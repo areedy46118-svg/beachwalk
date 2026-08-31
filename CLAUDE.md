@@ -1,0 +1,112 @@
+# Beachwalk — context for Claude
+
+A first-person low-poly horror walking sim: an eerie infinite night beach.
+See `README.md` for the player-facing feature list and every tuning knob.
+
+## Running it
+
+```bash
+python3 serve.py 4173      # dependency-free static server
+```
+
+Then open <http://localhost:4173>. It needs to be served over HTTP (ES
+modules); `file://` won't work. `node`/`npx` are not assumed to be present.
+
+## Stack
+
+- Vanilla JS, no build step. `index.html` + `main.js` + `assets/` + vendored
+  three.js r160 in `vendor/three/` (imported via the import map in the HTML).
+- The **whole game is `main.js`** (~2000 lines, one file, top-to-bottom).
+- `.claude/launch.json` lets the Claude Code browser preview start the server.
+
+## Architecture — the load-bearing ideas
+
+**World axes.** You walk **down the beach along -Z** toward the low moon
+(`MOON_DIR`). The **ocean is toward -X** (your left); the dry beach is +X and
+ends in a **sand cliff**. The player is a bare camera clamped between two
+invisible walls: `WADE_X` (into the surf) and `CLIFF_BLOCK_X` (foot of the
+cliff) — both are clamps on `camera.position.x`.
+
+**"Infinite" = recentring tiles.** `sand`, `ocean`, the `debris` group and
+`cliff` are large meshes snapped back onto the player every frame (sand/ocean
+in X+Z, debris/cliff in Z only, to `DEBRIS_TILE` / `CLIFF_PERIOD`). Nothing
+actually scrolls. All water/shoreline motion is computed in **world space**
+in the shaders (`shoreLine(z,t)` in `shoreGLSL`), so recentring is invisible.
+The `lighthouse` and the `castle` are the exceptions — fixed world objects.
+
+**Shaders.** `noiseGLSL` / `shoreGLSL` / `waveGLSL` are string fragments
+shared between the ocean `ShaderMaterial` and the sand material's
+`onBeforeCompile`. The sand shader discards fragments seaward of `shoreLine`
+so it never overlaps the water; the ocean discards fragments landward of it.
+
+**Retro look.** `renderer.setPixelRatio(RETRO_SCALE)` (~0.42) renders at low
+res; CSS `image-rendering: pixelated` blows it up. `retroTex()` forces
+nearest filtering / no anisotropy. Canvas textures are small (256²) and
+colour-quantised. Everything is `flatShading`.
+
+**Pointer lock is hand-rolled** (not `PointerLockControls`, so we get
+sensitivity + invert-Y). `requestLock()` + `pointerlockchange` +
+one `mousemove` handler. There's a drag-to-look **fallback** for browsers
+that can't lock. Key gotcha: browsers enforce a ~1.25 s cooldown before
+re-locking after an exit, so re-locking right after closing the note/menu
+fails — handled by `everLocked` / `scheduleLockRetry()`; never fall back to
+drag-look once we've successfully locked once.
+
+**Interaction.** `updateHover()` raycasts the screen centre against
+`interactables[]` each frame. `addInteractable(root, label, kind, data)` —
+`kind` is `'physics'` (grab), `'inventory'` (take), or default (`data.onActivate`).
+Tiny props carry an invisible `hitProxy` sphere so they're easy to aim at.
+`primaryAction()` (click / `E` / `F`) routes grab / throw / take / dig.
+
+**Physics.** `PhysProp` class + `physProps[]` — a tiny custom rigid body
+(gravity, ground bounce/friction, corridor walls; **no prop-vs-prop
+collision**). Grab springs the held prop in front of the camera; click again
+throws; `G` drops.
+
+**First-person hand.** Rendered in a **separate overlay scene**
+(`vmScene` / `vmCamera`, `renderer.autoClear=false; clearDepth()`).
+`armRig` = a bare skin-toned hand/forearm; `toolMount` at the fist centre
+holds tool models (the shovel). `layoutViewmodel()` positions the hand from
+the view camera's half-extents so it stays framed at any window aspect —
+call it on resize. The dig swing is driven by `digT` (0→1 over `DIG_DUR`)
+in `updateViewmodel()`; the impact fires at the halfway point.
+
+**Digging.** `crosshairGroundPoint()` raycasts the crosshair onto `sand`.
+`digImpact()` stamps `digHoles` (flat crater decal) + `digPits` (sunk 3D
+cone) + `digMounds` (spoil), spawns `spawnPuffs()` sand chunks, and plays
+`sfxDigImpact()`. Pools recycle after `DIG_POOL` (20).
+
+**Audio** is all synthesised in `startAmbientAudio()` / `sfx*()` (wind, surf,
+footsteps, dig, glass). The **one sample** is `assets/backrooms.m4a` — the
+opening music, faded in/out via a Web Audio gain chain in `startMusic()`
+(`MUSIC_*` consts), started when the intro ends.
+
+**Opening.** Title card is bare "BEACHWALK" + controls. `beginGame()` (on
+the overlay click) requests pointer lock *on the gesture*, then runs the
+black `#intro` card: the line fades in, holds, fades out, world fades up,
+`introDone = true`, music starts. `frozen()` includes `!introDone`.
+
+## Working in the Claude Code browser preview
+
+The preview browser can't use the real Pointer Lock API and **throttles
+`requestAnimationFrame` when its pane isn't focused**, so live movement is
+hard to drive from `javascript_tool`. Instead:
+
+- `window.__bw` exposes `scene`, `camera`, `state()`, `music()`, and helpers
+  like `startDig`, `spawnPuffs`, `toggleEquip`, `beginGame`, `showEnd`.
+- Move the camera by hand (`camera.position.set(...)` + `camera.lookAt(...)`
+  + `camera.updateMatrixWorld(true)`), then take a screenshot to force one
+  render frame.
+
+## Conventions
+
+- Match the existing terse style: one file, grouped by `// ---` banners,
+  short helper functions, `_scratch` temp vectors reused across frames.
+- Keep it dependency-free and offline (vendored three, synthesised audio,
+  procedural textures). New assets go in `assets/` and must be small.
+- Everything flat-shaded / low-poly / cold-blue palette; keep the retro look.
+
+## Open ideas
+
+Real note art for the bottle · more items and scripted events along the walk
+· prop-vs-prop physics · persistent dig holes · a nicer two-handed dig anim.

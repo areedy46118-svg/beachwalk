@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Beach Walk</title>
+<style>
+  :root { color-scheme: dark; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #05070f; }
+  /* the scene renders at a fraction of the screen resolution; blow it back
+     up with hard pixel edges for the PS1-era look */
+  canvas {
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+
+  #overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.2rem;
+    background: radial-gradient(ellipse at 50% 40%, #0c1424 0%, #05070f 70%);
+    color: #b9c6dd;
+    font-family: "Georgia", "Times New Roman", serif;
+    text-align: center;
+    z-index: 10;
+    transition: opacity 0.6s ease;
+    cursor: pointer;
+  }
+  #overlay.hidden { opacity: 0; pointer-events: none; }
+
+  #overlay h1 {
+    font-size: clamp(2.2rem, 7vw, 4rem);
+    font-weight: 400;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: #d7e2f2;
+    text-shadow: 0 0 24px rgba(120, 150, 200, 0.35);
+  }
+  #overlay p { font-size: 0.9rem; letter-spacing: 0.1em; opacity: 0.7; max-width: 40ch; line-height: 1.9; }
+  #overlay .key { color: #e8eefb; }
+  #overlay .prompt {
+    margin-top: 0.5rem;
+    font-size: 1rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.9; } }
+
+  /* black intro card — the opening line fades in over it, then it lifts */
+  #intro {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 1.6s ease;
+    font-family: "Georgia", "Times New Roman", serif;
+  }
+  #intro.show { opacity: 1; pointer-events: auto; }
+  #intro p {
+    max-width: 34ch;
+    text-align: center;
+    white-space: pre-line;
+    color: #aeb9cf;
+    font-size: clamp(1rem, 2.6vw, 1.4rem);
+    letter-spacing: 0.08em;
+    line-height: 2.1;
+    opacity: 0;
+    transition: opacity 2.2s ease;
+  }
+  #intro.text-in p { opacity: 0.92; }
+
+  /* bottom HUD strip: stamina bar with the contextual button prompt beside it */
+  #hud {
+    position: fixed;
+    left: 50%;
+    bottom: 1.4rem;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    z-index: 5;
+    pointer-events: none;
+  }
+  #stamina {
+    width: 150px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.10);
+    border-radius: 2px;
+    overflow: hidden;
+    opacity: 0.25;
+    transition: opacity 0.35s ease;
+    flex: none;
+  }
+  #stamina.show { opacity: 1; }
+  #stamina-fill {
+    width: 100%;
+    height: 100%;
+    background: rgba(210, 224, 245, 0.85);
+    transform-origin: left center;
+    transition: transform 0.08s linear, background 0.25s ease;
+  }
+  #stamina-fill.low { background: rgba(224, 138, 96, 0.9); }
+
+  .vignette {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 4;
+    box-shadow: inset 0 0 22vw 6vw rgba(0, 0, 0, 0.75);
+  }
+
+  /* crosshair */
+  #crosshair {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    width: 7px;
+    height: 7px;
+    margin: -3.5px 0 0 -3.5px;
+    border-radius: 50%;
+    background: rgba(210, 222, 240, 0.28);
+    z-index: 5;
+    pointer-events: none;
+    transition: background 0.15s ease, transform 0.15s ease;
+  }
+  #crosshair.active { background: rgba(235, 244, 255, 0.9); transform: scale(1.5); }
+  #crosshair.holding { background: rgba(150, 200, 255, 0.8); transform: scale(0.7); }
+
+  /* contextual button prompt, sits beside the stamina bar */
+  #prompt {
+    color: rgba(232, 240, 252, 0.9);
+    font-family: "Georgia", serif;
+    font-size: 0.78rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    text-shadow: 0 1px 6px rgba(0, 0, 0, 0.95);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    white-space: nowrap;
+  }
+  #prompt.show { opacity: 1; }
+  #prompt .key {
+    display: inline-block;
+    min-width: 1.5em;
+    padding: 1px 5px;
+    margin-right: 0.35em;
+    border: 1px solid rgba(190, 208, 236, 0.55);
+    border-radius: 3px;
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    color: #eef4ff;
+    background: rgba(10, 16, 28, 0.6);
+    text-align: center;
+  }
+
+  /* note-in-a-bottle reader */
+  #note {
+    position: fixed;
+    inset: 0;
+    z-index: 12;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(2, 4, 9, 0.72);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.35s ease;
+    cursor: pointer;
+  }
+  #note.show { opacity: 1; pointer-events: auto; }
+  #note .paper {
+    max-width: 30rem;
+    margin: 2rem;
+    padding: 2.6rem 2.4rem;
+    background: linear-gradient(150deg, #d9cba4 0%, #ccbb92 55%, #bda87e 100%);
+    color: #2b2417;
+    font-family: "Georgia", "Times New Roman", serif;
+    font-size: 1.35rem;
+    line-height: 1.7;
+    letter-spacing: 0.02em;
+    text-align: center;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6), inset 0 0 60px rgba(120, 96, 54, 0.35);
+    transform: rotate(-1.2deg);
+  }
+  #note .paper::first-letter { font-size: 1.1em; }
+  #note .dismiss {
+    margin-top: 1.8rem;
+    font-size: 0.7rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    opacity: 0.5;
+  }
+
+  /* inventory hotbar — left side, vertical */
+  #hotbar {
+    position: fixed;
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    z-index: 6;
+    transition: opacity 0.3s ease;
+  }
+  #hotbar.hidden { opacity: 0; pointer-events: none; }
+  #hotbar .slot {
+    width: 50px;
+    height: 50px;
+    border: 1px solid rgba(150, 168, 200, 0.28);
+    border-radius: 6px;
+    background: rgba(10, 16, 28, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    position: relative;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  #hotbar .slot:hover { border-color: rgba(200, 218, 250, 0.7); background: rgba(20, 30, 48, 0.7); }
+  #hotbar .slot.equipped { border-color: rgba(255, 190, 120, 0.9); box-shadow: 0 0 12px rgba(255, 170, 90, 0.3); }
+  #hotbar .slot img { width: 30px; height: 30px; image-rendering: auto; }
+  #hotbar .slot .num {
+    position: absolute;
+    top: 1px;
+    left: 4px;
+    font-size: 10px;
+    font-family: "Georgia", serif;
+    color: rgba(180, 195, 224, 0.5);
+  }
+  #hotbar .slot .label {
+    position: absolute;
+    left: 60px;
+    top: 50%;
+    transform: translateY(-50%);
+    white-space: nowrap;
+    font-family: "Georgia", serif;
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    color: #dbe4f4;
+    background: rgba(6, 10, 18, 0.9);
+    padding: 3px 8px;
+    border-radius: 4px;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    pointer-events: none;
+  }
+  #hotbar .slot:hover .label { opacity: 1; }
+  #hotbar .slot.empty { opacity: 0.35; cursor: default; }
+  #hotbar .slot.empty:hover { border-color: rgba(150, 168, 200, 0.28); background: rgba(10, 16, 28, 0.55); }
+
+  /* pause / settings menu */
+  #menu {
+    position: fixed;
+    inset: 0;
+    z-index: 13;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(4, 7, 14, 0.82);
+    backdrop-filter: blur(3px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+    font-family: "Georgia", "Times New Roman", serif;
+    color: #c3cfe4;
+  }
+  #menu.show { opacity: 1; pointer-events: auto; }
+  #menu .panel {
+    width: min(90vw, 420px);
+    background: rgba(12, 18, 30, 0.9);
+    border: 1px solid rgba(120, 140, 180, 0.2);
+    border-radius: 10px;
+    padding: 2rem 2.2rem;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+  }
+  #menu h2 {
+    font-weight: 400;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    font-size: 1.1rem;
+    color: #dde6f6;
+    margin-bottom: 1.6rem;
+    text-align: center;
+  }
+  #menu .row { margin-bottom: 1.3rem; }
+  #menu .row label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.82rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+    opacity: 0.85;
+  }
+  #menu .row label .val { color: #eaf1ff; opacity: 1; }
+  #menu input[type="range"] {
+    width: 100%;
+    accent-color: #7ea6d8;
+    height: 4px;
+  }
+  #menu .row.toggle label { cursor: pointer; }
+  #menu .buttons { display: flex; gap: 0.8rem; margin-top: 1.8rem; }
+  #menu button {
+    flex: 1;
+    padding: 0.7rem 1rem;
+    background: rgba(30, 44, 66, 0.8);
+    border: 1px solid rgba(140, 162, 200, 0.3);
+    border-radius: 6px;
+    color: #dde6f6;
+    font-family: inherit;
+    font-size: 0.8rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  #menu button:hover { background: rgba(46, 66, 96, 0.95); }
+  #menu .tip {
+    margin-top: 1.4rem;
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    opacity: 0.45;
+    text-align: center;
+    line-height: 1.7;
+  }
+
+  /* end screen */
+  #end {
+    position: fixed;
+    inset: 0;
+    z-index: 14;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.4rem;
+    background: #02040a;
+    color: #b9c6dd;
+    font-family: "Georgia", "Times New Roman", serif;
+    text-align: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 2s ease;
+  }
+  #end.show { opacity: 1; pointer-events: auto; }
+  #end h1 {
+    font-size: clamp(2rem, 6vw, 3.4rem);
+    font-weight: 400;
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+    color: #e6edfb;
+  }
+  #end p { font-size: 0.9rem; letter-spacing: 0.1em; opacity: 0.7; max-width: 32ch; line-height: 1.8; }
+  #end button {
+    margin-top: 1rem;
+    padding: 0.7rem 1.6rem;
+    background: transparent;
+    border: 1px solid rgba(140, 162, 200, 0.4);
+    border-radius: 6px;
+    color: #dde6f6;
+    font-family: inherit;
+    font-size: 0.75rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+  <div class="vignette"></div>
+  <div id="crosshair"></div>
+
+  <div id="hud">
+    <div id="stamina"><div id="stamina-fill"></div></div>
+    <div id="prompt"></div>
+  </div>
+
+  <div id="hotbar" class="hidden"></div>
+
+  <div id="note">
+    <div class="paper">
+      <div id="note-text"></div>
+      <div class="dismiss">Click or press Esc to put it away</div>
+    </div>
+  </div>
+
+  <div id="menu">
+    <div class="panel">
+      <h2>Settings</h2>
+      <div class="row">
+        <label>Field of view <span class="val" id="v-fov">75</span></label>
+        <input type="range" id="s-fov" min="60" max="120" step="1" value="75" />
+      </div>
+      <div class="row">
+        <label>Mouse sensitivity <span class="val" id="v-sens">1.0</span></label>
+        <input type="range" id="s-sens" min="0.2" max="3" step="0.05" value="1" />
+      </div>
+      <div class="row">
+        <label>Brightness <span class="val" id="v-bright">1.16</span></label>
+        <input type="range" id="s-bright" min="0.5" max="2" step="0.02" value="1.16" />
+      </div>
+      <div class="row">
+        <label>Volume <span class="val" id="v-vol">90%</span></label>
+        <input type="range" id="s-vol" min="0" max="1" step="0.01" value="0.9" />
+      </div>
+      <div class="row toggle">
+        <label><span>Invert look (Y)</span><input type="checkbox" id="s-invert" /></label>
+      </div>
+      <div class="buttons">
+        <button id="m-resume">Resume</button>
+      </div>
+      <div class="tip">
+        WASD move &nbsp;·&nbsp; Shift run &nbsp;·&nbsp; Space jump &nbsp;·&nbsp; E / click interact<br />
+        1–6 use item &nbsp;·&nbsp; click throw held object &nbsp;·&nbsp; G drop &nbsp;·&nbsp; Esc resume
+      </div>
+    </div>
+  </div>
+
+  <div id="end">
+    <h1>The Lighthouse</h1>
+    <p>You reach the light at the end of the beach. The rest is another walk.</p>
+    <button id="end-restart">Walk again</button>
+  </div>
+
+  <div id="intro"><p id="intro-text"></p></div>
+
+  <div id="overlay">
+    <h1>Beachwalk</h1>
+    <p>
+      <span class="key">WASD</span> move &nbsp;·&nbsp;
+      <span class="key">Shift</span> run &nbsp;·&nbsp;
+      <span class="key">Space</span> jump &nbsp;·&nbsp;
+      <span class="key">E</span> interact &nbsp;·&nbsp;
+      <span class="key">Esc</span> menu
+    </p>
+    <div class="prompt">Click to begin</div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three/three.module.js",
+      "three/addons/controls/PointerLockControls.js": "./vendor/three/PointerLockControls.js"
+    }
+  }
+  </script>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
