@@ -71,7 +71,7 @@ function retroTex(t, { repeatWrap = true } = {}) {
 }
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x0a1220, 0.020);
+scene.fog = new THREE.FogExp2(0x0b1626, 0.014);   // thinned so the swell reads further out to sea
 
 const camera = new THREE.PerspectiveCamera(settings.fov, window.innerWidth / window.innerHeight, 0.1, 5000);
 camera.position.set(8, EYE_HEIGHT, 0);
@@ -169,6 +169,35 @@ const shoreGLSL = `
     return tide + swash + wobble;
   }
 `;
+
+// JS mirror of shoreLine() so gameplay code (footprints, digging, splashes)
+// can tell dry sand from surf. Keep in lockstep with shoreGLSL above.
+const bwFract = (x) => x - Math.floor(x);
+const bwHashJS = (n) => bwFract(Math.sin(n) * 43758.5453123);
+function bwNoiseJS(x) {
+  const i = Math.floor(x), f = bwFract(x), u = f * f * (3 - 2 * f);
+  return bwHashJS(i) * (1 - u) + bwHashJS(i + 1) * u;
+}
+function shoreLineJS(z, t) {
+  const tide = Math.sin(t * 0.045) * 3.0;
+  const swash = 2.4 * Math.sin(t * 0.6) + 1.2 * Math.sin(t * 0.97 + 1.7);
+  const wobble = (bwNoiseJS(z * 0.12 + t * 0.05) - 0.5) * 4.0;
+  return tide + swash + wobble;
+}
+// true when (x,z) is seaward of the waterline — i.e. standing in / over water
+function inWater(x, z) { return x < shoreLineJS(z, oceanUniforms.uTime.value) + 0.25; }
+
+// Ocean shader uniforms — declared up here because the sand shader and the
+// gameplay water checks both reach for uTime before the Ocean section runs.
+const oceanUniforms = THREE.UniformsUtils.merge([
+  THREE.UniformsLib.fog,
+  { uTime: { value: 0 }, uOffset: { value: new THREE.Vector2() }, uCamPos: { value: new THREE.Vector3() },
+    uMoonDir: { value: MOON_DIR },
+    uDeep: { value: new THREE.Color(0x123f66) },
+    uShallow: { value: new THREE.Color(0x2f8ec2) },
+    uCrest: { value: new THREE.Color(0xaad9ec) },
+    uSky: { value: new THREE.Color(0x1d3856) } },
+]);
 
 // ------------------------------------------------------------------
 // Sand texture
@@ -725,6 +754,7 @@ const _fm = new THREE.Matrix4(), _fq = new THREE.Quaternion(), _fe = new THREE.E
 let footIdx = 0, footSide = 1, digIdx = 0;
 const lastFootPos = new THREE.Vector3();
 function stampFoot(x, z, fwdX, fwdZ, side) {
+  if (inWater(x, z)) return;                 // prints don't hold on water
   _fe.set(0, Math.atan2(fwdX, fwdZ) + Math.PI, 0);
   _fq.setFromEuler(_fe);
   const off = 0.14 * side;
@@ -735,6 +765,7 @@ function stampFoot(x, z, fwdX, fwdZ, side) {
   foot.instanceMatrix.needsUpdate = true;
 }
 function stampDigHole(x, z, fwdX = 0, fwdZ = -1) {
+  if (inWater(x, z)) return;                 // no crater on the water — digImpact() splashes instead
   const yaw = Math.random() * Math.PI;
   const sc = 0.9 + Math.random() * 0.4;
   _fe.set(0, yaw, 0); _fq.setFromEuler(_fe);
@@ -841,34 +872,98 @@ function updatePuffs(dt) {
   if (any) puff.instanceMatrix.needsUpdate = true;
 }
 
+// water kicked up by wading / digging in the surf — pale droplets that
+// arc up and fall back. Same pooled-instances pattern as the sand puffs.
+const SPLASH_POOL = 110;
+const splashGeo = new THREE.IcosahedronGeometry(1, 0);
+const splash = new THREE.InstancedMesh(
+  splashGeo,
+  new THREE.MeshStandardMaterial({
+    color: 0xd6e6f0, roughness: 0.35, metalness: 0, emissive: 0x4c728c,
+    transparent: true, opacity: 0.92, flatShading: true,
+  }),
+  SPLASH_POOL
+);
+splash.frustumCulled = false; splash.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(splash);
+const splashes = Array.from({ length: SPLASH_POOL }, () => ({
+  life: 0, ttl: 1, pos: new THREE.Vector3(), vel: new THREE.Vector3(), sz: 1, rot: new THREE.Euler(),
+}));
+{ const hide = new THREE.Matrix4().makeScale(0, 0, 0); for (let i = 0; i < SPLASH_POOL; i++) splash.setMatrixAt(i, hide); }
+let splashIdx = 0;
+function spawnSplash(x, z, n, dirX = 0, dirZ = 0, power = 1) {
+  for (let i = 0; i < n; i++) {
+    const p = splashes[splashIdx];
+    splashIdx = (splashIdx + 1) % SPLASH_POOL;
+    p.ttl = p.life = 0.34 + Math.random() * 0.42;
+    p.sz = (0.45 + Math.random() * 0.95) * (0.6 + power * 0.6);
+    p.pos.set(x + (Math.random() - 0.5) * 0.35, 0.02 + Math.random() * 0.05, z + (Math.random() - 0.5) * 0.35);
+    const out = 1.0 + Math.random() * 2.4;
+    p.vel.set(
+      dirX * 1.6 * power + (Math.random() - 0.5) * out,
+      (2.4 + Math.random() * 3.4) * (0.55 + power * 0.55),
+      dirZ * 1.6 * power + (Math.random() - 0.5) * out
+    );
+    p.rot.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+  }
+}
+const _spm = new THREE.Matrix4(), _spq = new THREE.Quaternion(), _sps = new THREE.Vector3();
+function updateSplashes(dt) {
+  let any = false;
+  for (let i = 0; i < SPLASH_POOL; i++) {
+    const p = splashes[i];
+    if (p.life <= 0) continue;
+    any = true;
+    p.life -= dt;
+    p.vel.y -= 16 * dt;
+    p.pos.addScaledVector(p.vel, dt);
+    p.rot.x += p.vel.x * dt * 3; p.rot.z += p.vel.z * dt * 3;
+    if (p.pos.y <= 0.02) p.life = 0;
+    const k = Math.max(0, p.life / p.ttl);
+    const sc = p.sz * 0.055 * (0.35 + 0.65 * k);
+    _spq.setFromEuler(p.rot);
+    _spm.compose(p.pos, _spq, _sps.set(sc, sc * 1.7, sc));
+    splash.setMatrixAt(i, _spm);
+    if (p.life <= 0) splash.setMatrixAt(i, _spm.makeScale(0, 0, 0));
+  }
+  if (any) splash.instanceMatrix.needsUpdate = true;
+}
+
 // ------------------------------------------------------------------
 // Ocean
 // ------------------------------------------------------------------
 const waveGLSL = `
   float oceanWave(vec2 p, float t){
     float w = 0.0;
-    w += sin(p.x * 0.13 + p.y * 0.02 + t * 1.05) * 0.34;
-    w += sin(p.x * 0.09 - p.y * 0.05 + t * 0.83) * 0.28;
-    w += sin(p.x * 0.21 + p.y * 0.10 + t * 1.55) * 0.15;
-    w += sin(p.y * 0.33 - p.x * 0.06 + t * 2.10) * 0.10;
-    w += sin(p.y * 0.60 + p.x * 0.15 + t * 2.90) * 0.05;
-    w += sin(p.x * 1.10 + t * 4.10) * 0.028;
-    w += sin(p.y * 1.35 - t * 3.70) * 0.022;
-    float build = smoothstep(-90.0, 3.0, p.x);
-    w += sin(p.x * 0.5 - t * 2.6) * 0.16 * build;
-    w *= smoothstep(8.0, -24.0, p.x);
+    // long travelling swell — the motion you read far out to sea
+    w += sin(p.x * 0.045 + p.y * 0.028 - t * 0.55) * 0.70;
+    w += sin(p.x * 0.032 - p.y * 0.041 + t * 0.42) * 0.50;
+    // steep mid waves — short wavelength + real amplitude so each triangle
+    // tilts, which is what gives the faceted low-poly water its shape
+    w += sin(p.x * 0.20 + p.y * 0.13 + t * 1.10) * 0.48;
+    w += sin(p.x * 0.16 - p.y * 0.19 + t * 0.90) * 0.40;
+    w += sin(p.y * 0.24 - p.x * 0.11 + t * 1.30) * 0.34;
+    w += sin(p.x * 0.33 + p.y * 0.28 + t * 1.70) * 0.26;
+    w += sin(p.y * 0.44 + p.x * 0.20 - t * 2.10) * 0.19;
+    w += sin(p.x * 0.61 - p.y * 0.35 + t * 2.60) * 0.13;
+    // a steeper set that stacks up as it nears the shore
+    float build = smoothstep(-120.0, 4.0, p.x);
+    w += sin(p.x * 0.50 - t * 2.30) * 0.16 * build;
+    // ease down to the waterline so it meets the sand without a wall of water
+    w *= smoothstep(0.5, -22.0, p.x);
+    // short, sharp chop that lives right in the near band so the facets you
+    // actually walk past have real relief (kept off the far water)
+    float nearBand = smoothstep(-55.0, -2.0, p.x);
+    w += sin(p.x * 0.62 + p.y * 0.44 - t * 3.0) * 0.12 * nearBand;
+    w += sin(p.y * 0.78 - p.x * 0.36 + t * 2.5) * 0.09 * nearBand;
     return w;
   }
 `;
-const oceanUniforms = THREE.UniformsUtils.merge([
-  THREE.UniformsLib.fog,
-  { uTime: { value: 0 }, uOffset: { value: new THREE.Vector2() }, uCamPos: { value: new THREE.Vector3() },
-    uMoonDir: { value: MOON_DIR }, uDeep: { value: new THREE.Color(0x081726) }, uShallow: { value: new THREE.Color(0x1b3a55) } },
-]);
-const oceanGeo = new THREE.PlaneGeometry(3000, 3000, 300, 300);
+const oceanGeo = new THREE.PlaneGeometry(2200, 2200, 360, 360);   // ~6 m facets
 oceanGeo.rotateX(-Math.PI / 2);
 const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
   fog: true, uniforms: oceanUniforms,
+  extensions: { derivatives: true },        // dFdx/dFdy for the flat facet normal (WebGL1)
   vertexShader: `
     #include <fog_pars_vertex>
     uniform float uTime; uniform vec2 uOffset; varying vec3 vWorld;
@@ -886,7 +981,8 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
   `,
   fragmentShader: `
     #include <fog_pars_fragment>
-    uniform float uTime; uniform vec3 uCamPos; uniform vec3 uMoonDir; uniform vec3 uDeep; uniform vec3 uShallow;
+    uniform float uTime; uniform vec3 uCamPos; uniform vec3 uMoonDir;
+    uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uCrest; uniform vec3 uSky;
     varying vec3 vWorld;
     ${noiseGLSL}
     ${shoreGLSL}
@@ -894,43 +990,61 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
     void main() {
       float shore = shoreLine(vWorld.z, uTime);
       if (vWorld.x > shore) discard;
-      vec2 wp = vec2(vWorld.x, vWorld.z);
-      float e = 0.55;
-      float hL = oceanWave(wp - vec2(e, 0.0), uTime);
-      float hR = oceanWave(wp + vec2(e, 0.0), uTime);
-      float hD = oceanWave(wp - vec2(0.0, e), uTime);
-      float hU = oceanWave(wp + vec2(0.0, e), uTime);
-      vec3 n = normalize(vec3(hL - hR, 2.0 * e, hD - hU));
-      n.xz += 0.12 * vec2(sin(wp.x * 2.7 + wp.y * 0.6 + uTime * 5.0), sin(wp.y * 2.4 - wp.x * 0.5 - uTime * 4.3));
-      n.xz += 0.05 * vec2(sin(wp.x * 6.1 - uTime * 8.0), sin(wp.y * 5.3 + uTime * 7.0));
-      n = normalize(n);
+
+      // one flat normal per rendered triangle — the low-poly water facet look
+      vec3 n = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
+      if (n.y < 0.0) n = -n;
+
       vec3 viewDir = normalize(uCamPos - vWorld);
+      float dist = shore - vWorld.x;                 // metres out from the waterline
+
+      // shallow near the beach -> deep blue further out -> sky tint at the horizon
+      float deepen = smoothstep(0.0, 190.0, dist);
+      vec3 col = mix(uShallow, uDeep, deepen);
+      col = mix(col, uSky, smoothstep(140.0, 520.0, dist));
+
+      // facets catch the moon at different angles; fade the shading out at
+      // distance, where the triangles go sub-pixel and would just sparkle
+      float ndl = max(dot(n, normalize(uMoonDir)), 0.0);
+      float facet = mix(1.0, 0.5 + 1.05 * ndl, smoothstep(340.0, 12.0, dist));
+      col *= facet;
+
+      // steep facets pick up a pale sky tint at grazing angles
       float fres = pow(1.0 - max(dot(n, viewDir), 0.0), 3.0);
-      float dist = shore - vWorld.x;
-      float depth = smoothstep(0.0, 70.0, dist);
-      vec3 col = mix(uShallow, uDeep, depth);
-      col += vec3(0.05, 0.08, 0.13) * fres;
+      col += uSky * fres * 0.5;
+
+      // tilted facets catch a pale edge — reads as low-poly wave faces
+      float steep = clamp((1.0 - n.y) * 3.0, 0.0, 1.0);
+      steep *= smoothstep(300.0, 8.0, dist);
+      col = mix(col, uCrest, steep * 0.22);
+
+      // crest highlight on the up-facing tops of the swell
+      float wh = oceanWave(vec2(vWorld.x, vWorld.z), uTime);
+      float crest = smoothstep(0.30, 0.80, wh) * smoothstep(0.55, 0.95, n.y);
+      col = mix(col, uCrest, crest * 0.5);
+
+      // moon glitter road
       vec3 hv = normalize(uMoonDir + viewDir);
-      float spec = pow(max(dot(n, hv), 0.0), 90.0);
+      float spec = pow(max(dot(n, hv), 0.0), 60.0);
       vec3 moonFlat = normalize(vec3(uMoonDir.x, 0.0, uMoonDir.z));
       vec3 viewFlat = normalize(vec3(-viewDir.x, 0.0, -viewDir.z));
       float road = pow(max(dot(viewFlat, moonFlat), 0.0), 8.0);
-      col += vec3(0.85, 0.90, 1.0) * spec * (0.10 + road * 1.3);
-      col += vec3(0.26, 0.34, 0.50) * road * 0.12;
-      float wh = oceanWave(wp, uTime);
-      float caps = smoothstep(0.15, 0.30, wh) * (0.5 + 0.5 * sin(wp.x * 2.0 - uTime * 6.0));
-      col = mix(col, vec3(0.60, 0.68, 0.78), caps * 0.30 * depth);
+      col += vec3(0.90, 0.94, 1.0) * spec * (0.15 + road * 1.4);
+      col += vec3(0.26, 0.34, 0.50) * road * 0.14;
+
+      // shoreline foam / swash lace
       float band = smoothstep(3.5, 0.0, dist) * smoothstep(-1.8, 0.5, dist);
       float fizz = 0.5 + 0.5 * sin(vWorld.z * 3.1 + uTime * 9.0) * sin(vWorld.z * 1.3 - uTime * 5.0);
-      col = mix(col, vec3(0.74, 0.81, 0.88), clamp(band * fizz, 0.0, 0.85));
+      col = mix(col, vec3(0.78, 0.85, 0.92), clamp(band * fizz, 0.0, 0.85));
       float lace = smoothstep(0.0, 1.5, dist) * smoothstep(5.0, 1.5, dist);
       col += vec3(0.16) * lace * (0.35 + 0.65 * bwNoise(vWorld.z * 2.0 + uTime * 1.5));
+
       gl_FragColor = vec4(col, 1.0);
       #include <fog_fragment>
     }
   `,
 }));
-ocean.position.y = -0.32;
+ocean.position.y = -0.35;
 ocean.frustumCulled = false;
 scene.add(ocean);
 
@@ -1037,6 +1151,7 @@ function beginGame() {
   if (introStarted) return;
   introStarted = true;
   startAmbientAudio();
+  startMusic();                                    // swell it in from the moment you spawn
   requestLock();                                   // must fire on the click gesture
   overlay.classList.add('hidden');
 
@@ -1053,7 +1168,6 @@ function beginGame() {
     for (const k in keys) keys[k] = false;
     clock.getDelta();                              // drop the big first-frame dt
     if (!locked && !fallbackLook) enterFallback();
-    startMusic();
   }, revealAt);
 }
 overlay.addEventListener('click', beginGame);
@@ -1201,8 +1315,9 @@ function updateHover() {
     crosshair.className = 'active';
     setPrompt(kbd('E') + best.label);
   } else if (equipped && equipped.onDig && digT <= 0 && crosshairGroundPoint()) {
+    const onMound = !inWater(_digHit.x, _digHit.z) && moundAt(_digHit.x, _digHit.z);
     crosshair.className = 'active';
-    setPrompt(kbd('LMB') + 'Dig here');
+    setPrompt(kbd('LMB') + (onMound ? 'Dig up the mound' : 'Dig here'));
   } else {
     crosshair.className = '';
     setPrompt('');
@@ -1392,69 +1507,29 @@ const viewmodel = new THREE.Group();
 viewmodel.visible = false;
 vmScene.add(viewmodel);
 
-/* A bare hand and forearm coming up from the lower right, fist closed
- * around the shovel's shaft. The rig's origin sits at the centre of the
- * fist, so the tool just parents to `toolMount` at 0,0,0 and the fingers
- * wrap it. Low-poly on purpose: blocky segments, flat shading. */
-const ARM_BASE = new THREE.Vector3(0.24, -0.30, -0.78);
-const ARM_ROT_X = 0.30;
+/* No hand — the equipped item just floats in the lower-right of the view
+ * as if an invisible hand were holding it. `armRig` is kept purely as the
+ * transform that `updateViewmodel()` sways and swings; `toolMount` at its
+ * origin is where tool models parent. */
+const ARM_BASE = new THREE.Vector3(0.16, -0.20, -0.62);
+const ARM_ROT_X = 0.10;
 const armRig = new THREE.Group();
 armRig.position.copy(ARM_BASE);
-armRig.rotation.set(ARM_ROT_X, -0.34, 0.20);
+armRig.rotation.set(ARM_ROT_X, -0.45, 0.10);
 viewmodel.add(armRig);
 
-// Keep the hand at the same spot in the frame whatever the window shape:
-// derive its X from the view's half-width at the arm's depth.
+// Keep the floating item at the same spot in the frame whatever the window
+// shape: derive its X/Y from the view's half-extents at the item's depth —
+// tucked into the lower-right corner like a held tool.
 function layoutViewmodel() {
   const d = Math.abs(ARM_BASE.z);
   const halfH = Math.tan((vmCamera.fov * Math.PI) / 360) * d;
   const halfW = halfH * vmCamera.aspect;
-  ARM_BASE.x = halfW * 0.52;
-  ARM_BASE.y = -halfH * 0.72;
+  ARM_BASE.x = halfW * 0.58;
+  ARM_BASE.y = -halfH * 0.66;
 }
-{
-  const skin = new THREE.MeshStandardMaterial({ color: 0xb98a68, roughness: 0.85, metalness: 0, emissive: 0x2a1a11, flatShading: true });
-  const skinDark = new THREE.MeshStandardMaterial({ color: 0xa2745a, roughness: 0.9, metalness: 0, emissive: 0x22140d, flatShading: true });
 
-  // forearm tapering into the wrist, running down out of frame
-  const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.085, 0.62, 7), skin);
-  forearm.position.set(0.015, -0.36, -0.02);
-  forearm.rotation.z = -0.06;
-  const wrist = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.09, 0.075), skin);
-  wrist.position.set(0, -0.085, 0);
-
-  // palm — the shaft passes through it vertically
-  const palm = new THREE.Mesh(new THREE.BoxGeometry(0.105, 0.135, 0.085), skin);
-  palm.position.set(0, 0, 0.001);
-  // heel of the thumb
-  const thenar = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.085, 0.06), skin);
-  thenar.position.set(-0.05, -0.028, 0.012);
-
-  armRig.add(forearm, wrist, palm, thenar);
-
-  // four curled fingers closing over the front of the shaft
-  for (let i = 0; i < 4; i++) {
-    const y = 0.052 - i * 0.036;
-    const len = i === 0 ? 0.085 : i === 3 ? 0.068 : 0.082;
-    const prox = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.03, len), i % 2 ? skin : skinDark);
-    prox.position.set(0.028, y, 0.058);
-    prox.rotation.x = -0.15;
-    // the tip curls back toward the palm, closing the grip
-    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.032, 0.05), i % 2 ? skinDark : skin);
-    tip.position.set(0.028, y - 0.012, 0.098);
-    tip.rotation.x = -1.15;
-    armRig.add(prox, tip);
-  }
-  // thumb crossing over the fingers
-  const thumb1 = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.065), skin);
-  thumb1.position.set(-0.042, 0.026, 0.042);
-  thumb1.rotation.set(-0.35, 0.55, 0);
-  const thumb2 = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.036, 0.055), skinDark);
-  thumb2.position.set(-0.012, 0.036, 0.078);
-  thumb2.rotation.set(-0.2, 1.15, 0);
-  armRig.add(thumb1, thumb2);
-}
-// the tool sits in the middle of the fist
+// the tool parents here — sits where the fist used to be
 const toolMount = new THREE.Group();
 armRig.add(toolMount);
 
@@ -1484,12 +1559,12 @@ function makeShovelIcon() {
   return c.toDataURL();
 }
 
-// scaled + slid so the shaft runs straight through the closed fist, with
-// the D-handle just above the thumb and the blade hanging below frame
+// held out ahead, D-handle back toward the camera and the blade angled
+// down-and-forward — the scoop faces the ground so the dig swing bites in
 const shovelVM = makeShovel();
-shovelVM.scale.setScalar(0.44);
-shovelVM.position.set(0.004, -0.13, 0.022);
-shovelVM.rotation.set(0.16, 0.1, 0.03);
+shovelVM.scale.setScalar(0.48);
+shovelVM.position.set(-0.04, -0.02, 0.0);
+shovelVM.rotation.set(0.70, 0.35, 0.32);
 shovelVM.visible = false;
 toolMount.add(shovelVM);
 
@@ -1647,9 +1722,16 @@ function digImpact() {
     x = THREE.MathUtils.clamp(camera.position.x + _pf.x * 1.5, WADE_X + 0.3, CLIFF_BLOCK_X - 0.3);
     z = camera.position.z + _pf.z * 1.5;
   }
+  if (inWater(x, z)) {
+    // blade hits water, not sand — throw a splash, leave no crater
+    spawnSplash(x, z, 24, _pf.x, _pf.z, 1.7);
+    sfxSplash(1.1);
+    return;
+  }
   stampDigHole(x, z, _pf.x, _pf.z);
   spawnPuffs(x, z, 22, _pf.x, _pf.z);
   sfxDigImpact();
+  revealMoundNear(x, z, _pf.x, _pf.z);
 }
 
 let vmSway = 0;
@@ -1706,6 +1788,88 @@ addInteractable(bottle, 'Take the bottle', 'inventory', {
 });
 
 // ------------------------------------------------------------------
+// Buried caches — rare little sand mounds along the walk. Dig one open
+// with the shovel and it turns up a (placeholder) buried object.
+// ------------------------------------------------------------------
+const moundMat = new THREE.MeshStandardMaterial({ color: 0x74809a, roughness: 1, flatShading: true, emissive: 0x272f42 });
+const moundDomeGeo = new THREE.SphereGeometry(0.55, 9, 5, 0, Math.PI * 2, 0, Math.PI * 0.5);
+moundDomeGeo.scale(1, 0.36, 1);             // a low, flat dome
+function makeMound() {
+  const g = new THREE.Group();
+  const dome = new THREE.Mesh(moundDomeGeo, moundMat);
+  dome.rotation.y = Math.random() * Math.PI;
+  g.add(dome);
+  // a couple of pressed-in pebbles so it reads as disturbed sand, not a bump
+  for (let i = 0; i < 3; i++) {
+    const a = Math.random() * Math.PI * 2, r = 0.2 + Math.random() * 0.28;
+    const pb = new THREE.Mesh(new THREE.DodecahedronGeometry(0.03 + Math.random() * 0.03, 0),
+      new THREE.MeshStandardMaterial({ color: 0x525b6d, roughness: 1, flatShading: true, emissive: 0x161b25 }));
+    pb.position.set(Math.cos(a) * r, 0.02, Math.sin(a) * r);
+    g.add(pb);
+  }
+  return g;
+}
+function makeBuriedObject() {
+  // PLACEHOLDER — swap this model + the item below for the real thing later
+  const g = new THREE.Group();
+  const brass = new THREE.MeshStandardMaterial({ color: 0x9c7b3f, roughness: 0.6, metalness: 0.35, flatShading: true, emissive: 0x2c2110 });
+  const wrap = new THREE.MeshStandardMaterial({ color: 0x6f6552, roughness: 1, flatShading: true, emissive: 0x1c1a14 });
+  const box = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 0.13), brass);
+  const band = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.13, 0.035), wrap);
+  g.add(box, band);
+  return g;
+}
+
+const mounds = [];
+{
+  // spread them thinly from just past the spawn down to near the lighthouse
+  let z = -28;
+  while (z > END_Z + 40) {
+    const x = 3.0 + Math.random() * (CLIFF_BLOCK_X - 5.0);
+    const m = makeMound();
+    m.position.set(x, 0, z);
+    scene.add(m);
+    mounds.push({ root: m, x, z, taken: false });
+    z -= 60 + Math.random() * 90;           // "fairly rare" — ~60–150 m apart
+  }
+}
+function moundAt(x, z) {
+  for (const m of mounds) {
+    if (m.taken) continue;
+    const dx = x - m.x, dz = z - m.z;
+    if (dx * dx + dz * dz < 1.6 * 1.6) return m;
+  }
+  return null;
+}
+function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
+  const m = moundAt(x, z);
+  if (!m) return;
+  m.taken = true;
+  scene.remove(m.root);
+  spawnPuffs(m.x, m.z, 20, fwdX, fwdZ);
+  sfxDigImpact();
+
+  const relic = makeBuriedObject();
+  relic.position.set(m.x, 0.09, m.z);
+  relic.rotation.set((Math.random() - 0.5) * 0.5, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.4);
+  const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.36, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  proxy.name = 'hitProxy'; relic.add(proxy);
+  scene.add(relic);
+  addInteractable(relic, 'Take the buried object', 'inventory', {
+    onActivate: () => {
+      sfxThud(0.04);
+      scene.remove(relic);
+      hovered = null;
+      addToInventory({
+        name: 'Buried object', icon: '📦',
+        use: () => openNote('A small buried object.\n\n(placeholder — what it is comes later.)'),
+      });
+    },
+  });
+}
+
+// ------------------------------------------------------------------
 // Ambient audio
 // ------------------------------------------------------------------
 function startAmbientAudio() {
@@ -1746,9 +1910,9 @@ function startAmbientAudio() {
 }
 // the provided track: swells in over a few seconds, plays a while, fades out
 const MUSIC_TARGET = 0.6;   // relative to the master volume
-const MUSIC_FADE_IN = 7;
-const MUSIC_HOLD = 18;
-const MUSIC_FADE_OUT = 7;
+const MUSIC_FADE_IN = 2.5;  // up quickly — it should already be there as you spawn
+const MUSIC_HOLD = 34;
+const MUSIC_FADE_OUT = 10;
 function startMusic() {
   if (musicStarted || !audioCtx) return;
   musicStarted = true;
@@ -1874,6 +2038,24 @@ function sfxDigImpact() {
 
   out.gain.setTargetAtTime(0.0001, t + 0.45, 0.1);
 }
+// a foot / blade breaking the surface of the surf — a short wet spatter
+// with a quick bright rise and fall
+function sfxSplash(power = 1) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const s = noiseBurst(0.34, (x) => Math.pow(1 - x, 1.7) * (0.55 + 0.45 * Math.random()));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.7;
+  bp.frequency.setValueAtTime(700, t);
+  bp.frequency.exponentialRampToValueAtTime(2400, t + 0.09);
+  bp.frequency.exponentialRampToValueAtTime(650, t + 0.30);
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 420;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.03 + 0.05 * power, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
+  s.connect(bp).connect(hp).connect(g).connect(ctx.destination);
+  s.start(t); s.stop(t + 0.34);
+}
 
 // ------------------------------------------------------------------
 // End of the walk
@@ -1900,6 +2082,7 @@ const moveDir = new THREE.Vector3();
 let bobPhase = 0;
 let camBaseY = EYE_HEIGHT, vy = 0, onGround = true, jumpLatch = false;
 let stamina = 1, exhausted = false;
+let splashTimer = 0;
 const snap = (v, s) => Math.round(v / s) * s;
 
 function update(dt) {
@@ -1940,20 +2123,41 @@ function update(dt) {
   staminaFill.style.transform = `scaleX(${Math.max(0, stamina)})`;
   staminaFill.classList.toggle('low', exhausted);
 
+  const wading = inWater(camera.position.x, camera.position.z);
   if (moving && onGround && speed > 0.6) {
     const dx = camera.position.x - lastFootPos.x, dz = camera.position.z - lastFootPos.z;
     const gate = running ? 1.0 : 0.8;
     if (dx * dx + dz * dz > gate * gate) {
       moveDir.copy(velocity).setY(0).normalize();
-      stampFoot(camera.position.x, camera.position.z, moveDir.x, moveDir.z, footSide);
+      if (wading) {
+        // no footprint on water — kick up a splash instead
+        spawnSplash(camera.position.x, camera.position.z, 9, moveDir.x, moveDir.z, 1);
+        sfxSplash(0.85);
+      } else {
+        stampFoot(camera.position.x, camera.position.z, moveDir.x, moveDir.z, footSide);
+        sfxStep();
+      }
       footSide = -footSide;
       lastFootPos.set(camera.position.x, 0, camera.position.z);
-      sfxStep();
     }
   }
+  // fine spray trailing off your legs the whole time you're moving through surf
+  if (wading && moving && onGround && speed > 0.5) {
+    splashTimer -= dt;
+    if (splashTimer <= 0) {
+      moveDir.copy(velocity).setY(0).normalize();
+      spawnSplash(
+        camera.position.x - moveDir.x * 0.3 + (Math.random() - 0.5) * 0.3,
+        camera.position.z - moveDir.z * 0.3 + (Math.random() - 0.5) * 0.3,
+        2, moveDir.x, moveDir.z, 0.32
+      );
+      splashTimer = 0.05 + Math.random() * 0.05;
+    }
+  } else splashTimer = 0;
 
   for (const p of physProps) p.step(dt);
   updatePuffs(dt);
+  updateSplashes(dt);
 
   const px = camera.position.x, pz = camera.position.z;
   sand.position.set(snap(px, SAND_TILE), 0, snap(pz, SAND_TILE));
@@ -2013,7 +2217,8 @@ window.__bw = {
   THREE, scene, camera, player: camera,
   interactables, physProps, inventory, bottle, cliff, foot, lighthouse, city,
   castle, shovelWorld, viewmodel,
-  openMenu, closeMenu, showEnd, stampFoot, startDig, toggleEquip, spawnPuffs, stampDigHole, beginGame,
+  mounds, moundAt, revealMoundNear, inWater, shoreLineJS,
+  openMenu, closeMenu, showEnd, stampFoot, startDig, toggleEquip, spawnPuffs, spawnSplash, stampDigHole, beginGame,
   get shovelItem() { return shovelItem; },
   state: () => ({ started, locked, fallbackLook, introDone, noteOpen, menuOpen, ended, onGround, stamina: +stamina.toFixed(2), exhausted, digT: +digT.toFixed(2), equipped: equipped && equipped.name, held: held && held.mesh.name, hovered: hovered && hovered.label, inv: inventory.map(i => i.name) }),
   music: () => (musicEl ? { paused: musicEl.paused, t: +musicEl.currentTime.toFixed(1), env: musicEnvGain ? +musicEnvGain.gain.value.toFixed(3) : null, vol: musicVolGain ? +musicVolGain.gain.value.toFixed(2) : null } : { musicEl: null }),

@@ -4,8 +4,9 @@
     {
       "name": "beachwalk",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["/Users/ashtonr/Desktop/BeachWalk/serve.py", "4173"],
-      "port": 4173
+      "runtimeArgs": ["serve.py"],
+      "port": 4173,
+      "autoPort": true
     }
   ]
 }
