@@ -384,6 +384,165 @@
   #hotbar .slot.empty { opacity: 0.35; cursor: default; }
   #hotbar .slot.empty:hover { border-color: rgba(150, 168, 200, 0.28); background: rgba(10, 16, 28, 0.55); }
 
+  /* blue-blood counter — top left, hidden until the first successful drain.
+     The jar canvas is redrawn each frame so it turns on the spot. */
+  #blood {
+    position: fixed;
+    left: 1.1rem;
+    top: 1.0rem;
+    z-index: 6;
+    display: none;
+    align-items: center;
+    gap: 0.5rem;
+    pointer-events: none;
+  }
+  #blood.show { display: flex; }
+  #blood canvas { width: 44px; height: 44px; image-rendering: pixelated; }
+  #blood .amt {
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size: 0.9rem;
+    letter-spacing: 0.08em;
+    color: #9fe4f5;
+    text-shadow: 0 0 10px rgba(80, 190, 225, 0.5), 0 1px 5px rgba(0, 0, 0, 0.95);
+  }
+  #blood .amt .unit { font-size: 0.66rem; opacity: 0.6; margin-left: 2px; }
+
+  /* backpack — TAB. Ten slots you can drag things between; dropping one
+     item onto another tries to combine them. */
+  #invpanel {
+    position: fixed;
+    inset: 0;
+    z-index: 13;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(4, 7, 14, 0.78);
+    backdrop-filter: blur(3px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    font-family: "Georgia", "Times New Roman", serif;
+    color: #c3cfe4;
+  }
+  #invpanel.show { opacity: 1; pointer-events: auto; }
+  #invpanel .panel {
+    width: min(94vw, 540px);
+    background: rgba(12, 18, 30, 0.94);
+    border: 1px solid rgba(120, 140, 180, 0.22);
+    border-radius: 10px;
+    padding: 1.7rem 1.8rem 1.5rem;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.65);
+  }
+  #invpanel h2 {
+    font-weight: 400;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    font-size: 1rem;
+    color: #dde6f6;
+    margin-bottom: 1.3rem;
+    text-align: center;
+  }
+  #invpanel .grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 9px;
+  }
+  #invpanel .islot {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    border: 1px solid rgba(150, 168, 200, 0.22);
+    border-radius: 6px;
+    background: rgba(10, 16, 28, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+  }
+  #invpanel .islot img { width: 62%; height: 62%; object-fit: contain; pointer-events: none; }
+  #invpanel .islot.filled { cursor: grab; }
+  #invpanel .islot.filled:hover { border-color: rgba(200, 218, 250, 0.6); background: rgba(20, 30, 48, 0.75); }
+  #invpanel .islot.dragging { opacity: 0.35; }
+  /* a slot the held item can actually be combined with */
+  #invpanel .islot.combines {
+    border-color: rgba(96, 226, 208, 0.9);
+    background: rgba(10, 34, 38, 0.85);
+    box-shadow: 0 0 16px rgba(60, 220, 200, 0.28);
+  }
+  #invpanel .islot .num {
+    position: absolute;
+    top: 2px;
+    left: 5px;
+    font-size: 10px;
+    color: rgba(180, 195, 224, 0.45);
+  }
+  #invpanel .islot .nm {
+    position: absolute;
+    bottom: 2px;
+    left: 2px;
+    right: 2px;
+    text-align: center;
+    font-size: 0.52rem;
+    line-height: 1.1;
+    letter-spacing: 0.04em;
+    color: rgba(200, 214, 238, 0.75);
+    pointer-events: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #invpanel .tip {
+    margin-top: 1.3rem;
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    opacity: 0.45;
+    text-align: center;
+    line-height: 1.7;
+  }
+  /* the item that follows the cursor while dragging */
+  #invghost {
+    position: fixed;
+    z-index: 20;
+    width: 54px;
+    height: 54px;
+    margin: -27px 0 0 -27px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    border: 1px solid rgba(150, 200, 230, 0.5);
+    border-radius: 6px;
+    background: rgba(12, 22, 36, 0.9);
+    pointer-events: none;
+  }
+  #invghost.show { display: flex; }
+  #invghost img { width: 62%; height: 62%; object-fit: contain; }
+
+  /* the extraction — full-screen procedural animation */
+  #drain {
+    position: fixed;
+    inset: 0;
+    z-index: 16;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.1rem;
+    background: #03060b;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  #drain.show { opacity: 1; pointer-events: auto; }
+  #drain canvas { width: min(92vw, 620px); image-rendering: pixelated; }
+  #drain .cap {
+    font-size: 0.72rem;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: rgba(150, 210, 232, 0.75);
+  }
+
   /* pause / settings menu */
   #menu {
     position: fixed;
@@ -514,6 +673,27 @@
   </div>
 
   <div id="hotbar" class="hidden"></div>
+
+  <div id="blood">
+    <canvas id="blood-jar" width="88" height="88"></canvas>
+    <span class="amt"><span id="blood-amt">0</span><span class="unit">mL</span></span>
+  </div>
+
+  <div id="invpanel">
+    <div class="panel">
+      <h2>Pack</h2>
+      <div class="grid" id="inv-grid"></div>
+      <div class="tip">
+        Drag an item onto another to combine them &nbsp;·&nbsp; Tab or Esc to close
+      </div>
+    </div>
+  </div>
+  <div id="invghost"></div>
+
+  <div id="drain">
+    <canvas id="drain-canvas" width="620" height="300"></canvas>
+    <div class="cap" id="drain-cap">Extracting</div>
+  </div>
 
   <div id="note">
     <div class="paper">
