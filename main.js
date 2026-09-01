@@ -42,6 +42,11 @@ const END_Z = LH_Z + 55;
 // we cut off and replace with a proper gallery and lantern room.
 const LH_OUTER = 4.57;             // outer face of the wall at the doorway
 const LH_INNER = 2.55;             // clear inside radius down at the floor
+// the headland the tower stands on: how far back it runs, how high the
+// crest is, and how wide the spine is before it drops to the sea
+const HL_RUN = 74;
+const HL_CREST = 7.2;
+const HL_HALF = 13;
 const LH_TOP = 26.2;               // gallery deck = lantern-room floor
 const LH_CUT_Y = 26.45;            // scan is discarded above this
 const LH_RISE = 4.4;               // metres gained per full turn of the stair
@@ -60,7 +65,7 @@ const DIG_DUR = 0.8;
 // ------------------------------------------------------------------
 // Settings
 // ------------------------------------------------------------------
-const DEFAULT_SETTINGS = { fov: 75, sensitivity: 1, brightness: 1.16, volume: 0.9, musicVolume: 0.5, waveVolume: 0.62, sfxVolume: 0.45, walkSpeed: 1, invertY: false };
+const DEFAULT_SETTINGS = { fov: 75, sensitivity: 1, brightness: 1.16, volume: 0.9, musicVolume: 0.5, waveVolume: 0.62, sfxVolume: 0.45, walkSpeed: 1.4, invertY: false };
 let settings = { ...DEFAULT_SETTINGS };
 try { settings = { ...settings, ...JSON.parse(localStorage.getItem('beachwalk.settings') || '{}') }; } catch (e) {}
 function saveSettings() { try { localStorage.setItem('beachwalk.settings', JSON.stringify(settings)); } catch (e) {} }
@@ -72,6 +77,7 @@ let sfxBusGain = null;    // sub-mix for every one-shot effect
 // every sfx routes here instead of straight at the speakers
 const sfxOut = () => sfxBusGain || (audioCtx && audioCtx.destination);
 let lhEl = null, lhGain = null, lhStarted = false;
+const LH_TRACK_LEVEL = 0.55;   // the lighthouse track sits under everything else
 
 // ------------------------------------------------------------------
 // Renderer / scene / camera
@@ -214,13 +220,16 @@ function shoreLineJS(z, t) {
   return tide + swash + wobble;
 }
 // true when (x,z) is seaward of the waterline — i.e. standing in / over water
-function inWater(x, z) { return x < shoreLineJS(z, oceanUniforms.uTime.value) + 0.25; }
+function inWater(x, z) {
+  if (onHeadland(x, z)) return false;           // the ridge stands clear of it
+  return x < shoreLineJS(z, oceanUniforms.uTime.value) + 0.25;
+}
 
 /* JS mirror of oceanWave() plus the mesh's own offset, so gameplay can ask
  * how high the water actually is at a point. Anything sitting on the sand
  * inside the waterline gets sunk to this, otherwise it stands on top of the
  * sea like a table. Keep in lockstep with waveGLSL. */
-const OCEAN_Y = -0.35;
+const OCEAN_Y = 0.055;
 // GLSL semantics: works when e0 > e1, which THREE.MathUtils.smoothstep does not
 const gsmooth = (e0, e1, x) => {
   const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
@@ -648,7 +657,7 @@ function loadMesh(url) {
     });
 }
 const lighthouse = new THREE.Group();
-lighthouse.position.set(LH_X, 0, LH_Z);
+lighthouse.position.set(LH_X, HL_CREST, LH_Z);
 let lampCore, beamPivot, lanternGlass = null;
 const lhWindows = [];          // {y, ang} — cut through the scan, framed below
 {
@@ -1008,6 +1017,57 @@ function onPath(x, z, margin = 0) {
   return Math.abs(x - pathBend(z)) < pathHalfAt(z) + margin;
 }
 
+/* The headland. The tower stands on a ridge that climbs out of the beach,
+ * with the sea falling away on both sides — the approach reads as a walk out
+ * along a spine rather than across flat sand. Heights are in world space,
+ * relative to the lighthouse origin.
+ *
+ *   HL_RUN    how far back down the beach the ridge starts
+ *   HL_CREST  height at the tower
+ *   HL_HALF   how wide the spine is before it drops away
+ */
+function headlandAt(wx, wz) {
+  const z = wz - LH_Z;                      // +Z is back toward the beach
+  if (z < -26 || z > HL_RUN) return 0;
+  // along the spine: flat top over the tower, easing down to the sand
+  const t = THREE.MathUtils.clamp(1 - Math.max(0, z) / HL_RUN, 0, 1);
+  const along = t * t * (3 - 2 * t);        // smoothstep, so it eases in
+  // across the spine: a crown that falls off to nothing at the flanks
+  const x = wx - LH_X - pathBend(Math.max(0, z)) * 0.5;
+  const across = Math.max(0, 1 - Math.pow(Math.abs(x) / HL_HALF, 1.7));
+  let h = HL_CREST * along * across;
+  // a little roll along its length so it isn't an extruded ramp
+  h += Math.sin(z * 0.09) * 0.5 * along * across;
+  h += Math.sin(z * 0.31 + x * 0.2) * 0.16 * along * across;
+  return Math.max(0, h);
+}
+// true anywhere the ridge is high enough to be dry land
+function onHeadland(wx, wz) { return headlandAt(wx, wz) > 0.35; }
+
+// ---- the ridge itself ----------------------------------------------
+{
+  const NX = 96, NZ = 120, SPAN = 42;
+  const g = new THREE.PlaneGeometry(SPAN, HL_RUN + 30, NX, NZ);
+  g.rotateX(-Math.PI / 2);
+  const pos = g.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const lx = pos.getX(i), lz = pos.getZ(i);
+    // plane is centred on the group; shift so it runs from the tower outward
+    const wz = LH_Z + lz + (HL_RUN - 30) / 2 + 15;
+    const wx = LH_X + lx;
+    pos.setY(i, headlandAt(wx, wz) - HL_CREST);
+    pos.setZ(i, lz + (HL_RUN - 30) / 2 + 15);
+  }
+  g.computeVertexNormals();
+  const gTex = sandTex.clone(); gTex.needsUpdate = true; gTex.repeat.set(SPAN / 6, (HL_RUN + 30) / 6);
+  const ridge = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
+    map: gTex, color: 0x5f6552, roughness: 1, metalness: 0,
+    emissive: 0x1c2016, emissiveMap: gTex, flatShading: false,
+  }));
+  ridge.frustumCulled = false;
+  lhGround.add(ridge);
+}
+
 {
   const rockMat = new THREE.MeshStandardMaterial({ color: 0x4b5260, roughness: 1, flatShading: true, emissive: 0x171b23 });
   const rockDk = new THREE.MeshStandardMaterial({ color: 0x373d49, roughness: 1, flatShading: true, emissive: 0x101319 });
@@ -1073,15 +1133,17 @@ function onPath(x, z, margin = 0) {
         transformed.x += sway * 0.28 * pow(max(position.y, 0.0), 1.6);
         transformed.z += sway * 0.16 * pow(max(position.y, 0.0), 1.6);`);
   };
-  const BLADES = 1500;
+  const BLADES = 2600;
   const grass = new THREE.InstancedMesh(bladeGeo, grassMat, BLADES);
   grass.frustumCulled = false;
   grass.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(BLADES * 3).fill(1), 3);
   const gc = new THREE.Color();
   for (let i = 0; i < BLADES; i++) {
     // clumped: pick a clump centre then jitter around it
-    const ca = Math.random() * Math.PI * 2, cr = 5 + Math.random() * 17;
-    const cxp = Math.cos(ca) * cr, czp = Math.sin(ca) * cr;
+    // clumps run the length of the ridge, thickest on the shoulders
+    const czp = -14 + Math.random() * (HL_RUN + 20);
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const cxp = pathBend(Math.max(0, czp)) + side * (pathHalfAt(Math.max(0, czp)) + Math.random() * 9);
     const jx = (Math.random() - 0.5) * 2.6, jz = (Math.random() - 0.5) * 2.6;
     const bx = cxp + jx, bz = czp + jz;
     let h = 0.55 + Math.random() * 1.15;
@@ -1094,7 +1156,9 @@ function onPath(x, z, margin = 0) {
     }
     e.set((Math.random() - 0.5) * 0.5, Math.random() * Math.PI, (Math.random() - 0.5) * 0.5);
     q.setFromEuler(e);
-    m.compose(v.set(bx, 0, bz), q, new THREE.Vector3(1, h, 1));
+    const gy = headlandAt(LH_X + bx, LH_Z + bz) - HL_CREST;
+    if (gy + HL_CREST < 0.12 && Math.random() < 0.75) { grass.setMatrixAt(i, hidden); continue; }
+    m.compose(v.set(bx, gy, bz), q, new THREE.Vector3(1, h, 1));
     grass.setMatrixAt(i, m);
     const t = 0.6 + Math.random() * 0.7;
     gc.setRGB(t * 0.9, t, t * 0.72);
@@ -1116,7 +1180,9 @@ function onPath(x, z, margin = 0) {
       // ragged edges — trodden ground doesn't have a clean border
       const wobL = Math.sin(z * 1.7) * 0.16 + Math.sin(z * 0.9 + 2.1) * 0.12;
       const wobR = Math.sin(z * 1.5 + 1.1) * 0.16 + Math.sin(z * 0.8) * 0.12;
-      pos.push(cx - hw + wobL, 0, z,  cx + hw + wobR, 0, z);
+      const yL = headlandAt(LH_X + cx - hw + wobL, LH_Z + z) - HL_CREST;
+      const yR = headlandAt(LH_X + cx + hw + wobR, LH_Z + z) - HL_CREST;
+      pos.push(cx - hw + wobL, yL, z,  cx + hw + wobR, yR, z);
       uv.push(0, z * 0.25,  1, z * 0.25);
       if (i < SEG) {
         const a = i * 2;
@@ -1134,9 +1200,54 @@ function onPath(x, z, margin = 0) {
       emissive: 0x2a2519, emissiveMap: pathTex,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
     }));
-    pathMesh.position.y = 0.012;
+    pathMesh.position.y = 0.03;
     pathMesh.frustumCulled = false;
     lhGround.add(pathMesh);
+
+    // ---- fence line ------------------------------------------------
+    // Weathered posts down both shoulders with wire strung between them,
+    // the way a coast path is kept off the drop.
+    {
+      const postMat = new THREE.MeshStandardMaterial({
+        color: 0x9a8f7c, roughness: 1, metalness: 0, flatShading: true, emissive: 0x2b271f,
+      });
+      const wireMat = new THREE.LineBasicMaterial({ color: 0x6a6a64, transparent: true, opacity: 0.55 });
+      for (const side of [-1, 1]) {
+        const tops = [[], []];                 // two strands of wire
+        let z = -0.5;
+        while (z < PATH_LEN + 2) {
+          const cx = pathBend(z) + side * (pathHalfAt(z) + 0.55);
+          const gy = headlandAt(LH_X + cx, LH_Z + z) - HL_CREST;
+          const h = 1.02 + Math.random() * 0.16;
+          const post = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, h, 6), postMat);
+          post.position.set(cx, gy + h / 2 - 0.06, z);
+          post.rotation.set((Math.random() - 0.5) * 0.09, Math.random(), (Math.random() - 0.5) * 0.11);
+          lhGround.add(post);
+          tops[0].push(new THREE.Vector3(cx, gy + h - 0.16, z));
+          tops[1].push(new THREE.Vector3(cx, gy + h - 0.52, z));
+          z += 2.3 + Math.random() * 0.9;
+        }
+        for (const strand of tops) {
+          if (strand.length < 2) continue;
+          // let the wire sag between posts
+          const sag = [];
+          for (let i = 0; i < strand.length - 1; i++) {
+            const a = strand[i], b = strand[i + 1];
+            for (let k = 0; k <= 4; k++) {
+              const t = k / 4;
+              const p2 = a.clone().lerp(b, t);
+              p2.y -= Math.sin(t * Math.PI) * 0.07;
+              sag.push(p2);
+            }
+          }
+          const lg = new THREE.BufferGeometry().setFromPoints(sag);
+          const line = new THREE.Line(lg, wireMat);
+          line.frustumCulled = false;
+          lhGround.add(line);
+        }
+      }
+    }
+
 
     // stones kicked to the sides over years of walking it
     const EDGE = 60;
@@ -1867,7 +1978,7 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
     }
   `,
 }));
-ocean.position.y = -0.35;
+ocean.position.y = OCEAN_Y;
 ocean.frustumCulled = false;
 scene.add(ocean);
 
@@ -2038,7 +2149,7 @@ try {
 function beginGame() {
   if (introStarted) return;
   introStarted = true;
-  startAmbientAudio();
+  startAmbientAudio();      // usually already running from the title card
   startMusic();                                    // swell it in from the moment you spawn
   requestLock();                                   // must fire on the click gesture
   overlay.classList.add('hidden');
@@ -2070,6 +2181,16 @@ function beginGame() {
   }, revealAt);
 }
 overlay.addEventListener('click', beginGame);
+/* Surf under the title card. Browsers won't let an AudioContext start
+ * without a gesture, so we arm it on the first move or key the player makes
+ * over the menu and let the sea come up behind the title. */
+function primeMenuAudio() {
+  if (audioStarted) return;
+  startAmbientAudio();
+}
+for (const ev of ['pointermove', 'pointerdown', 'keydown']) {
+  window.addEventListener(ev, primeMenuAudio, { once: false, passive: true });
+}
 
 const keys = Object.create(null);
 window.addEventListener('keydown', (e) => {
@@ -2130,7 +2251,7 @@ function applySettings() {
   renderer.toneMappingExposure = settings.brightness;
   if (masterGain && audioCtx) masterGain.gain.setTargetAtTime(settings.volume, audioCtx.currentTime, 0.05);
   if (musicVolGain && audioCtx) musicVolGain.gain.setTargetAtTime(settings.volume * settings.musicVolume, audioCtx.currentTime, 0.05);
-  if (lhGain && audioCtx) lhGain.gain.setTargetAtTime(settings.volume * settings.musicVolume, audioCtx.currentTime, 0.05);
+  if (lhGain && audioCtx) lhGain.gain.setTargetAtTime(settings.volume * settings.musicVolume * LH_TRACK_LEVEL, audioCtx.currentTime, 0.05);
   if (waveBusGain && audioCtx) waveBusGain.gain.setTargetAtTime(settings.waveVolume, audioCtx.currentTime, 0.05);
   if (sfxBusGain && audioCtx) sfxBusGain.gain.setTargetAtTime(settings.sfxVolume, audioCtx.currentTime, 0.05);
   document.getElementById('v-fov').textContent = settings.fov;
@@ -2361,6 +2482,9 @@ function updateHover() {
   if (best) {
     crosshair.className = 'active';
     setPrompt(kbd('E') + best.label);
+  } else if (equipped && equipped.onListen && !listening) {
+    crosshair.className = 'active';
+    setPrompt(kbd('LMB') + 'Hold it to your ear');
   } else if (equipped && equipped.onDig && digT <= 0 && crosshairGroundPoint()) {
     const onMound = !inWater(_digHit.x, _digHit.z) && moundAt(_digHit.x, _digHit.z);
     crosshair.className = 'active';
@@ -2378,6 +2502,7 @@ function primaryAction() {
     else if (hovered.onActivate) hovered.onActivate();
     return;
   }
+  if (equipped && equipped.onListen) { listenToShell(); return; }
   if (equipped && equipped.onDig && digT <= 0) startDig();
 }
 
@@ -3608,10 +3733,20 @@ const shells = [];
         sfxThud(0.02);
         scene.remove(m);
         hovered = null;
-        addToInventory({
+        const vm = spiral ? makeSpiralShell() : makeFanShell();
+        vm.scale.setScalar(spiral ? 1.5 : 1.9);
+        vm.position.set(0, -0.02, 0.01);
+        vm.rotation.set(spiral ? 1.1 : 0.5, 0.6, spiral ? 0.4 : 0.2);
+        vm.visible = false;
+        toolMount.add(vm);
+        const item = {
           id: 'shell', name: spiral ? 'Spiral shell' : 'Fan shell', icon,
-          use: () => listenToShell(),
-        });
+          viewmodel: vm,
+          onListen: true,                       // click while holding it
+          use: () => toggleEquip(item),
+        };
+        addToInventory(item);
+        toggleEquip(item);                      // it goes straight into your hand
       },
     });
     z -= 22 + Math.random() * 46;
@@ -3658,7 +3793,7 @@ function listenToShell() {
     const vs = ctx.createMediaElementSource(shellVoice);
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
     const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 260;
-    const vg = ctx.createGain(); vg.gain.value = 0.11;      // barely there on purpose
+    const vg = ctx.createGain(); vg.gain.value = 0.055;     // barely there on purpose
     vs.connect(lp).connect(hp).connect(vg).connect(out);
     shellVoice.play().catch(() => {});
   } catch (e) {}
@@ -4008,7 +4143,17 @@ function updateCrab(dt) {
   // Sunk well clear of the surface: the ocean mesh only has vertices every
   // ~6 m, so the drawn surface can sit a long way below the analytic height
   // at any given point. Deep enough that the interpolation can't expose it.
+  const sub = submersionAt(crab.position.x, crab.position.z);
   crab.position.y = restYInWater(crab.position.x, crab.position.z, 1.15) + bob;
+  // hidden entirely while it's still under — you get the wake, not the crab
+  crab.visible = sub < 0.92;
+  if (sub > 0.25 && crabState.awake) {
+    crabState.wakeRipple = (crabState.wakeRipple || 0) - dt;
+    if (crabState.wakeRipple <= 0) {
+      addRipple(crab.position.x, crab.position.z, 0.5 + sub * 0.6);
+      crabState.wakeRipple = 0.22;
+    }
+  }
   ud.rig.rotation.z = Math.sin(crabState.scuttle) * 0.09 * reach;
   ud.rig.rotation.x = -rear * 0.30 - lunge * 0.38 + Math.sin(crabState.scuttle * 2) * 0.035 * reach;
   ud.rig.position.y = rear * 0.06 + lunge * 0.05;
@@ -4427,6 +4572,8 @@ const SAMPLES = {
   sandHit: ['assets/sand-hit1.m4a', 'assets/sand-hit2.m4a', 'assets/sand-hit3.m4a', 'assets/sand-hit4.m4a'],
   glassBreak: ['assets/glass-break.m4a'],
   fleshHit: ['assets/flesh-hit.m4a'],
+  doorOpen: ['assets/door-open.m4a'],
+  doorClose: ['assets/door-close.m4a'],
   wade: ['assets/wade1.m4a', 'assets/wade2.m4a', 'assets/wade3.m4a', 'assets/wade4.m4a'],
   slosh: ['assets/slosh1.m4a', 'assets/slosh2.m4a', 'assets/slosh3.m4a', 'assets/slosh4.m4a'],
   splash: ['assets/water-splash1.m4a', 'assets/water-splash2.m4a', 'assets/water-splash3.m4a'],
@@ -4492,7 +4639,7 @@ function startLighthouseTrack() {
   lhEl.play().then(() => {
     const t = audioCtx.currentTime;
     lhGain.gain.setValueAtTime(0.0001, t);
-    lhGain.gain.exponentialRampToValueAtTime(settings.volume * settings.musicVolume, t + 2.0);
+    lhGain.gain.exponentialRampToValueAtTime(settings.volume * settings.musicVolume * LH_TRACK_LEVEL, t + 2.0);
   }).catch(() => { lhStarted = false; });
   document.addEventListener('visibilitychange', () => {
     if (!lhEl) return;
@@ -4691,6 +4838,7 @@ function sfxSplash(power = 1) {
 // the tower door — a long timber groan on the hinges, then the latch
 function sfxDoor(opening) {
   const ctx = audioCtx; if (!ctx) return;
+  if (playSample(opening ? 'doorOpen' : 'doorClose', 0.85, 0.05)) return;
   const t = ctx.currentTime;
   const out = ctx.createGain(); out.gain.value = 0.5; out.connect(sfxOut());
 
@@ -4836,7 +4984,7 @@ function addTrauma(v) { trauma = Math.min(1, trauma + v); }
 // ------------------------------------------------------------------
 const PLAYER_R = 0.4;
 let insideTower = false, groundY = 0;
-let stairTurns = 0, lastStairA = 0, doorHeard = false;
+let stairTurns = 0, lastStairA = 0, doorHeard = false, atLanternTop = false;
 const _towerV = new THREE.Vector2();
 function updateTower(dt) {
   const dx = camera.position.x - LH_X, dz = camera.position.z - LH_Z;
@@ -4855,7 +5003,9 @@ function updateTower(dt) {
   const throughDoor = doorSwing > 0.55 && Math.abs(ang) < doorHalf * 0.92 &&
                       camBaseY < EYE_HEIGHT + LH_DOOR_H - 0.5;
   if (!throughDoor && d > 0.001) {
-    const inner = lhBoreAt(Math.max(0, groundY)) - PLAYER_R, outer = LH_OUTER + PLAYER_R;
+    const climb = Math.max(0, groundY - HL_CREST);
+    const inner = (atLanternTop ? 3.15 : lhBoreAt(climb)) - PLAYER_R;
+    const outer = LH_OUTER + PLAYER_R;
     let clamped = null;
     if (insideTower && d > inner) clamped = inner;
     else if (!insideTower && d < outer) clamped = outer;
@@ -4878,12 +5028,16 @@ function updateTower(dt) {
       stairTurns = THREE.MathUtils.clamp(stairTurns + da / (Math.PI * 2), 0, LH_TOP / LH_RISE);
     }
     lastStairA = ang;
-    groundY = Math.min(LH_TOP, stairTurns * LH_RISE);
-    if (groundY >= LH_TOP - 0.05 && started && !ended) showEnd();
+    groundY = HL_CREST + Math.min(LH_TOP, stairTurns * LH_RISE);
+    // Reaching the top no longer ends it — you arrive, and the walk ends
+    // when you step out of the lantern onto the gallery.
+    atLanternTop = stairTurns * LH_RISE >= LH_TOP - 0.4;
+    if (atLanternTop && d > 1.95 && started && !ended) showEnd();
   } else {
     lastStairA = ang;
     stairTurns = 0;
-    groundY = 0;
+    atLanternTop = false;
+    groundY = headlandAt(camera.position.x, camera.position.z);
   }
 }
 const snap = (v, s) => Math.round(v / s) * s;
