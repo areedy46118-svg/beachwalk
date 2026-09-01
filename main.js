@@ -244,6 +244,16 @@ function waveHeightJS(x, z, t) {
   w += Math.sin(z * 0.78 - x * 0.36 + t * 2.5) * 0.09 * nearBand;
   return OCEAN_Y + w;
 }
+// Ring buffer of surface disturbances, fed to the ocean shader. Anything
+// that moves through or lands in the water drops one.
+let rippleIdx = 0;
+function addRipple(x, z, strength = 1) {
+  if (!inWater(x, z)) return;
+  const r = oceanUniforms.uRipples.value[rippleIdx];
+  r.set(x, z, oceanUniforms.uTime.value, strength);
+  rippleIdx = (rippleIdx + 1) % oceanUniforms.uRipples.value.length;
+}
+
 // the surface right now
 function waterSurfaceAt(x, z) { return waveHeightJS(x, z, oceanUniforms.uTime.value); }
 
@@ -272,6 +282,7 @@ const oceanUniforms = THREE.UniformsUtils.merge([
     uDeep: { value: new THREE.Color(0x123f66) },
     uShallow: { value: new THREE.Color(0x2f8ec2) },
     uCrest: { value: new THREE.Color(0xaad9ec) },
+    uRipples: { value: Array.from({ length: 12 }, () => new THREE.Vector4(0, 0, -999, 0)) },
     uSky: { value: new THREE.Color(0x1d3856) } },
 ]);
 
@@ -1276,6 +1287,131 @@ scatter(
 );
 
 // ------------------------------------------------------------------
+// Seashells. Two builds — a ribbed fan and a spiral cone — grown from a
+// lathe/parametric sweep so they read as shells rather than lumps.
+// ------------------------------------------------------------------
+function makeFanShell() {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xd8c9b4, roughness: 0.82, metalness: 0.02,
+    flatShading: true, emissive: 0x3a3025, side: THREE.DoubleSide,
+  });
+  // a ribbed scallop: wedges fanning out from the hinge, each tilted a little
+  const RIBS = 11, SPAN = Math.PI * 0.92, R = 0.085;
+  const pos = [];
+  for (let i = 0; i < RIBS; i++) {
+    const a0 = -SPAN / 2 + (i / RIBS) * SPAN;
+    const a1 = -SPAN / 2 + ((i + 1) / RIBS) * SPAN;
+    const bulge = 1 + 0.14 * Math.sin((i / RIBS) * Math.PI);   // fatter mid-fan
+    const r = R * bulge;
+    // hinge point, then the two outer corners of this rib
+    const y0 = 0.012 * Math.sin((i / RIBS) * Math.PI);
+    pos.push(0, 0, 0);
+    pos.push(Math.cos(a0) * r, y0, Math.sin(a0) * r);
+    pos.push(Math.cos(a1) * r, y0, Math.sin(a1) * r);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.computeVertexNormals();
+  const shell = new THREE.Mesh(geo, mat);
+  shell.rotation.x = -0.22;
+  g.add(shell);
+  return g;
+}
+function makeSpiralShell() {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xc9b79c, roughness: 0.78, metalness: 0.02,
+    flatShading: true, emissive: 0x342a1e,
+  });
+  // a cone wound round its own axis — a whelk, roughly
+  const TURNS = 3.1, SEGS = 46, SIDES = 7;
+  const pts = [], idx = [];
+  for (let i = 0; i <= SEGS; i++) {
+    const t = i / SEGS;
+    const a = t * TURNS * Math.PI * 2;
+    const rad = 0.052 * (1 - t) + 0.004;        // tapering tube
+    const coil = 0.062 * (1 - t * 0.75);        // winding in as it climbs
+    const cx = Math.cos(a) * coil, cz = Math.sin(a) * coil, cy = t * 0.115;
+    for (let k = 0; k < SIDES; k++) {
+      const b = (k / SIDES) * Math.PI * 2;
+      pts.push(cx + Math.cos(b) * rad * 0.8, cy + Math.sin(b) * rad, cz + Math.cos(b + a) * rad * 0.35);
+    }
+  }
+  for (let i = 0; i < SEGS; i++) for (let k = 0; k < SIDES; k++) {
+    const a0 = i * SIDES + k, a1 = i * SIDES + ((k + 1) % SIDES);
+    const b0 = a0 + SIDES, b1 = a1 + SIDES;
+    idx.push(a0, b0, a1, a1, b0, b1);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  g.add(new THREE.Mesh(geo, mat));
+  return g;
+}
+
+// ------------------------------------------------------------------
+// Rocks. Generated rather than modelled: start from a subdivided solid,
+// shove every vertex around with layered noise, then weld nothing and let
+// flat shading find the facets. Same idea as a low-poly rock generator,
+// and it costs a few lines instead of a dependency.
+// ------------------------------------------------------------------
+function makeRockGeo(seed = 1, detail = 1, lumpiness = 0.34) {
+  const g = new THREE.IcosahedronGeometry(0.5, detail);
+  const pos = g.attributes.position;
+  const v = new THREE.Vector3();
+  // cheap deterministic hash so a given seed always makes the same rock
+  const h = (a, b, c) => {
+    const n = Math.sin(a * 12.9898 + b * 78.233 + c * 37.719 + seed * 43.123) * 43758.5453;
+    return n - Math.floor(n) - 0.5;
+  };
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const d = v.clone().normalize();
+    // three octaves: broad lopsidedness, then chunkier faces, then grit
+    let k = 1;
+    k += h(d.x * 1.7, d.y * 1.7, d.z * 1.7) * lumpiness;
+    k += h(d.x * 4.3, d.y * 4.3, d.z * 4.3) * lumpiness * 0.5;
+    k += h(d.x * 9.1, d.y * 9.1, d.z * 9.1) * lumpiness * 0.22;
+    v.multiplyScalar(k);
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  // squash so they sit like rocks rather than float like asteroids
+  g.scale(1, 0.72, 0.92);
+  g.computeVertexNormals();
+  return g;
+}
+{
+  const stoneA = new THREE.MeshStandardMaterial({ color: 0x5b6270, roughness: 1, flatShading: true, emissive: 0x171b23 });
+  const stoneB = new THREE.MeshStandardMaterial({ color: 0x474d59, roughness: 1, flatShading: true, emissive: 0x12151b });
+  const stoneC = new THREE.MeshStandardMaterial({ color: 0x6a6255, roughness: 1, flatShading: true, emissive: 0x1b1811 });
+  // a few distinct shapes so the beach doesn't read as one rock repeated
+  const shapes = [
+    { geo: makeRockGeo(1, 1, 0.38), mat: stoneA, n: 5, lo: 0.16, hi: 0.55 },   // scattered cobbles
+    { geo: makeRockGeo(7, 1, 0.30), mat: stoneB, n: 4, lo: 0.22, hi: 0.85 },
+    { geo: makeRockGeo(3, 2, 0.26), mat: stoneC, n: 2, lo: 0.55, hi: 1.7 },    // the odd boulder
+    { geo: makeRockGeo(11, 0, 0.42), mat: stoneB, n: 7, lo: 0.09, hi: 0.24 },  // shingle
+  ];
+  for (const sh of shapes) {
+    scatter(sh.geo, sh.mat, sh.n, () => {
+      const s = sh.lo + Math.random() * (sh.hi - sh.lo);
+      // clustered toward the wrack line and the dry upper beach, thinning
+      // out toward the water so they don't clog the walkable strip
+      const band = Math.random();
+      const x = band < 0.55
+        ? 1.2 + Math.random() * 5.0            // the tide line
+        : 6.5 + Math.random() * 7.0;           // dry sand under the cliff
+      return {
+        x, z: zSpan(), y: s * 0.30,
+        rot: new THREE.Euler(Math.random() * 3, Math.random() * 3, Math.random() * 3),
+        scale: new THREE.Vector3(s, s * (0.7 + Math.random() * 0.5), s * (0.8 + Math.random() * 0.45)),
+      };
+    });
+  }
+}
+
+// ------------------------------------------------------------------
 // Ground decals — footprints + dig holes (instanced pools)
 // ------------------------------------------------------------------
 function makeFootTexture() {
@@ -1549,6 +1685,7 @@ const splashes = Array.from({ length: SPLASH_POOL }, () => ({
 { const hide = new THREE.Matrix4().makeScale(0, 0, 0); for (let i = 0; i < SPLASH_POOL; i++) splash.setMatrixAt(i, hide); }
 let splashIdx = 0;
 function spawnSplash(x, z, n, dirX = 0, dirZ = 0, power = 1) {
+  addRipple(x, z, Math.min(1.4, 0.5 + power * 0.7));
   for (let i = 0; i < n; i++) {
     const p = splashes[splashIdx];
     splashIdx = (splashIdx + 1) % SPLASH_POOL;
@@ -1640,7 +1777,29 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
     #include <fog_pars_fragment>
     uniform float uTime; uniform vec3 uCamPos; uniform vec3 uMoonDir;
     uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uCrest; uniform vec3 uSky;
+    uniform vec4 uRipples[12];          // xz = origin, z = start time, w = strength
     varying vec3 vWorld;
+
+    /* Rings spreading from anything that disturbed the surface. Done per
+     * fragment rather than by displacing vertices: the ocean mesh has ~6 m
+     * facets, so a 1 m ripple would fall straight through the tessellation
+     * and never be drawn. Returns a crest factor to lift the colour with. */
+    float rippleField(vec2 p, float t) {
+      float total = 0.0;
+      for (int i = 0; i < 12; i++) {
+        vec4 r = uRipples[i];
+        float age = t - r.z;
+        if (age < 0.0 || age > 4.5 || r.w <= 0.0) continue;
+        float d = distance(p, r.xy);
+        float front = age * 1.9;                       // how far the ring has run
+        float band = d - front;
+        // a couple of trailing crests behind the leading edge
+        float wave = sin(band * 4.2) * exp(-abs(band) * 0.85);
+        float fade = exp(-age * 1.15) * exp(-d * 0.16);
+        total += wave * fade * r.w;
+      }
+      return total;
+    }
     ${noiseGLSL}
     ${shoreGLSL}
     ${waveGLSL}
@@ -1688,6 +1847,13 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
       float road = pow(max(dot(viewFlat, moonFlat), 0.0), 8.0);
       col += vec3(0.90, 0.94, 1.0) * spec * (0.15 + road * 1.4);
       col += vec3(0.26, 0.34, 0.50) * road * 0.14;
+
+      // rings from anything moving through the water
+      float rip = rippleField(vec2(vWorld.x, vWorld.z), uTime);
+      col = mix(col, uCrest, clamp(rip * 0.30, 0.0, 0.26));
+      col += vec3(0.05, 0.07, 0.09) * max(rip, 0.0);
+      // the moon just catches the leading edge
+      col += vec3(0.34, 0.40, 0.48) * pow(max(rip, 0.0), 3.0) * 0.16;
 
       // shoreline foam / swash lace
       float band = smoothstep(3.5, 0.0, dist) * smoothstep(-1.8, 0.5, dist);
@@ -3389,6 +3555,123 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
 }
 
 // ------------------------------------------------------------------
+// Shells you can pick up. Hold one to your ear and there's something
+// under the sea-roar that isn't the sea.
+// ------------------------------------------------------------------
+function makeShellIcon(spiral) {
+  const c = document.createElement('canvas'); c.width = c.height = 48;
+  const g = c.getContext('2d');
+  g.fillStyle = '#d8c9b4';
+  if (spiral) {
+    g.beginPath();
+    for (let i = 0; i <= 60; i++) {
+      const t = i / 60, a = t * Math.PI * 5.2, r = 19 * (1 - t) + 2;
+      const x = 24 + Math.cos(a) * r * 0.75, y = 26 - t * 16 + Math.sin(a) * r * 0.5;
+      i ? g.lineTo(x, y) : g.moveTo(x, y);
+    }
+    g.strokeStyle = '#d8c9b4'; g.lineWidth = 5; g.lineCap = 'round'; g.stroke();
+  } else {
+    g.beginPath(); g.moveTo(24, 40);
+    for (let i = 0; i <= 12; i++) {
+      const a = Math.PI + (i / 12) * Math.PI;
+      g.lineTo(24 + Math.cos(a) * 19, 40 + Math.sin(a) * 19 * 0.92);
+    }
+    g.closePath(); g.fill();
+    g.strokeStyle = '#a8977e'; g.lineWidth = 1.2;
+    for (let i = 1; i < 6; i++) {
+      const a = Math.PI + (i / 6) * Math.PI;
+      g.beginPath(); g.moveTo(24, 40); g.lineTo(24 + Math.cos(a) * 18, 40 + Math.sin(a) * 17); g.stroke();
+    }
+  }
+  return c.toDataURL();
+}
+const SHELL_ICONS = [makeShellIcon(false), makeShellIcon(true)];
+const shells = [];
+{
+  // a handful along the wrack line, spread the length of the walk
+  let z = -12;
+  for (let i = 0; i < 7; i++) {
+    const spiral = i % 2 === 1;
+    const m = spiral ? makeSpiralShell() : makeFanShell();
+    const sc = 1.25 + Math.random() * 0.8;
+    m.scale.setScalar(sc);
+    m.position.set(1.6 + Math.random() * 3.6, 0.012, z);
+    m.rotation.set(spiral ? Math.PI / 2 : (Math.random() - 0.5) * 0.3, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.4);
+    const hit = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    hit.name = 'hitProxy'; m.add(hit);
+    scene.add(m);
+    shells.push(m);
+    const icon = SHELL_ICONS[spiral ? 1 : 0];
+    addInteractable(m, 'Take the shell', 'inventory', {
+      onActivate: () => {
+        sfxThud(0.02);
+        scene.remove(m);
+        hovered = null;
+        addToInventory({
+          id: 'shell', name: spiral ? 'Spiral shell' : 'Fan shell', icon,
+          use: () => listenToShell(),
+        });
+      },
+    });
+    z -= 22 + Math.random() * 46;
+  }
+}
+
+/* Holding it to your ear. The roar is synthesised — noise through a pair of
+ * tight resonant peaks, which is physically what a shell does to room noise —
+ * and a voice bed sits underneath it, filtered down until it's only ever
+ * almost words. */
+let shellVoice = null, listening = false;
+function listenToShell() {
+  const ctx = audioCtx;
+  if (!ctx || listening) return;
+  listening = true;
+  const t = ctx.currentTime, DUR = 9;
+  const out = ctx.createGain();
+  out.gain.value = 0;
+  out.gain.linearRampToValueAtTime(1, t + 1.2);
+  out.gain.setValueAtTime(1, t + DUR - 2.2);
+  out.gain.linearRampToValueAtTime(0, t + DUR);
+  out.connect(ctx.destination);
+
+  // the roar: noise through two resonant peaks, like a cavity
+  const src = noiseBurst(DUR, () => 1);
+  src.loop = true;
+  const peaks = [520, 1180];
+  for (const f of peaks) {
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = 7.5;
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.13 + Math.random() * 0.1;
+    const lg = ctx.createGain(); lg.gain.value = f * 0.06;
+    lfo.connect(lg).connect(bp.frequency);
+    lfo.start(t); lfo.stop(t + DUR);
+    const g = ctx.createGain(); g.gain.value = 0.16;
+    src.connect(bp).connect(g).connect(out);
+  }
+  src.start(t); src.stop(t + DUR);
+
+  // and the thing under it
+  shellVoice = new Audio(Math.random() < 0.5 ? 'assets/whisper1.m4a' : 'assets/whisper2.m4a');
+  shellVoice.loop = true;
+  try {
+    const vs = ctx.createMediaElementSource(shellVoice);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 260;
+    const vg = ctx.createGain(); vg.gain.value = 0.11;      // barely there on purpose
+    vs.connect(lp).connect(hp).connect(vg).connect(out);
+    shellVoice.play().catch(() => {});
+  } catch (e) {}
+
+  setPrompt('You hold it to your ear&hellip;');
+  setTimeout(() => {
+    listening = false;
+    if (shellVoice) { shellVoice.pause(); shellVoice = null; }
+    if (promptHTML.includes('ear')) setPrompt('');
+  }, DUR * 1000);
+}
+
+// ------------------------------------------------------------------
 // The crab — comes out of the surf at you partway down the beach. Small,
 // fast, and it takes three nips to put you down. A shovel swing kills it.
 // ------------------------------------------------------------------
@@ -3703,6 +3986,7 @@ function updateCrab(dt) {
     if (inWater(crab.position.x, crab.position.z) && Math.random() < dt * 4) {
       spawnSplash(crab.position.x, crab.position.z, 2, _crabDir.x, _crabDir.z, 0.4);
       if (Math.random() < 0.25) sfxSplash(0.35);   // sloshing as it comes in
+      addRipple(crab.position.x, crab.position.z, 0.55);
     }
   } else {
     crabState.scuttle += dt * 2.2;            // shifting its weight, waiting
@@ -4529,7 +4813,7 @@ const moveDir = new THREE.Vector3();
 let bobPhase = 0;
 let camBaseY = EYE_HEIGHT, vy = 0, onGround = true, jumpLatch = false;
 let stamina = 1, exhausted = false;
-let splashTimer = 0;
+let splashTimer = 0, rippleTimer = 0;
 
 // ------------------------------------------------------------------
 // Game feel. Small stuff, but it's the difference between the shovel
@@ -4702,6 +4986,14 @@ function update(dt) {
     }
   }
   // fine spray trailing off your legs the whole time you're moving through surf
+  if (wading && onGround) {
+    // a continuous wake, so standing still in the surf still ripples
+    rippleTimer -= dt;
+    if (rippleTimer <= 0) {
+      addRipple(camera.position.x, camera.position.z, moving ? 0.85 : 0.4);
+      rippleTimer = moving ? 0.16 : 0.5;
+    }
+  }
   if (wading && moving && onGround && speed > 0.5) {
     splashTimer -= dt;
     if (splashTimer <= 0) {
@@ -4811,7 +5103,8 @@ window.__bw = {
   set introDone(v) { introDone = v; },
   openPack, closePack, startExtraction, driveExtraction, finishExtraction, hudJar,
   lighthouse, startLighthouseTrack, bottleProp, playSample, updateTower,
-  waterSurfaceAt, submersionAt, restYInWater, groundGlow,
+  waterSurfaceAt, submersionAt, restYInWater, groundGlow, addRipple,
+  shells, listenToShell, makeRockGeo,
   lhDoor, shinies, onPath, pathBend, pathHalfAt, lhWindows, lanternGlass,
   get doorOpen() { return doorOpen; }, set doorOpen(v) { doorOpen = v; doorSwing = v ? 1 : 0; lhDoor.rotation.y = -doorSwing * 1.95; },
   get insideTower() { return insideTower; },
