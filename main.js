@@ -34,12 +34,22 @@ const LH_X = 2;
 const LH_Z = -1200;
 const END_Z = LH_Z + 55;
 
+// The tower you can actually walk into. The shaft is hollow, with a helical
+// stair winding up the inside wall to the lamp room.
+const LH_OUTER = 3.6;              // wall radius at the base
+const LH_INNER = 2.7;              // inside face of the wall
+const LH_TOP = 30;                 // floor height of the lamp room
+const LH_RISE = 5.0;               // metres gained per full turn of the stair
+const LH_STAIR_R = 1.95;           // how far out the treads sit from the axis
+const LH_DOOR_W = 0.85;            // half-width of the doorway, in radians it's derived
+const LH_DOOR_H = 2.6;
+
 const DIG_DUR = 0.8;
 
 // ------------------------------------------------------------------
 // Settings
 // ------------------------------------------------------------------
-const DEFAULT_SETTINGS = { fov: 75, sensitivity: 1, brightness: 1.16, volume: 0.9, musicVolume: 0.5, waveVolume: 0.62, invertY: false };
+const DEFAULT_SETTINGS = { fov: 75, sensitivity: 1, brightness: 1.16, volume: 0.9, musicVolume: 0.5, waveVolume: 0.62, walkSpeed: 1, invertY: false };
 let settings = { ...DEFAULT_SETTINGS };
 try { settings = { ...settings, ...JSON.parse(localStorage.getItem('beachwalk.settings') || '{}') }; } catch (e) {}
 function saveSettings() { try { localStorage.setItem('beachwalk.settings', JSON.stringify(settings)); } catch (e) {} }
@@ -47,6 +57,7 @@ function saveSettings() { try { localStorage.setItem('beachwalk.settings', JSON.
 let audioStarted = false, audioCtx = null, masterGain = null;
 let musicEl = null, musicEnvGain = null, musicVolGain = null, musicStarted = false;
 let waveBusGain = null;   // sub-mix for surf ambience + water-step splashes
+let lhEl = null, lhGain = null, lhStarted = false;
 
 // ------------------------------------------------------------------
 // Renderer / scene / camera
@@ -490,8 +501,88 @@ const lighthouse = new THREE.Group();
 lighthouse.position.set(LH_X, 0, LH_Z);
 let lampCore, beamPivot;
 {
-  const stone = new THREE.MeshStandardMaterial({ color: 0x2a2f3a, roughness: 1, metalness: 0, emissive: 0x14171f });
-  const tower = new THREE.Mesh(new THREE.CylinderGeometry(2.3, 3.6, 30, 18), stone); tower.position.y = 15;
+  const stone = new THREE.MeshStandardMaterial({ color: 0x2a2f3a, roughness: 1, metalness: 0, emissive: 0x14171f, side: THREE.DoubleSide });
+  // The tower is a hollow tube you can walk into. The wall is built in two
+  // bands so the lower one can carry a gap for the doorway; three's cylinder
+  // measures theta from +Z, which is the side you approach from.
+  const DOOR_HALF = Math.atan2(LH_DOOR_W, LH_OUTER);
+  const rOut = (y) => LH_OUTER + (2.3 - LH_OUTER) * (y / LH_TOP);
+  const rIn = (y) => LH_INNER + (1.75 - LH_INNER) * (y / LH_TOP);
+  const band = (r0, r1, y0, y1, gap) => new THREE.Mesh(
+    new THREE.CylinderGeometry(r1, r0, y1 - y0, 28, 1, true,
+      gap ? DOOR_HALF : 0, gap ? Math.PI * 2 - DOOR_HALF * 2 : Math.PI * 2), stone);
+
+  const wallLoOut = band(rOut(0), rOut(LH_DOOR_H), 0, LH_DOOR_H, true);
+  wallLoOut.position.y = LH_DOOR_H / 2;
+  const wallHiOut = band(rOut(LH_DOOR_H), rOut(LH_TOP), LH_DOOR_H, LH_TOP, false);
+  wallHiOut.position.y = (LH_DOOR_H + LH_TOP) / 2;
+  const wallLoIn = band(rIn(0), rIn(LH_DOOR_H), 0, LH_DOOR_H, true);
+  wallLoIn.position.y = LH_DOOR_H / 2;
+  const wallHiIn = band(rIn(LH_DOOR_H), rIn(LH_TOP), LH_DOOR_H, LH_TOP, false);
+  wallHiIn.position.y = (LH_DOOR_H + LH_TOP) / 2;
+  // the reveal around the doorway, so the wall reads as thick
+  const jamb = new THREE.Mesh(
+    new THREE.RingGeometry(rIn(LH_DOOR_H), rOut(LH_DOOR_H), 28, 1, -DOOR_HALF, DOOR_HALF * 2),
+    new THREE.MeshStandardMaterial({ color: 0x1b1f27, roughness: 1, side: THREE.DoubleSide, emissive: 0x0a0c10 }));
+  jamb.rotation.x = -Math.PI / 2;
+  jamb.position.y = LH_DOOR_H;
+  const tower = new THREE.Group();
+  tower.add(wallLoOut, wallHiOut, wallLoIn, wallHiIn, jamb);
+  // floor slab
+  const floor = new THREE.Mesh(new THREE.CylinderGeometry(LH_INNER, LH_INNER, 0.25, 28),
+    new THREE.MeshStandardMaterial({ color: 0x23262e, roughness: 1, emissive: 0x0e1014 }));
+  floor.position.y = 0.02;
+  // the helical stair — treads climbing the inside wall, starting at the door
+  const treadMat = new THREE.MeshStandardMaterial({ color: 0x3d4450, roughness: 1, flatShading: true, emissive: 0x191d23 });
+  const stairs = new THREE.Group();
+  {
+    const PER_TURN = 22;
+    const stepGeo = new THREE.BoxGeometry(1.5, 0.14, 0.62);
+    for (let i = 0; ; i++) {
+      const t = i / PER_TURN;                       // turns completed
+      const y = t * LH_RISE;
+      if (y > LH_TOP - 0.15) break;
+      const a = t * Math.PI * 2 + Math.PI / 2;      // +Z at the door, winding round
+      const st = new THREE.Mesh(stepGeo, treadMat);
+      st.position.set(Math.cos(a) * LH_STAIR_R, y, Math.sin(a) * LH_STAIR_R);
+      st.rotation.y = -a;
+      stairs.add(st);
+    }
+    const newel = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.36, LH_TOP, 10), stone);
+    newel.position.y = LH_TOP / 2;
+    stairs.add(newel);
+
+    // Oil lamps up the shaft. Without these the interior is pitch black —
+    // the moon can't reach in, and nothing here casts shadows anyway.
+    const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffcf94, fog: false });
+    const bracketMat = new THREE.MeshStandardMaterial({ color: 0x1a1d24, roughness: 1, flatShading: true });
+    for (let y = 1.6; y < LH_TOP - 1; y += LH_RISE * 0.75) {
+      const t = y / LH_RISE;
+      const a = t * Math.PI * 2 + Math.PI / 2 + Math.PI;   // opposite the treads
+      const lr = LH_INNER - 0.45;
+      const px = Math.cos(a) * lr, pz = Math.sin(a) * lr;
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), bulbMat);
+      bulb.position.set(px, y + 1.5, pz);
+      const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.3), bracketMat);
+      bracket.position.set(px * 1.06, y + 1.5, pz * 1.06);
+      bracket.lookAt(0, y + 1.5, 0);
+      const lamp = new THREE.PointLight(0xffb070, 6.5, 6.0, 1.6);
+      lamp.position.set(px * 0.86, y + 1.5, pz * 0.86);
+      const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: glowTex, color: 0xffd39a, transparent: true, opacity: 0.34,
+        depthWrite: false, fog: false, blending: THREE.AdditiveBlending,
+      }));
+      halo.position.copy(bulb.position);
+      halo.scale.setScalar(1.5);
+      stairs.add(bulb, bracket, lamp, halo);
+    }
+  }
+  // lamp-room floor, with the stairwell left open
+  const topFloor = new THREE.Mesh(
+    new THREE.RingGeometry(0.9, rIn(LH_TOP) + 0.5, 28, 1, 0, Math.PI * 1.5),
+    new THREE.MeshStandardMaterial({ color: 0x23262e, roughness: 1, side: THREE.DoubleSide, emissive: 0x0e1014 }));
+  topFloor.rotation.x = -Math.PI / 2;
+  topFloor.position.y = LH_TOP;
   const gallery = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 3.5, 1.4, 18), new THREE.MeshStandardMaterial({ color: 0x14171e, roughness: 1 })); gallery.position.y = 30.4;
   const lampRoom = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.5, 3.4, 14), new THREE.MeshStandardMaterial({ color: 0x0c0e13, roughness: 0.6, metalness: 0.3 })); lampRoom.position.y = 32.6;
   const roof = new THREE.Mesh(new THREE.ConeGeometry(3.0, 2.6, 14), new THREE.MeshStandardMaterial({ color: 0x191b22, roughness: 1 })); roof.position.y = 35.6;
@@ -506,9 +597,85 @@ let lampCore, beamPivot;
   beamGeo.translate(0, 130, 0); beamGeo.rotateX(-Math.PI / 2);
   const beam = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: 0xfff0d6, transparent: true, opacity: 0.05, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, fog: false }));
   beamPivot.add(beam); beamPivot.userData.beam = beam;
-  lighthouse.add(tower, gallery, lampRoom, roof, lampCore, glow, halo, beamPivot);
+  lighthouse.add(tower, floor, stairs, topFloor, gallery, lampRoom, roof, lampCore, glow, halo, beamPivot);
+  lighthouse.userData.doorHalf = DOOR_HALF;
 }
 scene.add(lighthouse);
+
+// ------------------------------------------------------------------
+// The headland the lighthouse stands on — boulders and tall grass, so the
+// end of the walk looks like somewhere rather than more beach. All of it
+// sits in a band around LH_Z and is skipped by the recentring tiles.
+// ------------------------------------------------------------------
+const lhGround = new THREE.Group();
+lighthouse.add(lhGround);
+{
+  const rockMat = new THREE.MeshStandardMaterial({ color: 0x4b5260, roughness: 1, flatShading: true, emissive: 0x171b23 });
+  const rockDk = new THREE.MeshStandardMaterial({ color: 0x373d49, roughness: 1, flatShading: true, emissive: 0x101319 });
+  const ROCKS = 46;
+  const rocks = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), rockMat, ROCKS);
+  const rocksDk = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), rockDk, ROCKS);
+  rocks.frustumCulled = rocksDk.frustumCulled = false;
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3();
+  for (let i = 0; i < ROCKS; i++) {
+    // ring them round the tower, thickest out to the sides
+    const a = Math.random() * Math.PI * 2;
+    const rr = 5.5 + Math.random() * 13;
+    const s = 0.5 + Math.random() * 1.9;
+    e.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+    q.setFromEuler(e);
+    m.compose(v.set(Math.cos(a) * rr, s * 0.28, Math.sin(a) * rr), q, new THREE.Vector3(s, s * 0.72, s * 1.1));
+    rocks.setMatrixAt(i, m);
+    const a2 = Math.random() * Math.PI * 2, rr2 = 4.5 + Math.random() * 16, s2 = 0.3 + Math.random() * 1.1;
+    e.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+    q.setFromEuler(e);
+    m.compose(v.set(Math.cos(a2) * rr2, s2 * 0.3, Math.sin(a2) * rr2), q, new THREE.Vector3(s2, s2 * 0.8, s2));
+    rocksDk.setMatrixAt(i, m);
+  }
+  rocks.instanceMatrix.needsUpdate = rocksDk.instanceMatrix.needsUpdate = true;
+  lhGround.add(rocks, rocksDk);
+
+  // tall marram grass — crossed blades so it reads from any angle, leaning
+  // with the wind and swaying in the vertex shader
+  const bladeGeo = new THREE.PlaneGeometry(0.10, 1.0, 1, 3);
+  bladeGeo.translate(0, 0.5, 0);                    // pivot at the root
+  const grassMat = new THREE.MeshStandardMaterial({
+    color: 0x5c6b4a, roughness: 1, flatShading: true, emissive: 0x1b2416,
+    side: THREE.DoubleSide, transparent: true, alphaTest: 0.5,
+  });
+  grassMat.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = oceanUniforms.uTime;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        vec4 iw = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+        float sway = sin(uTime * 1.6 + iw.x * 0.7 + iw.z * 0.5) * 0.5 + sin(uTime * 2.7 + iw.z) * 0.2;
+        transformed.x += sway * 0.28 * pow(max(position.y, 0.0), 1.6);
+        transformed.z += sway * 0.16 * pow(max(position.y, 0.0), 1.6);`);
+  };
+  const BLADES = 1500;
+  const grass = new THREE.InstancedMesh(bladeGeo, grassMat, BLADES);
+  grass.frustumCulled = false;
+  grass.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(BLADES * 3).fill(1), 3);
+  const gc = new THREE.Color();
+  for (let i = 0; i < BLADES; i++) {
+    // clumped: pick a clump centre then jitter around it
+    const ca = Math.random() * Math.PI * 2, cr = 5 + Math.random() * 17;
+    const cxp = Math.cos(ca) * cr, czp = Math.sin(ca) * cr;
+    const jx = (Math.random() - 0.5) * 2.6, jz = (Math.random() - 0.5) * 2.6;
+    const h = 0.55 + Math.random() * 1.15;
+    e.set((Math.random() - 0.5) * 0.5, Math.random() * Math.PI, (Math.random() - 0.5) * 0.5);
+    q.setFromEuler(e);
+    m.compose(v.set(cxp + jx, 0, czp + jz), q, new THREE.Vector3(1, h, 1));
+    grass.setMatrixAt(i, m);
+    const t = 0.6 + Math.random() * 0.7;
+    gc.setRGB(t * 0.9, t, t * 0.72);
+    grass.setColorAt(i, gc);
+  }
+  grass.instanceMatrix.needsUpdate = true;
+  grass.instanceColor.needsUpdate = true;
+  lhGround.add(grass);
+}
 
 // ------------------------------------------------------------------
 // Wrack line
@@ -820,7 +987,7 @@ const puffs = Array.from({ length: PUFF_POOL }, () => ({
 }));
 { const hide = new THREE.Matrix4().makeScale(0, 0, 0); for (let i = 0; i < PUFF_POOL; i++) puff.setMatrixAt(i, hide); }
 let puffIdx = 0;
-function spawnPuffs(x, z, n, dirX = 0, dirZ = -1) {
+function spawnPuffs(x, z, n, dirX = 0, dirZ = -1, y = 0.06, tint = null) {
   for (let i = 0; i < n; i++) {
     const idx = puffIdx;
     const p = puffs[idx];
@@ -829,7 +996,7 @@ function spawnPuffs(x, z, n, dirX = 0, dirZ = -1) {
     p.ttl = p.life = fine ? 1.1 + Math.random() * 0.7 : 0.7 + Math.random() * 0.55;
     p.settled = false;
     p.sz = fine ? 0.7 + Math.random() * 0.7 : 2.2 + Math.random() * 2.6;
-    p.pos.set(x + (Math.random() - 0.5) * 0.25, 0.06, z + (Math.random() - 0.5) * 0.25);
+    p.pos.set(x + (Math.random() - 0.5) * 0.25, y, z + (Math.random() - 0.5) * 0.25);
     const spread = fine ? 2.2 : 3.4;
     const up = fine ? 4.5 + Math.random() * 3.5 : 4.0 + Math.random() * 4.5;
     p.vel.set(
@@ -840,7 +1007,8 @@ function spawnPuffs(x, z, n, dirX = 0, dirZ = -1) {
     p.spin.set((Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18);
     p.rot.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
     const shade = 0.55 + Math.random() * 0.5;          // some darker clods, some pale
-    _pc.setRGB(shade, shade, shade * 1.05);
+    if (tint) _pc.setRGB(tint[0] * shade, tint[1] * shade, tint[2] * shade);
+    else _pc.setRGB(shade, shade, shade * 1.05);
     puff.setColorAt(idx, _pc);
   }
   puff.instanceColor.needsUpdate = true;
@@ -1290,6 +1458,7 @@ const S_BRIGHT = document.getElementById('s-bright');
 const S_VOL = document.getElementById('s-vol');
 const S_WAVE = document.getElementById('s-wave');
 const S_MUSIC = document.getElementById('s-music');
+const S_SPEED = document.getElementById('s-speed');
 const S_INVERT = document.getElementById('s-invert');
 function applySettings() {
   camera.fov = settings.fov;
@@ -1297,6 +1466,7 @@ function applySettings() {
   renderer.toneMappingExposure = settings.brightness;
   if (masterGain && audioCtx) masterGain.gain.setTargetAtTime(settings.volume, audioCtx.currentTime, 0.05);
   if (musicVolGain && audioCtx) musicVolGain.gain.setTargetAtTime(settings.volume * settings.musicVolume, audioCtx.currentTime, 0.05);
+  if (lhGain && audioCtx) lhGain.gain.setTargetAtTime(settings.volume * settings.musicVolume, audioCtx.currentTime, 0.05);
   if (waveBusGain && audioCtx) waveBusGain.gain.setTargetAtTime(settings.waveVolume, audioCtx.currentTime, 0.05);
   document.getElementById('v-fov').textContent = settings.fov;
   document.getElementById('v-sens').textContent = settings.sensitivity.toFixed(2);
@@ -1304,12 +1474,14 @@ function applySettings() {
   document.getElementById('v-vol').textContent = Math.round(settings.volume * 100) + '%';
   document.getElementById('v-music').textContent = Math.round(settings.musicVolume * 100) + '%';
   document.getElementById('v-wave').textContent = Math.round(settings.waveVolume * 100) + '%';
+  document.getElementById('v-speed').textContent = settings.walkSpeed.toFixed(1) + '×';
 }
 function syncMenuInputs() {
   S_FOV.value = settings.fov; S_SENS.value = settings.sensitivity;
   S_BRIGHT.value = settings.brightness; S_VOL.value = settings.volume;
   S_MUSIC.value = settings.musicVolume;
-  S_WAVE.value = settings.waveVolume; S_INVERT.checked = settings.invertY;
+  S_WAVE.value = settings.waveVolume; S_SPEED.value = settings.walkSpeed;
+  S_INVERT.checked = settings.invertY;
 }
 S_FOV.addEventListener('input', () => { settings.fov = +S_FOV.value; applySettings(); saveSettings(); });
 S_SENS.addEventListener('input', () => { settings.sensitivity = +S_SENS.value; applySettings(); saveSettings(); });
@@ -1317,6 +1489,7 @@ S_BRIGHT.addEventListener('input', () => { settings.brightness = +S_BRIGHT.value
 S_VOL.addEventListener('input', () => { settings.volume = +S_VOL.value; applySettings(); saveSettings(); });
 S_WAVE.addEventListener('input', () => { settings.waveVolume = +S_WAVE.value; applySettings(); saveSettings(); });
 S_MUSIC.addEventListener('input', () => { settings.musicVolume = +S_MUSIC.value; applySettings(); saveSettings(); });
+S_SPEED.addEventListener('input', () => { settings.walkSpeed = +S_SPEED.value; applySettings(); saveSettings(); });
 S_INVERT.addEventListener('change', () => { settings.invertY = S_INVERT.checked; saveSettings(); });
 document.getElementById('m-resume').addEventListener('click', closeMenu);
 applySettings();
@@ -1550,6 +1723,7 @@ class PhysProp {
     physProps.push(this);
   }
   step(dt) {
+    if (this.dead) return;
     const p = this.mesh.position;
     if (this.held) {
       camera.getWorldPosition(_pv);
@@ -1565,16 +1739,21 @@ class PhysProp {
     }
     this.vel.y -= GRAV * dt;
     p.addScaledVector(this.vel, dt);
+    const incoming = this.vel.length();          // speed going into any contact
+    let struck = false;
     if (p.y <= this.restH) {
       p.y = this.restH;
       if (this.vel.y < 0) this.vel.y = -this.vel.y * this.bounce;
       if (Math.abs(this.vel.y) < 0.7) this.vel.y = 0;
       this.vel.x *= this.friction; this.vel.z *= this.friction;
       this.angVel.multiplyScalar(0.86);
+      struck = true;
     }
     const lo = WADE_X + this.radius, hi = CLIFF_BLOCK_X - this.radius;
-    if (p.x < lo) { p.x = lo; this.vel.x = Math.abs(this.vel.x) * this.bounce; }
-    if (p.x > hi) { p.x = hi; this.vel.x = -Math.abs(this.vel.x) * this.bounce; }
+    if (p.x < lo) { p.x = lo; this.vel.x = Math.abs(this.vel.x) * this.bounce; struck = true; }
+    if (p.x > hi) { p.x = hi; this.vel.x = -Math.abs(this.vel.x) * this.bounce; struck = true; }
+    if (struck && this.onImpact) this.onImpact(incoming);
+    if (this.dead) return;
     this.mesh.rotation.x += this.angVel.x * dt;
     this.mesh.rotation.y += this.angVel.y * dt;
     this.mesh.rotation.z += this.angVel.z * dt;
@@ -2105,17 +2284,47 @@ const bottle = new THREE.Group();
   bottle.add(hit);
 }
 bottle.scale.setScalar(1.35);
-bottle.position.set(3.6, 0.075, -42);
+bottle.position.set(3.6, 0.11, -42);
 bottle.rotation.set(0, 1.1, Math.PI / 2 * 0.96);
-scene.add(bottle);
-addInteractable(bottle, 'Take the bottle', 'inventory', {
-  onActivate: () => {
-    sfxGlassPick();
-    scene.remove(bottle);
-    hovered = null;
-    addToInventory({ name: 'Message in a bottle', icon: '🍾', use: () => openNote(NOTE_TEXT) });
-  },
+// A physics prop rather than a straight pickup: grab it with E, click to
+// throw. Land it hard enough and it shatters, which is the only way to get
+// at the note rolled up inside.
+const bottleProp = makeProp(bottle, 'message in a bottle', {
+  radius: 0.14, restH: 0.11, bounce: 0.28, friction: 0.7,
 });
+let bottleBroken = false;
+bottleProp.onImpact = (speed) => {
+  if (bottleBroken || speed < 5.2) return;      // a gentle drop just clinks
+  bottleBroken = true;
+  bottleProp.dead = true;
+  const p = bottle.position.clone();
+  scene.remove(bottle);
+  const i = interactables.findIndex((it) => it.root === bottle);
+  if (i >= 0) interactables.splice(i, 1);
+  if (hovered && hovered.root === bottle) hovered = null;
+  sfxGlassBreak();
+  spawnPuffs(p.x, p.z, 26, 0, 0, Math.max(0.08, p.y), [0.42, 0.85, 0.55]);
+
+  // the note it was carrying, now loose on the sand
+  const note = new THREE.Group();
+  const paper = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.17, 7),
+    new THREE.MeshStandardMaterial({ color: 0xd8c9a2, roughness: 1, flatShading: true, emissive: 0x2b2416 }));
+  paper.rotation.z = Math.PI / 2;
+  note.add(paper);
+  const nhit = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  nhit.name = 'hitProxy'; note.add(nhit);
+  note.position.set(p.x, 0.03, p.z);
+  note.rotation.y = Math.random() * Math.PI;
+  scene.add(note);
+  addInteractable(note, 'Take the note', 'inventory', {
+    onActivate: () => {
+      scene.remove(note);
+      hovered = null;
+      addToInventory({ name: 'Sea-worn note', icon: '📜', use: () => openNote(NOTE_TEXT) });
+    },
+  });
+};
 
 // ------------------------------------------------------------------
 // Horseshoe crab — stranded in the wrack line. Take it, then "use" it
@@ -2891,6 +3100,7 @@ function startAmbientAudio() {
   noise.connect(surf).connect(surfGain).connect(waveBusGain);
   masterGain.connect(ctx.destination);
   noise.start(); lfo.start(); lfo2.start();
+  loadSamples();
   document.addEventListener('visibilitychange', () => {
     masterGain.gain.setTargetAtTime(document.hidden ? 0 : settings.volume, ctx.currentTime, 0.4);
   });
@@ -2927,6 +3137,83 @@ function startMusic() {
   document.addEventListener('visibilitychange', () => {
     if (!musicEl) return;
     if (document.hidden) musicEl.pause(); else if (musicStarted) musicEl.play().catch(() => {});
+  });
+}
+
+// ---- recorded one-shots -------------------------------------------
+// Everything else in here is synthesised, but these are real recordings.
+// Decoded once when the audio context comes up; every play is a fresh
+// BufferSource so they can overlap.
+const SAMPLES = {
+  sandHit: ['assets/sand-hit1.m4a', 'assets/sand-hit2.m4a', 'assets/sand-hit3.m4a', 'assets/sand-hit4.m4a'],
+  glassBreak: ['assets/glass-break.m4a'],
+};
+const sampleBanks = {};
+function loadSamples() {
+  if (!audioCtx) return;
+  for (const [name, urls] of Object.entries(SAMPLES)) {
+    sampleBanks[name] = [];
+    urls.forEach((url, i) => {
+      fetch(url)
+        .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(r.status)))
+        .then((b) => audioCtx.decodeAudioData(b))
+        .then((buf) => { sampleBanks[name][i] = buf; })
+        .catch(() => {});                       // silent — the synth fallback covers it
+    });
+  }
+}
+// plays a random one from the bank; returns false if nothing has loaded yet
+function playSample(name, gain = 1, rateJitter = 0) {
+  const ctx = audioCtx; if (!ctx) return false;
+  const bank = (sampleBanks[name] || []).filter(Boolean);
+  if (!bank.length) return false;
+  const src = ctx.createBufferSource();
+  src.buffer = bank[(Math.random() * bank.length) | 0];
+  if (rateJitter) src.playbackRate.value = 1 + (Math.random() - 0.5) * 2 * rateJitter;
+  const g = ctx.createGain(); g.gain.value = gain;
+  src.connect(g).connect(ctx.destination);
+  src.start();
+  return true;
+}
+
+// bottle shattering — the recording, with a synthesised burst behind it
+function sfxGlassBreak() {
+  const ctx = audioCtx; if (!ctx) return;
+  if (playSample('glassBreak', 0.95, 0.06)) return;
+  const t = ctx.currentTime;
+  const s = noiseBurst(0.5, (x) => Math.pow(1 - x, 2.2) * (0.3 + 0.7 * Math.random()));
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2600;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.3, t + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+  s.connect(hp).connect(g).connect(ctx.destination);
+  s.start(t); s.stop(t + 0.5);
+}
+
+// The track that cues as you reach the lighthouse door. Streamed through an
+// <audio> element like the opening music, on its own gain so the music slider
+// governs it too.
+function startLighthouseTrack() {
+  if (lhStarted || !audioCtx) return;
+  lhStarted = true;
+  // duck the opening music out of the way if it's somehow still going
+  if (musicEnvGain) musicEnvGain.gain.setTargetAtTime(0.0001, audioCtx.currentTime, 1.2);
+  lhEl = new Audio('assets/lighthouse.m4a');
+  lhEl.crossOrigin = 'anonymous';
+  lhEl.loop = false;
+  const src = audioCtx.createMediaElementSource(lhEl);
+  lhGain = audioCtx.createGain();
+  lhGain.gain.value = 0.0001;
+  src.connect(lhGain).connect(audioCtx.destination);
+  lhEl.play().then(() => {
+    const t = audioCtx.currentTime;
+    lhGain.gain.setValueAtTime(0.0001, t);
+    lhGain.gain.exponentialRampToValueAtTime(settings.volume * settings.musicVolume, t + 2.0);
+  }).catch(() => { lhStarted = false; });
+  document.addEventListener('visibilitychange', () => {
+    if (!lhEl) return;
+    if (document.hidden) lhEl.pause(); else if (lhStarted) lhEl.play().catch(() => {});
   });
 }
 
@@ -3009,6 +3296,8 @@ function sfxDig() {
 // a short bright spray of grains
 function sfxDigImpact() {
   const ctx = audioCtx; if (!ctx) return;
+  // one of the four recorded sand impacts, picked at random
+  if (playSample('sandHit', 0.85, 0.08)) return;
   const t = ctx.currentTime;
   const out = ctx.createGain(); out.gain.value = 0.9; out.connect(ctx.destination);
 
@@ -3189,6 +3478,62 @@ let bobPhase = 0;
 let camBaseY = EYE_HEIGHT, vy = 0, onGround = true, jumpLatch = false;
 let stamina = 1, exhausted = false;
 let splashTimer = 0;
+
+// ------------------------------------------------------------------
+// The tower: walls you can't walk through, a doorway you can, and a
+// helical stair whose height comes from how far round you've walked.
+// ------------------------------------------------------------------
+const PLAYER_R = 0.4;
+let insideTower = false, groundY = 0;
+let stairTurns = 0, lastStairA = 0, doorHeard = false;
+const _towerV = new THREE.Vector2();
+function updateTower(dt) {
+  const dx = camera.position.x - LH_X, dz = camera.position.z - LH_Z;
+  let d = Math.hypot(dx, dz);
+  // three's cylinder measures theta from +Z, and so does the doorway
+  const ang = Math.atan2(dx, dz);
+  const doorHalf = lighthouse.userData.doorHalf;
+
+  // the track cues once, as you come up on the door
+  if (!doorHeard && started && introDone && d < 11 && Math.abs(ang) < 1.1) {
+    doorHeard = true;
+    startLighthouseTrack();
+  }
+
+  // you can only pass through the wall at the doorway, and only down low
+  const throughDoor = Math.abs(ang) < doorHalf * 0.92 && camBaseY < EYE_HEIGHT + LH_DOOR_H - 0.5;
+  if (!throughDoor && d > 0.001) {
+    const inner = LH_INNER - PLAYER_R, outer = LH_OUTER + PLAYER_R;
+    let clamped = null;
+    if (insideTower && d > inner) clamped = inner;
+    else if (!insideTower && d < outer) clamped = outer;
+    if (clamped !== null) {
+      camera.position.x = LH_X + (dx / d) * clamped;
+      camera.position.z = LH_Z + (dz / d) * clamped;
+      d = clamped;
+    }
+  } else if (throughDoor) {
+    insideTower = d < LH_INNER - 0.1;
+  }
+  if (d > LH_OUTER + 2) insideTower = false;      // well clear of it
+
+  // climbing: the stair gains LH_RISE for every full turn you walk round it
+  if (insideTower) {
+    if (d > 0.9) {
+      let da = lastStairA - ang;                  // winding this way is "up"
+      if (da > Math.PI) da -= Math.PI * 2;
+      if (da < -Math.PI) da += Math.PI * 2;
+      stairTurns = THREE.MathUtils.clamp(stairTurns + da / (Math.PI * 2), 0, LH_TOP / LH_RISE);
+    }
+    lastStairA = ang;
+    groundY = Math.min(LH_TOP, stairTurns * LH_RISE);
+    if (groundY >= LH_TOP - 0.05 && started && !ended) showEnd();
+  } else {
+    lastStairA = ang;
+    stairTurns = 0;
+    groundY = 0;
+  }
+}
 const snap = (v, s) => Math.round(v / s) * s;
 
 function update(dt) {
@@ -3203,7 +3548,7 @@ function update(dt) {
   const running = wantRun && moving && stamina > 0 && !exhausted && onGround;
   if (running) { stamina = Math.max(0, stamina - dt / RUN_SECONDS); if (stamina <= 0) exhausted = true; }
   else { stamina = Math.min(1, stamina + dt / STAM_REGEN); if (exhausted && stamina > 0.35) exhausted = false; }
-  const spd = running ? RUN_SPEED : WALK_SPEED;
+  const spd = (running ? RUN_SPEED : WALK_SPEED) * settings.walkSpeed;
 
   camera.getWorldDirection(forward);
   forward.y = 0; forward.normalize();
@@ -3211,14 +3556,18 @@ function update(dt) {
   const target = new THREE.Vector3().addScaledVector(forward, move.y).addScaledVector(right, move.x).multiplyScalar(spd);
   velocity.lerp(target, 1 - Math.pow(0.0016, dt));
   camera.position.addScaledVector(velocity, dt);
-  camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
-  camera.position.x = Math.max(camera.position.x, WADE_X);
+  if (!insideTower) {
+    camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
+    camera.position.x = Math.max(camera.position.x, WADE_X);
+  }
+  updateTower(dt);
 
   if (onGround && canMove && keys['Space'] && !jumpLatch) { vy = JUMP_V; onGround = false; jumpLatch = true; }
   if (!keys['Space']) jumpLatch = false;
   vy -= P_GRAV * dt;
   camBaseY += vy * dt;
-  if (camBaseY <= EYE_HEIGHT) { camBaseY = EYE_HEIGHT; vy = 0; onGround = true; }
+  const floorLimit = EYE_HEIGHT + groundY;
+  if (camBaseY <= floorLimit) { camBaseY = floorLimit; vy = 0; onGround = true; }
 
   const speed = velocity.length();
   bobPhase += dt * speed * 2.1;
@@ -3301,7 +3650,6 @@ function update(dt) {
     if (bx * bx + bz * bz < 7.5 * 7.5) startDialog('start');
   }
 
-  if (started && !ended && camera.position.z < END_Z) showEnd();
 }
 
 const clock = new THREE.Clock();
@@ -3348,6 +3696,11 @@ window.__bw = {
   sfxSplash, bradly, startDialog, endDialog, heldGlow,
   crab, crabState, killCrab, damagePlayer, playerDied,
   openPack, closePack, startExtraction, driveExtraction, finishExtraction, hudJar,
+  lighthouse, startLighthouseTrack, bottleProp, playSample, updateTower,
+  get insideTower() { return insideTower; },
+  get groundY() { return groundY; },
+  get stairTurns() { return stairTurns; },
+  get bottleBroken() { return bottleBroken; },
   get hp() { return hp; },
   get blood() { return bloodAmount; },
   get bloodSeen() { return bloodSeen; },
