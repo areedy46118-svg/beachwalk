@@ -497,6 +497,38 @@ function makeGlowTexture() {
   return new THREE.CanvasTexture(c);
 }
 const glowTex = makeGlowTexture();
+
+// ------------------------------------------------------------------
+// Baked mesh blobs (see tools/objconv.py). Positions and indices, nothing
+// else — normals are recomputed here because the whole game is flat shaded,
+// which keeps the file about a sixth the size of the OBJ it came from.
+// ------------------------------------------------------------------
+function loadMesh(url) {
+  return fetch(url)
+    .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(r.status))))
+    .then((buf) => {
+      const magic = String.fromCharCode(...new Uint8Array(buf, 0, 8));
+      if (magic !== 'BWMESH01') throw new Error('bad mesh header');
+      const dv = new DataView(buf);
+      const nV = dv.getUint32(8, true), nF = dv.getUint32(12, true);
+      const qs = [dv.getFloat32(16, true), dv.getFloat32(20, true), dv.getFloat32(24, true)];
+      const off = [dv.getFloat32(28, true), dv.getFloat32(32, true), dv.getFloat32(36, true)];
+      let p = 40;
+      const q = new Int16Array(buf, p, nV * 3); p += nV * 6;
+      const pos = new Float32Array(nV * 3);
+      for (let i = 0; i < nV; i++) for (let k = 0; k < 3; k++) {
+        pos[i * 3 + k] = (q[i * 3 + k] + 32767) * qs[k] + off[k];
+      }
+      const wide = nV > 65535;
+      const idx = wide ? new Uint32Array(buf.slice(p, p + nF * 12))
+                       : new Uint16Array(buf.slice(p, p + nF * 6));
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      geo.setIndex(new THREE.BufferAttribute(idx, 1));
+      geo.computeVertexNormals();
+      return geo;
+    });
+}
 const lighthouse = new THREE.Group();
 lighthouse.position.set(LH_X, 0, LH_Z);
 let lampCore, beamPivot;
@@ -599,8 +631,45 @@ let lampCore, beamPivot;
   beamPivot.add(beam); beamPivot.userData.beam = beam;
   lighthouse.add(tower, floor, stairs, topFloor, gallery, lampRoom, roof, lampCore, glow, halo, beamPivot);
   lighthouse.userData.doorHalf = DOOR_HALF;
+  // The hand-built shell is only a stand-in — the real tower is a baked mesh
+  // that swaps in below. The interior (inner wall, floor, stair, lamps) stays
+  // either way, because that's what the climb and the collision are built on.
+  lighthouse.userData.shell = [tower, gallery, lampRoom, roof];
 }
 scene.add(lighthouse);
+
+// The scanned tower. Replaces the stand-in shell once it lands; everything
+// inside is left alone. Weathered to match the rest of the walk: cold damp
+// concrete, streaked and grimy, darker the closer to the ground it gets.
+const LH_MESH_Y = -0.15;               // sink it slightly so it meets the sand
+let lighthouseMesh = null;
+loadMesh('assets/lighthouse.bwmesh').then((geo) => {
+  geo.computeBoundingBox();
+  const bb = geo.boundingBox;
+  // grime: darker low down and in the creases, with vertical streaking
+  const pos = geo.attributes.position;
+  const col = new Float32Array(pos.count * 3);
+  const h = Math.max(0.001, bb.max.y - bb.min.y);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const up = (y - bb.min.y) / h;
+    let t = 0.40 + 0.55 * Math.pow(up, 0.6);                 // damp base
+    t *= 0.82 + 0.18 * (0.5 + 0.5 * Math.sin(Math.atan2(z, x) * 9.0));   // vertical streaks
+    t *= 0.88 + 0.24 * ((Math.sin(x * 7.3 + y * 5.1 + z * 6.7) * 43758.5453) % 1);
+    t = Math.max(0.16, Math.min(1, t));
+    col[i * 3] = t * 0.95; col[i * 3 + 1] = t * 0.98; col[i * 3 + 2] = t;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+
+  lighthouseMesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+    color: 0x6a7180, vertexColors: true, roughness: 1, metalness: 0,
+    emissive: 0x12151b, flatShading: true, side: THREE.DoubleSide,
+  }));
+  lighthouseMesh.position.y = LH_MESH_Y;
+  lighthouseMesh.frustumCulled = false;
+  lighthouse.add(lighthouseMesh);
+  for (const o of lighthouse.userData.shell) o.visible = false;
+}).catch(() => {});                     // no blob, keep the stand-in
 
 // ------------------------------------------------------------------
 // The headland the lighthouse stands on — boulders and tall grass, so the
@@ -3697,6 +3766,7 @@ window.__bw = {
   crab, crabState, killCrab, damagePlayer, playerDied,
   openPack, closePack, startExtraction, driveExtraction, finishExtraction, hudJar,
   lighthouse, startLighthouseTrack, bottleProp, playSample, updateTower,
+  get lighthouseMesh() { return lighthouseMesh; },
   get insideTower() { return insideTower; },
   get groundY() { return groundY; },
   get stairTurns() { return stairTurns; },
