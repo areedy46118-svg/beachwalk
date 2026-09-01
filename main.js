@@ -1704,7 +1704,7 @@ function damagePlayer(n = 1) {
   hurtFlash = 1;
   sfxHurt();
   addTrauma(0.7);
-  hitstop = 0.06;
+  hitstop = 0.05;       // ~3 frames
   // shoved back off whatever hit you
   if (crabState && crabState.alive) {
     const kx = camera.position.x - crab.position.x, kz = camera.position.z - crab.position.z;
@@ -2712,6 +2712,28 @@ function digImpact() {
 }
 
 let vmSway = 0;
+// Easing. Nothing the player looks at should move on a straight line —
+// the swing was linear on every segment before, which is exactly what makes
+// an animation read as placeholder.
+const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+const easeInCubic = (t) => t * t * t;
+const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const easeOutBack = (t) => 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 1, 2);
+
+/* The dig, re-cut to attack frame data at 60 fps over DIG_DUR (~48 frames):
+ *   anticipation  0.00–0.34   16f   hauls up and hangs at the top
+ *   strike        0.34–0.46    6f   drops fast, accelerating in
+ *   impact        0.46
+ *   recovery      0.46–1.00   26f   eases back, overshooting once
+ * The blade also swings through an arc rather than pitching on the spot,
+ * and the poses are pushed past what the geometry strictly needs so they
+ * still read at a glance. */
+const DIG_WINDUP = 0.34, DIG_STRIKE = 0.46;
+let vmLagX = 0, vmLagY = 0, vmPrevYaw = 0, vmPrevPitch = 0;
+let vmSpringY = 0, vmSpringV = 0;
+const _vmEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+function vmImpulse(v) { vmSpringV += v; }          // landings, jumps, impacts
+
 function updateViewmodel(dt) {
   const show = !!equipped && !held;
   viewmodel.visible = show;
@@ -2721,18 +2743,62 @@ function updateViewmodel(dt) {
   const moveAmt = Math.min(1, sp / WALK_SPEED);
   const bx = Math.sin(vmSway) * 0.010 * moveAmt;
   const by = Math.abs(Math.sin(vmSway)) * -0.014 * moveAmt;
-  let pitch = 0, lift = 0;
+
+  // --- follow through: the tool trails the turn, then catches up ------
+  _vmEuler.setFromQuaternion(camera.quaternion);
+  let dYaw = _vmEuler.y - vmPrevYaw, dPitch = _vmEuler.x - vmPrevPitch;
+  if (dYaw > Math.PI) dYaw -= Math.PI * 2;
+  if (dYaw < -Math.PI) dYaw += Math.PI * 2;
+  vmPrevYaw = _vmEuler.y; vmPrevPitch = _vmEuler.x;
+  if (frozen()) { vmLagX = vmLagY = 0; }           // don't trail scripted camera moves
+  else { vmLagY += dYaw * 1.15; vmLagX += dPitch * 1.15; }
+  const settle = Math.min(1, 11 * dt);
+  vmLagY -= vmLagY * settle; vmLagX -= vmLagX * settle;
+  vmLagY = THREE.MathUtils.clamp(vmLagY, -0.30, 0.30);
+  vmLagX = THREE.MathUtils.clamp(vmLagX, -0.24, 0.24);
+
+  // --- overlapping action: a damped spring carries landings and jumps --
+  vmSpringV += (-150 * vmSpringY - 16 * vmSpringV) * dt;
+  vmSpringY += vmSpringV * dt;
+  vmSpringY = THREE.MathUtils.clamp(vmSpringY, -0.14, 0.14);
+
+  let pitch = 0, lift = 0, swingYaw = 0, roll = 0, push = 0;
   if (digT > 0) {
     digT += dt / DIG_DUR;
     const p = digT;
-    if (p < 0.28) { const t = p / 0.28; pitch = -1.05 * t; lift = 0.14 * t; }
-    else if (p < 0.55) { const t = (p - 0.28) / 0.27; pitch = -1.05 + 2.4 * t; lift = 0.14 - 0.52 * t; }
-    else { const t = Math.min(1, (p - 0.55) / 0.45); pitch = 1.35 - 1.35 * t; lift = -0.38 + 0.38 * t; }
-    if (!digImpacted && p >= 0.5) { digImpacted = true; digImpact(); }
+    if (p < DIG_WINDUP) {
+      // anticipation: quick out of rest, hanging at the top of the haul
+      const t = easeOutCubic(p / DIG_WINDUP);
+      pitch = -1.25 * t; lift = 0.17 * t;
+      swingYaw = -0.34 * t; roll = -0.20 * t; push = 0.05 * t;
+    } else if (p < DIG_STRIKE) {
+      // the strike: accelerates into the sand, arcing across as it drops
+      const t = easeInCubic((p - DIG_WINDUP) / (DIG_STRIKE - DIG_WINDUP));
+      pitch = -1.25 + 2.85 * t; lift = 0.17 - 0.62 * t;
+      swingYaw = -0.34 + 0.50 * t; roll = -0.20 + 0.34 * t; push = 0.05 - 0.17 * t;
+    } else {
+      // recovery: eases back to rest and overshoots once on the way
+      const t = Math.min(1, (p - DIG_STRIKE) / (1 - DIG_STRIKE));
+      const e = easeOutBack(t);
+      pitch = 1.60 * (1 - e); lift = -0.45 * (1 - e);
+      swingYaw = 0.16 * (1 - e); roll = 0.14 * (1 - e); push = -0.12 * (1 - e);
+    }
+    if (!digImpacted && p >= DIG_STRIKE) {
+      digImpacted = true;
+      digImpact();
+      vmImpulse(-1.7);                             // the blade jars in your hands
+    }
     if (p >= 1) digT = 0;
   }
-  armRig.rotation.x = ARM_ROT_X + pitch;
-  armRig.position.set(ARM_BASE.x + bx, ARM_BASE.y + by + lift, ARM_BASE.z);
+
+  armRig.rotation.x = ARM_ROT_X + pitch + vmLagX;
+  armRig.rotation.y = -0.45 + swingYaw + vmLagY;
+  armRig.rotation.z = 0.10 + roll + vmLagY * 0.45;
+  armRig.position.set(
+    ARM_BASE.x + bx + vmLagY * 0.16,
+    ARM_BASE.y + by + lift + vmSpringY,
+    ARM_BASE.z + push
+  );
 }
 
 // ------------------------------------------------------------------
@@ -3522,7 +3588,7 @@ function killCrab() {
   burstCrab();
   sfxCrabDie();
   addTrauma(0.85);                             // the hit lands
-  hitstop = 0.09;
+  hitstop = 0.075;      // ~4.5 frames at 60fps
 }
 
 // pose one leg: `ph` is its phase through the step cycle (0..1)
@@ -4498,16 +4564,18 @@ function update(dt) {
   jumpBuf = Math.max(0, jumpBuf - dt);
   if (jumpBuf > 0 && coyote > 0 && canMove) {
     vy = JUMP_V; onGround = false; coyote = 0; jumpBuf = 0;
+    vmImpulse(1.5);                     // the tool hangs back as you leave the ground
   }
   vy -= P_GRAV * dt;
   camBaseY += vy * dt;
   const floorLimit = EYE_HEIGHT + groundY;
   if (camBaseY <= floorLimit) {
     if (!onGround && vy < -3.5) {
-      // land with some weight behind it
+      // land with some weight behind it — the tool keeps going after you stop
       const force = Math.min(1, -vy / 12);
       landDip = Math.max(landDip, 0.06 + force * 0.16);
       addTrauma(force * 0.25);
+      vmImpulse(-1.1 - force * 2.4);
       if (!inWater(camera.position.x, camera.position.z)) sfxStep(); else sfxSplash(0.9);
     }
     camBaseY = floorLimit; vy = 0; onGround = true;
