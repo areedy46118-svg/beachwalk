@@ -179,3 +179,17 @@ castle, crab, `startDig`, `toggleEquip`, `openMenu`, `openInspect`, `showEnd`,
 - Object–object physics collisions (currently ground + walls only)
 - Two-handed / nicer dig animation
 - Persistent dig holes (pool currently recycles after 20)
+
+## Credits
+
+**Japanese Giant Spider Crabs (NHMW-ZOO-CR-4381)** — the dead specimen on the
+beach at z −134.
+
+This work is based on
+["Japanese Giant Spider Crabs (NHMW-ZOO-CR-4381)"](https://sketchfab.com/3d-models/japanese-giant-spider-crabs-nhmw-zoo-cr-4381-043bf5f9f40a49ab87ce306a2d8c7b54)
+by [Natural History Museum Vienna](https://sketchfab.com/NHMWien)
+licensed under [CC-BY-NC-4.0](http://creativecommons.org/licenses/by-nc/4.0/).
+
+> **NC means non-commercial.** This model can stay in the game as long as the
+> game is never sold, monetised or bundled with anything that is. If Beachwalk
+> is ever released for money, this asset has to come out first.

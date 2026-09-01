@@ -3680,6 +3680,50 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
 }
 
 // ------------------------------------------------------------------
+// The big one. A giant spider crab washed up and long dead, scanned from a
+// museum specimen (see README for the credit). Static — it's a set piece,
+// not the thing that attacks you — so it gets the same treatment as the
+// lighthouse: no textures, flat shaded, graded cold and bleached.
+// ------------------------------------------------------------------
+const SPIDER_Z = -134;
+let spiderCrab = null;
+loadMesh('assets/spider-crab.bwmesh').then((geo) => {
+  geo.computeBoundingBox();
+  const bb = geo.boundingBox;
+  const pos = geo.attributes.position;
+  const col = new Float32Array(pos.count * 3);
+  const h = Math.max(0.001, bb.max.y - bb.min.y);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    // bleached on top where the sun got it, dark and wet underneath
+    const up = (y - bb.min.y) / h;
+    let t = 0.42 + 0.5 * Math.pow(up, 0.7);
+    t *= 0.9 + 0.2 * ((Math.sin(x * 6.1 + y * 4.7 + z * 5.3) * 43758.5453) % 1);
+    t = Math.max(0.2, Math.min(1, t));
+    col[i * 3] = t * 1.0; col[i * 3 + 1] = t * 0.94; col[i * 3 + 2] = t * 0.86;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  spiderCrab = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+    color: 0x9d8f7e, vertexColors: true, roughness: 1, metalness: 0,
+    emissive: 0x231c15, flatShading: true, side: THREE.DoubleSide,
+  }));
+  spiderCrab.position.set(4.1, 0.02, SPIDER_Z);
+  spiderCrab.rotation.set(0.06, 2.3, 0.04);      // slumped, half on its side
+  spiderCrab.frustumCulled = false;
+  scene.add(spiderCrab);
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy'; hit.position.y = 0.5;
+  spiderCrab.add(hit);
+  addInteractable(spiderCrab, 'Look at it', 'npc', {
+    onActivate: () => openNote(
+      'A spider crab, and far bigger than it has any right to be.\n\n' +
+      'Four metres claw to claw. The shell is dry and light. ' +
+      'Whatever brought it up here, the tide has been and gone since.'),
+  });
+}).catch(() => {});
+
+// ------------------------------------------------------------------
 // Shells you can pick up. Hold one to your ear and there's something
 // under the sea-roar that isn't the sea.
 // ------------------------------------------------------------------
@@ -5259,6 +5303,7 @@ window.__bw = {
   lighthouse, startLighthouseTrack, bottleProp, playSample, updateTower,
   waterSurfaceAt, submersionAt, restYInWater, groundGlow, addRipple,
   shells, listenToShell, makeRockGeo,
+  get spiderCrab() { return spiderCrab; },
   lhDoor, shinies, onPath, pathBend, pathHalfAt, lhWindows, lanternGlass,
   get doorOpen() { return doorOpen; }, set doorOpen(v) { doorOpen = v; doorSwing = v ? 1 : 0; lhDoor.rotation.y = -doorSwing * 1.95; },
   get insideTower() { return insideTower; },
