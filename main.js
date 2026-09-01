@@ -34,15 +34,26 @@ const LH_X = 2;
 const LH_Z = -1200;
 const END_Z = LH_Z + 55;
 
-// The tower you can actually walk into. The shaft is hollow, with a helical
-// stair winding up the inside wall to the lamp room.
-const LH_OUTER = 3.6;              // wall radius at the base
-const LH_INNER = 2.7;              // inside face of the wall
-const LH_TOP = 30;                 // floor height of the lamp room
-const LH_RISE = 5.0;               // metres gained per full turn of the stair
-const LH_STAIR_R = 1.95;           // how far out the treads sit from the axis
-const LH_DOOR_W = 0.85;            // half-width of the doorway, in radians it's derived
-const LH_DOOR_H = 2.6;
+// The tower you can walk into. Every figure here is measured off the scanned
+// shell in assets/lighthouse.bwmesh so the built parts actually meet it:
+// it stands 31.9 m, the base flares to r4.96 with the +Z face at r4.57, the
+// shaft tapers r3.9 → r2.4, the clear bore runs r2.8 at the bottom down to
+// r2.06 near the top, and above y≈26.5 the scan is just a thin mast — which
+// we cut off and replace with a proper gallery and lantern room.
+const LH_OUTER = 4.57;             // outer face of the wall at the doorway
+const LH_INNER = 2.55;             // clear inside radius down at the floor
+const LH_TOP = 26.2;               // gallery deck = lantern-room floor
+const LH_CUT_Y = 26.45;            // scan is discarded above this
+const LH_RISE = 4.4;               // metres gained per full turn of the stair
+const LH_STAIR_R = 1.42;           // radius of the tread centres
+const LH_DOOR_W = 0.72;            // half-width of the doorway
+const LH_DOOR_H = 2.15;
+// the bore narrows as it climbs — keeps the stair and the player off the wall
+function lhBoreAt(y) {
+  if (y < 5) return 2.55;
+  if (y < 17) return THREE.MathUtils.lerp(2.55, 2.45, (y - 5) / 12);
+  return THREE.MathUtils.lerp(2.45, 1.90, THREE.MathUtils.clamp((y - 17) / 9, 0, 1));
+}
 
 const DIG_DUR = 0.8;
 
@@ -515,6 +526,7 @@ function addItemShine(root, { size = 0.55, height = 0.12, strength = 1 } = {}) {
   }));
   glint.position.y = height;
   glint.scale.setScalar(size);
+  glint.raycast = () => {};        // decoration only — never a hover target
   root.add(glint);
 
   // brighten the object's own surfaces a touch, and remember the base so the
@@ -579,111 +591,264 @@ function loadMesh(url) {
 }
 const lighthouse = new THREE.Group();
 lighthouse.position.set(LH_X, 0, LH_Z);
-let lampCore, beamPivot;
+let lampCore, beamPivot, lanternGlass = null;
+const lhWindows = [];          // {y, ang} — cut through the scan, framed below
 {
-  const stone = new THREE.MeshStandardMaterial({ color: 0x2a2f3a, roughness: 1, metalness: 0, emissive: 0x14171f, side: THREE.DoubleSide });
-  // The tower is a hollow tube you can walk into. The wall is built in two
-  // bands so the lower one can carry a gap for the doorway; three's cylinder
-  // measures theta from +Z, which is the side you approach from.
-  const DOOR_HALF = Math.atan2(LH_DOOR_W, LH_OUTER);
-  const rOut = (y) => LH_OUTER + (2.3 - LH_OUTER) * (y / LH_TOP);
-  const rIn = (y) => LH_INNER + (1.75 - LH_INNER) * (y / LH_TOP);
-  const band = (r0, r1, y0, y1, gap) => new THREE.Mesh(
-    new THREE.CylinderGeometry(r1, r0, y1 - y0, 28, 1, true,
-      gap ? DOOR_HALF : 0, gap ? Math.PI * 2 - DOOR_HALF * 2 : Math.PI * 2), stone);
+  const DOOR_HALF = Math.atan2(LH_DOOR_W + 0.15, LH_OUTER);
+  lighthouse.userData.doorHalf = DOOR_HALF;
 
-  const wallLoOut = band(rOut(0), rOut(LH_DOOR_H), 0, LH_DOOR_H, true);
-  wallLoOut.position.y = LH_DOOR_H / 2;
-  const wallHiOut = band(rOut(LH_DOOR_H), rOut(LH_TOP), LH_DOOR_H, LH_TOP, false);
-  wallHiOut.position.y = (LH_DOOR_H + LH_TOP) / 2;
-  const wallLoIn = band(rIn(0), rIn(LH_DOOR_H), 0, LH_DOOR_H, true);
-  wallLoIn.position.y = LH_DOOR_H / 2;
-  const wallHiIn = band(rIn(LH_DOOR_H), rIn(LH_TOP), LH_DOOR_H, LH_TOP, false);
-  wallHiIn.position.y = (LH_DOOR_H + LH_TOP) / 2;
-  // the reveal around the doorway, so the wall reads as thick
-  const jamb = new THREE.Mesh(
-    new THREE.RingGeometry(rIn(LH_DOOR_H), rOut(LH_DOOR_H), 28, 1, -DOOR_HALF, DOOR_HALF * 2),
-    new THREE.MeshStandardMaterial({ color: 0x1b1f27, roughness: 1, side: THREE.DoubleSide, emissive: 0x0a0c10 }));
-  jamb.rotation.x = -Math.PI / 2;
-  jamb.position.y = LH_DOOR_H;
-  const tower = new THREE.Group();
-  tower.add(wallLoOut, wallHiOut, wallLoIn, wallHiIn, jamb);
-  // floor slab
-  const floor = new THREE.Mesh(new THREE.CylinderGeometry(LH_INNER, LH_INNER, 0.25, 28),
+  const stone = new THREE.MeshStandardMaterial({ color: 0x2a2f3a, roughness: 1, metalness: 0, emissive: 0x14171f, side: THREE.DoubleSide });
+  const iron  = new THREE.MeshStandardMaterial({ color: 0x23262d, roughness: 0.55, metalness: 0.6, flatShading: true, emissive: 0x0b0d10 });
+  const brass = new THREE.MeshStandardMaterial({ color: 0x6b5a32, roughness: 0.45, metalness: 0.7, flatShading: true, emissive: 0x171204 });
+
+  // ---- stand-in shaft, shown only if the scan fails to load -------
+  const fallback = new THREE.Group();
+  {
+    const outer = new THREE.Mesh(new THREE.CylinderGeometry(2.4, LH_OUTER, LH_TOP, 24, 1, true,
+      DOOR_HALF, Math.PI * 2 - DOOR_HALF * 2), stone);
+    outer.position.y = LH_TOP / 2;
+    fallback.add(outer);
+  }
+  lighthouse.add(fallback);
+  lighthouse.userData.shell = [fallback];
+
+  // ---- ground floor ----------------------------------------------
+  const floor = new THREE.Mesh(new THREE.CylinderGeometry(LH_INNER + 0.2, LH_INNER + 0.2, 0.25, 24),
     new THREE.MeshStandardMaterial({ color: 0x23262e, roughness: 1, emissive: 0x0e1014 }));
   floor.position.y = 0.02;
-  // the helical stair — treads climbing the inside wall, starting at the door
+  lighthouse.add(floor);
+
+  // ---- the helical stair ------------------------------------------
+  // Treads cantilever off a central newel, the way they do in a real
+  // tower, and stop at a landing under the gallery hatch.
   const treadMat = new THREE.MeshStandardMaterial({ color: 0x3d4450, roughness: 1, flatShading: true, emissive: 0x191d23 });
   const stairs = new THREE.Group();
+  const stairAngleAt = (y) => (y / LH_RISE) * Math.PI * 2 + Math.PI / 2;
   {
-    const PER_TURN = 22;
-    const stepGeo = new THREE.BoxGeometry(1.5, 0.14, 0.62);
-    for (let i = 0; ; i++) {
-      const t = i / PER_TURN;                       // turns completed
-      const y = t * LH_RISE;
-      if (y > LH_TOP - 0.15) break;
-      const a = t * Math.PI * 2 + Math.PI / 2;      // +Z at the door, winding round
+    const PER_TURN = 20;
+    const stepGeo = new THREE.BoxGeometry(1.30, 0.13, 0.58);
+    const nSteps = Math.floor((LH_TOP - 0.2) / (LH_RISE / PER_TURN));
+    for (let i = 1; i <= nSteps; i++) {
+      const y = i * (LH_RISE / PER_TURN);
+      const a = stairAngleAt(y);
       const st = new THREE.Mesh(stepGeo, treadMat);
       st.position.set(Math.cos(a) * LH_STAIR_R, y, Math.sin(a) * LH_STAIR_R);
       st.rotation.y = -a;
       stairs.add(st);
+      // a rail post every few treads, with the handrail riding on top
+      if (i % 4 === 0) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.95, 5), iron);
+        post.position.set(Math.cos(a) * (LH_STAIR_R + 0.42), y + 0.48, Math.sin(a) * (LH_STAIR_R + 0.42));
+        stairs.add(post);
+      }
     }
-    const newel = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.36, LH_TOP, 10), stone);
+    // the newel the treads spring from
+    const newel = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.32, LH_TOP, 12), stone);
     newel.position.y = LH_TOP / 2;
     stairs.add(newel);
 
-    // Oil lamps up the shaft. Without these the interior is pitch black —
-    // the moon can't reach in, and nothing here casts shadows anyway.
-    const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffcf94, fog: false });
-    const bracketMat = new THREE.MeshStandardMaterial({ color: 0x1a1d24, roughness: 1, flatShading: true });
-    for (let y = 1.6; y < LH_TOP - 1; y += LH_RISE * 0.75) {
-      const t = y / LH_RISE;
-      const a = t * Math.PI * 2 + Math.PI / 2 + Math.PI;   // opposite the treads
-      const lr = LH_INNER - 0.45;
+    // handrail: a helix of short chords following the tread noses
+    const railGeo = [];
+    for (let y = 0.9; y < LH_TOP - 0.3; y += 0.35) railGeo.push(y);
+    for (let i = 0; i < railGeo.length - 1; i++) {
+      const y0 = railGeo[i], y1 = railGeo[i + 1];
+      const a0 = stairAngleAt(y0 - 0.9), a1 = stairAngleAt(y1 - 0.9);
+      const R = LH_STAIR_R + 0.42;
+      const p0 = new THREE.Vector3(Math.cos(a0) * R, y0, Math.sin(a0) * R);
+      const p1 = new THREE.Vector3(Math.cos(a1) * R, y1, Math.sin(a1) * R);
+      const seg = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, p0.distanceTo(p1) * 1.06, 5), iron);
+      seg.position.copy(p0).lerp(p1, 0.5);
+      seg.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), p1.clone().sub(p0).normalize());
+      stairs.add(seg);
+    }
+
+    // oil lamps up the shaft — nothing else lights the inside
+    for (let y = 2.2; y < LH_TOP - 1.5; y += LH_RISE * 0.5) {
+      const a = stairAngleAt(y) + Math.PI;            // on the wall opposite the treads
+      const lr = lhBoreAt(y) - 0.35;
       const px = Math.cos(a) * lr, pz = Math.sin(a) * lr;
-      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), bulbMat);
-      bulb.position.set(px, y + 1.5, pz);
-      const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.3), bracketMat);
-      bracket.position.set(px * 1.06, y + 1.5, pz * 1.06);
-      bracket.lookAt(0, y + 1.5, 0);
-      const lamp = new THREE.PointLight(0xffb070, 6.5, 6.0, 1.6);
-      lamp.position.set(px * 0.86, y + 1.5, pz * 0.86);
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.085, 8, 6),
+        new THREE.MeshBasicMaterial({ color: 0xffcf94, fog: false }));
+      bulb.position.set(px, y + 1.4, pz);
+      const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.28), iron);
+      bracket.position.set(px * 1.07, y + 1.4, pz * 1.07);
+      bracket.lookAt(0, y + 1.4, 0);
+      const lamp = new THREE.PointLight(0xffb070, 6.0, 6.5, 1.6);
+      lamp.position.set(px * 0.84, y + 1.4, pz * 0.84);
       const halo = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: glowTex, color: 0xffd39a, transparent: true, opacity: 0.34,
+        map: glowTex, color: 0xffd39a, transparent: true, opacity: 0.32,
         depthWrite: false, fog: false, blending: THREE.AdditiveBlending,
       }));
       halo.position.copy(bulb.position);
-      halo.scale.setScalar(1.5);
+      halo.scale.setScalar(1.4);
       stairs.add(bulb, bracket, lamp, halo);
     }
   }
-  // lamp-room floor, with the stairwell left open
-  const topFloor = new THREE.Mesh(
-    new THREE.RingGeometry(0.9, rIn(LH_TOP) + 0.5, 28, 1, 0, Math.PI * 1.5),
-    new THREE.MeshStandardMaterial({ color: 0x23262e, roughness: 1, side: THREE.DoubleSide, emissive: 0x0e1014 }));
-  topFloor.rotation.x = -Math.PI / 2;
-  topFloor.position.y = LH_TOP;
-  const gallery = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 3.5, 1.4, 18), new THREE.MeshStandardMaterial({ color: 0x14171e, roughness: 1 })); gallery.position.y = 30.4;
-  const lampRoom = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.5, 3.4, 14), new THREE.MeshStandardMaterial({ color: 0x0c0e13, roughness: 0.6, metalness: 0.3 })); lampRoom.position.y = 32.6;
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(3.0, 2.6, 14), new THREE.MeshStandardMaterial({ color: 0x191b22, roughness: 1 })); roof.position.y = 35.6;
-  lampCore = new THREE.Mesh(new THREE.SphereGeometry(1.15, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffe9c2, fog: false })); lampCore.position.y = 32.7;
+  lighthouse.add(stairs);
+
+  // ---- windows up the shaft ---------------------------------------
+  // Each is a hole cut clean through the scan (see the loader), lined with
+  // a reveal and glazed, set beside the stair so you pass them climbing.
+  for (const y of [5.4, 11.0, 16.6, 22.0]) {
+    lhWindows.push({ y, ang: stairAngleAt(y) - 0.55, w: 0.42, h: 1.15 });
+  }
+  for (const w of lhWindows) {
+    const g = new THREE.Group();
+    g.position.set(Math.cos(w.ang) * 0.1, w.y, Math.sin(w.ang) * 0.1);
+    g.rotation.y = Math.atan2(Math.cos(w.ang), Math.sin(w.ang));   // face outward
+    // reveal: jambs, sill and head lining the cut, so the wall reads thick
+    const depth = 1.5, rIn = lhBoreAt(w.y) - 0.05;
+    for (const s of [-1, 1]) {
+      const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.07, w.h * 2 + 0.12, depth), stone);
+      jamb.position.set(s * (w.w + 0.03), 0, rIn + depth / 2);
+      g.add(jamb);
+    }
+    for (const s of [-1, 1]) {
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(w.w * 2 + 0.2, 0.07, depth), stone);
+      cap.position.set(0, s * (w.h + 0.03), rIn + depth / 2);
+      g.add(cap);
+    }
+    // glazing: one pane and a pair of bars
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(w.w * 2, w.h * 2),
+      new THREE.MeshStandardMaterial({
+        color: 0x8fb4d8, roughness: 0.08, metalness: 0.1,
+        transparent: true, opacity: 0.16, side: THREE.DoubleSide, emissive: 0x16202c,
+      }));
+    glass.position.set(0, 0, rIn + depth - 0.12);
+    g.add(glass);
+    for (const yy of [-w.h * 0.34, w.h * 0.34]) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(w.w * 2, 0.045, 0.05), iron);
+      bar.position.set(0, yy, rIn + depth - 0.12);
+      g.add(bar);
+    }
+    const mull = new THREE.Mesh(new THREE.BoxGeometry(0.045, w.h * 2, 0.05), iron);
+    mull.position.set(0, 0, rIn + depth - 0.12);
+    g.add(mull);
+    lighthouse.add(g);
+  }
+
+  // ---- gallery deck + railing --------------------------------------
+  // The masonry stops here; a deck rings the tower with the lantern
+  // sitting inside it, exactly like the real thing.
+  const deckMat = new THREE.MeshStandardMaterial({ color: 0x2b2f38, roughness: 1, side: THREE.DoubleSide, emissive: 0x101319 });
+  const deck = new THREE.Mesh(new THREE.CylinderGeometry(3.35, 3.15, 0.22, 28), stone);
+  deck.position.y = LH_TOP - 0.11;
+  const corbel = new THREE.Mesh(new THREE.CylinderGeometry(3.15, 2.45, 0.5, 28), stone);
+  corbel.position.y = LH_TOP - 0.45;
+  lighthouse.add(deck, corbel);
+
+  // The scan's cap was cut away with the mast, so the top of the shaft has
+  // to be closed here or you'd see straight up to the sky from the floor.
+  // Outside the lantern it's the walkway; inside it's the lantern floor,
+  // with a wedge left open where the stair comes up.
+  const walk = new THREE.Mesh(new THREE.RingGeometry(1.90, 3.35, 28), deckMat);
+  walk.rotation.x = -Math.PI / 2;
+  walk.position.y = LH_TOP + 0.005;
+  lighthouse.add(walk);
+
+  const hatchA = stairAngleAt(LH_TOP);          // where the stair arrives
+  const HATCH = Math.PI * 0.34;                 // how much of the floor it takes
+  const lantFloor = new THREE.Mesh(
+    new THREE.RingGeometry(0.34, 1.92, 24, 1, hatchA + HATCH / 2, Math.PI * 2 - HATCH),
+    deckMat);
+  lantFloor.rotation.x = -Math.PI / 2;
+  lantFloor.position.y = LH_TOP + 0.005;
+  lighthouse.add(lantFloor);
+  // a low kerb round the stairwell so the opening reads as a hatch
+  for (let i = 0; i < 12; i++) {
+    const a = hatchA + HATCH / 2 + (i / 11) * (Math.PI * 2 - HATCH);
+    const kerb = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.16, 0.42), iron);
+    kerb.position.set(Math.cos(a) * 0.5, LH_TOP + 0.08, Math.sin(a) * 0.5);
+    kerb.rotation.y = -a;
+    lighthouse.add(kerb);
+  }
+
+  // railing round the gallery
+  {
+    const N = 24, R = 3.2;
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2;
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 1.05, 5), iron);
+      post.position.set(Math.cos(a) * R, LH_TOP + 0.52, Math.sin(a) * R);
+      lighthouse.add(post);
+    }
+    for (const [ry, rr] of [[LH_TOP + 1.02, 0.05], [LH_TOP + 0.55, 0.032]]) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(R, rr, 6, 32), iron);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = ry;
+      lighthouse.add(ring);
+    }
+  }
+
+  // ---- lantern room -------------------------------------------------
+  const LR_R = 1.95, LR_Y0 = LH_TOP + 0.1, LR_H = 3.3;
+  // low plinth the glazing stands on
+  const plinth = new THREE.Mesh(new THREE.CylinderGeometry(LR_R + 0.08, LR_R + 0.08, 0.35, 16), iron);
+  plinth.position.y = LR_Y0 + 0.17;
+  lighthouse.add(plinth);
+  // the glass itself
+  lanternGlass = new THREE.Mesh(
+    new THREE.CylinderGeometry(LR_R, LR_R, LR_H - 0.35, 16, 1, true),
+    new THREE.MeshStandardMaterial({
+      color: 0xa8c6e0, roughness: 0.05, metalness: 0.15,
+      transparent: true, opacity: 0.17, side: THREE.DoubleSide, emissive: 0x1d2733,
+    }));
+  lanternGlass.position.y = LR_Y0 + 0.35 + (LR_H - 0.35) / 2;
+  lighthouse.add(lanternGlass);
+  // astragals — the vertical glazing bars, and two horizontal rings
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2;
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.07, LR_H - 0.35, 0.07), iron);
+    bar.position.set(Math.cos(a) * LR_R, LR_Y0 + 0.35 + (LR_H - 0.35) / 2, Math.sin(a) * LR_R);
+    bar.rotation.y = -a;
+    lighthouse.add(bar);
+  }
+  for (const yy of [LR_Y0 + 1.25, LR_Y0 + 2.45]) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(LR_R, 0.035, 6, 24), iron);
+    ring.rotation.x = Math.PI / 2; ring.position.y = yy;
+    lighthouse.add(ring);
+  }
+  // the roof: a shallow cone with a ventilator ball and a finial
+  const roofMat = iron.clone(); roofMat.side = THREE.DoubleSide;
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(LR_R + 0.35, 1.5, 16), roofMat);
+  roof.position.y = LR_Y0 + LR_H + 0.75;
+  const vent = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), iron);
+  vent.position.y = LR_Y0 + LR_H + 1.6;
+  const finial = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.65, 5), iron);
+  finial.position.y = LR_Y0 + LR_H + 2.05;
+  lighthouse.add(roof, vent, finial);
+
+  // ---- the optic ----------------------------------------------------
+  const LAMP_Y = LR_Y0 + 1.6;
+  const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.62, 0.7, 12), brass);
+  pedestal.position.y = LR_Y0 + 0.7;
+  lighthouse.add(pedestal);
+  lampCore = new THREE.Mesh(new THREE.SphereGeometry(0.62, 16, 12),
+    new THREE.MeshBasicMaterial({ color: 0xffe9c2, fog: false }));
+  lampCore.position.y = LAMP_Y;
+  // fresnel rings round the lamp
+  for (const [ry, rr] of [[LAMP_Y - 0.5, 0.85], [LAMP_Y, 0.95], [LAMP_Y + 0.5, 0.85]]) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(rr, 0.05, 6, 20), brass);
+    ring.rotation.x = Math.PI / 2; ring.position.y = ry;
+    lighthouse.add(ring);
+  }
   const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffe6bf, transparent: true, opacity: 0.85, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
-  glow.position.y = 32.7; glow.scale.setScalar(7);
+  glow.position.y = LAMP_Y; glow.scale.setScalar(6);
   const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffdca6, transparent: true, opacity: 0.16, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
-  halo.position.y = 32.7; halo.scale.setScalar(26);
+  halo.position.y = LAMP_Y; halo.scale.setScalar(22);
   lighthouse.userData.glow = glow; lighthouse.userData.halo = halo;
-  beamPivot = new THREE.Group(); beamPivot.position.y = 32.7;
+  const lampLight = new THREE.PointLight(0xffd9a0, 14, 14, 1.5);
+  lampLight.position.y = LAMP_Y;
+  lighthouse.add(lampCore, glow, halo, lampLight);
+
+  beamPivot = new THREE.Group(); beamPivot.position.y = LAMP_Y;
   const beamGeo = new THREE.ConeGeometry(6, 260, 22, 1, true);
   beamGeo.translate(0, 130, 0); beamGeo.rotateX(-Math.PI / 2);
   const beam = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: 0xfff0d6, transparent: true, opacity: 0.05, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, fog: false }));
   beamPivot.add(beam); beamPivot.userData.beam = beam;
-  lighthouse.add(tower, floor, stairs, topFloor, gallery, lampRoom, roof, lampCore, glow, halo, beamPivot);
-  lighthouse.userData.doorHalf = DOOR_HALF;
-  // The hand-built shell is only a stand-in — the real tower is a baked mesh
-  // that swaps in below. The interior (inner wall, floor, stair, lamps) stays
-  // either way, because that's what the climb and the collision are built on.
-  lighthouse.userData.shell = [tower, gallery, lampRoom, roof];
+  lighthouse.add(beamPivot);
 }
+scene.add(lighthouse);
 scene.add(lighthouse);
 
 // The scanned tower. Replaces the stand-in shell once it lands; everything
@@ -709,23 +874,41 @@ loadMesh('assets/lighthouse.bwmesh').then((geo) => {
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
 
-  // Cut the doorway. The scan is a closed tower, so without this the opening
-  // the stand-in shell had is walled over and the door has nothing to open
-  // into. Drop every triangle whose centre falls in the door's box — on the
-  // +Z face, within the door's width, below its head.
+  // Carve the scan. It arrives as a closed tower with a thin mast on top and
+  // no openings at all, so: cut the doorway, cut a window at each landing,
+  // and lop off everything above the gallery — the lantern room replaces it.
+  // Triangles are dropped by centroid, which is enough at this tessellation.
   {
     const src = geo.getIndex().array;
     const keep = [];
-    const doorX = LH_DOOR_W + 0.18;                 // a little clearance either side
-    const yLo = -LH_MESH_Y - 0.25;                  // start below grade
-    const yHi = -LH_MESH_Y + LH_DOOR_H + 0.05;
+    const doorX = LH_DOOR_W + 0.16;
+    const yLo = -LH_MESH_Y - 0.3;                       // start below grade
+    const yHi = -LH_MESH_Y + LH_DOOR_H + 0.02;
+    const cutY = LH_CUT_Y - LH_MESH_Y;                  // mesh-local gallery height
+    // window boxes, in mesh-local space
+    const wins = lhWindows.map((w) => ({
+      y: w.y - LH_MESH_Y, ang: w.ang, hw: w.w + 0.10, hh: w.h + 0.10,
+      nx: Math.cos(w.ang), nz: Math.sin(w.ang),
+    }));
     for (let i = 0; i < src.length; i += 3) {
       const a = src[i], b = src[i + 1], c = src[i + 2];
       const cx = (pos.getX(a) + pos.getX(b) + pos.getX(c)) / 3;
       const cy = (pos.getY(a) + pos.getY(b) + pos.getY(c)) / 3;
       const cz = (pos.getZ(a) + pos.getZ(b) + pos.getZ(c)) / 3;
-      const inDoor = cz > 0 && Math.abs(cx) < doorX && cy > yLo && cy < yHi;
-      if (!inDoor) keep.push(a, b, c);
+
+      if (cy > cutY) continue;                          // mast and cap go
+      if (cz > 0 && Math.abs(cx) < doorX && cy > yLo && cy < yHi) continue;   // doorway
+      let inWin = false;
+      for (const w of wins) {
+        if (Math.abs(cy - w.y) > w.hh) continue;
+        // distance along the window normal must be positive (that side of the
+        // tower), and the sideways offset within the opening
+        const along = cx * w.nx + cz * w.nz;
+        const across = -cx * w.nz + cz * w.nx;
+        if (along > 0.5 && Math.abs(across) < w.hw) { inWin = true; break; }
+      }
+      if (inWin) continue;
+      keep.push(a, b, c);
     }
     geo.setIndex(keep.length > 65535 ? new THREE.Uint32BufferAttribute(keep, 1)
                                      : new THREE.Uint16BufferAttribute(keep, 1));
@@ -1666,6 +1849,7 @@ function beginGame() {
   }, revealAt);
 }
 overlay.addEventListener('click', beginGame);
+
 const keys = Object.create(null);
 window.addEventListener('keydown', (e) => {
   keys[e.code] = true;
@@ -2612,7 +2796,40 @@ let lhDoorEntry = null;
 {
   const DW = LH_DOOR_W;                       // half-width of the opening
   const DH = LH_DOOR_H;
-  const R = (LH_OUTER + LH_INNER) / 2 + 0.08; // sits in the thickness of the wall
+  const PORTAL_Z = 4.52;                      // face of the surround
+  const R = PORTAL_Z - 0.18;                  // door hangs just inside it
+
+  // The scan's wall is anything but flat here — it reads r4.24 at the foot,
+  // bulges to r4.57 around waist height, then steps back to r3.6 above the
+  // head. A flat leaf can't sit against that, so the opening gets its own
+  // projecting stone surround, which gives the door one clean plane to hang
+  // in and covers the ragged edge left by the cut.
+  const surround = new THREE.MeshStandardMaterial({
+    color: 0x3a3f4b, roughness: 1, metalness: 0, flatShading: true, emissive: 0x171a21,
+  });
+  {
+    const depth = 1.35, zc = PORTAL_Z - depth / 2;
+    for (const sgn of [-1, 1]) {                       // jambs
+      const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.42, DH + 0.5, depth), surround);
+      jamb.position.set(sgn * (DW + 0.21), (DH + 0.5) / 2, zc);
+      lighthouse.add(jamb);
+    }
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(DW * 2 + 0.84, 0.34, depth + 0.12), surround);
+    lintel.position.set(0, DH + 0.17, zc + 0.06);
+    // a shallow hood over the lintel to throw the rain off
+    const hood = new THREE.Mesh(new THREE.BoxGeometry(DW * 2 + 1.05, 0.16, 0.5), surround);
+    hood.position.set(0, DH + 0.42, PORTAL_Z - 0.1);
+    hood.rotation.x = -0.18;
+    // threshold slab
+    const sill = new THREE.Mesh(new THREE.BoxGeometry(DW * 2 + 0.9, 0.14, depth + 0.5), surround);
+    sill.position.set(0, 0.06, zc + 0.22);
+    lighthouse.add(lintel, hood, sill);
+    // soffit, so you don't see daylight through the top of the reveal
+    const soffit = new THREE.Mesh(new THREE.BoxGeometry(DW * 2, 0.1, depth), surround);
+    soffit.position.set(0, DH + 0.02, zc);
+    lighthouse.add(soffit);
+  }
+
   // hinge down the left edge as you face it from outside
   lhDoor.position.set(-DW, 0, R);
   lighthouse.add(lhDoor);
@@ -2669,7 +2886,7 @@ let lhDoorEntry = null;
   // A lamp over the threshold. Without it the doorway is a black hole in a
   // black tower and you'd never find it — this also gives the end of the
   // path something to aim at from a long way off.
-  const lampY = DH + 0.55, lampZ = LH_OUTER - 0.25;
+  const lampY = DH + 0.78, lampZ = PORTAL_Z - 0.12;
   const hood = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.22, 8), ironMat);
   hood.position.set(0, lampY + 0.16, lampZ);
   const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.085, 8, 6),
@@ -3055,11 +3272,11 @@ function makeCrab() {
 
   const BODY_Y = 0.20;
   const carapace = new THREE.Mesh(new THREE.IcosahedronGeometry(0.24, 0), shell);
-  carapace.scale.set(1.5, 0.52, 1.0);
+  carapace.scale.set(1.75, 0.42, 1.05);
   carapace.position.y = BODY_Y;
   // a paler underside so it reads when it rears up
   const belly = new THREE.Mesh(new THREE.IcosahedronGeometry(0.21, 0), pale);
-  belly.scale.set(1.35, 0.28, 0.9);
+  belly.scale.set(1.6, 0.22, 0.95);
   belly.position.y = BODY_Y - 0.05;
   // a ridged brow over the eyes
   const brow = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.05, 0.07), shell);
@@ -3115,27 +3332,32 @@ function makeCrab() {
   }
 
   // eight walking legs, four a side, each a hip + femur + tibia chain
+  const legMat = new THREE.MeshStandardMaterial({ color: 0x7a3a29, roughness: 0.8, flatShading: true, emissive: 0x2a0f09 });
   const legs = [];
   for (const s of [-1, 1]) for (let i = 0; i < 4; i++) {
     const hip = new THREE.Group();
-    const z0 = -0.06 + i * 0.075;
-    hip.position.set(s * 0.20, BODY_Y - 0.04, z0);
-    const femur = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.032, 0.032), dark);
-    femur.position.x = s * 0.075;                       // extends outward from the hip
-    hip.add(femur);
+    const z0 = -0.10 + i * 0.085;
+    hip.position.set(s * 0.17, BODY_Y - 0.03, z0);
+    // a stubby coxa buried in the body, then the long femur
+    const coxa = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.055, 0.055), legMat);
+    coxa.position.x = s * 0.03;
+    const femur = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.05, 0.048), legMat);
+    femur.position.x = s * 0.115;
+    hip.add(coxa, femur);
 
     const knee = new THREE.Group();
-    knee.position.x = s * 0.15;
-    const tibia = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.15, 0.028), dark);
-    tibia.position.y = -0.075;                          // drops to the sand
-    const foot = new THREE.Mesh(new THREE.ConeGeometry(0.022, 0.05, 4), dark);
-    foot.position.y = -0.16;
+    knee.position.x = s * 0.20;
+    const tibia = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.17, 0.042), legMat);
+    tibia.position.y = -0.085;
+    const foot = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.07, 4), dark);
+    foot.position.y = -0.19;
     foot.rotation.x = Math.PI;
     knee.add(tibia, foot);
     hip.add(knee);
     rig.add(hip);
-    // alternating tripod: legs step in two interleaved sets
-    legs.push({ hip, knee, side: s, group: (i + (s > 0 ? 1 : 0)) % 2, rest: z0 });
+    // Two interleaved sets step together (an alternating tripod), and within
+    // a set the legs run a wave down the body — front foot first.
+    legs.push({ hip, knee, side: s, idx: i, group: (i + (s > 0 ? 1 : 0)) % 2 });
   }
 
   g.userData = { rig, claws, legs, eyes, bodyY: BODY_Y };
@@ -3165,10 +3387,10 @@ function poseLeg(leg, ph, reach) {
   const t = swinging ? (ph - 0.62) / 0.38 : ph / 0.62;
   // fore/aft travel: drags back while planted, whips forward while lifted
   const drive = swinging ? -1 + 2 * t : 1 - 2 * t;
-  leg.hip.rotation.y = drive * 0.42 * reach * leg.side;
+  leg.hip.rotation.y = drive * 0.62 * reach * leg.side;
   // lift only during the swing, eased so the foot doesn't pop
   const lift = swinging ? Math.sin(t * Math.PI) : 0;
-  leg.hip.rotation.z = leg.side * (-0.25 - lift * 0.5 * reach);
+  leg.hip.rotation.z = leg.side * (-0.30 - lift * 0.75 * reach);
   // the knee straightens as the leg extends, folds as it comes under the body
   leg.knee.rotation.z = leg.side * (0.55 + lift * 0.35 + drive * 0.12);
 }
@@ -3226,7 +3448,8 @@ function updateCrab(dt) {
   const reach = closing ? 1 : 0.25;
   const cyc = crabState.scuttle / (Math.PI * 2);
   for (const leg of ud.legs) {
-    poseLeg(leg, (cyc + leg.group * 0.5 + (leg.rest * 0.4)) % 1, reach);
+    // half a cycle between the two sets, then a visible ripple along each set
+    poseLeg(leg, (cyc + leg.group * 0.5 + leg.idx * 0.11) % 1, reach);
   }
   // the body rocks with the tripod and rides a little higher when roused
   const rear = crabState.rear;
@@ -3732,17 +3955,39 @@ function sfxGlassPick() {
     o.start(t + i * 0.045); o.stop(t + i * 0.045 + 0.3);
   });
 }
+// A foot going into dry sand: a short low compression as the weight lands,
+// and a brighter granular crunch of grains shifting over it. Randomised per
+// step and alternating slightly left/right so a walk doesn't tick like a
+// metronome.
+let stepAlt = 0;
 function sfxStep() {
   const ctx = audioCtx; if (!ctx) return;
-  const t = ctx.currentTime, len = Math.floor(ctx.sampleRate * 0.13);
-  const b = ctx.createBuffer(1, len, ctx.sampleRate);
-  const d = b.getChannelData(0);
-  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.2);
-  const s = ctx.createBufferSource(); s.buffer = b;
-  const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 850 + Math.random() * 350;
-  const g = ctx.createGain(); g.gain.value = 0.05;
-  s.connect(f).connect(g).connect(sfxOut());
-  s.start(t); s.stop(t + 0.13);
+  const t = ctx.currentTime;
+  stepAlt ^= 1;
+  const out = ctx.createGain();
+  out.gain.value = 0.55 * (stepAlt ? 1 : 0.86);
+  out.connect(sfxOut());
+
+  // the compression — weight settling into the sand
+  const body = noiseBurst(0.11, (x) => Math.pow(1 - x, 2.6));
+  const bf = ctx.createBiquadFilter(); bf.type = 'lowpass';
+  bf.frequency.value = 260 + Math.random() * 90;
+  const bg = ctx.createGain(); bg.gain.value = 0.30;
+  body.connect(bf).connect(bg).connect(out);
+  body.start(t); body.stop(t + 0.11);
+
+  // the crunch — grains shearing, bright and very short
+  const grit = noiseBurst(0.17, (x) => Math.pow(1 - x, 2.0) * (0.45 + 0.55 * Math.random()));
+  const gf = ctx.createBiquadFilter(); gf.type = 'bandpass';
+  gf.frequency.setValueAtTime(1900 + Math.random() * 700, t);
+  gf.frequency.exponentialRampToValueAtTime(700, t + 0.15);
+  gf.Q.value = 0.8;
+  const gg = ctx.createGain();
+  gg.gain.setValueAtTime(0.0001, t);
+  gg.gain.exponentialRampToValueAtTime(0.26, t + 0.012);
+  gg.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
+  grit.connect(gf).connect(gg).connect(out);
+  grit.start(t); grit.stop(t + 0.17);
 }
 function sfxThud(gain) {
   const ctx = audioCtx; if (!ctx) return;
@@ -4031,7 +4276,7 @@ function updateTower(dt) {
   const throughDoor = doorSwing > 0.55 && Math.abs(ang) < doorHalf * 0.92 &&
                       camBaseY < EYE_HEIGHT + LH_DOOR_H - 0.5;
   if (!throughDoor && d > 0.001) {
-    const inner = LH_INNER - PLAYER_R, outer = LH_OUTER + PLAYER_R;
+    const inner = lhBoreAt(Math.max(0, groundY)) - PLAYER_R, outer = LH_OUTER + PLAYER_R;
     let clamped = null;
     if (insideTower && d > inner) clamped = inner;
     else if (!insideTower && d < outer) clamped = outer;
@@ -4041,7 +4286,7 @@ function updateTower(dt) {
       d = clamped;
     }
   } else if (throughDoor) {
-    insideTower = d < LH_INNER - 0.1;
+    insideTower = d < LH_OUTER - 0.6;
   }
   if (d > LH_OUTER + 2) insideTower = false;      // well clear of it
 
@@ -4228,8 +4473,9 @@ window.__bw = {
   set introDone(v) { introDone = v; },
   openPack, closePack, startExtraction, driveExtraction, finishExtraction, hudJar,
   lighthouse, startLighthouseTrack, bottleProp, playSample, updateTower,
-  lhDoor, shinies, onPath, pathBend, pathHalfAt,
-  get doorOpen() { return doorOpen; }, set doorOpen(v) { doorOpen = v; },
+  lhDoor, shinies, onPath, pathBend, pathHalfAt, lhWindows, lanternGlass,
+  get doorOpen() { return doorOpen; }, set doorOpen(v) { doorOpen = v; doorSwing = v ? 1 : 0; lhDoor.rotation.y = -doorSwing * 1.95; },
+  get insideTower() { return insideTower; },
   get lighthouseMesh() { return lighthouseMesh; },
   get insideTower() { return insideTower; },
   get groundY() { return groundY; },
@@ -4255,3 +4501,27 @@ window.__bw = {
   state: () => ({ started, locked, fallbackLook, introDone, noteOpen, menuOpen, dialogOpen, inspecting, extracting, crabBled, dying, ended, onGround, stamina: +stamina.toFixed(2), exhausted, digT: +digT.toFixed(2), equipped: equipped && equipped.name, held: held && held.mesh.name, hovered: hovered && hovered.label, inv: inventory.map(i => i.name) }),
   music: () => (musicEl ? { paused: musicEl.paused, t: +musicEl.currentTime.toFixed(1), env: musicEnvGain ? +musicEnvGain.gain.value.toFixed(3) : null, vol: musicVolGain ? +musicVolGain.gain.value.toFixed(2) : null } : { musicEl: null }),
 };
+
+// ------------------------------------------------------------------
+// The surf should already be running while you're sat on the title card.
+// Browsers won't let an AudioContext make noise before the page has been
+// interacted with, so: build it and try immediately (which works whenever
+// the browser already trusts this page), and otherwise resume on the very
+// first thing the player does — moving onto the page, a key, a click.
+(function primeAmbience() {
+  startAmbientAudio();
+  if (!audioCtx) return;
+  const wake = () => {
+    if (!audioCtx) return;
+    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    if (audioCtx.state === 'running') {
+      for (const ev of ['pointerdown', 'pointermove', 'keydown', 'touchstart']) {
+        window.removeEventListener(ev, wake);
+      }
+    }
+  };
+  wake();
+  for (const ev of ['pointerdown', 'pointermove', 'keydown', 'touchstart']) {
+    window.addEventListener(ev, wake, { passive: true });
+  }
+})();

@@ -109,9 +109,13 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - **The lighthouse** — fixed tower far down the beach; the lamp + beam are
   fog-exempt so you see it turning from the start, the tower emerges from fog
   as you close in. A **trodden path** runs up to it through the boulders and
-  marram grass (they're cleared out of the lane and pile along its edges),
-  ending at a lit **timber door** you have to open before the wall will let
-  you in. Inside, the helical stair climbs to the lamp room and the ending.
+  marram grass, ending at a lit **timber door** in a projecting stone
+  surround, which you have to open before the wall will let you in. Every
+  built part is dimensioned off the scan (see `CLAUDE.md`): the doorway and
+  four shaft **windows** are cut clean through it, the mast above y≈26.5 is
+  cut away and replaced with a **gallery, railing, glazed lantern room and
+  roof**, and inside a helical stair winds up a central newel past oil lamps
+  and the windows to a hatch in the lantern floor — which is the ending.
 - **Detailed low-poly ground** — procedural sand (mottling, ripples, grit,
   pebbles, shell flecks) with a self-illuminating emissive map.
 - **Livelier ocean** — layered swell/chop/ripples, animated micro-normals,

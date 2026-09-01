@@ -136,10 +136,21 @@ had to be moved for this reason.
 volume slider and the master volume, which is how digging ended up deafening.
 Music is the deliberate exception.
 
-**The scanned lighthouse is a closed mesh.** It replaces the hand-built shell,
-so any opening (like the doorway) has to be *cut* out of the loaded geometry
-by dropping triangles whose centroid falls in the hole — see the door cut in
-the `loadMesh('assets/lighthouse.bwmesh')` handler.
+**The scanned lighthouse dictates every dimension.** `assets/lighthouse.bwmesh`
+is a closed, coarse 20-sided tower: 31.9 m tall, base flaring to r4.96 with
+its +Z face at r4.57, shaft tapering r3.9 → r2.4, clear bore r2.8 → r2.06,
+and above y≈26.5 nothing but a thin mast — no lantern room, no openings.
+Anything built to meet it must use those numbers (`LH_*` at the top of
+`main.js`), or it will float in mid-air or sit buried in the wall. Openings
+are *cut* by dropping triangles whose centroid falls in the hole, and the
+mast is cut the same way; see the carve step in the
+`loadMesh('assets/lighthouse.bwmesh')` handler. The gallery, lantern room and
+roof are built geometry that replaces what the scan lacks.
+
+**The scan's wall face is not flat.** At the doorway it reads r4.24 at the
+foot, bulges to r4.57, then steps back to r3.6 above head height — so a flat
+door leaf can't sit against it. The entrance has its own projecting stone
+surround, which gives the door one clean plane and hides the cut edge.
 
 **The headland scatter respects `onPath()`.** Rocks and grass re-roll their
 position until they're clear of the lane to the door; if you add more props
