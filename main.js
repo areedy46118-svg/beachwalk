@@ -1703,6 +1703,14 @@ function damagePlayer(n = 1) {
   hp -= n;
   hurtFlash = 1;
   sfxHurt();
+  addTrauma(0.7);
+  hitstop = 0.06;
+  // shoved back off whatever hit you
+  if (crabState && crabState.alive) {
+    const kx = camera.position.x - crab.position.x, kz = camera.position.z - crab.position.z;
+    const kd = Math.hypot(kx, kz) || 1;
+    knockback.set((kx / kd) * 5.5, 0, (kz / kd) * 5.5);
+  }
   if (hp <= 0) playerDied();
 }
 function playerDied() {
@@ -2696,6 +2704,7 @@ function digImpact() {
     sfxSplash(1.1);
     return;
   }
+  addTrauma(0.22);
   stampDigHole(x, z, _pf.x, _pf.z);
   spawnPuffs(x, z, 22, _pf.x, _pf.z);
   sfxDigImpact();
@@ -3372,12 +3381,148 @@ scene.add(crab);
 const crabState = { alive: true, awake: false, atkT: 0, scuttle: 0, deadT: 0, rear: 0, lunge: 0 };
 const _crabDir = new THREE.Vector3();
 
+// ---- gibs + blood ---------------------------------------------------
+// The crab doesn't slump over any more — the shovel takes it apart. Chunks
+// of shell tumble off with their own little rigid body, blood arcs out and
+// lands, and what's left soaks into the sand.
+const gibs = [];
+const bloodDrops = [];
+const GIB_MAT = new THREE.MeshStandardMaterial({ color: 0x8e3a29, roughness: 0.72, metalness: 0.05, flatShading: true, emissive: 0x35120b });
+const GIB_MAT_DK = new THREE.MeshStandardMaterial({ color: 0x5e2418, roughness: 1, flatShading: true, emissive: 0x1d0906 });
+const GIB_MAT_WET = new THREE.MeshStandardMaterial({ color: 0x6d1410, roughness: 0.45, metalness: 0.1, flatShading: true, emissive: 0x2a0604 });
+const BLOOD_MAT = new THREE.MeshStandardMaterial({ color: 0x400807, roughness: 0.4, metalness: 0.05, flatShading: true, emissive: 0x120202 });
+
+// a splat decal that soaks in and stays
+function makeBloodTexture() {
+  const S = 128;
+  const c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  const blob = (x, y, r, a) => {
+    const grd = g.createRadialGradient(x, y, 0, x, y, r);
+    grd.addColorStop(0, `rgba(72,10,9,${a})`);
+    grd.addColorStop(0.62, `rgba(50,7,6,${a * 0.72})`);
+    grd.addColorStop(1, 'rgba(42,6,6,0)');
+    g.fillStyle = grd; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+  };
+  blob(64, 64, 34, 0.95);
+  for (let i = 0; i < 16; i++) {
+    const a = Math.random() * Math.PI * 2, d = 14 + Math.random() * 42;
+    blob(64 + Math.cos(a) * d, 64 + Math.sin(a) * d, 3 + Math.random() * 11, 0.6 + Math.random() * 0.35);
+  }
+  const img = g.getImageData(0, 0, S, S), px = img.data;
+  for (let i = 0; i < px.length; i += 4) { px[i] &= 0xF0; px[i + 1] &= 0xF0; px[i + 2] &= 0xF0; }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapNearestFilter;
+  return t;
+}
+const BLOOD_POOL = 10;
+const bloodGeo = new THREE.PlaneGeometry(1, 1); bloodGeo.rotateX(-Math.PI / 2);
+const bloodDecals = new THREE.InstancedMesh(bloodGeo,
+  new THREE.MeshBasicMaterial({ map: makeBloodTexture(), transparent: true, depthWrite: false }), BLOOD_POOL);
+bloodDecals.frustumCulled = false; bloodDecals.renderOrder = 3;
+bloodDecals.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+{ const hide = new THREE.Matrix4().makeScale(0, 0, 0);
+  for (let i = 0; i < BLOOD_POOL; i++) bloodDecals.setMatrixAt(i, hide); }
+scene.add(bloodDecals);
+let bloodIdx = 0;
+const _bm = new THREE.Matrix4(), _bq = new THREE.Quaternion(), _be = new THREE.Euler(), _bs = new THREE.Vector3();
+function stampBlood(x, z, size) {
+  if (inWater(x, z)) return;                 // washes straight off the wet sand
+  _be.set(0, Math.random() * Math.PI * 2, 0); _bq.setFromEuler(_be);
+  _bs.set(size, 1, size * (0.85 + Math.random() * 0.3));
+  _bm.compose(new THREE.Vector3(x, 0.035, z), _bq, _bs);
+  bloodDecals.setMatrixAt(bloodIdx, _bm);
+  bloodIdx = (bloodIdx + 1) % BLOOD_POOL;
+  bloodDecals.instanceMatrix.needsUpdate = true;
+}
+
+function burstCrab() {
+  const p = crab.position, S = crab.scale.x;
+  // pieces of shell, claw and leg
+  const shapes = [
+    () => new THREE.IcosahedronGeometry(0.11, 0),
+    () => new THREE.TetrahedronGeometry(0.13, 0),
+    () => new THREE.BoxGeometry(0.16, 0.05, 0.09),
+    () => new THREE.DodecahedronGeometry(0.08, 0),
+  ];
+  for (let i = 0; i < 16; i++) {
+    const mat = i % 5 === 0 ? GIB_MAT_WET : (i % 2 ? GIB_MAT : GIB_MAT_DK);
+    const m = new THREE.Mesh(shapes[i % shapes.length](), mat);
+    const sc = (0.5 + Math.random() * 0.9) * S;
+    m.scale.set(sc, sc * (0.5 + Math.random() * 0.6), sc * (0.7 + Math.random() * 0.6));
+    m.position.set(p.x + (Math.random() - 0.5) * 0.3, 0.22 * S + Math.random() * 0.2, p.z + (Math.random() - 0.5) * 0.3);
+    m.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+    scene.add(m);
+    const a = Math.random() * Math.PI * 2, out = 0.7 + Math.random() * 1.7;
+    gibs.push({
+      m,
+      vel: new THREE.Vector3(Math.cos(a) * out, 2.1 + Math.random() * 2.3, Math.sin(a) * out),
+      spin: new THREE.Vector3((Math.random() - 0.5) * 16, (Math.random() - 0.5) * 16, (Math.random() - 0.5) * 16),
+      rest: 0.03 + Math.random() * 0.05,
+      life: 26,
+    });
+  }
+  // blood, thrown out with the pieces
+  for (let i = 0; i < 30; i++) {
+    const m = new THREE.Mesh(new THREE.IcosahedronGeometry(0.032 * (0.5 + Math.random()), 0), BLOOD_MAT);
+    m.position.set(p.x + (Math.random() - 0.5) * 0.2, 0.25 * S, p.z + (Math.random() - 0.5) * 0.2);
+    scene.add(m);
+    const a = Math.random() * Math.PI * 2, out = 1.1 + Math.random() * 2.6;
+    bloodDrops.push({
+      m,
+      vel: new THREE.Vector3(Math.cos(a) * out, 2.0 + Math.random() * 3.0, Math.sin(a) * out),
+      life: 4,
+    });
+  }
+  stampBlood(p.x, p.z, 1.1 + Math.random() * 0.5);
+  spawnPuffs(p.x, p.z, 12, 0, -1, 0.14);
+}
+
+function updateGibs(dt) {
+  for (let i = gibs.length - 1; i >= 0; i--) {
+    const g = gibs[i];
+    g.life -= dt;
+    if (g.life <= 0) { scene.remove(g.m); g.m.geometry.dispose(); gibs.splice(i, 1); continue; }
+    if (g.settled) continue;
+    g.vel.y -= 15 * dt;
+    g.m.position.addScaledVector(g.vel, dt);
+    g.m.rotation.x += g.spin.x * dt; g.m.rotation.y += g.spin.y * dt; g.m.rotation.z += g.spin.z * dt;
+    if (g.m.position.y <= g.rest) {
+      g.m.position.y = g.rest;
+      if (Math.abs(g.vel.y) > 1.1) {
+        g.vel.y = -g.vel.y * 0.28;               // one or two small bounces
+        g.vel.x *= 0.6; g.vel.z *= 0.6;
+        g.spin.multiplyScalar(0.5);
+      } else {
+        g.settled = true;
+        g.vel.set(0, 0, 0);
+        if (Math.random() < 0.5) stampBlood(g.m.position.x, g.m.position.z, 0.3 + Math.random() * 0.35);
+      }
+    }
+  }
+  for (let i = bloodDrops.length - 1; i >= 0; i--) {
+    const b = bloodDrops[i];
+    b.life -= dt;
+    b.vel.y -= 17 * dt;
+    b.m.position.addScaledVector(b.vel, dt);
+    if (b.m.position.y <= 0.02 || b.life <= 0) {
+      // it lands and soaks in
+      if (b.m.position.y <= 0.02) stampBlood(b.m.position.x, b.m.position.z, 0.16 + Math.random() * 0.3);
+      scene.remove(b.m); b.m.geometry.dispose(); bloodDrops.splice(i, 1);
+    }
+  }
+}
+
 function killCrab() {
   if (!crabState.alive) return;
   crabState.alive = false;
   crabState.deadT = 0;
-  spawnPuffs(crab.position.x, crab.position.z, 10, 0, -1);
+  crab.visible = false;                        // it comes apart instead
+  burstCrab();
   sfxCrabDie();
+  addTrauma(0.85);                             // the hit lands
+  hitstop = 0.09;
 }
 
 // pose one leg: `ph` is its phase through the step cycle (0..1)
@@ -3397,21 +3542,7 @@ function poseLeg(leg, ph, reach) {
 
 function updateCrab(dt) {
   const ud = crab.userData;
-  if (!crabState.alive) {
-    // rolls onto its back, legs curling in, and settles into the sand
-    crabState.deadT += dt;
-    const t = Math.min(1, crabState.deadT * 1.6);
-    ud.rig.rotation.z = t * Math.PI * 0.92;
-    ud.rig.rotation.x = Math.sin(crabState.deadT * 9) * 0.25 * (1 - t);   // a last twitch
-    crab.position.y = Math.max(0.0, 0.16 * (1 - t) - Math.max(0, crabState.deadT - 0.8) * 0.04);
-    const curl = t;
-    for (const leg of ud.legs) {
-      leg.hip.rotation.z = leg.side * (-0.25 - curl * 1.15);
-      leg.knee.rotation.z = leg.side * (0.55 + curl * 1.5);
-    }
-    for (const c of ud.claws) { c.fore.rotation.x = -curl * 0.8; c.jaw.rotation.x = 0; }
-    return;
-  }
+  if (!crabState.alive) return;                // nothing left to animate
   if (frozen()) return;
 
   const dx = camera.position.x - crab.position.x;
@@ -3872,6 +4003,7 @@ function startMusic() {
 const SAMPLES = {
   sandHit: ['assets/sand-hit1.m4a', 'assets/sand-hit2.m4a', 'assets/sand-hit3.m4a', 'assets/sand-hit4.m4a'],
   glassBreak: ['assets/glass-break.m4a'],
+  fleshHit: ['assets/flesh-hit.m4a'],
 };
 const sampleBanks = {};
 function loadSamples() {
@@ -4179,6 +4311,8 @@ function sfxCrabSnip() {
 // shell giving way under the blade
 function sfxCrabDie() {
   const ctx = audioCtx; if (!ctx) return;
+  // the recorded wet impact; the synth shell-crack still layers under it
+  playSample('fleshHit', 1.0, 0.07);
   const t = ctx.currentTime;
   const s = noiseBurst(0.26, (x) => Math.pow(1 - x, 1.8) * (0.4 + 0.6 * Math.random()));
   const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
@@ -4250,6 +4384,21 @@ let bobPhase = 0;
 let camBaseY = EYE_HEIGHT, vy = 0, onGround = true, jumpLatch = false;
 let stamina = 1, exhausted = false;
 let splashTimer = 0;
+
+// ------------------------------------------------------------------
+// Game feel. Small stuff, but it's the difference between the shovel
+// connecting and the shovel passing through: a frame of hitstop, a shove
+// of camera trauma, weight on the landings, and enough forgiveness around
+// a jump that missing one feels like your fault.
+// ------------------------------------------------------------------
+let trauma = 0;                     // 0..1, decays; shake is trauma squared
+let hitstop = 0;                    // seconds of near-frozen time after a hit
+let landDip = 0;                    // camera sink on landing, eased back out
+let coyote = 0, jumpBuf = 0;        // late-jump grace / early-press memory
+const COYOTE_TIME = 0.12, JUMP_BUFFER = 0.14;
+const _shakePrev = new THREE.Vector3();
+const knockback = new THREE.Vector3();
+function addTrauma(v) { trauma = Math.min(1, trauma + v); }
 
 // ------------------------------------------------------------------
 // The tower: walls you can't walk through, a doorway you can, and a
@@ -4328,24 +4477,59 @@ function update(dt) {
   right.crossVectors(forward, camera.up).normalize();
   const target = new THREE.Vector3().addScaledVector(forward, move.y).addScaledVector(right, move.x).multiplyScalar(spd);
   velocity.lerp(target, 1 - Math.pow(0.0016, dt));
+  camera.position.sub(_shakePrev);            // undo last frame's shake first
+  _shakePrev.set(0, 0, 0);
   camera.position.addScaledVector(velocity, dt);
+  // being nipped shoves you back a little
+  if (knockback.lengthSq() > 0.0001) {
+    camera.position.addScaledVector(knockback, dt);
+    knockback.multiplyScalar(1 - Math.min(1, 7 * dt));
+  }
   if (!insideTower) {
     camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
     camera.position.x = Math.max(camera.position.x, WADE_X);
   }
   updateTower(dt);
 
-  if (onGround && canMove && keys['Space'] && !jumpLatch) { vy = JUMP_V; onGround = false; jumpLatch = true; }
+  // coyote time and a buffered press, so a jump you meant to make happens
+  coyote = onGround ? COYOTE_TIME : Math.max(0, coyote - dt);
+  if (canMove && keys['Space'] && !jumpLatch) { jumpBuf = JUMP_BUFFER; jumpLatch = true; }
   if (!keys['Space']) jumpLatch = false;
+  jumpBuf = Math.max(0, jumpBuf - dt);
+  if (jumpBuf > 0 && coyote > 0 && canMove) {
+    vy = JUMP_V; onGround = false; coyote = 0; jumpBuf = 0;
+  }
   vy -= P_GRAV * dt;
   camBaseY += vy * dt;
   const floorLimit = EYE_HEIGHT + groundY;
-  if (camBaseY <= floorLimit) { camBaseY = floorLimit; vy = 0; onGround = true; }
+  if (camBaseY <= floorLimit) {
+    if (!onGround && vy < -3.5) {
+      // land with some weight behind it
+      const force = Math.min(1, -vy / 12);
+      landDip = Math.max(landDip, 0.06 + force * 0.16);
+      addTrauma(force * 0.25);
+      if (!inWater(camera.position.x, camera.position.z)) sfxStep(); else sfxSplash(0.9);
+    }
+    camBaseY = floorLimit; vy = 0; onGround = true;
+  }
+  landDip *= Math.max(0, 1 - 7.5 * dt);
 
   const speed = velocity.length();
   bobPhase += dt * speed * 2.1;
   const bob = (moving && onGround) ? Math.sin(bobPhase) * 0.045 * Math.min(speed / WALK_SPEED, 1) : 0;
-  camera.position.y = camBaseY + bob;
+  camera.position.y = camBaseY + bob - landDip;
+
+  // camera trauma — shoved, not jittered, so it reads as impact
+  trauma = Math.max(0, trauma - dt * 1.7);
+  if (trauma > 0.001) {
+    const k = trauma * trauma * 0.22;
+    _shakePrev.set(
+      (Math.random() * 2 - 1) * k,
+      (Math.random() * 2 - 1) * k * 0.8,
+      (Math.random() * 2 - 1) * k
+    );
+    camera.position.add(_shakePrev);
+  }
 
   staminaEl.classList.toggle('show', stamina < 0.999);
   staminaFill.style.transform = `scaleX(${Math.max(0, stamina)})`;
@@ -4413,6 +4597,7 @@ function update(dt) {
   updateHeldGlow(dt);
   updateDialogCam(dt);
   updateCrab(dt);
+  updateGibs(dt);
   updateBradlyBlink(dt);
   updateHurt(dt);
   updateShines(oceanUniforms.uTime.value);
@@ -4430,7 +4615,9 @@ function update(dt) {
 const clock = new THREE.Clock();
 function animate() {
   requestAnimationFrame(animate);
-  const dt = Math.min(clock.getDelta(), 0.05);
+  let dt = Math.min(clock.getDelta(), 0.05);
+  // a beat of near-frozen time on a solid hit, drained in real seconds
+  if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
   oceanUniforms.uTime.value += dt;
   update(dt);
   updateHover();
@@ -4469,7 +4656,10 @@ window.__bw = {
   renderer, inspectScene, inspectCamera,
   mounds, moundAt, revealMoundNear, makeGlowstick, inWater, shoreLineJS,
   sfxSplash, bradly, startDialog, endDialog, heldGlow,
-  crab, crabState, killCrab, damagePlayer, playerDied, updateCrab, poseLeg,
+  crab, crabState, killCrab, damagePlayer, playerDied, burstCrab, addTrauma, updateGibs,
+  get gibCount() { return gibs.length; },
+  get bloodCount() { return bloodDrops.length; },
+  get trauma() { return trauma; }, updateCrab, poseLeg,
   set introDone(v) { introDone = v; },
   openPack, closePack, startExtraction, driveExtraction, finishExtraction, hudJar,
   lighthouse, startLighthouseTrack, bottleProp, playSample, updateTower,
