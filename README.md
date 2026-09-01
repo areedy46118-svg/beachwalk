@@ -84,6 +84,12 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   and the barrel fills (`startExtraction()`) — you come away with a
   **jar of blue blood** (`models/blood-jar.js`, a capped milk-bottle jar of
   glowing blue), the syringe emptied and the crab kept.
+- **The rusted falchion** — a time-eaten cleaver-bladed sword
+  (`models/falchion.js`) left stabbed into the sand far down the beach:
+  a pitted, orange-corroded blade with a nicked edge, a recurved scrolled
+  guard, a rotting wire grip, and a verdigris-green helmet-head pommel.
+  Take it and it equips like the shovel — swing (LMB / `E`) and the blade
+  just cuts (kills the surf crab, no digging).
 - **The children's sand shovel** — the first item down the beach, stuck in a
   **sand castle**: bucket-molded stacked towers with crenellations, a curtain
   wall with a collapsed section and rubble, drip-castle blobs, shells pressed
