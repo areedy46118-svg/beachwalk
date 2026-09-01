@@ -7,7 +7,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 os.chdir(ROOT)
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 4173
+PORT = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("PORT", 4173))
 
 Handler = partial(SimpleHTTPRequestHandler, directory=ROOT)
 httpd = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
