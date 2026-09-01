@@ -121,6 +121,30 @@
     box-shadow: inset 0 0 22vw 6vw rgba(0, 0, 0, 0.75);
   }
 
+  /* taking a hit — red bleeds in from the edges and drains away.
+     Opacity is driven per-frame from JS, so no transition here. */
+  #hurt {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 7;
+    opacity: 0;
+    box-shadow: inset 0 0 13vw 1.5vw rgba(154, 14, 18, 0.72);
+    background: radial-gradient(ellipse at 50% 50%, rgba(120, 0, 0, 0) 62%, rgba(120, 8, 10, 0.28) 100%);
+  }
+
+  /* death — everything sinks into red, then the walk starts over */
+  #death {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 18;
+    opacity: 0;
+    background: radial-gradient(ellipse at 50% 50%, rgba(96, 4, 6, 0.75) 0%, #000 78%);
+    transition: opacity 1.5s ease-in;
+  }
+  #death.show { opacity: 1; pointer-events: auto; }
+
   /* crosshair */
   #crosshair {
     position: fixed;
@@ -289,6 +313,17 @@
     color: rgba(150, 172, 184, 0.55);
     animation: pulse 2.2s ease-in-out infinite;
   }
+  /* always-available way out of a conversation */
+  #dialog .leave {
+    margin-top: 14px;
+    font-size: 0.64rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgba(140, 162, 176, 0.42);
+    cursor: pointer;
+    transition: color 0.12s ease;
+  }
+  #dialog .leave:hover { color: rgba(210, 232, 240, 0.85); }
 
   /* inventory hotbar — left side, vertical */
   #hotbar {
@@ -469,6 +504,8 @@
 </head>
 <body>
   <div class="vignette"></div>
+  <div id="hurt"></div>
+  <div id="death"></div>
   <div id="crosshair"></div>
 
   <div id="hud">
@@ -505,6 +542,10 @@
         <input type="range" id="s-vol" min="0" max="1" step="0.01" value="0.9" />
       </div>
       <div class="row">
+        <label>Music volume <span class="val" id="v-music">50%</span></label>
+        <input type="range" id="s-music" min="0" max="1" step="0.01" value="0.5" />
+      </div>
+      <div class="row">
         <label>Wave volume <span class="val" id="v-wave">62%</span></label>
         <input type="range" id="s-wave" min="0" max="1" step="0.01" value="0.62" />
       </div>
@@ -532,6 +573,7 @@
       <div class="speaker" id="dialog-speaker"></div>
       <div class="box" id="dialog-text"></div>
       <div class="choices" id="dialog-choices"></div>
+      <div class="leave" id="dialog-leave">Esc &mdash; walk away</div>
     </div>
   </div>
 

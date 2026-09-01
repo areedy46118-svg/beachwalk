@@ -36,7 +36,7 @@ const DIG_DUR = 0.8;
 // ------------------------------------------------------------------
 // Settings
 // ------------------------------------------------------------------
-const DEFAULT_SETTINGS = { fov: 75, sensitivity: 1, brightness: 1.16, volume: 0.9, waveVolume: 0.62, invertY: false };
+const DEFAULT_SETTINGS = { fov: 75, sensitivity: 1, brightness: 1.16, volume: 0.9, musicVolume: 0.5, waveVolume: 0.62, invertY: false };
 let settings = { ...DEFAULT_SETTINGS };
 try { settings = { ...settings, ...JSON.parse(localStorage.getItem('beachwalk.settings') || '{}') }; } catch (e) {}
 function saveSettings() { try { localStorage.setItem('beachwalk.settings', JSON.stringify(settings)); } catch (e) {} }
@@ -1066,6 +1066,8 @@ const dialogEl = document.getElementById('dialog');
 const dialogSpeakerEl = document.getElementById('dialog-speaker');
 const dialogTextEl = document.getElementById('dialog-text');
 const dialogChoicesEl = document.getElementById('dialog-choices');
+const hurtEl = document.getElementById('hurt');
+const deathEl = document.getElementById('death');
 
 let started = false, locked = false, fallbackLook = false, dragging = false;
 let noteOpen = false, menuOpen = false, ended = false, introDone = false;
@@ -1073,9 +1075,43 @@ let dialogOpen = false;
 let menuReturnLock = false, noteReturnLock = false;
 const lookEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
-function frozen() { return noteOpen || menuOpen || dialogOpen || ended || !introDone; }
+// ------------------------------------------------------------------
+// Player health — three hits and the walk starts over
+// ------------------------------------------------------------------
+const MAX_HP = 3;
+const HURT_FADE = 1.1;                 // seconds for the red to bleed off
+let hp = MAX_HP, hurtFlash = 0, dying = false;
+function damagePlayer(n = 1) {
+  if (dying || ended || !introDone) return;
+  hp -= n;
+  hurtFlash = 1;
+  sfxHurt();
+  if (hp <= 0) playerDied();
+}
+function playerDied() {
+  if (dying) return;
+  dying = true;
+  if (locked) document.exitPointerLock();
+  if (held) dropHeld();
+  endDialog();
+  deathEl.classList.add('show');
+  refreshUI();
+  // come back at the title, but don't sit through the opening card again
+  setTimeout(() => {
+    try { sessionStorage.setItem('beachwalk.skipIntro', '1'); } catch (e) {}
+    location.reload();
+  }, 1600);
+}
+function updateHurt(dt) {
+  if (hurtFlash <= 0) return;
+  hurtFlash = Math.max(0, hurtFlash - dt / HURT_FADE);
+  // ease out so the spike is sharp and the tail is soft
+  hurtEl.style.opacity = String(hurtFlash * hurtFlash);
+}
+
+function frozen() { return noteOpen || menuOpen || dialogOpen || dying || ended || !introDone; }
 function refreshUI() {
-  const playing = started && !menuOpen && !noteOpen && !dialogOpen && !ended;
+  const playing = started && !menuOpen && !noteOpen && !dialogOpen && !dying && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
 }
 
@@ -1125,9 +1161,9 @@ document.addEventListener('pointerlockchange', () => {
   } else {
     if (fallbackLook || ended) return;
     if (!started) { overlay.classList.remove('hidden'); return; }
-    // an intentional exit (note / menu) is handled by those; a stray exit
-    // while still playing means the user hit Esc → show the menu
-    if (!menuOpen && !noteOpen) openMenu();
+    // an intentional exit (note / menu / dialogue / death) is handled by
+    // those; a stray exit while still playing means the user hit Esc → menu
+    if (!menuOpen && !noteOpen && !dialogOpen && !dying) openMenu();
   }
 });
 window.addEventListener('unhandledrejection', (e) => {
@@ -1153,6 +1189,13 @@ const introTextEl = document.getElementById('intro-text');
 const INTRO_LINE = 'You are alone on the shore.\nIt is well past midnight.\nThe tide keeps its own counsel.';
 let introStarted = false;
 
+// coming back from a death: straight into the walk, no opening card
+let skipIntro = false;
+try {
+  skipIntro = sessionStorage.getItem('beachwalk.skipIntro') === '1';
+  if (skipIntro) sessionStorage.removeItem('beachwalk.skipIntro');
+} catch (e) {}
+
 function beginGame() {
   if (introStarted) return;
   introStarted = true;
@@ -1160,6 +1203,14 @@ function beginGame() {
   startMusic();                                    // swell it in from the moment you spawn
   requestLock();                                   // must fire on the click gesture
   overlay.classList.add('hidden');
+
+  if (skipIntro) {
+    introDone = true;
+    for (const k in keys) keys[k] = false;
+    clock.getDelta();
+    if (!locked && !fallbackLook) enterFallback();
+    return;
+  }
 
   introTextEl.textContent = INTRO_LINE;
   introEl.style.transition = 'opacity 1.2s ease';
@@ -1217,23 +1268,26 @@ const S_SENS = document.getElementById('s-sens');
 const S_BRIGHT = document.getElementById('s-bright');
 const S_VOL = document.getElementById('s-vol');
 const S_WAVE = document.getElementById('s-wave');
+const S_MUSIC = document.getElementById('s-music');
 const S_INVERT = document.getElementById('s-invert');
 function applySettings() {
   camera.fov = settings.fov;
   camera.updateProjectionMatrix();
   renderer.toneMappingExposure = settings.brightness;
   if (masterGain && audioCtx) masterGain.gain.setTargetAtTime(settings.volume, audioCtx.currentTime, 0.05);
-  if (musicVolGain && audioCtx) musicVolGain.gain.setTargetAtTime(settings.volume, audioCtx.currentTime, 0.05);
+  if (musicVolGain && audioCtx) musicVolGain.gain.setTargetAtTime(settings.volume * settings.musicVolume, audioCtx.currentTime, 0.05);
   if (waveBusGain && audioCtx) waveBusGain.gain.setTargetAtTime(settings.waveVolume, audioCtx.currentTime, 0.05);
   document.getElementById('v-fov').textContent = settings.fov;
   document.getElementById('v-sens').textContent = settings.sensitivity.toFixed(2);
   document.getElementById('v-bright').textContent = settings.brightness.toFixed(2);
   document.getElementById('v-vol').textContent = Math.round(settings.volume * 100) + '%';
+  document.getElementById('v-music').textContent = Math.round(settings.musicVolume * 100) + '%';
   document.getElementById('v-wave').textContent = Math.round(settings.waveVolume * 100) + '%';
 }
 function syncMenuInputs() {
   S_FOV.value = settings.fov; S_SENS.value = settings.sensitivity;
   S_BRIGHT.value = settings.brightness; S_VOL.value = settings.volume;
+  S_MUSIC.value = settings.musicVolume;
   S_WAVE.value = settings.waveVolume; S_INVERT.checked = settings.invertY;
 }
 S_FOV.addEventListener('input', () => { settings.fov = +S_FOV.value; applySettings(); saveSettings(); });
@@ -1241,6 +1295,7 @@ S_SENS.addEventListener('input', () => { settings.sensitivity = +S_SENS.value; a
 S_BRIGHT.addEventListener('input', () => { settings.brightness = +S_BRIGHT.value; applySettings(); saveSettings(); });
 S_VOL.addEventListener('input', () => { settings.volume = +S_VOL.value; applySettings(); saveSettings(); });
 S_WAVE.addEventListener('input', () => { settings.waveVolume = +S_WAVE.value; applySettings(); saveSettings(); });
+S_MUSIC.addEventListener('input', () => { settings.musicVolume = +S_MUSIC.value; applySettings(); saveSettings(); });
 S_INVERT.addEventListener('change', () => { settings.invertY = S_INVERT.checked; saveSettings(); });
 document.getElementById('m-resume').addEventListener('click', closeMenu);
 applySettings();
@@ -1735,6 +1790,11 @@ function digImpact() {
     x = THREE.MathUtils.clamp(camera.position.x + _pf.x * 1.5, WADE_X + 0.3, CLIFF_BLOCK_X - 0.3);
     z = camera.position.z + _pf.z * 1.5;
   }
+  // a swing that lands near the crab kills it, sand or surf
+  if (crabState.alive) {
+    const cdx = x - crab.position.x, cdz = z - crab.position.z;
+    if (cdx * cdx + cdz * cdz < CRAB_KILL_RADIUS * CRAB_KILL_RADIUS) killCrab();
+  }
   if (inWater(x, z)) {
     // blade hits water, not sand — throw a splash, leave no crater
     spawnSplash(x, z, 24, _pf.x, _pf.z, 1.7);
@@ -1976,6 +2036,125 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
 }
 
 // ------------------------------------------------------------------
+// The crab — comes out of the surf at you partway down the beach. Small,
+// fast, and it takes three nips to put you down. A shovel swing kills it.
+// ------------------------------------------------------------------
+const CRAB_Z = -20;                    // where it's waiting, well before Bradly
+const CRAB_WAKE = 17;                  // it notices you at this range
+const CRAB_SPEED = 2.35;
+const CRAB_REACH = 1.15;               // how close it gets before it nips
+const CRAB_COOLDOWN = 1.5;             // seconds between nips
+const CRAB_KILL_RADIUS = 1.5;          // how near a shovel strike has to land
+function makeCrab() {
+  const g = new THREE.Group();
+  const shell = new THREE.MeshStandardMaterial({ color: 0x8e3a29, roughness: 0.8, flatShading: true, emissive: 0x2e0f0a });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x5e2418, roughness: 1, flatShading: true, emissive: 0x1a0805 });
+
+  const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.13, 0), shell);
+  body.scale.set(1.4, 0.6, 1.05);
+  body.position.y = 0.09;
+  g.add(body);
+
+  // eye stalks
+  for (const s of [-1, 1]) {
+    const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.06, 5), dark);
+    stalk.position.set(s * 0.045, 0.15, -0.09);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.017, 6, 5),
+      new THREE.MeshBasicMaterial({ color: 0x0a0a0c }));
+    eye.position.set(s * 0.045, 0.185, -0.09);
+    g.add(stalk, eye);
+  }
+  // claws, held out front
+  const claws = [];
+  for (const s of [-1, 1]) {
+    const arm = new THREE.Group();
+    arm.position.set(s * 0.15, 0.075, -0.07);
+    const upper = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.03, 0.05), shell);
+    upper.position.set(s * 0.03, 0, -0.03);
+    const claw = new THREE.Mesh(new THREE.IcosahedronGeometry(0.055, 0), shell);
+    claw.scale.set(0.9, 0.55, 1.25);
+    claw.position.set(s * 0.06, 0, -0.09);
+    arm.add(upper, claw);
+    g.add(arm);
+    claws.push(arm);
+  }
+  // legs — three a side, animated by the scuttle
+  const legs = [];
+  for (const s of [-1, 1]) for (let i = 0; i < 3; i++) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.016, 0.115), dark);
+    leg.position.set(s * 0.12, 0.05, -0.02 + i * 0.055);
+    leg.rotation.z = s * 0.75;
+    leg.rotation.y = s * 0.35;
+    g.add(leg);
+    legs.push(leg);
+  }
+  g.userData.claws = claws;
+  g.userData.legs = legs;
+  return g;
+}
+
+const crab = makeCrab();
+crab.position.set(-3.2, 0, CRAB_Z);          // waiting out in the surf
+crab.visible = true;
+scene.add(crab);
+const crabState = { alive: true, awake: false, atkT: 0, scuttle: 0, deadT: 0 };
+const _crabDir = new THREE.Vector3();
+
+function killCrab() {
+  if (!crabState.alive) return;
+  crabState.alive = false;
+  crabState.deadT = 0;
+  // flip it onto its back
+  crab.rotation.z = Math.PI;
+  crab.position.y = 0.1;
+  spawnPuffs(crab.position.x, crab.position.z, 8, 0, -1);
+  sfxCrabDie();
+}
+
+function updateCrab(dt) {
+  if (!crabState.alive) {
+    // settle the corpse into the sand and leave it
+    crabState.deadT += dt;
+    crab.position.y = Math.max(0.02, 0.1 - crabState.deadT * 0.05);
+    return;
+  }
+  if (frozen()) return;
+
+  const dx = camera.position.x - crab.position.x;
+  const dz = camera.position.z - crab.position.z;
+  const dist = Math.hypot(dx, dz);
+  if (!crabState.awake) {
+    if (dist > CRAB_WAKE) return;
+    crabState.awake = true;
+    sfxCrabWake();
+  }
+
+  crabState.atkT = Math.max(0, crabState.atkT - dt);
+
+  if (dist > CRAB_REACH) {
+    _crabDir.set(dx / dist, 0, dz / dist);
+    crab.position.addScaledVector(_crabDir, CRAB_SPEED * dt);
+    // face the player, and scuttle sideways rather than head-on
+    crab.rotation.y = Math.atan2(_crabDir.x, _crabDir.z) + Math.PI / 2;
+    crabState.scuttle += dt * 15;
+    crab.position.y = Math.abs(Math.sin(crabState.scuttle)) * 0.02;
+    const swing = Math.sin(crabState.scuttle) * 0.35;
+    crab.userData.legs.forEach((leg, i) => { leg.rotation.x = swing * (i % 2 ? -1 : 1); });
+    // out of the water it goes
+    if (inWater(crab.position.x, crab.position.z) && Math.random() < dt * 4) {
+      spawnSplash(crab.position.x, crab.position.z, 2, _crabDir.x, _crabDir.z, 0.4);
+    }
+  } else if (crabState.atkT <= 0) {
+    crabState.atkT = CRAB_COOLDOWN;
+    // snap both claws shut
+    for (const arm of crab.userData.claws) arm.rotation.x = -0.7;
+    setTimeout(() => { for (const arm of crab.userData.claws) arm.rotation.x = 0; }, 160);
+    sfxCrabSnip();
+    damagePlayer(1);
+  }
+}
+
+// ------------------------------------------------------------------
 // Bradly Beach — a guy up on the sand cliff, a little further down the
 // beach from where the glowstick turns up. Cut-out sprite, always facing
 // you. Getting close (or pressing E) starts a scripted exchange and the
@@ -2002,13 +2181,52 @@ const bradlySprite = new THREE.Sprite(bradlyMat);
 bradlySprite.scale.set(BRADLY_H * 0.55, BRADLY_H, 1);
 bradlySprite.position.y = BRADLY_H / 2;
 bradly.add(bradlySprite);
+/* Blink. With one still image the trick is to fake an eyelid: copy a thin
+ * band of forehead skin from just above the eyes and paint it down over
+ * them. Two canvases get baked once at load (open / shut) and we just swap
+ * the texture. BRADLY_EYES is in fractions of the image, measured from the
+ * top-left — tweak it via __bw.setEyes() once the real cut-out is in. */
+const BRADLY_EYES = { x: 0.40, y: 0.058, w: 0.20, h: 0.020 };
+let bradlyOpenTex = null, bradlyShutTex = null, bradlySrcImg = null;
+let blinkT = 2 + Math.random() * 3, blinking = false;
+function bakeBradlyFrames(img) {
+  bradlySrcImg = img;
+  const mk = (shut) => {
+    const c = document.createElement('canvas');
+    c.width = img.width; c.height = img.height;
+    const g = c.getContext('2d');
+    g.drawImage(img, 0, 0);
+    if (shut) {
+      const ex = BRADLY_EYES.x * img.width, ew = BRADLY_EYES.w * img.width;
+      const ey = BRADLY_EYES.y * img.height, eh = Math.max(2, BRADLY_EYES.h * img.height);
+      // stretch the strip above the eyes down across them
+      g.drawImage(c, ex, ey - eh, ew, eh, ex, ey, ew, eh * 1.6);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  };
+  bradlyOpenTex = mk(false);
+  bradlyShutTex = mk(true);
+  bradlyMat.map = bradlyOpenTex;
+  bradlyMat.needsUpdate = true;
+}
+function updateBradlyBlink(dt) {
+  if (!bradlyOpenTex) return;
+  blinkT -= dt;
+  if (blinkT > 0) return;
+  blinking = !blinking;
+  bradlyMat.map = blinking ? bradlyShutTex : bradlyOpenTex;
+  bradlyMat.needsUpdate = true;
+  // eyes shut for a beat, open for a few seconds — occasionally a double blink
+  blinkT = blinking ? 0.11 : (Math.random() < 0.18 ? 0.16 : 2.4 + Math.random() * 3.4);
+}
 // swap in the real cut-out the moment it's available (silent if it isn't)
 new THREE.TextureLoader().load('assets/bradly.png', (tex) => {
-  tex.colorSpace = THREE.SRGBColorSpace;
-  bradlyMat.map = tex;
-  bradlyMat.needsUpdate = true;
   const img = tex.image;
-  if (img && img.width) bradlySprite.scale.set(BRADLY_H * (img.width / img.height), BRADLY_H, 1);
+  if (!img || !img.width) return;
+  bradlySprite.scale.set(BRADLY_H * (img.width / img.height), BRADLY_H, 1);
+  bakeBradlyFrames(img);
 }, undefined, () => {});
 {
   const hit = new THREE.Mesh(new THREE.BoxGeometry(1.1, BRADLY_H, 0.8),
@@ -2031,7 +2249,7 @@ const BRADLY_SCRIPT = {
   },
   tell: {
     text: "I can tell you aren't. Look at you.",
-    choices: [{ label: '...', to: 'water' }],
+    choices: [{ label: 'Alright', to: 'water' }],
   },
   water: {
     text: "You don't even have a water on you, pussy.",
@@ -2109,6 +2327,7 @@ function endDialog() {
   if (dialogReturnLock && !fallbackLook) requestLock();
 }
 dialogEl.addEventListener('click', () => { if (dialogCanDismiss) endDialog(); });
+document.getElementById('dialog-leave').addEventListener('click', (e) => { e.stopPropagation(); endDialog(); });
 
 // Push in on whoever's talking: ease the FOV down and swing the view onto
 // them, then let it back out when the conversation drops.
@@ -2187,7 +2406,7 @@ function startMusic() {
   musicEnvGain = audioCtx.createGain();
   musicVolGain = audioCtx.createGain();
   musicEnvGain.gain.value = 0.0001;
-  musicVolGain.gain.value = settings.volume;
+  musicVolGain.gain.value = settings.volume * settings.musicVolume;
   src.connect(musicEnvGain).connect(musicVolGain).connect(audioCtx.destination);
 
   const play = () => {
@@ -2351,6 +2570,64 @@ function sfxSplash(power = 1) {
   out.gain.setTargetAtTime(0.0001, t + 0.42, 0.12);
 }
 
+// a dry chitinous rattle as the thing wakes up and starts moving
+function sfxCrabWake() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const s = noiseBurst(0.5, (x) => Math.pow(1 - x, 1.2) * (Math.random() < 0.4 ? 1 : 0.15));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 3200; bp.Q.value = 3;
+  const g = ctx.createGain(); g.gain.value = 0.05;
+  s.connect(bp).connect(g).connect(ctx.destination);
+  s.start(t); s.stop(t + 0.5);
+}
+// the nip — a hard click plus a short scrape
+function sfxCrabSnip() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const click = noiseBurst(0.05, (x) => Math.pow(1 - x, 0.8));
+  const cf = ctx.createBiquadFilter(); cf.type = 'bandpass'; cf.frequency.value = 2600; cf.Q.value = 2.2;
+  const cg = ctx.createGain(); cg.gain.value = 0.16;
+  click.connect(cf).connect(cg).connect(ctx.destination);
+  click.start(t); click.stop(t + 0.05);
+  const o = ctx.createOscillator(); o.type = 'square';
+  o.frequency.setValueAtTime(220, t); o.frequency.exponentialRampToValueAtTime(90, t + 0.08);
+  const og = ctx.createGain();
+  og.gain.setValueAtTime(0.06, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+  o.connect(og).connect(ctx.destination);
+  o.start(t); o.stop(t + 0.1);
+}
+// shell giving way under the blade
+function sfxCrabDie() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const s = noiseBurst(0.26, (x) => Math.pow(1 - x, 1.8) * (0.4 + 0.6 * Math.random()));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(3400, t);
+  lp.frequency.exponentialRampToValueAtTime(400, t + 0.2);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.22, t + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.26);
+  s.connect(lp).connect(g).connect(ctx.destination);
+  s.start(t); s.stop(t + 0.26);
+}
+// taking a hit — a dull thump with a low sting under it
+function sfxHurt() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const s = noiseBurst(0.24, (x) => Math.pow(1 - x, 2.2));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 320;
+  const g = ctx.createGain(); g.gain.value = 0.3;
+  s.connect(lp).connect(g).connect(ctx.destination);
+  s.start(t); s.stop(t + 0.24);
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(58, t + 0.35);
+  const og = ctx.createGain();
+  og.gain.setValueAtTime(0.16, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+  o.connect(og).connect(ctx.destination);
+  o.start(t); o.stop(t + 0.42);
+}
+
 // ------------------------------------------------------------------
 // End of the walk
 // ------------------------------------------------------------------
@@ -2478,6 +2755,9 @@ function update(dt) {
   updateViewmodel(dt);
   updateHeldGlow(dt);
   updateDialogCam(dt);
+  updateCrab(dt);
+  updateBradlyBlink(dt);
+  updateHurt(dt);
 
   // walking up on Bradly starts the exchange the first time, so you can't
   // miss him; after that he's a normal E-to-talk interactable
@@ -2522,6 +2802,17 @@ window.__bw = {
   castle, shovelWorld, viewmodel,
   mounds, moundAt, revealMoundNear, makeGlowstick, inWater, shoreLineJS,
   sfxSplash, bradly, startDialog, endDialog, heldGlow,
+  crab, crabState, killCrab, damagePlayer, playerDied,
+  get hp() { return hp; },
+  // live-tune the fake eyelid once the real cut-out is in:
+  //   __bw.setEyes({ y: 0.06, h: 0.022 })
+  eyes: BRADLY_EYES,
+  setEyes: (o) => {
+    Object.assign(BRADLY_EYES, o);
+    if (bradlySrcImg) bakeBradlyFrames(bradlySrcImg);
+    return { ...BRADLY_EYES };
+  },
+  blinkNow: () => { blinkT = 0; },
   get glowstickItem() { return glowstickItem; },
   openMenu, closeMenu, showEnd, stampFoot, startDig, toggleEquip, spawnPuffs, spawnSplash, stampDigHole, beginGame,
   get shovelItem() { return shovelItem; },
