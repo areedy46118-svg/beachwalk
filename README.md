@@ -182,6 +182,16 @@ castle, crab, `startDig`, `toggleEquip`, `openMenu`, `openInspect`, `showEnd`,
 
 ## Credits
 
+**Abandoned lighthouse_Draft** — the tower, keeper's house and ruined wall on
+the headland.
+
+This work is based on
+["Abandoned lighthouse_Draft"](https://sketchfab.com/3d-models/abandoned-lighthouse-draft-cdb4171ed4414995a62962ed0b751e9f)
+by [jonnysniper41](https://sketchfab.com/jonnysniper41)
+licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+Commercial use is allowed; the credit has to stay.
+
+
 **Japanese Giant Spider Crabs (NHMW-ZOO-CR-4381)** — the dead specimen on the
 beach at z −134.
 

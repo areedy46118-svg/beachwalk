@@ -38,6 +38,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('src'); ap.add_argument('dst')
     ap.add_argument('--meshes', default='', help='e.g. 0-9 or 0,3,7 (default: all)')
+    ap.add_argument('--ref', default='', help='meshes used to compute the shared transform; '
+                                              'lets several groups be exported in alignment')
+    ap.add_argument('--center', default='', help='meshes to centre X/Z on (default: --ref). '
+                                                 'Use to put a tower on the origin rather than an island.')
     ap.add_argument('--cell', type=float, default=0.0, help='decimation grid, in source units')
     ap.add_argument('--height', type=float, default=0.0, help='scale so the result is this tall (Y)')
     ap.add_argument('--yup', action='store_true', help='source is Z-up')
@@ -53,17 +57,33 @@ def main():
         else:
             buffers.append(open(os.path.join(root, uri), 'rb').read())
 
-    want = None
-    if args.meshes:
-        want = set()
-        for part in args.meshes.split(','):
+    def parse(sel):
+        if not sel:
+            return None
+        out = set()
+        for part in sel.split(','):
             if '-' in part:
-                a, b = part.split('-'); want.update(range(int(a), int(b) + 1))
+                a, b = part.split('-'); out.update(range(int(a), int(b) + 1))
             else:
-                want.add(int(part))
+                out.add(int(part))
+        return out
+    want = parse(args.meshes)
+    refset = parse(args.ref) or want
+    censet = parse(args.center)
 
+    refpts, cenpts = [], []
     verts, tris = [], []
     for mi, m in enumerate(g['meshes']):
+        if censet is not None and mi in censet:
+            for pr in m['primitives']:
+                pi = pr['attributes'].get('POSITION')
+                if pi is not None:
+                    cenpts.extend(read_accessor(g, buffers, pi))
+        if refset is not None and mi in refset:
+            for pr in m['primitives']:
+                pi = pr['attributes'].get('POSITION')
+                if pi is not None:
+                    refpts.extend(read_accessor(g, buffers, pi))
         if want is not None and mi not in want:
             continue
         for pr in m['primitives']:
@@ -111,12 +131,14 @@ def main():
         print(f'decimated to {len(verts)} verts, {len(tris)} tris')
 
     # --- orient, centre, scale ---------------------------------------
-    pts = []
-    for x, y, z in verts:
-        pts.append((x, z, -y) if args.yup else (x, y, z))
-    xs = [p[0] for p in pts]; ys = [p[1] for p in pts]; zs = [p[2] for p in pts]
-    cx = (min(xs) + max(xs)) / 2; cz = (min(zs) + max(zs)) / 2; ymin = min(ys)
-    scale = args.height / max(1e-6, (max(ys) - ymin)) if args.height > 0 else 1.0
+    orient = (lambda p: (p[0], p[2], -p[1])) if args.yup else (lambda p: (p[0], p[1], p[2]))
+    pts = [orient(v) for v in verts]
+    ref = [orient(v) for v in (refpts or verts)]
+    rxs = [p[0] for p in ref]; rys = [p[1] for p in ref]; rzs = [p[2] for p in ref]
+    cen = [orient(v) for v in cenpts] if cenpts else ref
+    cxs = [p[0] for p in cen]; czs = [p[2] for p in cen]
+    cx = (min(cxs) + max(cxs)) / 2; cz = (min(czs) + max(czs)) / 2; ymin = min(rys)
+    scale = args.height / max(1e-6, (max(rys) - ymin)) if args.height > 0 else 1.0
     pts = [((p[0] - cx) * scale, (p[1] - ymin) * scale, (p[2] - cz) * scale) for p in pts]
 
     xs = [p[0] for p in pts]; ys = [p[1] for p in pts]; zs = [p[2] for p in pts]

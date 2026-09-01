@@ -921,75 +921,58 @@ scene.add(lighthouse);
 // The scanned tower. Replaces the stand-in shell once it lands; everything
 // inside is left alone. Weathered to match the rest of the walk: cold damp
 // concrete, streaked and grimy, darker the closer to the ground it gets.
-const LH_MESH_Y = -0.15;               // sink it slightly so it meets the sand
-let lighthouseMesh = null;
-loadMesh('assets/lighthouse.bwmesh').then((geo) => {
-  geo.computeBoundingBox();
-  const bb = geo.boundingBox;
-  // grime: darker low down and in the creases, with vertical streaking
-  const pos = geo.attributes.position;
-  const col = new Float32Array(pos.count * 3);
-  const h = Math.max(0.001, bb.max.y - bb.min.y);
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-    const up = (y - bb.min.y) / h;
-    let t = 0.40 + 0.55 * Math.pow(up, 0.6);                 // damp base
-    t *= 0.82 + 0.18 * (0.5 + 0.5 * Math.sin(Math.atan2(z, x) * 9.0));   // vertical streaks
-    t *= 0.88 + 0.24 * ((Math.sin(x * 7.3 + y * 5.1 + z * 6.7) * 43758.5453) % 1);
-    t = Math.max(0.16, Math.min(1, t));
-    col[i * 3] = t * 0.95; col[i * 3 + 1] = t * 0.98; col[i * 3 + 2] = t;
-  }
-  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-
-  // Carve the scan. It arrives as a closed tower with a thin mast on top and
-  // no openings at all, so: cut the doorway, cut a window at each landing,
-  // and lop off everything above the gallery — the lantern room replaces it.
-  // Triangles are dropped by centroid, which is enough at this tessellation.
-  {
-    const src = geo.getIndex().array;
-    const keep = [];
-    const doorX = LH_DOOR_W + 0.16;
-    const yLo = -LH_MESH_Y - 0.3;                       // start below grade
-    const yHi = -LH_MESH_Y + LH_DOOR_H + 0.02;
-    const cutY = LH_CUT_Y - LH_MESH_Y;                  // mesh-local gallery height
-    // window boxes, in mesh-local space
-    const wins = lhWindows.map((w) => ({
-      y: w.y - LH_MESH_Y, ang: w.ang, hw: w.w + 0.10, hh: w.h + 0.10,
-      nx: Math.cos(w.ang), nz: Math.sin(w.ang),
-    }));
-    for (let i = 0; i < src.length; i += 3) {
-      const a = src[i], b = src[i + 1], c = src[i + 2];
-      const cx = (pos.getX(a) + pos.getX(b) + pos.getX(c)) / 3;
-      const cy = (pos.getY(a) + pos.getY(b) + pos.getY(c)) / 3;
-      const cz = (pos.getZ(a) + pos.getZ(b) + pos.getZ(c)) / 3;
-
-      if (cy > cutY) continue;                          // mast and cap go
-      if (cz > 0 && Math.abs(cx) < doorX && cy > yLo && cy < yHi) continue;   // doorway
-      let inWin = false;
-      for (const w of wins) {
-        if (Math.abs(cy - w.y) > w.hh) continue;
-        // distance along the window normal must be positive (that side of the
-        // tower), and the sideways offset within the opening
-        const along = cx * w.nx + cz * w.nz;
-        const across = -cx * w.nz + cz * w.nx;
-        if (along > 0.5 && Math.abs(across) < w.hw) { inWin = true; break; }
+/* The tower is jonnysniper41's "Abandoned lighthouse_Draft" (CC-BY-4.0, see
+ * README). It ships as a whole scene — tower, keeper's house, ruined wall,
+ * a rock islet and a water plane — with eleven materials but no textures at
+ * all, so restyling it is just a matter of assigning our own.
+ *
+ * We take the built structures and skip two groups deliberately: the model's
+ * water, because we have an ocean, and its rock islet, because we have the
+ * headland. What's left drops onto the crest.
+ */
+const LH_MODEL_Y = -7.42;      // puts the tower's base on the crest
+const lhParts = {};
+const LH_GROUPS = [
+  { name: 'stone', url: 'assets/lh-stone.bwmesh', mat: () => new THREE.MeshStandardMaterial({
+      color: 0x6e737c, vertexColors: true, roughness: 1, metalness: 0,
+      emissive: 0x14171d, flatShading: true, side: THREE.DoubleSide }) },
+  { name: 'wood', url: 'assets/lh-wood.bwmesh', mat: () => new THREE.MeshStandardMaterial({
+      color: 0x574a3a, vertexColors: true, roughness: 1, metalness: 0,
+      emissive: 0x140f0a, flatShading: true, side: THREE.DoubleSide }) },
+  { name: 'glass', url: 'assets/lh-glass.bwmesh', mat: () => new THREE.MeshStandardMaterial({
+      color: 0x9fb8c4, roughness: 0.35, metalness: 0.1, transparent: true, opacity: 0.42,
+      emissive: 0x22323a, flatShading: true, side: THREE.DoubleSide }) },
+];
+for (const grp of LH_GROUPS) {
+  loadMesh(grp.url).then((geo) => {
+    geo.computeBoundingBox();
+    const bb = geo.boundingBox;
+    const pos = geo.attributes.position;
+    // Weathering, in vertex colours: damp and dark at the foot, salt-bleached
+    // higher up, with vertical streaking and a mottle over the top. Same
+    // treatment the rest of the world gets, so it doesn't read as an import.
+    if (grp.name !== 'glass') {
+      const col = new Float32Array(pos.count * 3);
+      const h = Math.max(0.001, bb.max.y - bb.min.y);
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+        const up = (y - bb.min.y) / h;
+        let t = 0.42 + 0.5 * Math.pow(up, 0.65);
+        t *= 0.84 + 0.16 * (0.5 + 0.5 * Math.sin(Math.atan2(z, x) * 8.0));
+        t *= 0.88 + 0.24 * ((Math.sin(x * 7.3 + y * 5.1 + z * 6.7) * 43758.5453) % 1);
+        t = Math.max(0.16, Math.min(1, t));
+        col[i * 3] = t * 0.95; col[i * 3 + 1] = t * 0.98; col[i * 3 + 2] = t;
       }
-      if (inWin) continue;
-      keep.push(a, b, c);
+      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
     }
-    geo.setIndex(keep.length > 65535 ? new THREE.Uint32BufferAttribute(keep, 1)
-                                     : new THREE.Uint16BufferAttribute(keep, 1));
-  }
-
-  lighthouseMesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
-    color: 0x6a7180, vertexColors: true, roughness: 1, metalness: 0,
-    emissive: 0x12151b, flatShading: true, side: THREE.DoubleSide,
-  }));
-  lighthouseMesh.position.y = LH_MESH_Y;
-  lighthouseMesh.frustumCulled = false;
-  lighthouse.add(lighthouseMesh);
-  for (const o of lighthouse.userData.shell) o.visible = false;
-}).catch(() => {});                     // no blob, keep the stand-in
+    const mesh = new THREE.Mesh(geo, grp.mat());
+    mesh.position.y = LH_MODEL_Y;
+    mesh.frustumCulled = false;
+    lighthouse.add(mesh);
+    lhParts[grp.name] = mesh;
+    for (const o of lighthouse.userData.shell) o.visible = false;
+  }).catch(() => {});
+}
 
 // ------------------------------------------------------------------
 // The headland the lighthouse stands on — boulders and tall grass, so the
@@ -5044,8 +5027,10 @@ function updateTower(dt) {
   }
 
   // you can only pass through the wall at the doorway, and only down low
+  // the door height is measured from the crest the tower stands on, not from
+  // sea level — the player is already ~HL_CREST up by the time they get here
   const throughDoor = doorSwing > 0.55 && Math.abs(ang) < doorHalf * 0.92 &&
-                      camBaseY < EYE_HEIGHT + LH_DOOR_H - 0.5;
+                      camBaseY < HL_CREST + EYE_HEIGHT + LH_DOOR_H - 0.5;
   if (!throughDoor && d > 0.001) {
     const climb = Math.max(0, groundY - HL_CREST);
     const inner = (atLanternTop ? 3.15 : lhBoreAt(climb)) - PLAYER_R;
@@ -5307,7 +5292,7 @@ window.__bw = {
   lhDoor, shinies, onPath, pathBend, pathHalfAt, lhWindows, lanternGlass,
   get doorOpen() { return doorOpen; }, set doorOpen(v) { doorOpen = v; doorSwing = v ? 1 : 0; lhDoor.rotation.y = -doorSwing * 1.95; },
   get insideTower() { return insideTower; },
-  get lighthouseMesh() { return lighthouseMesh; },
+  get lhParts() { return lhParts; },
   get insideTower() { return insideTower; },
   get groundY() { return groundY; },
   get stairTurns() { return stairTurns; },
