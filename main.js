@@ -41,7 +41,7 @@ const END_Z = LH_Z + 55;
 // shaft tapers r3.9 → r2.4, the clear bore runs r2.8 at the bottom down to
 // r2.06 near the top, and above y≈26.5 the scan is just a thin mast — which
 // we cut off and replace with a proper gallery and lantern room.
-const LH_OUTER = 4.57;             // outer face of the wall at the doorway
+const LH_OUTER = 4.35;             // outer face of the wall, matching the model
 const LH_INNER = 2.55;             // clear inside radius down at the floor
 // the headland the tower stands on: how far back it runs, how high the
 // crest is, and how wide the spine is before it drops to the sea
@@ -931,7 +931,7 @@ scene.add(lighthouse);
  * water, because we have an ocean, and its rock islet, because we have the
  * headland. What's left drops onto the crest.
  */
-const LH_MODEL_Y = -7.42;      // puts the tower's base on the crest
+const LH_MODEL_Y = 0;          // tower-only export already sits on the crest
 const lhParts = {};
 const LH_GROUPS = [
   { name: 'stone', url: 'assets/lh-stone.bwmesh', mat: () => new THREE.MeshStandardMaterial({
@@ -1121,7 +1121,7 @@ function onHeadland(wx, wz) { return headlandAt(wx, wz) > 0.35; }
           transformed.x += sway * 0.16 * max(position.y, 0.0);
           transformed.z += sway * 0.10 * max(position.y, 0.0);`);
     };
-    const PER = 420;
+    const PER = 160;
     const m = new THREE.Matrix4(), q = new THREE.Quaternion();
     const e = new THREE.Euler(), v = new THREE.Vector3();
     const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
@@ -1135,11 +1135,13 @@ function onHeadland(wx, wz) { return headlandAt(wx, wz) > 0.35; }
         const bx = cx + (Math.random() - 0.5) * 2.2, bz = cz + (Math.random() - 0.5) * 2.2;
         const gy = headlandAt(LH_X + bx, LH_Z + bz) - HL_CREST;
         // nothing grows on the trodden path, or off the end of the ridge
-        if (gy + HL_CREST < 0.25 || onPath(bx, bz, -0.2)) { inst.setMatrixAt(i, hidden); continue; }
-        const h = 0.5 + Math.random() * 0.95;
+        // never off the end of the ridge, never on the trodden path, and
+        // bedded a touch so no clump floats over a slope
+        if (gy + HL_CREST < 0.5 || onPath(bx, bz, -0.2)) { inst.setMatrixAt(i, hidden); continue; }
+        const h = 0.34 + Math.random() * 0.42;   // knee height, not waist
         e.set(0, Math.random() * Math.PI * 2, 0);
         q.setFromEuler(e);
-        m.compose(v.set(bx, gy, bz), q, new THREE.Vector3(h * (0.8 + Math.random() * 0.5), h, h * (0.8 + Math.random() * 0.5)));
+        m.compose(v.set(bx, gy - h * 0.08, bz), q, new THREE.Vector3(h, h, h));
         inst.setMatrixAt(i, m);
       }
       inst.instanceMatrix.needsUpdate = true;
@@ -1315,7 +1317,7 @@ const wrackX = () => 1.4 + Math.random() * 3.4;      // the high-tide band
 scatter(
   new THREE.IcosahedronGeometry(0.5, 0),
   new THREE.MeshStandardMaterial({ color: 0x2b3226, roughness: 1, flatShading: true, emissive: 0x0a0d08 }),
-  6,
+  3,
   () => { const s = 0.35 + Math.random() * 0.75; return {
     x: wrackX(), z: zSpan(), y: 0.03,
     rot: new THREE.Euler(0, Math.random() * Math.PI * 2, 0),
@@ -1326,7 +1328,7 @@ scatter(
 scatter(
   new THREE.BoxGeometry(1, 0.03, 0.11),
   new THREE.MeshStandardMaterial({ color: 0x22301f, roughness: 1, flatShading: true, emissive: 0x080c07 }),
-  5,
+  2,
   () => ({
     x: wrackX(), z: zSpan(), y: 0.018,
     rot: new THREE.Euler(0, Math.random() * Math.PI * 2, 0),
@@ -1337,7 +1339,7 @@ scatter(
 scatter(
   new THREE.ConeGeometry(0.5, 0.22, 7),
   new THREE.MeshStandardMaterial({ color: 0xa9aca4, roughness: 1, flatShading: true, emissive: 0x33352f }),
-  7,
+  3,
   () => { const s = 0.07 + Math.random() * 0.11; return {
     x: 0.8 + Math.random() * 4.4, z: zSpan(), y: 0.012,
     rot: new THREE.Euler(Math.PI * (Math.random() < 0.5 ? 1 : 0.06), Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.5),
@@ -1348,7 +1350,7 @@ scatter(
 scatter(
   new THREE.ConeGeometry(0.4, 1.0, 6),
   new THREE.MeshStandardMaterial({ color: 0x8d8578, roughness: 1, flatShading: true, emissive: 0x2b2823 }),
-  3,
+  1,
   () => { const s = 0.055 + Math.random() * 0.06; return {
     x: 0.9 + Math.random() * 4.0, z: zSpan(), y: 0.02,
     rot: new THREE.Euler(Math.PI / 2 + (Math.random() - 0.5) * 0.6, Math.random() * Math.PI * 2, 0),
@@ -1359,7 +1361,7 @@ scatter(
 scatter(
   new THREE.DodecahedronGeometry(0.5, 0),
   new THREE.MeshStandardMaterial({ color: 0x4c5464, roughness: 1, flatShading: true, emissive: 0x161b25 }),
-  9,
+  4,
   () => { const s = 0.05 + Math.random() * 0.11; return {
     x: 0.6 + Math.random() * 4.8, z: zSpan(), y: s * 0.45,
     rot: new THREE.Euler(Math.random() * 3, Math.random() * 3, Math.random() * 3),
@@ -1370,7 +1372,7 @@ scatter(
 scatter(
   new THREE.BoxGeometry(1, 0.12, 0.12),
   new THREE.MeshStandardMaterial({ color: 0x4b4236, roughness: 1, flatShading: true, emissive: 0x120f0b }),
-  2,
+  1,
   () => ({
     x: wrackX(), z: zSpan(), y: 0.06,
     rot: new THREE.Euler(0, Math.random() * Math.PI, (Math.random() - 0.5) * 0.2),
@@ -1380,7 +1382,7 @@ scatter(
 scatter(
   new THREE.CylinderGeometry(0.05, 0.03, 1, 5),
   new THREE.MeshStandardMaterial({ color: 0x574a3b, roughness: 1, flatShading: true, emissive: 0x151109 }),
-  3,
+  1,
   () => ({
     x: wrackX(), z: zSpan(), y: 0.05,
     rot: new THREE.Euler(Math.PI / 2 + (Math.random() - 0.5) * 0.3, Math.random() * Math.PI, 0),
@@ -1391,7 +1393,7 @@ scatter(
 scatter(
   new THREE.BoxGeometry(0.1, 0.02, 0.08),
   new THREE.MeshStandardMaterial({ color: 0x9aa0a6, roughness: 1, flatShading: true, emissive: 0x2e3235 }),
-  3,
+  1,
   () => ({
     x: wrackX(), z: zSpan(), y: 0.015,
     rot: new THREE.Euler((Math.random() - 0.5) * 0.4, Math.random() * Math.PI, (Math.random() - 0.5) * 0.4),
@@ -1524,11 +1526,12 @@ loadGeoPack('assets/rocks.json').then((geos) => {
     rock01: 'assets/tex/rock01.jpg', rock06: 'assets/tex/rock06.jpg',
     rock11: 'assets/tex/rock11.jpg', rock16: 'assets/tex/rock16.jpg',
   };
+  // Sparse on purpose — the beach was carpeted before.
   const bands = [
-    { n: 6, lo: 0.14, hi: 0.42 },       // shingle through the tide line
-    { n: 4, lo: 0.30, hi: 0.85 },
-    { n: 3, lo: 0.55, hi: 1.5 },
-    { n: 1, lo: 1.2, hi: 2.6 },         // the occasional boulder
+    { n: 2, lo: 0.16, hi: 0.40 },
+    { n: 2, lo: 0.30, hi: 0.70 },
+    { n: 1, lo: 0.55, hi: 1.2 },
+    { n: 1, lo: 1.0, hi: 2.0 },         // the occasional boulder
   ];
   keys.forEach((k, gi) => {
     const map = retroTex(texLoader.load(tex[k] || tex.rock01), { repeatWrap: false });
@@ -1540,12 +1543,15 @@ loadGeoPack('assets/rocks.json').then((geos) => {
     const b = bands[gi % bands.length];
     scatter(geos[k], mat, b.n, () => {
       const sc = b.lo + Math.random() * (b.hi - b.lo);
+      const sink = -sc * 0.12;          // bedded, not resting on the surface
       // thickest along the wrack line, thinning toward the water
       const x = Math.random() < 0.55 ? 1.2 + Math.random() * 5.0 : 6.5 + Math.random() * 7.0;
       return {
-        x, z: zSpan(), y: 0,
-        rot: new THREE.Euler(Math.random() * 0.5, Math.random() * Math.PI * 2, Math.random() * 0.5),
-        scale: new THREE.Vector3(sc, sc * (0.75 + Math.random() * 0.5), sc * (0.85 + Math.random() * 0.4)),
+        x, z: zSpan(), y: sink,
+        // spin freely on Y but barely tilt, so they sit flush instead of
+        // standing on edge, and bed them a little into the sand
+        rot: new THREE.Euler((Math.random() - 0.5) * 0.12, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.12),
+        scale: new THREE.Vector3(sc, sc * (0.5 + Math.random() * 0.3), sc * (0.85 + Math.random() * 0.4)),
       };
     });
   });
@@ -2217,11 +2223,16 @@ overlay.addEventListener('click', beginGame);
  * without a gesture, so we arm it on the first move or key the player makes
  * over the menu and let the sea come up behind the title. */
 function primeMenuAudio() {
-  if (audioStarted) return;
+  if (audioStarted) { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); return; }
   startAmbientAudio();
+  // Safari in particular starts the context suspended even when it was
+  // created inside the gesture, so it has to be resumed explicitly.
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
 }
-for (const ev of ['pointermove', 'pointerdown', 'keydown']) {
-  window.addEventListener(ev, primeMenuAudio, { once: false, passive: true });
+// pointermove is NOT a user gesture, so it can't unlock audio — only a real
+// press or key can. That's why the surf never came up under the title.
+for (const ev of ['pointerdown', 'keydown', 'touchstart']) {
+  window.addEventListener(ev, primeMenuAudio, { passive: true });
 }
 
 const keys = Object.create(null);

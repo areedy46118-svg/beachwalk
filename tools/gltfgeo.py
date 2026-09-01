@@ -39,7 +39,9 @@ for m in g['meshes']:
     # normalise: sit on y=0, centred in x/z, unit height
     ys = [p[1] for p in pos]; xs = [p[0] for p in pos]; zs = [p[2] for p in pos]
     cx = (min(xs)+max(xs))/2; cz = (min(zs)+max(zs))/2; y0 = min(ys)
-    h = max(1e-6, max(ys)-y0)
+    # normalise by the LARGEST dimension, not the height — a wide flat clump
+    # divided by its height comes back enormous
+    h = max(1e-6, max(max(ys)-y0, max(xs)-min(xs), max(zs)-min(zs)))
     key = m.get('name').split('_')[0]
     out[key] = {
         'p': [round(v, 4) for p in pos for v in ((p[0]-cx)/h, (p[1]-y0)/h, (p[2]-cz)/h)],
