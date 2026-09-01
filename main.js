@@ -1062,15 +1062,20 @@ const menuEl = document.getElementById('menu');
 const endEl = document.getElementById('end');
 const staminaEl = document.getElementById('stamina');
 const staminaFill = document.getElementById('stamina-fill');
+const dialogEl = document.getElementById('dialog');
+const dialogSpeakerEl = document.getElementById('dialog-speaker');
+const dialogTextEl = document.getElementById('dialog-text');
+const dialogChoicesEl = document.getElementById('dialog-choices');
 
 let started = false, locked = false, fallbackLook = false, dragging = false;
 let noteOpen = false, menuOpen = false, ended = false, introDone = false;
+let dialogOpen = false;
 let menuReturnLock = false, noteReturnLock = false;
 const lookEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
-function frozen() { return noteOpen || menuOpen || ended || !introDone; }
+function frozen() { return noteOpen || menuOpen || dialogOpen || ended || !introDone; }
 function refreshUI() {
-  const playing = started && !menuOpen && !noteOpen && !ended;
+  const playing = started && !menuOpen && !noteOpen && !dialogOpen && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
 }
 
@@ -1178,7 +1183,8 @@ window.addEventListener('keydown', (e) => {
   if (!introDone) return;
   if (e.code === 'Escape') {
     if (ended) return;
-    if (noteOpen) closeNote();
+    if (dialogOpen) endDialog();
+    else if (noteOpen) closeNote();
     else if (menuOpen) closeMenu();
     else if (fallbackLook) openMenu();
   } else if (e.code === 'KeyE' || e.code === 'KeyF') { primaryAction(); }
@@ -1468,7 +1474,7 @@ function renderHotbar() {
     if (item) {
       const lab = document.createElement('span');
       lab.className = 'label';
-      lab.textContent = item.name + (item.onDig ? (item === equipped ? ' — holster' : ' — equip') : ' — use');
+      lab.textContent = item.name + (item.viewmodel ? (item === equipped ? ' — holster' : ' — equip') : ' — use');
       slot.appendChild(lab);
       slot.addEventListener('click', (e) => { e.stopPropagation(); useSlot(i); });
     }
@@ -1879,6 +1885,46 @@ function makeGlowstickIcon() {
   return c.toDataURL();
 }
 
+// Held in the right hand when equipped. The view model lives in the overlay
+// scene (which can't light the world), so the actual lamp is a separate
+// PointLight in the main scene that rides just off the camera — see
+// updateHeldGlow(). Held up on end, the way you'd carry a cracked stick.
+const glowstickVM = makeGlowstick();
+glowstickVM.remove(glowstickVM.userData.light);
+glowstickVM.scale.setScalar(1.5);
+glowstickVM.position.set(0.01, 0.0, 0.01);
+glowstickVM.rotation.set(0, 0, 1.15);
+glowstickVM.visible = false;
+toolMount.add(glowstickVM);
+
+// Intensity has to be this high to read against the scene's ambient +
+// hemisphere fill; anything under ~20 gets swallowed on the sand.
+const HELD_GLOW_RANGE = 11;           // metres of usable light around you
+const HELD_GLOW_MAX = 28;
+const heldGlow = new THREE.PointLight(GLOWSTICK_COLOR, 0, HELD_GLOW_RANGE, 1.35);
+heldGlow.visible = false;
+scene.add(heldGlow);
+const _glowRight = new THREE.Vector3(), _glowFwd = new THREE.Vector3();
+function updateHeldGlow(dt) {
+  const on = equipped === glowstickItem && !held;
+  const want = on ? HELD_GLOW_MAX : 0;
+  heldGlow.intensity += (want - heldGlow.intensity) * Math.min(1, dt * 7);
+  heldGlow.visible = heldGlow.intensity > 0.05;
+  if (!heldGlow.visible) return;
+  // sit it out to the right and a little below eye line, where the hand is
+  camera.getWorldDirection(_glowFwd);
+  _glowRight.crossVectors(_glowFwd, camera.up).normalize();
+  heldGlow.position.copy(camera.position)
+    .addScaledVector(_glowFwd, 0.45)
+    .addScaledVector(_glowRight, 0.34);
+  heldGlow.position.y = camera.position.y - 0.5;
+}
+
+const glowstickItem = {
+  name: 'Glowstick', icon: makeGlowstickIcon(), viewmodel: glowstickVM,
+  use: () => toggleEquip(glowstickItem),
+};
+
 const mounds = [];
 {
   // spread them thinly from just past the spawn down to near the lighthouse
@@ -1923,11 +1969,162 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
       if (first) sfxGlassPick(); else sfxThud(0.04);
       scene.remove(relic);
       hovered = null;
-      addToInventory(first
-        ? { name: 'Glowstick', icon: makeGlowstickIcon(), use: () => openNote('A cracked glowstick, still burning a cold green.') }
-        : { name: 'Buried object', icon: '📦', use: () => openNote('A small buried object.\n\n(placeholder — what it is comes later.)') });
+      if (first) { addToInventory(glowstickItem); toggleEquip(glowstickItem); }
+      else addToInventory({ name: 'Buried object', icon: '📦', use: () => openNote('A small buried object.\n\n(placeholder — what it is comes later.)') });
     },
   });
+}
+
+// ------------------------------------------------------------------
+// Bradly Beach — a guy up on the sand cliff, a little further down the
+// beach from where the glowstick turns up. Cut-out sprite, always facing
+// you. Getting close (or pressing E) starts a scripted exchange and the
+// camera pushes in on him for the duration.
+// ------------------------------------------------------------------
+const BRADLY_H = 1.86;                     // his height in metres
+// Stand-in until assets/bradly.png exists — a flat dark silhouette, so the
+// encounter is playable and correctly placed before the real cut-out lands.
+function makeBradlyPlaceholder() {
+  const c = document.createElement('canvas'); c.width = 128; c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(9, 13, 19, 0.94)';
+  g.beginPath(); g.arc(64, 32, 19, 0, Math.PI * 2); g.fill();
+  g.fillRect(41, 52, 46, 86);
+  g.fillRect(25, 58, 13, 78); g.fillRect(90, 58, 13, 78);
+  g.fillRect(45, 138, 16, 106); g.fillRect(67, 138, 16, 106);
+  return new THREE.CanvasTexture(c);
+}
+const bradly = new THREE.Group();
+const bradlyMat = new THREE.SpriteMaterial({
+  map: makeBradlyPlaceholder(), transparent: true, alphaTest: 0.35,
+});
+const bradlySprite = new THREE.Sprite(bradlyMat);
+bradlySprite.scale.set(BRADLY_H * 0.55, BRADLY_H, 1);
+bradlySprite.position.y = BRADLY_H / 2;
+bradly.add(bradlySprite);
+// swap in the real cut-out the moment it's available (silent if it isn't)
+new THREE.TextureLoader().load('assets/bradly.png', (tex) => {
+  tex.colorSpace = THREE.SRGBColorSpace;
+  bradlyMat.map = tex;
+  bradlyMat.needsUpdate = true;
+  const img = tex.image;
+  if (img && img.width) bradlySprite.scale.set(BRADLY_H * (img.width / img.height), BRADLY_H, 1);
+}, undefined, () => {});
+{
+  const hit = new THREE.Mesh(new THREE.BoxGeometry(1.1, BRADLY_H, 0.8),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.position.y = BRADLY_H / 2; hit.name = 'hitProxy';
+  bradly.add(hit);
+  // on the cliff top, ~10 m past the first buried cache
+  const gz = mounds.length ? mounds[0].z : -28;
+  bradly.position.set(CLIFF_X - 0.9, CLIFF_H, gz - 10);
+}
+scene.add(bradly);
+addInteractable(bradly, 'Talk to him', 'npc', { onActivate: () => startDialog('start') });
+
+// The script. Saying yes or no lands you in the same place — he was never
+// really asking.
+const BRADLY_SCRIPT = {
+  start: {
+    text: 'You working out down here?',
+    choices: [{ label: 'Yes', to: 'tell' }, { label: 'No', to: 'tell' }],
+  },
+  tell: {
+    text: "I can tell you aren't. Look at you.",
+    choices: [{ label: '...', to: 'water' }],
+  },
+  water: {
+    text: "You don't even have a water on you, pussy.",
+    choices: [],                            // he's done with you
+  },
+};
+
+let dialogReturnLock = false, bradlyMet = false;
+let dialogTarget = null, dialogCanDismiss = false;
+let typeTimer = null, dialogEndTimer = null;
+function typeLine(text, onDone) {
+  clearInterval(typeTimer);
+  dialogTextEl.textContent = '';
+  dialogEl.classList.add('typing');
+  let i = 0;
+  typeTimer = setInterval(() => {
+    dialogTextEl.textContent = text.slice(0, ++i);
+    if (i >= text.length) {
+      clearInterval(typeTimer);
+      dialogEl.classList.remove('typing');
+      onDone();
+    }
+  }, 28);
+}
+function showDialogNode(id) {
+  const node = BRADLY_SCRIPT[id];
+  if (!node) { endDialog(); return; }
+  clearTimeout(dialogEndTimer);
+  dialogChoicesEl.innerHTML = '';
+  dialogCanDismiss = false;
+  typeLine(node.text, () => {
+    if (!node.choices.length) {
+      // last word — it ends on its own, or on a click
+      dialogCanDismiss = true;
+      const hint = document.createElement('div');
+      hint.className = 'hint';
+      hint.textContent = 'he turns away';
+      dialogChoicesEl.appendChild(hint);
+      dialogEndTimer = setTimeout(endDialog, 2800);
+      return;
+    }
+    for (const ch of node.choices) {
+      const b = document.createElement('button');
+      b.className = 'choice';
+      b.textContent = ch.label;
+      b.addEventListener('click', (e) => { e.stopPropagation(); showDialogNode(ch.to); });
+      dialogChoicesEl.appendChild(b);
+    }
+  });
+}
+function startDialog(id) {
+  if (dialogOpen || ended || !introDone) return;
+  dialogOpen = true;
+  bradlyMet = true;
+  dialogTarget = bradlySprite.getWorldPosition(new THREE.Vector3());
+  dialogSpeakerEl.textContent = 'Bradly Beach';
+  dialogEl.classList.add('show');
+  setPrompt('');
+  crosshair.className = '';
+  if (held) dropHeld();
+  dialogReturnLock = locked;
+  if (locked) document.exitPointerLock();
+  refreshUI();
+  showDialogNode(id);
+}
+function endDialog() {
+  if (!dialogOpen) return;
+  clearTimeout(dialogEndTimer); clearInterval(typeTimer);
+  dialogOpen = false;
+  dialogCanDismiss = false;
+  dialogTarget = null;
+  dialogEl.classList.remove('show');
+  dialogEl.classList.remove('typing');
+  refreshUI();
+  if (dialogReturnLock && !fallbackLook) requestLock();
+}
+dialogEl.addEventListener('click', () => { if (dialogCanDismiss) endDialog(); });
+
+// Push in on whoever's talking: ease the FOV down and swing the view onto
+// them, then let it back out when the conversation drops.
+const DIALOG_FOV = 42;
+const _lookM = new THREE.Matrix4(), _lookQ = new THREE.Quaternion();
+function updateDialogCam(dt) {
+  const wantFov = dialogOpen ? Math.min(settings.fov, DIALOG_FOV) : settings.fov;
+  if (Math.abs(camera.fov - wantFov) > 0.01) {
+    camera.fov += (wantFov - camera.fov) * Math.min(1, dt * 3.5);
+    camera.updateProjectionMatrix();
+  }
+  if (dialogOpen && dialogTarget) {
+    _lookM.lookAt(camera.position, dialogTarget, camera.up);
+    _lookQ.setFromRotationMatrix(_lookM);
+    camera.quaternion.slerp(_lookQ, Math.min(1, dt * 3.2));
+  }
 }
 
 // ------------------------------------------------------------------
@@ -2279,6 +2476,15 @@ function update(dt) {
   if (cll) cll.material.opacity = 0.30 + 0.05 * Math.sin(oceanUniforms.uTime.value * 2.3);
 
   updateViewmodel(dt);
+  updateHeldGlow(dt);
+  updateDialogCam(dt);
+
+  // walking up on Bradly starts the exchange the first time, so you can't
+  // miss him; after that he's a normal E-to-talk interactable
+  if (!bradlyMet && started && !frozen()) {
+    const bx = camera.position.x - bradly.position.x, bz = camera.position.z - bradly.position.z;
+    if (bx * bx + bz * bz < 7.5 * 7.5) startDialog('start');
+  }
 
   if (started && !ended && camera.position.z < END_Z) showEnd();
 }
@@ -2315,7 +2521,8 @@ window.__bw = {
   interactables, physProps, inventory, bottle, cliff, foot, lighthouse, city,
   castle, shovelWorld, viewmodel,
   mounds, moundAt, revealMoundNear, makeGlowstick, inWater, shoreLineJS,
-  sfxSplash,
+  sfxSplash, bradly, startDialog, endDialog, heldGlow,
+  get glowstickItem() { return glowstickItem; },
   openMenu, closeMenu, showEnd, stampFoot, startDig, toggleEquip, spawnPuffs, spawnSplash, stampDigHole, beginGame,
   get shovelItem() { return shovelItem; },
   state: () => ({ started, locked, fallbackLook, introDone, noteOpen, menuOpen, ended, onGround, stamina: +stamina.toFixed(2), exhausted, digT: +digT.toFixed(2), equipped: equipped && equipped.name, held: held && held.mesh.name, hovered: hovered && hovered.label, inv: inventory.map(i => i.name) }),
