@@ -147,11 +147,12 @@ export function makeSyringeIcon() {
   // barrel
   g.fillStyle = '#dfe6ea'; g.fillRect(14, 20, 20, 8);
   g.strokeStyle = '#8a9096'; g.lineWidth = 1; g.strokeRect(14, 20, 20, 8);
-  // blood
-  g.fillStyle = '#2f7bff'; g.fillRect(15, 21, 11, 6);
-  // plunger
-  g.fillStyle = '#c9ced3'; g.fillRect(4, 22.5, 12, 3);
-  g.fillRect(2, 19, 3, 10);
+  // No blood in it. You carry it empty, and the extraction empties it again
+  // when the draw runs into the tally, so the icon is always the empty state:
+  // plunger fully depressed, nothing in the barrel.
+  g.fillStyle = '#c9ced3';
+  g.fillRect(13, 22.5, 3, 3);          // rod, pushed home
+  g.fillRect(10, 19, 3, 10);           // thumb rest against the barrel
   // flange
   g.fillRect(32, 17, 3, 14);
   // needle

@@ -814,22 +814,12 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   walk.position.y = LH_TOP + 0.005;
   lighthouse.add(walk);
 
-  const hatchA = stairAngleAt(LH_TOP);          // where the stair arrives
-  const HATCH = Math.PI * 0.34;                 // how much of the floor it takes
-  const lantFloor = new THREE.Mesh(
-    new THREE.RingGeometry(0.34, 1.92, 24, 1, hatchA + HATCH / 2, Math.PI * 2 - HATCH),
-    deckMat);
-  lantFloor.rotation.x = -Math.PI / 2;
-  lantFloor.position.y = LH_TOP + 0.005;
-  lighthouse.add(lantFloor);
-  // a low kerb round the stairwell so the opening reads as a hatch
-  for (let i = 0; i < 12; i++) {
-    const a = hatchA + HATCH / 2 + (i / 11) * (Math.PI * 2 - HATCH);
-    const kerb = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.16, 0.42), iron);
-    kerb.position.set(Math.cos(a) * 0.5, LH_TOP + 0.08, Math.sin(a) * 0.5);
-    kerb.rotation.y = -a;
-    lighthouse.add(kerb);
-  }
+  // No inner floor over the stairwell. It used to be a ring with a wedge cut
+  // where the stair arrives, but the wedge is positioned from the geometry's
+  // angle convention while the climb is tracked in another, so the two drifted
+  // apart and the stair delivered you into solid floor. The shaft is simply
+  // open now — you come up through it into the lantern, and the walkway ring
+  // outside is what you stand on.
 
   // railing round the gallery
   {
@@ -937,9 +927,6 @@ const LH_GROUPS = [
   { name: 'stone', url: 'assets/lh-stone.bwmesh', mat: () => new THREE.MeshStandardMaterial({
       color: 0x6e737c, vertexColors: true, roughness: 1, metalness: 0,
       emissive: 0x14171d, flatShading: true, side: THREE.DoubleSide }) },
-  { name: 'wood', url: 'assets/lh-wood.bwmesh', mat: () => new THREE.MeshStandardMaterial({
-      color: 0x574a3a, vertexColors: true, roughness: 1, metalness: 0,
-      emissive: 0x140f0a, flatShading: true, side: THREE.DoubleSide }) },
   { name: 'glass', url: 'assets/lh-glass.bwmesh', mat: () => new THREE.MeshStandardMaterial({
       color: 0x9fb8c4, roughness: 0.35, metalness: 0.1, transparent: true, opacity: 0.42,
       emissive: 0x22323a, flatShading: true, side: THREE.DoubleSide }) },
@@ -965,6 +952,26 @@ for (const grp of LH_GROUPS) {
         col[i * 3] = t * 0.95; col[i * 3 + 1] = t * 0.98; col[i * 3 + 2] = t;
       }
       geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    }
+    if (grp.name === 'stone') {
+      // Cut the entrance. The model's own opening (if it has one) faces
+      // wherever the author put it, which is not where the path arrives, so
+      // we make our own at +Z and let the surround below hide the cut edge.
+      const idx = geo.getIndex().array;
+      const pos = geo.attributes.position;
+      const keep = [];
+      const halfW = LH_DOOR_W + 0.30, top = LH_DOOR_H + 0.35;
+      for (let t = 0; t < idx.length; t += 3) {
+        let cx = 0, cy = 0, cz = 0;
+        for (let k = 0; k < 3; k++) {
+          const v = idx[t + k];
+          cx += pos.getX(v); cy += pos.getY(v); cz += pos.getZ(v);
+        }
+        cx /= 3; cy /= 3; cz /= 3;
+        const inDoor = cz > 0 && Math.abs(cx) < halfW && cy > -0.2 && cy < top;
+        if (!inDoor) keep.push(idx[t], idx[t + 1], idx[t + 2]);
+      }
+      geo.setIndex(keep);
     }
     const mesh = new THREE.Mesh(geo, grp.mat());
     mesh.position.y = LH_MODEL_Y;
@@ -2740,7 +2747,11 @@ const invGridEl = document.getElementById('inv-grid');
 const invGhostEl = document.getElementById('invghost');
 const RECIPES = [
   // dropping one onto the other runs the scripted 3D extraction
-  { a: 'syringe', b: 'horseshoe', run: () => { closePack(); startExtraction(); } },
+  // packReturnLock is cleared first: closePack() re-requests pointer lock
+  // asynchronously, and the lock would otherwise land *after* startExtraction()
+  // has already released it, trapping you in the examine view with Escape
+  // being eaten by the browser's own exit-pointer-lock handling.
+  { a: 'syringe', b: 'horseshoe', run: () => { packReturnLock = false; closePack(); startExtraction(); } },
 ];
 function findRecipe(x, y) {
   if (!x || !y || x === y) return null;
@@ -5357,6 +5368,7 @@ window.__bw = {
   get trauma() { return trauma; }, updateCrab, poseLeg,
   set introDone(v) { introDone = v; },
   openPack, closePack, startExtraction, driveExtraction, finishExtraction, hudJar,
+  get audioCtx() { return audioCtx; }, get audioStarted() { return audioStarted; },
   lighthouse, startLighthouseTrack, bottleProp, playSample, updateTower,
   waterSurfaceAt, submersionAt, restYInWater, groundGlow, addRipple,
   shells, listenToShell, makeRockGeo,
