@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { makeHorseshoeCrab, makeHorseshoeCrabIcon } from './models/horseshoe-crab.js';
 import { makeSyringe, makeSyringeIcon } from './models/syringe.js';
-import { makeBloodJar, makeBloodJarIcon } from './models/blood-jar.js';
+import { makeBloodJar } from './models/blood-jar.js';
 
 /* ------------------------------------------------------------------ *
  *  Beach Walk — an endless, eerie shoreline at night.
@@ -49,7 +49,7 @@ const DIG_DUR = 0.8;
 // ------------------------------------------------------------------
 // Settings
 // ------------------------------------------------------------------
-const DEFAULT_SETTINGS = { fov: 75, sensitivity: 1, brightness: 1.16, volume: 0.9, musicVolume: 0.5, waveVolume: 0.62, walkSpeed: 1, invertY: false };
+const DEFAULT_SETTINGS = { fov: 75, sensitivity: 1, brightness: 1.16, volume: 0.9, musicVolume: 0.5, waveVolume: 0.62, sfxVolume: 0.45, walkSpeed: 1, invertY: false };
 let settings = { ...DEFAULT_SETTINGS };
 try { settings = { ...settings, ...JSON.parse(localStorage.getItem('beachwalk.settings') || '{}') }; } catch (e) {}
 function saveSettings() { try { localStorage.setItem('beachwalk.settings', JSON.stringify(settings)); } catch (e) {} }
@@ -57,6 +57,9 @@ function saveSettings() { try { localStorage.setItem('beachwalk.settings', JSON.
 let audioStarted = false, audioCtx = null, masterGain = null;
 let musicEl = null, musicEnvGain = null, musicVolGain = null, musicStarted = false;
 let waveBusGain = null;   // sub-mix for surf ambience + water-step splashes
+let sfxBusGain = null;    // sub-mix for every one-shot effect
+// every sfx routes here instead of straight at the speakers
+const sfxOut = () => sfxBusGain || (audioCtx && audioCtx.destination);
 let lhEl = null, lhGain = null, lhStarted = false;
 
 // ------------------------------------------------------------------
@@ -499,6 +502,51 @@ function makeGlowTexture() {
 const glowTex = makeGlowTexture();
 
 // ------------------------------------------------------------------
+// Pickup shine — the beach is very dark and a chitin-brown crab lying in
+// the wrack is easy to walk straight past. Each takeable thing gets a soft
+// additive glint hovering over it and a gentle lift in its own emissive, so
+// it separates from the sand without turning into a video-game waypoint.
+// ------------------------------------------------------------------
+const shinies = [];
+function addItemShine(root, { size = 0.55, height = 0.12, strength = 1 } = {}) {
+  const glint = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTex, color: 0xbcd6ff, transparent: true, opacity: 0.0,
+    depthWrite: false, blending: THREE.AdditiveBlending, fog: true,
+  }));
+  glint.position.y = height;
+  glint.scale.setScalar(size);
+  root.add(glint);
+
+  // brighten the object's own surfaces a touch, and remember the base so the
+  // pulse rides on top of whatever the model author chose
+  const mats = [];
+  root.traverse((o) => {
+    if (!o.isMesh || !o.material || o.name === 'hitProxy') return;
+    for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+      if (!m.emissive || mats.some((e) => e.m === m)) continue;
+      mats.push({ m, base: m.emissive.clone() });
+    }
+  });
+  shinies.push({ root, glint, mats, strength, phase: Math.random() * 6.28 });
+}
+function updateShines(t) {
+  for (const s of shinies) {
+    if (!s.root.parent) { s.glint.material.opacity = 0; continue; }
+    // slow breath, never fully off — a wet-shell highlight catching the moon
+    const k = 0.5 + 0.5 * Math.sin(t * 1.5 + s.phase);
+    s.glint.material.opacity = (0.10 + 0.13 * k) * s.strength;
+    for (const { m, base } of s.mats) {
+      m.emissive.setRGB(
+        base.r + (0.055 + 0.045 * k) * s.strength,
+        base.g + (0.065 + 0.050 * k) * s.strength,
+        base.b + (0.085 + 0.065 * k) * s.strength
+      );
+    }
+  }
+}
+
+
+// ------------------------------------------------------------------
 // Baked mesh blobs (see tools/objconv.py). Positions and indices, nothing
 // else — normals are recomputed here because the whole game is flat shaded,
 // which keeps the file about a sixth the size of the OBJ it came from.
@@ -661,6 +709,28 @@ loadMesh('assets/lighthouse.bwmesh').then((geo) => {
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
 
+  // Cut the doorway. The scan is a closed tower, so without this the opening
+  // the stand-in shell had is walled over and the door has nothing to open
+  // into. Drop every triangle whose centre falls in the door's box — on the
+  // +Z face, within the door's width, below its head.
+  {
+    const src = geo.getIndex().array;
+    const keep = [];
+    const doorX = LH_DOOR_W + 0.18;                 // a little clearance either side
+    const yLo = -LH_MESH_Y - 0.25;                  // start below grade
+    const yHi = -LH_MESH_Y + LH_DOOR_H + 0.05;
+    for (let i = 0; i < src.length; i += 3) {
+      const a = src[i], b = src[i + 1], c = src[i + 2];
+      const cx = (pos.getX(a) + pos.getX(b) + pos.getX(c)) / 3;
+      const cy = (pos.getY(a) + pos.getY(b) + pos.getY(c)) / 3;
+      const cz = (pos.getZ(a) + pos.getZ(b) + pos.getZ(c)) / 3;
+      const inDoor = cz > 0 && Math.abs(cx) < doorX && cy > yLo && cy < yHi;
+      if (!inDoor) keep.push(a, b, c);
+    }
+    geo.setIndex(keep.length > 65535 ? new THREE.Uint32BufferAttribute(keep, 1)
+                                     : new THREE.Uint16BufferAttribute(keep, 1));
+  }
+
   lighthouseMesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
     color: 0x6a7180, vertexColors: true, roughness: 1, metalness: 0,
     emissive: 0x12151b, flatShading: true, side: THREE.DoubleSide,
@@ -678,6 +748,25 @@ loadMesh('assets/lighthouse.bwmesh').then((geo) => {
 // ------------------------------------------------------------------
 const lhGround = new THREE.Group();
 lighthouse.add(lhGround);
+
+// A trodden path runs from the beach up to the door. The doorway sits at
+// local +Z (three measures cylinder theta from +Z), which is the side you
+// arrive from, so the lane just runs straight out along +Z. Everything
+// scattered on the headland asks `onPath()` first and steps aside.
+const PATH_LEN = 30;                    // how far out from the tower it reaches
+const PATH_HALF = 1.9;                  // half-width at the door…
+const PATH_HALF_FAR = 3.1;              // …flaring as it meets the sand
+function pathHalfAt(z) {
+  const t = THREE.MathUtils.clamp(z / PATH_LEN, 0, 1);
+  return PATH_HALF + (PATH_HALF_FAR - PATH_HALF) * t * t;
+}
+// wander the centre line a little so it doesn't read as a runway
+const pathBend = (z) => Math.sin(z * 0.21) * 0.9 + Math.sin(z * 0.07 + 1.3) * 0.6;
+function onPath(x, z, margin = 0) {
+  if (z < -1.5 || z > PATH_LEN + 3) return false;
+  return Math.abs(x - pathBend(z)) < pathHalfAt(z) + margin;
+}
+
 {
   const rockMat = new THREE.MeshStandardMaterial({ color: 0x4b5260, roughness: 1, flatShading: true, emissive: 0x171b23 });
   const rockDk = new THREE.MeshStandardMaterial({ color: 0x373d49, roughness: 1, flatShading: true, emissive: 0x101319 });
@@ -686,20 +775,41 @@ lighthouse.add(lhGround);
   const rocksDk = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), rockDk, ROCKS);
   rocks.frustumCulled = rocksDk.frustumCulled = false;
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3();
+  // re-roll a spot until it's off the path (bounded, so it can't spin)
+  const offPath = (pick, margin) => {
+    for (let tries = 0; tries < 24; tries++) {
+      const p = pick();
+      if (!onPath(p.x, p.z, margin)) return p;
+    }
+    return null;
+  };
+  const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
   for (let i = 0; i < ROCKS; i++) {
     // ring them round the tower, thickest out to the sides
-    const a = Math.random() * Math.PI * 2;
-    const rr = 5.5 + Math.random() * 13;
     const s = 0.5 + Math.random() * 1.9;
-    e.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
-    q.setFromEuler(e);
-    m.compose(v.set(Math.cos(a) * rr, s * 0.28, Math.sin(a) * rr), q, new THREE.Vector3(s, s * 0.72, s * 1.1));
-    rocks.setMatrixAt(i, m);
-    const a2 = Math.random() * Math.PI * 2, rr2 = 4.5 + Math.random() * 16, s2 = 0.3 + Math.random() * 1.1;
-    e.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
-    q.setFromEuler(e);
-    m.compose(v.set(Math.cos(a2) * rr2, s2 * 0.3, Math.sin(a2) * rr2), q, new THREE.Vector3(s2, s2 * 0.8, s2));
-    rocksDk.setMatrixAt(i, m);
+    const spot = offPath(() => {
+      const a = Math.random() * Math.PI * 2, rr = 5.5 + Math.random() * 13;
+      return { x: Math.cos(a) * rr, z: Math.sin(a) * rr };
+    }, s * 0.9);
+    if (!spot) rocks.setMatrixAt(i, hidden);
+    else {
+      e.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+      q.setFromEuler(e);
+      m.compose(v.set(spot.x, s * 0.28, spot.z), q, new THREE.Vector3(s, s * 0.72, s * 1.1));
+      rocks.setMatrixAt(i, m);
+    }
+    const s2 = 0.3 + Math.random() * 1.1;
+    const spot2 = offPath(() => {
+      const a = Math.random() * Math.PI * 2, rr = 4.5 + Math.random() * 16;
+      return { x: Math.cos(a) * rr, z: Math.sin(a) * rr };
+    }, s2 * 0.9);
+    if (!spot2) rocksDk.setMatrixAt(i, hidden);
+    else {
+      e.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+      q.setFromEuler(e);
+      m.compose(v.set(spot2.x, s2 * 0.3, spot2.z), q, new THREE.Vector3(s2, s2 * 0.8, s2));
+      rocksDk.setMatrixAt(i, m);
+    }
   }
   rocks.instanceMatrix.needsUpdate = rocksDk.instanceMatrix.needsUpdate = true;
   lhGround.add(rocks, rocksDk);
@@ -732,10 +842,18 @@ lighthouse.add(lhGround);
     const ca = Math.random() * Math.PI * 2, cr = 5 + Math.random() * 17;
     const cxp = Math.cos(ca) * cr, czp = Math.sin(ca) * cr;
     const jx = (Math.random() - 0.5) * 2.6, jz = (Math.random() - 0.5) * 2.6;
-    const h = 0.55 + Math.random() * 1.15;
+    const bx = cxp + jx, bz = czp + jz;
+    let h = 0.55 + Math.random() * 1.15;
+    // blades on the path have been walked flat; right in the middle of it
+    // they're gone altogether
+    if (onPath(bx, bz, 0.5)) {
+      const trodden = Math.abs(bx - pathBend(bz)) / (pathHalfAt(bz) + 0.5);
+      if (trodden < 0.72) { grass.setMatrixAt(i, hidden); continue; }
+      h *= 0.35;
+    }
     e.set((Math.random() - 0.5) * 0.5, Math.random() * Math.PI, (Math.random() - 0.5) * 0.5);
     q.setFromEuler(e);
-    m.compose(v.set(cxp + jx, 0, czp + jz), q, new THREE.Vector3(1, h, 1));
+    m.compose(v.set(bx, 0, bz), q, new THREE.Vector3(1, h, 1));
     grass.setMatrixAt(i, m);
     const t = 0.6 + Math.random() * 0.7;
     gc.setRGB(t * 0.9, t, t * 0.72);
@@ -744,6 +862,74 @@ lighthouse.add(lhGround);
   grass.instanceMatrix.needsUpdate = true;
   grass.instanceColor.needsUpdate = true;
   lhGround.add(grass);
+
+  // ---- the path surface itself -------------------------------------
+  // A ribbon of packed, paler ground following the same bend, laid just
+  // above the sand. Built as a strip so it can bend and flare.
+  {
+    const SEG = 34;
+    const pos = [], uv = [], idx = [];
+    for (let i = 0; i <= SEG; i++) {
+      const z = (i / SEG) * (PATH_LEN + 2) - 1.0;
+      const cx = pathBend(z), hw = pathHalfAt(z);
+      // ragged edges — trodden ground doesn't have a clean border
+      const wobL = Math.sin(z * 1.7) * 0.16 + Math.sin(z * 0.9 + 2.1) * 0.12;
+      const wobR = Math.sin(z * 1.5 + 1.1) * 0.16 + Math.sin(z * 0.8) * 0.12;
+      pos.push(cx - hw + wobL, 0, z,  cx + hw + wobR, 0, z);
+      uv.push(0, z * 0.25,  1, z * 0.25);
+      if (i < SEG) {
+        const a = i * 2;
+        idx.push(a, a + 2, a + 1,  a + 1, a + 2, a + 3);
+      }
+    }
+    const pathGeo = new THREE.BufferGeometry();
+    pathGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    pathGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    pathGeo.setIndex(idx);
+    pathGeo.computeVertexNormals();
+    const pathTex = sandTex.clone(); pathTex.needsUpdate = true; pathTex.repeat.set(1.4, 1);
+    const pathMesh = new THREE.Mesh(pathGeo, new THREE.MeshStandardMaterial({
+      map: pathTex, color: 0x8d8067, roughness: 1, metalness: 0,
+      emissive: 0x2a2519, emissiveMap: pathTex,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+    }));
+    pathMesh.position.y = 0.012;
+    pathMesh.frustumCulled = false;
+    lhGround.add(pathMesh);
+
+    // stones kicked to the sides over years of walking it
+    const EDGE = 60;
+    const edging = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), rockMat, EDGE);
+    edging.frustumCulled = false;
+    for (let i = 0; i < EDGE; i++) {
+      const z = -0.5 + Math.random() * (PATH_LEN + 1.5);
+      const side = i % 2 ? 1 : -1;
+      const s = 0.13 + Math.random() * 0.26;
+      const x = pathBend(z) + side * (pathHalfAt(z) + 0.05 + Math.random() * 0.4);
+      e.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+      q.setFromEuler(e);
+      m.compose(v.set(x, s * 0.4, z), q, new THREE.Vector3(s, s * 0.7, s * 1.15));
+      edging.setMatrixAt(i, m);
+    }
+    edging.instanceMatrix.needsUpdate = true;
+    lhGround.add(edging);
+
+    // a few flat slabs set into the last stretch up to the threshold
+    const SLABS = 9;
+    const slabMat = new THREE.MeshStandardMaterial({ color: 0x656b78, roughness: 1, flatShading: true, emissive: 0x1e222b });
+    const slabs = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 0.08, 6), slabMat, SLABS);
+    slabs.frustumCulled = false;
+    for (let i = 0; i < SLABS; i++) {
+      const z = 3.9 + i * 1.15;
+      const s = 0.45 + Math.random() * 0.2;
+      e.set(0, Math.random() * Math.PI, 0);
+      q.setFromEuler(e);
+      m.compose(v.set(pathBend(z) + (Math.random() - 0.5) * 0.35, 0.02, z), q, new THREE.Vector3(s, 1, s * 0.85));
+      slabs.setMatrixAt(i, m);
+    }
+    slabs.instanceMatrix.needsUpdate = true;
+    lhGround.add(slabs);
+  }
 }
 
 // ------------------------------------------------------------------
@@ -1461,12 +1647,15 @@ function beginGame() {
     return;
   }
 
+  // Snap to black on the same frame the title leaves, so the world is never
+  // glimpsed underneath — the card only *fades* on the way back out.
   introTextEl.textContent = INTRO_LINE;
-  introEl.style.transition = 'opacity 1.2s ease';
-  introEl.classList.add('show');                   // fade to black
-  setTimeout(() => introEl.classList.add('text-in'), 1400);   // line fades in
-  setTimeout(() => introEl.classList.remove('text-in'), 1400 + 2200 + 3200); // holds, fades out
-  const revealAt = 1400 + 2200 + 3200 + 2200;
+  introEl.style.transition = 'none';
+  introEl.classList.add('show');
+  void introEl.offsetWidth;                        // commit before re-arming
+  setTimeout(() => introEl.classList.add('text-in'), 600);    // line fades in
+  setTimeout(() => introEl.classList.remove('text-in'), 600 + 2200 + 3200); // holds, fades out
+  const revealAt = 600 + 2200 + 3200 + 2200;
   setTimeout(() => {
     introEl.style.transition = 'opacity 2.4s ease';
     introEl.classList.remove('show');              // world fades up
@@ -1526,6 +1715,7 @@ const S_SENS = document.getElementById('s-sens');
 const S_BRIGHT = document.getElementById('s-bright');
 const S_VOL = document.getElementById('s-vol');
 const S_WAVE = document.getElementById('s-wave');
+const S_SFX = document.getElementById('s-sfx');
 const S_MUSIC = document.getElementById('s-music');
 const S_SPEED = document.getElementById('s-speed');
 const S_INVERT = document.getElementById('s-invert');
@@ -1537,19 +1727,21 @@ function applySettings() {
   if (musicVolGain && audioCtx) musicVolGain.gain.setTargetAtTime(settings.volume * settings.musicVolume, audioCtx.currentTime, 0.05);
   if (lhGain && audioCtx) lhGain.gain.setTargetAtTime(settings.volume * settings.musicVolume, audioCtx.currentTime, 0.05);
   if (waveBusGain && audioCtx) waveBusGain.gain.setTargetAtTime(settings.waveVolume, audioCtx.currentTime, 0.05);
+  if (sfxBusGain && audioCtx) sfxBusGain.gain.setTargetAtTime(settings.sfxVolume, audioCtx.currentTime, 0.05);
   document.getElementById('v-fov').textContent = settings.fov;
   document.getElementById('v-sens').textContent = settings.sensitivity.toFixed(2);
   document.getElementById('v-bright').textContent = settings.brightness.toFixed(2);
   document.getElementById('v-vol').textContent = Math.round(settings.volume * 100) + '%';
   document.getElementById('v-music').textContent = Math.round(settings.musicVolume * 100) + '%';
   document.getElementById('v-wave').textContent = Math.round(settings.waveVolume * 100) + '%';
+  document.getElementById('v-sfx').textContent = Math.round(settings.sfxVolume * 100) + '%';
   document.getElementById('v-speed').textContent = settings.walkSpeed.toFixed(1) + '×';
 }
 function syncMenuInputs() {
   S_FOV.value = settings.fov; S_SENS.value = settings.sensitivity;
   S_BRIGHT.value = settings.brightness; S_VOL.value = settings.volume;
   S_MUSIC.value = settings.musicVolume;
-  S_WAVE.value = settings.waveVolume; S_SPEED.value = settings.walkSpeed;
+  S_WAVE.value = settings.waveVolume; S_SFX.value = settings.sfxVolume; S_SPEED.value = settings.walkSpeed;
   S_INVERT.checked = settings.invertY;
 }
 S_FOV.addEventListener('input', () => { settings.fov = +S_FOV.value; applySettings(); saveSettings(); });
@@ -1557,6 +1749,7 @@ S_SENS.addEventListener('input', () => { settings.sensitivity = +S_SENS.value; a
 S_BRIGHT.addEventListener('input', () => { settings.brightness = +S_BRIGHT.value; applySettings(); saveSettings(); });
 S_VOL.addEventListener('input', () => { settings.volume = +S_VOL.value; applySettings(); saveSettings(); });
 S_WAVE.addEventListener('input', () => { settings.waveVolume = +S_WAVE.value; applySettings(); saveSettings(); });
+S_SFX.addEventListener('input', () => { settings.sfxVolume = +S_SFX.value; applySettings(); saveSettings(); });
 S_MUSIC.addEventListener('input', () => { settings.musicVolume = +S_MUSIC.value; applySettings(); saveSettings(); });
 S_SPEED.addEventListener('input', () => { settings.walkSpeed = +S_SPEED.value; applySettings(); saveSettings(); });
 S_INVERT.addEventListener('change', () => { settings.invertY = S_INVERT.checked; saveSettings(); });
@@ -1609,6 +1802,7 @@ noteEl.addEventListener('click', closeNote);
 // little scene on top of everything, like the first-person hand.
 // ------------------------------------------------------------------
 const inspectEl = document.getElementById('inspect');
+const INSPECT_HINT = 'Hold right-click to turn it over  ·  scroll to zoom  ·  click to put it away';
 const inspectScene = new THREE.Scene();
 inspectScene.background = new THREE.Color(0x05070e);
 const inspectCamera = new THREE.PerspectiveCamera(42, 1, 0.01, 100);
@@ -1670,12 +1864,19 @@ function closeInspect() {
   refreshUI();
   if (inspectReturnLock && !fallbackLook) requestLock();
 }
+// Hold the RIGHT button to turn the object over; the LEFT button puts it
+// away. Keeping the two on separate buttons means you can never spin the
+// thing by accident while trying to leave, or leave while trying to spin.
 {
   let idrag = false, lastX = 0, lastY = 0;
+  inspectEl.addEventListener('contextmenu', (e) => e.preventDefault());
   inspectEl.addEventListener('pointerdown', (e) => {
-    idrag = true; lastX = e.clientX; lastY = e.clientY; inspectAuto = 0;
-    inspectEl.classList.add('dragging');
-    inspectEl.setPointerCapture(e.pointerId);
+    if (e.button === 2) {
+      e.preventDefault();
+      idrag = true; lastX = e.clientX; lastY = e.clientY; inspectAuto = 0;
+      inspectEl.classList.add('dragging');
+      inspectEl.setPointerCapture(e.pointerId);
+    }
   });
   inspectEl.addEventListener('pointermove', (e) => {
     if (!idrag) return;
@@ -1685,11 +1886,15 @@ function closeInspect() {
     lastX = e.clientX; lastY = e.clientY;
   });
   const endDrag = (e) => {
+    if (!idrag) return;
     idrag = false;
     inspectEl.classList.remove('dragging');
     if (e.pointerId != null && inspectEl.hasPointerCapture(e.pointerId)) inspectEl.releasePointerCapture(e.pointerId);
   };
-  inspectEl.addEventListener('pointerup', endDrag);
+  inspectEl.addEventListener('pointerup', (e) => {
+    if (e.button === 2) { endDrag(e); return; }
+    if (e.button === 0 && !idrag) closeInspect();          // left click = put it away
+  });
   inspectEl.addEventListener('pointercancel', endDrag);
   inspectEl.addEventListener('wheel', (e) => {
     e.preventDefault();
@@ -2244,6 +2449,7 @@ scene.add(castle);
 const shovelWorld = makeShovel();
 shovelWorld.position.set(4.72, 0.72, CASTLE_Z + 0.08);
 shovelWorld.rotation.set(0.55, 0.4, -0.4);
+addItemShine(shovelWorld, { size: 0.7, height: 0.45, strength: 0.8 });
 {
   const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   proxy.position.y = 0.3; proxy.name = 'hitProxy';
@@ -2396,6 +2602,111 @@ bottleProp.onImpact = (speed) => {
 };
 
 // ------------------------------------------------------------------
+// The lighthouse door — a heavy planked door hung in the opening at the
+// end of the path. It's shut when you arrive and the wall won't let you
+// past until you open it, so getting in is a deliberate act.
+// ------------------------------------------------------------------
+let doorOpen = false, doorSwing = 0;          // swing eases 0 → 1
+const lhDoor = new THREE.Group();
+let lhDoorEntry = null;
+{
+  const DW = LH_DOOR_W;                       // half-width of the opening
+  const DH = LH_DOOR_H;
+  const R = (LH_OUTER + LH_INNER) / 2 + 0.08; // sits in the thickness of the wall
+  // hinge down the left edge as you face it from outside
+  lhDoor.position.set(-DW, 0, R);
+  lighthouse.add(lhDoor);
+
+  const plankMat = new THREE.MeshStandardMaterial({
+    color: 0x4a3b2b, roughness: 0.95, metalness: 0.02,
+    flatShading: true, emissive: 0x1a130c,
+  });
+  const ironMat = new THREE.MeshStandardMaterial({
+    color: 0x2a2c31, roughness: 0.6, metalness: 0.55, flatShading: true, emissive: 0x0d0e11,
+  });
+
+  // vertical boards, each slightly different so it reads as timber
+  const nP = 7, pw = (DW * 2) / nP;
+  for (let i = 0; i < nP; i++) {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(pw * 0.94, DH - 0.06, 0.09 + Math.random() * 0.02), plankMat);
+    p.position.set(pw * (i + 0.5), DH / 2, 0);
+    lhDoor.add(p);
+  }
+  // iron straps across, with bolt heads
+  for (const y of [DH * 0.22, DH * 0.78]) {
+    const strap = new THREE.Mesh(new THREE.BoxGeometry(DW * 2 - 0.05, 0.11, 0.045), ironMat);
+    strap.position.set(DW, y, 0.06);
+    lhDoor.add(strap);
+    for (let i = 0; i < nP; i++) {
+      const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.03, 6), ironMat);
+      bolt.rotation.x = Math.PI / 2;
+      bolt.position.set(pw * (i + 0.5), y, 0.09);
+      lhDoor.add(bolt);
+    }
+  }
+  // hinges on the pivot edge
+  for (const y of [DH * 0.18, DH * 0.82]) {
+    const h = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.09, 0.05), ironMat);
+    h.position.set(0.22, y, 0.07);
+    lhDoor.add(h);
+  }
+  // ring handle on the free edge
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.10, 0.022, 6, 14), ironMat);
+  ring.position.set(DW * 2 - 0.24, DH * 0.5, 0.10);
+  lhDoor.add(ring);
+  const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.02, 8), ironMat);
+  plate.rotation.x = Math.PI / 2;
+  plate.position.set(DW * 2 - 0.24, DH * 0.5 + 0.11, 0.09);
+  lhDoor.add(plate);
+
+  // a fat invisible slab so it's easy to aim at
+  const hit = new THREE.Mesh(new THREE.BoxGeometry(DW * 2, DH, 0.5),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.position.set(DW, DH / 2, 0);
+  hit.name = 'hitProxy';
+  lhDoor.add(hit);
+
+  // A lamp over the threshold. Without it the doorway is a black hole in a
+  // black tower and you'd never find it — this also gives the end of the
+  // path something to aim at from a long way off.
+  const lampY = DH + 0.55, lampZ = LH_OUTER - 0.25;
+  const hood = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.22, 8), ironMat);
+  hood.position.set(0, lampY + 0.16, lampZ);
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.085, 8, 6),
+    new THREE.MeshBasicMaterial({ color: 0xffdca8, fog: false }));
+  bulb.position.set(0, lampY, lampZ);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.34), ironMat);
+  arm.position.set(0, lampY + 0.2, lampZ - 0.18);
+  const doorLamp = new THREE.PointLight(0xffb478, 9, 11, 1.7);
+  doorLamp.position.set(0, lampY - 0.05, lampZ + 0.15);
+  const lampHalo = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTex, color: 0xffd9a4, transparent: true, opacity: 0.42,
+    depthWrite: false, fog: false, blending: THREE.AdditiveBlending,
+  }));
+  lampHalo.position.copy(bulb.position);
+  lampHalo.scale.setScalar(2.6);
+  lighthouse.add(hood, bulb, arm, doorLamp, lampHalo);
+  lighthouse.userData.doorLamp = { light: doorLamp, halo: lampHalo, bulb };
+
+  addInteractable(lhDoor, 'Open the door', 'action', {
+    onActivate: () => {
+      doorOpen = !doorOpen;
+      lhDoorEntry.label = doorOpen ? 'Close the door' : 'Open the door';
+      sfxDoor(doorOpen);
+    },
+  });
+  lhDoorEntry = interactables[interactables.length - 1];
+}
+function updateDoor(dt) {
+  const target = doorOpen ? 1 : 0;
+  if (doorSwing === target) return;
+  // heavy: quick to get moving, slow to settle
+  doorSwing += THREE.MathUtils.clamp(target - doorSwing, -1, 1) * Math.min(1, dt * 2.6);
+  if (Math.abs(target - doorSwing) < 0.004) doorSwing = target;
+  lhDoor.rotation.y = -doorSwing * 1.95;      // swings outward, toward the path
+}
+
+// ------------------------------------------------------------------
 // Horseshoe crab — stranded in the wrack line. Take it, then "use" it
 // to turn it over and look at the underside. Model lives in
 // models/horseshoe-crab.js.
@@ -2413,6 +2724,7 @@ hcrabWorld.add(hcrab);
 hcrabWorld.position.set(2.7, 0.03, -58);
 hcrabWorld.rotation.set(0.05, -0.7, -0.03);
 scene.add(hcrabWorld);
+addItemShine(hcrabWorld, { size: 0.8, height: 0.14 });
 let hcrabTaken = false, crabBled = false;
 const crabItem = {
   id: 'horseshoe', name: 'Horseshoe crab', icon: makeHorseshoeCrabIcon(),
@@ -2454,7 +2766,9 @@ syringeWorld.rotation.set(0.1, 1.1, 0.5);
 
 let syringeTaken = false;
 const bloodJar = makeBloodJar();
-const jarItem = { name: 'Jar of blue blood', icon: makeBloodJarIcon(), use: () => openInspect(bloodJar, { rotX: 0.18, rotY: 0.6 }) };
+// The jar is never carried — it only exists as the model shown at the end
+// of an extraction, and as the running tally in the corner of the screen.
+const jarItem = null;
 const syringeItem = {
   id: 'syringe', name: 'Bleeding syringe', icon: makeSyringeIcon(),
   use: () => {
@@ -2524,19 +2838,21 @@ function finishExtraction() {
   syringe.userData.parts.cap.visible = true;
   syringe.userData.parts.cap.position.z = 0;
   bloodJar.userData.setFill(0.86);
-  if (!inventory.includes(jarItem)) addToInventory(jarItem);
+  // The crab is spent — it goes back to the sea, not into your pack. And
+  // the blood itself never becomes an item: it just runs into the tally in
+  // the corner, which is the only place it's ever shown.
+  removeFromInventory(crabItem);
   renderHotbar();
-  // the counter appears the first time you actually draw any
   bloodAmount += BLOOD_PER_CRAB;
   bloodSeen = true;
   bloodPulse = 1;
   hudJar.userData.setFill(Math.min(1, bloodAmount / BLOOD_JAR_CAP));
   updateBloodReadout();
   sfxBloodGained();
-  // show the jar as the payoff
+  // show the jar as the payoff, then it's gone
   inspectSetModel(bloodJar);
   inspectRotX = 0.12; inspectRotY = 0.45; inspectDist = 3.7; inspectAuto = 0;
-  inspectEl.querySelector('.hint').textContent = 'A jar of blue blood · drag to look · Esc to put it away';
+  inspectEl.querySelector('.hint').textContent = 'A jar of blue blood · hold right-click to turn it · click to put it away';
 }
 
 // ------------------------------------------------------------------
@@ -2721,80 +3037,157 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
 const CRAB_Z = -20;                    // where it's waiting, well before Bradly
 const CRAB_WAKE = 17;                  // it notices you at this range
 const CRAB_SPEED = 2.35;
-const CRAB_REACH = 1.15;               // how close it gets before it nips
+const CRAB_REACH = 1.45;               // how close it gets before it nips
 const CRAB_COOLDOWN = 1.5;             // seconds between nips
 const CRAB_KILL_RADIUS = 1.5;          // how near a shovel strike has to land
+// Built around a `rig` group so the whole animal can be pitched, rolled and
+// bounced by the gait without disturbing its heading. Each leg is a two-bone
+// chain hung off a hip, so it can actually reach forward, plant, and drag
+// back rather than just waggling on the spot.
 function makeCrab() {
   const g = new THREE.Group();
-  const shell = new THREE.MeshStandardMaterial({ color: 0x8e3a29, roughness: 0.8, flatShading: true, emissive: 0x2e0f0a });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x5e2418, roughness: 1, flatShading: true, emissive: 0x1a0805 });
+  const rig = new THREE.Group();
+  g.add(rig);
 
-  const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.13, 0), shell);
-  body.scale.set(1.4, 0.6, 1.05);
-  body.position.y = 0.09;
-  g.add(body);
+  const shell = new THREE.MeshStandardMaterial({ color: 0x8e3a29, roughness: 0.72, metalness: 0.05, flatShading: true, emissive: 0x35120b });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x5e2418, roughness: 1, flatShading: true, emissive: 0x1d0906 });
+  const pale = new THREE.MeshStandardMaterial({ color: 0xb08163, roughness: 0.85, flatShading: true, emissive: 0x2a1a12 });
 
-  // eye stalks
+  const BODY_Y = 0.20;
+  const carapace = new THREE.Mesh(new THREE.IcosahedronGeometry(0.24, 0), shell);
+  carapace.scale.set(1.5, 0.52, 1.0);
+  carapace.position.y = BODY_Y;
+  // a paler underside so it reads when it rears up
+  const belly = new THREE.Mesh(new THREE.IcosahedronGeometry(0.21, 0), pale);
+  belly.scale.set(1.35, 0.28, 0.9);
+  belly.position.y = BODY_Y - 0.05;
+  // a ridged brow over the eyes
+  const brow = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.05, 0.07), shell);
+  brow.position.set(0, BODY_Y + 0.06, -0.15);
+  rig.add(carapace, belly, brow);
+
+  // eye stalks — kept so they can swivel toward you
+  const eyes = [];
   for (const s of [-1, 1]) {
-    const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.06, 5), dark);
-    stalk.position.set(s * 0.045, 0.15, -0.09);
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.017, 6, 5),
-      new THREE.MeshBasicMaterial({ color: 0x0a0a0c }));
-    eye.position.set(s * 0.045, 0.185, -0.09);
-    g.add(stalk, eye);
+    const stalk = new THREE.Group();
+    stalk.position.set(s * 0.075, BODY_Y + 0.05, -0.15);
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.016, 0.10, 5), dark);
+    rod.position.y = 0.05;
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.028, 7, 6),
+      new THREE.MeshStandardMaterial({ color: 0x0b0b0e, roughness: 0.25, metalness: 0.1, emissive: 0x140505 }));
+    ball.position.y = 0.105;
+    stalk.add(rod, ball);
+    rig.add(stalk);
+    eyes.push(stalk);
   }
-  // claws, held out front
+
+  // claws: shoulder → forearm → the pincer itself, so it can open and close
   const claws = [];
   for (const s of [-1, 1]) {
-    const arm = new THREE.Group();
-    arm.position.set(s * 0.15, 0.075, -0.07);
-    const upper = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.03, 0.05), shell);
-    upper.position.set(s * 0.03, 0, -0.03);
-    const claw = new THREE.Mesh(new THREE.IcosahedronGeometry(0.055, 0), shell);
-    claw.scale.set(0.9, 0.55, 1.25);
-    claw.position.set(s * 0.06, 0, -0.09);
-    arm.add(upper, claw);
-    g.add(arm);
-    claws.push(arm);
+    const shoulder = new THREE.Group();
+    shoulder.position.set(s * 0.24, BODY_Y - 0.02, -0.10);
+    const upper = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.055, 0.075), shell);
+    upper.position.set(s * 0.04, 0, -0.04);
+    shoulder.add(upper);
+
+    const fore = new THREE.Group();
+    fore.position.set(s * 0.07, 0, -0.08);
+    const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.06, 0.10), shell);
+    forearm.position.z = -0.05;
+    fore.add(forearm);
+
+    // the pincer — a fixed lower jaw and a hinged upper one
+    const pincer = new THREE.Group();
+    pincer.position.z = -0.10;
+    const lower = new THREE.Mesh(new THREE.IcosahedronGeometry(0.075, 0), shell);
+    lower.scale.set(0.75, 0.4, 1.25);
+    lower.position.set(0, -0.022, -0.05);
+    const upperJaw = new THREE.Group();
+    const uj = new THREE.Mesh(new THREE.IcosahedronGeometry(0.07, 0), shell);
+    uj.scale.set(0.72, 0.38, 1.2);
+    uj.position.set(0, 0.02, -0.05);
+    upperJaw.add(uj);
+    pincer.add(lower, upperJaw);
+    fore.add(pincer);
+    shoulder.add(fore);
+    rig.add(shoulder);
+    claws.push({ shoulder, fore, jaw: upperJaw, side: s });
   }
-  // legs — three a side, animated by the scuttle
+
+  // eight walking legs, four a side, each a hip + femur + tibia chain
   const legs = [];
-  for (const s of [-1, 1]) for (let i = 0; i < 3; i++) {
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.016, 0.115), dark);
-    leg.position.set(s * 0.12, 0.05, -0.02 + i * 0.055);
-    leg.rotation.z = s * 0.75;
-    leg.rotation.y = s * 0.35;
-    g.add(leg);
-    legs.push(leg);
+  for (const s of [-1, 1]) for (let i = 0; i < 4; i++) {
+    const hip = new THREE.Group();
+    const z0 = -0.06 + i * 0.075;
+    hip.position.set(s * 0.20, BODY_Y - 0.04, z0);
+    const femur = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.032, 0.032), dark);
+    femur.position.x = s * 0.075;                       // extends outward from the hip
+    hip.add(femur);
+
+    const knee = new THREE.Group();
+    knee.position.x = s * 0.15;
+    const tibia = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.15, 0.028), dark);
+    tibia.position.y = -0.075;                          // drops to the sand
+    const foot = new THREE.Mesh(new THREE.ConeGeometry(0.022, 0.05, 4), dark);
+    foot.position.y = -0.16;
+    foot.rotation.x = Math.PI;
+    knee.add(tibia, foot);
+    hip.add(knee);
+    rig.add(hip);
+    // alternating tripod: legs step in two interleaved sets
+    legs.push({ hip, knee, side: s, group: (i + (s > 0 ? 1 : 0)) % 2, rest: z0 });
   }
-  g.userData.claws = claws;
-  g.userData.legs = legs;
+
+  g.userData = { rig, claws, legs, eyes, bodyY: BODY_Y };
   return g;
 }
 
 const crab = makeCrab();
 crab.position.set(-3.2, 0, CRAB_Z);          // waiting out in the surf
+crab.scale.setScalar(1.55);                  // big enough to be a real threat
 crab.visible = true;
 scene.add(crab);
-const crabState = { alive: true, awake: false, atkT: 0, scuttle: 0, deadT: 0 };
+const crabState = { alive: true, awake: false, atkT: 0, scuttle: 0, deadT: 0, rear: 0, lunge: 0 };
 const _crabDir = new THREE.Vector3();
 
 function killCrab() {
   if (!crabState.alive) return;
   crabState.alive = false;
   crabState.deadT = 0;
-  // flip it onto its back
-  crab.rotation.z = Math.PI;
-  crab.position.y = 0.1;
-  spawnPuffs(crab.position.x, crab.position.z, 8, 0, -1);
+  spawnPuffs(crab.position.x, crab.position.z, 10, 0, -1);
   sfxCrabDie();
 }
 
+// pose one leg: `ph` is its phase through the step cycle (0..1)
+function poseLeg(leg, ph, reach) {
+  // stance for most of the cycle, a quick lifted swing for the rest
+  const swinging = ph > 0.62;
+  const t = swinging ? (ph - 0.62) / 0.38 : ph / 0.62;
+  // fore/aft travel: drags back while planted, whips forward while lifted
+  const drive = swinging ? -1 + 2 * t : 1 - 2 * t;
+  leg.hip.rotation.y = drive * 0.42 * reach * leg.side;
+  // lift only during the swing, eased so the foot doesn't pop
+  const lift = swinging ? Math.sin(t * Math.PI) : 0;
+  leg.hip.rotation.z = leg.side * (-0.25 - lift * 0.5 * reach);
+  // the knee straightens as the leg extends, folds as it comes under the body
+  leg.knee.rotation.z = leg.side * (0.55 + lift * 0.35 + drive * 0.12);
+}
+
 function updateCrab(dt) {
+  const ud = crab.userData;
   if (!crabState.alive) {
-    // settle the corpse into the sand and leave it
+    // rolls onto its back, legs curling in, and settles into the sand
     crabState.deadT += dt;
-    crab.position.y = Math.max(0.02, 0.1 - crabState.deadT * 0.05);
+    const t = Math.min(1, crabState.deadT * 1.6);
+    ud.rig.rotation.z = t * Math.PI * 0.92;
+    ud.rig.rotation.x = Math.sin(crabState.deadT * 9) * 0.25 * (1 - t);   // a last twitch
+    crab.position.y = Math.max(0.0, 0.16 * (1 - t) - Math.max(0, crabState.deadT - 0.8) * 0.04);
+    const curl = t;
+    for (const leg of ud.legs) {
+      leg.hip.rotation.z = leg.side * (-0.25 - curl * 1.15);
+      leg.knee.rotation.z = leg.side * (0.55 + curl * 1.5);
+    }
+    for (const c of ud.claws) { c.fore.rotation.x = -curl * 0.8; c.jaw.rotation.x = 0; }
     return;
   }
   if (frozen()) return;
@@ -2805,29 +3198,64 @@ function updateCrab(dt) {
   if (!crabState.awake) {
     if (dist > CRAB_WAKE) return;
     crabState.awake = true;
+    crabState.rear = 1;                       // it rears up as it notices you
     sfxCrabWake();
   }
 
   crabState.atkT = Math.max(0, crabState.atkT - dt);
+  crabState.lunge = Math.max(0, (crabState.lunge || 0) - dt * 3.4);
+  crabState.rear = Math.max(0, (crabState.rear || 0) - dt * 1.2);
 
-  if (dist > CRAB_REACH) {
+  const closing = dist > CRAB_REACH;
+  if (closing) {
     _crabDir.set(dx / dist, 0, dz / dist);
-    crab.position.addScaledVector(_crabDir, CRAB_SPEED * dt);
-    // face the player, and scuttle sideways rather than head-on
+    // it slows as it comes into range rather than sliding to a dead stop
+    const speed = CRAB_SPEED * THREE.MathUtils.clamp((dist - CRAB_REACH) / 1.2, 0.35, 1);
+    crab.position.addScaledVector(_crabDir, speed * dt);
+    crabState.scuttle += dt * speed * 5.2;
+    // it goes sideways, the way crabs do, but keeps its eyes on you
     crab.rotation.y = Math.atan2(_crabDir.x, _crabDir.z) + Math.PI / 2;
-    crabState.scuttle += dt * 15;
-    crab.position.y = Math.abs(Math.sin(crabState.scuttle)) * 0.02;
-    const swing = Math.sin(crabState.scuttle) * 0.35;
-    crab.userData.legs.forEach((leg, i) => { leg.rotation.x = swing * (i % 2 ? -1 : 1); });
-    // out of the water it goes
     if (inWater(crab.position.x, crab.position.z) && Math.random() < dt * 4) {
       spawnSplash(crab.position.x, crab.position.z, 2, _crabDir.x, _crabDir.z, 0.4);
     }
-  } else if (crabState.atkT <= 0) {
+  } else {
+    crabState.scuttle += dt * 2.2;            // shifting its weight, waiting
+  }
+
+  // ---- gait -------------------------------------------------------
+  const reach = closing ? 1 : 0.25;
+  const cyc = crabState.scuttle / (Math.PI * 2);
+  for (const leg of ud.legs) {
+    poseLeg(leg, (cyc + leg.group * 0.5 + (leg.rest * 0.4)) % 1, reach);
+  }
+  // the body rocks with the tripod and rides a little higher when roused
+  const rear = crabState.rear;
+  const lunge = crabState.lunge;
+  crab.position.y = Math.abs(Math.sin(crabState.scuttle)) * 0.018 * reach;
+  ud.rig.rotation.z = Math.sin(crabState.scuttle) * 0.09 * reach;
+  ud.rig.rotation.x = -rear * 0.30 - lunge * 0.38 + Math.sin(crabState.scuttle * 2) * 0.035 * reach;
+  ud.rig.position.y = rear * 0.06 + lunge * 0.05;
+
+  // claws: weave while it advances, thrown wide when it rears, snapped
+  // shut through the lunge
+  for (const c of ud.claws) {
+    const weave = Math.sin(crabState.scuttle * 0.8 + (c.side > 0 ? 1.7 : 0)) * 0.16 * reach;
+    c.shoulder.rotation.y = c.side * (-0.15 - rear * 0.55) + weave;
+    c.shoulder.rotation.x = -rear * 0.5 - lunge * 0.15 + weave * 0.4;
+    c.fore.rotation.x = -0.1 - rear * 0.35 + lunge * 0.5;
+    // the pincer gapes, then bites
+    const gape = lunge > 0.55 ? 0 : (0.32 + rear * 0.35) * (1 - lunge);
+    c.jaw.rotation.x = -gape;
+  }
+  // eye stalks lean toward you
+  for (let i = 0; i < ud.eyes.length; i++) {
+    ud.eyes[i].rotation.x = -0.12 - rear * 0.25;
+    ud.eyes[i].rotation.z = (i ? -1 : 1) * (0.1 + rear * 0.2);
+  }
+
+  if (!closing && crabState.atkT <= 0) {
     crabState.atkT = CRAB_COOLDOWN;
-    // snap both claws shut
-    for (const arm of crab.userData.claws) arm.rotation.x = -0.7;
-    setTimeout(() => { for (const arm of crab.userData.claws) arm.rotation.x = 0; }, 160);
+    crabState.lunge = 1;                       // drives the strike pose above
     sfxCrabSnip();
     damagePlayer(1);
   }
@@ -3165,6 +3593,11 @@ function startAmbientAudio() {
   waveBusGain = ctx.createGain();
   waveBusGain.gain.value = settings.waveVolume;
   waveBusGain.connect(masterGain);
+  // every one-shot effect (dig, steps, crab, glass…) goes through here, so
+  // the SFX slider governs them and none of them can out-shout the mix.
+  sfxBusGain = ctx.createGain();
+  sfxBusGain.gain.value = settings.sfxVolume;
+  sfxBusGain.connect(masterGain);
   noise.connect(wind).connect(windGain).connect(masterGain);
   noise.connect(surf).connect(surfGain).connect(waveBusGain);
   masterGain.connect(ctx.destination);
@@ -3240,7 +3673,7 @@ function playSample(name, gain = 1, rateJitter = 0) {
   src.buffer = bank[(Math.random() * bank.length) | 0];
   if (rateJitter) src.playbackRate.value = 1 + (Math.random() - 0.5) * 2 * rateJitter;
   const g = ctx.createGain(); g.gain.value = gain;
-  src.connect(g).connect(ctx.destination);
+  src.connect(g).connect(sfxOut());
   src.start();
   return true;
 }
@@ -3248,7 +3681,7 @@ function playSample(name, gain = 1, rateJitter = 0) {
 // bottle shattering — the recording, with a synthesised burst behind it
 function sfxGlassBreak() {
   const ctx = audioCtx; if (!ctx) return;
-  if (playSample('glassBreak', 0.95, 0.06)) return;
+  if (playSample('glassBreak', 0.42, 0.06)) return;
   const t = ctx.currentTime;
   const s = noiseBurst(0.5, (x) => Math.pow(1 - x, 2.2) * (0.3 + 0.7 * Math.random()));
   const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2600;
@@ -3256,7 +3689,7 @@ function sfxGlassBreak() {
   g.gain.setValueAtTime(0.0001, t);
   g.gain.exponentialRampToValueAtTime(0.3, t + 0.008);
   g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
-  s.connect(hp).connect(g).connect(ctx.destination);
+  s.connect(hp).connect(g).connect(sfxOut());
   s.start(t); s.stop(t + 0.5);
 }
 
@@ -3295,7 +3728,7 @@ function sfxGlassPick() {
     g.gain.setValueAtTime(0.0001, t + i * 0.045);
     g.gain.exponentialRampToValueAtTime(0.12, t + i * 0.045 + 0.01);
     g.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.045 + 0.28);
-    o.connect(g).connect(ctx.destination);
+    o.connect(g).connect(sfxOut());
     o.start(t + i * 0.045); o.stop(t + i * 0.045 + 0.3);
   });
 }
@@ -3307,8 +3740,8 @@ function sfxStep() {
   for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.2);
   const s = ctx.createBufferSource(); s.buffer = b;
   const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 850 + Math.random() * 350;
-  const g = ctx.createGain(); g.gain.value = 0.08;
-  s.connect(f).connect(g).connect(ctx.destination);
+  const g = ctx.createGain(); g.gain.value = 0.05;
+  s.connect(f).connect(g).connect(sfxOut());
   s.start(t); s.stop(t + 0.13);
 }
 function sfxThud(gain) {
@@ -3320,7 +3753,7 @@ function sfxThud(gain) {
   const s = ctx.createBufferSource(); s.buffer = b;
   const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 400;
   const g = ctx.createGain(); g.gain.value = gain ?? 0.05;
-  s.connect(f).connect(g).connect(ctx.destination);
+  s.connect(f).connect(g).connect(sfxOut());
   s.start(t); s.stop(t + 0.1);
 }
 // the extraction — a soft wet suction that rises as the barrel fills
@@ -3357,8 +3790,8 @@ function sfxDig() {
   f.frequency.setValueAtTime(400, t);
   f.frequency.exponentialRampToValueAtTime(1600, t + 0.22);
   f.frequency.exponentialRampToValueAtTime(600, t + 0.34);
-  const g = ctx.createGain(); g.gain.value = 0.04;
-  s.connect(f).connect(g).connect(ctx.destination);
+  const g = ctx.createGain(); g.gain.value = 0.022;
+  s.connect(f).connect(g).connect(sfxOut());
   s.start(t); s.stop(t + 0.34);
 }
 // the blade biting into damp sand: a soft body thud + a granular crunch +
@@ -3366,9 +3799,9 @@ function sfxDig() {
 function sfxDigImpact() {
   const ctx = audioCtx; if (!ctx) return;
   // one of the four recorded sand impacts, picked at random
-  if (playSample('sandHit', 0.85, 0.08)) return;
+  if (playSample('sandHit', 0.30, 0.09)) return;
   const t = ctx.currentTime;
-  const out = ctx.createGain(); out.gain.value = 0.9; out.connect(ctx.destination);
+  const out = ctx.createGain(); out.gain.value = 0.34; out.connect(sfxOut());
 
   // low body — the blade landing
   const body = noiseBurst(0.16, (x) => Math.pow(1 - x, 2.5));
@@ -3448,13 +3881,38 @@ function sfxSplash(power = 1) {
 }
 
 // a dry chitinous rattle as the thing wakes up and starts moving
+// the tower door — a long timber groan on the hinges, then the latch
+function sfxDoor(opening) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const out = ctx.createGain(); out.gain.value = 0.5; out.connect(sfxOut());
+
+  // the creak: filtered noise wobbling in pitch as the hinge binds
+  const creak = noiseBurst(1.1, (x) => Math.sin(Math.PI * Math.min(1, x * 1.15)) * (0.5 + 0.5 * Math.sin(x * 26)));
+  const cf = ctx.createBiquadFilter(); cf.type = 'bandpass'; cf.Q.value = 7;
+  cf.frequency.setValueAtTime(opening ? 320 : 520, t);
+  cf.frequency.exponentialRampToValueAtTime(opening ? 640 : 260, t + 0.95);
+  const cg = ctx.createGain();
+  cg.gain.setValueAtTime(0.0001, t);
+  cg.gain.exponentialRampToValueAtTime(0.28, t + 0.12);
+  cg.gain.exponentialRampToValueAtTime(0.0001, t + 1.1);
+  creak.connect(cf).connect(cg).connect(out);
+  creak.start(t); creak.stop(t + 1.1);
+
+  // the heavy body of it — a low thump as the leaf takes up
+  const body = noiseBurst(0.3, (x) => Math.pow(1 - x, 2.4));
+  const bf = ctx.createBiquadFilter(); bf.type = 'lowpass'; bf.frequency.value = 170;
+  const bg = ctx.createGain(); bg.gain.value = 0.5;
+  body.connect(bf).connect(bg).connect(out);
+  body.start(t + (opening ? 0.0 : 0.85)); body.stop(t + 1.2);
+}
 function sfxCrabWake() {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime;
   const s = noiseBurst(0.5, (x) => Math.pow(1 - x, 1.2) * (Math.random() < 0.4 ? 1 : 0.15));
   const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 3200; bp.Q.value = 3;
   const g = ctx.createGain(); g.gain.value = 0.05;
-  s.connect(bp).connect(g).connect(ctx.destination);
+  s.connect(bp).connect(g).connect(sfxOut());
   s.start(t); s.stop(t + 0.5);
 }
 // the nip — a hard click plus a short scrape
@@ -3464,13 +3922,13 @@ function sfxCrabSnip() {
   const click = noiseBurst(0.05, (x) => Math.pow(1 - x, 0.8));
   const cf = ctx.createBiquadFilter(); cf.type = 'bandpass'; cf.frequency.value = 2600; cf.Q.value = 2.2;
   const cg = ctx.createGain(); cg.gain.value = 0.16;
-  click.connect(cf).connect(cg).connect(ctx.destination);
+  click.connect(cf).connect(cg).connect(sfxOut());
   click.start(t); click.stop(t + 0.05);
   const o = ctx.createOscillator(); o.type = 'square';
   o.frequency.setValueAtTime(220, t); o.frequency.exponentialRampToValueAtTime(90, t + 0.08);
   const og = ctx.createGain();
   og.gain.setValueAtTime(0.06, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
-  o.connect(og).connect(ctx.destination);
+  o.connect(og).connect(sfxOut());
   o.start(t); o.stop(t + 0.1);
 }
 // shell giving way under the blade
@@ -3485,7 +3943,7 @@ function sfxCrabDie() {
   g.gain.setValueAtTime(0.0001, t);
   g.gain.exponentialRampToValueAtTime(0.22, t + 0.012);
   g.gain.exponentialRampToValueAtTime(0.0001, t + 0.26);
-  s.connect(lp).connect(g).connect(ctx.destination);
+  s.connect(lp).connect(g).connect(sfxOut());
   s.start(t); s.stop(t + 0.26);
 }
 // taking a hit — a dull thump with a low sting under it
@@ -3494,14 +3952,14 @@ function sfxHurt() {
   const t = ctx.currentTime;
   const s = noiseBurst(0.24, (x) => Math.pow(1 - x, 2.2));
   const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 320;
-  const g = ctx.createGain(); g.gain.value = 0.3;
-  s.connect(lp).connect(g).connect(ctx.destination);
+  const g = ctx.createGain(); g.gain.value = 0.18;
+  s.connect(lp).connect(g).connect(sfxOut());
   s.start(t); s.stop(t + 0.24);
   const o = ctx.createOscillator(); o.type = 'sine';
   o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(58, t + 0.35);
   const og = ctx.createGain();
   og.gain.setValueAtTime(0.16, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
-  o.connect(og).connect(ctx.destination);
+  o.connect(og).connect(sfxOut());
   o.start(t); o.stop(t + 0.42);
 }
 
@@ -3516,7 +3974,7 @@ function sfxBloodGained() {
     g.gain.setValueAtTime(0.0001, at);
     g.gain.exponentialRampToValueAtTime(0.07, at + 0.015);
     g.gain.exponentialRampToValueAtTime(0.0001, at + 0.4);
-    o.connect(g).connect(ctx.destination);
+    o.connect(g).connect(sfxOut());
     o.start(at); o.stop(at + 0.42);
   });
 }
@@ -3570,7 +4028,8 @@ function updateTower(dt) {
   }
 
   // you can only pass through the wall at the doorway, and only down low
-  const throughDoor = Math.abs(ang) < doorHalf * 0.92 && camBaseY < EYE_HEIGHT + LH_DOOR_H - 0.5;
+  const throughDoor = doorSwing > 0.55 && Math.abs(ang) < doorHalf * 0.92 &&
+                      camBaseY < EYE_HEIGHT + LH_DOOR_H - 0.5;
   if (!throughDoor && d > 0.001) {
     const inner = LH_INNER - PLAYER_R, outer = LH_OUTER + PLAYER_R;
     let clamped = null;
@@ -3711,6 +4170,8 @@ function update(dt) {
   updateCrab(dt);
   updateBradlyBlink(dt);
   updateHurt(dt);
+  updateShines(oceanUniforms.uTime.value);
+  updateDoor(dt);
 
   // walking up on Bradly starts the exchange the first time, so you can't
   // miss him; after that he's a normal E-to-talk interactable
@@ -3763,9 +4224,12 @@ window.__bw = {
   renderer, inspectScene, inspectCamera,
   mounds, moundAt, revealMoundNear, makeGlowstick, inWater, shoreLineJS,
   sfxSplash, bradly, startDialog, endDialog, heldGlow,
-  crab, crabState, killCrab, damagePlayer, playerDied,
+  crab, crabState, killCrab, damagePlayer, playerDied, updateCrab, poseLeg,
+  set introDone(v) { introDone = v; },
   openPack, closePack, startExtraction, driveExtraction, finishExtraction, hudJar,
   lighthouse, startLighthouseTrack, bottleProp, playSample, updateTower,
+  lhDoor, shinies, onPath, pathBend, pathHalfAt,
+  get doorOpen() { return doorOpen; }, set doorOpen(v) { doorOpen = v; },
   get lighthouseMesh() { return lighthouseMesh; },
   get insideTower() { return insideTower; },
   get groundY() { return groundY; },

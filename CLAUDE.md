@@ -123,6 +123,34 @@ hard to drive from `javascript_tool`. Instead:
   + `camera.updateMatrixWorld(true)`), then take a screenshot to force one
   render frame.
 
+## Gotchas worth knowing
+
+**Declaration order matters.** `main.js` is one long top-to-bottom module of
+`const`s, so anything that *calls* `addInteractable` or pushes to a shared
+array must appear **after** that array is declared, or you get a temporal
+dead zone error at load. The lighthouse door and the pickup-shine helper both
+had to be moved for this reason.
+
+**All one-shot sfx go through `sfxOut()`**, which returns the SFX bus. Never
+`connect(ctx.destination)` from an effect — that bypasses both the Effects
+volume slider and the master volume, which is how digging ended up deafening.
+Music is the deliberate exception.
+
+**The scanned lighthouse is a closed mesh.** It replaces the hand-built shell,
+so any opening (like the doorway) has to be *cut* out of the loaded geometry
+by dropping triangles whose centroid falls in the hole — see the door cut in
+the `loadMesh('assets/lighthouse.bwmesh')` handler.
+
+**The headland scatter respects `onPath()`.** Rocks and grass re-roll their
+position until they're clear of the lane to the door; if you add more props
+out there, ask `onPath()` first or they'll grow through the path.
+
+**The preview browser is fragile with this scene.** It can't pointer-lock, it
+throttles `requestAnimationFrame` when the pane isn't focused, and long
+`javascript_tool` calls (especially ones that start the audio) will kill the
+pane. Drive tests through `window.__bw`, keep calls short, and force a frame
+with a screenshot before reading state.
+
 ## Conventions
 
 - Match the existing terse style: one file, grouped by `// ---` banners,

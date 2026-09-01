@@ -26,7 +26,8 @@ Then open <http://localhost:4173> and click to begin. Any static server works
 | Click (while carrying) | Throw the held object — it's a toggle, no hold |
 | `G` | Drop the held object gently |
 | `1`–`6` / click a slot | Use / equip an inventory item (the crab → examine it) |
-| Drag / scroll (examine view) | Turn the item over / zoom in |
+| Hold right-click (examine view) | Turn the item over |
+| Left-click / scroll (examine view) | Put it away / zoom in |
 | `Q` | Holster the equipped tool · close the examine view |
 | `Esc` | Pause / settings menu (and close the note / examine view) |
 
@@ -45,9 +46,9 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 ## What's in it
 
 - **Title & opening** — the title card is just **BEACHWALK** + the controls.
-  Clicking begin drops to black, the opening line fades in for a few
-  seconds, then the world fades up. `INTRO_LINE` / the timings in
-  `beginGame()`.
+  Clicking begin cuts *straight* to black (no glimpse of the world), the
+  opening line fades in and out, then the world fades up. `INTRO_LINE` /
+  the timings in `beginGame()`.
 - **Opening music** — `assets/backrooms.m4a` swells in over ~7 s once the
   world appears, holds, then fades back out (~30 s total). Routed through a
   Web Audio gain chain so the volume slider still works. `MUSIC_*` consts.
@@ -81,9 +82,10 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   (`models/syringe.js`): barrel with graduations, a slim plunger, luer hub,
   needle, orange cap, blue haemolymph column. Carry it **and** the crab, then
   **use** either one: the needle goes into the hinge, the plunger draws back
-  and the barrel fills (`startExtraction()`) — you come away with a
-  **jar of blue blood** (`models/blood-jar.js`, a capped milk-bottle jar of
-  glowing blue), the syringe emptied and the crab kept.
+  and the barrel fills (`startExtraction()`). The **crab is spent and leaves
+  your pack**; the blood is never an item either — it runs straight into the
+  **tally in the top-left corner** (the jar model from `models/blood-jar.js`,
+  turning on the spot beside a mL count).
 - **The children's sand shovel** — the first item down the beach, stuck in a
   **sand castle**: bucket-molded stacked towers with crenellations, a curtain
   wall with a collapsed section and rubble, drip-castle blobs, shells pressed
@@ -106,7 +108,10 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   light-pollution wash that lifts over the cliff ridge.
 - **The lighthouse** — fixed tower far down the beach; the lamp + beam are
   fog-exempt so you see it turning from the start, the tower emerges from fog
-  as you close in. Walking past it shows the end screen.
+  as you close in. A **trodden path** runs up to it through the boulders and
+  marram grass (they're cleared out of the lane and pile along its edges),
+  ending at a lit **timber door** you have to open before the wall will let
+  you in. Inside, the helical stair climbs to the lamp room and the ending.
 - **Detailed low-poly ground** — procedural sand (mottling, ripples, grit,
   pebbles, shell flecks) with a self-illuminating emissive map.
 - **Livelier ocean** — layered swell/chop/ripples, animated micro-normals,
@@ -114,6 +119,19 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   and out with a tide + wave-set shoreline (`shoreLine()` in GLSL).
 - **Night mood** — haloed moon + reflection, stars, fog, synthesised
   wind/surf that swells in sets.
+- **Pickup shine** — takeable things (the crab, the shovel) carry a soft
+  additive glint and a gentle lift in their own emissive, so they separate
+  from very dark sand without turning into waypoint markers.
+  `addItemShine()`.
+- **The enemy crab** — a bigger animal on a proper rig: eight two-bone legs
+  walking an alternating-tripod gait, articulated claws that weave as it
+  closes, gape when it rears and snap shut on the strike, eye stalks that
+  lean toward you, and a death that rolls it onto its back with the legs
+  curling in.
+- **Audio mix** — every one-shot effect routes through an **SFX bus**
+  (`sfxBusGain`) under the master volume, with its own *Effects volume*
+  slider. Previously they went straight to the speakers, which is why
+  digging was so loud.
 
 ## Layout
 
@@ -140,6 +158,9 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - `layoutViewmodel()` / `shovelVM` transforms — the first-person hand pose
 - `INTRO_LINE` + the setTimeout offsets in `beginGame()` — opening pacing
 - `MUSIC_TARGET` / `MUSIC_FADE_IN` / `MUSIC_HOLD` / `MUSIC_FADE_OUT`
+- `PATH_LEN` / `PATH_HALF` / `pathBend()` — the lighthouse path's shape
+- `CRAB_SPEED` / `CRAB_REACH` / `CRAB_WAKE` / `crab.scale` — the enemy crab
+- `DEFAULT_SETTINGS.sfxVolume` — how loud one-shot effects sit
 - `FOOT_POOL`, `REACH`, `NOTE_TEXT`, `scene.fog` density
 - `DEFAULT_SETTINGS` — starting FOV etc.
 
