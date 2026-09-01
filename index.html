@@ -121,6 +121,30 @@
     box-shadow: inset 0 0 22vw 6vw rgba(0, 0, 0, 0.75);
   }
 
+  /* taking a hit — red bleeds in from the edges and drains away.
+     Opacity is driven per-frame from JS, so no transition here. */
+  #hurt {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 7;
+    opacity: 0;
+    box-shadow: inset 0 0 13vw 1.5vw rgba(154, 14, 18, 0.72);
+    background: radial-gradient(ellipse at 50% 50%, rgba(120, 0, 0, 0) 62%, rgba(120, 8, 10, 0.28) 100%);
+  }
+
+  /* death — everything sinks into red, then the walk starts over */
+  #death {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 18;
+    opacity: 0;
+    background: radial-gradient(ellipse at 50% 50%, rgba(96, 4, 6, 0.75) 0%, #000 78%);
+    transition: opacity 1.5s ease-in;
+  }
+  #death.show { opacity: 1; pointer-events: auto; }
+
   /* crosshair */
   #crosshair {
     position: fixed;
@@ -202,6 +226,104 @@
     text-transform: uppercase;
     opacity: 0.5;
   }
+
+  /* NPC dialogue — a stark terminal card, PS1/retro-horror flavour.
+     Monospace on purpose: it reads as a different register from the
+     serif the rest of the game uses. */
+  #dialog {
+    position: fixed;
+    inset: 0;
+    z-index: 12;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 0 1.5rem 3.4rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Courier New", monospace;
+  }
+  #dialog.show { opacity: 1; pointer-events: auto; }
+  #dialog .frame { width: min(92vw, 660px); }
+  #dialog .speaker {
+    display: inline-block;
+    padding: 4px 13px;
+    background: rgba(3, 6, 10, 0.97);
+    border: 1px solid rgba(96, 226, 208, 0.45);
+    border-bottom: none;
+    color: #6fe3d0;
+    font-size: 0.7rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+  }
+  #dialog .box {
+    position: relative;
+    min-height: 5.2rem;
+    padding: 1.15rem 1.35rem 1.3rem;
+    background: rgba(2, 4, 8, 0.97);
+    border: 1px solid rgba(96, 226, 208, 0.32);
+    color: #e6f2ef;
+    font-size: 1rem;
+    line-height: 1.8;
+    letter-spacing: 0.045em;
+    text-shadow: 0 0 12px rgba(110, 200, 190, 0.18);
+    box-shadow: 0 22px 64px rgba(0, 0, 0, 0.8);
+  }
+  /* blinking block cursor while the line types itself out */
+  #dialog.typing .box::after {
+    content: "";
+    display: inline-block;
+    width: 0.55em;
+    height: 1.05em;
+    margin-left: 2px;
+    background: #6fe3d0;
+    vertical-align: -0.18em;
+    animation: caret 0.7s step-end infinite;
+  }
+  @keyframes caret { 0%, 55% { opacity: 1; } 56%, 100% { opacity: 0; } }
+  #dialog .choices { display: flex; flex-direction: column; gap: 3px; margin-top: 11px; }
+  #dialog .choice {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 0.55rem 1.1rem;
+    background: rgba(2, 4, 8, 0.92);
+    border: 1px solid rgba(120, 150, 180, 0.2);
+    color: #adc2cc;
+    font-family: inherit;
+    font-size: 0.85rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+  }
+  #dialog .choice::before { content: "\25B8"; margin-right: 0.7em; opacity: 0; }
+  #dialog .choice:hover {
+    color: #eafffb;
+    border-color: rgba(96, 226, 208, 0.7);
+    background: rgba(9, 26, 30, 0.95);
+  }
+  #dialog .choice:hover::before { opacity: 1; }
+  #dialog .hint {
+    margin-top: 12px;
+    font-size: 0.68rem;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: rgba(150, 172, 184, 0.55);
+    animation: pulse 2.2s ease-in-out infinite;
+  }
+  /* always-available way out of a conversation */
+  #dialog .leave {
+    margin-top: 14px;
+    font-size: 0.64rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgba(140, 162, 176, 0.42);
+    cursor: pointer;
+    transition: color 0.12s ease;
+  }
+  #dialog .leave:hover { color: rgba(210, 232, 240, 0.85); }
 
   /* inventory hotbar — left side, vertical */
   #hotbar {
@@ -412,6 +534,8 @@
 </head>
 <body>
   <div class="vignette"></div>
+  <div id="hurt"></div>
+  <div id="death"></div>
   <div id="crosshair"></div>
 
   <div id="hud">
@@ -451,6 +575,14 @@
         <label>Volume <span class="val" id="v-vol">90%</span></label>
         <input type="range" id="s-vol" min="0" max="1" step="0.01" value="0.9" />
       </div>
+      <div class="row">
+        <label>Music volume <span class="val" id="v-music">50%</span></label>
+        <input type="range" id="s-music" min="0" max="1" step="0.01" value="0.5" />
+      </div>
+      <div class="row">
+        <label>Wave volume <span class="val" id="v-wave">62%</span></label>
+        <input type="range" id="s-wave" min="0" max="1" step="0.01" value="0.62" />
+      </div>
       <div class="row toggle">
         <label><span>Invert look (Y)</span><input type="checkbox" id="s-invert" /></label>
       </div>
@@ -468,6 +600,15 @@
     <h1>The Lighthouse</h1>
     <p>You reach the light at the end of the beach. The rest is another walk.</p>
     <button id="end-restart">Walk again</button>
+  </div>
+
+  <div id="dialog">
+    <div class="frame">
+      <div class="speaker" id="dialog-speaker"></div>
+      <div class="box" id="dialog-text"></div>
+      <div class="choices" id="dialog-choices"></div>
+      <div class="leave" id="dialog-leave">Esc &mdash; walk away</div>
+    </div>
   </div>
 
   <div id="intro"><p id="intro-text"></p></div>

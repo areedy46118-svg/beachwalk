@@ -39,13 +39,14 @@ const DIG_DUR = 0.8;
 // ------------------------------------------------------------------
 // Settings
 // ------------------------------------------------------------------
-const DEFAULT_SETTINGS = { fov: 75, sensitivity: 1, brightness: 1.16, volume: 0.9, invertY: false };
+const DEFAULT_SETTINGS = { fov: 75, sensitivity: 1, brightness: 1.16, volume: 0.9, musicVolume: 0.5, waveVolume: 0.62, invertY: false };
 let settings = { ...DEFAULT_SETTINGS };
 try { settings = { ...settings, ...JSON.parse(localStorage.getItem('beachwalk.settings') || '{}') }; } catch (e) {}
 function saveSettings() { try { localStorage.setItem('beachwalk.settings', JSON.stringify(settings)); } catch (e) {} }
 
 let audioStarted = false, audioCtx = null, masterGain = null;
 let musicEl = null, musicEnvGain = null, musicVolGain = null, musicStarted = false;
+let waveBusGain = null;   // sub-mix for surf ambience + water-step splashes
 
 // ------------------------------------------------------------------
 // Renderer / scene / camera
@@ -74,7 +75,7 @@ function retroTex(t, { repeatWrap = true } = {}) {
 }
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x0a1220, 0.020);
+scene.fog = new THREE.FogExp2(0x0b1626, 0.014);   // thinned so the swell reads further out to sea
 
 const camera = new THREE.PerspectiveCamera(settings.fov, window.innerWidth / window.innerHeight, 0.1, 5000);
 camera.position.set(8, EYE_HEIGHT, 0);
@@ -172,6 +173,35 @@ const shoreGLSL = `
     return tide + swash + wobble;
   }
 `;
+
+// JS mirror of shoreLine() so gameplay code (footprints, digging, splashes)
+// can tell dry sand from surf. Keep in lockstep with shoreGLSL above.
+const bwFract = (x) => x - Math.floor(x);
+const bwHashJS = (n) => bwFract(Math.sin(n) * 43758.5453123);
+function bwNoiseJS(x) {
+  const i = Math.floor(x), f = bwFract(x), u = f * f * (3 - 2 * f);
+  return bwHashJS(i) * (1 - u) + bwHashJS(i + 1) * u;
+}
+function shoreLineJS(z, t) {
+  const tide = Math.sin(t * 0.045) * 3.0;
+  const swash = 2.4 * Math.sin(t * 0.6) + 1.2 * Math.sin(t * 0.97 + 1.7);
+  const wobble = (bwNoiseJS(z * 0.12 + t * 0.05) - 0.5) * 4.0;
+  return tide + swash + wobble;
+}
+// true when (x,z) is seaward of the waterline — i.e. standing in / over water
+function inWater(x, z) { return x < shoreLineJS(z, oceanUniforms.uTime.value) + 0.25; }
+
+// Ocean shader uniforms — declared up here because the sand shader and the
+// gameplay water checks both reach for uTime before the Ocean section runs.
+const oceanUniforms = THREE.UniformsUtils.merge([
+  THREE.UniformsLib.fog,
+  { uTime: { value: 0 }, uOffset: { value: new THREE.Vector2() }, uCamPos: { value: new THREE.Vector3() },
+    uMoonDir: { value: MOON_DIR },
+    uDeep: { value: new THREE.Color(0x123f66) },
+    uShallow: { value: new THREE.Color(0x2f8ec2) },
+    uCrest: { value: new THREE.Color(0xaad9ec) },
+    uSky: { value: new THREE.Color(0x1d3856) } },
+]);
 
 // ------------------------------------------------------------------
 // Sand texture
@@ -728,6 +758,7 @@ const _fm = new THREE.Matrix4(), _fq = new THREE.Quaternion(), _fe = new THREE.E
 let footIdx = 0, footSide = 1, digIdx = 0;
 const lastFootPos = new THREE.Vector3();
 function stampFoot(x, z, fwdX, fwdZ, side) {
+  if (inWater(x, z)) return;                 // prints don't hold on water
   _fe.set(0, Math.atan2(fwdX, fwdZ) + Math.PI, 0);
   _fq.setFromEuler(_fe);
   const off = 0.14 * side;
@@ -738,6 +769,7 @@ function stampFoot(x, z, fwdX, fwdZ, side) {
   foot.instanceMatrix.needsUpdate = true;
 }
 function stampDigHole(x, z, fwdX = 0, fwdZ = -1) {
+  if (inWater(x, z)) return;                 // no crater on the water — digImpact() splashes instead
   const yaw = Math.random() * Math.PI;
   const sc = 0.9 + Math.random() * 0.4;
   _fe.set(0, yaw, 0); _fq.setFromEuler(_fe);
@@ -844,34 +876,98 @@ function updatePuffs(dt) {
   if (any) puff.instanceMatrix.needsUpdate = true;
 }
 
+// water kicked up by wading / digging in the surf — pale droplets that
+// arc up and fall back. Same pooled-instances pattern as the sand puffs.
+const SPLASH_POOL = 110;
+const splashGeo = new THREE.IcosahedronGeometry(1, 0);
+const splash = new THREE.InstancedMesh(
+  splashGeo,
+  new THREE.MeshStandardMaterial({
+    color: 0xd6e6f0, roughness: 0.35, metalness: 0, emissive: 0x4c728c,
+    transparent: true, opacity: 0.92, flatShading: true,
+  }),
+  SPLASH_POOL
+);
+splash.frustumCulled = false; splash.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(splash);
+const splashes = Array.from({ length: SPLASH_POOL }, () => ({
+  life: 0, ttl: 1, pos: new THREE.Vector3(), vel: new THREE.Vector3(), sz: 1, rot: new THREE.Euler(),
+}));
+{ const hide = new THREE.Matrix4().makeScale(0, 0, 0); for (let i = 0; i < SPLASH_POOL; i++) splash.setMatrixAt(i, hide); }
+let splashIdx = 0;
+function spawnSplash(x, z, n, dirX = 0, dirZ = 0, power = 1) {
+  for (let i = 0; i < n; i++) {
+    const p = splashes[splashIdx];
+    splashIdx = (splashIdx + 1) % SPLASH_POOL;
+    p.ttl = p.life = 0.34 + Math.random() * 0.42;
+    p.sz = (0.45 + Math.random() * 0.95) * (0.6 + power * 0.6);
+    p.pos.set(x + (Math.random() - 0.5) * 0.35, 0.02 + Math.random() * 0.05, z + (Math.random() - 0.5) * 0.35);
+    const out = 1.0 + Math.random() * 2.4;
+    p.vel.set(
+      dirX * 1.6 * power + (Math.random() - 0.5) * out,
+      (2.4 + Math.random() * 3.4) * (0.55 + power * 0.55),
+      dirZ * 1.6 * power + (Math.random() - 0.5) * out
+    );
+    p.rot.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+  }
+}
+const _spm = new THREE.Matrix4(), _spq = new THREE.Quaternion(), _sps = new THREE.Vector3();
+function updateSplashes(dt) {
+  let any = false;
+  for (let i = 0; i < SPLASH_POOL; i++) {
+    const p = splashes[i];
+    if (p.life <= 0) continue;
+    any = true;
+    p.life -= dt;
+    p.vel.y -= 16 * dt;
+    p.pos.addScaledVector(p.vel, dt);
+    p.rot.x += p.vel.x * dt * 3; p.rot.z += p.vel.z * dt * 3;
+    if (p.pos.y <= 0.02) p.life = 0;
+    const k = Math.max(0, p.life / p.ttl);
+    const sc = p.sz * 0.055 * (0.35 + 0.65 * k);
+    _spq.setFromEuler(p.rot);
+    _spm.compose(p.pos, _spq, _sps.set(sc, sc * 1.7, sc));
+    splash.setMatrixAt(i, _spm);
+    if (p.life <= 0) splash.setMatrixAt(i, _spm.makeScale(0, 0, 0));
+  }
+  if (any) splash.instanceMatrix.needsUpdate = true;
+}
+
 // ------------------------------------------------------------------
 // Ocean
 // ------------------------------------------------------------------
 const waveGLSL = `
   float oceanWave(vec2 p, float t){
     float w = 0.0;
-    w += sin(p.x * 0.13 + p.y * 0.02 + t * 1.05) * 0.34;
-    w += sin(p.x * 0.09 - p.y * 0.05 + t * 0.83) * 0.28;
-    w += sin(p.x * 0.21 + p.y * 0.10 + t * 1.55) * 0.15;
-    w += sin(p.y * 0.33 - p.x * 0.06 + t * 2.10) * 0.10;
-    w += sin(p.y * 0.60 + p.x * 0.15 + t * 2.90) * 0.05;
-    w += sin(p.x * 1.10 + t * 4.10) * 0.028;
-    w += sin(p.y * 1.35 - t * 3.70) * 0.022;
-    float build = smoothstep(-90.0, 3.0, p.x);
-    w += sin(p.x * 0.5 - t * 2.6) * 0.16 * build;
-    w *= smoothstep(8.0, -24.0, p.x);
+    // long travelling swell — the motion you read far out to sea
+    w += sin(p.x * 0.045 + p.y * 0.028 - t * 0.55) * 0.70;
+    w += sin(p.x * 0.032 - p.y * 0.041 + t * 0.42) * 0.50;
+    // steep mid waves — short wavelength + real amplitude so each triangle
+    // tilts, which is what gives the faceted low-poly water its shape
+    w += sin(p.x * 0.20 + p.y * 0.13 + t * 1.10) * 0.48;
+    w += sin(p.x * 0.16 - p.y * 0.19 + t * 0.90) * 0.40;
+    w += sin(p.y * 0.24 - p.x * 0.11 + t * 1.30) * 0.34;
+    w += sin(p.x * 0.33 + p.y * 0.28 + t * 1.70) * 0.26;
+    w += sin(p.y * 0.44 + p.x * 0.20 - t * 2.10) * 0.19;
+    w += sin(p.x * 0.61 - p.y * 0.35 + t * 2.60) * 0.13;
+    // a steeper set that stacks up as it nears the shore
+    float build = smoothstep(-120.0, 4.0, p.x);
+    w += sin(p.x * 0.50 - t * 2.30) * 0.16 * build;
+    // ease down to the waterline so it meets the sand without a wall of water
+    w *= smoothstep(0.5, -22.0, p.x);
+    // short, sharp chop that lives right in the near band so the facets you
+    // actually walk past have real relief (kept off the far water)
+    float nearBand = smoothstep(-55.0, -2.0, p.x);
+    w += sin(p.x * 0.62 + p.y * 0.44 - t * 3.0) * 0.12 * nearBand;
+    w += sin(p.y * 0.78 - p.x * 0.36 + t * 2.5) * 0.09 * nearBand;
     return w;
   }
 `;
-const oceanUniforms = THREE.UniformsUtils.merge([
-  THREE.UniformsLib.fog,
-  { uTime: { value: 0 }, uOffset: { value: new THREE.Vector2() }, uCamPos: { value: new THREE.Vector3() },
-    uMoonDir: { value: MOON_DIR }, uDeep: { value: new THREE.Color(0x081726) }, uShallow: { value: new THREE.Color(0x1b3a55) } },
-]);
-const oceanGeo = new THREE.PlaneGeometry(3000, 3000, 300, 300);
+const oceanGeo = new THREE.PlaneGeometry(2200, 2200, 360, 360);   // ~6 m facets
 oceanGeo.rotateX(-Math.PI / 2);
 const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
   fog: true, uniforms: oceanUniforms,
+  extensions: { derivatives: true },        // dFdx/dFdy for the flat facet normal (WebGL1)
   vertexShader: `
     #include <fog_pars_vertex>
     uniform float uTime; uniform vec2 uOffset; varying vec3 vWorld;
@@ -889,7 +985,8 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
   `,
   fragmentShader: `
     #include <fog_pars_fragment>
-    uniform float uTime; uniform vec3 uCamPos; uniform vec3 uMoonDir; uniform vec3 uDeep; uniform vec3 uShallow;
+    uniform float uTime; uniform vec3 uCamPos; uniform vec3 uMoonDir;
+    uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uCrest; uniform vec3 uSky;
     varying vec3 vWorld;
     ${noiseGLSL}
     ${shoreGLSL}
@@ -897,43 +994,61 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
     void main() {
       float shore = shoreLine(vWorld.z, uTime);
       if (vWorld.x > shore) discard;
-      vec2 wp = vec2(vWorld.x, vWorld.z);
-      float e = 0.55;
-      float hL = oceanWave(wp - vec2(e, 0.0), uTime);
-      float hR = oceanWave(wp + vec2(e, 0.0), uTime);
-      float hD = oceanWave(wp - vec2(0.0, e), uTime);
-      float hU = oceanWave(wp + vec2(0.0, e), uTime);
-      vec3 n = normalize(vec3(hL - hR, 2.0 * e, hD - hU));
-      n.xz += 0.12 * vec2(sin(wp.x * 2.7 + wp.y * 0.6 + uTime * 5.0), sin(wp.y * 2.4 - wp.x * 0.5 - uTime * 4.3));
-      n.xz += 0.05 * vec2(sin(wp.x * 6.1 - uTime * 8.0), sin(wp.y * 5.3 + uTime * 7.0));
-      n = normalize(n);
+
+      // one flat normal per rendered triangle — the low-poly water facet look
+      vec3 n = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
+      if (n.y < 0.0) n = -n;
+
       vec3 viewDir = normalize(uCamPos - vWorld);
+      float dist = shore - vWorld.x;                 // metres out from the waterline
+
+      // shallow near the beach -> deep blue further out -> sky tint at the horizon
+      float deepen = smoothstep(0.0, 190.0, dist);
+      vec3 col = mix(uShallow, uDeep, deepen);
+      col = mix(col, uSky, smoothstep(140.0, 520.0, dist));
+
+      // facets catch the moon at different angles; fade the shading out at
+      // distance, where the triangles go sub-pixel and would just sparkle
+      float ndl = max(dot(n, normalize(uMoonDir)), 0.0);
+      float facet = mix(1.0, 0.5 + 1.05 * ndl, smoothstep(340.0, 12.0, dist));
+      col *= facet;
+
+      // steep facets pick up a pale sky tint at grazing angles
       float fres = pow(1.0 - max(dot(n, viewDir), 0.0), 3.0);
-      float dist = shore - vWorld.x;
-      float depth = smoothstep(0.0, 70.0, dist);
-      vec3 col = mix(uShallow, uDeep, depth);
-      col += vec3(0.05, 0.08, 0.13) * fres;
+      col += uSky * fres * 0.5;
+
+      // tilted facets catch a pale edge — reads as low-poly wave faces
+      float steep = clamp((1.0 - n.y) * 3.0, 0.0, 1.0);
+      steep *= smoothstep(300.0, 8.0, dist);
+      col = mix(col, uCrest, steep * 0.22);
+
+      // crest highlight on the up-facing tops of the swell
+      float wh = oceanWave(vec2(vWorld.x, vWorld.z), uTime);
+      float crest = smoothstep(0.30, 0.80, wh) * smoothstep(0.55, 0.95, n.y);
+      col = mix(col, uCrest, crest * 0.5);
+
+      // moon glitter road
       vec3 hv = normalize(uMoonDir + viewDir);
-      float spec = pow(max(dot(n, hv), 0.0), 90.0);
+      float spec = pow(max(dot(n, hv), 0.0), 60.0);
       vec3 moonFlat = normalize(vec3(uMoonDir.x, 0.0, uMoonDir.z));
       vec3 viewFlat = normalize(vec3(-viewDir.x, 0.0, -viewDir.z));
       float road = pow(max(dot(viewFlat, moonFlat), 0.0), 8.0);
-      col += vec3(0.85, 0.90, 1.0) * spec * (0.10 + road * 1.3);
-      col += vec3(0.26, 0.34, 0.50) * road * 0.12;
-      float wh = oceanWave(wp, uTime);
-      float caps = smoothstep(0.15, 0.30, wh) * (0.5 + 0.5 * sin(wp.x * 2.0 - uTime * 6.0));
-      col = mix(col, vec3(0.60, 0.68, 0.78), caps * 0.30 * depth);
+      col += vec3(0.90, 0.94, 1.0) * spec * (0.15 + road * 1.4);
+      col += vec3(0.26, 0.34, 0.50) * road * 0.14;
+
+      // shoreline foam / swash lace
       float band = smoothstep(3.5, 0.0, dist) * smoothstep(-1.8, 0.5, dist);
       float fizz = 0.5 + 0.5 * sin(vWorld.z * 3.1 + uTime * 9.0) * sin(vWorld.z * 1.3 - uTime * 5.0);
-      col = mix(col, vec3(0.74, 0.81, 0.88), clamp(band * fizz, 0.0, 0.85));
+      col = mix(col, vec3(0.78, 0.85, 0.92), clamp(band * fizz, 0.0, 0.85));
       float lace = smoothstep(0.0, 1.5, dist) * smoothstep(5.0, 1.5, dist);
       col += vec3(0.16) * lace * (0.35 + 0.65 * bwNoise(vWorld.z * 2.0 + uTime * 1.5));
+
       gl_FragColor = vec4(col, 1.0);
       #include <fog_fragment>
     }
   `,
 }));
-ocean.position.y = -0.32;
+ocean.position.y = -0.35;
 ocean.frustumCulled = false;
 scene.add(ocean);
 
@@ -950,16 +1065,56 @@ const menuEl = document.getElementById('menu');
 const endEl = document.getElementById('end');
 const staminaEl = document.getElementById('stamina');
 const staminaFill = document.getElementById('stamina-fill');
+const dialogEl = document.getElementById('dialog');
+const dialogSpeakerEl = document.getElementById('dialog-speaker');
+const dialogTextEl = document.getElementById('dialog-text');
+const dialogChoicesEl = document.getElementById('dialog-choices');
+const hurtEl = document.getElementById('hurt');
+const deathEl = document.getElementById('death');
 
 let started = false, locked = false, fallbackLook = false, dragging = false;
 let noteOpen = false, menuOpen = false, ended = false, introDone = false;
-let inspecting = false;
+let inspecting = false, dialogOpen = false;
 let menuReturnLock = false, noteReturnLock = false, inspectReturnLock = false;
 const lookEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
-function frozen() { return noteOpen || menuOpen || ended || inspecting || !introDone; }
+// ------------------------------------------------------------------
+// Player health — three hits and the walk starts over
+// ------------------------------------------------------------------
+const MAX_HP = 3;
+const HURT_FADE = 1.1;                 // seconds for the red to bleed off
+let hp = MAX_HP, hurtFlash = 0, dying = false;
+function damagePlayer(n = 1) {
+  if (dying || ended || !introDone) return;
+  hp -= n;
+  hurtFlash = 1;
+  sfxHurt();
+  if (hp <= 0) playerDied();
+}
+function playerDied() {
+  if (dying) return;
+  dying = true;
+  if (locked) document.exitPointerLock();
+  if (held) dropHeld();
+  endDialog();
+  deathEl.classList.add('show');
+  refreshUI();
+  // come back at the title, but don't sit through the opening card again
+  setTimeout(() => {
+    try { sessionStorage.setItem('beachwalk.skipIntro', '1'); } catch (e) {}
+    location.reload();
+  }, 1600);
+}
+function updateHurt(dt) {
+  if (hurtFlash <= 0) return;
+  hurtFlash = Math.max(0, hurtFlash - dt / HURT_FADE);
+  // ease out so the spike is sharp and the tail is soft
+  hurtEl.style.opacity = String(hurtFlash * hurtFlash);
+}
+
+function frozen() { return noteOpen || menuOpen || dialogOpen || inspecting || dying || ended || !introDone; }
 function refreshUI() {
-  const playing = started && !menuOpen && !noteOpen && !inspecting && !ended;
+  const playing = started && !menuOpen && !noteOpen && !dialogOpen && !inspecting && !dying && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
 }
 
@@ -1009,9 +1164,9 @@ document.addEventListener('pointerlockchange', () => {
   } else {
     if (fallbackLook || ended) return;
     if (!started) { overlay.classList.remove('hidden'); return; }
-    // an intentional exit (note / menu) is handled by those; a stray exit
-    // while still playing means the user hit Esc → show the menu
-    if (!menuOpen && !noteOpen) openMenu();
+    // an intentional exit (note / menu / dialogue / death) is handled by
+    // those; a stray exit while still playing means the user hit Esc → menu
+    if (!menuOpen && !noteOpen && !dialogOpen && !dying) openMenu();
   }
 });
 window.addEventListener('unhandledrejection', (e) => {
@@ -1037,12 +1192,28 @@ const introTextEl = document.getElementById('intro-text');
 const INTRO_LINE = 'You are alone on the shore.\nIt is well past midnight.\nThe tide keeps its own counsel.';
 let introStarted = false;
 
+// coming back from a death: straight into the walk, no opening card
+let skipIntro = false;
+try {
+  skipIntro = sessionStorage.getItem('beachwalk.skipIntro') === '1';
+  if (skipIntro) sessionStorage.removeItem('beachwalk.skipIntro');
+} catch (e) {}
+
 function beginGame() {
   if (introStarted) return;
   introStarted = true;
   startAmbientAudio();
+  startMusic();                                    // swell it in from the moment you spawn
   requestLock();                                   // must fire on the click gesture
   overlay.classList.add('hidden');
+
+  if (skipIntro) {
+    introDone = true;
+    for (const k in keys) keys[k] = false;
+    clock.getDelta();
+    if (!locked && !fallbackLook) enterFallback();
+    return;
+  }
 
   introTextEl.textContent = INTRO_LINE;
   introEl.style.transition = 'opacity 1.2s ease';
@@ -1057,7 +1228,6 @@ function beginGame() {
     for (const k in keys) keys[k] = false;
     clock.getDelta();                              // drop the big first-frame dt
     if (!locked && !fallbackLook) enterFallback();
-    startMusic();
   }, revealAt);
 }
 overlay.addEventListener('click', beginGame);
@@ -1068,6 +1238,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Escape') {
     if (ended) return;
     if (inspecting) closeInspect();
+    else if (dialogOpen) endDialog();
     else if (noteOpen) closeNote();
     else if (menuOpen) closeMenu();
     else if (fallbackLook) openMenu();
@@ -1100,26 +1271,35 @@ const S_FOV = document.getElementById('s-fov');
 const S_SENS = document.getElementById('s-sens');
 const S_BRIGHT = document.getElementById('s-bright');
 const S_VOL = document.getElementById('s-vol');
+const S_WAVE = document.getElementById('s-wave');
+const S_MUSIC = document.getElementById('s-music');
 const S_INVERT = document.getElementById('s-invert');
 function applySettings() {
   camera.fov = settings.fov;
   camera.updateProjectionMatrix();
   renderer.toneMappingExposure = settings.brightness;
   if (masterGain && audioCtx) masterGain.gain.setTargetAtTime(settings.volume, audioCtx.currentTime, 0.05);
-  if (musicVolGain && audioCtx) musicVolGain.gain.setTargetAtTime(settings.volume, audioCtx.currentTime, 0.05);
+  if (musicVolGain && audioCtx) musicVolGain.gain.setTargetAtTime(settings.volume * settings.musicVolume, audioCtx.currentTime, 0.05);
+  if (waveBusGain && audioCtx) waveBusGain.gain.setTargetAtTime(settings.waveVolume, audioCtx.currentTime, 0.05);
   document.getElementById('v-fov').textContent = settings.fov;
   document.getElementById('v-sens').textContent = settings.sensitivity.toFixed(2);
   document.getElementById('v-bright').textContent = settings.brightness.toFixed(2);
   document.getElementById('v-vol').textContent = Math.round(settings.volume * 100) + '%';
+  document.getElementById('v-music').textContent = Math.round(settings.musicVolume * 100) + '%';
+  document.getElementById('v-wave').textContent = Math.round(settings.waveVolume * 100) + '%';
 }
 function syncMenuInputs() {
   S_FOV.value = settings.fov; S_SENS.value = settings.sensitivity;
-  S_BRIGHT.value = settings.brightness; S_VOL.value = settings.volume; S_INVERT.checked = settings.invertY;
+  S_BRIGHT.value = settings.brightness; S_VOL.value = settings.volume;
+  S_MUSIC.value = settings.musicVolume;
+  S_WAVE.value = settings.waveVolume; S_INVERT.checked = settings.invertY;
 }
 S_FOV.addEventListener('input', () => { settings.fov = +S_FOV.value; applySettings(); saveSettings(); });
 S_SENS.addEventListener('input', () => { settings.sensitivity = +S_SENS.value; applySettings(); saveSettings(); });
 S_BRIGHT.addEventListener('input', () => { settings.brightness = +S_BRIGHT.value; applySettings(); saveSettings(); });
 S_VOL.addEventListener('input', () => { settings.volume = +S_VOL.value; applySettings(); saveSettings(); });
+S_WAVE.addEventListener('input', () => { settings.waveVolume = +S_WAVE.value; applySettings(); saveSettings(); });
+S_MUSIC.addEventListener('input', () => { settings.musicVolume = +S_MUSIC.value; applySettings(); saveSettings(); });
 S_INVERT.addEventListener('change', () => { settings.invertY = S_INVERT.checked; saveSettings(); });
 document.getElementById('m-resume').addEventListener('click', closeMenu);
 applySettings();
@@ -1313,8 +1493,9 @@ function updateHover() {
     crosshair.className = 'active';
     setPrompt(kbd('E') + best.label);
   } else if (equipped && equipped.onDig && digT <= 0 && crosshairGroundPoint()) {
+    const onMound = !inWater(_digHit.x, _digHit.z) && moundAt(_digHit.x, _digHit.z);
     crosshair.className = 'active';
-    setPrompt(kbd('LMB') + 'Dig here');
+    setPrompt(kbd('LMB') + (onMound ? 'Dig up the mound' : 'Dig here'));
   } else {
     crosshair.className = '';
     setPrompt('');
@@ -1459,7 +1640,7 @@ function renderHotbar() {
     if (item) {
       const lab = document.createElement('span');
       lab.className = 'label';
-      lab.textContent = item.name + (item.onDig ? (item === equipped ? ' — holster' : ' — equip') : ' — use');
+      lab.textContent = item.name + (item.viewmodel ? (item === equipped ? ' — holster' : ' — equip') : ' — use');
       slot.appendChild(lab);
       slot.addEventListener('click', (e) => { e.stopPropagation(); useSlot(i); });
     }
@@ -1504,69 +1685,29 @@ const viewmodel = new THREE.Group();
 viewmodel.visible = false;
 vmScene.add(viewmodel);
 
-/* A bare hand and forearm coming up from the lower right, fist closed
- * around the shovel's shaft. The rig's origin sits at the centre of the
- * fist, so the tool just parents to `toolMount` at 0,0,0 and the fingers
- * wrap it. Low-poly on purpose: blocky segments, flat shading. */
-const ARM_BASE = new THREE.Vector3(0.24, -0.30, -0.78);
-const ARM_ROT_X = 0.30;
+/* No hand — the equipped item just floats in the lower-right of the view
+ * as if an invisible hand were holding it. `armRig` is kept purely as the
+ * transform that `updateViewmodel()` sways and swings; `toolMount` at its
+ * origin is where tool models parent. */
+const ARM_BASE = new THREE.Vector3(0.16, -0.20, -0.62);
+const ARM_ROT_X = 0.10;
 const armRig = new THREE.Group();
 armRig.position.copy(ARM_BASE);
-armRig.rotation.set(ARM_ROT_X, -0.34, 0.20);
+armRig.rotation.set(ARM_ROT_X, -0.45, 0.10);
 viewmodel.add(armRig);
 
-// Keep the hand at the same spot in the frame whatever the window shape:
-// derive its X from the view's half-width at the arm's depth.
+// Keep the floating item at the same spot in the frame whatever the window
+// shape: derive its X/Y from the view's half-extents at the item's depth —
+// tucked into the lower-right corner like a held tool.
 function layoutViewmodel() {
   const d = Math.abs(ARM_BASE.z);
   const halfH = Math.tan((vmCamera.fov * Math.PI) / 360) * d;
   const halfW = halfH * vmCamera.aspect;
-  ARM_BASE.x = halfW * 0.52;
-  ARM_BASE.y = -halfH * 0.72;
+  ARM_BASE.x = halfW * 0.58;
+  ARM_BASE.y = -halfH * 0.66;
 }
-{
-  const skin = new THREE.MeshStandardMaterial({ color: 0xb98a68, roughness: 0.85, metalness: 0, emissive: 0x2a1a11, flatShading: true });
-  const skinDark = new THREE.MeshStandardMaterial({ color: 0xa2745a, roughness: 0.9, metalness: 0, emissive: 0x22140d, flatShading: true });
 
-  // forearm tapering into the wrist, running down out of frame
-  const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.085, 0.62, 7), skin);
-  forearm.position.set(0.015, -0.36, -0.02);
-  forearm.rotation.z = -0.06;
-  const wrist = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.09, 0.075), skin);
-  wrist.position.set(0, -0.085, 0);
-
-  // palm — the shaft passes through it vertically
-  const palm = new THREE.Mesh(new THREE.BoxGeometry(0.105, 0.135, 0.085), skin);
-  palm.position.set(0, 0, 0.001);
-  // heel of the thumb
-  const thenar = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.085, 0.06), skin);
-  thenar.position.set(-0.05, -0.028, 0.012);
-
-  armRig.add(forearm, wrist, palm, thenar);
-
-  // four curled fingers closing over the front of the shaft
-  for (let i = 0; i < 4; i++) {
-    const y = 0.052 - i * 0.036;
-    const len = i === 0 ? 0.085 : i === 3 ? 0.068 : 0.082;
-    const prox = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.03, len), i % 2 ? skin : skinDark);
-    prox.position.set(0.028, y, 0.058);
-    prox.rotation.x = -0.15;
-    // the tip curls back toward the palm, closing the grip
-    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.032, 0.05), i % 2 ? skinDark : skin);
-    tip.position.set(0.028, y - 0.012, 0.098);
-    tip.rotation.x = -1.15;
-    armRig.add(prox, tip);
-  }
-  // thumb crossing over the fingers
-  const thumb1 = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.065), skin);
-  thumb1.position.set(-0.042, 0.026, 0.042);
-  thumb1.rotation.set(-0.35, 0.55, 0);
-  const thumb2 = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.036, 0.055), skinDark);
-  thumb2.position.set(-0.012, 0.036, 0.078);
-  thumb2.rotation.set(-0.2, 1.15, 0);
-  armRig.add(thumb1, thumb2);
-}
-// the tool sits in the middle of the fist
+// the tool parents here — sits where the fist used to be
 const toolMount = new THREE.Group();
 armRig.add(toolMount);
 
@@ -1580,8 +1721,9 @@ function makeShovel() {
   const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.62, 10), red); shaft.position.y = 0.31;
   const grip = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.018, 8, 16), red); grip.position.y = 0.63; grip.rotation.x = Math.PI / 2;
   const gripBar = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.15, 8), red); gripBar.position.y = 0.63; gripBar.rotation.z = Math.PI / 2;
-  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.24, 0.03), red); blade.position.set(0, -0.08, 0.02);
-  const lip = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.02, 0.06), red); lip.position.set(0, -0.2, 0.035);
+  // scoop/lip on the -Z face so the concave side leads into the sand on the dig
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.24, 0.03), red); blade.position.set(0, -0.08, -0.02);
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.02, 0.06), red); lip.position.set(0, -0.2, -0.045);
   g.add(shaft, grip, gripBar, blade, lip);
   return g;
 }
@@ -1596,12 +1738,12 @@ function makeShovelIcon() {
   return c.toDataURL();
 }
 
-// scaled + slid so the shaft runs straight through the closed fist, with
-// the D-handle just above the thumb and the blade hanging below frame
+// held out ahead, D-handle back toward the camera and the blade angled
+// down-and-forward — the scoop faces the ground so the dig swing bites in
 const shovelVM = makeShovel();
-shovelVM.scale.setScalar(0.44);
-shovelVM.position.set(0.004, -0.13, 0.022);
-shovelVM.rotation.set(0.16, 0.1, 0.03);
+shovelVM.scale.setScalar(0.48);
+shovelVM.position.set(-0.04, -0.02, 0.0);
+shovelVM.rotation.set(0.70, 0.35, 0.32);
 shovelVM.visible = false;
 toolMount.add(shovelVM);
 
@@ -1759,9 +1901,21 @@ function digImpact() {
     x = THREE.MathUtils.clamp(camera.position.x + _pf.x * 1.5, WADE_X + 0.3, CLIFF_BLOCK_X - 0.3);
     z = camera.position.z + _pf.z * 1.5;
   }
+  // a swing that lands near the crab kills it, sand or surf
+  if (crabState.alive) {
+    const cdx = x - crab.position.x, cdz = z - crab.position.z;
+    if (cdx * cdx + cdz * cdz < CRAB_KILL_RADIUS * CRAB_KILL_RADIUS) killCrab();
+  }
+  if (inWater(x, z)) {
+    // blade hits water, not sand — throw a splash, leave no crater
+    spawnSplash(x, z, 24, _pf.x, _pf.z, 1.7);
+    sfxSplash(1.1);
+    return;
+  }
   stampDigHole(x, z, _pf.x, _pf.z);
   spawnPuffs(x, z, 22, _pf.x, _pf.z);
   sfxDigImpact();
+  revealMoundNear(x, z, _pf.x, _pf.z);
 }
 
 let vmSway = 0;
@@ -1822,32 +1976,33 @@ addInteractable(bottle, 'Take the bottle', 'inventory', {
 // to turn it over and look at the underside. Model lives in
 // models/horseshoe-crab.js.
 // ------------------------------------------------------------------
-const crab = makeHorseshoeCrab();
-const crabWorld = new THREE.Group();
-crabWorld.add(crab);
+// (renamed hcrab* to avoid the enemy `crab` added on main)
+const hcrab = makeHorseshoeCrab();
+const hcrabWorld = new THREE.Group();
+hcrabWorld.add(hcrab);
 {
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.30, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   hit.name = 'hitProxy';
-  crabWorld.add(hit);
+  hcrabWorld.add(hit);
 }
-crabWorld.position.set(2.7, 0.03, -58);
-crabWorld.rotation.set(0.05, -0.7, -0.03);
-scene.add(crabWorld);
-let crabTaken = false;
+hcrabWorld.position.set(2.7, 0.03, -58);
+hcrabWorld.rotation.set(0.05, -0.7, -0.03);
+scene.add(hcrabWorld);
+let hcrabTaken = false, crabBled = false;
 const crabItem = {
   name: 'Horseshoe crab', icon: makeHorseshoeCrabIcon(),
   use: () => {
     if (!crabBled && inventory.includes(syringeItem)) startExtraction();
-    else openInspect(crab, { rotX: 0.5, rotY: 0.5 });
+    else openInspect(hcrab, { rotX: 0.5, rotY: 0.5 });
   },
 };
-addInteractable(crabWorld, 'Take the horseshoe crab', 'inventory', {
+addInteractable(hcrabWorld, 'Take the horseshoe crab', 'inventory', {
   onActivate: () => {
-    if (crabTaken) return;
-    crabTaken = true;
+    if (hcrabTaken) return;
+    hcrabTaken = true;
     sfxThud(0.04);
-    scene.remove(crabWorld);
+    scene.remove(hcrabWorld);
     hovered = null;
     addToInventory(crabItem);
   },
@@ -1873,7 +2028,7 @@ syringeWorld.position.set(3.6, 0.06, -96);
 syringeWorld.rotation.set(0.1, 1.1, 0.5);
 scene.add(syringeWorld);
 
-let syringeTaken = false, crabBled = false;
+let syringeTaken = false;
 const bloodJar = makeBloodJar();
 const jarItem = { name: 'Jar of blue blood', icon: makeBloodJarIcon(), use: () => openInspect(bloodJar, { rotX: 0.18, rotY: 0.6 }) };
 const syringeItem = {
@@ -1905,19 +2060,19 @@ function startExtraction() {
 
   const SS = 1.4;
   extractRig.clear();
-  crab.position.set(0, 0, 0); crab.rotation.set(0, 0, 0); crab.scale.setScalar(1);
+  hcrab.position.set(0, 0, 0); hcrab.rotation.set(0, 0, 0); hcrab.scale.setScalar(1);
   syringe.position.set(0, 0, 0); syringe.rotation.set(0.95, 0.5, 0); syringe.scale.setScalar(SS);
   syringe.userData.setFill(0);
   syringe.userData.parts.cap.visible = true;
   const tip = new THREE.Vector3(0, 0, syringe.userData.parts.tipZ * SS).applyEuler(syringe.rotation);
   syringe.position.copy(_hinge).sub(tip).add(new THREE.Vector3(0, 0.05, 0));   // start lifted clear
   syringe.userData.startY = syringe.position.y;
-  extractRig.add(crab, syringe);
+  extractRig.add(hcrab, syringe);
 
   inspectSetModel(extractRig);
   // frame on the crab, not the crab+syringe pair
   extractRig.updateMatrixWorld(true);
-  const cb = new THREE.Box3().setFromObject(crab).getCenter(new THREE.Vector3());
+  const cb = new THREE.Box3().setFromObject(hcrab).getCenter(new THREE.Vector3());
   inspectFit.position.copy(cb).multiplyScalar(-inspectFit.scale.x);
   inspectRotX = 0.62; inspectRotY = 0.55; inspectDist = 4.2; inspectAuto = 999;   // no idle drift
   inspectCamera.aspect = window.innerWidth / window.innerHeight;
@@ -1961,6 +2116,492 @@ function finishExtraction() {
 }
 
 // ------------------------------------------------------------------
+// Buried caches — rare little sand mounds along the walk. Dig one open
+// with the shovel and it turns up a (placeholder) buried object.
+// ------------------------------------------------------------------
+const moundMat = new THREE.MeshStandardMaterial({ color: 0x74809a, roughness: 1, flatShading: true, emissive: 0x272f42 });
+const moundDomeGeo = new THREE.SphereGeometry(0.55, 9, 5, 0, Math.PI * 2, 0, Math.PI * 0.5);
+moundDomeGeo.scale(1, 0.36, 1);             // a low, flat dome
+function makeMound() {
+  const g = new THREE.Group();
+  const dome = new THREE.Mesh(moundDomeGeo, moundMat);
+  dome.rotation.y = Math.random() * Math.PI;
+  g.add(dome);
+  // a couple of pressed-in pebbles so it reads as disturbed sand, not a bump
+  for (let i = 0; i < 3; i++) {
+    const a = Math.random() * Math.PI * 2, r = 0.2 + Math.random() * 0.28;
+    const pb = new THREE.Mesh(new THREE.DodecahedronGeometry(0.03 + Math.random() * 0.03, 0),
+      new THREE.MeshStandardMaterial({ color: 0x525b6d, roughness: 1, flatShading: true, emissive: 0x161b25 }));
+    pb.position.set(Math.cos(a) * r, 0.02, Math.sin(a) * r);
+    g.add(pb);
+  }
+  return g;
+}
+function makeBuriedObject() {
+  // PLACEHOLDER — used for the 2nd buried cache onward, swap later
+  const g = new THREE.Group();
+  const brass = new THREE.MeshStandardMaterial({ color: 0x9c7b3f, roughness: 0.6, metalness: 0.35, flatShading: true, emissive: 0x2c2110 });
+  const wrap = new THREE.MeshStandardMaterial({ color: 0x6f6552, roughness: 1, flatShading: true, emissive: 0x1c1a14 });
+  const box = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 0.13), brass);
+  const band = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.13, 0.035), wrap);
+  g.add(box, band);
+  return g;
+}
+
+// The glowstick — first thing you dig up. A short cracked light-stick
+// burning a cold teal, throwing a small glow pool on the sand.
+const GLOWSTICK_COLOR = 0x2fe9cf;   // cold teal, matched to the reference
+const GLOWSTICK_LEN = 0.15;         // ~6 in
+const GLOWSTICK_RADIUS = 0.014;
+const GLOWSTICK_GLOW = 2.0;         // metres — the light's reach on the ground
+function makeGlowstick() {
+  const g = new THREE.Group();
+  // translucent casing + a lit inner core
+  const casing = new THREE.Mesh(
+    new THREE.CylinderGeometry(GLOWSTICK_RADIUS, GLOWSTICK_RADIUS, GLOWSTICK_LEN, 10),
+    new THREE.MeshBasicMaterial({ color: 0x74e6d4, transparent: true, opacity: 0.42, fog: false })
+  );
+  casing.rotation.z = Math.PI / 2;                    // lie flat, along X
+  const core = new THREE.Mesh(
+    new THREE.CylinderGeometry(GLOWSTICK_RADIUS * 0.5, GLOWSTICK_RADIUS * 0.5, GLOWSTICK_LEN + 0.006, 8),
+    new THREE.MeshBasicMaterial({ color: 0x5fd0c0, fog: false })
+  );
+  core.rotation.z = Math.PI / 2;
+  const capMat = new THREE.MeshStandardMaterial({ color: 0x172523, roughness: 1, flatShading: true });
+  for (const s of [-1, 1]) {
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(GLOWSTICK_RADIUS * 1.15, GLOWSTICK_RADIUS * 1.15, 0.012, 10), capMat);
+    cap.rotation.z = Math.PI / 2; cap.position.x = s * (GLOWSTICK_LEN / 2 + 0.004);
+    g.add(cap);
+  }
+  g.add(casing, core);
+  // the glow it throws on the ground — a soft, even teal pool (low decay so
+  // it doesn't clip to white at the centre under the film tonemap)
+  const light = new THREE.PointLight(GLOWSTICK_COLOR, 0.9, GLOWSTICK_GLOW, 1.0);
+  light.position.set(0, 0.04, 0);
+  g.add(light);
+  // faint additive halo so the stick itself blooms a little
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTex, color: GLOWSTICK_COLOR, transparent: true, opacity: 0.16,
+    depthWrite: false, fog: false, blending: THREE.AdditiveBlending,
+  }));
+  halo.scale.setScalar(0.4);
+  g.add(halo);
+  g.userData.light = light;
+  return g;
+}
+function makeGlowstickIcon() {
+  const c = document.createElement('canvas'); c.width = c.height = 48;
+  const g = c.getContext('2d');
+  g.lineCap = 'round';
+  g.strokeStyle = '#3af0d8'; g.lineWidth = 10;
+  g.beginPath(); g.moveTo(12, 36); g.lineTo(36, 12); g.stroke();
+  g.strokeStyle = '#dcfff8'; g.lineWidth = 3.5;
+  g.beginPath(); g.moveTo(12, 36); g.lineTo(36, 12); g.stroke();
+  return c.toDataURL();
+}
+
+// Held in the right hand when equipped. The view model lives in the overlay
+// scene (which can't light the world), so the actual lamp is a separate
+// PointLight in the main scene that rides just off the camera — see
+// updateHeldGlow(). Held up on end, the way you'd carry a cracked stick.
+const glowstickVM = makeGlowstick();
+glowstickVM.remove(glowstickVM.userData.light);
+glowstickVM.scale.setScalar(1.5);
+glowstickVM.position.set(0.01, 0.0, 0.01);
+glowstickVM.rotation.set(0, 0, 1.15);
+glowstickVM.visible = false;
+toolMount.add(glowstickVM);
+
+// Intensity has to be this high to read against the scene's ambient +
+// hemisphere fill; anything under ~20 gets swallowed on the sand.
+const HELD_GLOW_RANGE = 11;           // metres of usable light around you
+const HELD_GLOW_MAX = 28;
+const heldGlow = new THREE.PointLight(GLOWSTICK_COLOR, 0, HELD_GLOW_RANGE, 1.35);
+heldGlow.visible = false;
+scene.add(heldGlow);
+const _glowRight = new THREE.Vector3(), _glowFwd = new THREE.Vector3();
+function updateHeldGlow(dt) {
+  const on = equipped === glowstickItem && !held;
+  const want = on ? HELD_GLOW_MAX : 0;
+  heldGlow.intensity += (want - heldGlow.intensity) * Math.min(1, dt * 7);
+  heldGlow.visible = heldGlow.intensity > 0.05;
+  if (!heldGlow.visible) return;
+  // sit it out to the right and a little below eye line, where the hand is
+  camera.getWorldDirection(_glowFwd);
+  _glowRight.crossVectors(_glowFwd, camera.up).normalize();
+  heldGlow.position.copy(camera.position)
+    .addScaledVector(_glowFwd, 0.45)
+    .addScaledVector(_glowRight, 0.34);
+  heldGlow.position.y = camera.position.y - 0.5;
+}
+
+const glowstickItem = {
+  name: 'Glowstick', icon: makeGlowstickIcon(), viewmodel: glowstickVM,
+  use: () => toggleEquip(glowstickItem),
+};
+
+const mounds = [];
+{
+  // spread them thinly from just past the spawn down to near the lighthouse
+  let z = -28;
+  while (z > END_Z + 40) {
+    const x = 3.0 + Math.random() * (CLIFF_BLOCK_X - 5.0);
+    const m = makeMound();
+    m.position.set(x, 0, z);
+    scene.add(m);
+    mounds.push({ root: m, x, z, taken: false });
+    z -= 60 + Math.random() * 90;           // "fairly rare" — ~60–150 m apart
+  }
+}
+function moundAt(x, z) {
+  for (const m of mounds) {
+    if (m.taken) continue;
+    const dx = x - m.x, dz = z - m.z;
+    if (dx * dx + dz * dz < 1.6 * 1.6) return m;
+  }
+  return null;
+}
+let moundFinds = 0;
+function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
+  const m = moundAt(x, z);
+  if (!m) return;
+  m.taken = true;
+  scene.remove(m.root);
+  spawnPuffs(m.x, m.z, 14, fwdX, fwdZ);
+  sfxDigImpact();
+  moundFinds++;
+
+  const first = moundFinds === 1;              // the first cache always holds the glowstick
+  const relic = first ? makeGlowstick() : makeBuriedObject();
+  relic.position.set(m.x, first ? 0.055 : 0.09, m.z);
+  relic.rotation.set(first ? 0 : (Math.random() - 0.5) * 0.5, Math.random() * Math.PI * 2, first ? 0 : (Math.random() - 0.5) * 0.4);
+  const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.36, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  proxy.name = 'hitProxy'; relic.add(proxy);
+  scene.add(relic);
+  addInteractable(relic, first ? 'Take the glowstick' : 'Take the buried object', 'inventory', {
+    onActivate: () => {
+      if (first) sfxGlassPick(); else sfxThud(0.04);
+      scene.remove(relic);
+      hovered = null;
+      if (first) { addToInventory(glowstickItem); toggleEquip(glowstickItem); }
+      else addToInventory({ name: 'Buried object', icon: '📦', use: () => openNote('A small buried object.\n\n(placeholder — what it is comes later.)') });
+    },
+  });
+}
+
+// ------------------------------------------------------------------
+// The crab — comes out of the surf at you partway down the beach. Small,
+// fast, and it takes three nips to put you down. A shovel swing kills it.
+// ------------------------------------------------------------------
+const CRAB_Z = -20;                    // where it's waiting, well before Bradly
+const CRAB_WAKE = 17;                  // it notices you at this range
+const CRAB_SPEED = 2.35;
+const CRAB_REACH = 1.15;               // how close it gets before it nips
+const CRAB_COOLDOWN = 1.5;             // seconds between nips
+const CRAB_KILL_RADIUS = 1.5;          // how near a shovel strike has to land
+function makeCrab() {
+  const g = new THREE.Group();
+  const shell = new THREE.MeshStandardMaterial({ color: 0x8e3a29, roughness: 0.8, flatShading: true, emissive: 0x2e0f0a });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x5e2418, roughness: 1, flatShading: true, emissive: 0x1a0805 });
+
+  const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.13, 0), shell);
+  body.scale.set(1.4, 0.6, 1.05);
+  body.position.y = 0.09;
+  g.add(body);
+
+  // eye stalks
+  for (const s of [-1, 1]) {
+    const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.06, 5), dark);
+    stalk.position.set(s * 0.045, 0.15, -0.09);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.017, 6, 5),
+      new THREE.MeshBasicMaterial({ color: 0x0a0a0c }));
+    eye.position.set(s * 0.045, 0.185, -0.09);
+    g.add(stalk, eye);
+  }
+  // claws, held out front
+  const claws = [];
+  for (const s of [-1, 1]) {
+    const arm = new THREE.Group();
+    arm.position.set(s * 0.15, 0.075, -0.07);
+    const upper = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.03, 0.05), shell);
+    upper.position.set(s * 0.03, 0, -0.03);
+    const claw = new THREE.Mesh(new THREE.IcosahedronGeometry(0.055, 0), shell);
+    claw.scale.set(0.9, 0.55, 1.25);
+    claw.position.set(s * 0.06, 0, -0.09);
+    arm.add(upper, claw);
+    g.add(arm);
+    claws.push(arm);
+  }
+  // legs — three a side, animated by the scuttle
+  const legs = [];
+  for (const s of [-1, 1]) for (let i = 0; i < 3; i++) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.016, 0.115), dark);
+    leg.position.set(s * 0.12, 0.05, -0.02 + i * 0.055);
+    leg.rotation.z = s * 0.75;
+    leg.rotation.y = s * 0.35;
+    g.add(leg);
+    legs.push(leg);
+  }
+  g.userData.claws = claws;
+  g.userData.legs = legs;
+  return g;
+}
+
+const crab = makeCrab();
+crab.position.set(-3.2, 0, CRAB_Z);          // waiting out in the surf
+crab.visible = true;
+scene.add(crab);
+const crabState = { alive: true, awake: false, atkT: 0, scuttle: 0, deadT: 0 };
+const _crabDir = new THREE.Vector3();
+
+function killCrab() {
+  if (!crabState.alive) return;
+  crabState.alive = false;
+  crabState.deadT = 0;
+  // flip it onto its back
+  crab.rotation.z = Math.PI;
+  crab.position.y = 0.1;
+  spawnPuffs(crab.position.x, crab.position.z, 8, 0, -1);
+  sfxCrabDie();
+}
+
+function updateCrab(dt) {
+  if (!crabState.alive) {
+    // settle the corpse into the sand and leave it
+    crabState.deadT += dt;
+    crab.position.y = Math.max(0.02, 0.1 - crabState.deadT * 0.05);
+    return;
+  }
+  if (frozen()) return;
+
+  const dx = camera.position.x - crab.position.x;
+  const dz = camera.position.z - crab.position.z;
+  const dist = Math.hypot(dx, dz);
+  if (!crabState.awake) {
+    if (dist > CRAB_WAKE) return;
+    crabState.awake = true;
+    sfxCrabWake();
+  }
+
+  crabState.atkT = Math.max(0, crabState.atkT - dt);
+
+  if (dist > CRAB_REACH) {
+    _crabDir.set(dx / dist, 0, dz / dist);
+    crab.position.addScaledVector(_crabDir, CRAB_SPEED * dt);
+    // face the player, and scuttle sideways rather than head-on
+    crab.rotation.y = Math.atan2(_crabDir.x, _crabDir.z) + Math.PI / 2;
+    crabState.scuttle += dt * 15;
+    crab.position.y = Math.abs(Math.sin(crabState.scuttle)) * 0.02;
+    const swing = Math.sin(crabState.scuttle) * 0.35;
+    crab.userData.legs.forEach((leg, i) => { leg.rotation.x = swing * (i % 2 ? -1 : 1); });
+    // out of the water it goes
+    if (inWater(crab.position.x, crab.position.z) && Math.random() < dt * 4) {
+      spawnSplash(crab.position.x, crab.position.z, 2, _crabDir.x, _crabDir.z, 0.4);
+    }
+  } else if (crabState.atkT <= 0) {
+    crabState.atkT = CRAB_COOLDOWN;
+    // snap both claws shut
+    for (const arm of crab.userData.claws) arm.rotation.x = -0.7;
+    setTimeout(() => { for (const arm of crab.userData.claws) arm.rotation.x = 0; }, 160);
+    sfxCrabSnip();
+    damagePlayer(1);
+  }
+}
+
+// ------------------------------------------------------------------
+// Bradly Beach — a guy up on the sand cliff, a little further down the
+// beach from where the glowstick turns up. Cut-out sprite, always facing
+// you. Getting close (or pressing E) starts a scripted exchange and the
+// camera pushes in on him for the duration.
+// ------------------------------------------------------------------
+const BRADLY_H = 1.86;                     // his height in metres
+// Stand-in until assets/bradly.png exists — a flat dark silhouette, so the
+// encounter is playable and correctly placed before the real cut-out lands.
+function makeBradlyPlaceholder() {
+  const c = document.createElement('canvas'); c.width = 128; c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(9, 13, 19, 0.94)';
+  g.beginPath(); g.arc(64, 32, 19, 0, Math.PI * 2); g.fill();
+  g.fillRect(41, 52, 46, 86);
+  g.fillRect(25, 58, 13, 78); g.fillRect(90, 58, 13, 78);
+  g.fillRect(45, 138, 16, 106); g.fillRect(67, 138, 16, 106);
+  return new THREE.CanvasTexture(c);
+}
+const bradly = new THREE.Group();
+const bradlyMat = new THREE.SpriteMaterial({
+  map: makeBradlyPlaceholder(), transparent: true, alphaTest: 0.35,
+});
+const bradlySprite = new THREE.Sprite(bradlyMat);
+bradlySprite.scale.set(BRADLY_H * 0.55, BRADLY_H, 1);
+bradlySprite.position.y = BRADLY_H / 2;
+bradly.add(bradlySprite);
+/* Blink. With one still image the trick is to fake an eyelid: copy a thin
+ * band of forehead skin from just above the eyes and paint it down over
+ * them. Two canvases get baked once at load (open / shut) and we just swap
+ * the texture. BRADLY_EYES is in fractions of the image, measured from the
+ * top-left — tweak it via __bw.setEyes() once the real cut-out is in. */
+const BRADLY_EYES = { x: 0.40, y: 0.058, w: 0.20, h: 0.020 };
+let bradlyOpenTex = null, bradlyShutTex = null, bradlySrcImg = null;
+let blinkT = 2 + Math.random() * 3, blinking = false;
+function bakeBradlyFrames(img) {
+  bradlySrcImg = img;
+  const mk = (shut) => {
+    const c = document.createElement('canvas');
+    c.width = img.width; c.height = img.height;
+    const g = c.getContext('2d');
+    g.drawImage(img, 0, 0);
+    if (shut) {
+      const ex = BRADLY_EYES.x * img.width, ew = BRADLY_EYES.w * img.width;
+      const ey = BRADLY_EYES.y * img.height, eh = Math.max(2, BRADLY_EYES.h * img.height);
+      // stretch the strip above the eyes down across them
+      g.drawImage(c, ex, ey - eh, ew, eh, ex, ey, ew, eh * 1.6);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  };
+  bradlyOpenTex = mk(false);
+  bradlyShutTex = mk(true);
+  bradlyMat.map = bradlyOpenTex;
+  bradlyMat.needsUpdate = true;
+}
+function updateBradlyBlink(dt) {
+  if (!bradlyOpenTex) return;
+  blinkT -= dt;
+  if (blinkT > 0) return;
+  blinking = !blinking;
+  bradlyMat.map = blinking ? bradlyShutTex : bradlyOpenTex;
+  bradlyMat.needsUpdate = true;
+  // eyes shut for a beat, open for a few seconds — occasionally a double blink
+  blinkT = blinking ? 0.11 : (Math.random() < 0.18 ? 0.16 : 2.4 + Math.random() * 3.4);
+}
+// swap in the real cut-out the moment it's available (silent if it isn't)
+new THREE.TextureLoader().load('assets/bradly.png', (tex) => {
+  const img = tex.image;
+  if (!img || !img.width) return;
+  bradlySprite.scale.set(BRADLY_H * (img.width / img.height), BRADLY_H, 1);
+  bakeBradlyFrames(img);
+}, undefined, () => {});
+{
+  const hit = new THREE.Mesh(new THREE.BoxGeometry(1.1, BRADLY_H, 0.8),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.position.y = BRADLY_H / 2; hit.name = 'hitProxy';
+  bradly.add(hit);
+  // on the cliff top, ~10 m past the first buried cache
+  const gz = mounds.length ? mounds[0].z : -28;
+  bradly.position.set(CLIFF_X - 0.9, CLIFF_H, gz - 10);
+}
+scene.add(bradly);
+addInteractable(bradly, 'Talk to him', 'npc', { onActivate: () => startDialog('start') });
+
+// The script. Saying yes or no lands you in the same place — he was never
+// really asking.
+const BRADLY_SCRIPT = {
+  start: {
+    text: 'You working out down here?',
+    choices: [{ label: 'Yes', to: 'tell' }, { label: 'No', to: 'tell' }],
+  },
+  tell: {
+    text: "I can tell you aren't. Look at you.",
+    choices: [{ label: 'Alright', to: 'water' }],
+  },
+  water: {
+    text: "You don't even have a water on you, pussy.",
+    choices: [],                            // he's done with you
+  },
+};
+
+let dialogReturnLock = false, bradlyMet = false;
+let dialogTarget = null, dialogCanDismiss = false;
+let typeTimer = null, dialogEndTimer = null;
+function typeLine(text, onDone) {
+  clearInterval(typeTimer);
+  dialogTextEl.textContent = '';
+  dialogEl.classList.add('typing');
+  let i = 0;
+  typeTimer = setInterval(() => {
+    dialogTextEl.textContent = text.slice(0, ++i);
+    if (i >= text.length) {
+      clearInterval(typeTimer);
+      dialogEl.classList.remove('typing');
+      onDone();
+    }
+  }, 28);
+}
+function showDialogNode(id) {
+  const node = BRADLY_SCRIPT[id];
+  if (!node) { endDialog(); return; }
+  clearTimeout(dialogEndTimer);
+  dialogChoicesEl.innerHTML = '';
+  dialogCanDismiss = false;
+  typeLine(node.text, () => {
+    if (!node.choices.length) {
+      // last word — it ends on its own, or on a click
+      dialogCanDismiss = true;
+      const hint = document.createElement('div');
+      hint.className = 'hint';
+      hint.textContent = 'he turns away';
+      dialogChoicesEl.appendChild(hint);
+      dialogEndTimer = setTimeout(endDialog, 2800);
+      return;
+    }
+    for (const ch of node.choices) {
+      const b = document.createElement('button');
+      b.className = 'choice';
+      b.textContent = ch.label;
+      b.addEventListener('click', (e) => { e.stopPropagation(); showDialogNode(ch.to); });
+      dialogChoicesEl.appendChild(b);
+    }
+  });
+}
+function startDialog(id) {
+  if (dialogOpen || ended || !introDone) return;
+  dialogOpen = true;
+  bradlyMet = true;
+  dialogTarget = bradlySprite.getWorldPosition(new THREE.Vector3());
+  dialogSpeakerEl.textContent = 'Bradly Beach';
+  dialogEl.classList.add('show');
+  setPrompt('');
+  crosshair.className = '';
+  if (held) dropHeld();
+  dialogReturnLock = locked;
+  if (locked) document.exitPointerLock();
+  refreshUI();
+  showDialogNode(id);
+}
+function endDialog() {
+  if (!dialogOpen) return;
+  clearTimeout(dialogEndTimer); clearInterval(typeTimer);
+  dialogOpen = false;
+  dialogCanDismiss = false;
+  dialogTarget = null;
+  dialogEl.classList.remove('show');
+  dialogEl.classList.remove('typing');
+  refreshUI();
+  if (dialogReturnLock && !fallbackLook) requestLock();
+}
+dialogEl.addEventListener('click', () => { if (dialogCanDismiss) endDialog(); });
+document.getElementById('dialog-leave').addEventListener('click', (e) => { e.stopPropagation(); endDialog(); });
+
+// Push in on whoever's talking: ease the FOV down and swing the view onto
+// them, then let it back out when the conversation drops.
+const DIALOG_FOV = 42;
+const _lookM = new THREE.Matrix4(), _lookQ = new THREE.Quaternion();
+function updateDialogCam(dt) {
+  const wantFov = dialogOpen ? Math.min(settings.fov, DIALOG_FOV) : settings.fov;
+  if (Math.abs(camera.fov - wantFov) > 0.01) {
+    camera.fov += (wantFov - camera.fov) * Math.min(1, dt * 3.5);
+    camera.updateProjectionMatrix();
+  }
+  if (dialogOpen && dialogTarget) {
+    _lookM.lookAt(camera.position, dialogTarget, camera.up);
+    _lookQ.setFromRotationMatrix(_lookM);
+    camera.quaternion.slerp(_lookQ, Math.min(1, dt * 3.2));
+  }
+}
+
+// ------------------------------------------------------------------
 // Ambient audio
 // ------------------------------------------------------------------
 function startAmbientAudio() {
@@ -1991,8 +2632,14 @@ function startAmbientAudio() {
   masterGain = ctx.createGain();
   masterGain.gain.value = 0.0;
   masterGain.gain.linearRampToValueAtTime(settings.volume, ctx.currentTime + 4);
+  // dedicated sub-mix for everything "waves": the surf loop and the
+  // water-step splashes both pass through here so the Wave volume slider
+  // can pull them down together, under the master volume.
+  waveBusGain = ctx.createGain();
+  waveBusGain.gain.value = settings.waveVolume;
+  waveBusGain.connect(masterGain);
   noise.connect(wind).connect(windGain).connect(masterGain);
-  noise.connect(surf).connect(surfGain).connect(masterGain);
+  noise.connect(surf).connect(surfGain).connect(waveBusGain);
   masterGain.connect(ctx.destination);
   noise.start(); lfo.start(); lfo2.start();
   document.addEventListener('visibilitychange', () => {
@@ -2001,9 +2648,9 @@ function startAmbientAudio() {
 }
 // the provided track: swells in over a few seconds, plays a while, fades out
 const MUSIC_TARGET = 0.6;   // relative to the master volume
-const MUSIC_FADE_IN = 7;
-const MUSIC_HOLD = 18;
-const MUSIC_FADE_OUT = 7;
+const MUSIC_FADE_IN = 2.5;  // up quickly — it should already be there as you spawn
+const MUSIC_HOLD = 34;
+const MUSIC_FADE_OUT = 10;
 function startMusic() {
   if (musicStarted || !audioCtx) return;
   musicStarted = true;
@@ -2014,7 +2661,7 @@ function startMusic() {
   musicEnvGain = audioCtx.createGain();
   musicVolGain = audioCtx.createGain();
   musicEnvGain.gain.value = 0.0001;
-  musicVolGain.gain.value = settings.volume;
+  musicVolGain.gain.value = settings.volume * settings.musicVolume;
   src.connect(musicEnvGain).connect(musicVolGain).connect(audioCtx.destination);
 
   const play = () => {
@@ -2144,6 +2791,112 @@ function sfxDigImpact() {
 
   out.gain.setTargetAtTime(0.0001, t + 0.45, 0.1);
 }
+// a foot breaking the surface of the surf — layered so it reads as real
+// water: a wet "sploosh" front, a low displaced-water gloop, and a fine
+// spray tail of droplets falling back. Randomised so repeated steps differ.
+function sfxSplash(power = 1) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const dest = waveBusGain || ctx.destination;
+  const out = ctx.createGain();
+  out.gain.value = 0.9 * (0.7 + 0.5 * power);
+  out.connect(dest);
+  const rnd = (a, b) => a + Math.random() * (b - a);
+
+  // 1) the sploosh — broadband noise through a lowpass that drops fast
+  const body = noiseBurst(0.22, (x) => Math.pow(1 - x, 1.4) * (0.6 + 0.4 * Math.random()));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0.8;
+  lp.frequency.setValueAtTime(rnd(1400, 2000), t);
+  lp.frequency.exponentialRampToValueAtTime(rnd(280, 420), t + 0.14);
+  const bg = ctx.createGain();
+  bg.gain.setValueAtTime(0.0001, t);
+  bg.gain.exponentialRampToValueAtTime(0.5, t + 0.012);
+  bg.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+  body.connect(lp).connect(bg).connect(out);
+  body.start(t); body.stop(t + 0.24);
+
+  // 2) low gloop — displaced water; a short sine that bends downward
+  const o = ctx.createOscillator(); o.type = 'sine';
+  const f0 = rnd(150, 210);
+  o.frequency.setValueAtTime(f0, t);
+  o.frequency.exponentialRampToValueAtTime(f0 * 0.55, t + 0.13);
+  const og = ctx.createGain();
+  og.gain.setValueAtTime(0.0001, t);
+  og.gain.exponentialRampToValueAtTime(0.16, t + 0.015);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+  o.connect(og).connect(out);
+  o.start(t); o.stop(t + 0.18);
+
+  // 3) spray tail — fine droplets pattering back down
+  const spray = noiseBurst(0.4, (x) => Math.pow(1 - x, 2.6) * (0.5 + 0.5 * Math.sin(x * rnd(70, 120))));
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = rnd(2200, 3000);
+  const sg = ctx.createGain();
+  sg.gain.setValueAtTime(0.0001, t + 0.02);
+  sg.gain.exponentialRampToValueAtTime(0.09, t + 0.06);
+  sg.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+  spray.connect(hp).connect(sg).connect(out);
+  spray.start(t + 0.02); spray.stop(t + 0.44);
+
+  out.gain.setTargetAtTime(0.0001, t + 0.42, 0.12);
+}
+
+// a dry chitinous rattle as the thing wakes up and starts moving
+function sfxCrabWake() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const s = noiseBurst(0.5, (x) => Math.pow(1 - x, 1.2) * (Math.random() < 0.4 ? 1 : 0.15));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 3200; bp.Q.value = 3;
+  const g = ctx.createGain(); g.gain.value = 0.05;
+  s.connect(bp).connect(g).connect(ctx.destination);
+  s.start(t); s.stop(t + 0.5);
+}
+// the nip — a hard click plus a short scrape
+function sfxCrabSnip() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const click = noiseBurst(0.05, (x) => Math.pow(1 - x, 0.8));
+  const cf = ctx.createBiquadFilter(); cf.type = 'bandpass'; cf.frequency.value = 2600; cf.Q.value = 2.2;
+  const cg = ctx.createGain(); cg.gain.value = 0.16;
+  click.connect(cf).connect(cg).connect(ctx.destination);
+  click.start(t); click.stop(t + 0.05);
+  const o = ctx.createOscillator(); o.type = 'square';
+  o.frequency.setValueAtTime(220, t); o.frequency.exponentialRampToValueAtTime(90, t + 0.08);
+  const og = ctx.createGain();
+  og.gain.setValueAtTime(0.06, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+  o.connect(og).connect(ctx.destination);
+  o.start(t); o.stop(t + 0.1);
+}
+// shell giving way under the blade
+function sfxCrabDie() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const s = noiseBurst(0.26, (x) => Math.pow(1 - x, 1.8) * (0.4 + 0.6 * Math.random()));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(3400, t);
+  lp.frequency.exponentialRampToValueAtTime(400, t + 0.2);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.22, t + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.26);
+  s.connect(lp).connect(g).connect(ctx.destination);
+  s.start(t); s.stop(t + 0.26);
+}
+// taking a hit — a dull thump with a low sting under it
+function sfxHurt() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const s = noiseBurst(0.24, (x) => Math.pow(1 - x, 2.2));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 320;
+  const g = ctx.createGain(); g.gain.value = 0.3;
+  s.connect(lp).connect(g).connect(ctx.destination);
+  s.start(t); s.stop(t + 0.24);
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(58, t + 0.35);
+  const og = ctx.createGain();
+  og.gain.setValueAtTime(0.16, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+  o.connect(og).connect(ctx.destination);
+  o.start(t); o.stop(t + 0.42);
+}
 
 // ------------------------------------------------------------------
 // End of the walk
@@ -2170,6 +2923,7 @@ const moveDir = new THREE.Vector3();
 let bobPhase = 0;
 let camBaseY = EYE_HEIGHT, vy = 0, onGround = true, jumpLatch = false;
 let stamina = 1, exhausted = false;
+let splashTimer = 0;
 const snap = (v, s) => Math.round(v / s) * s;
 
 function update(dt) {
@@ -2210,20 +2964,41 @@ function update(dt) {
   staminaFill.style.transform = `scaleX(${Math.max(0, stamina)})`;
   staminaFill.classList.toggle('low', exhausted);
 
+  const wading = inWater(camera.position.x, camera.position.z);
   if (moving && onGround && speed > 0.6) {
     const dx = camera.position.x - lastFootPos.x, dz = camera.position.z - lastFootPos.z;
     const gate = running ? 1.0 : 0.8;
     if (dx * dx + dz * dz > gate * gate) {
       moveDir.copy(velocity).setY(0).normalize();
-      stampFoot(camera.position.x, camera.position.z, moveDir.x, moveDir.z, footSide);
+      if (wading) {
+        // no footprint on water — kick up a splash instead
+        spawnSplash(camera.position.x, camera.position.z, 9, moveDir.x, moveDir.z, 1);
+        sfxSplash(0.85);
+      } else {
+        stampFoot(camera.position.x, camera.position.z, moveDir.x, moveDir.z, footSide);
+        sfxStep();
+      }
       footSide = -footSide;
       lastFootPos.set(camera.position.x, 0, camera.position.z);
-      sfxStep();
     }
   }
+  // fine spray trailing off your legs the whole time you're moving through surf
+  if (wading && moving && onGround && speed > 0.5) {
+    splashTimer -= dt;
+    if (splashTimer <= 0) {
+      moveDir.copy(velocity).setY(0).normalize();
+      spawnSplash(
+        camera.position.x - moveDir.x * 0.3 + (Math.random() - 0.5) * 0.3,
+        camera.position.z - moveDir.z * 0.3 + (Math.random() - 0.5) * 0.3,
+        2, moveDir.x, moveDir.z, 0.32
+      );
+      splashTimer = 0.05 + Math.random() * 0.05;
+    }
+  } else splashTimer = 0;
 
   for (const p of physProps) p.step(dt);
   updatePuffs(dt);
+  updateSplashes(dt);
 
   const px = camera.position.x, pz = camera.position.z;
   sand.position.set(snap(px, SAND_TILE), 0, snap(pz, SAND_TILE));
@@ -2248,6 +3023,18 @@ function update(dt) {
   if (cll) cll.material.opacity = 0.30 + 0.05 * Math.sin(oceanUniforms.uTime.value * 2.3);
 
   updateViewmodel(dt);
+  updateHeldGlow(dt);
+  updateDialogCam(dt);
+  updateCrab(dt);
+  updateBradlyBlink(dt);
+  updateHurt(dt);
+
+  // walking up on Bradly starts the exchange the first time, so you can't
+  // miss him; after that he's a normal E-to-talk interactable
+  if (!bradlyMet && started && !frozen()) {
+    const bx = camera.position.x - bradly.position.x, bz = camera.position.z - bradly.position.z;
+    if (bx * bx + bz * bz < 7.5 * 7.5) startDialog('start');
+  }
 
   if (started && !ended && camera.position.z < END_Z) showEnd();
 }
@@ -2288,11 +3075,26 @@ layoutViewmodel();
 window.__bw = {
   THREE, scene, camera, player: camera,
   interactables, physProps, inventory, bottle, cliff, foot, lighthouse, city,
-  castle, shovelWorld, viewmodel, crab, crabWorld, syringe, syringeWorld, bloodJar,
+  castle, shovelWorld, viewmodel,
+  hcrab, hcrabWorld, syringe, syringeWorld, bloodJar,
   renderer, inspectScene, inspectCamera,
-  openMenu, closeMenu, showEnd, stampFoot, startDig, toggleEquip, spawnPuffs, stampDigHole, beginGame,
+  mounds, moundAt, revealMoundNear, makeGlowstick, inWater, shoreLineJS,
+  sfxSplash, bradly, startDialog, endDialog, heldGlow,
+  crab, crabState, killCrab, damagePlayer, playerDied,
+  get hp() { return hp; },
+  // live-tune the fake eyelid once the real cut-out is in:
+  //   __bw.setEyes({ y: 0.06, h: 0.022 })
+  eyes: BRADLY_EYES,
+  setEyes: (o) => {
+    Object.assign(BRADLY_EYES, o);
+    if (bradlySrcImg) bakeBradlyFrames(bradlySrcImg);
+    return { ...BRADLY_EYES };
+  },
+  blinkNow: () => { blinkT = 0; },
+  get glowstickItem() { return glowstickItem; },
+  openMenu, closeMenu, showEnd, stampFoot, startDig, toggleEquip, spawnPuffs, spawnSplash, stampDigHole, beginGame,
   openInspect, closeInspect, startExtraction,
   get shovelItem() { return shovelItem; }, get crabItem() { return crabItem; }, get syringeItem() { return syringeItem; }, get jarItem() { return jarItem; },
-  state: () => ({ started, locked, fallbackLook, introDone, noteOpen, menuOpen, inspecting, extracting, crabBled, ended, onGround, stamina: +stamina.toFixed(2), exhausted, digT: +digT.toFixed(2), equipped: equipped && equipped.name, held: held && held.mesh.name, hovered: hovered && hovered.label, inv: inventory.map(i => i.name) }),
+  state: () => ({ started, locked, fallbackLook, introDone, noteOpen, menuOpen, dialogOpen, inspecting, extracting, crabBled, dying, ended, onGround, stamina: +stamina.toFixed(2), exhausted, digT: +digT.toFixed(2), equipped: equipped && equipped.name, held: held && held.mesh.name, hovered: hovered && hovered.label, inv: inventory.map(i => i.name) }),
   music: () => (musicEl ? { paused: musicEl.paused, t: +musicEl.currentTime.toFixed(1), env: musicEnvGain ? +musicEnvGain.gain.value.toFixed(3) : null, vol: musicVolGain ? +musicVolGain.gain.value.toFixed(2) : null } : { musicEl: null }),
 };
