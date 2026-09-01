@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { makeHorseshoeCrab, makeHorseshoeCrabIcon } from './models/horseshoe-crab.js';
 import { makeSyringe, makeSyringeIcon } from './models/syringe.js';
 import { makeBloodJar } from './models/blood-jar.js';
@@ -3955,6 +3956,54 @@ crab.position.set(-3.2, 0, CRAB_Z);          // waiting out in the surf
 crab.scale.setScalar(1.55);                  // big enough to be a real threat
 crab.visible = true;
 scene.add(crab);
+/* The enemy's body is TwilightFox's "Animated Crab rigged FREE" (Sketchfab
+ * Standard licence). The procedural rig stays in the file but is switched off
+ * once the model lands — all the AI, the submersion and the death still drive
+ * the same `crab` group, so only the visual changes.
+ *
+ * The file ships one 0.48 s clip and no others, so there's no separate idle
+ * or attack: the clip's rate is scaled by how fast it's actually moving, and
+ * the rear-up and lunge stay as transforms on the group.
+ */
+let crabMixer = null, crabAction = null, crabModel = null;
+new GLTFLoader().load('assets/crab.glb', (gltf) => {
+  crabModel = gltf.scene;
+  const orange = new THREE.MeshStandardMaterial({
+    color: 0xc4531f, roughness: 0.72, metalness: 0.04,
+    emissive: 0x3a1206, flatShading: true,
+  });
+  crabModel.traverse((o) => {
+    if (o.isMesh || o.isSkinnedMesh) {
+      o.material = orange;
+      o.frustumCulled = false;
+    }
+  });
+  // Fit from the raw geometry bounds. Box3.setFromObject() on a skinned
+  // hierarchy reports the bind pose through the bone transforms and comes
+  // back wrong — it produced a 16x blow-up before this.
+  let gmin = null, gmax = null;
+  crabModel.traverse((o) => {
+    if (!o.geometry) return;
+    o.geometry.computeBoundingBox();
+    const b = o.geometry.boundingBox;
+    gmin = gmin ? gmin.min(b.min) : b.min.clone();
+    gmax = gmax ? gmax.max(b.max) : b.max.clone();
+  });
+  if (gmin) {
+    const size = gmax.clone().sub(gmin);
+    const k = 0.62 / Math.max(1e-6, Math.max(size.x, size.z));
+    crabModel.scale.setScalar(k);
+    crabModel.position.y = -gmin.y * k;
+  }
+  crab.userData.rig.visible = false;          // retire the built one
+  crab.add(crabModel);
+  if (gltf.animations && gltf.animations.length) {
+    crabMixer = new THREE.AnimationMixer(crabModel);
+    crabAction = crabMixer.clipAction(gltf.animations[0]);
+    crabAction.play();
+  }
+}, undefined, () => {});
+
 const crabState = { alive: true, awake: false, atkT: 0, scuttle: 0, deadT: 0, rear: 0, lunge: 0 };
 const _crabDir = new THREE.Vector3();
 
@@ -4119,7 +4168,7 @@ function poseLeg(leg, ph, reach) {
 
 function updateCrab(dt) {
   const ud = crab.userData;
-  if (!crabState.alive) return;                // nothing left to animate
+  if (!crabState.alive) { if (crabMixer) crabMixer.update(0); return; }
   if (frozen()) return;
 
   const dx = camera.position.x - crab.position.x;
@@ -4156,6 +4205,12 @@ function updateCrab(dt) {
 
   // ---- gait -------------------------------------------------------
   const reach = closing ? 1 : 0.25;
+  if (crabMixer) {
+    // one clip for everything, so the rate carries the difference between
+    // shifting its weight and running at you
+    if (crabAction) crabAction.timeScale = closing ? 1.35 : 0.32;
+    crabMixer.update(dt);
+  }
   const cyc = crabState.scuttle / (Math.PI * 2);
   for (const leg of ud.legs) {
     // half a cycle between the two sets, then a visible ripple along each set
@@ -5288,6 +5343,7 @@ window.__bw = {
   lighthouse, startLighthouseTrack, bottleProp, playSample, updateTower,
   waterSurfaceAt, submersionAt, restYInWater, groundGlow, addRipple,
   shells, listenToShell, makeRockGeo,
+  get crabModel() { return crabModel; }, get crabMixer() { return crabMixer; },
   get spiderCrab() { return spiderCrab; },
   lhDoor, shinies, onPath, pathBend, pathHalfAt, lhWindows, lanternGlass,
   get doorOpen() { return doorOpen; }, set doorOpen(v) { doorOpen = v; doorSwing = v ? 1 : 0; lhDoor.rotation.y = -doorSwing * 1.95; },

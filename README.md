@@ -182,6 +182,14 @@ castle, crab, `startDig`, `toggleEquip`, `openMenu`, `openInspect`, `showEnd`,
 
 ## Credits
 
+**Animated Crab rigged FREE** — the enemy crab.
+
+["Animated Crab rigged FREE"](https://sketchfab.com/3d-models/animated-crab-rigged-free-ca331da937b04b0f94b9245d5f2ac778)
+by [TwilightFox](https://sketchfab.com/twilightfox), under the
+[Sketchfab Standard licence](https://sketchfab.com/licenses) — commercial use
+and derivative works allowed.
+
+
 **Abandoned lighthouse_Draft** — the tower, keeper's house and ruined wall on
 the headland.
 
