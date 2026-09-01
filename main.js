@@ -61,6 +61,16 @@ function lhBoreAt(y) {
   return THREE.MathUtils.lerp(2.45, 1.90, THREE.MathUtils.clamp((y - 17) / 9, 0, 1));
 }
 
+// Outer face of the wall: a splayed base course, then a slightly concave
+// taper up to the gallery. Paired with the bore above it, the masonry is
+// 1.9 m thick at the foot and 0.55 m under the lantern, which is what makes
+// the doorway read as a tunnel through stone rather than a hole in a shell.
+function lhOuterAt(y) {
+  if (y < 1.1) return 4.62 - 0.27 * (y / 1.1);
+  const t = THREE.MathUtils.clamp((y - 1.1) / (LH_TOP - 1.1), 0, 1);
+  return THREE.MathUtils.lerp(4.35, 2.45, Math.pow(t, 0.82));
+}
+
 const DIG_DUR = 0.8;
 
 // ------------------------------------------------------------------
@@ -657,6 +667,7 @@ function loadMesh(url) {
       return geo;
     });
 }
+const lhParts = {};
 const lighthouse = new THREE.Group();
 lighthouse.position.set(LH_X, HL_CREST, LH_Z);
 let lampCore, beamPivot, lanternGlass = null;
@@ -669,16 +680,115 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   const iron  = new THREE.MeshStandardMaterial({ color: 0x23262d, roughness: 0.55, metalness: 0.6, flatShading: true, emissive: 0x0b0d10 });
   const brass = new THREE.MeshStandardMaterial({ color: 0x6b5a32, roughness: 0.45, metalness: 0.7, flatShading: true, emissive: 0x171204 });
 
-  // ---- stand-in shaft, shown only if the scan fails to load -------
-  const fallback = new THREE.Group();
-  {
-    const outer = new THREE.Mesh(new THREE.CylinderGeometry(2.4, LH_OUTER, LH_TOP, 24, 1, true,
-      DOOR_HALF, Math.PI * 2 - DOOR_HALF * 2), stone);
-    outer.position.y = LH_TOP / 2;
-    fallback.add(outer);
+  // ---- the shaft ---------------------------------------------------
+  // Built here rather than imported. The scan this replaces was a coarse
+  // closed post — no opening, no lantern room, and a taper that agreed with
+  // nothing — so the door, the windows and the gallery all had to be guessed
+  // against it and none of them quite landed. Generating it means every one
+  // of those meets the wall exactly where it should, by construction.
+  const stairAngleAt = (y) => (y / LH_RISE) * Math.PI * 2 + Math.PI / 2;
+  for (const y of [5.4, 11.0, 16.6, 22.0]) {
+    lhWindows.push({ y, ang: stairAngleAt(y) - 0.55, w: 0.42, h: 1.15 });
   }
-  lighthouse.add(fallback);
-  lighthouse.userData.shell = [fallback];
+
+  // Openings, in the angle convention updateTower() measures the player in
+  // (from +Z). The door faces +Z, which is where the path arrives.
+  const OPENINGS = [{ ang: 0, halfW: LH_DOOR_W + 0.16, y0: -0.6, y1: LH_DOOR_H, door: true }];
+  for (const w of lhWindows) {
+    OPENINGS.push({ ang: Math.PI / 2 - w.ang, halfW: w.w + 0.05, y0: w.y - w.h, y1: w.y + w.h });
+  }
+
+  // Holes are cut by dropping the triangles whose centroid falls inside one.
+  const carve = (geo) => {
+    const idx = geo.getIndex().array, pos = geo.attributes.position;
+    const keep = [];
+    for (let t = 0; t < idx.length; t += 3) {
+      let cx = 0, cy = 0, cz = 0;
+      for (let k = 0; k < 3; k++) {
+        const v = idx[t + k];
+        cx += pos.getX(v); cy += pos.getY(v); cz += pos.getZ(v);
+      }
+      cx /= 3; cy /= 3; cz /= 3;
+      const a = Math.atan2(cx, cz), r = Math.hypot(cx, cz);
+      let cut = false;
+      for (const o of OPENINGS) {
+        if (cy < o.y0 || cy > o.y1) continue;
+        let da = a - o.ang;
+        if (da > Math.PI) da -= Math.PI * 2;
+        if (da < -Math.PI) da += Math.PI * 2;
+        if (Math.abs(da) * r < o.halfW) { cut = true; break; }
+      }
+      if (!cut) keep.push(idx[t], idx[t + 1], idx[t + 2]);
+    }
+    geo.setIndex(keep);
+  };
+
+  // Damp and dark at the foot, salt-bleached higher up, with vertical
+  // streaking — the same weathering the rest of the walk gets.
+  const weather = (geo) => {
+    const pos = geo.attributes.position;
+    const col = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+      let t = 0.44 + 0.48 * Math.pow(THREE.MathUtils.clamp(y / LH_TOP, 0, 1), 0.65);
+      t *= 0.86 + 0.14 * (0.5 + 0.5 * Math.sin(Math.atan2(z, x) * 9));
+      t *= 0.9 + 0.2 * ((((Math.sin(x * 7.3 + y * 5.1 + z * 6.7) * 43758.5453) % 1) + 1) % 1);
+      t = THREE.MathUtils.clamp(t, 0.18, 1);
+      col[i * 3] = t * 0.95; col[i * 3 + 1] = t * 0.98; col[i * 3 + 2] = t;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  };
+
+  // Rings sit on every opening edge as well as up the taper, so the cuts
+  // come out square instead of ragged.
+  const ringYs = [];
+  for (let y = 0; y <= LH_TOP; y += 0.55) ringYs.push(y);
+  for (const o of OPENINGS) ringYs.push(Math.max(0, o.y0), o.y1, (o.y0 + o.y1) / 2);
+  ringYs.push(LH_TOP);
+  const ys = [...new Set(ringYs.filter((y) => y >= 0 && y <= LH_TOP))].sort((a, b) => a - b);
+
+  const shaftMat = new THREE.MeshStandardMaterial({
+    color: 0x646b78, vertexColors: true, roughness: 1, metalness: 0,
+    emissive: 0x14171d, flatShading: true, side: THREE.DoubleSide });
+  const lathe = (radiusAt) => {
+    const g = new THREE.LatheGeometry(ys.map((y) => new THREE.Vector2(radiusAt(y), y)), 30);
+    carve(g); weather(g); g.computeVertexNormals();
+    return g;
+  };
+  const shaftOut = new THREE.Mesh(lathe(lhOuterAt), shaftMat);
+  const shaftIn = new THREE.Mesh(lathe(lhBoreAt), shaftMat);
+  shaftOut.frustumCulled = shaftIn.frustumCulled = false;
+  lighthouse.add(shaftOut, shaftIn);
+  lhParts.outer = shaftOut; lhParts.inner = shaftIn;
+  lighthouse.userData.shell = [];
+
+  // String courses: three shallow bands round the taper. They cost almost
+  // nothing and they're what stops the silhouette reading as a bare post.
+  for (const by of [7.0, 14.0, 20.5]) {
+    const r = lhOuterAt(by) + 0.09;
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(r - 0.05, r, 0.34, 30), stone);
+    band.position.y = by;
+    lighthouse.add(band);
+  }
+
+  // The doorway is a tunnel through nearly two metres of masonry, so it
+  // needs its jambs and soffit lined or you see the cut edge from inside.
+  {
+    const ym = LH_DOOR_H / 2, rI = lhBoreAt(ym), th = lhOuterAt(ym) - rI;
+    const g = new THREE.Group();
+    for (const sgn of [-1, 1]) {
+      const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.08, LH_DOOR_H + 0.1, th), stone);
+      jamb.position.set(sgn * (LH_DOOR_W + 0.16), ym, rI + th / 2);
+      g.add(jamb);
+    }
+    const soffit = new THREE.Mesh(new THREE.BoxGeometry((LH_DOOR_W + 0.16) * 2 + 0.16, 0.08, th), stone);
+    soffit.position.set(0, LH_DOOR_H, rI + th / 2);
+    g.add(soffit);
+    const thresh = new THREE.Mesh(new THREE.BoxGeometry((LH_DOOR_W + 0.16) * 2 + 0.16, 0.1, th), stone);
+    thresh.position.set(0, 0.05, rI + th / 2);
+    g.add(thresh);
+    lighthouse.add(g);
+  }
 
   // ---- ground floor ----------------------------------------------
   const floor = new THREE.Mesh(new THREE.CylinderGeometry(LH_INNER + 0.2, LH_INNER + 0.2, 0.25, 24),
@@ -691,7 +801,6 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   // tower, and stop at a landing under the gallery hatch.
   const treadMat = new THREE.MeshStandardMaterial({ color: 0x3d4450, roughness: 1, flatShading: true, emissive: 0x191d23 });
   const stairs = new THREE.Group();
-  const stairAngleAt = (y) => (y / LH_RISE) * Math.PI * 2 + Math.PI / 2;
   {
     const PER_TURN = 20;
     const stepGeo = new THREE.BoxGeometry(1.30, 0.13, 0.58);
@@ -757,15 +866,12 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   // ---- windows up the shaft ---------------------------------------
   // Each is a hole cut clean through the scan (see the loader), lined with
   // a reveal and glazed, set beside the stair so you pass them climbing.
-  for (const y of [5.4, 11.0, 16.6, 22.0]) {
-    lhWindows.push({ y, ang: stairAngleAt(y) - 0.55, w: 0.42, h: 1.15 });
-  }
   for (const w of lhWindows) {
     const g = new THREE.Group();
     g.position.set(Math.cos(w.ang) * 0.1, w.y, Math.sin(w.ang) * 0.1);
     g.rotation.y = Math.atan2(Math.cos(w.ang), Math.sin(w.ang));   // face outward
     // reveal: jambs, sill and head lining the cut, so the wall reads thick
-    const depth = 1.5, rIn = lhBoreAt(w.y) - 0.05;
+    const rIn = lhBoreAt(w.y) - 0.05, depth = Math.max(0.4, lhOuterAt(w.y) - rIn);
     for (const s of [-1, 1]) {
       const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.07, w.h * 2 + 0.12, depth), stone);
       jamb.position.set(s * (w.w + 0.03), 0, rIn + depth / 2);
@@ -907,80 +1013,6 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   lighthouse.add(beamPivot);
 }
 scene.add(lighthouse);
-scene.add(lighthouse);
-
-// The scanned tower. Replaces the stand-in shell once it lands; everything
-// inside is left alone. Weathered to match the rest of the walk: cold damp
-// concrete, streaked and grimy, darker the closer to the ground it gets.
-/* The tower is jonnysniper41's "Abandoned lighthouse_Draft" (CC-BY-4.0, see
- * README). It ships as a whole scene — tower, keeper's house, ruined wall,
- * a rock islet and a water plane — with eleven materials but no textures at
- * all, so restyling it is just a matter of assigning our own.
- *
- * We take the built structures and skip two groups deliberately: the model's
- * water, because we have an ocean, and its rock islet, because we have the
- * headland. What's left drops onto the crest.
- */
-const LH_MODEL_Y = 0;          // tower-only export already sits on the crest
-const lhParts = {};
-const LH_GROUPS = [
-  { name: 'stone', url: 'assets/lh-stone.bwmesh', mat: () => new THREE.MeshStandardMaterial({
-      color: 0x6e737c, vertexColors: true, roughness: 1, metalness: 0,
-      emissive: 0x14171d, flatShading: true, side: THREE.DoubleSide }) },
-  { name: 'glass', url: 'assets/lh-glass.bwmesh', mat: () => new THREE.MeshStandardMaterial({
-      color: 0x9fb8c4, roughness: 0.35, metalness: 0.1, transparent: true, opacity: 0.42,
-      emissive: 0x22323a, flatShading: true, side: THREE.DoubleSide }) },
-];
-for (const grp of LH_GROUPS) {
-  loadMesh(grp.url).then((geo) => {
-    geo.computeBoundingBox();
-    const bb = geo.boundingBox;
-    const pos = geo.attributes.position;
-    // Weathering, in vertex colours: damp and dark at the foot, salt-bleached
-    // higher up, with vertical streaking and a mottle over the top. Same
-    // treatment the rest of the world gets, so it doesn't read as an import.
-    if (grp.name !== 'glass') {
-      const col = new Float32Array(pos.count * 3);
-      const h = Math.max(0.001, bb.max.y - bb.min.y);
-      for (let i = 0; i < pos.count; i++) {
-        const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-        const up = (y - bb.min.y) / h;
-        let t = 0.42 + 0.5 * Math.pow(up, 0.65);
-        t *= 0.84 + 0.16 * (0.5 + 0.5 * Math.sin(Math.atan2(z, x) * 8.0));
-        t *= 0.88 + 0.24 * ((Math.sin(x * 7.3 + y * 5.1 + z * 6.7) * 43758.5453) % 1);
-        t = Math.max(0.16, Math.min(1, t));
-        col[i * 3] = t * 0.95; col[i * 3 + 1] = t * 0.98; col[i * 3 + 2] = t;
-      }
-      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    }
-    if (grp.name === 'stone') {
-      // Cut the entrance. The model's own opening (if it has one) faces
-      // wherever the author put it, which is not where the path arrives, so
-      // we make our own at +Z and let the surround below hide the cut edge.
-      const idx = geo.getIndex().array;
-      const pos = geo.attributes.position;
-      const keep = [];
-      const halfW = LH_DOOR_W + 0.30, top = LH_DOOR_H + 0.35;
-      for (let t = 0; t < idx.length; t += 3) {
-        let cx = 0, cy = 0, cz = 0;
-        for (let k = 0; k < 3; k++) {
-          const v = idx[t + k];
-          cx += pos.getX(v); cy += pos.getY(v); cz += pos.getZ(v);
-        }
-        cx /= 3; cy /= 3; cz /= 3;
-        const inDoor = cz > 0 && Math.abs(cx) < halfW && cy > -0.2 && cy < top;
-        if (!inDoor) keep.push(idx[t], idx[t + 1], idx[t + 2]);
-      }
-      geo.setIndex(keep);
-    }
-    const mesh = new THREE.Mesh(geo, grp.mat());
-    mesh.position.y = LH_MODEL_Y;
-    mesh.frustumCulled = false;
-    lighthouse.add(mesh);
-    lhParts[grp.name] = mesh;
-    for (const o of lighthouse.userData.shell) o.visible = false;
-  }).catch(() => {});
-}
 
 // ------------------------------------------------------------------
 // The headland the lighthouse stands on — boulders and tall grass, so the
@@ -1002,7 +1034,12 @@ function pathHalfAt(z) {
   return PATH_HALF + (PATH_HALF_FAR - PATH_HALF) * t * t;
 }
 // wander the centre line a little so it doesn't read as a runway
-const pathBend = (z) => Math.sin(z * 0.21) * 0.9 + Math.sin(z * 0.07 + 1.3) * 0.6;
+// How far the lane wanders off the straight at a given distance from the door.
+// The wander is faded out over the last stretch: it has to arrive square on
+// the doorway, and without the fade it ran past a metre and a half to one
+// side, which is what made the door look like it wasn't on the path at all.
+const pathBend = (z) => (Math.sin(z * 0.21) * 0.9 + Math.sin(z * 0.07 + 1.3) * 0.6)
+  * THREE.MathUtils.smoothstep(z, 2, 16);
 function onPath(x, z, margin = 0) {
   if (z < -1.5 || z > PATH_LEN + 3) return false;
   return Math.abs(x - pathBend(z)) < pathHalfAt(z) + margin;
