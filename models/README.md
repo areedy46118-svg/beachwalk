@@ -15,7 +15,8 @@ slot opens the examine view (`openInspect`) where you drag to turn it over.
 | `horseshoe-crab.js` | `makeHorseshoeCrab()` → a detailed smooth-shaded *Limulus*: a broad rounded head shield on a poleless Cartesian-grid dome with the **cardiac + ophthalmic ridges, the raised margin and the articulation groove sculpted into the height field**, a wavy hinge bar, six movable spines per side, a triangular telson, genal spines, and a full underside (six leg pairs, chelicerae, operculum, book gills). Plus `makeHorseshoeCrabIcon()`. |
 | `syringe.js` | `makeSyringe()` → a glass bleeding hypodermic: barrel with graduation marks, a small finger flange + slim cross-section plunger + thumb rest, rubber piston, luer hub, steel needle, removable orange cap, and a **blue haemolymph column**. `group.userData.setFill(t)` (0→1) slides the plunger and grows the blood — the game drives this during the extraction. Plus `makeSyringeIcon()`. |
 | `blood-jar.js` | `makeBloodJar()` → an old milk-bottle-style glass jar filled with glowing blue haemolymph, a pale foam layer, a crimped foil cap and a paper label. `group.userData.setFill(t)` sets the level. Plus `makeBloodJarIcon()`. |
-| `viewer.html` | Dev viewer — `?model=horseshoe-crab` (default), `?model=syringe`, `?model=blood-jar`. Drag to rotate, scroll to zoom, **Flip over**, Wireframe, Auto-spin, **Fill** (syringe/jar), Reset. |
+| `falchion.js` | `makeFalchion()` → a rusted, time-eaten falchion: a lofted cleaver blade with vertex-colour corrosion + a nicked edge, a recurved scrolled quillon guard, a corroded wire grip, and a verdigris-green figural helmet-head pommel. Plus `makeFalchionIcon()`. Local frame: `+Z` toward the point, `+Y` the spine, edge faces `-Y`, origin at the guard. |
+| `viewer.html` | Dev viewer — `?model=horseshoe-crab` (default), `syringe`, `blood-jar`, `falchion`. Drag to rotate, scroll to zoom, **Flip over**, Wireframe, Auto-spin, **Fill** (syringe/jar), Reset. |
 
 ## Looking at it
 
