@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { makeHorseshoeCrab, makeHorseshoeCrabIcon } from './models/horseshoe-crab.js';
+import { makeSyringe, makeSyringeIcon } from './models/syringe.js';
+import { makeBloodJar, makeBloodJarIcon } from './models/blood-jar.js';
 
 /* ------------------------------------------------------------------ *
  *  Beach Walk — an endless, eerie shoreline at night.
@@ -1074,13 +1077,13 @@ const bloodJarEl = document.getElementById('blood-jar');
 
 // blue blood you've drawn. The HUD stays hidden until the first extraction.
 const BLOOD_PER_CRAB = 120;        // mL out of one horseshoe crab
-const BLOOD_JAR_CAP = 600;         // mL the jar gauge reads full at
+const BLOOD_JAR_CAP = 140;         // mL the jar gauge reads full at
 let bloodAmount = 0, bloodSeen = false;
 
 let started = false, locked = false, fallbackLook = false, dragging = false;
 let noteOpen = false, menuOpen = false, ended = false, introDone = false;
-let dialogOpen = false, invOpen = false, drainOpen = false;
-let menuReturnLock = false, noteReturnLock = false, packReturnLock = false;
+let dialogOpen = false, invOpen = false, inspecting = false;
+let menuReturnLock = false, noteReturnLock = false, packReturnLock = false, inspectReturnLock = false;
 const lookEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
 // ------------------------------------------------------------------
@@ -1117,9 +1120,9 @@ function updateHurt(dt) {
   hurtEl.style.opacity = String(hurtFlash * hurtFlash);
 }
 
-function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || drainOpen || dying || ended || !introDone; }
+function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || inspecting || dying || ended || !introDone; }
 function refreshUI() {
-  const playing = started && !menuOpen && !noteOpen && !dialogOpen && !invOpen && !drainOpen && !dying && !ended;
+  const playing = started && !menuOpen && !noteOpen && !dialogOpen && !invOpen && !inspecting && !dying && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
   bloodEl.classList.toggle('show', bloodSeen && playing);
 }
@@ -1172,7 +1175,7 @@ document.addEventListener('pointerlockchange', () => {
     if (!started) { overlay.classList.remove('hidden'); return; }
     // an intentional exit (note / menu / dialogue / death) is handled by
     // those; a stray exit while still playing means the user hit Esc → menu
-    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !drainOpen && !dying) openMenu();
+    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !inspecting && !dying) openMenu();
   }
 });
 window.addEventListener('unhandledrejection', (e) => {
@@ -1243,21 +1246,22 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Tab') e.preventDefault();   // never let focus walk the page
   if (!introDone) return;
   if (e.code === 'Tab') {
-    if (ended || dying || drainOpen) return;
+    if (ended || dying || inspecting) return;
     if (invOpen) closePack();
     else if (!menuOpen && !noteOpen && !dialogOpen) openPack();
     return;
   }
   if (e.code === 'Escape') {
     if (ended) return;
-    if (invOpen) closePack();
+    if (inspecting) closeInspect();
+    else if (invOpen) closePack();
     else if (dialogOpen) endDialog();
     else if (noteOpen) closeNote();
     else if (menuOpen) closeMenu();
     else if (fallbackLook) openMenu();
   } else if (e.code === 'KeyE' || e.code === 'KeyF') { primaryAction(); }
   else if (e.code === 'KeyG') { if (held) dropHeld(); }
-  else if (e.code === 'KeyQ') { if (equipped) toggleEquip(equipped); }
+  else if (e.code === 'KeyQ') { if (inspecting) closeInspect(); else if (equipped) toggleEquip(equipped); }
   else if (/^Digit[1-6]$/.test(e.code)) { useSlot(+e.code.slice(5) - 1); }
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -1356,6 +1360,113 @@ function closeNote() {
   if (noteReturnLock && !fallbackLook) requestLock();
 }
 noteEl.addEventListener('click', closeNote);
+
+// ------------------------------------------------------------------
+// Item inspect view — a held object floating in the dark that you
+// drag to turn over (to look at its underside). Rendered as its own
+// little scene on top of everything, like the first-person hand.
+// ------------------------------------------------------------------
+const inspectEl = document.getElementById('inspect');
+const inspectScene = new THREE.Scene();
+inspectScene.background = new THREE.Color(0x05070e);
+const inspectCamera = new THREE.PerspectiveCamera(42, 1, 0.01, 100);
+inspectCamera.position.set(0, 0, 3.3);
+inspectScene.add(new THREE.AmbientLight(0x9fb0cc, 1.05));
+{
+  const key = new THREE.DirectionalLight(0xfff0d8, 2.1); key.position.set(-0.7, 1.2, 1.0); inspectScene.add(key);
+  const fill = new THREE.DirectionalLight(0x8aa2d6, 0.9); fill.position.set(1.2, -0.4, 0.7); inspectScene.add(fill);
+  const rim = new THREE.DirectionalLight(0xc6d6f2, 1.1); rim.position.set(0.2, -1.0, -1.1); inspectScene.add(rim);
+  inspectScene.add(new THREE.HemisphereLight(0x4a5e80, 0x141820, 0.6));
+}
+const inspectPivot = new THREE.Group();      // spun by the drag
+inspectScene.add(inspectPivot);
+const inspectFit = new THREE.Group();        // holds the model, centred + scaled to frame
+inspectPivot.add(inspectFit);
+
+let inspectModel = null, inspectRotX = 0, inspectRotY = 0, inspectDist = 3.3, inspectAuto = 0;
+
+function inspectSetModel(model) {
+  if (inspectModel === model) return;
+  if (inspectModel) inspectFit.remove(inspectModel);
+  inspectModel = model;
+  model.position.set(0, 0, 0);
+  model.rotation.set(0, 0, 0);
+  model.scale.setScalar(1);
+  inspectPivot.rotation.set(0, 0, 0);
+  inspectFit.position.set(0, 0, 0);
+  inspectFit.scale.setScalar(1);
+  inspectFit.add(model);
+  inspectFit.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  const centre = box.getCenter(new THREE.Vector3());
+  const k = 1.7 / (Math.max(size.x, size.y, size.z) || 1);
+  inspectFit.scale.setScalar(k);
+  inspectFit.position.copy(centre).multiplyScalar(-k);
+}
+function openInspect(model, { rotX = -0.55, rotY = 0.7 } = {}) {
+  if (inspecting) return;
+  inspecting = true;
+  inspectSetModel(model);
+  inspectRotX = rotX; inspectRotY = rotY; inspectDist = 3.3; inspectAuto = 0;
+  inspectCamera.aspect = window.innerWidth / window.innerHeight;
+  inspectCamera.updateProjectionMatrix();
+  inspectEl.classList.add('show');
+  promptEl.classList.remove('show');
+  crosshair.className = '';
+  crosshair.style.display = 'none';
+  inspectReturnLock = locked;
+  if (locked) document.exitPointerLock();
+  refreshUI();
+}
+function closeInspect() {
+  if (!inspecting || extracting) return;             // can't bail mid-draw
+  inspecting = false;
+  inspectEl.classList.remove('show');
+  inspectEl.querySelector('.hint').textContent = 'Drag to turn it over  ·  scroll to zoom  ·  Esc to put it away';
+  crosshair.style.display = '';
+  refreshUI();
+  if (inspectReturnLock && !fallbackLook) requestLock();
+}
+{
+  let idrag = false, lastX = 0, lastY = 0;
+  inspectEl.addEventListener('pointerdown', (e) => {
+    idrag = true; lastX = e.clientX; lastY = e.clientY; inspectAuto = 0;
+    inspectEl.classList.add('dragging');
+    inspectEl.setPointerCapture(e.pointerId);
+  });
+  inspectEl.addEventListener('pointermove', (e) => {
+    if (!idrag) return;
+    inspectRotY += (e.clientX - lastX) * 0.01;
+    inspectRotX += (e.clientY - lastY) * 0.01;
+    inspectRotX = Math.max(-Math.PI, Math.min(Math.PI, inspectRotX));
+    lastX = e.clientX; lastY = e.clientY;
+  });
+  const endDrag = (e) => {
+    idrag = false;
+    inspectEl.classList.remove('dragging');
+    if (e.pointerId != null && inspectEl.hasPointerCapture(e.pointerId)) inspectEl.releasePointerCapture(e.pointerId);
+  };
+  inspectEl.addEventListener('pointerup', endDrag);
+  inspectEl.addEventListener('pointercancel', endDrag);
+  inspectEl.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    inspectDist = Math.max(2.0, Math.min(7, inspectDist + e.deltaY * 0.003));
+  }, { passive: false });
+}
+function updateInspect(dt) {
+  if (!inspecting) return;
+  if (extracting) {
+    extractT = Math.min(1, extractT + dt / 3.4);
+    driveExtraction(extractT);
+    if (extractT >= 1) finishExtraction();
+  }
+  inspectAuto += dt;
+  const idle = inspectAuto > 1.2 ? (inspectAuto - 1.2) * 0.2 : 0;   // a slow drift once you let go
+  inspectPivot.rotation.set(inspectRotX, inspectRotY + idle, 0);
+  inspectCamera.position.z = inspectDist;
+  inspectCamera.lookAt(0, 0, 0);
+}
 
 // ------------------------------------------------------------------
 // Interaction
@@ -1598,7 +1709,8 @@ const invPanelEl = document.getElementById('invpanel');
 const invGridEl = document.getElementById('inv-grid');
 const invGhostEl = document.getElementById('invghost');
 const RECIPES = [
-  { a: 'syringe', b: 'horseshoe', run: (syringe, crab) => drainHorseshoe(syringe, crab) },
+  // dropping one onto the other runs the scripted 3D extraction
+  { a: 'syringe', b: 'horseshoe', run: () => { closePack(); startExtraction(); } },
 ];
 function findRecipe(x, y) {
   if (!x || !y || x === y) return null;
@@ -2006,6 +2118,150 @@ addInteractable(bottle, 'Take the bottle', 'inventory', {
 });
 
 // ------------------------------------------------------------------
+// Horseshoe crab — stranded in the wrack line. Take it, then "use" it
+// to turn it over and look at the underside. Model lives in
+// models/horseshoe-crab.js.
+// ------------------------------------------------------------------
+// (renamed hcrab* to avoid the enemy `crab` added on main)
+const hcrab = makeHorseshoeCrab();
+const hcrabWorld = new THREE.Group();
+hcrabWorld.add(hcrab);
+{
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.30, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy';
+  hcrabWorld.add(hit);
+}
+hcrabWorld.position.set(2.7, 0.03, -58);
+hcrabWorld.rotation.set(0.05, -0.7, -0.03);
+scene.add(hcrabWorld);
+let hcrabTaken = false, crabBled = false;
+const crabItem = {
+  id: 'horseshoe', name: 'Horseshoe crab', icon: makeHorseshoeCrabIcon(),
+  use: () => {
+    if (!crabBled && inventory.includes(syringeItem)) startExtraction();
+    else openInspect(hcrab, { rotX: 0.5, rotY: 0.5 });
+  },
+};
+addInteractable(hcrabWorld, 'Take the horseshoe crab', 'inventory', {
+  onActivate: () => {
+    if (hcrabTaken) return;
+    hcrabTaken = true;
+    sfxThud(0.04);
+    scene.remove(hcrabWorld);
+    hovered = null;
+    addToInventory(crabItem);
+  },
+});
+
+// ------------------------------------------------------------------
+// Bleeding syringe — a big glass hypodermic further down the beach.
+// Take it, then "use" it while carrying the crab to draw the pale
+// blue haemolymph: the needle goes into the hinge and the plunger
+// pulls back, filling the barrel. Model in models/syringe.js.
+// ------------------------------------------------------------------
+const syringe = makeSyringe();
+const syringeWorld = new THREE.Group();
+syringeWorld.add(syringe);
+{
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy';
+  syringeWorld.add(hit);
+}
+syringe.scale.setScalar(1.6);
+syringeWorld.position.set(3.6, 0.06, -96);
+syringeWorld.rotation.set(0.1, 1.1, 0.5);
+// not in the world any more — you start the walk with it (see below)
+
+let syringeTaken = false;
+const bloodJar = makeBloodJar();
+const jarItem = { name: 'Jar of blue blood', icon: makeBloodJarIcon(), use: () => openInspect(bloodJar, { rotX: 0.18, rotY: 0.6 }) };
+const syringeItem = {
+  id: 'syringe', name: 'Bleeding syringe', icon: makeSyringeIcon(),
+  use: () => {
+    if (!crabBled && inventory.includes(crabItem)) startExtraction();
+    else openInspect(syringe, { rotX: 0.15, rotY: 0.8 });
+  },
+};
+// you set out with the syringe already on you, empty
+syringeTaken = true;
+syringe.scale.setScalar(1);
+addToInventory(syringeItem);
+
+// ---- the extraction: crab + syringe combine ----------------------
+let extracting = false, extractT = 0;
+const extractRig = new THREE.Group();
+const _hinge = new THREE.Vector3(0, 0.036, -0.116);          // where the needle bites
+function startExtraction() {
+  if (inspecting) return;
+  inspecting = true; extracting = true; extractT = 0;
+
+  const SS = 1.4;
+  extractRig.clear();
+  hcrab.position.set(0, 0, 0); hcrab.rotation.set(0, 0, 0); hcrab.scale.setScalar(1);
+  syringe.position.set(0, 0, 0); syringe.rotation.set(0.95, 0.5, 0); syringe.scale.setScalar(SS);
+  syringe.userData.setFill(0);
+  syringe.userData.parts.cap.visible = true;
+  const tip = new THREE.Vector3(0, 0, syringe.userData.parts.tipZ * SS).applyEuler(syringe.rotation);
+  syringe.position.copy(_hinge).sub(tip).add(new THREE.Vector3(0, 0.05, 0));   // start lifted clear
+  syringe.userData.startY = syringe.position.y;
+  extractRig.add(hcrab, syringe);
+
+  inspectSetModel(extractRig);
+  // frame on the crab, not the crab+syringe pair
+  extractRig.updateMatrixWorld(true);
+  const cb = new THREE.Box3().setFromObject(hcrab).getCenter(new THREE.Vector3());
+  inspectFit.position.copy(cb).multiplyScalar(-inspectFit.scale.x);
+  inspectRotX = 0.62; inspectRotY = 0.55; inspectDist = 4.2; inspectAuto = 999;   // no idle drift
+  inspectCamera.aspect = window.innerWidth / window.innerHeight;
+  inspectCamera.updateProjectionMatrix();
+  inspectEl.classList.add('show');
+  inspectEl.querySelector('.hint').textContent = 'Drawing haemolymph…';
+  promptEl.classList.remove('show');
+  crosshair.className = ''; crosshair.style.display = 'none';
+  inspectReturnLock = locked;
+  if (locked) document.exitPointerLock();
+  sfxDraw();
+  refreshUI();
+}
+function driveExtraction(t) {
+  const ease = (a, b) => THREE.MathUtils.clamp((t - a) / (b - a), 0, 1);
+  // 0.00–0.14  cap flicks off
+  const c = ease(0, 0.14);
+  syringe.userData.parts.cap.position.z = -c * 0.08;
+  syringe.userData.parts.cap.visible = c < 1;
+  // 0.14–0.32  needle dips into the hinge ... 0.86–1.0 lifts back out
+  const dip = ease(0.14, 0.32) - ease(0.86, 1.0);
+  syringe.position.y = syringe.userData.startY - dip * 0.05;
+  // 0.32–0.9  plunger draws, barrel fills (with a faint pulse)
+  const f = ease(0.32, 0.9);
+  syringe.userData.setFill(f * (0.97 + 0.03 * Math.sin(t * 60)));
+}
+function finishExtraction() {
+  extracting = false;
+  crabBled = true;
+  // the syringe is emptied into a jar and re-capped
+  syringe.userData.setFill(0);
+  syringe.userData.parts.cap.visible = true;
+  syringe.userData.parts.cap.position.z = 0;
+  bloodJar.userData.setFill(0.86);
+  if (!inventory.includes(jarItem)) addToInventory(jarItem);
+  renderHotbar();
+  // the counter appears the first time you actually draw any
+  bloodAmount += BLOOD_PER_CRAB;
+  bloodSeen = true;
+  bloodPulse = 1;
+  hudJar.userData.setFill(Math.min(1, bloodAmount / BLOOD_JAR_CAP));
+  updateBloodReadout();
+  sfxBloodGained();
+  // show the jar as the payoff
+  inspectSetModel(bloodJar);
+  inspectRotX = 0.12; inspectRotY = 0.45; inspectDist = 3.7; inspectAuto = 0;
+  inspectEl.querySelector('.hint').textContent = 'A jar of blue blood · drag to look · Esc to put it away';
+}
+
+// ------------------------------------------------------------------
 // Buried caches — rare little sand mounds along the walk. Dig one open
 // with the shovel and it turns up a (placeholder) buried object.
 // ------------------------------------------------------------------
@@ -2300,411 +2556,54 @@ function updateCrab(dt) {
 }
 
 // ------------------------------------------------------------------
-// Syringe + horseshoe crabs. You start with the empty syringe; the crabs
-// are scattered along the shore further down the beach. Dragging one onto
-// the other in the pack draws the blue blood off.
+// Blue-blood readout — the actual jar model, shrunk down and turning on
+// the spot in the top-left corner, with the amount beside it. Rendered as
+// a scissored corner viewport over the main scene each frame.
 // ------------------------------------------------------------------
-const BLOOD_BLUE = 0x39a8dc;
-function makeSyringe() {
-  const g = new THREE.Group();
-  const glass = new THREE.MeshStandardMaterial({
-    color: 0xc7d4e0, roughness: 0.22, metalness: 0.05,
-    transparent: true, opacity: 0.4, flatShading: true,
-  });
-  const plastic = new THREE.MeshStandardMaterial({ color: 0xdfe8f2, roughness: 0.85, flatShading: true, emissive: 0x1a2028 });
-  const steel = new THREE.MeshStandardMaterial({ color: 0xa8b4c2, roughness: 0.3, metalness: 0.75, flatShading: true });
-  const R = 0.019, L = 0.13;
-
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(R, R, L, 10, 1, true), glass);
-  const flange = new THREE.Mesh(new THREE.BoxGeometry(R * 3.4, 0.008, R * 1.2), plastic);
-  flange.position.y = L / 2;
-  const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, L * 0.72, 6), plastic);
-  rod.position.y = L * 0.72;
-  const thumb = new THREE.Mesh(new THREE.CylinderGeometry(R * 1.25, R * 1.25, 0.008, 10), plastic);
-  thumb.position.y = L * 1.06;
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.45, R * 0.9, 0.02, 8), plastic);
-  hub.position.y = -L / 2 - 0.01;
-  const needle = new THREE.Mesh(new THREE.CylinderGeometry(0.0018, 0.0018, 0.055, 5), steel);
-  needle.position.y = -L / 2 - 0.048;
-
-  // the column of blood, hidden until there's something in it
-  const fluid = new THREE.Mesh(
-    new THREE.CylinderGeometry(R * 0.86, R * 0.86, L * 0.9, 10),
-    new THREE.MeshStandardMaterial({ color: BLOOD_BLUE, emissive: 0x11557a, roughness: 0.3, flatShading: true })
-  );
-  fluid.visible = false;
-  g.add(barrel, flange, rod, thumb, hub, needle, fluid);
-  g.userData.fluid = fluid;
-  g.userData.barrelLen = L;
-  return g;
-}
-// fill 0..1 — slides the plunger down and grows the blood column
-function setSyringeFill(model, fill) {
-  const fluid = model.userData.fluid;
-  if (!fluid) return;
-  const L = model.userData.barrelLen;
-  fluid.visible = fill > 0.001;
-  fluid.scale.y = Math.max(0.001, fill);
-  fluid.position.y = -L / 2 + (L * 0.9 * fill) / 2;
-}
-function makeSyringeIcon() {
-  const c = document.createElement('canvas'); c.width = c.height = 48;
-  const g = c.getContext('2d');
-  g.save(); g.translate(24, 24); g.rotate(-Math.PI / 4); g.translate(-24, -24);
-  g.fillStyle = '#dfe8f2'; g.fillRect(20, 6, 8, 5);             // thumb rest
-  g.fillRect(23, 10, 2, 9);                                      // rod
-  g.fillStyle = 'rgba(200,220,235,0.55)'; g.fillRect(18, 17, 12, 20);  // barrel
-  g.strokeStyle = '#aebecd'; g.lineWidth = 1.5; g.strokeRect(18, 17, 12, 20);
-  g.fillStyle = '#dfe8f2'; g.fillRect(16, 15, 16, 3);            // flange
-  g.fillStyle = '#a8b4c2'; g.fillRect(23, 37, 2, 8);             // needle
-  g.restore();
-  return c.toDataURL();
-}
-
-function makeHorseshoeCrab() {
-  const g = new THREE.Group();
-  const shellMat = new THREE.MeshStandardMaterial({ color: 0x53412a, roughness: 0.85, flatShading: true, emissive: 0x191207 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x33281a, roughness: 1, flatShading: true, emissive: 0x0d0a05 });
-
-  // prosoma — the big horseshoe dome up front
-  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.5), shellMat);
-  dome.scale.set(1.0, 0.36, 1.15);
-  dome.position.y = 0.015;
-  g.add(dome);
-  // the flat rim it sits on, so it reads as a shell not a ball
-  const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.225, 0.215, 0.018, 12, 1, false, 0, Math.PI * 2), shellMat);
-  rim.scale.set(1.0, 1, 1.15);
-  rim.position.y = 0.012;
-  g.add(rim);
-
-  // opisthosoma — the smaller hexagonal plate behind it
-  const rear = new THREE.Mesh(new THREE.CylinderGeometry(0.135, 0.105, 0.05, 6), shellMat);
-  rear.position.set(0, 0.022, 0.245);
-  rear.rotation.y = Math.PI / 6;
-  g.add(rear);
-  // the spines along its edge
-  for (let i = -2; i <= 2; i++) {
-    if (!i) continue;
-    const sp = new THREE.Mesh(new THREE.ConeGeometry(0.011, 0.06, 4), dark);
-    sp.position.set(i * 0.042, 0.022, 0.29);
-    sp.rotation.x = -Math.PI / 2 + 0.3;
-    g.add(sp);
-  }
-
-  // telson — the long tail spike
-  const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.016, 0.3, 5), dark);
-  tail.position.set(0, 0.02, 0.42);
-  tail.rotation.x = Math.PI / 2 - 0.12;
-  g.add(tail);
-
-  // a suggestion of legs underneath
-  for (const s of [-1, 1]) for (let i = 0; i < 4; i++) {
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.01, 0.07), dark);
-    leg.position.set(s * (0.09 + i * 0.022), 0.006, -0.06 + i * 0.055);
-    leg.rotation.z = s * 0.5;
-    g.add(leg);
-  }
-  return g;
-}
-function makeHorseshoeIcon() {
-  const c = document.createElement('canvas'); c.width = c.height = 48;
-  const g = c.getContext('2d');
-  g.fillStyle = '#6b5436';
-  g.beginPath(); g.ellipse(24, 20, 15, 12, 0, Math.PI, 0); g.fill();   // dome
-  g.fillRect(9, 20, 30, 3);
-  g.beginPath(); g.moveTo(14, 23); g.lineTo(34, 23); g.lineTo(30, 34); g.lineTo(18, 34); g.closePath(); g.fill();
-  g.strokeStyle = '#3b2f1d'; g.lineWidth = 2.5;
-  g.beginPath(); g.moveTo(24, 34); g.lineTo(24, 45); g.stroke();       // telson
-  g.fillStyle = 'rgba(255,255,255,0.14)';
-  g.beginPath(); g.ellipse(19, 15, 5, 3.5, -0.4, 0, Math.PI * 2); g.fill();
-  return c.toDataURL();
-}
-
-const syringeVM = makeSyringe();
-syringeVM.scale.setScalar(1.25);
-syringeVM.position.set(0, -0.01, 0.01);
-syringeVM.rotation.set(0.5, 0.2, 0.5);
-syringeVM.visible = false;
-toolMount.add(syringeVM);
-
-const syringeItem = {
-  id: 'syringe', name: 'Syringe', icon: makeSyringeIcon(), viewmodel: syringeVM,
-  use: () => toggleEquip(syringeItem),
-};
-addToInventory(syringeItem);        // you set out with it, empty
-
-// --- the crabs themselves, spread along the shore ---------------------
-const horseshoes = [];
+const HUD_JAR_PX = 52;                      // on-screen size of the corner view
+const hudScene = new THREE.Scene();
+const hudCamera = new THREE.PerspectiveCamera(30, 1, 0.05, 20);
+hudCamera.position.set(0, 0, 1);
+hudScene.add(new THREE.AmbientLight(0xcfe0ee, 3.2));
 {
-  // far enough down the beach to be past Bradly, then every 30-ish metres
-  let z = -56;
-  for (let i = 0; i < 4; i++) {
-    const m = makeHorseshoeCrab();
-    const x = 1.6 + Math.random() * 3.2;              // out on the wet sand
-    m.position.set(x, 0, z);
-    m.rotation.y = Math.random() * Math.PI * 2;
-    const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.42, 8, 6),
-      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-    proxy.name = 'hitProxy'; proxy.position.y = 0.1;
-    m.add(proxy);
-    scene.add(m);
-    horseshoes.push(m);
-    addInteractable(m, 'Take the horseshoe crab', 'inventory', {
-      onActivate: () => {
-        sfxThud(0.05);
-        scene.remove(m);
-        hovered = null;
-        addToInventory({ id: 'horseshoe', name: 'Horseshoe crab', icon: makeHorseshoeIcon(),
-          use: () => openNote('A horseshoe crab, still faintly moving.\n\nIts blood is worth more than you are.') });
-      },
-    });
-    z -= 26 + Math.random() * 18;
-  }
+  const k = new THREE.DirectionalLight(0xffffff, 4.5); k.position.set(0.6, 1, 0.8); hudScene.add(k);
+  const r = new THREE.DirectionalLight(0x9fd4f0, 2.2); r.position.set(-0.8, 0.2, -0.5); hudScene.add(r);
+  const b = new THREE.DirectionalLight(0xffffff, 1.6); b.position.set(0, -0.6, 1); hudScene.add(b);
 }
-
-// ------------------------------------------------------------------
-// Extraction — the syringe into the crab's hinge, drawn on a canvas
-// ------------------------------------------------------------------
-const drainEl = document.getElementById('drain');
-const drainCanvas = document.getElementById('drain-canvas');
-const drainCapEl = document.getElementById('drain-cap');
-const DRAIN_DUR = 3.4;              // seconds
-
-function drawDrainFrame(ctx, p) {
-  const W = drainCanvas.width, H = drainCanvas.height;
-  ctx.clearRect(0, 0, W, H);
-  const cx = 186, cy = 112;         // the crab (top of its shell)
-  const sx = 442, sy = 128;         // the syringe
-
-  // how far the needle is in, and how much has moved across
-  const insert = Math.min(1, p / 0.22);
-  const flow = Math.max(0, Math.min(1, (p - 0.24) / 0.62));
-
-  // --- the crab, top down --------------------------------------------
-  const drained = flow;
-  const R = 74;
-  // Colour bleeds from a live shell toward a drained grey. The whole frame
-  // gets quantised to 4 bits at the end, so these land on multiples of 16 —
-  // otherwise the "grey" rounds back to brown.
-  const mix = (a, b) => (a + (b - a) * drained) | 0;
-  const shell = `rgb(${mix(128, 112)}, ${mix(96, 112)}, ${mix(64, 112)})`;
-  const shellDk = `rgb(${mix(80, 80)}, ${mix(64, 80)}, ${mix(48, 80)})`;
-
-  // prosoma — broad horseshoe front with the genal spines sweeping back
-  ctx.fillStyle = shell;
-  ctx.beginPath();
-  ctx.arc(cx, cy + 26, R, Math.PI, 0);              // the domed front
-  ctx.lineTo(cx + R, cy + 40);
-  ctx.lineTo(cx + R * 0.60, cy + 54);               // in toward the hinge
-  ctx.lineTo(cx - R * 0.60, cy + 54);
-  ctx.lineTo(cx - R, cy + 40);
-  ctx.closePath(); ctx.fill();
-  // the two spines that trail past the hinge
-  for (const s of [-1, 1]) {
-    ctx.beginPath();
-    ctx.moveTo(cx + s * R, cy + 30);
-    ctx.lineTo(cx + s * R * 0.80, cy + 96);
-    ctx.lineTo(cx + s * R * 0.58, cy + 48);
-    ctx.closePath(); ctx.fill();
-  }
-  // opisthosoma — the hinged hexagonal plate
-  ctx.fillStyle = shellDk;
-  ctx.beginPath();
-  ctx.moveTo(cx - R * 0.56, cy + 56);
-  ctx.lineTo(cx + R * 0.56, cy + 56);
-  ctx.lineTo(cx + R * 0.42, cy + 104);
-  ctx.lineTo(cx - R * 0.42, cy + 104);
-  ctx.closePath(); ctx.fill();
-  // telson
-  ctx.strokeStyle = shellDk; ctx.lineWidth = 6; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(cx, cy + 104); ctx.lineTo(cx, cy + 168); ctx.stroke();
-  // the ridge line down the shell
-  ctx.strokeStyle = shellDk; ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.moveTo(cx, cy - 34); ctx.lineTo(cx, cy + 48); ctx.stroke();
-
-  // the blue still in there, glowing up through the shell
-  if (drained < 0.99) {
-    const grad = ctx.createRadialGradient(cx, cy + 16, 4, cx, cy + 16, R * 0.82);
-    grad.addColorStop(0, `rgba(120, 214, 250, ${0.72 * (1 - drained)})`);
-    grad.addColorStop(0.6, `rgba(62, 169, 221, ${0.42 * (1 - drained)})`);
-    grad.addColorStop(1, 'rgba(62, 169, 221, 0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.ellipse(cx, cy + 16, R * 0.82, R * 0.62, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  // shell highlight
-  ctx.save();
-  ctx.globalAlpha = 0.18;
-  ctx.fillStyle = '#dfe8f2';
-  ctx.beginPath(); ctx.ellipse(cx - 28, cy - 2, 24, 13, -0.4, 0, Math.PI * 2); ctx.fill();
-  ctx.restore();
-
-  // --- the line from crab to syringe ---------------------------------
-  const nx = cx + R * 0.54, ny = cy + 44;
-  ctx.strokeStyle = '#8fa0b0'; ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(nx, ny);
-  ctx.lineTo(nx + (sx - 52 - nx) * insert, ny - (ny - (sy + 74)) * insert);
-  ctx.stroke();
-
-  // blood travelling along it
-  if (flow > 0) {
-    ctx.strokeStyle = '#43b3e6'; ctx.lineWidth = 5; ctx.lineCap = 'round';
-    ctx.beginPath();
-    const tx = nx + (sx - 52 - nx), ty = sy + 74;
-    ctx.moveTo(nx, ny);
-    ctx.lineTo(nx + (tx - nx) * Math.min(1, flow * 1.4), ny + (ty - ny) * Math.min(1, flow * 1.4));
-    ctx.stroke();
-    // beads running up the tube
-    for (let i = 0; i < 4; i++) {
-      const t = (p * 1.7 + i * 0.25) % 1;
-      ctx.globalAlpha = 0.5;
-      ctx.fillStyle = '#a5e4ff';
-      ctx.beginPath();
-      ctx.arc(nx + (tx - nx) * t, ny + (ty - ny) * t, 3.4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-  }
-
-  // --- the syringe ----------------------------------------------------
-  const bw = 46, bh = 128;
-  const bx = sx - bw / 2, by = sy - 34;
-  ctx.fillStyle = 'rgba(190, 212, 228, 0.16)';
-  ctx.fillRect(bx, by, bw, bh);
-  // the blood collecting in it
-  const fh = bh * flow;
-  ctx.fillStyle = '#3ea9dd';
-  ctx.fillRect(bx + 3, by + bh - fh, bw - 6, fh);
-  ctx.fillStyle = 'rgba(160, 226, 255, 0.55)';
-  if (fh > 3) ctx.fillRect(bx + 3, by + bh - fh, bw - 6, 4);
-  ctx.strokeStyle = '#aebecd'; ctx.lineWidth = 3;
-  ctx.strokeRect(bx, by, bw, bh);
-  // flange, plunger (pulled back as it fills), needle
-  ctx.fillStyle = '#dfe8f2';
-  ctx.fillRect(bx - 13, by - 7, bw + 26, 7);
-  const plungeY = by - 7 - 46 * flow;
-  ctx.fillRect(bx + bw / 2 - 4, plungeY, 8, 48 * flow + 4);
-  ctx.fillRect(bx - 10, plungeY - 7, bw + 20, 8);
-  ctx.fillStyle = '#a8b4c2';
-  ctx.fillRect(bx + bw / 2 - 3, by + bh, 6, 16);
-  ctx.fillRect(bx + bw / 2 - 1.5, by + bh + 16, 3, 30);
-
-  // ticks up the barrel
-  ctx.strokeStyle = 'rgba(215, 232, 244, 0.5)'; ctx.lineWidth = 1.5;
-  for (let i = 1; i < 5; i++) {
-    const ty = by + (bh / 5) * i;
-    ctx.beginPath(); ctx.moveTo(bx + bw - 13, ty); ctx.lineTo(bx + bw - 3, ty); ctx.stroke();
-  }
-
-  // quantise the whole frame to the game's colour depth
-  const img = ctx.getImageData(0, 0, W, H), px = img.data;
-  for (let i = 0; i < px.length; i += 4) { px[i] &= 0xF0; px[i + 1] &= 0xF0; px[i + 2] &= 0xF0; }
-  ctx.putImageData(img, 0, 0);
+const hudJarPivot = new THREE.Group();
+hudScene.add(hudJarPivot);
+const hudJar = makeBloodJar();
+hudJarPivot.add(hudJar);
+{
+  // centre it on the pivot and frame it in the little viewport
+  const box = new THREE.Box3().setFromObject(hudJar);
+  const size = box.getSize(new THREE.Vector3());
+  const mid = box.getCenter(new THREE.Vector3());
+  const k = 0.60 / Math.max(size.x, size.y, size.z);
+  hudJar.scale.setScalar(k);
+  hudJar.position.copy(mid).multiplyScalar(-k);
+  hudJar.userData.setFill(0);
 }
-
-let drainRAF = 0;
-function drainHorseshoe(syringe, crab) {
-  if (drainOpen) return;
-  drainOpen = true;
-  closePack();
-  invOpen = false;                                  // stay closed behind the animation
-  drainEl.classList.add('show');
-  drainCapEl.textContent = 'Extracting';
-  refreshUI();
-  sfxDrain();
-
-  const ctx = drainCanvas.getContext('2d');
-  const t0 = performance.now();
-  const tick = () => {
-    const p = Math.min(1, (performance.now() - t0) / (DRAIN_DUR * 1000));
-    drawDrainFrame(ctx, p);
-    if (p >= 1) {
-      drainCapEl.textContent = `+${BLOOD_PER_CRAB} mL`;
-      setTimeout(finish, 900);
-      return;
-    }
-    drainRAF = requestAnimationFrame(tick);
-  };
-  const finish = () => {
-    cancelAnimationFrame(drainRAF);
-    removeFromInventory(crab);                      // the crab is spent
-    bloodAmount += BLOOD_PER_CRAB;
-    bloodSeen = true;                               // HUD appears from here on
-    bloodPulse = 1;
-    drainEl.classList.remove('show');
-    drainOpen = false;
-    refreshUI();
-    updateBloodReadout();
-    sfxBloodGained();
-  };
-  drainRAF = requestAnimationFrame(tick);
-}
-
-// ------------------------------------------------------------------
-// Blue-blood readout — a little jar turning on the spot, top left
-// ------------------------------------------------------------------
 let jarSpin = 0, bloodPulse = 0;
-function updateBloodReadout() {
-  bloodAmtEl.textContent = String(bloodAmount);
-}
-function drawBloodJar(dt) {
+function updateBloodReadout() { bloodAmtEl.textContent = String(bloodAmount); }
+function renderBloodJar(dt) {
   if (!bloodSeen || !bloodEl.classList.contains('show')) return;
-  jarSpin += dt * 1.5;
-  bloodPulse = Math.max(0, bloodPulse - dt * 1.6);
-  const ctx = bloodJarEl.getContext('2d');
-  const W = bloodJarEl.width, H = bloodJarEl.height;
-  ctx.clearRect(0, 0, W, H);
+  jarSpin += dt * 1.1;
+  bloodPulse = Math.max(0, bloodPulse - dt * 1.4);
+  hudJarPivot.rotation.y = jarSpin;
+  hudJarPivot.rotation.x = 0.16 + Math.sin(jarSpin * 0.5) * 0.04;
+  hudJarPivot.scale.setScalar(1 + bloodPulse * 0.18);
 
-  const cx = W / 2, cy = H / 2 + 4;
-  const jw = 34, jh = 44;                       // jar body
-  const s = Math.sin(jarSpin), c = Math.cos(jarSpin);
-  // the body narrows and widens as it turns, so it reads as spinning on its axis
-  const halfW = jw * (0.62 + 0.38 * Math.abs(c)) / 2;
-  const rimRy = 6 * Math.abs(c) + 2;
-  const top = cy - jh / 2, bot = cy + jh / 2;
-  const glow = 1 + bloodPulse * 0.35;
-
-  // glass body
-  ctx.fillStyle = `rgba(150, 200, 225, ${0.13 * glow})`;
-  ctx.fillRect(cx - halfW, top, halfW * 2, jh);
-
-  // liquid
-  const fill = Math.max(0, Math.min(1, bloodAmount / BLOOD_JAR_CAP));
-  const lh = (jh - 6) * fill;
-  if (lh > 0.5) {
-    const ly = bot - 3 - lh;
-    ctx.fillStyle = `rgba(62, 169, 221, ${0.92 * glow})`;
-    ctx.fillRect(cx - halfW + 2, ly, halfW * 2 - 4, lh);
-    // the surface ellipse, which also flattens as it turns
-    ctx.fillStyle = `rgba(140, 220, 250, ${0.95 * glow})`;
-    ctx.beginPath();
-    ctx.ellipse(cx, ly, halfW - 2, Math.max(1.2, rimRy * 0.55), 0, 0, Math.PI * 2);
-    ctx.fill();
-    // a highlight band sweeping round the body
-    ctx.save();
-    ctx.beginPath(); ctx.rect(cx - halfW + 2, ly, halfW * 2 - 4, lh); ctx.clip();
-    ctx.globalAlpha = 0.3 * Math.max(0, s);
-    ctx.fillStyle = '#dff4ff';
-    ctx.fillRect(cx + s * halfW * 0.5 - 3, ly, 6, lh);
-    ctx.restore();
-  }
-
-  // rim + neck + lid
-  ctx.strokeStyle = `rgba(190, 226, 244, ${0.85 * glow})`;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(cx - halfW, top, halfW * 2, jh);
-  ctx.beginPath();
-  ctx.ellipse(cx, top, halfW, rimRy, 0, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.fillStyle = `rgba(120, 150, 170, ${0.9 * glow})`;
-  ctx.fillRect(cx - halfW * 0.6, top - 8, halfW * 1.2, 6);
-
-  // chunky pixels, same as everything else
-  const img = ctx.getImageData(0, 0, W, H), px = img.data;
-  for (let i = 0; i < px.length; i += 4) { px[i] &= 0xF0; px[i + 1] &= 0xF0; px[i + 2] &= 0xF0; }
-  ctx.putImageData(img, 0, 0);
+  // the DOM element tells us where to put the corner viewport
+  const r = bloodEl.getBoundingClientRect();
+  const x = r.left, y = window.innerHeight - r.top - HUD_JAR_PX - 2;
+  renderer.setScissorTest(true);
+  renderer.setViewport(x, y, HUD_JAR_PX, HUD_JAR_PX);
+  renderer.setScissor(x, y, HUD_JAR_PX, HUD_JAR_PX);
+  renderer.clearDepth();
+  renderer.render(hudScene, hudCamera);
+  renderer.setScissorTest(false);
+  renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
 }
 
 // ------------------------------------------------------------------
@@ -3068,6 +2967,21 @@ function sfxThud(gain) {
   s.connect(f).connect(g).connect(ctx.destination);
   s.start(t); s.stop(t + 0.1);
 }
+// the extraction — a soft wet suction that rises as the barrel fills
+function sfxDraw() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const src = noiseBurst(2.6, (x) => (0.15 + 0.5 * x) * (0.6 + 0.4 * Math.sin(x * 40)));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 3;
+  bp.frequency.setValueAtTime(180, t);
+  bp.frequency.linearRampToValueAtTime(520, t + 2.4);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.05, t + 0.4);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 2.6);
+  src.connect(bp).connect(g).connect(masterGain || ctx.destination);
+  src.start(t); src.stop(t + 2.6);
+}
 // a chunk of shaped noise, `env(i01)` returns 0..1 amplitude over its length
 function noiseBurst(seconds, env) {
   const ctx = audioCtx;
@@ -3233,35 +3147,6 @@ function sfxHurt() {
   o.start(t); o.stop(t + 0.42);
 }
 
-// the extraction — a wet suction that rises as the barrel fills
-function sfxDrain() {
-  const ctx = audioCtx; if (!ctx) return;
-  const t = ctx.currentTime, dur = DRAIN_DUR;
-  const out = ctx.createGain(); out.gain.value = 0.5; out.connect(ctx.destination);
-
-  const s = noiseBurst(dur, (x) => 0.25 + 0.5 * Math.sin(Math.PI * x) * (0.7 + 0.3 * Math.random()));
-  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 2.4;
-  bp.frequency.setValueAtTime(240, t);
-  bp.frequency.exponentialRampToValueAtTime(900, t + dur * 0.8);
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(0.11, t + 0.4);
-  g.gain.setValueAtTime(0.11, t + dur * 0.82);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  s.connect(bp).connect(g).connect(out);
-  s.start(t); s.stop(t + dur);
-
-  // a low tone that climbs as the syringe fills
-  const o = ctx.createOscillator(); o.type = 'triangle';
-  o.frequency.setValueAtTime(64, t);
-  o.frequency.linearRampToValueAtTime(132, t + dur * 0.85);
-  const og = ctx.createGain();
-  og.gain.setValueAtTime(0.0001, t);
-  og.gain.exponentialRampToValueAtTime(0.05, t + 0.5);
-  og.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.connect(og).connect(out);
-  o.start(t); o.stop(t + dur + 0.1);
-}
 // the little chime when it lands in the jar
 function sfxBloodGained() {
   const ctx = audioCtx; if (!ctx) return;
@@ -3408,7 +3293,6 @@ function update(dt) {
   updateCrab(dt);
   updateBradlyBlink(dt);
   updateHurt(dt);
-  drawBloodJar(dt);
 
   // walking up on Bradly starts the exchange the first time, so you can't
   // miss him; after that he's a normal E-to-talk interactable
@@ -3427,13 +3311,19 @@ function animate() {
   oceanUniforms.uTime.value += dt;
   update(dt);
   updateHover();
+  if (inspecting) {
+    updateInspect(dt);
+    renderer.render(inspectScene, inspectCamera);
+    return;
+  }
   renderer.render(scene, camera);
+  renderer.autoClear = false;
   if (viewmodel.visible) {
-    renderer.autoClear = false;
     renderer.clearDepth();
     renderer.render(vmScene, vmCamera);
-    renderer.autoClear = true;
   }
+  renderBloodJar(dt);          // corner viewport, drawn over the world
+  renderer.autoClear = true;
 }
 animate();
 
@@ -3441,6 +3331,7 @@ window.addEventListener('resize', () => {
   const a = window.innerWidth / window.innerHeight;
   camera.aspect = a; camera.updateProjectionMatrix();
   vmCamera.aspect = a; vmCamera.updateProjectionMatrix();
+  inspectCamera.aspect = a; inspectCamera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
   layoutViewmodel();
 });
@@ -3451,10 +3342,12 @@ window.__bw = {
   THREE, scene, camera, player: camera,
   interactables, physProps, inventory, bottle, cliff, foot, lighthouse, city,
   castle, shovelWorld, viewmodel,
+  hcrab, hcrabWorld, syringe, syringeWorld, bloodJar,
+  renderer, inspectScene, inspectCamera,
   mounds, moundAt, revealMoundNear, makeGlowstick, inWater, shoreLineJS,
   sfxSplash, bradly, startDialog, endDialog, heldGlow,
   crab, crabState, killCrab, damagePlayer, playerDied,
-  horseshoes, openPack, closePack, drainHorseshoe, setSyringeFill,
+  openPack, closePack, startExtraction, driveExtraction, finishExtraction, hudJar,
   get hp() { return hp; },
   get blood() { return bloodAmount; },
   get bloodSeen() { return bloodSeen; },
@@ -3470,7 +3363,8 @@ window.__bw = {
   blinkNow: () => { blinkT = 0; },
   get glowstickItem() { return glowstickItem; },
   openMenu, closeMenu, showEnd, stampFoot, startDig, toggleEquip, spawnPuffs, spawnSplash, stampDigHole, beginGame,
-  get shovelItem() { return shovelItem; },
-  state: () => ({ started, locked, fallbackLook, introDone, noteOpen, menuOpen, ended, onGround, stamina: +stamina.toFixed(2), exhausted, digT: +digT.toFixed(2), equipped: equipped && equipped.name, held: held && held.mesh.name, hovered: hovered && hovered.label, inv: inventory.map(i => i.name) }),
+  openInspect, closeInspect, startExtraction,
+  get shovelItem() { return shovelItem; }, get crabItem() { return crabItem; }, get syringeItem() { return syringeItem; }, get jarItem() { return jarItem; },
+  state: () => ({ started, locked, fallbackLook, introDone, noteOpen, menuOpen, dialogOpen, inspecting, extracting, crabBled, dying, ended, onGround, stamina: +stamina.toFixed(2), exhausted, digT: +digT.toFixed(2), equipped: equipped && equipped.name, held: held && held.mesh.name, hovered: hovered && hovered.label, inv: inventory.map(i => i.name) }),
   music: () => (musicEl ? { paused: musicEl.paused, t: +musicEl.currentTime.toFixed(1), env: musicEnvGain ? +musicEnvGain.gain.value.toFixed(3) : null, vol: musicVolGain ? +musicVolGain.gain.value.toFixed(2) : null } : { musicEl: null }),
 };

@@ -397,7 +397,7 @@
     pointer-events: none;
   }
   #blood.show { display: flex; }
-  #blood canvas { width: 44px; height: 44px; image-rendering: pixelated; }
+  #blood #blood-jar { width: 52px; height: 52px; flex: none; }
   #blood .amt {
     font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
     font-size: 0.9rem;
@@ -518,29 +518,34 @@
   #invghost.show { display: flex; }
   #invghost img { width: 62%; height: 62%; object-fit: contain; }
 
-  /* the extraction — full-screen procedural animation */
-  #drain {
+  /* item inspect view — drag a held object around, look at its underside */
+  #inspect {
     position: fixed;
     inset: 0;
-    z-index: 16;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 1.1rem;
-    background: #03060b;
+    z-index: 12;
     opacity: 0;
     pointer-events: none;
+    /* the canvas already paints the dark inspect scene; this is just a
+       faint vignette + a click-catcher */
+    background: radial-gradient(ellipse at 50% 45%, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.45) 100%);
     transition: opacity 0.4s ease;
-    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    cursor: grab;
   }
-  #drain.show { opacity: 1; pointer-events: auto; }
-  #drain canvas { width: min(92vw, 620px); image-rendering: pixelated; }
-  #drain .cap {
-    font-size: 0.72rem;
-    letter-spacing: 0.28em;
+  #inspect.show { opacity: 1; pointer-events: auto; }
+  #inspect.dragging { cursor: grabbing; }
+  #inspect .hint {
+    position: absolute;
+    left: 50%;
+    bottom: 2.4rem;
+    transform: translateX(-50%);
+    font-family: "Georgia", "Times New Roman", serif;
+    font-size: 0.74rem;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: rgba(150, 210, 232, 0.75);
+    color: rgba(210, 222, 244, 0.7);
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.9);
+    white-space: nowrap;
+    pointer-events: none;
   }
 
   /* pause / settings menu */
@@ -675,7 +680,7 @@
   <div id="hotbar" class="hidden"></div>
 
   <div id="blood">
-    <canvas id="blood-jar" width="88" height="88"></canvas>
+    <div id="blood-jar"></div>
     <span class="amt"><span id="blood-amt">0</span><span class="unit">mL</span></span>
   </div>
 
@@ -690,16 +695,15 @@
   </div>
   <div id="invghost"></div>
 
-  <div id="drain">
-    <canvas id="drain-canvas" width="620" height="300"></canvas>
-    <div class="cap" id="drain-cap">Extracting</div>
-  </div>
-
   <div id="note">
     <div class="paper">
       <div id="note-text"></div>
       <div class="dismiss">Click or press Esc to put it away</div>
     </div>
+  </div>
+
+  <div id="inspect">
+    <div class="hint">Drag to turn it over &nbsp;·&nbsp; scroll to zoom &nbsp;·&nbsp; Esc to put it away</div>
   </div>
 
   <div id="menu">

@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Model viewer — horseshoe crab</title>
+<style>
+  :root { color-scheme: dark; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0b0f16; }
+  canvas { display: block; }
+
+  #hud {
+    position: fixed; left: 50%; bottom: 1.6rem; transform: translateX(-50%);
+    display: flex; gap: 0.6rem; z-index: 3;
+    font-family: "Georgia", "Times New Roman", serif;
+  }
+  #hud button {
+    padding: 0.5rem 0.9rem;
+    background: rgba(16, 24, 38, 0.82);
+    border: 1px solid rgba(140, 162, 200, 0.34);
+    border-radius: 6px;
+    color: #dbe4f4;
+    font: inherit; font-size: 0.72rem;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    cursor: pointer;
+  }
+  #hud button:hover { background: rgba(30, 44, 66, 0.95); }
+  #hud button.on { border-color: rgba(255, 190, 120, 0.9); color: #ffd9ab; }
+
+  #caption {
+    position: fixed; left: 50%; top: 1.4rem; transform: translateX(-50%);
+    font-family: "Georgia", serif; font-size: 0.74rem;
+    letter-spacing: 0.16em; text-transform: uppercase;
+    color: rgba(200, 214, 240, 0.55); z-index: 3; white-space: nowrap;
+  }
+  #stage { position: fixed; inset: 0; cursor: grab; z-index: 2; }
+  #stage.dragging { cursor: grabbing; }
+</style>
+</head>
+<body>
+  <div id="caption">drag to rotate &nbsp;·&nbsp; scroll to zoom</div>
+  <div id="stage"></div>
+  <div id="hud">
+    <button id="b-flip">Flip over</button>
+    <button id="b-spin" class="on">Auto-spin</button>
+    <button id="b-wire">Wireframe</button>
+    <button id="b-fill" style="display:none">Fill</button>
+    <button id="b-reset">Reset</button>
+  </div>
+
+  <script type="importmap">
+  { "imports": { "three": "../vendor/three/three.module.js" } }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+
+    const which = new URLSearchParams(location.search).get('model') || 'horseshoe-crab';
+    const factories = {
+      'horseshoe-crab': () => import('./horseshoe-crab.js').then(m => m.makeHorseshoeCrab()),
+      'syringe': () => import('./syringe.js').then(m => m.makeSyringe()),
+      'blood-jar': () => import('./blood-jar.js').then(m => m.makeBloodJar()),
+    };
+    document.getElementById('caption').textContent = which.replace('-', ' ') + '  ·  drag to rotate  ·  scroll to zoom';
+    document.title = 'Model viewer — ' + which;
+
+    const stage = document.getElementById('stage');
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setClearColor(0x0b0f16);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.15;
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x0b0f16, 0.06);
+
+    const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.01, 100);
+
+    // soft studio 3-point light so the underside still reads when flipped
+    scene.add(new THREE.AmbientLight(0x9fb0cc, 0.85));
+    const key = new THREE.DirectionalLight(0xfff0d8, 1.6); key.position.set(-0.7, 1.2, 1.0); scene.add(key);
+    const fill = new THREE.DirectionalLight(0x8aa2d6, 0.7); fill.position.set(1.2, -0.4, 0.7); scene.add(fill);
+    const rim = new THREE.DirectionalLight(0xc6d6f2, 0.8); rim.position.set(0.2, -1.0, -1.1); scene.add(rim);
+    scene.add(new THREE.HemisphereLight(0x4a5e80, 0x141820, 0.5));
+
+    // pivot holds the model, centred + scaled to frame
+    const pivot = new THREE.Group();
+    const fit = new THREE.Group();
+    pivot.add(fit);
+    scene.add(pivot);
+
+    const crab = await (factories[which] || factories['horseshoe-crab'])();
+    fit.add(crab);
+    fit.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(crab);
+    const size = box.getSize(new THREE.Vector3());
+    const centre = box.getCenter(new THREE.Vector3());
+    const k = 1.7 / Math.max(size.x, size.y, size.z);
+    fit.scale.setScalar(k);
+    fit.position.copy(centre).multiplyScalar(-k);
+
+    console.log(which + ' — meshes:',
+      (() => { let n = 0; crab.traverse(o => { if (o.isMesh) n++; }); return n; })(),
+      '· size (m):', [size.x, size.y, size.z].map(n => +n.toFixed(3)));
+
+    // syringe: expose a Fill toggle
+    if (crab.userData.setFill) {
+      let f = 0;
+      const bFill = document.getElementById('b-fill');
+      bFill.style.display = '';
+      bFill.addEventListener('click', () => { f = f < 0.99 ? 1 : 0; crab.userData.setFill(f); bFill.classList.toggle('on', f > 0); });
+    }
+
+    // --- interaction ---------------------------------------------------
+    const HOME = { rx: -0.5, ry: 0.7, dist: 3.7 };
+    let rotX = HOME.rx, rotY = HOME.ry, dist = HOME.dist;
+    let autoSpin = true, dragging = false, lastX = 0, lastY = 0;
+
+    stage.addEventListener('pointerdown', (e) => {
+      dragging = true; lastX = e.clientX; lastY = e.clientY;
+      stage.classList.add('dragging'); stage.setPointerCapture(e.pointerId);
+    });
+    stage.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      rotY += (e.clientX - lastX) * 0.01;
+      rotX += (e.clientY - lastY) * 0.01;
+      rotX = Math.max(-Math.PI, Math.min(Math.PI, rotX));
+      lastX = e.clientX; lastY = e.clientY;
+    });
+    const endDrag = (e) => {
+      dragging = false; stage.classList.remove('dragging');
+      if (e.pointerId != null && stage.hasPointerCapture(e.pointerId)) stage.releasePointerCapture(e.pointerId);
+    };
+    stage.addEventListener('pointerup', endDrag);
+    stage.addEventListener('pointercancel', endDrag);
+    stage.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      dist = Math.max(2.0, Math.min(7, dist + e.deltaY * 0.003));
+    }, { passive: false });
+
+    const bFlip = document.getElementById('b-flip');
+    const bSpin = document.getElementById('b-spin');
+    const bWire = document.getElementById('b-wire');
+    bFlip.addEventListener('click', () => {
+      rotX = Math.abs(rotX + Math.PI) < 0.01 ? 0 : rotX + Math.PI;
+    });
+    bSpin.addEventListener('click', () => {
+      autoSpin = !autoSpin; bSpin.classList.toggle('on', autoSpin);
+    });
+    bWire.addEventListener('click', () => {
+      let w = false;
+      crab.traverse(o => { if (o.isMesh) { o.material.wireframe = !o.material.wireframe; w = o.material.wireframe; } });
+      bWire.classList.toggle('on', w);
+    });
+    document.getElementById('b-reset').addEventListener('click', () => {
+      rotX = HOME.rx; rotY = HOME.ry; dist = HOME.dist;
+    });
+
+    addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    window.__view = {
+      set: (rx, ry, d) => {
+        rotX = rx; rotY = ry; if (d) dist = d;
+        autoSpin = false; bSpin.classList.remove('on');
+        pivot.rotation.set(rotX, rotY, 0);
+        camera.position.set(0, 0, dist); camera.lookAt(0, 0, 0);
+        renderer.render(scene, camera);
+      },
+      crab, scene, camera, renderer,
+    };
+
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), 0.05);
+      if (autoSpin && !dragging) rotY += dt * 0.35;
+      pivot.rotation.set(rotX, rotY, 0);
+      camera.position.set(0, 0, dist);
+      camera.lookAt(0, 0, 0);
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>

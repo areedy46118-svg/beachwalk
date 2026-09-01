@@ -25,9 +25,10 @@ Then open <http://localhost:4173> and click to begin. Any static server works
 | Click / `E` / `F` | Grab a physics object · take an item · dig (with the shovel) |
 | Click (while carrying) | Throw the held object — it's a toggle, no hold |
 | `G` | Drop the held object gently |
-| `1`–`6` / click a slot | Use / equip an inventory item |
-| `Q` | Holster the equipped tool |
-| `Esc` | Pause / settings menu (and close the note) |
+| `1`–`6` / click a slot | Use / equip an inventory item (the crab → examine it) |
+| Drag / scroll (examine view) | Turn the item over / zoom in |
+| `Q` | Holster the equipped tool · close the examine view |
+| `Esc` | Pause / settings menu (and close the note / examine view) |
 
 ## World layout
 
@@ -66,7 +67,23 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   drop. A tiny custom rigid-body sim (gravity, ground bounce/friction, walls).
 - **Inventory + equipping** — a vertical hotbar on the **left** that appears
   once you pick something up. Items either **use** (the bottle → reads the
-  note, `NOTE_TEXT`) or **equip** (the shovel).
+  note, `NOTE_TEXT`; the crab → examine view; the syringe → examine, or draw
+  blood if you also carry the crab) or **equip** (the shovel).
+- **The horseshoe crab** — a detailed smooth-shaded *Limulus* stranded in the
+  wrack line (`models/horseshoe-crab.js`): a broad rounded head shield with the
+  cardiac + ophthalmic ridges and raised margin sculpted in, a wavy hinge,
+  movable spines, a triangular telson, and a complete underside — six leg
+  pairs, chelicerae, operculum, book gills. Take it, then **use** it to open
+  the **examine view**: the object floats in the dark, **drag to turn it over**
+  and look underneath, scroll to zoom, `Esc`/`Q` to put it away. The view is
+  its own scene rendered over everything (`openInspect()` / `inspectScene`).
+- **The bleeding syringe** — a glass hypodermic further down the beach
+  (`models/syringe.js`): barrel with graduations, a slim plunger, luer hub,
+  needle, orange cap, blue haemolymph column. Carry it **and** the crab, then
+  **use** either one: the needle goes into the hinge, the plunger draws back
+  and the barrel fills (`startExtraction()`) — you come away with a
+  **jar of blue blood** (`models/blood-jar.js`, a capped milk-bottle jar of
+  glowing blue), the syringe emptied and the crab kept.
 - **The children's sand shovel** — the first item down the beach, stuck in a
   **sand castle**: bucket-molded stacked towers with crenellations, a curtain
   wall with a collapsed section and rubble, drip-castle blobs, shells pressed
@@ -102,8 +119,9 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 
 | File | Purpose |
 |------|---------|
-| `index.html` | Page shell, HUD, title, intro card, settings menu, hotbar, end screen |
+| `index.html` | Page shell, HUD, title, intro card, settings menu, hotbar, examine view, end screen |
 | `main.js` | The whole game |
+| `models/` | Standalone object models + a dev viewer (`horseshoe-crab.js`, `viewer.html`) |
 | `assets/backrooms.m4a` | Opening music (mono AAC, converted from the source WAV) |
 | `vendor/three/` | three.js r160 (vendored, offline-safe) |
 | `serve.py` | Tiny static server |
@@ -117,7 +135,8 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - `CLIFF_X` / `CLIFF_H` / `CLIFF_PERIOD`
 - `LH_Z` — how far the lighthouse (the ending) is; `END_Z` is the trigger
 - `CITY_TILE` and the `towers` block — city distance / height / density
-- `CASTLE_Z` — where the shovel-in-a-castle sits
+- `CASTLE_Z` — where the shovel-in-a-castle sits; `crabWorld.position` — the crab
+- `inspectDist` / the `k` fit factor in `inspectSetModel()` — examine-view framing
 - `layoutViewmodel()` / `shovelVM` transforms — the first-person hand pose
 - `INTRO_LINE` + the setTimeout offsets in `beginGame()` — opening pacing
 - `MUSIC_TARGET` / `MUSIC_FADE_IN` / `MUSIC_HOLD` / `MUSIC_FADE_OUT`
@@ -125,11 +144,13 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - `DEFAULT_SETTINGS` — starting FOV etc.
 
 `window.__bw` is a dev hook (scene, camera, physProps, inventory, lighthouse,
-castle, `startDig`, `toggleEquip`, `openMenu`, `showEnd`, …) for the console.
+castle, crab, `startDig`, `toggleEquip`, `openMenu`, `openInspect`, `showEnd`,
+…) for the console.
 
 ## Next steps
 
-- Real note art; more items and scripted events along the walk
+- Real note art; more items and scripted events along the walk (the examine
+  view is ready for more examinable objects — add a model in `models/`)
 - Object–object physics collisions (currently ground + walls only)
 - Two-handed / nicer dig animation
 - Persistent dig holes (pool currently recycles after 20)
