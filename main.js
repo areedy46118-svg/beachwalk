@@ -216,6 +216,53 @@ function shoreLineJS(z, t) {
 // true when (x,z) is seaward of the waterline — i.e. standing in / over water
 function inWater(x, z) { return x < shoreLineJS(z, oceanUniforms.uTime.value) + 0.25; }
 
+/* JS mirror of oceanWave() plus the mesh's own offset, so gameplay can ask
+ * how high the water actually is at a point. Anything sitting on the sand
+ * inside the waterline gets sunk to this, otherwise it stands on top of the
+ * sea like a table. Keep in lockstep with waveGLSL. */
+const OCEAN_Y = -0.35;
+// GLSL semantics: works when e0 > e1, which THREE.MathUtils.smoothstep does not
+const gsmooth = (e0, e1, x) => {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+};
+function waveHeightJS(x, z, t) {
+  let w = 0;
+  w += Math.sin(x * 0.045 + z * 0.028 - t * 0.55) * 0.70;
+  w += Math.sin(x * 0.032 - z * 0.041 + t * 0.42) * 0.50;
+  w += Math.sin(x * 0.20 + z * 0.13 + t * 1.10) * 0.48;
+  w += Math.sin(x * 0.16 - z * 0.19 + t * 0.90) * 0.40;
+  w += Math.sin(z * 0.24 - x * 0.11 + t * 1.30) * 0.34;
+  w += Math.sin(x * 0.33 + z * 0.28 + t * 1.70) * 0.26;
+  w += Math.sin(z * 0.44 + x * 0.20 - t * 2.10) * 0.19;
+  w += Math.sin(x * 0.61 - z * 0.35 + t * 2.60) * 0.13;
+  const build = gsmooth(-120.0, 4.0, x);
+  w += Math.sin(x * 0.50 - t * 2.30) * 0.16 * build;
+  w *= gsmooth(0.5, -22.0, x);
+  const nearBand = gsmooth(-55.0, -2.0, x);
+  w += Math.sin(x * 0.62 + z * 0.44 - t * 3.0) * 0.12 * nearBand;
+  w += Math.sin(z * 0.78 - x * 0.36 + t * 2.5) * 0.09 * nearBand;
+  return OCEAN_Y + w;
+}
+// the surface right now
+function waterSurfaceAt(x, z) { return waveHeightJS(x, z, oceanUniforms.uTime.value); }
+
+/* How submerged a point is, 0 (dry sand) to 1 (fully under), ramped over the
+ * first SUBMERGE_RUN metres past the waterline so things wade in rather than
+ * popping. The sea surface sits below the sand plane, so anything resting at
+ * y=0 in the water zone would otherwise stand proud of the sea like a table. */
+const SUBMERGE_RUN = 1.6;
+function submersionAt(x, z) {
+  const into = shoreLineJS(z, oceanUniforms.uTime.value) - x;   // >0 is seaward
+  return THREE.MathUtils.clamp(into / SUBMERGE_RUN, 0, 1);
+}
+// the y an object of this height should rest at, given where it stands
+function restYInWater(x, z, sink) {
+  const sub = submersionAt(x, z);
+  if (sub <= 0) return 0;
+  return (waterSurfaceAt(x, z) - sink) * sub;
+}
+
 // Ocean shader uniforms — declared up here because the sand shader and the
 // gameplay water checks both reach for uTime before the Ocean section runs.
 const oceanUniforms = THREE.UniformsUtils.merge([
@@ -2207,12 +2254,16 @@ class PhysProp {
     p.addScaledVector(this.vel, dt);
     const incoming = this.vel.length();          // speed going into any contact
     let struck = false;
-    if (p.y <= this.restH) {
-      p.y = this.restH;
-      if (this.vel.y < 0) this.vel.y = -this.vel.y * this.bounce;
+    // things dropped in the sea settle under the surface, not on it
+    const sub = submersionAt(p.x, p.z);
+    const rest = this.restH + restYInWater(p.x, p.z, this.radius * 0.6);
+    if (p.y <= rest) {
+      p.y = rest;
+      if (this.vel.y < 0) this.vel.y = -this.vel.y * (this.bounce * (1 - sub * 0.9));
       if (Math.abs(this.vel.y) < 0.7) this.vel.y = 0;
-      this.vel.x *= this.friction; this.vel.z *= this.friction;
-      this.angVel.multiplyScalar(0.86);
+      const fr = this.friction * (1 - sub * 0.45);       // water drags on it
+      this.vel.x *= fr; this.vel.z *= fr;
+      this.angVel.multiplyScalar(0.86 - sub * 0.26);
       struck = true;
     }
     const lo = WADE_X + this.radius, hi = CLIFF_BLOCK_X - this.radius;
@@ -3208,9 +3259,10 @@ function makeGlowstick() {
   g.add(casing, core);
   // the glow it throws on the ground — a soft, even teal pool (low decay so
   // it doesn't clip to white at the centre under the film tonemap)
-  const light = new THREE.PointLight(GLOWSTICK_COLOR, 0.9, GLOWSTICK_GLOW, 1.0);
-  light.position.set(0, 0.04, 0);
-  g.add(light);
+  // NB: no light in here on purpose. Adding a light to the scene at runtime
+  // changes the lighting state, which forces every material in the game to
+  // recompile — measured at ~940 ms of hard freeze on the first frame after.
+  // The glow comes from `groundGlow` below, which exists from startup.
   // faint additive halo so the stick itself blooms a little
   const halo = new THREE.Sprite(new THREE.SpriteMaterial({
     map: glowTex, color: GLOWSTICK_COLOR, transparent: true, opacity: 0.16,
@@ -3218,7 +3270,6 @@ function makeGlowstick() {
   }));
   halo.scale.setScalar(0.4);
   g.add(halo);
-  g.userData.light = light;
   return g;
 }
 function makeGlowstickIcon() {
@@ -3237,7 +3288,6 @@ function makeGlowstickIcon() {
 // PointLight in the main scene that rides just off the camera — see
 // updateHeldGlow(). Held up on end, the way you'd carry a cracked stick.
 const glowstickVM = makeGlowstick();
-glowstickVM.remove(glowstickVM.userData.light);
 glowstickVM.scale.setScalar(1.5);
 glowstickVM.position.set(0.01, 0.0, 0.01);
 glowstickVM.rotation.set(0, 0, 1.15);
@@ -3246,18 +3296,32 @@ toolMount.add(glowstickVM);
 
 // Intensity has to be this high to read against the scene's ambient +
 // hemisphere fill; anything under ~20 gets swallowed on the sand.
+// The glow for a glowstick lying on the sand. Created up front and parked at
+// zero intensity so the scene's light count never changes while you play.
+const groundGlow = new THREE.PointLight(GLOWSTICK_COLOR, 0, GLOWSTICK_GLOW, 1.0);
+// Stays visible for the whole run at zero intensity. three skips invisible
+// objects when it builds the lighting state, so toggling `visible` would
+// change the light count and trigger the same full recompile we're avoiding.
+groundGlow.visible = true;
+scene.add(groundGlow);
+function placeGroundGlow(obj) {
+  if (!obj) { groundGlow.intensity = 0; return; }
+  obj.getWorldPosition(groundGlow.position);
+  groundGlow.position.y += 0.04;
+  groundGlow.intensity = 0.9;
+}
+
 const HELD_GLOW_RANGE = 11;           // metres of usable light around you
 const HELD_GLOW_MAX = 28;
 const heldGlow = new THREE.PointLight(GLOWSTICK_COLOR, 0, HELD_GLOW_RANGE, 1.35);
-heldGlow.visible = false;
+heldGlow.visible = true;      // never toggled, for the same reason as groundGlow
 scene.add(heldGlow);
 const _glowRight = new THREE.Vector3(), _glowFwd = new THREE.Vector3();
 function updateHeldGlow(dt) {
   const on = equipped === glowstickItem && !held;
   const want = on ? HELD_GLOW_MAX : 0;
   heldGlow.intensity += (want - heldGlow.intensity) * Math.min(1, dt * 7);
-  heldGlow.visible = heldGlow.intensity > 0.05;
-  if (!heldGlow.visible) return;
+  if (heldGlow.intensity <= 0.05) return;
   // sit it out to the right and a little below eye line, where the hand is
   camera.getWorldDirection(_glowFwd);
   _glowRight.crossVectors(_glowFwd, camera.up).normalize();
@@ -3311,10 +3375,12 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   proxy.name = 'hitProxy'; relic.add(proxy);
   scene.add(relic);
+  if (first) { relic.updateMatrixWorld(true); placeGroundGlow(relic); }
   addInteractable(relic, first ? 'Take the glowstick' : 'Take the buried object', 'inventory', {
     onActivate: () => {
       if (first) sfxGlassPick(); else sfxThud(0.04);
       scene.remove(relic);
+      if (first) placeGroundGlow(null);       // the held light takes over
       hovered = null;
       if (first) { addToInventory(glowstickItem); toggleEquip(glowstickItem); }
       else addToInventory({ name: 'Buried object', icon: '📦', use: () => openNote('A small buried object.\n\n(placeholder — what it is comes later.)') });
@@ -3636,6 +3702,7 @@ function updateCrab(dt) {
     crab.rotation.y = Math.atan2(_crabDir.x, _crabDir.z) + Math.PI / 2;
     if (inWater(crab.position.x, crab.position.z) && Math.random() < dt * 4) {
       spawnSplash(crab.position.x, crab.position.z, 2, _crabDir.x, _crabDir.z, 0.4);
+      if (Math.random() < 0.25) sfxSplash(0.35);   // sloshing as it comes in
     }
   } else {
     crabState.scuttle += dt * 2.2;            // shifting its weight, waiting
@@ -3651,7 +3718,13 @@ function updateCrab(dt) {
   // the body rocks with the tripod and rides a little higher when roused
   const rear = crabState.rear;
   const lunge = crabState.lunge;
-  crab.position.y = Math.abs(Math.sin(crabState.scuttle)) * 0.018 * reach;
+  // While it's still in the surf the water covers it — it only comes fully
+  // clear once it's crawled out onto the sand.
+  const bob = Math.abs(Math.sin(crabState.scuttle)) * 0.018 * reach;
+  // Sunk well clear of the surface: the ocean mesh only has vertices every
+  // ~6 m, so the drawn surface can sit a long way below the analytic height
+  // at any given point. Deep enough that the interpolation can't expose it.
+  crab.position.y = restYInWater(crab.position.x, crab.position.z, 1.15) + bob;
   ud.rig.rotation.z = Math.sin(crabState.scuttle) * 0.09 * reach;
   ud.rig.rotation.x = -rear * 0.30 - lunge * 0.38 + Math.sin(crabState.scuttle * 2) * 0.035 * reach;
   ud.rig.position.y = rear * 0.06 + lunge * 0.05;
@@ -4070,6 +4143,9 @@ const SAMPLES = {
   sandHit: ['assets/sand-hit1.m4a', 'assets/sand-hit2.m4a', 'assets/sand-hit3.m4a', 'assets/sand-hit4.m4a'],
   glassBreak: ['assets/glass-break.m4a'],
   fleshHit: ['assets/flesh-hit.m4a'],
+  wade: ['assets/wade1.m4a', 'assets/wade2.m4a', 'assets/wade3.m4a', 'assets/wade4.m4a'],
+  slosh: ['assets/slosh1.m4a', 'assets/slosh2.m4a', 'assets/slosh3.m4a', 'assets/slosh4.m4a'],
+  splash: ['assets/water-splash1.m4a', 'assets/water-splash2.m4a', 'assets/water-splash3.m4a'],
 };
 const sampleBanks = {};
 function loadSamples() {
@@ -4279,6 +4355,10 @@ function sfxDigImpact() {
 // spray tail of droplets falling back. Randomised so repeated steps differ.
 function sfxSplash(power = 1) {
   const ctx = audioCtx; if (!ctx) return;
+  // recorded water. A hard entry gets a proper splash, a footfall in the
+  // shallows gets the wading step, and light movement just sloshes.
+  const bank = power > 1.0 ? 'splash' : (power > 0.55 ? 'wade' : 'slosh');
+  if (playSample(bank, Math.min(1, 0.42 + power * 0.42), 0.09)) return;
   const t = ctx.currentTime;
   const dest = waveBusGain || ctx.destination;
   const out = ctx.createGain();
@@ -4731,6 +4811,7 @@ window.__bw = {
   set introDone(v) { introDone = v; },
   openPack, closePack, startExtraction, driveExtraction, finishExtraction, hudJar,
   lighthouse, startLighthouseTrack, bottleProp, playSample, updateTower,
+  waterSurfaceAt, submersionAt, restYInWater, groundGlow,
   lhDoor, shinies, onPath, pathBend, pathHalfAt, lhWindows, lanternGlass,
   get doorOpen() { return doorOpen; }, set doorOpen(v) { doorOpen = v; doorSwing = v ? 1 : 0; lhDoor.rotation.y = -doorSwing * 1.95; },
   get insideTower() { return insideTower; },
