@@ -384,6 +384,36 @@
   #hotbar .slot.empty { opacity: 0.35; cursor: default; }
   #hotbar .slot.empty:hover { border-color: rgba(150, 168, 200, 0.28); background: rgba(10, 16, 28, 0.55); }
 
+  /* item inspect view — drag a held object around, look at its underside */
+  #inspect {
+    position: fixed;
+    inset: 0;
+    z-index: 12;
+    opacity: 0;
+    pointer-events: none;
+    /* the canvas already paints the dark inspect scene; this is just a
+       faint vignette + a click-catcher */
+    background: radial-gradient(ellipse at 50% 45%, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.45) 100%);
+    transition: opacity 0.4s ease;
+    cursor: grab;
+  }
+  #inspect.show { opacity: 1; pointer-events: auto; }
+  #inspect.dragging { cursor: grabbing; }
+  #inspect .hint {
+    position: absolute;
+    left: 50%;
+    bottom: 2.4rem;
+    transform: translateX(-50%);
+    font-family: "Georgia", "Times New Roman", serif;
+    font-size: 0.74rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(210, 222, 244, 0.7);
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.9);
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
   /* pause / settings menu */
   #menu {
     position: fixed;
@@ -520,6 +550,10 @@
       <div id="note-text"></div>
       <div class="dismiss">Click or press Esc to put it away</div>
     </div>
+  </div>
+
+  <div id="inspect">
+    <div class="hint">Drag to turn it over &nbsp;·&nbsp; scroll to zoom &nbsp;·&nbsp; Esc to put it away</div>
   </div>
 
   <div id="menu">

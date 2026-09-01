@@ -58,6 +58,29 @@ drag-look once we've successfully locked once.
 Tiny props carry an invisible `hitProxy` sphere so they're easy to aim at.
 `primaryAction()` (click / `E` / `F`) routes grab / throw / take / dig.
 
+**Examine view.** `openInspect(model)` / `closeInspect()` — a "turn the item
+over" screen (like the RE inventory). `inspectScene` + `inspectCamera` render
+over everything when `inspecting` (animate() early-returns); `inspectFit`
+centres+scales the model, `inspectPivot` is spun by dragging `#inspect`.
+`frozen()` includes `inspecting`. Used by the crab (`openInspect(crab)`) and
+the syringe; reusable for any examinable item.
+
+**The extraction / combine.** Crab + syringe are separate inventory items;
+"use" *either* while carrying the other → `startExtraction()`. A scripted
+sequence plays in the inspect scene: an `extractRig` holds crab + syringe with
+the needle at `_hinge`, and `driveExtraction(t)` (from `updateInspect`, ~3.4 s)
+pops the cap, sinks the needle, runs `syringe.userData.setFill(0→1)`, then
+lifts out. `finishExtraction()` sets `crabBled`, empties + re-caps the syringe,
+adds a **"Jar of blue blood"** item (`makeBloodJar()`), and shows the jar as
+the payoff.
+
+**Object models.** `models/` holds standalone factories (`makeHorseshoeCrab()`,
+`makeSyringe()`, `makeBloodJar()`) plus `viewer.html` (`?model=…`), a
+drag-to-rotate dev viewer. Factories `import * as THREE from 'three'`, return a
+`Group`, use metres, `+Y` up / `+Z` forward. **Smooth-shaded**, a deliberate
+exception to the flat-shaded retro look because they're hero props seen up
+close. The syringe and jar carry `userData.setFill(t)` + `userData.parts`.
+
 **Physics.** `PhysProp` class + `physProps[]` — a tiny custom rigid body
 (gravity, ground bounce/friction, corridor walls; **no prop-vs-prop
 collision**). Grab springs the held prop in front of the camera; click again
@@ -93,7 +116,9 @@ The preview browser can't use the real Pointer Lock API and **throttles
 hard to drive from `javascript_tool`. Instead:
 
 - `window.__bw` exposes `scene`, `camera`, `state()`, `music()`, and helpers
-  like `startDig`, `spawnPuffs`, `toggleEquip`, `beginGame`, `showEnd`.
+  like `startDig`, `spawnPuffs`, `toggleEquip`, `beginGame`, `showEnd`,
+  `openInspect`/`closeInspect`, `startExtraction`, `crab`, `syringe`,
+  `bloodJar`, `crabItem`, `syringeItem`, `jarItem`.
 - Move the camera by hand (`camera.position.set(...)` + `camera.lookAt(...)`
   + `camera.updateMatrixWorld(true)`), then take a screenshot to force one
   render frame.

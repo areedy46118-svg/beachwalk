@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { makeHorseshoeCrab, makeHorseshoeCrabIcon } from './models/horseshoe-crab.js';
+import { makeSyringe, makeSyringeIcon } from './models/syringe.js';
+import { makeBloodJar, makeBloodJarIcon } from './models/blood-jar.js';
 
 /* ------------------------------------------------------------------ *
  *  Beach Walk — an endless, eerie shoreline at night.
@@ -1071,8 +1074,8 @@ const deathEl = document.getElementById('death');
 
 let started = false, locked = false, fallbackLook = false, dragging = false;
 let noteOpen = false, menuOpen = false, ended = false, introDone = false;
-let dialogOpen = false;
-let menuReturnLock = false, noteReturnLock = false;
+let inspecting = false, dialogOpen = false;
+let menuReturnLock = false, noteReturnLock = false, inspectReturnLock = false;
 const lookEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
 // ------------------------------------------------------------------
@@ -1109,9 +1112,9 @@ function updateHurt(dt) {
   hurtEl.style.opacity = String(hurtFlash * hurtFlash);
 }
 
-function frozen() { return noteOpen || menuOpen || dialogOpen || dying || ended || !introDone; }
+function frozen() { return noteOpen || menuOpen || dialogOpen || inspecting || dying || ended || !introDone; }
 function refreshUI() {
-  const playing = started && !menuOpen && !noteOpen && !dialogOpen && !dying && !ended;
+  const playing = started && !menuOpen && !noteOpen && !dialogOpen && !inspecting && !dying && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
 }
 
@@ -1234,13 +1237,14 @@ window.addEventListener('keydown', (e) => {
   if (!introDone) return;
   if (e.code === 'Escape') {
     if (ended) return;
-    if (dialogOpen) endDialog();
+    if (inspecting) closeInspect();
+    else if (dialogOpen) endDialog();
     else if (noteOpen) closeNote();
     else if (menuOpen) closeMenu();
     else if (fallbackLook) openMenu();
   } else if (e.code === 'KeyE' || e.code === 'KeyF') { primaryAction(); }
   else if (e.code === 'KeyG') { if (held) dropHeld(); }
-  else if (e.code === 'KeyQ') { if (equipped) toggleEquip(equipped); }
+  else if (e.code === 'KeyQ') { if (inspecting) closeInspect(); else if (equipped) toggleEquip(equipped); }
   else if (/^Digit[1-6]$/.test(e.code)) { useSlot(+e.code.slice(5) - 1); }
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -1339,6 +1343,113 @@ function closeNote() {
   if (noteReturnLock && !fallbackLook) requestLock();
 }
 noteEl.addEventListener('click', closeNote);
+
+// ------------------------------------------------------------------
+// Item inspect view — a held object floating in the dark that you
+// drag to turn over (to look at its underside). Rendered as its own
+// little scene on top of everything, like the first-person hand.
+// ------------------------------------------------------------------
+const inspectEl = document.getElementById('inspect');
+const inspectScene = new THREE.Scene();
+inspectScene.background = new THREE.Color(0x05070e);
+const inspectCamera = new THREE.PerspectiveCamera(42, 1, 0.01, 100);
+inspectCamera.position.set(0, 0, 3.3);
+inspectScene.add(new THREE.AmbientLight(0x9fb0cc, 1.05));
+{
+  const key = new THREE.DirectionalLight(0xfff0d8, 2.1); key.position.set(-0.7, 1.2, 1.0); inspectScene.add(key);
+  const fill = new THREE.DirectionalLight(0x8aa2d6, 0.9); fill.position.set(1.2, -0.4, 0.7); inspectScene.add(fill);
+  const rim = new THREE.DirectionalLight(0xc6d6f2, 1.1); rim.position.set(0.2, -1.0, -1.1); inspectScene.add(rim);
+  inspectScene.add(new THREE.HemisphereLight(0x4a5e80, 0x141820, 0.6));
+}
+const inspectPivot = new THREE.Group();      // spun by the drag
+inspectScene.add(inspectPivot);
+const inspectFit = new THREE.Group();        // holds the model, centred + scaled to frame
+inspectPivot.add(inspectFit);
+
+let inspectModel = null, inspectRotX = 0, inspectRotY = 0, inspectDist = 3.3, inspectAuto = 0;
+
+function inspectSetModel(model) {
+  if (inspectModel === model) return;
+  if (inspectModel) inspectFit.remove(inspectModel);
+  inspectModel = model;
+  model.position.set(0, 0, 0);
+  model.rotation.set(0, 0, 0);
+  model.scale.setScalar(1);
+  inspectPivot.rotation.set(0, 0, 0);
+  inspectFit.position.set(0, 0, 0);
+  inspectFit.scale.setScalar(1);
+  inspectFit.add(model);
+  inspectFit.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  const centre = box.getCenter(new THREE.Vector3());
+  const k = 1.7 / (Math.max(size.x, size.y, size.z) || 1);
+  inspectFit.scale.setScalar(k);
+  inspectFit.position.copy(centre).multiplyScalar(-k);
+}
+function openInspect(model, { rotX = -0.55, rotY = 0.7 } = {}) {
+  if (inspecting) return;
+  inspecting = true;
+  inspectSetModel(model);
+  inspectRotX = rotX; inspectRotY = rotY; inspectDist = 3.3; inspectAuto = 0;
+  inspectCamera.aspect = window.innerWidth / window.innerHeight;
+  inspectCamera.updateProjectionMatrix();
+  inspectEl.classList.add('show');
+  promptEl.classList.remove('show');
+  crosshair.className = '';
+  crosshair.style.display = 'none';
+  inspectReturnLock = locked;
+  if (locked) document.exitPointerLock();
+  refreshUI();
+}
+function closeInspect() {
+  if (!inspecting || extracting) return;             // can't bail mid-draw
+  inspecting = false;
+  inspectEl.classList.remove('show');
+  inspectEl.querySelector('.hint').textContent = 'Drag to turn it over  ·  scroll to zoom  ·  Esc to put it away';
+  crosshair.style.display = '';
+  refreshUI();
+  if (inspectReturnLock && !fallbackLook) requestLock();
+}
+{
+  let idrag = false, lastX = 0, lastY = 0;
+  inspectEl.addEventListener('pointerdown', (e) => {
+    idrag = true; lastX = e.clientX; lastY = e.clientY; inspectAuto = 0;
+    inspectEl.classList.add('dragging');
+    inspectEl.setPointerCapture(e.pointerId);
+  });
+  inspectEl.addEventListener('pointermove', (e) => {
+    if (!idrag) return;
+    inspectRotY += (e.clientX - lastX) * 0.01;
+    inspectRotX += (e.clientY - lastY) * 0.01;
+    inspectRotX = Math.max(-Math.PI, Math.min(Math.PI, inspectRotX));
+    lastX = e.clientX; lastY = e.clientY;
+  });
+  const endDrag = (e) => {
+    idrag = false;
+    inspectEl.classList.remove('dragging');
+    if (e.pointerId != null && inspectEl.hasPointerCapture(e.pointerId)) inspectEl.releasePointerCapture(e.pointerId);
+  };
+  inspectEl.addEventListener('pointerup', endDrag);
+  inspectEl.addEventListener('pointercancel', endDrag);
+  inspectEl.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    inspectDist = Math.max(2.0, Math.min(7, inspectDist + e.deltaY * 0.003));
+  }, { passive: false });
+}
+function updateInspect(dt) {
+  if (!inspecting) return;
+  if (extracting) {
+    extractT = Math.min(1, extractT + dt / 3.4);
+    driveExtraction(extractT);
+    if (extractT >= 1) finishExtraction();
+  }
+  inspectAuto += dt;
+  const idle = inspectAuto > 1.2 ? (inspectAuto - 1.2) * 0.2 : 0;   // a slow drift once you let go
+  inspectPivot.rotation.set(inspectRotX, inspectRotY + idle, 0);
+  inspectCamera.position.z = inspectDist;
+  inspectCamera.lookAt(0, 0, 0);
+}
 
 // ------------------------------------------------------------------
 // Interaction
@@ -1859,6 +1970,150 @@ addInteractable(bottle, 'Take the bottle', 'inventory', {
     addToInventory({ name: 'Message in a bottle', icon: '🍾', use: () => openNote(NOTE_TEXT) });
   },
 });
+
+// ------------------------------------------------------------------
+// Horseshoe crab — stranded in the wrack line. Take it, then "use" it
+// to turn it over and look at the underside. Model lives in
+// models/horseshoe-crab.js.
+// ------------------------------------------------------------------
+// (renamed hcrab* to avoid the enemy `crab` added on main)
+const hcrab = makeHorseshoeCrab();
+const hcrabWorld = new THREE.Group();
+hcrabWorld.add(hcrab);
+{
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.30, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy';
+  hcrabWorld.add(hit);
+}
+hcrabWorld.position.set(2.7, 0.03, -58);
+hcrabWorld.rotation.set(0.05, -0.7, -0.03);
+scene.add(hcrabWorld);
+let hcrabTaken = false, crabBled = false;
+const crabItem = {
+  name: 'Horseshoe crab', icon: makeHorseshoeCrabIcon(),
+  use: () => {
+    if (!crabBled && inventory.includes(syringeItem)) startExtraction();
+    else openInspect(hcrab, { rotX: 0.5, rotY: 0.5 });
+  },
+};
+addInteractable(hcrabWorld, 'Take the horseshoe crab', 'inventory', {
+  onActivate: () => {
+    if (hcrabTaken) return;
+    hcrabTaken = true;
+    sfxThud(0.04);
+    scene.remove(hcrabWorld);
+    hovered = null;
+    addToInventory(crabItem);
+  },
+});
+
+// ------------------------------------------------------------------
+// Bleeding syringe — a big glass hypodermic further down the beach.
+// Take it, then "use" it while carrying the crab to draw the pale
+// blue haemolymph: the needle goes into the hinge and the plunger
+// pulls back, filling the barrel. Model in models/syringe.js.
+// ------------------------------------------------------------------
+const syringe = makeSyringe();
+const syringeWorld = new THREE.Group();
+syringeWorld.add(syringe);
+{
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy';
+  syringeWorld.add(hit);
+}
+syringe.scale.setScalar(1.6);
+syringeWorld.position.set(3.6, 0.06, -96);
+syringeWorld.rotation.set(0.1, 1.1, 0.5);
+scene.add(syringeWorld);
+
+let syringeTaken = false;
+const bloodJar = makeBloodJar();
+const jarItem = { name: 'Jar of blue blood', icon: makeBloodJarIcon(), use: () => openInspect(bloodJar, { rotX: 0.18, rotY: 0.6 }) };
+const syringeItem = {
+  name: 'Bleeding syringe', icon: makeSyringeIcon(),
+  use: () => {
+    if (!crabBled && inventory.includes(crabItem)) startExtraction();
+    else openInspect(syringe, { rotX: 0.15, rotY: 0.8 });
+  },
+};
+addInteractable(syringeWorld, 'Take the syringe', 'inventory', {
+  onActivate: () => {
+    if (syringeTaken) return;
+    syringeTaken = true;
+    sfxThud(0.03);
+    scene.remove(syringeWorld);
+    hovered = null;
+    syringe.scale.setScalar(1);
+    addToInventory(syringeItem);
+  },
+});
+
+// ---- the extraction: crab + syringe combine ----------------------
+let extracting = false, extractT = 0;
+const extractRig = new THREE.Group();
+const _hinge = new THREE.Vector3(0, 0.036, -0.116);          // where the needle bites
+function startExtraction() {
+  if (inspecting) return;
+  inspecting = true; extracting = true; extractT = 0;
+
+  const SS = 1.4;
+  extractRig.clear();
+  hcrab.position.set(0, 0, 0); hcrab.rotation.set(0, 0, 0); hcrab.scale.setScalar(1);
+  syringe.position.set(0, 0, 0); syringe.rotation.set(0.95, 0.5, 0); syringe.scale.setScalar(SS);
+  syringe.userData.setFill(0);
+  syringe.userData.parts.cap.visible = true;
+  const tip = new THREE.Vector3(0, 0, syringe.userData.parts.tipZ * SS).applyEuler(syringe.rotation);
+  syringe.position.copy(_hinge).sub(tip).add(new THREE.Vector3(0, 0.05, 0));   // start lifted clear
+  syringe.userData.startY = syringe.position.y;
+  extractRig.add(hcrab, syringe);
+
+  inspectSetModel(extractRig);
+  // frame on the crab, not the crab+syringe pair
+  extractRig.updateMatrixWorld(true);
+  const cb = new THREE.Box3().setFromObject(hcrab).getCenter(new THREE.Vector3());
+  inspectFit.position.copy(cb).multiplyScalar(-inspectFit.scale.x);
+  inspectRotX = 0.62; inspectRotY = 0.55; inspectDist = 4.2; inspectAuto = 999;   // no idle drift
+  inspectCamera.aspect = window.innerWidth / window.innerHeight;
+  inspectCamera.updateProjectionMatrix();
+  inspectEl.classList.add('show');
+  inspectEl.querySelector('.hint').textContent = 'Drawing haemolymph…';
+  promptEl.classList.remove('show');
+  crosshair.className = ''; crosshair.style.display = 'none';
+  inspectReturnLock = locked;
+  if (locked) document.exitPointerLock();
+  sfxDraw();
+  refreshUI();
+}
+function driveExtraction(t) {
+  const ease = (a, b) => THREE.MathUtils.clamp((t - a) / (b - a), 0, 1);
+  // 0.00–0.14  cap flicks off
+  const c = ease(0, 0.14);
+  syringe.userData.parts.cap.position.z = -c * 0.08;
+  syringe.userData.parts.cap.visible = c < 1;
+  // 0.14–0.32  needle dips into the hinge ... 0.86–1.0 lifts back out
+  const dip = ease(0.14, 0.32) - ease(0.86, 1.0);
+  syringe.position.y = syringe.userData.startY - dip * 0.05;
+  // 0.32–0.9  plunger draws, barrel fills (with a faint pulse)
+  const f = ease(0.32, 0.9);
+  syringe.userData.setFill(f * (0.97 + 0.03 * Math.sin(t * 60)));
+}
+function finishExtraction() {
+  extracting = false;
+  crabBled = true;
+  // the syringe is emptied into a jar and re-capped
+  syringe.userData.setFill(0);
+  syringe.userData.parts.cap.visible = true;
+  syringe.userData.parts.cap.position.z = 0;
+  bloodJar.userData.setFill(0.86);
+  if (!inventory.includes(jarItem)) addToInventory(jarItem);
+  renderHotbar();
+  // show the jar as the payoff
+  inspectSetModel(bloodJar);
+  inspectRotX = 0.12; inspectRotY = 0.45; inspectDist = 3.7; inspectAuto = 0;
+  inspectEl.querySelector('.hint').textContent = 'A jar of blue blood · drag to look · Esc to put it away';
+}
 
 // ------------------------------------------------------------------
 // Buried caches — rare little sand mounds along the walk. Dig one open
@@ -2515,6 +2770,21 @@ function sfxThud(gain) {
   s.connect(f).connect(g).connect(ctx.destination);
   s.start(t); s.stop(t + 0.1);
 }
+// the extraction — a soft wet suction that rises as the barrel fills
+function sfxDraw() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const src = noiseBurst(2.6, (x) => (0.15 + 0.5 * x) * (0.6 + 0.4 * Math.sin(x * 40)));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 3;
+  bp.frequency.setValueAtTime(180, t);
+  bp.frequency.linearRampToValueAtTime(520, t + 2.4);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.05, t + 0.4);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 2.6);
+  src.connect(bp).connect(g).connect(masterGain || ctx.destination);
+  src.start(t); src.stop(t + 2.6);
+}
 // a chunk of shaped noise, `env(i01)` returns 0..1 amplitude over its length
 function noiseBurst(seconds, env) {
   const ctx = audioCtx;
@@ -2828,6 +3098,11 @@ function animate() {
   oceanUniforms.uTime.value += dt;
   update(dt);
   updateHover();
+  if (inspecting) {
+    updateInspect(dt);
+    renderer.render(inspectScene, inspectCamera);
+    return;
+  }
   renderer.render(scene, camera);
   if (viewmodel.visible) {
     renderer.autoClear = false;
@@ -2842,6 +3117,7 @@ window.addEventListener('resize', () => {
   const a = window.innerWidth / window.innerHeight;
   camera.aspect = a; camera.updateProjectionMatrix();
   vmCamera.aspect = a; vmCamera.updateProjectionMatrix();
+  inspectCamera.aspect = a; inspectCamera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
   layoutViewmodel();
 });
@@ -2852,6 +3128,8 @@ window.__bw = {
   THREE, scene, camera, player: camera,
   interactables, physProps, inventory, bottle, cliff, foot, lighthouse, city,
   castle, shovelWorld, viewmodel,
+  hcrab, hcrabWorld, syringe, syringeWorld, bloodJar,
+  renderer, inspectScene, inspectCamera,
   mounds, moundAt, revealMoundNear, makeGlowstick, inWater, shoreLineJS,
   sfxSplash, bradly, startDialog, endDialog, heldGlow,
   crab, crabState, killCrab, damagePlayer, playerDied,
@@ -2867,7 +3145,8 @@ window.__bw = {
   blinkNow: () => { blinkT = 0; },
   get glowstickItem() { return glowstickItem; },
   openMenu, closeMenu, showEnd, stampFoot, startDig, toggleEquip, spawnPuffs, spawnSplash, stampDigHole, beginGame,
-  get shovelItem() { return shovelItem; },
-  state: () => ({ started, locked, fallbackLook, introDone, noteOpen, menuOpen, ended, onGround, stamina: +stamina.toFixed(2), exhausted, digT: +digT.toFixed(2), equipped: equipped && equipped.name, held: held && held.mesh.name, hovered: hovered && hovered.label, inv: inventory.map(i => i.name) }),
+  openInspect, closeInspect, startExtraction,
+  get shovelItem() { return shovelItem; }, get crabItem() { return crabItem; }, get syringeItem() { return syringeItem; }, get jarItem() { return jarItem; },
+  state: () => ({ started, locked, fallbackLook, introDone, noteOpen, menuOpen, dialogOpen, inspecting, extracting, crabBled, dying, ended, onGround, stamina: +stamina.toFixed(2), exhausted, digT: +digT.toFixed(2), equipped: equipped && equipped.name, held: held && held.mesh.name, hovered: hovered && hovered.label, inv: inventory.map(i => i.name) }),
   music: () => (musicEl ? { paused: musicEl.paused, t: +musicEl.currentTime.toFixed(1), env: musicEnvGain ? +musicEnvGain.gain.value.toFixed(3) : null, vol: musicVolGain ? +musicVolGain.gain.value.toFixed(2) : null } : { musicEl: null }),
 };
