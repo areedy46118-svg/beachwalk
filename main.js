@@ -230,7 +230,7 @@ function inWater(x, z) {
  * how high the water actually is at a point. Anything sitting on the sand
  * inside the waterline gets sunk to this, otherwise it stands on top of the
  * sea like a table. Keep in lockstep with waveGLSL. */
-const OCEAN_Y = 0.055;
+const OCEAN_Y = -0.34;
 // GLSL semantics: works when e0 > e1, which THREE.MathUtils.smoothstep does not
 const gsmooth = (e0, e1, x) => {
   const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
@@ -292,7 +292,7 @@ const oceanUniforms = THREE.UniformsUtils.merge([
     uDeep: { value: new THREE.Color(0x123f66) },
     uShallow: { value: new THREE.Color(0x2f8ec2) },
     uCrest: { value: new THREE.Color(0xaad9ec) },
-    uRipples: { value: Array.from({ length: 12 }, () => new THREE.Vector4(0, 0, -999, 0)) },
+    uRipples: { value: Array.from({ length: 8 }, () => new THREE.Vector4(0, 0, -999, 0)) },
     uSky: { value: new THREE.Color(0x1d3856) } },
 ]);
 
@@ -1099,58 +1099,53 @@ function onHeadland(wx, wz) { return headlandAt(wx, wz) > 0.35; }
   rocks.instanceMatrix.needsUpdate = rocksDk.instanceMatrix.needsUpdate = true;
   lhGround.add(rocks, rocksDk);
 
-  // tall marram grass — crossed blades so it reads from any angle, leaning
-  // with the wind and swaying in the vertex shader
-  const bladeGeo = new THREE.PlaneGeometry(0.10, 1.0, 1, 3);
-  bladeGeo.translate(0, 0.5, 0);                    // pivot at the root
-  const grassMat = new THREE.MeshStandardMaterial({
-    color: 0x5c6b4a, roughness: 1, flatShading: true, emissive: 0x1b2416,
-    side: THREE.DoubleSide, transparent: true, alphaTest: 0.5,
-  });
-  grassMat.onBeforeCompile = (sh) => {
-    sh.uniforms.uTime = oceanUniforms.uTime;
-    sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime;')
-      .replace('#include <begin_vertex>', `#include <begin_vertex>
-        vec4 iw = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-        float sway = sin(uTime * 1.6 + iw.x * 0.7 + iw.z * 0.5) * 0.5 + sin(uTime * 2.7 + iw.z) * 0.2;
-        transformed.x += sway * 0.28 * pow(max(position.y, 0.0), 1.6);
-        transformed.z += sway * 0.16 * pow(max(position.y, 0.0), 1.6);`);
-  };
-  const BLADES = 2600;
-  const grass = new THREE.InstancedMesh(bladeGeo, grassMat, BLADES);
-  grass.frustumCulled = false;
-  grass.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(BLADES * 3).fill(1), 3);
-  const gc = new THREE.Color();
-  for (let i = 0; i < BLADES; i++) {
-    // clumped: pick a clump centre then jitter around it
-    // clumps run the length of the ridge, thickest on the shoulders
-    const czp = -14 + Math.random() * (HL_RUN + 20);
-    const side = Math.random() < 0.5 ? -1 : 1;
-    const cxp = pathBend(Math.max(0, czp)) + side * (pathHalfAt(Math.max(0, czp)) + Math.random() * 9);
-    const jx = (Math.random() - 0.5) * 2.6, jz = (Math.random() - 0.5) * 2.6;
-    const bx = cxp + jx, bz = czp + jz;
-    let h = 0.55 + Math.random() * 1.15;
-    // blades on the path have been walked flat; right in the middle of it
-    // they're gone altogether
-    if (onPath(bx, bz, 0.5)) {
-      const trodden = Math.abs(bx - pathBend(bz)) / (pathHalfAt(bz) + 0.5);
-      if (trodden < 0.72) { grass.setMatrixAt(i, hidden); continue; }
-      h *= 0.35;
-    }
-    e.set((Math.random() - 0.5) * 0.5, Math.random() * Math.PI, (Math.random() - 0.5) * 0.5);
-    q.setFromEuler(e);
-    const gy = headlandAt(LH_X + bx, LH_Z + bz) - HL_CREST;
-    if (gy + HL_CREST < 0.12 && Math.random() < 0.75) { grass.setMatrixAt(i, hidden); continue; }
-    m.compose(v.set(bx, gy, bz), q, new THREE.Vector3(1, h, 1));
-    grass.setMatrixAt(i, m);
-    const t = 0.6 + Math.random() * 0.7;
-    gc.setRGB(t * 0.9, t, t * 0.72);
-    grass.setColorAt(i, gc);
-  }
-  grass.instanceMatrix.needsUpdate = true;
-  grass.instanceColor.needsUpdate = true;
-  lhGround.add(grass);
+  // Grass on the headland: the real clumps from the pack, alpha-cut and
+  // swaying in the vertex shader. The old version was solid blade planes,
+  // which read as green sticks.
+  loadGeoPack('assets/grass.json').then((geos) => {
+    const keys = Object.keys(geos);
+    const map = texLoader.load('assets/tex/grass.png');
+    map.colorSpace = THREE.SRGBColorSpace;
+    const grassMat = new THREE.MeshStandardMaterial({
+      map, color: 0x8a9470, roughness: 1, metalness: 0, emissive: 0x1b2116,
+      side: THREE.DoubleSide, transparent: true, alphaTest: 0.42,
+    });
+    grassMat.onBeforeCompile = (sh) => {
+      sh.uniforms.uTime = oceanUniforms.uTime;
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nuniform float uTime;')
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+          vec4 iw = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+          float sway = sin(uTime * 1.5 + iw.x * 0.7 + iw.z * 0.5) * 0.5
+                     + sin(uTime * 2.6 + iw.z) * 0.2;
+          transformed.x += sway * 0.16 * max(position.y, 0.0);
+          transformed.z += sway * 0.10 * max(position.y, 0.0);`);
+    };
+    const PER = 420;
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion();
+    const e = new THREE.Euler(), v = new THREE.Vector3();
+    const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
+    keys.forEach((k) => {
+      const inst = new THREE.InstancedMesh(geos[k], grassMat, PER);
+      inst.frustumCulled = false;
+      for (let i = 0; i < PER; i++) {
+        const cz = -14 + Math.random() * (HL_RUN + 20);
+        const side = Math.random() < 0.5 ? -1 : 1;
+        const cx = pathBend(Math.max(0, cz)) + side * (pathHalfAt(Math.max(0, cz)) + Math.random() * 9);
+        const bx = cx + (Math.random() - 0.5) * 2.2, bz = cz + (Math.random() - 0.5) * 2.2;
+        const gy = headlandAt(LH_X + bx, LH_Z + bz) - HL_CREST;
+        // nothing grows on the trodden path, or off the end of the ridge
+        if (gy + HL_CREST < 0.25 || onPath(bx, bz, -0.2)) { inst.setMatrixAt(i, hidden); continue; }
+        const h = 0.5 + Math.random() * 0.95;
+        e.set(0, Math.random() * Math.PI * 2, 0);
+        q.setFromEuler(e);
+        m.compose(v.set(bx, gy, bz), q, new THREE.Vector3(h * (0.8 + Math.random() * 0.5), h, h * (0.8 + Math.random() * 0.5)));
+        inst.setMatrixAt(i, m);
+      }
+      inst.instanceMatrix.needsUpdate = true;
+      lhGround.add(inst);
+    });
+  }).catch(() => {});
 
   // ---- the path surface itself -------------------------------------
   // A ribbon of packed, paler ground following the same bend, laid just
@@ -1244,7 +1239,8 @@ function onHeadland(wx, wz) { return headlandAt(wx, wz) > 0.35; }
       const x = pathBend(z) + side * (pathHalfAt(z) + 0.05 + Math.random() * 0.4);
       e.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
       q.setFromEuler(e);
-      m.compose(v.set(x, s * 0.4, z), q, new THREE.Vector3(s, s * 0.7, s * 1.15));
+      const ey = headlandAt(LH_X + x, LH_Z + z) - HL_CREST;
+      m.compose(v.set(x, ey + s * 0.34, z), q, new THREE.Vector3(s, s * 0.7, s * 1.15));
       edging.setMatrixAt(i, m);
     }
     edging.instanceMatrix.needsUpdate = true;
@@ -1260,7 +1256,9 @@ function onHeadland(wx, wz) { return headlandAt(wx, wz) > 0.35; }
       const s = 0.45 + Math.random() * 0.2;
       e.set(0, Math.random() * Math.PI, 0);
       q.setFromEuler(e);
-      m.compose(v.set(pathBend(z) + (Math.random() - 0.5) * 0.35, 0.02, z), q, new THREE.Vector3(s, 1, s * 0.85));
+      const sx = pathBend(z) + (Math.random() - 0.5) * 0.35;
+      const sy = headlandAt(LH_X + sx, LH_Z + z) - HL_CREST;
+      m.compose(v.set(sx, sy + 0.05, z), q, new THREE.Vector3(s, 1, s * 0.85));
       slabs.setMatrixAt(i, m);
     }
     slabs.instanceMatrix.needsUpdate = true;
@@ -1274,7 +1272,27 @@ function onHeadland(wx, wz) { return headlandAt(wx, wz) > 0.35; }
 const DEBRIS_TILE = 46;
 const debris = new THREE.Group();
 scene.add(debris);
+/* Everything scattered on the sand gets clipped at the waterline the same way
+ * the beach itself is, so the tide covers it instead of it poking through the
+ * sea. Doing it in the shader means no per-frame instance updates. */
+function clipAtShore(mat) {
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = oceanUniforms.uTime;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vSeaPos;')
+      .replace('#include <project_vertex>',
+        '#include <project_vertex>\nvSeaPos = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vSeaPos;\nuniform float uTime;\n' + noiseGLSL + shoreGLSL)
+      .replace('#include <clipping_planes_fragment>',
+        '#include <clipping_planes_fragment>\n if (vSeaPos.x < shoreLine(vSeaPos.z, uTime) - 0.05) discard;');
+  };
+  mat.customProgramCacheKey = () => 'clipAtShore';
+  return mat;
+}
+
 function scatter(geo, mat, perTile, place) {
+  clipAtShore(mat);
   const grid = 7, half = grid >> 1;
   const mesh = new THREE.InstancedMesh(geo, mat, perTile * grid);
   mesh.frustumCulled = false;
@@ -1452,6 +1470,26 @@ function makeSpiralShell() {
 // flat shading find the facets. Same idea as a low-poly rock generator,
 // and it costs a few lines instead of a dependency.
 // ------------------------------------------------------------------
+/* Rock and grass geometry from the packs credited in the README, pulled out
+ * by tools/gltfgeo.py as bare positions/UVs/indices. Both were already only a
+ * few hundred triangles, so the value is the silhouettes and the UVs — no rig,
+ * no loader needed. */
+const texLoader = new THREE.TextureLoader();
+function loadGeoPack(url) {
+  return fetch(url).then((r) => r.json()).then((j) => {
+    const out = {};
+    for (const [k, v] of Object.entries(j)) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(v.p, 3));
+      if (v.u) g.setAttribute('uv', new THREE.Float32BufferAttribute(v.u, 2));
+      g.setIndex(v.i);
+      g.computeVertexNormals();
+      out[k] = g;
+    }
+    return out;
+  });
+}
+
 function makeRockGeo(seed = 1, detail = 1, lumpiness = 0.34) {
   const g = new THREE.IcosahedronGeometry(0.5, detail);
   const pos = g.attributes.position;
@@ -1477,34 +1515,41 @@ function makeRockGeo(seed = 1, detail = 1, lumpiness = 0.34) {
   g.computeVertexNormals();
   return g;
 }
-{
-  const stoneA = new THREE.MeshStandardMaterial({ color: 0x5b6270, roughness: 1, flatShading: true, emissive: 0x171b23 });
-  const stoneB = new THREE.MeshStandardMaterial({ color: 0x474d59, roughness: 1, flatShading: true, emissive: 0x12151b });
-  const stoneC = new THREE.MeshStandardMaterial({ color: 0x6a6255, roughness: 1, flatShading: true, emissive: 0x1b1811 });
-  // a few distinct shapes so the beach doesn't read as one rock repeated
-  const shapes = [
-    { geo: makeRockGeo(1, 1, 0.38), mat: stoneA, n: 5, lo: 0.16, hi: 0.55 },   // scattered cobbles
-    { geo: makeRockGeo(7, 1, 0.30), mat: stoneB, n: 4, lo: 0.22, hi: 0.85 },
-    { geo: makeRockGeo(3, 2, 0.26), mat: stoneC, n: 2, lo: 0.55, hi: 1.7 },    // the odd boulder
-    { geo: makeRockGeo(11, 0, 0.42), mat: stoneB, n: 7, lo: 0.09, hi: 0.24 },  // shingle
+// The scattered rocks are the real models now — the procedural ones read as
+// lumps. Four builds, each with its own albedo, instanced through the same
+// tiling scatter() so they run the length of the beach.
+loadGeoPack('assets/rocks.json').then((geos) => {
+  const keys = Object.keys(geos);
+  const tex = {
+    rock01: 'assets/tex/rock01.jpg', rock06: 'assets/tex/rock06.jpg',
+    rock11: 'assets/tex/rock11.jpg', rock16: 'assets/tex/rock16.jpg',
+  };
+  const bands = [
+    { n: 6, lo: 0.14, hi: 0.42 },       // shingle through the tide line
+    { n: 4, lo: 0.30, hi: 0.85 },
+    { n: 3, lo: 0.55, hi: 1.5 },
+    { n: 1, lo: 1.2, hi: 2.6 },         // the occasional boulder
   ];
-  for (const sh of shapes) {
-    scatter(sh.geo, sh.mat, sh.n, () => {
-      const s = sh.lo + Math.random() * (sh.hi - sh.lo);
-      // clustered toward the wrack line and the dry upper beach, thinning
-      // out toward the water so they don't clog the walkable strip
-      const band = Math.random();
-      const x = band < 0.55
-        ? 1.2 + Math.random() * 5.0            // the tide line
-        : 6.5 + Math.random() * 7.0;           // dry sand under the cliff
+  keys.forEach((k, gi) => {
+    const map = retroTex(texLoader.load(tex[k] || tex.rock01), { repeatWrap: false });
+    map.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.MeshStandardMaterial({
+      map, color: 0x8d95a4, roughness: 1, metalness: 0,
+      emissive: 0x141820, emissiveMap: map, flatShading: true,
+    });
+    const b = bands[gi % bands.length];
+    scatter(geos[k], mat, b.n, () => {
+      const sc = b.lo + Math.random() * (b.hi - b.lo);
+      // thickest along the wrack line, thinning toward the water
+      const x = Math.random() < 0.55 ? 1.2 + Math.random() * 5.0 : 6.5 + Math.random() * 7.0;
       return {
-        x, z: zSpan(), y: s * 0.30,
-        rot: new THREE.Euler(Math.random() * 3, Math.random() * 3, Math.random() * 3),
-        scale: new THREE.Vector3(s, s * (0.7 + Math.random() * 0.5), s * (0.8 + Math.random() * 0.45)),
+        x, z: zSpan(), y: 0,
+        rot: new THREE.Euler(Math.random() * 0.5, Math.random() * Math.PI * 2, Math.random() * 0.5),
+        scale: new THREE.Vector3(sc, sc * (0.75 + Math.random() * 0.5), sc * (0.85 + Math.random() * 0.4)),
       };
     });
-  }
-}
+  });
+}).catch(() => {});
 
 // ------------------------------------------------------------------
 // Ground decals — footprints + dig holes (instanced pools)
@@ -1848,7 +1893,7 @@ const waveGLSL = `
     return w;
   }
 `;
-const oceanGeo = new THREE.PlaneGeometry(2200, 2200, 360, 360);   // ~6 m facets
+const oceanGeo = new THREE.PlaneGeometry(2200, 2200, 240, 240);   // ~9 m facets
 oceanGeo.rotateX(-Math.PI / 2);
 const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
   fog: true, uniforms: oceanUniforms,
@@ -1872,7 +1917,7 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
     #include <fog_pars_fragment>
     uniform float uTime; uniform vec3 uCamPos; uniform vec3 uMoonDir;
     uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uCrest; uniform vec3 uSky;
-    uniform vec4 uRipples[12];          // xz = origin, z = start time, w = strength
+    uniform vec4 uRipples[8];          // xz = origin, z = start time, w = strength
     varying vec3 vWorld;
 
     /* Rings spreading from anything that disturbed the surface. Done per
@@ -1881,7 +1926,7 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
      * and never be drawn. Returns a crest factor to lift the colour with. */
     float rippleField(vec2 p, float t) {
       float total = 0.0;
-      for (int i = 0; i < 12; i++) {
+      for (int i = 0; i < 8; i++) {
         vec4 r = uRipples[i];
         float age = t - r.z;
         if (age < 0.0 || age > 4.5 || r.w <= 0.0) continue;
@@ -1943,8 +1988,11 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
       col += vec3(0.90, 0.94, 1.0) * spec * (0.15 + road * 1.4);
       col += vec3(0.26, 0.34, 0.50) * road * 0.14;
 
-      // rings from anything moving through the water
-      float rip = rippleField(vec2(vWorld.x, vWorld.z), uTime);
+      // rings from anything moving through the water. Skipped beyond ~55 m:
+      // they can't be read at that range and the loop is per-pixel over a
+      // very large plane, which is what made the sea expensive.
+      float camDist = distance(uCamPos.xz, vWorld.xz);
+      float rip = camDist < 55.0 ? rippleField(vec2(vWorld.x, vWorld.z), uTime) : 0.0;
       col = mix(col, uCrest, clamp(rip * 0.30, 0.0, 0.26));
       col += vec3(0.05, 0.07, 0.09) * max(rip, 0.0);
       // the moon just catches the leading edge
@@ -3664,50 +3712,6 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
 }
 
 // ------------------------------------------------------------------
-// The big one. A giant spider crab washed up and long dead, scanned from a
-// museum specimen (see README for the credit). Static — it's a set piece,
-// not the thing that attacks you — so it gets the same treatment as the
-// lighthouse: no textures, flat shaded, graded cold and bleached.
-// ------------------------------------------------------------------
-const SPIDER_Z = -134;
-let spiderCrab = null;
-loadMesh('assets/spider-crab.bwmesh').then((geo) => {
-  geo.computeBoundingBox();
-  const bb = geo.boundingBox;
-  const pos = geo.attributes.position;
-  const col = new Float32Array(pos.count * 3);
-  const h = Math.max(0.001, bb.max.y - bb.min.y);
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-    // bleached on top where the sun got it, dark and wet underneath
-    const up = (y - bb.min.y) / h;
-    let t = 0.42 + 0.5 * Math.pow(up, 0.7);
-    t *= 0.9 + 0.2 * ((Math.sin(x * 6.1 + y * 4.7 + z * 5.3) * 43758.5453) % 1);
-    t = Math.max(0.2, Math.min(1, t));
-    col[i * 3] = t * 1.0; col[i * 3 + 1] = t * 0.94; col[i * 3 + 2] = t * 0.86;
-  }
-  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  spiderCrab = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
-    color: 0x9d8f7e, vertexColors: true, roughness: 1, metalness: 0,
-    emissive: 0x231c15, flatShading: true, side: THREE.DoubleSide,
-  }));
-  spiderCrab.position.set(4.1, 0.02, SPIDER_Z);
-  spiderCrab.rotation.set(0.06, 2.3, 0.04);      // slumped, half on its side
-  spiderCrab.frustumCulled = false;
-  scene.add(spiderCrab);
-  const hit = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 6),
-    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  hit.name = 'hitProxy'; hit.position.y = 0.5;
-  spiderCrab.add(hit);
-  addInteractable(spiderCrab, 'Look at it', 'npc', {
-    onActivate: () => openNote(
-      'A spider crab, and far bigger than it has any right to be.\n\n' +
-      'Four metres claw to claw. The shell is dry and light. ' +
-      'Whatever brought it up here, the tide has been and gone since.'),
-  });
-}).catch(() => {});
-
-// ------------------------------------------------------------------
 // Shells you can pick up. Hold one to your ear and there's something
 // under the sea-roar that isn't the sea.
 // ------------------------------------------------------------------
@@ -3952,7 +3956,7 @@ function makeCrab() {
 }
 
 const crab = makeCrab();
-crab.position.set(-3.2, 0, CRAB_Z);          // waiting out in the surf
+crab.position.set(-7.5, 0, CRAB_Z);          // well out, submerged from the start
 crab.scale.setScalar(1.55);                  // big enough to be a real threat
 crab.visible = true;
 scene.add(crab);
@@ -4175,6 +4179,8 @@ function updateCrab(dt) {
   const dz = camera.position.z - crab.position.z;
   const dist = Math.hypot(dx, dz);
   if (!crabState.awake) {
+    // stays under until it comes for you
+    crab.visible = submersionAt(crab.position.x, crab.position.z) < 0.92;
     if (dist > CRAB_WAKE) return;
     crabState.awake = true;
     crabState.rear = 1;                       // it rears up as it notices you
@@ -5344,7 +5350,6 @@ window.__bw = {
   waterSurfaceAt, submersionAt, restYInWater, groundGlow, addRipple,
   shells, listenToShell, makeRockGeo,
   get crabModel() { return crabModel; }, get crabMixer() { return crabMixer; },
-  get spiderCrab() { return spiderCrab; },
   lhDoor, shinies, onPath, pathBend, pathHalfAt, lhWindows, lanternGlass,
   get doorOpen() { return doorOpen; }, set doorOpen(v) { doorOpen = v; doorSwing = v ? 1 : 0; lhDoor.rotation.y = -doorSwing * 1.95; },
   get insideTower() { return insideTower; },

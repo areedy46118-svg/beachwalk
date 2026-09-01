@@ -182,6 +182,15 @@ castle, crab, `startDig`, `toggleEquip`, `openMenu`, `openInspect`, `showEnd`,
 
 ## Credits
 
+**Lowpoly Rocks - 3** — the rocks along the beach and the headland.
+["Lowpoly Rocks - 3"](https://sketchfab.com/3d-models/lowpoly-rocks-3)
+by [Loïc Norgeot](https://sketchfab.com/norgeotloic), [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+
+**Grass pack (lowpoly, game-ready)** — the grass on the headland.
+["Grass pack (lowpoly, game-ready)"](https://sketchfab.com/3d-models/grass-pack-lowpoly-game-ready)
+by [LOLIPOP](https://sketchfab.com/lolipop_1707), [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+
+
 **Animated Crab rigged FREE** — the enemy crab.
 
 ["Animated Crab rigged FREE"](https://sketchfab.com/3d-models/animated-crab-rigged-free-ca331da937b04b0f94b9245d5f2ac778)
@@ -200,7 +209,7 @@ licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
 Commercial use is allowed; the credit has to stay.
 
 
-**Japanese Giant Spider Crabs (NHMW-ZOO-CR-4381)** — the dead specimen on the
+** — the dead specimen on the
 beach at z −134.
 
 This work is based on
