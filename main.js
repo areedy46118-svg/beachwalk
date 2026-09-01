@@ -36,13 +36,14 @@ const DIG_DUR = 0.8;
 // ------------------------------------------------------------------
 // Settings
 // ------------------------------------------------------------------
-const DEFAULT_SETTINGS = { fov: 75, sensitivity: 1, brightness: 1.16, volume: 0.9, invertY: false };
+const DEFAULT_SETTINGS = { fov: 75, sensitivity: 1, brightness: 1.16, volume: 0.9, waveVolume: 0.62, invertY: false };
 let settings = { ...DEFAULT_SETTINGS };
 try { settings = { ...settings, ...JSON.parse(localStorage.getItem('beachwalk.settings') || '{}') }; } catch (e) {}
 function saveSettings() { try { localStorage.setItem('beachwalk.settings', JSON.stringify(settings)); } catch (e) {} }
 
 let audioStarted = false, audioCtx = null, masterGain = null;
 let musicEl = null, musicEnvGain = null, musicVolGain = null, musicStarted = false;
+let waveBusGain = null;   // sub-mix for surf ambience + water-step splashes
 
 // ------------------------------------------------------------------
 // Renderer / scene / camera
@@ -1209,6 +1210,7 @@ const S_FOV = document.getElementById('s-fov');
 const S_SENS = document.getElementById('s-sens');
 const S_BRIGHT = document.getElementById('s-bright');
 const S_VOL = document.getElementById('s-vol');
+const S_WAVE = document.getElementById('s-wave');
 const S_INVERT = document.getElementById('s-invert');
 function applySettings() {
   camera.fov = settings.fov;
@@ -1216,19 +1218,23 @@ function applySettings() {
   renderer.toneMappingExposure = settings.brightness;
   if (masterGain && audioCtx) masterGain.gain.setTargetAtTime(settings.volume, audioCtx.currentTime, 0.05);
   if (musicVolGain && audioCtx) musicVolGain.gain.setTargetAtTime(settings.volume, audioCtx.currentTime, 0.05);
+  if (waveBusGain && audioCtx) waveBusGain.gain.setTargetAtTime(settings.waveVolume, audioCtx.currentTime, 0.05);
   document.getElementById('v-fov').textContent = settings.fov;
   document.getElementById('v-sens').textContent = settings.sensitivity.toFixed(2);
   document.getElementById('v-bright').textContent = settings.brightness.toFixed(2);
   document.getElementById('v-vol').textContent = Math.round(settings.volume * 100) + '%';
+  document.getElementById('v-wave').textContent = Math.round(settings.waveVolume * 100) + '%';
 }
 function syncMenuInputs() {
   S_FOV.value = settings.fov; S_SENS.value = settings.sensitivity;
-  S_BRIGHT.value = settings.brightness; S_VOL.value = settings.volume; S_INVERT.checked = settings.invertY;
+  S_BRIGHT.value = settings.brightness; S_VOL.value = settings.volume;
+  S_WAVE.value = settings.waveVolume; S_INVERT.checked = settings.invertY;
 }
 S_FOV.addEventListener('input', () => { settings.fov = +S_FOV.value; applySettings(); saveSettings(); });
 S_SENS.addEventListener('input', () => { settings.sensitivity = +S_SENS.value; applySettings(); saveSettings(); });
 S_BRIGHT.addEventListener('input', () => { settings.brightness = +S_BRIGHT.value; applySettings(); saveSettings(); });
 S_VOL.addEventListener('input', () => { settings.volume = +S_VOL.value; applySettings(); saveSettings(); });
+S_WAVE.addEventListener('input', () => { settings.waveVolume = +S_WAVE.value; applySettings(); saveSettings(); });
 S_INVERT.addEventListener('change', () => { settings.invertY = S_INVERT.checked; saveSettings(); });
 document.getElementById('m-resume').addEventListener('click', closeMenu);
 applySettings();
@@ -1543,8 +1549,9 @@ function makeShovel() {
   const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.62, 10), red); shaft.position.y = 0.31;
   const grip = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.018, 8, 16), red); grip.position.y = 0.63; grip.rotation.x = Math.PI / 2;
   const gripBar = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.15, 8), red); gripBar.position.y = 0.63; gripBar.rotation.z = Math.PI / 2;
-  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.24, 0.03), red); blade.position.set(0, -0.08, 0.02);
-  const lip = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.02, 0.06), red); lip.position.set(0, -0.2, 0.035);
+  // scoop/lip on the -Z face so the concave side leads into the sand on the dig
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.24, 0.03), red); blade.position.set(0, -0.08, -0.02);
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.02, 0.06), red); lip.position.set(0, -0.2, -0.045);
   g.add(shaft, grip, gripBar, blade, lip);
   return g;
 }
@@ -1810,7 +1817,7 @@ function makeMound() {
   return g;
 }
 function makeBuriedObject() {
-  // PLACEHOLDER — swap this model + the item below for the real thing later
+  // PLACEHOLDER — used for the 2nd buried cache onward, swap later
   const g = new THREE.Group();
   const brass = new THREE.MeshStandardMaterial({ color: 0x9c7b3f, roughness: 0.6, metalness: 0.35, flatShading: true, emissive: 0x2c2110 });
   const wrap = new THREE.MeshStandardMaterial({ color: 0x6f6552, roughness: 1, flatShading: true, emissive: 0x1c1a14 });
@@ -1818,6 +1825,58 @@ function makeBuriedObject() {
   const band = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.13, 0.035), wrap);
   g.add(box, band);
   return g;
+}
+
+// The glowstick — first thing you dig up. A short cracked light-stick
+// burning a cold teal, throwing a small glow pool on the sand.
+const GLOWSTICK_COLOR = 0x2fe9cf;   // cold teal, matched to the reference
+const GLOWSTICK_LEN = 0.15;         // ~6 in
+const GLOWSTICK_RADIUS = 0.014;
+const GLOWSTICK_GLOW = 2.0;         // metres — the light's reach on the ground
+function makeGlowstick() {
+  const g = new THREE.Group();
+  // translucent casing + a lit inner core
+  const casing = new THREE.Mesh(
+    new THREE.CylinderGeometry(GLOWSTICK_RADIUS, GLOWSTICK_RADIUS, GLOWSTICK_LEN, 10),
+    new THREE.MeshBasicMaterial({ color: 0x74e6d4, transparent: true, opacity: 0.42, fog: false })
+  );
+  casing.rotation.z = Math.PI / 2;                    // lie flat, along X
+  const core = new THREE.Mesh(
+    new THREE.CylinderGeometry(GLOWSTICK_RADIUS * 0.5, GLOWSTICK_RADIUS * 0.5, GLOWSTICK_LEN + 0.006, 8),
+    new THREE.MeshBasicMaterial({ color: 0x5fd0c0, fog: false })
+  );
+  core.rotation.z = Math.PI / 2;
+  const capMat = new THREE.MeshStandardMaterial({ color: 0x172523, roughness: 1, flatShading: true });
+  for (const s of [-1, 1]) {
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(GLOWSTICK_RADIUS * 1.15, GLOWSTICK_RADIUS * 1.15, 0.012, 10), capMat);
+    cap.rotation.z = Math.PI / 2; cap.position.x = s * (GLOWSTICK_LEN / 2 + 0.004);
+    g.add(cap);
+  }
+  g.add(casing, core);
+  // the glow it throws on the ground — a soft, even teal pool (low decay so
+  // it doesn't clip to white at the centre under the film tonemap)
+  const light = new THREE.PointLight(GLOWSTICK_COLOR, 0.9, GLOWSTICK_GLOW, 1.0);
+  light.position.set(0, 0.04, 0);
+  g.add(light);
+  // faint additive halo so the stick itself blooms a little
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTex, color: GLOWSTICK_COLOR, transparent: true, opacity: 0.16,
+    depthWrite: false, fog: false, blending: THREE.AdditiveBlending,
+  }));
+  halo.scale.setScalar(0.4);
+  g.add(halo);
+  g.userData.light = light;
+  return g;
+}
+function makeGlowstickIcon() {
+  const c = document.createElement('canvas'); c.width = c.height = 48;
+  const g = c.getContext('2d');
+  g.lineCap = 'round';
+  g.strokeStyle = '#3af0d8'; g.lineWidth = 10;
+  g.beginPath(); g.moveTo(12, 36); g.lineTo(36, 12); g.stroke();
+  g.strokeStyle = '#dcfff8'; g.lineWidth = 3.5;
+  g.beginPath(); g.moveTo(12, 36); g.lineTo(36, 12); g.stroke();
+  return c.toDataURL();
 }
 
 const mounds = [];
@@ -1841,30 +1900,32 @@ function moundAt(x, z) {
   }
   return null;
 }
+let moundFinds = 0;
 function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
   const m = moundAt(x, z);
   if (!m) return;
   m.taken = true;
   scene.remove(m.root);
-  spawnPuffs(m.x, m.z, 20, fwdX, fwdZ);
+  spawnPuffs(m.x, m.z, 14, fwdX, fwdZ);
   sfxDigImpact();
+  moundFinds++;
 
-  const relic = makeBuriedObject();
-  relic.position.set(m.x, 0.09, m.z);
-  relic.rotation.set((Math.random() - 0.5) * 0.5, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.4);
+  const first = moundFinds === 1;              // the first cache always holds the glowstick
+  const relic = first ? makeGlowstick() : makeBuriedObject();
+  relic.position.set(m.x, first ? 0.055 : 0.09, m.z);
+  relic.rotation.set(first ? 0 : (Math.random() - 0.5) * 0.5, Math.random() * Math.PI * 2, first ? 0 : (Math.random() - 0.5) * 0.4);
   const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.36, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   proxy.name = 'hitProxy'; relic.add(proxy);
   scene.add(relic);
-  addInteractable(relic, 'Take the buried object', 'inventory', {
+  addInteractable(relic, first ? 'Take the glowstick' : 'Take the buried object', 'inventory', {
     onActivate: () => {
-      sfxThud(0.04);
+      if (first) sfxGlassPick(); else sfxThud(0.04);
       scene.remove(relic);
       hovered = null;
-      addToInventory({
-        name: 'Buried object', icon: '📦',
-        use: () => openNote('A small buried object.\n\n(placeholder — what it is comes later.)'),
-      });
+      addToInventory(first
+        ? { name: 'Glowstick', icon: makeGlowstickIcon(), use: () => openNote('A cracked glowstick, still burning a cold green.') }
+        : { name: 'Buried object', icon: '📦', use: () => openNote('A small buried object.\n\n(placeholder — what it is comes later.)') });
     },
   });
 }
@@ -1900,8 +1961,14 @@ function startAmbientAudio() {
   masterGain = ctx.createGain();
   masterGain.gain.value = 0.0;
   masterGain.gain.linearRampToValueAtTime(settings.volume, ctx.currentTime + 4);
+  // dedicated sub-mix for everything "waves": the surf loop and the
+  // water-step splashes both pass through here so the Wave volume slider
+  // can pull them down together, under the master volume.
+  waveBusGain = ctx.createGain();
+  waveBusGain.gain.value = settings.waveVolume;
+  waveBusGain.connect(masterGain);
   noise.connect(wind).connect(windGain).connect(masterGain);
-  noise.connect(surf).connect(surfGain).connect(masterGain);
+  noise.connect(surf).connect(surfGain).connect(waveBusGain);
   masterGain.connect(ctx.destination);
   noise.start(); lfo.start(); lfo2.start();
   document.addEventListener('visibilitychange', () => {
@@ -2038,23 +2105,53 @@ function sfxDigImpact() {
 
   out.gain.setTargetAtTime(0.0001, t + 0.45, 0.1);
 }
-// a foot / blade breaking the surface of the surf — a short wet spatter
-// with a quick bright rise and fall
+// a foot breaking the surface of the surf — layered so it reads as real
+// water: a wet "sploosh" front, a low displaced-water gloop, and a fine
+// spray tail of droplets falling back. Randomised so repeated steps differ.
 function sfxSplash(power = 1) {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime;
-  const s = noiseBurst(0.34, (x) => Math.pow(1 - x, 1.7) * (0.55 + 0.45 * Math.random()));
-  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.7;
-  bp.frequency.setValueAtTime(700, t);
-  bp.frequency.exponentialRampToValueAtTime(2400, t + 0.09);
-  bp.frequency.exponentialRampToValueAtTime(650, t + 0.30);
-  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 420;
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(0.03 + 0.05 * power, t + 0.02);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
-  s.connect(bp).connect(hp).connect(g).connect(ctx.destination);
-  s.start(t); s.stop(t + 0.34);
+  const dest = waveBusGain || ctx.destination;
+  const out = ctx.createGain();
+  out.gain.value = 0.9 * (0.7 + 0.5 * power);
+  out.connect(dest);
+  const rnd = (a, b) => a + Math.random() * (b - a);
+
+  // 1) the sploosh — broadband noise through a lowpass that drops fast
+  const body = noiseBurst(0.22, (x) => Math.pow(1 - x, 1.4) * (0.6 + 0.4 * Math.random()));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0.8;
+  lp.frequency.setValueAtTime(rnd(1400, 2000), t);
+  lp.frequency.exponentialRampToValueAtTime(rnd(280, 420), t + 0.14);
+  const bg = ctx.createGain();
+  bg.gain.setValueAtTime(0.0001, t);
+  bg.gain.exponentialRampToValueAtTime(0.5, t + 0.012);
+  bg.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+  body.connect(lp).connect(bg).connect(out);
+  body.start(t); body.stop(t + 0.24);
+
+  // 2) low gloop — displaced water; a short sine that bends downward
+  const o = ctx.createOscillator(); o.type = 'sine';
+  const f0 = rnd(150, 210);
+  o.frequency.setValueAtTime(f0, t);
+  o.frequency.exponentialRampToValueAtTime(f0 * 0.55, t + 0.13);
+  const og = ctx.createGain();
+  og.gain.setValueAtTime(0.0001, t);
+  og.gain.exponentialRampToValueAtTime(0.16, t + 0.015);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+  o.connect(og).connect(out);
+  o.start(t); o.stop(t + 0.18);
+
+  // 3) spray tail — fine droplets pattering back down
+  const spray = noiseBurst(0.4, (x) => Math.pow(1 - x, 2.6) * (0.5 + 0.5 * Math.sin(x * rnd(70, 120))));
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = rnd(2200, 3000);
+  const sg = ctx.createGain();
+  sg.gain.setValueAtTime(0.0001, t + 0.02);
+  sg.gain.exponentialRampToValueAtTime(0.09, t + 0.06);
+  sg.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+  spray.connect(hp).connect(sg).connect(out);
+  spray.start(t + 0.02); spray.stop(t + 0.44);
+
+  out.gain.setTargetAtTime(0.0001, t + 0.42, 0.12);
 }
 
 // ------------------------------------------------------------------
@@ -2217,7 +2314,8 @@ window.__bw = {
   THREE, scene, camera, player: camera,
   interactables, physProps, inventory, bottle, cliff, foot, lighthouse, city,
   castle, shovelWorld, viewmodel,
-  mounds, moundAt, revealMoundNear, inWater, shoreLineJS,
+  mounds, moundAt, revealMoundNear, makeGlowstick, inWater, shoreLineJS,
+  sfxSplash,
   openMenu, closeMenu, showEnd, stampFoot, startDig, toggleEquip, spawnPuffs, spawnSplash, stampDigHole, beginGame,
   get shovelItem() { return shovelItem; },
   state: () => ({ started, locked, fallbackLook, introDone, noteOpen, menuOpen, ended, onGround, stamina: +stamina.toFixed(2), exhausted, digT: +digT.toFixed(2), equipped: equipped && equipped.name, held: held && held.mesh.name, hovered: hovered && hovered.label, inv: inventory.map(i => i.name) }),
