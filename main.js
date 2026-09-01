@@ -2181,30 +2181,80 @@ const bradlySprite = new THREE.Sprite(bradlyMat);
 bradlySprite.scale.set(BRADLY_H * 0.55, BRADLY_H, 1);
 bradlySprite.position.y = BRADLY_H / 2;
 bradly.add(bradlySprite);
-/* Blink. With one still image the trick is to fake an eyelid: copy a thin
- * band of forehead skin from just above the eyes and paint it down over
- * them. Two canvases get baked once at load (open / shut) and we just swap
- * the texture. BRADLY_EYES is in fractions of the image, measured from the
- * top-left — tweak it via __bw.setEyes() once the real cut-out is in. */
-const BRADLY_EYES = { x: 0.40, y: 0.058, w: 0.20, h: 0.020 };
+/* Bradly is a photo cut-out (assets/bradly.png, made by tools/cutout.swift),
+ * pushed through the same treatment the rest of the game gets: knocked down
+ * to a low pixel count, posterised to a handful of levels per channel, and
+ * graded cold and sickly so he sits in the night palette instead of looking
+ * like a photo pasted on the beach.
+ *
+ * Blink. With one still image the trick is a fake eyelid: copy a thin band
+ * of forehead from just above the eyes and paint it down over them. Both
+ * frames are baked once at load and we just swap the texture. BRADLY_EYES is
+ * in fractions of the source image from the top-left — tune it live with
+ * __bw.setEyes({ y: 0.07 }). */
+// measured off the cut-out: forehead peaks bright around y=0.05, the eyes are
+// the dark band at y=0.072–0.092
+const BRADLY_EYES = { x: 0.41, y: 0.072, w: 0.21, h: 0.022 };
+const BRADLY_PIX = 260;             // texture height in pixels — the chunkiness
+const BRADLY_LEVELS = 6;            // posterisation steps per channel
 let bradlyOpenTex = null, bradlyShutTex = null, bradlySrcImg = null;
 let blinkT = 2 + Math.random() * 3, blinking = false;
+
 function bakeBradlyFrames(img) {
   bradlySrcImg = img;
   const mk = (shut) => {
-    const c = document.createElement('canvas');
-    c.width = img.width; c.height = img.height;
-    const g = c.getContext('2d');
-    g.drawImage(img, 0, 0);
+    // 1. full-res pass, with the eyelid painted in for the shut frame
+    const full = document.createElement('canvas');
+    full.width = img.width; full.height = img.height;
+    const fg = full.getContext('2d');
+    fg.drawImage(img, 0, 0);
     if (shut) {
       const ex = BRADLY_EYES.x * img.width, ew = BRADLY_EYES.w * img.width;
       const ey = BRADLY_EYES.y * img.height, eh = Math.max(2, BRADLY_EYES.h * img.height);
       // stretch the strip above the eyes down across them
-      g.drawImage(c, ex, ey - eh, ew, eh, ex, ey, ew, eh * 1.6);
+      fg.drawImage(full, ex, ey - eh * 1.25, ew, eh, ex, ey, ew, eh);
     }
+
+    // 2. knock it down to sprite resolution
+    const hh = BRADLY_PIX;
+    const ww = Math.max(1, Math.round(img.width * (hh / img.height)));
+    const c = document.createElement('canvas');
+    c.width = ww; c.height = hh;
+    const g = c.getContext('2d');
+    g.imageSmoothingEnabled = true;
+    g.drawImage(full, 0, 0, ww, hh);
+
+    // 3. hard alpha, posterise, grade
+    const id = g.getImageData(0, 0, ww, hh);
+    const px = id.data;
+    const step = 255 / (BRADLY_LEVELS - 1);
+    for (let i = 0; i < px.length; i += 4) {
+      // the segmentation leaves a soft, bright fringe — cut it away cleanly
+      if (px[i + 3] < 150) { px[i + 3] = 0; continue; }
+      px[i + 3] = 255;
+
+      let r = px[i], gg = px[i + 1], b = px[i + 2];
+      // contrast around mid grey, then desaturate toward luma
+      const lum = 0.299 * r + 0.587 * gg + 0.114 * b;
+      const CON = 1.34, SAT = 0.55;
+      r = lum + (r - lum) * SAT; gg = lum + (gg - lum) * SAT; b = lum + (b - lum) * SAT;
+      r = (r - 128) * CON + 116; gg = (gg - 128) * CON + 122; b = (b - 128) * CON + 112;
+      // sickly green-cyan cast; sprites aren't lit, so this is his final
+      // brightness — keep him readable against the night sky
+      r *= 0.86; gg *= 1.02; b *= 0.92;
+      // a little grain before quantising so the bands break up
+      const n = (Math.random() - 0.5) * 20;
+      r += n; gg += n; b += n;
+      // posterise
+      px[i]     = Math.max(0, Math.min(255, Math.round(r / step) * step));
+      px[i + 1] = Math.max(0, Math.min(255, Math.round(gg / step) * step));
+      px[i + 2] = Math.max(0, Math.min(255, Math.round(b / step) * step));
+    }
+    g.putImageData(id, 0, 0);
+
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
-    return t;
+    return retroTex(t, { repeatWrap: false });     // nearest filtering, stays chunky
   };
   bradlyOpenTex = mk(false);
   bradlyShutTex = mk(true);
@@ -2233,9 +2283,11 @@ new THREE.TextureLoader().load('assets/bradly.png', (tex) => {
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   hit.position.y = BRADLY_H / 2; hit.name = 'hitProxy';
   bradly.add(hit);
-  // on the cliff top, ~10 m past the first buried cache
+  // on the cliff top, ~10 m past the first buried cache. Feet sunk a touch
+  // below the lip so the runnels in the cliff face don't leave him floating,
+  // and kept near enough the edge to stay inside REACH for the E prompt.
   const gz = mounds.length ? mounds[0].z : -28;
-  bradly.position.set(CLIFF_X - 0.9, CLIFF_H, gz - 10);
+  bradly.position.set(CLIFF_X - 0.45, CLIFF_H - 0.22, gz - 10);
 }
 scene.add(bradly);
 addInteractable(bradly, 'Talk to him', 'npc', { onActivate: () => startDialog('start') });
