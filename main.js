@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { makeHorseshoeCrab, makeHorseshoeCrabIcon } from './models/horseshoe-crab.js';
 import { makeSyringe, makeSyringeIcon } from './models/syringe.js';
 import { makeBloodJar, makeBloodJarIcon } from './models/blood-jar.js';
+import { makeFalchion, makeFalchionIcon } from './models/falchion.js';
 
 /* ------------------------------------------------------------------ *
  *  Beach Walk — an endless, eerie shoreline at night.
@@ -1906,6 +1907,8 @@ function digImpact() {
     const cdx = x - crab.position.x, cdz = z - crab.position.z;
     if (cdx * cdx + cdz * cdz < CRAB_KILL_RADIUS * CRAB_KILL_RADIUS) killCrab();
   }
+  // a blade just cuts — no crater, no dig (the swing whoosh already played)
+  if (equipped && equipped.slash) return;
   if (inWater(x, z)) {
     // blade hits water, not sand — throw a splash, leave no crater
     spawnSplash(x, z, 24, _pf.x, _pf.z, 1.7);
@@ -2114,6 +2117,48 @@ function finishExtraction() {
   inspectRotX = 0.12; inspectRotY = 0.45; inspectDist = 3.7; inspectAuto = 0;
   inspectEl.querySelector('.hint').textContent = 'A jar of blue blood · drag to look · Esc to put it away';
 }
+
+// ------------------------------------------------------------------
+// Rusted falchion — a time-eaten cleaver-bladed sword left stuck in
+// the sand. Equip it and swing (LMB / E) like the shovel; the blade
+// just cuts — no digging. Model in models/falchion.js.
+// ------------------------------------------------------------------
+const falchionVM = makeFalchion();
+falchionVM.scale.setScalar(0.33);
+falchionVM.position.set(-0.03, -0.03, 0.05);
+falchionVM.rotation.set(0.2, 1.4, 0.95);          // grip at the hand, blade raked up across the view
+falchionVM.visible = false;
+toolMount.add(falchionVM);
+
+const falchionItem = {
+  name: 'Rusted falchion', icon: makeFalchionIcon(), onDig: true, slash: true, viewmodel: falchionVM,
+  use: () => toggleEquip(falchionItem),
+};
+
+const falchionWorld = new THREE.Group();
+falchionWorld.add(makeFalchion());
+{
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy'; hit.position.z = 0.2;
+  falchionWorld.add(hit);
+}
+falchionWorld.children[0].scale.setScalar(1.15);
+falchionWorld.position.set(4.9, 0.34, -128);
+falchionWorld.rotation.set(-1.15, 0.5, 0.15);     // stabbed point-down into the sand, canted
+scene.add(falchionWorld);
+let falchionTaken = false;
+addInteractable(falchionWorld, 'Take the rusted falchion', 'inventory', {
+  onActivate: () => {
+    if (falchionTaken) return;
+    falchionTaken = true;
+    sfxThud(0.05);
+    scene.remove(falchionWorld);
+    hovered = null;
+    addToInventory(falchionItem);
+    toggleEquip(falchionItem);
+  },
+});
 
 // ------------------------------------------------------------------
 // Buried caches — rare little sand mounds along the walk. Dig one open
@@ -3128,7 +3173,7 @@ window.__bw = {
   THREE, scene, camera, player: camera,
   interactables, physProps, inventory, bottle, cliff, foot, lighthouse, city,
   castle, shovelWorld, viewmodel,
-  hcrab, hcrabWorld, syringe, syringeWorld, bloodJar,
+  hcrab, hcrabWorld, syringe, syringeWorld, bloodJar, falchionWorld,
   renderer, inspectScene, inspectCamera,
   mounds, moundAt, revealMoundNear, makeGlowstick, inWater, shoreLineJS,
   sfxSplash, bradly, startDialog, endDialog, heldGlow,
@@ -3146,7 +3191,7 @@ window.__bw = {
   get glowstickItem() { return glowstickItem; },
   openMenu, closeMenu, showEnd, stampFoot, startDig, toggleEquip, spawnPuffs, spawnSplash, stampDigHole, beginGame,
   openInspect, closeInspect, startExtraction,
-  get shovelItem() { return shovelItem; }, get crabItem() { return crabItem; }, get syringeItem() { return syringeItem; }, get jarItem() { return jarItem; },
+  get shovelItem() { return shovelItem; }, get crabItem() { return crabItem; }, get syringeItem() { return syringeItem; }, get jarItem() { return jarItem; }, get falchionItem() { return falchionItem; },
   state: () => ({ started, locked, fallbackLook, introDone, noteOpen, menuOpen, dialogOpen, inspecting, extracting, crabBled, dying, ended, onGround, stamina: +stamina.toFixed(2), exhausted, digT: +digT.toFixed(2), equipped: equipped && equipped.name, held: held && held.mesh.name, hovered: hovered && hovered.label, inv: inventory.map(i => i.name) }),
   music: () => (musicEl ? { paused: musicEl.paused, t: +musicEl.currentTime.toFixed(1), env: musicEnvGain ? +musicEnvGain.gain.value.toFixed(3) : null, vol: musicVolGain ? +musicVolGain.gain.value.toFixed(2) : null } : { musicEl: null }),
 };

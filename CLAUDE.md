@@ -75,11 +75,17 @@ adds a **"Jar of blue blood"** item (`makeBloodJar()`), and shows the jar as
 the payoff.
 
 **Object models.** `models/` holds standalone factories (`makeHorseshoeCrab()`,
-`makeSyringe()`, `makeBloodJar()`) plus `viewer.html` (`?model=…`), a
-drag-to-rotate dev viewer. Factories `import * as THREE from 'three'`, return a
-`Group`, use metres, `+Y` up / `+Z` forward. **Smooth-shaded**, a deliberate
-exception to the flat-shaded retro look because they're hero props seen up
-close. The syringe and jar carry `userData.setFill(t)` + `userData.parts`.
+`makeSyringe()`, `makeBloodJar()`, `makeFalchion()`) plus `viewer.html`
+(`?model=…`), a drag-to-rotate dev viewer. Factories `import * as THREE from
+'three'`, return a `Group`, use metres, `+Y` up / `+Z` forward. **Smooth-shaded**,
+a deliberate exception to the flat-shaded retro look because they're hero props
+seen up close. The syringe and jar carry `userData.setFill(t)` + `userData.parts`.
+
+**The falchion** is an equippable weapon: `falchionItem` has `viewmodel:
+falchionVM` (in `toolMount`, like the shovel) plus `onDig: true, slash: true`,
+so `startDig()` / `updateViewmodel()` give it the same swing arc — and
+`digImpact()` early-returns for `equipped.slash` (kills the crab if in range,
+but no craters/mounds/puffs). World pickup at z −128, stabbed into the sand.
 
 **Physics.** `PhysProp` class + `physProps[]` — a tiny custom rigid body
 (gravity, ground bounce/friction, corridor walls; **no prop-vs-prop
@@ -117,8 +123,9 @@ hard to drive from `javascript_tool`. Instead:
 
 - `window.__bw` exposes `scene`, `camera`, `state()`, `music()`, and helpers
   like `startDig`, `spawnPuffs`, `toggleEquip`, `beginGame`, `showEnd`,
-  `openInspect`/`closeInspect`, `startExtraction`, `crab`, `syringe`,
-  `bloodJar`, `crabItem`, `syringeItem`, `jarItem`.
+  `openInspect`/`closeInspect`, `startExtraction`, `hcrab`, `syringe`,
+  `bloodJar`, `falchionWorld`, `crabItem`, `syringeItem`, `jarItem`,
+  `falchionItem`.
 - Move the camera by hand (`camera.position.set(...)` + `camera.lookAt(...)`
   + `camera.updateMatrixWorld(true)`), then take a screenshot to force one
   render frame.
