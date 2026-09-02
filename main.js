@@ -61,7 +61,10 @@ const LH_STEP = LH_RISE / LH_PER_TURN;   // one riser, 0.22 m
 const LH_TREAD_T = 0.13;           // tread thickness
 const LH_POLE_R = 0.075;           // the steel newel pole the treads wrap round
 const LH_TREAD_R = 1.42;           // how far out from the pole a tread reaches
-const LH_RAIL_R = 1.50;            // the outer handrail
+// INSIDE the tread's edge, not outside it. At 1.50 the balusters stood 8 cm
+// off the end of every step, so the whole rail floated in the air beside the
+// stair — which is exactly what it looked like.
+const LH_RAIL_R = 1.36;            // the outer handrail
 // Where the stair meets the gallery, in the game's angle convention. The
 // treads are laid out so height and angle are locked together, so this is
 // derived rather than eyeballed — the hatch in the deck has to be here, and
@@ -1042,7 +1045,7 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
       stairs.add(nose);
       // a baluster on every tread, out at the rail
       const bal = new THREE.Mesh(balGeo, redIron);
-      bal.position.set(Math.cos(a) * (LH_RAIL_R - 0.02), y + LH_TREAD_T / 2 + 0.45, Math.sin(a) * (LH_RAIL_R - 0.02));
+      bal.position.set(Math.cos(a) * LH_RAIL_R, y + LH_TREAD_T / 2 + 0.45, Math.sin(a) * LH_RAIL_R);
       stairs.add(bal);
     }
     // the handrail: one unbroken red tube on the outside of the spiral
@@ -1335,6 +1338,16 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   lighthouse.userData.glow = glow; lighthouse.userData.halo = halo;
   const lampLight = new THREE.PointLight(0xffd9a0, 14, 14, 1.5);
   lampLight.position.y = LAMP_Y;
+  /* The crosshair cannot hit a 0.19 m burner through a glass drum, so the
+   * light carries its own proxy — sized to the whole optic, so anywhere on
+   * the lens counts. It is registered as an interactable much further down
+   * the file, because `addInteractable` does not exist yet up here. */
+  const lampProxy = new THREE.Mesh(new THREE.CylinderGeometry(LENS_R + 0.18, LENS_R + 0.18, LENS_H + 0.5, 10),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  lampProxy.name = 'hitProxy';
+  lampProxy.position.y = LAMP_Y;
+  lighthouse.add(lampProxy);
+  lhParts.lampProxy = lampProxy;
   lighthouse.add(lampCore, glow, halo, lampLight);
 
   beamPivot = new THREE.Group(); beamPivot.position.y = LAMP_Y;
@@ -1568,7 +1581,11 @@ function onHeadland(wx, wz) { return headlandAt(wx, wz) > 0.35; }
     return null;
   };
   const ridgeY = (x, z) => headlandAt(LH_X + x, LH_Z + z) - HL_CREST;   // local y on the ridge
-  const onRidge = (x, z) => headlandAt(LH_X + x, LH_Z + z) > 1.4;      // the crown, not the fall-off
+  const onRidge = (x, z) => headlandAt(LH_X + x, LH_Z + z) > 1.4       // the crown, not the fall-off
+    // ...and never on the building or its stone apron. The footing skirt runs
+    // out to 6.6 m, so anything inside that is either growing through the
+    // masonry or standing on it — which is how grass ended up in the doorway.
+    && Math.hypot(x, z) > 7.0;
 
   // the same night treatment the beach rocks get: the scans were lit for
   // day, and a cool tint keeps them the colour of everything else out here
@@ -2142,6 +2159,7 @@ function makeApron(R) {
 function rockSpotClear(x, z) {
   if (headlandAt(x, z) > 0.15) return false;                 // never on the ridge
   if (onPath(x - LH_X, z - LH_Z, 0.5)) return false;         // nor across the lane to the door
+  if (Math.hypot(x - LH_X, z - LH_Z) < 7.0) return false;    // nor through the tower or its apron
   return true;
 }
 
@@ -3104,7 +3122,8 @@ window.addEventListener('keydown', (e) => {
     else if (noteOpen) closeNote();
     else if (menuOpen) closeMenu();
     else if (fallbackLook) openMenu();
-  } else if (e.code === 'KeyE' || e.code === 'KeyF') {
+  } else if (e.code === 'KeyE' || e.code === 'KeyF' || e.code === 'Enter' || e.code === 'NumpadEnter') {
+    // Enter is an alias for E throughout: people reach for it on a prompt
     if (inspecting) { if (inspectEquip) inspectEquip(); return; }
     primaryAction();
   }
@@ -5885,6 +5904,15 @@ new THREE.TextureLoader().load('assets/bradly.png', (tex) => {
 scene.add(bradly);
 addInteractable(bradly, 'Talk to him', 'npc', { onActivate: () => startDialog('start') });
 
+/* The end of the walk. You climb the tower, you stand in the lantern, and you
+ * put your hand on the light — a thing you choose, at the one place the whole
+ * kilometre has been pointing at. */
+if (lhParts.lampProxy) {
+  addInteractable(lhParts.lampProxy, 'Put your hand on the light', 'action', {
+    onActivate: () => { if (!ended) showEnd(); },
+  });
+}
+
 // ------------------------------------------------------------------
 // The crate below Bradly — and the ring in it
 // ------------------------------------------------------------------
@@ -6085,8 +6113,15 @@ new GLTFLoader().load('assets/octopus-ring.glb', (gltf) => {
    * broad smooth faces had caught it as sheets. Tarnished silver reads far
    * better here as a bright rough dielectric with a lift on it.
    * DoubleSide because a raw STL's winding cannot be relied on. */
+  /* GOLD. The download carries no texture maps at all — it is a raw STL scan
+   * whose only material is `Scene_-_Root`, metallic 0, roughness 0.6 — so the
+   * surface here IS the model's, and the colour is ours. Roughness is kept
+   * near the scan's own 0.6 and metalness stays low: there is no environment
+   * map in this game, and a true metal has no diffuse, so at high metalness
+   * the scan renders as lit specks on black. This is gold as a bright rough
+   * dielectric with a warm lift, which is what reads by moonlight. */
   const silver = new THREE.MeshStandardMaterial({
-    color: 0xc2cad6, roughness: 0.52, metalness: 0.12, emissive: 0x2b3340,
+    color: 0xd8ab52, roughness: 0.55, metalness: 0.18, emissive: 0x3a2a0e,
     side: THREE.DoubleSide, flatShading: true,
   });
   let geo = null;
@@ -6102,7 +6137,7 @@ new GLTFLoader().load('assets/octopus-ring.glb', (gltf) => {
   ring.add(m);
 });
 const ringItem = {
-  id: 'ring', name: 'Signet ring', icon: makeRingIcon(), ring: true,
+  id: 'ring', name: 'The Octopus Ring', icon: makeRingIcon(), ring: true,
   // the prompt only offers what is actually available: examining a ring you
   // are already wearing, or with both slots full, is just examining it
   use: () => openInspect(ring, {
@@ -6142,11 +6177,11 @@ function dropRing() {
   addItemShine(ringWorld, { size: 1.2, height: 0.5, strength: 3.2 });
   // and the metal itself catches the moon while it lies out here — a 20 mm
   // ring with the inspect view's emissive is invisible on night sand
-  ring.traverse((o) => { if (o.isMesh && o.material.emissive) o.material.emissive.setHex(0x3a4356); });
+  ring.traverse((o) => { if (o.isMesh && o.material.emissive) o.material.emissive.setHex(0x6b5220); });
   addInteractable(ringWorld, 'Take the ring', 'inventory', {
     onActivate: () => {
       ringProp.dead = true;
-      ring.traverse((o) => { if (o.isMesh && o.material.emissive) o.material.emissive.setHex(0x101419); });
+      ring.traverse((o) => { if (o.isMesh && o.material.emissive) o.material.emissive.setHex(0x3a2a0e); });
       scene.remove(ringWorld);
       removeInteractable(ringWorld);
       hovered = null;
@@ -8003,10 +8038,11 @@ function updateTower(dt) {
     stairY = stairY === null ? stepped
            : stairY + (stepped - stairY) * Math.min(1, dt * 18);
     groundY = HL_CREST + stairY;
-    // Reaching the top no longer ends it — you arrive, and the walk ends
-    // when you step out of the lantern onto the gallery.
+    /* Reaching the top does not end it, and neither does stepping out onto
+     * the gallery any more — a walk this long should not finish by accident
+     * because you drifted two metres. You arrive, and then you put your hand
+     * on the light: see the lamp's interactable further down. */
     atLanternTop = stairTurns * LH_RISE >= LH_TOP - 0.4;
-    if (atLanternTop && d > 1.95 && started && !ended) showEnd();
   } else {
     lastStairA = ang;
     stairTurns = 0;

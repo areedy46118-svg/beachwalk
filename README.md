@@ -111,8 +111,8 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - **The crate below Bradly** — washed up at the cliff foot, and the one lock
   in the game. A left click thuds off the boards. Only a wound-up heavy (about
   two-thirds of a full charge) puts the blade through the lid.
-- **The signet ring** — in the crate: a tarnished band stamped with a
-  horseshoe crab. Take it, examine it, and press `E` to put it on — it leaves
+- **The Octopus Ring** — in the crate: a scanned gold ring, an octopus with
+  its arms curled round to make the band. Take it, examine it, and press `E` to put it on — it leaves
   the pack for a new **Rings** section, two slots under the hotbar that appear
   the first time a ring is in your hands. Click a worn ring to take it off.
 - **The crab telegraphs** — it no longer nips the instant it reaches you. It
@@ -138,8 +138,7 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   red cast-iron spiral stair wound round a central steel pole, standing free
   of the wall: thin diamond-plate treads, one continuous red handrail on the
   outside, oil lamps on the brick every half turn, moonlight standing in the
-  windows and washing down from the lantern glass. Climb it to the gallery
-  to end the walk.
+  windows and washing down from the lantern glass. Climb it, and put your hand on the light to end the walk.
 - **Detailed low-poly ground** — procedural sand (mottling, ripples, grit,
   pebbles, shell flecks) with a self-illuminating emissive map.
 - **Livelier ocean** — layered swell/chop/ripples, animated micro-normals,

@@ -476,6 +476,24 @@ the bore and `LH_RAIL_R + 0.25` — your centre may pass the rail line a
 little, which reads as leaning on it. Outside it is whitewashed render
 (`shaftOutMat`) with a black lantern — the brightest thing on the headland.
 
+**The walk ends when you put your hand on the light.** Not by arriving, and
+not by stepping onto the gallery — that fired `showEnd()` off a two-metre
+drift and finished a kilometre by accident. The optic carries a `hitProxy`
+cylinder sized to the whole lens (the crosshair cannot find a 0.19 m burner
+through a glass drum), registered as an interactable far down the file
+because `addInteractable` does not exist where the lantern is built. `Enter`
+is an alias for `E` everywhere, for the people who reach for it on a prompt.
+
+**`LH_RAIL_R` must be INSIDE `LH_TREAD_R`.** At 1.50 against a 1.42 tread the
+balusters stood eight centimetres off the end of every step and the whole
+handrail floated in the air beside the stair. 1.36 puts them on the tread.
+
+**Nothing may stand within 7 m of the tower's axis.** The footing skirt runs
+out to 6.6 m, so anything inside that is growing through masonry or standing
+on it — which is how grass ended up in the doorway and a fence post ended up
+on the stair. `onRidge()` in the dressing and `rockSpotClear()` both carry
+the keep-out; so does the fence loop, at `LH_OUTER + 1.1`.
+
 **Walk it after touching any of this.** The test that matters is the one in
 the preview harness: open the door, enter, spiral the camera at r ≈ 1.05 for
 seven turns, and check `groundY` reaches `HL_CREST + LH_TOP`. A wall-to-well

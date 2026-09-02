@@ -115,21 +115,27 @@ export function makeRingIcon() {
   const g = c.getContext('2d');
   g.lineCap = 'round';
   // band: two arcs, the lower one lighter where the moon would catch it
+  // gold, and an octopus on it — the slot has to show the ring you actually
+  // have. At 48 px that is a band, a domed body and the suggestion of arms.
   g.lineWidth = 5;
-  g.strokeStyle = '#6d7684';
-  g.beginPath(); g.arc(24, 28, 13, Math.PI * 1.15, Math.PI * 1.85); g.stroke();
-  g.strokeStyle = '#b9c3d0';
-  g.beginPath(); g.arc(24, 28, 13, Math.PI * 1.85, Math.PI * 3.15); g.stroke();
-  // the head, sitting on top of the band
-  g.fillStyle = '#c3ccd8';
-  g.beginPath(); g.ellipse(24, 13, 9, 7, 0, 0, Math.PI * 2); g.fill();
-  g.fillStyle = '#39424e';
-  g.beginPath(); g.ellipse(24, 13, 6, 4.4, 0, 0, Math.PI * 2); g.fill();
-  // the crab on it, at the only fidelity 48 px allows: a shield and a tail
-  g.fillStyle = '#aeb8c6';
-  g.beginPath(); g.ellipse(24, 11.6, 3, 2, 0, 0, Math.PI * 2); g.fill();
-  g.lineWidth = 1.2;
-  g.strokeStyle = '#aeb8c6';
-  g.beginPath(); g.moveTo(24, 13.4); g.lineTo(24, 17); g.stroke();
+  g.strokeStyle = '#8a6320';
+  g.beginPath(); g.arc(24, 29, 13, Math.PI * 1.12, Math.PI * 1.88); g.stroke();
+  g.strokeStyle = '#e2b45c';
+  g.beginPath(); g.arc(24, 29, 13, Math.PI * 1.88, Math.PI * 3.12); g.stroke();
+  // the body
+  g.fillStyle = '#f0c877';
+  g.beginPath(); g.ellipse(24, 15, 8, 9, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#a8792c';
+  g.beginPath(); g.ellipse(24, 17.5, 8.5, 5, 0, 0, Math.PI * 2); g.fill();
+  // the arms, curling down over the shoulders of the band
+  g.strokeStyle = '#d9a94f'; g.lineCap = 'round';
+  for (const [x0, x1, y1] of [[16, 9, 27], [19, 14, 30], [29, 34, 30], [32, 39, 27]]) {
+    g.lineWidth = 2.6;
+    g.beginPath(); g.moveTo(x0, 19); g.quadraticCurveTo((x0 + x1) / 2, 26, x1, y1); g.stroke();
+  }
+  // two eyes on the body
+  g.fillStyle = '#3a2a0e';
+  g.beginPath(); g.arc(21, 13, 1.7, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(27, 13, 1.7, 0, Math.PI * 2); g.fill();
   return c.toDataURL();
 }
