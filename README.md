@@ -182,10 +182,6 @@ castle, crab, `startDig`, `toggleEquip`, `openMenu`, `openInspect`, `showEnd`,
 
 ## Credits
 
-**Lowpoly Rocks - 3** — the rocks along the beach and the headland.
-["Lowpoly Rocks - 3"](https://sketchfab.com/3d-models/lowpoly-rocks-3)
-by [Loïc Norgeot](https://sketchfab.com/norgeotloic), [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
-
 **Grass pack (lowpoly, game-ready)** — the grass on the headland.
 ["Grass pack (lowpoly, game-ready)"](https://sketchfab.com/3d-models/grass-pack-lowpoly-game-ready)
 by [LOLIPOP](https://sketchfab.com/lolipop_1707), [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
@@ -197,39 +193,3 @@ by [LOLIPOP](https://sketchfab.com/lolipop_1707), [CC-BY-4.0](http://creativecom
 by [TwilightFox](https://sketchfab.com/twilightfox), under the
 [Sketchfab Standard licence](https://sketchfab.com/licenses) — commercial use
 and derivative works allowed.
-
-
-**Beach Rock** — the large scanned boulders along the tideline.
-
-This work is based on
-["Beach Rock"](https://sketchfab.com/3d-models/beach-rock-a4998ae7cb764287a03c70a544bd0d3d)
-by [SmallpolyArt](https://sketchfab.com/SmallpolyArt)
-licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
-Commercial use is allowed; the credit has to stay.
-
-
-**Beach Rocks 001** — the lower rocky patches.
-
-["Beach Rocks 001"](https://sketchfab.com/3d-models/beach-rocks-001-89d1260414cc4ecf88a736bfa01a4127)
-by [DEEP C](https://sketchfab.com/deepc326), under the
-[Sketchfab Standard licence](https://sketchfab.com/licenses) — commercial use
-and derivative works allowed.
-
-Both are photogrammetry of a patch of ground rather than of a rock, so
-`tools/gltfrocks.py` merges the 65k-vertex chunks, decimates by vertex
-clustering, then takes a tight column of the surface around each raised point.
-The scan is an open heightfield, so the game beds each rock deep enough that
-its own ring of sand sits under the beach and closes the silhouette. The baked
-albedo is kept at 256px, `beach_rock`'s normal map with it — at ~250 triangles
-the mesh carries no detail of its own — and the UVs are the reason these keep
-theirs where the older procedural packs don't.
-
-
-**Seaweed Patch** — the wrack along the tideline.
-
-This work is based on
-["Seaweed Patch"](https://sketchfab.com/3d-models/seaweed-patch-ed57fa7a769f439ba0ac90e400b2e5af)
-by [emcderm](https://sketchfab.com/emcderm)
-licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
-Commercial use is allowed; the credit has to stay.
-

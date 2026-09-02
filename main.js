@@ -1408,28 +1408,7 @@ function scatter(geo, mat, perTile, place) {
 const zSpan = () => Math.random() * DEBRIS_TILE - DEBRIS_TILE / 2;
 const wrackX = () => 1.4 + Math.random() * 3.4;      // the high-tide band
 
-// clumped bladder-wrack — small stuff filling in between the scanned weed
-scatter(
-  new THREE.IcosahedronGeometry(0.5, 0),
-  new THREE.MeshStandardMaterial({ color: 0x2b3226, roughness: 1, flatShading: true, emissive: 0x0a0d08 }),
-  1,
-  () => { const s = 0.35 + Math.random() * 0.75; return {
-    x: wrackX(), z: zSpan(), y: 0.03,
-    rot: new THREE.Euler(0, Math.random() * Math.PI * 2, 0),
-    scale: new THREE.Vector3(s * (1 + Math.random()), s * 0.15, s * (0.6 + Math.random())),
-  }; }
-);
-// long kelp ribbons trailing along the line
-scatter(
-  new THREE.BoxGeometry(1, 0.03, 0.11),
-  new THREE.MeshStandardMaterial({ color: 0x22301f, roughness: 1, flatShading: true, emissive: 0x080c07 }),
-  2,
-  () => ({
-    x: wrackX(), z: zSpan(), y: 0.018,
-    rot: new THREE.Euler(0, Math.random() * Math.PI * 2, 0),
-    scale: new THREE.Vector3(0.7 + Math.random() * 1.9, 1, 0.6 + Math.random() * 1.6),
-  })
-);
+// (bladder-wrack and kelp removed — the wrack scatter looked bad)
 // scallop / clam shells, pale against the dark sand
 scatter(
   new THREE.ConeGeometry(0.5, 0.22, 7),
@@ -1450,17 +1429,6 @@ scatter(
     x: 0.9 + Math.random() * 4.0, z: zSpan(), y: 0.02,
     rot: new THREE.Euler(Math.PI / 2 + (Math.random() - 0.5) * 0.6, Math.random() * Math.PI * 2, 0),
     scale: new THREE.Vector3(s, s * 1.6, s),
-  }; }
-);
-// water-worn pebbles
-scatter(
-  new THREE.DodecahedronGeometry(0.5, 0),
-  new THREE.MeshStandardMaterial({ color: 0x4c5464, roughness: 1, flatShading: true, emissive: 0x161b25 }),
-  4,
-  () => { const s = 0.05 + Math.random() * 0.11; return {
-    x: 0.6 + Math.random() * 4.8, z: zSpan(), y: s * 0.45,
-    rot: new THREE.Euler(Math.random() * 3, Math.random() * 3, Math.random() * 3),
-    scale: new THREE.Vector3(s, s * 0.7, s * (0.8 + Math.random() * 0.5)),
   }; }
 );
 // driftwood — planks and gnarled branches
@@ -1615,156 +1583,9 @@ function makeRockGeo(seed = 1, detail = 1, lumpiness = 0.34) {
 // The scattered rocks are the real models now — the procedural ones read as
 // lumps. Four builds, each with its own albedo, instanced through the same
 // tiling scatter() so they run the length of the beach.
-// Rocks come ashore in groups — an outcrop with smaller stones shed around
-// it, and clean sand between. Sprinkling the same number uniformly is what
-// made the beach read as carpeted, so the count stays low and the placement
-// does the work. Every rock pack draws from the same clusters, so a group is
-// a mix of scans rather than several independent sprinklings.
-const rockClusters = Array.from({ length: 3 }, () => ({
-  x: 1.1 + Math.random() * 9.0,
-  z: zSpan(),
-  r: 1.5 + Math.random() * 3.0,
-}));
-const placeRock = () => {
-  if (Math.random() > 0.78) {                 // the odd stray, well away
-    return { x: Math.random() < 0.55 ? 1.2 + Math.random() * 5.0 : 6.5 + Math.random() * 7.0, z: zSpan() };
-  }
-  const c = rockClusters[(Math.random() * rockClusters.length) | 0];
-  const a = Math.random() * Math.PI * 2;
-  const d = Math.pow(Math.random(), 0.65) * c.r;   // dense in the middle
-  return {
-    x: THREE.MathUtils.clamp(c.x + Math.cos(a) * d, 0.9, 12.5),
-    z: c.z + Math.sin(a) * d,
-  };
-};
-// Stone near the waterline is wet: darker, and colder in tone. The band sits
-// just landward of the shore, since anything seaward is discarded by
-// clipAtShore() anyway.
-const wetTint = (x) => {
-  const wet = THREE.MathUtils.clamp(1 - (x - 1.0) / 4.5, 0, 1);
-  return new THREE.Color(1 - wet * 0.34, 1 - wet * 0.31, 1 - wet * 0.22);
-};
-
-loadGeoPack('assets/rocks.json').then((geos) => {
-  const keys = Object.keys(geos);
-  const tex = {
-    rock01: 'assets/tex/rock01.jpg', rock06: 'assets/tex/rock06.jpg',
-    rock11: 'assets/tex/rock11.jpg', rock16: 'assets/tex/rock16.jpg',
-  };
-  // Sparse on purpose — the beach was carpeted before. Sparser still now the
-  // scanned rocks are in: this pack is the small shingle around them, and the
-  // big shapes are left to the scans, which hold up far better up close.
-  const bands = [
-    { n: 2, lo: 0.14, hi: 0.34 },
-    { n: 1, lo: 0.26, hi: 0.55 },
-    { n: 1, lo: 0.45, hi: 0.85 },
-    { n: 1, lo: 0.30, hi: 0.70 },
-  ];
-  keys.forEach((k, gi) => {
-    const map = retroTex(texLoader.load(tex[k] || tex.rock01), { repeatWrap: false });
-    map.colorSpace = THREE.SRGBColorSpace;
-    const mat = new THREE.MeshStandardMaterial({
-      map, color: 0x8d95a4, roughness: 1, metalness: 0,
-      emissive: 0x141820, emissiveMap: map, flatShading: true,
-    });
-    const b = bands[gi % bands.length];
-    scatter(geos[k], mat, b.n, () => {
-      const sc = b.lo + Math.random() * (b.hi - b.lo);
-      const sink = -sc * 0.12;          // bedded, not resting on the surface
-      const p = placeRock();
-      return {
-        x: p.x, z: p.z, y: sink,
-        color: wetTint(p.x),
-        // spin freely on Y but barely tilt, so they sit flush instead of
-        // standing on edge, and bed them a little into the sand
-        rot: new THREE.Euler((Math.random() - 0.5) * 0.12, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.12),
-        scale: new THREE.Vector3(sc, sc * (0.5 + Math.random() * 0.3), sc * (0.85 + Math.random() * 0.4)),
-      };
-    });
-  });
-}).catch(() => {});
-
-// The scanned beach props. Photogrammetry, so the silhouette is only half of
-// it — the baked albedo is what makes them read as real stone, which is why
-// these keep their UVs where the earlier packs didn't. Decimated to a few
-// hundred triangles each by tools/gltfrocks.py; see README for credits.
-const scannedProps = [
-  { url: 'assets/rock-a.json', tex: 'assets/tex/rock-a.jpg', n: 1,
-    nrm: 'assets/tex/rock-a-n.png', nscale: 0.75,
-    tint: 0x8d95a4, lo: 1.1, hi: 2.6, bed: 0.40 },        // the big beach rock
-  { url: 'assets/rock-b.json', tex: 'assets/tex/rock-b.jpg', n: 1,
-    tint: 0x8a92a1, lo: 0.9, hi: 2.0, bed: 0.38 },        // a low rocky patch
-];
-for (const sp of scannedProps) {
-  loadGeoPack(sp.url).then((geos) => {
-    const map = retroTex(texLoader.load(sp.tex), { repeatWrap: false });
-    map.colorSpace = THREE.SRGBColorSpace;
-    const mat = new THREE.MeshStandardMaterial({
-      map, color: sp.tint, roughness: 1, metalness: 0,
-      emissive: 0x141820, emissiveMap: map, flatShading: true, side: THREE.DoubleSide,
-    });
-    // The scan ships a normal map, and at 200-odd triangles the mesh has none
-    // of its own detail left — this is what puts the pitting back. It stays in
-    // linear space: tagging a normal map as sRGB bends every normal it holds.
-    if (sp.nrm) {
-      mat.normalMap = retroTex(texLoader.load(sp.nrm), { repeatWrap: false });
-      mat.normalScale = new THREE.Vector2(sp.nscale, sp.nscale);
-    }
-    for (const geo of Object.values(geos)) {
-      geo.computeBoundingBox();
-      const geoH = Math.max(0.02, geo.boundingBox.max.y);   // sits on y=0
-      scatter(geo, mat, sp.n, () => {
-        const sc = sp.lo + Math.random() * (sp.hi - sp.lo);
-        const sy = sc * (0.72 + Math.random() * 0.3);
-        const p = placeRock();
-        return {
-          x: p.x, z: p.z,
-          // Bed it by a fraction of its own HEIGHT. These are beach rocks —
-          // roughly a third as tall as they are wide — so sinking them by a
-          // fraction of their width, which is what the older packs do, buries
-          // them completely.
-          y: -geoH * sy * sp.bed - 0.04,
-          // wet down by the water, plus a little jitter so six rocks drawn
-          // from three meshes don't read as three meshes
-          color: wetTint(p.x).multiplyScalar(0.86 + Math.random() * 0.28),
-          // free to spin, barely allowed to tilt — a scan stood on its side
-          // is the single most obvious way to make a beach look wrong
-          rot: new THREE.Euler((Math.random() - 0.5) * 0.10,
-                               Math.random() * Math.PI * 2,
-                               (Math.random() - 0.5) * 0.10),
-          scale: new THREE.Vector3(sc, sy, sc),
-        };
-      });
-    }
-  }).catch(() => {});
-}
-
-// Wrack along the tideline, scanned. Two of the three parts come out as flat
-// mats and the third as a heaped clump — and a flat mat is exactly what weed
-// lying on a beach looks like, so both are kept and only the bedding differs.
-loadGeoPack('assets/seaweed.json').then((geos) => {
-  const map = retroTex(texLoader.load('assets/tex/seaweed.jpg'), { repeatWrap: false });
-  map.colorSpace = THREE.SRGBColorSpace;
-  const mat = new THREE.MeshStandardMaterial({
-    map, color: 0xa3ab92, roughness: 1, metalness: 0,
-    emissive: 0x1a201a, emissiveMap: map, flatShading: true,
-  });
-  for (const geo of Object.values(geos)) {
-    geo.computeBoundingBox();
-    const geoH = Math.max(0.02, geo.boundingBox.max.y);
-    scatter(geo, mat, 2, () => {
-      const sc = 0.8 + Math.random() * 1.0;
-      const sy = sc * (0.7 + Math.random() * 0.4);
-      const x = wrackX() + (Math.random() - 0.5) * 1.8;
-      return {
-        x, z: zSpan(), y: -geoH * sy * 0.34,
-        color: wetTint(x).multiplyScalar(0.85 + Math.random() * 0.3),
-        rot: new THREE.Euler(0, Math.random() * Math.PI * 2, 0),
-        scale: new THREE.Vector3(sc, sy, sc),
-      };
-    });
-  }
-}).catch(() => {});
+// The beach rocks are separate world props now (see the low-poly rock pack
+// further down): placed rare, flush with the sand, jumpable, and never
+// clipped at the shore so the tide can't hide them.
 
 // ------------------------------------------------------------------
 // Ground decals — footprints + dig holes (instanced pools)
@@ -2521,7 +2342,7 @@ window.addEventListener('keydown', (e) => {
     else if (menuOpen) closeMenu();
     else if (fallbackLook) openMenu();
   } else if (e.code === 'KeyE' || e.code === 'KeyF') { primaryAction(); }
-  else if (e.code === 'KeyG') { if (held) dropHeld(); }
+  else if (e.code === 'KeyG') { if (held) dropHeld(); else if (equipped) dropEquipped(); }
   else if (e.code === 'KeyQ') { if (inspecting) closeInspect(); else if (equipped) toggleEquip(equipped); }
   else if (/^Digit[1-6]$/.test(e.code)) { useSlot(+e.code.slice(5) - 1); }
 });
@@ -2762,6 +2583,10 @@ function addInteractable(root, label, kind, data) {
   root.traverse((o) => { if (o.isMesh) meshes.push(o); });
   interactables.push({ root, label, kind, meshes, ...data });
 }
+function removeInteractable(root) {
+  const i = interactables.findIndex((it) => it.root === root);
+  if (i >= 0) interactables.splice(i, 1);
+}
 const kbd = (k) => `<span class="key">${k}</span>`;
 let promptHTML = '';
 function setPrompt(html) {
@@ -2797,7 +2622,10 @@ function updateHover() {
   } else if (equipped && equipped.onDig && digT <= 0 && crosshairGroundPoint()) {
     const onMound = !inWater(_digHit.x, _digHit.z) && moundAt(_digHit.x, _digHit.z);
     crosshair.className = 'active';
-    setPrompt(kbd('LMB') + (onMound ? 'Dig up the mound' : 'Dig here'));
+    setPrompt(kbd('LMB') + (onMound ? 'Dig up the mound' : 'Dig here') + ' &nbsp;&nbsp; ' + kbd('G') + 'Drop');
+  } else if (equipped) {
+    crosshair.className = '';
+    setPrompt(kbd('G') + 'Drop ' + equipped.name.toLowerCase());
   } else {
     crosshair.className = '';
     setPrompt('');
@@ -2885,6 +2713,55 @@ function grab(prop) {
 function dropHeld() {
   if (!held) return;
   held.held = false; held.vel.multiplyScalar(0.3); held = null;
+}
+// Drop the equipped inventory item onto the sand in front of you. It builds
+// a world model from the item's own factory (worldFactory) or, failing that,
+// a clone of its viewmodel, registers a fresh 'take it back' interactable,
+// and pulls the item out of the pack. Picking it up re-adds and re-equips.
+const _dropDir = new THREE.Vector3();
+function dropEquipped() {
+  const item = equipped;
+  if (!item) return;
+  let m = null;
+  if (item.worldFactory) {
+    m = item.worldFactory();
+  } else if (item.viewmodel) {
+    m = item.viewmodel.clone(true);
+    m.traverse((o) => { o.visible = true; });
+    m.scale.multiplyScalar(item.dropScale || 1);
+  } else {
+    // a use-item with no world model (note, jar, buried thing) — drop it as a
+    // small wrapped parcel so it still leaves the pack and can be picked back up
+    m = new THREE.Group();
+    const box = new THREE.Mesh(
+      new THREE.BoxGeometry(0.16, 0.11, 0.12),
+      new THREE.MeshStandardMaterial({ color: 0x6a6256, roughness: 1, flatShading: true, emissive: 0x1c1a15 }));
+    const tie = new THREE.Mesh(
+      new THREE.BoxGeometry(0.17, 0.12, 0.03),
+      new THREE.MeshStandardMaterial({ color: 0x2e2a22, roughness: 1, flatShading: true, emissive: 0x0c0b08 }));
+    box.castShadow = false; m.add(box, tie);
+  }
+  if (!m) return;
+  camera.getWorldDirection(_dropDir); _dropDir.y = 0;
+  if (_dropDir.lengthSq() < 1e-4) _dropDir.set(0, 0, -1); else _dropDir.normalize();
+  const dx = THREE.MathUtils.clamp(camera.position.x + _dropDir.x * 1.1, WADE_X + 0.4, CLIFF_BLOCK_X - 0.4);
+  const dz = camera.position.z + _dropDir.z * 1.1;
+  m.position.set(dx, 0.04, dz);
+  m.rotation.y = Math.random() * Math.PI * 2;
+  scene.add(m);
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy'; m.add(hit);
+  removeFromInventory(item);
+  addInteractable(m, 'Take the ' + item.name.toLowerCase(), 'inventory', {
+    onActivate: () => {
+      scene.remove(m); removeInteractable(m); hovered = null;
+      sfxThud(0.02);
+      addToInventory(item);
+      if (item.viewmodel) toggleEquip(item);
+    },
+  });
+  sfxThud(0.03);
 }
 function throwHeld() {
   if (!held) return;
