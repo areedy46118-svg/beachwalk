@@ -2,8 +2,11 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 /* ------------------------------------------------------------------ *
- *  Storm drain outfall — the concrete pipe that comes out of the dune
- *  behind you, and what somebody has made of the chamber at the end.
+ *  The drainage tunnel home — the concrete outfall that comes out of the
+ *  dune behind you, and what somebody has made of the chamber at the end.
+ *
+ *  Distinct from the tunnel in the sand wall further down the beach: that
+ *  one is a dug corridor (TUN_* in main.js), this is a storm drain.
  *
  *  Local frame:  the bore runs +X into the land, mouth face at x = 0,
  *  +Y up, Z across.  The walkable invert sits at y ≈ NAV.floorY.
@@ -243,9 +246,9 @@ function rustStainTex() {
   return t;
 }
 
-export function makeDrainTunnel(opts = {}) {
+export function makeDrainageTunnelHome(opts = {}) {
   const T = new THREE.Group();
-  T.name = 'drainTunnel';
+  T.name = 'drainageTunnelHome';
 
   const boreTex = concreteTex(128, 128, { base: '#575a5b', damp: 0.6, graffiti: true });
   boreTex.repeat.set(6, 2);

@@ -182,10 +182,6 @@ castle, crab, `startDig`, `toggleEquip`, `openMenu`, `openInspect`, `showEnd`,
 
 ## Credits
 
-**Lowpoly Rocks - 3** — the rocks along the beach and the headland.
-["Lowpoly Rocks - 3"](https://sketchfab.com/3d-models/lowpoly-rocks-3)
-by [Loïc Norgeot](https://sketchfab.com/norgeotloic), [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
-
 **Grass pack (lowpoly, game-ready)** — the grass on the headland.
 ["Grass pack (lowpoly, game-ready)"](https://sketchfab.com/3d-models/grass-pack-lowpoly-game-ready)
 by [LOLIPOP](https://sketchfab.com/lolipop_1707), [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
@@ -197,26 +193,3 @@ by [LOLIPOP](https://sketchfab.com/lolipop_1707), [CC-BY-4.0](http://creativecom
 by [TwilightFox](https://sketchfab.com/twilightfox), under the
 [Sketchfab Standard licence](https://sketchfab.com/licenses) — commercial use
 and derivative works allowed.
-
-
-**Abandoned lighthouse_Draft** — the tower, keeper's house and ruined wall on
-the headland.
-
-This work is based on
-["Abandoned lighthouse_Draft"](https://sketchfab.com/3d-models/abandoned-lighthouse-draft-cdb4171ed4414995a62962ed0b751e9f)
-by [jonnysniper41](https://sketchfab.com/jonnysniper41)
-licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
-Commercial use is allowed; the credit has to stay.
-
-
-** — the dead specimen on the
-beach at z −134.
-
-This work is based on
-["Japanese Giant Spider Crabs (NHMW-ZOO-CR-4381)"](https://sketchfab.com/3d-models/japanese-giant-spider-crabs-nhmw-zoo-cr-4381-043bf5f9f40a49ab87ce306a2d8c7b54)
-by [Natural History Museum Vienna](https://sketchfab.com/NHMWien)
-licensed under [CC-BY-NC-4.0](http://creativecommons.org/licenses/by-nc/4.0/).
-
-> **NC means non-commercial.** This model can stay in the game as long as the
-> game is never sold, monetised or bundled with anything that is. If Beachwalk
-> is ever released for money, this asset has to come out first.

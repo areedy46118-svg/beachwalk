@@ -81,9 +81,13 @@ drag-to-rotate dev viewer. Factories `import * as THREE from 'three'`, return a
 exception to the flat-shaded retro look because they're hero props seen up
 close. The syringe and jar carry `userData.setFill(t)` + `userData.parts`.
 
-**The storm drain.** `models/drain-tunnel.js` → `makeDrainTunnel()`, placed at
-`DRAIN_X` (= `CLIFF_BLOCK_X`) / `DRAIN_Z` — behind you when you spawn. It is a
-**fixed world object** like the lighthouse, and three things make it work:
+**The drainage tunnel home.** `models/drainage-tunnel-home.js` →
+`makeDrainageTunnelHome()`, placed at
+`DRAIN_X` (= `CLIFF_BLOCK_X`) / `DRAIN_Z` — behind you when you spawn. Not to
+be confused with the **tunnel in the sand wall** (`tunnel`, `insideTunnel`,
+`TUN_*`, `updateTunnelBounds()`), a separate dug corridor further down the
+walk; the two are independent and their identifiers do not overlap. This one
+is a **fixed world object** like the lighthouse, and three things make it work:
 
 - The cliff is *cut open* at the mouth by a **world-space discard** injected
   into `cliff.material.onBeforeCompile` — world space, because the cliff is
@@ -229,21 +233,56 @@ had to be moved for this reason.
 volume slider and the master volume, which is how digging ended up deafening.
 Music is the deliberate exception.
 
-**The scanned lighthouse dictates every dimension.** `assets/lighthouse.bwmesh`
-is a closed, coarse 20-sided tower: 31.9 m tall, base flaring to r4.96 with
-its +Z face at r4.57, shaft tapering r3.9 → r2.4, clear bore r2.8 → r2.06,
-and above y≈26.5 nothing but a thin mast — no lantern room, no openings.
-Anything built to meet it must use those numbers (`LH_*` at the top of
-`main.js`), or it will float in mid-air or sit buried in the wall. Openings
-are *cut* by dropping triangles whose centroid falls in the hole, and the
-mast is cut the same way; see the carve step in the
-`loadMesh('assets/lighthouse.bwmesh')` handler. The gallery, lantern room and
-roof are built geometry that replaces what the scan lacks.
+**The lighthouse is generated, not imported.** Two profile functions at the
+top of `main.js` define it and everything else is hung off them: `lhOuterAt(y)`
+is the outer face (a splayed base course, then a concave taper r4.35 → r2.45
+at `LH_TOP`) and `lhBoreAt(y)` is the clear inside (r2.55 → r1.90). The shaft
+is two `LatheGeometry` revolutions of those profiles; the gallery, lantern
+room and roof sit on top of them. If you move a wall, move the profile — do
+not hand-place a radius, or the deck and the stair will drift off it again.
 
-**The scan's wall face is not flat.** At the doorway it reads r4.24 at the
-foot, bulges to r4.57, then steps back to r3.6 above head height — so a flat
-door leaf can't sit against it. The entrance has its own projecting stone
-surround, which gives the door one clean plane and hides the cut edge.
+A scanned tower (jonnysniper41's) used to stand here and was dropped in
+Sep 2026. It was a closed 20-sided post with no lantern and no openings, so
+every added part had to be guessed against a shape we didn't control, and the
+door, the corbel and the lantern floor each ended up slightly wrong. Building
+it made all three exact. Don't reintroduce a scan for the tower.
+
+**Openings are cut, not modelled.** `OPENINGS` lists the door and the four
+stair windows in the *game's* angle convention (`atan2(x, z)`, measured from
++Z — the same one `updateTower()` measures the player in), and `carve()` drops
+the triangles whose centroid falls inside one. Note the lathe rings are seeded
+on every opening edge so the cuts come out square. Window angles are stored in
+the cos/sin convention on `lhWindows`, hence the `Math.PI / 2 - w.ang` when
+they cross over; get that backwards and the holes appear on the wrong side.
+
+**The wall is thick.** 1.9 m at the foot, 0.55 m under the lantern, so every
+hole needs a lined reveal (jambs, soffit, sill) or you see straight through
+the cut edge. The door additionally has a projecting stone surround outside.
+
+**Beach rocks are world objects, not debris.** `makeErodedRock()` builds them
+(lobes for the silhouette, hard-cut solution pits for the surface, a shear
+plane for the wave-cut face, flattened base) and they're placed as *formations*
+— 4-7 masses round a shared centre, 90-170 m apart. They deliberately sit
+outside the recentring `debris` tile and outside `clipAtShore()`: they're
+landmarks you can climb, and a real rock stays visible when the tide runs over
+it. `rockColliders[]` gives each mass a cylinder — `rockGroundAt()` to stand on
+it, `pushOutOfRocks()` to keep you out of it — applied in `update()` after
+`updateTower()`, so a rock beats the sand.
+
+**The tunnel is region-clamped, not collided.** The cliff is one mesh that
+snaps back onto the player every `CLIFF_PERIOD`, so a hole cut in it would
+repeat down the whole beach. Instead the bore stands proud of the dune toe at
+`TUN_BORE_X`, the cliff material discards fragments across the mouth in WORLD
+space (same trick as `clipAtShore`), and `updateTunnelBounds()` clamps you to a
+box for the corridor and a bigger box for the room. `inTunnelMouth()` is what
+lifts `CLIFF_BLOCK_X`, and only down low. The room at the end is a stand-in,
+not the reference model.
+
+**The shovel has two swings.** Left click is the plain dig; holding right winds
+up (`startWind`/`releaseWind`, `WIND_FULL`) and `digPower` 0-1 then scales the
+pose amplitude, the swing duration, the crab kill radius, the trauma, the sand
+thrown and the pitch of the impact sample. `winding` must be cleared on blur or
+the shovel stays over your head.
 
 **The headland scatter respects `onPath()`.** Rocks and grass re-roll their
 position until they're clear of the lane to the door; if you add more props

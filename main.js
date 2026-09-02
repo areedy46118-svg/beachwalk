@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { makeHorseshoeCrab, makeHorseshoeCrabIcon } from './models/horseshoe-crab.js';
 import { makeSyringe, makeSyringeIcon } from './models/syringe.js';
 import { makeBloodJar } from './models/blood-jar.js';
-import { makeDrainTunnel } from './models/drain-tunnel.js';
+import { makeDrainageTunnelHome } from './models/drainage-tunnel-home.js';
 import { makeWaterBottle, makeWaterBottleIcon } from './models/water-bottle.js';
 
 /* ------------------------------------------------------------------ *
@@ -54,6 +54,14 @@ const LH_TOP = 26.2;               // gallery deck = lantern-room floor
 const LH_CUT_Y = 26.45;            // scan is discarded above this
 const LH_RISE = 4.4;               // metres gained per full turn of the stair
 const LH_STAIR_R = 1.42;           // radius of the tread centres
+const LH_PER_TURN = 20;            // treads per full turn
+const LH_STEP = LH_RISE / LH_PER_TURN;   // one riser, 0.22 m
+const LH_TREAD_T = 0.13;           // tread thickness
+// Where the stair meets the gallery, in the game's angle convention. The
+// treads are laid out so height and angle are locked together, so this is
+// derived rather than eyeballed — the hatch in the deck has to be here, and
+// the last attempt at a hatch drifted because it was placed by hand.
+const LH_ARRIVE = ((-(LH_TOP / LH_RISE) * Math.PI * 2) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
 const LH_DOOR_W = 0.72;            // half-width of the doorway
 const LH_DOOR_H = 2.15;
 // the bore narrows as it climbs — keeps the stair and the player off the wall
@@ -63,12 +71,22 @@ function lhBoreAt(y) {
   return THREE.MathUtils.lerp(2.45, 1.90, THREE.MathUtils.clamp((y - 17) / 9, 0, 1));
 }
 
+// Outer face of the wall: a splayed base course, then a slightly concave
+// taper up to the gallery. Paired with the bore above it, the masonry is
+// 1.9 m thick at the foot and 0.55 m under the lantern, which is what makes
+// the doorway read as a tunnel through stone rather than a hole in a shell.
+function lhOuterAt(y) {
+  if (y < 1.1) return 4.62 - 0.27 * (y / 1.1);
+  const t = THREE.MathUtils.clamp((y - 1.1) / (LH_TOP - 1.1), 0, 1);
+  return THREE.MathUtils.lerp(4.35, 2.45, Math.pow(t, 0.82));
+}
+
 const DIG_DUR = 0.8;
 
 // ------------------------------------------------------------------
 // Settings
 // ------------------------------------------------------------------
-const DEFAULT_SETTINGS = { fov: 75, sensitivity: 1, brightness: 1.16, volume: 0.9, musicVolume: 0.5, waveVolume: 0.62, sfxVolume: 0.45, walkSpeed: 1.4, invertY: false };
+const DEFAULT_SETTINGS = { fov: 107, sensitivity: 1, brightness: 1.16, volume: 0.5, musicVolume: 0.32, waveVolume: 0.46, sfxVolume: 0.6, walkSpeed: 1.4, invertY: false };
 let settings = { ...DEFAULT_SETTINGS };
 try { settings = { ...settings, ...JSON.parse(localStorage.getItem('beachwalk.settings') || '{}') }; } catch (e) {}
 function saveSettings() { try { localStorage.setItem('beachwalk.settings', JSON.stringify(settings)); } catch (e) {} }
@@ -225,6 +243,11 @@ function shoreLineJS(z, t) {
 // true when (x,z) is seaward of the waterline — i.e. standing in / over water
 function inWater(x, z) {
   if (onHeadland(x, z)) return false;           // the ridge stands clear of it
+  // The trodden lane up to the lighthouse door is dry ground, even at the
+  // mouth where it meets the sand and a high swash can wash across x = LH_X.
+  // Kept as a plain box here so it needs nothing that's declared further down.
+  const pz = z - LH_Z;
+  if (pz > -3 && pz < 34 && Math.abs(x - LH_X) < 4.6) return false;
   return x < shoreLineJS(z, oceanUniforms.uTime.value) + 0.25;
 }
 
@@ -659,6 +682,7 @@ function loadMesh(url) {
       return geo;
     });
 }
+const lhParts = {};
 const lighthouse = new THREE.Group();
 lighthouse.position.set(LH_X, HL_CREST, LH_Z);
 let lampCore, beamPivot, lanternGlass = null;
@@ -671,16 +695,115 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   const iron  = new THREE.MeshStandardMaterial({ color: 0x23262d, roughness: 0.55, metalness: 0.6, flatShading: true, emissive: 0x0b0d10 });
   const brass = new THREE.MeshStandardMaterial({ color: 0x6b5a32, roughness: 0.45, metalness: 0.7, flatShading: true, emissive: 0x171204 });
 
-  // ---- stand-in shaft, shown only if the scan fails to load -------
-  const fallback = new THREE.Group();
-  {
-    const outer = new THREE.Mesh(new THREE.CylinderGeometry(2.4, LH_OUTER, LH_TOP, 24, 1, true,
-      DOOR_HALF, Math.PI * 2 - DOOR_HALF * 2), stone);
-    outer.position.y = LH_TOP / 2;
-    fallback.add(outer);
+  // ---- the shaft ---------------------------------------------------
+  // Built here rather than imported. The scan this replaces was a coarse
+  // closed post — no opening, no lantern room, and a taper that agreed with
+  // nothing — so the door, the windows and the gallery all had to be guessed
+  // against it and none of them quite landed. Generating it means every one
+  // of those meets the wall exactly where it should, by construction.
+  const stairAngleAt = (y) => (y / LH_RISE) * Math.PI * 2 + Math.PI / 2;
+  for (const y of [5.4, 11.0, 16.6, 22.0]) {
+    lhWindows.push({ y, ang: stairAngleAt(y) - 0.55, w: 0.42, h: 1.15 });
   }
-  lighthouse.add(fallback);
-  lighthouse.userData.shell = [fallback];
+
+  // Openings, in the angle convention updateTower() measures the player in
+  // (from +Z). The door faces +Z, which is where the path arrives.
+  const OPENINGS = [{ ang: 0, halfW: LH_DOOR_W + 0.16, y0: -0.6, y1: LH_DOOR_H, door: true }];
+  for (const w of lhWindows) {
+    OPENINGS.push({ ang: Math.PI / 2 - w.ang, halfW: w.w + 0.05, y0: w.y - w.h, y1: w.y + w.h });
+  }
+
+  // Holes are cut by dropping the triangles whose centroid falls inside one.
+  const carve = (geo) => {
+    const idx = geo.getIndex().array, pos = geo.attributes.position;
+    const keep = [];
+    for (let t = 0; t < idx.length; t += 3) {
+      let cx = 0, cy = 0, cz = 0;
+      for (let k = 0; k < 3; k++) {
+        const v = idx[t + k];
+        cx += pos.getX(v); cy += pos.getY(v); cz += pos.getZ(v);
+      }
+      cx /= 3; cy /= 3; cz /= 3;
+      const a = Math.atan2(cx, cz), r = Math.hypot(cx, cz);
+      let cut = false;
+      for (const o of OPENINGS) {
+        if (cy < o.y0 || cy > o.y1) continue;
+        let da = a - o.ang;
+        if (da > Math.PI) da -= Math.PI * 2;
+        if (da < -Math.PI) da += Math.PI * 2;
+        if (Math.abs(da) * r < o.halfW) { cut = true; break; }
+      }
+      if (!cut) keep.push(idx[t], idx[t + 1], idx[t + 2]);
+    }
+    geo.setIndex(keep);
+  };
+
+  // Damp and dark at the foot, salt-bleached higher up, with vertical
+  // streaking — the same weathering the rest of the walk gets.
+  const weather = (geo) => {
+    const pos = geo.attributes.position;
+    const col = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+      let t = 0.44 + 0.48 * Math.pow(THREE.MathUtils.clamp(y / LH_TOP, 0, 1), 0.65);
+      t *= 0.86 + 0.14 * (0.5 + 0.5 * Math.sin(Math.atan2(z, x) * 9));
+      t *= 0.9 + 0.2 * ((((Math.sin(x * 7.3 + y * 5.1 + z * 6.7) * 43758.5453) % 1) + 1) % 1);
+      t = THREE.MathUtils.clamp(t, 0.18, 1);
+      col[i * 3] = t * 0.95; col[i * 3 + 1] = t * 0.98; col[i * 3 + 2] = t;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  };
+
+  // Rings sit on every opening edge as well as up the taper, so the cuts
+  // come out square instead of ragged.
+  const ringYs = [];
+  for (let y = 0; y <= LH_TOP; y += 0.55) ringYs.push(y);
+  for (const o of OPENINGS) ringYs.push(Math.max(0, o.y0), o.y1, (o.y0 + o.y1) / 2);
+  ringYs.push(LH_TOP);
+  const ys = [...new Set(ringYs.filter((y) => y >= 0 && y <= LH_TOP))].sort((a, b) => a - b);
+
+  const shaftMat = new THREE.MeshStandardMaterial({
+    color: 0x646b78, vertexColors: true, roughness: 1, metalness: 0,
+    emissive: 0x14171d, flatShading: true, side: THREE.DoubleSide });
+  const lathe = (radiusAt) => {
+    const g = new THREE.LatheGeometry(ys.map((y) => new THREE.Vector2(radiusAt(y), y)), 30);
+    carve(g); weather(g); g.computeVertexNormals();
+    return g;
+  };
+  const shaftOut = new THREE.Mesh(lathe(lhOuterAt), shaftMat);
+  const shaftIn = new THREE.Mesh(lathe(lhBoreAt), shaftMat);
+  shaftOut.frustumCulled = shaftIn.frustumCulled = false;
+  lighthouse.add(shaftOut, shaftIn);
+  lhParts.outer = shaftOut; lhParts.inner = shaftIn;
+  lighthouse.userData.shell = [];
+
+  // String courses: three shallow bands round the taper. They cost almost
+  // nothing and they're what stops the silhouette reading as a bare post.
+  for (const by of [7.0, 14.0, 20.5]) {
+    const r = lhOuterAt(by) + 0.09;
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(r - 0.05, r, 0.34, 30), stone);
+    band.position.y = by;
+    lighthouse.add(band);
+  }
+
+  // The doorway is a tunnel through nearly two metres of masonry, so it
+  // needs its jambs and soffit lined or you see the cut edge from inside.
+  {
+    const ym = LH_DOOR_H / 2, rI = lhBoreAt(ym), th = lhOuterAt(ym) - rI;
+    const g = new THREE.Group();
+    for (const sgn of [-1, 1]) {
+      const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.08, LH_DOOR_H + 0.1, th), stone);
+      jamb.position.set(sgn * (LH_DOOR_W + 0.16), ym, rI + th / 2);
+      g.add(jamb);
+    }
+    const soffit = new THREE.Mesh(new THREE.BoxGeometry((LH_DOOR_W + 0.16) * 2 + 0.16, 0.08, th), stone);
+    soffit.position.set(0, LH_DOOR_H, rI + th / 2);
+    g.add(soffit);
+    const thresh = new THREE.Mesh(new THREE.BoxGeometry((LH_DOOR_W + 0.16) * 2 + 0.16, 0.1, th), stone);
+    thresh.position.set(0, 0.05, rI + th / 2);
+    g.add(thresh);
+    lighthouse.add(g);
+  }
 
   // ---- ground floor ----------------------------------------------
   const floor = new THREE.Mesh(new THREE.CylinderGeometry(LH_INNER + 0.2, LH_INNER + 0.2, 0.25, 24),
@@ -693,13 +816,12 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   // tower, and stop at a landing under the gallery hatch.
   const treadMat = new THREE.MeshStandardMaterial({ color: 0x3d4450, roughness: 1, flatShading: true, emissive: 0x191d23 });
   const stairs = new THREE.Group();
-  const stairAngleAt = (y) => (y / LH_RISE) * Math.PI * 2 + Math.PI / 2;
   {
-    const PER_TURN = 20;
-    const stepGeo = new THREE.BoxGeometry(1.30, 0.13, 0.58);
-    const nSteps = Math.floor((LH_TOP - 0.2) / (LH_RISE / PER_TURN));
+    const stepGeo = new THREE.BoxGeometry(1.30, LH_TREAD_T, 0.58);
+    // up to and including the deck, so there's no gap at the last step
+    const nSteps = Math.round(LH_TOP / LH_STEP);
     for (let i = 1; i <= nSteps; i++) {
-      const y = i * (LH_RISE / PER_TURN);
+      const y = i * LH_STEP;
       const a = stairAngleAt(y);
       const st = new THREE.Mesh(stepGeo, treadMat);
       st.position.set(Math.cos(a) * LH_STAIR_R, y, Math.sin(a) * LH_STAIR_R);
@@ -759,15 +881,12 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   // ---- windows up the shaft ---------------------------------------
   // Each is a hole cut clean through the scan (see the loader), lined with
   // a reveal and glazed, set beside the stair so you pass them climbing.
-  for (const y of [5.4, 11.0, 16.6, 22.0]) {
-    lhWindows.push({ y, ang: stairAngleAt(y) - 0.55, w: 0.42, h: 1.15 });
-  }
   for (const w of lhWindows) {
     const g = new THREE.Group();
     g.position.set(Math.cos(w.ang) * 0.1, w.y, Math.sin(w.ang) * 0.1);
     g.rotation.y = Math.atan2(Math.cos(w.ang), Math.sin(w.ang));   // face outward
     // reveal: jambs, sill and head lining the cut, so the wall reads thick
-    const depth = 1.5, rIn = lhBoreAt(w.y) - 0.05;
+    const rIn = lhBoreAt(w.y) - 0.05, depth = Math.max(0.4, lhOuterAt(w.y) - rIn);
     for (const s of [-1, 1]) {
       const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.07, w.h * 2 + 0.12, depth), stone);
       jamb.position.set(s * (w.w + 0.03), 0, rIn + depth / 2);
@@ -801,18 +920,48 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   // The masonry stops here; a deck rings the tower with the lantern
   // sitting inside it, exactly like the real thing.
   const deckMat = new THREE.MeshStandardMaterial({ color: 0x2b2f38, roughness: 1, side: THREE.DoubleSide, emissive: 0x101319 });
-  const deck = new THREE.Mesh(new THREE.CylinderGeometry(3.35, 3.15, 0.22, 28), stone);
-  deck.position.y = LH_TOP - 0.11;
-  const corbel = new THREE.Mesh(new THREE.CylinderGeometry(3.15, 2.45, 0.5, 28), stone);
-  corbel.position.y = LH_TOP - 0.45;
+  // Both of these are rings. They used to be solid cylinders, which capped
+  // the shaft as effectively as a lid: you climbed the whole stair and
+  // arrived under a stone floor with nothing to come up through. The bore
+  // stays open the whole way now, so the stairwell runs into the lantern.
+  // The deck is floor almost all the way in — you need something to stand on
+  // when you step off the last tread — with a hatch cut where the stair comes
+  // up through it. Cutting the hatch at LH_ARRIVE rather than placing it by
+  // eye is the whole point: the previous one was a hand-placed wedge and it
+  // sat a quarter-turn away from where you actually surfaced.
+  const LH_HATCH = 0.55;
+  const cutWedge = (geo, a0, a1) => {
+    const idx = geo.getIndex().array, pos = geo.attributes.position, keep = [];
+    for (let t = 0; t < idx.length; t += 3) {
+      let cx = 0, cz = 0;
+      for (let k = 0; k < 3; k++) { const v = idx[t + k]; cx += pos.getX(v); cz += pos.getZ(v); }
+      let a = Math.atan2(cx / 3, cz / 3) - a0;
+      a = ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+      if (a >= a1 - a0) keep.push(idx[t], idx[t + 1], idx[t + 2]);
+    }
+    geo.setIndex(keep);
+  };
+  const HATCH_A0 = LH_ARRIVE - 0.35, HATCH_A1 = LH_ARRIVE + 0.75;
+  const ringBand = (pts) => new THREE.LatheGeometry(
+    [...pts, pts[0]].map(([r, y]) => new THREE.Vector2(r, y)), 28);
+  const deck = new THREE.Mesh(ringBand([
+    [LH_HATCH, LH_TOP - 0.22], [3.15, LH_TOP - 0.22], [3.35, LH_TOP], [LH_HATCH, LH_TOP],
+  ]), stone);
+  const corbel = new THREE.Mesh(ringBand([
+    [LH_HATCH, LH_TOP - 0.70], [2.45, LH_TOP - 0.70], [3.15, LH_TOP - 0.20], [LH_HATCH, LH_TOP - 0.20],
+  ]), stone);
+  for (const m of [deck, corbel]) cutWedge(m.geometry, HATCH_A0, HATCH_A1);
   lighthouse.add(deck, corbel);
 
   // The scan's cap was cut away with the mast, so the top of the shaft has
   // to be closed here or you'd see straight up to the sky from the floor.
   // Outside the lantern it's the walkway; inside it's the lantern floor,
   // with a wedge left open where the stair comes up.
-  const walk = new THREE.Mesh(new THREE.RingGeometry(1.90, 3.35, 28), deckMat);
-  walk.rotation.x = -Math.PI / 2;
+  // rotation baked in so the hatch can be cut in the same frame as the deck's
+  const walkGeo = new THREE.RingGeometry(LH_HATCH, 3.35, 28, 1);
+  walkGeo.rotateX(-Math.PI / 2);
+  cutWedge(walkGeo, HATCH_A0, HATCH_A1);
+  const walk = new THREE.Mesh(walkGeo, deckMat);
   walk.position.y = LH_TOP + 0.005;
   lighthouse.add(walk);
 
@@ -842,9 +991,15 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
 
   // ---- lantern room -------------------------------------------------
   const LR_R = 1.95, LR_Y0 = LH_TOP + 0.1, LR_H = 3.3;
-  // low plinth the glazing stands on
-  const plinth = new THREE.Mesh(new THREE.CylinderGeometry(LR_R + 0.08, LR_R + 0.08, 0.35, 16), iron);
-  plinth.position.y = LR_Y0 + 0.17;
+  // Low plinth the glazing stands on — a ring, carrying the same hatch as the
+  // deck below it. As a solid disc it was a second lid over the stairwell,
+  // sitting 0.45 m above the one we'd just opened.
+  const plinthGeo = ringBand([
+    [LH_HATCH, LR_Y0], [LR_R + 0.08, LR_Y0],
+    [LR_R + 0.08, LR_Y0 + 0.35], [LH_HATCH, LR_Y0 + 0.35],
+  ]);
+  cutWedge(plinthGeo, HATCH_A0, HATCH_A1);
+  const plinth = new THREE.Mesh(plinthGeo, iron);
   lighthouse.add(plinth);
   // the glass itself
   lanternGlass = new THREE.Mesh(
@@ -909,80 +1064,6 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   lighthouse.add(beamPivot);
 }
 scene.add(lighthouse);
-scene.add(lighthouse);
-
-// The scanned tower. Replaces the stand-in shell once it lands; everything
-// inside is left alone. Weathered to match the rest of the walk: cold damp
-// concrete, streaked and grimy, darker the closer to the ground it gets.
-/* The tower is jonnysniper41's "Abandoned lighthouse_Draft" (CC-BY-4.0, see
- * README). It ships as a whole scene — tower, keeper's house, ruined wall,
- * a rock islet and a water plane — with eleven materials but no textures at
- * all, so restyling it is just a matter of assigning our own.
- *
- * We take the built structures and skip two groups deliberately: the model's
- * water, because we have an ocean, and its rock islet, because we have the
- * headland. What's left drops onto the crest.
- */
-const LH_MODEL_Y = 0;          // tower-only export already sits on the crest
-const lhParts = {};
-const LH_GROUPS = [
-  { name: 'stone', url: 'assets/lh-stone.bwmesh', mat: () => new THREE.MeshStandardMaterial({
-      color: 0x6e737c, vertexColors: true, roughness: 1, metalness: 0,
-      emissive: 0x14171d, flatShading: true, side: THREE.DoubleSide }) },
-  { name: 'glass', url: 'assets/lh-glass.bwmesh', mat: () => new THREE.MeshStandardMaterial({
-      color: 0x9fb8c4, roughness: 0.35, metalness: 0.1, transparent: true, opacity: 0.42,
-      emissive: 0x22323a, flatShading: true, side: THREE.DoubleSide }) },
-];
-for (const grp of LH_GROUPS) {
-  loadMesh(grp.url).then((geo) => {
-    geo.computeBoundingBox();
-    const bb = geo.boundingBox;
-    const pos = geo.attributes.position;
-    // Weathering, in vertex colours: damp and dark at the foot, salt-bleached
-    // higher up, with vertical streaking and a mottle over the top. Same
-    // treatment the rest of the world gets, so it doesn't read as an import.
-    if (grp.name !== 'glass') {
-      const col = new Float32Array(pos.count * 3);
-      const h = Math.max(0.001, bb.max.y - bb.min.y);
-      for (let i = 0; i < pos.count; i++) {
-        const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-        const up = (y - bb.min.y) / h;
-        let t = 0.42 + 0.5 * Math.pow(up, 0.65);
-        t *= 0.84 + 0.16 * (0.5 + 0.5 * Math.sin(Math.atan2(z, x) * 8.0));
-        t *= 0.88 + 0.24 * ((Math.sin(x * 7.3 + y * 5.1 + z * 6.7) * 43758.5453) % 1);
-        t = Math.max(0.16, Math.min(1, t));
-        col[i * 3] = t * 0.95; col[i * 3 + 1] = t * 0.98; col[i * 3 + 2] = t;
-      }
-      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    }
-    if (grp.name === 'stone') {
-      // Cut the entrance. The model's own opening (if it has one) faces
-      // wherever the author put it, which is not where the path arrives, so
-      // we make our own at +Z and let the surround below hide the cut edge.
-      const idx = geo.getIndex().array;
-      const pos = geo.attributes.position;
-      const keep = [];
-      const halfW = LH_DOOR_W + 0.30, top = LH_DOOR_H + 0.35;
-      for (let t = 0; t < idx.length; t += 3) {
-        let cx = 0, cy = 0, cz = 0;
-        for (let k = 0; k < 3; k++) {
-          const v = idx[t + k];
-          cx += pos.getX(v); cy += pos.getY(v); cz += pos.getZ(v);
-        }
-        cx /= 3; cy /= 3; cz /= 3;
-        const inDoor = cz > 0 && Math.abs(cx) < halfW && cy > -0.2 && cy < top;
-        if (!inDoor) keep.push(idx[t], idx[t + 1], idx[t + 2]);
-      }
-      geo.setIndex(keep);
-    }
-    const mesh = new THREE.Mesh(geo, grp.mat());
-    mesh.position.y = LH_MODEL_Y;
-    mesh.frustumCulled = false;
-    lighthouse.add(mesh);
-    lhParts[grp.name] = mesh;
-    for (const o of lighthouse.userData.shell) o.visible = false;
-  }).catch(() => {});
-}
 
 // ------------------------------------------------------------------
 // The headland the lighthouse stands on — boulders and tall grass, so the
@@ -1004,7 +1085,12 @@ function pathHalfAt(z) {
   return PATH_HALF + (PATH_HALF_FAR - PATH_HALF) * t * t;
 }
 // wander the centre line a little so it doesn't read as a runway
-const pathBend = (z) => Math.sin(z * 0.21) * 0.9 + Math.sin(z * 0.07 + 1.3) * 0.6;
+// How far the lane wanders off the straight at a given distance from the door.
+// The wander is faded out over the last stretch: it has to arrive square on
+// the doorway, and without the fade it ran past a metre and a half to one
+// side, which is what made the door look like it wasn't on the path at all.
+const pathBend = (z) => (Math.sin(z * 0.21) * 0.9 + Math.sin(z * 0.07 + 1.3) * 0.6)
+  * THREE.MathUtils.smoothstep(z, 2, 16);
 function onPath(x, z, margin = 0) {
   if (z < -1.5 || z > PATH_LEN + 3) return false;
   return Math.abs(x - pathBend(z)) < pathHalfAt(z) + margin;
@@ -1313,37 +1399,18 @@ function scatter(geo, mat, perTile, place) {
   for (let gz = -half; gz <= half; gz++) for (const it of items) {
     q.setFromEuler(it.rot);
     m.compose(new THREE.Vector3(it.x, it.y, it.z + gz * DEBRIS_TILE), q, it.scale);
+    if (it.color) mesh.setColorAt(idx, it.color);
     mesh.setMatrixAt(idx++, m);
   }
   mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   debris.add(mesh);
   return mesh;
 }
 const zSpan = () => Math.random() * DEBRIS_TILE - DEBRIS_TILE / 2;
 const wrackX = () => 1.4 + Math.random() * 3.4;      // the high-tide band
 
-// clumped bladder-wrack — the bulk of the line
-scatter(
-  new THREE.IcosahedronGeometry(0.5, 0),
-  new THREE.MeshStandardMaterial({ color: 0x2b3226, roughness: 1, flatShading: true, emissive: 0x0a0d08 }),
-  3,
-  () => { const s = 0.35 + Math.random() * 0.75; return {
-    x: wrackX(), z: zSpan(), y: 0.03,
-    rot: new THREE.Euler(0, Math.random() * Math.PI * 2, 0),
-    scale: new THREE.Vector3(s * (1 + Math.random()), s * 0.15, s * (0.6 + Math.random())),
-  }; }
-);
-// long kelp ribbons trailing along the line
-scatter(
-  new THREE.BoxGeometry(1, 0.03, 0.11),
-  new THREE.MeshStandardMaterial({ color: 0x22301f, roughness: 1, flatShading: true, emissive: 0x080c07 }),
-  2,
-  () => ({
-    x: wrackX(), z: zSpan(), y: 0.018,
-    rot: new THREE.Euler(0, Math.random() * Math.PI * 2, 0),
-    scale: new THREE.Vector3(0.7 + Math.random() * 1.9, 1, 0.6 + Math.random() * 1.6),
-  })
-);
+// (bladder-wrack and kelp removed — the wrack scatter looked bad)
 // scallop / clam shells, pale against the dark sand
 scatter(
   new THREE.ConeGeometry(0.5, 0.22, 7),
@@ -1364,17 +1431,6 @@ scatter(
     x: 0.9 + Math.random() * 4.0, z: zSpan(), y: 0.02,
     rot: new THREE.Euler(Math.PI / 2 + (Math.random() - 0.5) * 0.6, Math.random() * Math.PI * 2, 0),
     scale: new THREE.Vector3(s, s * 1.6, s),
-  }; }
-);
-// water-worn pebbles
-scatter(
-  new THREE.DodecahedronGeometry(0.5, 0),
-  new THREE.MeshStandardMaterial({ color: 0x4c5464, roughness: 1, flatShading: true, emissive: 0x161b25 }),
-  4,
-  () => { const s = 0.05 + Math.random() * 0.11; return {
-    x: 0.6 + Math.random() * 4.8, z: zSpan(), y: s * 0.45,
-    rot: new THREE.Euler(Math.random() * 3, Math.random() * 3, Math.random() * 3),
-    scale: new THREE.Vector3(s, s * 0.7, s * (0.8 + Math.random() * 0.5)),
   }; }
 );
 // driftwood — planks and gnarled branches
@@ -1529,60 +1585,256 @@ function makeRockGeo(seed = 1, detail = 1, lumpiness = 0.34) {
 // The scattered rocks are the real models now — the procedural ones read as
 // lumps. Four builds, each with its own albedo, instanced through the same
 // tiling scatter() so they run the length of the beach.
-loadGeoPack('assets/rocks.json').then((geos) => {
-  const keys = Object.keys(geos);
-  const tex = {
-    rock01: 'assets/tex/rock01.jpg', rock06: 'assets/tex/rock06.jpg',
-    rock11: 'assets/tex/rock11.jpg', rock16: 'assets/tex/rock16.jpg',
+// ------------------------------------------------------------------
+// Beach rocks — irregular eroded formations
+// ------------------------------------------------------------------
+/* The reference is a limestone shelf worn into pits, lips and overhangs, and
+ * it comes in GROUPS — a formation with sand running between the masses —
+ * never a lone lump. So a formation is 3-7 masses sharing a centre, and each
+ * mass is an icosphere pushed about by four things: broad lopsidedness so no
+ * two read alike, horizontal strata, erosion pits gouged in from random
+ * directions, and a flattened base so it sits ON the sand rather than over it.
+ *
+ * These are fixed world objects, deliberately NOT part of the recentring
+ * `debris` tile and NOT clipped at the shoreline: they're landmarks you can
+ * climb, they carry collision, and a real rock stays visible when the tide
+ * runs over it.
+ */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-  // Sparse on purpose — the beach was carpeted before.
-  const bands = [
-    { n: 2, lo: 0.16, hi: 0.40 },
-    { n: 2, lo: 0.30, hi: 0.70 },
-    { n: 1, lo: 0.55, hi: 1.2 },
-    { n: 1, lo: 1.0, hi: 2.0 },         // the occasional boulder
-  ];
-  keys.forEach((k, gi) => {
-    const map = retroTex(texLoader.load(tex[k] || tex.rock01), { repeatWrap: false });
-    map.colorSpace = THREE.SRGBColorSpace;
-    const mat = new THREE.MeshStandardMaterial({
-      map, color: 0x8d95a4, roughness: 1, metalness: 0,
-      emissive: 0x141820, emissiveMap: map, flatShading: true,
-    });
-    const b = bands[gi % bands.length];
-    scatter(geos[k], mat, b.n, () => {
-      const sc = b.lo + Math.random() * (b.hi - b.lo);
-      const sink = -sc * 0.12;          // bedded, not resting on the surface
-      // thickest along the wrack line, thinning toward the water
-      const x = Math.random() < 0.55 ? 1.2 + Math.random() * 5.0 : 6.5 + Math.random() * 7.0;
-      return {
-        x, z: zSpan(), y: sink,
-        // spin freely on Y but barely tilt, so they sit flush instead of
-        // standing on edge, and bed them a little into the sand
-        rot: new THREE.Euler((Math.random() - 0.5) * 0.12, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.12),
-        scale: new THREE.Vector3(sc, sc * (0.5 + Math.random() * 0.3), sc * (0.85 + Math.random() * 0.4)),
-      };
-    });
+}
+
+function makeErodedRock(seed, detail = 3) {
+  const rnd = mulberry32(seed);
+  const g = new THREE.IcosahedronGeometry(0.5, detail);
+  const pos = g.attributes.position;
+  const v = new THREE.Vector3(), d = new THREE.Vector3();
+
+  // broad lobes give the silhouette its lopsidedness
+  const lobes = Array.from({ length: 3 + Math.floor(rnd() * 2) }, () => ({
+    dir: new THREE.Vector3(rnd() * 2 - 1, rnd() * 0.8 - 0.2, rnd() * 2 - 1).normalize(),
+    amp: 0.20 + rnd() * 0.34,
+    tight: 1.0 + rnd() * 1.6,
+  }));
+  /* Erosion. This is the whole character of the reference: solution pits and
+   * hollows bitten deep into the stone, leaving lips and overhangs between
+   * them. Shallow noise gives you a crumpled ball, so the pits are cut hard —
+   * a lot of them, deep, with a tight falloff so each one has an edge. */
+  const pits = Array.from({ length: 10 + Math.floor(rnd() * 7) }, () => ({
+    dir: new THREE.Vector3(rnd() * 2 - 1, rnd() * 1.6 - 0.35, rnd() * 2 - 1).normalize(),
+    amp: 0.16 + rnd() * 0.30,
+    tight: 7 + rnd() * 20,
+  }));
+  const strataPhase = rnd() * 6.28, strataFreq = 6 + rnd() * 10;
+  const squash = 0.52 + rnd() * 0.34;          // beach rock is wider than tall
+  // a wave-cut face: one side sheared off flat, the way a shelf breaks
+  const shear = new THREE.Vector3(rnd() * 2 - 1, 0.15 + rnd() * 0.3, rnd() * 2 - 1).normalize();
+  const shearAt = 0.34 + rnd() * 0.20;
+
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    d.copy(v).normalize();
+    let r = 1;
+    for (const l of lobes) r += l.amp * Math.pow(Math.max(0, d.dot(l.dir)), l.tight);
+    for (const p of pits) r -= p.amp * Math.pow(Math.max(0, d.dot(p.dir)), p.tight);
+    r *= 1 + 0.075 * Math.sin(v.y * strataFreq + strataPhase);   // bedding planes
+    // sharp ridge noise — abs() of a sine leaves creases, not swells
+    r *= 0.90 + 0.13 * Math.abs(Math.sin(d.x * 7.1 + d.z * 5.9 + seed));
+    r *= 0.94 + 0.10 * Math.abs(Math.sin(d.y * 11.3 + d.x * 9.7 - seed * 2));
+    v.multiplyScalar(Math.max(0.30, r));
+    v.y *= squash;
+    // shear the exposed face flat
+    const sd = v.dot(shear);
+    if (sd > shearAt) v.addScaledVector(shear, -(sd - shearAt));
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  // sit it flat: everything below the cut is pressed onto one plane, so the
+  // rock meets the sand along an edge instead of balancing on a curve
+  const cut = -0.5 * squash * 0.42;
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i);
+    if (y < cut) pos.setY(i, cut);
+  }
+  g.computeVertexNormals();
+  g.computeBoundingBox();
+  const bb = g.boundingBox;
+  // translate so the flattened base is exactly y = 0
+  g.translate(0, -bb.min.y, 0);
+  g.computeBoundingBox();
+
+  // weathering in vertex colours: dark and damp in the crevices, bleached on
+  // the up-faces where the moon catches, plus a mottle so it isn't uniform
+  const nrm = g.attributes.normal;
+  const col = new Float32Array(pos.count * 3);
+  const h = Math.max(0.001, g.boundingBox.max.y);
+  for (let i = 0; i < pos.count; i++) {
+    const up = Math.max(0, nrm.getY(i));
+    const yy = pos.getY(i) / h;
+    let t = 0.36 + 0.42 * Math.pow(up, 0.8) + 0.20 * yy;
+    t *= 0.86 + 0.20 * Math.abs(Math.sin(pos.getX(i) * 9.1 + pos.getZ(i) * 7.7 + seed));
+    t = THREE.MathUtils.clamp(t, 0.16, 1);
+    col[i * 3] = t * 0.99; col[i * 3 + 1] = t * 0.98; col[i * 3 + 2] = t;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return g;
+}
+
+const rockMatBeach = new THREE.MeshStandardMaterial({
+  color: 0x7c8496, vertexColors: true, roughness: 1, metalness: 0,
+  emissive: 0x161a22, flatShading: true,
+});
+
+/* Collision. The game has no mesh collision, so each mass registers a
+ * cylinder: stand on it when your feet clear the top, and get pushed out of
+ * it when they don't. Cheap, and for rounded boulders it's honest enough. */
+const rockColliders = [];
+const rockGroup = new THREE.Group();
+scene.add(rockGroup);
+
+function placeRockMass(seed, wx, wz, scale, tilt) {
+  const geo = makeErodedRock(seed, scale > 1.4 ? 3 : 2);
+  const m = new THREE.Mesh(geo, rockMatBeach);
+  const sy = scale * (0.82 + mulberry32(seed * 7 + 3)() * 0.4);
+  m.scale.set(scale, sy, scale);
+  m.position.set(wx, -0.10, wz);              // bedded, so the base edge is buried
+  m.rotation.set(tilt.x, tilt.y, tilt.z);
+  m.frustumCulled = false;
+  rockGroup.add(m);
+  const bb = geo.boundingBox;
+  const rad = Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) * 0.5 * scale;
+  rockColliders.push({
+    x: wx, z: wz,
+    r: rad * 0.86,                            // inside the silhouette, so you
+    top: -0.10 + bb.max.y * sy,               // never stand on thin air
   });
-}).catch(() => {});
+  return m;
+}
+
+/* Formations, laid down the length of the walk. Rare on purpose — the beach
+ * was carpeted once and that is not worth repeating — so they're 90-170 m
+ * apart and each one is a landmark rather than scenery. */
+{
+  const rnd = mulberry32(20260901);
+  let z = -30, seed = 1;
+  while (z > -1120) {
+    // the formation's own centre, and how spread out its masses are
+    const cx = 0.6 + rnd() * 8.0;
+    const spread = 2.4 + rnd() * 4.0;
+    const n = 4 + Math.floor(rnd() * 4);
+    const big = 2.2 + rnd() * 2.9;            // the formation's dominant mass
+    for (let i = 0; i < n; i++) {
+      // the first mass is the big one; the rest shed around it, smaller
+      const t = i === 0 ? 0 : 0.35 + rnd() * 0.65;
+      const a = rnd() * Math.PI * 2;
+      const dd = i === 0 ? 0 : Math.pow(rnd(), 0.6) * spread;
+      const mx = THREE.MathUtils.clamp(cx + Math.cos(a) * dd, WADE_X + 0.6, CLIFF_BLOCK_X - 0.8);
+      const mz = z + Math.sin(a) * dd;
+      if (headlandAt(mx, mz) > 0.15) continue;      // never on the ridge
+      const sc = big * (i === 0 ? 1 : 0.26 + t * 0.46);
+      placeRockMass(seed++, mx, mz, sc, {
+        x: (rnd() - 0.5) * 0.13,
+        y: rnd() * Math.PI * 2,
+        z: (rnd() - 0.5) * 0.13,
+      });
+    }
+    z -= 90 + rnd() * 80;
+  }
+}
+
+/* Standing on them. Called after updateTower() has set groundY from the sand
+ * or the headland; a rock under your feet simply wins. */
+const ROCK_STEP = 0.42;                 // how high a lip you can walk straight up
+function rockGroundAt(x, z, feetY) {
+  let best = null;
+  for (const c of rockColliders) {
+    const dx = x - c.x, dz = z - c.z;
+    if (dx * dx + dz * dz > c.r * c.r) continue;
+    if (feetY >= c.top - ROCK_STEP && (!best || c.top > best.top)) best = c;
+  }
+  return best;
+}
+function pushOutOfRocks(feetY) {
+  for (const c of rockColliders) {
+    if (feetY >= c.top - 0.06) continue;        // above it: that's a floor, not a wall
+    const dx = camera.position.x - c.x, dz = camera.position.z - c.z;
+    const rr = c.r + PLAYER_R * 0.6;
+    const d2 = dx * dx + dz * dz;
+    if (d2 >= rr * rr || d2 < 1e-6) continue;
+    const d = Math.sqrt(d2);
+    camera.position.x = c.x + (dx / d) * rr;
+    camera.position.z = c.z + (dz / d) * rr;
+  }
+}
 
 // ------------------------------------------------------------------
 // Ground decals — footprints + dig holes (instanced pools)
 // ------------------------------------------------------------------
 function makeFootTexture() {
-  const c = document.createElement('canvas'); c.width = c.height = 128;
+  // A pressed barefoot print in soft sand: heel, a narrowed arch, the ball,
+  // and five toe pads — drawn as a shallow pit (dark, soft-edged) with a
+  // moon-lit lip of pushed-up sand along the lower-right and a shadow along
+  // the upper-left. The print points up the canvas; stampFoot() spins it to
+  // the heading and mirrors it left/right per step.
+  const S = 128;
+  const c = document.createElement('canvas'); c.width = c.height = S;
   const g = c.getContext('2d');
-  const dk = (cx, cy, rx, ry, a0) => {
-    const grad = g.createRadialGradient(cx, cy, 0, cx, cy, Math.max(rx, ry));
-    grad.addColorStop(0, `rgba(0,1,3,${a0})`); grad.addColorStop(0.6, `rgba(2,4,8,${a0 * 0.55})`); grad.addColorStop(1, 'rgba(2,4,8,0)');
-    g.fillStyle = grad; g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); g.fill();
+
+  const sole = new Path2D();
+  sole.moveTo(52, 110);
+  sole.bezierCurveTo(33, 106, 28, 86, 35, 70);
+  sole.bezierCurveTo(39, 57, 41, 45, 52, 34);
+  sole.bezierCurveTo(59, 26, 77, 26, 84, 37);
+  sole.bezierCurveTo(90, 48, 85, 61, 81, 74);
+  sole.bezierCurveTo(79, 88, 75, 105, 62, 110);
+  sole.closePath();
+
+  const pit = (px, py, r, a) => {
+    const rg = g.createRadialGradient(px, py, 0, px, py, r);
+    rg.addColorStop(0, `rgba(0,1,3,${a})`);
+    rg.addColorStop(0.65, `rgba(3,5,10,${a * 0.5})`);
+    rg.addColorStop(1, 'rgba(3,5,10,0)');
+    g.fillStyle = rg; g.beginPath(); g.arc(px, py, r, 0, 7); g.fill();
   };
-  dk(64, 46, 30, 34, 0.7); dk(64, 50, 22, 26, 0.95); dk(64, 96, 17, 19, 0.9); dk(64, 74, 12, 22, 0.7);
-  const rim = g.createLinearGradient(0, 6, 0, 46);
-  rim.addColorStop(0, 'rgba(200,214,236,0.42)'); rim.addColorStop(1, 'rgba(200,214,236,0)');
-  g.strokeStyle = rim; g.lineWidth = 4;
-  g.beginPath(); g.ellipse(64, 48, 27, 31, 0, Math.PI * 1.12, Math.PI * 1.88); g.stroke();
-  return new THREE.CanvasTexture(c);
+
+  g.save();
+  g.clip(sole);
+  g.fillStyle = 'rgba(2,4,9,0.5)'; g.fillRect(0, 0, S, S);
+  pit(57, 92, 27, 0.92);          // heel, deepest
+  pit(64, 44, 25, 0.82);          // ball
+  pit(50, 66, 14, 0.4);           // shallow arch
+  g.restore();
+
+  // pushed-up sunlit lip, offset down-right toward the moon
+  g.save(); g.translate(2.6, 3.2);
+  g.strokeStyle = 'rgba(208,220,240,0.4)'; g.lineWidth = 3.4;
+  g.lineJoin = 'round'; g.stroke(sole);
+  g.restore();
+  // the shaded far rim
+  g.save(); g.translate(-1.6, -2.2);
+  g.strokeStyle = 'rgba(0,1,4,0.4)'; g.lineWidth = 2.4;
+  g.lineJoin = 'round'; g.stroke(sole);
+  g.restore();
+
+  // toes: big to little, arcing off the ball
+  const toes = [[60, 17, 6.6], [72, 18, 5.3], [81, 22, 4.5], [88, 28, 3.7], [93, 35, 3.0]];
+  for (const [tx, ty, tr] of toes) {
+    pit(tx, ty, tr + 2.5, 0.85);
+    g.beginPath(); g.arc(tx, ty, tr, 0, 7);
+    g.fillStyle = 'rgba(2,3,8,0.55)'; g.fill();
+    g.save(); g.translate(1.4, 2);
+    g.strokeStyle = 'rgba(202,214,234,0.28)'; g.lineWidth = 1.5;
+    g.beginPath(); g.arc(tx, ty, tr, 0, 7); g.stroke();
+    g.restore();
+  }
+
+  const t = new THREE.CanvasTexture(c);
+  t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
+  return t;
 }
 function makeCraterTexture() {
   const S = 128;
@@ -1697,6 +1949,15 @@ scene.add(digMounds);
   for (let i = 0; i < FOOT_POOL; i++) foot.setMatrixAt(i, hide);
   for (let i = 0; i < DIG_POOL; i++) { digHoles.setMatrixAt(i, hide); digPits.setMatrixAt(i, hide); digMounds.setMatrixAt(i, hide); } }
 
+// A print stamped on dry sand can be reached by the tide a few seconds later.
+// inWater() only gates the stamp; this discards any decal fragment currently
+// seaward of the live shoreline, so the surf washes prints and holes away as
+// it comes up and they're back when it draws down. Same clip the ocean and
+// the beached debris use.
+for (const dm of [foot, digHoles, digPits]) clipAtShore(dm.material);
+digMounds.material = digMounds.material.clone();   // shared with nothing else, but be sure
+clipAtShore(digMounds.material);
+
 const _fm = new THREE.Matrix4(), _fq = new THREE.Quaternion(), _fe = new THREE.Euler(), _fs = new THREE.Vector3();
 let footIdx = 0, footSide = 1, digIdx = 0;
 const lastFootPos = new THREE.Vector3();
@@ -1705,7 +1966,8 @@ function stampFoot(x, z, fwdX, fwdZ, side) {
   _fe.set(0, Math.atan2(fwdX, fwdZ) + Math.PI, 0);
   _fq.setFromEuler(_fe);
   const off = 0.14 * side;
-  _fs.set(0.92 + Math.random() * 0.16, 1, 1.0 + Math.random() * 0.2);
+  // negative x-scale mirrors the texture, so one foot is the other's reflection
+  _fs.set((0.92 + Math.random() * 0.16) * side, 1, 1.0 + Math.random() * 0.2);
   _fm.compose(new THREE.Vector3(x + (-fwdZ) * off, 0.03, z + fwdX * off), _fq, _fs);
   foot.setMatrixAt(footIdx, _fm);
   footIdx = (footIdx + 1) % FOOT_POOL;
@@ -2264,7 +2526,7 @@ window.addEventListener('keydown', (e) => {
     else if (menuOpen) closeMenu();
     else if (fallbackLook) openMenu();
   } else if (e.code === 'KeyE' || e.code === 'KeyF') { primaryAction(); }
-  else if (e.code === 'KeyG') { if (held) dropHeld(); }
+  else if (e.code === 'KeyG') { if (held) dropHeld(); else if (equipped) dropEquipped(); }
   else if (e.code === 'KeyQ') { if (inspecting) closeInspect(); else if (equipped) toggleEquip(equipped); }
   else if (/^Digit[1-6]$/.test(e.code)) { useSlot(+e.code.slice(5) - 1); }
 });
@@ -2274,8 +2536,15 @@ let downPos = null;
 renderer.domElement.addEventListener('pointerdown', (e) => {
   downPos = [e.clientX, e.clientY];
   if (fallbackLook) dragging = true;
+  // right button hauls the shovel back; it swings when you let go
+  if (e.button === 2 && started && !frozen()) startWind();
 });
-window.addEventListener('pointerup', () => { dragging = false; });
+window.addEventListener('pointerup', (e) => {
+  dragging = false;
+  if (e.button === 2) releaseWind();
+});
+// losing the window mid-wind shouldn't leave the shovel stuck over your head
+window.addEventListener('blur', () => { if (winding) releaseWind(); });
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 renderer.domElement.addEventListener('click', (e) => {
   const d = downPos ? Math.hypot(e.clientX - downPos[0], e.clientY - downPos[1]) : 0;
@@ -2505,6 +2774,10 @@ function addInteractable(root, label, kind, data) {
   root.traverse((o) => { if (o.isMesh) meshes.push(o); });
   interactables.push({ root, label, kind, meshes, ...data });
 }
+function removeInteractable(root) {
+  const i = interactables.findIndex((it) => it.root === root);
+  if (i >= 0) interactables.splice(i, 1);
+}
 const kbd = (k) => `<span class="key">${k}</span>`;
 let promptHTML = '';
 function setPrompt(html) {
@@ -2540,7 +2813,12 @@ function updateHover() {
   } else if (equipped && equipped.onDig && digT <= 0 && crosshairGroundPoint()) {
     const onMound = !inWater(_digHit.x, _digHit.z) && moundAt(_digHit.x, _digHit.z);
     crosshair.className = 'active';
-    setPrompt(kbd('LMB') + (onMound ? 'Dig up the mound' : 'Dig here'));
+    setPrompt(kbd('LMB') + (onMound ? 'Dig up the mound' : 'Dig here')
+      + ' &nbsp;&nbsp; ' + kbd('RMB') + 'Hold to wind up'
+      + ' &nbsp;&nbsp; ' + kbd('G') + 'Drop');
+  } else if (equipped) {
+    crosshair.className = '';
+    setPrompt(kbd('G') + 'Drop ' + equipped.name.toLowerCase());
   } else {
     crosshair.className = '';
     setPrompt('');
@@ -2628,6 +2906,55 @@ function grab(prop) {
 function dropHeld() {
   if (!held) return;
   held.held = false; held.vel.multiplyScalar(0.3); held = null;
+}
+// Drop the equipped inventory item onto the sand in front of you. It builds
+// a world model from the item's own factory (worldFactory) or, failing that,
+// a clone of its viewmodel, registers a fresh 'take it back' interactable,
+// and pulls the item out of the pack. Picking it up re-adds and re-equips.
+const _dropDir = new THREE.Vector3();
+function dropEquipped() {
+  const item = equipped;
+  if (!item) return;
+  let m = null;
+  if (item.worldFactory) {
+    m = item.worldFactory();
+  } else if (item.viewmodel) {
+    m = item.viewmodel.clone(true);
+    m.traverse((o) => { o.visible = true; });
+    m.scale.multiplyScalar(item.dropScale || 1);
+  } else {
+    // a use-item with no world model (note, jar, buried thing) — drop it as a
+    // small wrapped parcel so it still leaves the pack and can be picked back up
+    m = new THREE.Group();
+    const box = new THREE.Mesh(
+      new THREE.BoxGeometry(0.16, 0.11, 0.12),
+      new THREE.MeshStandardMaterial({ color: 0x6a6256, roughness: 1, flatShading: true, emissive: 0x1c1a15 }));
+    const tie = new THREE.Mesh(
+      new THREE.BoxGeometry(0.17, 0.12, 0.03),
+      new THREE.MeshStandardMaterial({ color: 0x2e2a22, roughness: 1, flatShading: true, emissive: 0x0c0b08 }));
+    box.castShadow = false; m.add(box, tie);
+  }
+  if (!m) return;
+  camera.getWorldDirection(_dropDir); _dropDir.y = 0;
+  if (_dropDir.lengthSq() < 1e-4) _dropDir.set(0, 0, -1); else _dropDir.normalize();
+  const dx = THREE.MathUtils.clamp(camera.position.x + _dropDir.x * 1.1, WADE_X + 0.4, CLIFF_BLOCK_X - 0.4);
+  const dz = camera.position.z + _dropDir.z * 1.1;
+  m.position.set(dx, 0.04, dz);
+  m.rotation.y = Math.random() * Math.PI * 2;
+  scene.add(m);
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy'; m.add(hit);
+  removeFromInventory(item);
+  addInteractable(m, 'Take the ' + item.name.toLowerCase(), 'inventory', {
+    onActivate: () => {
+      scene.remove(m); removeInteractable(m); hovered = null;
+      sfxThud(0.02);
+      addToInventory(item);
+      if (item.viewmodel) toggleEquip(item);
+    },
+  });
+  sfxThud(0.03);
 }
 function throwHeld() {
   if (!held) return;
@@ -3062,11 +3389,30 @@ addInteractable(shovelWorld, "Take the sand shovel", 'inventory', {
   },
 });
 
-function startDig() {
+/* The charged swing. Hold the right button and the shovel hauls back; the
+ * longer it's held the further it winds, and letting go drops it with that
+ * much more behind it. digPower 0 is the ordinary left-click dig, 1 is a full
+ * wind-up: slower, wider, and it hits a good deal harder. The pose is driven
+ * from windCharge so what you see in your hands is the strength you've built. */
+const WIND_FULL = 1.15;                 // seconds of holding to reach full power
+let winding = false, windT = 0, digPower = 0;
+function startDig(power = 0) {
   if (digT > 0 || !equipped || !equipped.onDig || frozen()) return;
+  digPower = THREE.MathUtils.clamp(power, 0, 1);
   digT = 0.0001;
   digImpacted = false;
-  sfxDig();
+  sfxDig(digPower);
+}
+function startWind() {
+  if (digT > 0 || winding || !equipped || !equipped.onDig || frozen()) return;
+  winding = true; windT = 0;
+}
+function releaseWind() {
+  if (!winding) return;
+  winding = false;
+  // even a tap off the right button carries a bit more than a plain dig
+  startDig(0.25 + 0.75 * Math.min(1, windT / WIND_FULL));
+  windT = 0;
 }
 // where on the sand the crosshair is pointing (null if you're looking at
 // the sky or somewhere out of reach)
@@ -3091,21 +3437,25 @@ function digImpact() {
     x = THREE.MathUtils.clamp(camera.position.x + _pf.x * 1.5, WADE_X + 0.3, CLIFF_BLOCK_X - 0.3);
     z = camera.position.z + _pf.z * 1.5;
   }
-  // a swing that lands near the crab kills it, sand or surf
+  // a swing that lands near the crab kills it, sand or surf — a wound-up one
+  // reaches further, so a charged swing is the reliable way to land it
+  const P = digPower;
   if (crabState.alive) {
+    const reach = CRAB_KILL_RADIUS * (1 + P * 0.55);
     const cdx = x - crab.position.x, cdz = z - crab.position.z;
-    if (cdx * cdx + cdz * cdz < CRAB_KILL_RADIUS * CRAB_KILL_RADIUS) killCrab();
+    if (cdx * cdx + cdz * cdz < reach * reach) killCrab();
   }
   if (inWater(x, z)) {
     // blade hits water, not sand — throw a splash, leave no crater
-    spawnSplash(x, z, 24, _pf.x, _pf.z, 1.7);
-    sfxSplash(1.1);
+    spawnSplash(x, z, 24 + P * 22, _pf.x, _pf.z, 1.7 + P * 0.9);
+    sfxSplash(1.1 + P * 0.5);
+    addTrauma(0.10 + P * 0.22);
     return;
   }
-  addTrauma(0.22);
+  addTrauma(0.22 + P * 0.30);
   stampDigHole(x, z, _pf.x, _pf.z);
-  spawnPuffs(x, z, 22, _pf.x, _pf.z);
-  sfxDigImpact();
+  spawnPuffs(x, z, 22 + Math.round(P * 20), _pf.x, _pf.z);
+  sfxDigImpact(P);
   revealMoundNear(x, z, _pf.x, _pf.z);
 }
 
@@ -3135,7 +3485,12 @@ function vmImpulse(v) { vmSpringV += v; }          // landings, jumps, impacts
 function updateViewmodel(dt) {
   const show = !!equipped && !held;
   viewmodel.visible = show;
-  if (!show) return;
+  if (!show) { winding = false; windT = 0; return; }
+  if (winding) {
+    if (frozen()) { winding = false; windT = 0; }
+    else windT = Math.min(WIND_FULL * 1.35, windT + dt);
+  }
+  const windCharge = winding ? Math.min(1, windT / WIND_FULL) : 0;
   const sp = velocity.length();
   vmSway += dt * (2.2 + sp * 1.7);
   const moveAmt = Math.min(1, sp / WALK_SPEED);
@@ -3161,32 +3516,48 @@ function updateViewmodel(dt) {
   vmSpringY = THREE.MathUtils.clamp(vmSpringY, -0.14, 0.14);
 
   let pitch = 0, lift = 0, swingYaw = 0, roll = 0, push = 0;
-  if (digT > 0) {
-    digT += dt / DIG_DUR;
+  if (winding) {
+    // The haul-back. Rises fast and then creeps, so a full charge still feels
+    // like it's straining rather than sitting at a pose, and the shoulders
+    // shake a little once it's wound past full.
+    const e = easeOutCubic(windCharge);
+    const strain = windT > WIND_FULL ? Math.sin(windT * 34) * 0.012 : 0;
+    pitch = -(0.55 + 1.35 * e) + strain;
+    lift = 0.10 + 0.20 * e;
+    swingYaw = -(0.22 + 0.42 * e);
+    roll = -(0.14 + 0.26 * e) + strain;
+    push = 0.04 + 0.10 * e;
+  } else if (digT > 0) {
+    // a heavier swing takes longer to come round
+    digT += dt / (DIG_DUR * (1 + digPower * 0.45));
     const p = digT;
+    const P = digPower;
     if (p < DIG_WINDUP) {
       // anticipation: quick out of rest, hanging at the top of the haul
       const t = easeOutCubic(p / DIG_WINDUP);
-      pitch = -1.25 * t; lift = 0.17 * t;
-      swingYaw = -0.34 * t; roll = -0.20 * t; push = 0.05 * t;
+      pitch = -(1.25 + P * 0.70) * t; lift = (0.17 + P * 0.13) * t;
+      swingYaw = -(0.34 + P * 0.26) * t; roll = -(0.20 + P * 0.16) * t; push = 0.05 * t;
     } else if (p < DIG_STRIKE) {
       // the strike: accelerates into the sand, arcing across as it drops
       const t = easeInCubic((p - DIG_WINDUP) / (DIG_STRIKE - DIG_WINDUP));
-      pitch = -1.25 + 2.85 * t; lift = 0.17 - 0.62 * t;
-      swingYaw = -0.34 + 0.50 * t; roll = -0.20 + 0.34 * t; push = 0.05 - 0.17 * t;
+      pitch = -(1.25 + P * 0.70) + (2.85 + P * 1.30) * t;
+      lift = (0.17 + P * 0.13) - (0.62 + P * 0.22) * t;
+      swingYaw = -(0.34 + P * 0.26) + (0.50 + P * 0.34) * t;
+      roll = -(0.20 + P * 0.16) + (0.34 + P * 0.24) * t;
+      push = 0.05 - (0.17 + P * 0.10) * t;
     } else {
       // recovery: eases back to rest and overshoots once on the way
       const t = Math.min(1, (p - DIG_STRIKE) / (1 - DIG_STRIKE));
       const e = easeOutBack(t);
-      pitch = 1.60 * (1 - e); lift = -0.45 * (1 - e);
+      pitch = (1.60 + P * 0.6) * (1 - e); lift = -(0.45 + P * 0.2) * (1 - e);
       swingYaw = 0.16 * (1 - e); roll = 0.14 * (1 - e); push = -0.12 * (1 - e);
     }
     if (!digImpacted && p >= DIG_STRIKE) {
       digImpacted = true;
       digImpact();
-      vmImpulse(-1.7);                             // the blade jars in your hands
+      vmImpulse(-1.7 - digPower * 1.9);            // the blade jars in your hands
     }
-    if (p >= 1) digT = 0;
+    if (p >= 1) { digT = 0; digPower = 0; }
   }
 
   armRig.rotation.x = ARM_ROT_X + pitch + vmLagX;
@@ -3269,33 +3640,36 @@ let lhDoorEntry = null;
 {
   const DW = LH_DOOR_W;                       // half-width of the opening
   const DH = LH_DOOR_H;
-  const PORTAL_Z = 4.52;                      // face of the surround
+  const PORTAL_Z = 4.86;                      // face of the surround
   const R = PORTAL_Z - 0.18;                  // door hangs just inside it
 
-  // The scan's wall is anything but flat here — it reads r4.24 at the foot,
-  // bulges to r4.57 around waist height, then steps back to r3.6 above the
-  // head. A flat leaf can't sit against that, so the opening gets its own
-  // projecting stone surround, which gives the door one clean plane to hang
-  // in and covers the ragged edge left by the cut.
+  // The wall leans in as it climbs — lhOuterAt() reads 4.62 at the foot of
+  // the door and 4.21 at its head — so a flat surround set at one radius
+  // will be swallowed by the wall at the bottom or hang off it at the top,
+  // which is exactly how it looked. The face sits clear of the widest point
+  // and every piece runs back to BACK_Z, well inside the masonry at every
+  // height it passes, so the frame is buried into the curve all the way up
+  // instead of resting against it.
   const surround = new THREE.MeshStandardMaterial({
     color: 0x3a3f4b, roughness: 1, metalness: 0, flatShading: true, emissive: 0x171a21,
   });
   {
-    const depth = 1.35, zc = PORTAL_Z - depth / 2;
+    const BACK_Z = 3.25;                     // buried, at every door height
+    const depth = PORTAL_Z - BACK_Z, zc = (PORTAL_Z + BACK_Z) / 2;
     for (const sgn of [-1, 1]) {                       // jambs
-      const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.42, DH + 0.5, depth), surround);
-      jamb.position.set(sgn * (DW + 0.21), (DH + 0.5) / 2, zc);
+      const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.5, DH + 0.5, depth), surround);
+      jamb.position.set(sgn * (DW + 0.25), (DH + 0.5) / 2, zc);
       lighthouse.add(jamb);
     }
-    const lintel = new THREE.Mesh(new THREE.BoxGeometry(DW * 2 + 0.84, 0.34, depth + 0.12), surround);
-    lintel.position.set(0, DH + 0.17, zc + 0.06);
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(DW * 2 + 1.0, 0.34, depth), surround);
+    lintel.position.set(0, DH + 0.17, zc);
     // a shallow hood over the lintel to throw the rain off
-    const hood = new THREE.Mesh(new THREE.BoxGeometry(DW * 2 + 1.05, 0.16, 0.5), surround);
-    hood.position.set(0, DH + 0.42, PORTAL_Z - 0.1);
+    const hood = new THREE.Mesh(new THREE.BoxGeometry(DW * 2 + 1.24, 0.16, depth), surround);
+    hood.position.set(0, DH + 0.44, zc);
     hood.rotation.x = -0.18;
-    // threshold slab
-    const sill = new THREE.Mesh(new THREE.BoxGeometry(DW * 2 + 0.9, 0.14, depth + 0.5), surround);
-    sill.position.set(0, 0.06, zc + 0.22);
+    // threshold slab, jutting out to meet the last of the stepping stones
+    const sill = new THREE.Mesh(new THREE.BoxGeometry(DW * 2 + 1.05, 0.16, depth + 0.35), surround);
+    sill.position.set(0, 0.07, zc + 0.18);
     lighthouse.add(lintel, hood, sill);
     // soffit, so you don't see daylight through the top of the reveal
     const soffit = new THREE.Mesh(new THREE.BoxGeometry(DW * 2, 0.1, depth), surround);
@@ -4484,6 +4858,244 @@ new THREE.TextureLoader().load('assets/bradly.png', (tex) => {
 scene.add(bradly);
 addInteractable(bradly, 'Talk to him', 'npc', { onActivate: () => startDialog('start') });
 
+// ------------------------------------------------------------------
+// The tunnel in the sand wall, and the room at the end of it
+// ------------------------------------------------------------------
+/* A mouth bitten out of the cliff a few metres past Bradly, a long dark bore
+ * running back into the headland, and a room at the far end.
+ *
+ * The cliff itself can't be holed: it's one long mesh that snaps back onto
+ * the player every CLIFF_PERIOD, so a hole cut at one z would repeat every
+ * 40 m down the beach. Instead the mouth is its own structure standing proud
+ * of the wall — a rock surround with a black throat behind it — which reads
+ * as an opening and stays put because it's a fixed world object.
+ *
+ * Movement in here is region-clamped rather than collided: the corridor is a
+ * box in z, the room is a bigger box, and the beach's own CLIFF_BLOCK_X wall
+ * is lifted only across the mouth. Simple, and it can't wedge you in a corner.
+ */
+const TUN_Z = bradly.position.z - 4.6;          // ~15 ft further along the walk
+const TUN_HALF = 1.25;                          // corridor half-width
+const TUN_H = 2.7;
+const TUN_MOUTH_X = CLIFF_BLOCK_X - 0.6;        // where the beach wall opens
+const TUN_BORE_X = CLIFF_X - 5.0;               // the bore's lip, proud of the dune
+const TUN_END_X = CLIFF_X + 25;                 // corridor runs this far back
+const ROOM_HALF = 4.2, ROOM_LEN = 8.6, ROOM_H = 3.3;
+const ROOM_END_X = TUN_END_X + ROOM_LEN;
+
+const tunnel = new THREE.Group();
+scene.add(tunnel);
+
+const caveMat = new THREE.MeshStandardMaterial({
+  color: 0x4a4234, roughness: 1, metalness: 0,
+  emissive: 0x0a0906, flatShading: true, side: THREE.DoubleSide,
+});
+const caveDark = new THREE.MeshStandardMaterial({
+  color: 0x2a2620, roughness: 1, metalness: 0,
+  emissive: 0x050403, flatShading: true, side: THREE.DoubleSide,
+});
+
+/* The bore. A tube along +X whose wall is pushed about per-ring so it narrows
+ * and widens as you go — a straight pipe reads as a corridor, and this is
+ * meant to read as something dug. */
+{
+  const LEN = TUN_END_X - TUN_BORE_X;
+  const RINGS = 60, SIDES = 11;
+  const g = new THREE.CylinderGeometry(1, 1, LEN, SIDES, RINGS, true);
+  g.rotateZ(Math.PI / 2);                        // lay the axis along X
+  const pos = g.attributes.position;
+  const rnd = mulberry32(4711);
+  const wob = Array.from({ length: 24 }, () => rnd());
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const a = Math.atan2(z, y);
+    const t = (x + LEN / 2) / LEN;               // 0 at the mouth, 1 at the room
+    // squeeze in and out along its length, and roughen around the ring
+    let r = 1.0
+      + 0.16 * Math.sin(t * 11 + wob[0] * 6)
+      + 0.10 * Math.sin(t * 23 + wob[1] * 6)
+      + 0.13 * Math.sin(a * 3 + t * 9 + wob[2] * 6)
+      + 0.08 * Math.sin(a * 7 - t * 14 + wob[3] * 6);
+    const ny = y * r, nz = z * r;
+    // wider than tall, and flat-bottomed so there's a floor to walk on
+    pos.setXYZ(i, x, Math.max(-0.62, ny * (TUN_H / 2)), nz * TUN_HALF * 1.18);
+  }
+  g.computeVertexNormals();
+  const bore = new THREE.Mesh(g, caveMat);
+  bore.position.set(TUN_BORE_X + LEN / 2, 1.05, TUN_Z);
+  bore.frustumCulled = false;
+  tunnel.add(bore);
+
+  // floor — sand run in from the beach, going darker the deeper you get
+  const fl = new THREE.Mesh(new THREE.PlaneGeometry(LEN, TUN_HALF * 2.5, 1, 1),
+    new THREE.MeshStandardMaterial({ color: 0x5c5748, roughness: 1, emissive: 0x121009 }));
+  fl.rotation.x = -Math.PI / 2;
+  fl.position.set(TUN_BORE_X + LEN / 2, 0.005, TUN_Z);
+  tunnel.add(fl);
+}
+
+/* The mouth. A ring of eroded rock standing proud of the cliff face, with a
+ * black throat behind it so the opening reads as depth rather than a decal. */
+{
+  // No black quad here: a flat panel reads as a rectangle stuck on the wall.
+  // The bore's own mouth stands proud of the dune toe, so what you look into
+  // is the actual tube, and the boulders below dress its lip.
+
+  // boulders crowding the opening, from the same generator as the beach rocks
+  const rnd = mulberry32(9002);
+  for (let i = 0; i < 11; i++) {
+    const a = (i / 11) * Math.PI * 2 + rnd() * 0.3;
+    const rz = Math.cos(a) * (TUN_HALF + 0.55 + rnd() * 0.35);
+    const ry = Math.sin(a) * (TUN_H * 0.52 + rnd() * 0.3) + TUN_H / 2 - 0.15;
+    if (ry < 0.15) continue;                     // nothing floating at the sill
+    const sc = 0.7 + rnd() * 1.0;
+    const m = new THREE.Mesh(makeErodedRock(500 + i, 2), rockMatBeach);
+    m.scale.set(sc, sc * (0.7 + rnd() * 0.5), sc);
+    m.position.set(TUN_BORE_X + 0.15 + rnd() * 0.5, ry - sc * 0.3, TUN_Z + rz);
+    m.rotation.set(rnd() * 3, rnd() * 6, rnd() * 3);
+    m.frustumCulled = false;
+    tunnel.add(m);
+  }
+  // spoil heaped either side of the sill, so it reads as dug out, not moulded
+  for (let i = 0; i < 5; i++) {
+    const sc = 0.8 + rnd() * 0.9;
+    const m = new THREE.Mesh(makeErodedRock(560 + i, 2), rockMatBeach);
+    m.scale.set(sc, sc * 0.45, sc);
+    m.position.set(TUN_BORE_X - 0.7 - rnd() * 1.4, -0.08,
+      TUN_Z + (rnd() < 0.5 ? -1 : 1) * (TUN_HALF + 0.5 + rnd() * 1.1));
+    m.rotation.y = rnd() * 6;
+    m.frustumCulled = false;
+    tunnel.add(m);
+  }
+}
+
+/* The room. Not the model from the reference folder — that hasn't reached me,
+ * so this is a stand-in built to the same idea: a bare concrete cell at the
+ * end of the bore, lit by one bulb, with something already in it. */
+const theRoom = new THREE.Group();
+theRoom.position.set(TUN_END_X + ROOM_LEN / 2, 0, TUN_Z);
+tunnel.add(theRoom);
+{
+  const wallMat = new THREE.MeshStandardMaterial({
+    color: 0x555049, roughness: 1, metalness: 0, emissive: 0x0b0a09,
+    flatShading: true, side: THREE.BackSide,
+  });
+  const shell = new THREE.Mesh(new THREE.BoxGeometry(ROOM_LEN, ROOM_H, ROOM_HALF * 2), wallMat);
+  shell.position.y = ROOM_H / 2;
+  shell.frustumCulled = false;
+  theRoom.add(shell);
+
+  const floorMat = new THREE.MeshStandardMaterial({
+    color: 0x3e3a35, roughness: 1, emissive: 0x0a0908, flatShading: true });
+  const fl = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_LEN, ROOM_HALF * 2), floorMat);
+  fl.rotation.x = -Math.PI / 2; fl.position.y = 0.01;
+  theRoom.add(fl);
+
+  // the bulb — the only thing lighting it
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6),
+    new THREE.MeshBasicMaterial({ color: 0xffe3ad, fog: false }));
+  bulb.position.set(0, ROOM_H - 0.55, 0);
+  const flex = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.5, 4),
+    new THREE.MeshStandardMaterial({ color: 0x1a1815, roughness: 1 }));
+  flex.position.set(0, ROOM_H - 0.28, 0);
+  const roomLight = new THREE.PointLight(0xffd9a0, 5.2, 9, 1.7);
+  roomLight.position.copy(bulb.position);
+  theRoom.add(bulb, flex, roomLight);
+
+  // a table and a chair, so it reads as somewhere someone was
+  const wood = new THREE.MeshStandardMaterial({
+    color: 0x4a3f30, roughness: 1, flatShading: true, emissive: 0x0e0b07 });
+  const table = new THREE.Group();
+  const top = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.07, 0.85), wood);
+  top.position.y = 0.74; table.add(top);
+  for (const [lx, lz] of [[-0.66, -0.34], [0.66, -0.34], [-0.66, 0.34], [0.66, 0.34]]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.74, 0.07), wood);
+    leg.position.set(lx, 0.37, lz); table.add(leg);
+  }
+  table.position.set(1.1, 0, -0.4);
+  table.rotation.y = 0.22;
+  theRoom.add(table);
+
+  const chair = new THREE.Group();
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.06, 0.45), wood);
+  seat.position.y = 0.45; chair.add(seat);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.5, 0.05), wood);
+  back.position.set(0, 0.72, -0.2); chair.add(back);
+  for (const [lx, lz] of [[-0.19, -0.19], [0.19, -0.19], [-0.19, 0.19], [0.19, 0.19]]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.45, 0.05), wood);
+    leg.position.set(lx, 0.225, lz); chair.add(leg);
+  }
+  chair.position.set(-0.4, 0, 0.5);
+  chair.rotation.y = -0.8;
+  theRoom.add(chair);
+}
+
+/* Two dim lamps down the bore. Created once and never toggled — revealing a
+ * light later changes the lighting state and recompiles every material in the
+ * scene, which is what caused the a-second-long freeze when digging a mound. */
+for (const t of [0.22, 0.62]) {
+  const lx = TUN_BORE_X + (TUN_END_X - TUN_BORE_X) * t;
+  const lamp = new THREE.PointLight(0xffb070, 2.6, 7.5, 1.8);
+  lamp.position.set(lx, 1.9, TUN_Z + TUN_HALF * 0.5);
+  const glow = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 5),
+    new THREE.MeshBasicMaterial({ color: 0xffcf94, fog: false }));
+  glow.position.copy(lamp.position);
+  tunnel.add(lamp, glow);
+}
+// a little light spilling out of the mouth, so you can find it from the beach
+{
+  const spill = new THREE.PointLight(0xffc08a, 1.5, 6, 2);
+  spill.position.set(TUN_BORE_X + 0.4, 1.5, TUN_Z);
+  tunnel.add(spill);
+}
+
+/* The cliff is one continuous surface and the bore runs straight through it,
+ * so without this you'd see the sand wall slicing across the tunnel from the
+ * inside. Same per-fragment discard the ocean and the sand already use, tested
+ * in WORLD space because the cliff mesh recentres itself on the player. */
+{
+  const zc = TUN_Z.toFixed(3), zh = (TUN_HALF * 1.5).toFixed(3), yh = (TUN_H + 0.2).toFixed(3);
+  cliff.material.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vTunP;')
+      .replace('#include <project_vertex>',
+        '#include <project_vertex>\nvTunP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vTunP;')
+      .replace('#include <clipping_planes_fragment>',
+        '#include <clipping_planes_fragment>\n if (abs(vTunP.z - ' + zc + ') < ' + zh +
+        ' && vTunP.y < ' + yh + ') discard;');
+  };
+  cliff.material.customProgramCacheKey = () => 'clipTunnel';
+  cliff.material.needsUpdate = true;
+}
+
+/* Where you're allowed to be. The corridor and the room are boxes; the beach's
+ * cliff wall opens only across the mouth, and only down low, so you can't
+ * stroll into the headland anywhere else. */
+let insideTunnel = false;
+function inTunnelMouth(z, feetY) {
+  return Math.abs(z - TUN_Z) < TUN_HALF && feetY < TUN_H - 0.6;
+}
+function updateTunnelBounds() {
+  const p = camera.position;
+  // generous slack on the far side: the test has to be impossible to outrun,
+  // or a big enough step would land past it and let you out the back wall
+  insideTunnel = p.x > TUN_MOUTH_X - 0.4 && p.x < ROOM_END_X + 8
+    && Math.abs(p.z - TUN_Z) < ROOM_HALF + 4;
+  if (!insideTunnel) return;
+  if (p.x < TUN_END_X) {
+    // in the bore
+    p.z = THREE.MathUtils.clamp(p.z, TUN_Z - TUN_HALF + PLAYER_R, TUN_Z + TUN_HALF - PLAYER_R);
+    p.x = Math.min(p.x, TUN_END_X + 0.2);
+  } else {
+    // in the room
+    p.z = THREE.MathUtils.clamp(p.z, TUN_Z - ROOM_HALF + PLAYER_R, TUN_Z + ROOM_HALF - PLAYER_R);
+    p.x = Math.min(p.x, ROOM_END_X - PLAYER_R);
+  }
+}
+
+
 // The script. Saying yes or no lands you in the same place — he was never
 // really asking.
 const BRADLY_SCRIPT = {
@@ -4705,13 +5317,14 @@ function loadSamples() {
   }
 }
 // plays a random one from the bank; returns false if nothing has loaded yet
-function playSample(name, gain = 1, rateJitter = 0) {
+function playSample(name, gain = 1, rateJitter = 0, rate = 1) {
   const ctx = audioCtx; if (!ctx) return false;
   const bank = (sampleBanks[name] || []).filter(Boolean);
   if (!bank.length) return false;
   const src = ctx.createBufferSource();
   src.buffer = bank[(Math.random() * bank.length) | 0];
-  if (rateJitter) src.playbackRate.value = 1 + (Math.random() - 0.5) * 2 * rateJitter;
+  src.playbackRate.value = rate;
+  if (rateJitter) src.playbackRate.value = rate + (Math.random() - 0.5) * 2 * rateJitter;
   const g = ctx.createGain(); g.gain.value = gain;
   src.connect(g).connect(sfxOut());
   src.start();
@@ -4782,29 +5395,50 @@ function sfxStep() {
   const t = ctx.currentTime;
   stepAlt ^= 1;
   const out = ctx.createGain();
-  out.gain.value = 0.55 * (stepAlt ? 1 : 0.86);
+  out.gain.value = 0.6 * (stepAlt ? 1 : 0.8) * (0.85 + Math.random() * 0.3);
   out.connect(sfxOut());
 
-  // the compression — weight settling into the sand
-  const body = noiseBurst(0.11, (x) => Math.pow(1 - x, 2.6));
-  const bf = ctx.createBiquadFilter(); bf.type = 'lowpass';
-  bf.frequency.value = 260 + Math.random() * 90;
-  const bg = ctx.createGain(); bg.gain.value = 0.30;
-  body.connect(bf).connect(bg).connect(out);
-  body.start(t); body.stop(t + 0.11);
+  // 1. the thud — bodyweight dropping onto packed sand, gone almost at once
+  const thump = noiseBurst(0.09, (x) => Math.pow(1 - x, 3.4));
+  const tf = ctx.createBiquadFilter(); tf.type = 'lowpass';
+  tf.frequency.value = 140 + Math.random() * 55; tf.Q.value = 1.3;
+  const tg = ctx.createGain(); tg.gain.value = 0.4;
+  thump.connect(tf).connect(tg).connect(out);
+  thump.start(t); thump.stop(t + 0.09);
 
-  // the crunch — grains shearing, bright and very short
-  const grit = noiseBurst(0.17, (x) => Math.pow(1 - x, 2.0) * (0.45 + 0.55 * Math.random()));
+  // 2. the compression — damp sand packing down under the heel, a soft crush
+  const comp = noiseBurst(0.14, (x) => Math.pow(1 - x, 2.1) * (0.55 + 0.45 * Math.random()));
+  const cf = ctx.createBiquadFilter(); cf.type = 'lowpass';
+  cf.frequency.setValueAtTime(560 + Math.random() * 170, t);
+  cf.frequency.exponentialRampToValueAtTime(210, t + 0.13);
+  const cg = ctx.createGain(); cg.gain.value = 0.32;
+  comp.connect(cf).connect(cg).connect(out);
+  comp.start(t); comp.stop(t + 0.14);
+
+  // 3. loose grains scattering off the print — granular, bright, quick
+  const grit = noiseBurst(0.16, (x) => {
+    const env = Math.pow(1 - x, 1.7);
+    return env * (0.3 + 0.7 * Math.abs(Math.sin(x * 85 + Math.random() * 6)));
+  });
   const gf = ctx.createBiquadFilter(); gf.type = 'bandpass';
-  gf.frequency.setValueAtTime(1900 + Math.random() * 700, t);
-  gf.frequency.exponentialRampToValueAtTime(700, t + 0.15);
-  gf.Q.value = 0.8;
+  gf.frequency.setValueAtTime(2000 + Math.random() * 850, t);
+  gf.frequency.exponentialRampToValueAtTime(820, t + 0.14);
+  gf.Q.value = 0.7;
   const gg = ctx.createGain();
   gg.gain.setValueAtTime(0.0001, t);
-  gg.gain.exponentialRampToValueAtTime(0.26, t + 0.012);
-  gg.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
+  gg.gain.exponentialRampToValueAtTime(0.19 + Math.random() * 0.07, t + 0.01);
+  gg.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
   grit.connect(gf).connect(gg).connect(out);
-  grit.start(t); grit.stop(t + 0.17);
+  grit.start(t); grit.stop(t + 0.16);
+
+  // 4. the odd shell chip ticking — sparse, so a walk never sounds looped
+  if (Math.random() < 0.28) {
+    const tick = noiseBurst(0.03, (x) => Math.pow(1 - x, 5));
+    const kf = ctx.createBiquadFilter(); kf.type = 'highpass'; kf.frequency.value = 3600;
+    const kg = ctx.createGain(); kg.gain.value = 0.04 + Math.random() * 0.05;
+    tick.connect(kf).connect(kg).connect(out);
+    tick.start(t + 0.006); tick.stop(t + 0.036);
+  }
 }
 function sfxThud(gain) {
   const ctx = audioCtx; if (!ctx) return;
@@ -4844,24 +5478,28 @@ function noiseBurst(seconds, env) {
   return s;
 }
 // the swing — a short airy whoosh as the blade arcs down
-function sfxDig() {
+function sfxDig(power = 0) {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime;
-  const s = noiseBurst(0.34, (x) => Math.sin(Math.PI * Math.min(1, x * 1.2)) * (1 - x * 0.3));
-  const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 0.9;
-  f.frequency.setValueAtTime(400, t);
-  f.frequency.exponentialRampToValueAtTime(1600, t + 0.22);
-  f.frequency.exponentialRampToValueAtTime(600, t + 0.34);
-  const g = ctx.createGain(); g.gain.value = 0.022;
+  // a heavier swing is a longer, lower whoosh — more air moved, more slowly
+  const len = 0.34 + power * 0.16;
+  const s = noiseBurst(len, (x) => Math.sin(Math.PI * Math.min(1, x * 1.2)) * (1 - x * 0.3));
+  const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 0.9 + power * 0.5;
+  f.frequency.setValueAtTime(400 - power * 130, t);
+  f.frequency.exponentialRampToValueAtTime(1600 - power * 420, t + len * 0.65);
+  f.frequency.exponentialRampToValueAtTime(600 - power * 200, t + len);
+  const g = ctx.createGain(); g.gain.value = 0.022 + power * 0.030;
   s.connect(f).connect(g).connect(sfxOut());
-  s.start(t); s.stop(t + 0.34);
+  s.start(t); s.stop(t + len);
 }
 // the blade biting into damp sand: a soft body thud + a granular crunch +
 // a short bright spray of grains
-function sfxDigImpact() {
+function sfxDigImpact(power = 0) {
   const ctx = audioCtx; if (!ctx) return;
-  // one of the four recorded sand impacts, picked at random
-  if (playSample('sandHit', 0.30, 0.09)) return;
+  // one of the four recorded sand impacts, picked at random. A charged swing
+  // plays it louder and pitched down, which is most of what makes it read as
+  // heavier without needing a second recording.
+  if (playSample('sandHit', 0.30 + power * 0.26, 0.09, 1 - power * 0.16)) return;
   const t = ctx.currentTime;
   const out = ctx.createGain(); out.gain.value = 0.34; out.connect(sfxOut());
 
@@ -5091,14 +5729,16 @@ const knockback = new THREE.Vector3();
 function addTrauma(v) { trauma = Math.min(1, trauma + v); }
 
 // ------------------------------------------------------------------
-// Storm drain — the outfall behind you at spawn. The bore is a plain
-// circular pipe, so the collision is a radial clamp about its axis;
-// the chamber at the end is a box clamp. Runs *after* updateTower so it
-// gets the last word on groundY.
+// The drainage tunnel home — the storm-drain outfall up the beach behind
+// you, and the chamber somebody lives in at the end of it. Separate from
+// the tunnel in the sand wall (TUN_*): that one is a dug corridor further
+// down the walk. The bore here is a plain circular pipe, so the collision
+// is a radial clamp about its axis; the chamber is a box clamp. Runs
+// *after* updateTower so it gets the last word on groundY.
 // ------------------------------------------------------------------
 const DRAIN_X = CLIFF_BLOCK_X;      // the mouth sits exactly on the cliff clamp
 const DRAIN_Z = 34;                 // behind you: the walk goes -Z
-const drainTunnel = makeDrainTunnel({
+const drainTunnel = makeDrainageTunnelHome({
   // the scour outside is heaped beach sand, so it uses the beach's own
   // material — a bespoke colour reads as pale slabs dropped on the sand
   sandMat,
@@ -5457,7 +6097,7 @@ function updateDrainAudio(dt) {
 // helical stair whose height comes from how far round you've walked.
 // ------------------------------------------------------------------
 const PLAYER_R = 0.4;
-let insideTower = false, groundY = 0;
+let insideTower = false, groundY = 0, stairY = null;
 let stairTurns = 0, lastStairA = 0, doorHeard = false, atLanternTop = false;
 const _towerV = new THREE.Vector2();
 function updateTower(dt) {
@@ -5480,7 +6120,13 @@ function updateTower(dt) {
                       camBaseY < HL_CREST + EYE_HEIGHT + LH_DOOR_H - 0.5;
   if (!throughDoor && d > 0.001) {
     const climb = Math.max(0, groundY - HL_CREST);
-    const inner = (atLanternTop ? 3.15 : lhBoreAt(climb)) - PLAYER_R;
+    // Once you're on the stair the treads, not the wall, are what you can
+    // stand on — they reach r2.07, while the bore down low is r2.55, so the
+    // wall alone would let you walk off the outer edge into thin air.
+    const onStair = climb > 0.6;
+    const inner = (atLanternTop ? 3.15
+                 : onStair ? Math.min(lhBoreAt(climb), 2.02)
+                 : lhBoreAt(climb)) - PLAYER_R;
     const outer = LH_OUTER + PLAYER_R;
     let clamped = null;
     if (insideTower && d > inner) clamped = inner;
@@ -5504,7 +6150,17 @@ function updateTower(dt) {
       stairTurns = THREE.MathUtils.clamp(stairTurns + da / (Math.PI * 2), 0, LH_TOP / LH_RISE);
     }
     lastStairA = ang;
-    groundY = HL_CREST + Math.min(LH_TOP, stairTurns * LH_RISE);
+    // Stand on the tread, not on the helix the treads were generated from.
+    // The climb is continuous while the treads are discrete, so the raw
+    // spiral height left your feet up to a full riser out from the step you
+    // were looking at — sunk into it low down, hanging over it higher up.
+    // Snap to the tread top, then ease onto it so the risers don't jolt.
+    const raw = Math.min(LH_TOP, stairTurns * LH_RISE);
+    const stepped = Math.min(LH_TOP,
+      Math.floor(raw / LH_STEP + 1e-4) * LH_STEP + LH_TREAD_T / 2);
+    stairY = stairY === null ? stepped
+           : stairY + (stepped - stairY) * Math.min(1, dt * 18);
+    groundY = HL_CREST + stairY;
     // Reaching the top no longer ends it — you arrive, and the walk ends
     // when you step out of the lantern onto the gallery.
     atLanternTop = stairTurns * LH_RISE >= LH_TOP - 0.4;
@@ -5512,6 +6168,7 @@ function updateTower(dt) {
   } else {
     lastStairA = ang;
     stairTurns = 0;
+    stairY = null;
     atLanternTop = false;
     groundY = headlandAt(camera.position.x, camera.position.z);
   }
@@ -5545,12 +6202,31 @@ function update(dt) {
     camera.position.addScaledVector(knockback, dt);
     knockback.multiplyScalar(1 - Math.min(1, 7 * dt));
   }
+  // Two ways through the sand wall now: the tunnel in the dune, and the
+  // drainage tunnel home further back up the beach.
   if (!insideTower && !insideDrain) {
-    camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
+    // the cliff holds you back everywhere except across the tunnel mouth
+    const feet = camBaseY - EYE_HEIGHT;
+    if (!inTunnelMouth(camera.position.z, feet)) {
+      camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
+    }
     camera.position.x = Math.max(camera.position.x, WADE_X);
   }
+  updateTunnelBounds();
   updateTower(dt);
-  updateDrain(dt);          // after the tower, so it wins on groundY
+  // Rocks are solid: walk into one and you're pushed out, clear its lip and
+  // you stand on it. Done after updateTower() so a rock simply beats the sand.
+  // Skipped inside the drainage tunnel home — there are no beach rocks in
+  // there, and pushOutOfRocks would shove you about inside the pipe.
+  if (insideTunnel) {
+    groundY = 0;                       // the bore and the room are flat floor
+  } else if (!insideTower && !insideDrain) {
+    const feet = camBaseY - EYE_HEIGHT;
+    pushOutOfRocks(feet);
+    const rc = rockGroundAt(camera.position.x, camera.position.z, feet);
+    if (rc && rc.top > groundY) groundY = rc.top;
+  }
+  updateDrain(dt);          // last, so it wins on groundY inside the home
 
   // coyote time and a buffered press, so a jump you meant to make happens
   coyote = onGround ? COYOTE_TIME : Math.max(0, coyote - dt);
@@ -5571,7 +6247,7 @@ function update(dt) {
       landDip = Math.max(landDip, 0.06 + force * 0.16);
       addTrauma(force * 0.25);
       vmImpulse(-1.1 - force * 2.4);
-      if (!inWater(camera.position.x, camera.position.z)) sfxStep(); else sfxSplash(0.9);
+      if (inWater(camera.position.x, camera.position.z)) sfxSplash(0.9); else sfxStep();
     }
     camBaseY = floorLimit; vy = 0; onGround = true;
   }
@@ -5745,6 +6421,10 @@ window.__bw = {
   lhDoor, shinies, onPath, pathBend, pathHalfAt, lhWindows, lanternGlass,
   get doorOpen() { return doorOpen; }, set doorOpen(v) { doorOpen = v; doorSwing = v ? 1 : 0; lhDoor.rotation.y = -doorSwing * 1.95; },
   get insideTower() { return insideTower; },
+  get insideTunnel() { return insideTunnel; },
+  tunnel, theRoom, updateTunnelBounds, inTunnelMouth,
+  get tunnelZ() { return TUN_Z; },
+  rockColliders, rockGroundAt,
   get lhParts() { return lhParts; },
   get insideTower() { return insideTower; },
   get groundY() { return groundY; },
