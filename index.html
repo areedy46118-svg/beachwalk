@@ -325,19 +325,85 @@
   }
   #dialog .leave:hover { color: rgba(210, 232, 240, 0.85); }
 
-  /* inventory hotbar — left side, vertical */
-  #hotbar {
+  /* inventory hotbar — left side, vertical, with the ring slots under it.
+     The column is positioned by #gear so the rings sit under the hotbar
+     however many slots it has, instead of at a hand-measured offset. */
+  #gear {
     position: fixed;
     left: 1rem;
     top: 50%;
     transform: translateY(-50%);
     display: flex;
     flex-direction: column;
-    gap: 0.45rem;
+    align-items: flex-start;
+    gap: 0.7rem;
     z-index: 6;
+  }
+  #hotbar {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
     transition: opacity 0.3s ease;
   }
   #hotbar.hidden { opacity: 0; pointer-events: none; }
+  /* the ring slots — two, smaller than the hotbar's and side by side, so the
+     section reads as a different kind of thing rather than more of the same */
+  #rings {
+    display: flex;
+    flex-direction: column;
+    gap: 0.22rem;
+    transition: opacity 0.3s ease;
+  }
+  #rings.hidden { opacity: 0; pointer-events: none; }
+  #rings .rlabel {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 0.62rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(178, 194, 222, 0.5);
+    padding-left: 2px;
+  }
+  #rings .rslots { display: flex; gap: 0.4rem; }
+  #rings .rslot {
+    position: relative;
+    width: 38px;
+    height: 38px;
+    border: 1px solid rgba(150, 168, 200, 0.28);
+    border-radius: 50%;
+    background: rgba(10, 16, 28, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 19px;
+    cursor: default;
+  }
+  #rings .rslot img { width: 26px; height: 26px; image-rendering: auto; }
+  #rings .rslot.worn {
+    cursor: pointer;
+    border-color: rgba(214, 226, 246, 0.55);
+    background: rgba(20, 30, 48, 0.7);
+    box-shadow: 0 0 10px rgba(180, 200, 235, 0.16);
+  }
+  #rings .rslot.worn:hover { border-color: rgba(255, 190, 120, 0.85); }
+  #rings .rslot.empty { opacity: 0.38; }
+  #rings .rslot .label {
+    position: absolute;
+    left: 46px;
+    top: 50%;
+    transform: translateY(-50%);
+    white-space: nowrap;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 0.68rem;
+    color: rgba(222, 232, 248, 0.9);
+    background: rgba(8, 13, 22, 0.82);
+    border: 1px solid rgba(150, 168, 200, 0.22);
+    border-radius: 4px;
+    padding: 0.14rem 0.4rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.14s ease;
+  }
+  #rings .rslot.worn:hover .label { opacity: 1; }
   #hotbar .slot {
     width: 50px;
     height: 50px;
@@ -677,7 +743,13 @@
     <div id="prompt"></div>
   </div>
 
-  <div id="hotbar" class="hidden"></div>
+  <div id="gear">
+    <div id="hotbar" class="hidden"></div>
+    <div id="rings" class="hidden">
+      <span class="rlabel">Rings</span>
+      <div class="rslots"></div>
+    </div>
+  </div>
 
   <div id="blood">
     <div id="blood-jar"></div>

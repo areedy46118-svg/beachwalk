@@ -96,6 +96,23 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   synth *shff → crunch → grain-spray* sound, a detailed crater (irregular
   pit, dark undercut bowl, shovel gouges, scattered clods) with a real 3D
   sunk cone + spoil mound, and a burst of tumbling low-poly sand chunks.
+- **The heavy swing** — hold the **right button** and the shovel hauls back
+  and keeps straining; let go and it drops from exactly where your hands were,
+  with no re-wind and nothing to snap through. Release to blade moving is one
+  frame, and the drop is about 130 ms of accelerating arc against the 370 ms
+  a left click takes from rest. A heavy also reaches **6.6 m to a click's
+  4.2 m**, so there are angles you can only land wound up, and it throws more
+  sand, shakes the camera harder and kills the crab from further out. The
+  shaft creaks when the charge tops out, and the blade leaves a **trail** —
+  a thin streak off the cutting edge that brightens with how hard you swung.
+- **The crab telegraphs** — it no longer nips the instant it reaches you. It
+  rears with its claws thrown wide and its pincers gaping for 18 frames while
+  a rasp climbs under it, strikes for 6, and is then wide open for 20. The
+  reach is re-checked on the frame the claw closes, so backing off during the
+  wind-up actually works, and the recovery is your opening to swing back.
+- **The kill lands in two beats** — the blade connects, time stops for five
+  frames with the crab still there, folded up under the shovel and thrown
+  back, and *then* it comes apart.
 - **Footprints** — pre-stamped trail behind spawn, new prints as you go
   (toe pointing the right way), footstep sound; oldest recycle.
 - **The sand cliff** — a lofted eroded escarpment, scalloped lip, vertical
@@ -127,6 +144,28 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   additive glint and a gentle lift in their own emissive, so they separate
   from very dark sand without turning into waypoint markers.
   `addItemShine()`.
+- **The rock formation** — six real scanned granite boulders
+  (`assets/rocks.glb`) in one heap on the sand below Bradly, and only there: a
+  dominant mass with smaller ones leaning into it, two riding up on the pile,
+  a skirt of half-buried chunks, and sand banked against the lot so they sit
+  *in* the beach rather than on it. Solid — you're pushed out of them and can
+  climb them. The scans were baked in daylight, so `reexpose()` gamma-lifts
+  the albedo for the moonlight.
+- **The body bag** — a corpse roped at the head and the feet
+  (`assets/corpse.glb`), on the high-water line thirty metres short of the
+  wreck, tipped on its side and settled into the sand, clear of the tide at
+  every state of it. You read it as a black bar long before you can tell what
+  it is. Solid; looking at it says one line and offers you nothing to do.
+  `CORPSE_X` / `CORPSE_Z`.
+- **The stuck gate** — the barred outlet in the back wall of the drainage
+  tunnel home now says **Look inside**. Press `E` and you lean the last half
+  metre onto the bars while the FOV squeezes to 19°, which is the zoom and is
+  also what crops the lit room out of frame. Eight metres of ribbed pipe run
+  back into the hill. Nothing is down there — and then, a second and a half
+  later, two small pale eyes fade up out of the black, blink at their own
+  pace, drift, and after a while tilt their head. Cave drone, far-off drips
+  and the whisper track pushed down a delay so it reads as somebody muttering
+  to himself round a bend. `E` again backs you out.
 - **The enemy crab** — a bigger animal on a proper rig: eight two-bone legs
   walking an alternating-tripod gait, articulated claws that weave as it
   closes, gape when it rears and snap shut on the strike, eye stalks that
@@ -185,6 +224,21 @@ castle, crab, `startDig`, `toggleEquip`, `openMenu`, `openInspect`, `showEnd`,
 **Grass pack (lowpoly, game-ready)** — the grass on the headland.
 ["Grass pack (lowpoly, game-ready)"](https://sketchfab.com/3d-models/grass-pack-lowpoly-game-ready)
 by [LOLIPOP](https://sketchfab.com/lolipop_1707), [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+
+
+**(FREE) Realistic Rocks - Asset LowPoly** — the rock formations on the beach.
+
+["(FREE) Realistic Rocks - Asset LowPoly"](https://sketchfab.com/3d-models/free-realistic-rocks-asset-lowpoly-6e02ec577b4a473fb173c54fd6eef62d)
+by [Domenico Bianco - Pizza&Games](https://sketchfab.com/pizzaandgames),
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+
+
+**Corpse in a black body bag with ropes** — the body on the beach before the
+wreck.
+
+["Corpse in a black body bag with ropes"](https://sketchfab.com/3d-models/corpse-in-a-black-body-bag-with-ropes-fb2fe10ba9b14982b5785d73d7155daa)
+by [Dennis Hafemann](https://sketchfab.com/dennis.hafemann),
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
 
 
 **Animated Crab rigged FREE** — the enemy crab.

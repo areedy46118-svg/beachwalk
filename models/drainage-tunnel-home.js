@@ -784,8 +784,13 @@ export function makeDrainageTunnelHome(opts = {}) {
       bw((y0 + y1) / 2, y1 - y0, (oz + oh + z1) / 2, z1 - (oz + oh));      // right of it
       bw((y0 + oy - oh) / 2, (oy - oh) - y0, oz, oh * 2);                  // under it
       bw((oy + oh + y1) / 2, y1 - (oy + oh), oz, oh * 2);                  // over it
-      // a closed box behind the hole, so the bore has somewhere dark to go
-      R.add(slab(1.2, 1.2, 1.2, M.void, ROOM_X1 + 0.82, oy, oz));
+      /* A closed box behind the hole, so the bore has somewhere dark to go —
+       * and it is set a long way back, because the point of the outlet is
+       * that you can look down it. Everything past the back wall is empty:
+       * the cliff is a single plane 23 m seaward of here, so the shaft runs
+       * into nothing at all. The box has to be there or the sky dome, which
+       * is centred on the player, shows through the open end of the throat. */
+      R.add(slab(2.0, 1.5, 1.5, M.void, ROOM_X1 + 8.7, oy, oz));
     }
     R.add(slab(rlen + 0.6, 0.22, ROOM_HZ * 2 + 0.5, M.conc, rcx, ROOM_H + 0.11, 0));     // ceiling slab
 
@@ -839,10 +844,38 @@ export function makeDrainageTunnelHome(opts = {}) {
       const lip = new THREE.Mesh(new THREE.TorusGeometry(0.305, 0.04, 5, 16), M.conc);
       lip.position.z = -0.01;
       F.add(lip);
-      const throat = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.30, 1.0, 16, 1, true), M.throat);
+      /* The shaft. Five metres of it, running back into the hill — long
+       * enough that looking down it reads as a tunnel rather than a recess,
+       * which is the whole of what the gate is for. Its material is BackSide,
+       * so from anywhere but the bore itself it does not draw at all. */
+      const THROAT_LEN = 8.0;
+      const throat = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.30, 0.30, THROAT_LEN, 16, 1, true), M.throat);
       throat.rotation.x = Math.PI / 2;
-      throat.position.z = -0.52;
+      throat.position.z = -(THROAT_LEN / 2 + 0.02);
       F.add(throat);
+      /* Ribs down the shaft. Without them the bore is a smooth dark tube with
+       * no scale in it and the far end could be one metre away or twenty;
+       * the rings are what let the eye read depth, exactly as the joints do
+       * in a real brick sewer. */
+      for (let i = 1; i <= 11; i++) {
+        const rz = -(0.35 + i * 0.72);
+        if (-rz > THROAT_LEN) break;
+        const rib = new THREE.Mesh(new THREE.TorusGeometry(0.288, 0.022, 4, 14), M.dark);
+        rib.position.z = rz;
+        F.add(rib);
+      }
+      /* Standing water along the invert. This is the depth cue that does the
+       * most work — it is the one continuous thing running away from you —
+       * but it has to stay NARROW and DIM: full bore width it climbs over
+       * the ribs and the whole shaft reads as a flight of stairs. */
+      const invert = new THREE.Mesh(new THREE.PlaneGeometry(0.20, THROAT_LEN - 0.2),
+        new THREE.MeshStandardMaterial({
+          color: 0x121820, roughness: 0.22, metalness: 0.1, emissive: 0x090e15,
+        }));
+      invert.rotation.x = -Math.PI / 2;
+      invert.position.set(0, -0.262, -(THROAT_LEN / 2 + 0.02));
+      F.add(invert);
       // the grille: heavy bars in a welded frame, plus cross-flats behind.
       // This is the thing you try to get through and can't.
       for (let i = 0; i < 4; i++) {

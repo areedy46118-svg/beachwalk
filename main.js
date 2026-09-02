@@ -6,6 +6,7 @@ import { makeBloodJar } from './models/blood-jar.js';
 import { makeDrainageTunnelHome } from './models/drainage-tunnel-home.js';
 import { makeWaterBottle, makeWaterBottleIcon } from './models/water-bottle.js';
 import { makeShipwreck } from './models/shipwreck.js';
+import { makeRing, makeRingIcon } from './models/ring.js';
 
 /* ------------------------------------------------------------------ *
  *  Beach Walk — an endless, eerie shoreline at night.
@@ -1583,23 +1584,52 @@ function makeRockGeo(seed = 1, detail = 1, lumpiness = 0.34) {
   g.computeVertexNormals();
   return g;
 }
-// The scattered rocks are the real models now — the procedural ones read as
-// lumps. Four builds, each with its own albedo, instanced through the same
-// tiling scatter() so they run the length of the beach.
-// ------------------------------------------------------------------
-// Beach rocks — irregular eroded formations
-// ------------------------------------------------------------------
-/* The reference is a limestone shelf worn into pits, lips and overhangs, and
- * it comes in GROUPS — a formation with sand running between the masses —
- * never a lone lump. So a formation is 3-7 masses sharing a centre, and each
- * mass is an icosphere pushed about by four things: broad lopsidedness so no
- * two read alike, horizontal strata, erosion pits gouged in from random
- * directions, and a flattened base so it sits ON the sand rather than over it.
+/* Re-exposing a scanned prop. Both of the scans on this beach were baked
+ * under a midday sun and come out as black cut-outs under a quarter moon —
+ * the rocks average 0.05 linear, the body bag 0.002, which is not a texture
+ * at all, it is a hole. So the albedo goes through a gamma lift before the
+ * lighting sees it: same map, same detail, carried up to where the sand
+ * already sits. `rim` adds a cold Fresnel edge on top, and for something as
+ * dark as the bag that rim is the only thing that gives it a shape you can
+ * read rather than a silhouette you can't. Done in the shader, deliberately,
+ * so the files on disk stay the textures that shipped with the models.
  *
- * These are fixed world objects, deliberately NOT part of the recentring
- * `debris` tile and NOT clipped at the shoreline: they're landmarks you can
- * climb, they carry collision, and a real rock stays visible when the tide
- * runs over it.
+ * `normal` and `vViewPosition` are both in scope by <emissivemap_fragment>:
+ * it sits after <normal_fragment_maps>, so the rim follows the normal map's
+ * creases instead of the smooth geometry underneath. */
+function reexpose(mat, gamma, rim) {
+  mat.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>',
+      '#include <map_fragment>\n  diffuseColor.rgb = pow(diffuseColor.rgb, vec3('
+      + gamma.toFixed(3) + '));');
+    if (!rim) return;
+    sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>',
+      '#include <emissivemap_fragment>\n'
+      + '  float bwRim = pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 2.6);\n'
+      + '  totalEmissiveRadiance += vec3(' + rim.map((v) => v.toFixed(3)).join(', ') + ') * bwRim;');
+  };
+  mat.needsUpdate = true;
+}
+
+// ------------------------------------------------------------------
+// Beach rocks — the scanned granite formations
+// ------------------------------------------------------------------
+/* Six scanned boulders out of assets/rocks.glb — Domenico Bianco's "(FREE)
+ * Realistic Rocks - Asset LowPoly", repacked by tools/gltfpack.py. Geometry,
+ * UVs and the baked albedo + normal come through exactly as modelled — the
+ * scan IS the look, which is why these keep their maps when the rest of the
+ * beach is flat shaded and untextured. Only the exposure moves, and only in
+ * the shader: see reexpose() above.
+ *
+ * They go down as FORMATIONS, never as lone lumps, because that is what the
+ * reference photograph is: a granite heap on open sand. One dominant mass,
+ * smaller ones leaning in against it, a skirt of half-buried chunks around
+ * that, and sand drifted up the sides of the whole pile — that last part is
+ * the `apron`, and it is what makes them sit IN the beach rather than on it.
+ *
+ * Fixed world objects: deliberately outside the recentring `debris` tile and
+ * outside clipAtShore(). They're landmarks you can climb, and a real rock
+ * stays visible when the tide runs over it.
  */
 function mulberry32(a) {
   return function () {
@@ -1610,86 +1640,6 @@ function mulberry32(a) {
   };
 }
 
-function makeErodedRock(seed, detail = 3) {
-  const rnd = mulberry32(seed);
-  const g = new THREE.IcosahedronGeometry(0.5, detail);
-  const pos = g.attributes.position;
-  const v = new THREE.Vector3(), d = new THREE.Vector3();
-
-  // broad lobes give the silhouette its lopsidedness
-  const lobes = Array.from({ length: 3 + Math.floor(rnd() * 2) }, () => ({
-    dir: new THREE.Vector3(rnd() * 2 - 1, rnd() * 0.8 - 0.2, rnd() * 2 - 1).normalize(),
-    amp: 0.20 + rnd() * 0.34,
-    tight: 1.0 + rnd() * 1.6,
-  }));
-  /* Erosion. This is the whole character of the reference: solution pits and
-   * hollows bitten deep into the stone, leaving lips and overhangs between
-   * them. Shallow noise gives you a crumpled ball, so the pits are cut hard —
-   * a lot of them, deep, with a tight falloff so each one has an edge. */
-  const pits = Array.from({ length: 10 + Math.floor(rnd() * 7) }, () => ({
-    dir: new THREE.Vector3(rnd() * 2 - 1, rnd() * 1.6 - 0.35, rnd() * 2 - 1).normalize(),
-    amp: 0.16 + rnd() * 0.30,
-    tight: 7 + rnd() * 20,
-  }));
-  const strataPhase = rnd() * 6.28, strataFreq = 6 + rnd() * 10;
-  const squash = 0.52 + rnd() * 0.34;          // beach rock is wider than tall
-  // a wave-cut face: one side sheared off flat, the way a shelf breaks
-  const shear = new THREE.Vector3(rnd() * 2 - 1, 0.15 + rnd() * 0.3, rnd() * 2 - 1).normalize();
-  const shearAt = 0.34 + rnd() * 0.20;
-
-  for (let i = 0; i < pos.count; i++) {
-    v.fromBufferAttribute(pos, i);
-    d.copy(v).normalize();
-    let r = 1;
-    for (const l of lobes) r += l.amp * Math.pow(Math.max(0, d.dot(l.dir)), l.tight);
-    for (const p of pits) r -= p.amp * Math.pow(Math.max(0, d.dot(p.dir)), p.tight);
-    r *= 1 + 0.075 * Math.sin(v.y * strataFreq + strataPhase);   // bedding planes
-    // sharp ridge noise — abs() of a sine leaves creases, not swells
-    r *= 0.90 + 0.13 * Math.abs(Math.sin(d.x * 7.1 + d.z * 5.9 + seed));
-    r *= 0.94 + 0.10 * Math.abs(Math.sin(d.y * 11.3 + d.x * 9.7 - seed * 2));
-    v.multiplyScalar(Math.max(0.30, r));
-    v.y *= squash;
-    // shear the exposed face flat
-    const sd = v.dot(shear);
-    if (sd > shearAt) v.addScaledVector(shear, -(sd - shearAt));
-    pos.setXYZ(i, v.x, v.y, v.z);
-  }
-  // sit it flat: everything below the cut is pressed onto one plane, so the
-  // rock meets the sand along an edge instead of balancing on a curve
-  const cut = -0.5 * squash * 0.42;
-  for (let i = 0; i < pos.count; i++) {
-    const y = pos.getY(i);
-    if (y < cut) pos.setY(i, cut);
-  }
-  g.computeVertexNormals();
-  g.computeBoundingBox();
-  const bb = g.boundingBox;
-  // translate so the flattened base is exactly y = 0
-  g.translate(0, -bb.min.y, 0);
-  g.computeBoundingBox();
-
-  // weathering in vertex colours: dark and damp in the crevices, bleached on
-  // the up-faces where the moon catches, plus a mottle so it isn't uniform
-  const nrm = g.attributes.normal;
-  const col = new Float32Array(pos.count * 3);
-  const h = Math.max(0.001, g.boundingBox.max.y);
-  for (let i = 0; i < pos.count; i++) {
-    const up = Math.max(0, nrm.getY(i));
-    const yy = pos.getY(i) / h;
-    let t = 0.36 + 0.42 * Math.pow(up, 0.8) + 0.20 * yy;
-    t *= 0.86 + 0.20 * Math.abs(Math.sin(pos.getX(i) * 9.1 + pos.getZ(i) * 7.7 + seed));
-    t = THREE.MathUtils.clamp(t, 0.16, 1);
-    col[i * 3] = t * 0.99; col[i * 3 + 1] = t * 0.98; col[i * 3 + 2] = t;
-  }
-  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  return g;
-}
-
-const rockMatBeach = new THREE.MeshStandardMaterial({
-  color: 0x7c8496, vertexColors: true, roughness: 1, metalness: 0,
-  emissive: 0x161a22, flatShading: true,
-});
-
 /* Collision. The game has no mesh collision, so each mass registers a
  * cylinder: stand on it when your feet clear the top, and get pushed out of
  * it when they don't. Cheap, and for rounded boulders it's honest enough. */
@@ -1697,54 +1647,169 @@ const rockColliders = [];
 const rockGroup = new THREE.Group();
 scene.add(rockGroup);
 
-function placeRockMass(seed, wx, wz, scale, tilt) {
-  const geo = makeErodedRock(seed, scale > 1.4 ? 3 : 2);
-  const m = new THREE.Mesh(geo, rockMatBeach);
-  const sy = scale * (0.82 + mulberry32(seed * 7 + 3)() * 0.4);
-  m.scale.set(scale, sy, scale);
-  m.position.set(wx, -0.10, wz);              // bedded, so the base edge is buried
-  m.rotation.set(tilt.x, tilt.y, tilt.z);
-  m.frustumCulled = false;
-  rockGroup.add(m);
-  const bb = geo.boundingBox;
-  const rad = Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) * 0.5 * scale;
-  rockColliders.push({
-    x: wx, z: wz,
-    r: rad * 0.86,                            // inside the silhouette, so you
-    top: -0.10 + bb.max.y * sy,               // never stand on thin air
-  });
-  return m;
+/* The apron. A plane bent into a low dome and then let fall away past the
+ * rim, so the apron's own edge is buried under the beach instead of drawing
+ * a circle across it. Built per formation because the uv has to carry the
+ * world texel density: sandTex repeats every SAND_TILE metres, so a dome of
+ * radius R spans 2R/SAND_TILE of a tile — not the whole 0..1 a plane ships
+ * with, which would put 177 tiles inside six metres and mip down to mud. */
+function makeApron(R) {
+  const g = new THREE.PlaneGeometry(2, 2, 18, 18);
+  g.rotateX(-Math.PI / 2);
+  const p = g.attributes.position, uv = g.attributes.uv;
+  const k = R / (SAND_TILE * sandTex.repeat.x);
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), z = p.getZ(i);
+    const d = Math.min(1, Math.hypot(x, z));
+    p.setY(i, Math.cos(d * Math.PI * 0.5) - (d > 0.84 ? (d - 0.84) * 3.4 : 0));
+    uv.setXY(i, 0.5 + x * k, 0.5 + z * k);
+  }
+  g.computeVertexNormals();
+  return g;
 }
 
-/* Formations, laid down the length of the walk. Rare on purpose — the beach
- * was carpeted once and that is not worth repeating — so they're 90-170 m
- * apart and each one is a landmark rather than scenery. */
-{
-  const rnd = mulberry32(20260901);
-  let z = -30, seed = 1;
-  while (z > -1120) {
-    // the formation's own centre, and how spread out its masses are
-    const cx = 0.6 + rnd() * 8.0;
-    const spread = 2.4 + rnd() * 4.0;
-    const n = 4 + Math.floor(rnd() * 4);
-    const big = 2.2 + rnd() * 2.9;            // the formation's dominant mass
-    for (let i = 0; i < n; i++) {
-      // the first mass is the big one; the rest shed around it, smaller
-      const t = i === 0 ? 0 : 0.35 + rnd() * 0.65;
-      const a = rnd() * Math.PI * 2;
-      const dd = i === 0 ? 0 : Math.pow(rnd(), 0.6) * spread;
-      const mx = THREE.MathUtils.clamp(cx + Math.cos(a) * dd, WADE_X + 0.6, CLIFF_BLOCK_X - 0.8);
-      const mz = z + Math.sin(a) * dd;
-      if (headlandAt(mx, mz) > 0.15) continue;      // never on the ridge
-      const sc = big * (i === 0 ? 1 : 0.26 + t * 0.46);
-      placeRockMass(seed++, mx, mz, sc, {
-        x: (rnd() - 0.5) * 0.13,
-        y: rnd() * Math.PI * 2,
-        z: (rnd() - 0.5) * 0.13,
-      });
+/* Keep-outs. Only the headland and the trodden lane to the lighthouse door
+ * matter now that there is one formation and it stands near Bradly. */
+function rockSpotClear(x, z) {
+  if (headlandAt(x, z) > 0.15) return false;                 // never on the ridge
+  if (onPath(x - LH_X, z - LH_Z, 0.5)) return false;         // nor across the lane to the door
+  return true;
+}
+
+new GLTFLoader().load('assets/rocks.glb', (gltf) => {
+  gltf.scene.updateMatrixWorld(true);
+
+  // ---- the six rocks, baked flat and stood on their own base -------------
+  const kinds = [];
+  gltf.scene.traverse((o) => {
+    if (!o.isMesh) return;
+    // Bake the node transform in — the download hangs the rocks off an FBX
+    // root at 0.01 scale, rotated Y-up, and spread across a 13 m layout grid.
+    // After this each geometry is upright, in metres, centred on its own
+    // footprint with its base exactly at y = 0.
+    const geo = o.geometry.clone().applyMatrix4(o.matrixWorld);
+    geo.computeBoundingBox();
+    const b = geo.boundingBox;
+    geo.translate(-(b.min.x + b.max.x) / 2, -b.min.y, -(b.min.z + b.max.z) / 2);
+    geo.computeBoundingBox();
+    geo.computeBoundingSphere();
+    const s = geo.boundingBox.getSize(new THREE.Vector3());
+
+    const mat = o.material;                 // the model's own maps, kept
+    mat.color.setHex(0x93a1bb);             // granite in moonlight, not in sun
+    // You walk INTO the moon, so every rock ahead of you is backlit and the
+    // moon contributes nothing to the face you are looking at. The emissive
+    // is what carries the stone on that side — without it a formation is a
+    // black cut-out until you have walked past it.
+    mat.emissive.setHex(0x6d7d9c);
+    mat.emissiveMap = mat.map;              // so the lift follows the stone
+    mat.roughness = 1;
+    mat.metalness = 0;
+    if (mat.normalScale) mat.normalScale.set(1.4, 1.4);
+    reexpose(mat, 0.54);
+
+    kinds.push({ geo, mat, name: o.name, foot: Math.max(s.x, s.z), h: s.y });
+  });
+  if (!kinds.length) return;
+  kinds.sort((a, b) => (a.name < b.name ? -1 : 1));   // scatter must be stable
+  // blocky ones carry a formation; flat ones are the slabs it sheds
+  const tall = kinds.filter((k) => k.h / k.foot > 0.8);
+  const stock = tall.length ? tall : kinds;
+
+  /* One mass. `width` is what it should measure across the sand, `bury` how
+   * much of its own height goes under. The scans are open-bottomed, so the
+   * ragged rim has to end up below the beach — and these are bedded a good
+   * way past that, because a boulder that has sat on a beach for a century
+   * is half in it. `lift` rides one up onto the pile. Returns its crown. */
+  function placeMass(kind, wx, wz, width, bury, lift, rnd) {
+    const sc = width / kind.foot;
+    const sy = sc * (0.72 + rnd() * 0.26);       // squat, and never twice alike
+    const sunk = kind.h * sy * bury;
+    const m = new THREE.Mesh(kind.geo, kind.mat);
+    m.scale.set(sc, sy, sc);
+    m.position.set(wx, lift - sunk, wz);
+    m.rotation.set((rnd() - 0.5) * 0.2, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.2);
+    rockGroup.add(m);
+    const top = lift + kind.h * sy - sunk;
+    // A half-buried chunk is scenery, not terrain: giving it a collider would
+    // only shove you off a 20 cm nub you should be walking straight over.
+    if (top > 0.42) {
+      rockColliders.push({ x: wx, z: wz, r: width * 0.5 * 0.82, top });
     }
-    z -= 90 + rnd() * 80;
+    return top;
   }
+  const pick = (list, rnd) => list[Math.floor(rnd() * list.length)];
+
+  /* ONE formation, on the sand below Bradly. It is a landmark, not scenery —
+   * scattering stone the length of the walk was tried and made the beach
+   * read as a quarry, so this is the only rock on it.
+   *
+   * The distances are all fractions of `big`, the dominant mass, and they are
+   * deliberately SHORT: the huddle sits *inside* its radius so the masses
+   * interpenetrate and the pile reads as one rock with faces. Spaced politely
+   * apart you get five boulders standing about on a beach. */
+  const rnd = mulberry32(20260901);
+  const cx = 6.4, z = bradly.position.z + 3.0;
+  const big = 3.4;
+  const crown = placeMass(pick(stock, rnd), cx, z, big, 0.26, 0, rnd);
+
+  // the huddle, leaning in against the core — the first two ride up on the
+  // pile, and that stacking is what stops it reading as a ring
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 + rnd() * 0.9;
+    const d = big * (0.26 + rnd() * 0.32);
+    const mx = cx + Math.cos(a) * d, mz = z + Math.sin(a) * d;
+    if (!rockSpotClear(mx, mz)) continue;
+    placeMass(pick(kinds, rnd), mx, mz, big * (0.44 + rnd() * 0.42),
+      0.24 + rnd() * 0.12, i < 2 ? crown * (0.1 + rnd() * 0.22) : 0, rnd);
+  }
+  // masses shed off the side of the pile, still touching it
+  for (let i = 0; i < 4; i++) {
+    const a = rnd() * Math.PI * 2;
+    const d = big * (0.66 + rnd() * 0.46);
+    const mx = cx + Math.cos(a) * d, mz = z + Math.sin(a) * d;
+    if (!rockSpotClear(mx, mz)) continue;
+    placeMass(pick(kinds, rnd), mx, mz, big * (0.22 + rnd() * 0.3),
+      0.34 + rnd() * 0.18, 0, rnd);
+  }
+  // the skirt: chunks all but swallowed by the sand out around the pile
+  for (let i = 0; i < 7; i++) {
+    const a = rnd() * Math.PI * 2;
+    const d = big * (1.0 + rnd() * 1.0);
+    const mx = cx + Math.cos(a) * d, mz = z + Math.sin(a) * d;
+    if (!rockSpotClear(mx, mz)) continue;
+    placeMass(pick(kinds, rnd), mx, mz, 0.26 + rnd() * 0.6,
+      0.55 + rnd() * 0.26, 0, rnd);
+  }
+  /* And the sand heaped against the lot of it. Two aprons rather than one:
+   * a broad shallow one that takes the beach up to the pile, and a tighter,
+   * taller one banked against the masses themselves. That inner bank is what
+   * actually blends them — a rock meeting flat sand along a hard line reads
+   * as dropped on the beach however deep it is bedded. */
+  for (const [k, h] of [[2.35, 0.34], [1.28, 0.72]]) {
+    const R = big * k;
+    const apron = new THREE.Mesh(makeApron(R), sandMat);
+    apron.scale.set(R, h, R);
+    apron.position.set(cx, -0.12, z);
+    apron.rotation.y = rnd() * Math.PI * 2;
+    apron.renderOrder = -1;                    // under the footprint decals
+    rockGroup.add(apron);
+  }
+});
+
+/* Drawing them. Fog swallows the beach past about 180 m, but the camera's far
+ * plane is 5000 and the walk is a kilometre long, so frustum culling alone
+ * leaves every rock on the beach submitted every frame — 175 draw calls of
+ * pure fog. One pass over the list per frame costs nothing and takes them
+ * back off. `farProps` is the same treatment for anything else too big to
+ * draw at a distance it cannot be seen from; the body bag's ropes are 235k
+ * triangles and stop being legible about 40 m out. */
+const ROCK_DRAW = 210;
+const farProps = [];
+function updateFarProps() {
+  const cz = camera.position.z;
+  for (const m of rockGroup.children) m.visible = Math.abs(m.position.z - cz) < ROCK_DRAW;
+  for (const f of farProps) f.obj.visible = Math.abs(f.z - cz) < f.d;
 }
 
 /* Standing on them. Called after updateTower() has set groundY from the sand
@@ -2368,10 +2433,11 @@ function updateHurt(dt) {
   hurtEl.style.opacity = String(hurtFlash * hurtFlash);
 }
 
-function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || inspecting || dying || ended || !introDone; }
+function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || inspecting || peeking || dying || ended || !introDone; }
 function refreshUI() {
   const playing = started && !menuOpen && !noteOpen && !dialogOpen && !invOpen && !inspecting && !dying && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
+  ringsEl.classList.toggle('hidden', !playing || !ringsFound);
   bloodEl.classList.toggle('show', bloodSeen && playing);
 }
 
@@ -2522,11 +2588,15 @@ window.addEventListener('keydown', (e) => {
     if (ended) return;
     if (inspecting) closeInspect();
     else if (invOpen) closePack();
+    else if (peeking) endPeek();
     else if (dialogOpen) endDialog();
     else if (noteOpen) closeNote();
     else if (menuOpen) closeMenu();
     else if (fallbackLook) openMenu();
-  } else if (e.code === 'KeyE' || e.code === 'KeyF') { primaryAction(); }
+  } else if (e.code === 'KeyE' || e.code === 'KeyF') {
+    if (inspecting) { if (inspectEquip) inspectEquip(); return; }
+    primaryAction();
+  }
   else if (e.code === 'KeyG') { if (held) dropHeld(); else if (equipped) dropEquipped(); }
   else if (e.code === 'KeyQ') { if (inspecting) closeInspect(); else if (equipped) toggleEquip(equipped); }
   else if (/^Digit[1-6]$/.test(e.code)) { useSlot(+e.code.slice(5) - 1); }
@@ -2688,9 +2758,17 @@ function inspectSetModel(model) {
   inspectFit.scale.setScalar(k);
   inspectFit.position.copy(centre).multiplyScalar(-k);
 }
-function openInspect(model, { rotX = -0.55, rotY = 0.7 } = {}) {
+/* `equipLabel` / `onEquip` turn the examine screen into the place a thing is
+ * put ON. Deliberately bound to E and not to the click: click already means
+ * "put it away" in here, and a screen where the same button both wears the
+ * item and pockets it is a screen you cannot use twice in a row. */
+let inspectEquip = null;
+function openInspect(model, { rotX = -0.55, rotY = 0.7, equipLabel = null, onEquip = null } = {}) {
   if (inspecting) return;
   inspecting = true;
+  inspectEquip = equipLabel ? onEquip : null;
+  inspectEl.querySelector('.hint').innerHTML =
+    inspectEquip ? kbd('E') + equipLabel + '  ·  ' + INSPECT_HINT : INSPECT_HINT;
   inspectSetModel(model);
   inspectRotX = rotX; inspectRotY = rotY; inspectDist = 3.3; inspectAuto = 0;
   inspectCamera.aspect = window.innerWidth / window.innerHeight;
@@ -2706,8 +2784,9 @@ function openInspect(model, { rotX = -0.55, rotY = 0.7 } = {}) {
 function closeInspect() {
   if (!inspecting || extracting) return;             // can't bail mid-draw
   inspecting = false;
+  inspectEquip = null;
   inspectEl.classList.remove('show');
-  inspectEl.querySelector('.hint').textContent = 'Drag to turn it over  ·  scroll to zoom  ·  Esc to put it away';
+  inspectEl.querySelector('.hint').innerHTML = INSPECT_HINT;
   crosshair.style.display = '';
   refreshUI();
   if (inspectReturnLock && !fallbackLook) requestLock();
@@ -2788,6 +2867,7 @@ function setPrompt(html) {
   promptEl.classList.toggle('show', !!html);
 }
 function updateHover() {
+  if (peeking) { hovered = null; return; }       // the peek owns the prompt
   if (frozen() || (!locked && !fallbackLook)) {
     hovered = null; crosshair.className = ''; setPrompt(''); return;
   }
@@ -2811,7 +2891,8 @@ function updateHover() {
   } else if (equipped && equipped.onListen && !listening) {
     crosshair.className = 'active';
     setPrompt(kbd('LMB') + 'Hold it to your ear');
-  } else if (equipped && equipped.onDig && digT <= 0 && crosshairGroundPoint()) {
+  } else if (equipped && equipped.onDig && digT <= 0
+             && crosshairGroundPoint(winding ? DIG_REACH + DIG_HEAVY_REACH : DIG_REACH)) {
     const onMound = !inWater(_digHit.x, _digHit.z) && moundAt(_digHit.x, _digHit.z);
     crosshair.className = 'active';
     setPrompt(kbd('LMB') + (onMound ? 'Dig up the mound' : 'Dig here')
@@ -2826,6 +2907,7 @@ function updateHover() {
   }
 }
 function primaryAction() {
+  if (peeking) { endPeek(); return; }
   if (frozen()) return;
   if (held) { throwHeld(); return; }
   if (hovered) {
@@ -2977,6 +3059,48 @@ function makeProp(mesh, name, opts) {
   addInteractable(mesh, 'Pick up ' + name, 'physics', { prop });
   return prop;
 }
+/* Breaking glass. Shared by the floats and by anything else thin enough to
+ * go: kill the body, drop the prop out of the world and out of `interactables`
+ * (leaving it in there is how you end up hovering "Pick up glass float" over
+ * a cloud of shards), then throw shards that are real gibs so they bounce and
+ * settle like everything else rather than being a puff of sprites. */
+const SHARD_MAT = new THREE.MeshStandardMaterial({
+  color: 0x2f6f5c, roughness: 0.2, metalness: 0.05, flatShading: true,
+  transparent: true, opacity: 0.72, emissive: 0x0c2b22, side: THREE.DoubleSide,
+});
+function shatterGlass(prop, mesh, speed, radius, threshold = 4.6) {
+  if (prop.dead || speed < threshold) return;        // a gentle knock just clinks
+  prop.dead = true;
+  const p = mesh.position.clone();
+  scene.remove(mesh);
+  removeInteractable(mesh);
+  if (hovered && hovered.root === mesh) hovered = null;
+  sfxGlassBreak();
+  addTrauma(0.12);
+  const mat = SHARD_MAT.clone();
+  if (mesh.material && mesh.material.color) {
+    mat.color.copy(mesh.material.color);
+    if (mesh.material.emissive) mat.emissive.copy(mesh.material.emissive);
+  }
+  for (let i = 0; i < 14; i++) {
+    // curved slivers, not cubes — a broken float leaves shell, and a flat
+    // tetrahedron scaled thin reads as a shard from any angle
+    const m = new THREE.Mesh(new THREE.TetrahedronGeometry(radius * (0.22 + Math.random() * 0.3), 0), mat);
+    m.scale.set(1, 0.35 + Math.random() * 0.5, 1);
+    m.position.set(p.x + (Math.random() - 0.5) * radius, Math.max(0.04, p.y), p.z + (Math.random() - 0.5) * radius);
+    m.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+    scene.add(m);
+    const a = Math.random() * Math.PI * 2, out = 0.8 + Math.random() * 2.2;
+    gibs.push({
+      m,
+      vel: new THREE.Vector3(Math.cos(a) * out, 1.6 + Math.random() * 2.4, Math.sin(a) * out),
+      spin: new THREE.Vector3((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20),
+      rest: 0.015 + Math.random() * 0.03,
+      life: 30,
+    });
+  }
+}
+
 {
   const woodMat = new THREE.MeshStandardMaterial({ color: 0x5a4c3a, roughness: 1, flatShading: true, emissive: 0x120e08 });
   const plank = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.16, 0.3), woodMat);
@@ -2990,10 +3114,23 @@ function makeProp(mesh, name, opts) {
   pail.position.set(3, 0.17, -16);
   makeProp(pail, 'pail', { radius: 0.22, restH: 0.17 });
 
-  const float = new THREE.Mesh(new THREE.SphereGeometry(0.24, 14, 10),
-    new THREE.MeshStandardMaterial({ color: 0x2f6f5c, roughness: 0.25, transparent: true, opacity: 0.7, emissive: 0x0c2b22 }));
-  float.position.set(6.5, 0.24, -22);
-  makeProp(float, 'glass float', { radius: 0.24, restH: 0.24, bounce: 0.5 });
+  /* The glass floats. Three of them, and they break — a net float is thin
+   * blown glass and the one thing in the game you can already throw hard.
+   * They shatter above 4.6 m/s, which a throw clears easily and a drop off
+   * your own hand does not, so breaking one is always something you chose. */
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0x2f6f5c, roughness: 0.25, transparent: true, opacity: 0.7, emissive: 0x0c2b22,
+  });
+  const glassMatBlue = glassMat.clone();
+  glassMatBlue.color.setHex(0x2b5a74); glassMatBlue.emissive.setHex(0x0a2130);
+  for (const [x, z, r, mat] of [[6.5, -22, 0.24, glassMat],
+                                [2.6, -63, 0.19, glassMatBlue],
+                                [10.4, -101, 0.27, glassMat]]) {
+    const float = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 10), mat);
+    float.position.set(x, r, z);
+    const p = makeProp(float, 'glass float', { radius: r, restH: r, bounce: 0.5 });
+    p.onImpact = (speed) => shatterGlass(p, float, speed, r);
+  }
 
   const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.32, 0),
     new THREE.MeshStandardMaterial({ color: 0x59606f, roughness: 1, flatShading: true, emissive: 0x14171f }));
@@ -3032,6 +3169,56 @@ function renderHotbar() {
     hotbarEl.appendChild(slot);
   }
 }
+/* Rings. A second, separate place things live: two slots under the hotbar,
+ * and a ring in one of them is *worn*, not carried — it has left the pack.
+ * Kept as its own array rather than a flag on the item so the two slots are
+ * a real limit, and so the order you put them on is the order they show.
+ *
+ * The section stays hidden until the first ring is in your hands. Two empty
+ * circles on the HUD from the opening minute would be a puzzle prompt for
+ * something you have no reason to think about yet. */
+const RING_SLOTS = 2;
+const rings = [];
+let ringsFound = false;
+const ringsEl = document.getElementById('rings');
+const ringSlotsEl = ringsEl.querySelector('.rslots');
+function renderRings() {
+  ringSlotsEl.innerHTML = '';
+  for (let i = 0; i < RING_SLOTS; i++) {
+    const item = rings[i];
+    const slot = document.createElement('div');
+    slot.className = 'rslot' + (item ? ' worn' : ' empty');
+    if (item) {
+      slot.innerHTML = iconHTML(item);
+      const lab = document.createElement('span');
+      lab.className = 'label';
+      lab.textContent = item.name + ' — take off';
+      slot.appendChild(lab);
+      slot.addEventListener('click', (e) => { e.stopPropagation(); takeOffRing(i); });
+    }
+    ringSlotsEl.appendChild(slot);
+  }
+  refreshUI();
+}
+function wearRing(item) {
+  // already on a finger: putting it on again would push a second copy into
+  // `rings` and leave you wearing one ring twice
+  if (rings.includes(item) || rings.length >= RING_SLOTS) return false;
+  removeFromInventory(item);
+  rings.push(item);
+  renderRings();
+  sfxRingOn();
+  return true;
+}
+function takeOffRing(i) {
+  const item = rings[i];
+  if (!item || inventory.length >= INV_MAX) return;
+  rings.splice(i, 1);
+  addToInventory(item);
+  renderRings();
+  sfxRingOff();
+}
+
 function addToInventory(item) {
   if (inventory.length >= INV_MAX) return false;
   inventory.push(item);
@@ -3067,6 +3254,7 @@ function toggleEquip(item) {
   renderPack();
 }
 renderHotbar();
+renderRings();
 
 // ------------------------------------------------------------------
 // The pack (Tab) — ten slots, drag one item onto another to combine.
@@ -3264,6 +3452,89 @@ shovelVM.rotation.set(0.70, 0.35, 0.32);
 shovelVM.visible = false;
 toolMount.add(shovelVM);
 
+/* The swing trail. Follow-through and arc, and the cheapest thing there is
+ * for making a swing read as a swing rather than as a model changing angle:
+ * a ribbon strung between the blade's edge and its root, sampled every frame
+ * through the strike and left to fade after it. Two markers ride the shovel
+ * and the strip is rebuilt from a ring buffer of where they have been.
+ *
+ * It lives in vmScene, NOT under the arm — the whole point is that it stays
+ * where the blade was while the blade moves on.
+ *
+ * Brightness scales with digPower, so a wound-up swing tears a streak across
+ * the screen and a tap leaves almost nothing. That difference is doing real
+ * work: it is the clearest read the player has on how hard they just hit. */
+/* The two markers sit at the ENDS OF THE BLADE'S LIP, not along the shaft.
+ * Strung tip-to-root down the tool the ribbon is 0.3 local units wide and,
+ * swept through four radians, it fills a quarter of the screen with a solid
+ * white fan. Strung across the cutting edge it is exactly as wide as the
+ * blade, and what it draws is the path the edge actually took. Ten samples,
+ * not eighteen: a trail is a smear behind the blade, not a diagram of the
+ * whole swing. */
+const TRAIL_N = 10;
+const trailTip = new THREE.Object3D();  trailTip.position.set(-0.095, -0.21, -0.05);
+const trailRoot = new THREE.Object3D(); trailRoot.position.set(0.095, -0.21, -0.05);
+shovelVM.add(trailTip, trailRoot);
+const trailPos = new Float32Array(TRAIL_N * 2 * 3);
+const trailCol = new Float32Array(TRAIL_N * 2 * 3);
+const trailGeo = new THREE.BufferGeometry();
+trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPos, 3));
+trailGeo.setAttribute('color', new THREE.BufferAttribute(trailCol, 3));
+{
+  const idx = [];
+  for (let i = 0; i < TRAIL_N - 1; i++) {
+    const a = i * 2;
+    idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+  }
+  trailGeo.setIndex(idx);
+}
+const trailMesh = new THREE.Mesh(trailGeo, new THREE.MeshBasicMaterial({
+  vertexColors: true, transparent: true, depthWrite: false, fog: false,
+  blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+}));
+trailMesh.frustumCulled = false;        // it is rebuilt in place every frame
+trailMesh.visible = false;
+vmScene.add(trailMesh);
+let trailLen = 0, trailFade = 0, trailPower = 0;
+const _tv = new THREE.Vector3();
+
+function trailSample() {
+  // shuffle every sample one slot older, then write the newest into slot 0
+  trailPos.copyWithin(6, 0, (TRAIL_N - 1) * 6);
+  trailTip.getWorldPosition(_tv);
+  trailPos[0] = _tv.x; trailPos[1] = _tv.y; trailPos[2] = _tv.z;
+  trailRoot.getWorldPosition(_tv);
+  trailPos[3] = _tv.x; trailPos[4] = _tv.y; trailPos[5] = _tv.z;
+  trailLen = Math.min(TRAIL_N, trailLen + 1);
+}
+function updateTrail(dt, recording) {
+  if (recording) { trailSample(); trailFade = 1; }
+  else if (trailFade > 0) trailFade = Math.max(0, trailFade - dt / 0.16);
+  if (trailFade <= 0) {
+    if (trailMesh.visible) { trailMesh.visible = false; trailLen = 0; }
+    return;
+  }
+  trailMesh.visible = true;
+  /* Slots past what has actually been recorded keep whatever was in them, so
+   * they are zeroed in COLOUR rather than moved — the blend is additive, and
+   * black adds nothing. Cheaper than fixing up positions every frame. */
+  for (let i = 0; i < TRAIL_N; i++) {
+    const age = i / (TRAIL_N - 1);
+    const a = (i < trailLen ? Math.pow(1 - age, 1.7) : 0)
+      * trailFade * (0.020 + trailPower * 0.062);
+    /* Low, because the quads OVERLAP as the arc tightens and additive
+     * blending accumulates every one of them — a per-quad alpha that looks
+     * faint on its own stacks into solid white where the smear doubles back. */
+    for (let k = 0; k < 2; k++) {
+      const o = (i * 2 + k) * 3;
+      const w = k === 0 ? 1 : 0.85;      // barely tapered: both ends are the edge
+      trailCol[o] = a * w * 0.70; trailCol[o + 1] = a * w * 0.80; trailCol[o + 2] = a * w;
+    }
+  }
+  trailGeo.attributes.position.needsUpdate = true;
+  trailGeo.attributes.color.needsUpdate = true;
+}
+
 // ------------------------------------------------------------------
 // Sand castle with the shovel stuck in it — the first item you find
 // ------------------------------------------------------------------
@@ -3393,33 +3664,90 @@ addInteractable(shovelWorld, "Take the sand shovel", 'inventory', {
 /* The charged swing. Hold the right button and the shovel hauls back; the
  * longer it's held the further it winds, and letting go drops it with that
  * much more behind it. digPower 0 is the ordinary left-click dig, 1 is a full
- * wind-up: slower, wider, and it hits a good deal harder. The pose is driven
- * from windCharge so what you see in your hands is the strength you've built. */
-const WIND_FULL = 1.15;                 // seconds of holding to reach full power
-let winding = false, windT = 0, digPower = 0;
-function startDig(power = 0) {
+ * wind-up: slower, wider, reaches further, and hits a good deal harder.
+ *
+ * THE RELEASE USED TO LAG, and the reason is worth writing down. A charged
+ * swing went through startDig() like any other, and startDig() starts the
+ * animation at p = 0 — which is *anticipation*, the part that hauls the tool
+ * up from rest. So letting go snapped the shovel out of the pose you had just
+ * spent a second winding into, dropped it back to rest, and then spent another
+ * 0.4 s winding it up again before it fell. Two artefacts, one cause.
+ *
+ * A charged swing is already wound. It starts at DIG_WINDUP — the doorstep of
+ * the strike — from the exact pose the hands were left in, captured off the
+ * last rendered frame so there is nothing to snap between. Release to blade
+ * moving is one frame. */
+const WIND_FULL = 1.0;                  // seconds of holding to reach full power
+let winding = false, windT = 0, digPower = 0, digCharged = false, windFull = false;
+
+/* Poses are [pitch, lift, yaw, roll, push] and the swing is lerps between
+ * them, rather than five hand-written curves per segment. That is what lets
+ * the charged release start from an arbitrary pose instead of a fixed one. */
+const REST_POSE = [0, 0, 0, 0, 0];
+const _poseA = [0, 0, 0, 0, 0];         // where the strike starts
+const _poseB = [0, 0, 0, 0, 0];         // where it lands
+const _pose = [0, 0, 0, 0, 0];          // this frame, and what release captures
+function poseMix(out, a, b, t) {
+  for (let i = 0; i < 5; i++) out[i] = a[i] + (b[i] - a[i]) * t;
+  return out;
+}
+// the top of an ordinary left-click swing
+function haulPose(out, P) {
+  out[0] = -(1.25 + P * 0.70); out[1] = 0.17 + P * 0.13;
+  out[2] = -(0.34 + P * 0.26); out[3] = -(0.20 + P * 0.16); out[4] = 0.05;
+  return out;
+}
+/* Where the blade lands. `push` is the arm's z, and the vm camera looks down
+ * -Z, so a more negative push is the tool thrust further out in front of you —
+ * this is the visible half of a heavy's longer reach, the other half being the
+ * raycast in digImpact(). At full charge the arm goes from 0.62 m out to 1.06,
+ * which reads as a real lunge rather than a tuning nudge. */
+function impactPose(out, P) {
+  /* `lift` used to take the hand to -0.69 at full charge, which is below the
+   * bottom of the frame — the blade left the screen on the frame it landed,
+   * so the one pose that most needs to read was the one you could not see.
+   * The chop is carried by `pitch` instead, which is what was doing the work
+   * anyway; the hand now stops just inside the edge. */
+  out[0] = 1.72 + P * 0.80; out[1] = -(0.30 + P * 0.06);
+  out[2] = 0.16 + P * 0.14; out[3] = 0.14 + P * 0.10; out[4] = -(0.12 + P * 0.26);
+  return out;
+}
+
+function startDig(power = 0, fromPose = null) {
   if (digT > 0 || !equipped || !equipped.onDig || frozen()) return;
   digPower = THREE.MathUtils.clamp(power, 0, 1);
-  digT = 0.0001;
   digImpacted = false;
+  digCharged = !!fromPose;
+  if (fromPose) {
+    for (let i = 0; i < 5; i++) _poseA[i] = fromPose[i];
+    digT = DIG_WINDUP;                  // already wound: straight into the strike
+  } else {
+    haulPose(_poseA, digPower);
+    digT = 0.0001;
+  }
+  impactPose(_poseB, digPower);
   sfxDig(digPower);
 }
 function startWind() {
   if (digT > 0 || winding || !equipped || !equipped.onDig || frozen()) return;
-  winding = true; windT = 0;
+  winding = true; windT = 0; windFull = false;
 }
 function releaseWind() {
   if (!winding) return;
   winding = false;
   // even a tap off the right button carries a bit more than a plain dig
-  startDig(0.25 + 0.75 * Math.min(1, windT / WIND_FULL));
+  startDig(0.3 + 0.7 * Math.min(1, windT / WIND_FULL), _pose);
   windT = 0;
 }
+/* How far in front of you the blade can land. A wound-up swing reaches
+ * DIG_REACH + DIG_HEAVY_REACH, half again as far as a left click — you can
+ * see it too, because the crater and the sand it throws land out there. */
+const DIG_REACH = 4.2, DIG_HEAVY_REACH = 2.4;
 // where on the sand the crosshair is pointing (null if you're looking at
 // the sky or somewhere out of reach)
 const digRay = new THREE.Raycaster();
 const _digHit = new THREE.Vector3();
-function crosshairGroundPoint(maxDist = 4.5) {
+function crosshairGroundPoint(maxDist = DIG_REACH) {
   digRay.far = maxDist;
   digRay.setFromCamera({ x: 0, y: 0 }, camera);
   const hits = digRay.intersectObject(sand, false);
@@ -3430,19 +3758,21 @@ function crosshairGroundPoint(maxDist = 4.5) {
 }
 function digImpact() {
   camera.getWorldDirection(_pf); _pf.y = 0; _pf.normalize();
-  const p = crosshairGroundPoint();
+  const P = digPower;
+  if (crateStrike(P)) return;             // the blade is on the crate, not the sand
+  const p = crosshairGroundPoint(DIG_REACH + P * DIG_HEAVY_REACH);
   let x, z;
   if (p) { x = p.x; z = p.z; }
   else {
     // looking at the sky — scuff the sand just in front of your feet instead
-    x = THREE.MathUtils.clamp(camera.position.x + _pf.x * 1.5, WADE_X + 0.3, CLIFF_BLOCK_X - 0.3);
-    z = camera.position.z + _pf.z * 1.5;
+    const d = 1.5 + P * 1.1;
+    x = THREE.MathUtils.clamp(camera.position.x + _pf.x * d, WADE_X + 0.3, CLIFF_BLOCK_X - 0.3);
+    z = camera.position.z + _pf.z * d;
   }
   // a swing that lands near the crab kills it, sand or surf — a wound-up one
   // reaches further, so a charged swing is the reliable way to land it
-  const P = digPower;
   if (crabState.alive) {
-    const reach = CRAB_KILL_RADIUS * (1 + P * 0.55);
+    const reach = CRAB_KILL_RADIUS * (1 + P * 1.1);
     const cdx = x - crab.position.x, cdz = z - crab.position.z;
     if (cdx * cdx + cdz * cdz < reach * reach) killCrab();
   }
@@ -3453,7 +3783,7 @@ function digImpact() {
     addTrauma(0.10 + P * 0.22);
     return;
   }
-  addTrauma(0.22 + P * 0.30);
+  addTrauma(0.18 + P * 0.42);
   stampDigHole(x, z, _pf.x, _pf.z);
   spawnPuffs(x, z, 22 + Math.round(P * 20), _pf.x, _pf.z);
   sfxDigImpact(P);
@@ -3469,14 +3799,17 @@ const easeInCubic = (t) => t * t * t;
 const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const easeOutBack = (t) => 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 1, 2);
 
-/* The dig, re-cut to attack frame data at 60 fps over DIG_DUR (~48 frames):
+/* The dig, cut to attack frame data at 60 fps over DIG_DUR (~48 frames):
  *   anticipation  0.00–0.34   16f   hauls up and hangs at the top
  *   strike        0.34–0.46    6f   drops fast, accelerating in
  *   impact        0.46
  *   recovery      0.46–1.00   26f   eases back, overshooting once
- * The blade also swings through an arc rather than pitching on the spot,
- * and the poses are pushed past what the geometry strictly needs so they
- * still read at a glance. */
+ * A charged swing enters at 0.34 and plays only the last two — anticipation
+ * is the wind-up, and it has already happened in your hands.
+ *
+ * The blade swings through an arc rather than pitching on the spot, and the
+ * poses are pushed past what the geometry strictly needs so they still read
+ * at a glance. */
 const DIG_WINDUP = 0.34, DIG_STRIKE = 0.46;
 let vmLagX = 0, vmLagY = 0, vmPrevYaw = 0, vmPrevPitch = 0;
 let vmSpringY = 0, vmSpringV = 0;
@@ -3486,10 +3819,17 @@ function vmImpulse(v) { vmSpringV += v; }          // landings, jumps, impacts
 function updateViewmodel(dt) {
   const show = !!equipped && !held;
   viewmodel.visible = show;
-  if (!show) { winding = false; windT = 0; return; }
+  if (!show) { winding = false; windT = 0; updateTrail(dt, false); return; }
   if (winding) {
     if (frozen()) { winding = false; windT = 0; }
-    else windT = Math.min(WIND_FULL * 1.35, windT + dt);
+    else {
+      windT = Math.min(WIND_FULL * 1.35, windT + dt);
+      /* A charge with no full mark is a charge you hold too long every time.
+       * One cue at the top — a creak of strain, and the tremble that was
+       * already there gets a good deal harder — and after that you know the
+       * shape of it by feel. */
+      if (!windFull && windT >= WIND_FULL) { windFull = true; sfxWindFull(); }
+    }
   }
   const windCharge = winding ? Math.min(1, windT / WIND_FULL) : 0;
   const sp = velocity.length();
@@ -3516,59 +3856,65 @@ function updateViewmodel(dt) {
   vmSpringY += vmSpringV * dt;
   vmSpringY = THREE.MathUtils.clamp(vmSpringY, -0.14, 0.14);
 
-  let pitch = 0, lift = 0, swingYaw = 0, roll = 0, push = 0;
   if (winding) {
-    // The haul-back. Rises fast and then creeps, so a full charge still feels
-    // like it's straining rather than sitting at a pose, and the shoulders
-    // shake a little once it's wound past full.
+    /* The haul-back. Rises fast and then creeps, so a full charge still feels
+     * like it's straining rather than sitting at a pose, and the shoulders
+     * shake a little once it's wound past full. */
     const e = easeOutCubic(windCharge);
-    const strain = windT > WIND_FULL ? Math.sin(windT * 34) * 0.012 : 0;
-    pitch = -(0.55 + 1.35 * e) + strain;
-    lift = 0.10 + 0.20 * e;
-    swingYaw = -(0.22 + 0.42 * e);
-    roll = -(0.14 + 0.26 * e) + strain;
-    push = 0.04 + 0.10 * e;
+    const strain = windFull ? Math.sin(windT * 38) * 0.026 : 0;
+    _pose[0] = -(0.62 + 1.42 * e) + strain;
+    _pose[1] = 0.11 + 0.22 * e;
+    _pose[2] = -(0.24 + 0.48 * e);
+    _pose[3] = -(0.16 + 0.30 * e) + strain;
+    _pose[4] = 0.05 + 0.12 * e;
   } else if (digT > 0) {
-    // a heavier swing takes longer to come round
-    digT += dt / (DIG_DUR * (1 + digPower * 0.45));
-    const p = digT;
     const P = digPower;
+    /* A heavy is slower through the whole move, and slower still to recover —
+     * the commitment after the blade lands is most of what makes it read as
+     * weight rather than as a faster shovel. */
+    digT += dt / (DIG_DUR * (1 + P * 0.55));
+    const p = digT;
     if (p < DIG_WINDUP) {
       // anticipation: quick out of rest, hanging at the top of the haul
-      const t = easeOutCubic(p / DIG_WINDUP);
-      pitch = -(1.25 + P * 0.70) * t; lift = (0.17 + P * 0.13) * t;
-      swingYaw = -(0.34 + P * 0.26) * t; roll = -(0.20 + P * 0.16) * t; push = 0.05 * t;
+      poseMix(_pose, REST_POSE, _poseA, easeOutCubic(p / DIG_WINDUP));
     } else if (p < DIG_STRIKE) {
-      // the strike: accelerates into the sand, arcing across as it drops
-      const t = easeInCubic((p - DIG_WINDUP) / (DIG_STRIKE - DIG_WINDUP));
-      pitch = -(1.25 + P * 0.70) + (2.85 + P * 1.30) * t;
-      lift = (0.17 + P * 0.13) - (0.62 + P * 0.22) * t;
-      swingYaw = -(0.34 + P * 0.26) + (0.50 + P * 0.34) * t;
-      roll = -(0.20 + P * 0.16) + (0.34 + P * 0.24) * t;
-      push = 0.05 - (0.17 + P * 0.10) * t;
+      /* The strike. easeInCubic starts almost stationary and ends at full
+       * speed, so the blade hangs for a beat and then falls — and because
+       * _poseA is wherever the swing actually began, a charged release picks
+       * up from the wound pose with nothing to snap through. */
+      poseMix(_pose, _poseA, _poseB, easeInCubic((p - DIG_WINDUP) / (DIG_STRIKE - DIG_WINDUP)));
     } else {
-      // recovery: eases back to rest and overshoots once on the way
-      const t = Math.min(1, (p - DIG_STRIKE) / (1 - DIG_STRIKE));
-      const e = easeOutBack(t);
-      pitch = (1.60 + P * 0.6) * (1 - e); lift = -(0.45 + P * 0.2) * (1 - e);
-      swingYaw = 0.16 * (1 - e); roll = 0.14 * (1 - e); push = -0.12 * (1 - e);
+      // recovery: eases back to rest, overshooting once on the way
+      poseMix(_pose, _poseB, REST_POSE, easeOutBack(Math.min(1, (p - DIG_STRIKE) / (1 - DIG_STRIKE))));
     }
     if (!digImpacted && p >= DIG_STRIKE) {
       digImpacted = true;
       digImpact();
-      vmImpulse(-1.7 - digPower * 1.9);            // the blade jars in your hands
+      /* The jar in your hands. This used to be -1.7 to -3.6, which slammed
+       * the spring into its own ±0.14 clamp on the very next frame — a hard
+       * step, and it read as the animation stuttering on the hit rather than
+       * as an impact. The spring's peak is roughly v0/sqrt(stiffness), so
+       * anything under ~1.5 stays inside the clamp and stays a curve. */
+      vmImpulse(-0.95 - P * 0.5);
     }
-    if (p >= 1) { digT = 0; digPower = 0; }
+    if (p >= 1) { digT = 0; digPower = 0; digCharged = false; }
+  } else {
+    for (let i = 0; i < 5; i++) _pose[i] = 0;
   }
 
-  armRig.rotation.x = ARM_ROT_X + pitch + vmLagX;
-  armRig.rotation.y = -0.45 + swingYaw + vmLagY;
-  armRig.rotation.z = 0.10 + roll + vmLagY * 0.45;
+  armRig.rotation.x = ARM_ROT_X + _pose[0] + vmLagX;
+  armRig.rotation.y = -0.45 + _pose[2] + vmLagY;
+  armRig.rotation.z = 0.10 + _pose[3] + vmLagY * 0.45;
   armRig.position.set(
     ARM_BASE.x + bx + vmLagY * 0.16,
-    ARM_BASE.y + by + lift + vmSpringY,
-    ARM_BASE.z + push
+    ARM_BASE.y + by + _pose[1] + vmSpringY,
+    ARM_BASE.z + _pose[4]
   );
+
+  // Only the strike and a beat past it leave a trail; a trail on the wind-up
+  // would say the tool was moving fast when it is deliberately barely moving.
+  trailPower = digPower;
+  updateTrail(dt, shovelVM.visible && digT >= DIG_WINDUP - 0.02 && digT < DIG_STRIKE + 0.13);
 }
 
 // ------------------------------------------------------------------
@@ -3917,7 +4263,8 @@ function finishExtraction() {
   // show the jar as the payoff, then it's gone
   inspectSetModel(bloodJar);
   inspectRotX = 0.12; inspectRotY = 0.45; inspectDist = 3.7; inspectAuto = 0;
-  inspectEl.querySelector('.hint').textContent = 'A jar of blue blood · hold right-click to turn it · click to put it away';
+  inspectEl.querySelector('.hint').textContent =
+    'A jar of blue blood · hold right-click to turn it · click to put it away';
 }
 
 // ------------------------------------------------------------------
@@ -4245,7 +4592,17 @@ const CRAB_Z = -20;                    // where it's waiting, well before Bradly
 const CRAB_WAKE = 17;                  // it notices you at this range
 const CRAB_SPEED = 2.35;
 const CRAB_REACH = 1.45;               // how close it gets before it nips
-const CRAB_COOLDOWN = 1.5;             // seconds between nips
+/* Attack frame data, at 60 fps. The nip used to land the same frame the crab
+ * came into reach, with the lunge pose playing *after* the damage — nothing
+ * to read and nothing to do about it. Now it telegraphs: startup you can see
+ * and react to, a short active window, and a long recovery that is your
+ * opening to swing back. Being in reach when it starts is not enough — the
+ * distance is re-tested on the active frame, so backing off actually works. */
+const CRAB_WIND = 0.30;                // 18f startup — rears, claws wide, gaping
+const CRAB_STRIKE = 0.10;              //  6f active  — damage on the first frame
+const CRAB_RECOVER = 0.34;             // 20f recovery — committed, and punishable
+const CRAB_COOLDOWN = 0.85;            // seconds between attacks, after recovery
+const CRAB_HIT_STOP = 0.08;            // ~5f of frozen time when the shovel lands
 const CRAB_KILL_RADIUS = 1.5;          // how near a shovel strike has to land
 // Built around a `rig` group so the whole animal can be pitched, rolled and
 // bounced by the gait without disturbing its heading. Each leg is a two-bone
@@ -4407,7 +4764,7 @@ new GLTFLoader().load('assets/crab.glb', (gltf) => {
   }
 }, undefined, () => {});
 
-const crabState = { alive: true, awake: false, atkT: 0, scuttle: 0, deadT: 0, rear: 0, lunge: 0 };
+const crabState = { alive: true, awake: false, atk: -1, cool: 0, scuttle: 0, deadT: 0, rear: 0, lunge: 0, struck: false };
 const _crabDir = new THREE.Vector3();
 
 // ---- gibs + blood ---------------------------------------------------
@@ -4543,15 +4900,30 @@ function updateGibs(dt) {
   }
 }
 
+/* The killing blow, in two beats. It used to be one: the crab vanished and
+ * the gibs appeared on the same frame, which gives the player nothing to
+ * connect the swing to. Now the blade lands, time stops for five frames, and
+ * for exactly those five frames the crab is still there — folded up under the
+ * shovel in a hard squash, thrown back along the swing. THEN it comes apart.
+ * The freeze and the squash are the same beat, which is why `struck` ends on
+ * `hitstop` rather than on a timer of its own. */
 function killCrab() {
-  if (!crabState.alive) return;
+  if (!crabState.alive || crabState.struck) return;
+  crabState.struck = true;
+  crabState.atk = -1;
+  camera.getWorldDirection(_crabDir); _crabDir.y = 0; _crabDir.normalize();
+  sfxCrabHit();
+  addTrauma(0.55);
+  hitstop = CRAB_HIT_STOP;
+}
+function finishCrab() {
   crabState.alive = false;
+  crabState.struck = false;
   crabState.deadT = 0;
   crab.visible = false;                        // it comes apart instead
   burstCrab();
   sfxCrabDie();
-  addTrauma(0.85);                             // the hit lands
-  hitstop = 0.075;      // ~4.5 frames at 60fps
+  addTrauma(0.45);                             // the second half of the hit
 }
 
 // pose one leg: `ph` is its phase through the step cycle (0..1)
@@ -4572,6 +4944,18 @@ function poseLeg(leg, ph, reach) {
 function updateCrab(dt) {
   const ud = crab.userData;
   if (!crabState.alive) { if (crabMixer) crabMixer.update(0); return; }
+  /* Impact frames. Held for the length of the hitstop and no longer, so the
+   * squash you are looking at is the reason the world has stopped. It is
+   * driven off `hitstop` and not off dt, because dt is what hitstop scales. */
+  if (crabState.struck) {
+    const e = 1 - THREE.MathUtils.clamp(hitstop / CRAB_HIT_STOP, 0, 1);
+    ud.rig.scale.set(1 + 0.34 * (1 - e), 1 - 0.42 * (1 - e), 1 + 0.34 * (1 - e));
+    ud.rig.rotation.x = 0.55 * (1 - e);
+    ud.rig.rotation.z = 0.22 * (1 - e);
+    crab.position.addScaledVector(_crabDir, 1.4 * dt);   // thrown off the blade
+    if (hitstop <= 0) finishCrab();
+    return;
+  }
   if (frozen()) return;
 
   const dx = camera.position.x - crab.position.x;
@@ -4586,11 +4970,45 @@ function updateCrab(dt) {
     sfxCrabWake();
   }
 
-  crabState.atkT = Math.max(0, crabState.atkT - dt);
-  crabState.lunge = Math.max(0, (crabState.lunge || 0) - dt * 3.4);
   crabState.rear = Math.max(0, (crabState.rear || 0) - dt * 1.2);
-
   const closing = dist > CRAB_REACH;
+
+  // ---- the attack cycle -------------------------------------------
+  let atkRear = 0, atkLunge = 0, atkSquash = 0;
+  if (crabState.atk >= 0) {
+    const was = crabState.atk;
+    crabState.atk += dt;
+    const t = crabState.atk;
+    if (was < CRAB_WIND && t >= CRAB_WIND) {
+      sfxCrabSnip();
+      // re-tested here, not when the wind-up began: the tell is only fair if
+      // getting out of the way is a thing that works
+      if (dist < CRAB_REACH + 0.4) damagePlayer(1);
+    }
+    if (t < CRAB_WIND) {
+      /* Anticipation, and it winds DOWN as well as up: the body compresses
+       * onto its legs while the claws go wide. A wind-up that moves the same
+       * way as the strike reads as no wind-up at all. */
+      const e = easeOutCubic(t / CRAB_WIND);
+      atkRear = e; atkSquash = e;
+    } else if (t < CRAB_WIND + CRAB_STRIKE) {
+      // the strike: out fast and held there for the rest of the active frames
+      const e = easeOutCubic((t - CRAB_WIND) / CRAB_STRIKE);
+      atkRear = 1 - e; atkLunge = e; atkSquash = -0.4 * e;
+    } else {
+      // recovery: slow in, and it is wide open for all of it
+      const e = easeInOutCubic((t - CRAB_WIND - CRAB_STRIKE) / CRAB_RECOVER);
+      atkLunge = 1 - e; atkSquash = -0.4 * (1 - e);
+    }
+    if (t >= CRAB_WIND + CRAB_STRIKE + CRAB_RECOVER) {
+      crabState.atk = -1;
+      crabState.cool = CRAB_COOLDOWN;
+    }
+  } else {
+    crabState.cool = Math.max(0, (crabState.cool || 0) - dt);
+    if (!closing && crabState.cool <= 0) { crabState.atk = 0; sfxCrabTell(); }
+  }
+  crabState.lunge = atkLunge;
   if (closing) {
     _crabDir.set(dx / dist, 0, dz / dist);
     // it slows as it comes into range rather than sliding to a dead stop
@@ -4622,8 +5040,12 @@ function updateCrab(dt) {
     poseLeg(leg, (cyc + leg.group * 0.5 + leg.idx * 0.11) % 1, reach);
   }
   // the body rocks with the tripod and rides a little higher when roused
-  const rear = crabState.rear;
+  const rear = Math.max(crabState.rear, atkRear);
   const lunge = crabState.lunge;
+  /* Squash and stretch, roughly holding volume: it compresses and spreads as
+   * it winds, and draws up tall and narrow as it throws itself at you. This
+   * is most of why the strike reads as force rather than as a rotation. */
+  ud.rig.scale.set(1 + atkSquash * 0.11, 1 - atkSquash * 0.17, 1 + atkSquash * 0.11);
   // While it's still in the surf the water covers it — it only comes fully
   // clear once it's crawled out onto the sand.
   const bob = Math.abs(Math.sin(crabState.scuttle)) * 0.018 * reach;
@@ -4662,12 +5084,6 @@ function updateCrab(dt) {
     ud.eyes[i].rotation.z = (i ? -1 : 1) * (0.1 + rear * 0.2);
   }
 
-  if (!closing && crabState.atkT <= 0) {
-    crabState.atkT = CRAB_COOLDOWN;
-    crabState.lunge = 1;                       // drives the strike pose above
-    sfxCrabSnip();
-    damagePlayer(1);
-  }
 }
 
 // ------------------------------------------------------------------
@@ -4859,6 +5275,165 @@ new THREE.TextureLoader().load('assets/bradly.png', (tex) => {
 scene.add(bradly);
 addInteractable(bradly, 'Talk to him', 'npc', { onActivate: () => startDialog('start') });
 
+// ------------------------------------------------------------------
+// The crate below Bradly — and the ring in it
+// ------------------------------------------------------------------
+/* A shipping crate washed up against the cliff under where Bradly stands.
+ * It is the game's one lock, and the key is the swing you already have: a
+ * left click thuds off the boards and does nothing, and only a wound-up
+ * heavy (`CRATE_POWER`, which needs about two-thirds of a full charge) puts
+ * the blade through the lid. That is the whole reason it exists — the heavy
+ * swing is otherwise just a better version of the light one, and this is the
+ * one place the game asks for it by name.
+ *
+ * It is solid while it stands: a cylinder in `rockColliders`, dropped again
+ * when the boards come apart.
+ */
+const CRATE_X = 12.8, CRATE_R = 0.52, CRATE_H = 0.72;
+const CRATE_POWER = 0.75;              // ~0.64 s of charge — a real haul-back
+const crateZ = bradly.position.z - 1.5;
+const crate = new THREE.Group();
+crate.position.set(CRATE_X, 0, crateZ);
+crate.rotation.y = -0.32;
+let crateBroken = false;
+{
+  const boardMat = new THREE.MeshStandardMaterial({
+    color: 0x6a5642, roughness: 1, flatShading: true, emissive: 0x161009,
+  });
+  const battenMat = new THREE.MeshStandardMaterial({
+    color: 0x4e3e2d, roughness: 1, flatShading: true, emissive: 0x110c06,
+  });
+  const W = CRATE_R * 2 * 0.72;        // the box is a little inside its collider
+  // four sides of slats with gaps, so it reads as boards and not as a box
+  for (const [ry, dx, dz] of [[0, 0, W / 2], [Math.PI, 0, -W / 2],
+                              [Math.PI / 2, W / 2, 0], [-Math.PI / 2, -W / 2, 0]]) {
+    const face = new THREE.Group();
+    face.position.set(dx, 0, dz);
+    face.rotation.y = ry;
+    for (let i = 0; i < 4; i++) {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(W, CRATE_H / 4.6, 0.035), boardMat);
+      b.position.y = CRATE_H * (0.11 + i * 0.26);
+      b.rotation.z = (Math.random() - 0.5) * 0.02;   // nothing here is square
+      face.add(b);
+    }
+    crate.add(face);
+  }
+  // lid
+  for (let i = 0; i < 4; i++) {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(W, 0.032, W / 4.3), boardMat);
+    b.position.set(0, CRATE_H, -W / 2 + W / 8 + i * (W / 4));
+    crate.add(b);
+  }
+  // corner battens, which are what stop it looking like slats floating in a ring
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.055, CRATE_H + 0.03, 0.055), battenMat);
+    p.position.set(sx * W / 2, CRATE_H / 2, sz * W / 2);
+    crate.add(p);
+  }
+  // a strap round the middle, rusted through in one place
+  const strap = new THREE.Mesh(new THREE.BoxGeometry(W + 0.09, 0.028, W + 0.09), battenMat);
+  strap.position.y = CRATE_H * 0.52;
+  crate.add(strap);
+  scene.add(crate);
+  rockColliders.push({ x: CRATE_X, z: crateZ, r: CRATE_R, top: CRATE_H });
+  addItemShine(crate, { size: 0.9, height: 0.5, strength: 0.5 });
+}
+
+/* Hitting it. Raycast the crosshair straight at the crate rather than reading
+ * the sand under it — aim at the lid and the ground point lands a metre past
+ * the far side, which is exactly the kind of near-miss that reads as the game
+ * being broken. */
+function crateStrike(P) {
+  if (crateBroken) return false;
+  digRay.far = DIG_REACH + P * DIG_HEAVY_REACH;
+  digRay.setFromCamera({ x: 0, y: 0 }, camera);
+  if (!digRay.intersectObject(crate, true).length) return false;
+  if (P >= CRATE_POWER) { breakCrate(); return true; }
+  // it holds. The blade jars back at you, and a puff of dust off the boards
+  // says you connected — a swing that hits and does nothing must not feel
+  // the same as a swing that hit nothing at all.
+  sfxCrateThud();
+  addTrauma(0.17);
+  vmImpulse(-1.15);
+  spawnPuffs(CRATE_X, crateZ, 5, _pf.x, _pf.z, CRATE_H * 0.7, [0.52, 0.42, 0.30]);
+  return true;
+}
+
+function breakCrate() {
+  if (crateBroken) return;
+  crateBroken = true;
+  scene.remove(crate);
+  const ci = rockColliders.findIndex((c) => c.x === CRATE_X && c.z === crateZ);
+  if (ci >= 0) rockColliders.splice(ci, 1);
+  sfxCrateBreak();
+  addTrauma(0.5);
+  hitstop = 0.06;
+  spawnPuffs(CRATE_X, crateZ, 18, _pf.x, _pf.z, CRATE_H * 0.6, [0.52, 0.42, 0.30]);
+
+  // the boards, as real gibs so they bounce and settle with everything else
+  const splint = new THREE.MeshStandardMaterial({
+    color: 0x6a5642, roughness: 1, flatShading: true, emissive: 0x161009,
+  });
+  for (let i = 0; i < 18; i++) {
+    const L = 0.10 + Math.random() * 0.26;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(L, 0.028, 0.05 + Math.random() * 0.05), splint);
+    m.position.set(CRATE_X + (Math.random() - 0.5) * 0.5,
+      0.1 + Math.random() * CRATE_H, crateZ + (Math.random() - 0.5) * 0.5);
+    m.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+    scene.add(m);
+    const a = Math.random() * Math.PI * 2, out = 0.9 + Math.random() * 2.0;
+    gibs.push({
+      m,
+      vel: new THREE.Vector3(Math.cos(a) * out, 1.9 + Math.random() * 2.4, Math.sin(a) * out),
+      spin: new THREE.Vector3((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14),
+      rest: 0.02, life: 40,
+    });
+  }
+  dropRing();
+}
+
+/* What was in it. The ring goes down on the sand where the crate stood, with
+ * the same shine every other takeable thing carries — at 20 mm across it is
+ * the smallest object in the game, and without the glint you would walk over
+ * it in the dark. */
+const ring = makeRing();
+const ringWorld = new THREE.Group();
+ringWorld.add(ring);
+const ringItem = {
+  id: 'ring', name: 'Signet ring', icon: makeRingIcon(), ring: true,
+  // the prompt only offers what is actually available: examining a ring you
+  // are already wearing, or with both slots full, is just examining it
+  use: () => openInspect(ring, {
+    // opens looking down onto the bezel: the stamp is the whole point of it
+    rotX: 1.1, rotY: 0.35,
+    equipLabel: (inventory.includes(ringItem) && rings.length < RING_SLOTS) ? 'Put it on' : null,
+    onEquip: () => { if (wearRing(ringItem)) closeInspect(); },
+  }),
+};
+function dropRing() {
+  ring.position.set(0, 0.012, 0);
+  ring.rotation.set(Math.PI / 2 - 0.35, 0.4, 0);      // fallen flat, tipped a little
+  ringWorld.position.set(CRATE_X + 0.18, 0, crateZ - 0.12);
+  scene.add(ringWorld);
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.26, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy';
+  hit.position.y = 0.06;
+  ringWorld.add(hit);
+  addItemShine(ringWorld, { size: 0.4, height: 0.08, strength: 1.2 });
+  addInteractable(ringWorld, 'Take the ring', 'inventory', {
+    onActivate: () => {
+      scene.remove(ringWorld);
+      removeInteractable(ringWorld);
+      hovered = null;
+      ringsFound = true;
+      addToInventory(ringItem);
+      renderRings();
+      sfxThud(0.03);
+    },
+  });
+}
+
 // The tunnel in the sand wall and the room at the end of it were removed
 // at the project's request. The drainage tunnel home further up the beach
 // is the one that stays — see makeDrainageTunnelHome() below.
@@ -4957,9 +5532,13 @@ document.getElementById('dialog-leave').addEventListener('click', (e) => { e.sto
 const DIALOG_FOV = 42;
 const _lookM = new THREE.Matrix4(), _lookQ = new THREE.Quaternion();
 function updateDialogCam(dt) {
-  const wantFov = dialogOpen ? Math.min(settings.fov, DIALOG_FOV) : settings.fov;
+  // The peek's squeeze is the zoom — and it is also what crops the lit room
+  // out of frame, so there is nothing left to look at but the bore.
+  const wantFov = peeking && !peekLeaving ? PEEK_FOV
+    : dialogOpen ? Math.min(settings.fov, DIALOG_FOV) : settings.fov;
+  const rate = peeking ? 2.6 : 3.5;
   if (Math.abs(camera.fov - wantFov) > 0.01) {
-    camera.fov += (wantFov - camera.fov) * Math.min(1, dt * 3.5);
+    camera.fov += (wantFov - camera.fov) * Math.min(1, dt * rate);
     camera.updateProjectionMatrix();
   }
   if (dialogOpen && dialogTarget) {
@@ -5207,6 +5786,80 @@ function sfxStep() {
     tick.start(t + 0.006); tick.stop(t + 0.036);
   }
 }
+/* Putting a ring on. Two notes a semitone apart and a breath of cloth: the
+ * metal touching, and the finger going through. Short - an equip sound you
+ * hear twice a minute has to be over before you notice it is a sound. */
+function sfxRingOn() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  for (const [f, d, g0] of [[2380, 0.0, 0.05], [2530, 0.012, 0.035]]) {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t + d);
+    g.gain.exponentialRampToValueAtTime(g0, t + d + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.16);
+    o.connect(g).connect(sfxOut());
+    o.start(t + d); o.stop(t + d + 0.18);
+  }
+  const cloth = noiseBurst(0.12, (x) => Math.sin(Math.PI * x) * 0.7);
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1400;
+  const cg = ctx.createGain(); cg.gain.value = 0.035;
+  cloth.connect(lp).connect(cg).connect(sfxOut());
+  cloth.start(t); cloth.stop(t + 0.12);
+}
+// taking it off - the same tick, lower, and without the cloth
+function sfxRingOff() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 1780;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.038, t + 0.004);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+  o.connect(g).connect(sfxOut());
+  o.start(t); o.stop(t + 0.15);
+}
+// the blade bouncing off boards that hold
+function sfxCrateThud() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const body = noiseBurst(0.14, (x) => Math.pow(1 - x, 2.4));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 190; bp.Q.value = 1.6;
+  const g = ctx.createGain(); g.gain.value = 0.4;
+  body.connect(bp).connect(g).connect(sfxOut());
+  body.start(t); body.stop(t + 0.14);
+  const knock = ctx.createOscillator(); knock.type = 'triangle';
+  knock.frequency.setValueAtTime(150, t);
+  knock.frequency.exponentialRampToValueAtTime(78, t + 0.09);
+  const kg = ctx.createGain();
+  kg.gain.setValueAtTime(0.075, t); kg.gain.exponentialRampToValueAtTime(0.0001, t + 0.11);
+  knock.connect(kg).connect(sfxOut());
+  knock.start(t); knock.stop(t + 0.12);
+}
+// and the boards giving: a crack, then the pieces going everywhere
+function sfxCrateBreak() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const crack = noiseBurst(0.22, (x) => Math.pow(1 - x, 1.1) * (0.3 + 0.7 * Math.random()));
+  const cf = ctx.createBiquadFilter(); cf.type = 'bandpass'; cf.Q.value = 0.9;
+  cf.frequency.setValueAtTime(1500, t);
+  cf.frequency.exponentialRampToValueAtTime(420, t + 0.2);
+  const cg = ctx.createGain(); cg.gain.value = 0.4;
+  crack.connect(cf).connect(cg).connect(sfxOut());
+  crack.start(t); crack.stop(t + 0.22);
+  // the clatter afterwards, a handful of little wooden knocks
+  for (let i = 0; i < 7; i++) {
+    const d = 0.05 + Math.random() * 0.42;
+    const o = ctx.createOscillator(); o.type = 'triangle';
+    o.frequency.setValueAtTime(190 + Math.random() * 220, t + d);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t + d);
+    g.gain.exponentialRampToValueAtTime(0.03 + Math.random() * 0.02, t + d + 0.003);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.07);
+    o.connect(g).connect(sfxOut());
+    o.start(t + d); o.stop(t + d + 0.09);
+  }
+}
 function sfxThud(gain) {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime, len = Math.floor(ctx.sampleRate * 0.1);
@@ -5275,6 +5928,29 @@ function noiseBurst(seconds, env) {
   for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * env(i / len);
   const s = ctx.createBufferSource(); s.buffer = b;
   return s;
+}
+/* Reaching full charge. Not a ping — a short wooden creak, the shaft taking
+ * all the load it is going to take, so it reads as the tool straining rather
+ * than as a UI noise in a game that has no UI noises. */
+function sfxWindFull() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const creak = noiseBurst(0.20, (x) => Math.pow(1 - x, 1.4) * (0.4 + 0.6 * Math.random()));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 6.5;
+  bp.frequency.setValueAtTime(430, t);
+  bp.frequency.exponentialRampToValueAtTime(760, t + 0.2);
+  const g = ctx.createGain(); g.gain.value = 0.075;
+  creak.connect(bp).connect(g).connect(sfxOut());
+  creak.start(t); creak.stop(t + 0.2);
+  const o = ctx.createOscillator(); o.type = 'triangle';
+  o.frequency.setValueAtTime(150, t);
+  o.frequency.exponentialRampToValueAtTime(196, t + 0.16);
+  const og = ctx.createGain();
+  og.gain.setValueAtTime(0.0001, t);
+  og.gain.exponentialRampToValueAtTime(0.045, t + 0.03);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+  o.connect(og).connect(sfxOut());
+  o.start(t); o.stop(t + 0.22);
 }
 // the swing — a short airy whoosh as the blade arcs down
 function sfxDig(power = 0) {
@@ -5420,6 +6096,55 @@ function sfxCrabWake() {
   s.start(t); s.stop(t + 0.5);
 }
 // the nip — a hard click plus a short scrape
+/* The tell. Whatever else is on screen, this is the thing that has to say
+ * "it is winding up" — so it is a rising rasp, not a click: legs scraping
+ * shell as it gathers, pitched UP over the eighteen frames of the startup so
+ * the sound itself is the countdown. Deliberately unlike sfxCrabSnip(), which
+ * is the strike; you should never confuse the two. */
+function sfxCrabTell() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const rasp = noiseBurst(CRAB_WIND, (x) => (0.35 + 0.65 * Math.random()) * Math.min(1, x * 3.5) * (1 - x * 0.25));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 3.2;
+  bp.frequency.setValueAtTime(700, t);
+  bp.frequency.exponentialRampToValueAtTime(2400, t + CRAB_WIND);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.15, t + CRAB_WIND * 0.8);
+  g.gain.exponentialRampToValueAtTime(0.02, t + CRAB_WIND);
+  rasp.connect(bp).connect(g).connect(sfxOut());
+  rasp.start(t); rasp.stop(t + CRAB_WIND);
+  // and a low swell under it, so it carries when the surf is loud
+  const o = ctx.createOscillator(); o.type = 'sawtooth';
+  o.frequency.setValueAtTime(48, t);
+  o.frequency.exponentialRampToValueAtTime(96, t + CRAB_WIND);
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 320;
+  const og = ctx.createGain();
+  og.gain.setValueAtTime(0.0001, t);
+  og.gain.exponentialRampToValueAtTime(0.075, t + CRAB_WIND * 0.85);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + CRAB_WIND + 0.05);
+  o.connect(lp).connect(og).connect(sfxOut());
+  o.start(t); o.stop(t + CRAB_WIND + 0.06);
+}
+/* The blade landing on shell — the first half of the kill, played under the
+ * hitstop while the crab is still there. sfxCrabDie() is the second half, and
+ * fires when it actually comes apart. Splitting them is what stops the kill
+ * being one undifferentiated crunch. */
+function sfxCrabHit() {
+  const ctx = audioCtx; if (!ctx) return;
+  if (playSample('fleshHit', 0.5, 0.07, 0.86)) return;
+  const t = ctx.currentTime;
+  const body = noiseBurst(0.13, (x) => Math.pow(1 - x, 2.0));
+  const bf = ctx.createBiquadFilter(); bf.type = 'lowpass'; bf.frequency.value = 340;
+  const bg = ctx.createGain(); bg.gain.value = 0.5;
+  body.connect(bf).connect(bg).connect(sfxOut());
+  body.start(t); body.stop(t + 0.13);
+  const crack = noiseBurst(0.09, (x) => Math.pow(1 - x, 1.2) * Math.random());
+  const cf = ctx.createBiquadFilter(); cf.type = 'bandpass'; cf.frequency.value = 1500; cf.Q.value = 1.1;
+  const cg = ctx.createGain(); cg.gain.value = 0.3;
+  crack.connect(cf).connect(cg).connect(sfxOut());
+  crack.start(t); crack.stop(t + 0.09);
+}
 function sfxCrabSnip() {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime;
@@ -5551,13 +6276,266 @@ drainTunnel.position.set(DRAIN_X, 0, DRAIN_Z);
 scene.add(drainTunnel);
 const DN = drainTunnel.userData.nav;
 
-// Looking at the grille in the back wall just tells you what you already
-// suspect. `bare` prints the line without an [E] prefix — it's a statement,
-// not something you can act on.
+// ------------------------------------------------------------------
+// The stuck gate at the back of the drain
+// ------------------------------------------------------------------
+/* The outlet in the chamber's back wall is barred and the bars do not move.
+ * What you *can* do is get your face against them and look, and that is the
+ * whole of this: press E, the camera leans in over the last half metre and
+ * the FOV squeezes from 107 down to 19 — which is the zoom, and it is also
+ * what shuts the room out of frame so there is nothing to look at but the
+ * bore. Five metres of ribbed pipe run back into the hill behind the grille.
+ *
+ * Nothing is down there. Then, about a second and a half after you settle,
+ * there is: two eyes, small and pale and a long way in, fading up out of the
+ * black rather than switching on. They blink at their own pace, drift a
+ * little, and once in a while tilt. There is no reveal past that, no monster
+ * and no jump — the thing that works is that it is *far away*, it is looking
+ * back, and you have to decide to keep looking at it.
+ *
+ * The audio does most of the rest. A cave drone, a slow tail of dripping,
+ * and the whisper track already in the assets folder run through a heavy
+ * lowpass and a delay so it reads as somebody muttering to himself round a
+ * bend, too far off to make out and never quite still.
+ *
+ * The camera is driven as an absolute override at the tail of update(), so
+ * the physics that ran earlier in the frame is simply overwritten; the exact
+ * position and orientation you leaned from are stored and restored on exit,
+ * and `_shakePrev` is cleared each frame so the trauma shake can't leave a
+ * stale offset behind when you come back out.
+ */
+const PEEK_FOV = 24;
+const PEEK_IN = 0.9, PEEK_OUT = 0.45;      // seconds to lean in / back out
+let peeking = false, peekLeaving = false, peekT = 0, peekHeld = 0;
+let peekReturnLock = false, gateEyes = null;
+const _peekFrom = new THREE.Vector3(), _peekTo = new THREE.Vector3();
+const _peekFromQ = new THREE.Quaternion(), _peekToQ = new THREE.Quaternion();
+const _peekHome = new THREE.Vector3(), _peekHomeQ = new THREE.Quaternion();
+const _pk = new THREE.Vector3(), _pk2 = new THREE.Vector3();
+
+/* A pair of eyes, drawn once onto a small canvas. Not two dots: a dot at
+ * this size is a bright speck and reads as a reflector or a bug. An eye is a
+ * pale almond, darker at the lids, with an iris sitting on it and one hard
+ * catchlight — keep those four things and it stays an eye even when it is
+ * eleven pixels wide, which is all it ever is here. */
+function makeEyeTexture() {
+  const S = 64;
+  const c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, S, S);
+  // the wet of the eye, brightest at the middle of the opening
+  const sclera = g.createRadialGradient(S / 2, S / 2, 1, S / 2, S / 2, S * 0.42);
+  sclera.addColorStop(0, 'rgba(214, 224, 238, 0.95)');
+  sclera.addColorStop(0.55, 'rgba(150, 166, 190, 0.60)');
+  sclera.addColorStop(1, 'rgba(90, 102, 124, 0)');
+  g.save();
+  g.beginPath();
+  g.ellipse(S / 2, S / 2, S * 0.44, S * 0.24, 0, 0, Math.PI * 2);   // the opening
+  g.clip();
+  g.fillStyle = sclera; g.fillRect(0, 0, S, S);
+  // iris + pupil, sat a touch high the way a lid always covers a little
+  g.fillStyle = 'rgba(24, 30, 40, 0.86)';
+  g.beginPath(); g.arc(S / 2, S * 0.47, S * 0.17, 0, Math.PI * 2); g.fill();
+  g.fillStyle = 'rgba(6, 8, 12, 0.95)';
+  g.beginPath(); g.arc(S / 2, S * 0.47, S * 0.085, 0, Math.PI * 2); g.fill();
+  // the catchlight — the one hard edge in the whole thing
+  g.fillStyle = 'rgba(232, 240, 252, 0.9)';
+  g.beginPath(); g.arc(S * 0.44, S * 0.40, S * 0.045, 0, Math.PI * 2); g.fill();
+  g.restore();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function makeGateEyes(F) {
+  const G = new THREE.Group();
+  // 4.6 m down an eight-metre pipe: far enough to be small, near enough that
+  // the ribs still give the eye something to measure it against
+  G.position.set(0, -0.02, -4.6);
+  const tex = makeEyeTexture();
+  const eyes = [];
+  for (const sx of [-1, 1]) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.040, 0.022),
+      new THREE.MeshBasicMaterial({
+        map: tex, transparent: true, opacity: 0, depthWrite: false, fog: false,
+      }));
+    m.position.set(sx * 0.038, 0, 0.004);
+    m.scale.x = sx;                            // mirror the catchlight over
+    eyes.push(m);
+    G.add(m);
+  }
+  /* Something for them to be set in. Almost black, so you never actually see
+   * a head — but it occludes the ribs behind it, and that missing ring is
+   * what tells you the eyes are attached to a body rather than floating. */
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 8),
+    new THREE.MeshBasicMaterial({ color: 0x05070b, fog: false }));
+  head.scale.set(1.1, 1.3, 0.8);
+  head.position.z = -0.075;
+  G.add(head);
+  G.visible = false;
+  G.userData = { eyes, blink: 0, blinkIn: 2.2, baseY: -0.02 };
+  F.add(G);
+  return G;
+}
+
+// ---- the sound down the pipe ---------------------------------------
+let peekAudio = null, peekVoiceEl = null, peekVoiceNode = null;
+function startPeekAudio() {
+  const ctx = audioCtx; if (!ctx) return;
+  /* Built once and kept. createMediaElementSource() can only be called once
+   * per element, and re-running the graph would stack a second filter chain
+   * off the same source every time you looked in — the whispers getting
+   * louder on each peek. Later peeks just ramp the gain and hit play again. */
+  if (peekAudio) {
+    peekAudio.gain.gain.setTargetAtTime(1, ctx.currentTime, 0.5);
+    peekAudio.dripIn = 1.4;
+    if (peekVoiceEl) peekVoiceEl.play().catch(() => {});
+    return;
+  }
+  const gain = ctx.createGain();
+  gain.gain.value = 0;
+  gain.connect(sfxOut());
+  // the cave: brown noise under a low resonance, breathing very slowly
+  const buf = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  let lp = 0;
+  for (let i = 0; i < d.length; i++) { lp = lp * 0.9975 + (Math.random() * 2 - 1) * 0.003; d[i] = lp * 9; }
+  const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+  const low = ctx.createBiquadFilter(); low.type = 'lowpass'; low.frequency.value = 210;
+  const res = ctx.createBiquadFilter(); res.type = 'bandpass'; res.frequency.value = 58; res.Q.value = 5.5;
+  const resG = ctx.createGain(); resG.gain.value = 0.9;
+  const breath = ctx.createOscillator(); breath.frequency.value = 0.055;
+  const breathG = ctx.createGain(); breathG.gain.value = 0.45;
+  breath.connect(breathG).connect(resG.gain);
+  const room = ctx.createGain(); room.gain.value = 0.55;
+  src.connect(low).connect(room).connect(gain);
+  src.connect(res).connect(resG).connect(gain);
+  src.start(); breath.start();
+
+  /* Him. The whisper recordings the shell already uses, but pushed a long
+   * way down the pipe: most of the top end gone, and a pair of delays with
+   * feedback so every phrase comes back off the walls a beat later. That
+   * doubling is what makes it read as one person talking to himself in a
+   * space, rather than as a sound effect. */
+  const voice = ctx.createGain(); voice.gain.value = 0.115;
+  voice.connect(gain);
+  try {
+    if (!peekVoiceEl) peekVoiceEl = new Audio('assets/whisper1.m4a');
+    peekVoiceEl.loop = true;
+    peekVoiceEl.currentTime = 0;
+    if (!peekVoiceNode) peekVoiceNode = ctx.createMediaElementSource(peekVoiceEl);
+    const lpv = ctx.createBiquadFilter(); lpv.type = 'lowpass'; lpv.frequency.value = 620;
+    const hpv = ctx.createBiquadFilter(); hpv.type = 'highpass'; hpv.frequency.value = 190;
+    const dl = ctx.createDelay(1.5); dl.delayTime.value = 0.29;
+    const fb = ctx.createGain(); fb.gain.value = 0.42;
+    const wet = ctx.createGain(); wet.gain.value = 0.5;
+    dl.connect(fb).connect(dl);
+    peekVoiceNode.connect(lpv).connect(hpv);
+    hpv.connect(voice);
+    hpv.connect(dl).connect(wet).connect(voice);
+    peekVoiceEl.play().catch(() => {});
+  } catch (e) {}
+  gain.gain.setTargetAtTime(1, ctx.currentTime, 0.6);
+  peekAudio = { gain, dripIn: 1.4 };
+}
+function stopPeekAudio() {
+  if (!peekAudio || !audioCtx) return;
+  peekAudio.gain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.22);
+  if (peekVoiceEl) { try { peekVoiceEl.pause(); } catch (e) {} }
+}
+
+// ---- leaning in ------------------------------------------------------
+function startPeek() {
+  const F = drainTunnel.userData.outlet;
+  if (peeking || !F || frozen()) return;
+  if (!gateEyes) gateEyes = makeGateEyes(F);
+  peeking = true; peekLeaving = false; peekT = 0; peekHeld = 0;
+  gateEyes.visible = false;
+  gateEyes.userData.blink = 0;
+  gateEyes.userData.blinkIn = 2.2;
+  _peekHome.copy(camera.position); _peekHomeQ.copy(camera.quaternion);
+  _peekFrom.copy(camera.position); _peekFromQ.copy(camera.quaternion);
+  /* Where to stop. Closer than this and the crop threads clean between the
+   * middle two bars and you are simply in the pipe — the grille has to stay
+   * in frame, because looking THROUGH something you cannot open is the whole
+   * point. At 0.78 m back, FOV 24 puts the bars and the concrete round the
+   * bore just inside the edges. The axis is local +Z out of the grille. */
+  F.localToWorld(_peekTo.set(0, 0, 0.78));
+  F.localToWorld(_pk.set(0, 0, -5.0));
+  _lookM.lookAt(_peekTo, _pk, camera.up);
+  _peekToQ.setFromRotationMatrix(_lookM);
+  peekReturnLock = locked;
+  if (locked) document.exitPointerLock();
+  if (held) dropHeld();
+  hovered = null;
+  crosshair.className = '';
+  crosshair.style.display = 'none';      // nothing to aim at down there
+  setPrompt(kbd('E') + 'Back away');
+  startPeekAudio();
+}
+function endPeek() {
+  if (!peeking || peekLeaving) return;
+  peekLeaving = true;
+  setPrompt('');
+  stopPeekAudio();
+}
+function updatePeek(dt) {
+  if (!peeking) return;
+  peekT = THREE.MathUtils.clamp(peekT + (peekLeaving ? -dt / PEEK_OUT : dt / PEEK_IN), 0, 1);
+  const e = easeInOutCubic(peekT);
+  camera.position.lerpVectors(_peekFrom, _peekTo, e);
+  camera.quaternion.slerpQuaternions(_peekFromQ, _peekToQ, e);
+  _shakePrev.set(0, 0, 0);       // nothing to unwind next frame
+
+  if (!peekLeaving && peekT >= 1) peekHeld += dt;
+  updateGateEyes(dt);
+
+  // a drip a long way down the pipe, every so often
+  if (peekAudio && !peekLeaving) {
+    peekAudio.dripIn -= dt;
+    if (peekAudio.dripIn <= 0) {
+      peekAudio.dripIn = 2.4 + Math.random() * 4.5;
+      sfxDrip(0.20 + Math.random() * 0.16, (Math.random() - 0.5) * 0.5);
+    }
+  }
+  if (peekLeaving && peekT <= 0) {
+    peeking = false; peekLeaving = false; peekHeld = 0;
+    crosshair.style.display = '';
+    camera.position.copy(_peekHome);
+    camera.quaternion.copy(_peekHomeQ);
+    if (gateEyes) gateEyes.visible = false;
+    if (peekReturnLock && !fallbackLook) requestLock();
+  }
+}
+function updateGateEyes(dt) {
+  const G = gateEyes; if (!G) return;
+  const u = G.userData;
+  // they do not greet you: nothing is there, and then something is
+  const fade = THREE.MathUtils.clamp((peekHeld - 1.5) / 2.6, 0, 1);
+  G.visible = fade > 0.002;
+  if (!G.visible) return;
+
+  u.blinkIn -= dt;
+  if (u.blinkIn <= 0) { u.blink = 1; u.blinkIn = 1.5 + Math.random() * 4.2; }
+  if (u.blink > 0) u.blink = Math.max(0, u.blink - dt / 0.13);
+  // blink starts and ends open and shuts through the middle of its window
+  const open = u.blink > 0 ? 1 - Math.sin(u.blink * Math.PI) : 1;
+
+  const t = peekHeld;
+  for (const m of u.eyes) {
+    m.material.opacity = 0.62 * fade;
+    m.scale.y = Math.max(0.05, open);
+  }
+  // he is not still: a slow sway, a slower shift of weight, and after a
+  // while the head goes over to one side and stays there
+  G.position.x = Math.sin(t * 0.41) * 0.014 + Math.sin(t * 0.17 + 1.1) * 0.020;
+  G.position.y = u.baseY + Math.sin(t * 0.29 + 2.2) * 0.008;
+  G.rotation.z = THREE.MathUtils.clamp((t - 7) / 6, 0, 1) * 0.30;
+}
+
 if (drainTunnel.userData.outlet) {
-  addInteractable(drainTunnel.userData.outlet, "It's too strong.", 'default', {
-    bare: true,
-    onActivate: () => {},
+  addInteractable(drainTunnel.userData.outlet, 'Look inside', 'default', {
+    onActivate: () => startPeek(),
   });
 }
 
@@ -6084,6 +7062,112 @@ function updateShip(dt) {
 }
 
 // ------------------------------------------------------------------
+// The body bag
+// ------------------------------------------------------------------
+/* Thirty metres short of the wreck, on the wet sand. You pick it up as a
+ * black bar a long way down the beach — you are walking INTO the moon
+ * (MOON_DIR), so everything ahead of you is a silhouette, and a sealed black
+ * bag on lit sand is the strongest silhouette on the walk. Then the hull
+ * comes up out of the fog behind it and the two read as one story.
+ *
+ * Placed to make sense rather than to be dropped: it lies on the high-water
+ * line, skewed off the shore with the head end nearest you, tipped over onto
+ * one side and settled into a low drift of the beach's own sand.
+ *
+ * It has to be clear of the water, and that is a hard number, not a guess.
+ * shoreLine() = tide(±3) + swash(±3.6) + wobble(±2), so the waterline can
+ * reach x = 8.6 at the top of everything, and the sand plane discards a
+ * further metre seaward of it. Anything below that gets the surf drawn over
+ * the sand under it and the bag left sitting on top of the water like a raft.
+ * At CORPSE_X = 9.6 the body spans 8.9 to 10.3 and is never wet.
+ *
+ * The model is Dennis Hafemann's "Corpse in a black body bag with ropes",
+ * repacked into assets/corpse.glb by tools/gltfpack.py. Geometry untouched; the materials
+ * are rewritten from KHR_materials_pbrSpecularGlossiness to plain
+ * metallic-roughness, because three r160 dropped that extension and without
+ * the rewrite the bag loads as a blank white slug with no maps at all.
+ */
+const CORPSE_X = 9.6, CORPSE_Z = -126, CORPSE_YAW = 1.15;
+const CORPSE_SINK = 0.05;               // how far the bag is bedded into the sand
+const corpse = new THREE.Group();
+corpse.position.set(CORPSE_X, -CORPSE_SINK, CORPSE_Z);
+corpse.rotation.set(0.03, CORPSE_YAW, 0.055);
+scene.add(corpse);
+
+// the sand it has settled into — same trick as the rock aprons, but only
+// yawed, never tipped, because drifted sand lies flat however the bag lies
+{
+  const drift = new THREE.Mesh(makeApron(1.1), sandMat);
+  // low, or its own shaded flank draws a dark halo round the bag
+  drift.scale.set(1.75, 0.085, 0.86);
+  drift.position.set(CORPSE_X, -0.035, CORPSE_Z);
+  drift.rotation.y = CORPSE_YAW;
+  drift.renderOrder = -1;
+  scene.add(drift);
+}
+
+new GLTFLoader().load('assets/corpse.glb', (gltf) => {
+  gltf.scene.traverse((o) => {
+    if (!o.isMesh) return;
+    const m = o.material;
+    if (/rope/i.test(m.name || '')) {
+      m.color.setHex(0xc8bda4);           // wet hemp, still the model's map
+      m.roughness = 0.85;
+      m.metalness = 0;
+      reexpose(m, 0.8);
+    } else {
+      /* Wet black PVC — and the map really is black: it averages 2/255 and
+       * peaks at 28. In the download that was fine, because the material was
+       * spec-gloss and everything you saw came off a studio HDRI. There is no
+       * environment map here, so left alone the bag renders as a void.
+       *
+       * The fix is deliberately NOT to make it grey: a black bag has to stay
+       * black or it reads as a tarp. So the gamma lift is gentle, the
+       * roughness goes down until the moon lays a wet streak along the
+       * sheeting, and the rim does the rest of the shape. */
+      m.color.setHex(0xffffff);
+      m.roughness = 0.3;
+      m.metalness = 0;
+      reexpose(m, 0.55, [0.115, 0.138, 0.185]);
+    }
+  });
+  corpse.add(gltf.scene);
+  // The bag carries the silhouette from a long way off; the ropes are a
+  // detail you only ever read stood over it, and they cost 235k triangles.
+  farProps.push({ obj: corpse, z: CORPSE_Z, d: 150 });
+  gltf.scene.traverse((o) => {
+    if (o.isMesh && /rope/i.test(o.material.name || '')) {
+      farProps.push({ obj: o, z: CORPSE_Z, d: 45 });
+    }
+  });
+
+  /* Hover text. The ropes are 235k triangles between them — raycasting that
+   * every frame is not on, so the crosshair gets a plain invisible box the
+   * size of the bag instead. `bare` prints the line with no [E]: there is
+   * nothing to do here, which is rather the point. */
+  const proxy = new THREE.Mesh(
+    new THREE.BoxGeometry(2.05, 0.42, 0.7),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  proxy.position.y = 0.18;
+  proxy.name = 'hitProxy';
+  corpse.add(proxy);
+  addInteractable(proxy, 'Someone tied it shut.', 'default', { bare: true });
+});
+
+/* Solid, like the rocks — you walk round a body, you don't walk through one.
+ * Four cylinders down its length approximate the capsule; each one is low
+ * enough that you can still jump up and stand on it. */
+{
+  const ax = Math.cos(CORPSE_YAW), az = -Math.sin(CORPSE_YAW);
+  for (let i = 0; i < 4; i++) {
+    const t = (i / 3 - 0.5) * 1.42;
+    rockColliders.push({
+      x: CORPSE_X + ax * t, z: CORPSE_Z + az * t, r: 0.30,
+      top: 0.33 - CORPSE_SINK,
+    });
+  }
+}
+// ------------------------------------------------------------------
 // The tower: walls you can't walk through, a doorway you can, and a
 // helical stair whose height comes from how far round you've walked.
 // ------------------------------------------------------------------
@@ -6166,7 +7250,15 @@ function updateTower(dt) {
 }
 const snap = (v, s) => Math.round(v / s) * s;
 
-function update(dt) {
+function update(dt, rawDt = dt) {
+  /* The lean is a camera move, not a player move. Putting the player back
+   * where they were standing before the physics runs means every clamp below
+   * — the cliff, the drain's walls, the floor — sees a position it agrees
+   * with, and updatePeek() at the bottom of this function writes the leaned
+   * camera back for the render. Without this the clamps get a frame's worth
+   * of a body half inside a wall, and hand it back to you when you stand up.
+   */
+  if (peeking) camera.position.copy(_peekHome);
   const canMove = (locked || fallbackLook) && !frozen();
   const mx = canMove ? (keys['KeyD'] ? 1 : 0) - (keys['KeyA'] ? 1 : 0) : 0;
   const mz = canMove ? (keys['KeyW'] ? 1 : 0) - (keys['KeyS'] ? 1 : 0) : 0;
@@ -6199,6 +7291,7 @@ function update(dt) {
     camera.position.x = Math.max(camera.position.x, WADE_X);
   }
   updateTower(dt);
+  updateFarProps();
   // Rocks are solid: walk into one and you're pushed out, clear its lip and
   // you stand on it. Done after updateTower() so a rock simply beats the sand.
   // Skipped inside the drainage tunnel home — there are no beach rocks in
@@ -6324,7 +7417,7 @@ function update(dt) {
   const cll = city.userData.lights;
   if (cll) cll.material.opacity = 0.30 + 0.05 * Math.sin(oceanUniforms.uTime.value * 2.3);
 
-  updateViewmodel(dt);
+  updateViewmodel(rawDt);       // real time: a swing must not stall in hitstop
   updateHeldGlow(dt);
   updateDialogCam(dt);
   updateCrab(dt);
@@ -6333,6 +7426,10 @@ function update(dt) {
   updateHurt(dt);
   updateShines(oceanUniforms.uTime.value);
   updateDoor(dt);
+
+  // Last word on the camera: the lean overwrites whatever the physics above
+  // put in camera.position, and restores it exactly when you back out.
+  updatePeek(dt);
 
   // walking up on Bradly starts the exchange the first time, so you can't
   // miss him; after that he's a normal E-to-talk interactable
@@ -6349,9 +7446,14 @@ function animate() {
   if (!drainWarmed) warmDrain();
   let dt = Math.min(clock.getDelta(), 0.05);
   // a beat of near-frozen time on a solid hit, drained in real seconds
+  /* Hitstop stalls the WORLD, not your hands. Killing the crab sets 0.075 s
+   * of near-frozen time, and running the view model on that scaled dt froze
+   * the shovel mid-arc — which reads as the animation stuttering on the hit
+   * rather than as the hit landing. The swing gets real seconds. */
+  const rawDt = dt;
   if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
   oceanUniforms.uTime.value += dt;
-  update(dt);
+  update(dt, rawDt);
   updateHover();
   if (inspecting) {
     updateInspect(dt);
@@ -6407,7 +7509,13 @@ window.__bw = {
   lhDoor, shinies, onPath, pathBend, pathHalfAt, lhWindows, lanternGlass,
   get doorOpen() { return doorOpen; }, set doorOpen(v) { doorOpen = v; doorSwing = v ? 1 : 0; lhDoor.rotation.y = -doorSwing * 1.95; },
   get insideTower() { return insideTower; },
-  rockColliders, rockGroundAt,
+  rockColliders, rockGroundAt, rockGroup,
+  startPeek, endPeek, get peeking() { return peeking; }, get gateEyes() { return gateEyes; },
+  armRig, shovelItem, startWind, releaseWind,
+  crate, ringItem, ringWorld, rings, breakCrate, wearRing,
+  get crateBroken() { return crateBroken; }, get ringsFound() { return ringsFound; },
+  get digT() { return digT; }, get digPower() { return digPower; }, get winding() { return winding; },
+  corpse, CORPSE_X, CORPSE_Z,
   get lhParts() { return lhParts; },
   get insideTower() { return insideTower; },
   get groundY() { return groundY; },

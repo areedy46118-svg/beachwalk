@@ -74,6 +74,17 @@ lifts out. `finishExtraction()` sets `crabBled`, empties + re-caps the syringe,
 adds a **"Jar of blue blood"** item (`makeBloodJar()`), and shows the jar as
 the payoff.
 
+**Textured scans come in through `tools/gltfpack.py`.** `gltfslim.py` throws
+the maps away (right for the flat-shaded crab); `gltfpack.py` keeps them, and
+is what the rocks and the body bag went through. It rebuilds the binary from
+scratch so dropped attributes actually leave, downcasts 32-bit indices,
+resizes every image and re-encodes it as JPEG (Sketchfab ships 4096² PNGs —
+344 MB for six little rocks), and **rewrites
+`KHR_materials_pbrSpecularGlossiness` into metallic-roughness**. That last one
+is not optional: three r160 dropped the extension, and a spec-gloss model
+loads as blank white with no maps at all, which is exactly how the body bag
+first looked.
+
 **Object models.** `models/` holds standalone factories (`makeHorseshoeCrab()`,
 `makeSyringe()`, `makeBloodJar()`) plus `viewer.html` (`?model=…`), a
 drag-to-rotate dev viewer. Factories `import * as THREE from 'three'`, return a
@@ -144,9 +155,34 @@ top was exactly level with both the bore invert and the room floor.
 
 **The crosshair can thread a grille.** The back-wall outlet needs an
 invisible `hitProxy` disc across the bore, or the centre ray passes between
-the bars and straight down the open pipe. Its interactable is `bare: true`,
-which prints the label with no `[E]` prefix — it's a statement, not an
-action.
+the bars and straight down the open pipe.
+
+**The stuck gate — "Look inside".** That outlet is now the game's one set
+piece of pure looking: `startPeek()` / `updatePeek()` / `endPeek()`, with the
+eyes in `makeGateEyes()` / `updateGateEyes()` and the sound in
+`startPeekAudio()`. Behind the bars is eight metres of ribbed pipe (built in
+`models/drainage-tunnel-home.js`, capped by an `M.void` box so the sky dome —
+which is centred on the player — doesn't show through the open end). Four
+things carry it and none of them is a jump scare:
+
+- **The lean is a camera move, not a player move.** `update()` starts by
+  putting `camera.position` back on `_peekHome` while `peeking`, so every
+  clamp below it — cliff, drain walls, floor — sees a position it agrees with;
+  `updatePeek()` at the bottom of `update()` writes the leaned camera back for
+  the render. Skip that and the clamps get a frame of a body half inside a
+  wall and hand it back to you when you stand up. It also clears `_shakePrev`
+  each frame, or the trauma shake leaves a stale offset behind on exit.
+- **Where you stop is load-bearing.** At 0.4 m the FOV-24 crop threads clean
+  between the middle two bars and you are simply *in* the pipe. 0.78 m keeps
+  the grille in frame, and looking through something you cannot open is the
+  whole point.
+- **The eyes must not be there when you arrive.** They fade up 1.5 s after the
+  lean settles. Drawn as a pale almond with an iris and one hard catchlight,
+  not a dot — a dot at eleven pixels reads as a reflector.
+- **`createMediaElementSource()` can only be called once per element.** The
+  whisper graph is built on the first peek and kept; later peeks ramp the gain
+  and call `play()` again. Rebuilding it stacks a second chain off the same
+  source and the whispers get louder every time you look in.
 
 The **erosion channel** outside can only ever sit *above* y = 0 — the beach
 sand is a flat plane recentred on the player, so a trench cut below it would
@@ -192,6 +228,27 @@ Two things that had to be got right, both found by walking it:
   originally on the far side, which left a 0.4 m ledge between it and the
   bulwark — not a path. The stair is now on the side you come in, so climbing
   it leaves you on open deck with a clear run to the ramp.
+
+**The body bag.** `CORPSE_X/Z/YAW`, thirty metres short of the wreck — the
+whole point of it is the approach, so everything about the placement serves
+being seen from a long way down the beach:
+
+- **It has to be clear of the water, and that is a hard number.**
+  `shoreLine()` = tide(±3) + swash(±3.6) + wobble(±2), so the waterline can
+  reach x = 8.6 and the sand plane discards a further metre seaward of it. Put
+  the bag below that and the surf draws over the sand under it and it sits on
+  the water like a raft. At `CORPSE_X` = 9.6 the body spans 8.9 to 10.3 and is
+  never wet — measured, not guessed: sampling `shoreLineJS(-126, t)` over an
+  hour of game time peaks at 8.13.
+- It is skewed off the shore line with the head end nearest you, tipped onto
+  one side, and settled into a `makeApron()` drift. That drift is kept **low**
+  (0.085) — at the height it started at, its own shaded flank drew a dark halo
+  round the bag.
+- Four cylinders in `rockColliders[]` down its length make it solid. You walk
+  round a body; you do not walk through one.
+- The crosshair gets an **invisible box proxy**, not the model. The ropes are
+  235k triangles and `updateHover()` raycasts every interactable every frame.
+  Its label is `bare: true` — there is nothing to do here, which is the point.
 
 The **ship's wheel** (`shipWheel`) has three detents; `shipWheel.position` is
 −1 / 0 / +1 and the hover label carries the state. Nothing reads it yet — it's
@@ -288,15 +345,59 @@ they cross over; get that backwards and the holes appear on the wrong side.
 hole needs a lined reveal (jambs, soffit, sill) or you see straight through
 the cut edge. The door additionally has a projecting stone surround outside.
 
-**Beach rocks are world objects, not debris.** `makeErodedRock()` builds them
-(lobes for the silhouette, hard-cut solution pits for the surface, a shear
-plane for the wave-cut face, flattened base) and they're placed as *formations*
-— 4-7 masses round a shared centre, 90-170 m apart. They deliberately sit
-outside the recentring `debris` tile and outside `clipAtShore()`: they're
-landmarks you can climb, and a real rock stays visible when the tide runs over
-it. `rockColliders[]` gives each mass a cylinder — `rockGroundAt()` to stand on
-it, `pushOutOfRocks()` to keep you out of it — applied in `update()` after
-`updateTower()`, so a rock beats the sand.
+**Beach rocks are world objects, not debris.** Six scanned boulders out of
+`assets/rocks.glb`, loaded with `GLTFLoader` and laid down as ONE formation,
+on the sand below Bradly: a dominant mass, a huddle leaning in against it (two
+of them lifted so the pile stacks), a few shed off the side, and a skirt of
+half-buried chunks. It sits outside the recentring `debris` tile and outside
+`clipAtShore()`: it's a landmark you can climb, and a real rock stays visible
+when the tide runs over it. `rockColliders[]` gives each mass a cylinder —
+`rockGroundAt()` to stand on it, `pushOutOfRocks()` to keep you out of it —
+applied in `update()` after `updateTower()`, so a rock beats the sand.
+Anything whose crown lands under 0.42 m gets no collider at all: a chunk you
+should be stepping over must not become a wall.
+
+**There is deliberately no scatter.** Formations down the length of the walk
+and loose stones between them were both built and both removed: the beach read
+as a quarry. One pile is a landmark; twelve are scenery. Don't put them back.
+
+Two things about the formation that were each got wrong first time:
+
+- **The masses have to interpenetrate.** Every distance is a fraction of
+  `big`, the dominant mass, and the huddle sits *inside* its radius. Spaced
+  politely apart you get five boulders standing about on a beach; overlapping
+  you get one rock with faces.
+- **The aprons are what make it flush.** A plane bent into a low dome and then
+  let fall away past its own rim, so the edge is buried under the beach
+  instead of drawing a circle across it, in the beach's own `sandMat`. There
+  are *two*: a broad shallow one taking the beach up to the pile, and a
+  tighter, taller one banked against the masses. The inner bank is the one
+  that does the blending — a rock meeting flat sand along a hard line reads as
+  dropped on the beach however deep it is bedded. The uv is baked per apron
+  because `sandTex` repeats every `SAND_TILE` metres: a plane's stock 0..1
+  would put 177 tiles inside six metres and mip to mud.
+
+**Scans lit for daylight go black at night — `reexpose()`.** The rock albedo
+averages 0.05 linear and the body bag's 0.002, and under a quarter moon both
+render as holes in the beach. `reexpose(mat, gamma, rim)` gamma-lifts the
+albedo in `onBeforeCompile` before the lighting sees it, and optionally adds a
+cold Fresnel edge (rocks 0.54 and no rim; bag 0.55 plus a rim). Two reasons it
+is done in the shader and not in the .png: the files on disk stay the textures
+that shipped with the models, and the rim needs `normal` *after*
+`<normal_fragment_maps>` so it follows the creases in the normal map.
+
+The rocks also carry a strong `emissive` with `emissiveMap = map`. You walk
+INTO the moon, so every rock ahead of you is backlit and the directional light
+contributes nothing to the face you are looking at; the emissive is the only
+thing carrying the stone until you have walked past it.
+
+**`updateFarProps()`.** The camera's far plane is 5000 and the walk is a
+kilometre, so frustum culling alone submits things the fog has already eaten.
+It switches `visible` off past `ROCK_DRAW` (210 m, well beyond where `FogExp2`
+has finished), and `farProps` does the same for anything too heavy to draw
+where it cannot be seen: the body bag past 150 m, and its 235k-triangle ropes
+past 45 m. That last one is the one that matters — the ropes alone are most of
+a frame's triangles whenever they are on screen.
 
 **The tunnel is region-clamped, not collided.** The cliff is one mesh that
 snaps back onto the player every `CLIFF_PERIOD`, so a hole cut in it would
@@ -309,9 +410,95 @@ not the reference model.
 
 **The shovel has two swings.** Left click is the plain dig; holding right winds
 up (`startWind`/`releaseWind`, `WIND_FULL`) and `digPower` 0-1 then scales the
-pose amplitude, the swing duration, the crab kill radius, the trauma, the sand
-thrown and the pitch of the impact sample. `winding` must be cleared on blur or
-the shovel stays over your head.
+pose amplitude, the swing duration, the reach, the crab kill radius, the
+trauma, the sand thrown and the pitch of the impact sample. `winding` must be
+cleared on blur or the shovel stays over your head.
+
+**Why the release used to lag, and why the animation is pose-to-pose now.** A
+charged swing went through `startDig()` like any other, and `startDig()` starts
+the animation at p = 0 — which is *anticipation*, the segment that hauls the
+tool up from rest. Letting go therefore snapped the shovel out of the pose you
+had just spent a second winding into, dropped it to rest, and spent another
+0.4 s winding it up again before it fell. Two artefacts, one cause.
+
+So the swing is now three lerps between poses — `[pitch, lift, yaw, roll,
+push]` arrays, `_poseA` (where the strike starts) → `_poseB` (where it lands)
+→ rest — instead of five hand-written curves per segment. `_poseA` is
+`haulPose()` for a left click and, for a release, **the pose the last rendered
+frame actually left the arm in**, captured off `_pose`. `digT` starts at
+`DIG_WINDUP` for a charged swing, so it enters the strike immediately. Release
+to blade moving is one frame, and measured off `armRig.rotation.x` the pose
+moves 0.007 rad across the release boundary.
+
+**The swing trail.** Follow-through and arc, in `updateTrail()` — a ribbon
+strung between two markers at the **ends of the blade's lip**, sampled every
+frame through the strike and left to fade. Two things it got wrong first:
+
+- **Strung down the tool instead of across the edge** it is 0.3 local units
+  wide, and swept through four radians that is a solid white fan over a
+  quarter of the screen. Across the cutting edge it is exactly as wide as the
+  blade and draws the path the edge actually took. Ten samples, not eighteen:
+  a trail is a smear behind the blade, not a diagram of the whole swing.
+- **The quads overlap** where the arc doubles back, and additive blending adds
+  every one of them, so a per-quad alpha that looks faint alone stacks into
+  white. It has to be set far lower than it seems it should be.
+
+It lives in `vmScene`, deliberately not under the arm — the whole point is
+that it stays where the blade was while the blade moves on. Its brightness
+scales with `digPower`, which is the clearest read the player has on how hard
+they just hit.
+
+Three more things that make a heavy feel like one:
+
+- **Reach.** `DIG_REACH` 4.2 m, `+ digPower * DIG_HEAVY_REACH` 2.4 more. Only
+  the raycast's `far` changes, so it shows up as *angles you can only land
+  wound up* — at a shallow enough pitch a click scuffs the sand at your feet
+  and a heavy craters five metres out. `impactPose()` pushes the arm from
+  0.62 m in front of you to 1.06, which is the visible half of the same thing.
+- **Hitstop stalls the world, not your hands.** `killCrab()` sets 0.075 s of
+  near-frozen time, and running the view model on that scaled `dt` froze the
+  shovel mid-arc — which reads as the animation stuttering on the hit rather
+  than as the hit landing. `animate()` keeps a `rawDt` and `updateViewmodel()`
+  gets real seconds.
+- **The jar in your hands has to stay a curve.** `vmImpulse()` on impact used
+  to be -1.7 to -3.6, which slams the spring into its own ±0.14 clamp on the
+  next frame — a hard step, not an impact. The spring's peak is roughly
+  `v0 / sqrt(stiffness)`, so anything under ~1.5 stays inside the clamp.
+- **The blade has to be on screen when it lands.** `impactPose`'s `lift` used
+  to reach -0.69 at full charge, which is below the bottom of the frame: the
+  one pose that most needs to read was the one you could not see. The chop is
+  carried by `pitch`, which was doing the work anyway.
+
+`sfxWindFull()` fires the moment the charge tops out, and the tremble that was
+already in the wound pose roughly doubles. A charge with no full mark is a
+charge you hold too long every time.
+
+**The crab's attack is telegraphed — startup / active / recovery.** It used to
+land the same frame the crab came into reach, with the lunge pose playing
+*after* the damage: nothing to read and nothing to do about it.
+`CRAB_WIND` (18f) rears it up with the claws thrown wide and the pincers
+gaping, `CRAB_STRIKE` (6f) puts the damage on the first active frame, and
+`CRAB_RECOVER` (20f) leaves it wide open. Two details carry it:
+
+- **Reach is re-tested on the active frame**, not when the wind-up began. A
+  tell is only fair if getting out of the way is a thing that works — and it
+  does; back off during the startup and the snap closes on nothing.
+- **It winds DOWN as well as up.** `atkSquash` compresses the body onto its
+  legs through the startup and stretches it through the strike. A wind-up that
+  moves the same way as the strike reads as no wind-up at all.
+
+`sfxCrabTell()` is a rising rasp over exactly `CRAB_WIND` seconds, so the
+sound is the countdown. Keep it unlike `sfxCrabSnip()` — confusing the tell
+with the strike is worse than having neither.
+
+**The kill is two beats.** `killCrab()` no longer bursts it. It sets
+`crabState.struck`, plays `sfxCrabHit()` and starts `CRAB_HIT_STOP` (5 frames)
+of frozen time; for exactly those frames the crab is still there, folded up
+under the blade in a hard squash and thrown back along the swing, and then
+`finishCrab()` brings the gibs. The hold ends on `hitstop` reaching zero and
+not on a timer of its own — `hitstop` scales `dt`, so anything measured in
+`dt` would stretch to ten times its length. The freeze and the squash are
+meant to be the same beat.
 
 **The headland scatter respects `onPath()`.** Rocks and grass re-roll their
 position until they're clear of the lane to the door; if you add more props
