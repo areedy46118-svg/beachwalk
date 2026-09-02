@@ -52,6 +52,14 @@ const LH_TOP = 26.2;               // gallery deck = lantern-room floor
 const LH_CUT_Y = 26.45;            // scan is discarded above this
 const LH_RISE = 4.4;               // metres gained per full turn of the stair
 const LH_STAIR_R = 1.42;           // radius of the tread centres
+const LH_PER_TURN = 20;            // treads per full turn
+const LH_STEP = LH_RISE / LH_PER_TURN;   // one riser, 0.22 m
+const LH_TREAD_T = 0.13;           // tread thickness
+// Where the stair meets the gallery, in the game's angle convention. The
+// treads are laid out so height and angle are locked together, so this is
+// derived rather than eyeballed — the hatch in the deck has to be here, and
+// the last attempt at a hatch drifted because it was placed by hand.
+const LH_ARRIVE = ((-(LH_TOP / LH_RISE) * Math.PI * 2) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
 const LH_DOOR_W = 0.72;            // half-width of the doorway
 const LH_DOOR_H = 2.15;
 // the bore narrows as it climbs — keeps the stair and the player off the wall
@@ -802,11 +810,11 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   const treadMat = new THREE.MeshStandardMaterial({ color: 0x3d4450, roughness: 1, flatShading: true, emissive: 0x191d23 });
   const stairs = new THREE.Group();
   {
-    const PER_TURN = 20;
-    const stepGeo = new THREE.BoxGeometry(1.30, 0.13, 0.58);
-    const nSteps = Math.floor((LH_TOP - 0.2) / (LH_RISE / PER_TURN));
+    const stepGeo = new THREE.BoxGeometry(1.30, LH_TREAD_T, 0.58);
+    // up to and including the deck, so there's no gap at the last step
+    const nSteps = Math.round(LH_TOP / LH_STEP);
     for (let i = 1; i <= nSteps; i++) {
-      const y = i * (LH_RISE / PER_TURN);
+      const y = i * LH_STEP;
       const a = stairAngleAt(y);
       const st = new THREE.Mesh(stepGeo, treadMat);
       st.position.set(Math.cos(a) * LH_STAIR_R, y, Math.sin(a) * LH_STAIR_R);
@@ -905,18 +913,48 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   // The masonry stops here; a deck rings the tower with the lantern
   // sitting inside it, exactly like the real thing.
   const deckMat = new THREE.MeshStandardMaterial({ color: 0x2b2f38, roughness: 1, side: THREE.DoubleSide, emissive: 0x101319 });
-  const deck = new THREE.Mesh(new THREE.CylinderGeometry(3.35, 3.15, 0.22, 28), stone);
-  deck.position.y = LH_TOP - 0.11;
-  const corbel = new THREE.Mesh(new THREE.CylinderGeometry(3.15, 2.45, 0.5, 28), stone);
-  corbel.position.y = LH_TOP - 0.45;
+  // Both of these are rings. They used to be solid cylinders, which capped
+  // the shaft as effectively as a lid: you climbed the whole stair and
+  // arrived under a stone floor with nothing to come up through. The bore
+  // stays open the whole way now, so the stairwell runs into the lantern.
+  // The deck is floor almost all the way in — you need something to stand on
+  // when you step off the last tread — with a hatch cut where the stair comes
+  // up through it. Cutting the hatch at LH_ARRIVE rather than placing it by
+  // eye is the whole point: the previous one was a hand-placed wedge and it
+  // sat a quarter-turn away from where you actually surfaced.
+  const LH_HATCH = 0.55;
+  const cutWedge = (geo, a0, a1) => {
+    const idx = geo.getIndex().array, pos = geo.attributes.position, keep = [];
+    for (let t = 0; t < idx.length; t += 3) {
+      let cx = 0, cz = 0;
+      for (let k = 0; k < 3; k++) { const v = idx[t + k]; cx += pos.getX(v); cz += pos.getZ(v); }
+      let a = Math.atan2(cx / 3, cz / 3) - a0;
+      a = ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+      if (a >= a1 - a0) keep.push(idx[t], idx[t + 1], idx[t + 2]);
+    }
+    geo.setIndex(keep);
+  };
+  const HATCH_A0 = LH_ARRIVE - 0.35, HATCH_A1 = LH_ARRIVE + 0.75;
+  const ringBand = (pts) => new THREE.LatheGeometry(
+    [...pts, pts[0]].map(([r, y]) => new THREE.Vector2(r, y)), 28);
+  const deck = new THREE.Mesh(ringBand([
+    [LH_HATCH, LH_TOP - 0.22], [3.15, LH_TOP - 0.22], [3.35, LH_TOP], [LH_HATCH, LH_TOP],
+  ]), stone);
+  const corbel = new THREE.Mesh(ringBand([
+    [LH_HATCH, LH_TOP - 0.70], [2.45, LH_TOP - 0.70], [3.15, LH_TOP - 0.20], [LH_HATCH, LH_TOP - 0.20],
+  ]), stone);
+  for (const m of [deck, corbel]) cutWedge(m.geometry, HATCH_A0, HATCH_A1);
   lighthouse.add(deck, corbel);
 
   // The scan's cap was cut away with the mast, so the top of the shaft has
   // to be closed here or you'd see straight up to the sky from the floor.
   // Outside the lantern it's the walkway; inside it's the lantern floor,
   // with a wedge left open where the stair comes up.
-  const walk = new THREE.Mesh(new THREE.RingGeometry(1.90, 3.35, 28), deckMat);
-  walk.rotation.x = -Math.PI / 2;
+  // rotation baked in so the hatch can be cut in the same frame as the deck's
+  const walkGeo = new THREE.RingGeometry(LH_HATCH, 3.35, 28, 1);
+  walkGeo.rotateX(-Math.PI / 2);
+  cutWedge(walkGeo, HATCH_A0, HATCH_A1);
+  const walk = new THREE.Mesh(walkGeo, deckMat);
   walk.position.y = LH_TOP + 0.005;
   lighthouse.add(walk);
 
@@ -946,9 +984,15 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
 
   // ---- lantern room -------------------------------------------------
   const LR_R = 1.95, LR_Y0 = LH_TOP + 0.1, LR_H = 3.3;
-  // low plinth the glazing stands on
-  const plinth = new THREE.Mesh(new THREE.CylinderGeometry(LR_R + 0.08, LR_R + 0.08, 0.35, 16), iron);
-  plinth.position.y = LR_Y0 + 0.17;
+  // Low plinth the glazing stands on — a ring, carrying the same hatch as the
+  // deck below it. As a solid disc it was a second lid over the stairwell,
+  // sitting 0.45 m above the one we'd just opened.
+  const plinthGeo = ringBand([
+    [LH_HATCH, LR_Y0], [LR_R + 0.08, LR_Y0],
+    [LR_R + 0.08, LR_Y0 + 0.35], [LH_HATCH, LR_Y0 + 0.35],
+  ]);
+  cutWedge(plinthGeo, HATCH_A0, HATCH_A1);
+  const plinth = new THREE.Mesh(plinthGeo, iron);
   lighthouse.add(plinth);
   // the glass itself
   lanternGlass = new THREE.Mesh(
@@ -3304,33 +3348,36 @@ let lhDoorEntry = null;
 {
   const DW = LH_DOOR_W;                       // half-width of the opening
   const DH = LH_DOOR_H;
-  const PORTAL_Z = 4.52;                      // face of the surround
+  const PORTAL_Z = 4.86;                      // face of the surround
   const R = PORTAL_Z - 0.18;                  // door hangs just inside it
 
-  // The scan's wall is anything but flat here — it reads r4.24 at the foot,
-  // bulges to r4.57 around waist height, then steps back to r3.6 above the
-  // head. A flat leaf can't sit against that, so the opening gets its own
-  // projecting stone surround, which gives the door one clean plane to hang
-  // in and covers the ragged edge left by the cut.
+  // The wall leans in as it climbs — lhOuterAt() reads 4.62 at the foot of
+  // the door and 4.21 at its head — so a flat surround set at one radius
+  // will be swallowed by the wall at the bottom or hang off it at the top,
+  // which is exactly how it looked. The face sits clear of the widest point
+  // and every piece runs back to BACK_Z, well inside the masonry at every
+  // height it passes, so the frame is buried into the curve all the way up
+  // instead of resting against it.
   const surround = new THREE.MeshStandardMaterial({
     color: 0x3a3f4b, roughness: 1, metalness: 0, flatShading: true, emissive: 0x171a21,
   });
   {
-    const depth = 1.35, zc = PORTAL_Z - depth / 2;
+    const BACK_Z = 3.25;                     // buried, at every door height
+    const depth = PORTAL_Z - BACK_Z, zc = (PORTAL_Z + BACK_Z) / 2;
     for (const sgn of [-1, 1]) {                       // jambs
-      const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.42, DH + 0.5, depth), surround);
-      jamb.position.set(sgn * (DW + 0.21), (DH + 0.5) / 2, zc);
+      const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.5, DH + 0.5, depth), surround);
+      jamb.position.set(sgn * (DW + 0.25), (DH + 0.5) / 2, zc);
       lighthouse.add(jamb);
     }
-    const lintel = new THREE.Mesh(new THREE.BoxGeometry(DW * 2 + 0.84, 0.34, depth + 0.12), surround);
-    lintel.position.set(0, DH + 0.17, zc + 0.06);
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(DW * 2 + 1.0, 0.34, depth), surround);
+    lintel.position.set(0, DH + 0.17, zc);
     // a shallow hood over the lintel to throw the rain off
-    const hood = new THREE.Mesh(new THREE.BoxGeometry(DW * 2 + 1.05, 0.16, 0.5), surround);
-    hood.position.set(0, DH + 0.42, PORTAL_Z - 0.1);
+    const hood = new THREE.Mesh(new THREE.BoxGeometry(DW * 2 + 1.24, 0.16, depth), surround);
+    hood.position.set(0, DH + 0.44, zc);
     hood.rotation.x = -0.18;
-    // threshold slab
-    const sill = new THREE.Mesh(new THREE.BoxGeometry(DW * 2 + 0.9, 0.14, depth + 0.5), surround);
-    sill.position.set(0, 0.06, zc + 0.22);
+    // threshold slab, jutting out to meet the last of the stepping stones
+    const sill = new THREE.Mesh(new THREE.BoxGeometry(DW * 2 + 1.05, 0.16, depth + 0.35), surround);
+    sill.position.set(0, 0.07, zc + 0.18);
     lighthouse.add(lintel, hood, sill);
     // soffit, so you don't see daylight through the top of the reveal
     const soffit = new THREE.Mesh(new THREE.BoxGeometry(DW * 2, 0.1, depth), surround);
@@ -5130,7 +5177,7 @@ function addTrauma(v) { trauma = Math.min(1, trauma + v); }
 // helical stair whose height comes from how far round you've walked.
 // ------------------------------------------------------------------
 const PLAYER_R = 0.4;
-let insideTower = false, groundY = 0;
+let insideTower = false, groundY = 0, stairY = null;
 let stairTurns = 0, lastStairA = 0, doorHeard = false, atLanternTop = false;
 const _towerV = new THREE.Vector2();
 function updateTower(dt) {
@@ -5153,7 +5200,13 @@ function updateTower(dt) {
                       camBaseY < HL_CREST + EYE_HEIGHT + LH_DOOR_H - 0.5;
   if (!throughDoor && d > 0.001) {
     const climb = Math.max(0, groundY - HL_CREST);
-    const inner = (atLanternTop ? 3.15 : lhBoreAt(climb)) - PLAYER_R;
+    // Once you're on the stair the treads, not the wall, are what you can
+    // stand on — they reach r2.07, while the bore down low is r2.55, so the
+    // wall alone would let you walk off the outer edge into thin air.
+    const onStair = climb > 0.6;
+    const inner = (atLanternTop ? 3.15
+                 : onStair ? Math.min(lhBoreAt(climb), 2.02)
+                 : lhBoreAt(climb)) - PLAYER_R;
     const outer = LH_OUTER + PLAYER_R;
     let clamped = null;
     if (insideTower && d > inner) clamped = inner;
@@ -5177,7 +5230,17 @@ function updateTower(dt) {
       stairTurns = THREE.MathUtils.clamp(stairTurns + da / (Math.PI * 2), 0, LH_TOP / LH_RISE);
     }
     lastStairA = ang;
-    groundY = HL_CREST + Math.min(LH_TOP, stairTurns * LH_RISE);
+    // Stand on the tread, not on the helix the treads were generated from.
+    // The climb is continuous while the treads are discrete, so the raw
+    // spiral height left your feet up to a full riser out from the step you
+    // were looking at — sunk into it low down, hanging over it higher up.
+    // Snap to the tread top, then ease onto it so the risers don't jolt.
+    const raw = Math.min(LH_TOP, stairTurns * LH_RISE);
+    const stepped = Math.min(LH_TOP,
+      Math.floor(raw / LH_STEP + 1e-4) * LH_STEP + LH_TREAD_T / 2);
+    stairY = stairY === null ? stepped
+           : stairY + (stepped - stairY) * Math.min(1, dt * 18);
+    groundY = HL_CREST + stairY;
     // Reaching the top no longer ends it — you arrive, and the walk ends
     // when you step out of the lantern onto the gallery.
     atLanternTop = stairTurns * LH_RISE >= LH_TOP - 0.4;
@@ -5185,6 +5248,7 @@ function updateTower(dt) {
   } else {
     lastStairA = ang;
     stairTurns = 0;
+    stairY = null;
     atLanternTop = false;
     groundY = headlandAt(camera.position.x, camera.position.z);
   }
