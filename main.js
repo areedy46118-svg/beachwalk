@@ -5818,14 +5818,22 @@ cliff.material.needsUpdate = true;
 // compile() only does the programs, so warmDrain() renders it once into a
 // tiny offscreen target to force the buffer uploads too. Runs on the first
 // animate frame, while the title card is still covering the screen.
-let drainWarmed = false;
+let drainWarmed = false, drainWarmError = null;
 function warmDrain() {
   if (drainWarmed) return;
   drainWarmed = true;
+  const restore = [];
   try {
+    // Frustum culling is the trap here: a warm-up render only uploads what
+    // the warm camera can actually see, so anything culled still costs you
+    // the first time you really look at it. Switch culling off for the pass
+    // and every mesh is drawn — and therefore uploaded — exactly once.
+    drainTunnel.traverse((o) => {
+      if (o.isMesh) { restore.push([o, o.frustumCulled]); o.frustumCulled = false; }
+    });
     const rt = new THREE.WebGLRenderTarget(8, 8);
-    const cam = new THREE.PerspectiveCamera(75, 1, 0.1, 200);
-    cam.position.set(DRAIN_X - 9, 2.2, DRAIN_Z);
+    const cam = new THREE.PerspectiveCamera(75, 1, 0.1, 400);
+    cam.position.set(DRAIN_X - 12, 3.0, DRAIN_Z);
     cam.lookAt(DRAIN_X + 20, 1.4, DRAIN_Z);
     cam.updateMatrixWorld(true);
     renderer.compile(scene, cam);
@@ -5833,15 +5841,20 @@ function warmDrain() {
     const prevAutoClear = renderer.autoClear;
     renderer.autoClear = true;
     renderer.setRenderTarget(rt);
-    renderer.render(scene, cam);          // outside, looking in
+    renderer.render(scene, cam);
+    // and again from inside, so the chamber's own lighting variant is built
     cam.position.set(DRAIN_X + DN.ROOM_X0 + 1, 1.7, DRAIN_Z);
     cam.lookAt(DRAIN_X + DN.ROOM_X1, 1.6, DRAIN_Z);
     cam.updateMatrixWorld(true);
-    renderer.render(scene, cam);          // and from inside the chamber
+    renderer.render(scene, cam);
     renderer.setRenderTarget(prevTarget);
     renderer.autoClear = prevAutoClear;
     rt.dispose();
-  } catch (e) { /* warm-up is best-effort; never let it break the frame */ }
+  } catch (e) {
+    drainWarmError = e;                   // surfaced on __bw, not swallowed
+  } finally {
+    for (const [o, v] of restore) o.frustumCulled = v;
+  }
 }
 
 let insideDrain = false, drainMix = 0, mouthNear = 0;
@@ -6413,6 +6426,7 @@ window.__bw = {
   get audioCtx() { return audioCtx; }, get audioStarted() { return audioStarted; },
   lighthouse, startLighthouseTrack, bottleProp, playSample, updateTower,
   drainTunnel, DRAIN_X, DRAIN_Z, updateDrain, sfxDrip,
+  get drainWarmed() { return drainWarmed; }, get drainWarmError() { return drainWarmError; },
   waterBottle, waterBottleWorld, get waterBottleItem() { return waterBottleItem; },
   get insideDrain() { return insideDrain; }, get drainMix() { return drainMix; },
   waterSurfaceAt, submersionAt, restYInWater, groundGlow, addRipple,

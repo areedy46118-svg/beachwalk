@@ -374,6 +374,7 @@ export function makeDrainageTunnelHome(opts = {}) {
     beacon.add(slab(0.07, 1.9, 0.07, M.rust, 0.04, -1.10, 0));
     beacon.add(slab(0.05, 0.7, 0.05, M.rust, 0.30, -1.45, 0, 0, 0, 0.5));
     T.userData.beacon = { bulb, halo };
+    beacon.userData.noBake = true;
 
     // wing walls running off either side, and rubble shelving to the sand.
     // Everything here sits clear of the walking line down the middle.
@@ -544,11 +545,17 @@ export function makeDrainageTunnelHome(opts = {}) {
   // not a brown path. The read comes from low berms in the beach's own sand.
   {
     const N = 24;
-    const centre = (t) => ({
-      x: -0.9 - t * 12.4,
-      z: Math.sin(t * 3.1) * 1.15 + Math.sin(t * 7.7) * 0.3,
-      w: 0.55 + t * 2.3,
-    });
+    // The width has to feather to nothing at the seaward end. Left blunt, the
+    // strip stops on a hard straight edge and reads as a plank lying on the
+    // sand rather than a channel petering out.
+    const centre = (t) => {
+      const fade = 1 - Math.pow(Math.max(0, (t - 0.78) / 0.22), 1.8);
+      return {
+        x: -0.9 - t * 12.4,
+        z: Math.sin(t * 3.1) * 1.15 + Math.sin(t * 7.7) * 0.3,
+        w: (0.55 + t * 2.3) * fade,
+      };
+    };
     // a damp dip, barely darker than the beach and with soft edges
     const pos = [], idx = [];
     for (let i = 0; i < N; i++) {
@@ -626,6 +633,56 @@ export function makeDrainageTunnelHome(opts = {}) {
     pool.position.set(-1.6, 0.012, 0);
     pool.scale.set(1, 1, 0.66);
     ER.add(pool);
+    // Braided side channels: the flow has wandered and left older, drier
+    // courses either side of the live one. Cheap, and it's what actually
+    // makes a scour read as scour rather than as one drawn line.
+    for (const sg of [-1, 1]) {
+      const bp = [], bi = [], BN = 14;
+      for (let i = 0; i < BN; i++) {
+        const t = 0.18 + (i / (BN - 1)) * 0.8, c = centre(t);
+        const off = sg * (c.w * 0.72 + 0.35 + Math.sin(t * 5.2 + sg) * 0.5);
+        const hw = 0.18 + t * 0.55;
+        bp.push(c.x, 0.008, c.z + off - hw, c.x, 0.008, c.z + off + hw);
+      }
+      for (let i = 0; i < BN - 1; i++) {
+        const a = i * 2, b2 = (i + 1) * 2;
+        bi.push(a, a + 1, b2 + 1, a, b2 + 1, b2);
+      }
+      const bg = new THREE.BufferGeometry();
+      bg.setAttribute('position', new THREE.Float32BufferAttribute(bp, 3));
+      bg.setIndex(bi);
+      bg.computeVertexNormals();
+      ER.add(new THREE.Mesh(bg, M.wetsand));
+    }
+    // rills running off the banks into the main channel
+    for (let i = 0; i < 14; i++) {
+      const t = 0.1 + rnd(i * 4.8) * 0.85, c = centre(t), sg = i % 2 ? 1 : -1;
+      const len = 0.5 + rnd(i * 2.6) * 1.1;
+      ER.add(slab(len, 0.006, 0.10 + rnd(i * 6.2) * 0.12, M.wetsand,
+        c.x + (rnd(i * 3.9) - 0.5) * 0.9, 0.009,
+        c.z + sg * (c.w + 0.3 + rnd(i * 7.4) * 0.9),
+        0, sg * (0.5 + rnd(i) * 0.7), 0));
+    }
+    // a low scarp where the bank has been undercut and slumped
+    for (let i = 0; i < 12; i++) {
+      const t = rnd(i * 5.4), c = centre(t), sg = i % 2 ? 1 : -1;
+      const h = 0.07 + rnd(i * 2.8) * 0.12;
+      ER.add(mound(0.7 + rnd(i * 3.6) * 1.0, h, 0.3 + rnd(i * 8.1) * 0.5, M.drysand,
+        c.x + (rnd(i * 9.7) - 0.5) * 0.7, h * 0.2,
+        c.z + sg * (c.w + 0.05), rnd(i * 2.2) * 3.1));
+    }
+    // coarser lag gravel left where the flow dropped it, out toward the sea
+    for (let i = 0; i < 22; i++) {
+      const t = 0.45 + rnd(i * 7.7) * 0.55, c = centre(t);
+      const r = 0.05 + rnd(i * 4.3) * 0.09;
+      const k = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), M.cobble);
+      k.position.set(c.x + (rnd(i * 6.9) - 0.5) * 2.4, r * 0.3,
+        c.z + (rnd(i * 3.1) - 0.5) * (c.w * 2.6));
+      k.scale.y = 0.4 + rnd(i * 5.5) * 0.25;
+      k.rotation.set(rnd(i) * 3, rnd(i + 2) * 3, rnd(i + 5) * 3);
+      ER.add(k);
+    }
+
     // sand slumped away from the foot of the concrete
     for (let i = 0; i < 9; i++) {
       const s = rnd(i * 8.8), sg = i % 2 ? 1 : -1;
@@ -695,12 +752,8 @@ export function makeDrainageTunnelHome(opts = {}) {
       h.position.set(0.05, 0.3 + i * 0.78, -OW - 0.12);
       DOOR.add(h);
     }
-    // spalled concrete round the opening, and rust bled off the frame
-    for (let i = 0; i < 7; i++) {
-      const s = rnd(i * 6.1), sg = i % 2 ? 1 : -1;
-      DOOR.add(slab(0.09, 0.12 + s * 0.2, 0.1 + s * 0.22, M.dark,
-        -0.035, 0.25 + s * 1.8, sg * (OW + 0.02)));
-    }
+    // No spall chunks on the jamb: sitting proud of the wall with nothing
+    // behind them they just read as debris floating in the doorway.
   }
 
   // ================= the chamber somebody lives in =======================
@@ -950,14 +1003,23 @@ export function makeDrainageTunnelHome(opts = {}) {
   const lamp2 = new THREE.PointLight(0xffb367, 0.9, 3.4, 1.8);
   lamp2.position.set(ROOM_X1 - 1.2, 0.9, ROOM_HZ - 1.0);
   R.add(lamp2);
-  // cold spill at the mouth so the first few metres read
-  const mouthLight = new THREE.PointLight(0x9fb6dc, 1.1, 7.5, 1.5);
-  mouthLight.position.set(0.6, PIPE_CY, 0);
-  T.add(mouthLight);
+  // The mouth used to have its own cold spill. The first bore lamp sits 2 m
+  // in and covers it, and every light in the scene is a per-fragment cost
+  // for everything, so it's one fewer.
+  const mouthLight = null;
 
   // Solid props, as local-space AABBs [x0, z0, x1, z1] — the game pushes the
   // player out of these so you can't walk through the bed or the shelving.
   const bedX = ROOM_X1 - 1.5, shX = ROOM_X0 + 1.5;
+  // Collapse the static shells by material as well. Nested Groups (the lamps,
+  // the side connection, the outlet, the beacon) are left alone, so anything
+  // that animates or needs its own raycast target survives.
+  bakeScatter(HW);
+  bakeScatter(BORE);
+  bakeScatter(DOOR);
+  bakeScatter(R);
+  bakeScatter(T);
+
   T.userData.nav = {
     BORE_R, PIPE_CY, BORE_LEN, DOOR_X, ROOM_X0, ROOM_X1, ROOM_HZ, ROOM_H, FLOOR_Y,
     doorHalfZ: 1.0, doorH: 2.12,
@@ -970,7 +1032,7 @@ export function makeDrainageTunnelHome(opts = {}) {
       [ROOM_X0 + 1.82, 1.24, ROOM_X0 + 2.18, 1.60],                   // bucket
     ],
   };
-  T.userData.lights = { lamp, lamp2, mouthLight, tube, bore: boreLights };
+  T.userData.lights = { lamp, lamp2, tube, bore: boreLights };
   // where drips fall from — local points along the crown of the bore
   T.userData.drips = [];
   for (let i = 0; i < 6; i++)
