@@ -81,6 +81,93 @@ drag-to-rotate dev viewer. Factories `import * as THREE from 'three'`, return a
 exception to the flat-shaded retro look because they're hero props seen up
 close. The syringe and jar carry `userData.setFill(t)` + `userData.parts`.
 
+**The drainage tunnel home.** `models/drainage-tunnel-home.js` →
+`makeDrainageTunnelHome()`, placed at
+`DRAIN_X` (= `CLIFF_BLOCK_X`) / `DRAIN_Z` — behind you when you spawn. Not to
+be confused with the **tunnel in the sand wall** (`tunnel`, `insideTunnel`,
+`TUN_*`, `updateTunnelBounds()`), a separate dug corridor further down the
+walk; the two are independent and their identifiers do not overlap. This one
+is a **fixed world object** like the lighthouse, and three things make it work:
+
+- The cliff is *cut open* at the mouth by a **world-space discard** injected
+  into `cliff.material.onBeforeCompile` — world space, because the cliff is
+  snapped back onto the player in Z every frame and a local-space window would
+  slide with it. Same reasoning as `shoreLine(z,t)`.
+- The headwall is a **shell, not a solid** — an open-ended cylinder plus a
+  `RingGeometry` face plate with the bore hole in it. A solid block would plug
+  the pipe.
+- `updateDrain(dt)` runs **after** `updateTower(dt)` so it gets the last word on
+  `groundY`, and `insideDrain` lifts the `CLIFF_BLOCK_X` clamp. Gotcha: the
+  chamber's back wall must be clamped *inside* the `insideDrain` branch —
+  letting the player fall out of that branch drops `insideDrain`, and the cliff
+  clamp then teleports them back to the mouth.
+
+Two more traps, both of which bit once already:
+
+- **A wall with a doorway in it is four slabs around the hole.** Adding a
+  full-width slab "for the wall" as well plugs the opening — the collision
+  still lets you walk through, so it only shows up visually.
+- **A group rotated to face a wall has its own +Z.** For the back-wall outlet
+  (`F.rotation.y = -PI/2`) local +Z points *into the room*, so anything set
+  into the wall needs a **negative** z or the pipe sticks out of it.
+- **A fixture on the pipe wall must have +Y pointing radially outward.** For a
+  thing at angle `ang` from the crown on side `sg`, that is
+  `rotation.x = sg * ang` — nothing else. Get it wrong and the fixture, and
+  especially anything long attached to it like a conduit, swings out into the
+  middle of the bore and reads as a random pipe crossing the tunnel. The wall
+  lamps and the side connection both had this.
+- **A wall a doorway sits in has to span the *room*, not the pipe.** The door
+  bulkhead was 5 m wide against a 6.8 m room, leaving an open gap at each front
+  corner that you could see the sky through.
+- **A dark ring on a solid wall is not a hole.** The back wall is built as four
+  slabs around a real opening, with a closed dark box behind it, so the outlet
+  bore actually recedes into somewhere.
+
+Solid furniture is `userData.nav.props` — local-space `[x0, z0, x1, z1]`
+AABBs that `pushOutOfDrainProps()` shoves the player out of along the
+shallowest face.
+
+**Turning round used to hitch for a quarter second.** The structure is
+frustum-culled until it first enters the view, and that frame pays for
+compiling every shader program *and* uploading ~400 geometries.
+`renderer.compile()` only does the programs, so `warmDrain()` renders the
+whole thing into an 8×8 offscreen target on the first animate frame, while
+the title card still covers the screen; and `bakeScatter()` merges the
+decorative scatter by material (`BufferGeometryUtils.mergeGeometries`,
+now in the import map). 263 ms → ~36 ms. `bakeScatter` has to normalise
+first — polyhedra come out non-indexed, boxes indexed, and the hand-built
+channel strips carry no uv, and the merge refuses a mixed batch.
+
+**Flicker is always coplanar faces.** The two that bit: the door frame's
+back face sat exactly on the wall's front face, and the threshold slab's
+top was exactly level with both the bore invert and the room floor.
+
+**The crosshair can thread a grille.** The back-wall outlet needs an
+invisible `hitProxy` disc across the bore, or the centre ray passes between
+the bars and straight down the open pipe. Its interactable is `bare: true`,
+which prints the label with no `[E]` prefix — it's a statement, not an
+action.
+
+The **erosion channel** outside can only ever sit *above* y = 0 — the beach
+sand is a flat plane recentred on the player, so a trench cut below it would
+just be covered over. The depth reads from the berms heaped either side, and
+those are squashed icosahedra using **the beach's own `sandMat`** (passed in
+via `makeDrainTunnel({ sandMat, wetSandMat })`) — boxes in a bespoke colour
+read as pale slabs dropped on the sand, which is exactly what it looked like
+first time round.
+
+Ambience is synthesised in `startDrainAudio()` / `sfxDrip()` and ramped by
+`drainMix` (how deep you are), which also ducks `waveBusGain` so the surf falls
+away behind you; `mouthNear` drives a separate trickle layer at the outfall.
+`updateDrainDrips()` drops visible droplets and fires `sfxDrip()` — panned by
+where the drop is relative to your view — at the moment one lands. Note
+`exponentialRampToValueAtTime` throws on a zero target, so the drip gain is
+guarded: `drainMix` can reach 0 while a drop is still falling.
+
+A full **bottle of water** (`models/water-bottle.js`) sits by the bed —
+`waterBottleItem`, takeable with `E`, examinable like the crab. It is not
+wired to `hp`; making it a consumable would just need `use` to call a heal.
+
 **Physics.** `PhysProp` class + `physProps[]` — a tiny custom rigid body
 (gravity, ground bounce/friction, corridor walls; **no prop-vs-prop
 collision**). Grab springs the held prop in front of the camera; click again
@@ -124,6 +211,16 @@ hard to drive from `javascript_tool`. Instead:
   render frame.
 
 ## Gotchas worth knowing
+
+**A new `three/addons/…` import needs adding to TWO import maps.** There is no
+build step, so `three/addons/utils/BufferGeometryUtils.js` is a bare specifier —
+a nickname the browser will not guess at. It only resolves if it is listed in
+the import map, and there are two of them: `index.html` for the game and
+`models/viewer.html` for the dev viewer. Miss either and that page dies with
+`Failed to resolve module specifier …` before a single line runs — a blank
+screen, not a degraded one. Being present in `vendor/three/` is not enough:
+`BufferGeometryUtils.js` sat there unreferenced for ages and still had to be
+mapped the first time something imported it.
 
 **Declaration order matters.** `main.js` is one long top-to-bottom module of
 `const`s, so anything that *calls* `addInteractable` or pushes to a shared

@@ -15,7 +15,9 @@ slot opens the examine view (`openInspect`) where you drag to turn it over.
 | `horseshoe-crab.js` | `makeHorseshoeCrab()` → a detailed smooth-shaded *Limulus*: a broad rounded head shield on a poleless Cartesian-grid dome with the **cardiac + ophthalmic ridges, the raised margin and the articulation groove sculpted into the height field**, a wavy hinge bar, six movable spines per side, a triangular telson, genal spines, and a full underside (six leg pairs, chelicerae, operculum, book gills). Plus `makeHorseshoeCrabIcon()`. |
 | `syringe.js` | `makeSyringe()` → a glass bleeding hypodermic: barrel with graduation marks, a small finger flange + slim cross-section plunger + thumb rest, rubber piston, luer hub, steel needle, removable orange cap, and a **blue haemolymph column**. `group.userData.setFill(t)` (0→1) slides the plunger and grows the blood — the game drives this during the extraction. Plus `makeSyringeIcon()`. |
 | `blood-jar.js` | `makeBloodJar()` → an old milk-bottle-style glass jar filled with glowing blue haemolymph, a pale foam layer, a crimped foil cap and a paper label. `group.userData.setFill(t)` sets the level. Plus `makeBloodJarIcon()`. |
-| `viewer.html` | Dev viewer — `?model=horseshoe-crab` (default), `?model=syringe`, `?model=blood-jar`. Drag to rotate, scroll to zoom, **Flip over**, Wireframe, Auto-spin, **Fill** (syringe/jar), Reset. |
+| `drainage-tunnel-home.js` | `makeDrainageTunnelHome()` → the drainage tunnel home: a storm-drain outfall up the beach behind spawn, and the chamber somebody lives in at the end of it. Distinct from the **tunnel in the sand wall** (`TUN_*` in `main.js`) further down the walk, which is a dug corridor. Outside: a weathered concrete headwall with the pipe hole punched through a ring plate, wing walls, and the **scour channel** the outflow has cut down the beach (wet bed, sand berms, cobbles, fallen blocks, a scour pool). Inside: a ringed circular bore with a silted invert, a green-algae water channel, graffiti, caged wall lamps, a side connection bleeding rust down the wall, a steel blast door standing open, and the brick chamber somebody lives in (joists and conduit, one dim tube light, pallet bed, shelving, barrel, bucket under a drip, cobwebs, and a **rusted outlet in the back wall** with an ochre run below it). A red beacon on a mast blinks on top so you can find it from down the beach. Carries `userData.nav` (collision numbers + solid-prop AABBs), `userData.lights`, `userData.beacon`, `userData.outlet` and `userData.drips`. Takes `makeDrainageTunnelHome({ sandMat, wetSandMat })` so the scour outside blends with the real beach. |
+| `water-bottle.js` | `makeWaterBottle()` → a half-litre supermarket bottle, still sealed and full: ribbed body, moulded base dimple, knurled blue cap with a tamper ring, printed label, and a water column driven by `userData.setFill(t)`. Found by the bed in the drain chamber. Plus `makeWaterBottleIcon()`. |
+| `viewer.html` | Dev viewer — `?model=horseshoe-crab` (default), `?model=syringe`, `?model=blood-jar`, `?model=drainage-tunnel-home`, `?model=water-bottle`. Drag to rotate, scroll to zoom, **Flip over**, Wireframe, Auto-spin, **Fill** (syringe/jar), Reset. |
 
 ## Looking at it
 
@@ -26,9 +28,9 @@ python3 serve.py 4173
 Then open <http://localhost:4173/models/viewer.html>.
 
 > In this git worktree the Claude Code preview attaches to a server on
-> **port 4174** (`.claude/launch.json`), because a separate checkout may
+> **port 4176** (`.claude/launch.json`), because a separate checkout may
 > already hold 4173. If `preview_start` can't attach, start it by hand:
-> `python3 serve.py 4174` from the worktree root.
+> `python3 serve.py 4176` from the worktree root.
 
 ## Model conventions
 
@@ -40,6 +42,9 @@ Then open <http://localhost:4173/models/viewer.html>.
 - Origin is roughly the centre of the carapace.
 - Smooth-shaded, no textures / external assets — a deliberate exception to the
   flat-shaded world props because these are hero props seen up close.
+  `drainage-tunnel-home.js` is the exception to the exception: it's a walk-in world
+  structure, not a hero prop, so it's **flat-shaded** with small procedural
+  canvas textures (concrete, brick) like the rest of the beach.
 - Helpers worth reusing: `domeGeo()` / `domeField()` (dome caps, the latter a
   poleless Cartesian grid you can sculpt ridges into), `taperedTube()` (smooth
   swept limb / spike / needle), `seat()` (ray-cast detail onto a surface).

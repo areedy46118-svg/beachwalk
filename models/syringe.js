@@ -143,21 +143,42 @@ export function makeSyringeIcon() {
   c.width = c.height = 48;
   const g = c.getContext('2d');
   g.save();
+  // draw it along the diagonal so the full length fits the square
   g.translate(24, 24); g.rotate(-Math.PI / 4); g.translate(-24, -24);
-  // barrel
-  g.fillStyle = '#dfe6ea'; g.fillRect(14, 20, 20, 8);
-  g.strokeStyle = '#8a9096'; g.lineWidth = 1; g.strokeRect(14, 20, 20, 8);
-  // No blood in it. You carry it empty, and the extraction empties it again
-  // when the draw runs into the tally, so the icon is always the empty state:
-  // plunger fully depressed, nothing in the barrel.
-  g.fillStyle = '#c9ced3';
-  g.fillRect(13, 22.5, 3, 3);          // rod, pushed home
-  g.fillRect(10, 19, 3, 10);           // thumb rest against the barrel
-  // flange
-  g.fillRect(32, 17, 3, 14);
+
+  const cy = 24, top = cy - 3.5, h = 7;      // slim barrel, not a fat stub
+  // plunger rod + thumb rest, pushed home at the back
+  g.fillStyle = '#b9bec6';
+  g.fillRect(2, cy - 0.9, 8, 1.8);
+  g.fillRect(1, cy - 5, 2.5, 10);            // thumb rest
+  // finger flange
+  g.fillStyle = '#d5dade';
+  g.fillRect(9, cy - 6, 2.5, 12);
+  // glass barrel
+  g.fillStyle = 'rgba(226,238,242,0.92)';
+  g.fillRect(11, top, 22, h);
+  g.strokeStyle = '#7d858c'; g.lineWidth = 1;
+  g.strokeRect(11.5, top + 0.5, 21, h - 1);
+  // graduation marks
+  g.strokeStyle = 'rgba(90,100,110,0.85)'; g.lineWidth = 1;
+  for (let i = 1; i <= 4; i++) {
+    const x = 13 + i * 4;
+    g.beginPath(); g.moveTo(x, top + 1); g.lineTo(x, top + (i % 2 ? 3 : 4.5)); g.stroke();
+  }
+  // shoulder tapering to the hub
+  g.fillStyle = '#d5dade';
+  g.beginPath();
+  g.moveTo(33, top); g.lineTo(36, cy - 1.6);
+  g.lineTo(36, cy + 1.6); g.lineTo(33, top + h);
+  g.closePath(); g.fill();
+  // luer hub
+  g.fillStyle = '#aab0b6';
+  g.fillRect(36, cy - 1.8, 3, 3.6);
   // needle
-  g.strokeStyle = '#b9bec6'; g.lineWidth = 1.4;
-  g.beginPath(); g.moveTo(35, 24); g.lineTo(46, 24); g.stroke();
+  g.strokeStyle = '#cfd5dd'; g.lineWidth = 1.3;
+  g.beginPath(); g.moveTo(39, cy); g.lineTo(46.5, cy); g.stroke();
+  g.strokeStyle = '#8f979f'; g.lineWidth = 0.8;
+  g.beginPath(); g.moveTo(44.5, cy); g.lineTo(46.5, cy - 1); g.stroke();
   g.restore();
   return c.toDataURL();
 }
