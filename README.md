@@ -197,3 +197,27 @@ by [LOLIPOP](https://sketchfab.com/lolipop_1707), [CC-BY-4.0](http://creativecom
 by [TwilightFox](https://sketchfab.com/twilightfox), under the
 [Sketchfab Standard licence](https://sketchfab.com/licenses) — commercial use
 and derivative works allowed.
+
+
+**Beach Rock** — the large scanned boulders along the tideline.
+
+This work is based on
+["Beach Rock"](https://sketchfab.com/3d-models/beach-rock-a4998ae7cb764287a03c70a544bd0d3d)
+by [SmallpolyArt](https://sketchfab.com/SmallpolyArt)
+licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+Commercial use is allowed; the credit has to stay.
+
+
+**Beach Rocks 001** — the lower rocky patches.
+
+["Beach Rocks 001"](https://sketchfab.com/3d-models/beach-rocks-001-89d1260414cc4ecf88a736bfa01a4127)
+by [DEEP C](https://sketchfab.com/deepc326), under the
+[Sketchfab Standard licence](https://sketchfab.com/licenses) — commercial use
+and derivative works allowed.
+
+Both are photogrammetry of a patch of ground rather than of a rock, so
+`tools/gltfrocks.py` merges the chunks, decimates by vertex clustering, then
+pulls the individual rocks out as raised features and drops the sand they were
+sitting in. The baked albedo is kept and downscaled to 256px; the UVs are the
+reason these keep theirs where the older packs don't.
+

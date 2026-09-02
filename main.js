@@ -1392,9 +1392,11 @@ function scatter(geo, mat, perTile, place) {
   for (let gz = -half; gz <= half; gz++) for (const it of items) {
     q.setFromEuler(it.rot);
     m.compose(new THREE.Vector3(it.x, it.y, it.z + gz * DEBRIS_TILE), q, it.scale);
+    if (it.color) mesh.setColorAt(idx, it.color);
     mesh.setMatrixAt(idx++, m);
   }
   mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   debris.add(mesh);
   return mesh;
 }
@@ -1608,6 +1610,36 @@ function makeRockGeo(seed = 1, detail = 1, lumpiness = 0.34) {
 // The scattered rocks are the real models now — the procedural ones read as
 // lumps. Four builds, each with its own albedo, instanced through the same
 // tiling scatter() so they run the length of the beach.
+// Rocks come ashore in groups — an outcrop with smaller stones shed around
+// it, and clean sand between. Sprinkling the same number uniformly is what
+// made the beach read as carpeted, so the count stays low and the placement
+// does the work. Every rock pack draws from the same clusters, so a group is
+// a mix of scans rather than several independent sprinklings.
+const rockClusters = Array.from({ length: 3 }, () => ({
+  x: 1.1 + Math.random() * 9.0,
+  z: zSpan(),
+  r: 1.5 + Math.random() * 3.0,
+}));
+const placeRock = () => {
+  if (Math.random() > 0.78) {                 // the odd stray, well away
+    return { x: Math.random() < 0.55 ? 1.2 + Math.random() * 5.0 : 6.5 + Math.random() * 7.0, z: zSpan() };
+  }
+  const c = rockClusters[(Math.random() * rockClusters.length) | 0];
+  const a = Math.random() * Math.PI * 2;
+  const d = Math.pow(Math.random(), 0.65) * c.r;   // dense in the middle
+  return {
+    x: THREE.MathUtils.clamp(c.x + Math.cos(a) * d, 0.9, 12.5),
+    z: c.z + Math.sin(a) * d,
+  };
+};
+// Stone near the waterline is wet: darker, and colder in tone. The band sits
+// just landward of the shore, since anything seaward is discarded by
+// clipAtShore() anyway.
+const wetTint = (x) => {
+  const wet = THREE.MathUtils.clamp(1 - (x - 1.0) / 4.5, 0, 1);
+  return new THREE.Color(1 - wet * 0.34, 1 - wet * 0.31, 1 - wet * 0.22);
+};
+
 loadGeoPack('assets/rocks.json').then((geos) => {
   const keys = Object.keys(geos);
   const tex = {
@@ -1632,10 +1664,10 @@ loadGeoPack('assets/rocks.json').then((geos) => {
     scatter(geos[k], mat, b.n, () => {
       const sc = b.lo + Math.random() * (b.hi - b.lo);
       const sink = -sc * 0.12;          // bedded, not resting on the surface
-      // thickest along the wrack line, thinning toward the water
-      const x = Math.random() < 0.55 ? 1.2 + Math.random() * 5.0 : 6.5 + Math.random() * 7.0;
+      const p = placeRock();
       return {
-        x, z: zSpan(), y: sink,
+        x: p.x, z: p.z, y: sink,
+        color: wetTint(p.x),
         // spin freely on Y but barely tilt, so they sit flush instead of
         // standing on edge, and bed them a little into the sand
         rot: new THREE.Euler((Math.random() - 0.5) * 0.12, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.12),
@@ -1644,6 +1676,51 @@ loadGeoPack('assets/rocks.json').then((geos) => {
     });
   });
 }).catch(() => {});
+
+// The scanned beach props. Photogrammetry, so the silhouette is only half of
+// it — the baked albedo is what makes them read as real stone, which is why
+// these keep their UVs where the earlier packs didn't. Decimated to a few
+// hundred triangles each by tools/gltfrocks.py; see README for credits.
+const scannedProps = [
+  { url: 'assets/rock-a.json', tex: 'assets/tex/rock-a.jpg', n: 1,
+    tint: 0x8d95a4, lo: 1.0, hi: 2.4, bed: 0.22 },        // the big beach rock
+  { url: 'assets/rock-b.json', tex: 'assets/tex/rock-b.jpg', n: 1,
+    tint: 0x8a92a1, lo: 0.8, hi: 1.8, bed: 0.20 },        // a low rocky patch
+];
+for (const sp of scannedProps) {
+  loadGeoPack(sp.url).then((geos) => {
+    const map = retroTex(texLoader.load(sp.tex), { repeatWrap: false });
+    map.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.MeshStandardMaterial({
+      map, color: sp.tint, roughness: 1, metalness: 0,
+      emissive: 0x141820, emissiveMap: map, flatShading: true,
+    });
+    for (const geo of Object.values(geos)) {
+      geo.computeBoundingBox();
+      const geoH = Math.max(0.02, geo.boundingBox.max.y);   // sits on y=0
+      scatter(geo, mat, sp.n, () => {
+        const sc = sp.lo + Math.random() * (sp.hi - sp.lo);
+        const sy = sc * (0.72 + Math.random() * 0.3);
+        const p = placeRock();
+        return {
+          x: p.x, z: p.z,
+          // Bed it by a fraction of its own HEIGHT. These are beach rocks —
+          // roughly a third as tall as they are wide — so sinking them by a
+          // fraction of their width, which is what the older packs do, buries
+          // them completely.
+          y: -geoH * sy * sp.bed,
+          color: wetTint(p.x),
+          // free to spin, barely allowed to tilt — a scan stood on its side
+          // is the single most obvious way to make a beach look wrong
+          rot: new THREE.Euler((Math.random() - 0.5) * 0.10,
+                               Math.random() * Math.PI * 2,
+                               (Math.random() - 0.5) * 0.10),
+          scale: new THREE.Vector3(sc, sy, sc),
+        };
+      });
+    }
+  }).catch(() => {});
+}
 
 // ------------------------------------------------------------------
 // Ground decals — footprints + dig holes (instanced pools)
