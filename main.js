@@ -1954,70 +1954,6 @@ scatter(
   })
 );
 
-// ------------------------------------------------------------------
-// Seashells. Two builds — a ribbed fan and a spiral cone — grown from a
-// lathe/parametric sweep so they read as shells rather than lumps.
-// ------------------------------------------------------------------
-function makeFanShell() {
-  const g = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({
-    color: 0xd8c9b4, roughness: 0.82, metalness: 0.02,
-    flatShading: true, emissive: 0x3a3025, side: THREE.DoubleSide,
-  });
-  // a ribbed scallop: wedges fanning out from the hinge, each tilted a little
-  const RIBS = 11, SPAN = Math.PI * 0.92, R = 0.085;
-  const pos = [];
-  for (let i = 0; i < RIBS; i++) {
-    const a0 = -SPAN / 2 + (i / RIBS) * SPAN;
-    const a1 = -SPAN / 2 + ((i + 1) / RIBS) * SPAN;
-    const bulge = 1 + 0.14 * Math.sin((i / RIBS) * Math.PI);   // fatter mid-fan
-    const r = R * bulge;
-    // hinge point, then the two outer corners of this rib
-    const y0 = 0.012 * Math.sin((i / RIBS) * Math.PI);
-    pos.push(0, 0, 0);
-    pos.push(Math.cos(a0) * r, y0, Math.sin(a0) * r);
-    pos.push(Math.cos(a1) * r, y0, Math.sin(a1) * r);
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  geo.computeVertexNormals();
-  const shell = new THREE.Mesh(geo, mat);
-  shell.rotation.x = -0.22;
-  g.add(shell);
-  return g;
-}
-function makeSpiralShell() {
-  const g = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({
-    color: 0xc9b79c, roughness: 0.78, metalness: 0.02,
-    flatShading: true, emissive: 0x342a1e,
-  });
-  // a cone wound round its own axis — a whelk, roughly
-  const TURNS = 3.1, SEGS = 46, SIDES = 7;
-  const pts = [], idx = [];
-  for (let i = 0; i <= SEGS; i++) {
-    const t = i / SEGS;
-    const a = t * TURNS * Math.PI * 2;
-    const rad = 0.052 * (1 - t) + 0.004;        // tapering tube
-    const coil = 0.062 * (1 - t * 0.75);        // winding in as it climbs
-    const cx = Math.cos(a) * coil, cz = Math.sin(a) * coil, cy = t * 0.115;
-    for (let k = 0; k < SIDES; k++) {
-      const b = (k / SIDES) * Math.PI * 2;
-      pts.push(cx + Math.cos(b) * rad * 0.8, cy + Math.sin(b) * rad, cz + Math.cos(b + a) * rad * 0.35);
-    }
-  }
-  for (let i = 0; i < SEGS; i++) for (let k = 0; k < SIDES; k++) {
-    const a0 = i * SIDES + k, a1 = i * SIDES + ((k + 1) % SIDES);
-    const b0 = a0 + SIDES, b1 = a1 + SIDES;
-    idx.push(a0, b0, a1, a1, b0, b1);
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-  geo.setIndex(idx);
-  geo.computeVertexNormals();
-  g.add(new THREE.Mesh(geo, mat));
-  return g;
-}
 
 // ------------------------------------------------------------------
 // Rocks. Generated rather than modelled: start from a subdivided solid,
@@ -4220,6 +4156,18 @@ addItemShine(shovelWorld, { size: 0.7, height: 0.45, strength: 0.8 });
 scene.add(shovelWorld);
 
 let digT = 0, digImpacted = false;
+/* Holding the shell to your ear. `listenT` eases up while `listening` and
+ * back down after, and the arm blends from wherever it is to `EAR_AT` — up,
+ * in, and close enough to the camera that the shell fills the right edge of
+ * the frame with its mouth turned to the side of your head. The look-lag is
+ * mostly switched off on the way there: a hand at your ear does not trail
+ * your turns the way a tool held out in front does. */
+let listenT = 0;
+// x and y are FRACTIONS of the frame's half-extents at the ear's depth, like
+// layoutViewmodel(): an absolute offset that sat at the edge of a landscape
+// window was clean off the side of a portrait one
+const EAR_AT = new THREE.Vector3(0.88, 0.02, -0.25);   // straddling the right edge, at ear height
+const EAR_POSE = [0.35, 0, 1.25, 0.55, 0];        // [pitch, lift, yaw, roll, push]
 const shovelItem = {
   name: 'Sand shovel', icon: makeShovelIcon(), onDig: true, viewmodel: shovelVM,
   use: () => toggleEquip(shovelItem),
@@ -4524,13 +4472,17 @@ function updateViewmodel(dt) {
     for (let i = 0; i < 5; i++) _pose[i] = 0;
   }
 
-  armRig.rotation.x = ARM_ROT_X + _pose[0] + vmLagX;
-  armRig.rotation.y = -0.45 + _pose[2] + vmLagY;
-  armRig.rotation.z = 0.10 + _pose[3] + vmLagY * 0.45;
+  listenT = THREE.MathUtils.clamp(listenT + (listening ? dt / 0.55 : -dt / 0.45), 0, 1);
+  const ear = easeOutCubic(listenT), lagK = 1 - ear * 0.85;
+  const earH = Math.tan((vmCamera.fov * Math.PI) / 360) * -EAR_AT.z;
+  const earX = earH * vmCamera.aspect * EAR_AT.x, earY = earH * EAR_AT.y;
+  armRig.rotation.x = ARM_ROT_X + _pose[0] + vmLagX * lagK + ear * EAR_POSE[0];
+  armRig.rotation.y = -0.45 + _pose[2] + vmLagY * lagK + ear * EAR_POSE[2];
+  armRig.rotation.z = 0.10 + _pose[3] + vmLagY * 0.45 * lagK + ear * EAR_POSE[3];
   armRig.position.set(
-    ARM_BASE.x + bx + vmLagY * 0.16,
-    ARM_BASE.y + by + _pose[1] + vmSpringY,
-    ARM_BASE.z + _pose[4]
+    ARM_BASE.x + bx + vmLagY * 0.16 + ear * (earX - ARM_BASE.x),
+    ARM_BASE.y + by + _pose[1] + vmSpringY + ear * (earY - ARM_BASE.y),
+    ARM_BASE.z + _pose[4] + ear * (EAR_AT.z - ARM_BASE.z)
   );
 
   // Only the strike and a beat past it leave a trail; a trail on the wind-up
@@ -5083,64 +5035,76 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
 // Shells you can pick up. Hold one to your ear and there's something
 // under the sea-roar that isn't the sea.
 // ------------------------------------------------------------------
-function makeShellIcon(spiral) {
+function makeShellIcon() {
+  // a conch, in the scan's own colours: the spire, the body whorl, the lip
   const c = document.createElement('canvas'); c.width = c.height = 48;
   const g = c.getContext('2d');
-  g.fillStyle = '#d8c9b4';
-  if (spiral) {
-    g.beginPath();
-    for (let i = 0; i <= 60; i++) {
-      const t = i / 60, a = t * Math.PI * 5.2, r = 19 * (1 - t) + 2;
-      const x = 24 + Math.cos(a) * r * 0.75, y = 26 - t * 16 + Math.sin(a) * r * 0.5;
-      i ? g.lineTo(x, y) : g.moveTo(x, y);
-    }
-    g.strokeStyle = '#d8c9b4'; g.lineWidth = 5; g.lineCap = 'round'; g.stroke();
-  } else {
-    g.beginPath(); g.moveTo(24, 40);
-    for (let i = 0; i <= 12; i++) {
-      const a = Math.PI + (i / 12) * Math.PI;
-      g.lineTo(24 + Math.cos(a) * 19, 40 + Math.sin(a) * 19 * 0.92);
-    }
-    g.closePath(); g.fill();
-    g.strokeStyle = '#a8977e'; g.lineWidth = 1.2;
-    for (let i = 1; i < 6; i++) {
-      const a = Math.PI + (i / 6) * Math.PI;
-      g.beginPath(); g.moveTo(24, 40); g.lineTo(24 + Math.cos(a) * 18, 40 + Math.sin(a) * 17); g.stroke();
-    }
-  }
+  g.fillStyle = '#d9c5a8';
+  g.beginPath(); g.ellipse(26, 28, 15, 11, -0.55, 0, Math.PI * 2); g.fill();     // body whorl
+  g.beginPath(); g.moveTo(14, 20); g.lineTo(9, 7); g.lineTo(24, 16); g.closePath(); g.fill();  // spire
+  g.fillStyle = '#b9987a';
+  g.beginPath(); g.ellipse(30, 32, 9, 5.5, -0.55, 0, Math.PI * 2); g.fill();      // the mouth
+  g.fillStyle = '#5c4636';
+  g.beginPath(); g.ellipse(31, 33, 5, 2.6, -0.55, 0, Math.PI * 2); g.fill();      // and the dark inside it
+  g.strokeStyle = '#a88a6c'; g.lineWidth = 1.1;
+  for (let i = 0; i < 4; i++) { g.beginPath(); g.moveTo(13 + i * 4, 18 - i * 3); g.lineTo(24 + i * 3, 24 - i * 2); g.stroke(); }
   return c.toDataURL();
 }
-const SHELL_ICONS = [makeShellIcon(false), makeShellIcon(true)];
+const SHELL_ICON = makeShellIcon();
 const shells = [];
-{
-  // a handful along the wrack line, spread the length of the walk
+/* The shells are a scan — blenderboom's "Sea shell", assets/shell.glb: 13k
+ * triangles with its own colour, roughness and normal maps, and 11 cm long
+ * at true size. On this renderer that is a smudge, so they lie on the wrack
+ * line at two to three times life — big conches, pale on the dark sand — and
+ * the same geometry goes into your hand. The scan loads async, so the whole
+ * placement, interactables included, runs in the callback; everything it
+ * needs is declared by the time a network round trip has happened. */
+let shellKind = null;                        // { geo, mat } once the scan lands
+new GLTFLoader().load('assets/shell.glb', (gltf) => {
+  gltf.scene.updateMatrixWorld(true);
+  let geo = null, mat = null;
+  gltf.scene.traverse((o) => {
+    if (o.isMesh && !geo) { geo = o.geometry.clone().applyMatrix4(o.matrixWorld); mat = o.material; }
+  });
+  if (!geo) return;
+  geo.computeBoundingBox();
+  const b = geo.boundingBox;
+  geo.translate(-(b.min.x + b.max.x) / 2, -b.min.y, -(b.min.z + b.max.z) / 2);    // base on y = 0
+  geo.computeBoundingSphere();
+  // daylight-baked albedo, lifted for a night beach the way the rocks are
+  mat.emissive.setHex(0x5a5c64);
+  mat.emissiveMap = mat.map;
+  mat.metalness = 0;
+  reexpose(mat, 0.6);
+  shellKind = { geo, mat };
+
+  const rnd = mulberry32(742);
   let z = -12;
   for (let i = 0; i < 7; i++) {
-    const spiral = i % 2 === 1;
-    const m = spiral ? makeSpiralShell() : makeFanShell();
-    const sc = 1.25 + Math.random() * 0.8;
-    m.scale.setScalar(sc);
-    m.position.set(1.6 + Math.random() * 3.6, 0.012, z);
-    m.rotation.set(spiral ? Math.PI / 2 : (Math.random() - 0.5) * 0.3, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.4);
-    const hit = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6),
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(geo, mat));
+    const sc = 2.0 + rnd() * 0.9;                                           // 22–32 cm
+    g.scale.setScalar(sc);
+    g.position.set(1.6 + rnd() * 3.6, 0.004, z);
+    g.rotation.set((rnd() - 0.5) * 0.2, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.25);
+    const hit = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6),
       new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-    hit.name = 'hitProxy'; m.add(hit);
-    scene.add(m);
-    shells.push(m);
-    const icon = SHELL_ICONS[spiral ? 1 : 0];
-    addInteractable(m, 'Take the shell', 'inventory', {
+    hit.name = 'hitProxy'; hit.position.y = 0.025; g.add(hit);
+    scene.add(g);
+    shells.push(g);
+    addInteractable(g, 'Take the shell', 'inventory', {
       onActivate: () => {
         sfxThud(0.02);
-        scene.remove(m);
+        scene.remove(g);
         hovered = null;
-        const vm = spiral ? makeSpiralShell() : makeFanShell();
-        vm.scale.setScalar(spiral ? 1.5 : 1.9);
-        vm.position.set(0, -0.02, 0.01);
-        vm.rotation.set(spiral ? 1.1 : 0.5, 0.6, spiral ? 0.4 : 0.2);
+        const vm = new THREE.Mesh(geo, mat);
+        vm.scale.setScalar(2.4);
+        vm.position.set(0, -0.03, 0.0);
+        vm.rotation.set(0.5, 0.6, 0.2);
         vm.visible = false;
         toolMount.add(vm);
         const item = {
-          id: 'shell', name: spiral ? 'Spiral shell' : 'Fan shell', icon,
+          id: 'shell', name: 'Sea shell', icon: SHELL_ICON,
           viewmodel: vm,
           onListen: true,                       // click while holding it
           use: () => toggleEquip(item),
@@ -5149,9 +5113,9 @@ const shells = [];
         toggleEquip(item);                      // it goes straight into your hand
       },
     });
-    z -= 22 + Math.random() * 46;
+    z -= 22 + rnd() * 46;
   }
-}
+});
 
 /* Holding it to your ear. The roar is synthesised — noise through a pair of
  * tight resonant peaks, which is physically what a shell does to room noise —
@@ -6101,29 +6065,52 @@ const ringWorld = new THREE.Group();
 ringWorld.add(ring);
 new GLTFLoader().load('assets/octopus-ring.glb', (gltf) => {
   gltf.scene.updateMatrixWorld(true);
-  /* DoubleSide, and the scan's own normals kept. A raw STL decimated to its
-   * lowest LOD does not have consistent winding, so under FrontSide most of
-   * its triangles face away and the ring renders as a scatter of specks —
-   * which is exactly how it first came in. */
-  /* Low metalness, and that is not a style choice. There is no environment
-   * map in this game, and a metal has NO diffuse — so at metalness 0.62 the
-   * scan rendered as a few hundred lit facets on black, a scatter of specks
-   * in the shape of a ring. Its thousands of small scan facets shatter the
-   * one directional specular into pinpoints, where the old built signet's
-   * broad smooth faces had caught it as sheets. Tarnished silver reads far
-   * better here as a bright rough dielectric with a lift on it.
-   * DoubleSide because a raw STL's winding cannot be relied on. */
-  /* GOLD. The download carries no texture maps at all — it is a raw STL scan
-   * whose only material is `Scene_-_Root`, metallic 0, roughness 0.6 — so the
-   * surface here IS the model's, and the colour is ours. Roughness is kept
-   * near the scan's own 0.6 and metalness stays low: there is no environment
-   * map in this game, and a true metal has no diffuse, so at high metalness
-   * the scan renders as lit specks on black. This is gold as a bright rough
-   * dielectric with a warm lift, which is what reads by moonlight. */
-  const silver = new THREE.MeshStandardMaterial({
-    color: 0xd8ab52, roughness: 0.55, metalness: 0.18, emissive: 0x3a2a0e,
-    side: THREE.DoubleSide, flatShading: true,
+  /* RUSTED IRON, and the texture is projected, not mapped. The scan has no
+   * UVs — it is a raw STL, and an STL cannot carry them — so Poly Haven's
+   * "Rusty Metal 02" (assets/rust-diff.jpg, rust-rough.jpg, cut to 512 and
+   * 256) goes on TRIPLANAR: sampled three times in the ring's own object
+   * space, along each axis, and blended by the face normal. No seams, no
+   * unwrap, and it follows every pit in the scan. `uTri` is the tiling — the
+   * geometry is ~28 units across, so 0.062 puts about two repeats round it,
+   * which is the scale at which the rust reads as rust and not as noise.
+   *
+   * DoubleSide because a raw STL's winding cannot be relied on, and low
+   * metalness because there is no environment map here and a true metal
+   * has no diffuse — at 0.6 the ring is a scatter of lit specks on black.
+   * The emissive is multiplied by the same sample, so the lift that keeps it
+   * visible on dark sand follows the rust instead of flattening it.
+   *
+   * The blend normal comes from screen derivatives of the object-space
+   * position, NOT from the normal attribute: the decimated pack carries only
+   * positions and indices, so `normal` reads as zero, the three weights sum
+   * to nothing, and every sample is black — the ring rendered as a cut-out.
+   * Flat shading never noticed, because three derives its lighting normal
+   * the same way; the projection has to as well. */
+  const rustDiff = retroTex(new THREE.TextureLoader().load('assets/rust-diff.jpg'));
+  rustDiff.colorSpace = THREE.SRGBColorSpace;
+  const rustRough = retroTex(new THREE.TextureLoader().load('assets/rust-rough.jpg'));
+  const iron = new THREE.MeshStandardMaterial({
+    color: 0xe0d6c8, map: rustDiff, roughnessMap: rustRough, roughness: 1.0, metalness: 0.14,
+    emissive: 0x9a6a3c, side: THREE.DoubleSide, flatShading: true,
   });
+  iron.onBeforeCompile = (sh) => {
+    sh.uniforms.uTri = { value: 0.062 };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uTri; varying vec3 vTriP;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvTriP = position * uTri;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+varying vec3 vTriP;
+vec4 triSample(sampler2D t, vec3 p, vec3 n) {
+  vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y + w.z + 1e-4);
+  return texture2D(t, p.yz) * w.x + texture2D(t, p.xz) * w.y + texture2D(t, p.xy) * w.z;
+}`)
+      .replace('#include <map_fragment>',
+        'vec3 triN = normalize(cross(dFdx(vTriP), dFdy(vTriP)));\n  vec4 triCol = triSample(map, vTriP, triN);\n  diffuseColor *= triCol;')
+      .replace('#include <roughnessmap_fragment>',
+        'float roughnessFactor = roughness * triSample(roughnessMap, vTriP, triN).g;')
+      .replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance *= triCol.rgb * 1.8;');
+  };
   let geo = null;
   gltf.scene.traverse((o) => { if (o.isMesh && !geo) geo = o.geometry.clone().applyMatrix4(o.matrixWorld); });
   if (!geo) return;
@@ -6132,7 +6119,9 @@ new GLTFLoader().load('assets/octopus-ring.glb', (gltf) => {
   geo.computeBoundingBox();
   const bb = geo.boundingBox, size = bb.getSize(new THREE.Vector3()), mid = bb.getCenter(new THREE.Vector3());
   geo.translate(-mid.x, -mid.y, -mid.z);
-  const m = new THREE.Mesh(geo, silver);
+  // USE_MAP wants a uv attribute even though the projection never reads it
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2));
+  const m = new THREE.Mesh(geo, iron);
   m.scale.setScalar(0.023 / Math.max(size.x, size.y, size.z));
   ring.add(m);
 });
@@ -6177,11 +6166,11 @@ function dropRing() {
   addItemShine(ringWorld, { size: 1.2, height: 0.5, strength: 3.2 });
   // and the metal itself catches the moon while it lies out here — a 20 mm
   // ring with the inspect view's emissive is invisible on night sand
-  ring.traverse((o) => { if (o.isMesh && o.material.emissive) o.material.emissive.setHex(0x6b5220); });
+  ring.traverse((o) => { if (o.isMesh && o.material.emissive) o.material.emissive.setHex(0xe0a868); });
   addInteractable(ringWorld, 'Take the ring', 'inventory', {
     onActivate: () => {
       ringProp.dead = true;
-      ring.traverse((o) => { if (o.isMesh && o.material.emissive) o.material.emissive.setHex(0x3a2a0e); });
+      ring.traverse((o) => { if (o.isMesh && o.material.emissive) o.material.emissive.setHex(0x9a6a3c); });
       scene.remove(ringWorld);
       removeInteractable(ringWorld);
       hovered = null;
@@ -7859,6 +7848,112 @@ function updateShip(dt) {
 // ------------------------------------------------------------------
 // The body bag
 // ------------------------------------------------------------------
+// ------------------------------------------------------------------
+// The dock house. voyoo's "Dock House – Stylized Wooden Pier"
+// (assets/dock.glb, every one of its 25 materials with its own three maps,
+// cut to 512), sixty metres past the wreck: a pier on piles standing out
+// from the cliff foot into the surf, a shed on the boards with a lamp on
+// its wall, a boat tied up at the sea end under the lamp post.
+//
+// The model is built at about 1:2.8 — its door is 65 cm tall — so it is
+// scaled up to a door you can walk through, and turned so the shed end is
+// landward. It is a FIXED world object like the wreck. You get up onto it
+// by the drift: the beach heaped against the land end of the pier, which
+// sand does to anything that stands in its way for long enough, and which
+// puts the deck at the top of a dune instead of two metres in the air.
+// ------------------------------------------------------------------
+const DOCK_X = 4, DOCK_Z = -215, DOCK_S = 2.8;
+const DOCK_DECK = 0.62 * DOCK_S;                        // top of the boards
+const DK = { X0: -2.77, X1: 0.50, Z0: -3.17, Z1: 2.80 };  // the deck, model space
+// the shed's walls as thin slabs round its floor, model space, with the
+// doorway left out of the seaward face
+const DOCK_WALLS = [
+  [-2.35, -2.49, -0.47, -2.39],     // back
+  [-2.35, -2.49, -2.25, -0.90],     // left
+  [-0.57, -2.49, -0.47, -0.90],     // right
+  [-2.35, -1.00, -1.14, -0.90],     // front, to the door
+  [-0.73, -1.00, -0.47, -0.90],     // front, past the door
+];
+const DOCK_DRIFT_R = 7.2, DOCK_DRIFT_H = 1.95;
+const DOCK_DRIFT_X = DOCK_X + 3.35 * DOCK_S;
+const DOCK_DRIFT_Z = DOCK_Z + ((DK.X0 + DK.X1) / 2) * DOCK_S;
+const dock = new THREE.Group();
+dock.position.set(DOCK_X, 0, DOCK_Z);
+dock.rotation.y = -Math.PI / 2;            // model -z (the shed end) → world +X, the land
+dock.scale.setScalar(DOCK_S);
+scene.add(dock);
+{
+  const drift = new THREE.Mesh(makeApron(DOCK_DRIFT_R), sandMat);
+  drift.scale.set(DOCK_DRIFT_R, DOCK_DRIFT_H, DOCK_DRIFT_R);
+  drift.position.set(DOCK_DRIFT_X, 0, DOCK_DRIFT_Z);
+  scene.add(drift);
+}
+function driftAt(wx, wz) {
+  const d = Math.hypot(wx - DOCK_DRIFT_X, wz - DOCK_DRIFT_Z) / DOCK_DRIFT_R;
+  if (d >= 1) return 0;
+  return Math.max(0, DOCK_DRIFT_H * (Math.cos(d * Math.PI * 0.5) - (d > 0.84 ? (d - 0.84) * 3.4 : 0)));
+}
+new GLTFLoader().load('assets/dock.glb', (gltf) => {
+  gltf.scene.traverse((o) => {
+    if (!o.isMesh) return;
+    const m = o.material;
+    if (/^Lamp/.test(m.name)) {
+      // the two lamps are lit: they are the whole reason you notice it
+      m.emissive.setHex(0xffb35a); m.emissiveMap = m.map; m.emissiveIntensity = 1.8;
+      return;
+    }
+    // stylised daylight wood, lifted for the night the way everything else is
+    m.emissive.setHex(0x2c3242); m.emissiveMap = m.map;
+    m.metalness = 0;
+    reexpose(m, 0.68);
+  });
+  dock.add(gltf.scene);
+  dock.updateMatrixWorld(true);
+  // the lamps light the boards: the post at the sea end, the one by the door
+  const post = dock.localToWorld(new THREE.Vector3(0.17, 1.28, 2.5));
+  const door = dock.localToWorld(new THREE.Vector3(-1.94, 1.03, -0.93));
+  const l1 = new THREE.PointLight(0xffb478, 11, 14, 1.6); l1.position.copy(post); scene.add(l1);
+  const l2 = new THREE.PointLight(0xffb478, 7, 9, 1.7); l2.position.copy(door); scene.add(l2);
+  farProps.push({ obj: dock, z: DOCK_Z, d: 300 });
+  farProps.push({ obj: l1, z: DOCK_Z, d: 300 });
+  farProps.push({ obj: l2, z: DOCK_Z, d: 300 });
+  // the boat is solid — two cylinders down its length
+  for (const lz of [1.0, 2.0]) {
+    const w = dock.localToWorld(new THREE.Vector3(-1.32, 0, lz));
+    rockColliders.push({ x: w.x, z: w.z, r: 1.35, top: 0.5 * DOCK_S });
+  }
+});
+/* Standing on it. The drift is terrain and always applies; the boards only
+ * when your feet are already within a step of them, so walking under the
+ * pier keeps you on the sand. The shed's walls are pushed out of along the
+ * shallowest face, and only at deck height — under the boards they are not
+ * there. Model space for all of it: the pier is turned -90°, so model x runs
+ * down world z and model z runs back up world x. */
+let onDock = false;
+function updateDock(dt) {
+  const dx = camera.position.x - DOCK_X, dz = camera.position.z - DOCK_Z;
+  onDock = false;
+  if (Math.abs(dx) > 24 || Math.abs(dz) > 16) return;
+  const feet = camBaseY - EYE_HEIGHT;
+  const g = driftAt(camera.position.x, camera.position.z);
+  if (g > groundY) groundY = g;
+  let lx = dz / DOCK_S, lz = -dx / DOCK_S;
+  const onBoards = lx > DK.X0 && lx < DK.X1 && lz > DK.Z0 && lz < DK.Z1;
+  if (onBoards && DOCK_DECK <= feet + 0.45 && DOCK_DECK > groundY) { groundY = DOCK_DECK; onDock = true; }
+  if (feet > DOCK_DECK - 0.4 && feet < DOCK_DECK + 1.2) {
+    const pr = PLAYER_R / DOCK_S;
+    for (const [x0, z0, x1, z1] of DOCK_WALLS) {
+      if (lx <= x0 - pr || lx >= x1 + pr || lz <= z0 - pr || lz >= z1 + pr) continue;
+      const push = [x0 - pr - lx, x1 + pr - lx, z0 - pr - lz, z1 + pr - lz];
+      let k = 0;
+      for (let i = 1; i < 4; i++) if (Math.abs(push[i]) < Math.abs(push[k])) k = i;
+      if (k < 2) lx += push[k]; else lz += push[k];
+    }
+    camera.position.x = DOCK_X - lz * DOCK_S;
+    camera.position.z = DOCK_Z + lx * DOCK_S;
+  }
+}
+
 /* Thirty metres short of the wreck, on the wet sand. You pick it up as a
  * black bar a long way down the beach — you are walking INTO the moon
  * (MOON_DIR), so everything ahead of you is a silhouette, and a sealed black
@@ -8089,7 +8184,7 @@ function update(dt, rawDt = dt) {
     knockback.multiplyScalar(1 - Math.min(1, 7 * dt));
   }
   // The drainage tunnel home is the only way through the sand wall.
-  if (!insideTower && !insideDrain) {
+  if (!insideTower && !insideDrain && !onDock) {    // the pier's sea end is past WADE_X
     camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
     camera.position.x = Math.max(camera.position.x, WADE_X);
   }
@@ -8107,6 +8202,7 @@ function update(dt, rawDt = dt) {
   }
   updateDrain(dt);          // last, so it wins on groundY inside the home
   updateShip(dt);           // and the wreck overrides the sand where you're on it
+  updateDock(dt);           // the pier's drift, boards and shed walls
 
   // coyote time and a buffered press, so a jump you meant to make happens
   coyote = onGround ? COYOTE_TIME : Math.max(0, coyote - dt);
@@ -8308,7 +8404,8 @@ window.__bw = {
   waterBottle, waterBottleWorld, get waterBottleItem() { return waterBottleItem; },
   get insideDrain() { return insideDrain; }, get drainMix() { return drainMix; },
   waterSurfaceAt, submersionAt, restYInWater, groundGlow, addRipple,
-  shells, listenToShell, makeRockGeo,
+  shells, listenToShell, makeRockGeo, dock, ring, driftAt, updateDock,
+  listen: (v) => { listening = v; },      // the ear pose without the audio, for the preview harness
   get crabModel() { return crabModel; }, get crabMixer() { return crabMixer; },
   lhDoor, shinies, onPath, pathBend, pathHalfAt, lhWindows, lanternGlass,
   get doorOpen() { return doorOpen; }, set doorOpen(v) { doorOpen = v; doorSwing = v ? 1 : 0; lhDoor.rotation.y = -doorSwing * 1.95; },
@@ -8323,7 +8420,8 @@ window.__bw = {
   corpse, CORPSE_X, CORPSE_Z,
   get lhParts() { return lhParts; },
   get insideTower() { return insideTower; },
-  get groundY() { return groundY; },
+  get groundY() { return groundY; }, set groundY(v) { groundY = v; },
+  get camBaseY() { return camBaseY; }, set camBaseY(v) { camBaseY = v; },   // floor tests in the harness
   get stairTurns() { return stairTurns; },
   get bottleBroken() { return bottleBroken; },
   get hp() { return hp; },

@@ -108,11 +108,19 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - **Glass floats break** — three of them along the walk, and a hard throw
   shatters one into shards that bounce and settle. A drop from your hand does
   not; breaking one is always something you chose.
+- **The dock house** — sixty metres past the wreck, a pier on piles standing
+  out from the cliff foot into the surf, with a shed on the boards, a lamp lit
+  on the post at the sea end, and a boat tied up under it. The beach has
+  drifted up against its land end; walk up the sand and onto the boards.
+- **The shells** are scans now. Take one and it goes straight into your hand;
+  click to hold it to your ear, and the hand rises to the side of your head
+  while you listen.
 - **The crate below Bradly** — washed up at the cliff foot, and the one lock
   in the game. A left click thuds off the boards. Only a wound-up heavy (about
   two-thirds of a full charge) puts the blade through the lid.
-- **The Octopus Ring** — in the crate: a scanned gold ring, an octopus with
-  its arms curled round to make the band. Take it, examine it, and press `E` to put it on — it leaves
+- **The Octopus Ring** — in the crate: a scanned ring, an octopus with its
+  arms curled round to make the band, gone to rust — the metal is a real rust
+  texture projected onto the scan. Take it, examine it, and press `E` to put it on — it leaves
   the pack for a new **Rings** section, two slots under the hotbar that appear
   the first time a ring is in your hands. Click a worn ring to take it off.
 - **The crab telegraphs** — it no longer nips the instant it reaches you. It
@@ -238,6 +246,25 @@ by [LOLIPOP](https://sketchfab.com/lolipop_1707), [CC-BY-4.0](http://creativecom
 ["(FREE) Realistic Rocks - Asset LowPoly"](https://sketchfab.com/3d-models/free-realistic-rocks-asset-lowpoly-6e02ec577b4a473fb173c54fd6eef62d)
 by [Domenico Bianco - Pizza&Games](https://sketchfab.com/pizzaandgames),
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+
+
+**Sea shell** — the shells on the wrack line, and the one you hold to your ear.
+
+["Sea shell"](https://sketchfab.com/3d-models/sea-shell-742a5f4a7bc84abe8d0c645cdb411cc8)
+by [blenderboom](https://sketchfab.com/blenderboom),
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+
+
+**Dock House - Stylized Wooden Pier** — the pier past the wreck.
+
+["Dock House - Stylized Wooden Pier"](https://sketchfab.com/3d-models/dock-house-stylized-wooden-pier-4f0df975625a432c91f2685963d12500)
+by [voyoo](https://sketchfab.com/voyoo),
+[Sketchfab Standard](https://sketchfab.com/licenses) licence.
+
+
+**Rusty Metal 02** — the rust on the ring.
+
+[Rusty Metal 02](https://polyhaven.com/a/rusty_metal_02) by Poly Haven, CC0.
 
 
 **Octopus Ring** — the ring in the crate.

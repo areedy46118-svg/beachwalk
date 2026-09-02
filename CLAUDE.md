@@ -93,6 +93,38 @@ shatter the one directional specular into pinpoints where a built model's
 broad faces catch it as sheets. Tarnished metal reads far better here as a
 bright rough dielectric with an emissive lift. The body bag hit this first.
 
+**A scan with no UVs gets its texture PROJECTED — see the ring.** The
+octopus ring is an STL and cannot carry UVs, so Poly Haven's rust goes on
+triplanar in `iron.onBeforeCompile`: sampled along each object-space axis and
+blended by the face normal. Two things it depends on: `USE_MAP` still wants a
+`uv` attribute on the geometry (a zero one is added), and the blend normal
+comes from `dFdx/dFdy` of the object-space position — NOT the `normal`
+attribute, because `gltfpack.py --decimate` emits positions and indices only,
+so `normal` reads as zero, the weights sum to nothing and the ring renders as
+a black cut-out. Flat shading never notices, because three derives its
+lighting normal from derivatives too. `uTri` is the tiling.
+
+**The dock house is a fixed world object like the wreck** (`DOCK_*`,
+`updateDock()`), sixty metres past it. The model is built at about 1:2.8 —
+its door is 65 cm — so it is scaled to a door you can walk through and turned
+-90° so the shed end is landward; model x runs down world z and model z back
+up world x, and `updateDock()` works in model space. You get onto the boards
+by the DRIFT, a `makeApron()` dome of the beach's own sand banked against the
+land end, which `driftAt()` also serves as terrain. The boards only count as
+a floor when your feet are already within a step of them, so walking under
+the pier keeps you on the sand; the shed's walls are five thin slabs with the
+doorway left out, pushed out of along the shallowest face and only at deck
+height. `onDock` lifts the `WADE_X` clamp because the sea end stands past it.
+The two lamp materials are lit and carry a PointLight each; the whole thing
+is in `farProps` at 300 m.
+
+**The shells are a scan** (`assets/shell.glb`, blenderboom's, 11 cm at true
+size and laid down at 2–3×). The placement and its interactables run in the
+loader callback. Holding one to your ear is `listenT` in `updateViewmodel()`:
+the arm blends to `EAR_AT` / `EAR_POSE` while `listening`, with the look-lag
+mostly off on the way there. `__bw.listen(v)` flips the state without audio
+for the preview harness.
+
 **Textured scans come in through `tools/gltfpack.py`.** `gltfslim.py` throws
 the maps away (right for the flat-shaded crab); `gltfpack.py` keeps them, and
 is what the rocks and the body bag went through. It rebuilds the binary from
