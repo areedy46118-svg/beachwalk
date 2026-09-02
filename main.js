@@ -776,31 +776,6 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
     OPENINGS.push({ ang: Math.PI / 2 - w.ang, halfW: w.w + 0.05, y0: w.y - w.h, y1: w.y + w.h });
   }
 
-  // Holes are cut by dropping the triangles whose centroid falls inside one.
-  const carve = (geo) => {
-    const idx = geo.getIndex().array, pos = geo.attributes.position;
-    const keep = [];
-    for (let t = 0; t < idx.length; t += 3) {
-      let cx = 0, cy = 0, cz = 0;
-      for (let k = 0; k < 3; k++) {
-        const v = idx[t + k];
-        cx += pos.getX(v); cy += pos.getY(v); cz += pos.getZ(v);
-      }
-      cx /= 3; cy /= 3; cz /= 3;
-      const a = Math.atan2(cx, cz), r = Math.hypot(cx, cz);
-      let cut = false;
-      for (const o of OPENINGS) {
-        if (cy < o.y0 || cy > o.y1) continue;
-        let da = a - o.ang;
-        if (da > Math.PI) da -= Math.PI * 2;
-        if (da < -Math.PI) da += Math.PI * 2;
-        if (Math.abs(da) * r < o.halfW) { cut = true; break; }
-      }
-      if (!cut) keep.push(idx[t], idx[t + 1], idx[t + 2]);
-    }
-    geo.setIndex(keep);
-  };
-
   // Damp and dark at the foot, salt-bleached higher up, with vertical
   // streaking — the same weathering the rest of the walk gets.
   const weather = (geo) => {
@@ -847,16 +822,99 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
     emissive: 0x141821, emissiveMap: brickTex, side: THREE.DoubleSide });
   const render = new THREE.MeshStandardMaterial({
     color: 0xa9b1bf, roughness: 0.95, metalness: 0, emissive: 0x262d3a, flatShading: true });
-  const lathe = (radiusAt) => {
-    const g = new THREE.LatheGeometry(ys.map((y) => new THREE.Vector2(radiusAt(y), y)), 30);
-    carve(g); weather(g); g.computeVertexNormals();
+  /* The shaft is generated as a grid, not lathed and carved. The old way
+   * dropped whole lathe triangles whose centroid fell in an opening, and with
+   * 30 segments a triangle spans 12° — nearly a metre on the outer face — so
+   * every door and window edge was a sawtooth of half-triangles: the "spikes"
+   * round the doorway. Here the angle samples INCLUDE each opening's edge
+   * angles on the surface being built (as ringYs already include its top and
+   * bottom), so the quads inside an opening are dropped along vertex lines
+   * and the cut is square by construction.
+   *
+   * Openings are parallel-sided in world space (a doorway has parallel
+   * jambs), so an edge sits at a different angle on the bore than on the
+   * outer face; each surface gets its own edge angles, taken at the
+   * opening's mid-height. Convention throughout is the game's: a = atan2(x,z),
+   * x = r sin a, z = r cos a — the same one updateTower() measures you in. */
+  const ANG_N = 72;
+  const edgeAng = (o, radiusAt) => Math.asin(Math.min(0.99, o.halfW / radiusAt((Math.max(0, o.y0) + o.y1) / 2)));
+  const wrapA = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+  const buildShaft = (radiusAt, inward) => {
+    const angs = new Set();
+    for (let k = 0; k < ANG_N; k++) angs.add(wrapA((k / ANG_N) * Math.PI * 2));
+    for (const o of OPENINGS) { const e = edgeAng(o, radiusAt); angs.add(wrapA(o.ang - e)); angs.add(wrapA(o.ang + e)); }
+    const A = [...angs].sort((p, q) => p - q);
+    const pos = [], uv = [], idx = [];
+    const col = (a, y) => { const r = radiusAt(y); pos.push(r * Math.sin(a), y, r * Math.cos(a)); uv.push((a + Math.PI) / (Math.PI * 2), y / LH_TOP); };
+    // vertices: one column per angle (plus a duplicate of the first at +2π for the seam), one row per y
+    const NA = A.length + 1, NY = ys.length;
+    for (let yi = 0; yi < NY; yi++) for (let ai = 0; ai < NA; ai++) col(ai < A.length ? A[ai] : A[0] + Math.PI * 2, ys[yi]);
+    const inside = (ac, yc) => {
+      const r = radiusAt(yc);
+      for (const o of OPENINGS) {
+        if (yc < o.y0 || yc > o.y1) continue;
+        if (Math.abs(wrapA(ac - o.ang)) * r < o.halfW) return true;
+      }
+      return false;
+    };
+    for (let yi = 0; yi < NY - 1; yi++) for (let ai = 0; ai < NA - 1; ai++) {
+      const a0 = ai < A.length ? A[ai] : A[0] + Math.PI * 2, a1 = ai + 1 < A.length ? A[ai + 1] : A[0] + Math.PI * 2;
+      if (inside((a0 + a1) / 2, (ys[yi] + ys[yi + 1]) / 2)) continue;
+      const v00 = yi * NA + ai, v01 = v00 + 1, v10 = v00 + NA, v11 = v10 + 1;
+      if (inward) idx.push(v00, v01, v10, v01, v11, v10); else idx.push(v00, v10, v01, v01, v10, v11);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    weather(g); g.computeVertexNormals();
     return g;
   };
-  const shaftOut = new THREE.Mesh(lathe(lhOuterAt), shaftOutMat);
-  const shaftIn = new THREE.Mesh(lathe(lhBoreAt), shaftInMat);
+  const shaftOut = new THREE.Mesh(buildShaft(lhOuterAt, false), shaftOutMat);
+  const shaftIn = new THREE.Mesh(buildShaft(lhBoreAt, true), shaftInMat);
   shaftOut.frustumCulled = shaftIn.frustumCulled = false;
   lighthouse.add(shaftOut, shaftIn);
   lhParts.outer = shaftOut; lhParts.inner = shaftIn;
+
+  /* Reveals — the jambs, soffits and sills that line every opening through
+   * the thick wall — generated off the SAME edge angles as the cuts, so they
+   * meet the wall exactly. Each jamb runs from the bore edge to the outer
+   * edge; each soffit/sill sweeps between the two jamb lines with its inner
+   * and outer edges on the bore arc and the outer arc, so there is no sliver
+   * where a straight chord would have left the arc bulging past it. */
+  {
+    const pos = [], idx = [];
+    const P = (a, r, y) => { pos.push(r * Math.sin(a), y, r * Math.cos(a)); return pos.length / 3 - 1; };
+    const quad = (a, b, c, d) => idx.push(a, b, c, a, c, d);
+    for (const o of OPENINGS) {
+      const eb = edgeAng(o, lhBoreAt), eo = edgeAng(o, lhOuterAt);
+      const yLo = Math.max(0, o.y0), yHi = o.y1;
+      const rows = ys.filter((y) => y >= yLo - 1e-6 && y <= yHi + 1e-6);
+      for (const sgn of [-1, 1]) {                            // the two jambs
+        for (let k = 0; k < rows.length - 1; k++) {
+          const y0 = rows[k], y1 = rows[k + 1];
+          quad(P(o.ang + sgn * eb, lhBoreAt(y0), y0), P(o.ang + sgn * eo, lhOuterAt(y0), y0),
+               P(o.ang + sgn * eo, lhOuterAt(y1), y1), P(o.ang + sgn * eb, lhBoreAt(y1), y1));
+        }
+      }
+      const N = 8;                                            // soffit, and a sill where there is one
+      for (const [y, has] of [[yHi, true], [yLo, o.y0 >= 0]]) {
+        if (!has) continue;
+        for (let k = 0; k < N; k++) {
+          const t0 = k / N, t1 = (k + 1) / N;
+          const ab0 = o.ang + (-eb + 2 * eb * t0), ab1 = o.ang + (-eb + 2 * eb * t1);
+          const ao0 = o.ang + (-eo + 2 * eo * t0), ao1 = o.ang + (-eo + 2 * eo * t1);
+          quad(P(ab0, lhBoreAt(y), y), P(ab1, lhBoreAt(y), y), P(ao1, lhOuterAt(y), y), P(ao0, lhOuterAt(y), y));
+        }
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx); g.computeVertexNormals();
+    const reveals = new THREE.Mesh(g, stone);                 // stone dressings on a white tower
+    reveals.frustumCulled = false;
+    lighthouse.add(reveals);
+  }
   lighthouse.userData.shell = [];
 
   // String courses: three shallow bands round the taper. They cost almost
@@ -873,14 +931,7 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   {
     const ym = LH_DOOR_H / 2, rI = lhBoreAt(ym), th = lhOuterAt(ym) - rI;
     const g = new THREE.Group();
-    for (const sgn of [-1, 1]) {
-      const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.08, LH_DOOR_H + 0.1, th), stone);
-      jamb.position.set(sgn * (LH_DOOR_W + 0.16), ym, rI + th / 2);
-      g.add(jamb);
-    }
-    const soffit = new THREE.Mesh(new THREE.BoxGeometry((LH_DOOR_W + 0.16) * 2 + 0.16, 0.08, th), stone);
-    soffit.position.set(0, LH_DOOR_H, rI + th / 2);
-    g.add(soffit);
+    // jambs and soffit are generated with the wall now (see the reveals above)
     const thresh = new THREE.Mesh(new THREE.BoxGeometry((LH_DOOR_W + 0.16) * 2 + 0.16, 0.1, th), stone);
     thresh.position.set(0, 0.05, rI + th / 2);
     g.add(thresh);
@@ -1015,18 +1066,8 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
     const g = new THREE.Group();
     g.position.set(Math.cos(w.ang) * 0.1, w.y, Math.sin(w.ang) * 0.1);
     g.rotation.y = Math.atan2(Math.cos(w.ang), Math.sin(w.ang));   // face outward
-    // reveal: jambs, sill and head lining the cut, so the wall reads thick
+    // the reveal is generated with the wall; only the glazing is placed here
     const rIn = lhBoreAt(w.y) - 0.05, depth = Math.max(0.4, lhOuterAt(w.y) - rIn);
-    for (const s of [-1, 1]) {
-      const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.07, w.h * 2 + 0.12, depth), stone);
-      jamb.position.set(s * (w.w + 0.03), 0, rIn + depth / 2);
-      g.add(jamb);
-    }
-    for (const s of [-1, 1]) {
-      const cap = new THREE.Mesh(new THREE.BoxGeometry(w.w * 2 + 0.2, 0.07, depth), stone);
-      cap.position.set(0, s * (w.h + 0.03), rIn + depth / 2);
-      g.add(cap);
-    }
     // glazing: one pane and a pair of bars
     const glass = new THREE.Mesh(new THREE.PlaneGeometry(w.w * 2, w.h * 2),
       new THREE.MeshStandardMaterial({
@@ -1077,11 +1118,10 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   const deck = new THREE.Mesh(ringBand([
     [LH_HATCH, LH_TOP - 0.22], [3.15, LH_TOP - 0.22], [3.35, LH_TOP], [LH_HATCH, LH_TOP],
   ]), stone);
-  const corbel = new THREE.Mesh(ringBand([
-    [LH_HATCH, LH_TOP - 0.70], [2.45, LH_TOP - 0.70], [3.15, LH_TOP - 0.20], [LH_HATCH, LH_TOP - 0.20],
-  ]), stone);
-  for (const m of [deck, corbel]) cutWedge(m.geometry, HATCH_A0, HATCH_A1);
-  lighthouse.add(deck, corbel);
+  // No corbel under it: a second ring a half-metre below the deck read as
+  // another floor from the stair, and there is one floor up here, the top.
+  cutWedge(deck.geometry, HATCH_A0, HATCH_A1);
+  lighthouse.add(deck);
 
   // The scan's cap was cut away with the mast, so the top of the shaft has
   // to be closed here or you'd see straight up to the sky from the floor.
@@ -6606,13 +6646,13 @@ const _pk = new THREE.Vector3(), _pk2 = new THREE.Vector3();
  * they are gone. Not fade out: gone, between one frame and the next, and they
  * do not come back on this peek. The silence after is doing more work than
  * anything before it. */
-const EYE_DIAM = 0.030, EYE_GAP = 0.070;   // a quarter over life size: legible at 2 m
+const EYE_DIAM = 0.026, EYE_GAP = 0.066;   // near life size — the model at a distance, not a prop
 let gateEyesModel = null;                 // the loaded glb, kept for reuse
 function makeGateEyes(F) {
   const G = new THREE.Group();
   // 2.3 m down the pipe to start with. At 4.6 they were two pale pixels and
   // the model — the whole point of using it — was invisible.
-  G.position.set(0, -0.02, -2.3);
+  G.position.set(0, -0.02, -2.6);
   G.userData = { eyes: [], mats: [], blink: 0, blinkIn: 2.2, baseY: -0.02,
                  ready: false, gone: false, stay: 0, stayFor: 8 };
   new GLTFLoader().load('assets/eyes.glb', (gltf) => {
@@ -6656,7 +6696,9 @@ function makeGateEyes(F) {
         if ('transmission' in mat) { mat.transmission = 0; mat.thickness = 0; }
         mat.transparent = true; mat.opacity = 0; mat.depthWrite = true;
         mat.roughness = m === iris ? 0.5 : 0.18; mat.metalness = 0;
-        mat.emissive.setHex(m === iris ? 0x1a1e26 : 0x3a4152);
+        // the sclera is lifted just enough to be found; the iris is NOT, so
+        // the pupil stays black. Lift both and you get two grey discs.
+        mat.emissive.setHex(m === iris ? 0x05060a : 0x1a1f2a);
         mat.emissiveMap = mat.map;
         mat.fog = false;
         G.userData.mats.push(mat);
@@ -6676,7 +6718,7 @@ function makeGateEyes(F) {
   G.add(head);
   // a little cold light just in front of the face, so the corneas glint —
   // wet is what makes an eye an eye, and wet needs a highlight
-  const glint = new THREE.PointLight(0xc6d4ee, 0.9, 0.9, 1.6);
+  const glint = new THREE.PointLight(0xc6d4ee, 0.35, 0.8, 1.8);
   glint.position.set(0.05, 0.08, 0.28);
   G.add(glint);
   G.visible = false;
@@ -6761,8 +6803,8 @@ function startPeek() {
   gateEyes.visible = true;
   for (const m of gateEyes.userData.mats) m.opacity = 0;
   const u = gateEyes.userData;
-  u.gone = false; u.stay = 0; u.stayFor = 6 + Math.random() * 4;   // how long they stay
-  gateEyes.position.z = -2.3;
+  u.gone = false; u.stay = 0; u.stayFor = 2.4 + Math.random() * 1.6;  // seen, and then not
+  gateEyes.position.z = -2.6;
   gateEyes.userData.blink = 0;
   gateEyes.userData.blinkIn = 2.2;
   _peekHome.copy(camera.position); _peekHomeQ.copy(camera.quaternion);
@@ -6832,7 +6874,7 @@ function updateGateEyes(dt) {
     G.visible = false;
     return;
   }
-  for (const m of u.mats) m.opacity = fade;
+  for (const m of u.mats) m.opacity = fade * 0.72;    // never fully solid
 
   u.blinkIn -= dt;
   if (u.blinkIn <= 0) { u.blink = 1; u.blinkIn = 1.5 + Math.random() * 4.2; }
@@ -6848,7 +6890,7 @@ function updateGateEyes(dt) {
   G.position.y = u.baseY + Math.sin(t * 0.29 + 2.2) * 0.008;
   G.rotation.z = THREE.MathUtils.clamp((t - 7) / 6, 0, 1) * 0.30;
   // and over the time he is there, he comes a metre up the pipe toward you
-  G.position.z = -2.3 + 0.8 * THREE.MathUtils.clamp(u.stay / u.stayFor, 0, 1);
+  G.position.z = -2.6 + 0.5 * THREE.MathUtils.clamp(u.stay / u.stayFor, 0, 1);
 }
 
 if (drainTunnel.userData.outlet) {

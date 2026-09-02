@@ -271,6 +271,28 @@ being seen from a long way down the beach:
   235k triangles and `updateHover()` raycasts every interactable every frame.
   Its label is `bare: true` — there is nothing to do here, which is the point.
 
+**The hull had no UVs until Sep 2026.** `hullGeo()` and the deck plating set
+only `position`, so `map: hullMap` sampled one texel and the wreck drew as a
+single flat brown — the whole "it looks like slop" complaint was a texture
+that had never rendered. Both write `uv` now (u along her length, v keel to
+rail), the hull is smooth-shaded (a 44-station loft under flat shading is a
+row of slabs), the map repeats ONCE up the hull so the weed line at the sand
+appears once, and she is lifted off her own map like everything else on the
+beach. If a wreck detail looks flat, check the geometry has `uv` before
+touching the material.
+
+**The lighthouse openings are cut on vertex lines.** `buildShaft()` samples
+the shaft as a grid whose angle list includes every opening's edge angles on
+that surface (as `ringYs` includes its top and bottom), so quads inside an
+opening drop along vertex lines and the cut is square by construction. The
+old `carve()` dropped whole lathe triangles by centroid, and at 30 segments a
+triangle is 12° — nearly a metre on the outer face — which put a sawtooth of
+half-triangles round the door: the "spikes". Openings are parallel-sided in
+world space, so an edge is at a different angle on the bore than on the outer
+face (`edgeAng()`); the reveals are generated from those same angles, inner
+and outer edges on the arcs, so they meet the wall exactly. There is no
+corbel under the deck any more: a second ring read as another floor.
+
 The **ship's wheel** (`shipWheel`) has three detents; `shipWheel.position` is
 −1 / 0 / +1 and the hover label carries the state. Nothing reads it yet — it's
 there for a puzzle.

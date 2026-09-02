@@ -116,9 +116,14 @@ function holedAt(x, v, sg) {
   return false;
 }
 
+/* The skin. It is lofted from the station functions above and, since the
+ * rebuild, carries UVs — u along her length, v from keel to rail. It did not
+ * before, and without them a texture samples one texel everywhere: for a
+ * long while the rust map was in the material and the hull drew as a single
+ * flat brown, which is most of why she read as a cut-out. */
 function hullGeo() {
   const xs = 44, vs = 11;
-  const pos = [], idx = [];
+  const pos = [], uv = [], idx = [];
   const P = (i, j, sg) => {
     const t = i / xs;
     const x0 = -HALF + t * LEN;
@@ -131,7 +136,7 @@ function hullGeo() {
   for (const sg of [1, -1]) {
     const base = pos.length / 3;
     for (let i = 0; i <= xs; i++)
-      for (let j = 0; j <= vs; j++) { const p = P(i, j, sg); pos.push(p[0], p[1], p[2]); }
+      for (let j = 0; j <= vs; j++) { const p = P(i, j, sg); pos.push(p[0], p[1], p[2]); uv.push(i / xs, j / vs); }
     for (let i = 0; i < xs; i++)
       for (let j = 0; j < vs; j++) {
         const x0 = -HALF + (i / xs) * LEN, x1 = -HALF + ((i + 1) / xs) * LEN;
@@ -148,6 +153,7 @@ function hullGeo() {
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   g.setIndex(idx);
   g.computeVertexNormals();
   return g;
@@ -158,12 +164,15 @@ function hullTex() {
   const w = 256, h = 256;
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d');
-  g.fillStyle = '#8a4a22'; g.fillRect(0, 0, w, h);                 // rust ground
+  /* Rust seen by moonlight is brown, not orange: the ground and the mottle
+   * are pulled well toward grey, and the colour comes back under the warm
+   * emissive. The old ground was #8a4a22 — a rust that only exists at noon. */
+  g.fillStyle = '#5e4635'; g.fillRect(0, 0, w, h);                 // rust ground
   // broad corrosion mottle
-  for (let i = 0; i < 150; i++) {
+  for (let i = 0; i < 170; i++) {
     const x = Math.random() * w, y = Math.random() * h, r = 8 + Math.random() * 46;
     const pick = Math.random();
-    const col = pick < 0.34 ? '58,30,14' : pick < 0.7 ? '176,96,40' : '120,60,26';
+    const col = pick < 0.34 ? '42,28,20' : pick < 0.7 ? '132,84,52' : '92,58,36';
     const gr = g.createRadialGradient(x, y, 0, x, y, r);
     gr.addColorStop(0, `rgba(${col},${0.10 + Math.random() * 0.32})`);
     gr.addColorStop(1, `rgba(${col},0)`);
@@ -179,6 +188,23 @@ function hullTex() {
     gr.addColorStop(0.75, `rgba(${teal},0.18)`);
     gr.addColorStop(1, `rgba(${teal},0)`);
     g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
+  }
+  /* The weed line. She has stood in the wash for years, so from the sand up
+   * to about a metre above it she is black-green with growth, with a pale
+   * crust of barnacle where the spray reaches. v = 0 is the keel and the sand
+   * sits at v ≈ 0.27, so the band lives at canvas y 0.58–0.76 and fades up.
+   * This is the single thing that says "wreck" rather than "boat on a beach". */
+  {
+    const band = g.createLinearGradient(0, h * 0.55, 0, h * 0.78);
+    band.addColorStop(0, 'rgba(22,34,28,0)');
+    band.addColorStop(0.35, 'rgba(22,34,28,0.55)');
+    band.addColorStop(1, 'rgba(14,22,18,0.92)');
+    g.fillStyle = band; g.fillRect(0, h * 0.55, w, h * 0.45);
+    for (let i = 0; i < 900; i++) {                                  // barnacle crust
+      const x = Math.random() * w, y = h * (0.52 + Math.random() * 0.2);
+      g.fillStyle = `rgba(${160 + Math.random() * 40 | 0},${150 + Math.random() * 30 | 0},${130 + Math.random() * 30 | 0},${0.25 + Math.random() * 0.5})`;
+      g.fillRect(x, y, 1 + Math.random() * 2, 1 + Math.random() * 2);
+    }
   }
   // horizontal plate seams and weld lines
   g.strokeStyle = 'rgba(40,20,10,0.5)';
@@ -205,9 +231,9 @@ function hullTex() {
   }
   // graffiti
   const inks = ['#e8e2d6', '#3050a0', '#c03040', '#202020', '#d8b030'];
-  for (let i = 0; i < 9; i++) {
+  for (let i = 0; i < 4; i++) {
     g.strokeStyle = inks[(Math.random() * inks.length) | 0];
-    g.globalAlpha = 0.4 + Math.random() * 0.35;
+    g.globalAlpha = 0.22 + Math.random() * 0.22;
     g.lineWidth = 1.5 + Math.random() * 3;
     g.beginPath();
     let x = Math.random() * w, y = h * (0.3 + Math.random() * 0.5);
@@ -260,15 +286,19 @@ export function makeShipwreck(opts = {}) {
   S.name = 'shipwreck';
 
   const hullMap = hullTex();
-  hullMap.repeat.set(7, 2);
+  hullMap.repeat.set(6, 1);               // ONE repeat keel to rail, or the weed line appears twice
   const deckMap = hullTex();
   deckMap.repeat.set(9, 3);
 
   const M = {
-    hull:  new THREE.MeshStandardMaterial({ map: hullMap, color: 0xb0a294, roughness: 0.94, metalness: 0.14, emissive: 0x140a05, side: THREE.DoubleSide, flatShading: true }),
-    deck:  new THREE.MeshStandardMaterial({ map: deckMap, color: 0x8f8478, roughness: 0.97, metalness: 0.12, emissive: 0x0f0803, side: THREE.DoubleSide, flatShading: true }),
+    // Smooth-shaded: a 44-station loft under flat shading is a row of slabs,
+    // and slabs are what made her read as a box. Lifted like everything else
+    // on the beach, off her own map, so she is a rusted hull in moonlight and
+    // not a black cut-out against the water.
+    hull:  new THREE.MeshStandardMaterial({ map: hullMap, color: 0xd6cabe, roughness: 0.9, metalness: 0.18, emissive: 0x4a3628, emissiveMap: hullMap, side: THREE.DoubleSide }),
+    deck:  new THREE.MeshStandardMaterial({ map: deckMap, color: 0xb0a89e, roughness: 0.96, metalness: 0.12, emissive: 0x2e241c, emissiveMap: deckMap, side: THREE.DoubleSide, flatShading: true }),
     inner: new THREE.MeshStandardMaterial({ color: 0x3a2114, roughness: 1, metalness: 0.08, emissive: 0x0a0503, side: THREE.DoubleSide, flatShading: true }),
-    steel: new THREE.MeshStandardMaterial({ color: 0x6a4a30, roughness: 0.8, metalness: 0.35, emissive: 0x0d0704, flatShading: true }),
+    steel: new THREE.MeshStandardMaterial({ color: 0x74604e, roughness: 0.78, metalness: 0.4, emissive: 0x1a120c, flatShading: true }),
     dark:  new THREE.MeshStandardMaterial({ color: 0x14100c, roughness: 1, metalness: 0, emissive: 0x030202, side: THREE.DoubleSide }),
     wood:  new THREE.MeshStandardMaterial({ color: 0x4a3524, roughness: 1, metalness: 0, emissive: 0x100b06, flatShading: true }),
     brass: new THREE.MeshStandardMaterial({ color: 0x7a6330, roughness: 0.6, metalness: 0.6, emissive: 0x120e05, flatShading: true }),
@@ -285,12 +315,13 @@ export function makeShipwreck(opts = {}) {
   // deck plating, with the cargo hatch left open and a notch for the stair
   {
     const xs = 30, zs = 10;
-    const pos = [], idx = [];
+    const pos = [], uv = [], idx = [];
     for (let i = 0; i <= xs; i++)
       for (let j = 0; j <= zs; j++) {
         const x = -HALF + (i / xs) * LEN;
         const b = beamAt(x) * sectionK(1) * flareAt(x, 1) * 0.985;
         pos.push(x, DECK_Y + sheerAt(x), -b + (j / zs) * b * 2);
+        uv.push(i / xs, j / zs);
       }
     for (let i = 0; i < xs; i++)
       for (let j = 0; j < zs; j++) {
@@ -308,6 +339,7 @@ export function makeShipwreck(opts = {}) {
       }
     const dg = new THREE.BufferGeometry();
     dg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    dg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     dg.setIndex(idx);
     dg.computeVertexNormals();
     HULL.add(new THREE.Mesh(dg, M.deck));
@@ -614,6 +646,53 @@ export function makeShipwreck(opts = {}) {
     board.position.set(BR_X0 - 0.09, dy(BR_X0) + 2.35, 0);
     board.rotation.y = -Math.PI / 2;
     S.add(board);
+  }
+
+  // ================= stern gear, funnel, anchor ===========================
+  /* The parts of a ship that a silhouette is recognised by. A hull alone is
+   * a shape; a hull with a propeller half out of the sand, a rudder behind
+   * it, a stack on the bridge and an anchor at the hawse is a SHIP. */
+  {
+    // rudder: a plate hung off the sternpost, its heel in the sand
+    // aft of the transom, not at it: this hull carries full beam down to the
+    // keel, so gear placed at x > -HALF is inside the plating and never seen
+    const rud = slab(0.14, 2.6, 1.15, M.hull, -HALF - 1.35, 0.55, 0, 0, 0, 0.08);
+    S.add(rud);
+    S.add(slab(0.2, 3.0, 0.2, M.steel, -HALF - 0.62, 0.6, 0));                    // sternpost
+    // propeller: hub, shaft, three blades — bronze, the one thing on her the
+    // sea has not turned brown
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.5, 9), M.brass);
+    hub.rotation.z = Math.PI / 2; hub.position.set(-HALF - 0.95, 0.62, 0);
+    S.add(hub);
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 2.4, 7), M.steel);
+    shaft.rotation.z = Math.PI / 2; shaft.position.set(-HALF + 0.2, 0.62, 0);
+    S.add(shaft);
+    for (let i = 0; i < 3; i++) {
+      const bl = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.05, 0.5), M.brass);
+      bl.geometry.translate(0, 0.62, 0);
+      bl.position.set(-HALF - 0.95, 0.62, 0);
+      bl.rotation.set(0.42, 0, 0);                    // pitch
+      const carrier = new THREE.Group();
+      carrier.rotation.x = (i / 3) * TAU + 0.6;
+      carrier.position.copy(bl.position); bl.position.set(0, 0, 0);
+      carrier.add(bl);
+      S.add(carrier);
+    }
+    // funnel on the bridge roof, its cap gone, streaked black inside
+    const fx = (BR_X0 + BR_X1) / 2 + 0.7, fy = DECK_Y + sheerAt(fx) + BR_H;
+    const fun = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.42, 1.9, 10, 1, true), M.hull);
+    fun.position.set(fx, fy + 0.95, 0.7);
+    S.add(fun);
+    const funIn = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.30, 1.6, 10, 1, true), M.dark);
+    funIn.position.set(fx, fy + 1.0, 0.7);
+    S.add(funIn);
+    S.add(slab(0.06, 1.2, 0.06, M.steel, fx + 0.9, fy + 0.6, 0.7, 0, 0, -0.45));  // its stay
+    // the anchor, hanging from the hawse at the bow, flukes in the sand
+    const ax = HALF - 2.2, az = beamAt(HALF - 2.2) * sectionK(0.75) + 0.25;
+    S.add(slab(0.14, 2.3, 0.14, M.steel, ax, 1.55, az, 0, 0, 0.12));            // shank
+    S.add(slab(1.3, 0.12, 0.12, M.steel, ax, 2.55, az));                        // stock
+    S.add(slab(0.14, 0.14, 1.5, M.steel, ax - 0.05, 0.42, az));                 // crown arms
+    for (const sg of [-1, 1]) S.add(slab(0.16, 0.45, 0.28, M.steel, ax - 0.05, 0.62, az + sg * 0.7, 0, 0, sg * 0.5));
   }
 
   // ================= sand banked against the hull =========================
