@@ -157,6 +157,31 @@ top was exactly level with both the bore invert and the room floor.
 invisible `hitProxy` disc across the bore, or the centre ray passes between
 the bars and straight down the open pipe.
 
+**The peek never drops the pointer lock.** `pointerlockchange` treats any
+exit it did not cause as "the user hit Esc" and opens the settings menu, and
+`peeking` was not in its guard list — so E on the gate opened the menu on top
+of the peek. `startPeek()` holds the lock (mouse look is gated by `frozen()`,
+which includes peeking) and the guard names `peeking` too. Anything else that
+freezes the player should do the same, or be added to that guard.
+
+**The string courses are open-ended cylinders.** `CylinderGeometry` caps by
+default, and three capped bands round the outside of the shaft are three
+solid discs straight through the bore — floors at 7, 14 and 20.5 m that you
+climbed up into. Pass `openEnded = true` on anything ring-shaped that crosses
+the shaft.
+
+**The swing lands where you aimed when you committed it.** `startDig()`
+captures the camera ray into `_aimO/_aimD`, and `digImpact()`, `crateStrike()`
+and `glassStrike()` all use `aimRay()` — never the live camera — because the
+blade lands 130–370 ms after the click or the release, and by then you have
+looked somewhere else. The crab is a ray-to-body test now (aim line within
+0.62 m + 0.25 P of its centre), not "any impact within 1.5 m": at 3.2 m on a
+heavy you could kill it looking at the sand beside it. `hitConnect(P, k)` is
+the confirm on anything solid — a FOV punch that eases back through
+`updateDialogCam()`, trauma, a blade jar, a beat of hitstop, `sfxConnect()` —
+and `flashMats()` turns the struck thing white for the frozen frames. Sand
+gets none of it; sand is not a hit.
+
 **The stuck gate — "Look inside".** That outlet is now the game's one set
 piece of pure looking: `startPeek()` / `updatePeek()` / `endPeek()`, with the
 eyes in `makeGateEyes()` / `updateGateEyes()` and the sound in
@@ -177,8 +202,12 @@ things carry it and none of them is a jump scare:
   the grille in frame, and looking through something you cannot open is the
   whole point.
 - **The eyes must not be there when you arrive.** They fade up 1.5 s after the
-  lean settles. Drawn as a pale almond with an iris and one hard catchlight,
-  not a dot — a dot at eleven pixels reads as a reflector.
+  lean settles and are gone 2.4–4 s later, between one frame and the next.
+  They are a DRAWING — a pair of eyes in ink on white, knocked out to alpha by
+  `tools/knockout.py` into `assets/eyes.png` and put on a plane, tinted down
+  with `MeshBasicMaterial.color` so white paper reads as skin in a black
+  drain. Two models were tried before it (a canvas pair, then a real eyeball
+  glb) and both read as lights or as cartoons at that distance; ink does not.
 - **`createMediaElementSource()` can only be called once per element.** The
   whisper graph is built on the first peek and kept; later peeks ramp the gain
   and call `play()` again. Rebuilding it stacks a second chain off the same

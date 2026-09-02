@@ -921,7 +921,9 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   // nothing and they're what stops the silhouette reading as a bare post.
   for (const by of [7.0, 14.0, 20.5]) {
     const r = lhOuterAt(by) + 0.09;
-    const band = new THREE.Mesh(new THREE.CylinderGeometry(r - 0.05, r, 0.34, 30), render);
+    // openEnded, or the caps are two solid discs right through the shaft — a
+    // floor across the bore at 7, 14 and 20.5 m that you climbed up into
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(r - 0.05, r, 0.34, 30, 1, true), render);
     band.position.y = by;
     lighthouse.add(band);
   }
@@ -2657,7 +2659,7 @@ document.addEventListener('pointerlockchange', () => {
     if (!started) { overlay.classList.remove('hidden'); return; }
     // an intentional exit (note / menu / dialogue / death) is handled by
     // those; a stray exit while still playing means the user hit Esc → menu
-    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !inspecting && !dying) openMenu();
+    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !inspecting && !peeking && !dying) openMenu();
   }
 });
 window.addEventListener('unhandledrejection', (e) => {
@@ -3268,11 +3270,11 @@ const SHARD_MAT = new THREE.MeshStandardMaterial({
  * speed well past its threshold — the same code path a hard throw takes, so
  * a float or the bottle breaks the same way whichever way you broke it. */
 function glassStrike() {
-  digRay.far = DIG_REACH + digPower * DIG_HEAVY_REACH;
-  digRay.setFromCamera({ x: 0, y: 0 }, camera);
+  aimRay(digPower);
   for (const p of physProps) {
     if (!p.onImpact || p.dead || p.held || !p.mesh.parent) continue;
     if (!digRay.intersectObject(p.mesh, true).length) continue;
+    hitConnect(digPower, 0.7);
     p.onImpact(12);
     vmImpulse(-0.9);
     return true;
@@ -3924,8 +3926,19 @@ function impactPose(out, P) {
   return out;
 }
 
+/* Where the swing is going is decided when you COMMIT it — the click, or the
+ * release — not on the frame the blade lands 130–370 ms later. Reading the
+ * camera at impact meant a swing landed wherever you had drifted to looking
+ * by then, which is the whole "it doesn't hit what I aimed at" feel. */
+const _aimO = new THREE.Vector3(), _aimD = new THREE.Vector3();
+function aimRay(P) {
+  digRay.set(_aimO, _aimD);
+  digRay.far = DIG_REACH + P * DIG_HEAVY_REACH;
+  return digRay;
+}
 function startDig(power = 0, fromPose = null) {
   if (digT > 0 || !equipped || !equipped.onDig || frozen()) return;
+  camera.getWorldPosition(_aimO); camera.getWorldDirection(_aimD);
   digPower = THREE.MathUtils.clamp(power, 0, 1);
   digImpacted = false;
   digCharged = !!fromPose;
@@ -3967,26 +3980,32 @@ function crosshairGroundPoint(maxDist = DIG_REACH) {
   if (_digHit.x < WADE_X + 0.2 || _digHit.x > CLIFF_BLOCK_X + 1.5) return null;
   return _digHit;
 }
+const _hitC = new THREE.Vector3();
 function digImpact() {
-  camera.getWorldDirection(_pf); _pf.y = 0; _pf.normalize();
+  _pf.copy(_aimD); _pf.y = 0; _pf.normalize();
   const P = digPower;
   if (crateStrike(P)) return;             // the blade is on the crate, not the sand
   if (glassStrike()) return;              // or on something that shatters
-  const p = crosshairGroundPoint(DIG_REACH + P * DIG_HEAVY_REACH);
+  // the crab: the AIM LINE has to pass close to the body. It used to be any
+  // impact point within 1.5 m of it (3.2 on a heavy) — you could kill it
+  // looking at the sand beside it, which is not a hit anyone feels they made.
+  if (crabState.alive) {
+    aimRay(P);
+    _hitC.copy(crab.position); _hitC.y += 0.28;
+    const t = THREE.MathUtils.clamp(_hitC.clone().sub(_aimO).dot(_aimD), 0, digRay.far);
+    const miss = _hitC.distanceTo(_aimO.clone().addScaledVector(_aimD, t));
+    if (miss < 0.62 + P * 0.25) { hitConnect(P, 1); killCrab(); return; }
+  }
+  aimRay(P);
+  const hits = digRay.intersectObject(sand, false);
   let x, z;
-  if (p) { x = p.x; z = p.z; }
-  else {
+  if (hits.length && hits[0].point.x > WADE_X + 0.2 && hits[0].point.x < CLIFF_BLOCK_X + 1.5) {
+    x = hits[0].point.x; z = hits[0].point.z;
+  } else {
     // looking at the sky — scuff the sand just in front of your feet instead
     const d = 1.5 + P * 1.1;
-    x = THREE.MathUtils.clamp(camera.position.x + _pf.x * d, WADE_X + 0.3, CLIFF_BLOCK_X - 0.3);
-    z = camera.position.z + _pf.z * d;
-  }
-  // a swing that lands near the crab kills it, sand or surf — a wound-up one
-  // reaches further, so a charged swing is the reliable way to land it
-  if (crabState.alive) {
-    const reach = CRAB_KILL_RADIUS * (1 + P * 1.1);
-    const cdx = x - crab.position.x, cdz = z - crab.position.z;
-    if (cdx * cdx + cdz * cdz < reach * reach) killCrab();
+    x = THREE.MathUtils.clamp(_aimO.x + _pf.x * d, WADE_X + 0.3, CLIFF_BLOCK_X - 0.3);
+    z = _aimO.z + _pf.z * d;
   }
   if (inWater(x, z)) {
     // blade hits water, not sand — throw a splash, leave no crater
@@ -4000,6 +4019,37 @@ function digImpact() {
   spawnPuffs(x, z, 22 + Math.round(P * 20), _pf.x, _pf.z);
   sfxDigImpact(P);
   revealMoundNear(x, z, _pf.x, _pf.z);
+}
+
+/* Connecting. The difference between "the animation played" and "I hit
+ * that": the view punches in a few degrees and eases back, the camera takes
+ * a real knock, the blade jars, and the thing you struck goes white for the
+ * frozen frames. Sand gets none of this; sand is not a hit. */
+let fovKick = 0;
+function hitConnect(P, k) {
+  fovKick = Math.max(fovKick, (3.2 + P * 3.4) * k);
+  addTrauma((0.18 + P * 0.24) * k);
+  vmImpulse(-(0.9 + P * 0.6) * k);
+  hitstop = Math.max(hitstop, 0.03 * k);
+  sfxConnect(P, k);
+}
+const _flashing = [];
+function flashMats(root) {
+  root.traverse((o) => {
+    if (!o.isMesh || !o.material || !o.material.emissive) return;
+    const m = o.material;
+    if (_flashing.some((f) => f.m === m)) return;
+    _flashing.push({ m, hex: m.emissive.getHex(), t: 0.075 });
+    m.emissive.setHex(0xdde4f0);
+  });
+}
+function updateFlashes(dt) {
+  for (let i = _flashing.length - 1; i >= 0; i--) {
+    const f = _flashing[i];
+    f.t -= dt;
+    if (f.t <= 0) { f.m.emissive.setHex(f.hex); _flashing.splice(i, 1); }
+  }
+  fovKick = Math.max(0, fovKick - dt * 26);
 }
 
 let vmSway = 0;
@@ -5128,6 +5178,7 @@ function killCrab() {
   crabState.atk = -1;
   camera.getWorldDirection(_crabDir); _crabDir.y = 0; _crabDir.normalize();
   _crabHitFrom.copy(crab.position);
+  flashMats(crab);
   sfxCrabHit();
   addTrauma(0.55);
   hitstop = CRAB_HIT_STOP;
@@ -5617,10 +5668,10 @@ const plankTex = makePlankTexture();
  * being broken. */
 function crateStrike(P) {
   if (crateBroken) return false;
-  digRay.far = DIG_REACH + P * DIG_HEAVY_REACH;
-  digRay.setFromCamera({ x: 0, y: 0 }, camera);
+  aimRay(P);
   if (!digRay.intersectObject(crate, true).length) return false;
-  if (P >= CRATE_POWER) { breakCrate(); return true; }
+  if (P >= CRATE_POWER) { hitConnect(P, 1); flashMats(crate); breakCrate(); return true; }
+  hitConnect(P, 0.45); flashMats(crate);
   // it holds. The blade jars back at you, and a puff of dust off the boards
   // says you connected — a swing that hits and does nothing must not feel
   // the same as a swing that hit nothing at all.
@@ -5829,8 +5880,8 @@ const _lookM = new THREE.Matrix4(), _lookQ = new THREE.Quaternion();
 function updateDialogCam(dt) {
   // The peek's squeeze is the zoom — and it is also what crops the lit room
   // out of frame, so there is nothing left to look at but the bore.
-  const wantFov = peeking && !peekLeaving ? PEEK_FOV
-    : dialogOpen ? Math.min(settings.fov, DIALOG_FOV) : settings.fov;
+  const wantFov = (peeking && !peekLeaving ? PEEK_FOV
+    : dialogOpen ? Math.min(settings.fov, DIALOG_FOV) : settings.fov) + fovKick;
   const rate = peeking ? 2.6 : 3.5;
   if (Math.abs(camera.fov - wantFov) > 0.01) {
     camera.fov += (wantFov - camera.fov) * Math.min(1, dt * rate);
@@ -6262,6 +6313,23 @@ function sfxWindFull() {
   o.connect(og).connect(sfxOut());
   o.start(t); o.stop(t + 0.22);
 }
+// the blade meeting something solid: a hard, short transient on top of
+// whatever the thing itself sounds like. This is the "click" of a hit.
+function sfxConnect(P = 0, k = 1) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const s = noiseBurst(0.045, (x) => Math.pow(1 - x, 1.2));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1900 - P * 500; bp.Q.value = 1.4;
+  const g = ctx.createGain(); g.gain.value = (0.16 + P * 0.1) * k;
+  s.connect(bp).connect(g).connect(sfxOut());
+  s.start(t); s.stop(t + 0.045);
+  const o = ctx.createOscillator(); o.type = 'square';
+  o.frequency.setValueAtTime(260 - P * 70, t); o.frequency.exponentialRampToValueAtTime(70, t + 0.06);
+  const og = ctx.createGain();
+  og.gain.setValueAtTime(0.055 * k, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+  o.connect(og).connect(sfxOut());
+  o.start(t); o.stop(t + 0.08);
+}
 // the swing — a short airy whoosh as the blade arcs down
 function sfxDig(power = 0) {
   const ctx = audioCtx; if (!ctx) return;
@@ -6619,108 +6687,51 @@ const DN = drainTunnel.userData.nav;
 const PEEK_FOV = 15;
 const PEEK_IN = 0.9, PEEK_OUT = 0.45;      // seconds to lean in / back out
 let peeking = false, peekLeaving = false, peekT = 0, peekHeld = 0;
-let peekReturnLock = false, gateEyes = null;
+let gateEyes = null;
 const _peekFrom = new THREE.Vector3(), _peekTo = new THREE.Vector3();
 const _peekFromQ = new THREE.Quaternion(), _peekToQ = new THREE.Quaternion();
 const _peekHome = new THREE.Vector3(), _peekHomeQ = new THREE.Quaternion();
 const _pk = new THREE.Vector3(), _pk2 = new THREE.Vector3();
 
-/* The eyes are ChamberSu1996's "Procedural Eyes For Ray II" — two proper
- * eyeballs, sclera + cornea with a normal map and a separate iris — packed
- * into assets/eyes.glb. Used exactly as modelled, with three changes made at
- * load: the cornea's KHR_materials_transmission is switched off (three
- * renders transmission through a separate pass that costs a full extra frame
- * and, in a black pipe, makes the cornea vanish); both materials get a small
- * emissive lift keyed to their own maps, so the whites read faintly in the
- * dark the way eyes catch light; and both are made transparent so they can
- * fade in rather than switch on.
- *
- * Sized and aimed here, not in the file. Each eye is fitted to 24 mm, set
- * 64 mm apart, and turned so its gaze — the sclera centre → iris centre
- * vector, read off the loaded geometry — points straight back up the bore at
- * you. That is the whole of what makes them eerie: they are not lights in the
- * dark, they are looking at you.
- *
- * What they do: fade up 1.5 s after you settle, blink on their own timing,
- * drift, tilt, creep a metre closer over the time they are there — and then
- * they are gone. Not fade out: gone, between one frame and the next, and they
- * do not come back on this peek. The silence after is doing more work than
- * anything before it. */
-const EYE_DIAM = 0.026, EYE_GAP = 0.066;   // near life size — the model at a distance, not a prop
-let gateEyesModel = null;                 // the loaded glb, kept for reuse
+/* The eyes are a drawing — Ethan's, a pair of eyes in ink on white — knocked
+ * out to alpha by tools/knockout.py into assets/eyes.png and put on a plane
+ * down the pipe. Not a model, not lit: a MeshBasicMaterial, tinted down so
+ * white paper reads as pale skin in a black drain, with the darkness of the
+ * ink doing the rest. They are the size of a real pair of eyes, 2.6 m off,
+ * fade up 1.5 s after you settle, blink, drift, tilt, creep half a metre
+ * closer, and then are gone between one frame and the next. */
+const EYES_W = 0.19;                      // the drawing, edge to edge, in metres
+let gateEyesTex = null;
 function makeGateEyes(F) {
   const G = new THREE.Group();
-  // 2.3 m down the pipe to start with. At 4.6 they were two pale pixels and
-  // the model — the whole point of using it — was invisible.
   G.position.set(0, -0.02, -2.6);
   G.userData = { eyes: [], mats: [], blink: 0, blinkIn: 2.2, baseY: -0.02,
-                 ready: false, gone: false, stay: 0, stayFor: 8 };
-  new GLTFLoader().load('assets/eyes.glb', (gltf) => {
-    gltf.scene.updateMatrixWorld(true);
-    // each eye is a node holding a sclera mesh and an iris mesh
-    const eyeNodes = [];
-    gltf.scene.traverse((o) => { if (/^Eye[LR]$/.test(o.name)) eyeNodes.push(o); });
-    eyeNodes.sort((a, b) => (a.name < b.name ? -1 : 1));
-    const _c = new THREE.Vector3(), _ic = new THREE.Vector3(), _gaze = new THREE.Vector3();
-    eyeNodes.forEach((node, k) => {
-      // bake the node transform (the FBX chain) so the eye is a plain unit
-      // ball we can size and aim ourselves
-      const eye = new THREE.Group();
-      let sclera = null, iris = null;
-      node.traverse((o) => {
-        if (!o.isMesh) return;
-        const m = o.clone();
-        m.geometry = o.geometry.clone().applyMatrix4(o.matrixWorld);
-        m.position.set(0, 0, 0); m.rotation.set(0, 0, 0); m.scale.set(1, 1, 1);
-        if (/Iris/.test(o.name)) iris = m; else sclera = m;
-        eye.add(m);
-      });
-      if (!sclera) return;
-      sclera.geometry.computeBoundingBox();
-      const sb = sclera.geometry.boundingBox;
-      sb.getCenter(_c);
-      const diam = Math.max(sb.max.x - sb.min.x, sb.max.y - sb.min.y, sb.max.z - sb.min.z);
-      // recentre on the ball's centre, size to a human eye
-      const k2 = EYE_DIAM / diam;
-      eye.children.forEach((m) => m.geometry.translate(-_c.x, -_c.y, -_c.z).scale(k2, k2, k2));
-      // gaze: where the iris sits on the ball
-      if (iris) {
-        iris.geometry.computeBoundingBox(); iris.geometry.boundingBox.getCenter(_ic);
-        _gaze.copy(_ic).normalize();
-        eye.quaternion.setFromUnitVectors(_gaze, new THREE.Vector3(0, 0, 1));   // look up the bore
-      }
-      eye.position.x = (k === 0 ? -1 : 1) * EYE_GAP / 2;
-      // materials: no transmission pass, a faint lift off their own maps, fadeable
-      eye.children.forEach((m) => {
-        const mat = m.material = m.material.clone();
-        if ('transmission' in mat) { mat.transmission = 0; mat.thickness = 0; }
-        mat.transparent = true; mat.opacity = 0; mat.depthWrite = true;
-        mat.roughness = m === iris ? 0.5 : 0.18; mat.metalness = 0;
-        // the sclera is lifted just enough to be found; the iris is NOT, so
-        // the pupil stays black. Lift both and you get two grey discs.
-        mat.emissive.setHex(m === iris ? 0x05060a : 0x1a1f2a);
-        mat.emissiveMap = mat.map;
-        mat.fog = false;
-        G.userData.mats.push(mat);
-      });
-      G.userData.eyes.push(eye);
-      G.add(eye);
+                 ready: false, gone: false, stay: 0, stayFor: 3 };
+  texLoader.load('assets/eyes.png', (tex) => {
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.minFilter = THREE.LinearMipmapLinearFilter; tex.magFilter = THREE.LinearFilter;
+    gateEyesTex = tex;
+    const ar = tex.image.height / tex.image.width;
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex, transparent: true, opacity: 0, depthWrite: false, fog: false,
+      // the tint IS the brightness: white paper at 0x6e7686 is the grey of a
+      // face that has been in the dark a long time
+      color: 0x6e7686, side: THREE.DoubleSide,
     });
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(EYES_W, EYES_W * ar), mat);
+    quad.position.z = 0.001;
+    G.userData.eyes.push(quad); G.userData.mats.push(mat);
+    G.add(quad);
     G.userData.ready = true;
-  });
+  }, undefined, () => { /* no file yet: the gate simply shows nothing */ });
   /* Something for them to be set in. Almost black, so you never actually see
    * a head — but it occludes the ribs behind it, and that missing ring is
    * what tells you the eyes are attached to a body rather than floating. */
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 8),
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8),
     new THREE.MeshBasicMaterial({ color: 0x05070b, fog: false }));
-  head.scale.set(1.1, 1.3, 0.8);
-  head.position.z = -0.075;
+  head.scale.set(1.0, 1.35, 0.8);
+  head.position.set(0, -0.02, -0.09);
   G.add(head);
-  // a little cold light just in front of the face, so the corneas glint —
-  // wet is what makes an eye an eye, and wet needs a highlight
-  const glint = new THREE.PointLight(0xc6d4ee, 0.35, 0.8, 1.8);
-  glint.position.set(0.05, 0.08, 0.28);
-  G.add(glint);
   G.visible = false;
   F.add(G);
   return G;
@@ -6818,8 +6829,11 @@ function startPeek() {
   F.localToWorld(_pk.set(0, 0, -5.0));
   _lookM.lookAt(_peekTo, _pk, camera.up);
   _peekToQ.setFromRotationMatrix(_lookM);
-  peekReturnLock = locked;
-  if (locked) document.exitPointerLock();
+  /* The lock stays. Dropping it here fired pointerlockchange, which treats
+   * any exit it didn't cause as "the user hit Esc" and opened the settings
+   * menu on top of the peek — every time you pressed E on the gate. Mouse
+   * look is already gated by frozen(), which includes peeking, so holding the
+   * lock costs nothing and the camera stays where the lean puts it. */
   if (held) dropHeld();
   hovered = null;
   crosshair.className = '';
@@ -6858,7 +6872,6 @@ function updatePeek(dt) {
     camera.position.copy(_peekHome);
     camera.quaternion.copy(_peekHomeQ);
     if (gateEyes) gateEyes.visible = false;
-    if (peekReturnLock && !fallbackLook) requestLock();
   }
 }
 function updateGateEyes(dt) {
@@ -6874,7 +6887,7 @@ function updateGateEyes(dt) {
     G.visible = false;
     return;
   }
-  for (const m of u.mats) m.opacity = fade * 0.72;    // never fully solid
+  for (const m of u.mats) m.opacity = fade * 0.82;    // never fully solid
 
   u.blinkIn -= dt;
   if (u.blinkIn <= 0) { u.blink = 1; u.blinkIn = 1.5 + Math.random() * 4.2; }
@@ -7789,6 +7802,7 @@ function update(dt, rawDt = dt) {
   if (cll) cll.material.opacity = 0.30 + 0.05 * Math.sin(oceanUniforms.uTime.value * 2.3);
 
   updateViewmodel(rawDt);       // real time: a swing must not stall in hitstop
+  updateFlashes(rawDt);
   updateHeldGlow(dt);
   updateDialogCam(dt);
   updateCrab(dt);
