@@ -133,16 +133,13 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - **The city** — pushed far back and heavily fogged so you can only just make
   out rooflines and a scattering of lit windows, under a faint sodium
   light-pollution wash that lifts over the cliff ridge.
-- **The lighthouse** — fixed tower far down the beach; the lamp + beam are
-  fog-exempt so you see it turning from the start, the tower emerges from fog
-  as you close in. A **trodden path** runs up to it through the boulders and
-  marram grass, ending at a lit **timber door** in a projecting stone
-  surround, which you have to open before the wall will let you in. Every
-  built part is dimensioned off the scan (see `CLAUDE.md`): the doorway and
-  four shaft **windows** are cut clean through it, the mast above y≈26.5 is
-  cut away and replaced with a **gallery, railing, glazed lantern room and
-  roof**, and inside a helical stair winds up a central newel past oil lamps
-  and the windows to a hatch in the lantern floor — which is the ending.
+- **The lighthouse** — a whitewashed conical tower with a black lantern, the
+  brightest thing on the headland. Inside, a round brick shaft with a red
+  cast-iron spiral stair wound up it: diamond-plate wedge treads springing from
+  the wall, an open well down the middle you can look all the way down, one
+  continuous red handrail on red balusters, oil lamps on the brick every half
+  turn and the moon washing down from the lantern glass. Climb it to the
+  gallery to end the walk.
 - **Detailed low-poly ground** — procedural sand (mottling, ripples, grit,
   pebbles, shell flecks) with a self-illuminating emissive map.
 - **Livelier ocean** — layered swell/chop/ripples, animated micro-normals,
@@ -248,6 +245,13 @@ wreck.
 
 ["Corpse in a black body bag with ropes"](https://sketchfab.com/3d-models/corpse-in-a-black-body-bag-with-ropes-fb2fe10ba9b14982b5785d73d7155daa)
 by [Dennis Hafemann](https://sketchfab.com/dennis.hafemann),
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+
+
+**Procedural Eyes For Ray II** — the eyes down the pipe behind the drain gate.
+
+["Procedural Eyes For Ray II"](https://sketchfab.com/3d-models/procedural-eyes-for-ray-ii)
+by [ChamberSu1996](https://sketchfab.com/chambersu1996),
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
 
 

@@ -348,6 +348,29 @@ is two `LatheGeometry` revolutions of those profiles; the gallery, lantern
 room and roof sit on top of them. If you move a wall, move the profile — do
 not hand-place a radius, or the deck and the stair will drift off it again.
 
+**Inside it is built to two photographs, not to a scan.** The interior is a
+BRICK shaft (`makeBrickTexture()`, on the bore lathe via `texture.repeat` —
+LatheGeometry hands out u round and v up) with a red cast-iron stair wound
+round it: wedge treads (`ExtrudeGeometry` of a sector, top at the stepped
+height) springing from the wall in to `LH_WELL_R`, an **open well** down the
+middle, one continuous red `TubeGeometry` handrail on the inner edge, and the
+diamond-plate `makeTreadTexture()` on the treads. There is no newel any more.
+`updateTower()` therefore clamps on BOTH sides while you are on the stair: the
+bore outward, `LH_WELL_R + PLAYER_R * 0.7` inward. Outside it is whitewashed
+render (`shaftOutMat`) with a black lantern — the brightest thing on the
+headland, which is what a lighthouse is for.
+
+Two things learned building it: warm lamps on red iron in a brick tube go
+monochrome red, so the brick's tint is COOL (`0x8892a4`) and the lamps are
+nearer white than amber; and tread nosings deeper than ~3 cm read as spokes
+when you look up the well.
+
+A Hirtshals interior scan (Daniel Olaizola's, CC-BY-SA) was tried in Sep 2026
+and dropped: it is an inside-out photogrammetry shell — whitewash, gaps where
+the windows were, 338k noisy triangles, treads fused into wedges — nothing a
+player could climb and not the red-iron-and-brick the references show. Same
+lesson as below: don't reintroduce a scan for the tower.
+
 A scanned tower (jonnysniper41's) used to stand here and was dropped in
 Sep 2026. It was a closed 20-sided post with no lantern and no openings, so
 every added part had to be guessed against a shape we didn't control, and the

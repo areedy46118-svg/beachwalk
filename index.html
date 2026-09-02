@@ -666,6 +666,11 @@
   }
   #menu .row.toggle label { cursor: pointer; }
   #menu .buttons { display: flex; gap: 0.8rem; margin-top: 1.8rem; }
+  #menu .buttons button.secondary {
+    opacity: 0.72;
+    border-color: rgba(150, 168, 200, 0.28);
+  }
+  #menu .buttons button.secondary:hover { opacity: 1; }
   #menu button {
     flex: 1;
     padding: 0.7rem 1rem;
@@ -818,10 +823,11 @@
       </div>
       <div class="buttons">
         <button id="m-resume">Resume</button>
+        <button id="m-restart" class="secondary">Restart from the beach</button>
       </div>
       <div class="tip">
-        WASD move &nbsp;·&nbsp; Shift run &nbsp;·&nbsp; Space jump &nbsp;·&nbsp; E / click interact<br />
-        1–6 use item &nbsp;·&nbsp; hold right-click to wind up a heavy swing &nbsp;·&nbsp; click throw held object &nbsp;·&nbsp; G drop &nbsp;·&nbsp; Esc resume
+        WASD move &nbsp;·&nbsp; Shift run &nbsp;·&nbsp; Space jump &nbsp;·&nbsp; E interact / pick up &nbsp;·&nbsp; click swing / throw<br />
+        1–6 use item &nbsp;·&nbsp; hold right-click to wind up a heavy swing &nbsp;·&nbsp; G drop &nbsp;·&nbsp; Esc resume
       </div>
     </div>
   </div>

@@ -59,6 +59,7 @@ const LH_STAIR_R = 1.42;           // radius of the tread centres
 const LH_PER_TURN = 20;            // treads per full turn
 const LH_STEP = LH_RISE / LH_PER_TURN;   // one riser, 0.22 m
 const LH_TREAD_T = 0.13;           // tread thickness
+const LH_WELL_R = 0.95;            // the open well down the middle of the stair
 // Where the stair meets the gallery, in the game's angle convention. The
 // treads are laid out so height and angle are locked together, so this is
 // derived rather than eyeballed — the hatch in the deck has to be here, and
@@ -67,6 +68,64 @@ const LH_ARRIVE = ((-(LH_TOP / LH_RISE) * Math.PI * 2) % (Math.PI * 2) + Math.PI
 const LH_DOOR_W = 0.72;            // half-width of the doorway
 const LH_DOOR_H = 2.15;
 // the bore narrows as it climbs — keeps the stair and the player off the wall
+/* Brick, drawn the way the sand is — 256², a coarse palette, nearest — for
+ * the inside of the shaft. Courses of stretcher bond with a pale mortar line,
+ * every brick its own shade so it never tiles as a grid. Cooled well off red:
+ * the lamps in there are warm and will bring the colour back; a warm brick
+ * under a warm lamp goes orange. */
+function makeBrickTexture() {
+  const S = 256;
+  const c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  const rnd = mulberry32(4417);
+  g.fillStyle = '#6a6a72'; g.fillRect(0, 0, S, S);              // mortar
+  const rows = 8, bh = S / rows, bw = S / 4;
+  for (let r = 0; r < rows; r++) {
+    const off = r % 2 ? bw / 2 : 0;
+    for (let k = -1; k < 5; k++) {
+      const x = k * bw + off, y = r * bh;
+      const t = rnd();
+      const R = 112 + Math.floor(t * 40), G = 62 + Math.floor(t * 22), B = 58 + Math.floor(rnd() * 18);
+      g.fillStyle = `rgb(${R},${G},${B})`;
+      g.fillRect(x + 2, y + 2, bw - 4, bh - 4);
+      // a darker face here and there, the way a fired batch varies
+      if (rnd() < 0.22) { g.fillStyle = 'rgba(30,18,18,0.35)'; g.fillRect(x + 2, y + 2, bw - 4, bh - 4); }
+      // spalling and soot: a few dark flecks per brick
+      for (let f = 0; f < 3; f++) {
+        g.fillStyle = `rgba(20,14,14,${0.25 + rnd() * 0.35})`;
+        g.fillRect(x + 3 + rnd() * (bw - 8), y + 3 + rnd() * (bh - 8), 1 + rnd() * 3, 1 + rnd() * 2);
+      }
+    }
+  }
+  const img = g.getImageData(0, 0, S, S), d = img.data, step = 255 / 7;
+  for (let i = 0; i < d.length; i += 4) for (let k = 0; k < 3; k++) d[i + k] = Math.round(d[i + k] / step) * step;
+  g.putImageData(img, 0, 0);
+  const t = retroTex(new THREE.CanvasTexture(c));
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+/* Cast iron for the treads: the raised-diamond anti-slip pattern that every
+ * lighthouse stair in the world has, four diamonds to the tile. It reads at
+ * a glance as "iron plate", which a flat red box never did. */
+function makeTreadTexture() {
+  const S = 128;
+  const c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  g.fillStyle = '#8c8c94'; g.fillRect(0, 0, S, S);
+  const n = 4, cell = S / n;
+  for (let i = 0; i < n; i++) for (let k = 0; k < n; k++) {
+    const cx = i * cell + cell / 2, cy = k * cell + cell / 2, h = cell * 0.36;
+    // the diamond, lit from the top-left: a bright upper face, a dark lower one
+    g.fillStyle = '#c4c4cc';
+    g.beginPath(); g.moveTo(cx, cy - h); g.lineTo(cx + h, cy); g.lineTo(cx, cy); g.lineTo(cx - h, cy); g.closePath(); g.fill();
+    g.fillStyle = '#55555c';
+    g.beginPath(); g.moveTo(cx - h, cy); g.lineTo(cx, cy); g.lineTo(cx + h, cy); g.lineTo(cx, cy + h); g.closePath(); g.fill();
+  }
+  const t = retroTex(new THREE.CanvasTexture(c));
+  t.repeat.set(4, 4);                                            // 6 cm diamonds
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
 function lhBoreAt(y) {
   if (y < 5) return 2.55;
   if (y < 17) return THREE.MathUtils.lerp(2.55, 2.45, (y - 5) / 12);
@@ -764,16 +823,35 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   ringYs.push(LH_TOP);
   const ys = [...new Set(ringYs.filter((y) => y >= 0 && y <= LH_TOP))].sort((a, b) => a - b);
 
-  const shaftMat = new THREE.MeshStandardMaterial({
-    color: 0x646b78, vertexColors: true, roughness: 1, metalness: 0,
-    emissive: 0x14171d, flatShading: true, side: THREE.DoubleSide });
+  /* Two skins, because the reference is two buildings. From the beach it is
+   * a WHITE tower with a black lantern — whitewashed render that takes the
+   * moon and is the brightest thing on the headland, which is what a
+   * lighthouse is for. Inside it is BRICK: a round shaft of it, running up
+   * into the dark, with the red iron stair wound round it. The old single
+   * grey material was neither, and read as a concrete post from both sides.
+   *
+   * LatheGeometry hands out u round the shaft and v up it, so the brick
+   * courses come straight off texture.repeat: ~14.5 m round at the foot and
+   * 26 m up, at 0.4 m per repeat, is 36 × 64. */
+  const brickTex = makeBrickTexture();
+  brickTex.repeat.set(36, 64);
+  const shaftOutMat = new THREE.MeshStandardMaterial({
+    color: 0xb2bac8, vertexColors: true, roughness: 0.95, metalness: 0,
+    emissive: 0x2a3140, flatShading: true, side: THREE.DoubleSide });
+  const shaftInMat = new THREE.MeshStandardMaterial({
+    // tinted COOL on purpose: the lamps are warm, and a warm brick under a
+    // warm lamp is orange — the first pass was a red tube with red stairs in it
+    map: brickTex, color: 0x8892a4, vertexColors: true, roughness: 1, metalness: 0,
+    emissive: 0x141821, emissiveMap: brickTex, side: THREE.DoubleSide });
+  const render = new THREE.MeshStandardMaterial({
+    color: 0xa9b1bf, roughness: 0.95, metalness: 0, emissive: 0x262d3a, flatShading: true });
   const lathe = (radiusAt) => {
     const g = new THREE.LatheGeometry(ys.map((y) => new THREE.Vector2(radiusAt(y), y)), 30);
     carve(g); weather(g); g.computeVertexNormals();
     return g;
   };
-  const shaftOut = new THREE.Mesh(lathe(lhOuterAt), shaftMat);
-  const shaftIn = new THREE.Mesh(lathe(lhBoreAt), shaftMat);
+  const shaftOut = new THREE.Mesh(lathe(lhOuterAt), shaftOutMat);
+  const shaftIn = new THREE.Mesh(lathe(lhBoreAt), shaftInMat);
   shaftOut.frustumCulled = shaftIn.frustumCulled = false;
   lighthouse.add(shaftOut, shaftIn);
   lhParts.outer = shaftOut; lhParts.inner = shaftIn;
@@ -783,7 +861,7 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   // nothing and they're what stops the silhouette reading as a bare post.
   for (const by of [7.0, 14.0, 20.5]) {
     const r = lhOuterAt(by) + 0.09;
-    const band = new THREE.Mesh(new THREE.CylinderGeometry(r - 0.05, r, 0.34, 30), stone);
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(r - 0.05, r, 0.34, 30), render);
     band.position.y = by;
     lighthouse.add(band);
   }
@@ -814,50 +892,81 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   lighthouse.add(floor);
 
   // ---- the helical stair ------------------------------------------
-  // Treads cantilever off a central newel, the way they do in a real
-  // tower, and stop at a landing under the gallery hatch.
-  const treadMat = new THREE.MeshStandardMaterial({ color: 0x3d4450, roughness: 1, flatShading: true, emissive: 0x191d23 });
+  /* Built to the photographs: red cast-iron treads springing from the BRICK,
+   * an open well down the middle, and one continuous red handrail spiralling
+   * up the inner edge on red balusters. The previous stair cantilevered box
+   * treads off a stone newel — the well is the whole character of the thing.
+   * Look down through it from the top and you see every tread you climbed.
+   *
+   * Each tread is a wedge from the bore wall to LH_WELL_R, so it gets
+   * narrower as the shaft tapers, exactly as a real one does; and it is a
+   * real extruded solid so the undersides read from below. The collision in
+   * updateTower() is the wall on one side and the well on the other. */
+  const treadTex = makeTreadTexture();
+  const treadMat = new THREE.MeshStandardMaterial({
+    map: treadTex, color: 0xa8342c, roughness: 0.62, metalness: 0.35,
+    emissive: 0x3a0d0a, emissiveMap: treadTex, flatShading: true });
+  const redIron = new THREE.MeshStandardMaterial({
+    color: 0xa8342c, roughness: 0.5, metalness: 0.45, emissive: 0x3a0d0a, flatShading: true });
   const stairs = new THREE.Group();
   {
-    const stepGeo = new THREE.BoxGeometry(1.30, LH_TREAD_T, 0.58);
-    // up to and including the deck, so there's no gap at the last step
     const nSteps = Math.round(LH_TOP / LH_STEP);
+    const half = (Math.PI * 2 / LH_PER_TURN) * 0.54;          // a hair of overlap, no gaps
     for (let i = 1; i <= nSteps; i++) {
       const y = i * LH_STEP;
       const a = stairAngleAt(y);
-      const st = new THREE.Mesh(stepGeo, treadMat);
-      st.position.set(Math.cos(a) * LH_STAIR_R, y, Math.sin(a) * LH_STAIR_R);
-      st.rotation.y = -a;
+      const rOut = lhBoreAt(y) + 0.06;                          // let into the brick
+      // the wedge, drawn in (x, -z) so the extrusion can be turned to lie flat
+      const sh = new THREE.Shape();
+      const N = 5;
+      for (let k = 0; k <= N; k++) {
+        const t = a - half + (2 * half) * (k / N);
+        const px = Math.cos(t) * rOut, pz = Math.sin(t) * rOut;
+        if (k === 0) sh.moveTo(px, -pz); else sh.lineTo(px, -pz);
+      }
+      for (let k = N; k >= 0; k--) {
+        const t = a - half + (2 * half) * (k / N);
+        sh.lineTo(Math.cos(t) * LH_WELL_R, -Math.sin(t) * LH_WELL_R);
+      }
+      sh.closePath();
+      const g = new THREE.ExtrudeGeometry(sh, { depth: LH_TREAD_T, bevelEnabled: false });
+      g.rotateX(Math.PI / 2);                                    // extrusion -> down, shape.y -> +z
+      const st = new THREE.Mesh(g, treadMat);
+      st.position.y = y + LH_TREAD_T / 2;                        // top face at the stepped height
       stairs.add(st);
-      // a rail post every few treads, with the handrail riding on top
-      if (i % 4 === 0) {
-        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.95, 5), iron);
-        post.position.set(Math.cos(a) * (LH_STAIR_R + 0.42), y + 0.48, Math.sin(a) * (LH_STAIR_R + 0.42));
-        stairs.add(post);
+      // the nose: a red lip along the leading edge, which is what the eye
+      // follows up a spiral
+      const nose = new THREE.Mesh(new THREE.BoxGeometry(rOut - LH_WELL_R, 0.026, 0.03), redIron);
+      const an = a + half;
+      const rm = (rOut + LH_WELL_R) / 2;
+      nose.position.set(Math.cos(an) * rm, y + LH_TREAD_T / 2 - 0.01, Math.sin(an) * rm);
+      nose.rotation.y = -an;
+      stairs.add(nose);
+      // a baluster every second tread, up to the rail
+      if (i % 2 === 0) {
+        const bal = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.92, 5), redIron);
+        bal.position.set(Math.cos(a) * (LH_WELL_R + 0.05), y + LH_TREAD_T / 2 + 0.46, Math.sin(a) * (LH_WELL_R + 0.05));
+        stairs.add(bal);
       }
     }
-    // the newel the treads spring from
-    const newel = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.32, LH_TOP, 12), stone);
-    newel.position.y = LH_TOP / 2;
-    stairs.add(newel);
-
-    // handrail: a helix of short chords following the tread noses
-    const railGeo = [];
-    for (let y = 0.9; y < LH_TOP - 0.3; y += 0.35) railGeo.push(y);
-    for (let i = 0; i < railGeo.length - 1; i++) {
-      const y0 = railGeo[i], y1 = railGeo[i + 1];
-      const a0 = stairAngleAt(y0 - 0.9), a1 = stairAngleAt(y1 - 0.9);
-      const R = LH_STAIR_R + 0.42;
-      const p0 = new THREE.Vector3(Math.cos(a0) * R, y0, Math.sin(a0) * R);
-      const p1 = new THREE.Vector3(Math.cos(a1) * R, y1, Math.sin(a1) * R);
-      const seg = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, p0.distanceTo(p1) * 1.06, 5), iron);
-      seg.position.copy(p0).lerp(p1, 0.5);
-      seg.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), p1.clone().sub(p0).normalize());
-      stairs.add(seg);
+    // the handrail: one unbroken red tube, the helix the treads follow
+    {
+      const pts = [];
+      for (let y = LH_STEP * 0.5; y <= LH_TOP + 0.01; y += 0.22) {
+        const a = stairAngleAt(y);
+        const R = LH_WELL_R + 0.05;
+        pts.push(new THREE.Vector3(Math.cos(a) * R, y + LH_TREAD_T / 2 + 0.92, Math.sin(a) * R));
+      }
+      const curve = new THREE.CatmullRomCurve3(pts);
+      const rail = new THREE.Mesh(new THREE.TubeGeometry(curve, pts.length * 2, 0.028, 7, false), redIron);
+      stairs.add(rail);
     }
-
-    // oil lamps up the shaft — nothing else lights the inside
-    for (let y = 2.2; y < LH_TOP - 1.5; y += LH_RISE * 0.5) {
+    /* Light. This is a brick tube with no windows on most of its height and
+     * the old one was black inside. Oil lamps on the wall every half turn,
+     * warmer and further-reaching than before, and a cold wash down from the
+     * lantern — the moon through the glass — so the top of the well is a
+     * pale disc you climb toward. */
+    for (let y = 2.0; y < LH_TOP - 1.5; y += LH_RISE * 0.5) {
       const a = stairAngleAt(y) + Math.PI;            // on the wall opposite the treads
       const lr = lhBoreAt(y) - 0.35;
       const px = Math.cos(a) * lr, pz = Math.sin(a) * lr;
@@ -867,7 +976,7 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
       const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.28), iron);
       bracket.position.set(px * 1.07, y + 1.4, pz * 1.07);
       bracket.lookAt(0, y + 1.4, 0);
-      const lamp = new THREE.PointLight(0xffb070, 6.0, 6.5, 1.6);
+      const lamp = new THREE.PointLight(0xffd8b0, 9.5, 9.5, 1.5);
       lamp.position.set(px * 0.84, y + 1.4, pz * 0.84);
       const halo = new THREE.Sprite(new THREE.SpriteMaterial({
         map: glowTex, color: 0xffd39a, transparent: true, opacity: 0.32,
@@ -877,6 +986,9 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
       halo.scale.setScalar(1.4);
       stairs.add(bulb, bracket, lamp, halo);
     }
+    const moonWash = new THREE.PointLight(0x8aa2cc, 5.5, 34, 1.2);
+    moonWash.position.set(0, LH_TOP + 0.6, 0);
+    stairs.add(moonWash);
   }
   lighthouse.add(stairs);
 
@@ -2622,7 +2734,7 @@ renderer.domElement.addEventListener('click', (e) => {
   if (d >= 6) return;
   // if we lost the lock (browser cooldown, stray Esc), a click takes it back
   if (started && !locked && !fallbackLook && !frozen()) { lockRetry = 0; requestLock(); return; }
-  primaryAction();
+  attackAction();
 });
 
 // ------------------------------------------------------------------
@@ -2672,6 +2784,25 @@ S_MUSIC.addEventListener('input', () => { settings.musicVolume = +S_MUSIC.value;
 S_SPEED.addEventListener('input', () => { settings.walkSpeed = +S_SPEED.value; applySettings(); saveSettings(); });
 S_INVERT.addEventListener('change', () => { settings.invertY = S_INVERT.checked; saveSettings(); });
 document.getElementById('m-resume').addEventListener('click', closeMenu);
+/* Restart. Puts you back where the intro leaves you — standing at the top of
+ * the beach, facing down it, whole — and does it in place, this frame. Not a
+ * reload: that lands on the title card and needs a click to get the pointer
+ * lock back. Your pack comes with you; the world stays as you left it. */
+function respawn() {
+  if (dying || ended) return;
+  if (peeking) { peeking = false; peekLeaving = false; crosshair.style.display = ''; stopPeekAudio(); }
+  if (inspecting) closeInspect();
+  if (held) dropHeld();
+  camera.position.set(8, EYE_HEIGHT, 0);
+  camera.lookAt(8, EYE_HEIGHT - 0.05, -10);
+  camBaseY = EYE_HEIGHT; vy = 0; onGround = true;
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0); _shakePrev.set(0, 0, 0);
+  trauma = 0; hitstop = 0;
+  hp = MAX_HP; hurtFlash = 0;
+  winding = false; windT = 0; digT = 0;
+  closeMenu();
+}
+document.getElementById('m-restart').addEventListener('click', respawn);
 applySettings();
 syncMenuInputs();
 
@@ -2873,7 +3004,7 @@ function updateHover() {
   }
   if (held) {
     hovered = null; crosshair.className = 'holding';
-    setPrompt(kbd('LMB') + 'Throw &nbsp;&nbsp; ' + kbd('G') + 'Drop');
+    setPrompt(kbd('LMB') + 'Throw &nbsp;&nbsp; ' + kbd('E') + 'Put down');
     return;
   }
   raycaster.setFromCamera({ x: 0, y: 0 }, camera);
@@ -2906,17 +3037,33 @@ function updateHover() {
     setPrompt('');
   }
 }
-function primaryAction() {
+/* Two verbs, two inputs. E is INTERACT: take, grab, talk, look inside, and
+ * put down what you're carrying. The mouse is ATTACK: throw what you're
+ * carrying, swing what you're holding. They used to share one function, so
+ * with the shovel out a click on a glass float picked the float up instead
+ * of hitting it — the pickup winning over the swing every time, because the
+ * hover check came first. Now a click never picks anything up while a tool
+ * is in your hand. With nothing equipped and nothing held it still falls
+ * through to interact, so a bare-handed player who clicks on a thing is not
+ * left clicking at nothing. */
+function primaryAction() {                       // E / F
   if (peeking) { endPeek(); return; }
   if (frozen()) return;
-  if (held) { throwHeld(); return; }
+  if (held) { dropHeld(); return; }
   if (hovered) {
     if (hovered.kind === 'physics') grab(hovered.prop);
     else if (hovered.onActivate) hovered.onActivate();
     return;
   }
+  if (equipped && equipped.onListen) listenToShell();
+}
+function attackAction() {                        // left mouse
+  if (peeking) { endPeek(); return; }
+  if (frozen()) return;
+  if (held) { throwHeld(); return; }
+  if (equipped && equipped.onDig) { if (digT <= 0) startDig(); return; }
   if (equipped && equipped.onListen) { listenToShell(); return; }
-  if (equipped && equipped.onDig && digT <= 0) startDig();
+  primaryAction();                               // bare hands: a click still interacts
 }
 
 // ------------------------------------------------------------------
@@ -3068,6 +3215,22 @@ const SHARD_MAT = new THREE.MeshStandardMaterial({
   color: 0x2f6f5c, roughness: 0.2, metalness: 0.05, flatShading: true,
   transparent: true, opacity: 0.72, emissive: 0x0c2b22, side: THREE.DoubleSide,
 });
+/* Hitting glass with the shovel. Anything with an onImpact is breakable, so
+ * the swing raycasts at each one still standing and, on a hit, feeds it a
+ * speed well past its threshold — the same code path a hard throw takes, so
+ * a float or the bottle breaks the same way whichever way you broke it. */
+function glassStrike() {
+  digRay.far = DIG_REACH + digPower * DIG_HEAVY_REACH;
+  digRay.setFromCamera({ x: 0, y: 0 }, camera);
+  for (const p of physProps) {
+    if (!p.onImpact || p.dead || p.held || !p.mesh.parent) continue;
+    if (!digRay.intersectObject(p.mesh, true).length) continue;
+    p.onImpact(12);
+    vmImpulse(-0.9);
+    return true;
+  }
+  return false;
+}
 function shatterGlass(prop, mesh, speed, radius, threshold = 4.6) {
   if (prop.dead || speed < threshold) return;        // a gentle knock just clinks
   prop.dead = true;
@@ -3096,7 +3259,7 @@ function shatterGlass(prop, mesh, speed, radius, threshold = 4.6) {
       vel: new THREE.Vector3(Math.cos(a) * out, 1.6 + Math.random() * 2.4, Math.sin(a) * out),
       spin: new THREE.Vector3((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20),
       rest: 0.015 + Math.random() * 0.03,
-      life: 30,
+      life: 30, bleed: false,
     });
   }
 }
@@ -3760,6 +3923,7 @@ function digImpact() {
   camera.getWorldDirection(_pf); _pf.y = 0; _pf.normalize();
   const P = digPower;
   if (crateStrike(P)) return;             // the blade is on the crate, not the sand
+  if (glassStrike()) return;              // or on something that shatters
   const p = crosshairGroundPoint(DIG_REACH + P * DIG_HEAVY_REACH);
   let x, z;
   if (p) { x = p.x; z = p.z; }
@@ -4883,7 +5047,9 @@ function updateGibs(dt) {
       } else {
         g.settled = true;
         g.vel.set(0, 0, 0);
-        if (Math.random() < 0.5) stampBlood(g.m.position.x, g.m.position.z, 0.3 + Math.random() * 0.35);
+        // only meat bleeds — glass and wood ride this same system and were
+        // leaving blood splats under the shards and the splinters
+        if (g.bleed !== false && Math.random() < 0.5) stampBlood(g.m.position.x, g.m.position.z, 0.3 + Math.random() * 0.35);
       }
     }
   }
@@ -5293,21 +5459,73 @@ addInteractable(bradly, 'Talk to him', 'npc', { onActivate: () => startDialog('s
  * It is solid while it stands: a cylinder in `rockColliders`, dropped again
  * when the boards come apart.
  */
-const CRATE_X = 12.8, CRATE_R = 0.52, CRATE_H = 0.72;
+// a metre and a half off the cliff foot, where the moon actually reaches — at
+// x = 12.8 it stood in the cliff's own shadow and read as a dark box at best
+const CRATE_X = 11.4, CRATE_R = 0.52, CRATE_H = 0.72;
 const CRATE_POWER = 0.75;              // ~0.64 s of charge — a real haul-back
-const crateZ = bradly.position.z - 1.5;
+const crateZ = bradly.position.z - 2.5;
 const crate = new THREE.Group();
 crate.position.set(CRATE_X, 0, crateZ);
 crate.rotation.y = -0.32;
 let crateBroken = false;
+/* Salt-bleached boards. Drawn the way the sand texture is — 256², a coarse
+ * palette, nearest-filtered — so it sits in the same world as everything
+ * else instead of looking like a prop from a different game: a flat brown
+ * box did exactly that. Grain runs along the plank, a knot or two, and the
+ * gaps between boards are dark. Cool greys, because everything on this
+ * beach is lit by the moon and nothing on it is warm. */
+function makePlankTexture() {
+  const S = 256;
+  const c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  const rnd = mulberry32(7331);
+  const PLANKS = 4, ph = S / PLANKS;
+  for (let i = 0; i < PLANKS; i++) {
+    const y0 = i * ph;
+    const base = 128 + Math.floor(rnd() * 26) - 13;          // each board its own grey
+    g.fillStyle = `rgb(${base - 6},${base},${base + 12})`;
+    g.fillRect(0, y0, S, ph);
+    // grain: long faint streaks that wander a little across the board
+    for (let k = 0; k < 26; k++) {
+      const yy = y0 + 3 + rnd() * (ph - 6);
+      const d = Math.floor(rnd() * 22) - 11;
+      g.strokeStyle = `rgba(${base - 26 + d},${base - 20 + d},${base - 8 + d},0.55)`;
+      g.lineWidth = 0.6 + rnd() * 1.2;
+      g.beginPath();
+      g.moveTo(0, yy);
+      for (let x = 0; x <= S; x += 32) g.lineTo(x, yy + Math.sin(x * 0.02 + k) * 1.6 + (rnd() - 0.5) * 1.2);
+      g.stroke();
+    }
+    // a knot
+    if (rnd() < 0.7) {
+      const kx = 30 + rnd() * (S - 60), ky = y0 + ph * (0.3 + rnd() * 0.4);
+      const kr = 4 + rnd() * 5;
+      g.fillStyle = `rgba(${base - 44},${base - 40},${base - 30},0.9)`;
+      g.beginPath(); g.ellipse(kx, ky, kr * 1.4, kr, 0, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = `rgba(${base - 30},${base - 26},${base - 18},0.6)`; g.lineWidth = 1;
+      g.beginPath(); g.ellipse(kx, ky, kr * 2.1, kr * 1.5, 0, 0, Math.PI * 2); g.stroke();
+    }
+    // the gap to the next board, and a bevel catching the light above it
+    g.fillStyle = 'rgba(14,16,22,0.95)'; g.fillRect(0, y0 + ph - 3, S, 3);
+    g.fillStyle = `rgba(${base + 26},${base + 30},${base + 40},0.6)`; g.fillRect(0, y0, S, 2);
+  }
+  // quantise to the beach's coarse palette
+  const img = g.getImageData(0, 0, S, S), d = img.data, step = 255 / 7;
+  for (let i = 0; i < d.length; i += 4) for (let k = 0; k < 3; k++) d[i + k] = Math.round(d[i + k] / step) * step;
+  g.putImageData(img, 0, 0);
+  const t = retroTex(new THREE.CanvasTexture(c));
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const plankTex = makePlankTexture();
 {
-  // greyed, not warm: the crab's gibs are red-brown and the two ended up
-  // side by side on the same sand looking like the same thing
   const boardMat = new THREE.MeshStandardMaterial({
-    color: 0x66594b, roughness: 1, flatShading: true, emissive: 0x0e0d0b,
+    map: plankTex, color: 0x8390a4, roughness: 1, flatShading: true,
+    emissive: 0x2a3446, emissiveMap: plankTex,
   });
   const battenMat = new THREE.MeshStandardMaterial({
-    color: 0x4e3e2d, roughness: 1, flatShading: true, emissive: 0x110c06,
+    map: plankTex, color: 0x5c6675, roughness: 1, flatShading: true,
+    emissive: 0x1c2432, emissiveMap: plankTex,
   });
   const W = CRATE_R * 2 * 0.72;        // the box is a little inside its collider
   // four sides of slats with gaps, so it reads as boards and not as a box
@@ -5378,7 +5596,8 @@ function breakCrate() {
 
   // the boards, as real gibs so they bounce and settle with everything else
   const splint = new THREE.MeshStandardMaterial({
-    color: 0x66594b, roughness: 1, flatShading: true, emissive: 0x0e0d0b,
+    map: plankTex, color: 0x8390a4, roughness: 1, flatShading: true,
+    emissive: 0x2a3446, emissiveMap: plankTex,
   });
   for (let i = 0; i < 18; i++) {
     const L = 0.10 + Math.random() * 0.26;
@@ -5392,7 +5611,7 @@ function breakCrate() {
       m,
       vel: new THREE.Vector3(Math.cos(a) * out, 1.9 + Math.random() * 2.4, Math.sin(a) * out),
       spin: new THREE.Vector3((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14),
-      rest: 0.02, life: 40,
+      rest: 0.02, life: 40, bleed: false,
     });
   }
   dropRing();
@@ -5416,19 +5635,41 @@ const ringItem = {
     onEquip: () => { if (wearRing(ringItem)) closeInspect(); },
   }),
 };
+/* It comes OUT. Set down quietly on the sand where the crate stood, a 20 mm
+ * ring is the easiest thing in the game to walk away from; so it is thrown
+ * up out of the boards on a real body, toward you, rings off the sand when
+ * it lands, and sits under a glint twice the size a takeable normally gets.
+ * The arc is the point: your eye follows a thing that moves. */
+let ringProp = null;
 function dropRing() {
   ring.position.set(0, 0.012, 0);
-  ring.rotation.set(Math.PI / 2 - 0.35, 0.4, 0);      // fallen flat, tipped a little
-  ringWorld.position.set(CRATE_X + 0.18, 0, crateZ - 0.12);
+  ring.rotation.set(Math.PI / 2 - 0.35, 0.4, 0);      // flat, tipped a little
+  ringWorld.position.set(CRATE_X, CRATE_H * 0.55, crateZ);
   scene.add(ringWorld);
-  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.26, 8, 6),
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   hit.name = 'hitProxy';
   hit.position.y = 0.06;
   ringWorld.add(hit);
-  addItemShine(ringWorld, { size: 0.4, height: 0.08, strength: 1.2 });
+  // a body of its own, but NOT makeProp(): that would register it as a
+  // grab-and-throw physics prop, and a ring is a thing you take
+  ringProp = new PhysProp(ringWorld, { radius: 0.05, restH: 0.012, bounce: 0.38, friction: 0.55 });
+  const tx = camera.position.x - CRATE_X, tz = camera.position.z - crateZ;
+  const td = Math.hypot(tx, tz) || 1;
+  ringProp.vel.set((tx / td) * 1.6 + (Math.random() - 0.5) * 0.4, 3.4, (tz / td) * 1.6 + (Math.random() - 0.5) * 0.4);
+  ringProp.angVel.set(6, 9, 4);
+  let rang = false;
+  ringProp.onImpact = (speed) => { if (!rang && speed > 1.2) { rang = true; sfxRingLand(); } };
+  // the glint sits well up off the sand: at height 0.12 a 1.5 m sprite had
+  // its lower half under the beach and drew a hard line where the sand cut it
+  addItemShine(ringWorld, { size: 1.2, height: 0.5, strength: 3.2 });
+  // and the metal itself catches the moon while it lies out here — a 20 mm
+  // ring with the inspect view's emissive is invisible on night sand
+  ring.traverse((o) => { if (o.isMesh && o.material.emissive) o.material.emissive.setHex(0x3a4356); });
   addInteractable(ringWorld, 'Take the ring', 'inventory', {
     onActivate: () => {
+      ringProp.dead = true;
+      ring.traverse((o) => { if (o.isMesh && o.material.emissive) o.material.emissive.setHex(0x101419); });
       scene.remove(ringWorld);
       removeInteractable(ringWorld);
       hovered = null;
@@ -5812,6 +6053,21 @@ function sfxRingOn() {
   const cg = ctx.createGain(); cg.gain.value = 0.035;
   cloth.connect(lp).connect(cg).connect(sfxOut());
   cloth.start(t); cloth.stop(t + 0.12);
+}
+// a ring landing on sand: a bright ting that rings on a moment, then stops
+// dead as the sand takes it
+function sfxRingLand() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  for (const [f, g0, dur] of [[3120, 0.06, 0.34], [4660, 0.03, 0.22], [1980, 0.02, 0.4]]) {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(g0, t + 0.003);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(sfxOut());
+    o.start(t); o.stop(t + dur + 0.02);
+  }
 }
 // taking it off - the same tick, lower, and without the cloth
 function sfxRingOff() {
@@ -6321,57 +6577,87 @@ const _peekFromQ = new THREE.Quaternion(), _peekToQ = new THREE.Quaternion();
 const _peekHome = new THREE.Vector3(), _peekHomeQ = new THREE.Quaternion();
 const _pk = new THREE.Vector3(), _pk2 = new THREE.Vector3();
 
-/* A pair of eyes, drawn once onto a small canvas. Not two dots: a dot at
- * this size is a bright speck and reads as a reflector or a bug. An eye is a
- * pale almond, darker at the lids, with an iris sitting on it and one hard
- * catchlight — keep those four things and it stays an eye even when it is
- * eleven pixels wide, which is all it ever is here. */
-function makeEyeTexture() {
-  const S = 64;
-  const c = document.createElement('canvas'); c.width = c.height = S;
-  const g = c.getContext('2d');
-  g.clearRect(0, 0, S, S);
-  // the wet of the eye, brightest at the middle of the opening
-  const sclera = g.createRadialGradient(S / 2, S / 2, 1, S / 2, S / 2, S * 0.42);
-  sclera.addColorStop(0, 'rgba(214, 224, 238, 0.95)');
-  sclera.addColorStop(0.55, 'rgba(150, 166, 190, 0.60)');
-  sclera.addColorStop(1, 'rgba(90, 102, 124, 0)');
-  g.save();
-  g.beginPath();
-  g.ellipse(S / 2, S / 2, S * 0.44, S * 0.24, 0, 0, Math.PI * 2);   // the opening
-  g.clip();
-  g.fillStyle = sclera; g.fillRect(0, 0, S, S);
-  // iris + pupil, sat a touch high the way a lid always covers a little
-  g.fillStyle = 'rgba(24, 30, 40, 0.86)';
-  g.beginPath(); g.arc(S / 2, S * 0.47, S * 0.17, 0, Math.PI * 2); g.fill();
-  g.fillStyle = 'rgba(6, 8, 12, 0.95)';
-  g.beginPath(); g.arc(S / 2, S * 0.47, S * 0.085, 0, Math.PI * 2); g.fill();
-  // the catchlight — the one hard edge in the whole thing
-  g.fillStyle = 'rgba(232, 240, 252, 0.9)';
-  g.beginPath(); g.arc(S * 0.44, S * 0.40, S * 0.045, 0, Math.PI * 2); g.fill();
-  g.restore();
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-
+/* The eyes are ChamberSu1996's "Procedural Eyes For Ray II" — two proper
+ * eyeballs, sclera + cornea with a normal map and a separate iris — packed
+ * into assets/eyes.glb. Used exactly as modelled, with three changes made at
+ * load: the cornea's KHR_materials_transmission is switched off (three
+ * renders transmission through a separate pass that costs a full extra frame
+ * and, in a black pipe, makes the cornea vanish); both materials get a small
+ * emissive lift keyed to their own maps, so the whites read faintly in the
+ * dark the way eyes catch light; and both are made transparent so they can
+ * fade in rather than switch on.
+ *
+ * Sized and aimed here, not in the file. Each eye is fitted to 24 mm, set
+ * 64 mm apart, and turned so its gaze — the sclera centre → iris centre
+ * vector, read off the loaded geometry — points straight back up the bore at
+ * you. That is the whole of what makes them eerie: they are not lights in the
+ * dark, they are looking at you.
+ *
+ * What they do: fade up 1.5 s after you settle, blink on their own timing,
+ * drift, tilt, creep a metre closer over the time they are there — and then
+ * they are gone. Not fade out: gone, between one frame and the next, and they
+ * do not come back on this peek. The silence after is doing more work than
+ * anything before it. */
+const EYE_DIAM = 0.024, EYE_GAP = 0.064;
+let gateEyesModel = null;                 // the loaded glb, kept for reuse
 function makeGateEyes(F) {
   const G = new THREE.Group();
   // 4.6 m down an eight-metre pipe: far enough to be small, near enough that
   // the ribs still give the eye something to measure it against
   G.position.set(0, -0.02, -4.6);
-  const tex = makeEyeTexture();
-  const eyes = [];
-  for (const sx of [-1, 1]) {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.040, 0.022),
-      new THREE.MeshBasicMaterial({
-        map: tex, transparent: true, opacity: 0, depthWrite: false, fog: false,
-      }));
-    m.position.set(sx * 0.038, 0, 0.004);
-    m.scale.x = sx;                            // mirror the catchlight over
-    eyes.push(m);
-    G.add(m);
-  }
+  G.userData = { eyes: [], mats: [], blink: 0, blinkIn: 2.2, baseY: -0.02,
+                 ready: false, gone: false, stay: 0, stayFor: 8 };
+  new GLTFLoader().load('assets/eyes.glb', (gltf) => {
+    gltf.scene.updateMatrixWorld(true);
+    // each eye is a node holding a sclera mesh and an iris mesh
+    const eyeNodes = [];
+    gltf.scene.traverse((o) => { if (/^Eye[LR]$/.test(o.name)) eyeNodes.push(o); });
+    eyeNodes.sort((a, b) => (a.name < b.name ? -1 : 1));
+    const _c = new THREE.Vector3(), _ic = new THREE.Vector3(), _gaze = new THREE.Vector3();
+    eyeNodes.forEach((node, k) => {
+      // bake the node transform (the FBX chain) so the eye is a plain unit
+      // ball we can size and aim ourselves
+      const eye = new THREE.Group();
+      let sclera = null, iris = null;
+      node.traverse((o) => {
+        if (!o.isMesh) return;
+        const m = o.clone();
+        m.geometry = o.geometry.clone().applyMatrix4(o.matrixWorld);
+        m.position.set(0, 0, 0); m.rotation.set(0, 0, 0); m.scale.set(1, 1, 1);
+        if (/Iris/.test(o.name)) iris = m; else sclera = m;
+        eye.add(m);
+      });
+      if (!sclera) return;
+      sclera.geometry.computeBoundingBox();
+      const sb = sclera.geometry.boundingBox;
+      sb.getCenter(_c);
+      const diam = Math.max(sb.max.x - sb.min.x, sb.max.y - sb.min.y, sb.max.z - sb.min.z);
+      // recentre on the ball's centre, size to a human eye
+      const k2 = EYE_DIAM / diam;
+      eye.children.forEach((m) => m.geometry.translate(-_c.x, -_c.y, -_c.z).scale(k2, k2, k2));
+      // gaze: where the iris sits on the ball
+      if (iris) {
+        iris.geometry.computeBoundingBox(); iris.geometry.boundingBox.getCenter(_ic);
+        _gaze.copy(_ic).normalize();
+        eye.quaternion.setFromUnitVectors(_gaze, new THREE.Vector3(0, 0, 1));   // look up the bore
+      }
+      eye.position.x = (k === 0 ? -1 : 1) * EYE_GAP / 2;
+      // materials: no transmission pass, a faint lift off their own maps, fadeable
+      eye.children.forEach((m) => {
+        const mat = m.material = m.material.clone();
+        if ('transmission' in mat) { mat.transmission = 0; mat.thickness = 0; }
+        mat.transparent = true; mat.opacity = 0; mat.depthWrite = true;
+        mat.roughness = m === iris ? 0.5 : 0.18; mat.metalness = 0;
+        mat.emissive.setHex(m === iris ? 0x0c0f14 : 0x232833);
+        mat.emissiveMap = mat.map;
+        mat.fog = false;
+        G.userData.mats.push(mat);
+      });
+      G.userData.eyes.push(eye);
+      G.add(eye);
+    });
+    G.userData.ready = true;
+  });
   /* Something for them to be set in. Almost black, so you never actually see
    * a head — but it occludes the ribs behind it, and that missing ring is
    * what tells you the eyes are attached to a body rather than floating. */
@@ -6381,7 +6667,6 @@ function makeGateEyes(F) {
   head.position.z = -0.075;
   G.add(head);
   G.visible = false;
-  G.userData = { eyes, blink: 0, blinkIn: 2.2, baseY: -0.02 };
   F.add(G);
   return G;
 }
@@ -6461,7 +6746,10 @@ function startPeek() {
   // visible at zero opacity from the first frame of the lean: the draw is
   // free and it gets the material compiled while you are still moving
   gateEyes.visible = true;
-  for (const m of gateEyes.userData.eyes) m.material.opacity = 0;
+  for (const m of gateEyes.userData.mats) m.opacity = 0;
+  const u = gateEyes.userData;
+  u.gone = false; u.stay = 0; u.stayFor = 6 + Math.random() * 4;   // how long they stay
+  gateEyes.position.z = -4.6;
   gateEyes.userData.blink = 0;
   gateEyes.userData.blinkIn = 2.2;
   _peekHome.copy(camera.position); _peekHomeQ.copy(camera.quaternion);
@@ -6519,27 +6807,35 @@ function updatePeek(dt) {
   }
 }
 function updateGateEyes(dt) {
-  const G = gateEyes; if (!G) return;
+  const G = gateEyes; if (!G || !G.userData.ready) return;
   const u = G.userData;
+  if (u.gone) return;
   // they do not greet you: nothing is there, and then something is
   const fade = THREE.MathUtils.clamp((peekHeld - 1.5) / 2.6, 0, 1);
+  if (fade >= 1) u.stay += dt;
+  if (u.stay >= u.stayFor) {
+    // and then nothing is, again. Between one frame and the next.
+    u.gone = true;
+    G.visible = false;
+    return;
+  }
+  for (const m of u.mats) m.opacity = fade;
 
   u.blinkIn -= dt;
   if (u.blinkIn <= 0) { u.blink = 1; u.blinkIn = 1.5 + Math.random() * 4.2; }
   if (u.blink > 0) u.blink = Math.max(0, u.blink - dt / 0.13);
   // blink starts and ends open and shuts through the middle of its window
   const open = u.blink > 0 ? 1 - Math.sin(u.blink * Math.PI) : 1;
+  for (const e of u.eyes) e.scale.y = Math.max(0.05, open);
 
   const t = peekHeld;
-  for (const m of u.eyes) {
-    m.material.opacity = 0.62 * fade;
-    m.scale.y = Math.max(0.05, open);
-  }
   // he is not still: a slow sway, a slower shift of weight, and after a
   // while the head goes over to one side and stays there
   G.position.x = Math.sin(t * 0.41) * 0.014 + Math.sin(t * 0.17 + 1.1) * 0.020;
   G.position.y = u.baseY + Math.sin(t * 0.29 + 2.2) * 0.008;
   G.rotation.z = THREE.MathUtils.clamp((t - 7) / 6, 0, 1) * 0.30;
+  // and over the time he is there, he comes a metre up the pipe toward you
+  G.position.z = -4.6 + 0.95 * THREE.MathUtils.clamp(u.stay / u.stayFor, 0, 1);
 }
 
 if (drainTunnel.userData.outlet) {
@@ -7211,14 +7507,18 @@ function updateTower(dt) {
     // Once you're on the stair the treads, not the wall, are what you can
     // stand on — they reach r2.07, while the bore down low is r2.55, so the
     // wall alone would let you walk off the outer edge into thin air.
+    // The treads reach the brick now, so the bore itself is the outer limit
+    // the whole way up. The well is the other limit — see below.
     const onStair = climb > 0.6;
-    const inner = (atLanternTop ? 3.15
-                 : onStair ? Math.min(lhBoreAt(climb), 2.02)
-                 : lhBoreAt(climb)) - PLAYER_R;
+    const inner = (atLanternTop ? 3.15 : lhBoreAt(climb)) - PLAYER_R;
     const outer = LH_OUTER + PLAYER_R;
     let clamped = null;
     if (insideTower && d > inner) clamped = inner;
     else if (!insideTower && d < outer) clamped = outer;
+    // the open well: on the stair you keep a hand's width off the rail
+    if (clamped === null && insideTower && onStair && !atLanternTop && d < LH_WELL_R + PLAYER_R * 0.7) {
+      clamped = LH_WELL_R + PLAYER_R * 0.7;
+    }
     if (clamped !== null) {
       camera.position.x = LH_X + (dx / d) * clamped;
       camera.position.z = LH_Z + (dz / d) * clamped;
@@ -7523,7 +7823,8 @@ window.__bw = {
   get doorOpen() { return doorOpen; }, set doorOpen(v) { doorOpen = v; doorSwing = v ? 1 : 0; lhDoor.rotation.y = -doorSwing * 1.95; },
   get insideTower() { return insideTower; },
   rockColliders, rockGroundAt, rockGroup,
-  startPeek, endPeek, get peeking() { return peeking; }, get gateEyes() { return gateEyes; },
+  startPeek, endPeek, respawn, get peeking() { return peeking; }, get gateEyes() { return gateEyes; },
+  get ringProp() { return ringProp; },
   armRig, shovelItem, startWind, releaseWind,
   crate, ringItem, ringWorld, rings, breakCrate, wearRing,
   get crateBroken() { return crateBroken; }, get ringsFound() { return ringsFound; },
