@@ -81,6 +81,27 @@ drag-to-rotate dev viewer. Factories `import * as THREE from 'three'`, return a
 exception to the flat-shaded retro look because they're hero props seen up
 close. The syringe and jar carry `userData.setFill(t)` + `userData.parts`.
 
+**The storm drain.** `models/drain-tunnel.js` → `makeDrainTunnel()`, placed at
+`DRAIN_X` (= `CLIFF_BLOCK_X`) / `DRAIN_Z` — behind you when you spawn. It is a
+**fixed world object** like the lighthouse, and three things make it work:
+
+- The cliff is *cut open* at the mouth by a **world-space discard** injected
+  into `cliff.material.onBeforeCompile` — world space, because the cliff is
+  snapped back onto the player in Z every frame and a local-space window would
+  slide with it. Same reasoning as `shoreLine(z,t)`.
+- The headwall is a **shell, not a solid** — an open-ended cylinder plus a
+  `RingGeometry` face plate with the bore hole in it. A solid block would plug
+  the pipe.
+- `updateDrain(dt)` runs **after** `updateTower(dt)` so it gets the last word on
+  `groundY`, and `insideDrain` lifts the `CLIFF_BLOCK_X` clamp. Gotcha: the
+  chamber's back wall must be clamped *inside* the `insideDrain` branch —
+  letting the player fall out of that branch drops `insideDrain`, and the cliff
+  clamp then teleports them back to the mouth.
+
+Ambience is synthesised in `startDrainAudio()` / `sfxDrip()` and ramped by
+`drainMix` (how deep you are), which also ducks `waveBusGain` so the surf falls
+away behind you.
+
 **Physics.** `PhysProp` class + `physProps[]` — a tiny custom rigid body
 (gravity, ground bounce/friction, corridor walls; **no prop-vs-prop
 collision**). Grab springs the held prop in front of the camera; click again

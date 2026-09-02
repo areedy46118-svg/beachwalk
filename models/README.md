@@ -15,7 +15,8 @@ slot opens the examine view (`openInspect`) where you drag to turn it over.
 | `horseshoe-crab.js` | `makeHorseshoeCrab()` → a detailed smooth-shaded *Limulus*: a broad rounded head shield on a poleless Cartesian-grid dome with the **cardiac + ophthalmic ridges, the raised margin and the articulation groove sculpted into the height field**, a wavy hinge bar, six movable spines per side, a triangular telson, genal spines, and a full underside (six leg pairs, chelicerae, operculum, book gills). Plus `makeHorseshoeCrabIcon()`. |
 | `syringe.js` | `makeSyringe()` → a glass bleeding hypodermic: barrel with graduation marks, a small finger flange + slim cross-section plunger + thumb rest, rubber piston, luer hub, steel needle, removable orange cap, and a **blue haemolymph column**. `group.userData.setFill(t)` (0→1) slides the plunger and grows the blood — the game drives this during the extraction. Plus `makeSyringeIcon()`. |
 | `blood-jar.js` | `makeBloodJar()` → an old milk-bottle-style glass jar filled with glowing blue haemolymph, a pale foam layer, a crimped foil cap and a paper label. `group.userData.setFill(t)` sets the level. Plus `makeBloodJarIcon()`. |
-| `viewer.html` | Dev viewer — `?model=horseshoe-crab` (default), `?model=syringe`, `?model=blood-jar`. Drag to rotate, scroll to zoom, **Flip over**, Wireframe, Auto-spin, **Fill** (syringe/jar), Reset. |
+| `drain-tunnel.js` | `makeDrainTunnel()` → the storm drain outfall on the beach behind spawn: a weathered concrete headwall with the pipe hole punched through it, a ringed circular bore with a silted invert, a wet channel of green algae, graffiti and caged wall lamps, a steel blast door standing open, and the brick chamber somebody is living in (joists and conduit, one dim tube light, pallet bed, shelving, barrel, puddles). Carries `userData.nav` (the collision numbers), `userData.lights` and `userData.drips`. |
+| `viewer.html` | Dev viewer — `?model=horseshoe-crab` (default), `?model=syringe`, `?model=blood-jar`, `?model=drain-tunnel`. Drag to rotate, scroll to zoom, **Flip over**, Wireframe, Auto-spin, **Fill** (syringe/jar), Reset. |
 
 ## Looking at it
 
@@ -26,9 +27,9 @@ python3 serve.py 4173
 Then open <http://localhost:4173/models/viewer.html>.
 
 > In this git worktree the Claude Code preview attaches to a server on
-> **port 4174** (`.claude/launch.json`), because a separate checkout may
+> **port 4176** (`.claude/launch.json`), because a separate checkout may
 > already hold 4173. If `preview_start` can't attach, start it by hand:
-> `python3 serve.py 4174` from the worktree root.
+> `python3 serve.py 4176` from the worktree root.
 
 ## Model conventions
 
@@ -40,6 +41,9 @@ Then open <http://localhost:4173/models/viewer.html>.
 - Origin is roughly the centre of the carapace.
 - Smooth-shaded, no textures / external assets — a deliberate exception to the
   flat-shaded world props because these are hero props seen up close.
+  `drain-tunnel.js` is the exception to the exception: it's a walk-in world
+  structure, not a hero prop, so it's **flat-shaded** with small procedural
+  canvas textures (concrete, brick) like the rest of the beach.
 - Helpers worth reusing: `domeGeo()` / `domeField()` (dome caps, the latter a
   poleless Cartesian grid you can sculpt ridges into), `taperedTube()` (smooth
   swept limb / spike / needle), `seat()` (ray-cast detail onto a surface).

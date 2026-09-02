@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { makeHorseshoeCrab, makeHorseshoeCrabIcon } from './models/horseshoe-crab.js';
 import { makeSyringe, makeSyringeIcon } from './models/syringe.js';
 import { makeBloodJar } from './models/blood-jar.js';
+import { makeDrainTunnel } from './models/drain-tunnel.js';
 
 /* ------------------------------------------------------------------ *
  *  Beach Walk — an endless, eerie shoreline at night.
@@ -5089,6 +5090,167 @@ const knockback = new THREE.Vector3();
 function addTrauma(v) { trauma = Math.min(1, trauma + v); }
 
 // ------------------------------------------------------------------
+// Storm drain — the outfall behind you at spawn. The bore is a plain
+// circular pipe, so the collision is a radial clamp about its axis;
+// the chamber at the end is a box clamp. Runs *after* updateTower so it
+// gets the last word on groundY.
+// ------------------------------------------------------------------
+const DRAIN_X = CLIFF_BLOCK_X;      // the mouth sits exactly on the cliff clamp
+const DRAIN_Z = 22;                 // behind you: the walk goes -Z
+const drainTunnel = makeDrainTunnel();
+drainTunnel.position.set(DRAIN_X, 0, DRAIN_Z);
+scene.add(drainTunnel);
+const DN = drainTunnel.userData.nav;
+
+// Punch the cliff open at the mouth. World-space, like shoreLine(z,t) — the
+// cliff is snapped back onto the player in Z every frame, and a discard in
+// local space would slide along with it.
+cliff.material.onBeforeCompile = (sh) => {
+  sh.uniforms.uDrainZ = { value: DRAIN_Z };
+  sh.vertexShader = 'varying vec3 vDrainW;\n' + sh.vertexShader.replace(
+    '#include <fog_vertex>',
+    '#include <fog_vertex>\n  vDrainW = (modelMatrix * vec4(transformed, 1.0)).xyz;'
+  );
+  sh.fragmentShader = 'varying vec3 vDrainW;\nuniform float uDrainZ;\n' + sh.fragmentShader.replace(
+    '#include <clipping_planes_fragment>',
+    '#include <clipping_planes_fragment>\n  if (abs(vDrainW.z - uDrainZ) < 2.6 && vDrainW.y < 3.3) discard;'
+  );
+};
+cliff.material.needsUpdate = true;
+
+let insideDrain = false, drainMix = 0;
+function updateDrain(dt) {
+  const lx = camera.position.x - DRAIN_X;
+  const lz = camera.position.z - DRAIN_Z;
+
+  // far enough away that none of this applies
+  if (lx < -3 || lx > DN.ROOM_X1 + 3 || Math.abs(lz) > 9) {
+    insideDrain = false;
+    drainMix = Math.max(0, drainMix - dt * 1.2);
+    updateDrainAudio(dt);
+    return;
+  }
+
+  // lined up with the hole? that's the only way through the headwall
+  const lined = Math.abs(lz) < DN.BORE_R - PLAYER_R - 0.1;
+
+  if (lx > -0.5 && !lined && !insideDrain) {
+    camera.position.x = DRAIN_X - 0.5;      // walked into the concrete face
+    drainMix = Math.max(0, drainMix - dt * 1.2);
+    updateDrainAudio(dt);
+    return;
+  }
+
+  if (lx > -0.2) {
+    insideDrain = true;
+    // the back of the chamber. Clamp it here, *not* by falling out of the
+    // inside-branch — dropping insideDrain hands you straight back to the
+    // cliff clamp, which teleports you to the mouth.
+    if (lx > DN.ROOM_X1 - PLAYER_R) {
+      camera.position.x = DRAIN_X + DN.ROOM_X1 - PLAYER_R;
+    }
+    if (lx < DN.DOOR_X - 0.1) {
+      // in the pipe: clamp off the curving wall, funnelling in to the
+      // doorway over the last couple of metres so it never jerks you sideways
+      const wide = DN.BORE_R * 0.76 - PLAYER_R * 0.5;
+      const narrow = DN.doorHalfZ - PLAYER_R;
+      const f = THREE.MathUtils.clamp((lx - (DN.DOOR_X - 2.6)) / 2.5, 0, 1);
+      const lim = THREE.MathUtils.lerp(wide, narrow, f);
+      camera.position.z = DRAIN_Z + THREE.MathUtils.clamp(lz, -lim, lim);
+    } else if (lx < DN.ROOM_X0 + PLAYER_R) {
+      // squeezing through the doorway
+      const lim = DN.doorHalfZ - PLAYER_R;
+      camera.position.z = DRAIN_Z + THREE.MathUtils.clamp(lz, -lim, lim);
+    } else {
+      const lim = DN.ROOM_HZ - PLAYER_R;
+      camera.position.z = DRAIN_Z + THREE.MathUtils.clamp(lz, -lim, lim);
+    }
+    groundY = DN.FLOOR_Y;
+    drainMix = Math.min(1, drainMix + dt * 0.9);
+  } else {
+    insideDrain = false;                       // back out on the sand
+    drainMix = Math.max(0, drainMix - dt * 1.2);
+  }
+  // how far in you are drives the mix, not just whether you're in
+  const depth = THREE.MathUtils.clamp(lx / 4, 0, 1);
+  if (insideDrain) drainMix = Math.max(drainMix, depth);
+  updateDrainAudio(dt);
+}
+
+// ---- sewer ambience: a resonant pipe drone plus drips with a slapback ----
+let drainAudio = null, dripNext = 2;
+function startDrainAudio() {
+  if (drainAudio || !audioCtx) return;
+  const ctx = audioCtx;
+  const gain = ctx.createGain();
+  gain.gain.value = 0;
+  gain.connect(sfxOut());
+  // brown-ish noise, then a narrow resonance — the note a big pipe sings
+  const buf = ctx.createBuffer(1, ctx.sampleRate * 3, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  let lp = 0;
+  for (let i = 0; i < d.length; i++) { lp = lp * 0.996 + (Math.random() * 2 - 1) * 0.004; d[i] = lp * 7; }
+  const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 104; bp.Q.value = 3.4;
+  const air = ctx.createBiquadFilter(); air.type = 'bandpass'; air.frequency.value = 620; air.Q.value = 1.1;
+  const airG = ctx.createGain(); airG.gain.value = 0.28;
+  // a slow breath through it
+  const lfo = ctx.createOscillator(); lfo.frequency.value = 0.07;
+  const lfoG = ctx.createGain(); lfoG.gain.value = 0.1;
+  lfo.connect(lfoG).connect(airG.gain);
+  src.connect(bp).connect(gain);
+  src.connect(air).connect(airG).connect(gain);
+  src.start(); lfo.start();
+  drainAudio = { gain };
+}
+function sfxDrip(vol = 1) {
+  const ctx = audioCtx; if (!ctx || !drainAudio) return;
+  const t = ctx.currentTime;
+  const out = drainAudio.gain;
+  // a drip is a pitch that *rises* as the cavity closes — sweep it up
+  const f = 480 + Math.random() * 760;
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(f * 0.5, t);
+  o.frequency.exponentialRampToValueAtTime(f * 1.95, t + 0.038);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.5 * vol, t + 0.004);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
+  // slapback off the pipe walls
+  const dl = ctx.createDelay(1); dl.delayTime.value = 0.11 + Math.random() * 0.07;
+  const fb = ctx.createGain(); fb.gain.value = 0.32;
+  const wet = ctx.createGain(); wet.gain.value = 0.55;
+  dl.connect(fb).connect(dl);
+  o.connect(g);
+  g.connect(out);
+  g.connect(dl).connect(wet).connect(out);
+  o.start(t); o.stop(t + 0.45);
+  setTimeout(() => { try { wet.disconnect(); fb.disconnect(); dl.disconnect(); } catch (e) {} }, 2600);
+}
+let drainAudioSettled = true;
+function updateDrainAudio(dt) {
+  if (!audioCtx || !started) return;
+  // don't build the drone, or fight the volume sliders, until you're near it
+  if (drainMix <= 0.0001) {
+    if (drainAudioSettled) return;
+    drainAudioSettled = true;
+  } else drainAudioSettled = false;
+  startDrainAudio();
+  if (!drainAudio) return;
+  const ctx = audioCtx;
+  drainAudio.gain.gain.setTargetAtTime(drainMix * settings.sfxVolume * 0.8, ctx.currentTime, 0.5);
+  // duck the surf the further in you get — the sea should fall away behind you
+  if (waveBusGain) waveBusGain.gain.setTargetAtTime(settings.waveVolume * (1 - 0.8 * drainMix), ctx.currentTime, 0.6);
+  if (drainMix > 0.12) {
+    dripNext -= dt;
+    if (dripNext <= 0) {
+      sfxDrip(0.35 + Math.random() * 0.5 * drainMix);
+      dripNext = 0.9 + Math.random() * 3.4;
+    }
+  }
+}
+
+// ------------------------------------------------------------------
 // The tower: walls you can't walk through, a doorway you can, and a
 // helical stair whose height comes from how far round you've walked.
 // ------------------------------------------------------------------
@@ -5181,11 +5343,12 @@ function update(dt) {
     camera.position.addScaledVector(knockback, dt);
     knockback.multiplyScalar(1 - Math.min(1, 7 * dt));
   }
-  if (!insideTower) {
+  if (!insideTower && !insideDrain) {
     camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
     camera.position.x = Math.max(camera.position.x, WADE_X);
   }
   updateTower(dt);
+  updateDrain(dt);          // after the tower, so it wins on groundY
 
   // coyote time and a buffered press, so a jump you meant to make happens
   coyote = onGround ? COYOTE_TIME : Math.max(0, coyote - dt);
@@ -5370,6 +5533,8 @@ window.__bw = {
   openPack, closePack, startExtraction, driveExtraction, finishExtraction, hudJar,
   get audioCtx() { return audioCtx; }, get audioStarted() { return audioStarted; },
   lighthouse, startLighthouseTrack, bottleProp, playSample, updateTower,
+  drainTunnel, DRAIN_X, DRAIN_Z, updateDrain, sfxDrip,
+  get insideDrain() { return insideDrain; }, get drainMix() { return drainMix; },
   waterSurfaceAt, submersionAt, restYInWater, groundGlow, addRipple,
   shells, listenToShell, makeRockGeo,
   get crabModel() { return crabModel; }, get crabMixer() { return crabMixer; },
