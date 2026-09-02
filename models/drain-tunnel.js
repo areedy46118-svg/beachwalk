@@ -16,7 +16,7 @@ const TAU = Math.PI * 2;
 
 const BORE_R = 1.42;            // clear inside radius of the pipe
 const PIPE_CY = 1.16;           // height of the pipe axis above the invert
-const BORE_LEN = 11.4;          // mouth → door
+const BORE_LEN = 17.6;          // mouth → door
 const DOOR_X = BORE_LEN;
 const ROOM_X0 = BORE_LEN + 0.55;
 const ROOM_X1 = ROOM_X0 + 7.2;
@@ -175,7 +175,7 @@ function rustStainTex() {
   return t;
 }
 
-export function makeDrainTunnel() {
+export function makeDrainTunnel(opts = {}) {
   const T = new THREE.Group();
   T.name = 'drainTunnel';
 
@@ -189,6 +189,8 @@ export function makeDrainTunnel() {
     bore:    new THREE.MeshStandardMaterial({ map: boreTex, color: 0x9aa0a2, roughness: 0.95, metalness: 0.02, emissive: 0x0a0d10, side: THREE.DoubleSide, flatShading: true }),
     rock:    new THREE.MeshStandardMaterial({ color: 0x6a6560, roughness: 1, metalness: 0, emissive: 0x1b1f26, flatShading: true, side: THREE.DoubleSide }),
     conc:    new THREE.MeshStandardMaterial({ map: wallTex, color: 0x8e9294, roughness: 0.98, metalness: 0.02, emissive: 0x0a0d11, flatShading: true }),
+    throat:  new THREE.MeshStandardMaterial({ color: 0x191c20, roughness: 1, metalness: 0, emissive: 0x05070a, side: THREE.BackSide }),
+    void:    new THREE.MeshStandardMaterial({ color: 0x05060a, roughness: 1, metalness: 0, emissive: 0x000000, side: THREE.BackSide }),
     dark:    new THREE.MeshStandardMaterial({ color: 0x23262a, roughness: 1, metalness: 0, emissive: 0x05070a, flatShading: true }),
     silt:    new THREE.MeshStandardMaterial({ color: 0x3f3c34, roughness: 1, metalness: 0, emissive: 0x0e0d09, flatShading: true }),
     // there's no env map to reflect, so a "wet" look has to come from a pale
@@ -202,13 +204,15 @@ export function makeDrainTunnel() {
     steel:   new THREE.MeshStandardMaterial({ color: 0x5b6064, roughness: 0.6, metalness: 0.6, emissive: 0x0c0e10, flatShading: true }),
     brickM:  new THREE.MeshStandardMaterial({ map: brick, color: 0xa08c7c, roughness: 1, metalness: 0, emissive: 0x0b0908, flatShading: true }),
     wood:    new THREE.MeshStandardMaterial({ color: 0x4c3f2c, roughness: 1, metalness: 0, emissive: 0x100c07, flatShading: true }),
-    cloth:   new THREE.MeshStandardMaterial({ color: 0x6d685c, roughness: 1, metalness: 0, emissive: 0x131210, flatShading: true, side: THREE.DoubleSide }),
+    cloth:   new THREE.MeshStandardMaterial({ color: 0x8b8578, roughness: 1, metalness: 0, emissive: 0x1e1c18, flatShading: true, side: THREE.DoubleSide }),
     blanket: new THREE.MeshStandardMaterial({ color: 0x3d3a44, roughness: 1, metalness: 0, emissive: 0x0d0c10, flatShading: true }),
     glow:    new THREE.MeshBasicMaterial({ color: 0xffe4b0, fog: false }),
     seaweed: new THREE.MeshStandardMaterial({ color: 0x2b3226, roughness: 1, metalness: 0, emissive: 0x0a0d08, flatShading: true }),
     stain:   new THREE.MeshStandardMaterial({ map: rustStainTex(), transparent: true, roughness: 1, metalness: 0, emissive: 0x0b0602, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide }),
-    wetsand: new THREE.MeshStandardMaterial({ color: 0x3c404b, roughness: 0.85, metalness: 0.05, emissive: 0x11141c, flatShading: true, side: THREE.DoubleSide }),
-    drysand: new THREE.MeshStandardMaterial({ color: 0x53555f, roughness: 1, metalness: 0, emissive: 0x1b1e28, flatShading: true }),
+    // The berms have to read as the same sand as the beach, so the game hands
+    // in its own sand material; a bespoke flat colour reads as pale slabs.
+    wetsand: opts.wetSandMat || new THREE.MeshStandardMaterial({ color: 0x5a6478, roughness: 0.9, metalness: 0.04, emissive: 0x1e2537, flatShading: true, side: THREE.DoubleSide }),
+    drysand: opts.sandMat || new THREE.MeshStandardMaterial({ color: 0x6d7d99, roughness: 0.95, metalness: 0, emissive: 0x27324a, flatShading: true }),
     cobble:  new THREE.MeshStandardMaterial({ color: 0x55565e, roughness: 1, metalness: 0, emissive: 0x14161c, flatShading: true }),
   };
 
@@ -281,67 +285,82 @@ export function makeDrainTunnel() {
   // ---- caged bulkhead lamps: the last few still burning (photo 7) --------
   const boreLights = [];
   {
-    // mounted up near the springline, alternating sides down the bore
+    // Mounted near the springline, alternating sides down the bore.
+    // The fixture's +Y has to point radially *outward* or the whole thing —
+    // conduit included — swings out into the middle of the pipe.
     const TH = 0.84;                       // angle from the crown
-    for (let i = 0; i < 4; i++) {
-      const x = 2.0 + i * 2.95, sg = i % 2 ? 1 : -1;
-      const y = PIPE_CY + (BORE_R - 0.08) * Math.cos(TH);
-      const z = sg * (BORE_R - 0.08) * Math.sin(TH);
+    const RR = BORE_R - 0.04;
+    const N = Math.max(4, Math.round((BORE_LEN - 3.0) / 2.95));
+    for (let i = 0; i < N; i++) {
+      const x = 2.0 + i * ((BORE_LEN - 3.4) / (N - 1)), sg = i % 2 ? 1 : -1;
+      const y = PIPE_CY + RR * Math.cos(TH);
+      const z = sg * RR * Math.sin(TH);
       const dead = i % 2 === 1;             // half of them have gone
       const L = new THREE.Group();
       L.position.set(x, y, z);
-      L.rotation.x = -sg * (Math.PI / 2 - TH);
+      L.rotation.x = sg * TH;               // +Y now points into the wall
       T.add(L);
-      L.add(slab(0.2, 0.1, 0.16, M.rust, 0, 0.05, 0));                 // backplate
-      const lens = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6),
+      L.add(slab(0.2, 0.08, 0.16, M.rust, 0, 0.02, 0));                // backplate
+      const lens = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6),
         dead ? M.dark : M.glow);
-      lens.scale.set(1, 0.7, 1); lens.position.y = -0.03;
+      lens.scale.set(1, 0.7, 1); lens.position.y = -0.06;
       L.add(lens);
       // wire guard
       for (let k = 0; k < 3; k++) {
-        const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.082 - k * 0.006, 0.006, 3, 10, Math.PI), M.rust);
+        const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.078 - k * 0.006, 0.005, 3, 10, Math.PI), M.rust);
         hoop.rotation.set(Math.PI / 2, 0, k * 0.7);
-        hoop.position.y = -0.03;
+        hoop.position.y = -0.06;
         L.add(hoop);
       }
       if (!dead) {
         const pl = new THREE.PointLight(0xffd2a0, 1.8, 9.5, 1.6);
-        pl.position.set(x, y - 0.2, z * 0.86);
+        pl.position.set(x, y - 0.22, z * 0.85);
         T.add(pl);
         boreLights.push(pl);
       }
-      // the conduit feeding it, running along the pipe
-      L.add(slab(2.9, 0.03, 0.03, M.rust, 1.4, 0.08, 0));
+      // conduit feeding it: thin, and tucked right against the pipe wall
+      L.add(slab(2.6, 0.022, 0.022, M.rust, 1.3, 0.012, 0));
     }
   }
 
   // ---- a smaller line joining the bore partway down ---------------------
-  // Built *proud* of the pipe wall rather than cut into it: a recess would
-  // need a hole punching in the tube, the same problem as the headwall.
+  // Built proud of the pipe wall rather than cut into it — a recess would need
+  // a hole punching in the tube. Same rule as the lamps: the group's +Y must
+  // point radially *outward*, or the stub sticks out into the middle instead.
   {
-    const SX = 8.6, ang = 0.62;                    // where, and how far round
+    const SX = 11.4, ang = 0.62, sg = -1;
+    const RR = BORE_R - 0.06;
     const S = new THREE.Group();
-    S.position.set(SX, PIPE_CY + (BORE_R - 0.12) * Math.cos(ang),
-                   -(BORE_R - 0.12) * Math.sin(ang));
-    S.rotation.x = Math.PI / 2 - ang;
+    S.position.set(SX, PIPE_CY + RR * Math.cos(ang), sg * RR * Math.sin(ang));
+    S.rotation.x = sg * ang;
     T.add(S);
-    const surround = new THREE.Mesh(new THREE.TorusGeometry(0.30, 0.10, 5, 14), M.conc);
+    const surround = new THREE.Mesh(new THREE.TorusGeometry(0.30, 0.09, 5, 14), M.conc);
     surround.rotation.x = Math.PI / 2;
     S.add(surround);
-    const mouth = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.9, 12, 1, true), M.dark);
-    mouth.position.y = 0.45;
+    // the stub runs back out of the bore, into the ground
+    const mouth = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.95, 12, 1, true), M.throat);
+    mouth.position.y = 0.46;
     S.add(mouth);
-    S.add(new THREE.Mesh(new THREE.CircleGeometry(0.26, 12), M.dark)
-      .rotateX(Math.PI / 2).translateZ(-0.88));
+    const cap = new THREE.Mesh(new THREE.CircleGeometry(0.26, 12), M.void);
+    cap.rotation.x = Math.PI / 2;
+    cap.position.y = 0.93;
+    S.add(cap);
     for (let i = 0; i < 2; i++) {
-      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.024, 0.56), M.frame);
-      bar.position.set(-0.14 + i * 0.28, -0.02, 0);
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.024, 0.52), M.frame);
+      bar.position.set(-0.13 + i * 0.26, 0.02, 0);
       S.add(bar);
     }
-    // the stain it has run down the pipe wall ever since
-    const run = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 1.5), M.stain);
-    run.position.set(SX, PIPE_CY - 0.28, -(BORE_R - 0.16));
-    run.rotation.y = 0.16;
+    // the stain it has run down the pipe wall ever since. A flat plane would
+    // cut through a round pipe, so this is a slice of cylinder at wall radius.
+    // After rotateZ, a point at theta sits at (y, z) = (sin t, cos t) * r, so
+    // the outlet's own angle is atan2 of its direction, and theta increases
+    // down the wall toward the invert.
+    const thOut = Math.atan2(Math.cos(ang), sg * Math.sin(ang));
+    const rg = new THREE.CylinderGeometry(BORE_R - 0.015, BORE_R - 0.015, 0.62, 6, 1, true,
+      thOut, 1.45);
+    rg.rotateZ(Math.PI / 2);                          // lay it along the bore
+    const run = new THREE.Mesh(rg, M.stain);
+    run.position.set(SX, PIPE_CY, 0);
     T.add(run);
   }
 
@@ -387,21 +406,22 @@ export function makeDrainTunnel() {
   }
 
   // ---- the outfall channel the water has cut down the beach --------------
-  // Everything here has to sit just *above* y = 0: the beach sand is a flat
-  // plane recentred on the player, so a trench dug below it would be covered.
-  // The depth reads from the berms heaped either side instead.
+  // Everything here sits just *above* y = 0: the beach sand is a flat plane
+  // recentred on the player, so a trench dug below it would be covered over.
+  // Keep it quiet — real scour is a damp shallow dip and some shifted gravel,
+  // not a brown path. The read comes from low berms in the beach's own sand.
   {
-    const N = 26;
+    const N = 24;
     const centre = (t) => ({
-      x: -0.7 - t * 11.6,
-      z: Math.sin(t * 3.4) * 1.0 + Math.sin(t * 8.1) * 0.28,
-      w: 0.48 + t * 2.0,
+      x: -0.9 - t * 12.4,
+      z: Math.sin(t * 3.1) * 1.15 + Math.sin(t * 7.7) * 0.3,
+      w: 0.55 + t * 2.3,
     });
-    // the wet bed, a shallow V so the middle catches the light differently
+    // a damp dip, barely darker than the beach and with soft edges
     const pos = [], idx = [];
     for (let i = 0; i < N; i++) {
       const t = i / (N - 1), c = centre(t);
-      pos.push(c.x, 0.014, c.z - c.w,  c.x, 0.006, c.z,  c.x, 0.014, c.z + c.w);
+      pos.push(c.x, 0.010, c.z - c.w,  c.x, 0.004, c.z,  c.x, 0.010, c.z + c.w);
     }
     for (let i = 0; i < N - 1; i++) {
       const a = i * 3, b = (i + 1) * 3;
@@ -413,13 +433,13 @@ export function makeDrainTunnel() {
     bed.computeVertexNormals();
     T.add(new THREE.Mesh(bed, M.wetsand));
 
-    // the thread of water still running out of it
-    const wp = [], wi = [];
-    for (let i = 0; i < N; i++) {
-      const t = i / (N - 1), c = centre(t), hw = c.w * (0.16 + t * 0.2);
-      wp.push(c.x, 0.019, c.z - hw, c.x, 0.019, c.z + hw);
+    // the last thread of water, only near the mouth where it still runs
+    const wp = [], wi = [], WN = 10;
+    for (let i = 0; i < WN; i++) {
+      const t = (i / (WN - 1)) * 0.42, c = centre(t), hw = 0.07 + t * 0.22;
+      wp.push(c.x, 0.014, c.z - hw, c.x, 0.014, c.z + hw);
     }
-    for (let i = 0; i < N - 1; i++) {
+    for (let i = 0; i < WN - 1; i++) {
       const a = i * 2, b = (i + 1) * 2;
       wi.push(a, a + 1, b + 1, a, b + 1, b);
     }
@@ -427,54 +447,58 @@ export function makeDrainTunnel() {
     wg.setAttribute('position', new THREE.Float32BufferAttribute(wp, 3));
     wg.setIndex(wi);
     wg.computeVertexNormals();
-    const stream = new THREE.Mesh(wg, M.water);
-    T.add(stream);
+    T.add(new THREE.Mesh(wg, M.water));
 
-    // sand heaped up along both banks — this is what sells the cut
-    for (let i = 0; i < 34; i++) {
+    // Low banks along both edges. Boxes read as flat plates dropped on the
+    // beach, so these are squashed low-poly lumps in the beach's own sand.
+    const mound = (w, h, d, mat, x, y, z, ry) => {
+      const m = new THREE.Mesh(new THREE.IcosahedronGeometry(0.5, 0), mat);
+      m.scale.set(w, h, d);
+      m.position.set(x, y, z);
+      m.rotation.set(0, ry, 0);
+      return m;
+    };
+    for (let i = 0; i < 30; i++) {
       const t = rnd(i * 2.3), c = centre(t), sg = i % 2 ? 1 : -1;
-      const h = 0.10 + rnd(i * 5.7) * 0.26 * (1 - t * 0.4);
-      const b = slab(0.7 + rnd(i * 3.1) * 1.3, h, 0.35 + rnd(i * 7.9) * 0.6,
-        i % 3 === 0 ? M.wetsand : M.drysand,
-        c.x + (rnd(i * 9.2) - 0.5) * 0.8, h / 2,
-        c.z + sg * (c.w + 0.18 + rnd(i * 4.5) * 0.5),
-        (rnd(i) - 0.5) * 0.2, rnd(i * 1.7) * 1.2, (rnd(i * 2.9) - 0.5) * 0.18);
-      T.add(b);
+      const h = 0.10 + rnd(i * 5.7) * 0.16 * (1 - t * 0.4);
+      T.add(mound(1.5 + rnd(i * 3.1) * 2.4, h, 0.8 + rnd(i * 7.9) * 1.3, M.drysand,
+        c.x + (rnd(i * 9.2) - 0.5) * 1.2, h * 0.16,
+        c.z + sg * (c.w + 0.2 + rnd(i * 4.5) * 0.8),
+        rnd(i * 1.7) * 3.1));
     }
-    // cobbles and shingle washed out and left along the channel
-    for (let i = 0; i < 44; i++) {
+    // gravel the flow has sorted out along the edges
+    for (let i = 0; i < 40; i++) {
       const t = rnd(i * 6.1), c = centre(t);
-      const r = 0.05 + rnd(i * 3.7) * (0.12 + t * 0.16);
+      const r = 0.04 + rnd(i * 3.7) * (0.07 + t * 0.10);
       const k = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), M.cobble);
-      k.position.set(c.x + (rnd(i * 8.3) - 0.5) * 1.6, r * 0.45,
-        c.z + (rnd(i * 4.9) - 0.5) * (c.w * 2.2));
-      k.scale.y = 0.6 + rnd(i * 2.2) * 0.4;
+      k.position.set(c.x + (rnd(i * 8.3) - 0.5) * 1.8, r * 0.35,
+        c.z + (rnd(i * 4.9) - 0.5) * (c.w * 2.3));
+      k.scale.y = 0.45 + rnd(i * 2.2) * 0.3;
       k.rotation.set(rnd(i) * 3, rnd(i + 3) * 3, rnd(i + 7) * 3);
       T.add(k);
     }
-    // a few bigger blocks fallen off the headwall (photo B)
-    for (let i = 0; i < 7; i++) {
+    // a few blocks fallen off the headwall, close in where they'd actually be
+    for (let i = 0; i < 6; i++) {
       const s = rnd(i * 11.7);
-      const r = 0.32 + s * 0.42;
+      const r = 0.26 + s * 0.34;
       const k = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), M.rock);
-      k.position.set(-1.4 - rnd(i * 3.3) * 4.2, r * 0.42,
-        (i % 2 ? 1 : -1) * (1.9 + rnd(i * 5.5) * 2.6));
-      k.scale.set(1, 0.62 + s * 0.3, 0.86);
-      k.rotation.set((s - 0.5) * 0.5, s * 3, (rnd(i) - 0.5) * 0.4);
+      k.position.set(-1.3 - rnd(i * 3.3) * 3.0, r * 0.34,
+        (i % 2 ? 1 : -1) * (2.1 + rnd(i * 5.5) * 2.2));
+      k.scale.set(1, 0.55 + s * 0.25, 0.88);
+      k.rotation.set((s - 0.5) * 0.4, s * 3, (rnd(i) - 0.5) * 0.3);
       T.add(k);
     }
-    // the scour pool the outflow has dug right at the lip
-    const pool = new THREE.Mesh(new THREE.CircleGeometry(1.5, 14), M.water);
+    // the scour pool at the lip, shallow and soft
+    const pool = new THREE.Mesh(new THREE.CircleGeometry(1.3, 14), M.water);
     pool.rotation.x = -Math.PI / 2;
-    pool.position.set(-1.5, 0.018, 0);
-    pool.scale.set(1, 1, 0.72);
+    pool.position.set(-1.6, 0.012, 0);
+    pool.scale.set(1, 1, 0.66);
     T.add(pool);
-    // undercut sand slumped away from the foot of the concrete
+    // sand slumped away from the foot of the concrete
     for (let i = 0; i < 9; i++) {
       const s = rnd(i * 8.8), sg = i % 2 ? 1 : -1;
-      T.add(slab(0.5 + s * 0.7, 0.12 + s * 0.3, 0.5 + s * 0.8, M.wetsand,
-        -0.5 - s * 0.9, 0.07 + s * 0.1, sg * (1.5 + s * 2.4),
-        (s - 0.5) * 0.3, s * 2, (s - 0.5) * 0.25));
+      T.add(mound(0.9 + s * 1.2, 0.14 + s * 0.2, 0.9 + s * 1.3, M.drysand,
+        -0.7 - s * 1.0, 0.02 + s * 0.03, sg * (1.7 + s * 2.3), s * 3.1));
     }
   }
 
@@ -496,7 +520,9 @@ export function makeDrainTunnel() {
     // The bulkhead is built as four slabs *around* the opening — there is
     // deliberately no full-width slab, or it would plug the doorway.
     const OW = 1.0, OH = 2.12;   // half-width / height of the doorway
-    const WW = 5.0, TH = 0.52;   // wall width / thickness
+    // WW must span the *room*, not just the pipe — anything narrower leaves
+    // an open gap at each front corner that you can see the sky through
+    const WW = ROOM_HZ * 2 + 0.5, TH = 0.52;   // wall width / thickness
     const side = (WW - OW * 2) / 2;
     DOOR.add(slab(TH, 3.4, side, M.conc, 0.2, 1.55, OW + side / 2));
     DOOR.add(slab(TH, 3.4, side, M.conc, 0.2, 1.55, -OW - side / 2));
@@ -549,7 +575,21 @@ export function makeDrainTunnel() {
     R.add(slab(rlen, 0.2, ROOM_HZ * 2 + 0.4, M.conc, rcx, -0.1, 0));                     // floor
     R.add(slab(rlen, ROOM_H + 0.4, 0.25, M.brickM, rcx, ROOM_H / 2, ROOM_HZ + 0.12));    // side walls
     R.add(slab(rlen, ROOM_H + 0.4, 0.25, M.brickM, rcx, ROOM_H / 2, -ROOM_HZ - 0.12));
-    R.add(slab(0.25, ROOM_H + 0.4, ROOM_HZ * 2 + 0.5, M.brickM, ROOM_X1 + 0.12, ROOM_H / 2, 0)); // back wall
+    // Back wall, built around a real opening for the outlet — a solid slab
+    // leaves the pipe with no hole in it, just a dark ring pasted on brick.
+    {
+      const oy = 1.62, oz = 0.55, oh = 0.34;          // outlet centre / half-size
+      const y0 = -0.2, y1 = ROOM_H + 0.2;
+      const z0 = -(ROOM_HZ + 0.25), z1 = ROOM_HZ + 0.25;
+      const bw = (yc, hh, zc, dd) =>
+        R.add(slab(0.25, hh, dd, M.brickM, ROOM_X1 + 0.12, yc, zc));
+      bw((y0 + y1) / 2, y1 - y0, (z0 + oz - oh) / 2, (oz - oh) - z0);      // left of it
+      bw((y0 + y1) / 2, y1 - y0, (oz + oh + z1) / 2, z1 - (oz + oh));      // right of it
+      bw((y0 + oy - oh) / 2, (oy - oh) - y0, oz, oh * 2);                  // under it
+      bw((oy + oh + y1) / 2, y1 - (oy + oh), oz, oh * 2);                  // over it
+      // a closed box behind the hole, so the bore has somewhere dark to go
+      R.add(slab(1.2, 1.2, 1.2, M.void, ROOM_X1 + 0.82, oy, oz));
+    }
     R.add(slab(rlen + 0.6, 0.22, ROOM_HZ * 2 + 0.5, M.conc, rcx, ROOM_H + 0.11, 0));     // ceiling slab
 
     // exposed joists + conduit under the ceiling (photo 5)
@@ -577,8 +617,12 @@ export function makeDrainTunnel() {
       F.position.set(OX, OY, OZ);
       F.rotation.y = -Math.PI / 2;                        // face into the room
       R.add(F);
-      // render panel the frame is bolted to, set back into the brick
-      F.add(slab(0.98, 0.98, 0.06, M.conc, 0, 0, -0.035));
+      // render panel the frame is bolted to, with the bore hole in it
+      // Round hole, and wide enough to cover the corners of the square opening
+      // cut in the brick — otherwise the hole reads square.
+      const panel = new THREE.Mesh(new THREE.RingGeometry(0.302, 0.62, 20, 1), M.conc);
+      panel.position.z = -0.02;
+      F.add(panel);
       // the square frame, four rusted angles
       const FW = 0.44, FT = 0.075;
       for (const [dx, dy, w, h] of [[0, FW, FW * 2 + FT, FT], [0, -FW, FW * 2 + FT, FT],
@@ -594,26 +638,24 @@ export function makeDrainTunnel() {
         b.position.set(sx * (FW - 0.02), sy * (FW - 0.02), 0.06);
         F.add(b);
       }
-      // the pipe itself: a bright lip, then a bore that goes properly dark
-      const lip = new THREE.Mesh(new THREE.TorusGeometry(0.33, 0.045, 5, 16), M.conc);
+      // the bore: a lip, then a shaft running back into the dark
+      const lip = new THREE.Mesh(new THREE.TorusGeometry(0.305, 0.04, 5, 16), M.conc);
       lip.position.z = -0.01;
       F.add(lip);
-      // the bore recedes back into the wall and goes properly dark
-      const throat = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.31, 0.62, 16, 1, true), M.dark);
+      const throat = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.30, 1.0, 16, 1, true), M.throat);
       throat.rotation.x = Math.PI / 2;
-      throat.position.z = -0.34;
+      throat.position.z = -0.52;
       F.add(throat);
-      F.add(new THREE.Mesh(new THREE.CircleGeometry(0.31, 16), M.dark).translateZ(-0.65));
       // three bars sagging across the mouth, proud of the bore so they read
       for (let i = 0; i < 3; i++) {
-        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.026, FW * 2, 0.024), M.frame);
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.026, FW * 1.75, 0.024), M.frame);
         bar.position.set(-0.2 + i * 0.2, 0, 0.015);
         bar.rotation.z = (rnd(i * 4.4) - 0.5) * 0.16;
         F.add(bar);
       }
       // the bleed running down the wall below it
-      const bleed = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 1.65), M.stain);
-      bleed.position.set(ROOM_X1 - 0.06, OY - 1.0, OZ);
+      const bleed = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 1.5), M.stain);
+      bleed.position.set(ROOM_X1 - 0.06, OY - 1.02, OZ);
       bleed.rotation.y = -Math.PI / 2;
       R.add(bleed);
       // and a wet patch where it lands
@@ -712,8 +754,16 @@ export function makeDrainTunnel() {
       R.add(web);
     }
 
-    // a rag hung off the joists (photo 5)
-    R.add(slab(0.02, 0.75, 0.5, M.cloth, ROOM_X1 - 2.6, ROOM_H - 0.6, ROOM_HZ - 0.9, 0, 0.2, 0.06));
+    // a rag over a line strung between the joists (photo 5) — without the
+    // line it just reads as a dark slab floating in the air
+    {
+      const rx = ROOM_X1 - 2.6, rz = ROOM_HZ - 0.9;
+      const line = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.012, 0.012), M.rust);
+      line.position.set(rx, ROOM_H - 0.20, rz);
+      R.add(line);
+      R.add(slab(0.30, 0.42, 0.02, M.cloth, rx - 0.16, ROOM_H - 0.42, rz, 0, 0.12, 0.05));
+      R.add(slab(0.24, 0.34, 0.02, M.cloth, rx + 0.34, ROOM_H - 0.38, rz, 0, -0.08, -0.04));
+    }
     // tally scratched by the bed
     for (let i = 0; i < 11; i++)
       R.add(slab(0.012, 0.2, 0.016, M.dark, bx - 0.7 + i * 0.055, 1.35, -ROOM_HZ + 0.02, 0, 0, i % 5 === 4 ? 0.9 : 0));
@@ -735,16 +785,28 @@ export function makeDrainTunnel() {
   mouthLight.position.set(0.6, PIPE_CY, 0);
   T.add(mouthLight);
 
+  // Solid props, as local-space AABBs [x0, z0, x1, z1] — the game pushes the
+  // player out of these so you can't walk through the bed or the shelving.
+  const bedX = ROOM_X1 - 1.5, shX = ROOM_X0 + 1.5;
   T.userData.nav = {
     BORE_R, PIPE_CY, BORE_LEN, DOOR_X, ROOM_X0, ROOM_X1, ROOM_HZ, ROOM_H, FLOOR_Y,
     doorHalfZ: 1.0, doorH: 2.12,
+    props: [
+      [bedX - 0.95, -ROOM_HZ + 0.25, bedX + 0.95, -ROOM_HZ + 1.25],   // pallet bed
+      [ROOM_X1 - 1.56, ROOM_HZ - 1.31, ROOM_X1 - 0.84, ROOM_HZ - 0.69], // crate table
+      [shX - 0.78, ROOM_HZ - 0.53, shX + 0.78, ROOM_HZ - 0.07],       // shelving
+      [ROOM_X0 + 0.41, -ROOM_HZ + 0.31, ROOM_X0 + 0.99, -ROOM_HZ + 0.89], // barrel
+      [ROOM_X0 + 1.22, -ROOM_HZ + 0.25, ROOM_X0 + 1.78, -ROOM_HZ + 0.85], // crates
+      [ROOM_X0 + 1.82, 1.24, ROOM_X0 + 2.18, 1.60],                   // bucket
+    ],
   };
   T.userData.lights = { lamp, lamp2, mouthLight, tube, bore: boreLights };
   // where drips fall from — local points along the crown of the bore
-  T.userData.drips = [
-    [1.9, PIPE_CY + BORE_R - 0.1, 0.2], [4.1, PIPE_CY + BORE_R - 0.1, -0.3],
-    [6.9, PIPE_CY + BORE_R - 0.1, 0.15], [9.4, PIPE_CY + BORE_R - 0.1, -0.2],
-    [ROOM_X0 + 2.0, ROOM_H - 0.3, 1.4], [ROOM_X1 - 1.0, ROOM_H - 0.3, -1.7],
-  ];
+  T.userData.drips = [];
+  for (let i = 0; i < 6; i++)
+    T.userData.drips.push([2.0 + i * ((BORE_LEN - 3.4) / 5),
+      PIPE_CY + BORE_R - 0.1, (rnd(i * 5.3) - 0.5) * 0.7]);
+  T.userData.drips.push([ROOM_X0 + 2.0, ROOM_H - 0.3, 1.42]);
+  T.userData.drips.push([ROOM_X1 - 1.0, ROOM_H - 0.3, -1.7]);
   return T;
 }

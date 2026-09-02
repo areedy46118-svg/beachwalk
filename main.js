@@ -5098,7 +5098,17 @@ function addTrauma(v) { trauma = Math.min(1, trauma + v); }
 // ------------------------------------------------------------------
 const DRAIN_X = CLIFF_BLOCK_X;      // the mouth sits exactly on the cliff clamp
 const DRAIN_Z = 22;                 // behind you: the walk goes -Z
-const drainTunnel = makeDrainTunnel();
+const drainTunnel = makeDrainTunnel({
+  // the scour outside is heaped beach sand, so it uses the beach's own
+  // material — a bespoke colour reads as pale slabs dropped on the sand
+  sandMat,
+  wetSandMat: (() => {
+    const m = sandMat.clone();
+    m.color = new THREE.Color(0x66718b); m.emissive = new THREE.Color(0x232c42);
+    m.roughness = 0.72; m.metalness = 0.06; m.side = THREE.DoubleSide;
+    return m;
+  })(),
+});
 drainTunnel.position.set(DRAIN_X, 0, DRAIN_Z);
 scene.add(drainTunnel);
 const DN = drainTunnel.userData.nav;
@@ -5255,6 +5265,7 @@ function updateDrain(dt) {
       const lim = DN.ROOM_HZ - PLAYER_R;
       camera.position.z = DRAIN_Z + THREE.MathUtils.clamp(lz, -lim, lim);
     }
+    pushOutOfDrainProps();
     groundY = DN.FLOOR_Y;
     drainMix = Math.min(1, drainMix + dt * 0.9);
   } else {
@@ -5265,6 +5276,26 @@ function updateDrain(dt) {
   const depth = THREE.MathUtils.clamp(lx / 4, 0, 1);
   if (insideDrain) drainMix = Math.max(drainMix, depth);
   updateDrainAudio(dt);
+}
+
+// the furniture is solid: shove the player out along whichever face is nearest
+function pushOutOfDrainProps() {
+  const props = DN.props;
+  if (!props) return;
+  const lx = camera.position.x - DRAIN_X, lz = camera.position.z - DRAIN_Z;
+  for (const [x0, z0, x1, z1] of props) {
+    const ax0 = x0 - PLAYER_R, ax1 = x1 + PLAYER_R;
+    const az0 = z0 - PLAYER_R, az1 = z1 + PLAYER_R;
+    if (lx <= ax0 || lx >= ax1 || lz <= az0 || lz >= az1) continue;
+    // inside — leave by the shallowest of the four faces
+    const dl = lx - ax0, dr = ax1 - lx, db = lz - az0, df = az1 - lz;
+    const m = Math.min(dl, dr, db, df);
+    if (m === dl) camera.position.x = DRAIN_X + ax0;
+    else if (m === dr) camera.position.x = DRAIN_X + ax1;
+    else if (m === db) camera.position.z = DRAIN_Z + az0;
+    else camera.position.z = DRAIN_Z + az1;
+    return;
+  }
 }
 
 // how close you are to the mouth, inside or out — drives the water trickle

@@ -106,10 +106,30 @@ Two more traps, both of which bit once already:
 - **A group rotated to face a wall has its own +Z.** For the back-wall outlet
   (`F.rotation.y = -PI/2`) local +Z points *into the room*, so anything set
   into the wall needs a **negative** z or the pipe sticks out of it.
+- **A fixture on the pipe wall must have +Y pointing radially outward.** For a
+  thing at angle `ang` from the crown on side `sg`, that is
+  `rotation.x = sg * ang` — nothing else. Get it wrong and the fixture, and
+  especially anything long attached to it like a conduit, swings out into the
+  middle of the bore and reads as a random pipe crossing the tunnel. The wall
+  lamps and the side connection both had this.
+- **A wall a doorway sits in has to span the *room*, not the pipe.** The door
+  bulkhead was 5 m wide against a 6.8 m room, leaving an open gap at each front
+  corner that you could see the sky through.
+- **A dark ring on a solid wall is not a hole.** The back wall is built as four
+  slabs around a real opening, with a closed dark box behind it, so the outlet
+  bore actually recedes into somewhere.
+
+Solid furniture is `userData.nav.props` — local-space `[x0, z0, x1, z1]`
+AABBs that `pushOutOfDrainProps()` shoves the player out of along the
+shallowest face.
 
 The **erosion channel** outside can only ever sit *above* y = 0 — the beach
 sand is a flat plane recentred on the player, so a trench cut below it would
-just be covered over. The depth reads from the berms heaped either side.
+just be covered over. The depth reads from the berms heaped either side, and
+those are squashed icosahedra using **the beach's own `sandMat`** (passed in
+via `makeDrainTunnel({ sandMat, wetSandMat })`) — boxes in a bespoke colour
+read as pale slabs dropped on the sand, which is exactly what it looked like
+first time round.
 
 Ambience is synthesised in `startDrainAudio()` / `sfxDrip()` and ramped by
 `drainMix` (how deep you are), which also ducks `waveBusGain` so the surf falls
