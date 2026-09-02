@@ -30,6 +30,13 @@ NC = {'SCALAR': 1, 'VEC2': 2, 'VEC3': 3, 'VEC4': 4,
 ARRAY_BUFFER, ELEMENT_ARRAY_BUFFER = 34962, 34963
 
 
+def _descendants(nodes, i):
+    out = []
+    for c in nodes[i].get('children', []):
+        out.append(c); out.extend(_descendants(nodes, c))
+    return out
+
+
 def pad4(b):
     b.extend(b'\0' * ((4 - len(b) % 4) % 4))
 
@@ -60,6 +67,9 @@ def main():
                     help='vertex attributes to throw away')
     ap.add_argument('--drop-mr', action='store_true',
                     help='drop metallicRoughness maps and use flat factors')
+    ap.add_argument('--nodes', default=None,
+                    help='regex: keep only nodes (or nodes whose mesh) matching this, plus ancestors/descendants')
+    ap.add_argument('--min-tris', type=int, default=0, help='drop primitives smaller than this')
     a = ap.parse_args()
     nrm_max = a.normal_tex or a.tex
     drop = {s for s in a.drop.split(',') if s}
@@ -71,6 +81,68 @@ def main():
         uri = b.get('uri', '')
         bufs.append(base64.b64decode(uri.split(',', 1)[1]) if uri.startswith('data:')
                     else open(os.path.join(root, uri), 'rb').read())
+
+    # ---- keep only the nodes asked for ---------------------------------
+    # A Sketchfab scene is often one asset plus the ground it was scanned on
+    # and a demo scatter of itself; --nodes lets you take the four grass clumps
+    # and leave the 70k-triangle lawn behind.
+    if a.nodes or a.min_tris:
+        import re
+        nodes = g.get('nodes', [])
+        if a.min_tris:
+            for m in g.get('meshes', []):
+                m['primitives'] = [pr for pr in m.get('primitives', [])
+                                   if 'indices' not in pr or g['accessors'][pr['indices']]['count'] // 3 >= a.min_tris]
+        if a.nodes:
+            rx = re.compile(a.nodes)
+            parent = {}
+            for i, n in enumerate(nodes):
+                for c in n.get('children', []):
+                    parent[c] = i
+            hit = set()
+            for i, n in enumerate(nodes):
+                mname = g['meshes'][n['mesh']].get('name', '') if 'mesh' in n else ''
+                has_geo = 'mesh' in n and g['meshes'][n['mesh']].get('primitives')
+                if (rx.search(n.get('name', '') or '') or rx.search(mname or '')) and (has_geo or 'mesh' not in n):
+                    hit.add(i)
+            keep = set()
+            def down(i):
+                keep.add(i)
+                for c in nodes[i].get('children', []):
+                    down(c)
+            for i in hit:
+                down(i)
+                j = i
+                while j in parent:
+                    j = parent[j]; keep.add(j)
+            # everything under a hit is kept whole; ancestors are kept for
+            # their transforms only and carry no mesh of their own
+            under = set()
+            for i in hit:
+                under.update(_descendants(nodes, i))
+            for i, n in enumerate(nodes):
+                if 'children' in n:
+                    n['children'] = [c for c in n['children'] if c in keep]
+                if i not in hit and i not in under:
+                    n.pop('mesh', None)
+            for sc in g.get('scenes', []):
+                sc['nodes'] = [r for r in sc.get('nodes', []) if r in keep]
+        # drop meshes nothing points at any more, and remap
+        refd = sorted({n['mesh'] for n in nodes if 'mesh' in n and g['meshes'][n['mesh']].get('primitives')})
+        remap_m = {old: new for new, old in enumerate(refd)}
+        g['meshes'] = [g['meshes'][i] for i in refd]
+        for n in nodes:
+            if 'mesh' in n:
+                if n['mesh'] in remap_m: n['mesh'] = remap_m[n['mesh']]
+                else: n.pop('mesh')
+        # and materials nothing uses
+        usedm = sorted({pr['material'] for m in g['meshes'] for pr in m['primitives'] if 'material' in pr})
+        remap_mat = {old: new for new, old in enumerate(usedm)}
+        g['materials'] = [g['materials'][i] for i in usedm]
+        for m in g['meshes']:
+            for pr in m['primitives']:
+                if 'material' in pr: pr['material'] = remap_mat[pr['material']]
+        print('kept %d meshes, %d materials' % (len(g['meshes']), len(g['materials'])))
 
     # ---- materials: spec-gloss -> metallic-roughness -------------------
     for m in g.get('materials', []):
@@ -186,11 +258,14 @@ def main():
     g['accessors'] = newacc
 
     # ---- images: resize, re-encode, embed ------------------------------
-    normal_imgs = set()
+    normal_imgs, cutout_imgs = set(), set()
     for m in g.get('materials', []):
         nt = m.get('normalTexture')
         if nt:
             normal_imgs.add(g['textures'][nt['index']].get('source'))
+        bt = m.get('pbrMetallicRoughness', {}).get('baseColorTexture')
+        if bt and m.get('alphaMode', 'OPAQUE') != 'OPAQUE':
+            cutout_imgs.add(g['textures'][bt['index']].get('source'))
     live = set()
     for m in g.get('materials', []):
         pbr = m.get('pbrMetallicRoughness', {})
@@ -208,17 +283,27 @@ def main():
         uri = img.get('uri', '')
         raw = (base64.b64decode(uri.split(',', 1)[1]) if uri.startswith('data:')
                else open(os.path.join(root, uri), 'rb').read())
-        im = Image.open(io.BytesIO(raw)).convert('RGB')
+        im0 = Image.open(io.BytesIO(raw))
+        # Cut-outs keep their alpha: grass cards and leaves are nothing without
+        # it, and JPEG throws it away. Anything with a used alpha channel, or
+        # feeding a BLEND/MASK material, goes out as PNG.
+        alpha = im0.mode in ('RGBA', 'LA') or (im0.mode == 'P' and 'transparency' in im0.info)
+        if alpha:
+            im0 = im0.convert('RGBA')
+            alpha = im0.getchannel('A').getextrema()[0] < 250
+        alpha = alpha or si in cutout_imgs
+        im = im0.convert('RGBA' if alpha else 'RGB')
         lim = nrm_max if si in normal_imgs else a.tex
         if max(im.size) > lim:
             k = lim / max(im.size)
             im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))),
                            Image.LANCZOS)
         out = io.BytesIO()
-        im.save(out, 'JPEG', quality=a.quality, optimize=True)
+        if alpha: im.save(out, 'PNG', optimize=True)
+        else: im.save(out, 'JPEG', quality=a.quality, optimize=True)
         enc = out.getvalue()
-        print('  %-44s %4dpx  %6.1f KB' % (os.path.basename(uri), max(im.size), len(enc) / 1024))
-        keep_img[si] = {'bufferView': emit(enc), 'mimeType': 'image/jpeg',
+        print('  %-44s %4dpx %s %6.1f KB' % (os.path.basename(uri), max(im.size), 'png ' if alpha else 'jpeg', len(enc) / 1024))
+        keep_img[si] = {'bufferView': emit(enc), 'mimeType': 'image/png' if alpha else 'image/jpeg',
                         'name': os.path.splitext(os.path.basename(uri))[0]}
 
     order = sorted(keep_img)

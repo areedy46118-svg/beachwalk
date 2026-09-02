@@ -256,6 +256,27 @@ by [ChamberSu1996](https://sketchfab.com/chambersu1996),
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
 
 
+**Rocks and stones pack** — the stone on the headland round the lighthouse.
+
+["Rocks and stones pack"](https://sketchfab.com/3d-models/rocks-and-stones-pack)
+by [shtran](https://sketchfab.com/shtran),
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+
+
+**Simple grass chunks** — the grass clumps on the headland.
+
+["Simple grass chunks"](https://sketchfab.com/3d-models/simple-grass-chunks)
+by [3dhdscan](https://sketchfab.com/3dhdscan),
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+
+
+**Realistic grass** — the dense grass along the lane to the door.
+
+["Realistic grass"](https://sketchfab.com/3d-models/realistic-grass)
+by [Pasha](https://sketchfab.com/Pasha.), under the
+[Sketchfab Standard licence](https://sketchfab.com/licenses).
+
+
 **Animated Crab rigged FREE** — the enemy crab.
 
 ["Animated Crab rigged FREE"](https://sketchfab.com/3d-models/animated-crab-rigged-free-ca331da937b04b0f94b9245d5f2ac778)

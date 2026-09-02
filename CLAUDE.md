@@ -208,6 +208,10 @@ things carry it and none of them is a jump scare:
   with `MeshBasicMaterial.color` so white paper reads as skin in a black
   drain. Two models were tried before it (a canvas pair, then a real eyeball
   glb) and both read as lights or as cartoons at that distance; ink does not.
+  And they happen ONCE a game: `eyesSeen` is set the moment the fade passes
+  0.35, and every later peek starts with `gone = true`. A second showing
+  would make them a feature of the gate; the first made them a thing that
+  happened to you.
 - **`createMediaElementSource()` can only be called once per element.** The
   whisper graph is built on the first peek and kept; later peeks ramp the gain
   and call `play()` again. Rebuilding it stacks a second chain off the same
@@ -603,6 +607,21 @@ under the blade in a hard squash and thrown back along the swing, and then
 not on a timer of its own — `hitstop` scales `dt`, so anything measured in
 `dt` would stretch to ten times its length. The freeze and the squash are
 meant to be the same beat.
+
+**The headland is dressed from three scan packs** — `assets/stones.glb`
+(shtran), `assets/grass-clumps.glb` (3dhdscan, four alpha-card clumps pulled
+out of a 78k-tri scene with `gltfpack.py --nodes`), `assets/grass-patch.glb`
+(Pasha, one 30k-tri blade patch, `--min-tris` to drop the demo quads). All of
+it is placed by `headlandAt()` and kept off the lane by `onPath()`, bedded
+into the ridge by a fraction of its own height PLUS half the drop across its
+footprint (`slopeAt`), because a rock set at the surface of a slope hangs its
+downhill edge in the air. Stone gets a fraction of the lift the beach
+formation has — at the formation's emissive the field glowed like lamps.
+Boulders (the four big ones) carry `rockColliders`. The dense patch is 30k
+triangles an instance: 12 of them is the budget. And `lhGround` is in
+`farProps` at 320 m — InstancedMesh is culled by its base geometry's bounds,
+so every scatter here runs `frustumCulled = false`, and without the far cull
+the whole headland draws from the spawn.
 
 **The headland scatter respects `onPath()`.** Rocks and grass re-roll their
 position until they're clear of the lane to the door; if you add more props

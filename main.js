@@ -1242,8 +1242,18 @@ scene.add(lighthouse);
 // end of the walk looks like somewhere rather than more beach. All of it
 // sits in a band around LH_Z and is skipped by the recentring tiles.
 // ------------------------------------------------------------------
+const farProps = [];        // {obj, z, d}: things switched off beyond d metres; see updateFarProps()
 const lhGround = new THREE.Group();
 lighthouse.add(lhGround);
+/* The DRESSING — stone and grass — lives in its own group so it can be
+ * switched off past 320 m without taking the ridge, the lane and the fences
+ * with it. It is all InstancedMesh with frustumCulled off (three culls an
+ * InstancedMesh by its BASE geometry's bounds, which is wrong for a scatter),
+ * so without the far cull a few hundred thousand triangles of grass would
+ * draw from the spawn, a kilometre away. */
+const lhDress = new THREE.Group();
+lhGround.add(lhDress);
+farProps.push({ obj: lhDress, z: LH_Z, d: 320 });
 
 // A trodden path runs from the beach up to the door. The doorway sits at
 // local +Z (three measures cylinder theta from +Z), which is the side you
@@ -1312,21 +1322,30 @@ function onHeadland(wx, wz) { return headlandAt(wx, wz) > 0.35; }
   g.computeVertexNormals();
   const gTex = sandTex.clone(); gTex.needsUpdate = true; gTex.repeat.set(SPAN / 6, (HL_RUN + 30) / 6);
   const ridge = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
-    map: gTex, color: 0x5f6552, roughness: 1, metalness: 0,
-    emissive: 0x1c2016, emissiveMap: gTex, flatShading: false,
+    map: gTex, color: 0x707862, roughness: 1, metalness: 0,
+    emissive: 0x30382a, emissiveMap: gTex, flatShading: false,
   }));
   ridge.frustumCulled = false;
   lhGround.add(ridge);
 }
 
 {
-  const rockMat = new THREE.MeshStandardMaterial({ color: 0x4b5260, roughness: 1, flatShading: true, emissive: 0x171b23 });
-  const rockDk = new THREE.MeshStandardMaterial({ color: 0x373d49, roughness: 1, flatShading: true, emissive: 0x101319 });
-  const ROCKS = 46;
-  const rocks = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), rockMat, ROCKS);
-  const rocksDk = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), rockDk, ROCKS);
-  rocks.frustumCulled = rocksDk.frustumCulled = false;
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3();
+  /* The headland is dressed from three scan packs, placed on the ridge by
+   * headlandAt() and kept off the lane by onPath() — the same two rules the
+   * old dodecahedra and the grass.json clumps followed, with real stone and
+   * real grass instead. The approach to the door is the last thing the walk
+   * shows you, so this is where the beach spends its detail budget.
+   *
+   *   assets/stones.glb        shtran's rocks & stones: ten scanned rocks
+   *   assets/grass-clumps.glb  3dhdscan's grass chunks: four alpha-card clumps
+   *   assets/grass-patch.glb   Pasha's realistic grass: one dense blade patch
+   *
+   * Everything is bedded INTO the ridge — a fraction of its own height under
+   * the surface — because the ridge is a smooth heightfield and anything set
+   * on it at exactly y = 0 floats on every slope. */
+  const rnd = mulberry32(19770);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3();
+  const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
   // re-roll a spot until it's off the path (bounded, so it can't spin)
   const offPath = (pick, margin) => {
     for (let tries = 0; tries < 24; tries++) {
@@ -1335,49 +1354,25 @@ function onHeadland(wx, wz) { return headlandAt(wx, wz) > 0.35; }
     }
     return null;
   };
-  const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
-  for (let i = 0; i < ROCKS; i++) {
-    // ring them round the tower, thickest out to the sides
-    const s = 0.5 + Math.random() * 1.9;
-    const spot = offPath(() => {
-      const a = Math.random() * Math.PI * 2, rr = 5.5 + Math.random() * 13;
-      return { x: Math.cos(a) * rr, z: Math.sin(a) * rr };
-    }, s * 0.9);
-    if (!spot) rocks.setMatrixAt(i, hidden);
-    else {
-      e.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
-      q.setFromEuler(e);
-      m.compose(v.set(spot.x, s * 0.28, spot.z), q, new THREE.Vector3(s, s * 0.72, s * 1.1));
-      rocks.setMatrixAt(i, m);
-    }
-    const s2 = 0.3 + Math.random() * 1.1;
-    const spot2 = offPath(() => {
-      const a = Math.random() * Math.PI * 2, rr = 4.5 + Math.random() * 16;
-      return { x: Math.cos(a) * rr, z: Math.sin(a) * rr };
-    }, s2 * 0.9);
-    if (!spot2) rocksDk.setMatrixAt(i, hidden);
-    else {
-      e.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
-      q.setFromEuler(e);
-      m.compose(v.set(spot2.x, s2 * 0.3, spot2.z), q, new THREE.Vector3(s2, s2 * 0.8, s2));
-      rocksDk.setMatrixAt(i, m);
-    }
-  }
-  rocks.instanceMatrix.needsUpdate = rocksDk.instanceMatrix.needsUpdate = true;
-  lhGround.add(rocks, rocksDk);
+  const ridgeY = (x, z) => headlandAt(LH_X + x, LH_Z + z) - HL_CREST;   // local y on the ridge
+  const onRidge = (x, z) => headlandAt(LH_X + x, LH_Z + z) > 1.4;      // the crown, not the fall-off
 
-  // Grass on the headland: the real clumps from the pack, alpha-cut and
-  // swaying in the vertex shader. The old version was solid blade planes,
-  // which read as green sticks.
-  loadGeoPack('assets/grass.json').then((geos) => {
-    const keys = Object.keys(geos);
-    const map = texLoader.load('assets/tex/grass.png');
-    map.colorSpace = THREE.SRGBColorSpace;
-    const grassMat = new THREE.MeshStandardMaterial({
-      map, color: 0x8a9470, roughness: 1, metalness: 0, emissive: 0x1b2116,
-      side: THREE.DoubleSide, transparent: true, alphaTest: 0.42,
-    });
-    grassMat.onBeforeCompile = (sh) => {
+  // the same night treatment the beach rocks get: the scans were lit for
+  // day, and a cool tint keeps them the colour of everything else out here
+  const nightStone = (mat) => {
+    // a fraction of the lift the beach formation gets: these are small, many
+    // and IN the moon, and at the formation's emissive they glowed like lamps
+    mat.color.setHex(0x6f7a8c); mat.emissive.setHex(0x1e2531); mat.emissiveMap = mat.map;
+    mat.roughness = 1; mat.metalness = 0;
+    if (mat.normalScale) mat.normalScale.set(1.2, 1.2);
+    reexpose(mat, 0.68);
+  };
+  const nightGrass = (mat) => {
+    mat.color.setHex(0xb2c0aa); mat.emissive.setHex(0x2c3a2e); mat.emissiveMap = mat.map;
+    mat.roughness = 1; mat.metalness = 0;
+    mat.side = THREE.DoubleSide; mat.transparent = false; mat.alphaTest = 0.42; mat.depthWrite = true;
+    // the same sway the old clumps had, so the headland moves in the wind
+    mat.onBeforeCompile = (sh) => {
       sh.uniforms.uTime = oceanUniforms.uTime;
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nuniform float uTime;')
@@ -1385,36 +1380,137 @@ function onHeadland(wx, wz) { return headlandAt(wx, wz) > 0.35; }
           vec4 iw = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
           float sway = sin(uTime * 1.5 + iw.x * 0.7 + iw.z * 0.5) * 0.5
                      + sin(uTime * 2.6 + iw.z) * 0.2;
-          transformed.x += sway * 0.16 * max(position.y, 0.0);
-          transformed.z += sway * 0.10 * max(position.y, 0.0);`);
+          transformed.x += sway * 0.14 * max(position.y, 0.0);
+          transformed.z += sway * 0.09 * max(position.y, 0.0);`);
     };
-    const PER = 160;
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion();
-    const e = new THREE.Euler(), v = new THREE.Vector3();
-    const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
-    keys.forEach((k) => {
-      const inst = new THREE.InstancedMesh(geos[k], grassMat, PER);
+    mat.needsUpdate = true;
+  };
+  // bake a loaded mesh's node transform, recentre on its footprint, base at 0
+  const bakeKind = (o) => {
+    const geo = o.geometry.clone().applyMatrix4(o.matrixWorld);
+    geo.computeBoundingBox();
+    const b = geo.boundingBox;
+    geo.translate(-(b.min.x + b.max.x) / 2, -b.min.y, -(b.min.z + b.max.z) / 2);
+    geo.computeBoundingBox(); geo.computeBoundingSphere();
+    const size = geo.boundingBox.getSize(new THREE.Vector3());
+    return { geo, mat: o.material, name: o.name, foot: Math.max(size.x, size.z), h: size.y, size };
+  };
+
+  // ---- stone --------------------------------------------------------
+  new GLTFLoader().load('assets/stones.glb', (gltf) => {
+    gltf.scene.updateMatrixWorld(true);
+    const kinds = [];
+    gltf.scene.traverse((o) => { if (o.isMesh) kinds.push(bakeKind(o)); });
+    kinds.sort((a, b) => (a.name < b.name ? -1 : 1));
+    kinds.forEach((k) => nightStone(k.mat));
+    const pick = () => kinds[Math.floor(rnd() * kinds.length)];
+    /* Three populations, one pool per kind:
+     *   - a field of stone round the tower, thickest out to the flanks,
+     *   - a few real boulders on the fall-off, solid to walk into,
+     *   - and the kicked-aside stones lining the lane, which the feet of a
+     *     century put there. */
+    const per = new Map(kinds.map((k) => [k, []]));
+    const slopeAt = (x, z) => Math.hypot(ridgeY(x + 0.5, z) - ridgeY(x - 0.5, z), ridgeY(x, z + 0.5) - ridgeY(x, z - 0.5));
+    const place = (k, x, z, width, bury, tilt = 0.25) => {
+      const s = width / k.foot, sy = s * (0.78 + rnd() * 0.3);
+      // steeper ground, deeper bedding — plus half the drop across the
+      // footprint, so the downhill edge meets the surface too
+      const drop = slopeAt(x, z) * width * 0.8;
+      const y = ridgeY(x, z) - k.h * sy * bury - drop;
+      e.set((rnd() - 0.5) * tilt, rnd() * Math.PI * 2, (rnd() - 0.5) * tilt);
+      q.setFromEuler(e);
+      m.compose(v.set(x, y, z), q, sc.set(s, sy, s));
+      per.get(k).push(m.clone());
+      return { top: y + k.h * sy, r: width * 0.5 * 0.8 };
+    };
+    for (let i = 0; i < 110; i++) {                                    // the field
+      const w = 0.22 + Math.pow(rnd(), 1.6) * 1.3;
+      const spot = offPath(() => {
+        const a = rnd() * Math.PI * 2, rr = 4.5 + Math.pow(rnd(), 0.7) * 15;
+        return { x: Math.cos(a) * rr, z: Math.max(-12, Math.sin(a) * rr) };
+      }, w * 0.6 + 0.3);
+      if (!spot || !onRidge(spot.x, spot.z)) continue;
+      place(pick(), spot.x, spot.z, w, 0.18 + rnd() * 0.16);
+    }
+    for (let i = 0; i < 4; i++) {                                      // the boulders
+      const w = 1.2 + rnd() * 0.8;
+      const side = i % 2 ? 1 : -1;
+      const spot = offPath(() => ({ x: side * (6 + rnd() * 4), z: -4 + rnd() * 18 }), w * 0.6 + 0.4);
+      if (!spot || headlandAt(LH_X + spot.x, LH_Z + spot.z) < 2.5 || slopeAt(spot.x, spot.z) > 0.5) continue;
+      const c = place(pick(), spot.x, spot.z, w, 0.22 + rnd() * 0.12, 0.14);
+      rockColliders.push({ x: LH_X + spot.x, z: LH_Z + spot.z, r: c.r, top: HL_CREST + c.top });
+    }
+    for (let i = 0; i < 70; i++) {                                     // the lane's edging
+      const z = -0.5 + rnd() * (PATH_LEN + 1.5);
+      const side = i % 2 ? 1 : -1;
+      const w = 0.12 + rnd() * 0.24;
+      const x = pathBend(z) + side * (pathHalfAt(z) + 0.05 + rnd() * 0.5);
+      if (!onRidge(x, z)) continue;
+      place(pick(), x, z, w, 0.55 + rnd() * 0.25, 0.5);       // kicked here and trodden in
+    }
+    for (const [k, mats] of per) {
+      if (!mats.length) continue;
+      const inst = new THREE.InstancedMesh(k.geo, k.mat, mats.length);
+      mats.forEach((mm, idx) => inst.setMatrixAt(idx, mm));
+      inst.instanceMatrix.needsUpdate = true;
+      inst.frustumCulled = false;
+      lhDress.add(inst);
+    }
+  });
+
+  // ---- grass --------------------------------------------------------
+  // the clumps: knee-high tufts, everywhere the ridge is dry and the lane isn't
+  new GLTFLoader().load('assets/grass-clumps.glb', (gltf) => {
+    gltf.scene.updateMatrixWorld(true);
+    const kinds = [];
+    gltf.scene.traverse((o) => { if (o.isMesh) kinds.push(bakeKind(o)); });
+    const seen = new Set();
+    kinds.forEach((k) => { if (!seen.has(k.mat)) { seen.add(k.mat); nightGrass(k.mat); } });
+    const PER = 260;
+    for (const k of kinds) {
+      const inst = new THREE.InstancedMesh(k.geo, k.mat, PER);
       inst.frustumCulled = false;
       for (let i = 0; i < PER; i++) {
-        const cz = -14 + Math.random() * (HL_RUN + 20);
-        const side = Math.random() < 0.5 ? -1 : 1;
-        const cx = pathBend(Math.max(0, cz)) + side * (pathHalfAt(Math.max(0, cz)) + Math.random() * 9);
-        const bx = cx + (Math.random() - 0.5) * 2.2, bz = cz + (Math.random() - 0.5) * 2.2;
-        const gy = headlandAt(LH_X + bx, LH_Z + bz) - HL_CREST;
-        // nothing grows on the trodden path, or off the end of the ridge
-        // never off the end of the ridge, never on the trodden path, and
-        // bedded a touch so no clump floats over a slope
-        if (gy + HL_CREST < 0.5 || onPath(bx, bz, -0.2)) { inst.setMatrixAt(i, hidden); continue; }
-        const h = 0.34 + Math.random() * 0.42;   // knee height, not waist
-        e.set(0, Math.random() * Math.PI * 2, 0);
-        q.setFromEuler(e);
-        m.compose(v.set(bx, gy - h * 0.08, bz), q, new THREE.Vector3(h, h, h));
+        const cz = -14 + rnd() * (HL_RUN + 20);
+        const side = rnd() < 0.5 ? -1 : 1;
+        const cx = pathBend(Math.max(0, cz)) + side * (pathHalfAt(Math.max(0, cz)) + rnd() * 10);
+        const bx = cx + (rnd() - 0.5) * 2.4, bz = cz + (rnd() - 0.5) * 2.4;
+        if (!onRidge(bx, bz) || onPath(bx, bz, -0.15)) { inst.setMatrixAt(i, hidden); continue; }
+        const h = (0.9 + rnd() * 0.7);                  // the clumps are ~0.5 m tall as shipped
+        e.set(0, rnd() * Math.PI * 2, 0); q.setFromEuler(e);
+        m.compose(v.set(bx, ridgeY(bx, bz) - 0.03, bz), q, sc.set(h, h, h));
         inst.setMatrixAt(i, m);
       }
       inst.instanceMatrix.needsUpdate = true;
-      lhGround.add(inst);
-    });
-  }).catch(() => {});
+      lhDress.add(inst);
+    }
+  });
+  // the dense patch: lush ground cover along the lane's edges up to the door,
+  // where you are close enough to see individual blades
+  new GLTFLoader().load('assets/grass-patch.glb', (gltf) => {
+    gltf.scene.updateMatrixWorld(true);
+    let kind = null;
+    gltf.scene.traverse((o) => { if (o.isMesh && !kind) kind = bakeKind(o); });
+    if (!kind) return;
+    nightGrass(kind.mat);
+    const N = 12;                        // 30k triangles each — this is the budget
+    const inst = new THREE.InstancedMesh(kind.geo, kind.mat, N);
+    inst.frustumCulled = false;
+    // as shipped it is a ~1 m square of 5 cm blades; stretched to 2.2 m
+    // squares of 0.24 m blades it is the grass you walk past, not a lawn
+    const sw = 2.2 / kind.foot, sy = 0.24 / Math.max(0.01, kind.h);
+    for (let i = 0; i < N; i++) {
+      const z = 0.5 + rnd() * 20;
+      const side = i % 2 ? 1 : -1;
+      const x = pathBend(z) + side * (pathHalfAt(z) + 1.0 + rnd() * 2.2);
+      if (!onRidge(x, z) || onPath(x, z, 0.9)) { inst.setMatrixAt(i, hidden); continue; }
+      e.set(0, rnd() * Math.PI * 2, 0); q.setFromEuler(e);
+      m.compose(v.set(x, ridgeY(x, z) - 0.02, z), q, sc.set(sw, sy, sw));
+      inst.setMatrixAt(i, m);
+    }
+    inst.instanceMatrix.needsUpdate = true;
+    lhDress.add(inst);
+  });
 
   // ---- the path surface itself -------------------------------------
   // A ribbon of packed, paler ground following the same bend, laid just
@@ -1497,27 +1593,10 @@ function onHeadland(wx, wz) { return headlandAt(wx, wz) > 0.35; }
     }
 
 
-    // stones kicked to the sides over years of walking it
-    const EDGE = 60;
-    const edging = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), rockMat, EDGE);
-    edging.frustumCulled = false;
-    for (let i = 0; i < EDGE; i++) {
-      const z = -0.5 + Math.random() * (PATH_LEN + 1.5);
-      const side = i % 2 ? 1 : -1;
-      const s = 0.13 + Math.random() * 0.26;
-      const x = pathBend(z) + side * (pathHalfAt(z) + 0.05 + Math.random() * 0.4);
-      e.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
-      q.setFromEuler(e);
-      const ey = headlandAt(LH_X + x, LH_Z + z) - HL_CREST;
-      m.compose(v.set(x, ey + s * 0.34, z), q, new THREE.Vector3(s, s * 0.7, s * 1.15));
-      edging.setMatrixAt(i, m);
-    }
-    edging.instanceMatrix.needsUpdate = true;
-    lhGround.add(edging);
-
+    // the stones kicked to the sides of the lane are placed with the field above
     // a few flat slabs set into the last stretch up to the threshold
     const SLABS = 9;
-    const slabMat = new THREE.MeshStandardMaterial({ color: 0x656b78, roughness: 1, flatShading: true, emissive: 0x1e222b });
+    const slabMat = new THREE.MeshStandardMaterial({ color: 0x4a515e, roughness: 1, flatShading: true, emissive: 0x12161d });
     const slabs = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 0.08, 6), slabMat, SLABS);
     slabs.frustumCulled = false;
     for (let i = 0; i < SLABS; i++) {
@@ -1975,7 +2054,8 @@ new GLTFLoader().load('assets/rocks.glb', (gltf) => {
  * draw at a distance it cannot be seen from; the body bag's ropes are 235k
  * triangles and stop being legible about 40 m out. */
 const ROCK_DRAW = 210;
-const farProps = [];
+// `farProps` itself is declared up by lhGround — the headland registers into
+// it at module load, long before this section runs
 function updateFarProps() {
   const cz = camera.position.z;
   for (const m of rockGroup.children) m.visible = Math.abs(m.position.z - cz) < ROCK_DRAW;
@@ -6687,7 +6767,7 @@ const DN = drainTunnel.userData.nav;
 const PEEK_FOV = 15;
 const PEEK_IN = 0.9, PEEK_OUT = 0.45;      // seconds to lean in / back out
 let peeking = false, peekLeaving = false, peekT = 0, peekHeld = 0;
-let gateEyes = null;
+let gateEyes = null, eyesSeen = false;   // seen once, never again this game
 const _peekFrom = new THREE.Vector3(), _peekTo = new THREE.Vector3();
 const _peekFromQ = new THREE.Quaternion(), _peekToQ = new THREE.Quaternion();
 const _peekHome = new THREE.Vector3(), _peekHomeQ = new THREE.Quaternion();
@@ -6704,7 +6784,7 @@ const EYES_W = 0.19;                      // the drawing, edge to edge, in metre
 let gateEyesTex = null;
 function makeGateEyes(F) {
   const G = new THREE.Group();
-  G.position.set(0, -0.02, -2.6);
+  G.position.set(0, -0.02, -3.6);
   G.userData = { eyes: [], mats: [], blink: 0, blinkIn: 2.2, baseY: -0.02,
                  ready: false, gone: false, stay: 0, stayFor: 3 };
   texLoader.load('assets/eyes.png', (tex) => {
@@ -6716,7 +6796,7 @@ function makeGateEyes(F) {
       map: tex, transparent: true, opacity: 0, depthWrite: false, fog: false,
       // the tint IS the brightness: white paper at 0x6e7686 is the grey of a
       // face that has been in the dark a long time
-      color: 0x6e7686, side: THREE.DoubleSide,
+      color: 0x4e5562, side: THREE.DoubleSide,
     });
     const quad = new THREE.Mesh(new THREE.PlaneGeometry(EYES_W, EYES_W * ar), mat);
     quad.position.z = 0.001;
@@ -6814,8 +6894,12 @@ function startPeek() {
   gateEyes.visible = true;
   for (const m of gateEyes.userData.mats) m.opacity = 0;
   const u = gateEyes.userData;
-  u.gone = false; u.stay = 0; u.stayFor = 2.4 + Math.random() * 1.6;  // seen, and then not
-  gateEyes.position.z = -2.6;
+  /* Once. The first time you look in, they are there; every time after,
+   * nothing is — and you know it was there. A second showing would make it a
+   * feature of the gate. The first made it a thing that happened to you. */
+  u.gone = eyesSeen; u.stay = 0; u.stayFor = 2.4 + Math.random() * 1.6;
+  if (eyesSeen) gateEyes.visible = false;
+  gateEyes.position.z = -3.6;
   gateEyes.userData.blink = 0;
   gateEyes.userData.blinkIn = 2.2;
   _peekHome.copy(camera.position); _peekHomeQ.copy(camera.quaternion);
@@ -6880,6 +6964,7 @@ function updateGateEyes(dt) {
   if (u.gone) return;
   // they do not greet you: nothing is there, and then something is
   const fade = THREE.MathUtils.clamp((peekHeld - 1.5) / 2.6, 0, 1);
+  if (fade > 0.35) eyesSeen = true;                  // that counts as seen
   if (fade >= 1) u.stay += dt;
   if (u.stay >= u.stayFor) {
     // and then nothing is, again. Between one frame and the next.
@@ -6887,7 +6972,7 @@ function updateGateEyes(dt) {
     G.visible = false;
     return;
   }
-  for (const m of u.mats) m.opacity = fade * 0.82;    // never fully solid
+  for (const m of u.mats) m.opacity = fade * 0.55;    // never more than half there
 
   u.blinkIn -= dt;
   if (u.blinkIn <= 0) { u.blink = 1; u.blinkIn = 1.5 + Math.random() * 4.2; }
@@ -6903,7 +6988,7 @@ function updateGateEyes(dt) {
   G.position.y = u.baseY + Math.sin(t * 0.29 + 2.2) * 0.008;
   G.rotation.z = THREE.MathUtils.clamp((t - 7) / 6, 0, 1) * 0.30;
   // and over the time he is there, he comes a metre up the pipe toward you
-  G.position.z = -2.6 + 0.5 * THREE.MathUtils.clamp(u.stay / u.stayFor, 0, 1);
+  G.position.z = -3.6 + 0.45 * THREE.MathUtils.clamp(u.stay / u.stayFor, 0, 1);
 }
 
 if (drainTunnel.userData.outlet) {
