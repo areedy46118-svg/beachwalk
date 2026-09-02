@@ -62,6 +62,7 @@
       'syringe': () => import('./syringe.js').then(m => m.makeSyringe()),
       'blood-jar': () => import('./blood-jar.js').then(m => m.makeBloodJar()),
       'drain-tunnel': () => import('./drain-tunnel.js').then(m => m.makeDrainTunnel()),
+      'water-bottle': () => import('./water-bottle.js').then(m => m.makeWaterBottle()),
     };
     document.getElementById('caption').textContent = which.replace('-', ' ') + '  ·  drag to rotate  ·  scroll to zoom';
     document.title = 'Model viewer — ' + which;

@@ -4,6 +4,7 @@ import { makeHorseshoeCrab, makeHorseshoeCrabIcon } from './models/horseshoe-cra
 import { makeSyringe, makeSyringeIcon } from './models/syringe.js';
 import { makeBloodJar } from './models/blood-jar.js';
 import { makeDrainTunnel } from './models/drain-tunnel.js';
+import { makeWaterBottle, makeWaterBottleIcon } from './models/water-bottle.js';
 
 /* ------------------------------------------------------------------ *
  *  Beach Walk — an endless, eerie shoreline at night.
@@ -5102,6 +5103,37 @@ drainTunnel.position.set(DRAIN_X, 0, DRAIN_Z);
 scene.add(drainTunnel);
 const DN = drainTunnel.userData.nav;
 
+// ---- a full bottle of water, left by the bed in the chamber ----------
+const waterBottle = makeWaterBottle();
+const waterBottleWorld = new THREE.Group();
+waterBottleWorld.add(waterBottle);
+{
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.20, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy';
+  waterBottleWorld.add(hit);
+}
+waterBottleWorld.position.set(DRAIN_X + 17.0, DN.FLOOR_Y, DRAIN_Z - 1.75);
+waterBottleWorld.rotation.set(0, 0.7, 0);
+scene.add(waterBottleWorld);
+addItemShine(waterBottleWorld, { size: 0.5, height: 0.10 });
+let waterBottleTaken = false;
+const waterBottleItem = {
+  id: 'waterbottle', name: 'Bottle of water', icon: makeWaterBottleIcon(),
+  use: () => openInspect(waterBottle, { rotX: 0.1, rotY: 0.6 }),
+};
+addInteractable(waterBottleWorld, 'Take the bottle of water', 'inventory', {
+  onActivate: () => {
+    if (waterBottleTaken) return;
+    waterBottleTaken = true;
+    sfxThud(0.03);
+    scene.remove(waterBottleWorld);
+    hovered = null;
+    addToInventory(waterBottleItem);
+  },
+});
+
+
 // Punch the cliff open at the mouth. World-space, like shoreLine(z,t) — the
 // cliff is snapped back onto the player in Z every frame, and a discard in
 // local space would slide along with it.
@@ -5118,10 +5150,68 @@ cliff.material.onBeforeCompile = (sh) => {
 };
 cliff.material.needsUpdate = true;
 
-let insideDrain = false, drainMix = 0;
+let insideDrain = false, drainMix = 0, mouthNear = 0;
+
+// ---- visible drips: a drop falls, and the sound fires when it lands ----
+const dripMat = new THREE.MeshBasicMaterial({ color: 0x9dc2d6, transparent: true, opacity: 0.66, fog: false });
+const dripGeo = new THREE.SphereGeometry(0.017, 5, 4);
+const drainDrips = drainTunnel.userData.drips.map(([lx, ly, lz]) => {
+  const mesh = new THREE.Mesh(dripGeo, dripMat);
+  mesh.visible = false;
+  scene.add(mesh);
+  return { mesh, x: DRAIN_X + lx, y0: ly, z: DRAIN_Z + lz, y: ly, v: 0,
+           wait: 1 + Math.random() * 5, falling: false };
+});
+const _dripV = new THREE.Vector3(), _dripR = new THREE.Vector3();
+function updateDrainDrips(dt) {
+  const live = drainMix > 0.04;
+  for (const d of drainDrips) {
+    if (!d.falling) {
+      if (!live) { d.mesh.visible = false; continue; }
+      d.wait -= dt;
+      if (d.wait <= 0) { d.falling = true; d.y = d.y0; d.v = 0; d.mesh.visible = true; }
+      continue;
+    }
+    d.v += 9.81 * dt;
+    d.y -= d.v * dt;
+    d.mesh.position.set(d.x, d.y, d.z);
+    d.mesh.scale.set(1, 1 + Math.min(3.5, d.v * 0.55), 1);   // stretches as it falls
+    if (d.y <= DN.FLOOR_Y + 0.01) {
+      d.falling = false;
+      d.mesh.visible = false;
+      d.wait = 1.4 + Math.random() * 5.5;
+      // pan it by where the drop is relative to where you're looking
+      _dripV.set(d.x - camera.position.x, 0, d.z - camera.position.z);
+      const dist = _dripV.length() || 1;
+      camera.getWorldDirection(_dripR); _dripR.y = 0; _dripR.normalize();
+      _dripR.cross(camera.up);
+      const pan = THREE.MathUtils.clamp(_dripV.dot(_dripR) / dist, -1, 1);
+      sfxDrip(drainMix * (0.85 - Math.min(0.6, dist * 0.045)), pan);
+    }
+  }
+}
+
+// ---- the lamps are old: let them stutter ------------------------------
+const drainLamps = [];
+drainTunnel.traverse(o => { if (o.isPointLight) drainLamps.push({ l: o, base: o.intensity, seed: Math.random() * 100 }); });
+let flickerT = 0;
+function updateDrainFlicker(dt) {
+  flickerT += dt;
+  for (const f of drainLamps) {
+    const t = flickerT + f.seed;
+    // a slow sag with an occasional hard stutter
+    let k = 0.90 + 0.10 * Math.sin(t * 2.3) * Math.sin(t * 0.71);
+    const s = Math.sin(t * 13.7) * Math.sin(t * 5.1);
+    if (s > 0.95) k *= 0.58;          // a stutter, not a blackout — you still have to walk it
+    f.l.intensity = f.base * k;
+  }
+}
 function updateDrain(dt) {
   const lx = camera.position.x - DRAIN_X;
   const lz = camera.position.z - DRAIN_Z;
+  mouthNear = drainMouthProximity();
+  updateDrainDrips(dt);
+  if (drainMix > 0.02) updateDrainFlicker(dt);
 
   // far enough away that none of this applies
   if (lx < -3 || lx > DN.ROOM_X1 + 3 || Math.abs(lz) > 9) {
@@ -5177,6 +5267,13 @@ function updateDrain(dt) {
   updateDrainAudio(dt);
 }
 
+// how close you are to the mouth, inside or out — drives the water trickle
+function drainMouthProximity() {
+  const dx = camera.position.x - DRAIN_X, dz = camera.position.z - DRAIN_Z;
+  const d = Math.hypot(dx * 0.7, dz);
+  return THREE.MathUtils.clamp(1 - (d - 3) / 9, 0, 1);
+}
+
 // ---- sewer ambience: a resonant pipe drone plus drips with a slapback ----
 let drainAudio = null, dripNext = 2;
 function startDrainAudio() {
@@ -5200,13 +5297,35 @@ function startDrainAudio() {
   lfo.connect(lfoG).connect(airG.gain);
   src.connect(bp).connect(gain);
   src.connect(air).connect(airG).connect(gain);
+  // separate layer: running water at the mouth, on its own gain
+  const trickle = ctx.createGain(); trickle.gain.value = 0;
+  trickle.connect(sfxOut());
+  const tf = ctx.createBiquadFilter(); tf.type = 'bandpass'; tf.frequency.value = 1750; tf.Q.value = 0.8;
+  const th = ctx.createBiquadFilter(); th.type = 'highpass'; th.frequency.value = 700;
+  const tw = ctx.createOscillator(); tw.frequency.value = 0.23;      // it burbles
+  const twg = ctx.createGain(); twg.gain.value = 320;
+  tw.connect(twg).connect(tf.frequency);
+  const tsrc = ctx.createBufferSource(); tsrc.buffer = buf; tsrc.loop = true;
+  tsrc.connect(th).connect(tf).connect(trickle);
+  tsrc.start(); tw.start();
   src.start(); lfo.start();
-  drainAudio = { gain };
+  drainAudio = { gain, trickle };
 }
-function sfxDrip(vol = 1) {
+function sfxDrip(vol = 1, pan = 0) {
   const ctx = audioCtx; if (!ctx || !drainAudio) return;
+  // exponentialRampToValueAtTime throws on a zero target, and vol can reach
+  // zero when the mix decays while a drop is still falling
+  vol = Math.min(1, vol);
+  if (!(vol > 0.004)) return;
   const t = ctx.currentTime;
-  const out = drainAudio.gain;
+  let out = drainAudio.gain;
+  if (ctx.createStereoPanner) {
+    const sp = ctx.createStereoPanner();
+    sp.pan.value = THREE.MathUtils.clamp(pan, -1, 1);
+    sp.connect(drainAudio.gain);
+    out = sp;
+    setTimeout(() => { try { sp.disconnect(); } catch (e) {} }, 2800);
+  }
   // a drip is a pitch that *rises* as the cavity closes — sweep it up
   const f = 480 + Math.random() * 760;
   const o = ctx.createOscillator(); o.type = 'sine';
@@ -5241,13 +5360,9 @@ function updateDrainAudio(dt) {
   drainAudio.gain.gain.setTargetAtTime(drainMix * settings.sfxVolume * 0.8, ctx.currentTime, 0.5);
   // duck the surf the further in you get — the sea should fall away behind you
   if (waveBusGain) waveBusGain.gain.setTargetAtTime(settings.waveVolume * (1 - 0.8 * drainMix), ctx.currentTime, 0.6);
-  if (drainMix > 0.12) {
-    dripNext -= dt;
-    if (dripNext <= 0) {
-      sfxDrip(0.35 + Math.random() * 0.5 * drainMix);
-      dripNext = 0.9 + Math.random() * 3.4;
-    }
-  }
+  // the trickle of the outfall, loudest where the water leaves the pipe
+  if (drainAudio.trickle)
+    drainAudio.trickle.gain.setTargetAtTime(mouthNear * settings.sfxVolume * 0.5, ctx.currentTime, 0.4);
 }
 
 // ------------------------------------------------------------------
@@ -5534,6 +5649,7 @@ window.__bw = {
   get audioCtx() { return audioCtx; }, get audioStarted() { return audioStarted; },
   lighthouse, startLighthouseTrack, bottleProp, playSample, updateTower,
   drainTunnel, DRAIN_X, DRAIN_Z, updateDrain, sfxDrip,
+  waterBottle, waterBottleWorld, get waterBottleItem() { return waterBottleItem; },
   get insideDrain() { return insideDrain; }, get drainMix() { return drainMix; },
   waterSurfaceAt, submersionAt, restYInWater, groundGlow, addRipple,
   shells, listenToShell, makeRockGeo,

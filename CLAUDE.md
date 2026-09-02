@@ -98,9 +98,30 @@ close. The syringe and jar carry `userData.setFill(t)` + `userData.parts`.
   letting the player fall out of that branch drops `insideDrain`, and the cliff
   clamp then teleports them back to the mouth.
 
+Two more traps, both of which bit once already:
+
+- **A wall with a doorway in it is four slabs around the hole.** Adding a
+  full-width slab "for the wall" as well plugs the opening — the collision
+  still lets you walk through, so it only shows up visually.
+- **A group rotated to face a wall has its own +Z.** For the back-wall outlet
+  (`F.rotation.y = -PI/2`) local +Z points *into the room*, so anything set
+  into the wall needs a **negative** z or the pipe sticks out of it.
+
+The **erosion channel** outside can only ever sit *above* y = 0 — the beach
+sand is a flat plane recentred on the player, so a trench cut below it would
+just be covered over. The depth reads from the berms heaped either side.
+
 Ambience is synthesised in `startDrainAudio()` / `sfxDrip()` and ramped by
 `drainMix` (how deep you are), which also ducks `waveBusGain` so the surf falls
-away behind you.
+away behind you; `mouthNear` drives a separate trickle layer at the outfall.
+`updateDrainDrips()` drops visible droplets and fires `sfxDrip()` — panned by
+where the drop is relative to your view — at the moment one lands. Note
+`exponentialRampToValueAtTime` throws on a zero target, so the drip gain is
+guarded: `drainMix` can reach 0 while a drop is still falling.
+
+A full **bottle of water** (`models/water-bottle.js`) sits by the bed —
+`waterBottleItem`, takeable with `E`, examinable like the crab. It is not
+wired to `hp`; making it a consumable would just need `use` to call a heal.
 
 **Physics.** `PhysProp` class + `physProps[]` — a tiny custom rigid body
 (gravity, ground bounce/friction, corridor walls; **no prop-vs-prop
