@@ -169,8 +169,9 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   metre onto the bars while the FOV squeezes to 24°, which is the zoom and is
   also what crops the lit room out of frame. Eight metres of ribbed pipe run
   back into the hill. Nothing is down there — and then, a second and a half
-  later, two small pale eyes fade up out of the black, blink at their own
-  pace, drift, and after a while tilt their head. Cave drone, far-off drips
+  later, a pair of drawn eyes fades up out of the black — a drawing of
+  Ethan's, knocked out to alpha — blinks at its own pace, drifts, creeps
+  closer, and is gone again within a few seconds. Cave drone, far-off drips
   and the whisper track pushed down a delay so it reads as somebody muttering
   to himself round a bend. `E` again backs you out.
 - **The enemy crab** — a bigger animal on a proper rig: eight two-bone legs
