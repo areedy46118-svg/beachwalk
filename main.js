@@ -84,7 +84,7 @@ const DIG_DUR = 0.8;
 // ------------------------------------------------------------------
 // Settings
 // ------------------------------------------------------------------
-const DEFAULT_SETTINGS = { fov: 75, sensitivity: 1, brightness: 1.16, volume: 0.9, musicVolume: 0.5, waveVolume: 0.62, sfxVolume: 0.45, walkSpeed: 1.4, invertY: false };
+const DEFAULT_SETTINGS = { fov: 107, sensitivity: 1, brightness: 1.16, volume: 0.5, musicVolume: 0.32, waveVolume: 0.46, sfxVolume: 0.6, walkSpeed: 1.4, invertY: false };
 let settings = { ...DEFAULT_SETTINGS };
 try { settings = { ...settings, ...JSON.parse(localStorage.getItem('beachwalk.settings') || '{}') }; } catch (e) {}
 function saveSettings() { try { localStorage.setItem('beachwalk.settings', JSON.stringify(settings)); } catch (e) {} }
@@ -241,6 +241,11 @@ function shoreLineJS(z, t) {
 // true when (x,z) is seaward of the waterline — i.e. standing in / over water
 function inWater(x, z) {
   if (onHeadland(x, z)) return false;           // the ridge stands clear of it
+  // The trodden lane up to the lighthouse door is dry ground, even at the
+  // mouth where it meets the sand and a high swash can wash across x = LH_X.
+  // Kept as a plain box here so it needs nothing that's declared further down.
+  const pz = z - LH_Z;
+  if (pz > -3 && pz < 34 && Math.abs(x - LH_X) < 4.6) return false;
   return x < shoreLineJS(z, oceanUniforms.uTime.value) + 0.25;
 }
 
@@ -454,18 +459,11 @@ function makeCliff() {
     pos.setXYZ(i, cx, cy, zAlong);
   }
   g.computeVertexNormals();
-  // The face is a real eroded sand edge now, cropped out of a scan's atlas and
-  // mirrored into a tile so the seams match (tools note in the README). The
-  // procedural bump map stays: it carries the runnels, which the flat crop
-  // can't. The cool tint pulls the scan's warm beige back to the night palette.
-  // texLoader isn't declared until much further down, hence the local one.
-  const tex = retroTex(new THREE.TextureLoader().load('assets/tex/sandcliff.jpg'));
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.repeat.set(CLIFF_LEN / 11, 2.5);
+  const tex = sandTex.clone(); tex.needsUpdate = true; tex.repeat.set(CLIFF_LEN / 7, 4);
   const bmp = sandBump.clone(); bmp.needsUpdate = true; bmp.repeat.set(CLIFF_LEN / 7, 4);
   const mat = new THREE.MeshStandardMaterial({
     map: tex, bumpMap: bmp, bumpScale: 2.2,
-    color: 0x51576a, roughness: 1, metalness: 0, emissive: 0x272d3d, emissiveMap: tex, side: THREE.DoubleSide,
+    color: 0x64697c, roughness: 1, metalness: 0, emissive: 0x2f3648, emissiveMap: tex, side: THREE.DoubleSide,
   });
   const mesh = new THREE.Mesh(g, mat);
   mesh.frustumCulled = false;
@@ -1693,9 +1691,9 @@ loadGeoPack('assets/rocks.json').then((geos) => {
 const scannedProps = [
   { url: 'assets/rock-a.json', tex: 'assets/tex/rock-a.jpg', n: 1,
     nrm: 'assets/tex/rock-a-n.png', nscale: 0.75,
-    tint: 0x8d95a4, lo: 1.0, hi: 2.4, bed: 0.22 },        // the big beach rock
+    tint: 0x8d95a4, lo: 1.1, hi: 2.6, bed: 0.40 },        // the big beach rock
   { url: 'assets/rock-b.json', tex: 'assets/tex/rock-b.jpg', n: 1,
-    tint: 0x8a92a1, lo: 0.8, hi: 1.8, bed: 0.20 },        // a low rocky patch
+    tint: 0x8a92a1, lo: 0.9, hi: 2.0, bed: 0.38 },        // a low rocky patch
 ];
 for (const sp of scannedProps) {
   loadGeoPack(sp.url).then((geos) => {
@@ -1703,7 +1701,7 @@ for (const sp of scannedProps) {
     map.colorSpace = THREE.SRGBColorSpace;
     const mat = new THREE.MeshStandardMaterial({
       map, color: sp.tint, roughness: 1, metalness: 0,
-      emissive: 0x141820, emissiveMap: map, flatShading: true,
+      emissive: 0x141820, emissiveMap: map, flatShading: true, side: THREE.DoubleSide,
     });
     // The scan ships a normal map, and at 200-odd triangles the mesh has none
     // of its own detail left — this is what puts the pitting back. It stays in
@@ -1725,7 +1723,7 @@ for (const sp of scannedProps) {
           // roughly a third as tall as they are wide — so sinking them by a
           // fraction of their width, which is what the older packs do, buries
           // them completely.
-          y: -geoH * sy * sp.bed,
+          y: -geoH * sy * sp.bed - 0.04,
           // wet down by the water, plus a little jitter so six rocks drawn
           // from three meshes don't read as three meshes
           color: wetTint(p.x).multiplyScalar(0.86 + Math.random() * 0.28),
@@ -1772,19 +1770,66 @@ loadGeoPack('assets/seaweed.json').then((geos) => {
 // Ground decals — footprints + dig holes (instanced pools)
 // ------------------------------------------------------------------
 function makeFootTexture() {
-  const c = document.createElement('canvas'); c.width = c.height = 128;
+  // A pressed barefoot print in soft sand: heel, a narrowed arch, the ball,
+  // and five toe pads — drawn as a shallow pit (dark, soft-edged) with a
+  // moon-lit lip of pushed-up sand along the lower-right and a shadow along
+  // the upper-left. The print points up the canvas; stampFoot() spins it to
+  // the heading and mirrors it left/right per step.
+  const S = 128;
+  const c = document.createElement('canvas'); c.width = c.height = S;
   const g = c.getContext('2d');
-  const dk = (cx, cy, rx, ry, a0) => {
-    const grad = g.createRadialGradient(cx, cy, 0, cx, cy, Math.max(rx, ry));
-    grad.addColorStop(0, `rgba(0,1,3,${a0})`); grad.addColorStop(0.6, `rgba(2,4,8,${a0 * 0.55})`); grad.addColorStop(1, 'rgba(2,4,8,0)');
-    g.fillStyle = grad; g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); g.fill();
+
+  const sole = new Path2D();
+  sole.moveTo(52, 110);
+  sole.bezierCurveTo(33, 106, 28, 86, 35, 70);
+  sole.bezierCurveTo(39, 57, 41, 45, 52, 34);
+  sole.bezierCurveTo(59, 26, 77, 26, 84, 37);
+  sole.bezierCurveTo(90, 48, 85, 61, 81, 74);
+  sole.bezierCurveTo(79, 88, 75, 105, 62, 110);
+  sole.closePath();
+
+  const pit = (px, py, r, a) => {
+    const rg = g.createRadialGradient(px, py, 0, px, py, r);
+    rg.addColorStop(0, `rgba(0,1,3,${a})`);
+    rg.addColorStop(0.65, `rgba(3,5,10,${a * 0.5})`);
+    rg.addColorStop(1, 'rgba(3,5,10,0)');
+    g.fillStyle = rg; g.beginPath(); g.arc(px, py, r, 0, 7); g.fill();
   };
-  dk(64, 46, 30, 34, 0.7); dk(64, 50, 22, 26, 0.95); dk(64, 96, 17, 19, 0.9); dk(64, 74, 12, 22, 0.7);
-  const rim = g.createLinearGradient(0, 6, 0, 46);
-  rim.addColorStop(0, 'rgba(200,214,236,0.42)'); rim.addColorStop(1, 'rgba(200,214,236,0)');
-  g.strokeStyle = rim; g.lineWidth = 4;
-  g.beginPath(); g.ellipse(64, 48, 27, 31, 0, Math.PI * 1.12, Math.PI * 1.88); g.stroke();
-  return new THREE.CanvasTexture(c);
+
+  g.save();
+  g.clip(sole);
+  g.fillStyle = 'rgba(2,4,9,0.5)'; g.fillRect(0, 0, S, S);
+  pit(57, 92, 27, 0.92);          // heel, deepest
+  pit(64, 44, 25, 0.82);          // ball
+  pit(50, 66, 14, 0.4);           // shallow arch
+  g.restore();
+
+  // pushed-up sunlit lip, offset down-right toward the moon
+  g.save(); g.translate(2.6, 3.2);
+  g.strokeStyle = 'rgba(208,220,240,0.4)'; g.lineWidth = 3.4;
+  g.lineJoin = 'round'; g.stroke(sole);
+  g.restore();
+  // the shaded far rim
+  g.save(); g.translate(-1.6, -2.2);
+  g.strokeStyle = 'rgba(0,1,4,0.4)'; g.lineWidth = 2.4;
+  g.lineJoin = 'round'; g.stroke(sole);
+  g.restore();
+
+  // toes: big to little, arcing off the ball
+  const toes = [[60, 17, 6.6], [72, 18, 5.3], [81, 22, 4.5], [88, 28, 3.7], [93, 35, 3.0]];
+  for (const [tx, ty, tr] of toes) {
+    pit(tx, ty, tr + 2.5, 0.85);
+    g.beginPath(); g.arc(tx, ty, tr, 0, 7);
+    g.fillStyle = 'rgba(2,3,8,0.55)'; g.fill();
+    g.save(); g.translate(1.4, 2);
+    g.strokeStyle = 'rgba(202,214,234,0.28)'; g.lineWidth = 1.5;
+    g.beginPath(); g.arc(tx, ty, tr, 0, 7); g.stroke();
+    g.restore();
+  }
+
+  const t = new THREE.CanvasTexture(c);
+  t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
+  return t;
 }
 function makeCraterTexture() {
   const S = 128;
@@ -1899,6 +1944,15 @@ scene.add(digMounds);
   for (let i = 0; i < FOOT_POOL; i++) foot.setMatrixAt(i, hide);
   for (let i = 0; i < DIG_POOL; i++) { digHoles.setMatrixAt(i, hide); digPits.setMatrixAt(i, hide); digMounds.setMatrixAt(i, hide); } }
 
+// A print stamped on dry sand can be reached by the tide a few seconds later.
+// inWater() only gates the stamp; this discards any decal fragment currently
+// seaward of the live shoreline, so the surf washes prints and holes away as
+// it comes up and they're back when it draws down. Same clip the ocean and
+// the beached debris use.
+for (const dm of [foot, digHoles, digPits]) clipAtShore(dm.material);
+digMounds.material = digMounds.material.clone();   // shared with nothing else, but be sure
+clipAtShore(digMounds.material);
+
 const _fm = new THREE.Matrix4(), _fq = new THREE.Quaternion(), _fe = new THREE.Euler(), _fs = new THREE.Vector3();
 let footIdx = 0, footSide = 1, digIdx = 0;
 const lastFootPos = new THREE.Vector3();
@@ -1907,7 +1961,8 @@ function stampFoot(x, z, fwdX, fwdZ, side) {
   _fe.set(0, Math.atan2(fwdX, fwdZ) + Math.PI, 0);
   _fq.setFromEuler(_fe);
   const off = 0.14 * side;
-  _fs.set(0.92 + Math.random() * 0.16, 1, 1.0 + Math.random() * 0.2);
+  // negative x-scale mirrors the texture, so one foot is the other's reflection
+  _fs.set((0.92 + Math.random() * 0.16) * side, 1, 1.0 + Math.random() * 0.2);
   _fm.compose(new THREE.Vector3(x + (-fwdZ) * off, 0.03, z + fwdX * off), _fq, _fs);
   foot.setMatrixAt(footIdx, _fm);
   footIdx = (footIdx + 1) % FOOT_POOL;
@@ -4987,29 +5042,50 @@ function sfxStep() {
   const t = ctx.currentTime;
   stepAlt ^= 1;
   const out = ctx.createGain();
-  out.gain.value = 0.55 * (stepAlt ? 1 : 0.86);
+  out.gain.value = 0.6 * (stepAlt ? 1 : 0.8) * (0.85 + Math.random() * 0.3);
   out.connect(sfxOut());
 
-  // the compression — weight settling into the sand
-  const body = noiseBurst(0.11, (x) => Math.pow(1 - x, 2.6));
-  const bf = ctx.createBiquadFilter(); bf.type = 'lowpass';
-  bf.frequency.value = 260 + Math.random() * 90;
-  const bg = ctx.createGain(); bg.gain.value = 0.30;
-  body.connect(bf).connect(bg).connect(out);
-  body.start(t); body.stop(t + 0.11);
+  // 1. the thud — bodyweight dropping onto packed sand, gone almost at once
+  const thump = noiseBurst(0.09, (x) => Math.pow(1 - x, 3.4));
+  const tf = ctx.createBiquadFilter(); tf.type = 'lowpass';
+  tf.frequency.value = 140 + Math.random() * 55; tf.Q.value = 1.3;
+  const tg = ctx.createGain(); tg.gain.value = 0.4;
+  thump.connect(tf).connect(tg).connect(out);
+  thump.start(t); thump.stop(t + 0.09);
 
-  // the crunch — grains shearing, bright and very short
-  const grit = noiseBurst(0.17, (x) => Math.pow(1 - x, 2.0) * (0.45 + 0.55 * Math.random()));
+  // 2. the compression — damp sand packing down under the heel, a soft crush
+  const comp = noiseBurst(0.14, (x) => Math.pow(1 - x, 2.1) * (0.55 + 0.45 * Math.random()));
+  const cf = ctx.createBiquadFilter(); cf.type = 'lowpass';
+  cf.frequency.setValueAtTime(560 + Math.random() * 170, t);
+  cf.frequency.exponentialRampToValueAtTime(210, t + 0.13);
+  const cg = ctx.createGain(); cg.gain.value = 0.32;
+  comp.connect(cf).connect(cg).connect(out);
+  comp.start(t); comp.stop(t + 0.14);
+
+  // 3. loose grains scattering off the print — granular, bright, quick
+  const grit = noiseBurst(0.16, (x) => {
+    const env = Math.pow(1 - x, 1.7);
+    return env * (0.3 + 0.7 * Math.abs(Math.sin(x * 85 + Math.random() * 6)));
+  });
   const gf = ctx.createBiquadFilter(); gf.type = 'bandpass';
-  gf.frequency.setValueAtTime(1900 + Math.random() * 700, t);
-  gf.frequency.exponentialRampToValueAtTime(700, t + 0.15);
-  gf.Q.value = 0.8;
+  gf.frequency.setValueAtTime(2000 + Math.random() * 850, t);
+  gf.frequency.exponentialRampToValueAtTime(820, t + 0.14);
+  gf.Q.value = 0.7;
   const gg = ctx.createGain();
   gg.gain.setValueAtTime(0.0001, t);
-  gg.gain.exponentialRampToValueAtTime(0.26, t + 0.012);
-  gg.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
+  gg.gain.exponentialRampToValueAtTime(0.19 + Math.random() * 0.07, t + 0.01);
+  gg.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
   grit.connect(gf).connect(gg).connect(out);
-  grit.start(t); grit.stop(t + 0.17);
+  grit.start(t); grit.stop(t + 0.16);
+
+  // 4. the odd shell chip ticking — sparse, so a walk never sounds looped
+  if (Math.random() < 0.28) {
+    const tick = noiseBurst(0.03, (x) => Math.pow(1 - x, 5));
+    const kf = ctx.createBiquadFilter(); kf.type = 'highpass'; kf.frequency.value = 3600;
+    const kg = ctx.createGain(); kg.gain.value = 0.04 + Math.random() * 0.05;
+    tick.connect(kf).connect(kg).connect(out);
+    tick.start(t + 0.006); tick.stop(t + 0.036);
+  }
 }
 function sfxThud(gain) {
   const ctx = audioCtx; if (!ctx) return;
@@ -5430,7 +5506,7 @@ function update(dt) {
       landDip = Math.max(landDip, 0.06 + force * 0.16);
       addTrauma(force * 0.25);
       vmImpulse(-1.1 - force * 2.4);
-      if (!inWater(camera.position.x, camera.position.z)) sfxStep(); else sfxSplash(0.9);
+      if (inWater(camera.position.x, camera.position.z)) sfxSplash(0.9); else sfxStep();
     }
     camBaseY = floorLimit; vy = 0; onGround = true;
   }

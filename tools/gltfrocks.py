@@ -169,43 +169,43 @@ print('decimated: %d tris at cell %.4f' % (len(tris), hi))
 # it out to a radius, cut away everything below its own local ground level,
 # and that is one rock. Repeat away from what's already been claimed for the
 # next one.
-def extract_bumps(pos, tris, n_bumps, radius_frac, floor_frac):
+def extract_bumps(pos, tris, n_bumps, radius_frac):
+    """N tight columns around the highest points. Keep every triangle whose
+    centroid lands in the column and nothing else — the earlier version cut the
+    underside off and then kept only the largest connected piece, and between
+    them those two steps were what left the rocks with chunks missing. The scan
+    is a heightfield with an open bottom regardless; the game beds it deep so
+    its own ring of sand sits under the beach and closes the look."""
     xs = [p[0] for p in pos]; zs = [p[2] for p in pos]
     span = max(max(xs) - min(xs), max(zs) - min(zs))
     R = radius_frac * span
     ys = sorted(p[1] for p in pos)
-    ground = ys[len(ys) // 2]
-    peak_max = ys[-1]
-    claimed = set()
+    ground, peak = ys[len(ys) // 2], ys[-1]
+    centers = []
     parts = []
     for _ in range(n_bumps):
-        best = None
+        best, besty = -1, -1e30
         for vi, p in enumerate(pos):
-            if vi in claimed:
+            if p[1] <= besty:
                 continue
-            if best is None or p[1] > pos[best][1]:
-                best = vi
-        if best is None:
+            if any((p[0] - cx) ** 2 + (p[2] - cz) ** 2 < (R * 0.85) ** 2 for cx, cz in centers):
+                continue
+            best, besty = vi, p[1]
+        if best < 0 or besty - ground < 0.15 * (peak - ground):
             break
-        px, py, pz = pos[best]
-        if py - ground < 0.12 * (peak_max - ground):
-            break
-        near = [t for t in tris
-                if all((pos[v][0]-px)**2 + (pos[v][2]-pz)**2 < R*R for v in t)]
-        for t in near:
-            claimed.update(t)
-        if not near:
-            claimed.add(best)
-            continue
-        local = sorted(pos[v][1] for t in near for v in t)
-        base = local[len(local) // 6]                  # local ground, not global
-        cut = base + floor_frac * (py - base)
-        keep = [t for t in near if max(pos[v][1] for v in t) > cut]
-        if len(keep) >= a.min_tris:
-            parts.append(max(components(pos, keep), key=len))
+        px, _, pz = pos[best]
+        centers.append((px, pz))
+        sub = []
+        for t in tris:
+            cx = (pos[t[0]][0] + pos[t[1]][0] + pos[t[2]][0]) / 3
+            cz = (pos[t[0]][2] + pos[t[1]][2] + pos[t[2]][2]) / 3
+            if (cx - px) ** 2 + (cz - pz) ** 2 < R * R:
+                sub.append(t)
+        if len(sub) >= a.min_tris:
+            parts.append(sub)
     return parts
 
-parts = (extract_bumps(pos, tris, a.bumps, a.bump_radius, a.crop) if a.bumps
+parts = (extract_bumps(pos, tris, a.bumps, a.bump_radius) if a.bumps
          else components(pos, tris)[:a.max_parts])
 
 out = {}
