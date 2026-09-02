@@ -524,12 +524,40 @@ function makeCliff() {
     pos.setXYZ(i, cx, cy, zAlong);
   }
   g.computeVertexNormals();
-  const tex = sandTex.clone(); tex.needsUpdate = true; tex.repeat.set(CLIFF_LEN / 7, 4);
-  const bmp = sandBump.clone(); bmp.needsUpdate = true; bmp.repeat.set(CLIFF_LEN / 7, 4);
+  /* The toe is where the cliff and the beach meet, and it used to meet badly:
+   * a hard line of a different grey, at a different grain size, sitting on
+   * the sand. `aU` is the loft parameter (0 at the toe, 1 at the top), and
+   * the shader uses it to run the bottom band back to the beach's own colour
+   * and then dissolve the last of it on a hash — so the cliff comes out of
+   * the sand instead of being placed on it. The along-shore density is the
+   * beach's own (one tile per SAND_TILE) so the grain rate agrees where they
+   * touch; up the face it stays finer, because a vertical wall at 9 m a tile
+   * is a smear. */
+  const uAttr = new Float32Array(pos.count);
+  for (let i = 0; i < pos.count; i++) uAttr[i] = g.attributes.uv.getY(i) + 0.5;
+  g.setAttribute('aU', new THREE.BufferAttribute(uAttr, 1));
+  const tex = sandTex.clone(); tex.needsUpdate = true; tex.repeat.set(CLIFF_LEN / SAND_TILE, 4);
+  const bmp = sandBump.clone(); bmp.needsUpdate = true; bmp.repeat.set(CLIFF_LEN / SAND_TILE, 4);
   const mat = new THREE.MeshStandardMaterial({
     map: tex, bumpMap: bmp, bumpScale: 2.2,
     color: 0x64697c, roughness: 1, metalness: 0, emissive: 0x2f3648, emissiveMap: tex, side: THREE.DoubleSide,
   });
+  mat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float aU;\nvarying float vU;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vU = aU;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying float vU;
+        float bwH2(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }`)
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+        if (vU < bwH2(floor(gl_FragCoord.xy)) * 0.075) discard;`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        // the toe carries the beach's colour, so there is nothing to see at
+        // the join; the face is the cliff's own further up
+        float bwT = smoothstep(0.06, 0.30, vU);
+        diffuseColor.rgb *= mix(vec3(1.072, 1.199, 1.529), vec3(1.0), bwT);`);
+  };
   const mesh = new THREE.Mesh(g, mat);
   mesh.frustumCulled = false;
   return mesh;
@@ -1162,7 +1190,19 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   }
 
   // ---- lantern room -------------------------------------------------
+  /* Built to the photograph of a real lantern: heavy black astragals, a
+   * rusted sill ring where the glazing meets the deck, a segmented black
+   * roof with a ventilator cowl on it, and — the thing the eye actually goes
+   * to — a DRUM LENS on a steel column rather than a bare bulb. The old one
+   * was a glowing sphere inside three brass hoops and read as a light bulb in
+   * a greenhouse. */
   const LR_R = 1.95, LR_Y0 = LH_TOP + 0.1, LR_H = 3.3;
+  const GLASS_Y0 = LR_Y0 + 0.35, GLASS_H = LR_H - 0.35;
+  const rust = new THREE.MeshStandardMaterial({
+    color: 0x6b4634, roughness: 0.92, metalness: 0.25, flatShading: true, emissive: 0x1a0e08 });
+  const steelGrey = new THREE.MeshStandardMaterial({
+    color: 0x767c85, roughness: 0.42, metalness: 0.7, flatShading: true, emissive: 0x14171b });
+
   // Low plinth the glazing stands on — a ring, carrying the same hatch as the
   // deck below it. As a solid disc it was a second lid over the stairwell,
   // sitting 0.45 m above the one we'd just opened.
@@ -1173,52 +1213,120 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   cutWedge(plinthGeo, HATCH_A0, HATCH_A1);
   const plinth = new THREE.Mesh(plinthGeo, iron);
   lighthouse.add(plinth);
+  // the rusted sill the glazing is bedded in — every lantern has one, and it
+  // is the only warm colour up here
+  const sill = new THREE.Mesh(new THREE.CylinderGeometry(LR_R + 0.13, LR_R + 0.13, 0.16, 24, 1, true), rust);
+  sill.position.y = GLASS_Y0 + 0.02;
+  lighthouse.add(sill);
+
   // the glass itself
   lanternGlass = new THREE.Mesh(
-    new THREE.CylinderGeometry(LR_R, LR_R, LR_H - 0.35, 16, 1, true),
+    new THREE.CylinderGeometry(LR_R, LR_R, GLASS_H, 16, 1, true),
     new THREE.MeshStandardMaterial({
       color: 0xa8c6e0, roughness: 0.05, metalness: 0.15,
-      transparent: true, opacity: 0.17, side: THREE.DoubleSide, emissive: 0x1d2733,
+      transparent: true, opacity: 0.14, side: THREE.DoubleSide, emissive: 0x1d2733,
     }));
-  lanternGlass.position.y = LR_Y0 + 0.35 + (LR_H - 0.35) / 2;
+  lanternGlass.position.y = GLASS_Y0 + GLASS_H / 2;
   lighthouse.add(lanternGlass);
-  // astragals — the vertical glazing bars, and two horizontal rings
-  for (let i = 0; i < 16; i++) {
-    const a = (i / 16) * Math.PI * 2;
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.07, LR_H - 0.35, 0.07), iron);
-    bar.position.set(Math.cos(a) * LR_R, LR_Y0 + 0.35 + (LR_H - 0.35) / 2, Math.sin(a) * LR_R);
+  /* Astragals. Twelve, not sixteen, and nearly twice as thick: in the
+   * photograph they are structural columns carrying the roof, not glazing
+   * beads, and each one has a foot casting where it meets the sill. */
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.13, GLASS_H, 0.11), iron);
+    bar.position.set(Math.cos(a) * LR_R, GLASS_Y0 + GLASS_H / 2, Math.sin(a) * LR_R);
     bar.rotation.y = -a;
     lighthouse.add(bar);
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.22, 0.17), iron);
+    foot.position.set(Math.cos(a) * LR_R, GLASS_Y0 + 0.11, Math.sin(a) * LR_R);
+    foot.rotation.y = -a;
+    lighthouse.add(foot);
   }
-  for (const yy of [LR_Y0 + 1.25, LR_Y0 + 2.45]) {
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(LR_R, 0.035, 6, 24), iron);
+  for (const yy of [GLASS_Y0 + GLASS_H * 0.42, GLASS_Y0 + GLASS_H * 0.84]) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(LR_R, 0.045, 6, 24), iron);
     ring.rotation.x = Math.PI / 2; ring.position.y = yy;
     lighthouse.add(ring);
   }
-  // the roof: a shallow cone with a ventilator ball and a finial
+
+  /* The roof: a black cone with the ribs showing, a cornice where it lands on
+   * the astragals, and a VENTILATOR — the cowl and ball that carried the
+   * lamp's fumes out. A bare cone with a sphere on it reads as a party hat;
+   * the ribs and the cowl are what make it ironwork. */
   const roofMat = iron.clone(); roofMat.side = THREE.DoubleSide;
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(LR_R + 0.35, 1.5, 16), roofMat);
-  roof.position.y = LR_Y0 + LR_H + 0.75;
-  const vent = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), iron);
-  vent.position.y = LR_Y0 + LR_H + 1.6;
-  const finial = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.65, 5), iron);
-  finial.position.y = LR_Y0 + LR_H + 2.05;
-  lighthouse.add(roof, vent, finial);
+  const ROOF_Y = GLASS_Y0 + GLASS_H;
+  const cornice = new THREE.Mesh(new THREE.CylinderGeometry(LR_R + 0.22, LR_R + 0.16, 0.18, 24), iron);
+  cornice.position.y = ROOF_Y + 0.09;
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(LR_R + 0.24, 1.35, 24), roofMat);
+  roof.position.y = ROOF_Y + 0.86;
+  lighthouse.add(cornice, roof);
+  for (let i = 0; i < 12; i++) {                       // the ribs down the roof
+    const a = (i / 12) * Math.PI * 2;
+    const rib = new THREE.Mesh(new THREE.BoxGeometry(0.055, 1.38, 0.05), iron);
+    rib.position.set(Math.cos(a) * (LR_R + 0.24) * 0.5, ROOF_Y + 0.86, Math.sin(a) * (LR_R + 0.24) * 0.5);
+    rib.rotation.set(Math.sin(a) * 0.55, -a, -Math.cos(a) * 0.55);
+    lighthouse.add(rib);
+  }
+  const cowl = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.36, 0.5, 12), iron);
+  cowl.position.y = ROOF_Y + 1.70;
+  const cowlCap = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), iron);
+  cowlCap.position.y = ROOF_Y + 1.94;
+  const finial = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.045, 0.7, 6), iron);
+  finial.position.y = ROOF_Y + 2.35;
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6), iron);
+  ball.position.y = ROOF_Y + 2.72;
+  lighthouse.add(cowl, cowlCap, finial, ball);
 
   // ---- the optic ----------------------------------------------------
-  const LAMP_Y = LR_Y0 + 1.6;
-  const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.62, 0.7, 12), brass);
-  pedestal.position.y = LR_Y0 + 0.7;
-  lighthouse.add(pedestal);
-  lampCore = new THREE.Mesh(new THREE.SphereGeometry(0.62, 16, 12),
-    new THREE.MeshBasicMaterial({ color: 0xffe9c2, fog: false }));
-  lampCore.position.y = LAMP_Y;
-  // fresnel rings round the lamp
-  for (const [ry, rr] of [[LAMP_Y - 0.5, 0.85], [LAMP_Y, 0.95], [LAMP_Y + 0.5, 0.85]]) {
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(rr, 0.05, 6, 20), brass);
+  /* A drum lens on a steel column, which is what is actually up there: a
+   * glass cylinder banded with the horizontal prism rings that bend the light
+   * into a sheet, vertical astragals holding the panels, a brass crown, and
+   * the burner inside it. */
+  const COL_Y = GLASS_Y0, LENS_H = 1.30, LENS_R = 0.56;
+  const LENS_Y0 = COL_Y + 0.95;
+  const LAMP_Y = LENS_Y0 + LENS_H / 2;
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.56, 0.16, 14), steelGrey);
+  base.position.y = COL_Y + 0.08;
+  const column = new THREE.Mesh(new THREE.CylinderGeometry(0.155, 0.185, 0.88, 12), steelGrey);
+  column.position.y = COL_Y + 0.56;
+  const table = new THREE.Mesh(new THREE.CylinderGeometry(LENS_R + 0.06, 0.30, 0.14, 16), brass);
+  table.position.y = LENS_Y0 - 0.02;
+  lighthouse.add(base, column, table);
+  // the glass drum
+  const drum = new THREE.Mesh(
+    new THREE.CylinderGeometry(LENS_R, LENS_R, LENS_H, 16, 1, true),
+    new THREE.MeshStandardMaterial({
+      color: 0xffe6bd, roughness: 0.08, metalness: 0.05, transparent: true,
+      opacity: 0.34, side: THREE.DoubleSide, emissive: 0x6a4a1c,
+    }));
+  drum.position.y = LAMP_Y;
+  lighthouse.add(drum);
+  // the prism rings — the horizontal steps that make it a Fresnel
+  for (let k = 0; k < 9; k++) {
+    const t = (k + 0.5) / 9;
+    const ry = LENS_Y0 + t * LENS_H;
+    // fattest in the middle, where the belt of the lens throws the beam
+    const rr = LENS_R + 0.035 * Math.sin(t * Math.PI);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(rr, 0.032, 5, 20), brass);
     ring.rotation.x = Math.PI / 2; ring.position.y = ry;
     lighthouse.add(ring);
   }
+  for (let i = 0; i < 8; i++) {                        // the panel astragals
+    const a = (i / 8) * Math.PI * 2;
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.035, LENS_H, 0.035), brass);
+    bar.position.set(Math.cos(a) * LENS_R, LAMP_Y, Math.sin(a) * LENS_R);
+    bar.rotation.y = -a;
+    lighthouse.add(bar);
+  }
+  const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.24, LENS_R + 0.05, 0.30, 16), brass);
+  crown.position.y = LENS_Y0 + LENS_H + 0.13;
+  const crownCap = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), brass);
+  crownCap.position.y = LENS_Y0 + LENS_H + 0.27;
+  lighthouse.add(crown, crownCap);
+
+  // the burner: small, inside the drum, and still what `updateTower()` flashes
+  lampCore = new THREE.Mesh(new THREE.SphereGeometry(0.19, 12, 10),
+    new THREE.MeshBasicMaterial({ color: 0xffe9c2, fog: false }));
+  lampCore.position.y = LAMP_Y;
   const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffe6bf, transparent: true, opacity: 0.85, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
   glow.position.y = LAMP_Y; glow.scale.setScalar(6);
   const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffdca6, transparent: true, opacity: 0.16, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
@@ -1320,11 +1428,78 @@ function onHeadland(wx, wz) { return headlandAt(wx, wz) > 0.35; }
     pos.setZ(i, lz + (HL_RUN - 30) / 2 + 15);
   }
   g.computeVertexNormals();
-  const gTex = sandTex.clone(); gTex.needsUpdate = true; gTex.repeat.set(SPAN / 6, (HL_RUN + 30) / 6);
-  const ridge = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
-    map: gTex, color: 0x707862, roughness: 1, metalness: 0,
-    emissive: 0x30382a, emissiveMap: gTex, flatShading: false,
-  }));
+
+  /* Making the ridge meet the beach without a seam takes three things, and
+   * the old build had none of them:
+   *
+   *   1. WORLD UVs at the beach's own density. The ridge's uv ran 0..1 across
+   *      its own plane, so the grain changed size and phase at the join. The
+   *      sand plane is 1600 m at 177.8 repeats — one tile per SAND_TILE (9 m)
+   *      — and it recentres by whole multiples of SAND_TILE, so the phase is
+   *      preserved and (wx + 800) / 9 lines the two up exactly.
+   *   2. COLOUR that starts as sand. The crown is grassy headland and the toe
+   *      is beach; mixing between them by height means there is no line to
+   *      see, because the two materials are the same colour where they meet.
+   *   3. A DISSOLVED edge. Even matched, two coplanar surfaces at y = 0 fight
+   *      for the depth buffer. The rim is dropped below the sand and the last
+   *      strip is discarded against a hash, so the ridge ends in a ragged
+   *      scatter of sand-coloured pixels instead of a circle.
+   */
+  const uv = g.attributes.uv, hAttr = new Float32Array(pos.count);
+  for (let i = 0; i < pos.count; i++) {
+    const wx = LH_X + pos.getX(i);
+    const wz = LH_Z + pos.getZ(i);
+    uv.setXY(i, (wx + 800) / SAND_TILE, (800 - wz) / SAND_TILE);
+    const h = pos.getY(i) + HL_CREST;                 // height above the beach
+    hAttr[i] = h;
+    /* The rim SINKS rather than dissolving. A hash dither keyed to height was
+     * tried and is wrong here: the ridge climbs slowly, so even a 0.4 m band
+     * of height is metres of ground and, seen along the slope, half the
+     * headland turned to speckle. Sinking the last third of a metre below
+     * y = 0 lets the beach plane — which is opaque and right there — cover
+     * the join, so the ridge simply comes up out of the sand. It also ends
+     * the z-fighting the two had while they were coplanar at the toe. */
+    if (h < 0.35) pos.setY(i, pos.getY(i) - (0.35 - h) * 1.7);
+  }
+  g.setAttribute('aH', new THREE.BufferAttribute(hAttr, 1));
+  g.computeVertexNormals();
+  const gTex = sandTex.clone(); gTex.needsUpdate = true; gTex.repeat.set(1, 1);
+  const gBump = sandBump.clone(); gBump.needsUpdate = true; gBump.repeat.set(1, 1);
+  const ridgeMat = new THREE.MeshStandardMaterial({
+    map: gTex, bumpMap: gBump, bumpScale: 1.2,
+    color: 0xffffff, roughness: 1, metalness: 0,
+    emissive: 0xffffff, emissiveMap: gTex, flatShading: false,
+  });
+  ridgeMat.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = oceanUniforms.uTime;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float aH;\nvarying float vH;\nvarying vec3 vWP;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vH = aH;\n  vWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vH;\nvarying vec3 vWP;\nuniform float uTime;\nfloat bwWet;\n' + noiseGLSL + shoreGLSL)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        // sand at the toe, headland grass on the crown, and nothing in
+        // between that draws a line
+        float bwG = smoothstep(0.25, 2.6, vH);
+        diffuseColor.rgb *= mix(vec3(0.427, 0.490, 0.600), vec3(0.439, 0.471, 0.384), bwG);
+        /* And the toe has to take the beach's WET TINT too. sandMat darkens
+         * itself for sixteen metres landward of the waterline, and the ridge
+         * meets the beach right inside that band — so matching only the base
+         * colour still left the ridge a pale oval sitting on darker sand.
+         * Weighted by (1 - grass) so the dry crown never sees it. */
+        bwWet = smoothstep(16.0, -1.0, vWP.x - shoreLine(vWP.z, uTime)) * (1.0 - bwG);
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.72, 0.78, 0.9), bwWet);`)
+      /* And the wet beach is not just darker, it is SMOOTH and slightly
+       * METALLIC — which under one directional light at night is most of why
+       * it reads dark at all. Matching only the albedo left the ridge a pale
+       * oval on dark sand; these two lines are what actually close the gap. */
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n  roughnessFactor = mix(roughnessFactor, 0.30, bwWet);')
+      .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n  metalnessFactor = mix(metalnessFactor, 0.22, bwWet);')
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        totalEmissiveRadiance *= mix(vec3(0.153, 0.196, 0.290), vec3(0.188, 0.220, 0.165),
+                                     smoothstep(0.25, 2.6, vH));`);
+  };
+  const ridge = new THREE.Mesh(g, ridgeMat);
   ridge.frustumCulled = false;
   lhGround.add(ridge);
 }
@@ -2091,65 +2266,106 @@ function pushOutOfRocks(feetY) {
 // Ground decals — footprints + dig holes (instanced pools)
 // ------------------------------------------------------------------
 function makeFootTexture() {
-  // A pressed barefoot print in soft sand: heel, a narrowed arch, the ball,
-  // and five toe pads — drawn as a shallow pit (dark, soft-edged) with a
-  // moon-lit lip of pushed-up sand along the lower-right and a shadow along
-  // the upper-left. The print points up the canvas; stampFoot() spins it to
-  // the heading and mirrors it left/right per step.
-  const S = 128;
+  /* A barefoot print pressed into wet sand, built the way the real thing is
+   * shaped rather than as one blob: a HEEL pit, a BALL pit, a narrow arch
+   * bridging them, and five toes as SEPARATE pits clear of the ball. The
+   * previous one filled a single bezier outline with flat dark and read as a
+   * smear.
+   *
+   * Three things carry it, in this order of importance:
+   *   - the RIM. Sand displaced by a foot piles up all round the print and
+   *     catches the light; that pale lip is what makes a photograph of a
+   *     footprint read as a footprint. It is drawn as its own ring, brighter
+   *     on the moon side, not as an outline stroke of the sole.
+   *   - the toes being SEPARATE. Joined to the ball they read as a paw.
+   *   - GRAIN inside. A smooth gradient reads as a painted shadow; sand
+   *     inside a print is coarser than the sand around it, because the
+   *     pressure brings the wet grit up.
+   * The print points up the canvas; stampFoot() spins it to the heading and
+   * mirrors it left/right per step. */
+  const S = 256;
   const c = document.createElement('canvas'); c.width = c.height = S;
   const g = c.getContext('2d');
+  const rnd = (n) => Math.random() * n;
 
-  const sole = new Path2D();
-  sole.moveTo(52, 110);
-  sole.bezierCurveTo(33, 106, 28, 86, 35, 70);
-  sole.bezierCurveTo(39, 57, 41, 45, 52, 34);
-  sole.bezierCurveTo(59, 26, 77, 26, 84, 37);
-  sole.bezierCurveTo(90, 48, 85, 61, 81, 74);
-  sole.bezierCurveTo(79, 88, 75, 105, 62, 110);
-  sole.closePath();
-
-  const pit = (px, py, r, a) => {
-    const rg = g.createRadialGradient(px, py, 0, px, py, r);
-    rg.addColorStop(0, `rgba(0,1,3,${a})`);
-    rg.addColorStop(0.65, `rgba(3,5,10,${a * 0.5})`);
-    rg.addColorStop(1, 'rgba(3,5,10,0)');
-    g.fillStyle = rg; g.beginPath(); g.arc(px, py, r, 0, 7); g.fill();
+  // the parts, in canvas space: [cx, cy, rx, ry, rot, depth]
+  const HEEL = [124, 196, 30, 34, 0, 1.0];
+  const BALL = [130, 92, 37, 27, -0.06, 0.92];
+  const ARCH = [131, 146, 20, 34, 0.03, 0.34];
+  const TOES = [                                   // big toe to little
+    [104, 46, 13.5, 11.5, -0.30, 0.86],
+    [130, 38, 10.0, 8.6, -0.10, 0.80],
+    [151, 41, 8.6, 7.4, 0.10, 0.74],
+    [168, 49, 7.4, 6.4, 0.28, 0.68],
+    [182, 60, 6.2, 5.6, 0.46, 0.60],
+  ];
+  const PARTS = [HEEL, BALL, ARCH, ...TOES];
+  const ell = (p, grow = 0) => {
+    g.beginPath();
+    g.ellipse(p[0], p[1], p[2] + grow, p[3] + grow, p[4], 0, Math.PI * 2);
   };
 
+  /* 1. the rim, and it has to be a RING. A radial gradient whose inner stop
+   * sits inside the part fills the part pale, and since a night beach is
+   * nearly black the pale wins and the whole print reads as a white ghost —
+   * which is exactly what the first build did. Strokes, offset toward the
+   * moon and stacked wide-then-narrow for softness, leave the middle alone. */
+  const rim = (dx, dy, passes) => {
+    g.save(); g.translate(dx, dy); g.lineJoin = 'round';
+    for (const [w, col] of passes) {
+      g.lineWidth = w; g.strokeStyle = col;
+      for (const p of PARTS) { ell(p, 2.5); g.stroke(); }
+    }
+    g.restore();
+  };
+  rim(2.6, 3.2, [[7, 'rgba(196,210,236,0.15)'], [4, 'rgba(214,226,246,0.24)'], [2, 'rgba(226,236,252,0.32)']]);
+  rim(-2.2, -2.8, [[6, 'rgba(0,1,4,0.20)'], [3, 'rgba(0,1,4,0.26)']]);
+
+  // 2. the pits themselves — deepest at the middle of each part
+  g.globalCompositeOperation = 'source-over';
+  for (const p of PARTS) {
+    const d = p[5];
+    const rg = g.createRadialGradient(p[0], p[1] + 2, 0, p[0], p[1], p[2] + 3);
+    rg.addColorStop(0, `rgba(1,2,6,${0.90 * d})`);
+    rg.addColorStop(0.62, `rgba(3,6,12,${0.66 * d})`);
+    rg.addColorStop(0.92, `rgba(6,9,16,${0.16 * d})`);
+    rg.addColorStop(1, 'rgba(6,9,16,0)');
+    g.fillStyle = rg; ell(p, 3); g.fill();
+  }
+
+  /* 3. grain. Clipped to the print so it only roughens the inside: dark
+   * grit and a few wet-bright grains, plus a scatter of coarser flecks the
+   * pressure has brought up. */
   g.save();
-  g.clip(sole);
-  g.fillStyle = 'rgba(2,4,9,0.5)'; g.fillRect(0, 0, S, S);
-  pit(57, 92, 27, 0.92);          // heel, deepest
-  pit(64, 44, 25, 0.82);          // ball
-  pit(50, 66, 14, 0.4);           // shallow arch
+  g.beginPath();
+  for (const p of PARTS) { g.ellipse(p[0], p[1], p[2], p[3], p[4], 0, Math.PI * 2); }
+  g.clip();
+  for (let k = 0; k < 2600; k++) {
+    const x = rnd(S), y = rnd(S);
+    const bright = Math.random() < 0.3;
+    g.fillStyle = bright
+      ? `rgba(${150 + rnd(70) | 0},${162 + rnd(70) | 0},${184 + rnd(60) | 0},${0.10 + rnd(0.22)})`
+      : `rgba(0,1,5,${0.10 + rnd(0.3)})`;
+    const r = bright ? 1 + rnd(1.6) : 1 + rnd(2.2);
+    g.fillRect(x, y, r, r);
+  }
   g.restore();
 
-  // pushed-up sunlit lip, offset down-right toward the moon
-  g.save(); g.translate(2.6, 3.2);
-  g.strokeStyle = 'rgba(208,220,240,0.4)'; g.lineWidth = 3.4;
-  g.lineJoin = 'round'; g.stroke(sole);
-  g.restore();
-  // the shaded far rim
-  g.save(); g.translate(-1.6, -2.2);
-  g.strokeStyle = 'rgba(0,1,4,0.4)'; g.lineWidth = 2.4;
-  g.lineJoin = 'round'; g.stroke(sole);
-  g.restore();
-
-  // toes: big to little, arcing off the ball
-  const toes = [[60, 17, 6.6], [72, 18, 5.3], [81, 22, 4.5], [88, 28, 3.7], [93, 35, 3.0]];
-  for (const [tx, ty, tr] of toes) {
-    pit(tx, ty, tr + 2.5, 0.85);
-    g.beginPath(); g.arc(tx, ty, tr, 0, 7);
-    g.fillStyle = 'rgba(2,3,8,0.55)'; g.fill();
-    g.save(); g.translate(1.4, 2);
-    g.strokeStyle = 'rgba(202,214,234,0.28)'; g.lineWidth = 1.5;
-    g.beginPath(); g.arc(tx, ty, tr, 0, 7); g.stroke();
+  // 4. the wall of each pit on the light side: a thin bright crescent just
+  // inside the rim, which is what gives the print depth at a glance
+  for (const p of PARTS) {
+    g.save();
+    g.beginPath(); g.ellipse(p[0], p[1], p[2], p[3], p[4], 0, Math.PI * 2); g.clip();
+    g.translate(-2.2, -2.6);
+    g.strokeStyle = `rgba(196,210,236,${0.22 * p[5]})`;
+    g.lineWidth = 3.2;
+    g.beginPath(); g.ellipse(p[0], p[1], p[2], p[3], p[4], 0, Math.PI * 2); g.stroke();
     g.restore();
   }
 
   const t = new THREE.CanvasTexture(c);
   t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.anisotropy = 4;
   return t;
 }
 function makeCraterTexture() {

@@ -314,6 +314,46 @@ appears once, and she is lifted off her own map like everything else on the
 beach. If a wreck detail looks flat, check the geometry has `uv` before
 touching the material.
 
+**The lantern is built to a photograph of a real one.** A drum lens on a
+steel column — a glass cylinder banded with the horizontal prism rings that
+bend the light into a sheet, panel astragals, a brass crown — not a glowing
+sphere inside three hoops, which read as a light bulb in a greenhouse. Round
+it: a rusted sill ring where the glazing beds into the deck (the only warm
+colour up there), twelve heavy astragals with foot castings rather than
+sixteen thin ones, a cornice, and a black roof with its ribs showing, a
+ventilator cowl, a finial and a ball. `lampCore` is still the small burner
+inside the drum, because `updateTower()` flashes it.
+
+**Ground surfaces have to match in FOUR things, not one.** The headland ridge
+read as a pale oval sitting on the beach, and matching its base colour to
+`sandMat`'s fixed almost none of it. What the beach actually does near the
+water is: darken (`wetMask` tint), *and* drop `roughnessFactor` to 0.30, *and*
+raise `metalnessFactor` to 0.22 — smooth and slightly metallic under one
+directional light at night is most of why wet sand reads dark at all. The
+ridge now runs the same four steps, weighted by `(1 - grass)` so the dry crown
+is untouched. Its uv is baked in WORLD space at the beach's own density —
+`(wx + 800) / SAND_TILE` — because the sand plane recentres by whole multiples
+of `SAND_TILE`, so the phase is preserved and the grain lines up across the
+join. The cliff toe gets the same treatment through `aU` (0 at the toe, 1 at
+the top).
+
+**Sink a rim, don't dither it.** The ridge's edge was first dissolved against
+a hash keyed to height. The ridge climbs slowly, so even a 0.4 m band of
+height is metres of ground, and seen along the slope half the headland turned
+to speckle. Dropping the last third of a metre BELOW y = 0 lets the beach
+plane — opaque and right there — cover the join, which also ends the
+z-fighting the two had while coplanar at the toe.
+
+**A footprint's rim has to be a RING.** `makeFootTexture()` draws heel, ball,
+arch and five separate toe pits, and the thing that makes it read as a print
+is the pale lip of displaced sand round it. Drawn as radial gradients whose
+inner stop sits inside the part, that lip FILLS each part pale — and since a
+night beach is nearly black the pale wins and the whole print is a white
+ghost, which is exactly what the first build did. It is strokes now, offset
+toward the moon and stacked wide-then-narrow for softness, leaving the middle
+to the dark pits. Toes must also stay clear of the ball; joined to it they
+read as a paw.
+
 **The lighthouse openings are cut on vertex lines.** `buildShaft()` samples
 the shaft as a grid whose angle list includes every opening's edge angles on
 that surface (as `ringYs` includes its top and bottom), so quads inside an
