@@ -59,7 +59,9 @@ const LH_STAIR_R = 1.42;           // radius of the tread centres
 const LH_PER_TURN = 20;            // treads per full turn
 const LH_STEP = LH_RISE / LH_PER_TURN;   // one riser, 0.22 m
 const LH_TREAD_T = 0.13;           // tread thickness
-const LH_WELL_R = 0.95;            // the open well down the middle of the stair
+const LH_POLE_R = 0.075;           // the steel newel pole the treads wrap round
+const LH_TREAD_R = 1.42;           // how far out from the pole a tread reaches
+const LH_RAIL_R = 1.50;            // the outer handrail
 // Where the stair meets the gallery, in the game's angle convention. The
 // treads are laid out so height and angle are locked together, so this is
 // derived rather than eyeballed — the hatch in the deck has to be here, and
@@ -892,91 +894,100 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   lighthouse.add(floor);
 
   // ---- the helical stair ------------------------------------------
-  /* Built to the photographs: red cast-iron treads springing from the BRICK,
-   * an open well down the middle, and one continuous red handrail spiralling
-   * up the inner edge on red balusters. The previous stair cantilevered box
-   * treads off a stone newel — the well is the whole character of the thing.
-   * Look down through it from the top and you see every tread you climbed.
+  /* Built to the photograph: a slim red cast-iron stair wound round a
+   * central STEEL POLE, standing free of the brick with a gap of open air to
+   * the wall, the handrail on the OUTSIDE edge on slender balusters, thin
+   * open treads you can see between. The wall-to-well version before this
+   * was a spiral of red paddles the width of the room — the reference stair
+   * is small, light, and the brick shows all round it.
    *
-   * Each tread is a wedge from the bore wall to LH_WELL_R, so it gets
-   * narrower as the shaft tapers, exactly as a real one does; and it is a
-   * real extruded solid so the undersides read from below. The collision in
-   * updateTower() is the wall on one side and the well on the other. */
+   * The pole is what makes it read: one dark vertical line the whole height
+   * of the shaft that every tread is pinned to. Collision in updateTower():
+   * the pole on the inside, the rail on the outside. */
   const treadTex = makeTreadTexture();
   const treadMat = new THREE.MeshStandardMaterial({
-    map: treadTex, color: 0xa8342c, roughness: 0.62, metalness: 0.35,
-    emissive: 0x3a0d0a, emissiveMap: treadTex, flatShading: true });
+    map: treadTex, color: 0xc4392f, roughness: 0.58, metalness: 0.3,
+    emissive: 0x4a100c, emissiveMap: treadTex, flatShading: true });
   const redIron = new THREE.MeshStandardMaterial({
-    color: 0xa8342c, roughness: 0.5, metalness: 0.45, emissive: 0x3a0d0a, flatShading: true });
+    color: 0xc4392f, roughness: 0.48, metalness: 0.4, emissive: 0x4a100c, flatShading: true });
+  const steel = new THREE.MeshStandardMaterial({
+    color: 0x5a6069, roughness: 0.4, metalness: 0.75, emissive: 0x14161a, flatShading: true });
   const stairs = new THREE.Group();
   {
+    // the pole, with a collar where each turn's treads pin to it
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(LH_POLE_R, LH_POLE_R, LH_TOP + 0.4, 12), steel);
+    pole.position.y = LH_TOP / 2;
+    stairs.add(pole);
+    for (let y = LH_RISE; y < LH_TOP; y += LH_RISE) {
+      const collar = new THREE.Mesh(new THREE.CylinderGeometry(LH_POLE_R + 0.03, LH_POLE_R + 0.03, 0.12, 12), steel);
+      collar.position.y = y;
+      stairs.add(collar);
+    }
     const nSteps = Math.round(LH_TOP / LH_STEP);
-    const half = (Math.PI * 2 / LH_PER_TURN) * 0.54;          // a hair of overlap, no gaps
+    const half = (Math.PI * 2 / LH_PER_TURN) * 0.5;
+    const rIn = LH_POLE_R + 0.02, rOut = LH_TREAD_R;
+    // one wedge geometry, shared: the stair does not taper with the shaft
+    const sh = new THREE.Shape();
+    const N = 4;
+    for (let k = 0; k <= N; k++) {
+      const t = -half + (2 * half) * (k / N);
+      const px = Math.cos(t) * rOut, pz = Math.sin(t) * rOut;
+      if (k === 0) sh.moveTo(px, -pz); else sh.lineTo(px, -pz);
+    }
+    for (let k = N; k >= 0; k--) {
+      const t = -half + (2 * half) * (k / N);
+      sh.lineTo(Math.cos(t) * rIn, -Math.sin(t) * rIn);
+    }
+    sh.closePath();
+    const TREAD_PLATE = 0.035;                                    // a plate, not a slab
+    const wedge = new THREE.ExtrudeGeometry(sh, { depth: TREAD_PLATE, bevelEnabled: false });
+    wedge.rotateX(Math.PI / 2);                                   // extrusion -> down, shape.y -> +z
+    const noseGeo = new THREE.BoxGeometry(rOut - rIn, 0.07, 0.035);
+    const balGeo = new THREE.CylinderGeometry(0.013, 0.013, 0.9, 5);
     for (let i = 1; i <= nSteps; i++) {
       const y = i * LH_STEP;
       const a = stairAngleAt(y);
-      const rOut = lhBoreAt(y) + 0.06;                          // let into the brick
-      // the wedge, drawn in (x, -z) so the extrusion can be turned to lie flat
-      const sh = new THREE.Shape();
-      const N = 5;
-      for (let k = 0; k <= N; k++) {
-        const t = a - half + (2 * half) * (k / N);
-        const px = Math.cos(t) * rOut, pz = Math.sin(t) * rOut;
-        if (k === 0) sh.moveTo(px, -pz); else sh.lineTo(px, -pz);
-      }
-      for (let k = N; k >= 0; k--) {
-        const t = a - half + (2 * half) * (k / N);
-        sh.lineTo(Math.cos(t) * LH_WELL_R, -Math.sin(t) * LH_WELL_R);
-      }
-      sh.closePath();
-      const g = new THREE.ExtrudeGeometry(sh, { depth: LH_TREAD_T, bevelEnabled: false });
-      g.rotateX(Math.PI / 2);                                    // extrusion -> down, shape.y -> +z
-      const st = new THREE.Mesh(g, treadMat);
-      st.position.y = y + LH_TREAD_T / 2;                        // top face at the stepped height
+      const st = new THREE.Mesh(wedge, treadMat);
+      st.rotation.y = -a;                                         // wedge was drawn at angle 0
+      st.position.y = y + LH_TREAD_T / 2;                         // top face at the stepped height
       stairs.add(st);
-      // the nose: a red lip along the leading edge, which is what the eye
-      // follows up a spiral
-      const nose = new THREE.Mesh(new THREE.BoxGeometry(rOut - LH_WELL_R, 0.026, 0.03), redIron);
-      const an = a + half;
-      const rm = (rOut + LH_WELL_R) / 2;
-      nose.position.set(Math.cos(an) * rm, y + LH_TREAD_T / 2 - 0.01, Math.sin(an) * rm);
+      // the nose: a deeper red lip under the leading edge — the line the eye
+      // follows up a spiral, and what stops a thin plate reading as paper
+      const an = a + half, rm = (rOut + rIn) / 2;
+      const nose = new THREE.Mesh(noseGeo, redIron);
+      nose.position.set(Math.cos(an) * rm, y + LH_TREAD_T / 2 - 0.045, Math.sin(an) * rm);
       nose.rotation.y = -an;
       stairs.add(nose);
-      // a baluster every second tread, up to the rail
-      if (i % 2 === 0) {
-        const bal = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.92, 5), redIron);
-        bal.position.set(Math.cos(a) * (LH_WELL_R + 0.05), y + LH_TREAD_T / 2 + 0.46, Math.sin(a) * (LH_WELL_R + 0.05));
-        stairs.add(bal);
-      }
+      // a baluster on every tread, out at the rail
+      const bal = new THREE.Mesh(balGeo, redIron);
+      bal.position.set(Math.cos(a) * (LH_RAIL_R - 0.02), y + LH_TREAD_T / 2 + 0.45, Math.sin(a) * (LH_RAIL_R - 0.02));
+      stairs.add(bal);
     }
-    // the handrail: one unbroken red tube, the helix the treads follow
+    // the handrail: one unbroken red tube on the outside of the spiral
     {
       const pts = [];
       for (let y = LH_STEP * 0.5; y <= LH_TOP + 0.01; y += 0.22) {
         const a = stairAngleAt(y);
-        const R = LH_WELL_R + 0.05;
-        pts.push(new THREE.Vector3(Math.cos(a) * R, y + LH_TREAD_T / 2 + 0.92, Math.sin(a) * R));
+        pts.push(new THREE.Vector3(Math.cos(a) * LH_RAIL_R, y + LH_TREAD_T / 2 + 0.9, Math.sin(a) * LH_RAIL_R));
       }
-      const curve = new THREE.CatmullRomCurve3(pts);
-      const rail = new THREE.Mesh(new THREE.TubeGeometry(curve, pts.length * 2, 0.028, 7, false), redIron);
+      const rail = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), pts.length * 2, 0.026, 7, false), redIron);
       stairs.add(rail);
     }
-    /* Light. This is a brick tube with no windows on most of its height and
-     * the old one was black inside. Oil lamps on the wall every half turn,
-     * warmer and further-reaching than before, and a cold wash down from the
-     * lantern — the moon through the glass — so the top of the well is a
-     * pale disc you climb toward. */
+    /* Light. A brick tube is black without it. Lamps on the wall every half
+     * turn, near-white so the brick stays brick; moonlight standing in every
+     * window; and a cold wash down the shaft from the lantern, so the top is
+     * a pale disc you climb toward. */
     for (let y = 2.0; y < LH_TOP - 1.5; y += LH_RISE * 0.5) {
-      const a = stairAngleAt(y) + Math.PI;            // on the wall opposite the treads
+      const a = stairAngleAt(y) + Math.PI;
       const lr = lhBoreAt(y) - 0.35;
       const px = Math.cos(a) * lr, pz = Math.sin(a) * lr;
       const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.085, 8, 6),
-        new THREE.MeshBasicMaterial({ color: 0xffcf94, fog: false }));
+        new THREE.MeshBasicMaterial({ color: 0xffe2bd, fog: false }));
       bulb.position.set(px, y + 1.4, pz);
       const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.28), iron);
       bracket.position.set(px * 1.07, y + 1.4, pz * 1.07);
       bracket.lookAt(0, y + 1.4, 0);
-      const lamp = new THREE.PointLight(0xffd8b0, 9.5, 9.5, 1.5);
+      const lamp = new THREE.PointLight(0xffe0bc, 13, 11, 1.4);
       lamp.position.set(px * 0.84, y + 1.4, pz * 0.84);
       const halo = new THREE.Sprite(new THREE.SpriteMaterial({
         map: glowTex, color: 0xffd39a, transparent: true, opacity: 0.32,
@@ -986,7 +997,12 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
       halo.scale.setScalar(1.4);
       stairs.add(bulb, bracket, lamp, halo);
     }
-    const moonWash = new THREE.PointLight(0x8aa2cc, 5.5, 34, 1.2);
+    for (const w of lhWindows) {
+      const ml = new THREE.PointLight(0x9db4dc, 5, 7, 1.3);
+      ml.position.set(Math.cos(w.ang) * (lhBoreAt(w.y) - 0.3), w.y, Math.sin(w.ang) * (lhBoreAt(w.y) - 0.3));
+      stairs.add(ml);
+    }
+    const moonWash = new THREE.PointLight(0x8aa2cc, 6, 36, 1.2);
     moonWash.position.set(0, LH_TOP + 0.6, 0);
     stairs.add(moonWash);
   }
@@ -2784,23 +2800,15 @@ S_MUSIC.addEventListener('input', () => { settings.musicVolume = +S_MUSIC.value;
 S_SPEED.addEventListener('input', () => { settings.walkSpeed = +S_SPEED.value; applySettings(); saveSettings(); });
 S_INVERT.addEventListener('change', () => { settings.invertY = S_INVERT.checked; saveSettings(); });
 document.getElementById('m-resume').addEventListener('click', closeMenu);
-/* Restart. Puts you back where the intro leaves you — standing at the top of
- * the beach, facing down it, whole — and does it in place, this frame. Not a
- * reload: that lands on the title card and needs a click to get the pointer
- * lock back. Your pack comes with you; the world stays as you left it. */
+/* Restart: a new game. Everything the walk changed — the crab, the crate,
+ * the bottle, the pack, the rings, where you are — goes back to how it was,
+ * and the only honest way to do that in a file this size is to load it
+ * again. The opening card is skipped, the way it is after a death; the title
+ * click stays, because the pointer lock needs a gesture and nothing can give
+ * it one for you. */
 function respawn() {
-  if (dying || ended) return;
-  if (peeking) { peeking = false; peekLeaving = false; crosshair.style.display = ''; stopPeekAudio(); }
-  if (inspecting) closeInspect();
-  if (held) dropHeld();
-  camera.position.set(8, EYE_HEIGHT, 0);
-  camera.lookAt(8, EYE_HEIGHT - 0.05, -10);
-  camBaseY = EYE_HEIGHT; vy = 0; onGround = true;
-  velocity.set(0, 0, 0); knockback.set(0, 0, 0); _shakePrev.set(0, 0, 0);
-  trauma = 0; hitstop = 0;
-  hp = MAX_HP; hurtFlash = 0;
-  winding = false; windT = 0; digT = 0;
-  closeMenu();
+  try { sessionStorage.setItem('beachwalk.skipIntro', '1'); } catch (e) {}
+  location.reload();
 }
 document.getElementById('m-restart').addEventListener('click', respawn);
 applySettings();
@@ -6568,7 +6576,7 @@ const DN = drainTunnel.userData.nav;
  * and `_shakePrev` is cleared each frame so the trauma shake can't leave a
  * stale offset behind when you come back out.
  */
-const PEEK_FOV = 24;
+const PEEK_FOV = 15;
 const PEEK_IN = 0.9, PEEK_OUT = 0.45;      // seconds to lean in / back out
 let peeking = false, peekLeaving = false, peekT = 0, peekHeld = 0;
 let peekReturnLock = false, gateEyes = null;
@@ -6598,13 +6606,13 @@ const _pk = new THREE.Vector3(), _pk2 = new THREE.Vector3();
  * they are gone. Not fade out: gone, between one frame and the next, and they
  * do not come back on this peek. The silence after is doing more work than
  * anything before it. */
-const EYE_DIAM = 0.024, EYE_GAP = 0.064;
+const EYE_DIAM = 0.030, EYE_GAP = 0.070;   // a quarter over life size: legible at 2 m
 let gateEyesModel = null;                 // the loaded glb, kept for reuse
 function makeGateEyes(F) {
   const G = new THREE.Group();
-  // 4.6 m down an eight-metre pipe: far enough to be small, near enough that
-  // the ribs still give the eye something to measure it against
-  G.position.set(0, -0.02, -4.6);
+  // 2.3 m down the pipe to start with. At 4.6 they were two pale pixels and
+  // the model — the whole point of using it — was invisible.
+  G.position.set(0, -0.02, -2.3);
   G.userData = { eyes: [], mats: [], blink: 0, blinkIn: 2.2, baseY: -0.02,
                  ready: false, gone: false, stay: 0, stayFor: 8 };
   new GLTFLoader().load('assets/eyes.glb', (gltf) => {
@@ -6648,7 +6656,7 @@ function makeGateEyes(F) {
         if ('transmission' in mat) { mat.transmission = 0; mat.thickness = 0; }
         mat.transparent = true; mat.opacity = 0; mat.depthWrite = true;
         mat.roughness = m === iris ? 0.5 : 0.18; mat.metalness = 0;
-        mat.emissive.setHex(m === iris ? 0x0c0f14 : 0x232833);
+        mat.emissive.setHex(m === iris ? 0x1a1e26 : 0x3a4152);
         mat.emissiveMap = mat.map;
         mat.fog = false;
         G.userData.mats.push(mat);
@@ -6666,6 +6674,11 @@ function makeGateEyes(F) {
   head.scale.set(1.1, 1.3, 0.8);
   head.position.z = -0.075;
   G.add(head);
+  // a little cold light just in front of the face, so the corneas glint —
+  // wet is what makes an eye an eye, and wet needs a highlight
+  const glint = new THREE.PointLight(0xc6d4ee, 0.9, 0.9, 1.6);
+  glint.position.set(0.05, 0.08, 0.28);
+  G.add(glint);
   G.visible = false;
   F.add(G);
   return G;
@@ -6749,7 +6762,7 @@ function startPeek() {
   for (const m of gateEyes.userData.mats) m.opacity = 0;
   const u = gateEyes.userData;
   u.gone = false; u.stay = 0; u.stayFor = 6 + Math.random() * 4;   // how long they stay
-  gateEyes.position.z = -4.6;
+  gateEyes.position.z = -2.3;
   gateEyes.userData.blink = 0;
   gateEyes.userData.blinkIn = 2.2;
   _peekHome.copy(camera.position); _peekHomeQ.copy(camera.quaternion);
@@ -6835,7 +6848,7 @@ function updateGateEyes(dt) {
   G.position.y = u.baseY + Math.sin(t * 0.29 + 2.2) * 0.008;
   G.rotation.z = THREE.MathUtils.clamp((t - 7) / 6, 0, 1) * 0.30;
   // and over the time he is there, he comes a metre up the pipe toward you
-  G.position.z = -4.6 + 0.95 * THREE.MathUtils.clamp(u.stay / u.stayFor, 0, 1);
+  G.position.z = -2.3 + 0.8 * THREE.MathUtils.clamp(u.stay / u.stayFor, 0, 1);
 }
 
 if (drainTunnel.userData.outlet) {
@@ -7507,17 +7520,20 @@ function updateTower(dt) {
     // Once you're on the stair the treads, not the wall, are what you can
     // stand on — they reach r2.07, while the bore down low is r2.55, so the
     // wall alone would let you walk off the outer edge into thin air.
-    // The treads reach the brick now, so the bore itself is the outer limit
-    // the whole way up. The well is the other limit — see below.
+    // On the stair the RAIL is the outer limit, not the brick — the stair
+    // stands free of the wall with air between. Your centre may go a little
+    // past the rail line; the body overlaps it and that reads as leaning on it.
     const onStair = climb > 0.6;
-    const inner = (atLanternTop ? 3.15 : lhBoreAt(climb)) - PLAYER_R;
+    const inner = (atLanternTop ? 3.15
+                 : onStair ? Math.min(lhBoreAt(climb), LH_RAIL_R + 0.25)
+                 : lhBoreAt(climb)) - PLAYER_R;
     const outer = LH_OUTER + PLAYER_R;
     let clamped = null;
     if (insideTower && d > inner) clamped = inner;
     else if (!insideTower && d < outer) clamped = outer;
-    // the open well: on the stair you keep a hand's width off the rail
-    if (clamped === null && insideTower && onStair && !atLanternTop && d < LH_WELL_R + PLAYER_R * 0.7) {
-      clamped = LH_WELL_R + PLAYER_R * 0.7;
+    // and the pole in the middle
+    if (clamped === null && insideTower && !atLanternTop && d < LH_POLE_R + PLAYER_R * 0.7) {
+      clamped = LH_POLE_R + PLAYER_R * 0.7;
     }
     if (clamped !== null) {
       camera.position.x = LH_X + (dx / d) * clamped;
@@ -7531,7 +7547,7 @@ function updateTower(dt) {
 
   // climbing: the stair gains LH_RISE for every full turn you walk round it
   if (insideTower) {
-    if (d > 0.9) {
+    if (d > 0.3) {
       let da = lastStairA - ang;                  // winding this way is "up"
       if (da > Math.PI) da -= Math.PI * 2;
       if (da < -Math.PI) da += Math.PI * 2;

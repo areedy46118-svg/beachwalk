@@ -134,12 +134,12 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   out rooflines and a scattering of lit windows, under a faint sodium
   light-pollution wash that lifts over the cliff ridge.
 - **The lighthouse** — a whitewashed conical tower with a black lantern, the
-  brightest thing on the headland. Inside, a round brick shaft with a red
-  cast-iron spiral stair wound up it: diamond-plate wedge treads springing from
-  the wall, an open well down the middle you can look all the way down, one
-  continuous red handrail on red balusters, oil lamps on the brick every half
-  turn and the moon washing down from the lantern glass. Climb it to the
-  gallery to end the walk.
+  brightest thing on the headland. Inside, a round brick shaft with a slim
+  red cast-iron spiral stair wound round a central steel pole, standing free
+  of the wall: thin diamond-plate treads, one continuous red handrail on the
+  outside, oil lamps on the brick every half turn, moonlight standing in the
+  windows and washing down from the lantern glass. Climb it to the gallery
+  to end the walk.
 - **Detailed low-poly ground** — procedural sand (mottling, ripples, grit,
   pebbles, shell flecks) with a self-illuminating emissive map.
 - **Livelier ocean** — layered swell/chop/ripples, animated micro-normals,

@@ -348,22 +348,31 @@ is two `LatheGeometry` revolutions of those profiles; the gallery, lantern
 room and roof sit on top of them. If you move a wall, move the profile — do
 not hand-place a radius, or the deck and the stair will drift off it again.
 
-**Inside it is built to two photographs, not to a scan.** The interior is a
+**Inside it is built to a photograph, not to a scan.** The interior is a
 BRICK shaft (`makeBrickTexture()`, on the bore lathe via `texture.repeat` —
-LatheGeometry hands out u round and v up) with a red cast-iron stair wound
-round it: wedge treads (`ExtrudeGeometry` of a sector, top at the stepped
-height) springing from the wall in to `LH_WELL_R`, an **open well** down the
-middle, one continuous red `TubeGeometry` handrail on the inner edge, and the
-diamond-plate `makeTreadTexture()` on the treads. There is no newel any more.
-`updateTower()` therefore clamps on BOTH sides while you are on the stair: the
-bore outward, `LH_WELL_R + PLAYER_R * 0.7` inward. Outside it is whitewashed
-render (`shaftOutMat`) with a black lantern — the brightest thing on the
-headland, which is what a lighthouse is for.
+LatheGeometry hands out u round and v up) with a slim red cast-iron stair
+wound round a central STEEL POLE (`LH_POLE_R`), standing free of the wall
+with air between: thin wedge treads (`ExtrudeGeometry` of a sector, one
+shared geometry, rotated per tread, top at the stepped height) from the pole
+out to `LH_TREAD_R`, a deeper red nose under each leading edge, a baluster on
+every tread, and one continuous red `TubeGeometry` handrail on the OUTSIDE at
+`LH_RAIL_R`. `updateTower()` clamps on both sides while you are on the stair:
+the pole inward (`LH_POLE_R + PLAYER_R * 0.7`), and outward the smaller of
+the bore and `LH_RAIL_R + 0.25` — your centre may pass the rail line a
+little, which reads as leaning on it. Outside it is whitewashed render
+(`shaftOutMat`) with a black lantern — the brightest thing on the headland.
+
+**Walk it after touching any of this.** The test that matters is the one in
+the preview harness: open the door, enter, spiral the camera at r ≈ 1.05 for
+seven turns, and check `groundY` reaches `HL_CREST + LH_TOP`. A wall-to-well
+version with an inner "well" clamp shipped for an hour and could not be
+climbed — the walkable band at the top was 27 cm wide.
 
 Two things learned building it: warm lamps on red iron in a brick tube go
 monochrome red, so the brick's tint is COOL (`0x8892a4`) and the lamps are
-nearer white than amber; and tread nosings deeper than ~3 cm read as spokes
-when you look up the well.
+nearer white than amber; and treads that reach the wall read as a spiral of
+red paddles the width of the room — the reference stair is small and the
+brick shows all round it.
 
 A Hirtshals interior scan (Daniel Olaizola's, CC-BY-SA) was tried in Sep 2026
 and dropped: it is an inside-out photogrammetry shell — whitewash, gaps where
