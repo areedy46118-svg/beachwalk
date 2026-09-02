@@ -454,11 +454,18 @@ function makeCliff() {
     pos.setXYZ(i, cx, cy, zAlong);
   }
   g.computeVertexNormals();
-  const tex = sandTex.clone(); tex.needsUpdate = true; tex.repeat.set(CLIFF_LEN / 7, 4);
+  // The face is a real eroded sand edge now, cropped out of a scan's atlas and
+  // mirrored into a tile so the seams match (tools note in the README). The
+  // procedural bump map stays: it carries the runnels, which the flat crop
+  // can't. The cool tint pulls the scan's warm beige back to the night palette.
+  // texLoader isn't declared until much further down, hence the local one.
+  const tex = retroTex(new THREE.TextureLoader().load('assets/tex/sandcliff.jpg'));
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.repeat.set(CLIFF_LEN / 11, 2.5);
   const bmp = sandBump.clone(); bmp.needsUpdate = true; bmp.repeat.set(CLIFF_LEN / 7, 4);
   const mat = new THREE.MeshStandardMaterial({
     map: tex, bumpMap: bmp, bumpScale: 2.2,
-    color: 0x64697c, roughness: 1, metalness: 0, emissive: 0x2f3648, emissiveMap: tex, side: THREE.DoubleSide,
+    color: 0x51576a, roughness: 1, metalness: 0, emissive: 0x272d3d, emissiveMap: tex, side: THREE.DoubleSide,
   });
   const mesh = new THREE.Mesh(g, mat);
   mesh.frustumCulled = false;
@@ -1403,11 +1410,11 @@ function scatter(geo, mat, perTile, place) {
 const zSpan = () => Math.random() * DEBRIS_TILE - DEBRIS_TILE / 2;
 const wrackX = () => 1.4 + Math.random() * 3.4;      // the high-tide band
 
-// clumped bladder-wrack — the bulk of the line
+// clumped bladder-wrack — small stuff filling in between the scanned weed
 scatter(
   new THREE.IcosahedronGeometry(0.5, 0),
   new THREE.MeshStandardMaterial({ color: 0x2b3226, roughness: 1, flatShading: true, emissive: 0x0a0d08 }),
-  3,
+  1,
   () => { const s = 0.35 + Math.random() * 0.75; return {
     x: wrackX(), z: zSpan(), y: 0.03,
     rot: new THREE.Euler(0, Math.random() * Math.PI * 2, 0),
@@ -1733,6 +1740,33 @@ for (const sp of scannedProps) {
     }
   }).catch(() => {});
 }
+
+// Wrack along the tideline, scanned. Two of the three parts come out as flat
+// mats and the third as a heaped clump — and a flat mat is exactly what weed
+// lying on a beach looks like, so both are kept and only the bedding differs.
+loadGeoPack('assets/seaweed.json').then((geos) => {
+  const map = retroTex(texLoader.load('assets/tex/seaweed.jpg'), { repeatWrap: false });
+  map.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.MeshStandardMaterial({
+    map, color: 0xa3ab92, roughness: 1, metalness: 0,
+    emissive: 0x1a201a, emissiveMap: map, flatShading: true,
+  });
+  for (const geo of Object.values(geos)) {
+    geo.computeBoundingBox();
+    const geoH = Math.max(0.02, geo.boundingBox.max.y);
+    scatter(geo, mat, 2, () => {
+      const sc = 0.8 + Math.random() * 1.0;
+      const sy = sc * (0.7 + Math.random() * 0.4);
+      const x = wrackX() + (Math.random() - 0.5) * 1.8;
+      return {
+        x, z: zSpan(), y: -geoH * sy * 0.34,
+        color: wetTint(x).multiplyScalar(0.85 + Math.random() * 0.3),
+        rot: new THREE.Euler(0, Math.random() * Math.PI * 2, 0),
+        scale: new THREE.Vector3(sc, sy, sc),
+      };
+    });
+  }
+}).catch(() => {});
 
 // ------------------------------------------------------------------
 // Ground decals — footprints + dig holes (instanced pools)

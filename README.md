@@ -221,3 +221,26 @@ pulls the individual rocks out as raised features and drops the sand they were
 sitting in. The baked albedo is kept and downscaled to 256px; the UVs are the
 reason these keep theirs where the older packs don't.
 
+
+**Seaweed Patch** — the wrack along the tideline.
+
+This work is based on
+["Seaweed Patch"](https://sketchfab.com/3d-models/seaweed-patch-ed57fa7a769f439ba0ac90e400b2e5af)
+by [emcderm](https://sketchfab.com/emcderm)
+licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+Commercial use is allowed; the credit has to stay.
+
+
+**Eroded sand edge on Rügen beach / RealityScan** — the face of the sand cliff.
+
+This work is based on
+["Eroded sand edge on Rügen beach / RealityScan"](https://sketchfab.com/3d-models/eroded-sand-edge-on-rugen-beach-realityscan-f2653102a2bc440e925970c3d6b2ca83)
+by [hhdev](https://sketchfab.com/hhdev)
+licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+Commercial use is allowed; the credit has to stay.
+
+Only its albedo is used. A scan atlas doesn't tile, so the cliff takes the
+most even 1536px patch of it — picked by scoring crops for darkness and
+variance — mirrored into a 2x2 so the edges match, then reduced to 256px. The
+cliff's own bump map is kept on top, because a flat crop has no runnels.
+
