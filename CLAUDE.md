@@ -162,6 +162,31 @@ they cross over; get that backwards and the holes appear on the wrong side.
 hole needs a lined reveal (jambs, soffit, sill) or you see straight through
 the cut edge. The door additionally has a projecting stone surround outside.
 
+**Beach rocks are world objects, not debris.** `makeErodedRock()` builds them
+(lobes for the silhouette, hard-cut solution pits for the surface, a shear
+plane for the wave-cut face, flattened base) and they're placed as *formations*
+— 4-7 masses round a shared centre, 90-170 m apart. They deliberately sit
+outside the recentring `debris` tile and outside `clipAtShore()`: they're
+landmarks you can climb, and a real rock stays visible when the tide runs over
+it. `rockColliders[]` gives each mass a cylinder — `rockGroundAt()` to stand on
+it, `pushOutOfRocks()` to keep you out of it — applied in `update()` after
+`updateTower()`, so a rock beats the sand.
+
+**The tunnel is region-clamped, not collided.** The cliff is one mesh that
+snaps back onto the player every `CLIFF_PERIOD`, so a hole cut in it would
+repeat down the whole beach. Instead the bore stands proud of the dune toe at
+`TUN_BORE_X`, the cliff material discards fragments across the mouth in WORLD
+space (same trick as `clipAtShore`), and `updateTunnelBounds()` clamps you to a
+box for the corridor and a bigger box for the room. `inTunnelMouth()` is what
+lifts `CLIFF_BLOCK_X`, and only down low. The room at the end is a stand-in,
+not the reference model.
+
+**The shovel has two swings.** Left click is the plain dig; holding right winds
+up (`startWind`/`releaseWind`, `WIND_FULL`) and `digPower` 0-1 then scales the
+pose amplitude, the swing duration, the crab kill radius, the trauma, the sand
+thrown and the pitch of the impact sample. `winding` must be cleared on blur or
+the shovel stays over your head.
+
 **The headland scatter respects `onPath()`.** Rocks and grass re-roll their
 position until they're clear of the lane to the door; if you add more props
 out there, ask `onPath()` first or they'll grow through the path.
