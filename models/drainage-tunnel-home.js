@@ -271,7 +271,6 @@ export function makeDrainageTunnelHome(opts = {}) {
     // sheen — a near-black puddle just reads as a hole in the floor
     water:   new THREE.MeshStandardMaterial({ color: 0x39434a, roughness: 0.12, metalness: 0.45, emissive: 0x141b21 }),
     algae:   new THREE.MeshStandardMaterial({ color: 0x416624, roughness: 0.55, metalness: 0, emissive: 0x0e1f08 }),
-    lime:    new THREE.MeshStandardMaterial({ color: 0xb9b2a2, roughness: 1, metalness: 0, emissive: 0x24211c, flatShading: true }),
     slime:   new THREE.MeshStandardMaterial({ color: 0x2e4426, roughness: 0.75, metalness: 0, emissive: 0x0d1a0a }),
     rust:    new THREE.MeshStandardMaterial({ color: 0x6a4025, roughness: 0.85, metalness: 0.25, emissive: 0x140c06, flatShading: true }),
     web:     new THREE.MeshStandardMaterial({ color: 0x9aa0a8, transparent: true, opacity: 0.13, roughness: 1, depthWrite: false, side: THREE.DoubleSide }),
@@ -811,17 +810,10 @@ export function makeDrainageTunnelHome(opts = {}) {
         g2.position.set(-0.2 + rnd(i * 7.1) * 0.4, -0.22 - rnd(i * 2.2) * 0.05, -0.02);
         F.add(g2);
       }
-      // a trickle still coming through, and lime leaching round the lip
+      // a trickle still coming through
       const trickle = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.30, 0.012), M.water);
       trickle.position.set(0.03, -0.30, 0.02);
       F.add(trickle);
-      for (let i = 0; i < 6; i++) {
-        const lm = new THREE.Mesh(new THREE.IcosahedronGeometry(0.03 + rnd(i * 5.9) * 0.045, 0), M.lime);
-        const a = rnd(i * 8.2) * Math.PI * 2;
-        lm.position.set(Math.cos(a) * 0.33, Math.sin(a) * 0.33, 0.01);
-        lm.scale.set(1, 1, 0.4);
-        F.add(lm);
-      }
       // The crosshair threads straight between the bars and on down the open
       // bore, hitting nothing, so the grille needs an invisible face to catch
       // the raycast — same trick as the tiny props elsewhere in the game.
