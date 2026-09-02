@@ -209,6 +209,74 @@ function brickTex() {
 }
 
 // the ochre bleed that runs down a wall under a rusting outlet
+/* The throat's own surface. The gate is the one place in the game you stand
+ * still and STARE at a wall, and a flat dark cylinder gives the eye nothing
+ * to hold — so this is drawn to the photograph of a real storm drain: poured
+ * concrete going green-black with wet, the mineral bloom that creeps down
+ * from every construction joint, rust bleeding out of the reinforcement, and
+ * a darker band along the invert where the water runs. u wraps the pipe and
+ * v runs its length, so the joints come out as rings round the bore.
+ */
+function throatTex() {
+  const W = 256, H = 256;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const R = (n) => Math.random() * n;
+  g.fillStyle = '#3c3f3a'; g.fillRect(0, 0, W, H);                  // wet concrete
+  for (let i = 0; i < 140; i++) {                                   // broad blotching
+    const x = R(W), y = R(H), r = 10 + R(60);
+    const p = Math.random();
+    const col = p < 0.4 ? '22,26,22' : p < 0.72 ? '86,92,80' : '54,62,50';
+    const gr = g.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, `rgba(${col},${0.10 + R(0.28)})`);
+    gr.addColorStop(1, `rgba(${col},0)`);
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
+  }
+  // the joints between pipe sections: a dark line, a pale mineral crust under
+  // it, and rust bleeding on down out of the reinforcement
+  for (let k = 0; k < 4; k++) {
+    const y = (k + 0.5) * (H / 4) + (R(10) - 5);
+    g.fillStyle = 'rgba(10,12,10,0.75)'; g.fillRect(0, y, W, 2.5);
+    g.fillStyle = 'rgba(196,198,176,0.30)'; g.fillRect(0, y + 2.5, W, 1.6);
+    for (let i = 0; i < 26; i++) {
+      const x = R(W), w = 3 + R(16), h = 4 + R(20);
+      g.fillStyle = `rgba(206,208,188,${0.06 + R(0.16)})`;
+      g.beginPath(); g.ellipse(x, y + 3 + R(6), w, h, 0, 0, TAU); g.fill();
+    }
+    for (let i = 0; i < 14; i++) {
+      const x = R(W);
+      const gr = g.createLinearGradient(0, y, 0, y + 30 + R(40));
+      gr.addColorStop(0, 'rgba(96,52,24,0.40)');
+      gr.addColorStop(1, 'rgba(96,52,24,0)');
+      g.fillStyle = gr; g.fillRect(x, y, 1 + R(3.5), 70);
+    }
+  }
+  for (let i = 0; i < 220; i++) {                                   // algae, low down
+    const x = R(W), y = R(H);
+    const wet = 1 - Math.abs(0.5 - (x / W)) * 2;
+    if (Math.random() > 0.25 + wet * 0.75) continue;
+    const gr = g.createRadialGradient(x, y, 0, x, y, 4 + R(16));
+    gr.addColorStop(0, `rgba(30,46,28,${0.14 + R(0.3)})`);
+    gr.addColorStop(1, 'rgba(30,46,28,0)');
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, 20, 0, TAU); g.fill();
+  }
+  const inv = g.createLinearGradient(W * 0.36, 0, W * 0.64, 0);     // the invert band
+  inv.addColorStop(0, 'rgba(8,12,12,0)');
+  inv.addColorStop(0.5, 'rgba(8,12,12,0.55)');
+  inv.addColorStop(1, 'rgba(8,12,12,0)');
+  g.fillStyle = inv; g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 5000; i++) {                                  // grit
+    const v = 30 + R(90) | 0;
+    g.fillStyle = `rgba(${v},${v + 4},${v - 2},0.5)`;
+    g.fillRect(R(W) | 0, R(H) | 0, 1, 1);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapNearestFilter;
+  t.anisotropy = 1;
+  return t;
+}
+
 function rustStainTex() {
   const w = 96, h = 160;
   const c = document.createElement('canvas'); c.width = w; c.height = h;
@@ -849,11 +917,34 @@ export function makeDrainageTunnelHome(opts = {}) {
        * which is the whole of what the gate is for. Its material is BackSide,
        * so from anywhere but the bore itself it does not draw at all. */
       const THROAT_LEN = 8.0;
+      const thTex = throatTex();
+      thTex.repeat.set(1, THROAT_LEN / 2.0);         // a joint ring every ~0.5 m
+      const throatMat = new THREE.MeshStandardMaterial({
+        map: thTex, color: 0x3a4048, roughness: 0.82, metalness: 0.05,
+        emissive: 0x0c1014, emissiveMap: thTex, side: THREE.BackSide,
+      });
       const throat = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.30, 0.30, THROAT_LEN, 16, 1, true), M.throat);
+        new THREE.CylinderGeometry(0.30, 0.30, THROAT_LEN, 24, 6, true), throatMat);
       throat.rotation.x = Math.PI / 2;
       throat.position.z = -(THROAT_LEN / 2 + 0.02);
       F.add(throat);
+      /* Slime hanging off the crown. Seven thin dark tongues at irregular
+       * spacing: they break the pipe's perfect circle, they carry the eye
+       * down its length, and they are what makes it read as somewhere nobody
+       * has been for a very long time. */
+      // dark and short, not green and spiky: at M.slime's colour and twice
+      // this length they read as spikes growing out of the pipe
+      const drool = new THREE.MeshStandardMaterial({
+        color: 0x1d2a20, roughness: 1, metalness: 0, emissive: 0x080d0a, flatShading: true });
+      for (let i = 0; i < 9; i++) {
+        const z = -(0.5 + rnd(i * 5.1) * (THROAT_LEN - 1.2));
+        const a = (rnd(i * 2.3) - 0.5) * 2.2;                 // near the crown
+        const len = 0.025 + rnd(i * 7.7) * 0.055;
+        const tongue = new THREE.Mesh(new THREE.ConeGeometry(0.006, len, 4), drool);
+        tongue.position.set(Math.sin(a) * 0.293, Math.cos(a) * 0.293 - len / 2, z);
+        tongue.rotation.z = -a;
+        F.add(tongue);
+      }
       /* Ribs down the shaft. Without them the bore is a smooth dark tube with
        * no scale in it and the far end could be one metre away or twenty;
        * the rings are what let the eye read depth, exactly as the joints do
@@ -861,7 +952,7 @@ export function makeDrainageTunnelHome(opts = {}) {
       for (let i = 1; i <= 11; i++) {
         const rz = -(0.35 + i * 0.72);
         if (-rz > THROAT_LEN) break;
-        const rib = new THREE.Mesh(new THREE.TorusGeometry(0.288, 0.022, 4, 14), M.dark);
+        const rib = new THREE.Mesh(new THREE.TorusGeometry(0.292, 0.016, 4, 18), M.dark);
         rib.position.z = rz;
         F.add(rib);
       }
@@ -871,7 +962,7 @@ export function makeDrainageTunnelHome(opts = {}) {
        * the ribs and the whole shaft reads as a flight of stairs. */
       const invert = new THREE.Mesh(new THREE.PlaneGeometry(0.20, THROAT_LEN - 0.2),
         new THREE.MeshStandardMaterial({
-          color: 0x121820, roughness: 0.22, metalness: 0.1, emissive: 0x090e15,
+          color: 0x16202a, roughness: 0.12, metalness: 0.35, emissive: 0x0b1219,
         }));
       invert.rotation.x = -Math.PI / 2;
       invert.position.set(0, -0.262, -(THROAT_LEN / 2 + 0.02));

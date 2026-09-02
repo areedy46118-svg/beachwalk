@@ -241,6 +241,13 @@ by [Domenico Bianco - Pizza&Games](https://sketchfab.com/pizzaandgames),
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
 
 
+**Octopus Ring** — the ring in the crate.
+
+["Octopus Ring"](https://sketchfab.com/3d-models/octopus-ring)
+by [Thunk3D scanner](https://sketchfab.com/Diana123456),
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+
+
 **Corpse in a black body bag with ropes** — the body on the beach before the
 wreck.
 

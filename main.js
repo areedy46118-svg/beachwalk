@@ -903,6 +903,7 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   shaftOut.frustumCulled = shaftIn.frustumCulled = false;
   lighthouse.add(shaftOut, shaftIn);
   lhParts.outer = shaftOut; lhParts.inner = shaftIn;
+  lhParts.render = render;         // the footing below is built after headlandAt()
 
   /* Reveals — the jambs, soffits and sills that line every opening through
    * the thick wall — generated off the SAME edge angles as the cuts, so they
@@ -1502,6 +1503,43 @@ function onHeadland(wx, wz) { return headlandAt(wx, wz) > 0.35; }
   const ridge = new THREE.Mesh(g, ridgeMat);
   ridge.frustumCulled = false;
   lhGround.add(ridge);
+
+  /* The footing, and it has to be built HERE. `lhOuterAt(0)` is 4.62 and the
+   * ridge falls away from the tower's axis — at that radius `headlandAt()`
+   * has already dropped about 1.2 m — so the base course hung in the air on
+   * every downhill side and you could see under the building. This is the
+   * splayed plinth that beds it in: a skirt swept round the tower from its
+   * own face out to 6.6 m, every outer vertex dropped to the GROUND at that
+   * point and a little under it, so it meets the headland all the way round
+   * however the ridge falls there.
+   *
+   * It cannot live up in the shaft block with the rest of the masonry:
+   * `headlandAt()` reads `pathBend`, which is declared further down the file,
+   * and calling it during module evaluation is a temporal dead zone crash
+   * that takes the whole page with it. That is the trap CLAUDE.md warns
+   * about, and it caught this on the first try. */
+  {
+    const SEG = 60, R_IN = lhOuterAt(0.0) - 0.05, R_OUT = 6.6;
+    const fpos = [], fidx = [];
+    for (let i = 0; i <= SEG; i++) {
+      const a = (i / SEG) * Math.PI * 2;
+      const cx = Math.cos(a), cz = Math.sin(a);
+      fpos.push(cx * R_IN, 0.42, cz * R_IN);                    // on the tower's face
+      const gy = headlandAt(LH_X + cx * R_OUT, LH_Z + cz * R_OUT) - HL_CREST;
+      fpos.push(cx * R_OUT, gy - 0.45, cz * R_OUT);             // sunk into the ridge
+    }
+    for (let i = 0; i < SEG; i++) {
+      const a = i * 2, b2 = a + 2;
+      fidx.push(a, b2, b2 + 1, a, b2 + 1, a + 1);
+    }
+    const fg = new THREE.BufferGeometry();
+    fg.setAttribute('position', new THREE.Float32BufferAttribute(fpos, 3));
+    fg.setIndex(fidx);
+    fg.computeVertexNormals();
+    const footing = new THREE.Mesh(fg, lhParts.render);
+    footing.frustumCulled = false;
+    lhGround.add(footing);
+  }
 }
 
 {
@@ -1736,6 +1774,10 @@ function onHeadland(wx, wz) { return headlandAt(wx, wz) > 0.35; }
         let z = -0.5;
         while (z < PATH_LEN + 2) {
           const cx = pathBend(z) + side * (pathHalfAt(z) + 0.55);
+          /* Never inside the building. The lane starts at the threshold, so
+           * its first shoulder posts were landing within the tower's own
+           * footprint — one of them stood on the stair. */
+          if (Math.hypot(cx, z) < LH_OUTER + 1.1) { z += 2.3; continue; }
           const gy = headlandAt(LH_X + cx, LH_Z + z) - HL_CREST;
           const h = 1.02 + Math.random() * 0.16;
           const post = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, h, 6), postMat);
@@ -1744,6 +1786,9 @@ function onHeadland(wx, wz) { return headlandAt(wx, wz) > 0.35; }
           lhGround.add(post);
           tops[0].push(new THREE.Vector3(cx, gy + h - 0.16, z));
           tops[1].push(new THREE.Vector3(cx, gy + h - 0.52, z));
+          // and the wire is strung between the posts that exist, so it does
+          // not simply fly through the wall where one was skipped
+          if (tops[0].length && Math.hypot(cx, z) < LH_OUTER + 1.1) { tops[0].length = 0; tops[1].length = 0; }
           z += 2.3 + Math.random() * 0.9;
         }
         for (const strand of tops) {
@@ -6016,9 +6061,46 @@ function breakCrate() {
  * the same shine every other takeable thing carries — at 20 mm across it is
  * the smallest object in the game, and without the glint you would walk over
  * it in the dark. */
-const ring = makeRing();
+/* The ring is a scan — Thunk3D's "Octopus Ring" — not the built signet that
+ * was here before. `assets/octopus-ring.glb` is the lowest of the seven LODs
+ * the download ships (7k triangles, which is plenty at 20 mm), packed with
+ * `--nodes`; it carries no maps at all, being a raw STL scan, so the metal is
+ * all in the material. It loads async, so `ring` is a Group that stays empty
+ * until it lands and everything downstream — the world drop, the inspect
+ * view, the hotbar icon — works off the Group either way. */
+const ring = new THREE.Group();
 const ringWorld = new THREE.Group();
 ringWorld.add(ring);
+new GLTFLoader().load('assets/octopus-ring.glb', (gltf) => {
+  gltf.scene.updateMatrixWorld(true);
+  /* DoubleSide, and the scan's own normals kept. A raw STL decimated to its
+   * lowest LOD does not have consistent winding, so under FrontSide most of
+   * its triangles face away and the ring renders as a scatter of specks —
+   * which is exactly how it first came in. */
+  /* Low metalness, and that is not a style choice. There is no environment
+   * map in this game, and a metal has NO diffuse — so at metalness 0.62 the
+   * scan rendered as a few hundred lit facets on black, a scatter of specks
+   * in the shape of a ring. Its thousands of small scan facets shatter the
+   * one directional specular into pinpoints, where the old built signet's
+   * broad smooth faces had caught it as sheets. Tarnished silver reads far
+   * better here as a bright rough dielectric with a lift on it.
+   * DoubleSide because a raw STL's winding cannot be relied on. */
+  const silver = new THREE.MeshStandardMaterial({
+    color: 0xc2cad6, roughness: 0.52, metalness: 0.12, emissive: 0x2b3340,
+    side: THREE.DoubleSide, flatShading: true,
+  });
+  let geo = null;
+  gltf.scene.traverse((o) => { if (o.isMesh && !geo) geo = o.geometry.clone().applyMatrix4(o.matrixWorld); });
+  if (!geo) return;
+  // the scan arrives ~30 units across and centred on nothing in particular:
+  // recentre it and fit it to a ring you could actually wear
+  geo.computeBoundingBox();
+  const bb = geo.boundingBox, size = bb.getSize(new THREE.Vector3()), mid = bb.getCenter(new THREE.Vector3());
+  geo.translate(-mid.x, -mid.y, -mid.z);
+  const m = new THREE.Mesh(geo, silver);
+  m.scale.setScalar(0.023 / Math.max(size.x, size.y, size.z));
+  ring.add(m);
+});
 const ringItem = {
   id: 'ring', name: 'Signet ring', icon: makeRingIcon(), ring: true,
   // the prompt only offers what is actually available: examining a ring you

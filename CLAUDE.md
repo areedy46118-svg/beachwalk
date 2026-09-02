@@ -74,6 +74,25 @@ lifts out. `finishExtraction()` sets `crabBled`, empties + re-caps the syringe,
 adds a **"Jar of blue blood"** item (`makeBloodJar()`), and shows the jar as
 the payoff.
 
+**A Sketchfab scan split into "Object_0..N" is CHUNKS, not LODs.** They all
+carry nearly the same bounding box and the triangle counts fall away like an
+LOD chain, which is exactly what it looks like — but the splitter walks the
+triangle LIST, not the surface, so each chunk is a scatter of triangles over
+the whole model. The octopus ring arrives as seven chunks of one
+400k-triangle mesh; taking the smallest as if it were an LOD renders as a
+cloud of specks (15 % of the surface), and taking the next one up renders as
+a denser cloud of specks. `gltfpack.py --decimate N` is the answer: it merges
+every primitive in world space and vertex-clusters the result down to a
+budget, which welds instead of dropping. If a packed scan renders as speckle,
+check `verts` — 65532 is the tell.
+
+**And there is no environment map in this game, so METALNESS IS A TRAP.** A
+metal has no diffuse term; at `metalness: 0.62` the ring rendered as a few
+hundred lit facets on black, because a scan's thousands of small faces
+shatter the one directional specular into pinpoints where a built model's
+broad faces catch it as sheets. Tarnished metal reads far better here as a
+bright rough dielectric with an emissive lift. The body bag hit this first.
+
 **Textured scans come in through `tools/gltfpack.py`.** `gltfslim.py` throws
 the maps away (right for the flat-shaded crab); `gltfpack.py` keeps them, and
 is what the rocks and the body bag went through. It rebuilds the binary from
@@ -662,6 +681,22 @@ triangles an instance: 12 of them is the budget. And `lhGround` is in
 `farProps` at 320 m — InstancedMesh is culled by its base geometry's bounds,
 so every scatter here runs `frustumCulled = false`, and without the far cull
 the whole headland draws from the spawn.
+
+**The tower is bedded into the headland by a footing.** `lhOuterAt(0)` is
+4.62 and `headlandAt()` has already dropped about 1.2 m at that radius, so
+the base course hung in the air on every downhill side and you could see
+under the building. A skirt swept round the tower from its own face out to
+6.6 m, every outer vertex dropped to the ground there and a little under it,
+beds it in whichever way the ridge falls. It has to be built in the headland
+section, NOT up with the masonry: `headlandAt()` reads `pathBend`, which is
+declared much further down, and calling it during module evaluation is a
+temporal dead zone crash that takes the whole page. It caught this on the
+first try.
+
+**Nothing on the lane may stand inside the tower.** The path starts at the
+threshold, so the fence's first shoulder posts were landing inside the
+tower's own footprint — one stood on the stair. The loop skips any post
+within `LH_OUTER + 1.1` of the axis and breaks the wire run there too.
 
 **The headland scatter respects `onPath()`.** Rocks and grass re-roll their
 position until they're clear of the lane to the door; if you add more props

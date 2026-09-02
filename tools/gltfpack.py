@@ -30,6 +30,51 @@ NC = {'SCALAR': 1, 'VEC2': 2, 'VEC3': 3, 'VEC4': 4,
 ARRAY_BUFFER, ELEMENT_ARRAY_BUFFER = 34962, 34963
 
 
+def mat_mul(a, b):
+    return [sum(a[k * 4 + r] * b[c * 4 + k] for k in range(4)) for c in range(4) for r in range(4)]
+
+
+def node_matrix(n):
+    if 'matrix' in n:
+        return list(n['matrix'])
+    t = n.get('translation', [0, 0, 0]); r = n.get('rotation', [0, 0, 0, 1]); s = n.get('scale', [1, 1, 1])
+    x, y, z, w = r
+    return [(1-2*(y*y+z*z))*s[0], (2*(x*y+z*w))*s[0], (2*(x*z-y*w))*s[0], 0,
+            (2*(x*y-z*w))*s[1], (1-2*(x*x+z*z))*s[1], (2*(y*z+x*w))*s[1], 0,
+            (2*(x*z+y*w))*s[2], (2*(y*z-x*w))*s[2], (1-2*(x*x+y*y))*s[2], 0,
+            t[0], t[1], t[2], 1]
+
+
+def apply_m(m, p):
+    x, y, z = p[0], p[1], p[2]
+    return (m[0]*x + m[4]*y + m[8]*z + m[12],
+            m[1]*x + m[5]*y + m[9]*z + m[13],
+            m[2]*x + m[6]*y + m[10]*z + m[14])
+
+
+def _cluster(P, I, cell):
+    """snap to a grid, average each cell, drop the triangles that collapse"""
+    rep, acc, remap = {}, [], [0] * len(P)
+    for vi, p in enumerate(P):
+        key = (round(p[0] / cell), round(p[1] / cell), round(p[2] / cell))
+        j = rep.get(key)
+        if j is None:
+            j = rep[key] = len(acc); acc.append([0.0, 0.0, 0.0, 0])
+        s = acc[j]; s[0] += p[0]; s[1] += p[1]; s[2] += p[2]; s[3] += 1
+        remap[vi] = j
+    pos = [(s[0] / s[3], s[1] / s[3], s[2] / s[3]) for s in acc]
+    tris, seen = [], set()
+    for t in range(0, len(I) - 2, 3):
+        a, b, c = remap[I[t]], remap[I[t + 1]], remap[I[t + 2]]
+        if a == b or b == c or a == c:
+            continue
+        k = tuple(sorted((a, b, c)))
+        if k in seen:
+            continue
+        seen.add(k); tris.append((a, b, c))
+    return pos, tris
+
+
 def _descendants(nodes, i):
     out = []
     for c in nodes[i].get('children', []):
@@ -70,6 +115,8 @@ def main():
     ap.add_argument('--nodes', default=None,
                     help='regex: keep only nodes (or nodes whose mesh) matching this, plus ancestors/descendants')
     ap.add_argument('--min-tris', type=int, default=0, help='drop primitives smaller than this')
+    ap.add_argument('--decimate', type=int, default=0,
+                    help='merge every primitive and vertex-cluster down to about this many triangles')
     a = ap.parse_args()
     nrm_max = a.normal_tex or a.tex
     drop = {s for s in a.drop.split(',') if s}
@@ -167,6 +214,69 @@ def main():
             if not g[k]:
                 del g[k]
 
+    # ---- merge everything and decimate ---------------------------------
+    if a.decimate:
+        """Sketchfab splits a big scan into 65535-VERTEX CHUNKS, and the
+        splitter walks the triangle list rather than the surface — so each
+        chunk is a scatter of triangles spread over the whole model and any
+        one of them alone renders as a cloud of specks. (The octopus ring
+        arrives as seven such chunks of a 400k-triangle mesh; taking the
+        smallest as if it were an LOD gave 15 % of the surface.) The only
+        correct thing to do is take them ALL, and then decimate for real —
+        vertex clustering, which welds, rather than dropping triangles."""
+        import math as _m
+        P, I = [], []
+        def _walk(ni, parent):
+            n = g['nodes'][ni]
+            m = mat_mul(parent, node_matrix(n))
+            if 'mesh' in n:
+                for pr in g['meshes'][n['mesh']].get('primitives', []):
+                    pos = read_accessor(g, bufs, pr['attributes']['POSITION'])
+                    idx = ([v[0] for v in read_accessor(g, bufs, pr['indices'])]
+                           if 'indices' in pr else list(range(len(pos))))
+                    off = len(P)
+                    P.extend(apply_m(m, p) for p in pos)
+                    I.extend(v + off for v in idx)
+            for c in n.get('children', []):
+                _walk(c, m)
+        ident = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]
+        for ni in g['scenes'][g.get('scene', 0)]['nodes']:
+            _walk(ni, ident)
+        print('merged: %d verts, %d tris' % (len(P), len(I) // 3))
+        ext = max(max(p[k] for p in P) - min(p[k] for p in P) for k in range(3))
+        lo, hi = ext / 900.0, ext / 3.0
+        best = None
+        for _ in range(26):                       # bisect the grid onto the budget
+            cell = (lo + hi) / 2
+            vp, tris = _cluster(P, I, cell)
+            if len(tris) > a.decimate: lo = cell
+            else: hi = cell; best = (vp, tris)
+        vp, tris = best if best else _cluster(P, I, hi)
+        print('decimated: %d tris at cell %.5f' % (len(tris), hi))
+        # rebuild the file around one mesh
+        vbuf = bytearray()
+        for v in vp: vbuf.extend(struct.pack('<fff', *v))
+        wide = len(vp) > 65535
+        ibuf = bytearray()
+        for t in tris: ibuf.extend(struct.pack('<III' if wide else '<HHH', *t))
+        g['buffers'] = [{'byteLength': 0}]
+        g['bufferViews'] = [
+            {'buffer': 0, 'byteOffset': 0, 'byteLength': len(vbuf), 'target': 34962},
+            {'buffer': 0, 'byteOffset': len(vbuf), 'byteLength': len(ibuf), 'target': 34963}]
+        mn = [min(v[k] for v in vp) for k in range(3)]
+        mx = [max(v[k] for v in vp) for k in range(3)]
+        g['accessors'] = [
+            {'bufferView': 0, 'componentType': 5126, 'count': len(vp), 'type': 'VEC3', 'min': mn, 'max': mx},
+            {'bufferView': 1, 'componentType': 5125 if wide else 5123, 'count': len(tris) * 3, 'type': 'SCALAR'}]
+        g['meshes'] = [{'primitives': [{'attributes': {'POSITION': 0}, 'indices': 1, 'material': 0}]}]
+        g['materials'] = g.get('materials', [{}])[:1] or [{}]
+        g['nodes'] = [{'mesh': 0}]
+        g['scenes'] = [{'nodes': [0]}]
+        g['scene'] = 0
+        bufs = [bytes(vbuf) + bytes(ibuf)]
+        for bv in g['bufferViews']: bv['byteOffset'] = bv['byteOffset']
+        g['buffers'][0]['byteLength'] = len(bufs[0])
+
     # ---- prune attributes, and note which accessors survive ------------
     for m in g.get('meshes', []):
         for pr in m.get('primitives', []):
@@ -258,6 +368,8 @@ def main():
     g['accessors'] = newacc
 
     # ---- images: resize, re-encode, embed ------------------------------
+    if 'textures' not in g:
+        g['textures'] = []          # an untextured scan (raw STL) has neither
     normal_imgs, cutout_imgs = set(), set()
     for m in g.get('materials', []):
         nt = m.get('normalTexture')
@@ -308,11 +420,15 @@ def main():
 
     order = sorted(keep_img)
     imap = {si: k for k, si in enumerate(order)}
-    g['images'] = [keep_img[si] for si in order]
-    g['textures'] = [{**{k: v for k, v in t.items() if k != 'source'},
-                      'source': imap[t['source']]}
-                     if t.get('source') in imap else t
-                     for t in g['textures']]
+    if not keep_img:
+        g.pop('images', None); g.pop('textures', None); g.pop('samplers', None)
+    else:
+        g['images'] = [keep_img[si] for si in order]
+    if keep_img:
+        g['textures'] = [{**{k: v for k, v in t.items() if k != 'source'},
+                          'source': imap[t['source']]}
+                         if t.get('source') in imap else t
+                         for t in g['textures']]
 
     g['bufferViews'] = views
     g['buffers'] = [{'byteLength': len(blob)}]
