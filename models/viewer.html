@@ -66,6 +66,7 @@
       'blood-jar': () => import('./blood-jar.js').then(m => m.makeBloodJar()),
       'drainage-tunnel-home': () => import('./drainage-tunnel-home.js').then(m => m.makeDrainageTunnelHome()),
       'water-bottle': () => import('./water-bottle.js').then(m => m.makeWaterBottle()),
+      'shipwreck': () => import('./shipwreck.js').then(m => m.makeShipwreck()),
     };
     document.getElementById('caption').textContent = which.replace('-', ' ') + '  ·  drag to rotate  ·  scroll to zoom';
     document.title = 'Model viewer — ' + which;

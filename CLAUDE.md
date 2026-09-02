@@ -168,6 +168,28 @@ A full **bottle of water** (`models/water-bottle.js`) sits by the bed —
 `waterBottleItem`, takeable with `E`, examinable like the crab. It is not
 wired to `hp`; making it a consumable would just need `use` to call a heal.
 
+**The wreck.** `models/shipwreck.js` → `makeShipwreck()`, lying across the
+beach at `SHIP_X` / `SHIP_Z` so it blocks the walk; you get past it by going
+through it. Collision is a **floor lookup**, not a solid: `shipFloorAt(lx, lz,
+feet)` returns the highest walkable surface at or just below your feet, so the
+hold floor and the deck can sit at the same (x, z) without fighting — the deck
+is only selectable once the stair has actually lifted you. Anywhere inside the
+hull with no floor is solid and pushes you back out.
+
+Two things that had to be got right, both found by walking it:
+
+- **Which lateral clamp applies is decided by *where* you are, not by how high
+  the floor is.** Keying the hold's walls off "below deck level" made them
+  apply to the exit ramp too, and they shoved you back up it every time.
+- **Holes in the deck must not sit across the route.** The stair well was
+  originally on the far side, which left a 0.4 m ledge between it and the
+  bulwark — not a path. The stair is now on the side you come in, so climbing
+  it leaves you on open deck with a clear run to the ramp.
+
+The **ship's wheel** (`shipWheel`) has three detents; `shipWheel.position` is
+−1 / 0 / +1 and the hover label carries the state. Nothing reads it yet — it's
+there for a puzzle.
+
 **Physics.** `PhysProp` class + `physProps[]` — a tiny custom rigid body
 (gravity, ground bounce/friction, corridor walls; **no prop-vs-prop
 collision**). Grab springs the held prop in front of the camera; click again

@@ -322,28 +322,34 @@ export function makeDrainageTunnelHome(opts = {}) {
     collar.position.set(-0.02, PIPE_CY, 0);
     collar.rotation.y = Math.PI / 2;
     HW.add(collar);
-    // weathering: spalled patches with rebar showing, and damp streaks
+    // Weathering on the face. Everything here is placed in polar coordinates
+    // about the bore axis and kept outside BORE_R — put at an arbitrary small
+    // radius it ends up floating inside the pipe mouth, which is exactly what
+    // it looked like: debris hanging in the opening.
     for (let i = 0; i < 10; i++) {
-      const a = (rnd(i * 3.7) - 0.5) * 2.2, hgt = 0.5 + rnd(i * 5.1) * 2.6;
-      const rr = 3.3;
-      const px = 0.1 + rnd(i * 2.9) * 1.1;
-      const pz = Math.sin(a) * rr * 0.72;
-      const spall = new THREE.Mesh(new THREE.IcosahedronGeometry(0.18 + rnd(i * 6.3) * 0.3, 0), M.dark);
-      spall.scale.set(0.35, 1, 1);
-      spall.position.set(px, hgt, pz);
+      const a = rnd(i * 3.7) * TAU;
+      const rad = BORE_R + 0.45 + rnd(i * 5.1) * 1.2;
+      const py = PIPE_CY + rad * Math.cos(a);
+      if (py < 0.25) continue;                 // not below the sand
+      const pz = rad * Math.sin(a);
+      const px = -0.06 - rnd(i * 2.9) * 0.08;  // just proud of the face plate
+      const spall = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16 + rnd(i * 6.3) * 0.26, 0), M.dark);
+      spall.scale.set(0.30, 1, 1);
+      spall.position.set(px, py, pz);
       HW.add(spall);
       if (i % 3 === 0) {                       // a bar of rebar hanging out
-        const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.5, 4), M.frame);
-        bar.position.set(px - 0.18, hgt, pz);
+        const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.42, 4), M.frame);
+        bar.position.set(px - 0.16, py, pz);
         bar.rotation.set(0, 0, Math.PI / 2 - 0.4 + rnd(i) * 0.8);
         HW.add(bar);
       }
     }
-    // a broken lip where the sea has had at the top edge
+    // a broken lip where the sea has had at the top edge, on the shell itself
     for (let i = 0; i < 7; i++) {
-      const a = (rnd(i * 9.1) - 0.5) * 2.6, s = rnd(i * 4.2);
+      const a = (rnd(i * 9.1) - 0.5) * 1.5, s = rnd(i * 4.2);
+      const rad = 3.2 + s * 0.3;
       HW.add(slab(0.5 + s * 0.7, 0.3 + s * 0.5, 0.5 + s * 0.8, M.rock,
-        0.6 + s * 1.6, 3.5 + s * 0.7, Math.sin(a) * 2.7,
+        0.5 + s * 1.7, PIPE_CY + rad * Math.cos(a), rad * Math.sin(a),
         (s - 0.5) * 0.4, a, (s - 0.5) * 0.35));
     }
 

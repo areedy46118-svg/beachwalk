@@ -5,6 +5,7 @@ import { makeSyringe, makeSyringeIcon } from './models/syringe.js';
 import { makeBloodJar } from './models/blood-jar.js';
 import { makeDrainageTunnelHome } from './models/drainage-tunnel-home.js';
 import { makeWaterBottle, makeWaterBottleIcon } from './models/water-bottle.js';
+import { makeShipwreck } from './models/shipwreck.js';
 
 /* ------------------------------------------------------------------ *
  *  Beach Walk — an endless, eerie shoreline at night.
@@ -4858,243 +4859,9 @@ new THREE.TextureLoader().load('assets/bradly.png', (tex) => {
 scene.add(bradly);
 addInteractable(bradly, 'Talk to him', 'npc', { onActivate: () => startDialog('start') });
 
-// ------------------------------------------------------------------
-// The tunnel in the sand wall, and the room at the end of it
-// ------------------------------------------------------------------
-/* A mouth bitten out of the cliff a few metres past Bradly, a long dark bore
- * running back into the headland, and a room at the far end.
- *
- * The cliff itself can't be holed: it's one long mesh that snaps back onto
- * the player every CLIFF_PERIOD, so a hole cut at one z would repeat every
- * 40 m down the beach. Instead the mouth is its own structure standing proud
- * of the wall — a rock surround with a black throat behind it — which reads
- * as an opening and stays put because it's a fixed world object.
- *
- * Movement in here is region-clamped rather than collided: the corridor is a
- * box in z, the room is a bigger box, and the beach's own CLIFF_BLOCK_X wall
- * is lifted only across the mouth. Simple, and it can't wedge you in a corner.
- */
-const TUN_Z = bradly.position.z - 4.6;          // ~15 ft further along the walk
-const TUN_HALF = 1.25;                          // corridor half-width
-const TUN_H = 2.7;
-const TUN_MOUTH_X = CLIFF_BLOCK_X - 0.6;        // where the beach wall opens
-const TUN_BORE_X = CLIFF_X - 5.0;               // the bore's lip, proud of the dune
-const TUN_END_X = CLIFF_X + 25;                 // corridor runs this far back
-const ROOM_HALF = 4.2, ROOM_LEN = 8.6, ROOM_H = 3.3;
-const ROOM_END_X = TUN_END_X + ROOM_LEN;
-
-const tunnel = new THREE.Group();
-scene.add(tunnel);
-
-const caveMat = new THREE.MeshStandardMaterial({
-  color: 0x4a4234, roughness: 1, metalness: 0,
-  emissive: 0x0a0906, flatShading: true, side: THREE.DoubleSide,
-});
-const caveDark = new THREE.MeshStandardMaterial({
-  color: 0x2a2620, roughness: 1, metalness: 0,
-  emissive: 0x050403, flatShading: true, side: THREE.DoubleSide,
-});
-
-/* The bore. A tube along +X whose wall is pushed about per-ring so it narrows
- * and widens as you go — a straight pipe reads as a corridor, and this is
- * meant to read as something dug. */
-{
-  const LEN = TUN_END_X - TUN_BORE_X;
-  const RINGS = 60, SIDES = 11;
-  const g = new THREE.CylinderGeometry(1, 1, LEN, SIDES, RINGS, true);
-  g.rotateZ(Math.PI / 2);                        // lay the axis along X
-  const pos = g.attributes.position;
-  const rnd = mulberry32(4711);
-  const wob = Array.from({ length: 24 }, () => rnd());
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-    const a = Math.atan2(z, y);
-    const t = (x + LEN / 2) / LEN;               // 0 at the mouth, 1 at the room
-    // squeeze in and out along its length, and roughen around the ring
-    let r = 1.0
-      + 0.16 * Math.sin(t * 11 + wob[0] * 6)
-      + 0.10 * Math.sin(t * 23 + wob[1] * 6)
-      + 0.13 * Math.sin(a * 3 + t * 9 + wob[2] * 6)
-      + 0.08 * Math.sin(a * 7 - t * 14 + wob[3] * 6);
-    const ny = y * r, nz = z * r;
-    // wider than tall, and flat-bottomed so there's a floor to walk on
-    pos.setXYZ(i, x, Math.max(-0.62, ny * (TUN_H / 2)), nz * TUN_HALF * 1.18);
-  }
-  g.computeVertexNormals();
-  const bore = new THREE.Mesh(g, caveMat);
-  bore.position.set(TUN_BORE_X + LEN / 2, 1.05, TUN_Z);
-  bore.frustumCulled = false;
-  tunnel.add(bore);
-
-  // floor — sand run in from the beach, going darker the deeper you get
-  const fl = new THREE.Mesh(new THREE.PlaneGeometry(LEN, TUN_HALF * 2.5, 1, 1),
-    new THREE.MeshStandardMaterial({ color: 0x5c5748, roughness: 1, emissive: 0x121009 }));
-  fl.rotation.x = -Math.PI / 2;
-  fl.position.set(TUN_BORE_X + LEN / 2, 0.005, TUN_Z);
-  tunnel.add(fl);
-}
-
-/* The mouth. A ring of eroded rock standing proud of the cliff face, with a
- * black throat behind it so the opening reads as depth rather than a decal. */
-{
-  // No black quad here: a flat panel reads as a rectangle stuck on the wall.
-  // The bore's own mouth stands proud of the dune toe, so what you look into
-  // is the actual tube, and the boulders below dress its lip.
-
-  // boulders crowding the opening, from the same generator as the beach rocks
-  const rnd = mulberry32(9002);
-  for (let i = 0; i < 11; i++) {
-    const a = (i / 11) * Math.PI * 2 + rnd() * 0.3;
-    const rz = Math.cos(a) * (TUN_HALF + 0.55 + rnd() * 0.35);
-    const ry = Math.sin(a) * (TUN_H * 0.52 + rnd() * 0.3) + TUN_H / 2 - 0.15;
-    if (ry < 0.15) continue;                     // nothing floating at the sill
-    const sc = 0.7 + rnd() * 1.0;
-    const m = new THREE.Mesh(makeErodedRock(500 + i, 2), rockMatBeach);
-    m.scale.set(sc, sc * (0.7 + rnd() * 0.5), sc);
-    m.position.set(TUN_BORE_X + 0.15 + rnd() * 0.5, ry - sc * 0.3, TUN_Z + rz);
-    m.rotation.set(rnd() * 3, rnd() * 6, rnd() * 3);
-    m.frustumCulled = false;
-    tunnel.add(m);
-  }
-  // spoil heaped either side of the sill, so it reads as dug out, not moulded
-  for (let i = 0; i < 5; i++) {
-    const sc = 0.8 + rnd() * 0.9;
-    const m = new THREE.Mesh(makeErodedRock(560 + i, 2), rockMatBeach);
-    m.scale.set(sc, sc * 0.45, sc);
-    m.position.set(TUN_BORE_X - 0.7 - rnd() * 1.4, -0.08,
-      TUN_Z + (rnd() < 0.5 ? -1 : 1) * (TUN_HALF + 0.5 + rnd() * 1.1));
-    m.rotation.y = rnd() * 6;
-    m.frustumCulled = false;
-    tunnel.add(m);
-  }
-}
-
-/* The room. Not the model from the reference folder — that hasn't reached me,
- * so this is a stand-in built to the same idea: a bare concrete cell at the
- * end of the bore, lit by one bulb, with something already in it. */
-const theRoom = new THREE.Group();
-theRoom.position.set(TUN_END_X + ROOM_LEN / 2, 0, TUN_Z);
-tunnel.add(theRoom);
-{
-  const wallMat = new THREE.MeshStandardMaterial({
-    color: 0x555049, roughness: 1, metalness: 0, emissive: 0x0b0a09,
-    flatShading: true, side: THREE.BackSide,
-  });
-  const shell = new THREE.Mesh(new THREE.BoxGeometry(ROOM_LEN, ROOM_H, ROOM_HALF * 2), wallMat);
-  shell.position.y = ROOM_H / 2;
-  shell.frustumCulled = false;
-  theRoom.add(shell);
-
-  const floorMat = new THREE.MeshStandardMaterial({
-    color: 0x3e3a35, roughness: 1, emissive: 0x0a0908, flatShading: true });
-  const fl = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_LEN, ROOM_HALF * 2), floorMat);
-  fl.rotation.x = -Math.PI / 2; fl.position.y = 0.01;
-  theRoom.add(fl);
-
-  // the bulb — the only thing lighting it
-  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6),
-    new THREE.MeshBasicMaterial({ color: 0xffe3ad, fog: false }));
-  bulb.position.set(0, ROOM_H - 0.55, 0);
-  const flex = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.5, 4),
-    new THREE.MeshStandardMaterial({ color: 0x1a1815, roughness: 1 }));
-  flex.position.set(0, ROOM_H - 0.28, 0);
-  const roomLight = new THREE.PointLight(0xffd9a0, 5.2, 9, 1.7);
-  roomLight.position.copy(bulb.position);
-  theRoom.add(bulb, flex, roomLight);
-
-  // a table and a chair, so it reads as somewhere someone was
-  const wood = new THREE.MeshStandardMaterial({
-    color: 0x4a3f30, roughness: 1, flatShading: true, emissive: 0x0e0b07 });
-  const table = new THREE.Group();
-  const top = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.07, 0.85), wood);
-  top.position.y = 0.74; table.add(top);
-  for (const [lx, lz] of [[-0.66, -0.34], [0.66, -0.34], [-0.66, 0.34], [0.66, 0.34]]) {
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.74, 0.07), wood);
-    leg.position.set(lx, 0.37, lz); table.add(leg);
-  }
-  table.position.set(1.1, 0, -0.4);
-  table.rotation.y = 0.22;
-  theRoom.add(table);
-
-  const chair = new THREE.Group();
-  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.06, 0.45), wood);
-  seat.position.y = 0.45; chair.add(seat);
-  const back = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.5, 0.05), wood);
-  back.position.set(0, 0.72, -0.2); chair.add(back);
-  for (const [lx, lz] of [[-0.19, -0.19], [0.19, -0.19], [-0.19, 0.19], [0.19, 0.19]]) {
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.45, 0.05), wood);
-    leg.position.set(lx, 0.225, lz); chair.add(leg);
-  }
-  chair.position.set(-0.4, 0, 0.5);
-  chair.rotation.y = -0.8;
-  theRoom.add(chair);
-}
-
-/* Two dim lamps down the bore. Created once and never toggled — revealing a
- * light later changes the lighting state and recompiles every material in the
- * scene, which is what caused the a-second-long freeze when digging a mound. */
-for (const t of [0.22, 0.62]) {
-  const lx = TUN_BORE_X + (TUN_END_X - TUN_BORE_X) * t;
-  const lamp = new THREE.PointLight(0xffb070, 2.6, 7.5, 1.8);
-  lamp.position.set(lx, 1.9, TUN_Z + TUN_HALF * 0.5);
-  const glow = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 5),
-    new THREE.MeshBasicMaterial({ color: 0xffcf94, fog: false }));
-  glow.position.copy(lamp.position);
-  tunnel.add(lamp, glow);
-}
-// a little light spilling out of the mouth, so you can find it from the beach
-{
-  const spill = new THREE.PointLight(0xffc08a, 1.5, 6, 2);
-  spill.position.set(TUN_BORE_X + 0.4, 1.5, TUN_Z);
-  tunnel.add(spill);
-}
-
-/* The cliff is one continuous surface and the bore runs straight through it,
- * so without this you'd see the sand wall slicing across the tunnel from the
- * inside. Same per-fragment discard the ocean and the sand already use, tested
- * in WORLD space because the cliff mesh recentres itself on the player. */
-{
-  const zc = TUN_Z.toFixed(3), zh = (TUN_HALF * 1.5).toFixed(3), yh = (TUN_H + 0.2).toFixed(3);
-  cliff.material.onBeforeCompile = (sh) => {
-    sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vTunP;')
-      .replace('#include <project_vertex>',
-        '#include <project_vertex>\nvTunP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-    sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vTunP;')
-      .replace('#include <clipping_planes_fragment>',
-        '#include <clipping_planes_fragment>\n if (abs(vTunP.z - ' + zc + ') < ' + zh +
-        ' && vTunP.y < ' + yh + ') discard;');
-  };
-  cliff.material.customProgramCacheKey = () => 'clipTunnel';
-  cliff.material.needsUpdate = true;
-}
-
-/* Where you're allowed to be. The corridor and the room are boxes; the beach's
- * cliff wall opens only across the mouth, and only down low, so you can't
- * stroll into the headland anywhere else. */
-let insideTunnel = false;
-function inTunnelMouth(z, feetY) {
-  return Math.abs(z - TUN_Z) < TUN_HALF && feetY < TUN_H - 0.6;
-}
-function updateTunnelBounds() {
-  const p = camera.position;
-  // generous slack on the far side: the test has to be impossible to outrun,
-  // or a big enough step would land past it and let you out the back wall
-  insideTunnel = p.x > TUN_MOUTH_X - 0.4 && p.x < ROOM_END_X + 8
-    && Math.abs(p.z - TUN_Z) < ROOM_HALF + 4;
-  if (!insideTunnel) return;
-  if (p.x < TUN_END_X) {
-    // in the bore
-    p.z = THREE.MathUtils.clamp(p.z, TUN_Z - TUN_HALF + PLAYER_R, TUN_Z + TUN_HALF - PLAYER_R);
-    p.x = Math.min(p.x, TUN_END_X + 0.2);
-  } else {
-    // in the room
-    p.z = THREE.MathUtils.clamp(p.z, TUN_Z - ROOM_HALF + PLAYER_R, TUN_Z + ROOM_HALF - PLAYER_R);
-    p.x = Math.min(p.x, ROOM_END_X - PLAYER_R);
-  }
-}
-
+// The tunnel in the sand wall and the room at the end of it were removed
+// at the project's request. The drainage tunnel home further up the beach
+// is the one that stays — see makeDrainageTunnelHome() below.
 
 // The script. Saying yes or no lands you in the same place — he was never
 // really asking.
@@ -5452,6 +5219,38 @@ function sfxThud(gain) {
   s.connect(f).connect(g).connect(sfxOut());
   s.start(t); s.stop(t + 0.1);
 }
+// the wheel: a dry seized groan with a detent knock at the end of the turn
+function sfxWheelTurn() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, len = Math.floor(ctx.sampleRate * 0.55);
+  const b = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = b.getChannelData(0);
+  let lp = 0;
+  for (let i = 0; i < len; i++) {
+    const env = Math.sin((i / len) * Math.PI);
+    lp = lp * 0.86 + (Math.random() * 2 - 1) * 0.14;
+    // a slow rasp on top of the noise, so it grinds rather than hisses
+    d[i] = lp * env * (0.55 + 0.45 * Math.sin(i * 0.06)) * 0.5;
+  }
+  const src = ctx.createBufferSource(); src.buffer = b;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
+  bp.frequency.setValueAtTime(320, t);
+  bp.frequency.exponentialRampToValueAtTime(760, t + 0.5);
+  bp.Q.value = 2.2;
+  const g = ctx.createGain(); g.gain.value = 0.5;
+  src.connect(bp).connect(g).connect(sfxOut());
+  src.start(t); src.stop(t + 0.56);
+  // the detent it drops into
+  const o = ctx.createOscillator(); o.type = 'triangle';
+  o.frequency.setValueAtTime(180, t + 0.5);
+  o.frequency.exponentialRampToValueAtTime(70, t + 0.62);
+  const og = ctx.createGain();
+  og.gain.setValueAtTime(0.0001, t + 0.5);
+  og.gain.exponentialRampToValueAtTime(0.26, t + 0.515);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.66);
+  o.connect(og).connect(sfxOut());
+  o.start(t + 0.5); o.stop(t + 0.68);
+}
 // the extraction — a soft wet suction that rises as the barrel fills
 function sfxDraw() {
   const ctx = audioCtx; if (!ctx) return;
@@ -5731,8 +5530,7 @@ function addTrauma(v) { trauma = Math.min(1, trauma + v); }
 // ------------------------------------------------------------------
 // The drainage tunnel home — the storm-drain outfall up the beach behind
 // you, and the chamber somebody lives in at the end of it. Separate from
-// the tunnel in the sand wall (TUN_*): that one is a dug corridor further
-// down the walk. The bore here is a plain circular pipe, so the collision
+// the sand wall. The bore here is a plain circular pipe, so the collision
 // is a radial clamp about its axis; the chamber is a box clamp. Runs
 // *after* updateTower so it gets the last word on groundY.
 // ------------------------------------------------------------------
@@ -5799,7 +5597,14 @@ addInteractable(waterBottleWorld, 'Take the bottle of water', 'inventory', {
 // Punch the cliff open at the mouth. World-space, like shoreLine(z,t) — the
 // cliff is snapped back onto the player in Z every frame, and a discard in
 // local space would slide along with it.
-cliff.material.onBeforeCompile = (sh) => {
+// CHAINED, not assigned. onBeforeCompile is a single slot: assigning to it
+// silently throws away anything already installed on this material, which is
+// exactly how the other tunnel's window got wiped out once. Call whatever is
+// there first, then add this one — distinct varying names, and both append
+// after <clipping_planes_fragment>, so every discard survives.
+const prevCliffCompile = cliff.material.onBeforeCompile;
+cliff.material.onBeforeCompile = function (sh, rndr) {
+  if (prevCliffCompile) prevCliffCompile.call(this, sh, rndr);
   sh.uniforms.uDrainZ = { value: DRAIN_Z };
   sh.vertexShader = 'varying vec3 vDrainW;\n' + sh.vertexShader.replace(
     '#include <fog_vertex>',
@@ -6106,6 +5911,175 @@ function updateDrainAudio(dt) {
 }
 
 // ------------------------------------------------------------------
+// The wreck — a coaster lying across the beach, blocking the walk. You
+// get past it by going through it: in at the breach in the near side,
+// up the stair out of the hold, across the deck, and down the ramp of
+// torn plate on the far side.
+//
+// Collision is a floor lookup, not a solid: shipFloorAt() returns the
+// highest walkable surface at or just below your feet, so the hold floor
+// and the deck can sit above one another at the same (x, z) without the
+// two fighting. Anywhere inside the hull with no floor is solid, and you
+// get pushed back out the way you came.
+// ------------------------------------------------------------------
+const SHIP_X = 6, SHIP_Z = -155;
+const shipwreck = makeShipwreck({ sandMat });
+shipwreck.position.set(SHIP_X, 0, SHIP_Z);
+scene.add(shipwreck);
+const SN = shipwreck.userData.nav;
+
+let onShip = false, inBridge = false;
+
+// ---- the ship's wheel: three detents, port / midships / starboard -------
+// Nothing reads it yet; it's here for the puzzle. shipWheel.position is the
+// state (-1, 0, 1) and __bw.shipWheel exposes it.
+const shipWheel = {
+  positions: ['hard to port', 'midships', 'hard to starboard'],
+  index: 1,                                   // 0 | 1 | 2, starts midships
+  get position() { return this.index - 1; },  // -1 | 0 | 1
+  get label() { return this.positions[this.index]; },
+};
+{
+  const w = shipwreck.userData.wheel;
+  const WHEEL_STEP = Math.PI * 0.62;          // how far a detent turns it
+  let wheelTarget = 0, wheelSpin = 0;
+  const setWheel = (i) => {
+    shipWheel.index = THREE.MathUtils.clamp(i, 0, 2);
+    wheelTarget = (shipWheel.index - 1) * WHEEL_STEP;
+  };
+  shipWheel.set = setWheel;
+  // the wheel is turned about its own axis, which after the group's
+  // rotation.y is its local Z
+  shipWheel._tick = (dt) => {
+    wheelSpin += (wheelTarget - wheelSpin) * Math.min(1, dt * 6);
+    w.rotation.z = wheelSpin;
+  };
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy';
+  w.add(hit);
+  // The hover label carries the state — no new UI needed, and you can read
+  // where the wheel is standing without touching it.
+  const relabel = () => { if (shipWheel._it) shipWheel._it.label = 'Turn the wheel \u2014 ' + shipWheel.label; };
+  addInteractable(w, 'Turn the wheel \u2014 midships', 'default', {
+    onActivate: () => {
+      setWheel(shipWheel.index >= 2 ? 0 : shipWheel.index + 1);
+      relabel();
+      sfxWheelTurn();
+    },
+  });
+  shipWheel._it = interactables[interactables.length - 1];
+  shipWheel.relabel = relabel;
+}
+
+
+const deckHalfAt = (lx) => SN.beamAt(THREE.MathUtils.clamp(lx, -SN.HALF, SN.HALF)) * SN.sectionK(1) * 0.98;
+
+function shipFloorAt(lx, lz, feet) {
+  const tol = feet + 0.45;
+  let best = null;
+  const take = (y) => { if (y <= tol && (best === null || y > best)) best = y; };
+
+  // hold floor, and the mouth of the breach outside it
+  const inHold = lx > SN.HOLD_X0 && lx < SN.HOLD_X1 && Math.abs(lz) < SN.HOLD_HZ;
+  const inBreach = lx > SN.BREACH_X0 && lx < SN.BREACH_X1 && lz >= SN.HOLD_HZ && lz < SN.HOLD_HZ + 1.8;
+  if (inHold || inBreach) take(SN.HOLD_Y);
+
+  // the stair out of the hold
+  if (lx > SN.STAIR_X0 && lx < SN.STAIR_X1 && lz > SN.STAIR_Z0 && lz < SN.STAIR_Z1) {
+    const t = (lx - SN.STAIR_X0) / (SN.STAIR_X1 - SN.STAIR_X0);
+    take(SN.HOLD_Y + t * (SN.DECK_Y - SN.HOLD_Y));
+  }
+
+  // the deck, minus the open hatch and the stair well
+  if (Math.abs(lx) < SN.HALF && Math.abs(lz) < deckHalfAt(lx)) {
+    const inHatch = lx > SN.HATCH_X0 && lx < SN.HATCH_X1 && Math.abs(lz) < SN.HATCH_HZ;
+    const inWell = lx > SN.STAIR_X0 && lx < SN.STAIR_X1 && lz > SN.STAIR_Z0 && lz < SN.STAIR_Z1;
+    if (!inHatch && !inWell) take(SN.DECK_Y);
+  }
+
+  // the ramp down the far side
+  if (lx > SN.RAMP_X0 && lx < SN.RAMP_X1 && lz > SN.RAMP_Z0 && lz < SN.RAMP_Z1) {
+    const t = (lz - SN.RAMP_Z0) / (SN.RAMP_Z1 - SN.RAMP_Z0);
+    take(t * SN.DECK_Y);
+  }
+  return best;
+}
+
+function updateShip(dt) {
+  shipWheel._tick(dt);
+  const lx = camera.position.x - SHIP_X;
+  const lz = camera.position.z - SHIP_Z;
+  const reach = SN.HALF + 1.0;
+  if (Math.abs(lx) > reach || Math.abs(lz) > 9) { onShip = false; inBridge = false; return; }
+
+  const feet = camBaseY - EYE_HEIGHT;
+  const floor = shipFloorAt(lx, lz, feet);
+  if (floor !== null) {
+    onShip = true;
+    groundY = floor;
+    // Which clamp applies is decided by *where you are*, not by how high the
+    // floor is. Keying it off height alone made the hold's walls apply to the
+    // exit ramp too, and they shoved you back up it every time.
+    const onRamp = lx > SN.RAMP_X0 && lx < SN.RAMP_X1
+      && lz > SN.RAMP_Z0 && lz < SN.RAMP_Z1;
+    const inHold = !onRamp && lx > SN.HOLD_X0 - 0.6 && lx < SN.HOLD_X1 + 0.6
+      && lz > -SN.HOLD_HZ - 0.6 && lz < SN.HOLD_HZ + 2.0
+      && floor < SN.DECK_Y - 0.5;
+
+    if (onRamp) {
+      // stay on the plating; it's a narrow way down
+      const rl = (SN.RAMP_X1 - SN.RAMP_X0) / 2 - PLAYER_R * 0.5;
+      const rc = SHIP_X + (SN.RAMP_X0 + SN.RAMP_X1) / 2;
+      camera.position.x = THREE.MathUtils.clamp(camera.position.x, rc - rl, rc + rl);
+    } else if (inHold) {
+      const hz = SN.HOLD_HZ - PLAYER_R;
+      const inBreach = lx > SN.BREACH_X0 && lx < SN.BREACH_X1;
+      if (lz > hz && !inBreach) camera.position.z = SHIP_Z + hz;
+      if (lz < -hz) camera.position.z = SHIP_Z - hz;
+      camera.position.x = THREE.MathUtils.clamp(camera.position.x,
+        SHIP_X + SN.HOLD_X0 + PLAYER_R, SHIP_X + SN.HOLD_X1 - PLAYER_R);
+    } else if (floor > SN.DECK_Y - 0.35) {
+      // on deck: the bulwark keeps you aboard, except where the ramp leaves
+      const lim = deckHalfAt(lx) - PLAYER_R;
+      const atRamp = lx > SN.RAMP_X0 - 0.2 && lx < SN.RAMP_X1 + 0.2;
+      if (lz > lim) camera.position.z = SHIP_Z + lim;
+      else if (lz < -lim && !atRamp) camera.position.z = SHIP_Z - lim;
+
+      // The bridge is a room, not a decal: its walls are solid and the
+      // doorway in the forward face is the only way in or out. Tracked with
+      // a flag because a box test alone can't tell "coming in" from "going
+      // out" once you're standing in the opening.
+      const atDoor = Math.abs(lz) < 0.5;
+      const bz = SN.BR_HZ - PLAYER_R;
+      if (!inBridge) {
+        if (lx > SN.BR_X0 - PLAYER_R && lx < SN.BR_X1 && Math.abs(lz) < SN.BR_HZ) {
+          if (atDoor) inBridge = true;
+          else camera.position.x = SHIP_X + SN.BR_X0 - PLAYER_R;
+        }
+      } else {
+        camera.position.x = Math.min(camera.position.x, SHIP_X + SN.BR_X1 - PLAYER_R);
+        camera.position.z = THREE.MathUtils.clamp(camera.position.z, SHIP_Z - bz, SHIP_Z + bz);
+        if (lx < SN.BR_X0) {
+          if (atDoor) inBridge = false;
+          else camera.position.x = SHIP_X + SN.BR_X0 + PLAYER_R * 0.5;
+        }
+      }
+    } else {
+      inBridge = false;
+    }
+    return;
+  }
+
+  // no floor here: if you're inside the hull, it's solid — push back out
+  onShip = false;
+  const hullHalf = deckHalfAt(lx) + 0.25;
+  if (Math.abs(lx) < SN.HALF + 0.25 && Math.abs(lz) < hullHalf && feet < SN.DECK_Y - 0.2) {
+    camera.position.z = SHIP_Z + (lz >= 0 ? hullHalf : -hullHalf);
+  }
+}
+
+// ------------------------------------------------------------------
 // The tower: walls you can't walk through, a doorway you can, and a
 // helical stair whose height comes from how far round you've walked.
 // ------------------------------------------------------------------
@@ -6215,31 +6189,24 @@ function update(dt) {
     camera.position.addScaledVector(knockback, dt);
     knockback.multiplyScalar(1 - Math.min(1, 7 * dt));
   }
-  // Two ways through the sand wall now: the tunnel in the dune, and the
-  // drainage tunnel home further back up the beach.
+  // The drainage tunnel home is the only way through the sand wall.
   if (!insideTower && !insideDrain) {
-    // the cliff holds you back everywhere except across the tunnel mouth
-    const feet = camBaseY - EYE_HEIGHT;
-    if (!inTunnelMouth(camera.position.z, feet)) {
-      camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
-    }
+    camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
     camera.position.x = Math.max(camera.position.x, WADE_X);
   }
-  updateTunnelBounds();
   updateTower(dt);
   // Rocks are solid: walk into one and you're pushed out, clear its lip and
   // you stand on it. Done after updateTower() so a rock simply beats the sand.
   // Skipped inside the drainage tunnel home — there are no beach rocks in
   // there, and pushOutOfRocks would shove you about inside the pipe.
-  if (insideTunnel) {
-    groundY = 0;                       // the bore and the room are flat floor
-  } else if (!insideTower && !insideDrain) {
+  if (!insideTower && !insideDrain) {
     const feet = camBaseY - EYE_HEIGHT;
     pushOutOfRocks(feet);
     const rc = rockGroundAt(camera.position.x, camera.position.z, feet);
     if (rc && rc.top > groundY) groundY = rc.top;
   }
   updateDrain(dt);          // last, so it wins on groundY inside the home
+  updateShip(dt);           // and the wreck overrides the sand where you're on it
 
   // coyote time and a buffered press, so a jump you meant to make happens
   coyote = onGround ? COYOTE_TIME : Math.max(0, coyote - dt);
@@ -6426,6 +6393,7 @@ window.__bw = {
   get audioCtx() { return audioCtx; }, get audioStarted() { return audioStarted; },
   lighthouse, startLighthouseTrack, bottleProp, playSample, updateTower,
   drainTunnel, DRAIN_X, DRAIN_Z, updateDrain, sfxDrip,
+  shipwreck, SHIP_X, SHIP_Z, shipFloorAt, shipWheel, get onShip() { return onShip; }, get inBridge() { return inBridge; },
   get drainWarmed() { return drainWarmed; }, get drainWarmError() { return drainWarmError; },
   waterBottle, waterBottleWorld, get waterBottleItem() { return waterBottleItem; },
   get insideDrain() { return insideDrain; }, get drainMix() { return drainMix; },
@@ -6435,9 +6403,6 @@ window.__bw = {
   lhDoor, shinies, onPath, pathBend, pathHalfAt, lhWindows, lanternGlass,
   get doorOpen() { return doorOpen; }, set doorOpen(v) { doorOpen = v; doorSwing = v ? 1 : 0; lhDoor.rotation.y = -doorSwing * 1.95; },
   get insideTower() { return insideTower; },
-  get insideTunnel() { return insideTunnel; },
-  tunnel, theRoom, updateTunnelBounds, inTunnelMouth,
-  get tunnelZ() { return TUN_Z; },
   rockColliders, rockGroundAt,
   get lhParts() { return lhParts; },
   get insideTower() { return insideTower; },
