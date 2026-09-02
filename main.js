@@ -1646,12 +1646,14 @@ loadGeoPack('assets/rocks.json').then((geos) => {
     rock01: 'assets/tex/rock01.jpg', rock06: 'assets/tex/rock06.jpg',
     rock11: 'assets/tex/rock11.jpg', rock16: 'assets/tex/rock16.jpg',
   };
-  // Sparse on purpose — the beach was carpeted before.
+  // Sparse on purpose — the beach was carpeted before. Sparser still now the
+  // scanned rocks are in: this pack is the small shingle around them, and the
+  // big shapes are left to the scans, which hold up far better up close.
   const bands = [
-    { n: 2, lo: 0.16, hi: 0.40 },
-    { n: 2, lo: 0.30, hi: 0.70 },
-    { n: 1, lo: 0.55, hi: 1.2 },
-    { n: 1, lo: 1.0, hi: 2.0 },         // the occasional boulder
+    { n: 2, lo: 0.14, hi: 0.34 },
+    { n: 1, lo: 0.26, hi: 0.55 },
+    { n: 1, lo: 0.45, hi: 0.85 },
+    { n: 1, lo: 0.30, hi: 0.70 },
   ];
   keys.forEach((k, gi) => {
     const map = retroTex(texLoader.load(tex[k] || tex.rock01), { repeatWrap: false });
@@ -1683,6 +1685,7 @@ loadGeoPack('assets/rocks.json').then((geos) => {
 // hundred triangles each by tools/gltfrocks.py; see README for credits.
 const scannedProps = [
   { url: 'assets/rock-a.json', tex: 'assets/tex/rock-a.jpg', n: 1,
+    nrm: 'assets/tex/rock-a-n.png', nscale: 0.75,
     tint: 0x8d95a4, lo: 1.0, hi: 2.4, bed: 0.22 },        // the big beach rock
   { url: 'assets/rock-b.json', tex: 'assets/tex/rock-b.jpg', n: 1,
     tint: 0x8a92a1, lo: 0.8, hi: 1.8, bed: 0.20 },        // a low rocky patch
@@ -1695,6 +1698,13 @@ for (const sp of scannedProps) {
       map, color: sp.tint, roughness: 1, metalness: 0,
       emissive: 0x141820, emissiveMap: map, flatShading: true,
     });
+    // The scan ships a normal map, and at 200-odd triangles the mesh has none
+    // of its own detail left — this is what puts the pitting back. It stays in
+    // linear space: tagging a normal map as sRGB bends every normal it holds.
+    if (sp.nrm) {
+      mat.normalMap = retroTex(texLoader.load(sp.nrm), { repeatWrap: false });
+      mat.normalScale = new THREE.Vector2(sp.nscale, sp.nscale);
+    }
     for (const geo of Object.values(geos)) {
       geo.computeBoundingBox();
       const geoH = Math.max(0.02, geo.boundingBox.max.y);   // sits on y=0
@@ -1709,7 +1719,9 @@ for (const sp of scannedProps) {
           // fraction of their width, which is what the older packs do, buries
           // them completely.
           y: -geoH * sy * sp.bed,
-          color: wetTint(p.x),
+          // wet down by the water, plus a little jitter so six rocks drawn
+          // from three meshes don't read as three meshes
+          color: wetTint(p.x).multiplyScalar(0.86 + Math.random() * 0.28),
           // free to spin, barely allowed to tilt — a scan stood on its side
           // is the single most obvious way to make a beach look wrong
           rot: new THREE.Euler((Math.random() - 0.5) * 0.10,
