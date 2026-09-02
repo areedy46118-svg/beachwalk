@@ -208,6 +208,16 @@ hard to drive from `javascript_tool`. Instead:
 
 ## Gotchas worth knowing
 
+**A new `three/addons/…` import needs adding to TWO import maps.** There is no
+build step, so `three/addons/utils/BufferGeometryUtils.js` is a bare specifier —
+a nickname the browser will not guess at. It only resolves if it is listed in
+the import map, and there are two of them: `index.html` for the game and
+`models/viewer.html` for the dev viewer. Miss either and that page dies with
+`Failed to resolve module specifier …` before a single line runs — a blank
+screen, not a degraded one. Being present in `vendor/three/` is not enough:
+`BufferGeometryUtils.js` sat there unreferenced for ages and still had to be
+mapped the first time something imported it.
+
 **Declaration order matters.** `main.js` is one long top-to-bottom module of
 `const`s, so anything that *calls* `addInteractable` or pushes to a shared
 array must appear **after** that array is declared, or you get a temporal
