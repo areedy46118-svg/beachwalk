@@ -6608,6 +6608,41 @@ function sfxGlassPick() {
 // step and alternating slightly left/right so a walk doesn't tick like a
 // metronome.
 let stepAlt = 0;
+/* A step on the pier: a hollow knock, not a crush. Boards over air ring —
+ * a short low resonance with a bright transient off the heel, and none of
+ * the sand's grit. Alternates weight like the sand step does. */
+function sfxStepWood() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  stepAlt ^= 1;
+  const out = ctx.createGain();
+  out.gain.value = 0.55 * (stepAlt ? 1 : 0.8) * (0.85 + Math.random() * 0.3);
+  out.connect(sfxOut());
+  // the knock: a damped low tone, the plank ringing over the void beneath
+  const knock = ctx.createOscillator(); knock.type = 'sine';
+  const f0 = 118 + Math.random() * 40;
+  knock.frequency.setValueAtTime(f0 * 1.6, t);
+  knock.frequency.exponentialRampToValueAtTime(f0, t + 0.035);
+  const kg = ctx.createGain();
+  kg.gain.setValueAtTime(0.0001, t);
+  kg.gain.exponentialRampToValueAtTime(0.5, t + 0.006);
+  kg.gain.exponentialRampToValueAtTime(0.0001, t + 0.16 + Math.random() * 0.05);
+  knock.connect(kg).connect(out);
+  knock.start(t); knock.stop(t + 0.24);
+  // the heel: a short bright transient, the sole hitting the board
+  const heel = noiseBurst(0.04, (x) => Math.pow(1 - x, 4));
+  const hf = ctx.createBiquadFilter(); hf.type = 'bandpass';
+  hf.frequency.value = 900 + Math.random() * 500; hf.Q.value = 1.1;
+  const hg = ctx.createGain(); hg.gain.value = 0.22;
+  heel.connect(hf).connect(hg).connect(out);
+  heel.start(t); heel.stop(t + 0.04);
+  // and the board's body under it — a soft thud, lower than the sand's
+  const body = noiseBurst(0.07, (x) => Math.pow(1 - x, 3));
+  const bf = ctx.createBiquadFilter(); bf.type = 'lowpass'; bf.frequency.value = 260; bf.Q.value = 1.6;
+  const bg = ctx.createGain(); bg.gain.value = 0.3;
+  body.connect(bf).connect(bg).connect(out);
+  body.start(t); body.stop(t + 0.07);
+}
 function sfxStep() {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime;
@@ -8044,7 +8079,9 @@ new GLTFLoader().load('assets/dock.glb', (gltf) => {
   gltf.scene.updateMatrixWorld(true);
   if (doorMesh) {
     const pivot = new THREE.Group();
-    pivot.position.set(-1.14, 0, -0.945);
+    // the hinge is at x = -0.73: the knob is on the -1.14 edge, and a door
+    // hung on its knob side opened backwards
+    pivot.position.set(-0.73, 0, -0.945);
     gltf.scene.add(pivot);
     pivot.updateMatrixWorld(true);
     pivot.attach(doorMesh);
@@ -8111,7 +8148,7 @@ function updateDock(dt) {
     const target = dockDoorOpen ? 1 : 0;
     dockDoorSwing += THREE.MathUtils.clamp(target - dockDoorSwing, -1, 1) * Math.min(1, dt * 3.2);
     if (Math.abs(target - dockDoorSwing) < 0.004) dockDoorSwing = target;
-    dockDoor.rotation.y = dockDoorSwing * 1.5;           // swings in, off the deck
+    dockDoor.rotation.y = -dockDoorSwing * 1.5;          // swings in, off the deck
   }
   const dx = camera.position.x - DOCK_X, dz = camera.position.z - DOCK_Z;
   if (Math.abs(dx) > 24 || Math.abs(dz) > 16) { onDock = false; return; }
@@ -8129,9 +8166,14 @@ function updateDock(dt) {
     if (wasOn || entering) {
       onDock = true;
       if (DOCK_DECK > groundY) groundY = DOCK_DECK;
-      // the edge stops you; only the land end is open
-      lx = THREE.MathUtils.clamp(lx, DK.X0 + pr, DK.X1 - pr);
+      /* Which edges hold you: the sea end always, and the two sides only
+       * where the water is under them — past WADE_X, the last stretch of
+       * the pier. Over the beach the sides are open, so you can step off
+       * onto the sand and carry on down the walk; a bulwark the whole way
+       * round turned the pier into a dead end you had to walk back off. */
       lz = Math.min(lz, DK.Z1 - pr);
+      const overWater = DOCK_X - lz * DOCK_S < WADE_X + 0.4;
+      if (overWater) lx = THREE.MathUtils.clamp(lx, DK.X0 + pr, DK.X1 - pr);
       const walls = dockDoorOpen ? DOCK_WALLS : DOCK_WALLS.concat([DOCK_DOOR_SLAB]);
       for (const [x0, z0, x1, z1] of walls) {
         if (lx <= x0 - pr || lx >= x1 + pr || lz <= z0 - pr || lz >= z1 + pr) continue;
@@ -8423,7 +8465,9 @@ function update(dt, rawDt = dt) {
       landDip = Math.max(landDip, 0.06 + force * 0.16);
       addTrauma(force * 0.25);
       vmImpulse(-1.1 - force * 2.4);
-      if (inWater(camera.position.x, camera.position.z)) sfxSplash(0.9); else sfxStep();
+      if (inWater(camera.position.x, camera.position.z)) sfxSplash(0.9);
+      else if (onDock) sfxStepWood();
+      else sfxStep();
     }
     camBaseY = floorLimit; vy = 0; onGround = true;
   }
@@ -8460,6 +8504,8 @@ function update(dt, rawDt = dt) {
         // no footprint on water — kick up a splash instead
         spawnSplash(camera.position.x, camera.position.z, 9, moveDir.x, moveDir.z, 1);
         sfxSplash(0.85);
+      } else if (onDock) {
+        sfxStepWood();                     // boards: a knock, and no print
       } else {
         stampFoot(camera.position.x, camera.position.z, moveDir.x, moveDir.z, footSide);
         sfxStep();

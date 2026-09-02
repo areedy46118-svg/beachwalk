@@ -112,8 +112,10 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   out from the cliff foot into the surf, with a shed on the boards, a lamp lit
   on the post at the sea end, and a boat tied up under it. The beach has
   drifted up against its land end; walk up the sand and onto the boards. The
-  pier is solid — you cannot walk in under it — and its edges stop you rather
-  than let you step off into the surf. The shed door opens with `E`. The crate
+  pier is solid — you cannot walk in under it. Its sea end and the last
+  stretch of its sides hold you out of the surf; over the beach the sides are
+  open, so step off onto the sand and carry on. Boards knock underfoot. The
+  shed door opens with `E`. The crate
   by the lamp post breaks the way the one under Bradly does, and holds
   **A Rusted Key** — a scanned medieval key — that, for now, opens nothing.
 - **The shells** are scans now. Take one and it goes straight into your hand;
