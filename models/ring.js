@@ -57,14 +57,16 @@ export function makeRing() {
   // ---- the bezel ---------------------------------------------------
   // small: at 0.006 it is a plate the band hangs off, and the whole thing
   // stops reading as jewellery at all
+  /* A cylinder's axis is already Y, so a flat disc facing UP needs no
+   * rotation at all. The first build rotated it a quarter turn "to face +Y"
+   * and got a coin standing on its edge along the top of the band, with the
+   * stamp poking out from behind its rim like a pin. */
   const bezel = new THREE.Mesh(new THREE.CylinderGeometry(0.0042, 0.0047, 0.0019, 24), silver);
-  bezel.rotation.x = Math.PI / 2;                    // face out along +Y
   bezel.scale.set(1.22, 1, 0.82);                    // an oval, not a disc
   bezel.position.y = R + 0.0026;
   G.add(bezel);
   // the sunken field the stamp stands in
   const field = new THREE.Mesh(new THREE.CylinderGeometry(0.0034, 0.0037, 0.0008, 22), tarnish);
-  field.rotation.x = Math.PI / 2;
   field.scale.set(1.22, 1, 0.82);
   field.position.y = R + 0.0033;
   G.add(field);
@@ -74,7 +76,7 @@ export function makeRing() {
   /* Proud of the field, not level with it. At R + 0.0037 the stamp sits just
    * UNDER the top face of the field disc and all you see is the crown of the
    * head shield poking through, which reads as a pin rather than as a crab. */
-  S.position.y = R + 0.0046;
+  S.position.y = R + 0.0040;              // relief base just inside the field's top
   S.rotation.x = -Math.PI / 2;                       // lie it on the field
   G.add(S);
   // prosoma - the broad head shield, flattened and slightly domed

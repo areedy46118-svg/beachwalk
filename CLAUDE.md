@@ -229,6 +229,27 @@ Two things that had to be got right, both found by walking it:
   bulwark — not a path. The stair is now on the side you come in, so climbing
   it leaves you on open deck with a clear run to the ramp.
 
+**Breakable glass is `shatterGlass(prop, mesh, speed, radius)`,** hung off a
+`PhysProp`'s `onImpact`. It kills the body, drops the prop out of the scene
+AND out of `interactables` (leave it in and you hover "Pick up glass float"
+over a cloud of shards), and throws shards as real `gibs` so they bounce and
+settle like everything else. The bottle predates it and still has its own
+inline version because it also has to leave the note behind.
+
+**The crate and the ring.** The crate under Bradly is the game's one lock:
+`crateStrike(P)` raycasts the crosshair at the crate itself — reading the sand
+under it lands the ground point a metre past the far side when you aim at the
+lid — and only `P >= CRATE_POWER` (0.75, ~two-thirds of a charge) breaks it.
+It is a `rockColliders` cylinder while it stands, removed in `breakCrate()`.
+The ring (`models/ring.js`) is a takeable that `openInspect()`s with
+`equipLabel`/`onEquip`; `E` in the inspect view — not the click, which already
+means "put it away" in there — calls `wearRing()`. Worn rings live in
+`rings[]`, a separate array from `inventory` so `RING_SLOTS` is a real limit,
+rendered by `renderRings()` into `#rings` under the hotbar; both sit in the
+`#gear` column so the rings stay under the hotbar however many slots it has.
+`#rings` stays hidden until `ringsFound`. `wearRing()` refuses a ring already
+in `rings[]` — it duplicated once.
+
 **The body bag.** `CORPSE_X/Z/YAW`, thirty metres short of the wreck — the
 whole point of it is the approach, so everything about the placement serves
 being seen from a long way down the beach:

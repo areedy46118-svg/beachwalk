@@ -4907,11 +4907,13 @@ function updateGibs(dt) {
  * shovel in a hard squash, thrown back along the swing. THEN it comes apart.
  * The freeze and the squash are the same beat, which is why `struck` ends on
  * `hitstop` rather than on a timer of its own. */
+const _crabHitFrom = new THREE.Vector3();
 function killCrab() {
   if (!crabState.alive || crabState.struck) return;
   crabState.struck = true;
   crabState.atk = -1;
   camera.getWorldDirection(_crabDir); _crabDir.y = 0; _crabDir.normalize();
+  _crabHitFrom.copy(crab.position);
   sfxCrabHit();
   addTrauma(0.55);
   hitstop = CRAB_HIT_STOP;
@@ -4922,7 +4924,7 @@ function finishCrab() {
   crabState.deadT = 0;
   crab.visible = false;                        // it comes apart instead
   burstCrab();
-  sfxCrabDie();
+  sfxCrabDie(false);
   addTrauma(0.45);                             // the second half of the hit
 }
 
@@ -4952,7 +4954,9 @@ function updateCrab(dt) {
     ud.rig.scale.set(1 + 0.34 * (1 - e), 1 - 0.42 * (1 - e), 1 + 0.34 * (1 - e));
     ud.rig.rotation.x = 0.55 * (1 - e);
     ud.rig.rotation.z = 0.22 * (1 - e);
-    crab.position.addScaledVector(_crabDir, 1.4 * dt);   // thrown off the blade
+    // thrown off the blade. Placed from the hold's own progress, not moved by
+    // dt — dt is 8 % of real time in here and it went eight millimetres.
+    crab.position.copy(_crabHitFrom).addScaledVector(_crabDir, 0.34 * e);
     if (hitstop <= 0) finishCrab();
     return;
   }
@@ -5297,8 +5301,10 @@ crate.position.set(CRATE_X, 0, crateZ);
 crate.rotation.y = -0.32;
 let crateBroken = false;
 {
+  // greyed, not warm: the crab's gibs are red-brown and the two ended up
+  // side by side on the same sand looking like the same thing
   const boardMat = new THREE.MeshStandardMaterial({
-    color: 0x6a5642, roughness: 1, flatShading: true, emissive: 0x161009,
+    color: 0x66594b, roughness: 1, flatShading: true, emissive: 0x0e0d0b,
   });
   const battenMat = new THREE.MeshStandardMaterial({
     color: 0x4e3e2d, roughness: 1, flatShading: true, emissive: 0x110c06,
@@ -5372,7 +5378,7 @@ function breakCrate() {
 
   // the boards, as real gibs so they bounce and settle with everything else
   const splint = new THREE.MeshStandardMaterial({
-    color: 0x6a5642, roughness: 1, flatShading: true, emissive: 0x161009,
+    color: 0x66594b, roughness: 1, flatShading: true, emissive: 0x0e0d0b,
   });
   for (let i = 0; i < 18; i++) {
     const L = 0.10 + Math.random() * 0.26;
@@ -6161,10 +6167,12 @@ function sfxCrabSnip() {
   o.start(t); o.stop(t + 0.1);
 }
 // shell giving way under the blade
-function sfxCrabDie() {
+function sfxCrabDie(withSample = true) {
   const ctx = audioCtx; if (!ctx) return;
-  // the recorded wet impact; the synth shell-crack still layers under it
-  playSample('fleshHit', 1.0, 0.07);
+  // the recorded wet impact; the synth shell-crack still layers under it.
+  // Skipped when it follows sfxCrabHit() — the sample 80 ms after itself is
+  // not two beats, it is one beat with a stutter in it.
+  if (withSample) playSample('fleshHit', 1.0, 0.07);
   const t = ctx.currentTime;
   const s = noiseBurst(0.26, (x) => Math.pow(1 - x, 1.8) * (0.4 + 0.6 * Math.random()));
   const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
@@ -6450,7 +6458,10 @@ function startPeek() {
   if (peeking || !F || frozen()) return;
   if (!gateEyes) gateEyes = makeGateEyes(F);
   peeking = true; peekLeaving = false; peekT = 0; peekHeld = 0;
-  gateEyes.visible = false;
+  // visible at zero opacity from the first frame of the lean: the draw is
+  // free and it gets the material compiled while you are still moving
+  gateEyes.visible = true;
+  for (const m of gateEyes.userData.eyes) m.material.opacity = 0;
   gateEyes.userData.blink = 0;
   gateEyes.userData.blinkIn = 2.2;
   _peekHome.copy(camera.position); _peekHomeQ.copy(camera.quaternion);
@@ -6512,8 +6523,6 @@ function updateGateEyes(dt) {
   const u = G.userData;
   // they do not greet you: nothing is there, and then something is
   const fade = THREE.MathUtils.clamp((peekHeld - 1.5) / 2.6, 0, 1);
-  G.visible = fade > 0.002;
-  if (!G.visible) return;
 
   u.blinkIn -= dt;
   if (u.blinkIn <= 0) { u.blink = 1; u.blinkIn = 1.5 + Math.random() * 4.2; }
@@ -6537,6 +6546,10 @@ if (drainTunnel.userData.outlet) {
   addInteractable(drainTunnel.userData.outlet, 'Look inside', 'default', {
     onActivate: () => startPeek(),
   });
+  // Built now, not on the first peek: a lazy build compiled two new shaders
+  // and uploaded the geometry on the frame the eyes appeared, which is the
+  // one frame in the game that must not hitch.
+  gateEyes = makeGateEyes(drainTunnel.userData.outlet);
 }
 
 // ---- a full bottle of water, left by the bed in the chamber ----------

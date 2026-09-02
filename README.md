@@ -105,6 +105,16 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   sand, shakes the camera harder and kills the crab from further out. The
   shaft creaks when the charge tops out, and the blade leaves a **trail** —
   a thin streak off the cutting edge that brightens with how hard you swung.
+- **Glass floats break** — three of them along the walk, and a hard throw
+  shatters one into shards that bounce and settle. A drop from your hand does
+  not; breaking one is always something you chose.
+- **The crate below Bradly** — washed up at the cliff foot, and the one lock
+  in the game. A left click thuds off the boards. Only a wound-up heavy (about
+  two-thirds of a full charge) puts the blade through the lid.
+- **The signet ring** — in the crate: a tarnished band stamped with a
+  horseshoe crab. Take it, examine it, and press `E` to put it on — it leaves
+  the pack for a new **Rings** section, two slots under the hotbar that appear
+  the first time a ring is in your hands. Click a worn ring to take it off.
 - **The crab telegraphs** — it no longer nips the instant it reaches you. It
   rears with its claws thrown wide and its pincers gaping for 18 frames while
   a rasp climbs under it, strikes for 6, and is then wide open for 20. The
@@ -159,7 +169,7 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   `CORPSE_X` / `CORPSE_Z`.
 - **The stuck gate** — the barred outlet in the back wall of the drainage
   tunnel home now says **Look inside**. Press `E` and you lean the last half
-  metre onto the bars while the FOV squeezes to 19°, which is the zoom and is
+  metre onto the bars while the FOV squeezes to 24°, which is the zoom and is
   also what crops the lit room out of frame. Eight metres of ribbed pipe run
   back into the hill. Nothing is down there — and then, a second and a half
   later, two small pale eyes fade up out of the black, blink at their own
