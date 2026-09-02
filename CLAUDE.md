@@ -123,6 +123,27 @@ Solid furniture is `userData.nav.props` — local-space `[x0, z0, x1, z1]`
 AABBs that `pushOutOfDrainProps()` shoves the player out of along the
 shallowest face.
 
+**Turning round used to hitch for a quarter second.** The structure is
+frustum-culled until it first enters the view, and that frame pays for
+compiling every shader program *and* uploading ~400 geometries.
+`renderer.compile()` only does the programs, so `warmDrain()` renders the
+whole thing into an 8×8 offscreen target on the first animate frame, while
+the title card still covers the screen; and `bakeScatter()` merges the
+decorative scatter by material (`BufferGeometryUtils.mergeGeometries`,
+now in the import map). 263 ms → ~36 ms. `bakeScatter` has to normalise
+first — polyhedra come out non-indexed, boxes indexed, and the hand-built
+channel strips carry no uv, and the merge refuses a mixed batch.
+
+**Flicker is always coplanar faces.** The two that bit: the door frame's
+back face sat exactly on the wall's front face, and the threshold slab's
+top was exactly level with both the bore invert and the room floor.
+
+**The crosshair can thread a grille.** The back-wall outlet needs an
+invisible `hitProxy` disc across the bore, or the centre ray passes between
+the bars and straight down the open pipe. Its interactable is `bare: true`,
+which prints the label with no `[E]` prefix — it's a statement, not an
+action.
+
 The **erosion channel** outside can only ever sit *above* y = 0 — the beach
 sand is a flat plane recentred on the player, so a trench cut below it would
 just be covered over. The depth reads from the berms heaped either side, and

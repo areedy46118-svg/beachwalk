@@ -2533,7 +2533,7 @@ function updateHover() {
   hovered = best;
   if (best) {
     crosshair.className = 'active';
-    setPrompt(kbd('E') + best.label);
+    setPrompt(best.bare ? best.label : kbd('E') + best.label);
   } else if (equipped && equipped.onListen && !listening) {
     crosshair.className = 'active';
     setPrompt(kbd('LMB') + 'Hold it to your ear');
@@ -5097,7 +5097,7 @@ function addTrauma(v) { trauma = Math.min(1, trauma + v); }
 // gets the last word on groundY.
 // ------------------------------------------------------------------
 const DRAIN_X = CLIFF_BLOCK_X;      // the mouth sits exactly on the cliff clamp
-const DRAIN_Z = 22;                 // behind you: the walk goes -Z
+const DRAIN_Z = 34;                 // behind you: the walk goes -Z
 const drainTunnel = makeDrainTunnel({
   // the scour outside is heaped beach sand, so it uses the beach's own
   // material — a bespoke colour reads as pale slabs dropped on the sand
@@ -5113,6 +5113,16 @@ drainTunnel.position.set(DRAIN_X, 0, DRAIN_Z);
 scene.add(drainTunnel);
 const DN = drainTunnel.userData.nav;
 
+// Looking at the grille in the back wall just tells you what you already
+// suspect. `bare` prints the line without an [E] prefix — it's a statement,
+// not something you can act on.
+if (drainTunnel.userData.outlet) {
+  addInteractable(drainTunnel.userData.outlet, "It's too strong.", 'default', {
+    bare: true,
+    onActivate: () => {},
+  });
+}
+
 // ---- a full bottle of water, left by the bed in the chamber ----------
 const waterBottle = makeWaterBottle();
 const waterBottleWorld = new THREE.Group();
@@ -5123,7 +5133,9 @@ waterBottleWorld.add(waterBottle);
   hit.name = 'hitProxy';
   waterBottleWorld.add(hit);
 }
-waterBottleWorld.position.set(DRAIN_X + 17.0, DN.FLOOR_Y, DRAIN_Z - 1.75);
+// keyed off the room, not a fixed offset — a longer bore used to leave
+// the bottle buried in the pipe wall
+waterBottleWorld.position.set(DRAIN_X + DN.ROOM_X1 - 2.6, DN.FLOOR_Y, DRAIN_Z - DN.ROOM_HZ + 1.55);
 waterBottleWorld.rotation.set(0, 0.7, 0);
 scene.add(waterBottleWorld);
 addItemShine(waterBottleWorld, { size: 0.5, height: 0.10 });
@@ -5159,6 +5171,38 @@ cliff.material.onBeforeCompile = (sh) => {
   );
 };
 cliff.material.needsUpdate = true;
+
+// The structure is frustum-culled until you turn round, and the frame it
+// first becomes visible pays for compiling every one of its shader programs
+// *and* uploading ~400 geometries — that was the quarter-second hitch.
+// compile() only does the programs, so warmDrain() renders it once into a
+// tiny offscreen target to force the buffer uploads too. Runs on the first
+// animate frame, while the title card is still covering the screen.
+let drainWarmed = false;
+function warmDrain() {
+  if (drainWarmed) return;
+  drainWarmed = true;
+  try {
+    const rt = new THREE.WebGLRenderTarget(8, 8);
+    const cam = new THREE.PerspectiveCamera(75, 1, 0.1, 200);
+    cam.position.set(DRAIN_X - 9, 2.2, DRAIN_Z);
+    cam.lookAt(DRAIN_X + 20, 1.4, DRAIN_Z);
+    cam.updateMatrixWorld(true);
+    renderer.compile(scene, cam);
+    const prevTarget = renderer.getRenderTarget();
+    const prevAutoClear = renderer.autoClear;
+    renderer.autoClear = true;
+    renderer.setRenderTarget(rt);
+    renderer.render(scene, cam);          // outside, looking in
+    cam.position.set(DRAIN_X + DN.ROOM_X0 + 1, 1.7, DRAIN_Z);
+    cam.lookAt(DRAIN_X + DN.ROOM_X1, 1.6, DRAIN_Z);
+    cam.updateMatrixWorld(true);
+    renderer.render(scene, cam);          // and from inside the chamber
+    renderer.setRenderTarget(prevTarget);
+    renderer.autoClear = prevAutoClear;
+    rt.dispose();
+  } catch (e) { /* warm-up is best-effort; never let it break the frame */ }
+}
 
 let insideDrain = false, drainMix = 0, mouthNear = 0;
 
@@ -5216,7 +5260,19 @@ function updateDrainFlicker(dt) {
     f.l.intensity = f.base * k;
   }
 }
+let beaconT = 0;
 function updateDrain(dt) {
+  // the beacon blinks whether or not you're anywhere near — it's the thing
+  // that tells you the structure is down there at all, so it runs before
+  // any of the distance early-outs below
+  const bc = drainTunnel.userData.beacon;
+  if (bc) {
+    beaconT += dt;
+    const on = (beaconT % 2.2) < 0.95;
+    const k = on ? 1 : 0.045;
+    bc.bulb.material.color.setRGB(k, k * 0.12, k * 0.07);
+    bc.halo.visible = on;
+  }
   const lx = camera.position.x - DRAIN_X;
   const lz = camera.position.z - DRAIN_Z;
   mouthNear = drainMouthProximity();
@@ -5630,6 +5686,7 @@ function update(dt) {
 const clock = new THREE.Clock();
 function animate() {
   requestAnimationFrame(animate);
+  if (!drainWarmed) warmDrain();
   let dt = Math.min(clock.getDelta(), 0.05);
   // a beat of near-frozen time on a solid hit, drained in real seconds
   if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
