@@ -124,7 +124,8 @@ only while `dockDoorOpen` is false.
 first. Gibs and puffs take the crate's own `y`, so the deck crate's boards
 land on the deck. The key it holds is set down, not thrown: `PhysProp`
 knows one ground, the sand, and a body bouncing on a deck two metres up
-falls straight through the boards.
+falls straight through the boards. The key itself is Sousinho's scan
+(`assets/key.glb`), loaded async into the `keyModel` Group like the ring.
 
 **The dock house is a fixed world object like the wreck** (`DOCK_*`,
 `updateDock()`), sixty metres past it. The model is built at about 1:2.8 —

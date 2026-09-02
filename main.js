@@ -6203,35 +6203,47 @@ const ringItem = {
  * a body like the ring: PhysProp knows one ground, the sand, and a key
  * bouncing off a deck two metres up would fall straight through the boards
  * to the beach underneath. It is set down where the crate stood. */
-function makeKey() {
-  const g = new THREE.Group();
-  const brass = new THREE.MeshStandardMaterial({ color: 0xa8843c, roughness: 0.5, metalness: 0.22, emissive: 0x3a2a10, flatShading: true });
-  const bow = new THREE.Mesh(new THREE.TorusGeometry(0.017, 0.0045, 6, 14), brass);
-  bow.position.x = -0.038;
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.0042, 0.0042, 0.072, 8), brass);
-  shaft.rotation.z = Math.PI / 2;
-  const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.0065, 0.0065, 0.008, 8), brass);
-  collar.rotation.z = Math.PI / 2; collar.position.x = -0.016;
-  const bit1 = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.015, 0.0045), brass); bit1.position.set(0.029, -0.011, 0);
-  const bit2 = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.010, 0.0045), brass); bit2.position.set(0.016, -0.009, 0);
-  g.add(bow, shaft, collar, bit1, bit2);
-  return g;
-}
+/* The key is Sousinho's "Medieval key (copper version)" — assets/key.glb,
+ * 7k triangles with its own colour, roughness and normal maps, packed by
+ * tools/gltfpack.py. It arrives ~4 units long and six units off its origin,
+ * so it is recentred and fitted to 12 cm; the daylight-baked albedo gets
+ * the same lift the shell does. It loads async: `keyModel` is a Group that
+ * fills when the scan lands, and the drop, the inspect view and the hotbar
+ * all work off the Group either way. */
 function makeKeyIcon() {
   const c = document.createElement('canvas'); c.width = c.height = 48;
   const g = c.getContext('2d');
-  g.strokeStyle = '#c9a24e'; g.fillStyle = '#c9a24e'; g.lineCap = 'round';
+  g.strokeStyle = '#8a5a30'; g.fillStyle = '#8a5a30'; g.lineCap = 'round';
   g.lineWidth = 4;
   g.beginPath(); g.arc(13, 24, 7, 0, Math.PI * 2); g.stroke();             // the bow
   g.beginPath(); g.moveTo(20, 24); g.lineTo(41, 24); g.stroke();            // the shaft
   g.fillRect(34, 24, 4, 8); g.fillRect(27, 24, 3, 6);                        // the bits
   return c.toDataURL();
 }
-const keyModel = makeKey();
+const keyModel = new THREE.Group();
 const keyWorld = new THREE.Group();
 keyWorld.add(keyModel);
+new GLTFLoader().load('assets/key.glb', (gltf) => {
+  gltf.scene.updateMatrixWorld(true);
+  let geo = null, mat = null;
+  gltf.scene.traverse((o) => {
+    if (o.isMesh && !geo) { geo = o.geometry.clone().applyMatrix4(o.matrixWorld); mat = o.material; }
+  });
+  if (!geo) return;
+  geo.computeBoundingBox();
+  const bb = geo.boundingBox, size = bb.getSize(new THREE.Vector3()), mid = bb.getCenter(new THREE.Vector3());
+  geo.translate(-mid.x, -mid.y, -mid.z);
+  geo.computeBoundingSphere();
+  mat.emissive.setHex(0x4a3a2a);
+  mat.emissiveMap = mat.map;
+  mat.metalness = Math.min(mat.metalness, 0.25);      // no environment map: a true metal goes black
+  reexpose(mat, 0.62);
+  const m = new THREE.Mesh(geo, mat);
+  m.scale.setScalar(0.12 / Math.max(size.x, size.y, size.z));
+  keyModel.add(m);
+});
 const keyItem = {
-  id: 'key', name: 'Brass key', icon: makeKeyIcon(),
+  id: 'key', name: 'A Rusted Key', icon: makeKeyIcon(),
   use: () => openInspect(keyModel, { rotX: 0.9, rotY: 0.4 }),
 };
 function dropKey(c) {

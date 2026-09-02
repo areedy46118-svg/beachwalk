@@ -114,8 +114,8 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   drifted up against its land end; walk up the sand and onto the boards. The
   pier is solid — you cannot walk in under it — and its edges stop you rather
   than let you step off into the surf. The shed door opens with `E`. The crate
-  by the lamp post breaks the way the one under Bradly does, and holds a
-  **brass key** that, for now, opens nothing.
+  by the lamp post breaks the way the one under Bradly does, and holds
+  **A Rusted Key** — a scanned medieval key — that, for now, opens nothing.
 - **The shells** are scans now. Take one and it goes straight into your hand;
   click to hold it to your ear, and the hand rises to the side of your head
   while you listen. There is a word in it, under the roar, if you wait. Put
@@ -267,6 +267,13 @@ by [blenderboom](https://sketchfab.com/blenderboom),
 ["Dock House - Stylized Wooden Pier"](https://sketchfab.com/3d-models/dock-house-stylized-wooden-pier-4f0df975625a432c91f2685963d12500)
 by [voyoo](https://sketchfab.com/voyoo),
 [Sketchfab Standard](https://sketchfab.com/licenses) licence.
+
+
+**Medieval key (copper version)** — the key in the dock's crate.
+
+["Medieval key (copper version)"](https://sketchfab.com/3d-models/medieval-key-copper-version-21595543c33a4150bc65d04e025aa84c)
+by [Sousinho](https://sketchfab.com/sousinho),
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
 
 
 **Rusty Metal 02** — the rust on the ring.
