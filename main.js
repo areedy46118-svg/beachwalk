@@ -155,6 +155,9 @@ const DIG_DUR = 0.8;
 const DEFAULT_SETTINGS = { fov: 107, sensitivity: 1, brightness: 1.16, volume: 0.5, musicVolume: 0.32, waveVolume: 0.46, sfxVolume: 0.6, walkSpeed: 1.4, invertY: false };
 let settings = { ...DEFAULT_SETTINGS };
 try { settings = { ...settings, ...JSON.parse(localStorage.getItem('beachwalk.settings') || '{}') }; } catch (e) {}
+// walk speed is never remembered: every game starts at the default 1.4×, and
+// the slider is for the session you are in
+settings.walkSpeed = DEFAULT_SETTINGS.walkSpeed;
 function saveSettings() { try { localStorage.setItem('beachwalk.settings', JSON.stringify(settings)); } catch (e) {} }
 
 let audioStarted = false, audioCtx = null, masterGain = null;
@@ -2157,7 +2160,9 @@ new GLTFLoader().load('assets/rocks.glb', (gltf) => {
     // A half-buried chunk is scenery, not terrain: giving it a collider would
     // only shove you off a 20 cm nub you should be walking straight over.
     if (top > 0.42) {
-      rockColliders.push({ x: wx, z: wz, r: width * 0.5 * 0.82, top });
+      // the full half-width, not 82 % of it: at 0.82 the outer faces of the
+      // big masses stood clear of their own collider and you walked into stone
+      rockColliders.push({ x: wx, z: wz, r: width * 0.5, top });
     }
     return top;
   }
@@ -2252,7 +2257,7 @@ function pushOutOfRocks(feetY) {
   for (const c of rockColliders) {
     if (feetY >= c.top - 0.06) continue;        // above it: that's a floor, not a wall
     const dx = camera.position.x - c.x, dz = camera.position.z - c.z;
-    const rr = c.r + PLAYER_R * 0.6;
+    const rr = c.r + PLAYER_R * 0.85;
     const d2 = dx * dx + dz * dz;
     if (d2 >= rr * rr || d2 < 1e-6) continue;
     const d = Math.sqrt(d2);
@@ -3754,6 +3759,7 @@ function useSlot(i) {
   item.use();
 }
 function toggleEquip(item) {
+  if (listening) stopListening();               // whatever leaves your hand goes quiet
   equipped = (equipped === item) ? null : item;
   viewmodel.visible = !!equipped;
   toolMount.children.forEach((c) => { c.visible = false; });
@@ -4143,6 +4149,12 @@ castle.position.set(4.6, 0, CASTLE_Z);
   castle.add(spoil);
 }
 scene.add(castle);
+{
+  // solid: you walk round a sandcastle, not through it
+  const bb = new THREE.Box3().setFromObject(castle);
+  const size = bb.getSize(new THREE.Vector3());
+  rockColliders.push({ x: castle.position.x, z: castle.position.z, r: Math.max(size.x, size.z) * 0.42, top: bb.max.y });
+}
 
 const shovelWorld = makeShovel();
 shovelWorld.position.set(4.72, 0.72, CASTLE_Z + 0.08);
@@ -5121,7 +5133,37 @@ new GLTFLoader().load('assets/shell.glb', (gltf) => {
  * tight resonant peaks, which is physically what a shell does to room noise —
  * and a voice bed sits underneath it, filtered down until it's only ever
  * almost words. */
-let shellVoice = null, listening = false;
+let shellVoice = null, listening = false, shellAudio = null;
+/* Everything the shell is doing stops HERE, at once, and `toggleEquip()`
+ * calls it — put the shell down, switch to the shovel, open the pack, and
+ * the roar and the voice are gone on the same frame. It used to run its
+ * nine seconds out whatever you did with your hands. */
+function stopListening() {
+  if (!listening) return;
+  listening = false;
+  if (shellAudio) {
+    try { shellAudio.src.stop(); } catch (e) {}
+    try { shellAudio.out.gain.cancelScheduledValues(0); shellAudio.out.gain.value = 0; shellAudio.out.disconnect(); } catch (e) {}
+    clearTimeout(shellAudio.timer); clearTimeout(shellAudio.wordTimer);
+    shellAudio = null;
+  }
+  if (shellVoice) { shellVoice.pause(); shellVoice = null; }
+  if (window.speechSynthesis) speechSynthesis.cancel();
+  if (promptHTML.includes('ear')) setPrompt('');
+}
+/* The one word in the shell. Speech synthesis, because it is the only voice
+ * this dependency-free game has that can say a specific word — pitched low
+ * and slow and at a fraction of the volume, under the roar, so it is a thing
+ * you are not sure you heard. It is outside the Web Audio graph, so the
+ * master volume is applied by hand. */
+function sayInShell(word) {
+  if (!('speechSynthesis' in window) || !listening) return;
+  const u = new SpeechSynthesisUtterance(word);
+  u.volume = Math.min(1, 0.44 * settings.volume);
+  u.pitch = 0.3; u.rate = 0.6;
+  speechSynthesis.cancel();
+  speechSynthesis.speak(u);
+}
 function listenToShell() {
   const ctx = audioCtx;
   if (!ctx || listening) return;
@@ -5132,7 +5174,7 @@ function listenToShell() {
   out.gain.linearRampToValueAtTime(1, t + 1.2);
   out.gain.setValueAtTime(1, t + DUR - 2.2);
   out.gain.linearRampToValueAtTime(0, t + DUR);
-  out.connect(ctx.destination);
+  out.connect(sfxOut());
 
   // the roar: noise through two resonant peaks, like a cavity
   const src = noiseBurst(DUR, () => 1);
@@ -5163,11 +5205,11 @@ function listenToShell() {
   } catch (e) {}
 
   setPrompt('You hold it to your ear&hellip;');
-  setTimeout(() => {
-    listening = false;
-    if (shellVoice) { shellVoice.pause(); shellVoice = null; }
-    if (promptHTML.includes('ear')) setPrompt('');
-  }, DUR * 1000);
+  shellAudio = {
+    src, out,
+    wordTimer: setTimeout(() => sayInShell('lighthouse'), 3400),   // once the roar has settled
+    timer: setTimeout(stopListening, DUR * 1000),
+  };
 }
 
 // ------------------------------------------------------------------
@@ -5896,10 +5938,12 @@ if (lhParts.lampProxy) {
 const CRATE_X = 11.4, CRATE_R = 0.52, CRATE_H = 0.72;
 const CRATE_POWER = 0.75;              // ~0.64 s of charge — a real haul-back
 const crateZ = bradly.position.z - 2.5;
-const crate = new THREE.Group();
-crate.position.set(CRATE_X, 0, crateZ);
-crate.rotation.y = -0.32;
-let crateBroken = false;
+/* There is more than one now — the dock has its own — so the crate is a
+ * factory: `buildCrate(x, y, z, yaw, onBreak)` builds the boards, stands a
+ * collider under them, and registers in `crates[]`, which `crateStrike()`
+ * walks. `crate` / `crates[0].broken` / `breakCrate()` still name the first one,
+ * because the harness and the ring flow do. */
+const crates = [];
 /* Salt-bleached boards. Drawn the way the sand texture is — 256², a coarse
  * palette, nearest-filtered — so it sits in the same world as everything
  * else instead of looking like a prop from a different game: a flat brown
@@ -5950,7 +5994,10 @@ function makePlankTexture() {
   return t;
 }
 const plankTex = makePlankTexture();
-{
+function buildCrate(x, y, z, yaw, onBreak) {
+  const crate = new THREE.Group();
+  crate.position.set(x, y, z);
+  crate.rotation.y = yaw;
   const boardMat = new THREE.MeshStandardMaterial({
     map: plankTex, color: 0x8390a4, roughness: 1, flatShading: true,
     emissive: 0x2a3446, emissiveMap: plankTex,
@@ -5991,40 +6038,49 @@ const plankTex = makePlankTexture();
   strap.position.y = CRATE_H * 0.52;
   crate.add(strap);
   scene.add(crate);
-  rockColliders.push({ x: CRATE_X, z: crateZ, r: CRATE_R, top: CRATE_H });
+  const collider = { x, z, r: CRATE_R, top: y + CRATE_H };
+  rockColliders.push(collider);
   addItemShine(crate, { size: 0.9, height: 0.5, strength: 0.5 });
+  const entry = { group: crate, x, y, z, collider, onBreak, broken: false };
+  crates.push(entry);
+  return entry;
 }
+const crateEntry = buildCrate(CRATE_X, 0, crateZ, -0.32, () => dropRing());
+const crate = crateEntry.group;
 
 /* Hitting it. Raycast the crosshair straight at the crate rather than reading
  * the sand under it — aim at the lid and the ground point lands a metre past
  * the far side, which is exactly the kind of near-miss that reads as the game
  * being broken. */
 function crateStrike(P) {
-  if (crateBroken) return false;
   aimRay(P);
-  if (!digRay.intersectObject(crate, true).length) return false;
-  if (P >= CRATE_POWER) { hitConnect(P, 1); flashMats(crate); breakCrate(); return true; }
-  hitConnect(P, 0.45); flashMats(crate);
-  // it holds. The blade jars back at you, and a puff of dust off the boards
-  // says you connected — a swing that hits and does nothing must not feel
-  // the same as a swing that hit nothing at all.
-  sfxCrateThud();
-  addTrauma(0.17);
-  vmImpulse(-1.15);
-  spawnPuffs(CRATE_X, crateZ, 5, _pf.x, _pf.z, CRATE_H * 0.7, [0.52, 0.42, 0.30]);
-  return true;
+  for (const c of crates) {
+    if (c.broken) continue;
+    if (!digRay.intersectObject(c.group, true).length) continue;
+    if (P >= CRATE_POWER) { hitConnect(P, 1); flashMats(c.group); breakCrate(c); return true; }
+    hitConnect(P, 0.45); flashMats(c.group);
+    // it holds. The blade jars back at you, and a puff of dust off the boards
+    // says you connected — a swing that hits and does nothing must not feel
+    // the same as a swing that hit nothing at all.
+    sfxCrateThud();
+    addTrauma(0.17);
+    vmImpulse(-1.15);
+    spawnPuffs(c.x, c.z, 5, _pf.x, _pf.z, c.y + CRATE_H * 0.7, [0.52, 0.42, 0.30]);
+    return true;
+  }
+  return false;
 }
 
-function breakCrate() {
-  if (crateBroken) return;
-  crateBroken = true;
-  scene.remove(crate);
-  const ci = rockColliders.findIndex((c) => c.x === CRATE_X && c.z === crateZ);
+function breakCrate(c = crates[0]) {
+  if (!c || c.broken) return;
+  c.broken = true;
+  scene.remove(c.group);
+  const ci = rockColliders.indexOf(c.collider);
   if (ci >= 0) rockColliders.splice(ci, 1);
   sfxCrateBreak();
   addTrauma(0.5);
   hitstop = 0.06;
-  spawnPuffs(CRATE_X, crateZ, 18, _pf.x, _pf.z, CRATE_H * 0.6, [0.52, 0.42, 0.30]);
+  spawnPuffs(c.x, c.z, 18, _pf.x, _pf.z, c.y + CRATE_H * 0.6, [0.52, 0.42, 0.30]);
 
   // the boards, as real gibs so they bounce and settle with everything else
   const splint = new THREE.MeshStandardMaterial({
@@ -6034,8 +6090,8 @@ function breakCrate() {
   for (let i = 0; i < 18; i++) {
     const L = 0.10 + Math.random() * 0.26;
     const m = new THREE.Mesh(new THREE.BoxGeometry(L, 0.028, 0.05 + Math.random() * 0.05), splint);
-    m.position.set(CRATE_X + (Math.random() - 0.5) * 0.5,
-      0.1 + Math.random() * CRATE_H, crateZ + (Math.random() - 0.5) * 0.5);
+    m.position.set(c.x + (Math.random() - 0.5) * 0.5,
+      c.y + 0.1 + Math.random() * CRATE_H, c.z + (Math.random() - 0.5) * 0.5);
     m.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
     scene.add(m);
     const a = Math.random() * Math.PI * 2, out = 0.9 + Math.random() * 2.0;
@@ -6043,10 +6099,10 @@ function breakCrate() {
       m,
       vel: new THREE.Vector3(Math.cos(a) * out, 1.9 + Math.random() * 2.4, Math.sin(a) * out),
       spin: new THREE.Vector3((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14),
-      rest: 0.02, life: 40, bleed: false,
+      rest: c.y + 0.02, life: 40, bleed: false,
     });
   }
-  dropRing();
+  if (c.onBreak) c.onBreak(c);
 }
 
 /* What was in it. The ring goes down on the sand where the crate stood, with
@@ -6141,6 +6197,62 @@ const ringItem = {
  * up out of the boards on a real body, toward you, rings off the sand when
  * it lands, and sits under a glint twice the size a takeable normally gets.
  * The arc is the point: your eye follows a thing that moves. */
+/* What the dock's crate holds. A brass key, and for now it opens nothing:
+ * it is a placeholder for whatever the pier turns out to be about — a thing
+ * to find and turn over so the crate is worth breaking. It is NOT thrown on
+ * a body like the ring: PhysProp knows one ground, the sand, and a key
+ * bouncing off a deck two metres up would fall straight through the boards
+ * to the beach underneath. It is set down where the crate stood. */
+function makeKey() {
+  const g = new THREE.Group();
+  const brass = new THREE.MeshStandardMaterial({ color: 0xa8843c, roughness: 0.5, metalness: 0.22, emissive: 0x3a2a10, flatShading: true });
+  const bow = new THREE.Mesh(new THREE.TorusGeometry(0.017, 0.0045, 6, 14), brass);
+  bow.position.x = -0.038;
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.0042, 0.0042, 0.072, 8), brass);
+  shaft.rotation.z = Math.PI / 2;
+  const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.0065, 0.0065, 0.008, 8), brass);
+  collar.rotation.z = Math.PI / 2; collar.position.x = -0.016;
+  const bit1 = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.015, 0.0045), brass); bit1.position.set(0.029, -0.011, 0);
+  const bit2 = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.010, 0.0045), brass); bit2.position.set(0.016, -0.009, 0);
+  g.add(bow, shaft, collar, bit1, bit2);
+  return g;
+}
+function makeKeyIcon() {
+  const c = document.createElement('canvas'); c.width = c.height = 48;
+  const g = c.getContext('2d');
+  g.strokeStyle = '#c9a24e'; g.fillStyle = '#c9a24e'; g.lineCap = 'round';
+  g.lineWidth = 4;
+  g.beginPath(); g.arc(13, 24, 7, 0, Math.PI * 2); g.stroke();             // the bow
+  g.beginPath(); g.moveTo(20, 24); g.lineTo(41, 24); g.stroke();            // the shaft
+  g.fillRect(34, 24, 4, 8); g.fillRect(27, 24, 3, 6);                        // the bits
+  return c.toDataURL();
+}
+const keyModel = makeKey();
+const keyWorld = new THREE.Group();
+keyWorld.add(keyModel);
+const keyItem = {
+  id: 'key', name: 'Brass key', icon: makeKeyIcon(),
+  use: () => openInspect(keyModel, { rotX: 0.9, rotY: 0.4 }),
+};
+function dropKey(c) {
+  keyModel.rotation.set(Math.PI / 2, 0, 0.6);           // lying flat on the boards
+  keyWorld.position.set(c.x + 0.12, c.y + 0.006, c.z - 0.08);
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy'; hit.position.y = 0.05; keyWorld.add(hit);
+  scene.add(keyWorld);
+  addItemShine(keyWorld, { size: 1.1, height: 0.45, strength: 2.6 });
+  addInteractable(keyWorld, 'Take the key', 'inventory', {
+    onActivate: () => {
+      scene.remove(keyWorld);
+      removeInteractable(keyWorld);
+      hovered = null;
+      addToInventory(keyItem);
+      sfxThud(0.03);
+    },
+  });
+}
+
 let ringProp = null;
 function dropRing() {
   ring.position.set(0, 0.012, 0);
@@ -7907,8 +8019,41 @@ new GLTFLoader().load('assets/dock.glb', (gltf) => {
     m.metalness = 0;
     reexpose(m, 0.68);
   });
+  /* The door opens. The model's Door mesh is re-hung on a pivot at its hinge
+   * edge (model space, hinge at x = -1.14 on the shed's seaward face) with
+   * `attach()`, which keeps its world transform, and the pivot swings in
+   * `updateDock()`. Its doorway slab is solid only while it is shut. */
+  let doorMesh = null, boxMesh = null;
+  gltf.scene.traverse((o) => {
+    if (!o.isMesh) return;
+    if (o.material.name === 'Door') doorMesh = o;
+    if (o.material.name === 'BoxCrate') boxMesh = o;
+  });
+  gltf.scene.updateMatrixWorld(true);
+  if (doorMesh) {
+    const pivot = new THREE.Group();
+    pivot.position.set(-1.14, 0, -0.945);
+    gltf.scene.add(pivot);
+    pivot.updateMatrixWorld(true);
+    pivot.attach(doorMesh);
+    dockDoor = pivot;
+    addInteractable(pivot, 'Open the door', 'action', {
+      onActivate: () => {
+        dockDoorOpen = !dockDoorOpen;
+        dockDoorEntry.label = dockDoorOpen ? 'Close the door' : 'Open the door';
+        sfxDoor(dockDoorOpen);
+      },
+    });
+    dockDoorEntry = interactables[interactables.length - 1];
+  }
+  // the model's own crate is stood down for one you can break open
+  if (boxMesh) boxMesh.visible = false;
   dock.add(gltf.scene);
   dock.updateMatrixWorld(true);
+  {
+    const at = dock.localToWorld(new THREE.Vector3(-0.31, 0.62, 2.10));
+    buildCrate(at.x, DOCK_DECK, at.z, 0.4, dropKey);
+  }
   // the lamps light the boards: the post at the sea end, the one by the door
   const post = dock.localToWorld(new THREE.Vector3(0.17, 1.28, 2.5));
   const door = dock.localToWorld(new THREE.Vector3(-1.94, 1.03, -0.93));
@@ -7929,29 +8074,72 @@ new GLTFLoader().load('assets/dock.glb', (gltf) => {
  * shallowest face, and only at deck height — under the boards they are not
  * there. Model space for all of it: the pier is turned -90°, so model x runs
  * down world z and model z runs back up world x. */
-let onDock = false;
+/* The pier is SOLID from below and EDGED from above, and which of those you
+ * get is a matter of where you came from, not of how high the floor is.
+ *
+ * The first version let the boards count as a floor whenever your feet were
+ * within a step of them — and the drift runs on under the deck, so walking
+ * in beneath the pier carried you up the sand until your feet were close
+ * enough, and then the deck took you: you popped up through the boards. And
+ * at the sea end, stepping off dropped `onDock`, the WADE_X clamp came back
+ * on, and it threw you a metre and a half up the beach. Both were the same
+ * bug: a floor test that did not know whether you were on the thing.
+ *
+ * So `onDock` is STICKY. You get on only at the buried land end, where the
+ * sand is level with the boards; once on, you stay on until you walk off
+ * that same end, and the other three edges simply stop you — you do not
+ * step off a pier into the surf by accident. Not on it, the whole footprint
+ * is a wall: pushed out along the shallowest face, never toward the buried
+ * end, and never toward a face that would put you past WADE_X where the
+ * surf clamp would only throw you straight back. */
+let onDock = false, dockDoorOpen = false, dockDoorSwing = 0, dockDoor = null, dockDoorEntry = null;
+const DOCK_DOOR_SLAB = [-1.14, -1.00, -0.73, -0.90];      // the doorway, solid while shut
 function updateDock(dt) {
+  if (dockDoor) {
+    const target = dockDoorOpen ? 1 : 0;
+    dockDoorSwing += THREE.MathUtils.clamp(target - dockDoorSwing, -1, 1) * Math.min(1, dt * 3.2);
+    if (Math.abs(target - dockDoorSwing) < 0.004) dockDoorSwing = target;
+    dockDoor.rotation.y = dockDoorSwing * 1.5;           // swings in, off the deck
+  }
   const dx = camera.position.x - DOCK_X, dz = camera.position.z - DOCK_Z;
-  onDock = false;
-  if (Math.abs(dx) > 24 || Math.abs(dz) > 16) return;
+  if (Math.abs(dx) > 24 || Math.abs(dz) > 16) { onDock = false; return; }
   const feet = camBaseY - EYE_HEIGHT;
   const g = driftAt(camera.position.x, camera.position.z);
   if (g > groundY) groundY = g;
   let lx = dz / DOCK_S, lz = -dx / DOCK_S;
-  const onBoards = lx > DK.X0 && lx < DK.X1 && lz > DK.Z0 && lz < DK.Z1;
-  if (onBoards && DOCK_DECK <= feet + 0.45 && DOCK_DECK > groundY) { groundY = DOCK_DECK; onDock = true; }
-  if (feet > DOCK_DECK - 0.4 && feet < DOCK_DECK + 1.2) {
-    const pr = PLAYER_R / DOCK_S;
-    for (const [x0, z0, x1, z1] of DOCK_WALLS) {
-      if (lx <= x0 - pr || lx >= x1 + pr || lz <= z0 - pr || lz >= z1 + pr) continue;
-      const push = [x0 - pr - lx, x1 + pr - lx, z0 - pr - lz, z1 + pr - lz];
-      let k = 0;
-      for (let i = 1; i < 4; i++) if (Math.abs(push[i]) < Math.abs(push[k])) k = i;
-      if (k < 2) lx += push[k]; else lz += push[k];
+  const pr = PLAYER_R / DOCK_S;
+  const inFoot = lx > DK.X0 - pr && lx < DK.X1 + pr && lz > DK.Z0 - pr && lz < DK.Z1 + pr;
+  const wasOn = onDock;
+  onDock = false;
+  if (inFoot) {
+    // the way on: the buried land end, at the height of the boards
+    const entering = !wasOn && feet >= DOCK_DECK - 0.35 && lz < DK.Z0 + 1.2;
+    if (wasOn || entering) {
+      onDock = true;
+      if (DOCK_DECK > groundY) groundY = DOCK_DECK;
+      // the edge stops you; only the land end is open
+      lx = THREE.MathUtils.clamp(lx, DK.X0 + pr, DK.X1 - pr);
+      lz = Math.min(lz, DK.Z1 - pr);
+      const walls = dockDoorOpen ? DOCK_WALLS : DOCK_WALLS.concat([DOCK_DOOR_SLAB]);
+      for (const [x0, z0, x1, z1] of walls) {
+        if (lx <= x0 - pr || lx >= x1 + pr || lz <= z0 - pr || lz >= z1 + pr) continue;
+        const push = [x0 - pr - lx, x1 + pr - lx, z0 - pr - lz, z1 + pr - lz];
+        let k = 0;
+        for (let i = 1; i < 4; i++) if (Math.abs(push[i]) < Math.abs(push[k])) k = i;
+        if (k < 2) lx += push[k]; else lz += push[k];
+      }
+    } else {
+      // not on it: it is a wall. Faces in model space, then the world x each
+      // would leave you at, so the surf clamp is never asked to undo a push.
+      const cands = [
+        [DK.X0 - pr - lx, 0], [DK.X1 + pr - lx, 0], [0, DK.Z1 + pr - lz],
+      ].filter(([px, pz]) => DOCK_X - (lz + pz) * DOCK_S >= WADE_X + 0.05);
+      cands.sort((a, b) => (Math.abs(a[0]) + Math.abs(a[1])) - (Math.abs(b[0]) + Math.abs(b[1])));
+      if (cands.length) { lx += cands[0][0]; lz += cands[0][1]; }
     }
-    camera.position.x = DOCK_X - lz * DOCK_S;
-    camera.position.z = DOCK_Z + lx * DOCK_S;
   }
+  camera.position.x = DOCK_X - lz * DOCK_S;
+  camera.position.z = DOCK_Z + lx * DOCK_S;
 }
 
 /* Thirty metres short of the wreck, on the wet sand. You pick it up as a
@@ -8405,17 +8593,18 @@ window.__bw = {
   get insideDrain() { return insideDrain; }, get drainMix() { return drainMix; },
   waterSurfaceAt, submersionAt, restYInWater, groundGlow, addRipple,
   shells, listenToShell, makeRockGeo, dock, ring, driftAt, updateDock,
-  listen: (v) => { listening = v; },      // the ear pose without the audio, for the preview harness
+  listen: (v) => { listening = v; }, stopListening, keyItem, keyWorld,   // the ear pose without the audio, for the preview harness
+  get dockDoorOpen() { return dockDoorOpen; }, set dockDoorOpen(v) { dockDoorOpen = v; }, get onDock() { return onDock; },
   get crabModel() { return crabModel; }, get crabMixer() { return crabMixer; },
   lhDoor, shinies, onPath, pathBend, pathHalfAt, lhWindows, lanternGlass,
   get doorOpen() { return doorOpen; }, set doorOpen(v) { doorOpen = v; doorSwing = v ? 1 : 0; lhDoor.rotation.y = -doorSwing * 1.95; },
   get insideTower() { return insideTower; },
-  rockColliders, rockGroundAt, rockGroup,
+  rockColliders, rockGroundAt, pushOutOfRocks, rockGroup,
   startPeek, endPeek, respawn, get peeking() { return peeking; }, get gateEyes() { return gateEyes; },
   get ringProp() { return ringProp; },
   armRig, shovelItem, startWind, releaseWind,
   crate, ringItem, ringWorld, rings, breakCrate, wearRing,
-  get crateBroken() { return crateBroken; }, get ringsFound() { return ringsFound; },
+  get crateBroken() { return crates[0].broken; }, crates, get ringsFound() { return ringsFound; },
   get digT() { return digT; }, get digPower() { return digPower; }, get winding() { return winding; },
   corpse, CORPSE_X, CORPSE_Z,
   get lhParts() { return lhParts; },

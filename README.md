@@ -111,11 +111,18 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - **The dock house** — sixty metres past the wreck, a pier on piles standing
   out from the cliff foot into the surf, with a shed on the boards, a lamp lit
   on the post at the sea end, and a boat tied up under it. The beach has
-  drifted up against its land end; walk up the sand and onto the boards.
+  drifted up against its land end; walk up the sand and onto the boards. The
+  pier is solid — you cannot walk in under it — and its edges stop you rather
+  than let you step off into the surf. The shed door opens with `E`. The crate
+  by the lamp post breaks the way the one under Bradly does, and holds a
+  **brass key** that, for now, opens nothing.
 - **The shells** are scans now. Take one and it goes straight into your hand;
   click to hold it to your ear, and the hand rises to the side of your head
-  while you listen.
-- **The crate below Bradly** — washed up at the cliff foot, and the one lock
+  while you listen. There is a word in it, under the roar, if you wait. Put
+  the shell down and it goes silent at once.
+- **Walk speed always starts at 1.4×.** The slider in the menu is for the
+  session you are in; it is not remembered.
+- **The crate below Bradly** — washed up at the cliff foot, and the first lock
   in the game. A left click thuds off the boards. Only a wound-up heavy (about
   two-thirds of a full charge) puts the blade through the lid.
 - **The Octopus Ring** — in the crate: a scanned ring, an octopus with its

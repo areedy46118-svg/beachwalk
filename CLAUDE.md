@@ -104,6 +104,28 @@ so `normal` reads as zero, the weights sum to nothing and the ring renders as
 a black cut-out. Flat shading never notices, because three derives its
 lighting normal from derivatives too. `uTri` is the tiling.
 
+**The dock is solid from below and edged from above, and `onDock` is
+STICKY.** The first `updateDock()` let the boards count as a floor whenever
+your feet were within a step of them — but the drift runs on under the deck,
+so walking in beneath the pier carried you up the sand until the deck took
+you and you popped up through the boards; and stepping off the sea end
+dropped `onDock`, brought the `WADE_X` clamp back, and threw you a metre and
+a half up the beach. Same bug both times: a floor test that did not know
+whether you were on the thing. Now you get on only at the buried land end
+at board height, you stay on until you leave by that end, the other three
+edges clamp, and off the pier its whole footprint is a wall — pushed out
+along the shallowest face, never toward the buried end, and never toward a
+face that would land you past `WADE_X`. The shed door is the model's own
+Door mesh re-hung on a pivot with `attach()`; its doorway slab is solid
+only while `dockDoorOpen` is false.
+
+**Crates are a factory now** — `buildCrate(x, y, z, yaw, onBreak)` into
+`crates[]`, walked by `crateStrike()`; `crate`/`breakCrate()` still mean the
+first. Gibs and puffs take the crate's own `y`, so the deck crate's boards
+land on the deck. The key it holds is set down, not thrown: `PhysProp`
+knows one ground, the sand, and a body bouncing on a deck two metres up
+falls straight through the boards.
+
 **The dock house is a fixed world object like the wreck** (`DOCK_*`,
 `updateDock()`), sixty metres past it. The model is built at about 1:2.8 —
 its door is 65 cm — so it is scaled to a door you can walk through and turned
@@ -117,6 +139,32 @@ doorway left out, pushed out of along the shallowest face and only at deck
 height. `onDock` lifts the `WADE_X` clamp because the sea end stands past it.
 The two lamp materials are lit and carry a PointLight each; the whole thing
 is in `farProps` at 300 m.
+
+**Whatever leaves your hand goes quiet.** `toggleEquip()` calls
+`stopListening()`, which kills the roar source, the whisper element, the
+speech utterance and both timers on the same frame; the shell used to run
+its nine seconds out whatever you did. The word in it is `speechSynthesis`
+— the only voice a dependency-free game has that can say a specific word —
+pitched low, slow, and at a fraction of the volume with the master volume
+applied by hand, because it lives outside the Web Audio graph.
+
+**Anything flat stuck to the wreck's hull is built from `hullPt()`.** The
+plating flares and tumbles home, so a plane hung at one beam floats off the
+plate within a metre; `hullQuad()` puts all four corners on the loft. The
+porthole streaks and the name on the bows go through it, and they are
+`noBake` so `bakeGroup()` leaves their materials alone. `hullQuad()` is a
+GRID, not a quad: the hull is convex both ways, and a flat quad between two
+points on it is a chord whose middle lies inside the plate — the name was
+drawn that way first and only its two ends showed.
+
+**The hold's inner walls are an inner skin on the same loft.** They were
+flat slabs 2.8 m off the centreline the whole way down, and below the
+porthole line the section tumbles home to ~2.3 m — so along the length of
+the hold the inner wall stood PROUD of the plating and, from the beach, the
+lower half of her was one black slab with a hard straight top edge. That
+was the wreck's "it looks like slop" from the day it was built, and no
+amount of texture fixed it. If the lower hull ever reads as a black band
+again, raycast into the side: the first hit must be `M.hull`.
 
 **The shells are a scan** (`assets/shell.glb`, blenderboom's, 11 cm at true
 size and laid down at 2–3×). The placement and its interactables run in the
