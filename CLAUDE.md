@@ -168,9 +168,16 @@ A full **bottle of water** (`models/water-bottle.js`) sits by the bed —
 `waterBottleItem`, takeable with `E`, examinable like the crab. It is not
 wired to `hp`; making it a consumable would just need `use` to call a heal.
 
-**The wreck.** `models/shipwreck.js` → `makeShipwreck()`, lying across the
-beach at `SHIP_X` / `SHIP_Z` so it blocks the walk; you get past it by going
-through it. Collision is a **floor lookup**, not a solid: `shipFloorAt(lx, lz,
+**The wreck.** `models/shipwreck.js` → `makeShipwreck()`, the **Limulus** — an
+old horseshoe-crabbing boat, which is why her gear is aboard and why the catch
+is still in the hold. She lies across the beach at `SHIP_X` / `SHIP_Z` and
+blocks the walk; you get past it by going through it.
+
+The hull is a loft with `beamAt` (fined stem, rounded transom), `flareAt` (bow
+flare), `rakeAt` (the stem leans forward as it rises) and **`sheerAt`** (the
+deck line lifts to both ends). Sheer is the one that stops a hull reading as a
+shoebox — and because the plating follows it, `shipFloorAt()` has to as well
+via `deckYAt(lx)`, or you float over the bow and sink at midships. Collision is a **floor lookup**, not a solid: `shipFloorAt(lx, lz,
 feet)` returns the highest walkable surface at or just below your feet, so the
 hold floor and the deck can sit at the same (x, z) without fighting — the deck
 is only selectable once the stair has actually lifted you. Anywhere inside the

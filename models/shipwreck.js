@@ -51,22 +51,43 @@ const BR_X0 = 7.0, BR_X1 = 11.0, BR_HZ = 2.5, BR_H = 2.7;
 
 function rnd(seed) { const s = Math.sin(seed * 91.7) * 43758.5453; return s - Math.floor(s); }
 
-// how wide the hull is at a given station, 0 at the stem, full amidships
+// How wide the hull is at a given station: fine at the stem, full amidships,
+// tucking in again to a rounded transom.
 function beamAt(x) {
   const u = x / HALF;                                   // -1 .. 1
-  if (u > 0.62) {                                       // bow, fines away
-    const t = (u - 0.62) / 0.38;
-    return (BEAM / 2) * (1 - t * t * 0.96);
+  if (u > 0.34) {                                       // the bow fines away early
+    const t = (u - 0.34) / 0.66;
+    return (BEAM / 2) * (1 - Math.pow(t, 1.65) * 0.97);
   }
-  if (u < -0.72) {                                      // rounded transom
-    const t = (-u - 0.72) / 0.28;
-    return (BEAM / 2) * (1 - t * t * 0.55);
+  if (u < -0.70) {                                      // rounded transom
+    const t = (-u - 0.70) / 0.30;
+    return (BEAM / 2) * (1 - t * t * 0.62);
   }
-  return (BEAM / 2) * (1 - 0.06 * u * u);
+  return (BEAM / 2) * (1 - 0.09 * u * u);
 }
-// the section: how far out the hull is at a given height, 0 = keel, 1 = deck
+// The section, keel (0) to deck (1): slack bilge, then flare in the topsides
+// so she isn't a slab. The flare is strongest forward — see flareAt().
 function sectionK(v) {
-  return Math.pow(Math.min(1, v * 1.35), 0.62);         // slack bilge, firm topsides
+  return Math.pow(Math.min(1, v * 1.32), 0.58);
+}
+function flareAt(x, v) {
+  const u = x / HALF;
+  const fwd = Math.max(0, (u - 0.1) / 0.9);
+  return 1 + fwd * fwd * 0.42 * Math.pow(v, 2.2);       // bow flare
+}
+// Sheer: the deck line lifts toward both ends, most of it forward. This is
+// what stops a hull reading as a shoebox, so the walkable deck follows it
+// too — see shipFloorAt() in main.js.
+function sheerAt(x) {
+  const u = THREE.MathUtils.clamp(x / HALF, -1, 1);
+  return 0.62 * Math.pow(Math.max(0, u), 2.1) + 0.30 * Math.pow(Math.max(0, -u), 2.4);
+}
+// The stem rakes forward as it rises, and the transom tucks under.
+function rakeAt(x, v) {
+  const u = x / HALF;
+  const fwd = Math.max(0, (u - 0.3) / 0.7);
+  const aft = Math.max(0, (-u - 0.5) / 0.5);
+  return fwd * fwd * 1.5 * v * v - aft * aft * 0.55 * (1 - v) * (1 - v);
 }
 
 function slab(w, h, d, mat, x, y, z, rx = 0, ry = 0, rz = 0) {
@@ -77,43 +98,53 @@ function slab(w, h, d, mat, x, y, z, rx = 0, ry = 0, rz = 0) {
 }
 
 // ---- the hull skin ------------------------------------------------------
-function hullGeo(opts) {
-  const { xs = 34, vs = 9, breach = true } = opts || {};
-  const pos = [], idx = [];
-  const ring = [];
-  for (let i = 0; i <= xs; i++) {
-    const x = -HALF + (i / xs) * LEN;
-    const b = beamAt(x);
-    const row = [];
-    for (let j = 0; j <= vs; j++) {
-      const v = j / vs;
-      const y = KEEL_Y + v * (RAIL_Y - KEEL_Y);
-      const z = b * sectionK(v);
-      row.push([x, y, z]);
-    }
-    ring.push(row);
+// Torn openings, over and above the breach you walk through — she has been
+// on the sand a long time and the plating has gone in places.
+const HOLES = [
+  { x: -9.2, v: 0.62, rx: 1.5, rv: 0.20, side: 1 },
+  { x: -7.4, v: 0.34, rx: 0.9, rv: 0.13, side: -1 },
+  { x: 4.6, v: 0.55, rx: 1.2, rv: 0.16, side: -1 },
+  { x: 8.4, v: 0.44, rx: 1.0, rv: 0.14, side: 1 },
+  { x: -4.0, v: 0.78, rx: 1.7, rv: 0.14, side: -1 },
+];
+function holedAt(x, v, sg) {
+  for (const h of HOLES) {
+    if (h.side !== sg) continue;
+    const dx = (x - h.x) / h.rx, dv = (v - h.v) / h.rv;
+    if (dx * dx + dv * dv < 1) return true;
   }
-  const push = (p) => { pos.push(p[0], p[1], p[2]); return pos.length / 3 - 1; };
-  // two sides, mirrored in z
+  return false;
+}
+
+function hullGeo() {
+  const xs = 44, vs = 11;
+  const pos = [], idx = [];
+  const P = (i, j, sg) => {
+    const t = i / xs;
+    const x0 = -HALF + t * LEN;
+    const v = j / vs;
+    const deckTop = DECK_Y + sheerAt(x0) + 0.75;        // top of the bulwark
+    const y = KEEL_Y + v * (deckTop - KEEL_Y);
+    const b = beamAt(x0) * sectionK(v) * flareAt(x0, v);
+    return [x0 + rakeAt(x0, v), y, sg * b];
+  };
   for (const sg of [1, -1]) {
     const base = pos.length / 3;
     for (let i = 0; i <= xs; i++)
-      for (let j = 0; j <= vs; j++) {
-        const p = ring[i][j];
-        push([p[0], p[1], sg * p[2]]);
-      }
-    for (let i = 0; i < xs; i++) {
+      for (let j = 0; j <= vs; j++) { const p = P(i, j, sg); pos.push(p[0], p[1], p[2]); }
+    for (let i = 0; i < xs; i++)
       for (let j = 0; j < vs; j++) {
         const x0 = -HALF + (i / xs) * LEN, x1 = -HALF + ((i + 1) / xs) * LEN;
-        const yv = KEEL_Y + (j / vs) * (RAIL_Y - KEEL_Y);
-        // leave the doorway out of the +Z side
-        if (breach && sg > 0 && x1 > BREACH_X0 && x0 < BREACH_X1 && yv < 2.35) continue;
+        const xm = (x0 + x1) / 2, vm = (j + 0.5) / vs;
+        const yv = KEEL_Y + vm * (DECK_Y + sheerAt(xm) + 0.75 - KEEL_Y);
+        // the doorway you walk in through
+        if (sg > 0 && x1 > BREACH_X0 && x0 < BREACH_X1 && yv < 2.35) continue;
+        if (holedAt(xm, vm, sg)) continue;
         const a = base + i * (vs + 1) + j;
         const b2 = base + (i + 1) * (vs + 1) + j;
         if (sg > 0) idx.push(a, b2, b2 + 1, a, b2 + 1, a + 1);
         else idx.push(a, b2 + 1, b2, a, a + 1, b2 + 1);
       }
-    }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -242,6 +273,7 @@ export function makeShipwreck(opts = {}) {
     wood:  new THREE.MeshStandardMaterial({ color: 0x4a3524, roughness: 1, metalness: 0, emissive: 0x100b06, flatShading: true }),
     brass: new THREE.MeshStandardMaterial({ color: 0x7a6330, roughness: 0.6, metalness: 0.6, emissive: 0x120e05, flatShading: true }),
     glass: new THREE.MeshStandardMaterial({ color: 0x2a3238, roughness: 0.3, metalness: 0.2, emissive: 0x080c10, transparent: true, opacity: 0.45, side: THREE.DoubleSide }),
+    shell: new THREE.MeshStandardMaterial({ color: 0x6b5a44, roughness: 1, metalness: 0, emissive: 0x14100a, flatShading: true }),
     sand:  opts.sandMat || new THREE.MeshStandardMaterial({ color: 0x6d7d99, roughness: 0.95, emissive: 0x27324a, flatShading: true }),
   };
 
@@ -257,8 +289,8 @@ export function makeShipwreck(opts = {}) {
     for (let i = 0; i <= xs; i++)
       for (let j = 0; j <= zs; j++) {
         const x = -HALF + (i / xs) * LEN;
-        const b = beamAt(x) * sectionK(1) * 0.985;
-        pos.push(x, DECK_Y, -b + (j / zs) * b * 2);
+        const b = beamAt(x) * sectionK(1) * flareAt(x, 1) * 0.985;
+        pos.push(x, DECK_Y + sheerAt(x), -b + (j / zs) * b * 2);
       }
     for (let i = 0; i < xs; i++)
       for (let j = 0; j < zs; j++) {
@@ -267,7 +299,10 @@ export function makeShipwreck(opts = {}) {
         const z0 = -bz + (j / zs) * bz * 2, z1 = -bz + ((j + 1) / zs) * bz * 2;
         const inHatch = x1 > HATCH_X0 && x0 < HATCH_X1 && z1 > -HATCH_HZ && z0 < HATCH_HZ;
         const inStair = x1 > STAIR_X0 && x0 < STAIR_X1 && z1 > STAIR_Z0 && z0 < STAIR_Z1;
-        if (inHatch || inStair) continue;
+        // a stretch of plating gone forward, frames showing through
+        const zm = (z0 + z1) / 2, xm = (x0 + x1) / 2;
+        const collapsed = xm > -11.0 && xm < -7.4 && zm > 0.2 && zm < 2.6;
+        if (inHatch || inStair || collapsed) continue;
         const a = i * (zs + 1) + j, b2 = (i + 1) * (zs + 1) + j;
         idx.push(a, b2, b2 + 1, a, b2 + 1, a + 1);
       }
@@ -367,12 +402,16 @@ export function makeShipwreck(opts = {}) {
     const n = 46;
     for (let i = 0; i <= n; i++) {
       const x = -HALF + (i / n) * LEN;
-      const b = beamAt(x) * sectionK(1);
+      const b = beamAt(x) * sectionK(1) * flareAt(x, 1);
       if (b < 0.35) continue;
       for (const sg of [-1, 1]) {
         // no bulwark where the ramp leaves the deck
         if (sg < 0 && x > RAMP_X0 - 0.3 && x < RAMP_X1 + 0.3) continue;
-        HULL.add(slab(LEN / n + 0.05, 0.72, 0.13, M.hull, x, DECK_Y + 0.36, sg * (b - 0.05)));
+        // and stretches of it torn away or folded flat
+        if (rnd(i * 5.7 + (sg > 0 ? 0 : 40)) < 0.22) continue;
+        const lean = (rnd(i * 3.1 + sg) - 0.5) * 0.5;
+        HULL.add(slab(LEN / n + 0.05, 0.72, 0.13, M.hull, x,
+          DECK_Y + sheerAt(x) + 0.36, sg * (b - 0.05), lean, 0, 0));
       }
     }
   }
@@ -397,6 +436,7 @@ export function makeShipwreck(opts = {}) {
   S.add(BR);
   {
     const w = BR_X1 - BR_X0, cx = (BR_X0 + BR_X1) / 2;
+    BR.position.y = sheerAt(cx);          // she carries sheer aft too
     // walls, with a doorway punched in the -X face
     BR.add(slab(w, 0.12, BR_HZ * 2, M.deck, cx, DECK_Y + BR_H, 0));          // roof
     for (const sg of [-1, 1])
@@ -451,12 +491,12 @@ export function makeShipwreck(opts = {}) {
   // ================= mast, derrick, chain =================================
   {
     const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.16, 6.2, 7), M.steel);
-    mast.position.set(-2.0, DECK_Y + 3.1, 0);
+    mast.position.set(-2.0, DECK_Y + sheerAt(-2.0) + 3.1, 0);
     mast.rotation.z = 0.10;
     S.add(mast);
-    S.add(slab(0.08, 0.08, 2.2, M.steel, -2.3, DECK_Y + 5.1, 0));
+    S.add(slab(0.08, 0.08, 2.2, M.steel, -2.3, DECK_Y + sheerAt(-2.3) + 5.1, 0));
     const boom = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 3.6, 6), M.steel);
-    boom.position.set(-3.4, DECK_Y + 1.5, 0.5);
+    boom.position.set(-3.4, DECK_Y + sheerAt(-3.4) + 1.5, 0.5);
     boom.rotation.set(0, 0.3, 1.15);
     S.add(boom);
     // anchor chain out of the hawse, down into the sand
@@ -467,6 +507,113 @@ export function makeShipwreck(opts = {}) {
       lk.rotation.set(i % 2 ? 0 : Math.PI / 2, 0.4, 0.2);
       S.add(lk);
     }
+  }
+
+  // ================= what she was working =================================
+  // A horseshoe crabber: culling boards to sort the catch on, stacked wire
+  // baskets, the davit and winch that swung them inboard, and the shells
+  // still lying in the hold decades later.
+  {
+    const dy = (x) => DECK_Y + sheerAt(x);
+
+    // culling table, port side aft of the hatch
+    const TX = -1.6, TZ = -2.2;
+    S.add(slab(3.4, 0.08, 1.15, M.wood, TX, dy(TX) + 0.85, TZ));
+    for (const dx of [-1.5, 1.5]) for (const dz of [-0.45, 0.45])
+      S.add(slab(0.09, 0.85, 0.09, M.steel, TX + dx, dy(TX) + 0.42, TZ + dz));
+    S.add(slab(3.4, 0.13, 0.06, M.wood, TX, dy(TX) + 0.95, TZ - 0.55));   // lip
+
+    // stacked wire baskets — open crates, some tipped
+    const basket = (x, y, z, ry, tip) => {
+      const g2 = new THREE.Group();
+      g2.position.set(x, y, z); g2.rotation.set(tip, ry, tip * 0.6);
+      const w = 0.62, h = 0.34;
+      g2.add(slab(w, 0.05, w, M.steel, 0, -h / 2, 0));
+      for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        for (let k = 0; k < 4; k++) {
+          const o = -w / 2 + 0.06 + k * (w - 0.12) / 3;
+          g2.add(slab(ax ? 0.035 : 0.035, h, az ? 0.035 : 0.035, M.steel,
+            ax ? ax * w / 2 : o, 0, az ? az * w / 2 : o));
+        }
+        g2.add(slab(ax ? 0.05 : w, 0.05, az ? 0.05 : w, M.steel, ax * w / 2, h / 2, az * w / 2));
+      }
+      // bake here: these are Groups, and the bake at the end only collapses
+      // direct Mesh children, so eleven of them would add ~230 draw calls
+      return bakeGroup(g2);
+    };
+    for (let i = 0; i < 7; i++) {
+      const x = -6.4 + rnd(i * 3.7) * 3.0;
+      const z = 2.15 + rnd(i * 5.1) * 0.5;
+      S.add(basket(x, dy(x) + 0.2 + (i % 3) * 0.36, z, rnd(i) * 1.2, (rnd(i * 2.2) - 0.5) * 0.25));
+    }
+    for (let i = 0; i < 4; i++) {          // and some spilled into the hold
+      const x = HOLD_X0 + 1.0 + rnd(i * 7.7) * (HOLD_X1 - HOLD_X0 - 2);
+      S.add(basket(x, HOLD_Y + 0.2, (rnd(i * 4.4) - 0.5) * 3.4, rnd(i) * 2, (rnd(i * 6) - 0.5) * 0.6));
+    }
+
+    // davit and hand winch at the hatch coaming
+    const DX = 6.6;
+    const davit = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.095, 2.6, 6), M.steel);
+    davit.position.set(DX, dy(DX) + 1.3, 2.3);
+    S.add(davit);
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 1.5, 6), M.steel);
+    arm.position.set(DX - 0.55, dy(DX) + 2.5, 1.9);
+    arm.rotation.set(0.5, 0, 1.15);
+    S.add(arm);
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.20, 0.20, 0.42, 9), M.steel);
+    drum.position.set(DX + 0.05, dy(DX) + 0.55, 2.55);
+    drum.rotation.z = Math.PI / 2;
+    S.add(drum);
+    const crank = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.03, 3, 9), M.steel);
+    crank.position.set(DX + 0.32, dy(DX) + 0.55, 2.55);
+    crank.rotation.y = Math.PI / 2;
+    S.add(crank);
+    // the fall, hanging slack off the arm
+    for (let i = 0; i < 9; i++) {
+      const t = i / 8;
+      S.add(slab(0.03, 0.22, 0.03, M.steel, DX - 1.0 - t * 0.08,
+        dy(DX) + 2.35 - t * 2.0, 1.55 + t * 0.06, 0, 0, 0.05));
+    }
+
+    // the catch that never got landed, still in the hold
+    for (let i = 0; i < 16; i++) {
+      const x = HOLD_X0 + 0.7 + rnd(i * 2.6) * (HOLD_X1 - HOLD_X0 - 1.4);
+      const z = (rnd(i * 8.1) - 0.5) * HOLD_HZ * 1.6;
+      const sh = new THREE.Mesh(new THREE.SphereGeometry(0.26, 7, 5, 0, TAU, 0, Math.PI / 2), M.shell);
+      sh.scale.set(1, 0.34, 1.18);
+      sh.position.set(x, HOLD_Y + 0.03, z);
+      sh.rotation.set(rnd(i) < 0.3 ? Math.PI : 0, rnd(i * 3.3) * TAU, 0);
+      S.add(sh);
+      const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.035, 0.42, 4), M.shell);
+      const a = rnd(i * 3.3) * TAU;
+      tail.position.set(x - Math.sin(a) * 0.4, HOLD_Y + 0.03, z - Math.cos(a) * 0.4);
+      tail.rotation.set(Math.PI / 2, 0, -a);
+      S.add(tail);
+    }
+
+    // her name, on a board still bolted to the bridge front
+    const nameTex = (() => {
+      const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+      const g = c.getContext('2d');
+      g.fillStyle = '#2f2a22'; g.fillRect(0, 0, 256, 64);
+      g.fillStyle = '#c8bda6';
+      g.font = 'bold 34px Georgia, serif'; g.textAlign = 'center';
+      g.fillText('LIMULUS', 128, 34);
+      g.font = '17px Georgia, serif';
+      g.fillText('DELAWARE BAY', 128, 55);
+      for (let i = 0; i < 600; i++) {            // rusted through
+        g.fillStyle = `rgba(${120 + Math.random() * 70 | 0},${50 + Math.random() * 40 | 0},20,${Math.random() * 0.55})`;
+        g.fillRect(Math.random() * 256 | 0, Math.random() * 64 | 0, 3, 2);
+      }
+      const t = new THREE.CanvasTexture(c);
+      t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapNearestFilter;
+      return t;
+    })();
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 0.48),
+      new THREE.MeshStandardMaterial({ map: nameTex, roughness: 1, emissive: 0x161210, side: THREE.DoubleSide }));
+    board.position.set(BR_X0 - 0.09, dy(BR_X0) + 2.35, 0);
+    board.rotation.y = -Math.PI / 2;
+    S.add(board);
   }
 
   // ================= sand banked against the hull =========================
@@ -494,7 +641,7 @@ export function makeShipwreck(opts = {}) {
     STAIR_X0, STAIR_X1, STAIR_Z0, STAIR_Z1,
     RAMP_X0, RAMP_X1, RAMP_Z0, RAMP_Z1,
     BR_X0, BR_X1, BR_HZ, BR_H,
-    beamAt, sectionK,
+    beamAt, sectionK, flareAt, sheerAt,
   };
   S.userData.wheel = wheel;
   return S;

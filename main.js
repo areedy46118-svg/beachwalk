@@ -5973,7 +5973,11 @@ const shipWheel = {
 }
 
 
-const deckHalfAt = (lx) => SN.beamAt(THREE.MathUtils.clamp(lx, -SN.HALF, SN.HALF)) * SN.sectionK(1) * 0.98;
+const _lxc = (lx) => THREE.MathUtils.clamp(lx, -SN.HALF, SN.HALF);
+const deckHalfAt = (lx) => SN.beamAt(_lxc(lx)) * SN.sectionK(1) * SN.flareAt(_lxc(lx), 1) * 0.98;
+// she has sheer, so the deck is not one height — the walkable surface has to
+// track the plating or you end up floating over the bow and sunk at midships
+const deckYAt = (lx) => SN.DECK_Y + SN.sheerAt(_lxc(lx));
 
 function shipFloorAt(lx, lz, feet) {
   const tol = feet + 0.45;
@@ -5988,20 +5992,20 @@ function shipFloorAt(lx, lz, feet) {
   // the stair out of the hold
   if (lx > SN.STAIR_X0 && lx < SN.STAIR_X1 && lz > SN.STAIR_Z0 && lz < SN.STAIR_Z1) {
     const t = (lx - SN.STAIR_X0) / (SN.STAIR_X1 - SN.STAIR_X0);
-    take(SN.HOLD_Y + t * (SN.DECK_Y - SN.HOLD_Y));
+    take(SN.HOLD_Y + t * (deckYAt(SN.STAIR_X1) - SN.HOLD_Y));
   }
 
   // the deck, minus the open hatch and the stair well
   if (Math.abs(lx) < SN.HALF && Math.abs(lz) < deckHalfAt(lx)) {
     const inHatch = lx > SN.HATCH_X0 && lx < SN.HATCH_X1 && Math.abs(lz) < SN.HATCH_HZ;
     const inWell = lx > SN.STAIR_X0 && lx < SN.STAIR_X1 && lz > SN.STAIR_Z0 && lz < SN.STAIR_Z1;
-    if (!inHatch && !inWell) take(SN.DECK_Y);
+    if (!inHatch && !inWell) take(deckYAt(lx));
   }
 
   // the ramp down the far side
   if (lx > SN.RAMP_X0 && lx < SN.RAMP_X1 && lz > SN.RAMP_Z0 && lz < SN.RAMP_Z1) {
     const t = (lz - SN.RAMP_Z0) / (SN.RAMP_Z1 - SN.RAMP_Z0);
-    take(t * SN.DECK_Y);
+    take(t * deckYAt((SN.RAMP_X0 + SN.RAMP_X1) / 2));
   }
   return best;
 }
@@ -6025,7 +6029,7 @@ function updateShip(dt) {
       && lz > SN.RAMP_Z0 && lz < SN.RAMP_Z1;
     const inHold = !onRamp && lx > SN.HOLD_X0 - 0.6 && lx < SN.HOLD_X1 + 0.6
       && lz > -SN.HOLD_HZ - 0.6 && lz < SN.HOLD_HZ + 2.0
-      && floor < SN.DECK_Y - 0.5;
+      && floor < deckYAt(lx) - 0.5;
 
     if (onRamp) {
       // stay on the plating; it's a narrow way down
@@ -6039,7 +6043,7 @@ function updateShip(dt) {
       if (lz < -hz) camera.position.z = SHIP_Z - hz;
       camera.position.x = THREE.MathUtils.clamp(camera.position.x,
         SHIP_X + SN.HOLD_X0 + PLAYER_R, SHIP_X + SN.HOLD_X1 - PLAYER_R);
-    } else if (floor > SN.DECK_Y - 0.35) {
+    } else if (floor > deckYAt(lx) - 0.35) {
       // on deck: the bulwark keeps you aboard, except where the ramp leaves
       const lim = deckHalfAt(lx) - PLAYER_R;
       const atRamp = lx > SN.RAMP_X0 - 0.2 && lx < SN.RAMP_X1 + 0.2;
@@ -6074,7 +6078,7 @@ function updateShip(dt) {
   // no floor here: if you're inside the hull, it's solid — push back out
   onShip = false;
   const hullHalf = deckHalfAt(lx) + 0.25;
-  if (Math.abs(lx) < SN.HALF + 0.25 && Math.abs(lz) < hullHalf && feet < SN.DECK_Y - 0.2) {
+  if (Math.abs(lx) < SN.HALF + 0.25 && Math.abs(lz) < hullHalf && feet < deckYAt(lx) - 0.2) {
     camera.position.z = SHIP_Z + (lz >= 0 ? hullHalf : -hullHalf);
   }
 }
