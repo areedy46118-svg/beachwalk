@@ -706,7 +706,11 @@ through drifting smoke (a low-frequency noise sheet, screen-blended) and two
 sheets of rising dust. Two faces were tried first and cut — a horror
 display face read as corny, and an olive Amnesia-style grade read as a
 poster. The first press of anything is the gesture that lets the sea come
-up; nothing begins until BEGIN.
+up; nothing begins until BEGIN. **And the press that reveals the menu must
+not also press the menu**: pointerdown shows the list, the list is clickable
+at once, and the click from that same press lands on whatever button is
+now under the cursor — near the centre that was CONTROLS, so the sheet
+opened on the first click. `menuArmedAt` holds the buttons off for 500 ms.
 
 **The sea under the title is its own layer.** The walk's surf is a bed you
 stop hearing; the menu wants waves you cannot not hear. `titleSurfGain` in

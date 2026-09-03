@@ -3155,15 +3155,27 @@ function beginGame() {
  * gesture that lets the sea come up (primeMenuAudio) and it shows the list.
  * Nothing begins until BEGIN — the old click-anywhere started the game on
  * the same press that was meant to unmute it. */
-function showTitleMenu() { if (!introStarted) overlay.classList.add('menu'); }
+/* The press that reveals the menu must not also press the menu. pointerdown
+ * shows the list, the list is clickable at once, and the click from that
+ * same press then lands on whatever button is now under the cursor — near
+ * the centre of the screen that was CONTROLS, so the sheet appeared on the
+ * first click, and lower down it would have started the game. The buttons
+ * are armed only once the list has finished coming up. */
+let menuArmedAt = Infinity;
+function showTitleMenu() {
+  if (introStarted || overlay.classList.contains('menu')) return;
+  overlay.classList.add('menu');
+  menuArmedAt = performance.now() + 500;
+}
+const menuArmed = () => performance.now() >= menuArmedAt;
 window.addEventListener('pointerdown', () => { if (!overlay.classList.contains('menu')) showTitleMenu(); }, { passive: true });
 window.addEventListener('keydown', (e) => {
   if (introStarted) return;
   if (!overlay.classList.contains('menu')) { showTitleMenu(); return; }
-  if (e.code === 'Enter' || e.code === 'Space') beginGame();
+  if ((e.code === 'Enter' || e.code === 'Space') && menuArmed()) beginGame();
 });
-overlay.querySelector('.begin').addEventListener('click', (e) => { e.stopPropagation(); beginGame(); });
-overlay.querySelector('.ctl').addEventListener('click', (e) => { e.stopPropagation(); overlay.classList.toggle('controls-open'); });
+overlay.querySelector('.begin').addEventListener('click', (e) => { e.stopPropagation(); if (menuArmed()) beginGame(); });
+overlay.querySelector('.ctl').addEventListener('click', (e) => { e.stopPropagation(); if (menuArmed()) overlay.classList.toggle('controls-open'); });
 /* Surf under the title card. Browsers won't let an AudioContext start
  * without a gesture, so we arm it on the first move or key the player makes
  * over the menu and let the sea come up behind the title. */
