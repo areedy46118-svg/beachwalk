@@ -121,7 +121,7 @@ def claw(C, up=0.0, swing=0.0, roll=0.0, fore=0.0, wrist=0.0, gape=0.0):
     setrot(e, (U, gape))                       # the pincer opening
 def body(pitch=0, twist=0, roll=0, lift=0, push=0, squash=0):
     setrot('Bone', (AX, pitch), (AZ, twist), (AY, roll))
-    setloc('Bone', (push, 0, lift))
+    setloc('Bone', (0, push, lift))          # the lunge is forward, +Y
     setscale('Bone', (1+squash*0.10, 1-squash*0.16, 1+squash*0.10))  # local Y is world Z
 def rest():
     for pb in pbs:
@@ -176,25 +176,26 @@ for f in range(0, N+1):
 finish(act, True)
 
 # ------------------------------------------------------------------ WALK
-# It travels SIDEWAYS (the game yaws it 90 deg to its heading), so the cycle
-# is the legs reaching out and hauling in along the body's X, not a stride.
+# It comes at you HEAD ON now (the game yaws it to face you), so this is a
+# forward gait: the legs stride fore and aft about Z, lifting on the return,
+# both sides in an alternating tripod, and the claws carried up and forward.
 act = new_action("walk"); N = 20
 for f in range(0, N+1):
     p = (f % N)/N; a = p*2*math.pi
     rest()
-    body(pitch=math.sin(a*2)*0.030, roll=math.sin(a)*0.055,
-         lift=abs(math.sin(a))*0.030-0.010, twist=math.sin(a)*0.025)
+    body(pitch=math.sin(a*2)*0.028, roll=math.sin(a)*0.045,
+         lift=abs(math.sin(a))*0.030-0.010, twist=math.sin(a)*0.02)
     for L in LEGS:
-        # the two sides half a cycle apart, with a ripple down each side
-        ph = a + (math.pi if L['side']>0 else 0) + L['i']*0.55
-        ext  = math.cos(ph)            # +1 reaching out, -1 hauled in
-        rise = max(0.0, math.sin(ph))  # only lifts on the return
-        leg(L, lift=rise*0.34 - 0.02, sweep=ext*0.20*L['side'],
-               knee=-0.34 + ext*0.30, foot=0.10 + rise*0.16)
+        # tripod: alternate legs down each side, the two sides half a cycle apart
+        ph = a + (math.pi if (L['i'] + (0 if L['side']>0 else 1)) % 2 else 0)
+        stride = math.cos(ph)          # +1 reached forward, -1 drawn back
+        rise = max(0.0, math.sin(ph))  # lifts only on the return
+        leg(L, lift=rise*0.36 - 0.02, sweep=stride*0.42*L['side'],
+               knee=-0.30 - rise*0.28, foot=0.10 + rise*0.20)
     for C in CLAWS:
         ph = a + (1.5 if C['side']>0 else 0)
-        claw(C, up=0.28+math.sin(ph)*0.10, swing=-0.10*C['side']+math.sin(ph)*0.09,
-                fore=-0.30, wrist=0.22, gape=0.16)
+        claw(C, up=0.34+math.sin(ph)*0.09, swing=-0.12*C['side']+math.sin(ph)*0.06,
+                fore=-0.32, wrist=0.24, gape=0.18+math.sin(ph*1.7)*0.06)
     key(f)
 finish(act, True)
 
@@ -210,17 +211,19 @@ def P(body_kw, lead_kw, trail_kw, leg_kw):
 P_READY = P(dict(), dict(up=0.30, fore=-0.20, wrist=0.30, gape=0.15),
                dict(up=0.25, fore=-0.25, wrist=0.20, gape=0.15),
                dict(knee=-0.30, foot=0.14))
-P_WOUND = P(dict(pitch=-0.30, twist=-0.34, roll=-0.10, lift=0.075, squash=0.90),
-            dict(up=1.05, swing=-0.85, roll=0.25, fore=-0.60, wrist=0.60, gape=0.77),
-            dict(up=0.60, swing=0.30, fore=-0.40, wrist=0.20, gape=0.45),
-            dict(lift=-0.10, sweep=-0.12, knee=-0.52, foot=0.30))
-P_CONTACT = P(dict(pitch=0.30, twist=0.50, roll=0.14, lift=-0.02, push=0.26, squash=-0.50),
-              dict(up=-0.35, swing=0.85, roll=-0.20, fore=0.05, wrist=-0.10, gape=0.0),
-              dict(up=0.20, swing=-0.25, fore=-0.15, wrist=0.15, gape=0.0),
+# Reared back and up, the lead claw cocked HIGH over the body -- the read.
+P_WOUND = P(dict(pitch=-0.38, twist=-0.16, roll=-0.06, lift=0.09, push=-0.12, squash=0.90),
+            dict(up=1.20, swing=-0.32, roll=0.15, fore=-0.70, wrist=0.65, gape=0.80),
+            dict(up=0.70, swing=0.20, fore=-0.45, wrist=0.25, gape=0.50),
+            dict(lift=-0.10, sweep=-0.10, knee=-0.52, foot=0.30))
+# Slammed down and FORWARD at you, the body pitched into it and lunging.
+P_CONTACT = P(dict(pitch=0.36, twist=0.22, roll=0.08, lift=-0.04, push=0.42, squash=-0.50),
+              dict(up=-0.42, swing=0.30, roll=-0.15, fore=0.10, wrist=-0.15, gape=0.0),
+              dict(up=0.10, swing=-0.15, fore=-0.10, wrist=0.12, gape=0.0),
               dict(lift=0.14, sweep=0.16, knee=-0.20, foot=0.16))
-P_OVER = P(dict(pitch=0.42, twist=0.62, roll=0.18, push=0.32, squash=-0.35),
-           dict(up=-0.45, swing=1.05, roll=-0.28, fore=0.14, wrist=-0.18, gape=0.06),
-           dict(up=0.15, swing=-0.32, fore=-0.15, wrist=0.15, gape=0.06),
+P_OVER = P(dict(pitch=0.46, twist=0.30, roll=0.10, push=0.50, squash=-0.35),
+           dict(up=-0.55, swing=0.40, roll=-0.22, fore=0.20, wrist=-0.24, gape=0.06),
+           dict(up=0.05, swing=-0.20, fore=-0.10, wrist=0.12, gape=0.06),
            dict(lift=0.18, sweep=0.20, knee=-0.16, foot=0.14))
 def mix(p0, p1, t):
     o = {}
@@ -251,19 +254,41 @@ for f in range(0, 24):
 finish(act, False)
 
 # ----------------------------------------------------------------- STUN
-# the parry payoff: it reels, claws drop wide open, and it is left there
+# The parry payoff. It does not hang in the air and wobble: it goes DOWN,
+# flat, the body on the sand and the legs splayed out level, claws dropped
+# open where they fell -- lies there twitching for most of CRAB_STUN, and
+# drags itself back up over the last third of a second.
 act = new_action("stun"); N = 51
-for f in range(0, N+1):
+def stun_pose(f):
     rest()
-    e = min(1.0, f/6.0)                      # snapped back
-    w = math.sin(f*0.55)*math.exp(-f/26.0)   # and wobbling it off
-    body(pitch=-0.34*e+w*0.10, twist=0.30*e+w*0.16, roll=w*0.14, lift=-0.05*e)
-    for C in CLAWS:
-        claw(C, up=-0.45*e+w*0.14, swing=(0.55*e+w*0.2)*C['side'],
-                fore=0.25*e, wrist=-0.30*e, gape=0.55*e+w*0.1)
-    for L in LEGS:
-        leg(L, lift=-0.12*e+w*0.10, sweep=w*0.14*L['side'], knee=-0.45*e, foot=0.20*e)
-    key(f)
+    if f <= 6:                                   # the collapse
+        e = f/6.0; s_ = 1 - (1-e)**2.2
+        body(pitch=0.18*s_, twist=0.12*s_, roll=0.22*s_, lift=-1.05*s_, push=-0.15*s_, squash=-0.55*s_)
+        for C in CLAWS:
+            claw(C, up=-0.62*s_, swing=0.55*s_*C['side'], roll=0.3*s_*C['side'],
+                    fore=0.42*s_, wrist=-0.30*s_, gape=0.72*s_)
+        for L in LEGS:
+            leg(L, lift=0.88*s_, sweep=0.30*s_*L['side'], knee=0.48*s_, foot=-0.42*s_)
+    elif f <= 40:                                # flat out, twitching
+        u = f - 6
+        tw = math.sin(u*1.9)*math.exp(-u/14.0)   # the collapse settling
+        body(pitch=0.18+tw*0.04, twist=0.12, roll=0.22+tw*0.03, lift=-1.05-tw*0.03, push=-0.15, squash=-0.55)
+        for C in CLAWS:
+            fl = 0.72 + math.sin(u*0.9 + (1.3 if C['side']>0 else 0))*0.10   # pincers flutter
+            claw(C, up=-0.62, swing=0.55*C['side'], roll=0.3*C['side'], fore=0.42, wrist=-0.30, gape=fl)
+        for L in LEGS:
+            jt = math.sin(u*1.4 + L['i']*1.1 + (0.8 if L['side']>0 else 0))*math.exp(-u/20.0)*0.12
+            leg(L, lift=0.88+jt, sweep=0.30*L['side'], knee=0.48-jt*0.5, foot=-0.42)
+    else:                                        # dragging itself back up
+        e = (f-40)/11.0; s_ = e*e*(3-2*e); k = 1 - s_
+        body(pitch=0.18*k-0.06*s_, twist=0.12*k, roll=0.22*k, lift=-1.05*k+0.02*s_, push=-0.15*k, squash=-0.55*k+0.15*s_)
+        for C in CLAWS:
+            claw(C, up=-0.62*k+0.30*s_, swing=0.55*k*C['side'], roll=0.3*k*C['side'],
+                    fore=0.42*k-0.25*s_, wrist=-0.30*k+0.25*s_, gape=0.72*k+0.15*s_)
+        for L in LEGS:
+            leg(L, lift=0.88*k, sweep=0.30*k*L['side'], knee=0.48*k-0.30*s_, foot=-0.42*k+0.12*s_)
+for f in range(0, N+1):
+    stun_pose(f); key(f)
 finish(act, False)
 
 # ------------------------------------------------------------------ DIE

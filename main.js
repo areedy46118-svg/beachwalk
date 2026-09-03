@@ -6436,6 +6436,7 @@ function parryCrab() {
   parryGlow = 0.42;
   flashMats(crab);
   sfxParry();
+  playSample('poise', 0.95);             // and the sound of its poise going
   addTrauma(0.5);
   fovKick = Math.max(fovKick, 7);
   vmImpulse(-1.35);
@@ -6626,8 +6627,8 @@ function updateCrab(dt) {
     const speed = CRAB_SPEED * THREE.MathUtils.clamp((dist - CRAB_REACH) / 1.2, 0.35, 1);
     crab.position.addScaledVector(_crabDir, speed * dt);
     crabState.scuttle += dt * speed * 5.2;
-    // it goes sideways, the way crabs do, but keeps its eyes on you
-    crab.rotation.y = Math.atan2(_crabDir.x, _crabDir.z) + Math.PI / 2;
+    // it comes at you head on now, claws first: the model's front is -Z
+    crab.rotation.y = Math.atan2(_crabDir.x, _crabDir.z) + Math.PI;
     if (inWater(crab.position.x, crab.position.z) && Math.random() < dt * 4) {
       spawnSplash(crab.position.x, crab.position.z, 2, _crabDir.x, _crabDir.z, 0.4);
       // ...and only when it is close enough for you to hear it. sfxSplash is
@@ -7573,6 +7574,7 @@ const SAMPLES = {
   wade: ['assets/wade1.m4a', 'assets/wade2.m4a', 'assets/wade3.m4a', 'assets/wade4.m4a'],
   slosh: ['assets/slosh1.m4a', 'assets/slosh2.m4a', 'assets/slosh3.m4a', 'assets/slosh4.m4a'],
   splash: ['assets/water-splash1.m4a', 'assets/water-splash2.m4a', 'assets/water-splash3.m4a'],
+  poise: ['assets/poise-broken.m4a'],      // the parry landing: its guard is gone
 };
 const sampleBanks = {};
 function loadSamples() {
@@ -8209,25 +8211,39 @@ function sfxGuardUp() {
 function sfxBlock() {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime;
-  const out = ctx.createGain(); out.gain.value = 1.15; out.connect(sfxOut());
-  // a hard dead CLANK on the front of it — steel taking a hit, no sustain,
-  // so it stays unmistakable from the parry's ring
+  const out = ctx.createGain(); out.gain.value = 1.6; out.connect(sfxOut());
+  /* HEAVY. It used to be a knock; it is a shovel taking the whole weight of
+   * the swing now. Under everything a sub thump you feel more than hear,
+   * a slab of low body that hangs for a quarter second, a mid crack driven
+   * into a waveshaper so it bites, and the dead steel clank on top — kept,
+   * because that is what keeps it unmistakable from the parry's ring. */
+  const sub = ctx.createOscillator(); sub.type = 'sine';
+  sub.frequency.setValueAtTime(95, t);
+  sub.frequency.exponentialRampToValueAtTime(36, t + 0.22);
+  const sg = ctx.createGain();
+  sg.gain.setValueAtTime(0.0001, t);
+  sg.gain.exponentialRampToValueAtTime(0.95, t + 0.006);
+  sg.gain.exponentialRampToValueAtTime(0.0001, t + 0.30);
+  sub.connect(sg).connect(out); sub.start(t); sub.stop(t + 0.32);
+  const body = noiseBurst(0.28, (x) => Math.pow(1 - x, 2.0));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 210; lp.Q.value = 1.6;
+  const bg = ctx.createGain(); bg.gain.value = 1.1;
+  body.connect(lp).connect(bg).connect(out); body.start(t); body.stop(t + 0.28);
+  // the crack: mid noise through a hard curve, so it has an edge
+  const crack = noiseBurst(0.09, (x) => Math.pow(1 - x, 3.2));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 780; bp.Q.value = 0.8;
+  const shaper = ctx.createWaveShaper();
+  { const n = 256, c = new Float32Array(n); for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; c[i] = Math.tanh(x * 3.2); } shaper.curve = c; }
+  const cg = ctx.createGain(); cg.gain.value = 0.55;
+  crack.connect(bp).connect(shaper).connect(cg).connect(out); crack.start(t); crack.stop(t + 0.09);
   const clank = ctx.createOscillator(); clank.type = 'square';
-  clank.frequency.setValueAtTime(410, t);
-  clank.frequency.exponentialRampToValueAtTime(190, t + 0.04);
+  clank.frequency.setValueAtTime(380, t);
+  clank.frequency.exponentialRampToValueAtTime(170, t + 0.045);
   const kg = ctx.createGain();
   kg.gain.setValueAtTime(0.0001, t);
-  kg.gain.exponentialRampToValueAtTime(0.42, t + 0.004);
-  kg.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+  kg.gain.exponentialRampToValueAtTime(0.30, t + 0.004);
+  kg.gain.exponentialRampToValueAtTime(0.0001, t + 0.075);
   clank.connect(kg).connect(out); clank.start(t); clank.stop(t + 0.09);
-  const thud = noiseBurst(0.13, (x) => Math.pow(1 - x, 2.6));
-  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 340; lp.Q.value = 1.4;
-  const tg = ctx.createGain(); tg.gain.value = 0.7;
-  thud.connect(lp).connect(tg).connect(out); thud.start(t); thud.stop(t + 0.13);
-  const clack = noiseBurst(0.05, (x) => Math.pow(1 - x, 5));
-  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1250; bp.Q.value = 1.1;
-  const cg = ctx.createGain(); cg.gain.value = 0.3;
-  clack.connect(bp).connect(cg).connect(out); clack.start(t); clack.stop(t + 0.05);
 }
 /* And the parry: a bright struck-steel ring, two partials a fifth apart so
  * it reads as a bell rather than a beep, over a hard transient. This is the

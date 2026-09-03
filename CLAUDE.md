@@ -1050,6 +1050,27 @@ out of step with the frame the blow actually lands on — the clip is authored
 at 30fps with contact on frame 9, which is `CRAB_WIND` exactly. Move
 `CRAB_WIND` and you must move the pose beats in `tools/crab_anim.py` too.
 
+**It comes at you HEAD ON.** The model's front is -Z (Blender +Y), so
+`crab.rotation.y = atan2(dx, dz) + PI` faces it at you; the old `+ PI/2`
+walked it sideways, which is what crabs do and what nobody can read a
+claw swing from. The walk is a forward gait (legs striding about Z in an
+alternating tripod), the lunge is along +Y, and the lead claw goes from
+cocked HIGH over the body to slammed down and forward — a small horizontal
+component only, so the arc comes AT the camera rather than across it.
+
+**The stun is flat on the sand.** It used to hang in the air and wobble.
+Now it collapses in six frames — body dropped by a full unit, legs splayed
+out level, claws dropped open where they fell — lies there twitching for
+most of `CRAB_STUN`, and drags itself back up over the last eleven frames.
+The clip is exactly 1.7 s so the getting-up lands as the timer runs out.
+
+**A parry plays `assets/poise-broken.m4a` on top of the ring** (via the
+`poise` sample bank) — it is a ripped Elden Ring effect the owner supplied,
+so it is NOT redistributable and is credited as such. The block got heavy:
+a sub thump under a quarter-second of low body, a mid crack through a
+waveshaper, and the dead steel clank kept on top so it never reads as the
+parry.
+
 **Before this, the entire telegraph was INVISIBLE.** The loader sets
 `crab.userData.rig.visible = false` once the model lands, but every line of
 the attack — the rear-up, the twist, the claw sweep, the gaping pincer, the

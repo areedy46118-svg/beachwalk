@@ -311,6 +311,11 @@ timing.
 [artofmickey](https://www.cgtrader.com/artofmickey), CGTrader free model.
 
 
+**Poise Broken** — the sound of a parry landing. An Elden Ring sound effect
+(FromSoftware) supplied by the project owner for this personal build; it is
+not covered by any open licence and must not be redistributed with the game.
+
+
 **Rusty Metal 02** — the rust on the ring.
 
 [Rusty Metal 02](https://polyhaven.com/a/rusty_metal_02) by Poly Haven, CC0.
