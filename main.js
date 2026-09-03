@@ -3576,6 +3576,11 @@ class PhysProp {
     if (crabState.alive && incoming > 5 && p.distanceTo(crab.position) < 0.75) {
       hitConnect(0.4, 1); killCrab();
     }
+    // and a sandcastle comes down if you put something through it
+    if (incoming > 3 && !castleBroken && Math.abs(p.y) < 1.4
+        && Math.hypot(p.x - castle.position.x, p.z - castle.position.z) < 1.5) {
+      breakCastle(p.x - this.vel.x, p.z - this.vel.z);
+    }
     if (struck && incoming > 1.1) sfxPropHit(surface, incoming);
     if (struck && this.onImpact) this.onImpact(incoming);
     if (this.dead) return;
@@ -4388,11 +4393,70 @@ castle.position.set(4.6, 0, CASTLE_Z);
   castle.add(spoil);
 }
 scene.add(castle);
+/* IT FALLS DOWN. A sandcastle that stops you dead is a wall pretending to be
+ * sand — so walk into it and it collapses, or put something through it. The
+ * shovel stuck in the keep is a separate interactable and survives either
+ * way: take it out and leave the castle standing, or wreck the castle and
+ * pick the shovel up off the heap. Both are fine; that is the point.
+ *
+ * The pieces are real gibs, so they bounce and settle like everything else
+ * on this beach rather than fading out where they stand. */
+let castleBroken = false;
+function breakCastle(fromX, fromZ) {
+  if (castleBroken) return;
+  castleBroken = true;
+  const ci = rockColliders.findIndex((c) => c.castle);
+  if (ci >= 0) rockColliders.splice(ci, 1);
+  const cx = castle.position.x, cz = castle.position.z;
+  sfxCrateThud();
+  spawnPuffs(cx, cz, 30, 0, -1, 0.4, [0.52, 0.56, 0.62]);
+  addTrauma(0.22);
+  // away from whatever knocked it down
+  let ax = cx - (fromX ?? cx - 1), az = cz - (fromZ ?? cz);
+  const ad = Math.hypot(ax, az) || 1; ax /= ad; az /= ad;
+  const lumps = [];
+  castle.traverse((o) => { if (o.isMesh) lumps.push(o); });
+  for (const m of lumps) {
+    const w = m.getWorldPosition(new THREE.Vector3());
+    const g = new THREE.Mesh(m.geometry, m.material);
+    g.scale.copy(m.getWorldScale(new THREE.Vector3()));
+    g.position.copy(w);
+    g.rotation.copy(m.rotation);
+    scene.add(g);
+    gibs.push({
+      m: g,
+      vel: new THREE.Vector3(ax * (0.7 + Math.random() * 1.9) + (Math.random() - 0.5) * 1.2,
+                             1.1 + Math.random() * 2.2,
+                             az * (0.7 + Math.random() * 1.9) + (Math.random() - 0.5) * 1.2),
+      spin: new THREE.Vector3((Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9),
+      rest: 0.02, life: 26, bleed: false,
+    });
+  }
+  scene.remove(castle);
+  // the shovel is left standing in the heap where the keep was
+  if (shovelWorld.parent) {
+    shovelWorld.position.y = 0.14;
+    shovelWorld.rotation.set(1.15, 0.4, -0.2);
+  }
+}
 {
   // solid: you walk round a sandcastle, not through it
   const bb = new THREE.Box3().setFromObject(castle);
   const size = bb.getSize(new THREE.Vector3());
-  rockColliders.push({ x: castle.position.x, z: castle.position.z, r: Math.max(size.x, size.z) * 0.42, top: bb.max.y });
+  rockColliders.push({ x: castle.position.x, z: castle.position.z, r: Math.max(size.x, size.z) * 0.42, top: bb.max.y, castle: true });
+}
+/* Walking through it. Checked before the push-out gets a chance to stop you,
+ * so you go THROUGH the thing you just knocked over instead of bouncing off
+ * the collider of a castle that is already in pieces. */
+function updateCastle() {
+  if (castleBroken) return;
+  const c = rockColliders.find((k) => k.castle);
+  if (!c) return;
+  // touching it is enough. There is no speed to reach first: it is sand, and
+  // the collider would otherwise stop you at exactly this distance.
+  const dx = camera.position.x - c.x, dz = camera.position.z - c.z;
+  const r = c.r + PLAYER_R * 0.9;
+  if (dx * dx + dz * dz < r * r) breakCastle(camera.position.x, camera.position.z);
 }
 
 const shovelWorld = makeShovel();
@@ -6204,18 +6268,21 @@ let blinkT = 2 + Math.random() * 3, blinking = false;
  *
  * Shared by Bradly and the fisherman: it was written for the one and the
  * second would have been sixty lines of the same thing. */
-function bakeCutout(img, eyes, { pix = 260, levels = 6, grain = 20, sat = 0.55, paint = null } = {}) {
+/* `padBottom` adds transparent canvas UNDER the photograph, as a fraction of
+ * its height, for `paint` to build into. The fisherman needs it: his boot
+ * runs to the very last row of the crop, so there is nowhere to put a sole. */
+function bakeCutout(img, eyes, { pix = 260, levels = 6, grain = 20, sat = 0.55, paint = null, padBottom = 0 } = {}) {
   const mk = (shut) => {
     // 1. full-res pass, with the eyelid painted in for the shut frame
     const full = document.createElement('canvas');
-    full.width = img.width; full.height = img.height;
+    full.width = img.width; full.height = Math.round(img.height * (1 + padBottom));
     const fg = full.getContext('2d');
     fg.drawImage(img, 0, 0);
     /* Anything painted on goes here — BEFORE the downsample, the posterise
      * and the grade — so it is put through everything the photograph is and
      * comes out the same material. Paint it after and it sits on top of the
      * picture looking like paint. */
-    if (paint) paint(fg, img.width, img.height);
+    if (paint) paint(fg, img.width, img.height, full.height);
     if (shut) {
       const ex = eyes.x * img.width, ew = eyes.w * img.width;
       const ey = eyes.y * img.height, eh = Math.max(2, eyes.h * img.height);
@@ -6225,7 +6292,7 @@ function bakeCutout(img, eyes, { pix = 260, levels = 6, grain = 20, sat = 0.55, 
 
     // 2. knock it down to sprite resolution
     const hh = pix;
-    const ww = Math.max(1, Math.round(img.width * (hh / img.height)));
+    const ww = Math.max(1, Math.round(full.width * (hh / full.height)));
     const c = document.createElement('canvas');
     c.width = ww; c.height = hh;
     const g = c.getContext('2d');
@@ -6764,8 +6831,18 @@ function showDialogNode(id) {
       const b = document.createElement('button');
       // a line you have already put to him greys out. It is the only thing
       // in here that is not full white, so the grey means exactly one thing.
-      b.className = 'choice' + (dialogUsed.has(ch.label) ? ' used' : '');
-      b.textContent = ch.label;
+      const fresh = !dialogUsed.has(ch.label);
+      b.className = 'choice' + (fresh ? '' : ' used');
+      // a line you can only say because of something you are carrying, and
+      // have not said yet, gets a star — otherwise you would never know it
+      // had appeared
+      if (ch.when && fresh) {
+        const st = document.createElement('span');
+        st.className = 'star';
+        st.textContent = '\u2605';
+        b.appendChild(st);
+      }
+      b.appendChild(document.createTextNode(ch.label));
       b.addEventListener('click', (e) => {
         e.stopPropagation();
         dialogUsed.add(ch.label);
@@ -8928,7 +9005,12 @@ const FISHERMAN_SCRIPT = {
   },
 };
 const fisherman = new THREE.Group();
-fisherman.position.set(FISH_X, DOCK_DECK, FISH_Z);
+/* A hair off the boards, with a contact shadow under him. A Sprite is
+ * screen-aligned, so when you look DOWN at one the floor in front of it is
+ * nearer the camera than its base and clips it — which is what was cutting
+ * his boots off, not the photograph. Lifting him clear and painting the
+ * shadow back in is the standard answer. */
+fisherman.position.set(FISH_X, DOCK_DECK + 0.035, FISH_Z);
 scene.add(fisherman);
 {
   /* What he sits on: the blue plastic fish tub from the photograph, upended.
@@ -9000,6 +9082,16 @@ scene.add(fisherman);
   haft.position.set(0.03, boxH + 0.033, 0.23); haft.rotation.y = -0.5;
   gut.add(blade, haft);
   fisherman.add(gut);
+  // the contact shadow that puts him back on the floor
+  {
+    const sh = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.05), new THREE.MeshBasicMaterial({
+      map: glowTex, color: 0x000000, transparent: true, opacity: 0.6,
+      depthWrite: false, blending: THREE.NormalBlending,
+    }));
+    sh.rotation.x = -Math.PI / 2;
+    sh.position.set(-0.12, -0.03, 0.02);
+    fisherman.add(sh);
+  }
   rockColliders.push({ x: FISH_X - 0.66, z: FISH_Z + 0.05, r: 0.46, top: DOCK_DECK + boxH, mat: 'wood' });
   rockColliders.push({ x: FISH_X + 0.30, z: FISH_Z, r: 0.40, top: DOCK_DECK + FISH_TUB_H, mat: 'wood' });
 }
@@ -9035,7 +9127,8 @@ fisherman.add(fishSprite);
  * The numbers are measured off assets/fisherman.png (494 x 892) by walking
  * its alpha: from y = 596 down there are two legs, his right at x 163-294
  * and his left at x 361-433, closing to x 350-388 by y = 821. */
-function paintPegLeg(g, W, H) {
+const FISH_PAD = 0.05;             // transparent canvas under him, for the sole
+function paintFisherman(g, W, H, FH) {
   const X = (v) => (v / 494) * W, Y = (v) => (v / 892) * H;
   // 1. take the leg off. Two bands, because below y = 810 his OTHER boot
   //    reaches across to x = 346 and must not be cut away with it.
@@ -9107,6 +9200,38 @@ function paintPegLeg(g, W, H) {
   g.closePath(); g.fill();
   g.fillStyle = 'rgba(180,190,200,0.30)';
   g.fillRect(tx - tw * 1.1, ty - Y(24), tw * 0.5, Y(22));
+
+  /* 3. and his right boot. The photograph's crop runs out at its toe — the
+   * sole tapers to nothing at y = 886 and the image ends at 892 — so it
+   * reads as a foot that stops rather than a boot standing on a floor. The
+   * padding under the picture is where the rest of it goes: a sole, a welt
+   * and a toe cap, drawn to meet the leather that is already there.
+   *
+   * The boot is around x 203-302 at y = 862, closing to 259-266 at y = 886. */
+  const bx0 = X(198), bx1 = X(312), by = Y(858), sole = FH - Y(8);
+  const leather = g.createLinearGradient(0, by, 0, sole);
+  leather.addColorStop(0, '#5a4632');
+  leather.addColorStop(1, '#2e2419');
+  g.fillStyle = leather;
+  g.beginPath();
+  g.moveTo(bx0 + X(6), by);
+  g.bezierCurveTo(bx0 - X(4), by + Y(26), bx0 + X(2), sole - Y(6), bx0 + X(16), sole);
+  g.lineTo(bx1 - X(14), sole);
+  g.bezierCurveTo(bx1 + X(2), sole - Y(10), bx1 + X(4), by + Y(22), bx1 - X(8), by);
+  g.closePath(); g.fill();
+  // the welt, and the sole under it
+  g.fillStyle = '#241c14';
+  g.beginPath();
+  g.moveTo(bx0 + X(10), sole - Y(13));
+  g.lineTo(bx1 - X(8), sole - Y(13));
+  g.lineTo(bx1 - X(6), sole); g.lineTo(bx0 + X(12), sole);
+  g.closePath(); g.fill();
+  // a lit edge along the top of the toe cap so it is not a flat shape
+  g.strokeStyle = 'rgba(190,170,140,0.30)'; g.lineWidth = X(3);
+  g.beginPath();
+  g.moveTo(bx0 + X(14), by + Y(16));
+  g.quadraticCurveTo((bx0 + bx1) / 2, by + Y(4), bx1 - X(16), by + Y(14));
+  g.stroke();
 }
 
 // measured off the photograph: his cap brim is dark, the eyes sit just under it
@@ -9116,12 +9241,12 @@ let fishBlinkT = 1.5 + Math.random() * 3, fishBlinking = false;
 new THREE.TextureLoader().load('assets/fisherman.png', (tex) => {
   const img = tex.image;
   if (!img || !img.width) return;
-  fishSprite.scale.set(FISH_H * (img.width / img.height), FISH_H, 1);
+  fishSprite.scale.set(FISH_H * (img.width / (img.height * (1 + FISH_PAD))), FISH_H, 1);
   /* He is the one cut-out you stand close to and look at while he talks, so
    * he gets more of everything than Bradly does across a beach: twice the
    * pixels, more posterisation steps, and less grain and desaturation, which
    * are what were eating the detail in his face. */
-  const f = bakeCutout(img, FISH_EYES, { pix: 620, levels: 9, grain: 9, sat: 0.72, paint: paintPegLeg });
+  const f = bakeCutout(img, FISH_EYES, { pix: 620, levels: 9, grain: 9, sat: 0.72, paint: paintFisherman, padBottom: FISH_PAD });
   fishOpenTex = f.open; fishShutTex = f.shut;
   fishMat.map = fishOpenTex;
   fishMat.needsUpdate = true;
@@ -9433,6 +9558,7 @@ function update(dt, rawDt = dt) {
     camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
     camera.position.x = Math.max(camera.position.x, WADE_X);
   }
+  updateCastle();           // before the push-out, so you walk through what you just flattened
   updateTower(dt);
   updateFarProps();
   // Rocks are solid: walk into one and you're pushed out, clear its lip and

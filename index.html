@@ -313,6 +313,14 @@
   }
   #dialog .choice:hover { color: #ffffff; }
   #dialog .choice:hover::before { opacity: 1; }
+  /* the one spot of colour in the whole box: a line that has just become
+     sayable because of something in your pack */
+  #dialog .choice .star {
+    color: #ffcf4a;
+    margin-right: 0.55em;
+    font-size: 0.9em;
+    text-shadow: 0 0 8px rgba(255, 200, 60, 0.5);
+  }
   #dialog .choice.used { color: rgba(255, 255, 255, 0.42); }
   #dialog .choice.used:hover { color: rgba(255, 255, 255, 0.68); }
   #dialog .hint {
