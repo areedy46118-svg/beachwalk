@@ -24,8 +24,10 @@ Then open <http://localhost:4173> and click to begin. Any static server works
 | Mouse | Look (pointer lock; drag-to-look fallback if it's blocked) |
 | Click / `E` / `F` | Grab a physics object · take an item · dig (with the shovel) |
 | Click (while carrying) | Throw the held object — it's a toggle, no hold |
+| `Ctrl` | Crouch (toggle) — crawl under the pier |
 | `G` | Drop the held object gently |
-| `1`–`6` / click a slot | Use / equip an inventory item (the crab → examine it) |
+| `1`–`6` / click a slot | Hold an inventory item — everything can be carried |
+| `Tab` → `Inspect` | Examine an item. The pack is the only way in |
 | Hold right-click (examine view) | Turn the item over |
 | Left-click / scroll (examine view) | Put it away / zoom in |
 | `Q` | Holster the equipped tool · close the examine view |
@@ -120,8 +122,15 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   **A Rusted Key** — a scanned medieval key — that, for now, opens nothing.
 - **The shells** are scans now. Take one and it goes straight into your hand;
   click to hold it to your ear, and the hand rises to the side of your head
-  while you listen. There is a word in it, under the roar, if you wait. Put
-  the shell down and it goes silent at once.
+  while you listen — the sea, and nothing else. Put the shell down and it
+  goes silent at once.
+- **Throw anything at anything.** A thrown prop splashes going into the sea,
+  lands on the pier's boards instead of dropping through them, bounces off
+  rock and timber with a sound that matches what it hit, and will kill the
+  crab outright.
+- **Crouch (`Ctrl`) to get under the pier.** Nothing solid can be walked
+  through: the piles, the light post and the boat are all real, and you can
+  stand on the boat and step off it.
 - **Walk speed always starts at 1.4×.** The slider in the menu is for the
   session you are in; it is not remembered.
 - **The crate below Bradly** — washed up at the cliff foot, and the first lock
