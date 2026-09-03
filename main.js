@@ -161,6 +161,7 @@ settings.walkSpeed = DEFAULT_SETTINGS.walkSpeed;
 function saveSettings() { try { localStorage.setItem('beachwalk.settings', JSON.stringify(settings)); } catch (e) {} }
 
 let audioStarted = false, audioCtx = null, masterGain = null;
+let titleSurfGain = null;               // the sea under the title, pulled down on begin
 let musicEl = null, musicEnvGain = null, musicVolGain = null, musicStarted = false;
 let waveBusGain = null;   // sub-mix for surf ambience + water-step splashes
 let sfxBusGain = null;    // sub-mix for every one-shot effect
@@ -200,6 +201,8 @@ scene.fog = new THREE.FogExp2(0x0b1626, 0.014);   // thinned so the swell reads 
 
 const camera = new THREE.PerspectiveCamera(settings.fov, window.innerWidth / window.innerHeight, 0.1, 5000);
 camera.position.set(8, EYE_HEIGHT, 0);
+const spawnPos = camera.position.clone(), spawnQuat = camera.quaternion.clone();
+renderer.domElement.classList.add('title-grade');   // the menu's grade; lifted on begin
 
 // ------------------------------------------------------------------
 // Lighting
@@ -3036,7 +3039,10 @@ window.addEventListener('pointermove', (e) => { if (fallbackLook && dragging && 
 // ------------------------------------------------------------------
 const introEl = document.getElementById('intro');
 const introTextEl = document.getElementById('intro-text');
-const INTRO_LINE = 'You are alone on the shore.\nIt is well past midnight.\nThe tide keeps its own counsel.';
+const INTRO_LINES = [
+  'You are alone on the shore.\nIt is well past midnight.',
+  'The tide keeps its own counsel.\nSo does the thing that walks it <em>with you</em>.',
+];
 let introStarted = false;
 
 // coming back from a death: straight into the walk, no opening card
@@ -3046,6 +3052,67 @@ try {
   if (skipIntro) sessionStorage.removeItem('beachwalk.skipIntro');
 } catch (e) {}
 
+/* THE TITLE CAMERA. The menu is not a picture of the beach, it is the
+ * beach: while the title is up the player camera is borrowed for a slow low
+ * drift down the sand toward the moon, and handed back to the spawn point
+ * on begin. Safe because update() returns before introDone and nothing
+ * else moves the camera until then. */
+let titleT = 0;
+const _tcLook = new THREE.Vector3();
+function titleCam(dt) {
+  titleT += dt;
+  const t = titleT;
+  // camBaseY too: the head-height code writes camera.position.y from it
+  camBaseY = 0.82 + Math.sin(t * 0.21) * 0.035;
+  camera.position.set(5.2 + Math.sin(t * 0.11) * 0.4, camBaseY, 4 - t * 0.10);
+  _tcLook.set(2.4 + Math.sin(t * 0.06) * 1.6, 1.0 + Math.sin(t * 0.13) * 0.2, camera.position.z - 40);
+  camera.lookAt(_tcLook);
+}
+/* Under the black card: a drone you feel in the chest and a heartbeat that
+ * is a little too slow, gone the moment the beach comes up. */
+let introDrone = null;
+function startIntroAudio() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const g = ctx.createGain(); g.gain.value = 0.0001; g.connect(sfxOut());
+  g.gain.exponentialRampToValueAtTime(0.55, t + 3.2);
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 41;
+  const o2 = ctx.createOscillator(); o2.type = 'triangle'; o2.frequency.value = 61.7;
+  const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 150;
+  const dg = ctx.createGain(); dg.gain.value = 0.55;
+  const trem = ctx.createOscillator(); trem.frequency.value = 0.31;
+  const tg = ctx.createGain(); tg.gain.value = 0.3;
+  trem.connect(tg).connect(dg.gain);
+  o.connect(f); o2.connect(f); f.connect(dg).connect(g);
+  o.start(t); o2.start(t); trem.start(t);
+  const beat = (at) => {
+    for (const [d, a] of [[0, 0.55], [0.17, 0.34]]) {
+      const k = ctx.createOscillator(); k.type = 'sine';
+      k.frequency.setValueAtTime(72, at + d);
+      k.frequency.exponentialRampToValueAtTime(36, at + d + 0.13);
+      const kg = ctx.createGain();
+      kg.gain.setValueAtTime(0.0001, at + d);
+      kg.gain.exponentialRampToValueAtTime(a, at + d + 0.012);
+      kg.gain.exponentialRampToValueAtTime(0.0001, at + d + 0.24);
+      k.connect(kg).connect(g); k.start(at + d); k.stop(at + d + 0.27);
+    }
+  };
+  for (let i = 0; i < 9; i++) beat(t + 1.4 + i * 1.18);      // ~51 bpm
+  introDrone = { g, o, o2, trem };
+}
+function endIntroAudio() {
+  if (!introDrone || !audioCtx) return;
+  const d = introDrone; introDrone = null;
+  d.g.gain.setTargetAtTime(0.0001, audioCtx.currentTime, 0.3);
+  setTimeout(() => { try { d.o.stop(); d.o2.stop(); d.trem.stop(); } catch (e) {} }, 1800);
+}
+function leaveTitle() {
+  camera.position.copy(spawnPos);
+  camera.quaternion.copy(spawnQuat);
+  camBaseY = EYE_HEIGHT;
+  renderer.domElement.classList.remove('title-grade');
+  if (titleSurfGain && audioCtx) titleSurfGain.gain.setTargetAtTime(0.0001, audioCtx.currentTime, 1.0);
+}
 function beginGame() {
   if (introStarted) return;
   introStarted = true;
@@ -3053,6 +3120,7 @@ function beginGame() {
   startMusic();                                    // swell it in from the moment you spawn
   requestLock();                                   // must fire on the click gesture
   overlay.classList.add('hidden');
+  leaveTitle();
 
   if (skipIntro) {
     introDone = true;
@@ -3064,14 +3132,18 @@ function beginGame() {
 
   // Snap to black on the same frame the title leaves, so the world is never
   // glimpsed underneath — the card only *fades* on the way back out.
-  introTextEl.textContent = INTRO_LINE;
+  introTextEl.innerHTML = `<span class="l1">${INTRO_LINES[0]}</span><span class="l2">${INTRO_LINES[1]}</span>`;
   introEl.style.transition = 'none';
   introEl.classList.add('show');
   void introEl.offsetWidth;                        // commit before re-arming
-  setTimeout(() => introEl.classList.add('text-in'), 600);    // line fades in
-  setTimeout(() => introEl.classList.remove('text-in'), 600 + 2200 + 3200); // holds, fades out
-  const revealAt = 600 + 2200 + 3200 + 2200;
+  startIntroAudio();
+  setTimeout(() => introEl.classList.add('beat1'), 900);              // the first two lines
+  setTimeout(() => introEl.classList.add('beat2'), 4700);             // then what is out here
+  setTimeout(() => introEl.classList.remove('beat1', 'beat2'), 9400); // all of it fades
+  const revealAt = 11300;
   setTimeout(() => {
+    endIntroAudio();
+    playSample('splash', 1.15, 0, 0.58);             // one wave, close, as the beach comes up
     introEl.style.transition = 'opacity 2.4s ease';
     introEl.classList.remove('show');              // world fades up
     introDone = true;
@@ -3080,7 +3152,19 @@ function beginGame() {
     if (!locked && !fallbackLook) enterFallback();
   }, revealAt);
 }
-overlay.addEventListener('click', beginGame);
+/* Two phases. The first press of anything is PRESS ANY KEY: it is the
+ * gesture that lets the sea come up (primeMenuAudio) and it shows the list.
+ * Nothing begins until BEGIN — the old click-anywhere started the game on
+ * the same press that was meant to unmute it. */
+function showTitleMenu() { if (!introStarted) overlay.classList.add('menu'); }
+window.addEventListener('pointerdown', () => { if (!overlay.classList.contains('menu')) showTitleMenu(); }, { passive: true });
+window.addEventListener('keydown', (e) => {
+  if (introStarted) return;
+  if (!overlay.classList.contains('menu')) { showTitleMenu(); return; }
+  if (e.code === 'Enter' || e.code === 'Space') beginGame();
+});
+overlay.querySelector('.begin').addEventListener('click', (e) => { e.stopPropagation(); beginGame(); });
+overlay.querySelector('.ctl').addEventListener('click', (e) => { e.stopPropagation(); overlay.classList.toggle('controls-open'); });
 /* Surf under the title card. Browsers won't let an AudioContext start
  * without a gesture, so we arm it on the first move or key the player makes
  * over the menu and let the sea come up behind the title. */
@@ -7519,8 +7603,23 @@ function startAmbientAudio() {
   sfxBusGain.connect(masterGain);
   noise.connect(wind).connect(windGain).connect(masterGain);
   noise.connect(surf).connect(surfGain).connect(waveBusGain);
+  /* THE SEA UNDER THE TITLE. The walk's surf is a bed you stop hearing; the
+   * menu wants waves you cannot not hear — a lower, slower swell that rolls
+   * in and draws back every ~13 s, with a rumble under it. It only exists
+   * while the title is up; leaveTitle() pulls it down. */
+  const tsurf = ctx.createBiquadFilter(); tsurf.type = 'bandpass'; tsurf.frequency.value = 170; tsurf.Q.value = 0.45;
+  const trum = ctx.createBiquadFilter(); trum.type = 'lowpass'; trum.frequency.value = 95;
+  const swell = ctx.createGain(); swell.gain.value = 0.5;
+  const swLfo = ctx.createOscillator(); swLfo.frequency.value = 0.077;
+  const swLfoG = ctx.createGain(); swLfoG.gain.value = 0.48;
+  swLfo.connect(swLfoG).connect(swell.gain);
+  titleSurfGain = ctx.createGain(); titleSurfGain.gain.value = 0.0001;
+  noise.connect(tsurf).connect(swell);
+  noise.connect(trum).connect(swell);
+  swell.connect(titleSurfGain).connect(waveBusGain);
+  if (!introStarted) titleSurfGain.gain.exponentialRampToValueAtTime(1.6, ctx.currentTime + 3.5);
   masterGain.connect(ctx.destination);
-  noise.start(); lfo.start(); lfo2.start();
+  noise.start(); lfo.start(); lfo2.start(); swLfo.start();
   loadSamples();
   document.addEventListener('visibilitychange', () => {
     masterGain.gain.setTargetAtTime(document.hidden ? 0 : settings.volume, ctx.currentTime, 0.4);
@@ -10441,6 +10540,7 @@ function animate() {
   const rawDt = dt;
   if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
   oceanUniforms.uTime.value += dt;
+  if (!introStarted) titleCam(rawDt);
   update(dt, rawDt);
   updateHover();
   if (inspecting) {

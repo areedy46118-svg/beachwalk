@@ -316,6 +316,12 @@ timing.
 not covered by any open licence and must not be redistributed with the game.
 
 
+**Curse of the Zombie** — the title face.
+
+Curse of the Zombie by Chad Savage (Sinister Fonts), free for personal use;
+`assets/fonts/curse-of-the-zombie.ttf`.
+
+
 **Rusty Metal 02** — the rust on the ring.
 
 [Rusty Metal 02](https://polyhaven.com/a/rusty_metal_02) by Poly Haven, CC0.

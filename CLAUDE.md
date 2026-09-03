@@ -694,13 +694,35 @@ so the view-model pose, the trail markers at the lip and the world
 placement all hold. If you change the blade's extent, move `trailTip` /
 `trailRoot` with it.
 
-**The cover is the beach reduced to a line.** Black, a hairline of
-surf-light at 64 % with a glow, a dim moon over it, film grain (an inline
-SVG `feTurbulence` tile stepped about at 0.07 opacity), a vignette, the
-name in the serif with a flicker you are not sure you saw, and the
-controls in the dialogue's monospace along the bottom. The old card was a
-blue gradient with a glow on the title, a menu from a different game.
-`#overlay` is still the click target; everything in it is decoration.
+**The cover IS the beach, graded like a painting.** The overlay is glass
+over the live scene: while the title is up `titleCam()` borrows the player
+camera for a slow low drift down the sand toward the moon (safe because
+`update()` returns before `introDone`), and `leaveTitle()` hands it back to
+`spawnPos`/`spawnQuat` on begin — x and z, that is: the head-height code writes `camera.position.y`
+from `camBaseY` every frame regardless, so the title view sits at eye
+height whatever `titleCam()` asks for. Underneath, `canvas.title-grade` drains the
+colour, crushes it and pushes it olive; over it the glass carries a multiply
+tint, a dirt layer, moving grain and a heavy vignette — the sick painted
+palette of the Amnesia menus, without painting anything. The name is set
+in Curse of the Zombie (`assets/fonts/`), one span per letter so each can be
+knocked a few degrees off, and it flickers once in a while. Two phases: cold
+(the name and PRESS ANY KEY) and `.menu` (BEGIN / CONTROLS, left, the way
+Amnesia lists them). The first press of anything is the gesture that lets the
+sea come up; nothing begins until BEGIN — the old click-anywhere started the
+game on the same press that was meant to unmute it. Enter/Space begin too.
+
+**The sea under the title is its own layer.** The walk's surf is a bed you
+stop hearing; the menu wants waves you cannot not hear. `titleSurfGain` in
+`startAmbientAudio()` is a lower, slower swell (bandpass 170 + a 95 Hz
+rumble, an LFO rolling it in and back every ~13 s) into `waveBusGain`, ramped
+up only while `!introStarted` and pulled down by `leaveTitle()`.
+
+**The intro is two beats and a heartbeat.** `INTRO_LINES` land as `.l1`
+then `.l2` (`beat1` at 0.9 s, `beat2` at 4.7 s, all gone at 9.4 s, the world
+up at 11.3 s), the last two words flicker, and `startIntroAudio()` runs a
+41 Hz drone with a slow tremolo under a heartbeat at ~51 bpm — a little too
+slow — that `endIntroAudio()` kills as one close wave (`splash` at rate
+0.58) brings the beach up.
 
 **First-person hand.** Rendered in a **separate overlay scene**
 (`vmScene` / `vmCamera`, `renderer.autoClear=false; clearDepth()`).
