@@ -3423,6 +3423,10 @@ function updateHover() {
   for (const it of interactables) {
     if (!it.root.parent) continue;
     if (it.prop && it.prop.held) continue;
+    // `when` gates a thing on the world, not on where you are looking: the
+    // hover raycast only tests an interactable's OWN meshes, so nothing is
+    // occluded by walls and the fisherman was hailable through a shut door
+    if (it.when && !it.when()) continue;
     const hits = raycaster.intersectObjects(it.meshes, false);
     if (hits.length && hits[0].distance < bestD) { bestD = hits[0].distance; best = it; }
   }
@@ -8742,9 +8746,9 @@ function updateDock(dt) {
 // the table. The only other person on the walk, and the first thing he
 // says is that you should not be in here.
 // ------------------------------------------------------------------
-const FISH_H = 1.18;                      // seated, so a good deal under Bradly
+const FISH_H = 1.46;                      // sole of his boot to the top of his cap, seated
 const FISH_X = 9.9, FISH_Z = -217.75;     // beside the table, on the shed floor
-const FISH_TUB_H = 0.46;
+const FISH_TUB_H = 0.44;
 const FISHERMAN_SCRIPT = {
   start: {
     text: 'I should kill you for snooping around my property like that.',
@@ -8761,12 +8765,12 @@ scene.add(fisherman);
   const blue = new THREE.MeshStandardMaterial({
     color: 0x2f5f9c, roughness: 0.62, metalness: 0.05, flatShading: true, emissive: 0x0d2038,
   });
-  const tub = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.38, FISH_TUB_H, 14), blue);
+  const tub = new THREE.Mesh(new THREE.CylinderGeometry(0.235, 0.285, FISH_TUB_H, 14), blue);
   tub.position.y = FISH_TUB_H / 2;
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.30, 0.028, 6, 16), blue);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.235, 0.024, 6, 16), blue);
   rim.position.y = FISH_TUB_H; rim.rotation.x = Math.PI / 2;
   fisherman.add(tub, rim);
-  rockColliders.push({ x: FISH_X, z: FISH_Z, r: 0.42, top: DOCK_DECK + FISH_TUB_H, mat: 'wood' });
+  rockColliders.push({ x: FISH_X, z: FISH_Z, r: 0.34, top: DOCK_DECK + FISH_TUB_H, mat: 'wood' });
 }
 // Stand-in until assets/fisherman.png exists — a seated silhouette, so he is
 // there and talking with the cut-out still to come.
@@ -8786,10 +8790,13 @@ const fishMat = new THREE.SpriteMaterial({
 });
 const fishSprite = new THREE.Sprite(fishMat);
 fishSprite.scale.set(FISH_H, FISH_H, 1);
-fishSprite.position.y = FISH_TUB_H + FISH_H * 0.42;   // sat on the tub, not floating over it
+// his boots are on the deck in the photograph and his legs come down in
+// front of the tub, so the cut-out stands ON the boards and the tub shows
+// behind and either side of him
+fishSprite.position.y = FISH_H / 2;
 fisherman.add(fishSprite);
 // measured off the photograph: his cap brim is dark, the eyes sit just under it
-const FISH_EYES = { x: 0.40, y: 0.115, w: 0.20, h: 0.020 };
+const FISH_EYES = { x: 0.32, y: 0.104, w: 0.24, h: 0.022 };
 let fishOpenTex = null, fishShutTex = null;
 let fishBlinkT = 1.5 + Math.random() * 3, fishBlinking = false;
 new THREE.TextureLoader().load('assets/fisherman.png', (tex) => {
@@ -8815,7 +8822,7 @@ function updateFisherman(dt) {
     }
   }
   fishSway += dt;
-  fishSprite.position.y = FISH_TUB_H + FISH_H * 0.42 + Math.sin(fishSway * 0.9) * 0.012;
+  fishSprite.position.y = FISH_H / 2 + Math.sin(fishSway * 0.9) * 0.012;
   fishSprite.material.rotation = Math.sin(fishSway * 0.55) * 0.012;
 }
 {
@@ -8825,9 +8832,15 @@ function updateFisherman(dt) {
   fisherman.add(hit);
 }
 addInteractable(fisherman, 'Talk to him', 'npc', {
-  onActivate: () => startDialog('start', {
-    name: 'Very Old Fisherman', script: FISHERMAN_SCRIPT, sprite: fishSprite,
-  }),
+  // not through a shut door. He is inside the shed, and until it is open
+  // you can neither see him nor should you be able to hail him.
+  when: () => dockDoorOpen,
+  onActivate: () => {
+    if (!dockDoorOpen) return;
+    startDialog('start', {
+      name: 'Very Old Fisherman', script: FISHERMAN_SCRIPT, sprite: fishSprite,
+    });
+  },
 });
 farProps.push({ obj: fisherman, z: FISH_Z, d: 300 });
 

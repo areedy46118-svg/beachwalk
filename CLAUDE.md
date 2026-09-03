@@ -168,7 +168,14 @@ up standing in one. The push-out runs again after it.
 graded cold, with blink as a fake eyelid (a band of forehead painted down
 over the eyes, both frames baked once). Bradly and the Very Old Fisherman
 use it. `startDialog(id, npc)` takes `{name, script, sprite}`; omitting it
-is still Bradly.
+is still Bradly. Both cut-outs come from `tools/cutout.swift`, which is
+macOS Vision person segmentation and needs no dependencies:
+`swift tools/cutout.swift assets/x.JPG assets/x.png 900`.
+
+**An interactable's `when()` gates it on the WORLD.** `updateHover()`
+raycasts only an interactable's own meshes, so nothing in this game is
+occluded by walls — the fisherman was hailable straight through a shut
+door. Anything that should only exist under some condition needs `when`.
 
 **`headroomClear()` gates standing up, and it RAYCASTS.** It asked whether
 you were inside the pier's plan rectangle first, which is a much bigger
