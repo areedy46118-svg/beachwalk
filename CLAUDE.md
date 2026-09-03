@@ -703,7 +703,12 @@ moon (safe because `update()` returns before `introDone`; the head-height
 code still owns `camera.position.y`), turned almost all the way down by
 `canvas.title-grade` so the moon's track on the water barely surfaces
 through drifting smoke (a low-frequency noise sheet, screen-blended) and two
-sheets of rising dust. Two faces were tried first and cut — a horror
+sheets of rising dust. **An SVG noise tile is only seamless if the filter
+region IS the rect**: `feTurbulence stitchTiles` makes the noise periodic at
+the filter region, and a `<filter>` defaults to 120 % of the rect at a -10 %
+offset, so the period never matched the tile edge and a hard vertical join
+stood in the fog right beside the W. Every noise filter here carries
+`x='0' y='0' width='100%' height='100%'`. Two faces were tried first and cut — a horror
 display face read as corny, and an olive Amnesia-style grade read as a
 poster. The first press of anything is the gesture that lets the sea come
 up; nothing begins until BEGIN. **And the press that reveals the menu must
