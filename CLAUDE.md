@@ -192,6 +192,12 @@ ghost — is the dialogue's language now: black, white, one hairline,
 square, monospace, no glow and no colour. The held slot is the one solid
 white line.
 
+**The wheel walks the hotbar.** `scrollHotbar(dir)` steps through the
+strip's held-able slots, wrapping, and EQUIPS — everything can be held, so
+a slot you scroll onto is a thing in your hands. It accumulates `deltaY`
+to 40 before stepping so a trackpad flick is one step, and it is gated on
+being in the game: the examine screen's wheel is its zoom.
+
 **Inventory icons are RENDERS, and the render target must be sRGB.** A
 `WebGLRenderTarget` does not get the canvas's output transform: unless its
 texture's `colorSpace` says sRGB the shader writes LINEAR values, and read
@@ -667,11 +673,17 @@ throws; `G` drops.
 `makeShovel()` is a triangular loop handle with finger scallops along the
 grip, a round shaft swelling into a socket, and a scoop that is a real
 TROUGH — a parametric sheet (`sheet(u, v)`: rims curling toward the open
--Z face, a back wall at the neck, a shallow bow along the length) drawn
-twice, outside and a darker inside, with a `TubeGeometry` rolled round its
-edge for the rim and a rib down the back. The old one was five boxes and a
-torus, and five boxes read as five boxes from any distance. Smooth-shaded,
-like the other hero props. It keeps the old footprint exactly — shaft
+-Z face, a back wall at the neck, a shallow bow along the length)
+thickened into ONE closed shell — outer face, inner face and a strip round
+the edge in a single indexed geometry, so the smoothed normals run over
+the rim and it reads as a moulded lip. The first build drew the sheet
+twice with a tube glued round the edge and the seam showed at every
+angle. The old one before that was five boxes and a torus. Smooth-shaded,
+like the other hero props, with a little clearcoat. **The shaft is on the
+BACK** (`BK`, +Z): the socket, rib, shaft and handle all sit behind the
+back wall, so from the open face you see the trough and not a shaft lying
+in the bowl — which is how it first came out, and which is a shovel you
+cannot dig with. It keeps the old footprint exactly — shaft
 0 → 0.6, grip at 0.66, blade 0.02 → -0.21, ±0.1 wide, scoop facing -Z —
 so the view-model pose, the trail markers at the lip and the world
 placement all hold. If you change the blade's extent, move `trailTip` /
