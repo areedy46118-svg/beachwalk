@@ -7279,19 +7279,31 @@ const BRADLY_SCRIPT = {
 let dialogReturnLock = false, bradlyMet = false;
 let dialogTarget = null, dialogCanDismiss = false;
 let typeTimer = null, dialogEndTimer = null;
+let typeFull = null;                   // the line being typed, and what ends it
 function typeLine(text, onDone) {
   clearInterval(typeTimer);
   dialogTextEl.textContent = '';
   dialogEl.classList.add('typing');
   let i = 0;
+  const done = () => {
+    clearInterval(typeTimer); typeTimer = null; typeFull = null;
+    dialogTextEl.textContent = text;
+    dialogEl.classList.remove('typing');
+    onDone();
+  };
+  typeFull = done;
   typeTimer = setInterval(() => {
     dialogTextEl.textContent = text.slice(0, ++i);
-    if (i >= text.length) {
-      clearInterval(typeTimer);
-      dialogEl.classList.remove('typing');
-      onDone();
-    }
+    if (i >= text.length) done();
   }, 28);
+}
+/* A click while a line is still typing puts the whole line up at once —
+ * the choices arrive with it — and that click does nothing else. Reading
+ * faster than the typewriter is the normal case, not the exception. */
+function finishTyping() {
+  if (!typeFull) return false;
+  typeFull();
+  return true;
 }
 let dialogScript = BRADLY_SCRIPT;
 const dialogUsed = new Set();      // lines you have already put to someone, by label
@@ -7363,7 +7375,7 @@ function startDialog(id, npc = null) {
 }
 function endDialog() {
   if (!dialogOpen) return;
-  clearTimeout(dialogEndTimer); clearInterval(typeTimer);
+  clearTimeout(dialogEndTimer); clearInterval(typeTimer); typeTimer = null; typeFull = null;
   dialogOpen = false;
   dialogCanDismiss = false;
   dialogTarget = null;
@@ -7372,7 +7384,10 @@ function endDialog() {
   refreshUI();
   if (dialogReturnLock && !fallbackLook) requestLock();
 }
-dialogEl.addEventListener('click', () => { if (dialogCanDismiss) endDialog(); });
+dialogEl.addEventListener('click', () => {
+  if (finishTyping()) return;
+  if (dialogCanDismiss) endDialog();
+});
 document.getElementById('dialog-leave').addEventListener('click', (e) => { e.stopPropagation(); endDialog(); });
 
 // Push in on whoever's talking: ease the FOV down and swing the view onto
@@ -10380,6 +10395,7 @@ window.__bw = {
   lipNdc: () => { armRig.updateMatrixWorld(true); trailTip.getWorldPosition(_lipA); trailRoot.getWorldPosition(_lipB); return _lipA.lerp(_lipB, 0.5).project(vmCamera); },
   landK: () => landK, landDist: () => landDist,
   addToInventory, openPack, closePack, selectPackSlot, sfxCastleBreak, digImpacted: () => digImpacted,
+  finishTyping, dialogTextEl,
   THREE, scene, camera, player: camera,
   interactables, physProps, inventory, bottle, cliff, foot, lighthouse, city,
   castle, shovelWorld, viewmodel,

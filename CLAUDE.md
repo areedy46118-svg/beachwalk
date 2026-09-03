@@ -232,6 +232,11 @@ only direction anyone sees him from. And `dialogTarget` takes a `headY`,
 because a sprite's origin is its centre and on a seated man that is his
 chest, so the push-in framed his jumper.
 
+**A click finishes the typewriter.** `typeLine()` keeps its completer in
+`typeFull`; `finishTyping()` runs it, and the dialogue's click handler
+tries that FIRST and returns, so the click that puts the line up never
+also dismisses. Reading faster than the typewriter is the normal case.
+
 **An interactable's `when()` gates it on the WORLD.** `updateHover()`
 raycasts only an interactable's own meshes, so nothing in this game is
 occluded by walls — the fisherman was hailable straight through a shut
