@@ -2279,7 +2279,11 @@ function rockGroundAt(x, z, feetY) {
 function pushOutOfSolids(pos, feetY, grow, headY = Infinity) {
   let hit = null;
   for (const c of rockColliders) {
-    if (feetY >= c.top - 0.06) continue;        // above it: that's a floor, not a wall
+    /* Anything whose top is within a STEP of your feet is a floor, not a
+     * wall — `rockGroundAt()` lifts you onto it in the same frame. The two
+     * used to disagree (0.06 here against ROCK_STEP there), so a stair tread
+     * you were meant to walk up shoved you back off it instead. */
+    if (feetY >= c.top - ROCK_STEP) continue;
     if (c.floorY !== undefined && headY < c.floorY) continue;   // you are under it
     if (solidDepth(c, pos.x, pos.z, grow) <= 0) continue;
     if (c.r !== undefined) {
@@ -3086,7 +3090,8 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Tab') e.preventDefault();   // never let focus walk the page
   if (!introDone) return;
   if (e.code === 'Tab') {
-    if (ended || dying || inspecting) return;
+    if (ended || dying) return;
+    if (inspecting) { closeInspect(); return; }   // Tab is a way out of it too
     if (invOpen) closePack();
     else if (!menuOpen && !noteOpen && !dialogOpen) openPack();
     return;
@@ -3552,7 +3557,11 @@ class PhysProp {
       if (p.x > hi) { p.x = hi; this.vel.x = -Math.abs(this.vel.x) * this.bounce; struck = true; }
     }
     // going into the sea: a splash you can see and hear, once
-    if (sub > 0.25 && !this.splashed && p.y <= rest + 0.25) {
+    /* ...and only if it ARRIVED. A body resting near the waterline goes in
+     * and out of `sub` every few seconds as the tide and swash move over it,
+     * and without a speed test each of those was a fresh splash — which is
+     * the splashing you could hear from anywhere on the beach. */
+    if (sub > 0.25 && incoming > 2.0 && !this.splashed && p.y <= rest + 0.25) {
       this.splashed = true;
       spawnSplash(p.x, p.z, 10 + Math.min(20, incoming * 2), this.vel.x, this.vel.z, 1 + incoming * 0.08);
       sfxSplash(Math.min(1.5, 0.45 + incoming * 0.09));
@@ -5906,7 +5915,10 @@ function updateCrab(dt) {
     crab.rotation.y = Math.atan2(_crabDir.x, _crabDir.z) + Math.PI / 2;
     if (inWater(crab.position.x, crab.position.z) && Math.random() < dt * 4) {
       spawnSplash(crab.position.x, crab.position.z, 2, _crabDir.x, _crabDir.z, 0.4);
-      if (Math.random() < 0.25) sfxSplash(0.35);   // sloshing as it comes in
+      // ...and only when it is close enough for you to hear it. sfxSplash is
+      // not positional, so a crab wading a couple of hundred metres back up
+      // the beach was audible at full volume for the whole walk.
+      if (Math.random() < 0.25 && crab.position.distanceTo(camera.position) < 14) sfxSplash(0.35);
       addRipple(crab.position.x, crab.position.z, 0.55);
     }
   } else {
@@ -8349,7 +8361,7 @@ const DOCK_WALLS = [
   [-2.35, -1.00, -1.14, -0.90],     // front, to the door
   [-0.73, -1.00, -0.47, -0.90],     // front, past the door
 ];
-const DOCK_DRIFT_R = 7.2, DOCK_DRIFT_H = 1.95;
+const DOCK_DRIFT_R = 8.4, DOCK_DRIFT_H = 1.12;   // a bank the pier sits in, not a ramp over it
 const DOCK_DRIFT_X = DOCK_X + 3.35 * DOCK_S;
 const DOCK_DRIFT_Z = DOCK_Z + ((DK.X0 + DK.X1) / 2) * DOCK_S;
 const dock = new THREE.Group();
@@ -8376,6 +8388,30 @@ function onPier(wx, wz) {
 }
 function dockDeckAt(wx, wz) {
   return onPier(wx, wz) ? DOCK_DECK : null;
+}
+/* Getting up onto it. The drift alone was a dune you scrambled: it stood
+ * higher than the deck, so you walked up loose sand and were snapped onto
+ * the boards somewhere near the top. It is lower now — a bank the pier sits
+ * in rather than a ramp over it — and a short flight of timber steps does
+ * the last two thirds of a metre. Each tread is a real collider with a rise
+ * of 0.18, well inside ROCK_STEP, so you walk up them rather than climb. */
+const DOCK_STEPS = [];
+{
+  const wood = new THREE.MeshStandardMaterial({
+    color: 0x6b5942, roughness: 1, metalness: 0, flatShading: true, emissive: 0x231c14,
+  });
+  const EDGE = DOCK_X - DK.Z0 * DOCK_S;          // the deck's landward lip
+  const HALF_W = 1.7, DEPTH = 0.42;
+  for (let i = 0; i < 3; i++) {
+    const top = DOCK_DECK - (i + 1) * 0.18;      // 1.556, 1.376, 1.196
+    const x0 = EDGE + i * DEPTH, x1 = x0 + DEPTH + 0.06;
+    const cz = DOCK_Z + ((DK.X0 + DK.X1) / 2) * DOCK_S;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, 0.9, HALF_W * 2), wood);
+    m.position.set((x0 + x1) / 2, top - 0.45, cz);
+    scene.add(m);
+    DOCK_STEPS.push(m);
+    rockColliders.push({ x0, x1, z0: cz - HALF_W, z1: cz + HALF_W, top, mat: 'wood' });
+  }
 }
 function driftAt(wx, wz) {
   const d = Math.hypot(wx - DOCK_DRIFT_X, wz - DOCK_DRIFT_Z) / DOCK_DRIFT_R;
@@ -8564,7 +8600,7 @@ function updateDock(dt) {
   onDock = false;
   if (inFoot) {
     // the way on: the buried land end, at the height of the boards
-    const entering = !wasOn && feet >= DOCK_DECK - 0.35 && lz < DK.Z0 + 1.2;
+    const entering = !wasOn && feet >= DOCK_DECK - 0.42 && lz < DK.Z0 + 1.2;
     if (wasOn || entering) {
       onDock = true;
       if (DOCK_DECK > groundY) groundY = DOCK_DECK;
@@ -8798,10 +8834,19 @@ function updateTower(dt) {
  * ceiling in the game, so that is what this asks about — plus anything
  * solid whose top is over your head. Standing up under the boards used to
  * put your head through them and hand you back out on top. */
+const _upRay = new THREE.Raycaster();
+const _upDir = new THREE.Vector3(0, 1, 0);
 function headroomClear() {
   const feet = camBaseY - playerEye();
   const stand = feet + EYE_HEIGHT + 0.18;
-  if (!onDock && onPier(camera.position.x, camera.position.z) && stand > DOCK_DECK && feet < DOCK_DECK) return false;
+  /* Look UP and see. This used to ask whether you were inside the pier's
+   * plan rectangle, which is a much bigger thing than the pier's roof: the
+   * boat is moored inside that rectangle with nothing at all above it, so
+   * standing up beside the boat — in open air, under open sky — was refused.
+   * A ray knows the difference. */
+  _upRay.set(_pv.set(camera.position.x, feet + 0.2, camera.position.z), _upDir);
+  _upRay.far = Math.max(0.05, stand - feet - 0.2);
+  if (_upRay.intersectObject(dock, true).some((h) => h.object.name !== 'hitProxy' && h.object.visible)) return false;
   /* A narrower body than the push-out uses. At the full radius, standing
    * beside one of the pier's bollards counted as something over your head
    * and locked you in a crouch on open deck. */
@@ -8903,7 +8948,7 @@ function update(dt, rawDt = dt) {
       landDip = Math.max(landDip, 0.06 + force * 0.16);
       addTrauma(force * 0.25);
       vmImpulse(-1.1 - force * 2.4);
-      if (!onDock && inWater(camera.position.x, camera.position.z)) sfxSplash(0.9);
+      if (!onDock && !onShip && groundY < 0.35 && inWater(camera.position.x, camera.position.z)) sfxSplash(0.9);
       else if (onDock) sfxStepWood();
       else sfxStep();
     }

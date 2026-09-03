@@ -27,7 +27,7 @@ Then open <http://localhost:4173> and click to begin. Any static server works
 | `Ctrl` | Crouch (toggle) — crawl under the pier |
 | `G` | Drop the held object gently |
 | `1`–`6` / click a slot | Hold an inventory item — everything can be carried |
-| `Tab` → `Inspect` | Examine an item. The pack is the only way in |
+| `Tab` → `Inspect` | Examine an item. The pack is the only way in; `Tab` or `Esc` leaves |
 | Hold left-click | Wind up a heavy swing; release to land it |
 | Hold right-click (examine view) | Turn the item over |
 | Left-click / scroll (examine view) | Put it away / zoom in |
@@ -114,7 +114,8 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - **The dock house** — sixty metres past the wreck, a pier on piles standing
   out from the cliff foot into the surf, with a shed on the boards, a lamp lit
   on the post at the sea end, and a boat tied up under it. The beach has
-  drifted up against its land end; walk up the sand and onto the boards. The
+  drifted up against its land end, and a short flight of timber steps takes
+  you the last of the way onto the boards. The
   pier is solid — you cannot walk in under it. Its sea end and the last
   stretch of its sides hold you out of the surf; over the beach the sides are
   open, so step off onto the sand and carry on. Boards knock underfoot. The

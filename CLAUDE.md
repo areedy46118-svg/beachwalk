@@ -145,10 +145,26 @@ came out full of holes.
 solid push-out put you straight back inside a pile — which is how you ended
 up standing in one. The push-out runs again after it.
 
-**`headroomClear()` gates standing up**, and it uses a NARROWER body than
-the push-out: at the full radius, standing beside one of the pier's bollards
-counted as a ceiling and locked you in a crouch on open deck. Jumping stands
-you up first when there is room.
+**`headroomClear()` gates standing up, and it RAYCASTS.** It asked whether
+you were inside the pier's plan rectangle first, which is a much bigger
+thing than the pier's roof — the boat is moored inside that rectangle with
+open sky above it, so standing up beside the boat was refused. A ray up from
+your head knows the difference. It also uses a narrower body than the
+push-out for the analytic colliders: at the full radius, standing beside one
+of the pier's bollards counted as a ceiling. Jumping stands you up first.
+
+**The push-out and the step-up must use the SAME tolerance.** `rockGroundAt`
+lifts you onto anything within `ROCK_STEP` (0.42) of your feet, so
+`pushOutOfSolids` has to stop treating those as walls — at 0.06 a stair
+tread you were meant to walk up shoved you back off it, and the pier's steps
+were unclimbable.
+
+**Splashing needs a reason.** Three separate sources each fired without one:
+a prop resting near the waterline crossed `submersionAt` every few seconds
+as the swash moved and splashed each time (it needs an arrival SPEED); the
+crab wading fired `sfxSplash`, which is not positional, from anywhere on the
+kilometre (it needs a distance gate); and landing splashed off `inWater`
+alone, which is true above the sea as well as in it.
 
 **The examine screen dies if the pack re-locks the pointer.** `closePack()`
 re-requests pointer lock asynchronously and it lands a frame later, on top
