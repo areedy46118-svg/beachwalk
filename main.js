@@ -6664,6 +6664,9 @@ function startDialog(id, npc = null) {
   bradlyMet = true;
   dialogScript = npc ? npc.script : BRADLY_SCRIPT;
   dialogTarget = (npc ? npc.sprite : bradlySprite).getWorldPosition(new THREE.Vector3());
+  // his head, not the middle of him: a sprite's origin is its centre, which
+  // on a seated man is his chest
+  if (npc && npc.headY) dialogTarget.y += npc.headY;
   dialogSpeakerEl.textContent = npc ? npc.name : 'Bradly Beach';
   dialogEl.classList.add('show');
   setPrompt('');
@@ -8530,6 +8533,11 @@ new GLTFLoader().load('assets/dock.glb', (gltf) => {
         dockDoorOpen = !dockDoorOpen;
         dockDoorEntry.label = dockDoorOpen ? 'Close the door' : 'Open the door';
         sfxDoor(dockDoorOpen);
+        /* He is sitting right there and he has been waiting. Opening the
+         * door on him starts it — you do not walk in and choose to say
+         * hello to a man who is already looking at you. Once only; after
+         * that he is an interactable like anyone else. */
+        if (dockDoorOpen && !fishermanMet) setTimeout(talkToFisherman, 620);
       },
     });
     dockDoorEntry = interactables[interactables.length - 1];
@@ -8746,9 +8754,9 @@ function updateDock(dt) {
 // the table. The only other person on the walk, and the first thing he
 // says is that you should not be in here.
 // ------------------------------------------------------------------
-const FISH_H = 1.46;                      // sole of his boot to the top of his cap, seated
+const FISH_H = 1.80;                      // sole of his boot to the top of his cap, seated
 const FISH_X = 9.9, FISH_Z = -217.75;     // beside the table, on the shed floor
-const FISH_TUB_H = 0.44;
+const FISH_TUB_H = 0.58;
 const FISHERMAN_SCRIPT = {
   start: {
     text: 'I should kill you for snooping around my property like that.',
@@ -8765,12 +8773,17 @@ scene.add(fisherman);
   const blue = new THREE.MeshStandardMaterial({
     color: 0x2f5f9c, roughness: 0.62, metalness: 0.05, flatShading: true, emissive: 0x0d2038,
   });
-  const tub = new THREE.Mesh(new THREE.CylinderGeometry(0.235, 0.285, FISH_TUB_H, 14), blue);
-  tub.position.y = FISH_TUB_H / 2;
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.235, 0.024, 6, 16), blue);
-  rim.position.y = FISH_TUB_H; rim.rotation.x = Math.PI / 2;
+  /* Set BACK from him, not under him. He is a billboard and the tub is a
+   * solid cylinder at the same spot, so the sprite plane cut straight
+   * through it and the tub's front half ate his legs and boots — the
+   * "clipping through his seat". Pushed deeper into the shed it sits behind
+   * him from the doorway, which is the only way anyone sees him. */
+  const tub = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.36, FISH_TUB_H, 14), blue);
+  tub.position.set(0.30, FISH_TUB_H / 2, 0);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.30, 0.028, 6, 16), blue);
+  rim.position.set(0.30, FISH_TUB_H, 0); rim.rotation.x = Math.PI / 2;
   fisherman.add(tub, rim);
-  rockColliders.push({ x: FISH_X, z: FISH_Z, r: 0.34, top: DOCK_DECK + FISH_TUB_H, mat: 'wood' });
+  rockColliders.push({ x: FISH_X + 0.30, z: FISH_Z, r: 0.40, top: DOCK_DECK + FISH_TUB_H, mat: 'wood' });
 }
 // Stand-in until assets/fisherman.png exists — a seated silhouette, so he is
 // there and talking with the cut-out still to come.
@@ -8803,7 +8816,8 @@ new THREE.TextureLoader().load('assets/fisherman.png', (tex) => {
   const img = tex.image;
   if (!img || !img.width) return;
   fishSprite.scale.set(FISH_H * (img.width / img.height), FISH_H, 1);
-  const f = bakeCutout(img, FISH_EYES, { pix: 200, levels: 6 });
+  // 200 px was a smear at the range you actually stand from him
+  const f = bakeCutout(img, FISH_EYES, { pix: 480, levels: 7 });
   fishOpenTex = f.open; fishShutTex = f.shut;
   fishMat.map = fishOpenTex;
   fishMat.needsUpdate = true;
@@ -8831,15 +8845,21 @@ function updateFisherman(dt) {
   hit.position.y = (FISH_H + FISH_TUB_H) / 2; hit.name = 'hitProxy';
   fisherman.add(hit);
 }
+function talkToFisherman() {
+  fishermanMet = true;
+  startDialog('start', {
+    name: 'Very Old Fisherman', script: FISHERMAN_SCRIPT, sprite: fishSprite,
+    headY: FISH_H * 0.36,
+  });
+}
+let fishermanMet = false;
 addInteractable(fisherman, 'Talk to him', 'npc', {
   // not through a shut door. He is inside the shed, and until it is open
   // you can neither see him nor should you be able to hail him.
   when: () => dockDoorOpen,
   onActivate: () => {
     if (!dockDoorOpen) return;
-    startDialog('start', {
-      name: 'Very Old Fisherman', script: FISHERMAN_SCRIPT, sprite: fishSprite,
-    });
+    talkToFisherman();
   },
 });
 farProps.push({ obj: fisherman, z: FISH_Z, d: 300 });

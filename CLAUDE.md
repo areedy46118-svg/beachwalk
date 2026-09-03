@@ -172,6 +172,14 @@ is still Bradly. Both cut-outs come from `tools/cutout.swift`, which is
 macOS Vision person segmentation and needs no dependencies:
 `swift tools/cutout.swift assets/x.JPG assets/x.png 900`.
 
+**A billboard and a solid prop at the same spot fight.** The fisherman's
+blue tub was directly under him, so the sprite plane cut through the
+cylinder and the tub's front half ate his legs and boots. It is set back
+0.3 m into the shed instead, behind him from the doorway — which is the
+only direction anyone sees him from. And `dialogTarget` takes a `headY`,
+because a sprite's origin is its centre and on a seated man that is his
+chest, so the push-in framed his jumper.
+
 **An interactable's `when()` gates it on the WORLD.** `updateHover()`
 raycasts only an interactable's own meshes, so nothing in this game is
 occluded by walls — the fisherman was hailable straight through a shut
