@@ -1144,6 +1144,15 @@ gaping, `CRAB_STRIKE` (6f) puts the damage on the first active frame, and
 sound is the countdown. Keep it unlike `sfxCrabSnip()` — confusing the tell
 with the strike is worse than having neither.
 
+**Anything that refreshes `hitstop` must fire ONCE.** `hitConnect()` sets
+`hitstop = max(hitstop, 0.03)`, and under hitstop the world runs at 8 %, so
+a test that stays true while the world is frozen re-freezes it every frame
+for as long as it stays true. The thrown-prop kill did exactly that: the
+body sat inside the crab's 0.75 m at 8 % speed for hundreds of frames, each
+one calling hitConnect() and building a fresh sfxConnect graph — four
+seconds of stall and a few hundred sounds, which is what "throwing at the
+crab lags" was. It is gated on `crabState.struck` now, like killCrab().
+
 **The kill is two beats.** `killCrab()` no longer bursts it. It sets
 `crabState.struck`, plays `sfxCrabHit()` and starts `CRAB_HIT_STOP` (5 frames)
 of frozen time; for exactly those frames the crab is still there, folded up

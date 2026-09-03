@@ -3727,9 +3727,17 @@ class PhysProp {
       sfxSplash(Math.min(1.5, 0.45 + incoming * 0.09));
       addRipple(p.x, p.z, 1);
     } else if (sub < 0.1) this.splashed = false;
-    // and anything moving fast enough kills the crab
-    if (crabState.alive && incoming > 5 && p.distanceTo(crab.position) < 0.75) {
+    /* And anything moving fast enough kills the crab — ONCE. This fired every
+     * frame the body was inside the radius: hitConnect() refreshes hitstop
+     * to at least 0.03 s each call, and under hitstop the body moves at 8 %
+     * speed, so it sat inside the 0.75 m for hundreds of frames, each one
+     * re-freezing the world and building a fresh sfxConnect graph. Four
+     * seconds of near-frozen time and a few hundred sounds: the "lag" when
+     * a throw hit the crab. Gated on `struck` now, the same gate killCrab()
+     * has, and the body loses most of its speed in the shell. */
+    if (crabState.alive && !crabState.struck && incoming > 5 && p.distanceTo(crab.position) < 0.75) {
       hitConnect(0.4, 1); killCrab();
+      this.vel.multiplyScalar(0.3);
     }
     if (struck && incoming > 1.1) sfxPropHit(surface, incoming);
     if (struck && this.onImpact) this.onImpact(incoming);
@@ -10585,7 +10593,7 @@ window.__bw = {
   lipNdc: () => { armRig.updateMatrixWorld(true); trailTip.getWorldPosition(_lipA); trailRoot.getWorldPosition(_lipB); return _lipA.lerp(_lipB, 0.5).project(vmCamera); },
   landK: () => landK, landDist: () => landDist,
   addToInventory, openPack, closePack, selectPackSlot, sfxCastleBreak, digImpacted: () => digImpacted,
-  finishTyping, dialogTextEl,
+  finishTyping, dialogTextEl, get hitstop() { return hitstop; },
   THREE, scene, camera, player: camera,
   interactables, physProps, inventory, bottle, cliff, foot, lighthouse, city,
   castle, shovelWorld, viewmodel,
