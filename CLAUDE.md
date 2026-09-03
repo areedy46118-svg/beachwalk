@@ -880,6 +880,28 @@ Three more things that make a heavy feel like one:
 already in the wound pose roughly doubles. A charge with no full mark is a
 charge you hold too long every time.
 
+**THE GUARD, AND THE PARRY.** Hold right and the shovel comes up across
+you; a strike that lands on it does nothing at all. The first `PARRY_WINDOW`
+(0.20 s) after the press is a parry instead, which cancels the attack and
+puts `crabState.stun` on for 1.7 s. `blockStart` is measured from the PRESS,
+not from whether the pose has settled — committing to the timing is the
+skill, waiting for an animation is not. The two sounds must never be
+confused: a block is a dull wooden knock, a parry is a struck-steel ring,
+and that difference is the whole mechanic.
+
+**A view model at -0.22 is behind the near plane.** `vmCamera`'s near is
+0.01 and the arm rests at -0.62; pulling the guard in to -0.22 did not read
+as "close", it made the shovel vanish. -0.56 and out to the leading side is
+the pose that reads.
+
+**The crab's swing is an ARC now.** It used to rise and lunge straight down
+the line at you, which from the front is a shape barely changing size —
+nothing to read, nothing to time against. The body cocks away first
+(`atkTwist`), one claw draws back across itself (`atkSweep`), and then
+everything comes through together and overshoots. Anticipation opposite the
+action is the only thing that makes a strike legible early enough to answer,
+which a parry window requires.
+
 **The crab's attack is telegraphed — startup / active / recovery.** It used to
 land the same frame the crab came into reach, with the lunge pose playing
 *after* the damage: nothing to read and nothing to do about it.

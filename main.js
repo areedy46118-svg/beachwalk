@@ -3128,18 +3128,25 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
    * hauls the shovel back for a heavy. Right is deliberately left free.
    * The wind-up only starts once you have held past WIND_TAP, so a quick
    * click never flickers into the haul pose on its way out. */
-  if (e.button === 0 && started && !frozen() && equipped && equipped.onDig && digT <= 0) {
+  if (e.button === 0 && started && !frozen() && !blocking && equipped && equipped.onDig && digT <= 0) {
     windLatch = setTimeout(() => { windLatch = null; startWind(); }, WIND_TAP * 1000);
+  }
+  if (e.button === 2 && started && !frozen() && equipped && equipped.onDig) {
+    if (winding) { clearTimeout(windLatch); windLatch = null; winding = false; windT = 0; }
+    blocking = true;
+    blockStart = performance.now();
+    sfxGuardUp();
   }
 });
 window.addEventListener('pointerup', (e) => {
   dragging = false;
+  if (e.button === 2) { blocking = false; return; }
   if (e.button !== 0) return;
   if (windLatch) { clearTimeout(windLatch); windLatch = null; return; }  // a tap: the click handler swings
   if (winding) { releaseWind(); swungAt = performance.now(); }
 });
 // losing the window mid-wind shouldn't leave the shovel stuck over your head
-window.addEventListener('blur', () => { if (winding) releaseWind(); });
+window.addEventListener('blur', () => { if (winding) releaseWind(); blocking = false; });
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 renderer.domElement.addEventListener('click', (e) => {
   const d = downPos ? Math.hypot(e.clientX - downPos[0], e.clientY - downPos[1]) : 0;
@@ -4478,6 +4485,15 @@ let digT = 0, digImpacted = false;
  * mostly switched off on the way there: a hand at your ear does not trail
  * your turns the way a tool held out in front does. */
 let listenT = 0;
+// across you and high, close to the camera: the blade fills the middle of
+// the frame, which is the whole readable difference between guarding and not
+// z matters more than it looks: the arm rests at -0.62 and vmCamera's near
+// plane is 0.01, so pulling the guard in to -0.22 put half the shovel behind
+// the near plane and it vanished entirely rather than reading as close.
+const BLOCK_AT = new THREE.Vector3(0.46, 0.04, -0.56);
+// the shaft comes up ACROSS the view, blade high on your leading side: at a
+// shallower roll it read as holding the tool out rather than guarding with it
+const BLOCK_POSE = [-0.22, 0.06, 1.22, -1.02, 0.08];
 // x and y are FRACTIONS of the frame's half-extents at the ear's depth, like
 // layoutViewmodel(): an absolute offset that sat at the edge of a landscape
 // window was clean off the side of a portrait one
@@ -4547,6 +4563,18 @@ addInteractable(shovelWorld, "Take the sand shovel", 'inventory', {
 const WIND_FULL = 1.0;                  // seconds of holding to reach full power
 const WIND_TAP = 0.16;                  // held longer than this and you meant a heavy
 let windLatch = null, swungAt = -1;      // when a held release last landed a heavy
+/* THE GUARD. Hold right and the shovel comes up across you. It is a real
+ * guard, not a damage modifier: a strike that lands on it does nothing at
+ * all. What makes it worth learning is the first fifth of a second — raise
+ * it INTO the blow and you parry, which stuns the thing that swung and
+ * leaves it standing there for you.
+ *
+ * `blockStart` is when the guard went up, so the window is measured from the
+ * press and not from whether the animation has finished. Committing to the
+ * timing is the skill; waiting for a pose to settle is not. */
+const PARRY_WINDOW = 0.20;               // seconds after the guard goes up
+let blocking = false, blockT = 0, blockStart = -1;
+let parryGlow = 0;                       // the white flash on a successful parry
 let winding = false, windT = 0, digPower = 0, digCharged = false, windFull = false;
 
 /* Poses are [pitch, lift, yaw, roll, push] and the swing is lerps between
@@ -4916,17 +4944,24 @@ function updateViewmodel(dt) {
     for (let i = 0; i < 5; i++) _pose[i] = 0;
   }
 
+  // the guard goes up fast and comes down slower — you commit to raising it
+  blockT = THREE.MathUtils.clamp(blockT + (blocking ? dt / 0.10 : -dt / 0.22), 0, 1);
+  const blk = easeOutCubic(blockT);
   listenT = THREE.MathUtils.clamp(listenT + (listening ? dt / 0.55 : -dt / 0.45), 0, 1);
   const ear = easeOutCubic(listenT), lagK = 1 - ear * 0.85;
   const earH = Math.tan((vmCamera.fov * Math.PI) / 360) * -EAR_AT.z;
   const earX = earH * vmCamera.aspect * EAR_AT.x, earY = earH * EAR_AT.y;
-  armRig.rotation.x = ARM_ROT_X + _pose[0] + vmLagX * lagK + ear * EAR_POSE[0];
-  armRig.rotation.y = -0.45 + _pose[2] + vmLagY * lagK + ear * EAR_POSE[2];
-  armRig.rotation.z = 0.10 + _pose[3] + vmLagY * 0.45 * lagK + ear * EAR_POSE[3];
+  // a parry rings the tool: a short hard shudder that decays out
+  const ring = parryGlow > 0 ? Math.sin(parryGlow * 62) * parryGlow * 0.10 : 0;
+  const bH = Math.tan((vmCamera.fov * Math.PI) / 360) * -BLOCK_AT.z;
+  const blkX = bH * vmCamera.aspect * BLOCK_AT.x, blkY = bH * BLOCK_AT.y;
+  armRig.rotation.x = ARM_ROT_X + _pose[0] + vmLagX * lagK + ear * EAR_POSE[0] + blk * BLOCK_POSE[0] + ring;
+  armRig.rotation.y = -0.45 + _pose[2] + vmLagY * lagK + ear * EAR_POSE[2] + blk * BLOCK_POSE[2];
+  armRig.rotation.z = 0.10 + _pose[3] + vmLagY * 0.45 * lagK + ear * EAR_POSE[3] + blk * BLOCK_POSE[3] - ring;
   armRig.position.set(
-    ARM_BASE.x + bx + vmLagY * 0.16 + ear * (earX - ARM_BASE.x),
-    ARM_BASE.y + by + _pose[1] + vmSpringY + ear * (earY - ARM_BASE.y),
-    ARM_BASE.z + _pose[4] + ear * (EAR_AT.z - ARM_BASE.z)
+    ARM_BASE.x + bx + vmLagY * 0.16 + ear * (earX - ARM_BASE.x) + blk * (blkX - ARM_BASE.x),
+    ARM_BASE.y + by + _pose[1] + vmSpringY + ear * (earY - ARM_BASE.y) + blk * (blkY - ARM_BASE.y),
+    ARM_BASE.z + _pose[4] + ear * (EAR_AT.z - ARM_BASE.z) + blk * (BLOCK_AT.z - ARM_BASE.z)
   );
 
   // Only the strike and a beat past it leave a trail; a trail on the wind-up
@@ -5830,7 +5865,7 @@ new GLTFLoader().load('assets/crab.glb', (gltf) => {
   }
 }, undefined, () => {});
 
-const crabState = { alive: true, awake: false, atk: -1, cool: 0, scuttle: 0, deadT: 0, rear: 0, lunge: 0, struck: false };
+const crabState = { alive: true, awake: false, atk: -1, cool: 0, scuttle: 0, deadT: 0, rear: 0, lunge: 0, struck: false, stun: 0 };
 const _crabDir = new THREE.Vector3();
 
 // ---- gibs + blood ---------------------------------------------------
@@ -5975,6 +6010,40 @@ function updateGibs(dt) {
  * shovel in a hard squash, thrown back along the swing. THEN it comes apart.
  * The freeze and the squash are the same beat, which is why `struck` ends on
  * `hitstop` rather than on a timer of its own. */
+/* A parry is the loudest thing in the game that is not a death: the world
+ * stops for a tenth of a second, the tool rings, the crab goes white and
+ * folds up, and it stays folded long enough that you cannot possibly miss
+ * the opening. Everything here is about making the timing feel worth it. */
+const CRAB_STUN = 1.7;
+function parryCrab() {
+  crabState.atk = -1;
+  crabState.cool = CRAB_COOLDOWN;
+  crabState.stun = CRAB_STUN;
+  parryGlow = 0.42;
+  flashMats(crab);
+  sfxParry();
+  addTrauma(0.5);
+  fovKick = Math.max(fovKick, 7);
+  vmImpulse(-1.35);
+  hitstop = Math.max(hitstop, 0.11);
+  // it is thrown back off your blade
+  const kx = crab.position.x - camera.position.x, kz = crab.position.z - camera.position.z;
+  const kd = Math.hypot(kx, kz) || 1;
+  crab.position.x += (kx / kd) * 0.34;
+  crab.position.z += (kz / kd) * 0.34;
+  setPrompt('<b>PARRY</b>');
+  setTimeout(() => { if (promptHTML.includes('PARRY')) setPrompt(''); }, 700);
+}
+function blockCrab() {
+  sfxBlock();
+  addTrauma(0.3);
+  vmImpulse(-0.9);
+  hitstop = Math.max(hitstop, 0.05);
+  // shoved back, but not hurt
+  const kx = camera.position.x - crab.position.x, kz = camera.position.z - crab.position.z;
+  const kd = Math.hypot(kx, kz) || 1;
+  knockback.set((kx / kd) * 3.0, 0, (kz / kd) * 3.0);
+}
 const _crabHitFrom = new THREE.Vector3();
 function killCrab() {
   if (!crabState.alive || crabState.struck) return;
@@ -6044,34 +6113,75 @@ function updateCrab(dt) {
   }
 
   crabState.rear = Math.max(0, (crabState.rear || 0) - dt * 1.2);
+  /* Stunned. It stops dead — no attack, no advance — and hangs there low and
+   * splayed with its claws down, shuddering. The pose has to read as OPEN
+   * from across the beach, because the whole point of a parry is the window
+   * it buys you. */
+  if (crabState.stun > 0) {
+    crabState.stun -= dt;
+    const q = crabState.stun;
+    const shake = Math.sin(q * 47) * Math.min(0.05, q * 0.06);
+    ud.rig.rotation.set(0.34, shake * 2.2, shake);
+    ud.rig.position.y = -0.05;
+    ud.rig.scale.set(1.08, 0.86, 1.08);
+    for (const c of ud.claws) {
+      c.shoulder.rotation.set(0.55, c.side * 0.5, 0);
+      c.fore.rotation.x = 0.6;
+      c.jaw.rotation.x = -0.05;
+    }
+    for (let i = 0; i < ud.eyes.length; i++) { ud.eyes[i].rotation.x = 0.45; ud.eyes[i].rotation.z = 0; }
+    crabState.scuttle += dt * 0.6;
+    if (crabState.stun <= 0) { crabState.stun = 0; crabState.cool = 0.35; }
+    return;
+  }
   const closing = dist > CRAB_REACH;
 
   // ---- the attack cycle -------------------------------------------
-  let atkRear = 0, atkLunge = 0, atkSquash = 0;
+  let atkRear = 0, atkLunge = 0, atkSquash = 0, atkTwist = 0, atkSweep = 0;
   if (crabState.atk >= 0) {
     const was = crabState.atk;
     crabState.atk += dt;
     const t = crabState.atk;
     if (was < CRAB_WIND && t >= CRAB_WIND) {
       sfxCrabSnip();
-      // re-tested here, not when the wind-up began: the tell is only fair if
-      // getting out of the way is a thing that works
-      if (dist < CRAB_REACH + 0.4) damagePlayer(1);
+      /* Re-tested here, not when the wind-up began: the tell is only fair if
+       * getting out of the way is a thing that works. Three outcomes now —
+       * you were not guarding and it hurts; the guard was already up and it
+       * does nothing; or the guard went up INTO it and the thing that swung
+       * is left standing there stunned. */
+      if (dist < CRAB_REACH + 0.4) {
+        if (blocking) {
+          if ((performance.now() - blockStart) / 1000 <= PARRY_WINDOW) parryCrab();
+          else blockCrab();
+        } else damagePlayer(1);
+      }
     }
+    /* It is a SWING now, not a shove. The old attack rose and lunged
+     * straight down the line at you, which from the front is a shape barely
+     * changing size — there is nothing to read and nothing to time against.
+     * Now the whole body cocks away from the blow first, one claw drawn back
+     * across itself, and then everything comes through together on an arc:
+     * anticipation opposite the action, which is the only thing that makes a
+     * strike legible early enough to answer. `atkTwist` is that rotation and
+     * `atkSweep` is where the lead claw is through it. */
     if (t < CRAB_WIND) {
-      /* Anticipation, and it winds DOWN as well as up: the body compresses
-       * onto its legs while the claws go wide. A wind-up that moves the same
-       * way as the strike reads as no wind-up at all. */
       const e = easeOutCubic(t / CRAB_WIND);
       atkRear = e; atkSquash = e;
+      atkTwist = -e;                      // cocked away, winding up
+      atkSweep = -e;
     } else if (t < CRAB_WIND + CRAB_STRIKE) {
-      // the strike: out fast and held there for the rest of the active frames
+      // through the blow, fast, and past it: the follow-through overshoots
       const e = easeOutCubic((t - CRAB_WIND) / CRAB_STRIKE);
       atkRear = 1 - e; atkLunge = e; atkSquash = -0.4 * e;
+      atkTwist = -1 + e * 2.15;
+      atkSweep = -1 + e * 2.3;
     } else {
-      // recovery: slow in, and it is wide open for all of it
+      // recovery: it has to haul itself back round, and it is open for all
+      // of it — this is the punish window a swing owes you
       const e = easeInOutCubic((t - CRAB_WIND - CRAB_STRIKE) / CRAB_RECOVER);
       atkLunge = 1 - e; atkSquash = -0.4 * (1 - e);
+      atkTwist = 1.15 * (1 - e);
+      atkSweep = 1.3 * (1 - e);
     }
     if (t >= CRAB_WIND + CRAB_STRIKE + CRAB_RECOVER) {
       crabState.atk = -1;
@@ -6139,19 +6249,24 @@ function updateCrab(dt) {
       crabState.wakeRipple = 0.22;
     }
   }
-  ud.rig.rotation.z = Math.sin(crabState.scuttle) * 0.09 * reach;
+  ud.rig.rotation.z = Math.sin(crabState.scuttle) * 0.09 * reach - atkTwist * 0.16;
   ud.rig.rotation.x = -rear * 0.30 - lunge * 0.38 + Math.sin(crabState.scuttle * 2) * 0.035 * reach;
+  ud.rig.rotation.y = atkTwist * 0.42;          // the body goes through the swing
   ud.rig.position.y = rear * 0.06 + lunge * 0.05;
 
   // claws: weave while it advances, thrown wide when it rears, snapped
   // shut through the lunge
   for (const c of ud.claws) {
     const weave = Math.sin(crabState.scuttle * 0.8 + (c.side > 0 ? 1.7 : 0)) * 0.16 * reach;
-    c.shoulder.rotation.y = c.side * (-0.15 - rear * 0.55) + weave;
-    c.shoulder.rotation.x = -rear * 0.5 - lunge * 0.15 + weave * 0.4;
+    // one claw leads and the other trails: a two-armed swing reads as a hug
+    const lead = c.side > 0 ? 1 : 0.32;
+    c.shoulder.rotation.y = c.side * (-0.15 - rear * 0.55) + weave + atkSweep * 0.95 * lead;
+    c.shoulder.rotation.x = -rear * 0.5 - lunge * 0.15 + weave * 0.4 - atkSweep * 0.22 * lead;
+    c.shoulder.rotation.z = atkSweep * 0.3 * lead;
     c.fore.rotation.x = -0.1 - rear * 0.35 + lunge * 0.5;
-    // the pincer gapes, then bites
-    const gape = lunge > 0.55 ? 0 : (0.32 + rear * 0.35) * (1 - lunge);
+    c.fore.rotation.y = -atkSweep * 0.5 * lead;    // the forearm trails the shoulder
+    // gapes through the wind-up and snaps shut the instant it comes through
+    const gape = lunge > 0.5 ? 0 : (0.32 + rear * 0.45) * (1 - lunge);
     c.jaw.rotation.x = -gape;
   }
   // eye stalks lean toward you
@@ -7578,6 +7693,55 @@ function sfxCrabWake() {
  * shell as it gathers, pitched UP over the eighteen frames of the startup so
  * the sound itself is the countdown. Deliberately unlike sfxCrabSnip(), which
  * is the strike; you should never confuse the two. */
+/* The guard going up: a short scrape of the haft against your glove. Quiet —
+ * it happens every time you press, and anything with body to it would wear
+ * out in the first minute. */
+function sfxGuardUp() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const out = ctx.createGain(); out.gain.value = 0.2; out.connect(sfxOut());
+  const n = noiseBurst(0.09, (x) => Math.pow(1 - x, 2.4) * (0.4 + 0.6 * Math.random()));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1500; bp.Q.value = 0.8;
+  n.connect(bp).connect(out); n.start(t); n.stop(t + 0.09);
+}
+/* A blow stopped on the blade: a dull wooden knock with a little metal in
+ * it, and no ring. The ring is what a parry gets, and the two must never be
+ * mistaken for one another — that difference is the whole mechanic. */
+function sfxBlock() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const out = ctx.createGain(); out.gain.value = 0.75; out.connect(sfxOut());
+  const thud = noiseBurst(0.13, (x) => Math.pow(1 - x, 2.6));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 340; lp.Q.value = 1.4;
+  const tg = ctx.createGain(); tg.gain.value = 0.7;
+  thud.connect(lp).connect(tg).connect(out); thud.start(t); thud.stop(t + 0.13);
+  const clack = noiseBurst(0.05, (x) => Math.pow(1 - x, 5));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1250; bp.Q.value = 1.1;
+  const cg = ctx.createGain(); cg.gain.value = 0.3;
+  clack.connect(bp).connect(cg).connect(out); clack.start(t); clack.stop(t + 0.05);
+}
+/* And the parry: a bright struck-steel ring, two partials a fifth apart so
+ * it reads as a bell rather than a beep, over a hard transient. This is the
+ * sound the player is trying to make happen. */
+function sfxParry() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const out = ctx.createGain(); out.gain.value = 0.9; out.connect(sfxOut());
+  const hit = noiseBurst(0.05, (x) => Math.pow(1 - x, 6));
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2600;
+  const hg = ctx.createGain(); hg.gain.value = 0.55;
+  hit.connect(hp).connect(hg).connect(out); hit.start(t); hit.stop(t + 0.05);
+  for (const [f, g0, dur] of [[1180, 0.30, 0.62], [1770, 0.17, 0.44], [3140, 0.09, 0.3]]) {
+    const o = ctx.createOscillator(); o.type = 'triangle';
+    o.frequency.setValueAtTime(f * 1.02, t);
+    o.frequency.exponentialRampToValueAtTime(f, t + 0.05);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(g0, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(out); o.start(t); o.stop(t + dur + 0.05);
+  }
+}
 function sfxCrabTell() {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime;
@@ -9614,6 +9778,7 @@ function update(dt, rawDt = dt) {
     camBaseY = floorLimit; vy = 0; onGround = true;
   }
   landDip *= Math.max(0, 1 - 7.5 * dt);
+  parryGlow = Math.max(0, parryGlow - dt * 1.6);
 
   const speed = velocity.length();
   bobPhase += dt * speed * 2.1;
@@ -9804,6 +9969,7 @@ window.__bw = {
   get doorOpen() { return doorOpen; }, set doorOpen(v) { doorOpen = v; doorSwing = v ? 1 : 0; lhDoor.rotation.y = -doorSwing * 1.95; },
   get insideTower() { return insideTower; },
   rockColliders, rockGroundAt, pushOutOfRocks, rockGroup, headroomClear, solidDepth,
+  parryCrab, blockCrab, breakCastle, get blocking() { return blocking; }, set blocking(v) { blocking = v; blockStart = performance.now(); },
   onPier, deckHeightAt, fisherman, FISHERMAN_SCRIPT,
   get crouching() { return crouching; }, set crouching(v) { crouching = v; },
   startPeek, endPeek, respawn, get peeking() { return peeking; }, get gateEyes() { return gateEyes; },
