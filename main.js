@@ -3134,7 +3134,8 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   if (e.button === 2 && started && !frozen() && equipped && equipped.onDig) {
     if (winding) { clearTimeout(windLatch); windLatch = null; winding = false; windT = 0; }
     blocking = true;
-    blockStart = performance.now();
+    // a window only if the last one has had time to close
+    blockStart = parryCool > 0 ? -1e9 : performance.now();
     sfxGuardUp();
   }
 });
@@ -4573,7 +4574,16 @@ let windLatch = null, swungAt = -1;      // when a held release last landed a he
  * press and not from whether the animation has finished. Committing to the
  * timing is the skill; waiting for a pose to settle is not. */
 const PARRY_WINDOW = 0.20;               // seconds after the guard goes up
-let blocking = false, blockT = 0, blockStart = -1;
+/* And a cooldown, which is the thing that makes the window mean anything.
+ * Without it the window opens on every press, so mashing right click parries
+ * everything and the timing you are supposed to be learning is worth nothing
+ * — mashing must never beat reading. Blocking is unaffected: the guard still
+ * stops the blow, you simply do not get the stun.
+ *
+ * A successful parry clears it at once. Landing one should let you act on
+ * what you just earned, not stand there waiting. */
+const PARRY_COOLDOWN = 0.55;
+let blocking = false, blockT = 0, blockStart = -1, parryCool = 0;
 let parryGlow = 0;                       // the white flash on a successful parry
 let winding = false, windT = 0, digPower = 0, digCharged = false, windFull = false;
 
@@ -6016,6 +6026,7 @@ function updateGibs(dt) {
  * the opening. Everything here is about making the timing feel worth it. */
 const CRAB_STUN = 1.7;
 function parryCrab() {
+  parryCool = 0;                         // landing one costs you nothing
   crabState.atk = -1;
   crabState.cool = CRAB_COOLDOWN;
   crabState.stun = CRAB_STUN;
@@ -6151,7 +6162,8 @@ function updateCrab(dt) {
        * is left standing there stunned. */
       if (dist < CRAB_REACH + 0.4) {
         if (blocking) {
-          if ((performance.now() - blockStart) / 1000 <= PARRY_WINDOW) parryCrab();
+          const dtp = (performance.now() - blockStart) / 1000;
+          if (dtp <= PARRY_WINDOW && parryCool <= 0) parryCrab();
           else blockCrab();
         } else damagePlayer(1);
       }
@@ -9779,6 +9791,10 @@ function update(dt, rawDt = dt) {
   }
   landDip *= Math.max(0, 1 - 7.5 * dt);
   parryGlow = Math.max(0, parryGlow - dt * 1.6);
+  // the window burns down whether or not anything came at you
+  if (blocking && blockStart > 0 && parryCool <= 0
+      && (performance.now() - blockStart) / 1000 > PARRY_WINDOW) parryCool = PARRY_COOLDOWN;
+  parryCool = Math.max(0, parryCool - dt);
 
   const speed = velocity.length();
   bobPhase += dt * speed * 2.1;
@@ -9970,6 +9986,7 @@ window.__bw = {
   get insideTower() { return insideTower; },
   rockColliders, rockGroundAt, pushOutOfRocks, rockGroup, headroomClear, solidDepth,
   parryCrab, blockCrab, breakCastle, get blocking() { return blocking; }, set blocking(v) { blocking = v; blockStart = performance.now(); },
+  get parryCool() { return parryCool; }, get blockStart() { return blockStart; },
   onPier, deckHeightAt, fisherman, FISHERMAN_SCRIPT,
   get crouching() { return crouching; }, set crouching(v) { crouching = v; },
   startPeek, endPeek, respawn, get peeking() { return peeking; }, get gateEyes() { return gateEyes; },

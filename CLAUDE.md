@@ -883,7 +883,12 @@ charge you hold too long every time.
 **THE GUARD, AND THE PARRY.** Hold right and the shovel comes up across
 you; a strike that lands on it does nothing at all. The first `PARRY_WINDOW`
 (0.20 s) after the press is a parry instead, which cancels the attack and
-puts `crabState.stun` on for 1.7 s. `blockStart` is measured from the PRESS,
+puts `crabState.stun` on for 1.7 s. `PARRY_COOLDOWN` (0.55 s) is what makes
+that window mean anything: without it the window opens on every press, so
+mashing right click parries everything and the timing is worth nothing.
+Mashing must never beat reading. Blocking is untouched by the cooldown — the
+guard still stops the blow, you just do not get the stun — and landing a
+parry clears it at once, so a win lets you act on what you earned. `blockStart` is measured from the PRESS,
 not from whether the pose has settled — committing to the timing is the
 skill, waiting for an animation is not. The two sounds must never be
 confused: a block is a dull wooden knock, a parry is a struck-steel ring,
