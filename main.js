@@ -3131,7 +3131,7 @@ window.addEventListener('pointerup', (e) => {
   dragging = false;
   if (e.button !== 0) return;
   if (windLatch) { clearTimeout(windLatch); windLatch = null; return; }  // a tap: the click handler swings
-  if (winding) { releaseWind(); swungFromHold = true; }
+  if (winding) { releaseWind(); swungAt = performance.now(); }
 });
 // losing the window mid-wind shouldn't leave the shovel stuck over your head
 window.addEventListener('blur', () => { if (winding) releaseWind(); });
@@ -3141,7 +3141,11 @@ renderer.domElement.addEventListener('click', (e) => {
   if (d >= 6) return;
   // if we lost the lock (browser cooldown, stray Esc), a click takes it back
   if (started && !locked && !fallbackLook && !frozen()) { lockRetry = 0; requestLock(); return; }
-  if (swungFromHold) { swungFromHold = false; return; }   // the release already swung
+  /* A click that arrives right on the back of a held release is that
+   * release's own click — the heavy already swung, so it must not also fire
+   * a light one. A timestamp rather than a flag: a flag survives a release
+   * that produces no click at all and then eats the NEXT swing you ask for. */
+  if (performance.now() - swungAt < 250) return;
   attackAction();
 });
 
@@ -4358,7 +4362,7 @@ addInteractable(shovelWorld, "Take the sand shovel", 'inventory', {
  * moving is one frame. */
 const WIND_FULL = 1.0;                  // seconds of holding to reach full power
 const WIND_TAP = 0.16;                  // held longer than this and you meant a heavy
-let windLatch = null, swungFromHold = false;
+let windLatch = null, swungAt = -1;      // when a held release last landed a heavy
 let winding = false, windT = 0, digPower = 0, digCharged = false, windFull = false;
 
 /* Poses are [pitch, lift, yaw, roll, push] and the swing is lerps between
