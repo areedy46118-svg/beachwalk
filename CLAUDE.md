@@ -411,6 +411,22 @@ solid discs straight through the bore — floors at 7, 14 and 20.5 m that you
 climbed up into. Pass `openEnded = true` on anything ring-shaped that crosses
 the shaft.
 
+**The blade lands ON the crosshair.** The poses put the blade at a fixed
+spot in the lower right whatever you were aiming at, so a swing at the crab
+or a crater four metres out finished with the shovel a hand's width from it
+and the hit happening somewhere else. The crosshair is fixed, so anything
+the swing meets is at the centre of the screen, and the blade has to be
+there too. `aimLand()` finds what the ray will meet when you commit — the
+same things `digImpact()` tests, in the same order — and `landBlade()` in
+`updateViewmodel()` translates the whole rig each frame so the middle of
+the blade's lip sits on that point's screen position (projected by the
+main camera, unprojected by `vmCamera` at the lip's own depth, so the two
+cameras' FOVs never have to agree). The correction is measured off the
+UNCORRECTED pose every frame, so it never feeds back; the weight follows
+the strike's own easing in, holds through the impact and the hitstop, and
+eases off in the recovery. Nothing in reach means the scuff at your feet,
+and the target is clamped to the frame so the blade never leaves it.
+
 **The swing lands where you aimed when you committed it.** `startDig()`
 captures the camera ray into `_aimO/_aimD`, and `digImpact()`, `crateStrike()`
 and `glassStrike()` all use `aimRay()` — never the live camera — because the

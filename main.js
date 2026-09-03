@@ -4698,10 +4698,48 @@ function aimRay(P) {
   digRay.far = DIG_REACH + P * DIG_HEAVY_REACH;
   return digRay;
 }
+/* WHERE THE BLADE LANDS ON SCREEN. The poses put the blade at a fixed spot
+ * in the lower right whatever you were aiming at, so a swing at the crab or
+ * at a crater four metres out ended with the shovel a hand's width from it
+ * and the hit happening somewhere else. The crosshair is fixed, so anything
+ * the swing meets is at the centre of the screen — and the blade has to be
+ * there too. `aimLand()` finds what the ray will meet when you commit, the
+ * same things digImpact() tests in the same order, and updateViewmodel()
+ * slides the whole arm each frame so the lip of the blade sits on that
+ * point's screen position through the strike, holds there a beat, and lets
+ * go through the recovery. It is a translation of the rig, not a re-solve
+ * of the pose: the swing keeps its shape, it just finishes on the mark. */
+const _landP = new THREE.Vector3(), _landNdc = new THREE.Vector3();
+let landDist = -1;                        // -1: nothing in reach, scuff at the feet
+function aimLand(P) {
+  aimRay(P);
+  let d = Infinity;
+  const near = (h) => { if (h && h.distance < d) d = h.distance; };
+  if (!castleBroken && castleGeo) near(digRay.intersectObject(castle, true)[0]);
+  for (const c of crates) if (!c.broken) near(digRay.intersectObject(c.group, true)[0]);
+  if (crabState.alive) {
+    _hitC.copy(crab.position); _hitC.y += 0.28;
+    const t = THREE.MathUtils.clamp(_hitC.clone().sub(_aimO).dot(_aimD), 0, digRay.far);
+    if (_hitC.distanceTo(_aimO.clone().addScaledVector(_aimD, t)) < 0.62 + P * 0.25) d = Math.min(d, t);
+  }
+  near(nearestSolidHit());
+  near(digRay.intersectObject(sand, false)[0]);
+  landDist = isFinite(d) ? d : -1;
+}
+// the landing point this frame: the locked direction from where you stand now
+function landPoint() {
+  camera.getWorldPosition(_landP);
+  if (landDist >= 0) return _landP.addScaledVector(_aimD, landDist);
+  _pf.copy(_aimD); _pf.y = 0; _pf.normalize();
+  const d = 1.5 + digPower * 1.1;
+  _landP.x += _pf.x * d; _landP.z += _pf.z * d; _landP.y -= playerEye();
+  return _landP;
+}
 function startDig(power = 0, fromPose = null) {
   if (digT > 0 || !equipped || !equipped.onDig || frozen()) return;
   camera.getWorldDirection(_aimD);            // the angle; aimRay() takes the position
   digPower = THREE.MathUtils.clamp(power, 0, 1);
+  aimLand(digPower);
   digImpacted = false;
   digCharged = !!fromPose;
   if (fromPose) {
@@ -4930,6 +4968,41 @@ let vmSpringY = 0, vmSpringV = 0;
 const _vmEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 function vmImpulse(v) { vmSpringV += v; }          // landings, jumps, impacts
 
+/* Put the lip of the blade on the landing point. The rig is posed first, the
+ * lip's position read back, and the arm translated by the gap between it
+ * and where the point projects at the lip's own depth — so the correction
+ * is measured off the uncorrected pose every frame and never feeds back.
+ * The weight follows the strike's own easing in, so the blade sweeps onto
+ * the mark rather than snapping to it, holds through the impact and the
+ * hitstop, and eases off in the recovery. It is clamped to the frame: a
+ * point below your feet takes the blade to the bottom edge, not off it. */
+const LAND_HOLD = 0.18, LAND_RELEASE = 0.26;
+const _lipA = new THREE.Vector3(), _lipB = new THREE.Vector3(), _landV = new THREE.Vector3();
+let landK = 0;
+function landBlade() {
+  landK = 0;
+  if (digT <= 0 || !shovelVM.visible) return;
+  const p = digT;
+  if (p < DIG_WINDUP) return;
+  if (p < DIG_STRIKE) landK = easeInCubic((p - DIG_WINDUP) / (DIG_STRIKE - DIG_WINDUP));
+  else if (p < DIG_STRIKE + LAND_HOLD) landK = 1;
+  else landK = 1 - easeInOutCubic(Math.min(1, (p - DIG_STRIKE - LAND_HOLD) / LAND_RELEASE));
+  if (landK <= 0) return;
+  _landNdc.copy(landPoint()).project(camera);
+  if (_landNdc.z > 1) return;             // behind you: leave the pose alone
+  _landNdc.x = THREE.MathUtils.clamp(_landNdc.x, -0.90, 0.95);
+  _landNdc.y = THREE.MathUtils.clamp(_landNdc.y, -0.78, 0.72);
+  armRig.updateMatrixWorld(true);
+  trailTip.getWorldPosition(_lipA); trailRoot.getWorldPosition(_lipB);
+  _lipA.lerp(_lipB, 0.5);                 // the middle of the cutting edge
+  const depth = Math.min(_lipA.z, -0.30);
+  _landV.set(_landNdc.x, _landNdc.y, 0.5).unproject(vmCamera);
+  _landV.multiplyScalar(depth / _landV.z);  // the point's ray at the lip's depth
+  _landV.sub(_lipA);
+  if (_landV.length() > 1.2) _landV.setLength(1.2);
+  armRig.position.addScaledVector(_landV, landK);
+}
+
 function updateViewmodel(dt) {
   // your hands are out of it while someone is talking to you, or while you
   // are turning something over — both are close-up shots of something else
@@ -5037,6 +5110,7 @@ function updateViewmodel(dt) {
     ARM_BASE.y + by + _pose[1] + vmSpringY + ear * (earY - ARM_BASE.y) + blk * (blkY - ARM_BASE.y),
     ARM_BASE.z + _pose[4] + ear * (EAR_AT.z - ARM_BASE.z) + blk * (BLOCK_AT.z - ARM_BASE.z)
   );
+  landBlade();
 
   // Only the strike and a beat past it leave a trail; a trail on the wind-up
   // would say the tool was moving fast when it is deliberately barely moving.
@@ -10055,6 +10129,8 @@ layoutViewmodel();
 
 // dev hook
 window.__bw = {
+  lipNdc: () => { armRig.updateMatrixWorld(true); trailTip.getWorldPosition(_lipA); trailRoot.getWorldPosition(_lipB); return _lipA.lerp(_lipB, 0.5).project(vmCamera); },
+  landK: () => landK, landDist: () => landDist,
   THREE, scene, camera, player: camera,
   interactables, physProps, inventory, bottle, cliff, foot, lighthouse, city,
   castle, shovelWorld, viewmodel,
