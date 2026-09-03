@@ -3911,11 +3911,16 @@ function removeFromInventory(item) {
  * The model is CLONED for the render. The originals are live: `ring` sits
  * inside `ringWorld` out on the sand and the examine screen re-parents
  * whatever it is handed, so borrowing one would tear it out of the world. */
-const ICON_PX = 192;
+const ICON_PX = 256;
 let iconRT = null, iconScene = null, iconCam = null, iconFit = null;
 function initIconRig() {
   if (iconScene) return;
-  iconRT = new THREE.WebGLRenderTarget(ICON_PX, ICON_PX, { depthBuffer: true });
+  /* Multisampled, and in sRGB. A render target does not get the canvas's
+   * output transform: unless its texture says sRGB the shader writes LINEAR
+   * values, and read back as bytes those are the dark, flat, greyed icons
+   * the first version had — every colour a stop and a half too dark. */
+  iconRT = new THREE.WebGLRenderTarget(ICON_PX, ICON_PX, { depthBuffer: true, samples: 4 });
+  iconRT.texture.colorSpace = THREE.SRGBColorSpace;
   iconScene = new THREE.Scene();
   iconCam = new THREE.PerspectiveCamera(30, 1, 0.05, 40);
   iconCam.position.set(0, 0, 5.4);
@@ -3923,10 +3928,13 @@ function initIconRig() {
   iconScene.add(iconFit);
   // lit like the examine screen, a shade warmer so metal and glass read
   iconScene.add(new THREE.AmbientLight(0x9fb0cc, 1.15));
-  const key = new THREE.DirectionalLight(0xfff2e0, 2.5); key.position.set(-0.8, 1.1, 1.2);
-  const fill = new THREE.DirectionalLight(0x8aa2d6, 0.85); fill.position.set(1.3, -0.3, 0.8);
-  const rim = new THREE.DirectionalLight(0xd6e4ff, 1.2); rim.position.set(0.3, -0.9, -1.2);
-  iconScene.add(key, fill, rim, new THREE.HemisphereLight(0x54688c, 0x141820, 0.7));
+  const key = new THREE.DirectionalLight(0xfff2e0, 2.2); key.position.set(-0.8, 1.1, 1.2);
+  const fill = new THREE.DirectionalLight(0x8aa2d6, 0.7); fill.position.set(1.3, -0.3, 0.8);
+  // a hard cold rim from behind: the edge light is what separates a dark
+  // object from a dark tile, and it is most of what reads as "detail"
+  const rim = new THREE.DirectionalLight(0xe4eeff, 2.4); rim.position.set(0.4, 0.6, -1.4);
+  const under = new THREE.DirectionalLight(0x6f86b8, 0.6); under.position.set(0, -1, 0.3);
+  iconScene.add(key, fill, rim, under, new THREE.HemisphereLight(0x54688c, 0x141820, 0.6));
 }
 function renderItemIcon(model, { rotX = -0.5, rotY = 0.7 } = {}) {
   if (!model) return null;
@@ -3964,17 +3972,20 @@ function renderItemIcon(model, { rotX = -0.5, rotY = 0.7 } = {}) {
   const c = document.createElement('canvas');
   c.width = c.height = ICON_PX;
   const g = c.getContext('2d');
-  // the tile it sits on, and a soft pool of shadow under the object
-  const bg = g.createRadialGradient(ICON_PX * 0.5, ICON_PX * 0.42, 0, ICON_PX * 0.5, ICON_PX * 0.5, ICON_PX * 0.62);
-  bg.addColorStop(0, '#171c24');
-  bg.addColorStop(1, '#080a0e');
+  // a plain near-black tile — the UI is black and white, and the object is
+  // the only thing on it — with a faint lift behind the object and a pool
+  // of shadow under it so it sits rather than floats
+  g.fillStyle = '#07080b'; g.fillRect(0, 0, ICON_PX, ICON_PX);
+  const bg = g.createRadialGradient(ICON_PX * 0.5, ICON_PX * 0.46, 0, ICON_PX * 0.5, ICON_PX * 0.46, ICON_PX * 0.5);
+  bg.addColorStop(0, 'rgba(255,255,255,0.075)');
+  bg.addColorStop(1, 'rgba(255,255,255,0)');
   g.fillStyle = bg; g.fillRect(0, 0, ICON_PX, ICON_PX);
-  const sh = g.createRadialGradient(ICON_PX * 0.5, ICON_PX * 0.76, 0, ICON_PX * 0.5, ICON_PX * 0.76, ICON_PX * 0.34);
-  sh.addColorStop(0, 'rgba(0,0,0,0.66)');
+  const sh = g.createRadialGradient(ICON_PX * 0.5, ICON_PX * 0.78, 0, ICON_PX * 0.5, ICON_PX * 0.78, ICON_PX * 0.36);
+  sh.addColorStop(0, 'rgba(0,0,0,0.75)');
   sh.addColorStop(1, 'rgba(0,0,0,0)');
   g.fillStyle = sh;
-  g.save(); g.translate(0, ICON_PX * 0.06); g.scale(1, 0.34);
-  g.fillRect(0, 0, ICON_PX, ICON_PX * 2); g.restore();
+  g.save(); g.translate(0, ICON_PX * 0.05); g.scale(1, 0.30);
+  g.fillRect(0, 0, ICON_PX, ICON_PX * 2.4); g.restore();
   // the render, flipped: GL reads bottom-up
   const id = g.createImageData(ICON_PX, ICON_PX);
   for (let y = 0; y < ICON_PX; y++) {
@@ -4052,13 +4063,71 @@ function findRecipe(x, y) {
   }
   return null;
 }
+/* The pack has a SELECTION. Click a slot and the item comes up in the pane
+ * beside the grid — its icon large, its name, and the two things you can do
+ * with it as real buttons: INSPECT and HOLD (or USE). The old pack hid
+ * "Inspect" in a corner of the slot until you hovered it, which nobody
+ * found; the pane makes both verbs the biggest things on the screen.
+ * Dragging still works exactly as it did — reorder, or drop one item on
+ * another to combine — a drag just has to MOVE first (a still click
+ * selects), so the two never fight. */
+const invDetailEl = document.getElementById('inv-detail');
+let packSel = -1;
+function inspectFromPack(item) {
+  const model = item.inspectModel;
+  if (!model) return;
+  const opts = item.inspectOpts ? item.inspectOpts() : {};
+  /* Clear the return-lock FIRST. closePack() re-requests pointer lock
+   * asynchronously, and that lock lands a frame or two later — on top of
+   * the examine screen, where it eats every click, drag and scroll.
+   * Turning, zooming and clicking out were all dead for exactly this
+   * reason. Same trap the combine recipes hit. */
+  packReturnLock = false;
+  closePack();
+  openInspect(model, { ...opts, name: item.name });
+}
+function renderPackDetail() {
+  if (!invDetailEl) return;
+  const item = inventory[packSel];
+  if (!item) {
+    invDetailEl.className = 'detail empty';
+    invDetailEl.innerHTML = inventory.length
+      ? '<div class="hint">Select an item</div>'
+      : '<div class="hint">Nothing in it yet</div>';
+    return;
+  }
+  invDetailEl.className = 'detail';
+  const verb = item.viewmodel ? (item === equipped ? 'Holster' : 'Hold') : 'Use';
+  invDetailEl.innerHTML = `<div class="big">${iconHTML(item)}</div>
+    <div class="name">${item.name}</div>
+    <button type="button" class="act insp">Inspect</button>
+    <button type="button" class="act hold">${verb}</button>
+    <div class="hint">Drag onto another item to combine</div>`;
+  const canInspect = !!item.inspectModel;
+  const bI = invDetailEl.querySelector('.insp'), bH = invDetailEl.querySelector('.hold');
+  bI.disabled = !canInspect;
+  bI.addEventListener('click', (e) => { e.stopPropagation(); inspectFromPack(item); });
+  bH.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const i = inventory.indexOf(item);
+    if (i < 0) return;
+    closePack();
+    useSlot(i);
+  });
+}
+function selectPackSlot(i) {
+  packSel = inventory[i] ? i : -1;
+  for (const s of invGridEl.querySelectorAll('.islot')) s.classList.toggle('sel', +s.dataset.index === packSel);
+  renderPackDetail();
+}
 function renderPack() {
   if (!invGridEl) return;
   invGridEl.innerHTML = '';
+  if (!inventory[packSel]) packSel = inventory.length ? 0 : -1;
   for (let i = 0; i < INV_MAX; i++) {
     const item = inventory[i];
     const slot = document.createElement('div');
-    slot.className = 'islot' + (item ? ' filled' : '');
+    slot.className = 'islot' + (item ? ' filled' : '') + (i === packSel ? ' sel' : '') + (item && item === equipped ? ' held' : '');
     slot.dataset.index = String(i);
     slot.innerHTML = `<span class="num">${i + 1}</span>` + (item ? iconHTML(item) : '');
     if (item) {
@@ -4066,32 +4135,12 @@ function renderPack() {
       nm.className = 'nm';
       nm.textContent = item.name;
       slot.appendChild(nm);
-      /* Examining is a thing you do in the pack, and only here. It used to be
-       * what "use" did from the hotbar, which meant half the items could not
-       * be carried at all — you owned them and never held them. */
-      const insp = document.createElement('button');
-      insp.className = 'insp';
-      insp.type = 'button';
-      insp.textContent = 'Inspect';
-      insp.addEventListener('pointerdown', (e) => e.stopPropagation());
-      insp.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const model = item.inspectModel;
-        if (!model) return;
-        const opts = item.inspectOpts ? item.inspectOpts() : {};
-        /* Clear the return-lock FIRST. closePack() re-requests pointer lock
-         * asynchronously, and that lock lands a frame or two later — on top
-         * of the examine screen, where it eats every click, drag and scroll.
-         * Turning, zooming and clicking out were all dead for exactly this
-         * reason. Same trap the combine recipes hit. */
-        packReturnLock = false;
-        closePack();
-        openInspect(model, { ...opts, name: item.name });
-      });
-      slot.appendChild(insp);
+      // double-click goes straight to the examine screen
+      slot.addEventListener('dblclick', (e) => { e.stopPropagation(); inspectFromPack(item); });
     }
     invGridEl.appendChild(slot);
   }
+  renderPackDetail();
 }
 renderPack();
 
@@ -4105,18 +4154,26 @@ function clearDropHints() {
   for (const s of invGridEl.querySelectorAll('.islot')) s.classList.remove('combines', 'dragging');
 }
 function endDrag() {
-  dragItem = null; dragFrom = -1;
+  dragArm = null; dragItem = null; dragFrom = -1;
   invGhostEl.classList.remove('show');
   clearDropHints();
 }
+// a press arms a drag; it only becomes one once the pointer has moved
+let dragArm = null;                     // {item, from, x, y, slot}
 invGridEl.addEventListener('pointerdown', (e) => {
   const slot = e.target.closest('.islot');
   if (!slot) return;
   const i = +slot.dataset.index;
   const item = inventory[i];
+  selectPackSlot(i);
   if (!item) return;
   e.preventDefault();
-  dragItem = item; dragFrom = i;
+  dragArm = { item, from: i, x: e.clientX, y: e.clientY, slot };
+});
+function beginDrag(e) {
+  const { item, from, slot } = dragArm;
+  dragArm = null;
+  dragItem = item; dragFrom = from;
   invGhostEl.innerHTML = iconHTML(item);
   invGhostEl.style.left = e.clientX + 'px';
   invGhostEl.style.top = e.clientY + 'px';
@@ -4127,13 +4184,15 @@ invGridEl.addEventListener('pointerdown', (e) => {
     const other = inventory[+s.dataset.index];
     if (other && findRecipe(item, other)) s.classList.add('combines');
   }
-});
+}
 window.addEventListener('pointermove', (e) => {
+  if (dragArm && Math.hypot(e.clientX - dragArm.x, e.clientY - dragArm.y) > 6) beginDrag(e);
   if (!dragItem) return;
   invGhostEl.style.left = e.clientX + 'px';
   invGhostEl.style.top = e.clientY + 'px';
 });
 window.addEventListener('pointerup', (e) => {
+  dragArm = null;
   if (!dragItem) return;
   const slot = slotFromPoint(e.clientX, e.clientY);
   const item = dragItem, from = dragFrom;
@@ -4147,6 +4206,7 @@ window.addEventListener('pointerup', (e) => {
   // no recipe — just reorder / swap the two slots
   if (target) { inventory[to] = item; inventory[from] = target; }
   else { inventory.splice(from, 1); inventory.splice(Math.min(to, inventory.length), 0, item); }
+  packSel = inventory.indexOf(item);
   renderHotbar(); renderPack();
 });
 
@@ -4427,7 +4487,7 @@ function breakCastle(fromX, fromZ) {
   const ci = rockColliders.findIndex((c) => c.castle);
   if (ci >= 0) rockColliders.splice(ci, 1);
   const cx = castle.position.x, cz = castle.position.z;
-  sfxCrateThud();
+  sfxCastleBreak();
   spawnPuffs(cx, cz, 9, 0, -1, 0.25);
   addTrauma(0.22);
   // away from whatever knocked it down
@@ -4683,12 +4743,12 @@ function impactPose(out, P) {
 }
 
 /* Where the swing is going is decided when you COMMIT it — the click, or the
- * release — not on the frame the blade lands 130–370 ms later. Reading the
+ * release — not on the frame the blade lands 150–200 ms later. Reading the
  * camera at impact meant a swing landed wherever you had drifted to looking
  * by then, which is the whole "it doesn't hit what I aimed at" feel. */
 const _aimO = new THREE.Vector3(), _aimD = new THREE.Vector3();
 /* Where the blade lands. The DIRECTION is locked at the moment you commit —
- * the blade arrives 130–370 ms after the click and by then you have looked
+ * the blade arrives 150–200 ms after the click and by then you have looked
  * somewhere else — but the ORIGIN is wherever you are standing now. It used
  * to lock both, so at a run you had moved a couple of metres past the point
  * by the time the blade fell and the crater opened up at your heels. */
@@ -5061,7 +5121,9 @@ function updateViewmodel(dt) {
     /* A heavy is slower through the whole move, and slower still to recover —
      * the commitment after the blade lands is most of what makes it read as
      * weight rather than as a faster shovel. */
-    digT += dt / (DIG_DUR * (1 + P * 0.55));
+    /* A click is quick: the whole light swing is 0.44 s and the blade is
+     * down 200 ms after the press. A heavy is nearly three times that. */
+    digT += dt / (DIG_DUR * (0.55 + P));
     const p = digT;
     if (p < DIG_WINDUP) {
       // anticipation: quick out of rest, hanging at the top of the haul
@@ -7608,6 +7670,56 @@ function sfxCrateBreak() {
     o.start(t + d); o.stop(t + d + 0.09);
   }
 }
+/* Sand coming down. Not a crack and not a clatter — a castle is damp sand,
+ * so it gives with a soft low collapse, one of the recorded sand impacts
+ * pitched down under it, a second of granular crumble as the layers let go
+ * (timed to the slump, which drops a layer every 70 ms), a few dull lumps
+ * landing, and a fine hiss of dry grains sifting off the heap at the end. */
+function sfxCastleBreak() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const out = ctx.createGain(); out.gain.value = 0.9; out.connect(sfxOut());
+  playSample('sandHit', 0.42, 0.04, 0.78);
+  // the give — a low soft body, no attack to speak of
+  const body = noiseBurst(0.42, (x) => Math.pow(Math.sin(Math.min(1, x * 3) * Math.PI / 2), 1.5) * Math.pow(1 - x, 1.8));
+  const bf = ctx.createBiquadFilter(); bf.type = 'lowpass'; bf.frequency.value = 150; bf.Q.value = 0.7;
+  const bg = ctx.createGain(); bg.gain.value = 0.55;
+  body.connect(bf).connect(bg).connect(out);
+  body.start(t); body.stop(t + 0.42);
+  // the crumble — granular, closing down as the pile settles
+  const crumble = noiseBurst(1.15, (x) => (Math.random() < 0.45 ? 0.2 + 0.8 * Math.random() : 0.12) * Math.pow(1 - x, 1.4));
+  const cf = ctx.createBiquadFilter(); cf.type = 'lowpass'; cf.Q.value = 0.9;
+  cf.frequency.setValueAtTime(1500, t + 0.03);
+  cf.frequency.exponentialRampToValueAtTime(260, t + 1.1);
+  const cg = ctx.createGain();
+  cg.gain.setValueAtTime(0.0001, t);
+  cg.gain.exponentialRampToValueAtTime(0.26, t + 0.06);
+  cg.gain.exponentialRampToValueAtTime(0.0001, t + 1.15);
+  crumble.connect(cf).connect(cg).connect(out);
+  crumble.start(t); crumble.stop(t + 1.16);
+  // lumps landing, a beat apart, each duller than the last
+  for (let i = 0; i < 6; i++) {
+    const d = 0.12 + i * 0.13 + Math.random() * 0.06;
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(95 - i * 5, t + d);
+    o.frequency.exponentialRampToValueAtTime(48, t + d + 0.1);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t + d);
+    g.gain.exponentialRampToValueAtTime(0.06 - i * 0.006, t + d + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.14);
+    o.connect(g).connect(out);
+    o.start(t + d); o.stop(t + d + 0.16);
+  }
+  // dry grains sifting off the heap
+  const sift = noiseBurst(1.0, (x) => Math.pow(1 - x, 2.2) * (0.6 + 0.4 * Math.random()));
+  const sf = ctx.createBiquadFilter(); sf.type = 'highpass'; sf.frequency.value = 3200;
+  const sg = ctx.createGain();
+  sg.gain.setValueAtTime(0.0001, t + 0.3);
+  sg.gain.exponentialRampToValueAtTime(0.05, t + 0.45);
+  sg.gain.exponentialRampToValueAtTime(0.0001, t + 1.3);
+  sift.connect(sf).connect(sg).connect(out);
+  sift.start(t + 0.3); sift.stop(t + 1.3);
+}
 function sfxThud(gain) {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime, len = Math.floor(ctx.sampleRate * 0.1);
@@ -10131,6 +10243,7 @@ layoutViewmodel();
 window.__bw = {
   lipNdc: () => { armRig.updateMatrixWorld(true); trailTip.getWorldPosition(_lipA); trailRoot.getWorldPosition(_lipB); return _lipA.lerp(_lipB, 0.5).project(vmCamera); },
   landK: () => landK, landDist: () => landDist,
+  addToInventory, openPack, closePack, selectPackSlot, sfxCastleBreak, digImpacted: () => digImpacted,
   THREE, scene, camera, player: camera,
   interactables, physProps, inventory, bottle, cliff, foot, lighthouse, city,
   castle, shovelWorld, viewmodel,

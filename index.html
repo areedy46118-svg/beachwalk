@@ -345,7 +345,9 @@
 
   /* inventory hotbar — left side, vertical, with the ring slots under it.
      The column is positioned by #gear so the rings sit under the hotbar
-     however many slots it has, instead of at a hand-measured offset. */
+     however many slots it has, instead of at a hand-measured offset.
+     Black and white, square, one hairline — the same language as the
+     dialogue. The held slot is the one solid white line on the HUD. */
   #gear {
     position: fixed;
     left: 1rem;
@@ -354,119 +356,114 @@
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 0.7rem;
+    gap: 0.8rem;
     z-index: 6;
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Courier New", monospace;
   }
   #hotbar {
     display: flex;
     flex-direction: column;
-    gap: 0.45rem;
+    gap: 6px;
     transition: opacity 0.3s ease;
   }
   #hotbar.hidden { opacity: 0; pointer-events: none; }
+  #hotbar .slot {
+    width: 52px;
+    height: 52px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    cursor: pointer;
+    transition: border-color 0.12s ease, background 0.12s ease;
+  }
+  #hotbar .slot:hover { border-color: rgba(255, 255, 255, 0.6); }
+  #hotbar .slot.equipped { border-color: #ffffff; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35); }
+  #hotbar .slot img { width: 100%; height: 100%; object-fit: cover; image-rendering: auto; display: block; }
+  #hotbar .slot .num {
+    position: absolute;
+    top: 2px;
+    left: 4px;
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    color: rgba(255, 255, 255, 0.55);
+    text-shadow: 0 1px 2px #000;
+    z-index: 1;
+  }
+  #hotbar .slot .label {
+    position: absolute;
+    left: 62px;
+    top: 50%;
+    transform: translateY(-50%);
+    white-space: nowrap;
+    font-size: 0.66rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #ffffff;
+    background: rgba(0, 0, 0, 0.88);
+    border-left: 1px solid rgba(255, 255, 255, 0.5);
+    padding: 4px 9px;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+    pointer-events: none;
+  }
+  #hotbar .slot:hover .label { opacity: 1; }
+  #hotbar .slot.empty { opacity: 0.28; cursor: default; }
+  #hotbar .slot.empty:hover { border-color: rgba(255, 255, 255, 0.22); }
   /* the ring slots — two, smaller than the hotbar's and side by side, so the
      section reads as a different kind of thing rather than more of the same */
   #rings {
     display: flex;
     flex-direction: column;
-    gap: 0.22rem;
+    gap: 5px;
     transition: opacity 0.3s ease;
   }
   #rings.hidden { opacity: 0; pointer-events: none; }
   #rings .rlabel {
-    font-family: Georgia, 'Times New Roman', serif;
-    font-size: 0.62rem;
-    letter-spacing: 0.16em;
+    font-size: 0.56rem;
+    letter-spacing: 0.3em;
     text-transform: uppercase;
-    color: rgba(178, 194, 222, 0.5);
-    padding-left: 2px;
+    color: rgba(255, 255, 255, 0.4);
+    padding-left: 1px;
   }
-  #rings .rslots { display: flex; gap: 0.4rem; }
+  #rings .rslots { display: flex; gap: 6px; }
   #rings .rslot {
     position: relative;
-    width: 38px;
-    height: 38px;
-    border: 1px solid rgba(150, 168, 200, 0.28);
+    width: 36px;
+    height: 36px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
     border-radius: 50%;
-    background: rgba(10, 16, 28, 0.55);
+    background: rgba(0, 0, 0, 0.55);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 19px;
+    overflow: hidden;
     cursor: default;
   }
-  #rings .rslot img { width: 26px; height: 26px; image-rendering: auto; }
-  #rings .rslot.worn {
-    cursor: pointer;
-    border-color: rgba(214, 226, 246, 0.55);
-    background: rgba(20, 30, 48, 0.7);
-    box-shadow: 0 0 10px rgba(180, 200, 235, 0.16);
-  }
-  #rings .rslot.worn:hover { border-color: rgba(255, 190, 120, 0.85); }
-  #rings .rslot.empty { opacity: 0.38; }
+  #rings .rslot img { width: 100%; height: 100%; object-fit: cover; image-rendering: auto; }
+  #rings .rslot.worn { cursor: pointer; border-color: rgba(255, 255, 255, 0.7); }
+  #rings .rslot.worn:hover { border-color: #ffffff; }
+  #rings .rslot.empty { opacity: 0.28; }
   #rings .rslot .label {
     position: absolute;
     left: 46px;
     top: 50%;
     transform: translateY(-50%);
     white-space: nowrap;
-    font-family: Georgia, 'Times New Roman', serif;
-    font-size: 0.68rem;
-    color: rgba(222, 232, 248, 0.9);
-    background: rgba(8, 13, 22, 0.82);
-    border: 1px solid rgba(150, 168, 200, 0.22);
-    border-radius: 4px;
-    padding: 0.14rem 0.4rem;
+    font-size: 0.62rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #ffffff;
+    background: rgba(0, 0, 0, 0.88);
+    border-left: 1px solid rgba(255, 255, 255, 0.5);
+    padding: 4px 9px;
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.14s ease;
+    transition: opacity 0.12s ease;
   }
   #rings .rslot.worn:hover .label { opacity: 1; }
-  #hotbar .slot {
-    width: 50px;
-    height: 50px;
-    border: 1px solid rgba(150, 168, 200, 0.28);
-    border-radius: 6px;
-    background: rgba(10, 16, 28, 0.55);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 24px;
-    position: relative;
-    cursor: pointer;
-    transition: border-color 0.15s ease, background 0.15s ease;
-  }
-  #hotbar .slot:hover { border-color: rgba(200, 218, 250, 0.7); background: rgba(20, 30, 48, 0.7); }
-  #hotbar .slot.equipped { border-color: rgba(255, 190, 120, 0.9); box-shadow: 0 0 12px rgba(255, 170, 90, 0.3); }
-  #hotbar .slot img { width: 100%; height: 100%; object-fit: cover; border-radius: 3px; image-rendering: auto; }
-  #hotbar .slot .num {
-    position: absolute;
-    top: 1px;
-    left: 4px;
-    font-size: 10px;
-    font-family: "Georgia", serif;
-    color: rgba(180, 195, 224, 0.5);
-  }
-  #hotbar .slot .label {
-    position: absolute;
-    left: 60px;
-    top: 50%;
-    transform: translateY(-50%);
-    white-space: nowrap;
-    font-family: "Georgia", serif;
-    font-size: 0.72rem;
-    letter-spacing: 0.1em;
-    color: #dbe4f4;
-    background: rgba(6, 10, 18, 0.9);
-    padding: 3px 8px;
-    border-radius: 4px;
-    opacity: 0;
-    transition: opacity 0.15s ease;
-    pointer-events: none;
-  }
-  #hotbar .slot:hover .label { opacity: 1; }
-  #hotbar .slot.empty { opacity: 0.35; cursor: default; }
-  #hotbar .slot.empty:hover { border-color: rgba(150, 168, 200, 0.28); background: rgba(10, 16, 28, 0.55); }
 
   /* blue-blood counter — top left, hidden until the first successful drain.
      The jar canvas is redrawn each frame so it turns on the spot. */
@@ -491,8 +488,10 @@
   }
   #blood .amt .unit { font-size: 0.66rem; opacity: 0.6; margin-left: 2px; }
 
-  /* backpack — TAB. Ten slots you can drag things between; dropping one
-     item onto another tries to combine them. */
+  /* THE PACK — Tab. Black and white and one hairline, like the dialogue:
+     a grid of ten square slots, and beside it a pane for the selected item
+     with the two verbs — INSPECT and HOLD — as the biggest things on the
+     screen. Drag a slot to reorder; drop one item on another to combine. */
   #invpanel {
     position: fixed;
     inset: 0;
@@ -500,130 +499,197 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(4, 7, 14, 0.78);
-    backdrop-filter: blur(3px);
+    background: rgba(0, 0, 0, 0.82);
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.2s ease;
-    font-family: "Georgia", "Times New Roman", serif;
-    color: #c3cfe4;
+    transition: opacity 0.18s ease;
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Courier New", monospace;
+    color: #ffffff;
+    user-select: none;
   }
   #invpanel.show { opacity: 1; pointer-events: auto; }
   #invpanel .panel {
-    width: min(94vw, 540px);
-    background: rgba(12, 18, 30, 0.94);
-    border: 1px solid rgba(120, 140, 180, 0.22);
-    border-radius: 10px;
-    padding: 1.7rem 1.8rem 1.5rem;
-    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.65);
+    width: min(94vw, 760px);
+    border-top: 1px solid rgba(255, 255, 255, 0.3);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+    padding: 1.1rem 0 1.0rem;
+  }
+  #invpanel .head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 1.1rem;
+    padding: 0 0.2rem;
   }
   #invpanel h2 {
     font-weight: 400;
-    letter-spacing: 0.3em;
+    letter-spacing: 0.4em;
     text-transform: uppercase;
-    font-size: 1rem;
-    color: #dde6f6;
-    margin-bottom: 1.3rem;
-    text-align: center;
+    font-size: 0.78rem;
+    color: #ffffff;
+  }
+  #invpanel .head .count {
+    font-size: 0.62rem;
+    letter-spacing: 0.2em;
+    color: rgba(255, 255, 255, 0.4);
+  }
+  #invpanel .body {
+    display: grid;
+    grid-template-columns: 1fr 236px;
+    gap: 1.6rem;
+    align-items: stretch;
   }
   #invpanel .grid {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    gap: 9px;
+    gap: 6px;
+    align-content: start;
   }
   #invpanel .islot {
     position: relative;
     aspect-ratio: 1 / 1;
-    border: 1px solid rgba(150, 168, 200, 0.22);
-    border-radius: 6px;
-    background: rgba(10, 16, 28, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(0, 0, 0, 0.6);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 26px;
-    transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+    overflow: hidden;
+    transition: border-color 0.1s ease;
   }
-  #invpanel .islot img { width: 100%; height: 100%; object-fit: cover; border-radius: 5px; pointer-events: none; }
+  #invpanel .islot img { width: 100%; height: 100%; object-fit: cover; pointer-events: none; display: block; }
   #invpanel .islot.filled { cursor: grab; }
-  #invpanel .islot.filled:hover { border-color: rgba(200, 218, 250, 0.6); background: rgba(20, 30, 48, 0.75); }
-  #invpanel .islot.dragging { opacity: 0.35; }
+  #invpanel .islot.filled:hover { border-color: rgba(255, 255, 255, 0.6); }
+  #invpanel .islot.sel { border-color: #ffffff; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5); }
+  #invpanel .islot.dragging { opacity: 0.3; }
   /* a slot the held item can actually be combined with */
   #invpanel .islot.combines {
-    border-color: rgba(96, 226, 208, 0.9);
-    background: rgba(10, 34, 38, 0.85);
-    box-shadow: 0 0 16px rgba(60, 220, 200, 0.28);
+    border-color: #ffffff;
+    box-shadow: inset 0 0 0 1px #ffffff, 0 0 0 1px rgba(255, 255, 255, 0.35);
   }
   #invpanel .islot .num {
     position: absolute;
-    top: 2px;
+    top: 3px;
     left: 5px;
-    font-size: 10px;
-    color: rgba(180, 195, 224, 0.45);
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    color: rgba(255, 255, 255, 0.5);
+    text-shadow: 0 1px 2px #000;
+    z-index: 1;
   }
-  /* Examine, from the pack — the only way in */
-  #invpanel .islot .insp {
+  /* the small "held" mark: the thing in your hands right now */
+  #invpanel .islot.held::after {
+    content: "IN HAND";
     position: absolute;
     top: 3px;
-    right: 3px;
-    font: inherit;
-    font-size: 0.46rem;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    padding: 2px 5px;
-    border-radius: 4px;
-    border: 1px solid rgba(150, 168, 200, 0.3);
-    background: rgba(12, 20, 34, 0.85);
-    color: rgba(198, 212, 236, 0.72);
-    cursor: pointer;
-    opacity: 0;
-    transition: opacity 0.12s ease, border-color 0.12s ease, color 0.12s ease;
-  }
-  #invpanel .islot:hover .insp { opacity: 1; }
-  #invpanel .islot .insp:hover {
-    border-color: rgba(210, 226, 255, 0.8);
-    color: #eaf1ff;
+    right: 4px;
+    font-size: 7px;
+    letter-spacing: 0.16em;
+    color: #ffffff;
+    text-shadow: 0 1px 2px #000;
   }
   #invpanel .islot .nm {
     position: absolute;
-    bottom: 2px;
-    left: 2px;
-    right: 2px;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 3px 3px 4px;
     text-align: center;
-    font-size: 0.52rem;
+    font-size: 0.5rem;
     line-height: 1.1;
-    letter-spacing: 0.04em;
-    color: rgba(200, 214, 238, 0.75);
+    letter-spacing: 0.01em;
+    color: rgba(255, 255, 255, 0.85);
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0));
     pointer-events: none;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  #invpanel .tip {
-    margin-top: 1.3rem;
-    font-size: 0.7rem;
-    letter-spacing: 0.1em;
-    opacity: 0.45;
-    text-align: center;
-    line-height: 1.7;
+  /* the pane */
+  #invpanel .detail {
+    border-left: 1px solid rgba(255, 255, 255, 0.18);
+    padding-left: 1.6rem;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.6rem;
+    min-height: 100%;
   }
+  #invpanel .detail.empty { justify-content: center; align-items: center; }
+  #invpanel .detail .big {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: #000;
+    overflow: hidden;
+  }
+  #invpanel .detail .big img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  #invpanel .detail .name {
+    font-size: 0.82rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #ffffff;
+    padding: 0.2rem 0 0.35rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #invpanel .detail .act {
+    font: inherit;
+    font-size: 0.74rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    text-align: center;
+    padding: 0.62rem 0.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    background: transparent;
+    color: #ffffff;
+    cursor: pointer;
+    transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+  }
+  #invpanel .detail .act:hover { background: #ffffff; color: #000000; }
+  #invpanel .detail .act.insp { border-color: #ffffff; }
+  #invpanel .detail .act:disabled { opacity: 0.25; cursor: default; }
+  #invpanel .detail .act:disabled:hover { background: transparent; color: #ffffff; }
+  #invpanel .detail .hint {
+    font-size: 0.58rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.38);
+    text-align: center;
+    line-height: 1.6;
+  }
+  #invpanel .tip {
+    margin-top: 1.1rem;
+    padding: 0 0.2rem;
+    font-size: 0.58rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.38);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 1.6rem;
+    line-height: 1.6;
+  }
+  #invpanel .tip b { font-weight: 400; color: rgba(255, 255, 255, 0.7); }
   /* the item that follows the cursor while dragging */
   #invghost {
     position: fixed;
     z-index: 20;
-    width: 54px;
-    height: 54px;
-    margin: -27px 0 0 -27px;
+    width: 60px;
+    height: 60px;
+    margin: -30px 0 0 -30px;
     display: none;
     align-items: center;
     justify-content: center;
-    font-size: 28px;
-    border: 1px solid rgba(150, 200, 230, 0.5);
-    border-radius: 6px;
-    background: rgba(12, 22, 36, 0.9);
+    border: 1px solid #ffffff;
+    background: #000;
+    overflow: hidden;
     pointer-events: none;
+    opacity: 0.9;
   }
   #invghost.show { display: flex; }
-  #invghost img { width: 100%; height: 100%; object-fit: cover; border-radius: 5px; }
+  #invghost img { width: 100%; height: 100%; object-fit: cover; }
 
   /* item inspect view — drag a held object around, look at its underside */
   #inspect {
@@ -819,10 +885,16 @@
 
   <div id="invpanel">
     <div class="panel">
-      <h2>Pack</h2>
-      <div class="grid" id="inv-grid"></div>
+      <div class="head"><h2>Pack</h2><span class="count">Tab / Esc &nbsp;close</span></div>
+      <div class="body">
+        <div class="grid" id="inv-grid"></div>
+        <div class="detail empty" id="inv-detail"></div>
+      </div>
       <div class="tip">
-        Drag an item onto another to combine them &nbsp;·&nbsp; Tab or Esc to close
+        <span><b>Click</b> select</span>
+        <span><b>Double-click</b> inspect</span>
+        <span><b>Drag</b> reorder</span>
+        <span><b>Drop</b> onto another item to combine</span>
       </div>
     </div>
   </div>

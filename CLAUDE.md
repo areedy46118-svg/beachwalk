@@ -181,6 +181,25 @@ rather than modelled because he is a billboard and a 3-D peg would line up
 from exactly one angle. The coordinates come from walking the PNG's alpha,
 not from guessing.
 
+**The pack has a SELECTION, and the verbs are buttons.** Click a slot and
+the item comes up in the pane beside the grid — icon large, name, and
+INSPECT and HOLD (or USE) as the biggest things on the screen. The old
+pack hid "Inspect" in a corner of the slot until you hovered it, and
+nobody found it. A press ARMS a drag and it only becomes one after 6 px of
+movement, so a still click selects and the two never fight; double-click
+goes straight to the examine screen. The whole HUD — hotbar, rings, pack,
+ghost — is the dialogue's language now: black, white, one hairline,
+square, monospace, no glow and no colour. The held slot is the one solid
+white line.
+
+**Inventory icons are RENDERS, and the render target must be sRGB.** A
+`WebGLRenderTarget` does not get the canvas's output transform: unless its
+texture's `colorSpace` says sRGB the shader writes LINEAR values, and read
+back as bytes those are the dark, flat, greyed icons the first version
+had — every colour a stop and a half too dark. `samples: 4` gives them
+edges. The rim light from behind is most of what reads as "detail" on a
+dark object over a dark tile.
+
 **Inventory icons are RENDERS.** `renderItemIcon()` puts the item's own
 model through the game's renderer into an offscreen target, reads the
 pixels, and composites them onto a dark tile with a shadow under them —
@@ -426,6 +445,18 @@ UNCORRECTED pose every frame, so it never feeds back; the weight follows
 the strike's own easing in, holds through the impact and the hitstop, and
 eases off in the recovery. Nothing in reach means the scuff at your feet,
 and the target is clamped to the frame so the blade never leaves it.
+
+**A click is quick.** The light swing is 0.44 s end to end and the blade
+is down 200 ms after the press (`DIG_DUR * (0.55 + P)`); a heavy is nearly
+three times that. It was 370 ms, which is long enough to feel like the
+game thinking about it.
+
+**Sand does not crack.** `sfxCastleBreak()` is a soft low give, one of the
+recorded sand impacts pitched down under it, a second of granular crumble
+closing down as the pile settles (timed to the slump's 70 ms layers), a
+few dull lumps landing, and a fine hiss of dry grains sifting off the heap
+at the end. The crate's knock was there first and it was wrong: a castle
+is damp sand, not boards.
 
 **The swing lands where you aimed when you committed it.** `startDig()`
 captures the camera ray into `_aimO/_aimD`, and `digImpact()`, `crateStrike()`
