@@ -899,6 +899,25 @@ and that difference is the whole mechanic.
 as "close", it made the shovel vanish. -0.56 and out to the leading side is
 the pose that reads.
 
+**The pointer lock never gives up.** `scheduleLockRetry()` used to stop
+after six tries and leave the player to click, and Safari makes that a
+regular event — its "press Esc to reveal the pointer" banner eats a
+keypress, it drops the lock on its own, and its post-exit cooldown outlasts
+six retries. It asks every 600 ms for as long as the game wants the lock;
+any press on the world takes it back (on `pointerdown`, since the click may
+never arrive); focus / visibilitychange ask again; and a drag fallback that
+latched after a real lock once worked is undone by the next press.
+
+**The sandcastle is a scan, and the break is a triangle-grid fracture.**
+`assets/sandcastle.glb` (assetfactory) is welded into ONE geometry in metres
+with its base on y = 0 at load, because `breakCastle()` cuts it up by
+walking its triangles into 0.28 m cells — each occupied cell becomes a chunk
+with its own body. Nothing is sliced; a chunk's ragged edge reads as a
+break at this triangle count. Cells are stacked, so the keep comes down as
+lumps and the base stays a low ring, and higher chunks are thrown further.
+The collider is pushed by the loader, not at module time: a `Box3` of an
+empty group is size zero.
+
 **The crab's swing is an ARC now.** It used to rise and lunge straight down
 the line at you, which from the front is a shape barely changing size —
 nothing to read, nothing to time against. The body cocks away first

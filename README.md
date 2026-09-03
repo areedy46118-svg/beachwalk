@@ -24,7 +24,7 @@ Then open <http://localhost:4173> and click to begin. Any static server works
 | Mouse | Look (pointer lock; drag-to-look fallback if it's blocked) |
 | Click / `E` / `F` | Grab a physics object · take an item · dig (with the shovel) |
 | Click (while carrying) | Throw the held object — it's a toggle, no hold |
-| Hold right-click | Guard with the shovel. Raise it INTO a blow to parry and stun |
+| Hold right-click | Guard with the shovel, held across you. Raise it INTO a blow to parry and stun |
 | `Ctrl` | Crouch (toggle) — crawl under the pier |
 | `G` | Drop the held object gently |
 | `1`–`6` / click a slot | Hold an inventory item — everything can be carried |
@@ -292,6 +292,13 @@ by [voyoo](https://sketchfab.com/voyoo),
 ["Medieval key (copper version)"](https://sketchfab.com/3d-models/medieval-key-copper-version-21595543c33a4150bc65d04e025aa84c)
 by [Sousinho](https://sketchfab.com/sousinho),
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+
+
+**Low poly sand castle** — the castle the shovel is stuck in.
+
+["Low poly sand castle"](https://sketchfab.com/3d-models/low-poly-sand-castle-b0fb3f4ec6d643b9b468cc7724b17f85)
+by [assetfactory](https://sketchfab.com/assetfactory),
+[Sketchfab Standard](https://sketchfab.com/licenses) licence.
 
 
 **Rusty Metal 02** — the rust on the ring.

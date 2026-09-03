@@ -2973,12 +2973,25 @@ function requestLock() {
     else enterFallback();
   }, 400);
 }
+/* KEEP TRYING. This used to give up after six goes and leave you to click,
+ * and Safari makes that a regular event: its "press Esc to reveal the
+ * pointer" banner eats a keypress, it drops the lock on its own now and
+ * then, and its cooldown after an exit runs longer than the six retries
+ * did. So while the game wants the lock — started, not frozen, not in the
+ * drag fallback — it asks every 600 ms until it has it. A request that
+ * fails is free. */
 function scheduleLockRetry() {
   if (locked || fallbackLook || frozen()) return;
   if (!everLocked) { enterFallback(); return; }
-  if (lockRetry++ > 6) return;              // give up quietly; a click re-locks
   clearTimeout(lockTimer);
-  lockTimer = setTimeout(() => { lockRetry = 0; requestLock(); }, 550);
+  lockTimer = setTimeout(() => { if (!locked && !frozen()) requestLock(); }, 600);
+}
+// and whenever the tab comes back, ask again at once
+for (const ev of ['focus', 'visibilitychange']) {
+  window.addEventListener(ev, () => {
+    if (document.visibilityState === 'hidden') return;
+    if (started && !locked && !fallbackLook && !frozen()) setTimeout(requestLock, 120);
+  });
 }
 document.addEventListener('pointerlockerror', () => {
   if (everLocked) scheduleLockRetry(); else enterFallback();
@@ -3124,6 +3137,15 @@ let downPos = null;
 renderer.domElement.addEventListener('pointerdown', (e) => {
   downPos = [e.clientX, e.clientY];
   if (fallbackLook) dragging = true;
+  /* Any press on the world while unlocked takes the lock back — on the
+   * press, not the click, because a click may never arrive if the browser
+   * has just swallowed the gesture for its own banner. And if the drag
+   * fallback has somehow latched on after a real lock once worked, this is
+   * the way back out of it. */
+  if (started && !locked && !frozen()) {
+    if (fallbackLook && everLocked) { fallbackLook = false; dragging = false; }
+    if (!fallbackLook) requestLock();
+  }
   /* The LEFT button does both: a click is a light swing, and holding it
    * hauls the shovel back for a heavy. Right is deliberately left free.
    * The wind-up only starts once you have held past WIND_TAP, so a quick
@@ -4306,101 +4328,64 @@ function updateTrail(dt, recording) {
 // Sand castle with the shovel stuck in it — the first item you find
 // ------------------------------------------------------------------
 const CASTLE_Z = -10;
+const CASTLE_H = 1.15;              // how tall it stands on the sand
+/* The castle is assetfactory's "Low poly sand castle" (assets/sandcastle.glb,
+ * 13k triangles, its own baked colour map), lifted for the night the way the
+ * rocks and the shell are. The two meshes are welded into ONE geometry in
+ * metres with the base on y = 0, because that is what the fracture below
+ * needs: it cuts the castle up by walking its triangles, and it wants one
+ * list of them in world scale. The built-up bucket towers this replaced
+ * were the one thing on the beach that still read as programmer art. */
 const castle = new THREE.Group();
 castle.position.set(4.6, 0, CASTLE_Z);
-{
-  castle.scale.setScalar(0.85);
-  const moldMat = new THREE.MeshStandardMaterial({ color: 0x5c6679, roughness: 1, flatShading: true, emissive: 0x212938 });
-  const wetMat = new THREE.MeshStandardMaterial({ color: 0x454e60, roughness: 1, flatShading: true, emissive: 0x161c28 });
-  const shellMat = new THREE.MeshStandardMaterial({ color: 0xb9bcb4, roughness: 1, flatShading: true, emissive: 0x3a3c38 });
-
-  // bucket-molded towers: a stack of tapered drums, each a bucket-load
-  function tower(x, z, h, r, tilt) {
-    const g = new THREE.Group();
-    g.position.set(x, 0, z);
-    g.rotation.z = tilt;
-    const drums = Math.max(2, Math.round(h / 0.3));
-    let y = 0;
-    for (let i = 0; i < drums; i++) {
-      const t = i / drums;
-      const rr = r * (1 - t * 0.42);
-      const dh = h / drums;
-      const d = new THREE.Mesh(new THREE.CylinderGeometry(rr * 0.9, rr, dh * 1.04, 8), i === 0 ? wetMat : moldMat);
-      d.position.y = y + dh / 2;
-      d.rotation.y = i * 0.31;                       // each bucket set down askew
-      g.add(d);
-      y += dh;
-    }
-    // crenellated top
-    const top = r * 0.62;
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2;
-      const mer = new THREE.Mesh(new THREE.BoxGeometry(top * 0.42, 0.13, top * 0.42), moldMat);
-      mer.position.set(Math.cos(a) * top, y + 0.05, Math.sin(a) * top);
-      mer.rotation.y = a;
-      g.add(mer);
-    }
-    return g;
-  }
-
-  const keep = tower(0, 0, 0.95, 0.42, 0.03);
-  const t2 = tower(-0.62, 0.5, 0.62, 0.29, -0.06);
-  const t3 = tower(0.58, 0.46, 0.5, 0.26, 0.07);
-  const t4 = tower(0.1, -0.72, 0.44, 0.24, -0.04);
-  castle.add(keep, t2, t3, t4);
-
-  // curtain wall between the towers, with a gap where it's collapsed
-  for (let i = 0; i < 14; i++) {
-    const a = (i / 14) * Math.PI * 2;
-    if (a > 3.5 && a < 4.5) continue;                 // slumped section
-    const seg = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.2 + Math.random() * 0.1, 0.14), moldMat);
-    seg.position.set(Math.cos(a) * 0.95, 0.1, Math.sin(a) * 0.95);
-    seg.rotation.y = -a;
-    castle.add(seg);
-  }
-  // rubble where the wall gave way
-  for (let i = 0; i < 5; i++) {
-    const a = 3.5 + Math.random();
-    const lump = new THREE.Mesh(new THREE.DodecahedronGeometry(0.07 + Math.random() * 0.06, 0), wetMat);
-    lump.position.set(Math.cos(a) * (0.95 + Math.random() * 0.35), 0.03, Math.sin(a) * (0.95 + Math.random() * 0.35));
-    lump.rotation.set(Math.random(), Math.random(), Math.random());
-    castle.add(lump);
-  }
-
-  // packed base / moat berm
-  const berm = new THREE.Mesh(new THREE.CylinderGeometry(1.42, 1.62, 0.12, 12), wetMat);
-  berm.position.y = 0.06;
-  castle.add(berm);
-
-  // drip-castle blobs melted down the keep's flank
-  for (let i = 0; i < 9; i++) {
-    const a = Math.random() * Math.PI * 2, up = 0.15 + Math.random() * 0.6;
-    const blob = new THREE.Mesh(new THREE.IcosahedronGeometry(0.05 + Math.random() * 0.05, 0), moldMat);
-    blob.position.set(Math.cos(a) * 0.44, up, Math.sin(a) * 0.44);
-    blob.scale.y = 1.7;
-    castle.add(blob);
-  }
-
-  // shells pressed into the walls as decoration
-  for (let i = 0; i < 7; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const sh = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.03, 7), shellMat);
-    sh.position.set(Math.cos(a) * 0.98, 0.13 + Math.random() * 0.1, Math.sin(a) * 0.98);
-    sh.rotation.set(Math.PI / 2, 0, -a);
-    castle.add(sh);
-  }
-
-  // a moat scratched around it, and the spoil pile from digging it
-  const moat = new THREE.Mesh(new THREE.RingGeometry(1.5, 2.1, 16), new THREE.MeshBasicMaterial({
-    map: makeCraterTexture(), transparent: true, depthWrite: false, opacity: 0.3,
-  }));
-  moat.rotation.x = -Math.PI / 2; moat.position.y = 0.02;
-  castle.add(moat);
-  const spoil = new THREE.Mesh(new THREE.ConeGeometry(0.45, 0.22, 7), wetMat);
-  spoil.position.set(1.35, 0.09, 0.7); spoil.scale.set(1.5, 1, 1.2);
-  castle.add(spoil);
-}
 scene.add(castle);
+let castleGeo = null, castleMat = null;
+new GLTFLoader().load('assets/sandcastle.glb', (gltf) => {
+  gltf.scene.updateMatrixWorld(true);
+  const parts = [];
+  gltf.scene.traverse((o) => {
+    if (!o.isMesh) return;
+    let g = o.geometry.clone().applyMatrix4(o.matrixWorld);
+    if (g.index) g = g.toNonIndexed();
+    parts.push(g);
+    castleMat = castleMat || o.material;
+  });
+  if (!parts.length) return;
+  // weld: every part carries position / normal / uv, non-indexed, so this
+  // is a straight concatenation
+  const cat = (name, n) => {
+    const total = parts.reduce((a, g) => a + g.attributes[name].count, 0);
+    const out = new Float32Array(total * n);
+    let off = 0;
+    for (const g of parts) { out.set(g.attributes[name].array, off); off += g.attributes[name].count * n; }
+    return new THREE.Float32BufferAttribute(out, n);
+  };
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', cat('position', 3));
+  geo.setAttribute('normal', cat('normal', 3));
+  geo.setAttribute('uv', cat('uv', 2));
+  geo.computeBoundingBox();
+  const b = geo.boundingBox, size = b.getSize(new THREE.Vector3());
+  const k = CASTLE_H / size.y;
+  geo.translate(-(b.min.x + b.max.x) / 2, -b.min.y, -(b.min.z + b.max.z) / 2);
+  geo.scale(k, k, k);
+  geo.computeBoundingBox();
+  geo.computeBoundingSphere();
+  castleGeo = geo;
+  // a daylight-baked sand colour, taken into the night like the rocks
+  castleMat.flatShading = true;
+  castleMat.color.setHex(0x9aa4b8);
+  castleMat.emissive.setHex(0x3a4358);
+  castleMat.emissiveMap = castleMat.map;
+  castleMat.roughness = 1; castleMat.metalness = 0;
+  reexpose(castleMat, 0.6);
+  castleMat.needsUpdate = true;
+  const m = new THREE.Mesh(geo, castleMat);
+  castle.add(m);
+  // solid, on its real footprint
+  const fs = geo.boundingBox.getSize(new THREE.Vector3());
+  rockColliders.push({ x: castle.position.x, z: castle.position.z, r: Math.max(fs.x, fs.z) * 0.36, top: CASTLE_H, castle: true });
+});
 /* IT FALLS DOWN. A sandcastle that stops you dead is a wall pretending to be
  * sand — so walk into it and it collapses, or put something through it. The
  * shovel stuck in the keep is a separate interactable and survives either
@@ -4417,28 +4402,59 @@ function breakCastle(fromX, fromZ) {
   if (ci >= 0) rockColliders.splice(ci, 1);
   const cx = castle.position.x, cz = castle.position.z;
   sfxCrateThud();
-  spawnPuffs(cx, cz, 30, 0, -1, 0.4, [0.52, 0.56, 0.62]);
-  addTrauma(0.22);
+  spawnPuffs(cx, cz, 34, 0, -1, 0.35, [0.55, 0.58, 0.64]);
+  spawnPuffs(cx, cz, 18, 0, -1, 0.85, [0.55, 0.58, 0.64]);
+  addTrauma(0.24);
   // away from whatever knocked it down
   let ax = cx - (fromX ?? cx - 1), az = cz - (fromZ ?? cz);
   const ad = Math.hypot(ax, az) || 1; ax /= ad; az /= ad;
-  const lumps = [];
-  castle.traverse((o) => { if (o.isMesh) lumps.push(o); });
-  for (const m of lumps) {
-    const w = m.getWorldPosition(new THREE.Vector3());
-    const g = new THREE.Mesh(m.geometry, m.material);
-    g.scale.copy(m.getWorldScale(new THREE.Vector3()));
-    g.position.copy(w);
-    g.rotation.copy(m.rotation);
-    scene.add(g);
-    gibs.push({
-      m: g,
-      vel: new THREE.Vector3(ax * (0.7 + Math.random() * 1.9) + (Math.random() - 0.5) * 1.2,
-                             1.1 + Math.random() * 2.2,
-                             az * (0.7 + Math.random() * 1.9) + (Math.random() - 0.5) * 1.2),
-      spin: new THREE.Vector3((Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9),
-      rest: 0.02, life: 26, bleed: false,
-    });
+  /* THE FRACTURE. The castle is one mesh, so it is cut into pieces by its
+   * triangles: each one goes into the grid cell its centroid falls in, and
+   * every occupied cell becomes a chunk with its own body. Nothing is sliced
+   * — at this triangle count a chunk's ragged edge reads as a break, not as
+   * a cut — and because the cells are stacked, the top of the keep comes
+   * down as lumps of tower and the base as a low ring of wall, which is how
+   * a sandcastle actually goes: the tall parts first, then the rest slumps.
+   * Higher chunks are thrown further; the base barely moves. */
+  if (castleGeo) {
+    const CELL = 0.28;
+    const pos = castleGeo.attributes.position, nor = castleGeo.attributes.normal, uv = castleGeo.attributes.uv;
+    const cells = new Map();
+    for (let t = 0; t < pos.count; t += 3) {
+      const mx = (pos.getX(t) + pos.getX(t + 1) + pos.getX(t + 2)) / 3;
+      const my = (pos.getY(t) + pos.getY(t + 1) + pos.getY(t + 2)) / 3;
+      const mz = (pos.getZ(t) + pos.getZ(t + 1) + pos.getZ(t + 2)) / 3;
+      const key = Math.floor(mx / CELL) + ',' + Math.floor(my / CELL) + ',' + Math.floor(mz / CELL);
+      let c = cells.get(key);
+      if (!c) cells.set(key, c = { p: [], n: [], u: [], cx: 0, cy: 0, cz: 0, k: 0 });
+      for (let v = t; v < t + 3; v++) {
+        c.p.push(pos.getX(v), pos.getY(v), pos.getZ(v));
+        c.n.push(nor.getX(v), nor.getY(v), nor.getZ(v));
+        c.u.push(uv.getX(v), uv.getY(v));
+      }
+      c.cx += mx; c.cy += my; c.cz += mz; c.k++;
+    }
+    for (const c of cells.values()) {
+      const ccx = c.cx / c.k, ccy = c.cy / c.k, ccz = c.cz / c.k;
+      const g = new THREE.BufferGeometry();
+      const P = new Float32Array(c.p);
+      for (let i = 0; i < P.length; i += 3) { P[i] -= ccx; P[i + 1] -= ccy; P[i + 2] -= ccz; }
+      g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+      g.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(c.n), 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(c.u), 2));
+      const m = new THREE.Mesh(g, castleMat);
+      m.position.set(cx + ccx, ccy, cz + ccz);
+      scene.add(m);
+      const h = ccy / CASTLE_H;                       // 0 at the base, 1 at the top
+      const out = 0.4 + h * 1.6 + Math.random() * 0.5;
+      const spread = (Math.random() - 0.5) * (0.8 + h);
+      gibs.push({
+        m,
+        vel: new THREE.Vector3(ax * out + spread + ccx * 1.2, 0.6 + h * 2.6 + Math.random() * 0.9, az * out + spread + ccz * 1.2),
+        spin: new THREE.Vector3((Math.random() - 0.5) * 6 * h, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 6 * h),
+        rest: Math.max(0.02, ccy * 0.12), life: 40, bleed: false,
+      });
+    }
   }
   scene.remove(castle);
   // the shovel is left standing in the heap where the keep was
@@ -4446,12 +4462,6 @@ function breakCastle(fromX, fromZ) {
     shovelWorld.position.y = 0.14;
     shovelWorld.rotation.set(1.15, 0.4, -0.2);
   }
-}
-{
-  // solid: you walk round a sandcastle, not through it
-  const bb = new THREE.Box3().setFromObject(castle);
-  const size = bb.getSize(new THREE.Vector3());
-  rockColliders.push({ x: castle.position.x, z: castle.position.z, r: Math.max(size.x, size.z) * 0.42, top: bb.max.y, castle: true });
 }
 /* Walking through it. Checked before the push-out gets a chance to stop you,
  * so you go THROUGH the thing you just knocked over instead of bouncing off
@@ -4491,10 +4501,14 @@ let listenT = 0;
 // z matters more than it looks: the arm rests at -0.62 and vmCamera's near
 // plane is 0.01, so pulling the guard in to -0.22 put half the shovel behind
 // the near plane and it vanished entirely rather than reading as close.
-const BLOCK_AT = new THREE.Vector3(0.46, 0.04, -0.56);
+// held ACROSS the view, horizontal, blade to your right and high — the
+// reference is a sword block in a first-person game: the weapon is a bar
+// across the top third of the frame, and there is no mistaking it for a
+// rest pose
+const BLOCK_AT = new THREE.Vector3(-0.10, 0.30, -0.50);
 // the shaft comes up ACROSS the view, blade high on your leading side: at a
 // shallower roll it read as holding the tool out rather than guarding with it
-const BLOCK_POSE = [-0.22, 0.06, 1.22, -1.02, 0.08];
+const BLOCK_POSE = [0.35, 0.0, 0.95, -1.62, 0.06];
 // x and y are FRACTIONS of the frame's half-extents at the ear's depth, like
 // layoutViewmodel(): an absolute offset that sat at the edge of a landscape
 // window was clean off the side of a portrait one
@@ -6047,9 +6061,14 @@ function parryCrab() {
 }
 function blockCrab() {
   sfxBlock();
-  addTrauma(0.3);
-  vmImpulse(-0.9);
-  hitstop = Math.max(hitstop, 0.05);
+  flashMats(shovelVM);                   // the tool goes white for the frozen frames
+  parryGlow = Math.max(parryGlow, 0.22); // and shudders in your hands
+  fovKick = Math.max(fovKick, 3.5);
+  addTrauma(0.42);
+  vmImpulse(-1.25);
+  hitstop = Math.max(hitstop, 0.07);
+  setPrompt('<b>BLOCKED</b>');
+  setTimeout(() => { if (promptHTML.includes('BLOCKED')) setPrompt(''); }, 520);
   // shoved back, but not hurt
   const kx = camera.position.x - crab.position.x, kz = camera.position.z - crab.position.z;
   const kd = Math.hypot(kx, kz) || 1;
@@ -7722,7 +7741,17 @@ function sfxGuardUp() {
 function sfxBlock() {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime;
-  const out = ctx.createGain(); out.gain.value = 0.75; out.connect(sfxOut());
+  const out = ctx.createGain(); out.gain.value = 1.15; out.connect(sfxOut());
+  // a hard dead CLANK on the front of it — steel taking a hit, no sustain,
+  // so it stays unmistakable from the parry's ring
+  const clank = ctx.createOscillator(); clank.type = 'square';
+  clank.frequency.setValueAtTime(410, t);
+  clank.frequency.exponentialRampToValueAtTime(190, t + 0.04);
+  const kg = ctx.createGain();
+  kg.gain.setValueAtTime(0.0001, t);
+  kg.gain.exponentialRampToValueAtTime(0.42, t + 0.004);
+  kg.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+  clank.connect(kg).connect(out); clank.start(t); clank.stop(t + 0.09);
   const thud = noiseBurst(0.13, (x) => Math.pow(1 - x, 2.6));
   const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 340; lp.Q.value = 1.4;
   const tg = ctx.createGain(); tg.gain.value = 0.7;
@@ -9200,10 +9229,12 @@ scene.add(fisherman);
    * through it and the tub's front half ate his legs and boots — the
    * "clipping through his seat". Pushed deeper into the shed it sits behind
    * him from the doorway, which is the only way anyone sees him. */
+  // 0.44 back, not 0.30: at 0.30 the tub's front rim still met the sprite
+  // plane at his knee and the peg's cuff went into it
   const tub = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.36, FISH_TUB_H, 14), blue);
-  tub.position.set(0.30, FISH_TUB_H / 2, 0);
+  tub.position.set(0.44, FISH_TUB_H / 2, 0);
   const rim = new THREE.Mesh(new THREE.TorusGeometry(0.30, 0.028, 6, 16), blue);
-  rim.position.set(0.30, FISH_TUB_H, 0); rim.rotation.x = Math.PI / 2;
+  rim.position.set(0.44, FISH_TUB_H, 0); rim.rotation.x = Math.PI / 2;
   fisherman.add(tub, rim);
   /* The gutting box. It is here to do a job: the photograph ends at his
    * boots and that hard horizontal edge is the one thing that gives the
@@ -9269,7 +9300,7 @@ scene.add(fisherman);
     fisherman.add(sh);
   }
   rockColliders.push({ x: FISH_X - 0.66, z: FISH_Z + 0.05, r: 0.46, top: DOCK_DECK + boxH, mat: 'wood' });
-  rockColliders.push({ x: FISH_X + 0.30, z: FISH_Z, r: 0.40, top: DOCK_DECK + FISH_TUB_H, mat: 'wood' });
+  rockColliders.push({ x: FISH_X + 0.44, z: FISH_Z, r: 0.40, top: DOCK_DECK + FISH_TUB_H, mat: 'wood' });
 }
 // Stand-in until assets/fisherman.png exists — a seated silhouette, so he is
 // there and talking with the cut-out still to come.
