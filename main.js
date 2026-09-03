@@ -6190,18 +6190,39 @@ scene.add(crab);
  * or attack: the clip's rate is scaled by how fast it's actually moving, and
  * the rear-up and lunge stay as transforms on the group.
  */
-let crabMixer = null, crabAction = null, crabModel = null;
+let crabMixer = null, crabModel = null;
+const crabClips = {};                   // idle | walk | attack | stun | die
+let crabCur = null;
+/* One clip per state, and the ATTACK one is driven by the combat clock
+ * rather than left to run on its own — see `crabAnim()`. */
+function crabPlay(name, loop) {
+  const a = crabClips[name];
+  if (!a || crabCur === a) return a;
+  for (const k in crabClips) if (crabClips[k] !== a) crabClips[k].fadeOut(0.12);
+  a.reset();
+  a.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
+  a.clampWhenFinished = !loop;
+  a.fadeIn(0.12).play();
+  crabCur = a;
+  return a;
+}
 new GLTFLoader().load('assets/crab.glb', (gltf) => {
   crabModel = gltf.scene;
-  const orange = new THREE.MeshStandardMaterial({
-    color: 0xc4531f, roughness: 0.72, metalness: 0.04,
-    emissive: 0x3a1206, flatShading: true,
-  });
   crabModel.traverse((o) => {
-    if (o.isMesh || o.isSkinnedMesh) {
-      o.material = orange;
-      o.frustumCulled = false;
-    }
+    if (!(o.isMesh || o.isSkinnedMesh)) return;
+    o.frustumCulled = false;             // a skinned bound box is the bind pose
+    const m = o.material;
+    if (!m) return;
+    /* The scan is lit for daylight and this is a quarter moon, so it goes
+     * through the same gamma lift the rocks and the body bag do, with a cold
+     * rim so the shell reads against the sand. METALNESS IS A TRAP here —
+     * there is no environment map, and a metal has no diffuse term. */
+    m.metalness = 0;
+    m.emissive = new THREE.Color(0x3a1a0e);
+    m.emissiveMap = m.map;
+    m.emissiveIntensity = 0.68;
+    reexpose(m, 0.52, [0.058, 0.078, 0.115]);   // a cold edge off the shell
+    m.needsUpdate = true;
   });
   // Fit from the raw geometry bounds. Box3.setFromObject() on a skinned
   // hierarchy reports the bind pose through the bone transforms and comes
@@ -6224,10 +6245,38 @@ new GLTFLoader().load('assets/crab.glb', (gltf) => {
   crab.add(crabModel);
   if (gltf.animations && gltf.animations.length) {
     crabMixer = new THREE.AnimationMixer(crabModel);
-    crabAction = crabMixer.clipAction(gltf.animations[0]);
-    crabAction.play();
+    for (const clip of gltf.animations) crabClips[clip.name] = crabMixer.clipAction(clip);
+    crabPlay('idle', true);
   }
 }, undefined, () => {});
+
+/* WHICH CLIP, AND WHEN. The attack is not left to play at its own rate: its
+ * time is written straight from `crabState.atk`, the same clock the damage
+ * and the parry window are measured on. That is the whole point — the claw
+ * going up IS the tell, and it cannot drift out of step with the frame the
+ * blow actually lands on. The stun likewise runs off the stun timer, so a
+ * parry leaves it reeling for exactly as long as it is helpless. */
+function crabAnim(dt, closing, moving) {
+  if (!crabMixer) return;
+  if (!crabState.alive) {
+    crabPlay('die', false);
+  } else if (crabState.stun > 0) {
+    const a = crabPlay('stun', false);
+    if (a) { a.paused = true; a.time = clampTime(a, CRAB_STUN - crabState.stun); }
+  } else if (crabState.atk >= 0) {
+    const a = crabPlay('attack', false);
+    if (a) { a.paused = true; a.time = clampTime(a, crabState.atk); }
+  } else if (closing) {
+    const a = crabPlay('walk', true);
+    if (a) { a.paused = false; a.timeScale = 0.85 + moving * 0.75; }
+  } else {
+    const a = crabPlay('idle', true);
+    if (a) { a.paused = false; a.timeScale = 1; }
+  }
+  crabMixer.update(dt);
+}
+const clampTime = (a, t) =>
+  THREE.MathUtils.clamp(t, 0, a.getClip().duration - 1e-4);
 
 const crabState = { alive: true, awake: false, atk: -1, cool: 0, scuttle: 0, deadT: 0, rear: 0, lunge: 0, struck: false, stun: 0 };
 const _crabDir = new THREE.Vector3();
@@ -6501,6 +6550,7 @@ function updateCrab(dt) {
     }
     for (let i = 0; i < ud.eyes.length; i++) { ud.eyes[i].rotation.x = 0.45; ud.eyes[i].rotation.z = 0; }
     crabState.scuttle += dt * 0.6;
+    crabAnim(dt, false, 0);              // the reel, run off the stun timer
     if (crabState.stun <= 0) { crabState.stun = 0; crabState.cool = 0.35; }
     return;
   }
@@ -6592,12 +6642,7 @@ function updateCrab(dt) {
 
   // ---- gait -------------------------------------------------------
   const reach = closing ? 1 : 0.25;
-  if (crabMixer) {
-    // one clip for everything, so the rate carries the difference between
-    // shifting its weight and running at you
-    if (crabAction) crabAction.timeScale = closing ? 1.35 : 0.32;
-    crabMixer.update(dt);
-  }
+  crabAnim(dt, closing, closing ? 1 : 0);
   const cyc = crabState.scuttle / (Math.PI * 2);
   for (const leg of ud.legs) {
     // half a cycle between the two sets, then a visible ripple along each set
@@ -10439,6 +10484,7 @@ window.__bw = {
   listen: (v) => { listening = v; }, stopListening, keyItem, keyWorld,   // the ear pose without the audio, for the preview harness
   get dockDoorOpen() { return dockDoorOpen; }, set dockDoorOpen(v) { dockDoorOpen = v; }, get onDock() { return onDock; },
   get crabModel() { return crabModel; }, get crabMixer() { return crabMixer; },
+  crabClips, crabPlay, get crabCur() { return crabCur; },
   lhDoor, shinies, onPath, pathBend, pathHalfAt, lhWindows, lanternGlass,
   get doorOpen() { return doorOpen; }, set doorOpen(v) { doorOpen = v; doorSwing = v ? 1 : 0; lhDoor.rotation.y = -doorSwing * 1.95; },
   get insideTower() { return insideTower; },

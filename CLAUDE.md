@@ -1033,6 +1033,40 @@ have made it a floor, and the body falls on through to the sand. There is
 no speed threshold any more: it is sand, and whatever reaches it brings it
 down.
 
+**The crab is a scan with five hand-built clips, and the ATTACK one is
+driven by the combat clock.** `assets/crab.glb` is artofmickey's CRAB 001,
+rebuilt by `tools/crab_anim.py` (Blender headless): 32.5k tris decimated to
+12k, the scan's own albedo/roughness/normal kept, and `idle` / `walk` /
+`attack` / `stun` / `die` authored on its own rig. Two things about that rig
+had to be fixed before a single frame could be keyed — every limb chain was
+an unparented ROOT, so the body could not carry the legs, and there was a
+stray bone 7449 units under the world.
+
+The clips are chosen in `crabAnim()`, and the attack and the stun do NOT run
+at their own rate: their `action.time` is written straight from
+`crabState.atk` and from `CRAB_STUN - crabState.stun`. That is the whole
+point. The claw going up IS the parry tell, so it cannot be allowed to drift
+out of step with the frame the blow actually lands on — the clip is authored
+at 30fps with contact on frame 9, which is `CRAB_WIND` exactly. Move
+`CRAB_WIND` and you must move the pose beats in `tools/crab_anim.py` too.
+
+**Before this, the entire telegraph was INVISIBLE.** The loader sets
+`crab.userData.rig.visible = false` once the model lands, but every line of
+the attack — the rear-up, the twist, the claw sweep, the gaping pincer, the
+squash — was applied to that now-hidden procedural rig, and the only thing
+actually on screen was one 0.48 s walk loop at a scaled rate. There was
+nothing to read and so nothing to time a parry against. The procedural pose
+code is still there and still runs, because it is the fallback for when the
+.glb does not load; it just is not what you are looking at any more.
+
+**A claw thrown far enough to read will shear.** The first wind-up put the
+lead claw through 83 deg at the shoulder on top of a 72 deg swing and a roll,
+and the skinning stretched it into a blade. The pose is worth less than the
+silhouette: at about two thirds of that amplitude it still reads across a
+beach and the shell holds together. And the claw has to ARRIVE on the contact
+frame — the first build peaked at f12, three frames after the damage, so the
+hit and the picture of the hit were 100 ms apart.
+
 **The crab's swing is an ARC now.** It used to rise and lunge straight down
 the line at you, which from the front is a shape barely changing size —
 nothing to read, nothing to time against. The body cocks away first

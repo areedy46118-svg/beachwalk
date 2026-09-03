@@ -302,6 +302,15 @@ by [assetfactory](https://sketchfab.com/assetfactory),
 [Sketchfab Standard](https://sketchfab.com/licenses) licence.
 
 
+**CRAB 001** — the crab that comes for you. Rigged by its author; the five
+animation clips (`idle`, `walk`, `attack`, `stun`, `die`) are built here by
+`tools/crab_anim.py`, with the attack authored against the game's own parry
+timing.
+
+["CRAB 001"](https://www.cgtrader.com/free-3d-models) by
+[artofmickey](https://www.cgtrader.com/artofmickey), CGTrader free model.
+
+
 **Rusty Metal 02** — the rust on the ring.
 
 [Rusty Metal 02](https://polyhaven.com/a/rusty_metal_02) by Poly Haven, CC0.
