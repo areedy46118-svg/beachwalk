@@ -172,6 +172,23 @@ is still Bradly. Both cut-outs come from `tools/cutout.swift`, which is
 macOS Vision person segmentation and needs no dependencies:
 `swift tools/cutout.swift assets/x.JPG assets/x.png 900`.
 
+**HIS LEFT LEG IS PAINTED ON.** A photograph ends where it ends, and the
+hard cut at his shin was the tell — so that leg comes off below the knee and
+a peg goes on it. `paintPegLeg()` runs inside `bakeCutout` via its `paint`
+hook, which fires BEFORE the downsample, the posterise and the grade: paint
+it after and it sits on top of the picture looking like paint. It is painted
+rather than modelled because he is a billboard and a 3-D peg would line up
+from exactly one angle. The coordinates come from walking the PNG's alpha,
+not from guessing.
+
+**Inventory icons are RENDERS.** `renderItemIcon()` puts the item's own
+model through the game's renderer into an offscreen target, reads the
+pixels, and composites them onto a dark tile with a shadow under them —
+once, at pickup, cached on the item. The model is CLONED first: the
+originals are live in the world, and the examine screen re-parents whatever
+it is handed. Restore the renderer's target, clear colour and `autoClear`
+around it; this runs mid-frame on the game's own renderer.
+
 **The gutting crate is there to hide the cut-out's bottom edge.** A
 photograph ends somewhere, and that hard horizontal line at his boots is the
 one thing that gives a sprite away — so something has to stand in front of

@@ -3777,7 +3777,7 @@ function renderHotbar() {
     const slot = document.createElement('div');
     slot.className = 'slot' + (item ? '' : ' empty') + (item && item === equipped ? ' equipped' : '');
     let icon = '';
-    if (item) icon = item.icon.startsWith('data:') ? `<img src="${item.icon}" alt="">` : item.icon;
+    if (item) icon = iconHTML(item);
     slot.innerHTML = `<span class="num">${i + 1}</span>` + icon;
     if (item) {
       const lab = document.createElement('span');
@@ -3856,8 +3856,114 @@ function removeFromInventory(item) {
   renderPack();
   refreshUI();
 }
-const iconHTML = (item) =>
-  item.icon.startsWith('data:') ? `<img src="${item.icon}" alt="">` : item.icon;
+/* INVENTORY ICONS ARE RENDERS, not drawings. Every icon used to be a few
+ * strokes on a 48 px canvas, which reads as clip art next to the rest of the
+ * game — the reference for this is the survival-horror inventory, where each
+ * slot holds a little photograph of the object itself, lit and grounded.
+ *
+ * So each one is the item's OWN model, rendered once through the game's own
+ * renderer into an offscreen target, then composited onto a dark tile with a
+ * floor shadow under it. Rendered at pickup, cached on the item, and never
+ * touched again — this costs one frame each, once.
+ *
+ * The model is CLONED for the render. The originals are live: `ring` sits
+ * inside `ringWorld` out on the sand and the examine screen re-parents
+ * whatever it is handed, so borrowing one would tear it out of the world. */
+const ICON_PX = 192;
+let iconRT = null, iconScene = null, iconCam = null, iconFit = null;
+function initIconRig() {
+  if (iconScene) return;
+  iconRT = new THREE.WebGLRenderTarget(ICON_PX, ICON_PX, { depthBuffer: true });
+  iconScene = new THREE.Scene();
+  iconCam = new THREE.PerspectiveCamera(30, 1, 0.05, 40);
+  iconCam.position.set(0, 0, 5.4);
+  iconFit = new THREE.Group();
+  iconScene.add(iconFit);
+  // lit like the examine screen, a shade warmer so metal and glass read
+  iconScene.add(new THREE.AmbientLight(0x9fb0cc, 1.15));
+  const key = new THREE.DirectionalLight(0xfff2e0, 2.5); key.position.set(-0.8, 1.1, 1.2);
+  const fill = new THREE.DirectionalLight(0x8aa2d6, 0.85); fill.position.set(1.3, -0.3, 0.8);
+  const rim = new THREE.DirectionalLight(0xd6e4ff, 1.2); rim.position.set(0.3, -0.9, -1.2);
+  iconScene.add(key, fill, rim, new THREE.HemisphereLight(0x54688c, 0x141820, 0.7));
+}
+function renderItemIcon(model, { rotX = -0.5, rotY = 0.7 } = {}) {
+  if (!model) return null;
+  initIconRig();
+  const m = model.clone(true);
+  m.traverse((o) => { o.visible = true; });
+  m.position.set(0, 0, 0); m.rotation.set(0, 0, 0); m.scale.setScalar(1);
+  iconFit.clear();
+  iconFit.position.set(0, 0, 0); iconFit.scale.setScalar(1); iconFit.rotation.set(rotX, rotY, 0);
+  iconFit.add(m);
+  iconFit.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(m);
+  const size = box.getSize(new THREE.Vector3());
+  const big = Math.max(size.x, size.y, size.z) || 1;
+  const k = 1.9 / big;
+  m.scale.setScalar(k);
+  m.position.copy(box.getCenter(new THREE.Vector3())).multiplyScalar(-k);
+
+  // put the renderer back exactly as it was: it is the game's own, mid-frame
+  const prevTarget = renderer.getRenderTarget();
+  const prevClear = renderer.getClearColor(new THREE.Color());
+  const prevAlpha = renderer.getClearAlpha();
+  const prevAutoClear = renderer.autoClear;
+  renderer.setRenderTarget(iconRT);
+  renderer.setClearColor(0x000000, 0);
+  renderer.autoClear = true;
+  renderer.render(iconScene, iconCam);
+  const buf = new Uint8Array(ICON_PX * ICON_PX * 4);
+  renderer.readRenderTargetPixels(iconRT, 0, 0, ICON_PX, ICON_PX, buf);
+  renderer.setRenderTarget(prevTarget);
+  renderer.setClearColor(prevClear, prevAlpha);
+  renderer.autoClear = prevAutoClear;
+  iconFit.clear();
+
+  const c = document.createElement('canvas');
+  c.width = c.height = ICON_PX;
+  const g = c.getContext('2d');
+  // the tile it sits on, and a soft pool of shadow under the object
+  const bg = g.createRadialGradient(ICON_PX * 0.5, ICON_PX * 0.42, 0, ICON_PX * 0.5, ICON_PX * 0.5, ICON_PX * 0.62);
+  bg.addColorStop(0, '#171c24');
+  bg.addColorStop(1, '#080a0e');
+  g.fillStyle = bg; g.fillRect(0, 0, ICON_PX, ICON_PX);
+  const sh = g.createRadialGradient(ICON_PX * 0.5, ICON_PX * 0.76, 0, ICON_PX * 0.5, ICON_PX * 0.76, ICON_PX * 0.34);
+  sh.addColorStop(0, 'rgba(0,0,0,0.66)');
+  sh.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = sh;
+  g.save(); g.translate(0, ICON_PX * 0.06); g.scale(1, 0.34);
+  g.fillRect(0, 0, ICON_PX, ICON_PX * 2); g.restore();
+  // the render, flipped: GL reads bottom-up
+  const id = g.createImageData(ICON_PX, ICON_PX);
+  for (let y = 0; y < ICON_PX; y++) {
+    const src = (ICON_PX - 1 - y) * ICON_PX * 4, dst = y * ICON_PX * 4;
+    for (let x = 0; x < ICON_PX * 4; x++) id.data[dst + x] = buf[src + x];
+  }
+  const tmp = document.createElement('canvas');
+  tmp.width = tmp.height = ICON_PX;
+  tmp.getContext('2d').putImageData(id, 0, 0);
+  g.drawImage(tmp, 0, 0);
+  return c.toDataURL();
+}
+/* The icon an item shows. Rendered on first ask and kept — items whose model
+ * arrives over the network simply keep the drawn one until it lands. */
+function itemIcon(item) {
+  if (item._icon) return item._icon;
+  const model = item.iconModel || item.inspectModel;
+  if (model) {
+    let empty = true;
+    model.traverse((o) => { if (o.isMesh) empty = false; });
+    if (!empty) {
+      const url = renderItemIcon(model, item.iconRot || {});
+      if (url) { item._icon = url; return url; }
+    }
+  }
+  return item.icon;
+}
+const iconHTML = (item) => {
+  const src = itemIcon(item);
+  return src.startsWith('data:') ? `<img src="${src}" alt="">` : src;
+};
 function useSlot(i) {
   const item = inventory[i];
   if (!item || menuOpen || ended) return;
@@ -4659,7 +4765,9 @@ const _vmEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 function vmImpulse(v) { vmSpringV += v; }          // landings, jumps, impacts
 
 function updateViewmodel(dt) {
-  const show = !!equipped && !held;
+  // your hands are out of it while someone is talking to you, or while you
+  // are turning something over — both are close-up shots of something else
+  const show = !!equipped && !held && !dialogOpen && !inspecting;
   viewmodel.visible = show;
   if (!show) { winding = false; windT = 0; updateTrail(dt, false); return; }
   if (winding) {
@@ -6096,13 +6204,18 @@ let blinkT = 2 + Math.random() * 3, blinking = false;
  *
  * Shared by Bradly and the fisherman: it was written for the one and the
  * second would have been sixty lines of the same thing. */
-function bakeCutout(img, eyes, { pix = 260, levels = 6, grain = 20, sat = 0.55 } = {}) {
+function bakeCutout(img, eyes, { pix = 260, levels = 6, grain = 20, sat = 0.55, paint = null } = {}) {
   const mk = (shut) => {
     // 1. full-res pass, with the eyelid painted in for the shut frame
     const full = document.createElement('canvas');
     full.width = img.width; full.height = img.height;
     const fg = full.getContext('2d');
     fg.drawImage(img, 0, 0);
+    /* Anything painted on goes here — BEFORE the downsample, the posterise
+     * and the grade — so it is put through everything the photograph is and
+     * comes out the same material. Paint it after and it sits on top of the
+     * picture looking like paint. */
+    if (paint) paint(fg, img.width, img.height);
     if (shut) {
       const ex = eyes.x * img.width, ew = eyes.w * img.width;
       const ey = eyes.y * img.height, eh = Math.max(2, eyes.h * img.height);
@@ -6628,6 +6741,7 @@ function typeLine(text, onDone) {
   }, 28);
 }
 let dialogScript = BRADLY_SCRIPT;
+const dialogUsed = new Set();      // lines you have already put to someone, by label
 function showDialogNode(id) {
   const node = dialogScript[id];
   if (!node) { endDialog(); return; }
@@ -6646,10 +6760,17 @@ function showDialogNode(id) {
       return;
     }
     for (const ch of node.choices) {
+      if (ch.when && !ch.when()) continue;      // e.g. only if you have the key
       const b = document.createElement('button');
-      b.className = 'choice';
+      // a line you have already put to him greys out. It is the only thing
+      // in here that is not full white, so the grey means exactly one thing.
+      b.className = 'choice' + (dialogUsed.has(ch.label) ? ' used' : '');
       b.textContent = ch.label;
-      b.addEventListener('click', (e) => { e.stopPropagation(); showDialogNode(ch.to); });
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dialogUsed.add(ch.label);
+        showDialogNode(ch.to);
+      });
       dialogChoicesEl.appendChild(b);
     }
   });
@@ -8767,7 +8888,15 @@ const FISHERMAN_SCRIPT = {
       { label: 'Sorry, I was just leaving', to: 'leaving' },
       { label: 'Is that a threat?', to: 'threat' },
       { label: 'Who are you?', to: 'who' },
+      // only if it is on you — he is not going to answer a question about a
+      // key you have not found
+      { label: 'Do you know about this rusted key?', to: 'key',
+        when: () => inventory.includes(keyItem) },
     ],
+  },
+  key: {
+    text: '\u2026',                 // his answer to the key, for you to write
+    choices: [{ label: 'Sorry, I was just leaving', to: 'leaving' }],
   },
   leaving: {
     text: 'Aye. You were.',
@@ -8777,6 +8906,7 @@ const FISHERMAN_SCRIPT = {
     text: "Call it what you like. The water's taken quieter men than you.",
     choices: [
       { label: 'Who are you?', to: 'who2' },
+      { label: 'Do you know about this rusted key?', to: 'key', when: () => inventory.includes(keyItem) },
       { label: 'Sorry, I was just leaving', to: 'leaving' },
     ],
   },
@@ -8784,6 +8914,7 @@ const FISHERMAN_SCRIPT = {
     text: "I've fished this water sixty years. Long enough to know what walks it after dark.",
     choices: [
       { label: 'Is that a threat?', to: 'threat2' },
+      { label: 'Do you know about this rusted key?', to: 'key', when: () => inventory.includes(keyItem) },
       { label: 'Sorry, I was just leaving', to: 'leaving' },
     ],
   },
@@ -8895,6 +9026,89 @@ fishSprite.scale.set(FISH_H, FISH_H, 1);
 // behind and either side of him
 fishSprite.position.y = FISH_H / 2;
 fisherman.add(fishSprite);
+/* HIS LEFT LEG IS A PEG. The photograph's leg ends where the photograph
+ * ends, and a hard horizontal cut at the shin is the thing that gives a
+ * cut-out away — so that leg is taken off below the knee and a peg is put
+ * on it. Painted INTO the texture rather than modelled: he is a billboard,
+ * and a 3-D peg would only line up from the one angle it was aimed at.
+ *
+ * The numbers are measured off assets/fisherman.png (494 x 892) by walking
+ * its alpha: from y = 596 down there are two legs, his right at x 163-294
+ * and his left at x 361-433, closing to x 350-388 by y = 821. */
+function paintPegLeg(g, W, H) {
+  const X = (v) => (v / 494) * W, Y = (v) => (v / 892) * H;
+  // 1. take the leg off. Two bands, because below y = 810 his OTHER boot
+  //    reaches across to x = 346 and must not be cut away with it.
+  g.save();
+  g.globalCompositeOperation = 'destination-out';
+  g.fillStyle = '#000';
+  g.beginPath();
+  g.moveTo(X(318), Y(612)); g.lineTo(X(494), Y(612));
+  g.lineTo(X(494), Y(892)); g.lineTo(X(348), Y(892));
+  g.lineTo(X(348), Y(808)); g.lineTo(X(318), Y(808));
+  g.closePath(); g.fill();
+  g.restore();
+
+  // 2. the peg. A tapered shaft from under the knee to the boards, a leather
+  //    cuff strapped over the stump, and an iron ferrule at the tip.
+  const kx = X(392), ky = Y(606), tx = X(360), ty = Y(884);
+  const kw = X(30), tw = X(13);
+  const shaft = g.createLinearGradient(kx - kw, 0, kx + kw, 0);
+  // pale, sun-bleached wood. At a mid brown it graded down to a black stick
+  // against a dark shed and you could not tell it was there at all.
+  shaft.addColorStop(0, '#7d6444');
+  shaft.addColorStop(0.30, '#d8bb8a');
+  shaft.addColorStop(0.60, '#b9976a');
+  shaft.addColorStop(1, '#6a533a');
+  g.fillStyle = shaft;
+  g.beginPath();
+  g.moveTo(kx - kw, ky); g.lineTo(kx + kw, ky);
+  g.lineTo(tx + tw, ty); g.lineTo(tx - tw, ty);
+  g.closePath(); g.fill();
+
+  // grain, deterministic so both blink frames are identical
+  g.save();
+  g.beginPath();
+  g.moveTo(kx - kw, ky); g.lineTo(kx + kw, ky); g.lineTo(tx + tw, ty); g.lineTo(tx - tw, ty);
+  g.closePath(); g.clip();
+  g.strokeStyle = 'rgba(70,52,32,0.30)';
+  for (let i = 0; i < 9; i++) {
+    const f = (i + 0.5) / 9;
+    g.lineWidth = X(1 + (i % 3));
+    g.beginPath();
+    g.moveTo(kx - kw + kw * 2 * f, ky);
+    g.lineTo(tx - tw + tw * 2 * f + X((i % 2 ? 3 : -3)), ty);
+    g.stroke();
+  }
+  g.restore();
+
+  // the cuff: a leather cup over the stump, with two straps round it
+  const cuff = g.createLinearGradient(kx - kw * 1.3, 0, kx + kw * 1.3, 0);
+  cuff.addColorStop(0, '#3d2a1a');
+  cuff.addColorStop(0.4, '#8a5f38');
+  cuff.addColorStop(1, '#332315');
+  g.fillStyle = cuff;
+  g.beginPath();
+  g.moveTo(kx - kw * 1.35, ky - Y(26));
+  g.lineTo(kx + kw * 1.35, ky - Y(26));
+  g.lineTo(kx + kw * 1.06, ky + Y(30));
+  g.lineTo(kx - kw * 1.06, ky + Y(30));
+  g.closePath(); g.fill();
+  g.fillStyle = 'rgba(38,26,16,0.85)';
+  g.fillRect(kx - kw * 1.3, ky - Y(14), kw * 2.6, Y(7));
+  g.fillRect(kx - kw * 1.2, ky + Y(8), kw * 2.4, Y(7));
+
+  // and the iron shoe on the end
+  g.fillStyle = '#767b84';
+  g.beginPath();
+  g.moveTo(tx - tw * 1.25, ty - Y(26));
+  g.lineTo(tx + tw * 1.25, ty - Y(26));
+  g.lineTo(tx + tw * 1.35, ty); g.lineTo(tx - tw * 1.35, ty);
+  g.closePath(); g.fill();
+  g.fillStyle = 'rgba(180,190,200,0.30)';
+  g.fillRect(tx - tw * 1.1, ty - Y(24), tw * 0.5, Y(22));
+}
+
 // measured off the photograph: his cap brim is dark, the eyes sit just under it
 const FISH_EYES = { x: 0.32, y: 0.104, w: 0.24, h: 0.022 };
 let fishOpenTex = null, fishShutTex = null;
@@ -8907,7 +9121,7 @@ new THREE.TextureLoader().load('assets/fisherman.png', (tex) => {
    * he gets more of everything than Bradly does across a beach: twice the
    * pixels, more posterisation steps, and less grain and desaturation, which
    * are what were eating the detail in his face. */
-  const f = bakeCutout(img, FISH_EYES, { pix: 620, levels: 9, grain: 9, sat: 0.72 });
+  const f = bakeCutout(img, FISH_EYES, { pix: 620, levels: 9, grain: 9, sat: 0.72, paint: paintPegLeg });
   fishOpenTex = f.open; fishShutTex = f.shut;
   fishMat.map = fishOpenTex;
   fishMat.needsUpdate = true;
