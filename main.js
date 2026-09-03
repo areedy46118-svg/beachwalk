@@ -5374,11 +5374,10 @@ function stopListening() {
   if (shellAudio) {
     try { shellAudio.src.stop(); } catch (e) {}
     try { shellAudio.out.gain.cancelScheduledValues(0); shellAudio.out.gain.value = 0; shellAudio.out.disconnect(); } catch (e) {}
-    clearTimeout(shellAudio.timer); clearTimeout(shellAudio.wordTimer);
+    clearTimeout(shellAudio.timer);
     shellAudio = null;
   }
   if (shellVoice) { shellVoice.pause(); shellVoice = null; }
-  if (window.speechSynthesis) speechSynthesis.cancel();
   if (promptHTML.includes('ear')) setPrompt('');
 }
 function listenToShell() {
@@ -5410,9 +5409,24 @@ function listenToShell() {
   src.start(t); src.stop(t + DUR);
 
   setPrompt('You hold it to your ear&hellip;');
-  // Just the sea. There was a voice under this — a whisper bed, and the word
-  // "lighthouse" spoken low at 3.4 s — and both are gone: what you hold to
-  // your ear is the cavity roar and nothing else.
+  /* And the thing under it. The word "lighthouse" that used to be spoken at
+   * 3.4 s is gone — that was a voice saying something, and this is not. What
+   * is left is the whisper bed: filtered down until it is only ever almost
+   * words, and quiet enough that you are never sure you heard it.
+   *
+   * A fresh Audio element every time, so createMediaElementSource() is only
+   * ever called once per element — the trap the gate's whispers hit. */
+  shellVoice = new Audio(Math.random() < 0.5 ? 'assets/whisper1.m4a' : 'assets/whisper2.m4a');
+  shellVoice.loop = true;
+  try {
+    const vs = ctx.createMediaElementSource(shellVoice);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 260;
+    const vg = ctx.createGain(); vg.gain.value = 0.055;     // barely there on purpose
+    vs.connect(lp).connect(hp).connect(vg).connect(out);
+    shellVoice.play().catch(() => {});
+  } catch (e) {}
+
   shellAudio = { src, out, timer: setTimeout(stopListening, DUR * 1000) };
 }
 

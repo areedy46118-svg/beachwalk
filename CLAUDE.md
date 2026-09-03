@@ -173,12 +173,12 @@ The two lamp materials are lit and carry a PointLight each; the whole thing
 is in `farProps` at 300 m.
 
 **Whatever leaves your hand goes quiet.** `toggleEquip()` calls
-`stopListening()`, which kills the roar source, the whisper element, the
-speech utterance and both timers on the same frame; the shell used to run
-its nine seconds out whatever you did. The word in it is `speechSynthesis`
-— the only voice a dependency-free game has that can say a specific word —
-pitched low, slow, and at a fraction of the volume with the master volume
-applied by hand, because it lives outside the Web Audio graph.
+`stopListening()`, which kills the roar source, the whisper element and the
+timer on the same frame; the shell used to run its nine seconds out whatever
+you did. Under the roar is the whisper bed, filtered to almost-words at 0.055
+gain. A spoken word ("lighthouse", via `speechSynthesis`) was tried there in
+Sep 2026 and cut: a voice saying something specific is a different thing from
+a voice you are not sure you heard, and the shell wants the second.
 
 **Anything flat stuck to the wreck's hull is built from `hullPt()`.** The
 plating flares and tumbles home, so a plane hung at one beam floats off the

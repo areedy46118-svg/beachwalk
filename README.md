@@ -122,8 +122,8 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   **A Rusted Key** — a scanned medieval key — that, for now, opens nothing.
 - **The shells** are scans now. Take one and it goes straight into your hand;
   click to hold it to your ear, and the hand rises to the side of your head
-  while you listen — the sea, and nothing else. Put the shell down and it
-  goes silent at once.
+  while you listen. Under the roar there is something that isn't the sea. Put
+  the shell down and it goes silent at once.
 - **Throw anything at anything.** A thrown prop splashes going into the sea,
   lands on the pier's boards instead of dropping through them, bounces off
   rock and timber with a sound that matches what it hit, and will kill the
