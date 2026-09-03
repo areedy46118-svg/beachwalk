@@ -4277,15 +4277,103 @@ armRig.add(toolMount);
 // held view model
 // ------------------------------------------------------------------
 function makeShovel() {
+  /* A plastic beach shovel built to a photograph of one: a triangular loop
+   * handle with finger scallops along the grip, a round shaft that swells
+   * into a socket, and a scoop that is a real TROUGH — a curved sheet with
+   * a rolled rim, a back wall where the shaft comes in, and a rib down the
+   * back. The old one was five boxes and a torus, and five boxes read as
+   * five boxes from any distance. Smooth-shaded: it is a hero prop, in your
+   * hands for the whole game. Same footprint as before — shaft 0 → 0.6,
+   * grip at 0.66, blade 0.02 → -0.21, ±0.1 wide, scoop facing -Z — so the
+   * view-model pose, the trail markers and the world placement all hold. */
   const g = new THREE.Group();
-  const red = new THREE.MeshStandardMaterial({ color: 0xd42a22, roughness: 0.4, metalness: 0.05, emissive: 0x2a0705, flatShading: true });
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.62, 10), red); shaft.position.y = 0.31;
-  const grip = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.018, 8, 16), red); grip.position.y = 0.63; grip.rotation.x = Math.PI / 2;
-  const gripBar = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.15, 8), red); gripBar.position.y = 0.63; gripBar.rotation.z = Math.PI / 2;
-  // scoop/lip on the -Z face so the concave side leads into the sand on the dig
-  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.24, 0.03), red); blade.position.set(0, -0.08, -0.02);
-  const lip = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.02, 0.06), red); lip.position.set(0, -0.2, -0.045);
-  g.add(shaft, grip, gripBar, blade, lip);
+  const red = new THREE.MeshStandardMaterial({ color: 0xd8271d, roughness: 0.34, metalness: 0.0, emissive: 0x2c0806 });
+  const redIn = new THREE.MeshStandardMaterial({ color: 0xb81f16, roughness: 0.42, metalness: 0.0, emissive: 0x240604, side: THREE.BackSide });
+
+  // --- the scoop: a parametric sheet ---------------------------------
+  const NU = 20, NV = 28;
+  const halfW = (v) => 0.060 + 0.040 * Math.sin(Math.min(1, v / 0.78) * Math.PI / 2) - 0.010 * Math.max(0, (v - 0.78) / 0.22);
+  const curl = (v) => 0.030 - 0.010 * v;               // the rims roll up more near the neck
+  const sheet = (u, v) => {
+    const y = 0.02 - 0.23 * v;
+    let z = -curl(v) * Math.pow(Math.abs(u), 2.4);        // trough: rims toward -Z (the open face)
+    const bw = Math.max(0, 1 - v / 0.26);                 // the back wall at the neck
+    z += -0.050 * bw * bw * (1 - 0.5 * Math.abs(u));
+    z += 0.006 * Math.sin(v * Math.PI);                   // a shallow bow along the length
+    return new THREE.Vector3(u * halfW(v), y, z);
+  };
+  const pos = [], uvs = [], idx = [];
+  for (let j = 0; j <= NV; j++) {
+    for (let i = 0; i <= NU; i++) {
+      const p = sheet((i / NU) * 2 - 1, j / NV);
+      pos.push(p.x, p.y, p.z); uvs.push(i / NU, j / NV);
+    }
+  }
+  for (let j = 0; j < NV; j++) {
+    for (let i = 0; i < NU; i++) {
+      const a = j * (NU + 1) + i, b = a + 1, c = a + NU + 1, d = c + 1;
+      idx.push(a, c, b, b, c, d);
+    }
+  }
+  const scoopGeo = new THREE.BufferGeometry();
+  scoopGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  scoopGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  scoopGeo.setIndex(idx);
+  scoopGeo.computeVertexNormals();
+  // the sheet twice: the outside, and a slightly darker inside face
+  g.add(new THREE.Mesh(scoopGeo, red), new THREE.Mesh(scoopGeo, redIn));
+
+  // --- the rolled rim: a tube round the edge -------------------------
+  const rimPts = [];
+  for (let j = 0; j <= NV; j++) rimPts.push(sheet(-1, j / NV));
+  for (let i = 1; i < NU; i++) rimPts.push(sheet((i / NU) * 2 - 1, 1));
+  for (let j = NV; j >= 0; j--) rimPts.push(sheet(1, j / NV));
+  const rim = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rimPts), 96, 0.0045, 7, false), red);
+  g.add(rim);
+
+  // --- the rib down the back, and the socket the shaft sits in -------
+  const rib = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), red);
+  rib.scale.set(0.015, 0.085, 0.011); rib.position.set(0, -0.045, 0.010);
+  g.add(rib);
+  const socket = new THREE.Mesh(new THREE.LatheGeometry([
+    new THREE.Vector2(0.026, -0.01), new THREE.Vector2(0.026, 0.0), new THREE.Vector2(0.022, 0.03),
+    new THREE.Vector2(0.016, 0.06), new THREE.Vector2(0.0135, 0.09),
+  ], 18), red);
+  socket.position.set(0, 0.0, -0.006);
+  g.add(socket);
+
+  // --- the shaft: round, a hair thicker at the bottom ----------------
+  const shaft = new THREE.Mesh(new THREE.LatheGeometry([
+    new THREE.Vector2(0.0135, 0.08), new THREE.Vector2(0.0125, 0.30), new THREE.Vector2(0.0115, 0.585),
+    new THREE.Vector2(0.0, 0.585),
+  ], 18), red);
+  shaft.position.z = -0.006;
+  g.add(shaft);
+
+  // --- the handle: a triangular loop, scalloped along the grip -------
+  const loopPts = [
+    new THREE.Vector3(0, 0.575, 0), new THREE.Vector3(-0.026, 0.612, 0), new THREE.Vector3(-0.048, 0.648, 0),
+    new THREE.Vector3(-0.044, 0.672, 0), new THREE.Vector3(-0.022, 0.683, 0), new THREE.Vector3(0, 0.686, 0),
+    new THREE.Vector3(0.022, 0.683, 0), new THREE.Vector3(0.044, 0.672, 0), new THREE.Vector3(0.048, 0.648, 0),
+    new THREE.Vector3(0.026, 0.612, 0),
+  ];
+  const loop = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(loopPts, true, 'catmullrom', 0.6), 80, 0.0085, 9, true), red);
+  loop.position.z = -0.006;
+  g.add(loop);
+  // finger scallops: the grip swells between each groove
+  for (let i = 0; i < 4; i++) {
+    const x = -0.030 + i * 0.020;
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.0105, 10, 8), red);
+    knob.position.set(x, 0.681 - Math.abs(x) * 0.18, -0.006);
+    knob.scale.set(1, 0.9, 1);
+    g.add(knob);
+  }
+  // the web where the arms meet the shaft
+  const web = new THREE.Mesh(new THREE.SphereGeometry(0.016, 12, 8), red);
+  web.position.set(0, 0.585, -0.006); web.scale.set(1.1, 0.8, 0.8);
+  g.add(web);
+
+  g.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
   return g;
 }
 function makeShovelIcon() {

@@ -663,6 +663,28 @@ there for a puzzle.
 collision**). Grab springs the held prop in front of the camera; click again
 throws; `G` drops.
 
+**The shovel is built to a photograph of a plastic beach shovel.**
+`makeShovel()` is a triangular loop handle with finger scallops along the
+grip, a round shaft swelling into a socket, and a scoop that is a real
+TROUGH — a parametric sheet (`sheet(u, v)`: rims curling toward the open
+-Z face, a back wall at the neck, a shallow bow along the length) drawn
+twice, outside and a darker inside, with a `TubeGeometry` rolled round its
+edge for the rim and a rib down the back. The old one was five boxes and a
+torus, and five boxes read as five boxes from any distance. Smooth-shaded,
+like the other hero props. It keeps the old footprint exactly — shaft
+0 → 0.6, grip at 0.66, blade 0.02 → -0.21, ±0.1 wide, scoop facing -Z —
+so the view-model pose, the trail markers at the lip and the world
+placement all hold. If you change the blade's extent, move `trailTip` /
+`trailRoot` with it.
+
+**The cover is the beach reduced to a line.** Black, a hairline of
+surf-light at 64 % with a glow, a dim moon over it, film grain (an inline
+SVG `feTurbulence` tile stepped about at 0.07 opacity), a vignette, the
+name in the serif with a flicker you are not sure you saw, and the
+controls in the dialogue's monospace along the bottom. The old card was a
+blue gradient with a glow on the title, a menu from a different game.
+`#overlay` is still the click target; everything in it is decoration.
+
 **First-person hand.** Rendered in a **separate overlay scene**
 (`vmScene` / `vmCamera`, `renderer.autoClear=false; clearDepth()`).
 `armRig` = a bare skin-toned hand/forearm; `toolMount` at the fist centre
