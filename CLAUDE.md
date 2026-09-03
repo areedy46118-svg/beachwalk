@@ -129,9 +129,36 @@ through the boards to the beach; and a circle round the five-metre boat left
 a metre of open air off each side that you stood on, which is why you
 floated beside it. A hull is a BOX.
 
-**Dock colliders come out of the model** (`columnsOf()` in its loader):
-vertices bucketed on a coarse world grid, one cylinder per bucket, because
-all twelve piles are a single mesh whose bounding box is the whole pier.
+**Dock colliders come out of the model, in three shapes** (in its loader).
+`columnsOf()` buckets vertices on a coarse grid and emits a cylinder per
+bucket — the piles are a single mesh whose bounding box is the whole pier.
+`slicesOf()` cuts the boat along its length and takes the beam of each
+slice, because its bounding box is a rectangle with a metre of open air at
+each corner where the hull tapers, and that is the invisible ledge you could
+stand on off its side. `boxOf()` does the table, chair, ladder and crate,
+which really are boxes. A per-vertex occupancy grid was tried for the boat
+and was worse: vertices are sparse inside big flat faces, so its own floor
+came out full of holes.
+
+**The dock clamp must not get the last word on your position.**
+`updateDock()` clamps you to the deck footprint, and running that after the
+solid push-out put you straight back inside a pile — which is how you ended
+up standing in one. The push-out runs again after it.
+
+**`headroomClear()` gates standing up**, and it uses a NARROWER body than
+the push-out: at the full radius, standing beside one of the pier's bollards
+counted as a ceiling and locked you in a crouch on open deck. Jumping stands
+you up first when there is room.
+
+**The examine screen dies if the pack re-locks the pointer.** `closePack()`
+re-requests pointer lock asynchronously and it lands a frame later, on top
+of the overlay, eating every click, drag and scroll — turning, zooming and
+clicking out were all dead. Clear `packReturnLock` FIRST. Same trap the
+combine recipes hit.
+
+**The blade's DIRECTION is locked at commit, its ORIGIN is not.** Both used
+to be, and at a run you had moved two metres past the point by the time the
+blade fell, so the crater opened at your heels.
 
 **Crouch is a toggle (Ctrl), and it is what gets you under the pier.**
 `playerEye()` / `playerHeight()` replace the EYE_HEIGHT constant everywhere

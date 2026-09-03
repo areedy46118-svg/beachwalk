@@ -28,6 +28,7 @@ Then open <http://localhost:4173> and click to begin. Any static server works
 | `G` | Drop the held object gently |
 | `1`–`6` / click a slot | Hold an inventory item — everything can be carried |
 | `Tab` → `Inspect` | Examine an item. The pack is the only way in |
+| Hold left-click | Wind up a heavy swing; release to land it |
 | Hold right-click (examine view) | Turn the item over |
 | Left-click / scroll (examine view) | Put it away / zoom in |
 | `Q` | Holster the equipped tool · close the examine view |

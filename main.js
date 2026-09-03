@@ -3101,7 +3101,9 @@ window.addEventListener('keydown', (e) => {
     else if (menuOpen) closeMenu();
     else if (fallbackLook) openMenu();
   } else if (e.code === 'ControlLeft' || e.code === 'ControlRight') {
-    if (!frozen()) crouching = !crouching;
+    // standing up is refused while there is something over your head — you
+    // used to stand under the pier and get teleported out from under it
+    if (!frozen() && (!crouching || headroomClear())) crouching = !crouching;
   } else if (e.code === 'KeyE' || e.code === 'KeyF' || e.code === 'Enter' || e.code === 'NumpadEnter') {
     // Enter is an alias for E throughout: people reach for it on a prompt
     if (inspecting) { if (inspectEquip) inspectEquip(); return; }
@@ -3117,12 +3119,19 @@ let downPos = null;
 renderer.domElement.addEventListener('pointerdown', (e) => {
   downPos = [e.clientX, e.clientY];
   if (fallbackLook) dragging = true;
-  // right button hauls the shovel back; it swings when you let go
-  if (e.button === 2 && started && !frozen()) startWind();
+  /* The LEFT button does both: a click is a light swing, and holding it
+   * hauls the shovel back for a heavy. Right is deliberately left free.
+   * The wind-up only starts once you have held past WIND_TAP, so a quick
+   * click never flickers into the haul pose on its way out. */
+  if (e.button === 0 && started && !frozen() && equipped && equipped.onDig && digT <= 0) {
+    windLatch = setTimeout(() => { windLatch = null; startWind(); }, WIND_TAP * 1000);
+  }
 });
 window.addEventListener('pointerup', (e) => {
   dragging = false;
-  if (e.button === 2) releaseWind();
+  if (e.button !== 0) return;
+  if (windLatch) { clearTimeout(windLatch); windLatch = null; return; }  // a tap: the click handler swings
+  if (winding) { releaseWind(); swungFromHold = true; }
 });
 // losing the window mid-wind shouldn't leave the shovel stuck over your head
 window.addEventListener('blur', () => { if (winding) releaseWind(); });
@@ -3132,6 +3141,7 @@ renderer.domElement.addEventListener('click', (e) => {
   if (d >= 6) return;
   // if we lost the lock (browser cooldown, stray Esc), a click takes it back
   if (started && !locked && !fallbackLook && !frozen()) { lockRetry = 0; requestLock(); return; }
+  if (swungFromHold) { swungFromHold = false; return; }   // the release already swung
   attackAction();
 });
 
@@ -3903,6 +3913,12 @@ function renderPack() {
         const model = item.inspectModel;
         if (!model) return;
         const opts = item.inspectOpts ? item.inspectOpts() : {};
+        /* Clear the return-lock FIRST. closePack() re-requests pointer lock
+         * asynchronously, and that lock lands a frame or two later — on top
+         * of the examine screen, where it eats every click, drag and scroll.
+         * Turning, zooming and clicking out were all dead for exactly this
+         * reason. Same trap the combine recipes hit. */
+        packReturnLock = false;
         closePack();
         openInspect(model, { ...opts, name: item.name });
       });
@@ -4309,6 +4325,9 @@ function holdable(item, model, { scale = 1, pos = [0, -0.02, 0], rot = [0, 0, 0]
 }
 const shovelItem = {
   name: 'Sand shovel', icon: makeShovelIcon(), onDig: true, viewmodel: shovelVM,
+  // its own instance, because inspectSetModel() re-parents and rescales what
+  // it is handed — pass the view model and the tool leaves your hand
+  inspectModel: makeShovel(),
   use: () => toggleEquip(shovelItem),
 };
 addInteractable(shovelWorld, "Take the sand shovel", 'inventory', {
@@ -4338,6 +4357,8 @@ addInteractable(shovelWorld, "Take the sand shovel", 'inventory', {
  * last rendered frame so there is nothing to snap between. Release to blade
  * moving is one frame. */
 const WIND_FULL = 1.0;                  // seconds of holding to reach full power
+const WIND_TAP = 0.16;                  // held longer than this and you meant a heavy
+let windLatch = null, swungFromHold = false;
 let winding = false, windT = 0, digPower = 0, digCharged = false, windFull = false;
 
 /* Poses are [pitch, lift, yaw, roll, push] and the swing is lerps between
@@ -4378,14 +4399,20 @@ function impactPose(out, P) {
  * camera at impact meant a swing landed wherever you had drifted to looking
  * by then, which is the whole "it doesn't hit what I aimed at" feel. */
 const _aimO = new THREE.Vector3(), _aimD = new THREE.Vector3();
+/* Where the blade lands. The DIRECTION is locked at the moment you commit —
+ * the blade arrives 130–370 ms after the click and by then you have looked
+ * somewhere else — but the ORIGIN is wherever you are standing now. It used
+ * to lock both, so at a run you had moved a couple of metres past the point
+ * by the time the blade fell and the crater opened up at your heels. */
 function aimRay(P) {
+  camera.getWorldPosition(_aimO);
   digRay.set(_aimO, _aimD);
   digRay.far = DIG_REACH + P * DIG_HEAVY_REACH;
   return digRay;
 }
 function startDig(power = 0, fromPose = null) {
   if (digT > 0 || !equipped || !equipped.onDig || frozen()) return;
-  camera.getWorldPosition(_aimO); camera.getWorldDirection(_aimD);
+  camera.getWorldDirection(_aimD);            // the angle; aimRay() takes the position
   digPower = THREE.MathUtils.clamp(power, 0, 1);
   digImpacted = false;
   digCharged = !!fromPose;
@@ -5207,6 +5234,7 @@ function updateHeldGlow(dt) {
 
 const glowstickItem = {
   name: 'Glowstick', icon: makeGlowstickIcon(), viewmodel: glowstickVM,
+  inspectModel: makeGlowstick(),
   use: () => toggleEquip(glowstickItem),
 };
 
@@ -5348,6 +5376,8 @@ new GLTFLoader().load('assets/shell.glb', (gltf) => {
         const item = {
           id: 'shell', name: 'Sea shell', icon: SHELL_ICON,
           viewmodel: vm,
+          inspectModel: new THREE.Mesh(geo, mat),
+          inspectOpts: () => ({ rotX: 0.3, rotY: 0.7 }),
           onListen: true,                       // click while holding it
           use: () => toggleEquip(item),
         };
@@ -8408,18 +8438,23 @@ new GLTFLoader().load('assets/dock.glb', (gltf) => {
   farProps.push({ obj: l1, z: DOCK_Z, d: 300 });
   farProps.push({ obj: l2, z: DOCK_Z, d: 300 });
   /* Everything on the pier you can walk into, taken from the model itself
-   * rather than guessed. The piles were the worst of it — you walked through
-   * every one — and a hand-placed list would drift the moment the model did.
+   * rather than guessed — and each shaped like the thing you can SEE. Three
+   * shapes, because one does not fit all of them:
    *
-   * `columnsOf` finds the uprights in a mesh: it buckets the vertices onto a
-   * coarse world grid in x/z, and emits one cylinder per bucket. The piles
-   * are a SINGLE mesh holding all of them, so its bounding box is the whole
-   * pier and no one box would do.
-   *
-   * The boat is a BOX, not a circle. It was two r = 1.35 cylinders, and a
-   * circle round a five-metre hull leaves a metre of open air off each side
-   * that you stand on — which is the "you just float on top of it". A box on
-   * its real footprint lets you step on at the gunwale and off again. */
+   * `columnsOf`  the piles and the light post. All the piles are a SINGLE
+   *              mesh whose bounding box is the whole pier, so they are
+   *              found by bucketing vertices on a coarse grid: one cylinder
+   *              per bucket.
+   * `slicesOf`   the boat. Its bounding box is a rectangle with a metre of
+   *              open air at each corner where the hull tapers — the
+   *              invisible ledge you could stand on off its side. Slicing
+   *              along its length and taking the beam of each slice follows
+   *              the hull in and out. A per-vertex occupancy grid was tried
+   *              first and was worse: vertices are sparse in the middle of
+   *              big flat faces, so the boat's own floor came out full of
+   *              holes, and the deck sprouted invisible steps.
+   * `boxOf`      the table, chair, ladder, crate. These really are boxes.
+   */
   const columnsOf = (mesh, cell, mat) => {
     mesh.updateWorldMatrix(true, false);
     const pos = mesh.geometry.attributes.position, v = new THREE.Vector3();
@@ -8439,25 +8474,46 @@ new GLTFLoader().load('assets/dock.glb', (gltf) => {
       rockColliders.push({ x: (c.x0 + c.x1) / 2, z: (c.z0 + c.z1) / 2, r: Math.min(r, 0.45), top: c.top, mat });
     }
   };
-  let pillars = null, lightPost = null, boat = null;
+  const slicesOf = (mesh, n, mat) => {
+    mesh.updateWorldMatrix(true, false);
+    const pos = mesh.geometry.attributes.position, v = new THREE.Vector3();
+    const pts = [];
+    for (let i = 0; i < pos.count; i++) pts.push(v.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld).clone());
+    const bb = new THREE.Box3().setFromPoints(pts);
+    const size = bb.getSize(new THREE.Vector3());
+    const long = size.x >= size.z ? 'x' : 'z', cross = long === 'x' ? 'z' : 'x';
+    const lo = bb.min[long], span = size[long];
+    const slice = [];
+    for (const p of pts) {
+      const k = Math.min(n - 1, Math.max(0, Math.floor(((p[long] - lo) / span) * n)));
+      let sl = slice[k];
+      if (!sl) slice[k] = sl = { c0: p[cross], c1: p[cross], top: p.y };
+      sl.c0 = Math.min(sl.c0, p[cross]); sl.c1 = Math.max(sl.c1, p[cross]);
+      sl.top = Math.max(sl.top, p.y);
+    }
+    for (let k = 0; k < n; k++) {
+      const sl = slice[k];
+      if (!sl || sl.c1 - sl.c0 < 0.12) continue;
+      const a0 = lo + (k / n) * span, a1 = lo + ((k + 1) / n) * span;
+      rockColliders.push(long === 'x'
+        ? { x0: a0, x1: a1, z0: sl.c0, z1: sl.c1, top: sl.top, mat }
+        : { x0: sl.c0, x1: sl.c1, z0: a0, z1: a1, top: sl.top, mat });
+    }
+  };
+  const boxOf = (mesh, mat) => {
+    mesh.updateWorldMatrix(true, false);
+    const bb = new THREE.Box3().setFromObject(mesh);
+    if (bb.max.y - bb.min.y < 0.2) return;
+    rockColliders.push({ x0: bb.min.x, x1: bb.max.x, z0: bb.min.z, z1: bb.max.z, top: bb.max.y, mat });
+  };
   dock.traverse((o) => {
-    if (!o.isMesh) return;
+    if (!o.isMesh || !o.visible) return;
     const n = o.material.name;
-    if (n === 'WoodenPillars') pillars = o;
-    else if (n === 'LightPost') lightPost = o;
-    else if (n === 'Boat') boat = o;
+    if (n === 'WoodenPillars') columnsOf(o, 1.2, 'wood');
+    else if (n === 'LightPost') columnsOf(o, 2.0, 'wood');
+    else if (n === 'Boat') slicesOf(o, 9, 'wood');
+    else if (n === 'Table' || n === 'Chair' || n === 'Ladder' || n === 'BoxCrate') boxOf(o, 'wood');
   });
-  if (pillars) columnsOf(pillars, 1.2, 'wood');
-  if (lightPost) columnsOf(lightPost, 2.0, 'wood');
-  if (boat) {
-    boat.updateWorldMatrix(true, false);
-    const bb = new THREE.Box3().setFromObject(boat);
-    rockColliders.push({
-      x0: bb.min.x + 0.15, x1: bb.max.x - 0.15,
-      z0: bb.min.z + 0.15, z1: bb.max.z - 0.15,
-      top: bb.max.y - 0.06, mat: 'wood',
-    });
-  }
 });
 /* Standing on it. The drift is terrain and always applies; the boards only
  * when your feet are already within a step of them, so walking under the
@@ -8734,6 +8790,23 @@ function updateTower(dt) {
     groundY = headlandAt(camera.position.x, camera.position.z);
   }
 }
+/* Is there room to stand up where you are? The pier's deck is the only
+ * ceiling in the game, so that is what this asks about — plus anything
+ * solid whose top is over your head. Standing up under the boards used to
+ * put your head through them and hand you back out on top. */
+function headroomClear() {
+  const feet = camBaseY - playerEye();
+  const stand = feet + EYE_HEIGHT + 0.18;
+  if (!onDock && onPier(camera.position.x, camera.position.z) && stand > DOCK_DECK && feet < DOCK_DECK) return false;
+  /* A narrower body than the push-out uses. At the full radius, standing
+   * beside one of the pier's bollards counted as something over your head
+   * and locked you in a crouch on open deck. */
+  for (const c of rockColliders) {
+    if (c.top <= feet + 0.25 || c.top >= stand) continue;
+    if (solidDepth(c, camera.position.x, camera.position.z, PLAYER_R * 0.3) > 0) return false;
+  }
+  return true;
+}
 const snap = (v, s) => Math.round(v / s) * s;
 
 function update(dt, rawDt = dt) {
@@ -8794,13 +8867,25 @@ function update(dt, rawDt = dt) {
   updateDrain(dt);          // last, so it wins on groundY inside the home
   updateShip(dt);           // and the wreck overrides the sand where you're on it
   updateDock(dt);           // the pier's drift, boards and shed walls
+  /* ...and then out of anything solid again. updateDock() clamps you to the
+   * deck's footprint, and that clamp used to run AFTER the push-out and put
+   * you straight back inside a pile — which is how you ended up standing in
+   * one. Whatever moves you last, this gets the final word. */
+  if (!insideTower && !insideDrain) {
+    const feet2 = camBaseY - playerEye();
+    pushOutOfSolids(camera.position, feet2, PLAYER_R * 0.85, feet2 + playerHeight());
+    const rc2 = rockGroundAt(camera.position.x, camera.position.z, feet2);
+    if (rc2 && rc2.top > groundY) groundY = rc2.top;
+  }
 
   // coyote time and a buffered press, so a jump you meant to make happens
   coyote = onGround ? COYOTE_TIME : Math.max(0, coyote - dt);
   if (canMove && keys['Space'] && !jumpLatch) { jumpBuf = JUMP_BUFFER; jumpLatch = true; }
   if (!keys['Space']) jumpLatch = false;
   jumpBuf = Math.max(0, jumpBuf - dt);
-  if (jumpBuf > 0 && coyote > 0 && canMove) {
+  // jumping out of a crouch stands you up first, if there is room to
+  if (jumpBuf > 0 && coyote > 0 && canMove && crouching && headroomClear()) crouching = false;
+  if (jumpBuf > 0 && coyote > 0 && canMove && !crouching) {
     vy = JUMP_V; onGround = false; coyote = 0; jumpBuf = 0;
     vmImpulse(1.5);                     // the tool hangs back as you leave the ground
   }
@@ -9010,7 +9095,8 @@ window.__bw = {
   lhDoor, shinies, onPath, pathBend, pathHalfAt, lhWindows, lanternGlass,
   get doorOpen() { return doorOpen; }, set doorOpen(v) { doorOpen = v; doorSwing = v ? 1 : 0; lhDoor.rotation.y = -doorSwing * 1.95; },
   get insideTower() { return insideTower; },
-  rockColliders, rockGroundAt, pushOutOfRocks, rockGroup,
+  rockColliders, rockGroundAt, pushOutOfRocks, rockGroup, headroomClear, solidDepth,
+  get crouching() { return crouching; }, set crouching(v) { crouching = v; },
   startPeek, endPeek, respawn, get peeking() { return peeking; }, get gateEyes() { return gateEyes; },
   get ringProp() { return ringProp; },
   armRig, shovelItem, startWind, releaseWind,
