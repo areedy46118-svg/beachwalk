@@ -24,7 +24,7 @@ Then open <http://localhost:4173> and click to begin. Any static server works
 | Mouse | Look (pointer lock; drag-to-look fallback if it's blocked) |
 | Click / `E` / `F` | Grab a physics object · take an item · dig (with the shovel) |
 | Click (while carrying) | Throw the held object — it's a toggle, no hold |
-| Hold right-click | Guard with the shovel, held across you. Raise it INTO a blow to parry and stun |
+| Hold right-click | Guard with the shovel, held across you. Raise it INTO a blow to parry and stun. No swing comes out of a guard |
 | `Ctrl` | Crouch (toggle) — crawl under the pier |
 | `G` | Drop the held object gently |
 | `1`–`6` / click a slot | Hold an inventory item — everything can be carried |

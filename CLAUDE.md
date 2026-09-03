@@ -908,6 +908,13 @@ any press on the world takes it back (on `pointerdown`, since the click may
 never arrive); focus / visibilitychange ask again; and a drag fallback that
 latched after a real lock once worked is undone by the next press.
 
+**Right click is the guard and NOTHING else.** A left button held under
+`WIND_TAP` when the right came down left its wind-up latch pending; it fired
+`startWind()` under the guard, and letting go of the left button landed a
+heavy out of a block. The right-press clears the latch every time,
+`startWind()` refuses while `blocking`, and the click handler ignores any
+button but the left and any click made under a guard.
+
 **The sandcastle is a scan, and the break is a triangle-grid fracture.**
 `assets/sandcastle.glb` (assetfactory) is welded into ONE geometry in metres
 with its base on y = 0 at load, because `breakCastle()` cuts it up by
@@ -916,7 +923,14 @@ with its own body. Nothing is sliced; a chunk's ragged edge reads as a
 break at this triangle count. Cells are stacked, so the keep comes down as
 lumps and the base stays a low ring, and higher chunks are thrown further.
 The collider is pushed by the loader, not at module time: a `Box3` of an
-empty group is size zero.
+empty group is size zero. The break is a SLUMP, not a burst: chunks are
+sorted into layers by height and let go top-down, 70 ms apart, each barely
+lifting and coming to rest part-buried (rest height under its own
+half-height) — the first version threw everything up at once, which is an
+explosion, and sand does not explode. It stands at x = 10.4 on the dry
+beach with a `makeApron()` bank round its foot, tinted to `sandMat`'s own
+family; at x = 4.6 it was inside the swash and sat in the sea half the tide.
+The crab running into it and the shovel hitting it both break it.
 
 **The crab's swing is an ARC now.** It used to rise and lunge straight down
 the line at you, which from the front is a shape barely changing size —

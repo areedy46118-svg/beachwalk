@@ -3154,7 +3154,13 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
     windLatch = setTimeout(() => { windLatch = null; startWind(); }, WIND_TAP * 1000);
   }
   if (e.button === 2 && started && !frozen() && equipped && equipped.onDig) {
-    if (winding) { clearTimeout(windLatch); windLatch = null; winding = false; windT = 0; }
+    /* Kill the wind-up EVERY time, latched or live. Only a live wind was
+     * cancelled before, so a left button held under WIND_TAP when the right
+     * came down left its latch pending — it fired startWind() under the
+     * guard, and letting go of the left button landed a heavy out of a
+     * block. Right click is the guard and nothing else. */
+    clearTimeout(windLatch); windLatch = null;
+    if (winding) { winding = false; windT = 0; windFull = false; }
     blocking = true;
     // a window only if the last one has had time to close
     blockStart = parryCool > 0 ? -1e9 : performance.now();
@@ -3181,6 +3187,7 @@ renderer.domElement.addEventListener('click', (e) => {
    * a light one. A timestamp rather than a flag: a flag survives a release
    * that produces no click at all and then eats the NEXT swing you ask for. */
   if (performance.now() - swungAt < 250) return;
+  if (e.button !== 0 || blocking) return;   // only the left button swings, and never from a guard
   attackAction();
 });
 
@@ -4328,7 +4335,13 @@ function updateTrail(dt, recording) {
 // Sand castle with the shovel stuck in it — the first item you find
 // ------------------------------------------------------------------
 const CASTLE_Z = -10;
-const CASTLE_H = 1.15;              // how tall it stands on the sand
+/* Up the DRY beach. It stood at x = 4.6, which is inside the swash: the
+ * waterline reaches 8.6, so for part of every tide the surf was drawn over
+ * the sand under it and it sat in the sea like a dropped toy — which is
+ * most of why it looked so out of place. Same number the mounds and the
+ * body bag use. */
+const CASTLE_X = 10.4;
+const CASTLE_H = 1.65;              // how tall it stands on the sand
 /* The castle is assetfactory's "Low poly sand castle" (assets/sandcastle.glb,
  * 13k triangles, its own baked colour map), lifted for the night the way the
  * rocks and the shell are. The two meshes are welded into ONE geometry in
@@ -4337,8 +4350,18 @@ const CASTLE_H = 1.15;              // how tall it stands on the sand
  * list of them in world scale. The built-up bucket towers this replaced
  * were the one thing on the beach that still read as programmer art. */
 const castle = new THREE.Group();
-castle.position.set(4.6, 0, CASTLE_Z);
+castle.position.set(CASTLE_X, -0.05, CASTLE_Z);     // its base a little INTO the sand
 scene.add(castle);
+/* And bedded in: a low apron of the beach's own sand banked round its foot,
+ * the way the rocks are. A thing set down ON a flat plane meets it along a
+ * hard line and reads as placed; a thing the sand has drifted up against
+ * reads as having been there. */
+{
+  const apron = new THREE.Mesh(makeApron(2.4), sandMat);
+  apron.scale.set(2.4, 0.13, 2.4);
+  apron.position.set(CASTLE_X, 0, CASTLE_Z);
+  scene.add(apron);
+}
 let castleGeo = null, castleMat = null;
 new GLTFLoader().load('assets/sandcastle.glb', (gltf) => {
   gltf.scene.updateMatrixWorld(true);
@@ -4374,8 +4397,11 @@ new GLTFLoader().load('assets/sandcastle.glb', (gltf) => {
   castleGeo = geo;
   // a daylight-baked sand colour, taken into the night like the rocks
   castleMat.flatShading = true;
-  castleMat.color.setHex(0x9aa4b8);
-  castleMat.emissive.setHex(0x3a4358);
+  // the beach's own tint, not a warmer or paler one: `sandMat` is
+  // 0x6d7d99 lit by 0x27324a, and anything on it that is not in that family
+  // is a different material however good its texture
+  castleMat.color.setHex(0x8290aa);
+  castleMat.emissive.setHex(0x323d56);
   castleMat.emissiveMap = castleMat.map;
   castleMat.roughness = 1; castleMat.metalness = 0;
   reexpose(castleMat, 0.6);
@@ -4402,9 +4428,8 @@ function breakCastle(fromX, fromZ) {
   if (ci >= 0) rockColliders.splice(ci, 1);
   const cx = castle.position.x, cz = castle.position.z;
   sfxCrateThud();
-  spawnPuffs(cx, cz, 34, 0, -1, 0.35, [0.55, 0.58, 0.64]);
-  spawnPuffs(cx, cz, 18, 0, -1, 0.85, [0.55, 0.58, 0.64]);
-  addTrauma(0.24);
+  spawnPuffs(cx, cz, 9, 0, -1, 0.25);
+  addTrauma(0.22);
   // away from whatever knocked it down
   let ax = cx - (fromX ?? cx - 1), az = cz - (fromZ ?? cz);
   const ad = Math.hypot(ax, az) || 1; ax /= ad; az /= ad;
@@ -4417,25 +4442,40 @@ function breakCastle(fromX, fromZ) {
    * a sandcastle actually goes: the tall parts first, then the rest slumps.
    * Higher chunks are thrown further; the base barely moves. */
   if (castleGeo) {
-    const CELL = 0.28;
+    /* THE FRACTURE, as a slump. The first version threw every chunk up and
+     * out at once, which is an explosion, and sand does not explode — it
+     * gives way from the top. So the pieces are cut by walking the
+     * triangles into 0.22 m cells, sorted into LAYERS by height, and let go
+     * a layer at a time from the top down, seventy milliseconds apart:
+     * the towers come off first, then the walls, then the base sags. Each
+     * piece barely lifts, tumbles slowly, and comes to rest part-buried in
+     * the beach (its rest height is under its own half-height), because a
+     * lump of sand that lands ON the sand and sits proud of it is a block. */
+    const CELL = 0.22;
     const pos = castleGeo.attributes.position, nor = castleGeo.attributes.normal, uv = castleGeo.attributes.uv;
     const cells = new Map();
     for (let t = 0; t < pos.count; t += 3) {
       const mx = (pos.getX(t) + pos.getX(t + 1) + pos.getX(t + 2)) / 3;
       const my = (pos.getY(t) + pos.getY(t + 1) + pos.getY(t + 2)) / 3;
       const mz = (pos.getZ(t) + pos.getZ(t + 1) + pos.getZ(t + 2)) / 3;
-      const key = Math.floor(mx / CELL) + ',' + Math.floor(my / CELL) + ',' + Math.floor(mz / CELL);
+      const iy = Math.floor(my / CELL);
+      const key = Math.floor(mx / CELL) + ',' + iy + ',' + Math.floor(mz / CELL);
       let c = cells.get(key);
-      if (!c) cells.set(key, c = { p: [], n: [], u: [], cx: 0, cy: 0, cz: 0, k: 0 });
+      if (!c) cells.set(key, c = { p: [], n: [], u: [], cx: 0, cy: 0, cz: 0, k: 0, iy, ylo: 1e9, yhi: -1e9 });
       for (let v = t; v < t + 3; v++) {
-        c.p.push(pos.getX(v), pos.getY(v), pos.getZ(v));
+        const vy = pos.getY(v);
+        c.p.push(pos.getX(v), vy, pos.getZ(v));
         c.n.push(nor.getX(v), nor.getY(v), nor.getZ(v));
         c.u.push(uv.getX(v), uv.getY(v));
+        if (vy < c.ylo) c.ylo = vy; if (vy > c.yhi) c.yhi = vy;
       }
       c.cx += mx; c.cy += my; c.cz += mz; c.k++;
     }
-    for (const c of cells.values()) {
+    const layers = [...cells.values()].sort((a, b) => b.iy - a.iy);
+    const topLayer = layers.length ? layers[0].iy : 0;
+    for (const c of layers) {
       const ccx = c.cx / c.k, ccy = c.cy / c.k, ccz = c.cz / c.k;
+      const halfH = Math.max(0.04, (c.yhi - c.ylo) / 2);
       const g = new THREE.BufferGeometry();
       const P = new Float32Array(c.p);
       for (let i = 0; i < P.length; i += 3) { P[i] -= ccx; P[i + 1] -= ccy; P[i + 2] -= ccz; }
@@ -4443,17 +4483,25 @@ function breakCastle(fromX, fromZ) {
       g.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(c.n), 3));
       g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(c.u), 2));
       const m = new THREE.Mesh(g, castleMat);
-      m.position.set(cx + ccx, ccy, cz + ccz);
-      scene.add(m);
+      m.position.set(cx + ccx, castle.position.y + ccy, cz + ccz);
       const h = ccy / CASTLE_H;                       // 0 at the base, 1 at the top
-      const out = 0.4 + h * 1.6 + Math.random() * 0.5;
-      const spread = (Math.random() - 0.5) * (0.8 + h);
-      gibs.push({
-        m,
-        vel: new THREE.Vector3(ax * out + spread + ccx * 1.2, 0.6 + h * 2.6 + Math.random() * 0.9, az * out + spread + ccz * 1.2),
-        spin: new THREE.Vector3((Math.random() - 0.5) * 6 * h, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 6 * h),
-        rest: Math.max(0.02, ccy * 0.12), life: 40, bleed: false,
-      });
+      const wait = (topLayer - c.iy) * 70;             // the top goes first
+      setTimeout(() => {
+        if (!m.parent) scene.add(m);
+        // radially out from the middle, more so at the top, and a little
+        // away from whatever hit it — sand slides, it is not thrown
+        const rr = Math.hypot(ccx, ccz) || 1;
+        const out = 0.25 + h * 0.9;
+        gibs.push({
+          m,
+          vel: new THREE.Vector3((ccx / rr) * out + ax * 0.5 * h + (Math.random() - 0.5) * 0.3,
+                                 0.15 + h * 1.1 + Math.random() * 0.35,
+                                 (ccz / rr) * out + az * 0.5 * h + (Math.random() - 0.5) * 0.3),
+          spin: new THREE.Vector3((Math.random() - 0.5) * 1.6, (Math.random() - 0.5) * 1.2, (Math.random() - 0.5) * 1.6),
+          rest: halfH * 0.45, life: 45, bleed: false,
+        });
+        if (Math.random() < 0.18) spawnPuffs(cx + ccx * 0.6, cz + ccz * 0.6, 2, ax, az, 0.1);
+      }, wait);
     }
   }
   scene.remove(castle);
@@ -4478,7 +4526,7 @@ function updateCastle() {
 }
 
 const shovelWorld = makeShovel();
-shovelWorld.position.set(4.72, 0.72, CASTLE_Z + 0.08);
+shovelWorld.position.set(CASTLE_X + 0.16, 0.98, CASTLE_Z + 0.12);   // stuck in the keep's flank
 shovelWorld.rotation.set(0.55, 0.4, -0.4);
 addItemShine(shovelWorld, { size: 0.7, height: 0.45, strength: 0.8 });
 {
@@ -4505,7 +4553,7 @@ let listenT = 0;
 // reference is a sword block in a first-person game: the weapon is a bar
 // across the top third of the frame, and there is no mistaking it for a
 // rest pose
-const BLOCK_AT = new THREE.Vector3(-0.10, 0.30, -0.50);
+const BLOCK_AT = new THREE.Vector3(-0.10, 0.02, -0.52);
 // the shaft comes up ACROSS the view, blade high on your leading side: at a
 // shallower roll it read as holding the tool out rather than guarding with it
 const BLOCK_POSE = [0.35, 0.0, 0.95, -1.62, 0.06];
@@ -4667,6 +4715,7 @@ function startDig(power = 0, fromPose = null) {
   sfxDig(digPower);
 }
 function startWind() {
+  if (blocking) return;                  // no swing comes out of a guard
   if (digT > 0 || winding || !equipped || !equipped.onDig || frozen()) return;
   winding = true; windT = 0; windFull = false;
 }
@@ -4698,6 +4747,7 @@ const _hitC = new THREE.Vector3();
 function digImpact() {
   _pf.copy(_aimD); _pf.y = 0; _pf.normalize();
   const P = digPower;
+  if (castleStrike(P)) return;            // the blade went through the castle
   if (crateStrike(P)) return;             // the blade is on the crate, not the sand
   if (glassStrike()) return;              // or on something that shatters
   // the crab: the AIM LINE has to pass close to the body. It used to be any
@@ -6223,6 +6273,13 @@ function updateCrab(dt) {
     if (!closing && crabState.cool <= 0) { crabState.atk = 0; sfxCrabTell(); }
   }
   crabState.lunge = atkLunge;
+  // it is sand, and the crab is a wall of shell coming through at a run
+  if (!castleBroken) {
+    const cc = rockColliders.find((k) => k.castle);
+    if (cc && Math.hypot(crab.position.x - cc.x, crab.position.z - cc.z) < cc.r + 0.35) {
+      breakCastle(crab.position.x, crab.position.z);
+    }
+  }
   if (closing) {
     _crabDir.set(dx / dist, 0, dz / dist);
     // it slows as it comes into range rather than sliding to a dead stop
@@ -6655,6 +6712,17 @@ function buildCrate(x, y, z, yaw, onBreak) {
 const crateEntry = buildCrate(CRATE_X, 0, crateZ, -0.32, () => dropRing());
 const crate = crateEntry.group;
 
+/* The castle under the blade. Any swing takes it — it is sand — and the
+ * swing still connects, because putting a shovel through a sandcastle is a
+ * thing you feel in the handle. */
+function castleStrike(P) {
+  if (castleBroken || !castleGeo) return false;
+  aimRay(P);
+  if (!digRay.intersectObject(castle, true).length) return false;
+  hitConnect(P, 0.55);
+  breakCastle(camera.position.x, camera.position.z);
+  return true;
+}
 /* Hitting it. Raycast the crosshair straight at the crate rather than reading
  * the sand under it — aim at the lid and the ground point lands a metre past
  * the far side, which is exactly the kind of near-miss that reads as the game
