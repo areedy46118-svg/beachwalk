@@ -140,6 +140,16 @@ which really are boxes. A per-vertex occupancy grid was tried for the boat
 and was worse: vertices are sparse inside big flat faces, so its own floor
 came out full of holes.
 
+**The pier is an L, and its footprint is SAMPLED, not assumed.** Asking
+whether you stood inside the deck's bounding rectangle put boards under you
+out over open water — including right over the moored boat, which is the
+invisible deck you walked along at plank height with wood knocking
+underfoot. `buildDeckGrid()` raycasts down onto the floor mesh over a 0.35 m
+grid ONCE at load; `deckHeightAt()` is a lookup after that, because a
+raycast per frame per prop would be far too much. `onDock` is no longer
+sticky either: you are on it while there are boards under your feet, so you
+step off wherever they stop.
+
 **The deck STOPS you; it never moves you.** Pushing out along the nearest
 legal face flung you the width of the pier — walk in from seaward and the
 sea end was the only face left, so you were shoved five metres sideways. It
@@ -153,6 +163,12 @@ up until you are out.
 `updateDock()` clamps you to the deck footprint, and running that after the
 solid push-out put you straight back inside a pile — which is how you ended
 up standing in one. The push-out runs again after it.
+
+**Photo cut-out NPCs share `bakeCutout()`** — low pixel count, posterised,
+graded cold, with blink as a fake eyelid (a band of forehead painted down
+over the eyes, both frames baked once). Bradly and the Very Old Fisherman
+use it. `startDialog(id, npc)` takes `{name, script, sprite}`; omitting it
+is still Bradly.
 
 **`headroomClear()` gates standing up, and it RAYCASTS.** It asked whether
 you were inside the pier's plan rectangle first, which is a much bigger

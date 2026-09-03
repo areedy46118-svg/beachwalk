@@ -6083,8 +6083,16 @@ const BRADLY_LEVELS = 6;            // posterisation steps per channel
 let bradlyOpenTex = null, bradlyShutTex = null, bradlySrcImg = null;
 let blinkT = 2 + Math.random() * 3, blinking = false;
 
-function bakeBradlyFrames(img) {
-  bradlySrcImg = img;
+/* The look every photo cut-out in this game gets: knocked down to a low
+ * pixel count, posterised to a handful of levels per channel, and graded
+ * cold so it sits in the night palette rather than looking like a photo
+ * pasted on the beach. Blink is a fake eyelid — a thin band of forehead from
+ * just above the eyes, painted down over them — because there is only ever
+ * one still image. Both frames are baked once and the texture swapped.
+ *
+ * Shared by Bradly and the fisherman: it was written for the one and the
+ * second would have been sixty lines of the same thing. */
+function bakeCutout(img, eyes, { pix = 260, levels = 6 } = {}) {
   const mk = (shut) => {
     // 1. full-res pass, with the eyelid painted in for the shut frame
     const full = document.createElement('canvas');
@@ -6092,14 +6100,14 @@ function bakeBradlyFrames(img) {
     const fg = full.getContext('2d');
     fg.drawImage(img, 0, 0);
     if (shut) {
-      const ex = BRADLY_EYES.x * img.width, ew = BRADLY_EYES.w * img.width;
-      const ey = BRADLY_EYES.y * img.height, eh = Math.max(2, BRADLY_EYES.h * img.height);
+      const ex = eyes.x * img.width, ew = eyes.w * img.width;
+      const ey = eyes.y * img.height, eh = Math.max(2, eyes.h * img.height);
       // stretch the strip above the eyes down across them
       fg.drawImage(full, ex, ey - eh * 1.25, ew, eh, ex, ey, ew, eh);
     }
 
     // 2. knock it down to sprite resolution
-    const hh = BRADLY_PIX;
+    const hh = pix;
     const ww = Math.max(1, Math.round(img.width * (hh / img.height)));
     const c = document.createElement('canvas');
     c.width = ww; c.height = hh;
@@ -6110,7 +6118,7 @@ function bakeBradlyFrames(img) {
     // 3. hard alpha, posterise, grade
     const id = g.getImageData(0, 0, ww, hh);
     const px = id.data;
-    const step = 255 / (BRADLY_LEVELS - 1);
+    const step = 255 / (levels - 1);
     for (let i = 0; i < px.length; i += 4) {
       // the segmentation leaves a soft, bright fringe — cut it away cleanly
       if (px[i + 3] < 150) { px[i + 3] = 0; continue; }
@@ -6139,8 +6147,12 @@ function bakeBradlyFrames(img) {
     t.colorSpace = THREE.SRGBColorSpace;
     return retroTex(t, { repeatWrap: false });     // nearest filtering, stays chunky
   };
-  bradlyOpenTex = mk(false);
-  bradlyShutTex = mk(true);
+  return { open: mk(false), shut: mk(true) };
+}
+function bakeBradlyFrames(img) {
+  bradlySrcImg = img;
+  const f = bakeCutout(img, BRADLY_EYES, { pix: BRADLY_PIX, levels: BRADLY_LEVELS });
+  bradlyOpenTex = f.open; bradlyShutTex = f.shut;
   bradlyMat.map = bradlyOpenTex;
   bradlyMat.needsUpdate = true;
 }
@@ -6611,8 +6623,9 @@ function typeLine(text, onDone) {
     }
   }, 28);
 }
+let dialogScript = BRADLY_SCRIPT;
 function showDialogNode(id) {
-  const node = BRADLY_SCRIPT[id];
+  const node = dialogScript[id];
   if (!node) { endDialog(); return; }
   clearTimeout(dialogEndTimer);
   dialogChoicesEl.innerHTML = '';
@@ -6637,12 +6650,17 @@ function showDialogNode(id) {
     }
   });
 }
-function startDialog(id) {
+/* Anyone can talk now, not just Bradly. `npc` carries the name shown on the
+ * card, the script to walk and the sprite the camera pushes in on; leaving
+ * it out is still Bradly, because everything that called this already
+ * assumed him. */
+function startDialog(id, npc = null) {
   if (dialogOpen || ended || !introDone) return;
   dialogOpen = true;
   bradlyMet = true;
-  dialogTarget = bradlySprite.getWorldPosition(new THREE.Vector3());
-  dialogSpeakerEl.textContent = 'Bradly Beach';
+  dialogScript = npc ? npc.script : BRADLY_SCRIPT;
+  dialogTarget = (npc ? npc.sprite : bradlySprite).getWorldPosition(new THREE.Vector3());
+  dialogSpeakerEl.textContent = npc ? npc.name : 'Bradly Beach';
   dialogEl.classList.add('show');
   setPrompt('');
   crosshair.className = '';
@@ -8383,13 +8401,53 @@ scene.add(dock);
 function dockLocal(wx, wz) {
   return { lx: (wz - DOCK_Z) / DOCK_S, lz: -(wx - DOCK_X) / DOCK_S };
 }
-function onPier(wx, wz) {
-  const { lx, lz } = dockLocal(wx, wz);
-  return lx > DK.X0 && lx < DK.X1 && lz > DK.Z0 && lz < DK.Z1;
+/* WHERE THE BOARDS ACTUALLY ARE. This asked whether you stood inside the
+ * deck's bounding rectangle, and the pier is not a rectangle — it is an L,
+ * narrow along the jetty and wide at the shed. So there was deck underfoot
+ * out over open water where you could see there was none: you walked off the
+ * end at plank height with the boards knocking under you.
+ *
+ * The footprint is sampled off the floor mesh ONCE at load, by raycasting
+ * down onto it over a grid, and every later question is a lookup. A raycast
+ * per frame per prop would be far too much; a 0.35 m grid is 40 x 30 rays
+ * paid once. Until the model lands the old rectangle stands in, because
+ * `updateDock()` runs from the first frame. */
+const DECK_CELL = 0.35;
+let deckGrid = null, deckGX0 = 0, deckGZ0 = 0, deckGW = 0, deckGH = 0;
+function buildDeckGrid(floorMeshes) {
+  const bb = new THREE.Box3();
+  for (const m of floorMeshes) bb.expandByObject(m);
+  if (!isFinite(bb.min.x)) return;
+  deckGX0 = bb.min.x - DECK_CELL; deckGZ0 = bb.min.z - DECK_CELL;
+  deckGW = Math.ceil((bb.max.x - deckGX0) / DECK_CELL) + 2;
+  deckGH = Math.ceil((bb.max.z - deckGZ0) / DECK_CELL) + 2;
+  const grid = new Float32Array(deckGW * deckGH);
+  const ray = new THREE.Raycaster();
+  ray.far = (bb.max.y - bb.min.y) + 2;
+  const down = new THREE.Vector3(0, -1, 0), from = new THREE.Vector3();
+  for (let ix = 0; ix < deckGW; ix++) {
+    for (let iz = 0; iz < deckGH; iz++) {
+      from.set(deckGX0 + (ix + 0.5) * DECK_CELL, bb.max.y + 1, deckGZ0 + (iz + 0.5) * DECK_CELL);
+      ray.set(from, down);
+      const h = ray.intersectObjects(floorMeshes, true)[0];
+      if (h) grid[iz * deckGW + ix] = h.point.y;
+    }
+  }
+  deckGrid = grid;
 }
-function dockDeckAt(wx, wz) {
-  return onPier(wx, wz) ? DOCK_DECK : null;
+function deckHeightAt(wx, wz) {
+  if (!deckGrid) {                       // before the model lands
+    const { lx, lz } = dockLocal(wx, wz);
+    return (lx > DK.X0 && lx < DK.X1 && lz > DK.Z0 && lz < DK.Z1) ? DOCK_DECK : null;
+  }
+  const ix = Math.floor((wx - deckGX0) / DECK_CELL);
+  const iz = Math.floor((wz - deckGZ0) / DECK_CELL);
+  if (ix < 0 || iz < 0 || ix >= deckGW || iz >= deckGH) return null;
+  const y = deckGrid[iz * deckGW + ix];
+  return y > 0 ? y : null;
 }
+function onPier(wx, wz) { return deckHeightAt(wx, wz) !== null; }
+function dockDeckAt(wx, wz) { return deckHeightAt(wx, wz); }
 /* Getting up onto it. The drift alone was a dune you scrambled: it stood
  * higher than the deck, so you walked up loose sand and were snapped onto
  * the boards somewhere near the top. It is lower now — a bank the pier sits
@@ -8478,7 +8536,13 @@ new GLTFLoader().load('assets/dock.glb', (gltf) => {
   dock.updateMatrixWorld(true);
   {
     let deckMat = null;
-    dock.traverse((o) => { if (o.isMesh && o.material.name === 'floor') deckMat = o.material; });
+    const floors = [];
+    dock.traverse((o) => {
+      if (!o.isMesh) return;
+      if (o.material.name === 'floor') { deckMat = o.material; floors.push(o); }
+      else if (o.material.name === 'FloorFrames') floors.push(o);
+    });
+    if (floors.length) buildDeckGrid(floors);
     buildDockSteps(deckMat || new THREE.MeshStandardMaterial({ color: 0x6b5942, roughness: 1, flatShading: true, emissive: 0x231c14 }));
   }
   {
@@ -8611,15 +8675,20 @@ function updateDock(dt) {
   if (g > groundY) groundY = g;
   let lx = dz / DOCK_S, lz = -dx / DOCK_S;
   const pr = PLAYER_R / DOCK_S;
-  const inFoot = lx > DK.X0 - pr && lx < DK.X1 + pr && lz > DK.Z0 - pr && lz < DK.Z1 + pr;
+  const boards = deckHeightAt(camera.position.x, camera.position.z);
+  const inFoot = boards !== null;
   const wasOn = onDock;
   onDock = false;
   if (inFoot) {
-    // the way on: the buried land end, at the height of the boards
-    const entering = !wasOn && feet >= DOCK_DECK - 0.42 && lz < DK.Z0 + 1.2;
-    if (wasOn || entering) {
+    /* On it while there are boards under your feet — and NOT sticky any
+     * more. It used to keep you at plank height until you left by the land
+     * end, so walking off the side or the sea end carried you out over
+     * nothing at deck height with the boards still knocking underfoot.
+     * Step off wherever the boards stop, onto the boat or onto the sand. */
+    const entering = feet >= boards - 0.42;
+    if (entering) {
       onDock = true;
-      if (DOCK_DECK > groundY) groundY = DOCK_DECK;
+      if (boards > groundY) groundY = boards;
       /* Which edges hold you: the sea end always, and the two sides only
        * where the water is under them — past WADE_X, the last stretch of
        * the pier. Over the beach the sides are open, so you can step off
@@ -8636,7 +8705,7 @@ function updateDock(dt) {
         for (let i = 1; i < 4; i++) if (Math.abs(push[i]) < Math.abs(push[k])) k = i;
         if (k < 2) lx += push[k]; else lz += push[k];
       }
-    } else if (feet + playerHeight() > DOCK_DECK) {
+    } else if (feet + playerHeight() > boards) {
       /* Not on it, and too tall to pass beneath, so the deck stops you —
        * it STOPS you, it does not move you. This used to push out along the
        * nearest face, and walking into the pier from seaward left the sea
@@ -8667,6 +8736,100 @@ function updateDock(dt) {
   camera.position.x = DOCK_X - lz * DOCK_S;
   camera.position.z = DOCK_Z + lx * DOCK_S;
 }
+
+// ------------------------------------------------------------------
+// The Very Old Fisherman — sitting on a blue tub in the dock house, by
+// the table. The only other person on the walk, and the first thing he
+// says is that you should not be in here.
+// ------------------------------------------------------------------
+const FISH_H = 1.18;                      // seated, so a good deal under Bradly
+const FISH_X = 9.9, FISH_Z = -217.75;     // beside the table, on the shed floor
+const FISH_TUB_H = 0.46;
+const FISHERMAN_SCRIPT = {
+  start: {
+    text: 'I should kill you for snooping around my property like that.',
+    choices: [],
+  },
+};
+const fisherman = new THREE.Group();
+fisherman.position.set(FISH_X, DOCK_DECK, FISH_Z);
+scene.add(fisherman);
+{
+  /* What he sits on: the blue plastic fish tub from the photograph, upended.
+   * Tapered, ribbed round the foot, and drilled with the little holes those
+   * things always have. It is his seat, so it is solid. */
+  const blue = new THREE.MeshStandardMaterial({
+    color: 0x2f5f9c, roughness: 0.62, metalness: 0.05, flatShading: true, emissive: 0x0d2038,
+  });
+  const tub = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.38, FISH_TUB_H, 14), blue);
+  tub.position.y = FISH_TUB_H / 2;
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.30, 0.028, 6, 16), blue);
+  rim.position.y = FISH_TUB_H; rim.rotation.x = Math.PI / 2;
+  fisherman.add(tub, rim);
+  rockColliders.push({ x: FISH_X, z: FISH_Z, r: 0.42, top: DOCK_DECK + FISH_TUB_H, mat: 'wood' });
+}
+// Stand-in until assets/fisherman.png exists — a seated silhouette, so he is
+// there and talking with the cut-out still to come.
+function makeFishermanPlaceholder() {
+  const c = document.createElement('canvas'); c.width = 160; c.height = 160;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(9, 13, 19, 0.94)';
+  g.beginPath(); g.arc(80, 30, 20, 0, Math.PI * 2); g.fill();      // head
+  g.fillRect(56, 50, 48, 60);                                      // body
+  g.fillRect(38, 58, 16, 46); g.fillRect(106, 58, 16, 46);         // arms
+  g.fillRect(52, 108, 56, 22);                                     // thighs, seated
+  g.fillRect(56, 128, 18, 30); g.fillRect(88, 128, 18, 30);        // shins
+  return new THREE.CanvasTexture(c);
+}
+const fishMat = new THREE.SpriteMaterial({
+  map: makeFishermanPlaceholder(), transparent: true, alphaTest: 0.35,
+});
+const fishSprite = new THREE.Sprite(fishMat);
+fishSprite.scale.set(FISH_H, FISH_H, 1);
+fishSprite.position.y = FISH_TUB_H + FISH_H * 0.42;   // sat on the tub, not floating over it
+fisherman.add(fishSprite);
+// measured off the photograph: his cap brim is dark, the eyes sit just under it
+const FISH_EYES = { x: 0.40, y: 0.115, w: 0.20, h: 0.020 };
+let fishOpenTex = null, fishShutTex = null;
+let fishBlinkT = 1.5 + Math.random() * 3, fishBlinking = false;
+new THREE.TextureLoader().load('assets/fisherman.png', (tex) => {
+  const img = tex.image;
+  if (!img || !img.width) return;
+  fishSprite.scale.set(FISH_H * (img.width / img.height), FISH_H, 1);
+  const f = bakeCutout(img, FISH_EYES, { pix: 200, levels: 6 });
+  fishOpenTex = f.open; fishShutTex = f.shut;
+  fishMat.map = fishOpenTex;
+  fishMat.needsUpdate = true;
+}, undefined, () => {});
+/* Alive, the way Bradly is: he blinks, and he breathes. The sway is tiny and
+ * slow — an old man sitting still, not an idle animation. */
+let fishSway = 0;
+function updateFisherman(dt) {
+  if (fishOpenTex) {
+    fishBlinkT -= dt;
+    if (fishBlinkT <= 0) {
+      fishBlinking = !fishBlinking;
+      fishMat.map = fishBlinking ? fishShutTex : fishOpenTex;
+      fishMat.needsUpdate = true;
+      fishBlinkT = fishBlinking ? 0.12 : (Math.random() < 0.2 ? 0.18 : 2.6 + Math.random() * 3.6);
+    }
+  }
+  fishSway += dt;
+  fishSprite.position.y = FISH_TUB_H + FISH_H * 0.42 + Math.sin(fishSway * 0.9) * 0.012;
+  fishSprite.material.rotation = Math.sin(fishSway * 0.55) * 0.012;
+}
+{
+  const hit = new THREE.Mesh(new THREE.BoxGeometry(0.9, FISH_H + FISH_TUB_H, 0.9),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.position.y = (FISH_H + FISH_TUB_H) / 2; hit.name = 'hitProxy';
+  fisherman.add(hit);
+}
+addInteractable(fisherman, 'Talk to him', 'npc', {
+  onActivate: () => startDialog('start', {
+    name: 'Very Old Fisherman', script: FISHERMAN_SCRIPT, sprite: fishSprite,
+  }),
+});
+farProps.push({ obj: fisherman, z: FISH_Z, d: 300 });
 
 /* Thirty metres short of the wreck, on the wet sand. You pick it up as a
  * black bar a long way down the beach — you are walking INTO the moon
@@ -8948,6 +9111,7 @@ function update(dt, rawDt = dt) {
   updateDrain(dt);          // last, so it wins on groundY inside the home
   updateShip(dt);           // and the wreck overrides the sand where you're on it
   updateDock(dt);           // the pier's drift, boards and shed walls
+  updateFisherman(rawDt);   // he blinks and breathes, like Bradly
   /* ...and then out of anything solid again. updateDock() clamps you to the
    * deck's footprint, and that clamp used to run AFTER the push-out and put
    * you straight back inside a pile — which is how you ended up standing in
@@ -9177,6 +9341,7 @@ window.__bw = {
   get doorOpen() { return doorOpen; }, set doorOpen(v) { doorOpen = v; doorSwing = v ? 1 : 0; lhDoor.rotation.y = -doorSwing * 1.95; },
   get insideTower() { return insideTower; },
   rockColliders, rockGroundAt, pushOutOfRocks, rockGroup, headroomClear, solidDepth,
+  onPier, deckHeightAt, fisherman, FISHERMAN_SCRIPT,
   get crouching() { return crouching; }, set crouching(v) { crouching = v; },
   startPeek, endPeek, respawn, get peeking() { return peeking; }, get gateEyes() { return gateEyes; },
   get ringProp() { return ringProp; },

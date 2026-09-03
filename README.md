@@ -111,6 +111,10 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - **Glass floats break** — three of them along the walk, and a hard throw
   shatters one into shards that bounce and settle. A drop from your hand does
   not; breaking one is always something you chose.
+- **The Very Old Fisherman** — sitting on a blue fish tub in the dock house,
+  beside the table. The only other person on the walk, and he is not pleased
+  to see you. His cut-out is `assets/fisherman.png`; until that file exists
+  he stands in as a silhouette.
 - **The dock house** — sixty metres past the wreck, a pier on piles standing
   out from the cliff foot into the surf, with a shed on the boards, a lamp lit
   on the post at the sea end, and a boat tied up under it. The beach has
