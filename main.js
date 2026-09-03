@@ -6096,7 +6096,7 @@ let blinkT = 2 + Math.random() * 3, blinking = false;
  *
  * Shared by Bradly and the fisherman: it was written for the one and the
  * second would have been sixty lines of the same thing. */
-function bakeCutout(img, eyes, { pix = 260, levels = 6 } = {}) {
+function bakeCutout(img, eyes, { pix = 260, levels = 6, grain = 20, sat = 0.55 } = {}) {
   const mk = (shut) => {
     // 1. full-res pass, with the eyelid painted in for the shut frame
     const full = document.createElement('canvas');
@@ -6131,14 +6131,14 @@ function bakeCutout(img, eyes, { pix = 260, levels = 6 } = {}) {
       let r = px[i], gg = px[i + 1], b = px[i + 2];
       // contrast around mid grey, then desaturate toward luma
       const lum = 0.299 * r + 0.587 * gg + 0.114 * b;
-      const CON = 1.34, SAT = 0.55;
+      const CON = 1.34, SAT = sat;
       r = lum + (r - lum) * SAT; gg = lum + (gg - lum) * SAT; b = lum + (b - lum) * SAT;
       r = (r - 128) * CON + 116; gg = (gg - 128) * CON + 122; b = (b - 128) * CON + 112;
       // sickly green-cyan cast; sprites aren't lit, so this is his final
       // brightness — keep him readable against the night sky
       r *= 0.86; gg *= 1.02; b *= 0.92;
       // a little grain before quantising so the bands break up
-      const n = (Math.random() - 0.5) * 20;
+      const n = (Math.random() - 0.5) * grain;
       r += n; gg += n; b += n;
       // posterise
       px[i]     = Math.max(0, Math.min(255, Math.round(r / step) * step));
@@ -8757,10 +8757,43 @@ function updateDock(dt) {
 const FISH_H = 1.80;                      // sole of his boot to the top of his cap, seated
 const FISH_X = 9.9, FISH_Z = -217.75;     // beside the table, on the shed floor
 const FISH_TUB_H = 0.58;
+/* He opens with a threat and then lets you pick how to take it. Backing out
+ * ends it; the other two answer and leave the remaining ones open, so you
+ * can hear him out without the conversation looping forever. */
 const FISHERMAN_SCRIPT = {
   start: {
     text: 'I should kill you for snooping around my property like that.',
+    choices: [
+      { label: 'Sorry, I was just leaving', to: 'leaving' },
+      { label: 'Is that a threat?', to: 'threat' },
+      { label: 'Who are you?', to: 'who' },
+    ],
+  },
+  leaving: {
+    text: 'Aye. You were.',
     choices: [],
+  },
+  threat: {
+    text: "Call it what you like. The water's taken quieter men than you.",
+    choices: [
+      { label: 'Who are you?', to: 'who2' },
+      { label: 'Sorry, I was just leaving', to: 'leaving' },
+    ],
+  },
+  who: {
+    text: "I've fished this water sixty years. Long enough to know what walks it after dark.",
+    choices: [
+      { label: 'Is that a threat?', to: 'threat2' },
+      { label: 'Sorry, I was just leaving', to: 'leaving' },
+    ],
+  },
+  who2: {
+    text: "I've fished this water sixty years. You're not the strangest thing I've found on my boards.",
+    choices: [{ label: 'Sorry, I was just leaving', to: 'leaving' }],
+  },
+  threat2: {
+    text: "It's a warning. You'll know the difference if you keep walking that way.",
+    choices: [{ label: 'Sorry, I was just leaving', to: 'leaving' }],
   },
 };
 const fisherman = new THREE.Group();
@@ -8783,6 +8816,60 @@ scene.add(fisherman);
   const rim = new THREE.Mesh(new THREE.TorusGeometry(0.30, 0.028, 6, 16), blue);
   rim.position.set(0.30, FISH_TUB_H, 0); rim.rotation.x = Math.PI / 2;
   fisherman.add(tub, rim);
+  /* The gutting box. It is here to do a job: the photograph ends at his
+   * boots and that hard horizontal edge is the one thing that gives the
+   * cut-out away, so something has to stand in front of it. A fish crate he
+   * is working over is what a man sitting on a tub in a shed would have —
+   * so it earns its place twice.
+   *
+   * It goes on the DOOR side of him, because that is the only direction
+   * anyone sees him from and a billboard is only occluded by what is
+   * actually nearer the camera. */
+  const boxW = 0.84, boxD = 0.46, boxH = 0.30;
+  // warm timber, not the beach crate's cold grey — at that colour it read as
+  // a black mass in here and he looked to be sitting astride it
+  const crateWood = new THREE.MeshStandardMaterial({
+    map: plankTex, color: 0xa08256, roughness: 1, flatShading: true,
+    emissive: 0x3a2c1a, emissiveMap: plankTex,
+  });
+  const gut = new THREE.Group();
+  gut.position.set(-0.66, 0, 0.05);
+  gut.rotation.y = 0.22;
+  // four slatted sides and a base, so it reads as a fish crate and not a block
+  for (const [w, d, x, z] of [[boxW, 0.04, 0, boxD / 2], [boxW, 0.04, 0, -boxD / 2],
+                              [0.04, boxD, boxW / 2, 0], [0.04, boxD, -boxW / 2, 0]]) {
+    for (let i = 0; i < 3; i++) {
+      const slat = new THREE.Mesh(new THREE.BoxGeometry(w, boxH / 3.6, d), crateWood);
+      slat.position.set(x, boxH * (0.14 + i * 0.33), z);
+      gut.add(slat);
+    }
+  }
+  const base = new THREE.Mesh(new THREE.BoxGeometry(boxW, 0.05, boxD), crateWood);
+  base.position.y = boxH - 0.025;
+  gut.add(base);
+  // and what is in it: two fish, pale side up, and the knife across the rim
+  const fishMatt = new THREE.MeshStandardMaterial({
+    color: 0x8d9aa6, roughness: 0.55, metalness: 0.12, flatShading: true, emissive: 0x27303a });
+  for (const [fx, fz, fr] of [[-0.13, 0.05, 0.35], [0.12, -0.06, -0.5]]) {
+    const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.11, 0), fishMatt);
+    body.scale.set(1.7, 0.40, 0.68);
+    body.position.set(fx, boxH + 0.03, fz);
+    body.rotation.y = fr;
+    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.1, 4), fishMatt);
+    tail.position.set(fx - Math.cos(fr) * 0.21, boxH + 0.03, fz + Math.sin(fr) * 0.21);
+    tail.rotation.set(Math.PI / 2, 0, -fr);
+    tail.scale.set(1, 1, 0.4);
+    gut.add(body, tail);
+  }
+  const steel = new THREE.MeshStandardMaterial({ color: 0x9aa4b0, roughness: 0.4, metalness: 0.5, flatShading: true, emissive: 0x191d22 });
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.008, 0.028), steel);
+  blade.position.set(0.16, boxH + 0.03, 0.16); blade.rotation.y = -0.5;
+  const haft = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.018, 0.026),
+    new THREE.MeshStandardMaterial({ color: 0x4a3524, roughness: 1, flatShading: true, emissive: 0x120d08 }));
+  haft.position.set(0.03, boxH + 0.033, 0.23); haft.rotation.y = -0.5;
+  gut.add(blade, haft);
+  fisherman.add(gut);
+  rockColliders.push({ x: FISH_X - 0.66, z: FISH_Z + 0.05, r: 0.46, top: DOCK_DECK + boxH, mat: 'wood' });
   rockColliders.push({ x: FISH_X + 0.30, z: FISH_Z, r: 0.40, top: DOCK_DECK + FISH_TUB_H, mat: 'wood' });
 }
 // Stand-in until assets/fisherman.png exists — a seated silhouette, so he is
@@ -8816,8 +8903,11 @@ new THREE.TextureLoader().load('assets/fisherman.png', (tex) => {
   const img = tex.image;
   if (!img || !img.width) return;
   fishSprite.scale.set(FISH_H * (img.width / img.height), FISH_H, 1);
-  // 200 px was a smear at the range you actually stand from him
-  const f = bakeCutout(img, FISH_EYES, { pix: 480, levels: 7 });
+  /* He is the one cut-out you stand close to and look at while he talks, so
+   * he gets more of everything than Bradly does across a beach: twice the
+   * pixels, more posterisation steps, and less grain and desaturation, which
+   * are what were eating the detail in his face. */
+  const f = bakeCutout(img, FISH_EYES, { pix: 620, levels: 9, grain: 9, sat: 0.72 });
   fishOpenTex = f.open; fishShutTex = f.shut;
   fishMat.map = fishOpenTex;
   fishMat.needsUpdate = true;

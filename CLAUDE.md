@@ -172,6 +172,16 @@ is still Bradly. Both cut-outs come from `tools/cutout.swift`, which is
 macOS Vision person segmentation and needs no dependencies:
 `swift tools/cutout.swift assets/x.JPG assets/x.png 900`.
 
+**The gutting crate is there to hide the cut-out's bottom edge.** A
+photograph ends somewhere, and that hard horizontal line at his boots is the
+one thing that gives a sprite away — so something has to stand in front of
+it. A fish crate a man sitting in a shed would be working over earns its
+place twice. It goes on the DOOR side of him, because a billboard is only
+occluded by what is genuinely nearer the camera, and the doorway is the only
+direction anyone sees him from. `bakeCutout` takes `grain` and `sat` now: he
+is the one cut-out you stand close to, so he bakes at 620 px with far less
+grain than Bradly, who is read across a beach.
+
 **A billboard and a solid prop at the same spot fight.** The fisherman's
 blue tub was directly under him, so the sprite plane cut through the
 cylinder and the tub's front half ate his legs and boots. It is set back
