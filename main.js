@@ -3041,7 +3041,7 @@ const introEl = document.getElementById('intro');
 const introTextEl = document.getElementById('intro-text');
 const INTRO_LINES = [
   'You are alone on the shore.\nIt is well past midnight.',
-  'The tide keeps its own counsel.\nSo does the thing that walks it <em>with you</em>.',
+  'The tide keeps its own counsel.',
 ];
 let introStarted = false;
 
@@ -3075,7 +3075,7 @@ function startIntroAudio() {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime;
   const g = ctx.createGain(); g.gain.value = 0.0001; g.connect(sfxOut());
-  g.gain.exponentialRampToValueAtTime(0.55, t + 3.2);
+  g.gain.exponentialRampToValueAtTime(0.2, t + 3.2);     // felt, not heard
   const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 41;
   const o2 = ctx.createOscillator(); o2.type = 'triangle'; o2.frequency.value = 61.7;
   const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 150;
@@ -3086,7 +3086,7 @@ function startIntroAudio() {
   o.connect(f); o2.connect(f); f.connect(dg).connect(g);
   o.start(t); o2.start(t); trem.start(t);
   const beat = (at) => {
-    for (const [d, a] of [[0, 0.55], [0.17, 0.34]]) {
+    for (const [d, a] of [[0, 0.22], [0.17, 0.13]]) {
       const k = ctx.createOscillator(); k.type = 'sine';
       k.frequency.setValueAtTime(72, at + d);
       k.frequency.exponentialRampToValueAtTime(36, at + d + 0.13);
@@ -3143,7 +3143,6 @@ function beginGame() {
   const revealAt = 11300;
   setTimeout(() => {
     endIntroAudio();
-    playSample('splash', 1.15, 0, 0.58);             // one wave, close, as the beach comes up
     introEl.style.transition = 'opacity 2.4s ease';
     introEl.classList.remove('show');              // world fades up
     introDone = true;

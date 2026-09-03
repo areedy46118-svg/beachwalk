@@ -694,22 +694,19 @@ so the view-model pose, the trail markers at the lip and the world
 placement all hold. If you change the blade's extent, move `trailTip` /
 `trailRoot` with it.
 
-**The cover IS the beach, graded like a painting.** The overlay is glass
-over the live scene: while the title is up `titleCam()` borrows the player
-camera for a slow low drift down the sand toward the moon (safe because
-`update()` returns before `introDone`), and `leaveTitle()` hands it back to
-`spawnPos`/`spawnQuat` on begin — x and z, that is: the head-height code writes `camera.position.y`
-from `camBaseY` every frame regardless, so the title view sits at eye
-height whatever `titleCam()` asks for. Underneath, `canvas.title-grade` drains the
-colour, crushes it and pushes it olive; over it the glass carries a multiply
-tint, a dirt layer, moving grain and a heavy vignette — the sick painted
-palette of the Amnesia menus, without painting anything. The name is set
-in Curse of the Zombie (`assets/fonts/`), one span per letter so each can be
-knocked a few degrees off, and it flickers once in a while. Two phases: cold
-(the name and PRESS ANY KEY) and `.menu` (BEGIN / CONTROLS, left, the way
-Amnesia lists them). The first press of anything is the gesture that lets the
-sea come up; nothing begins until BEGIN — the old click-anywhere started the
-game on the same press that was meant to unmute it. Enter/Space begin too.
+**The cover is a name in plain white capitals over near-black.** Minimal
+on purpose: a system sans, letter-spaced, edges eaten a little by a noise
+mask so it reads printed rather than typed, three letters a hair off, and
+nothing else on the screen but PRESS ANY KEY — then BEGIN / CONTROLS under
+it. Behind it the LIVE beach, `titleCam()` drifting it slowly toward the
+moon (safe because `update()` returns before `introDone`; the head-height
+code still owns `camera.position.y`), turned almost all the way down by
+`canvas.title-grade` so the moon's track on the water barely surfaces
+through drifting smoke (a low-frequency noise sheet, screen-blended) and two
+sheets of rising dust. Two faces were tried first and cut — a horror
+display face read as corny, and an olive Amnesia-style grade read as a
+poster. The first press of anything is the gesture that lets the sea come
+up; nothing begins until BEGIN.
 
 **The sea under the title is its own layer.** The walk's surf is a bed you
 stop hearing; the menu wants waves you cannot not hear. `titleSurfGain` in
@@ -719,10 +716,12 @@ up only while `!introStarted` and pulled down by `leaveTitle()`.
 
 **The intro is two beats and a heartbeat.** `INTRO_LINES` land as `.l1`
 then `.l2` (`beat1` at 0.9 s, `beat2` at 4.7 s, all gone at 9.4 s, the world
-up at 11.3 s), the last two words flicker, and `startIntroAudio()` runs a
-41 Hz drone with a slow tremolo under a heartbeat at ~51 bpm — a little too
-slow — that `endIntroAudio()` kills as one close wave (`splash` at rate
-0.58) brings the beach up.
+up at 11.3 s), and `startIntroAudio()` runs a 41 Hz drone with a slow
+tremolo under a heartbeat at ~51 bpm — a little too slow, and quiet enough
+to be felt rather than heard — that `endIntroAudio()` kills as the beach
+comes up. A line about "the thing that walks it with you" and a wave crash
+on the cut were both tried and cut: naming the thing is less frightening
+than the tide keeping its counsel, and the splash read as a bug.
 
 **First-person hand.** Rendered in a **separate overlay scene**
 (`vmScene` / `vmCamera`, `renderer.autoClear=false; clearDepth()`).
