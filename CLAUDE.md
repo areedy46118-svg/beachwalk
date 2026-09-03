@@ -1018,6 +1018,21 @@ beach with a `makeApron()` bank round its foot, tinted to `sandMat`'s own
 family; at x = 4.6 it was inside the swash and sat in the sea half the tide.
 The crab running into it and the shovel hitting it both break it.
 
+**And a thrown thing must never LAND on it.** A body brought it down by a
+proximity guess — within 1.5 m, `abs(p.y) < 1.4`, and moving faster than 3
+— but the collider stands `CASTLE_H` (1.65 m) tall, so anything that
+arrived over the top was already above that gate: it rested on the
+cylinder and hung there in mid-air, which is what "they float" was.
+`PhysProp` now asks the two solid helpers WHICH collider they hit, since
+both already report it. `rockGroundAt` answers "what would this land on",
+which is true of anything merely flying over, so the floor case also tests
+that the body has actually reached `top + restH`; `pushOutOfSolids`
+already skips anything it is above, so a hit on the flank is contact by
+construction. Either way the castle is gone before the line that would
+have made it a floor, and the body falls on through to the sand. There is
+no speed threshold any more: it is sand, and whatever reaches it brings it
+down.
+
 **The crab's swing is an ARC now.** It used to rise and lunge straight down
 the line at you, which from the front is a shape barely changing size —
 nothing to read, nothing to time against. The body cocks away first

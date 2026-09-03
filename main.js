@@ -3569,8 +3569,25 @@ class PhysProp {
     if (sub > 0.15) surface = 'water';
     const deck = dockDeckAt(p.x, p.z);
     if (deck !== null && deck + this.restH > rest && p.y >= deck - 0.35) { rest = deck + this.restH; surface = 'wood'; }
+    /* THE CASTLE IS SAND, AND IT IS NOT A FLOOR. It used to be brought down
+     * by a proximity guess — within 1.5 m, `abs(p.y) < 1.4`, and moving —
+     * but its collider stands 1.65 m tall, so anything that arrived over the
+     * top of it landed ABOVE that gate: the body rested on the cylinder and
+     * hung there in mid-air, which is the floating. The two solid helpers
+     * already report WHICH collider they hit, so ask them. Whatever reaches
+     * it brings it down, from any height and at any speed, and the collider
+     * is gone by the next line so it can never be the thing you land on. */
     const sc = rockGroundAt(p.x, p.z, p.y);
-    if (sc && sc.top + this.restH > rest) { rest = sc.top + this.restH; surface = sc.mat || 'rock'; }
+    if (sc && sc.top + this.restH > rest) {
+      /* CONTACT, not proximity. `rockGroundAt` answers "what would this land
+       * on", which is true of anything merely flying over the castle — so
+       * the height test is what makes it a hit. And it must not become the
+       * floor: its collider stands 1.65 m tall, and the old proximity guess
+       * (`abs(p.y) < 1.4`) missed everything that arrived over the top, so
+       * the body rested on the cylinder and hung there in mid-air. */
+      if (sc.castle && p.y <= sc.top + this.restH) breakCastle(p.x - this.vel.x, p.z - this.vel.z);
+      else { rest = sc.top + this.restH; surface = sc.mat || 'rock'; }
+    }
     if (p.y <= rest) {
       p.y = rest;
       const wet = surface === 'water' ? sub : 0;
@@ -3583,7 +3600,13 @@ class PhysProp {
     }
     // and the sides of anything solid
     _pp.copy(p);
-    const side = pushOutOfSolids(_pp, p.y, this.radius);
+    let side = pushOutOfSolids(_pp, p.y, this.radius);
+    if (side && side.castle) {
+      // straight through the side of it, rather than bouncing off a wall
+      breakCastle(p.x - this.vel.x, p.z - this.vel.z);
+      _pp.copy(p);
+      side = pushOutOfSolids(_pp, p.y, this.radius);
+    }
     if (side) {
       const nx = _pp.x - p.x, nz = _pp.z - p.z;
       p.x = _pp.x; p.z = _pp.z;
@@ -3612,11 +3635,6 @@ class PhysProp {
     // and anything moving fast enough kills the crab
     if (crabState.alive && incoming > 5 && p.distanceTo(crab.position) < 0.75) {
       hitConnect(0.4, 1); killCrab();
-    }
-    // and a sandcastle comes down if you put something through it
-    if (incoming > 3 && !castleBroken && Math.abs(p.y) < 1.4
-        && Math.hypot(p.x - castle.position.x, p.z - castle.position.z) < 1.5) {
-      breakCastle(p.x - this.vel.x, p.z - this.vel.z);
     }
     if (struck && incoming > 1.1) sfxPropHit(surface, incoming);
     if (struck && this.onImpact) this.onImpact(incoming);
