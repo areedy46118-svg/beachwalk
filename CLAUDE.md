@@ -119,6 +119,37 @@ face that would land you past `WADE_X`. The shed door is the model's own
 Door mesh re-hung on a pivot with `attach()`; its doorway slab is solid
 only while `dockDoorOpen` is false.
 
+**`rockColliders` is the game's ONE list of solid things, and it is shared.**
+Cylinders `{x,z,r,top}` and boxes `{x0,z0,x1,z1,top}`, each with a `mat`
+('rock' or 'wood') that both a thrown prop and the shovel read to pick a
+sound and a scar. The player and `PhysProp` run the same `solidDepth()` /
+`pushOutOfSolids()` / `rockGroundAt()`. Two things this fixed at a stroke: a
+body knew only ONE ground — the sand — so anything set down on the pier fell
+through the boards to the beach; and a circle round the five-metre boat left
+a metre of open air off each side that you stood on, which is why you
+floated beside it. A hull is a BOX.
+
+**Dock colliders come out of the model** (`columnsOf()` in its loader):
+vertices bucketed on a coarse world grid, one cylinder per bucket, because
+all twelve piles are a single mesh whose bounding box is the whole pier.
+
+**Crouch is a toggle (Ctrl), and it is what gets you under the pier.**
+`playerEye()` / `playerHeight()` replace the EYE_HEIGHT constant everywhere
+"where are my feet" is asked; `updateDock()` only makes the footprint a wall
+when `feet + playerHeight() > DOCK_DECK`, so crouching walks you under it —
+the piles stay solid because they are real colliders.
+
+**Splashing is for walking THROUGH water, never over it.** `wading` is
+gated on `!onDock && !onShip` and on your feet actually being near sea
+level; before that the pier's boards splashed underfoot.
+
+**Everything can be held, and examining moved into the pack.** `holdable()`
+gives an item a view model cloned LAZILY from the same object the examine
+screen shows — lazily because the ring and the key are scans that land over
+the network long after the item exists. `use` equips; the pack's per-slot
+Inspect button is the only way into `openInspect()`, which now names what
+you are holding.
+
 **Crates are a factory now** — `buildCrate(x, y, z, yaw, onBreak)` into
 `crates[]`, walked by `crateStrike()`; `crate`/`breakCrate()` still mean the
 first. Gibs and puffs take the crate's own `y`, so the deck crate's boards

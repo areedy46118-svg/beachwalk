@@ -2241,29 +2241,66 @@ function updateFarProps() {
   for (const f of farProps) f.obj.visible = Math.abs(f.z - cz) < f.d;
 }
 
-/* Standing on them. Called after updateTower() has set groundY from the sand
- * or the headland; a rock under your feet simply wins. */
+/* SOLIDS. `rockColliders` is the game's one list of things you cannot walk
+ * through, and it is shared: the player is pushed out of them and stands on
+ * them, and so is anything you throw. Two shapes, because a boulder is a
+ * circle and a boat is not — a circle round a 5 m hull leaves you standing
+ * on open air a metre off its side, which is exactly what the boat did:
+ *
+ *   { x, z, r, top }              a cylinder
+ *   { x0, z0, x1, z1, top }       an axis-aligned box
+ *
+ * Every entry also carries `mat` — 'rock' by default, or 'wood' — which is
+ * what a thrown bottle and a shovel blade both read to decide what they just
+ * hit and what it should sound like. */
 const ROCK_STEP = 0.42;                 // how high a lip you can walk straight up
+// how far (x,z) is inside a solid; <= 0 is outside. Cheap, and the same test
+// serves the floor lookup, the push-out and the props.
+function solidDepth(c, x, z, grow = 0) {
+  if (c.r !== undefined) {
+    const dx = x - c.x, dz = z - c.z, rr = c.r + grow;
+    const d2 = dx * dx + dz * dz;
+    return d2 >= rr * rr ? 0 : rr - Math.sqrt(d2);
+  }
+  const px = Math.min(x - (c.x0 - grow), (c.x1 + grow) - x);
+  const pz = Math.min(z - (c.z0 - grow), (c.z1 + grow) - z);
+  return (px <= 0 || pz <= 0) ? 0 : Math.min(px, pz);
+}
 function rockGroundAt(x, z, feetY) {
   let best = null;
   for (const c of rockColliders) {
-    const dx = x - c.x, dz = z - c.z;
-    if (dx * dx + dz * dz > c.r * c.r) continue;
+    if (solidDepth(c, x, z) <= 0) continue;
     if (feetY >= c.top - ROCK_STEP && (!best || c.top > best.top)) best = c;
   }
   return best;
 }
-function pushOutOfRocks(feetY) {
+// shove a point out of every solid it is inside, along the shallowest face,
+// and report the last thing it was pushed out of
+function pushOutOfSolids(pos, feetY, grow, headY = Infinity) {
+  let hit = null;
   for (const c of rockColliders) {
     if (feetY >= c.top - 0.06) continue;        // above it: that's a floor, not a wall
-    const dx = camera.position.x - c.x, dz = camera.position.z - c.z;
-    const rr = c.r + PLAYER_R * 0.85;
-    const d2 = dx * dx + dz * dz;
-    if (d2 >= rr * rr || d2 < 1e-6) continue;
-    const d = Math.sqrt(d2);
-    camera.position.x = c.x + (dx / d) * rr;
-    camera.position.z = c.z + (dz / d) * rr;
+    if (c.floorY !== undefined && headY < c.floorY) continue;   // you are under it
+    if (solidDepth(c, pos.x, pos.z, grow) <= 0) continue;
+    if (c.r !== undefined) {
+      const dx = pos.x - c.x, dz = pos.z - c.z, rr = c.r + grow;
+      const d = Math.hypot(dx, dz) || 1e-6;
+      pos.x = c.x + (dx / d) * rr;
+      pos.z = c.z + (dz / d) * rr;
+    } else {
+      const push = [(c.x0 - grow) - pos.x, (c.x1 + grow) - pos.x,
+                    (c.z0 - grow) - pos.z, (c.z1 + grow) - pos.z];
+      let k = 0;
+      for (let i = 1; i < 4; i++) if (Math.abs(push[i]) < Math.abs(push[k])) k = i;
+      if (k < 2) pos.x += push[k]; else pos.z += push[k];
+    }
+    hit = c;
   }
+  return hit;
+}
+function pushOutOfRocks(feetY) {
+  // your head, so a crouch takes you under the pier's deck
+  pushOutOfSolids(camera.position, feetY, PLAYER_R * 0.85, feetY + playerHeight());
 }
 
 // ------------------------------------------------------------------
@@ -3063,6 +3100,8 @@ window.addEventListener('keydown', (e) => {
     else if (noteOpen) closeNote();
     else if (menuOpen) closeMenu();
     else if (fallbackLook) openMenu();
+  } else if (e.code === 'ControlLeft' || e.code === 'ControlRight') {
+    if (!frozen()) crouching = !crouching;
   } else if (e.code === 'KeyE' || e.code === 'KeyF' || e.code === 'Enter' || e.code === 'NumpadEnter') {
     // Enter is an alias for E throughout: people reach for it on a prompt
     if (inspecting) { if (inspectEquip) inspectEquip(); return; }
@@ -3245,12 +3284,14 @@ function inspectSetModel(model) {
  * "put it away" in here, and a screen where the same button both wears the
  * item and pockets it is a screen you cannot use twice in a row. */
 let inspectEquip = null;
-function openInspect(model, { rotX = -0.55, rotY = 0.7, equipLabel = null, onEquip = null } = {}) {
+function openInspect(model, { rotX = -0.55, rotY = 0.7, equipLabel = null, onEquip = null, name = '' } = {}) {
   if (inspecting) return;
   inspecting = true;
   inspectEquip = equipLabel ? onEquip : null;
   inspectEl.querySelector('.hint').innerHTML =
     inspectEquip ? kbd('E') + equipLabel + '  ·  ' + INSPECT_HINT : INSPECT_HINT;
+  const nameEl = inspectEl.querySelector('.iname');
+  if (nameEl) { nameEl.textContent = name; nameEl.style.display = name ? '' : 'none'; }
   inspectSetModel(model);
   inspectRotX = rotX; inspectRotY = rotY; inspectDist = 3.3; inspectAuto = 0;
   inspectCamera.aspect = window.innerWidth / window.innerHeight;
@@ -3424,6 +3465,7 @@ const GRAV = 11;
 const physProps = [];
 let held = null;
 const _pv = new THREE.Vector3(), _pt = new THREE.Vector3(), _pf = new THREE.Vector3();
+const _pp = new THREE.Vector3();          // props: where a push-out would put it
 class PhysProp {
   constructor(mesh, opts = {}) {
     this.mesh = mesh;
@@ -3434,6 +3476,7 @@ class PhysProp {
     this.bounce = opts.bounce ?? 0.32;
     this.friction = opts.friction ?? 0.78;
     this.holdDist = opts.holdDist ?? Math.max(1.15, this.radius + 0.9);
+    this.splashed = false;
     this.held = false;
     physProps.push(this);
   }
@@ -3455,22 +3498,57 @@ class PhysProp {
     this.vel.y -= GRAV * dt;
     p.addScaledVector(this.vel, dt);
     const incoming = this.vel.length();          // speed going into any contact
-    let struck = false;
-    // things dropped in the sea settle under the surface, not on it
+    let struck = false, surface = 'sand';
+    /* What is under it. A body used to know one ground — the sand — so a
+     * bottle set down on the pier fell straight through the boards to the
+     * beach two metres below, and one thrown at a rock went through it. It
+     * asks the same solids the player does now, and the deck as well. */
     const sub = submersionAt(p.x, p.z);
-    const rest = this.restH + restYInWater(p.x, p.z, this.radius * 0.6);
+    let rest = this.restH + restYInWater(p.x, p.z, this.radius * 0.6);
+    if (sub > 0.15) surface = 'water';
+    const deck = dockDeckAt(p.x, p.z);
+    if (deck !== null && deck + this.restH > rest && p.y >= deck - 0.35) { rest = deck + this.restH; surface = 'wood'; }
+    const sc = rockGroundAt(p.x, p.z, p.y);
+    if (sc && sc.top + this.restH > rest) { rest = sc.top + this.restH; surface = sc.mat || 'rock'; }
     if (p.y <= rest) {
       p.y = rest;
-      if (this.vel.y < 0) this.vel.y = -this.vel.y * (this.bounce * (1 - sub * 0.9));
+      const wet = surface === 'water' ? sub : 0;
+      if (this.vel.y < 0) this.vel.y = -this.vel.y * (this.bounce * (1 - wet * 0.9));
       if (Math.abs(this.vel.y) < 0.7) this.vel.y = 0;
-      const fr = this.friction * (1 - sub * 0.45);       // water drags on it
+      const fr = this.friction * (1 - wet * 0.45);       // water drags on it
       this.vel.x *= fr; this.vel.z *= fr;
-      this.angVel.multiplyScalar(0.86 - sub * 0.26);
+      this.angVel.multiplyScalar(0.86 - wet * 0.26);
       struck = true;
     }
+    // and the sides of anything solid
+    _pp.copy(p);
+    const side = pushOutOfSolids(_pp, p.y, this.radius);
+    if (side) {
+      const nx = _pp.x - p.x, nz = _pp.z - p.z;
+      p.x = _pp.x; p.z = _pp.z;
+      if (nx * this.vel.x + nz * this.vel.z < 0) {       // only if it was going in
+        if (Math.abs(nx) > Math.abs(nz)) this.vel.x = -this.vel.x * this.bounce;
+        else this.vel.z = -this.vel.z * this.bounce;
+      }
+      struck = true; surface = side.mat || 'rock';
+    }
     const lo = WADE_X + this.radius, hi = CLIFF_BLOCK_X - this.radius;
-    if (p.x < lo) { p.x = lo; this.vel.x = Math.abs(this.vel.x) * this.bounce; struck = true; }
-    if (p.x > hi) { p.x = hi; this.vel.x = -Math.abs(this.vel.x) * this.bounce; struck = true; }
+    if (!onPier(p.x, p.z)) {
+      if (p.x < lo) { p.x = lo; this.vel.x = Math.abs(this.vel.x) * this.bounce; struck = true; }
+      if (p.x > hi) { p.x = hi; this.vel.x = -Math.abs(this.vel.x) * this.bounce; struck = true; }
+    }
+    // going into the sea: a splash you can see and hear, once
+    if (sub > 0.25 && !this.splashed && p.y <= rest + 0.25) {
+      this.splashed = true;
+      spawnSplash(p.x, p.z, 10 + Math.min(20, incoming * 2), this.vel.x, this.vel.z, 1 + incoming * 0.08);
+      sfxSplash(Math.min(1.5, 0.45 + incoming * 0.09));
+      addRipple(p.x, p.z, 1);
+    } else if (sub < 0.1) this.splashed = false;
+    // and anything moving fast enough kills the crab
+    if (crabState.alive && incoming > 5 && p.distanceTo(crab.position) < 0.75) {
+      hitConnect(0.4, 1); killCrab();
+    }
+    if (struck && incoming > 1.1) sfxPropHit(surface, incoming);
     if (struck && this.onImpact) this.onImpact(incoming);
     if (this.dead) return;
     this.mesh.rotation.x += this.angVel.x * dt;
@@ -3763,7 +3841,11 @@ function toggleEquip(item) {
   equipped = (equipped === item) ? null : item;
   viewmodel.visible = !!equipped;
   toolMount.children.forEach((c) => { c.visible = false; });
-  if (equipped && equipped.viewmodel) equipped.viewmodel.visible = true;
+  if (equipped && equipped.viewmodel) {
+    const vm = equipped.viewmodel;
+    if (vm.userData.build) { vm.userData.build(); vm.userData.build = null; }
+    vm.visible = true;
+  }
   digT = 0;
   renderHotbar();
   renderPack();
@@ -3808,6 +3890,23 @@ function renderPack() {
       nm.className = 'nm';
       nm.textContent = item.name;
       slot.appendChild(nm);
+      /* Examining is a thing you do in the pack, and only here. It used to be
+       * what "use" did from the hotbar, which meant half the items could not
+       * be carried at all — you owned them and never held them. */
+      const insp = document.createElement('button');
+      insp.className = 'insp';
+      insp.type = 'button';
+      insp.textContent = 'Inspect';
+      insp.addEventListener('pointerdown', (e) => e.stopPropagation());
+      insp.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const model = item.inspectModel;
+        if (!model) return;
+        const opts = item.inspectOpts ? item.inspectOpts() : {};
+        closePack();
+        openInspect(model, { ...opts, name: item.name });
+      });
+      slot.appendChild(insp);
     }
     invGridEl.appendChild(slot);
   }
@@ -4180,6 +4279,34 @@ let listenT = 0;
 // window was clean off the side of a portrait one
 const EAR_AT = new THREE.Vector3(0.88, 0.02, -0.25);   // straddling the right edge, at ear height
 const EAR_POSE = [0.35, 0, 1.25, 0.55, 0];        // [pitch, lift, yaw, roll, push]
+/* EVERYTHING CAN BE HELD. Half the items used to have no model in the hand
+ * at all: picking one up put an icon in the hotbar and using it threw you
+ * straight into the examine screen, so the ring, the key, the bottle and the
+ * crab were things you owned but never carried. `holdable()` gives an item a
+ * view model cloned from the same object the examine screen shows, so what
+ * you hold and what you turn over are the one object.
+ *
+ * The clone is LAZY. Two of these models — the ring and the key — are scans
+ * that arrive over the network some seconds after the item exists, and a
+ * clone taken at declaration time would be an empty Group forever. It is
+ * built the first time you equip, by which point the loader has long since
+ * run. */
+function holdable(item, model, { scale = 1, pos = [0, -0.02, 0], rot = [0, 0, 0] } = {}) {
+  const vm = new THREE.Group();
+  vm.visible = false;
+  vm.userData.build = () => {
+    const m = model.clone(true);
+    m.traverse((o) => { o.visible = true; });
+    m.scale.setScalar(scale);
+    m.position.set(pos[0], pos[1], pos[2]);
+    m.rotation.set(rot[0], rot[1], rot[2]);
+    vm.add(m);
+  };
+  toolMount.add(vm);
+  item.viewmodel = vm;
+  item.inspectModel = model;          // what the pack's Inspect button shows
+  return item;
+}
 const shovelItem = {
   name: 'Sand shovel', icon: makeShovelIcon(), onDig: true, viewmodel: shovelVM,
   use: () => toggleEquip(shovelItem),
@@ -4316,7 +4443,29 @@ function digImpact() {
     const miss = _hitC.distanceTo(_aimO.clone().addScaledVector(_aimD, t));
     if (miss < 0.62 + P * 0.25) { hitConnect(P, 1); killCrab(); return; }
   }
+  /* Something solid in front of the sand. The blade used to raycast the sand
+   * and nothing else, so a swing at the pier went straight through the boards
+   * and cratered the beach two metres underneath — you dug UNDER the dock.
+   * The dock, the rocks and the wreck are tested first, and if one of them is
+   * nearer than the sand the blade stops there: a wood or stone hit, its own
+   * sound, its own chips, a scar left on the surface, and no hole. */
   aimRay(P);
+  {
+    const solidHit = nearestSolidHit();
+    const sandHit = digRay.intersectObject(sand, false)[0];
+    if (solidHit && (!sandHit || solidHit.distance < sandHit.distance)) {
+      const surface = solidHit.surface;
+      hitConnect(P, surface === 'rock' ? 0.85 : 0.7);
+      sfxPropHit(surface, 7 + P * 6);
+      sfxDigImpact(P * 0.4);
+      const pt = solidHit.point;
+      // chips the colour of what you hit, thrown back along the normal
+      const tint = surface === 'wood' ? [0.30, 0.24, 0.17] : [0.42, 0.44, 0.48];
+      spawnPuffs(pt.x, pt.z, 9 + Math.round(P * 8), -_pf.x, -_pf.z, pt.y, tint);
+      stampScar(solidHit, surface);
+      return;
+    }
+  }
   const hits = digRay.intersectObject(sand, false);
   let x, z;
   if (hits.length && hits[0].point.x > WADE_X + 0.2 && hits[0].point.x < CLIFF_BLOCK_X + 1.5) {
@@ -4339,6 +4488,72 @@ function digImpact() {
   spawnPuffs(x, z, 22 + Math.round(P * 20), _pf.x, _pf.z);
   sfxDigImpact(P);
   revealMoundNear(x, z, _pf.x, _pf.z);
+}
+
+/* What the blade would meet before the sand: the pier, the beach rocks, the
+ * wreck. Returns the nearest with the material tag its scar and its sound
+ * are chosen from. */
+function nearestSolidHit() {
+  let best = null;
+  const test = (obj, surface) => {
+    if (!obj) return;
+    const h = digRay.intersectObject(obj, true)
+      .find((x) => x.object.name !== 'hitProxy' && x.object.visible);
+    if (h && (!best || h.distance < best.distance)) { best = h; best.surface = surface; }
+  };
+  test(dock, 'wood');
+  test(rockGroup, 'rock');
+  test(shipwreck, 'rock');
+  return best;
+}
+/* The mark it leaves. A small dark scar laid flat on the face you struck,
+ * offset a hair along its normal so it never z-fights, and pooled like the
+ * dig holes so a long session cannot grow the scene without bound. A hit
+ * that leaves nothing behind reads as a hit that did not land. */
+const SCAR_POOL = 24;
+const scars = [];
+let scarIdx = 0;
+const scarTex = (() => {
+  const S = 64;
+  const c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  gr.addColorStop(0, 'rgba(0,0,0,0.85)');
+  gr.addColorStop(0.55, 'rgba(0,0,0,0.42)');
+  gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, S, S);
+  // a few gouges through it, so it reads as a blade rather than a smudge
+  g.strokeStyle = 'rgba(0,0,0,0.7)'; g.lineCap = 'round';
+  for (let i = 0; i < 5; i++) {
+    g.lineWidth = 1 + Math.random() * 2.5;
+    const a = Math.random() * Math.PI, r = 10 + Math.random() * 16;
+    g.beginPath();
+    g.moveTo(S / 2 - Math.cos(a) * r, S / 2 - Math.sin(a) * r);
+    g.lineTo(S / 2 + Math.cos(a) * r, S / 2 + Math.sin(a) * r);
+    g.stroke();
+  }
+  return retroTex(new THREE.CanvasTexture(c), { repeatWrap: false });
+})();
+const _scarN = new THREE.Vector3();
+function stampScar(hit, surface) {
+  let m = scars[scarIdx];
+  if (!m) {
+    m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({
+      map: scarTex, transparent: true, depthWrite: false, opacity: 0.75, fog: true,
+    }));
+    scene.add(m);
+    scars[scarIdx] = m;
+  }
+  scarIdx = (scarIdx + 1) % SCAR_POOL;
+  const n = hit.face
+    ? _scarN.copy(hit.face.normal).transformDirection(hit.object.matrixWorld)
+    : _scarN.set(0, 1, 0);
+  m.position.copy(hit.point).addScaledVector(n, 0.012);
+  m.lookAt(m.position.clone().add(n));
+  m.scale.setScalar(0.22 + Math.random() * 0.14);
+  m.rotation.z = Math.random() * Math.PI * 2;
+  m.material.opacity = surface === 'wood' ? 0.7 : 0.5;
+  m.visible = true;
 }
 
 /* Connecting. The difference between "the animation played" and "I hit
@@ -4727,9 +4942,10 @@ const crabItem = {
   id: 'horseshoe', name: 'Horseshoe crab', icon: makeHorseshoeCrabIcon(),
   use: () => {
     if (!crabBled && inventory.includes(syringeItem)) startExtraction();
-    else openInspect(hcrab, { rotX: 0.5, rotY: 0.5 });
+    else toggleEquip(crabItem);
   },
 };
+holdable(crabItem, hcrab, { scale: 0.5, pos: [0, -0.06, 0.02], rot: [0.5, 0.6, 0.1] });
 addInteractable(hcrabWorld, 'Take the horseshoe crab', 'inventory', {
   onActivate: () => {
     if (hcrabTaken) return;
@@ -4770,9 +4986,10 @@ const syringeItem = {
   id: 'syringe', name: 'Bleeding syringe', icon: makeSyringeIcon(),
   use: () => {
     if (!crabBled && inventory.includes(crabItem)) startExtraction();
-    else openInspect(syringe, { rotX: 0.15, rotY: 0.8 });
+    else toggleEquip(syringeItem);
   },
 };
+holdable(syringeItem, syringe, { scale: 1.25, pos: [0, -0.03, 0], rot: [0.2, 0.5, 0.9] });
 // you set out with the syringe already on you, empty
 syringeTaken = true;
 syringe.scale.setScalar(1);
@@ -4849,8 +5066,10 @@ function finishExtraction() {
   // show the jar as the payoff, then it's gone
   inspectSetModel(bloodJar);
   inspectRotX = 0.12; inspectRotY = 0.45; inspectDist = 3.7; inspectAuto = 0;
+  const jarName = inspectEl.querySelector('.iname');
+  if (jarName) { jarName.textContent = 'Jar of blue blood'; jarName.style.display = ''; }
   inspectEl.querySelector('.hint').textContent =
-    'A jar of blue blood · hold right-click to turn it · click to put it away';
+    'Hold right-click to turn it · click to put it away';
 }
 
 // ------------------------------------------------------------------
@@ -4880,8 +5099,8 @@ function makeBuriedObject() {
   const g = new THREE.Group();
   const brass = new THREE.MeshStandardMaterial({ color: 0x9c7b3f, roughness: 0.6, metalness: 0.35, flatShading: true, emissive: 0x2c2110 });
   const wrap = new THREE.MeshStandardMaterial({ color: 0x6f6552, roughness: 1, flatShading: true, emissive: 0x1c1a14 });
-  const box = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 0.13), brass);
-  const band = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.13, 0.035), wrap);
+  const box = new THREE.Mesh(new THREE.BoxGeometry(0.27, 0.18, 0.20), brass);
+  const band = new THREE.Mesh(new THREE.BoxGeometry(0.285, 0.195, 0.05), wrap);
   g.add(box, band);
   return g;
 }
@@ -4889,8 +5108,8 @@ function makeBuriedObject() {
 // The glowstick — first thing you dig up. A short cracked light-stick
 // burning a cold teal, throwing a small glow pool on the sand.
 const GLOWSTICK_COLOR = 0x2fe9cf;   // cold teal, matched to the reference
-const GLOWSTICK_LEN = 0.15;         // ~6 in
-const GLOWSTICK_RADIUS = 0.014;
+const GLOWSTICK_LEN = 0.24;         // big enough to read on the sand
+const GLOWSTICK_RADIUS = 0.022;
 const GLOWSTICK_GLOW = 2.0;         // metres — the light's reach on the ground
 function makeGlowstick() {
   const g = new THREE.Group();
@@ -4967,7 +5186,7 @@ function placeGroundGlow(obj) {
 }
 
 const HELD_GLOW_RANGE = 11;           // metres of usable light around you
-const HELD_GLOW_MAX = 28;
+const HELD_GLOW_MAX = 17;             // dimmer in the hand: it lights your way, it is not a torch
 const heldGlow = new THREE.PointLight(GLOWSTICK_COLOR, 0, HELD_GLOW_RANGE, 1.35);
 heldGlow.visible = true;      // never toggled, for the same reason as groundGlow
 scene.add(heldGlow);
@@ -4996,7 +5215,11 @@ const mounds = [];
   // spread them thinly from just past the spawn down to near the lighthouse
   let z = -28;
   while (z > END_Z + 40) {
-    const x = 3.0 + Math.random() * (CLIFF_BLOCK_X - 5.0);
+    /* Well up the dry beach. shoreLine() can reach x = 8.6 and the sand
+     * plane discards a further metre seaward of it, so anything below ~9.6
+     * spends part of the tide with the surf drawn over it — a mound you
+     * cannot see is a mound you never dig. Same number the body bag uses. */
+    const x = 9.8 + Math.random() * (CLIFF_BLOCK_X - 11.4);
     const m = makeMound();
     m.position.set(x, 0, z);
     scene.add(m);
@@ -5022,7 +5245,7 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
   sfxDigImpact();
   moundFinds++;
 
-  const first = moundFinds === 1;              // the first cache always holds the glowstick
+  const first = m === mounds[0];               // THE first mound, not the first you happen to dig
   const relic = first ? makeGlowstick() : makeBuriedObject();
   relic.position.set(m.x, first ? 0.055 : 0.09, m.z);
   relic.rotation.set(first ? 0 : (Math.random() - 0.5) * 0.5, Math.random() * Math.PI * 2, first ? 0 : (Math.random() - 0.5) * 0.4);
@@ -5038,7 +5261,12 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
       if (first) placeGroundGlow(null);       // the held light takes over
       hovered = null;
       if (first) { addToInventory(glowstickItem); toggleEquip(glowstickItem); }
-      else addToInventory({ name: 'Buried object', icon: '📦', use: () => openNote('A small buried object.\n\n(placeholder — what it is comes later.)') });
+      else {
+        const buried = { name: 'Buried object', icon: '📦' };
+        buried.use = () => toggleEquip(buried);
+        holdable(buried, makeBuriedObject(), { scale: 0.9, pos: [0, -0.03, 0], rot: [0.3, 0.6, 0.2] });
+        addToInventory(buried);
+      }
     },
   });
 }
@@ -5097,7 +5325,9 @@ new GLTFLoader().load('assets/shell.glb', (gltf) => {
     g.add(new THREE.Mesh(geo, mat));
     const sc = 2.0 + rnd() * 0.9;                                           // 22–32 cm
     g.scale.setScalar(sc);
-    g.position.set(1.6 + rnd() * 3.6, 0.004, z);
+    // on the dry beach, clear of the highest swash: below x ~9.6 the surf
+    // draws over the sand under them and they read as shells under water
+    g.position.set(9.7 + rnd() * 3.0, 0.004, z);
     g.rotation.set((rnd() - 0.5) * 0.2, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.25);
     const hit = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6),
       new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
@@ -5151,19 +5381,6 @@ function stopListening() {
   if (window.speechSynthesis) speechSynthesis.cancel();
   if (promptHTML.includes('ear')) setPrompt('');
 }
-/* The one word in the shell. Speech synthesis, because it is the only voice
- * this dependency-free game has that can say a specific word — pitched low
- * and slow and at a fraction of the volume, under the roar, so it is a thing
- * you are not sure you heard. It is outside the Web Audio graph, so the
- * master volume is applied by hand. */
-function sayInShell(word) {
-  if (!('speechSynthesis' in window) || !listening) return;
-  const u = new SpeechSynthesisUtterance(word);
-  u.volume = Math.min(1, 0.44 * settings.volume);
-  u.pitch = 0.3; u.rate = 0.6;
-  speechSynthesis.cancel();
-  speechSynthesis.speak(u);
-}
 function listenToShell() {
   const ctx = audioCtx;
   if (!ctx || listening) return;
@@ -5192,24 +5409,11 @@ function listenToShell() {
   }
   src.start(t); src.stop(t + DUR);
 
-  // and the thing under it
-  shellVoice = new Audio(Math.random() < 0.5 ? 'assets/whisper1.m4a' : 'assets/whisper2.m4a');
-  shellVoice.loop = true;
-  try {
-    const vs = ctx.createMediaElementSource(shellVoice);
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
-    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 260;
-    const vg = ctx.createGain(); vg.gain.value = 0.055;     // barely there on purpose
-    vs.connect(lp).connect(hp).connect(vg).connect(out);
-    shellVoice.play().catch(() => {});
-  } catch (e) {}
-
   setPrompt('You hold it to your ear&hellip;');
-  shellAudio = {
-    src, out,
-    wordTimer: setTimeout(() => sayInShell('lighthouse'), 3400),   // once the roar has settled
-    timer: setTimeout(stopListening, DUR * 1000),
-  };
+  // Just the sea. There was a voice under this — a whisper bed, and the word
+  // "lighthouse" spoken low at 3.4 s — and both are gone: what you hold to
+  // your ear is the cavity roar and nothing else.
+  shellAudio = { src, out, timer: setTimeout(stopListening, DUR * 1000) };
 }
 
 // ------------------------------------------------------------------
@@ -6178,20 +6382,21 @@ vec4 triSample(sampler2D t, vec3 p, vec3 n) {
   // USE_MAP wants a uv attribute even though the projection never reads it
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2));
   const m = new THREE.Mesh(geo, iron);
-  m.scale.setScalar(0.023 / Math.max(size.x, size.y, size.z));
+  m.scale.setScalar(0.055 / Math.max(size.x, size.y, size.z));   // big enough to spot on dark sand
   ring.add(m);
 });
 const ringItem = {
   id: 'ring', name: 'The Octopus Ring', icon: makeRingIcon(), ring: true,
-  // the prompt only offers what is actually available: examining a ring you
-  // are already wearing, or with both slots full, is just examining it
-  use: () => openInspect(ring, {
-    // opens looking down onto the bezel: the stamp is the whole point of it
+  use: () => toggleEquip(ringItem),
+  // Putting it ON still happens in the examine screen — which you now reach
+  // from the pack — because that is where you can see what you are wearing.
+  inspectOpts: () => ({
     rotX: 1.1, rotY: 0.35,
     equipLabel: (inventory.includes(ringItem) && rings.length < RING_SLOTS) ? 'Put it on' : null,
     onEquip: () => { if (wearRing(ringItem)) closeInspect(); },
   }),
 };
+holdable(ringItem, ring, { scale: 2.2, pos: [0, -0.02, 0], rot: [1.1, 0.3, 0.2] });
 /* It comes OUT. Set down quietly on the sand where the crate stood, a 20 mm
  * ring is the easiest thing in the game to walk away from; so it is thrown
  * up out of the boards on a real body, toward you, rings off the sand when
@@ -6239,13 +6444,14 @@ new GLTFLoader().load('assets/key.glb', (gltf) => {
   mat.metalness = Math.min(mat.metalness, 0.25);      // no environment map: a true metal goes black
   reexpose(mat, 0.62);
   const m = new THREE.Mesh(geo, mat);
-  m.scale.setScalar(0.12 / Math.max(size.x, size.y, size.z));
+  m.scale.setScalar(0.20 / Math.max(size.x, size.y, size.z));    // a key you can see from standing
   keyModel.add(m);
 });
 const keyItem = {
   id: 'key', name: 'A Rusted Key', icon: makeKeyIcon(),
-  use: () => openInspect(keyModel, { rotX: 0.9, rotY: 0.4 }),
+  use: () => toggleEquip(keyItem),
 };
+holdable(keyItem, keyModel, { scale: 1.1, pos: [0, -0.02, 0], rot: [0.5, 0.3, 0.7] });
 function dropKey(c) {
   keyModel.rotation.set(Math.PI / 2, 0, 0.6);           // lying flat on the boards
   keyWorld.position.set(c.x + 0.12, c.y + 0.006, c.z - 0.08);
@@ -6611,6 +6817,54 @@ let stepAlt = 0;
 /* A step on the pier: a hollow knock, not a crush. Boards over air ring —
  * a short low resonance with a bright transient off the heel, and none of
  * the sand's grit. Alternates weight like the sand step does. */
+/* What a thrown thing sounds like when it lands, by what it lands on. The
+ * same four surfaces the shovel reads: a bottle off a rock is not a bottle
+ * in the sand, and before this everything anywhere made one dull thud. */
+function sfxPropHit(surface, speed) {
+  const ctx = audioCtx; if (!ctx) return;
+  if (surface === 'water') return;               // the splash already covers it
+  const t = ctx.currentTime;
+  const v = Math.min(1, speed / 11);
+  const out = ctx.createGain();
+  out.gain.value = 0.28 + v * 0.5;
+  out.connect(sfxOut());
+  if (surface === 'wood') {
+    // a hollow board knock, pitched by how hard it came in
+    const osc = ctx.createOscillator(); osc.type = 'sine';
+    const f = 150 + Math.random() * 60;
+    osc.frequency.setValueAtTime(f * 1.8, t);
+    osc.frequency.exponentialRampToValueAtTime(f, t + 0.03);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.6, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.14 + v * 0.08);
+    osc.connect(g).connect(out); osc.start(t); osc.stop(t + 0.24);
+    const tap = noiseBurst(0.035, (x) => Math.pow(1 - x, 4));
+    const tf = ctx.createBiquadFilter(); tf.type = 'bandpass'; tf.frequency.value = 1100; tf.Q.value = 1.2;
+    const tg = ctx.createGain(); tg.gain.value = 0.22;
+    tap.connect(tf).connect(tg).connect(out); tap.start(t); tap.stop(t + 0.035);
+  } else if (surface === 'rock') {
+    // stone: a hard bright crack with almost no body behind it
+    const crack = noiseBurst(0.05, (x) => Math.pow(1 - x, 5.5));
+    const cf = ctx.createBiquadFilter(); cf.type = 'bandpass';
+    cf.frequency.value = 2400 + Math.random() * 1400; cf.Q.value = 0.8;
+    const cg = ctx.createGain(); cg.gain.value = 0.5;
+    crack.connect(cf).connect(cg).connect(out); crack.start(t); crack.stop(t + 0.05);
+    const ring = ctx.createOscillator(); ring.type = 'triangle';
+    ring.frequency.value = 620 + Math.random() * 380;
+    const rg = ctx.createGain();
+    rg.gain.setValueAtTime(0.0001, t);
+    rg.gain.exponentialRampToValueAtTime(0.16, t + 0.004);
+    rg.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+    ring.connect(rg).connect(out); ring.start(t); ring.stop(t + 0.12);
+  } else {
+    // sand: a dead thump, no ring at all
+    const th = noiseBurst(0.1, (x) => Math.pow(1 - x, 3));
+    const lf = ctx.createBiquadFilter(); lf.type = 'lowpass'; lf.frequency.value = 210;
+    const lg = ctx.createGain(); lg.gain.value = 0.55;
+    th.connect(lf).connect(lg).connect(out); th.start(t); th.stop(t + 0.1);
+  }
+}
 function sfxStepWood() {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime;
@@ -7175,6 +7429,15 @@ const right = new THREE.Vector3();
 const moveDir = new THREE.Vector3();
 let bobPhase = 0;
 let camBaseY = EYE_HEIGHT, vy = 0, onGround = true, jumpLatch = false;
+/* Crouch. A toggle on Ctrl, not a hold — you crawl under the pier for as
+ * long as it takes to come out the other side, and holding a key for that
+ * is worse than pressing one twice. The eye drops to CROUCH_EYE and the
+ * body with it, which is what lets you under the boards; `playerHeight()`
+ * is the standing clearance every overhead test asks for. */
+const CROUCH_EYE = 0.85;
+let crouching = false, crouchT = 0;              // 0 stood up, 1 fully down
+const playerEye = () => EYE_HEIGHT + (CROUCH_EYE - EYE_HEIGHT) * crouchT;
+const playerHeight = () => playerEye() + 0.18;   // eye to the top of the head
 let stamina = 1, exhausted = false;
 let splashTimer = 0, rippleTimer = 0;
 
@@ -7249,6 +7512,10 @@ const PEEK_FOV = 15;
 const PEEK_IN = 0.9, PEEK_OUT = 0.45;      // seconds to lean in / back out
 let peeking = false, peekLeaving = false, peekT = 0, peekHeld = 0;
 let gateEyes = null, eyesSeen = false;   // seen once, never again this game
+// How far down the throat they are. Further than they were: at 3.6 m they
+// were close enough to be a face looking back, and the whole point is that
+// you are not sure there is anything there at all.
+const EYES_Z = -5.4;
 const _peekFrom = new THREE.Vector3(), _peekTo = new THREE.Vector3();
 const _peekFromQ = new THREE.Quaternion(), _peekToQ = new THREE.Quaternion();
 const _peekHome = new THREE.Vector3(), _peekHomeQ = new THREE.Quaternion();
@@ -7265,7 +7532,7 @@ const EYES_W = 0.19;                      // the drawing, edge to edge, in metre
 let gateEyesTex = null;
 function makeGateEyes(F) {
   const G = new THREE.Group();
-  G.position.set(0, -0.02, -3.6);
+  G.position.set(0, -0.02, EYES_Z);
   G.userData = { eyes: [], mats: [], blink: 0, blinkIn: 2.2, baseY: -0.02,
                  ready: false, gone: false, stay: 0, stayFor: 3 };
   texLoader.load('assets/eyes.png', (tex) => {
@@ -7380,7 +7647,7 @@ function startPeek() {
    * feature of the gate. The first made it a thing that happened to you. */
   u.gone = eyesSeen; u.stay = 0; u.stayFor = 2.4 + Math.random() * 1.6;
   if (eyesSeen) gateEyes.visible = false;
-  gateEyes.position.z = -3.6;
+  gateEyes.position.z = EYES_Z;
   gateEyes.userData.blink = 0;
   gateEyes.userData.blinkIn = 2.2;
   _peekHome.copy(camera.position); _peekHomeQ.copy(camera.quaternion);
@@ -7501,8 +7768,9 @@ addItemShine(waterBottleWorld, { size: 0.5, height: 0.10 });
 let waterBottleTaken = false;
 const waterBottleItem = {
   id: 'waterbottle', name: 'Bottle of water', icon: makeWaterBottleIcon(),
-  use: () => openInspect(waterBottle, { rotX: 0.1, rotY: 0.6 }),
+  use: () => toggleEquip(waterBottleItem),
 };
+holdable(waterBottleItem, waterBottle, { scale: 0.85, pos: [0, -0.05, 0], rot: [0.1, 0.5, 0.15] });
 addInteractable(waterBottleWorld, 'Take the bottle of water', 'inventory', {
   onActivate: () => {
     if (waterBottleTaken) return;
@@ -7938,7 +8206,7 @@ function updateShip(dt) {
   const reach = SN.HALF + 1.0;
   if (Math.abs(lx) > reach || Math.abs(lz) > 9) { onShip = false; inBridge = false; return; }
 
-  const feet = camBaseY - EYE_HEIGHT;
+  const feet = camBaseY - playerEye();
   const floor = shipFloorAt(lx, lz, feet);
   if (floor !== null) {
     onShip = true;
@@ -8047,6 +8315,20 @@ scene.add(dock);
   drift.position.set(DOCK_DRIFT_X, 0, DOCK_DRIFT_Z);
   scene.add(drift);
 }
+/* The deck as a floor for anything that is not the player: the boards' top
+ * at (x, z), or null off the pier. `onPier` is the footprint alone, and it
+ * is what stops the surf clamp from dragging a bottle dropped at the sea end
+ * back up the beach. */
+function dockLocal(wx, wz) {
+  return { lx: (wz - DOCK_Z) / DOCK_S, lz: -(wx - DOCK_X) / DOCK_S };
+}
+function onPier(wx, wz) {
+  const { lx, lz } = dockLocal(wx, wz);
+  return lx > DK.X0 && lx < DK.X1 && lz > DK.Z0 && lz < DK.Z1;
+}
+function dockDeckAt(wx, wz) {
+  return onPier(wx, wz) ? DOCK_DECK : null;
+}
 function driftAt(wx, wz) {
   const d = Math.hypot(wx - DOCK_DRIFT_X, wz - DOCK_DRIFT_Z) / DOCK_DRIFT_R;
   if (d >= 1) return 0;
@@ -8111,10 +8393,56 @@ new GLTFLoader().load('assets/dock.glb', (gltf) => {
   farProps.push({ obj: dock, z: DOCK_Z, d: 300 });
   farProps.push({ obj: l1, z: DOCK_Z, d: 300 });
   farProps.push({ obj: l2, z: DOCK_Z, d: 300 });
-  // the boat is solid — two cylinders down its length
-  for (const lz of [1.0, 2.0]) {
-    const w = dock.localToWorld(new THREE.Vector3(-1.32, 0, lz));
-    rockColliders.push({ x: w.x, z: w.z, r: 1.35, top: 0.5 * DOCK_S });
+  /* Everything on the pier you can walk into, taken from the model itself
+   * rather than guessed. The piles were the worst of it — you walked through
+   * every one — and a hand-placed list would drift the moment the model did.
+   *
+   * `columnsOf` finds the uprights in a mesh: it buckets the vertices onto a
+   * coarse world grid in x/z, and emits one cylinder per bucket. The piles
+   * are a SINGLE mesh holding all of them, so its bounding box is the whole
+   * pier and no one box would do.
+   *
+   * The boat is a BOX, not a circle. It was two r = 1.35 cylinders, and a
+   * circle round a five-metre hull leaves a metre of open air off each side
+   * that you stand on — which is the "you just float on top of it". A box on
+   * its real footprint lets you step on at the gunwale and off again. */
+  const columnsOf = (mesh, cell, mat) => {
+    mesh.updateWorldMatrix(true, false);
+    const pos = mesh.geometry.attributes.position, v = new THREE.Vector3();
+    const cells = new Map();
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+      const key = Math.round(v.x / cell) + ',' + Math.round(v.z / cell);
+      let c = cells.get(key);
+      if (!c) cells.set(key, c = { x0: v.x, x1: v.x, z0: v.z, z1: v.z, top: v.y, lo: v.y });
+      c.x0 = Math.min(c.x0, v.x); c.x1 = Math.max(c.x1, v.x);
+      c.z0 = Math.min(c.z0, v.z); c.z1 = Math.max(c.z1, v.z);
+      c.top = Math.max(c.top, v.y); c.lo = Math.min(c.lo, v.y);
+    }
+    for (const c of cells.values()) {
+      const r = Math.max(c.x1 - c.x0, c.z1 - c.z0) / 2;
+      if (r < 0.06 || c.top - c.lo < 0.5) continue;      // a rail, not an upright
+      rockColliders.push({ x: (c.x0 + c.x1) / 2, z: (c.z0 + c.z1) / 2, r: Math.min(r, 0.45), top: c.top, mat });
+    }
+  };
+  let pillars = null, lightPost = null, boat = null;
+  dock.traverse((o) => {
+    if (!o.isMesh) return;
+    const n = o.material.name;
+    if (n === 'WoodenPillars') pillars = o;
+    else if (n === 'LightPost') lightPost = o;
+    else if (n === 'Boat') boat = o;
+  });
+  if (pillars) columnsOf(pillars, 1.2, 'wood');
+  if (lightPost) columnsOf(lightPost, 2.0, 'wood');
+  if (boat) {
+    boat.updateWorldMatrix(true, false);
+    const bb = new THREE.Box3().setFromObject(boat);
+    rockColliders.push({
+      x0: bb.min.x + 0.15, x1: bb.max.x - 0.15,
+      z0: bb.min.z + 0.15, z1: bb.max.z - 0.15,
+      top: bb.max.y - 0.06, mat: 'wood',
+    });
   }
 });
 /* Standing on it. The drift is terrain and always applies; the boards only
@@ -8152,7 +8480,7 @@ function updateDock(dt) {
   }
   const dx = camera.position.x - DOCK_X, dz = camera.position.z - DOCK_Z;
   if (Math.abs(dx) > 24 || Math.abs(dz) > 16) { onDock = false; return; }
-  const feet = camBaseY - EYE_HEIGHT;
+  const feet = camBaseY - playerEye();
   const g = driftAt(camera.position.x, camera.position.z);
   if (g > groundY) groundY = g;
   let lx = dz / DOCK_S, lz = -dx / DOCK_S;
@@ -8182,9 +8510,13 @@ function updateDock(dt) {
         for (let i = 1; i < 4; i++) if (Math.abs(push[i]) < Math.abs(push[k])) k = i;
         if (k < 2) lx += push[k]; else lz += push[k];
       }
-    } else {
-      // not on it: it is a wall. Faces in model space, then the world x each
-      // would leave you at, so the surf clamp is never asked to undo a push.
+    } else if (feet + playerHeight() > DOCK_DECK) {
+      /* Not on it, and too tall to pass beneath: the footprint is a wall.
+       * Faces in model space, then the world x each would leave you at, so
+       * the surf clamp is never asked to undo a push.
+       *
+       * Crouch and this branch does not run, so you crawl in under the deck
+       * — the piles stay solid, because those are real colliders now. */
       const cands = [
         [DK.X0 - pr - lx, 0], [DK.X1 + pr - lx, 0], [0, DK.Z1 + pr - lz],
       ].filter(([px, pz]) => DOCK_X - (lz + pz) * DOCK_S >= WADE_X + 0.05);
@@ -8410,7 +8742,10 @@ function update(dt, rawDt = dt) {
   const running = wantRun && moving && stamina > 0 && !exhausted && onGround;
   if (running) { stamina = Math.max(0, stamina - dt / RUN_SECONDS); if (stamina <= 0) exhausted = true; }
   else { stamina = Math.min(1, stamina + dt / STAM_REGEN); if (exhausted && stamina > 0.35) exhausted = false; }
-  const spd = (running ? RUN_SPEED : WALK_SPEED) * settings.walkSpeed;
+  crouchT += ((crouching ? 1 : 0) - crouchT) * Math.min(1, dt * 11);
+  if (crouchT < 0.001) crouchT = 0;
+  if (crouchT > 0.999) crouchT = 1;
+  const spd = (running ? RUN_SPEED : WALK_SPEED) * settings.walkSpeed * (1 - crouchT * 0.55);
 
   camera.getWorldDirection(forward);
   forward.y = 0; forward.normalize();
@@ -8437,7 +8772,7 @@ function update(dt, rawDt = dt) {
   // Skipped inside the drainage tunnel home — there are no beach rocks in
   // there, and pushOutOfRocks would shove you about inside the pipe.
   if (!insideTower && !insideDrain) {
-    const feet = camBaseY - EYE_HEIGHT;
+    const feet = camBaseY - playerEye();
     pushOutOfRocks(feet);
     const rc = rockGroundAt(camera.position.x, camera.position.z, feet);
     if (rc && rc.top > groundY) groundY = rc.top;
@@ -8457,7 +8792,7 @@ function update(dt, rawDt = dt) {
   }
   vy -= P_GRAV * dt;
   camBaseY += vy * dt;
-  const floorLimit = EYE_HEIGHT + groundY;
+  const floorLimit = playerEye() + groundY;
   if (camBaseY <= floorLimit) {
     if (!onGround && vy < -3.5) {
       // land with some weight behind it — the tool keeps going after you stop
@@ -8465,7 +8800,7 @@ function update(dt, rawDt = dt) {
       landDip = Math.max(landDip, 0.06 + force * 0.16);
       addTrauma(force * 0.25);
       vmImpulse(-1.1 - force * 2.4);
-      if (inWater(camera.position.x, camera.position.z)) sfxSplash(0.9);
+      if (!onDock && inWater(camera.position.x, camera.position.z)) sfxSplash(0.9);
       else if (onDock) sfxStepWood();
       else sfxStep();
     }
@@ -8494,7 +8829,11 @@ function update(dt, rawDt = dt) {
   staminaFill.style.transform = `scaleX(${Math.max(0, stamina)})`;
   staminaFill.classList.toggle('low', exhausted);
 
-  const wading = inWater(camera.position.x, camera.position.z);
+  /* Splashing is for walking THROUGH water, never over it. On the pier's
+   * boards, on the wreck's deck or on a rock you are above the sea, and the
+   * surf noise underfoot was the loudest thing wrong with the pier. */
+  const wading = !onDock && !onShip && inWater(camera.position.x, camera.position.z)
+    && camBaseY - playerEye() < 0.35;
   if (moving && onGround && speed > 0.6) {
     const dx = camera.position.x - lastFootPos.x, dz = camera.position.z - lastFootPos.z;
     const gate = running ? 1.0 : 0.8;
