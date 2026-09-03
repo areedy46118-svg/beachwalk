@@ -140,6 +140,15 @@ which really are boxes. A per-vertex occupancy grid was tried for the boat
 and was worse: vertices are sparse inside big flat faces, so its own floor
 came out full of holes.
 
+**The deck STOPS you; it never moves you.** Pushing out along the nearest
+legal face flung you the width of the pier — walk in from seaward and the
+sea end was the only face left, so you were shoved five metres sideways. It
+reverts the frame's movement instead (`_preMove`), and where there is
+nowhere legal to revert TO — at the sea end the `WADE_X` clamp pins you at
+x = -2.4, which is inside the footprint — it ducks you instead. A person
+under a low beam crouches; `headroomClear()` already refuses to let you back
+up until you are out.
+
 **The dock clamp must not get the last word on your position.**
 `updateDock()` clamps you to the deck footprint, and running that after the
 solid push-out put you straight back inside a pile — which is how you ended

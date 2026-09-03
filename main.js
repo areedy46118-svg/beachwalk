@@ -3485,6 +3485,7 @@ const physProps = [];
 let held = null;
 const _pv = new THREE.Vector3(), _pt = new THREE.Vector3(), _pf = new THREE.Vector3();
 const _pp = new THREE.Vector3();          // props: where a push-out would put it
+const _preMove = new THREE.Vector3();     // the player, before this frame's movement
 class PhysProp {
   constructor(mesh, opts = {}) {
     this.mesh = mesh;
@@ -8395,23 +8396,33 @@ function dockDeckAt(wx, wz) {
  * in rather than a ramp over it — and a short flight of timber steps does
  * the last two thirds of a metre. Each tread is a real collider with a rise
  * of 0.18, well inside ROCK_STEP, so you walk up them rather than climb. */
-const DOCK_STEPS = [];
-{
-  const wood = new THREE.MeshStandardMaterial({
-    color: 0x6b5942, roughness: 1, metalness: 0, flatShading: true, emissive: 0x231c14,
-  });
+const DOCK_STEPS = new THREE.Group();
+scene.add(DOCK_STEPS);
+function buildDockSteps(deckMat) {
+  /* The pier's own timber, not a colour that nearly matches it: the material
+   * is taken from the deck the steps run up to, so they are the same boards.
+   * Each tread ABUTS the one above with no gap — the first is set back into
+   * the deck's lip by an overlap — and every riser runs all the way down to
+   * the sand, so nothing floats however the drift falls away beneath. */
   const EDGE = DOCK_X - DK.Z0 * DOCK_S;          // the deck's landward lip
-  const HALF_W = 1.7, DEPTH = 0.42;
+  const HALF_W = 1.55, TREAD = 0.46, RISE = 0.18, LAP = 0.05;
+  const cz = DOCK_Z + ((DK.X0 + DK.X1) / 2) * DOCK_S;
   for (let i = 0; i < 3; i++) {
-    const top = DOCK_DECK - (i + 1) * 0.18;      // 1.556, 1.376, 1.196
-    const x0 = EDGE + i * DEPTH, x1 = x0 + DEPTH + 0.06;
-    const cz = DOCK_Z + ((DK.X0 + DK.X1) / 2) * DOCK_S;
-    const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, 0.9, HALF_W * 2), wood);
-    m.position.set((x0 + x1) / 2, top - 0.45, cz);
-    scene.add(m);
-    DOCK_STEPS.push(m);
+    const top = DOCK_DECK - (i + 1) * RISE;      // 1.556, 1.376, 1.196
+    const x0 = EDGE - LAP + i * TREAD;
+    const x1 = x0 + TREAD + LAP;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, top + 0.6, HALF_W * 2), deckMat);
+    m.position.set((x0 + x1) / 2, top - (top + 0.6) / 2, cz);
+    DOCK_STEPS.add(m);
+    // a stringer down each side, so the flight reads as built and not stacked
+    for (const sg of [-1, 1]) {
+      const sr = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, top + 0.5, 0.14), deckMat);
+      sr.position.set((x0 + x1) / 2, top - (top + 0.5) / 2 + 0.06, cz + sg * (HALF_W + 0.05));
+      DOCK_STEPS.add(sr);
+    }
     rockColliders.push({ x0, x1, z0: cz - HALF_W, z1: cz + HALF_W, top, mat: 'wood' });
   }
+  farProps.push({ obj: DOCK_STEPS, z: DOCK_Z, d: 300 });
 }
 function driftAt(wx, wz) {
   const d = Math.hypot(wx - DOCK_DRIFT_X, wz - DOCK_DRIFT_Z) / DOCK_DRIFT_R;
@@ -8465,6 +8476,11 @@ new GLTFLoader().load('assets/dock.glb', (gltf) => {
   if (boxMesh) boxMesh.visible = false;
   dock.add(gltf.scene);
   dock.updateMatrixWorld(true);
+  {
+    let deckMat = null;
+    dock.traverse((o) => { if (o.isMesh && o.material.name === 'floor') deckMat = o.material; });
+    buildDockSteps(deckMat || new THREE.MeshStandardMaterial({ color: 0x6b5942, roughness: 1, flatShading: true, emissive: 0x231c14 }));
+  }
   {
     const at = dock.localToWorld(new THREE.Vector3(-0.31, 0.62, 2.10));
     buildCrate(at.x, DOCK_DECK, at.z, 0.4, dropKey);
@@ -8621,17 +8637,31 @@ function updateDock(dt) {
         if (k < 2) lx += push[k]; else lz += push[k];
       }
     } else if (feet + playerHeight() > DOCK_DECK) {
-      /* Not on it, and too tall to pass beneath: the footprint is a wall.
-       * Faces in model space, then the world x each would leave you at, so
-       * the surf clamp is never asked to undo a push.
+      /* Not on it, and too tall to pass beneath, so the deck stops you —
+       * it STOPS you, it does not move you. This used to push out along the
+       * nearest face, and walking into the pier from seaward left the sea
+       * end as the only legal face, so you were shoved five metres sideways
+       * across the whole width of the pier: the teleport.
        *
-       * Crouch and this branch does not run, so you crawl in under the deck
-       * — the piles stay solid, because those are real colliders now. */
-      const cands = [
-        [DK.X0 - pr - lx, 0], [DK.X1 + pr - lx, 0], [0, DK.Z1 + pr - lz],
-      ].filter(([px, pz]) => DOCK_X - (lz + pz) * DOCK_S >= WADE_X + 0.05);
-      cands.sort((a, b) => (Math.abs(a[0]) + Math.abs(a[1])) - (Math.abs(b[0]) + Math.abs(b[1])));
-      if (cands.length) { lx += cands[0][0]; lz += cands[0][1]; }
+       * Undoing the frame's movement is the honest answer to "you cannot go
+       * there". If the position you came from was itself inside the deck
+       * (you stood up under the boards), fall back to the old push so you
+       * are never sealed in.
+       *
+       * Crouch and this branch does not run at all, so you crawl in under
+       * the deck — the piles stay solid, because those are real colliders. */
+      if (!onPier(_preMove.x, _preMove.z)) {
+        camera.position.x = _preMove.x;
+        camera.position.z = _preMove.z;
+        return;
+      }
+      /* You are already under it and there is nowhere legal to send you —
+       * at the sea end the WADE_X clamp pins you at x = -2.4, which is
+       * INSIDE the footprint, so no push has an honest destination and the
+       * old one flung you the width of the pier. Duck instead. It is what a
+       * person does under a low beam, `headroomClear()` already refuses to
+       * let you back up until you are clear, and nothing teleports. */
+      crouching = true;
     }
   }
   camera.position.x = DOCK_X - lz * DOCK_S;
@@ -8890,6 +8920,8 @@ function update(dt, rawDt = dt) {
   velocity.lerp(target, 1 - Math.pow(0.0016, dt));
   camera.position.sub(_shakePrev);            // undo last frame's shake first
   _shakePrev.set(0, 0, 0);
+  // where you stood before this frame moved you — what a blocked move undoes to
+  _preMove.set(camera.position.x, 0, camera.position.z);
   camera.position.addScaledVector(velocity, dt);
   // being nipped shoves you back a little
   if (knockback.lengthSq() > 0.0001) {
