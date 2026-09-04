@@ -539,7 +539,9 @@ function makeCliff() {
     const zAlong = pos.getX(i);
     const u = pos.getY(i) + 0.5;
     let cx, cy;
-    if (u < 0.22) { const t = u / 0.22; cx = L(CLIFF_X - 3.0, CLIFF_X - 0.25, t); cy = L(0.0, 0.55, t * t); }
+    // the first row sits 12 cm UNDER the beach plane, so the sand covers the
+    // edge instead of meeting it on a line (see "Sink a rim, don't dither it")
+    if (u < 0.22) { const t = u / 0.22; cx = L(CLIFF_X - 3.2, CLIFF_X - 0.25, t); cy = -0.12 + 0.67 * Math.pow(t, 1.6); }
     else if (u < 0.62) { const t = (u - 0.22) / 0.40; cx = L(CLIFF_X - 0.25, CLIFF_X - 0.55, t); cy = L(0.55, CLIFF_H, t); }
     else { const t = (u - 0.62) / 0.38; cx = L(CLIFF_X - 0.55, CLIFF_X + 30.0, t * t); cy = L(CLIFF_H, CLIFF_H + 0.9, t); }
     const faceMask = cl((u - 0.15) / 0.2, 0, 1) * cl((0.68 - u) / 0.15, 0, 1);
@@ -551,15 +553,20 @@ function makeCliff() {
     pos.setXYZ(i, cx, cy, zAlong);
   }
   g.computeVertexNormals();
-  /* The toe is where the cliff and the beach meet, and it used to meet badly:
-   * a hard line of a different grey, at a different grain size, sitting on
-   * the sand. `aU` is the loft parameter (0 at the toe, 1 at the top), and
-   * the shader uses it to run the bottom band back to the beach's own colour
-   * and then dissolve the last of it on a hash — so the cliff comes out of
-   * the sand instead of being placed on it. The along-shore density is the
-   * beach's own (one tile per SAND_TILE) so the grain rate agrees where they
-   * touch; up the face it stays finer, because a vertical wall at 9 m a tile
-   * is a smear. */
+  /* THE TOE IS THE BEACH. Where the cliff meets the sand it used to meet on
+   * a line you could see from the spawn: a hand-guessed tint that was not
+   * the beach's, the cliff's own grain at a different density, a bump twice
+   * the beach's, and a dithered edge lying ON the sand plane. `aU` is the
+   * loft parameter (0 at the toe, 1 at the top) and over the bottom band
+   * everything converges on the sand material EXACTLY: the colour and
+   * emissive are scaled by the ratio of the two materials' own constants
+   * (uniforms, not guesses); the map and emissive map are sampled in WORLD
+   * space at the beach's density and phase — (w + 800) / SAND_TILE, the same
+   * formula the ridge bakes into its uv — so the grain is continuous across
+   * the join; the beach's wet treatment (tint, roughness, metalness off
+   * `shoreLine`) runs in the same band; the bump is eased toward the flat
+   * geometric normal; and the edge row is sunk under the sand plane, so
+   * there is no edge to dither. Up the face it is the cliff's own. */
   const uAttr = new Float32Array(pos.count);
   for (let i = 0; i < pos.count; i++) uAttr[i] = g.attributes.uv.getY(i) + 0.5;
   g.setAttribute('aU', new THREE.BufferAttribute(uAttr, 1));
@@ -570,20 +577,42 @@ function makeCliff() {
     color: 0x64697c, roughness: 1, metalness: 0, emissive: 0x2f3648, emissiveMap: tex, side: THREE.DoubleSide,
   });
   mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = oceanUniforms.uTime;
+    sh.uniforms.uToeCol = { value: new THREE.Vector3(sandMat.color.r / mat.color.r, sandMat.color.g / mat.color.g, sandMat.color.b / mat.color.b) };
+    sh.uniforms.uToeEmi = { value: new THREE.Vector3(sandMat.emissive.r / mat.emissive.r, sandMat.emissive.g / mat.emissive.g, sandMat.emissive.b / mat.emissive.b) };
+    sh.uniforms.uToeBump = { value: sandMat.bumpScale / mat.bumpScale };
+    sh.uniforms.uSandTile = { value: SAND_TILE };
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float aU;\nvarying float vU;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vU = aU;');
+      .replace('#include <common>', '#include <common>\nattribute float aU;\nvarying float vU;\nvarying vec3 vToeW;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vU = aU;')
+      .replace('#include <fog_vertex>', '#include <fog_vertex>\n  vToeW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
         varying float vU;
-        float bwH2(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }`)
-      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
-        if (vU < bwH2(floor(gl_FragCoord.xy)) * 0.075) discard;`)
-      .replace('#include <map_fragment>', `#include <map_fragment>
-        // the toe carries the beach's colour, so there is nothing to see at
-        // the join; the face is the cliff's own further up
-        float bwT = smoothstep(0.06, 0.30, vU);
-        diffuseColor.rgb *= mix(vec3(1.072, 1.199, 1.529), vec3(1.0), bwT);`);
+        varying vec3 vToeW;
+        uniform float uTime, uToeBump, uSandTile;
+        uniform vec3 uToeCol, uToeEmi;
+        float bwT, bwWet;
+        vec4 bwToeTex;
+        ` + noiseGLSL + shoreGLSL)
+      .replace('#include <map_fragment>', `
+        bwT = smoothstep(0.04, 0.27, vU);                 // 0 on the apron, 1 up the face
+        // the beach's own grain, in world space at the beach's density and phase
+        vec2 bwUv = vec2((vToeW.x + 800.0) / uSandTile, (800.0 - vToeW.z) / uSandTile);
+        bwToeTex = mix(texture2D(map, bwUv), texture2D(map, vMapUv), bwT);
+        diffuseColor *= bwToeTex;
+        // the beach's constants, exactly, and its wet treatment
+        diffuseColor.rgb *= mix(uToeCol, vec3(1.0), bwT);
+        float bwFrom = vToeW.x - shoreLine(vToeW.z, uTime);
+        bwWet = smoothstep(16.0, -1.0, bwFrom) * (1.0 - bwT);
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.72, 0.78, 0.9), bwWet);`)
+      .replace('#include <emissivemap_fragment>', `
+        totalEmissiveRadiance *= bwToeTex.rgb * mix(uToeEmi, vec3(1.0), bwT);`)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n  roughnessFactor = mix(roughnessFactor, 0.30, bwWet);')
+      .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n  metalnessFactor = mix(metalnessFactor, 0.22, bwWet);')
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        // the beach's bump is weaker: ease the perturbation toward it on the apron
+        normal = normalize(mix(nonPerturbedNormal, normal, mix(uToeBump, 1.0, bwT)));`);
   };
   const mesh = new THREE.Mesh(g, mat);
   mesh.frustumCulled = false;
