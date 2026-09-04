@@ -40,6 +40,24 @@ below = np.clip((yy - (chin - 24)) / 30, 0, 1)   # the matte takes over under th
 body_a = pinkness * window * below
 body_a = np.array(Image.fromarray((body_a * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(2.2))).astype(np.float32) / 255.0
 body_a = np.clip(body_a * 1.6, 0, 1)             # the blur thinned it; fill the suit back in
+# --- the suit under the water is the HOOD'S pink, not the red the water made of it.
+# Seen through the sea the suit came out dark red, which on a night beach read
+# as a body. So: the hood's own colour is measured off the head, the body's
+# silhouette is closed up so the water showing through it fills in, and every
+# pixel in it is re-coloured to that pink, keeping only the picture's own
+# light and shade (its luminance) so the wet folds still read.
+head_pink = (pinkness > 0.5) & (head_a > 0.5) & (yy < chin - 40)
+hood = rgb[head_pink].mean(0) if head_pink.any() else np.array([214.0, 52.0, 122.0])
+sil = Image.fromarray((np.clip(body_a * 2.2, 0, 1) * 255).astype(np.uint8))
+sil = sil.filter(ImageFilter.MaxFilter(9)).filter(ImageFilter.MinFilter(7)).filter(ImageFilter.GaussianBlur(2))
+sil = np.array(sil).astype(np.float32) / 255.0 * below
+lum = (0.30 * rgb[:, :, 0] + 0.59 * rgb[:, :, 1] + 0.11 * rgb[:, :, 2])
+hood_lum = 0.30 * hood[0] + 0.59 * hood[1] + 0.11 * hood[2]
+shade = np.clip(lum / max(hood_lum, 1.0), 0.55, 1.15)[:, :, None]
+recol = np.clip(hood[None, None, :] * shade, 0, 255)
+k = (sil * 0.92)[:, :, None]                     # how far toward the hood's pink
+rgb = rgb * (1 - k) + recol * k
+body_a = np.maximum(body_a, sil)
 # --- join and fade
 alpha = np.maximum(head_a * (1 - below) + head_a * below, body_a)
 alpha = np.maximum(alpha, head_a * (yy < chin + 6))

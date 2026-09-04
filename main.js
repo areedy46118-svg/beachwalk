@@ -2536,6 +2536,13 @@ function makeCraterTexture() {
   return t;
 }
 
+/* ONE GAIT FOR EVERY TRAIL. Measured off a photograph of a walk along a
+ * beach: each foot lands `FOOT_SIDE` off the line of travel on its own side
+ * (so the two lines are a foot's width apart), a stride `FOOT_STRIDE`
+ * apart, toes turned `FOOT_TOE` out. The player's own prints, the trail
+ * behind the spawn to the drain, and the trail at the campsite all use
+ * these — a trail with a different spacing reads as a different animal. */
+const FOOT_SIDE = 0.16, FOOT_STRIDE = 0.66, FOOT_TOE = 0.08;
 const FOOT_POOL = 96;
 const footGeo = new THREE.PlaneGeometry(0.31, 0.44); footGeo.rotateX(-Math.PI / 2);   // a print is wider than it looks
 const foot = new THREE.InstancedMesh(footGeo, new THREE.MeshBasicMaterial({ map: makeFootTexture(), transparent: true, depthWrite: false, opacity: 0.88 }), FOOT_POOL);
@@ -2587,8 +2594,8 @@ function stampFoot(x, z, fwdX, fwdZ, side) {
   _fe.set(0, Math.atan2(fwdX, fwdZ) + Math.PI, 0);
   _fq.setFromEuler(_fe);
   // feet fall either side of the line of travel, toes a little out, never quite the same
-  const off = (0.26 + Math.random() * 0.06) * side;
-  _fe.y += side * 0.13 + (Math.random() - 0.5) * 0.16;
+  const off = (FOOT_SIDE + (Math.random() - 0.5) * 0.04) * side;
+  _fe.y += side * FOOT_TOE + (Math.random() - 0.5) * 0.10;
   _fq.setFromEuler(_fe);
   // negative x-scale mirrors the texture, so one foot is the other's reflection
   _fs.set((0.92 + Math.random() * 0.16) * side, 1, 1.0 + Math.random() * 0.2);
@@ -2627,7 +2634,8 @@ function stampDigHole(x, z, fwdX = 0, fwdZ = -1) {
 }
 {
   let side = 1;
-  for (let i = 22; i >= 1; i--) { stampFoot(camera.position.x + Math.sin(i * 0.5) * 0.3, camera.position.z + i * 0.8, 0, -1, side); side = -side; }
+  // the walk in from the drain: on the line, the stagger is stampFoot's own
+  for (let i = 26; i >= 1; i--) { stampFoot(camera.position.x + (Math.random() - 0.5) * 0.04, camera.position.z + i * FOOT_STRIDE, 0, -1, side); side = -side; }
   lastFootPos.set(camera.position.x, 0, camera.position.z);
 }
 
@@ -10346,13 +10354,13 @@ const camp = new THREE.Group();
     const heading = Math.atan2(fwdX, fwdZ) + Math.PI;
     let side = 1, i = 0;
     // the first pair is right at the towel's edge, where they stood up
-    for (let x = CAMP_X - 1.36; x > 1.6 && i < CAMP_PRINTS; x -= 0.58 + Math.random() * 0.08, side = -side, i++) {
+    for (let x = CAMP_X - 1.36; x > 1.6 && i < CAMP_PRINTS; x -= FOOT_STRIDE + (Math.random() - 0.5) * 0.06, side = -side, i++) {
       // STAGGERED, like a walk: left and right feet a shoulder's width apart
       // either side of the line, toes turned a little out, each a little
       // different — in a row they read as a stamp
-      const off = (0.30 + Math.random() * 0.08) * side;
-      e.set(0, heading + side * 0.14 + (Math.random() - 0.5) * 0.18, 0); q.setFromEuler(e);
-      const z = CAMP_Z + 0.02 + (Math.random() - 0.5) * 0.08;
+      const off = (FOOT_SIDE + (Math.random() - 0.5) * 0.04) * side;
+      e.set(0, heading + side * FOOT_TOE + (Math.random() - 0.5) * 0.10, 0); q.setFromEuler(e);
+      const z = CAMP_Z + 0.02 + (Math.random() - 0.5) * 0.04;
       sc.set((0.92 + Math.random() * 0.16) * side, 1, 1.0 + Math.random() * 0.2);
       m.compose(new THREE.Vector3(x + (-fwdZ) * off, 0.03, z + fwdX * off), q, sc);
       campFoot.setMatrixAt(i, m);
@@ -11584,7 +11592,7 @@ function update(dt, rawDt = dt) {
     && camBaseY - playerEye() < 0.35;
   if (moving && onGround && speed > 0.6) {
     const dx = camera.position.x - lastFootPos.x, dz = camera.position.z - lastFootPos.z;
-    const gate = running ? 1.0 : 0.8;
+    const gate = running ? FOOT_STRIDE * 1.3 : FOOT_STRIDE;
     if (dx * dx + dz * dz > gate * gate) {
       moveDir.copy(velocity).setY(0).normalize();
       if (wading) {

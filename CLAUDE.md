@@ -1326,7 +1326,12 @@ in the picture (the suit seen through the water, and its colour on the
 water) is kept by a soft colour matte, so the neck and chest come out of
 the sea as they do in the photograph, and the last sixth of the frame fades
 so the picture never ends on a line. The bake keeps his colours (`sat`
-1.0, twelve levels): the pink and the cyan are the point of him. `SNORK_WL` is
+1.0, twelve levels): the pink and the cyan are the point of him. **And the
+suit under the water is the HOOD'S pink.** Seen through the sea it came out
+dark red, which on a night beach read as a body: the tool measures the
+hood's colour off the head, closes the body's silhouette so the water
+showing through it fills in, and re-colours every pixel in it to that pink
+keeping only the picture's own luminance, so the wet folds still read. `SNORK_WL` is
 the photo's waterline as a fraction of the cut-out; he rises until that line
 sits `SNORK_SINK` relative to the drawn sea (negative: a hand above it, so
 the wet shoulders show and the fade meets the water). The sprite is placed
@@ -1354,11 +1359,14 @@ pinned at your chest and the throw began behind glass. Only the cliff is a
 wall now, either way, and `throwHeld()` gives 16 m/s with more lift (was
 12), about fifteen metres out: past the snorkeler, not past the horizon.
 
-**Prints are STAGGERED, and WIDE.** Left and right feet fall a shoulder's
-width either side of the line of travel (0.26–0.38 m, not 0.14), toes
-turned a little out, each with its own small yaw — in a straight row they
-read as a stamp. Both `stampFoot()` and the campsite trail do this. The
-print quad is 0.31 m across: a foot is wider than it looks.
+**ONE GAIT FOR EVERY TRAIL.** `FOOT_SIDE` (0.16 m off the line, each foot
+on its own side, so the two lines are a foot's width apart), `FOOT_STRIDE`
+(0.66 m) and `FOOT_TOE` (0.08 rad out), measured off a photograph of a walk
+along a beach. The player's own prints (`stampFoot()` and the stride gate),
+the trail behind the spawn to the drain (which used to wander on a sine
+and stride 0.8), and the campsite trail all use them — a trail with a
+different spacing reads as a different animal. The print quad is 0.31 m
+across: a foot is wider than it looks.
 
 **A footprint is ONE depression with a shadow INSIDE it.** Built off a
 photograph of a bare print in wet sand: the whole sole is a single shallow
