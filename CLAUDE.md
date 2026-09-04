@@ -1379,6 +1379,36 @@ Two things that bit building it: `Object3D.position` is a getter, so
 glint Sprite under any raycast wants `Raycaster.camera`, so `addItemShine`
 gives it a no-op `raycast`.
 
+**The mushroom house (`MUSH_X` / `MUSH_Z`, 90 m past the tall one).** The
+Bell Pavilion — La Jolla's "mushroom house" — built to the photographs in
+`models/mushroom-house.js`, GENERATED like the lighthouse, not imported: a
+round concrete room on a single column, its underside a flaring dish of 28
+radial ribs (the gills), a band of 26 wood-framed window bays all the way
+round under a low roof with a ribbed ceiling, and below it a bunker of
+curved concrete walls on a raised platform with an iron gate hanging open;
+inside the column a spiral stair of open cantilevered treads winding round
+an open well up into the room, a rail on the well side and a rail round the
+well above with a gap where the stair arrives. Abandoned: 42 % of the panes
+gone and another fifth broken to a half, glass on the floor under them,
+streaked and tie-holed concrete with spray tags on a few wall bays, a dead
+pendant lamp. Everything the walk needs is in `MUSH` (radii, `H_ROOM`, the
+door's angle and half-width, the stair's rise, treads, turns, `A0` and
+`TOP_ANG`); the stair goes UP as the angle DECREASES, the lighthouse's
+convention, and `updateMushroom()` is `updateTower()`'s shape: regions and
+clamps, the climb by winding, the tread snap. Three things it had to get
+right: the room branch only applies OVER THE FLOOR RING (`d >= BORE`) —
+keyed on height alone, the top metre of the climb read as the room and
+snapped you up onto a floor you had not reached; the well is railed from
+the floor except where the stair arrives (`atTop`), but `mushOnFloor`
+remembers whether you came from the floor, because someone winding DOWN
+past the top must not be held; and the cliff clamp lifts while
+`insideMush` so the back of the room, which stands past `CLIFF_BLOCK_X`,
+can be walked. The bunker walls are `rockColliders` cylinders 1 m apart
+(AABB boxes cannot turn), the platform a 0.4 m cylinder you step up, and
+the cliff is cut open round it in world space, the drain's trick. Its
+group is in `farProps`, so in a frozen preview still you must set it
+visible yourself.
+
 **The tall one (`SMILE_X` / `SMILE_Z`, past the snorkeler).** Vertex
 Mercher's "The smile (Rigged)" — a 165k-triangle rig with no clips — built
 by `tools/smile_anim.py` into `assets/smile.glb`: decimated to 24k with its

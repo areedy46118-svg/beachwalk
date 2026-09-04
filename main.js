@@ -6,6 +6,7 @@ import { makeBloodJar } from './models/blood-jar.js';
 import { makeDrainageTunnelHome } from './models/drainage-tunnel-home.js';
 import { makeWaterBottle, makeWaterBottleIcon } from './models/water-bottle.js';
 import { makeShipwreck } from './models/shipwreck.js';
+import { makeMushroomHouse, MUSH } from './models/mushroom-house.js';
 import { makeRing, makeRingIcon } from './models/ring.js';
 import { makeCdCase, makeCdCaseIcon } from './models/cd-case.js';
 
@@ -10894,6 +10895,96 @@ function updateSmile(dt) {
   }
 }
 
+// ------------------------------------------------------------------
+// The mushroom house — the Bell Pavilion, past the tall one
+// ------------------------------------------------------------------
+/* Built to the photographs (see models/mushroom-house.js): a round concrete
+ * room on a single column at the foot of the sand wall, a bunker of curved
+ * walls on a platform below it, an iron gate hanging open, and inside the
+ * column a spiral stair that winds up an open well into the room. It is a
+ * fixed world object like the lighthouse and walks the same way: regions
+ * and clamps in `updateMushroom()`, the stair climbed by winding, the room
+ * a floor with a window wall and a railed well. Its bunker walls and
+ * platform are `rockColliders`, so a thrown thing and the player agree on
+ * them. The cliff is cut open behind it in world space, the drain's trick.
+ * The cliff clamp lifts while `insideMush`, so the back of the room — which
+ * stands past CLIFF_BLOCK_X — can be walked. */
+const MUSH_X = 12.6, MUSH_Z = SMILE_Z - 90;
+const mushHouse = makeMushroomHouse();
+mushHouse.group.position.set(MUSH_X, 0, MUSH_Z);
+scene.add(mushHouse.group);
+farProps.push({ obj: mushHouse.group, z: MUSH_Z, d: 320 });
+for (const c of mushHouse.colliders) {
+  if (c.r !== undefined) rockColliders.push({ x: c.x + MUSH_X, z: c.z + MUSH_Z, r: c.r, top: c.top, mat: c.mat });
+  else rockColliders.push({ x0: c.x0 + MUSH_X, x1: c.x1 + MUSH_X, z0: c.z0 + MUSH_Z, z1: c.z1 + MUSH_Z, top: c.top, mat: c.mat });
+}
+{
+  const prev = cliff.material.onBeforeCompile;
+  cliff.material.onBeforeCompile = function (sh, rndr) {
+    if (prev) prev.call(this, sh, rndr);
+    sh.uniforms.uMushX = { value: MUSH_X }; sh.uniforms.uMushZ = { value: MUSH_Z };
+    sh.fragmentShader = 'uniform float uMushX, uMushZ;\n' + sh.fragmentShader.replace(
+      'if (abs(vDrainW.z - uDrainZ) < 2.6 && vDrainW.y < 3.3) discard;',
+      'if (abs(vDrainW.z - uDrainZ) < 2.6 && vDrainW.y < 3.3) discard;\n  if (length(vDrainW.xz - vec2(uMushX, uMushZ)) < 6.2 && vDrainW.y < 9.0) discard;');
+  };
+  cliff.material.needsUpdate = true;
+}
+let insideMush = false, mushTurns = 0, mushLastA = 0, mushStairY = null, mushOnFloor = false;
+const _angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return d; };
+function updateMushroom(dt) {
+  const M = MUSH;
+  const dx = camera.position.x - MUSH_X, dz = camera.position.z - MUSH_Z;
+  let d = Math.hypot(dx, dz);
+  const ang = Math.atan2(dx, dz);
+  const feet = camBaseY - playerEye();
+  const clampTo = (r) => { if (d > 0.001) { camera.position.x = MUSH_X + (dx / d) * r; camera.position.z = MUSH_Z + (dz / d) * r; d = r; } };
+  const atTop = mushTurns * M.RISE >= M.H_ROOM - 0.45 && Math.abs(_angDiff(ang, M.TOP_ANG)) < 1.1;
+
+  // the room: a floor, a window wall, and a well you can only step into
+  // where the stair arrives. OVER THE FLOOR RING only — inside the bore you
+  // are on the stair whatever your height, or the top metre of the climb
+  // read as the room and snapped you up onto a floor you had not reached.
+  if (insideMush && feet > M.H_ROOM - 0.9 && d >= M.BORE - 0.05) {
+    groundY = Math.max(groundY, M.H_ROOM);
+    const outer = M.R_ROOM - 0.45;
+    if (d > outer) clampTo(outer);
+    else if (d < M.BORE + 0.15 && !atTop) clampTo(M.BORE + 0.15);   // the rail round the well
+    mushLastA = ang; mushOnFloor = true;
+    return;
+  }
+  // from the floor, the well is railed except where the stair arrives — but
+  // someone already ON the stair, winding down past the top, is not held
+  if (insideMush && mushOnFloor && d < M.BORE - 0.05 && !atTop) {
+    groundY = Math.max(groundY, M.H_ROOM);
+    clampTo(M.BORE + 0.15); mushLastA = ang; return;
+  }
+  mushOnFloor = false;
+
+  const doorOk = Math.abs(_angDiff(ang, M.DOOR_ANG)) < M.DOOR_HALF * 0.95 && feet < M.PLAT_TOP + 1.7;
+  if (!insideMush) {
+    if (d < M.COL_R + PLAYER_R) {
+      if (doorOk) insideMush = true;
+      else { clampTo(M.COL_R + PLAYER_R); return; }
+    } else return;
+  }
+  // inside the column
+  if (feet < M.PLAT_TOP + 1.2 && d > M.COL_R + 0.9) {       // walked out through the door
+    insideMush = false; mushTurns = 0; mushStairY = null; mushOnFloor = false; return;
+  }
+  const inner = M.BORE - PLAYER_R * 0.55, well = 0.55;
+  if (d > inner && !(doorOk && mushTurns * M.RISE < 0.6)) clampTo(inner);
+  else if (d < well) clampTo(well);
+  // winding: the stair gains RISE per turn, up as the angle decreases
+  if (d > 0.3) {
+    mushTurns = THREE.MathUtils.clamp(mushTurns + _angDiff(mushLastA, ang) / (Math.PI * 2), 0, M.TURNS);
+  }
+  mushLastA = ang;
+  const raw = Math.min(M.H_ROOM, M.PLAT_TOP + mushTurns * M.RISE);
+  const stepped = Math.min(M.H_ROOM, Math.floor((raw - M.PLAT_TOP) / M.STEP + 1e-4) * M.STEP + M.PLAT_TOP + 0.035);
+  mushStairY = mushStairY === null ? stepped : mushStairY + (stepped - mushStairY) * Math.min(1, dt * 18);
+  groundY = Math.max(groundY, mushStairY);
+}
+
 /* The trails. Each one leaves a widening V of ripples behind it and throws a
  * little water as it comes, so from the beach there are three wakes running
  * at you out of the dark before there is anything to see. */
@@ -11856,12 +11947,13 @@ function update(dt, rawDt = dt) {
     knockback.multiplyScalar(1 - Math.min(1, 7 * dt));
   }
   // The drainage tunnel home is the only way through the sand wall.
-  if (!insideTower && !insideDrain && !onDock) {    // the pier's sea end is past WADE_X
+  if (!insideTower && !insideDrain && !onDock && !insideMush) {    // the pier's sea end is past WADE_X; the pavilion's back room is past the cliff line
     camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
     camera.position.x = Math.max(camera.position.x, WADE_X);
   }
   updateCastle();           // before the push-out, so you walk through what you just flattened
   updateTower(dt);
+  updateMushroom(dt);
   updateFarProps();
   // Rocks are solid: walk into one and you're pushed out, clear its lip and
   // you stand on it. Done after updateTower() so a rock simply beats the sand.
@@ -12086,6 +12178,7 @@ layoutViewmodel();
 
 // dev hook
 window.__bw = {
+  MUSH_X, MUSH_Z, MUSH, mushHouse, updateMushroom, mushState: () => ({ inside: insideMush, turns: mushTurns, stairY: mushStairY }),
   smile, updateSmile, smileState: () => ({ phase: smilePhase, t: smileT, loaded: !!smileMixer, clips: Object.keys(smileClips) }), sfxSmileStep,
   updateHurt, hurtEl,
   militaryItem, militaryWorld, milModel, get toolVM() { return toolVM; }, vmScene, vmCamera, toolMount,
@@ -12152,7 +12245,7 @@ window.__bw = {
   corpse, CORPSE_X, CORPSE_Z,
   get lhParts() { return lhParts; },
   get insideTower() { return insideTower; },
-  get groundY() { return groundY; }, set groundY(v) { groundY = v; },
+  get groundY() { return groundY; }, set groundY(v) { groundY = v; }, get camBaseY() { return camBaseY; }, set camBaseY(v) { camBaseY = v; },
   get camBaseY() { return camBaseY; }, set camBaseY(v) { camBaseY = v; },   // floor tests in the harness
   get stairTurns() { return stairTurns; },
   get bottleBroken() { return bottleBroken; },
