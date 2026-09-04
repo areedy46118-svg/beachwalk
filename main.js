@@ -541,7 +541,10 @@ function makeCliff() {
     let cx, cy;
     // the first row sits 12 cm UNDER the beach plane, so the sand covers the
     // edge instead of meeting it on a line (see "Sink a rim, don't dither it")
-    if (u < 0.22) { const t = u / 0.22; cx = L(CLIFF_X - 3.2, CLIFF_X - 0.25, t); cy = -0.12 + 0.67 * Math.pow(t, 1.6); }
+    // a TALUS, not a step: 5.5 m wide, flat for most of it (t^3 keeps it under
+    // 12 cm where you can still walk, at CLIFF_BLOCK_X) and rising only in
+    // the last stretch, so the normal turns slowly and there is no crease
+    if (u < 0.22) { const t = u / 0.22; cx = L(CLIFF_X - 5.5, CLIFF_X - 0.25, t); cy = -0.12 + 0.67 * Math.pow(t, 3.0); }
     else if (u < 0.62) { const t = (u - 0.22) / 0.40; cx = L(CLIFF_X - 0.25, CLIFF_X - 0.55, t); cy = L(0.55, CLIFF_H, t); }
     else { const t = (u - 0.62) / 0.38; cx = L(CLIFF_X - 0.55, CLIFF_X + 30.0, t * t); cy = L(CLIFF_H, CLIFF_H + 0.9, t); }
     const faceMask = cl((u - 0.15) / 0.2, 0, 1) * cl((0.68 - u) / 0.15, 0, 1);
@@ -583,23 +586,28 @@ function makeCliff() {
     sh.uniforms.uToeBump = { value: sandMat.bumpScale / mat.bumpScale };
     sh.uniforms.uSandTile = { value: SAND_TILE };
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float aU;\nvarying float vU;\nvarying vec3 vToeW;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vU = aU;')
+      .replace('#include <common>', '#include <common>\nattribute float aU;\nvarying float vU;\nvarying vec3 vToeW;\nvarying vec3 vToeN;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vU = aU;\n  vToeN = normalize(mat3(modelMatrix) * objectNormal);')
       .replace('#include <fog_vertex>', '#include <fog_vertex>\n  vToeW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
         varying float vU;
-        varying vec3 vToeW;
+        varying vec3 vToeW, vToeN;
         uniform float uTime, uToeBump, uSandTile;
         uniform vec3 uToeCol, uToeEmi;
         float bwT, bwWet;
         vec4 bwToeTex;
         ` + noiseGLSL + shoreGLSL)
       .replace('#include <map_fragment>', `
-        bwT = smoothstep(0.04, 0.27, vU);                 // 0 on the apron, 1 up the face
-        // the beach's own grain, in world space at the beach's density and phase
-        vec2 bwUv = vec2((vToeW.x + 800.0) / uSandTile, (800.0 - vToeW.z) / uSandTile);
-        bwToeTex = mix(texture2D(map, bwUv), texture2D(map, vMapUv), bwT);
+        bwT = smoothstep(0.10, 0.48, vU);                 // the beach for the talus and the lower face, the cliff's own above
+        // the beach's own grain at the beach's density and phase: laid flat
+        // where the surface is flat, and stood up (z, y) where it turns into
+        // the wall, so it never streaks down a vertical face
+        vec2 bwUvFlat = vec2((vToeW.x + 800.0) / uSandTile, (800.0 - vToeW.z) / uSandTile);
+        vec2 bwUvWall = vec2((800.0 - vToeW.z) / uSandTile, vToeW.y / uSandTile);
+        float bwUp = smoothstep(0.35, 0.85, abs(vToeN.y));
+        vec4 bwBeach = mix(texture2D(map, bwUvWall), texture2D(map, bwUvFlat), bwUp);
+        bwToeTex = mix(bwBeach, texture2D(map, vMapUv), bwT);
         diffuseColor *= bwToeTex;
         // the beach's constants, exactly, and its wet treatment
         diffuseColor.rgb *= mix(uToeCol, vec3(1.0), bwT);

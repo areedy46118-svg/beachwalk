@@ -681,8 +681,15 @@ the map and emissive map sampled in WORLD space at the beach's density and
 phase `(w + 800) / SAND_TILE` so the grain runs straight across the join,
 the beach's wet treatment off `shoreLine`, and the bump eased toward
 `nonPerturbedNormal` — and the loft's first row is sunk 12 cm under the sand
-plane, so there is no edge to dither and the hash dissolve is gone. Before
-this the join was a line you could see from the spawn.
+plane, so there is no edge to dither and the hash dissolve is gone. Matching
+the material was not enough on its own: with a 3 m apron the surface turned
+from flat to wall fast enough that the LIGHTING change read as a line. The
+toe is a 5.5 m TALUS now (t³ — under 12 cm where you can still walk, rising
+only in the last stretch), the beach's shading runs to `aU` 0.48, well up
+the face, and the beach grain is projected flat where the surface is flat
+and stood up (z, y) where it turns into the wall — one projection down a
+vertical face streaks. Before this the join was a line you could see from
+the spawn.
 
 **A cache is a MOLEHILL, not a bump.** It was a smooth half-sphere in one
 flat colour, and tan on a blue beach it read as painted-on plastic. Real
