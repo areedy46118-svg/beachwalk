@@ -271,7 +271,18 @@ hidden.
 carried `rest = crate.y`, so the dock crate's boards held deck height
 wherever they flew and the ones that cleared the edge hung in the air beside
 the pier. `updateGibs()` asks `dockDeckAt()` every frame and falls back to
-the sand, so a board that leaves the boards falls to the beach.
+the sand, so a board that leaves the boards falls to the beach. It also
+rests on HALF ITS OWN THICKNESS and lands FLAT: a board is a thin box up to
+0.36 long tumbling on three axes, and resting its centre on the ground
+buried a corner every time, which is the plank sunk into the beach.
+
+**A dropped thing goes where you were LOOKING, on top of what is there.**
+`dropEquipped()` set the item down at a flat y = 0.04 — the sand plane — a
+metre in front of you whatever you were standing on, so on the pier it went
+UNDER the boards and on the drift it went inside the mound, and either way
+it was gone. `dropPoint()` raycasts the crosshair at the boards, the steps,
+the banks and the beach, and `groundUnder()` is the fallback: `driftAt`,
+then the deck, then the solids.
 
 **Splashing needs a reason.** Three separate sources each fired without one:
 a prop resting near the waterline crossed `submersionAt` every few seconds
@@ -661,6 +672,17 @@ is untouched. Its uv is baked in WORLD space at the beach's own density —
 of `SAND_TILE`, so the phase is preserved and the grain lines up across the
 join. The cliff toe gets the same treatment through `aU` (0 at the toe, 1 at
 the top).
+
+**Heaped sand is DRY sand — `duneMat`, not `sandMat`.** Every bank in the
+game (the pier's drift, the castle's foot, the rock aprons, the bag's bed)
+was drawn with `sandMat`, and `sandMat`'s wet pass reaches SIXTEEN metres
+inland: inside that it tints blue, drops `roughnessFactor` to 0.30 and lifts
+`metalnessFactor` to 0.22. On the flat beach that reads as wet sand; on a
+dome it reads as a wet BOULDER, which is exactly why the mounds looked like
+rock. `duneMat` keeps the same grain and the same shore discard, takes the
+wet pass out, and runs a warmer, drier body so a bank reads as something you
+could put a shovel into. Its mottle uses `bwNoise` — `shoreGLSL` brings no
+`fbm`, and reaching for one is a shader that will not compile.
 
 **Sink a rim, don't dither it.** The ridge's edge was first dissolved against
 a hash keyed to height. The ridge climbs slowly, so even a 0.4 m band of

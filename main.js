@@ -518,6 +518,39 @@ sandMat.onBeforeCompile = (shader) => {
     .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.30, max(wetMask, 0.0));')
     .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = mix(metalnessFactor, 0.22, max(wetMask, 0.0));');
 };
+/* HEAPED SAND IS DRY SAND. Every bank in the game — the pier's drift, the
+ * castle's foot, the rock aprons, the bag's bed — was drawn with `sandMat`,
+ * and `sandMat`'s wet treatment reaches SIXTEEN METRES inland: within that
+ * it tints blue, drops roughness to 0.30 and lifts metalness to 0.22. On a
+ * flat beach that reads as wet sand; on a dome it reads as a wet BOULDER,
+ * which is exactly what the mounds looked like. A bank stands proud of the
+ * swash, so it gets the same grain and the same shore discard with the wet
+ * pass taken out, and a warmer, drier body so it reads as something you
+ * could put a shovel into. */
+const duneMat = new THREE.MeshStandardMaterial({
+  map: sandTex, bumpMap: sandBump, bumpScale: 1.7,
+  color: 0x93866b, roughness: 1.0, metalness: 0.0,
+  emissive: 0x2b2718, emissiveMap: sandTex,
+});
+duneMat.onBeforeCompile = (shader) => {
+  shader.uniforms.uTime = oceanUniforms.uTime;
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;\nuniform float uTime;\n' + noiseGLSL + shoreGLSL)
+    .replace('#include <clipping_planes_fragment>',
+      `#include <clipping_planes_fragment>
+       float bwShore = shoreLine(vWorldPos.z, uTime);
+       if (vWorldPos.x < bwShore - 1.0) discard;`)
+    .replace('#include <map_fragment>',
+      `#include <map_fragment>
+       // loose grain: a coarse mottle so a bank reads as heaped, not moulded
+       // (bwNoise is the only noise shoreGLSL brings, and it is 1-D)
+       float bwG = bwNoise(vWorldPos.x * 1.7) * 0.5 + bwNoise(vWorldPos.z * 2.3 + 11.0) * 0.5;
+       diffuseColor.rgb *= 0.88 + 0.26 * bwG;`);
+};
+duneMat.customProgramCacheKey = () => 'dune';
 const sand = new THREE.Mesh(sandGeo, sandMat);
 scene.add(sand);
 
@@ -2097,6 +2130,10 @@ scene.add(rockGroup);
  * world texel density: sandTex repeats every SAND_TILE metres, so a dome of
  * radius R spans 2R/SAND_TILE of a tile — not the whole 0..1 a plane ships
  * with, which would put 177 tiles inside six metres and mip down to mud. */
+/* Every heaped bank in one group, so the crosshair can be raycast at them
+ * when something is set down. */
+const driftGroup = new THREE.Group();
+scene.add(driftGroup);
 function makeApron(R) {
   const g = new THREE.PlaneGeometry(2, 2, 18, 18);
   g.rotateX(-Math.PI / 2);
@@ -2235,12 +2272,12 @@ new GLTFLoader().load('assets/rocks.glb', (gltf) => {
    * as dropped on the beach however deep it is bedded. */
   for (const [k, h] of [[2.35, 0.34], [1.28, 0.72]]) {
     const R = big * k;
-    const apron = new THREE.Mesh(makeApron(R), sandMat);
+    const apron = new THREE.Mesh(makeApron(R), duneMat);
     apron.scale.set(R, h, R);
     apron.position.set(cx, -0.12, z);
     apron.rotation.y = rnd() * Math.PI * 2;
     apron.renderOrder = -1;                    // under the footprint decals
-    rockGroup.add(apron);
+    rockGroup.add(apron);      // stays here so it is far-culled with the rocks
   }
 });
 
@@ -3802,11 +3839,14 @@ function dropEquipped() {
     box.castShadow = false; m.add(box, tie);
   }
   if (!m) return;
-  camera.getWorldDirection(_dropDir); _dropDir.y = 0;
-  if (_dropDir.lengthSq() < 1e-4) _dropDir.set(0, 0, -1); else _dropDir.normalize();
-  const dx = THREE.MathUtils.clamp(camera.position.x + _dropDir.x * 1.1, WADE_X + 0.4, CLIFF_BLOCK_X - 0.4);
-  const dz = camera.position.z + _dropDir.z * 1.1;
-  m.position.set(dx, 0.04, dz);
+  /* IT GOES WHERE YOU WERE LOOKING, AND ON TOP OF WHAT IS THERE. It used to
+   * be set down at a flat y = 0.04 — the sand plane — a metre in front of
+   * you whatever you were standing on. On the pier that put it UNDER the
+   * boards and on the drift it put it inside the mound, and either way it
+   * was gone. The crosshair is raycast at the boards, the banks and the
+   * beach; anything it misses falls back to the ground under the point. */
+  const dp = dropPoint();
+  m.position.copy(dp);
   m.rotation.y = Math.random() * Math.PI * 2;
   scene.add(m);
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 6),
@@ -3822,6 +3862,34 @@ function dropEquipped() {
     },
   });
   sfxThud(0.03);
+}
+/* Where a dropped thing should come to rest: the first surface the
+ * crosshair meets within arm's reach, else the ground in front of you. */
+const _dropRay = new THREE.Raycaster();
+const _dropPt = new THREE.Vector3();
+function groundUnder(x, z) {
+  let y = driftAt(x, z);                       // the banks are terrain
+  const deck = dockDeckAt(x, z);
+  if (deck !== null && deck > y) y = deck;     // and the boards are a floor
+  const rk = rockGroundAt(x, z, y + 0.6);
+  if (rk && rk.top > y) y = rk.top;
+  return y;
+}
+function dropPoint() {
+  _dropRay.setFromCamera({ x: 0, y: 0 }, camera);
+  _dropRay.far = 3.0;
+  const hits = _dropRay.intersectObjects([sand, dock, DOCK_STEPS, driftGroup, rockGroup], true)
+    .filter((h) => h.object.name !== 'hitProxy' && h.object.visible);
+  if (hits.length) {
+    _dropPt.copy(hits[0].point);
+  } else {
+    camera.getWorldDirection(_dropDir); _dropDir.y = 0;
+    if (_dropDir.lengthSq() < 1e-4) _dropDir.set(0, 0, -1); else _dropDir.normalize();
+    _dropPt.set(camera.position.x + _dropDir.x * 1.1, 0, camera.position.z + _dropDir.z * 1.1);
+  }
+  _dropPt.x = THREE.MathUtils.clamp(_dropPt.x, WADE_X + 0.4, CLIFF_BLOCK_X - 0.4);
+  _dropPt.y = Math.max(_dropPt.y, groundUnder(_dropPt.x, _dropPt.z)) + 0.04;
+  return _dropPt;
 }
 function throwHeld() {
   if (!held) return;
@@ -4691,10 +4759,11 @@ scene.add(castle);
  * hard line and reads as placed; a thing the sand has drifted up against
  * reads as having been there. */
 {
-  const apron = new THREE.Mesh(makeApron(2.4), sandMat);
+  const apron = new THREE.Mesh(makeApron(2.4), duneMat);
   apron.scale.set(2.4, 0.13, 2.4);
-  apron.position.set(CASTLE_X, 0, CASTLE_Z);
-  scene.add(apron);
+  // sunk, so the beach plane covers the join rather than drawing an oval
+  apron.position.set(CASTLE_X, -0.045, CASTLE_Z);
+  driftGroup.add(apron);
 }
 let castleGeo = null, castleMat = null;
 new GLTFLoader().load('assets/sandcastle.glb', (gltf) => {
@@ -6537,7 +6606,16 @@ function updateGibs(dt) {
      * deck height wherever they flew — the ones that cleared the edge hung
      * in the air beside the pier. The boards under it are a lookup. */
     const deck = dockDeckAt(g.m.position.x, g.m.position.z);
-    const rest = deck !== null ? deck + 0.02 : g.rest;
+    /* Half its own thickness, so it lies ON the sand. A board is a flat box
+     * up to 0.36 long tumbling on all three axes, and resting its CENTRE on
+     * the ground buried a corner of it every time — which is the plank
+     * sunk into the beach. Measured once, off the geometry. */
+    if (g.half === undefined) {
+      g.m.geometry.computeBoundingBox();
+      const bb = g.m.geometry.boundingBox;
+      g.half = (bb.max.y - bb.min.y) * 0.5 * g.m.scale.y;
+    }
+    const rest = (deck !== null ? deck + 0.02 : g.rest) + g.half;
     g.m.visible = !coveredByWater(g.m.position.x, g.m.position.y, g.m.position.z);
     if (g.settled) continue;
     g.vel.y -= 15 * dt;
@@ -6552,6 +6630,9 @@ function updateGibs(dt) {
       } else {
         g.settled = true;
         g.vel.set(0, 0, 0);
+        // and it comes to rest FLAT, the way a dropped board does
+        g.m.rotation.x = 0; g.m.rotation.z = 0;
+        g.m.position.y = rest;
         // only meat bleeds — glass and wood ride this same system and were
         // leaving blood splats under the shards and the splinters
         // and nothing stains water
@@ -9457,10 +9538,10 @@ dock.rotation.y = -Math.PI / 2;            // model -z (the shed end) → world 
 dock.scale.setScalar(DOCK_S);
 scene.add(dock);
 {
-  const drift = new THREE.Mesh(makeApron(DOCK_DRIFT_R), sandMat);
+  const drift = new THREE.Mesh(makeApron(DOCK_DRIFT_R), duneMat);
   drift.scale.set(DOCK_DRIFT_R, DOCK_DRIFT_H, DOCK_DRIFT_R);
   drift.position.set(DOCK_DRIFT_X, 0, DOCK_DRIFT_Z);
-  scene.add(drift);
+  driftGroup.add(drift);
 }
 /* The deck as a floor for anything that is not the player: the boards' top
  * at (x, z), or null off the pier. `onPier` is the footprint alone, and it
@@ -10191,13 +10272,13 @@ scene.add(corpse);
 // the sand it has settled into — same trick as the rock aprons, but only
 // yawed, never tipped, because drifted sand lies flat however the bag lies
 {
-  const drift = new THREE.Mesh(makeApron(1.1), sandMat);
+  const drift = new THREE.Mesh(makeApron(1.1), duneMat);
   // low, or its own shaded flank draws a dark halo round the bag
   drift.scale.set(1.75, 0.085, 0.86);
   drift.position.set(CORPSE_X, -0.035, CORPSE_Z);
   drift.rotation.y = CORPSE_YAW;
   drift.renderOrder = -1;
-  scene.add(drift);
+  driftGroup.add(drift);
 }
 
 new GLTFLoader().load('assets/corpse.glb', (gltf) => {
@@ -10652,6 +10733,7 @@ window.__bw = {
   finishTyping, dialogTextEl, get hitstop() { return hitstop; },
   gibs, bloodDrops, coveredByWater, submersionAt, waterSurfaceAt, listenToShell, stopListening,
   get audioCtx() { return audioCtx; }, sfxOut,
+  dropEquipped, dropPoint, groundUnder, duneMat, driftGroup, driftAt, updateGibs, updatePuffs,
   THREE, scene, camera, player: camera,
   interactables, physProps, inventory, bottle, cliff, foot, lighthouse, city,
   castle, shovelWorld, viewmodel,
