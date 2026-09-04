@@ -75,7 +75,7 @@ export function makeMushroomHouse() {
   const concTex = concreteTexture(7, false), tagTex = concreteTexture(19, true);
   const conc = new THREE.MeshStandardMaterial({ map: concTex, color: 0x98a2b2, roughness: 1, metalness: 0, flatShading: true, emissive: 0x333b4a, emissiveMap: concTex, side: THREE.DoubleSide });
   const concTag = conc.clone(); concTag.map = tagTex; concTag.emissiveMap = tagTex;
-  const pale = conc.clone(); pale.color.setHex(0xb6bcc8); pale.emissive.setHex(0x3a4250);   // the stair, the ribs: the pale poured work in the photographs
+  const pale = conc.clone(); pale.color.setHex(0xbcc2ce); pale.emissive.setHex(0x4c5566);   // lit enough to read in the well   // the stair, the ribs: the pale poured work in the photographs
   const wood = new THREE.MeshStandardMaterial({ color: 0x4e3323, roughness: 0.9, metalness: 0, flatShading: true, emissive: 0x170d07 });
   const glass = new THREE.MeshPhysicalMaterial({ color: 0x8fb0c8, roughness: 0.12, metalness: 0, transparent: true, opacity: 0.36, side: THREE.DoubleSide, depthWrite: false, emissive: 0x16202e });
   const iron = new THREE.MeshStandardMaterial({ color: 0x3f352d, roughness: 0.95, metalness: 0.1, flatShading: true, emissive: 0x100b07 });
@@ -109,11 +109,24 @@ export function makeMushroomHouse() {
     if (Math.abs(a - M.DOOR_ANG) < gateHalf + 0.05) continue;
     colliders.push({ x: Math.sin(a) * M.WALL_R, z: Math.cos(a) * M.WALL_R, r: 0.45, top: wallTop, mat: 'rock' });
   }
-  // the ends run back into the cliff
-  for (const a of [arc0, arc1]) {
-    const x = Math.sin(a) * M.WALL_R, z = Math.cos(a) * M.WALL_R;
-    mesh(new THREE.BoxGeometry(5.0, WALL_H, WALL_T), conc, x + 2.4, M.PLAT_TOP + WALL_H / 2, z);
-    for (let k = 0; k < 6; k++) colliders.push({ x: x + 0.3 + k * 0.9, z, r: 0.45, top: wallTop, mat: 'rock' });
+  /* THE BACK IS A RETAINING WALL. The cliff is cut away inside the
+   * footprint so the bluff does not run through the yard and the column,
+   * and a cut through a one-sided bluff is a window onto the void behind it
+   * — you could see the beach a kilometre off through the sand wall. So
+   * the whole landward half is closed by a tall concrete retaining wall,
+   * higher than the bluff, and the cut edge is behind it. */
+  {
+    const RET_R = M.PLAT_R + 0.15, RET_TOP = 4.55, r0 = arc1, r1 = arc0 + TAU;
+    const n = 30;
+    arcBand(RET_R + 0.2, M.PLAT_TOP - 0.3, RET_TOP, r0, r1, conc, n); arcBand(RET_R - 0.2, M.PLAT_TOP - 0.3, RET_TOP, r0, r1, conc, n);
+    mesh(new THREE.RingGeometry(RET_R - 0.2, RET_R + 0.2, n, 1, r0, r1 - r0).rotateX(-Math.PI / 2), conc, 0, RET_TOP, 0);
+    for (let i = 0; i < 34; i++) { const a = r0 + (i + 0.5) * (r1 - r0) / 34; colliders.push({ x: Math.sin(a) * RET_R, z: Math.cos(a) * RET_R, r: 0.5, top: RET_TOP, mat: 'rock' }); }
+    // and it steps down to meet the bunker wall at each end
+    for (const a of [arc0, arc1]) {
+      const m = mesh(new THREE.BoxGeometry(RET_R - M.WALL_R + 0.6, RET_TOP - M.PLAT_TOP, WALL_T), conc, Math.sin(a) * (M.WALL_R + RET_R) / 2, (M.PLAT_TOP + RET_TOP) / 2, Math.cos(a) * (M.WALL_R + RET_R) / 2);
+      m.rotation.y = a;
+      colliders.push({ x: Math.sin(a) * (M.WALL_R + RET_R) / 2, z: Math.cos(a) * (M.WALL_R + RET_R) / 2, r: 0.5, top: RET_TOP, mat: 'rock' });
+    }
   }
   // the gate: bars in a frame, hanging a third open on one post
   {

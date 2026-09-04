@@ -10925,7 +10925,7 @@ for (const c of mushHouse.colliders) {
     sh.uniforms.uMushX = { value: MUSH_X }; sh.uniforms.uMushZ = { value: MUSH_Z };
     sh.fragmentShader = 'uniform float uMushX, uMushZ;\n' + sh.fragmentShader.replace(
       'if (abs(vDrainW.z - uDrainZ) < 2.6 && vDrainW.y < 3.3) discard;',
-      'if (abs(vDrainW.z - uDrainZ) < 2.6 && vDrainW.y < 3.3) discard;\n  if (length(vDrainW.xz - vec2(uMushX, uMushZ)) < 6.6 && vDrainW.y < 9.6) discard;');
+      'if (abs(vDrainW.z - uDrainZ) < 2.6 && vDrainW.y < 3.3) discard;\n  if (length(vDrainW.xz - vec2(uMushX, uMushZ)) < 5.9 && vDrainW.y < 4.6) discard;');
   };
   cliff.material.needsUpdate = true;
 }
@@ -10966,7 +10966,16 @@ function updateMushroom(dt) {
      * test of "closer than that" was never true: you could stand in the
      * doorway pushing and never be inside. The door takes you a little
      * further out than the wall holds you. */
-    if (d < M.COL_R + PLAYER_R + 0.3 && doorOk) insideMush = true;
+    if (d < M.COL_R + PLAYER_R + 0.3 && doorOk) {
+      /* THE COUNT STARTS AT THE DOOR. `mushLastA` was whatever it last was —
+       * zero on a fresh game — so the first frame inside credited you with
+       * the whole angle from there to the doorway: a quarter turn, which is
+       * a floor 80 cm above the treads you were looking at, and a door that
+       * refused to let you out again because you never got back to zero. */
+      insideMush = true; mushLastA = ang;
+      mushTurns = THREE.MathUtils.clamp(_angDiff(M.A0, ang) / (Math.PI * 2), 0, M.TURNS);
+      mushStairY = null;
+    }
     else if (d < M.COL_R + PLAYER_R) { clampTo(M.COL_R + PLAYER_R); return; }
     else return;
   }

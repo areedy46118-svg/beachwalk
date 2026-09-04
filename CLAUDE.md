@@ -1411,7 +1411,17 @@ pushing forever — the door admits you from 0.3 m further out; and **at the
 top of the stair the well's inner clamp has to open** (`atFloor`) or you
 can never step off onto the floor ring. Walk it with the pumped loop and
 `__bw.keys` / `__bw.look()` steering at the next point on the spiral —
-that test is the one that found both. The column's axis sits ON the cliff
+that test is the one that found both. **And the count starts at the
+door:** `mushLastA` was whatever it last was, so the first frame inside
+credited you with the angle from there to the doorway — a quarter turn, a
+floor 80 cm above the treads you were looking at, and a door that never
+let you out because you never got back to zero. Entry sets `mushLastA`
+and derives `mushTurns` from the angle to `A0`. **The back is a retaining
+wall.** The cliff is cut away inside the footprint (r < 5.9, y < 4.6) so
+the bluff does not run through the yard, and a cut through a one-sided
+bluff is a window onto the void behind it — the whole landward half is
+closed by a concrete wall taller than the bluff, with the cut edge behind
+it. The column's axis sits ON the cliff
 line (`MUSH_X` 16) so half of it is in the wall and the front steps are at
 x = 9, above the highest swash. The cap is ONE lathe — floor top, fascia,
 underside — so there is no seam; the glass and the rails are arcs of the
