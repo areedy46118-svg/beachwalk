@@ -5866,9 +5866,29 @@ function finishExtraction() {
  * differently, which is most of what makes it read as loose), the colour
  * is earth rather than sand, and the rim is broken by clods lying round
  * it rather than by a circle drawn on the beach. */
-const moundMat = new THREE.MeshStandardMaterial({ color: 0x9c8862, roughness: 1, flatShading: true, emissive: 0x37301d });
-const clodMat = new THREE.MeshStandardMaterial({ color: 0x8d7a58, roughness: 1, flatShading: true, emissive: 0x2c2617 });
-const clodMatDk = new THREE.MeshStandardMaterial({ color: 0x776748, roughness: 1, flatShading: true, emissive: 0x211c12 });
+/* It wears THE BEACH'S OWN GRAIN. Flat colour on a lumpy dome read as
+ * moulded plastic however the tint was chosen — the thing that ties it to
+ * the sand it came out of is the same texture the sand has, cloned so it
+ * can carry its own repeat (the beach's is set to tile over eight hundred
+ * metres, which on a one-metre heap is a smear). Warmer and lighter than
+ * the flat around it, because it is dry sand turned up from under the wet. */
+const moundTex = sandTex.clone(); moundTex.needsUpdate = true; moundTex.repeat.set(2.6, 2.6);
+const moundBump = sandBump.clone(); moundBump.needsUpdate = true; moundBump.repeat.set(2.6, 2.6);
+const moundMat = new THREE.MeshStandardMaterial({
+  map: moundTex, bumpMap: moundBump, bumpScale: 2.2,
+  // the map MULTIPLIES, and the beach's grain is dark, so the body has to
+  // be lifted well past the tint you actually want or it comes out olive
+  color: 0xdfc79b, roughness: 1, metalness: 0, flatShading: true,
+  emissive: 0x4a4029, emissiveMap: moundTex,
+});
+const clodMat = new THREE.MeshStandardMaterial({
+  map: moundTex, bumpMap: moundBump, bumpScale: 1.6,
+  color: 0xcbb489, roughness: 1, flatShading: true, emissive: 0x3d3422, emissiveMap: moundTex,
+});
+const clodMatDk = new THREE.MeshStandardMaterial({
+  map: moundTex, bumpMap: moundBump, bumpScale: 1.6,
+  color: 0xb09b75, roughness: 1, flatShading: true, emissive: 0x2e281a, emissiveMap: moundTex,
+});
 function lumpyDome(r, hy, seed) {
   const g = new THREE.SphereGeometry(r, 11, 6, 0, Math.PI * 2, 0, Math.PI * 0.5);
   g.scale(1, hy, 1);
@@ -6066,15 +6086,26 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
   const first = m === mounds[0];               // THE first mound, not the first you happen to dig
   const second = m === mounds[1];              // and the second one has the CD in it
   const relic = first ? makeGlowstick() : (second ? makeCdCase() : makeBuriedObject());
-  relic.position.set(m.x, first ? 0.055 : (second ? 0.006 : 0.09), m.z);
+  relic.position.set(m.x, first ? 0.055 : (second ? 0.052 : 0.09), m.z);
+  /* The CD is STOOD UP in the sand, not laid flat. Face up it is a
+   * hand-sized rectangle seen edge-on from standing height and it read as a
+   * sliver; leaning back out of the hole the cover faces you and catches
+   * the moon. */
   relic.rotation.set(
-    first ? 0 : (second ? -Math.PI / 2 + 0.14 : (Math.random() - 0.5) * 0.5),
-    Math.random() * Math.PI * 2,
-    first ? 0 : (second ? 0 : (Math.random() - 0.5) * 0.4));
+    first ? 0 : (second ? -0.62 : (Math.random() - 0.5) * 0.5),
+    second ? Math.PI * 0.12 : Math.random() * Math.PI * 2,
+    first ? 0 : (second ? -0.16 : (Math.random() - 0.5) * 0.4));
   const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.36, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   proxy.name = 'hitProxy'; relic.add(proxy);
   scene.add(relic);
+  /* AND YOU HAVE TO SEE IT COME OUT. The glowstick lights itself, so it was
+   * obvious; everything else was a dark object dropped on a dark beach at
+   * the moment the screen was full of flying sand, and it went straight
+   * past people. Everything a mound gives up now carries the same shine
+   * every other takeable does, at a good size, so there is something
+   * standing where you dug once the sand settles. */
+  if (!first) addItemShine(relic, { size: 0.85, height: 0.16, strength: 1.5 });
   if (first) { relic.updateMatrixWorld(true); placeGroundGlow(relic); }
   addInteractable(relic, first ? 'Take the glowstick' : (second ? 'Take the CD' : 'Take the buried object'), 'inventory', {
     onActivate: () => {

@@ -74,15 +74,18 @@ export function makeCdCase() {
    * the scene's own lighting as well left the sleeve muddy at night and
    * washed out under the examine lamps. `MeshBasicMaterial` shows the
    * picture as it is, which is what you want of a thing held up to a face. */
-  // both inserts upright, at the aspect measured off the photographs
-  const front = new THREE.Mesh(new THREE.PlaneGeometry(0.1185, 0.1251),
+  /* THE FRONT BOOKLET IS SQUARE — 120 x 120 mm — and the tray card behind
+   * is taller than it is wide. Forcing both to the case's own portrait
+   * shape stretched the cover by a twelfth, which is exactly enough to
+   * see. Each plane is the real insert's own size. */
+  const front = new THREE.Mesh(new THREE.PlaneGeometry(0.1185, 0.1185),
     new THREE.MeshBasicMaterial({ map: art('assets/cd-front.jpg') }));
-  front.position.set(0.0018, 0.0026, t - 0.0011);
+  front.position.set(0.0016, 0.0055, t - 0.0011);
   g.add(front);
 
-  const back = new THREE.Mesh(new THREE.PlaneGeometry(0.1205, 0.1305),
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(0.1175, 0.1325),
     new THREE.MeshBasicMaterial({ map: art('assets/cd-back.jpg') }));
-  back.position.set(-0.0018, 0.0022, -t + 0.0012); back.rotation.y = Math.PI;
+  back.position.set(-0.0016, 0.0018, -t + 0.0012); back.rotation.y = Math.PI;
   g.add(back);
 
   // --- the tray the disc sits in, seen through the clear lid -------------
