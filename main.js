@@ -3003,11 +3003,21 @@ const lookEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 // Player health — three hits and the walk starts over
 // ------------------------------------------------------------------
 const MAX_HP = 3;
-const HURT_FADE = 1.1;                 // seconds for the red to bleed off
-let hp = MAX_HP, hurtFlash = 0, dying = false;
+const HURT_FADE = 1.1;                 // seconds for the hit's spike of red to bleed off
+/* YOU MEND. A hit used to be forever: two crabs an hour apart were the same
+ * fight, and the third exchange of the night was a one-hit death. Twelve
+ * seconds without being hurt and a point comes back, then another every
+ * eight — slow enough that a fight is still a fight, quick enough that the
+ * next one is not decided by the last. And while you are down a point the
+ * red does not leave the edges of the screen: it settles to a faint,
+ * breathing rim, deeper the worse you are, so you always know. */
+const REGEN_DELAY = 12;                // seconds unhurt before you start to mend
+const REGEN_EVERY = 8;                 // then a point back every so many seconds
+let hp = MAX_HP, hurtFlash = 0, dying = false, sinceHurt = 1e9, regenAcc = 0;
 function damagePlayer(n = 1) {
   if (dying || ended || !introDone) return;
   hp -= n;
+  sinceHurt = 0; regenAcc = 0;           // the mending starts over from the last blow
   // DEV MODE: a hit still lands — flash, knock, sound — but it never finishes you
   if (settings.devMode) hp = Math.max(hp, 1);
   hurtFlash = 1;
@@ -3039,10 +3049,19 @@ function playerDied() {
   }, 1600);
 }
 function updateHurt(dt) {
-  if (hurtFlash <= 0) return;
-  hurtFlash = Math.max(0, hurtFlash - dt / HURT_FADE);
-  // ease out so the spike is sharp and the tail is soft
-  hurtEl.style.opacity = String(hurtFlash * hurtFlash);
+  if (hurtFlash > 0) hurtFlash = Math.max(0, hurtFlash - dt / HURT_FADE);
+  if (!dying && !ended && introDone && hp < MAX_HP) {
+    sinceHurt += dt;
+    if (sinceHurt > REGEN_DELAY) {
+      regenAcc += dt;
+      if (regenAcc >= REGEN_EVERY) { regenAcc = 0; hp = Math.min(MAX_HP, hp + 1); }
+    }
+  }
+  // the hit is a sharp spike with a soft tail; under it, while you are
+  // hurt, a faint rim that breathes and deepens with every point you are down
+  const wounded = 1 - hp / MAX_HP;
+  const rim = wounded > 0 ? (0.14 + 0.24 * wounded) * (0.86 + 0.14 * Math.sin(performance.now() * 0.0022)) : 0;
+  hurtEl.style.opacity = String(Math.max(hurtFlash * hurtFlash, rim));
 }
 
 function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || inspecting || peeking || packCut || dying || ended || !introDone; }
@@ -11893,6 +11912,7 @@ layoutViewmodel();
 
 // dev hook
 window.__bw = {
+  updateHurt, hurtEl,
   militaryItem, militaryWorld, milModel, get toolVM() { return toolVM; }, vmScene, vmCamera, toolMount,
   get settings() { return settings; }, get hp() { return hp; },
   snorkSprite, updateSnorkeler, snork: () => ({ up: snorkUp, want: snorkWant, talkT: snorkTalkT, hasTex: !!snorkOpenTex }),

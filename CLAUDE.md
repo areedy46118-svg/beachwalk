@@ -1202,6 +1202,15 @@ nothing else, so holding LMB past `WIND_TAP` is what charges; the on-screen
 prompt still said RMB long after that stopped being true, which is worth
 remembering the next time a control moves.
 
+**YOU MEND, AND THE RED STAYS WHILE YOU ARE HURT.** `MAX_HP` is 3 and a hit
+used to be forever, so the third exchange of the night was a one-hit death.
+`REGEN_DELAY` (12 s) without being hurt and a point comes back, then one
+every `REGEN_EVERY` (8 s) — `sinceHurt` / `regenAcc` in `updateHurt()`, reset
+by every `damagePlayer()`. And `#hurt` no longer fades to nothing: under the
+hit's spike it settles to a faint breathing rim, 0.14 + 0.24 per point down,
+so you always know you are hurt without a bar. `updateHurt()` therefore runs
+every frame now; it used to return early when the flash was spent.
+
 **A BLOCK COSTS WIND; A PARRY DOES NOT.** Holding a shovel across a blow
 that hard takes something out of you, and it comes out of the bar you run
 on — so a fight you spend blocking is a fight you cannot back out of, and
