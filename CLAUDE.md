@@ -778,7 +778,16 @@ cm, blade at -X, a Z-up root matrix) into the sand shovel's frame with one
 rotation matrix and a 0.27 lift, so every pose holds untouched. Three
 groups, because the scan lands over the network: the hand's, the
 examine/drop copy, the one on the beach past the drain. Its placement
-must not read `DRAIN_X` — declared thousands of lines later.
+must not read `DRAIN_X` — declared thousands of lines later. **Matte, like
+the photograph:** at `reexpose` 0.62 with the scan's own metalness it
+rendered pale grey — a dark olive albedo lifted that hard is chalk, and
+metal with no environment map is pinpoints — so it gets a gentle 0.88, full
+roughness and 0.18 metalness. The orientation matrix's sign pair decides
+which way it faces in the hand; the first pair held it back to front. Two
+owner-supplied impacts hang off the two tools: a paint can is the sand
+shovel's block (`blockSand`, in `blockCrab`) and a solid metal hit is the
+Military Shovel's heavy landing (`milHeavy`, in `hitConnect` at P ≥ 0.5);
+neither is redistributable.
 
 **The shovel is built to a photograph of a plastic beach shovel.**
 `makeShovel()` is a triangular loop handle with finger scallops along the

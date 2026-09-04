@@ -5177,7 +5177,8 @@ const milModel = new THREE.Group(), milInspect = new THREE.Group(), militaryWorl
 function orientMil(src) {
   const w = new THREE.Group();
   // loaded axes: length on X, thin on Y, width on Z  ->  width on X, length on Y (blade -Y), thin on Z
-  w.quaternion.setFromRotationMatrix(new THREE.Matrix4().set(0, 0, -1, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0, 1));
+  // (the first matrix had the other two signs and held it back to front)
+  w.quaternion.setFromRotationMatrix(new THREE.Matrix4().set(0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1));
   w.scale.setScalar(0.01);
   const g = new THREE.Group();
   g.add(w); w.add(src);
@@ -5189,8 +5190,15 @@ new GLTFLoader().load('assets/military-shovel.glb', (gltf) => {
   gltf.scene.traverse((o) => {
     if (!o.isMesh) return;
     o.material.side = THREE.DoubleSide;
-    reexpose(o.material, 0.62);                // lit for daylight; it is night
-    o.material.emissive = new THREE.Color(0x0d0f14);
+    /* MATTE, like the photograph. At gamma 0.62 with the scan's own
+     * metalness the tool rendered pale grey — a dark olive albedo lifted
+     * that hard is chalk, and metal with no environment is pinpoints. A
+     * gentle lift, full roughness and little metalness is the painted
+     * steel in the picture. */
+    reexpose(o.material, 0.88);
+    o.material.roughness = 1.0;
+    o.material.metalness = 0.18;
+    o.material.emissive = new THREE.Color(0x04050a);
   });
   milModel.add(orientMil(gltf.scene));
   milInspect.add(orientMil(gltf.scene.clone(true)));
@@ -5595,6 +5603,7 @@ function stampScar(hit, surface) {
  * frozen frames. Sand gets none of this; sand is not a hit. */
 let fovKick = 0;
 function hitConnect(P, k) {
+  if (equipped === militaryItem && P >= 0.5) playSample('milHeavy', 1.0, 0.04);   // a heavy, on steel
   fovKick = Math.max(fovKick, (3.2 + P * 3.4) * k);
   addTrauma((0.18 + P * 0.24) * k);
   vmImpulse(-(0.9 + P * 0.6) * k);
@@ -7141,7 +7150,8 @@ function gaspOut() {
   setTimeout(() => { if (promptHTML.includes('BREATH')) setPrompt(''); }, 800);
 }
 function blockCrab(u = crabs[0]) {
-  sfxBlock();
+  // what the blow lands on: plastic rings like a paint can, steel like steel
+  if (equipped === shovelItem) playSample('blockSand', 1.0, 0.04); else sfxBlock();
   stamina = Math.max(0, stamina - BLOCK_COST);
   if (stamina <= 0.001) { exhausted = true; gaspOut(); }
   flashMats(toolVM);                     // the tool goes white for the frozen frames
@@ -8325,6 +8335,8 @@ const SAMPLES = {
   splash: ['assets/water-splash1.m4a', 'assets/water-splash2.m4a', 'assets/water-splash3.m4a'],
   poise: ['assets/poise-broken.m4a'],      // the parry landing: its guard is gone
   smash: ['assets/overhead-hit.m4a'],      // a charged overhead going through shell
+  blockSand: ['assets/block-sand.m4a'],    // a blow stopped on the plastic shovel: a paint can, not steel
+  milHeavy: ['assets/military-heavy.m4a'], // the military shovel's heavy landing on something solid
 };
 const sampleBanks = {};
 function loadSamples() {
