@@ -1389,7 +1389,9 @@ until the water takes it, then the splash. It stands 120 m past the
 snorkeler so neither can be seen from the other. **The animation is
 restraint.** A flailing sprint (0.95 rad legs, pumping arms, a rolling
 torso) read as a cartoon; the run is a short quick stride with the arms
-held down and close, played at 2x, and the idle is DEAD STILL but for the
+held down and close (elbows folded FORWARD — the first sign had the
+forearms flying up behind it, which was most of "the arms are flying
+around"), played at 2x, and the idle is DEAD STILL but for the
 whole upper body tilting a few degrees to one side over eight seconds,
 holding, and coming back — the way something looks at a thing it does not
 understand. Three things it took: **Blender

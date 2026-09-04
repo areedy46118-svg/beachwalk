@@ -89,8 +89,8 @@ L_LEG = ('Bone.012_012', 'Bone.013_013', 'Bone.014_014')
 # a limb hangs down -Z, so +angle about the armature X axis swings its tip toward +Y: forward
 def arm_pose(A, swing=0.0, elbow=0.0, out=0.0, side=1):
     setrot(A[0], (AX, swing), (AY, out * side))
-    setrot(A[1], (AX, -elbow))          # the forearm folds back
-    setrot(A[2], (AX, -elbow * 0.3))
+    setrot(A[1], (AX, elbow))           # the forearm folds FORWARD, the way an arm bends (minus was the arms flying up behind it)
+    setrot(A[2], (AX, elbow * 0.2))
 def leg_pose(Lg, swing=0.0, knee=0.0, foot=0.0):
     setrot(Lg[0], (AX, swing))
     setrot(Lg[1], (AX, -knee))          # the shin folds back
@@ -131,12 +131,12 @@ for f in range(0, N + 1):
     rest()
     s = f / N * 2 * math.pi
     lsw = math.sin(s); rsw = math.sin(s + math.pi)
-    def kn(sw): return max(0.0, -sw) * 0.9 + 0.18
-    leg_pose(L_LEG, swing=0.58 * lsw, knee=kn(lsw), foot=0.2 * max(0.0, lsw))
-    leg_pose(R_LEG, swing=0.58 * rsw, knee=kn(rsw), foot=0.2 * max(0.0, rsw))
-    arm_pose(L_ARM, swing=0.18 * rsw - 0.15, elbow=1.35, out=-0.06, side=1)
-    arm_pose(R_ARM, swing=0.18 * lsw - 0.15, elbow=1.35, out=-0.06, side=-1)
-    torso(lean=0.24, roll=0.0, twist=0.03 * math.sin(s), bob=0.35 * abs(math.sin(s)) - 0.1)
+    def kn(sw): return max(0.0, -sw) * 0.7 + 0.16
+    leg_pose(L_LEG, swing=0.42 * lsw, knee=kn(lsw), foot=0.15 * max(0.0, lsw))
+    leg_pose(R_LEG, swing=0.42 * rsw, knee=kn(rsw), foot=0.15 * max(0.0, rsw))
+    arm_pose(L_ARM, swing=0.08 * rsw - 0.12, elbow=1.4, out=-0.06, side=1)
+    arm_pose(R_ARM, swing=0.08 * lsw - 0.12, elbow=1.4, out=-0.06, side=-1)
+    torso(lean=0.18, roll=0.0, twist=0.02 * math.sin(s), bob=0.25 * abs(math.sin(s)) - 0.08)
     key(f)
 finish(act)
 
