@@ -82,10 +82,10 @@ export function makeMushroomHouse() {
   const colliders = [];                                  // local-space, axis-aligned, {x0,z0,x1,z1,top,mat} or {x,z,r,top,mat}
 
   const concTex = concreteTexture(7, false), concTagTex = concreteTexture(19, true);
-  const conc = new THREE.MeshStandardMaterial({ map: concTex, color: 0x9aa0a8, roughness: 1, metalness: 0, flatShading: true, emissive: 0x2a2f3a, emissiveMap: concTex, side: THREE.DoubleSide });
+  const conc = new THREE.MeshStandardMaterial({ map: concTex, color: 0xa8aeb6, roughness: 1, metalness: 0, flatShading: true, emissive: 0x434a58, emissiveMap: concTex, side: THREE.DoubleSide });
   const concTag = conc.clone(); concTag.map = concTagTex; concTag.emissiveMap = concTagTex;
   const wood = new THREE.MeshStandardMaterial({ color: 0x5a3a24, roughness: 0.9, metalness: 0, flatShading: true, emissive: 0x1a1008 });
-  const glass = new THREE.MeshPhysicalMaterial({ color: 0x9fb8cc, roughness: 0.15, metalness: 0, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false, emissive: 0x0d1420 });
+  const glass = new THREE.MeshPhysicalMaterial({ color: 0x9fb8cc, roughness: 0.15, metalness: 0, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false, emissive: 0x1a2636 });
   const iron = new THREE.MeshStandardMaterial({ color: 0x4a3d33, roughness: 0.95, metalness: 0.15, flatShading: true, emissive: 0x120d08 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 1, metalness: 0, emissive: 0x040506 });
   const mesh = (geo, mat, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); g.add(m); return m; };
@@ -102,14 +102,27 @@ export function makeMushroomHouse() {
   // ---------------------------------------------------------- the bunker wall
   // a curved wall round the seaward half, with the gate opening at the front
   const WALL_H = 2.3, WALL_T = 0.4, wallTop = M.PLAT_TOP + WALL_H;
-  const arc0 = M.DOOR_ANG - 1.95, arc1 = M.DOOR_ANG + 1.95, segs = 22;
+  const arc0 = M.DOOR_ANG - 1.95, arc1 = M.DOOR_ANG + 1.95;
   const gateHalf = 0.11;
-  for (let i = 0; i < segs; i++) {
-    const a = arc0 + (i + 0.5) * (arc1 - arc0) / segs;
-    if (Math.abs(a - M.DOOR_ANG) < gateHalf) continue;                   // the gate
-    const len = M.WALL_R * (arc1 - arc0) / segs + 0.02;
-    const m = mesh(new THREE.BoxGeometry(WALL_T, WALL_H, len), (i % 5 === 1) ? concTag : conc, Math.sin(a) * M.WALL_R, M.PLAT_TOP + WALL_H / 2, Math.cos(a) * M.WALL_R);
-    m.rotation.y = a;
+  /* A CURVED WALL IS ARCS, NOT BOXES. Twenty-two rotated boxes overlapped
+   * into a curve, but every box top is a rectangle at its own angle, so the
+   * parapet was a sawtooth and the wall read as a row of concrete posts. Two
+   * arcs of cylinder either side of the gate — outer face, inner face, a
+   * ring on top — are one wall. The colliders stay a row of cylinders along
+   * the arc: an axis-aligned box cannot turn a corner. */
+  const wallArc = (a0, a1, mat) => {
+    const len = a1 - a0, ro = M.WALL_R + WALL_T / 2, ri = M.WALL_R - WALL_T / 2, n = Math.max(6, Math.round(len * 10));
+    mesh(new THREE.CylinderGeometry(ro, ro, WALL_H, n, 1, true, a0, len), mat, 0, M.PLAT_TOP + WALL_H / 2, 0);
+    mesh(new THREE.CylinderGeometry(ri, ri, WALL_H, n, 1, true, a0, len), mat, 0, M.PLAT_TOP + WALL_H / 2, 0);
+    mesh(new THREE.RingGeometry(ri, ro, n, 1, a0, len).rotateX(-Math.PI / 2), mat, 0, wallTop, 0);
+    // the ends, closed
+    for (const a of [a0, a1]) { const e = mesh(new THREE.BoxGeometry(WALL_T, WALL_H, 0.04), mat, Math.sin(a) * M.WALL_R, M.PLAT_TOP + WALL_H / 2, Math.cos(a) * M.WALL_R); e.rotation.y = a; }
+  };
+  wallArc(arc0, M.DOOR_ANG - gateHalf, concTag);
+  wallArc(M.DOOR_ANG + gateHalf, arc1, conc);
+  for (let i = 0; i < 24; i++) {
+    const a = arc0 + (i + 0.5) * (arc1 - arc0) / 24;
+    if (Math.abs(a - M.DOOR_ANG) < gateHalf + 0.06) continue;
     colliders.push({ x: Math.sin(a) * M.WALL_R, z: Math.cos(a) * M.WALL_R, r: 0.5, top: wallTop, mat: 'rock' });
   }
   // the wall returns into the cliff on both ends
