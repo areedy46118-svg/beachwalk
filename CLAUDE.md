@@ -674,7 +674,15 @@ is untouched. Its uv is baked in WORLD space at the beach's own density —
 `(wx + 800) / SAND_TILE` — because the sand plane recentres by whole multiples
 of `SAND_TILE`, so the phase is preserved and the grain lines up across the
 join. The cliff toe gets the same treatment through `aU` (0 at the toe, 1 at
-the top).
+the top). **The toe IS the beach** (Sep 2026): over the bottom band the cliff's
+shader converges on `sandMat` exactly — colour and emissive scaled by the
+ratio of the two materials' own constants (uniforms, not a guessed tint),
+the map and emissive map sampled in WORLD space at the beach's density and
+phase `(w + 800) / SAND_TILE` so the grain runs straight across the join,
+the beach's wet treatment off `shoreLine`, and the bump eased toward
+`nonPerturbedNormal` — and the loft's first row is sunk 12 cm under the sand
+plane, so there is no edge to dither and the hash dissolve is gone. Before
+this the join was a line you could see from the spawn.
 
 **A cache is a MOLEHILL, not a bump.** It was a smooth half-sphere in one
 flat colour, and tan on a blue beach it read as painted-on plastic. Real
