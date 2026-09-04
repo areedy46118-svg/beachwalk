@@ -156,10 +156,11 @@ const DIG_DUR = 0.8;
 const DEFAULT_SETTINGS = { fov: 107, sensitivity: 1, brightness: 1.16, volume: 0.5, musicVolume: 0.30, waveVolume: 0.18, sfxVolume: 0.57, walkSpeed: 1.4, invertY: false, devMode: false };
 let settings = { ...DEFAULT_SETTINGS };
 try { settings = { ...settings, ...JSON.parse(localStorage.getItem('beachwalk.settings') || '{}') }; } catch (e) {}
+settings.devMode = false;   // NEVER carried over: a game always starts as a game, whatever the last session was
 // walk speed is never remembered: every game starts at the default 1.4×, and
 // the slider is for the session you are in
 settings.walkSpeed = DEFAULT_SETTINGS.walkSpeed;
-function saveSettings() { try { localStorage.setItem('beachwalk.settings', JSON.stringify(settings)); } catch (e) {} }
+function saveSettings() { try { localStorage.setItem('beachwalk.settings', JSON.stringify({ ...settings, devMode: false })); } catch (e) {} }
 
 let audioStarted = false, audioCtx = null, masterGain = null;
 let titleSurfGain = null;               // the sea under the title, pulled down on begin
@@ -2536,7 +2537,7 @@ function makeCraterTexture() {
 }
 
 const FOOT_POOL = 96;
-const footGeo = new THREE.PlaneGeometry(0.26, 0.44); footGeo.rotateX(-Math.PI / 2);
+const footGeo = new THREE.PlaneGeometry(0.31, 0.44); footGeo.rotateX(-Math.PI / 2);   // a print is wider than it looks
 const foot = new THREE.InstancedMesh(footGeo, new THREE.MeshBasicMaterial({ map: makeFootTexture(), transparent: true, depthWrite: false, opacity: 0.88 }), FOOT_POOL);
 foot.frustumCulled = false; foot.renderOrder = 2; foot.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 scene.add(foot);
@@ -2586,8 +2587,8 @@ function stampFoot(x, z, fwdX, fwdZ, side) {
   _fe.set(0, Math.atan2(fwdX, fwdZ) + Math.PI, 0);
   _fq.setFromEuler(_fe);
   // feet fall either side of the line of travel, toes a little out, never quite the same
-  const off = (0.19 + Math.random() * 0.05) * side;
-  _fe.y += side * 0.11 + (Math.random() - 0.5) * 0.14;
+  const off = (0.26 + Math.random() * 0.06) * side;
+  _fe.y += side * 0.13 + (Math.random() - 0.5) * 0.16;
   _fq.setFromEuler(_fe);
   // negative x-scale mirrors the texture, so one foot is the other's reflection
   _fs.set((0.92 + Math.random() * 0.16) * side, 1, 1.0 + Math.random() * 0.2);
@@ -10349,8 +10350,8 @@ const camp = new THREE.Group();
       // STAGGERED, like a walk: left and right feet a shoulder's width apart
       // either side of the line, toes turned a little out, each a little
       // different — in a row they read as a stamp
-      const off = (0.22 + Math.random() * 0.06) * side;
-      e.set(0, heading + side * 0.12 + (Math.random() - 0.5) * 0.16, 0); q.setFromEuler(e);
+      const off = (0.30 + Math.random() * 0.08) * side;
+      e.set(0, heading + side * 0.14 + (Math.random() - 0.5) * 0.18, 0); q.setFromEuler(e);
       const z = CAMP_Z + 0.02 + (Math.random() - 0.5) * 0.08;
       sc.set((0.92 + Math.random() * 0.16) * side, 1, 1.0 + Math.random() * 0.2);
       m.compose(new THREE.Vector3(x + (-fwdZ) * off, 0.03, z + fwdX * off), q, sc);
@@ -10396,8 +10397,8 @@ const SNORK_X = -8.5, SNORK_Z = CAMP_Z - 5;  // eleven metres off the waterline,
 const SNORK_H = 0.95;                 // tube tip to waterline; over life-size, like every cut-out read at range
 const SNORK_PEEK = 0.23;              // the tube and nothing else: 9 cm was a pixel at twenty metres
 const SNORK_EYES = { x: 0.22, y: 0.388, w: 0.56, h: 0.029 };  // both lenses of the mask, measured off the cut-out
-const SNORK_WL = 0.71;                // the photo's own waterline, as a fraction of the cut-out's height
-const SNORK_SINK = -0.08;             // the photo's waterline rides a hand ABOVE the drawn sea, so the wet shoulders show and the fade meets the water
+const SNORK_WL = 0.69;                // the photo's own waterline, as a fraction of the cut-out's height
+const SNORK_SINK = -0.30;             // the photo's waterline rides well ABOVE the drawn sea: neck and chest out of the water, the fade at the bottom meeting it
 /* HE IS NOT A FLOATING HEAD. The person segmentation ends at his neck, and
  * a neck ending in a line at the surface is a head on a plate. So the
  * cut-out is rebuilt from the PHOTOGRAPH ITSELF (tools/snorkeler_body.py):
@@ -10430,7 +10431,8 @@ function snorkSetFrames(img) {
   // SNORK_H is tip to waterline; the picture runs on below that into the water
   const T = SNORK_H / SNORK_WL;
   snorkSprite.scale.set(T * img.width / img.height, T, 1);
-  const f = bakeCutout(img, SNORK_EYES, { pix: 620, levels: 9, grain: 8, sat: 0.72 });
+  // his own colours: the pink and the cyan are the point of him, so no desaturation and a finer posterise
+  const f = bakeCutout(img, SNORK_EYES, { pix: 620, levels: 12, grain: 6, sat: 1.0 });
   snorkOpenTex = f.open; snorkShutTex = f.shut;
   snorkMat.map = snorkOpenTex; snorkMat.needsUpdate = true;
   snorkSprite.visible = true;

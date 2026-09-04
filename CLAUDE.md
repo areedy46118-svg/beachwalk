@@ -855,7 +855,9 @@ black `#intro` card: the line fades in, holds, fades out, world fades up,
 harness exposes `settings` through a getter: the reset REASSIGNS the module
 variable, so a captured reference goes stale.
 
-`settings.devMode` — the last toggle in the settings menu, "Dev mode — no
+`settings.devMode` is NEVER persisted: it is forced off after the saved
+settings load and written out as false, so a game always starts as a game
+whatever the last session was doing. It is the last toggle in the settings menu, "Dev mode — no
 deaths, no cutscenes", persisted with the rest of `beachwalk.settings`. Two
 effects, both at the one door each thing goes through: `damagePlayer()` still
 lands the hit (flash, knock, sound) but clamps `hp` to 1, and `playerDied()`
@@ -1316,11 +1318,15 @@ between. At x = -11 with the whole tube up he is a fleck, which is the brief,
 and `snorkGlint` — a faint warm point on the tube's valve, only while he is
 down — is the one thing out there that is not a star. **He is not a floating
 head.** The person segmentation ends at his neck, and a painted-on suit
-(tried first) still read as a head on a plate. `tools/snorkeler_body.py`
-rebuilds the cut-out from the PHOTOGRAPH ITSELF: the head keeps the
-segmentation's alpha and below the neck the picture's own pixels — the suit
-seen through the water — are kept under a soft shoulder-shaped mask that
-fades to nothing toward the bottom, blurred through the join. `SNORK_WL` is
+(tried first) still read as a head on a plate; so did a shoulder-shaped
+mask over the photo. `tools/snorkeler_body.py` uses the segmentation for
+the one thing it is good at — taking the hills and sky off around the head,
+mask and tube — and from the chin down segments NOTHING: every pink pixel
+in the picture (the suit seen through the water, and its colour on the
+water) is kept by a soft colour matte, so the neck and chest come out of
+the sea as they do in the photograph, and the last sixth of the frame fades
+so the picture never ends on a line. The bake keeps his colours (`sat`
+1.0, twelve levels): the pink and the cyan are the point of him. `SNORK_WL` is
 the photo's waterline as a fraction of the cut-out; he rises until that line
 sits `SNORK_SINK` relative to the drawn sea (negative: a hand above it, so
 the wet shoulders show and the fade meets the water). The sprite is placed
@@ -1348,10 +1354,11 @@ pinned at your chest and the throw began behind glass. Only the cliff is a
 wall now, either way, and `throwHeld()` gives 16 m/s with more lift (was
 12), about fifteen metres out: past the snorkeler, not past the horizon.
 
-**Prints are STAGGERED.** Left and right feet fall a shoulder's width
-either side of the line of travel (0.19–0.28 m, not 0.14), toes turned a
-little out, each with its own small yaw — in a straight row they read as a
-stamp. Both `stampFoot()` and the campsite trail do this.
+**Prints are STAGGERED, and WIDE.** Left and right feet fall a shoulder's
+width either side of the line of travel (0.26–0.38 m, not 0.14), toes
+turned a little out, each with its own small yaw — in a straight row they
+read as a stamp. Both `stampFoot()` and the campsite trail do this. The
+print quad is 0.31 m across: a foot is wider than it looks.
 
 **A footprint is ONE depression with a shadow INSIDE it.** Built off a
 photograph of a bare print in wet sand: the whole sole is a single shallow
