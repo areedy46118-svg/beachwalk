@@ -16,7 +16,10 @@ import * as THREE from 'three';
  *
  * Metres, +Y up, +Z out of the front face. */
 
-const W = 0.142, H = 0.125, D = 0.0104;      // the real case, to the millimetre
+/* A CD case STANDS UP: 125 mm across by 142 mm tall by 10 mm thick. This
+ * had them the other way round, which laid the whole thing on its side and
+ * turned both faces of artwork through ninety degrees. */
+const W = 0.125, H = 0.142, D = 0.0104;      // the real case, to the millimetre
 
 // --------------------------------------------------------------- textures
 const loader = new THREE.TextureLoader();
@@ -71,15 +74,15 @@ export function makeCdCase() {
    * the scene's own lighting as well left the sleeve muddy at night and
    * washed out under the examine lamps. `MeshBasicMaterial` shows the
    * picture as it is, which is what you want of a thing held up to a face. */
-  const booklet = 0.1195;                      // a CD booklet is 120 mm square
-  const front = new THREE.Mesh(new THREE.PlaneGeometry(booklet, booklet),
+  // both inserts upright, at the aspect measured off the photographs
+  const front = new THREE.Mesh(new THREE.PlaneGeometry(0.1185, 0.1251),
     new THREE.MeshBasicMaterial({ map: art('assets/cd-front.jpg') }));
-  front.position.z = t - 0.0011;
+  front.position.set(0.0018, 0.0026, t - 0.0011);
   g.add(front);
 
-  const back = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.004, H - 0.004),
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(0.1205, 0.1305),
     new THREE.MeshBasicMaterial({ map: art('assets/cd-back.jpg') }));
-  back.position.z = -t + 0.0012; back.rotation.y = Math.PI;
+  back.position.set(-0.0018, 0.0022, -t + 0.0012); back.rotation.y = Math.PI;
   g.add(back);
 
   // --- the tray the disc sits in, seen through the clear lid -------------
@@ -121,9 +124,9 @@ export function makeCdCase() {
     new THREE.MeshBasicMaterial({ map: spineTex }));
   spine.position.x = -W / 2 + 0.0011;
   g.add(spine);
-  for (let i = 0; i < 7; i++) {
-    const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.0026, 0.0075, D * 0.7), black);
-    tooth.position.set(-W / 2 + 0.0012, -H / 2 + 0.012 + i * 0.0165, 0);
+  for (let i = 0; i < 8; i++) {
+    const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.0026, 0.0072, D * 0.7), black);
+    tooth.position.set(-W / 2 + 0.0012, -H / 2 + 0.013 + i * 0.0165, 0);
     g.add(tooth);
   }
 

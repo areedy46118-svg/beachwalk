@@ -688,9 +688,15 @@ happen to dig — the same rule the glowstick's `mounds[0]` uses).
 clear lid and shell, black tray, the disc, hinge teeth down the spine, and
 the inserts front and back. **The sleeve is the OWNER'S OWN ARTWORK** —
 photographed, then rectified out of the three reference shots by a
-four-point perspective transform (`assets/cd-front.jpg` square, as a booklet
-is; `cd-back.jpg` wider than tall; `cd-spine.jpg` a strip rotated onto the
-edge). Two things that matter: the inserts take **`MeshBasicMaterial`**,
+four-point perspective transform. **A CD case STANDS UP** — 125 mm across
+by 142 mm tall — and having those the other way round laid the whole thing
+on its side and turned both faces of artwork through ninety degrees; both
+inserts are upright, at the aspect measured off the photographs. The
+photographs are also shot THROUGH the case's own lid, so each carries a
+broad sheen: dividing by a heavily blurred copy of itself takes the
+low-frequency lighting out and leaves the ink, and without that step the
+sleeve is a washed-out smear rather than the drawing. Two more things
+matter: the inserts take **`MeshBasicMaterial`**,
 because a photograph already carries the light it was shot in and lighting
 it twice left the sleeve muddy at night and chalk under the examine lamps;
 and the lid sits at opacity 0.11, because at 0.30 with full clearcoat the

@@ -5866,9 +5866,9 @@ function finishExtraction() {
  * differently, which is most of what makes it read as loose), the colour
  * is earth rather than sand, and the rim is broken by clods lying round
  * it rather than by a circle drawn on the beach. */
-const moundMat = new THREE.MeshStandardMaterial({ color: 0x6d5c47, roughness: 1, flatShading: true, emissive: 0x241d13 });
-const clodMat = new THREE.MeshStandardMaterial({ color: 0x554839, roughness: 1, flatShading: true, emissive: 0x150f0a });
-const clodMatDk = new THREE.MeshStandardMaterial({ color: 0x42382c, roughness: 1, flatShading: true, emissive: 0x0f0b07 });
+const moundMat = new THREE.MeshStandardMaterial({ color: 0x9c8862, roughness: 1, flatShading: true, emissive: 0x37301d });
+const clodMat = new THREE.MeshStandardMaterial({ color: 0x8d7a58, roughness: 1, flatShading: true, emissive: 0x2c2617 });
+const clodMatDk = new THREE.MeshStandardMaterial({ color: 0x776748, roughness: 1, flatShading: true, emissive: 0x211c12 });
 function lumpyDome(r, hy, seed) {
   const g = new THREE.SphereGeometry(r, 11, 6, 0, Math.PI * 2, 0, Math.PI * 0.5);
   g.scale(1, hy, 1);
