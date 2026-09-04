@@ -153,7 +153,7 @@ const DIG_DUR = 0.8;
 // ------------------------------------------------------------------
 // Settings
 // ------------------------------------------------------------------
-const DEFAULT_SETTINGS = { fov: 107, sensitivity: 1, brightness: 1.16, volume: 0.5, musicVolume: 0.32, waveVolume: 0.46, sfxVolume: 0.6, walkSpeed: 1.4, invertY: false };
+const DEFAULT_SETTINGS = { fov: 107, sensitivity: 1, brightness: 1.16, volume: 0.5, musicVolume: 0.32, waveVolume: 0.46, sfxVolume: 0.6, walkSpeed: 1.4, invertY: false, devMode: false };
 let settings = { ...DEFAULT_SETTINGS };
 try { settings = { ...settings, ...JSON.parse(localStorage.getItem('beachwalk.settings') || '{}') }; } catch (e) {}
 // walk speed is never remembered: every game starts at the default 1.4×, and
@@ -2941,6 +2941,8 @@ let hp = MAX_HP, hurtFlash = 0, dying = false;
 function damagePlayer(n = 1) {
   if (dying || ended || !introDone) return;
   hp -= n;
+  // DEV MODE: a hit still lands — flash, knock, sound — but it never finishes you
+  if (settings.devMode) hp = Math.max(hp, 1);
   hurtFlash = 1;
   sfxHurt();
   addTrauma(0.7);
@@ -2956,6 +2958,7 @@ function damagePlayer(n = 1) {
 }
 function playerDied() {
   if (dying) return;
+  if (settings.devMode) { hp = Math.max(hp, 1); return; }
   dying = true;
   if (locked) document.exitPointerLock();
   if (held) dropHeld();
@@ -3347,6 +3350,7 @@ const S_SFX = document.getElementById('s-sfx');
 const S_MUSIC = document.getElementById('s-music');
 const S_SPEED = document.getElementById('s-speed');
 const S_INVERT = document.getElementById('s-invert');
+const S_DEV = document.getElementById('s-dev');
 function applySettings() {
   camera.fov = settings.fov;
   camera.updateProjectionMatrix();
@@ -3371,6 +3375,7 @@ function syncMenuInputs() {
   S_MUSIC.value = settings.musicVolume;
   S_WAVE.value = settings.waveVolume; S_SFX.value = settings.sfxVolume; S_SPEED.value = settings.walkSpeed;
   S_INVERT.checked = settings.invertY;
+  S_DEV.checked = settings.devMode;
 }
 S_FOV.addEventListener('input', () => { settings.fov = +S_FOV.value; applySettings(); saveSettings(); });
 S_SENS.addEventListener('input', () => { settings.sensitivity = +S_SENS.value; applySettings(); saveSettings(); });
@@ -3381,6 +3386,7 @@ S_SFX.addEventListener('input', () => { settings.sfxVolume = +S_SFX.value; apply
 S_MUSIC.addEventListener('input', () => { settings.musicVolume = +S_MUSIC.value; applySettings(); saveSettings(); });
 S_SPEED.addEventListener('input', () => { settings.walkSpeed = +S_SPEED.value; applySettings(); saveSettings(); });
 S_INVERT.addEventListener('change', () => { settings.invertY = S_INVERT.checked; saveSettings(); });
+S_DEV.addEventListener('change', () => { settings.devMode = S_DEV.checked; saveSettings(); });
 document.getElementById('m-resume').addEventListener('click', closeMenu);
 /* Restart: a new game. Everything the walk changed — the crab, the crate,
  * the bottle, the pack, the rings, where you are — goes back to how it was,
@@ -10353,6 +10359,18 @@ function updatePack(dt) {
   if (packPhase === 0) {
     // you walk down the beach along -Z, so you reach them from above
     if (camera.position.z > PACK_Z + PACK_TRIGGER) return;
+    if (settings.devMode) {
+      // DEV MODE: skip the camera. They are simply ashore and awake, so the
+      // fight can be tested without sitting through the swim every time.
+      for (let i = 0; i < packCrabs.length; i++) {
+        const u = packCrabs[i], [tx, tz] = PACK_SPOTS[i];
+        u.g.position.set(tx, restYInWater(tx, tz, 1.15), tz);
+        u.g.rotation.y = Math.PI * 1.5; u.g.visible = true;
+        u.st.awake = true; u.st.rear = 1; u.wake = 1e6;
+      }
+      packPhase = 2; packCut = false;
+      return;
+    }
     packPhase = 1; packT = 0; packCut = true;
     if (held) dropHeld();
     hovered = null; setPrompt('');
@@ -11521,6 +11539,7 @@ layoutViewmodel();
 
 // dev hook
 window.__bw = {
+  settings, get hp() { return hp; },
   // aim the camera from the harness: writes the look state itself, so nothing
   // overwrites it on the next frame the way a bare camera.lookAt() gets undone
   look: (yaw, pitch = 0) => { lookEuler.set(pitch, yaw, 0, lookEuler.order); camera.quaternion.setFromEuler(lookEuler); camera.updateMatrixWorld(true); },

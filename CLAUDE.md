@@ -848,6 +848,18 @@ the overlay click) requests pointer lock *on the gesture*, then runs the
 black `#intro` card: the line fades in, holds, fades out, world fades up,
 `introDone = true`, music starts. `frozen()` includes `!introDone`.
 
+## Dev mode
+
+`settings.devMode` — the last toggle in the settings menu, "Dev mode — no
+deaths, no cutscenes", persisted with the rest of `beachwalk.settings`. Two
+effects, both at the one door each thing goes through: `damagePlayer()` still
+lands the hit (flash, knock, sound) but clamps `hp` to 1, and `playerDied()`
+refuses outright, so nothing can finish you; and `updatePack()` skips the
+swim-in — the three are put ashore at `PACK_SPOTS`, awake, on the frame you
+cross the trigger, so the fight can be tested without the camera being taken.
+The peek and the dialogues are player-initiated and are left alone. Off by
+default; it is for walking the beach, not for playing it.
+
 ## Working in the Claude Code browser preview
 
 The preview browser can't use the real Pointer Lock API and **throttles
