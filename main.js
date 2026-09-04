@@ -10909,7 +10909,7 @@ function updateSmile(dt) {
  * them. The cliff is cut open behind it in world space, the drain's trick.
  * The cliff clamp lifts while `insideMush`, so the back of the room — which
  * stands past CLIFF_BLOCK_X — can be walked. */
-const MUSH_X = 12.6, MUSH_Z = SMILE_Z - 90;
+const MUSH_X = 16.0, MUSH_Z = SMILE_Z - 90;   // the column's axis ON the cliff line: half of it in the wall, the steps dry at x = 9
 const mushHouse = makeMushroomHouse();
 mushHouse.group.position.set(MUSH_X, 0, MUSH_Z);
 scene.add(mushHouse.group);
@@ -10925,7 +10925,7 @@ for (const c of mushHouse.colliders) {
     sh.uniforms.uMushX = { value: MUSH_X }; sh.uniforms.uMushZ = { value: MUSH_Z };
     sh.fragmentShader = 'uniform float uMushX, uMushZ;\n' + sh.fragmentShader.replace(
       'if (abs(vDrainW.z - uDrainZ) < 2.6 && vDrainW.y < 3.3) discard;',
-      'if (abs(vDrainW.z - uDrainZ) < 2.6 && vDrainW.y < 3.3) discard;\n  if (length(vDrainW.xz - vec2(uMushX, uMushZ)) < 6.2 && vDrainW.y < 9.0) discard;');
+      'if (abs(vDrainW.z - uDrainZ) < 2.6 && vDrainW.y < 3.3) discard;\n  if (length(vDrainW.xz - vec2(uMushX, uMushZ)) < 6.6 && vDrainW.y < 9.6) discard;');
   };
   cliff.material.needsUpdate = true;
 }
@@ -10962,17 +10962,22 @@ function updateMushroom(dt) {
 
   const doorOk = Math.abs(_angDiff(ang, M.DOOR_ANG)) < M.DOOR_HALF * 0.95 && feet < M.PLAT_TOP + 1.7;
   if (!insideMush) {
-    if (d < M.COL_R + PLAYER_R) {
-      if (doorOk) insideMush = true;
-      else { clampTo(M.COL_R + PLAYER_R); return; }
-    } else return;
+    /* The wall clamp parks you at EXACTLY COL_R + PLAYER_R, so an entry
+     * test of "closer than that" was never true: you could stand in the
+     * doorway pushing and never be inside. The door takes you a little
+     * further out than the wall holds you. */
+    if (d < M.COL_R + PLAYER_R + 0.3 && doorOk) insideMush = true;
+    else if (d < M.COL_R + PLAYER_R) { clampTo(M.COL_R + PLAYER_R); return; }
+    else return;
   }
   // inside the column
   if (feet < M.PLAT_TOP + 1.2 && d > M.COL_R + 0.9) {       // walked out through the door
     insideMush = false; mushTurns = 0; mushStairY = null; mushOnFloor = false; return;
   }
   const inner = M.BORE - PLAYER_R * 0.55, well = 0.55;
-  if (d > inner && !(doorOk && mushTurns * M.RISE < 0.6)) clampTo(inner);
+  const atDoor = doorOk && mushTurns * M.RISE < 0.6;                 // going in or out at the bottom
+  const atFloor = mushTurns >= M.TURNS - 0.12;                       // at the top: the floor ring is open to you
+  if (d > inner && !atDoor && !atFloor) clampTo(inner);
   else if (d < well) clampTo(well);
   // winding: the stair gains RISE per turn, up as the angle decreases
   if (d > 0.3) {

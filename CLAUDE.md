@@ -1395,15 +1395,27 @@ pendant lamp. Everything the walk needs is in `MUSH` (radii, `H_ROOM`, the
 door's angle and half-width, the stair's rise, treads, turns, `A0` and
 `TOP_ANG`); the stair goes UP as the angle DECREASES, the lighthouse's
 convention, and `updateMushroom()` is `updateTower()`'s shape: regions and
-clamps, the climb by winding, the tread snap. Three things it had to get
-right: the room branch only applies OVER THE FLOOR RING (`d >= BORE`) —
+clamps, the climb by winding, the tread snap. Five things it had to get
+right, and the last two only showed up walking it in the LIVE loop with
+real keys (the stepped harness test passed and the owner could not get up
+the stair): the room branch only applies OVER THE FLOOR RING (`d >= BORE`) —
 keyed on height alone, the top metre of the climb read as the room and
 snapped you up onto a floor you had not reached; the well is railed from
 the floor except where the stair arrives (`atTop`), but `mushOnFloor`
 remembers whether you came from the floor, because someone winding DOWN
-past the top must not be held; and the cliff clamp lifts while
-`insideMush` so the back of the room, which stands past `CLIFF_BLOCK_X`,
-can be walked. The bunker walls are `rockColliders` cylinders 1 m apart
+past the top must not be held; the cliff clamp lifts while `insideMush` so
+the back of the room, which stands past `CLIFF_BLOCK_X`, can be walked;
+**the wall clamp parks you at exactly `COL_R + PLAYER_R`, so an entry test
+of "closer than that" was never true** and you could stand in the doorway
+pushing forever — the door admits you from 0.3 m further out; and **at the
+top of the stair the well's inner clamp has to open** (`atFloor`) or you
+can never step off onto the floor ring. Walk it with the pumped loop and
+`__bw.keys` / `__bw.look()` steering at the next point on the spiral —
+that test is the one that found both. The column's axis sits ON the cliff
+line (`MUSH_X` 16) so half of it is in the wall and the front steps are at
+x = 9, above the highest swash. The cap is ONE lathe — floor top, fascia,
+underside — so there is no seam; the glass and the rails are arcs of the
+drum, not chords; the treads are extruded wedges. The bunker walls are `rockColliders` cylinders 1 m apart
 (AABB boxes cannot turn), the platform a 0.4 m cylinder you step up, and
 the cliff is cut open round it in world space, the drain's trick. Its
 group is in `farProps`, so in a frozen preview still you must set it
