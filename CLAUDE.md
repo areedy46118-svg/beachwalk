@@ -857,8 +857,11 @@ lands the hit (flash, knock, sound) but clamps `hp` to 1, and `playerDied()`
 refuses outright, so nothing can finish you; and `updatePack()` skips the
 swim-in — the three are put ashore at `PACK_SPOTS`, awake, on the frame you
 cross the trigger, so the fight can be tested without the camera being taken.
-The peek and the dialogues are player-initiated and are left alone. Off by
-default; it is for walking the beach, not for playing it.
+The crabs never wake in it either (`updateCrabUnit` returns before the wake,
+and an awake one never starts a swing), so they sit at their spawns — the
+pack stays out at `PACK_START_X`. The peek and the dialogues are
+player-initiated and are left alone. Off by default; it is for walking the
+beach, not for playing it.
 
 ## Working in the Claude Code browser preview
 
@@ -1294,6 +1297,34 @@ Two things that bit building it: `Object3D.position` is a getter, so
 `Object.assign(mesh, { position })` throws and takes the page with it; and a
 glint Sprite under any raycast wants `Raycaster.camera`, so `addItemShine`
 gives it a no-op `raycast`.
+
+**The snorkeler (`SNORK_X` / `SNORK_Z`, off the campsite).** A third photo
+cut-out, `assets/snorkeler.png` out of `assets/snorkeler.jpg` via
+`tools/cutout.swift`, cropped to its opaque rows so `SNORK_H` means tube tip
+to waterline. He is a Sprite whose lower part is simply BELOW the drawn sea,
+so the water hides him: `SNORK_PEEK` of the tube shows, riding
+`waterSurfaceAt()` every frame (offshore the swell is ±2 m, so never assume
+-0.34 out there). A `physProps` body coming to rest within 3.2 m of him is
+the trigger — not a hit; a stone in the water beside a man is what makes him
+surface — and `updateSnorkeler()` eases him up, splashes, and opens
+`startDialog('start', SNORK_NPC)` 0.7 s later. He goes back under five
+seconds after the dialogue closes and can be roused again. `SNORK_EYES` is
+the blink band across both lenses of the mask. Dialogue choices can now
+carry `act`, a callback run when picked — "Give New CD" is gated by `when`
+on `cdItem` and `act` takes it out of the pack. His lines after the opener
+are placeholders written to fit; the opener is the owner's.
+
+**A throw is not stopped by the sea.** `PhysProp` had a wall at `WADE_X`
+as well as at the cliff, so nothing could ever be thrown into the water —
+it hit glass at the waterline and dropped. Only the cliff is a wall now, and
+`throwHeld()` gives 20 m/s with more lift (was 12), which carries a stone
+about twenty-seven metres out: far enough to reach the snorkeler.
+
+**Footprints are a depression, not an outline.** The rim strokes in
+`makeFootTexture()` were at 0.15–0.32 alpha stacked three deep, which drew a
+bright line round every part of the print, and a print with an outline is a
+cartoon of one. They are at 0.05–0.10 now, the pits are shallower and the
+material is at 0.8, so a print is something you half see.
 
 **A thing you set down is the SIZE YOU FOUND IT.** `dropEquipped()` built
 the world model by cloning the VIEW model, which is scaled and posed for the

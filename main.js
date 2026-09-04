@@ -2389,17 +2389,20 @@ function makeFootTexture() {
     }
     g.restore();
   };
-  rim(2.6, 3.2, [[7, 'rgba(196,210,236,0.15)'], [4, 'rgba(214,226,246,0.24)'], [2, 'rgba(226,236,252,0.32)']]);
-  rim(-2.2, -2.8, [[6, 'rgba(0,1,4,0.20)'], [3, 'rgba(0,1,4,0.26)']]);
+  /* Quieter than it was. Stacked pale strokes at 0.15-0.32 drew a bright
+   * outline round every part, and a print with an outline is a cartoon of a
+   * print; the real lip is a soft lift you half see. */
+  rim(2.6, 3.2, [[9, 'rgba(196,210,236,0.05)'], [5, 'rgba(214,226,246,0.08)'], [3, 'rgba(226,236,252,0.10)']]);
+  rim(-2.2, -2.8, [[7, 'rgba(0,1,4,0.09)'], [3, 'rgba(0,1,4,0.12)']]);
 
   // 2. the pits themselves — deepest at the middle of each part
   g.globalCompositeOperation = 'source-over';
   for (const p of PARTS) {
     const d = p[5];
     const rg = g.createRadialGradient(p[0], p[1] + 2, 0, p[0], p[1], p[2] + 3);
-    rg.addColorStop(0, `rgba(1,2,6,${0.90 * d})`);
-    rg.addColorStop(0.62, `rgba(3,6,12,${0.66 * d})`);
-    rg.addColorStop(0.92, `rgba(6,9,16,${0.16 * d})`);
+    rg.addColorStop(0, `rgba(1,2,6,${0.66 * d})`);
+    rg.addColorStop(0.55, `rgba(3,6,12,${0.46 * d})`);
+    rg.addColorStop(0.92, `rgba(6,9,16,${0.12 * d})`);
     rg.addColorStop(1, 'rgba(6,9,16,0)');
     g.fillStyle = rg; ell(p, 3); g.fill();
   }
@@ -2415,7 +2418,7 @@ function makeFootTexture() {
     const x = rnd(S), y = rnd(S);
     const bright = Math.random() < 0.3;
     g.fillStyle = bright
-      ? `rgba(${150 + rnd(70) | 0},${162 + rnd(70) | 0},${184 + rnd(60) | 0},${0.10 + rnd(0.22)})`
+      ? `rgba(${150 + rnd(70) | 0},${162 + rnd(70) | 0},${184 + rnd(60) | 0},${0.04 + rnd(0.10)})`
       : `rgba(0,1,5,${0.10 + rnd(0.3)})`;
     const r = bright ? 1 + rnd(1.6) : 1 + rnd(2.2);
     g.fillRect(x, y, r, r);
@@ -2522,7 +2525,7 @@ function makeCraterTexture() {
 
 const FOOT_POOL = 96;
 const footGeo = new THREE.PlaneGeometry(0.26, 0.44); footGeo.rotateX(-Math.PI / 2);
-const foot = new THREE.InstancedMesh(footGeo, new THREE.MeshBasicMaterial({ map: makeFootTexture(), transparent: true, depthWrite: false, opacity: 0.95 }), FOOT_POOL);
+const foot = new THREE.InstancedMesh(footGeo, new THREE.MeshBasicMaterial({ map: makeFootTexture(), transparent: true, depthWrite: false, opacity: 0.8 }), FOOT_POOL);
 foot.frustumCulled = false; foot.renderOrder = 2; foot.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 scene.add(foot);
 
@@ -3815,9 +3818,12 @@ class PhysProp {
       }
       struck = true; surface = side.mat || 'rock';
     }
-    const lo = WADE_X + this.radius, hi = CLIFF_BLOCK_X - this.radius;
+    /* The cliff is a wall to a thrown thing; the sea is NOT. There used to be
+     * a wall at WADE_X too, which is why nothing could be thrown into the
+     * water — it hit glass at the waterline and dropped. A body flies as far
+     * as its arc takes it now and comes to rest in the water it lands in. */
+    const hi = CLIFF_BLOCK_X - this.radius;
     if (!onPier(p.x, p.z)) {
-      if (p.x < lo) { p.x = lo; this.vel.x = Math.abs(this.vel.x) * this.bounce; struck = true; }
       if (p.x > hi) { p.x = hi; this.vel.x = -Math.abs(this.vel.x) * this.bounce; struck = true; }
     }
     // going into the sea: a splash you can see and hear, once
@@ -3964,7 +3970,9 @@ function throwHeld() {
   if (!held) return;
   camera.getWorldDirection(_pf);
   held.held = false;
-  held.vel.copy(_pf).multiplyScalar(12).add(new THREE.Vector3(0, 1.6, 0));
+  // hard: 12 m/s barely cleared the swash. 20 with more lift carries a stone
+  // twenty metres out, which is where the snorkeler is.
+  held.vel.copy(_pf).multiplyScalar(20).add(new THREE.Vector3(0, 2.6, 0));
   held.angVel.set((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8);
   held = null;
   sfxThud(0.05);
@@ -7112,6 +7120,7 @@ function updateCrabUnit(u, dt) {
     // stays under until it comes for you
     u.g.visible = submersionAt(u.g.position.x, u.g.position.z) < 0.92;
     if (dist > u.wake) return;
+    if (settings.devMode) return;        // DEV MODE: they stay where they were put
     u.st.awake = true;
     u.st.rear = 1;                       // it rears up as it notices you
     sfxCrabWake();
@@ -7210,7 +7219,7 @@ function updateCrabUnit(u, dt) {
     }
   } else {
     u.st.cool = Math.max(0, (u.st.cool || 0) - dt);
-    if (!closing && u.st.cool <= 0) { u.st.atk = 0; sfxCrabTell(); }
+    if (!closing && u.st.cool <= 0 && !settings.devMode) { u.st.atk = 0; sfxCrabTell(); }
   }
   u.st.lunge = atkLunge;
   // it is sand, and the crab is a wall of shell coming through at a run
@@ -8013,6 +8022,7 @@ function showDialogNode(id) {
       b.addEventListener('click', (e) => {
         e.stopPropagation();
         dialogUsed.add(ch.label);
+        if (ch.act) ch.act();                 // e.g. hand over the thing you offered
         showDialogNode(ch.to);
       });
       dialogChoicesEl.appendChild(b);
@@ -10186,7 +10196,7 @@ const camp = new THREE.Group();
   // --- the Discman, lid shut, headphones trailing off it onto the towel --
   {
     const cd = new THREE.Group();
-    const body = new THREE.MeshStandardMaterial({ color: 0xb8bec9, roughness: 0.45, metalness: 0.25, emissive: 0x20242c });
+    const body = new THREE.MeshStandardMaterial({ color: 0xdde2ec, roughness: 0.4, metalness: 0.2, emissive: 0x3c4352 });
     const dark = new THREE.MeshStandardMaterial({ color: 0x15171c, roughness: 0.6, emissive: 0x05060a });
     const base = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.026, 0.15), body);
     cd.add(base);
@@ -10197,7 +10207,7 @@ const camp = new THREE.Group();
     ring.rotation.x = Math.PI / 2; ring.position.set(0, 0.0205, -0.004);
     cd.add(ring);
     const screen = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.004, 0.014),
-      new THREE.MeshStandardMaterial({ color: 0x6f8a5a, emissive: 0x2c4a22, roughness: 0.8 }));
+      new THREE.MeshStandardMaterial({ color: 0x9fd08a, emissive: 0x63b04a, roughness: 0.8 }));
     screen.position.set(-0.03, 0.0145, 0.062);
     cd.add(screen);
     for (let i = 0; i < 4; i++) {
@@ -10227,11 +10237,11 @@ const camp = new THREE.Group();
      * on a night beach that is a few pixels. The camp's loose things are
      * laid down at 1.7x, the same reason the shells are laid at 2-3x, and
      * carry the same glint every takeable does. */
-    cd.scale.setScalar(1.7);
-    cd.position.set(CAMP_X + 0.32, 0.05, CAMP_Z - 0.18);
+    cd.scale.setScalar(2.3);
+    cd.position.set(CAMP_X + 0.32, 0.07, CAMP_Z - 0.18);
     cd.rotation.y = 2.4;
-    makeProp(cd, 'CD player', { radius: 0.19, restH: 0.05, bounce: 0.2, friction: 0.7 });
-    addItemShine(cd, { size: 0.7, height: 0.16, strength: 0.6 });
+    makeProp(cd, 'CD player', { radius: 0.25, restH: 0.07, bounce: 0.2, friction: 0.7 });
+    addItemShine(cd, { size: 1.0, height: 0.22, strength: 1.1 });
   }
 
   // --- the soda: one open and upright, one drunk and on its side ---------
@@ -10327,19 +10337,110 @@ const camp = new THREE.Group();
   {
     const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.28, 0),
       new THREE.MeshStandardMaterial({ color: 0x59606f, roughness: 1, flatShading: true, emissive: 0x14171f }));
-    stone.position.set(4.1, 0.26, CAMP_Z - 0.75);
+    stone.position.set(7.4, 0.26, CAMP_Z - 7.2);
     makeProp(stone, 'stone', { radius: 0.28, restH: 0.26, bounce: 0.12, friction: 0.6 });
     const glass = new THREE.MeshStandardMaterial({
       color: 0x2b5a74, roughness: 0.25, transparent: true, opacity: 0.7, emissive: 0x0a2130 });
     const r = 0.23;
     const float = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 10), glass);
-    float.position.set(4.7, r, CAMP_Z + 0.95);
+    float.position.set(5.6, r, CAMP_Z + 8.6);
     const fp = makeProp(float, 'glass float', { radius: r, restH: r, bounce: 0.5 });
     fp.onImpact = (speed) => shatterGlass(fp, float, speed, r);
   }
 
   scene.add(camp);
   farProps.push({ obj: camp, z: CAMP_Z, d: 260 });
+}
+
+// ------------------------------------------------------------------
+// The snorkeler — a tube above the water, twenty metres out
+// ------------------------------------------------------------------
+/* Off the campsite, out past where you can wade, there is a snorkel standing
+ * a hand's width out of the water and nothing else — you can barely see it,
+ * and it goes under and comes back with the swell. He is a photo cut-out
+ * like Bradly and the fisherman (`bakeCutout`, blink and all), a sprite
+ * whose lower part is simply BELOW the drawn sea, so the water hides him:
+ * `SNORK_PEEK` of the tube shows until something you threw comes down near
+ * him, and then he comes up shouting and the dialogue opens on him.
+ *
+ * The cut-out is `assets/snorkeler.png` (from `tools/cutout.swift`, like the
+ * others); until it is there the sprite stays hidden and none of this runs. */
+const SNORK_X = -21, SNORK_Z = CAMP_Z - 5;
+const SNORK_H = 0.64;                 // the cut-out, snorkel tip to waterline, in metres
+const SNORK_PEEK = 0.09;              // how much of the tube shows before he comes up
+const SNORK_EYES = { x: 0.22, y: 0.535, w: 0.56, h: 0.04 };   // both lenses of the mask, measured off the cut-out
+const snorkMat = new THREE.SpriteMaterial({ transparent: true, depthWrite: false });
+const snorkSprite = new THREE.Sprite(snorkMat);
+snorkSprite.visible = false;
+snorkSprite.position.set(SNORK_X, 0, SNORK_Z);
+scene.add(snorkSprite);
+let snorkOpenTex = null, snorkShutTex = null, snorkBlinkT = 2, snorkBlinking = false;
+function snorkSetFrames(img) {
+  snorkSprite.scale.set(SNORK_H * img.width / img.height, SNORK_H, 1);
+  const f = bakeCutout(img, SNORK_EYES, { pix: 620, levels: 9, grain: 8, sat: 0.72 });
+  snorkOpenTex = f.open; snorkShutTex = f.shut;
+  snorkMat.map = snorkOpenTex; snorkMat.needsUpdate = true;
+  snorkSprite.visible = true;
+}
+new THREE.TextureLoader().load('assets/snorkeler.png', (tex) => {
+  if (tex.image && tex.image.width) snorkSetFrames(tex.image);
+}, undefined, () => {});
+
+const SNORK_SCRIPT = {
+  start: {
+    text: 'HOLY SHIT!! YOU ALMOST CRUSHED MY SKULL WITH THAT THING!!',
+    choices: [
+      { label: "You shouldn't even be here", to: 'here' },
+      { label: "C'monnn, I wasn't actually trying to hit you.", to: 'trying' },
+      // only if it is on you — and handing it over is handing it over
+      { label: 'Give New CD', to: 'cd',
+        when: () => inventory.includes(cdItem), act: () => removeFromInventory(cdItem) },
+    ],
+  },
+  here: { text: 'Says the guy throwing rocks at the sea at three in the morning.', choices: [] },
+  trying: { text: "Yeah? Then you've got one hell of an arm for somebody not trying.", choices: [] },
+  cd: { text: '…Where did you get this. …No. Never mind. I’ll take it.', choices: [] },
+};
+const SNORK_NPC = { name: 'Snorkeler', script: SNORK_SCRIPT, sprite: snorkSprite, headY: 0 };
+let snorkUp = 0, snorkWant = 0, snorkTalkT = -1, snorkDownT = -1, snorkWasOpen = false, snorkT = 0;
+function updateSnorkeler(dt) {
+  if (!snorkOpenTex) return;
+  snorkT += dt;
+  // blink, the way the others do
+  snorkBlinkT -= dt;
+  if (snorkBlinkT <= 0) {
+    snorkBlinking = !snorkBlinking;
+    snorkMat.map = snorkBlinking ? snorkShutTex : snorkOpenTex; snorkMat.needsUpdate = true;
+    snorkBlinkT = snorkBlinking ? 0.12 : (Math.random() < 0.2 ? 0.18 : 2.6 + Math.random() * 3.6);
+  }
+  /* The trigger: anything thrown that comes down near him. Not "hits" — a
+   * stone in the water a metre off is exactly what would make a man surface
+   * swearing, and aiming at a snorkel from the beach is hard enough. */
+  if (snorkWant === 0 && snorkUp < 0.05 && !dialogOpen) {
+    for (const p of physProps) {
+      if (p.held || p.dead) continue;
+      const q = p.mesh.position;
+      // near him and down at the water (the sea is two metres lower out here than at the shore)
+      if (Math.hypot(q.x - SNORK_X, q.z - SNORK_Z) < 3.2 && q.y < waterSurfaceAt(q.x, q.z) + 1.5) {
+        snorkWant = 1; snorkTalkT = 0.7;
+        spawnSplash(SNORK_X, SNORK_Z, 26, 0, 0, 1.6); sfxSplash(1.5);
+        break;
+      }
+    }
+  }
+  snorkUp += (snorkWant - snorkUp) * Math.min(1, dt * 2.4);
+  if (snorkTalkT > 0) {
+    snorkTalkT -= dt;
+    if (snorkTalkT <= 0 && !dialogOpen) { startDialog('start', SNORK_NPC); snorkWasOpen = true; }
+  }
+  if (snorkWasOpen && !dialogOpen) { snorkWasOpen = false; snorkDownT = 5; }   // he treads water a while, then goes back under
+  if (snorkDownT > 0) { snorkDownT -= dt; if (snorkDownT <= 0) { snorkDownT = -1; snorkWant = 0; } }
+  // he rides the swell; only the tube shows until he comes up
+  const e = snorkUp * snorkUp * (3 - 2 * snorkUp);
+  const water = waterSurfaceAt(SNORK_X, SNORK_Z);
+  snorkSprite.position.y = water + THREE.MathUtils.lerp(-SNORK_H / 2 + SNORK_PEEK, SNORK_H / 2, e)
+    + Math.sin(snorkT * 0.7) * 0.012;
+  snorkMat.rotation = Math.sin(snorkT * 0.5) * 0.02 * e;
 }
 
 /* The trails. Each one leaves a widening V of ripples behind it and throws a
@@ -10360,14 +10461,7 @@ function updatePack(dt) {
     // you walk down the beach along -Z, so you reach them from above
     if (camera.position.z > PACK_Z + PACK_TRIGGER) return;
     if (settings.devMode) {
-      // DEV MODE: skip the camera. They are simply ashore and awake, so the
-      // fight can be tested without sitting through the swim every time.
-      for (let i = 0; i < packCrabs.length; i++) {
-        const u = packCrabs[i], [tx, tz] = PACK_SPOTS[i];
-        u.g.position.set(tx, restYInWater(tx, tz, 1.15), tz);
-        u.g.rotation.y = Math.PI * 1.5; u.g.visible = true;
-        u.st.awake = true; u.st.rear = 1; u.wake = 1e6;
-      }
+      // DEV MODE: no cutscene and no fight. They stay out where they wait.
       packPhase = 2; packCut = false;
       return;
     }
@@ -11475,6 +11569,7 @@ function update(dt, rawDt = dt) {
   updateHeldGlow(dt);
   updateDialogCam(dt);
   updatePack(dt);
+  updateSnorkeler(dt);
   updateCrab(dt);
   updateGibs(dt);
   updateBradlyBlink(dt);
@@ -11540,6 +11635,8 @@ layoutViewmodel();
 // dev hook
 window.__bw = {
   settings, get hp() { return hp; },
+  snorkSprite, updateSnorkeler, snork: () => ({ up: snorkUp, want: snorkWant, talkT: snorkTalkT, hasTex: !!snorkOpenTex }),
+  snorkFake: () => { const c = document.createElement('canvas'); c.width = 80; c.height = 128; const g = c.getContext('2d'); g.fillStyle = '#e0407a'; g.fillRect(10, 30, 60, 98); g.fillStyle = '#ff7030'; g.fillRect(58, 0, 10, 60); snorkSetFrames(c); },
   // aim the camera from the harness: writes the look state itself, so nothing
   // overwrites it on the next frame the way a bare camera.lookAt() gets undone
   look: (yaw, pitch = 0) => { lookEuler.set(pitch, yaw, 0, lookEuler.order); camera.quaternion.setFromEuler(lookEuler); camera.updateMatrixWorld(true); },
