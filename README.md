@@ -262,6 +262,10 @@ castle, crab, `startDig`, `toggleEquip`, `openMenu`, `openInspect`, `showEnd`,
 
 ## Credits
 
+This work is based on ["Survival Shovel"](https://sketchfab.com/3d-models/survival-shovel-143de1be88704810bd14f64cfed64bb7)
+by [howittworks](https://sketchfab.com/howittworks) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Military Shovel.
+
 **Grass pack (lowpoly, game-ready)** — the grass on the headland.
 ["Grass pack (lowpoly, game-ready)"](https://sketchfab.com/3d-models/grass-pack-lowpoly-game-ready)
 by [LOLIPOP](https://sketchfab.com/lolipop_1707), [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).

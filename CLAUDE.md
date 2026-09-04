@@ -766,6 +766,20 @@ there for a puzzle.
 collision**). Grab springs the held prop in front of the camera; click again
 throws; `G` drops.
 
+**The Military Shovel is a scan, and there is ONE shovel in hand.**
+howittworks' "Survival Shovel" (`assets/military-shovel.glb`, through
+`gltfpack.py` at 2048 with its normal and metal-rough maps kept — 1.8 MB
+because looking like the photograph is the point). It is a second dig
+item: `onDig` plus its own `lip`, and `toggleEquip()` points `toolVM` at
+whichever dig tool is equipped and re-hangs `trailTip`/`trailRoot` at that
+tool's lip — the dig, trail, overhead roll and hit flash all name `toolVM`
+now, never `shovelVM`. `orientMil()` puts the scan (95 cm down model X, in
+cm, blade at -X, a Z-up root matrix) into the sand shovel's frame with one
+rotation matrix and a 0.27 lift, so every pose holds untouched. Three
+groups, because the scan lands over the network: the hand's, the
+examine/drop copy, the one on the beach past the drain. Its placement
+must not read `DRAIN_X` — declared thousands of lines later.
+
 **The shovel is built to a photograph of a plastic beach shovel.**
 `makeShovel()` is a triangular loop handle with finger scallops along the
 grip, a round shaft swelling into a socket, and a scoop that is a real

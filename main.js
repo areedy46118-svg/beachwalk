@@ -4369,6 +4369,13 @@ function toggleEquip(item) {
     const vm = equipped.viewmodel;
     if (vm.userData.build) { vm.userData.build(); vm.userData.build = null; }
     vm.visible = true;
+    if (equipped.onDig) {
+      toolVM = vm;
+      const lip = equipped.lip || SAND_LIP;
+      toolVM.add(trailTip, trailRoot);           // re-parents: the ribbon rides this blade now
+      trailTip.position.set(lip[0][0], lip[0][1], lip[0][2]);
+      trailRoot.position.set(lip[1][0], lip[1][1], lip[1][2]);
+    }
   }
   digT = 0;
   renderHotbar();
@@ -4768,6 +4775,12 @@ shovelVM.rotation.set(VM_REST_ROT[0], VM_REST_ROT[1], VM_REST_ROT[2]);
 let ohBlend = 0;
 shovelVM.visible = false;
 toolMount.add(shovelVM);
+/* THE SHOVEL IN HAND. The dig, the trail, the overhead roll and the hit
+ * flash all used to name `shovelVM` directly; with a second digging tool
+ * they name `toolVM`, which toggleEquip() points at whichever dig item is
+ * equipped and re-hangs the trail markers on, at that tool's own lip. */
+let toolVM = shovelVM;
+const SAND_LIP = [[-0.095, -0.21, -0.05], [0.095, -0.21, -0.05]];
 
 /* The swing trail. Follow-through and arc, and the cheapest thing there is
  * for making a swing read as a swing rather than as a model changing angle:
@@ -5139,9 +5152,82 @@ const shovelItem = {
   name: 'Sand shovel', icon: makeShovelIcon(), onDig: true, viewmodel: shovelVM,
   // its own instance, because inspectSetModel() re-parents and rescales what
   // it is handed — pass the view model and the tool leaves your hand
-  inspectModel: makeShovel(),
+  inspectModel: makeShovel(), lip: SAND_LIP,
   use: () => toggleEquip(shovelItem),
 };
+// ------------------------------------------------------------------
+// The Military Shovel — howittworks' "Survival Shovel" scan, CC-BY-4.0
+// ------------------------------------------------------------------
+/* A second digging tool, used exactly as the sand shovel is: same swings,
+ * same trail, same overhead, same prompts — it is an item with `onDig` and
+ * its own `lip`, and toggleEquip() points `toolVM` at it. The scan comes in
+ * through tools/gltfpack.py with its base colour at 2048 and its normal and
+ * metal-rough maps kept (1.8 MB; the source is 52 MB of PNG), because the
+ * point of it is that it looks like the photograph it was scanned from.
+ *
+ * The model is 95 cm long down its X in centimetres, the wide flat blade at
+ * -X and the handle plate at +X, and the glTF root carries a Z-up matrix. It
+ * is put into the SAND SHOVEL'S frame — shaft up +Y, blade down to
+ * y = -0.21, thin axis on Z — by one rotation matrix and a lift, so every
+ * pose, the blade-on-the-crosshair correction and the drop all hold
+ * untouched. Three groups because the scan lands over the network: the
+ * hand's copy, the examine/drop copy, and the one on the beach. */
+const MIL_LIP = [[-0.12, -0.21, 0], [0.12, -0.21, 0]];
+const milModel = new THREE.Group(), milInspect = new THREE.Group(), militaryWorld = new THREE.Group();
+function orientMil(src) {
+  const w = new THREE.Group();
+  // loaded axes: length on X, thin on Y, width on Z  ->  width on X, length on Y (blade -Y), thin on Z
+  w.quaternion.setFromRotationMatrix(new THREE.Matrix4().set(0, 0, -1, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0, 1));
+  w.scale.setScalar(0.01);
+  const g = new THREE.Group();
+  g.add(w); w.add(src);
+  g.position.y = 0.27;                         // lip at -0.21, like the sand shovel's
+  const out = new THREE.Group(); out.add(g);
+  return out;
+}
+new GLTFLoader().load('assets/military-shovel.glb', (gltf) => {
+  gltf.scene.traverse((o) => {
+    if (!o.isMesh) return;
+    o.material.side = THREE.DoubleSide;
+    reexpose(o.material, 0.62);                // lit for daylight; it is night
+    o.material.emissive = new THREE.Color(0x0d0f14);
+  });
+  milModel.add(orientMil(gltf.scene));
+  milInspect.add(orientMil(gltf.scene.clone(true)));
+  militaryWorld.add(orientMil(gltf.scene.clone(true)));
+}, undefined, () => {});
+const militaryVM = new THREE.Group();
+militaryVM.add(milModel);
+militaryVM.scale.setScalar(0.48);
+militaryVM.position.set(-0.04, -0.02, 0.0);
+militaryVM.rotation.set(VM_REST_ROT[0], VM_REST_ROT[1], VM_REST_ROT[2]);
+militaryVM.visible = false;
+toolMount.add(militaryVM);
+const militaryItem = {
+  name: 'Military Shovel', icon: makeShovelIcon(), onDig: true, viewmodel: militaryVM,
+  inspectModel: milInspect, lip: MIL_LIP,
+  use: () => toggleEquip(militaryItem),
+};
+// a few steps past the drain (DRAIN_X / DRAIN_Z are declared much further
+// down; reading them here is a dead-zone crash), on the sand at the cliff foot
+militaryWorld.position.set(CLIFF_BLOCK_X - 2.0, 0.06, 34 + 4.5);
+militaryWorld.rotation.set(-Math.PI / 2, 0, 0.45);
+{
+  const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  proxy.position.y = 0.25; proxy.name = 'hitProxy';
+  militaryWorld.add(proxy);
+}
+scene.add(militaryWorld);
+addInteractable(militaryWorld, 'Take the military shovel', 'inventory', {
+  onActivate: () => {
+    sfxThud(0.04);
+    scene.remove(militaryWorld);
+    hovered = null;
+    addToInventory(militaryItem);
+    toggleEquip(militaryItem);
+  },
+});
+
 addInteractable(shovelWorld, "Take the sand shovel", 'inventory', {
   onActivate: () => {
     sfxThud(0.04);
@@ -5573,7 +5659,7 @@ const _lipA = new THREE.Vector3(), _lipB = new THREE.Vector3(), _landV = new THR
 let landK = 0;
 function landBlade() {
   landK = 0;
-  if (digT <= 0 || !shovelVM.visible) return;
+  if (digT <= 0 || !toolVM.visible) return;
   const p = digT;
   if (p < DIG_WINDUP) return;
   if (p < DIG_STRIKE) landK = easeInCubic((p - DIG_WINDUP) / (DIG_STRIKE - DIG_WINDUP));
@@ -5728,7 +5814,7 @@ function updateViewmodel(dt) {
   const wantOh = (winding && windOverhead) || (digT > 0 && digOverhead) ? 1 : 0;
   ohBlend += (wantOh - ohBlend) * Math.min(1, dt * 9);
   if (ohBlend > 0.001 || wantOh) {
-    shovelVM.rotation.set(
+    toolVM.rotation.set(
       VM_REST_ROT[0] + (VM_OVERHEAD_ROT[0] - VM_REST_ROT[0]) * ohBlend,
       VM_REST_ROT[1] + (VM_OVERHEAD_ROT[1] - VM_REST_ROT[1]) * ohBlend,
       VM_REST_ROT[2] + (VM_OVERHEAD_ROT[2] - VM_REST_ROT[2]) * ohBlend);
@@ -5737,7 +5823,7 @@ function updateViewmodel(dt) {
   // Only the strike and a beat past it leave a trail; a trail on the wind-up
   // would say the tool was moving fast when it is deliberately barely moving.
   trailPower = digPower;
-  updateTrail(dt, shovelVM.visible && digT >= DIG_WINDUP - 0.02 && digT < DIG_STRIKE + 0.13);
+  updateTrail(dt, toolVM.visible && digT >= DIG_WINDUP - 0.02 && digT < DIG_STRIKE + 0.13);
 }
 
 // ------------------------------------------------------------------
@@ -7058,7 +7144,7 @@ function blockCrab(u = crabs[0]) {
   sfxBlock();
   stamina = Math.max(0, stamina - BLOCK_COST);
   if (stamina <= 0.001) { exhausted = true; gaspOut(); }
-  flashMats(shovelVM);                   // the tool goes white for the frozen frames
+  flashMats(toolVM);                     // the tool goes white for the frozen frames
   parryGlow = Math.max(parryGlow, 0.22); // and shudders in your hands
   fovKick = Math.max(fovKick, 3.5);
   addTrauma(0.42);
@@ -11727,6 +11813,7 @@ layoutViewmodel();
 
 // dev hook
 window.__bw = {
+  militaryItem, militaryWorld, milModel, get toolVM() { return toolVM; }, vmScene, vmCamera, toolMount,
   get settings() { return settings; }, get hp() { return hp; },
   snorkSprite, updateSnorkeler, snork: () => ({ up: snorkUp, want: snorkWant, talkT: snorkTalkT, hasTex: !!snorkOpenTex }),
   snorkFake: () => { const c = document.createElement('canvas'); c.width = 80; c.height = 128; const g = c.getContext('2d'); g.fillStyle = '#e0407a'; g.fillRect(10, 30, 60, 98); g.fillStyle = '#ff7030'; g.fillRect(58, 0, 10, 60); snorkSetFrames(c); },
