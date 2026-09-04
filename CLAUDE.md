@@ -680,7 +680,12 @@ turned earth is loose CLODS: `lumpyDome()` displaces the dome per vertex
 a pile rather than a bump, and fourteen dodecahedron clods lie round the
 foot thinning outward so the heap crumbles into the beach instead of ending
 on a line. Flat-shaded, because every facet catching the moon differently is
-most of what reads as loose. Dark damp earth, not sand.
+most of what reads as loose. It also wears **the beach's own grain** —
+`sandTex` cloned so it can carry its own repeat (the beach's tiles over
+eight hundred metres, which on a one-metre heap is a smear); flat colour on
+a lumpy dome read as moulded plastic however the tint was chosen. And the
+map MULTIPLIES, so the body has to be lifted well past the tan you actually
+want or it comes out olive — dark brown reads as something a dog left.
 
 **"New Cd" is in the SECOND mound** (`mounds[1]`, not the second one you
 happen to dig — the same rule the glowstick's `mounds[0]` uses).
@@ -696,12 +701,23 @@ photographs are also shot THROUGH the case's own lid, so each carries a
 broad sheen: dividing by a heavily blurred copy of itself takes the
 low-frequency lighting out and leaves the ink, and without that step the
 sleeve is a washed-out smear rather than the drawing. Two more things
-matter: the inserts take **`MeshBasicMaterial`**,
+matter. **The front booklet is SQUARE** — 120 x 120 mm — and the tray card
+behind it is taller than wide; forcing both to the case's own portrait shape
+stretched the cover by a twelfth, which is exactly enough to see. And the
+inserts take **`MeshBasicMaterial`**,
 because a photograph already carries the light it was shot in and lighting
 it twice left the sleeve muddy at night and chalk under the examine lamps;
 and the lid sits at opacity 0.11, because at 0.30 with full clearcoat the
 polystyrene threw a sheen over the whole front and the artwork — the point
 of the object — came out white.
+
+**Everything a mound gives up carries a shine.** The glowstick lights
+itself, so it was obvious; everything else was a dark object dropped on a
+dark beach at the moment the screen was full of flying sand, and it went
+straight past people. `addItemShine()` on the relic, at a good size. The CD
+is also STOOD UP in the hole rather than laid flat — face up it is a
+hand-sized rectangle seen edge-on from standing height, and it read as a
+sliver.
 
 **A buried cache has to look like something you would DIG.** `moundMat` was
 `0x74809a` — the beach's own cold blue-grey — so a cache read as one more
