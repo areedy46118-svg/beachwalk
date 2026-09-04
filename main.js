@@ -5504,6 +5504,8 @@ function digImpact() {
        * it gets its own report — a hard concrete crack, under the shell hit
        * rather than instead of it, so the swing still sounds like a swing. */
       if (heavy && digOverhead) playSample('smash', 1.0, 0.05);
+      // the military shovel's light hit is steel on shell: one of two, at random
+      if (equipped === militaryItem && !heavy) playSample('milLight', 1.0, 0.05);
       hurtCrab(best, heavy ? CRAB_HP : 1, P);
       return;
     }
@@ -8365,6 +8367,7 @@ const SAMPLES = {
   blockSand: ['assets/block-sand.m4a'],    // a blow stopped on the plastic shovel: a paint can, not steel
   milHeavy: ['assets/military-heavy.m4a'], // the military shovel's heavy landing on something solid
   blockMil: ['assets/block-military.m4a'], // a blow stopped on the military shovel: solid steel
+  milLight: ['assets/military-light1.m4a', 'assets/military-light2.m4a'],   // its light swing landing on a crab, one or the other
 };
 const sampleBanks = {};
 function loadSamples() {

@@ -320,8 +320,9 @@ timing.
 not covered by any open licence and must not be redistributed with the game.
 
 **Paint can / metal impacts** — the sand shovel's block, and the Military
-Shovel's block and heavy hit, are three impact samples the owner supplied
-(`assets/block-sand.m4a`, `assets/block-military.m4a`,
+Shovel's block, light hits and heavy hit, are five impact samples the owner
+supplied (`assets/block-sand.m4a`, `assets/block-military.m4a`,
+`assets/military-light1.m4a`, `assets/military-light2.m4a`,
 `assets/military-heavy.m4a`). They are not ours to
 redistribute and are credited as such.
 

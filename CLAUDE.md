@@ -802,7 +802,9 @@ must not read `DRAIN_X` — declared thousands of lines later. Three
 owner-supplied impacts hang off the two tools: a paint can is the sand
 shovel's block (`blockSand`), a solid metal hit is the Military Shovel's
 block (`blockMil`, both in `blockCrab`) and another is its heavy landing
-(`milHeavy`, in `hitConnect` at P ≥ 0.5); none is redistributable.
+(`milHeavy`, in `hitConnect` at P ≥ 0.5), and two more are its LIGHT hit
+on a crab (`milLight`, in `digImpact`'s crab branch, one of the two at
+random); none is redistributable.
 
 **The shovel is built to a photograph of a plastic beach shovel.**
 `makeShovel()` is a triangular loop handle with finger scallops along the
