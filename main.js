@@ -3803,8 +3803,22 @@ function dropEquipped() {
   const item = equipped;
   if (!item) return;
   let m = null;
+  const hasMesh = (g) => { let any = false; g.traverse((o) => { if (o.isMesh || o.isSkinnedMesh) any = true; }); return any; };
   if (item.worldFactory) {
     m = item.worldFactory();
+  } else if (item.inspectModel && hasMesh(item.inspectModel)) {
+    /* THE MODEL, NOT THE VIEW MODEL. A view model is built for the hand and
+     * scaled to it — the shovel's is 0.48, and everything `holdable()` makes
+     * carries whatever scale it was given — so cloning that put a half-size
+     * shovel on the sand, and a thing you set down came back smaller than
+     * the thing you picked up. `inspectModel` is the object at the size it
+     * was authored, and `inspectSetModel()` guarantees its own transform is
+     * identity (it scales the wrapper, never the model), so it clones clean. */
+    m = item.inspectModel.clone(true);
+    m.traverse((o) => { o.visible = true; });
+    m.position.set(0, 0, 0);
+    m.rotation.set(0, 0, 0);
+    m.scale.setScalar(item.dropScale || 1);
   } else if (item.viewmodel) {
     m = item.viewmodel.clone(true);
     m.traverse((o) => { o.visible = true; });
@@ -9912,8 +9926,13 @@ function dockDeckAt(wx, wz) { return deckHeightAt(wx, wz); }
 /* Close to the dock, not halfway to it: the shed and its two lamps are the
  * thing you are walking toward, so the fight reads as the last stretch
  * before you get there rather than an empty patch of beach. */
-const PACK_Z = DOCK_Z + 34;
-const PACK_TRIGGER = 22;                      // how far short of them it starts
+/* In front of the shed, and nowhere near the wreck. At `DOCK_Z + 34` with a
+ * 22 m lead the cutscene fired at z = -159 — four metres past the wreck at
+ * -155 — so it went off the moment you were clear of it rather than on the
+ * last stretch to the dock. The trigger is the player's z ALONE: it does not
+ * care whether you are walking the waterline or the foot of the cliff. */
+const PACK_Z = DOCK_Z + 18;
+const PACK_TRIGGER = 20;                      // how far short of them it starts
 const PACK_START_X = -34;                     // out where the water is black
 const PACK_SWIM = 3.4, PACK_HOLD = 0.75;      // the swim in, then a beat on them
 /* They come ashore at the WATERLINE, not out in the deep. `updateCrabUnit`

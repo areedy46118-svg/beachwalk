@@ -1230,10 +1230,24 @@ every copy then walks in lockstep, and SkeletonUtils is not vendored here —
 so the .glb is fetched ONCE and `GLTFLoader.parse()` is run per crab off the
 same buffer. Four parses, one download.
 
-**The three, and the wakes.** `PACK_Z` is halfway from the wreck to the dock.
+**A thing you set down is the SIZE YOU FOUND IT.** `dropEquipped()` built
+the world model by cloning the VIEW model, which is scaled and posed for the
+hand — the shovel's is 0.48, and everything `holdable()` makes carries
+whatever scale it was given — so a shovel you dropped came back half the
+shovel you picked up. It clones `inspectModel` now: the object at the size
+it was authored, and `inspectSetModel()` guarantees its own transform is
+identity (it scales a wrapper, never the model), so it clones clean.
+
+**The three, and the wakes.** `PACK_Z` is `DOCK_Z + 18`, in front of the
+shed.
 They wait a long way out with `wake: 0`, so they never notice you on their
 own; crossing `PACK_TRIGGER` starts the cutscene and what wakes them is its
-end. Two things make it work: `updateCrabUnit` already hides anything with a
+end. **The trigger is the player's z ALONE** — it does not care whether you
+are walking the waterline or the foot of the cliff — and it has to be a long
+way past the wreck: at `DOCK_Z + 34` with a 22 m lead it fired at z = -159,
+four metres past the wreck at -155, so it went off the moment you were clear
+of it instead of on the last stretch to the dock. It fires at -177 now, 22 m
+past the wreck and 38 m short of the shed. Two things make it work: `updateCrabUnit` already hides anything with a
 submersion over 0.92, so on the way in there is nothing to see BUT the wake —
 which is the whole idea — and they have to come ashore at the WATERLINE
 (`PACK_SPOTS` at x ≈ 2–4), because arriving out in the deep ended the
