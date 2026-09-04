@@ -10365,15 +10365,27 @@ const camp = new THREE.Group();
  *
  * The cut-out is `assets/snorkeler.png` (from `tools/cutout.swift`, like the
  * others); until it is there the sprite stays hidden and none of this runs. */
-const SNORK_X = -21, SNORK_Z = CAMP_Z - 5;
-const SNORK_H = 0.64;                 // the cut-out, snorkel tip to waterline, in metres
-const SNORK_PEEK = 0.09;              // how much of the tube shows before he comes up
+const SNORK_X = -11, SNORK_Z = CAMP_Z - 5;   // fourteen metres off the waterline, well past where you can wade
+const SNORK_H = 0.95;                 // tube tip to waterline; over life-size, like every cut-out read at range
+const SNORK_PEEK = 0.23;              // the tube and nothing else: 9 cm was a pixel at twenty metres
 const SNORK_EYES = { x: 0.22, y: 0.535, w: 0.56, h: 0.04 };   // both lenses of the mask, measured off the cut-out
 const snorkMat = new THREE.SpriteMaterial({ transparent: true, depthWrite: false });
 const snorkSprite = new THREE.Sprite(snorkMat);
 snorkSprite.visible = false;
 snorkSprite.position.set(SNORK_X, 0, SNORK_Z);
 scene.add(snorkSprite);
+/* The valve on top of the tube catches the moon. Without it the tube is a
+ * dark fleck a pixel or two across on dark water at the retro scale, and
+ * "barely see it" turned out to mean "cannot"; with it there is one warm
+ * point out there that is not a star, which is exactly as much as you get. */
+const snorkGlint = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: glowTex, color: 0xffb080, transparent: true, opacity: 0.0,
+  depthWrite: false, blending: THREE.AdditiveBlending, fog: true,
+}));
+snorkGlint.raycast = () => {};
+snorkGlint.scale.setScalar(0.42);
+snorkGlint.visible = false;
+scene.add(snorkGlint);
 let snorkOpenTex = null, snorkShutTex = null, snorkBlinkT = 2, snorkBlinking = false;
 function snorkSetFrames(img) {
   snorkSprite.scale.set(SNORK_H * img.width / img.height, SNORK_H, 1);
@@ -10441,6 +10453,10 @@ function updateSnorkeler(dt) {
   snorkSprite.position.y = water + THREE.MathUtils.lerp(-SNORK_H / 2 + SNORK_PEEK, SNORK_H / 2, e)
     + Math.sin(snorkT * 0.7) * 0.012;
   snorkMat.rotation = Math.sin(snorkT * 0.5) * 0.02 * e;
+  // the valve on the tube, only while he is down
+  snorkGlint.visible = snorkSprite.visible;
+  snorkGlint.position.set(SNORK_X + 0.22 * snorkSprite.scale.x, snorkSprite.position.y + SNORK_H / 2 - 0.04, SNORK_Z);
+  snorkGlint.material.opacity = (1 - e) * (0.22 + 0.10 * Math.sin(snorkT * 1.7));
 }
 
 /* The trails. Each one leaves a widening V of ripples behind it and throws a

@@ -1304,7 +1304,12 @@ cut-out, `assets/snorkeler.png` out of `assets/snorkeler.jpg` via
 to waterline. He is a Sprite whose lower part is simply BELOW the drawn sea,
 so the water hides him: `SNORK_PEEK` of the tube shows, riding
 `waterSurfaceAt()` every frame (offshore the swell is ±2 m, so never assume
--0.34 out there). A `physProps` body coming to rest within 3.2 m of him is
+-0.34 out there). He was first put at x = -21 with 9 cm of tube showing and
+could not be seen at all: at the retro scale that is a pixel, and a raycast
+from the eye to the tube hit the sea two metres short of him — a crest in
+between. At x = -11 with the whole tube up he is a fleck, which is the brief,
+and `snorkGlint` — a faint warm point on the tube's valve, only while he is
+down — is the one thing out there that is not a star. A `physProps` body coming to rest within 3.2 m of him is
 the trigger — not a hit; a stone in the water beside a man is what makes him
 surface — and `updateSnorkeler()` eases him up, splashes, and opens
 `startDialog('start', SNORK_NPC)` 0.7 s later. He goes back under five
