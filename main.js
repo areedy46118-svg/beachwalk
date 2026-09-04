@@ -7162,7 +7162,9 @@ function gaspOut() {
 }
 function blockCrab(u = crabs[0]) {
   // what the blow lands on: plastic rings like a paint can, steel like steel
-  if (equipped === shovelItem) playSample('blockSand', 1.0, 0.04); else sfxBlock();
+  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04);
+  else if (equipped === shovelItem) playSample('blockSand', 1.0, 0.04);
+  else sfxBlock();
   stamina = Math.max(0, stamina - BLOCK_COST);
   if (stamina <= 0.001) { exhausted = true; gaspOut(); }
   flashMats(toolVM);                     // the tool goes white for the frozen frames
@@ -8348,6 +8350,7 @@ const SAMPLES = {
   smash: ['assets/overhead-hit.m4a'],      // a charged overhead going through shell
   blockSand: ['assets/block-sand.m4a'],    // a blow stopped on the plastic shovel: a paint can, not steel
   milHeavy: ['assets/military-heavy.m4a'], // the military shovel's heavy landing on something solid
+  blockMil: ['assets/block-military.m4a'], // a blow stopped on the military shovel: solid steel
 };
 const sampleBanks = {};
 function loadSamples() {

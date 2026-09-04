@@ -786,11 +786,11 @@ any gamma lift read as highlighted; the map is multiplied DOWN (0x8e918a),
 roughness 1, metalness 0.12. Three
 groups, because the scan lands over the network: the hand's, the
 examine/drop copy, the one on the beach past the drain. Its placement
-must not read `DRAIN_X` — declared thousands of lines later. Two
+must not read `DRAIN_X` — declared thousands of lines later. Three
 owner-supplied impacts hang off the two tools: a paint can is the sand
-shovel's block (`blockSand`, in `blockCrab`) and a solid metal hit is the
-Military Shovel's heavy landing (`milHeavy`, in `hitConnect` at P ≥ 0.5);
-neither is redistributable.
+shovel's block (`blockSand`), a solid metal hit is the Military Shovel's
+block (`blockMil`, both in `blockCrab`) and another is its heavy landing
+(`milHeavy`, in `hitConnect` at P ≥ 0.5); none is redistributable.
 
 **The shovel is built to a photograph of a plastic beach shovel.**
 `makeShovel()` is a triangular loop handle with finger scallops along the
