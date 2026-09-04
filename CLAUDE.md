@@ -347,13 +347,17 @@ is in `farProps` at 300 m.
 first pass put the cavity through two bandpasses at Q 7.5 and the whisper
 bed at 0.055 — a filter that narrow throws nearly all the energy away, so
 holding it to your ear got you silence. The second was four wide layers of
-resonant noise, and the owner heard a radio between stations. It is the
-SEA now (`listenToShell()`): a low bed that never stops with a slow heave
-under it, and three real waves over eleven seconds, each rolling up out of
-the low end, breaking as a short broad crash and washing out as a long
-hiss that thins as the water runs back. The whispers sit at 0.85 under all
-of it — almost words, never words. The whole thing is at `SHELL_LEVEL`
-0.55: a shell at the ear, not headphones.
+resonant noise, and the third was "waves" of filtered noise with a crash
+and a hiss; the owner heard static in both, and he was right: AT THE EAR,
+ANY BROADBAND HISS IS A RADIO, however it is shaped. So `listenToShell()`
+has no white noise in it at all. The sea is BROWN noise under a 140 Hz
+lowpass — a rumble with nothing above it to hiss — heaving slowly; the
+shell is a hollow note, two soft sines a fifth apart with a slow waver;
+under both a 47 Hz sub that breathes; and twice, far off, a low triangle
+call that slides down and is gone. The whispers sit under it (gain 1.6
+now that everything else came down). `SHELL_LEVEL` is 0.40. Measured on
+the SFX bus with an analyser: what the shell adds is 96 % below 300 Hz and
+the 4 % above 1.5 kHz is the whisper track itself.
 
 **Three shells, not seven.** A shell is a find, not litter; they are at
 z = -12, -163 and -319, the same stretch seven used to cover.
