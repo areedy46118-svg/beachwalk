@@ -5214,9 +5214,12 @@ new GLTFLoader().load('assets/military-shovel.glb', (gltf) => {
      * multiplied down a little besides, because the hand's lights are set
      * for a red plastic toy. Full roughness, so nothing on it glints. */
     o.material.roughness = 1.0;
-    o.material.metalness = 0.12;
-    o.material.color.setHex(0x8e918a);
-    o.material.emissive = new THREE.Color(0x000000);
+    o.material.metalness = 0.10;
+    // a touch brighter and greener than the flat cut: the multiplier leans
+    // olive, and a faint olive emissive keeps the paint's colour under the
+    // cold night light instead of letting it go to grey
+    o.material.color.setHex(0xc2cba6);
+    o.material.emissive = new THREE.Color(0x0c1006);
   });
   milModel.add(orientMil(gltf.scene));
   milInspect.add(orientMil(gltf.scene.clone(true)));
