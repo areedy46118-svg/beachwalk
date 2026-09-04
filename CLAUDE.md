@@ -858,9 +858,13 @@ hard to drive from `javascript_tool`. Instead:
   like `startDig`, `spawnPuffs`, `toggleEquip`, `beginGame`, `showEnd`,
   `openInspect`/`closeInspect`, `startExtraction`, `crab`, `syringe`,
   `bloodJar`, `crabItem`, `syringeItem`, `jarItem`.
-- Move the camera by hand (`camera.position.set(...)` + `camera.lookAt(...)`
-  + `camera.updateMatrixWorld(true)`), then take a screenshot to force one
-  render frame.
+- Aim with `__bw.look(yaw, pitch)` or `__bw.lookAt(x, y, z)` — a bare
+  `camera.lookAt()` is undone by the loop. For a still, freeze the loop
+  (`window.requestAnimationFrame = () => 0`), place the camera, call
+  `__bw.renderer.render(__bw.scene, __bw.camera)`, and screenshot in a
+  SEPARATE call. A frozen loop never re-runs `updateFarProps()`, so a
+  far-culled group (the camp, the dock) you teleport to stays hidden until
+  you set its `visible` yourself.
 
 ## Gotchas worth knowing
 
@@ -1262,6 +1266,22 @@ atlas — mostly the dark parts — so the heap came out far darker than the
 castle it fell off. `castleChunkMat` is the beach's own grain lifted (the map
 multiplies) to the tone the castle actually renders at, so the pile matches
 the thing that made it and settles into the sand around it.
+
+**The campsite (`CAMP_X` / `CAMP_Z`, 55 m past the dock).** A towel laid
+facing the water with a Discman, a drink, goggles, a bag and sandals on and
+around it, and a line of BARE footprints from its seaward end straight into
+the sea with nothing coming back; the float and the stone sit by the last
+print. The loose things are `makeProp()` bodies laid at 1.6–1.8x with the
+glint, for the same reason the shells are laid at 2–3x. The trail is its
+OWN `InstancedMesh` on `foot.material` — the player's prints live in a pool
+that recycles, and a trail meant to still be there when you come back cannot
+share it; the shared material is already clipped at the shore, so the prints
+in the swash come and go with the water. `CAMP_X` obeys the body bag's hard
+number: the waterline reaches x = 8.6, the towel's seaward end is at 10.7.
+Two things that bit building it: `Object3D.position` is a getter, so
+`Object.assign(mesh, { position })` throws and takes the page with it; and a
+glint Sprite under any raycast wants `Raycaster.camera`, so `addItemShine`
+gives it a no-op `raycast`.
 
 **A thing you set down is the SIZE YOU FOUND IT.** `dropEquipped()` built
 the world model by cloning the VIEW model, which is scaled and posed for the

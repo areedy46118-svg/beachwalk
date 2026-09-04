@@ -735,6 +735,7 @@ function addItemShine(root, { size = 0.55, height = 0.12, strength = 1 } = {}) {
     map: glowTex, color: 0xbcd6ff, transparent: true, opacity: 0.0,
     depthWrite: false, blending: THREE.AdditiveBlending, fog: true,
   }));
+  glint.raycast = () => {};            // a glint is not a thing you can aim at
   glint.position.y = height;
   glint.scale.setScalar(size);
   glint.raycast = () => {};        // decoration only — never a hover target
@@ -10054,6 +10055,287 @@ const _packMid = new THREE.Vector3(), _packQ = new THREE.Quaternion(), _packM = 
   fp.onImpact = (speed) => shatterGlass(fp, float, speed, r);
 }
 
+// ------------------------------------------------------------------
+// The campsite — someone was here, and walked into the sea
+// ------------------------------------------------------------------
+/* Past the dock, on the dry sand, a towel laid down facing the water with
+ * everything a person brings for an evening on a beach still on it: a
+ * Discman with the headphones trailing off it, a drink, goggles, a bag,
+ * sandals kicked off at the seaward end. And from that end, a line of BARE
+ * footprints straight down the beach and into the water, with nothing
+ * coming back. The float and the stone at the last print are the game's
+ * usual invitation to throw something at the dark.
+ *
+ * Everything but the towel, the bag and the sandals is a `makeProp()` body,
+ * so it can be picked up and thrown like the rest of the beach's loose
+ * things. The footprints are their OWN instanced mesh: the player's prints
+ * live in a 96-slot pool that recycles, and a trail meant to still be there
+ * when you come back cannot share it. They borrow `foot.material`, which is
+ * already clipped at the shore, so the prints in the swash come and go with
+ * the water — which is exactly what a trail into the sea should do.
+ *
+ * `CAMP_X` obeys the same hard number as the body bag: the waterline can
+ * reach x = 8.6, and the towel's seaward end is at 10.7. */
+const CAMP_X = 11.6, CAMP_Z = DOCK_Z - 55;
+const camp = new THREE.Group();
+{
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const quant = (v, n = 6) => Math.round(v / (255 / n)) * (255 / n);
+
+  // --- the towel: a bold print, cream stripes, colour-quantised ------------
+  const towelTex = (() => {
+    const c = document.createElement('canvas'); c.width = 256; c.height = 144;
+    const g = c.getContext('2d');
+    g.fillStyle = '#e8e2d2'; g.fillRect(0, 0, 256, 144);
+    // wide teal bands with a thin plum stripe on each edge
+    for (let i = 0; i < 4; i++) {
+      const y = 8 + i * 36;
+      g.fillStyle = '#3f8f8a'; g.fillRect(0, y, 256, 22);
+      g.fillStyle = '#6b3f7a'; g.fillRect(0, y - 3, 256, 3); g.fillRect(0, y + 22, 256, 3);
+    }
+    // a scatter of big flat flowers over the bands
+    for (let i = 0; i < 26; i++) {
+      const x = rnd(0, 256), y = rnd(0, 144), r = rnd(7, 13);
+      g.fillStyle = ['#d9d3e8', '#b74c7b', '#f0c26a', '#c9e5df'][i % 4];
+      for (let k = 0; k < 5; k++) {
+        const a = k / 5 * Math.PI * 2;
+        g.beginPath(); g.arc(x + Math.cos(a) * r * 0.55, y + Math.sin(a) * r * 0.55, r * 0.5, 0, 7); g.fill();
+      }
+      g.fillStyle = '#2d2a3a'; g.beginPath(); g.arc(x, y, r * 0.22, 0, 7); g.fill();
+    }
+    // fringe at both short ends
+    g.fillStyle = '#d8d0bc';
+    for (let y = 0; y < 144; y += 4) { g.fillRect(0, y, 6, 2); g.fillRect(250, y, 6, 2); }
+    const img = g.getImageData(0, 0, 256, 144), d = img.data;
+    for (let i = 0; i < d.length; i += 4) { d[i] = quant(d[i]); d[i + 1] = quant(d[i + 1]); d[i + 2] = quant(d[i + 2]); }
+    g.putImageData(img, 0, 0);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    return retroTex(t, { repeatWrap: false });
+  })();
+  // 1.8 m long, laid with its length toward the water (along X)
+  const towelGeo = new THREE.PlaneGeometry(1.8, 1.0, 22, 12); towelGeo.rotateX(-Math.PI / 2);
+  {
+    const p = towelGeo.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), z = p.getZ(i);
+      // wrinkles, a body's worth of hollow in the middle, and one corner turned up
+      let y = 0.012 + 0.014 * Math.sin(x * 9.1 + 1.3) * Math.sin(z * 11.7) + 0.008 * bwNoiseJS(x * 5 + z * 7);
+      const corner = Math.max(0, (x - 0.55) / 0.35) * Math.max(0, (-z - 0.28) / 0.22);
+      y += corner * corner * 0.075;
+      p.setY(i, y);
+    }
+    towelGeo.computeVertexNormals();
+  }
+  const towelMat = new THREE.MeshStandardMaterial({
+    map: towelTex, roughness: 1, metalness: 0, side: THREE.DoubleSide,
+    emissive: 0x2a2d3a, emissiveMap: towelTex, emissiveIntensity: 0.55,
+  });
+  const towel = new THREE.Mesh(towelGeo, towelMat);
+  towel.position.set(CAMP_X, 0, CAMP_Z);
+  towel.rotation.y = 0.06;                       // not quite square to the sea
+  towel.renderOrder = 2;
+  camp.add(towel);
+
+  // --- the bag, soft-sided, slumped at the landward end --------------------
+  {
+    const bagGeo = new THREE.BoxGeometry(0.34, 0.30, 0.20, 3, 3, 2);
+    const p = bagGeo.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const y = p.getY(i), k = 1 + (0.15 - y) * 0.35;   // bellies out toward the bottom
+      p.setX(i, p.getX(i) * k + rnd(-0.008, 0.008)); p.setZ(i, p.getZ(i) * k + rnd(-0.008, 0.008));
+      if (y > 0.1) p.setY(i, y - 0.05 * Math.abs(p.getX(i)) / 0.17);   // sags at the mouth
+    }
+    bagGeo.computeVertexNormals();
+    const bag = new THREE.Mesh(bagGeo, new THREE.MeshStandardMaterial({
+      color: 0x7f8ea8, roughness: 1, flatShading: true, emissive: 0x161c28 }));
+    bag.position.set(CAMP_X + 1.05, 0.15, CAMP_Z + 0.62);
+    bag.rotation.set(0.06, 0.7, -0.1);
+    const handle = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.012, 6, 14, Math.PI),
+      new THREE.MeshStandardMaterial({ color: 0x5a4a3a, roughness: 1, flatShading: true }));
+    handle.position.set(0, 0.16, 0.06); handle.rotation.z = 0.35;
+    bag.add(handle);
+    camp.add(bag);
+    rockColliders.push({ x: bag.position.x, z: bag.position.z, r: 0.2, top: 0.3, mat: 'wood' });
+  }
+
+  // --- sandals, kicked off at the seaward end, one on its side -----------
+  {
+    const soleMat = new THREE.MeshStandardMaterial({ color: 0x3a3f4a, roughness: 1, flatShading: true, emissive: 0x0c0e14 });
+    const strapMat = new THREE.MeshStandardMaterial({ color: 0xd9663c, roughness: 0.9, flatShading: true, emissive: 0x2a1108 });
+    for (const [dx, dz, yaw, tipped] of [[-0.98, 0.22, 0.4, false], [-1.12, -0.06, -1.1, true]]) {
+      const sandal = new THREE.Group();
+      const sole = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.018, 10), soleMat);
+      sole.scale.set(1, 1, 2.3);
+      sandal.add(sole);
+      const post = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.006, 5, 8, Math.PI), strapMat);
+      post.position.set(0, 0.012, 0.04); post.rotation.y = Math.PI / 2;
+      sandal.add(post);
+      sandal.scale.setScalar(1.35);
+      sandal.position.set(CAMP_X + dx, tipped ? 0.075 : 0.012, CAMP_Z + dz);
+      sandal.rotation.set(tipped ? Math.PI / 2.3 : 0, yaw, 0);
+      camp.add(sandal);
+    }
+  }
+
+  // --- the Discman, lid shut, headphones trailing off it onto the towel --
+  {
+    const cd = new THREE.Group();
+    const body = new THREE.MeshStandardMaterial({ color: 0xb8bec9, roughness: 0.45, metalness: 0.25, emissive: 0x20242c });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x15171c, roughness: 0.6, emissive: 0x05060a });
+    const base = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.026, 0.15), body);
+    cd.add(base);
+    const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.062, 0.007, 20), body);
+    lid.position.set(0, 0.0165, -0.004);
+    cd.add(lid);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.048, 0.0025, 6, 24), dark);
+    ring.rotation.x = Math.PI / 2; ring.position.set(0, 0.0205, -0.004);
+    cd.add(ring);
+    const screen = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.004, 0.014),
+      new THREE.MeshStandardMaterial({ color: 0x6f8a5a, emissive: 0x2c4a22, roughness: 0.8 }));
+    screen.position.set(-0.03, 0.0145, 0.062);
+    cd.add(screen);
+    for (let i = 0; i < 4; i++) {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.006, 0.01), dark);
+      b.position.set(0.012 + i * 0.016, 0.015, 0.064);
+      cd.add(b);
+    }
+    // the cable, out of the jack and across to the headphones
+    const cableMat = new THREE.MeshStandardMaterial({ color: 0x0f1014, roughness: 0.9 });
+    const curve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0.072, -0.004, 0.02), new THREE.Vector3(0.14, -0.01, 0.10),
+      new THREE.Vector3(0.20, -0.012, 0.20), new THREE.Vector3(0.30, -0.012, 0.24),
+      new THREE.Vector3(0.36, 0.0, 0.20),
+    ]);
+    cd.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 24, 0.003, 5), cableMat));
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.006, 6, 20, Math.PI * 1.15), dark);
+    band.position.set(0.40, 0.0, 0.18); band.rotation.set(Math.PI / 2, 0, 0.9);
+    cd.add(band);
+    for (const sg of [1, -1]) {
+      const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.026, 0.02, 12), dark);
+      const a = 0.9 + sg * Math.PI * 0.575;
+      cup.position.set(0.40 + Math.cos(a) * 0.075, 0.0, 0.18 + Math.sin(a) * 0.075);
+      cup.rotation.set(0, -a, Math.PI / 2);
+      cd.add(cup);
+    }
+    /* Real size, these are specks: a Discman is 14 cm and from head height
+     * on a night beach that is a few pixels. The camp's loose things are
+     * laid down at 1.7x, the same reason the shells are laid at 2-3x, and
+     * carry the same glint every takeable does. */
+    cd.scale.setScalar(1.7);
+    cd.position.set(CAMP_X + 0.32, 0.05, CAMP_Z - 0.18);
+    cd.rotation.y = 2.4;
+    makeProp(cd, 'CD player', { radius: 0.19, restH: 0.05, bounce: 0.2, friction: 0.7 });
+    addItemShine(cd, { size: 0.7, height: 0.16, strength: 0.6 });
+  }
+
+  // --- the soda: one open and upright, one drunk and on its side ---------
+  {
+    const labelTex = (() => {
+      const c = document.createElement('canvas'); c.width = 128; c.height = 64;
+      const g = c.getContext('2d');
+      g.fillStyle = '#b8202a'; g.fillRect(0, 0, 128, 64);
+      g.fillStyle = '#f2ece2'; g.beginPath();
+      g.moveTo(0, 42); g.quadraticCurveTo(64, 12, 128, 40); g.lineTo(128, 48); g.quadraticCurveTo(64, 22, 0, 50); g.fill();
+      g.fillStyle = '#f2ece2'; g.fillRect(28, 20, 34, 9); g.fillRect(68, 20, 26, 9);
+      g.fillStyle = '#c9cdd4'; g.fillRect(0, 0, 128, 5); g.fillRect(0, 59, 128, 5);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+      return retroTex(t, { repeatWrap: false });
+    })();
+    const canMat = new THREE.MeshStandardMaterial({ map: labelTex, roughness: 0.4, metalness: 0.35, emissive: 0x2a0c0e, emissiveMap: labelTex, emissiveIntensity: 0.5 });
+    const alu = new THREE.MeshStandardMaterial({ color: 0xc6cad2, roughness: 0.35, metalness: 0.5, emissive: 0x22252c });
+    const makeCan = () => {
+      const g = new THREE.Group();
+      g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.033, 0.031, 0.118, 14, 1, true), canMat));
+      const top = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.033, 0.006, 14), alu);
+      top.position.y = 0.062; g.add(top);
+      const bottom = new THREE.Mesh(new THREE.CylinderGeometry(0.031, 0.026, 0.006, 14), alu);
+      bottom.position.y = -0.062; g.add(bottom);
+      const tab = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.002, 0.008), alu);
+      tab.position.set(0, 0.066, 0.008); g.add(tab);
+      return g;
+    };
+    const up = makeCan();
+    up.scale.setScalar(1.6);
+    up.position.set(CAMP_X + 0.62, 0.1, CAMP_Z + 0.22);
+    makeProp(up, 'soda can', { radius: 0.08, restH: 0.1, bounce: 0.35, friction: 0.7 });
+    addItemShine(up, { size: 0.6, height: 0.2, strength: 0.6 });
+    const down = makeCan();
+    down.scale.setScalar(1.6);
+    down.position.set(CAMP_X + 0.15, 0.053, CAMP_Z + 0.68);
+    down.rotation.set(Math.PI / 2, 0, 1.9);
+    makeProp(down, 'empty can', { radius: 0.08, restH: 0.053, bounce: 0.4, friction: 0.7 });
+  }
+
+  // --- swim goggles, strap and all, set down on the towel -----------------
+  {
+    const gg = new THREE.Group();
+    const frame = new THREE.MeshStandardMaterial({ color: 0xe0793a, roughness: 0.6, emissive: 0x3a1a08 });
+    const lensMat = new THREE.MeshPhysicalMaterial({ color: 0x3a6fa8, roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.8, emissive: 0x0e2340 });
+    for (const sg of [1, -1]) {
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.024, 0.005, 6, 14), frame);
+      rim.position.set(sg * 0.033, 0.012, 0); rim.rotation.x = Math.PI / 2;
+      gg.add(rim);
+      const lens = new THREE.Mesh(new THREE.CircleGeometry(0.022, 14), lensMat);
+      lens.position.set(sg * 0.033, 0.013, 0); lens.rotation.x = -Math.PI / 2;
+      gg.add(lens);
+    }
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.006, 0.008), frame);
+    bridge.position.set(0, 0.012, 0);      // Object3D.position is a getter: never Object.assign it
+    gg.add(bridge);
+    const strap = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.004, 5, 20, Math.PI * 1.3),
+      new THREE.MeshStandardMaterial({ color: 0x1b1d24, roughness: 0.9 }));
+    strap.position.set(0, 0.006, -0.06); strap.rotation.set(Math.PI / 2, 0, Math.PI * 0.85);
+    gg.add(strap);
+    gg.scale.setScalar(1.8);
+    gg.position.set(CAMP_X - 0.45, 0.02, CAMP_Z + 0.3);
+    gg.rotation.y = -0.6;
+    makeProp(gg, 'swim goggles', { radius: 0.14, restH: 0.02, bounce: 0.25, friction: 0.75 });
+    addItemShine(gg, { size: 0.6, height: 0.14, strength: 0.6 });
+  }
+
+  // --- bare feet, straight down into the water, and nothing back ----------
+  const CAMP_PRINTS = 18;
+  const campFoot = new THREE.InstancedMesh(footGeo, foot.material, CAMP_PRINTS);
+  campFoot.frustumCulled = false; campFoot.renderOrder = 2;
+  {
+    const hide = new THREE.Matrix4().makeScale(0, 0, 0);
+    for (let i = 0; i < CAMP_PRINTS; i++) campFoot.setMatrixAt(i, hide);
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3();
+    const fwdX = -1, fwdZ = 0;                     // toward the sea
+    e.set(0, Math.atan2(fwdX, fwdZ) + Math.PI, 0); q.setFromEuler(e);
+    let side = 1, i = 0;
+    // the first pair is right at the towel's edge, where they stood up
+    for (let x = CAMP_X - 1.02; x > 1.6 && i < CAMP_PRINTS; x -= 0.58 + Math.random() * 0.08, side = -side, i++) {
+      // left and right feet either side of the line, as stampFoot() does it
+      const off = 0.14 * side;
+      const z = CAMP_Z + 0.02 + (Math.random() - 0.5) * 0.06;
+      sc.set((0.92 + Math.random() * 0.16) * side, 1, 1.0 + Math.random() * 0.2);
+      m.compose(new THREE.Vector3(x + (-fwdZ) * off, 0.03, z + fwdX * off), q, sc);
+      campFoot.setMatrixAt(i, m);
+    }
+    campFoot.instanceMatrix.needsUpdate = true;
+  }
+  camp.add(campFoot);
+
+  // --- and by the last print, the usual two things to throw ---------------
+  {
+    const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.28, 0),
+      new THREE.MeshStandardMaterial({ color: 0x59606f, roughness: 1, flatShading: true, emissive: 0x14171f }));
+    stone.position.set(4.1, 0.26, CAMP_Z - 0.75);
+    makeProp(stone, 'stone', { radius: 0.28, restH: 0.26, bounce: 0.12, friction: 0.6 });
+    const glass = new THREE.MeshStandardMaterial({
+      color: 0x2b5a74, roughness: 0.25, transparent: true, opacity: 0.7, emissive: 0x0a2130 });
+    const r = 0.23;
+    const float = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 10), glass);
+    float.position.set(4.7, r, CAMP_Z + 0.95);
+    const fp = makeProp(float, 'glass float', { radius: r, restH: r, bounce: 0.5 });
+    fp.onImpact = (speed) => shatterGlass(fp, float, speed, r);
+  }
+
+  scene.add(camp);
+  farProps.push({ obj: camp, z: CAMP_Z, d: 260 });
+}
+
 /* The trails. Each one leaves a widening V of ripples behind it and throws a
  * little water as it comes, so from the beach there are three wakes running
  * at you out of the dark before there is anything to see. */
@@ -11239,6 +11521,10 @@ layoutViewmodel();
 
 // dev hook
 window.__bw = {
+  // aim the camera from the harness: writes the look state itself, so nothing
+  // overwrites it on the next frame the way a bare camera.lookAt() gets undone
+  look: (yaw, pitch = 0) => { lookEuler.set(pitch, yaw, 0, lookEuler.order); camera.quaternion.setFromEuler(lookEuler); camera.updateMatrixWorld(true); },
+  lookAt: (x, y, z) => { const d = new THREE.Vector3(x, y, z).sub(camera.position); window.__bw.look(Math.atan2(-d.x, -d.z), Math.atan2(d.y, Math.hypot(d.x, d.z))); },
   lipNdc: () => { armRig.updateMatrixWorld(true); trailTip.getWorldPosition(_lipA); trailRoot.getWorldPosition(_lipB); return _lipA.lerp(_lipB, 0.5).project(vmCamera); },
   landK: () => landK, landDist: () => landDist,
   aimO: () => _aimO.clone(), aimD: () => _aimD.clone(),
