@@ -1425,7 +1425,17 @@ it. The column's axis sits ON the cliff
 line (`MUSH_X` 16) so half of it is in the wall and the front steps are at
 x = 9, above the highest swash. The cap is ONE lathe — floor top, fascia,
 underside — so there is no seam; the glass and the rails are arcs of the
-drum, not chords; the treads are extruded wedges. The bunker walls are `rockColliders` cylinders 1 m apart
+drum, not chords; the treads are extruded wedges. **`rotation.y = π/2 − a`
+MIRRORS an angle.** three's rotation about Y sends local +X to
+(cos θ, 0, −sin θ), so π/2 − a lands it at angle π − a, not a: the treads
+wound the opposite way from the walk and from the rail (which used sin/cos
+directly), and the owner climbed invisible steps beside the visible ones.
+`a − π/2` is the rotation that puts a centreline on (sin a, 0, cos a).
+**The harness's rAF can be dead outright**, ticks 0 in 800 ms even with a
+setTimeout pump installed (animate() is parked in the real queue); `__bw.step(dt)`
+runs one whole game tick, so a walk can be driven deterministically —
+`keys.KeyW` plus `look()` steering at the next point on the spiral, 512
+ticks to the top. The bunker walls are `rockColliders` cylinders 1 m apart
 (AABB boxes cannot turn), the platform a 0.4 m cylinder you step up, and
 the cliff is cut open round it in world space, the drain's trick. Its
 group is in `farProps`, so in a frozen preview still you must set it

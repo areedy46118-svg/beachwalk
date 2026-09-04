@@ -12192,6 +12192,7 @@ layoutViewmodel();
 
 // dev hook
 window.__bw = {
+  step: (dt) => update(dt, dt),   // one whole game tick, for a harness whose rAF is stalled
   MUSH_X, MUSH_Z, MUSH, mushHouse, updateMushroom, mushState: () => ({ inside: insideMush, turns: mushTurns, stairY: mushStairY }),
   smile, updateSmile, smileState: () => ({ phase: smilePhase, t: smileT, loaded: !!smileMixer, clips: Object.keys(smileClips) }), sfxSmileStep,
   updateHurt, hurtEl,

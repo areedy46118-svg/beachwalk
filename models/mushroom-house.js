@@ -176,8 +176,8 @@ export function makeMushroomHouse() {
       const rib = new THREE.Mesh(new THREE.BoxGeometry(len + 0.03, depth, 0.13), pale);
       const rm = (p0.x + p1.x) / 2, ym = (p0.y + p1.y) / 2 - depth / 2 + 0.02;
       rib.position.set(Math.sin(a) * rm, ym, Math.cos(a) * rm);
-      rib.rotation.y = Math.PI / 2 - a;
-      rib.rotateZ(Math.atan2(p1.y - p0.y, p1.x - p0.x));
+      rib.rotation.y = a - Math.PI / 2;          // local +X -> (sin a, 0, cos a); π/2 - a mirrors it
+      rib.rotateZ(-Math.atan2(p1.y - p0.y, p1.x - p0.x));
       g.add(rib);
     }
   }
@@ -221,7 +221,7 @@ export function makeMushroomHouse() {
     const pos = rib.geometry.attributes.position;
     for (let k = 0; k < pos.count; k++) { const x = pos.getX(k); const s = 1 - 0.55 * ((x + len / 2) / len); pos.setY(k, pos.getY(k) * s); }
     rib.geometry.translate(len / 2, 0, 0);
-    rib.position.set(0, roofY - 0.17, 0); rib.rotation.y = Math.PI / 2 - a;
+    rib.position.set(0, roofY - 0.17, 0); rib.rotation.y = a - Math.PI / 2;
     g.add(rib);
   }
   // what was left in it: a curved bench under the seaward windows, the
@@ -233,22 +233,6 @@ export function makeMushroomHouse() {
     mesh(new THREE.RingGeometry(M.R_ROOM - 0.85, M.R_ROOM - 0.2, 18, 1, b0, b1 - b0).rotateX(Math.PI / 2), cream, 0, M.H_ROOM + 0.01, 0);
     // a cushion or two still on it
     const c1 = mesh(new THREE.BoxGeometry(0.6, 0.12, 0.5), dark, Math.sin(b0 + 0.4) * (M.R_ROOM - 0.52), seatY + 0.06, Math.cos(b0 + 0.4) * (M.R_ROOM - 0.52)); c1.rotation.y = b0 + 0.4;
-    // the table: a pedestal and a round top, over by the far windows
-    const tx = 2.6, tz = 1.4;
-    mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.04, 20), cream, tx, M.H_ROOM + 0.74, tz);
-    mesh(new THREE.CylinderGeometry(0.07, 0.24, 0.72, 12), cream, tx, M.H_ROOM + 0.36, tz);
-    const chair = (x, z, yaw, over) => {
-      const c = new THREE.Group();
-      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.22, 0.42, 12), cream); base.position.y = 0.21; c.add(base);
-      const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.2, 0.08, 14), cream); seat.position.y = 0.46; c.add(seat);
-      const back = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.27, 0.42, 14, 1, true, Math.PI * 0.62, Math.PI * 0.76), cream); back.position.y = 0.7; c.add(back);
-      c.position.set(x, M.H_ROOM, z); c.rotation.y = yaw;
-      if (over) { c.rotation.z = Math.PI / 2 - 0.15; c.position.y = M.H_ROOM + 0.27; }
-      g.add(c);
-    };
-    chair(tx + 0.85, tz - 0.3, 0.6, false); chair(tx - 0.3, tz + 0.95, 2.3, false); chair(tx - 1.3, tz - 0.5, 1.0, true);
-    mesh(new THREE.ConeGeometry(0.3, 0.34, 14, 1, true), dark, tx, roofY - 0.95, tz);
-    mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.75, 6), dark, tx, roofY - 0.5, tz);
   }
 
   // ---------------------------------------------------------- the stair
@@ -268,8 +252,14 @@ export function makeMushroomHouse() {
   for (let i = 0; i <= N; i++) {
     const a = M.A0 - i * stepA, y = M.PLAT_TOP + i * M.STEP;
     // the shape's +X is the tread's centreline; three's angle a maps +X to (sin a, 0, cos a)
+    /* THE SIGN THAT MIRRORED THE STAIR. rotation.y = π/2 - a put every tread
+     * at angle π - a, so the treads you could see wound the opposite way
+     * from the treads you could walk on and from the rail: you climbed
+     * invisible steps beside the visible ones and could not find the way
+     * down. a - π/2 is the rotation that sends the wedge's centreline to
+     * (sin a, 0, cos a), the game's angle. */
     const tr = new THREE.Mesh(treadGeo, pale);
-    tr.position.set(0, y, 0); tr.rotation.y = Math.PI / 2 - a;
+    tr.position.set(0, y, 0); tr.rotation.y = a - Math.PI / 2;
     g.add(tr);
     if (i % 2 === 0) { const b = mesh(new THREE.BoxGeometry(0.028, 0.92, 0.028), iron, Math.sin(a) * (tIn + 0.05), y + 0.46, Math.cos(a) * (tIn + 0.05)); b.rotation.y = a; }
     railPts.push(new THREE.Vector3(Math.sin(a) * (tIn + 0.05), y + 0.92, Math.cos(a) * (tIn + 0.05)));
