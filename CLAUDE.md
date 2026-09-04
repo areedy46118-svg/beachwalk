@@ -343,14 +343,20 @@ height. `onDock` lifts the `WADE_X` clamp because the sea end stands past it.
 The two lamp materials are lit and carry a PointLight each; the whole thing
 is in `farProps` at 300 m.
 
-**A shell you cannot hear is not a shell.** The first pass put the cavity
-through two bandpasses at Q 7.5 and the whisper bed at 0.055 gain — a filter
-that narrow throws nearly all the energy away, so holding it to your ear got
-you silence. It is four layers now, all wider: two broad wandering
-resonances, something far down and much bigger than the shell breathing in
-and out every eight seconds, a thin hiss of the shell's own air, and three
-slow swells that rise out of the roar. The whispers sit at 0.85 — almost
-words, never words. Measured on the SFX bus it is twice the ambient floor.
+**A shell you cannot hear is not a shell, and static is not the sea.** The
+first pass put the cavity through two bandpasses at Q 7.5 and the whisper
+bed at 0.055 — a filter that narrow throws nearly all the energy away, so
+holding it to your ear got you silence. The second was four wide layers of
+resonant noise, and the owner heard a radio between stations. It is the
+SEA now (`listenToShell()`): a low bed that never stops with a slow heave
+under it, and three real waves over eleven seconds, each rolling up out of
+the low end, breaking as a short broad crash and washing out as a long
+hiss that thins as the water runs back. The whispers sit at 0.85 under all
+of it — almost words, never words. The whole thing is at `SHELL_LEVEL`
+0.55: a shell at the ear, not headphones.
+
+**Three shells, not seven.** A shell is a find, not litter; they are at
+z = -12, -163 and -319, the same stretch seven used to cover.
 
 **Whatever leaves your hand goes quiet.** `toggleEquip()` calls
 `stopListening()`, which kills the roar source, the whisper element and the

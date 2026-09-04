@@ -6606,7 +6606,7 @@ new GLTFLoader().load('assets/shell.glb', (gltf) => {
 
   const rnd = mulberry32(742);
   let z = -12;
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 3; i++) {                                   // three, not seven: a shell is a find, not litter
     const g = new THREE.Group();
     g.add(new THREE.Mesh(geo, mat));
     const sc = 2.0 + rnd() * 0.9;                                           // 22–32 cm
@@ -6643,7 +6643,7 @@ new GLTFLoader().load('assets/shell.glb', (gltf) => {
         toggleEquip(item);                      // it goes straight into your hand
       },
     });
-    z -= 22 + rnd() * 46;
+    z -= (22 + rnd() * 46) * 2.3;                      // three shells over the stretch seven used to cover
   }
 });
 
@@ -6673,55 +6673,45 @@ function listenToShell() {
   if (!ctx || listening) return;
   listening = true;
   const t = ctx.currentTime, DUR = 11;
+  const SHELL_LEVEL = 0.55;              // quieter at the ear than it was: a shell, not headphones
   const out = ctx.createGain();
   out.gain.value = 0;
-  out.gain.linearRampToValueAtTime(1, t + 1.4);
-  out.gain.setValueAtTime(1, t + DUR - 2.4);
+  out.gain.linearRampToValueAtTime(SHELL_LEVEL, t + 1.4);
+  out.gain.setValueAtTime(SHELL_LEVEL, t + DUR - 2.4);
   out.gain.linearRampToValueAtTime(0, t + DUR);
   out.connect(sfxOut());
   const noise = () => { const n = noiseBurst(DUR, () => 1); n.loop = true; n.start(t); n.stop(t + DUR); return n; };
 
-  /* IT HAS TO BE LOUD ENOUGH TO LEAN INTO. The first version was two
-   * bandpasses at Q 7.5 and a whisper bed at 0.055 — a filter that narrow
-   * throws away nearly all the energy, so holding the shell to your ear got
-   * you silence. Wider peaks, four layers, and the whispers up where you can
-   * almost make them out. */
-  // the cavity: two broad resonances that wander
-  for (const [f, g0] of [[430, 0.5], [1020, 0.34]]) {
-    const bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = 2.2;
-    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.11 + Math.random() * 0.09;
-    const lg = ctx.createGain(); lg.gain.value = f * 0.10;
-    lfo.connect(lg).connect(bp.frequency); lfo.start(t); lfo.stop(t + DUR);
-    const g = ctx.createGain(); g.gain.value = g0;
-    noise().connect(bp).connect(g).connect(out);
-  }
-  // something far down and much bigger than the shell, breathing in and out
+  /* WAVES, NOT STATIC. The first cavity was two resonant bandpasses over a
+   * breathing rumble and a hiss, and it read as a radio between stations.
+   * What you hear in a shell is the SEA — so it is the sea: a low bed that
+   * never stops, and over it three real waves, each one rolling up out of
+   * the low end, breaking as a short broad crash, and washing out as a long
+   * hiss that thins as it goes. The whispers sit under all of it. */
+  // the bed: the sea a long way off, always there
   {
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 130; lp.Q.value = 0.9;
-    const g = ctx.createGain(); g.gain.value = 0.34;
-    const br = ctx.createOscillator(); br.frequency.value = 0.13;   // ~8 s a breath
-    const brg = ctx.createGain(); brg.gain.value = 0.3;
-    br.connect(brg).connect(g.gain); br.start(t); br.stop(t + DUR);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 160; lp.Q.value = 0.7;
+    const g = ctx.createGain(); g.gain.value = 0.22;
+    const sw = ctx.createOscillator(); sw.frequency.value = 0.09;     // a slow heave under it
+    const swg = ctx.createGain(); swg.gain.value = 0.08;
+    sw.connect(swg).connect(g.gain); sw.start(t); sw.stop(t + DUR);
     noise().connect(lp).connect(g).connect(out);
   }
-  // and a thin hiss over the top of it all, the shell's own air
-  {
-    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 4200;
-    const g = ctx.createGain(); g.gain.value = 0.1;
-    noise().connect(hp).connect(g).connect(out);
-  }
-  // a couple of slow swells that rise out of the roar and fall back
+  // three waves, each its own roll, break and wash
   for (let i = 0; i < 3; i++) {
-    const at = t + 1.8 + i * 2.9 + Math.random();
-    const o = ctx.createOscillator(); o.type = 'sine';
-    o.frequency.setValueAtTime(58 + Math.random() * 26, at);
-    o.frequency.linearRampToValueAtTime(38, at + 1.9);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, at);
-    g.gain.exponentialRampToValueAtTime(0.16, at + 0.7);
-    g.gain.exponentialRampToValueAtTime(0.0001, at + 1.9);
-    o.connect(g).connect(out); o.start(at); o.stop(at + 2);
+    const at = t + 0.6 + i * 3.3 + Math.random() * 0.5;
+    // the roll: low and rising
+    { const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(220, at); lp.frequency.linearRampToValueAtTime(520, at + 1.5);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.42, at + 1.5); g.gain.exponentialRampToValueAtTime(0.0001, at + 2.4);
+      const n = noise(); n.connect(lp).connect(g).connect(out); }
+    // the break: a short broad crash at the top of the roll
+    { const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 0.6;
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, at + 1.3); g.gain.exponentialRampToValueAtTime(0.36, at + 1.55); g.gain.exponentialRampToValueAtTime(0.0001, at + 2.3);
+      const n = noise(); n.connect(bp).connect(g).connect(out); }
+    // the wash: a long hiss thinning out as the water runs back
+    { const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.setValueAtTime(1800, at + 1.5); hp.frequency.linearRampToValueAtTime(4200, at + 4.2);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, at + 1.5); g.gain.exponentialRampToValueAtTime(0.2, at + 1.8); g.gain.exponentialRampToValueAtTime(0.0001, at + 4.4);
+      const n = noise(); n.connect(hp).connect(g).connect(out); }
   }
 
   setPrompt('You hold it to your ear&hellip;');
