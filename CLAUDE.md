@@ -1098,9 +1098,17 @@ the GROUP, not `ud.rig` — the rig is switched off the moment the model
 lands, so nothing posed on it can be seen (the death squash has always had
 this problem; the gibs cover it).
 
-**THE OVERHEAD.** Hold sprint while you wind and the shovel goes up over
-your head in both hands and comes down the middle — the one swing that is a
-smash rather than a dig. It is a POSE SET, not a second animation system:
+**THE OVERHEAD, AND WHICH FACE LANDS.** Hold sprint while you wind and the
+shovel goes up over your head in both hands and comes down the middle — the
+one swing that is a smash rather than a dig. A dig bites with the OPEN face;
+a smash lands on the flat BACK of the scoop, blade square to the ground and
+the open side up, so it is the TOOL that turns, not just the arm:
+`VM_OVERHEAD_ROT` rolls `shovelVM` right over and squares it up, blended in
+across the wind so you watch the hands change their grip. Measured at the
+strike, the back's normal reaches -0.98 on Y — flat. A charged overhead into
+a crab also fires the `smash` bank on top of the shell hit.
+
+It is otherwise a POSE SET, not a second animation system:
 `haulPose` and `impactPose` branch on `digOverhead` and the same three lerps
 run, so the landing, the trail and the blade-on-the-crosshair correction all
 work untouched. The choice is LATCHED during the wind (`windOverhead`), not
@@ -1111,6 +1119,16 @@ overhead back into a side swing.
 nothing else, so holding LMB past `WIND_TAP` is what charges; the on-screen
 prompt still said RMB long after that stopped being true, which is worth
 remembering the next time a control moves.
+
+**A BLOCK COSTS WIND; A PARRY DOES NOT.** Holding a shovel across a blow
+that hard takes something out of you, and it comes out of the bar you run
+on — so a fight you spend blocking is a fight you cannot back out of, and
+timing it instead costs nothing. That is the whole argument for learning the
+tell. `BLOCK_COST` is a third of the bar per blow stopped; at empty the guard
+drops, `gaspOut()` puts a breath through your teeth, and the right button
+refuses to raise it again until a third of the bar is back. The gasp fires
+ONCE per emptying — one on every press while the bar is flat is a stutter,
+not a body.
 
 **THE GUARD, AND THE PARRY.** Hold right and the shovel comes up across
 you; a strike that lands on it does nothing at all. The first `PARRY_WINDOW`

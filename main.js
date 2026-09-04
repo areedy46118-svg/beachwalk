@@ -3282,6 +3282,8 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
      * block. Right click is the guard and nothing else. */
     clearTimeout(windLatch); windLatch = null;
     if (winding) { winding = false; windT = 0; windFull = false; }
+    // nothing to hold it up with. The breath you let out IS the refusal.
+    if (exhausted || stamina <= 0.001) { if (!blockGasped) gaspOut(); return; }
     blocking = true;
     // a window only if the last one has had time to close
     blockStart = parryCool > 0 ? -1e9 : performance.now();
@@ -4627,7 +4629,16 @@ function makeShovelIcon() {
 const shovelVM = makeShovel();
 shovelVM.scale.setScalar(0.48);
 shovelVM.position.set(-0.04, -0.02, 0.0);
-shovelVM.rotation.set(0.70, 0.35, 0.32);
+/* The tool's own rest orientation, and the one it takes for an overhead.
+ * A dig bites with the OPEN face; an overhead is a smash, and a smash lands
+ * on the flat BACK of the scoop with the blade square to the ground and the
+ * open side up. That is a different grip, not a different arm angle, so it
+ * is the tool that turns — rolled right over and squared up, blended in
+ * across the wind so you see the hands change their hold. */
+const VM_REST_ROT = [0.70, 0.35, 0.32];
+const VM_OVERHEAD_ROT = [-0.62, 0.0, Math.PI];
+shovelVM.rotation.set(VM_REST_ROT[0], VM_REST_ROT[1], VM_REST_ROT[2]);
+let ohBlend = 0;
 shovelVM.visible = false;
 toolMount.add(shovelVM);
 
@@ -5028,6 +5039,14 @@ const PARRY_WINDOW = 0.20;               // seconds after the guard goes up
  * A successful parry clears it at once. Landing one should let you act on
  * what you just earned, not stand there waiting. */
 const PARRY_COOLDOWN = 0.55;
+/* A BLOCK COSTS WIND; A PARRY DOES NOT. Holding a shovel across a blow that
+ * hard takes something out of you, and the bar it takes it out of is the one
+ * you run on — so a fight you spend blocking is a fight you cannot back out
+ * of. Timing it instead costs nothing, which is the whole argument for
+ * learning the tell. When the bar goes, so does the guard, and you hear
+ * yourself run out. */
+const BLOCK_COST = 0.34;                 // of a full bar, per blow stopped
+let blockGasped = false;
 let blocking = false, blockT = 0, blockStart = -1, parryCool = 0;
 let parryGlow = 0;                       // the white flash on a successful parry
 let winding = false, windT = 0, digPower = 0, digCharged = false, windFull = false;
@@ -5212,6 +5231,10 @@ function digImpact() {
     if (best) {
       const heavy = P >= CRAB_HEAVY;
       hitConnect(P, heavy ? 1.25 : 0.85);
+      /* An overhead that lands charged is the heaviest thing in the game and
+       * it gets its own report — a hard concrete crack, under the shell hit
+       * rather than instead of it, so the swing still sounds like a swing. */
+      if (heavy && digOverhead) playSample('smash', 1.0, 0.05);
       hurtCrab(best, heavy ? CRAB_HP : 1, P);
       return;
     }
@@ -5547,6 +5570,18 @@ function updateViewmodel(dt) {
     ARM_BASE.z + _pose[4] + ear * (EAR_AT.z - ARM_BASE.z) + blk * (BLOCK_AT.z - ARM_BASE.z)
   );
   landBlade();
+
+  /* Turn the tool over for an overhead, and back afterwards. Blended rather
+   * than snapped, so the change of grip happens while the shovel is going up
+   * and is finished by the time it comes down. */
+  const wantOh = (winding && windOverhead) || (digT > 0 && digOverhead) ? 1 : 0;
+  ohBlend += (wantOh - ohBlend) * Math.min(1, dt * 9);
+  if (ohBlend > 0.001 || wantOh) {
+    shovelVM.rotation.set(
+      VM_REST_ROT[0] + (VM_OVERHEAD_ROT[0] - VM_REST_ROT[0]) * ohBlend,
+      VM_REST_ROT[1] + (VM_OVERHEAD_ROT[1] - VM_REST_ROT[1]) * ohBlend,
+      VM_REST_ROT[2] + (VM_OVERHEAD_ROT[2] - VM_REST_ROT[2]) * ohBlend);
+  }
 
   // Only the strike and a beat past it leave a trail; a trail on the wind-up
   // would say the tool was moving fast when it is deliberately barely moving.
@@ -6859,8 +6894,19 @@ function parryCrab(u = crabs[0]) {
   setPrompt('<b>PARRY</b>');
   setTimeout(() => { if (promptHTML.includes('PARRY')) setPrompt(''); }, 700);
 }
+/* Out of wind: the guard drops and you hear it go. Once per emptying — a
+ * gasp on every press while the bar is flat would be a stutter, not a body. */
+function gaspOut() {
+  blockGasped = true;
+  blocking = false;
+  sfxGasp();
+  setPrompt('<b>OUT OF BREATH</b>');
+  setTimeout(() => { if (promptHTML.includes('BREATH')) setPrompt(''); }, 800);
+}
 function blockCrab(u = crabs[0]) {
   sfxBlock();
+  stamina = Math.max(0, stamina - BLOCK_COST);
+  if (stamina <= 0.001) { exhausted = true; gaspOut(); }
   flashMats(shovelVM);                   // the tool goes white for the frozen frames
   parryGlow = Math.max(parryGlow, 0.22); // and shudders in your hands
   fovKick = Math.max(fovKick, 3.5);
@@ -8039,6 +8085,7 @@ const SAMPLES = {
   slosh: ['assets/slosh1.m4a', 'assets/slosh2.m4a', 'assets/slosh3.m4a', 'assets/slosh4.m4a'],
   splash: ['assets/water-splash1.m4a', 'assets/water-splash2.m4a', 'assets/water-splash3.m4a'],
   poise: ['assets/poise-broken.m4a'],      // the parry landing: its guard is gone
+  smash: ['assets/overhead-hit.m4a'],      // a charged overhead going through shell
 };
 const sampleBanks = {};
 function loadSamples() {
@@ -8399,6 +8446,32 @@ function sfxCastleBreak() {
   sg.gain.exponentialRampToValueAtTime(0.0001, t + 1.3);
   sift.connect(sf).connect(sg).connect(out);
   sift.start(t + 0.3); sift.stop(t + 1.3);
+}
+/* Running out. A breath pushed out through the teeth: a band of noise that
+ * opens and closes over a third of a second, with a little voice under it —
+ * you hear the body, not a UI sound. */
+function sfxGasp() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const out = ctx.createGain(); out.gain.value = 0.9; out.connect(sfxOut());
+  const air = noiseBurst(0.55, (x) => Math.sin(Math.min(1, x * 2.4) * Math.PI) * Math.pow(1 - x, 0.7));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.9;
+  bp.frequency.setValueAtTime(900, t);
+  bp.frequency.exponentialRampToValueAtTime(340, t + 0.5);
+  const ag = ctx.createGain(); ag.gain.value = 0.5;
+  air.connect(bp).connect(ag).connect(out);
+  air.start(t); air.stop(t + 0.55);
+  // the voice under it, barely pitched
+  const o = ctx.createOscillator(); o.type = 'sawtooth';
+  o.frequency.setValueAtTime(132, t);
+  o.frequency.exponentialRampToValueAtTime(88, t + 0.4);
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 620;
+  const og = ctx.createGain();
+  og.gain.setValueAtTime(0.0001, t);
+  og.gain.exponentialRampToValueAtTime(0.10, t + 0.07);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+  o.connect(lp).connect(og).connect(out);
+  o.start(t); o.stop(t + 0.5);
 }
 function sfxThud(gain) {
   const ctx = audioCtx; if (!ctx) return;
@@ -9549,6 +9622,20 @@ function updateDrainAudio(dt) {
 // get pushed back out the way you came.
 // ------------------------------------------------------------------
 const SHIP_X = 6, SHIP_Z = -155;
+/* THE SECOND CACHE IS PLACED, not rolled. `mounds[1]` is the one with the CD
+ * in it, and where a thing is found is half of what it means — so it sits
+ * halfway between the wreck and Bradley rather than wherever the spacing
+ * happened to drop it. It has to be done HERE and not where the mounds are
+ * built: `SHIP_Z` is declared further down the file, and reaching for it up
+ * there is a temporal dead zone that takes the whole page with it. Bradley
+ * stands ten metres past `mounds[0]`, which is why that is the number. */
+if (mounds.length > 1) {
+  const bradleyZ = mounds[0].z - 10;
+  const m = mounds[1];
+  m.z = (SHIP_Z + bradleyZ) / 2;
+  m.x = 9.8 + Math.random() * (CLIFF_BLOCK_X - 11.4);
+  m.root.position.set(m.x, 0, m.z);
+}
 const shipwreck = makeShipwreck({ sandMat });
 shipwreck.position.set(SHIP_X, 0, SHIP_Z);
 scene.add(shipwreck);
@@ -9822,7 +9909,10 @@ function dockDeckAt(wx, wz) { return deckHeightAt(wx, wz); }
  * own; the trigger is the player's own z, and what wakes them is the end of
  * the cutscene. Submerged that far out `updateCrabUnit` keeps them invisible,
  * so all you get on the way in is the wake — which is the whole idea. */
-const PACK_Z = (SHIP_Z + DOCK_Z) / 2;         // halfway between the two
+/* Close to the dock, not halfway to it: the shed and its two lamps are the
+ * thing you are walking toward, so the fight reads as the last stretch
+ * before you get there rather than an empty patch of beach. */
+const PACK_Z = DOCK_Z + 34;
 const PACK_TRIGGER = 22;                      // how far short of them it starts
 const PACK_START_X = -34;                     // out where the water is black
 const PACK_SWIM = 3.4, PACK_HOLD = 0.75;      // the swim in, then a beat on them
@@ -10785,7 +10875,13 @@ function update(dt, rawDt = dt) {
   const wantRun = canMove && (keys['ShiftLeft'] || keys['ShiftRight']);
   const running = wantRun && moving && stamina > 0 && !exhausted && onGround;
   if (running) { stamina = Math.max(0, stamina - dt / RUN_SECONDS); if (stamina <= 0) exhausted = true; }
-  else { stamina = Math.min(1, stamina + dt / STAM_REGEN); if (exhausted && stamina > 0.35) exhausted = false; }
+  else {
+    stamina = Math.min(1, stamina + dt / STAM_REGEN);
+    if (exhausted && stamina > 0.35) exhausted = false;
+    if (stamina > 0.35) blockGasped = false;    // you can hold it up again
+  }
+  // and a guard already up drops the moment the bar is empty
+  if (blocking && (exhausted || stamina <= 0.001)) gaspOut();
   crouchT += ((crouching ? 1 : 0) - crouchT) * Math.min(1, dt * 11);
   if (crouchT < 0.001) crouchT = 0;
   if (crouchT > 0.999) crouchT = 1;
