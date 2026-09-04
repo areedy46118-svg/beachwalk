@@ -2376,35 +2376,47 @@ function makeFootTexture() {
     g.ellipse(p[0], p[1], p[2] + grow, p[3] + grow, p[4], 0, Math.PI * 2);
   };
 
-  /* 1. the rim, and it has to be a RING. A radial gradient whose inner stop
-   * sits inside the part fills the part pale, and since a night beach is
-   * nearly black the pale wins and the whole print reads as a white ghost —
-   * which is exactly what the first build did. Strokes, offset toward the
-   * moon and stacked wide-then-narrow for softness, leave the middle alone. */
-  const rim = (dx, dy, passes) => {
-    g.save(); g.translate(dx, dy); g.lineJoin = 'round';
-    for (const [w, col] of passes) {
-      g.lineWidth = w; g.strokeStyle = col;
-      for (const p of PARTS) { ell(p, 2.5); g.stroke(); }
-    }
-    g.restore();
-  };
-  /* Quieter than it was. Stacked pale strokes at 0.15-0.32 drew a bright
-   * outline round every part, and a print with an outline is a cartoon of a
-   * print; the real lip is a soft lift you half see. */
-  rim(2.6, 3.2, [[9, 'rgba(196,210,236,0.05)'], [5, 'rgba(214,226,246,0.08)'], [3, 'rgba(226,236,252,0.10)']]);
-  rim(-2.2, -2.8, [[7, 'rgba(0,1,4,0.09)'], [3, 'rgba(0,1,4,0.12)']]);
+  /* Built off a photograph of a bare print in wet sand: the whole sole is ONE
+   * shallow depression — heel, arch and ball read as a single shape with a
+   * continuous outer edge — with the shadow lying INSIDE it along the wall
+   * that faces away from the light, a faint lip of pushed-up sand outside
+   * the other edge, and the toes as separate, deeper pits. The first version
+   * drew a pale ring round every part and read as a cartoon; the second was
+   * so faint it read as nothing. The shadow wall is what sells depth. */
+  const union = (grow = 0) => { g.beginPath(); for (const p of PARTS) { g.ellipse(p[0], p[1], p[2] + grow, p[3] + grow, p[4], 0, Math.PI * 2); } };
 
-  // 2. the pits themselves — deepest at the middle of each part
+  // 1. the lip: a soft, faint lift of sand outside the lit edge only
+  g.save(); g.translate(2.4, 3.0); g.lineJoin = 'round';
+  for (const [w, col] of [[9, 'rgba(200,212,236,0.05)'], [5, 'rgba(214,226,246,0.08)'], [2.5, 'rgba(226,236,252,0.11)']]) {
+    g.lineWidth = w; g.strokeStyle = col; union(2.5); g.stroke();
+  }
+  g.restore();
+
+  // 2. the floor: one flat, shallow depression
+  g.fillStyle = 'rgba(3,5,11,0.50)'; union(1.5); g.fill();
+  // heel and ball sit deeper than the arch
+  for (const p of [HEEL, BALL]) {
+    const rg = g.createRadialGradient(p[0], p[1], 0, p[0], p[1], p[2] + 2);
+    rg.addColorStop(0, 'rgba(1,2,6,0.34)'); rg.addColorStop(1, 'rgba(1,2,6,0)');
+    g.fillStyle = rg; ell(p, 2); g.fill();
+  }
+
+  // 3. the shadow wall: darken the whole floor, then lift the darkening off
+  //    everywhere except a band along the edge that faces away from the moon
+  g.save(); union(1.5); g.clip();
+  g.fillStyle = 'rgba(1,2,6,0.46)'; g.fillRect(0, 0, S, S);
+  g.globalCompositeOperation = 'destination-out';
+  g.save(); g.translate(3.4, 4.4); g.fillStyle = 'rgba(0,0,0,0.62)'; union(0.5); g.fill(); g.restore();
   g.globalCompositeOperation = 'source-over';
-  for (const p of PARTS) {
-    const d = p[5];
-    const rg = g.createRadialGradient(p[0], p[1] + 2, 0, p[0], p[1], p[2] + 3);
-    rg.addColorStop(0, `rgba(1,2,6,${0.66 * d})`);
-    rg.addColorStop(0.55, `rgba(3,6,12,${0.46 * d})`);
-    rg.addColorStop(0.92, `rgba(6,9,16,${0.12 * d})`);
-    rg.addColorStop(1, 'rgba(6,9,16,0)');
-    g.fillStyle = rg; ell(p, 3); g.fill();
+  g.restore();
+
+  // 4. the toes are small and DEEP — pressed harder, and cut clean
+  for (const p of TOES) {
+    const rg = g.createRadialGradient(p[0], p[1] + 1, 0, p[0], p[1], p[2] + 1.5);
+    rg.addColorStop(0, `rgba(1,2,6,${0.80 * p[5]})`);
+    rg.addColorStop(0.7, `rgba(2,4,9,${0.50 * p[5]})`);
+    rg.addColorStop(1, 'rgba(2,4,9,0)');
+    g.fillStyle = rg; ell(p, 1.5); g.fill();
   }
 
   /* 3. grain. Clipped to the print so it only roughens the inside: dark
@@ -2525,7 +2537,7 @@ function makeCraterTexture() {
 
 const FOOT_POOL = 96;
 const footGeo = new THREE.PlaneGeometry(0.26, 0.44); footGeo.rotateX(-Math.PI / 2);
-const foot = new THREE.InstancedMesh(footGeo, new THREE.MeshBasicMaterial({ map: makeFootTexture(), transparent: true, depthWrite: false, opacity: 0.8 }), FOOT_POOL);
+const foot = new THREE.InstancedMesh(footGeo, new THREE.MeshBasicMaterial({ map: makeFootTexture(), transparent: true, depthWrite: false, opacity: 0.88 }), FOOT_POOL);
 foot.frustumCulled = false; foot.renderOrder = 2; foot.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 scene.add(foot);
 
@@ -3750,7 +3762,10 @@ class PhysProp {
       camera.getWorldPosition(_pv);
       camera.getWorldDirection(_pf);
       _pt.copy(_pv).addScaledVector(_pf, this.holdDist);
-      _pt.x = THREE.MathUtils.clamp(_pt.x, WADE_X + this.radius, CLIFF_BLOCK_X - this.radius);
+      // the cliff stops it; the sea does not. Walled at WADE_X, a thing held
+      // at the waterline sat pinned at your chest and every throw from there
+      // began behind an invisible barrier.
+      _pt.x = Math.min(_pt.x, CLIFF_BLOCK_X - this.radius);
       _pt.y = Math.max(_pt.y, this.restH);
       this.vel.subVectors(_pt, p).multiplyScalar(13);
       if (this.vel.length() > 24) this.vel.setLength(24);
@@ -3972,7 +3987,7 @@ function throwHeld() {
   held.held = false;
   // hard: 12 m/s barely cleared the swash. 20 with more lift carries a stone
   // twenty metres out, which is where the snorkeler is.
-  held.vel.copy(_pf).multiplyScalar(20).add(new THREE.Vector3(0, 2.6, 0));
+  held.vel.copy(_pf).multiplyScalar(16).add(new THREE.Vector3(0, 2.2, 0));
   held.angVel.set((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8);
   held = null;
   sfxThud(0.05);
@@ -10321,7 +10336,7 @@ const camp = new THREE.Group();
     e.set(0, Math.atan2(fwdX, fwdZ) + Math.PI, 0); q.setFromEuler(e);
     let side = 1, i = 0;
     // the first pair is right at the towel's edge, where they stood up
-    for (let x = CAMP_X - 1.02; x > 1.6 && i < CAMP_PRINTS; x -= 0.58 + Math.random() * 0.08, side = -side, i++) {
+    for (let x = CAMP_X - 1.36; x > 1.6 && i < CAMP_PRINTS; x -= 0.58 + Math.random() * 0.08, side = -side, i++) {
       // left and right feet either side of the line, as stampFoot() does it
       const off = 0.14 * side;
       const z = CAMP_Z + 0.02 + (Math.random() - 0.5) * 0.06;
@@ -10365,10 +10380,40 @@ const camp = new THREE.Group();
  *
  * The cut-out is `assets/snorkeler.png` (from `tools/cutout.swift`, like the
  * others); until it is there the sprite stays hidden and none of this runs. */
-const SNORK_X = -11, SNORK_Z = CAMP_Z - 5;   // fourteen metres off the waterline, well past where you can wade
+const SNORK_X = -8.5, SNORK_Z = CAMP_Z - 5;  // eleven metres off the waterline, six past where you can wade
 const SNORK_H = 0.95;                 // tube tip to waterline; over life-size, like every cut-out read at range
 const SNORK_PEEK = 0.23;              // the tube and nothing else: 9 cm was a pixel at twenty metres
 const SNORK_EYES = { x: 0.22, y: 0.535, w: 0.56, h: 0.04 };   // both lenses of the mask, measured off the cut-out
+const SNORK_PAD = 0.42;               // canvas added under the cut-out for the shoulders
+const SNORK_SINK = 0.16;              // how far under the water the photo's own waterline stays when he is up
+/* HE IS NOT A FLOATING HEAD. The photograph ends at the waterline, so the
+ * cut-out ends at his neck, and a neck ending in a straight line at the
+ * surface reads as a head on a plate. The suit is painted on below it —
+ * the hood's own colour sampled off the picture, widening into shoulders,
+ * darkening as it goes down as wet cloth does — through the same bake as
+ * the photo so it is the same material. And he only ever rises until that
+ * waterline is `SNORK_SINK` under the drawn sea, so the join is below the
+ * water and what shows is a man to the collarbone, which is how a swimmer
+ * treading water looks. */
+function paintSnorkelerBody(g, w, h, fullH) {
+  const d = g.getImageData(Math.round(w * 0.5), Math.round(h * 0.26), 1, 1).data;   // the hood
+  const [r, gg, b] = d[3] > 40 ? [d[0], d[1], d[2]] : [214, 52, 122];
+  const neckY = h * 0.985, neckW = w * 0.34, shW = w * 0.98, botY = fullH;
+  const grad = g.createLinearGradient(0, neckY, 0, botY);
+  grad.addColorStop(0, `rgb(${r},${gg},${b})`);
+  grad.addColorStop(0.55, `rgb(${(r * 0.72) | 0},${(gg * 0.72) | 0},${(b * 0.74) | 0})`);
+  grad.addColorStop(1, `rgb(${(r * 0.48) | 0},${(gg * 0.5) | 0},${(b * 0.56) | 0})`);
+  g.fillStyle = grad;
+  g.beginPath();
+  g.moveTo(w * 0.5 - neckW / 2, neckY - h * 0.02);
+  g.lineTo(w * 0.5 + neckW / 2, neckY - h * 0.02);
+  g.bezierCurveTo(w * 0.5 + neckW / 2, neckY + h * 0.06, w * 0.5 + shW / 2, neckY + h * 0.10, w * 0.5 + shW / 2, neckY + h * 0.2);
+  g.lineTo(w * 0.5 + shW / 2, botY);
+  g.lineTo(w * 0.5 - shW / 2, botY);
+  g.lineTo(w * 0.5 - shW / 2, neckY + h * 0.2);
+  g.bezierCurveTo(w * 0.5 - shW / 2, neckY + h * 0.10, w * 0.5 - neckW / 2, neckY + h * 0.06, w * 0.5 - neckW / 2, neckY - h * 0.02);
+  g.closePath(); g.fill();
+}
 const snorkMat = new THREE.SpriteMaterial({ transparent: true, depthWrite: false });
 const snorkSprite = new THREE.Sprite(snorkMat);
 snorkSprite.visible = false;
@@ -10388,8 +10433,8 @@ snorkGlint.visible = false;
 scene.add(snorkGlint);
 let snorkOpenTex = null, snorkShutTex = null, snorkBlinkT = 2, snorkBlinking = false;
 function snorkSetFrames(img) {
-  snorkSprite.scale.set(SNORK_H * img.width / img.height, SNORK_H, 1);
-  const f = bakeCutout(img, SNORK_EYES, { pix: 620, levels: 9, grain: 8, sat: 0.72 });
+  snorkSprite.scale.set(SNORK_H * img.width / img.height, SNORK_H * (1 + SNORK_PAD), 1);
+  const f = bakeCutout(img, SNORK_EYES, { pix: 620, levels: 9, grain: 8, sat: 0.72, paint: paintSnorkelerBody, padBottom: SNORK_PAD });
   snorkOpenTex = f.open; snorkShutTex = f.shut;
   snorkMat.map = snorkOpenTex; snorkMat.needsUpdate = true;
   snorkSprite.visible = true;
@@ -10450,12 +10495,14 @@ function updateSnorkeler(dt) {
   // he rides the swell; only the tube shows until he comes up
   const e = snorkUp * snorkUp * (3 - 2 * snorkUp);
   const water = waterSurfaceAt(SNORK_X, SNORK_Z);
-  snorkSprite.position.y = water + THREE.MathUtils.lerp(-SNORK_H / 2 + SNORK_PEEK, SNORK_H / 2, e)
-    + Math.sin(snorkT * 0.7) * 0.012;
+  // the sprite is taller than the photo now (shoulders under it); place it by its TIP
+  const T = SNORK_H * (1 + SNORK_PAD);
+  const tip = water + THREE.MathUtils.lerp(SNORK_PEEK, SNORK_H - SNORK_SINK, e);
+  snorkSprite.position.y = tip - T / 2 + Math.sin(snorkT * 0.7) * 0.012;
   snorkMat.rotation = Math.sin(snorkT * 0.5) * 0.02 * e;
   // the valve on the tube, only while he is down
   snorkGlint.visible = snorkSprite.visible;
-  snorkGlint.position.set(SNORK_X + 0.22 * snorkSprite.scale.x, snorkSprite.position.y + SNORK_H / 2 - 0.04, SNORK_Z);
+  snorkGlint.position.set(SNORK_X + 0.22 * snorkSprite.scale.x, snorkSprite.position.y + T / 2 - 0.04, SNORK_Z);
   snorkGlint.material.opacity = (1 - e) * (0.22 + 0.10 * Math.sin(snorkT * 1.7));
 }
 

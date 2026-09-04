@@ -1309,7 +1309,13 @@ could not be seen at all: at the retro scale that is a pixel, and a raycast
 from the eye to the tube hit the sea two metres short of him — a crest in
 between. At x = -11 with the whole tube up he is a fleck, which is the brief,
 and `snorkGlint` — a faint warm point on the tube's valve, only while he is
-down — is the one thing out there that is not a star. A `physProps` body coming to rest within 3.2 m of him is
+down — is the one thing out there that is not a star. **He is not a floating
+head.** The photograph ends at the waterline, so the cut-out ends at his
+neck; `paintSnorkelerBody()` paints the suit on below it in the bake's
+`paint` hook (hood colour sampled off the picture, widening into shoulders,
+darkening as wet cloth does) into `SNORK_PAD` of extra canvas, and he only
+rises until the photo's own waterline is `SNORK_SINK` under the drawn sea.
+The sprite is placed by its TIP, since its height is no longer the photo's. A `physProps` body coming to rest within 3.2 m of him is
 the trigger — not a hit; a stone in the water beside a man is what makes him
 surface — and `updateSnorkeler()` eases him up, splashes, and opens
 `startDialog('start', SNORK_NPC)` 0.7 s later. He goes back under five
@@ -1320,16 +1326,21 @@ on `cdItem` and `act` takes it out of the pack. His lines after the opener
 are placeholders written to fit; the opener is the owner's.
 
 **A throw is not stopped by the sea.** `PhysProp` had a wall at `WADE_X`
-as well as at the cliff, so nothing could ever be thrown into the water —
-it hit glass at the waterline and dropped. Only the cliff is a wall now, and
-`throwHeld()` gives 20 m/s with more lift (was 12), which carries a stone
-about twenty-seven metres out: far enough to reach the snorkeler.
+as well as at the cliff — for a FREE body and for a HELD one — so nothing
+could ever be thrown into the water: a thing held at the waterline sat
+pinned at your chest and the throw began behind glass. Only the cliff is a
+wall now, either way, and `throwHeld()` gives 16 m/s with more lift (was
+12), about fifteen metres out: past the snorkeler, not past the horizon.
 
-**Footprints are a depression, not an outline.** The rim strokes in
-`makeFootTexture()` were at 0.15–0.32 alpha stacked three deep, which drew a
-bright line round every part of the print, and a print with an outline is a
-cartoon of one. They are at 0.05–0.10 now, the pits are shallower and the
-material is at 0.8, so a print is something you half see.
+**A footprint is ONE depression with a shadow INSIDE it.** Built off a
+photograph of a bare print in wet sand: the whole sole is a single shallow
+floor with a continuous edge, the shadow lies inside along the wall that
+faces away from the moon (the floor is darkened under a clip and the
+darkening lifted off with `destination-out` through the same shape shifted
+toward the light, which leaves a band on the far side), a faint lip sits
+outside the lit edge only, and the toes are small deep pits. Two wrong
+versions preceded it: pale rings round every part (a cartoon) and then rings
+so faint the print was nothing at all. The wall shadow is what sells depth.
 
 **A thing you set down is the SIZE YOU FOUND IT.** `dropEquipped()` built
 the world model by cloning the VIEW model, which is scaled and posed for the
