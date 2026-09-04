@@ -774,16 +774,19 @@ item: `onDig` plus its own `lip`, and `toggleEquip()` points `toolVM` at
 whichever dig tool is equipped and re-hangs `trailTip`/`trailRoot` at that
 tool's lip — the dig, trail, overhead roll and hit flash all name `toolVM`
 now, never `shovelVM`. `orientMil()` puts the scan (95 cm down model X, in
-cm, blade at -X, a Z-up root matrix) into the sand shovel's frame with one
-rotation matrix and a 0.27 lift, so every pose holds untouched. Three
+cm, a Z-up root matrix) into the sand shovel's frame with one rotation
+matrix and a 0.25 lift, so every pose holds untouched. **WHICH END IS THE
+BLADE:** the wide flat thin part at model -X is the D-HANDLE — a loop of
+steel is flat; the blade is the wide part at +X that sits OFFSET in the
+thin axis, a dished plate bent off the shaft line. The first build took the
+flat end for the blade and the tool hung upside down, striking with the
+grip. The matrix's rows are x = -Lz, y = -Lx, z = +Ly: blade down, plate on
+the -Z scoop side. **And no night lift on it at all** — olive drab under
+any gamma lift read as highlighted; the map is multiplied DOWN (0x8e918a),
+roughness 1, metalness 0.12. Three
 groups, because the scan lands over the network: the hand's, the
 examine/drop copy, the one on the beach past the drain. Its placement
-must not read `DRAIN_X` — declared thousands of lines later. **Matte, like
-the photograph:** at `reexpose` 0.62 with the scan's own metalness it
-rendered pale grey — a dark olive albedo lifted that hard is chalk, and
-metal with no environment map is pinpoints — so it gets a gentle 0.88, full
-roughness and 0.18 metalness. The orientation matrix's sign pair decides
-which way it faces in the hand; the first pair held it back to front. Two
+must not read `DRAIN_X` — declared thousands of lines later. Two
 owner-supplied impacts hang off the two tools: a paint can is the sand
 shovel's block (`blockSand`, in `blockCrab`) and a solid metal hit is the
 Military Shovel's heavy landing (`milHeavy`, in `hitConnect` at P ≥ 0.5);

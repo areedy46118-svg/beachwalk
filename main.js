@@ -5176,13 +5176,20 @@ const MIL_LIP = [[-0.12, -0.21, 0], [0.12, -0.21, 0]];
 const milModel = new THREE.Group(), milInspect = new THREE.Group(), militaryWorld = new THREE.Group();
 function orientMil(src) {
   const w = new THREE.Group();
-  // loaded axes: length on X, thin on Y, width on Z  ->  width on X, length on Y (blade -Y), thin on Z
-  // (the first matrix had the other two signs and held it back to front)
-  w.quaternion.setFromRotationMatrix(new THREE.Matrix4().set(0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1));
+  /* WHICH END IS THE BLADE. The wide flat thin part at model -X is the
+   * D-HANDLE — a loop of steel is flat. The blade is the wide part at +X
+   * that sits OFFSET in the thin axis: a dished plate, bent off the shaft
+   * line the way an entrenching tool's is. The first build took the flat
+   * end for the blade and the tool hung upside down, striking with the
+   * grip. Loaded axes: length on X (blade +X), thin on Y (blade plate at
+   * -Y), width on Z. Wanted: width on X, length on Y with the blade at -Y,
+   * thin on Z with the blade plate at -Z (the sand shovel's scoop side —
+   * its shaft is on the +Z back). Rows: x = -Lz, y = -Lx, z = +Ly. */
+  w.quaternion.setFromRotationMatrix(new THREE.Matrix4().set(0, 0, -1, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1));
   w.scale.setScalar(0.01);
   const g = new THREE.Group();
   g.add(w); w.add(src);
-  g.position.y = 0.27;                         // lip at -0.21, like the sand shovel's
+  g.position.y = 0.25;                         // blade tip at -0.21, like the sand shovel's lip
   const out = new THREE.Group(); out.add(g);
   return out;
 }
@@ -5195,10 +5202,14 @@ new GLTFLoader().load('assets/military-shovel.glb', (gltf) => {
      * that hard is chalk, and metal with no environment is pinpoints. A
      * gentle lift, full roughness and little metalness is the painted
      * steel in the picture. */
-    reexpose(o.material, 0.88);
+    /* AS DARK AS THE PHOTOGRAPH. No night lift at all — the paint is olive
+     * drab and any gamma lift made it read as highlighted — and the map is
+     * multiplied down a little besides, because the hand's lights are set
+     * for a red plastic toy. Full roughness, so nothing on it glints. */
     o.material.roughness = 1.0;
-    o.material.metalness = 0.18;
-    o.material.emissive = new THREE.Color(0x04050a);
+    o.material.metalness = 0.12;
+    o.material.color.setHex(0x8e918a);
+    o.material.emissive = new THREE.Color(0x000000);
   });
   milModel.add(orientMil(gltf.scene));
   milInspect.add(orientMil(gltf.scene.clone(true)));
