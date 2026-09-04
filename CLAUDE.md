@@ -1230,6 +1230,33 @@ every copy then walks in lockstep, and SkeletonUtils is not vendored here —
 so the .glb is fetched ONCE and `GLTFLoader.parse()` is run per crab off the
 same buffer. Four parses, one download.
 
+**ONE RULE FOR EVERY TAKEABLE ON THE GROUND.** A syringe is 14 cm and a CD
+case is 12; on a dark beach at head height those are a few pixels and you
+walk past them. Rather than a hand-tuned scale per item — which is how the
+ring got a glint and the syringe did not — `addInteractable` gives anything
+with kind `'inventory'` the same treatment: `makeNoticeable()` measures it
+and lifts it until its longest side reaches `ITEM_MIN_SIZE` (0.42 m), then
+adds the shine. It is a FLOOR, not a multiplier, so the shovel (0.81) and
+the horseshoe crab (0.73) are left exactly as they were. Two things it has
+to get right: the measurement SKIPS `hitProxy`, which is an invisible sphere
+of at least 0.4 m — include it and everything measures the same and nothing
+ever scales — and a scan that has not landed yet measures zero, so it retries
+for a few seconds rather than blowing an empty group up to the cap.
+
+**No click when the audio starts.** A context created inside a gesture can
+still come up SUSPENDED, and while it is suspended `currentTime` does not
+move — so the four-second master fade `startAmbientAudio()` schedules is
+measured against a stopped clock and is already in the past when the context
+runs. The whole bed arrived at full level on the first block of samples.
+`fadeInMaster()` re-arms it from the live clock after `resume()` resolves.
+
+**A chunk of castle is a LUMP, not its triangles.** Cutting the mesh by cell
+and keeping the raw triangles gave each piece a scatter of long thin slivers
+— at this triangle count a cell is a handful of big faces and the leftovers
+stuck out like spines. Sand does not break into spikes. The cell still says
+where a piece is and how big it is; the piece itself is a rounded icosahedron
+knocked out of round.
+
 **A thing you set down is the SIZE YOU FOUND IT.** `dropEquipped()` built
 the world model by cloning the VIEW model, which is scaled and posed for the
 hand — the shovel's is 0.48, and everything `holdable()` makes carries

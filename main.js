@@ -730,6 +730,7 @@ const glowTex = makeGlowTexture();
 // ------------------------------------------------------------------
 const shinies = [];
 function addItemShine(root, { size = 0.55, height = 0.12, strength = 1 } = {}) {
+  if (shinies.some((s) => s.root === root)) return;   // never twice on one thing
   const glint = new THREE.Sprite(new THREE.SpriteMaterial({
     map: glowTex, color: 0xbcd6ff, transparent: true, opacity: 0.0,
     depthWrite: false, blending: THREE.AdditiveBlending, fog: true,
@@ -3205,12 +3206,28 @@ overlay.querySelector('.ctl').addEventListener('click', (e) => { e.stopPropagati
 /* Surf under the title card. Browsers won't let an AudioContext start
  * without a gesture, so we arm it on the first move or key the player makes
  * over the menu and let the sea come up behind the title. */
+/* THE FADE HAS TO BE SCHEDULED AFTER THE RESUME. A context created inside
+ * a gesture can still come up SUSPENDED, and while it is suspended its
+ * `currentTime` does not move — so the four-second ramp `startAmbientAudio()`
+ * schedules is measured from a clock that is not running, and by the time
+ * the context actually starts the ramp is already in the past. The whole
+ * bed arrives at full level on the first block of samples, which is the
+ * click you hear on the press that opens the menu. Re-arming it from the
+ * live clock is the fix. */
+function fadeInMaster(seconds = 2.2) {
+  if (!masterGain || !audioCtx) return;
+  const t = audioCtx.currentTime;
+  masterGain.gain.cancelScheduledValues(t);
+  masterGain.gain.setValueAtTime(0.0001, t);
+  masterGain.gain.linearRampToValueAtTime(settings.volume, t + seconds);
+}
 function primeMenuAudio() {
-  if (audioStarted) { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); return; }
+  if (audioStarted) { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().then(() => fadeInMaster(0.6)); return; }
   startAmbientAudio();
   // Safari in particular starts the context suspended even when it was
   // created inside the gesture, so it has to be resumed explicitly.
-  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().then(() => fadeInMaster());
+  else fadeInMaster();
 }
 // pointermove is NOT a user gesture, so it can't unlock audio — only a real
 // press or key can. That's why the surf never came up under the title.
@@ -3551,10 +3568,54 @@ const raycaster = new THREE.Raycaster();
 raycaster.far = REACH;
 const interactables = [];
 let hovered = null;
+/* ONE RULE FOR EVERY TAKEABLE ON THE GROUND. A syringe is 14 cm and a CD
+ * case is 12; on a dark beach, at head height, those are a few pixels and
+ * you walk past them. Rather than hand-tuning a scale per item — which is
+ * how the ring got a glint and the syringe did not — anything you can pick
+ * up is measured when it goes down and lifted until its longest side
+ * reaches `ITEM_MIN_SIZE`, and given the same shine. Something already big
+ * enough (the shovel, the bottle) is left alone: the rule is a FLOOR, not a
+ * multiplier, so nothing that already reads gets inflated.
+ *
+ * The measurement skips `hitProxy`, which is an invisible sphere of at
+ * least 0.4 m — include it and every item measures the same and nothing
+ * ever scales. */
+const ITEM_MIN_SIZE = 0.42;      // the smallest a takeable may look on the sand
+const ITEM_MAX_BOOST = 3.2;      // and the most it may be lifted to get there
+const _itemBox = new THREE.Box3(), _itemV = new THREE.Vector3();
+function visualSize(root) {
+  _itemBox.makeEmpty();
+  let any = false;
+  root.traverse((o) => {
+    if (!o.isMesh && !o.isSkinnedMesh) return;
+    if (o.name === 'hitProxy' || !o.geometry) return;
+    o.updateWorldMatrix(true, false);
+    o.geometry.computeBoundingBox();
+    _itemBox.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld));
+    any = true;
+  });
+  if (!any) return 0;
+  _itemBox.getSize(_itemV);
+  return Math.max(_itemV.x, _itemV.y, _itemV.z);
+}
+function makeNoticeable(root, tries = 0) {
+  root.updateMatrixWorld(true);
+  const size = visualSize(root);
+  if (size <= 0) {
+    // a scan that has not landed yet — the group is empty, so come back
+    if (tries < 6) setTimeout(() => makeNoticeable(root, tries + 1), 900);
+    return;
+  }
+  const k = THREE.MathUtils.clamp(ITEM_MIN_SIZE / size, 1, ITEM_MAX_BOOST);
+  if (k > 1.001) root.scale.multiplyScalar(k);
+  addItemShine(root, { size: Math.max(0.6, size * k * 2.2), height: size * k * 0.55 + 0.06, strength: 1.5 });
+}
 function addInteractable(root, label, kind, data) {
   const meshes = [];
   root.traverse((o) => { if (o.isMesh) meshes.push(o); });
   interactables.push({ root, label, kind, meshes, ...data });
+  // everything you can put in the pack gets the same floor and the same glint
+  if (kind === 'inventory' && !(data && data.bare)) makeNoticeable(root);
 }
 function removeInteractable(root) {
   const i = interactables.findIndex((it) => it.root === root);
@@ -4884,12 +4945,21 @@ function breakCastle(fromX, fromZ) {
     for (const c of layers) {
       const ccx = c.cx / c.k, ccy = c.cy / c.k, ccz = c.cz / c.k;
       const halfH = Math.max(0.04, (c.yhi - c.ylo) / 2);
-      const g = new THREE.BufferGeometry();
-      const P = new Float32Array(c.p);
-      for (let i = 0; i < P.length; i += 3) { P[i] -= ccx; P[i + 1] -= ccy; P[i + 2] -= ccz; }
-      g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
-      g.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(c.n), 3));
-      g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(c.u), 2));
+      /* A CHUNK IS A LUMP, NOT ITS TRIANGLES. Cutting the mesh by cell and
+       * keeping the raw triangles gave each piece a scatter of long thin
+       * slivers — at this triangle count a cell is a handful of big faces,
+       * and the leftovers stuck out like spines. Sand does not break into
+       * spikes. The cell still decides WHERE a piece is and how big, but
+       * the piece itself is a rounded lump knocked out of round, which is
+       * what a handful of wet sand actually looks like when it lets go. */
+      const r = THREE.MathUtils.clamp(Math.max(halfH, 0.055) * 1.15, 0.05, CELL * 0.85);
+      const g = new THREE.IcosahedronGeometry(r, 0);
+      const lp = g.attributes.position;
+      for (let i = 0; i < lp.count; i++) {
+        const k = 0.72 + Math.random() * 0.5;
+        lp.setXYZ(i, lp.getX(i) * k, lp.getY(i) * k * 0.82, lp.getZ(i) * k);
+      }
+      g.computeVertexNormals();
       const m = new THREE.Mesh(g, castleMat);
       m.position.set(cx + ccx, castle.position.y + ccy, cz + ccz);
       const h = ccy / CASTLE_H;                       // 0 at the base, 1 at the top
