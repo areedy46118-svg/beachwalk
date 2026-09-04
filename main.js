@@ -153,7 +153,7 @@ const DIG_DUR = 0.8;
 // ------------------------------------------------------------------
 // Settings
 // ------------------------------------------------------------------
-const DEFAULT_SETTINGS = { fov: 107, sensitivity: 1, brightness: 1.16, volume: 0.5, musicVolume: 0.32, waveVolume: 0.46, sfxVolume: 0.6, walkSpeed: 1.4, invertY: false, devMode: false };
+const DEFAULT_SETTINGS = { fov: 107, sensitivity: 1, brightness: 1.16, volume: 0.5, musicVolume: 0.30, waveVolume: 0.18, sfxVolume: 0.57, walkSpeed: 1.4, invertY: false, devMode: false };
 let settings = { ...DEFAULT_SETTINGS };
 try { settings = { ...settings, ...JSON.parse(localStorage.getItem('beachwalk.settings') || '{}') }; } catch (e) {}
 // walk speed is never remembered: every game starts at the default 1.4×, and
@@ -2585,7 +2585,10 @@ function stampFoot(x, z, fwdX, fwdZ, side) {
   if (inWater(x, z)) return;                 // prints don't hold on water
   _fe.set(0, Math.atan2(fwdX, fwdZ) + Math.PI, 0);
   _fq.setFromEuler(_fe);
-  const off = 0.14 * side;
+  // feet fall either side of the line of travel, toes a little out, never quite the same
+  const off = (0.19 + Math.random() * 0.05) * side;
+  _fe.y += side * 0.11 + (Math.random() - 0.5) * 0.14;
+  _fq.setFromEuler(_fe);
   // negative x-scale mirrors the texture, so one foot is the other's reflection
   _fs.set((0.92 + Math.random() * 0.16) * side, 1, 1.0 + Math.random() * 0.2);
   _fm.compose(new THREE.Vector3(x + (-fwdZ) * off, 0.03, z + fwdX * off), _fq, _fs);
@@ -3403,6 +3406,10 @@ S_SPEED.addEventListener('input', () => { settings.walkSpeed = +S_SPEED.value; a
 S_INVERT.addEventListener('change', () => { settings.invertY = S_INVERT.checked; saveSettings(); });
 S_DEV.addEventListener('change', () => { settings.devMode = S_DEV.checked; saveSettings(); });
 document.getElementById('m-resume').addEventListener('click', closeMenu);
+document.getElementById('m-reset').addEventListener('click', () => {
+  settings = { ...DEFAULT_SETTINGS };
+  syncMenuInputs(); applySettings(); saveSettings();
+});
 /* Restart: a new game. Everything the walk changed — the crab, the crate,
  * the bottle, the pack, the rings, where you are — goes back to how it was,
  * and the only honest way to do that in a file this size is to load it
@@ -3674,9 +3681,11 @@ function updateHover() {
     // hover raycast only tests an interactable's OWN meshes, so nothing is
     // occluded by walls and the fisherman was hailable through a shut door
     if (it.when && !it.when()) continue;
+    raycaster.far = it.far || REACH;           // a man in the water is hailed from the beach
     const hits = raycaster.intersectObjects(it.meshes, false);
     if (hits.length && hits[0].distance < bestD) { bestD = hits[0].distance; best = it; }
   }
+  raycaster.far = REACH;                       // the override above must not leak to other raycasts
   hovered = best;
   if (best) {
     crosshair.className = 'active';
@@ -3985,8 +3994,8 @@ function throwHeld() {
   if (!held) return;
   camera.getWorldDirection(_pf);
   held.held = false;
-  // hard: 12 m/s barely cleared the swash. 20 with more lift carries a stone
-  // twenty metres out, which is where the snorkeler is.
+  held.thrown = true;                 // the snorkeler answers to a throw, not to a body lying near him
+  // strong, and about fifteen metres out: past the snorkeler, not past the horizon
   held.vel.copy(_pf).multiplyScalar(16).add(new THREE.Vector3(0, 2.2, 0));
   held.angVel.set((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8);
   held = null;
@@ -10333,13 +10342,16 @@ const camp = new THREE.Group();
     for (let i = 0; i < CAMP_PRINTS; i++) campFoot.setMatrixAt(i, hide);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3();
     const fwdX = -1, fwdZ = 0;                     // toward the sea
-    e.set(0, Math.atan2(fwdX, fwdZ) + Math.PI, 0); q.setFromEuler(e);
+    const heading = Math.atan2(fwdX, fwdZ) + Math.PI;
     let side = 1, i = 0;
     // the first pair is right at the towel's edge, where they stood up
     for (let x = CAMP_X - 1.36; x > 1.6 && i < CAMP_PRINTS; x -= 0.58 + Math.random() * 0.08, side = -side, i++) {
-      // left and right feet either side of the line, as stampFoot() does it
-      const off = 0.14 * side;
-      const z = CAMP_Z + 0.02 + (Math.random() - 0.5) * 0.06;
+      // STAGGERED, like a walk: left and right feet a shoulder's width apart
+      // either side of the line, toes turned a little out, each a little
+      // different — in a row they read as a stamp
+      const off = (0.22 + Math.random() * 0.06) * side;
+      e.set(0, heading + side * 0.12 + (Math.random() - 0.5) * 0.16, 0); q.setFromEuler(e);
+      const z = CAMP_Z + 0.02 + (Math.random() - 0.5) * 0.08;
       sc.set((0.92 + Math.random() * 0.16) * side, 1, 1.0 + Math.random() * 0.2);
       m.compose(new THREE.Vector3(x + (-fwdZ) * off, 0.03, z + fwdX * off), q, sc);
       campFoot.setMatrixAt(i, m);
@@ -10383,37 +10395,19 @@ const camp = new THREE.Group();
 const SNORK_X = -8.5, SNORK_Z = CAMP_Z - 5;  // eleven metres off the waterline, six past where you can wade
 const SNORK_H = 0.95;                 // tube tip to waterline; over life-size, like every cut-out read at range
 const SNORK_PEEK = 0.23;              // the tube and nothing else: 9 cm was a pixel at twenty metres
-const SNORK_EYES = { x: 0.22, y: 0.535, w: 0.56, h: 0.04 };   // both lenses of the mask, measured off the cut-out
-const SNORK_PAD = 0.42;               // canvas added under the cut-out for the shoulders
-const SNORK_SINK = 0.16;              // how far under the water the photo's own waterline stays when he is up
-/* HE IS NOT A FLOATING HEAD. The photograph ends at the waterline, so the
- * cut-out ends at his neck, and a neck ending in a straight line at the
- * surface reads as a head on a plate. The suit is painted on below it —
- * the hood's own colour sampled off the picture, widening into shoulders,
- * darkening as it goes down as wet cloth does — through the same bake as
- * the photo so it is the same material. And he only ever rises until that
- * waterline is `SNORK_SINK` under the drawn sea, so the join is below the
- * water and what shows is a man to the collarbone, which is how a swimmer
- * treading water looks. */
-function paintSnorkelerBody(g, w, h, fullH) {
-  const d = g.getImageData(Math.round(w * 0.5), Math.round(h * 0.26), 1, 1).data;   // the hood
-  const [r, gg, b] = d[3] > 40 ? [d[0], d[1], d[2]] : [214, 52, 122];
-  const neckY = h * 0.985, neckW = w * 0.34, shW = w * 0.98, botY = fullH;
-  const grad = g.createLinearGradient(0, neckY, 0, botY);
-  grad.addColorStop(0, `rgb(${r},${gg},${b})`);
-  grad.addColorStop(0.55, `rgb(${(r * 0.72) | 0},${(gg * 0.72) | 0},${(b * 0.74) | 0})`);
-  grad.addColorStop(1, `rgb(${(r * 0.48) | 0},${(gg * 0.5) | 0},${(b * 0.56) | 0})`);
-  g.fillStyle = grad;
-  g.beginPath();
-  g.moveTo(w * 0.5 - neckW / 2, neckY - h * 0.02);
-  g.lineTo(w * 0.5 + neckW / 2, neckY - h * 0.02);
-  g.bezierCurveTo(w * 0.5 + neckW / 2, neckY + h * 0.06, w * 0.5 + shW / 2, neckY + h * 0.10, w * 0.5 + shW / 2, neckY + h * 0.2);
-  g.lineTo(w * 0.5 + shW / 2, botY);
-  g.lineTo(w * 0.5 - shW / 2, botY);
-  g.lineTo(w * 0.5 - shW / 2, neckY + h * 0.2);
-  g.bezierCurveTo(w * 0.5 - shW / 2, neckY + h * 0.10, w * 0.5 - neckW / 2, neckY + h * 0.06, w * 0.5 - neckW / 2, neckY - h * 0.02);
-  g.closePath(); g.fill();
-}
+const SNORK_EYES = { x: 0.22, y: 0.388, w: 0.56, h: 0.029 };  // both lenses of the mask, measured off the cut-out
+const SNORK_WL = 0.71;                // the photo's own waterline, as a fraction of the cut-out's height
+const SNORK_SINK = -0.08;             // the photo's waterline rides a hand ABOVE the drawn sea, so the wet shoulders show and the fade meets the water
+/* HE IS NOT A FLOATING HEAD. The person segmentation ends at his neck, and
+ * a neck ending in a line at the surface is a head on a plate. So the
+ * cut-out is rebuilt from the PHOTOGRAPH ITSELF (tools/snorkeler_body.py):
+ * the head keeps the segmentation's alpha, and below the neck the picture's
+ * own pixels — the suit seen through the water, refracted and dimmed as the
+ * camera saw it — are kept under a soft shoulder-shaped mask that fades to
+ * nothing toward the bottom of the frame, blurred through the join. Nothing
+ * is painted. `SNORK_WL` is where the water met him in the photo, and he
+ * rises until that line is `SNORK_SINK` under the drawn sea, so the fade is
+ * what shows wherever the swell drops. */
 const snorkMat = new THREE.SpriteMaterial({ transparent: true, depthWrite: false });
 const snorkSprite = new THREE.Sprite(snorkMat);
 snorkSprite.visible = false;
@@ -10433,8 +10427,10 @@ snorkGlint.visible = false;
 scene.add(snorkGlint);
 let snorkOpenTex = null, snorkShutTex = null, snorkBlinkT = 2, snorkBlinking = false;
 function snorkSetFrames(img) {
-  snorkSprite.scale.set(SNORK_H * img.width / img.height, SNORK_H * (1 + SNORK_PAD), 1);
-  const f = bakeCutout(img, SNORK_EYES, { pix: 620, levels: 9, grain: 8, sat: 0.72, paint: paintSnorkelerBody, padBottom: SNORK_PAD });
+  // SNORK_H is tip to waterline; the picture runs on below that into the water
+  const T = SNORK_H / SNORK_WL;
+  snorkSprite.scale.set(T * img.width / img.height, T, 1);
+  const f = bakeCutout(img, SNORK_EYES, { pix: 620, levels: 9, grain: 8, sat: 0.72 });
   snorkOpenTex = f.open; snorkShutTex = f.shut;
   snorkMat.map = snorkOpenTex; snorkMat.needsUpdate = true;
   snorkSprite.visible = true;
@@ -10460,6 +10456,29 @@ const SNORK_SCRIPT = {
 };
 const SNORK_NPC = { name: 'Snorkeler', script: SNORK_SCRIPT, sprite: snorkSprite, headY: 0 };
 let snorkUp = 0, snorkWant = 0, snorkTalkT = -1, snorkDownT = -1, snorkWasOpen = false, snorkT = 0;
+/* ONCE. The first version triggered off any body near him, so the stone
+ * that roused him — lying in the water beside his head — roused him again
+ * every time he went under, and the dialogue spammed. It takes a THROW now
+ * (`thrown` is set by throwHeld() and cleared when the body comes to rest),
+ * and only until he has been met: after that he stays up, treading water,
+ * and he is an interactable you hail with E like anyone else. */
+let snorkMet = false;
+const snorkHit = new THREE.Group();
+{
+  const hit = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.5, 1.4),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy';
+  snorkHit.add(hit);
+  snorkHit.position.set(SNORK_X, 0, SNORK_Z);
+  scene.add(snorkHit);
+}
+// declared AFTER snorkHit: this file is one module of consts, and a reference
+// above the declaration is a dead-zone crash that takes the whole page
+addInteractable(snorkHit, 'Talk to him', 'npc', {
+  when: () => snorkMet && !dialogOpen,
+  far: 30,                                     // he is eleven metres out; a hail carries
+  onActivate: () => startDialog('start', SNORK_NPC),
+});
 function updateSnorkeler(dt) {
   if (!snorkOpenTex) return;
   snorkT += dt;
@@ -10473,33 +10492,34 @@ function updateSnorkeler(dt) {
   /* The trigger: anything thrown that comes down near him. Not "hits" — a
    * stone in the water a metre off is exactly what would make a man surface
    * swearing, and aiming at a snorkel from the beach is hard enough. */
-  if (snorkWant === 0 && snorkUp < 0.05 && !dialogOpen) {
+  if (!snorkMet && snorkWant === 0 && !dialogOpen) {
     for (const p of physProps) {
-      if (p.held || p.dead) continue;
+      if (p.held || p.dead || !p.thrown) continue;
       const q = p.mesh.position;
-      // near him and down at the water (the sea is two metres lower out here than at the shore)
+      // a thrown thing coming down near him, at the water
       if (Math.hypot(q.x - SNORK_X, q.z - SNORK_Z) < 3.2 && q.y < waterSurfaceAt(q.x, q.z) + 1.5) {
-        snorkWant = 1; snorkTalkT = 0.7;
+        snorkMet = true; snorkWant = 1; snorkTalkT = 0.7; p.thrown = false;
         spawnSplash(SNORK_X, SNORK_Z, 26, 0, 0, 1.6); sfxSplash(1.5);
         break;
       }
     }
   }
+  for (const p of physProps) if (p.thrown && !p.held && p.vel.lengthSq() < 0.04) p.thrown = false;   // at rest: no longer a throw
   snorkUp += (snorkWant - snorkUp) * Math.min(1, dt * 2.4);
   if (snorkTalkT > 0) {
     snorkTalkT -= dt;
     if (snorkTalkT <= 0 && !dialogOpen) { startDialog('start', SNORK_NPC); snorkWasOpen = true; }
   }
-  if (snorkWasOpen && !dialogOpen) { snorkWasOpen = false; snorkDownT = 5; }   // he treads water a while, then goes back under
-  if (snorkDownT > 0) { snorkDownT -= dt; if (snorkDownT <= 0) { snorkDownT = -1; snorkWant = 0; } }
+  if (snorkWasOpen && !dialogOpen) snorkWasOpen = false;   // met, he stays up — treading water, hailable with E
   // he rides the swell; only the tube shows until he comes up
   const e = snorkUp * snorkUp * (3 - 2 * snorkUp);
   const water = waterSurfaceAt(SNORK_X, SNORK_Z);
   // the sprite is taller than the photo now (shoulders under it); place it by its TIP
-  const T = SNORK_H * (1 + SNORK_PAD);
+  const T = SNORK_H / SNORK_WL;
   const tip = water + THREE.MathUtils.lerp(SNORK_PEEK, SNORK_H - SNORK_SINK, e);
   snorkSprite.position.y = tip - T / 2 + Math.sin(snorkT * 0.7) * 0.012;
   snorkMat.rotation = Math.sin(snorkT * 0.5) * 0.02 * e;
+  snorkHit.position.y = snorkSprite.position.y + T * 0.15;
   // the valve on the tube, only while he is down
   snorkGlint.visible = snorkSprite.visible;
   snorkGlint.position.set(SNORK_X + 0.22 * snorkSprite.scale.x, snorkSprite.position.y + T / 2 - 0.04, SNORK_Z);
@@ -11697,7 +11717,7 @@ layoutViewmodel();
 
 // dev hook
 window.__bw = {
-  settings, get hp() { return hp; },
+  get settings() { return settings; }, get hp() { return hp; },
   snorkSprite, updateSnorkeler, snork: () => ({ up: snorkUp, want: snorkWant, talkT: snorkTalkT, hasTex: !!snorkOpenTex }),
   snorkFake: () => { const c = document.createElement('canvas'); c.width = 80; c.height = 128; const g = c.getContext('2d'); g.fillStyle = '#e0407a'; g.fillRect(10, 30, 60, 98); g.fillStyle = '#ff7030'; g.fillRect(58, 0, 10, 60); snorkSetFrames(c); },
   // aim the camera from the harness: writes the look state itself, so nothing
