@@ -1369,6 +1369,30 @@ Two things that bit building it: `Object3D.position` is a getter, so
 glint Sprite under any raycast wants `Raycaster.camera`, so `addItemShine`
 gives it a no-op `raycast`.
 
+**The tall one (`SMILE_X` / `SMILE_Z`, past the snorkeler).** Vertex
+Mercher's "The smile (Rigged)" — a 165k-triangle rig with no clips — built
+by `tools/smile_anim.py` into `assets/smile.glb`: decimated to 24k with its
+own maps, and `idle` (a tall thing standing very still) and `run` (a flat
+sprint) authored on its 21 bones with the crab pipeline's helpers. It
+stands on the dry sand between you and the moon, a black silhouette with a
+pale grin (`color` × 0.22 and a cold `reexpose` rim on the body; the face
+keeps its light and a little emissive), turning slowly to keep its face on
+you; inside `SMILE_SEE` it bolts for the sea at `SMILE_RUN`, wheels to -X,
+splashes in, sinks past `WADE_X - 3` and is gone for good — `sfxSmileBolt()`
+on the first frame of that is the startle (kicked sand, two detuned saws
+tearing up through a bandpass, a thump). Three things it took: **Blender
+exports this rig LYING ALONG -Z** (its root joint comes out -90° about X;
+the FBX chain under it is not something `export_yup` untangles), so the
+loader wraps it in a group turned +90° about X, which puts the head up and
+the face toward -Z, and `atan2(dx, dz) + PI` faces it at you like the crab.
+**`Box3.setFromObject()` knows nothing about skinning** — it boxed the raw
+geometry through the node chain and answered 7.9 tall by 11.7 wide for a
+figure 32 tall, and the first build scaled it off the wrong axis;
+`skinnedBounds()` runs the vertices through the bones and is the only
+measurement of a skinned mesh that means anything. And the first sprint
+threw the trailing leg horizontal — a 0.95 rad swing on legs that long — so
+it runs at 0.78. It is one skinned mesh: ONE of it, no clone().
+
 **The snorkeler (`SNORK_X` / `SNORK_Z`, off the campsite).** A third photo
 cut-out, `assets/snorkeler.png` out of `assets/snorkeler.jpg` via
 `tools/cutout.swift`, cropped to its opaque rows so `SNORK_H` means tube tip

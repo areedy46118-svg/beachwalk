@@ -10721,6 +10721,153 @@ function updateSnorkeler(dt) {
   snorkGlint.material.opacity = (1 - e) * (0.22 + 0.10 * Math.sin(snorkT * 1.7));
 }
 
+// ------------------------------------------------------------------
+// The tall one — Vertex Mercher's "The smile (Rigged)", CC-BY-4.0
+// ------------------------------------------------------------------
+/* Past the snorkeler, a tall thin figure stands on the dry sand between you
+ * and the moon, and turns to keep facing you as you come. It is a black
+ * silhouette with a pale grin — the moon is behind it from where you walk,
+ * so the shape is all you get until you are close — and the moment you are
+ * near enough to make out what it is (`SMILE_SEE`) it bolts for the sea at
+ * a flat sprint and goes under, and does not come back. The bolt is the
+ * startle: `sfxSmileBolt()` on the first frame of it.
+ *
+ * `assets/smile.glb` is built by tools/smile_anim.py: the scan decimated to
+ * 24k triangles with its own maps, and two clips authored on its 21 bones
+ * (`idle`, `run`). The model's front is -Z, like the crab's, so
+ * `atan2(dx, dz) + PI` faces it at you. It is one skinned mesh, so ONE of
+ * it — no clone(). */
+const SMILE_X = 8.6, SMILE_Z = CAMP_Z - 42;
+const SMILE_H = 2.75;                  // taller than a man by a head and a half
+const SMILE_SEE = 15;                  // how close you get before it goes
+const SMILE_RUN = 8.5;                 // m/s, flat out
+const smile = new THREE.Group();
+smile.visible = false;
+smile.position.set(SMILE_X, 0, SMILE_Z);
+scene.add(smile);
+farProps.push({ obj: smile, z: SMILE_Z, d: 260 });
+let smileMixer = null, smileClips = {}, smilePhase = 0, smileT = 0, smileCur = null;
+new GLTFLoader().load('assets/smile.glb', (gltf) => {
+  const m = gltf.scene;
+  m.traverse((o) => {
+    if (!(o.isMesh || o.isSkinnedMesh)) return;
+    o.frustumCulled = false;
+    const mat = o.material;
+    const face = /003/.test(mat.name);
+    /* dark: the body's flat grey is taken most of the way to black, and a
+     * cold rim is added so the silhouette holds against a dark beach; the
+     * face keeps more of its light and a little emissive, so the grin is
+     * the one pale thing on it */
+    mat.color.multiplyScalar(face ? 0.85 : 0.22);
+    mat.roughness = 1; mat.metalness = 0;
+    mat.emissive = new THREE.Color(face ? 0x2a2b33 : 0x050608);
+    reexpose(mat, 1.0, face ? [0.18, 0.2, 0.26] : [0.26, 0.32, 0.46]);
+  });
+  /* STAND IT UP, AND MEASURE IT SKINNED. Blender exports this rig lying
+   * along -Z (its root joint comes out at -90 degrees about X — the
+   * Sketchfab FBX chain under it is not something export_yup untangles),
+   * so it gets a wrapper turned +90 about X, which puts the head up and the
+   * face toward -Z. And Box3.setFromObject() knows nothing about skinning:
+   * it boxes the raw geometry through the node chain and answered 7.9 tall
+   * by 11.7 wide for a figure that is 32 tall, so the first build scaled
+   * it off the wrong axis. `skinnedBounds()` runs the vertices through the
+   * bones, which is the only measurement of a skinned mesh that means
+   * anything. */
+  const up = new THREE.Group();
+  up.rotation.x = Math.PI / 2;
+  up.add(m);
+  const sb = skinnedBounds(up);
+  const k = SMILE_H / Math.max(0.01, sb.size.y);
+  up.scale.setScalar(k);
+  up.position.y = -sb.min.y * k;
+  smile.add(up);
+  smileMixer = new THREE.AnimationMixer(m);
+  for (const c of gltf.animations) smileClips[c.name] = smileMixer.clipAction(c);
+  smilePlay('idle', true);
+  smile.visible = true;
+}, undefined, () => {});
+/* The bounds of a skinned thing are where its bones put it, not where its
+ * geometry sits: every seventh vertex through applyBoneTransform(). */
+const _sbV = new THREE.Vector3();
+function skinnedBounds(root) {
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3(); box.makeEmpty();
+  root.traverse((o) => {
+    if (!o.isSkinnedMesh) return;
+    o.skeleton.update();
+    const pos = o.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i += 7) {
+      _sbV.fromBufferAttribute(pos, i); o.applyBoneTransform(i, _sbV); _sbV.applyMatrix4(o.matrixWorld); box.expandByPoint(_sbV);
+    }
+  });
+  return { min: box.min.clone(), max: box.max.clone(), size: box.getSize(new THREE.Vector3()) };
+}
+function smilePlay(name, loop) {
+  const a = smileClips[name];
+  if (!a || smileCur === a) return a;
+  for (const k in smileClips) if (smileClips[k] !== a) smileClips[k].fadeOut(0.1);
+  a.reset(); a.setLoop(THREE.LoopRepeat, Infinity); a.fadeIn(0.1).play();
+  smileCur = a;
+  return a;
+}
+/* THE STARTLE. Not a scream — a thing that big should not make a sound
+ * like a person. A slap of kicked sand, a shriek that is two sawtooths a
+ * semitone apart tearing up through a bandpass with a hard tremolo on
+ * them, and a thump under it all. Half a second, gone. */
+function sfxSmileBolt() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  const nb = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.5), ctx.sampleRate); const d = nb.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2.2);
+  const ns = ctx.createBufferSource(); ns.buffer = nb;
+  const nf = ctx.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 1400; nf.Q.value = 0.7;
+  const ng = ctx.createGain(); ng.gain.setValueAtTime(0.9, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+  ns.connect(nf); nf.connect(ng); ng.connect(out); ns.start(t);
+  for (const det of [0, 7]) {
+    const o = ctx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(620 + det * 10, t); o.frequency.exponentialRampToValueAtTime(2400 + det * 40, t + 0.42); o.detune.value = det * 14;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 2.5;
+    bp.frequency.setValueAtTime(1200, t); bp.frequency.exponentialRampToValueAtTime(3200, t + 0.4);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
+    const tr = ctx.createOscillator(); tr.frequency.value = 38; const tg = ctx.createGain(); tg.gain.value = 0.25;
+    tr.connect(tg); tg.connect(g.gain);
+    o.connect(bp); bp.connect(g); g.connect(out);
+    o.start(t); o.stop(t + 0.6); tr.start(t); tr.stop(t + 0.6);
+  }
+  const sub = ctx.createOscillator(); sub.type = 'sine';
+  sub.frequency.setValueAtTime(90, t); sub.frequency.exponentialRampToValueAtTime(32, t + 0.3);
+  const sg = ctx.createGain(); sg.gain.setValueAtTime(1.0, t); sg.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+  sub.connect(sg); sg.connect(out); sub.start(t); sub.stop(t + 0.45);
+}
+const _smileTurn = (cur, want) => { let d = want - cur; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
+function updateSmile(dt) {
+  if (!smileMixer || smilePhase === 2) return;
+  smileMixer.update(dt * (smilePhase === 1 ? 1.7 : 1));
+  const p = smile.position;
+  if (smilePhase === 0) {
+    // it stands, and it turns to keep its face on you — slowly, like it has all night
+    const dx = camera.position.x - p.x, dz = camera.position.z - p.z;
+    const want = Math.atan2(dx, dz) + Math.PI;
+    smile.rotation.y += _smileTurn(smile.rotation.y, want) * Math.min(1, dt * 1.4);
+    if (introDone && !dying && !ended && Math.hypot(dx, dz) < SMILE_SEE) {
+      smilePhase = 1; smileT = 0;
+      smilePlay('run', true);
+      sfxSmileBolt();
+    }
+    return;
+  }
+  // the bolt: it wheels to the sea and goes, straight down the beach into the water
+  smileT += dt;
+  const want = Math.atan2(-1, 0) + Math.PI;
+  smile.rotation.y += _smileTurn(smile.rotation.y, want) * Math.min(1, dt * 7);
+  p.x -= SMILE_RUN * dt;
+  const sub = submersionAt(p.x, p.z);
+  if (sub > 0.15 && Math.random() < 0.6) spawnSplash(p.x, p.z, 7, -1, 0, 1.3);
+  if (smileT > 0.9 && sub > 0.15 && !smile.userData.splashed) { smile.userData.splashed = true; sfxSplash(1.3); }
+  if (p.x < WADE_X - 3) p.y -= 1.7 * dt;                       // and under, as the bottom falls away
+  if (p.x < -17 || p.y < -3.4) { smile.visible = false; smilePhase = 2; }
+}
+
 /* The trails. Each one leaves a widening V of ripples behind it and throws a
  * little water as it comes, so from the beach there are three wakes running
  * at you out of the dark before there is anything to see. */
@@ -11848,6 +11995,7 @@ function update(dt, rawDt = dt) {
   updateDialogCam(dt);
   updatePack(dt);
   updateSnorkeler(dt);
+  updateSmile(dt);
   updateCrab(dt);
   updateGibs(dt);
   updateBradlyBlink(dt);
@@ -11912,6 +12060,7 @@ layoutViewmodel();
 
 // dev hook
 window.__bw = {
+  smile, updateSmile, smileState: () => ({ phase: smilePhase, t: smileT, loaded: !!smileMixer, clips: Object.keys(smileClips) }), sfxSmileBolt,
   updateHurt, hurtEl,
   militaryItem, militaryWorld, milModel, get toolVM() { return toolVM; }, vmScene, vmCamera, toolMount,
   get settings() { return settings; }, get hp() { return hp; },
