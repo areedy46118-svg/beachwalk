@@ -7,6 +7,7 @@ import { makeDrainageTunnelHome } from './models/drainage-tunnel-home.js';
 import { makeWaterBottle, makeWaterBottleIcon } from './models/water-bottle.js';
 import { makeShipwreck } from './models/shipwreck.js';
 import { makeRing, makeRingIcon } from './models/ring.js';
+import { makeCdCase, makeCdCaseIcon } from './models/cd-case.js';
 
 /* ------------------------------------------------------------------ *
  *  Beach Walk — an endless, eerie shoreline at night.
@@ -5855,21 +5856,58 @@ function finishExtraction() {
  * than the flat it stands on: tan, matte, with a little lift so it catches
  * the moon and separates from the wet blue around it. The pebbles pressed
  * into it go warm with it, or they read as gravel. */
-const moundMat = new THREE.MeshStandardMaterial({ color: 0xb2a079, roughness: 1, flatShading: true, emissive: 0x3a3320 });
-const moundDomeGeo = new THREE.SphereGeometry(0.55, 9, 5, 0, Math.PI * 2, 0, Math.PI * 0.5);
-moundDomeGeo.scale(1, 0.36, 1);             // a low, flat dome
+/* SPOIL, NOT A BUMP. A cache used to be a smooth half-sphere in one flat
+ * colour, and at 0xb2a079 it was a bright tan pebble sitting on a blue
+ * beach — the "horrible" of it was that it read as painted-on plastic. A
+ * real molehill is loose CLODS: damp earth turned up out of the hole in
+ * lumps, dark and matte, crumbling out to a scatter of smaller lumps at
+ * the foot, with no clean edge anywhere. So the dome is displaced per
+ * vertex into lumps and flat-shaded (every facet catches the moon
+ * differently, which is most of what makes it read as loose), the colour
+ * is earth rather than sand, and the rim is broken by clods lying round
+ * it rather than by a circle drawn on the beach. */
+const moundMat = new THREE.MeshStandardMaterial({ color: 0x6d5c47, roughness: 1, flatShading: true, emissive: 0x241d13 });
+const clodMat = new THREE.MeshStandardMaterial({ color: 0x554839, roughness: 1, flatShading: true, emissive: 0x150f0a });
+const clodMatDk = new THREE.MeshStandardMaterial({ color: 0x42382c, roughness: 1, flatShading: true, emissive: 0x0f0b07 });
+function lumpyDome(r, hy, seed) {
+  const g = new THREE.SphereGeometry(r, 11, 6, 0, Math.PI * 2, 0, Math.PI * 0.5);
+  g.scale(1, hy, 1);
+  const p = g.attributes.position;
+  let n = seed;
+  const rnd = () => (n = (n * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const d = Math.hypot(x, z) / r;
+    if (y < 0.004) continue;                       // leave the rim on the sand
+    const k = 1 + (rnd() - 0.5) * 0.34 * (1 - d * 0.4);
+    p.setXYZ(i, x * k, y * (1 + (rnd() - 0.5) * 0.5), z * k);
+  }
+  g.computeVertexNormals();
+  return g;
+}
 function makeMound() {
   const g = new THREE.Group();
-  const dome = new THREE.Mesh(moundDomeGeo, moundMat);
+  // two heaps of different size, overlapping — one dome is a bump, two is a pile
+  const dome = new THREE.Mesh(lumpyDome(0.5, 0.34, 1 + ((Math.random() * 1e6) | 0)), moundMat);
   dome.rotation.y = Math.random() * Math.PI;
   g.add(dome);
-  // a couple of pressed-in pebbles so it reads as disturbed sand, not a bump
-  for (let i = 0; i < 3; i++) {
-    const a = Math.random() * Math.PI * 2, r = 0.2 + Math.random() * 0.28;
-    const pb = new THREE.Mesh(new THREE.DodecahedronGeometry(0.03 + Math.random() * 0.03, 0),
-      new THREE.MeshStandardMaterial({ color: 0x7d7154, roughness: 1, flatShading: true, emissive: 0x241f13 }));
-    pb.position.set(Math.cos(a) * r, 0.02, Math.sin(a) * r);
-    g.add(pb);
+  const lobe = new THREE.Mesh(lumpyDome(0.3, 0.38, 1 + ((Math.random() * 1e6) | 0)), moundMat);
+  lobe.position.set((Math.random() - 0.5) * 0.34, 0, (Math.random() - 0.5) * 0.34);
+  lobe.rotation.y = Math.random() * Math.PI;
+  g.add(lobe);
+  /* The clods. They are what stops the heap having an edge: a dozen lumps
+   * of the same earth lying where they rolled, thinning outward, so the
+   * pile crumbles into the beach instead of ending on a line. */
+  for (let i = 0; i < 14; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = 0.28 + Math.pow(Math.random(), 1.6) * 0.42;
+    const sz = 0.018 + Math.random() * 0.042 * (1 - (r - 0.28) / 0.42);
+    const cl = new THREE.Mesh(new THREE.DodecahedronGeometry(sz, 0),
+      Math.random() < 0.4 ? clodMatDk : clodMat);
+    cl.position.set(Math.cos(a) * r, sz * 0.45, Math.sin(a) * r);
+    cl.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+    cl.scale.y = 0.6 + Math.random() * 0.3;
+    g.add(cl);
   }
   return g;
 }
@@ -6026,21 +6064,26 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
   moundFinds++;
 
   const first = m === mounds[0];               // THE first mound, not the first you happen to dig
-  const relic = first ? makeGlowstick() : makeBuriedObject();
-  relic.position.set(m.x, first ? 0.055 : 0.09, m.z);
-  relic.rotation.set(first ? 0 : (Math.random() - 0.5) * 0.5, Math.random() * Math.PI * 2, first ? 0 : (Math.random() - 0.5) * 0.4);
+  const second = m === mounds[1];              // and the second one has the CD in it
+  const relic = first ? makeGlowstick() : (second ? makeCdCase() : makeBuriedObject());
+  relic.position.set(m.x, first ? 0.055 : (second ? 0.006 : 0.09), m.z);
+  relic.rotation.set(
+    first ? 0 : (second ? -Math.PI / 2 + 0.14 : (Math.random() - 0.5) * 0.5),
+    Math.random() * Math.PI * 2,
+    first ? 0 : (second ? 0 : (Math.random() - 0.5) * 0.4));
   const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.36, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   proxy.name = 'hitProxy'; relic.add(proxy);
   scene.add(relic);
   if (first) { relic.updateMatrixWorld(true); placeGroundGlow(relic); }
-  addInteractable(relic, first ? 'Take the glowstick' : 'Take the buried object', 'inventory', {
+  addInteractable(relic, first ? 'Take the glowstick' : (second ? 'Take the CD' : 'Take the buried object'), 'inventory', {
     onActivate: () => {
       if (first) sfxGlassPick(); else sfxThud(0.04);
       scene.remove(relic);
       if (first) placeGroundGlow(null);       // the held light takes over
       hovered = null;
       if (first) { addToInventory(glowstickItem); toggleEquip(glowstickItem); }
+      else if (second) { addToInventory(cdItem); }
       else {
         const buried = { name: 'Buried object', icon: '📦' };
         buried.use = () => toggleEquip(buried);
@@ -6050,6 +6093,13 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
     },
   });
 }
+
+/* "New Cd" — what the second mound has been keeping. The case is modelled
+ * to the real thing; the sleeve is painted in models/cd-case.js rather than
+ * copied off the album, which is somebody else's drawing. */
+const cdItem = { name: 'New Cd', icon: makeCdCaseIcon() };
+cdItem.use = () => toggleEquip(cdItem);
+holdable(cdItem, makeCdCase(), { scale: 1.15, pos: [0.02, -0.05, 0.02], rot: [0.22, -0.5, 0.12] });
 
 // ------------------------------------------------------------------
 // Shells you can pick up. Hold one to your ear and there's something
@@ -10708,7 +10758,8 @@ window.__bw = {
   gibs, bloodDrops, coveredByWater, submersionAt, waterSurfaceAt, listenToShell, stopListening,
   get audioCtx() { return audioCtx; }, sfxOut,
   dropEquipped, dropPoint, groundUnder, driftGroup, driftAt, updateGibs, updatePuffs,
-  mounds, moundMat, moundAt, revealMoundNear,
+  mounds, moundMat, moundAt, revealMoundNear, makeMound, makeCdCase,
+  get cdItem() { return cdItem; },
   THREE, scene, camera, player: camera,
   interactables, physProps, inventory, bottle, cliff, foot, lighthouse, city,
   castle, shovelWorld, viewmodel,

@@ -673,6 +673,25 @@ of `SAND_TILE`, so the phase is preserved and the grain lines up across the
 join. The cliff toe gets the same treatment through `aU` (0 at the toe, 1 at
 the top).
 
+**A cache is a MOLEHILL, not a bump.** It was a smooth half-sphere in one
+flat colour, and tan on a blue beach it read as painted-on plastic. Real
+turned earth is loose CLODS: `lumpyDome()` displaces the dome per vertex
+(the rim left alone so it still meets the sand), two overlapping lobes make
+a pile rather than a bump, and fourteen dodecahedron clods lie round the
+foot thinning outward so the heap crumbles into the beach instead of ending
+on a line. Flat-shaded, because every facet catching the moon differently is
+most of what reads as loose. Dark damp earth, not sand.
+
+**"New Cd" is in the SECOND mound** (`mounds[1]`, not the second one you
+happen to dig — the same rule the glowstick's `mounds[0]` uses).
+`models/cd-case.js` builds a jewel case to the real 142 x 125 x 10 mm shape:
+clear lid and shell, black tray, the disc, hinge teeth down the spine, and
+printed inserts front and back. **The sleeve is PAINTED, not copied** — the
+case is a generic industrial shape and is modelled exactly, but an album
+cover is somebody's copyrighted drawing and this repo is public, so the
+insert is an original canvas in the same family as the reference (salmon
+ground, crowds of small heads, blue diagonal, block lettering up the back).
+
 **A buried cache has to look like something you would DIG.** `moundMat` was
 `0x74809a` — the beach's own cold blue-grey — so a cache read as one more
 grey lump on a grey beach and nobody dug it. Dry sand turned up out of a
