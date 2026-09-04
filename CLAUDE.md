@@ -256,6 +256,23 @@ lifts you onto anything within `ROCK_STEP` (0.42) of your feet, so
 tread you were meant to walk up shoved you back off it, and the pier's steps
 were unclimbable.
 
+**The sea hides what it covers, and the seabed is ABOVE the sea.** Gibs,
+blood and puffs went on drawing under the water — bright specks lying on the
+bottom with a wave running over them. `coveredByWater(x, y, z)` is the one
+test they all ask, and the thing that makes it work is a margin: the seabed
+is the sand plane at y = 0, but the drawn ocean sits at -0.34 with waves
+around it, so a clod at rest on the bottom is really a third of a metre
+ABOVE the surface you can see. Comparing its y straight to the wave height
+hid nothing at all. Blood also stops staining once it lands in water, and
+puffs are an InstancedMesh so a drowned one is scaled to zero rather than
+hidden.
+
+**A gib's ground is a LOOKUP, not a number it was born with.** Crate boards
+carried `rest = crate.y`, so the dock crate's boards held deck height
+wherever they flew and the ones that cleared the edge hung in the air beside
+the pier. `updateGibs()` asks `dockDeckAt()` every frame and falls back to
+the sand, so a board that leaves the boards falls to the beach.
+
 **Splashing needs a reason.** Three separate sources each fired without one:
 a prop resting near the waterline crossed `submersionAt` every few seconds
 as the swash moved and splashed each time (it needs an arrival SPEED); the
@@ -311,6 +328,15 @@ doorway left out, pushed out of along the shallowest face and only at deck
 height. `onDock` lifts the `WADE_X` clamp because the sea end stands past it.
 The two lamp materials are lit and carry a PointLight each; the whole thing
 is in `farProps` at 300 m.
+
+**A shell you cannot hear is not a shell.** The first pass put the cavity
+through two bandpasses at Q 7.5 and the whisper bed at 0.055 gain — a filter
+that narrow throws nearly all the energy away, so holding it to your ear got
+you silence. It is four layers now, all wider: two broad wandering
+resonances, something far down and much bigger than the shell breathing in
+and out every eight seconds, a thin hiss of the shell's own air, and three
+slow swells that rise out of the roar. The whispers sit at 0.85 — almost
+words, never words. Measured on the SFX bus it is twice the ambient floor.
 
 **Whatever leaves your hand goes quiet.** `toggleEquip()` calls
 `stopListening()`, which kills the roar source, the whisper element and the

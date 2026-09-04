@@ -373,6 +373,22 @@ function submersionAt(x, z) {
   const into = shoreLineJS(z, oceanUniforms.uTime.value) - x;   // >0 is seaward
   return THREE.MathUtils.clamp(into / SUBMERGE_RUN, 0, 1);
 }
+/* THE SEA HIDES WHAT IT COVERS. Debris, blood and thrown sand all used to
+ * go on drawing where the water had closed over them — bright specks lying
+ * on the seabed with a wave running across the top of them. Anything that
+ * settles asks this before it draws. */
+function coveredByWater(x, y, z) {
+  const sub = submersionAt(x, z);
+  if (sub <= 0.15) return false;
+  /* The seabed is the SAND PLANE, at y = 0, and out here the drawn water
+   * sits BELOW it (the ocean mesh is at -0.34 and the sand is discarded
+   * seaward of the shoreline). So a clod at rest on the bottom is really
+   * a third of a metre above the surface you can see, and comparing it
+   * straight to the wave height hid nothing at all. The margin is what
+   * makes "lying on the bottom" count as under the sea, while a gib still
+   * in the air over the surf goes on drawing. */
+  return y < waterSurfaceAt(x, z) + 0.5 * sub;
+}
 // the y an object of this height should rest at, given where it stands
 function restYInWater(x, z, sink) {
   const sub = submersionAt(x, z);
@@ -2653,7 +2669,8 @@ function updatePuffs(dt) {
     }
     const k = p.life / p.ttl;
     const grow = p.settled ? Math.max(0.001, k * 3) : (0.5 + 0.5 * Math.min(1, k * 4));
-    const sc = p.sz * 0.055 * grow;        // ~0.03–0.25 m clods
+    // instances cannot be hidden one at a time, so a drowned clod is scaled away
+    const sc = coveredByWater(p.pos.x, p.pos.y, p.pos.z) ? 0 : p.sz * 0.055 * grow;
     _pq.setFromEuler(p.rot);
     _pm.compose(p.pos, _pq, _ps.set(sc, sc, sc));
     puff.setMatrixAt(i, _pm);
@@ -6094,7 +6111,7 @@ function stopListening() {
   if (!listening) return;
   listening = false;
   if (shellAudio) {
-    try { shellAudio.src.stop(); } catch (e) {}
+    try { if (shellAudio.src) shellAudio.src.stop(); } catch (e) {}
     try { shellAudio.out.gain.cancelScheduledValues(0); shellAudio.out.gain.value = 0; shellAudio.out.disconnect(); } catch (e) {}
     clearTimeout(shellAudio.timer);
     shellAudio = null;
@@ -6106,50 +6123,78 @@ function listenToShell() {
   const ctx = audioCtx;
   if (!ctx || listening) return;
   listening = true;
-  const t = ctx.currentTime, DUR = 9;
+  const t = ctx.currentTime, DUR = 11;
   const out = ctx.createGain();
   out.gain.value = 0;
-  out.gain.linearRampToValueAtTime(1, t + 1.2);
-  out.gain.setValueAtTime(1, t + DUR - 2.2);
+  out.gain.linearRampToValueAtTime(1, t + 1.4);
+  out.gain.setValueAtTime(1, t + DUR - 2.4);
   out.gain.linearRampToValueAtTime(0, t + DUR);
   out.connect(sfxOut());
+  const noise = () => { const n = noiseBurst(DUR, () => 1); n.loop = true; n.start(t); n.stop(t + DUR); return n; };
 
-  // the roar: noise through two resonant peaks, like a cavity
-  const src = noiseBurst(DUR, () => 1);
-  src.loop = true;
-  const peaks = [520, 1180];
-  for (const f of peaks) {
+  /* IT HAS TO BE LOUD ENOUGH TO LEAN INTO. The first version was two
+   * bandpasses at Q 7.5 and a whisper bed at 0.055 — a filter that narrow
+   * throws away nearly all the energy, so holding the shell to your ear got
+   * you silence. Wider peaks, four layers, and the whispers up where you can
+   * almost make them out. */
+  // the cavity: two broad resonances that wander
+  for (const [f, g0] of [[430, 0.5], [1020, 0.34]]) {
     const bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = 7.5;
-    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.13 + Math.random() * 0.1;
-    const lg = ctx.createGain(); lg.gain.value = f * 0.06;
-    lfo.connect(lg).connect(bp.frequency);
-    lfo.start(t); lfo.stop(t + DUR);
-    const g = ctx.createGain(); g.gain.value = 0.16;
-    src.connect(bp).connect(g).connect(out);
+    bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = 2.2;
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.11 + Math.random() * 0.09;
+    const lg = ctx.createGain(); lg.gain.value = f * 0.10;
+    lfo.connect(lg).connect(bp.frequency); lfo.start(t); lfo.stop(t + DUR);
+    const g = ctx.createGain(); g.gain.value = g0;
+    noise().connect(bp).connect(g).connect(out);
   }
-  src.start(t); src.stop(t + DUR);
+  // something far down and much bigger than the shell, breathing in and out
+  {
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 130; lp.Q.value = 0.9;
+    const g = ctx.createGain(); g.gain.value = 0.34;
+    const br = ctx.createOscillator(); br.frequency.value = 0.13;   // ~8 s a breath
+    const brg = ctx.createGain(); brg.gain.value = 0.3;
+    br.connect(brg).connect(g.gain); br.start(t); br.stop(t + DUR);
+    noise().connect(lp).connect(g).connect(out);
+  }
+  // and a thin hiss over the top of it all, the shell's own air
+  {
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 4200;
+    const g = ctx.createGain(); g.gain.value = 0.1;
+    noise().connect(hp).connect(g).connect(out);
+  }
+  // a couple of slow swells that rise out of the roar and fall back
+  for (let i = 0; i < 3; i++) {
+    const at = t + 1.8 + i * 2.9 + Math.random();
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(58 + Math.random() * 26, at);
+    o.frequency.linearRampToValueAtTime(38, at + 1.9);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(0.16, at + 0.7);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 1.9);
+    o.connect(g).connect(out); o.start(at); o.stop(at + 2);
+  }
 
   setPrompt('You hold it to your ear&hellip;');
-  /* And the thing under it. The word "lighthouse" that used to be spoken at
-   * 3.4 s is gone — that was a voice saying something, and this is not. What
-   * is left is the whisper bed: filtered down until it is only ever almost
-   * words, and quiet enough that you are never sure you heard it.
+  /* And the thing under it. Not a voice saying a word — filtered down until
+   * it is only ever almost words — but loud enough now that you are certain
+   * something is down there, and never certain what it said.
    *
    * A fresh Audio element every time, so createMediaElementSource() is only
    * ever called once per element — the trap the gate's whispers hit. */
   shellVoice = new Audio(Math.random() < 0.5 ? 'assets/whisper1.m4a' : 'assets/whisper2.m4a');
   shellVoice.loop = true;
+  shellVoice.volume = 1;
   try {
     const vs = ctx.createMediaElementSource(shellVoice);
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
-    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 260;
-    const vg = ctx.createGain(); vg.gain.value = 0.055;     // barely there on purpose
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1500;
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 190;
+    const vg = ctx.createGain(); vg.gain.value = 0.85;      // almost words, not silence
     vs.connect(lp).connect(hp).connect(vg).connect(out);
     shellVoice.play().catch(() => {});
   } catch (e) {}
 
-  shellAudio = { src, out, timer: setTimeout(stopListening, DUR * 1000) };
+  shellAudio = { src: null, out, timer: setTimeout(stopListening, DUR * 1000) };
 }
 
 // ------------------------------------------------------------------
@@ -6487,12 +6532,19 @@ function updateGibs(dt) {
     const g = gibs[i];
     g.life -= dt;
     if (g.life <= 0) { scene.remove(g.m); g.m.geometry.dispose(); gibs.splice(i, 1); continue; }
+    /* WHAT IT LANDS ON IS ASKED EVERY FRAME, not fixed when it was thrown.
+     * A crate gib carried `rest = crate.y`, so the deck crate's boards kept
+     * deck height wherever they flew — the ones that cleared the edge hung
+     * in the air beside the pier. The boards under it are a lookup. */
+    const deck = dockDeckAt(g.m.position.x, g.m.position.z);
+    const rest = deck !== null ? deck + 0.02 : g.rest;
+    g.m.visible = !coveredByWater(g.m.position.x, g.m.position.y, g.m.position.z);
     if (g.settled) continue;
     g.vel.y -= 15 * dt;
     g.m.position.addScaledVector(g.vel, dt);
     g.m.rotation.x += g.spin.x * dt; g.m.rotation.y += g.spin.y * dt; g.m.rotation.z += g.spin.z * dt;
-    if (g.m.position.y <= g.rest) {
-      g.m.position.y = g.rest;
+    if (g.m.position.y <= rest) {
+      g.m.position.y = rest;
       if (Math.abs(g.vel.y) > 1.1) {
         g.vel.y = -g.vel.y * 0.28;               // one or two small bounces
         g.vel.x *= 0.6; g.vel.z *= 0.6;
@@ -6502,7 +6554,9 @@ function updateGibs(dt) {
         g.vel.set(0, 0, 0);
         // only meat bleeds — glass and wood ride this same system and were
         // leaving blood splats under the shards and the splinters
-        if (g.bleed !== false && Math.random() < 0.5) stampBlood(g.m.position.x, g.m.position.z, 0.3 + Math.random() * 0.35);
+        // and nothing stains water
+        if (g.bleed !== false && Math.random() < 0.5 && submersionAt(g.m.position.x, g.m.position.z) < 0.12)
+          stampBlood(g.m.position.x, g.m.position.z, 0.3 + Math.random() * 0.35);
       }
     }
   }
@@ -6511,9 +6565,11 @@ function updateGibs(dt) {
     b.life -= dt;
     b.vel.y -= 17 * dt;
     b.m.position.addScaledVector(b.vel, dt);
+    b.m.visible = !coveredByWater(b.m.position.x, b.m.position.y, b.m.position.z);
     if (b.m.position.y <= 0.02 || b.life <= 0) {
-      // it lands and soaks in
-      if (b.m.position.y <= 0.02) stampBlood(b.m.position.x, b.m.position.z, 0.16 + Math.random() * 0.3);
+      // it lands and soaks in — into sand. Water takes it without a mark.
+      if (b.m.position.y <= 0.02 && submersionAt(b.m.position.x, b.m.position.z) < 0.12)
+        stampBlood(b.m.position.x, b.m.position.z, 0.16 + Math.random() * 0.3);
       scene.remove(b.m); b.m.geometry.dispose(); bloodDrops.splice(i, 1);
     }
   }
@@ -7213,7 +7269,7 @@ function breakCrate(c = crates[0]) {
       m,
       vel: new THREE.Vector3(Math.cos(a) * out, 1.9 + Math.random() * 2.4, Math.sin(a) * out),
       spin: new THREE.Vector3((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14),
-      rest: c.y + 0.02, life: 40, bleed: false,
+      rest: 0.02, life: 40, bleed: false,   // the deck, if any, is found per frame
     });
   }
   if (c.onBreak) c.onBreak(c);
@@ -10594,6 +10650,8 @@ window.__bw = {
   landK: () => landK, landDist: () => landDist,
   addToInventory, openPack, closePack, selectPackSlot, sfxCastleBreak, digImpacted: () => digImpacted,
   finishTyping, dialogTextEl, get hitstop() { return hitstop; },
+  gibs, bloodDrops, coveredByWater, submersionAt, waterSurfaceAt, listenToShell, stopListening,
+  get audioCtx() { return audioCtx; }, sfxOut,
   THREE, scene, camera, player: camera,
   interactables, physProps, inventory, bottle, cliff, foot, lighthouse, city,
   castle, shovelWorld, viewmodel,
