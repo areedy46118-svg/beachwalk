@@ -1172,6 +1172,34 @@ out of step with the frame the blow actually lands on — the clip is authored
 at 30fps with contact on frame 9, which is `CRAB_WIND` exactly. Move
 `CRAB_WIND` and you must move the pose beats in `tools/crab_anim.py` too.
 
+**THE CRABS ARE A LIST.** There used to be exactly one and every part of it
+was a global — the group, the state, the mixer, the clip map. Three of them
+come out of the water together before the dock, so all of that moved onto a
+UNIT (`makeCrabUnit`) and the loner became `crabs[0]`; `crab` / `crabState`
+still name that first one because the shovel, the blood counter and the
+harness all reach for them. Anything that can hit *a* crab — the blade
+(`digImpact`, `aimLand`), a thrown prop, the knockback — walks `crabs[]` and
+picks the nearest one it actually reached, and `killCrab` / `parryCrab` /
+`blockCrab` all take the unit so a parry stuns the crab that swung and
+nothing else.
+
+**A skinned mesh cannot be `clone()`d.** The clone shares the skeleton and
+every copy then walks in lockstep, and SkeletonUtils is not vendored here —
+so the .glb is fetched ONCE and `GLTFLoader.parse()` is run per crab off the
+same buffer. Four parses, one download.
+
+**The three, and the wakes.** `PACK_Z` is halfway from the wreck to the dock.
+They wait a long way out with `wake: 0`, so they never notice you on their
+own; crossing `PACK_TRIGGER` starts the cutscene and what wakes them is its
+end. Two things make it work: `updateCrabUnit` already hides anything with a
+submersion over 0.92, so on the way in there is nothing to see BUT the wake —
+which is the whole idea — and they have to come ashore at the WATERLINE
+(`PACK_SPOTS` at x ≈ 2–4), because arriving out in the deep ended the
+cutscene on three ripples and nothing standing in them. The camera is TURNED,
+never moved, so every clamp still agrees with where you are standing and you
+are exactly there when it lets go. `packCut` is in `frozen()` and in the
+pointerlock guard, like `peeking`.
+
 **It comes at you HEAD ON.** The model's front is -Z (Blender +Y), so
 `crab.rotation.y = atan2(dx, dz) + PI` faces it at you; the old `+ PI/2`
 walked it sideways, which is what crabs do and what nobody can read a

@@ -2924,6 +2924,7 @@ const BLOOD_JAR_CAP = 140;         // mL the jar gauge reads full at
 let bloodAmount = 0, bloodSeen = false;
 
 let started = false, locked = false, fallbackLook = false, dragging = false;
+let packCut = false;            // the three coming in: the player watches
 let noteOpen = false, menuOpen = false, ended = false, introDone = false;
 let dialogOpen = false, invOpen = false, inspecting = false;
 let menuReturnLock = false, noteReturnLock = false, packReturnLock = false, inspectReturnLock = false;
@@ -2943,8 +2944,9 @@ function damagePlayer(n = 1) {
   addTrauma(0.7);
   hitstop = 0.05;       // ~3 frames
   // shoved back off whatever hit you
-  if (crabState && crabState.alive) {
-    const kx = camera.position.x - crab.position.x, kz = camera.position.z - crab.position.z;
+  const hitter = nearestCrab(camera.position);
+  if (hitter) {
+    const kx = camera.position.x - hitter.g.position.x, kz = camera.position.z - hitter.g.position.z;
     const kd = Math.hypot(kx, kz) || 1;
     knockback.set((kx / kd) * 5.5, 0, (kz / kd) * 5.5);
   }
@@ -2971,7 +2973,7 @@ function updateHurt(dt) {
   hurtEl.style.opacity = String(hurtFlash * hurtFlash);
 }
 
-function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || inspecting || peeking || dying || ended || !introDone; }
+function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || inspecting || peeking || packCut || dying || ended || !introDone; }
 function refreshUI() {
   const playing = started && !menuOpen && !noteOpen && !dialogOpen && !invOpen && !inspecting && !dying && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
@@ -3040,7 +3042,7 @@ document.addEventListener('pointerlockchange', () => {
     if (!started) { overlay.classList.remove('hidden'); return; }
     // an intentional exit (note / menu / dialogue / death) is handled by
     // those; a stray exit while still playing means the user hit Esc → menu
-    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !inspecting && !peeking && !dying) openMenu();
+    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !inspecting && !peeking && !packCut && !dying) openMenu();
   }
 });
 window.addEventListener('unhandledrejection', (e) => {
@@ -3759,9 +3761,14 @@ class PhysProp {
      * seconds of near-frozen time and a few hundred sounds: the "lag" when
      * a throw hit the crab. Gated on `struck` now, the same gate killCrab()
      * has, and the body loses most of its speed in the shell. */
-    if (crabState.alive && !crabState.struck && incoming > 5 && p.distanceTo(crab.position) < 0.75) {
-      hitConnect(0.4, 1); killCrab();
-      this.vel.multiplyScalar(0.3);
+    if (incoming > 5) {
+      for (const u of crabs) {
+        if (!u.st.alive || u.st.struck) continue;
+        if (p.distanceTo(u.g.position) >= 0.75) continue;
+        hitConnect(0.4, 1); killCrab(u);
+        this.vel.multiplyScalar(0.3);
+        break;
+      }
     }
     if (struck && incoming > 1.1) sfxPropHit(surface, incoming);
     if (struck && this.onImpact) this.onImpact(incoming);
@@ -5089,8 +5096,9 @@ function aimLand(P) {
   const near = (h) => { if (h && h.distance < d) d = h.distance; };
   if (!castleBroken && castleGeo) near(digRay.intersectObject(castle, true)[0]);
   for (const c of crates) if (!c.broken) near(digRay.intersectObject(c.group, true)[0]);
-  if (crabState.alive) {
-    _hitC.copy(crab.position); _hitC.y += 0.28;
+  for (const u of crabs) {
+    if (!u.st.alive) continue;
+    _hitC.copy(u.g.position); _hitC.y += 0.28;
     const t = THREE.MathUtils.clamp(_hitC.clone().sub(_aimO).dot(_aimD), 0, digRay.far);
     if (_hitC.distanceTo(_aimO.clone().addScaledVector(_aimD, t)) < 0.62 + P * 0.25) d = Math.min(d, t);
   }
@@ -5163,12 +5171,17 @@ function digImpact() {
   // the crab: the AIM LINE has to pass close to the body. It used to be any
   // impact point within 1.5 m of it (3.2 on a heavy) — you could kill it
   // looking at the sand beside it, which is not a hit anyone feels they made.
-  if (crabState.alive) {
+  {
     aimRay(P);
-    _hitC.copy(crab.position); _hitC.y += 0.28;
-    const t = THREE.MathUtils.clamp(_hitC.clone().sub(_aimO).dot(_aimD), 0, digRay.far);
-    const miss = _hitC.distanceTo(_aimO.clone().addScaledVector(_aimD, t));
-    if (miss < 0.62 + P * 0.25) { hitConnect(P, 1); killCrab(); return; }
+    let best = null, bestT = Infinity;
+    for (const u of crabs) {
+      if (!u.st.alive) continue;
+      _hitC.copy(u.g.position); _hitC.y += 0.28;
+      const t = THREE.MathUtils.clamp(_hitC.clone().sub(_aimO).dot(_aimD), 0, digRay.far);
+      const miss = _hitC.distanceTo(_aimO.clone().addScaledVector(_aimD, t));
+      if (miss < 0.62 + P * 0.25 && t < bestT) { bestT = t; best = u; }
+    }
+    if (best) { hitConnect(P, 1); killCrab(best); return; }
   }
   /* Something solid in front of the sand. The blade used to raycast the sand
    * and nothing else, so a swing at the pier went straight through the boards
@@ -6448,11 +6461,6 @@ function makeCrab() {
   return g;
 }
 
-const crab = makeCrab();
-crab.position.set(-7.5, 0, CRAB_Z);          // well out, submerged from the start
-crab.scale.setScalar(1.55);                  // big enough to be a real threat
-crab.visible = true;
-scene.add(crab);
 /* The enemy's body is TwilightFox's "Animated Crab rigged FREE" (Sketchfab
  * Standard licence). The procedural rig stays in the file but is switched off
  * once the model lands — all the AI, the submersion and the death still drive
@@ -6462,24 +6470,34 @@ scene.add(crab);
  * or attack: the clip's rate is scaled by how fast it's actually moving, and
  * the rear-up and lunge stay as transforms on the group.
  */
-let crabMixer = null, crabModel = null;
-const crabClips = {};                   // idle | walk | attack | stun | die
-let crabCur = null;
+/* THE CRABS ARE A LIST. There used to be exactly one, and every part of it
+ * was a global — the group, the state, the mixer, the clip map. Three of
+ * them come out of the water together before the dock, so all of that moved
+ * onto a UNIT and the loner became `crabs[0]`. `crab` / `crabState` still
+ * name that first one, because the shovel, the blood counter and the
+ * harness all reach for them.
+ *
+ * Each unit parses its OWN copy of the .glb. A skinned mesh cannot be
+ * `clone()`d — the clone shares the skeleton and every copy then walks in
+ * lockstep — and SkeletonUtils is not vendored here, so the file is fetched
+ * once and `GLTFLoader.parse()` is run per crab off the same buffer. */
+const crabs = [];
+let crabGlbBuf = null, crabGlbWait = null;
 /* One clip per state, and the ATTACK one is driven by the combat clock
  * rather than left to run on its own — see `crabAnim()`. */
-function crabPlay(name, loop) {
-  const a = crabClips[name];
-  if (!a || crabCur === a) return a;
-  for (const k in crabClips) if (crabClips[k] !== a) crabClips[k].fadeOut(0.12);
+function crabPlay(u, name, loop) {
+  const a = u.clips[name];
+  if (!a || u.cur === a) return a;
+  for (const k in u.clips) if (u.clips[k] !== a) u.clips[k].fadeOut(0.12);
   a.reset();
   a.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
   a.clampWhenFinished = !loop;
   a.fadeIn(0.12).play();
-  crabCur = a;
+  u.cur = a;
   return a;
 }
-new GLTFLoader().load('assets/crab.glb', (gltf) => {
-  crabModel = gltf.scene;
+function dressCrab(u, gltf) {
+  const crabModel = u.model = gltf.scene;
   crabModel.traverse((o) => {
     if (!(o.isMesh || o.isSkinnedMesh)) return;
     o.frustumCulled = false;             // a skinned bound box is the bind pose
@@ -6513,14 +6531,22 @@ new GLTFLoader().load('assets/crab.glb', (gltf) => {
     crabModel.scale.setScalar(k);
     crabModel.position.y = -gmin.y * k;
   }
-  crab.userData.rig.visible = false;          // retire the built one
-  crab.add(crabModel);
+  u.ud.rig.visible = false;                   // retire the built one
+  u.g.add(crabModel);
   if (gltf.animations && gltf.animations.length) {
-    crabMixer = new THREE.AnimationMixer(crabModel);
-    for (const clip of gltf.animations) crabClips[clip.name] = crabMixer.clipAction(clip);
-    crabPlay('idle', true);
+    u.mixer = new THREE.AnimationMixer(crabModel);
+    for (const clip of gltf.animations) u.clips[clip.name] = u.mixer.clipAction(clip);
+    crabPlay(u, 'idle', true);
   }
-}, undefined, () => {});
+}
+function loadCrabModel(u) {
+  const loader = new GLTFLoader();
+  if (!crabGlbWait) crabGlbWait = fetch('assets/crab.glb').then((r) => r.arrayBuffer());
+  crabGlbWait
+    .then((buf) => new Promise((res, rej) => loader.parse(buf.slice(0), '', res, rej)))
+    .then((gltf) => dressCrab(u, gltf))
+    .catch(() => {});
+}
 
 /* WHICH CLIP, AND WHEN. The attack is not left to play at its own rate: its
  * time is written straight from `crabState.atk`, the same clock the damage
@@ -6528,30 +6554,61 @@ new GLTFLoader().load('assets/crab.glb', (gltf) => {
  * going up IS the tell, and it cannot drift out of step with the frame the
  * blow actually lands on. The stun likewise runs off the stun timer, so a
  * parry leaves it reeling for exactly as long as it is helpless. */
-function crabAnim(dt, closing, moving) {
-  if (!crabMixer) return;
-  if (!crabState.alive) {
-    crabPlay('die', false);
-  } else if (crabState.stun > 0) {
-    const a = crabPlay('stun', false);
-    if (a) { a.paused = true; a.time = clampTime(a, CRAB_STUN - crabState.stun); }
-  } else if (crabState.atk >= 0) {
-    const a = crabPlay('attack', false);
-    if (a) { a.paused = true; a.time = clampTime(a, crabState.atk); }
+function crabAnim(u, dt, closing, moving) {
+  if (!u.mixer) return;
+  if (!u.st.alive) {
+    crabPlay(u, 'die', false);
+  } else if (u.st.stun > 0) {
+    const a = crabPlay(u, 'stun', false);
+    if (a) { a.paused = true; a.time = clampTime(a, CRAB_STUN - u.st.stun); }
+  } else if (u.st.atk >= 0) {
+    const a = crabPlay(u, 'attack', false);
+    if (a) { a.paused = true; a.time = clampTime(a, u.st.atk); }
   } else if (closing) {
-    const a = crabPlay('walk', true);
+    const a = crabPlay(u, 'walk', true);
     if (a) { a.paused = false; a.timeScale = 0.85 + moving * 0.75; }
   } else {
-    const a = crabPlay('idle', true);
+    const a = crabPlay(u, 'idle', true);
     if (a) { a.paused = false; a.timeScale = 1; }
   }
-  crabMixer.update(dt);
+  u.mixer.update(dt);
 }
 const clampTime = (a, t) =>
   THREE.MathUtils.clamp(t, 0, a.getClip().duration - 1e-4);
 
-const crabState = { alive: true, awake: false, atk: -1, cool: 0, scuttle: 0, deadT: 0, rear: 0, lunge: 0, struck: false, stun: 0 };
+function makeCrabUnit(x, z, opts = {}) {
+  const g = makeCrab();
+  g.position.set(x, 0, z);
+  g.scale.setScalar(opts.scale ?? 1.55);       // big enough to be a real threat
+  scene.add(g);
+  const u = {
+    g, ud: g.userData, model: null, mixer: null, clips: {}, cur: null,
+    st: { alive: true, awake: false, atk: -1, cool: 0, scuttle: 0, deadT: 0,
+          rear: 0, lunge: 0, struck: false, stun: 0, wakeRipple: 0 },
+    // the throw-back off a blade is per crab: a shared temp put every struck
+    // crab on the same spot
+    hitFrom: new THREE.Vector3(), hitDir: new THREE.Vector3(), dir: new THREE.Vector3(),
+    wake: opts.wake ?? CRAB_WAKE,
+    pack: !!opts.pack,
+  };
+  crabs.push(u);
+  loadCrabModel(u);
+  return u;
+}
+const crabUnit = makeCrabUnit(-7.5, CRAB_Z);   // the loner, well out and under
+const crab = crabUnit.g, crabState = crabUnit.st;
 const _crabDir = new THREE.Vector3();
+// the nearest crab that is still alive — what the shovel, a thrown thing and
+// the knockback all actually want
+function nearestCrab(pos, maxD = Infinity) {
+  let best = null, bd = maxD;
+  for (const u of crabs) {
+    if (!u.st.alive || !u.g.visible) continue;
+    const d = Math.hypot(pos.x - u.g.position.x, pos.z - u.g.position.z);
+    if (d < bd) { bd = d; best = u; }
+  }
+  return best;
+}
 
 // ---- gibs + blood ---------------------------------------------------
 // The crab doesn't slump over any more — the shovel takes it apart. Chunks
@@ -6609,8 +6666,8 @@ function stampBlood(x, z, size) {
   bloodDecals.instanceMatrix.needsUpdate = true;
 }
 
-function burstCrab() {
-  const p = crab.position, S = crab.scale.x;
+function burstCrab(u = crabs[0]) {
+  const p = u.g.position, S = u.g.scale.x;
   // pieces of shell, claw and leg
   const shapes = [
     () => new THREE.IcosahedronGeometry(0.11, 0),
@@ -6723,13 +6780,13 @@ function updateGibs(dt) {
  * folds up, and it stays folded long enough that you cannot possibly miss
  * the opening. Everything here is about making the timing feel worth it. */
 const CRAB_STUN = 1.7;
-function parryCrab() {
+function parryCrab(u = crabs[0]) {
   parryCool = 0;                         // landing one costs you nothing
-  crabState.atk = -1;
-  crabState.cool = CRAB_COOLDOWN;
-  crabState.stun = CRAB_STUN;
+  u.st.atk = -1;
+  u.st.cool = CRAB_COOLDOWN;
+  u.st.stun = CRAB_STUN;
   parryGlow = 0.42;
-  flashMats(crab);
+  flashMats(u.g);
   sfxParry();
   playSample('poise', 0.95);             // and the sound of its poise going
   addTrauma(0.5);
@@ -6737,14 +6794,14 @@ function parryCrab() {
   vmImpulse(-1.35);
   hitstop = Math.max(hitstop, 0.11);
   // it is thrown back off your blade
-  const kx = crab.position.x - camera.position.x, kz = crab.position.z - camera.position.z;
+  const kx = u.g.position.x - camera.position.x, kz = u.g.position.z - camera.position.z;
   const kd = Math.hypot(kx, kz) || 1;
-  crab.position.x += (kx / kd) * 0.34;
-  crab.position.z += (kz / kd) * 0.34;
+  u.g.position.x += (kx / kd) * 0.34;
+  u.g.position.z += (kz / kd) * 0.34;
   setPrompt('<b>PARRY</b>');
   setTimeout(() => { if (promptHTML.includes('PARRY')) setPrompt(''); }, 700);
 }
-function blockCrab() {
+function blockCrab(u = crabs[0]) {
   sfxBlock();
   flashMats(shovelVM);                   // the tool goes white for the frozen frames
   parryGlow = Math.max(parryGlow, 0.22); // and shudders in your hands
@@ -6760,23 +6817,23 @@ function blockCrab() {
   knockback.set((kx / kd) * 3.0, 0, (kz / kd) * 3.0);
 }
 const _crabHitFrom = new THREE.Vector3();
-function killCrab() {
-  if (!crabState.alive || crabState.struck) return;
-  crabState.struck = true;
-  crabState.atk = -1;
-  camera.getWorldDirection(_crabDir); _crabDir.y = 0; _crabDir.normalize();
-  _crabHitFrom.copy(crab.position);
-  flashMats(crab);
+function killCrab(u = crabs[0]) {
+  if (!u.st.alive || u.st.struck) return;
+  u.st.struck = true;
+  u.st.atk = -1;
+  camera.getWorldDirection(u.hitDir); u.hitDir.y = 0; u.hitDir.normalize();
+  u.hitFrom.copy(u.g.position);
+  flashMats(u.g);
   sfxCrabHit();
   addTrauma(0.55);
   hitstop = CRAB_HIT_STOP;
 }
-function finishCrab() {
-  crabState.alive = false;
-  crabState.struck = false;
-  crabState.deadT = 0;
-  crab.visible = false;                        // it comes apart instead
-  burstCrab();
+function finishCrab(u = crabs[0]) {
+  u.st.alive = false;
+  u.st.struck = false;
+  u.st.deadT = 0;
+  u.g.visible = false;                         // it comes apart instead
+  burstCrab(u);
   sfxCrabDie(false);
   addTrauma(0.45);                             // the second half of the hit
 }
@@ -6796,45 +6853,47 @@ function poseLeg(leg, ph, reach) {
   leg.knee.rotation.z = leg.side * (0.55 + lift * 0.35 + drive * 0.12);
 }
 
-function updateCrab(dt) {
-  const ud = crab.userData;
-  if (!crabState.alive) { if (crabMixer) crabMixer.update(0); return; }
+/* One crab's frame. Everything in here used to read the globals; it takes a
+ * unit now so the pack can run the same brain three times over. */
+function updateCrabUnit(u, dt) {
+  const ud = u.ud;
+  if (!u.st.alive) { if (u.mixer) u.mixer.update(0); return; }
   /* Impact frames. Held for the length of the hitstop and no longer, so the
    * squash you are looking at is the reason the world has stopped. It is
    * driven off `hitstop` and not off dt, because dt is what hitstop scales. */
-  if (crabState.struck) {
+  if (u.st.struck) {
     const e = 1 - THREE.MathUtils.clamp(hitstop / CRAB_HIT_STOP, 0, 1);
     ud.rig.scale.set(1 + 0.34 * (1 - e), 1 - 0.42 * (1 - e), 1 + 0.34 * (1 - e));
     ud.rig.rotation.x = 0.55 * (1 - e);
     ud.rig.rotation.z = 0.22 * (1 - e);
     // thrown off the blade. Placed from the hold's own progress, not moved by
     // dt — dt is 8 % of real time in here and it went eight millimetres.
-    crab.position.copy(_crabHitFrom).addScaledVector(_crabDir, 0.34 * e);
-    if (hitstop <= 0) finishCrab();
+    u.g.position.copy(u.hitFrom).addScaledVector(u.hitDir, 0.34 * e);
+    if (hitstop <= 0) finishCrab(u);
     return;
   }
   if (frozen()) return;
 
-  const dx = camera.position.x - crab.position.x;
-  const dz = camera.position.z - crab.position.z;
+  const dx = camera.position.x - u.g.position.x;
+  const dz = camera.position.z - u.g.position.z;
   const dist = Math.hypot(dx, dz);
-  if (!crabState.awake) {
+  if (!u.st.awake) {
     // stays under until it comes for you
-    crab.visible = submersionAt(crab.position.x, crab.position.z) < 0.92;
-    if (dist > CRAB_WAKE) return;
-    crabState.awake = true;
-    crabState.rear = 1;                       // it rears up as it notices you
+    u.g.visible = submersionAt(u.g.position.x, u.g.position.z) < 0.92;
+    if (dist > u.wake) return;
+    u.st.awake = true;
+    u.st.rear = 1;                       // it rears up as it notices you
     sfxCrabWake();
   }
 
-  crabState.rear = Math.max(0, (crabState.rear || 0) - dt * 1.2);
+  u.st.rear = Math.max(0, (u.st.rear || 0) - dt * 1.2);
   /* Stunned. It stops dead — no attack, no advance — and hangs there low and
    * splayed with its claws down, shuddering. The pose has to read as OPEN
    * from across the beach, because the whole point of a parry is the window
    * it buys you. */
-  if (crabState.stun > 0) {
-    crabState.stun -= dt;
-    const q = crabState.stun;
+  if (u.st.stun > 0) {
+    u.st.stun -= dt;
+    const q = u.st.stun;
     const shake = Math.sin(q * 47) * Math.min(0.05, q * 0.06);
     ud.rig.rotation.set(0.34, shake * 2.2, shake);
     ud.rig.position.y = -0.05;
@@ -6845,19 +6904,19 @@ function updateCrab(dt) {
       c.jaw.rotation.x = -0.05;
     }
     for (let i = 0; i < ud.eyes.length; i++) { ud.eyes[i].rotation.x = 0.45; ud.eyes[i].rotation.z = 0; }
-    crabState.scuttle += dt * 0.6;
-    crabAnim(dt, false, 0);              // the reel, run off the stun timer
-    if (crabState.stun <= 0) { crabState.stun = 0; crabState.cool = 0.35; }
+    u.st.scuttle += dt * 0.6;
+    crabAnim(u, dt, false, 0);              // the reel, run off the stun timer
+    if (u.st.stun <= 0) { u.st.stun = 0; u.st.cool = 0.35; }
     return;
   }
   const closing = dist > CRAB_REACH;
 
   // ---- the attack cycle -------------------------------------------
   let atkRear = 0, atkLunge = 0, atkSquash = 0, atkTwist = 0, atkSweep = 0;
-  if (crabState.atk >= 0) {
-    const was = crabState.atk;
-    crabState.atk += dt;
-    const t = crabState.atk;
+  if (u.st.atk >= 0) {
+    const was = u.st.atk;
+    u.st.atk += dt;
+    const t = u.st.atk;
     if (was < CRAB_WIND && t >= CRAB_WIND) {
       sfxCrabSnip();
       /* Re-tested here, not when the wind-up began: the tell is only fair if
@@ -6868,8 +6927,8 @@ function updateCrab(dt) {
       if (dist < CRAB_REACH + 0.4) {
         if (blocking) {
           const dtp = (performance.now() - blockStart) / 1000;
-          if (dtp <= PARRY_WINDOW && parryCool <= 0) parryCrab();
-          else blockCrab();
+          if (dtp <= PARRY_WINDOW && parryCool <= 0) parryCrab(u);
+          else blockCrab(u);
         } else damagePlayer(1);
       }
     }
@@ -6901,82 +6960,82 @@ function updateCrab(dt) {
       atkSweep = 1.3 * (1 - e);
     }
     if (t >= CRAB_WIND + CRAB_STRIKE + CRAB_RECOVER) {
-      crabState.atk = -1;
-      crabState.cool = CRAB_COOLDOWN;
+      u.st.atk = -1;
+      u.st.cool = CRAB_COOLDOWN;
     }
   } else {
-    crabState.cool = Math.max(0, (crabState.cool || 0) - dt);
-    if (!closing && crabState.cool <= 0) { crabState.atk = 0; sfxCrabTell(); }
+    u.st.cool = Math.max(0, (u.st.cool || 0) - dt);
+    if (!closing && u.st.cool <= 0) { u.st.atk = 0; sfxCrabTell(); }
   }
-  crabState.lunge = atkLunge;
+  u.st.lunge = atkLunge;
   // it is sand, and the crab is a wall of shell coming through at a run
   if (!castleBroken) {
     const cc = rockColliders.find((k) => k.castle);
-    if (cc && Math.hypot(crab.position.x - cc.x, crab.position.z - cc.z) < cc.r + 0.35) {
-      breakCastle(crab.position.x, crab.position.z);
+    if (cc && Math.hypot(u.g.position.x - cc.x, u.g.position.z - cc.z) < cc.r + 0.35) {
+      breakCastle(u.g.position.x, u.g.position.z);
     }
   }
   if (closing) {
-    _crabDir.set(dx / dist, 0, dz / dist);
+    u.dir.set(dx / dist, 0, dz / dist);
     // it slows as it comes into range rather than sliding to a dead stop
     const speed = CRAB_SPEED * THREE.MathUtils.clamp((dist - CRAB_REACH) / 1.2, 0.35, 1);
-    crab.position.addScaledVector(_crabDir, speed * dt);
-    crabState.scuttle += dt * speed * 5.2;
+    u.g.position.addScaledVector(u.dir, speed * dt);
+    u.st.scuttle += dt * speed * 5.2;
     // it comes at you head on now, claws first: the model's front is -Z
-    crab.rotation.y = Math.atan2(_crabDir.x, _crabDir.z) + Math.PI;
-    if (inWater(crab.position.x, crab.position.z) && Math.random() < dt * 4) {
-      spawnSplash(crab.position.x, crab.position.z, 2, _crabDir.x, _crabDir.z, 0.4);
+    u.g.rotation.y = Math.atan2(u.dir.x, u.dir.z) + Math.PI;
+    if (inWater(u.g.position.x, u.g.position.z) && Math.random() < dt * 4) {
+      spawnSplash(u.g.position.x, u.g.position.z, 2, u.dir.x, u.dir.z, 0.4);
       // ...and only when it is close enough for you to hear it. sfxSplash is
       // not positional, so a crab wading a couple of hundred metres back up
       // the beach was audible at full volume for the whole walk.
-      if (Math.random() < 0.25 && crab.position.distanceTo(camera.position) < 14) sfxSplash(0.35);
-      addRipple(crab.position.x, crab.position.z, 0.55);
+      if (Math.random() < 0.25 && u.g.position.distanceTo(camera.position) < 14) sfxSplash(0.35);
+      addRipple(u.g.position.x, u.g.position.z, 0.55);
     }
   } else {
-    crabState.scuttle += dt * 2.2;            // shifting its weight, waiting
+    u.st.scuttle += dt * 2.2;            // shifting its weight, waiting
   }
 
   // ---- gait -------------------------------------------------------
   const reach = closing ? 1 : 0.25;
-  crabAnim(dt, closing, closing ? 1 : 0);
-  const cyc = crabState.scuttle / (Math.PI * 2);
+  crabAnim(u, dt, closing, closing ? 1 : 0);
+  const cyc = u.st.scuttle / (Math.PI * 2);
   for (const leg of ud.legs) {
     // half a cycle between the two sets, then a visible ripple along each set
     poseLeg(leg, (cyc + leg.group * 0.5 + leg.idx * 0.11) % 1, reach);
   }
   // the body rocks with the tripod and rides a little higher when roused
-  const rear = Math.max(crabState.rear, atkRear);
-  const lunge = crabState.lunge;
+  const rear = Math.max(u.st.rear, atkRear);
+  const lunge = u.st.lunge;
   /* Squash and stretch, roughly holding volume: it compresses and spreads as
    * it winds, and draws up tall and narrow as it throws itself at you. This
    * is most of why the strike reads as force rather than as a rotation. */
   ud.rig.scale.set(1 + atkSquash * 0.11, 1 - atkSquash * 0.17, 1 + atkSquash * 0.11);
   // While it's still in the surf the water covers it — it only comes fully
   // clear once it's crawled out onto the sand.
-  const bob = Math.abs(Math.sin(crabState.scuttle)) * 0.018 * reach;
+  const bob = Math.abs(Math.sin(u.st.scuttle)) * 0.018 * reach;
   // Sunk well clear of the surface: the ocean mesh only has vertices every
   // ~6 m, so the drawn surface can sit a long way below the analytic height
   // at any given point. Deep enough that the interpolation can't expose it.
-  const sub = submersionAt(crab.position.x, crab.position.z);
-  crab.position.y = restYInWater(crab.position.x, crab.position.z, 1.15) + bob;
+  const sub = submersionAt(u.g.position.x, u.g.position.z);
+  u.g.position.y = restYInWater(u.g.position.x, u.g.position.z, 1.15) + bob;
   // hidden entirely while it's still under — you get the wake, not the crab
-  crab.visible = sub < 0.92;
-  if (sub > 0.25 && crabState.awake) {
-    crabState.wakeRipple = (crabState.wakeRipple || 0) - dt;
-    if (crabState.wakeRipple <= 0) {
-      addRipple(crab.position.x, crab.position.z, 0.5 + sub * 0.6);
-      crabState.wakeRipple = 0.22;
+  u.g.visible = sub < 0.92;
+  if (sub > 0.25 && u.st.awake) {
+    u.st.wakeRipple = (u.st.wakeRipple || 0) - dt;
+    if (u.st.wakeRipple <= 0) {
+      addRipple(u.g.position.x, u.g.position.z, 0.5 + sub * 0.6);
+      u.st.wakeRipple = 0.22;
     }
   }
-  ud.rig.rotation.z = Math.sin(crabState.scuttle) * 0.09 * reach - atkTwist * 0.16;
-  ud.rig.rotation.x = -rear * 0.30 - lunge * 0.38 + Math.sin(crabState.scuttle * 2) * 0.035 * reach;
+  ud.rig.rotation.z = Math.sin(u.st.scuttle) * 0.09 * reach - atkTwist * 0.16;
+  ud.rig.rotation.x = -rear * 0.30 - lunge * 0.38 + Math.sin(u.st.scuttle * 2) * 0.035 * reach;
   ud.rig.rotation.y = atkTwist * 0.42;          // the body goes through the swing
   ud.rig.position.y = rear * 0.06 + lunge * 0.05;
 
   // claws: weave while it advances, thrown wide when it rears, snapped
   // shut through the lunge
   for (const c of ud.claws) {
-    const weave = Math.sin(crabState.scuttle * 0.8 + (c.side > 0 ? 1.7 : 0)) * 0.16 * reach;
+    const weave = Math.sin(u.st.scuttle * 0.8 + (c.side > 0 ? 1.7 : 0)) * 0.16 * reach;
     // one claw leads and the other trails: a two-armed swing reads as a hug
     const lead = c.side > 0 ? 1 : 0.32;
     c.shoulder.rotation.y = c.side * (-0.15 - rear * 0.55) + weave + atkSweep * 0.95 * lead;
@@ -6996,6 +7055,12 @@ function updateCrab(dt) {
 
 }
 
+
+/* Every crab, every frame. The loner and the three that come out of the
+ * water before the dock all run the same brain. */
+function updateCrab(dt) {
+  for (const u of crabs) updateCrabUnit(u, dt);
+}
 // ------------------------------------------------------------------
 // Blue-blood readout — the actual jar model, shrunk down and turning on
 // the spot in the top-left corner, with the amount beside it. Rendered as
@@ -7048,7 +7113,7 @@ function renderBloodJar(dt) {
 }
 
 // ------------------------------------------------------------------
-// Bradly Beach — a guy up on the sand cliff, a little further down the
+// Bradley Beach — a guy up on the sand cliff, a little further down the
 // beach from where the glowstick turns up. Cut-out sprite, always facing
 // you. Getting close (or pressing E) starts a scripted exchange and the
 // camera pushes in on him for the duration.
@@ -7722,7 +7787,7 @@ function startDialog(id, npc = null) {
   // his head, not the middle of him: a sprite's origin is its centre, which
   // on a seated man is his chest
   if (npc && npc.headY) dialogTarget.y += npc.headY;
-  dialogSpeakerEl.textContent = npc ? npc.name : 'Bradly Beach';
+  dialogSpeakerEl.textContent = npc ? npc.name : 'Bradley Beach';
   dialogEl.classList.add('show');
   setPrompt('');
   crosshair.className = '';
@@ -9658,6 +9723,101 @@ function dockDeckAt(wx, wz) { return deckHeightAt(wx, wz); }
  * in rather than a ramp over it — and a short flight of timber steps does
  * the last two thirds of a metre. Each tread is a real collider with a rise
  * of 0.18, well inside ROCK_STEP, so you walk up them rather than climb. */
+/* THE THREE. Halfway from the wreck to the dock, three of them come out of
+ * the water at once — which is the point: one crab is a fight you have
+ * learned, three is a fight you have to move through. They are spread wide
+ * enough that you cannot hold them all in view, and close enough that they
+ * arrive together.
+ *
+ * They wait a long way out with `wake: 0`, so they never notice you on their
+ * own; the trigger is the player's own z, and what wakes them is the end of
+ * the cutscene. Submerged that far out `updateCrabUnit` keeps them invisible,
+ * so all you get on the way in is the wake — which is the whole idea. */
+const PACK_Z = (SHIP_Z + DOCK_Z) / 2;         // halfway between the two
+const PACK_TRIGGER = 26;                      // how far short of them it starts
+const PACK_START_X = -34;                     // out where the water is black
+const PACK_SWIM = 3.4, PACK_HOLD = 0.75;      // the swim in, then a beat on them
+/* They come ashore at the WATERLINE, not out in the deep. `updateCrabUnit`
+ * hides anything with a submersion over 0.92, so arriving at x = -6 the
+ * whole cutscene ended on three wakes and nothing standing in them. Here
+ * they break the surface as the camera lets go. */
+const PACK_SPOTS = [[3.4, PACK_Z + 6.2], [1.9, PACK_Z + 0.2], [3.8, PACK_Z - 5.8]];
+const packCrabs = PACK_SPOTS.map(([, z]) => makeCrabUnit(PACK_START_X, z, { pack: true, wake: 0 }));
+let packPhase = 0;                            // 0 waiting · 1 coming in · 2 loose
+let packT = 0;
+const _packMid = new THREE.Vector3(), _packQ = new THREE.Quaternion(), _packM = new THREE.Matrix4();
+
+// something to throw at them, put where the fight happens
+{
+  const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.3, 0),
+    new THREE.MeshStandardMaterial({ color: 0x59606f, roughness: 1, flatShading: true, emissive: 0x14171f }));
+  stone.position.set(8.6, 0.28, PACK_Z + 4.2);
+  makeProp(stone, 'stone', { radius: 0.3, restH: 0.28, bounce: 0.12, friction: 0.6 });
+
+  const glass = new THREE.MeshStandardMaterial({
+    color: 0x2f6f5c, roughness: 0.25, transparent: true, opacity: 0.7, emissive: 0x0c2b22,
+  });
+  const r = 0.25;
+  const float = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 10), glass);
+  float.position.set(6.9, r, PACK_Z - 3.4);
+  const fp = makeProp(float, 'glass float', { radius: r, restH: r, bounce: 0.5 });
+  fp.onImpact = (speed) => shatterGlass(fp, float, speed, r);
+}
+
+/* The trails. Each one leaves a widening V of ripples behind it and throws a
+ * little water as it comes, so from the beach there are three wakes running
+ * at you out of the dark before there is anything to see. */
+function packWake(u) {
+  const p = u.g.position;
+  addRipple(p.x, p.z, 1.0 + Math.random() * 0.5);
+  // the V behind it, widening as it goes
+  for (const sg of [1, -1]) {
+    if (Math.random() < 0.7) addRipple(p.x - 1.4 - Math.random() * 1.6, p.z + sg * (0.8 + Math.random() * 1.5), 0.5 + Math.random() * 0.5);
+  }
+  if (Math.random() < 0.5) spawnSplash(p.x, p.z, 4, 1, 0, 0.6);
+}
+function updatePack(dt) {
+  if (packPhase === 2 || !introDone || dying || ended) return;
+  if (packPhase === 0) {
+    // you walk down the beach along -Z, so you reach them from above
+    if (camera.position.z > PACK_Z + PACK_TRIGGER) return;
+    packPhase = 1; packT = 0; packCut = true;
+    if (held) dropHeld();
+    hovered = null; setPrompt('');
+    sfxCrabWake();
+    return;
+  }
+  packT += dt;
+  for (let i = 0; i < packCrabs.length; i++) {
+    const u = packCrabs[i];
+    const [tx, tz] = PACK_SPOTS[i];
+    // staggered, so they arrive as a group rather than a rank
+    const e = THREE.MathUtils.clamp((packT - i * 0.22) / PACK_SWIM, 0, 1);
+    const k = e * e * (3 - 2 * e);
+    u.g.position.x = PACK_START_X + (tx - PACK_START_X) * k;
+    u.g.position.z = tz;
+    u.g.position.y = restYInWater(u.g.position.x, u.g.position.z, 1.15);
+    u.g.rotation.y = Math.PI * 1.5;             // facing the shore, claws first
+    u.g.visible = submersionAt(u.g.position.x, u.g.position.z) < 0.92;
+    if (e > 0 && e < 1) packWake(u);
+  }
+  /* The camera is turned, not moved. Nothing about where you are standing
+   * changes, so every clamp below still agrees with it, and when it lets go
+   * you are exactly where you were. */
+  _packMid.set(0, 0, 0);
+  for (const u of packCrabs) _packMid.add(u.g.position);
+  _packMid.multiplyScalar(1 / packCrabs.length);
+  _packMid.y = 0.5;
+  _packM.lookAt(camera.position, _packMid, camera.up);
+  _packQ.setFromRotationMatrix(_packM);
+  camera.quaternion.slerp(_packQ, Math.min(1, dt * 2.6));
+  if (packT >= PACK_SWIM + PACK_HOLD) {
+    packPhase = 2; packCut = false;
+    for (const u of packCrabs) { u.st.awake = true; u.st.rear = 1; u.wake = 1e6; }
+    sfxCrabTell();
+  }
+}
+
 const DOCK_STEPS = new THREE.Group();
 scene.add(DOCK_STEPS);
 function buildDockSteps(deckMat) {
@@ -10718,6 +10878,7 @@ function update(dt, rawDt = dt) {
   updateFlashes(rawDt);
   updateHeldGlow(dt);
   updateDialogCam(dt);
+  updatePack(dt);
   updateCrab(dt);
   updateGibs(dt);
   updateBradlyBlink(dt);
@@ -10815,8 +10976,8 @@ window.__bw = {
   shells, listenToShell, makeRockGeo, dock, ring, driftAt, updateDock,
   listen: (v) => { listening = v; }, stopListening, keyItem, keyWorld,   // the ear pose without the audio, for the preview harness
   get dockDoorOpen() { return dockDoorOpen; }, set dockDoorOpen(v) { dockDoorOpen = v; }, get onDock() { return onDock; },
-  get crabModel() { return crabModel; }, get crabMixer() { return crabMixer; },
-  crabClips, crabPlay, get crabCur() { return crabCur; },
+  crabs, makeCrabUnit, nearestCrab, crabPlay, updateCrabUnit,
+  packCrabs, updatePack, get packPhase() { return packPhase; }, PACK_Z,
   lhDoor, shinies, onPath, pathBend, pathHalfAt, lhWindows, lanternGlass,
   get doorOpen() { return doorOpen; }, set doorOpen(v) { doorOpen = v; doorSwing = v ? 1 : 0; lhDoor.rotation.y = -doorSwing * 1.95; },
   get insideTower() { return insideTower; },
