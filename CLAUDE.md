@@ -1359,10 +1359,10 @@ pinned at your chest and the throw began behind glass. Only the cliff is a
 wall now, either way, and `throwHeld()` gives 16 m/s with more lift (was
 12), about fifteen metres out: past the snorkeler, not past the horizon.
 
-**ONE GAIT FOR EVERY TRAIL.** `FOOT_SIDE` (0.16 m off the line, each foot
-on its own side, so the two lines are a foot's width apart), `FOOT_STRIDE`
-(0.66 m) and `FOOT_TOE` (0.08 rad out), measured off a photograph of a walk
-along a beach. The player's own prints (`stampFoot()` and the stride gate),
+**ONE GAIT FOR EVERY TRAIL.** `FOOT_SIDE` (0.26 m off the line, each foot
+on its own side — a clear zigzag, left well left and right well right; at
+0.16 the owner still read the trail as a line), `FOOT_STRIDE` (0.66 m) and
+`FOOT_TOE` (0.12 rad out), off a photograph of a walk along a beach. The player's own prints (`stampFoot()` and the stride gate),
 the trail behind the spawn to the drain (which used to wander on a sine
 and stride 0.8), and the campsite trail all use them — a trail with a
 different spacing reads as a different animal. The print quad is 0.31 m

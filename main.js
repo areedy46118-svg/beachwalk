@@ -2542,7 +2542,7 @@ function makeCraterTexture() {
  * apart, toes turned `FOOT_TOE` out. The player's own prints, the trail
  * behind the spawn to the drain, and the trail at the campsite all use
  * these — a trail with a different spacing reads as a different animal. */
-const FOOT_SIDE = 0.16, FOOT_STRIDE = 0.66, FOOT_TOE = 0.08;
+const FOOT_SIDE = 0.26, FOOT_STRIDE = 0.66, FOOT_TOE = 0.12;   // a clear zigzag: left well left, right well right
 const FOOT_POOL = 96;
 const footGeo = new THREE.PlaneGeometry(0.31, 0.44); footGeo.rotateX(-Math.PI / 2);   // a print is wider than it looks
 const foot = new THREE.InstancedMesh(footGeo, new THREE.MeshBasicMaterial({ map: makeFootTexture(), transparent: true, depthWrite: false, opacity: 0.88 }), FOOT_POOL);
@@ -10460,7 +10460,7 @@ const SNORK_SCRIPT = {
         when: () => inventory.includes(cdItem), act: () => removeFromInventory(cdItem) },
     ],
   },
-  here: { text: 'Says the guy throwing rocks at the sea at three in the morning.', choices: [] },
+  here: { text: 'Says the one making sand castles?', choices: [] },
   trying: { text: "Yeah? Then you've got one hell of an arm for somebody not trying.", choices: [] },
   cd: { text: '…Where did you get this. …No. Never mind. I’ll take it.', choices: [] },
 };
