@@ -850,6 +850,11 @@ black `#intro` card: the line fades in, holds, fades out, world fades up,
 
 ## Dev mode
 
+`DEFAULT_SETTINGS` are the owner's own (music 30 %, waves 18 %, effects
+57 %); "Reset to defaults" in the menu puts them back and saves. Note the
+harness exposes `settings` through a getter: the reset REASSIGNS the module
+variable, so a captured reference goes stale.
+
 `settings.devMode` — the last toggle in the settings menu, "Dev mode — no
 deaths, no cutscenes", persisted with the rest of `beachwalk.settings`. Two
 effects, both at the one door each thing goes through: `damagePlayer()` still
@@ -1310,12 +1315,23 @@ from the eye to the tube hit the sea two metres short of him — a crest in
 between. At x = -11 with the whole tube up he is a fleck, which is the brief,
 and `snorkGlint` — a faint warm point on the tube's valve, only while he is
 down — is the one thing out there that is not a star. **He is not a floating
-head.** The photograph ends at the waterline, so the cut-out ends at his
-neck; `paintSnorkelerBody()` paints the suit on below it in the bake's
-`paint` hook (hood colour sampled off the picture, widening into shoulders,
-darkening as wet cloth does) into `SNORK_PAD` of extra canvas, and he only
-rises until the photo's own waterline is `SNORK_SINK` under the drawn sea.
-The sprite is placed by its TIP, since its height is no longer the photo's. A `physProps` body coming to rest within 3.2 m of him is
+head.** The person segmentation ends at his neck, and a painted-on suit
+(tried first) still read as a head on a plate. `tools/snorkeler_body.py`
+rebuilds the cut-out from the PHOTOGRAPH ITSELF: the head keeps the
+segmentation's alpha and below the neck the picture's own pixels — the suit
+seen through the water — are kept under a soft shoulder-shaped mask that
+fades to nothing toward the bottom, blurred through the join. `SNORK_WL` is
+the photo's waterline as a fraction of the cut-out; he rises until that line
+sits `SNORK_SINK` relative to the drawn sea (negative: a hand above it, so
+the wet shoulders show and the fade meets the water). The sprite is placed
+by its TIP, since its height is no longer the photo's. **He answers to a
+THROW, once.** Any body lying near him re-roused him every time he went
+under — the stone that woke him lay by his head — and the dialogue spammed.
+`throwHeld()` sets `thrown` on the body, cleared when it comes to rest; the
+trigger wants it; and `snorkMet` ends the trigger for good: he stays up and
+is an interactable hailed with E, with its own `far` (30 m) since `REACH`
+is 3.2 and he is eleven metres out. `updateHover()` sets `raycaster.far`
+per interactable and restores it after. A `physProps` body coming to rest within 3.2 m of him is
 the trigger — not a hit; a stone in the water beside a man is what makes him
 surface — and `updateSnorkeler()` eases him up, splashes, and opens
 `startDialog('start', SNORK_NPC)` 0.7 s later. He goes back under five
@@ -1331,6 +1347,11 @@ could ever be thrown into the water: a thing held at the waterline sat
 pinned at your chest and the throw began behind glass. Only the cliff is a
 wall now, either way, and `throwHeld()` gives 16 m/s with more lift (was
 12), about fifteen metres out: past the snorkeler, not past the horizon.
+
+**Prints are STAGGERED.** Left and right feet fall a shoulder's width
+either side of the line of travel (0.19–0.28 m, not 0.14), toes turned a
+little out, each with its own small yaw — in a straight row they read as a
+stamp. Both `stampFoot()` and the campsite trail do this.
 
 **A footprint is ONE depression with a shadow INSIDE it.** Built off a
 photograph of a bare print in wet sand: the whole sole is a single shallow
