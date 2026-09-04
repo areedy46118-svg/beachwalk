@@ -686,11 +686,16 @@ most of what reads as loose. Dark damp earth, not sand.
 happen to dig — the same rule the glowstick's `mounds[0]` uses).
 `models/cd-case.js` builds a jewel case to the real 142 x 125 x 10 mm shape:
 clear lid and shell, black tray, the disc, hinge teeth down the spine, and
-printed inserts front and back. **The sleeve is PAINTED, not copied** — the
-case is a generic industrial shape and is modelled exactly, but an album
-cover is somebody's copyrighted drawing and this repo is public, so the
-insert is an original canvas in the same family as the reference (salmon
-ground, crowds of small heads, blue diagonal, block lettering up the back).
+the inserts front and back. **The sleeve is the OWNER'S OWN ARTWORK** —
+photographed, then rectified out of the three reference shots by a
+four-point perspective transform (`assets/cd-front.jpg` square, as a booklet
+is; `cd-back.jpg` wider than tall; `cd-spine.jpg` a strip rotated onto the
+edge). Two things that matter: the inserts take **`MeshBasicMaterial`**,
+because a photograph already carries the light it was shot in and lighting
+it twice left the sleeve muddy at night and chalk under the examine lamps;
+and the lid sits at opacity 0.11, because at 0.30 with full clearcoat the
+polystyrene threw a sheen over the whole front and the artwork — the point
+of the object — came out white.
 
 **A buried cache has to look like something you would DIG.** `moundMat` was
 `0x74809a` — the beach's own cold blue-grey — so a cache read as one more
