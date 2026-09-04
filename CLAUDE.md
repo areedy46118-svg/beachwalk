@@ -1377,10 +1377,22 @@ sprint) authored on its 21 bones with the crab pipeline's helpers. It
 stands on the dry sand between you and the moon, a black silhouette with a
 pale grin (`color` × 0.22 and a cold `reexpose` rim on the body; the face
 keeps its light and a little emissive), turning slowly to keep its face on
-you; inside `SMILE_SEE` it bolts for the sea at `SMILE_RUN`, wheels to -X,
-splashes in, sinks past `WADE_X - 3` and is gone for good — `sfxSmileBolt()`
-on the first frame of that is the startle (kicked sand, two detuned saws
-tearing up through a bandpass, a thump). Three things it took: **Blender
+you; inside `SMILE_SEE` (9 m — close enough to see the face) it bolts for
+the sea at `SMILE_RUN`, wheels to -X, and goes under like a dive the moment
+it is past the wading line; it is switched off the frame the top of it is
+under the drawn sea WHERE IT IS (`waterSurfaceAt`), not at a distance — the
+swell out there drops two metres and the first build left its head standing
+out of a trough for seconds. **No stinger.** A musical shriek was tried on
+the bolt and cut: it tells you the game is scaring you. Its FEET are the
+sound — `sfxSmileStep()` every `SMILE_STEP`, falling off with distance,
+until the water takes it, then the splash. It stands 120 m past the
+snorkeler so neither can be seen from the other. **The animation is
+restraint.** A flailing sprint (0.95 rad legs, pumping arms, a rolling
+torso) read as a cartoon; the run is a short quick stride with the arms
+held down and close, played at 2x, and the idle is DEAD STILL but for the
+whole upper body tilting a few degrees to one side over eight seconds,
+holding, and coming back — the way something looks at a thing it does not
+understand. Three things it took: **Blender
 exports this rig LYING ALONG -Z** (its root joint comes out -90° about X;
 the FBX chain under it is not something `export_yup` untangles), so the
 loader wraps it in a group turned +90° about X, which puts the head up and

@@ -100,33 +100,43 @@ def torso(lean=0.0, roll=0.0, twist=0.0, bob=0.0):
     setloc('_rootJoint', (0, 0, bob))
 
 # ------------------------------------------------------------------ IDLE
-# a tall thing standing very still. The breath is in the torso, the head
-# drifts a degree or two, the fingers hang. 120 frames, loops.
-act = new_action('idle'); N = 120
+# Dead still. The arms hang, nothing breathes. Over eight seconds the whole
+# upper body tilts to one side by a few degrees, holds there, and comes
+# back -- the way something looks at a thing it does not understand -- with
+# a slight lean toward you. Nothing else moves at all. 240 frames, loops.
+act = new_action('idle'); N = 240
+def ease(t): return t * t * (3 - 2 * t)
 for f in range(0, N + 1):
     rest()
-    s = f / N * 2 * math.pi
-    torso(lean=0.012 * math.sin(s) + 0.01, roll=0.014 * math.sin(s * 0.5 + 1.0), twist=0.02 * math.sin(s * 0.5), bob=0.22 * math.sin(s))
-    arm_pose(L_ARM, swing=0.02 * math.sin(s + 0.6), elbow=0.05, out=0.02, side=1)
-    arm_pose(R_ARM, swing=0.02 * math.sin(s + 2.1), elbow=0.05, out=0.02, side=-1)
+    t = f / N
+    # tilt: out over the first 30%, hold to 60%, back by 85%, still to the end
+    if t < 0.30: k = ease(t / 0.30)
+    elif t < 0.60: k = 1.0
+    elif t < 0.85: k = 1.0 - ease((t - 0.60) / 0.25)
+    else: k = 0.0
+    torso(lean=0.05 + 0.02 * k, roll=0.16 * k, twist=0.04 * k, bob=0.0)
+    arm_pose(L_ARM, swing=0.0, elbow=0.03, out=0.0, side=1)
+    arm_pose(R_ARM, swing=0.0, elbow=0.03, out=0.0, side=-1)
     key(f)
 finish(act)
 
 # ------------------------------------------------------------------- RUN
-# a flat-out sprint, 20 frames a cycle at 30 fps, played faster in the game.
-# Big thigh swing, the shin folding hard on the back-swing, arms pumping
-# opposite the legs, the whole thing leaning into it and bobbing.
+# Fast and SMOOTH, not flailing: the legs work in a short, quick stride
+# with the shin folding cleanly, the arms stay down and close to the body
+# with only a small counter-swing, the torso leans into it and stays
+# level. Played at 2x in the game it is an inhuman scurry, not a sprint
+# cartoon. 20 frames a cycle.
 act = new_action('run'); N = 20
 for f in range(0, N + 1):
     rest()
     s = f / N * 2 * math.pi
     lsw = math.sin(s); rsw = math.sin(s + math.pi)
-    def kn(sw): return max(0.0, -sw) * 1.15 + 0.22          # knee folds when the leg is back
-    leg_pose(L_LEG, swing=0.78 * lsw, knee=kn(lsw), foot=0.3 * max(0.0, lsw))
-    leg_pose(R_LEG, swing=0.78 * rsw, knee=kn(rsw), foot=0.3 * max(0.0, rsw))
-    arm_pose(L_ARM, swing=0.7 * rsw, elbow=1.15, out=0.1, side=1)
-    arm_pose(R_ARM, swing=0.7 * lsw, elbow=1.15, out=0.1, side=-1)
-    torso(lean=0.30 + 0.03 * math.sin(2 * s), roll=0.04 * math.sin(s), twist=0.08 * math.sin(s), bob=0.8 * abs(math.sin(s)) - 0.25)
+    def kn(sw): return max(0.0, -sw) * 0.9 + 0.18
+    leg_pose(L_LEG, swing=0.58 * lsw, knee=kn(lsw), foot=0.2 * max(0.0, lsw))
+    leg_pose(R_LEG, swing=0.58 * rsw, knee=kn(rsw), foot=0.2 * max(0.0, rsw))
+    arm_pose(L_ARM, swing=0.18 * rsw - 0.15, elbow=1.35, out=-0.06, side=1)
+    arm_pose(R_ARM, swing=0.18 * lsw - 0.15, elbow=1.35, out=-0.06, side=-1)
+    torso(lean=0.24, roll=0.0, twist=0.03 * math.sin(s), bob=0.35 * abs(math.sin(s)) - 0.1)
     key(f)
 finish(act)
 

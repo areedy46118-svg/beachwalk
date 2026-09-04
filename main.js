@@ -10737,16 +10737,17 @@ function updateSnorkeler(dt) {
  * (`idle`, `run`). The model's front is -Z, like the crab's, so
  * `atan2(dx, dz) + PI` faces it at you. It is one skinned mesh, so ONE of
  * it — no clone(). */
-const SMILE_X = 8.6, SMILE_Z = CAMP_Z - 42;
+const SMILE_X = 8.6, SMILE_Z = CAMP_Z - 120;   // far enough past the snorkeler that you cannot see one from the other
 const SMILE_H = 2.75;                  // taller than a man by a head and a half
-const SMILE_SEE = 15;                  // how close you get before it goes
+const SMILE_SEE = 9;                   // how close you get before it goes: close enough to see the face
 const SMILE_RUN = 8.5;                 // m/s, flat out
+const SMILE_STEP = 0.17;               // seconds between its footfalls at that speed
 const smile = new THREE.Group();
 smile.visible = false;
 smile.position.set(SMILE_X, 0, SMILE_Z);
 scene.add(smile);
 farProps.push({ obj: smile, z: SMILE_Z, d: 260 });
-let smileMixer = null, smileClips = {}, smilePhase = 0, smileT = 0, smileCur = null;
+let smileMixer = null, smileClips = {}, smilePhase = 0, smileT = 0, smileCur = null, smileStepT = 0;
 new GLTFLoader().load('assets/smile.glb', (gltf) => {
   const m = gltf.scene;
   m.traverse((o) => {
@@ -10810,39 +10811,30 @@ function smilePlay(name, loop) {
   smileCur = a;
   return a;
 }
-/* THE STARTLE. Not a scream — a thing that big should not make a sound
- * like a person. A slap of kicked sand, a shriek that is two sawtooths a
- * semitone apart tearing up through a bandpass with a hard tremolo on
- * them, and a thump under it all. Half a second, gone. */
-function sfxSmileBolt() {
+/* ITS FEET ARE THE SOUND. A stinger was tried on the bolt and cut: a
+ * musical shriek tells you the game is scaring you. Fast heavy footfalls on
+ * sand, falling off with distance, tell you something big is running, and
+ * then the splash tells you where it went. Each is a lowpassed slap of
+ * noise and a thump under it, the same recipe as a step, only bigger. */
+function sfxSmileStep(dist) {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime, out = sfxOut();
-  const nb = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.5), ctx.sampleRate); const d = nb.getChannelData(0);
-  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2.2);
+  const g0 = 0.9 / (1 + dist / 7);
+  const nb = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.12), ctx.sampleRate); const d = nb.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 3);
   const ns = ctx.createBufferSource(); ns.buffer = nb;
-  const nf = ctx.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 1400; nf.Q.value = 0.7;
-  const ng = ctx.createGain(); ng.gain.setValueAtTime(0.9, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+  const nf = ctx.createBiquadFilter(); nf.type = 'lowpass'; nf.frequency.value = 520 + Math.random() * 120;
+  const ng = ctx.createGain(); ng.gain.setValueAtTime(g0, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
   ns.connect(nf); nf.connect(ng); ng.connect(out); ns.start(t);
-  for (const det of [0, 7]) {
-    const o = ctx.createOscillator(); o.type = 'sawtooth';
-    o.frequency.setValueAtTime(620 + det * 10, t); o.frequency.exponentialRampToValueAtTime(2400 + det * 40, t + 0.42); o.detune.value = det * 14;
-    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 2.5;
-    bp.frequency.setValueAtTime(1200, t); bp.frequency.exponentialRampToValueAtTime(3200, t + 0.4);
-    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
-    const tr = ctx.createOscillator(); tr.frequency.value = 38; const tg = ctx.createGain(); tg.gain.value = 0.25;
-    tr.connect(tg); tg.connect(g.gain);
-    o.connect(bp); bp.connect(g); g.connect(out);
-    o.start(t); o.stop(t + 0.6); tr.start(t); tr.stop(t + 0.6);
-  }
-  const sub = ctx.createOscillator(); sub.type = 'sine';
-  sub.frequency.setValueAtTime(90, t); sub.frequency.exponentialRampToValueAtTime(32, t + 0.3);
-  const sg = ctx.createGain(); sg.gain.setValueAtTime(1.0, t); sg.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
-  sub.connect(sg); sg.connect(out); sub.start(t); sub.stop(t + 0.45);
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(74, t); o.frequency.exponentialRampToValueAtTime(38, t + 0.1);
+  const og = ctx.createGain(); og.gain.setValueAtTime(g0 * 0.8, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+  o.connect(og); og.connect(out); o.start(t); o.stop(t + 0.16);
 }
 const _smileTurn = (cur, want) => { let d = want - cur; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
 function updateSmile(dt) {
   if (!smileMixer || smilePhase === 2) return;
-  smileMixer.update(dt * (smilePhase === 1 ? 1.7 : 1));
+  smileMixer.update(dt * (smilePhase === 1 ? 2.0 : 1));
   const p = smile.position;
   if (smilePhase === 0) {
     // it stands, and it turns to keep its face on you — slowly, like it has all night
@@ -10850,9 +10842,8 @@ function updateSmile(dt) {
     const want = Math.atan2(dx, dz) + Math.PI;
     smile.rotation.y += _smileTurn(smile.rotation.y, want) * Math.min(1, dt * 1.4);
     if (introDone && !dying && !ended && Math.hypot(dx, dz) < SMILE_SEE) {
-      smilePhase = 1; smileT = 0;
+      smilePhase = 1; smileT = 0; smileStepT = 0;
       smilePlay('run', true);
-      sfxSmileBolt();
     }
     return;
   }
@@ -10862,10 +10853,19 @@ function updateSmile(dt) {
   smile.rotation.y += _smileTurn(smile.rotation.y, want) * Math.min(1, dt * 7);
   p.x -= SMILE_RUN * dt;
   const sub = submersionAt(p.x, p.z);
+  // its feet, until the water takes the sound
+  smileStepT += dt;
+  if (smileStepT >= SMILE_STEP && sub < 0.4) { smileStepT = 0; sfxSmileStep(camera.position.distanceTo(p)); }
   if (sub > 0.15 && Math.random() < 0.6) spawnSplash(p.x, p.z, 7, -1, 0, 1.3);
-  if (smileT > 0.9 && sub > 0.15 && !smile.userData.splashed) { smile.userData.splashed = true; sfxSplash(1.3); }
-  if (p.x < WADE_X - 3) p.y -= 1.7 * dt;                       // and under, as the bottom falls away
-  if (p.x < -17 || p.y < -3.4) { smile.visible = false; smilePhase = 2; }
+  if (sub > 0.15 && !smile.userData.splashed) { smile.userData.splashed = true; sfxSplash(1.3); }
+  /* AND GONE. It used to sink slowly and go invisible far out, and out
+   * there the swell drops two metres, so its head and shoulders stood out of
+   * a trough for seconds. It goes down fast once it is past the wading
+   * line, and it is switched off the frame the top of it is under the drawn
+   * sea — measured against the water where it is, not a distance. */
+  if (p.x < WADE_X + 1) p.y -= 3.4 * dt;                      // it goes under like a dive, not a wade
+  const water = waterSurfaceAt(p.x, p.z);
+  if (p.y + SMILE_H < water - 0.25 || p.x < -14) { smile.visible = false; smilePhase = 2; }
 }
 
 /* The trails. Each one leaves a widening V of ripples behind it and throws a
@@ -12060,7 +12060,7 @@ layoutViewmodel();
 
 // dev hook
 window.__bw = {
-  smile, updateSmile, smileState: () => ({ phase: smilePhase, t: smileT, loaded: !!smileMixer, clips: Object.keys(smileClips) }), sfxSmileBolt,
+  smile, updateSmile, smileState: () => ({ phase: smilePhase, t: smileT, loaded: !!smileMixer, clips: Object.keys(smileClips) }), sfxSmileStep,
   updateHurt, hurtEl,
   militaryItem, militaryWorld, milModel, get toolVM() { return toolVM; }, vmScene, vmCamera, toolMount,
   get settings() { return settings; }, get hp() { return hp; },
