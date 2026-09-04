@@ -815,9 +815,10 @@ stop hearing; the menu wants waves you cannot not hear. `titleSurfGain` in
 rumble, an LFO rolling it in and back every ~13 s) into `waveBusGain`, ramped
 up only while `!introStarted` and pulled down by `leaveTitle()`.
 
-**The intro is two beats and a heartbeat.** `INTRO_LINES` land as `.l1`
-then `.l2` (`beat1` at 0.9 s, `beat2` at 4.7 s, all gone at 9.4 s, the world
-up at 11.3 s), and `startIntroAudio()` runs a 41 Hz drone with a slow
+**The intro is one beat and a heartbeat.** All of it lands together at
+0.9 s, is gone at 5.4 s and the world is up at 7.3 s. It used to arrive in
+two beats nearly four seconds apart, which made the card outstay the line —
+the second half is a closing thought, not a reveal, and `startIntroAudio()` runs a 41 Hz drone with a slow
 tremolo under a heartbeat at ~51 bpm — a little too slow, and quiet enough
 to be felt rather than heard — that `endIntroAudio()` kills as the beach
 comes up. A line about "the thing that walks it with you" and a wave crash
@@ -1255,7 +1256,12 @@ and keeping the raw triangles gave each piece a scatter of long thin slivers
 — at this triangle count a cell is a handful of big faces and the leftovers
 stuck out like spines. Sand does not break into spikes. The cell still says
 where a piece is and how big it is; the piece itself is a rounded icosahedron
-knocked out of round.
+knocked out of round. It also needs its OWN material: on `castleMat` a
+rounded lump's uv samples wherever it happens to land on the scan's baked
+atlas — mostly the dark parts — so the heap came out far darker than the
+castle it fell off. `castleChunkMat` is the beach's own grain lifted (the map
+multiplies) to the tone the castle actually renders at, so the pile matches
+the thing that made it and settles into the sand around it.
 
 **A thing you set down is the SIZE YOU FOUND IT.** `dropEquipped()` built
 the world model by cloning the VIEW model, which is scaled and posed for the

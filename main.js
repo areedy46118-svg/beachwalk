@@ -757,7 +757,7 @@ function updateShines(t) {
     if (!s.root.parent) { s.glint.material.opacity = 0; continue; }
     // slow breath, never fully off — a wet-shell highlight catching the moon
     const k = 0.5 + 0.5 * Math.sin(t * 1.5 + s.phase);
-    s.glint.material.opacity = (0.10 + 0.13 * k) * s.strength;
+    s.glint.material.opacity = (0.055 + 0.075 * k) * s.strength;
     for (const { m, base } of s.mats) {
       m.emissive.setRGB(
         base.r + (0.055 + 0.045 * k) * s.strength,
@@ -3164,10 +3164,13 @@ function beginGame() {
   introEl.classList.add('show');
   void introEl.offsetWidth;                        // commit before re-arming
   startIntroAudio();
-  setTimeout(() => introEl.classList.add('beat1'), 900);              // the first two lines
-  setTimeout(() => introEl.classList.add('beat2'), 4700);             // then what is out here
-  setTimeout(() => introEl.classList.remove('beat1', 'beat2'), 9400); // all of it fades
-  const revealAt = 11300;
+  /* ALL OF IT AT ONCE. It used to land in two beats nearly four seconds
+   * apart, which made the card outstay the line — the second half is a
+   * closing thought, not a reveal, so it comes up with the rest and the
+   * whole thing is over in half the time. */
+  setTimeout(() => introEl.classList.add('beat1', 'beat2'), 900);
+  setTimeout(() => introEl.classList.remove('beat1', 'beat2'), 5400);
+  const revealAt = 7300;
   setTimeout(() => {
     endIntroAudio();
     introEl.style.transition = 'opacity 2.4s ease';
@@ -3608,7 +3611,8 @@ function makeNoticeable(root, tries = 0) {
   }
   const k = THREE.MathUtils.clamp(ITEM_MIN_SIZE / size, 1, ITEM_MAX_BOOST);
   if (k > 1.001) root.scale.multiplyScalar(k);
-  addItemShine(root, { size: Math.max(0.6, size * k * 2.2), height: size * k * 0.55 + 0.06, strength: 1.5 });
+  // the glint says "this is a thing", it does not light the beach
+  addItemShine(root, { size: Math.max(0.55, size * k * 1.9), height: size * k * 0.55 + 0.06, strength: 0.75 });
 }
 function addInteractable(root, label, kind, data) {
   const meshes = [];
@@ -4889,6 +4893,21 @@ new GLTFLoader().load('assets/sandcastle.glb', (gltf) => {
  *
  * The pieces are real gibs, so they bounce and settle like everything else
  * on this beach rather than fading out where they stand. */
+/* WHAT IT BREAKS INTO HAS TO BE WHAT IT WAS. The chunks took `castleMat`,
+ * which is right in principle and wrong in practice: that material carries
+ * the scan's own baked map, and a rounded lump's uv samples wherever it
+ * happens to land on that atlas — mostly the dark parts — so the pile came
+ * out much darker than the castle it fell off. The chunks get the beach's
+ * own grain instead, lifted (the map MULTIPLIES) to the tone the castle
+ * actually renders at, so the heap matches the thing that made it and
+ * settles into the sand around it. */
+const castleChunkTex = sandTex.clone(); castleChunkTex.needsUpdate = true; castleChunkTex.repeat.set(3.2, 3.2);
+const castleChunkBump = sandBump.clone(); castleChunkBump.needsUpdate = true; castleChunkBump.repeat.set(3.2, 3.2);
+const castleChunkMat = new THREE.MeshStandardMaterial({
+  map: castleChunkTex, bumpMap: castleChunkBump, bumpScale: 1.4,
+  color: 0xa7b1c6, roughness: 1, metalness: 0, flatShading: true,
+  emissive: 0x2f3850, emissiveMap: castleChunkTex,
+});
 let castleBroken = false;
 function breakCastle(fromX, fromZ) {
   if (castleBroken) return;
@@ -4960,7 +4979,7 @@ function breakCastle(fromX, fromZ) {
         lp.setXYZ(i, lp.getX(i) * k, lp.getY(i) * k * 0.82, lp.getZ(i) * k);
       }
       g.computeVertexNormals();
-      const m = new THREE.Mesh(g, castleMat);
+      const m = new THREE.Mesh(g, castleChunkMat);
       m.position.set(cx + ccx, castle.position.y + ccy, cz + ccz);
       const h = ccy / CASTLE_H;                       // 0 at the base, 1 at the top
       const wait = (topLayer - c.iy) * 70;             // the top goes first
