@@ -518,39 +518,6 @@ sandMat.onBeforeCompile = (shader) => {
     .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.30, max(wetMask, 0.0));')
     .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = mix(metalnessFactor, 0.22, max(wetMask, 0.0));');
 };
-/* HEAPED SAND IS DRY SAND. Every bank in the game — the pier's drift, the
- * castle's foot, the rock aprons, the bag's bed — was drawn with `sandMat`,
- * and `sandMat`'s wet treatment reaches SIXTEEN METRES inland: within that
- * it tints blue, drops roughness to 0.30 and lifts metalness to 0.22. On a
- * flat beach that reads as wet sand; on a dome it reads as a wet BOULDER,
- * which is exactly what the mounds looked like. A bank stands proud of the
- * swash, so it gets the same grain and the same shore discard with the wet
- * pass taken out, and a warmer, drier body so it reads as something you
- * could put a shovel into. */
-const duneMat = new THREE.MeshStandardMaterial({
-  map: sandTex, bumpMap: sandBump, bumpScale: 1.7,
-  color: 0x93866b, roughness: 1.0, metalness: 0.0,
-  emissive: 0x2b2718, emissiveMap: sandTex,
-});
-duneMat.onBeforeCompile = (shader) => {
-  shader.uniforms.uTime = oceanUniforms.uTime;
-  shader.vertexShader = shader.vertexShader
-    .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;')
-    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-  shader.fragmentShader = shader.fragmentShader
-    .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;\nuniform float uTime;\n' + noiseGLSL + shoreGLSL)
-    .replace('#include <clipping_planes_fragment>',
-      `#include <clipping_planes_fragment>
-       float bwShore = shoreLine(vWorldPos.z, uTime);
-       if (vWorldPos.x < bwShore - 1.0) discard;`)
-    .replace('#include <map_fragment>',
-      `#include <map_fragment>
-       // loose grain: a coarse mottle so a bank reads as heaped, not moulded
-       // (bwNoise is the only noise shoreGLSL brings, and it is 1-D)
-       float bwG = bwNoise(vWorldPos.x * 1.7) * 0.5 + bwNoise(vWorldPos.z * 2.3 + 11.0) * 0.5;
-       diffuseColor.rgb *= 0.88 + 0.26 * bwG;`);
-};
-duneMat.customProgramCacheKey = () => 'dune';
 const sand = new THREE.Mesh(sandGeo, sandMat);
 scene.add(sand);
 
@@ -2272,7 +2239,7 @@ new GLTFLoader().load('assets/rocks.glb', (gltf) => {
    * as dropped on the beach however deep it is bedded. */
   for (const [k, h] of [[2.35, 0.34], [1.28, 0.72]]) {
     const R = big * k;
-    const apron = new THREE.Mesh(makeApron(R), duneMat);
+    const apron = new THREE.Mesh(makeApron(R), sandMat);
     apron.scale.set(R, h, R);
     apron.position.set(cx, -0.12, z);
     apron.rotation.y = rnd() * Math.PI * 2;
@@ -2557,7 +2524,9 @@ foot.frustumCulled = false; foot.renderOrder = 2; foot.instanceMatrix.setUsage(T
 scene.add(foot);
 
 const DIG_POOL = 20;
-const _sandMat = new THREE.MeshStandardMaterial({ color: 0x6b7690, roughness: 1, flatShading: true, emissive: 0x232c3f });
+// spoil thrown out of a hole is dry sand from under the surface, not the
+// wet blue flat it came out of — the same family as a buried cache
+const _sandMat = new THREE.MeshStandardMaterial({ color: 0x9d8d68, roughness: 1, flatShading: true, emissive: 0x322c1b });
 // flat scrape/gouge decal on the surface
 const digGeo = new THREE.PlaneGeometry(1.0, 1.0); digGeo.rotateX(-Math.PI / 2);
 const digHoles = new THREE.InstancedMesh(digGeo, new THREE.MeshBasicMaterial({ map: makeCraterTexture(), transparent: true, depthWrite: false, opacity: 1 }), DIG_POOL);
@@ -4759,10 +4728,9 @@ scene.add(castle);
  * hard line and reads as placed; a thing the sand has drifted up against
  * reads as having been there. */
 {
-  const apron = new THREE.Mesh(makeApron(2.4), duneMat);
+  const apron = new THREE.Mesh(makeApron(2.4), sandMat);
   apron.scale.set(2.4, 0.13, 2.4);
-  // sunk, so the beach plane covers the join rather than drawing an oval
-  apron.position.set(CASTLE_X, -0.045, CASTLE_Z);
+  apron.position.set(CASTLE_X, 0, CASTLE_Z);
   driftGroup.add(apron);
 }
 let castleGeo = null, castleMat = null;
@@ -5881,7 +5849,13 @@ function finishExtraction() {
 // Buried caches — rare little sand mounds along the walk. Dig one open
 // with the shovel and it turns up a (placeholder) buried object.
 // ------------------------------------------------------------------
-const moundMat = new THREE.MeshStandardMaterial({ color: 0x74809a, roughness: 1, flatShading: true, emissive: 0x272f42 });
+/* A CACHE HAS TO LOOK LIKE SOMETHING YOU WOULD PUT A SHOVEL INTO. It was
+ * `0x74809a` — the beach's own cold blue-grey — so a mound read as one more
+ * grey lump on a grey beach and nobody dug it. Dry heaped sand is warmer
+ * than the flat it stands on: tan, matte, with a little lift so it catches
+ * the moon and separates from the wet blue around it. The pebbles pressed
+ * into it go warm with it, or they read as gravel. */
+const moundMat = new THREE.MeshStandardMaterial({ color: 0xb2a079, roughness: 1, flatShading: true, emissive: 0x3a3320 });
 const moundDomeGeo = new THREE.SphereGeometry(0.55, 9, 5, 0, Math.PI * 2, 0, Math.PI * 0.5);
 moundDomeGeo.scale(1, 0.36, 1);             // a low, flat dome
 function makeMound() {
@@ -5893,7 +5867,7 @@ function makeMound() {
   for (let i = 0; i < 3; i++) {
     const a = Math.random() * Math.PI * 2, r = 0.2 + Math.random() * 0.28;
     const pb = new THREE.Mesh(new THREE.DodecahedronGeometry(0.03 + Math.random() * 0.03, 0),
-      new THREE.MeshStandardMaterial({ color: 0x525b6d, roughness: 1, flatShading: true, emissive: 0x161b25 }));
+      new THREE.MeshStandardMaterial({ color: 0x7d7154, roughness: 1, flatShading: true, emissive: 0x241f13 }));
     pb.position.set(Math.cos(a) * r, 0.02, Math.sin(a) * r);
     g.add(pb);
   }
@@ -9538,7 +9512,7 @@ dock.rotation.y = -Math.PI / 2;            // model -z (the shed end) → world 
 dock.scale.setScalar(DOCK_S);
 scene.add(dock);
 {
-  const drift = new THREE.Mesh(makeApron(DOCK_DRIFT_R), duneMat);
+  const drift = new THREE.Mesh(makeApron(DOCK_DRIFT_R), sandMat);
   drift.scale.set(DOCK_DRIFT_R, DOCK_DRIFT_H, DOCK_DRIFT_R);
   drift.position.set(DOCK_DRIFT_X, 0, DOCK_DRIFT_Z);
   driftGroup.add(drift);
@@ -10272,7 +10246,7 @@ scene.add(corpse);
 // the sand it has settled into — same trick as the rock aprons, but only
 // yawed, never tipped, because drifted sand lies flat however the bag lies
 {
-  const drift = new THREE.Mesh(makeApron(1.1), duneMat);
+  const drift = new THREE.Mesh(makeApron(1.1), sandMat);
   // low, or its own shaded flank draws a dark halo round the bag
   drift.scale.set(1.75, 0.085, 0.86);
   drift.position.set(CORPSE_X, -0.035, CORPSE_Z);
@@ -10733,7 +10707,8 @@ window.__bw = {
   finishTyping, dialogTextEl, get hitstop() { return hitstop; },
   gibs, bloodDrops, coveredByWater, submersionAt, waterSurfaceAt, listenToShell, stopListening,
   get audioCtx() { return audioCtx; }, sfxOut,
-  dropEquipped, dropPoint, groundUnder, duneMat, driftGroup, driftAt, updateGibs, updatePuffs,
+  dropEquipped, dropPoint, groundUnder, driftGroup, driftAt, updateGibs, updatePuffs,
+  mounds, moundMat, moundAt, revealMoundNear,
   THREE, scene, camera, player: camera,
   interactables, physProps, inventory, bottle, cliff, foot, lighthouse, city,
   castle, shovelWorld, viewmodel,

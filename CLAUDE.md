@@ -673,16 +673,14 @@ of `SAND_TILE`, so the phase is preserved and the grain lines up across the
 join. The cliff toe gets the same treatment through `aU` (0 at the toe, 1 at
 the top).
 
-**Heaped sand is DRY sand — `duneMat`, not `sandMat`.** Every bank in the
-game (the pier's drift, the castle's foot, the rock aprons, the bag's bed)
-was drawn with `sandMat`, and `sandMat`'s wet pass reaches SIXTEEN metres
-inland: inside that it tints blue, drops `roughnessFactor` to 0.30 and lifts
-`metalnessFactor` to 0.22. On the flat beach that reads as wet sand; on a
-dome it reads as a wet BOULDER, which is exactly why the mounds looked like
-rock. `duneMat` keeps the same grain and the same shore discard, takes the
-wet pass out, and runs a warmer, drier body so a bank reads as something you
-could put a shovel into. Its mottle uses `bwNoise` — `shoreGLSL` brings no
-`fbm`, and reaching for one is a shader that will not compile.
+**A buried cache has to look like something you would DIG.** `moundMat` was
+`0x74809a` — the beach's own cold blue-grey — so a cache read as one more
+grey lump on a grey beach and nobody dug it. Dry sand turned up out of a
+hole is warmer than the wet flat it stands on, so the mounds and the spoil
+`_sandMat` are tan and matte with a little lift to catch the moon. The
+aprons and drifts are NOT this: they are the beach heaped up, they keep
+`sandMat`, and a tan pass over them made the pier's bank and the castle's
+foot read as painted discs.
 
 **Sink a rim, don't dither it.** The ridge's edge was first dissolved against
 a hash keyed to height. The ridge climbs slowly, so even a 0.4 m band of
