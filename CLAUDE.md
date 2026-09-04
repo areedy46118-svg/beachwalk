@@ -1088,6 +1088,30 @@ Three more things that make a heavy feel like one:
 already in the wound pose roughly doubles. A charge with no full mark is a
 charge you hold too long every time.
 
+**IT TAKES TWO.** `CRAB_HP` is 2: a light swing is a hit, not a kill, and
+only a charge past `CRAB_HEAVY` (0.85) puts one down in one. That is the
+whole reason to hold the button — a heavy is not a faster shovel, it is the
+difference between two exchanges and none. `hurtCrab(u, dmg, P)` is the one
+door: it kills at zero and otherwise breaks the attack, throws it back off
+the blade and flashes it white for `CRAB_RECOIL`. The recoil squash goes on
+the GROUP, not `ud.rig` — the rig is switched off the moment the model
+lands, so nothing posed on it can be seen (the death squash has always had
+this problem; the gibs cover it).
+
+**THE OVERHEAD.** Hold sprint while you wind and the shovel goes up over
+your head in both hands and comes down the middle — the one swing that is a
+smash rather than a dig. It is a POSE SET, not a second animation system:
+`haulPose` and `impactPose` branch on `digOverhead` and the same three lerps
+run, so the landing, the trail and the blade-on-the-crosshair correction all
+work untouched. The choice is LATCHED during the wind (`windOverhead`), not
+sampled at the release — letting go of sprint a frame early turned an
+overhead back into a side swing.
+
+**AND THE WIND-UP IS ON THE LEFT BUTTON.** Right click became the guard and
+nothing else, so holding LMB past `WIND_TAP` is what charges; the on-screen
+prompt still said RMB long after that stopped being true, which is worth
+remembering the next time a control moves.
+
 **THE GUARD, AND THE PARRY.** Hold right and the shovel comes up across
 you; a strike that lands on it does nothing at all. The first `PARRY_WINDOW`
 (0.20 s) after the press is a parry instead, which cancels the attack and

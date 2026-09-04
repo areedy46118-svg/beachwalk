@@ -3599,8 +3599,12 @@ function updateHover() {
              && crosshairGroundPoint(winding ? DIG_REACH + DIG_HEAVY_REACH : DIG_REACH)) {
     const onMound = !inWater(_digHit.x, _digHit.z) && moundAt(_digHit.x, _digHit.z);
     crosshair.className = 'active';
+    /* The prompt said RMB winds up, which stopped being true when the right
+     * button became the guard and nothing else — you wind by HOLDING the
+     * left one, and holding sprint with it turns the swing overhead. */
     setPrompt(kbd('LMB') + (onMound ? 'Dig up the mound' : 'Dig here')
-      + ' &nbsp;&nbsp; ' + kbd('RMB') + 'Hold to wind up'
+      + ' &nbsp;&nbsp; ' + kbd('Hold LMB') + 'Heavy'
+      + ' &nbsp;&nbsp; ' + kbd('Shift') + '+ hold: overhead'
       + ' &nbsp;&nbsp; ' + kbd('G') + 'Drop');
   } else if (equipped) {
     crosshair.className = '';
@@ -3765,7 +3769,7 @@ class PhysProp {
       for (const u of crabs) {
         if (!u.st.alive || u.st.struck) continue;
         if (p.distanceTo(u.g.position) >= 0.75) continue;
-        hitConnect(0.4, 1); killCrab(u);
+        hitConnect(0.4, 1); hurtCrab(u, 1);
         this.vel.multiplyScalar(0.3);
         break;
       }
@@ -5027,6 +5031,14 @@ const PARRY_COOLDOWN = 0.55;
 let blocking = false, blockT = 0, blockStart = -1, parryCool = 0;
 let parryGlow = 0;                       // the white flash on a successful parry
 let winding = false, windT = 0, digPower = 0, digCharged = false, windFull = false;
+/* THE OVERHEAD. Hold sprint while you wind and the shovel goes up over your
+ * head in both hands instead of back over your shoulder, and comes down the
+ * middle — the one swing in the game that is a smash rather than a dig. It
+ * is a POSE SET, not a second animation system: the same three lerps run,
+ * they just run between different poses, so the landing, the trail and the
+ * blade-on-the-crosshair correction all work exactly as they already do. */
+let digOverhead = false, windOverhead = false;
+const overheadHeld = () => !!(keys['ShiftLeft'] || keys['ShiftRight']);
 
 /* Poses are [pitch, lift, yaw, roll, push] and the swing is lerps between
  * them, rather than five hand-written curves per segment. That is what lets
@@ -5041,6 +5053,12 @@ function poseMix(out, a, b, t) {
 }
 // the top of an ordinary left-click swing
 function haulPose(out, P) {
+  if (digOverhead) {
+    // both hands above the head, brought in to the centre line
+    out[0] = -(1.95 + P * 0.35); out[1] = 0.34 + P * 0.16;
+    out[2] = 0.44; out[3] = 0.02; out[4] = 0.12;
+    return out;
+  }
   out[0] = -(1.25 + P * 0.70); out[1] = 0.17 + P * 0.13;
   out[2] = -(0.34 + P * 0.26); out[3] = -(0.20 + P * 0.16); out[4] = 0.05;
   return out;
@@ -5051,6 +5069,14 @@ function haulPose(out, P) {
  * raycast in digImpact(). At full charge the arm goes from 0.62 m out to 1.06,
  * which reads as a real lunge rather than a tuning nudge. */
 function impactPose(out, P) {
+  if (digOverhead) {
+    /* Straight down the middle and driven forward — no yaw across the body,
+     * because the whole read of an overhead is that it does not swing, it
+     * FALLS. Further through than a side swing, and further out. */
+    out[0] = 2.30 + P * 0.55; out[1] = -(0.40 + P * 0.08);
+    out[2] = 0.42; out[3] = -0.03; out[4] = -(0.26 + P * 0.34);
+    return out;
+  }
   /* `lift` used to take the hand to -0.69 at full charge, which is below the
    * bottom of the frame — the blade left the screen on the frame it landed,
    * so the one pose that most needs to read was the one you could not see.
@@ -5119,6 +5145,8 @@ function startDig(power = 0, fromPose = null) {
   if (digT > 0 || !equipped || !equipped.onDig || frozen()) return;
   camera.getWorldDirection(_aimD);            // the angle; aimRay() takes the position
   digPower = THREE.MathUtils.clamp(power, 0, 1);
+  // a charged release keeps whatever it was wound as; a plain click never is
+  digOverhead = !!fromPose && windOverhead;
   aimLand(digPower);
   digImpacted = false;
   digCharged = !!fromPose;
@@ -5135,7 +5163,7 @@ function startDig(power = 0, fromPose = null) {
 function startWind() {
   if (blocking) return;                  // no swing comes out of a guard
   if (digT > 0 || winding || !equipped || !equipped.onDig || frozen()) return;
-  winding = true; windT = 0; windFull = false;
+  winding = true; windT = 0; windFull = false; windOverhead = false;
 }
 function releaseWind() {
   if (!winding) return;
@@ -5181,7 +5209,12 @@ function digImpact() {
       const miss = _hitC.distanceTo(_aimO.clone().addScaledVector(_aimD, t));
       if (miss < 0.62 + P * 0.25 && t < bestT) { bestT = t; best = u; }
     }
-    if (best) { hitConnect(P, 1); killCrab(best); return; }
+    if (best) {
+      const heavy = P >= CRAB_HEAVY;
+      hitConnect(P, heavy ? 1.25 : 0.85);
+      hurtCrab(best, heavy ? CRAB_HP : 1, P);
+      return;
+    }
   }
   /* Something solid in front of the sand. The blade used to raycast the sand
    * and nothing else, so a swing at the pier went straight through the boards
@@ -5436,11 +5469,25 @@ function updateViewmodel(dt) {
      * shake a little once it's wound past full. */
     const e = easeOutCubic(windCharge);
     const strain = windFull ? Math.sin(windT * 38) * 0.026 : 0;
-    _pose[0] = -(0.62 + 1.42 * e) + strain;
-    _pose[1] = 0.11 + 0.22 * e;
-    _pose[2] = -(0.24 + 0.48 * e);
-    _pose[3] = -(0.16 + 0.30 * e) + strain;
-    _pose[4] = 0.05 + 0.12 * e;
+    /* LATCHED, not sampled at the release. Which swing this is gets decided
+     * while you wind it — that is when you can see it — and reading the key
+     * again on the way out meant letting go of sprint a frame early turned
+     * an overhead back into a side swing. */
+    if (overheadHeld()) windOverhead = true;
+    if (windOverhead) {
+      // hauled up over the head, and shaking harder the longer it is held
+      _pose[0] = -(0.70 + 1.60 * e) + strain * 1.6;
+      _pose[1] = 0.10 + 0.30 * e;
+      _pose[2] = -0.06 + 0.50 * e;
+      _pose[3] = -0.06 + 0.08 * e + strain;
+      _pose[4] = 0.05 + 0.10 * e;
+    } else {
+      _pose[0] = -(0.62 + 1.42 * e) + strain;
+      _pose[1] = 0.11 + 0.22 * e;
+      _pose[2] = -(0.24 + 0.48 * e);
+      _pose[3] = -(0.16 + 0.30 * e) + strain;
+      _pose[4] = 0.05 + 0.12 * e;
+    }
   } else if (digT > 0) {
     const P = digPower;
     /* A heavy is slower through the whole move, and slower still to recover —
@@ -5471,9 +5518,11 @@ function updateViewmodel(dt) {
        * step, and it read as the animation stuttering on the hit rather than
        * as an impact. The spring's peak is roughly v0/sqrt(stiffness), so
        * anything under ~1.5 stays inside the clamp and stays a curve. */
-      vmImpulse(-0.95 - P * 0.5);
+      vmImpulse(-0.95 - P * 0.5 - (digOverhead ? 0.35 : 0));
+      // the whole body goes into an overhead, so it kicks back harder
+      if (digOverhead) { addTrauma(0.16 + P * 0.2); fovKick = Math.max(fovKick, 4 + P * 3); }
     }
-    if (p >= 1) { digT = 0; digPower = 0; digCharged = false; }
+    if (p >= 1) { digT = 0; digPower = 0; digCharged = false; digOverhead = false; }
   } else {
     for (let i = 0; i < 5; i++) _pose[i] = 0;
   }
@@ -6353,6 +6402,13 @@ const CRAB_STRIKE = 0.10;              //  6f active  — damage on the first fr
 const CRAB_RECOVER = 0.34;             // 20f recovery — committed, and punishable
 const CRAB_COOLDOWN = 0.85;            // seconds between attacks, after recovery
 const CRAB_HIT_STOP = 0.08;            // ~5f of frozen time when the shovel lands
+/* IT TAKES TWO. A light swing is a hit, not a kill — the shell holds and it
+ * comes back at you — and only a swing wound all the way up puts one down in
+ * one. That is the whole reason to hold the button: a heavy is not a faster
+ * shovel, it is the difference between two exchanges and none. */
+const CRAB_HP = 2;
+const CRAB_HEAVY = 0.85;               // charge at or past this and it kills
+const CRAB_RECOIL = 0.34;              // how long a survived hit throws it
 const CRAB_KILL_RADIUS = 1.5;          // how near a shovel strike has to land
 // Built around a `rig` group so the whole animal can be pitched, rolled and
 // bounced by the gait without disturbing its heading. Each leg is a two-bone
@@ -6584,7 +6640,9 @@ function makeCrabUnit(x, z, opts = {}) {
   const u = {
     g, ud: g.userData, model: null, mixer: null, clips: {}, cur: null,
     st: { alive: true, awake: false, atk: -1, cool: 0, scuttle: 0, deadT: 0,
-          rear: 0, lunge: 0, struck: false, stun: 0, wakeRipple: 0 },
+          rear: 0, lunge: 0, struck: false, stun: 0, wakeRipple: 0,
+          hp: CRAB_HP, recoil: 0 },
+    base: opts.scale ?? 1.55,
     // the throw-back off a blade is per crab: a shared temp put every struck
     // crab on the same spot
     hitFrom: new THREE.Vector3(), hitDir: new THREE.Vector3(), dir: new THREE.Vector3(),
@@ -6828,6 +6886,23 @@ function killCrab(u = crabs[0]) {
   addTrauma(0.55);
   hitstop = CRAB_HIT_STOP;
 }
+/* A blow that lands but does not finish it. The shell holds, the attack is
+ * broken, and it is thrown back off the blade white — so a light hit still
+ * reads as a hit, and still buys you the room a hit should buy. */
+function hurtCrab(u, dmg, P = 0) {
+  if (!u.st.alive || u.st.struck) return false;
+  u.st.hp -= dmg;
+  if (u.st.hp <= 0) { killCrab(u); return true; }
+  u.st.atk = -1;
+  u.st.cool = Math.max(u.st.cool, 0.55);
+  u.st.recoil = CRAB_RECOIL;
+  camera.getWorldDirection(u.hitDir); u.hitDir.y = 0; u.hitDir.normalize();
+  u.hitFrom.copy(u.g.position);
+  flashMats(u.g);
+  sfxCrabHit();
+  addTrauma(0.28 + P * 0.18);
+  return false;
+}
 function finishCrab(u = crabs[0]) {
   u.st.alive = false;
   u.st.struck = false;
@@ -6907,6 +6982,20 @@ function updateCrabUnit(u, dt) {
     u.st.scuttle += dt * 0.6;
     crabAnim(u, dt, false, 0);              // the reel, run off the stun timer
     if (u.st.stun <= 0) { u.st.stun = 0; u.st.cool = 0.35; }
+    return;
+  }
+  /* Reeling from a hit it survived. It does not advance and it does not
+   * swing; the squash goes on the GROUP, because `ud.rig` is switched off
+   * the moment the model lands and nothing posed on it can be seen. */
+  if (u.st.recoil > 0) {
+    u.st.recoil = Math.max(0, u.st.recoil - dt);
+    const k = u.st.recoil / CRAB_RECOIL;
+    u.g.position.copy(u.hitFrom).addScaledVector(u.hitDir, 0.5 * (1 - k));
+    u.g.position.y = restYInWater(u.g.position.x, u.g.position.z, 1.15);
+    u.g.scale.set(u.base * (1 + 0.18 * k), u.base * (1 - 0.22 * k), u.base * (1 + 0.18 * k));
+    u.st.scuttle += dt * 1.4;
+    crabAnim(u, dt, false, 0);
+    if (u.st.recoil <= 0) u.g.scale.setScalar(u.base);
     return;
   }
   const closing = dist > CRAB_REACH;
@@ -9734,14 +9823,17 @@ function dockDeckAt(wx, wz) { return deckHeightAt(wx, wz); }
  * the cutscene. Submerged that far out `updateCrabUnit` keeps them invisible,
  * so all you get on the way in is the wake — which is the whole idea. */
 const PACK_Z = (SHIP_Z + DOCK_Z) / 2;         // halfway between the two
-const PACK_TRIGGER = 26;                      // how far short of them it starts
+const PACK_TRIGGER = 22;                      // how far short of them it starts
 const PACK_START_X = -34;                     // out where the water is black
 const PACK_SWIM = 3.4, PACK_HOLD = 0.75;      // the swim in, then a beat on them
 /* They come ashore at the WATERLINE, not out in the deep. `updateCrabUnit`
  * hides anything with a submersion over 0.92, so arriving at x = -6 the
  * whole cutscene ended on three wakes and nothing standing in them. Here
  * they break the surface as the camera lets go. */
-const PACK_SPOTS = [[3.4, PACK_Z + 6.2], [1.9, PACK_Z + 0.2], [3.8, PACK_Z - 5.8]];
+/* Ten to twenty metres ahead of where the cutscene fires, which is close
+ * enough to watch them break the surface and far enough that all three are
+ * in shot at once. */
+const PACK_SPOTS = [[3.4, PACK_Z + 11.5], [1.9, PACK_Z + 5.0], [3.8, PACK_Z - 1.5]];
 const packCrabs = PACK_SPOTS.map(([, z]) => makeCrabUnit(PACK_START_X, z, { pack: true, wake: 0 }));
 let packPhase = 0;                            // 0 waiting · 1 coming in · 2 loose
 let packT = 0;
@@ -10945,8 +11037,12 @@ layoutViewmodel();
 window.__bw = {
   lipNdc: () => { armRig.updateMatrixWorld(true); trailTip.getWorldPosition(_lipA); trailRoot.getWorldPosition(_lipB); return _lipA.lerp(_lipB, 0.5).project(vmCamera); },
   landK: () => landK, landDist: () => landDist,
+  aimO: () => _aimO.clone(), aimD: () => _aimD.clone(),
   addToInventory, openPack, closePack, selectPackSlot, sfxCastleBreak, digImpacted: () => digImpacted,
   finishTyping, dialogTextEl, get hitstop() { return hitstop; },
+  hurtCrab, get digOverhead() { return digOverhead; }, get windOverhead() { return windOverhead; },
+  keys, overheadHeld,
+  CRAB_HP, CRAB_HEAVY,
   gibs, bloodDrops, coveredByWater, submersionAt, waterSurfaceAt, listenToShell, stopListening,
   get audioCtx() { return audioCtx; }, sfxOut,
   dropEquipped, dropPoint, groundUnder, driftGroup, driftAt, updateGibs, updatePuffs,
