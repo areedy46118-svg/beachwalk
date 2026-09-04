@@ -100,43 +100,50 @@ def torso(lean=0.0, roll=0.0, twist=0.0, bob=0.0):
     setloc('_rootJoint', (0, 0, bob))
 
 # ------------------------------------------------------------------ IDLE
-# Dead still. The arms hang, nothing breathes. Over eight seconds the whole
-# upper body tilts to one side by a few degrees, holds there, and comes
-# back -- the way something looks at a thing it does not understand -- with
-# a slight lean toward you. Nothing else moves at all. 240 frames, loops.
+# Nearly still: a relaxed stance -- knees and elbows carry a little bend, so
+# the limbs read as limbs and not as sticks -- and over eight seconds the
+# whole upper body tilts a few degrees to one side, holds, and comes back,
+# the way something looks at a thing it does not understand. 240 frames.
 act = new_action('idle'); N = 240
 def ease(t): return t * t * (3 - 2 * t)
 for f in range(0, N + 1):
     rest()
     t = f / N
-    # tilt: out over the first 30%, hold to 60%, back by 85%, still to the end
     if t < 0.30: k = ease(t / 0.30)
     elif t < 0.60: k = 1.0
     elif t < 0.85: k = 1.0 - ease((t - 0.60) / 0.25)
     else: k = 0.0
     torso(lean=0.05 + 0.02 * k, roll=0.16 * k, twist=0.04 * k, bob=0.0)
-    arm_pose(L_ARM, swing=0.0, elbow=0.03, out=0.0, side=1)
-    arm_pose(R_ARM, swing=0.0, elbow=0.03, out=0.0, side=-1)
+    arm_pose(L_ARM, swing=-0.04, elbow=0.28, out=0.03, side=1)
+    arm_pose(R_ARM, swing=-0.04, elbow=0.22, out=0.03, side=-1)
+    leg_pose(L_LEG, swing=0.02, knee=0.14, foot=0.05)
+    leg_pose(R_LEG, swing=-0.02, knee=0.12, foot=0.05)
     key(f)
 finish(act)
 
 # ------------------------------------------------------------------- RUN
-# Fast and SMOOTH, not flailing: the legs work in a short, quick stride
-# with the shin folding cleanly, the arms stay down and close to the body
-# with only a small counter-swing, the torso leans into it and stays
-# level. Played at 2x in the game it is an inhuman scurry, not a sprint
-# cartoon. 20 frames a cycle.
+# A real run cycle, fast but articulated: the thigh swings, and the KNEE
+# folds hard as the leg comes through under the body and straightens as
+# the foot reaches forward; the elbows are bent and open and close as the
+# arms pump, held close. The joints are what make it a body and not a
+# pair of dividers. 20 frames a cycle, played at 2x in the game.
 act = new_action('run'); N = 20
 for f in range(0, N + 1):
     rest()
     s = f / N * 2 * math.pi
-    lsw = math.sin(s); rsw = math.sin(s + math.pi)
-    def kn(sw): return max(0.0, -sw) * 0.7 + 0.16
-    leg_pose(L_LEG, swing=0.42 * lsw, knee=kn(lsw), foot=0.15 * max(0.0, lsw))
-    leg_pose(R_LEG, swing=0.42 * rsw, knee=kn(rsw), foot=0.15 * max(0.0, rsw))
-    arm_pose(L_ARM, swing=0.08 * rsw - 0.12, elbow=1.4, out=-0.06, side=1)
-    arm_pose(R_ARM, swing=0.08 * lsw - 0.12, elbow=1.4, out=-0.06, side=-1)
-    torso(lean=0.18, roll=0.0, twist=0.02 * math.sin(s), bob=0.25 * abs(math.sin(s)) - 0.08)
+    def leg_cycle(ph):
+        sw = 0.55 * math.sin(ph)                       # thigh: forward at +
+        # knee: folded as the leg swings through (thigh moving forward, foot
+        # behind), straight as the foot lands ahead
+        kn = 0.28 + 1.05 * max(0.0, math.sin(ph + 1.35))
+        ft = 0.15 * max(0.0, math.sin(ph)) - 0.25 * max(0.0, math.sin(ph + math.pi))
+        return sw, kn, ft
+    for Lg, ph in ((L_LEG, s), (R_LEG, s + math.pi)):
+        sw, kn, ft = leg_cycle(ph)
+        leg_pose(Lg, swing=sw, knee=kn, foot=ft)
+    for A, ph, side in ((L_ARM, s + math.pi, 1), (R_ARM, s, -1)):
+        arm_pose(A, swing=0.22 * math.sin(ph) - 0.10, elbow=1.15 + 0.45 * math.sin(ph + 0.5), out=-0.05, side=side)
+    torso(lean=0.20, roll=0.0, twist=0.03 * math.sin(s), bob=0.25 * abs(math.sin(s)) - 0.08)
     key(f)
 finish(act)
 

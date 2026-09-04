@@ -10755,14 +10755,15 @@ new GLTFLoader().load('assets/smile.glb', (gltf) => {
     o.frustumCulled = false;
     const mat = o.material;
     const face = /003/.test(mat.name);
-    /* dark: the body's flat grey is taken most of the way to black, and a
-     * cold rim is added so the silhouette holds against a dark beach; the
-     * face keeps more of its light and a little emissive, so the grin is
-     * the one pale thing on it */
-    mat.color.multiplyScalar(face ? 0.85 : 0.22);
+    /* BLACK, and a face you can see. The body is its flat grey taken
+     * nearly to black with no rim at all — a Fresnel rim was tried and read
+     * as a white sheen over the whole figure. The face keeps its map, is
+     * lifted a little, and carries enough emissive that the grin shows in
+     * the dark from where you first make it out. */
+    mat.color.multiplyScalar(face ? 1.0 : 0.10);
     mat.roughness = 1; mat.metalness = 0;
-    mat.emissive = new THREE.Color(face ? 0x2a2b33 : 0x050608);
-    reexpose(mat, 1.0, face ? [0.18, 0.2, 0.26] : [0.26, 0.32, 0.46]);
+    mat.emissive = new THREE.Color(face ? 0x6a6a72 : 0x000000);
+    if (face) { mat.emissiveMap = mat.map; reexpose(mat, 0.8, null); }
   });
   /* STAND IT UP, AND MEASURE IT SKINNED. Blender exports this rig lying
    * along -Z (its root joint comes out at -90 degrees about X — the
@@ -10865,7 +10866,17 @@ function updateSmile(dt) {
    * sea — measured against the water where it is, not a distance. */
   if (p.x < WADE_X + 1) p.y -= 3.4 * dt;                      // it goes under like a dive, not a wade
   const water = waterSurfaceAt(p.x, p.z);
-  if (p.y + SMILE_H < water - 0.25 || p.x < -14) { smile.visible = false; smilePhase = 2; }
+  if (p.y + SMILE_H < water - 0.25 || p.x < -14) {
+    /* REMOVED, not hidden. `visible = false` was undone the next frame by
+     * updateFarProps(), which switches every entry in `farProps` on or off
+     * by distance — so it stood back up at its last spot, head at the
+     * surface, for the rest of the game. Out of the scene and out of the
+     * list, it cannot come back. */
+    smilePhase = 2;
+    scene.remove(smile);
+    const fi = farProps.findIndex((f) => f.obj === smile);
+    if (fi >= 0) farProps.splice(fi, 1);
+  }
 }
 
 /* The trails. Each one leaves a widening V of ripples behind it and throws a

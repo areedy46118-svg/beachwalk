@@ -1375,23 +1375,32 @@ by `tools/smile_anim.py` into `assets/smile.glb`: decimated to 24k with its
 own maps, and `idle` (a tall thing standing very still) and `run` (a flat
 sprint) authored on its 21 bones with the crab pipeline's helpers. It
 stands on the dry sand between you and the moon, a black silhouette with a
-pale grin (`color` × 0.22 and a cold `reexpose` rim on the body; the face
-keeps its light and a little emissive), turning slowly to keep its face on
-you; inside `SMILE_SEE` (9 m — close enough to see the face) it bolts for
+pale grin (`color` × 0.10 and NO rim on the body — a Fresnel rim was tried
+and read as a white sheen over the whole figure; the face keeps its map,
+is lifted, and carries enough emissive to show in the dark), turning slowly
+to keep its face on you; inside `SMILE_SEE` (9 m — close enough to see the face) it bolts for
 the sea at `SMILE_RUN`, wheels to -X, and goes under like a dive the moment
-it is past the wading line; it is switched off the frame the top of it is
-under the drawn sea WHERE IT IS (`waterSurfaceAt`), not at a distance — the
-swell out there drops two metres and the first build left its head standing
-out of a trough for seconds. **No stinger.** A musical shriek was tried on
+it is past the wading line; it is REMOVED — `scene.remove()` and out of
+`farProps` — the frame the top of it is under the drawn sea WHERE IT IS
+(`waterSurfaceAt`), not at a distance: the swell out there drops two
+metres and the first build left its head standing out of a trough for
+seconds. And it has to be removed, not hidden: `visible = false` was undone
+the next frame by `updateFarProps()`, which switches every `farProps` entry
+on or off by distance, so it stood back up at its last spot with its head at
+the surface for the rest of the game. Anything in `farProps` that is meant
+to go away for good must leave the list. **No stinger.** A musical shriek was tried on
 the bolt and cut: it tells you the game is scaring you. Its FEET are the
 sound — `sfxSmileStep()` every `SMILE_STEP`, falling off with distance,
 until the water takes it, then the splash. It stands 120 m past the
 snorkeler so neither can be seen from the other. **The animation is
 restraint.** A flailing sprint (0.95 rad legs, pumping arms, a rolling
-torso) read as a cartoon; the run is a short quick stride with the arms
-held down and close (elbows folded FORWARD — the first sign had the
-forearms flying up behind it, which was most of "the arms are flying
-around"), played at 2x, and the idle is DEAD STILL but for the
+torso) read as a cartoon; the run is a real cycle, fast but ARTICULATED: the
+knee folds hard as the leg swings through under the body and straightens as
+the foot reaches forward, the elbows are bent and open and close as the arms
+pump, held close (elbows folded FORWARD — the first sign had the forearms
+flying up behind it, which was most of "the arms are flying around"),
+played at 2x; the idle stance keeps a little bend in every knee and elbow,
+because straight limbs read as sticks, and the idle is DEAD STILL but for the
 whole upper body tilting a few degrees to one side over eight seconds,
 holding, and coming back — the way something looks at a thing it does not
 understand. Three things it took: **Blender
