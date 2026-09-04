@@ -730,7 +730,7 @@ const glowTex = makeGlowTexture();
 // it separates from the sand without turning into a video-game waypoint.
 // ------------------------------------------------------------------
 const shinies = [];
-function addItemShine(root, { size = 0.55, height = 0.12, strength = 1 } = {}) {
+function addItemShine(root, { size = 0.55, height = 0.12, strength = 1, lift = 1 } = {}) {
   if (shinies.some((s) => s.root === root)) return;   // never twice on one thing
   const glint = new THREE.Sprite(new THREE.SpriteMaterial({
     map: glowTex, color: 0xbcd6ff, transparent: true, opacity: 0.0,
@@ -752,7 +752,7 @@ function addItemShine(root, { size = 0.55, height = 0.12, strength = 1 } = {}) {
       mats.push({ m, base: m.emissive.clone() });
     }
   });
-  shinies.push({ root, glint, mats, strength, phase: Math.random() * 6.28 });
+  shinies.push({ root, glint, mats, strength, lift, phase: Math.random() * 6.28 });
 }
 function updateShines(t) {
   for (const s of shinies) {
@@ -761,10 +761,13 @@ function updateShines(t) {
     const k = 0.5 + 0.5 * Math.sin(t * 1.5 + s.phase);
     s.glint.material.opacity = (0.055 + 0.075 * k) * s.strength;
     for (const { m, base } of s.mats) {
+      // `lift` scales the glow on the object itself: a dark textured scan
+      // is swamped by the stock lift and reads as a flat grey cut-out
+      const L = s.strength * s.lift;
       m.emissive.setRGB(
-        base.r + (0.055 + 0.045 * k) * s.strength,
-        base.g + (0.065 + 0.050 * k) * s.strength,
-        base.b + (0.085 + 0.065 * k) * s.strength
+        base.r + (0.055 + 0.045 * k) * L,
+        base.g + (0.065 + 0.050 * k) * L,
+        base.b + (0.085 + 0.065 * k) * L
       );
     }
   }
@@ -4475,10 +4478,7 @@ function renderPack() {
     slot.dataset.index = String(i);
     slot.innerHTML = `<span class="num">${i + 1}</span>` + (item ? iconHTML(item) : '');
     if (item) {
-      const nm = document.createElement('span');
-      nm.className = 'nm';
-      nm.textContent = item.name;
-      slot.appendChild(nm);
+      // no name in the slot: the pane on the right names the selection
       // double-click goes straight to the examine screen
       slot.addEventListener('dblclick', (e) => { e.stopPropagation(); inspectFromPack(item); });
     }
@@ -5175,6 +5175,12 @@ const shovelItem = {
 const MIL_LIP = [[-0.12, -0.21, 0], [0.12, -0.21, 0]];
 const milModel = new THREE.Group(), milInspect = new THREE.Group(), militaryWorld = new THREE.Group();
 function orientMil(src) {
+  /* EACH COPY GETS ITS OWN MATERIALS. clone(true) shares them, and the
+   * pickup glint on the beach copy lifts the emissive of every material
+   * under it — so the copy in your HAND and the pack icon glowed a flat
+   * blue-grey too, which is what "it looks lit up" was: not the maps, not
+   * the lights, the glint on a different object. */
+  src.traverse((o) => { if (o.isMesh) o.material = o.material.clone(); });
   const w = new THREE.Group();
   /* WHICH END IS THE BLADE. The wide flat thin part at model -X is the
    * D-HANDLE — a loop of steel is flat. The blade is the wide part at +X
@@ -5183,9 +5189,10 @@ function orientMil(src) {
    * end for the blade and the tool hung upside down, striking with the
    * grip. Loaded axes: length on X (blade +X), thin on Y (blade plate at
    * -Y), width on Z. Wanted: width on X, length on Y with the blade at -Y,
-   * thin on Z with the blade plate at -Z (the sand shovel's scoop side —
-   * its shaft is on the +Z back). Rows: x = -Lz, y = -Lx, z = +Ly. */
-  w.quaternion.setFromRotationMatrix(new THREE.Matrix4().set(0, 0, -1, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1));
+   * thin on Z. The scoop has to face the DIRT in the hand — the plate on
+   * +Z, dish toward the ground — which is half a turn about the shaft from
+   * the first guess. Rows: x = +Lz, y = -Lx, z = -Ly. */
+  w.quaternion.setFromRotationMatrix(new THREE.Matrix4().set(0, 0, 1, 0, -1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0, 1));
   w.scale.setScalar(0.01);
   const g = new THREE.Group();
   g.add(w); w.add(src);
@@ -5237,6 +5244,9 @@ militaryWorld.rotation.set(-Math.PI / 2, 0, 0.45);
   militaryWorld.add(proxy);
 }
 scene.add(militaryWorld);
+// its own glint, added first so makeNoticeable() does not add the stock one:
+// a scan this dark is swamped by the stock lift
+addItemShine(militaryWorld, { size: 0.9, height: 0.3, strength: 0.7, lift: 0.25 });
 addInteractable(militaryWorld, 'Take the military shovel', 'inventory', {
   onActivate: () => {
     sfxThud(0.04);
@@ -7131,6 +7141,7 @@ function updateGibs(dt) {
  * the opening. Everything here is about making the timing feel worth it. */
 const CRAB_STUN = 1.7;
 function parryCrab(u = crabs[0]) {
+  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04);   // steel meeting the claw, under the ring
   parryCool = 0;                         // landing one costs you nothing
   u.st.atk = -1;
   u.st.cool = CRAB_COOLDOWN;

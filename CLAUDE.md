@@ -181,6 +181,9 @@ rather than modelled because he is a billboard and a 3-D peg would line up
 from exactly one angle. The coordinates come from walking the PNG's alpha,
 not from guessing.
 
+**The pack's slots carry no names.** The pane on the right names the
+selection; a name under every icon in the grid was clutter.
+
 **The pack has a SELECTION, and the verbs are buttons.** Click a slot and
 the item comes up in the pane beside the grid — icon large, name, and
 INSPECT and HOLD (or USE) as the biggest things on the screen. The old
@@ -783,7 +786,16 @@ flat end for the blade and the tool hung upside down, striking with the
 grip. The matrix's rows are x = -Lz, y = -Lx, z = +Ly: blade down, plate on
 the -Z scoop side. **And no night lift on it at all** — olive drab under
 any gamma lift read as highlighted; the map is multiplied DOWN (0x8e918a),
-roughness 1, metalness 0.12. Three
+roughness 1, metalness 0.12. **The "lit up" look was the GLINT.** `clone(true)`
+shares materials, and `addItemShine` lifts the emissive of every material
+under the beach copy every frame — so the copy in the hand and the pack
+icon glowed a flat blue-grey with it, and no amount of material tuning
+touched it. `orientMil()` clones the materials per copy now, and
+`addItemShine` takes `lift` (0.25 here) because a dark textured scan is
+swamped by the stock lift. If a scan ever reads as a flat grey cut-out,
+read its `emissive` before touching anything else. The scoop faces the
+dirt in the hand: rows x = +Lz, y = -Lx, z = -Ly. The Military Shovel
+plays its steel block on every block AND under the parry ring. Three
 groups, because the scan lands over the network: the hand's, the
 examine/drop copy, the one on the beach past the drain. Its placement
 must not read `DRAIN_X` — declared thousands of lines later. Three
