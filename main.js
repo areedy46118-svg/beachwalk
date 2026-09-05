@@ -2595,7 +2595,12 @@ function makeCraterTexture() {
 const FOOT_SIDE = 0.26, FOOT_STRIDE = 0.66, FOOT_TOE = 0.12;   // a clear zigzag: left well left, right well right
 const FOOT_POOL = 96;
 const footGeo = new THREE.PlaneGeometry(0.31, 0.44); footGeo.rotateX(-Math.PI / 2);   // a print is wider than it looks
-const foot = new THREE.InstancedMesh(footGeo, new THREE.MeshBasicMaterial({ map: makeFootTexture(), transparent: true, depthWrite: false, opacity: 0.88 }), FOOT_POOL);
+/* DoubleSide, or you only ever leave one track. stampFoot() mirrors the
+ * right foot with a negative x scale, and a negative determinant flips the
+ * winding — so with the default FrontSide every right-hand print is
+ * backface-culled and you walk the beach on one leg. campFoot shares this
+ * material, so it takes the fix too. */
+const foot = new THREE.InstancedMesh(footGeo, new THREE.MeshBasicMaterial({ map: makeFootTexture(), transparent: true, depthWrite: false, opacity: 0.88, side: THREE.DoubleSide }), FOOT_POOL);
 foot.frustumCulled = false; foot.renderOrder = 2; foot.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 scene.add(foot);
 
