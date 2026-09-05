@@ -5,3 +5,6 @@ node_modules/
 .claude/settings.local.json
 .vscode/
 incoming/
+
+# local MCP server config — contains an API token, never commit
+.mcp.json
