@@ -1507,6 +1507,57 @@ right, a hairline ring that fills once as it writes and is gone in two and a
 half seconds — re-armed on a TIMER and not a frame, because the frame loop is
 not something a save indicator should depend on.
 
+**THE BUNKER IS PACKED, NOT PLACED — AND ITS WALK IS IN THE FILE.** Bohdan
+Lvov's "Underground Bunker" (`assets/bunker.glb` out of `tools/bunker_pack.py`,
+`models/underground-bunker.js`) is a control room the owner wants as an exact
+replica and has not yet said where; `spawnBunker(x, y, z, yaw)` is the one
+call that will place it, and only the harness makes it for now. Exact means
+NOTHING is decimated and no map is resized — 165k triangles and 17 MB of the
+scan's own textures, the only liberty the metal-rough PNGs going out as q92
+JPEG — so it is 23 MB, the biggest asset here by a distance, and that is the
+brief. The scan is in metres at human scale (doors 2.38, ceiling 3.29) and is
+put on its feet in Blender: floor at z = 0, room centred, so the game places
+it with position and a heading and does the walk in the room's OWN frame
+(`b.inv`), which is why it can stand at any angle. Five things it took:
+
+- **The armature is the parent of the whole scene.** It only swayed the grass
+  outside, but Object_4 sits between the Sketchfab root (scale 0.1) and every
+  part of the room, so `bpy.data.objects.remove` on it orphaned the room and
+  the first build came out ten times life size. Hand its children to its
+  parent with their world matrices kept, THEN remove it.
+- **The walk is rasterised, not boxed.** 416 mesh objects with merged names
+  (`TableNAblem` spans the room) cannot be a hand-placed AABB each. Every
+  triangle between knee and head height (0.15–1.95 m) goes onto a 0.1 m grid
+  at pack time, and `blocked(lx, lz, r)` is a disc test against it. The grid
+  rides INSIDE the GLB as extras on the root node (`userData.bw_nav`), along
+  with the room box, the doors, the ladder and the lamps — one file, no
+  numbers copied by hand. **And the grid must skip what the exporter drops:**
+  a bare material-less `Icosphere` at the room's centre put a two-metre disc
+  of nothing in the middle of the floor you could not cross.
+- **The lamps are found by the emissive map.** The lamp mesh is one object
+  with the roof details; sampling the emissive texture at every face's uv
+  centroid and clustering the bright ones gives the six ceiling lamps, the
+  console's light board and the siren. A PointLight goes on each — invisible
+  when the group is far-culled, so they cost nothing until you are there.
+- **Blend materials get their depth write back.** GLTFLoader turns it off
+  for alpha BLEND, and the 94 lamp housings, boots and cable runs that share
+  the "LightNTransparency" map are opaque over nearly all of it; without the
+  write they sorted against each other. `alphaTest` 0.02 keeps the glass.
+- **One clip is two things.** The 400-frame "HatchOpening" drives 120
+  objects: the screens, panel lights, reels and rotors that should run for
+  ever, and the hatch, which should open once and STAY open — the scan swings
+  it shut again over the last seven seconds. Split by target name into an
+  ambient loop and a hatch clip, and the hatch clip cut at its peak (frame
+  236, found by scanning the quaternion track) into `openHatch()` and
+  `closeHatch()`.
+
+And in the walk: a frame that BEGINS inside furniture — a bite's shove, a
+teleport, the wall clamp landing you against a desk — must be ejected to the
+nearest clear cell, not let through; letting it through let you stroll about
+inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
+strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
+before it renders anything: write the log to a file.
+
 **THE CUT IS A STRAIGHT LINE.** The first cuts rolled the blade over the top,
 from pointing up on the near side to pointing down on the far side, and with
 the pivot at the grip that is an arc: the tip rose over the upper middle

@@ -347,6 +347,12 @@ This work is based on ["The smile ( Rigged)"](https://sketchfab.com/3d-models/th
 by [Vertex Mercher](https://sketchfab.com/VertexMercher) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the tall one past the snorkeler.
 
+This work is based on ["Underground Bunker"](https://sketchfab.com/3d-models/underground-bunker-720d2958484345d7b535554e14122b5c)
+by [Bohdan Lvov](https://sketchfab.com/ostapblendercg) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the bunker control
+room (`assets/bunker.glb`, packed as an exact replica by `tools/bunker_pack.py`;
+not placed on the walk yet).
+
 This work is based on ["Survival Shovel"](https://sketchfab.com/3d-models/survival-shovel-143de1be88704810bd14f64cfed64bb7)
 by [howittworks](https://sketchfab.com/howittworks) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Military Shovel.

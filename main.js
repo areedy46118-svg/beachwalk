@@ -9,6 +9,7 @@ import { makeShipwreck } from './models/shipwreck.js';
 import { makeMushroomHouse, MUSH } from './models/mushroom-house.js';
 import { makeRing, makeRingIcon } from './models/ring.js';
 import { makeCdCase, makeCdCaseIcon } from './models/cd-case.js';
+import { makeUndergroundBunker } from './models/underground-bunker.js';
 
 /* ------------------------------------------------------------------ *
  *  Beach Walk — an endless, eerie shoreline at night.
@@ -15137,6 +15138,96 @@ new GLTFLoader().load('assets/corpse.glb', (gltf) => {
   }
 }
 // ------------------------------------------------------------------
+// The underground bunker — PREPPED, NOT PLACED. Bohdan Lvov's scan of a
+// control room (`models/underground-bunker.js`, `assets/bunker.glb` out of
+// `tools/bunker_pack.py`), an exact replica of the room at human scale:
+// steel floor, two vault doors, a ladder to a hatch, a wall of CRTs. Where
+// it goes on the walk is not decided yet, so nothing here calls
+// `spawnBunker()` — the harness does (`__bw.spawnBunker(x, y, z, yaw)`) to
+// stand it anywhere for a look. When it is placed, that is the one call.
+//
+// It sits with its floor at the group's y and the room centred on it; the
+// walk is done in the room's OWN frame (the inverse of its matrix) so it can
+// stand at any heading: walls clamp, the ceiling caps a jump, and the
+// furniture is a grid rasterised off the geometry at pack time, resolved by
+// undoing the frame's move an axis at a time so you slide along a desk
+// rather than stop dead against it. While you are in one the beach's
+// clamps and colliders leave you alone, the drain's rule.
+// ------------------------------------------------------------------
+const bunkers = [];
+let inBunker = null;
+const _bkL = new THREE.Vector3(), _bkP = new THREE.Vector3();
+function spawnBunker(x, y, z, yaw = 0, opts) {
+  const g = makeUndergroundBunker(opts);
+  g.position.set(x, y, z);
+  g.rotation.y = yaw;
+  scene.add(g);
+  g.updateMatrixWorld(true);
+  const b = { group: g, inv: g.matrixWorld.clone().invert() };
+  bunkers.push(b);
+  farProps.push({ obj: g, z, d: 260 });
+  return b;
+}
+function updateBunkers(dt) {
+  inBunker = null;
+  for (const b of bunkers) {
+    const g = b.group, B = g.userData.bunker;
+    const dx = camera.position.x - g.position.x, dz = camera.position.z - g.position.z;
+    if (Math.abs(dx) > 40 || Math.abs(dz) > 40) continue;
+    B.update(dt);                       // the screens and the reels run while you are anywhere near
+    const nav = B.nav;
+    if (!nav) continue;
+    _bkL.copy(camera.position).applyMatrix4(b.inv);
+    const R = nav.room, pr = PLAYER_R * 0.75;
+    const feet = camBaseY - playerEye() - g.position.y;          // the room's floor is its y = 0
+    if (_bkL.x <= R.x0 || _bkL.x >= R.x1 || _bkL.z <= R.z0 || _bkL.z >= R.z1) continue;
+    if (feet < -0.6 || feet > R.h) continue;
+    inBunker = b;
+    if (g.position.y > groundY) groundY = g.position.y;
+    // the walls
+    _bkL.x = THREE.MathUtils.clamp(_bkL.x, R.x0 + pr, R.x1 - pr);
+    _bkL.z = THREE.MathUtils.clamp(_bkL.z, R.z0 + pr, R.z1 - pr);
+    // the furniture: a blocked move is undone an axis at a time, so you slide
+    _bkP.copy(_preMove).applyMatrix4(b.inv);
+    const r = 0.26;
+    if (B.blocked(_bkL.x, _bkL.z, r)) {
+      if (!B.blocked(_bkP.x, _bkP.z, r)) {
+        /* Try the axis you are mostly moving along FIRST. Trying x first
+         * every time meant that in a gap between two console units a
+         * hair of sideways drift was kept and the whole stride down the
+         * gap thrown away, and you stood in the gap walking on the spot. */
+        const mx = Math.abs(_bkL.x - _bkP.x), mz = Math.abs(_bkL.z - _bkP.z);
+        const keepZ = !B.blocked(_bkP.x, _bkL.z, r), keepX = !B.blocked(_bkL.x, _bkP.z, r);
+        if (mz >= mx ? keepZ : !keepX) _bkL.x = _bkP.x;
+        else if (mz >= mx ? keepX : keepX) _bkL.z = _bkP.z;
+        else { _bkL.x = _bkP.x; _bkL.z = _bkP.z; }
+        if (B.blocked(_bkL.x, _bkL.z, r)) { _bkL.x = _bkP.x; _bkL.z = _bkP.z; }
+      } else {
+        /* The frame BEGAN inside something — a bite's shove, a teleport, the
+         * wall clamp landing you in a desk against it. Undoing the move
+         * would leave you there, and letting it through (the first version)
+         * let you walk about inside the console bank. Step to the nearest
+         * clear spot instead: eight directions, widening. */
+        let best = null, bd = Infinity;
+        for (let k = 1; k <= 24 && !best; k++) {
+          const rr = k * 0.08;                         // out to two metres: the desks are deep
+          for (let a = 0; a < 8; a++) {
+            const x = _bkL.x + Math.cos(a * Math.PI / 4) * rr, z = _bkL.z + Math.sin(a * Math.PI / 4) * rr;
+            if (x <= R.x0 + pr || x >= R.x1 - pr || z <= R.z0 + pr || z >= R.z1 - pr) continue;
+            if (!B.blocked(x, z, r) && rr < bd) { bd = rr; best = [x, z]; }
+          }
+        }
+        if (best) { _bkL.x = best[0]; _bkL.z = best[1]; }
+      }
+    }
+    // the ceiling
+    const top = g.position.y + R.h - 0.12;
+    if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; }
+    _bkL.applyMatrix4(g.matrixWorld);
+    camera.position.x = _bkL.x; camera.position.z = _bkL.z;
+  }
+}
+// ------------------------------------------------------------------
 // The tower: walls you can't walk through, a doorway you can, and a
 // helical stair whose height comes from how far round you've walked.
 // ------------------------------------------------------------------
@@ -15306,7 +15397,7 @@ function update(dt, rawDt = dt) {
    * beach is only 16.6 m wide and the wreck is 26 long, so with the clamp
    * applied you hit an invisible wall 4.6 m short of her bow while
    * standing on her own deck. Her bulwark keeps you aboard. */
-  if (!insideTower && !insideDrain && !onDock && !onShip && mushWhere === 'out' && !mushInYard) {    // the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line
+  if (!insideTower && !insideDrain && !inBunker && !onDock && !onShip && mushWhere === 'out' && !mushInYard) {    // the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line
     camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
     camera.position.x = Math.max(camera.position.x, WADE_X);
   }
@@ -15318,7 +15409,7 @@ function update(dt, rawDt = dt) {
   // you stand on it. Done after updateTower() so a rock simply beats the sand.
   // Skipped inside the drainage tunnel home — there are no beach rocks in
   // there, and pushOutOfRocks would shove you about inside the pipe.
-  if (!insideTower && !insideDrain) {
+  if (!insideTower && !insideDrain && !inBunker) {
     const feet = camBaseY - playerEye();
     pushOutOfRocks(feet);
     const rc = rockGroundAt(camera.position.x, camera.position.z, feet);
@@ -15328,12 +15419,13 @@ function update(dt, rawDt = dt) {
   updateShip(dt);
   updateHoldDoor(dt);           // and the wreck overrides the sand where you're on it
   updateDock(dt);           // the pier's drift, boards and shed walls
+  updateBunkers(dt);        // the room's own frame: walls, furniture, ceiling
   updateFisherman(rawDt);   // he blinks and breathes, like Bradly
   /* ...and then out of anything solid again. updateDock() clamps you to the
    * deck's footprint, and that clamp used to run AFTER the push-out and put
    * you straight back inside a pile — which is how you ended up standing in
    * one. Whatever moves you last, this gets the final word. */
-  if (!insideTower && !insideDrain) {
+  if (!insideTower && !insideDrain && !inBunker) {
     const feet2 = camBaseY - playerEye();
     pushOutOfSolids(camera.position, feet2, PLAYER_R * 0.85, feet2 + playerHeight());
     const rc2 = rockGroundAt(camera.position.x, camera.position.z, feet2);
@@ -15757,6 +15849,7 @@ window.__bw = {
   get drainWarmed() { return drainWarmed; }, get drainWarmError() { return drainWarmError; },
   waterBottle, waterBottleWorld, get waterBottleItem() { return waterBottleItem; },
   get insideDrain() { return insideDrain; }, get drainMix() { return drainMix; },
+  spawnBunker, get bunkers() { return bunkers; }, get inBunker() { return inBunker; },
   waterSurfaceAt, submersionAt, restYInWater, groundGlow, addRipple,
   shells, listenToShell, makeRockGeo, dock, ring, driftAt, updateDock,
   listen: (v) => { listening = v; }, stopListening, keyItem, keyWorld,   // the ear pose without the audio, for the preview harness

@@ -68,6 +68,7 @@
       'water-bottle': () => import('./water-bottle.js').then(m => m.makeWaterBottle()),
       'ring': () => import('./ring.js').then(m => m.makeRing()),
       'shipwreck': () => import('./shipwreck.js').then(m => m.makeShipwreck()),
+      'underground-bunker': () => import('./underground-bunker.js').then(m => m.makeUndergroundBunker({ url: '../assets/bunker.glb' })),
     };
     document.getElementById('caption').textContent = which.replace('-', ' ') + '  ·  drag to rotate  ·  scroll to zoom';
     document.title = 'Model viewer — ' + which;
