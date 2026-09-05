@@ -3853,7 +3853,7 @@ function attackAction() {                        // left mouse
   if (peeking) { endPeek(); return; }
   if (frozen()) return;
   if (held) { throwHeld(); return; }
-  if (equipped && equipped.onDig) { if (digT <= 0 || cutCombo()) startDig(); return; }
+  if (equipped && equipped.onDig) { if (digT <= 0) startDig(); return; }
   if (equipped && equipped.onListen) { listenToShell(); return; }
   primaryAction();                               // bare hands: a click still interacts
 }
@@ -5045,26 +5045,50 @@ function updateSparks(dt) {
  * and it TWINKLES rather than glows: a smoothed random flicker in size and
  * brightness, which is what a highlight on a moving edge does and a lamp
  * does not. */
+/* THE GLINT IS A SPARKLE, NOT A LAMP. A hot core, four long tapering rays and
+ * four short ones on the diagonal — the shape every hand-drawn highlight on
+ * a blade has had since anyone drew one. Drawn as gradient strokes so the
+ * rays fade to nothing rather than ending, at 96 px so the taper survives
+ * the retro downscale. */
 const glintTex = (() => {
-  const c = document.createElement('canvas'); c.width = c.height = 64;
-  const g = c.getContext('2d');
-  const r = g.createRadialGradient(32, 32, 0, 32, 32, 30);
-  r.addColorStop(0, 'rgba(255,250,235,1)'); r.addColorStop(0.25, 'rgba(255,240,210,0.7)'); r.addColorStop(1, 'rgba(255,240,210,0)');
-  g.fillStyle = r; g.fillRect(0, 0, 64, 64);
-  g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 2;               // a four-point star through it
-  g.beginPath(); g.moveTo(32, 2); g.lineTo(32, 62); g.moveTo(2, 32); g.lineTo(62, 32); g.stroke();
+  const c = document.createElement('canvas'); c.width = c.height = 96;
+  const g = c.getContext('2d'); const m = 48;
+  const r = g.createRadialGradient(m, m, 0, m, m, 22);
+  r.addColorStop(0, 'rgba(255,252,240,1)'); r.addColorStop(0.3, 'rgba(255,244,220,0.55)'); r.addColorStop(1, 'rgba(255,240,210,0)');
+  g.fillStyle = r; g.fillRect(0, 0, 96, 96);
+  const ray = (ang, len, w, a) => {
+    const dx = Math.cos(ang), dy = Math.sin(ang);
+    const lg = g.createLinearGradient(m, m, m + dx * len, m + dy * len);
+    lg.addColorStop(0, `rgba(255,255,255,${a})`); lg.addColorStop(0.35, `rgba(255,250,235,${a * 0.55})`); lg.addColorStop(1, 'rgba(255,250,235,0)');
+    g.strokeStyle = lg; g.lineWidth = w; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(m, m); g.lineTo(m + dx * len, m + dy * len); g.stroke();
+  };
+  for (let i = 0; i < 4; i++) ray(i * Math.PI / 2, 46, 2.6, 0.95);                    // the long rays
+  for (let i = 0; i < 4; i++) ray(i * Math.PI / 2 + Math.PI / 4, 22, 1.8, 0.55);      // the short ones between
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 })();
 const tipGlint = new THREE.Sprite(new THREE.SpriteMaterial({ map: glintTex, transparent: true, opacity: 0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending }));
 tipGlint.scale.setScalar(0.04); tipGlint.visible = false; tipGlint.renderOrder = 10;
 vmScene.add(tipGlint);
-let glintK = 0, glintN = 0;
-const _glintP = new THREE.Vector3(), _glintR = new THREE.Vector3(), _glintC = new THREE.Vector3(), _glintN = new THREE.Vector3();
+let glintK = 0, glintN = 0, glintT = 0, glintPop = 0, glintPopAt = 0.5, glintWas = 0;
+const GLINT_SWEEP = 0.26;                   // the light runs the length of the edge in this
+const _glintP = new THREE.Vector3(), _glintR = new THREE.Vector3(), _glintC = new THREE.Vector3(), _glintN = new THREE.Vector3(), _glintS = new THREE.Vector3();
+/* AND IT MOVES LIKE ONE. The first version sat on the tip and jittered — a
+ * lamp with a loose contact. Now, the moment the charge tops out, the light
+ * RUNS the length of the cutting edge from the root to the tip, big and
+ * bright, and arrives; then it holds there breathing slowly, turning slowly,
+ * and every half second or so it POPS — a sharp brightening and a flick of
+ * spin, gone in a tenth of a second — which is what a highlight does when
+ * the hand holding the blade trembles. The pops are on an irregular count,
+ * because a regular one is a beacon. */
 function updateGlint(dt) {
   const want = (winding && windFull) ? 1 : 0;
-  glintK += (want - glintK) * Math.min(1, dt * (want ? 14 : 10));
+  if (want && !glintWas) { glintT = 0; glintPop = 0; glintPopAt = 0.35; tipGlint.material.rotation = Math.random() * Math.PI; }
+  glintWas = want;
+  glintK += (want - glintK) * Math.min(1, dt * (want ? 18 : 10));
   if (glintK < 0.01) { tipGlint.visible = false; return; }
   tipGlint.visible = true;
+  glintT += dt;
   /* ON THE EDGE, WHERE YOU CAN SEE IT. The wound pose holds the blade out to
    * the side and the very tip is often past the frame's edge, so a glint on
    * the tip alone was a glint you could not see at the one moment it was for.
@@ -5091,10 +5115,26 @@ function updateGlint(dt) {
     }
     if (!placed) tipGlint.position.copy(_glintC);
   }
-  glintN += ((Math.random() - 0.5) * 2 - glintN) * Math.min(1, dt * 26);   // the flicker, smoothed
-  const f = 0.62 + glintN * 0.38;
-  tipGlint.material.opacity = glintK * (0.55 + 0.45 * f);
-  tipGlint.scale.setScalar(glintK * (0.040 + 0.028 * f));
+  /* The run along the edge: from the root end (or the hand, when the edge is
+   * out of shot) to the point it will hold at, over GLINT_SWEEP. */
+  if (glintT < GLINT_SWEEP) {
+    _glintS.copy(_glintR).project(vmCamera);
+    const rootIn = Math.abs(_glintS.x) < 0.94 && Math.abs(_glintS.y) < 0.94;
+    if (!rootIn) toolMount.getWorldPosition(_glintR);
+    const u = easeOutCubic(glintT / GLINT_SWEEP);
+    tipGlint.position.lerpVectors(_glintR, tipGlint.position, u);
+  }
+  // the hold: a slow breath, a slow turn, and the irregular pop
+  glintPop = Math.max(0, glintPop - dt / 0.11);
+  glintPopAt -= dt;
+  if (glintPopAt <= 0 && glintT >= GLINT_SWEEP) { glintPop = 1; glintPopAt = 0.38 + Math.random() * 0.55; }
+  glintN += ((Math.random() - 0.5) * 2 - glintN) * Math.min(1, dt * 14);   // a little life under it, smoothed
+  const breath = 0.5 + 0.5 * Math.sin(glintT * Math.PI * 2 * 1.3);
+  const sweep = glintT < GLINT_SWEEP ? 1 - glintT / GLINT_SWEEP : 0;          // big and bright while it runs
+  const f = 0.55 + 0.30 * breath + 0.15 * glintN + glintPop * 0.9 + sweep * 0.8;
+  tipGlint.material.rotation += dt * (0.8 + glintPop * 9);
+  tipGlint.material.opacity = Math.min(1, glintK * (0.45 + 0.55 * f));
+  tipGlint.scale.setScalar(glintK * (0.036 + 0.030 * f));
 }
 
 function updateTrail(dt, recording) {
@@ -5639,9 +5679,13 @@ function poseMix(out, a, b, t) {
  * click, or the start of a wind-up — so the cocked pose and the cut agree. */
 let slashDir = -1, lastSlashAt = -1e9;   // -1 sweeps right to left
 const slashing = () => equipped === militaryItem && !digOverhead;
-const pickSlashDir = () => (performance.now() - lastSlashAt < 620) ? -slashDir : -1;
-// a click in a cut's recovery is the NEXT cut, straight out of this one
-const cutCombo = () => slashing() && digT >= SLASH_THROUGH;
+/* ALWAYS RIGHT TO LEFT. A backhand on the second click was built — the
+ * forehand mirrored about the middle of the frame, leaving from the far hip
+ * where the first cut finished — and cut on the owner's word: two cuts in
+ * two directions inside half a second read as flailing, not as a
+ * combination, and the light cut is the swing you make most. One direction,
+ * every time, and you know where the blade is going before you click. */
+const pickSlashDir = () => -1;
 /* THE BACKHAND IS THE FOREHAND IN A MIRROR — about the middle of the frame,
  * not about the hands' rest. `side` is measured from where the hands rest,
  * which is off to the right, so simply negating it sent the backhand's
@@ -5668,31 +5712,39 @@ const mirrorSide = (s, d) => d < 0 ? s : -2 * ARM_SIDE - s;
  * numerically: the lip's screen position was probed at every quarter of both
  * lerps and the numbers moved until the tip crossed the middle level and the
  * grip stayed in frame at full charge. `d` is the side, -1 for right to left. */
+/* THE HEAVY IS THE DIAGONAL. The light cut comes in level from the side; the
+ * heavy cocks in the TOP RIGHT CORNER — hands up at the shoulder, blade
+ * leaning out to the corner of the frame, still on screen so the glint has
+ * somewhere to be — comes through the mark already pointing down-left, and
+ * finishes in the bottom left corner, hands at the far hip. Top right to
+ * bottom left, the whole diagonal of the picture. Laid out on the probe at
+ * 16:9: the tip at (0.94, 0.65) cocked, (0, -0.1) on the mark, (-0.55, -0.8)
+ * through. `P` blends the light into it. */
 function slashCock(out, P, d) {
-  out[0] = -(0.30 + P * 0.40);                  // tip tilted back over the shoulder
-  out[1] = 0.14 + P * 0.16;
+  out[0] = -(0.30 + P * 0.10);                  // tip tilted back a little
+  out[1] = 0.14 + P * 0.34;                     // heavy: the hands come up to the shoulder
   out[2] = 0.45 - d * (0.25 - P * 0.10);        // and drawn round behind it
-  out[3] = d * (1.00 - P * 0.50);               // light: from the side; heavy: from high
-  out[4] = 0.10;                                // pulled in toward the chest
-  out[5] = mirrorSide(0, d);
+  out[3] = d * (1.00 - P * 0.05);               // leaning out toward the near top corner
+  out[4] = 0.10 - P * 0.08;                     // pulled in toward the chest
+  out[5] = mirrorSide(0.16 * P, d);             // heavy: out to the near edge
   return out;
 }
 function slashMark(out, P, d) {
   out[0] = 0.04 + P * 0.06;
-  out[1] = 0.20 - P * 0.04;                     // the hands come up to the chest
-  out[2] = 0.45;                                // cancels the arm's turn: the blade lies level in the picture
-  out[3] = -d * (1.75 + P * 0.10);              // level, pointing the other way
+  out[1] = 0.20 + P * 0.06;                     // the hands at the chest
+  out[2] = 0.45;                                // cancels the arm's turn: the blade lies in the picture
+  out[3] = -d * (1.75 + P * 0.25);              // light: level; heavy: already pointing down the diagonal
   out[4] = -(0.24 + P * 0.30);                  // arms out: the cut ARRIVES
-  out[5] = mirrorSide(-(0.14 + P * 0.10), d);   // the grip toward the centre line
+  out[5] = mirrorSide(-(0.14 + P * 0.06), d);   // the grip toward the centre line
   return out;
 }
 function slashThrough(out, P, d) {
-  out[0] = 0.20 + P * 0.10;
-  out[1] = 0.06 - P * 0.08;
-  out[2] = 0.45 + d * (0.35 - P * 0.05);        // the tip going on round behind you
-  out[3] = -d * (1.85 + P * 0.25);              // a little past level, toward the far bottom corner
-  out[4] = -(0.10 + P * 0.16);
-  out[5] = mirrorSide(-(1.05 + P * 0.10), d);   // the hands at the far hip
+  out[0] = 0.20 + P * 0.14;
+  out[1] = 0.06 - P * 0.22;                     // heavy: down to the far hip
+  out[2] = 0.45 + d * 0.35;                     // the tip going on round behind you
+  out[3] = -d * (1.85 + P * 0.75);              // light: a little past level; heavy: down into the corner
+  out[4] = -(0.10 + P * 0.20);
+  out[5] = mirrorSide(-(1.05 + P * 0.30), d);   // the hands at the far hip
   return out;
 }
 // the top of an ordinary left-click swing
@@ -5803,8 +5855,7 @@ function landPoint() {
   return _landP;
 }
 function startDig(power = 0, fromPose = null) {
-  const combo = !fromPose && cutCombo();      // the next cut, out of this one's recovery
-  if ((digT > 0 && !combo) || !equipped || !equipped.onDig || frozen()) return;
+  if (digT > 0 || !equipped || !equipped.onDig || frozen()) return;
   camera.getWorldDirection(_aimD);            // the angle; aimRay() takes the position
   digPower = THREE.MathUtils.clamp(power, 0, 1);
   // a charged release keeps whatever it was wound as; a plain click never is
@@ -5822,14 +5873,6 @@ function startDig(power = 0, fromPose = null) {
   if (fromPose) {
     for (let i = 0; i < 6; i++) _poseA[i] = fromPose[i];
     digT = windupEnd();                 // already wound: straight into the strike
-  } else if (combo) {
-    /* THE COMBINATION. A second click while the first cut is still coming
-     * back does not wait for it: the backhand leaves from wherever the arm
-     * is at that moment — which is out at the far hip, exactly where a
-     * backhand cocks — so two clicks are one figure-of-eight and not two
-     * cuts with a rest between them. */
-    for (let i = 0; i < 6; i++) _poseA[i] = _pose[i];
-    digT = windupEnd();
   } else {
     haulPose(_poseA, digPower);
     digT = 0.0001;
@@ -5837,7 +5880,7 @@ function startDig(power = 0, fromPose = null) {
   impactPose(_poseB, digPower);
   if (slashing()) throughPose(_poseC, digPower);
   // a cut's whoosh goes with the blade, not with the click: a light cut cocks first
-  sfxDig(digPower, slashing(), (fromPose || combo) ? 0 : windupEnd() * swingSecs(digPower));
+  sfxDig(digPower, slashing(), fromPose ? 0 : windupEnd() * swingSecs(digPower));
 }
 function startWind() {
   if (blocking) return;                  // no swing comes out of a guard
@@ -6100,9 +6143,12 @@ const DIG_WINDUP = 0.34, DIG_STRIKE = 0.46;
  * still fires at DIG_STRIKE, so everything keyed to that beat is untouched. */
 const SLASH_WINDUP = 0.22, SLASH_THROUGH = 0.62;
 const windupEnd = () => slashing() ? SLASH_WINDUP : DIG_WINDUP;
-// how long this swing takes: a heavy is slower, a cut is quicker and its
-// heavy less slowed — a katana is not a sledgehammer
-const swingSecs = (P) => slashing() ? DIG_DUR * (0.55 + P * 0.60) / 1.34 : DIG_DUR * (0.55 + P);
+/* How long this swing takes. A LIGHT CUT IS A CLICK: the same 0.44 s as the
+ * sand shovel's — it ran a third quicker and the owner called it too fast;
+ * with the blade crossing the whole frame there is more to see than in a
+ * chop, and it needs the time. A HEAVY cut stays quick for a heavy (0.69 s
+ * against the chop's 1.24): a katana is not a sledgehammer. */
+const swingSecs = (P) => slashing() ? DIG_DUR * (0.55 + P * 0.60) / (1 + 0.34 * P) : DIG_DUR * (0.55 + P);
 let vmLagX = 0, vmLagY = 0, vmPrevYaw = 0, vmPrevPitch = 0;
 let vmSpringY = 0, vmSpringV = 0;
 const _vmEuler = new THREE.Euler(0, 0, 0, 'YXZ');

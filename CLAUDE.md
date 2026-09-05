@@ -1362,16 +1362,28 @@ lands `sfxKillThud`, and the whoosh is a blade's — shorter, higher, and
 delayed to the strike, because on the click it played over the cock-back and
 was sixty milliseconds ahead of the picture.
 
-**THE BACKHAND IS THE FOREHAND IN A MIRROR — about the middle of the frame,
-not about the hands.** `side` is measured from the rest, which is off to the
-right, so negating it sent the backhand's follow-through a frame-width further
-right and clean out of the picture; `mirrorSide` reflects the grip about the
-centre line. Which side a cut comes from is decided when it is COMMITTED —
-the click, or the start of a wind-up — so the cocked pose and the cut agree;
-a second click inside 620 ms is the backhand, and one that lands in the first
-cut's RECOVERY does not wait for it: the next cut leaves from wherever the
-arm is (`cutCombo`), which is out toward the far hip, where a backhand cocks
-anyway. Two clicks are a figure of eight, not two cuts with a rest between.
+**THERE IS NO BACKHAND, AND A LIGHT CUT IS A CLICK.** A backhand on the
+second click was built — the forehand mirrored about the middle of the frame
+(`mirrorSide`), leaving from the far hip where the first cut finished — and
+cut on the owner's word: two cuts in two directions inside half a second read
+as flailing, and the light cut is the swing you make most. It is right to
+left every time, so you know where the blade is going before you click. The
+light cut also ran a third quicker than the sand shovel's click and was
+called too fast: it is the same 0.44 s now (`swingSecs`) — with the blade
+crossing the whole frame there is more to see than in a chop, and it needs
+the time. The heavy stays quick for a heavy (0.69 s against the chop's
+1.24), because a katana is not a sledgehammer.
+
+**THE GLINT IS A SPARKLE, AND IT MOVES LIKE ONE.** The first twinkle sat on
+the tip and jittered — a lamp with a loose contact. Now the moment the charge
+tops out the light RUNS the length of the cutting edge from the root to the
+tip (`GLINT_SWEEP`), big and bright, and arrives; then it holds, breathing
+slowly and turning slowly, and every half second or so on an irregular count
+it POPS — a sharp brightening and a flick of spin, gone in a tenth of a
+second — which is what a highlight does when the hand holding the blade
+trembles. The texture is the drawn one: a hot core, four long tapering rays
+and four short diagonals, as gradient strokes so the rays fade rather than
+end, at 96 px so the taper survives the retro downscale.
 
 **THE GUARD IS THE SAND SHOVEL'S, ON EVERY TOOL.** Held scoop-up, the
 Military Shovel's block put the bar the wrong way up with the blade on the
