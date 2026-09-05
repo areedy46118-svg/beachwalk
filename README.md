@@ -164,14 +164,18 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   while they grow to fill the frame — and it is dropped mid-stride, so the
   frame you get your hands back on is the frame they are ten metres out and
   still running.
-  They are three different animals. **The pale one** is the fight you learn
-  the language on: five hit points, all four swings. **The flayed red one** is
-  half a metre taller and seven hit points, with no quick swipe — everything
-  it does is committed, and everything it does leaves it open for a long time.
-  **The dark one** is small, fast, four hit points and mostly the swipe; it is
-  the one that gets behind you while you are reading one of the others. Each
-  has its own voice, a pitch and a weight, so you can tell from across the
-  sand which of them is winding up.
+  They are three different animals, and they do not move alike: each has its
+  own run, idle, roar and death out of the pack, and the two that share a run
+  cycle play it at half again the rate and thirty degrees more bent over.
+  **The pale one** is the fight you learn the language on: five hit points,
+  all four swings. **The flayed red one** is half a metre taller, seven hit
+  points, and **hits for two** — you have three — with no quick swipe;
+  everything it does is committed and everything it does leaves it open for a
+  long time. **The dark one** is small, fast, four hit points, mostly the
+  swipe, and the only one that chains three swings together; it is the one
+  that gets behind you while you are reading one of the others. Each has its
+  own voice, a pitch and a weight, so you can tell from across the sand which
+  of them is winding up.
   **Only one of them swings at a time**, and the turn goes to whichever has
   gone longest without one. Three tells at once is not three times the fight,
   it is no fight at all — there is nothing to read. So what you are answering

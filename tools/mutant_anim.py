@@ -25,14 +25,18 @@ Four things it has to do:
     goes nowhere is not a lunge and a death has to fall.
 
 THREE OF THEM COME AT YOU, and the pack ships three texture sets, so the
-variations are the sets: 02 is pale grey flesh with raw red and is the one
-baked into the GLB; 01 (flayed red-brown) and 03 (dark green-brown) come out
-as loose colour maps beside it, and the game parses the one GLB three times
-— the crab's trick — and swaps the map on two of them. Only the ALBEDO
-changes: the sculpt is the same, so the normal and the roughness in the GLB
-serve all three, and two 250 KB JPEGs buy a whole extra creature each. What
-makes them read as different animals is not only the skin: they are built at
-different heights and move at different speeds, and that is in main.js.
+variations are the sets. `tools/mutant_tex.py` prepares all three (run it
+first): it multiplies each set's ambient occlusion into its albedo — there is
+one directional light in this game and nothing in a crease is ever shaded by
+it, so the depth has to be in the map — and brings the whole thing down at
+source rather than letting a shader lift it, which is the Military Shovel's
+lesson. Set 02 is baked into the GLB; 01 and 03 ride beside it as JPEGs and
+the game parses the one GLB three times and swaps the map.
+
+AND THEY DO NOT MOVE ALIKE. The pack has two runs, two idles, two rages and
+two deaths, so each variation gets its own: they are told apart at fifty
+metres by their gait before you can see what colour they are. Sixteen clips
+go out; `walk` is not among them, because nothing in this fight walks.
 """
 import bpy, os, sys, math
 
@@ -44,8 +48,9 @@ OUT = '/Users/ethanreedy/Dev/beachwalk/assets/mutant.glb'
 # clip name in the game  ->  the FBX it comes out of
 CLIPS = [
     ('idle',   'Animation_fbx/mutant01@idle01.fbx'),
-    ('walk',   'Animation_fbx/mutant01@walk.fbx'),
+    ('idle2',  'Animation_fbx/mutant01@idle02.fbx'),
     ('run',    'Animation_fbx/mutant01@Run01.fbx'),
+    ('run2',   'Animation_fbx/mutant01@Run02.fbx'),
     ('attack', 'Animation_fbx/mutant01@attack01.fbx'),
     ('attack2', 'Animation_fbx/mutant01@attack02.fbx'),
     ('attack3', 'Animation_fbx/mutant01@attack03.fbx'),
@@ -55,10 +60,11 @@ CLIPS = [
     ('back',   'Animation_fbx/mutant01@walk_back01.fbx'),
     ('hit',    'Animation_fbx/mutant01@gethit.fbx'),
     ('die',    'Animation_fbx/mutant01@death01.fbx'),
+    ('die2',   'Animation_fbx/mutant01@death02.fbx'),
     ('roar',   'update_animation/mutant01@Rage_01.fbx'),
     ('roar2',  'update_animation/mutant01@Rage_02.fbx'),
 ]
-STRIP_DRIFT = {'walk', 'run', 'strafeL', 'strafeR', 'back'}          # authored travelling; the game moves the body
+STRIP_DRIFT = {'run', 'run2', 'strafeL', 'strafeR', 'back'}          # authored travelling; the game moves the body
 FINGERS = ('Thumb', 'Index', 'Middle', 'Ring', 'fingers')
 
 def log(*a): print("[mutant]", *a); sys.stdout.flush()
@@ -111,7 +117,7 @@ def tex_node(path, x, y, non_color=False):
     if non_color: n.image.colorspace_settings.name = 'Non-Color'
     n.location = (x, y)
     return n
-col = tex_node(TEX + '/mutant_color.jpg', -700, 300)
+col = tex_node(TEX + '/mutant_pale_color.jpg', -700, 300)
 rgh = tex_node(TEX + '/mutant_rough.jpg', -700, 0, True)
 nrm = tex_node(TEX + '/mutant_normal.jpg', -700, -300, True)
 nmap = nt.nodes.new('ShaderNodeNormalMap'); nmap.location = (-400, -300)
@@ -224,21 +230,15 @@ for img in bpy.data.images:
     except Exception: pass
 # ---------------------------------------------------- the other two skins
 # Same sculpt, same UVs: only the albedo changes, so these ride alongside the
-# GLB as plain JPEGs and the game swaps `map` on the copies it parses.
-for tag, rel in [('red', 'Textures/Texture_set_01/png 2k/Mutant_color.png'),
-                 ('dark', 'Textures/Texture_set_03/png 2k/Mutant_Base_color.tga')]:
-    src = SRC + '/' + rel
-    if not os.path.exists(src): log("SKIP skin", tag, "missing", rel); continue
-    img = bpy.data.images.load(src)
-    try: _ = img.pixels[0]           # the loaders are lazy; touch it or size is 0
-    except Exception: pass
-    if max(img.size) > 1024: img.scale(1024, 1024)
-    out = '/Users/ethanreedy/Dev/beachwalk/assets/mutant-%s.jpg' % tag
-    bpy.context.scene.render.image_settings.file_format = 'JPEG'
-    bpy.context.scene.render.image_settings.quality = 82
-    img.file_format = 'JPEG'
-    img.save_render(out)
-    log("skin", tag, "->", os.path.getsize(out) // 1024, "KB")
+# GLB as plain JPEGs and the game swaps `map` on the copies it parses. They
+# come out of tools/mutant_tex.py already occluded and already brought down.
+import shutil
+for tag in ('red', 'dark'):
+    src = TEX + '/mutant_%s_color.jpg' % tag
+    if not os.path.exists(src): log("SKIP skin", tag, "- run tools/mutant_tex.py first"); continue
+    dst = '/Users/ethanreedy/Dev/beachwalk/assets/mutant-%s.jpg' % tag
+    shutil.copyfile(src, dst)
+    log("skin", tag, "->", os.path.getsize(dst) // 1024, "KB")
 
 log("exporting", OUT)
 bpy.ops.export_scene.gltf(

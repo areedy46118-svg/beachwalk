@@ -1577,6 +1577,32 @@ click into the last 45 % of a committed startup takes its health and does
 not break the blow; a charge, a parry or a throw always does. It commits for the last fifth of every startup
 — the turn stops — which is the timing a sidestep should have.
 
+**NO NIGHT LIFT ON THESE EITHER, AND THE OCCLUSION GOES IN THE MAP.** They
+shipped at emissive 0.30 off their own map over a 0.74 gamma re-expose and
+came out as three bright grey figures pasted on a dark beach — the Military
+Shovel's trap: a lift applied to a whole map raises the DARK parts furthest,
+so it flattens the folds and sockets that make a body read. But the answer is
+not simply to remove it: at 0.085 the maps went entirely and all three were
+the same black creature at fighting range, which is worse, because you cannot
+tell which one is on you. The fix is in the TEXTURE, not the shader.
+`tools/mutant_tex.py` multiplies each set's ambient occlusion into its albedo
+— there is one directional light here and it is behind you, so nothing in a
+crease is ever shaded by the renderer and the depth has to be baked — and
+brings the whole map down at source. The shader then does almost nothing:
+emissive 0.20 off the map, gamma 1.0, and the COLD RIM, which is the one
+thing that must stay. It is the edge that separates two metres of dark flesh
+from a dark beach; without it they do not lurk, they vanish. 4K sources
+resized once beat the pack's own 2K maps resized again.
+
+**AND THEY MUST NOT MOVE ALIKE.** The pack has two runs, two idles, two rages
+and two deaths, so each kind gets its own in `kind.anim` — but two of them
+share a run clip, and the thing that makes those two different animals is not
+the clip, it is `rate` and `lean`: the small one plays Run02 at nearly twice
+speed bent thirty degrees over its own feet, the big one at four fifths
+almost upright. The lean goes on the MODEL group, never the skeleton and
+never the heading, and eases in with the running so a standing creature is
+never tipped.
+
 **THREE OF THEM, AND ONE SKIN EACH.** The pack ships three texture sets, so
 the variations ARE the sets: 02 is baked into the GLB and 01 (flayed red) and
 03 (dark green-brown) come out of the build as loose 150 KB colour JPEGs. One
@@ -1602,6 +1628,24 @@ rocked, dead, or wandered out of reach — gives it back. The step back keeps
 the turn through it and does not swing without it, which was the one path
 that used to slip past. `mutSeparate()` pushes them off each other or the
 three converge into one silhouette with six arms.
+
+**AGGRESSION IS THE COOLDOWN, AND THE SPRINT MUST NOT STOP WHEN THE TAKE
+DOES.** They stood about between swings; the gap between turns is a fifth of
+a second now, scaled by `kind.aggr`, and the ones without the turn circle IN
+to just inside their own reach rather than holding a polite ring, so backing
+away from one is backing into another. The red one hits for TWO — you have
+three — which is fair only because its startups are the longest thing in the
+fight and its recovery the most punishable; the dark one chains twice, three
+swipes on the end of each other. Thirty-two swings a minute, split 14/10/8,
+one tell at a time. And they come through the cutscene at nearly twice speed,
+so handing back at their walking chase speed was a visible gear change at the
+exact moment that had to look like nothing happened: `st.sprint` carries it
+over and decays across the next second and a half.
+
+**MEASURING ANY OF THIS NEEDS `heal()` EVERY FRAME.** A sample that lets the
+player die schedules `location.reload()`, and the page comes back mid-loop
+with everything reset — the run reads as seven swings a minute and the
+distances read as six hundred metres, and neither number means anything.
 
 **THE CUTSCENE IS A LENS MOVE, NOT A POSE.** `mutCut` joins `packCut` in
 `frozen()` and in the pointerlock guard; the camera is TURNED, never moved,
