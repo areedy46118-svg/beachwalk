@@ -5021,6 +5021,66 @@ function updateSparks(dt) {
   sparkPts.visible = live > 0;
 }
 
+/* FULL CHARGE SHOWS ON THE BLADE. `sfxWindFull` already tells you; this is
+ * the same moment made visible — a small point of light at the very tip that
+ * flickers while you hold, for every shovel, so you never overhold a heavy
+ * wondering if it is there yet. It is a sprite in the view-model scene parked
+ * on `trailTip` each frame (so it rides whichever tool is in hand), additive,
+ * and it TWINKLES rather than glows: a smoothed random flicker in size and
+ * brightness, which is what a highlight on a moving edge does and a lamp
+ * does not. */
+const glintTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const r = g.createRadialGradient(32, 32, 0, 32, 32, 30);
+  r.addColorStop(0, 'rgba(255,250,235,1)'); r.addColorStop(0.25, 'rgba(255,240,210,0.7)'); r.addColorStop(1, 'rgba(255,240,210,0)');
+  g.fillStyle = r; g.fillRect(0, 0, 64, 64);
+  g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 2;               // a four-point star through it
+  g.beginPath(); g.moveTo(32, 2); g.lineTo(32, 62); g.moveTo(2, 32); g.lineTo(62, 32); g.stroke();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+})();
+const tipGlint = new THREE.Sprite(new THREE.SpriteMaterial({ map: glintTex, transparent: true, opacity: 0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending }));
+tipGlint.scale.setScalar(0.04); tipGlint.visible = false; tipGlint.renderOrder = 10;
+vmScene.add(tipGlint);
+let glintK = 0, glintN = 0;
+const _glintP = new THREE.Vector3(), _glintR = new THREE.Vector3(), _glintC = new THREE.Vector3(), _glintN = new THREE.Vector3();
+function updateGlint(dt) {
+  const want = (winding && windFull) ? 1 : 0;
+  glintK += (want - glintK) * Math.min(1, dt * (want ? 14 : 10));
+  if (glintK < 0.01) { tipGlint.visible = false; return; }
+  tipGlint.visible = true;
+  /* ON THE EDGE, WHERE YOU CAN SEE IT. The wound pose holds the blade out to
+   * the side and the very tip is often past the frame's edge, so a glint on
+   * the tip alone was a glint you could not see at the one moment it was for.
+   * Walk the cutting edge from tip to root and take the first point that is
+   * actually inside the frame; the whole lip is the edge, so any of it is
+   * "the tip of the shovel" as far as the eye is concerned. */
+  trailTip.getWorldPosition(_glintP); trailRoot.getWorldPosition(_glintR);
+  let placed = false;
+  for (let k = 0; k <= 4 && !placed; k++) {
+    _glintC.lerpVectors(_glintP, _glintR, k / 4);
+    _glintN.copy(_glintC).project(vmCamera);
+    if (Math.abs(_glintN.x) < 0.94 && Math.abs(_glintN.y) < 0.94) { tipGlint.position.copy(_glintC); placed = true; }
+  }
+  /* And when the WHOLE edge is out of shot — the sand shovel's full wind holds
+   * the blade clear off the right of the frame — walk on down the tool toward
+   * the hand and light the first part of it that is in view. It is on the
+   * shovel and it is where your eye is; that is the job. */
+  if (!placed) {
+    toolMount.getWorldPosition(_glintC);
+    for (let k = 1; k <= 6 && !placed; k++) {
+      _glintN.lerpVectors(_glintR, _glintC, k / 6);
+      const q = _glintN.clone().project(vmCamera);
+      if (Math.abs(q.x) < 0.94 && Math.abs(q.y) < 0.94) { tipGlint.position.copy(_glintN); placed = true; }
+    }
+    if (!placed) tipGlint.position.copy(_glintC);
+  }
+  glintN += ((Math.random() - 0.5) * 2 - glintN) * Math.min(1, dt * 26);   // the flicker, smoothed
+  const f = 0.62 + glintN * 0.38;
+  tipGlint.material.opacity = glintK * (0.55 + 0.45 * f);
+  tipGlint.scale.setScalar(glintK * (0.040 + 0.028 * f));
+}
+
 function updateTrail(dt, recording) {
   if (recording) { trailSample(); trailFade = 1; }
   else if (trailFade > 0) trailFade = Math.max(0, trailFade - dt / 0.16);
@@ -5515,6 +5575,10 @@ let guardShock = 0, guardShockV = 0;
  * force through your shoulders feels like from the inside. Applied around the
  * scene render and removed again, so it never leaks into the look state. */
 let hitRoll = 0;
+/* THE SLAM DIP. An overhead that lands drops the CAMERA ten centimetres and
+ * lets it back up over a third of a second — your knees, not the shovel.
+ * Applied around the scene render and removed, like the roll. */
+let slamDip = 0;
 const GUARD_K = 420, GUARD_D = 11;       // stiff and only lightly damped: it rings
 let winding = false, windT = 0, digPower = 0, digCharged = false, windFull = false;
 /* THE OVERHEAD. Hold sprint while you wind and the shovel goes up over your
@@ -5547,9 +5611,12 @@ const slashing = () => equipped === militaryItem && !digOverhead;
 // the top of an ordinary left-click swing
 function haulPose(out, P) {
   if (digOverhead) {
-    // both hands above the head, brought in to the centre line
-    out[0] = -(1.95 + P * 0.35); out[1] = 0.34 + P * 0.16;
-    out[2] = 0.44; out[3] = 0.02; out[4] = 0.12;
+    /* BOTH HANDS STRAIGHT UP, and BACK. The tool goes past vertical over the
+     * head — you can feel your own arms in it — and the hands come in toward
+     * the centre line and draw back toward the chest, so the whole body is
+     * loaded behind it. It hangs there. Then it comes down. */
+    out[0] = -(2.38 + P * 0.32); out[1] = 0.48 + P * 0.16;
+    out[2] = 0.30; out[3] = 0.0; out[4] = 0.24 + P * 0.06;
     return out;
   }
   if (slashing()) {
@@ -5580,8 +5647,8 @@ function impactPose(out, P) {
      * FALLS. Further through than a side swing, and further out. Wound all
      * the way up it goes through nearly a third of a turn more and lands a
      * hand further out: the heaviest thing in the game should look it. */
-    out[0] = 2.62 + P * 0.78; out[1] = -(0.44 + P * 0.12);
-    out[2] = 0.42; out[3] = -0.03; out[4] = -(0.30 + P * 0.44);
+    out[0] = 2.92 + P * 0.72; out[1] = -(0.64 + P * 0.14);
+    out[2] = 0.36; out[3] = -0.04; out[4] = -(0.42 + P * 0.50);
     return out;
   }
   if (slashing()) {
@@ -6074,7 +6141,11 @@ function updateViewmodel(dt) {
        * speed, so the blade hangs for a beat and then falls — and because
        * _poseA is wherever the swing actually began, a charged release picks
        * up from the wound pose with nothing to snap through. */
-      poseMix(_pose, _poseA, _poseB, easeInCubic((p - DIG_WINDUP) / (DIG_STRIKE - DIG_WINDUP)));
+      /* An overhead falls harder than it is swung: quartic in, not cubic, so
+       * it hangs at the top for longer and covers the last half of the drop in
+       * a fifth of the time. That hang-then-drop is the whole read of a slam. */
+      const st = (p - DIG_WINDUP) / (DIG_STRIKE - DIG_WINDUP);
+      poseMix(_pose, _poseA, _poseB, digOverhead ? st * st * st * st : easeInCubic(st));
     } else {
       // recovery: eases back to rest, overshooting once on the way
       poseMix(_pose, _poseB, REST_POSE, easeOutBack(Math.min(1, (p - DIG_STRIKE) / (1 - DIG_STRIKE))));
@@ -6105,8 +6176,23 @@ function updateViewmodel(dt) {
           hitRoll = -slashDir * (0.030 + P * 0.034);
         }
       }
-      // the whole body goes into an overhead, so it kicks back harder
-      if (digOverhead) { addTrauma(0.16 + P * 0.2); fovKick = Math.max(fovKick, 4 + P * 3); }
+      /* THE SLAM. The whole body goes into an overhead and the whole body
+       * takes the stop: a longer freeze than any other swing, the biggest
+       * trauma, the lens punched, the CAMERA DROPPED ten centimetres and let
+       * back up (`slamDip` — you buckle), the guard spring hammered, sparks,
+       * a boom with a floor under it, and a burst of sand off the point of
+       * impact whether or not there was anything there to hit. */
+      if (digOverhead) {
+        hitstop = Math.max(hitstop, 0.075 + P * 0.065);
+        addTrauma(0.40 + P * 0.42);
+        fovKick = Math.max(fovKick, 6 + P * 5);
+        slamDip = 0.10 + P * 0.07;
+        guardShockV += 5.5 * (0.5 + P);
+        spawnSparks(8, 0.6 + P * 0.6);
+        sfxSlam(P);
+        const lp = landPoint();
+        spawnPuffs(lp.x, lp.z, 14 + Math.round(P * 12), -_pf.x, -_pf.z, Math.max(0.05, lp.y), null);
+      }
     }
     if (p >= 1) { digT = 0; digPower = 0; digCharged = false; digOverhead = false; }
   } else {
@@ -6121,6 +6207,7 @@ function updateViewmodel(dt) {
   const earH = Math.tan((vmCamera.fov * Math.PI) / 360) * -EAR_AT.z;
   const earX = earH * vmCamera.aspect * EAR_AT.x, earY = earH * EAR_AT.y;
   hitRoll += (0 - hitRoll) * Math.min(1, dt * 9);
+  slamDip += (0 - slamDip) * Math.min(1, dt * 7);
   // a parry rings the tool: the guard spring, driven by the blow that landed
   guardShockV += (-GUARD_K * guardShock - GUARD_D * guardShockV) * dt;
   guardShock += guardShockV * dt;
@@ -6164,6 +6251,7 @@ function updateViewmodel(dt) {
   trailGain = (equipped === militaryItem && !digOverhead) ? 1.55 : 1;
   updateTrail(dt, toolVM.visible && digT >= DIG_WINDUP - 0.02 && digT < DIG_STRIKE + 0.13);
   updateSparks(dt);
+  updateGlint(dt);
 }
 
 // ------------------------------------------------------------------
@@ -12466,6 +12554,20 @@ function killMutant(u) {
   addTrauma(0.6);
   hitstop = MUT_HIT_STOP + (equipped === militaryItem ? 0.05 : 0);
 }
+/* The slam's report: a sub that hits and a crack over it — concrete falling
+ * on concrete — sized by the charge. Under whatever the blade found. */
+function sfxSlam(P = 0) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(74, t); o.frequency.exponentialRampToValueAtTime(24, t + 0.36);
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.48 + P * 0.2, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.42);
+  o.connect(g).connect(out); o.start(t); o.stop(t + 0.44);
+  const c = noiseBurst(0.09, (x) => Math.pow(1 - x, 1.6));
+  const cf = ctx.createBiquadFilter(); cf.type = 'bandpass'; cf.Q.value = 0.8; cf.frequency.value = 900 - P * 300;
+  const cg = ctx.createGain(); cg.gain.value = 0.34 + P * 0.16;
+  c.connect(cf).connect(cg).connect(out); c.start(t); c.stop(t + 0.09);
+}
 /* The floor under a kill: a sub thump you feel more than hear, under whatever
  * the blade did. It is the same on every kill and that is the point — it is
  * the one sound in the fight that means "that one is finished". */
@@ -14746,7 +14848,9 @@ function animate() {
     return;
   }
   if (hitRoll) camera.rotateZ(hitRoll);
+  if (slamDip) camera.position.y -= slamDip;
   renderer.render(scene, camera);
+  if (slamDip) camera.position.y += slamDip;
   if (hitRoll) camera.rotateZ(-hitRoll);
   renderer.autoClear = false;
   if (viewmodel.visible) {
@@ -14838,7 +14942,7 @@ window.__bw = {
   get dockDoorOpen() { return dockDoorOpen; }, set dockDoorOpen(v) { dockDoorOpen = v; }, get onDock() { return onDock; },
   crabs, makeCrabUnit, nearestCrab, crabPlay, updateCrabUnit, get crabToken() { return crabToken; },
   mutants, mutant, updateMutant, hurtMutant, killMutant, parryMutant, blockMutant, nearestMutant,
-  sfxMutLaugh, sfxMutHunger, sfxMutTell, sfxMutRoar, spawnSparks,
+  sfxMutLaugh, sfxMutHunger, sfxMutTell, sfxMutRoar, spawnSparks, tipGlint, get windFull() { return windFull; },
   MUT_X, MUT_Z, MUT_HP, MUT_WIND, MUT_STUN, MUT_ATTACKS, MUT_KINDS, MUT_TRIGGER, mutSand, throwSand,
   get mutToken() { return mutToken; }, get mutCut() { return mutCut; }, get mutPhase() { return mutPhase; },
   mutState: () => mutants.map((u) => ({ kind: u.kindName, ...u.st, x: +u.g.position.x.toFixed(2), z: +u.g.position.z.toFixed(2), clip: u.cur && u.cur.getClip().name })),

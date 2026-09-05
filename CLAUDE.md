@@ -1350,6 +1350,22 @@ weight of a stopped one are the same language. A parry's freeze went to
 a second of the world stopped with the sparks hanging in it is the game
 telling you that you did that on purpose.
 
+**THE OVERHEAD IS A SLAM.** Both hands past vertical and drawn back, a hang
+at the top, and then a QUARTIC drop — not the cubic the other swings use —
+so it covers the last half of the fall in a fifth of the time. It lands
+like it: the longest freeze of any swing, the biggest trauma, the lens
+punched, the CAMERA dropped ten centimetres and let back up (`slamDip`, your
+knees, not the shovel — applied around the scene render and removed, like
+`hitRoll`), the guard spring hammered, sparks, `sfxSlam` (a sub that hits and
+a crack over it), and a burst of sand off the landing point whether or not
+there was anything there. **AND FULL CHARGE SHOWS ON THE BLADE.**
+`tipGlint` is a sprite parked on `trailTip` every frame — so it rides
+whichever tool is in hand — that TWINKLES while `windFull`: a smoothed random
+flicker in size and brightness, which is what a highlight on an edge does and
+a lamp does not. `sfxWindFull` was already the ear's version of this; a charge
+with no full mark is a charge you hold too long every time, and now you can
+see it as well as hear it.
+
 **A BLOCK COSTS WIND; A PARRY DOES NOT.** Holding a shovel across a blow
 that hard takes something out of you, and it comes out of the bar you run
 on — so a fight you spend blocking is a fight you cannot back out of, and
