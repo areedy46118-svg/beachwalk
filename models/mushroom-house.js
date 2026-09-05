@@ -92,9 +92,23 @@ export function makeMushroomHouse() {
   const glass = new THREE.MeshPhysicalMaterial({ color: 0x8fb0c8, roughness: 0.12, metalness: 0, transparent: true, opacity: 0.36, side: THREE.DoubleSide, depthWrite: false, emissive: 0x16202e });
   const iron = new THREE.MeshStandardMaterial({ color: 0x3f352d, roughness: 0.95, metalness: 0.1, flatShading: true, emissive: 0x100b07 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 1, metalness: 0, emissive: 0x040507 });
-  const cream = new THREE.MeshStandardMaterial({ color: 0xb9b2a4, roughness: 0.9, metalness: 0, flatShading: true, emissive: 0x2c2a26 });
+  const cream = new THREE.MeshStandardMaterial({ color: 0xb0b6c0, roughness: 0.9, metalness: 0, flatShading: true, emissive: 0x282d36 });
   const mesh = (geo, mat, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); g.add(m); return m; };
   const arcBand = (r, y0, y1, a0, a1, mat, n) => mesh(new THREE.CylinderGeometry(r, r, y1 - y0, n || Math.max(6, Math.round((a1 - a0) * 12)), 1, true, a0, a1 - a0), mat, 0, (y0 + y1) / 2, 0);
+  /* RINGGEOMETRY LIES ABOUT ITS ANGLE. Its theta runs (cos, sin) in XY, while
+   * CylinderGeometry's runs (sin, cos) in XZ — the game's own convention — so
+   * a ring laid flat with the same thetaStart as the arc it is meant to cap
+   * comes out A QUARTER TURN ROUND, and laid face-down it comes out mirrored
+   * as well. Every capped arc in here was built that way: the bench's seat
+   * hovered 90 deg from its own front, a pale slab over nothing in the middle
+   * of the room, and the walls' copings floated out over the yard and over
+   * the gate with nothing under them. Lay one down with this and nothing
+   * else. `down` faces it at the floor. */
+  const ringArc = (r0, r1, a0, a1, mat, y, down) => {
+    const n = Math.max(4, Math.round((a1 - a0) * 12));
+    const t0 = down ? Math.PI / 2 - a1 : a0 - Math.PI / 2;
+    return mesh(new THREE.RingGeometry(r0, r1, n, 1, t0, a1 - a0).rotateX(down ? Math.PI / 2 : -Math.PI / 2), mat, 0, y, 0);
+  };
   let seed = 11; const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
 
   // ---------------------------------------------------------- platform and steps
@@ -121,7 +135,7 @@ export function makeMushroomHouse() {
   const wallArc = (a0, a1, mat) => {
     const ro = M.WALL_R + WALL_T / 2, ri = M.WALL_R - WALL_T / 2, n = Math.max(6, Math.round((a1 - a0) * 12));
     arcBand(ro, M.PLAT_TOP, wallTop, a0, a1, mat, n); arcBand(ri, M.PLAT_TOP, wallTop, a0, a1, mat, n);
-    mesh(new THREE.RingGeometry(ri, ro, n, 1, a0, a1 - a0).rotateX(-Math.PI / 2), mat, 0, wallTop, 0);
+    ringArc(ri, ro, a0, a1, mat, wallTop);
     // an end return closing the wall's thickness: with rotation.y = a - PI/2
     // local +X is RADIAL and +Z tangential (a is the mirror; see the treads)
     for (const a of [a0, a1]) { const e = mesh(new THREE.BoxGeometry(WALL_T, WALL_H, 0.04), mat, Math.sin(a) * M.WALL_R, M.PLAT_TOP + WALL_H / 2, Math.cos(a) * M.WALL_R); e.rotation.y = a - Math.PI / 2; }
@@ -139,7 +153,7 @@ export function makeMushroomHouse() {
   {
     const r0 = arc1, r1 = arc0 + TAU, n = 40, y0 = -0.35;
     arcBand(RET_R + RET_T, y0, RET_TOP, r0, r1, conc, n); arcBand(RET_R - RET_T, y0, RET_TOP, r0, r1, conc, n);
-    mesh(new THREE.RingGeometry(RET_R - RET_T, RET_R + RET_T, n, 1, r0, r1 - r0).rotateX(-Math.PI / 2), conc, 0, RET_TOP, 0);
+    ringArc(RET_R - RET_T, RET_R + RET_T, r0, r1, conc, RET_TOP);
     const nc = Math.round((r1 - r0) * RET_R / 0.9);
     for (let i = 0; i < nc; i++) { const a = r0 + (i + 0.5) * (r1 - r0) / nc; colliders.push({ x: Math.sin(a) * RET_R, z: Math.cos(a) * RET_R, r: 0.5, top: RET_TOP, mat: 'rock' }); }
     // and at each end it steps down and in to meet the parapet
@@ -169,21 +183,26 @@ export function makeMushroomHouse() {
    * beside you. It is one tube from the platform to the room floor now:
    * the door is a gap in the bottom of it, and its top edge is the lip of
    * the well, flush with the floor. */
-  const lowerH = M.DOOR_H + 0.15, colTop = M.H_ROOM, upperH = colTop - (M.PLAT_TOP + lowerH);
+  /* AND THE WALL OVER THE DOOR IS WALL. It was a straight box laid across a
+   * curved opening: a chord through an arc stands 15 cm proud of the face at
+   * each end, and lit on its top it read as a grey bar hanging in the air
+   * over the gate rather than as a lintel. The door is a gap in the bottom
+   * DOOR_H of the tube now and the concrete above it is the tube's own, with
+   * a soffit closing the reveal. Nothing hangs. */
+  const colTop = M.H_ROOM, doorTop = M.PLAT_TOP + M.DOOR_H;
   const gapStart = M.DOOR_ANG + M.DOOR_HALF, gapLen = TAU - M.DOOR_HALF * 2;
   for (const r of [M.COL_R, M.BORE]) {
-    mesh(new THREE.CylinderGeometry(r, r, lowerH, 40, 1, true, gapStart, gapLen), conc, 0, M.PLAT_TOP + lowerH / 2, 0);
-    mesh(new THREE.CylinderGeometry(r, r, upperH, 40, 1, true), conc, 0, M.PLAT_TOP + lowerH + upperH / 2, 0);
+    mesh(new THREE.CylinderGeometry(r, r, M.DOOR_H, 40, 1, true, gapStart, gapLen), conc, 0, M.PLAT_TOP + M.DOOR_H / 2, 0);
+    mesh(new THREE.CylinderGeometry(r, r, colTop - doorTop, 40, 1, true), conc, 0, (doorTop + colTop) / 2, 0);
   }
-  // the doorway's reveal: with rotation.y = a - PI/2 the box's +X is RADIAL,
-  // so the jamb fills the wall's thickness instead of standing across the
-  // opening, and the head spans it instead of poking out of the wall
+  ringArc(M.BORE, M.COL_R, M.DOOR_ANG - M.DOOR_HALF, M.DOOR_ANG + M.DOOR_HALF, conc, doorTop, true);   // the soffit
+  // the reveal's jambs: with rotation.y = a - PI/2 the box's +X is RADIAL, so
+  // a jamb fills the wall's thickness instead of standing across the opening
   for (const sg of [-1, 1]) {
     const a = M.DOOR_ANG + sg * M.DOOR_HALF, rm = (M.COL_R + M.BORE) / 2;
     const j = mesh(new THREE.BoxGeometry(M.COL_R - M.BORE + 0.02, M.DOOR_H, 0.14), conc, Math.sin(a) * rm, M.PLAT_TOP + M.DOOR_H / 2, Math.cos(a) * rm);
     j.rotation.y = a - Math.PI / 2;
   }
-  { const rm = (M.COL_R + M.BORE) / 2; const head = mesh(new THREE.BoxGeometry(M.COL_R - M.BORE + 0.02, 0.2, M.COL_R * M.DOOR_HALF * 2 + 0.24), conc, Math.sin(M.DOOR_ANG) * rm, M.PLAT_TOP + M.DOOR_H + 0.08, Math.cos(M.DOOR_ANG) * rm); head.rotation.y = M.DOOR_ANG - Math.PI / 2; }
   // the shaft's own floor: concrete, worn darker. It was the `dark` material
   // when the top of the shaft was open and this read as the bottom of a
   // void; walled and walked on, a black disc through the doorway is a hole
@@ -244,7 +263,7 @@ export function makeMushroomHouse() {
   for (const am of shardAt) for (let k = 0; k < 4; k++) {
     const r = M.R_ROOM - 0.5 - rnd() * 1.4, a = am + (rnd() - 0.5) * 0.22;
     const sh = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0.1 + rnd() * 0.16, 0, 0.02, 0.03, 0, 0.1 + rnd() * 0.13], 3)), glass);
-    sh.geometry.computeVertexNormals(); sh.position.set(Math.sin(a) * r, M.H_ROOM + 0.005, Math.cos(a) * r); sh.rotation.y = rnd() * TAU; g.add(sh);
+    sh.geometry.computeVertexNormals(); sh.position.set(Math.sin(a) * r, M.H_ROOM + 0.03, Math.cos(a) * r); sh.rotation.y = rnd() * TAU; g.add(sh);
   }
   // the roof: fascia, a low dome, and the ceiling with its deep ribs
   arcBand(M.R_ROOM + 0.3, roofY - 0.02, roofY + 0.32, 0, TAU, conc, 56);
@@ -263,9 +282,11 @@ export function makeMushroomHouse() {
   // round table and its chairs (one on its side), the pendant lamp
   {
     const b0 = M.DOOR_ANG - 1.25, b1 = M.DOOR_ANG + 0.15, seatY = M.H_ROOM + 0.42;
-    mesh(new THREE.RingGeometry(M.R_ROOM - 0.85, M.R_ROOM - 0.2, 18, 1, b0, b1 - b0).rotateX(-Math.PI / 2), cream, 0, seatY, 0);
+    ringArc(M.R_ROOM - 0.85, M.R_ROOM - 0.2, b0, b1, cream, seatY);
     arcBand(M.R_ROOM - 0.85, M.H_ROOM, seatY, b0, b1, cream, 18);
-    mesh(new THREE.RingGeometry(M.R_ROOM - 0.85, M.R_ROOM - 0.2, 18, 1, b0, b1 - b0).rotateX(Math.PI / 2), cream, 0, M.H_ROOM + 0.01, 0);
+    for (const a of [b0, b1]) { const e = mesh(new THREE.BoxGeometry(0.65, seatY - M.H_ROOM, 0.06), cream, Math.sin(a) * (M.R_ROOM - 0.52), (M.H_ROOM + seatY) / 2, Math.cos(a) * (M.R_ROOM - 0.52)); e.rotation.y = a - Math.PI / 2; }
+    // (there was a ring face-down a centimetre off the floor under it: a
+    // pale band z-fighting with the concrete, which is what read as "laggy")
     // a cushion or two still on it
     const c1 = mesh(new THREE.BoxGeometry(0.6, 0.12, 0.5), dark, Math.sin(b0 + 0.4) * (M.R_ROOM - 0.52), seatY + 0.06, Math.cos(b0 + 0.4) * (M.R_ROOM - 0.52)); c1.rotation.y = b0 + 0.4;
   }

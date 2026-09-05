@@ -1442,7 +1442,8 @@ well, flush with the floor.
 **NOTHING IN THE ROOM IS BROWN.** The window frames were dark wood and the
 sill was capped with it, and at eye height in a round room that is one
 unbroken tan band all the way round you — the only warm thing on a cold
-beach and the first thing you look at. Weathered grey steel, concrete sill.
+beach and the first thing you look at. Weathered grey steel, concrete sill,
+and the bench went from cream to a cold pale stone for the same reason.
 
 Walk it with `__bw.step`, `__bw.keys.KeyW` and `__bw.look()` steering at the
 next point on the spiral: in at the door, up, off onto the floor ring, round
@@ -1472,9 +1473,24 @@ wound the opposite way from the walk and from the rail (which used sin/cos
 directly), and the owner climbed invisible steps beside the visible ones.
 `a − π/2` is the rotation that puts a centreline on (sin a, 0, cos a) —
 and it is what a RADIAL box wants too, so the door's jambs fill the wall's
-thickness instead of standing across the opening, the head spans the door
-instead of poking out of the wall, and the walls' end returns bridge the
-parapet to the retaining wall instead of lying along it.
+thickness instead of standing across the opening and the walls' end returns
+bridge the parapet to the retaining wall instead of lying along it.
+**And `RingGeometry` LIES ABOUT ITS ANGLE.** Its theta runs (cos, sin) in XY
+while `CylinderGeometry`'s runs (sin, cos) in XZ — the game's own convention
+— so a ring laid flat with the same `thetaStart` as the arc it is meant to
+cap comes out A QUARTER TURN ROUND, and laid face-down it comes out mirrored
+as well. Every capped arc in here was built that way and none of them was
+on its wall: the bench's seat hovered 90° from its own front, a pale slab
+over nothing in the middle of the room (with a second one a centimetre off
+the floor, z-fighting the concrete, which is what read as "laggy"), and the
+two walls' copings floated out over the yard and over the gate with nothing
+under them. `ringArc(r0, r1, a0, a1, mat, y, down)` is the only way to lay
+one down. A full circle is immune, which is why nothing looked wrong until
+an arc was capped. **The wall over a door is WALL,** not a box laid across
+it: a chord through an arc stands 15 cm proud of the face at each end, and
+lit on top that is a grey bar hanging in the air over the gate. The door is
+a gap in the bottom `DOOR_H` of the tube and the concrete above it is the
+tube's own, with a `ringArc` soffit closing the reveal.
 **The harness's rAF can be dead outright**, ticks 0 in 800 ms even with a
 setTimeout pump installed (animate() is parked in the real queue); `__bw.step(dt)`
 runs one whole game tick, so a walk can be driven deterministically —
