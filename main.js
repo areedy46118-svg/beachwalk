@@ -4883,18 +4883,25 @@ shovelVM.position.set(-0.04, -0.02, 0.0);
  * across the wind so you see the hands change their hold. */
 const VM_REST_ROT = [0.70, 0.35, 0.32];
 const VM_OVERHEAD_ROT = [-0.62, 0.0, Math.PI];
-/* THE MILITARY SHOVEL IS SWUNG LIKE A SWORD. The scoop rides ABOVE the fist
- * and further out, the D-handle is drawn back toward your chest, and the cut
- * comes down on the diagonal — up at the top right, through, and out at the
- * bottom left. This rotation is SEARCHED, not guessed: a grid over all three
- * axes scoring "shaft running up and away from the hand" against "cutting
- * edge lying in the plane of the screen", which lands on a shaft of
- * (0.07, 0.65, -0.76) — the blade riding high — and a lip of (0.90, -0.43,
- * 0.00), an edge already on the diagonal the cut travels, so it LEADS through
- * the arc instead of slapping with the flat. Eyeballing this through three
- * nested frames — the arm, the mount, and the scan's own Z-up root matrix —
- * is how you spend an hour and still hold it wrong. */
-const VM_SLASH_ROT = [-0.725, 0.725, -3.142];
+/* THE MILITARY SHOVEL IS SWUNG LIKE A SWORD, AND A SLASH IS A ROLL. The
+ * blade has to travel ACROSS the picture, never along its own length: the
+ * first diagonal cut had the shaft pointing away from the camera and the arm
+ * pitching, so the tip drove forward down its own line — the trail was a
+ * straight streak to the impact point, which is a STAB. For the tip to sweep
+ * from the top right corner to the bottom left it has to start standing in
+ * the picture plane, and the arm has to ROLL it across (rotation.z), with the
+ * pitch and yaw only carrying the arc down and out. So the slash grip IS the
+ * rest grip — scoop straight up over the fist, shaft (0.11, 0.96, -0.27),
+ * found by search — and all of the cut is in the arm. */
+const VM_SLASH_ROT = [-3.142, -0.483, 0.483];
+/* AND AT REST IT IS A SWORD AT GUARD. The sand shovel hangs blade-down in the
+ * dig grip; the Military Shovel is HELD, scoop straight up over the fist and
+ * a little forward, the way a blade is carried between cuts. Searched the same
+ * way: shaft (0.11, 0.96, -0.27), edge in the screen plane. The slash winds
+ * up out of this rather than out of the dig grip, so the blade only ever goes
+ * from high to higher to down — it never has to come up off the sand first. */
+const VM_MIL_REST_ROT = [-3.142, -0.483, 0.483];
+const restRot = () => equipped === militaryItem ? VM_MIL_REST_ROT : VM_REST_ROT;
 shovelVM.rotation.set(VM_REST_ROT[0], VM_REST_ROT[1], VM_REST_ROT[2]);
 let ohBlend = 0, slBlend = 0;
 shovelVM.visible = false;
@@ -5406,7 +5413,7 @@ const militaryVM = new THREE.Group();
 militaryVM.add(milModel);
 militaryVM.scale.setScalar(0.48);
 militaryVM.position.set(-0.04, -0.02, 0.0);
-militaryVM.rotation.set(VM_REST_ROT[0], VM_REST_ROT[1], VM_REST_ROT[2]);
+militaryVM.rotation.set(VM_MIL_REST_ROT[0], VM_MIL_REST_ROT[1], VM_MIL_REST_ROT[2]);   // scoop up: a sword at guard
 militaryVM.visible = false;
 toolMount.add(militaryVM);
 const militaryItem = {
@@ -5502,6 +5509,12 @@ let parryGlow = 0;                       // the white flash on a successful parr
  * and recovers. Three visible bounces on a parry, one and a half on a block,
  * and it is the same shape the whole game reads impacts with. */
 let guardShock = 0, guardShockV = 0;
+/* THE WORLD ROLLS WITH THE CUT. A few hundredths of a radian of camera roll
+ * on the frame the blade lands, decaying out over a quarter second: the hands
+ * stay level (they are in their own scene) and the WORLD tips, which is what
+ * force through your shoulders feels like from the inside. Applied around the
+ * scene render and removed again, so it never leaks into the look state. */
+let hitRoll = 0;
 const GUARD_K = 420, GUARD_D = 11;       // stiff and only lightly damped: it rings
 let winding = false, windT = 0, digPower = 0, digCharged = false, windFull = false;
 /* THE OVERHEAD. Hold sprint while you wind and the shovel goes up over your
@@ -5540,17 +5553,15 @@ function haulPose(out, P) {
     return out;
   }
   if (slashing()) {
-    /* UP AND BACK, to the top right. The blade goes high and out over the
-     * shoulder on the far side, the handle comes IN toward your chest
-     * (positive push), and the hand lifts — so the whole tool is cocked above
-     * the frame's top corner with the edge already lying on the line it is
-     * about to travel. A charge takes it higher and further round. */
-    const d = slashDir;
-    out[0] = -(0.92 + P * 0.40);
-    out[1] = 0.30 + P * 0.14;
-    out[2] = d * (0.68 + P * 0.24);
-    out[3] = d * (0.30 + P * 0.18);
-    out[4] = 0.18 + P * 0.06;
+    /* COCKED: rolled over to the RIGHT so the upright blade leans out toward
+     * the top right corner, lifted, drawn in toward the chest, turned a little
+     * right. Roll is the whole story of this swing; the rest is framing. */
+    const d = slashDir;                                 // -1: right to left
+    out[0] = -(0.34 + P * 0.18);
+    out[1] = 0.26 + P * 0.12;
+    out[2] = d * (0.30 + P * 0.10);
+    out[3] = d * (1.02 + P * 0.30);                     // d = -1 rolls it right
+    out[4] = 0.20 + P * 0.06;
     return out;
   }
   out[0] = -(1.25 + P * 0.70); out[1] = 0.17 + P * 0.13;
@@ -5574,17 +5585,17 @@ function impactPose(out, P) {
     return out;
   }
   if (slashing()) {
-    /* DOWN AND ACROSS, to the bottom left, and driven out through it. Pitch
-     * and yaw and lift all move together — that is what makes it a diagonal
-     * rather than a chop with a turn on it — and the follow-through carries
-     * past the low corner, which is where the trail gets its length. The arm
-     * pushes forward through the whole thing, so the cut ARRIVES. */
+    /* THROUGH: rolled all the way over to the LEFT — past vertical, the blade
+     * now leaning down toward the bottom left corner — with the arm brought
+     * down and round and driven forward, so the tip has crossed the whole
+     * frame on the diagonal and the cut ARRIVES at the end of it. The trail
+     * this leaves is an arc, not a line, which is the difference. */
     const d = slashDir;
-    out[0] = 1.34 + P * 0.52;
-    out[1] = -(0.38 + P * 0.12);
-    out[2] = d * -(0.96 + P * 0.32);
-    out[3] = d * -(0.54 + P * 0.24);
-    out[4] = -(0.32 + P * 0.40);
+    out[0] = 0.78 + P * 0.36;
+    out[1] = -(0.36 + P * 0.12);
+    out[2] = d * -(0.70 + P * 0.26);
+    out[3] = d * -(1.38 + P * 0.36);                    // and over to the left
+    out[4] = -(0.30 + P * 0.42);
     return out;
   }
   /* `lift` used to take the hand to -0.69 at full charge, which is below the
@@ -6091,6 +6102,7 @@ function updateViewmodel(dt) {
           hitstop = Math.max(hitstop, 0.05 + P * 0.055);
           addTrauma(0.20 + P * 0.26);
           fovKick = Math.max(fovKick, 3.4 + P * 3.6);
+          hitRoll = -slashDir * (0.030 + P * 0.034);
         }
       }
       // the whole body goes into an overhead, so it kicks back harder
@@ -6108,6 +6120,7 @@ function updateViewmodel(dt) {
   const ear = easeOutCubic(listenT), lagK = 1 - ear * 0.85;
   const earH = Math.tan((vmCamera.fov * Math.PI) / 360) * -EAR_AT.z;
   const earX = earH * vmCamera.aspect * EAR_AT.x, earY = earH * EAR_AT.y;
+  hitRoll += (0 - hitRoll) * Math.min(1, dt * 9);
   // a parry rings the tool: the guard spring, driven by the blow that landed
   guardShockV += (-GUARD_K * guardShock - GUARD_D * guardShockV) * dt;
   guardShock += guardShockV * dt;
@@ -6135,10 +6148,12 @@ function updateViewmodel(dt) {
   ohBlend += (wantOh - ohBlend) * Math.min(1, dt * 9);
   slBlend += (wantSl - slBlend) * Math.min(1, dt * 11);
   if (ohBlend > 0.001 || slBlend > 0.001 || wantOh || wantSl) {
-    // the two grips are exclusive; the overhead wins where they overlap
-    const grip = (i) => VM_REST_ROT[i]
-      + (VM_OVERHEAD_ROT[i] - VM_REST_ROT[i]) * ohBlend
-      + (VM_SLASH_ROT[i] - VM_REST_ROT[i]) * slBlend * (1 - ohBlend);
+    // the two grips are exclusive; the overhead wins where they overlap. The
+    // base is the TOOL'S OWN rest — the Military Shovel's is scoop-up.
+    const R = restRot();
+    const grip = (i) => R[i]
+      + (VM_OVERHEAD_ROT[i] - R[i]) * ohBlend
+      + (VM_SLASH_ROT[i] - R[i]) * slBlend * (1 - ohBlend);
     toolVM.rotation.set(grip(0), grip(1), grip(2));
   }
 
@@ -12447,8 +12462,20 @@ function killMutant(u) {
   u.hitFrom.copy(u.g.position);
   flashMats(u.g);
   sfxMutHit(u.kind.voice);
+  sfxKillThud();
   addTrauma(0.6);
-  hitstop = MUT_HIT_STOP;
+  hitstop = MUT_HIT_STOP + (equipped === militaryItem ? 0.05 : 0);
+}
+/* The floor under a kill: a sub thump you feel more than hear, under whatever
+ * the blade did. It is the same on every kill and that is the point — it is
+ * the one sound in the fight that means "that one is finished". */
+function sfxKillThud() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(64, t); o.frequency.exponentialRampToValueAtTime(27, t + 0.32);
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.42, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
+  o.connect(g).connect(out); o.start(t); o.stop(t + 0.4);
 }
 /* A blow that lands but does not finish it: it is rocked back off the blade
  * white, the swing it was in the middle of is broken, and it comes again. */
@@ -13024,42 +13051,181 @@ function sfxMutSever() {
   const g = ctx.createGain(); g.gain.value = 0.3;
   n.connect(bp).connect(g).connect(out); n.start(t); n.stop(t + 0.34);
 }
-/* The collapse. Called once, on the frame it dies. */
+/* ---- THE RAGDOLL, FOR REAL ---------------------------------------------
+ * The first version was a flop: the pose froze, every bone got a random
+ * spin, and the whole model was tipped over on a timer. It read as a mannequin
+ * being knocked off a table. This is what Source does, cut down to what a
+ * beach at night needs: the JOINTS are particles, the BONES are distance
+ * constraints between them, and the body is simulated — gravity, Verlet
+ * integration, a handful of constraint iterations, and a ground plane with
+ * friction and a little restitution. Nothing here knows what an arm is. The
+ * feet are on the sand when it dies, so they catch and the body topples over
+ * them; a hit to the chest carries the torso and the head goes last; a limb
+ * hits the ground before the body and bounces once; and it settles into
+ * whatever heap those particular constraints and that particular blow make,
+ * which is never the same heap twice.
+ *
+ * Two things make it read as a body and not a chain of beads. STIFFENERS —
+ * extra constraints across the torso (hips to shoulders, shoulder to
+ * shoulder, hip to hip) so the trunk is a box that tumbles and not a rope
+ * that folds. And BEND LIMITS: a minimum distance across every three-joint
+ * chain (hip–knee–foot, shoulder–elbow–hand, chest–neck–head, hips–spine–
+ * chest), which is the cheapest joint limit there is and stops the one thing
+ * that gives a Verlet ragdoll away, a knee folding flat the wrong way.
+ *
+ * The skeleton is then DRIVEN from the particles, parent first: each bone is
+ * turned by the smallest rotation that takes where it currently points its
+ * child to where the child's particle is. Smallest-rotation, not look-at,
+ * because this rig's bone axes do not run along the bones (the forearm sits
+ * diagonally off the upper arm) and a look-at would twist every limb; the
+ * minimal rotation preserves whatever roll the pose had. The root's position
+ * comes from the hips particle. All of it is in WORLD space, so the scan's
+ * scale and Z-up root matrix never enter into it. */
+const RAG_CHAIN = [
+  // [joint, parent joint, primary child joint (what the bone points at), ground radius]
+  ['Character1_Hips', null, 'Character1_Spine', 0.17],
+  ['Character1_Spine', 'Character1_Hips', 'Character1_Spine1', 0.14],
+  ['Character1_Spine1', 'Character1_Spine', 'Character1_Spine2', 0.14],
+  ['Character1_Spine2', 'Character1_Spine1', 'Character1_Neck', 0.15],
+  ['Character1_Neck', 'Character1_Spine2', 'Character1_Head', 0.07],
+  ['Character1_Head', 'Character1_Neck', null, 0.13],
+  ['Character1_LeftShoulder', 'Character1_Spine2', 'Character1_LeftArm', 0.08],
+  ['Character1_LeftArm', 'Character1_LeftShoulder', 'Character1_LeftForeArm', 0.07],
+  ['Character1_LeftForeArm', 'Character1_LeftArm', 'Character1_LeftHand', 0.06],
+  ['Character1_LeftHand', 'Character1_LeftForeArm', null, 0.05],
+  ['Character1_RightShoulder', 'Character1_Spine2', 'Character1_RightArm', 0.08],
+  ['Character1_RightArm', 'Character1_RightShoulder', 'Character1_RightForeArm', 0.07],
+  ['Character1_RightForeArm', 'Character1_RightArm', 'Character1_RightHand', 0.06],
+  ['Character1_RightHand', 'Character1_RightForeArm', null, 0.05],
+  ['Character1_LeftUpLeg', 'Character1_Hips', 'Character1_LeftLeg', 0.10],
+  ['Character1_LeftLeg', 'Character1_LeftUpLeg', 'Character1_LeftFoot', 0.07],
+  ['Character1_LeftFoot', 'Character1_LeftLeg', 'Character1_LeftToeBase', 0.06],
+  ['Character1_LeftToeBase', 'Character1_LeftFoot', null, 0.05],
+  ['Character1_RightUpLeg', 'Character1_Hips', 'Character1_RightLeg', 0.10],
+  ['Character1_RightLeg', 'Character1_RightUpLeg', 'Character1_RightFoot', 0.07],
+  ['Character1_RightFoot', 'Character1_RightLeg', 'Character1_RightToeBase', 0.06],
+  ['Character1_RightToeBase', 'Character1_RightFoot', null, 0.05],
+];
+// the trunk is a box, not a rope
+const RAG_STIFF = [
+  ['Character1_Hips', 'Character1_Spine2', 0.9],
+  ['Character1_LeftShoulder', 'Character1_RightShoulder', 1.0],
+  ['Character1_LeftUpLeg', 'Character1_RightUpLeg', 1.0],
+  ['Character1_Hips', 'Character1_LeftShoulder', 0.7],
+  ['Character1_Hips', 'Character1_RightShoulder', 0.7],
+  ['Character1_Spine2', 'Character1_LeftUpLeg', 0.5],
+  ['Character1_Spine2', 'Character1_RightUpLeg', 0.5],
+];
+// joints that must not fold flat: [a, b, c, fraction of (ab + bc) they may close to]
+const RAG_BEND = [
+  ['Character1_LeftUpLeg', 'Character1_LeftLeg', 'Character1_LeftFoot', 0.55],
+  ['Character1_RightUpLeg', 'Character1_RightLeg', 'Character1_RightFoot', 0.55],
+  ['Character1_LeftArm', 'Character1_LeftForeArm', 'Character1_LeftHand', 0.45],
+  ['Character1_RightArm', 'Character1_RightForeArm', 'Character1_RightHand', 0.45],
+  ['Character1_Spine2', 'Character1_Neck', 'Character1_Head', 0.72],
+  ['Character1_Hips', 'Character1_Spine1', 'Character1_Spine2', 0.90],
+  ['Character1_Hips', 'Character1_LeftUpLeg', 'Character1_LeftLeg', 0.60],
+  ['Character1_Hips', 'Character1_RightUpLeg', 'Character1_RightLeg', 0.60],
+];
+const RAG_ITER = 7, RAG_SUB = 2, RAG_DAMP = 0.985, RAG_FRICTION = 0.55, RAG_BOUNCE = 0.28;
+const _rg1 = new THREE.Vector3(), _rg2 = new THREE.Vector3(), _rg3 = new THREE.Vector3(), _rgQ = new THREE.Quaternion(), _rgQ2 = new THREE.Quaternion();
+const _rgM = new THREE.Matrix4();
+
 function mutRagdoll(u, dirX, dirZ, power) {
-  if (u.rag) return;
-  const bones = [];
-  if (u.model) u.model.traverse((o) => {
-    if (!o.isBone) return;
-    if (/Thumb|Index|Middle|Ring|fingers|Head_pt/.test(o.name)) return;
-    bones.push({ b: o, v: new THREE.Vector3(
-      (Math.random() - 0.5) * 7 * power, (Math.random() - 0.5) * 7 * power, (Math.random() - 0.5) * 7 * power) });
-  });
-  u.rag = { t: 0, bones, dirX, dirZ, fall: 0, vy: 1.1 + power * 0.8, y: 0 };
-  if (u.mixer) u.mixer.stopAllAction();          // it dies from the pose it was in
+  if (u.rag || !u.model) return;
+  if (u.mixer) u.mixer.stopAllAction();            // it dies from the pose it was in
+  u.model.updateMatrixWorld(true);
+  const bones = {};
+  u.model.traverse((o) => { if (o.isBone) bones[o.name] = o; });
+  // anything a severed bone carries is gone, so it is not simulated
+  const gone = (bn) => { for (let b = bn; b; b = b.parent) { if (u.gone[b.name]) return true; if (!b.isBone) break; } return false; };
+  const parts = [], byName = {};
+  for (const [name, parentName, childName, r] of RAG_CHAIN) {
+    const bn = bones[name]; if (!bn || gone(bn)) continue;
+    const p = bn.getWorldPosition(new THREE.Vector3());
+    // the blow's momentum, most of it up top: the chest goes, the feet stay planted and the body goes over them
+    const h = THREE.MathUtils.clamp((p.y - u.g.position.y) / Math.max(0.5, u.kind.h), 0, 1);
+    const kick = (0.9 + power * 2.4) * (0.25 + h * 0.75);
+    const v = new THREE.Vector3(dirX * kick + (Math.random() - 0.5) * 0.4, 0.4 + h * 0.6 + Math.random() * 0.3, dirZ * kick + (Math.random() - 0.5) * 0.4);
+    const part = { name, bone: bn, parent: parentName, child: childName, r, p, pp: p.clone().addScaledVector(v, -1 / 60), w: name.includes('Hips') ? 0.5 : name.includes('Head') ? 0.8 : 1 };
+    parts.push(part); byName[name] = part;
+  }
+  const cons = [], bends = [];
+  for (const part of parts) {
+    if (part.parent && byName[part.parent]) cons.push({ a: byName[part.parent], b: part, d: byName[part.parent].p.distanceTo(part.p), k: 1 });
+  }
+  for (const [a, b2, k] of RAG_STIFF) if (byName[a] && byName[b2]) cons.push({ a: byName[a], b: byName[b2], d: byName[a].p.distanceTo(byName[b2].p), k });
+  for (const [a, b2, c, f] of RAG_BEND) if (byName[a] && byName[b2] && byName[c])
+    bends.push({ a: byName[a], c: byName[c], min: (byName[a].p.distanceTo(byName[b2].p) + byName[b2].p.distanceTo(byName[c].p)) * f });
+  u.rag = { parts, byName, cons, bends, t: 0, asleep: false };
+  u.g.rotation.set(0, u.g.rotation.y, 0);           // the body's tilt is the particles' now, not the group's
 }
+
 function updateMutRagdoll(u, dt) {
-  const r = u.rag;
+  const r = u.rag; if (!r) return;
   r.t += dt;
-  // the body topples the way the blow went, and drops
-  r.fall += (1 - r.fall) * Math.min(1, dt * 3.4);
-  r.vy -= 9.8 * dt; r.y = Math.max(0, r.y + r.vy * dt);
-  if (r.y <= 0 && r.vy < 0) r.vy = -r.vy * 0.22;
-  /* IT FALLS ABOUT ITS FEET, NOT ITS HIPS. The model group's origin is the
-   * scan's own, which sits at the pelvis, so tipping THAT through ninety
-   * degrees swings the chest down and the legs UP and leaves the thing
-   * standing on its head. `u.g` is the unit's ground point — origin on the
-   * sand, under the feet — so the topple goes there and the body goes over
-   * the way a body does. The heading stays on u.g.rotation.y underneath it. */
-  const lean = r.fall * (Math.PI / 2) * 0.98;
-  u.g.rotation.x = lean;
-  u.g.rotation.z = lean * r.dirX * 0.42;
-  if (u.model) u.model.position.y = (u.modelY || 0) + r.y;
-  // and the limbs go where they were thrown, then hang
-  for (const it of r.bones) {
-    it.b.rotation.x += it.v.x * dt; it.b.rotation.y += it.v.y * dt; it.b.rotation.z += it.v.z * dt;
-    it.v.multiplyScalar(1 - Math.min(1, 3.1 * dt));
-    it.v.x -= it.b.rotation.x * 5.5 * dt;        // a pull back toward hanging
-    it.v.z -= it.b.rotation.z * 5.5 * dt;
+  const gy = 0.07;                                    // the sand plane, plus the flesh around a joint: the mesh rests ON the sand, not in it
+  if (!r.asleep) {
+    const h = Math.min(dt, 1 / 30) / RAG_SUB;
+    let motion = 0;
+    for (let s = 0; s < RAG_SUB; s++) {
+      // integrate
+      for (const q of r.parts) {
+        _rg1.subVectors(q.p, q.pp).multiplyScalar(RAG_DAMP);
+        q.pp.copy(q.p);
+        q.p.add(_rg1); q.p.y -= 9.8 * h * h;
+        motion += _rg1.lengthSq();
+      }
+      // constraints
+      for (let it = 0; it < RAG_ITER; it++) {
+        for (const c of r.cons) {
+          _rg1.subVectors(c.b.p, c.a.p); const d = _rg1.length() || 1e-6;
+          const diff = (d - c.d) / d * c.k, wa = c.a.w, wb = c.b.w, ws = wa + wb;
+          c.a.p.addScaledVector(_rg1, diff * (wa / ws)); c.b.p.addScaledVector(_rg1, -diff * (wb / ws));
+        }
+        for (const bd of r.bends) {
+          _rg1.subVectors(bd.c.p, bd.a.p); const d = _rg1.length() || 1e-6;
+          if (d < bd.min) { const diff = (d - bd.min) / d * 0.5; bd.a.p.addScaledVector(_rg1, diff); bd.c.p.addScaledVector(_rg1, -diff); }
+        }
+        // the ground, with friction: what touches the sand stops sliding
+        for (const q of r.parts) {
+          if (q.p.y < gy + q.r) {
+            q.p.y = gy + q.r;
+            q.pp.x = q.p.x - (q.p.x - q.pp.x) * (1 - RAG_FRICTION);
+            q.pp.z = q.p.z - (q.p.z - q.pp.z) * (1 - RAG_FRICTION);
+            if (q.pp.y < q.p.y) q.pp.y = q.p.y + (q.p.y - q.pp.y) * RAG_BOUNCE;   // and bounces, a little
+          }
+          q.p.x = THREE.MathUtils.clamp(q.p.x, WADE_X - 2, CLIFF_BLOCK_X + 0.6);
+        }
+      }
+    }
+    if (r.t > 1.5 && motion < 1e-7) r.asleep = true;     // it has come to rest
+  }
+  // drive the skeleton from the particles, parent first
+  const hips = r.byName['Character1_Hips'];
+  if (hips) {
+    hips.bone.parent.updateWorldMatrix(true, false);
+    hips.bone.position.copy(hips.bone.parent.worldToLocal(_rg1.copy(hips.p)));
+  }
+  for (const q of r.parts) {
+    if (!q.child || !r.byName[q.child]) continue;
+    const kid = r.byName[q.child];
+    q.bone.updateWorldMatrix(true, false);
+    kid.bone.updateWorldMatrix(true, false);
+    q.bone.getWorldPosition(_rg1);
+    kid.bone.getWorldPosition(_rg2);
+    /* Two scratch vectors, not one. The first build built `want` in the same
+     * vector it had just built `cur` in, so the two were one object, the
+     * rotation between them was the identity, and not a bone ever turned —
+     * the hips particle sank to the sand and dragged a RIGID body a metre
+     * through the floor. */
+    const cur = _rg2.sub(_rg1); if (cur.lengthSq() < 1e-8) continue; cur.normalize();
+    const want = _rg3.copy(kid.p).sub(_rg1); if (want.lengthSq() < 1e-8) continue; want.normalize();
+    _rgQ.setFromUnitVectors(cur, want);                // the smallest turn: keeps the pose's roll
+    q.bone.getWorldQuaternion(_rgQ2);
+    _rgQ2.premultiply(_rgQ);
+    if (q.bone.parent) { q.bone.parent.getWorldQuaternion(_rgQ); _rgQ2.premultiply(_rgQ.invert()); }
+    q.bone.quaternion.copy(_rgQ2);
   }
 }
 
@@ -14579,7 +14745,9 @@ function animate() {
     renderer.render(inspectScene, inspectCamera);
     return;
   }
+  if (hitRoll) camera.rotateZ(hitRoll);
   renderer.render(scene, camera);
+  if (hitRoll) camera.rotateZ(-hitRoll);
   renderer.autoClear = false;
   if (viewmodel.visible) {
     renderer.clearDepth();

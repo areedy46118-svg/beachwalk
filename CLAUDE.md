@@ -1216,16 +1216,32 @@ Three more things that make a heavy feel like one:
 already in the wound pose roughly doubles. A charge with no full mark is a
 charge you hold too long every time.
 
-**RAGDOLLS, AND WHAT COMES OFF.** An authored death clip plays the same way
-every time and by the third viewing the creature is a cutscene. This is not a
-physics ragdoll — no constraints, no solver — but it is the part that reads:
-the mixer stops DEAD ON THE POSE IT WAS IN, so the death starts from whatever
-it was doing when you killed it, every bone takes an angular kick with a
-damped pull back toward hanging, and the body topples and drops. **IT FALLS
-ABOUT ITS FEET, NOT ITS HIPS**: the model group's origin is the scan's own,
-at the pelvis, and tipping that through ninety degrees swings the chest down
-and the legs UP and leaves the thing standing on its head. The topple goes on
-`u.g`, whose origin is the ground point under the feet.
+**THE RAGDOLL IS A VERLET BODY, NOT A FLOP.** The first version froze the
+pose, spun every bone at random and tipped the group over on a timer, and it
+read as a mannequin knocked off a table. What is there now is what Source
+does, cut down to what a beach at night needs: the JOINTS are particles, the
+BONES are distance constraints between them, and the body is simulated —
+gravity, Verlet integration, seven constraint iterations over two substeps, a
+ground plane with friction and a little restitution. Nothing in it knows what
+an arm is. The feet are on the sand when it dies, so they catch and the body
+goes over them; the blow's momentum is put in as a per-particle kick weighted
+toward the top; a limb hits the ground before the trunk and bounces once; and
+it settles into whatever heap those constraints and that blow make, never the
+same twice, then SLEEPS when its motion dies. Two things make it read as a
+body rather than beads on a string: STIFFENERS across the trunk (hips to
+shoulders, shoulder to shoulder, hip to hip) so the torso is a box that
+tumbles and not a rope that folds, and BEND LIMITS — a minimum distance
+across every three-joint chain, which is the cheapest joint limit there is
+and stops the one thing that gives a Verlet ragdoll away: a knee folding flat
+the wrong way. The skeleton is then DRIVEN from the particles, parent first,
+each bone turned by the SMALLEST rotation that takes where it points its
+child to where the child's particle is. Smallest rotation, not look-at:
+this rig's bone axes do not run along the bones (the forearm sits diagonally
+off the upper arm — measured), so a look-at would twist every limb, and the
+minimal turn keeps whatever roll the pose had. It is all in WORLD space, so
+the scan's scale and its Z-up root matrix never enter into it, and the
+group's own tilt is zeroed — the fall is the particles' now. A severed bone's
+whole subtree is left out of the simulation.
 
 **A BONE SCALED TO NOTHING TAKES ITS SUBTREE WITH IT.** A skinned mesh cannot
 be cut, but collapsing the arm bone removes the arm from the shoulder down
@@ -1295,6 +1311,19 @@ through the whole thing so the cut arrives rather than passes. It runs a
 third quicker than the chop, and it lands hardest of the three swings: the
 biggest shock through the guard spring, nine sparks, and a beat of frozen
 time of its own.
+
+**AND AT REST IT IS A SWORD AT GUARD.** `VM_MIL_REST_ROT`, searched the same
+way: scoop straight up over the fist and a little forward, shaft
+(0.11, 0.96, -0.27). `restRot()` picks the tool's own rest for the grip
+blend, so the slash winds up out of scoop-up rather than out of the dig grip
+and the blade only ever goes from high to higher to down. The arc is
+exaggerated — cocked further up and right, driven further down and left —
+and the world ROLLS with the cut: `hitRoll`, a few hundredths of a radian
+applied around the scene render and removed again so it never leaks into the
+look state; the hands stay level in their own scene and the world tips,
+which is what force through your shoulders feels like from the inside. A kill
+lands with `sfxKillThud` under it, the same on every kill, the one sound in
+the fight that means "that one is finished".
 
 **THE MILITARY SHOVEL SLASHES.** A spade on a shaft is a sword if you turn it
 edge-on and swing it across yourself: `VM_SLASH_ROT` brings the blade out of
