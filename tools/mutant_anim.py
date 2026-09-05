@@ -221,6 +221,67 @@ for a in list(bpy.data.actions):
 log("actions kept:", [a.name for a in bpy.data.actions])
 log("scale curves dropped:", scaled, "- worst deviation from 1.0 was %.4f" % worstScale[0])
 
+# ---------------------------------------------------------- MIRRORED SWINGS
+# Four swings become eight. Every attack is copied with left and right
+# exchanged so the other hand throws it: for each frame, every bone's pose
+# matrix in armature space is read off the source, reflected across the rig's
+# own left/right plane (x = 0 in armature space), and given to the opposite
+# bone; the local basis is recovered from the reflected parent, parents
+# first, and keyed. Blender's own "paste flipped" does exactly this, but it
+# wants a 3D view and a clipboard, and this runs headless. Scale is not keyed,
+# and the fingers are left out as they are everywhere else.
+from mathutils import Matrix, Vector
+MIRROR = [('attack', 'attackM'), ('attack2', 'attack2M'), ('attack3', 'attack3M'), ('attack4', 'attack4M')]
+def flip_name(n):
+    for a, b in (('Left', 'Right'), ('_L_', '_R_')):
+        if a in n: return n.replace(a, b)
+        if b in n: return n.replace(b, a)
+    return n
+S = Matrix.Scale(-1.0, 4, Vector((1.0, 0.0, 0.0)))
+def depth(pb):
+    d = 0
+    while pb.parent: pb = pb.parent; d += 1
+    return d
+ordered = sorted(arm.pose.bones, key=depth)
+for src_name, dst_name in MIRROR:
+    src = bpy.data.actions.get(src_name)
+    if src is None: continue
+    euler = any(fc.data_path.endswith('rotation_euler') for fc in fcurves(src))
+    arm.animation_data.action = src
+    try: arm.animation_data.action_slot = src.slots[0]
+    except Exception: pass
+    f0, f1 = int(src.frame_range[0]), int(src.frame_range[1])
+    frames = []
+    for f in range(f0, f1 + 1):
+        bpy.context.scene.frame_set(f); bpy.context.view_layer.update()
+        frames.append({pb.name: pb.matrix.copy() for pb in arm.pose.bones})
+    arm.animation_data.action = None
+    dst = bpy.data.actions.new(dst_name); dst.use_fake_user = True
+    arm.animation_data.action = dst
+    try:
+        if not len(dst.slots): dst.slots.new(id_type='OBJECT', name='Object')
+        arm.animation_data.action_slot = dst.slots[0]
+    except Exception: pass
+    for i, mats in enumerate(frames):
+        f = f0 + i
+        want = {flip_name(name): S @ M @ S for name, M in mats.items()}
+        for pb in ordered:
+            W = want.get(pb.name)
+            if W is None or any(fn in pb.name for fn in FINGERS): continue
+            if pb.parent:
+                P = want.get(pb.parent.name, pb.parent.matrix)
+                basis = (P @ pb.parent.bone.matrix_local.inverted() @ pb.bone.matrix_local).inverted() @ W
+            else:
+                basis = pb.bone.matrix_local.inverted() @ W
+            loc, rot, _ = basis.decompose()
+            pb.location = loc
+            if euler: pb.rotation_euler = rot.to_euler(pb.rotation_mode); pb.keyframe_insert('rotation_euler', frame=f)
+            else: pb.rotation_quaternion = rot; pb.keyframe_insert('rotation_quaternion', frame=f)
+            pb.keyframe_insert('location', frame=f)
+    arm.animation_data.action = None
+    kept.append(dst_name)
+    log("mirrored %s -> %s (%d frames, %s)" % (src_name, dst_name, len(frames), 'euler' if euler else 'quaternion'))
+
 # --------------------------------------------------------------- measurements
 # what the game needs to know: how tall it is, and which way it faces
 dg = bpy.context.evaluated_depsgraph_get()

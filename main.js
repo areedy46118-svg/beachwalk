@@ -5725,39 +5725,48 @@ const mirrorSide = (s, d) => d < 0 ? s : -2 * ARM_SIDE - s;
  * numerically: the lip's screen position was probed at every quarter of both
  * lerps and the numbers moved until the tip crossed the middle level and the
  * grip stayed in frame at full charge. `d` is the side, -1 for right to left. */
-/* THE HEAVY IS THE DIAGONAL. The light cut comes in level from the side; the
- * heavy cocks in the TOP RIGHT CORNER — hands up at the shoulder, blade
- * leaning out to the corner of the frame, still on screen so the glint has
- * somewhere to be — comes through the mark already pointing down-left, and
- * finishes in the bottom left corner, hands at the far hip. Top right to
- * bottom left, the whole diagonal of the picture. Laid out on the probe at
- * 16:9: the tip at (0.94, 0.65) cocked, (0, -0.1) on the mark, (-0.55, -0.8)
- * through. `P` blends the light into it. */
+/* THE CUT IS A STRAIGHT LINE. The first cuts rolled the blade over the top —
+ * from pointing up on the near side to pointing down on the far side — and
+ * with the pivot at the grip that is an ARC: the tip rose over the upper
+ * middle before it came down, and the owner wanted a concise straight line
+ * from the top right to the bottom left. The geometry: a roll of Δθ through
+ * the strike bulges the tip off the chord by L(1 − cos(Δθ/2)), and L is the
+ * whole blade, so a straight line means a SMALL roll — the blade already
+ * pointing down the line at the cock and turning only ~0.7 rad through it —
+ * while the hands do the travelling. So: the blade points down the diagonal
+ * from cocked to through, the lip (which is across the tip) sweeps a broad
+ * straight band, and the hands come in from off the right edge to the far
+ * hip. Both cuts run the same line; the heavy is corner to corner, the light
+ * shorter. The numbers are SOLVED, not guessed: `side` and `lift` were fitted
+ * so the lip's middle lands on (0.86, 0.60) → (0, 0) → (-0.60, -0.76) at 16:9
+ * for the heavy and (0.64, 0.40) → (0, 0) → (-0.42, -0.52) for the light, and
+ * the interpolated path was checked at the quarters: (0.54, 0.40),
+ * (0.31, 0.23), (0.13, 0.10) — a line. */
 function slashCock(out, P, d) {
-  out[0] = -(0.30 + P * 0.10);                  // tip tilted back a little
-  out[1] = 0.14 + P * 0.34;                     // heavy: the hands come up to the shoulder
-  out[2] = 0.45 - d * (0.25 - P * 0.10);        // and drawn round behind it
-  out[3] = d * (1.00 - P * 0.05);               // leaning out toward the near top corner
-  out[4] = 0.10 - P * 0.08;                     // pulled in toward the chest
-  out[5] = mirrorSide(0.16 * P, d);             // heavy: out to the near edge
+  out[0] = -(0.06 + P * 0.04);
+  out[1] = 0.322 + P * 0.061;
+  out[2] = 0.45;                                // cancels the arm's turn: the blade lies in the picture
+  out[3] = -d * (1.45 - P * 0.10);              // pointing down the line already
+  out[4] = 0.06;
+  out[5] = mirrorSide(0.547 + P * 0.217, d);    // the hands off the near edge, high
   return out;
 }
 function slashMark(out, P, d) {
-  out[0] = 0.04 + P * 0.06;
-  out[1] = 0.20 + P * 0.06;                     // the hands at the chest
-  out[2] = 0.45;                                // cancels the arm's turn: the blade lies in the picture
-  out[3] = -d * (1.75 + P * 0.25);              // light: level; heavy: already pointing down the diagonal
-  out[4] = -(0.24 + P * 0.30);                  // arms out: the cut ARRIVES
-  out[5] = mirrorSide(-(0.14 + P * 0.06), d);   // the grip toward the centre line
+  out[0] = 0.04;
+  out[1] = 0.355;
+  out[2] = 0.45;
+  out[3] = -d * 2.05;                           // down the line
+  out[4] = -(0.22 + P * 0.12);                  // arms out: the cut ARRIVES
+  out[5] = mirrorSide(-0.095, d);
   return out;
 }
 function slashThrough(out, P, d) {
-  out[0] = 0.20 + P * 0.14;
-  out[1] = 0.06 - P * 0.22;                     // heavy: down to the far hip
-  out[2] = 0.45 + d * 0.35;                     // the tip going on round behind you
-  out[3] = -d * (1.85 + P * 0.75);              // light: a little past level; heavy: down into the corner
-  out[4] = -(0.10 + P * 0.20);
-  out[5] = mirrorSide(-(1.05 + P * 0.30), d);   // the hands at the far hip
+  out[0] = 0.14 + P * 0.02;
+  out[1] = 0.123 - P * 0.135;
+  out[2] = 0.45;
+  out[3] = -d * (2.30 + P * 0.08);              // a shade further round, into the corner
+  out[4] = -(0.10 + P * 0.02);
+  out[5] = mirrorSide(-(0.712 + P * 0.295), d); // the hands at the far hip
   return out;
 }
 // the top of an ordinary left-click swing
@@ -12529,6 +12538,15 @@ const MUT_ATTACKS = {
   attack2: { wind: 0.34, strike: 0.10, recover: 0.46, hit: 0.257, reach: 2.25, lunge: 0.0, chain: 'attack',  chainP: 0.60, w: 0.30 },
   attack3: { wind: 1.05, strike: 0.12, recover: 0.60, hit: 0.700, reach: 2.65, lunge: 0.0, chain: null,      chainP: 0.00, w: 0.20 },
   attack4: { wind: 0.50, strike: 0.14, recover: 1.05, hit: 0.333, reach: 2.55, lunge: 1.4, chain: 'attack2', chainP: 0.35, w: 0.16 },
+  /* AND THE OTHER HAND. The pack has four swings; `tools/mutant_anim.py`
+   * mirrors each one across the rig so the other arm throws it, and those
+   * four join the table with their sources' own timings and contact frames
+   * — a swing you have learned to read from the right comes from the left,
+   * and a chain can cross hands. Eight tells, not four. */
+  attackM:  { wind: 0.62, strike: 0.12, recover: 0.72, hit: 0.413, reach: 2.45, lunge: 0.0, chain: 'attack2M', chainP: 0.30, w: 0.34 },
+  attack2M: { wind: 0.34, strike: 0.10, recover: 0.46, hit: 0.257, reach: 2.25, lunge: 0.0, chain: 'attack',   chainP: 0.60, w: 0.30 },
+  attack3M: { wind: 1.05, strike: 0.12, recover: 0.60, hit: 0.700, reach: 2.65, lunge: 0.0, chain: null,       chainP: 0.00, w: 0.20 },
+  attack4M: { wind: 0.50, strike: 0.14, recover: 1.05, hit: 0.333, reach: 2.55, lunge: 1.4, chain: 'attack2',  chainP: 0.35, w: 0.16 },
 };
 /* The three of them. `use` is which swings this one has and how often it
  * reaches for each; `windK` scales its startups AND its recoveries together,
@@ -12552,7 +12570,7 @@ const MUT_KINDS = {
   /* the pale one: the fight you learn the language on. Long in the forearm,
    * otherwise the shape the sculpt came in. Run01, nearly upright. */
   pale: { skin: null, h: 2.30, hp: 5, dmg: 1, speedK: 1.00, windK: 1.00, reachK: 1.05, aggr: 1.10,
-          use: { attack: 0.32, attack2: 0.28, attack3: 0.18, attack4: 0.22 },
+          use: { attack: 0.20, attackM: 0.14, attack2: 0.16, attack2M: 0.14, attack3: 0.18, attack4: 0.18, attack4M: 0.10 },
           circle: 0.20, step: 0.30, chainMax: 1, feint: 0.10,
           bones: Object.assign({ Character1_LeftForeArm: 1.32, Character1_RightForeArm: 1.32,
                                  Character1_LeftHand: 1.22, Character1_RightHand: 1.22,
@@ -12565,7 +12583,7 @@ const MUT_KINDS = {
    * have three. Fair only because its startups are the longest thing in the
    * fight and its recovery the most punishable. Run02 at four fifths: a plod. */
   red:  { skin: 'assets/mutant-red.jpg', h: 2.74, hp: 7, dmg: 2, speedK: 0.95, windK: 1.24, reachK: 1.20, aggr: 1.00,
-          use: { attack: 0.38, attack3: 0.34, attack4: 0.28 },
+          use: { attack: 0.24, attackM: 0.16, attack3: 0.20, attack3M: 0.16, attack4: 0.28, attack2M: 0.10 },
           circle: 0.10, step: 0.38, chainMax: 1, feint: 0.04,
           bones: Object.assign({ Character1_Head: 1.48, Character1_Spine2: 1.14,
                                  Character1_LeftArm: 1.26, Character1_RightArm: 1.26,
@@ -12578,7 +12596,7 @@ const MUT_KINDS = {
    * health, chains three swings together, and runs Run02 at nearly twice
    * speed bent right over, which is faster than you can sprint. */
   dark: { skin: 'assets/mutant-dark.jpg', h: 2.02, hp: 4, dmg: 1, speedK: 1.32, windK: 0.72, reachK: 1.00, aggr: 1.60,
-          use: { attack2: 0.46, attack4: 0.32, attack: 0.22 },
+          use: { attack2: 0.26, attack2M: 0.24, attack4: 0.18, attack4M: 0.16, attack: 0.12, attackM: 0.10 },
           circle: 0.34, step: 0.22, chainMax: 2, feint: 0.20,
           bones: Object.assign({ Character1_Head: 0.62, Character1_Neck: 1.25,
                                  Character1_LeftArm: 1.10, Character1_RightArm: 1.10,
@@ -12613,9 +12631,28 @@ function mutClipTime(t, dur, A) {
   if (t < A.wind) return (t / A.wind) * hit;
   return hit + ((t - A.wind) / (A.strike + A.recover)) * (dur - hit);
 }
+/* What it is doing with its body between the beats. `u.gait` is the walk,
+ * the run and the idle it is using RIGHT NOW, drawn again whenever it comes
+ * to rest or sets off, with its own kind's clip favoured. A creature that
+ * always ran the same cycle and always stood the same way read as a
+ * recording; one that comes at you differently each time reads as alive. */
+function drawGait(u) {
+  const N = u.kind.anim, r = Math.random;
+  u.gait = {
+    walk: r() < 0.6 ? N.walk : (N.walk === 'walk' ? 'walk2' : 'walk'),
+    run: r() < 0.7 ? N.run : (N.run === 'run' ? 'run2' : 'run'),
+    idle: r() < 0.65 ? N.idle : (N.idle === 'idle' ? 'idle2' : 'idle'),
+    idleRate: 0.85 + r() * 0.4,
+  };
+}
 function mutAnim(u, dt, moving) {
   if (!u.mixer) return;
   const N = u.kind.anim;
+  if (!u.gait) drawGait(u);
+  // set off, or stop: draw again
+  const movingNow = moving > 0.04;
+  if (movingNow !== !!u.wasMoving) { u.wasMoving = movingNow; if (Math.random() < 0.7) drawGait(u); }
+  if (u.st.flourish > 0) u.st.flourish -= dt;
   if (!u.st.alive) {
     const a = mutPlay(u, N.die, false);
     if (a) { a.paused = false; a.timeScale = 1; }
@@ -12640,12 +12677,23 @@ function mutAnim(u, dt, moving) {
   } else if (u.st.back > 0) {
     const a = mutPlay(u, N.back, true);
     if (a) { a.paused = false; a.timeScale = 1.2; }
+  } else if (u.st.flourish > 0) {
+    // a roar thrown in mid-fight — quick, and not the one it opened with
+    const a = mutPlay(u, u.st.flourishClip, false);
+    if (a) { a.paused = false; a.timeScale = 1.7; }
   } else if (moving > 0.04) {
-    const a = mutPlay(u, N.run, true);
-    if (a) { a.paused = false; a.timeScale = (1.5 + moving * 0.55) * N.rate; }
+    /* GAITS THAT CHANGE. The walk clips were never played — everything that
+     * moved ran — and each kind ran one clip for ever. A slow advance walks
+     * now, a fast one runs, and which walk and which run is drawn afresh
+     * every time it sets off (`u.gait`), so the same creature closes
+     * differently from one exchange to the next. */
+    const slow = moving < 0.5;
+    const a = mutPlay(u, slow ? u.gait.walk : u.gait.run, true);
+    if (a) { a.paused = false; a.timeScale = slow ? (1.1 + moving * 1.2) * N.rate : (1.5 + moving * 0.55) * N.rate; }
   } else {
-    const a = mutPlay(u, N.idle, true);
-    if (a) { a.paused = false; a.timeScale = 1; }
+    // and it does not stand the same way twice: the idle is drawn too, and its pace
+    const a = mutPlay(u, u.gait.idle, true);
+    if (a) { a.paused = false; a.timeScale = u.gait.idleRate; }
   }
   /* THE LEAN IS WHAT MAKES ONE CLIP TWO ANIMALS. Two of them run the same
    * authored cycle; the small one plays it at nearly twice the rate bent
@@ -12753,7 +12801,7 @@ function makeMutant(x, z, kindName) {
   }
   const u = {
     g, kind, kindName, atk, model: null, mixer: null, clips: {}, cur: null, leanT: 0,
-    st: { alive: true, awake: false, roar: 0, atk: -1, swing: Object.keys(kind.use)[0],
+    st: { alive: true, awake: false, roar: 0, atk: -1, flourish: 0, fidget: 0, swing: Object.keys(kind.use)[0],
           cool: 0, stun: 0, recoil: 0, struck: false, hp: kind.hp, step: 0, deadT: 0,
           side: 0, sideT: 0, back: 0, chained: false, chainN: 0, chainAt: -1, swings: 0, wait: 0,
           sprint: 0, dash: 0, feint: 0, sand: 0, threw: 0, hunger: 2 + Math.random() * 5 },
@@ -13710,9 +13758,11 @@ function mutRagdoll(u, dirX, dirZ, power) {
     const p = bn.getWorldPosition(new THREE.Vector3());
     // the blow's momentum, most of it up top: the chest goes, the feet stay planted and the body goes over them
     const h = THREE.MathUtils.clamp((p.y - u.g.position.y) / Math.max(0.5, u.kind.h), 0, 1);
-    // harder than it was: the owner wanted the hit to feel like it — about half again
-    const kick = (1.3 + power * 3.0) * (0.25 + h * 0.75);
-    const v = new THREE.Vector3(dirX * kick + (Math.random() - 0.5) * 0.4, 0.4 + h * 0.6 + Math.random() * 0.3, dirZ * kick + (Math.random() - 0.5) * 0.4);
+    /* HARDER AGAIN. The owner asked twice: a killing blow has to throw the
+     * body. Most of the kick goes into the top of it and it is lifted as it
+     * goes, so it leaves its feet and tumbles rather than sliding off. */
+    const kick = (1.8 + power * 3.6) * (0.15 + h * 0.85);
+    const v = new THREE.Vector3(dirX * kick + (Math.random() - 0.5) * 0.5, 0.9 + h * 1.1 + Math.random() * 0.4, dirZ * kick + (Math.random() - 0.5) * 0.5);
     const part = { name, bone: bn, parent: parentName, child: childName, r, p, pp: p.clone().addScaledVector(v, -1 / 60), w: name.includes('Hips') ? 0.5 : name.includes('Head') ? 0.8 : 1 };
     parts.push(part); byName[name] = part;
   }
@@ -14000,7 +14050,7 @@ function updateMutantUnit(u, dt) {
       mutDrop(u);                    // its turn is over; the next one is open
       // AGGRESSION IS THE COOLDOWN. They stood about between swings; now the
       // next turn is a fifth of a second away and the small one is quicker.
-      u.st.cool = (0.10 + Math.random() * 0.44) * u.kind.windK / u.kind.aggr;
+      u.st.cool = (0.06 + Math.random() * 0.32) * u.kind.windK / u.kind.aggr;   // shorter than it was: the slots and the fidgets took a swing a minute off the rate, and this gives it back
     }
   } else {
     u.st.cool = Math.max(0, u.st.cool - dt);
@@ -14150,6 +14200,18 @@ function updateMutantUnit(u, dt) {
         u.st.sideT = 0.5 + Math.random() * 0.8;
       }
     }
+  }
+  /* AND IT DOES THINGS WHILE IT WAITS. Standing at reach without the turn it
+   * used to stand. Now and then it throws a roar — the OTHER rage clip, at
+   * speed, so it is a bark and not the opening — or a twitch of a side-step,
+   * on an irregular count. None of it is a tell; a tell is only ever the
+   * swing. It is a body that will not keep still. */
+  u.st.fidget = (u.st.fidget || 0) - dt;              // the count runs whatever it is doing
+  if (u.st.fidget <= 0 && dist <= A.reach + 1.5 && mutToken !== u && u.st.atk < 0 && u.st.flourish <= 0 && u.st.side === 0 && u.st.back <= 0 && u.st.dash <= 0) {
+    u.st.fidget = 1.2 + Math.random() * 2.0;
+    const roll = Math.random();
+    if (roll < 0.45) { u.st.flourish = 0.6; u.st.flourishClip = u.kind.anim.roar === 'roar' ? 'roar2' : 'roar'; }
+    else if (roll < 0.75) { u.st.side = Math.random() < 0.5 ? -1 : 1; u.st.sideT = 0.18 + Math.random() * 0.18; }
   }
   /* AND THE ONES WAITING SLIDE OUT TO THEIR SLOTS. Without the turn a creature
    * at reach stood where it had arrived — behind the one swinging, in a file

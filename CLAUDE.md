@@ -1446,6 +1446,40 @@ lands `sfxKillThud`, and the whoosh is a blade's — shorter, higher, and
 delayed to the strike, because on the click it played over the cock-back and
 was sixty milliseconds ahead of the picture.
 
+**THE CUT IS A STRAIGHT LINE.** The first cuts rolled the blade over the top,
+from pointing up on the near side to pointing down on the far side, and with
+the pivot at the grip that is an arc: the tip rose over the upper middle
+before it came down. The geometry is the lesson: a roll of Δθ through the
+strike bulges the tip off its chord by L(1 − cos(Δθ/2)), and L is the whole
+blade, so a straight line needs a SMALL roll — the blade already pointing
+down the diagonal at the cock and turning only ~0.7 rad through the cut —
+with the hands doing the travelling. The lip is across the tip, so it sweeps
+a broad straight band. Both cuts run the same line, the heavy corner to
+corner and the light shorter, and the numbers were SOLVED in the pane
+(`__solve`: fit `side` and `lift` so the lip's middle lands on a target
+screen point, then check the interpolated quarters), not guessed: the heavy
+runs (0.86, 0.60) → (0, 0) → (-0.60, -0.76) at 16:9 and its quarters read
+(0.54, 0.40), (0.31, 0.23), (0.13, 0.10). The hands are just off the right
+edge at the cock, which is the price of a blade as long as the frame is tall.
+
+**EIGHT SWINGS, AND A BODY THAT WILL NOT KEEP STILL.** The pack has four
+attacks and every clip in it was already in the game, so new attacks are
+DERIVED: `tools/mutant_anim.py` mirrors each attack across the rig (every
+bone's armature-space pose matrix reflected across x = 0 and given to the
+opposite bone, the local basis recovered from the reflected parent, parents
+first — what "paste flipped" does, headless) into `attackM..attack4M`, with
+their sources' timings and contact frames in `MUT_ATTACKS`; a swing you have
+learned from the right comes from the left, and a chain can cross hands.
+The walk clips were never played — everything that moved ran — and each kind
+ran one cycle for ever: `drawGait` picks the walk, the run and the idle (and
+the idle's pace) afresh every time a creature sets off or comes to rest, its
+own kind's clip favoured, and a slow advance walks now. And while it waits at
+reach without the turn it FIDGETS on an irregular count — a bark (the other
+rage clip at 1.7x, `flourish`) or a twitch of a side-step — none of which is
+a tell; a tell is only ever the swing. The ragdoll kick went up again
+(`1.8 + power * 3.6`, weighted to the top of the body and lifted), because
+the owner asked twice.
+
 **THERE IS NO BACKHAND, AND A LIGHT CUT IS A CLICK.** A backhand on the
 second click was built — the forehand mirrored about the middle of the frame
 (`mirrorSide`), leaving from the far hip where the first cut finished — and
