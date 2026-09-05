@@ -1291,6 +1291,85 @@ the body about half a metre further (2.5 m against a heavy cut's 2.1 and a
 light's 1.7, measured off the hips) — a little, so the hit reads harder, not
 so far that it flies.
 
+**THE PIECE IS THE PIECE.** A severed limb used to be a generic lump thrown
+off the body: you saw something leave and nothing on the ground that was an
+arm. `bakeLimb` takes the limb itself off: every triangle of the skin whose
+corners are mostly weighted to the cut bone's subtree is baked, in the pose
+it is in at that instant (`applyBoneTransform` then the mesh's world
+matrix — the same walk `skinnedBounds` does), into a static mesh with the
+creature's own material, turned so its long axis (cut joint to farthest
+joint below it) lies along X, centred on its own middle, and thrown as a
+gib; `updateGibs` lands gibs flat, so it comes to rest lying down. It has to
+be baked BEFORE the bone collapses, or there is nothing to bake. A torso cut
+bakes the whole upper body, head and arms and all, and it lies there. Pieces
+live 240 s (a forearm is ~1300 triangles). Two of three corners is the seam
+rule — it is ragged, as a tear is.
+
+**A BODY ON THE SAND TAKES THE BLOW TOO.** The blade passed straight through
+a corpse to the sand under it. `digImpact` tests the dead after the living:
+the nearest joint on the aim line takes the hit (`ragHit`) — every particle
+within three quarters of a metre is kicked along the swing and the ragdoll
+wakes, the blow sprays from the point it landed, and a heavy (or a third of
+lights) takes the piece it landed on: `limbFor` maps the joint to the limb
+(a hand or forearm is the forearm; a shoulder or upper arm the arm; anything
+in the leg the leg; head or neck the head; the spine the bisect, heavy
+only), `mutSever` bakes and collapses it, and `ragCut` drops every particle
+below the cut from the simulation, along with any constraint or bend limit
+that named one, keeping the cut joint as the stump.
+
+**IT FLOATS.** The seabed is the sand plane and the drawn sea sits BELOW it,
+so a body that came to rest in the surf lay on top of the water like a raft.
+In the water each joint's floor is the wave surface, a hand under it,
+blended in over the first stretch past the waterline the way everything else
+wades in; the surface moves, so the body rides the swell, and a wet ragdoll
+never sleeps (the swash moving under it is motion). A corpse asleep on the
+beach is WOKEN when the tide reaches its hips. Gibs float too — a third of
+their thickness under, lying flat — instead of being hidden the moment the
+sea covered them, which for a limb thrown into the surf was a limb that
+vanished. Measured: hips at -0.16 on a surface at -0.25, riding it.
+
+**THE FLANKS ARE SLOTS.** Three of them coming straight at you arrived in a
+file, one behind the other, and fought from there: standing still, the three
+spanned 47 degrees round you. Each has a slot — the one with the turn is
+AHEAD, the others take the side of it they are already on, `MUT_SLOT_ANG`
+(60 degrees) out; with no turn given out the slots hang off the pack's
+centre by index. `flankDir` bends an approach toward the slot's point at
+reach while there is ground to cover (`(dist - ring) / 1.2`), `flankSide`
+picks which way to circle so circling spreads them, and — the part that
+mattered — the ones WAITING at reach without the turn slide round to their
+slot at a walk instead of standing where they arrived. 47 degrees became
+79 standing; retreating they still bunch, because a thing chasing you at
+your own speed cannot get beside you. Crabs run the same rule with
+`CRAB_SLOT_ANG` and came out at 146 degrees, 16 m of sideways travel per
+crab per ten seconds.
+
+**THE CRAB LUNGES.** It closed through its startup at a stroll before and a
+player holding S was never there when the claw came down — too easy to kill
+backing up. It comes in through the whole startup at better than its walk
+now, through the strike itself at a dash, the bite is tested on every active
+frame rather than only the first (`st.landed`, once per swing), it dashes to
+cross a gap far more often (`dt * 3.0`, out to ten metres, at 7.4), and it
+circles at 3.2. Twenty seconds of holding S went from nothing to three
+bites; standing still it is eight in ten seconds against a player who never
+guards.
+
+**THE HEALTH BAR.** Three hairline segments in the bottom left in the HUD's
+own language — no frame, no number — dim red while you are whole (0.42) and
+brighter the more of you is gone, with a flash on the hit. It is the only
+colour on the screen, which is what makes it read. Driven from `updateHurt`,
+so it runs under the harness too.
+
+**HARDER, AND BLOODIER.** The ragdoll kick is half again what it was
+(`1.3 + power * 3.0`). `sprayBlood` is the directional spray a cut throws —
+most of it along the swing, from the height the blade landed — on every hit
+a mutant survives, on the kill, on a severed limb and on a blow into a
+corpse, with a stain under it; `bleedMutant` stays the radial burst from the
+chest. And the builds are further apart: the red head is 1.48 with the skull
+flaps at 1.55, the dark head 0.62 on a long neck with forearms at 1.48 and
+shins at 1.36, the pale one long in the forearm and the neck. It is done on
+the shared rig at load (`kind.bones`), not as three Blender exports: one
+download, and now that the scale tracks are gone it actually shows.
+
 **IT TAKES TWO.** `CRAB_HP` is 2: a light swing is a hit, not a kill, and
 only a charge past `CRAB_HEAVY` (0.85) puts one down in one. That is the
 whole reason to hold the button — a heavy is not a faster shovel, it is the

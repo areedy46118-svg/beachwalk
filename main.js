@@ -3082,8 +3082,21 @@ function playerDied() {
     location.reload();
   }, 1600);
 }
+const healthEl = document.getElementById('health');
+let hpShown = -1;
 function updateHurt(dt) {
   if (hurtFlash > 0) hurtFlash = Math.max(0, hurtFlash - dt / HURT_FADE);
+  /* THE HEALTH BAR. Three hairline segments in the bottom left, in the HUD's
+   * own language — no frame, no number — dim red while you are whole and
+   * brighter the more of you is gone, with a flash on the hit. It is the
+   * only colour on the screen, which is what makes it read. */
+  if (hp !== hpShown) {
+    hpShown = hp;
+    const segs = healthEl.children;
+    for (let i = 0; i < segs.length; i++) segs[i].classList.toggle('off', i >= hp);
+  }
+  healthEl.style.opacity = (introDone && !ended && !dying) ? (hp < MAX_HP ? 0.95 : 0.42) : 0;
+  healthEl.classList.toggle('hurt', hurtFlash > 0.55);
   if (!dying && !ended && introDone && hp < MAX_HP) {
     sinceHurt += dt;
     if (sinceHurt > REGEN_DELAY) {
@@ -5970,6 +5983,19 @@ function digImpact() {
       return;
     }
   }
+  // and the dead: the nearest joint of a body on the aim line takes it
+  {
+    let best = null, bq = null, bestT = Infinity;
+    for (const u of mutants) {
+      if (u.st.alive || !u.rag) continue;
+      for (const q of u.rag.parts) {
+        const t = THREE.MathUtils.clamp(_hitC.copy(q.p).sub(_aimO).dot(_aimD), 0, digRay.far);
+        const miss = q.p.distanceTo(_hitC.copy(_aimO).addScaledVector(_aimD, t));
+        if (miss < 0.42 + P * 0.15 && t < bestT) { bestT = t; best = u; bq = q; }
+      }
+    }
+    if (best) { ragHit(best, bq, P, _pf.x, _pf.z); return; }
+  }
   /* Something solid in front of the sand. The blade used to raycast the sand
    * and nothing else, so a swing at the pier went straight through the boards
    * and cratered the beach two metres underneath — you dug UNDER the dock.
@@ -7299,8 +7325,8 @@ const CRAB_WAKE = 17;                  // it notices you at this range
  * the pack take it in TURNS — one telegraph at a time, or there is nothing
  * to read and a parry is a coin toss. */
 const CRAB_SPEED = 3.75;
-const CRAB_DASH = 6.4;                 // the closing burst, faster than a sprint
-const CRAB_SEP = 1.5;                  // and they do not stand in one another
+const CRAB_DASH = 7.4;                 // the closing burst, faster than a sprint
+const CRAB_SEP = 1.9;                  // and they do not stand in one another
 let crabToken = null;
 const CRAB_REACH = 1.45;               // how close it gets before it nips
 /* Attack frame data, at 60 fps. The nip used to land the same frame the crab
@@ -7687,6 +7713,7 @@ function burstCrab(u = crabs[0]) {
   spawnPuffs(p.x, p.z, 12, 0, -1, 0.14);
 }
 
+const gy_lerp = (a, b, t) => a + (b - a) * t;
 function updateGibs(dt) {
   for (let i = gibs.length - 1; i >= 0; i--) {
     const g = gibs[i];
@@ -7706,8 +7733,22 @@ function updateGibs(dt) {
       const bb = g.m.geometry.boundingBox;
       g.half = (bb.max.y - bb.min.y) * 0.5 * g.m.scale.y;
     }
-    const rest = (deck !== null ? deck + 0.02 : g.rest) + g.half;
-    g.m.visible = !coveredByWater(g.m.position.x, g.m.position.y, g.m.position.z);
+    /* IT FLOATS. A piece that lands in the water rides the surface, a third
+     * of its thickness under, lying flat, and moves with the swell — it used
+     * to be hidden the moment the sea covered it, which for a limb thrown
+     * into the surf was a limb that vanished. */
+    const sub = submersionAt(g.m.position.x, g.m.position.z);
+    let rest = (deck !== null ? deck + 0.02 : g.rest) + g.half;
+    if (sub > 0.15) {
+      const ws = waterSurfaceAt(g.m.position.x, g.m.position.z) - g.half * 0.3;
+      rest = gy_lerp(rest, ws, Math.min(1, (sub - 0.15) / 0.6));
+      if (g.settled || g.m.position.y <= rest + 0.02) {
+        g.settled = true; g.vel.set(0, 0, 0);
+        g.m.position.y = rest; g.m.rotation.x = 0; g.m.rotation.z = 0; g.m.visible = true;
+        continue;
+      }
+      g.m.visible = true;
+    } else g.m.visible = !coveredByWater(g.m.position.x, g.m.position.y, g.m.position.z);
     if (g.settled) continue;
     g.vel.y -= 15 * dt;
     g.m.position.addScaledVector(g.vel, dt);
@@ -7955,10 +7996,18 @@ function updateCrabUnit(u, dt) {
     const was = u.st.atk;
     u.st.atk += dt;
     const t = u.st.atk;
-    // it CLOSES through its own startup, so backing off is not a free dodge
-    if (t < CRAB_WIND * 0.8 && dist > CRAB_REACH * 0.8) {
+    /* IT LUNGES. It closed through its startup at a stroll before, and a
+     * player holding S was never there when the claw came down — too easy to
+     * kill backing up, the owner said. It comes in through the whole startup
+     * at better than its walk now, and through the strike itself at a dash,
+     * so the snap follows you; and the bite is tested on every active frame,
+     * not only the first, so a crab that arrives a frame late still lands. */
+    if (t < CRAB_WIND && dist > CRAB_REACH * 0.8) {
       u.dir.set(dx / dist, 0, dz / dist);
-      u.g.position.addScaledVector(u.dir, CRAB_SPEED * 0.6 * dt);
+      u.g.position.addScaledVector(u.dir, CRAB_SPEED * 1.05 * dt);
+    } else if (t >= CRAB_WIND && t < CRAB_WIND + CRAB_STRIKE && dist > CRAB_REACH * 0.55) {
+      u.dir.set(dx / dist, 0, dz / dist);
+      u.g.position.addScaledVector(u.dir, CRAB_DASH * 0.9 * dt);
     }
     // and it feints: the claws go up and nothing comes of it
     if (u.st.feint > 0 && t >= CRAB_WIND * u.st.feint) {
@@ -7968,14 +8017,16 @@ function updateCrabUnit(u, dt) {
       crabAnim(u, dt, false, 0);
       return;
     }
-    if (was < CRAB_WIND && t >= CRAB_WIND) {
-      sfxCrabSnip();
+    if (was < CRAB_WIND && t >= CRAB_WIND) { sfxCrabSnip(); u.st.landed = false; }
+    if (t >= CRAB_WIND && t < CRAB_WIND + CRAB_STRIKE && !u.st.landed) {
       /* Re-tested here, not when the wind-up began: the tell is only fair if
        * getting out of the way is a thing that works. Three outcomes now —
        * you were not guarding and it hurts; the guard was already up and it
        * does nothing; or the guard went up INTO it and the thing that swung
-       * is left standing there stunned. */
-      if (dist < CRAB_REACH + 0.4) {
+       * is left standing there stunned. Once per swing. */
+      const d2 = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
+      if (d2 < CRAB_REACH + 0.4) {
+        u.st.landed = true;
         if (blocking) {
           const dtp = (performance.now() - blockStart) / 1000;
           if (dtp <= PARRY_WINDOW && parryCool <= 0) parryCrab(u);
@@ -8024,8 +8075,8 @@ function updateCrabUnit(u, dt) {
       u.st.feint = (Math.random() < 0.14) ? 0.55 + Math.random() * 0.2 : 0;
       sfxCrabTell();
     } else if (closing && u.st.cool <= 0 && crabToken === u && u.st.dash <= 0
-               && dist < 8 && dist > CRAB_REACH + 0.7 && Math.random() < dt * 1.8) {
-      u.st.dash = 0.3 + Math.random() * 0.3;      // cross the gap you opened
+               && dist < 10 && dist > CRAB_REACH + 0.7 && Math.random() < dt * 3.0) {
+      u.st.dash = 0.35 + Math.random() * 0.35;    // cross the gap you opened — and it does this often
     }
   }
   u.st.lunge = atkLunge;
@@ -8038,6 +8089,7 @@ function updateCrabUnit(u, dt) {
   }
   if (closing) {
     u.dir.set(dx / dist, 0, dz / dist);
+    flankDir(u, crabs, crabToken, CRAB_SLOT_ANG, dist, CRAB_REACH + 0.3, u.dir);   // round you, not in a file
     // it slows as it comes into range rather than sliding to a dead stop; it
     // sprints if it has been left behind, and it DASHES to close a real gap
     const rejoin = dist > 7 ? 1.35 : 1;
@@ -8063,13 +8115,13 @@ function updateCrabUnit(u, dt) {
      * while it circles; the others hold the range and wait. */
     u.st.sideT = (u.st.sideT || 0) - dt;
     if (u.st.sideT <= 0) {
-      u.st.side = Math.random() < 0.5 ? -1 : 1;
-      u.st.sideT = 0.35 + Math.random() * 0.75;      // short legs: it flips constantly
+      u.st.side = flankSide(u, crabs, crabToken, CRAB_SLOT_ANG);   // toward its slot, mostly: the circling spreads them
+      u.st.sideT = 0.5 + Math.random() * 0.9;        // long enough to see it go round
     }
     const tx = -dz / dist, tz = dx / dist;           // the tangent, to its right
     const want = crabToken === u ? CRAB_REACH - 0.35 : CRAB_REACH + 0.5;
     const rad = THREE.MathUtils.clamp((dist - want) * 2.0, -1.4, 1.4);
-    const sw = 2.3 + Math.random() * 0.3;
+    const sw = 3.2 + Math.random() * 0.5;            // and it goes round FAST: side to side is what a crab is
     u.g.position.x += (tx * u.st.side * sw + (dx / dist) * rad) * dt;
     u.g.position.z += (tz * u.st.side * sw + (dz / dist) * rad) * dt;
     u.st.scuttle += dt * 5.4;            // and the legs go with it
@@ -12413,7 +12465,53 @@ const MUT_RECOIL = 0.32;                   // how long a survived hit rocks it
 const MUT_HIT_STOP = 0.09;
 const MUT_HEAVY = 0.85;                    // a swing wound past this takes two
 const MUT_STRAFE = 1.7;                    // how fast they circle you at reach
-const MUT_SEP = 1.9;                       // and how far off each other they stay
+const MUT_SEP = 2.6;                       // and how far off each other they stay
+/* NOT IN A LINE. Three of them coming straight at you arrive in a file, one
+ * behind the other, and fight from there — which the owner saw. Each has a
+ * SLOT round you: the one with the turn is AHEAD, and the others take the
+ * side of it they are already on, a good half-turn out, and come in toward
+ * that point at reach rather than toward you. With no turn given out, the
+ * slots hang off the pack's centre. Crabs use the same rule with their own
+ * angle. `flankDir` bends an approach toward the slot while there is room
+ * to; `flankSide` picks which way to circle so the circling spreads them. */
+const MUT_SLOT_ANG = 1.05, CRAB_SLOT_ANG = 1.15;
+function slotAngle(u, list, token, slotAng) {
+  const cx = camera.position.x, cz = camera.position.z;
+  const angU = Math.atan2(u.g.position.x - cx, u.g.position.z - cz);
+  let ax, slot;
+  if (token && token !== u) {
+    ax = Math.atan2(token.g.position.x - cx, token.g.position.z - cz);
+    let d = angU - ax; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+    slot = d >= 0 ? 1 : -1;
+  } else if (token === u) return null;
+  else {
+    let mx = 0, mz = 0, n = 0;
+    for (const o of list) if (o.st.alive && o.st.awake) { mx += o.g.position.x; mz += o.g.position.z; n++; }
+    if (n < 2) return null;
+    ax = Math.atan2(mx / n - cx, mz / n - cz);
+    slot = [0, -1, 1][list.indexOf(u) % 3];
+    if (slot === 0) return null;
+  }
+  return ax + slot * slotAng;
+}
+function flankDir(u, list, token, slotAng, dist, ring, out) {
+  const ta = slotAngle(u, list, token, slotAng);
+  if (ta === null) return;
+  const tx = camera.position.x + Math.sin(ta) * ring - u.g.position.x;
+  const tz = camera.position.z + Math.cos(ta) * ring - u.g.position.z;
+  const td = Math.hypot(tx, tz) || 1e-4;
+  // toward the slot while there is ground to cover, toward you when close: a slot is a way to arrive, not a place to stand
+  const k = THREE.MathUtils.clamp((dist - ring) / 1.2, 0, 1) * Math.min(1, td / 1.5);
+  out.x = out.x * (1 - k) + (tx / td) * k; out.z = out.z * (1 - k) + (tz / td) * k;
+  const l = Math.hypot(out.x, out.z) || 1e-4; out.x /= l; out.z /= l;
+}
+function flankSide(u, list, token, slotAng) {
+  const ta = slotAngle(u, list, token, slotAng);
+  if (ta === null || Math.random() < 0.25) return Math.random() < 0.5 ? -1 : 1;
+  const angU = Math.atan2(u.g.position.x - camera.position.x, u.g.position.z - camera.position.z);
+  let d = ta - angU; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+  return d > 0 ? 1 : -1;                     // +side runs the angle up, measured
+}
 
 /* Four swings, and none of them on a fixed clock. Each has its own startup,
  * its own reach and its own contact frame — `hit`, where the hand actually
@@ -12456,7 +12554,9 @@ const MUT_KINDS = {
   pale: { skin: null, h: 2.30, hp: 5, dmg: 1, speedK: 1.00, windK: 1.00, reachK: 1.05, aggr: 1.10,
           use: { attack: 0.32, attack2: 0.28, attack3: 0.18, attack4: 0.22 },
           circle: 0.20, step: 0.30, chainMax: 1, feint: 0.10,
-          bones: { Character1_LeftForeArm: 1.14, Character1_RightForeArm: 1.14 },
+          bones: Object.assign({ Character1_LeftForeArm: 1.32, Character1_RightForeArm: 1.32,
+                                 Character1_LeftHand: 1.22, Character1_RightHand: 1.22,
+                                 Character1_Neck: 1.40, Character1_Head: 0.94 }, petalScale(0.9)),
           anim: { run: 'run', idle: 'idle', roar: 'roar', die: 'die', walk: 'walk', back: 'back',
                   rate: 1.05, lean: 0.10, strafeK: 1.0 },
           voice: { f: 1.00, growl: 1.00, rasp: 1.00, throat: 'wet' } },
@@ -12467,9 +12567,9 @@ const MUT_KINDS = {
   red:  { skin: 'assets/mutant-red.jpg', h: 2.74, hp: 7, dmg: 2, speedK: 0.95, windK: 1.24, reachK: 1.20, aggr: 1.00,
           use: { attack: 0.38, attack3: 0.34, attack4: 0.28 },
           circle: 0.10, step: 0.38, chainMax: 1, feint: 0.04,
-          bones: Object.assign({ Character1_Head: 1.20, Character1_Spine2: 1.08,
-                                 Character1_LeftArm: 1.18, Character1_RightArm: 1.18,
-                                 Character1_LeftUpLeg: 1.12, Character1_RightUpLeg: 1.12 }, petalScale(1.32)),
+          bones: Object.assign({ Character1_Head: 1.48, Character1_Spine2: 1.14,
+                                 Character1_LeftArm: 1.26, Character1_RightArm: 1.26,
+                                 Character1_LeftUpLeg: 1.16, Character1_RightUpLeg: 1.16 }, petalScale(1.55)),
           anim: { run: 'run2', idle: 'idle2', roar: 'roar2', die: 'die2', walk: 'walk2', back: 'back2',
                   rate: 0.80, lean: 0.03, strafeK: 0.7 },
           voice: { f: 0.68, growl: 1.45, rasp: 0.7, throat: 'bellow' } },
@@ -12480,9 +12580,10 @@ const MUT_KINDS = {
   dark: { skin: 'assets/mutant-dark.jpg', h: 2.02, hp: 4, dmg: 1, speedK: 1.32, windK: 0.72, reachK: 1.00, aggr: 1.60,
           use: { attack2: 0.46, attack4: 0.32, attack: 0.22 },
           circle: 0.34, step: 0.22, chainMax: 2, feint: 0.20,
-          bones: Object.assign({ Character1_Head: 0.80,
-                                 Character1_LeftForeArm: 1.34, Character1_RightForeArm: 1.34,
-                                 Character1_LeftLeg: 1.26, Character1_RightLeg: 1.26 }, petalScale(0.72)),
+          bones: Object.assign({ Character1_Head: 0.62, Character1_Neck: 1.25,
+                                 Character1_LeftArm: 1.10, Character1_RightArm: 1.10,
+                                 Character1_LeftForeArm: 1.48, Character1_RightForeArm: 1.48,
+                                 Character1_LeftLeg: 1.36, Character1_RightLeg: 1.36 }, petalScale(0.55)),
           anim: { run: 'run2', idle: 'idle2', roar: 'roar', die: 'die', walk: 'walk', back: 'back',
                   rate: 1.95, lean: 0.30, strafeK: 1.45 },
           voice: { f: 1.46, growl: 0.62, rasp: 1.45, throat: 'chitter' } },
@@ -12816,6 +12917,7 @@ function hurtMutant(u, dmg, P = 0) {
   const committed = u.st.atk >= 0 && u.st.atk > A.wind * 0.55 && u.st.atk < A.wind + A.strike;
   if (committed && P < MUT_HEAVY && dmg < 2) {
     flashMats(u.g); sfxMutHit(u.kind.voice); bleedMutant(u, 5, 0.3); addTrauma(0.22);
+    camera.getWorldDirection(_hitC); sprayBlood(u.g.position.x, u.g.position.y + u.kind.h * 0.55, u.g.position.z, _hitC.x, _hitC.z, 8, 0.8);
     return false;
   }
   u.st.atk = -1; u.st.chainAt = -1; u.st.chained = false; u.st.chainN = 0;
@@ -12829,6 +12931,8 @@ function hurtMutant(u, dmg, P = 0) {
   flashMats(u.g);
   sfxMutHit(u.kind.voice);
   bleedMutant(u, 8, 0.35);
+  sprayBlood(u.g.position.x, u.g.position.y + u.kind.h * 0.55, u.g.position.z, u.hitDir.x, u.hitDir.z, 12 + Math.round(P * 10), 0.9 + P * 0.6);
+  stampBlood(u.g.position.x + u.hitDir.x * 0.5, u.g.position.z + u.hitDir.z * 0.5, 0.45 + Math.random() * 0.35);
   addTrauma(0.3 + P * 0.2);
   return false;
 }
@@ -12864,6 +12968,7 @@ function finishMutant(u) {
   // the overhead throws it further — a little, so the hit reads harder, not so far it flies
   mutRagdoll(u, dx, dz, 0.7 + P * 0.7 + (oh ? 0.55 : 0));
   bleedMutant(u, 26, 1.0);
+  sprayBlood(u.g.position.x, u.g.position.y + u.kind.h * 0.5, u.g.position.z, dx, dz, 26 + Math.round(P * 14), 1.3 + P * 0.5);
   stampBlood(u.g.position.x, u.g.position.z, 1.3 + Math.random() * 0.5);
   sfxMutDie(u.kind.voice);
   addTrauma(0.5);
@@ -12874,6 +12979,18 @@ function finishMutant(u) {
     if (o === u || !o.st.alive) continue;
     const d = Math.hypot(camera.position.x - o.g.position.x, camera.position.z - o.g.position.z);
     setTimeout(() => { if (o.st.alive) sfxMutLaugh(d, o.kind.voice); }, 260 + Math.random() * 420);
+  }
+}
+/* BLOOD GOES WHERE THE BLADE WENT. `bleedMutant` is a radial burst from the
+ * chest; this is the spray a cut throws — most of it along the swing, a
+ * little to the sides, and from the height the blade landed at. */
+function sprayBlood(x, y, z, dirX, dirZ, n, force) {
+  for (let i = 0; i < n; i++) {
+    const m = new THREE.Mesh(new THREE.IcosahedronGeometry(0.028 * (0.5 + Math.random()), 0), BLOOD_MAT);
+    m.position.set(x + (Math.random() - 0.5) * 0.2, y + (Math.random() - 0.5) * 0.25, z + (Math.random() - 0.5) * 0.2);
+    scene.add(m);
+    const a = Math.random() * Math.PI * 2, side = (0.4 + Math.random() * 1.4) * force, along = (1.6 + Math.random() * 2.6) * force;
+    bloodDrops.push({ m, vel: new THREE.Vector3(dirX * along + Math.cos(a) * side, 0.8 + Math.random() * 2.2 * force, dirZ * along + Math.sin(a) * side), life: 4 });
   }
 }
 function bleedMutant(u, n, force) {
@@ -13206,7 +13323,7 @@ function mutSeparate(u, dt) {
     const dx = u.g.position.x - o.g.position.x, dz = u.g.position.z - o.g.position.z;
     const d = Math.hypot(dx, dz);
     if (d > MUT_SEP || d < 1e-4) continue;
-    const push = (MUT_SEP - d) * dt * 4.0;
+    const push = (MUT_SEP - d) * dt * 5.0;
     u.g.position.x += (dx / d) * push;
     u.g.position.z += (dz / d) * push;
   }
@@ -13385,29 +13502,94 @@ function burstHead(u, dirX, dirZ) {
   addTrauma(0.35); fovKick = Math.max(fovKick, 3);
   return true;
 }
+/* THE PIECE IS THE PIECE. A severed limb used to be a generic lump thrown
+ * from the body; you saw something leave and nothing on the ground that was
+ * an arm. Now the limb itself comes off: every triangle of the skin whose
+ * corners are mostly weighted to the cut bone's subtree is baked, in the pose
+ * it is in at that instant, into a static mesh with the creature's own
+ * material, laid along X so it lands lying down, and thrown as a gib. The
+ * seam is the skinning's own and it is ragged, as a tear is. It has to be
+ * baked BEFORE the bone collapses, or there is nothing to bake. A torso cut
+ * bakes the whole upper body — head, arms and all — and it lies there. */
+const _bkV = new THREE.Vector3();
+function bakeLimb(u, boneName) {
+  let root = null; const meshes = [];
+  u.model.traverse((o) => { if (o.isBone && o.name === boneName) root = o; if (o.isSkinnedMesh) meshes.push(o); });
+  if (!root || !meshes.length) return null;
+  u.model.updateMatrixWorld(true);
+  const rootP = root.getWorldPosition(new THREE.Vector3());
+  // the piece's long axis: from the cut to the farthest joint below it
+  const far = rootP.clone(); let farD = 0;
+  root.traverse((b) => { if (!b.isBone) return; b.getWorldPosition(_bkV); const d = _bkV.distanceTo(rootP); if (d > farD) { farD = d; far.copy(_bkV); } });
+  const axis = far.sub(rootP); if (axis.lengthSq() < 1e-6) axis.set(1, 0, 0); axis.normalize();
+  const turn = new THREE.Quaternion().setFromUnitVectors(axis, new THREE.Vector3(1, 0, 0));
+  const pos = [], uv = [];
+  for (const m of meshes) {
+    const bones = m.skeleton.bones, inSet = new Uint8Array(bones.length);
+    bones.forEach((b, i) => { for (let q = b; q; q = q.parent) { if (q === root) { inSet[i] = 1; break; } if (!q.isBone) break; } });
+    const g = m.geometry, P = g.attributes.position, SI = g.attributes.skinIndex, SW = g.attributes.skinWeight, UV = g.attributes.uv, idx = g.index;
+    if (!SI || !SW) continue;
+    const dom = (v) => { let best = 0, bw = -1; for (let k = 0; k < 4; k++) { const w = SW.getComponent(v, k); if (w > bw) { bw = w; best = SI.getComponent(v, k); } } return inSet[best]; };
+    const n = idx ? idx.count : P.count, at = (i) => (idx ? idx.getX(i) : i);
+    for (let t = 0; t < n; t += 3) {
+      const a = at(t), b = at(t + 1), c = at(t + 2);
+      if (dom(a) + dom(b) + dom(c) < 2) continue;
+      for (const v of [a, b, c]) {
+        _bkV.fromBufferAttribute(P, v); m.applyBoneTransform(v, _bkV); _bkV.applyMatrix4(m.matrixWorld);
+        _bkV.sub(rootP).applyQuaternion(turn);
+        pos.push(_bkV.x, _bkV.y, _bkV.z);
+        uv.push(UV ? UV.getX(v) : 0, UV ? UV.getY(v) : 0);
+      }
+    }
+  }
+  if (pos.length < 9) return null;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.computeVertexNormals();
+  geo.computeBoundingBox();
+  const c = geo.boundingBox.getCenter(new THREE.Vector3());
+  geo.translate(-c.x, -c.y, -c.z);              // about its own middle, so it tumbles and rests on its own thickness
+  const mesh = new THREE.Mesh(geo, meshes[0].material);
+  const back = turn.clone().invert();
+  mesh.quaternion.copy(back);                    // starts exactly where the limb was, and tumbles from there
+  mesh.position.copy(c.applyQuaternion(back).add(rootP));
+  return mesh;
+}
 function mutSever(u, part, dirX, dirZ, force) {
   if (!u.model || u.gone[part.bone]) return false;
   let target = null;
   u.model.traverse((o) => { if (o.isBone && o.name === part.bone) target = o; });
   if (!target) return false;
+  const piece = bakeLimb(u, part.bone);        // before the collapse, or there is nothing to bake
   u.gone[part.bone] = 1;
   target.scale.setScalar(0.0001);              // the seam is the skinning's own
-  // the piece itself, thrown along the swing
   const p = u.g.position;
-  const mat = mutGibMat(u);
-  const g = new THREE.Mesh(new THREE.IcosahedronGeometry(part.r * u.kind.h * 0.34, 0), mat);
-  g.scale.set(part.w * 0.75, part.len * 0.9, part.w * 0.6);   // long and thin: a piece of something
-  g.position.set(p.x + (Math.random() - 0.5) * 0.2, part.y * u.kind.h, p.z + (Math.random() - 0.5) * 0.2);
-  g.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
-  scene.add(g);
   const out = 1.6 + Math.random() * 2.2;
-  gibs.push({
-    m: g,
-    vel: new THREE.Vector3(dirX * out * force + (Math.random() - 0.5), 2.4 + Math.random() * 2.6, dirZ * out * force + (Math.random() - 0.5)),
-    spin: new THREE.Vector3((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14),
-    rest: part.r * u.kind.h * 0.3, life: 30,
-  });
+  if (piece) {
+    scene.add(piece);
+    gibs.push({
+      m: piece,
+      vel: new THREE.Vector3(dirX * out * force + (Math.random() - 0.5), 2.0 + Math.random() * 2.2, dirZ * out * force + (Math.random() - 0.5)),
+      spin: new THREE.Vector3((Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9),
+      rest: 0, life: 240,
+    });
+  }
+  // and a couple of small pieces of the wound itself
+  const mat = mutGibMat(u);
+  for (let i = 0; i < 3; i++) {
+    const g = new THREE.Mesh(new THREE.IcosahedronGeometry(part.r * u.kind.h * 0.12 * (0.6 + Math.random() * 0.8), 0), i ? mat : GIB_MAT_WET);
+    g.position.set(p.x + (Math.random() - 0.5) * 0.2, part.y * u.kind.h, p.z + (Math.random() - 0.5) * 0.2);
+    scene.add(g);
+    gibs.push({
+      m: g,
+      vel: new THREE.Vector3(dirX * out * force * 0.7 + (Math.random() - 0.5) * 1.5, 2.0 + Math.random() * 2.5, dirZ * out * force * 0.7 + (Math.random() - 0.5) * 1.5),
+      spin: new THREE.Vector3((Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18),
+      rest: 0, life: 40,
+    });
+  }
   bleedMutant(u, 14, 1.2);
+  sprayBlood(p.x, part.y * u.kind.h, p.z, dirX, dirZ, 14, 1.2);
   stampBlood(p.x, p.z, 0.7 + Math.random() * 0.5);
   sfxMutSever();
   return true;
@@ -13528,7 +13710,8 @@ function mutRagdoll(u, dirX, dirZ, power) {
     const p = bn.getWorldPosition(new THREE.Vector3());
     // the blow's momentum, most of it up top: the chest goes, the feet stay planted and the body goes over them
     const h = THREE.MathUtils.clamp((p.y - u.g.position.y) / Math.max(0.5, u.kind.h), 0, 1);
-    const kick = (0.9 + power * 2.4) * (0.25 + h * 0.75);
+    // harder than it was: the owner wanted the hit to feel like it — about half again
+    const kick = (1.3 + power * 3.0) * (0.25 + h * 0.75);
     const v = new THREE.Vector3(dirX * kick + (Math.random() - 0.5) * 0.4, 0.4 + h * 0.6 + Math.random() * 0.3, dirZ * kick + (Math.random() - 0.5) * 0.4);
     const part = { name, bone: bn, parent: parentName, child: childName, r, p, pp: p.clone().addScaledVector(v, -1 / 60), w: name.includes('Hips') ? 0.5 : name.includes('Head') ? 0.8 : 1 };
     parts.push(part); byName[name] = part;
@@ -13544,17 +13727,84 @@ function mutRagdoll(u, dirX, dirZ, power) {
   u.g.rotation.set(0, u.g.rotation.y, 0);           // the body's tilt is the particles' now, not the group's
 }
 
+/* A BODY ON THE SAND TAKES THE BLOW TOO. The blade used to pass straight
+ * through a corpse to the sand under it. Now the swing finds the nearest
+ * joint on the aim line, kicks everything near it along the swing — the
+ * ragdoll wakes and takes it like any other blow — sprays from the point it
+ * landed, and a hard enough cut takes the piece it landed on: the limb whose
+ * joint it was comes off (`limbFor`), the ragdoll forgets everything below
+ * the cut (`ragCut`) and keeps the stump, and the piece lies where it fell. */
+const RAG_LIMB_OF = {
+  LeftHand: 'LeftForeArm', LeftForeArm: 'LeftForeArm', LeftArm: 'LeftArm', LeftShoulder: 'LeftArm',
+  RightHand: 'RightForeArm', RightForeArm: 'RightForeArm', RightArm: 'RightArm', RightShoulder: 'RightArm',
+  LeftToeBase: 'LeftLeg', LeftFoot: 'LeftLeg', LeftLeg: 'LeftLeg', LeftUpLeg: 'LeftLeg',
+  RightToeBase: 'RightLeg', RightFoot: 'RightLeg', RightLeg: 'RightLeg', RightUpLeg: 'RightLeg',
+  Head: 'Head', Neck: 'Head', Spine1: 'torso', Spine2: 'torso', Spine: 'torso',
+};
+function limbFor(partName, P) {
+  const key = RAG_LIMB_OF[partName.replace('Character1_', '')];
+  if (!key) return null;
+  if (key === 'torso') return P >= MUT_HEAVY ? MUT_BISECT : null;
+  return MUT_LIMBS.find((l) => l.bone === 'Character1_' + key) || null;
+}
+function ragCut(u, boneName) {
+  const r = u.rag; if (!r || !r.byName[boneName]) return;
+  const below = (bn) => { for (let b = bn.parent; b; b = b.parent) { if (b.name === boneName) return true; if (!b.isBone) break; } return false; };
+  const gone = new Set(r.parts.filter((q) => below(q.bone)));
+  if (!gone.size) return;
+  r.parts = r.parts.filter((q) => !gone.has(q));
+  for (const q of gone) delete r.byName[q.name];
+  r.cons = r.cons.filter((c) => !gone.has(c.a) && !gone.has(c.b));
+  r.bends = r.bends.filter((b) => !gone.has(b.a) && !gone.has(b.c));
+}
+function ragHit(u, q, P, dirX, dirZ) {
+  const r = u.rag; r.asleep = false;
+  const kick = 2.6 + P * 4.4;
+  for (const o of r.parts) {
+    const d = o.p.distanceTo(q.p);
+    if (d > 0.75) continue;
+    const w = 1 / (1 + d * 3);
+    o.pp.x -= (dirX * kick + (Math.random() - 0.5) * 0.6) * w / 90;
+    o.pp.y -= (1.6 + P * 1.4) * w / 90;
+    o.pp.z -= (dirZ * kick + (Math.random() - 0.5) * 0.6) * w / 90;
+  }
+  hitConnect(P, 0.55);
+  playSample('fleshHit', 0.9, 0.05, 0.9 - P * 0.2);
+  sprayBlood(q.p.x, q.p.y, q.p.z, dirX, dirZ, 10 + Math.round(P * 12), 0.8 + P * 0.6);
+  stampBlood(q.p.x, q.p.z, 0.5 + Math.random() * 0.4);
+  const part = limbFor(q.name, P);
+  if (part && !u.gone[part.bone] && (P >= MUT_HEAVY || Math.random() < 0.38)) {
+    if (mutSever(u, part, dirX, dirZ, 0.9 + P * 0.6)) ragCut(u, part.bone);
+  }
+}
 function updateMutRagdoll(u, dt) {
   const r = u.rag; if (!r) return;
   r.t += dt;
   const gy = 0.07;                                    // the sand plane, plus the flesh around a joint: the mesh rests ON the sand, not in it
+  /* IT FLOATS. The seabed is the sand plane and the drawn sea sits BELOW it,
+   * so a body that came to rest on the sand in the surf lay on top of the
+   * water like a raft — the owner's "they sit on top". In the water each
+   * joint's floor is the wave surface, a hand under it, and the surface moves,
+   * so the body rides the swell; the sand floor is gone with the sand. It
+   * blends in over the first stretch past the waterline, the way everything
+   * else wades in, and a corpse the tide reaches later is WOKEN by it. */
+  let wet = false;
+  const hip0 = r.byName['Character1_Hips'] || r.parts[0];
+  if (r.asleep && hip0 && submersionAt(hip0.p.x, hip0.p.z) > 0.15) r.asleep = false;
   if (!r.asleep) {
     const h = Math.min(dt, 1 / 30) / RAG_SUB;
     let motion = 0;
+    for (const q of r.parts) {
+      const sub = submersionAt(q.p.x, q.p.z);
+      const k = THREE.MathUtils.clamp((sub - 0.15) / 0.6, 0, 1);
+      q.wet = k;
+      q.floor = k > 0 ? gy + (waterSurfaceAt(q.p.x, q.p.z) - 0.10 - gy) * k : gy;
+      if (k > 0) wet = true;
+    }
     for (let s = 0; s < RAG_SUB; s++) {
       // integrate
       for (const q of r.parts) {
-        _rg1.subVectors(q.p, q.pp).multiplyScalar(RAG_DAMP);
+        _rg1.subVectors(q.p, q.pp).multiplyScalar(q.wet > 0 ? RAG_DAMP - 0.10 * q.wet : RAG_DAMP);   // water is thick
         q.pp.copy(q.p);
         q.p.add(_rg1); q.p.y -= 9.8 * h * h;
         motion += _rg1.lengthSq();
@@ -13572,17 +13822,17 @@ function updateMutRagdoll(u, dt) {
         }
         // the ground, with friction: what touches the sand stops sliding
         for (const q of r.parts) {
-          if (q.p.y < gy + q.r) {
-            q.p.y = gy + q.r;
+          if (q.p.y < q.floor + q.r) {
+            q.p.y = q.floor + q.r;
             q.pp.x = q.p.x - (q.p.x - q.pp.x) * (1 - RAG_FRICTION);
             q.pp.z = q.p.z - (q.p.z - q.pp.z) * (1 - RAG_FRICTION);
-            if (q.pp.y < q.p.y) q.pp.y = q.p.y + (q.p.y - q.pp.y) * RAG_BOUNCE;   // and bounces, a little
+            if (q.pp.y < q.p.y) q.pp.y = q.p.y + (q.p.y - q.pp.y) * (q.wet > 0 ? 0 : RAG_BOUNCE);   // and bounces, a little — not in water
           }
-          q.p.x = THREE.MathUtils.clamp(q.p.x, WADE_X - 2, CLIFF_BLOCK_X + 0.6);
+          q.p.x = THREE.MathUtils.clamp(q.p.x, WADE_X - 6, CLIFF_BLOCK_X + 0.6);
         }
       }
     }
-    if (r.t > 1.5 && motion < 1e-7) r.asleep = true;     // it has come to rest
+    if (r.t > 1.5 && motion < 1e-7 && !wet) r.asleep = true;     // it has come to rest — on sand; water never lets it
   }
   // drive the skeleton from the particles, parent first
   const hips = r.byName['Character1_Hips'];
@@ -13820,7 +14070,7 @@ function updateMutantUnit(u, dt) {
           u.st.swing = u.kind.use[pick] ? pick : Object.keys(u.kind.use)[0];
           u.st.atk = 0; u.st.chained = false; u.st.chainN = 0; u.st.wait = 0;
           sfxMutTell(dist, u.atk[u.st.swing].wind, u.kind.voice);
-        } else { u.st.side = Math.random() < 0.5 ? -1 : 1; u.st.sideT = 0.5; }
+        } else { u.st.side = flankSide(u, mutants, mutToken, MUT_SLOT_ANG); u.st.sideT = 0.5; }
       }
     } else if (u.st.dash > 0) {
       /* THE CLOSING DASH. At eight metres a second it is faster than you can
@@ -13858,6 +14108,7 @@ function updateMutantUnit(u, dt) {
       const sp = MUT_SPEED * u.kind.speedK * (1 + u.st.sprint) * rejoin
         * THREE.MathUtils.clamp((dist - A.reach) / 1.8, 0.3, 1);
       u.dir.set(dx / dist, 0, dz / dist);
+      flankDir(u, mutants, mutToken, MUT_SLOT_ANG, dist, A.reach - 0.3, u.dir);   // round you, not in a file
       p.addScaledVector(u.dir, sp * dt);
       p.x = THREE.MathUtils.clamp(p.x, WADE_X - 1.5, CLIFF_BLOCK_X + 0.5);
       moving = sp / (MUT_SPEED * u.kind.speedK);
@@ -13895,9 +14146,30 @@ function updateMutantUnit(u, dt) {
       } else if (!wantSwing && maySwing && u.kind.use.attack4 && Math.random() > u.kind.circle) {
         u.st.back = 0.42;                     // it keeps the turn through the step
       } else {
-        u.st.side = Math.random() < 0.5 ? -1 : 1;
+        u.st.side = flankSide(u, mutants, mutToken, MUT_SLOT_ANG);   // and the circling spreads them
         u.st.sideT = 0.5 + Math.random() * 0.8;
       }
+    }
+  }
+  /* AND THE ONES WAITING SLIDE OUT TO THEIR SLOTS. Without the turn a creature
+   * at reach stood where it had arrived — behind the one swinging, in a file
+   * — for as long as it waited. It drifts round you toward its slot now, at a
+   * walk, and holds its range while it does, so the two without the turn end
+   * up either side of the one with it. Measured standing still: the three
+   * spanned 47 degrees round you before this, and a fight in a file is a
+   * fight with one thing in it. */
+  if (dist <= A.reach + 0.6 && mutToken !== u && u.st.atk < 0 && u.st.side === 0 && u.st.back <= 0 && u.st.dash <= 0 && u.st.recoil <= 0) {
+    const ta = slotAngle(u, mutants, mutToken, MUT_SLOT_ANG);
+    if (ta !== null) {
+      const angU = Math.atan2(-dx, -dz);
+      let d = ta - angU; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+      const tx = -dz / dist, tz = dx / dist;
+      const sw = Math.sign(d) * Math.min(1.5, Math.abs(d) * 2.5) * u.kind.anim.strafeK;
+      const r = THREE.MathUtils.clamp((dist - (A.reach - 0.6)) * 1.4, -1, 1);
+      p.x += (tx * sw + (dx / dist) * r * 1.2) * dt;
+      p.z += (tz * sw + (dz / dist) * r * 1.2) * dt;
+      p.x = THREE.MathUtils.clamp(p.x, WADE_X - 1.5, CLIFF_BLOCK_X + 0.5);
+      if (Math.abs(d) > 0.12) moving = Math.max(moving, 0.3);
     }
   }
   mutSeparate(u, dt);
@@ -15184,7 +15456,7 @@ window.__bw = {
   addToInventory, openPack, closePack, selectPackSlot, sfxCastleBreak, digImpacted: () => digImpacted,
   finishTyping, dialogTextEl, get hitstop() { return hitstop; },
   hurtCrab, get digOverhead() { return digOverhead; }, get windOverhead() { return windOverhead; },
-  get pose() { return _pose; }, get slashDir() { return slashDir; }, get blockT() { return blockT; },
+  get pose() { return _pose; }, get slashDir() { return slashDir; }, get blockT() { return blockT; }, get hp() { return hp; }, get hurtFlash() { return hurtFlash; },
   SLASH_WINDUP, SLASH_THROUGH, MIL_GRIP_Y,
   keys, overheadHeld,
   CRAB_HP, CRAB_HEAVY,

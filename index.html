@@ -259,6 +259,28 @@
   }
   #stamina-fill.low { background: rgba(224, 138, 96, 0.9); }
 
+  /* THE HEALTH BAR: three hairline segments in the bottom left, dim red
+     while whole and brighter the more of you is gone; a flash on the hit. */
+  #health {
+    position: fixed; left: 26px; bottom: 26px;
+    display: flex; gap: 5px;
+    z-index: 5; pointer-events: none;
+    opacity: 0; transition: opacity 0.5s ease;
+  }
+  #health i {
+    display: block; width: 40px; height: 3px;
+    background: rgba(255, 255, 255, 0.10); border-radius: 1px;
+    position: relative; overflow: hidden;
+  }
+  #health i::after {
+    content: ''; position: absolute; inset: 0;
+    background: rgba(198, 34, 30, 0.78);
+    transform-origin: left center; transform: scaleX(1);
+    transition: transform 0.28s ease, background 0.25s ease;
+  }
+  #health i.off::after { transform: scaleX(0); }
+  #health.hurt i::after { background: rgba(255, 78, 66, 1); }
+
   .vignette {
     position: fixed;
     inset: 0;
@@ -1016,6 +1038,7 @@
     <div id="stamina"><div id="stamina-fill"></div></div>
     <div id="prompt"></div>
   </div>
+  <div id="health"><i></i><i></i><i></i></div>
 
   <div id="gear">
     <div id="hotbar" class="hidden"></div>
