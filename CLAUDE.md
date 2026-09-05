@@ -1257,6 +1257,31 @@ hit's spike it settles to a faint breathing rim, 0.14 + 0.24 per point down,
 so you always know you are hurt without a bar. `updateHurt()` therefore runs
 every frame now; it used to return early when the flash was spent.
 
+**THE MILITARY SHOVEL SLASHES.** A spade on a shaft is a sword if you turn it
+edge-on and swing it across yourself: `VM_SLASH_ROT` brings the blade out of
+the dig grip so the EDGE leads, blended over the wind-up the way the overhead
+grip is, and `haulPose` / `impactPose` branch on `slashing()` into a broad
+horizontal arc that finishes past the far shoulder. `slashDir` flips on every
+commit, so a second cut is the backhand and a combination reads as one. It
+still DIGS — `digImpact` never asks what the pose was, so the crater, the
+sand, the crab test and the blade-on-the-crosshair correction are all
+untouched. The trail carries 1.55x on a slash, because a sweep draws an arc
+where a chop draws a line. The overhead went further through and further out
+at the same time: it is the heaviest thing in the game and should look it.
+
+**THE GUARD BOUNCES, IT DOES NOT RATTLE.** A blow stopped on steel used to be
+a decaying sine on `parryGlow` — loudest at the start and quieter after,
+which is a rattle. `guardShock` is a real spring (stiff, lightly damped) that
+the blow DRIVES: it overshoots, comes back through and settles, three visible
+bounces on a parry and half that on a block, and it knocks the tool across
+you as well as up. Sparks come with it — eighteen additive points in
+`vmScene`, pooled, thrown from `trailTip`, warm because struck steel is — and
+a solid hit drives the same spring, so the weight of a landed blow and the
+weight of a stopped one are the same language. A parry's freeze went to
+0.19 s: a parry that only made a noise reads as a lucky block, and a fifth of
+a second of the world stopped with the sparks hanging in it is the game
+telling you that you did that on purpose.
+
 **A BLOCK COSTS WIND; A PARRY DOES NOT.** Holding a shovel across a blow
 that hard takes something out of you, and it comes out of the bar you run
 on — so a fight you spend blocking is a fight you cannot back out of, and
@@ -1350,6 +1375,19 @@ point. The claw going up IS the parry tell, so it cannot be allowed to drift
 out of step with the frame the blow actually lands on — the clip is authored
 at 30fps with contact on frame 9, which is `CRAB_WIND` exactly. Move
 `CRAB_WIND` and you must move the pose beats in `tools/crab_anim.py` too.
+
+**AND EVERYTHING THE MUTANTS TAUGHT CAME BACK TO THE CRABS.** At 2.35 a crab
+was a metre a second slower than your walk, so every fight with one was
+optional — you strolled away from it. `CRAB_SPEED` is 3.75, it closes through
+its own wind-up at 0.6x, it rejoins at 1.35x past seven metres and it DASHES
+at 6.4 to cross a gap you opened. The three of the pack take it in turns
+(`crabToken`, handed out to whoever has waited longest and is in reach), they
+feint, they push off each other, and a blow on a parried one counts DOUBLE.
+Thirty seconds of holding S went from a stroll to ten damage with all three
+inside a metre and a half. And they are not one shell in three copies any
+more: each carries its own size, tint and lift — bleached and big, small dark
+and wet, rusted — and the material is CLONED per unit, because `parse` hands
+every copy the same one and tinting it tinted all three.
 
 **THE CRABS ARE A LIST.** There used to be exactly one and every part of it
 was a global — the group, the state, the mixer, the clip map. Three of them
@@ -1757,7 +1795,19 @@ seconds. And it has to be removed, not hidden: `visible = false` was undone
 the next frame by `updateFarProps()`, which switches every `farProps` entry
 on or off by distance, so it stood back up at its last spot with its head at
 the surface for the rest of the game. Anything in `farProps` that is meant
-to go away for good must leave the list. **No stinger.** A musical shriek was tried on
+to go away for good must leave the list. **THREE THROATS, NOT ONE TRANSPOSED.** `mutTone()` picks an instrument off
+`V.throat`: `bellow` is a sawtooth stack with a slow swell and a sub under it
+(a thing too big to hurry, and it arrives before it does), `chitter` is a fast
+square tremolo through a high formant (teeth, not lungs), `wet` is the
+original rasp. Every voiced sound goes through it, so a tell, a laugh and a
+hunger call from one creature are recognisably the same creature. It LAUGHS —
+five or six bursts on a falling contour — when it lands a blow on you, and
+when one of them dies THE OTHERS LAUGH, which is the cheapest thing in the
+whole fight and the one that most makes them a pack. And it breathes:
+`sfxMutHunger` every few seconds inside sixteen metres, quiet enough never to
+become the noise the fight is made of.
+
+**No stinger.** A musical shriek was tried on
 the bolt and cut: it tells you the game is scaring you. Its FEET are the
 sound — `sfxSmileStep()` every `SMILE_STEP`, falling off with distance,
 until the water takes it, then the splash. It stands 120 m past the

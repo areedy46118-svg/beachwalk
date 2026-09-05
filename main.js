@@ -4883,8 +4883,14 @@ shovelVM.position.set(-0.04, -0.02, 0.0);
  * across the wind so you see the hands change their hold. */
 const VM_REST_ROT = [0.70, 0.35, 0.32];
 const VM_OVERHEAD_ROT = [-0.62, 0.0, Math.PI];
+/* THE MILITARY SHOVEL SLASHES. A spade on a shaft is a sword if you turn it
+ * edge-on and swing it across yourself, and that is what this rotation does:
+ * the blade comes round out of the dig grip so the EDGE leads through the
+ * arc instead of the flat. It blends in over the wind-up the way the overhead
+ * grip does, so you watch the hands change their hold before the sweep. */
+const VM_SLASH_ROT = [0.16, 0.92, -0.42];
 shovelVM.rotation.set(VM_REST_ROT[0], VM_REST_ROT[1], VM_REST_ROT[2]);
-let ohBlend = 0;
+let ohBlend = 0, slBlend = 0;
 shovelVM.visible = false;
 toolMount.add(shovelVM);
 /* THE SHOVEL IN HAND. The dig, the trail, the overhead roll and the hit
@@ -4949,6 +4955,59 @@ function trailSample() {
   trailPos[3] = _tv.x; trailPos[4] = _tv.y; trailPos[5] = _tv.z;
   trailLen = Math.min(TRAIL_N, trailLen + 1);
 }
+let trailGain = 1;
+/* SPARKS. Steel stopping steel throws light, and light is what tells you the
+ * block landed before any sound gets there. They live in the view-model scene
+ * so they are always in front of you and always at the blade, they are
+ * additive so they read against the dark, and there are eighteen of them
+ * reused forever — a pool, like the puffs and the footprints. */
+const SPARK_N = 18;
+const sparkGeo = new THREE.BufferGeometry();
+{
+  const pos = new Float32Array(SPARK_N * 3), col = new Float32Array(SPARK_N * 3);
+  sparkGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  sparkGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+}
+const sparkPts = new THREE.Points(sparkGeo, new THREE.PointsMaterial({
+  size: 0.016, vertexColors: true, transparent: true, depthWrite: false,
+  blending: THREE.AdditiveBlending, sizeAttenuation: true,
+}));
+sparkPts.frustumCulled = false; sparkPts.visible = false;
+vmScene.add(sparkPts);
+const sparks = [];
+for (let i = 0; i < SPARK_N; i++) sparks.push({ ttl: 0, p: new THREE.Vector3(), v: new THREE.Vector3(), hot: 1 });
+let sparkIdx = 0;
+function spawnSparks(n, power) {
+  const at = new THREE.Vector3();
+  if (trailTip) trailTip.getWorldPosition(at); else at.set(0, 0, -0.6);
+  vmScene.worldToLocal(at);
+  for (let i = 0; i < n; i++) {
+    const sp = sparks[sparkIdx]; sparkIdx = (sparkIdx + 1) % SPARK_N;
+    sp.ttl = 0.16 + Math.random() * 0.22;
+    sp.hot = 0.7 + Math.random() * 0.6;
+    sp.p.copy(at);
+    const a = Math.random() * Math.PI * 2, r = (0.5 + Math.random()) * (0.7 + power);
+    sp.v.set(Math.cos(a) * r, Math.abs(Math.sin(a)) * r * 0.9 + 0.3, -(0.2 + Math.random() * 0.8) * r);
+  }
+}
+function updateSparks(dt) {
+  let live = 0;
+  const pos = sparkGeo.attributes.position.array, col = sparkGeo.attributes.color.array;
+  for (let i = 0; i < SPARK_N; i++) {
+    const sp = sparks[i];
+    if (sp.ttl <= 0) { col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = 0; continue; }
+    sp.ttl -= dt; live++;
+    sp.v.y -= 2.2 * dt;
+    sp.p.addScaledVector(sp.v, dt);
+    pos[i * 3] = sp.p.x; pos[i * 3 + 1] = sp.p.y; pos[i * 3 + 2] = sp.p.z;
+    const k = Math.max(0, sp.ttl / 0.3) * sp.hot;
+    col[i * 3] = k; col[i * 3 + 1] = k * 0.78; col[i * 3 + 2] = k * 0.45;   // struck steel is warm
+  }
+  sparkGeo.attributes.position.needsUpdate = true;
+  sparkGeo.attributes.color.needsUpdate = true;
+  sparkPts.visible = live > 0;
+}
+
 function updateTrail(dt, recording) {
   if (recording) { trailSample(); trailFade = 1; }
   else if (trailFade > 0) trailFade = Math.max(0, trailFade - dt / 0.16);
@@ -4963,7 +5022,7 @@ function updateTrail(dt, recording) {
   for (let i = 0; i < TRAIL_N; i++) {
     const age = i / (TRAIL_N - 1);
     const a = (i < trailLen ? Math.pow(1 - age, 1.7) : 0)
-      * trailFade * (0.020 + trailPower * 0.062);
+      * trailFade * (0.020 + trailPower * 0.062) * trailGain;
     /* Low, because the quads OVERLAP as the arc tightens and additive
      * blending accumulates every one of them — a per-quad alpha that looks
      * faint on its own stacks into solid white where the smear doubles back. */
@@ -5430,6 +5489,14 @@ const BLOCK_COST = 0.34;                 // of a full bar, per blow stopped
 let blockGasped = false;
 let blocking = false, blockT = 0, blockStart = -1, parryCool = 0;
 let parryGlow = 0;                       // the white flash on a successful parry
+/* THE GUARD BOUNCES. A blow stopped on steel used to be a decaying sine on
+ * `parryGlow` — a shudder that started at its loudest and got quieter, which
+ * is a rattle, not an impact. This is a real spring: the blow drives it, it
+ * overshoots, it comes back through and it settles, so the tool is KNOCKED
+ * and recovers. Three visible bounces on a parry, one and a half on a block,
+ * and it is the same shape the whole game reads impacts with. */
+let guardShock = 0, guardShockV = 0;
+const GUARD_K = 420, GUARD_D = 11;       // stiff and only lightly damped: it rings
 let winding = false, windT = 0, digPower = 0, digCharged = false, windFull = false;
 /* THE OVERHEAD. Hold sprint while you wind and the shovel goes up over your
  * head in both hands instead of back over your shoulder, and comes down the
@@ -5451,12 +5518,29 @@ function poseMix(out, a, b, t) {
   for (let i = 0; i < 5; i++) out[i] = a[i] + (b[i] - a[i]) * t;
   return out;
 }
+/* WHICH SWING THIS IS. The sand shovel chops; the Military Shovel SLASHES —
+ * a broad flat arc across the body, alternating side each time so two in a
+ * row sweep opposite ways and a combination reads as a combination. It still
+ * digs: `digImpact` never asks what the pose was, so the crater, the sand and
+ * the crab test are all untouched. An overhead is always an overhead. */
+let slashDir = 1;
+const slashing = () => equipped === militaryItem && !digOverhead;
 // the top of an ordinary left-click swing
 function haulPose(out, P) {
   if (digOverhead) {
     // both hands above the head, brought in to the centre line
     out[0] = -(1.95 + P * 0.35); out[1] = 0.34 + P * 0.16;
     out[2] = 0.44; out[3] = 0.02; out[4] = 0.12;
+    return out;
+  }
+  if (slashing()) {
+    /* Wound ACROSS, not up: the tool goes back over the shoulder on one side
+     * with the edge turned into the swing, and the whole arc is horizontal.
+     * A charge takes it further round and drops the hands, which is what
+     * winding up a two-handed cut actually looks like. */
+    const d = slashDir;
+    out[0] = -(0.42 + P * 0.34); out[1] = 0.13 + P * 0.10;
+    out[2] = d * (1.02 + P * 0.34); out[3] = d * -(0.44 + P * 0.24); out[4] = 0.12;
     return out;
   }
   out[0] = -(1.25 + P * 0.70); out[1] = 0.17 + P * 0.13;
@@ -5472,9 +5556,22 @@ function impactPose(out, P) {
   if (digOverhead) {
     /* Straight down the middle and driven forward — no yaw across the body,
      * because the whole read of an overhead is that it does not swing, it
-     * FALLS. Further through than a side swing, and further out. */
-    out[0] = 2.30 + P * 0.55; out[1] = -(0.40 + P * 0.08);
-    out[2] = 0.42; out[3] = -0.03; out[4] = -(0.26 + P * 0.34);
+     * FALLS. Further through than a side swing, and further out. Wound all
+     * the way up it goes through nearly a third of a turn more and lands a
+     * hand further out: the heaviest thing in the game should look it. */
+    out[0] = 2.62 + P * 0.78; out[1] = -(0.44 + P * 0.12);
+    out[2] = 0.42; out[3] = -0.03; out[4] = -(0.30 + P * 0.44);
+    return out;
+  }
+  if (slashing()) {
+    /* All the way THROUGH and out the other side. The arc finishes past the
+     * far shoulder, which is what makes it read as a cut that continued
+     * rather than a swat that stopped, and the follow-through is where the
+     * trail gets its width. */
+    const d = slashDir;
+    out[0] = 0.46 + P * 0.30; out[1] = -(0.14 + P * 0.06);
+    out[2] = d * -(1.16 + P * 0.42); out[3] = d * (0.50 + P * 0.28);
+    out[4] = -(0.24 + P * 0.34);
     return out;
   }
   /* `lift` used to take the hand to -0.69 at full charge, which is below the
@@ -5553,6 +5650,8 @@ function startDig(power = 0, fromPose = null) {
   digPower = THREE.MathUtils.clamp(power, 0, 1);
   // a charged release keeps whatever it was wound as; a plain click never is
   digOverhead = !!fromPose && windOverhead;
+  // the sweep changes side every time, so a second cut is the backhand
+  if (equipped === militaryItem && !digOverhead) slashDir = -slashDir;
   aimLand(digPower);
   digImpacted = false;
   digCharged = !!fromPose;
@@ -5954,6 +6053,8 @@ function updateViewmodel(dt) {
        * as an impact. The spring's peak is roughly v0/sqrt(stiffness), so
        * anything under ~1.5 stays inside the clamp and stays a curve. */
       vmImpulse(-0.95 - P * 0.5 - (digOverhead ? 0.35 : 0));
+      // and it JARS: a hit that stops dead has to shake the hands that made it
+      if (landDist >= 0) { guardShockV += (digOverhead ? 3.2 : 2.0) * (0.5 + P); spawnSparks(digOverhead ? 5 : 3, 0.4 + P * 0.5); }
       // the whole body goes into an overhead, so it kicks back harder
       if (digOverhead) { addTrauma(0.16 + P * 0.2); fovKick = Math.max(fovKick, 4 + P * 3); }
     }
@@ -5969,13 +6070,17 @@ function updateViewmodel(dt) {
   const ear = easeOutCubic(listenT), lagK = 1 - ear * 0.85;
   const earH = Math.tan((vmCamera.fov * Math.PI) / 360) * -EAR_AT.z;
   const earX = earH * vmCamera.aspect * EAR_AT.x, earY = earH * EAR_AT.y;
-  // a parry rings the tool: a short hard shudder that decays out
-  const ring = parryGlow > 0 ? Math.sin(parryGlow * 62) * parryGlow * 0.10 : 0;
+  // a parry rings the tool: the guard spring, driven by the blow that landed
+  guardShockV += (-GUARD_K * guardShock - GUARD_D * guardShockV) * dt;
+  guardShock += guardShockV * dt;
+  if (Math.abs(guardShock) < 1e-4 && Math.abs(guardShockV) < 1e-3) { guardShock = 0; guardShockV = 0; }
+  const ring = guardShock;
   const bH = Math.tan((vmCamera.fov * Math.PI) / 360) * -BLOCK_AT.z;
   const blkX = bH * vmCamera.aspect * BLOCK_AT.x, blkY = bH * BLOCK_AT.y;
   armRig.rotation.x = ARM_ROT_X + _pose[0] + vmLagX * lagK + ear * EAR_POSE[0] + blk * BLOCK_POSE[0] + ring;
   armRig.rotation.y = -0.45 + _pose[2] + vmLagY * lagK + ear * EAR_POSE[2] + blk * BLOCK_POSE[2];
   armRig.rotation.z = 0.10 + _pose[3] + vmLagY * 0.45 * lagK + ear * EAR_POSE[3] + blk * BLOCK_POSE[3] - ring;
+  armRig.rotation.y += ring * 0.55;      // and it is knocked ACROSS you, not only up
   armRig.position.set(
     ARM_BASE.x + bx + vmLagY * 0.16 + ear * (earX - ARM_BASE.x) + blk * (blkX - ARM_BASE.x),
     ARM_BASE.y + by + _pose[1] + vmSpringY + ear * (earY - ARM_BASE.y) + blk * (blkY - ARM_BASE.y),
@@ -5987,18 +6092,25 @@ function updateViewmodel(dt) {
    * than snapped, so the change of grip happens while the shovel is going up
    * and is finished by the time it comes down. */
   const wantOh = (winding && windOverhead) || (digT > 0 && digOverhead) ? 1 : 0;
+  const wantSl = equipped === militaryItem && !wantOh
+    && ((winding && !windOverhead) || (digT > 0 && !digOverhead)) ? 1 : 0;
   ohBlend += (wantOh - ohBlend) * Math.min(1, dt * 9);
-  if (ohBlend > 0.001 || wantOh) {
-    toolVM.rotation.set(
-      VM_REST_ROT[0] + (VM_OVERHEAD_ROT[0] - VM_REST_ROT[0]) * ohBlend,
-      VM_REST_ROT[1] + (VM_OVERHEAD_ROT[1] - VM_REST_ROT[1]) * ohBlend,
-      VM_REST_ROT[2] + (VM_OVERHEAD_ROT[2] - VM_REST_ROT[2]) * ohBlend);
+  slBlend += (wantSl - slBlend) * Math.min(1, dt * 11);
+  if (ohBlend > 0.001 || slBlend > 0.001 || wantOh || wantSl) {
+    // the two grips are exclusive; the overhead wins where they overlap
+    const grip = (i) => VM_REST_ROT[i]
+      + (VM_OVERHEAD_ROT[i] - VM_REST_ROT[i]) * ohBlend
+      + (VM_SLASH_ROT[i] - VM_REST_ROT[i]) * slBlend * (1 - ohBlend);
+    toolVM.rotation.set(grip(0), grip(1), grip(2));
   }
 
   // Only the strike and a beat past it leave a trail; a trail on the wind-up
   // would say the tool was moving fast when it is deliberately barely moving.
   trailPower = digPower;
+  // a slash draws a broad arc rather than a chop's line, so it carries further
+  trailGain = (equipped === militaryItem && !digOverhead) ? 1.55 : 1;
   updateTrail(dt, toolVM.visible && digT >= DIG_WINDUP - 0.02 && digT < DIG_STRIKE + 0.13);
+  updateSparks(dt);
 }
 
 // ------------------------------------------------------------------
@@ -6851,7 +6963,16 @@ function listenToShell() {
 // ------------------------------------------------------------------
 const CRAB_Z = -20;                    // where it's waiting, well before Bradly
 const CRAB_WAKE = 17;                  // it notices you at this range
-const CRAB_SPEED = 2.35;
+/* EVERYTHING THE MUTANTS TAUGHT, BROUGHT BACK HERE. At 2.35 a crab was a
+ * metre a second slower than your walk, so every fight with one was optional:
+ * you strolled away from it. It is faster than you now, it walks its own
+ * wind-up in, it rejoins at a sprint if it is left behind, and the three of
+ * the pack take it in TURNS — one telegraph at a time, or there is nothing
+ * to read and a parry is a coin toss. */
+const CRAB_SPEED = 3.75;
+const CRAB_DASH = 6.4;                 // the closing burst, faster than a sprint
+const CRAB_SEP = 1.5;                  // and they do not stand in one another
+let crabToken = null;
 const CRAB_REACH = 1.45;               // how close it gets before it nips
 /* Attack frame data, at 60 fps. The nip used to land the same frame the crab
  * came into reach, with the lunge pose playing *after* the damage — nothing
@@ -7025,12 +7146,20 @@ function dressCrab(u, gltf) {
      * through the same gamma lift the rocks and the body bag do, with a cold
      * rim so the shell reads against the sand. METALNESS IS A TRAP here —
      * there is no environment map, and a metal has no diffuse term. */
-    m.metalness = 0;
-    m.emissive = new THREE.Color(0x3a1a0e);
-    m.emissiveMap = m.map;
-    m.emissiveIntensity = 0.68;
-    reexpose(m, 0.52, [0.058, 0.078, 0.115]);   // a cold edge off the shell
-    m.needsUpdate = true;
+    /* AND NO TWO OF THEM ARE THE SAME SHELL. The three that come out of the
+     * water were one model at one size in one colour, which reads as three
+     * copies rather than three animals. Each carries its own tint and its own
+     * lift — one bleached and pale, one dark and wet, one rust — and the
+     * material is CLONED to do it, because `parse` hands every copy the same
+     * one and tinting it tinted all of them. */
+    const mm = o.material = m.clone();
+    mm.metalness = 0;
+    mm.emissive = new THREE.Color(u.tint || 0x3a1a0e);
+    mm.emissiveMap = mm.map;
+    mm.emissiveIntensity = 0.68 * (u.lift || 1);
+    if (u.tone) mm.color = new THREE.Color(u.tone);
+    reexpose(mm, 0.52, [0.058, 0.078, 0.115]);   // a cold edge off the shell
+    mm.needsUpdate = true;
   });
   // Fit from the raw geometry bounds. Box3.setFromObject() on a skinned
   // hierarchy reports the bind pose through the bone transforms and comes
@@ -7105,6 +7234,7 @@ function makeCrabUnit(x, z, opts = {}) {
           rear: 0, lunge: 0, struck: false, stun: 0, wakeRipple: 0,
           hp: CRAB_HP, recoil: 0 },
     base: opts.scale ?? 1.55,
+    tint: opts.tint, tone: opts.tone, lift: opts.lift,
     // the throw-back off a blade is per crab: a shared temp put every struck
     // crab on the same spot
     hitFrom: new THREE.Vector3(), hitDir: new THREE.Vector3(), dir: new THREE.Vector3(),
@@ -7304,9 +7434,11 @@ function parryCrab(u = crabs[0]) {
   if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04);   // steel meeting the claw, under the ring
   parryCool = 0;                         // landing one costs you nothing
   u.st.atk = -1;
+  if (crabToken === u) crabToken = null;
   u.st.cool = CRAB_COOLDOWN;
   u.st.stun = CRAB_STUN;
   parryGlow = 0.42;
+  guardShockV += 6.4; spawnSparks(11, 1.0);
   flashMats(u.g);
   sfxParry();
   playSample('poise', 0.95);             // and the sound of its poise going
@@ -7339,6 +7471,7 @@ function blockCrab(u = crabs[0]) {
   stamina = Math.max(0, stamina - BLOCK_COST);
   if (stamina <= 0.001) { exhausted = true; gaspOut(); }
   flashMats(toolVM);                     // the tool goes white for the frozen frames
+  guardShockV += 3.6; spawnSparks(6, 0.5);
   parryGlow = Math.max(parryGlow, 0.22); // and shudders in your hands
   fovKick = Math.max(fovKick, 3.5);
   addTrauma(0.42);
@@ -7356,6 +7489,7 @@ function killCrab(u = crabs[0]) {
   if (!u.st.alive || u.st.struck) return;
   u.st.struck = true;
   u.st.atk = -1;
+  if (crabToken === u) crabToken = null;
   camera.getWorldDirection(u.hitDir); u.hitDir.y = 0; u.hitDir.normalize();
   u.hitFrom.copy(u.g.position);
   flashMats(u.g);
@@ -7368,6 +7502,14 @@ function killCrab(u = crabs[0]) {
  * reads as a hit, and still buys you the room a hit should buy. */
 function hurtCrab(u, dmg, P = 0) {
   if (!u.st.alive || u.st.struck) return false;
+  // the riposte: a blow on one you have just parried counts double
+  if (u.st.stun > 0) {
+    dmg *= 2;
+    setPrompt('<b>RIPOSTE</b>');
+    setTimeout(() => { if (promptHTML.includes('RIPOSTE')) setPrompt(''); }, 700);
+    addTrauma(0.3); fovKick = Math.max(fovKick, 5);
+  }
+  if (crabToken === u) crabToken = null;
   u.st.hp -= dmg;
   if (u.st.hp <= 0) { killCrab(u); return true; }
   u.st.atk = -1;
@@ -7484,6 +7626,19 @@ function updateCrabUnit(u, dt) {
     const was = u.st.atk;
     u.st.atk += dt;
     const t = u.st.atk;
+    // it CLOSES through its own startup, so backing off is not a free dodge
+    if (t < CRAB_WIND * 0.8 && dist > CRAB_REACH * 0.8) {
+      u.dir.set(dx / dist, 0, dz / dist);
+      u.g.position.addScaledVector(u.dir, CRAB_SPEED * 0.6 * dt);
+    }
+    // and it feints: the claws go up and nothing comes of it
+    if (u.st.feint > 0 && t >= CRAB_WIND * u.st.feint) {
+      u.st.feint = 0; u.st.atk = -1;
+      u.st.cool = 0.16 + Math.random() * 0.18;
+      if (crabToken === u) crabToken = null;
+      crabAnim(u, dt, false, 0);
+      return;
+    }
     if (was < CRAB_WIND && t >= CRAB_WIND) {
       sfxCrabSnip();
       /* Re-tested here, not when the wind-up began: the tell is only fair if
@@ -7528,11 +7683,21 @@ function updateCrabUnit(u, dt) {
     }
     if (t >= CRAB_WIND + CRAB_STRIKE + CRAB_RECOVER) {
       u.st.atk = -1;
-      u.st.cool = CRAB_COOLDOWN;
+      if (crabToken === u) crabToken = null;
+      u.st.cool = CRAB_COOLDOWN * (0.55 + Math.random() * 0.6);
     }
   } else {
     u.st.cool = Math.max(0, (u.st.cool || 0) - dt);
-    if (!closing && u.st.cool <= 0 && !settings.devMode) { u.st.atk = 0; sfxCrabTell(); }
+    u.st.dash = Math.max(0, (u.st.dash || 0) - dt);
+    // it holds the turn or it does not swing
+    if (!closing && u.st.cool <= 0 && crabToken === u && !settings.devMode) {
+      u.st.atk = 0;
+      u.st.feint = (Math.random() < 0.14) ? 0.55 + Math.random() * 0.2 : 0;
+      sfxCrabTell();
+    } else if (closing && u.st.cool <= 0 && crabToken === u && u.st.dash <= 0
+               && dist < 8 && dist > CRAB_REACH + 0.7 && Math.random() < dt * 1.8) {
+      u.st.dash = 0.3 + Math.random() * 0.3;      // cross the gap you opened
+    }
   }
   u.st.lunge = atkLunge;
   // it is sand, and the crab is a wall of shell coming through at a run
@@ -7544,8 +7709,11 @@ function updateCrabUnit(u, dt) {
   }
   if (closing) {
     u.dir.set(dx / dist, 0, dz / dist);
-    // it slows as it comes into range rather than sliding to a dead stop
-    const speed = CRAB_SPEED * THREE.MathUtils.clamp((dist - CRAB_REACH) / 1.2, 0.35, 1);
+    // it slows as it comes into range rather than sliding to a dead stop; it
+    // sprints if it has been left behind, and it DASHES to close a real gap
+    const rejoin = dist > 7 ? 1.35 : 1;
+    const speed = (u.st.dash > 0 ? CRAB_DASH : CRAB_SPEED * rejoin)
+      * THREE.MathUtils.clamp((dist - CRAB_REACH) / 1.2, 0.35, 1);
     u.g.position.addScaledVector(u.dir, speed * dt);
     u.st.scuttle += dt * speed * 5.2;
     // it comes at you head on now, claws first: the model's front is -Z
@@ -7625,8 +7793,41 @@ function updateCrabUnit(u, dt) {
 
 /* Every crab, every frame. The loner and the three that come out of the
  * water before the dock all run the same brain. */
+/* Whose turn it is, handed out once a frame to whichever is in reach and has
+ * gone longest without a swing — the mutants' rule, and for the same reason:
+ * three claws going up at once is not three times the fight. */
+function crabGiveToken(dt) {
+  if (crabToken) {
+    const st = crabToken.st;
+    const d = Math.hypot(camera.position.x - crabToken.g.position.x, camera.position.z - crabToken.g.position.z);
+    if (!st.alive || st.stun > 0 || st.recoil > 0 || (st.atk < 0 && d > CRAB_REACH + 2.5)) crabToken = null;
+    else return;
+  }
+  let best = null, bw = -1;
+  for (const u of crabs) {
+    const st = u.st;
+    if (!st.alive || !st.awake || st.struck || st.stun > 0 || st.recoil > 0) continue;
+    st.wait = (st.wait || 0) + dt;
+    const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
+    if (d > CRAB_REACH + 2.0) continue;
+    if (st.wait > bw) { bw = st.wait; best = u; }
+  }
+  if (best) { crabToken = best; best.st.wait = 0; }
+}
+function crabSeparate(u, dt) {
+  for (const o of crabs) {
+    if (o === u || !o.st.alive) continue;
+    const dx = u.g.position.x - o.g.position.x, dz = u.g.position.z - o.g.position.z;
+    const d = Math.hypot(dx, dz);
+    if (d > CRAB_SEP || d < 1e-4) continue;
+    const push = (CRAB_SEP - d) * dt * 3.4;
+    u.g.position.x += (dx / d) * push;
+    u.g.position.z += (dz / d) * push;
+  }
+}
 function updateCrab(dt) {
-  for (const u of crabs) updateCrabUnit(u, dt);
+  crabGiveToken(dt);
+  for (const u of crabs) { updateCrabUnit(u, dt); if (u.st.alive) crabSeparate(u, dt); }
 }
 // ------------------------------------------------------------------
 // Blue-blood readout — the actual jar model, shrunk down and turning on
@@ -11076,7 +11277,16 @@ const PACK_SWIM = 3.4, PACK_HOLD = 0.75;      // the swim in, then a beat on the
  * enough to watch them break the surface and far enough that all three are
  * in shot at once. */
 const PACK_SPOTS = [[3.4, PACK_Z + 11.5], [1.9, PACK_Z + 5.0], [3.8, PACK_Z - 1.5]];
-const packCrabs = PACK_SPOTS.map(([, z]) => makeCrabUnit(PACK_START_X, z, { pack: true, wake: 0 }));
+/* The three, and not one of them the same as the next: a big bleached one, a
+ * small dark wet one, and a rusted one between them. Size does most of the
+ * work at a distance and the tint does the rest close up. */
+const PACK_LOOK = [
+  { scale: 1.86, tint: 0x4a3a24, tone: 0xd8cfbe, lift: 0.9 },   // bleached, and the biggest
+  { scale: 1.34, tint: 0x25160c, tone: 0x8a8f92, lift: 1.15 },  // small, dark, still wet
+  { scale: 1.62, tint: 0x50200c, tone: 0xc09070, lift: 1.0 },   // rust
+];
+const packCrabs = PACK_SPOTS.map(([, z], i) =>
+  makeCrabUnit(PACK_START_X, z, Object.assign({ pack: true, wake: 0 }, PACK_LOOK[i % PACK_LOOK.length])));
 let packPhase = 0;                            // 0 waiting · 1 coming in · 2 loose
 let packT = 0;
 const _packMid = new THREE.Vector3(), _packQ = new THREE.Quaternion(), _packM = new THREE.Matrix4();
@@ -11898,7 +12108,7 @@ const MUT_KINDS = {
           bones: { Character1_LeftForeArm: 1.14, Character1_RightForeArm: 1.14 },
           anim: { run: 'run', idle: 'idle', roar: 'roar', die: 'die', walk: 'walk', back: 'back',
                   rate: 1.05, lean: 0.10, strafeK: 1.0 },
-          voice: { f: 1.00, growl: 1.00, rasp: 1.00 } },
+          voice: { f: 1.00, growl: 1.00, rasp: 1.00, throat: 'wet' } },
   /* the flayed red one: a head a fifth again the size with the skull flaps
    * thrown wide, thick in the arm and the thigh, and it HITS FOR TWO — you
    * have three. Fair only because its startups are the longest thing in the
@@ -11911,7 +12121,7 @@ const MUT_KINDS = {
                                  Character1_LeftUpLeg: 1.12, Character1_RightUpLeg: 1.12 }, petalScale(1.32)),
           anim: { run: 'run2', idle: 'idle2', roar: 'roar2', die: 'die2', walk: 'walk2', back: 'back2',
                   rate: 0.80, lean: 0.03, strafeK: 0.7 },
-          voice: { f: 0.68, growl: 1.45, rasp: 0.7 } },
+          voice: { f: 0.68, growl: 1.45, rasp: 0.7, throat: 'bellow' } },
   /* the dark one: a small tight head, forearms a third longer than they
    * should be and shins to match — it is all reach and no weight. Four
    * health, chains three swings together, and runs Run02 at nearly twice
@@ -11924,7 +12134,7 @@ const MUT_KINDS = {
                                  Character1_LeftLeg: 1.26, Character1_RightLeg: 1.26 }, petalScale(0.72)),
           anim: { run: 'run2', idle: 'idle2', roar: 'roar', die: 'die', walk: 'walk', back: 'back',
                   rate: 1.95, lean: 0.30, strafeK: 1.45 },
-          voice: { f: 1.46, growl: 0.62, rasp: 1.45 } },
+          voice: { f: 1.46, growl: 0.62, rasp: 1.45, throat: 'chitter' } },
 };
 const MUT_VOICE = MUT_KINDS.pale.voice;    // the default for anything unvoiced
 const MUT_WIND = MUT_ATTACKS.attack.wind;  // the harness and the docs name the overhand's
@@ -12083,7 +12293,7 @@ function makeMutant(x, z, kindName) {
     st: { alive: true, awake: false, roar: 0, atk: -1, swing: Object.keys(kind.use)[0],
           cool: 0, stun: 0, recoil: 0, struck: false, hp: kind.hp, step: 0, deadT: 0,
           side: 0, sideT: 0, back: 0, chained: false, chainN: 0, chainAt: -1, swings: 0, wait: 0,
-          sprint: 0, dash: 0, feint: 0, sand: 0, threw: 0 },
+          sprint: 0, dash: 0, feint: 0, sand: 0, threw: 0, hunger: 2 + Math.random() * 5 },
     hitFrom: new THREE.Vector3(), hitDir: new THREE.Vector3(), dir: new THREE.Vector3(),
   };
   mutants.push(u);
@@ -12134,13 +12344,17 @@ function parryMutant(u) {
   u.st.cool = 0.6;
   u.st.stun = MUT_STUN;
   parryGlow = 0.5;
+  guardShockV += 7.6 * u.kind.reachK; spawnSparks(14, 1.3);
   flashMats(u.g);
   sfxParry();
   playSample('poise', 1.0);
-  addTrauma(0.6);
-  fovKick = Math.max(fovKick, 8);
+  addTrauma(0.7);
+  fovKick = Math.max(fovKick, 9);
   vmImpulse(-1.45);
-  hitstop = Math.max(hitstop, 0.13);
+  /* THE FREEZE IS THE REWARD. A parry that only made a noise read as a lucky
+   * block; a fifth of a second of the world stopping dead, with the sparks
+   * hanging in it, is the game telling you that you did that on purpose. */
+  hitstop = Math.max(hitstop, 0.19);
   const kx = u.g.position.x - camera.position.x, kz = u.g.position.z - camera.position.z;
   const kd = Math.hypot(kx, kz) || 1;
   u.g.position.x += (kx / kd) * 0.5;
@@ -12156,11 +12370,12 @@ function blockMutant(u) {
   stamina = Math.max(0, stamina - BLOCK_COST * 1.35 * u.kind.reachK);
   if (stamina <= 0.001) { exhausted = true; gaspOut(); }
   flashMats(toolVM);
+  guardShockV += 4.4 * u.kind.reachK; spawnSparks(8, 0.8);
   parryGlow = Math.max(parryGlow, 0.26);
   fovKick = Math.max(fovKick, 4.5);
   addTrauma(0.5);
   vmImpulse(-1.4);
-  hitstop = Math.max(hitstop, 0.08);
+  hitstop = Math.max(hitstop, 0.10);
   setPrompt('<b>BLOCKED</b>');
   setTimeout(() => { if (promptHTML.includes('BLOCKED')) setPrompt(''); }, 520);
   const kx = camera.position.x - u.g.position.x, kz = camera.position.z - u.g.position.z;
@@ -12234,6 +12449,14 @@ function finishMutant(u) {
   stampBlood(u.g.position.x, u.g.position.z, 1.3 + Math.random() * 0.5);
   sfxMutDie(u.kind.voice);
   addTrauma(0.5);
+  /* AND THE OTHERS LAUGH. You kill one of them and the ones still standing
+   * find it funny — which is the single cheapest thing in this whole fight
+   * and the one that most makes them a pack rather than three enemies. */
+  for (const o of mutants) {
+    if (o === u || !o.st.alive) continue;
+    const d = Math.hypot(camera.position.x - o.g.position.x, camera.position.z - o.g.position.z);
+    setTimeout(() => { if (o.st.alive) sfxMutLaugh(d, o.kind.voice); }, 260 + Math.random() * 420);
+  }
 }
 function bleedMutant(u, n, force) {
   const p = u.g.position;
@@ -12273,18 +12496,8 @@ function sfxMutTell(dist = 0, W = MUT_WIND, V = MUT_VOICE) {
   rg.gain.exponentialRampToValueAtTime(0.02 * g0, t + W);
   rasp.connect(bp).connect(rg).connect(out);
   rasp.start(t); rasp.stop(t + W);
-  // the throat under it, hauling up
-  const o = ctx.createOscillator(); o.type = 'sawtooth';
-  o.frequency.setValueAtTime(41 * V.f, t);
-  o.frequency.exponentialRampToValueAtTime(104 * V.f, t + rise);
-  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 240 * V.f;
-  const og = ctx.createGain();
-  og.gain.setValueAtTime(0.0001, t);
-  og.gain.exponentialRampToValueAtTime(0.10 * g0 * V.growl, t + rise * 0.9);
-  og.gain.setValueAtTime(0.10 * g0 * V.growl, t + Math.max(rise * 0.9, W - 0.05));
-  og.gain.exponentialRampToValueAtTime(0.0001, t + W + 0.06);
-  o.connect(lp).connect(og).connect(out);
-  o.start(t); o.stop(t + W + 0.07);
+  // the throat under it, hauling up — and it is THIS one's throat
+  mutTone(t, W + 0.06, V, 41, 104, 0.11 * g0, out);
 }
 function sfxMutSwing(V = MUT_VOICE) {
   const ctx = audioCtx; if (!ctx) return;
@@ -12300,22 +12513,8 @@ function sfxMutSwing(V = MUT_VOICE) {
 function sfxMutRoar(dist = 0, V = MUT_VOICE) {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime, out = sfxOut(), g0 = 1.1 / (1 + dist / 16), D = 1.5;
-  for (const [f0, f1, gn, ty] of [[58, 96, 0.16, 'sawtooth'], [87, 143, 0.09, 'square'], [29, 47, 0.13, 'triangle']]) {
-    const o = ctx.createOscillator(); o.type = ty;
-    o.frequency.setValueAtTime(f0 * V.f, t);
-    o.frequency.exponentialRampToValueAtTime(f1 * V.f, t + D * 0.35);
-    o.frequency.exponentialRampToValueAtTime(f0 * V.f * 0.8, t + D);
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
-    lp.frequency.setValueAtTime(400 * V.f, t);
-    lp.frequency.exponentialRampToValueAtTime(1500 * V.f, t + D * 0.3);
-    lp.frequency.exponentialRampToValueAtTime(300 * V.f, t + D);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(gn * g0 * V.growl, t + 0.18);
-    g.gain.setValueAtTime(gn * g0 * V.growl, t + D * 0.55);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + D);
-    o.connect(lp).connect(g).connect(out); o.start(t); o.stop(t + D + 0.05);
-  }
+  for (const [f0, f1, gn] of [[58, 96, 0.16], [87, 143, 0.09], [29, 47, 0.13]])
+    mutTone(t, D, V, f0, f1, gn * g0, out);
   // the tear of it, over the top
   const r = noiseBurst(D, (x) => (0.3 + 0.7 * Math.random()) * Math.sin(Math.min(1, x * 1.3) * Math.PI));
   const rf = ctx.createBiquadFilter(); rf.type = 'bandpass'; rf.Q.value = 1.6; rf.frequency.value = 620 * V.f;
@@ -12363,6 +12562,92 @@ function sfxMutDie(V = MUT_VOICE) {
   const wg = ctx.createGain(); wg.gain.value = 0.075 * V.rasp;
   wet.connect(wf).connect(wg).connect(out); wet.start(t); wet.stop(t + D * 0.8);
 }
+/* WHAT IT SOUNDS LIKE TO BE HUNGRY. Three creatures that only ever growl are
+ * one creature growling three times, so each throat is a different INSTRUMENT
+ * and not the same one transposed:
+ *   bellow  (the red one) a sawtooth stack with a slow swell and a sub under
+ *           it — a thing too big to hurry, and it arrives before it does
+ *   chitter (the dark one) a fast tremolo on a square through a high formant,
+ *           clicking: teeth and appetite, not lungs
+ *   wet     (the pale one) the original rasp, breath through a broken face
+ * Every voiced sound picks its shape off `V.throat`, so a tell, a laugh and a
+ * hunger call from the same creature are all recognisably it. */
+function mutTone(t, D, V, f0, f1, gain, out) {
+  const ctx = audioCtx;
+  const th = V.throat || 'wet';
+  const o = ctx.createOscillator();
+  o.type = th === 'bellow' ? 'sawtooth' : th === 'chitter' ? 'square' : 'sawtooth';
+  o.frequency.setValueAtTime(f0 * V.f, t);
+  o.frequency.exponentialRampToValueAtTime(f1 * V.f, t + D * 0.8);
+  const lp = ctx.createBiquadFilter();
+  lp.type = th === 'chitter' ? 'bandpass' : 'lowpass';
+  lp.frequency.setValueAtTime((th === 'chitter' ? 1500 : 340) * V.f, t);
+  lp.frequency.exponentialRampToValueAtTime((th === 'chitter' ? 3200 : 700) * V.f, t + D * 0.5);
+  if (th === 'chitter') lp.Q.value = 3.2;
+  const g = ctx.createGain();
+  const atk = th === 'bellow' ? D * 0.34 : 0.02;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(gain * V.growl, t + atk);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + D);
+  o.connect(lp).connect(g).connect(out);
+  // the chitter is BITTEN: a fast tremolo, so it reads as teeth and not a note
+  if (th === 'chitter') {
+    const lfo = ctx.createOscillator(); lfo.type = 'square'; lfo.frequency.value = 26 + Math.random() * 14;
+    const lg = ctx.createGain(); lg.gain.value = gain * 0.55;
+    lfo.connect(lg).connect(g.gain); lfo.start(t); lfo.stop(t + D);
+  }
+  // and the bellow has a sub under it you feel before you hear
+  if (th === 'bellow') {
+    const sub = ctx.createOscillator(); sub.type = 'sine';
+    sub.frequency.setValueAtTime(f0 * V.f * 0.5, t);
+    const sg = ctx.createGain();
+    sg.gain.setValueAtTime(0.0001, t);
+    sg.gain.exponentialRampToValueAtTime(gain * 0.9, t + atk);
+    sg.gain.exponentialRampToValueAtTime(0.0001, t + D * 1.1);
+    sub.connect(sg).connect(out); sub.start(t); sub.stop(t + D * 1.15);
+  }
+  o.start(t); o.stop(t + D + 0.05);
+}
+/* THE LAUGH. Not a joke — a thing enjoying this. Five or six bursts on a
+ * falling contour, each one shorter than the last, wet at the end. It comes
+ * when one of them lands a blow on you and when one of them DIES, which is
+ * the worst of the two: you kill one and the others find it funny. */
+function sfxMutLaugh(dist = 0, V = MUT_VOICE) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t0 = ctx.currentTime, out = sfxOut(), g0 = 1.0 / (1 + dist / 14);
+  const n = 5 + Math.floor(Math.random() * 3);
+  let t = t0;
+  for (let i = 0; i < n; i++) {
+    const k = i / (n - 1);
+    const D = 0.13 - k * 0.05 + Math.random() * 0.03;
+    const f = (150 - k * 55) * (0.9 + Math.random() * 0.2);
+    mutTone(t, D, V, f, f * 0.72, 0.11 * g0 * (1 - k * 0.3), out);
+    // the breath behind each one
+    const h = noiseBurst(D, (x) => Math.pow(1 - x, 1.6) * (0.3 + 0.7 * Math.random()));
+    const hf = ctx.createBiquadFilter(); hf.type = 'bandpass'; hf.Q.value = 1.6;
+    hf.frequency.value = (620 - k * 160) * V.f;
+    const hg = ctx.createGain(); hg.gain.value = 0.055 * g0 * V.rasp;
+    h.connect(hf).connect(hg).connect(out); h.start(t); h.stop(t + D);
+    t += D + 0.055 - k * 0.02 + Math.random() * 0.02;
+  }
+}
+/* And what it does between swings: breathing, and swallowing, and a click at
+ * the back of the throat. Quiet, close, and constant enough that you always
+ * know one of them is behind you. */
+function sfxMutHunger(dist = 0, V = MUT_VOICE) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut(), g0 = 0.9 / (1 + dist / 9);
+  const D = 0.5 + Math.random() * 0.5;
+  const br = noiseBurst(D, (x) => Math.sin(x * Math.PI) * (0.4 + 0.6 * Math.random()));
+  const bf = ctx.createBiquadFilter(); bf.type = 'bandpass'; bf.Q.value = 1.1;
+  bf.frequency.setValueAtTime(300 * V.f, t);
+  bf.frequency.exponentialRampToValueAtTime(720 * V.f, t + D * 0.6);
+  bf.frequency.exponentialRampToValueAtTime(240 * V.f, t + D);
+  const bg = ctx.createGain(); bg.gain.value = 0.075 * g0 * V.rasp;
+  br.connect(bf).connect(bg).connect(out); br.start(t); br.stop(t + D);
+  mutTone(t + D * 0.25, D * 0.5, V, 62, 44, 0.035 * g0, out);
+}
+
 /* The three of them at once, under the cutscene: a sub that swells for the
  * whole of it and does not resolve. It is not a sting — it is the floor of
  * the sound going out from under you while three things you have not met
@@ -12649,6 +12934,14 @@ function updateMutantUnit(u, dt) {
   }
 
   if (u.st.sprint > 0) u.st.sprint = Math.max(0, u.st.sprint - dt * 0.62);
+  /* Breathing, swallowing, a click at the back of the throat — often enough
+   * that you always know one of them is behind you, and quiet enough that it
+   * never becomes the noise the fight is made of. */
+  u.st.hunger -= dt;
+  if (u.st.hunger <= 0) {
+    u.st.hunger = 2.6 + Math.random() * 5.5;
+    if (dist < 16) sfxMutHunger(dist, u.kind.voice);
+  }
   let moving = 0;
   const A = u.atk[u.st.swing] || MUT_ATTACKS[u.st.swing];
   if (u.st.atk >= 0) {
@@ -12700,7 +12993,10 @@ function updateMutantUnit(u, dt) {
           const dtp = (performance.now() - blockStart) / 1000;
           if (dtp <= PARRY_WINDOW && parryCool <= 0) parryMutant(u);
           else blockMutant(u);
-        } else damagePlayer(u.kind.dmg);
+        } else {
+          damagePlayer(u.kind.dmg);
+          if (Math.random() < 0.5) sfxMutLaugh(dist, u.kind.voice);   // it is enjoying this
+        }
       }
       /* THE CHAIN IS DECIDED ON THE STRIKE, not at the end of the recovery:
        * by then the blow's own knockback had you out of range every time and
@@ -14189,8 +14485,9 @@ window.__bw = {
   shells, listenToShell, makeRockGeo, dock, ring, driftAt, updateDock,
   listen: (v) => { listening = v; }, stopListening, keyItem, keyWorld,   // the ear pose without the audio, for the preview harness
   get dockDoorOpen() { return dockDoorOpen; }, set dockDoorOpen(v) { dockDoorOpen = v; }, get onDock() { return onDock; },
-  crabs, makeCrabUnit, nearestCrab, crabPlay, updateCrabUnit,
+  crabs, makeCrabUnit, nearestCrab, crabPlay, updateCrabUnit, get crabToken() { return crabToken; },
   mutants, mutant, updateMutant, hurtMutant, killMutant, parryMutant, blockMutant, nearestMutant,
+  sfxMutLaugh, sfxMutHunger, sfxMutTell, sfxMutRoar, spawnSparks,
   MUT_X, MUT_Z, MUT_HP, MUT_WIND, MUT_STUN, MUT_ATTACKS, MUT_KINDS, MUT_TRIGGER, mutSand, throwSand,
   get mutToken() { return mutToken; }, get mutCut() { return mutCut; }, get mutPhase() { return mutPhase; },
   mutState: () => mutants.map((u) => ({ kind: u.kindName, ...u.st, x: +u.g.position.x.toFixed(2), z: +u.g.position.z.toFixed(2), clip: u.cur && u.cur.getClip().name })),
