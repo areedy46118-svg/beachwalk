@@ -4883,12 +4883,16 @@ shovelVM.position.set(-0.04, -0.02, 0.0);
  * across the wind so you see the hands change their hold. */
 const VM_REST_ROT = [0.70, 0.35, 0.32];
 const VM_OVERHEAD_ROT = [-0.62, 0.0, Math.PI];
-/* THE MILITARY SHOVEL SLASHES. A spade on a shaft is a sword if you turn it
- * edge-on and swing it across yourself, and that is what this rotation does:
- * the blade comes round out of the dig grip so the EDGE leads through the
- * arc instead of the flat. It blends in over the wind-up the way the overhead
- * grip does, so you watch the hands change their hold before the sweep. */
-const VM_SLASH_ROT = [0.16, 0.92, -0.42];
+/* THE MILITARY SHOVEL IS HELD BY THE HANDLE AND RUN THROUGH YOU. Not a spade
+ * turned sideways — a blade on the end of a shaft, the D-handle at your chest
+ * and the scoop a metre out in front, and the whole thing sweeps RIGHT TO
+ * LEFT across the frame. This rotation is SEARCHED, not guessed: it is the
+ * one where the shaft runs straight away from the view camera (0, -0.08, -1)
+ * and the cutting edge stands VERTICAL (0, -0.99, 0), which is what lets the
+ * scoop cut sideways instead of slapping. Eyeballing this through three
+ * nested frames — the arm, the mount, the scan's own root matrix — is how you
+ * spend an hour and still hold it wrong. */
+const VM_SLASH_ROT = [2.880, 1.309, -1.309];
 shovelVM.rotation.set(VM_REST_ROT[0], VM_REST_ROT[1], VM_REST_ROT[2]);
 let ohBlend = 0, slBlend = 0;
 shovelVM.visible = false;
@@ -5523,7 +5527,7 @@ function poseMix(out, a, b, t) {
  * row sweep opposite ways and a combination reads as a combination. It still
  * digs: `digImpact` never asks what the pose was, so the crater, the sand and
  * the crab test are all untouched. An overhead is always an overhead. */
-let slashDir = 1;
+let slashDir = -1, lastSlashAt = -1e9;   // -1 sweeps right to left
 const slashing = () => equipped === militaryItem && !digOverhead;
 // the top of an ordinary left-click swing
 function haulPose(out, P) {
@@ -5534,13 +5538,13 @@ function haulPose(out, P) {
     return out;
   }
   if (slashing()) {
-    /* Wound ACROSS, not up: the tool goes back over the shoulder on one side
-     * with the edge turned into the swing, and the whole arc is horizontal.
-     * A charge takes it further round and drops the hands, which is what
-     * winding up a two-handed cut actually looks like. */
+    /* Wound ACROSS. The grip already has the blade pointed away from you, so
+     * the swing is almost pure YAW — the arm carries it round to the far side
+     * and the shaft stays level, which is what makes it read as a cut rather
+     * than a swat. A charge takes it further round and drops the shoulder. */
     const d = slashDir;
-    out[0] = -(0.42 + P * 0.34); out[1] = 0.13 + P * 0.10;
-    out[2] = d * (1.02 + P * 0.34); out[3] = d * -(0.44 + P * 0.24); out[4] = 0.12;
+    out[0] = -(0.10 + P * 0.16); out[1] = 0.08 + P * 0.08;
+    out[2] = d * (1.18 + P * 0.36); out[3] = d * -(0.26 + P * 0.20); out[4] = 0.14;
     return out;
   }
   out[0] = -(1.25 + P * 0.70); out[1] = 0.17 + P * 0.13;
@@ -5565,13 +5569,14 @@ function impactPose(out, P) {
   }
   if (slashing()) {
     /* All the way THROUGH and out the other side. The arc finishes past the
-     * far shoulder, which is what makes it read as a cut that continued
-     * rather than a swat that stopped, and the follow-through is where the
-     * trail gets its width. */
+     * far shoulder — that follow-through is where the trail gets its width —
+     * and the arm drives forward through it, so the cut arrives rather than
+     * merely passing. A hair of pitch at the end drops the blade through the
+     * line instead of stopping it flat. */
     const d = slashDir;
-    out[0] = 0.46 + P * 0.30; out[1] = -(0.14 + P * 0.06);
-    out[2] = d * -(1.16 + P * 0.42); out[3] = d * (0.50 + P * 0.28);
-    out[4] = -(0.24 + P * 0.34);
+    out[0] = 0.24 + P * 0.22; out[1] = -(0.10 + P * 0.06);
+    out[2] = d * -(1.32 + P * 0.46); out[3] = d * (0.34 + P * 0.26);
+    out[4] = -(0.30 + P * 0.38);
     return out;
   }
   /* `lift` used to take the hand to -0.69 at full charge, which is below the
@@ -5650,8 +5655,14 @@ function startDig(power = 0, fromPose = null) {
   digPower = THREE.MathUtils.clamp(power, 0, 1);
   // a charged release keeps whatever it was wound as; a plain click never is
   digOverhead = !!fromPose && windOverhead;
-  // the sweep changes side every time, so a second cut is the backhand
-  if (equipped === militaryItem && !digOverhead) slashDir = -slashDir;
+  /* RIGHT TO LEFT, always — unless you are already swinging, in which case
+   * the second one comes back the other way. A lone cut should look the same
+   * every time you make it; a combination should look like a combination. */
+  if (equipped === militaryItem && !digOverhead) {
+    const now = performance.now();
+    slashDir = (now - lastSlashAt < 620) ? -slashDir : -1;
+    lastSlashAt = now;
+  }
   aimLand(digPower);
   digImpacted = false;
   digCharged = !!fromPose;
@@ -6029,7 +6040,12 @@ function updateViewmodel(dt) {
      * weight rather than as a faster shovel. */
     /* A click is quick: the whole light swing is 0.44 s and the blade is
      * down 200 ms after the press. A heavy is nearly three times that. */
-    digT += dt / (DIG_DUR * (0.55 + P));
+    /* A CUT IS FASTER THAN A DIG. The whole point of the Military Shovel's
+     * swing is that it is quick, hard and precise — a spade goes down into
+     * sand, a blade goes through something — so the slash runs a third
+     * quicker than the chop and its recovery with it. */
+    const slashRate = (equipped === militaryItem && !digOverhead) ? 1.34 : 1;
+    digT += (dt * slashRate) / (DIG_DUR * (0.55 + P));
     const p = digT;
     if (p < DIG_WINDUP) {
       // anticipation: quick out of rest, hanging at the top of the haul
@@ -7727,12 +7743,28 @@ function updateCrabUnit(u, dt) {
       addRipple(u.g.position.x, u.g.position.z, 0.55);
     }
   } else {
-    u.st.scuttle += dt * 2.2;            // shifting its weight, waiting
+    /* SIDEWAYS, WHICH IS WHAT A CRAB DOES. Standing still at reach shifting
+     * its weight was the one thing this animal should never do: it scuttles
+     * ACROSS you instead, and it changes its mind about which way often
+     * enough that you cannot lead it. The one holding the turn crowds in
+     * while it circles; the others hold the range and wait. */
+    u.st.sideT = (u.st.sideT || 0) - dt;
+    if (u.st.sideT <= 0) {
+      u.st.side = Math.random() < 0.5 ? -1 : 1;
+      u.st.sideT = 0.35 + Math.random() * 0.75;      // short legs: it flips constantly
+    }
+    const tx = -dz / dist, tz = dx / dist;           // the tangent, to its right
+    const want = crabToken === u ? CRAB_REACH - 0.35 : CRAB_REACH + 0.5;
+    const rad = THREE.MathUtils.clamp((dist - want) * 2.0, -1.4, 1.4);
+    const sw = 2.3 + Math.random() * 0.3;
+    u.g.position.x += (tx * u.st.side * sw + (dx / dist) * rad) * dt;
+    u.g.position.z += (tz * u.st.side * sw + (dz / dist) * rad) * dt;
+    u.st.scuttle += dt * 5.4;            // and the legs go with it
   }
 
   // ---- gait -------------------------------------------------------
-  const reach = closing ? 1 : 0.25;
-  crabAnim(u, dt, closing, closing ? 1 : 0);
+  const reach = closing ? 1 : 0.55;
+  crabAnim(u, dt, closing || u.st.side !== 0, closing ? 1 : 0.5);
   const cyc = u.st.scuttle / (Math.PI * 2);
   for (const leg of ud.legs) {
     // half a cycle between the two sets, then a visible ripple along each set
@@ -12263,6 +12295,7 @@ function dressMutant(u, gltf) {
   const s = u.kind.h / Math.max(0.001, b.size.y);
   m.scale.setScalar(s);
   m.position.y = -b.min.y * s;                // stood on its own feet
+  u.modelY = m.position.y;
   u.mixer = new THREE.AnimationMixer(m);
   for (const c of gltf.animations) u.clips[c.name] = u.mixer.clipAction(c);
   mutPlay(u, u.kind.anim.idle, true);
@@ -12295,6 +12328,7 @@ function makeMutant(x, z, kindName) {
           side: 0, sideT: 0, back: 0, chained: false, chainN: 0, chainAt: -1, swings: 0, wait: 0,
           sprint: 0, dash: 0, feint: 0, sand: 0, threw: 0, hunger: 2 + Math.random() * 5 },
     hitFrom: new THREE.Vector3(), hitDir: new THREE.Vector3(), dir: new THREE.Vector3(),
+    gone: {}, rag: null, gibMat: null, modelY: 0,
   };
   mutants.push(u);
   farProps.push({ obj: g, z, d: 280 });
@@ -12445,6 +12479,18 @@ function finishMutant(u) {
   u.st.struck = false;
   u.st.deadT = 0;
   mutDrop(u);
+  /* WHAT THE LAST BLOW TOOK WITH IT. A charged cut can go through the waist;
+   * anything else takes a limb about half the time, and sometimes nothing at
+   * all — because a kill that ALWAYS dismembers is a gore setting, and a kill
+   * that sometimes does is a thing that happened. */
+  const dx = u.hitDir.x, dz = u.hitDir.z;
+  const P = digPower;
+  if (P >= MUT_HEAVY && Math.random() < 0.42) mutSever(u, MUT_BISECT, dx, dz, 1.4);
+  else if (Math.random() < 0.55) {
+    const pick = MUT_LIMBS[Math.floor(Math.random() * MUT_LIMBS.length)];
+    mutSever(u, pick, dx, dz, 1.0);
+  }
+  mutRagdoll(u, dx, dz, 0.7 + P * 0.7);
   bleedMutant(u, 26, 1.0);
   stampBlood(u.g.position.x, u.g.position.z, 1.3 + Math.random() * 0.5);
   sfxMutDie(u.kind.voice);
@@ -12884,10 +12930,125 @@ function sfxMutSandHit() {
   n.start(t); n.stop(t + 0.42);
 }
 
+/* ---- RAGDOLLS, AND WHAT COMES OFF -----------------------------------
+ * An authored death clip plays the same way every time, and the third time
+ * you see it the creature stops being a body and becomes a cutscene. This is
+ * not a physics ragdoll — there are no constraints and no solver — but it is
+ * the part of one that reads: the mixer stops dead ON THE POSE IT WAS IN, so
+ * the death starts from whatever it was doing when you killed it, and then
+ * every bone gets an angular kick and a damped pull toward hanging, while the
+ * whole body topples in the direction of the blow and drops onto the sand.
+ * No two are the same because no two poses are the same.
+ *
+ * AND SOMETIMES A PIECE OF IT LEAVES. A skinned mesh cannot be cut, but a
+ * bone scaled to nothing takes its whole subtree with it — collapse the arm
+ * bone and the arm is gone from the shoulder down, cleanly, along the seam
+ * the skinning already defines. Put a piece of flesh in the air on the same
+ * frame with blood behind it and the eye reads a limb coming off, which is
+ * all it has to do. A charged cut can take the whole thing at the waist. */
+const MUT_LIMBS = [
+  { bone: 'Character1_Head', name: 'head', y: 0.86, r: 0.16, len: 1.1, w: 1.6 },
+  { bone: 'Character1_LeftArm', name: 'arm', y: 0.72, r: 0.11, len: 2.6, w: 1.0 },
+  { bone: 'Character1_RightArm', name: 'arm', y: 0.72, r: 0.11, len: 2.6, w: 1.0 },
+  { bone: 'Character1_LeftForeArm', name: 'forearm', y: 0.62, r: 0.09, len: 2.2, w: 0.7 },
+  { bone: 'Character1_RightForeArm', name: 'forearm', y: 0.62, r: 0.09, len: 2.2, w: 0.7 },
+  { bone: 'Character1_LeftLeg', name: 'leg', y: 0.30, r: 0.12, len: 2.4, w: 1.0 },
+  { bone: 'Character1_RightLeg', name: 'leg', y: 0.30, r: 0.12, len: 2.4, w: 1.0 },
+];
+const MUT_BISECT = { bone: 'Character1_Spine1', name: 'torso', y: 0.60, r: 0.20, len: 1.9, w: 2.0 };
+const _limbV = new THREE.Vector3();
+function mutSever(u, part, dirX, dirZ, force) {
+  if (!u.model || u.gone[part.bone]) return false;
+  let target = null;
+  u.model.traverse((o) => { if (o.isBone && o.name === part.bone) target = o; });
+  if (!target) return false;
+  u.gone[part.bone] = 1;
+  target.scale.setScalar(0.0001);              // the seam is the skinning's own
+  // the piece itself, thrown along the swing
+  const p = u.g.position;
+  const mat = u.gibMat || (u.gibMat = (() => {
+    const m = GIB_MAT.clone();
+    m.color = new THREE.Color(u.kindName === 'red' ? 0x6a2418 : u.kindName === 'dark' ? 0x3a3428 : 0x8a7f72);
+    m.emissive = new THREE.Color(0x140a08);
+    m.flatShading = true;              // a torn piece has facets, not a sheen
+    m.needsUpdate = true;
+    return m;
+  })());
+  const g = new THREE.Mesh(new THREE.IcosahedronGeometry(part.r * u.kind.h * 0.34, 0), mat);
+  g.scale.set(part.w * 0.75, part.len * 0.9, part.w * 0.6);   // long and thin: a piece of something
+  g.position.set(p.x + (Math.random() - 0.5) * 0.2, part.y * u.kind.h, p.z + (Math.random() - 0.5) * 0.2);
+  g.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+  scene.add(g);
+  const out = 1.6 + Math.random() * 2.2;
+  gibs.push({
+    m: g,
+    vel: new THREE.Vector3(dirX * out * force + (Math.random() - 0.5), 2.4 + Math.random() * 2.6, dirZ * out * force + (Math.random() - 0.5)),
+    spin: new THREE.Vector3((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14),
+    rest: part.r * u.kind.h * 0.3, life: 30,
+  });
+  bleedMutant(u, 14, 1.2);
+  stampBlood(p.x, p.z, 0.7 + Math.random() * 0.5);
+  sfxMutSever();
+  return true;
+}
+function sfxMutSever() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  playSample('fleshHit', 0.9, 0.05, 0.62);
+  // the wet part: a short tearing burst that opens and closes
+  const n = noiseBurst(0.34, (x) => Math.sin(Math.min(1, x * 3) * Math.PI) * (0.3 + 0.7 * Math.random()));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.8;
+  bp.frequency.setValueAtTime(240, t); bp.frequency.exponentialRampToValueAtTime(900, t + 0.3);
+  const g = ctx.createGain(); g.gain.value = 0.3;
+  n.connect(bp).connect(g).connect(out); n.start(t); n.stop(t + 0.34);
+}
+/* The collapse. Called once, on the frame it dies. */
+function mutRagdoll(u, dirX, dirZ, power) {
+  if (u.rag) return;
+  const bones = [];
+  if (u.model) u.model.traverse((o) => {
+    if (!o.isBone) return;
+    if (/Thumb|Index|Middle|Ring|fingers|Head_pt/.test(o.name)) return;
+    bones.push({ b: o, v: new THREE.Vector3(
+      (Math.random() - 0.5) * 7 * power, (Math.random() - 0.5) * 7 * power, (Math.random() - 0.5) * 7 * power) });
+  });
+  u.rag = { t: 0, bones, dirX, dirZ, fall: 0, vy: 1.1 + power * 0.8, y: 0 };
+  if (u.mixer) u.mixer.stopAllAction();          // it dies from the pose it was in
+}
+function updateMutRagdoll(u, dt) {
+  const r = u.rag;
+  r.t += dt;
+  // the body topples the way the blow went, and drops
+  r.fall += (1 - r.fall) * Math.min(1, dt * 3.4);
+  r.vy -= 9.8 * dt; r.y = Math.max(0, r.y + r.vy * dt);
+  if (r.y <= 0 && r.vy < 0) r.vy = -r.vy * 0.22;
+  /* IT FALLS ABOUT ITS FEET, NOT ITS HIPS. The model group's origin is the
+   * scan's own, which sits at the pelvis, so tipping THAT through ninety
+   * degrees swings the chest down and the legs UP and leaves the thing
+   * standing on its head. `u.g` is the unit's ground point — origin on the
+   * sand, under the feet — so the topple goes there and the body goes over
+   * the way a body does. The heading stays on u.g.rotation.y underneath it. */
+  const lean = r.fall * (Math.PI / 2) * 0.98;
+  u.g.rotation.x = lean;
+  u.g.rotation.z = lean * r.dirX * 0.42;
+  if (u.model) u.model.position.y = (u.modelY || 0) + r.y;
+  // and the limbs go where they were thrown, then hang
+  for (const it of r.bones) {
+    it.b.rotation.x += it.v.x * dt; it.b.rotation.y += it.v.y * dt; it.b.rotation.z += it.v.z * dt;
+    it.v.multiplyScalar(1 - Math.min(1, 3.1 * dt));
+    it.v.x -= it.b.rotation.x * 5.5 * dt;        // a pull back toward hanging
+    it.v.z -= it.b.rotation.z * 5.5 * dt;
+  }
+}
+
 function updateMutantUnit(u, dt) {
   if (!u.mixer) return;
   const p = u.g.position;
-  if (!u.st.alive) { u.st.deadT += dt; mutAnim(u, dt, 0); return; }
+  if (!u.st.alive) {
+    u.st.deadT += dt;
+    if (u.rag) updateMutRagdoll(u, dt); else mutAnim(u, dt, 0);
+    return;
+  }
   /* Impact frames, held for exactly the length of the hitstop, so what you are
    * looking at is the reason the world has stopped. Driven off `hitstop` and
    * not off dt, because dt is what hitstop scales. */

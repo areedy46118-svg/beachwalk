@@ -1216,6 +1216,26 @@ Three more things that make a heavy feel like one:
 already in the wound pose roughly doubles. A charge with no full mark is a
 charge you hold too long every time.
 
+**RAGDOLLS, AND WHAT COMES OFF.** An authored death clip plays the same way
+every time and by the third viewing the creature is a cutscene. This is not a
+physics ragdoll — no constraints, no solver — but it is the part that reads:
+the mixer stops DEAD ON THE POSE IT WAS IN, so the death starts from whatever
+it was doing when you killed it, every bone takes an angular kick with a
+damped pull back toward hanging, and the body topples and drops. **IT FALLS
+ABOUT ITS FEET, NOT ITS HIPS**: the model group's origin is the scan's own,
+at the pelvis, and tipping that through ninety degrees swings the chest down
+and the legs UP and leaves the thing standing on its head. The topple goes on
+`u.g`, whose origin is the ground point under the feet.
+
+**A BONE SCALED TO NOTHING TAKES ITS SUBTREE WITH IT.** A skinned mesh cannot
+be cut, but collapsing the arm bone removes the arm from the shoulder down
+along a seam the skinning already defines — no geometry surgery, no stretched
+triangles (measured: the corpse's bounds stay body-sized). Put a chunk in the
+air on the same frame with blood behind it and the eye reads a limb coming
+off. A charged cut can take it at the waist. It is a CHANCE, not a rule —
+about half of kills take something, because a kill that always dismembers is
+a gore setting and one that sometimes does is a thing that happened.
+
 **IT TAKES TWO.** `CRAB_HP` is 2: a light swing is a hit, not a kill, and
 only a charge past `CRAB_HEAVY` (0.85) puts one down in one. That is the
 whole reason to hold the button — a heavy is not a faster shovel, it is the
@@ -1256,6 +1276,20 @@ by every `damagePlayer()`. And `#hurt` no longer fades to nothing: under the
 hit's spike it settles to a faint breathing rim, 0.14 + 0.24 per point down,
 so you always know you are hurt without a bar. `updateHurt()` therefore runs
 every frame now; it used to return early when the flash was spent.
+
+**THE MILITARY SHOVEL IS HELD BY THE HANDLE AND RUN THROUGH YOU.** Not a
+spade turned sideways: the D-handle at your chest, the scoop a metre out in
+front, and the whole thing sweeps RIGHT TO LEFT. `VM_SLASH_ROT` is SEARCHED,
+not guessed — a grid over all three axes scoring "shaft running straight away
+from the view camera" against "cutting edge standing vertical", which lands
+on [2.880, 1.309, -1.309] and gives shaft (0, -0.08, -1) and lip (0, -0.99,
+0). Eyeballing that through three nested frames — the arm, the mount, and the
+scan's own Z-up root matrix — is how you spend an hour and still hold it
+wrong. With the grip right the swing is almost pure YAW, and it runs a third
+faster than the chop, because a spade goes down into sand and a blade goes
+through something. A lone cut is always right to left; only a second cut
+inside 620 ms comes back the other way, so a single swing looks the same
+every time and a combination looks like a combination.
 
 **THE MILITARY SHOVEL SLASHES.** A spade on a shaft is a sword if you turn it
 edge-on and swing it across yourself: `VM_SLASH_ROT` brings the blade out of
@@ -1375,6 +1409,13 @@ point. The claw going up IS the parry tell, so it cannot be allowed to drift
 out of step with the frame the blow actually lands on — the clip is authored
 at 30fps with contact on frame 9, which is `CRAB_WIND` exactly. Move
 `CRAB_WIND` and you must move the pose beats in `tools/crab_anim.py` too.
+
+**A CRAB GOES SIDEWAYS.** Standing still at reach shifting its weight was the
+one thing this animal should never do. It scuttles ACROSS you instead and
+changes its mind about which way often enough that you cannot lead it — 67 m
+of lateral travel and fourteen direction changes in thirty seconds of fight,
+across three of them, while they hold a metre and a half. The one holding the
+turn crowds in as it circles; the others hold the range and wait.
 
 **AND EVERYTHING THE MUTANTS TAUGHT CAME BACK TO THE CRABS.** At 2.35 a crab
 was a metre a second slower than your walk, so every fight with one was
