@@ -1252,6 +1252,40 @@ off. A charged cut can take it at the waist. It is a CHANCE, not a rule —
 about half of kills take something, because a kill that always dismembers is
 a gore setting and one that sometimes does is a thing that happened.
 
+**THE FLOATING ARMS WERE STUMPS, AND THE CUT WAS GROWING BACK.** The owner
+sent a picture of two corpses lying flat with an arm each standing straight
+up out of them. Two bugs. A severed limb's PARENT segment — the thigh above
+a taken knee, the upper arm above a taken forearm — had no particle at its
+far end, so nothing drove it and it kept whatever angle the death pose left
+it at. The first cut joint in a chain is a particle now (`belowCut`: only
+what hangs off it is left out), so the stump falls with the body. And the
+clips carry SCALE TRACKS after all: `tools/mutant_anim.py` strips the scale
+curves, but Blender's glTF exporter samples every channel on export and
+wrote seventy constant-1.0 tracks back into every clip, 1330 in all. Two
+consequences: the mixer stamped 1.0 over `kind.bones` every frame, so the
+three builds were the same build whenever a clip played (measured: the red
+head read 1.00, not 1.20), and `stopAllAction()` — which the ragdoll called
+to "die from the pose it was in" — RESTORES every bound property's original
+value, which put a cut bone's scale back to 1 and grew the limb back on the
+frame the body fell, and snapped the whole skeleton to its bind pose besides,
+so the particles were seeded from a T-pose. The scale tracks are dropped at
+LOAD in `dressMutant`, and the ragdoll no longer stops the actions: the mixer
+is simply never updated again, which is what "the pose it was in" needed all
+along.
+
+**OVERKILL TAKES THE HEAD.** A heavy — a charged cut or the overhead — that
+lands on a creature with one point left is far more blow than there was
+creature, and about half the time (`burstHead`) the skull bone collapses and
+a dozen fragments leave at once, pale bone among the meat, with the blood
+coming from where the head WAS rather than from the chest, and the neck a
+stump the ragdoll simulates like any other. Only then: a head that bursts on
+every heavy is a gore setting. What killed it is remembered on the unit
+(`killP`, `killOh`, `hpBefore`, set in `hurtMutant` before `killMutant`) and
+`finishMutant` reads those, not the live `digPower`. The overhead also throws
+the body about half a metre further (2.5 m against a heavy cut's 2.1 and a
+light's 1.7, measured off the hips) — a little, so the hit reads harder, not
+so far that it flies.
+
 **IT TAKES TWO.** `CRAB_HP` is 2: a light swing is a hit, not a kill, and
 only a charge past `CRAB_HEAVY` (0.85) puts one down in one. That is the
 whole reason to hold the button — a heavy is not a faster shovel, it is the

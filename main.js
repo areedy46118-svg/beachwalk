@@ -12564,7 +12564,17 @@ function dressMutant(u, gltf) {
   m.position.y = -b.min.y * s;                // stood on its own feet
   u.modelY = m.position.y;
   u.mixer = new THREE.AnimationMixer(m);
-  for (const c of gltf.animations) u.clips[c.name] = u.mixer.clipAction(c);
+  /* NO SCALE TRACKS. The build strips the scale curves out of the actions,
+   * but Blender's glTF exporter SAMPLES every channel on export and wrote
+   * seventy constant-1.0 scale tracks back into every clip — 1330 of them —
+   * so the mixer was stamping 1.0 over `kind.bones` every frame (three
+   * identical builds after all), and `stopAllAction` restores every bound
+   * property's ORIGINAL value, which put a severed bone's scale back to 1 and
+   * grew the limb back on the frame the body fell. Dropped here, at load. */
+  for (const c of gltf.animations) {
+    c.tracks = c.tracks.filter((t) => !t.name.endsWith('.scale'));
+    u.clips[c.name] = u.mixer.clipAction(c);
+  }
   mutPlay(u, u.kind.anim.idle, true);
   u.mixer.update(Math.random() * 4);          // not caught at the top of the loop
 }
@@ -12686,6 +12696,7 @@ function blockMutant(u) {
 function killMutant(u) {
   if (!u.st.alive || u.st.struck) return;
   u.st.struck = true;
+  if (u.st.killP === undefined) { u.st.killP = 0; u.st.killOh = false; u.st.hpBefore = u.st.hp; }   // a throw, or the harness
   u.st.atk = -1; u.st.stun = 0; u.st.recoil = 0; u.st.chainAt = -1;
   mutDrop(u);
   camera.getWorldDirection(u.hitDir); u.hitDir.y = 0; u.hitDir.normalize();
@@ -12737,8 +12748,13 @@ function hurtMutant(u, dmg, P = 0) {
     setTimeout(() => { if (promptHTML.includes('RIPOSTE')) setPrompt(''); }, 700);
     addTrauma(0.3); fovKick = Math.max(fovKick, 5);
   }
+  const before = u.st.hp;
   u.st.hp -= dmg;
-  if (u.st.hp <= 0) { killMutant(u); return true; }
+  if (u.st.hp <= 0) {
+    // what the finishing blow was, for the fall and for what comes off
+    u.st.killP = P; u.st.killOh = digOverhead; u.st.hpBefore = before;
+    killMutant(u); return true;
+  }
   /* POISE. A light swing into the last part of a committed startup takes
    * its point of health and does NOT stop the blow: it flashes, it bleeds,
    * and the hand comes down anyway. Trading with it is a choice, and the
@@ -12777,13 +12793,24 @@ function finishMutant(u) {
    * all — because a kill that ALWAYS dismembers is a gore setting, and a kill
    * that sometimes does is a thing that happened. */
   const dx = u.hitDir.x, dz = u.hitDir.z;
-  const P = digPower;
-  if (P >= MUT_HEAVY && Math.random() < 0.42) mutSever(u, MUT_BISECT, dx, dz, 1.4);
-  else if (Math.random() < 0.55) {
-    const pick = MUT_LIMBS[Math.floor(Math.random() * MUT_LIMBS.length)];
-    mutSever(u, pick, dx, dz, 1.0);
+  const P = u.st.killP || 0, oh = !!u.st.killOh;
+  /* OVERKILL. A heavy — a charged cut or the overhead — landing on a
+   * creature with one point left is far more blow than there was creature,
+   * and about half the time the head goes. Only then: a head that bursts on
+   * every heavy is a gore setting; one that bursts when you brought a slam
+   * down on something already finished is a thing that happened. */
+  const overkill = u.st.hpBefore <= 1 && (P >= MUT_HEAVY || oh);
+  let burst = false;
+  if (overkill && Math.random() < 0.55) burst = burstHead(u, dx, dz);
+  if (!burst) {
+    if (P >= MUT_HEAVY && !oh && Math.random() < 0.42) mutSever(u, MUT_BISECT, dx, dz, 1.4);
+    else if (Math.random() < 0.55) {
+      const pick = MUT_LIMBS[Math.floor(Math.random() * MUT_LIMBS.length)];
+      mutSever(u, pick, dx, dz, 1.0);
+    }
   }
-  mutRagdoll(u, dx, dz, 0.7 + P * 0.7);
+  // the overhead throws it further — a little, so the hit reads harder, not so far it flies
+  mutRagdoll(u, dx, dz, 0.7 + P * 0.7 + (oh ? 0.55 : 0));
   bleedMutant(u, 26, 1.0);
   stampBlood(u.g.position.x, u.g.position.z, 1.3 + Math.random() * 0.5);
   sfxMutDie(u.kind.voice);
@@ -13250,6 +13277,62 @@ const MUT_LIMBS = [
 ];
 const MUT_BISECT = { bone: 'Character1_Spine1', name: 'torso', y: 0.60, r: 0.20, len: 1.9, w: 2.0 };
 const _limbV = new THREE.Vector3();
+function mutGibMat(u) {
+  return u.gibMat || (u.gibMat = (() => {
+    const m = GIB_MAT.clone();
+    m.color = new THREE.Color(u.kindName === 'red' ? 0x6a2418 : u.kindName === 'dark' ? 0x3a3428 : 0x8a7f72);
+    m.emissive = new THREE.Color(0x140a08);
+    m.flatShading = true;              // a torn piece has facets, not a sheen
+    m.needsUpdate = true;
+    return m;
+  })());
+}
+/* THE HEAD GOES. Not a piece thrown, like a limb: the skull bone collapses
+ * and in its place a dozen fragments leave at once — pale bone among the
+ * meat — with a burst of blood from where it was rather than from the chest,
+ * and the neck is a stump the ragdoll simulates like any other. */
+const SKULL_MAT = new THREE.MeshStandardMaterial({ color: 0xb4a894, roughness: 0.85, metalness: 0.0, flatShading: true, emissive: 0x2a2620 });
+function burstHead(u, dirX, dirZ) {
+  if (!u.model || u.gone['Character1_Head']) return false;
+  let head = null;
+  u.model.traverse((o) => { if (o.isBone && o.name === 'Character1_Head') head = o; });
+  if (!head) return false;
+  u.model.updateMatrixWorld(true);
+  const hp = head.getWorldPosition(new THREE.Vector3());
+  hp.y += 0.09 * (u.kind.h / 2.3);           // the bone sits at the neck end of the skull
+  u.gone['Character1_Head'] = 1;
+  head.scale.setScalar(0.0001);
+  const meat = mutGibMat(u);
+  for (let i = 0; i < 14; i++) {
+    const bone = i % 3 === 0;
+    const r = (bone ? 0.055 : 0.038) * (0.6 + Math.random() * 0.8) * (u.kind.h / 2.3);
+    const g = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 0), bone ? SKULL_MAT : (i % 2 ? meat : GIB_MAT_WET));
+    g.scale.set(1 + Math.random() * 0.8, 0.5 + Math.random() * 0.6, 1 + Math.random() * 0.5);
+    g.position.set(hp.x + (Math.random() - 0.5) * 0.16, hp.y + (Math.random() - 0.5) * 0.16, hp.z + (Math.random() - 0.5) * 0.16);
+    g.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+    scene.add(g);
+    const a = Math.random() * Math.PI * 2, out = 1.4 + Math.random() * 3.4;
+    gibs.push({
+      m: g,
+      vel: new THREE.Vector3(Math.cos(a) * out + dirX * 3.0, 1.4 + Math.random() * 3.6, Math.sin(a) * out + dirZ * 3.0),
+      spin: new THREE.Vector3((Math.random() - 0.5) * 22, (Math.random() - 0.5) * 22, (Math.random() - 0.5) * 22),
+      rest: r * 0.5, life: 30,
+    });
+  }
+  // the blood comes from where the head was, not from the chest
+  for (let i = 0; i < 36; i++) {
+    const m = new THREE.Mesh(new THREE.IcosahedronGeometry(0.030 * (0.5 + Math.random()), 0), BLOOD_MAT);
+    m.position.set(hp.x + (Math.random() - 0.5) * 0.2, hp.y + (Math.random() - 0.5) * 0.2, hp.z + (Math.random() - 0.5) * 0.2);
+    scene.add(m);
+    const a = Math.random() * Math.PI * 2, out = 1.0 + Math.random() * 3.6;
+    bloodDrops.push({ m, vel: new THREE.Vector3(Math.cos(a) * out + dirX * 2.0, 0.6 + Math.random() * 3.4, Math.sin(a) * out + dirZ * 2.0), life: 4 });
+  }
+  stampBlood(hp.x, hp.z, 1.2 + Math.random() * 0.5);
+  sfxMutSever();
+  playSample('fleshHit', 1.0, 0.03, 0.5);        // and a second, lower, under it: something heavier than a limb
+  addTrauma(0.35); fovKick = Math.max(fovKick, 3);
+  return true;
+}
 function mutSever(u, part, dirX, dirZ, force) {
   if (!u.model || u.gone[part.bone]) return false;
   let target = null;
@@ -13259,14 +13342,7 @@ function mutSever(u, part, dirX, dirZ, force) {
   target.scale.setScalar(0.0001);              // the seam is the skinning's own
   // the piece itself, thrown along the swing
   const p = u.g.position;
-  const mat = u.gibMat || (u.gibMat = (() => {
-    const m = GIB_MAT.clone();
-    m.color = new THREE.Color(u.kindName === 'red' ? 0x6a2418 : u.kindName === 'dark' ? 0x3a3428 : 0x8a7f72);
-    m.emissive = new THREE.Color(0x140a08);
-    m.flatShading = true;              // a torn piece has facets, not a sheen
-    m.needsUpdate = true;
-    return m;
-  })());
+  const mat = mutGibMat(u);
   const g = new THREE.Mesh(new THREE.IcosahedronGeometry(part.r * u.kind.h * 0.34, 0), mat);
   g.scale.set(part.w * 0.75, part.len * 0.9, part.w * 0.6);   // long and thin: a piece of something
   g.position.set(p.x + (Math.random() - 0.5) * 0.2, part.y * u.kind.h, p.z + (Math.random() - 0.5) * 0.2);
@@ -13377,15 +13453,26 @@ const _rgM = new THREE.Matrix4();
 
 function mutRagdoll(u, dirX, dirZ, power) {
   if (u.rag || !u.model) return;
-  if (u.mixer) u.mixer.stopAllAction();            // it dies from the pose it was in
+  /* IT DIES FROM THE POSE IT WAS IN — so the mixer is simply never updated
+   * again. `stopAllAction()` was called here first, and that RESTORES every
+   * bound property to the value it had when the clip was first played: the
+   * body snapped to its bind pose on the frame it fell, and the particles
+   * were seeded from a T-pose rather than from the swing that killed it. */
   u.model.updateMatrixWorld(true);
   const bones = {};
   u.model.traverse((o) => { if (o.isBone) bones[o.name] = o; });
-  // anything a severed bone carries is gone, so it is not simulated
-  const gone = (bn) => { for (let b = bn; b; b = b.parent) { if (u.gone[b.name]) return true; if (!b.isBone) break; } return false; };
+  /* A SEVERED LIMB LEAVES A STUMP, AND THE STUMP IS SIMULATED. Everything
+   * below a cut bone is gone and gets no particle — but the cut joint itself
+   * is the END of the segment above it, and without a particle there that
+   * segment (the thigh above a taken knee, the upper arm above a taken
+   * forearm) had nothing to be driven toward and kept whatever angle the
+   * death pose left it at: an arm standing straight up out of a body lying
+   * flat, which is the picture the owner sent. The first cut joint in a
+   * chain is a particle like any other; only what hangs off it is left out. */
+  const belowCut = (bn) => { for (let b = bn.parent; b; b = b.parent) { if (u.gone[b.name]) return true; if (!b.isBone) break; } return false; };
   const parts = [], byName = {};
   for (const [name, parentName, childName, r] of RAG_CHAIN) {
-    const bn = bones[name]; if (!bn || gone(bn)) continue;
+    const bn = bones[name]; if (!bn || belowCut(bn)) continue;
     const p = bn.getWorldPosition(new THREE.Vector3());
     // the blow's momentum, most of it up top: the chest goes, the feet stay planted and the body goes over them
     const h = THREE.MathUtils.clamp((p.y - u.g.position.y) / Math.max(0.5, u.kind.h), 0, 1);
