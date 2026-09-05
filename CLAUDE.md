@@ -1383,45 +1383,85 @@ gives it a no-op `raycast`.
 Bell Pavilion — La Jolla's "mushroom house" — built to the photographs in
 `models/mushroom-house.js`, GENERATED like the lighthouse, not imported: a
 round concrete room on a single column, its underside a flaring dish of 28
-radial ribs (the gills), a band of 26 wood-framed window bays all the way
-round under a low roof with a ribbed ceiling, and below it a bunker of
-curved concrete walls on a raised platform with an iron gate hanging open;
-inside the column a spiral stair of open cantilevered treads winding round
-an open well up into the room, a rail on the well side and a rail round the
-well above with a gap where the stair arrives. Abandoned: 42 % of the panes
+radial ribs (the gills), a band of 26 steel-framed window bays all the way
+round under a low roof with a ribbed ceiling, and below it a bunker on a
+raised platform: a low parapet across the front with an iron gate hanging
+open in it, and a tall retaining wall round everything else. Inside the
+column a spiral stair of cantilevered treads winds round an open well up
+into the room, a rail on the well side and a rail round the well above with
+a gap where the stair arrives. Abandoned: 42 % of the panes
 gone and another fifth broken to a half, glass on the floor under them,
 streaked and tie-holed concrete with spray tags on a few wall bays, a dead
 pendant lamp. Everything the walk needs is in `MUSH` (radii, `H_ROOM`, the
 door's angle and half-width, the stair's rise, treads, turns, `A0` and
 `TOP_ANG`); the stair goes UP as the angle DECREASES, the lighthouse's
 convention, and `updateMushroom()` is `updateTower()`'s shape: regions and
-clamps, the climb by winding, the tread snap. Five things it had to get
-right, and the last two only showed up walking it in the LIVE loop with
-real keys (the stepped harness test passed and the owner could not get up
-the stair): the room branch only applies OVER THE FLOOR RING (`d >= BORE`) —
-keyed on height alone, the top metre of the climb read as the room and
-snapped you up onto a floor you had not reached; the well is railed from
-the floor except where the stair arrives (`atTop`), but `mushOnFloor`
-remembers whether you came from the floor, because someone winding DOWN
-past the top must not be held; the cliff clamp lifts while `insideMush` so
-the back of the room, which stands past `CLIFF_BLOCK_X`, can be walked;
-**the wall clamp parks you at exactly `COL_R + PLAYER_R`, so an entry test
-of "closer than that" was never true** and you could stand in the doorway
-pushing forever — the door admits you from 0.3 m further out; and **at the
-top of the stair the well's inner clamp has to open** (`atFloor`) or you
-can never step off onto the floor ring. Walk it with the pumped loop and
-`__bw.keys` / `__bw.look()` steering at the next point on the spiral —
-that test is the one that found both. **And the count starts at the
-door:** `mushLastA` was whatever it last was, so the first frame inside
-credited you with the angle from there to the doorway — a quarter turn, a
-floor 80 cm above the treads you were looking at, and a door that never
-let you out because you never got back to zero. Entry sets `mushLastA`
-and derives `mushTurns` from the angle to `A0`. **The back is a retaining
-wall.** The cliff is cut away inside the footprint (r < 5.9, y < 4.6) so
-the bluff does not run through the yard, and a cut through a one-sided
-bluff is a window onto the void behind it — the whole landward half is
-closed by a concrete wall taller than the bluff, with the cut edge behind
-it. The column's axis sits ON the cliff
+clamps, the climb by winding, the tread snap.
+
+**WHERE YOU ARE IS REMEMBERED, NOT INFERRED.** `mushWhere` is `'out'` /
+`'stair'` / `'floor'` and the transitions are the three real ways through:
+the doorway at the bottom, the top tread, and the gap in the well rail.
+Before that the room was "feet high enough and far enough out from the
+axis" — which is true of the top three treads as well, so ONE STEP DOWN off
+the top tread put the room's floor back under you and its rail back in
+front of you, and there was no way down again. That was the owner's
+"barrier". The two well transitions carry hysteresis — in at the tread line
+(`BORE − PLAYER_R·0.55`), out at the well line (`BORE`) — so standing on the
+lip cannot flicker between them. Three older traps live in the same
+function: **the wall clamp parks you at exactly `COL_R + PLAYER_R`, so an
+entry test of "closer than that" was never true** and you could stand in the
+doorway pushing forever (the door admits you from 0.3 m further out); at the
+top the well's inner clamp has to OPEN or you can never step off onto the
+floor ring; and the cliff clamp has to lift inside the house.
+
+**THE COUNT IS NEGATIVE AT THE DOOR.** `A0`, the first tread, is 0.6 rad
+round from the doorway, and the floor is flat over that stretch — so a count
+clamped at zero from the door credited you with those 0.6 rad: you stood a
+third of a metre above every tread you climbed, and at the top the height
+said you had arrived a fifth of a turn before the top tread and the gap in
+the rail actually were. `MUSH.TURN_MIN` lets it go negative and the treads
+and the walk line up exactly (`height = PLAT_TOP + i·STEP` at
+`ang = A0 − i·stepA`, both sides). The same rule applies stepping INTO the
+well from the room: derive the count from `TOP_ANG` and the angle you came
+in at, never a flat `TURNS`.
+
+**THE YARD IS PAST THE CLIFF LINE TOO.** The column's axis is ON it, so with
+the cliff clamp running inside the bunker you could walk the seaward third
+of the yard and never get round the back of the column. The walls are real
+colliders and a closed ring but for the gate, so they hold you instead
+(`mushInYard`); the only way out of the ring is seaward, well short of the
+clamp, so dropping it can never snap you anywhere.
+
+**THE SHAFT IS WALLED THE WHOLE WAY UP.** It used to stop at `DISH_Y0` and
+leave the last two metres of the climb standing in the open inside the flare
+of the dish — from the room you looked down on the top third of the stair
+hanging in mid-air. It is one tube from the platform to the room floor now;
+the door is a gap in the bottom of it and its top edge is the lip of the
+well, flush with the floor.
+
+**NOTHING IN THE ROOM IS BROWN.** The window frames were dark wood and the
+sill was capped with it, and at eye height in a round room that is one
+unbroken tan band all the way round you — the only warm thing on a cold
+beach and the first thing you look at. Weathered grey steel, concrete sill.
+
+Walk it with `__bw.step`, `__bw.keys.KeyW` and `__bw.look()` steering at the
+next point on the spiral: in at the door, up, off onto the floor ring, round
+the room, back in at the gap, down and out is 89 / 160 / 44 / … / 164 / 125
+ticks and no snap over 9 cm in a tick. That test is what finds all of this.
+
+**THE CUT LIVES INSIDE THE RETAINING WALL.** The cliff is cut away inside
+the footprint so the bluff does not run through the yard, and a cut through
+a one-sided bluff is a window onto the void behind it — so the cut has to be
+smaller than the thing standing in front of it, in BOTH dimensions
+(r < 5.62 against a wall whose faces are 5.55 and 5.95; y < 3.85 against a
+wall 4.15 high and a bluff that reaches 3.60 anywhere inside that radius),
+and the wall has to cover EVERY angle at which the bluff stands. At 5.9 m
+and a 218-degree parapet the cut reached past both, and on the +Z flank —
+the side you walk in from — you saw straight through the gap between the
+sand wall and the house. The parapet is the front 128 degrees only, where
+there is nothing but flat talus behind it; the retaining wall takes the rest
+and the bluff is drawn right up to the back of it and hidden inside its
+thickness. The column's axis sits ON the cliff
 line (`MUSH_X` 16) so half of it is in the wall and the front steps are at
 x = 9, above the highest swash. The cap is ONE lathe — floor top, fascia,
 underside — so there is no seam; the glass and the rails are arcs of the
@@ -1430,12 +1470,16 @@ MIRRORS an angle.** three's rotation about Y sends local +X to
 (cos θ, 0, −sin θ), so π/2 − a lands it at angle π − a, not a: the treads
 wound the opposite way from the walk and from the rail (which used sin/cos
 directly), and the owner climbed invisible steps beside the visible ones.
-`a − π/2` is the rotation that puts a centreline on (sin a, 0, cos a).
+`a − π/2` is the rotation that puts a centreline on (sin a, 0, cos a) —
+and it is what a RADIAL box wants too, so the door's jambs fill the wall's
+thickness instead of standing across the opening, the head spans the door
+instead of poking out of the wall, and the walls' end returns bridge the
+parapet to the retaining wall instead of lying along it.
 **The harness's rAF can be dead outright**, ticks 0 in 800 ms even with a
 setTimeout pump installed (animate() is parked in the real queue); `__bw.step(dt)`
 runs one whole game tick, so a walk can be driven deterministically —
 `keys.KeyW` plus `look()` steering at the next point on the spiral, 512
-ticks to the top. The bunker walls are `rockColliders` cylinders 1 m apart
+ticks to the top. The walls are `rockColliders` cylinders 1 m apart
 (AABB boxes cannot turn), the platform a 0.4 m cylinder you step up, and
 the cliff is cut open round it in world space, the drain's trick. Its
 group is in `farProps`, so in a frozen preview still you must set it

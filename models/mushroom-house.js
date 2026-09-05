@@ -3,7 +3,7 @@ import * as THREE from 'three';
 /* The Bell Pavilion — La Jolla's "mushroom house" — built to the
  * photographs. A round concrete room on a single column at the foot of the
  * cliff; the underside of the room a deep flaring dish of radial ribs; a
- * band of wood-framed windows all the way round, each bay a tall pane over
+ * band of steel-framed windows all the way round, each bay a tall pane over
  * a short one, under a low roof with a deeply ribbed ceiling; below it a
  * bunker of curved concrete walls on a raised platform, an iron gate hanging
  * open in the seaward wall, steps down to the sand; inside the column a
@@ -28,8 +28,15 @@ export const MUSH = {
 };
 MUSH.RISE = (MUSH.H_ROOM - MUSH.PLAT_TOP) / MUSH.TURNS;   // per full turn, from the platform to the floor
 MUSH.STEP = MUSH.RISE / MUSH.TREADS;
-MUSH.A0 = MUSH.DOOR_ANG - 0.6;
+MUSH.A0 = MUSH.DOOR_ANG - 0.6;                    // the first tread: 0.6 rad round from the doorway
 MUSH.TOP_ANG = MUSH.A0 - MUSH.TURNS * Math.PI * 2;
+/* THE DOORWAY IS BELOW THE FIRST TREAD, so the count is NEGATIVE there. Held
+ * at zero from the door, the walk credited you with the 0.6 rad between the
+ * two: every tread you climbed you stood a third of a metre above, and at
+ * the top the height said you had arrived 0.6 rad before the top tread and
+ * the gap in the rail actually were. The floor is flat over that stretch,
+ * so a negative count costs nothing and the treads and the walk line up. */
+MUSH.TURN_MIN = (MUSH.A0 - MUSH.DOOR_ANG - 0.4) / (Math.PI * 2);
 MUSH.DISH_Y0 = MUSH.H_ROOM - 2.1;                 // where the column ends and the dish begins
 
 // ------------------------------------------------------------ textures
@@ -76,7 +83,12 @@ export function makeMushroomHouse() {
   const conc = new THREE.MeshStandardMaterial({ map: concTex, color: 0x98a2b2, roughness: 1, metalness: 0, flatShading: true, emissive: 0x333b4a, emissiveMap: concTex, side: THREE.DoubleSide });
   const concTag = conc.clone(); concTag.map = tagTex; concTag.emissiveMap = tagTex;
   const pale = conc.clone(); pale.color.setHex(0xbcc2ce); pale.emissive.setHex(0x4c5566);   // lit enough to read in the well   // the stair, the ribs: the pale poured work in the photographs
-  const wood = new THREE.MeshStandardMaterial({ color: 0x4e3323, roughness: 0.9, metalness: 0, flatShading: true, emissive: 0x170d07 });
+  /* NOTHING IN HERE IS BROWN. The window frames were dark wood and the sill
+   * was capped with it, and at eye height in a round room that is one
+   * unbroken tan band all the way round you — the only warm thing on a cold
+   * beach, and the first thing you look at. They are weathered grey steel
+   * now, and the sill is capped in its own concrete. */
+  const frame = new THREE.MeshStandardMaterial({ color: 0x5a6270, roughness: 0.95, metalness: 0, flatShading: true, emissive: 0x1a1f28 });
   const glass = new THREE.MeshPhysicalMaterial({ color: 0x8fb0c8, roughness: 0.12, metalness: 0, transparent: true, opacity: 0.36, side: THREE.DoubleSide, depthWrite: false, emissive: 0x16202e });
   const iron = new THREE.MeshStandardMaterial({ color: 0x3f352d, roughness: 0.95, metalness: 0.1, flatShading: true, emissive: 0x100b07 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 1, metalness: 0, emissive: 0x040507 });
@@ -93,39 +105,49 @@ export function makeMushroomHouse() {
     colliders.push({ x0: dx - 0.31, x1: dx + 0.31, z0: -1.3, z1: 1.3, top, mat: 'rock' });
   }
 
-  // ---------------------------------------------------------- the bunker wall
+  // ---------------------------------------------------------- the walls
+  /* THE FRONT IS THE ONLY LOW WALL. The cliff is cut away inside the whole
+   * footprint, and a cut through a one-sided bluff is a window onto the void
+   * behind it — so every angle where the bluff stood has to be closed by
+   * something TALLER than the bluff. The old arcs gave the seaward 218 deg
+   * to a 2.3 m parapet, and the bluff on the +Z flank — the side you walk in
+   * from — stood 3.6 m: from the beach you saw straight through the gap
+   * between the sand wall and the house. The parapet keeps only the 128 deg
+   * across the front, where there is nothing but flat talus to hold back,
+   * and the retaining wall takes the whole of the rest. */
   const WALL_H = 2.3, WALL_T = 0.4, wallTop = M.PLAT_TOP + WALL_H;
-  const arc0 = M.DOOR_ANG - 1.9, arc1 = M.DOOR_ANG + 1.9, gateHalf = 0.14;
+  const arc0 = M.DOOR_ANG - 1.12, arc1 = M.DOOR_ANG + 1.12, gateHalf = 0.14;
+  const RET_R = M.PLAT_R + 0.15, RET_T = 0.2, RET_TOP = 4.15;   // the cut in main.js lives inside RET_R - RET_T and below RET_TOP
   const wallArc = (a0, a1, mat) => {
     const ro = M.WALL_R + WALL_T / 2, ri = M.WALL_R - WALL_T / 2, n = Math.max(6, Math.round((a1 - a0) * 12));
     arcBand(ro, M.PLAT_TOP, wallTop, a0, a1, mat, n); arcBand(ri, M.PLAT_TOP, wallTop, a0, a1, mat, n);
     mesh(new THREE.RingGeometry(ri, ro, n, 1, a0, a1 - a0).rotateX(-Math.PI / 2), mat, 0, wallTop, 0);
-    for (const a of [a0, a1]) { const e = mesh(new THREE.BoxGeometry(WALL_T, WALL_H, 0.04), mat, Math.sin(a) * M.WALL_R, M.PLAT_TOP + WALL_H / 2, Math.cos(a) * M.WALL_R); e.rotation.y = a; }
+    // an end return closing the wall's thickness: with rotation.y = a - PI/2
+    // local +X is RADIAL and +Z tangential (a is the mirror; see the treads)
+    for (const a of [a0, a1]) { const e = mesh(new THREE.BoxGeometry(WALL_T, WALL_H, 0.04), mat, Math.sin(a) * M.WALL_R, M.PLAT_TOP + WALL_H / 2, Math.cos(a) * M.WALL_R); e.rotation.y = a - Math.PI / 2; }
   };
   wallArc(arc0, M.DOOR_ANG - gateHalf, concTag);
   wallArc(M.DOOR_ANG + gateHalf, arc1, conc);
-  for (let i = 0; i < 26; i++) {
-    const a = arc0 + (i + 0.5) * (arc1 - arc0) / 26;
-    if (Math.abs(a - M.DOOR_ANG) < gateHalf + 0.05) continue;
-    colliders.push({ x: Math.sin(a) * M.WALL_R, z: Math.cos(a) * M.WALL_R, r: 0.45, top: wallTop, mat: 'rock' });
-  }
-  /* THE BACK IS A RETAINING WALL. The cliff is cut away inside the
-   * footprint so the bluff does not run through the yard and the column,
-   * and a cut through a one-sided bluff is a window onto the void behind it
-   * — you could see the beach a kilometre off through the sand wall. So
-   * the whole landward half is closed by a tall concrete retaining wall,
-   * higher than the bluff, and the cut edge is behind it. */
   {
-    const RET_R = M.PLAT_R + 0.15, RET_TOP = 4.55, r0 = arc1, r1 = arc0 + TAU;
-    const n = 30;
-    arcBand(RET_R + 0.2, M.PLAT_TOP - 0.3, RET_TOP, r0, r1, conc, n); arcBand(RET_R - 0.2, M.PLAT_TOP - 0.3, RET_TOP, r0, r1, conc, n);
-    mesh(new THREE.RingGeometry(RET_R - 0.2, RET_R + 0.2, n, 1, r0, r1 - r0).rotateX(-Math.PI / 2), conc, 0, RET_TOP, 0);
-    for (let i = 0; i < 34; i++) { const a = r0 + (i + 0.5) * (r1 - r0) / 34; colliders.push({ x: Math.sin(a) * RET_R, z: Math.cos(a) * RET_R, r: 0.5, top: RET_TOP, mat: 'rock' }); }
-    // and it steps down to meet the bunker wall at each end
+    const n = Math.max(4, Math.round((arc1 - arc0) * M.WALL_R / 0.9));
+    for (let i = 0; i < n; i++) {
+      const a = arc0 + (i + 0.5) * (arc1 - arc0) / n;
+      if (Math.abs(a - M.DOOR_ANG) < gateHalf + 0.05) continue;
+      colliders.push({ x: Math.sin(a) * M.WALL_R, z: Math.cos(a) * M.WALL_R, r: 0.45, top: wallTop, mat: 'rock' });
+    }
+  }
+  {
+    const r0 = arc1, r1 = arc0 + TAU, n = 40, y0 = -0.35;
+    arcBand(RET_R + RET_T, y0, RET_TOP, r0, r1, conc, n); arcBand(RET_R - RET_T, y0, RET_TOP, r0, r1, conc, n);
+    mesh(new THREE.RingGeometry(RET_R - RET_T, RET_R + RET_T, n, 1, r0, r1 - r0).rotateX(-Math.PI / 2), conc, 0, RET_TOP, 0);
+    const nc = Math.round((r1 - r0) * RET_R / 0.9);
+    for (let i = 0; i < nc; i++) { const a = r0 + (i + 0.5) * (r1 - r0) / nc; colliders.push({ x: Math.sin(a) * RET_R, z: Math.cos(a) * RET_R, r: 0.5, top: RET_TOP, mat: 'rock' }); }
+    // and at each end it steps down and in to meet the parapet
     for (const a of [arc0, arc1]) {
-      const m = mesh(new THREE.BoxGeometry(RET_R - M.WALL_R + 0.6, RET_TOP - M.PLAT_TOP, WALL_T), conc, Math.sin(a) * (M.WALL_R + RET_R) / 2, (M.PLAT_TOP + RET_TOP) / 2, Math.cos(a) * (M.WALL_R + RET_R) / 2);
-      m.rotation.y = a;
-      colliders.push({ x: Math.sin(a) * (M.WALL_R + RET_R) / 2, z: Math.cos(a) * (M.WALL_R + RET_R) / 2, r: 0.5, top: RET_TOP, mat: 'rock' });
+      const rm = (M.WALL_R + RET_R) / 2;
+      const m = mesh(new THREE.BoxGeometry(RET_R - M.WALL_R + 0.6, RET_TOP - y0, WALL_T), conc, Math.sin(a) * rm, (y0 + RET_TOP) / 2, Math.cos(a) * rm);
+      m.rotation.y = a - Math.PI / 2;
+      colliders.push({ x: Math.sin(a) * rm, z: Math.cos(a) * rm, r: 0.5, top: RET_TOP, mat: 'rock' });
     }
   }
   // the gate: bars in a frame, hanging a third open on one post
@@ -140,20 +162,33 @@ export function makeMushroomHouse() {
   }
 
   // ---------------------------------------------------------- the column
-  const lowerH = M.DOOR_H + 0.15, colTop = M.DISH_Y0, upperH = colTop - (M.PLAT_TOP + lowerH);
+  /* THE SHAFT IS WALLED THE WHOLE WAY UP. It used to stop at DISH_Y0 and
+   * leave the last two metres of the climb standing in the open inside the
+   * flare of the dish — from the room you looked down on the top third of
+   * the stair hanging in mid-air, and from the stair there was nothing
+   * beside you. It is one tube from the platform to the room floor now:
+   * the door is a gap in the bottom of it, and its top edge is the lip of
+   * the well, flush with the floor. */
+  const lowerH = M.DOOR_H + 0.15, colTop = M.H_ROOM, upperH = colTop - (M.PLAT_TOP + lowerH);
   const gapStart = M.DOOR_ANG + M.DOOR_HALF, gapLen = TAU - M.DOOR_HALF * 2;
   for (const r of [M.COL_R, M.BORE]) {
     mesh(new THREE.CylinderGeometry(r, r, lowerH, 40, 1, true, gapStart, gapLen), conc, 0, M.PLAT_TOP + lowerH / 2, 0);
     mesh(new THREE.CylinderGeometry(r, r, upperH, 40, 1, true), conc, 0, M.PLAT_TOP + lowerH + upperH / 2, 0);
   }
-  mesh(new THREE.RingGeometry(M.BORE, M.COL_R, 40).rotateX(-Math.PI / 2), conc, 0, colTop, 0);   // the wall's top, under the dish
+  // the doorway's reveal: with rotation.y = a - PI/2 the box's +X is RADIAL,
+  // so the jamb fills the wall's thickness instead of standing across the
+  // opening, and the head spans it instead of poking out of the wall
   for (const sg of [-1, 1]) {
     const a = M.DOOR_ANG + sg * M.DOOR_HALF, rm = (M.COL_R + M.BORE) / 2;
     const j = mesh(new THREE.BoxGeometry(M.COL_R - M.BORE + 0.02, M.DOOR_H, 0.14), conc, Math.sin(a) * rm, M.PLAT_TOP + M.DOOR_H / 2, Math.cos(a) * rm);
-    j.rotation.y = a;
+    j.rotation.y = a - Math.PI / 2;
   }
-  { const rm = (M.COL_R + M.BORE) / 2; const head = mesh(new THREE.BoxGeometry(M.COL_R - M.BORE + 0.02, 0.2, M.COL_R * M.DOOR_HALF * 2 + 0.24), conc, Math.sin(M.DOOR_ANG) * rm, M.PLAT_TOP + M.DOOR_H + 0.08, Math.cos(M.DOOR_ANG) * rm); head.rotation.y = M.DOOR_ANG; }
-  mesh(new THREE.CircleGeometry(M.BORE, 40).rotateX(-Math.PI / 2), dark, 0, M.PLAT_TOP + 0.01, 0);
+  { const rm = (M.COL_R + M.BORE) / 2; const head = mesh(new THREE.BoxGeometry(M.COL_R - M.BORE + 0.02, 0.2, M.COL_R * M.DOOR_HALF * 2 + 0.24), conc, Math.sin(M.DOOR_ANG) * rm, M.PLAT_TOP + M.DOOR_H + 0.08, Math.cos(M.DOOR_ANG) * rm); head.rotation.y = M.DOOR_ANG - Math.PI / 2; }
+  // the shaft's own floor: concrete, worn darker. It was the `dark` material
+  // when the top of the shaft was open and this read as the bottom of a
+  // void; walled and walked on, a black disc through the doorway is a hole
+  const shaftFloor = conc.clone(); shaftFloor.color.setHex(0x6c7280); shaftFloor.emissive.setHex(0x232a36);
+  mesh(new THREE.CircleGeometry(M.BORE, 40).rotateX(-Math.PI / 2), shaftFloor, 0, M.PLAT_TOP + 0.01, 0);
 
   // ---------------------------------------------------------- the cap: one solid piece
   // floor top from the well out to the rim, down the fascia, and back in
@@ -165,9 +200,9 @@ export function makeMushroomHouse() {
     for (let i = 10; i >= 0; i--) pts.push(dishPt(i / 10));
     mesh(new THREE.LatheGeometry(pts, 56), conc);
   }
-  // the well's lip, and the ribs under the dish: 24 of them, deep at the
-  // column and thinning to the rim, each following the curve in pieces
-  mesh(new THREE.CylinderGeometry(M.BORE, M.BORE, M.H_ROOM - dishY1 + 0.02, 40, 1, true), conc, 0, (M.H_ROOM + dishY1) / 2, 0);
+  // the ribs under the dish: 24 of them, deep at the column and thinning to
+  // the rim, each following the curve in pieces. (The well's lip used to be
+  // a band of its own here; the shaft is the lip now.)
   for (let i = 0; i < 24; i++) {
     const a = i / 24 * TAU;
     for (let k = 0; k < 7; k++) {
@@ -186,16 +221,16 @@ export function makeMushroomHouse() {
   const winY = M.H_ROOM + M.SILL, roofY = M.H_ROOM + M.ROOM_H, WIN_H = roofY - winY;
   // sill wall, inside and out, and its cap
   arcBand(M.R_ROOM, M.H_ROOM, winY, 0, TAU, conc, 56); arcBand(M.R_ROOM - 0.18, M.H_ROOM, winY, 0, TAU, conc, 56);
-  mesh(new THREE.RingGeometry(M.R_ROOM - 0.18, M.R_ROOM, 56).rotateX(-Math.PI / 2), wood, 0, winY, 0);
+  mesh(new THREE.RingGeometry(M.R_ROOM - 0.18, M.R_ROOM, 56).rotateX(-Math.PI / 2), conc, 0, winY, 0);
   // the windows: bays round the circle, each a tall pane over a short one,
   // the glass CURVED to the drum, the rails curved with it, the mullions
   // posts at the joints. Abandoned: two in five gone, one in five broken.
   const BAYS = 22, RG = M.R_ROOM - 0.06, split = winY + WIN_H * 0.3;
   const shardAt = [];
-  for (const y of [winY + 0.05, split, roofY - 0.05]) arcBand(RG + 0.03, y - 0.05, y + 0.05, 0, TAU, wood, 56);
+  for (const y of [winY + 0.05, split, roofY - 0.05]) arcBand(RG + 0.03, y - 0.05, y + 0.05, 0, TAU, frame, 56);
   for (let i = 0; i < BAYS; i++) {
     const a0 = i / BAYS * TAU, a1 = (i + 1) / BAYS * TAU;
-    const post = mesh(new THREE.BoxGeometry(0.16, WIN_H, 0.16), wood, Math.sin(a0) * RG, winY + WIN_H / 2, Math.cos(a0) * RG);
+    const post = mesh(new THREE.BoxGeometry(0.16, WIN_H, 0.16), frame, Math.sin(a0) * RG, winY + WIN_H / 2, Math.cos(a0) * RG);
     post.rotation.y = a0;
     const pad = 0.09 / RG;
     for (const [y0, y1] of [[winY + 0.1, split - 0.05], [split + 0.05, roofY - 0.1]]) {

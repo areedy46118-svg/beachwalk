@@ -10907,7 +10907,7 @@ function updateSmile(dt) {
  * a floor with a window wall and a railed well. Its bunker walls and
  * platform are `rockColliders`, so a thrown thing and the player agree on
  * them. The cliff is cut open behind it in world space, the drain's trick.
- * The cliff clamp lifts while `insideMush`, so the back of the room — which
+ * The cliff clamp lifts while you are in it, so the back of the room — which
  * stands past CLIFF_BLOCK_X — can be walked. */
 const MUSH_X = 16.0, MUSH_Z = SMILE_Z - 90;   // the column's axis ON the cliff line: half of it in the wall, the steps dry at x = 9
 const mushHouse = makeMushroomHouse();
@@ -10923,13 +10923,37 @@ for (const c of mushHouse.colliders) {
   cliff.material.onBeforeCompile = function (sh, rndr) {
     if (prev) prev.call(this, sh, rndr);
     sh.uniforms.uMushX = { value: MUSH_X }; sh.uniforms.uMushZ = { value: MUSH_Z };
+    /* THE CUT LIVES INSIDE THE RETAINING WALL. At 5.9 m it reached past the
+     * wall's outer face and past the parapet's ends, so the bluff was taken
+     * away where nothing stood in front of it and you saw the void behind
+     * the sand wall from the beach. 5.62 is inside the wall's inner face
+     * (5.55) and well inside its outer (5.95), so the bluff is drawn right
+     * up to the back of the concrete and is hidden by it; 3.85 clears the
+     * highest the bluff reaches anywhere inside that radius (3.60) and is
+     * under the wall's own top, so the cut can never show over it. */
     sh.fragmentShader = 'uniform float uMushX, uMushZ;\n' + sh.fragmentShader.replace(
       'if (abs(vDrainW.z - uDrainZ) < 2.6 && vDrainW.y < 3.3) discard;',
-      'if (abs(vDrainW.z - uDrainZ) < 2.6 && vDrainW.y < 3.3) discard;\n  if (length(vDrainW.xz - vec2(uMushX, uMushZ)) < 5.9 && vDrainW.y < 4.6) discard;');
+      'if (abs(vDrainW.z - uDrainZ) < 2.6 && vDrainW.y < 3.3) discard;\n  if (length(vDrainW.xz - vec2(uMushX, uMushZ)) < 5.62 && vDrainW.y < 3.85) discard;');
   };
   cliff.material.needsUpdate = true;
 }
-let insideMush = false, mushTurns = 0, mushLastA = 0, mushStairY = null, mushOnFloor = false;
+/* WHERE YOU ARE IS REMEMBERED, NOT INFERRED. The room used to be "feet high
+ * enough and far enough out from the axis", and that is true of the top
+ * three treads of the stair as well — so one step down off the top tread put
+ * the room's floor back under you and its rail back in front of you, and you
+ * could not get down again. `mushWhere` is the state and the transitions are
+ * the three real ways through: the doorway at the bottom, the top tread, and
+ * the gap in the well rail. They have hysteresis — in at the tread line, out
+ * at the well line — so standing on the lip cannot flicker between them. */
+let mushWhere = 'out';                                  // 'out' | 'stair' | 'floor'
+/* AND THE YARD IS PAST THE CLIFF LINE TOO. The column's axis is ON it, so
+ * with the cliff clamp running in the bunker you could walk the seaward
+ * third of the yard and never get round the back of the column. The walls
+ * are real colliders and they are a closed ring but for the gate, so they
+ * can hold you instead; the only way out of the ring is seaward, well
+ * short of the clamp, so dropping it can never snap you anywhere. */
+let mushInYard = false;
+let mushTurns = 0, mushLastA = 0, mushStairY = null;
 const _angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return d; };
 function updateMushroom(dt) {
   const M = MUSH;
@@ -10938,62 +10962,59 @@ function updateMushroom(dt) {
   const ang = Math.atan2(dx, dz);
   const feet = camBaseY - playerEye();
   const clampTo = (r) => { if (d > 0.001) { camera.position.x = MUSH_X + (dx / d) * r; camera.position.z = MUSH_Z + (dz / d) * r; d = r; } };
-  const atTop = mushTurns * M.RISE >= M.H_ROOM - 0.45 && Math.abs(_angDiff(ang, M.TOP_ANG)) < 1.1;
+  const atGap = Math.abs(_angDiff(ang, M.TOP_ANG)) < 0.45;              // where the stair arrives: the gap in the well rail
+  const doorOk = Math.abs(_angDiff(ang, M.DOOR_ANG)) < M.DOOR_HALF * 0.95;
+  const inner = M.BORE - PLAYER_R * 0.55, outer = M.R_ROOM - 0.45;
+  mushInYard = d < M.WALL_R + 0.6 && feet < M.PLAT_TOP + 2.4;
 
-  // the room: a floor, a window wall, and a well you can only step into
-  // where the stair arrives. OVER THE FLOOR RING only — inside the bore you
-  // are on the stair whatever your height, or the top metre of the climb
-  // read as the room and snapped you up onto a floor you had not reached.
-  if (insideMush && feet > M.H_ROOM - 0.9 && d >= M.BORE - 0.05) {
+  if (mushWhere === 'out') {
+    /* The wall clamp parks you at EXACTLY COL_R + PLAYER_R, so an entry test
+     * of "closer than that" was never true: you could stand in the doorway
+     * pushing and never be inside. The door takes you from further out. */
+    if (d < M.COL_R + PLAYER_R + 0.3 && doorOk && feet < M.PLAT_TOP + 1.7) {
+      /* THE COUNT STARTS AT THE DOOR, or the first frame inside credits you
+       * with the angle from wherever it last was to the doorway. */
+      mushWhere = 'stair'; mushLastA = ang;
+      mushTurns = THREE.MathUtils.clamp(_angDiff(M.A0, ang) / (Math.PI * 2), M.TURN_MIN, M.TURNS);
+      mushStairY = null;
+    } else {
+      if (d < M.COL_R + PLAYER_R) clampTo(M.COL_R + PLAYER_R);
+      return;
+    }
+  }
+
+  if (mushWhere === 'floor') {                            // the round room
     groundY = Math.max(groundY, M.H_ROOM);
-    const outer = M.R_ROOM - 0.45;
+    mushLastA = ang;
+    if (d > outer) { clampTo(outer); return; }
+    if (d >= M.BORE + 0.15) return;
+    if (!atGap) { clampTo(M.BORE + 0.15); return; }       // the rail round the well
+    if (d > inner) return;                                // on the lip, at the head of the stair
+    /* and the count starts at the TREAD YOU STEPPED ONTO, the same rule as
+     * the door: TURNS flat would credit you with the angle between the top
+     * tread and wherever in the gap you came in — a fifth of a metre. */
+    mushWhere = 'stair'; mushStairY = M.H_ROOM;                        // down you go
+    mushTurns = THREE.MathUtils.clamp(M.TURNS - _angDiff(ang, M.TOP_ANG) / (Math.PI * 2), M.TURN_MIN, M.TURNS);
+  }
+
+  // on the stair. Wind first — it gains RISE per turn, UP as the angle
+  // decreases, the lighthouse's convention — then read what that has earned.
+  if (d > 0.3) mushTurns = THREE.MathUtils.clamp(mushTurns + _angDiff(mushLastA, ang) / (Math.PI * 2), M.TURN_MIN, M.TURNS);
+  mushLastA = ang;
+  const atTop = mushTurns >= M.TURNS - 0.09 && atGap;     // the top tread, level with the floor
+  const atDoor = mushTurns * M.RISE < 0.6 && doorOk;      // the bottom, level with the platform (the count is negative there)
+  if (atTop && d > M.BORE) {                              // stepped off onto the floor ring
+    mushWhere = 'floor'; mushStairY = M.H_ROOM;
+    groundY = Math.max(groundY, M.H_ROOM);
     if (d > outer) clampTo(outer);
-    else if (d < M.BORE + 0.15 && !atTop) clampTo(M.BORE + 0.15);   // the rail round the well
-    mushLastA = ang; mushOnFloor = true;
     return;
   }
-  // from the floor, the well is railed except where the stair arrives — but
-  // someone already ON the stair, winding down past the top, is not held
-  if (insideMush && mushOnFloor && d < M.BORE - 0.05 && !atTop) {
-    groundY = Math.max(groundY, M.H_ROOM);
-    clampTo(M.BORE + 0.15); mushLastA = ang; return;
+  if (atDoor && d > M.COL_R + 0.9 && feet < M.PLAT_TOP + 1.2) {   // out through the door
+    mushWhere = 'out'; mushTurns = 0; mushStairY = null; return;
   }
-  mushOnFloor = false;
-
-  const doorOk = Math.abs(_angDiff(ang, M.DOOR_ANG)) < M.DOOR_HALF * 0.95 && feet < M.PLAT_TOP + 1.7;
-  if (!insideMush) {
-    /* The wall clamp parks you at EXACTLY COL_R + PLAYER_R, so an entry
-     * test of "closer than that" was never true: you could stand in the
-     * doorway pushing and never be inside. The door takes you a little
-     * further out than the wall holds you. */
-    if (d < M.COL_R + PLAYER_R + 0.3 && doorOk) {
-      /* THE COUNT STARTS AT THE DOOR. `mushLastA` was whatever it last was —
-       * zero on a fresh game — so the first frame inside credited you with
-       * the whole angle from there to the doorway: a quarter turn, which is
-       * a floor 80 cm above the treads you were looking at, and a door that
-       * refused to let you out again because you never got back to zero. */
-      insideMush = true; mushLastA = ang;
-      mushTurns = THREE.MathUtils.clamp(_angDiff(M.A0, ang) / (Math.PI * 2), 0, M.TURNS);
-      mushStairY = null;
-    }
-    else if (d < M.COL_R + PLAYER_R) { clampTo(M.COL_R + PLAYER_R); return; }
-    else return;
-  }
-  // inside the column
-  if (feet < M.PLAT_TOP + 1.2 && d > M.COL_R + 0.9) {       // walked out through the door
-    insideMush = false; mushTurns = 0; mushStairY = null; mushOnFloor = false; return;
-  }
-  const inner = M.BORE - PLAYER_R * 0.55, well = 0.55;
-  const atDoor = doorOk && mushTurns * M.RISE < 0.6;                 // going in or out at the bottom
-  const atFloor = mushTurns >= M.TURNS - 0.12;                       // at the top: the floor ring is open to you
-  if (d > inner && !atDoor && !atFloor) clampTo(inner);
-  else if (d < well) clampTo(well);
-  // winding: the stair gains RISE per turn, up as the angle decreases
-  if (d > 0.3) {
-    mushTurns = THREE.MathUtils.clamp(mushTurns + _angDiff(mushLastA, ang) / (Math.PI * 2), 0, M.TURNS);
-  }
-  mushLastA = ang;
-  const raw = Math.min(M.H_ROOM, M.PLAT_TOP + mushTurns * M.RISE);
+  if (!atTop && !atDoor && d > inner) clampTo(inner);
+  if (d < 0.5) clampTo(0.5);
+  const raw = THREE.MathUtils.clamp(M.PLAT_TOP + mushTurns * M.RISE, M.PLAT_TOP, M.H_ROOM);
   const stepped = Math.min(M.H_ROOM, Math.floor((raw - M.PLAT_TOP) / M.STEP + 1e-4) * M.STEP + M.PLAT_TOP + 0.035);
   mushStairY = mushStairY === null ? stepped : mushStairY + (stepped - mushStairY) * Math.min(1, dt * 18);
   groundY = Math.max(groundY, mushStairY);
@@ -11961,7 +11982,7 @@ function update(dt, rawDt = dt) {
     knockback.multiplyScalar(1 - Math.min(1, 7 * dt));
   }
   // The drainage tunnel home is the only way through the sand wall.
-  if (!insideTower && !insideDrain && !onDock && !insideMush) {    // the pier's sea end is past WADE_X; the pavilion's back room is past the cliff line
+  if (!insideTower && !insideDrain && !onDock && mushWhere === 'out' && !mushInYard) {    // the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line
     camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
     camera.position.x = Math.max(camera.position.x, WADE_X);
   }
@@ -12193,7 +12214,7 @@ layoutViewmodel();
 // dev hook
 window.__bw = {
   step: (dt) => update(dt, dt),   // one whole game tick, for a harness whose rAF is stalled
-  MUSH_X, MUSH_Z, MUSH, mushHouse, updateMushroom, mushState: () => ({ inside: insideMush, turns: mushTurns, stairY: mushStairY }),
+  MUSH_X, MUSH_Z, MUSH, mushHouse, updateMushroom, mushState: () => ({ where: mushWhere, turns: mushTurns, stairY: mushStairY }),
   smile, updateSmile, smileState: () => ({ phase: smilePhase, t: smileT, loaded: !!smileMixer, clips: Object.keys(smileClips) }), sfxSmileStep,
   updateHurt, hurtEl,
   militaryItem, militaryWorld, milModel, get toolVM() { return toolVM; }, vmScene, vmCamera, toolMount,
