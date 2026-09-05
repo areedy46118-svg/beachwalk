@@ -24,9 +24,15 @@ Four things it has to do:
     moves the body. Everything else keeps its motion, because a lunge that
     goes nowhere is not a lunge and a death has to fall.
 
-Texture set 02 of the three: pale grey flesh with raw red. Set 01 and 03 are
-both dark red-brown, which on this beach is a hole in the dark — the same
-lesson every scan here has taught (see `reexpose`).
+THREE OF THEM COME AT YOU, and the pack ships three texture sets, so the
+variations are the sets: 02 is pale grey flesh with raw red and is the one
+baked into the GLB; 01 (flayed red-brown) and 03 (dark green-brown) come out
+as loose colour maps beside it, and the game parses the one GLB three times
+— the crab's trick — and swaps the map on two of them. Only the ALBEDO
+changes: the sculpt is the same, so the normal and the roughness in the GLB
+serve all three, and two 250 KB JPEGs buy a whole extra creature each. What
+makes them read as different animals is not only the skin: they are built at
+different heights and move at different speeds, and that is in main.js.
 """
 import bpy, os, sys, math
 
@@ -216,6 +222,24 @@ ad.action = None
 for img in bpy.data.images:
     try: img.pack()
     except Exception: pass
+# ---------------------------------------------------- the other two skins
+# Same sculpt, same UVs: only the albedo changes, so these ride alongside the
+# GLB as plain JPEGs and the game swaps `map` on the copies it parses.
+for tag, rel in [('red', 'Textures/Texture_set_01/png 2k/Mutant_color.png'),
+                 ('dark', 'Textures/Texture_set_03/png 2k/Mutant_Base_color.tga')]:
+    src = SRC + '/' + rel
+    if not os.path.exists(src): log("SKIP skin", tag, "missing", rel); continue
+    img = bpy.data.images.load(src)
+    try: _ = img.pixels[0]           # the loaders are lazy; touch it or size is 0
+    except Exception: pass
+    if max(img.size) > 1024: img.scale(1024, 1024)
+    out = '/Users/ethanreedy/Dev/beachwalk/assets/mutant-%s.jpg' % tag
+    bpy.context.scene.render.image_settings.file_format = 'JPEG'
+    bpy.context.scene.render.image_settings.quality = 82
+    img.file_format = 'JPEG'
+    img.save_render(out)
+    log("skin", tag, "->", os.path.getsize(out) // 1024, "KB")
+
 log("exporting", OUT)
 bpy.ops.export_scene.gltf(
     filepath=OUT, export_format='GLB', export_apply=False,

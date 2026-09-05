@@ -3098,7 +3098,7 @@ function updateHurt(dt) {
   hurtEl.style.opacity = String(Math.max(hurtFlash * hurtFlash, rim));
 }
 
-function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || inspecting || peeking || packCut || dying || ended || !introDone; }
+function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || inspecting || peeking || packCut || mutCut || dying || ended || !introDone; }
 function refreshUI() {
   const playing = started && !menuOpen && !noteOpen && !dialogOpen && !invOpen && !inspecting && !dying && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
@@ -3167,7 +3167,7 @@ document.addEventListener('pointerlockchange', () => {
     if (!started) { overlay.classList.remove('hidden'); return; }
     // an intentional exit (note / menu / dialogue / death) is handled by
     // those; a stray exit while still playing means the user hit Esc → menu
-    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !inspecting && !peeking && !packCut && !dying) openMenu();
+    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !inspecting && !peeking && !packCut && !mutCut && !dying) openMenu();
   }
 });
 window.addEventListener('unhandledrejection', (e) => {
@@ -3996,7 +3996,7 @@ class PhysProp {
       }
       for (const u of mutants) {
         if (!u.st.alive || u.st.struck) continue;
-        if (Math.hypot(p.x - u.g.position.x, p.z - u.g.position.z) >= 0.9 || p.y > MUT_H) continue;
+        if (Math.hypot(p.x - u.g.position.x, p.z - u.g.position.z) >= 0.9 || p.y > u.kind.h) continue;
         hitConnect(0.4, 1); hurtMutant(u, 1);
         this.vel.multiplyScalar(0.3);
         break;
@@ -5530,7 +5530,7 @@ function aimLand(P) {
   }
   for (const u of mutants) {
     if (!u.st.alive) continue;
-    _hitC.copy(u.g.position); _hitC.y += MUT_H * 0.5;          // chest, not feet
+    _hitC.copy(u.g.position); _hitC.y += u.kind.h * 0.5;       // chest, not feet
     const t = THREE.MathUtils.clamp(_hitC.clone().sub(_aimO).dot(_aimD), 0, digRay.far);
     if (_hitC.distanceTo(_aimO.clone().addScaledVector(_aimD, t)) < 0.85 + P * 0.25) d = Math.min(d, t);
   }
@@ -5636,7 +5636,7 @@ function digImpact() {
     let best = null, bestT = Infinity;
     for (const u of mutants) {
       if (!u.st.alive || u.st.struck) continue;
-      _hitC.copy(u.g.position); _hitC.y += MUT_H * 0.5;
+      _hitC.copy(u.g.position); _hitC.y += u.kind.h * 0.5;
       const t = THREE.MathUtils.clamp(_hitC.clone().sub(_aimO).dot(_aimD), 0, digRay.far);
       const miss = _hitC.distanceTo(_aimO.clone().addScaledVector(_aimD, t));
       if (miss < 0.85 + P * 0.25 && t < bestT) { bestT = t; best = u; }
@@ -8389,9 +8389,15 @@ const _lookM = new THREE.Matrix4(), _lookQ = new THREE.Quaternion();
 function updateDialogCam(dt) {
   // The peek's squeeze is the zoom — and it is also what crops the lit room
   // out of frame, so there is nothing left to look at but the bore.
-  const wantFov = (peeking && !peekLeaving ? PEEK_FOV
+  /* The three coming at you own the lens while they are coming: `mutCutFov`
+   * is thrown wide for a beat and then hauled in tight, and it is driven
+   * hard so the zoom is a move and not a drift. Dropping it to -1 hands the
+   * field of view back and it eases home on its own, which is the frame you
+   * get your head back on. */
+  const wantFov = (mutCutFov > 0 ? mutCutFov
+    : peeking && !peekLeaving ? PEEK_FOV
     : dialogOpen ? Math.min(settings.fov, DIALOG_FOV) : settings.fov) + fovKick;
-  const rate = peeking ? 2.6 : 3.5;
+  const rate = mutCutFov > 0 ? 14 : peeking ? 2.6 : 3.5;
   if (Math.abs(camera.fov - wantFov) > 0.01) {
     camera.fov += (wantFov - camera.fov) * Math.min(1, dt * rate);
     camera.updateProjectionMatrix();
@@ -11808,73 +11814,86 @@ function updateMushroom(dt) {
 }
 
 // ------------------------------------------------------------------
-// The mutant — what is waiting on the beach past the pavilion
+// The mutants — the three waiting on the beach past the pavilion
 // ------------------------------------------------------------------
-/* cgtrader's "Mutant 01". Unlike the crab and the tall one this asset ARRIVES
- * WITH ITS ANIMATION — a 70-bone rig and seventeen clip FBXs authored on it —
- * so nothing is posed here; `tools/mutant_anim.py` puts the clips onto the one
- * textured mesh and exports them as glTF actions. What is built here is the
- * FIGHT, and it is the crab's grammar played bigger and slower: a startup you
- * can read across the sand, one active frame, and a recovery long enough to
- * punish. The same three outcomes on the active frame — it hurts you, the
- * guard eats it, or the guard went up INTO it and the thing that swung is
- * left standing there open.
+/* cgtrader's "Mutant 01". The asset ARRIVES with its animation — a 70-bone
+ * rig and seventeen clip FBXs authored on it — so nothing is posed here;
+ * `tools/mutant_anim.py` puts fourteen of those clips onto the one textured
+ * mesh and exports them as glTF actions. What is built here is the FIGHT.
  *
- * FIVE HIT POINTS, and that is the whole design. A light swing takes one and
- * a charge takes two, so it is three heavies at best; two would have made the
- * parry a nicety and five make it the plan — read the tell, take the stun,
- * wind all the way up, land it, and do it again. `MUT_STUN` is longer than a
- * crab's for the same reason: what a parry buys has to be worth the risk of
- * going for one.
+ * THREE OF THEM, AND THE PACK SHIPS THREE SKINS. One download, parsed three
+ * times — the crab's trick, because a skinned mesh cannot be `clone()`d and
+ * SkeletonUtils is not vendored — and two of the copies swap their albedo
+ * for the loose JPEGs the build writes out beside the GLB. The sculpt is the
+ * same, so one normal and one roughness map serve all three. What makes them
+ * read as different animals is not only the skin: `MUT_KINDS` gives each one
+ * its own height, speed, health, VOICE and set of swings, and the swing
+ * table is scaled per kind rather than restated — the big one winds up
+ * slower, reaches further and is open longer for it; the small one is the
+ * other way about.
  *
- * The attack clip's time is written from the combat clock the way the crab's
- * is — the swing you can see IS the tell and must not drift out of step with
- * the frame the damage lands on — but with a REMAP, because this clip's
- * contact is 41 % of the way through it and the startup and the recovery are
- * not the same length. See `mutClipTime`. */
+ * ONLY ONE OF THEM MAY SWING AT A TIME (`mutToken`). Three enemies all
+ * telegraphing at once is not three times the fight, it is noise: there is
+ * no tell to read because there are three, and no answer that is not luck.
+ * With the token, whoever is closest and off cooldown takes the swing and
+ * the other two circle you — so what you are reading is always one creature,
+ * and the pressure comes from where the other two have got to while you
+ * dealt with it. It is released the instant that one is parried, hurt,
+ * killed or finishes its recovery. */
 const MUT_X = 9.8, MUT_Z = MUSH_Z - 130;   // well past the pavilion, and up on the DRY sand:
                                            // the waterline reaches x = 8.6 (the body bag's hard number)
-const MUT_H = 2.25;                        // how tall it stands, in metres
 const MUT_HP = 5;
-const MUT_WAKE = 26;                       // it sees you a long way off
-const MUT_SPEED = 3.6;                     // faster than you are; each swing carries its own reach
-/* FOUR SWINGS, NOT ONE. With a single overhand on a fixed clock the owner
- * had it read in two exchanges — the tell was the same length every time
- * and the guard could go up on a count. Each swing has its own startup,
- * its own reach and its own contact frame (measured in the build: the frame
- * a hand is furthest forward and moving fastest), and which one comes next
- * is drawn, not scheduled:
+const MUT_SPEED = 3.6;                     // the pale one's; each kind scales off it
+const MUT_STUN = 2.1;                      // what landing a parry buys you
+const MUT_RECOIL = 0.32;                   // how long a survived hit rocks it
+const MUT_HIT_STOP = 0.09;
+const MUT_HEAVY = 0.85;                    // a swing wound past this takes two
+const MUT_STRAFE = 1.7;                    // how fast they circle you at reach
+const MUT_SEP = 1.9;                       // and how far off each other they stay
+
+/* Four swings, and none of them on a fixed clock. Each has its own startup,
+ * its own reach and its own contact frame — `hit`, where the hand actually
+ * arrives, measured in the build and not guessed — and the two halves of the
+ * clip are mapped separately (`mutClipTime`) so retuning a startup never
+ * pulls the picture off the damage frame.
  *   attack   the overhand — the long readable one, the one you learn on
- *   attack2  a quick swipe: a third of a second of startup, the punishment
- *            for standing in reach with the guard down
- *   attack3  THE HELD ONE. It winds all the way up and HANGS there for a
- *            second before it comes down, so a guard raised on the first
- *            count is a block, not a parry — it costs you wind, and it
- *            teaches you to watch the hand and not the clock
- *   attack4  the lunge: it covers ground through the strike, so backing
- *            off during the startup is not the answer it is to the others
- * And they CHAIN: a swipe is followed by the overhand more often than not,
- * with the second startup shortened, so one parry is not the end of the
- * exchange. The soulslike part is that none of this is unfair — every swing
- * still has a startup you can see and one frame it lands on — it is just
- * that reading it takes looking. `hit` is where the contact is in the clip,
- * and the two halves of each clip are mapped separately (`mutClipTime`) so
- * the hand always arrives on the damage frame however these are tuned. */
+ *   attack2  a quick swipe: the punishment for standing in reach guard-down
+ *   attack3  THE HELD ONE. It winds all the way up and HANGS there, so a
+ *            guard raised on the first count is a block, not a parry
+ *   attack4  the lunge: it covers ground through the strike, so backing off
+ *            during the startup is not the answer it is to the others */
 const MUT_ATTACKS = {
   attack:  { wind: 0.62, strike: 0.12, recover: 0.72, hit: 0.413, reach: 2.45, lunge: 0.0, chain: 'attack2', chainP: 0.30, w: 0.34 },
   attack2: { wind: 0.34, strike: 0.10, recover: 0.46, hit: 0.257, reach: 2.25, lunge: 0.0, chain: 'attack',  chainP: 0.60, w: 0.30 },
   attack3: { wind: 1.05, strike: 0.12, recover: 0.60, hit: 0.700, reach: 2.65, lunge: 0.0, chain: null,      chainP: 0.00, w: 0.20 },
   attack4: { wind: 0.50, strike: 0.14, recover: 1.05, hit: 0.333, reach: 2.55, lunge: 1.4, chain: 'attack2', chainP: 0.35, w: 0.16 },
 };
-const MUT_COOLDOWN = [0.30, 0.95];        // drawn between these, after a recovery
-const MUT_STUN = 2.1;                      // what landing a parry buys you
-const MUT_RECOIL = 0.32;                   // how long a survived hit rocks it
-const MUT_HIT_STOP = 0.09;
-const MUT_HEAVY = 0.85;                    // a swing wound past this takes two
-const MUT_STEP = 0.30;                     // seconds between footfalls at a dead run
-const MUT_STRAFE = 1.7;                    // how fast it circles you at reach
+/* The three of them. `use` is which swings this one has and how often it
+ * reaches for each; `windK` scales its startups AND its recoveries together,
+ * so a slow one is slow to commit and slow to recover — the punish window is
+ * the price of the reach. `voice` is a pitch and two weights, and every
+ * sound it makes goes through it, so you can tell which one is behind you. */
+const MUT_KINDS = {
+  // the pale one: raw grey flesh, the fight you learn the language on
+  pale: { skin: null, h: 2.25, hp: 5, speedK: 1.00, windK: 1.00, reachK: 1.00,
+          use: { attack: 0.34, attack2: 0.30, attack3: 0.20, attack4: 0.16 },
+          circle: 0.24, step: 0.30, voice: { f: 1.00, growl: 1.00, rasp: 1.00 } },
+  // the flayed red one: half a metre taller and two hits harder to put down.
+  // No quick swipe — everything it does is committed, and everything it does
+  // leaves it open for a long time afterwards
+  red:  { skin: 'assets/mutant-red.jpg', h: 2.62, hp: 7, speedK: 0.84, windK: 1.24, reachK: 1.12,
+          use: { attack: 0.40, attack3: 0.36, attack4: 0.24 },
+          circle: 0.12, step: 0.36, voice: { f: 0.70, growl: 1.4, rasp: 0.75 } },
+  // the dark one: small, fast, four health, and mostly the swipe. It is the
+  // one that gets behind you while you are reading one of the others
+  dark: { skin: 'assets/mutant-dark.jpg', h: 1.95, hp: 4, speedK: 1.22, windK: 0.76, reachK: 0.92,
+          use: { attack2: 0.46, attack4: 0.30, attack: 0.24 },
+          circle: 0.42, step: 0.24, voice: { f: 1.44, growl: 0.65, rasp: 1.4 } },
+};
+const MUT_VOICE = MUT_KINDS.pale.voice;    // the default for anything unvoiced
+const MUT_WIND = MUT_ATTACKS.attack.wind;  // the harness and the docs name the overhand's
 const mutants = [];
-const MUT_WIND = MUT_ATTACKS.attack.wind;  // the harness and the docs still name the overhand's
+let mutToken = null;                       // whose turn it is to swing
 
 function mutPlay(u, name, loop) {
   const a = u.clips[name];
@@ -11887,10 +11906,10 @@ function mutPlay(u, name, loop) {
   u.cur = a;
   return a;
 }
-/* THE CONTACT FRAME IS NOT HALFWAY. The hand arrives 41 % of the way through
- * the clip, and the startup and the recovery this is mapped onto are not the
- * same length, so the two halves are remapped separately: however the timings
- * are tuned, the hand lands on the frame the damage is dealt. */
+/* THE CONTACT FRAME IS NOT HALFWAY. The hand arrives partway through the
+ * clip and the startup and recovery it is mapped onto are not the same
+ * length, so the two halves are remapped separately: however the timings are
+ * tuned, the hand lands on the frame the damage is dealt. */
 function mutClipTime(t, dur, A) {
   const hit = dur * A.hit;
   if (t < A.wind) return (t / A.wind) * hit;
@@ -11908,29 +11927,30 @@ function mutAnim(u, dt, moving) {
     if (a) { a.paused = true; a.time = clampTime(a, (1 - u.st.stun / MUT_STUN) * a.getClip().duration); }
   } else if (u.st.atk >= 0) {
     const a = mutPlay(u, u.st.swing, false);
-    if (a) { a.paused = true; a.time = clampTime(a, mutClipTime(u.st.atk, a.getClip().duration, MUT_ATTACKS[u.st.swing])); }
+    if (a) { a.paused = true; a.time = clampTime(a, mutClipTime(u.st.atk, a.getClip().duration, u.atk[u.st.swing])); }
   } else if (u.st.recoil > 0) {
     const a = mutPlay(u, 'hit', false);
     if (a) { a.paused = true; a.time = clampTime(a, (1 - u.st.recoil / MUT_RECOIL) * a.getClip().duration * 0.55); }
   } else if (u.st.roar > 0) {
-    const a = mutPlay(u, 'roar', false);
+    const a = mutPlay(u, u.roarClip, false);
     if (a) { a.paused = false; a.timeScale = 1.3; }
   } else if (u.st.side !== 0 && moving < 0.5) {
     // circling you at reach, or backing off a step before the lunge
-    const a = mutPlay(u, u.st.side < 0 ? 'strafeL' : u.st.side > 0 ? 'strafeR' : 'back', true);
+    const a = mutPlay(u, u.st.side < 0 ? 'strafeL' : 'strafeR', true);
     if (a) { a.paused = false; a.timeScale = 1.25; }
   } else if (u.st.back > 0) {
     const a = mutPlay(u, 'back', true);
     if (a) { a.paused = false; a.timeScale = 1.2; }
   } else if (moving > 0.04) {
     const a = mutPlay(u, 'run', true);
-    if (a) { a.paused = false; a.timeScale = 1.5 + moving * 0.55; }
+    if (a) { a.paused = false; a.timeScale = (1.5 + moving * 0.55) * u.kind.speedK; }
   } else {
     const a = mutPlay(u, 'idle', true);
     if (a) { a.paused = false; a.timeScale = 1; }
   }
   u.mixer.update(dt);
 }
+let mutSkins = {};
 function dressMutant(u, gltf) {
   const m = u.model = gltf.scene;
   m.traverse((o) => {
@@ -11943,44 +11963,81 @@ function dressMutant(u, gltf) {
      * nothing from the one directional light. The emissive off its own map is
      * what carries it out of the dark, and the cold rim is what puts an edge
      * on it against the sand. METALNESS IS A TRAP — there is no environment
-     * map here. */
-    mat.metalness = 0;
-    mat.emissive = new THREE.Color(0xffffff);
-    mat.emissiveMap = mat.map;
-    mat.emissiveIntensity = 0.30;
-    reexpose(mat, 0.74, [0.052, 0.068, 0.10]);
-    mat.needsUpdate = true;
+     * map here. THE SKIN IS SWAPPED PER COPY, and the material has to be
+     * cloned to do it: `parse` hands every copy the same one. */
+    const mm = o.material = mat.clone();
+    if (u.kind.skin) {
+      if (!mutSkins[u.kind.skin]) {
+        const t = new THREE.TextureLoader().load(u.kind.skin);
+        t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping;
+        mutSkins[u.kind.skin] = t;
+      }
+      mm.map = mutSkins[u.kind.skin];
+    }
+    mm.metalness = 0;
+    mm.emissive = new THREE.Color(0xffffff);
+    mm.emissiveMap = mm.map;
+    mm.emissiveIntensity = 0.30;
+    reexpose(mm, 0.74, [0.052, 0.068, 0.10]);
+    mm.needsUpdate = true;
   });
   u.g.add(m);
   // Box3.setFromObject() knows nothing about skinning and answers the bind
   // pose through the node chain; skinnedBounds() runs the vertices through
   // the bones and is the only measurement of one of these that means anything
   const b = skinnedBounds(m);
-  const s = MUT_H / Math.max(0.001, b.size.y);
+  const s = u.kind.h / Math.max(0.001, b.size.y);
   m.scale.setScalar(s);
   m.position.y = -b.min.y * s;                // stood on its own feet
   u.mixer = new THREE.AnimationMixer(m);
   for (const c of gltf.animations) u.clips[c.name] = u.mixer.clipAction(c);
+  u.roarClip = u.clips.roar2 && Math.random() < 0.5 ? 'roar2' : 'roar';
   mutPlay(u, 'idle', true);
   u.mixer.update(Math.random() * 4);          // not caught at the top of the loop
 }
-function makeMutant(x, z) {
+let mutGlbWait = null;
+function makeMutant(x, z, kindName) {
+  const kind = MUT_KINDS[kindName];
   const g = new THREE.Group();
   g.position.set(x, 0, z);
   scene.add(g);
+  /* Its own swing table, scaled off the shared one. `windK` moves the
+   * startup and the recovery together, and a chain into a swing this kind
+   * does not have is dropped rather than left dangling. */
+  const atk = {};
+  for (const k in kind.use) {
+    const A = MUT_ATTACKS[k];
+    atk[k] = Object.assign({}, A, {
+      wind: A.wind * kind.windK,
+      recover: A.recover * kind.windK,
+      reach: A.reach * kind.reachK,
+      lunge: A.lunge * kind.reachK,
+      chain: (A.chain && kind.use[A.chain]) ? A.chain : null,
+    });
+  }
   const u = {
-    g, model: null, mixer: null, clips: {}, cur: null,
-    st: { alive: true, awake: false, roar: 0, atk: -1, swing: 'attack', cool: 0, stun: 0,
-          recoil: 0, struck: false, hp: MUT_HP, step: 0, deadT: 0,
-          side: 0, sideT: 0, back: 0, chained: false, chainAt: -1, swings: 0 },
+    g, kind, kindName, atk, model: null, mixer: null, clips: {}, cur: null, roarClip: 'roar',
+    st: { alive: true, awake: false, roar: 0, atk: -1, swing: Object.keys(kind.use)[0],
+          cool: 0, stun: 0, recoil: 0, struck: false, hp: kind.hp, step: 0, deadT: 0,
+          side: 0, sideT: 0, back: 0, chained: false, chainAt: -1, swings: 0, wait: 0 },
     hitFrom: new THREE.Vector3(), hitDir: new THREE.Vector3(), dir: new THREE.Vector3(),
   };
   mutants.push(u);
   farProps.push({ obj: g, z, d: 280 });
-  new GLTFLoader().load('assets/mutant.glb', (gltf) => dressMutant(u, gltf), undefined, () => {});
+  // ONE download, parsed once per copy: a skinned mesh cannot be cloned
+  if (!mutGlbWait) mutGlbWait = fetch('assets/mutant.glb').then((r) => r.arrayBuffer());
+  const loader = new GLTFLoader();
+  mutGlbWait
+    .then((buf) => new Promise((res, rej) => loader.parse(buf.slice(0), '', res, rej)))
+    .then((gltf) => dressMutant(u, gltf))
+    .catch(() => {});
   return u;
 }
-const mutant = makeMutant(MUT_X, MUT_Z);
+/* Where they stand. Spread across the beach so they do not arrive as a rank,
+ * and all of them ahead of the trigger, which is the player's Z alone. */
+const MUT_SPOTS = [[MUT_X, MUT_Z, 'pale'], [13.0, MUT_Z - 2.5, 'red'], [4.8, MUT_Z - 1.5, 'dark']];
+const mutant = makeMutant(...MUT_SPOTS[0]);
+for (let i = 1; i < MUT_SPOTS.length; i++) makeMutant(...MUT_SPOTS[i]);
 
 // the nearest live one — what the blade, a thrown thing and the knockback want
 function nearestMutant(pos, maxD = Infinity) {
@@ -11993,8 +12050,8 @@ function nearestMutant(pos, maxD = Infinity) {
   return best;
 }
 /* What shoved you: whichever of the two kinds is nearer. `damagePlayer` used
- * to ask `nearestCrab` and nothing else, so a blow from this one knocked you
- * away from a crab three hundred metres back up the beach. */
+ * to ask `nearestCrab` and nothing else, so a blow from one of these knocked
+ * you away from a crab three hundred metres back up the beach. */
 function nearestFoe(pos) {
   const c = nearestCrab(pos);
   let best = c ? c.g : null;
@@ -12003,12 +12060,14 @@ function nearestFoe(pos) {
   if (m) best = m.g;
   return best;
 }
+const mutDrop = (u) => { if (mutToken === u) mutToken = null; };
 
 function parryMutant(u) {
   if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04);
   parryCool = 0;                             // landing one costs you nothing
   u.st.atk = -1; u.st.chainAt = -1; u.st.chained = false;
-  u.st.cool = MUT_COOLDOWN;
+  mutDrop(u);
+  u.st.cool = 0.6;
   u.st.stun = MUT_STUN;
   parryGlow = 0.5;
   flashMats(u.g);
@@ -12029,8 +12088,8 @@ function blockMutant(u) {
   if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04);
   else if (equipped === shovelItem) playSample('blockSand', 1.0, 0.04);
   else sfxBlock();
-  // it is bigger than a crab and it costs you more to hold it off
-  stamina = Math.max(0, stamina - BLOCK_COST * 1.35);
+  // the big one costs you more to hold off than the small one does
+  stamina = Math.max(0, stamina - BLOCK_COST * 1.35 * u.kind.reachK);
   if (stamina <= 0.001) { exhausted = true; gaspOut(); }
   flashMats(toolVM);
   parryGlow = Math.max(parryGlow, 0.26);
@@ -12042,16 +12101,17 @@ function blockMutant(u) {
   setTimeout(() => { if (promptHTML.includes('BLOCKED')) setPrompt(''); }, 520);
   const kx = camera.position.x - u.g.position.x, kz = camera.position.z - u.g.position.z;
   const kd = Math.hypot(kx, kz) || 1;
-  knockback.set((kx / kd) * 4.2, 0, (kz / kd) * 4.2);
+  knockback.set((kx / kd) * 4.2 * u.kind.reachK, 0, (kz / kd) * 4.2 * u.kind.reachK);
 }
 function killMutant(u) {
   if (!u.st.alive || u.st.struck) return;
   u.st.struck = true;
-  u.st.atk = -1; u.st.stun = 0; u.st.recoil = 0;
+  u.st.atk = -1; u.st.stun = 0; u.st.recoil = 0; u.st.chainAt = -1;
+  mutDrop(u);
   camera.getWorldDirection(u.hitDir); u.hitDir.y = 0; u.hitDir.normalize();
   u.hitFrom.copy(u.g.position);
   flashMats(u.g);
-  sfxMutHit();
+  sfxMutHit(u.kind.voice);
   addTrauma(0.6);
   hitstop = MUT_HIT_STOP;
 }
@@ -12066,21 +12126,22 @@ function hurtMutant(u, dmg, P = 0) {
    * and the hand comes down anyway. Trading with it is a choice, and the
    * choice has a cost. A charged swing, a parry and a throw all still
    * break it — only the plain click is shrugged off, and only late. */
-  const A = MUT_ATTACKS[u.st.swing];
+  const A = u.atk[u.st.swing] || MUT_ATTACKS[u.st.swing];
   const committed = u.st.atk >= 0 && u.st.atk > A.wind * 0.55 && u.st.atk < A.wind + A.strike;
   if (committed && P < MUT_HEAVY && dmg < 2) {
-    flashMats(u.g); sfxMutHit(); bleedMutant(u, 5, 0.3); addTrauma(0.22);
+    flashMats(u.g); sfxMutHit(u.kind.voice); bleedMutant(u, 5, 0.3); addTrauma(0.22);
     return false;
   }
   u.st.atk = -1; u.st.chainAt = -1; u.st.chained = false;
   u.st.stun = 0;
   u.st.side = 0; u.st.back = 0;
+  mutDrop(u);
   u.st.cool = Math.max(u.st.cool, 0.45);
   u.st.recoil = MUT_RECOIL;
   camera.getWorldDirection(u.hitDir); u.hitDir.y = 0; u.hitDir.normalize();
   u.hitFrom.copy(u.g.position);
   flashMats(u.g);
-  sfxMutHit();
+  sfxMutHit(u.kind.voice);
   bleedMutant(u, 8, 0.35);
   addTrauma(0.3 + P * 0.2);
   return false;
@@ -12092,9 +12153,10 @@ function finishMutant(u) {
   u.st.alive = false;
   u.st.struck = false;
   u.st.deadT = 0;
+  mutDrop(u);
   bleedMutant(u, 26, 1.0);
   stampBlood(u.g.position.x, u.g.position.z, 1.3 + Math.random() * 0.5);
-  sfxMutDie();
+  sfxMutDie(u.kind.voice);
   addTrauma(0.5);
 }
 function bleedMutant(u, n, force) {
@@ -12112,119 +12174,260 @@ function bleedMutant(u, n, force) {
   }
 }
 
-/* Its voice. None of it is a stinger — the same rule the tall one taught: a
- * musical shriek tells you the game is scaring you. This is breath, throat
- * and weight. The TELL is the one that has to carry: it runs for exactly
- * `MUT_WIND` and rises the whole way, so the sound is the countdown to the
- * frame you have to answer, and it is pitched well under the crab's rasp so
- * the two are never confused. */
-/* The tell runs for exactly as long as THIS swing's startup, so the sound is
- * still the countdown — but four different countdowns now, and the held one
- * rises, stops, and holds a breath before it drops. */
-function sfxMutTell(dist = 0, W = MUT_WIND) {
+/* Their voices. None of it is a stinger — the same rule the tall one taught:
+ * a musical shriek tells you the game is scaring you. This is breath, throat
+ * and weight. Every one of these takes the kind's voice — a pitch and two
+ * weights — so the big one is a half-octave under the pale one and the small
+ * one is a fifth over it, and you can tell from across the sand which of the
+ * three is winding up behind you. The TELL is the one that has to carry: it
+ * runs for exactly this swing's startup, so the sound is the countdown to
+ * the frame you have to answer. */
+function sfxMutTell(dist = 0, W = MUT_WIND, V = MUT_VOICE) {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime, out = sfxOut(), g0 = 1 / (1 + dist / 12);
   const rise = Math.min(W, 0.62);
   const rasp = noiseBurst(W, (x) => (0.4 + 0.6 * Math.random()) * Math.min(1, x * (W / rise) * 2.5) * (1 - x * 0.2));
   const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 2.4;
-  bp.frequency.setValueAtTime(230, t);
-  bp.frequency.exponentialRampToValueAtTime(880, t + rise);
+  bp.frequency.setValueAtTime(230 * V.f, t);
+  bp.frequency.exponentialRampToValueAtTime(880 * V.f, t + rise);
   const rg = ctx.createGain();
   rg.gain.setValueAtTime(0.0001, t);
-  rg.gain.exponentialRampToValueAtTime(0.16 * g0, t + rise * 0.85);
-  rg.gain.setValueAtTime(0.16 * g0, t + Math.max(rise * 0.85, W - 0.08));
+  rg.gain.exponentialRampToValueAtTime(0.16 * g0 * V.rasp, t + rise * 0.85);
+  rg.gain.setValueAtTime(0.16 * g0 * V.rasp, t + Math.max(rise * 0.85, W - 0.08));
   rg.gain.exponentialRampToValueAtTime(0.02 * g0, t + W);
   rasp.connect(bp).connect(rg).connect(out);
   rasp.start(t); rasp.stop(t + W);
   // the throat under it, hauling up
   const o = ctx.createOscillator(); o.type = 'sawtooth';
-  o.frequency.setValueAtTime(41, t);
-  o.frequency.exponentialRampToValueAtTime(104, t + rise);
-  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 240;
+  o.frequency.setValueAtTime(41 * V.f, t);
+  o.frequency.exponentialRampToValueAtTime(104 * V.f, t + rise);
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 240 * V.f;
   const og = ctx.createGain();
   og.gain.setValueAtTime(0.0001, t);
-  og.gain.exponentialRampToValueAtTime(0.10 * g0, t + rise * 0.9);
-  og.gain.setValueAtTime(0.10 * g0, t + Math.max(rise * 0.9, W - 0.05));
+  og.gain.exponentialRampToValueAtTime(0.10 * g0 * V.growl, t + rise * 0.9);
+  og.gain.setValueAtTime(0.10 * g0 * V.growl, t + Math.max(rise * 0.9, W - 0.05));
   og.gain.exponentialRampToValueAtTime(0.0001, t + W + 0.06);
   o.connect(lp).connect(og).connect(out);
   o.start(t); o.stop(t + W + 0.07);
 }
-function sfxMutSwing() {
+function sfxMutSwing(V = MUT_VOICE) {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime;
   const w = noiseBurst(0.26, (x) => Math.sin(Math.min(1, x * 1.6) * Math.PI) * (1 - x * 0.3));
   const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.1;
-  bp.frequency.setValueAtTime(1500, t);
-  bp.frequency.exponentialRampToValueAtTime(240, t + 0.24);
+  bp.frequency.setValueAtTime(1500 * V.f, t);
+  bp.frequency.exponentialRampToValueAtTime(240 * V.f, t + 0.24);
   const g = ctx.createGain(); g.gain.value = 0.3;
   w.connect(bp).connect(g).connect(sfxOut());
   w.start(t); w.stop(t + 0.26);
 }
-function sfxMutRoar(dist = 0) {
+function sfxMutRoar(dist = 0, V = MUT_VOICE) {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime, out = sfxOut(), g0 = 1.1 / (1 + dist / 16), D = 1.5;
   for (const [f0, f1, gn, ty] of [[58, 96, 0.16, 'sawtooth'], [87, 143, 0.09, 'square'], [29, 47, 0.13, 'triangle']]) {
     const o = ctx.createOscillator(); o.type = ty;
-    o.frequency.setValueAtTime(f0, t);
-    o.frequency.exponentialRampToValueAtTime(f1, t + D * 0.35);
-    o.frequency.exponentialRampToValueAtTime(f0 * 0.8, t + D);
+    o.frequency.setValueAtTime(f0 * V.f, t);
+    o.frequency.exponentialRampToValueAtTime(f1 * V.f, t + D * 0.35);
+    o.frequency.exponentialRampToValueAtTime(f0 * V.f * 0.8, t + D);
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
-    lp.frequency.setValueAtTime(400, t);
-    lp.frequency.exponentialRampToValueAtTime(1500, t + D * 0.3);
-    lp.frequency.exponentialRampToValueAtTime(300, t + D);
+    lp.frequency.setValueAtTime(400 * V.f, t);
+    lp.frequency.exponentialRampToValueAtTime(1500 * V.f, t + D * 0.3);
+    lp.frequency.exponentialRampToValueAtTime(300 * V.f, t + D);
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(gn * g0, t + 0.18);
-    g.gain.setValueAtTime(gn * g0, t + D * 0.55);
+    g.gain.exponentialRampToValueAtTime(gn * g0 * V.growl, t + 0.18);
+    g.gain.setValueAtTime(gn * g0 * V.growl, t + D * 0.55);
     g.gain.exponentialRampToValueAtTime(0.0001, t + D);
     o.connect(lp).connect(g).connect(out); o.start(t); o.stop(t + D + 0.05);
   }
   // the tear of it, over the top
   const r = noiseBurst(D, (x) => (0.3 + 0.7 * Math.random()) * Math.sin(Math.min(1, x * 1.3) * Math.PI));
-  const rf = ctx.createBiquadFilter(); rf.type = 'bandpass'; rf.Q.value = 1.6; rf.frequency.value = 620;
-  const rg = ctx.createGain(); rg.gain.value = 0.085 * g0;
+  const rf = ctx.createBiquadFilter(); rf.type = 'bandpass'; rf.Q.value = 1.6; rf.frequency.value = 620 * V.f;
+  const rg = ctx.createGain(); rg.gain.value = 0.085 * g0 * V.rasp;
   r.connect(rf).connect(rg).connect(out); r.start(t); r.stop(t + D);
 }
-function sfxMutStep(dist = 0) {
+function sfxMutStep(dist = 0, V = MUT_VOICE) {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime, out = sfxOut(), g0 = 0.85 / (1 + dist / 8);
   const n = noiseBurst(0.14, (x) => Math.pow(1 - x, 2.6));
-  const nf = ctx.createBiquadFilter(); nf.type = 'lowpass'; nf.frequency.value = 430 + Math.random() * 140;
+  const nf = ctx.createBiquadFilter(); nf.type = 'lowpass'; nf.frequency.value = (430 + Math.random() * 140) * V.f;
   const ng = ctx.createGain(); ng.gain.setValueAtTime(g0 * 0.9, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
   n.connect(nf).connect(ng).connect(out); n.start(t); n.stop(t + 0.15);
   const o = ctx.createOscillator(); o.type = 'sine';
-  o.frequency.setValueAtTime(66, t); o.frequency.exponentialRampToValueAtTime(31, t + 0.11);
-  const og = ctx.createGain(); og.gain.setValueAtTime(g0 * 0.9, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+  o.frequency.setValueAtTime(66 * V.f, t); o.frequency.exponentialRampToValueAtTime(31 * V.f, t + 0.11);
+  const og = ctx.createGain(); og.gain.setValueAtTime(g0 * 0.9 * V.growl, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
   o.connect(og).connect(out); o.start(t); o.stop(t + 0.18);
 }
-function sfxMutHit() {
+function sfxMutHit(V = MUT_VOICE) {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime, out = sfxOut();
-  playSample('fleshHit', 0.75, 0.06, 0.72);      // the owner's own, pitched down: it is bigger
+  playSample('fleshHit', 0.75, 0.06, 0.72 * V.f);   // the owner's own, pitched to the voice
   const body = noiseBurst(0.17, (x) => Math.pow(1 - x, 1.8));
-  const bf = ctx.createBiquadFilter(); bf.type = 'lowpass'; bf.frequency.value = 260;
+  const bf = ctx.createBiquadFilter(); bf.type = 'lowpass'; bf.frequency.value = 260 * V.f;
   const bg = ctx.createGain(); bg.gain.value = 0.42;
   body.connect(bf).connect(bg).connect(out); body.start(t); body.stop(t + 0.17);
 }
-function sfxMutDie() {
+function sfxMutDie(V = MUT_VOICE) {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime, out = sfxOut(), D = 1.9;
   // it goes out of it: the throat drops away and the breath runs out wet
   const o = ctx.createOscillator(); o.type = 'sawtooth';
-  o.frequency.setValueAtTime(78, t);
-  o.frequency.exponentialRampToValueAtTime(23, t + D);
+  o.frequency.setValueAtTime(78 * V.f, t);
+  o.frequency.exponentialRampToValueAtTime(23 * V.f, t + D);
   const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
-  lp.frequency.setValueAtTime(700, t); lp.frequency.exponentialRampToValueAtTime(180, t + D);
+  lp.frequency.setValueAtTime(700 * V.f, t); lp.frequency.exponentialRampToValueAtTime(180 * V.f, t + D);
   const g = ctx.createGain();
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(0.14, t + 0.09);
+  g.gain.exponentialRampToValueAtTime(0.14 * V.growl, t + 0.09);
   g.gain.exponentialRampToValueAtTime(0.0001, t + D);
   o.connect(lp).connect(g).connect(out); o.start(t); o.stop(t + D + 0.05);
   const wet = noiseBurst(D * 0.8, (x) => (0.2 + 0.8 * Math.random()) * Math.pow(1 - x, 1.4));
   const wf = ctx.createBiquadFilter(); wf.type = 'bandpass'; wf.Q.value = 1.2;
-  wf.frequency.setValueAtTime(520, t); wf.frequency.exponentialRampToValueAtTime(160, t + D * 0.8);
-  const wg = ctx.createGain(); wg.gain.value = 0.075;
+  wf.frequency.setValueAtTime(520 * V.f, t); wf.frequency.exponentialRampToValueAtTime(160 * V.f, t + D * 0.8);
+  const wg = ctx.createGain(); wg.gain.value = 0.075 * V.rasp;
   wet.connect(wf).connect(wg).connect(out); wet.start(t); wet.stop(t + D * 0.8);
+}
+/* The three of them at once, under the cutscene: a sub that swells for the
+ * whole of it and does not resolve. It is not a sting — it is the floor of
+ * the sound going out from under you while three things you have not met
+ * come across the sand. */
+function sfxMutHorde(D = 4.4) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(23, t);
+  o.frequency.exponentialRampToValueAtTime(41, t + D * 0.85);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.24, t + D * 0.8);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + D + 0.5);
+  o.connect(g).connect(out); o.start(t); o.stop(t + D + 0.6);
+  // and the air moving over it, rising with them
+  const air = noiseBurst(D, (x) => (0.2 + 0.8 * Math.random()) * Math.pow(x, 1.6));
+  const af = ctx.createBiquadFilter(); af.type = 'lowpass';
+  af.frequency.setValueAtTime(120, t);
+  af.frequency.exponentialRampToValueAtTime(900, t + D);
+  const ag = ctx.createGain(); ag.gain.value = 0.07;
+  air.connect(af).connect(ag).connect(out); air.start(t); air.stop(t + D);
+}
+
+/* ---- the cutscene ----------------------------------------------------
+ * The three of them are the only thing on this stretch of beach and you
+ * should not meet them one at a time by walking into a wake radius. The
+ * trigger is the player's Z ALONE — the pack's rule, so it does not care
+ * whether you are on the waterline or at the foot of the cliff — and what
+ * it starts is not a pose: they roar where they stand, and then all three
+ * come at you flat out, and the camera stays on them the whole way in.
+ *
+ * THE CAMERA IS TURNED, NEVER MOVED. Every clamp below still agrees with
+ * where you are standing, and when it lets go you are exactly there. The
+ * zoom is the drama: the field of view is thrown WIDE for a beat — the
+ * flinch — and then hauled in tight over three quarters of a second, so
+ * they are running at a lens that is closing on them, and by the time it
+ * ends they fill the frame. It ends by DROPPING the take while they are
+ * still running, not by parking them: `mutCut` goes false, `updateDialogCam`
+ * eases the field of view back on its own, and the frame you get your head
+ * back on is the frame they are ten metres out and still coming. */
+const MUT_TRIGGER = 26;              // how far short of them it starts
+const MUT_CUT_END = 10.5;            // and how close they get before you get your head back
+const MUT_CUT_FOV = 24;
+let mutCut = false, mutCutT = 0, mutPhase = 0, mutCutFov = -1, mutCutOut = 0;
+const _mutMid = new THREE.Vector3(), _mutM = new THREE.Matrix4(), _mutQ = new THREE.Quaternion();
+function updateMutantCut(dt) {
+  if (mutPhase === 2 || !introDone || dying || ended) return false;
+  if (mutPhase === 0) {
+    // you walk down the beach along -Z, so you reach them from above
+    if (camera.position.z > MUT_Z + MUT_TRIGGER) return false;
+    if (settings.devMode) { mutPhase = 2; return false; }   // DEV MODE: no cutscene
+    mutPhase = 1; mutCutT = 0; mutCut = true;
+    mutCutFov = settings.fov;
+    if (held) dropHeld();
+    hovered = null; setPrompt('');
+    for (const u of mutants) { u.st.awake = true; u.st.roar = 1.2; u.st.step = 0; }
+    sfxMutHorde();
+    return true;
+  }
+  mutCutT += dt;
+  let near = Infinity;
+  for (let i = 0; i < mutants.length; i++) {
+    const u = mutants[i];
+    const p = u.g.position;
+    const dx = camera.position.x - p.x, dz = camera.position.z - p.z;
+    const d = Math.hypot(dx, dz) || 1;
+    near = Math.min(near, d);
+    u.g.rotation.y = Math.atan2(dx / d, dz / d);            // its front is +Z
+    // a beat of the roar first, staggered, and then it comes
+    const go = mutCutT - (0.30 + i * 0.16);
+    u.st.roar = Math.max(0, -go);
+    if (go > 0 && d > 2.6) {
+      const sp = MUT_SPEED * u.kind.speedK * Math.min(1, go * 3);
+      p.x += (dx / d) * sp * dt;
+      p.z += (dz / d) * sp * dt;
+      p.x = THREE.MathUtils.clamp(p.x, WADE_X - 1.5, CLIFF_BLOCK_X + 0.5);
+      u.st.step -= dt;
+      if (u.st.step <= 0) {
+        u.st.step = u.kind.step;
+        sfxMutStep(d, u.kind.voice);
+        if (inWater(p.x, p.z)) { spawnSplash(p.x, p.z, 2, dx / d, dz / d, 0.5); addRipple(p.x, p.z, 0.7); }
+      }
+    }
+    if (Math.abs(go) < 0.02) sfxMutRoar(d, u.kind.voice);
+    mutAnim(u, dt, go > 0 ? 1 : 0);
+    mutSeparate(u, dt);
+  }
+  // the camera goes with them, and the lens closes
+  _mutMid.set(0, 0, 0);
+  for (const u of mutants) _mutMid.add(u.g.position);
+  _mutMid.multiplyScalar(1 / mutants.length);
+  _mutMid.y = 1.25;
+  _mutM.lookAt(camera.position, _mutMid, camera.up);
+  _mutQ.setFromRotationMatrix(_mutM);
+  camera.quaternion.slerp(_mutQ, Math.min(1, dt * (mutCutT < 0.45 ? 9 : 4)));
+  /* IN FAST, THEN OPEN AS THEY ARRIVE. The first pass threw the lens wide
+   * for a beat before punching in, and at 118 degrees three creatures thirty
+   * metres off are specks — half a second of nothing at the front of a
+   * five-second shot. It goes straight in instead, tight by the time the
+   * first of them roars, and then opens back up over the last nine metres so
+   * that they burst the frame AND so the field of view is nearly home when
+   * the take is dropped: what would otherwise be a visible zoom-out over the
+   * opening of the fight. */
+  const ez = (x) => x * x * (3 - 2 * x);
+  const z = THREE.MathUtils.clamp((mutCutT - 0.05) / 0.50, 0, 1);
+  const tight = THREE.MathUtils.lerp(settings.fov, MUT_CUT_FOV, ez(z));
+  /* IT STAYS TIGHT. Opening the lens as they closed made them SHRINK — the
+   * field of view widened faster than the distance fell, which is the
+   * opposite of the shot. It holds at 24 until they are inside fifteen
+   * metres and only then gives a little back, so the last two seconds are
+   * three things growing to fill the frame. The rest of the way home is
+   * `mutCutOut`, after the take is dropped: four tenths of a second of the
+   * world rushing back while you already have your hands. */
+  const open = ez(THREE.MathUtils.clamp((15 - near) / 4.5, 0, 1)) * 0.22;
+  mutCutFov = THREE.MathUtils.lerp(tight, settings.fov, open);
+  addTrauma(dt * (0.5 + (1 - THREE.MathUtils.clamp(near / 26, 0, 1)) * 2.2));
+  if (near < MUT_CUT_END || mutCutT > 9) {
+    /* Dropped mid-stride. They keep the run they are in, the token is free,
+     * and the first swing goes to whichever of them reaches you first. */
+    mutPhase = 2; mutCut = false; mutCutOut = 0.4;
+    for (const u of mutants) { u.st.roar = 0; u.st.cool = 0.15 + Math.random() * 0.3; }
+  }
+  return true;
+}
+
+/* They do not stand in one another. Without this the three of them converge
+ * on the same point in front of you and become one silhouette with six arms;
+ * a light push off each other keeps them a body apart and — because it runs
+ * while they circle as well — is most of what makes them read as three
+ * things surrounding you rather than a crowd. */
+function mutSeparate(u, dt) {
+  for (const o of mutants) {
+    if (o === u || !o.st.alive) continue;
+    const dx = u.g.position.x - o.g.position.x, dz = u.g.position.z - o.g.position.z;
+    const d = Math.hypot(dx, dz);
+    if (d > MUT_SEP || d < 1e-4) continue;
+    const push = (MUT_SEP - d) * dt * 4.0;
+    u.g.position.x += (dx / d) * push;
+    u.g.position.z += (dz / d) * push;
+  }
 }
 
 function updateMutantUnit(u, dt) {
@@ -12250,12 +12453,7 @@ function updateMutantUnit(u, dt) {
 
   if (!u.st.awake) {
     mutAnim(u, dt, 0);
-    if (dist > MUT_WAKE) return;
-    if (settings.devMode) return;              // DEV MODE: it stays where it was put
-    u.st.awake = true;
-    u.st.roar = 2.2;                           // it sees you, and it tells you so
-    sfxMutRoar(dist);
-    return;
+    return;                                    // the cutscene is what wakes them
   }
   // the roar: it does not move through it, which is the beat that says what
   // the rest of this is going to be
@@ -12282,7 +12480,7 @@ function updateMutantUnit(u, dt) {
   }
 
   let moving = 0;
-  const A = MUT_ATTACKS[u.st.swing];
+  const A = u.atk[u.st.swing] || MUT_ATTACKS[u.st.swing];
   if (u.st.atk >= 0) {
     const was = u.st.atk;
     u.st.atk += dt;
@@ -12304,7 +12502,7 @@ function updateMutantUnit(u, dt) {
       p.addScaledVector(u.dir, 2.4 * dt);
     }
     if (was < A.wind && t >= A.wind) {
-      sfxMutSwing();
+      sfxMutSwing(u.kind.voice);
       /* Re-tested HERE and not when the startup began — a tell is only fair
        * if getting out of the way is a thing that works. */
       if (dist < A.reach + 0.7) {
@@ -12326,17 +12524,23 @@ function updateMutantUnit(u, dt) {
     if (u.st.chainAt > 0 && t >= u.st.chainAt) {
       u.st.swings++;
       u.st.swing = A.chain; u.st.atk = 0; u.st.chained = true; u.st.chainAt = -1;
-      sfxMutTell(dist, MUT_ATTACKS[A.chain].wind);
+      sfxMutTell(dist, u.atk[A.chain].wind, u.kind.voice);
     } else if (t >= A.wind + A.strike + A.recover) {
       u.st.atk = -1;
       u.st.swings++;
       u.st.chained = false;
-      u.st.cool = MUT_COOLDOWN[0] + Math.random() * (MUT_COOLDOWN[1] - MUT_COOLDOWN[0]);
+      mutDrop(u);                    // its turn is over; the next one is open
+      u.st.cool = (0.30 + Math.random() * 0.65) * u.kind.windK;
     }
   } else {
     u.st.cool = Math.max(0, u.st.cool - dt);
     turn(6);
     const near = dist <= A.reach;
+    /* WHOSE TURN IT IS. One of them swings and the others circle: three
+     * tells at once is not three times the fight, it is no fight at all,
+     * because there is nothing to read. Whoever is nearest and ready takes
+     * the token; a creature that cannot have it holds its range instead. */
+    const maySwing = mutToken === u;
     if (u.st.side !== 0) {
       /* Circling: sidelong at reach, keeping the range. It stops when its
        * time runs out or you close in, and what it does next is drawn
@@ -12348,7 +12552,7 @@ function updateMutantUnit(u, dt) {
       p.z += (tz * u.st.side * MUT_STRAFE + (dz / dist) * r * 0.8) * dt;
       p.x = THREE.MathUtils.clamp(p.x, WADE_X - 1.5, CLIFF_BLOCK_X + 0.5);
       moving = 0.2;
-      if (u.st.sideT <= 0 || dist < 1.4) { u.st.side = 0; u.st.cool = 0; }
+      if (u.st.sideT <= 0 || dist < 1.4) { u.st.side = 0; u.st.cool = Math.max(u.st.cool, 0.15); }
     } else if (u.st.back > 0) {
       // a step back, and then the lunge out of it
       u.st.back -= dt;
@@ -12357,17 +12561,26 @@ function updateMutantUnit(u, dt) {
       moving = 0.2;
       // and out of the step back: the lunge, mostly — the overhand often
       // enough that a step back is not a promise
-      if (u.st.back <= 0) { u.st.back = 0; u.st.swing = Math.random() < 0.7 ? 'attack4' : 'attack'; u.st.atk = 0; u.st.chained = false; sfxMutTell(dist, MUT_ATTACKS[u.st.swing].wind); }
+      if (u.st.back <= 0) {
+        u.st.back = 0;
+        // only if it still has the turn — a step back is not a way round the token
+        if (mutToken === u) {
+          const pick = (u.kind.use.attack4 && Math.random() < 0.7) ? 'attack4' : 'attack';
+          u.st.swing = u.kind.use[pick] ? pick : Object.keys(u.kind.use)[0];
+          u.st.atk = 0; u.st.chained = false; u.st.wait = 0;
+          sfxMutTell(dist, u.atk[u.st.swing].wind, u.kind.voice);
+        } else { u.st.side = Math.random() < 0.5 ? -1 : 1; u.st.sideT = 0.5; }
+      }
     } else if (!near) {
-      const sp = MUT_SPEED * THREE.MathUtils.clamp((dist - A.reach) / 1.8, 0.3, 1);
+      const sp = MUT_SPEED * u.kind.speedK * THREE.MathUtils.clamp((dist - A.reach) / 1.8, 0.3, 1);
       u.dir.set(dx / dist, 0, dz / dist);
       p.addScaledVector(u.dir, sp * dt);
       p.x = THREE.MathUtils.clamp(p.x, WADE_X - 1.5, CLIFF_BLOCK_X + 0.5);
-      moving = sp / MUT_SPEED;
+      moving = sp / (MUT_SPEED * u.kind.speedK);
       u.st.step -= dt;
       if (u.st.step <= 0) {
-        u.st.step = MUT_STEP / Math.max(0.35, moving);
-        sfxMutStep(dist);
+        u.st.step = u.kind.step / Math.max(0.35, moving);
+        sfxMutStep(dist, u.kind.voice);
         if (inWater(p.x, p.z)) {
           spawnSplash(p.x, p.z, 2, u.dir.x, u.dir.z, 0.5);
           addRipple(p.x, p.z, 0.7);
@@ -12376,25 +12589,29 @@ function updateMutantUnit(u, dt) {
     } else if (u.st.cool <= 0 && !settings.devMode) {
       /* At reach with its breath back: a swing, drawn by weight, or it
        * circles, or it takes a step back and comes in with the lunge. The
-       * first swing of a fight is always the overhand — you get to learn
-       * the language before it starts using all of it. */
+       * first swing of a fight is always the overhand if it has one — you
+       * get to learn the language before it starts using all of it. And if
+       * another of them holds the token, it circles instead. */
       const roll = Math.random();
-      if (u.st.swings === 0 || roll < 0.62) {
-        let pick = 'attack';
+      const wantSwing = u.st.swings === 0 || roll < 0.62;
+      if (wantSwing && maySwing) {
+        let pick = u.kind.use.attack ? 'attack' : Object.keys(u.kind.use)[0];
         if (u.st.swings > 0) {
-          let r = Math.random() * Object.values(MUT_ATTACKS).reduce((a, k) => a + k.w, 0);
-          for (const k in MUT_ATTACKS) { r -= MUT_ATTACKS[k].w; if (r <= 0) { pick = k; break; } }
+          const tot = Object.values(u.kind.use).reduce((a, w) => a + w, 0);
+          let r = Math.random() * tot;
+          for (const k in u.kind.use) { r -= u.kind.use[k]; if (r <= 0) { pick = k; break; } }
         }
-        u.st.swing = pick; u.st.atk = 0; u.st.chained = false;
-        sfxMutTell(dist, MUT_ATTACKS[pick].wind);
-      } else if (roll < 0.86) {
+        u.st.swing = pick; u.st.atk = 0; u.st.chained = false; u.st.wait = 0;
+        sfxMutTell(dist, u.atk[pick].wind, u.kind.voice);
+      } else if (!wantSwing && maySwing && u.kind.use.attack4 && Math.random() > u.kind.circle) {
+        u.st.back = 0.42;                     // it keeps the turn through the step
+      } else {
         u.st.side = Math.random() < 0.5 ? -1 : 1;
         u.st.sideT = 0.5 + Math.random() * 0.8;
-      } else {
-        u.st.back = 0.42;
       }
     }
   }
+  mutSeparate(u, dt);
   // and you do not walk through two hundred kilos of it
   if (dist < 0.9) {
     camera.position.x = p.x + (dx / dist) * 0.9;
@@ -12402,7 +12619,41 @@ function updateMutantUnit(u, dt) {
   }
   mutAnim(u, dt, moving);
 }
+/* WHOSE TURN IT IS. The token used to be grabbed by whoever's cooldown came
+ * up first, and a cooldown scales with `windK` — so the small fast one took
+ * nearly every turn and the big slow one swung twice in a minute, which is
+ * not a fight with three things in it, it is a fight with one and two
+ * spectators. It is HANDED OUT now, once a frame, to whichever of them is in
+ * range and has gone longest without a swing. Anything that cannot use it —
+ * stunned, rocked, dead, or wandered out of reach — gives it straight back. */
+function mutGiveToken(dt) {
+  if (mutToken) {
+    const st = mutToken.st;
+    const d = Math.hypot(camera.position.x - mutToken.g.position.x, camera.position.z - mutToken.g.position.z);
+    const A = mutToken.atk[st.swing] || MUT_ATTACKS[st.swing];
+    if (!st.alive || st.stun > 0 || st.recoil > 0 || (st.atk < 0 && d > A.reach + 2.2)) mutToken = null;
+    else return;
+  }
+  let best = null, bw = -1;
+  for (const u of mutants) {
+    const st = u.st;
+    if (!st.alive || !st.awake || st.struck || st.stun > 0 || st.recoil > 0 || st.roar > 0) continue;
+    st.wait += dt;
+    const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
+    const A = u.atk[st.swing] || MUT_ATTACKS[st.swing];
+    if (d > A.reach + 1.6) continue;
+    if (st.wait > bw) { bw = st.wait; best = u; }
+  }
+  if (best) mutToken = best;
+}
 function updateMutant(dt) {
+  // the lens comes home after the take is dropped, not before it
+  if (mutCutOut > 0) {
+    mutCutOut = Math.max(0, mutCutOut - dt);
+    mutCutFov = mutCutOut > 0 ? THREE.MathUtils.lerp(settings.fov, mutCutFov, mutCutOut / 0.4) : -1;
+  }
+  if (updateMutantCut(dt)) return;             // the cutscene drives them itself
+  mutGiveToken(dt);
   for (const u of mutants) updateMutantUnit(u, dt);
 }
 
@@ -13673,8 +13924,9 @@ window.__bw = {
   get dockDoorOpen() { return dockDoorOpen; }, set dockDoorOpen(v) { dockDoorOpen = v; }, get onDock() { return onDock; },
   crabs, makeCrabUnit, nearestCrab, crabPlay, updateCrabUnit,
   mutants, mutant, updateMutant, hurtMutant, killMutant, parryMutant, blockMutant, nearestMutant,
-  MUT_X, MUT_Z, MUT_H, MUT_HP, MUT_WAKE, MUT_WIND, MUT_STUN, MUT_ATTACKS,
-  mutState: () => mutants.map((u) => ({ ...u.st, x: u.g.position.x, z: u.g.position.z, clip: u.cur && u.cur.getClip().name })),
+  MUT_X, MUT_Z, MUT_HP, MUT_WIND, MUT_STUN, MUT_ATTACKS, MUT_KINDS, MUT_TRIGGER,
+  get mutToken() { return mutToken; }, get mutCut() { return mutCut; }, get mutPhase() { return mutPhase; },
+  mutState: () => mutants.map((u) => ({ kind: u.kindName, ...u.st, x: +u.g.position.x.toFixed(2), z: +u.g.position.z.toFixed(2), clip: u.cur && u.cur.getClip().name })),
   packCrabs, updatePack, get packPhase() { return packPhase; }, PACK_Z,
   lhDoor, shinies, onPath, pathBend, pathHalfAt, lhWindows, lanternGlass,
   get doorOpen() { return doorOpen; }, set doorOpen(v) { doorOpen = v; doorSwing = v ? 1 : 0; lhDoor.rotation.y = -doorSwing * 1.95; },

@@ -157,11 +157,27 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - **The kill lands in two beats** — the blade connects, time stops for five
   frames with the crab still there, folded up under the shovel and thrown
   back, and *then* it comes apart.
-- **The mutant** — a hunched, flayed, two-and-a-quarter-metre thing standing
-  on the dry sand a hundred and thirty metres past the pavilion. It sees you
-  at twenty-six metres, roars where it stands, and then runs at you. It has
-  **five hit points**: a light swing takes one and a charged one takes two,
-  so it is three heavies at best. Its swing is the crab's grammar played
+- **The three mutants** — hunched, flayed things standing on the dry sand a
+  hundred and thirty metres past the pavilion. Cross the line and they are a
+  **cutscene**: they roar where they stand and then all three come at you flat
+  out, the lens punching from wide to tight in half a second and holding there
+  while they grow to fill the frame — and it is dropped mid-stride, so the
+  frame you get your hands back on is the frame they are ten metres out and
+  still running.
+  They are three different animals. **The pale one** is the fight you learn
+  the language on: five hit points, all four swings. **The flayed red one** is
+  half a metre taller and seven hit points, with no quick swipe — everything
+  it does is committed, and everything it does leaves it open for a long time.
+  **The dark one** is small, fast, four hit points and mostly the swipe; it is
+  the one that gets behind you while you are reading one of the others. Each
+  has its own voice, a pitch and a weight, so you can tell from across the
+  sand which of them is winding up.
+  **Only one of them swings at a time**, and the turn goes to whichever has
+  gone longest without one. Three tells at once is not three times the fight,
+  it is no fight at all — there is nothing to read. So what you are answering
+  is always one creature, and the pressure is where the other two have got to.
+  A light swing takes one hit point and a charged one takes two. Their swings
+  are the crab's grammar played
   bigger — and it has FOUR of them: the overhand you learn on, a quick swipe
   for standing in reach with the guard down, a held one that hangs at the top
   for a second so a guard raised on the first count is a block and not a
@@ -265,7 +281,13 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - `MUSIC_TARGET` / `MUSIC_FADE_IN` / `MUSIC_HOLD` / `MUSIC_FADE_OUT`
 - `PATH_LEN` / `PATH_HALF` / `pathBend()` — the lighthouse path's shape
 - `CRAB_SPEED` / `CRAB_REACH` / `CRAB_WAKE` / `crab.scale` — the enemy crab
-- `MUT_ATTACKS` — the mutant's four swings: each one's startup (`wind`), active
+- `MUT_KINDS` — the three of them: height, health, and the multipliers on
+  speed, startup and reach; which swings each has and how often it reaches for
+  them; how much it circles; and `voice`, a pitch and two weights every sound
+  it makes goes through. `MUT_SPOTS` is where they stand, `MUT_TRIGGER` /
+  `MUT_CUT_END` / `MUT_CUT_FOV` are the cutscene's Z line, its hand-back
+  distance and how tight the lens gets.
+- `MUT_ATTACKS` — the mutants' four swings: each one's startup (`wind`), active
   window, recovery, reach, lunge distance, what it chains into and how often, and
   `hit`, where the contact is in its clip (measured in the build, not guessed —
   move `wind` and the hand still lands on the damage frame). `MUT_HP`, `MUT_STUN`,

@@ -1577,6 +1577,48 @@ click into the last 45 % of a committed startup takes its health and does
 not break the blow; a charge, a parry or a throw always does. It commits for the last fifth of every startup
 — the turn stops — which is the timing a sidestep should have.
 
+**THREE OF THEM, AND ONE SKIN EACH.** The pack ships three texture sets, so
+the variations ARE the sets: 02 is baked into the GLB and 01 (flayed red) and
+03 (dark green-brown) come out of the build as loose 150 KB colour JPEGs. One
+download, `GLTFLoader.parse`d once per unit — a skinned mesh cannot be
+`clone()`d — and two of the copies swap `map`. The material must be cloned to
+do it: `parse` hands every copy the same one. Only the albedo changes; the
+sculpt is shared, so one normal and one roughness serve all three. What makes
+them read as different animals is `MUT_KINDS`: height, health, and scalars on
+speed, startup and reach, with the swing table SCALED per kind rather than
+restated (`windK` moves startup and recovery together, so the big one's reach
+is paid for with the punish window), plus which swings it owns and a `voice`
+— a pitch and two weights that every sound it makes goes through.
+
+**ONLY ONE OF THEM MAY SWING AT A TIME, AND THE TURN IS HANDED OUT.** Three
+tells at once is not three times the fight, it is no fight: nothing to read
+and no answer that is not luck. `mutToken` is given, once a frame, to
+whichever is in range and has gone longest without a swing (`st.wait`).
+Letting them GRAB it instead was measured and was wrong: a cooldown scales
+with `windK`, so the small fast one took nearly every turn and the big slow
+one swung twice in a minute. Handed out, sixty seconds shares 11/10/7 with
+zero frames of two swinging. Anything that cannot use the turn — stunned,
+rocked, dead, or wandered out of reach — gives it back. The step back keeps
+the turn through it and does not swing without it, which was the one path
+that used to slip past. `mutSeparate()` pushes them off each other or the
+three converge into one silhouette with six arms.
+
+**THE CUTSCENE IS A LENS MOVE, NOT A POSE.** `mutCut` joins `packCut` in
+`frozen()` and in the pointerlock guard; the camera is TURNED, never moved,
+so every clamp still agrees and the hand-back is exact. Two things it got
+wrong first. It threw the field of view WIDE for a beat before punching in,
+and at 118 degrees three creatures thirty metres off are specks — half a
+second of nothing at the head of a five-second shot. And it then OPENED the
+lens as they closed, which made them shrink: the field of view widened faster
+than the distance fell, the exact opposite of the shot. It goes straight in
+now (settings.fov to 24 in half a second, tight before the first roar lands),
+HOLDS there while they grow, and gives back only a little inside fifteen
+metres. The rest is `mutCutOut`: four tenths of a second of lens after the
+take is dropped, while the player already has their hands — which is what
+makes it seamless instead of a one-second zoom-out over the opening of the
+fight. During the cutscene `updateMutantCut` drives them itself and returns
+true, so `updateMutantUnit` never runs and `frozen()` cannot freeze them.
+
 **FIVE HIT POINTS IS THE DESIGN.** A light swing takes one and a charge takes
 two, so it is three heavies at best and five exchanges at worst, and the free
 heavy a parry buys is the whole loop — read the tell, take the stun, wind all
