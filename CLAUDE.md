@@ -504,8 +504,13 @@ main camera, unprojected by `vmCamera` at the lip's own depth, so the two
 cameras' FOVs never have to agree). The correction is measured off the
 UNCORRECTED pose every frame, so it never feeds back; the weight follows
 the strike's own easing in, holds through the impact and the hitstop, and
-eases off in the recovery. Nothing in reach means the scuff at your feet,
-and the target is clamped to the frame so the blade never leaves it.
+eases off in the recovery. THE SWING GOES WHERE YOU LOOK: with nothing in
+reach the point is on the aim line itself, an arm's length out (`SWING_AIR`),
+so the blade passes through the crosshair whatever the pitch — it used to
+land at your feet, which dragged every swing made looking up down into the
+sand, and the owner looked straight up and still dug. A swing that meets
+nothing is a whiff now, not a scuff: no crater, a little jar, and that is
+all. The target is clamped to the frame so the blade never leaves it.
 
 **A click is quick.** The light swing is 0.44 s end to end and the blade
 is down 200 ms after the press (`DIG_DUR * (0.55 + P)`); a heavy is nearly

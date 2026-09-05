@@ -5845,14 +5845,17 @@ function aimLand(P) {
   near(digRay.intersectObject(sand, false)[0]);
   landDist = isFinite(d) ? d : -1;
 }
-// the landing point this frame: the locked direction from where you stand now
+/* The landing point this frame: the locked direction from where you stand
+ * now. THE SWING GOES WHERE YOU LOOK. With nothing in reach it used to land
+ * at your feet — "the scuff in front of you" — and that dragged the blade to
+ * the bottom of the frame on every swing made looking up, so a cut at the
+ * sky went into the sand: the owner looked straight up and still dug. With
+ * nothing in reach the point is on the aim line itself, an arm's length out,
+ * and the blade passes through the crosshair whatever the pitch. */
+const SWING_AIR = 2.2;                    // how far out the blade passes when there is nothing to meet
 function landPoint() {
   camera.getWorldPosition(_landP);
-  if (landDist >= 0) return _landP.addScaledVector(_aimD, landDist);
-  _pf.copy(_aimD); _pf.y = 0; _pf.normalize();
-  const d = 1.5 + digPower * 1.1;
-  _landP.x += _pf.x * d; _landP.z += _pf.z * d; _landP.y -= playerEye();
-  return _landP;
+  return _landP.addScaledVector(_aimD, landDist >= 0 ? landDist : SWING_AIR + digPower * 0.6);
 }
 function startDig(power = 0, fromPose = null) {
   if (digT > 0 || !equipped || !equipped.onDig || frozen()) return;
@@ -5995,10 +5998,13 @@ function digImpact() {
   if (hits.length && hits[0].point.x > WADE_X + 0.2 && hits[0].point.x < CLIFF_BLOCK_X + 1.5) {
     x = hits[0].point.x; z = hits[0].point.z;
   } else {
-    // looking at the sky — scuff the sand just in front of your feet instead
-    const d = 1.5 + P * 1.1;
-    x = THREE.MathUtils.clamp(_aimO.x + _pf.x * d, WADE_X + 0.3, CLIFF_BLOCK_X - 0.3);
-    z = _aimO.z + _pf.z * d;
+    /* NOTHING THERE. The blade goes through the air where you aimed it and
+     * that is all: no crater, no sand. It used to scuff the beach at your
+     * feet instead — a swing made at the sky dug a hole you were not looking
+     * at, which is the opposite of aiming. A whiff is its own information. */
+    vmImpulse(-0.35 - P * 0.25);
+    addTrauma(0.04 + P * 0.10);
+    return;
   }
   if (inWater(x, z)) {
     // blade hits water, not sand — throw a splash, leave no crater
