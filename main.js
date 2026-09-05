@@ -176,6 +176,7 @@ let audioStarted = false, audioCtx = null, masterGain = null;
 let titleSurfGain = null;               // the sea under the title, pulled down on begin
 let musicEl = null, musicEnvGain = null, musicVolGain = null, musicStarted = false;
 let waveBusGain = null;   // sub-mix for surf ambience + water-step splashes
+let windDuck = null;      // the wind's last stage: the bunker pulls it down
 let sfxBusGain = null;    // sub-mix for every one-shot effect
 // every sfx routes here instead of straight at the speakers
 const sfxOut = () => sfxBusGain || (audioCtx && audioCtx.destination);
@@ -3118,7 +3119,7 @@ function updateHurt(dt) {
   hurtEl.style.opacity = String(Math.max(hurtFlash * hurtFlash, rim));
 }
 
-function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || inspecting || peeking || packCut || mutCut || dying || ended || !introDone; }
+function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || inspecting || peeking || packCut || mutCut || hatchBusy || dying || ended || !introDone; }
 function refreshUI() {
   const playing = started && !menuOpen && !noteOpen && !dialogOpen && !invOpen && !inspecting && !dying && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
@@ -9111,7 +9112,8 @@ function startAmbientAudio() {
   sfxBusGain = ctx.createGain();
   sfxBusGain.gain.value = settings.sfxVolume;
   sfxBusGain.connect(masterGain);
-  noise.connect(wind).connect(windGain).connect(masterGain);
+  windDuck = ctx.createGain(); windDuck.gain.value = 1;
+  noise.connect(wind).connect(windGain).connect(windDuck).connect(masterGain);
   noise.connect(surf).connect(surfGain).connect(waveBusGain);
   /* THE SEA UNDER THE TITLE. The walk's surf is a bed you stop hearing; the
    * menu wants waves you cannot not hear — a lower, slower swell that rolls
@@ -10751,7 +10753,7 @@ function updateDrainAudio(dt) {
   const ctx = audioCtx;
   drainAudio.gain.gain.setTargetAtTime(drainMix * settings.sfxVolume * 0.8, ctx.currentTime, 0.5);
   // duck the surf the further in you get — the sea should fall away behind you
-  if (waveBusGain) waveBusGain.gain.setTargetAtTime(settings.waveVolume * (1 - 0.8 * drainMix), ctx.currentTime, 0.6);
+  if (waveBusGain) waveBusGain.gain.setTargetAtTime(settings.waveVolume * (1 - 0.8 * drainMix) * (1 - 0.92 * bunkerMix), ctx.currentTime, 0.6);
   // the trickle of the outfall, loudest where the water leaves the pipe
   if (drainAudio.trickle)
     drainAudio.trickle.gain.setTargetAtTime(mouthNear * settings.sfxVolume * 0.5, ctx.currentTime, 0.4);
@@ -15163,18 +15165,24 @@ function spawnBunker(x, y, z, yaw = 0, opts) {
   g.rotation.y = yaw;
   scene.add(g);
   g.updateMatrixWorld(true);
-  const b = { group: g, inv: g.matrixWorld.clone().invert() };
+  const b = { group: g, inv: g.matrixWorld.clone().invert(), hidden: !!(opts && opts.hidden) };
   bunkers.push(b);
-  farProps.push({ obj: g, z, d: 260 });
+  if (!b.hidden) farProps.push({ obj: g, z, d: 260 });
   return b;
 }
 function updateBunkers(dt) {
+  const wasIn = inBunker;
   inBunker = null;
   for (const b of bunkers) {
     const g = b.group, B = g.userData.bunker;
     const dx = camera.position.x - g.position.x, dz = camera.position.z - g.position.z;
+    /* The home under the beach is drawn only while you are in it or on the
+     * way: forty metres under the sand it is out of every frustum but the
+     * one looking straight down, and four hundred draw calls behind an
+     * opaque beach is a price for nothing. */
+    if (b.hidden) g.visible = wasIn === b || hatchBusy;
     if (Math.abs(dx) > 40 || Math.abs(dz) > 40) continue;
-    B.update(dt);                       // the screens and the reels run while you are anywhere near
+    if (g.visible) B.update(dt);        // the screens and the reels run while you can see them
     const nav = B.nav;
     if (!nav) continue;
     _bkL.copy(camera.position).applyMatrix4(b.inv);
@@ -15183,7 +15191,7 @@ function updateBunkers(dt) {
     if (_bkL.x <= R.x0 || _bkL.x >= R.x1 || _bkL.z <= R.z0 || _bkL.z >= R.z1) continue;
     if (feet < -0.6 || feet > R.h) continue;
     inBunker = b;
-    if (g.position.y > groundY) groundY = g.position.y;
+    groundY = g.position.y;             // the room's floor IS the floor: forty metres under the beach, "higher" is not the test
     // the walls
     _bkL.x = THREE.MathUtils.clamp(_bkL.x, R.x0 + pr, R.x1 - pr);
     _bkL.z = THREE.MathUtils.clamp(_bkL.z, R.z0 + pr, R.z1 - pr);
@@ -15226,6 +15234,289 @@ function updateBunkers(dt) {
     _bkL.applyMatrix4(g.matrixWorld);
     camera.position.x = _bkL.x; camera.position.z = _bkL.z;
   }
+}
+// ------------------------------------------------------------------
+// The hatch. A steel lid in a concrete collar set flush in the dry sand
+// between the snorkeler and the tall one, and the ONLY way into the bunker:
+// the room itself stands forty metres under the beach (`BUNKER_Y`), sealed,
+// where nothing on the walk can reach it. E on the lid and you are in the
+// room at the foot of its ladder; E on the ladder and you are back on the
+// sand beside the lid — each a cut of a second and a quarter under black,
+// with the lid seen to open before it and heard to shut after it, because
+// a climb you cannot see is a climb you can hear. The room is drawn only
+// while you are in it or on the way.
+// ------------------------------------------------------------------
+const HATCH_X = 10.2, HATCH_Z = SNORK_Z - 58;    // dry sand, x past the highest swash, halfway to the tall one
+const BUNKER_Y = -40;
+const HATCH_DUR = 1.25, HATCH_BLACK = 0.44, HATCH_HOLD = 0.32;   // fade out by 0.44, black to 0.76, in by 1.25
+let hatchBusy = false, hatchDir = 0, hatchT = 0, hatchCut = false, hatchClank = false;
+let bunkerMix = 0, bunkerAudio = null;
+const hatchReturn = { x: HATCH_X, z: HATCH_Z - 1.6, yaw: 0, set: false };
+const blackoutEl = document.getElementById('blackout');
+const hatch = new THREE.Group();
+hatch.position.set(HATCH_X, 0, HATCH_Z);
+hatch.rotation.y = 0.32;                         // a little off the beach's grain, like everything dropped on it
+scene.add(hatch);
+const hatchConcrete = new THREE.MeshStandardMaterial({ color: 0x737981, roughness: 1, metalness: 0, flatShading: true, emissive: 0x151920 });
+const hatchSteel = new THREE.MeshStandardMaterial({ color: 0x4d545d, roughness: 0.66, metalness: 0.18, flatShading: true, emissive: 0x0b0d12 });
+const hatchDark = new THREE.MeshStandardMaterial({ color: 0x22262c, roughness: 1, flatShading: true });
+let hatchLid = null, hatchBeacon = null;
+{
+  // the collar: a concrete kerb sunk in the sand, its well dark
+  const collar = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.34, 1.7), hatchConcrete);
+  collar.position.y = 0.14 - 0.17; hatch.add(collar);
+  const well = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.03, 1.18), hatchDark);
+  well.position.y = 0.135; hatch.add(well);
+  // the lid, hung on a bar along the landward edge
+  hatchLid = new THREE.Group(); hatchLid.position.set(0.57, 0.15, 0); hatch.add(hatchLid);
+  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1.22, 8), hatchSteel);
+  bar.rotation.x = Math.PI / 2; hatchLid.add(bar);
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.07, 1.12), hatchSteel);
+  plate.position.set(-0.56, 0.035, 0); hatchLid.add(plate);
+  const rim = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.03, 1.0), hatchSteel);
+  rim.position.set(-0.56, 0.085, 0); hatchLid.add(rim);
+  const inner = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.032, 0.84), hatchDark);
+  inner.position.set(-0.56, 0.086, 0); hatchLid.add(inner);
+  // the wheel
+  const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.024, 8, 22), hatchSteel);
+  wheel.rotation.x = Math.PI / 2; wheel.position.set(-0.56, 0.15, 0); hatchLid.add(wheel);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.1, 10), hatchSteel);
+  hub.position.set(-0.56, 0.14, 0); hatchLid.add(hub);
+  for (let i = 0; i < 3; i++) {
+    const sp = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.02, 0.025), hatchSteel);
+    sp.position.set(-0.56, 0.15, 0); sp.rotation.y = i * Math.PI / 3; hatchLid.add(sp);
+  }
+  // rivets round the rim
+  for (let i = 0; i < 12; i++) {
+    const a = i / 12 * Math.PI * 2;
+    const rv = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.02, 6), hatchSteel);
+    rv.position.set(-0.56 + Math.cos(a) * 0.5, 0.075, Math.sin(a) * 0.5); hatchLid.add(rv);
+  }
+  // a marker lamp on a stub beside it — the one red thing on a blue beach,
+  // so you find it from the waterline
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.62, 6), hatchSteel);
+  post.position.set(0.72, 0.31, 0.62); hatch.add(post);
+  const bc = document.createElement('canvas'); bc.width = bc.height = 32;
+  const g2 = bc.getContext('2d');
+  const gr = g2.createRadialGradient(16, 16, 0, 16, 16, 16);
+  gr.addColorStop(0, 'rgba(255,90,60,1)'); gr.addColorStop(0.35, 'rgba(255,50,30,0.55)'); gr.addColorStop(1, 'rgba(255,40,20,0)');
+  g2.fillStyle = gr; g2.fillRect(0, 0, 32, 32);
+  hatchBeacon = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(bc), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+  hatchBeacon.scale.setScalar(0.22); hatchBeacon.position.set(0.72, 0.66, 0.62); hatchBeacon.raycast = () => {}; hatch.add(hatchBeacon);
+  // the crosshair finds the lid, open or shut
+  const hit = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.7, 1.4), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy'; hit.position.y = 0.35; hatch.add(hit);
+  // bedded in a low drift of the beach's own sand, and the collar a step you stand on
+  const drift = new THREE.Mesh(makeApron(3.2), sandMat);
+  drift.scale.set(3.2, 0.11, 3.2); drift.position.set(HATCH_X, 0, HATCH_Z); driftGroup.add(drift);
+  rockColliders.push({ x: HATCH_X, z: HATCH_Z, r: 0.9, top: 0.14, mat: 'rock' });
+  farProps.push({ obj: hatch, z: HATCH_Z, d: 260 });
+}
+// the room, under the sand with its ladder under the lid; drawn only while you are in it
+let bunkerLadderProxy = null;
+const bunkerHome = spawnBunker(HATCH_X + 1.05, BUNKER_Y, HATCH_Z + 3.3, 0, {
+  hidden: true,
+  onLoad: (S, g) => {
+    const L = S.nav && S.nav.ladder;
+    if (!L) return;
+    // the way out: the ladder and the shaft above it, as one thing to aim at
+    const box = new THREE.BoxGeometry(L.x1 - L.x0 + 0.5, 3.2, L.z1 - L.z0 + 0.6);
+    bunkerLadderProxy = new THREE.Mesh(box, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    bunkerLadderProxy.name = 'hitProxy';
+    bunkerLadderProxy.position.set((L.x0 + L.x1) / 2, 1.75, (L.z0 + L.z1) / 2);
+    g.add(bunkerLadderProxy);
+    bunkerLadderProxy.updateMatrixWorld(true);       // the room is hidden until you enter, and a hover raycast wants a fresh matrix
+    addInteractable(bunkerLadderProxy, 'To Leave Bunker', 'action', { onActivate: leaveBunker, when: () => !!inBunker && !hatchBusy });
+  },
+});
+bunkerHome.group.visible = false;
+addInteractable(hatch, 'To Enter Bunker', 'action', { onActivate: enterBunker, when: () => !inBunker && !hatchBusy });
+
+function enterBunker() {
+  if (hatchBusy || inBunker) return;
+  hatchBusy = true; hatchDir = 1; hatchT = 0; hatchCut = false; hatchClank = false;
+  hatchReturn.x = camera.position.x; hatchReturn.z = camera.position.z; hatchReturn.yaw = lookEuler.y; hatchReturn.set = true;
+  bunkerHome.group.visible = true;             // upload and compile under the black, not on the first frame you see it
+  sfxHatch(true);
+}
+function leaveBunker() {
+  if (hatchBusy || !inBunker) return;
+  hatchBusy = true; hatchDir = -1; hatchT = 0; hatchCut = false; hatchClank = false;
+  const S = bunkerHome.group.userData.bunker;
+  /* The cover swings before the black comes down. The clip's first eight
+   * seconds are the gate's cogs turning and the cover does not move until
+   * 8.5 s, so it is started past the preamble and run fast. */
+  if (S.hatch) { S.openHatch(); S.hatch.time = 7.9; S.hatch.timeScale = 3.2; }
+  sfxHatch(true);
+}
+/* The cut. Into the room: at the foot of the ladder, facing down the room —
+ * the walk to the consoles is the payoff, not the ladder you came down.
+ * Out: exactly where you stood when you went in, looking the way you looked. */
+function placeInBunker() {
+  const g = bunkerHome.group;
+  const p = g.localToWorld(new THREE.Vector3(-0.2, 0, -3.3));
+  camera.position.set(p.x, BUNKER_Y + playerEye(), p.z);
+  camBaseY = camera.position.y; vy = 0; onGround = true; groundY = BUNKER_Y;
+  inBunker = bunkerHome;
+  lookEuler.set(0.02, Math.PI + g.rotation.y, 0, lookEuler.order);
+  camera.quaternion.setFromEuler(lookEuler);
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0);
+  bunkerMix = Math.max(bunkerMix, 0.35);
+}
+function placeOnBeach() {
+  const S = bunkerHome.group.userData.bunker;
+  if (S.hatch) { S.hatch.timeScale = 1; S.hatch.stop(); }    // the cover is shut again behind you
+  camera.position.set(hatchReturn.x, playerEye(), hatchReturn.z);
+  const rc = rockGroundAt(hatchReturn.x, hatchReturn.z, 0);
+  groundY = rc ? rc.top : 0;
+  camera.position.y = playerEye() + groundY;
+  camBaseY = camera.position.y; vy = 0; onGround = true;
+  inBunker = null;
+  lookEuler.set(0.02, hatchReturn.yaw, 0, lookEuler.order);
+  camera.quaternion.setFromEuler(lookEuler);
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0);
+}
+const smooth01 = (a, b, t) => { const x = THREE.MathUtils.clamp((t - a) / (b - a), 0, 1); return x * x * (3 - 2 * x); };
+function updateHatch(dt) {
+  // the marker lamp: a slow irregular blink, never a beacon's steady sweep
+  if (hatchBeacon) {
+    const tt = performance.now() * 0.001;
+    const on = (Math.sin(tt * 1.7) + Math.sin(tt * 0.61 + 1.3)) > 0.9 ? 1 : 0.18;
+    hatchBeacon.material.opacity = on * (0.65 + 0.35 * Math.sin(tt * 9.1));
+  }
+  if (hatchBusy) {
+    hatchT += dt;
+    const t = hatchT;
+    let lidOpen;
+    if (hatchDir > 0) lidOpen = smooth01(0.02, 0.46, t);                       // going in: it comes up ahead of you
+    else lidOpen = t < 0.58 ? 1 : 1 - smooth01(0.58, 0.86, t);                 // coming out: it stands open, then falls
+    hatchLid.rotation.z = -lidOpen * 1.78;
+    const black = t < HATCH_BLACK ? smooth01(0.06, HATCH_BLACK, t)
+      : t < HATCH_BLACK + HATCH_HOLD ? 1 : 1 - smooth01(HATCH_BLACK + HATCH_HOLD, HATCH_DUR, t);
+    blackoutEl.style.opacity = black.toFixed(3);
+    if (!hatchCut && t >= HATCH_BLACK + 0.04) { hatchCut = true; if (hatchDir > 0) placeInBunker(); else placeOnBeach(); }
+    const clankAt = hatchDir > 0 ? HATCH_BLACK + 0.18 : 0.84;
+    if (!hatchClank && t >= clankAt) { hatchClank = true; sfxHatch(false); }
+    if (t >= HATCH_DUR) {
+      hatchBusy = false; hatchLid.rotation.z = 0; blackoutEl.style.opacity = '0';
+    }
+  }
+  // the room's air: the sea and the wind go, a hum and a fan come
+  const want = inBunker ? 1 : 0;
+  const prev = bunkerMix;
+  bunkerMix += (want - bunkerMix) * Math.min(1, dt * 2.6);
+  if (Math.abs(bunkerMix - want) < 0.002) bunkerMix = want;
+  if (audioCtx && (bunkerMix > 0 || prev > 0)) {
+    const ctx = audioCtx;
+    if (bunkerMix > 0 && !bunkerAudio) startBunkerAudio();
+    if (bunkerAudio) bunkerAudio.gain.gain.setTargetAtTime(bunkerMix * settings.sfxVolume * 0.75, ctx.currentTime, 0.25);
+    if (waveBusGain && drainMix <= 0.0001) waveBusGain.gain.setTargetAtTime(settings.waveVolume * (1 - 0.92 * bunkerMix), ctx.currentTime, 0.3);
+    if (windDuck) windDuck.gain.setTargetAtTime(1 - 0.9 * bunkerMix, ctx.currentTime, 0.3);
+  }
+}
+/* A steel lid a hand thick. Opening: the dogs let go (a clack), the hinge
+ * groans as the weight comes up, and it lands on its stop with a ring.
+ * Closing: the swing, then the slam — a low body, three partials of the
+ * plate ringing, and the dogs going home. Both are heavy and both are short;
+ * the whole cut is a second and a quarter. */
+function sfxHatch(opening) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const out = ctx.createGain(); out.gain.value = 0.62; out.connect(sfxOut());
+  const clack = (at, f, g, len = 0.05) => {
+    const n = noiseBurst(len, (x) => Math.pow(1 - x, 5));
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = 6;
+    const gg = ctx.createGain(); gg.gain.value = g;
+    n.connect(bp).connect(gg).connect(out); n.start(t + at); n.stop(t + at + len);
+  };
+  const ring = (at, f, g, dur) => {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+    const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t + at);
+    og.gain.exponentialRampToValueAtTime(g, t + at + 0.006); og.gain.exponentialRampToValueAtTime(0.0001, t + at + dur);
+    o.connect(og).connect(out); o.start(t + at); o.stop(t + at + dur + 0.02);
+  };
+  const thud = (at, f, g, len) => {
+    const n = noiseBurst(len, (x) => Math.pow(1 - x, 2.2));
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = f;
+    const gg = ctx.createGain(); gg.gain.value = g;
+    n.connect(lp).connect(gg).connect(out); n.start(t + at); n.stop(t + at + len);
+  };
+  if (opening) {
+    clack(0.0, 1900, 0.5); clack(0.05, 1300, 0.35, 0.04);
+    // the hinge: noise through a narrow band that climbs as the leaf comes up, trembling
+    const groan = noiseBurst(0.62, (x) => Math.sin(Math.PI * Math.min(1, x * 1.08)) * (0.55 + 0.45 * Math.sin(x * 41)));
+    const gf = ctx.createBiquadFilter(); gf.type = 'bandpass'; gf.Q.value = 9;
+    gf.frequency.setValueAtTime(190, t + 0.08); gf.frequency.exponentialRampToValueAtTime(430, t + 0.6);
+    const gg = ctx.createGain(); gg.gain.value = 0.42;
+    groan.connect(gf).connect(gg).connect(out); groan.start(t + 0.08); groan.stop(t + 0.72);
+    // it meets its stop
+    thud(0.56, 140, 0.55, 0.22); ring(0.56, 610, 0.09, 0.5); ring(0.565, 1130, 0.05, 0.36);
+  } else {
+    // the swing: air and hinge, falling
+    const sw = noiseBurst(0.3, (x) => Math.sin(Math.PI * x));
+    const sf = ctx.createBiquadFilter(); sf.type = 'bandpass'; sf.Q.value = 2.2;
+    sf.frequency.setValueAtTime(520, t); sf.frequency.exponentialRampToValueAtTime(160, t + 0.3);
+    const sg = ctx.createGain(); sg.gain.value = 0.3;
+    sw.connect(sf).connect(sg).connect(out); sw.start(t); sw.stop(t + 0.3);
+    // the slam
+    thud(0.3, 95, 1.0, 0.34); thud(0.3, 420, 0.5, 0.08);
+    ring(0.3, 470, 0.11, 0.9); ring(0.302, 790, 0.07, 0.7); ring(0.305, 1240, 0.045, 0.5);
+    // the dogs going home
+    clack(0.46, 1500, 0.4); clack(0.53, 1150, 0.3, 0.04);
+  }
+}
+// steel plate underfoot: a clank with a little ring in it, and no print
+function sfxStepMetal() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  stepAlt ^= 1;
+  const out = ctx.createGain();
+  out.gain.value = 0.42 * (stepAlt ? 1 : 0.82) * (0.85 + Math.random() * 0.3);
+  out.connect(sfxOut());
+  const heel = noiseBurst(0.035, (x) => Math.pow(1 - x, 4));
+  const hf = ctx.createBiquadFilter(); hf.type = 'bandpass'; hf.frequency.value = 1400 + Math.random() * 900; hf.Q.value = 1.4;
+  const hg = ctx.createGain(); hg.gain.value = 0.3;
+  heel.connect(hf).connect(hg).connect(out); heel.start(t); heel.stop(t + 0.035);
+  const f0 = 260 + Math.random() * 90;
+  for (const [m, g, d] of [[1, 0.28, 0.14], [2.7, 0.08, 0.1], [4.1, 0.04, 0.07]]) {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f0 * m;
+    const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t);
+    og.gain.exponentialRampToValueAtTime(g, t + 0.004); og.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    o.connect(og).connect(out); o.start(t); o.stop(t + d + 0.02);
+  }
+  const body = noiseBurst(0.06, (x) => Math.pow(1 - x, 3));
+  const bf = ctx.createBiquadFilter(); bf.type = 'lowpass'; bf.frequency.value = 220;
+  const bg = ctx.createGain(); bg.gain.value = 0.25;
+  body.connect(bf).connect(bg).connect(out); body.start(t); body.stop(t + 0.06);
+}
+/* The room's air, on `bunkerMix`: mains hum with its second harmonic, a
+ * ventilation rumble that breathes, and a thread of CRT whine — quiet, and
+ * all of it below the sea it replaces. */
+function startBunkerAudio() {
+  if (bunkerAudio || !audioCtx) return;
+  const ctx = audioCtx;
+  const gain = ctx.createGain(); gain.gain.value = 0; gain.connect(sfxOut());
+  const hum = ctx.createOscillator(); hum.type = 'sawtooth'; hum.frequency.value = 50;
+  const hum2 = ctx.createOscillator(); hum2.type = 'sine'; hum2.frequency.value = 100.3;
+  const hf = ctx.createBiquadFilter(); hf.type = 'lowpass'; hf.frequency.value = 240;
+  const hg = ctx.createGain(); hg.gain.value = 0.045;
+  const h2g = ctx.createGain(); h2g.gain.value = 0.03;
+  hum.connect(hf).connect(hg).connect(gain); hum2.connect(h2g).connect(gain);
+  const buf = ctx.createBuffer(1, ctx.sampleRate * 3, ctx.sampleRate);
+  const d = buf.getChannelData(0); let lp = 0;
+  for (let i = 0; i < d.length; i++) { lp = lp * 0.995 + (Math.random() * 2 - 1) * 0.005; d[i] = lp * 6; }
+  const vent = ctx.createBufferSource(); vent.buffer = buf; vent.loop = true;
+  const vf = ctx.createBiquadFilter(); vf.type = 'lowpass'; vf.frequency.value = 190;
+  const vg = ctx.createGain(); vg.gain.value = 0.34;
+  const lfo = ctx.createOscillator(); lfo.frequency.value = 0.09;
+  const lg = ctx.createGain(); lg.gain.value = 0.1;
+  lfo.connect(lg).connect(vg.gain);
+  vent.connect(vf).connect(vg).connect(gain);
+  const whine = ctx.createOscillator(); whine.type = 'sine'; whine.frequency.value = 7840;
+  const wg = ctx.createGain(); wg.gain.value = 0.006;
+  whine.connect(wg).connect(gain);
+  hum.start(); hum2.start(); vent.start(); lfo.start(); whine.start();
+  bunkerAudio = { gain };
 }
 // ------------------------------------------------------------------
 // The tower: walls you can't walk through, a doorway you can, and a
@@ -15455,6 +15746,7 @@ function update(dt, rawDt = dt) {
       vmImpulse(-1.1 - force * 2.4);
       if (!onDock && !onShip && groundY < 0.35 && inWater(camera.position.x, camera.position.z)) sfxSplash(0.9);
       else if (onDock) sfxStepWood();
+      else if (inBunker) sfxStepMetal();
       else sfxStep();
     }
     camBaseY = floorLimit; vy = 0; onGround = true;
@@ -15503,6 +15795,8 @@ function update(dt, rawDt = dt) {
         sfxSplash(0.85);
       } else if (onDock) {
         sfxStepWood();                     // boards: a knock, and no print
+      } else if (inBunker) {
+        sfxStepMetal();                    // steel plate: a clank, and no print
       } else {
         stampFoot(camera.position.x, camera.position.z, moveDir.x, moveDir.z, footSide);
         sfxStep();
@@ -15749,7 +16043,7 @@ function animate() {
   if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
   oceanUniforms.uTime.value += dt;
   if (!introStarted) titleCam(rawDt);
-  update(dt, rawDt);
+  update(dt, rawDt); updateHatch(rawDt);
   updateHover();
   if (inspecting) {
     updateInspect(dt);
@@ -15793,7 +16087,7 @@ window.__bw = {
     const rawDt = dt;
     if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
     oceanUniforms.uTime.value += dt;
-    update(dt, rawDt);
+    update(dt, rawDt); updateHatch(rawDt);
   },
   MUSH_X, MUSH_Z, MUSH, mushHouse, updateMushroom, mushState: () => ({ where: mushWhere, turns: mushTurns, stairY: mushStairY }),
   smile, updateSmile, smileState: () => ({ phase: smilePhase, t: smileT, loaded: !!smileMixer, clips: Object.keys(smileClips) }), sfxSmileStep,
@@ -15850,6 +16144,7 @@ window.__bw = {
   waterBottle, waterBottleWorld, get waterBottleItem() { return waterBottleItem; },
   get insideDrain() { return insideDrain; }, get drainMix() { return drainMix; },
   spawnBunker, get bunkers() { return bunkers; }, get inBunker() { return inBunker; },
+  enterBunker, leaveBunker, get hatchBusy() { return hatchBusy; }, get bunkerMix() { return bunkerMix; }, get bunkerHome() { return bunkerHome; }, HATCH_X, HATCH_Z, BUNKER_Y, hatch,
   waterSurfaceAt, submersionAt, restYInWater, groundGlow, addRipple,
   shells, listenToShell, makeRockGeo, dock, ring, driftAt, updateDock,
   listen: (v) => { listening = v; }, stopListening, keyItem, keyWorld,   // the ear pose without the audio, for the preview harness

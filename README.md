@@ -271,6 +271,17 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   slider. Previously they went straight to the speakers, which is why
   digging was so loud.
 
+## The bunker
+
+Halfway between the snorkeler and the tall one, on the dry sand, a steel lid
+in a concrete collar with a red marker lamp blinking beside it. `E` on it —
+**E To Enter Bunker** — and a second and a quarter later you are standing at
+the foot of a ladder in a sealed control room forty metres under the beach:
+Bohdan Lvov's scanned bunker, exact, with its CRTs flickering and its reels
+turning. `E` on the ladder — **E To Leave Bunker** — puts you back on the sand
+where you stood. You hear the hatch open ahead of you and slam behind you
+both ways. The room cannot be reached any other way.
+
 ## Saving
 
 One autosave, and no save button. Reaching the mushroom house — the last
@@ -350,8 +361,8 @@ by [Vertex Mercher](https://sketchfab.com/VertexMercher) licensed under
 This work is based on ["Underground Bunker"](https://sketchfab.com/3d-models/underground-bunker-720d2958484345d7b535554e14122b5c)
 by [Bohdan Lvov](https://sketchfab.com/ostapblendercg) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the bunker control
-room (`assets/bunker.glb`, packed as an exact replica by `tools/bunker_pack.py`;
-not placed on the walk yet).
+room (`assets/bunker.glb`, packed as an exact replica by `tools/bunker_pack.py`)
+under the hatch between the snorkeler and the tall one.
 
 This work is based on ["Survival Shovel"](https://sketchfab.com/3d-models/survival-shovel-143de1be88704810bd14f64cfed64bb7)
 by [howittworks](https://sketchfab.com/howittworks) licensed under

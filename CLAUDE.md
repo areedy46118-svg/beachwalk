@@ -1558,6 +1558,29 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**THE HATCH IS A CUT, AND THE ROOM IS UNDER THE BEACH.** The bunker's only
+door is a steel lid in the sand at `HATCH_X / HATCH_Z` (halfway from the
+snorkeler to the tall one); the room stands at `BUNKER_Y` = -40 directly
+under it, sealed, `hidden` — drawn only while you are in it or on the way
+(`updateBunkers` toggles `visible`, and the loader's PointLights go with the
+group, so they cost nothing until then). Entering and leaving are the same
+shape (`updateHatch`, on the WALL clock beside `update()`, so hitstop cannot
+stretch it): the lid seen to swing for 0.44 s while the screen goes black,
+the cut at 0.48 — teleport, `camBaseY`, `vy`, `groundY`, `inBunker` and the
+look all set in one place — black held to 0.76, in by 1.25, with the slam
+heard behind you at black. `hatchBusy` is in `frozen()`. Three things it
+needed: **the room's floor is THE floor** — `updateBunkers` used to raise
+`groundY` to the room's y only if that was higher, which forty metres under
+a beach at y = 0 it never is, and you would have fallen out of the room to
+the sand above; **you come out where you went in** (`hatchReturn`), not at
+a fixed spot, so the collar you were standing on is under you again; and
+**the scan's hatch clip spends its first 8.5 s on the cogs**, so to see the
+cover move before the black it is started at 7.9 s and run at 3.2x, then
+`stop()`ped at the cut so it is shut again next time. The room's air is
+`bunkerMix`: the surf and the wind (`windDuck`, a stage added to the wind
+chain for this) pulled to a tenth, a mains hum, a breathing fan and a thread
+of CRT whine, and steel underfoot (`sfxStepMetal`, no print).
+
 **THE CUT IS A STRAIGHT LINE.** The first cuts rolled the blade over the top,
 from pointing up on the near side to pointing down on the far side, and with
 the pivot at the grip that is an arc: the tip rose over the upper middle

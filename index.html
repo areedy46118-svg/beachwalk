@@ -189,6 +189,8 @@
   }
 
   /* black intro card — the opening line fades in over it, then it lifts */
+  /* the hatch's cut: driven per frame from main.js, no transition of its own */
+  #blackout { position: fixed; inset: 0; z-index: 11; background: #000; opacity: 0; pointer-events: none; }
   #intro {
     position: fixed;
     inset: 0;
@@ -1181,6 +1183,7 @@
     </div>
   </div>
 
+  <div id="blackout"></div>
   <div id="intro"><p id="intro-text"></p></div>
 
   <div id="overlay">
