@@ -28,11 +28,21 @@ from PIL import Image, ImageChops
 
 SRC = '/private/tmp/claude-501/-Users-ethanreedy-Dev-beachwalk/86ac18b9-ad0c-4a6c-974a-c4c4d6a8f782/scratchpad/mutant/Textures'
 OUT = '/private/tmp/claude-501/-Users-ethanreedy-Dev-beachwalk/86ac18b9-ad0c-4a6c-974a-c4c4d6a8f782/scratchpad/tex'
+# And a grade on top of each, so they are three related animals rather than
+# three downloads. The sets already differ; this pushes them a little further
+# apart in the direction each is already going and -- the part that matters --
+# pulls all three toward the scene's own cold blue, so they sit in the light of
+# this beach instead of on top of it. (r, g, b gains, then a mix of the
+# scene's blue through all of it.)
 SETS = {
-    'pale': ('Texture_set_02/png 4k', 'Mutant_Base_color.png', 'Mutant_AO.png'),
-    'red':  ('Texture_set_01/Png 4k', 'Mutant_Base_color.png', 'Mutant_AO.png'),
-    'dark': ('Texture_set_03/png 4k', 'Mutant_Base_color.tga', 'Mutant_AO.tga'),
+    'pale': ('Texture_set_02/png 4k', 'Mutant_Base_color.png', 'Mutant_AO.png',
+             (0.94, 0.99, 1.10), 0.13),      # cooler, the drowned one
+    'red':  ('Texture_set_01/Png 4k', 'Mutant_Base_color.png', 'Mutant_AO.png',
+             (1.10, 0.86, 0.80), 0.09),      # warmer and deeper: raw meat
+    'dark': ('Texture_set_03/png 4k', 'Mutant_Base_color.tga', 'Mutant_AO.tga',
+             (0.86, 1.00, 0.88), 0.16),      # green, and furthest into the dark
 }
+SCENE_BLUE = (0.28, 0.34, 0.46)
 COL, NRM = 1536, 1024
 AO_POW = 0.85          # the AO map is contrasty; ease it or the folds go to black
 DOWN = 0.62            # and the whole thing comes DOWN, at source, not in a shader
@@ -50,13 +60,19 @@ def load(setdir, name):
 
 
 os.makedirs(OUT, exist_ok=True)
-for tag, (setdir, colname, aoname) in SETS.items():
+for tag, (setdir, colname, aoname, gain, blue) in SETS.items():
     col = load(setdir, colname).convert('RGB').resize((COL, COL), Image.LANCZOS)
     ao = load(setdir, aoname).convert('L').resize((COL, COL), Image.LANCZOS)
     ao = ao.point(lambda v: int(255 * pow(v / 255.0, AO_POW)))
     # multiply, then take the whole thing down: the moon does the modelling
     out = ImageChops.multiply(col, Image.merge('RGB', (ao, ao, ao)))
-    out = out.point(lambda v: int(v * DOWN))
+    # its own grade, then a little of the scene's blue through all of it, so
+    # the three sit in this light rather than on top of it
+    ch = list(out.split())
+    for i in range(3):
+        g, b = gain[i] * DOWN, SCENE_BLUE[i] * 255 * blue
+        ch[i] = ch[i].point(lambda v, g=g, b=b: min(255, int(v * g * (1 - blue) + b)))
+    out = Image.merge('RGB', ch)
     path = os.path.join(OUT, 'mutant_%s_color.jpg' % tag)
     out.save(path, quality=90, optimize=True)
     print('  %-5s colour %d px  %d KB' % (tag, COL, os.path.getsize(path) // 1024))

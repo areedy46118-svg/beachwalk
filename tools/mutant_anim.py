@@ -58,13 +58,16 @@ CLIPS = [
     ('strafeL', 'Animation_fbx/mutant01@strafe_left.fbx'),
     ('strafeR', 'Animation_fbx/mutant01@strafe_right.fbx'),
     ('back',   'Animation_fbx/mutant01@walk_back01.fbx'),
+    ('back2',  'Animation_fbx/mutant01@walk_back02.fbx'),
+    ('walk',   'Animation_fbx/mutant01@walk.fbx'),
+    ('walk2',  'Animation_fbx/mutant01@walk02.fbx'),
     ('hit',    'Animation_fbx/mutant01@gethit.fbx'),
     ('die',    'Animation_fbx/mutant01@death01.fbx'),
     ('die2',   'Animation_fbx/mutant01@death02.fbx'),
     ('roar',   'update_animation/mutant01@Rage_01.fbx'),
     ('roar2',  'update_animation/mutant01@Rage_02.fbx'),
 ]
-STRIP_DRIFT = {'run', 'run2', 'strafeL', 'strafeR', 'back'}          # authored travelling; the game moves the body
+STRIP_DRIFT = {'run', 'run2', 'strafeL', 'strafeR', 'back', 'back2', 'walk', 'walk2'}          # authored travelling; the game moves the body
 FINGERS = ('Thumb', 'Index', 'Middle', 'Ring', 'fingers')
 
 def log(*a): print("[mutant]", *a); sys.stdout.flush()
@@ -130,6 +133,8 @@ body.data.materials.clear(); body.data.materials.append(mat)
 
 # ------------------------------------------------------------------ the clips
 kept = []
+scaled = 0
+worstScale = [0.0]
 for name, rel in CLIPS:
     before = set(bpy.data.objects)
     try:
@@ -153,6 +158,19 @@ for name, rel in CLIPS:
         if fc.data_path.startswith('pose.bones["'):
             b = fc.data_path.split('"')[1]
             if any(f in b for f in FINGERS): drop_fcurve(act, fc); dropped += 1
+
+    # THE SCALE CHANNELS COME OFF. The FBX bake keys location, rotation AND
+    # scale on all seventy bones, and the scale is 1.0 everywhere -- a third
+    # of the curves in the file carrying nothing. Worse: it means the mixer
+    # WRITES a scale of 1 to every bone every frame, so the game cannot give
+    # one variation a bigger head and another longer forearms by scaling its
+    # bones. The animation stamps it back out. The worst deviation from 1.0 is
+    # printed so this stays honest -- if a clip ever really does squash, that
+    # number will say so and this has to come back.
+    for fc in list(fcurves(act)):
+        if fc.data_path.endswith('.scale'):
+            for kp in fc.keyframe_points: worstScale[0] = max(worstScale[0], abs(kp.co[1] - 1.0))
+            drop_fcurve(act, fc); scaled += 1
 
     # the hips: measure the travel, and take the linear part off a locomotion clip
     hips = [fc for fc in fcurves(act) if fc.data_path == 'pose.bones["Character1_Hips"].location']
@@ -201,6 +219,7 @@ for name, rel in CLIPS:
 for a in list(bpy.data.actions):
     if a.name not in kept: bpy.data.actions.remove(a)
 log("actions kept:", [a.name for a in bpy.data.actions])
+log("scale curves dropped:", scaled, "- worst deviation from 1.0 was %.4f" % worstScale[0])
 
 # --------------------------------------------------------------- measurements
 # what the game needs to know: how tall it is, and which way it faces

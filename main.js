@@ -11843,7 +11843,10 @@ function updateMushroom(dt) {
 const MUT_X = 9.8, MUT_Z = MUSH_Z - 130;   // well past the pavilion, and up on the DRY sand:
                                            // the waterline reaches x = 8.6 (the body bag's hard number)
 const MUT_HP = 5;
-const MUT_SPEED = 4.1;                     // the pale one's; each kind scales off it
+const MUT_SPEED = 4.6;                     // the pale one's; each kind scales off it.
+                                           // You WALK at 3.4 and sprint at 4.7: at 4.1 the big
+                                           // one made 3.5 and backing up was a dodge for free.
+const MUT_DASH = 8.0;                      // the closing burst, faster than you can run
 const MUT_STUN = 2.1;                      // what landing a parry buys you
 const MUT_RECOIL = 0.32;                   // how long a survived hit rocks it
 const MUT_HIT_STOP = 0.09;
@@ -11873,34 +11876,54 @@ const MUT_ATTACKS = {
  * so a slow one is slow to commit and slow to recover — the punish window is
  * the price of the reach. `voice` is a pitch and two weights, and every
  * sound it makes goes through it, so you can tell which one is behind you. */
+/* AND THEY ARE NOT BUILT ALIKE EITHER. One mesh, one skeleton, three sets of
+ * proportions: `bones` scales named bones on each copy after it is parsed and
+ * before it is measured, so a bigger head or a longer forearm changes the
+ * silhouette and the game still stands the creature on its feet at the right
+ * height. It works only because the build strips the scale channels — the FBX
+ * bake keys a scale of 1.0 on all seventy bones every frame, and the mixer
+ * was stamping this straight back out. `PETALS` is the twelve flaps of the
+ * split-open skull, which is the fastest way to make one head not another. */
+const PETALS = [];
+for (const side of ['L', 'R', 'front', 'Back'])
+  for (let i = 1; i <= 3; i++) PETALS.push('Head_pt_' + side + '_0' + i);
+const petalScale = (k) => { const o = {}; for (const n of PETALS) o[n] = k; return o; };
+
 const MUT_KINDS = {
-  /* the pale one: the fight you learn the language on. Its run is Run01, it
-   * stands nearly straight, and it has every swing. */
-  pale: { skin: null, h: 2.30, hp: 5, dmg: 1, speedK: 1.00, windK: 1.00, reachK: 1.00, aggr: 1.05,
-          use: { attack: 0.34, attack2: 0.30, attack3: 0.20, attack4: 0.16 },
-          circle: 0.22, step: 0.30, chainMax: 1,
-          anim: { run: 'run', idle: 'idle', roar: 'roar', die: 'die', rate: 1.05, lean: 0.10, strafeK: 1.0 },
+  /* the pale one: the fight you learn the language on. Long in the forearm,
+   * otherwise the shape the sculpt came in. Run01, nearly upright. */
+  pale: { skin: null, h: 2.30, hp: 5, dmg: 1, speedK: 1.00, windK: 1.00, reachK: 1.05, aggr: 1.10,
+          use: { attack: 0.32, attack2: 0.28, attack3: 0.18, attack4: 0.22 },
+          circle: 0.20, step: 0.30, chainMax: 1, feint: 0.10,
+          bones: { Character1_LeftForeArm: 1.14, Character1_RightForeArm: 1.14 },
+          anim: { run: 'run', idle: 'idle', roar: 'roar', die: 'die', walk: 'walk', back: 'back',
+                  rate: 1.05, lean: 0.10, strafeK: 1.0 },
           voice: { f: 1.00, growl: 1.00, rasp: 1.00 } },
-  /* the flayed red one: half a metre taller, seven health, and IT HITS FOR
-   * TWO — you have three, so a swing of its you failed to read is most of a
-   * life. That is fair because its startups are the longest thing in the
-   * fight; the tell is enormous and the punish window after it is enormous
-   * too. It runs Run02 at four fifths speed, which is a plod, and it barely
-   * circles: it walks through the middle of everything. */
-  red:  { skin: 'assets/mutant-red.jpg', h: 2.72, hp: 7, dmg: 2, speedK: 0.86, windK: 1.26, reachK: 1.14, aggr: 0.95,
-          use: { attack: 0.40, attack3: 0.36, attack4: 0.24 },
-          circle: 0.10, step: 0.38, chainMax: 1,
-          anim: { run: 'run2', idle: 'idle2', roar: 'roar2', die: 'die2', rate: 0.80, lean: 0.03, strafeK: 0.7 },
+  /* the flayed red one: a head a fifth again the size with the skull flaps
+   * thrown wide, thick in the arm and the thigh, and it HITS FOR TWO — you
+   * have three. Fair only because its startups are the longest thing in the
+   * fight and its recovery the most punishable. Run02 at four fifths: a plod. */
+  red:  { skin: 'assets/mutant-red.jpg', h: 2.74, hp: 7, dmg: 2, speedK: 0.95, windK: 1.24, reachK: 1.20, aggr: 1.00,
+          use: { attack: 0.38, attack3: 0.34, attack4: 0.28 },
+          circle: 0.10, step: 0.38, chainMax: 1, feint: 0.04,
+          bones: Object.assign({ Character1_Head: 1.20, Character1_Spine2: 1.08,
+                                 Character1_LeftArm: 1.18, Character1_RightArm: 1.18,
+                                 Character1_LeftUpLeg: 1.12, Character1_RightUpLeg: 1.12 }, petalScale(1.32)),
+          anim: { run: 'run2', idle: 'idle2', roar: 'roar2', die: 'die2', walk: 'walk2', back: 'back2',
+                  rate: 0.80, lean: 0.03, strafeK: 0.7 },
           voice: { f: 0.68, growl: 1.45, rasp: 0.7 } },
-  /* the dark one: small, four health, and the only one that CHAINS TWICE —
-   * three swipes on the end of each other, which is the combo you have to
-   * learn to sit through. It runs Run02 at nearly twice speed bent right
-   * over, so it reads as a completely different animal to the red one on
-   * the same clip, and it circles more than it stands. */
-  dark: { skin: 'assets/mutant-dark.jpg', h: 1.98, hp: 4, dmg: 1, speedK: 1.30, windK: 0.72, reachK: 0.92, aggr: 1.55,
-          use: { attack2: 0.50, attack4: 0.28, attack: 0.22 },
-          circle: 0.40, step: 0.22, chainMax: 2,
-          anim: { run: 'run2', idle: 'idle2', roar: 'roar', die: 'die', rate: 1.95, lean: 0.30, strafeK: 1.45 },
+  /* the dark one: a small tight head, forearms a third longer than they
+   * should be and shins to match — it is all reach and no weight. Four
+   * health, chains three swings together, and runs Run02 at nearly twice
+   * speed bent right over, which is faster than you can sprint. */
+  dark: { skin: 'assets/mutant-dark.jpg', h: 2.02, hp: 4, dmg: 1, speedK: 1.32, windK: 0.72, reachK: 1.00, aggr: 1.60,
+          use: { attack2: 0.46, attack4: 0.32, attack: 0.22 },
+          circle: 0.34, step: 0.22, chainMax: 2, feint: 0.20,
+          bones: Object.assign({ Character1_Head: 0.80,
+                                 Character1_LeftForeArm: 1.34, Character1_RightForeArm: 1.34,
+                                 Character1_LeftLeg: 1.26, Character1_RightLeg: 1.26 }, petalScale(0.72)),
+          anim: { run: 'run2', idle: 'idle2', roar: 'roar', die: 'die', walk: 'walk', back: 'back',
+                  rate: 1.95, lean: 0.30, strafeK: 1.45 },
           voice: { f: 1.46, growl: 0.62, rasp: 1.45 } },
 };
 const MUT_VOICE = MUT_KINDS.pale.voice;    // the default for anything unvoiced
@@ -11953,7 +11976,7 @@ function mutAnim(u, dt, moving) {
     const a = mutPlay(u, u.st.side < 0 ? 'strafeL' : 'strafeR', true);
     if (a) { a.paused = false; a.timeScale = 1.25 * N.strafeK; }
   } else if (u.st.back > 0) {
-    const a = mutPlay(u, 'back', true);
+    const a = mutPlay(u, N.back, true);
     if (a) { a.paused = false; a.timeScale = 1.2; }
   } else if (moving > 0.04) {
     const a = mutPlay(u, N.run, true);
@@ -12021,6 +12044,8 @@ function dressMutant(u, gltf) {
     mm.needsUpdate = true;
   });
   u.g.add(m);
+  // its own build: named bones scaled before anything is measured
+  if (u.kind.bones) m.traverse((o) => { if (o.isBone && u.kind.bones[o.name]) o.scale.setScalar(u.kind.bones[o.name]); });
   // Box3.setFromObject() knows nothing about skinning and answers the bind
   // pose through the node chain; skinnedBounds() runs the vertices through
   // the bones and is the only measurement of one of these that means anything
@@ -12057,7 +12082,8 @@ function makeMutant(x, z, kindName) {
     g, kind, kindName, atk, model: null, mixer: null, clips: {}, cur: null, leanT: 0,
     st: { alive: true, awake: false, roar: 0, atk: -1, swing: Object.keys(kind.use)[0],
           cool: 0, stun: 0, recoil: 0, struck: false, hp: kind.hp, step: 0, deadT: 0,
-          side: 0, sideT: 0, back: 0, chained: false, chainN: 0, chainAt: -1, swings: 0, wait: 0, sprint: 0 },
+          side: 0, sideT: 0, back: 0, chained: false, chainN: 0, chainAt: -1, swings: 0, wait: 0,
+          sprint: 0, dash: 0, feint: 0, sand: 0, threw: 0 },
     hitFrom: new THREE.Vector3(), hitDir: new THREE.Vector3(), dir: new THREE.Vector3(),
   };
   mutants.push(u);
@@ -12157,6 +12183,18 @@ function killMutant(u) {
  * white, the swing it was in the middle of is broken, and it comes again. */
 function hurtMutant(u, dmg, P = 0) {
   if (!u.st.alive || u.st.struck) return false;
+  /* THE RIPOSTE. A blow landed on one you have just parried counts DOUBLE.
+   * The parry was already an opening; this makes it the point of the fight —
+   * read the tell, take the stun, wind all the way up, and take half of a
+   * seven-health creature off in one swing. Without it a parry only bought
+   * you time, and time is not a reward. */
+  const riposte = u.st.stun > 0;
+  if (riposte) {
+    dmg *= 2;
+    setPrompt('<b>RIPOSTE</b>');
+    setTimeout(() => { if (promptHTML.includes('RIPOSTE')) setPrompt(''); }, 700);
+    addTrauma(0.3); fovKick = Math.max(fovKick, 5);
+  }
   u.st.hp -= dmg;
   if (u.st.hp <= 0) { killMutant(u); return true; }
   /* POISE. A light swing into the last part of a committed startup takes
@@ -12471,6 +12509,96 @@ function mutSeparate(u, dt) {
   }
 }
 
+/* ---- THE ONE AT THE BACK THROWS SAND -------------------------------
+ * You could always leave. Three creatures that only hurt you inside two and a
+ * half metres are three creatures you walk away from, and walking away from a
+ * fight is the least interesting thing this beach can offer. So whichever of
+ * them is furthest back and has nothing else to do scoops up a handful and
+ * throws it, and it costs you WIND rather than health: the bar you block and
+ * sprint on. Backing off to breathe is exactly what it takes away, so the
+ * pressure to close is real without a ranged attack that can kill you.
+ *
+ * It leads its throw, and it misses if you move. That is the whole fairness
+ * of it — it is a reason to stop retreating, not a punishment for having. */
+const MUT_SAND_FAR = 8.5;          // beyond this, somebody starts throwing
+const MUT_SAND_COOL = 2.6;
+const MUT_SAND_SPEED = 15;
+const mutSand = [];
+let mutNearest = 999;
+const _sandV = new THREE.Vector3();
+function throwSand(u, dist) {
+  u.st.sand = MUT_SAND_COOL * (0.75 + Math.random() * 0.6);
+  u.st.threw = 0.55;                                   // how long the motion runs
+  // lead it: where you will be if you keep doing what you are doing
+  const lead = Math.min(0.55, dist / MUT_SAND_SPEED);
+  const tx = camera.position.x + velocity.x * lead;
+  const tz = camera.position.z + velocity.z * lead;
+  const from = new THREE.Vector3(u.g.position.x, u.kind.h * 0.72, u.g.position.z);
+  const dx = tx - from.x, dz = tz - from.z;
+  const d = Math.hypot(dx, dz) || 1;
+  const flight = d / MUT_SAND_SPEED;
+  mutSand.push({
+    pos: from,
+    vel: new THREE.Vector3(dx / flight, 0.5 * 9.8 * flight + (playerEye() - from.y) / flight, dz / flight),
+    t: 0, life: flight + 0.4, voice: u.kind.voice,
+  });
+  sfxMutSandThrow(dist, u.kind.voice);
+}
+function updateMutSand(dt) {
+  for (let i = mutSand.length - 1; i >= 0; i--) {
+    const c = mutSand[i];
+    c.t += dt;
+    c.vel.y -= 9.8 * dt;
+    c.pos.addScaledVector(c.vel, dt);
+    // it is a handful of beach, so it comes apart on the way
+    if (Math.random() < dt * 40) spawnPuffs(c.pos.x, c.pos.z, 1, c.vel.x * 0.1, c.vel.z * 0.1, c.pos.y, [0.42, 0.44, 0.50]);
+    _sandV.set(camera.position.x - c.pos.x, (camera.position.y - 0.2) - c.pos.y, camera.position.z - c.pos.z);
+    if (_sandV.length() < 0.85) {
+      /* In your eyes. It takes the bar, shakes the frame and shoves you, and
+       * it does not take health: a ranged attack that can kill you turns a
+       * fight into a race, and this is here to stop you leaving, not to end
+       * you from across the sand. */
+      stamina = Math.max(0, stamina - 0.42);
+      if (stamina <= 0.001) { exhausted = true; if (!blockGasped) gaspOut(); }
+      addTrauma(0.75);
+      fovKick = Math.max(fovKick, 5);
+      hurtFlash = Math.max(hurtFlash, 0.35);
+      spawnPuffs(camera.position.x, camera.position.z, 10, 0, 0, camera.position.y - 0.25, [0.46, 0.47, 0.52]);
+      sfxMutSandHit();
+      const kx = camera.position.x - c.pos.x, kz = camera.position.z - c.pos.z;
+      const kd = Math.hypot(kx, kz) || 1;
+      knockback.set((kx / kd) * 2.4, 0, (kz / kd) * 2.4);
+      setPrompt('<b>SAND</b>');
+      setTimeout(() => { if (promptHTML.includes('SAND')) setPrompt(''); }, 620);
+      mutSand.splice(i, 1); continue;
+    }
+    if (c.t > c.life || c.pos.y < 0.02) {
+      spawnPuffs(c.pos.x, c.pos.z, 5, 0, 0, 0.08, [0.42, 0.44, 0.50]);
+      mutSand.splice(i, 1);
+    }
+  }
+}
+function sfxMutSandThrow(dist = 0, V = MUT_VOICE) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, g0 = 0.8 / (1 + dist / 10);
+  const w = noiseBurst(0.3, (x) => Math.sin(Math.min(1, x * 2.2) * Math.PI) * (1 - x * 0.4));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.9;
+  bp.frequency.setValueAtTime(700 * V.f, t);
+  bp.frequency.exponentialRampToValueAtTime(1800 * V.f, t + 0.28);
+  const g = ctx.createGain(); g.gain.value = 0.16 * g0;
+  w.connect(bp).connect(g).connect(sfxOut());
+  w.start(t); w.stop(t + 0.3);
+}
+function sfxMutSandHit() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const n = noiseBurst(0.42, (x) => Math.pow(1 - x, 1.5) * (0.4 + 0.6 * Math.random()));
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 900;
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.34, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.42);
+  n.connect(hp).connect(g).connect(sfxOut());
+  n.start(t); n.stop(t + 0.42);
+}
+
 function updateMutantUnit(u, dt) {
   if (!u.mixer) return;
   const p = u.g.position;
@@ -12531,6 +12659,26 @@ function updateMutantUnit(u, dt) {
      * it: stepping round it early is worth nothing, stepping round it late
      * is worth everything, which is the timing a sidestep should have. */
     if (t < A.wind * 0.8) turn(3.4);
+    /* AND IT WALKS THE WIND-UP IN. This is the whole answer to "I back up and
+     * never get hit": a startup that stands still is a startup you outrun by
+     * holding S. It closes through its own wind-up at two thirds of its run,
+     * so retreating buys you distance the swing simply eats, and the answers
+     * left are the ones that should be — step round it, guard it, or parry.
+     * It stops closing for the last fifth, which is the commit. */
+    if (t < A.wind * 0.8 && dist > A.reach * 0.75) {
+      u.dir.set(dx / dist, 0, dz / dist);
+      p.addScaledVector(u.dir, MUT_SPEED * u.kind.speedK * 0.66 * dt);
+    }
+    /* A FEINT. It throws the startup, gets most of the way through it and
+     * does not swing — then comes straight back with a real one. There is no
+     * way to read this but to watch the arm, which is the point: a tell you
+     * can answer on a stopwatch is not a tell. Rare, and never twice. */
+    if (u.st.feint > 0 && t >= A.wind * u.st.feint) {
+      u.st.feint = 0; u.st.atk = -1; u.st.chainAt = -1;
+      u.st.cool = 0.12 + Math.random() * 0.14;
+      mutAnim(u, dt, 0);
+      return;
+    }
     // the lunge covers ground through its strike
     if (A.lunge > 0 && t >= A.wind && t < A.wind + A.strike + 0.12 && dist > 1.3) {
       u.dir.set(dx / dist, 0, dz / dist);
@@ -12574,11 +12722,31 @@ function updateMutantUnit(u, dt) {
       mutDrop(u);                    // its turn is over; the next one is open
       // AGGRESSION IS THE COOLDOWN. They stood about between swings; now the
       // next turn is a fifth of a second away and the small one is quicker.
-      u.st.cool = (0.16 + Math.random() * 0.36) * u.kind.windK / u.kind.aggr;
+      u.st.cool = (0.10 + Math.random() * 0.44) * u.kind.windK / u.kind.aggr;
     }
   } else {
     u.st.cool = Math.max(0, u.st.cool - dt);
+    u.st.sand = Math.max(0, u.st.sand - dt);
     turn(6);
+    /* The one at the back, when you have got away from all of them. It does
+     * not hold the turn to do it, so somebody can still be swinging at you
+     * while somebody else throws — which is exactly the situation that makes
+     * standing off pointless. */
+    if (u.st.threw > 0) {
+      u.st.threw -= dt;
+      const a = mutPlay(u, 'attack2', false);
+      if (a) { a.paused = true; a.time = clampTime(a, (1 - u.st.threw / 0.55) * a.getClip().duration * 0.5); }
+      u.mixer.update(dt);
+      return;
+    }
+    /* Either you have got away from all of them, or THIS one is the one at
+     * the back — the straggler with nothing to do while somebody faster is on
+     * you. Both are the same idea: nobody out there is idle. */
+    if ((mutNearest > MUT_SAND_FAR || dist > 13) && u.st.sand <= 0 && mutToken !== u
+        && dist > MUT_SAND_FAR * 0.8 && dist < 34 && !settings.devMode) {
+      throwSand(u, dist);
+      return;
+    }
     const near = dist <= A.reach;
     /* WHOSE TURN IT IS. One of them swings and the others circle: three
      * tells at once is not three times the fight, it is no fight at all,
@@ -12601,6 +12769,12 @@ function updateMutantUnit(u, dt) {
       p.z += (tz * u.st.side * sw + (dz / dist) * r * 1.5) * dt;
       p.x = THREE.MathUtils.clamp(p.x, WADE_X - 1.5, CLIFF_BLOCK_X + 0.5);
       moving = 0.2;
+      /* AND CIRCLING IS NOT CHASING. It closes at a metre and a half a second
+       * while it circles and you retreat at three and a half, so a creature
+       * that kept orbiting while you walked away lost ground every time it
+       * did — which is how two of them ended up thirty metres behind a player
+       * who only ever held S. Break off and run the moment the range is gone. */
+      if (dist > A.reach + 1.5) u.st.side = 0;
       if (u.st.sideT <= 0 || dist < 1.4) { u.st.side = 0; u.st.cool = Math.max(u.st.cool, 0.15); }
     } else if (u.st.back > 0) {
       // a step back, and then the lunge out of it
@@ -12620,6 +12794,25 @@ function updateMutantUnit(u, dt) {
           sfxMutTell(dist, u.atk[u.st.swing].wind, u.kind.voice);
         } else { u.st.side = Math.random() < 0.5 ? -1 : 1; u.st.sideT = 0.5; }
       }
+    } else if (u.st.dash > 0) {
+      /* THE CLOSING DASH. At eight metres a second it is faster than you can
+       * sprint, and it ends in a swing — so a gap you open by running is a
+       * gap that buys you one exchange, not an exit. */
+      u.st.dash -= dt;
+      u.dir.set(dx / dist, 0, dz / dist);
+      p.addScaledVector(u.dir, MUT_DASH * u.kind.speedK * dt);
+      p.x = THREE.MathUtils.clamp(p.x, WADE_X - 1.5, CLIFF_BLOCK_X + 0.5);
+      moving = 1;
+      u.st.step -= dt;
+      if (u.st.step <= 0) { u.st.step = u.kind.step * 0.6; sfxMutStep(dist, u.kind.voice); }
+      if (u.st.dash <= 0 || dist < A.reach * 0.95) {
+        u.st.dash = 0;
+        if (mutToken === u) {
+          const pick = u.kind.use.attack4 ? 'attack4' : Object.keys(u.kind.use)[0];
+          u.st.swing = pick; u.st.atk = 0; u.st.chained = false; u.st.chainN = 0; u.st.wait = 0;
+          sfxMutTell(dist, u.atk[pick].wind, u.kind.voice);
+        }
+      }
     } else if (!near) {
       /* THE SPRINT DOES NOT STOP WHEN THE TAKE DOES. They come in at nearly
        * twice speed through the cutscene, so handing back at their walking
@@ -12627,12 +12820,23 @@ function updateMutantUnit(u, dt) {
        * your hands — the one frame that had to look like nothing happened.
        * It decays instead, over a second and a bit, while they are already
        * on you. */
-      const sp = MUT_SPEED * u.kind.speedK * (1 + u.st.sprint)
+      /* AND A CATCH-UP. Its top speed beats your walk by a metre a second, but
+       * every swing it throws costs it ground — it advances at two thirds
+       * through the startup and stands still through the recovery — so
+       * against a player who only ever holds S the slow one drifted forty
+       * metres out of the fight and stayed there. Past eight metres it is no
+       * longer fighting, it is rejoining, and it rejoins at a sprint. */
+      const rejoin = dist > 8 ? 1.4 : 1;
+      const sp = MUT_SPEED * u.kind.speedK * (1 + u.st.sprint) * rejoin
         * THREE.MathUtils.clamp((dist - A.reach) / 1.8, 0.3, 1);
       u.dir.set(dx / dist, 0, dz / dist);
       p.addScaledVector(u.dir, sp * dt);
       p.x = THREE.MathUtils.clamp(p.x, WADE_X - 1.5, CLIFF_BLOCK_X + 0.5);
       moving = sp / (MUT_SPEED * u.kind.speedK);
+      // hold the turn and a gap it can cross in one go? it crosses it
+      if (mutToken === u && u.st.cool <= 0 && dist < 9 && dist > A.reach + 0.8 && Math.random() < dt * 2.2) {
+        u.st.dash = 0.28 + Math.random() * 0.42;
+      }
       u.st.step -= dt;
       if (u.st.step <= 0) {
         u.st.step = u.kind.step / Math.max(0.35, moving);
@@ -12658,6 +12862,7 @@ function updateMutantUnit(u, dt) {
           for (const k in u.kind.use) { r -= u.kind.use[k]; if (r <= 0) { pick = k; break; } }
         }
         u.st.swing = pick; u.st.atk = 0; u.st.chained = false; u.st.chainN = 0; u.st.wait = 0;
+        u.st.feint = (u.st.swings > 1 && Math.random() < u.kind.feint) ? 0.55 + Math.random() * 0.2 : 0;
         sfxMutTell(dist, u.atk[pick].wind, u.kind.voice);
       } else if (!wantSwing && maySwing && u.kind.use.attack4 && Math.random() > u.kind.circle) {
         u.st.back = 0.42;                     // it keeps the turn through the step
@@ -12710,7 +12915,13 @@ function updateMutant(dt) {
   }
   if (updateMutantCut(dt)) return;             // the cutscene drives them itself
   mutGiveToken(dt);
+  mutNearest = 999;
+  for (const u of mutants) {
+    if (!u.st.alive || !u.st.awake) continue;
+    mutNearest = Math.min(mutNearest, Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z));
+  }
   for (const u of mutants) updateMutantUnit(u, dt);
+  updateMutSand(dt);
 }
 
 /* The trails. Each one leaves a widening V of ripples behind it and throws a
@@ -13980,7 +14191,7 @@ window.__bw = {
   get dockDoorOpen() { return dockDoorOpen; }, set dockDoorOpen(v) { dockDoorOpen = v; }, get onDock() { return onDock; },
   crabs, makeCrabUnit, nearestCrab, crabPlay, updateCrabUnit,
   mutants, mutant, updateMutant, hurtMutant, killMutant, parryMutant, blockMutant, nearestMutant,
-  MUT_X, MUT_Z, MUT_HP, MUT_WIND, MUT_STUN, MUT_ATTACKS, MUT_KINDS, MUT_TRIGGER,
+  MUT_X, MUT_Z, MUT_HP, MUT_WIND, MUT_STUN, MUT_ATTACKS, MUT_KINDS, MUT_TRIGGER, mutSand, throwSand,
   get mutToken() { return mutToken; }, get mutCut() { return mutCut; }, get mutPhase() { return mutPhase; },
   mutState: () => mutants.map((u) => ({ kind: u.kindName, ...u.st, x: +u.g.position.x.toFixed(2), z: +u.g.position.z.toFixed(2), clip: u.cur && u.cur.getClip().name })),
   packCrabs, updatePack, get packPhase() { return packPhase; }, PACK_Z,

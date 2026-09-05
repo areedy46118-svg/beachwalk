@@ -175,7 +175,20 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   swipe, and the only one that chains three swings together; it is the one
   that gets behind you while you are reading one of the others. Each has its
   own voice, a pitch and a weight, so you can tell from across the sand which
-  of them is winding up.
+  of them is winding up, and its own build — the red one's skull flaps are
+  thrown a third wider and its arms are thick, the dark one has a small tight
+  head on forearms and shins a third too long.
+- **You cannot walk away from them.** They close through their own wind-ups,
+  they break off circling the moment you open the range, anything left more
+  than eight metres behind rejoins at a sprint, and a gap you open by running
+  is crossed by a dash at eight metres a second that ends in a swing. And
+  whichever of them is at the back throws sand: it leads the throw and misses
+  if you move, and what it takes is your WIND, not your health — so backing
+  off to breathe is the one thing it stops.
+- **A parry is worth landing.** A blow on one you have just parried counts
+  double, which takes half of the big one off in a swing. They feint, too:
+  the startup goes up, gets most of the way through, and nothing comes — so
+  the tell has to be read off the arm and not off a count.
   **Only one of them swings at a time**, and the turn goes to whichever has
   gone longest without one. Three tells at once is not three times the fight,
   it is no fight at all — there is nothing to read. So what you are answering

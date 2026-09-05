@@ -1594,6 +1594,17 @@ thing that must stay. It is the edge that separates two metres of dark flesh
 from a dark beach; without it they do not lurk, they vanish. 4K sources
 resized once beat the pack's own 2K maps resized again.
 
+**AND THEY ARE NOT BUILT ALIKE.** One mesh, one skeleton, three sets of
+proportions: `kind.bones` scales named bones on each parsed copy BEFORE
+`skinnedBounds` measures it, so a bigger head or a longer forearm changes the
+silhouette and the creature is still stood on its feet at the right height.
+`PETALS` is the twelve flaps of the split-open skull — the fastest way to
+make one head not another. This works ONLY because the build strips the scale
+channels: the FBX bake keys a scale of 1.0 on all seventy bones of every
+clip, 1920 curves carrying nothing, and the mixer was stamping them straight
+back over anything set here. The tool prints the worst deviation from 1.0
+(0.0000) so that stays honest.
+
 **AND THEY MUST NOT MOVE ALIKE.** The pack has two runs, two idles, two rages
 and two deaths, so each kind gets its own in `kind.anim` — but two of them
 share a run clip, and the thing that makes those two different animals is not
@@ -1641,6 +1652,37 @@ one tell at a time. And they come through the cutscene at nearly twice speed,
 so handing back at their walking chase speed was a visible gear change at the
 exact moment that had to look like nothing happened: `st.sprint` carries it
 over and decays across the next second and a half.
+
+**"I BACK UP AND NEVER GET HIT" IS FOUR BUGS, NOT ONE.** (1) A startup that
+stands still is a startup you outrun by holding S — they walk the wind-up in
+now, at two thirds of a run, and stop only for the last fifth, which is the
+commit. (2) At 4.1 the big one made 3.5 against a 3.4 walk; base speed is 4.6
+and nothing is slower than you. (3) CIRCLING IS NOT CHASING: it closes at a
+metre and a half a second while you retreat at three and a half, so a
+creature that kept orbiting lost ground every time — it breaks off past reach
++ 1.5. (4) Every swing still costs ground (advance at two thirds, stand
+through the recovery), so past eight metres a straggler is not fighting, it
+is REJOINING, and it does that at 1.4x. Holding S for forty seconds went from
+free to eight damage, eight dashes and most of the wind bar. `MUT_DASH` is
+the closing burst at 8 m/s — faster than you can sprint — and it ends in a
+swing, so a gap you open by running buys one exchange, not an exit.
+
+**THE ONE AT THE BACK THROWS SAND.** Three creatures that can only hurt you
+inside two and a half metres are three creatures you walk away from. It costs
+WIND, not health — a ranged attack that can kill you turns the fight into a
+race — and it takes exactly what backing off to breathe is for. It LEADS the
+throw and misses if you move, which is the whole fairness of it: a reason to
+stop retreating, not a punishment for having. It fires when everyone is far
+OR when this one is the straggler (`dist > 13`), so nobody out there is idle,
+and it does not need the turn, so somebody can be swinging at you while
+somebody else throws.
+
+**THE RIPOSTE IS WHAT A PARRY IS FOR.** A blow landed on one you have just
+parried counts DOUBLE. Without it a parry only bought time, and time is not a
+reward; with it, reading the tell takes half a seven-health creature off in
+one swing. FEINTS are the other half: it throws the startup, gets most of the
+way through and does not swing. There is no way to read that but to watch the
+arm, which is the point — a tell you can answer on a stopwatch is not a tell.
 
 **MEASURING ANY OF THIS NEEDS `heal()` EVERY FRAME.** A sample that lets the
 player die schedules `location.reload()`, and the page comes back mid-loop
