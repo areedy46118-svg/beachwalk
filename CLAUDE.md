@@ -1446,6 +1446,54 @@ lands `sfxKillThud`, and the whoosh is a blade's — shorter, higher, and
 delayed to the strike, because on the click it played over the cock-back and
 was sixty milliseconds ahead of the picture.
 
+**ONE AUTOSAVE, AT THE PAVILION, AND NO SAVE BUTTON.** The walk to the
+mushroom house is an hour of finding things and the three past it can take
+you in twenty seconds; losing the first to the second is the one thing that
+would stop anyone playing it twice. `SAVE_Z` is `MUSH_Z + 26` and it fires on
+your Z alone, the way the pack's trigger does — it does not care whether you
+came down the waterline or the cliff — a little short of the house, so you
+are saved walking up to it and not after you have climbed it. Once a game
+(`checkpointDone`), never in dev mode, and there is deliberately no manual
+save: a quicksave key turns a walk into a series of attempts.
+
+**THE CHECKPOINT IS NOT THE WORLD — IT IS WHERE YOU STOOD AND WHAT YOU HAD.**
+Every placement in this game runs off seeded noise (`mulberry32`), so a
+reload rebuilds the beach identically; the save only has to put you back and
+give you back. And it gives you back by RE-RUNNING THE PICKUPS: every
+`addInteractable(..., 'inventory', ...)` gets a `save` id (its label plus a
+count — the third shell is the third shell every load) and its `onActivate`
+is wrapped to record itself in `takenPickups`. The restore fires those same
+handlers again, which is the only way to get this right in a file this size:
+the handler is what takes the thing off the beach, builds its view model,
+names it and puts it in the pack, and every one of the fourteen is different.
+Two of them do not exist until something else has happened — the captain's
+head is not takeable until the wheel is turned and he has fallen — so the
+replay is a pass that runs every frame for eight seconds and stops when it
+has found everything. What is saved besides: position and heading, hp, the
+dug mounds (re-`revealMoundNear`d), the pack's ORDER (replay lands things in
+whatever order they arrive, and the hotbar is muscle memory — 3 was the
+shovel all game), the rings, what was in your hand, and the dozen booleans
+the walk latches (`castleBroken`, `crabBled`, `eyesSeen`, `snorkMet`, the
+blood tally, the star, the boat key).
+
+**AND THE DOCK'S CUTSCENE IS BEHIND YOU.** It fires on Z alone and the
+pavilion is three hundred metres past it, so a restore played the whole
+swim-in the moment you loaded, at a place with no water and no crabs.
+`beginRestore` marks `packPhase = 2` when the checkpoint is past the trigger
+and leaves those three asleep where they wait — which is what the beach
+behind you actually looks like once you have walked it. Anything else keyed
+to a trigger you have already crossed needs the same treatment.
+
+**TWO WAYS BACK.** Both go through `reloadInto(mode)`, which writes the mode
+into `sessionStorage` and loads the file again — the only honest way to reset
+a world this size. "Restart game" clears the checkpoint first and gives you
+the first morning; "restart from last checkpoint" keeps it, and the button is
+disabled when there is nothing to go back to. A death takes the checkpoint if
+there is one and a fresh start if there is not. The badge is `#autosave`, top
+right, a hairline ring that fills once as it writes and is gone in two and a
+half seconds — re-armed on a TIMER and not a frame, because the frame loop is
+not something a save indicator should depend on.
+
 **THE CUT IS A STRAIGHT LINE.** The first cuts rolled the blade over the top,
 from pointing up on the near side to pointing down on the far side, and with
 the pivot at the grip that is an arc: the tip rose over the upper middle

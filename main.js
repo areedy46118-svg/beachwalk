@@ -162,6 +162,14 @@ settings.devMode = false;   // NEVER carried over: a game always starts as a gam
 // the slider is for the session you are in
 settings.walkSpeed = DEFAULT_SETTINGS.walkSpeed;
 function saveSettings() { try { localStorage.setItem('beachwalk.settings', JSON.stringify({ ...settings, devMode: false })); } catch (e) {} }
+/* The checkpoint lives beside the settings. It is written ONCE a game, when
+ * you reach the pavilion, and read only by a death or by the menu — there is
+ * deliberately no manual save: the walk is the thing, and a quicksave key
+ * turns a walk into a series of attempts. */
+const SAVE_KEY = 'beachwalk.save';
+function hasCheckpoint() { try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; } }
+let loadMode = 'fresh';
+try { loadMode = sessionStorage.getItem('beachwalk.load') || 'fresh'; sessionStorage.removeItem('beachwalk.load'); } catch (e) {}
 
 let audioStarted = false, audioCtx = null, masterGain = null;
 let titleSurfGain = null;               // the sea under the title, pulled down on begin
@@ -3076,11 +3084,9 @@ function playerDied() {
   endDialog();
   deathEl.classList.add('show');
   refreshUI();
-  // come back at the title, but don't sit through the opening card again
-  setTimeout(() => {
-    try { sessionStorage.setItem('beachwalk.skipIntro', '1'); } catch (e) {}
-    location.reload();
-  }, 1600);
+  // come back at the checkpoint if there is one, and never sit through the
+  // opening card again
+  setTimeout(() => { reloadInto(hasCheckpoint() ? 'checkpoint' : 'fresh'); }, 1600);
 }
 const healthEl = document.getElementById('health');
 let hpShown = -1;
@@ -3300,6 +3306,7 @@ function beginGame() {
     introDone = true;
     for (const k in keys) keys[k] = false;
     clock.getDelta();
+    beginRestore();                                // if you came back to a checkpoint
     if (!locked && !fallbackLook) enterFallback();
     return;
   }
@@ -3325,6 +3332,7 @@ function beginGame() {
     introDone = true;
     for (const k in keys) keys[k] = false;
     clock.getDelta();                              // drop the big first-frame dt
+    beginRestore();
     if (!locked && !fallbackLook) enterFallback();
   }, revealAt);
 }
@@ -3535,23 +3543,34 @@ document.getElementById('m-reset').addEventListener('click', () => {
   settings = { ...DEFAULT_SETTINGS };
   syncMenuInputs(); applySettings(); saveSettings();
 });
-/* Restart: a new game. Everything the walk changed — the crab, the crate,
- * the bottle, the pack, the rings, where you are — goes back to how it was,
- * and the only honest way to do that in a file this size is to load it
- * again. The opening card is skipped, the way it is after a death; the title
- * click stays, because the pointer lock needs a gesture and nothing can give
- * it one for you. */
-function respawn() {
-  try { sessionStorage.setItem('beachwalk.skipIntro', '1'); } catch (e) {}
+/* TWO WAYS BACK, AND NO SAVE BUTTON. Everything the walk changed — the crab,
+ * the crate, the bottle, the pack, the rings, where you are — goes back by
+ * loading the file again, which is the only honest way to reset a world this
+ * size; what differs is what is put back afterwards. "Restart game" clears
+ * the checkpoint and gives you the beach as it was on the first morning;
+ * "restart from last checkpoint" keeps it and hands you the walk exactly as
+ * you were carrying it when you reached the pavilion. The opening card is
+ * skipped either way; the title click stays, because pointer lock needs a
+ * gesture and nothing can give it one for you. */
+function reloadInto(mode) {
+  try {
+    sessionStorage.setItem('beachwalk.skipIntro', '1');
+    sessionStorage.setItem('beachwalk.load', mode);
+    if (mode === 'fresh') localStorage.removeItem(SAVE_KEY);
+  } catch (e) {}
   location.reload();
 }
+function respawn() { reloadInto('fresh'); }
 document.getElementById('m-restart').addEventListener('click', respawn);
+const mCheckpointBtn = document.getElementById('m-checkpoint');
+mCheckpointBtn.addEventListener('click', () => { if (hasCheckpoint()) reloadInto('checkpoint'); });
 applySettings();
 syncMenuInputs();
 
 function openMenu() {
   if (ended || menuOpen) return;
   menuOpen = true;
+  mCheckpointBtn.disabled = !hasCheckpoint();
   menuReturnLock = !fallbackLook && started;
   if (locked) document.exitPointerLock();
   if (held) dropHeld();
@@ -3768,10 +3787,29 @@ function makeNoticeable(root, tries = 0) {
   // the glint says "this is a thing", it does not light the beach
   addItemShine(root, { size: Math.max(0.55, size * k * 1.9), height: size * k * 0.55 + 0.06, strength: 0.75 });
 }
+/* ---- WHAT YOU PICKED UP, BY NAME ------------------------------------
+ * The checkpoint does not serialise items — it remembers which PICKUPS you
+ * took, and the restore fires those same `onActivate` handlers again. That
+ * is the only way to get this right in a file this size: the handler is
+ * what removes the thing from the beach, builds its view model, names it and
+ * puts it in the pack, and every one of those is different. Re-running it is
+ * the game doing the work it already knows how to do. The id is the label
+ * plus a count, because the world is built from seeded noise and lays out
+ * identically every load — the third shell is the third shell every time. */
+const takenPickups = new Set();
+const pickupSeen = new Map();
 function addInteractable(root, label, kind, data) {
   const meshes = [];
   root.traverse((o) => { if (o.isMesh) meshes.push(o); });
-  interactables.push({ root, label, kind, meshes, ...data });
+  const it = { root, label, kind, meshes, ...data };
+  if (kind === 'inventory' && it.onActivate) {
+    const n = (pickupSeen.get(label) || 0) + 1;
+    pickupSeen.set(label, n);
+    it.save = label + '#' + n;
+    const inner = it.onActivate;
+    it.onActivate = () => { takenPickups.add(it.save); inner(); };
+  }
+  interactables.push(it);
   // everything you can put in the pack gets the same floor and the same glint
   if (kind === 'inventory' && !(data && data.bare)) makeNoticeable(root);
 }
@@ -15202,6 +15240,8 @@ function headroomClear() {
 const snap = (v, s) => Math.round(v / s) * s;
 
 function update(dt, rawDt = dt) {
+  updateCheckpoint();
+  if (restore) updateRestore(dt);
   /* The lean is a camera move, not a player move. Putting the player back
    * where they were standing before the physics runs means every clamp below
    * — the cliff, the drain's walls, the floor — sees a position it agrees
@@ -15442,6 +15482,154 @@ function update(dt, rawDt = dt) {
 }
 
 const clock = new THREE.Clock();
+/* ---- THE CHECKPOINT --------------------------------------------------
+ * One autosave, at the pavilion, on the last stretch before the three come
+ * out of the dark — the walk to there is an hour of finding things and the
+ * fight past it can take you in twenty seconds, and losing the first to the
+ * second is the one thing that would make nobody play it twice.
+ *
+ * What is saved is not the world: it is WHERE YOU STOOD and WHAT YOU HAD.
+ * The world rebuilds itself identically on a reload (every placement runs off
+ * seeded noise), so the restore only has to put you back and give you back —
+ * and it gives you back by RE-RUNNING THE PICKUPS you made, each one firing
+ * the same handler that ran when you took it, which is what takes the thing
+ * off the beach as well as putting it in your pack. Two of those handlers do
+ * not exist until something else has happened (the captain's head is not
+ * takeable until the wheel is turned and he has fallen), so the replay is a
+ * pass that runs every frame for eight seconds and stops when it has found
+ * everything it is looking for. */
+const _saveV = new THREE.Vector3();
+function saveCheckpoint() {
+  const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+  const data = {
+    v: 3,
+    at: Date.now(),
+    pos: [+camera.position.x.toFixed(3), +camera.position.y.toFixed(3), +camera.position.z.toFixed(3)],
+    look: [+e.y.toFixed(4), +e.x.toFixed(4)],
+    hp,
+    took: [...takenPickups],
+    // the pack, in the order you carried it, and what was in your hand
+    pack: inventory.map((i) => i.name),
+    worn: rings.map((i) => i.name),
+    held: equipped ? equipped.name : null,
+    // the mounds you dug, so the beach is as pitted as you left it
+    mounds: mounds.map((m, i) => (m.taken ? i : -1)).filter((i) => i >= 0),
+    // and the handful of things the walk latches on
+    flags: {
+      castleBroken, crabBled, hcrabTaken, ringsFound, eyesSeen, snorkMet,
+      blood: bloodAmount, bloodSeen,
+      star: !!(helmStar && helmStar.solved),
+      headTaken: !!(shipHead && shipHead.userData.taken),
+      boatKey: boatKeyTaken,
+      dockDoor: dockDoorOpen,
+    },
+  };
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (err) { return; }
+  showAutosave();
+}
+const autosaveEl = document.getElementById('autosave');
+let autosaveT = null;
+function showAutosave() {
+  autosaveEl.classList.remove('show');
+  /* The ring has to be able to run its fill again, so the class has to come
+   * OFF for a beat first — and on a timer rather than a frame, because the
+   * frame loop is not something this can depend on. */
+  clearTimeout(autosaveT);
+  autosaveT = setTimeout(() => {
+    autosaveEl.classList.add('show');
+    autosaveT = setTimeout(() => autosaveEl.classList.remove('show'), 2600);
+  }, 40);
+}
+/* The pavilion is the line. It fires on Z alone, the way the pack's trigger
+ * does — it does not care whether you came down the waterline or the cliff —
+ * and a little short of the house, so you are saved as you walk up to it and
+ * not after you have climbed it. Once a game. */
+const SAVE_Z = MUSH_Z + 26;
+let checkpointDone = false;
+function updateCheckpoint() {
+  if (checkpointDone || !introDone || dying || ended || settings.devMode) return;
+  if (camera.position.z > SAVE_Z) return;
+  checkpointDone = true;
+  saveCheckpoint();
+}
+/* Putting it back. The pack, the rings and the world's flags land at once;
+ * the pickups are replayed over the next few seconds because some of the
+ * things they take are still coming over the network. */
+let restore = null, restoreT = 0;
+function beginRestore() {
+  if (loadMode !== 'checkpoint' || !hasCheckpoint()) return;
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(SAVE_KEY)); } catch (e) { return; }
+  if (!d || d.v !== 3) return;
+  checkpointDone = true;                       // you are past the line already
+  camera.position.set(d.pos[0], d.pos[1], d.pos[2]);
+  // the heading is the camera's own quaternion — the look handler reads it
+  // back off the camera every frame, so writing it here is all it takes
+  if (d.look) { lookEuler.set(d.look[1], d.look[0], 0, lookEuler.order); camera.quaternion.setFromEuler(lookEuler); camera.updateMatrixWorld(true); }
+  hp = Math.max(1, Math.min(MAX_HP, d.hp || MAX_HP));
+  const f = d.flags || {};
+  if (f.castleBroken && !castleBroken) breakCastle(CASTLE_X, CASTLE_Z);
+  crabBled = !!f.crabBled; hcrabTaken = !!f.hcrabTaken;
+  eyesSeen = !!f.eyesSeen; snorkMet = !!f.snorkMet;
+  dockDoorOpen = !!f.dockDoor;
+  bloodAmount = f.blood || 0; bloodSeen = !!f.bloodSeen;
+  if (bloodSeen) { hudJar.userData.setFill(Math.min(1, bloodAmount / BLOOD_JAR_CAP)); updateBloodReadout(); }
+  for (const i of d.mounds || []) if (mounds[i] && !mounds[i].taken) revealMoundNear(mounds[i].x, mounds[i].z);
+  /* THE THREE AT THE DOCK ARE BEHIND YOU. Their cutscene fires on your Z
+   * alone, and the pavilion is three hundred metres past it — so a restore
+   * would have played the whole swim-in the moment you loaded, at a place
+   * where there is no water and no crabs. It is marked done, and they are
+   * left asleep where they wait: what the beach behind you actually looks
+   * like once you have walked it. */
+  if (camera.position.z < PACK_Z + PACK_TRIGGER) { packPhase = 2; packCut = false; }
+  restore = d; restoreT = 0;
+  refreshUI();
+}
+function updateRestore(dt) {
+  if (!restore) return;
+  restoreT += dt;
+  const f = restore.flags || {};
+  // the wheel, if it was turned: he has to fall before he can be taken
+  if (f.star && helmStar && helmStar.g && !helmStar.solved) { helmStar.solved = true; dropShipHead(); }
+  // the pickups, as they arrive
+  let missing = 0;
+  for (const id of restore.took) {
+    if (takenPickups.has(id)) continue;
+    const it = interactables.find((q) => q.save === id);
+    if (it && it.onActivate) it.onActivate(); else missing++;
+  }
+  // the key out of his mouth: its own gate, not a pickup off the beach
+  if (f.boatKey && !boatKeyTaken && inventory.includes(headItem)) {
+    boatKeyTaken = true;
+    shipHead.remove(boatKey);
+    boatKey.position.set(0, 0, 0); boatKey.rotation.set(0, 0, 0);
+    addToInventory(boatKeyItem);
+  }
+  if (missing && restoreT < 8) return;
+  finishRestore();
+}
+function finishRestore() {
+  const d = restore; restore = null;
+  if (!d) return;
+  /* THE PACK COMES BACK IN ORDER. Replaying pickups puts things in whatever
+   * order they landed, and the hotbar is muscle memory — 3 was the shovel all
+   * game. Sort what you actually have by the order you were carrying it. */
+  const want = d.pack || [];
+  inventory.sort((a, b) => {
+    const ia = want.indexOf(a.name), ib = want.indexOf(b.name);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
+  for (const name of d.worn || []) {
+    const it = inventory.find((i) => i.name === name);
+    if (it) wearRing(it);
+  }
+  if (d.flags && d.flags.ringsFound) ringsFound = true;
+  if (d.held) {
+    const it = inventory.find((i) => i.name === d.held);
+    if (it && it !== equipped && (it.viewmodel || it.onDig)) toggleEquip(it);
+  }
+  renderHotbar(); renderPack(); renderRings(); refreshUI();
+}
 function animate() {
   requestAnimationFrame(animate);
   if (!drainWarmed) warmDrain();
@@ -15519,6 +15707,8 @@ window.__bw = {
   finishTyping, dialogTextEl, get hitstop() { return hitstop; },
   hurtCrab, get digOverhead() { return digOverhead; }, get windOverhead() { return windOverhead; },
   get pose() { return _pose; }, get slashDir() { return slashDir; }, get blockT() { return blockT; }, get hp() { return hp; }, get hurtFlash() { return hurtFlash; },
+  saveCheckpoint, beginRestore, hasCheckpoint, SAVE_KEY, takenPickups, get checkpointDone() { return checkpointDone; }, set checkpointDone(v) { checkpointDone = v; },
+  get loadMode() { return loadMode; }, set loadMode(v) { loadMode = v; }, get restoring() { return !!restore; }, SAVE_Z, updateRestore,
   SLASH_WINDUP, SLASH_THROUGH, MIL_GRIP_Y,
   keys, overheadHeld,
   CRAB_HP, CRAB_HEAVY,

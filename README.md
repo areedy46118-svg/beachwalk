@@ -271,6 +271,18 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   slider. Previously they went straight to the speakers, which is why
   digging was so loud.
 
+## Saving
+
+One autosave, and no save button. Reaching the mushroom house — the last
+stretch before the three come out of the dark — writes a checkpoint, and a
+small ring in the top right says so. It keeps where you stood, what you were
+carrying and in what order, what was in your hand, how hurt you were, the
+holes you dug and everything the walk has latched.
+
+Dying puts you back there with all of it. The settings menu has **Restart
+from last checkpoint** (greyed out until you have one) and **Restart game**,
+which clears the checkpoint and gives you the first morning again.
+
 ## Layout
 
 | File | Purpose |
