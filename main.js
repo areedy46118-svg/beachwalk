@@ -4883,16 +4883,18 @@ shovelVM.position.set(-0.04, -0.02, 0.0);
  * across the wind so you see the hands change their hold. */
 const VM_REST_ROT = [0.70, 0.35, 0.32];
 const VM_OVERHEAD_ROT = [-0.62, 0.0, Math.PI];
-/* THE MILITARY SHOVEL IS HELD BY THE HANDLE AND RUN THROUGH YOU. Not a spade
- * turned sideways — a blade on the end of a shaft, the D-handle at your chest
- * and the scoop a metre out in front, and the whole thing sweeps RIGHT TO
- * LEFT across the frame. This rotation is SEARCHED, not guessed: it is the
- * one where the shaft runs straight away from the view camera (0, -0.08, -1)
- * and the cutting edge stands VERTICAL (0, -0.99, 0), which is what lets the
- * scoop cut sideways instead of slapping. Eyeballing this through three
- * nested frames — the arm, the mount, the scan's own root matrix — is how you
- * spend an hour and still hold it wrong. */
-const VM_SLASH_ROT = [2.880, 1.309, -1.309];
+/* THE MILITARY SHOVEL IS SWUNG LIKE A SWORD. The scoop rides ABOVE the fist
+ * and further out, the D-handle is drawn back toward your chest, and the cut
+ * comes down on the diagonal — up at the top right, through, and out at the
+ * bottom left. This rotation is SEARCHED, not guessed: a grid over all three
+ * axes scoring "shaft running up and away from the hand" against "cutting
+ * edge lying in the plane of the screen", which lands on a shaft of
+ * (0.07, 0.65, -0.76) — the blade riding high — and a lip of (0.90, -0.43,
+ * 0.00), an edge already on the diagonal the cut travels, so it LEADS through
+ * the arc instead of slapping with the flat. Eyeballing this through three
+ * nested frames — the arm, the mount, and the scan's own Z-up root matrix —
+ * is how you spend an hour and still hold it wrong. */
+const VM_SLASH_ROT = [-0.725, 0.725, -3.142];
 shovelVM.rotation.set(VM_REST_ROT[0], VM_REST_ROT[1], VM_REST_ROT[2]);
 let ohBlend = 0, slBlend = 0;
 shovelVM.visible = false;
@@ -5538,13 +5540,17 @@ function haulPose(out, P) {
     return out;
   }
   if (slashing()) {
-    /* Wound ACROSS. The grip already has the blade pointed away from you, so
-     * the swing is almost pure YAW — the arm carries it round to the far side
-     * and the shaft stays level, which is what makes it read as a cut rather
-     * than a swat. A charge takes it further round and drops the shoulder. */
+    /* UP AND BACK, to the top right. The blade goes high and out over the
+     * shoulder on the far side, the handle comes IN toward your chest
+     * (positive push), and the hand lifts — so the whole tool is cocked above
+     * the frame's top corner with the edge already lying on the line it is
+     * about to travel. A charge takes it higher and further round. */
     const d = slashDir;
-    out[0] = -(0.10 + P * 0.16); out[1] = 0.08 + P * 0.08;
-    out[2] = d * (1.18 + P * 0.36); out[3] = d * -(0.26 + P * 0.20); out[4] = 0.14;
+    out[0] = -(0.92 + P * 0.40);
+    out[1] = 0.30 + P * 0.14;
+    out[2] = d * (0.68 + P * 0.24);
+    out[3] = d * (0.30 + P * 0.18);
+    out[4] = 0.18 + P * 0.06;
     return out;
   }
   out[0] = -(1.25 + P * 0.70); out[1] = 0.17 + P * 0.13;
@@ -5568,15 +5574,17 @@ function impactPose(out, P) {
     return out;
   }
   if (slashing()) {
-    /* All the way THROUGH and out the other side. The arc finishes past the
-     * far shoulder — that follow-through is where the trail gets its width —
-     * and the arm drives forward through it, so the cut arrives rather than
-     * merely passing. A hair of pitch at the end drops the blade through the
-     * line instead of stopping it flat. */
+    /* DOWN AND ACROSS, to the bottom left, and driven out through it. Pitch
+     * and yaw and lift all move together — that is what makes it a diagonal
+     * rather than a chop with a turn on it — and the follow-through carries
+     * past the low corner, which is where the trail gets its length. The arm
+     * pushes forward through the whole thing, so the cut ARRIVES. */
     const d = slashDir;
-    out[0] = 0.24 + P * 0.22; out[1] = -(0.10 + P * 0.06);
-    out[2] = d * -(1.32 + P * 0.46); out[3] = d * (0.34 + P * 0.26);
-    out[4] = -(0.30 + P * 0.38);
+    out[0] = 1.34 + P * 0.52;
+    out[1] = -(0.38 + P * 0.12);
+    out[2] = d * -(0.96 + P * 0.32);
+    out[3] = d * -(0.54 + P * 0.24);
+    out[4] = -(0.32 + P * 0.40);
     return out;
   }
   /* `lift` used to take the hand to -0.69 at full charge, which is below the
@@ -6068,9 +6076,23 @@ function updateViewmodel(dt) {
        * step, and it read as the animation stuttering on the hit rather than
        * as an impact. The spring's peak is roughly v0/sqrt(stiffness), so
        * anything under ~1.5 stays inside the clamp and stays a curve. */
-      vmImpulse(-0.95 - P * 0.5 - (digOverhead ? 0.35 : 0));
-      // and it JARS: a hit that stops dead has to shake the hands that made it
-      if (landDist >= 0) { guardShockV += (digOverhead ? 3.2 : 2.0) * (0.5 + P); spawnSparks(digOverhead ? 5 : 3, 0.4 + P * 0.5); }
+      const cut = equipped === militaryItem && !digOverhead;
+      vmImpulse(-0.95 - P * 0.5 - (digOverhead ? 0.35 : 0) - (cut ? 0.30 : 0));
+      /* AND IT JARS. A hit that stops dead has to shake the hands that made
+       * it. The cut lands hardest of the three: it is the fastest thing in
+       * the game and it arrives with the whole arm behind it, so it gets the
+       * biggest shock through the guard spring, the most sparks, and a beat
+       * of frozen time of its own — which is the difference between a swing
+       * that connects and a swing that LANDS. */
+      if (landDist >= 0) {
+        guardShockV += (digOverhead ? 3.2 : cut ? 4.2 : 2.0) * (0.5 + P);
+        spawnSparks(digOverhead ? 5 : cut ? 9 : 3, 0.4 + P * 0.6);
+        if (cut) {
+          hitstop = Math.max(hitstop, 0.05 + P * 0.055);
+          addTrauma(0.20 + P * 0.26);
+          fovKick = Math.max(fovKick, 3.4 + P * 3.6);
+        }
+      }
       // the whole body goes into an overhead, so it kicks back harder
       if (digOverhead) { addTrauma(0.16 + P * 0.2); fovKick = Math.max(fovKick, 4 + P * 3); }
     }

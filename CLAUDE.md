@@ -1277,19 +1277,24 @@ hit's spike it settles to a faint breathing rim, 0.14 + 0.24 per point down,
 so you always know you are hurt without a bar. `updateHurt()` therefore runs
 every frame now; it used to return early when the flash was spent.
 
-**THE MILITARY SHOVEL IS HELD BY THE HANDLE AND RUN THROUGH YOU.** Not a
-spade turned sideways: the D-handle at your chest, the scoop a metre out in
-front, and the whole thing sweeps RIGHT TO LEFT. `VM_SLASH_ROT` is SEARCHED,
-not guessed — a grid over all three axes scoring "shaft running straight away
-from the view camera" against "cutting edge standing vertical", which lands
-on [2.880, 1.309, -1.309] and gives shaft (0, -0.08, -1) and lip (0, -0.99,
-0). Eyeballing that through three nested frames — the arm, the mount, and the
-scan's own Z-up root matrix — is how you spend an hour and still hold it
-wrong. With the grip right the swing is almost pure YAW, and it runs a third
-faster than the chop, because a spade goes down into sand and a blade goes
-through something. A lone cut is always right to left; only a second cut
-inside 620 ms comes back the other way, so a single swing looks the same
-every time and a combination looks like a combination.
+**THE MILITARY SHOVEL IS SWUNG LIKE A SWORD.** The scoop rides ABOVE the
+fist and further out, the D-handle is drawn back toward your chest, and the
+cut comes down on the DIAGONAL: cocked at the top right, through, and out at
+the bottom left. `VM_SLASH_ROT` is SEARCHED, not guessed — a grid over all
+three axes scoring "shaft running up and away from the hand" against "cutting
+edge lying in the plane of the screen". It lands on a shaft of
+(0.07, 0.65, -0.76), the blade riding high, and a lip of (0.90, -0.43, 0.00),
+an edge already on the diagonal the cut is about to travel, so it LEADS
+through the arc instead of slapping with the flat. Two grips have now been
+found this way and neither could have been eyeballed: there are three nested
+frames between the pose and the blade — the arm, the mount, and the scan's
+own Z-up root matrix — and a wrong guess in any of them looks nearly right.
+The poses move pitch, yaw and lift TOGETHER, which is what makes it a
+diagonal rather than a chop with a turn on it, and the arm drives forward
+through the whole thing so the cut arrives rather than passes. It runs a
+third quicker than the chop, and it lands hardest of the three swings: the
+biggest shock through the guard spring, nine sparks, and a beat of frozen
+time of its own.
 
 **THE MILITARY SHOVEL SLASHES.** A spade on a shaft is a sword if you turn it
 edge-on and swing it across yourself: `VM_SLASH_ROT` brings the blade out of
