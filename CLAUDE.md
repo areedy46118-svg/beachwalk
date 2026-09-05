@@ -1501,6 +1501,60 @@ the cliff is cut open round it in world space, the drain's trick. Its
 group is in `farProps`, so in a frozen preview still you must set it
 visible yourself.
 
+**The mutant (`MUT_X` / `MUT_Z`, 130 m past the pavilion).** cgtrader's
+"Mutant 01", and the first asset here that ARRIVES WITH ITS ANIMATION — a
+70-bone HumanIK rig and seventeen separate clip FBXs authored on it. So
+`tools/mutant_anim.py` poses nothing: it joins the base mesh's four pieces
+(the animation FBXs carry a copy of the mesh with NO UVs — anything textured
+has to be built on `base_mesh.fbx`), keeps only the ARMATURE's action out of
+each clip file (each one also brings 83 HumanIK control empties with an
+action apiece), drops every finger curve — 32 of the 70 bones, and most of
+the animation data, for joints that never move a pixel at this range — and
+exports eight clips as glTF actions. Texture set 02 of the three: pale grey
+flesh with raw red. Sets 01 and 03 are dark red-brown, which on this beach is
+a hole in the dark.
+
+**WHERE THE BLOW LANDS IS MEASURED, NOT GUESSED.** The attack clip's time is
+written from the combat clock the way the crab's is — the swing you can see
+IS the tell and must not drift out of step with the frame the damage is dealt
+— but this clip's contact is 41 % of the way through it and the startup and
+recovery it is mapped onto are not the same length, so `mutClipTime()` maps
+the two halves SEPARATELY. `MUT_CLIP_HIT` comes out of the build, which plays
+the clip on the rig and finds the frame where a hand is furthest forward and
+moving fastest. Retune `MUT_WIND` and the hand still arrives on the damage
+frame; map it linearly instead and the picture and the hit come apart.
+
+**FIVE HIT POINTS IS THE DESIGN.** A light swing takes one and a charge takes
+two, so it is three heavies at best and five exchanges at worst, and the free
+heavy a parry buys is the whole loop — read the tell, take the stun, wind all
+the way up, land it. Two would have made the parry a nicety. `MUT_STUN` (2.1)
+is longer than a crab's for the same reason: what a parry buys has to be
+worth going for. It hits for ONE, not two — `MAX_HP` is 3 and the danger is
+meant to be its reach and its pressure, not two-shot deaths.
+
+Everything else is the crab's shape: wake, roar (it does not move through it,
+which is the beat that says what the rest of this will be), close, and the
+three outcomes on the active frame. Four things particular to it: it faces
++Z after export, so `rotation.y = atan2(dx, dz)` with NO `+ PI` (the crab's
+front is -Z); `skinnedBounds()` is the only measurement of it that means
+anything; it is REMOVED from no list when it dies — a body goes down and
+stays down, and gibbing a humanoid the way the shovel gibs a crab would be a
+different game; and `damagePlayer` asks `nearestFoe`, not `nearestCrab`, or
+a blow from this one knocks you away from a crab 300 m back up the beach.
+
+**`__bw.step` HAS TO DRAIN HITSTOP.** It is `update()`, and `hitstop` is
+counted down in `animate()` — so under the harness a killed crab or mutant
+sat in its impact frames for ever, because the frame that finishes it is the
+frame hitstop reaches zero. `step` now does what animate does: drain it, and
+scale dt by 0.08 while it runs.
+
+**AND THE INTRO IS ON A WALL CLOCK.** `beginGame()`'s card is `setTimeout`s,
+so a thousand `__bw.step` calls in one `javascript_tool` call all run while
+`introDone` is still false and `update()` does nothing at all. Call
+`beginGame()`, let the tool call END, and step in the next one. Teleporting
+down the beach also trips the pack cutscene (`packCut` is in `frozen()`);
+step until `__bw.packPhase` reaches 2 before expecting anything to move.
+
 **The tall one (`SMILE_X` / `SMILE_Z`, past the snorkeler).** Vertex
 Mercher's "The smile (Rigged)" — a 165k-triangle rig with no clips — built
 by `tools/smile_anim.py` into `assets/smile.glb`: decimated to 24k with its

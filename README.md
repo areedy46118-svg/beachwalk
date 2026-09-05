@@ -157,6 +157,14 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - **The kill lands in two beats** — the blade connects, time stops for five
   frames with the crab still there, folded up under the shovel and thrown
   back, and *then* it comes apart.
+- **The mutant** — a hunched, flayed, two-and-a-quarter-metre thing standing
+  on the dry sand a hundred and thirty metres past the pavilion. It sees you
+  at twenty-six metres, roars where it stands, and then runs at you. It has
+  **five hit points**: a light swing takes one and a charged one takes two,
+  so it is three heavies at best. Its swing is the crab's grammar played
+  bigger — a long readable overhand you can guard, and can PARRY if the guard
+  goes up into it, which leaves it doubled over and helpless for two seconds.
+  It does not come apart when it dies; it goes down and stays down.
 - **Footprints** — pre-stamped trail behind spawn, new prints as you go
   (toe pointing the right way), footstep sound; oldest recycle.
 - **The sand cliff** — a lofted eroded escarpment, scalloped lip, vertical
@@ -244,6 +252,10 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - `MUSIC_TARGET` / `MUSIC_FADE_IN` / `MUSIC_HOLD` / `MUSIC_FADE_OUT`
 - `PATH_LEN` / `PATH_HALF` / `pathBend()` — the lighthouse path's shape
 - `CRAB_SPEED` / `CRAB_REACH` / `CRAB_WAKE` / `crab.scale` — the enemy crab
+- `MUT_HP` / `MUT_WIND` / `MUT_STRIKE` / `MUT_RECOVER` / `MUT_STUN` / `MUT_REACH` /
+  `MUT_SPEED` / `MUT_WAKE` / `MUT_H` — the mutant past the pavilion. `MUT_WIND` is
+  how long the tell runs, and `MUT_CLIP_HIT` is where the swing connects in its
+  clip — move one and the picture and the damage come apart.
 - `DEFAULT_SETTINGS.sfxVolume` — how loud one-shot effects sit
 - `FOOT_POOL`, `REACH`, `NOTE_TEXT`, `scene.fog` density
 - `DEFAULT_SETTINGS` — starting FOV etc.
@@ -317,6 +329,15 @@ timing.
 
 ["CRAB 001"](https://www.cgtrader.com/free-3d-models) by
 [artofmickey](https://www.cgtrader.com/artofmickey), CGTrader free model.
+
+
+**Mutant 01** — the thing on the beach past the pavilion.
+
+"Mutant 01" from CGTrader, supplied by the project owner: a rigged mesh, three
+texture sets and seventeen authored animation clips. `assets/mutant.glb` is
+built from its base mesh and eight of those clips by `tools/mutant_anim.py`.
+Its licence is whatever the owner bought it under — check that before
+redistributing this build with the model in it.
 
 
 **Poise Broken** — the sound of a parry landing. An Elden Ring sound effect

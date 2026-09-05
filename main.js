@@ -3025,10 +3025,12 @@ function damagePlayer(n = 1) {
   sfxHurt();
   addTrauma(0.7);
   hitstop = 0.05;       // ~3 frames
-  // shoved back off whatever hit you
-  const hitter = nearestCrab(camera.position);
+  // shoved back off whatever hit you — a crab or the thing past the pavilion,
+  // whichever is actually nearer; asking only for a crab knocked you away from
+  // one three hundred metres back up the beach
+  const hitter = nearestFoe(camera.position);
   if (hitter) {
-    const kx = camera.position.x - hitter.g.position.x, kz = camera.position.z - hitter.g.position.z;
+    const kx = camera.position.x - hitter.position.x, kz = camera.position.z - hitter.position.z;
     const kd = Math.hypot(kx, kz) || 1;
     knockback.set((kx / kd) * 5.5, 0, (kz / kd) * 5.5);
   }
@@ -3943,6 +3945,13 @@ class PhysProp {
         if (!u.st.alive || u.st.struck) continue;
         if (p.distanceTo(u.g.position) >= 0.75) continue;
         hitConnect(0.4, 1); hurtCrab(u, 1);
+        this.vel.multiplyScalar(0.3);
+        break;
+      }
+      for (const u of mutants) {
+        if (!u.st.alive || u.st.struck) continue;
+        if (Math.hypot(p.x - u.g.position.x, p.z - u.g.position.z) >= 0.9 || p.y > MUT_H) continue;
+        hitConnect(0.4, 1); hurtMutant(u, 1);
         this.vel.multiplyScalar(0.3);
         break;
       }
@@ -5473,6 +5482,12 @@ function aimLand(P) {
     const t = THREE.MathUtils.clamp(_hitC.clone().sub(_aimO).dot(_aimD), 0, digRay.far);
     if (_hitC.distanceTo(_aimO.clone().addScaledVector(_aimD, t)) < 0.62 + P * 0.25) d = Math.min(d, t);
   }
+  for (const u of mutants) {
+    if (!u.st.alive) continue;
+    _hitC.copy(u.g.position); _hitC.y += MUT_H * 0.5;          // chest, not feet
+    const t = THREE.MathUtils.clamp(_hitC.clone().sub(_aimO).dot(_aimD), 0, digRay.far);
+    if (_hitC.distanceTo(_aimO.clone().addScaledVector(_aimD, t)) < 0.85 + P * 0.25) d = Math.min(d, t);
+  }
   near(nearestSolidHit());
   near(digRay.intersectObject(sand, false)[0]);
   landDist = isFinite(d) ? d : -1;
@@ -5564,6 +5579,28 @@ function digImpact() {
       // the military shovel's light hit is steel on shell: one of two, at random
       if (equipped === militaryItem && !heavy) playSample('milLight', 1.0, 0.05);
       hurtCrab(best, heavy ? CRAB_HP : 1, P);
+      return;
+    }
+  }
+  /* And the same test for the thing past the pavilion, on a body-sized radius
+   * up at its chest. A light swing takes one of its five and a charge takes
+   * two — the difference between four exchanges and three, which is the whole
+   * reason to wind one up in front of something that big. */
+  {
+    let best = null, bestT = Infinity;
+    for (const u of mutants) {
+      if (!u.st.alive || u.st.struck) continue;
+      _hitC.copy(u.g.position); _hitC.y += MUT_H * 0.5;
+      const t = THREE.MathUtils.clamp(_hitC.clone().sub(_aimO).dot(_aimD), 0, digRay.far);
+      const miss = _hitC.distanceTo(_aimO.clone().addScaledVector(_aimD, t));
+      if (miss < 0.85 + P * 0.25 && t < bestT) { bestT = t; best = u; }
+    }
+    if (best) {
+      const heavy = P >= MUT_HEAVY;
+      hitConnect(P, heavy ? 1.35 : 0.9);
+      if (heavy && digOverhead) playSample('smash', 1.0, 0.05);
+      if (equipped === militaryItem && !heavy) playSample('milLight', 1.0, 0.05);
+      hurtMutant(best, heavy ? 2 : 1, P);
       return;
     }
   }
@@ -11020,6 +11057,485 @@ function updateMushroom(dt) {
   groundY = Math.max(groundY, mushStairY);
 }
 
+// ------------------------------------------------------------------
+// The mutant — what is waiting on the beach past the pavilion
+// ------------------------------------------------------------------
+/* cgtrader's "Mutant 01". Unlike the crab and the tall one this asset ARRIVES
+ * WITH ITS ANIMATION — a 70-bone rig and seventeen clip FBXs authored on it —
+ * so nothing is posed here; `tools/mutant_anim.py` puts the clips onto the one
+ * textured mesh and exports them as glTF actions. What is built here is the
+ * FIGHT, and it is the crab's grammar played bigger and slower: a startup you
+ * can read across the sand, one active frame, and a recovery long enough to
+ * punish. The same three outcomes on the active frame — it hurts you, the
+ * guard eats it, or the guard went up INTO it and the thing that swung is
+ * left standing there open.
+ *
+ * FIVE HIT POINTS, and that is the whole design. A light swing takes one and
+ * a charge takes two, so it is three heavies at best; two would have made the
+ * parry a nicety and five make it the plan — read the tell, take the stun,
+ * wind all the way up, land it, and do it again. `MUT_STUN` is longer than a
+ * crab's for the same reason: what a parry buys has to be worth the risk of
+ * going for one.
+ *
+ * The attack clip's time is written from the combat clock the way the crab's
+ * is — the swing you can see IS the tell and must not drift out of step with
+ * the frame the damage lands on — but with a REMAP, because this clip's
+ * contact is 41 % of the way through it and the startup and the recovery are
+ * not the same length. See `mutClipTime`. */
+const MUT_X = 9.8, MUT_Z = MUSH_Z - 130;   // well past the pavilion, and up on the DRY sand:
+                                           // the waterline reaches x = 8.6 (the body bag's hard number)
+const MUT_H = 2.25;                        // how tall it stands, in metres
+const MUT_HP = 5;
+const MUT_WAKE = 26;                       // it sees you a long way off
+const MUT_SPEED = 3.6;                     // faster than you are
+const MUT_REACH = 2.3;                     // and longer in the arm than a crab
+const MUT_WIND = 0.68;                     // startup: a big overhand, and readable
+const MUT_STRIKE = 0.13;                   // active — the damage is on the first frame
+const MUT_RECOVER = 0.85;                  // recovery: your opening, long enough for a charge
+const MUT_COOLDOWN = 0.55;
+const MUT_STUN = 2.1;                      // what landing a parry buys you
+const MUT_RECOIL = 0.32;                   // how long a survived hit rocks it
+const MUT_HIT_STOP = 0.09;
+const MUT_HEAVY = 0.85;                    // a swing wound past this takes two
+const MUT_CLIP_HIT = 0.413;                // where the contact is in the clip (measured in the build)
+const MUT_STEP = 0.30;                     // seconds between footfalls at a dead run
+const MUT_TOTAL = MUT_WIND + MUT_STRIKE + MUT_RECOVER;
+const mutants = [];
+
+function mutPlay(u, name, loop) {
+  const a = u.clips[name];
+  if (!a || u.cur === a) return a;
+  for (const k in u.clips) if (u.clips[k] !== a) u.clips[k].fadeOut(0.14);
+  a.reset();
+  a.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
+  a.clampWhenFinished = !loop;
+  a.fadeIn(0.14).play();
+  u.cur = a;
+  return a;
+}
+/* THE CONTACT FRAME IS NOT HALFWAY. The hand arrives 41 % of the way through
+ * the clip, and the startup and the recovery this is mapped onto are not the
+ * same length, so the two halves are remapped separately: however the timings
+ * are tuned, the hand lands on the frame the damage is dealt. */
+function mutClipTime(t, dur) {
+  const hit = dur * MUT_CLIP_HIT;
+  if (t < MUT_WIND) return (t / MUT_WIND) * hit;
+  return hit + ((t - MUT_WIND) / (MUT_STRIKE + MUT_RECOVER)) * (dur - hit);
+}
+function mutAnim(u, dt, moving) {
+  if (!u.mixer) return;
+  if (!u.st.alive) {
+    const a = mutPlay(u, 'die', false);
+    if (a) { a.paused = false; a.timeScale = 1; }
+  } else if (u.st.stun > 0) {
+    // the reel, run off the stun clock, so it is helpless for exactly as long
+    // as it looks helpless
+    const a = mutPlay(u, 'hit', false);
+    if (a) { a.paused = true; a.time = clampTime(a, (1 - u.st.stun / MUT_STUN) * a.getClip().duration); }
+  } else if (u.st.atk >= 0) {
+    const a = mutPlay(u, 'attack', false);
+    if (a) { a.paused = true; a.time = clampTime(a, mutClipTime(u.st.atk, a.getClip().duration)); }
+  } else if (u.st.recoil > 0) {
+    const a = mutPlay(u, 'hit', false);
+    if (a) { a.paused = true; a.time = clampTime(a, (1 - u.st.recoil / MUT_RECOIL) * a.getClip().duration * 0.55); }
+  } else if (u.st.roar > 0) {
+    const a = mutPlay(u, 'roar', false);
+    if (a) { a.paused = false; a.timeScale = 1.3; }
+  } else if (moving > 0.04) {
+    const a = mutPlay(u, 'run', true);
+    if (a) { a.paused = false; a.timeScale = 1.5 + moving * 0.55; }
+  } else {
+    const a = mutPlay(u, 'idle', true);
+    if (a) { a.paused = false; a.timeScale = 1; }
+  }
+  u.mixer.update(dt);
+}
+function dressMutant(u, gltf) {
+  const m = u.model = gltf.scene;
+  m.traverse((o) => {
+    if (!(o.isMesh || o.isSkinnedMesh)) return;
+    o.frustumCulled = false;                 // a skinned bounding box is the bind pose
+    const mat = o.material;
+    if (!mat) return;
+    /* Pale flesh, and it STILL needs the lift every scan on this beach needs:
+     * you walk into the moon, so the side of it you are looking at gets almost
+     * nothing from the one directional light. The emissive off its own map is
+     * what carries it out of the dark, and the cold rim is what puts an edge
+     * on it against the sand. METALNESS IS A TRAP — there is no environment
+     * map here. */
+    mat.metalness = 0;
+    mat.emissive = new THREE.Color(0xffffff);
+    mat.emissiveMap = mat.map;
+    mat.emissiveIntensity = 0.30;
+    reexpose(mat, 0.74, [0.052, 0.068, 0.10]);
+    mat.needsUpdate = true;
+  });
+  u.g.add(m);
+  // Box3.setFromObject() knows nothing about skinning and answers the bind
+  // pose through the node chain; skinnedBounds() runs the vertices through
+  // the bones and is the only measurement of one of these that means anything
+  const b = skinnedBounds(m);
+  const s = MUT_H / Math.max(0.001, b.size.y);
+  m.scale.setScalar(s);
+  m.position.y = -b.min.y * s;                // stood on its own feet
+  u.mixer = new THREE.AnimationMixer(m);
+  for (const c of gltf.animations) u.clips[c.name] = u.mixer.clipAction(c);
+  mutPlay(u, 'idle', true);
+  u.mixer.update(Math.random() * 4);          // not caught at the top of the loop
+}
+function makeMutant(x, z) {
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  scene.add(g);
+  const u = {
+    g, model: null, mixer: null, clips: {}, cur: null,
+    st: { alive: true, awake: false, roar: 0, atk: -1, cool: 0, stun: 0,
+          recoil: 0, struck: false, hp: MUT_HP, step: 0, deadT: 0 },
+    hitFrom: new THREE.Vector3(), hitDir: new THREE.Vector3(), dir: new THREE.Vector3(),
+  };
+  mutants.push(u);
+  farProps.push({ obj: g, z, d: 280 });
+  new GLTFLoader().load('assets/mutant.glb', (gltf) => dressMutant(u, gltf), undefined, () => {});
+  return u;
+}
+const mutant = makeMutant(MUT_X, MUT_Z);
+
+// the nearest live one — what the blade, a thrown thing and the knockback want
+function nearestMutant(pos, maxD = Infinity) {
+  let best = null, bd = maxD;
+  for (const u of mutants) {
+    if (!u.st.alive) continue;
+    const d = Math.hypot(pos.x - u.g.position.x, pos.z - u.g.position.z);
+    if (d < bd) { bd = d; best = u; }
+  }
+  return best;
+}
+/* What shoved you: whichever of the two kinds is nearer. `damagePlayer` used
+ * to ask `nearestCrab` and nothing else, so a blow from this one knocked you
+ * away from a crab three hundred metres back up the beach. */
+function nearestFoe(pos) {
+  const c = nearestCrab(pos);
+  let best = c ? c.g : null;
+  let bd = c ? Math.hypot(pos.x - c.g.position.x, pos.z - c.g.position.z) : Infinity;
+  const m = nearestMutant(pos, bd);
+  if (m) best = m.g;
+  return best;
+}
+
+function parryMutant(u) {
+  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04);
+  parryCool = 0;                             // landing one costs you nothing
+  u.st.atk = -1;
+  u.st.cool = MUT_COOLDOWN;
+  u.st.stun = MUT_STUN;
+  parryGlow = 0.5;
+  flashMats(u.g);
+  sfxParry();
+  playSample('poise', 1.0);
+  addTrauma(0.6);
+  fovKick = Math.max(fovKick, 8);
+  vmImpulse(-1.45);
+  hitstop = Math.max(hitstop, 0.13);
+  const kx = u.g.position.x - camera.position.x, kz = u.g.position.z - camera.position.z;
+  const kd = Math.hypot(kx, kz) || 1;
+  u.g.position.x += (kx / kd) * 0.5;
+  u.g.position.z += (kz / kd) * 0.5;
+  setPrompt('<b>PARRY</b>');
+  setTimeout(() => { if (promptHTML.includes('PARRY')) setPrompt(''); }, 700);
+}
+function blockMutant(u) {
+  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04);
+  else if (equipped === shovelItem) playSample('blockSand', 1.0, 0.04);
+  else sfxBlock();
+  // it is bigger than a crab and it costs you more to hold it off
+  stamina = Math.max(0, stamina - BLOCK_COST * 1.35);
+  if (stamina <= 0.001) { exhausted = true; gaspOut(); }
+  flashMats(toolVM);
+  parryGlow = Math.max(parryGlow, 0.26);
+  fovKick = Math.max(fovKick, 4.5);
+  addTrauma(0.5);
+  vmImpulse(-1.4);
+  hitstop = Math.max(hitstop, 0.08);
+  setPrompt('<b>BLOCKED</b>');
+  setTimeout(() => { if (promptHTML.includes('BLOCKED')) setPrompt(''); }, 520);
+  const kx = camera.position.x - u.g.position.x, kz = camera.position.z - u.g.position.z;
+  const kd = Math.hypot(kx, kz) || 1;
+  knockback.set((kx / kd) * 4.2, 0, (kz / kd) * 4.2);
+}
+function killMutant(u) {
+  if (!u.st.alive || u.st.struck) return;
+  u.st.struck = true;
+  u.st.atk = -1; u.st.stun = 0; u.st.recoil = 0;
+  camera.getWorldDirection(u.hitDir); u.hitDir.y = 0; u.hitDir.normalize();
+  u.hitFrom.copy(u.g.position);
+  flashMats(u.g);
+  sfxMutHit();
+  addTrauma(0.6);
+  hitstop = MUT_HIT_STOP;
+}
+/* A blow that lands but does not finish it: it is rocked back off the blade
+ * white, the swing it was in the middle of is broken, and it comes again. */
+function hurtMutant(u, dmg, P = 0) {
+  if (!u.st.alive || u.st.struck) return false;
+  u.st.hp -= dmg;
+  if (u.st.hp <= 0) { killMutant(u); return true; }
+  u.st.atk = -1;
+  u.st.stun = 0;
+  u.st.cool = Math.max(u.st.cool, 0.45);
+  u.st.recoil = MUT_RECOIL;
+  camera.getWorldDirection(u.hitDir); u.hitDir.y = 0; u.hitDir.normalize();
+  u.hitFrom.copy(u.g.position);
+  flashMats(u.g);
+  sfxMutHit();
+  bleedMutant(u, 8, 0.35);
+  addTrauma(0.3 + P * 0.2);
+  return false;
+}
+/* IT DOES NOT COME APART. A crab is shell and the shovel takes it to pieces;
+ * this is a body, and a body goes down and stays down — the `die` clip runs
+ * out and it lies on the sand for the rest of the walk. */
+function finishMutant(u) {
+  u.st.alive = false;
+  u.st.struck = false;
+  u.st.deadT = 0;
+  bleedMutant(u, 26, 1.0);
+  stampBlood(u.g.position.x, u.g.position.z, 1.3 + Math.random() * 0.5);
+  sfxMutDie();
+  addTrauma(0.5);
+}
+function bleedMutant(u, n, force) {
+  const p = u.g.position;
+  for (let i = 0; i < n; i++) {
+    const m = new THREE.Mesh(new THREE.IcosahedronGeometry(0.030 * (0.5 + Math.random()), 0), BLOOD_MAT);
+    m.position.set(p.x + (Math.random() - 0.5) * 0.35, 0.85 + Math.random() * 0.7, p.z + (Math.random() - 0.5) * 0.35);
+    scene.add(m);
+    const a = Math.random() * Math.PI * 2, out = (0.9 + Math.random() * 2.2) * force;
+    bloodDrops.push({
+      m,
+      vel: new THREE.Vector3(Math.cos(a) * out, 1.4 + Math.random() * 2.6 * force, Math.sin(a) * out),
+      life: 4,
+    });
+  }
+}
+
+/* Its voice. None of it is a stinger — the same rule the tall one taught: a
+ * musical shriek tells you the game is scaring you. This is breath, throat
+ * and weight. The TELL is the one that has to carry: it runs for exactly
+ * `MUT_WIND` and rises the whole way, so the sound is the countdown to the
+ * frame you have to answer, and it is pitched well under the crab's rasp so
+ * the two are never confused. */
+function sfxMutTell(dist = 0) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut(), g0 = 1 / (1 + dist / 12);
+  const rasp = noiseBurst(MUT_WIND, (x) => (0.4 + 0.6 * Math.random()) * Math.min(1, x * 2.5) * (1 - x * 0.2));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 2.4;
+  bp.frequency.setValueAtTime(230, t);
+  bp.frequency.exponentialRampToValueAtTime(880, t + MUT_WIND);
+  const rg = ctx.createGain();
+  rg.gain.setValueAtTime(0.0001, t);
+  rg.gain.exponentialRampToValueAtTime(0.16 * g0, t + MUT_WIND * 0.85);
+  rg.gain.exponentialRampToValueAtTime(0.02 * g0, t + MUT_WIND);
+  rasp.connect(bp).connect(rg).connect(out);
+  rasp.start(t); rasp.stop(t + MUT_WIND);
+  // the throat under it, hauling up
+  const o = ctx.createOscillator(); o.type = 'sawtooth';
+  o.frequency.setValueAtTime(41, t);
+  o.frequency.exponentialRampToValueAtTime(104, t + MUT_WIND);
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 240;
+  const og = ctx.createGain();
+  og.gain.setValueAtTime(0.0001, t);
+  og.gain.exponentialRampToValueAtTime(0.10 * g0, t + MUT_WIND * 0.9);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + MUT_WIND + 0.06);
+  o.connect(lp).connect(og).connect(out);
+  o.start(t); o.stop(t + MUT_WIND + 0.07);
+}
+function sfxMutSwing() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const w = noiseBurst(0.26, (x) => Math.sin(Math.min(1, x * 1.6) * Math.PI) * (1 - x * 0.3));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.1;
+  bp.frequency.setValueAtTime(1500, t);
+  bp.frequency.exponentialRampToValueAtTime(240, t + 0.24);
+  const g = ctx.createGain(); g.gain.value = 0.3;
+  w.connect(bp).connect(g).connect(sfxOut());
+  w.start(t); w.stop(t + 0.26);
+}
+function sfxMutRoar(dist = 0) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut(), g0 = 1.1 / (1 + dist / 16), D = 1.5;
+  for (const [f0, f1, gn, ty] of [[58, 96, 0.16, 'sawtooth'], [87, 143, 0.09, 'square'], [29, 47, 0.13, 'triangle']]) {
+    const o = ctx.createOscillator(); o.type = ty;
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(f1, t + D * 0.35);
+    o.frequency.exponentialRampToValueAtTime(f0 * 0.8, t + D);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(400, t);
+    lp.frequency.exponentialRampToValueAtTime(1500, t + D * 0.3);
+    lp.frequency.exponentialRampToValueAtTime(300, t + D);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gn * g0, t + 0.18);
+    g.gain.setValueAtTime(gn * g0, t + D * 0.55);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + D);
+    o.connect(lp).connect(g).connect(out); o.start(t); o.stop(t + D + 0.05);
+  }
+  // the tear of it, over the top
+  const r = noiseBurst(D, (x) => (0.3 + 0.7 * Math.random()) * Math.sin(Math.min(1, x * 1.3) * Math.PI));
+  const rf = ctx.createBiquadFilter(); rf.type = 'bandpass'; rf.Q.value = 1.6; rf.frequency.value = 620;
+  const rg = ctx.createGain(); rg.gain.value = 0.085 * g0;
+  r.connect(rf).connect(rg).connect(out); r.start(t); r.stop(t + D);
+}
+function sfxMutStep(dist = 0) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut(), g0 = 0.85 / (1 + dist / 8);
+  const n = noiseBurst(0.14, (x) => Math.pow(1 - x, 2.6));
+  const nf = ctx.createBiquadFilter(); nf.type = 'lowpass'; nf.frequency.value = 430 + Math.random() * 140;
+  const ng = ctx.createGain(); ng.gain.setValueAtTime(g0 * 0.9, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+  n.connect(nf).connect(ng).connect(out); n.start(t); n.stop(t + 0.15);
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(66, t); o.frequency.exponentialRampToValueAtTime(31, t + 0.11);
+  const og = ctx.createGain(); og.gain.setValueAtTime(g0 * 0.9, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+  o.connect(og).connect(out); o.start(t); o.stop(t + 0.18);
+}
+function sfxMutHit() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  playSample('fleshHit', 0.75, 0.06, 0.72);      // the owner's own, pitched down: it is bigger
+  const body = noiseBurst(0.17, (x) => Math.pow(1 - x, 1.8));
+  const bf = ctx.createBiquadFilter(); bf.type = 'lowpass'; bf.frequency.value = 260;
+  const bg = ctx.createGain(); bg.gain.value = 0.42;
+  body.connect(bf).connect(bg).connect(out); body.start(t); body.stop(t + 0.17);
+}
+function sfxMutDie() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut(), D = 1.9;
+  // it goes out of it: the throat drops away and the breath runs out wet
+  const o = ctx.createOscillator(); o.type = 'sawtooth';
+  o.frequency.setValueAtTime(78, t);
+  o.frequency.exponentialRampToValueAtTime(23, t + D);
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(700, t); lp.frequency.exponentialRampToValueAtTime(180, t + D);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.14, t + 0.09);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + D);
+  o.connect(lp).connect(g).connect(out); o.start(t); o.stop(t + D + 0.05);
+  const wet = noiseBurst(D * 0.8, (x) => (0.2 + 0.8 * Math.random()) * Math.pow(1 - x, 1.4));
+  const wf = ctx.createBiquadFilter(); wf.type = 'bandpass'; wf.Q.value = 1.2;
+  wf.frequency.setValueAtTime(520, t); wf.frequency.exponentialRampToValueAtTime(160, t + D * 0.8);
+  const wg = ctx.createGain(); wg.gain.value = 0.075;
+  wet.connect(wf).connect(wg).connect(out); wet.start(t); wet.stop(t + D * 0.8);
+}
+
+function updateMutantUnit(u, dt) {
+  if (!u.mixer) return;
+  const p = u.g.position;
+  if (!u.st.alive) { u.st.deadT += dt; mutAnim(u, dt, 0); return; }
+  /* Impact frames, held for exactly the length of the hitstop, so what you are
+   * looking at is the reason the world has stopped. Driven off `hitstop` and
+   * not off dt, because dt is what hitstop scales. */
+  if (u.st.struck) {
+    const e = 1 - THREE.MathUtils.clamp(hitstop / MUT_HIT_STOP, 0, 1);
+    p.copy(u.hitFrom).addScaledVector(u.hitDir, 0.30 * e);
+    u.mixer.update(0);
+    if (hitstop <= 0) finishMutant(u);
+    return;
+  }
+  if (frozen()) return;
+
+  const dx = camera.position.x - p.x, dz = camera.position.z - p.z;
+  const dist = Math.hypot(dx, dz) || 0.001;
+  const face = Math.atan2(dx / dist, dz / dist);      // the model's front is +Z
+  const turn = (rate) => { u.g.rotation.y += _smileTurn(u.g.rotation.y, face) * Math.min(1, dt * rate); };
+
+  if (!u.st.awake) {
+    mutAnim(u, dt, 0);
+    if (dist > MUT_WAKE) return;
+    if (settings.devMode) return;              // DEV MODE: it stays where it was put
+    u.st.awake = true;
+    u.st.roar = 2.2;                           // it sees you, and it tells you so
+    sfxMutRoar(dist);
+    return;
+  }
+  // the roar: it does not move through it, which is the beat that says what
+  // the rest of this is going to be
+  if (u.st.roar > 0) {
+    u.st.roar -= dt;
+    turn(4);
+    mutAnim(u, dt, 0);
+    return;
+  }
+  // parried: stopped dead, wide open, for exactly as long as the clip says
+  if (u.st.stun > 0) {
+    u.st.stun -= dt;
+    mutAnim(u, dt, 0);
+    if (u.st.stun <= 0) { u.st.stun = 0; u.st.cool = 0.3; }
+    return;
+  }
+  // rocked by a hit it survived: it neither advances nor swings
+  if (u.st.recoil > 0) {
+    u.st.recoil = Math.max(0, u.st.recoil - dt);
+    const k = u.st.recoil / MUT_RECOIL;
+    p.copy(u.hitFrom).addScaledVector(u.hitDir, 0.45 * (1 - k));
+    mutAnim(u, dt, 0);
+    return;
+  }
+
+  let moving = 0;
+  if (u.st.atk >= 0) {
+    const was = u.st.atk;
+    u.st.atk += dt;
+    const t = u.st.atk;
+    // it tracks you through the wind-up and commits on the swing: stepping
+    // round it during the startup is worth something, and running is not
+    if (t < MUT_WIND) turn(3.2);
+    if (was < MUT_WIND && t >= MUT_WIND) {
+      sfxMutSwing();
+      /* Re-tested HERE and not when the wind-up began — a tell is only fair
+       * if getting out of the way is a thing that works. */
+      if (dist < MUT_REACH + 0.7) {
+        if (blocking) {
+          const dtp = (performance.now() - blockStart) / 1000;
+          if (dtp <= PARRY_WINDOW && parryCool <= 0) parryMutant(u);
+          else blockMutant(u);
+        } else damagePlayer(1);
+      }
+    }
+    if (t >= MUT_TOTAL) { u.st.atk = -1; u.st.cool = MUT_COOLDOWN; }
+  } else {
+    u.st.cool = Math.max(0, u.st.cool - dt);
+    turn(6);
+    if (dist > MUT_REACH) {
+      const sp = MUT_SPEED * THREE.MathUtils.clamp((dist - MUT_REACH) / 1.8, 0.3, 1);
+      u.dir.set(dx / dist, 0, dz / dist);
+      p.addScaledVector(u.dir, sp * dt);
+      p.x = THREE.MathUtils.clamp(p.x, WADE_X - 1.5, CLIFF_BLOCK_X + 0.5);
+      moving = sp / MUT_SPEED;
+      u.st.step -= dt;
+      if (u.st.step <= 0) {
+        u.st.step = MUT_STEP / Math.max(0.35, moving);
+        sfxMutStep(dist);
+        if (inWater(p.x, p.z)) {
+          spawnSplash(p.x, p.z, 2, u.dir.x, u.dir.z, 0.5);
+          addRipple(p.x, p.z, 0.7);
+        }
+      }
+    } else if (u.st.cool <= 0 && !settings.devMode) {
+      u.st.atk = 0;
+      sfxMutTell(dist);
+    }
+  }
+  // and you do not walk through two hundred kilos of it
+  if (dist < 0.9) {
+    camera.position.x = p.x + (dx / dist) * 0.9;
+    camera.position.z = p.z + (dz / dist) * 0.9;
+  }
+  mutAnim(u, dt, moving);
+}
+function updateMutant(dt) {
+  for (const u of mutants) updateMutantUnit(u, dt);
+}
+
 /* The trails. Each one leaves a widening V of ripples behind it and throws a
  * little water as it comes, so from the beach there are three wakes running
  * at you out of the dark before there is anything to see. */
@@ -12150,6 +12666,7 @@ function update(dt, rawDt = dt) {
   updateSnorkeler(dt);
   updateSmile(dt);
   updateCrab(dt);
+  updateMutant(dt);
   updateGibs(dt);
   updateBradlyBlink(dt);
   updateHurt(dt);
@@ -12213,7 +12730,17 @@ layoutViewmodel();
 
 // dev hook
 window.__bw = {
-  step: (dt) => update(dt, dt),   // one whole game tick, for a harness whose rAF is stalled
+  /* One whole game tick, for a harness whose rAF is stalled. It has to drain
+   * HITSTOP and scale dt exactly as animate() does, or nothing that hangs on
+   * the freeze ever ends: a killed crab or mutant sits in its impact frames
+   * for ever, because the frame that finishes it is the frame hitstop
+   * reaches zero, and update() is not where hitstop is counted down. */
+  step: (dt) => {
+    const rawDt = dt;
+    if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
+    oceanUniforms.uTime.value += dt;
+    update(dt, rawDt);
+  },
   MUSH_X, MUSH_Z, MUSH, mushHouse, updateMushroom, mushState: () => ({ where: mushWhere, turns: mushTurns, stairY: mushStairY }),
   smile, updateSmile, smileState: () => ({ phase: smilePhase, t: smileT, loaded: !!smileMixer, clips: Object.keys(smileClips) }), sfxSmileStep,
   updateHurt, hurtEl,
@@ -12263,6 +12790,9 @@ window.__bw = {
   listen: (v) => { listening = v; }, stopListening, keyItem, keyWorld,   // the ear pose without the audio, for the preview harness
   get dockDoorOpen() { return dockDoorOpen; }, set dockDoorOpen(v) { dockDoorOpen = v; }, get onDock() { return onDock; },
   crabs, makeCrabUnit, nearestCrab, crabPlay, updateCrabUnit,
+  mutants, mutant, updateMutant, hurtMutant, killMutant, parryMutant, blockMutant, nearestMutant,
+  MUT_X, MUT_Z, MUT_H, MUT_HP, MUT_WAKE, MUT_REACH, MUT_WIND, MUT_STUN, MUT_TOTAL,
+  mutState: () => mutants.map((u) => ({ ...u.st, x: u.g.position.x, z: u.g.position.z, clip: u.cur && u.cur.getClip().name })),
   packCrabs, updatePack, get packPhase() { return packPhase; }, PACK_Z,
   lhDoor, shinies, onPath, pathBend, pathHalfAt, lhWindows, lanternGlass,
   get doorOpen() { return doorOpen; }, set doorOpen(v) { doorOpen = v; doorSwing = v ? 1 : 0; lhDoor.rotation.y = -doorSwing * 1.95; },
