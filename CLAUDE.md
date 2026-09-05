@@ -586,6 +586,42 @@ A full **bottle of water** (`models/water-bottle.js`) sits by the bed —
 `waterBottleItem`, takeable with `E`, examinable like the crab. It is not
 wired to `hp`; making it a consumable would just need `use` to call a heal.
 
+**THE WHEEL, THE STAR, THE HEAD, THE KEY, THE DOOR — one chain, and every
+link had a break in it.** `dragWheel` was defined and never called: the look
+handler took every mousemove, so the wheel could be grabbed and let go and
+never turned. It is routed first now, ahead of `applyLook`, while
+`wheelGrab`. The puzzle is a BEARING, not a lock: ONE star (`helmStar`) is in
+the sky always, off her port bow, blinking on an irregular count (`bwHashJS`
+of the beat, not a sine — a swelling star is a lamp), and holding the wheel
+at `HELM_STAR_DETENT` for 0.8 s solves it and `dropShipHead()` lets the hook
+go. The head is alexrmartinez's scan (`assets/head.glb`), and it could NOT
+go through `gltfpack --decimate`: vertex clustering keeps positions and
+indices only, and a face is a UV atlas — it rendered as a flat red blob.
+`tools/head_pack.py` decimates in Blender, which keeps the UVs; note the
+glTF importer loads images LAZILY (`has_data` false until the pixels are
+touched), and the first build shipped the 2K PNGs whole. The built head's
+Group is kept and emptied and the scan lands in it, so the hook, the
+examine screen and the pack all hold the same object; the scan faces +Z in
+its own frame and is turned to face the helm. The key is a SECOND load of
+`assets/key.glb` into `boatKey`, a Group that exists synchronously, because
+`boatKeyItem` and `holdable()` name it at module time — the old code read
+`shipHead.userData.key` and nothing ever set it, so the key never existed
+and the door could not be opened. `holdable` clones lazily, so an empty
+group is fine.
+
+**THE DECK EDGE IS WHERE THE PLANKING IS.** The deck's geometry takes its x
+from `hullPt` — rake included, nearly two metres forward — but the walk was
+clamped on the raw station, so at the bow you stood behind an invisible
+wall short of planking you could see and the bow flanks looked wider than
+you could walk. `deckHalfAt(lx)` inverts the rake now off a table built on
+first use (`buildDeckEdge`, needing `rakeAt` and `hullPt` on `SN`), and the
+deck's floor and end clamps run in the planking's frame. **AND THE LADDER
+WELL HAS A LIP.** Its floor is the ladder, a ramp to the hold, so a step
+across its side from the deck put the ladder two metres under your feet —
+"falling off" on a deck with an unbroken bulwark. It is solid on three
+sides from deck height and open only at its head, and anyone already on
+the ladder is below deck height and walks through all of it.
+
 **The wreck.** `models/shipwreck.js` → `makeShipwreck()`, the **Limulus** — an
 old horseshoe-crabbing boat, which is why her gear is aboard and why the catch
 is still in the hold. She lies across the beach at `SHIP_X` / `SHIP_Z` and
@@ -1524,6 +1560,23 @@ the clip on the rig and finds the frame where a hand is furthest forward and
 moving fastest. Retune `MUT_WIND` and the hand still arrives on the damage
 frame; map it linearly instead and the picture and the hit come apart.
 
+**FOUR SWINGS, DRAWN, NOT SCHEDULED.** One overhand on one clock was read
+in two exchanges: the guard went up on a count. `MUT_ATTACKS` carries four —
+the overhand, a fast swipe, THE HELD ONE (a second of hang at the top, so a
+guard raised on the first count is a block, not a parry) and a lunge that
+covers ground through its strike — each with its own startup, reach and
+measured contact frame, and the pick is weighted random after the first
+swing of a fight, which is always the overhand. A swipe chains into the
+overhand (`chain` / `chainP`), once, with the second startup already under
+way, so a parry is not the end of an exchange. Between swings it circles
+(`strafeL` / `strafeR`, `MUT_STRAFE`) or steps back into the lunge, on a
+cooldown drawn from a range. THE CHAIN IS DECIDED ON THE STRIKE, not at the end of the recovery — by
+then the blow's own knockback had you out of range every time and it never
+fired once — and the follow-up steps in through its startup. POISE: a plain
+click into the last 45 % of a committed startup takes its health and does
+not break the blow; a charge, a parry or a throw always does. It commits for the last fifth of every startup
+— the turn stops — which is the timing a sidestep should have.
+
 **FIVE HIT POINTS IS THE DESIGN.** A light swing takes one and a charge takes
 two, so it is three heavies at best and five exchanges at worst, and the free
 heavy a parry buys is the whole loop — read the tell, take the stun, wind all
@@ -1551,7 +1604,9 @@ scale dt by 0.08 while it runs.
 **AND THE INTRO IS ON A WALL CLOCK.** `beginGame()`'s card is `setTimeout`s,
 so a thousand `__bw.step` calls in one `javascript_tool` call all run while
 `introDone` is still false and `update()` does nothing at all. Call
-`beginGame()`, let the tool call END, and step in the next one. Teleporting
+`beginGame()`, let the tool call END, and step in the next one — or set
+`sessionStorage['beachwalk.skipIntro'] = '1'` before a reload and it starts in
+the walk at once. `__bw.heal()` puts the harness player back to full. Teleporting
 down the beach also trips the pack cutscene (`packCut` is in `frozen()`);
 step until `__bw.packPhase` reaches 2 before expecting anything to move.
 

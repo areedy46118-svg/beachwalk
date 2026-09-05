@@ -1818,7 +1818,7 @@ export function makeShipwreck(opts = {}) {
     props: PROPS,
     crabSpot: [HOLD_X0 + 2.4, HOLD_Y + 0.03, -1.7],
     lanternSpot: [0.4, DECK_Y + 0.22, 2.85],
-    beamAt, sectionK, flareAt, sheerAt, halfAtY, deckHalf,
+    beamAt, sectionK, flareAt, sheerAt, rakeAt, halfAtY, deckHalf, hullPt,   // rakeAt: the walk inverts it for the deck edge
   };
   return S;
 }

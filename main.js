@@ -3181,8 +3181,18 @@ function applyLook(dx, dy) {
   lookEuler.x = Math.max(-HALF_PI, Math.min(HALF_PI, lookEuler.x));
   camera.quaternion.setFromEuler(lookEuler);
 }
-document.addEventListener('mousemove', (e) => { if (locked && !frozen()) applyLook(e.movementX, e.movementY); });
-window.addEventListener('pointermove', (e) => { if (fallbackLook && dragging && !frozen()) applyLook(e.movementX, e.movementY); });
+/* While you hold her wheel the mouse turns the WHEEL and not your head.
+ * `dragWheel` was defined and wired to a puzzle and never once called: the
+ * look handler took every mousemove, so the wheel could be grabbed and
+ * released and never turned, and the head never came off its hook. */
+document.addEventListener('mousemove', (e) => {
+  if (wheelGrab) { dragWheel(e.movementX); return; }
+  if (locked && !frozen()) applyLook(e.movementX, e.movementY);
+});
+window.addEventListener('pointermove', (e) => {
+  if (wheelGrab && fallbackLook && dragging) { dragWheel(e.movementX); return; }
+  if (fallbackLook && dragging && !frozen()) applyLook(e.movementX, e.movementY);
+});
 
 // ------------------------------------------------------------------
 // Opening sequence — black card, the line fades in and out, then the
@@ -10197,78 +10207,70 @@ function sfxLockerOpen() {
 const SHIP_Y_DECK = SN.DECK_Y;          // she has a flat deck now
 const SHIP_Y_FLOOR = SN.HOLD_Y + 0.16;
 
-// ---- three stars, framed by the wheelhouse window -----------------------
-// Placed off the LINE OF SIGHT from the helm through the front glass rather
-// than at arbitrary sky coordinates: they were over the water but nowhere
-// near what you can actually see standing at the wheel. Low enough over the
-// horizon to sit inside the window band, and spread just wide enough to fall
-// between its mullions.
-const STAR_ORDER = [0, 2, 1];      // port, starboard, midships
-const shipStars = [];
+// ---- the blinking star, and the wheel that answers to it ----------------
+/* ONE star, not three, and it is IN THE SKY — a real point of light out over
+ * the water that blinks, visible from the beach long before you board her,
+ * so the wheelhouse is not where you first learn there is something to look
+ * at. The old version was three lamps that only existed while you held the
+ * wheel and a sequence to match in order, which is a lock; this is a
+ * bearing. Turn her toward the star and hold her there, and the hook lets
+ * go. It sits off her PORT bow, framed in the front glass from the helm,
+ * a few degrees over the horizon so it lands inside the window band. */
+const helmStar = { g: null, core: null, halo: null, lit: 0, solved: false };
 {
   const wx = SHIP_X + SN.BR_X0 + 1.30;         // the wheel
   const eye = SHIP_Y_DECK + SN.BR_STEP + 1.72; // your eye at the helm, measured
   const D = 190;                                // out over the sea
-  for (let i = 0; i < 3; i++) {
-    const g = new THREE.Group();
-    // seaward is -X; spread across the window and a touch above the horizon
-    /* Height is set from the WINDOW, not from the sky: at eye + 26 they
-     * projected above the head of the glass and the front bulkhead ate
-     * them. These sit about four degrees up, inside the band. */
-    g.position.set(wx - D, eye + 22 + (i === 1 ? 5 : 0), SHIP_Z + (i - 1) * 38 + (i === 1 ? 9 : 0));  // the middle one off the mast's bearing
-    const core = new THREE.Mesh(new THREE.SphereGeometry(1.20, 8, 6),
-      new THREE.MeshBasicMaterial({ color: 0x9fb2d8, fog: false, transparent: true, opacity: 0.30 }));
-    const halo = new THREE.Mesh(new THREE.SphereGeometry(3.4, 8, 6),
-      new THREE.MeshBasicMaterial({ color: 0x9fb2d8, fog: false, transparent: true, opacity: 0.07, depthWrite: false }));
-    g.add(core, halo);
-    g.visible = false;      // only ever seen from the wheel
-    scene.add(g);
-    shipStars.push({ g, core, halo, lit: 0, set: false });
-  }
+  const g = new THREE.Group();
+  // seaward is -X; +Z is her port side, which is screen-left from the helm
+  g.position.set(wx - D, eye + 21, SHIP_Z + 30);
+  const core = new THREE.Mesh(new THREE.SphereGeometry(1.15, 8, 6),
+    new THREE.MeshBasicMaterial({ color: 0xbfd0f4, fog: false, transparent: true, opacity: 0.9 }));
+  const halo = new THREE.Mesh(new THREE.SphereGeometry(3.6, 8, 6),
+    new THREE.MeshBasicMaterial({ color: 0x9fb2d8, fog: false, transparent: true, opacity: 0.12, depthWrite: false }));
+  g.add(core, halo);
+  scene.add(g);
+  helmStar.g = g; helmStar.core = core; helmStar.halo = halo;
 }
+const HELM_STAR_DETENT = 0;        // hard to port: the side it is on
 
 const starPuzzle = {
-  step: 0, held: -1, holdT: 0, active: false,
-  begin() {
-    if (shipWheel.solved) return;
-    this.active = true;
-    if (this.step === 0) { for (const s of shipStars) s.set = false; }
-  },
+  held: -1, holdT: 0, active: false,
+  begin() { if (helmStar.solved) return; this.active = true; },
   letGo() { this.active = false; this.held = -1; this.holdT = 0; },
   holding(idx) { if (this.held !== idx) { this.held = idx; this.holdT = 0; } },
   update(dt) {
-    /* They belong to the helm and nowhere else. Left in the sky the whole
-     * time they were three lamps you could see from half a mile down the
-     * beach, which is not a constellation, it's a bug. */
-    const show = wheelGrab && !shipWheel.solved;
-    for (const st of shipStars) st.g.visible = show;
-    if (!show) return;
-    // the star for this step pulses; the ones already set stay lit
-    for (let i = 0; i < 3; i++) {
-      const st = shipStars[i];
-      const cue = this.active && !shipWheel.solved && STAR_ORDER[this.step] === i;
-      const want = st.set ? 1 : cue ? 0.55 + 0.45 * Math.sin(performance.now() * 0.006) : 0.12;
-      st.lit += (want - st.lit) * Math.min(1, dt * 6);
-      st.core.material.opacity = 0.22 + st.lit * 0.78;
-      st.halo.material.opacity = 0.04 + st.lit * 0.22;
-      const k = 0.55 + st.lit * 0.45;
-      st.core.material.color.setRGB(k * 0.72, k * 0.80, k);
-      st.g.scale.setScalar(0.85 + st.lit * 0.45);
+    const st = helmStar;
+    if (!st.g) return;
+    /* THE BLINK. Not a sine — a star that swells and fades is a lamp on a
+     * dimmer. It is ON, and then for a beat it is not, on an irregular
+     * count, the way a light a long way off is when something is between
+     * you and it. Once she is turned to it, it holds steady. */
+    const now = performance.now() * 0.001;
+    let want;
+    if (st.solved) want = 1;
+    else {
+      const k = Math.floor(now / 1.35), ph = now / 1.35 - k;
+      const off = 0.22 + bwHashJS(k * 7.1) * 0.18;             // how long it is dark this time
+      const on = ph > off;
+      const near = this.active && this.held === HELM_STAR_DETENT;   // answering the wheel
+      want = on ? (near ? 1 : 0.78) : (near ? 0.55 : 0.06);
     }
-    if (!this.active || shipWheel.solved) return;
-    // you have to hold it there, so brushing past a detent doesn't count
-    if (this.held === STAR_ORDER[this.step]) {
+    st.lit += (want - st.lit) * Math.min(1, dt * (want > st.lit ? 18 : 9));
+    st.core.material.opacity = 0.10 + st.lit * 0.90;
+    st.halo.material.opacity = 0.02 + st.lit * 0.20;
+    st.g.scale.setScalar(0.8 + st.lit * 0.5);
+    if (!this.active || st.solved) return;
+    // you have to hold her there, so brushing past the detent does not count
+    if (this.held === HELM_STAR_DETENT) {
       this.holdT += dt;
-      if (this.holdT > 0.7) {
-        shipStars[STAR_ORDER[this.step]].set = true;
+      if (this.holdT > 0.8) {
+        st.solved = true;
+        shipWheel.solved = true;
+        shipWheel.relabel();
         sfxStarSet();
-        this.step++;
-        this.holdT = 0; this.held = -1;
-        if (this.step >= STAR_ORDER.length) {
-          shipWheel.solved = true;
-          shipWheel.relabel();
-          dropShipHead();
-        }
+        dropShipHead();
+        setPrompt('');
       }
     } else this.holdT = 0;
   },
@@ -10280,16 +10282,71 @@ const starPuzzle = {
 // squarely — through the wheelhouse windows. Working the wheel drops him.
 let headFall = -1;                 // -1 hanging, else seconds since he let go
 const shipHead = shipwreck.userData.head;
-{
+/* HE IS A SCAN NOW. alexrmartinez's "Severed head" (assets/head.glb, cut to
+ * 20k triangles in Blender — see tools/head_pack.py for why not gltfpack)
+ * replaces the built one: the group the model made is kept as the thing
+ * the hook, the examine screen and the inventory all hold, emptied, and
+ * the scan lands in it over the network. It is measured and scaled to a
+ * head (a third of a metre, stump and all), hung face toward the helm so
+ * you see it squarely through the front glass, and lifted the way every
+ * scan on this beach is. The key is a second copy of Sousinho's key scan,
+ * set between the teeth with the bow out, and it is its own group from the
+ * start so the item that names it exists before either model has loaded. */
+const HEAD_H = 0.33;
+const boatKey = new THREE.Group();
+if (shipHead) {
+  while (shipHead.children.length) shipHead.remove(shipHead.children[0]);
+  shipHead.userData.key = boatKey;
   const g = shipwreck.userData.gaff;
-  if (g && shipHead) {
-    // move him out of the locker and onto the hook
+  if (g) {
     g.userData.hook.add(shipHead);
-    shipHead.position.set(0, -0.42, 0);
-    shipHead.rotation.set(0.25, 0.4, 0.15);
+    shipHead.position.set(0, -0.30, 0);
+    shipHead.rotation.set(0.10, Math.PI / 2 + 0.25, 0.08);   // the scan faces +Z; the helm is +X
     shipHead.visible = true;
-    addItemShine(shipHead, { size: 0.30, height: 0.0, strength: 0.35 });
   }
+  new GLTFLoader().load('assets/head.glb', (gltf) => {
+    const m = gltf.scene;
+    m.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(m);
+    const size = box.getSize(new THREE.Vector3()), ctr = box.getCenter(new THREE.Vector3());
+    const k = HEAD_H / Math.max(0.001, size.y);
+    m.scale.setScalar(k);
+    m.position.set(-ctr.x * k, -ctr.y * k, -ctr.z * k);
+    m.traverse((o) => {
+      if (!o.isMesh) return;
+      const mat = o.material; if (!mat) return;
+      mat.metalness = 0;
+      mat.emissive = new THREE.Color(0xffffff); mat.emissiveMap = mat.map; mat.emissiveIntensity = 0.22;
+      reexpose(mat, 0.70, [0.05, 0.06, 0.09]);
+      mat.needsUpdate = true;
+    });
+    shipHead.add(m);
+    /* The mouth, in metres in the head's own frame, MEASURED off the scan
+     * once it was scaled: the centreline profile puts the nose tip at
+     * y = -0.01, z = 0.123 and the chin at -0.105, and the lips sit between
+     * them at -0.078, 0.10. The key's length is its local X (see the
+     * loader below), turned to run out through the teeth along +Z, its
+     * centre a hair outside the lips so most of it shows. */
+    boatKey.position.set(0, -0.078, 0.112);
+    boatKey.rotation.set(0.1, Math.PI / 2, 0);        // bow OUT, bit between the teeth
+    shipHead.add(boatKey);
+    addItemShine(shipHead, { size: 0.34, height: 0.0, strength: 0.35, lift: 0.3 });
+  }, undefined, () => {});
+  new GLTFLoader().load('assets/key.glb', (gltf) => {
+    gltf.scene.updateMatrixWorld(true);
+    let geo = null, mat = null;
+    gltf.scene.traverse((o) => { if (o.isMesh && !geo) { geo = o.geometry.clone().applyMatrix4(o.matrixWorld); mat = o.material.clone(); } });
+    if (!geo) return;
+    geo.computeBoundingBox();
+    const bb = geo.boundingBox, size = bb.getSize(new THREE.Vector3()), mid = bb.getCenter(new THREE.Vector3());
+    geo.translate(-mid.x, -mid.y, -mid.z); geo.computeBoundingSphere();
+    mat.emissive.setHex(0x4a3a2a); mat.emissiveMap = mat.map;
+    mat.metalness = Math.min(mat.metalness, 0.25);
+    reexpose(mat, 0.62);
+    const km = new THREE.Mesh(geo, mat);
+    km.scale.setScalar(0.15 / Math.max(size.x, size.y, size.z));   // 15 cm long, along its X
+    boatKey.add(km);
+  }, undefined, () => {});
 }
 function makeHeadIcon() {
   const c = document.createElement('canvas'); c.width = c.height = 48;
@@ -10324,12 +10381,11 @@ function makeBoatKeyIcon() {
   g.beginPath(); g.moveTo(36, 38); g.lineTo(30, 43); g.stroke();
   return c.toDataURL();
 }
-const boatKey = shipHead && shipHead.userData.key;
 const boatKeyItem = {
   id: 'boatkey', name: "Wheelhouse key", icon: makeBoatKeyIcon(),
-  use: () => { if (boatKey) openInspect(boatKey, { name: 'Wheelhouse key' }); },
+  use: () => openInspect(boatKey, { name: 'Wheelhouse key' }),
 };
-if (boatKey) holdable(boatKeyItem, boatKey, { scale: 3.4, pos: [0, -0.04, 0.02], rot: [0.3, 0.6, 0.2] });
+holdable(boatKeyItem, boatKey, { scale: 3.0, pos: [0, -0.04, 0.02], rot: [0.3, 0.6, 0.2] });
 let boatKeyTaken = false;
 
 const headItem = {
@@ -10337,11 +10393,12 @@ const headItem = {
   /* Examining him is where you find it. equipLabel only appears while the
    * key is still in there, so once it is out he is just a head again. */
   use: () => openInspect(shipHead, {
-    equipLabel: boatKeyTaken ? null : 'Take the key from his mouth',
+    equipLabel: boatKeyTaken ? null : 'Pull the key out of his mouth',
     onEquip: () => {
-      if (boatKeyTaken || !boatKey) return;
+      if (boatKeyTaken) return;
       boatKeyTaken = true;
       shipHead.remove(boatKey);
+      boatKey.position.set(0, 0, 0); boatKey.rotation.set(0, 0, 0);   // out of the mouth, and its own thing
       sfxThud(0.03);
       addToInventory(boatKeyItem);
       setPrompt('');
@@ -10349,7 +10406,7 @@ const headItem = {
     },
   }),
 };
-holdable(headItem, shipHead, { scale: 1.0, pos: [0, -0.10, 0.02], rot: [0.3, 0.5, 0.1] });
+holdable(headItem, shipHead, { scale: 0.8, pos: [0, -0.12, 0.04], rot: [0.2, 2.4, 0.1] });
 
 /* ---- her deck lantern, off the wheelhouse step ------------------------
  * One of her fittings you can actually take, so the gear on deck is not
@@ -10501,8 +10558,8 @@ function updateShipHead(dt) {
 // grabbing puts you in position behind it looking out to sea, the mouse turns
 // the wheel instead of your head, and letting go settles it into a detent.
 //
-// Three stars over the water call the turns. Match all three in order and the
-// locker abaft the helm comes open.
+// One star over the water blinks. Turn her toward it and hold her there and
+// the captain comes off his hook.
 const shipWheel = {
   positions: ['hard to port', 'midships', 'hard to starboard'],
   index: 1,                                   // 0 | 1 | 2, starts midships
@@ -10582,7 +10639,8 @@ let _preHelmBaseY = 0;
     _preHelmQ.copy(camera.quaternion);
     _preHelmBaseY = camBaseY;
     helmStance();
-    setPrompt('Drag to turn her \u00b7 let go to set the wheel \u00b7 Esc to step away');
+    setPrompt(shipWheel.solved ? 'Drag to turn her \u00b7 Esc to step away'
+      : 'Drag to turn her toward the blinking star \u00b7 hold her there \u00b7 Esc to step away');
     starPuzzle.begin();
   };
   shipWheel.release = () => {
@@ -10624,7 +10682,37 @@ let _preHelmBaseY = 0;
  * your feet. The hold floor and the deck sit above one another at the
  * same (x, z) and picking by height is what stops them fighting. */
 const _lxc = (lx) => THREE.MathUtils.clamp(lx, -SN.HALF, SN.HALF);
-const deckHalfAt = (lx) => SN.deckHalf(_lxc(lx));
+/* THE DECK EDGE IS WHERE THE PLANKING IS, NOT WHERE THE STATION IS. The
+ * deck's own geometry takes its x from hullPt, rake included — forward she
+ * rakes the best part of two metres — but the walk was clamped on the raw
+ * station: at the bow you stood behind an invisible wall a metre short of
+ * planking you could see, and along the bow flanks the deck looked wider
+ * than you were allowed to walk. `deckHalfAt(lx)` inverts the rake now: it
+ * finds the station whose planking is at lx and answers with that station's
+ * half-width. Built once, on first use (PLAYER_R and SN are both below). */
+let _rakeX = null, _rakeB = null, DECK_X0 = -SN.HALF, DECK_X1 = SN.HALF;
+function buildDeckEdge() {
+  if (_rakeX) return;
+  const n = 260; _rakeX = new Float32Array(n + 1); _rakeB = new Float32Array(n + 1);
+  for (let i = 0; i <= n; i++) {
+    const x = -SN.HALF + (i / n) * SN.LEN;
+    // the same point deckGeo lays its edge on
+    const v = THREE.MathUtils.clamp((SN.DECK_Y - SN.KEEL_Y) / ((SN.DECK_Y + SN.sheerAt(x) + SN.BULWARK) - SN.KEEL_Y), 0, 1);
+    _rakeX[i] = x + SN.rakeAt(x, v);
+    _rakeB[i] = SN.halfAtY(x, SN.DECK_Y) * 0.985;
+  }
+  DECK_X0 = _rakeX[0]; DECK_X1 = _rakeX[n];
+}
+function deckHalfAt(lx) {
+  buildDeckEdge();
+  if (lx <= _rakeX[0]) return _rakeB[0];
+  const n = _rakeX.length - 1;
+  if (lx >= _rakeX[n]) return _rakeB[n];
+  let lo = 0, hi = n;                         // rake keeps it monotonic, so bisect
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (_rakeX[m] <= lx) lo = m; else hi = m; }
+  const t = (lx - _rakeX[lo]) / Math.max(1e-6, _rakeX[hi] - _rakeX[lo]);
+  return _rakeB[lo] + (_rakeB[hi] - _rakeB[lo]) * t;
+}
 
 function shipFloorAt(lx, lz, feet) {
   const tol = feet + 0.5;
@@ -10660,8 +10748,8 @@ function shipFloorAt(lx, lz, feet) {
     take(SN.HOLD_Y + t * (SN.DECK_Y - SN.HOLD_Y));
   }
 
-  // the deck, less the hatch and the stair well
-  if (Math.abs(lx) < SN.HALF && Math.abs(lz) < deckHalfAt(lx)) {
+  // the deck, less the hatch and the stair well — out to the raked stem
+  if (lx > DECK_X0 && lx < DECK_X1 && Math.abs(lz) < deckHalfAt(lx)) {
     const inHatch = lx > SN.HATCH_X0 && lx < SN.HATCH_X1 && Math.abs(lz) < SN.HATCH_HZ;
     const inWell = lx > SN.STAIR_X0 && lx < SN.STAIR_X1 && lz > SN.STAIR_Z0 && lz < SN.STAIR_Z1;
     if (!inHatch && !inWell) take(SN.DECK_Y);
@@ -10702,9 +10790,10 @@ let onShip = false, inBridge = false;
 let SHIP_END_LO = 0, SHIP_END_HI = 0;
 function shipEnds() {
   if (SHIP_END_HI) return;
-  SHIP_END_LO = -SN.HALF; SHIP_END_HI = SN.HALF;
-  while (SHIP_END_LO < 0 && SN.deckHalf(SHIP_END_LO) < PLAYER_R + 0.15) SHIP_END_LO += 0.05;
-  while (SHIP_END_HI > 0 && SN.deckHalf(SHIP_END_HI) < PLAYER_R + 0.15) SHIP_END_HI -= 0.05;
+  buildDeckEdge();
+  SHIP_END_LO = DECK_X0; SHIP_END_HI = DECK_X1;    // in the planking's frame, rake and all
+  while (SHIP_END_LO < 0 && deckHalfAt(SHIP_END_LO) < PLAYER_R + 0.12) SHIP_END_LO += 0.05;
+  while (SHIP_END_HI > 0 && deckHalfAt(SHIP_END_HI) < PLAYER_R + 0.12) SHIP_END_HI -= 0.05;
 }
 
 /* Her gear is solid wherever it stands, not only on deck. Each box
@@ -10745,7 +10834,7 @@ function updateShip(dt) {
     // no floor: if you are inside her hull she is solid, so slide back out
     onShip = false; inBridge = false;
     const hh = deckHalfAt(lx) + 0.3;
-    if (Math.abs(lx) < SN.HALF + 0.3 && Math.abs(lz) < hh && feet < SN.DECK_Y - 0.3)
+    if (lx > DECK_X0 - 0.3 && lx < DECK_X1 + 0.3 && Math.abs(lz) < hh && feet < SN.DECK_Y - 0.3)
       camera.position.z = SHIP_Z + (lz >= 0 ? hh : -hh);
     return;
   }
@@ -10792,6 +10881,27 @@ function updateShip(dt) {
     else if (m === dR) camera.position.x = SHIP_X + cx1;
     else if (m === dB) camera.position.z = SHIP_Z - cz;
     else camera.position.z = SHIP_Z + cz;
+  }
+
+  /* THE LADDER WELL IS A HOLE YOU COULD WALK INTO SIDEWAYS. Its floor is
+   * the ladder, which is a ramp down to the hold, so a step across its side
+   * from the deck put the ladder two metres under your feet and dropped you
+   * — the "falling off" on a deck with an unbroken bulwark. It has a lip
+   * you can see on three sides now (the model has one), and this is that
+   * lip: solid from deck height on the two long sides and the low end, open
+   * only at its head, where the top tread meets the deck. Anyone already ON
+   * the ladder is below deck height and walks through all of it. */
+  if (feet > SN.DECK_Y - 0.3) {
+    const wx0 = SN.STAIR_X0 - PLAYER_R, wx1 = SN.STAIR_X1 - 0.42;
+    const wz0 = SN.STAIR_Z0 - PLAYER_R, wz1 = SN.STAIR_Z1 + PLAYER_R;
+    if (lx > wx0 && lx < wx1 && lz > wz0 && lz < wz1) {
+      const dL = lx - wx0, dR = wx1 - lx, dB = lz - wz0, dF = wz1 - lz;
+      const m = Math.min(dL, dR, dB, dF);
+      if (m === dL) camera.position.x = SHIP_X + wx0;
+      else if (m === dR) camera.position.x = SHIP_X + wx1;
+      else if (m === dB) camera.position.z = SHIP_Z + wz0;
+      else camera.position.z = SHIP_Z + wz1;
+    }
   }
 
   /* The wheelhouse: walls solid, the door in the +Z side is the way in.
@@ -11727,20 +11837,44 @@ const MUT_X = 9.8, MUT_Z = MUSH_Z - 130;   // well past the pavilion, and up on 
 const MUT_H = 2.25;                        // how tall it stands, in metres
 const MUT_HP = 5;
 const MUT_WAKE = 26;                       // it sees you a long way off
-const MUT_SPEED = 3.6;                     // faster than you are
-const MUT_REACH = 2.3;                     // and longer in the arm than a crab
-const MUT_WIND = 0.68;                     // startup: a big overhand, and readable
-const MUT_STRIKE = 0.13;                   // active — the damage is on the first frame
-const MUT_RECOVER = 0.85;                  // recovery: your opening, long enough for a charge
-const MUT_COOLDOWN = 0.55;
+const MUT_SPEED = 3.6;                     // faster than you are; each swing carries its own reach
+/* FOUR SWINGS, NOT ONE. With a single overhand on a fixed clock the owner
+ * had it read in two exchanges — the tell was the same length every time
+ * and the guard could go up on a count. Each swing has its own startup,
+ * its own reach and its own contact frame (measured in the build: the frame
+ * a hand is furthest forward and moving fastest), and which one comes next
+ * is drawn, not scheduled:
+ *   attack   the overhand — the long readable one, the one you learn on
+ *   attack2  a quick swipe: a third of a second of startup, the punishment
+ *            for standing in reach with the guard down
+ *   attack3  THE HELD ONE. It winds all the way up and HANGS there for a
+ *            second before it comes down, so a guard raised on the first
+ *            count is a block, not a parry — it costs you wind, and it
+ *            teaches you to watch the hand and not the clock
+ *   attack4  the lunge: it covers ground through the strike, so backing
+ *            off during the startup is not the answer it is to the others
+ * And they CHAIN: a swipe is followed by the overhand more often than not,
+ * with the second startup shortened, so one parry is not the end of the
+ * exchange. The soulslike part is that none of this is unfair — every swing
+ * still has a startup you can see and one frame it lands on — it is just
+ * that reading it takes looking. `hit` is where the contact is in the clip,
+ * and the two halves of each clip are mapped separately (`mutClipTime`) so
+ * the hand always arrives on the damage frame however these are tuned. */
+const MUT_ATTACKS = {
+  attack:  { wind: 0.62, strike: 0.12, recover: 0.72, hit: 0.413, reach: 2.45, lunge: 0.0, chain: 'attack2', chainP: 0.30, w: 0.34 },
+  attack2: { wind: 0.34, strike: 0.10, recover: 0.46, hit: 0.257, reach: 2.25, lunge: 0.0, chain: 'attack',  chainP: 0.60, w: 0.30 },
+  attack3: { wind: 1.05, strike: 0.12, recover: 0.60, hit: 0.700, reach: 2.65, lunge: 0.0, chain: null,      chainP: 0.00, w: 0.20 },
+  attack4: { wind: 0.50, strike: 0.14, recover: 1.05, hit: 0.333, reach: 2.55, lunge: 1.4, chain: 'attack2', chainP: 0.35, w: 0.16 },
+};
+const MUT_COOLDOWN = [0.30, 0.95];        // drawn between these, after a recovery
 const MUT_STUN = 2.1;                      // what landing a parry buys you
 const MUT_RECOIL = 0.32;                   // how long a survived hit rocks it
 const MUT_HIT_STOP = 0.09;
 const MUT_HEAVY = 0.85;                    // a swing wound past this takes two
-const MUT_CLIP_HIT = 0.413;                // where the contact is in the clip (measured in the build)
 const MUT_STEP = 0.30;                     // seconds between footfalls at a dead run
-const MUT_TOTAL = MUT_WIND + MUT_STRIKE + MUT_RECOVER;
+const MUT_STRAFE = 1.7;                    // how fast it circles you at reach
 const mutants = [];
+const MUT_WIND = MUT_ATTACKS.attack.wind;  // the harness and the docs still name the overhand's
 
 function mutPlay(u, name, loop) {
   const a = u.clips[name];
@@ -11757,10 +11891,10 @@ function mutPlay(u, name, loop) {
  * the clip, and the startup and the recovery this is mapped onto are not the
  * same length, so the two halves are remapped separately: however the timings
  * are tuned, the hand lands on the frame the damage is dealt. */
-function mutClipTime(t, dur) {
-  const hit = dur * MUT_CLIP_HIT;
-  if (t < MUT_WIND) return (t / MUT_WIND) * hit;
-  return hit + ((t - MUT_WIND) / (MUT_STRIKE + MUT_RECOVER)) * (dur - hit);
+function mutClipTime(t, dur, A) {
+  const hit = dur * A.hit;
+  if (t < A.wind) return (t / A.wind) * hit;
+  return hit + ((t - A.wind) / (A.strike + A.recover)) * (dur - hit);
 }
 function mutAnim(u, dt, moving) {
   if (!u.mixer) return;
@@ -11773,14 +11907,21 @@ function mutAnim(u, dt, moving) {
     const a = mutPlay(u, 'hit', false);
     if (a) { a.paused = true; a.time = clampTime(a, (1 - u.st.stun / MUT_STUN) * a.getClip().duration); }
   } else if (u.st.atk >= 0) {
-    const a = mutPlay(u, 'attack', false);
-    if (a) { a.paused = true; a.time = clampTime(a, mutClipTime(u.st.atk, a.getClip().duration)); }
+    const a = mutPlay(u, u.st.swing, false);
+    if (a) { a.paused = true; a.time = clampTime(a, mutClipTime(u.st.atk, a.getClip().duration, MUT_ATTACKS[u.st.swing])); }
   } else if (u.st.recoil > 0) {
     const a = mutPlay(u, 'hit', false);
     if (a) { a.paused = true; a.time = clampTime(a, (1 - u.st.recoil / MUT_RECOIL) * a.getClip().duration * 0.55); }
   } else if (u.st.roar > 0) {
     const a = mutPlay(u, 'roar', false);
     if (a) { a.paused = false; a.timeScale = 1.3; }
+  } else if (u.st.side !== 0 && moving < 0.5) {
+    // circling you at reach, or backing off a step before the lunge
+    const a = mutPlay(u, u.st.side < 0 ? 'strafeL' : u.st.side > 0 ? 'strafeR' : 'back', true);
+    if (a) { a.paused = false; a.timeScale = 1.25; }
+  } else if (u.st.back > 0) {
+    const a = mutPlay(u, 'back', true);
+    if (a) { a.paused = false; a.timeScale = 1.2; }
   } else if (moving > 0.04) {
     const a = mutPlay(u, 'run', true);
     if (a) { a.paused = false; a.timeScale = 1.5 + moving * 0.55; }
@@ -11829,8 +11970,9 @@ function makeMutant(x, z) {
   scene.add(g);
   const u = {
     g, model: null, mixer: null, clips: {}, cur: null,
-    st: { alive: true, awake: false, roar: 0, atk: -1, cool: 0, stun: 0,
-          recoil: 0, struck: false, hp: MUT_HP, step: 0, deadT: 0 },
+    st: { alive: true, awake: false, roar: 0, atk: -1, swing: 'attack', cool: 0, stun: 0,
+          recoil: 0, struck: false, hp: MUT_HP, step: 0, deadT: 0,
+          side: 0, sideT: 0, back: 0, chained: false, chainAt: -1, swings: 0 },
     hitFrom: new THREE.Vector3(), hitDir: new THREE.Vector3(), dir: new THREE.Vector3(),
   };
   mutants.push(u);
@@ -11865,7 +12007,7 @@ function nearestFoe(pos) {
 function parryMutant(u) {
   if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04);
   parryCool = 0;                             // landing one costs you nothing
-  u.st.atk = -1;
+  u.st.atk = -1; u.st.chainAt = -1; u.st.chained = false;
   u.st.cool = MUT_COOLDOWN;
   u.st.stun = MUT_STUN;
   parryGlow = 0.5;
@@ -11919,8 +12061,20 @@ function hurtMutant(u, dmg, P = 0) {
   if (!u.st.alive || u.st.struck) return false;
   u.st.hp -= dmg;
   if (u.st.hp <= 0) { killMutant(u); return true; }
-  u.st.atk = -1;
+  /* POISE. A light swing into the last part of a committed startup takes
+   * its point of health and does NOT stop the blow: it flashes, it bleeds,
+   * and the hand comes down anyway. Trading with it is a choice, and the
+   * choice has a cost. A charged swing, a parry and a throw all still
+   * break it — only the plain click is shrugged off, and only late. */
+  const A = MUT_ATTACKS[u.st.swing];
+  const committed = u.st.atk >= 0 && u.st.atk > A.wind * 0.55 && u.st.atk < A.wind + A.strike;
+  if (committed && P < MUT_HEAVY && dmg < 2) {
+    flashMats(u.g); sfxMutHit(); bleedMutant(u, 5, 0.3); addTrauma(0.22);
+    return false;
+  }
+  u.st.atk = -1; u.st.chainAt = -1; u.st.chained = false;
   u.st.stun = 0;
+  u.st.side = 0; u.st.back = 0;
   u.st.cool = Math.max(u.st.cool, 0.45);
   u.st.recoil = MUT_RECOIL;
   camera.getWorldDirection(u.hitDir); u.hitDir.y = 0; u.hitDir.normalize();
@@ -11964,30 +12118,36 @@ function bleedMutant(u, n, force) {
  * `MUT_WIND` and rises the whole way, so the sound is the countdown to the
  * frame you have to answer, and it is pitched well under the crab's rasp so
  * the two are never confused. */
-function sfxMutTell(dist = 0) {
+/* The tell runs for exactly as long as THIS swing's startup, so the sound is
+ * still the countdown — but four different countdowns now, and the held one
+ * rises, stops, and holds a breath before it drops. */
+function sfxMutTell(dist = 0, W = MUT_WIND) {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime, out = sfxOut(), g0 = 1 / (1 + dist / 12);
-  const rasp = noiseBurst(MUT_WIND, (x) => (0.4 + 0.6 * Math.random()) * Math.min(1, x * 2.5) * (1 - x * 0.2));
+  const rise = Math.min(W, 0.62);
+  const rasp = noiseBurst(W, (x) => (0.4 + 0.6 * Math.random()) * Math.min(1, x * (W / rise) * 2.5) * (1 - x * 0.2));
   const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 2.4;
   bp.frequency.setValueAtTime(230, t);
-  bp.frequency.exponentialRampToValueAtTime(880, t + MUT_WIND);
+  bp.frequency.exponentialRampToValueAtTime(880, t + rise);
   const rg = ctx.createGain();
   rg.gain.setValueAtTime(0.0001, t);
-  rg.gain.exponentialRampToValueAtTime(0.16 * g0, t + MUT_WIND * 0.85);
-  rg.gain.exponentialRampToValueAtTime(0.02 * g0, t + MUT_WIND);
+  rg.gain.exponentialRampToValueAtTime(0.16 * g0, t + rise * 0.85);
+  rg.gain.setValueAtTime(0.16 * g0, t + Math.max(rise * 0.85, W - 0.08));
+  rg.gain.exponentialRampToValueAtTime(0.02 * g0, t + W);
   rasp.connect(bp).connect(rg).connect(out);
-  rasp.start(t); rasp.stop(t + MUT_WIND);
+  rasp.start(t); rasp.stop(t + W);
   // the throat under it, hauling up
   const o = ctx.createOscillator(); o.type = 'sawtooth';
   o.frequency.setValueAtTime(41, t);
-  o.frequency.exponentialRampToValueAtTime(104, t + MUT_WIND);
+  o.frequency.exponentialRampToValueAtTime(104, t + rise);
   const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 240;
   const og = ctx.createGain();
   og.gain.setValueAtTime(0.0001, t);
-  og.gain.exponentialRampToValueAtTime(0.10 * g0, t + MUT_WIND * 0.9);
-  og.gain.exponentialRampToValueAtTime(0.0001, t + MUT_WIND + 0.06);
+  og.gain.exponentialRampToValueAtTime(0.10 * g0, t + rise * 0.9);
+  og.gain.setValueAtTime(0.10 * g0, t + Math.max(rise * 0.9, W - 0.05));
+  og.gain.exponentialRampToValueAtTime(0.0001, t + W + 0.06);
   o.connect(lp).connect(og).connect(out);
-  o.start(t); o.stop(t + MUT_WIND + 0.07);
+  o.start(t); o.stop(t + W + 0.07);
 }
 function sfxMutSwing() {
   const ctx = audioCtx; if (!ctx) return;
@@ -12122,31 +12282,84 @@ function updateMutantUnit(u, dt) {
   }
 
   let moving = 0;
+  const A = MUT_ATTACKS[u.st.swing];
   if (u.st.atk >= 0) {
     const was = u.st.atk;
     u.st.atk += dt;
     const t = u.st.atk;
-    // it tracks you through the wind-up and commits on the swing: stepping
-    // round it during the startup is worth something, and running is not
-    if (t < MUT_WIND) turn(3.2);
-    if (was < MUT_WIND && t >= MUT_WIND) {
+    /* It tracks you through the startup and COMMITS for the last fifth of
+     * it: stepping round it early is worth nothing, stepping round it late
+     * is worth everything, which is the timing a sidestep should have. */
+    if (t < A.wind * 0.8) turn(3.4);
+    // the lunge covers ground through its strike
+    if (A.lunge > 0 && t >= A.wind && t < A.wind + A.strike + 0.12 && dist > 1.3) {
+      u.dir.set(dx / dist, 0, dz / dist);
+      p.addScaledVector(u.dir, (A.lunge / (A.strike + 0.12)) * dt);
+    }
+    // a chained swing STEPS IN through its startup: the first blow's own
+    // knockback put you out of reach, and a follow-up that stands still is
+    // a follow-up that never lands
+    if (u.st.chained && t < A.wind && dist > A.reach - 0.3) {
+      u.dir.set(dx / dist, 0, dz / dist);
+      p.addScaledVector(u.dir, 2.4 * dt);
+    }
+    if (was < A.wind && t >= A.wind) {
       sfxMutSwing();
-      /* Re-tested HERE and not when the wind-up began — a tell is only fair
+      /* Re-tested HERE and not when the startup began — a tell is only fair
        * if getting out of the way is a thing that works. */
-      if (dist < MUT_REACH + 0.7) {
+      if (dist < A.reach + 0.7) {
         if (blocking) {
           const dtp = (performance.now() - blockStart) / 1000;
           if (dtp <= PARRY_WINDOW && parryCool <= 0) parryMutant(u);
           else blockMutant(u);
         } else damagePlayer(1);
       }
+      /* THE CHAIN IS DECIDED ON THE STRIKE, not at the end of the recovery:
+       * by then the blow's own knockback had you out of range every time and
+       * it never fired once. Once — never three in a row, never off a swing
+       * that was itself chained — so a combo is two and you can count on it.
+       * The second swing comes out of the first's recovery at the halfway
+       * mark, which is what makes it a combo and not two attacks. */
+      u.st.chainAt = (A.chain && !u.st.chained && Math.random() < A.chainP && dist < A.reach + 2.2)
+        ? A.wind + A.strike + A.recover * 0.5 : -1;
     }
-    if (t >= MUT_TOTAL) { u.st.atk = -1; u.st.cool = MUT_COOLDOWN; }
+    if (u.st.chainAt > 0 && t >= u.st.chainAt) {
+      u.st.swings++;
+      u.st.swing = A.chain; u.st.atk = 0; u.st.chained = true; u.st.chainAt = -1;
+      sfxMutTell(dist, MUT_ATTACKS[A.chain].wind);
+    } else if (t >= A.wind + A.strike + A.recover) {
+      u.st.atk = -1;
+      u.st.swings++;
+      u.st.chained = false;
+      u.st.cool = MUT_COOLDOWN[0] + Math.random() * (MUT_COOLDOWN[1] - MUT_COOLDOWN[0]);
+    }
   } else {
     u.st.cool = Math.max(0, u.st.cool - dt);
     turn(6);
-    if (dist > MUT_REACH) {
-      const sp = MUT_SPEED * THREE.MathUtils.clamp((dist - MUT_REACH) / 1.8, 0.3, 1);
+    const near = dist <= A.reach;
+    if (u.st.side !== 0) {
+      /* Circling: sidelong at reach, keeping the range. It stops when its
+       * time runs out or you close in, and what it does next is drawn
+       * again — so its rhythm is not a rhythm. */
+      u.st.sideT -= dt;
+      const tx = -dz / dist, tz = dx / dist;           // tangent, to its right
+      const r = THREE.MathUtils.clamp((dist - (A.reach - 0.3)) * 1.5, -1, 1);   // and a little in or out to hold the range
+      p.x += (tx * u.st.side * MUT_STRAFE + (dx / dist) * r * 0.8) * dt;
+      p.z += (tz * u.st.side * MUT_STRAFE + (dz / dist) * r * 0.8) * dt;
+      p.x = THREE.MathUtils.clamp(p.x, WADE_X - 1.5, CLIFF_BLOCK_X + 0.5);
+      moving = 0.2;
+      if (u.st.sideT <= 0 || dist < 1.4) { u.st.side = 0; u.st.cool = 0; }
+    } else if (u.st.back > 0) {
+      // a step back, and then the lunge out of it
+      u.st.back -= dt;
+      u.dir.set(dx / dist, 0, dz / dist);
+      p.addScaledVector(u.dir, -1.3 * dt);
+      moving = 0.2;
+      // and out of the step back: the lunge, mostly — the overhand often
+      // enough that a step back is not a promise
+      if (u.st.back <= 0) { u.st.back = 0; u.st.swing = Math.random() < 0.7 ? 'attack4' : 'attack'; u.st.atk = 0; u.st.chained = false; sfxMutTell(dist, MUT_ATTACKS[u.st.swing].wind); }
+    } else if (!near) {
+      const sp = MUT_SPEED * THREE.MathUtils.clamp((dist - A.reach) / 1.8, 0.3, 1);
       u.dir.set(dx / dist, 0, dz / dist);
       p.addScaledVector(u.dir, sp * dt);
       p.x = THREE.MathUtils.clamp(p.x, WADE_X - 1.5, CLIFF_BLOCK_X + 0.5);
@@ -12161,8 +12374,25 @@ function updateMutantUnit(u, dt) {
         }
       }
     } else if (u.st.cool <= 0 && !settings.devMode) {
-      u.st.atk = 0;
-      sfxMutTell(dist);
+      /* At reach with its breath back: a swing, drawn by weight, or it
+       * circles, or it takes a step back and comes in with the lunge. The
+       * first swing of a fight is always the overhand — you get to learn
+       * the language before it starts using all of it. */
+      const roll = Math.random();
+      if (u.st.swings === 0 || roll < 0.62) {
+        let pick = 'attack';
+        if (u.st.swings > 0) {
+          let r = Math.random() * Object.values(MUT_ATTACKS).reduce((a, k) => a + k.w, 0);
+          for (const k in MUT_ATTACKS) { r -= MUT_ATTACKS[k].w; if (r <= 0) { pick = k; break; } }
+        }
+        u.st.swing = pick; u.st.atk = 0; u.st.chained = false;
+        sfxMutTell(dist, MUT_ATTACKS[pick].wind);
+      } else if (roll < 0.86) {
+        u.st.side = Math.random() < 0.5 ? -1 : 1;
+        u.st.sideT = 0.5 + Math.random() * 0.8;
+      } else {
+        u.st.back = 0.42;
+      }
     }
   }
   // and you do not walk through two hundred kilos of it
@@ -13380,6 +13610,7 @@ window.__bw = {
    * the freeze ever ends: a killed crab or mutant sits in its impact frames
    * for ever, because the frame that finishes it is the frame hitstop
    * reaches zero, and update() is not where hitstop is counted down. */
+  heal: () => { hp = MAX_HP; hurtFlash = 0; sinceHurt = 0; },   // the harness player has to survive a forty-second sample
   step: (dt) => {
     const rawDt = dt;
     if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
@@ -13427,6 +13658,8 @@ window.__bw = {
   lighthouse, startLighthouseTrack, bottleProp, playSample, updateTower,
   drainTunnel, DRAIN_X, DRAIN_Z, updateDrain, sfxDrip,
   shipwreck, SHIP_X, SHIP_Z, shipFloorAt, shipWheel, get onShip() { return onShip; }, get inBridge() { return inBridge; },
+  helmStar, starPuzzle, shipHead, boatKey, boatKeyItem, headItem, holdDoor, get holdDoorOpen() { return holdDoorOpen; },
+  get headFall() { return headFall; }, dropShipHead, deckHalfAt, get wheelGrab() { return wheelGrab; }, dragWheel: (dx) => dragWheel(dx),
   holdDoor, boatKeyItem, headItem, dropShipHead, shipLantern,
   get holdDoorOpen() { return holdDoorOpen; }, set holdDoorOpen(v) { holdDoorOpen = v; },
   get boatKeyTaken() { return boatKeyTaken; },
@@ -13440,7 +13673,7 @@ window.__bw = {
   get dockDoorOpen() { return dockDoorOpen; }, set dockDoorOpen(v) { dockDoorOpen = v; }, get onDock() { return onDock; },
   crabs, makeCrabUnit, nearestCrab, crabPlay, updateCrabUnit,
   mutants, mutant, updateMutant, hurtMutant, killMutant, parryMutant, blockMutant, nearestMutant,
-  MUT_X, MUT_Z, MUT_H, MUT_HP, MUT_WAKE, MUT_REACH, MUT_WIND, MUT_STUN, MUT_TOTAL,
+  MUT_X, MUT_Z, MUT_H, MUT_HP, MUT_WAKE, MUT_WIND, MUT_STUN, MUT_ATTACKS,
   mutState: () => mutants.map((u) => ({ ...u.st, x: u.g.position.x, z: u.g.position.z, clip: u.cur && u.cur.getClip().name })),
   packCrabs, updatePack, get packPhase() { return packPhase; }, PACK_Z,
   lhDoor, shinies, onPath, pathBend, pathHalfAt, lhWindows, lanternGlass,

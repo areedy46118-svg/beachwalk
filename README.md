@@ -162,9 +162,22 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   at twenty-six metres, roars where it stands, and then runs at you. It has
   **five hit points**: a light swing takes one and a charged one takes two,
   so it is three heavies at best. Its swing is the crab's grammar played
-  bigger — a long readable overhand you can guard, and can PARRY if the guard
-  goes up into it, which leaves it doubled over and helpless for two seconds.
-  It does not come apart when it dies; it goes down and stays down.
+  bigger — and it has FOUR of them: the overhand you learn on, a quick swipe
+  for standing in reach with the guard down, a held one that hangs at the top
+  for a second so a guard raised on the first count is a block and not a
+  parry, and a lunge that covers ground through the strike. A swipe chains
+  into the overhand more often than not. Between swings it circles you or
+  steps back before the lunge, on a drawn rhythm rather than a fixed one, and
+  a plain click into the last part of a committed startup takes its point of
+  health without stopping the blow. Every swing still has a startup you can
+  see and one frame it lands on: guard it, or raise the guard INTO it to
+  parry, which leaves it doubled over and helpless for two seconds. It does
+  not come apart when it dies; it goes down and stays down.
+- **The wreck's wheel** — one star out over the water blinks. Take the wheel,
+  drag her toward it and hold her there, and the captain's head comes off
+  the davit hook and drops through the hatch into the hold. Pick it up,
+  examine it, and pull the key out of its mouth; the key unlocks the shell
+  door low in her far side, which is the only way off her.
 - **Footprints** — pre-stamped trail behind spawn, new prints as you go
   (toe pointing the right way), footstep sound; oldest recycle.
 - **The sand cliff** — a lofted eroded escarpment, scalloped lip, vertical
@@ -252,10 +265,11 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - `MUSIC_TARGET` / `MUSIC_FADE_IN` / `MUSIC_HOLD` / `MUSIC_FADE_OUT`
 - `PATH_LEN` / `PATH_HALF` / `pathBend()` — the lighthouse path's shape
 - `CRAB_SPEED` / `CRAB_REACH` / `CRAB_WAKE` / `crab.scale` — the enemy crab
-- `MUT_HP` / `MUT_WIND` / `MUT_STRIKE` / `MUT_RECOVER` / `MUT_STUN` / `MUT_REACH` /
-  `MUT_SPEED` / `MUT_WAKE` / `MUT_H` — the mutant past the pavilion. `MUT_WIND` is
-  how long the tell runs, and `MUT_CLIP_HIT` is where the swing connects in its
-  clip — move one and the picture and the damage come apart.
+- `MUT_ATTACKS` — the mutant's four swings: each one's startup (`wind`), active
+  window, recovery, reach, lunge distance, what it chains into and how often, and
+  `hit`, where the contact is in its clip (measured in the build, not guessed —
+  move `wind` and the hand still lands on the damage frame). `MUT_HP`, `MUT_STUN`,
+  `MUT_COOLDOWN` (a range), `MUT_STRAFE`, `MUT_SPEED`, `MUT_WAKE`, `MUT_H`.
 - `DEFAULT_SETTINGS.sfxVolume` — how loud one-shot effects sit
 - `FOOT_POOL`, `REACH`, `NOTE_TEXT`, `scene.fog` density
 - `DEFAULT_SETTINGS` — starting FOV etc.
@@ -329,6 +343,16 @@ timing.
 
 ["CRAB 001"](https://www.cgtrader.com/free-3d-models) by
 [artofmickey](https://www.cgtrader.com/artofmickey), CGTrader free model.
+
+
+**Severed head** — the captain, on the hook over the wreck's hatch.
+
+This work is based on ["Severed head"](https://sketchfab.com/3d-models/severed-head-65103457564048b7a89d177e550181ae)
+by [alexrmartinez](https://sketchfab.com/alexrmartinez) licensed under
+[CC-BY-NC-4.0](http://creativecommons.org/licenses/by-nc/4.0/). **Non-commercial**:
+this build is a personal one, and the licence does not allow the model in
+anything sold. `assets/head.glb` is the scan cut to 20k triangles by
+`tools/head_pack.py`.
 
 
 **Mutant 01** — the thing on the beach past the pavilion.

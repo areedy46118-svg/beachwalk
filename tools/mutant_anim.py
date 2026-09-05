@@ -42,11 +42,17 @@ CLIPS = [
     ('run',    'Animation_fbx/mutant01@Run01.fbx'),
     ('attack', 'Animation_fbx/mutant01@attack01.fbx'),
     ('attack2', 'Animation_fbx/mutant01@attack02.fbx'),
+    ('attack3', 'Animation_fbx/mutant01@attack03.fbx'),
+    ('attack4', 'Animation_fbx/mutant01@attack04.fbx'),
+    ('strafeL', 'Animation_fbx/mutant01@strafe_left.fbx'),
+    ('strafeR', 'Animation_fbx/mutant01@strafe_right.fbx'),
+    ('back',   'Animation_fbx/mutant01@walk_back01.fbx'),
     ('hit',    'Animation_fbx/mutant01@gethit.fbx'),
     ('die',    'Animation_fbx/mutant01@death01.fbx'),
     ('roar',   'update_animation/mutant01@Rage_01.fbx'),
+    ('roar2',  'update_animation/mutant01@Rage_02.fbx'),
 ]
-STRIP_DRIFT = {'walk', 'run'}          # authored travelling; the game moves the body
+STRIP_DRIFT = {'walk', 'run', 'strafeL', 'strafeR', 'back'}          # authored travelling; the game moves the body
 FINGERS = ('Thumb', 'Index', 'Middle', 'Ring', 'fingers')
 
 def log(*a): print("[mutant]", *a); sys.stdout.flush()
