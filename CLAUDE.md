@@ -1293,49 +1293,69 @@ hit's spike it settles to a faint breathing rim, 0.14 + 0.24 per point down,
 so you always know you are hurt without a bar. `updateHurt()` therefore runs
 every frame now; it used to return early when the flash was spent.
 
-**THE MILITARY SHOVEL IS SWUNG LIKE A SWORD.** The scoop rides ABOVE the
-fist and further out, the D-handle is drawn back toward your chest, and the
-cut comes down on the DIAGONAL: cocked at the top right, through, and out at
-the bottom left. `VM_SLASH_ROT` is SEARCHED, not guessed — a grid over all
-three axes scoring "shaft running up and away from the hand" against "cutting
-edge lying in the plane of the screen". It lands on a shaft of
-(0.07, 0.65, -0.76), the blade riding high, and a lip of (0.90, -0.43, 0.00),
-an edge already on the diagonal the cut is about to travel, so it LEADS
-through the arc instead of slapping with the flat. Two grips have now been
-found this way and neither could have been eyeballed: there are three nested
-frames between the pose and the blade — the arm, the mount, and the scan's
-own Z-up root matrix — and a wrong guess in any of them looks nearly right.
-The poses move pitch, yaw and lift TOGETHER, which is what makes it a
-diagonal rather than a chop with a turn on it, and the arm drives forward
-through the whole thing so the cut arrives rather than passes. It runs a
-third quicker than the chop, and it lands hardest of the three swings: the
-biggest shock through the guard spring, nine sparks, and a beat of frozen
-time of its own.
+**THE MILITARY SHOVEL IS A KATANA, AND A CUT IS THREE THINGS AT ONCE.** The
+hand is on the HANDLE (`MIL_GRIP_Y`: the hand's copy is slid down its own
+length so the D-grip sits on the mount — a sword turns about the hands; the
+first cut pivoted at the neck like the spade does and the handle flailed the
+other way, a baton twirled), the hands TRAVEL (`side`, the sixth pose
+component, a fraction of the frame's half-width so it is the same picture at
+any window shape), and the blade ROLLS about them from up on the near side to
+down on the far side. Three poses, not two — `slashCock`, `slashMark`,
+`slashThrough` — and a fourth beat: the impact still fires at `DIG_STRIKE`,
+but the cut goes on through to `SLASH_THROUGH` before the recovery, because a
+blade does not stop where it lands. The tip comes in off one edge, arcs over
+the upper middle, crosses the crosshair LEVEL with the flat of the blade to
+the camera, and goes out low on the other side. THE PLANE OF THE SCREEN IS
+THE WHOLE DIFFERENCE BETWEEN A CUT AND A STAB: two versions tilted the blade
+toward the camera on the way down, the tip drove along its own length, every
+frame foreshortened, and the owner called both a stab. (A true flat
+horizontal cut is a YAW sweep and passes through pointing straight at the
+target — the same stab; a sword swing that reads is a roll.) Pitch is nearly
+still; yaw only cancels the arm's own -0.45 so the blade lies level at the
+mark; `VM_SLASH_ROT` equals the rest grip — the cut is all arm. It was laid
+out NUMERICALLY — the lip's screen position probed at every quarter of both
+lerps — not by eye: with the arm, the mount and the scan's own root matrix
+between the pose and the blade, a wrong guess in any one frame looks nearly
+right. At rest it is a sword at guard (`VM_MIL_REST_ROT`, scoop straight up
+over the fist). The heavy cocks higher and further back over the shoulder
+(it is the held pose, and the blade must be on screen to twinkle), finishes
+lower, drives further out, and is less slowed by the charge than a chop is
+(`swingSecs`). The cock is quicker than a haul and the stroke LONGER than a
+chop's: at the chop's timing the tip crossed the frame in two frames and only
+the trail (1.55x on a cut) said it had moved. The world still ROLLS with the
+cut (`hitRoll`, applied around the scene render and removed), a kill still
+lands `sfxKillThud`, and the whoosh is a blade's — shorter, higher, and
+delayed to the strike, because on the click it played over the cock-back and
+was sixty milliseconds ahead of the picture.
 
-**AND AT REST IT IS A SWORD AT GUARD.** `VM_MIL_REST_ROT`, searched the same
-way: scoop straight up over the fist and a little forward, shaft
-(0.11, 0.96, -0.27). `restRot()` picks the tool's own rest for the grip
-blend, so the slash winds up out of scoop-up rather than out of the dig grip
-and the blade only ever goes from high to higher to down. The arc is
-exaggerated — cocked further up and right, driven further down and left —
-and the world ROLLS with the cut: `hitRoll`, a few hundredths of a radian
-applied around the scene render and removed again so it never leaks into the
-look state; the hands stay level in their own scene and the world tips,
-which is what force through your shoulders feels like from the inside. A kill
-lands with `sfxKillThud` under it, the same on every kill, the one sound in
-the fight that means "that one is finished".
+**THE BACKHAND IS THE FOREHAND IN A MIRROR — about the middle of the frame,
+not about the hands.** `side` is measured from the rest, which is off to the
+right, so negating it sent the backhand's follow-through a frame-width further
+right and clean out of the picture; `mirrorSide` reflects the grip about the
+centre line. Which side a cut comes from is decided when it is COMMITTED —
+the click, or the start of a wind-up — so the cocked pose and the cut agree;
+a second click inside 620 ms is the backhand, and one that lands in the first
+cut's RECOVERY does not wait for it: the next cut leaves from wherever the
+arm is (`cutCombo`), which is out toward the far hip, where a backhand cocks
+anyway. Two clicks are a figure of eight, not two cuts with a rest between.
 
-**THE MILITARY SHOVEL SLASHES.** A spade on a shaft is a sword if you turn it
-edge-on and swing it across yourself: `VM_SLASH_ROT` brings the blade out of
-the dig grip so the EDGE leads, blended over the wind-up the way the overhead
-grip is, and `haulPose` / `impactPose` branch on `slashing()` into a broad
-horizontal arc that finishes past the far shoulder. `slashDir` flips on every
-commit, so a second cut is the backhand and a combination reads as one. It
-still DIGS — `digImpact` never asks what the pose was, so the crater, the
-sand, the crab test and the blade-on-the-crosshair correction are all
-untouched. The trail carries 1.55x on a slash, because a sweep draws an arc
-where a chop draws a line. The overhead went further through and further out
-at the same time: it is the heaviest thing in the game and should look it.
+**THE GUARD IS THE SAND SHOVEL'S, ON EVERY TOOL.** Held scoop-up, the
+Military Shovel's block put the bar the wrong way up with the blade on the
+wrong side, and the owner asked for the sand shovel's back. As the guard
+comes up the tool turns back into the dig grip (a quaternion SLERP — an
+Euler lerp across the flip swung it through the floor) and the arm is
+shifted so the NECK sits where the sand shovel's does, since that tool
+pivots there and this one pivots at the grip. Measured: both bars span the
+same stretch of the frame. The overhead keeps the neck pivot too — the slam
+was laid out on it and approved — so the model slides down the mount on the
+overhead's own grip blend, the lip markers riding with it, as the hands
+change to a two-handed hold.
+
+**THE TRAIL'S FIRST SAMPLE FILLS EVERY SLOT.** The strip draws a quad from
+slot 0 to slot 1 as soon as there is one sample, and slot 1 still held the
+last point of the PREVIOUS swing. On the chop that point was next to the
+blade and nobody saw it; on a cut that finishes at the far side of the frame
+it was a ribbon the width of the screen on the first frame of the next one.
 
 **THE GUARD BOUNCES, IT DOES NOT RATTLE.** A blow stopped on steel used to be
 a decaying sine on `parryGlow` — loudest at the start and quieter after,

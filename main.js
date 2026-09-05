@@ -3853,7 +3853,7 @@ function attackAction() {                        // left mouse
   if (peeking) { endPeek(); return; }
   if (frozen()) return;
   if (held) { throwHeld(); return; }
-  if (equipped && equipped.onDig) { if (digT <= 0) startDig(); return; }
+  if (equipped && equipped.onDig) { if (digT <= 0 || cutCombo()) startDig(); return; }
   if (equipped && equipped.onListen) { listenToShell(); return; }
   primaryAction();                               // bare hands: a click still interacts
 }
@@ -4707,6 +4707,7 @@ vmScene.add(viewmodel);
  * transform that `updateViewmodel()` sways and swings; `toolMount` at its
  * origin is where tool models parent. */
 const ARM_BASE = new THREE.Vector3(0.16, -0.20, -0.62);
+const ARM_SIDE = 0.58;                   // the hands' resting x, as a fraction of the frame's half-width
 const ARM_ROT_X = 0.10;
 const armRig = new THREE.Group();
 armRig.position.copy(ARM_BASE);
@@ -4716,11 +4717,13 @@ viewmodel.add(armRig);
 // Keep the floating item at the same spot in the frame whatever the window
 // shape: derive its X/Y from the view's half-extents at the item's depth —
 // tucked into the lower-right corner like a held tool.
+let vmHalfW = 0.5;                       // the frame's half-width at the hands' depth: what `side` is a fraction of
 function layoutViewmodel() {
   const d = Math.abs(ARM_BASE.z);
   const halfH = Math.tan((vmCamera.fov * Math.PI) / 360) * d;
   const halfW = halfH * vmCamera.aspect;
-  ARM_BASE.x = halfW * 0.58;
+  vmHalfW = halfW;
+  ARM_BASE.x = halfW * ARM_SIDE;
   ARM_BASE.y = -halfH * 0.66;
 }
 
@@ -4960,12 +4963,25 @@ let trailLen = 0, trailFade = 0, trailPower = 0;
 const _tv = new THREE.Vector3();
 
 function trailSample() {
-  // shuffle every sample one slot older, then write the newest into slot 0
-  trailPos.copyWithin(6, 0, (TRAIL_N - 1) * 6);
-  trailTip.getWorldPosition(_tv);
-  trailPos[0] = _tv.x; trailPos[1] = _tv.y; trailPos[2] = _tv.z;
+  trailTip.getWorldPosition(_tv); const tx = _tv.x, ty = _tv.y, tz = _tv.z;
   trailRoot.getWorldPosition(_tv);
-  trailPos[3] = _tv.x; trailPos[4] = _tv.y; trailPos[5] = _tv.z;
+  if (trailLen === 0) {
+    /* THE FIRST SAMPLE FILLS EVERY SLOT. The strip draws its quad from slot 0
+     * to slot 1 as soon as there is one sample, and slot 1 still held the last
+     * point of the PREVIOUS swing — on a cut that finishes at the far side of
+     * the frame that was a ribbon the width of the screen on the first frame
+     * of the next one, pointing at where the last one ended. */
+    for (let i = 0; i < TRAIL_N; i++) {
+      const o = i * 6;
+      trailPos[o] = tx; trailPos[o + 1] = ty; trailPos[o + 2] = tz;
+      trailPos[o + 3] = _tv.x; trailPos[o + 4] = _tv.y; trailPos[o + 5] = _tv.z;
+    }
+  } else {
+    // shuffle every sample one slot older, then write the newest into slot 0
+    trailPos.copyWithin(6, 0, (TRAIL_N - 1) * 6);
+    trailPos[0] = tx; trailPos[1] = ty; trailPos[2] = tz;
+    trailPos[3] = _tv.x; trailPos[4] = _tv.y; trailPos[5] = _tv.z;
+  }
   trailLen = Math.min(TRAIL_N, trailLen + 1);
 }
 let trailGain = 1;
@@ -5359,6 +5375,7 @@ const BLOCK_AT = new THREE.Vector3(-0.10, 0.02, -0.52);
 // the shaft comes up ACROSS the view, blade high on your leading side: at a
 // shallower roll it read as holding the tool out rather than guarding with it
 const BLOCK_POSE = [0.35, 0.0, 0.95, -1.62, 0.06];
+const _blkQ = new THREE.Quaternion(), _blkE = new THREE.Euler(), _blkV = new THREE.Vector3(), _blkP = new THREE.Vector3();
 // x and y are FRACTIONS of the frame's half-extents at the ear's depth, like
 // layoutViewmodel(): an absolute offset that sat at the edge of a landscape
 // window was clean off the side of a portrait one
@@ -5416,7 +5433,14 @@ const shovelItem = {
  * pose, the blade-on-the-crosshair correction and the drop all hold
  * untouched. Three groups because the scan lands over the network: the
  * hand's copy, the examine/drop copy, and the one on the beach. */
-const MIL_LIP = [[-0.12, -0.21, 0], [0.12, -0.21, 0]];
+/* THE HAND IS ON THE HANDLE. The scan sits in the sand shovel's frame with
+ * its neck at the origin, so every turn of the arm turned the tool about its
+ * NECK — the handle flailed the other way and a cut read as a baton twirled.
+ * The hand's copy is shifted down its own length so the D-grip sits on the
+ * mount: a sword turns about the hands. The lip markers move with it. The
+ * sand shovel keeps its neck pivot — a spade is held there. */
+const MIL_GRIP_Y = 0.68;
+const MIL_LIP = [[-0.12, -0.21 - MIL_GRIP_Y, 0], [0.12, -0.21 - MIL_GRIP_Y, 0]];
 const milModel = new THREE.Group(), milInspect = new THREE.Group(), militaryWorld = new THREE.Group();
 function orientMil(src) {
   /* EACH COPY GETS ITS OWN MATERIALS. clone(true) shares them, and the
@@ -5471,6 +5495,7 @@ new GLTFLoader().load('assets/military-shovel.glb', (gltf) => {
 }, undefined, () => {});
 const militaryVM = new THREE.Group();
 militaryVM.add(milModel);
+milModel.position.y = -MIL_GRIP_Y;
 militaryVM.scale.setScalar(0.48);
 militaryVM.position.set(-0.04, -0.02, 0.0);
 militaryVM.rotation.set(VM_MIL_REST_ROT[0], VM_MIL_REST_ROT[1], VM_MIL_REST_ROT[2]);   // scoop up: a sword at guard
@@ -5590,26 +5615,89 @@ let winding = false, windT = 0, digPower = 0, digCharged = false, windFull = fal
 let digOverhead = false, windOverhead = false;
 const overheadHeld = () => !!(keys['ShiftLeft'] || keys['ShiftRight']);
 
-/* Poses are [pitch, lift, yaw, roll, push] and the swing is lerps between
- * them, rather than five hand-written curves per segment. That is what lets
- * the charged release start from an arbitrary pose instead of a fixed one. */
-const REST_POSE = [0, 0, 0, 0, 0];
-const _poseA = [0, 0, 0, 0, 0];         // where the strike starts
-const _poseB = [0, 0, 0, 0, 0];         // where it lands
-const _pose = [0, 0, 0, 0, 0];          // this frame, and what release captures
+/* Poses are [pitch, lift, yaw, roll, push, side] and the swing is lerps
+ * between them, rather than five hand-written curves per segment. That is
+ * what lets the charged release start from an arbitrary pose instead of a
+ * fixed one. `side` is the hands' travel ACROSS the frame, as a fraction of
+ * its half-width so it is the same picture at any window shape; only the cut
+ * uses it — a chop and a smash keep the hands where they are. */
+const REST_POSE = [0, 0, 0, 0, 0, 0];
+const _poseA = [0, 0, 0, 0, 0, 0];      // where the strike starts
+const _poseB = [0, 0, 0, 0, 0, 0];      // where it lands
+const _poseC = [0, 0, 0, 0, 0, 0];      // where a cut's follow-through ends
+const _pose = [0, 0, 0, 0, 0, 0];       // this frame, and what release captures
 function poseMix(out, a, b, t) {
-  for (let i = 0; i < 5; i++) out[i] = a[i] + (b[i] - a[i]) * t;
+  for (let i = 0; i < 6; i++) out[i] = a[i] + (b[i] - a[i]) * t;
   return out;
 }
-/* WHICH SWING THIS IS. The sand shovel chops; the Military Shovel SLASHES —
- * a broad flat arc across the body, alternating side each time so two in a
- * row sweep opposite ways and a combination reads as a combination. It still
- * digs: `digImpact` never asks what the pose was, so the crater, the sand and
- * the crab test are all untouched. An overhead is always an overhead. */
+/* WHICH SWING THIS IS. The sand shovel chops; the Military Shovel CUTS — a
+ * sword stroke, right to left across the whole frame, coming back the other
+ * way when a second one follows inside a beat so a combination reads as a
+ * combination. It still digs: `digImpact` never asks what the pose was, so
+ * the crater, the sand and the crab test are all untouched. An overhead is
+ * always an overhead. The side is chosen when the swing is COMMITTED — the
+ * click, or the start of a wind-up — so the cocked pose and the cut agree. */
 let slashDir = -1, lastSlashAt = -1e9;   // -1 sweeps right to left
 const slashing = () => equipped === militaryItem && !digOverhead;
+const pickSlashDir = () => (performance.now() - lastSlashAt < 620) ? -slashDir : -1;
+// a click in a cut's recovery is the NEXT cut, straight out of this one
+const cutCombo = () => slashing() && digT >= SLASH_THROUGH;
+/* THE BACKHAND IS THE FOREHAND IN A MIRROR — about the middle of the frame,
+ * not about the hands' rest. `side` is measured from where the hands rest,
+ * which is off to the right, so simply negating it sent the backhand's
+ * follow-through a whole frame-width further right and out of the picture:
+ * the hands must end where the forehand's began, mirrored. */
+const mirrorSide = (s, d) => d < 0 ? s : -2 * ARM_SIDE - s;
+/* THE CUT, IN THREE POSES: cocked, on the mark, and out the far side. The
+ * tool pivots at the GRIP — a sword turns about the hands — and the hands
+ * themselves TRAVEL: `side` carries the grip from the cocked shoulder across
+ * the frame to the far hip while `roll` swings the blade about it from
+ * pointing up on the near side to pointing down on the far side, so the tip
+ * comes in off one edge, arcs over the upper middle and goes out low on the
+ * other, the whole width of the picture. Pitch is nearly still and yaw only
+ * cancels the arm's own turn, so the blade stays IN THE PLANE OF THE SCREEN
+ * from cock to follow-through: what you see is the flat of the blade,
+ * sweeping. That plane is the entire difference between a cut and a stab. The
+ * two versions before this tilted the blade toward the camera as it came
+ * down, so the tip drove along its own length and every frame foreshortened
+ * — a shovel poked at the ground. (A true flat horizontal cut is a YAW sweep
+ * and passes through pointing straight at the target, which is the same
+ * stab; a sword swing that READS is a roll.) The heavy cocks higher and
+ * further back over the shoulder — it is the held pose, and the blade has to
+ * be on screen to twinkle — finishes lower, and drives further out. Laid out
+ * numerically: the lip's screen position was probed at every quarter of both
+ * lerps and the numbers moved until the tip crossed the middle level and the
+ * grip stayed in frame at full charge. `d` is the side, -1 for right to left. */
+function slashCock(out, P, d) {
+  out[0] = -(0.30 + P * 0.40);                  // tip tilted back over the shoulder
+  out[1] = 0.14 + P * 0.16;
+  out[2] = 0.45 - d * (0.25 - P * 0.10);        // and drawn round behind it
+  out[3] = d * (1.00 - P * 0.50);               // light: from the side; heavy: from high
+  out[4] = 0.10;                                // pulled in toward the chest
+  out[5] = mirrorSide(0, d);
+  return out;
+}
+function slashMark(out, P, d) {
+  out[0] = 0.04 + P * 0.06;
+  out[1] = 0.20 - P * 0.04;                     // the hands come up to the chest
+  out[2] = 0.45;                                // cancels the arm's turn: the blade lies level in the picture
+  out[3] = -d * (1.75 + P * 0.10);              // level, pointing the other way
+  out[4] = -(0.24 + P * 0.30);                  // arms out: the cut ARRIVES
+  out[5] = mirrorSide(-(0.14 + P * 0.10), d);   // the grip toward the centre line
+  return out;
+}
+function slashThrough(out, P, d) {
+  out[0] = 0.20 + P * 0.10;
+  out[1] = 0.06 - P * 0.08;
+  out[2] = 0.45 + d * (0.35 - P * 0.05);        // the tip going on round behind you
+  out[3] = -d * (1.85 + P * 0.25);              // a little past level, toward the far bottom corner
+  out[4] = -(0.10 + P * 0.16);
+  out[5] = mirrorSide(-(1.05 + P * 0.10), d);   // the hands at the far hip
+  return out;
+}
 // the top of an ordinary left-click swing
 function haulPose(out, P) {
+  out[5] = 0;
   if (digOverhead) {
     /* BOTH HANDS STRAIGHT UP, and BACK. The tool goes past vertical over the
      * head — you can feel your own arms in it — and the hands come in toward
@@ -5619,18 +5707,7 @@ function haulPose(out, P) {
     out[2] = 0.30; out[3] = 0.0; out[4] = 0.24 + P * 0.06;
     return out;
   }
-  if (slashing()) {
-    /* COCKED: rolled over to the RIGHT so the upright blade leans out toward
-     * the top right corner, lifted, drawn in toward the chest, turned a little
-     * right. Roll is the whole story of this swing; the rest is framing. */
-    const d = slashDir;                                 // -1: right to left
-    out[0] = -(0.34 + P * 0.18);
-    out[1] = 0.26 + P * 0.12;
-    out[2] = d * (0.30 + P * 0.10);
-    out[3] = d * (1.02 + P * 0.30);                     // d = -1 rolls it right
-    out[4] = 0.20 + P * 0.06;
-    return out;
-  }
+  if (slashing()) return slashCock(out, P, slashDir);
   out[0] = -(1.25 + P * 0.70); out[1] = 0.17 + P * 0.13;
   out[2] = -(0.34 + P * 0.26); out[3] = -(0.20 + P * 0.16); out[4] = 0.05;
   return out;
@@ -5641,6 +5718,7 @@ function haulPose(out, P) {
  * raycast in digImpact(). At full charge the arm goes from 0.62 m out to 1.06,
  * which reads as a real lunge rather than a tuning nudge. */
 function impactPose(out, P) {
+  out[5] = 0;
   if (digOverhead) {
     /* Straight down the middle and driven forward — no yaw across the body,
      * because the whole read of an overhead is that it does not swing, it
@@ -5651,20 +5729,7 @@ function impactPose(out, P) {
     out[2] = 0.36; out[3] = -0.04; out[4] = -(0.42 + P * 0.50);
     return out;
   }
-  if (slashing()) {
-    /* THROUGH: rolled all the way over to the LEFT — past vertical, the blade
-     * now leaning down toward the bottom left corner — with the arm brought
-     * down and round and driven forward, so the tip has crossed the whole
-     * frame on the diagonal and the cut ARRIVES at the end of it. The trail
-     * this leaves is an arc, not a line, which is the difference. */
-    const d = slashDir;
-    out[0] = 0.78 + P * 0.36;
-    out[1] = -(0.36 + P * 0.12);
-    out[2] = d * -(0.70 + P * 0.26);
-    out[3] = d * -(1.38 + P * 0.36);                    // and over to the left
-    out[4] = -(0.30 + P * 0.42);
-    return out;
-  }
+  if (slashing()) return slashMark(out, P, slashDir);
   /* `lift` used to take the hand to -0.69 at full charge, which is below the
    * bottom of the frame — the blade left the screen on the frame it landed,
    * so the one pose that most needs to read was the one you could not see.
@@ -5674,6 +5739,8 @@ function impactPose(out, P) {
   out[2] = 0.16 + P * 0.14; out[3] = 0.14 + P * 0.10; out[4] = -(0.12 + P * 0.26);
   return out;
 }
+// where a cut's follow-through ends, before the recovery brings it back
+function throughPose(out, P) { return slashThrough(out, P, slashDir); }
 
 /* Where the swing is going is decided when you COMMIT it — the click, or the
  * release — not on the frame the blade lands 150–200 ms later. Reading the
@@ -5736,7 +5803,8 @@ function landPoint() {
   return _landP;
 }
 function startDig(power = 0, fromPose = null) {
-  if (digT > 0 || !equipped || !equipped.onDig || frozen()) return;
+  const combo = !fromPose && cutCombo();      // the next cut, out of this one's recovery
+  if ((digT > 0 && !combo) || !equipped || !equipped.onDig || frozen()) return;
   camera.getWorldDirection(_aimD);            // the angle; aimRay() takes the position
   digPower = THREE.MathUtils.clamp(power, 0, 1);
   // a charged release keeps whatever it was wound as; a plain click never is
@@ -5744,28 +5812,38 @@ function startDig(power = 0, fromPose = null) {
   /* RIGHT TO LEFT, always — unless you are already swinging, in which case
    * the second one comes back the other way. A lone cut should look the same
    * every time you make it; a combination should look like a combination. */
-  if (equipped === militaryItem && !digOverhead) {
-    const now = performance.now();
-    slashDir = (now - lastSlashAt < 620) ? -slashDir : -1;
-    lastSlashAt = now;
+  if (slashing()) {
+    if (!fromPose) slashDir = pickSlashDir();   // a wind-up chose its side when it began
+    lastSlashAt = performance.now();
   }
   aimLand(digPower);
   digImpacted = false;
   digCharged = !!fromPose;
   if (fromPose) {
-    for (let i = 0; i < 5; i++) _poseA[i] = fromPose[i];
-    digT = DIG_WINDUP;                  // already wound: straight into the strike
+    for (let i = 0; i < 6; i++) _poseA[i] = fromPose[i];
+    digT = windupEnd();                 // already wound: straight into the strike
+  } else if (combo) {
+    /* THE COMBINATION. A second click while the first cut is still coming
+     * back does not wait for it: the backhand leaves from wherever the arm
+     * is at that moment — which is out at the far hip, exactly where a
+     * backhand cocks — so two clicks are one figure-of-eight and not two
+     * cuts with a rest between them. */
+    for (let i = 0; i < 6; i++) _poseA[i] = _pose[i];
+    digT = windupEnd();
   } else {
     haulPose(_poseA, digPower);
     digT = 0.0001;
   }
   impactPose(_poseB, digPower);
-  sfxDig(digPower);
+  if (slashing()) throughPose(_poseC, digPower);
+  // a cut's whoosh goes with the blade, not with the click: a light cut cocks first
+  sfxDig(digPower, slashing(), (fromPose || combo) ? 0 : windupEnd() * swingSecs(digPower));
 }
 function startWind() {
   if (blocking) return;                  // no swing comes out of a guard
   if (digT > 0 || winding || !equipped || !equipped.onDig || frozen()) return;
   winding = true; windT = 0; windFull = false; windOverhead = false;
+  if (slashing()) slashDir = pickSlashDir();   // which shoulder it cocks over is decided now, not at the release
 }
 function releaseWind() {
   if (!winding) return;
@@ -5997,6 +6075,7 @@ let vmSway = 0;
 // an animation read as placeholder.
 const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 const easeInCubic = (t) => t * t * t;
+const easeOutQuad = (t) => 1 - (1 - t) * (1 - t);
 const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const easeOutBack = (t) => 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 1, 2);
 
@@ -6012,6 +6091,18 @@ const easeOutBack = (t) => 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 1, 
  * poses are pushed past what the geometry strictly needs so they still read
  * at a glance. */
 const DIG_WINDUP = 0.34, DIG_STRIKE = 0.46;
+/* A CUT HAS FOUR BEATS, NOT THREE. It cocks quicker than a chop hauls (the
+ * blade only comes up and back, not over the shoulder), takes LONGER from
+ * cocked to the mark — the tip crosses the whole frame and has to be seen
+ * crossing it; at the chop's timing it was there in two frames and only the
+ * trail said it had moved — and then keeps going: a follow-through out past
+ * the mark, decelerating, before the recovery brings it back. The impact
+ * still fires at DIG_STRIKE, so everything keyed to that beat is untouched. */
+const SLASH_WINDUP = 0.22, SLASH_THROUGH = 0.62;
+const windupEnd = () => slashing() ? SLASH_WINDUP : DIG_WINDUP;
+// how long this swing takes: a heavy is slower, a cut is quicker and its
+// heavy less slowed — a katana is not a sledgehammer
+const swingSecs = (P) => slashing() ? DIG_DUR * (0.55 + P * 0.60) / 1.34 : DIG_DUR * (0.55 + P);
 let vmLagX = 0, vmLagY = 0, vmPrevYaw = 0, vmPrevPitch = 0;
 let vmSpringY = 0, vmSpringV = 0;
 const _vmEuler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -6031,11 +6122,14 @@ let landK = 0;
 function landBlade() {
   landK = 0;
   if (digT <= 0 || !toolVM.visible) return;
-  const p = digT;
-  if (p < DIG_WINDUP) return;
-  if (p < DIG_STRIKE) landK = easeInCubic((p - DIG_WINDUP) / (DIG_STRIKE - DIG_WINDUP));
-  else if (p < DIG_STRIKE + LAND_HOLD) landK = 1;
-  else landK = 1 - easeInOutCubic(Math.min(1, (p - DIG_STRIKE - LAND_HOLD) / LAND_RELEASE));
+  const p = digT, W = windupEnd();
+  // a cut is let go of almost at once: it has a follow-through to make, and
+  // a lip held on the mark through it would pin the whole arm to the centre
+  const hold = slashing() ? 0.02 : LAND_HOLD, rel = slashing() ? 0.12 : LAND_RELEASE;
+  if (p < W) return;
+  if (p < DIG_STRIKE) landK = easeInCubic((p - W) / (DIG_STRIKE - W));
+  else if (p < DIG_STRIKE + hold) landK = 1;
+  else landK = 1 - easeInOutCubic(Math.min(1, (p - DIG_STRIKE - hold) / rel));
   if (landK <= 0) return;
   _landNdc.copy(landPoint()).project(camera);
   if (_landNdc.z > 1) return;             // behind you: leave the pose alone
@@ -6107,12 +6201,21 @@ function updateViewmodel(dt) {
     if (overheadHeld()) windOverhead = true;
     if (windOverhead) {
       // hauled up over the head, and shaking harder the longer it is held
+      _pose[5] = 0;
       _pose[0] = -(0.70 + 1.60 * e) + strain * 1.6;
       _pose[1] = 0.10 + 0.30 * e;
       _pose[2] = -0.06 + 0.50 * e;
       _pose[3] = -0.06 + 0.08 * e + strain;
       _pose[4] = 0.05 + 0.10 * e;
+    } else if (slashing()) {
+      /* THE CUT IS COCKED, NOT HAULED. The charge holds the blade where a
+       * light cut starts from and takes it higher and further back over the
+       * shoulder as it fills — the pose the strike leaves from, so the
+       * release has nothing to snap through — and it trembles on the roll. */
+      slashCock(_pose, e, slashDir);
+      _pose[0] += strain * 0.6; _pose[3] += strain;
     } else {
+      _pose[5] = 0;
       _pose[0] = -(0.62 + 1.42 * e) + strain;
       _pose[1] = 0.11 + 0.22 * e;
       _pose[2] = -(0.24 + 0.48 * e);
@@ -6130,12 +6233,11 @@ function updateViewmodel(dt) {
      * swing is that it is quick, hard and precise — a spade goes down into
      * sand, a blade goes through something — so the slash runs a third
      * quicker than the chop and its recovery with it. */
-    const slashRate = (equipped === militaryItem && !digOverhead) ? 1.34 : 1;
-    digT += (dt * slashRate) / (DIG_DUR * (0.55 + P));
-    const p = digT;
-    if (p < DIG_WINDUP) {
+    digT += dt / swingSecs(P);
+    const p = digT, W = windupEnd(), isCut = slashing();
+    if (p < W) {
       // anticipation: quick out of rest, hanging at the top of the haul
-      poseMix(_pose, REST_POSE, _poseA, easeOutCubic(p / DIG_WINDUP));
+      poseMix(_pose, REST_POSE, _poseA, easeOutCubic(p / W));
     } else if (p < DIG_STRIKE) {
       /* The strike. easeInCubic starts almost stationary and ends at full
        * speed, so the blade hangs for a beat and then falls — and because
@@ -6144,11 +6246,18 @@ function updateViewmodel(dt) {
       /* An overhead falls harder than it is swung: quartic in, not cubic, so
        * it hangs at the top for longer and covers the last half of the drop in
        * a fifth of the time. That hang-then-drop is the whole read of a slam. */
-      const st = (p - DIG_WINDUP) / (DIG_STRIKE - DIG_WINDUP);
+      const st = (p - W) / (DIG_STRIKE - W);
       poseMix(_pose, _poseA, _poseB, digOverhead ? st * st * st * st : easeInCubic(st));
+    } else if (isCut && p < SLASH_THROUGH) {
+      /* THE FOLLOW-THROUGH. A blade does not stop where it lands; it goes on
+       * through and out the far side, slowing, and is brought back from
+       * there. Without this beat the recovery began at the mark and pulled
+       * the tool straight back the way it had come, which is a tap. */
+      poseMix(_pose, _poseB, _poseC, easeOutQuad((p - DIG_STRIKE) / (SLASH_THROUGH - DIG_STRIKE)));
     } else {
       // recovery: eases back to rest, overshooting once on the way
-      poseMix(_pose, _poseB, REST_POSE, easeOutBack(Math.min(1, (p - DIG_STRIKE) / (1 - DIG_STRIKE))));
+      const from = isCut ? _poseC : _poseB, t0 = isCut ? SLASH_THROUGH : DIG_STRIKE;
+      poseMix(_pose, from, REST_POSE, easeOutBack(Math.min(1, (p - t0) / (1 - t0))));
     }
     if (!digImpacted && p >= DIG_STRIKE) {
       digImpacted = true;
@@ -6196,7 +6305,7 @@ function updateViewmodel(dt) {
     }
     if (p >= 1) { digT = 0; digPower = 0; digCharged = false; digOverhead = false; }
   } else {
-    for (let i = 0; i < 5; i++) _pose[i] = 0;
+    for (let i = 0; i < 6; i++) _pose[i] = 0;
   }
 
   // the guard goes up fast and comes down slower — you commit to raising it
@@ -6220,10 +6329,21 @@ function updateViewmodel(dt) {
   armRig.rotation.z = 0.10 + _pose[3] + vmLagY * 0.45 * lagK + ear * EAR_POSE[3] + blk * BLOCK_POSE[3] - ring;
   armRig.rotation.y += ring * 0.55;      // and it is knocked ACROSS you, not only up
   armRig.position.set(
-    ARM_BASE.x + bx + vmLagY * 0.16 + ear * (earX - ARM_BASE.x) + blk * (blkX - ARM_BASE.x),
+    ARM_BASE.x + bx + _pose[5] * vmHalfW + vmLagY * 0.16 + ear * (earX - ARM_BASE.x) + blk * (blkX - ARM_BASE.x),
     ARM_BASE.y + by + _pose[1] + vmSpringY + ear * (earY - ARM_BASE.y) + blk * (blkY - ARM_BASE.y),
     ARM_BASE.z + _pose[4] + ear * (EAR_AT.z - ARM_BASE.z) + blk * (BLOCK_AT.z - ARM_BASE.z)
   );
+  if (equipped === militaryItem) {
+    /* THE PIVOT SLIDES FOR AN OVERHEAD. A cut turns about the D-grip; a slam
+     * is two-handed, one hand well up the shaft, and pivots at the NECK like
+     * the sand shovel's — which is the pivot its pose set was laid out on, so
+     * the slam is exactly the slam it was. The model slides down the mount as
+     * the hands change their hold, on the overhead's own grip blend so it is
+     * one motion, and the lip markers ride with it. */
+    const gy = -MIL_GRIP_Y * (1 - ohBlend);
+    milModel.position.y = gy;
+    trailTip.position.y = trailRoot.position.y = -0.21 + gy;
+  }
   landBlade();
 
   /* Turn the tool over for an overhead, and back afterwards. Blended rather
@@ -6234,7 +6354,7 @@ function updateViewmodel(dt) {
     && ((winding && !windOverhead) || (digT > 0 && !digOverhead)) ? 1 : 0;
   ohBlend += (wantOh - ohBlend) * Math.min(1, dt * 9);
   slBlend += (wantSl - slBlend) * Math.min(1, dt * 11);
-  if (ohBlend > 0.001 || slBlend > 0.001 || wantOh || wantSl) {
+  if (ohBlend > 0.001 || slBlend > 0.001 || wantOh || wantSl || blk > 0.001) {
     // the two grips are exclusive; the overhead wins where they overlap. The
     // base is the TOOL'S OWN rest — the Military Shovel's is scoop-up.
     const R = restRot();
@@ -6242,6 +6362,22 @@ function updateViewmodel(dt) {
       + (VM_OVERHEAD_ROT[i] - R[i]) * ohBlend
       + (VM_SLASH_ROT[i] - R[i]) * slBlend * (1 - ohBlend);
     toolVM.rotation.set(grip(0), grip(1), grip(2));
+    /* THE GUARD IS THE SAND SHOVEL'S. Held scoop-up, the Military Shovel's
+     * block put the bar across the frame upside down and the blade on the
+     * wrong side; the guard that reads is the one the sand shovel makes —
+     * dig grip, shaft across the top of the view, blade high on the leading
+     * side. So the tool turns back into that hold as the guard comes up (a
+     * SLERP: an Euler lerp across the flip swung it through the floor on the
+     * way) and pivots at the NECK for it, where the sand shovel pivots, so
+     * the bar sits exactly where it sits with that tool. */
+    if (blk > 0.001 && equipped === militaryItem) {
+      _blkQ.setFromEuler(_blkE.set(VM_REST_ROT[0], VM_REST_ROT[1], VM_REST_ROT[2]));
+      toolVM.quaternion.slerp(_blkQ, blk);
+      armRig.updateMatrixWorld(true);
+      toolVM.localToWorld(_blkV.set(0, milModel.position.y, 0));   // the neck
+      toolMount.getWorldPosition(_blkP);                     // the grip, on the mount
+      armRig.position.addScaledVector(_blkV.sub(_blkP), -blk);
+    }
   }
 
   // Only the strike and a beat past it leave a trail; a trail on the wind-up
@@ -6249,7 +6385,7 @@ function updateViewmodel(dt) {
   trailPower = digPower;
   // a slash draws a broad arc rather than a chop's line, so it carries further
   trailGain = (equipped === militaryItem && !digOverhead) ? 1.55 : 1;
-  updateTrail(dt, toolVM.visible && digT >= DIG_WINDUP - 0.02 && digT < DIG_STRIKE + 0.13);
+  updateTrail(dt, toolVM.visible && digT >= windupEnd() - 0.02 && digT < (slashing() ? SLASH_THROUGH + 0.02 : DIG_STRIKE + 0.13));
   updateSparks(dt);
   updateGlint(dt);
 }
@@ -9423,17 +9559,23 @@ function sfxConnect(P = 0, k = 1) {
   o.start(t); o.stop(t + 0.08);
 }
 // the swing — a short airy whoosh as the blade arcs down
-function sfxDig(power = 0) {
+function sfxDig(power = 0, cut = false, delay = 0) {
   const ctx = audioCtx; if (!ctx) return;
-  const t = ctx.currentTime;
-  // a heavier swing is a longer, lower whoosh — more air moved, more slowly
-  const len = 0.34 + power * 0.16;
+  const t = ctx.currentTime + delay;
+  // a heavier swing is a longer, lower whoosh — more air moved, more slowly.
+  // A CUT is a blade through air, not a spade: shorter and higher, and
+  // delayed to the strike — on the click it played over the cock-back and
+  // the sound was sixty milliseconds ahead of the picture.
+  const len = cut ? 0.20 + power * 0.10 : 0.34 + power * 0.16;
   const s = noiseBurst(len, (x) => Math.sin(Math.PI * Math.min(1, x * 1.2)) * (1 - x * 0.3));
-  const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 0.9 + power * 0.5;
-  f.frequency.setValueAtTime(400 - power * 130, t);
-  f.frequency.exponentialRampToValueAtTime(1600 - power * 420, t + len * 0.65);
-  f.frequency.exponentialRampToValueAtTime(600 - power * 200, t + len);
-  const g = ctx.createGain(); g.gain.value = 0.022 + power * 0.030;
+  const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = (cut ? 1.5 : 0.9) + power * 0.5;
+  const lo = cut ? 900 - power * 200 : 400 - power * 130;
+  const hi = cut ? 3200 - power * 700 : 1600 - power * 420;
+  const end = cut ? 1300 - power * 300 : 600 - power * 200;
+  f.frequency.setValueAtTime(lo, t);
+  f.frequency.exponentialRampToValueAtTime(hi, t + len * 0.65);
+  f.frequency.exponentialRampToValueAtTime(end, t + len);
+  const g = ctx.createGain(); g.gain.value = (cut ? 0.028 : 0.022) + power * 0.030;
   s.connect(f).connect(g).connect(sfxOut());
   s.start(t); s.stop(t + len);
 }
@@ -14903,6 +15045,8 @@ window.__bw = {
   addToInventory, openPack, closePack, selectPackSlot, sfxCastleBreak, digImpacted: () => digImpacted,
   finishTyping, dialogTextEl, get hitstop() { return hitstop; },
   hurtCrab, get digOverhead() { return digOverhead; }, get windOverhead() { return windOverhead; },
+  get pose() { return _pose; }, get slashDir() { return slashDir; }, get blockT() { return blockT; },
+  SLASH_WINDUP, SLASH_THROUGH, MIL_GRIP_Y,
   keys, overheadHeld,
   CRAB_HP, CRAB_HEAVY,
   gibs, bloodDrops, coveredByWater, submersionAt, waterSurfaceAt, listenToShell, stopListening,
