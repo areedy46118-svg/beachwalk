@@ -12958,7 +12958,7 @@ new GLTFLoader().load('assets/corpse.glb', (gltf) => {
   proxy.position.y = 0.18;
   proxy.name = 'hitProxy';
   corpse.add(proxy);
-  addInteractable(proxy, 'Someone tied it shut.', 'default', { bare: true });
+  addInteractable(proxy, 'Who was this?', 'default', { bare: true });
 });
 
 /* Solid, like the rocks — you walk round a body, you don't walk through one.
