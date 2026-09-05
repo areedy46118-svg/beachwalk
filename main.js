@@ -409,6 +409,15 @@ const oceanUniforms = THREE.UniformsUtils.merge([
     uShallow: { value: new THREE.Color(0x2f8ec2) },
     uCrest: { value: new THREE.Color(0xaad9ec) },
     uRipples: { value: Array.from({ length: 8 }, () => new THREE.Vector4(0, 0, -999, 0)) },
+    /* The wreck, punched out of the sea. The surf runs up to x = 8.6 and
+     * she lies from x = -7 to 19, so without this the waves wash straight
+     * through her forward half. World-space, like shoreLine(): the ocean
+     * is a tile snapped back onto the player every frame, so anything cut
+     * in local space would slide along the beach with it. uShipHalf stays
+     * 0 until she is built, which disables the test. */
+    uShipHalf: { value: 0 },
+    uShipC: { value: new THREE.Vector2() },
+    uShipHW: { value: Array.from({ length: 17 }, () => 0) },
     uSky: { value: new THREE.Color(0x1d3856) } },
 ]);
 
@@ -2868,7 +2877,8 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
     #include <fog_pars_fragment>
     uniform float uTime; uniform vec3 uCamPos; uniform vec3 uMoonDir;
     uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uCrest; uniform vec3 uSky;
-    uniform vec4 uRipples[8];          // xz = origin, z = start time, w = strength
+    uniform vec4 uRipples[8];
+    uniform float uShipHalf; uniform vec2 uShipC; uniform float uShipHW[17];          // xz = origin, z = start time, w = strength
     varying vec3 vWorld;
 
     /* Rings spreading from anything that disturbed the surface. Done per
@@ -2897,6 +2907,22 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
     void main() {
       float shore = shoreLine(vWorld.z, uTime);
       if (vWorld.x > shore) discard;
+
+      // and no sea inside the wreck's waterline
+      if (uShipHalf > 0.0) {
+        float lx = vWorld.x - uShipC.x;
+        if (abs(lx) < uShipHalf) {
+          float t = (lx + uShipHalf) / (2.0 * uShipHalf) * float(17 - 1);
+          int i0 = int(floor(t));
+          float f = t - float(i0);
+          float a = 0.0, b = 0.0;
+          for (int k = 0; k < 17; k++) {
+            if (k == i0) a = uShipHW[k];
+            if (k == i0 + 1) b = uShipHW[k];
+          }
+          if (abs(vWorld.z - uShipC.y) < mix(a, b, f)) discard;
+        }
+      }
 
       // one flat normal per rendered triangle — the low-poly water facet look
       vec3 n = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
@@ -3760,7 +3786,12 @@ function updateHover() {
   hovered = best;
   if (best) {
     crosshair.className = 'active';
-    setPrompt(best.bare ? best.label : kbd('E') + best.label);
+    /* label and bare may be functions: a thing whose prompt depends on what
+     * you are carrying (the shell door reads differently once you have the
+     * key) has to be asked, not read once at registration. */
+    const lbl = typeof best.label === 'function' ? best.label() : best.label;
+    const br = typeof best.bare === 'function' ? best.bare() : best.bare;
+    setPrompt(br ? lbl : kbd('E') + lbl);
   } else if (equipped && equipped.onListen && !listening) {
     crosshair.className = 'active';
     setPrompt(kbd('LMB') + 'Hold it to your ear');
@@ -8877,6 +8908,45 @@ function sfxThud(gain) {
   s.start(t); s.stop(t + 0.1);
 }
 // the wheel: a dry seized groan with a detent knock at the end of the turn
+/* Dragging her wheel, and the detent it drops into. Both of these were
+ * being CALLED and never defined — dragWheel() and release() would have
+ * thrown the moment you actually turned her. It never showed up because
+ * every test I ran grabbed and let go without moving it. */
+function sfxWheelCreak() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, len = Math.floor(ctx.sampleRate * 0.26);
+  const b = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = b.getChannelData(0);
+  let lp = 0;
+  for (let i = 0; i < len; i++) {
+    const env = Math.pow(1 - i / len, 1.6);
+    lp = lp * 0.90 + (Math.random() * 2 - 1) * 0.10;
+    // dry timber on a dry shaft: a rasp, not a hiss
+    d[i] = lp * env * (0.5 + 0.5 * Math.sin(i * 0.11)) * 0.42;
+  }
+  const src = ctx.createBufferSource(); src.buffer = b;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
+  bp.frequency.setValueAtTime(240 + Math.random() * 160, t);
+  bp.Q.value = 3.0;
+  const g = ctx.createGain(); g.gain.value = 0.34;
+  src.connect(bp).connect(g).connect(sfxOut());
+  src.start(t); src.stop(t + 0.27);
+}
+function sfxWheelDetent() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const o1 = ctx.createOscillator(); o1.type = 'square';
+  o1.frequency.setValueAtTime(180, t);
+  o1.frequency.exponentialRampToValueAtTime(70, t + 0.09);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.30, t + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
+  o1.connect(lp).connect(g).connect(sfxOut());
+  o1.start(t); o1.stop(t + 0.18);
+}
+
 function sfxWheelTurn() {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime, len = Math.floor(ctx.sampleRate * 0.55);
@@ -10032,160 +10102,725 @@ shipwreck.position.set(SHIP_X, 0, SHIP_Z);
 scene.add(shipwreck);
 const SN = shipwreck.userData.nav;
 
-let onShip = false, inBridge = false;
+/* ---- punch her out of the sea ---------------------------------------
+ * Sampled off the SAME hull functions the geometry uses, at the height
+ * the water actually meets her, so the hole in the ocean is her waterline
+ * and not a guessed box. A little margin so the surf does not z-fight
+ * against her planking. */
+{
+  const hw = oceanUniforms.uShipHW.value;
+  const n = hw.length;
+  for (let i = 0; i < n; i++) {
+    const lx = -SN.HALF + (i / (n - 1)) * SN.LEN;
+    // widest she is anywhere the swash can reach, not just at y = 0
+    let m = 0;
+    for (let y = -0.4; y <= 1.0; y += 0.2) m = Math.max(m, SN.halfAtY(lx, y));
+    hw[i] = m + 0.22;
+  }
+  oceanUniforms.uShipC.value.set(SHIP_X, SHIP_Z);
+  oceanUniforms.uShipHalf.value = SN.HALF;
+}
 
-// ---- the ship's wheel: three detents, port / midships / starboard -------
-// Nothing reads it yet; it's here for the puzzle. shipWheel.position is the
-// state (-1, 0, 1) and __bw.shipWheel exposes it.
+// onShip / inBridge are declared with the collision block below.
+
+function sfxStarSet() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  for (let i = 0; i < 2; i++) {
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(680 + i * 340, t);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t + i * 0.05);
+    g.gain.exponentialRampToValueAtTime(0.16, t + i * 0.05 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.05 + 0.7);
+    o.connect(g).connect(sfxOut());
+    o.start(t + i * 0.05); o.stop(t + i * 0.05 + 0.75);
+  }
+}
+function sfxLockerOpen() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, len = Math.floor(ctx.sampleRate * 1.1);
+  const b = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = b.getChannelData(0);
+  let lp = 0;
+  for (let i = 0; i < len; i++) {
+    lp = lp * 0.92 + (Math.random() * 2 - 1) * 0.08;
+    d[i] = lp * Math.pow(1 - i / len, 1.4) * (0.6 + 0.4 * Math.sin(i * 0.004));
+  }
+  const src = ctx.createBufferSource(); src.buffer = b;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
+  bp.frequency.setValueAtTime(240, t);
+  bp.frequency.exponentialRampToValueAtTime(620, t + 1.0);
+  bp.Q.value = 3.4;
+  const g = ctx.createGain(); g.gain.value = 0.55;
+  src.connect(bp).connect(g).connect(sfxOut());
+  src.start(t); src.stop(t + 1.15);
+}
+
+// ---- the one she never landed, in the bottom of her hold ----------------
+// The same model and the same item as the one on the beach, so it picks up
+// and uses exactly the same way.
+{
+  const holdCrab = makeHorseshoeCrab();
+  const holdCrabWorld = new THREE.Group();
+  holdCrabWorld.add(holdCrab);
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.30, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy';
+  holdCrabWorld.add(hit);
+  const [cx, cy, cz] = SN.crabSpot || [SN.HOLD_X0 + 2.6, SN.HOLD_Y + 0.03, -1.3];
+  holdCrabWorld.position.set(SHIP_X + cx, cy, SHIP_Z + cz);
+  holdCrabWorld.rotation.set(0.04, 2.1, 0.03);
+  scene.add(holdCrabWorld);
+  addItemShine(holdCrabWorld, { size: 0.8, height: 0.14 });
+  let taken = false;
+  addInteractable(holdCrabWorld, 'Take the horseshoe crab', 'inventory', {
+    onActivate: () => {
+      if (taken) return;
+      taken = true;
+      sfxThud(0.04);
+      scene.remove(holdCrabWorld);
+      hovered = null;
+      if (!inventory.includes(crabItem)) addToInventory(crabItem);
+    },
+  });
+}
+
+// Heights the helm and the hold sit at. Declared HERE because main.js is one
+// long top-to-bottom module: the stars below read SHIP_Y_DECK, and a const
+// declared after them is in the temporal dead zone when they run.
+const SHIP_Y_DECK = SN.DECK_Y;          // she has a flat deck now
+const SHIP_Y_FLOOR = SN.HOLD_Y + 0.16;
+
+// ---- three stars, framed by the wheelhouse window -----------------------
+// Placed off the LINE OF SIGHT from the helm through the front glass rather
+// than at arbitrary sky coordinates: they were over the water but nowhere
+// near what you can actually see standing at the wheel. Low enough over the
+// horizon to sit inside the window band, and spread just wide enough to fall
+// between its mullions.
+const STAR_ORDER = [0, 2, 1];      // port, starboard, midships
+const shipStars = [];
+{
+  const wx = SHIP_X + SN.BR_X0 + 1.30;         // the wheel
+  const eye = SHIP_Y_DECK + SN.BR_STEP + 1.72; // your eye at the helm, measured
+  const D = 190;                                // out over the sea
+  for (let i = 0; i < 3; i++) {
+    const g = new THREE.Group();
+    // seaward is -X; spread across the window and a touch above the horizon
+    /* Height is set from the WINDOW, not from the sky: at eye + 26 they
+     * projected above the head of the glass and the front bulkhead ate
+     * them. These sit about four degrees up, inside the band. */
+    g.position.set(wx - D, eye + 22 + (i === 1 ? 5 : 0), SHIP_Z + (i - 1) * 38 + (i === 1 ? 9 : 0));  // the middle one off the mast's bearing
+    const core = new THREE.Mesh(new THREE.SphereGeometry(1.20, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0x9fb2d8, fog: false, transparent: true, opacity: 0.30 }));
+    const halo = new THREE.Mesh(new THREE.SphereGeometry(3.4, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0x9fb2d8, fog: false, transparent: true, opacity: 0.07, depthWrite: false }));
+    g.add(core, halo);
+    g.visible = false;      // only ever seen from the wheel
+    scene.add(g);
+    shipStars.push({ g, core, halo, lit: 0, set: false });
+  }
+}
+
+const starPuzzle = {
+  step: 0, held: -1, holdT: 0, active: false,
+  begin() {
+    if (shipWheel.solved) return;
+    this.active = true;
+    if (this.step === 0) { for (const s of shipStars) s.set = false; }
+  },
+  letGo() { this.active = false; this.held = -1; this.holdT = 0; },
+  holding(idx) { if (this.held !== idx) { this.held = idx; this.holdT = 0; } },
+  update(dt) {
+    /* They belong to the helm and nowhere else. Left in the sky the whole
+     * time they were three lamps you could see from half a mile down the
+     * beach, which is not a constellation, it's a bug. */
+    const show = wheelGrab && !shipWheel.solved;
+    for (const st of shipStars) st.g.visible = show;
+    if (!show) return;
+    // the star for this step pulses; the ones already set stay lit
+    for (let i = 0; i < 3; i++) {
+      const st = shipStars[i];
+      const cue = this.active && !shipWheel.solved && STAR_ORDER[this.step] === i;
+      const want = st.set ? 1 : cue ? 0.55 + 0.45 * Math.sin(performance.now() * 0.006) : 0.12;
+      st.lit += (want - st.lit) * Math.min(1, dt * 6);
+      st.core.material.opacity = 0.22 + st.lit * 0.78;
+      st.halo.material.opacity = 0.04 + st.lit * 0.22;
+      const k = 0.55 + st.lit * 0.45;
+      st.core.material.color.setRGB(k * 0.72, k * 0.80, k);
+      st.g.scale.setScalar(0.85 + st.lit * 0.45);
+    }
+    if (!this.active || shipWheel.solved) return;
+    // you have to hold it there, so brushing past a detent doesn't count
+    if (this.held === STAR_ORDER[this.step]) {
+      this.holdT += dt;
+      if (this.holdT > 0.7) {
+        shipStars[STAR_ORDER[this.step]].set = true;
+        sfxStarSet();
+        this.step++;
+        this.holdT = 0; this.held = -1;
+        if (this.step >= STAR_ORDER.length) {
+          shipWheel.solved = true;
+          shipWheel.relabel();
+          dropShipHead();
+        }
+      }
+    } else this.holdT = 0;
+  },
+};
+
+// ---- the captain, on the hook over the hold -----------------------------
+// He hangs off the gaff out over the open middle, out of reach and lit the
+// way every other takeable thing is, so you can see him from the deck and —
+// squarely — through the wheelhouse windows. Working the wheel drops him.
+let headFall = -1;                 // -1 hanging, else seconds since he let go
+const shipHead = shipwreck.userData.head;
+{
+  const g = shipwreck.userData.gaff;
+  if (g && shipHead) {
+    // move him out of the locker and onto the hook
+    g.userData.hook.add(shipHead);
+    shipHead.position.set(0, -0.42, 0);
+    shipHead.rotation.set(0.25, 0.4, 0.15);
+    shipHead.visible = true;
+    addItemShine(shipHead, { size: 0.30, height: 0.0, strength: 0.35 });
+  }
+}
+function makeHeadIcon() {
+  const c = document.createElement('canvas'); c.width = c.height = 48;
+  const g = c.getContext('2d');
+  g.fillStyle = '#6e6152';
+  g.beginPath(); g.ellipse(24, 22, 12, 14, 0.08, 0, Math.PI * 2); g.fill();   // skull
+  g.beginPath(); g.ellipse(25, 33, 8, 6, 0, 0, Math.PI * 2); g.fill();        // jaw
+  g.fillStyle = '#2a221a';
+  for (let i = 0; i < 9; i++)                                                 // hair
+    g.fillRect(14 + i * 2.2, 6 + Math.sin(i) * 2, 2, 6);
+  g.fillStyle = '#181410';
+  g.beginPath(); g.ellipse(19, 20, 3.2, 3.8, 0, 0, Math.PI * 2); g.fill();    // sockets
+  g.beginPath(); g.ellipse(29, 20, 3.2, 3.8, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#4a1c18';
+  g.beginPath(); g.ellipse(25, 41, 8, 3.4, 0, 0, Math.PI * 2); g.fill();      // the cut
+  g.fillStyle = '#d8cfc0';
+  for (let i = 0; i < 5; i++) g.fillRect(20 + i * 2.2, 34, 1.6, 3);           // teeth
+  return c.toDataURL();
+}
+/* ---- the key he was keeping in his mouth -----------------------------
+ * You get him off the hook by working the wheel, and the key by turning
+ * him over and looking. It opens the shell door low in her -Z side, which
+ * is the only way through to the far beach. */
+function makeBoatKeyIcon() {
+  const c = document.createElement('canvas'); c.width = c.height = 50;
+  const g = c.getContext('2d');
+  g.strokeStyle = '#d9ab46'; g.lineWidth = 4;
+  g.beginPath(); g.arc(17, 16, 7, 0, Math.PI * 2); g.stroke();
+  g.beginPath(); g.moveTo(21, 21); g.lineTo(37, 39); g.stroke();
+  g.lineWidth = 3;
+  g.beginPath(); g.moveTo(31, 33); g.lineTo(25, 38); g.stroke();
+  g.beginPath(); g.moveTo(36, 38); g.lineTo(30, 43); g.stroke();
+  return c.toDataURL();
+}
+const boatKey = shipHead && shipHead.userData.key;
+const boatKeyItem = {
+  id: 'boatkey', name: "Wheelhouse key", icon: makeBoatKeyIcon(),
+  use: () => { if (boatKey) openInspect(boatKey, { name: 'Wheelhouse key' }); },
+};
+if (boatKey) holdable(boatKeyItem, boatKey, { scale: 3.4, pos: [0, -0.04, 0.02], rot: [0.3, 0.6, 0.2] });
+let boatKeyTaken = false;
+
+const headItem = {
+  id: 'captain', name: "Captain's head", icon: makeHeadIcon(),
+  /* Examining him is where you find it. equipLabel only appears while the
+   * key is still in there, so once it is out he is just a head again. */
+  use: () => openInspect(shipHead, {
+    equipLabel: boatKeyTaken ? null : 'Take the key from his mouth',
+    onEquip: () => {
+      if (boatKeyTaken || !boatKey) return;
+      boatKeyTaken = true;
+      shipHead.remove(boatKey);
+      sfxThud(0.03);
+      addToInventory(boatKeyItem);
+      setPrompt('');
+      closeInspect();
+    },
+  }),
+};
+holdable(headItem, shipHead, { scale: 1.0, pos: [0, -0.10, 0.02], rot: [0.3, 0.5, 0.1] });
+
+/* ---- her deck lantern, off the wheelhouse step ------------------------
+ * One of her fittings you can actually take, so the gear on deck is not
+ * all scenery. It examines like the crab and the jar do. */
+function makeLanternIcon() {
+  const c = document.createElement('canvas'); c.width = c.height = 50;
+  const g = c.getContext('2d');
+  g.fillStyle = '#5a4a34'; g.fillRect(19, 8, 12, 6);
+  g.fillStyle = '#8a9aa8'; g.fillRect(17, 14, 16, 22);
+  g.fillStyle = '#2c3a44'; g.fillRect(20, 17, 10, 16);
+  g.fillStyle = '#c8a24a'; g.fillRect(23, 24, 4, 7);
+  g.fillStyle = '#5a4a34'; g.fillRect(16, 36, 18, 6);
+  g.strokeStyle = '#6a5a44'; g.lineWidth = 2;
+  g.beginPath(); g.arc(25, 8, 5, Math.PI, 0); g.stroke();
+  return c.toDataURL();
+}
+const shipLantern = shipwreck.userData.lantern;
+if (shipLantern) {
+  const lanternItem = {
+    id: 'lantern', name: 'Deck lantern', icon: makeLanternIcon(),
+    use: () => openInspect(shipLantern),
+  };
+  holdable(lanternItem, shipLantern, { scale: 1.0, pos: [0.02, -0.12, 0.03], rot: [0.2, 0.5, 0.1] });
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy'; shipLantern.add(hit);
+  addItemShine(shipLantern, { size: 0.34, height: 0.02, strength: 0.4 });
+  let lanternTaken = false;
+  addInteractable(shipLantern, 'Take the lantern', 'inventory', {
+    onActivate: () => {
+      if (lanternTaken) return;
+      lanternTaken = true;
+      sfxThud(0.04);
+      shipwreck.remove(shipLantern);
+      hovered = null;
+      addToInventory(lanternItem);
+    },
+  });
+}
+
+/* ---- the shell door low in her -Z side -------------------------------
+ * The way off her. It is locked until you have what was in his mouth, so
+ * the wheel, the head and the key are one chain and the boat has an end.
+ * The side ladder stays where it is as gear — it is not the route. */
+const holdDoor = shipwreck.userData.holdDoor;
+let holdDoorOpen = false, holdDoorSwing = 0;
+if (holdDoor) {
+  const hit = new THREE.Mesh(new THREE.BoxGeometry(SN.DOOR_W, SN.DOOR_H, 0.5),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy'; hit.position.set(-SN.DOOR_W / 2, 0, -0.1);
+  holdDoor.add(hit);
+  const relabel = () => {
+    if (holdDoorOpen) return;
+    const has = inventory.includes(boatKeyItem);
+    holdDoor.userData.label = has ? 'Unlock the door' : 'The door is locked.';
+    holdDoor.userData.bare = !has;
+  };
+  relabel();
+  addInteractable(holdDoor, 'The door is locked.', 'default', {
+    label: () => { relabel(); return holdDoor.userData.label; },
+    bare: () => { relabel(); return holdDoor.userData.bare; },
+    onActivate: () => {
+      if (holdDoorOpen) return;
+      if (!inventory.includes(boatKeyItem)) { sfxThud(0.02); return; }
+      holdDoorOpen = true;
+      sfxLockerOpen();
+      // it has done its one job: it goes into the lock and stays there
+      const ki = inventory.indexOf(boatKeyItem);
+      if (ki >= 0) {
+        inventory.splice(ki, 1);
+        if (equipped === boatKeyItem) toggleEquip(boatKeyItem);
+        renderHotbar();
+      }
+      setPrompt('');
+      hovered = null;
+    },
+  });
+}
+function updateHoldDoor(dt) {
+  if (!holdDoor) return;
+  const want = holdDoorOpen ? 1 : 0;
+  if (Math.abs(holdDoorSwing - want) < 0.001) return;
+  holdDoorSwing += (want - holdDoorSwing) * Math.min(1, dt * 3.2);
+  holdDoor.rotation.y = -holdDoorSwing * 2.0;
+}
+
+function dropShipHead() {
+  if (headFall >= 0 || !shipHead) return;
+  headFall = 0;
+  // hand him to the world so he falls clear of the swinging hook
+  const wp = shipHead.getWorldPosition(new THREE.Vector3());
+  shipwreck.userData.gaff.userData.hook.remove(shipHead);
+  scene.add(shipHead);
+  shipHead.position.copy(wp);
+  sfxLockerOpen();
+}
+/* Her loose gear. Lifting, throwing and dropping all come free from
+ * PhysProp; the point is that not everything aboard is welded down. */
+for (const L of (shipwreck.userData.loose || [])) {
+  L.m.position.set(SHIP_X + L.m.position.x, L.m.position.y, SHIP_Z + L.m.position.z);
+  makeProp(L.m, L.name, { radius: L.r, restH: L.r * 0.55, bounce: 0.3, friction: 0.62 });
+}
+
+const _headV = new THREE.Vector3();
+function updateShipHead(dt) {
+  if (headFall < 0 || !shipHead) return;
+  headFall += dt;
+  if (headFall > 4) return;
+  // he falls into the hold and settles on the sand down there
+  /* Once he is down he is yours to take. He is only made takeable here —
+   * hanging on the hook out of reach he is a thing you can see and not a
+   * thing you can have, which is the whole point of the puzzle. */
+  if (headFall > 0 && !shipHead.userData.takeable) {
+    shipHead.userData.takeable = true;
+    const hit = new THREE.Mesh(new THREE.SphereGeometry(0.26, 8, 6),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    hit.name = 'hitProxy'; shipHead.add(hit);
+    addInteractable(shipHead, "Take the captain's head", 'inventory', {
+      onActivate: () => {
+        if (shipHead.userData.taken) return;
+        shipHead.userData.taken = true;
+        sfxThud(0.05);
+        scene.remove(shipHead);
+        hovered = null;
+        addToInventory(headItem);
+      },
+    });
+  }
+  const floorY = SHIP_Y_FLOOR;
+  if (shipHead.position.y > floorY) {
+    _headV.set(0, -Math.min(6, headFall * 9.8), 0);
+    shipHead.position.addScaledVector(_headV, dt);
+    shipHead.rotation.x += dt * 2.4;
+    shipHead.rotation.z += dt * 1.1;
+    if (shipHead.position.y <= floorY) {
+      shipHead.position.y = floorY;
+      shipHead.rotation.set(0.1, shipHead.rotation.y, 0.05);
+      sfxThud(0.06);
+      /* No second interactable here. He is already takeable from the
+       * moment he comes off the hook, and adding a bare 'The captain.'
+       * label on landing shadowed that — you watched him drop and then
+       * could only look at him. */
+    }
+  }
+}
+
+// ---- the ship's wheel, and the thing it is for -------------------------
+// You take hold of it and drag, Amnesia-style, rather than pressing a button:
+// grabbing puts you in position behind it looking out to sea, the mouse turns
+// the wheel instead of your head, and letting go settles it into a detent.
+//
+// Three stars over the water call the turns. Match all three in order and the
+// locker abaft the helm comes open.
 const shipWheel = {
   positions: ['hard to port', 'midships', 'hard to starboard'],
   index: 1,                                   // 0 | 1 | 2, starts midships
   get position() { return this.index - 1; },  // -1 | 0 | 1
   get label() { return this.positions[this.index]; },
+  solved: false,
 };
+let wheelGrab = false, wheelFree = 0, dragWheel = () => {};
+let helmT = 0;                                 // 0 = free, 1 = fully at the helm
+const _helmPos = new THREE.Vector3(), _helmQ = new THREE.Quaternion();
+const _preHelmPos = new THREE.Vector3(), _preHelmQ = new THREE.Quaternion();
+let _preHelmBaseY = 0;
 {
   const w = shipwreck.userData.wheel;
-  const WHEEL_STEP = Math.PI * 0.62;          // how far a detent turns it
-  let wheelTarget = 0, wheelSpin = 0;
+  const WHEEL_STEP = Math.PI * 0.62;
+  let wheelTarget = 0, wheelSpin = 0, wheelCreak = 0;
   const setWheel = (i) => {
     shipWheel.index = THREE.MathUtils.clamp(i, 0, 2);
     wheelTarget = (shipWheel.index - 1) * WHEEL_STEP;
   };
   shipWheel.set = setWheel;
-  // the wheel is turned about its own axis, which after the group's
-  // rotation.y is its local Z
-  shipWheel._tick = (dt) => {
-    wheelSpin += (wheelTarget - wheelSpin) * Math.min(1, dt * 6);
-    w.rotation.z = wheelSpin;
+
+  // where you stand to steer: just abaft the wheel, looking out over the sea
+  const helmStance = () => {
+    const wp = w.getWorldPosition(new THREE.Vector3());
+    _helmPos.set(wp.x + 0.95, wp.y + 0.42, wp.z);
+    const look = new THREE.Vector3(wp.x - 40, wp.y + 4.0, wp.z);  // seaward, and up a little
+    const m = new THREE.Matrix4().lookAt(_helmPos, look, camera.up);
+    _helmQ.setFromRotationMatrix(m);
   };
-  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 6),
+
+  shipWheel._tick = (dt) => {
+    wheelSpin += (wheelTarget - wheelSpin) * Math.min(1, dt * (wheelGrab ? 22 : 7));
+    w.rotation.z = wheelSpin;
+    if (!wheelGrab) wheelFree = wheelSpin;
+    // ease into and out of the helm stance rather than snapping there
+    const want = wheelGrab ? 1 : 0;
+    helmT += (want - helmT) * Math.min(1, dt * 7);
+    if (helmT > 0.001) {
+      camera.position.lerpVectors(_preHelmPos, _helmPos, helmT);
+      camera.quaternion.slerpQuaternions(_preHelmQ, _helmQ, helmT);
+      /* camBaseY as well, not just the camera: update() writes
+       * camera.position.y from camBaseY every frame after this runs, so
+       * setting the position alone left you standing at the helm on the
+       * deck's height instead of the wheel's. vy is cleared so gravity
+       * doesn't argue with it. */
+      camBaseY = THREE.MathUtils.lerp(_preHelmBaseY, _helmPos.y, helmT);
+      vy = 0;
+    }
+  };
+
+  const relabel = () => {
+    if (shipWheel._it) {
+      shipWheel._it.label = shipWheel.solved
+        ? 'The wheel \u2014 ' + shipWheel.label
+        : 'Take the wheel \u2014 ' + shipWheel.label;
+    }
+  };
+  shipWheel.relabel = relabel;
+
+  /* Esc lets go of her, and so does a plain click — Esc is also how you
+   * open the settings menu, so it cannot be the only way off the wheel. */
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Escape' && wheelGrab) { e.stopPropagation(); shipWheel.release(); }
+  }, true);
+  window.addEventListener('click', (e) => {
+    if (!wheelGrab) return;
+    // a drag ends in a click too; only a click that did not turn her counts
+    if (Math.abs(wheelFree - wheelSpin) > 0.02) return;
+    e.stopPropagation(); shipWheel.release();
+  }, true);
+  shipWheel.grab = () => {
+    if (wheelGrab) return;
+    wheelGrab = true;
+    wheelFree = wheelSpin;
+    _preHelmPos.copy(camera.position);
+    _preHelmQ.copy(camera.quaternion);
+    _preHelmBaseY = camBaseY;
+    helmStance();
+    setPrompt('Drag to turn her \u00b7 let go to set the wheel \u00b7 Esc to step away');
+    starPuzzle.begin();
+  };
+  shipWheel.release = () => {
+    if (!wheelGrab) return;
+    wheelGrab = false;
+    const before = shipWheel.index;
+    setWheel(Math.round(wheelFree / WHEEL_STEP) + 1);
+    relabel();
+    if (shipWheel.index !== before) sfxWheelDetent();
+    setPrompt('');
+    starPuzzle.letGo();
+  };
+  dragWheel = (dx) => {
+    // drag left and she goes to port: the wheel turns the way your hand does
+    wheelFree = THREE.MathUtils.clamp(
+      wheelFree + dx * 0.0075 * settings.sensitivity, -WHEEL_STEP * 1.2, WHEEL_STEP * 1.2);
+    if (Math.abs(wheelFree - wheelCreak) > 0.16) { wheelCreak = wheelFree; sfxWheelCreak(); }
+    wheelTarget = wheelFree;
+    // while you hold it, the detent it is nearest is what counts
+    starPuzzle.holding(Math.round(wheelFree / WHEEL_STEP) + 1);
+  };
+
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.62, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   hit.name = 'hitProxy';
   w.add(hit);
-  // The hover label carries the state — no new UI needed, and you can read
-  // where the wheel is standing without touching it.
-  const relabel = () => { if (shipWheel._it) shipWheel._it.label = 'Turn the wheel \u2014 ' + shipWheel.label; };
-  addInteractable(w, 'Turn the wheel \u2014 midships', 'default', {
-    onActivate: () => {
-      setWheel(shipWheel.index >= 2 ? 0 : shipWheel.index + 1);
-      relabel();
-      sfxWheelTurn();
-    },
-  });
+  addInteractable(w, 'Take the wheel \u2014 midships', 'wheel', { onActivate: () => shipWheel.grab() });
   shipWheel._it = interactables[interactables.length - 1];
-  shipWheel.relabel = relabel;
 }
 
 
+
+/* Collision, built from the SAME constants the geometry is — SN is the
+ * model's own nav block, so there is no second copy of the layout to
+ * drift. The deck is flat, so every test below is a plain comparison; no
+ * curve to agree with.
+ *
+ * shipFloorAt() returns the highest walkable surface at or just under
+ * your feet. The hold floor and the deck sit above one another at the
+ * same (x, z) and picking by height is what stops them fighting. */
 const _lxc = (lx) => THREE.MathUtils.clamp(lx, -SN.HALF, SN.HALF);
-const deckHalfAt = (lx) => SN.beamAt(_lxc(lx)) * SN.sectionK(1) * SN.flareAt(_lxc(lx), 1) * 0.98;
-// she has sheer, so the deck is not one height — the walkable surface has to
-// track the plating or you end up floating over the bow and sunk at midships
-const deckYAt = (lx) => SN.DECK_Y + SN.sheerAt(_lxc(lx));
+const deckHalfAt = (lx) => SN.deckHalf(_lxc(lx));
 
 function shipFloorAt(lx, lz, feet) {
-  const tol = feet + 0.45;
+  const tol = feet + 0.5;
   let best = null;
   const take = (y) => { if (y <= tol && (best === null || y > best)) best = y; };
 
-  // hold floor, and the mouth of the breach outside it
-  const inHold = lx > SN.HOLD_X0 && lx < SN.HOLD_X1 && Math.abs(lz) < SN.HOLD_HZ;
-  const inBreach = lx > SN.BREACH_X0 && lx < SN.BREACH_X1 && lz >= SN.HOLD_HZ && lz < SN.HOLD_HZ + 1.8;
-  if (inHold || inBreach) take(SN.HOLD_Y);
+  // the hold, and the mouth of the breach outside it
+  if (lx > SN.HOLD_X0 && lx < SN.HOLD_X1 && Math.abs(lz) < SN.HOLD_HZ) take(SN.HOLD_Y);
 
-  // the stair out of the hold
-  if (lx > SN.STAIR_X0 && lx < SN.STAIR_X1 && lz > SN.STAIR_Z0 && lz < SN.STAIR_Z1) {
-    const t = (lx - SN.STAIR_X0) / (SN.STAIR_X1 - SN.STAIR_X0);
-    take(SN.HOLD_Y + t * (deckYAt(SN.STAIR_X1) - SN.HOLD_Y));
+  /* Out through the shell door once it is unlocked. Same shape as the
+   * breach apron: a RAMP down to sand level, because a flat patch at
+   * HOLD_Y out on open beach is a 25 cm invisible step. */
+  if (holdDoorOpen && Math.abs(lx - SN.DOOR_X) < SN.DOOR_W / 2 && lz < 0) {
+    const inner = -(SN.HOLD_HZ - 0.25);
+    const outer = -(SN.halfAtY(_lxc(lx), SN.HOLD_Y) + 1.2);
+    if (lz <= inner && lz > outer)
+      take(SN.HOLD_Y * (lz - outer) / (inner - outer));
+  }
+  /* The apron outside the breach is a RAMP, not a shelf. Her plating
+   * tumbles home hard down low, so a flat walkable patch out to a fixed
+   * lz stood 0.25 m proud of bare sand well clear of the hull — an
+   * invisible step in the open. It runs down to sand level instead. */
+  if (lx > SN.BREACH_X0 && lx < SN.BREACH_X1 && lz > 0) {
+    const inner = SN.HOLD_HZ - 0.25;
+    const outer = Math.max(inner + 0.8, SN.halfAtY(_lxc(lx), SN.HOLD_Y) + 1.1);
+    if (lz >= inner && lz < outer)
+      take(SN.HOLD_Y * (outer - lz) / (outer - inner));
   }
 
-  // the deck, minus the open hatch and the stair well
+  // the stair up out of it
+  if (lx > SN.STAIR_X0 && lx < SN.STAIR_X1 && lz > SN.STAIR_Z0 && lz < SN.STAIR_Z1) {
+    const t = (lx - SN.STAIR_X0) / (SN.STAIR_X1 - SN.STAIR_X0);
+    take(SN.HOLD_Y + t * (SN.DECK_Y - SN.HOLD_Y));
+  }
+
+  // the deck, less the hatch and the stair well
   if (Math.abs(lx) < SN.HALF && Math.abs(lz) < deckHalfAt(lx)) {
     const inHatch = lx > SN.HATCH_X0 && lx < SN.HATCH_X1 && Math.abs(lz) < SN.HATCH_HZ;
     const inWell = lx > SN.STAIR_X0 && lx < SN.STAIR_X1 && lz > SN.STAIR_Z0 && lz < SN.STAIR_Z1;
-    if (!inHatch && !inWell) take(deckYAt(lx));
+    if (!inHatch && !inWell) take(SN.DECK_Y);
   }
 
-  // the ramp down the far side
-  if (lx > SN.RAMP_X0 && lx < SN.RAMP_X1 && lz > SN.RAMP_Z0 && lz < SN.RAMP_Z1) {
-    const t = (lz - SN.RAMP_Z0) / (SN.RAMP_Z1 - SN.RAMP_Z0);
-    take(t * deckYAt((SN.RAMP_X0 + SN.RAMP_X1) / 2));
+  // the wheelhouse sole, up on its casing
+  if (lx > SN.BR_X0 && lx < SN.BR_X1 && Math.abs(lz) < SN.BR_HZ) take(SN.DECK_Y + SN.BR_STEP);
+
+  /* The steps outside its door. The casing lifts the sole 0.9 m off the
+   * deck, which is more than a stride, so without these the door is as
+   * unreachable as it was when it sat the wrong side of the cliff. */
+  if (lx > SN.BR_DOOR_C - SN.BR_DOOR_W / 2 - 0.24
+      && lx < SN.BR_DOOR_C + SN.BR_DOOR_W / 2 + 0.24
+      && lz >= SN.BR_HZ && lz < SN.BR_HZ + SN.BR_RUN) {
+    const t = (SN.BR_HZ + SN.BR_RUN - lz) / SN.BR_RUN;   // 1 at the wall
+    take(SN.DECK_Y + t * SN.BR_STEP);
   }
+
+  /* (No side ladder any more. With the shell door as the way through she
+   * has one exit, and a ladder up a side you cannot get down to was a
+   * route that led nowhere.) */
+
   return best;
 }
 
+let onShip = false, inBridge = false;
+
+/* Where her deck stops being wide enough to stand on. Walked once, not
+ * every frame: the deck tapers to nothing at the stem and the transom and
+ * the bulwark is cut away where it gets that narrow, so you could walk off
+ * the end — and the moment you did, shipFloorAt returned null, onShip
+ * dropped, and the beach clamp snapped you several metres sideways. That
+ * snap is the teleport at each end. Stopping at the stem is a wall you can
+ * see; being thrown back to WADE_X is not. */
+/* Worked out on first use, not at module scope: main.js is one long
+ * top-to-bottom module and PLAYER_R is declared below this point, so
+ * evaluating it here is a temporal dead zone and the whole file dies. */
+let SHIP_END_LO = 0, SHIP_END_HI = 0;
+function shipEnds() {
+  if (SHIP_END_HI) return;
+  SHIP_END_LO = -SN.HALF; SHIP_END_HI = SN.HALF;
+  while (SHIP_END_LO < 0 && SN.deckHalf(SHIP_END_LO) < PLAYER_R + 0.15) SHIP_END_LO += 0.05;
+  while (SHIP_END_HI > 0 && SN.deckHalf(SHIP_END_HI) < PLAYER_R + 0.15) SHIP_END_HI -= 0.05;
+}
+
+/* Her gear is solid wherever it stands, not only on deck. Each box
+ * carries the height band it occupies, so a bunk in the hold does not
+ * block the deck over it and a barrel on deck does not block the hold
+ * under it — which is what a flat 2D footprint did. */
+function pushOutOfShipGear(lx, lz, feet) {
+  for (const [x0, z0, x1, z1, lo, hi] of (SN.props || [])) {
+    if (feet < lo - 0.1 || feet > hi) continue;
+    const cx0 = x0 - PLAYER_R, cx1 = x1 + PLAYER_R, cz0 = z0 - PLAYER_R, cz1 = z1 + PLAYER_R;
+    if (lx <= cx0 || lx >= cx1 || lz <= cz0 || lz >= cz1) continue;
+    const dL = lx - cx0, dR = cx1 - lx, dB = lz - cz0, dF = cz1 - lz;
+    const m = Math.min(dL, dR, dB, dF);
+    if (m === dL) camera.position.x = SHIP_X + cx0;
+    else if (m === dR) camera.position.x = SHIP_X + cx1;
+    else if (m === dB) camera.position.z = SHIP_Z + cz0;
+    else camera.position.z = SHIP_Z + cz1;
+  }
+}
+
 function updateShip(dt) {
+  shipEnds();
   shipWheel._tick(dt);
+  starPuzzle.update(dt);
+  updateShipHead(dt);
+
+  if (onShip) camera.position.x = THREE.MathUtils.clamp(
+    camera.position.x, SHIP_X + SHIP_END_LO, SHIP_X + SHIP_END_HI);
+
   const lx = camera.position.x - SHIP_X;
   const lz = camera.position.z - SHIP_Z;
-  const reach = SN.HALF + 1.0;
-  if (Math.abs(lx) > reach || Math.abs(lz) > 9) { onShip = false; inBridge = false; return; }
+  if (Math.abs(lx) > SN.HALF + 1.5 || Math.abs(lz) > 11) { onShip = false; inBridge = false; return; }
 
-  const feet = camBaseY - playerEye();
-  const floor = shipFloorAt(lx, lz, feet);
-  if (floor !== null) {
-    onShip = true;
-    groundY = floor;
-    // Which clamp applies is decided by *where you are*, not by how high the
-    // floor is. Keying it off height alone made the hold's walls apply to the
-    // exit ramp too, and they shoved you back up it every time.
-    const onRamp = lx > SN.RAMP_X0 && lx < SN.RAMP_X1
-      && lz > SN.RAMP_Z0 && lz < SN.RAMP_Z1;
-    const inHold = !onRamp && lx > SN.HOLD_X0 - 0.6 && lx < SN.HOLD_X1 + 0.6
-      && lz > -SN.HOLD_HZ - 0.6 && lz < SN.HOLD_HZ + 2.0
-      && floor < deckYAt(lx) - 0.5;
+  const feet = camBaseY - playerEye();   // playerEye(), not EYE_HEIGHT: crouching
+  const floor = shipFloorAt(lx, lz, feet); // on deck must not read as feet-low
 
-    if (onRamp) {
-      // stay on the plating; it's a narrow way down
-      const rl = (SN.RAMP_X1 - SN.RAMP_X0) / 2 - PLAYER_R * 0.5;
-      const rc = SHIP_X + (SN.RAMP_X0 + SN.RAMP_X1) / 2;
-      camera.position.x = THREE.MathUtils.clamp(camera.position.x, rc - rl, rc + rl);
-    } else if (inHold) {
-      const hz = SN.HOLD_HZ - PLAYER_R;
-      const inBreach = lx > SN.BREACH_X0 && lx < SN.BREACH_X1;
-      if (lz > hz && !inBreach) camera.position.z = SHIP_Z + hz;
-      if (lz < -hz) camera.position.z = SHIP_Z - hz;
-      camera.position.x = THREE.MathUtils.clamp(camera.position.x,
-        SHIP_X + SN.HOLD_X0 + PLAYER_R, SHIP_X + SN.HOLD_X1 - PLAYER_R);
-    } else if (floor > deckYAt(lx) - 0.35) {
-      // on deck: the bulwark keeps you aboard, except where the ramp leaves
-      const lim = deckHalfAt(lx) - PLAYER_R;
-      const atRamp = lx > SN.RAMP_X0 - 0.2 && lx < SN.RAMP_X1 + 0.2;
-      if (lz > lim) camera.position.z = SHIP_Z + lim;
-      else if (lz < -lim && !atRamp) camera.position.z = SHIP_Z - lim;
-
-      // The bridge is a room, not a decal: its walls are solid and the
-      // doorway in the forward face is the only way in or out. Tracked with
-      // a flag because a box test alone can't tell "coming in" from "going
-      // out" once you're standing in the opening.
-      const atDoor = Math.abs(lz) < 0.5;
-      const bz = SN.BR_HZ - PLAYER_R;
-      if (!inBridge) {
-        if (lx > SN.BR_X0 - PLAYER_R && lx < SN.BR_X1 && Math.abs(lz) < SN.BR_HZ) {
-          if (atDoor) inBridge = true;
-          else camera.position.x = SHIP_X + SN.BR_X0 - PLAYER_R;
-        }
-      } else {
-        camera.position.x = Math.min(camera.position.x, SHIP_X + SN.BR_X1 - PLAYER_R);
-        camera.position.z = THREE.MathUtils.clamp(camera.position.z, SHIP_Z - bz, SHIP_Z + bz);
-        if (lx < SN.BR_X0) {
-          if (atDoor) inBridge = false;
-          else camera.position.x = SHIP_X + SN.BR_X0 + PLAYER_R * 0.5;
-        }
-      }
-    } else {
-      inBridge = false;
-    }
+  if (floor === null) {
+    // no floor: if you are inside her hull she is solid, so slide back out
+    onShip = false; inBridge = false;
+    const hh = deckHalfAt(lx) + 0.3;
+    if (Math.abs(lx) < SN.HALF + 0.3 && Math.abs(lz) < hh && feet < SN.DECK_Y - 0.3)
+      camera.position.z = SHIP_Z + (lz >= 0 ? hh : -hh);
     return;
   }
 
-  // no floor here: if you're inside the hull, it's solid — push back out
-  onShip = false;
-  const hullHalf = deckHalfAt(lx) + 0.25;
-  if (Math.abs(lx) < SN.HALF + 0.25 && Math.abs(lz) < hullHalf && feet < deckYAt(lx) - 0.2) {
-    camera.position.z = SHIP_Z + (lz >= 0 ? hullHalf : -hullHalf);
+  onShip = true;
+  groundY = floor;
+
+  const inHold = floor < SN.DECK_Y - 0.5;
+  pushOutOfShipGear(lx, lz, feet);
+
+  if (inHold) {
+    const hz = SN.HOLD_HZ - PLAYER_R;
+    const atBreach = lx > SN.BREACH_X0 && lx < SN.BREACH_X1;
+    const atDoor = holdDoorOpen
+      && Math.abs(lx - SN.DOOR_X) < SN.DOOR_W / 2 - PLAYER_R * 0.4;
+    if (lz > hz && !atBreach) camera.position.z = SHIP_Z + hz;
+    if (lz < -hz && !atDoor) camera.position.z = SHIP_Z - hz;
+    camera.position.x = THREE.MathUtils.clamp(camera.position.x,
+      SHIP_X + SN.HOLD_X0 + PLAYER_R, SHIP_X + SN.HOLD_X1 - PLAYER_R);
+    inBridge = false;
+    return;
+  }
+
+
+  /* The bulwark, unbroken. There is no gap to step off through any more:
+   * with the shell door as the answer, a place you can simply walk over
+   * the side is a way to skip her entirely. */
+  const lim = deckHalfAt(lx) - PLAYER_R;
+  if (lz > lim) camera.position.z = SHIP_Z + lim;
+  else if (lz < -lim) camera.position.z = SHIP_Z - lim;
+
+  /* The hatch has a coaming round it — a real lip you can see — so it is
+   * solid, not a hole you fall down. This is the single change that makes
+   * her deck walkable: before, the open hold amidships was invisible and
+   * you went straight through it. */
+  const cx0 = SN.HATCH_X0 - PLAYER_R, cx1 = SN.HATCH_X1 + PLAYER_R;
+  const cz = SN.HATCH_HZ + PLAYER_R;
+  if (feet < SN.DECK_Y + SN.COAMING - 0.15
+      && lx > cx0 && lx < cx1 && Math.abs(lz) < cz) {
+    // push out by the shallowest face of the coaming
+    const dL = lx - cx0, dR = cx1 - lx, dB = lz + cz, dF = cz - lz;
+    const m = Math.min(dL, dR, dB, dF);
+    if (m === dL) camera.position.x = SHIP_X + cx0;
+    else if (m === dR) camera.position.x = SHIP_X + cx1;
+    else if (m === dB) camera.position.z = SHIP_Z - cz;
+    else camera.position.z = SHIP_Z + cz;
+  }
+
+  /* The wheelhouse: walls solid, the door in the +Z side is the way in.
+   * The old version only pushed you out when lz > 0, so from her -Z side
+   * you walked through the wall as if it were not there. */
+  const atDoor = Math.abs(lx - SN.BR_DOOR_C) < SN.BR_DOOR_W / 2;
+  if (!inBridge) {
+    if (lx > SN.BR_X0 - PLAYER_R && lx < SN.BR_X1 + PLAYER_R
+        && Math.abs(lz) < SN.BR_HZ + PLAYER_R) {
+      // up at sole height inside the footprint you ARE in the wheelhouse
+      if (feet > SN.DECK_Y + SN.BR_STEP - 0.35 && Math.abs(lz) < SN.BR_HZ) inBridge = true;
+      else if (atDoor && lz > 0) inBridge = true;
+      else {
+        // out by the nearest face, so no wall is one-sided
+        const dF = lx - (SN.BR_X0 - PLAYER_R), dA = (SN.BR_X1 + PLAYER_R) - lx;
+        const dP = (SN.BR_HZ + PLAYER_R) - lz, dS = lz + SN.BR_HZ + PLAYER_R;
+        const m = Math.min(dF, dA, dP, dS);
+        if (m === dF) camera.position.x = SHIP_X + SN.BR_X0 - PLAYER_R;
+        else if (m === dA) camera.position.x = SHIP_X + SN.BR_X1 + PLAYER_R;
+        else if (m === dP) camera.position.z = SHIP_Z + SN.BR_HZ + PLAYER_R;
+        else camera.position.z = SHIP_Z - SN.BR_HZ - PLAYER_R;
+      }
+    }
+  } else {
+    camera.position.x = THREE.MathUtils.clamp(camera.position.x,
+      SHIP_X + SN.BR_X0 + PLAYER_R, SHIP_X + SN.BR_X1 - PLAYER_R);
+    if (lz < -SN.BR_HZ + PLAYER_R) camera.position.z = SHIP_Z - SN.BR_HZ + PLAYER_R;
+    if (lz > SN.BR_HZ - PLAYER_R) {
+      if (!atDoor) camera.position.z = SHIP_Z + SN.BR_HZ - PLAYER_R;
+      else if (lz > SN.BR_HZ + PLAYER_R) inBridge = false;
+    }
   }
 }
+
 
 // ------------------------------------------------------------------
 // The body bag
@@ -12498,7 +13133,11 @@ function update(dt, rawDt = dt) {
     knockback.multiplyScalar(1 - Math.min(1, 7 * dt));
   }
   // The drainage tunnel home is the only way through the sand wall.
-  if (!insideTower && !insideDrain && !onDock && mushWhere === 'out' && !mushInYard) {    // the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line
+  /* onShip joins onDock and the rest for the same reason. The walkable
+   * beach is only 16.6 m wide and the wreck is 26 long, so with the clamp
+   * applied you hit an invisible wall 4.6 m short of her bow while
+   * standing on her own deck. Her bulwark keeps you aboard. */
+  if (!insideTower && !insideDrain && !onDock && !onShip && mushWhere === 'out' && !mushInYard) {    // the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line
     camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
     camera.position.x = Math.max(camera.position.x, WADE_X);
   }
@@ -12517,7 +13156,8 @@ function update(dt, rawDt = dt) {
     if (rc && rc.top > groundY) groundY = rc.top;
   }
   updateDrain(dt);          // last, so it wins on groundY inside the home
-  updateShip(dt);           // and the wreck overrides the sand where you're on it
+  updateShip(dt);
+  updateHoldDoor(dt);           // and the wreck overrides the sand where you're on it
   updateDock(dt);           // the pier's drift, boards and shed walls
   updateFisherman(rawDt);   // he blinks and breathes, like Bradly
   /* ...and then out of anything solid again. updateDock() clamps you to the
@@ -12782,6 +13422,10 @@ window.__bw = {
   lighthouse, startLighthouseTrack, bottleProp, playSample, updateTower,
   drainTunnel, DRAIN_X, DRAIN_Z, updateDrain, sfxDrip,
   shipwreck, SHIP_X, SHIP_Z, shipFloorAt, shipWheel, get onShip() { return onShip; }, get inBridge() { return inBridge; },
+  holdDoor, boatKeyItem, headItem, dropShipHead, shipLantern,
+  get holdDoorOpen() { return holdDoorOpen; }, set holdDoorOpen(v) { holdDoorOpen = v; },
+  get boatKeyTaken() { return boatKeyTaken; },
+  tp: (x, y, z) => { camera.position.set(x, y, z); camBaseY = y; vy = 0; },  // preview harness: camBaseY is what update() writes y from
   get drainWarmed() { return drainWarmed; }, get drainWarmError() { return drainWarmError; },
   waterBottle, waterBottleWorld, get waterBottleItem() { return waterBottleItem; },
   get insideDrain() { return insideDrain; }, get drainMix() { return drainMix; },
