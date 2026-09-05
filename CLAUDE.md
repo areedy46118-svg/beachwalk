@@ -1484,6 +1484,19 @@ and leaves those three asleep where they wait — which is what the beach
 behind you actually looks like once you have walked it. Anything else keyed
 to a trigger you have already crossed needs the same treatment.
 
+**AND A CHECKPOINT DOES NOT ASK.** Restarting from one used to hand you the
+title card and PRESS ANY KEY, which is the game beginning, and this is the
+middle of one. A checkpoint load calls `beginGame()` ITSELF at the bottom of
+the module — at the bottom on purpose, because the restore names the mounds,
+the wreck's star and the pack, all declared thousands of lines below the
+title code, and reading them earlier is a dead-zone crash. No card, no menu,
+and `instantStart` holds `startMusic()` off: the opening music is the
+opening, and starting it three hundred metres down a beach you have already
+walked would begin the game over in the one sense that matters. The sea keeps
+going; nothing else does. The one thing a page cannot give itself is a
+pointer lock, so the look falls back to drag for the instant it takes you to
+click and the click takes the lock — which the Safari retry path already did.
+
 **TWO WAYS BACK.** Both go through `reloadInto(mode)`, which writes the mode
 into `sessionStorage` and loads the file again — the only honest way to reset
 a world this size. "Restart game" clears the checkpoint first and gives you

@@ -283,6 +283,10 @@ Dying puts you back there with all of it. The settings menu has **Restart
 from last checkpoint** (greyed out until you have one) and **Restart game**,
 which clears the checkpoint and gives you the first morning again.
 
+Coming back to a checkpoint is instant — no title card, no opening line, no
+opening music. You are standing at the pavilion before you have finished
+reading the button you pressed; the first click takes the mouse back.
+
 ## Layout
 
 | File | Purpose |

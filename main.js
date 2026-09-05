@@ -3231,6 +3231,16 @@ try {
   skipIntro = sessionStorage.getItem('beachwalk.skipIntro') === '1';
   if (skipIntro) sessionStorage.removeItem('beachwalk.skipIntro');
 } catch (e) {}
+/* AND A CHECKPOINT DOES NOT ASK. Restarting from a checkpoint used to hand
+ * you the title card and PRESS ANY KEY — which is the game beginning, and
+ * this is the middle of one. It starts itself the moment the file is up: no
+ * card, no menu, no opening music, and you are standing at the pavilion
+ * before you have finished reading the button you pressed. The one thing a
+ * page cannot give itself is a pointer lock, so the look falls back to drag
+ * for the instant it takes you to click, and the click takes the lock —
+ * which `scheduleLockRetry` and the pointerdown handler already do for the
+ * Safari case, so there is nothing new here to go wrong. */
+let instantStart = false;
 
 /* THE TITLE CAMERA. The menu is not a picture of the beach, it is the
  * beach: while the title is up the player camera is borrowed for a slow low
@@ -3297,8 +3307,12 @@ function beginGame() {
   if (introStarted) return;
   introStarted = true;
   startAmbientAudio();      // usually already running from the title card
-  startMusic();                                    // swell it in from the moment you spawn
-  requestLock();                                   // must fire on the click gesture
+  /* THE OPENING MUSIC IS THE OPENING. Coming back to a checkpoint you are
+   * mid-walk — three hundred metres down a beach you have already crossed —
+   * and the piece that plays you in from the title would start the game over
+   * in the one sense that matters. The sea keeps going; nothing else does. */
+  if (!instantStart) startMusic();
+  requestLock();                                   // fires on the click gesture, when there was one
   overlay.classList.add('hidden');
   leaveTitle();
 
@@ -15795,6 +15809,16 @@ window.__bw = {
   state: () => ({ started, locked, fallbackLook, introDone, noteOpen, menuOpen, dialogOpen, inspecting, extracting, crabBled, dying, ended, onGround, stamina: +stamina.toFixed(2), exhausted, digT: +digT.toFixed(2), equipped: equipped && equipped.name, held: held && held.mesh.name, hovered: hovered && hovered.label, inv: inventory.map(i => i.name) }),
   music: () => (musicEl ? { paused: musicEl.paused, t: +musicEl.currentTime.toFixed(1), env: musicEnvGain ? +musicEnvGain.gain.value.toFixed(3) : null, vol: musicVolGain ? +musicVolGain.gain.value.toFixed(2) : null } : { musicEl: null }),
 };
+
+/* STRAIGHT IN. This is at the bottom of the file on purpose: `beginGame`
+ * runs the restore, and the restore names the mounds, the wreck's star and
+ * the pack — all declared thousands of lines below where the title code
+ * lives, and reading them any earlier is a dead-zone crash. */
+if (loadMode === 'checkpoint' && hasCheckpoint()) {
+  instantStart = true;
+  skipIntro = true;
+  beginGame();
+}
 
 // ------------------------------------------------------------------
 // The surf should already be running while you're sat on the title card.
