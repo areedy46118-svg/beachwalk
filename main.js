@@ -5135,6 +5135,18 @@ function makeMilShovelIcon() {
   g.beginPath(); g.moveTo(19, 10); g.lineTo(19, 6); g.lineTo(29, 6); g.lineTo(29, 10); g.stroke();
   return c.toDataURL();
 }
+function makeKatanaIcon() {
+  const c = document.createElement('canvas'); c.width = c.height = 48;
+  const g = c.getContext('2d');
+  g.lineCap = 'round';
+  g.strokeStyle = '#b9c2c9'; g.lineWidth = 3.2;          // the blade, curved
+  g.beginPath(); g.moveTo(12, 40); g.quadraticCurveTo(22, 26, 38, 8); g.stroke();
+  g.strokeStyle = '#2a2a30'; g.lineWidth = 5;            // the guard
+  g.beginPath(); g.moveTo(9, 36); g.lineTo(17, 44); g.stroke();
+  g.strokeStyle = '#3a2f2a'; g.lineWidth = 4;            // the wrapped handle
+  g.beginPath(); g.moveTo(11, 41); g.lineTo(5, 46); g.stroke();
+  return c.toDataURL();
+}
 function makeShovelIcon() {
   const c = document.createElement('canvas'); c.width = c.height = 48;
   const g = c.getContext('2d');
@@ -5850,6 +5862,110 @@ scene.add(militaryWorld);
 // its own glint, added first so makeNoticeable() does not add the stock one:
 // a scan this dark is swamped by the stock lift
 addItemShine(militaryWorld, { size: 0.9, height: 0.3, strength: 0.7, lift: 0.25 });
+/* THE KATANA. brandon_grey's "Gothic Katana Sword [Dark] | Persephone's
+ * Leaf" (CC-BY-4.0), the blade only — the scabbard stays in the download —
+ * through `gltfpack.py` at 2048 with its normal and metal-rough maps kept,
+ * because looking like the photograph is the point, the same brief as the
+ * Military Shovel. It is the third cutting tool and it goes through every
+ * door the other two do: `onDig`, its own `lip`, the shared cut and the
+ * shared guard. What is its own: `dmgLight` / `dmgHeavy` (two and three —
+ * a click takes what a shovel's charge takes), `windRate` (a charge comes
+ * up a third faster), `gore` (a blade takes limbs where a spade bruises),
+ * `blade` (the whoosh, the connect and the block are a sword's and not a
+ * spade's), and `alternate` — consecutive lights cross the frame in opposite
+ * directions, which is the one thing that reads as a katana and was rightly
+ * cut for the shovel. The hand is on the TSUKA, so the model slides down the
+ * mount by `KAT_GRIP_Y` the way the D-grip does. */
+/* MEASURED, NOT REASONED. The scan's node carries its own rotation, so the
+ * blade lies on a diagonal in the file's frame and an axis-aligned box says
+ * nothing — a principal-axis fit over the 7563 vertices gave the length, the
+ * width and the thickness; the thick end (2–4.5 cm across the handle and
+ * guard) against the 5 mm run of the blade said which end is the tip; and
+ * the thinner side across the width said which way the edge faces. The
+ * quaternion below is that fit, the offsets re-centre the blade's own axis
+ * on the mount with the point at -0.21 like every other tool's tip, and the
+ * grip puts the fist a third of a metre below the pommel — on the tsuka. It
+ * is 1.81 m long, because that is how long the thing is. */
+const KAT_GRIP_Y = 1.268;
+const KAT_LIP = [[-0.03, -0.21 - KAT_GRIP_Y, 0], [-0.03, -0.07 - KAT_GRIP_Y, 0]];   // the last stretch of the edge, tip to fourteen cm back
+const katModel = new THREE.Group(), katInspect = new THREE.Group(), katanaWorld = new THREE.Group();
+/* Loaded axes, measured in the pane after the pack: the blade runs down the
+ * scan's +Z (cm, tip past +130), point away from the grip. Wanted: length
+ * on Y with the point at -Y, the edge on -Z (toward the camera's cut). The
+ * quaternion is measured, not reasoned — see the shovel's own note. */
+const KAT_Q = new THREE.Quaternion(0.84883, 0.45462, -0.19477, -0.18673);
+function orientKatana(src) {
+  src.traverse((o) => { if (o.isMesh) o.material = o.material.clone(); });
+  const w = new THREE.Group();
+  w.quaternion.copy(KAT_Q);
+  /* NO SCALE HERE. The shovel's scan arrives in raw centimetres and its
+   * wrapper divides by a hundred; this one carries the 0.01 INSIDE its own
+   * node chain (the Sketchfab .fbx node), and a second 0.01 on top made an
+   * eighteen-millimetre sword whose world scale read as zero. Measure the
+   * chain before assuming the file is in the units its vertices are in. */
+  w.scale.setScalar(1);
+  const g = new THREE.Group();
+  g.add(w); w.add(src);
+  g.position.set(0.034, 0.803, 0.063);        // blade axis on the mount, point at -0.21
+  const out = new THREE.Group(); out.add(g);
+  return out;
+}
+new GLTFLoader().load('assets/katana.glb', (gltf) => {
+  gltf.scene.traverse((o) => {
+    if (!o.isMesh) return;
+    o.material.side = THREE.DoubleSide;
+    /* METALNESS IS A TRAP, and this ships at 0.94. With no environment map a
+     * metal has no diffuse term, and the blade rendered as a black slab with
+     * a single pinpoint on it. A bright rough dielectric with a small
+     * emissive lift is what steel reads as on this beach — the ring and the
+     * body bag learned it first, and the shovel after them. The map is
+     * multiplied down a touch, as the shovel's is, because the hand's lights
+     * are set for a red plastic toy; the emissive is cold, so the dark steel
+     * keeps its colour under the moon rather than going to grey. */
+    o.material.metalness = 0.22;
+    o.material.roughness = 0.62;
+    o.material.color.setHex(0xd8dde2);
+    o.material.emissive = new THREE.Color(0x0a0d12);
+    o.material.emissiveIntensity = 1.0;
+    o.material.needsUpdate = true;
+  });
+  katModel.add(orientKatana(gltf.scene));
+  katInspect.add(orientKatana(gltf.scene.clone(true)));
+  katanaWorld.add(orientKatana(gltf.scene.clone(true)));
+}, undefined, () => {});
+const katanaVM = new THREE.Group();
+katanaVM.add(katModel);
+katModel.position.y = -KAT_GRIP_Y;
+katanaVM.scale.setScalar(0.48);
+katanaVM.position.set(-0.04, -0.02, 0.0);
+katanaVM.rotation.set(VM_MIL_REST_ROT[0], VM_MIL_REST_ROT[1], VM_MIL_REST_ROT[2]);
+katanaVM.visible = false;
+toolMount.add(katanaVM);
+const katanaItem = {
+  name: 'Katana', icon: makeKatanaIcon(), onDig: true, viewmodel: katanaVM,
+  inspectModel: katInspect, lip: KAT_LIP,
+  blade: true, dmgLight: 2, dmgHeavy: 3, windRate: 1.3, gore: 1.4, swingK: 0.9, alternate: true,
+  use: () => toggleEquip(katanaItem),
+};
+// a few steps from the Military Shovel, on the same stretch of sand under the cliff
+katanaWorld.position.set(CLIFF_BLOCK_X - 3.6, 0.05, 34 + 2.6);
+katanaWorld.rotation.set(-Math.PI / 2, 0, -0.6);
+{
+  const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  proxy.position.y = 0.25; proxy.name = 'hitProxy';
+  katanaWorld.add(proxy);
+}
+scene.add(katanaWorld);
+addItemShine(katanaWorld, { size: 0.9, height: 0.3, strength: 0.8, lift: 0.25 });
+addInteractable(katanaWorld, 'Take the katana', 'inventory', {
+  onActivate: () => {
+    sfxThud(0.04);
+    scene.remove(katanaWorld);
+    hovered = null;
+    addToInventory(katanaItem);
+    toggleEquip(katanaItem);
+  },
+});
 addInteractable(militaryWorld, 'Take the military shovel', 'inventory', {
   onActivate: () => {
     sfxThud(0.04);
@@ -5981,13 +6097,30 @@ let slashDir = -1, lastSlashAt = -1e9;   // -1 sweeps right to left
  * and the whoosh transfer whole, and each tool keeps its own grip through
  * `restRot()`. The overhead was always shared. */
 const slashing = () => !!(equipped && equipped.onDig) && !digOverhead;
+/* What the tool in hand does that the others do not. Every one of these
+ * defaults to the shovels' own behaviour, so a tool without the field is
+ * exactly the tool it was. */
+const toolDmg = (heavy) => (equipped && equipped.dmgLight) ? (heavy ? equipped.dmgHeavy : equipped.dmgLight) : (heavy ? 2 : 1);
+const toolGore = () => (equipped && equipped.gore) || 1;
+const isBlade = () => !!(equipped && equipped.blade);
 /* ALWAYS RIGHT TO LEFT. A backhand on the second click was built — the
  * forehand mirrored about the middle of the frame, leaving from the far hip
  * where the first cut finished — and cut on the owner's word: two cuts in
  * two directions inside half a second read as flailing, not as a
  * combination, and the light cut is the swing you make most. One direction,
  * every time, and you know where the blade is going before you click. */
-const pickSlashDir = () => -1;
+/* THE SHOVEL CUTS RIGHT TO LEFT EVERY TIME — two directions in half a second
+ * read as flailing on a spade, and that stays. A KATANA is the one tool where
+ * the return stroke is the whole vocabulary: a light thrown inside the chain
+ * window comes back from the far hip along the opposite diagonal, so a flurry
+ * crosses the frame and crosses back, which is what a blade looks like and
+ * what a spade never does. The first cut, and any cut after a pause, is the
+ * forehand. */
+const pickSlashDir = () => {
+  if (!(equipped && equipped.alternate)) return -1;
+  const chained = performance.now() - lastSlashAt < 900;
+  return chained ? -slashDir : -1;
+};
 /* THE BACKHAND IS THE FOREHAND IN A MIRROR — about the middle of the frame,
  * not about the hands' rest. `side` is measured from where the hands rest,
  * which is off to the right, so simply negating it sent the backhand's
@@ -6255,7 +6388,7 @@ function digImpact() {
       if (heavy && digOverhead) playSample('smash', 1.0, 0.05);
       // the military shovel's light hit is steel on shell: one of two, at random
       if (equipped === militaryItem && !heavy) playSample('milLight', 1.0, 0.05);
-      hurtCrab(best, heavy ? CRAB_HP : 1, P);
+      hurtCrab(best, heavy ? Math.max(CRAB_HP, toolDmg(true)) : toolDmg(false), P);
       return;
     }
   }
@@ -6277,7 +6410,7 @@ function digImpact() {
       hitConnect(P, heavy ? 1.35 : 0.9);
       if (heavy && digOverhead) playSample('smash', 1.0, 0.05);
       if (equipped === militaryItem && !heavy) playSample('milLight', 1.0, 0.05);
-      hurtMutant(best, heavy ? 2 : 1, P);
+      hurtMutant(best, toolDmg(heavy), P);
       return;
     }
   }
@@ -6505,7 +6638,7 @@ const windupEnd = () => slashing() ? SLASH_WINDUP : DIG_WINDUP;
  * with the blade crossing the whole frame there is more to see than in a
  * chop, and it needs the time. A HEAVY cut stays quick for a heavy (0.69 s
  * against the chop's 1.24): a katana is not a sledgehammer. */
-const swingSecs = (P) => slashing() ? DIG_DUR * (0.55 + P * 0.60) / (1 + 0.34 * P) : DIG_DUR * (0.55 + P);
+const swingSecs = (P) => (slashing() ? DIG_DUR * (0.55 + P * 0.60) / (1 + 0.34 * P) : DIG_DUR * (0.55 + P)) * ((equipped && equipped.swingK) || 1);
 let vmLagX = 0, vmLagY = 0, vmPrevYaw = 0, vmPrevPitch = 0;
 let vmSpringY = 0, vmSpringV = 0;
 const _vmEuler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -6558,7 +6691,7 @@ function updateViewmodel(dt) {
   if (winding) {
     if (frozen()) { winding = false; windT = 0; }
     else {
-      windT = Math.min(WIND_FULL * 1.35, windT + dt);
+      windT = Math.min(WIND_FULL * 1.35, windT + dt * ((equipped && equipped.windRate) || 1));   // a blade charges quicker than a spade
       /* A charge with no full mark is a charge you hold too long every time.
        * One cue at the top — a creak of strain, and the tremble that was
        * already there gets a good deal harder — and after that you know the
@@ -6742,6 +6875,14 @@ function updateViewmodel(dt) {
     const gy = -SAND_GRIP_Y * (1 - ohBlend) * (1 - blk);
     sandModel.position.y = gy;
     trailTip.position.y = trailRoot.position.y = -0.21 + gy;
+  }
+  if (equipped === katanaItem) {
+    // hand on the tsuka; the two markers sit at different heights along the
+    // edge, so each keeps its own offset from the grip
+    const gy = -KAT_GRIP_Y * (1 - ohBlend);
+    katModel.position.y = gy;
+    trailTip.position.y = -0.21 + gy;
+    trailRoot.position.y = -0.07 + gy;
   }
   if (equipped === militaryItem) {
     /* THE PIVOT SLIDES FOR AN OVERHEAD. A cut turns about the D-grip; a slam
@@ -8139,7 +8280,7 @@ function updateGibs(dt) {
  * the opening. Everything here is about making the timing feel worth it. */
 const CRAB_STUN = 1.7;
 function parryCrab(u = crabs[0]) {
-  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04);   // steel meeting the claw, under the ring
+  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxBladeClash();   // steel meeting the claw, under the ring
   parryCool = 0;                         // landing one costs you nothing
   u.st.atk = -1;
   if (crabToken === u) crabToken = null;
@@ -8173,7 +8314,7 @@ function gaspOut() {
 }
 function blockCrab(u = crabs[0]) {
   // what the blow lands on: plastic rings like a paint can, steel like steel
-  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04);
+  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxBladeClash();
   else if (equipped === shovelItem) playSample('blockSand', 1.0, 0.04);
   else sfxBlock();
   stamina = Math.max(0, stamina - BLOCK_COST);
@@ -10006,7 +10147,48 @@ function sfxWindFull() {
 }
 // the blade meeting something solid: a hard, short transient on top of
 // whatever the thing itself sounds like. This is the "click" of a hit.
+/* STEEL ON STEEL, FOR A SWORD. A block on the shovels is a recorded knock;
+ * the blade gets a synthesised clash — a sharp broadband strike, then three
+ * inharmonic partials ringing down at once, which is what a sword edge does
+ * against a bar and a spade never quite does. */
+function sfxBladeClash() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  const s = noiseBurst(0.05, (x) => Math.pow(1 - x, 1.4));
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2400;
+  const sg = ctx.createGain(); sg.gain.value = 0.22;
+  s.connect(hp).connect(sg).connect(out); s.start(t); s.stop(t + 0.05);
+  for (const [f, g, d] of [[2870, 0.09, 0.42], [4310, 0.06, 0.30], [6520, 0.035, 0.20]]) {
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(f * (0.985 + Math.random() * 0.03), t);
+    const og = ctx.createGain(); og.gain.setValueAtTime(g, t + 0.004); og.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    o.connect(og).connect(out); o.start(t); o.stop(t + d + 0.02);
+  }
+}
+/* AND A CUT INTO SOMETHING IS A CUT, NOT A KNOCK. The shovels' connect is a
+ * bandpassed tick and a square-wave thump — a blunt thing arriving. A blade
+ * arriving is a wet tear that lasts a tenth of a second, low and breathy,
+ * with a thin ring off the edge over it, and the thump under it is softer
+ * because nothing blunt happened. */
+function sfxBladeConnect(P = 0, k = 1) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  const s = noiseBurst(0.13 + P * 0.05, (x) => Math.pow(1 - x, 0.9) * (0.6 + 0.4 * Math.random()));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.setValueAtTime(1500 - P * 300, t);
+  bp.frequency.exponentialRampToValueAtTime(420, t + 0.12); bp.Q.value = 0.8;
+  const g = ctx.createGain(); g.gain.value = (0.20 + P * 0.12) * k;
+  s.connect(bp).connect(g).connect(out); s.start(t); s.stop(t + 0.2);
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(3400, t); o.frequency.exponentialRampToValueAtTime(2200, t + 0.09);
+  const og = ctx.createGain(); og.gain.setValueAtTime(0.05 * k, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.11);
+  o.connect(og).connect(out); o.start(t); o.stop(t + 0.12);
+  const th = ctx.createOscillator(); th.type = 'sine';
+  th.frequency.setValueAtTime(130, t); th.frequency.exponentialRampToValueAtTime(48, t + 0.08);
+  const tg = ctx.createGain(); tg.gain.setValueAtTime(0.07 * k, t); tg.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
+  th.connect(tg).connect(out); th.start(t); th.stop(t + 0.11);
+}
 function sfxConnect(P = 0, k = 1) {
+  if (isBlade()) return sfxBladeConnect(P, k);
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime;
   const s = noiseBurst(0.045, (x) => Math.pow(1 - x, 1.2));
@@ -10029,12 +10211,25 @@ function sfxDig(power = 0, cut = false, delay = 0) {
   // A CUT is a blade through air, not a spade: shorter and higher, and
   // delayed to the strike — on the click it played over the cock-back and
   // the sound was sixty milliseconds ahead of the picture.
-  const len = cut ? 0.20 + power * 0.10 : 0.34 + power * 0.16;
+  /* A SWORD THROUGH AIR IS THINNER AND HIGHER AGAIN than a spade's cut, and
+   * it SINGS: the whoosh is the same shape pushed up an octave and narrowed,
+   * with a faint pure tone riding it that a spade's edge is too blunt to
+   * make. That tone is what the ear files as "a blade". */
+  const blade = cut && isBlade();
+  const len = cut ? (blade ? 0.17 : 0.20) + power * 0.10 : 0.34 + power * 0.16;
   const s = noiseBurst(len, (x) => Math.sin(Math.PI * Math.min(1, x * 1.2)) * (1 - x * 0.3));
-  const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = (cut ? 1.5 : 0.9) + power * 0.5;
-  const lo = cut ? 900 - power * 200 : 400 - power * 130;
-  const hi = cut ? 3200 - power * 700 : 1600 - power * 420;
-  const end = cut ? 1300 - power * 300 : 600 - power * 200;
+  const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = (cut ? (blade ? 2.4 : 1.5) : 0.9) + power * 0.5;
+  const lo = cut ? (blade ? 1600 : 900) - power * 200 : 400 - power * 130;
+  const hi = cut ? (blade ? 5600 : 3200) - power * 700 : 1600 - power * 420;
+  const end = cut ? (blade ? 2100 : 1300) - power * 300 : 600 - power * 200;
+  if (blade) {
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(3800 + power * 400, t); o.frequency.exponentialRampToValueAtTime(5200, t + len * 0.6);
+    o.frequency.exponentialRampToValueAtTime(2900, t + len);
+    const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t);
+    og.gain.exponentialRampToValueAtTime(0.018 + power * 0.012, t + len * 0.35); og.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    o.connect(og).connect(sfxOut()); o.start(t); o.stop(t + len);
+  }
   f.frequency.setValueAtTime(lo, t);
   f.frequency.exponentialRampToValueAtTime(hi, t + len * 0.65);
   f.frequency.exponentialRampToValueAtTime(end, t + len);
@@ -13394,7 +13589,7 @@ function nearestFoe(pos) {
 const mutDrop = (u) => { if (mutToken === u) mutToken = null; };
 
 function parryMutant(u) {
-  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04);
+  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxBladeClash();
   parryCool = 0;                             // landing one costs you nothing
   u.st.atk = -1; u.st.chainAt = -1; u.st.chained = false;
   mutDrop(u);
@@ -13420,7 +13615,7 @@ function parryMutant(u) {
   setTimeout(() => { if (promptHTML.includes('PARRY')) setPrompt(''); }, 700);
 }
 function blockMutant(u) {
-  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04);
+  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxBladeClash();
   else if (equipped === shovelItem) playSample('blockSand', 1.0, 0.04);
   else sfxBlock();
   // the big one costs you more to hold off than the small one does
@@ -13459,7 +13654,7 @@ function killMutant(u) {
   sfxMutHit(u.kind.voice);
   sfxKillThud();
   addTrauma(0.6);
-  hitstop = MUT_HIT_STOP + (equipped === militaryItem ? 0.05 : 0);
+  hitstop = MUT_HIT_STOP + (equipped === militaryItem ? 0.05 : isBlade() ? 0.04 : 0);
 }
 /* The slam's report: a sub that hits and a crack over it — concrete falling
  * on concrete — sized by the charge. Under whatever the blade found. */
@@ -13595,7 +13790,12 @@ function hurtMutant(u, dmg, P = 0) {
   if (!u.st.alive || u.st.struck) return false;
   let poiseBroke = false;
   if (u.kind.human && u.st.stun <= 0) {
-    const light = P < MUT_HEAVY && dmg < 2 && !digOverhead;
+    /* LIGHT BY HOW IT WAS THROWN, NOT BY WHAT IT TAKES. This read `dmg < 2`,
+     * which was the same thing while every click did one — and the katana's
+     * click does two, so under the old test its every click was a heavy:
+     * three poise a swing, no chance of meeting his bar, a stagger every
+     * third click. The blade's advantage is the damage, not free staggers. */
+    const light = P < MUT_HEAVY && !digOverhead;
     _dbF.set(Math.sin(u.g.rotation.y), 0, Math.cos(u.g.rotation.y));
     _dbC.subVectors(camera.position, u.g.position).setY(0).normalize();
     const facing = _dbC.dot(_dbF) > 0.45;
@@ -13618,7 +13818,7 @@ function hurtMutant(u, dmg, P = 0) {
     u.st.poise = (u.st.poise ?? u.kind.poise) - (light ? 1 : 3);
     if (u.st.poise > 0) {
       u.st.hp -= dmg;
-      if (u.st.hp <= 0) { u.st.killP = P; u.st.killOh = digOverhead; u.st.hpBefore = u.st.hp + dmg; killMutant(u); return true; }
+      if (u.st.hp <= 0) { u.st.killP = P; u.st.killOh = digOverhead; u.st.killGore = toolGore(); u.st.hpBefore = u.st.hp + dmg; killMutant(u); return true; }
       /* AND A BLOW THAT DRAWS BLOOD SHOULD LOOK LIKE ONE. Six drops and a
        * short spray were lost inside `bossHit`'s shower of sparks — the
        * owner saw sparks and nothing else and read the hit as steel on
@@ -13654,7 +13854,7 @@ function hurtMutant(u, dmg, P = 0) {
   u.st.hp -= dmg;
   if (u.st.hp <= 0) {
     // what the finishing blow was, for the fall and for what comes off
-    u.st.killP = P; u.st.killOh = digOverhead; u.st.hpBefore = before;
+    u.st.killP = P; u.st.killOh = digOverhead; u.st.killGore = toolGore(); u.st.hpBefore = before;
     killMutant(u); return true;
   }
   /* POISE. A light swing into the last part of a committed startup takes
@@ -13664,7 +13864,7 @@ function hurtMutant(u, dmg, P = 0) {
    * break it — only the plain click is shrugged off, and only late. */
   const A = swingOf(u);
   const committed = u.st.atk >= 0 && u.st.atk > A.wind * 0.55 && u.st.atk < A.wind + A.strike;
-  if (!poiseBroke && committed && P < MUT_HEAVY && dmg < 2) {
+  if (!poiseBroke && committed && P < MUT_HEAVY && !digOverhead) {
     flashMats(u.g); sfxMutHit(u.kind.voice); bleedMutant(u, 5, 0.3); addTrauma(0.22);
     camera.getWorldDirection(_hitC); sprayBlood(u.g.position.x, u.g.position.y + u.kind.h * 0.55, u.g.position.z, _hitC.x, _hitC.z, 8, 0.8);
     return false;
@@ -13719,8 +13919,9 @@ function finishMutant(u) {
      * something and eleven were the head. */
     const over = u.st.hpBefore <= 1 && (hP >= MUT_HEAVY || hOh);
     let burst = false;
-    if (over && Math.random() < 0.28) burst = burstHead(u, hx, hz);
-    if (!burst && Math.random() < (hP >= MUT_HEAVY || hOh ? 0.30 : 0.12)) {
+    const G = u.st.killGore || 1;
+    if (over && Math.random() < 0.28 * G) burst = burstHead(u, hx, hz);
+    if (!burst && Math.random() < (hP >= MUT_HEAVY || hOh ? 0.30 : 0.12) * G) {
       const pick = MUT_LIMBS[Math.floor(Math.random() * MUT_LIMBS.length)];
       mutSever(u, pick, hx, hz, 1.0);
     }
@@ -13743,10 +13944,15 @@ function finishMutant(u) {
    * down on something already finished is a thing that happened. */
   const overkill = u.st.hpBefore <= 1 && (P >= MUT_HEAVY || oh);
   let burst = false;
-  if (overkill && Math.random() < 0.55) burst = burstHead(u, dx, dz);
+  /* AND A BLADE TAKES MORE. `killGore` is the tool's own multiplier,
+   * remembered at the kill because this runs after the hitstop: a shovel
+   * bruises and a katana cuts, so the same blow from the katana takes a
+   * limb or a head nearly twice as often. */
+  const G = u.st.killGore || 1;
+  if (overkill && Math.random() < 0.55 * G) burst = burstHead(u, dx, dz);
   if (!burst) {
-    if (P >= MUT_HEAVY && !oh && Math.random() < 0.42) mutSever(u, MUT_BISECT, dx, dz, 1.4);
-    else if (Math.random() < 0.55) {
+    if (P >= MUT_HEAVY && !oh && Math.random() < 0.42 * G) mutSever(u, MUT_BISECT, dx, dz, 1.4);
+    else if (Math.random() < 0.55 * G) {
       const pick = MUT_LIMBS[Math.floor(Math.random() * MUT_LIMBS.length)];
       mutSever(u, pick, dx, dz, 1.0);
     }
@@ -14718,7 +14924,7 @@ function ragHit(u, q, P, dirX, dirZ) {
   sprayBlood(q.p.x, q.p.y, q.p.z, dirX, dirZ, 10 + Math.round(P * 12), 0.8 + P * 0.6);
   stampBlood(q.p.x, q.p.z, 0.5 + Math.random() * 0.4);
   const part = limbFor(q.name, P);
-  if (part && !u.gone[part.bone] && (P >= MUT_HEAVY || Math.random() < 0.38)) {
+  if (part && !u.gone[part.bone] && (P >= MUT_HEAVY || Math.random() < 0.38 * toolGore())) {
     if (mutSever(u, part, dirX, dirZ, 0.9 + P * 0.6)) ragCut(u, part.bone);
   }
 }

@@ -1558,6 +1558,54 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**THE KATANA IS A THIRD CUTTING TOOL, AND EVERYTHING IT DOES DIFFERENTLY IS
+A FIELD ON THE ITEM.** brandon_grey's "Gothic Katana Sword [Dark]"
+(`assets/katana.glb`, the blade only, through `gltfpack.py --nodes Blade` at
+2048 with its maps kept — 1.55 MB, because looking like the photograph is
+the point). It walks through every door the shovels do: `onDig`, its own
+`lip`, the shared cut, the shared guard, the shared overhead. What is its own
+is declared on `katanaItem` and read by tiny helpers that DEFAULT to the
+shovels' behaviour, so a tool without the field is exactly the tool it was:
+`dmgLight` / `dmgHeavy` (2 / 3 — `toolDmg`), `windRate` (1.3: full charge in
+0.78 s against 1.0), `gore` (1.4 — `toolGore`, remembered on the unit as
+`killGore` at the kill because `finishMutant` runs after the hitstop),
+`swingK` (0.9), `blade` (the whoosh, the connect and the block are a
+sword's), and `alternate` (a light thrown inside 0.9 s of the last comes
+back along the other diagonal — the return stroke that was rightly cut for
+the shovel is the katana's whole vocabulary). It spawns beside the Military
+Shovel under the cliff.
+
+**A SCAN MAY CARRY ITS OWN 0.01, AND YOUR AXIS FIT MAY BE IN THE WRONG
+FRAME.** Two mistakes in one build. The shovel's scan arrives in raw
+centimetres and its wrapper scales by 0.01; this one carries the 0.01 INSIDE
+its Sketchfab .fbx node, so a second 0.01 on top made an eighteen-millimetre
+sword whose world scale printed as zero and whose in-hand bounds collapsed
+to a point. And the principal-axis fit was first done "in the wrapper's
+frame" by walking up from the mesh to the first ancestor with scale 0.01 —
+which found the SCAN'S node, not mine, so the fit ignored the root's
+rotation and the quaternion was wrong by that rotation. Find your wrapper as
+the parent of the scan's root node, by name. Then: an axis-aligned box says
+nothing about a blade lying on a diagonal in its node frame (85 cm "wide");
+a principal-axis fit over the vertices gives length, width and thickness;
+the thick end (2–4.5 cm across handle and guard against a 5 mm blade) is
+the handle; the thinner side across the width is the edge. Rows of the
+rotation are the scan-space vectors that become hand x, y, z — `[W; -L;
+-T]` here — and the offsets re-centre the blade's own axis on the mount
+with the point at -0.21 like every other tool's. It is 1.81 m long because
+that is how long the thing is.
+
+**METALNESS IS STILL A TRAP.** The blade ships at 0.94 and rendered as a
+black slab with one pinpoint on it. Steel on this beach is a bright rough
+dielectric (0.22 / 0.62) with the map multiplied down a touch and a small
+COLD emissive, so the dark steel keeps its colour under the moon.
+
+**LIGHT BY HOW IT WAS THROWN, NOT BY WHAT IT TAKES.** `hurtMutant` decided
+"light" with `dmg < 2`, which was the same thing while every click did one.
+The katana's click does two, so under the old test its every click was a
+heavy: three poise a swing, no chance of meeting his bar, a stagger every
+third click. `P < MUT_HEAVY && !digOverhead` now, in both places. The
+blade's advantage is the damage, not free staggers.
+
 **WHATEVER MOVES THE PLAYER LAST MUST RE-RUN THE ROOM'S CLAMP.**
 `updateBunkers` sits at line 17507 and `updateMutant` at 17658 — a hundred
 and fifty lines LATER — so the creature's own "you do not walk through two

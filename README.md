@@ -394,6 +394,10 @@ This work is based on ["Survival Shovel"](https://sketchfab.com/3d-models/surviv
 by [howittworks](https://sketchfab.com/howittworks) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Military Shovel.
 
+This work is based on ["Gothic Katana Sword [Dark] | Persephone's Leaf"](https://sketchfab.com/3d-models/gothic-katana-sword-dark-persephones-leaf-9d7e2bbd6a8f46289c1312969b689463)
+by [brandon_grey](https://sketchfab.com/brandondmc10) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Katana.
+
 **Grass pack (lowpoly, game-ready)** — the grass on the headland.
 ["Grass pack (lowpoly, game-ready)"](https://sketchfab.com/3d-models/grass-pack-lowpoly-game-ready)
 by [LOLIPOP](https://sketchfab.com/lolipop_1707), [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
