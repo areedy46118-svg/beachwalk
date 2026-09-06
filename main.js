@@ -12602,6 +12602,25 @@ const MUT_ATTACKS = {
   attack2M: { wind: 0.34, strike: 0.10, recover: 0.46, hit: 0.257, reach: 2.25, lunge: 0.0, chain: 'attack',   chainP: 0.60, w: 0.30 },
   attack3M: { wind: 1.05, strike: 0.12, recover: 0.60, hit: 0.700, reach: 2.65, lunge: 0.0, chain: null,       chainP: 0.00, w: 0.20 },
   attack4M: { wind: 0.50, strike: 0.14, recover: 1.05, hit: 0.333, reach: 2.55, lunge: 1.4, chain: 'attack2',  chainP: 0.35, w: 0.16 },
+  /* AND THE MAN WITH THE CROWBAR. The same table, because the fight is the
+   * same fight — the tell, the commit, the punish window, the parry and the
+   * riposte are the grammar the beach taught you and the boss is where you
+   * are asked to speak it. What is his own is the timing: he is quicker off
+   * the mark than anything on the sand and his recoveries are shorter, so
+   * the openings are real but narrow. `hit` on each is the frame the bar
+   * actually arrives, measured off the swinging hand by `tools/dealer_pack.py`
+   * and not guessed — three of the six are mirrored clips and their contact
+   * lands at a different fraction from their source's. */
+  dDown:  { wind: 0.52, strike: 0.12, recover: 0.58, hit: 0.370, reach: 2.55, lunge: 0.15, chain: 'dSide',  chainP: 0.40, w: 0.18 },
+  dSide:  { wind: 0.30, strike: 0.10, recover: 0.40, hit: 0.421, reach: 2.45, lunge: 0.0,  chain: 'dDownM', chainP: 0.52, w: 0.20 },
+  dDownM: { wind: 0.50, strike: 0.12, recover: 0.58, hit: 0.259, reach: 2.55, lunge: 0.15, chain: 'dSideM', chainP: 0.40, w: 0.14 },
+  dSideM: { wind: 0.30, strike: 0.10, recover: 0.40, hit: 0.351, reach: 2.45, lunge: 0.0,  chain: 'dDown',  chainP: 0.48, w: 0.16 },
+  // the held one: a full second over his head, so a guard raised on the
+  // first beat is a block and not a parry. It is the swing that teaches you
+  // to watch the arm instead of counting.
+  dHold:  { wind: 0.98, strike: 0.13, recover: 0.52, hit: 0.719, reach: 2.80, lunge: 0.0,  chain: null,     chainP: 0.00, w: 0.16 },
+  // and the one that covers the ground you just backed off
+  dLunge: { wind: 0.42, strike: 0.14, recover: 0.80, hit: 0.457, reach: 2.70, lunge: 1.7,  chain: 'dSide',  chainP: 0.34, w: 0.16 },
 };
 /* The three of them. `use` is which swings this one has and how often it
  * reaches for each; `windK` scales its startups AND its recoveries together,
@@ -12660,6 +12679,26 @@ const MUT_KINDS = {
           anim: { run: 'run2', idle: 'idle2', roar: 'roar', die: 'die', walk: 'walk', back: 'back',
                   rate: 1.95, lean: 0.30, strafeK: 1.45 },
           voice: { f: 1.46, growl: 0.62, rasp: 1.45, throat: 'chitter' } },
+  /* THE BLUE BLOOD DEALER. The first boss, and the argument for every rule
+   * the beach spent a kilometre teaching. He is a man, so nothing about him
+   * is a monster: he does not roar, he does not come apart, he does not
+   * throw sand, and he goes down where he stood. What makes him the hardest
+   * thing in the game is that he is FAST — startups at nine tenths of the
+   * pack's, recoveries shorter still — and that he never stops: `aggr` 1.7
+   * is a fifth of a second between swings, he chains two deep, and one in
+   * five of his startups is a feint. Twelve health against a light swing's
+   * one is a long exchange, and the only way to shorten it is the riposte:
+   * parry, wind all the way up, and take four off him at once.
+   * `solo` keeps him out of everything the pack shares — the dock cutscene
+   * wakes every mutant on the beach, and he is not on the beach. */
+  dealer: { glb: 'assets/dealer.glb', human: true, solo: true, noSand: true, skin: null,
+          h: 2.05, hp: 12, dmg: 1, speedK: 1.14, windK: 0.90, reachK: 1.06, aggr: 1.70,
+          use: { dDown: 0.18, dDownM: 0.14, dSide: 0.20, dSideM: 0.16, dHold: 0.16, dLunge: 0.16 },
+          circle: 0.32, step: 0.32, chainMax: 2, feint: 0.20,
+          bones: null,
+          anim: { run: 'run', idle: 'ready', roar: 'taunt', die: 'death', walk: 'walk', back: 'walk',
+                  rate: 1.0, lean: 0.05, strafeK: 1.2 },
+          voice: { f: 1.00, growl: 0.80, rasp: 0.9, throat: 'mask', human: true } },
 };
 const MUT_VOICE = MUT_KINDS.pale.voice;    // the default for anything unvoiced
 const MUT_WIND = MUT_ATTACKS.attack.wind;  // the harness and the docs name the overhand's
@@ -12785,6 +12824,27 @@ function dressMutant(u, gltf) {
      * THE SKIN IS SWAPPED PER COPY, and the material has to be cloned to do
      * it: `parse` hands every copy the same one. */
     const mm = o.material = mat.clone();
+    /* A MAN UNDER LAMPS IS NOT A MUTANT ON A BEACH. Everything below this is
+     * for two metres of dark flesh backlit by the moon: a gamma re-expose to
+     * pull it off the sand and a cold Fresnel rim so it has an edge at all.
+     * He stands in a lit room, so he needs neither — the rim read as a
+     * silver outline traced round him under the ceiling lamps, which is a
+     * ghost, not a man. He keeps his own maps, a touch of emissive so the
+     * shadowed side of him is not a hole, and nothing else. */
+    if (u.kind.human) {
+      mm.metalness = /crowbar/i.test(mat.name) ? 0.55 : 0;
+      mm.roughness = /crowbar/i.test(mat.name) ? 0.42 : 0.94;
+      mm.emissive = new THREE.Color(0xffffff);
+      mm.emissiveMap = mm.map;
+      mm.emissiveIntensity = 0.10;
+      // the albedo carries a real alpha for the mask straps and the lashes;
+      // BLEND on a doubleSided body sorts against itself, so it is a cut-out
+      if (mm.transparent) { mm.transparent = false; mm.alphaTest = 0.5; mm.depthWrite = true; }
+      mm.side = THREE.FrontSide;
+      mm.normalScale && mm.normalScale.set(1.1, 1.1);
+      mm.needsUpdate = true;
+      return;
+    }
     if (u.kind.skin) {
       if (!mutSkins[u.kind.skin]) {
         const t = new THREE.TextureLoader().load(u.kind.skin);
@@ -12809,6 +12869,19 @@ function dressMutant(u, gltf) {
     mm.needsUpdate = true;
   });
   u.g.add(m);
+  /* HE DOES NOT HOLD IT YET. The crowbar is its own mesh in the scan,
+   * skinned to whichever hand the clip has it in, so hiding it is all it
+   * takes to have him standing empty-handed in the dark — and the fight
+   * begins on the frame it appears. */
+  if (u.kind.human) {
+    m.traverse((o) => { if (o.isMesh && /crowbar/i.test(o.name)) { u.weapon = o; o.visible = false; } });
+    /* HE ALREADY FACES +Z, which is what the AI's `atan2(dx, dz)` points at
+     * the player — checked by rendering him alone from all four sides
+     * rather than by reasoning about the export, because the chain from the
+     * FBX through two importers and an exporter flips twice and the answer
+     * looked wrong from every angle but that one. Do not add a half turn
+     * here; it puts his back to the fight. */
+  }
   // its own build: named bones scaled before anything is measured
   if (u.kind.bones) m.traverse((o) => { if (o.isBone && u.kind.bones[o.name]) o.scale.setScalar(u.kind.bones[o.name]); });
   // Box3.setFromObject() knows nothing about skinning and answers the bind
@@ -12817,7 +12890,13 @@ function dressMutant(u, gltf) {
   const b = skinnedBounds(m);
   const s = u.kind.h / Math.max(0.001, b.size.y);
   m.scale.setScalar(s);
-  m.position.y = -b.min.y * s;                // stood on its own feet
+  /* Stood on its own feet — and the feet are measured in the GROUP's frame,
+   * not the world's. `skinnedBounds` runs the vertices through the bones in
+   * world space, so for every creature on the beach, whose group sits at
+   * y = 0, the two are the same thing and the difference never showed. The
+   * one in the bunker stands forty metres down, and `-b.min.y * s` lifted
+   * him twenty-six metres into the sand over the roof. */
+  m.position.y = -(b.min.y - u.g.position.y) * s;
   u.modelY = m.position.y;
   u.mixer = new THREE.AnimationMixer(m);
   /* NO SCALE TRACKS. The build strips the scale curves out of the actions,
@@ -12831,14 +12910,25 @@ function dressMutant(u, gltf) {
     c.tracks = c.tracks.filter((t) => !t.name.endsWith('.scale'));
     u.clips[c.name] = u.mixer.clipAction(c);
   }
-  mutPlay(u, u.kind.anim.idle, true);
+  /* THE NAMES THE FIGHT ASKS FOR. `mutAnim` reaches for 'hit', 'strafeL',
+   * 'strafeR' and the second gait of everything by name, and the pack has
+   * clips for all of them where he has six. The rest are aliases onto what
+   * he does have: he circles at a walk, and his second idle is the one the
+   * scan shipped with. An action can answer to two names — `mutPlay` compares
+   * actions, not keys. */
+  if (u.kind.human) {
+    const alias = { strafeL: 'walk', strafeR: 'walk', walk2: 'walk', run2: 'run', idle2: 'idleSrc',
+                    idle: 'ready', roar: 'taunt', roar2: 'taunt' };
+    for (const k in alias) if (u.clips[alias[k]]) u.clips[k] = u.clips[alias[k]];
+  }
+  mutPlay(u, u.kind.human ? 'calm' : u.kind.anim.idle, true);
   u.mixer.update(Math.random() * 4);          // not caught at the top of the loop
 }
-let mutGlbWait = null;
-function makeMutant(x, z, kindName) {
+const mutGlbWait = {};                     // one download per model, parsed per copy
+function makeMutant(x, z, kindName, y = 0) {
   const kind = MUT_KINDS[kindName];
   const g = new THREE.Group();
-  g.position.set(x, 0, z);
+  g.position.set(x, y, z);
   scene.add(g);
   /* Its own swing table, scaled off the shared one. `windK` moves the
    * startup and the recovery together, and a chain into a swing this kind
@@ -12864,11 +12954,14 @@ function makeMutant(x, z, kindName) {
     gone: {}, rag: null, gibMat: null, modelY: 0,
   };
   mutants.push(u);
-  farProps.push({ obj: g, z, d: 280 });
-  // ONE download, parsed once per copy: a skinned mesh cannot be cloned
-  if (!mutGlbWait) mutGlbWait = fetch('assets/mutant.glb').then((r) => r.arrayBuffer());
+  // the one under the beach is drawn with its room, not by how far down the
+  // walk it is — a Z cull would hide him at the very moment you are in there
+  if (!kind.solo) farProps.push({ obj: g, z, d: 280 });
+  // ONE download per model, parsed once per copy: a skinned mesh cannot be cloned
+  const src = kind.glb || 'assets/mutant.glb';
+  if (!mutGlbWait[src]) mutGlbWait[src] = fetch(src).then((r) => r.arrayBuffer());
   const loader = new GLTFLoader();
-  mutGlbWait
+  mutGlbWait[src]
     .then((buf) => new Promise((res, rej) => loader.parse(buf.slice(0), '', res, rej)))
     .then((gltf) => dressMutant(u, gltf))
     .catch(() => {});
@@ -13047,6 +13140,16 @@ function finishMutant(u) {
   u.st.struck = false;
   u.st.deadT = 0;
   mutDrop(u);
+  /* A MAN DOES NOT COME APART. Everything below takes a limb, bursts a head
+   * or throws the body into a Verlet ragdoll, and all of it is written to
+   * the mutant's own bone names besides. He falls on his own animation and
+   * he stays there — which is also the only ending a boss should get: you
+   * want to walk up to what you killed, not sweep up after it. */
+  if (u.kind.human) {
+    if (u.weapon) u.weapon.visible = true;
+    sfxKillThud();
+    return;
+  }
   /* WHAT THE LAST BLOW TOOK WITH IT. A charged cut can go through the waist;
    * anything else takes a limb about half the time, and sometimes nothing at
    * all — because a kill that ALWAYS dismembers is a gore setting, and a kill
@@ -13162,6 +13265,22 @@ function sfxMutRoar(dist = 0, V = MUT_VOICE) {
 function sfxMutStep(dist = 0, V = MUT_VOICE) {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime, out = sfxOut(), g0 = 0.85 / (1 + dist / 8);
+  // a boot on a steel floor, not a wet foot on sand: the room is the reason
+  // you can hear him coming without turning round
+  if (V.human) {
+    const h = noiseBurst(0.05, (x) => Math.pow(1 - x, 4));
+    const hf = ctx.createBiquadFilter(); hf.type = 'bandpass'; hf.frequency.value = 1250 + Math.random() * 700; hf.Q.value = 1.3;
+    const hg = ctx.createGain(); hg.gain.value = g0 * 0.5;
+    h.connect(hf).connect(hg).connect(out); h.start(t); h.stop(t + 0.05);
+    const f0 = 240 + Math.random() * 70;
+    for (const [mlt, gg, dd] of [[1, 0.30, 0.16], [2.6, 0.09, 0.11]]) {
+      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f0 * mlt;
+      const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t);
+      og.gain.exponentialRampToValueAtTime(g0 * gg, t + 0.005); og.gain.exponentialRampToValueAtTime(0.0001, t + dd);
+      o.connect(og).connect(out); o.start(t); o.stop(t + dd + 0.02);
+    }
+    return;
+  }
   const n = noiseBurst(0.14, (x) => Math.pow(1 - x, 2.6));
   const nf = ctx.createBiquadFilter(); nf.type = 'lowpass'; nf.frequency.value = (430 + Math.random() * 140) * V.f;
   const ng = ctx.createGain(); ng.gain.setValueAtTime(g0 * 0.9, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
@@ -13213,6 +13332,31 @@ function sfxMutDie(V = MUT_VOICE) {
 function mutTone(t, D, V, f0, f1, gain, out) {
   const ctx = audioCtx;
   const th = V.throat || 'wet';
+  /* THE MASK IS THE VOICE. Everything he says comes through a filter drum
+   * and a rubber face: a narrow band with the top gone, so it is a man in
+   * there and you can hear that it is a man, and you can hear that you
+   * cannot see his face. */
+  if (th === 'mask') {
+    const n = noiseBurst(D, (x) => Math.sin(Math.PI * Math.min(1, x * 1.1)) * (0.7 + 0.3 * Math.sin(x * 30)));
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 3.4;
+    bp.frequency.setValueAtTime(f0 * 2.2 * V.f, t);
+    bp.frequency.exponentialRampToValueAtTime(f1 * 2.4 * V.f, t + D * 0.7);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1800;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain * V.growl * 0.9, t + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + D);
+    n.connect(bp).connect(lp).connect(g).connect(out); n.start(t); n.stop(t + D);
+    const o2 = ctx.createOscillator(); o2.type = 'triangle';
+    o2.frequency.setValueAtTime(f0 * 0.55 * V.f, t);
+    o2.frequency.exponentialRampToValueAtTime(f1 * 0.55 * V.f, t + D * 0.8);
+    const g2 = ctx.createGain();
+    g2.gain.setValueAtTime(0.0001, t);
+    g2.gain.exponentialRampToValueAtTime(gain * 0.5, t + 0.04);
+    g2.gain.exponentialRampToValueAtTime(0.0001, t + D);
+    o2.connect(g2).connect(out); o2.start(t); o2.stop(t + D + 0.02);
+    return;
+  }
   const o = ctx.createOscillator();
   o.type = th === 'bellow' ? 'sawtooth' : th === 'chitter' ? 'square' : 'sawtooth';
   o.frequency.setValueAtTime(f0 * V.f, t);
@@ -13343,7 +13487,7 @@ function updateMutantCut(dt) {
     mutCutFov = settings.fov;
     if (held) dropHeld();
     hovered = null; setPrompt('');
-    for (const u of mutants) { u.st.awake = true; u.st.roar = 1.2; u.st.step = 0; }
+    for (const u of mutants) { if (u.kind.solo) continue; u.st.awake = true; u.st.roar = 1.2; u.st.step = 0; }
     sfxMutHorde();
     return true;
   }
@@ -13379,7 +13523,7 @@ function updateMutantCut(dt) {
   }
   // the camera goes with them, and the lens closes
   _mutMid.set(0, 0, 0);
-  for (const u of mutants) _mutMid.add(u.g.position);
+  for (const u of mutants) { if (u.kind.solo) continue; _mutMid.add(u.g.position); }
   _mutMid.multiplyScalar(1 / mutants.length);
   _mutMid.y = 1.25;
   _mutM.lookAt(camera.position, _mutMid, camera.up);
@@ -13410,7 +13554,7 @@ function updateMutantCut(dt) {
     /* Dropped mid-stride. They keep the run they are in, the token is free,
      * and the first swing goes to whichever of them reaches you first. */
     mutPhase = 2; mutCut = false; mutCutOut = 0.4;
-    for (const u of mutants) { u.st.roar = 0; u.st.cool = 0.05 + Math.random() * 0.15; u.st.sprint = MUT_CUT_SPRINT; }
+    for (const u of mutants) { if (u.kind.solo) continue; u.st.roar = 0; u.st.cool = 0.05 + Math.random() * 0.15; u.st.sprint = MUT_CUT_SPRINT; }
   }
   return true;
 }
@@ -14125,7 +14269,7 @@ function updateMutantUnit(u, dt) {
     /* Either you have got away from all of them, or THIS one is the one at
      * the back — the straggler with nothing to do while somebody faster is on
      * you. Both are the same idea: nobody out there is idle. */
-    if ((mutNearest > MUT_SAND_FAR || dist > 13) && u.st.sand <= 0 && mutToken !== u
+    if (!u.kind.noSand && (mutNearest > MUT_SAND_FAR || dist > 13) && u.st.sand <= 0 && mutToken !== u
         && dist > MUT_SAND_FAR * 0.8 && dist < 34 && !settings.devMode) {
       throwSand(u, dist);
       return;
@@ -15337,6 +15481,82 @@ const bunkerHome = spawnBunker(HATCH_X + 1.05, BUNKER_Y, HATCH_Z + 3.3, 0, {
 bunkerHome.group.visible = false;
 addInteractable(hatch, 'To Enter Bunker', 'action', { onActivate: enterBunker, when: () => !inBunker && !hatchBusy });
 
+// ------------------------------------------------------------------
+// The Blue Blood Dealer. He is already down there, standing at the far end
+// with his hands empty, and he has been for a while. The first thing that
+// happens when you come down the ladder is that he asks you a question you
+// have no answer to; the only thing you can say back is nothing, and the
+// crowbar comes up on the frame you say it.
+//
+// He is a MUT_KINDS entry, so every rule the beach spent a kilometre
+// teaching is his too — the tell, the commit, the poise, the parry window,
+// the riposte, the chain, the feint, the closing dash. What is different is
+// that he is a man: he does not roar, does not throw sand, does not come
+// apart, and goes down where he stood. And he is the first thing in the
+// game that is faster than you.
+// ------------------------------------------------------------------
+const DEALER_X = HATCH_X + 1.35, DEALER_Z = HATCH_Z + 7.5;   // the console end, facing the ladder
+let dealerMet = false, dealerFight = false, dealerWon = false;
+const dealer = makeMutant(DEALER_X, DEALER_Z, 'dealer', BUNKER_Y);
+dealer.g.visible = false;
+dealer.g.rotation.y = Math.PI;                 // looking down the room at the ladder
+const DEALER_SCRIPT = {
+  start: {
+    text: 'How did you get down here?',
+    // there is nothing to say to that, and saying nothing is what starts it
+    choices: [{ label: '…', act: () => startDealerFight() }],
+  },
+};
+const DEALER_NPC = { name: 'Blue Blood Dealer', script: DEALER_SCRIPT, sprite: dealer.g, headY: 1.72 };
+function startDealerFight() {
+  if (dealerFight || !dealer.st.alive) return;
+  dealerFight = true;
+  /* THE CROWBAR IS THE STARTING GUN. He is unarmed for the whole of the
+   * conversation — it is its own mesh in the scan and simply switched off —
+   * and it appears on the frame the taunt begins, which is the frame the
+   * fight begins. Nothing else announces it. */
+  if (dealer.weapon) dealer.weapon.visible = true;
+  dealer.st.awake = true;
+  dealer.st.roar = 1.5;                        // he squares up; he does not shout
+  dealer.st.step = 0;
+  dealer.st.cool = 0.25;
+  setTimeout(() => sfxMutRoar(2, dealer.kind.voice), 120);
+}
+/* He stays in the room, and the room is the one he is standing in — the
+ * fight AI works in world space and knows nothing about walls, so without
+ * this he would walk out through the console bank and off down the beach
+ * forty metres over his head. Same nav grid the player is held by. */
+function clampDealer() {
+  const B = bunkerHome.group.userData.bunker, nav = B.nav;
+  if (!nav) return;
+  const g = bunkerHome.group, p = dealer.g.position;
+  const lx = p.x - g.position.x, lz = p.z - g.position.z;
+  const R = nav.room, m = 0.42;
+  let cx = THREE.MathUtils.clamp(lx, R.x0 + m, R.x1 - m);
+  let cz = THREE.MathUtils.clamp(lz, R.z0 + m, R.z1 - m);
+  if (B.blocked(cx, cz, 0.34)) {
+    // out of the furniture along whichever way is shallowest, then give up
+    // and put him back where he was — he is never allowed to stand in a desk
+    const was = dealer.lastGood;
+    if (!B.blocked(was ? was.x : cx, cz, 0.34)) cx = was ? was.x : cx;
+    else if (!B.blocked(cx, was ? was.z : cz, 0.34)) cz = was ? was.z : cz;
+    else if (was) { cx = was.x; cz = was.z; }
+  }
+  if (!B.blocked(cx, cz, 0.34)) dealer.lastGood = { x: cx, z: cz };
+  p.x = g.position.x + cx; p.z = g.position.z + cz;
+  p.y = BUNKER_Y;
+}
+function updateDealer() {
+  const inRoom = inBunker === bunkerHome;
+  dealer.g.visible = bunkerHome.group.visible && !!dealer.model;
+  /* He does not fight the ceiling. Leave by the ladder mid-exchange and he
+   * stops where he is rather than pacing the room after a player who is
+   * forty metres above him; come back down and he picks it straight up. */
+  if (dealer.st.alive) dealer.st.awake = dealerFight && inRoom && !hatchBusy;
+  if (dealer.model) clampDealer();
+  if (!dealerWon && !dealer.st.alive && dealer.st.deadT > 0.5) dealerWon = true;
+}
+
 /* THE FIRST LOOK MUST NOT COST A SECOND. Four hundred meshes and seventeen
  * megabytes of texture upload and compile on the first frame they are drawn,
  * and setting `visible` at the press put all of it in the frame you pressed
@@ -15454,8 +15674,17 @@ function updateHatch(dt) {
     if (!hatchClank && t >= clankAt) { hatchClank = true; sfxHatch(false); }
     if (t >= HATCH_DUR) {
       hatchBusy = false; hatchLid.rotation.z = 0; blackoutEl.style.opacity = '0';
+      /* AND HE IS ALREADY TALKING. The question lands on the frame the black
+       * lifts, not after a beat of looking round — you are supposed to have
+       * been caught, and being given time to take the room in first would
+       * make it your entrance rather than his. */
+      if (hatchDir > 0 && !dealerMet && dealer.st.alive && dealer.model) {
+        dealerMet = true;
+        startDialog('start', DEALER_NPC);
+      }
     }
   }
+  updateDealer();
   // the room's air: the sea and the wind go, a hum and a fan come
   const want = inBunker ? 1 : 0;
   const prev = bunkerMix;
@@ -16203,7 +16432,9 @@ window.__bw = {
   waterBottle, waterBottleWorld, get waterBottleItem() { return waterBottleItem; },
   get insideDrain() { return insideDrain; }, get drainMix() { return drainMix; },
   spawnBunker, get bunkers() { return bunkers; }, get inBunker() { return inBunker; },
-  enterBunker, leaveBunker, get hatchBusy() { return hatchBusy; }, get bunkerMix() { return bunkerMix; }, get bunkerHome() { return bunkerHome; }, HATCH_X, HATCH_Z, BUNKER_Y, hatch,
+  enterBunker, leaveBunker, startDealerFight, get dealer() { return dealer; },
+  get dealerFight() { return dealerFight; }, get dealerMet() { return dealerMet; }, DEALER_X, DEALER_Z,
+  get hatchBusy() { return hatchBusy; }, get bunkerMix() { return bunkerMix; }, get bunkerHome() { return bunkerHome; }, HATCH_X, HATCH_Z, BUNKER_Y, hatch,
   waterSurfaceAt, submersionAt, restYInWater, groundGlow, addRipple,
   shells, listenToShell, makeRockGeo, dock, ring, driftAt, updateDock,
   listen: (v) => { listening = v; }, stopListening, keyItem, keyWorld,   // the ear pose without the audio, for the preview harness
