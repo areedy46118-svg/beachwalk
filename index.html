@@ -260,6 +260,20 @@
     transition: transform 0.08s linear, background 0.25s ease;
   }
   #stamina-fill.low { background: rgba(224, 138, 96, 0.9); }
+  /* 8 toggles the top walk speed, and a toggle you cannot see the state of is
+     a toggle nobody trusts. The HUD's own language: mono, letter-spaced,
+     hairline box, no colour. */
+  #fastwalk {
+    font: 600 9px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: 0.20em;
+    color: rgba(226, 234, 246, 0.86);
+    border: 1px solid rgba(226, 234, 246, 0.30);
+    padding: 3px 5px 2px;
+    opacity: 0;
+    transition: opacity 0.22s ease;
+    flex: none;
+  }
+  #fastwalk.show { opacity: 1; }
 
   /* THE HEALTH BAR: three hairline segments in the bottom left, dim red
      while whole and brighter the more of you is gone; a flash on the hit. */
@@ -323,7 +337,30 @@
     z-index: 7;
     opacity: 0;
     box-shadow: inset 0 0 13vw 1.5vw rgba(154, 14, 18, 0.72);
-    background: radial-gradient(ellipse at 50% 50%, rgba(120, 0, 0, 0) 62%, rgba(120, 8, 10, 0.28) 100%);
+    /* the pool sits toward the side the blow came from — a hit has a
+       direction, and the screen should say which way to look */
+    background: radial-gradient(ellipse at var(--hx, 50%) var(--hy, 50%), rgba(120, 0, 0, 0) 52%, rgba(120, 8, 10, 0.34) 100%);
+  }
+  /* BLOOD ON THE LENS. Drawn once onto a canvas and hung here; it spikes on
+     the blow and takes far longer to go than the flash does, because what is
+     on the glass stays on the glass. Four orientations, so no two hits leave
+     the same picture, and the element is its own layer so the flash under it
+     can fade at its own rate. */
+  #hurt-blood {
+    /* Its own layer, and a tie on z with the HUD it is declared before: so it
+       sits OVER the dark edge vignette that would swallow it and UNDER the
+       health bar, which is the one thing on this screen that must stay
+       readable while you are being hit. */
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 5;
+    opacity: 0;
+    background-size: cover;
+    background-position: center;
+    /* it is on the GLASS, not in the world, so it is out of focus */
+    filter: blur(1.6px);
+    will-change: opacity, transform;
   }
 
   /* death — everything sinks into red, then the walk starts over */
@@ -1059,11 +1096,13 @@
 <body>
   <div class="vignette"></div>
   <div id="hurt"></div>
+  <div id="hurt-blood"></div>
   <div id="death"></div>
   <div id="crosshair"></div>
 
   <div id="hud">
     <div id="stamina"><div id="stamina-fill"></div></div>
+    <div id="fastwalk">FAST</div>
     <div id="prompt"></div>
   </div>
   <div id="health"><i></i><i></i><i></i><i></i></div>
@@ -1203,6 +1242,7 @@
     <div class="controls">
       <span class="key">WASD</span><span>move</span>
       <span class="key">Shift</span><span>run</span>
+      <span class="key">8</span><span>top walk speed &middot; toggle</span>
       <span class="key">Space</span><span>jump</span>
       <span class="key">Ctrl</span><span>crouch</span>
       <span class="key">E</span><span>interact</span>

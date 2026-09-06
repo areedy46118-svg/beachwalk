@@ -1558,6 +1558,64 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**8 IS A LATCH, NOT A KEY YOU HOLD.** "Make 8 the max walk speed" was read
+as a number the first time — the constant that comes out as eight at the
+owner's own slider — and what he meant was the KEY: pressing 8 makes the top
+speed your walk and pressing it again gives the ordinary pace back.
+`fastWalk` turns the sprint off while it is on rather than stacking with it,
+because there is nothing above the top speed to reach for and letting shift
+still drain the bar would be charging you for a speed you already have; it
+costs no stamina, since it is a gait and not an effort. Digits 1-6 are the
+hotbar, so 8 was free. **And a latch with no visible state is a latch you
+press twice to find out what it was doing**: the FAST tag beside the stamina
+bar is in the HUD's own language — mono, letter-spaced, hairline, no colour —
+and it is the whole reason the toggle is usable.
+
+**BEING HIT WAS THE ONE IMPACT IN THIS GAME WITH NO SPRING UNDER IT.** The
+guard rings on one, the world rolls on one, an overhead dips the camera on
+one — and a crowbar landing on the PLAYER got a red flash, a shove and a
+lowpassed puff, which is why losing a quarter of your health read as a
+nudge. Four things now, and the one that carries it is DIRECTION:
+
+- **The head is thrown, and thrown the right way.** `hurtShock` is the same
+  damped spring, released from its PEAK on the frame the blow arrives (a head
+  is thrown in one frame, never eased into it) and ringing back through
+  centre in two thirds of a second. `hurtRollK` / `hurtPitchK` are worked out
+  from where the thing that hit you is standing, in the camera's own frame:
+  struck from your right and your head snaps LEFT, struck from in front and
+  it snaps back. **Positive `camera.rotateZ` is your head going left** —
+  measured with a render, not reasoned about. It is applied around the scene
+  render and taken off again, like `hitRoll` and `slamDip`, so it can never
+  leak into the look state. About 5° on a light blow and 7° on a heavy one.
+- **`k` is how hard it was, and everything reads off it.** A two-point blow
+  is half of you and it used to arrive through the same flash as a nip; and
+  the blow that leaves you on your LAST point is the one moment in a fight
+  the game should be shouting, so it lands hardest of all (×1.22). Trauma,
+  hitstop, the FOV punch, the knee dip, the knockback and the sound all
+  scale with it.
+- **BLOOD ON THE LENS, AND IT OUTLASTS THE FLASH.** Drawn once onto a canvas
+  — big splashes bedded into the corners and edges with their own satellites
+  and drips, and a mist over it — and hung on its own layer. Three things it
+  needed. It is round the EDGES: the middle of the screen is where you are
+  looking and a game that paints over it is a game you cannot play. It is
+  BRIGHT red with a dark heart and a lit rim, blurred in CSS, because the
+  first pass drew it near-black over a beach that is already nearly black and
+  you could not see you had been bled on — a drop on glass is wet, and wet
+  catches the moon. And it is a SIBLING of `#hurt`, not a child: a child is
+  multiplied by its parent's opacity, and that parent fades to nothing in a
+  second, while what lands on the glass should still be there two and a half
+  seconds later. Its z ties with the HUD it is declared before, so it sits
+  over the dark edge vignette that would swallow it and under the health bar,
+  which must stay readable while you are being hit. It is drawn and encoded
+  at the END OF THE INTRO, never on the frame you are hit — twenty
+  milliseconds of canvas is nothing at a loading screen and a dropped frame
+  in the middle of an exchange, the same reason the drain and the bunker are
+  warmed.
+- **And it sounds like a body, in the order a body feels it.** The crack of
+  the thing arriving, the dull weight of it going in, a sub you feel rather
+  than hear, and — a beat LATER, because the noise a person makes is never
+  simultaneous with the blow — the breath it drives out of you.
+
 **THE KATANA IS A THIRD CUTTING TOOL, AND EVERYTHING IT DOES DIFFERENTLY IS
 A FIELD ON THE ITEM.** brandon_grey's "Gothic Katana Sword [Dark]"
 (`assets/katana.glb`, the blade only, through `gltfpack.py --nodes Blade` at

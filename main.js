@@ -38,6 +38,23 @@ const WALK_SPEED = 3.4;
  * crash that takes the whole page, which is the file's oldest trap. */
 const RUN_SPEED = 5.71;                   // = 8.0 / the 1.4 speed setting
 const RUN_SECONDS = 5;                    // how long you can sprint
+/* AND 8 LATCHES IT. Holding shift down a kilometre of beach is a key you
+ * hold rather than a speed you have, and the bar runs out five seconds into
+ * it anyway. Pressing 8 makes the top speed your WALK — no shift, no bar, no
+ * end to it — and pressing it again gives the ordinary pace back. It is a
+ * gait, not a sprint, so it costs no stamina and it turns the sprint off
+ * while it is on: there is nothing above it to reach for, and letting shift
+ * still drain the bar would be charging you for a speed you already have.
+ * The tag in the HUD is not decoration — a latch with no visible state is a
+ * latch you press twice to find out what it was doing. */
+let fastWalk = false;
+const fastWalkEl = document.getElementById('fastwalk');
+function toggleFastWalk() {
+  if (!introDone || ended || dying) return;
+  fastWalk = !fastWalk;
+  fastWalkEl.classList.toggle('show', fastWalk);
+  sfxFastWalk(fastWalk);
+}
 /* AND THE BAR COMES BACK QUICKER. Nine seconds for a full bar meant one
  * emptying decided the next third of the fight; six keeps blocking a real
  * cost without making a mistake unrecoverable. */
@@ -3072,16 +3089,114 @@ const HURT_FADE = 1.1;                 // seconds for the hit's spike of red to 
 const REGEN_DELAY = 12;                // seconds unhurt before you start to mend
 const REGEN_EVERY = 8;                 // then a point back every so many seconds
 let hp = MAX_HP, hurtFlash = 0, dying = false, sinceHurt = 1e9, regenAcc = 0;
+/* BLOOD ON THE LENS. Drawn once — big blobs bedded into the corners and the
+ * edges, each with its own satellites and a drip running off it, and a fine
+ * mist over everything — and hung on a layer inside `#hurt`. Round the edges
+ * on purpose: the middle of the screen is where you are looking and a game
+ * that paints over it is a game you cannot play. It spikes on the blow and
+ * takes two and a half seconds to go, long after the red flash has, because
+ * what lands on the glass stays on the glass. Four orientations by flipping,
+ * so no two hits leave the same picture and no rotation ever swings an empty
+ * corner into frame. */
+const bloodLensEl = document.getElementById('hurt-blood');
+let lensBlood = 0, lensBloodPeak = 0;
+const _hurtF = new THREE.Vector3(), _hurtR = new THREE.Vector3();
+function makeLensBloodURL() {
+  const S = 640, c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  const R = mulberry32(0x51a7);
+  /* A DROP ON GLASS IS WET, AND WET CATCHES THE MOON. The first pass drew it
+   * near-black red, which on a beach that is already nearly black was
+   * nothing at all — you could not see you had been bled on. It is a bright
+   * red with a dark heart and a lighter rim, which is what a lit drop of
+   * something on a lens looks like, and the layer is blurred in CSS because
+   * it is on the GLASS and not in the world. */
+  const splash = (x, y, r, a) => {
+    const N = 15, pts = [];
+    for (let i = 0; i < N; i++) {
+      const th = (i / N) * Math.PI * 2, rr = r * (0.60 + R() * 0.78);
+      pts.push([x + Math.cos(th) * rr, y + Math.sin(th) * rr]);
+    }
+    g.beginPath();
+    pts.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])));
+    g.closePath();
+    const gr = g.createRadialGradient(x - r * 0.2, y - r * 0.2, r * 0.05, x, y, r * 1.25);
+    gr.addColorStop(0, `rgba(58, 3, 5, ${a})`);            // the heart, thick and dark
+    gr.addColorStop(0.55, `rgba(139, 11, 14, ${a})`);
+    gr.addColorStop(1, `rgba(178, 30, 30, ${a * 0.75})`);  // the lit rim
+    g.fillStyle = gr; g.fill();
+  };
+  // the big ones, pressed out toward the frame — the middle of the screen is
+  // where you are looking, and a game that paints over it is one you cannot play
+  for (let i = 0; i < 17; i++) {
+    const th = R() * Math.PI * 2;
+    const rad = (0.42 + R() * 0.28) * S;
+    const x = S / 2 + Math.cos(th) * rad, y = S / 2 + Math.sin(th) * rad * 0.92;
+    const r = 11 + R() * 34;
+    splash(x, y, r, 0.52 + R() * 0.36);
+    for (let j = 0; j < 3 + R() * 5; j++)               // what came off it
+      splash(x + (R() * 2 - 1) * r * 2.6, y + (R() * 2 - 1) * r * 2.6, 2.2 + R() * 7, 0.40 + R() * 0.42);
+    // and the drip running out of it
+    if (R() < 0.6) {
+      const len = r * (1.8 + R() * 4.4), w = r * (0.22 + R() * 0.30);
+      const grd = g.createLinearGradient(x, y, x, y + len);
+      grd.addColorStop(0, 'rgba(132, 10, 13, 0.72)');
+      grd.addColorStop(1, 'rgba(132, 10, 13, 0)');
+      g.fillStyle = grd;
+      g.beginPath(); g.moveTo(x - w, y); g.lineTo(x + w, y);
+      g.lineTo(x + w * 0.30, y + len); g.lineTo(x - w * 0.30, y + len);
+      g.closePath(); g.fill();
+      splash(x + (R() * 2 - 1) * w, y + len, w * 1.05, 0.6);
+    }
+  }
+  // the mist: what you only notice once it is there
+  for (let i = 0; i < 260; i++) {
+    const th = R() * Math.PI * 2, rad = (0.24 + Math.pow(R(), 0.42) * 0.52) * S;
+    g.fillStyle = `rgba(${150 + Math.floor(R() * 40)}, ${14 + Math.floor(R() * 14)}, 16, ${0.20 + R() * 0.46})`;
+    g.beginPath();
+    g.ellipse(S / 2 + Math.cos(th) * rad, S / 2 + Math.sin(th) * rad * 0.92,
+              0.8 + R() * 3.1, 0.8 + R() * 3.1, R() * 3, 0, Math.PI * 2);
+    g.fill();
+  }
+  return c.toDataURL('image/png');
+}
+let lensBloodURL = null;
+/* Drawn and encoded ONCE, and not on the frame you are hit. Twenty
+ * milliseconds of canvas is nothing at a loading screen and is a dropped
+ * frame in the middle of an exchange, which is the one place this whole
+ * effect exists to serve — the drain and the bunker are warmed for exactly
+ * the same reason. */
+function warmLensBlood() {
+  if (lensBloodURL) return;
+  lensBloodURL = makeLensBloodURL();
+  bloodLensEl.style.backgroundImage = `url(${lensBloodURL})`;
+}
+function spatterLens(k) {
+  warmLensBlood();
+  bloodLensEl.style.transform =
+    `scaleX(${Math.random() < 0.5 ? -1 : 1}) scaleY(${Math.random() < 0.5 ? -1 : 1}) scale(${1 + Math.random() * 0.12})`;
+  lensBloodPeak = Math.min(0.92, Math.max(lensBloodPeak * 0.7, 0.44 * k));
+  lensBlood = 1;
+}
 function damagePlayer(n = 1) {
   if (dying || ended || !introDone) return;
   hp -= n;
   sinceHurt = 0; regenAcc = 0;           // the mending starts over from the last blow
   // DEV MODE: a hit still lands — flash, knock, sound — but it never finishes you
   if (settings.devMode) hp = Math.max(hp, 1);
+  /* HOW HARD IT WAS. A two-point blow is two thirds of you, and it used to
+   * arrive through the same flash and the same shove as a nip from a crab;
+   * and the blow that leaves you on your LAST point is the one moment in the
+   * fight the game should be shouting at you, so it lands hardest of all. */
+  const k = Math.min(1.9, 1.0 + (n - 1) * 0.50) * (hp === 1 ? 1.22 : 1);
   hurtFlash = 1;
-  sfxHurt();
-  addTrauma(0.7);
-  hitstop = 0.05;       // ~3 frames
+  sfxHurt(k);
+  addTrauma(Math.min(1, 0.82 * k));
+  hitstop = Math.max(hitstop, Math.min(0.14, 0.085 * k));
+  fovKick = Math.max(fovKick, 5.5 * k);
+  slamDip = Math.max(slamDip, 0.05 * k);     // your knees give a little
+  spatterLens(k);
   // shoved back off whatever hit you — a crab or the thing past the pavilion,
   // whichever is actually nearer; asking only for a crab knocked you away from
   // one three hundred metres back up the beach
@@ -3089,8 +3204,23 @@ function damagePlayer(n = 1) {
   if (hitter) {
     const kx = camera.position.x - hitter.position.x, kz = camera.position.z - hitter.position.z;
     const kd = Math.hypot(kx, kz) || 1;
-    knockback.set((kx / kd) * 5.5, 0, (kz / kd) * 5.5);
+    knockback.set((kx / kd) * 6.6 * k, 0, (kz / kd) * 6.6 * k);
+    /* AND WHICH WAY IT THREW YOU. The blow comes from where the thing that
+     * threw it is standing, so the head goes the other way: struck from your
+     * right and it snaps left, struck from in front and it snaps up. Both
+     * measured in the camera's own frame, so it is right whatever you were
+     * looking at when it landed. */
+    camera.getWorldDirection(_hurtF); _hurtF.y = 0; _hurtF.normalize();
+    _hurtR.crossVectors(_hurtF, camera.up).normalize();
+    const side = -(kx / kd) * _hurtR.x - (kz / kd) * _hurtR.z;   // + = it is on your right
+    const face = -(kx / kd) * _hurtF.x - (kz / kd) * _hurtF.z;   // + = it is in front of you
+    hurtRollK = side * 0.135 * k;                                // ~7.7° on a light blow
+    hurtPitchK = (0.036 + 0.062 * Math.max(0, face)) * k;        // the head goes back
+  } else {
+    hurtRollK = (Math.random() < 0.5 ? -1 : 1) * 0.100 * k;
+    hurtPitchK = 0.062 * k;
   }
+  hurtShock = 1; hurtShockV = 0;         // released from the peak: a head is thrown, not eased
   if (hp <= 0) playerDied();
 }
 function playerDied() {
@@ -3110,6 +3240,12 @@ const healthEl = document.getElementById('health');
 let hpShown = -1;
 function updateHurt(dt) {
   if (hurtFlash > 0) hurtFlash = Math.max(0, hurtFlash - dt / HURT_FADE);
+  // what is on the glass outlasts the flash: a quick arrival, a long go
+  if (lensBlood > 0) {
+    lensBlood = Math.max(0, lensBlood - dt / 2.6);
+    bloodLensEl.style.opacity = String(lensBloodPeak * Math.pow(lensBlood, 1.6));
+    if (lensBlood === 0) lensBloodPeak = 0;
+  }
   /* THE HEALTH BAR. Three hairline segments in the bottom left, in the HUD's
    * own language — no frame, no number — dim red while you are whole and
    * brighter the more of you is gone, with a flash on the hit. It is the
@@ -3337,6 +3473,7 @@ function beginGame() {
 
   if (skipIntro) {
     introDone = true;
+    warmLensBlood();
     for (const k in keys) keys[k] = false;
     clock.getDelta();
     beginRestore();                                // if you came back to a checkpoint
@@ -3363,6 +3500,7 @@ function beginGame() {
     introEl.style.transition = 'opacity 2.4s ease';
     introEl.classList.remove('show');              // world fades up
     introDone = true;
+    warmLensBlood();
     for (const k in keys) keys[k] = false;
     clock.getDelta();                              // drop the big first-frame dt
     beginRestore();
@@ -3459,6 +3597,7 @@ window.addEventListener('keydown', (e) => {
   else if (e.code === 'KeyG') { if (held) dropHeld(); else if (equipped) dropEquipped(); }
   else if (e.code === 'KeyQ') { if (inspecting) closeInspect(); else if (equipped) toggleEquip(equipped); }
   else if (/^Digit[1-6]$/.test(e.code)) { useSlot(+e.code.slice(5) - 1); }
+  else if (e.code === 'Digit8') toggleFastWalk();
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
@@ -6051,6 +6190,21 @@ let hitRoll = 0;
  * lets it back up over a third of a second — your knees, not the shovel.
  * Applied around the scene render and removed, like the roll. */
 let slamDip = 0;
+/* AND A BLOW ON YOU THROWS YOUR HEAD. Everything in this game that lands
+ * reads through a spring — the guard rings on one, the world rolls on one —
+ * and the one thing that had none was the blow that lands on the PLAYER: a
+ * red flash, a shove and a puff of noise, which is why three points of
+ * health could go without the hits ever feeling like anything. This is the
+ * same spring, released from its peak on the frame the blow arrives (a head
+ * is thrown in one frame, not eased into it) and let ring back through
+ * centre: a snap, an overshoot and a settle inside two thirds of a second.
+ * `hurtRollK`/`hurtPitchK` carry WHICH WAY — worked out from where the thing
+ * that hit you is standing — because a blow with no direction in it is a
+ * screen effect and a blow with one is something that happened to your body.
+ * Applied around the scene render and taken off again, like the roll and the
+ * dip, so it never leaks into the look state. */
+let hurtShock = 0, hurtShockV = 0, hurtRollK = 0, hurtPitchK = 0;
+const HURT_K = 210, HURT_D = 12.5;       // ~0.43 s period, ratio 0.43: two bounces
 /* STIFFER, SO IT SNAPS RATHER THAN WALLOWS. At 420 the spring took most of
  * a second to come back through and a stopped blow read as the tool being
  * shoved; a block wants to arrive and be over. Same damping ratio, a third
@@ -6853,6 +7007,10 @@ function updateViewmodel(dt) {
   const earX = earH * vmCamera.aspect * EAR_AT.x, earY = earH * EAR_AT.y;
   hitRoll += (0 - hitRoll) * Math.min(1, dt * 9);
   slamDip += (0 - slamDip) * Math.min(1, dt * 7);
+  // the blow that landed on YOU, ringing out
+  hurtShockV += (-HURT_K * hurtShock - HURT_D * hurtShockV) * dt;
+  hurtShock += hurtShockV * dt;
+  if (Math.abs(hurtShock) < 1e-4 && Math.abs(hurtShockV) < 1e-3) { hurtShock = 0; hurtShockV = 0; }
   // a parry rings the tool: the guard spring, driven by the blow that landed
   guardShockV += (-GUARD_K * guardShock - GUARD_D * guardShockV) * dt;
   guardShock += guardShockV * dt;
@@ -10523,20 +10681,82 @@ function sfxCrabDie(withSample = true) {
   s.start(t); s.stop(t + 0.26);
 }
 // taking a hit — a dull thump with a low sting under it
-function sfxHurt() {
+/* The latch. Two ticks in the HUD's own register — up for on, down for off —
+ * short enough that it is a switch and not a jingle. */
+function sfxFastWalk(on) {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime;
-  const s = noiseBurst(0.24, (x) => Math.pow(1 - x, 2.2));
-  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 320;
-  const g = ctx.createGain(); g.gain.value = 0.18;
-  s.connect(lp).connect(g).connect(sfxOut());
-  s.start(t); s.stop(t + 0.24);
+  [0, 0.055].forEach((d, i) => {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'square';
+    o.frequency.value = on ? (i ? 880 : 620) : (i ? 440 : 620);
+    const at = t + d;
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(0.030, at + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.075);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600;
+    o.connect(lp).connect(g).connect(sfxOut());
+    o.start(at); o.stop(at + 0.09);
+  });
+}
+
+/* WHAT BEING HIT SOUNDS LIKE. The old one was a lowpassed puff and a soft
+ * sine — a thing landing in sand, not a crowbar landing on you — and it was
+ * most of why a blow that took a THIRD of your health read as a nudge. Four
+ * layers, in the order the body feels them: the crack of the thing arriving,
+ * the dull weight of it going in, a sub you feel rather than hear, and the
+ * breath it drives out of you a beat later, because the noise a person makes
+ * is never simultaneous with the blow. `k` is how hard it was. */
+function sfxHurt(k = 1) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const out = ctx.createGain(); out.gain.value = Math.min(1.5, 0.9 + (k - 1) * 0.5); out.connect(sfxOut());
+  // 1. the crack of arrival — short, bright, gone in a twentieth of a second
+  const crk = noiseBurst(0.07, (x) => Math.pow(1 - x, 3.4));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.8; bp.frequency.value = 1250;
+  const cg = ctx.createGain(); cg.gain.value = 0.30;
+  crk.connect(bp).connect(cg).connect(out);
+  crk.start(t); crk.stop(t + 0.07);
+  // 2. the weight going in: meat, not a drum, so noise under the tone
+  const bod = noiseBurst(0.30, (x) => Math.pow(1 - x, 1.9));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(520, t);
+  lp.frequency.exponentialRampToValueAtTime(180, t + 0.25);
+  const bg = ctx.createGain(); bg.gain.value = 0.34;
+  bod.connect(lp).connect(bg).connect(out);
+  bod.start(t); bod.stop(t + 0.30);
   const o = ctx.createOscillator(); o.type = 'sine';
-  o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(58, t + 0.35);
+  o.frequency.setValueAtTime(168, t); o.frequency.exponentialRampToValueAtTime(46, t + 0.42);
   const og = ctx.createGain();
-  og.gain.setValueAtTime(0.16, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
-  o.connect(og).connect(sfxOut());
-  o.start(t); o.stop(t + 0.42);
+  og.gain.setValueAtTime(0.34, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+  o.connect(og).connect(out);
+  o.start(t); o.stop(t + 0.52);
+  // 3. the sub — the part you feel in the chest
+  const sub = ctx.createOscillator(); sub.type = 'sine';
+  sub.frequency.setValueAtTime(64, t); sub.frequency.exponentialRampToValueAtTime(33, t + 0.38);
+  const sg = ctx.createGain();
+  sg.gain.setValueAtTime(0.0001, t);
+  sg.gain.exponentialRampToValueAtTime(0.26 * k, t + 0.012);
+  sg.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
+  sub.connect(sg).connect(out);
+  sub.start(t); sub.stop(t + 0.58);
+  // 4. and the breath it knocks out of you, a beat behind the blow
+  const br = t + 0.055;
+  const air = noiseBurst(0.42, (x) => Math.sin(Math.min(1, x * 3.2) * Math.PI) * Math.pow(1 - x, 0.8));
+  const ab = ctx.createBiquadFilter(); ab.type = 'bandpass'; ab.Q.value = 1.1;
+  ab.frequency.setValueAtTime(760, br);
+  ab.frequency.exponentialRampToValueAtTime(300, br + 0.4);
+  const ag = ctx.createGain(); ag.gain.value = 0.34;
+  air.connect(ab).connect(ag).connect(out);
+  air.start(br); air.stop(br + 0.42);
+  const v = ctx.createOscillator(); v.type = 'sawtooth';
+  v.frequency.setValueAtTime(122, br); v.frequency.exponentialRampToValueAtTime(82, br + 0.32);
+  const vl = ctx.createBiquadFilter(); vl.type = 'lowpass'; vl.frequency.value = 560;
+  const vg = ctx.createGain();
+  vg.gain.setValueAtTime(0.0001, br);
+  vg.gain.exponentialRampToValueAtTime(0.075, br + 0.05);
+  vg.gain.exponentialRampToValueAtTime(0.0001, br + 0.38);
+  v.connect(vl).connect(vg).connect(out);
+  v.start(br); v.stop(br + 0.4);
 }
 
 // the little chime when it lands in the jar
@@ -17753,7 +17973,7 @@ function update(dt, rawDt = dt) {
   const moving = move.lengthSq() > 0;
   if (moving) move.normalize();
 
-  const wantRun = canMove && (keys['ShiftLeft'] || keys['ShiftRight']);
+  const wantRun = canMove && !fastWalk && (keys['ShiftLeft'] || keys['ShiftRight']);
   const running = wantRun && moving && stamina > 0 && !exhausted && onGround;
   if (running) { stamina = Math.max(0, stamina - dt / RUN_SECONDS); if (stamina <= 0) exhausted = true; }
   else {
@@ -17766,7 +17986,7 @@ function update(dt, rawDt = dt) {
   crouchT += ((crouching ? 1 : 0) - crouchT) * Math.min(1, dt * 11);
   if (crouchT < 0.001) crouchT = 0;
   if (crouchT > 0.999) crouchT = 1;
-  const spd = (running ? RUN_SPEED : WALK_SPEED) * settings.walkSpeed * (1 - crouchT * 0.55);
+  const spd = ((running || fastWalk) ? RUN_SPEED : WALK_SPEED) * settings.walkSpeed * (1 - crouchT * 0.55);
 
   camera.getWorldDirection(forward);
   forward.y = 0; forward.normalize();
@@ -18152,11 +18372,15 @@ function animate() {
     renderer.render(inspectScene, inspectCamera);
     return;
   }
-  if (hitRoll) camera.rotateZ(hitRoll);
+  const hRoll = hitRoll + hurtShock * hurtRollK;
+  const hPitch = hurtShock * hurtPitchK;
+  if (hRoll) camera.rotateZ(hRoll);
+  if (hPitch) camera.rotateX(hPitch);
   if (slamDip) camera.position.y -= slamDip;
   renderer.render(scene, camera);
   if (slamDip) camera.position.y += slamDip;
-  if (hitRoll) camera.rotateZ(-hitRoll);
+  if (hPitch) camera.rotateX(-hPitch);
+  if (hRoll) camera.rotateZ(-hRoll);
   renderer.autoClear = false;
   if (viewmodel.visible) {
     renderer.clearDepth();
@@ -18230,6 +18454,11 @@ window.__bw = {
   get gibCount() { return gibs.length; },
   get bloodCount() { return bloodDrops.length; },
   get trauma() { return trauma; }, updateCrab, poseLeg,
+  // the blow that lands on YOU, so a hit reaction can be measured and not eyeballed
+  get hp() { return hp; }, get hurtShock() { return hurtShock; },
+  get hurtRollK() { return hurtRollK; }, get hurtPitchK() { return hurtPitchK; },
+  get fovKick() { return fovKick; }, get slamDip() { return slamDip; },
+  get lensBlood() { return lensBlood; }, get fastWalk() { return fastWalk; }, toggleFastWalk,
   set introDone(v) { introDone = v; },
   openPack, closePack, startExtraction, driveExtraction, finishExtraction, hudJar,
   get audioCtx() { return audioCtx; }, get audioStarted() { return audioStarted; },

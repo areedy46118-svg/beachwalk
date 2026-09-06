@@ -19,7 +19,8 @@ Then open <http://localhost:4173> and click to begin. Any static server works
 | Input | Action |
 |-------|--------|
 | `W` `A` `S` `D` | Walk |
-| `Shift` | Run (≈5 s of stamina, only a little faster) |
+| `Shift` | Run (≈5 s of stamina) |
+| `8` | Toggle the top walk speed on and off — a gait, not a sprint, so it costs no stamina and never runs out |
 | `Space` | Jump |
 | Mouse | Look (pointer lock; drag-to-look fallback if it's blocked) |
 | Click / `E` / `F` | Grab a physics object · take an item · dig (with the shovel) |
