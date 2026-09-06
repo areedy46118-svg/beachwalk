@@ -10,6 +10,7 @@ import { makeMushroomHouse, MUSH } from './models/mushroom-house.js';
 import { makeRing, makeRingIcon } from './models/ring.js';
 import { makeCdCase, makeCdCaseIcon } from './models/cd-case.js';
 import { makeUndergroundBunker } from './models/underground-bunker.js';
+import { makeKatana, KAT_TIP } from './models/katana.js';
 
 /* ------------------------------------------------------------------ *
  *  Beach Walk — an endless, eerie shoreline at night.
@@ -49,9 +50,21 @@ const RUN_SECONDS = 5;                    // how long you can sprint
  * latch you press twice to find out what it was doing. */
 let fastWalk = false;
 const fastWalkEl = document.getElementById('fastwalk');
+const FAST_WALK_X = 14, NORMAL_WALK_X = 1.4;   // the slider's top, and the owner's own
 function toggleFastWalk() {
   if (!introDone || ended || dying) return;
   fastWalk = !fastWalk;
+  /* IT IS THE SETTING, NOT A SECOND SPEED. The first pass multiplied
+   * `RUN_SPEED` behind the slider's back, so the menu said 1.4x while you
+   * crossed the beach at eight metres a second and nothing you could see
+   * agreed with what you were doing. 8 drives the walk-speed slider to its
+   * top and back to the owner's own, and the readout moves with it — one
+   * number, in the one place the game already keeps it. It is never saved:
+   * `settings.walkSpeed` is forced back to the default at load, the way dev
+   * mode is, so a game always starts at the pace it is meant to be walked. */
+  settings.walkSpeed = fastWalk ? FAST_WALK_X : NORMAL_WALK_X;
+  applySettings();      // the readout
+  syncMenuInputs();     // and the slider itself, so the menu agrees with your feet
   fastWalkEl.classList.toggle('show', fastWalk);
   sfxFastWalk(fastWalk);
 }
@@ -5369,7 +5382,29 @@ const VM_MIL_REST_ROT = [-3.142, -0.483, 0.483];
  * the sand shovel a different tool, and it made the hand jump every time you
  * scrolled between them. `VM_REST_ROT` is not gone — it is the DIG grip, and
  * the dig grip is what the guard turns back into on either tool. */
-const restRot = () => VM_MIL_REST_ROT;
+/* AND THE SWORD IS CARRIED THE WAY A SWORD IS CARRIED. The katana held the
+ * Military Shovel's guard grip, which stood a 1.8 m blade bolt upright at
+ * the right edge of the frame with the hand off the bottom of it — the owner
+ * called it "facing the wrong way", and it was: a katana's carry is a low
+ * DIAGONAL, hand at the lower right, the blade running down and across to
+ * the left with the edge down and the flat to the camera, which is how
+ * Battlefield V's own first-person katana holds it and is the pose the
+ * reference reel comes back to between every cut. Solved in the pane against
+ * that frame, not guessed — see `__solveKat`. */
+const VM_KAT_REST_ROT = [-0.533, -2.236, 1.182];
+const restRot = () => (equipped === katanaItem ? VM_KAT_REST_ROT : VM_MIL_REST_ROT);
+/* AND THE CUT KEEPS THE SHARED GRIP, WHICH IS WHY IT TRANSFERS AT ALL. The
+ * stroke was laid out NUMERICALLY against `VM_SLASH_ROT` — the lip's screen
+ * position probed at every quarter of both lerps until it ran corner to
+ * corner through the crosshair — and every tool that turns into that grip
+ * for the cut inherits all of it. Giving the katana its own slash grip was
+ * tried and threw the point three frames' worth off the top of the screen,
+ * because the arm poses are only correct for the blade angle they were
+ * solved against. So the sword TURNS IN THE HAND as the cut starts, out of
+ * the low carry and into the line of the stroke, which is what drawing into
+ * a cut actually looks like; what it must not do is turn while the cut is
+ * happening, and it does not — the grip is constant from the mark on. */
+const slashRot = () => VM_SLASH_ROT;
 shovelVM.rotation.set(VM_MIL_REST_ROT[0], VM_MIL_REST_ROT[1], VM_MIL_REST_ROT[2]);
 let ohBlend = 0, slBlend = 0;
 shovelVM.visible = false;
@@ -6036,71 +6071,30 @@ addItemShine(militaryWorld, { size: 0.9, height: 0.3, strength: 0.7, lift: 0.25 
  * `blade` (the whoosh, the connect and the block are a sword's and not a
  * spade's), and `alternate` — consecutive lights cross the frame in opposite
  * directions, which is the one thing that reads as a katana and was rightly
- * cut for the shovel. The hand is on the TSUKA, so the model slides down the
- * mount by `KAT_GRIP_Y` the way the D-grip does. */
-/* MEASURED, NOT REASONED. The scan's node carries its own rotation, so the
- * blade lies on a diagonal in the file's frame and an axis-aligned box says
- * nothing — a principal-axis fit over the 7563 vertices gave the length, the
- * width and the thickness; the thick end (2–4.5 cm across the handle and
- * guard) against the 5 mm run of the blade said which end is the tip; and
- * the thinner side across the width said which way the edge faces. The
- * quaternion below is that fit, the offsets re-centre the blade's own axis
- * on the mount with the point at -0.21 like every other tool's tip, and the
- * grip puts the fist a third of a metre below the pommel — on the tsuka. It
- * is 1.81 m long, because that is how long the thing is. */
-const KAT_GRIP_Y = 1.268;
-const KAT_LIP = [[-0.03, -0.21 - KAT_GRIP_Y, 0], [-0.03, -0.07 - KAT_GRIP_Y, 0]];   // the last stretch of the edge, tip to fourteen cm back
+ * cut for the shovel. It is BUILT (models/katana.js), not scanned — the
+ * reasons are written at the top of that file. */
+/* THE GRIP IS THE ORIGIN. The scan needed a slide down its own length to put
+ * the fist on the tsuka, and the charged cock had to be laid out twice
+ * because of it; the built one is authored with the hand at (0, 0, 0), so
+ * there is nothing to slide and the sword turns about the hands in every
+ * pose without a special case. A tool hangs from where it pivots, and the
+ * cheapest way to get that right is to author it there.
+ * The last stretch of the cutting edge: the point, and fourteen cm back. */
+const KAT_LIP = [[-0.012, KAT_TIP, 0], [-0.014, KAT_TIP + 0.14, 0]];
 const katModel = new THREE.Group(), katInspect = new THREE.Group(), katanaWorld = new THREE.Group();
-/* Loaded axes, measured in the pane after the pack: the blade runs down the
- * scan's +Z (cm, tip past +130), point away from the grip. Wanted: length
- * on Y with the point at -Y, the edge on -Z (toward the camera's cut). The
- * quaternion is measured, not reasoned — see the shovel's own note. */
-const KAT_Q = new THREE.Quaternion(0.84883, 0.45462, -0.19477, -0.18673);
-function orientKatana(src) {
-  src.traverse((o) => { if (o.isMesh) o.material = o.material.clone(); });
-  const w = new THREE.Group();
-  w.quaternion.copy(KAT_Q);
-  /* NO SCALE HERE. The shovel's scan arrives in raw centimetres and its
-   * wrapper divides by a hundred; this one carries the 0.01 INSIDE its own
-   * node chain (the Sketchfab .fbx node), and a second 0.01 on top made an
-   * eighteen-millimetre sword whose world scale read as zero. Measure the
-   * chain before assuming the file is in the units its vertices are in. */
-  w.scale.setScalar(1);
-  const g = new THREE.Group();
-  g.add(w); w.add(src);
-  g.position.set(0.034, 0.803, 0.063);        // blade axis on the mount, point at -0.21
-  const out = new THREE.Group(); out.add(g);
-  return out;
-}
-new GLTFLoader().load('assets/katana.glb', (gltf) => {
-  gltf.scene.traverse((o) => {
-    if (!o.isMesh) return;
-    o.material.side = THREE.DoubleSide;
-    /* METALNESS IS A TRAP, and this ships at 0.94. With no environment map a
-     * metal has no diffuse term, and the blade rendered as a black slab with
-     * a single pinpoint on it. A bright rough dielectric with a small
-     * emissive lift is what steel reads as on this beach — the ring and the
-     * body bag learned it first, and the shovel after them. The map is
-     * multiplied down a touch, as the shovel's is, because the hand's lights
-     * are set for a red plastic toy; the emissive is cold, so the dark steel
-     * keeps its colour under the moon rather than going to grey. */
-    o.material.metalness = 0.22;
-    o.material.roughness = 0.62;
-    o.material.color.setHex(0xd8dde2);
-    o.material.emissive = new THREE.Color(0x0a0d12);
-    o.material.emissiveIntensity = 1.0;
-    o.material.needsUpdate = true;
-  });
-  katModel.add(orientKatana(gltf.scene));
-  katInspect.add(orientKatana(gltf.scene.clone(true)));
-  katanaWorld.add(orientKatana(gltf.scene.clone(true)));
-}, undefined, () => {});
+katModel.add(makeKatana());
+katInspect.add(makeKatana());
+katanaWorld.add(makeKatana());
 const katanaVM = new THREE.Group();
 katanaVM.add(katModel);
-katModel.position.y = -KAT_GRIP_Y;
-katanaVM.scale.setScalar(0.48);
-katanaVM.position.set(-0.04, -0.02, 0.0);
-katanaVM.rotation.set(VM_MIL_REST_ROT[0], VM_MIL_REST_ROT[1], VM_MIL_REST_ROT[2]);
+katanaVM.scale.setScalar(1);
+/* Solved with the rotation, not set by eye: the hand had to come UP the
+ * frame as well as turn, because Battlefield V carries the tsuka near the
+ * vertical centre and ours sat on the bottom edge, which flattened the whole
+ * diagonal to five degrees. Grip at (0.42, -0.30) in the frame, point at
+ * (-0.62, -0.82) — measured off the reference and hit exactly. */
+katanaVM.position.set(-0.098, 0.127, -0.100);
+katanaVM.rotation.set(VM_KAT_REST_ROT[0], VM_KAT_REST_ROT[1], VM_KAT_REST_ROT[2]);
 katanaVM.visible = false;
 toolMount.add(katanaVM);
 const katanaItem = {
@@ -6110,15 +6104,21 @@ const katanaItem = {
   use: () => toggleEquip(katanaItem),
 };
 // a few steps from the Military Shovel, on the same stretch of sand under the cliff
-katanaWorld.position.set(CLIFF_BLOCK_X - 3.6, 0.05, 34 + 2.6);
+katanaWorld.position.set(CLIFF_BLOCK_X - 3.6, 0.06, 34 + 2.6);
 katanaWorld.rotation.set(-Math.PI / 2, 0, -0.6);
+katanaWorld.scale.setScalar(1);
 {
   const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   proxy.position.y = 0.25; proxy.name = 'hitProxy';
   katanaWorld.add(proxy);
 }
 scene.add(katanaWorld);
-addItemShine(katanaWorld, { size: 0.9, height: 0.3, strength: 0.8, lift: 0.25 });
+/* AND THE ONE ON THE SAND NEEDS MORE LIFT THAN THE ONE IN YOUR HAND. The
+ * blade is deliberately dark — it is steel at night — and a dark thing lying
+ * on a dark beach is a thing nobody picks up. The world copy is built by its
+ * own `makeKatana()` call, so it carries its own materials and the shine
+ * cannot leak back into the hand the way it did off the shovel's clone. */
+addItemShine(katanaWorld, { size: 1.05, height: 0.3, strength: 0.9, lift: 0.55 });
 addInteractable(katanaWorld, 'Take the katana', 'inventory', {
   onActivate: () => {
     sfxThud(0.04);
@@ -6341,31 +6341,44 @@ const mirrorSide = (s, d) => d < 0 ? s : -2 * ARM_SIDE - s;
  * for the heavy and (0.64, 0.40) → (0, 0) → (-0.42, -0.52) for the light, and
  * the interpolated path was checked at the quarters: (0.54, 0.40),
  * (0.31, 0.23), (0.13, 0.10) — a line. */
+/* THE STROKE IS ONE SET OF POSES AND THE TOOLS ARE NOT ONE LENGTH. It was
+ * laid out against the Military Shovel, whose lip sits 0.89 m from the fist;
+ * the katana's is 0.755, so the same arm travel sweeps a shorter blade and
+ * the cut fell short of the crosshair and finished with the point still high
+ * on the far side instead of low. A whole second pose set was solved for it
+ * and came back pinned against its own bounds — the hand simply has to cover
+ * more ground for a shorter blade to cross the same frame. So the stroke is
+ * SCALED rather than restated: the hands travel a quarter further across, and
+ * they DROP through the follow-through instead of staying up, which is what
+ * turns a swing that ends high into a cut that ends low on the far hip. Two
+ * numbers, and every improvement ever made to the stroke still applies. */
+const bladeReach = () => (isBlade() ? 1.26 : 1);
+const bladeDrop = () => (isBlade() ? 1 : 0);
 function slashCock(out, P, d) {
-  out[0] = -(0.06 + P * 0.04);
-  out[1] = 0.322 + P * 0.061;
+  out[0] = -(0.06 + P * 0.04) - bladeDrop() * 0.16;
+  out[1] = 0.322 + P * 0.061 + bladeDrop() * 0.10;
   out[2] = 0.45;                                // cancels the arm's turn: the blade lies in the picture
   out[3] = -d * (1.45 - P * 0.10);              // pointing down the line already
   out[4] = 0.06;
-  out[5] = mirrorSide(0.547 + P * 0.217, d);    // the hands off the near edge, high
+  out[5] = mirrorSide((0.547 + P * 0.217) * bladeReach(), d);   // the hands off the near edge, high
   return out;
 }
 function slashMark(out, P, d) {
-  out[0] = 0.04;
-  out[1] = 0.355;
+  out[0] = 0.04 - bladeDrop() * 0.10;
+  out[1] = 0.355 - bladeDrop() * 0.10;
   out[2] = 0.45;
   out[3] = -d * 2.05;                           // down the line
   out[4] = -(0.22 + P * 0.12);                  // arms out: the cut ARRIVES
-  out[5] = mirrorSide(-0.095, d);
+  out[5] = mirrorSide(-0.095 * bladeReach(), d);
   return out;
 }
 function slashThrough(out, P, d) {
-  out[0] = 0.14 + P * 0.02;
-  out[1] = 0.123 - P * 0.135;
+  out[0] = 0.14 + P * 0.02 + bladeDrop() * 0.30;
+  out[1] = 0.123 - P * 0.135 - bladeDrop() * 0.42;             // and the hands fall away
   out[2] = 0.45;
   out[3] = -d * (2.30 + P * 0.08);              // a shade further round, into the corner
   out[4] = -(0.10 + P * 0.02);
-  out[5] = mirrorSide(-(0.712 + P * 0.295), d); // the hands at the far hip
+  out[5] = mirrorSide(-(0.712 + P * 0.295) * bladeReach(), d);  // the hands at the far hip
   return out;
 }
 // the top of an ordinary left-click swing
@@ -7058,12 +7071,10 @@ function updateViewmodel(dt) {
     trailTip.position.y = trailRoot.position.y = -0.21 + gy;
   }
   if (equipped === katanaItem) {
-    // hand on the tsuka; the two markers sit at different heights along the
-    // edge, so each keeps its own offset from the grip
-    const gy = -KAT_GRIP_Y * (1 - ohBlend);
-    katModel.position.y = gy;
-    trailTip.position.y = -0.21 + gy;
-    trailRoot.position.y = -0.07 + gy;
+    // the grip IS the origin, so nothing slides; the markers simply sit on
+    // the last stretch of the edge, where the trail is drawn from
+    trailTip.position.y = KAT_TIP;
+    trailRoot.position.y = KAT_TIP + 0.14;
   }
   if (equipped === militaryItem) {
     /* THE PIVOT SLIDES FOR AN OVERHEAD. A cut turns about the D-grip; a slam
@@ -7084,15 +7095,23 @@ function updateViewmodel(dt) {
   const wantOh = (winding && windOverhead) || (digT > 0 && digOverhead) ? 1 : 0;
   const wantSl = slashing() && !wantOh
     && ((winding && !windOverhead) || (digT > 0 && !digOverhead)) ? 1 : 0;
-  ohBlend += (wantOh - ohBlend) * Math.min(1, dt * 9);
-  slBlend += (wantSl - slBlend) * Math.min(1, dt * 11);
+  ohBlend += (wantOh - ohBlend) * Math.min(1, dt * (wantOh ? 26 : 9));
+  /* THE GRIP CHANGE BELONGS BEFORE THE STROKE, NOT INSIDE IT. A light click
+   * has no wind-up, so at dt*11 the sword was still rotating out of its low
+   * carry and into the line of the cut while the arm was already throwing
+   * the stroke — two rotations at once, which is the definition of a flail
+   * and is exactly what "the move set must be fluid" was about. Going IN it
+   * snaps (three frames), so the blade is on the line before it moves; coming
+   * OUT it is soft, because settling back to the carry is a recovery and
+   * should be seen. */
+  slBlend += (wantSl - slBlend) * Math.min(1, dt * (wantSl ? 34 : 9));
   if (ohBlend > 0.001 || slBlend > 0.001 || wantOh || wantSl || blk > 0.001) {
     // the two grips are exclusive; the overhead wins where they overlap. The
     // base is the TOOL'S OWN rest — the Military Shovel's is scoop-up.
     const R = restRot();
     const grip = (i) => R[i]
       + (VM_OVERHEAD_ROT[i] - R[i]) * ohBlend
-      + (VM_SLASH_ROT[i] - R[i]) * slBlend * (1 - ohBlend);
+      + (slashRot()[i] - R[i]) * slBlend * (1 - ohBlend);
     toolVM.rotation.set(grip(0), grip(1), grip(2));
     /* THE GUARD IS THE SAND SHOVEL'S. Held scoop-up, the Military Shovel's
      * block put the bar across the frame upside down and the blade on the
@@ -10421,29 +10440,50 @@ function sfxDig(power = 0, cut = false, delay = 0) {
   // A CUT is a blade through air, not a spade: shorter and higher, and
   // delayed to the strike — on the click it played over the cock-back and
   // the sound was sixty milliseconds ahead of the picture.
-  /* A SWORD THROUGH AIR IS THINNER AND HIGHER AGAIN than a spade's cut, and
-   * it SINGS: the whoosh is the same shape pushed up an octave and narrowed,
-   * with a faint pure tone riding it that a spade's edge is too blunt to
-   * make. That tone is what the ear files as "a blade". */
+  /* A SWORD THROUGH AIR IS LOW, NOT HIGH — MEASURED OFF THE REFERENCE.
+   * The first version was a cartoon "shing": a band from 1.6 to 5.6 kHz with
+   * a pure sine at 3.8–5.2 kHz riding it, on the theory that a thin edge
+   * sings. It does not. Battlefield V's katana reel was pulled apart band by
+   * band and the three loudest swings in it put 78 %, 77 % and 89 % of their
+   * energy BELOW 1.25 kHz, and essentially nothing at all above 2.5 kHz —
+   * one of them is 78 % inside 160–315 Hz on its own. What you hear when a
+   * blade goes past your head is a column of air being moved, and a column
+   * of air is a low sound. The envelope was measured too: about 70 ms up to
+   * the peak and 150–200 ms down, so it is a WHUMP with a tail, not a hiss.
+   * Nothing above 2.5 kHz goes into it — that band is where the old one
+   * lived and it is the whole reason it did not sound like the video. */
   const blade = cut && isBlade();
-  const len = cut ? (blade ? 0.17 : 0.20) + power * 0.10 : 0.34 + power * 0.16;
-  const s = noiseBurst(len, (x) => Math.sin(Math.PI * Math.min(1, x * 1.2)) * (1 - x * 0.3));
-  const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = (cut ? (blade ? 2.4 : 1.5) : 0.9) + power * 0.5;
-  const lo = cut ? (blade ? 1600 : 900) - power * 200 : 400 - power * 130;
-  const hi = cut ? (blade ? 5600 : 3200) - power * 700 : 1600 - power * 420;
-  const end = cut ? (blade ? 2100 : 1300) - power * 300 : 600 - power * 200;
+  const len = cut ? (blade ? 0.27 : 0.20) + power * 0.10 : 0.34 + power * 0.16;
+  // 70 ms of rise on a 250 ms event is a peak at about 0.28 of its length
+  const s = noiseBurst(len, (x) => (x < 0.28 ? Math.sin((x / 0.28) * Math.PI * 0.5) : Math.pow(1 - (x - 0.28) / 0.72, 1.9)));
+  const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = (cut ? (blade ? 1.1 : 1.5) : 0.9) + power * 0.5;
+  const lo = cut ? (blade ? 170 : 900) - power * 20 : 400 - power * 130;
+  const hi = cut ? (blade ? 540 : 3200) + power * 120 : 1600 - power * 420;
+  const end = cut ? (blade ? 230 : 1300) - power * 30 : 600 - power * 200;
   if (blade) {
-    const o = ctx.createOscillator(); o.type = 'sine';
-    o.frequency.setValueAtTime(3800 + power * 400, t); o.frequency.exponentialRampToValueAtTime(5200, t + len * 0.6);
-    o.frequency.exponentialRampToValueAtTime(2900, t + len);
-    const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t);
-    og.gain.exponentialRampToValueAtTime(0.018 + power * 0.012, t + len * 0.35); og.gain.exponentialRampToValueAtTime(0.0001, t + len);
-    o.connect(og).connect(sfxOut()); o.start(t); o.stop(t + len);
+    /* THE BODY OF IT, where the reference keeps most of its energy: a second
+     * layer of noise under a lowpass that closes as the blade goes by. */
+    const bd = noiseBurst(len, (x) => (x < 0.30 ? Math.pow(x / 0.30, 0.7) : Math.pow(1 - (x - 0.30) / 0.70, 2.2)));
+    const bf = ctx.createBiquadFilter(); bf.type = 'lowpass'; bf.Q.value = 0.9;
+    bf.frequency.setValueAtTime(300 + power * 60, t);
+    bf.frequency.exponentialRampToValueAtTime(460 + power * 90, t + len * 0.35);
+    bf.frequency.exponentialRampToValueAtTime(150, t + len);
+    const bg = ctx.createGain(); bg.gain.value = 0.075 + power * 0.05;
+    bd.connect(bf).connect(bg).connect(sfxOut()); bd.start(t); bd.stop(t + len);
+    /* And the one thing that separates steel from a stick: a very quiet band
+     * of air a little higher up, arriving as the edge passes. Quiet enough
+     * to be a texture rather than a whistle — the reference has 2 % up
+     * there and no more. */
+    const air = noiseBurst(len * 0.45, (x) => Math.sin(Math.PI * Math.min(1, x * 1.4)) * Math.pow(1 - x, 1.4));
+    const af = ctx.createBiquadFilter(); af.type = 'bandpass'; af.Q.value = 1.8; af.frequency.value = 1500 + power * 200;
+    const ag = ctx.createGain(); ag.gain.value = 0.012 + power * 0.008;
+    air.connect(af).connect(ag).connect(sfxOut());
+    air.start(t + len * 0.18); air.stop(t + len * 0.63);
   }
   f.frequency.setValueAtTime(lo, t);
   f.frequency.exponentialRampToValueAtTime(hi, t + len * 0.65);
   f.frequency.exponentialRampToValueAtTime(end, t + len);
-  const g = ctx.createGain(); g.gain.value = (cut ? 0.028 : 0.022) + power * 0.030;
+  const g = ctx.createGain(); g.gain.value = (cut ? (blade ? 0.075 : 0.028) : 0.022) + power * 0.030;
   s.connect(f).connect(g).connect(sfxOut());
   s.start(t); s.stop(t + len);
 }
@@ -14377,7 +14417,51 @@ function sfxMutHit(V = MUT_VOICE) {
   const bg = ctx.createGain(); bg.gain.value = 0.42;
   body.connect(bf).connect(bg).connect(out); body.start(t); body.stop(t + 0.17);
 }
+/* A MAN DOES NOT POWER DOWN. The pack's death is a sawtooth falling from 78
+ * to 23 Hz over nearly two seconds under a lowpass sweeping down with it —
+ * which on a creature is a throat going out, and on the one HUMAN in the
+ * game is unmistakably a machine winding off, which is what the owner heard
+ * and what makes no sense in a room where the only machines are the ones on
+ * the wall. A man in a mask goes down on breath: the last of it driven out
+ * through the filter drum, a short groan that stops rather than slides, and
+ * the mask's own rattle after him. No pitch sweep anywhere in it — a
+ * continuous glide IS the machine sound, whatever it is made of. */
+function sfxHumanDie(V = MUT_VOICE) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = ctx.createGain();
+  out.gain.value = 0.9; out.connect(sfxOut());
+  // the breath going out of him, through the drum
+  const air = noiseBurst(0.85, (x) => Math.sin(Math.min(1, x * 2.6) * Math.PI * 0.5) * Math.pow(1 - x, 1.5));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 2.6;
+  bp.frequency.value = 620 * V.f;                       // parked, not swept
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1700;
+  const ag = ctx.createGain();
+  ag.gain.setValueAtTime(0.0001, t);
+  ag.gain.exponentialRampToValueAtTime(0.30 * V.rasp, t + 0.06);
+  ag.gain.exponentialRampToValueAtTime(0.0001, t + 0.8);
+  air.connect(bp).connect(lp).connect(ag).connect(out);
+  air.start(t); air.stop(t + 0.85);
+  // the groan under it: two steps down and done, never a glide
+  [[0, 118, 0.16, 0.26], [0.20, 96, 0.11, 0.34]].forEach(([d, f, g, len]) => {
+    const o = ctx.createOscillator(); o.type = 'triangle';
+    o.frequency.value = f * V.f;
+    const ol = ctx.createBiquadFilter(); ol.type = 'lowpass'; ol.frequency.value = 520;
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.0001, t + d);
+    og.gain.exponentialRampToValueAtTime(g * V.growl, t + d + 0.05);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + d + len);
+    o.connect(ol).connect(og).connect(out);
+    o.start(t + d); o.stop(t + d + len + 0.02);
+  });
+  // and the mask, emptying: a soft rattle of the filter as the last of it goes
+  const r = noiseBurst(0.5, (x) => Math.pow(1 - x, 2.4) * (0.5 + 0.5 * Math.sin(x * 90)));
+  const rf = ctx.createBiquadFilter(); rf.type = 'bandpass'; rf.Q.value = 5; rf.frequency.value = 380;
+  const rg = ctx.createGain(); rg.gain.value = 0.10;
+  r.connect(rf).connect(rg).connect(out);
+  r.start(t + 0.34); r.stop(t + 0.84);
+}
 function sfxMutDie(V = MUT_VOICE) {
+  if (V && V.human) return sfxHumanDie(V);
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime, out = sfxOut(), D = 1.9;
   // it goes out of it: the throat drops away and the breath runs out wet
@@ -16817,7 +16901,7 @@ function clampPlayerToRoom() {
     B.pushOut(_cpL, r, 5);
     if (B.blocked(_cpL.x, _cpL.z, r)) B.escape(_cpL, r, 3.2);
     if (B.blocked(_cpL.x, _cpL.z, r) && B.mainRegion) {
-      const m = B.mainRegion(_cpL.x, _cpL.z);
+      const m = B.mainRegion(_cpL.x, _cpL.z, r);
       if (m) { _cpL.x = m.x; _cpL.z = m.z; }
     }
   }
@@ -16892,7 +16976,7 @@ function updateBunkers(dt) {
        * walkable floor, worked out once, and it is never far — so the last
        * word is always somewhere you can stand rather than nowhere. */
       if (B.blocked(_bkL.x, _bkL.z, r) && B.mainRegion) {
-        const m = B.mainRegion(_bkL.x, _bkL.z);
+        const m = B.mainRegion(_bkL.x, _bkL.z, r);
         if (m) { _bkL.x = m.x; _bkL.z = m.z; }
       }
       if (B.blocked(_bkL.x, _bkL.z, r)) { _bkL.x = _bkP.x; _bkL.z = _bkP.z; }
@@ -17167,7 +17251,7 @@ function steerDealer(prevX, prevZ) {
   if (len < 1e-4) return;
   const lx = prevX - g.position.x, lz = prevZ - g.position.z;
   let ux = dx / len, uz = dz / len;
-  if (B.clearAhead(lx, lz, ux, uz, DEALER_PROBE, 0.32)) {
+  if (B.clearAhead(lx, lz, ux, uz, DEALER_PROBE, DEALER_R)) {
     dealer.wedge = 0;
     return;
   }
@@ -17182,7 +17266,7 @@ function steerDealer(prevX, prevZ) {
     for (const sgn of (dealer.turnBias > 0 ? [1, -1] : [-1, 1])) {
       const c = Math.cos(a * sgn), sn = Math.sin(a * sgn);
       const cx = ux * c - uz * sn, cz = ux * sn + uz * c;
-      if (B.clearAhead(lx, lz, cx, cz, DEALER_PROBE, 0.32)) {
+      if (B.clearAhead(lx, lz, cx, cz, DEALER_PROBE, DEALER_R)) {
         p.x = prevX + cx * len; p.z = prevZ + cz * len;
         /* And the further round he had to look, the longer he commits to
          * going that way. A 20-degree nudge is a slide along a desk front
@@ -17242,7 +17326,7 @@ function unstickDealer(dt, dist) {
     const px = camera.position.x - g0.position.x, pz = camera.position.z - g0.position.z;
     const dx0 = px - alx, dz0 = pz - alz, L0 = Math.hypot(dx0, dz0) || 1;
     if (B.clearAhead && !B.clearAhead(alx, alz, dx0 / L0, dz0 / L0, Math.min(L0, 3.0), 0.34)) {
-      const r0 = B.route(alx, alz, px, pz, 0.32);
+      const r0 = B.route(alx, alz, px, pz, DEALER_R);
       if (r0 && r0.length > 1) { dealer.path = r0; dealer.pathI = 0; }
     }
   }
@@ -17268,14 +17352,14 @@ function unstickDealer(dt, dist) {
    * it is three or four waypoints and not four hundred. */
   const lx = p.x - g.position.x, lz = p.z - g.position.z;
   const tx = camera.position.x - g.position.x, tz = camera.position.z - g.position.z;
-  const path = B.route(lx, lz, tx, tz, 0.32);
+  const path = B.route(lx, lz, tx, tz, DEALER_R);
   /* AND IF THE ROUTE STOPS A LONG WAY SHORT, he is not on the same piece of
    * floor as you — one of the two pockets behind the furniture, which
    * nothing his size walks out of. He steps back into the main room rather
    * than standing in a gap for the rest of the fight. */
   const endsAt = path && path.length ? path[path.length - 1] : null;
   if (!endsAt || Math.hypot(endsAt.x - tx, endsAt.z - tz) > 2.6) {
-    const m = B.mainRegion && B.mainRegion(lx, lz);
+    const m = B.mainRegion && B.mainRegion(lx, lz, DEALER_R);
     if (m && m.d > 0.05) {
       p.x = g.position.x + m.x; p.z = g.position.z + m.z;
       dealer.path = null; dealer.lastAt = { x: p.x, z: p.z };
@@ -17315,27 +17399,46 @@ function followPath(dt) {
   dealer.g.rotation.y = Math.atan2(-dx / L, -dz / L) + Math.PI;   // he faces where he is going
   return true;
 }
+/* HIS BODY IS THE PLAYER'S BODY, NEARLY. It was 0.32 against your 0.22, and
+ * ten centimetres of radius is the difference between a gap you can walk
+ * through and a wall — flooding the room's free cells at each radius, yours
+ * is one connected floor and his had the whole strip behind the table cut
+ * off from the rest of it by a SINGLE blocked column at x = 0.7. So you
+ * could stand behind the table by the two chairs and he could not follow,
+ * ever, by any route: not a bug in the steering, a body that did not fit.
+ * 0.24 is a man of his size against a doorway, it opens that column, and the
+ * furniture grid still keeps him out of the furniture. */
+const DEALER_R = 0.24;
 function clampDealer(dt) {
   const B = bunkerHome.group.userData.bunker, nav = B.nav;
   if (!nav) return;
   const g = bunkerHome.group, p = dealer.g.position;
   dealer.turnHold = Math.max(0, (dealer.turnHold || 0) - dt);
   if (dealer.turnHold <= 0) dealer.turnBias = 0;
-  const R = nav.room, m = 0.42;
+  /* AND HIS WALL MARGIN WAS WIDER THAN YOURS, WHICH IS A PLACE HE CANNOT
+   * FOLLOW YOU TO. He was held 42 cm off the room box while the player is
+   * held 19.5 cm off it (`PLAYER_R * 0.75`), so a strip more than a foot
+   * wide round the whole room — every corner, and the far side of the two
+   * chairs by the table — was ground you could stand on and he could not.
+   * That is the whole of "he can't reach me by the chairs": not the chairs,
+   * which have been out of the walk grid since the ladder went, but the
+   * skirting board. 0.30 is his own body against the wall; the furniture
+   * grid still keeps him out of the furniture. */
+  const R = nav.room, m = 0.30;
   _dsA.set(THREE.MathUtils.clamp(p.x - g.position.x, R.x0 + m, R.x1 - m), 0,
            THREE.MathUtils.clamp(p.z - g.position.z, R.z0 + m, R.z1 - m));
-  if (B.blocked(_dsA.x, _dsA.z, 0.32)) {
-    B.pushOut(_dsA, 0.32, 5);
+  if (B.blocked(_dsA.x, _dsA.z, DEALER_R)) {
+    B.pushOut(_dsA, DEALER_R, 5);
     _dsA.x = THREE.MathUtils.clamp(_dsA.x, R.x0 + m, R.x1 - m);
     _dsA.z = THREE.MathUtils.clamp(_dsA.z, R.z0 + m, R.z1 - m);
     // and if the push could not free him — wedged in a corner of the desk —
     // the last spot he stood clear in is better than standing in furniture
-    if (B.blocked(_dsA.x, _dsA.z, 0.32)) B.escape(_dsA, 0.32);
-    if (B.blocked(_dsA.x, _dsA.z, 0.32) && dealer.lastGood) {
+    if (B.blocked(_dsA.x, _dsA.z, DEALER_R)) B.escape(_dsA, DEALER_R);
+    if (B.blocked(_dsA.x, _dsA.z, DEALER_R) && dealer.lastGood) {
       _dsA.x = dealer.lastGood.x; _dsA.z = dealer.lastGood.z;
     }
   }
-  if (!B.blocked(_dsA.x, _dsA.z, 0.32)) dealer.lastGood = { x: _dsA.x, z: _dsA.z };
+  if (!B.blocked(_dsA.x, _dsA.z, DEALER_R)) dealer.lastGood = { x: _dsA.x, z: _dsA.z };
   p.x = g.position.x + _dsA.x; p.z = g.position.z + _dsA.z;
   p.y = BUNKER_Y;
 }
@@ -17970,28 +18073,88 @@ function sfxHatch(opening) {
   }
 }
 // steel plate underfoot: a clank with a little ring in it, and no print
+/* A BOOT ON STEEL PLATE, IN A CONCRETE BOX. The first one was a clank: a
+ * bandpassed tick, three sine partials and a lowpassed body, all arriving on
+ * the same instant — which is a small bell, not a person. A real footstep is
+ * TWO events a few hundredths apart (the heel lands, then the sole rolls
+ * down onto the plate), the plate under it RINGS at a pitch that changes
+ * with where you are standing, there is grit between the boot and the steel,
+ * and the room answers a moment later. Five layers, and the two that do most
+ * of the work are the split between heel and sole and the room's own tail —
+ * without the tail the step happens in a padded cell rather than forty
+ * metres down inside concrete. Alternating feet get their own weight, pitch
+ * and grit so no two are the same. */
 function sfxStepMetal() {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime;
   stepAlt ^= 1;
+  const heavy = stepAlt ? 1 : 0.86;
   const out = ctx.createGain();
-  out.gain.value = 0.42 * (stepAlt ? 1 : 0.82) * (0.85 + Math.random() * 0.3);
+  out.gain.value = 0.44 * heavy * (0.88 + Math.random() * 0.24);
   out.connect(sfxOut());
-  const heel = noiseBurst(0.035, (x) => Math.pow(1 - x, 4));
-  const hf = ctx.createBiquadFilter(); hf.type = 'bandpass'; hf.frequency.value = 1400 + Math.random() * 900; hf.Q.value = 1.4;
-  const hg = ctx.createGain(); hg.gain.value = 0.3;
-  heel.connect(hf).connect(hg).connect(out); heel.start(t); heel.stop(t + 0.035);
-  const f0 = 260 + Math.random() * 90;
-  for (const [m, g, d] of [[1, 0.28, 0.14], [2.7, 0.08, 0.1], [4.1, 0.04, 0.07]]) {
-    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f0 * m;
-    const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t);
-    og.gain.exponentialRampToValueAtTime(g, t + 0.004); og.gain.exponentialRampToValueAtTime(0.0001, t + d);
-    o.connect(og).connect(out); o.start(t); o.stop(t + d + 0.02);
+  /* THE ROOM ANSWERS. A short bright reverb built once per step out of a
+   * decaying noise burst — cheap, and the only thing that says the box is
+   * steel and concrete and that you are inside it. */
+  const room = ctx.createConvolver();
+  const rl = Math.floor(ctx.sampleRate * 0.19);
+  const rb = ctx.createBuffer(2, rl, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = rb.getChannelData(c);
+    for (let i = 0; i < rl; i++) {
+      const x = i / rl;
+      // a few discrete early reflections off the walls, then a smooth tail
+      const early = (i % 811 < 6 || i % 1279 < 6) ? 2.2 : 1;
+      d[i] = (Math.random() * 2 - 1) * Math.pow(1 - x, 3.1) * early * 0.5;
+    }
   }
-  const body = noiseBurst(0.06, (x) => Math.pow(1 - x, 3));
-  const bf = ctx.createBiquadFilter(); bf.type = 'lowpass'; bf.frequency.value = 220;
-  const bg = ctx.createGain(); bg.gain.value = 0.25;
-  body.connect(bf).connect(bg).connect(out); body.start(t); body.stop(t + 0.06);
+  room.buffer = rb;
+  const wet = ctx.createGain(); wet.gain.value = 0.34;
+  room.connect(wet).connect(out);
+  const send = (node, amt) => { const g = ctx.createGain(); g.gain.value = amt; node.connect(g).connect(room); };
+
+  const f0 = 232 + Math.random() * 110;          // where on the plate you put it
+  // 1. THE HEEL — a hard tick with the plate's own ring behind it
+  const heel = noiseBurst(0.028, (x) => Math.pow(1 - x, 5));
+  const hf = ctx.createBiquadFilter(); hf.type = 'bandpass'; hf.frequency.value = 1900 + Math.random() * 1100; hf.Q.value = 1.1;
+  const hg = ctx.createGain(); hg.gain.value = 0.34 * heavy;
+  heel.connect(hf).connect(hg).connect(out); send(hg, 0.5);
+  heel.start(t); heel.stop(t + 0.028);
+  /* The plate ringing: inharmonic partials, because a bolted-down steel
+   * sheet is a plate and not a string, and each one decays at its own rate. */
+  for (const [m, g, d] of [[1, 0.16, 0.13], [2.41, 0.075, 0.10], [3.86, 0.035, 0.075], [6.1, 0.014, 0.05]]) {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f0 * m * (0.99 + Math.random() * 0.02);
+    const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t);
+    og.gain.exponentialRampToValueAtTime(g * heavy, t + 0.004);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    o.connect(og).connect(out); send(og, 0.35);
+    o.start(t); o.stop(t + d + 0.02);
+  }
+  // 2. THE SOLE, a beat later — the weight rolling on, duller and lower
+  const roll = t + 0.032 + Math.random() * 0.022;
+  const sole = noiseBurst(0.075, (x) => Math.sin(Math.min(1, x * 3) * Math.PI * 0.5) * Math.pow(1 - x, 2.4));
+  const sf = ctx.createBiquadFilter(); sf.type = 'lowpass'; sf.frequency.value = 420;
+  const sg = ctx.createGain(); sg.gain.value = 0.30 * heavy;
+  sole.connect(sf).connect(sg).connect(out); send(sg, 0.3);
+  sole.start(roll); sole.stop(roll + 0.075);
+  // the boot's own thud: rubber and the man's weight, felt more than heard
+  const bo = ctx.createOscillator(); bo.type = 'sine';
+  bo.frequency.setValueAtTime(96, roll); bo.frequency.exponentialRampToValueAtTime(58, roll + 0.11);
+  const bg = ctx.createGain();
+  bg.gain.setValueAtTime(0.0001, roll);
+  bg.gain.exponentialRampToValueAtTime(0.20 * heavy, roll + 0.008);
+  bg.gain.exponentialRampToValueAtTime(0.0001, roll + 0.14);
+  bo.connect(bg).connect(out); bo.start(roll); bo.stop(roll + 0.16);
+  // 3. GRIT. Nobody sweeps a bunker: a few grains ground under the sole,
+  //    scattered over the step rather than landing with it
+  const gn = 2 + Math.floor(Math.random() * 4);
+  for (let i = 0; i < gn; i++) {
+    const at = t + 0.006 + Math.random() * 0.07;
+    const gr = noiseBurst(0.012, (x) => Math.pow(1 - x, 6));
+    const gf = ctx.createBiquadFilter(); gf.type = 'highpass'; gf.frequency.value = 3200 + Math.random() * 2600;
+    const gg = ctx.createGain(); gg.gain.value = 0.05 + Math.random() * 0.07;
+    gr.connect(gf).connect(gg).connect(out);
+    gr.start(at); gr.stop(at + 0.012);
+  }
 }
 /* The room's air, on `bunkerMix`: mains hum with its second harmonic and a
  * ventilation rumble that breathes. Quiet, and all of it low — the sea it
@@ -18160,7 +18323,7 @@ function update(dt, rawDt = dt) {
   const moving = move.lengthSq() > 0;
   if (moving) move.normalize();
 
-  const wantRun = canMove && !fastWalk && (keys['ShiftLeft'] || keys['ShiftRight']);
+  const wantRun = canMove && (keys['ShiftLeft'] || keys['ShiftRight']);
   const running = wantRun && moving && stamina > 0 && !exhausted && onGround;
   if (running) { stamina = Math.max(0, stamina - dt / RUN_SECONDS); if (stamina <= 0) exhausted = true; }
   else {
@@ -18175,7 +18338,7 @@ function update(dt, rawDt = dt) {
   crouchT += ((crouching ? 1 : 0) - crouchT) * Math.min(1, dt * 11);
   if (crouchT < 0.001) crouchT = 0;
   if (crouchT > 0.999) crouchT = 1;
-  const spd = ((running || fastWalk) ? RUN_SPEED : WALK_SPEED) * settings.walkSpeed * (1 - crouchT * 0.55);
+  const spd = (running ? RUN_SPEED : WALK_SPEED) * settings.walkSpeed * (1 - crouchT * 0.55);
 
   camera.getWorldDirection(forward);
   forward.y = 0; forward.normalize();
@@ -18679,6 +18842,7 @@ window.__bw = {
   get windT() { return windT; }, get windFull() { return windFull; }, WIND_FULL,
   enterBunker, leaveBunker, startDealerFight, startDealerPickup, get dealer() { return dealer; }, aimBar,
   smashCoatStand, updateCoatStand, get coatStand() { return coatStand; }, get coatBroken() { return coatBroken; },
+  katanaItem, katModel, katanaVM, updateDealer, sfxDig, restRot, slashRot, updateViewmodel, updateTrail,
   removeSmile, get smilePhase() { return smilePhase; },
   get crowbarOnTable() { return crowbarOnTable; }, get dealerPick() { return dealerPick; }, get bunkerProps() { return bunkerProps; },
   get dealerFight() { return dealerFight; }, get dealerMet() { return dealerMet; }, DEALER_X, DEALER_Z,

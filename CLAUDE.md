@@ -1558,6 +1558,135 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**THE KATANA IS BUILT NOW, AND THE SCAN IS GONE.** brandon_grey's "Gothic
+Katana Sword" was put in as an exact replica and the owner's verdict was
+"it's bad, it's facing the wrong way and it looks horrible" — and measuring
+it says why, in three numbers that are all properties of the FILE and none of
+which can be fixed from outside it. It was **1.81 m long**, and a sword as
+long as the frame is tall reads as a plank. Its blade was a plate of
+**constant thickness** — sampled across the width: 4.3, 4.4, 4.5, 4.6, 4.7
+mm, with one 3.2 at the very edge — so it had no shinogi, no bevel and
+nothing anywhere on it that could ever catch a highlight. And its baked map
+was a pale wash that went grey under this moon. `models/katana.js` builds one
+instead, the way the lighthouse and the mushroom house are built: 103 cm
+overall, a real shinogi-zukuri section, a curve with the edge on the outside
+of it, a drawn ito wrap, an iron tsuba and a brass habaki. Same lesson as the
+tower — **building it made it exact**, and it is the only way to answer "make
+the model look more exciting" at all.
+
+**AND THE SHINE IS GEOMETRY, NOT GLOSS — BUT THE ALBEDO HAS TO GO MUCH
+DARKER THAN IT LOOKS ON PAPER.** What makes a blade read as steel with no
+environment map is the RIDGE: the shinogi catches the one directional light
+as a hard line down the length of the sword and it moves as the blade turns,
+which is what a polished edge does. The material only has to stay out of its
+way. The trap is that the VIEW-MODEL SCENE CARRIES ITS OWN LIGHTS — an
+ambient at 0.9 and two directionals at 1.15 and 0.55, tuned for a skin-toned
+hand — so nearly three units of light land on whatever is in your fist. A
+0x7d8794 body with a 0xd7dee8 temper line is gunmetal in the abstract and
+renders as BONE in the hand; it took 0x2e343d and 0x6a7b90 to get dark steel
+with a bright line on it. Read the lights of the scene a thing will actually
+be lit by before choosing its colour.
+
+**A REFERENCE VIDEO IS A MEASURING INSTRUMENT.** The pose and the sound both
+came out of Battlefield V's own katana reel rather than out of taste:
+
+- **The carry is a low diagonal**, hand at the lower right, blade running
+  down and across to the left, edge down, flat to the camera. Ours held the
+  Military Shovel's guard — a 1.8 m blade bolt upright at the right edge with
+  the hand off the bottom of the screen, which is exactly "facing the wrong
+  way". Solved numerically against the reference frame (point at (-0.62,
+  -0.82), grip at (0.42, -0.30) in NDC) and hit exactly. The grip had to come
+  UP the frame as well as turn — BFV carries the tsuka near the vertical
+  centre and ours sat on the bottom edge, which flattened the whole diagonal
+  to five degrees.
+- **A SWORD THROUGH AIR IS LOW, NOT HIGH.** The whoosh was a band from 1.6 to
+  5.6 kHz with a pure sine at 3.8–5.2 kHz riding it, on the theory that a
+  thin edge sings. Pulling the reel apart band by band: the three loudest
+  swings in it put 78 %, 77 % and 89 % of their energy BELOW 1.25 kHz and
+  essentially nothing above 2.5 kHz — one is 78 % inside 160–315 Hz on its
+  own. What you hear is a column of air being moved and a column of air is a
+  low sound. The envelope was measured too: 70 ms up, 150–200 ms down. It is
+  a whump with a tail, not a hiss.
+
+**A SHARED POSE SET IS ONLY CORRECT FOR THE LENGTH IT WAS SOLVED AGAINST.**
+The cut was laid out against the Military Shovel, whose lip is 0.89 m from
+the fist; the katana's is 0.755, so the same arm travel swept a shorter blade
+and the cut fell short of the crosshair and finished with the point still
+high on the far side. A whole second pose set was solved for it and came back
+pinned against its own bounds — a shorter blade simply needs the HAND to
+cover more ground to cross the same frame. So the stroke is SCALED rather
+than restated (`bladeReach`, `bladeDrop`: a quarter more travel across, and
+the hands fall through the follow-through), and every improvement ever made
+to that stroke still applies. **And the tool must keep the SHARED grip
+through the cut**: giving the katana its own slash grip threw the point off
+the top of the screen, because the arm poses are only correct for the blade
+angle they were solved against.
+
+**A GRIP CHANGE BELONGS BEFORE THE STROKE, NOT INSIDE IT.** A light click has
+no wind-up, so at the old blend rate the sword was still rotating out of its
+low carry and into the line of the cut while the arm was already throwing the
+stroke — two rotations at once, which is the definition of a flail and is the
+whole of "the move set must be fluid". Going in it snaps in about three
+frames; coming out it stays soft, because settling back to the carry is a
+recovery and should be seen.
+
+**AND A TOOL AUTHORED WITH THE GRIP AT ITS ORIGIN NEEDS NO GRIP SLIDE.** The
+scan wanted `KAT_GRIP_Y` to put the fist on the tsuka, and the charged cock
+had to be laid out twice because of it. The built one has the hand at
+(0, 0, 0), so the sword turns about the hands in every pose without a special
+case. A tool hangs from where it pivots; the cheapest way to get that right
+is to author it there.
+
+**8 SETS THE SETTING, NOT A SECOND SPEED.** The first pass multiplied
+`RUN_SPEED` behind the slider's back, so the menu said 1.4x while you crossed
+the beach at eight metres a second and nothing you could see agreed with what
+you were doing. It drives the walk-speed slider to its top (14x) and back to
+the owner's own 1.4, readout and slider handle with it. It is never saved —
+`settings.walkSpeed` is forced back to the default at load, the way dev mode
+is — so a game always starts at the pace it is meant to be walked.
+
+**A MAN DOES NOT POWER DOWN.** The pack's death is a sawtooth falling from 78
+to 23 Hz over nearly two seconds under a lowpass sweeping down with it, which
+on a creature is a throat going out and on the one HUMAN in the game is
+unmistakably a machine winding off — the owner heard machine sounds when he
+killed the Dealer, and that was them. A continuous downward glide IS the
+machine sound, whatever it is made of. He goes down on breath now: the last
+of it driven out through the mask's filter drum, a groan that steps down
+twice and stops, and the mask emptying after him. No sweep anywhere in it.
+
+**HIS BODY WAS WIDER THAN YOURS, AND THAT IS A PLACE HE CANNOT FOLLOW YOU
+TO.** "Make him able to walk through the two red chairs by the table" was
+reported as a chair problem and was not one: the chairs have been out of the
+walk grid since the ladder went, and he walks through them. Two other things
+were stopping him, and both were about SIZE.
+
+- His wall margin was 0.42 against the player's 0.195, so a strip more than a
+  foot wide round the whole room — every corner, and the far side of those
+  chairs — was floor you could stand on and he could not.
+- His disc was 0.32 against your 0.22, and flooding the free cells at each
+  radius shows the strip behind the table cut off from the rest of the room,
+  for him, by a SINGLE blocked column at x = 0.7. Not a hole in the steering:
+  a body that did not fit through the gap.
+
+0.24 and 0.30 fix both, and the furniture grid still keeps him out of the
+furniture. **And `mainRegion` has to be worked out PER RADIUS** — it was
+hard-coded at 0.32, so once he was thin enough to walk behind the table the
+"largest connected piece of floor" he was sent back to was still the fat
+body's, and he would get there, be told it was not the main region, and be
+dragged back out. Measured after: 11 of 11 spots — both chairs, all four
+corners, both long walls — reached to within 1.18 m, well inside his reach.
+
+**A FOOTSTEP IS TWO EVENTS AND A ROOM.** The bunker's step was a bandpassed
+tick, three sine partials and a lowpassed body all arriving on the same
+instant, which is a small bell and not a person. A boot on steel plate is the
+HEEL and then, three or four hundredths later, the sole rolling down onto it;
+the plate rings at inharmonic partials because it is a bolted sheet and not a
+string; there is grit between the rubber and the steel because nobody sweeps
+a bunker; and the room answers a beat afterwards. That last one does most of
+the work — a short convolution reverb built per step out of a decaying noise
+burst with a few discrete early reflections in it. Without the tail the step
+happens in a padded cell rather than forty metres down inside concrete.
+
 **THE BOSS FIGHT HAD NO BLOOD IN IT AT ALL, AND THAT IS WHY YOU COULD NOT
 READ IT.** "You can't tell what's a successful hit" was not a feedback
 problem to be solved with more feedback — it was a bug, and the bug is the

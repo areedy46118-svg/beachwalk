@@ -196,12 +196,20 @@ export function makeUndergroundBunker(opts = {}) {
    * wall — but a body shoved into one is a boss who has left the fight. The
    * biggest region is worked out once, and `mainRegion` gives the nearest
    * cell in it, so there is always a way back to where the fight is. */
-  S.mainRegion = (lx, lz) => {
+  /* AND IT IS WORKED OUT PER BODY. The radius was hard-coded at 0.32, so
+   * when the Dealer's own disc came down to 0.24 the "largest connected
+   * piece of floor" he was being sent back to was still the one a fatter
+   * body could reach — and the strip behind the table, which he could now
+   * walk into, counted as outside it. He would get there, be told it was not
+   * the main region, and be dragged back out. One cache per radius. */
+  S._main = {};
+  S.mainRegion = (lx, lz, r = 0.32) => {
     const n = S.nav; if (!n) return null;
-    if (!S._main) {
+    const key = r.toFixed(3);
+    if (!S._main[key]) {
       const W = n.gw, H = n.gh, N = W * H, cxf = (i) => n.x0 + (i + 0.5) * n.cell, cyf = (j) => n.y0 + (j + 0.5) * n.cell;
       const free = new Uint8Array(N);
-      for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) if (!S.blocked(cxf(i), -cyf(j), 0.32)) free[j * W + i] = 1;
+      for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) if (!S.blocked(cxf(i), -cyf(j), r)) free[j * W + i] = 1;
       const comp = new Int32Array(N).fill(-1);
       let best = -1, bestSize = -1, c = 0;
       const DI = [1, -1, 0, 0], DJ = [0, 0, 1, -1];
@@ -221,9 +229,9 @@ export function makeUndergroundBunker(opts = {}) {
         if (sz > bestSize) { bestSize = sz; best = c; }
         c++;
       }
-      S._main = { comp, id: best, W, H, cxf, cyf };
+      S._main[key] = { comp, id: best, W, H, cxf, cyf };
     }
-    const M = S._main;
+    const M = S._main[key];
     let bd = Infinity, bx = null, bz = null;
     for (let id = 0; id < M.comp.length; id++) {
       if (M.comp[id] !== M.id) continue;
