@@ -349,11 +349,15 @@ def set_fingers(k=1.0, thumb=1.0):
         sg = CURL_SIGN[n]
         if which == 'Thumb':
             # the thumb lies ACROSS the others rather than curling under
-            ang = (0.45, 0.55, 0.40, 0.15)[min(seg, 4) - 1] * thumb * k
+            ang = (0.58, 0.70, 0.52, 0.18)[min(seg, 4) - 1] * thumb * k
             pb.rotation_quaternion = Quaternion((1, 0, 0), sg * ang * 0.75) @ Quaternion((0, 0, 1), sg * 0.35 * thumb * k)
         else:
             # knuckle, middle, tip, and the last joint barely moves
-            ang = (0.62, 0.98, 0.72, 0.22)[min(seg, 4) - 1] * k
+            # A LOOSE FIST READS AS AN OPEN HAND. At 0.62 at the knuckle the
+            # fingers curled without ever closing, so the crowbar sat in a
+            # cupped palm and the owner saw a hand that "opens too much".
+            # These are the angles a hand makes round a 3 cm bar.
+            ang = (0.88, 1.24, 0.86, 0.30)[min(seg, 4) - 1] * k
             pb.rotation_quaternion = Quaternion((1, 0, 0), sg * ang)
 def capture_fingers():
     return {n: pbs[n].rotation_quaternion.copy() for n in FINGER_SEG}
@@ -569,7 +573,18 @@ for f in range(N + 1):
     # so the mask holds level and pointed at you through the whole reach.
     head(pitch=-rp['lean'] * r * 0.94, yaw=-rp['twist'] * r * 0.75, roll=-rp['roll'] * r * 0.85)
     key(f)
-stamp_grip(); finish(act)
+    # AND THE HAND CLOSES ON THE BAR. `stamp_grip` puts ONE finger pose on a
+    # whole clip, which is right for a man already holding something and
+    # wrong for the one clip that is about picking it up: he reached with a
+    # fist already made and the fingers never moved. They are keyed per
+    # frame here — open on the way out, closing through the last of the
+    # reach, shut on the frame the game moves the bar into his hand at 0.42,
+    # and shut after. It is the only clip in the file that needs this, and
+    # it is the one everybody watches.
+    close = min(1.0, max(0.0, (t - 0.20) / 0.22))
+    set_fingers(0.20 + 0.80 * (close * close * (3 - 2 * close)), thumb=0.35 + 0.65 * close)
+    for n in FINGER_SEG: pbs[n].keyframe_insert('rotation_quaternion', frame=f)
+finish(act)
 
 # ----------------------------------------------------------------- TAUNT
 # The fight starts here: he brings the bar up across his chest, squares his
@@ -592,49 +607,56 @@ stamp_grip(); finish(act)
 # Over the head with both hands' weight behind it, and it HANGS — the swing
 # that teaches you not to answer a tell on a count. Cock to 0.30, hang to
 # 0.62 with the tremble of a thing held too long, down by 0.74, recover.
+# ------------------------------------------ ATTACK: THE WIND-UP SWING
+# THERE IS NO BOTH-ARMS-OVER-THE-HEAD ANY MORE. The owner's word on it was
+# "its bad", and it was: two straight arms lifted together over the mask is
+# the pose a cartoon villain makes with an anvil, it read as one shape with
+# no direction in it, and because the whole stroke came straight down the
+# middle there was nothing about it to answer except the moment. What a man
+# with a crowbar actually does when he means it is COIL — he takes it back
+# over his shoulder like a bat, turns his back half away, and comes through
+# horizontally with his hips leading and the bar last. That is legible from
+# across the room (the bar is cocked out to one side, in silhouette, for
+# most of a second), it has a direction you can move away from, and the
+# stroke crosses the frame instead of arriving at a point.
 act = new_action('attackHold'); N = 64
 for f in range(N + 1):
     rest(); t = f / N
-    # AND THE FALL IS THE HALF YOU CAN SEE. It used to hang for a third of
-    # the clip and then drop in a twelfth of it — mapped onto a 1.08 s
-    # startup that is half a second of a man standing still followed by a
-    # blur, and a guard raised off a blur is a guess. The hang is shorter
-    # and the descent is nearly twice as long, so the bar is visibly
-    # FALLING for a third of a second before it lands: long enough to time
-    # a block against, still the slowest thing he throws, and it still
-    # takes two of your four if you read it wrong. The tremble at the top
-    # grows as the hang runs out, so the moment before the release is the
-    # loudest part of the tell rather than the quietest.
-    if t < 0.24: u = ease(t / 0.24); hang = 0.0; down = 0.0
-    elif t < 0.38: u = 1.0; hang = (t - 0.24) / 0.14; down = 0.0
-    # AND THE FALL IS NOT A CUBE. Widening the window did nothing on its own,
-    # because `easein` is t³: at the halfway point of the descent the bar had
-    # moved an EIGHTH of the way and the whole stroke still happened in the
-    # last few frames. Measured on the hand, the visible drop was 0.147 s
-    # against a parry window of 0.156 — you were not reading it, you were
-    # guessing. A gentler exponent starts the bar moving as soon as the hang
-    # ends and still accelerates into the floor, so the fall is something you
-    # WATCH. It is still the slowest thing he throws and it still takes two.
-    elif t < 0.68: u = 1.0; hang = 1.0; down = ((t - 0.38) / 0.30) ** 1.25
-    else: u = 1.0; hang = 1.0; down = 1.0 - easeout((t - 0.68) / 0.32) * 0.30
-    tremble = 0.030 * math.sin(hang * math.pi * 7) * (0.35 + 0.65 * hang) * (1 - down)
-    cock = u * (1 - down)
-    # the arms are a beat behind the body, and they carry past the stop
-    downA = down if down <= 0 else min(1.0, down * 1.06)
-    lagU = ease(drag(t / 0.26, 0.10)) if t < 0.26 else u
-    cockA = lagU * (1 - downA)
-    over = follow(t, 0.68, 0.10, 1.4)
-    torso(lean=-0.30 * cock + 0.85 * down + 0.10 * over, twist=0.22 * cock - 0.30 * down, roll=-0.08 * cock, bob=0.05 * cock - 0.09 * down)
-    # DOWN THROUGH THE TARGET. The first down-stroke stopped with the arm
-    # still raised a third of the way, so the bar never came within a metre
-    # and a half of a man standing in front of him: measured, every held
-    # swing whiffed. It finishes with the arm forward and below level now,
-    # the bar at hip height in front of him, and the body bent over it.
-    arm_pose('Right', fwd=1.30 * cockA - 1.55 * downA + tremble - 0.22 * over, up=1.45 * cockA - 1.60 * downA - 0.18 * over, elbow=-1.15 * cockA + 0.90 * downA + 0.20 * over, twist=0.30 * cockA)
-    arm_pose('Left', fwd=1.05 * cockA - 1.25 * downA - 0.18 * over, up=1.10 * cockA - 1.25 * downA - 0.14 * over, elbow=-0.95 * cockA + 0.75 * downA + 0.16 * over)
-    leg_pose('Left', swing=-0.16 * cock + 0.36 * down, knee=0.12 * cock + 0.22 * down)
-    leg_pose('Right', swing=-0.08 * cock - 0.26 * down, knee=0.16 * cock + 0.32 * down)
-    head(pitch=-0.26 * cock + 0.48 * down, yaw=0.04)
+    # coil, hold, swing, and carry past it
+    if t < 0.26:   coil = ease(t / 0.26);        hold = 0.0;                 sw = 0.0
+    elif t < 0.44: coil = 1.0;                   hold = (t - 0.26) / 0.18;   sw = 0.0
+    elif t < 0.70: coil = 1.0;                   hold = 1.0;                 sw = ((t - 0.44) / 0.26) ** 1.2
+    else:          coil = 1.0;                   hold = 1.0;                 sw = 1.0
+    # the bar trembles harder the longer he holds it: the loudest part of a
+    # tell should be the moment before the release, not the moment after
+    tremble = 0.035 * math.sin(hold * math.pi * 6) * (0.3 + 0.7 * hold) * (1 - sw)
+    # THE HIPS LEAD AND THE BAR IS LAST. Everything downstream reads a
+    # retarded clock, which is what makes a swing whip rather than sweep.
+    swH = sw                                     # hips
+    swS = ((max(0.0, t - 0.47) / 0.26) ** 1.2) if t > 0.47 else 0.0   # shoulders
+    swS = min(1.0, swS)
+    swA = ((max(0.0, t - 0.50) / 0.26) ** 1.2) if t > 0.50 else 0.0   # the arms, last
+    swA = min(1.0, swA)
+    over = follow(t, 0.70, 0.16, 1.3)            # and they carry past the stop
+    c = coil * (1 - swH)
+    # coiled AWAY from you and turning through: the whole body is the swing
+    torso(lean=-0.10 * c + 0.30 * swH, twist=-0.62 * c + 0.95 * swH + 0.10 * over,
+          roll=-0.10 * c + 0.16 * swH, bob=0.03 * c - 0.05 * swH)
+    cA = coil * (1 - swA)
+    # the bar back over the right shoulder, then round at chest height
+    arm_pose('Right', fwd=-0.30 * cA + 1.35 * swA + tremble, up=0.85 * cA - 0.55 * swA,
+             elbow=-1.05 * cA + 0.55 * swA - 0.20 * over, twist=0.45 * cA - 0.30 * swA, out=0.35 * cA - 0.45 * swA)
+    # the left hand is on the bar too through the coil and lets go into the swing
+    arm_pose('Left', fwd=0.55 * cA + 0.30 * swA, up=0.45 * cA - 0.35 * swA,
+             elbow=-1.10 * cA + 0.30 * swA, out=-0.20 * cA + 0.30 * swA)
+    # the weight goes back onto the right foot and comes through onto the left
+    leg_pose('Left', swing=0.22 * c - 0.34 * swH, knee=0.16 * c + 0.10 * swH, out=0.06 * c)
+    leg_pose('Right', swing=-0.30 * c + 0.42 * swH, knee=0.34 * c - 0.08 * swH, out=0.10 * c)
+    # HIS MASK STAYS ON YOU THROUGH THE COIL. The torso turns 0.62 rad away
+    # and the head is its child, so without countering it he spends the whole
+    # tell looking at the wall — and a man who is not looking at you is not
+    # about to hit you. The twist is subtracted back out of the neck.
+    head(pitch=-0.06 * c + 0.10 * swH, yaw=0.62 * c - 0.80 * swH * 0.55, roll=0.04 * c)
     key(f)
 stamp_grip(); finish(act)
 

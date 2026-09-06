@@ -12850,8 +12850,8 @@ const MUT_ATTACKS = {
    * because his blow is tested on the BAR (`dealerBarHit`) and a man with a
    * crowbar reaches two metres, not two and a half; the lunge and the step
    * in the overhand are what close the rest. */
-  dDown:  { wind: 0.72, strike: 0.13, recover: 0.58, hit: 0.370, reach: 1.80, lunge: 0.55, chain: 'dSide',  chainP: 0.48, w: 0.18 },
-  dSide:  { wind: 0.52, strike: 0.11, recover: 0.44, hit: 0.421, reach: 1.75, lunge: 0.30, chain: 'dDown',  chainP: 0.52, w: 0.18 },   // hit measured in the game: the hand is furthest out at 0.375, and back behind him by 0.5
+  dDown:  { wind: 0.72, strike: 0.13, recover: 0.50, hit: 0.370, reach: 1.80, lunge: 0.55, chain: 'dSide',  chainP: 0.48, w: 0.18 },
+  dSide:  { wind: 0.52, strike: 0.11, recover: 0.38, hit: 0.421, reach: 1.75, lunge: 0.30, chain: 'dDown',  chainP: 0.52, w: 0.18 },   // hit measured in the game: the hand is furthest out at 0.375, and back behind him by 0.5
   dDownM: { wind: 0.70, strike: 0.13, recover: 0.72, hit: 0.278, reach: 1.80, lunge: 0.55, chain: 'dSideM', chainP: 0.42, w: 0.14 },
   dSideM: { wind: 0.52, strike: 0.11, recover: 0.56, hit: 0.281, reach: 1.75, lunge: 0.30, chain: 'dDown',  chainP: 0.42, w: 0.14 },
   // the held one: a full second over his head, so a guard raised on the
@@ -12872,7 +12872,7 @@ const MUT_ATTACKS = {
    * A second and a half of bar over his head is a long tell, and it should
    * be: it is the slowest thing he throws, the most punishable, and the only
    * one that takes two of your four. */
-  dHold:  { wind: 1.55, strike: 0.13, recover: 0.62, hit: 0.540, reach: 1.95, lunge: 0.40, chain: null,     chainP: 0.00, w: 0.20, dmg: 2 },
+  dHold:  { wind: 1.55, strike: 0.13, recover: 0.62, hit: 0.656, reach: 1.95, lunge: 0.40, chain: null,     chainP: 0.00, w: 0.20, dmg: 2 },
   // and the one that covers the ground you just backed off
   dLunge: { wind: 0.60, strike: 0.15, recover: 0.90, hit: 0.500, reach: 2.40, lunge: 2.1,  chain: 'dSide',  chainP: 0.30, w: 0.18 },
 };
@@ -12954,7 +12954,16 @@ const MUT_KINDS = {
    * pressure is meant to come from his reach and his chains, not from the
    * player being unable to see him wind up. */
   dealer: { glb: 'assets/dealer.glb', human: true, solo: true, noSand: true, skin: null,
-          h: 2.05, hp: 18, dmg: 1, speedK: 1.21, windK: 1.00, reachK: 1.00, aggr: 1.75,
+          /* HARDER AGAIN, AND THIS TIME IT IS THE BAR THAT DOES IT. The
+           * last pass turned every dial that makes a creature busier —
+           * aggression, chains, feints — and he was still not frightening,
+           * because half his swings went past you and the ones that landed
+           * came off a body that would not close the distance. With the bar
+           * aimed at your chest his blows connect, so the numbers can come
+           * down where they were only compensating and up where they now
+           * mean something: he is FASTER on his feet than you are, his
+           * recovery is shorter, and his health is the health of a boss. */
+          h: 2.05, hp: 24, dmg: 1, speedK: 1.30, windK: 0.92, reachK: 1.00, aggr: 2.05,
           /* AND THE STAGGER IS SHORTER THAN THE BEACH'S. Rocking him is the
            * prize and it still is, but a third of a second of him standing
            * there was two free swings; `recoilK` gives you one. */
@@ -12966,7 +12975,7 @@ const MUT_KINDS = {
            * not one landed, and none of them looked like anything. Four
            * swings: the overhand, the horizontal, the held one, the lunge. */
           use: { dDown: 0.30, dSide: 0.26, dHold: 0.22, dLunge: 0.22 },
-          circle: 0.64, step: 0.30, chainMax: 3, feint: 0.28,
+          circle: 0.70, step: 0.30, chainMax: 3, feint: 0.30,
           /* POISE, AND A GUARD OF HIS OWN. A light swing used to rock him every
            * time — a boss you can stun-lock with clicks is not a boss — so it
            * takes three (`poise`) to stagger him and only a charge does it at
@@ -12975,8 +12984,8 @@ const MUT_KINDS = {
            * does nothing. The parry is untouched: read the tell, take the stun,
            * and the riposte still doubles. That is the fight. And he does not
            * shout between swings (`fidgetK`): a man does not roar at you. */
-          poise: 8, poiseBack: 1.6, poiseWait: 1.4, parryK: 0.78,
-          block: 0.46, fidgetK: 0.22, fidgetGap: 2.4,
+          poise: 9, poiseBack: 1.9, poiseWait: 1.2, parryK: 0.72,
+          block: 0.52, fidgetK: 0.22, fidgetGap: 2.4,
           bones: null,
           anim: { run: 'run', idle: 'ready', roar: 'taunt', die: 'death', walk: 'walk', back: 'walk',
                   rate: 1.0, lean: 0.05, strafeK: 1.2 },
@@ -12988,6 +12997,13 @@ const mutants = [];
 const mutPlayWarned = new Set();
 let mutToken = null;                       // whose turn it is to swing
 
+/* Whatever swing it is in the middle of, as an entry that certainly exists:
+ * its own table first, the shared one next, and failing both the first swing
+ * its kind owns. Nothing downstream has to test for it. */
+function swingOf(u) {
+  return (u.atk && u.atk[u.st.swing]) || MUT_ATTACKS[u.st.swing]
+    || (u.atk && u.atk[Object.keys(u.kind.use)[0]]) || MUT_ATTACKS.attack;
+}
 function mutPlay(u, name, loop) {
   const a = u.clips[name];
   if (!a && name && !mutPlayWarned.has(name)) { mutPlayWarned.add(name); console.warn('[mut] no clip named', name, '— the creature will keep playing whatever it was'); }
@@ -13172,6 +13188,8 @@ function dressMutant(u, gltf) {
       if (mm) u.boneAlias['Character1_' + mm[1]] = o.name;
       if (/RightHand_\d+$/.test(o.name)) (u.bones = u.bones || {}).hand = o;
       if (/RightForeArm_\d+$/.test(o.name)) (u.bones = u.bones || {}).fore = o;
+      if (/RightArm_\d+$/.test(o.name)) (u.bones = u.bones || {}).arm = o;
+      if (/RightShoulder_\d+$/.test(o.name)) (u.bones = u.bones || {}).shoulder = o;
     });
     u.st.poise = u.kind.poise || 1;
     u.st.block = 0;
@@ -13535,7 +13553,7 @@ function hurtMutant(u, dmg, P = 0) {
    * and the hand comes down anyway. Trading with it is a choice, and the
    * choice has a cost. A charged swing, a parry and a throw all still
    * break it — only the plain click is shrugged off, and only late. */
-  const A = u.atk[u.st.swing] || MUT_ATTACKS[u.st.swing];
+  const A = swingOf(u);
   const committed = u.st.atk >= 0 && u.st.atk > A.wind * 0.55 && u.st.atk < A.wind + A.strike;
   if (!poiseBroke && committed && P < MUT_HEAVY && dmg < 2) {
     flashMats(u.g); sfxMutHit(u.kind.voice); bleedMutant(u, 5, 0.3); addTrauma(0.22);
@@ -14347,15 +14365,35 @@ const RAG_CHAIN = [
   ['Character1_RightFoot', 'Character1_RightLeg', 'Character1_RightToeBase', 0.06],
   ['Character1_RightToeBase', 'Character1_RightFoot', null, 0.05],
 ];
-// the trunk is a box, not a rope
+/* THE TRUNK IS A SOLID, NOT A SACK. Seven braces at a third to nine tenths
+ * stiffness held a torso together at the old forces; at half again the
+ * gravity and twice the kick they stretched, and a chest that stretches is
+ * a body that arrives on the floor looking like it has had the air let out
+ * of it — the owner's "deflated balloons". Every pair among the six trunk
+ * joints is braced at FULL stiffness now, which is a tetrahedral truss: a
+ * shape with no way to fold. The diagonals are what matter — hips to the
+ * opposite shoulder, shoulder to the opposite hip — because a box with only
+ * its edges is a hinge. The shoulders and the head are tied in too, so the
+ * neck cannot telescope and the arms hang off something rigid. */
 const RAG_STIFF = [
-  ['Character1_Hips', 'Character1_Spine2', 0.9],
+  ['Character1_Hips', 'Character1_Spine', 1.0],
+  ['Character1_Hips', 'Character1_Spine1', 1.0],
+  ['Character1_Hips', 'Character1_Spine2', 1.0],
+  ['Character1_Spine', 'Character1_Spine2', 1.0],
   ['Character1_LeftShoulder', 'Character1_RightShoulder', 1.0],
   ['Character1_LeftUpLeg', 'Character1_RightUpLeg', 1.0],
-  ['Character1_Hips', 'Character1_LeftShoulder', 0.7],
-  ['Character1_Hips', 'Character1_RightShoulder', 0.7],
-  ['Character1_Spine2', 'Character1_LeftUpLeg', 0.5],
-  ['Character1_Spine2', 'Character1_RightUpLeg', 0.5],
+  ['Character1_Hips', 'Character1_LeftShoulder', 1.0],
+  ['Character1_Hips', 'Character1_RightShoulder', 1.0],
+  ['Character1_Spine2', 'Character1_LeftUpLeg', 1.0],
+  ['Character1_Spine2', 'Character1_RightUpLeg', 1.0],
+  ['Character1_Spine', 'Character1_LeftShoulder', 1.0],
+  ['Character1_Spine', 'Character1_RightShoulder', 1.0],
+  ['Character1_LeftShoulder', 'Character1_RightUpLeg', 0.9],
+  ['Character1_RightShoulder', 'Character1_LeftUpLeg', 0.9],
+  ['Character1_Neck', 'Character1_LeftShoulder', 0.9],
+  ['Character1_Neck', 'Character1_RightShoulder', 0.9],
+  ['Character1_Spine1', 'Character1_LeftShoulder', 0.8],
+  ['Character1_Spine1', 'Character1_RightShoulder', 0.8],
 ];
 // joints that must not fold flat: [a, b, c, fraction of (ab + bc) they may close to]
 const RAG_BEND = [
@@ -14368,7 +14406,22 @@ const RAG_BEND = [
   ['Character1_Hips', 'Character1_LeftUpLeg', 'Character1_LeftLeg', 0.60],
   ['Character1_Hips', 'Character1_RightUpLeg', 'Character1_RightLeg', 0.60],
 ];
-const RAG_ITER = 7, RAG_SUB = 2, RAG_DAMP = 0.990, RAG_FRICTION = 0.55, RAG_BOUNCE = 0.28;
+/* AND THE SOLVER HAS TO KEEP UP WITH THE FORCES. Seven iterations over two
+ * substeps converged on the old kick; against a blow twice as hard under
+ * gravity half again as strong it did not, and an unconverged distance
+ * constraint IS a stretched limb. Twelve over three costs nothing at the one
+ * or two bodies this game ever has in the air at once. */
+const RAG_ITER = 12, RAG_SUB = 3, RAG_DAMP = 0.990, RAG_FRICTION = 0.55, RAG_BOUNCE = 0.28;
+/* AND A BODY IS NOT ALLOWED INSIDE ITSELF. Distance constraints hold the
+ * skeleton's lengths and nothing at all holds its VOLUME, so an arm folded
+ * through the chest, a thigh through the belly, and the whole thing settled
+ * into a puddle with a man's proportions only on paper. Every pair of parts
+ * that is not joined and is not braced pushes apart at the sum of their
+ * radii — the cheapest thickness there is, and the difference between a
+ * ragdoll and a bag. The pairs are worked out ONCE per body, and any pair
+ * whose rest distance is already inside that sum is dropped, because a
+ * collision that fights the skeleton is a body that shakes itself apart. */
+const RAG_SELF = 0.82;                   // how much of the summed radii it enforces
 /* A BODY FALLS HARDER THAN IT FLIES. Under the beach's own 9.8 a corpse
  * thrown hard enough to travel FLOATED on the way down — a long soft
  * parabola that reads as weightless however far it goes, which is the
@@ -14442,8 +14495,28 @@ function mutRagdoll(u, dirX, dirZ, power) {
   for (const [a, b2, k] of RAG_STIFF) if (byName[a] && byName[b2]) cons.push({ a: byName[a], b: byName[b2], d: byName[a].p.distanceTo(byName[b2].p), k });
   for (const [a, b2, c, f] of RAG_BEND) if (byName[a] && byName[b2] && byName[c])
     bends.push({ a: byName[a], c: byName[c], min: (byName[a].p.distanceTo(byName[b2].p) + byName[b2].p.distanceTo(byName[c].p)) * f });
-  u.rag = { parts, byName, cons, bends, t: 0, asleep: false };
+  /* The pairs that must never occupy the same space. Anything already joined
+   * by a bone or a brace is excluded — those have a length of their own and
+   * a collision would fight it — and so is any pair standing closer at rest
+   * than its own thickness, which is most of the trunk. What is left is what
+   * you would expect: an arm against the ribs, a wrist against a thigh, the
+   * knees against each other, the head against a shoulder. */
+  const joined = new Set();
+  for (const c of cons) joined.add(c.a.name + '|' + c.b.name).add(c.b.name + '|' + c.a.name);
+  const hits = [];
+  for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
+    const A = parts[i], B = parts[j];
+    if (joined.has(A.name + '|' + B.name)) continue;
+    const d = (A.r + B.r) * RAG_SELF;
+    if (A.p.distanceTo(B.p) < d) continue;          // already inside itself at rest: not our business
+    hits.push({ a: A, b: B, d });
+  }
+  u.rag = { parts, byName, cons, bends, hits, t: 0, asleep: false };
   u.g.rotation.set(0, u.g.rotation.y, 0);           // the body's tilt is the particles' now, not the group's
+  /* And the aim's yaw dies with him. It lives on the MODEL, and a man killed
+   * halfway through a swing would otherwise lie there wearing the last
+   * correction — the particles own the body from here. */
+  if (u.model) { u.model.rotation.y = 0; u.aimW = 0; }
 }
 
 /* A BODY ON THE SAND TAKES THE BLOW TOO. The blade used to pass straight
@@ -14539,6 +14612,16 @@ function updateMutRagdoll(u, dt) {
         for (const bd of r.bends) {
           _rg1.subVectors(bd.c.p, bd.a.p); const d = _rg1.length() || 1e-6;
           if (d < bd.min) { const diff = (d - bd.min) / d * 0.5; bd.a.p.addScaledVector(_rg1, diff); bd.c.p.addScaledVector(_rg1, -diff); }
+        }
+        /* AND IT IS NOT ALLOWED INSIDE ITSELF. Once per iteration, because
+         * a thickness that is only applied at the end is a thickness the
+         * next constraint pass immediately undoes. */
+        for (const c of r.hits) {
+          _rg1.subVectors(c.b.p, c.a.p); const d = _rg1.length() || 1e-6;
+          if (d >= c.d) continue;
+          const push = (d - c.d) / d * 0.5, wa = c.a.w, wb = c.b.w, ws = wa + wb;
+          c.a.p.addScaledVector(_rg1, push * (wa / ws) * 2);
+          c.b.p.addScaledVector(_rg1, -push * (wb / ws) * 2);
         }
         // the ground, with friction: what touches the sand stops sliding
         for (const q of r.parts) {
@@ -14745,7 +14828,13 @@ function updateMutantUnit(u, dt) {
     if (dist < 16) sfxMutHunger(dist, u.kind.voice);
   }
   let moving = 0;
-  const A = u.atk[u.st.swing] || MUT_ATTACKS[u.st.swing];
+  /* A SWING THAT IS NOT IN THE TABLE MUST NOT TAKE THE FRAME DOWN. This
+   * lookup returned `undefined` for a unit whose `st.swing` had not been set
+   * yet or named a clip its kind does not own, and the next line read
+   * `A.wind` off it — an uncaught TypeError inside `animate`, which is the
+   * whole game, once per frame for as long as the state lasted. Whatever it
+   * is holding, it falls back to one it definitely has. */
+  const A = swingOf(u);
   if (u.st.atk >= 0) {
     const was = u.st.atk;
     u.st.atk += dt;
@@ -15029,6 +15118,103 @@ function updateMutantUnit(u, dt) {
     camera.position.z = p.z + (dz / dist) * 0.9;
   }
   mutAnim(u, dt, moving);
+  aimBar(u, dt, dist);
+}
+/* THE BAR GOES WHERE HE IS SWINGING IT. An authored swing is a swing at the
+ * air in front of him: it lands wherever his arm happens to put it, and
+ * whether that is anywhere near YOU depends on how far away you were
+ * standing, which way he was facing and which of six clips came up. So half
+ * his blows passed a foot wide, the guard was never met by anything, and the
+ * whole fight felt like it was happening beside you rather than to you.
+ *
+ * This is the same idea as `landBlade`, which puts the player's own blade on
+ * the crosshair: the animation says WHEN and the correction says WHERE. The
+ * shoulder is turned by the smallest rotation that takes the bar's line onto
+ * your chest — smallest rotation and not a look-at, because the arm's roll
+ * is the clip's and must survive — eased in through the startup, full over
+ * the active window, and gone by the end of the recovery so nothing about
+ * the recovery or the idle is touched. It is CLAMPED: past `AIM_MAX` he is
+ * simply out of position and the blow misses, which is what keeps backing
+ * away worth doing. A swing that always connects is not a fight either. */
+/* AND THE ARM ALONE CANNOT DO IT. Measured with him squared up at 1.3 m,
+ * the side swing's own contact frame leaves the bar 1.74 m from your chest —
+ * the arc simply ends beside him — and closing that with the shoulder alone
+ * would need most of a right angle of arm, which is a different swing, not
+ * an aimed one. A fighter turns INTO a blow with his whole body. So the
+ * correction is two things: a yaw on the MODEL (never on `u.g`, which is the
+ * AI's own heading and must stay the AI's) that swings his frame round to
+ * put the bar on your bearing, and then the shoulder for what is left, which
+ * is mostly the height. Both are clamped and both are weighted by the same
+ * ease, so a swing thrown from too far out or too far round still misses. */
+const AIM_YAW = 0.70;                      // how far his body may turn into it
+const AIM_MAX = 0.80;                      // and how far the shoulder may bend it
+const _abA = new THREE.Vector3(), _abB = new THREE.Vector3(), _abC = new THREE.Vector3();
+const _abQ = new THREE.Quaternion(), _abP = new THREE.Quaternion(), _abInv = new THREE.Quaternion(), _abM = new THREE.Matrix4();
+function aimBar(u, dt, dist) {
+  if (!u.kind.human || !u.bones || !u.bones.arm || !u.bones.hand || !u.bones.fore) return;
+  const A = swingOf(u);
+  let w = 0;
+  if (u.st.atk >= 0 && A) {
+    const t = u.st.atk;
+    // nothing during the wind-up you are meant to read; all of it on the way in
+    if (t > A.wind * 0.55) w = THREE.MathUtils.clamp((t - A.wind * 0.55) / (A.wind * 0.45), 0, 1);
+    if (t > A.wind + A.strike) w *= Math.max(0, 1 - (t - A.wind - A.strike) / (A.recover * 0.6));
+  }
+  u.aimW = (u.aimW || 0) + (w - (u.aimW || 0)) * Math.min(1, dt * 18);
+  if (u.aimW < 0.004) { if (u.model) u.model.rotation.y = 0; return; }
+  const arm = u.bones.arm;
+  /* THE BODY TURNS FIRST, and it turns the MODEL, not `u.g`: the group's
+   * heading belongs to the AI and to every distance test in the fight, and
+   * a correction written into it would accumulate frame on frame. The bar's
+   * own hitbox reads bone world positions, so it follows this for free —
+   * the picture and the blow cannot come apart. */
+  if (u.model) {
+    u.model.rotation.y = 0;
+    u.model.updateMatrixWorld(true);
+    u.bones.hand.getWorldPosition(_abA);
+    u.bones.fore.getWorldPosition(_abB);
+    _abC.copy(_abA).addScaledVector(_abB.sub(_abA).normalize(), -0.62);   // the tip
+    const rx = u.g.position.x, rz = u.g.position.z;
+    let dy = Math.atan2(camera.position.x - rx, camera.position.z - rz)
+           - Math.atan2(_abC.x - rx, _abC.z - rz);
+    while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
+    u.model.rotation.y = THREE.MathUtils.clamp(dy, -AIM_YAW, AIM_YAW) * u.aimW;
+    u.model.updateMatrixWorld(true);
+  }
+  arm.updateWorldMatrix(true, false);
+  u.bones.hand.updateWorldMatrix(true, false);
+  u.bones.fore.updateWorldMatrix(true, false);
+  arm.getWorldPosition(_abA);                         // the shoulder: what turns
+  u.bones.hand.getWorldPosition(_abB);
+  u.bones.fore.getWorldPosition(_abC);
+  // the bar runs on out past the fist along the forearm's line
+  _abB.addScaledVector(_abC.sub(_abB).normalize(), -0.62);
+  _abB.sub(_abA);                                     // shoulder to bar tip
+  // where it should be: your chest, and never further than the arm can reach
+  _abC.copy(camera.position); _abC.y -= 0.45;
+  _abC.sub(_abA);
+  const L = _abB.length() || 1e-6;
+  _abC.normalize().multiplyScalar(L);
+  _abB.normalize(); _abC.normalize();
+  let ang = Math.acos(THREE.MathUtils.clamp(_abB.dot(_abC), -1, 1));
+  if (!(ang > 1e-4)) return;
+  const use = Math.min(ang, AIM_MAX) * u.aimW;
+  _abQ.setFromUnitVectors(_abB, _abC);
+  // only part of the way there: identity is "no correction", the full
+  // rotation is "the bar on your chest", and `use / ang` is how far he gets
+  if (use < ang) { _abP.identity(); _abQ.slerp(_abP, 1 - use / ang); }
+  /* The turn is in WORLD space and the bone wants it in its parent's, which
+   * is `Wp⁻¹ · Q · Wp`. It must come from `getWorldQuaternion` and NOT from
+   * inverting `matrixWorld` and reading the rotation off that: the model is
+   * scaled to the creature's height, and `setFromRotationMatrix` on a matrix
+   * with scale in it is not a rotation at all — the arm flew a hundred
+   * kilometres and the measurement read 244468 metres. */
+  arm.parent.updateWorldMatrix(true, false);
+  arm.parent.getWorldQuaternion(_abP);                // Wp
+  _abInv.copy(_abP).invert();                         // Wp⁻¹
+  _abQ.premultiply(_abInv).multiply(_abP);            // Wp⁻¹ · Q · Wp
+  arm.quaternion.premultiply(_abQ);
+  arm.updateMatrixWorld(true);
 }
 /* WHOSE TURN IT IS. The token used to be grabbed by whoever's cooldown came
  * up first, and a cooldown scales with `windK` — so the small fast one took
@@ -17292,7 +17478,7 @@ window.__bw = {
   get insideDrain() { return insideDrain; }, get drainMix() { return drainMix; },
   spawnBunker, get bunkers() { return bunkers; }, get inBunker() { return inBunker; },
   get windT() { return windT; }, get windFull() { return windFull; }, WIND_FULL,
-  enterBunker, leaveBunker, startDealerFight, startDealerPickup, get dealer() { return dealer; },
+  enterBunker, leaveBunker, startDealerFight, startDealerPickup, get dealer() { return dealer; }, aimBar,
   get crowbarOnTable() { return crowbarOnTable; }, get dealerPick() { return dealerPick; }, get bunkerProps() { return bunkerProps; },
   get dealerFight() { return dealerFight; }, get dealerMet() { return dealerMet; }, DEALER_X, DEALER_Z,
   get hatchBusy() { return hatchBusy; }, get bunkerMix() { return bunkerMix; }, get bunkerHome() { return bunkerHome; }, HATCH_X, HATCH_Z, BUNKER_Y, hatch,

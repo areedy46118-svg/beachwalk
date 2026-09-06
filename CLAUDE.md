@@ -1558,6 +1558,80 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**AN AUTHORED SWING IS A SWING AT THE AIR.** It lands wherever the arm
+happens to put it, and whether that is anywhere near YOU depends on how far
+off you were standing, which way he was facing and which of six clips came
+up. Measured with him squared up at 1.3 m, his side swing's own contact
+frame left the bar 1.78 m from your chest — so half his blows passed a foot
+wide, the guard was never met by anything, and the fight felt like it was
+happening beside you rather than to you. `aimBar` is the same idea as
+`landBlade`, which puts the player's own blade on the crosshair: **the
+animation says WHEN and the correction says WHERE.** Two parts, because the
+shoulder alone cannot cover most of two metres without becoming a different
+swing — a yaw that turns his body into the blow, then the shoulder for what
+is left, which is mostly height. Both clamped, both on the same ease, so a
+swing thrown from too far out still misses, which is what keeps backing away
+worth doing.
+
+| | bar to chest before | after |
+|---|---|---|
+| the overhand | 0.33 m | 0.15 m |
+| the horizontal | 1.78 m | 0.23 m |
+| the wind-up | 0.85 m | 0.05 m |
+| the lunge | 1.16 m | 0.11 m |
+
+Three things it needs. **The yaw goes on the MODEL, never on `u.g`** — the
+group's heading belongs to the AI and to every distance test in the fight,
+and a correction written into it accumulates frame on frame. **The bar's own
+hitbox reads bone world positions**, so it follows the correction for free
+and the picture and the blow cannot come apart. And **the world-to-local
+turn must come from `getWorldQuaternion`**, not from inverting `matrixWorld`
+and reading the rotation off that: the model is scaled to the creature's
+height, `setFromRotationMatrix` on a matrix with scale in it is not a
+rotation, and the arm flew far enough that the measurement read 244468
+metres.
+
+**A DISTANCE CONSTRAINT HOLDS A SKELETON'S LENGTHS AND NOTHING HOLDS ITS
+VOLUME.** Arms folded through the chest, thighs through the belly, and a
+corpse settled into a puddle with a man's proportions only on paper — the
+owner's "deflated balloons", and half of it was self-inflicted, because
+doubling the kick and raising gravity gave a solver that was already only
+just converging much more to do. Three things, and they are the difference
+between a ragdoll and a bag: every pair among the six trunk joints braced at
+FULL stiffness (a box with only its edges is a hinge — the DIAGONALS are what
+make it a truss); twelve iterations over three substeps instead of seven over
+two, because an unconverged distance constraint IS a stretched limb; and
+SELF-COLLISION, every pair of parts that is not joined pushing apart at the
+sum of their radii, worked out once per body and pruned of any pair already
+inside itself at rest, because a collision that fights the skeleton shakes
+the body apart. Measured from the frame of death to rest, every segment now
+holds within 1.2 %.
+
+**AND A TELL WANTS A DIRECTION, NOT A MOMENT.** Both arms lifted straight
+over the mask was one shape with nothing in it to read but timing, and it
+came down the middle so there was nowhere to move. What a man with a crowbar
+does when he means it is COIL — bar back over the shoulder like a bat, back
+half turned, then through horizontally with the hips leading and the bar
+last. It is legible in silhouette from across the room, it has a side you can
+move away from, and it crosses the frame instead of arriving at a point. The
+head has to counter the coil or he spends the whole tell looking at the wall,
+and a man not looking at you is not about to hit you.
+
+**A LOOSE FIST READS AS AN OPEN HAND.** At 0.62 rad at the knuckle the
+fingers curled without ever closing and the bar sat in a cupped palm. And
+`stamp_grip` puts ONE finger pose on a whole clip, which is right for a man
+already holding something and wrong for the one clip that is about picking it
+up: he reached with the fist already made. The pickup keys its fingers per
+frame — open on the way out, shut on the frame the game moves the bar into
+his hand.
+
+**A SWING THAT IS NOT IN THE TABLE MUST NOT TAKE THE FRAME DOWN.**
+`u.atk[u.st.swing] || MUT_ATTACKS[u.st.swing]` returns `undefined` for a unit
+whose swing was never set or names a clip its kind does not own, and the next
+line reads `A.wind` off it — an uncaught TypeError inside `animate`, which is
+the whole game, once per frame for as long as the state lasts. `swingOf`
+falls back to one the creature definitely has.
+
 **A MIRRORED RIG NEEDS TWO CURL SIGNS.** `CURL_SIGN` was one number
 "verified by rendering the hand" — the RIGHT hand, the one holding the
 crowbar, the only one anybody was looking at. The rig is mirrored, so the
