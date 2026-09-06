@@ -34,6 +34,36 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
  * and y up, with z = -y. The nav arrives in Blender's and is converted here,
  * once.
  */
+/* Take the cells a named set of meshes laid down back out of the walk grid.
+ * The rows are strings, so an affected row is rebuilt; the boxes are the
+ * meshes' own, measured in the ROOT's frame, which is the frame the grid is
+ * in. Returns what it cleared, for the record. */
+const _cvB = new THREE.Box3(), _cvM = new THREE.Matrix4(), _cvI = new THREE.Matrix4();
+function carveNav(n, root, re) {
+  root.updateMatrixWorld(true);
+  _cvI.copy(root.matrixWorld).invert();
+  const rows = new Map(), out = [];
+  root.traverse((o) => {
+    if (!o.isMesh || !o.geometry || !re.test(o.name || '')) return;
+    if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+    _cvM.multiplyMatrices(_cvI, o.matrixWorld);
+    _cvB.copy(o.geometry.boundingBox).applyMatrix4(_cvM);
+    // three's local metres to the grid's Blender axes (y = -z), a cell of margin
+    const m = n.cell;
+    const x0 = _cvB.min.x - m, x1 = _cvB.max.x + m;
+    const y0 = -_cvB.max.z - m, y1 = -_cvB.min.z + m;
+    out.push({ name: o.name, x0, x1, y0, y1 });
+    const i0 = Math.max(0, Math.floor((x0 - n.x0) / m)), i1 = Math.min(n.gw - 1, Math.floor((x1 - n.x0) / m));
+    const j0 = Math.max(0, Math.floor((y0 - n.y0) / m)), j1 = Math.min(n.gh - 1, Math.floor((y1 - n.y0) / m));
+    for (let j = j0; j <= j1; j++) {
+      let r = rows.get(j); if (!r) { r = n.grid[j].split(''); rows.set(j, r); }
+      for (let i = i0; i <= i1; i++) r[i] = '0';
+    }
+  });
+  for (const [j, r] of rows) n.grid[j] = r.join('');
+  return out;
+}
+
 export function makeUndergroundBunker(opts = {}) {
   const group = new THREE.Group();
   group.name = 'undergroundBunker';
@@ -52,6 +82,16 @@ export function makeUndergroundBunker(opts = {}) {
     let raw = null;
     root.traverse((o) => { if (!raw && o.userData && o.userData.bw_nav) raw = o.userData.bw_nav; });
     if (raw) S.nav = convertNav(typeof raw === 'string' ? JSON.parse(raw) : raw);
+    /* A CHAIR IS NOT A WALL. The grid is every triangle in the room between
+     * knee and head height, which is exactly right for a console bank and
+     * exactly wrong for the three swivel chairs: legs, a splayed base and a
+     * back, all of it solid, arranged so that walking into one puts you
+     * between the legs where the push-out's resultant cancels. `S.escape`
+     * gets you back out — but the honest answer is that a person shoulders
+     * a chair aside and does not stop for it, and the worst second in this
+     * game to lose is the one in the middle of the fight. Their cells come
+     * out of the grid, so you walk through them. Nothing else does. */
+    if (S.nav) S.walkThrough = carveNav(S.nav, root, opts.walkThrough || /^Chair\d*[_.]/);
 
     root.traverse((o) => {
       if (!o.isMesh) return;

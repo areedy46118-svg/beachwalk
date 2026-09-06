@@ -5152,8 +5152,13 @@ const VM_SLASH_ROT = [-3.142, -0.483, 0.483];
  * up out of this rather than out of the dig grip, so the blade only ever goes
  * from high to higher to down — it never has to come up off the sand first. */
 const VM_MIL_REST_ROT = [-3.142, -0.483, 0.483];
-const restRot = () => equipped === militaryItem ? VM_MIL_REST_ROT : VM_REST_ROT;
-shovelVM.rotation.set(VM_REST_ROT[0], VM_REST_ROT[1], VM_REST_ROT[2]);
+/* ONE GRIP FOR BOTH SHOVELS. They already share the cut, the overhead and
+ * the guard; holding them differently at rest was the last thing that made
+ * the sand shovel a different tool, and it made the hand jump every time you
+ * scrolled between them. `VM_REST_ROT` is not gone — it is the DIG grip, and
+ * the dig grip is what the guard turns back into on either tool. */
+const restRot = () => VM_MIL_REST_ROT;
+shovelVM.rotation.set(VM_MIL_REST_ROT[0], VM_MIL_REST_ROT[1], VM_MIL_REST_ROT[2]);
 let ohBlend = 0, slBlend = 0;
 shovelVM.visible = false;
 toolMount.add(shovelVM);
@@ -5892,7 +5897,11 @@ let hitRoll = 0;
  * lets it back up over a third of a second — your knees, not the shovel.
  * Applied around the scene render and removed, like the roll. */
 let slamDip = 0;
-const GUARD_K = 420, GUARD_D = 11;       // stiff and only lightly damped: it rings
+/* STIFFER, SO IT SNAPS RATHER THAN WALLOWS. At 420 the spring took most of
+ * a second to come back through and a stopped blow read as the tool being
+ * shoved; a block wants to arrive and be over. Same damping ratio, a third
+ * quicker — it still rings three times, it just rings and is done. */
+const GUARD_K = 640, GUARD_D = 13.5;     // stiff and only lightly damped: it rings
 let winding = false, windT = 0, digPower = 0, digCharged = false, windFull = false;
 /* THE OVERHEAD. Hold sprint while you wind and the shovel goes up over your
  * head in both hands instead of back over your shoulder, and comes down the
@@ -6717,13 +6726,18 @@ function updateViewmodel(dt) {
      * SLERP: an Euler lerp across the flip swung it through the floor on the
      * way) and pivots at the NECK for it, where the sand shovel pivots, so
      * the bar sits exactly where it sits with that tool. */
-    if (blk > 0.001 && equipped === militaryItem) {
+    if (blk > 0.001) {
       _blkQ.setFromEuler(_blkE.set(VM_REST_ROT[0], VM_REST_ROT[1], VM_REST_ROT[2]));
       toolVM.quaternion.slerp(_blkQ, blk);
-      armRig.updateMatrixWorld(true);
-      toolVM.localToWorld(_blkV.set(0, milModel.position.y, 0));   // the neck
-      toolMount.getWorldPosition(_blkP);                     // the grip, on the mount
-      armRig.position.addScaledVector(_blkV.sub(_blkP), -blk);
+      /* Only the SCAN needs shifting for it. The built shovel turns about
+       * its own neck already, so the bar lands where it always did; the
+       * Military Shovel turns about the grip and has to be slid up. */
+      if (equipped === militaryItem) {
+        armRig.updateMatrixWorld(true);
+        toolVM.localToWorld(_blkV.set(0, milModel.position.y, 0));   // the neck
+        toolMount.getWorldPosition(_blkP);                     // the grip, on the mount
+        armRig.position.addScaledVector(_blkV.sub(_blkP), -blk);
+      }
     }
   }
 
@@ -12929,7 +12943,11 @@ const MUT_KINDS = {
    * pressure is meant to come from his reach and his chains, not from the
    * player being unable to see him wind up. */
   dealer: { glb: 'assets/dealer.glb', human: true, solo: true, noSand: true, skin: null,
-          h: 2.05, hp: 18, dmg: 1, speedK: 1.14, windK: 1.00, reachK: 1.00, aggr: 1.45,
+          h: 2.05, hp: 18, dmg: 1, speedK: 1.21, windK: 1.00, reachK: 1.00, aggr: 1.75,
+          /* AND THE STAGGER IS SHORTER THAN THE BEACH'S. Rocking him is the
+           * prize and it still is, but a third of a second of him standing
+           * there was two free swings; `recoilK` gives you one. */
+          recoilK: 0.72,
           /* NO MIRRORED SWINGS FOR HIM. The pack's mirrors work because a
            * mutant's hands are both empty; his bar is SKINNED TO THE RIGHT
            * HAND, so a mirrored swing had the empty left hand do the swinging
@@ -12937,7 +12955,7 @@ const MUT_KINDS = {
            * not one landed, and none of them looked like anything. Four
            * swings: the overhand, the horizontal, the held one, the lunge. */
           use: { dDown: 0.30, dSide: 0.26, dHold: 0.22, dLunge: 0.22 },
-          circle: 0.52, step: 0.30, chainMax: 2, feint: 0.20,
+          circle: 0.64, step: 0.30, chainMax: 3, feint: 0.28,
           /* POISE, AND A GUARD OF HIS OWN. A light swing used to rock him every
            * time — a boss you can stun-lock with clicks is not a boss — so it
            * takes three (`poise`) to stagger him and only a charge does it at
@@ -12946,7 +12964,8 @@ const MUT_KINDS = {
            * does nothing. The parry is untouched: read the tell, take the stun,
            * and the riposte still doubles. That is the fight. And he does not
            * shout between swings (`fidgetK`): a man does not roar at you. */
-          poise: 3, block: 0.38, fidgetK: 0.22, fidgetGap: 2.4,
+          poise: 8, poiseBack: 1.6, poiseWait: 1.4, parryK: 0.78,
+          block: 0.46, fidgetK: 0.22, fidgetGap: 2.4,
           bones: null,
           anim: { run: 'run', idle: 'ready', roar: 'taunt', die: 'death', walk: 'walk', back: 'walk',
                   rate: 1.0, lean: 0.05, strafeK: 1.2 },
@@ -13315,14 +13334,22 @@ function blockMutant(u) {
   stamina = Math.max(0, stamina - BLOCK_COST * 1.35 * u.kind.reachK);
   if (stamina <= 0.001) { exhausted = true; gaspOut(); }
   flashMats(toolVM);
-  guardShockV += 4.4 * u.kind.reachK; spawnSparks(8, 0.8);
-  parryGlow = Math.max(parryGlow, 0.26);
-  fovKick = Math.max(fovKick, 4.5);
-  addTrauma(0.5);
-  vmImpulse(-1.4);
-  hitstop = Math.max(hitstop, 0.10);
+  /* SNAP, NOT SHOVE. A tenth of a second of frozen world under a soft spring
+   * read as the blow pushing you; what a block should feel like is a bar
+   * arriving on steel and stopping — so the freeze is SHORTER and everything
+   * around it is harder: the spring driven half again, twice the sparks off
+   * the edge, the knee dipping under it, and the word gone off the screen
+   * before you have finished reading it. Short and violent beats long and
+   * heavy for anything you are meant to do four times in an exchange. */
+  guardShockV += 7.4 * u.kind.reachK; spawnSparks(16, 1.1);
+  parryGlow = Math.max(parryGlow, 0.34);
+  fovKick = Math.max(fovKick, 6.0);
+  addTrauma(0.62);
+  vmImpulse(-1.48);
+  slamDip = Math.max(slamDip, 0.035);
+  hitstop = Math.max(hitstop, 0.085);
   setPrompt('<b>BLOCKED</b>');
-  setTimeout(() => { if (promptHTML.includes('BLOCKED')) setPrompt(''); }, 520);
+  setTimeout(() => { if (promptHTML.includes('BLOCKED')) setPrompt(''); }, 380);
   const kx = camera.position.x - u.g.position.x, kz = camera.position.z - u.g.position.z;
   const kd = Math.hypot(kx, kz) || 1;
   knockback.set((kx / kd) * 4.2 * u.kind.reachK, 0, (kz / kd) * 4.2 * u.kind.reachK);
@@ -13418,14 +13445,15 @@ function dealerBlock(u) {
   mutToken = u;
   if (u.weapon) flashMats(u.weapon);
   playSample('blockMil', 0.9, 0.04) || sfxBlock();
-  guardShockV += 3.6; spawnSparks(8, 0.9);
-  vmImpulse(-1.25);
-  addTrauma(0.22);
-  fovKick = Math.max(fovKick, 3.5);
-  hitstop = Math.max(hitstop, 0.07);
+  guardShockV += 6.0; spawnSparks(14, 1.05);
+  vmImpulse(-1.42);
+  addTrauma(0.34);
+  fovKick = Math.max(fovKick, 5.0);
+  hitstop = Math.max(hitstop, 0.075);
 }
 function hurtMutant(u, dmg, P = 0) {
   if (!u.st.alive || u.st.struck) return false;
+  let poiseBroke = false;
   if (u.kind.human && u.st.stun <= 0) {
     const light = P < MUT_HEAVY && dmg < 2 && !digOverhead;
     _dbF.set(Math.sin(u.g.rotation.y), 0, Math.cos(u.g.rotation.y));
@@ -13433,27 +13461,31 @@ function hurtMutant(u, dmg, P = 0) {
     const facing = _dbC.dot(_dbF) > 0.45;
     const ready = u.st.atk < 0 && u.st.recoil <= 0 && u.st.block <= 0;
     if (light && facing && ready && Math.random() < (u.kind.block || 0)) { dealerBlock(u); return false; }
-    if (light) {
-      /* poise: the point comes off, the blow does not move him — until the
-       * third, which does, and puts the count back */
-      u.st.poise = (u.st.poise ?? u.kind.poise) - 1;
-      if (u.st.poise > 0) {
-        u.st.hp -= dmg;
-        if (u.st.hp <= 0) { u.st.killP = P; u.st.killOh = digOverhead; u.st.hpBefore = u.st.hp + dmg; killMutant(u); return true; }
-        flashMats(u.g); sfxMutHit(u.kind.voice); bleedMutant(u, 6, 0.3); bossHit(P, false);
-        camera.getWorldDirection(_hitC); sprayBlood(u.g.position.x, u.g.position.y + u.kind.h * 0.55, u.g.position.z, _hitC.x, _hitC.z, 6, 0.7);
-        return false;
-      }
-      u.st.poise = u.kind.poise;
-      bossHit(P, true);                    // the one that finally moves him
-    } else {
-      /* AND A CHARGE IS THE HEAVIEST THING IN THE FIGHT. A wound-up cut or
-       * an overhead goes through his poise by definition, so it never
-       * reached the light branch and never got the confirm — the one blow
-       * that should land hardest was the one that landed softest. */
-      bossHit(P, true);
-      u.st.poise = u.kind.poise;
+    /* POISE IS A POOL, AND IT REFILLS. It used to be a COUNT of light
+     * swings — three and he rocked — and a charge skipped it outright and
+     * rocked him every single time. So the answer to a boss was to hold the
+     * button: every heavy was a free stagger and every third click was
+     * another, and a man you can rock at will is a man you are not fighting.
+     * Now every blow SPENDS from one pool, a heavy spending three times what
+     * a click does, and what is left grows back (`poiseBack`) once you have
+     * left him alone for a moment (`poiseWait`). Eight points is three
+     * charges landed in a row, or eight clicks, or a mix — pressure kept up,
+     * not one lucky swing. Trading blows breaks him; poking at him does not.
+     * THE PARRY IS THE EXCEPTION AND ALWAYS WAS: a stunned man is past this
+     * whole branch, so reading the tell is the one thing that opens him up
+     * on demand, which is exactly what a parry should be worth. */
+    u.st.poiseT = 0;
+    u.st.poise = (u.st.poise ?? u.kind.poise) - (light ? 1 : 3);
+    if (u.st.poise > 0) {
+      u.st.hp -= dmg;
+      if (u.st.hp <= 0) { u.st.killP = P; u.st.killOh = digOverhead; u.st.hpBefore = u.st.hp + dmg; killMutant(u); return true; }
+      flashMats(u.g); sfxMutHit(u.kind.voice); bleedMutant(u, 6, 0.3); bossHit(P, light ? false : true);
+      camera.getWorldDirection(_hitC); sprayBlood(u.g.position.x, u.g.position.y + u.kind.h * 0.55, u.g.position.z, _hitC.x, _hitC.z, 6, 0.7);
+      return false;
     }
+    u.st.poise = u.kind.poise;
+    poiseBroke = true;
+    bossHit(P, true);                      // the one that finally moves him
   }
   /* THE RIPOSTE. A blow landed on one you have just parried counts DOUBLE.
    * The parry was already an opening; this makes it the point of the fight —
@@ -13481,7 +13513,7 @@ function hurtMutant(u, dmg, P = 0) {
    * break it — only the plain click is shrugged off, and only late. */
   const A = u.atk[u.st.swing] || MUT_ATTACKS[u.st.swing];
   const committed = u.st.atk >= 0 && u.st.atk > A.wind * 0.55 && u.st.atk < A.wind + A.strike;
-  if (committed && P < MUT_HEAVY && dmg < 2) {
+  if (!poiseBroke && committed && P < MUT_HEAVY && dmg < 2) {
     flashMats(u.g); sfxMutHit(u.kind.voice); bleedMutant(u, 5, 0.3); addTrauma(0.22);
     camera.getWorldDirection(_hitC); sprayBlood(u.g.position.x, u.g.position.y + u.kind.h * 0.55, u.g.position.z, _hitC.x, _hitC.z, 8, 0.8);
     return false;
@@ -13491,7 +13523,7 @@ function hurtMutant(u, dmg, P = 0) {
   u.st.side = 0; u.st.back = 0;
   mutDrop(u);
   u.st.cool = Math.max(u.st.cool, 0.45);
-  u.st.recoil = MUT_RECOIL;
+  u.st.recoil = MUT_RECOIL * (u.kind.recoilK || 1);
   camera.getWorldDirection(u.hitDir); u.hitDir.y = 0; u.hitDir.normalize();
   u.hitFrom.copy(u.g.position);
   flashMats(u.g);
@@ -13899,8 +13931,16 @@ function updateMutantCut(dt) {
   }
   // the camera goes with them, and the lens closes
   _mutMid.set(0, 0, 0);
-  for (const u of mutants) { if (u.kind.solo) continue; _mutMid.add(u.g.position); }
-  _mutMid.multiplyScalar(1 / mutants.length);
+  let nMid = 0;
+  for (const u of mutants) { if (u.kind.solo) continue; _mutMid.add(u.g.position); nMid++; }
+  /* AND THE AVERAGE IS OVER WHAT WAS ACTUALLY SUMMED. The Dealer is a
+   * `mutants` entry like the other three and is skipped here, correctly —
+   * but the divide was by the length of the whole list, so the midpoint of
+   * three creatures six hundred metres down the beach was pulled a quarter
+   * of the way back toward the world origin and the take looked at open
+   * sand. It has always been wrong; a checkpoint load is simply the only
+   * way anybody reaches this stretch often enough to see it. */
+  _mutMid.multiplyScalar(1 / Math.max(1, nMid));
   _mutMid.y = 1.25;
   _mutM.lookAt(camera.position, _mutMid, camera.up);
   _mutQ.setFromRotationMatrix(_mutM);
@@ -14532,6 +14572,14 @@ function updateMutantUnit(u, dt) {
    * through the ceiling. Anything that is not the one who lives down there
    * stands off while you are in the bunker. */
   if (inBunker && !u.kind.solo) { mutDrop(u); mutAnim(u, dt, 0); return; }
+  /* What is left of his poise grows back once you stop hitting him, which is
+   * the half of a pool that makes it one: a stagger has to be paid for in a
+   * flurry, and a flurry has to be survived. */
+  if (u.kind.human && u.st.alive) {
+    u.st.poiseT = (u.st.poiseT || 0) + dt;
+    if (u.st.poiseT > (u.kind.poiseWait || 1.4) && u.st.poise < u.kind.poise)
+      u.st.poise = Math.min(u.kind.poise, u.st.poise + (u.kind.poiseBack || 1.6) * dt);
+  }
   // the roar: it does not move through it, which is the beat that says what
   // the rest of this is going to be
   if (u.st.roar > 0) {
@@ -14673,8 +14721,13 @@ function updateMutantUnit(u, dt) {
       if (hits) {
         u.st.landed = true;
         if (blocking) {
+          /* AND HIS IS A TIGHTER WINDOW. `parryK` scales it per creature —
+           * the pack keeps the full fifth of a second, he gives you a little
+           * over three quarters of it. The tell is still the whole of the
+           * read; it just has to be answered on the beat rather than near
+           * it, which is the difference between a boss and the beach. */
           const dtp = (performance.now() - blockStart) / 1000;
-          if (dtp <= PARRY_WINDOW && parryCool <= 0) parryMutant(u);
+          if (dtp <= PARRY_WINDOW * (u.kind.parryK || 1) && parryCool <= 0) parryMutant(u);
           else blockMutant(u);
         } else {
           damagePlayer(A.dmg || u.kind.dmg);

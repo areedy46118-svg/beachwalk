@@ -1558,6 +1558,68 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**AND THEN THE CHAIR STOPPED BEING SOLID AT ALL.** `S.escape` got you out
+of the swivel chair, and getting out of a chair is still a second you spent
+not fighting. A chair is a thing a person shoulders past. `carveNav` takes a
+named set of meshes back out of the walk grid at load — the three `Chair*`
+objects, measured in the room's own frame with a cell of margin — and you
+walk through them. Nothing else in the room is on that list, and nothing
+else should be: 2.31 m² of floor opened, the reachable area grew by exactly
+those three spots, and the room's walls were never the grid's job anyway
+(the `nav.room` box is what holds them, which is why a carve cannot breach
+them). The sweep still reads 308 cases and none stuck.
+
+**POISE IS A POOL, NOT A COUNT.** It was three light swings to rock him and
+a charge rocked him outright, so the answer to the first boss was to hold
+the button: every heavy was a free stagger. Now every blow SPENDS from one
+pool — a heavy spends three, a click spends one — and what is left grows
+back (`poiseBack` 1.6/s) once you have left him alone for `poiseWait`. Eight
+points is three charges in a row or eight clicks. **The parry is the
+exception and always was**: a stunned man is past the whole human branch, so
+reading the tell is the one thing that opens him up on demand, which is what
+a parry should be worth. Measured: 3 clicks became 8, one charge became 3,
+and the stagger itself is 0.23 s instead of 0.32 (`recoilK`) — still the
+prize, no longer two free swings. If a poise break lands mid-swing it must
+skip the "committed" shrug or the break is wasted on the one blow that
+earned it.
+
+**ONE GRIP FOR BOTH SHOVELS.** They already shared the cut, the overhead and
+the guard; holding them differently at rest was the last thing that made
+the sand shovel a different tool, and it made the hand jump every time you
+scrolled between them. `restRot()` is `VM_MIL_REST_ROT` for everything now.
+`VM_REST_ROT` is not gone — it is the DIG grip, which is what the guard
+turns back into on either tool, and only the scan needs the neck shift for
+it because the built shovel already pivots there. Both read
+[-3.142, -0.483, 0.483] at rest and [0.70, 0.35, 0.32] on the guard.
+
+**A BLOCK IS SHORT AND VIOLENT, NOT LONG AND HEAVY.** A tenth of a second of
+frozen world under a soft spring read as the blow SHOVING you. The freeze is
+shorter (0.085) and everything round it is harder: the spring driven half
+again, twice the sparks, the knee dipping, and the word off the screen
+before you finish reading it. The spring itself went from 3.26 Hz to 4.03 at
+the same damping ratio — it still rings three times, it just rings and is
+done. Anything you do four times in an exchange wants snap, not weight.
+
+**AND THE TAKE WAS AIMING AT THE WRONG PLACE THE WHOLE TIME.** The mutant
+cutscene sums the three pack creatures' positions and skipped the Dealer,
+correctly — and then divided by the length of the WHOLE list, which has four
+entries in it. The midpoint of three creatures six hundred metres down the
+beach was pulled a quarter of the way back toward the world origin, and the
+camera looked at open sand. Measured: the old expression aimed **173.7
+degrees** off — very nearly the opposite direction — and the fixed one holds
+within 0.4 for the whole take. It was always wrong; a checkpoint load is
+simply the only way anybody reaches that stretch often enough to see it.
+**An average is over what was actually summed.**
+
+**AND TWO THINGS THAT MAKE THE FIGHT UNMEASURABLE.** `updateDealer` runs
+inside `updateHatch`, which is on the WALL CLOCK beside `update()` — so a
+thousand `__bw.step` calls never tick him, and `st.cool` sitting frozen at
+one value is the tell. And **dev mode turns his swinging off outright**: the
+"at reach with its breath back" branch is gated on `!settings.devMode`, so
+switching dev mode on to stop a death reloading the page is switching off
+the thing you came to measure. Heal unconditionally every frame instead.
+Real-time, healed, at fighting range: 38 swings a minute.
+
 **A RESULTANT CANCELS INSIDE THINGS, AND THAT IS WHAT A CHAIR IS.**
 `pushOut` sums the push from every cell the body overlaps, which is right
 against a bin and right along a desk front — and exactly wrong between the
