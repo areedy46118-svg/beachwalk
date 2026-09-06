@@ -1578,9 +1578,44 @@ swing has ended and `SWING_GAP` has passed. Every swing runs its full width,
 and the fastest rhythm the button can produce is one whole swing per swing.
 The swing itself was the last exploit: at `swingK` 0.9 a light cut was
 0.2 s long, so even one-whole-swing-per-swing was thirteen swings in two and
-a half seconds. It is 1.55 now with a 0.26 s gap after a forehand and 0.55
-after the return, which measures at six swings in 2.66 s — a little over two
-a second, a rhythm and not a blender.
+a half seconds.
+
+**THE CADENCE IS THE RECOVERY, NOT A CLOCK.** The first answer slowed the
+cut itself (`swingK` 1.55) and put a wall-clock gap after it, and the owner
+called the sword slow — because it was: a click in the gap did nothing for
+up to half a second, which is the one thing a click must never do. The cut
+is back at 0.2 s. What limits the rate now is `recoverK`: a blade's
+RECOVERY runs at five times the length it would otherwise take (the
+return's nine), so the blade FINISHES the cut — `REC_HOLD`, a third of the
+recovery in which it drifts a few per cent — and then eases home, and the
+next forehand leaves the frame it arrives. Every click is answered, at once
+from rest or the moment the blade is home; the rhythm is set by a motion you
+can watch rather than a timer you cannot. Measured: eight swings in 3.3 s
+under a mashed button, in pairs. **And the held beat is the return's
+window**: a click anywhere up to `RETURN_LATEST` (0.82, about a sixth of
+the way home) throws the return from where the blade is, so a double click
+does not have to be a fast one.
+
+**A BLADE SETTLES; IT DOES NOT BOUNCE.** Two things were the "flinch"
+coming back to guard. `easeOutBack`'s overshoot threw the point two
+frame-widths off the right edge and back on every recovery — a blade eases
+in and out instead. And the GRIP was blended between poses as EULER ANGLES:
+the return's grip is the forehand's turned half a turn about the blade, and
+an Euler lerp from that back to the carry swung the whole sword through the
+camera on its way home (the point measured 8.6 frame-widths out). The grips
+are slerped now, and a blade's grip starts back to the carry over the last
+stretch of the recovery (`SL_GRIP_HOME`) so it lands with the arm rather
+than twitching after the arm has stopped.
+
+**AND A SWING CAN BE LEFT.** The guard takes over from a cut at any point
+(`cancelSwing`: a defence, and a cut abandoned before it lands is a cut you
+did not make); the charge takes over from one that has LANDED
+(`swingLanded`), so holding the button through a recovery goes straight to
+the heavy instead of waiting for the blade to drift home — and not from one
+that has not, so the button cannot feint a free cancel out of every strike.
+The haul-back blends in from wherever the hand was (`_windFrom`, `WIND_IN`)
+rather than snapping to the cock pose, which it had always done, from rest
+as well.
 And a click is ALWAYS the forehand: the 950 ms timing window that let a
 click after the blade had come home fire a backhand from the right is gone;
 the return is reached by chaining and nowhere else.

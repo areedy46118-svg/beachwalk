@@ -3672,7 +3672,8 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
    * hauls the shovel back for a heavy. Right is deliberately left free.
    * The wind-up only starts once you have held past WIND_TAP, so a quick
    * click never flickers into the haul pose on its way out. */
-  if (e.button === 0 && started && !frozen() && !blocking && equipped && equipped.onDig && digT <= 0) {
+  if (e.button === 0 && started && !frozen() && !blocking && equipped && equipped.onDig) {
+    // latched whether or not a swing is running: startWind decides when it fires
     windLatch = setTimeout(() => { windLatch = null; startWind(); }, WIND_TAP * 1000);
   }
   if (e.button === 2 && started && !frozen() && equipped && equipped.onDig) {
@@ -3685,6 +3686,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
     if (winding) { winding = false; windT = 0; windFull = false; }
     // nothing to hold it up with. The breath you let out IS the refusal.
     if (exhausted || stamina <= 0.001) { if (!blockGasped) gaspOut(); return; }
+    if (digT > 0) cancelSwing();           // the guard takes over from a swing at once
     blocking = true;
     // a window only if the last one has had time to close
     blockStart = parryCool > 0 ? -1e9 : performance.now();
@@ -4132,7 +4134,7 @@ function attackAction() {                        // left mouse
   if (held) { throwHeld(); return; }
   if (equipped && equipped.onDig) {
     if (digT <= 0) {
-      if (performance.now() >= swingReadyAt) startDig(); else queuedSwing = 'fore';
+      startDig();
     } else if (slashing() && equipped.alternate && !digOverhead && !katBack() && !digCharged && digT < RETURN_LATEST) {
       queuedSwing = 'return';                  // fires at the follow-through, from the left
     } else {
@@ -5970,6 +5972,7 @@ const KAT_BLOCK_ROT = [-3.050, -4.633, 0.162];
 const blockAt = () => (equipped === katanaItem ? KAT_BLOCK_AT : BLOCK_AT);
 const blockPose = () => (equipped === katanaItem ? KAT_BLOCK_POSE : BLOCK_POSE);
 const _blkQ = new THREE.Quaternion(), _blkE = new THREE.Euler(), _blkV = new THREE.Vector3(), _blkP = new THREE.Vector3();
+const _gQ = new THREE.Quaternion(), _gQ2 = new THREE.Quaternion();
 // x and y are FRACTIONS of the frame's half-extents at the ear's depth, like
 // layoutViewmodel(): an absolute offset that sat at the edge of a landscape
 // window was clean off the side of a portrait one
@@ -6157,7 +6160,7 @@ toolMount.add(katanaVM);
 const katanaItem = {
   name: 'Katana', icon: makeKatanaIcon(), onDig: true, viewmodel: katanaVM,
   inspectModel: katInspect, lip: KAT_LIP,
-  blade: true, dmgLight: 2, dmgHeavy: 3, windRate: 1.3, gore: 1.4, swingK: 1.55, alternate: true,
+  blade: true, dmgLight: 2, dmgHeavy: 3, windRate: 1.3, gore: 1.4, swingK: 0.9, recoverK: 5.0, alternate: true,
   use: () => toggleEquip(katanaItem),
 };
 // a few steps from the Military Shovel, on the same stretch of sand under the cliff
@@ -6239,18 +6242,23 @@ let queuedSwing = false;                 // false | 'return' | 'fore'
  * you could not lose with. Now a press either (a) queues the return, which
  * fires only at the forehand's follow-through while the blade is still on
  * the left, or (b) queues a fresh forehand, which fires only once the
- * current swing has ENDED and `SWING_GAP` has passed. Every swing runs its
+ * current swing has ENDED. Every swing runs its
  * whole width; the fastest possible rhythm is one full swing per swing. */
-/* AND IT IS NOT QUICK. `swingK` 0.9 on top of the cut's own 0.55 made a
- * light katana swing 0.2 s long — twice as fast as the reel's, and with the
- * return chained off it a pair of two-damage hits every third of a second:
- * the Dealer's whole bar in under three seconds of holding the button. 1.55
- * puts a swing at a third of a second, a forehand alone waits a quarter
- * second before the next, and a forehand-and-return pair waits over half —
- * about two swings a second at the very fastest, each of them the full
- * width of the screen. Responsive; not a machine gun. */
-const SWING_GAP = 0.26, RETURN_GAP = 0.55, RETURN_LATEST = 0.80;
-let swingReadyAt = 0;
+/* AND THE CADENCE IS THE RECOVERY, NOT A CLOCK. The first fix slowed the
+ * whole swing (`swingK` 1.55) and put a wall-clock gap after it, and the
+ * owner called the sword slow — because it was: the cut itself had gone
+ * from a quarter second to a third, and a click in the gap did nothing for
+ * up to half a second. The cut is back at its own speed. What stops the spam
+ * is `recoverK`: the RECOVERY runs at a fraction of the cut's pace, so the
+ * blade drifts home over a third of a second instead of snapping there,
+ * and the next forehand leaves the instant it arrives. Every click is
+ * answered — at once from rest, or on the frame the blade is home — and
+ * the fastest rhythm is set by an animation you can see rather than by a
+ * timer you cannot. A click inside the first stretch of the recovery
+ * (`RETURN_LATEST`) is the return, thrown from where the blade is. */
+const RETURN_LATEST = 0.82;
+const SL_GRIP_HOME = 0.82;               // where, in a blade's recovery, the grip starts back to the carry
+const REC_HOLD = 0.35;                   // the first stretch of a blade's recovery barely moves: the cut is finished
 /* THE GUARD. Hold right and the shovel comes up across you. It is a real
  * guard, not a damage modifier: a strike that lands on it does nothing at
  * all. What makes it worth learning is the first fifth of a second — raise
@@ -6775,9 +6783,23 @@ function startDig(power = 0, fromPose = null, chained = false) {
   // a cut's whoosh goes with the blade, not with the click: a light cut cocks first
   sfxDig(digPower, slashing(), fromPose ? 0 : windupEnd() * swingSecs(digPower));
 }
+/* A SWING CAN BE LEFT. The guard and the charge both take over from a cut
+ * that has landed — you can block, or go to the heavy, whenever you want in
+ * a fight instead of watching the blade drift home first. A guard leaves
+ * from ANY point (it is a defence; a cut you abandon before it lands is a
+ * cut you did not make); a charge only from a blow that has landed, so the
+ * button cannot feint a free cancel out of every strike. */
+const swingLanded = () => digT >= (slashing() ? SLASH_THROUGH : DIG_STRIKE + 0.08);
+function cancelSwing() {
+  digT = 0; digPower = 0; digCharged = false; digOverhead = false; queuedSwing = false;
+}
+const WIND_IN = 0.10;                    // seconds the haul-back blends in from wherever the hand was
+const _windFrom = [0, 0, 0, 0, 0, 0];
 function startWind() {
   if (blocking) return;                  // no swing comes out of a guard
-  if (digT > 0 || winding || !equipped || !equipped.onDig || frozen()) return;
+  if (winding || !equipped || !equipped.onDig || frozen()) return;
+  if (digT > 0) { if (!swingLanded()) return; cancelSwing(); }
+  for (let i = 0; i < 6; i++) _windFrom[i] = _pose[i];   // the haul leaves from here, not from a snap
   winding = true; windT = 0; windFull = false; windOverhead = false;
   /* A HEAVY IS ALWAYS THE FOREHAND. The combo alternates the light cuts —
    * that is the point of it — but a charge is a pose you HOLD, and a held
@@ -7252,6 +7274,10 @@ function updateViewmodel(dt) {
       _pose[3] = -(0.16 + 0.30 * e) + strain;
       _pose[4] = 0.05 + 0.12 * e;
     }
+    /* Into the haul from wherever the hand was — rest, or the tail of a cut
+     * it has just left — rather than the one-frame snap it used to be. */
+    const wi = Math.min(1, windT / WIND_IN);
+    if (wi < 1) poseMix(_pose, _windFrom, _pose, easeOutCubic(wi));
   } else if (digT > 0) {
     const P = digPower;
     /* A heavy is slower through the whole move, and slower still to recover —
@@ -7263,7 +7289,13 @@ function updateViewmodel(dt) {
      * swing is that it is quick, hard and precise — a spade goes down into
      * sand, a blade goes through something — so the slash runs a third
      * quicker than the chop and its recovery with it. */
-    digT += dt / swingSecs(P);
+    /* THE RECOVERY IS THE COST OF THE SWING. A blade's follow-through comes
+     * home at `recoverK` times the length it would otherwise take (the
+     * return's a little longer again, so a pair ends on a beat), which is
+     * the whole of what keeps a light hit from being spammable now that the
+     * cut itself is quick again. */
+    const rk = isBlade() && equipped.recoverK && digT >= SLASH_THROUGH && !digOverhead ? equipped.recoverK * (katBack() ? 1.8 : 1) : 1;
+    digT += dt / (swingSecs(P) * rk);
     const p = digT, W = windupEnd(), isCut = slashing();
     if (p < W) {
       // anticipation: quick out of rest, hanging at the top of the haul
@@ -7285,9 +7317,20 @@ function updateViewmodel(dt) {
        * the tool straight back the way it had come, which is a tap. */
       poseMix(_pose, _poseB, _poseC, easeOutQuad((p - DIG_STRIKE) / (SLASH_THROUGH - DIG_STRIKE)));
     } else {
-      // recovery: eases back to rest, overshooting once on the way
+      /* recovery: eases back to rest, overshooting once on the way — except a
+       * blade, which SETTLES. `easeOutBack` threw the katana's point two
+       * frame-widths off the right edge and back on every recovery, which
+       * the owner called a flinch, and a sword coming to guard does not
+       * bounce off it. Ease-in-out also holds the blade out on the left
+       * over the first stretch, which is the window the return chains in. */
       const from = isCut ? _poseC : _poseB, t0 = isCut ? SLASH_THROUGH : DIG_STRIKE;
-      poseMix(_pose, from, REST_POSE, easeOutBack(Math.min(1, (p - t0) / (1 - t0))));
+      const rt = Math.min(1, (p - t0) / (1 - t0));
+      /* A blade FINISHES its cut before it comes home: the first third of
+       * the recovery drifts a few per cent, then the rest eases back. That
+       * held beat is the window the return chains in, and it is what makes
+       * a cut read as a cut rather than as a wave. */
+      const rm = rt < REC_HOLD ? 0.08 * rt / REC_HOLD : 0.08 + 0.92 * easeInOutCubic((rt - REC_HOLD) / (1 - REC_HOLD));
+      poseMix(_pose, from, REST_POSE, isBlade() && !digOverhead ? rm : easeOutBack(rt));
     }
     if (!digImpacted && p >= DIG_STRIKE) {
       digImpacted = true;
@@ -7333,15 +7376,15 @@ function updateViewmodel(dt) {
         spawnPuffs(lp.x, lp.z, 14 + Math.round(P * 12), -_pf.x, -_pf.z, Math.max(0.05, lp.y), null);
       }
     }
-    if (p >= 1) { digT = 0; digPower = 0; digCharged = false; digOverhead = false; swingReadyAt = performance.now() + (katBack() ? RETURN_GAP : SWING_GAP) * 1000; }
+    if (p >= 1) { digT = 0; digPower = 0; digCharged = false; digOverhead = false; }
     /* ON the follow-through, not after it: the recovery eases with
      * `easeOutBack`, which is more than half-way home a few frames past the
      * through, so a return chained "a beat later" left from a half-recovered
      * pose and only ever swept the right of the screen. */
     else if (queuedSwing === 'return' && p >= SLASH_THROUGH && slashing() && !katBack()) chainSwing();
   } else {
-    // a forehand asked for during a swing, or during the gap after one
-    if (queuedSwing === 'fore' && !winding && !blocking && performance.now() >= swingReadyAt) { queuedSwing = false; startDig(); }
+    // a forehand asked for during a swing leaves the frame the blade is home
+    if (queuedSwing === 'fore' && !winding && !blocking) { queuedSwing = false; startDig(); }
     for (let i = 0; i < 6; i++) _pose[i] = 0;
   }
 
@@ -7405,8 +7448,13 @@ function updateViewmodel(dt) {
    * than snapped, so the change of grip happens while the shovel is going up
    * and is finished by the time it comes down. */
   const wantOh = (winding && windOverhead) || (digT > 0 && digOverhead) ? 1 : 0;
+  /* AND THE GRIP COMES HOME WITH THE ARM. It used to turn back to the carry
+   * only once the swing had ended — a second motion after the arm had
+   * already stopped, which is a twitch. On a blade it starts back over the
+   * last stretch of the recovery (past the return's window, so a chained
+   * return still leaves from the cut's grip) and lands with the hand. */
   const wantSl = slashing() && !wantOh
-    && ((winding && !windOverhead) || (digT > 0 && !digOverhead)) ? 1 : 0;
+    && ((winding && !windOverhead) || (digT > 0 && !digOverhead && !(isBlade() && equipped.recoverK && digT >= SL_GRIP_HOME))) ? 1 : 0;
   ohBlend += (wantOh - ohBlend) * Math.min(1, dt * (wantOh ? 26 : 9));
   /* THE GRIP CHANGE BELONGS BEFORE THE STROKE, NOT INSIDE IT. A light click
    * has no wind-up, so at dt*11 the sword was still rotating out of its low
@@ -7416,16 +7464,22 @@ function updateViewmodel(dt) {
    * snaps (three frames), so the blade is on the line before it moves; coming
    * OUT it is soft, because settling back to the carry is a recovery and
    * should be seen. */
-  slBlend += (wantSl - slBlend) * Math.min(1, dt * (wantSl ? 34 : 9));
+  slBlend += (wantSl - slBlend) * Math.min(1, dt * (wantSl ? 34 : isBlade() ? 13 : 9));
   if (ohBlend > 0.001 || slBlend > 0.001 || wantOh || wantSl || blk > 0.001) {
     // the two grips are exclusive; the overhead wins where they overlap. The
     // base is the TOOL'S OWN rest — the Military Shovel's is scoop-up.
-    const R = restRot();
+    /* SLERPED, NOT LERPED. The grips used to be blended as Euler angles,
+     * and the katana's return grip is the forehand's turned half a turn
+     * about the blade: an Euler lerp from that back to the carry swung the
+     * sword through the camera on its way home — the point measured eight
+     * frame-widths off the right edge — which was most of the "flinch" at
+     * the end of a combination. A slerp takes the short way round. */
+    const R = restRot(), SR = slashRot();
     const OH = katStabbing() ? KAT_STAB_ROT : VM_OVERHEAD_ROT;
-    const grip = (i) => R[i]
-      + (OH[i] - R[i]) * ohBlend
-      + (slashRot()[i] - R[i]) * slBlend * (1 - ohBlend);
-    toolVM.rotation.set(grip(0), grip(1), grip(2));
+    _gQ.setFromEuler(_blkE.set(R[0], R[1], R[2]));
+    if (slBlend > 0.001) { _gQ2.setFromEuler(_blkE.set(SR[0], SR[1], SR[2])); _gQ.slerp(_gQ2, slBlend * (1 - ohBlend)); }
+    if (ohBlend > 0.001) { _gQ2.setFromEuler(_blkE.set(OH[0], OH[1], OH[2])); _gQ.slerp(_gQ2, ohBlend); }
+    toolVM.quaternion.copy(_gQ);
     /* THE GUARD IS THE SAND SHOVEL'S. Held scoop-up, the Military Shovel's
      * block put the bar across the frame upside down and the blade on the
      * wrong side; the guard that reads is the one the sand shovel makes —
