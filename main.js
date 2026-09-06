@@ -4301,7 +4301,11 @@ function shatterGlass(prop, mesh, speed, radius, threshold = 4.6) {
   removeInteractable(mesh);
   if (hovered && hovered.root === mesh) hovered = null;
   sfxGlassBreak();
-  addTrauma(0.12);
+  /* AND BREAKING SOMETHING DOES NOT SHAKE THE ROOM EITHER. The blow that
+   * broke it already put trauma through the camera — `hitConnect` on the
+   * shovel, the body's own landing — and adding more per object turned a
+   * fight through a bench of glassware into a camera that would not settle.
+   * What a bottle going is: the noise and the shards. */
   const mat = SHARD_MAT.clone();
   if (mesh.material && mesh.material.color) {
     mat.color.copy(mesh.material.color);
@@ -4343,7 +4347,12 @@ function smashElectronics(prop, mesh, speed, radius, threshold = 4.0) {
   removeInteractable(mesh);
   if (hovered && hovered.root === mesh) hovered = null;
   sfxSmashElectronics();
-  addTrauma(0.2);
+  /* AND IT DOES NOT SHAKE THE ROOM. A monitor coming off a desk is a noise
+   * and a shower of parts, not an event the building feels — and with
+   * eighteen of them in here, a jolt on each turned a fight through the
+   * console bank into a camera that would not hold still. The trauma is
+   * the player's own blows and the bodies landing; a breaking set gets the
+   * pieces and the sparks and nothing else. */
   const gy = floorFor(p);
   const push = (m, up, out, life, spin) => {
     m.position.set(p.x + (Math.random() - 0.5) * radius, Math.max(gy + 0.04, p.y), p.z + (Math.random() - 0.5) * radius);
@@ -5123,7 +5132,20 @@ function makeShovelIcon() {
 
 // held out ahead, D-handle back toward the camera and the blade angled
 // down-and-forward — the scoop faces the ground so the dig swing bites in
-const shovelVM = makeShovel();
+/* AND IT PIVOTS AT ITS GRIP TOO. The Military Shovel's model is slid down
+ * inside its group by `MIL_GRIP_Y` so the D-handle sits on the mount — a
+ * sword turns about the hands. The sand shovel was never slid, so with the
+ * two now sharing a rest pose and a cut they hung at visibly different
+ * heights (measured: 28 cm apart at rest) and, worse, the charged cock was
+ * laid out for a tool that turns about its grip — swing this one about its
+ * NECK through the same angles and the blade leaves the top of the frame,
+ * taking the full-charge glint with it. Same treatment: an outer group takes
+ * the pose, the model inside it slides, and the slide comes back out for the
+ * guard and the overhead, which were both laid out on the neck pivot. */
+const SAND_GRIP_Y = 0.60;
+const sandModel = makeShovel();
+const shovelVM = new THREE.Group();
+shovelVM.add(sandModel);
 shovelVM.scale.setScalar(0.48);
 shovelVM.position.set(-0.04, -0.02, 0.0);
 /* The tool's own rest orientation, and the one it takes for an overhead.
@@ -6689,6 +6711,13 @@ function updateViewmodel(dt) {
     ARM_BASE.y + by + _pose[1] + vmSpringY + ear * (earY - ARM_BASE.y) + blk * (blkY - ARM_BASE.y),
     ARM_BASE.z + _pose[4] + ear * (EAR_AT.z - ARM_BASE.z) + blk * (BLOCK_AT.z - ARM_BASE.z)
   );
+  if (equipped === shovelItem) {
+    // the same slide, so both tools hang at the same height and the charged
+    // cock swings this blade through the arc it was laid out for
+    const gy = -SAND_GRIP_Y * (1 - ohBlend) * (1 - blk);
+    sandModel.position.y = gy;
+    trailTip.position.y = trailRoot.position.y = -0.21 + gy;
+  }
   if (equipped === militaryItem) {
     /* THE PIVOT SLIDES FOR AN OVERHEAD. A cut turns about the D-grip; a slam
      * is two-handed, one hand well up the shaft, and pivots at the NECK like
@@ -9242,6 +9271,7 @@ function startDialog(id, npc = null) {
   // his head, not the middle of him: a sprite's origin is its centre, which
   // on a seated man is his chest
   if (npc && npc.headY) dialogTarget.y += npc.headY;
+  dialogLeave = (npc && npc.onLeave) || null;
   dialogSpeakerEl.textContent = npc ? npc.name : 'Bradley Beach';
   dialogEl.classList.add('show');
   setPrompt('');
@@ -9254,6 +9284,13 @@ function startDialog(id, npc = null) {
 }
 function endDialog() {
   if (!dialogOpen) return;
+  /* AND SOME PEOPLE DO NOT LET YOU WALK AWAY. Escape closes any
+   * conversation, which is right for a man in a shed and wrong for the one
+   * standing between you and the ladder: leaving his line unanswered left
+   * `dealerFight` false and him rooted to his mark for the rest of the game,
+   * so the boss of the game had an exit written into his own dialogue box.
+   * An NPC may carry an `onLeave`, and his takes the crowbar off the shelf. */
+  const leave = dialogLeave; dialogLeave = null;
   clearTimeout(dialogEndTimer); clearInterval(typeTimer); typeTimer = null; typeFull = null;
   dialogOpen = false;
   dialogCanDismiss = false;
@@ -9262,6 +9299,7 @@ function endDialog() {
   dialogEl.classList.remove('typing');
   refreshUI();
   if (dialogReturnLock && !fallbackLook) requestLock();
+  if (leave) leave();
 }
 dialogEl.addEventListener('click', () => {
   if (finishTyping()) return;
@@ -9273,6 +9311,7 @@ document.getElementById('dialog-leave').addEventListener('click', (e) => { e.sto
 // them, then let it back out when the conversation drops.
 const DIALOG_FOV = 42;
 let dialogFov = DIALOG_FOV, dialogHead = null;   // an NPC may ask for a tighter lens and a bone to hold it on
+let dialogLeave = null;                          // ...and may refuse to be walked away from
 let cineHold = false;                            // ...and may keep the lens after the talking stops
 const _lookM = new THREE.Matrix4(), _lookQ = new THREE.Quaternion();
 function updateDialogCam(dt) {
@@ -16399,7 +16438,9 @@ const DEALER_SCRIPT = {
 };
 // close on the mask: a tighter lens than anyone else gets, held on the head
 // bone rather than on the spot he was standing when he started talking
-const DEALER_NPC = { name: 'Blue Blood Dealer', script: DEALER_SCRIPT, sprite: dealer.g, headY: 1.80, fov: 13 };
+const DEALER_NPC = { name: 'Blue Blood Dealer', script: DEALER_SCRIPT, sprite: dealer.g, headY: 1.80, fov: 13,
+  // say nothing and he takes the bar; walk out on him and he takes it anyway
+  onLeave: () => startDealerPickup() };
 /* Take the bar off the shelf and put it in his hand. */
 function dealerTakeBar() {
   if (crowbarOnTable) crowbarOnTable.visible = false;
@@ -16465,20 +16506,113 @@ function steerDealer(prevX, prevZ) {
   if (len < 1e-4) return;
   const lx = prevX - g.position.x, lz = prevZ - g.position.z;
   let ux = dx / len, uz = dz / len;
-  if (B.clearAhead(lx, lz, ux, uz, DEALER_PROBE, 0.32)) return;
-  // fan out: ±20°, ±40°, … out to ±115°, nearest heading first
-  for (let a = 0.35; a <= 2.05; a += 0.35) {
+  if (B.clearAhead(lx, lz, ux, uz, DEALER_PROBE, 0.32)) {
+    dealer.wedge = 0;
+    return;
+  }
+  /* Fan out — now the WHOLE way round. It used to stop at ±115°, which is
+   * enough to round a bin and not enough to leave a table: the table's long
+   * side and the wall make a pocket, every heading within two thirds of a
+   * turn of the player is blocked, and he stood in it grinding against the
+   * legs. Past ±115° the only headings left are backwards, and backwards out
+   * of a pocket is exactly what a man does. Nearest first, so he still
+   * prefers to keep coming. */
+  for (let a = 0.35; a <= Math.PI + 0.01; a += 0.35) {
     for (const sgn of (dealer.turnBias > 0 ? [1, -1] : [-1, 1])) {
       const c = Math.cos(a * sgn), sn = Math.sin(a * sgn);
       const cx = ux * c - uz * sn, cz = ux * sn + uz * c;
       if (B.clearAhead(lx, lz, cx, cz, DEALER_PROBE, 0.32)) {
         p.x = prevX + cx * len; p.z = prevZ + cz * len;
-        // keep going the same way round for a moment, or he dithers at a corner
-        dealer.turnBias = sgn; dealer.turnHold = 0.7;
+        /* And the further round he had to look, the longer he commits to
+         * going that way. A 20-degree nudge is a slide along a desk front
+         * and can be reconsidered next frame; a 90-degree turn is a DECISION
+         * to go round something, and re-deciding it every frame at a corner
+         * is how he ground to a halt against the table in the first place. */
+        dealer.turnBias = sgn;
+        dealer.turnHold = 0.7 + a * 0.55;
+        dealer.wedge = 0;
         return;
       }
     }
   }
+  /* NOTHING IS CLEAR AT ALL. He is inside something; `clampDealer` ejects
+   * him and this only has to stop him walking straight back in. */
+  dealer.wedge = (dealer.wedge || 0) + 1;
+  if (dealer.wedge > 6) {
+    p.x = prevX - ux * len; p.z = prevZ - uz * len;
+    dealer.turnBias = -(dealer.turnBias || 1); dealer.turnHold = 1.1;
+    dealer.wedge = 0;
+  }
+}
+/* AND FINDING A HEADING IS NOT THE SAME AS GETTING ANYWHERE. This is what
+ * actually had him on the table, and no amount of widening the fan would
+ * have fixed it: in a pocket between the furniture and the wall the NEAREST
+ * clear heading points further into the pocket, he takes it, the push-out
+ * cancels the step, and next frame the same heading is nearest again. He is
+ * not stuck and not blocked — every frame he "found a way" — he simply never
+ * moves. Traced: the same 140-degree turn chosen for four seconds while his
+ * position changed by two centimetres.
+ *
+ * So the test is PROGRESS, not clearance. If he has barely moved for most of
+ * a second while he is trying to reach you, the fan's opinion is worthless
+ * and he picks the heading with the most ROOM down it instead — probed three
+ * times as far — and commits to it long enough to actually leave. That is
+ * what a person does on the wrong side of a table: stop shouldering it and
+ * walk the long way round. */
+function unstickDealer(dt, dist) {
+  const B = bunkerHome.group.userData.bunker;
+  if (!B.nav || !B.route || !dealer.st.awake || dealer.st.atk >= 0) { dealer.grind = 0; return; }
+  const g = bunkerHome.group, p = dealer.g.position;
+  const q = dealer.lastAt || (dealer.lastAt = { x: p.x, z: p.z });
+  const moved = Math.hypot(p.x - q.x, p.z - q.z);
+  q.x = p.x; q.z = p.z;
+  // grinding: trying to close, and not closing
+  dealer.grind = (moved < 0.035 && dist > 2.2) ? (dealer.grind || 0) + dt : 0;
+  if (dealer.grind < 0.7) return;
+  dealer.grind = 0;
+  /* ASK THE ROOM. The greedy fan has just proved it cannot get out of
+   * wherever he is, so stop asking it: a breadth-first search over the free
+   * cells returns the actual way round the table, and he walks it. Recomputed
+   * only when he grinds, which is rarely, and thinned to corners so following
+   * it is three or four waypoints and not four hundred. */
+  const lx = p.x - g.position.x, lz = p.z - g.position.z;
+  const tx = camera.position.x - g.position.x, tz = camera.position.z - g.position.z;
+  const path = B.route(lx, lz, tx, tz, 0.32);
+  /* AND IF THE ROUTE STOPS A LONG WAY SHORT, he is not on the same piece of
+   * floor as you — one of the two pockets behind the furniture, which
+   * nothing his size walks out of. He steps back into the main room rather
+   * than standing in a gap for the rest of the fight. */
+  const endsAt = path && path.length ? path[path.length - 1] : null;
+  if (!endsAt || Math.hypot(endsAt.x - tx, endsAt.z - tz) > 2.6) {
+    const m = B.mainRegion && B.mainRegion(lx, lz);
+    if (m && m.d > 0.05) {
+      p.x = g.position.x + m.x; p.z = g.position.z + m.z;
+      dealer.path = null; dealer.lastAt = { x: p.x, z: p.z };
+      return;
+    }
+  }
+  dealer.path = (path && path.length) ? path : null;
+  dealer.pathI = 0;
+}
+/* Walk the route he was given, corner to corner, until it runs out or he can
+ * see his way again. It is dropped the moment the plain approach is working,
+ * because a path is a way out of a corner and not a way of getting about. */
+function followPath(dt) {
+  if (!dealer.path) return false;
+  const g = bunkerHome.group, p = dealer.g.position;
+  const wp = dealer.path[dealer.pathI];
+  if (!wp) { dealer.path = null; return false; }
+  const tx = g.position.x + wp.x, tz = g.position.z + wp.z;
+  const dx = tx - p.x, dz = tz - p.z, L = Math.hypot(dx, dz);
+  if (L < 0.34) {
+    dealer.pathI++;
+    if (dealer.pathI >= dealer.path.length) { dealer.path = null; }
+    return true;
+  }
+  const sp = MUT_SPEED * dealer.kind.speedK * 0.92 * dt;
+  p.x += (dx / L) * sp; p.z += (dz / L) * sp;
+  dealer.g.rotation.y = Math.atan2(-dx / L, -dz / L) + Math.PI;   // he faces where he is going
+  return true;
 }
 function clampDealer(dt) {
   const B = bunkerHome.group.userData.bunker, nav = B.nav;
@@ -16698,8 +16832,11 @@ function updateDealer(dt) {
    * simply held to `calm` until the fight starts. */
   if (!dealerFight && dealer.st.alive) dealer.gait = { walk: 'walk', run: 'run', idle: 'calm', idleRate: 1 };
   if (dealer.model) {
-    if (dealer.prevPos) steerDealer(dealer.prevPos.x, dealer.prevPos.z);
+    // a route out of a corner, if he was given one, comes before the fan
+    const onPath = followPath(dt);
+    if (dealer.prevPos && !onPath) steerDealer(dealer.prevPos.x, dealer.prevPos.z);
     clampDealer(dt);
+    unstickDealer(dt, Math.hypot(dealer.g.position.x - camera.position.x, dealer.g.position.z - camera.position.z));
     dealer.prevPos = { x: dealer.g.position.x, z: dealer.g.position.z };
   }
   if (!dealerWon && !dealer.st.alive && dealer.st.deadT > 0.5) dealerWon = true;

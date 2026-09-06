@@ -183,6 +183,146 @@ export function makeUndergroundBunker(opts = {}) {
     }
     return false;
   };
+  /* AND THE FLOOR IS NOT ALL ONE PIECE. Flooding the free cells finds THREE
+   * regions: the room, 31.6 m of it, and two pockets of about two square
+   * metres each, behind furniture, that nothing his size can walk out of.
+   * They are not a bug in the grid — they are real gaps between a desk and a
+   * wall — but a body shoved into one is a boss who has left the fight. The
+   * biggest region is worked out once, and `mainRegion` gives the nearest
+   * cell in it, so there is always a way back to where the fight is. */
+  S.mainRegion = (lx, lz) => {
+    const n = S.nav; if (!n) return null;
+    if (!S._main) {
+      const W = n.gw, H = n.gh, N = W * H, cxf = (i) => n.x0 + (i + 0.5) * n.cell, cyf = (j) => n.y0 + (j + 0.5) * n.cell;
+      const free = new Uint8Array(N);
+      for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) if (!S.blocked(cxf(i), -cyf(j), 0.32)) free[j * W + i] = 1;
+      const comp = new Int32Array(N).fill(-1);
+      let best = -1, bestSize = -1, c = 0;
+      const DI = [1, -1, 0, 0], DJ = [0, 0, 1, -1];
+      for (let s0 = 0; s0 < N; s0++) {
+        if (!free[s0] || comp[s0] >= 0) continue;
+        const q = [s0]; comp[s0] = c; let sz = 0;
+        while (q.length) {
+          const cur = q.pop(); sz++;
+          const i = cur % W, j = (cur / W) | 0;
+          for (let k = 0; k < 4; k++) {
+            const a = i + DI[k], b = j + DJ[k];
+            if (a < 0 || b < 0 || a >= W || b >= H) continue;
+            const id = b * W + a;
+            if (free[id] && comp[id] < 0) { comp[id] = c; q.push(id); }
+          }
+        }
+        if (sz > bestSize) { bestSize = sz; best = c; }
+        c++;
+      }
+      S._main = { comp, id: best, W, H, cxf, cyf };
+    }
+    const M = S._main;
+    let bd = Infinity, bx = null, bz = null;
+    for (let id = 0; id < M.comp.length; id++) {
+      if (M.comp[id] !== M.id) continue;
+      const x = M.cxf(id % M.W), y = M.cyf((id / M.W) | 0);
+      const dx = x - lx, dz = -y - lz, d = dx * dx + dz * dz;
+      if (d < bd) { bd = d; bx = x; bz = -y; }
+    }
+    return bx === null ? null : { x: bx, z: bz, d: Math.sqrt(bd) };
+  };
+  /* AND A WAY ROUND, WHICH A FAN OF HEADINGS IS NOT. Steering by "the
+   * nearest clear direction" is a greedy walk, and a greedy walk cannot
+   * leave a pocket: between the table and the wall every heading that points
+   * at the player is blocked, the nearest clear one points further in, and
+   * the push-out cancels the step — so he "found a way" every frame for four
+   * seconds while his position changed by two centimetres. A breadth-first
+   * search over the free cells is the whole answer and the grid is 59 by 113,
+   * which is nothing. `route` returns a list of waypoints in local metres,
+   * thinned to the corners: anywhere reachable in this room, it finds the way
+   * there, and if it returns null there is genuinely no way.
+   *
+   * Free is tested at the disc's own radius, so a route is one a BODY fits
+   * through, not a line a point could follow. */
+  S.route = (fx, fz, tx, tz, r = 0.32) => {
+    const n = S.nav; if (!n) return null;
+    const ci = (x) => Math.floor((x - n.x0) / n.cell);
+    const cj = (y) => Math.floor((y - n.y0) / n.cell);
+    const cx = (i) => n.x0 + (i + 0.5) * n.cell;
+    const cy = (j) => n.y0 + (j + 0.5) * n.cell;
+    const free = (i, j) => i >= 0 && j >= 0 && i < n.gw && j < n.gh && !S.blocked(cx(i), -cy(j), r);
+    const si = ci(fx), sj = cj(-fz), gi = ci(tx), gj = cj(-tz);
+    if (si === gi && sj === gj) return [];
+    const W = n.gw, N = W * n.gh;
+    const prev = new Int32Array(N).fill(-1);
+    const seen = new Uint8Array(N);
+    // the goal may be inside something (you, standing against a desk); walk
+    // out from it to the nearest cell a body fits in
+    let goal = -1;
+    for (let rad = 0; rad <= 26 && goal < 0; rad++)
+      for (let dj = -rad; dj <= rad && goal < 0; dj++)
+        for (let di = -rad; di <= rad && goal < 0; di++) {
+          if (Math.max(Math.abs(di), Math.abs(dj)) !== rad) continue;
+          if (free(gi + di, gj + dj)) goal = (gj + dj) * W + (gi + di);
+        }
+    if (goal < 0) return null;
+    const q = new Int32Array(N); let head = 0, tail = 0;
+    // and so may he be, so the search starts from wherever he can stand
+    let start = -1;
+    for (let rad = 0; rad <= 26 && start < 0; rad++)
+      for (let dj = -rad; dj <= rad && start < 0; dj++)
+        for (let di = -rad; di <= rad && start < 0; di++) {
+          if (Math.max(Math.abs(di), Math.abs(dj)) !== rad) continue;
+          if (free(si + di, sj + dj)) start = (sj + dj) * W + (si + di);
+        }
+    if (start < 0) return null;
+    q[tail++] = start; seen[start] = 1;
+    while (head < tail) {
+      const cur = q[head++];
+      if (cur === goal) break;
+      const i = cur % W, j = (cur / W) | 0;
+      for (let k = 0; k < 8; k++) {
+        const di = (k < 4 ? [1, -1, 0, 0][k] : [1, 1, -1, -1][k - 4]);
+        const dj = (k < 4 ? [0, 0, 1, -1][k] : [1, -1, 1, -1][k - 4]);
+        const a = i + di, b = j + dj;
+        if (a < 0 || b < 0 || a >= W || b >= n.gh) continue;
+        const id = b * W + a;
+        if (seen[id] || !free(a, b)) continue;
+        // a diagonal may not cut a corner a body would not fit through
+        if (k >= 4 && (!free(i + di, j) || !free(i, j + dj))) continue;
+        seen[id] = 1; prev[id] = cur; q[tail++] = id;
+      }
+    }
+    /* AND IF THERE IS NO WAY ALL THE WAY, THERE IS STILL A WAY CLOSER. A
+     * player can stand in a nook a bigger body does not fit into, and the
+     * honest answer there is not "no route" — which drops him back on the
+     * greedy fan that got him stuck — but the reachable cell NEAREST to
+     * where you are. He comes as far as the room lets him and waits at the
+     * mouth of it, which is what a man does. The search has already visited
+     * every cell he can reach, so this costs one pass over what it found. */
+    let end = goal;
+    if (!seen[goal]) {
+      const gx = cx(goal % W), gy = cy((goal / W) | 0);
+      let bestD = Infinity; end = -1;
+      for (let id = 0; id < N; id++) {
+        if (!seen[id]) continue;
+        const dx = cx(id % W) - gx, dy = cy((id / W) | 0) - gy;
+        const d = dx * dx + dy * dy;
+        if (d < bestD) { bestD = d; end = id; }
+      }
+      if (end < 0) return null;
+    }
+    const cells = [];
+    for (let c = end; c !== -1 && c !== start; c = prev[c]) cells.push(c);
+    cells.reverse();
+    // thin it to the corners: a straight run needs one waypoint, not forty
+    const out = []; let lastDx = 99, lastDz = 99, pi = start % W, pj = (start / W) | 0;
+    for (let k = 0; k < cells.length; k++) {
+      const i = cells[k] % W, j = (cells[k] / W) | 0;
+      const dx = Math.sign(i - pi), dz = Math.sign(j - pj);
+      if (dx !== lastDx || dz !== lastDz) { out.push({ x: cx(i), z: -cy(j) }); lastDx = dx; lastDz = dz; }
+      pi = i; pj = j;
+    }
+    const gI = end % W, gJ = (end / W) | 0;
+    out.push({ x: cx(gI), z: -cy(gJ) });
+    return out;
+  };
   /* Push a disc out of the blocked cells it overlaps. Each round, every
    * blocked cell inside the disc pushes it along the line from the cell's
    * nearest point by the depth of the overlap; a few rounds settle a corner.

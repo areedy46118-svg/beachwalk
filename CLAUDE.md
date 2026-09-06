@@ -1558,6 +1558,59 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**FINDING A HEADING IS NOT THE SAME AS GETTING ANYWHERE, AND THAT IS WHAT
+HAD HIM ON THE TABLE.** `steerDealer` is a fan of headings and a fan is a
+GREEDY walk: in a pocket between the furniture and the wall the nearest clear
+heading points further into the pocket, he takes it, the push-out cancels the
+step, and next frame the same heading is nearest again. Traced: the same
+140-degree turn chosen for four seconds while his position changed by two
+centimetres. He was never blocked and never stuck — every frame he "found a
+way" — he simply never moved, and widening the fan from ±115° to a full half
+turn (worth doing, and done) fixes none of it.
+
+So the test is PROGRESS. If he has barely moved for most of a second while
+trying to close, the fan's opinion is worthless and the ROOM is asked
+instead: `S.route` is a breadth-first search over the free cells, thinned to
+corners, 0.39 ms a call on a 59-by-113 grid, run only when he grinds. Two
+things it has to do beyond the obvious. **Both endpoints may be inside
+something** — you standing against a desk, him mid-shove — so each walks
+outward to the nearest cell a body actually fits in. And **when there is no
+way all the way there is still a way closer**: it returns the reachable cell
+nearest you rather than null, because null drops him back on the fan that got
+him stuck.
+
+**AND THE FLOOR IS NOT ALL ONE PIECE.** Flooding the free cells finds THREE
+regions — the room, and two pockets of about two square metres behind
+furniture that nothing his size can walk out of. They are not a bug in the
+grid, they are real gaps between a desk and a wall, but a body shoved into
+one is a boss who has left the fight. `S.mainRegion` is the largest region,
+computed once, and it is never more than 2.07 m away from anywhere.
+
+**SOME PEOPLE DO NOT LET YOU WALK AWAY.** Escape closes any conversation,
+which is right for a man in a shed and wrong for the one standing between you
+and the ladder: leaving his line unanswered left `dealerFight` false and him
+rooted to his mark for the rest of the game, so the boss of the game had an
+exit written into his own dialogue box. An NPC may carry an `onLeave`; his
+takes the crowbar off the shelf.
+
+**BREAKING SOMETHING DOES NOT SHAKE THE ROOM.** A monitor coming off a desk
+is a noise and a shower of parts, not an event the building feels — and with
+eighteen breakables in there, a jolt on each turned a fight through the
+console bank into a camera that would not settle. The blow that broke it has
+already put trauma through the camera, from `hitConnect` or from the body's
+own landing. Measured: six broken at once, trauma stays at zero.
+
+**AND A TOOL HANGS FROM WHERE IT PIVOTS.** Sharing a rest pose is not enough
+to make two tools hang alike: the Military Shovel's model is slid down inside
+its group by `MIL_GRIP_Y` so the D-handle sits on the mount, and the sand
+shovel was never slid, so with both in the same rotation they sat 28 cm
+apart. Worse, the charged cock was laid out for a tool that turns about its
+GRIP — swing one about its neck through those angles and the blade leaves the
+top of the frame, taking the full-charge glint with it. `SAND_GRIP_Y` gives
+it the same treatment, and the slide comes back out for the guard and the
+overhead, which were both laid out on the neck pivot. Measured: 2.2 cm apart
+at rest, and the glint back on screen at full charge.
+
 **THE CURL SIGN IS +1, AND THE COMMENT SAYING IT HAD BEEN CHECKED WAS
 WRONG.** It shipped as -1 "verified by rendering the hand", and it had not
 been: at the loose curl it started with, a hand bending the wrong way looks
