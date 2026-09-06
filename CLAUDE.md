@@ -1640,6 +1640,32 @@ same haul it always was. The cadence does not change (nine swings in
 3.3 s under a mashed button, in pairs); the dead frames at the end of a
 combination are gone.
 
+**A HEAVY IS QUICK WHERE IT IS SEEN AND LONG WHERE IT IS FELT.** Stretching
+the whole charged swing (`heavyK`, 1.75x) made it heavy by making it SLOW,
+which is not the same thing — the owner watched the blade wallow across the
+frame. A sword's weight is in the hold you spent charging it and in what
+happens after the edge lands, never in the edge's own travel, which on a
+real cut is the fastest part of the move. `bladeRate` runs the charge at
+nearly the light cut's pace through the strike (a quarter longer at full,
+just enough to read), carries a third again through the follow-through, and
+comes home FASTER than a light because it has already paid up front. 34
+frames became 22, with the cut landing six frames after the release. The
+light's own recovery came down with `recoverK` 5.0 to 4.0: 30 frames to 25.
+
+**A HIGHLIGHT ON AN EDGE IS AN EDGE, NOT A STAR.** The glint was a
+symmetrical eight-pointed sparkle pinned to the blade, and a symmetrical
+thing on a sword reads as a decal stuck on it: the shape says nothing about
+what is catching the light. It is anamorphic now — a hot core, a long thin
+streak either side of it and a much shorter pair across — and the sprite is
+TURNED to the edge's screen direction every frame, so the long axis lies on
+the blade's outline at any angle the swing holds it. It is also sized off
+the edge's own length rather than a constant. And it RUNS THE TOOL'S OWN
+EDGE: it used to run between `trailTip` and `trailRoot`, which are the two
+ends of the trail's ribbon — the width of a shovel's lip, and on the katana
+the last hand's breadth of the blade — so on a sword the light travelled
+four inches and sat there. A tool may declare `glintSpan`, how far back up
+its blade the edge runs from the point.
+
 **A CLICK IS NEVER BANKED.** Three clicks were three swings: the third
 fired on its own after the recovery, from a press made half a second
 earlier, and a sword that swings when you did not just ask it to is one you
@@ -3316,6 +3342,70 @@ door's angle and half-width, the stair's rise, treads, turns, `A0` and
 `TOP_ANG`); the stair goes UP as the angle DECREASES, the lighthouse's
 convention, and `updateMushroom()` is `updateTower()`'s shape: regions and
 clamps, the climb by winding, the tread snap.
+
+**THE FRONT OF THE BUILDING HAD A THREE AND A HALF METRE HOLE IN IT.** The
+parapet's colliders were laid 0.9 m of arc apart at radius 0.45 — beads on
+a string, touching and no more — and the gateway skipped every sample
+within 0.19 rad of the door, which at that radius threw away THREE of them.
+So the gate's 1.4 m opening was collided as a 3.5 m one and you walked
+through the front wall beside it. They are laid at half their own diameter
+now and the opening is measured in METRES off the gate's own width. The
+gate itself had no colliders at all — it was a picture of iron — and the
+posts had none either; both are solid, and the leaf had to be swung
+further open (1.35 rad) once it was, because where it hung as scenery it
+lay across its own doorway.
+
+**AND `mushWhere` REACHED ACROSS THE BEACH.** On the stair the walk clamps
+you to the shaft's bore FROM WHEREVER YOU ARE. The state is sticky on
+purpose — it is what stops one step off the top tread putting the room's
+floor back under you — so a state left set by any exit the three
+transitions do not name (a knockback out of the door, a teleport, a test
+harness) dragged the player back across the sand and posted them inside the
+column, over and over. Anything past `R_ROOM + 2.5`, or below the sand, is
+not in the building.
+
+**AND `floorY` HAS TO SURVIVE THE COPY.** The room's furniture is solid five
+metres up and nowhere else: `pushOutOfSolids` reads `floorY` and skips
+anything whose bottom is over your head. But the loop that offsets the
+house's colliders into world space rebuilt each one field by field and
+quietly dropped it — so a sofa on the top floor was a post standing on the
+sand, and the way in through the gate was blocked by an armchair nobody
+could see. Copy what you are given, or the field may as well not exist.
+
+**A ROOM WITH NO LIGHT IN IT IS NOT A ROOM.** The whole seventies interior
+was built and could not be seen: one directional moon outside a band of
+glass leaves an interior that renders as a black drum, and no amount of
+colour on a sofa survives that. Four cold lamps under the ceiling and one
+warm one over the credenza — they are the moon through the missing panes
+bouncing off a pale dish, which is what it would actually do. **Three, not
+ten**: every light in a scene is a shader define, and a far-culled group
+that switches ten of them on as you walk up to it recompiles every material
+in the game at the worst moment.
+
+**A PATTERN HAS TO BE TOLD HOW BIG IT IS.** Hung with the stock 0..1 uv, the
+wallpaper's four bullseyes stretched over fifteen metres of wall and came
+out as an orange smear — the drawing was there and none of it could be
+seen. Every map in the room carries a `repeat` worked out from the real
+size of the thing it is on. And the RETRO DOWNSCALE eats any pattern finer
+than a hand's breadth, so the patterns are big on purpose.
+
+**CONTRAST IS WHAT MAKES CONCRETE READ AS CONCRETE**, and a map that carries
+none cannot be given any by a material. Board-formed concrete is a RECORD of
+how it was poured: a dark seam per board with a pale lip under it where the
+lift bled, tie holes in a grid with rust running out of each one, damp
+running down and drying pale, and spalled patches with the aggregate
+showing. Drawn at 512 and pushed apart around mid grey before the quantise.
+The building is BACKLIT from every approach — you walk toward the moon — so
+the emissive off its own map is the only thing carrying it, the same lesson
+the scanned rocks taught.
+
+**AND THE FLOOR OF A ROOM IS NOT THE SLAB IT WAS POURED ON.** The room read
+as a black ring round a lit rug because the only thing under the furniture
+was the same structural concrete as the outside. Terrazzo — a pale ground
+with big chips in it — is what a dim room needs: something that catches
+what light there is. A round rug in a round room with a hole in the middle
+of it is a SECTOR of a ring, not a disc; a disc big enough to matter lay
+straight over the open well you climb up through.
 
 **WHERE YOU ARE IS REMEMBERED, NOT INFERRED.** `mushWhere` is `'out'` /
 `'stair'` / `'floor'` and the transitions are the three real ways through:

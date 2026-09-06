@@ -310,6 +310,27 @@ takes rather more, and the shovel breaks them too.
 
 ## Saving
 
+### The mushroom house
+
+The Bell Pavilion, generated rather than imported: a round room on one
+column, a dish of ribs under it, a band of steel-framed windows all the way
+round, a walled yard below with an iron gate, and a spiral stair inside the
+column up into the room.
+
+The top floor is furnished, and it is 1974 — a burnt-orange modular sofa
+curved round the seaward glass, two globe chairs (one over on its side), a
+wave-pattern shag rug, a smoked-glass table, a teak credenza with the deck
+still on it and the records off the shelf, a sunburst clock stopped on the
+wall, bullseye paper over the windows that never had a view, a dome lamp, a
+disco ball nobody took down. Nothing in it is ruined: it is dusty and
+sun-bleached and open to the weather through the panes that are gone, with
+the beach drifting in under them. Somebody carried all of it up that stair
+and then left.
+
+The furniture is solid up there and nowhere else, so you walk round the
+sofa on the top floor and not through thin air on the sand five metres
+under it.
+
 One autosave, and no save button. Reaching the mushroom house — the last
 stretch before the three come out of the dark — writes a checkpoint, and a
 small ring in the top right says so. It keeps where you stood, what you were

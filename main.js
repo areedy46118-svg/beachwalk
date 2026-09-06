@@ -5602,29 +5602,54 @@ function updateSparks(dt) {
  * a blade has had since anyone drew one. Drawn as gradient strokes so the
  * rays fade to nothing rather than ending, at 96 px so the taper survives
  * the retro downscale. */
+/* A HIGHLIGHT ON AN EDGE IS AN EDGE, NOT A STAR. The first texture was a
+ * symmetrical eight-pointed sparkle, and a symmetrical thing pinned to a
+ * blade reads as a decal stuck on it — the shape says nothing about what is
+ * catching the light. This one is ANAMORPHIC: a hot lens core, a long thin
+ * streak either side of it that lies ALONG the steel (the sprite is turned
+ * to the blade's screen direction every frame), a much shorter pair across
+ * it, and a wide soft bloom under the lot so it sits in the air rather than
+ * on the surface. Drawn at 160 px, because the streak's taper is the whole
+ * effect and it has to survive the retro downscale. */
 const glintTex = (() => {
-  const c = document.createElement('canvas'); c.width = c.height = 96;
-  const g = c.getContext('2d'); const m = 48;
-  const r = g.createRadialGradient(m, m, 0, m, m, 22);
-  r.addColorStop(0, 'rgba(255,252,240,1)'); r.addColorStop(0.3, 'rgba(255,244,220,0.55)'); r.addColorStop(1, 'rgba(255,240,210,0)');
-  g.fillStyle = r; g.fillRect(0, 0, 96, 96);
-  const ray = (ang, len, w, a) => {
-    const dx = Math.cos(ang), dy = Math.sin(ang);
-    const lg = g.createLinearGradient(m, m, m + dx * len, m + dy * len);
-    lg.addColorStop(0, `rgba(255,255,255,${a})`); lg.addColorStop(0.35, `rgba(255,250,235,${a * 0.55})`); lg.addColorStop(1, 'rgba(255,250,235,0)');
-    g.strokeStyle = lg; g.lineWidth = w; g.lineCap = 'round';
-    g.beginPath(); g.moveTo(m, m); g.lineTo(m + dx * len, m + dy * len); g.stroke();
+  const S = 160, m = S / 2;
+  const c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  const bloom = g.createRadialGradient(m, m, 0, m, m, m);
+  bloom.addColorStop(0, 'rgba(228,240,255,0.50)'); bloom.addColorStop(0.28, 'rgba(200,224,255,0.16)');
+  bloom.addColorStop(0.62, 'rgba(170,200,255,0.045)'); bloom.addColorStop(1, 'rgba(150,185,255,0)');
+  g.fillStyle = bloom; g.fillRect(0, 0, S, S);
+  // the streak: drawn as a stack of ever-shorter, ever-brighter passes, so
+  // it tapers to nothing instead of ending on a line
+  const streak = (len, w, a, col) => {
+    for (const sg of [-1, 1]) {
+      const lg = g.createLinearGradient(m, m, m + sg * len, m);
+      lg.addColorStop(0, `rgba(${col},${a})`); lg.addColorStop(0.18, `rgba(${col},${a * 0.5})`);
+      lg.addColorStop(0.55, `rgba(${col},${a * 0.12})`); lg.addColorStop(1, `rgba(${col},0)`);
+      g.strokeStyle = lg; g.lineWidth = w; g.lineCap = 'butt';
+      g.beginPath(); g.moveTo(m, m); g.lineTo(m + sg * len, m); g.stroke();
+    }
   };
-  for (let i = 0; i < 4; i++) ray(i * Math.PI / 2, 46, 2.6, 0.95);                    // the long rays
-  for (let i = 0; i < 4; i++) ray(i * Math.PI / 2 + Math.PI / 4, 22, 1.8, 0.55);      // the short ones between
+  g.save();
+  streak(m * 0.98, 7, 0.42, '190,215,255');          // the wide soft body of it
+  streak(m * 0.88, 3.2, 0.85, '226,238,255');        // the bright line inside that
+  streak(m * 0.62, 1.4, 1.0, '255,255,255');         // and the white filament
+  g.translate(m, m); g.rotate(Math.PI / 2); g.translate(-m, -m);
+  streak(m * 0.30, 5, 0.30, '190,215,255');          // the short cross, a fifth as long
+  streak(m * 0.22, 2.0, 0.70, '236,244,255');
+  g.restore();
+  const core = g.createRadialGradient(m, m, 0, m, m, S * 0.085);
+  core.addColorStop(0, 'rgba(255,255,255,1)'); core.addColorStop(0.45, 'rgba(240,248,255,0.75)');
+  core.addColorStop(1, 'rgba(210,230,255,0)');
+  g.fillStyle = core; g.fillRect(0, 0, S, S);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 })();
 const tipGlint = new THREE.Sprite(new THREE.SpriteMaterial({ map: glintTex, transparent: true, opacity: 0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending }));
-tipGlint.scale.setScalar(0.04); tipGlint.visible = false; tipGlint.renderOrder = 10;
+tipGlint.scale.setScalar(0.09); tipGlint.visible = false; tipGlint.renderOrder = 10;
 vmScene.add(tipGlint);
 let glintK = 0, glintN = 0, glintT = 0, glintPop = 0, glintPopAt = 0.5, glintWas = 0;
 const GLINT_SWEEP = 0.26;                   // the light runs the length of the edge in this
-const _glintP = new THREE.Vector3(), _glintR = new THREE.Vector3(), _glintC = new THREE.Vector3(), _glintN = new THREE.Vector3(), _glintS = new THREE.Vector3();
+const _glintP = new THREE.Vector3(), _glintR = new THREE.Vector3(), _glintC = new THREE.Vector3(), _glintN = new THREE.Vector3(), _glintS = new THREE.Vector3(), _glintE = new THREE.Vector3();
 /* AND IT MOVES LIKE ONE. The first version sat on the tip and jittered — a
  * lamp with a loose contact. Now, the moment the charge tops out, the light
  * RUNS the length of the cutting edge from the root to the tip, big and
@@ -5635,58 +5660,74 @@ const _glintP = new THREE.Vector3(), _glintR = new THREE.Vector3(), _glintC = ne
  * because a regular one is a beacon. */
 function updateGlint(dt) {
   const want = (winding && windFull) ? 1 : 0;
-  if (want && !glintWas) { glintT = 0; glintPop = 0; glintPopAt = 0.35; tipGlint.material.rotation = Math.random() * Math.PI; }
+  if (want && !glintWas) { glintT = 0; glintPop = 0; glintPopAt = 0.35; }
   glintWas = want;
   glintK += (want - glintK) * Math.min(1, dt * (want ? 18 : 10));
   if (glintK < 0.01) { tipGlint.visible = false; return; }
   tipGlint.visible = true;
   glintT += dt;
-  /* ON THE EDGE, WHERE YOU CAN SEE IT. The wound pose holds the blade out to
-   * the side and the very tip is often past the frame's edge, so a glint on
-   * the tip alone was a glint you could not see at the one moment it was for.
-   * Walk the cutting edge from tip to root and take the first point that is
-   * actually inside the frame; the whole lip is the edge, so any of it is
-   * "the tip of the shovel" as far as the eye is concerned. */
-  trailTip.getWorldPosition(_glintP); trailRoot.getWorldPosition(_glintR);
+  /* THE LIGHT RUNS THE TOOL'S OWN EDGE. It used to run between `trailTip`
+   * and `trailRoot`, which are the two ends of the TRAIL's ribbon — the
+   * width of a shovel's lip, and on the katana the last hand's breadth of
+   * the blade. So on a sword the highlight travelled four inches and sat
+   * there: it never had anything to do with the outline of the thing in
+   * your hand. A tool may declare `glintSpan`, how far back up its blade
+   * the edge runs from the point, and the light works that whole length.
+   * Everything without one keeps the lip it always had. */
+  trailTip.getWorldPosition(_glintP);
+  const span = equipped && equipped.glintSpan;
+  if (span) { _glintE.copy(trailTip.position); _glintE.y += span; toolVM.localToWorld(_glintE); }
+  else trailRoot.getWorldPosition(_glintE);
+  _glintR.copy(_glintE);
+  const inFrame = (v) => { _glintN.copy(v).project(vmCamera); return Math.abs(_glintN.x) < 0.94 && Math.abs(_glintN.y) < 0.94; };
+  /* Walk the edge from the point back toward the hand and hold at the first
+   * stretch of it actually in shot: a wound pose often carries the very tip
+   * past the frame, and a glint you cannot see is not a glint. */
   let placed = false;
-  for (let k = 0; k <= 4 && !placed; k++) {
-    _glintC.lerpVectors(_glintP, _glintR, k / 4);
-    _glintN.copy(_glintC).project(vmCamera);
-    if (Math.abs(_glintN.x) < 0.94 && Math.abs(_glintN.y) < 0.94) { tipGlint.position.copy(_glintC); placed = true; }
+  for (let k = 0; k <= 6 && !placed; k++) {
+    _glintC.lerpVectors(_glintP, _glintE, k / 6);
+    if (inFrame(_glintC)) { tipGlint.position.copy(_glintC); placed = true; }
   }
-  /* And when the WHOLE edge is out of shot — the sand shovel's full wind holds
-   * the blade clear off the right of the frame — walk on down the tool toward
-   * the hand and light the first part of it that is in view. It is on the
-   * shovel and it is where your eye is; that is the job. */
+  // and when the whole edge is out of shot, light the first part of the
+  // tool below it that is not — it is still on the steel, and it is where
+  // the eye is, which is the job
   if (!placed) {
     toolMount.getWorldPosition(_glintC);
     for (let k = 1; k <= 6 && !placed; k++) {
-      _glintN.lerpVectors(_glintR, _glintC, k / 6);
-      const q = _glintN.clone().project(vmCamera);
-      if (Math.abs(q.x) < 0.94 && Math.abs(q.y) < 0.94) { tipGlint.position.copy(_glintN); placed = true; }
+      _glintS.lerpVectors(_glintE, _glintC, k / 6);
+      if (inFrame(_glintS)) { tipGlint.position.copy(_glintS); placed = true; }
     }
     if (!placed) tipGlint.position.copy(_glintC);
   }
-  /* The run along the edge: from the root end (or the hand, when the edge is
-   * out of shot) to the point it will hold at, over GLINT_SWEEP. */
+  // the run: from the far end of the edge (or the hand, if that is off
+  // screen too) to the point it holds at, over GLINT_SWEEP
   if (glintT < GLINT_SWEEP) {
-    _glintS.copy(_glintR).project(vmCamera);
-    const rootIn = Math.abs(_glintS.x) < 0.94 && Math.abs(_glintS.y) < 0.94;
-    if (!rootIn) toolMount.getWorldPosition(_glintR);
-    const u = easeOutCubic(glintT / GLINT_SWEEP);
-    tipGlint.position.lerpVectors(_glintR, tipGlint.position, u);
+    if (!inFrame(_glintR)) toolMount.getWorldPosition(_glintR);
+    tipGlint.position.lerpVectors(_glintR, tipGlint.position, easeOutCubic(glintT / GLINT_SWEEP));
   }
-  // the hold: a slow breath, a slow turn, and the irregular pop
+  /* AND IT LIES ALONG THE STEEL. The streak is drawn down the texture's own
+   * X, so turning the sprite to the edge's SCREEN direction puts the long
+   * axis of the highlight on the blade's outline at any angle the swing
+   * holds it — which is the whole difference between a light on a sword and
+   * a sticker on one. Measured off the two ends, every frame. */
+  _glintN.copy(_glintP).project(vmCamera);
+  _glintS.copy(_glintE).project(vmCamera);
+  const ex = _glintS.x - _glintN.x, ey = (_glintS.y - _glintN.y) / Math.max(0.2, vmCamera.aspect);
+  const edgeAng = Math.atan2(ey, ex);
+  // the hold: a slow breath, the irregular pop, and a flick of the angle
+  // with it — a highlight moves because the hand holding the blade trembles
   glintPop = Math.max(0, glintPop - dt / 0.11);
   glintPopAt -= dt;
   if (glintPopAt <= 0 && glintT >= GLINT_SWEEP) { glintPop = 1; glintPopAt = 0.38 + Math.random() * 0.55; }
-  glintN += ((Math.random() - 0.5) * 2 - glintN) * Math.min(1, dt * 14);   // a little life under it, smoothed
-  const breath = 0.5 + 0.5 * Math.sin(glintT * Math.PI * 2 * 1.3);
-  const sweep = glintT < GLINT_SWEEP ? 1 - glintT / GLINT_SWEEP : 0;          // big and bright while it runs
-  const f = 0.55 + 0.30 * breath + 0.15 * glintN + glintPop * 0.9 + sweep * 0.8;
-  tipGlint.material.rotation += dt * (0.8 + glintPop * 9);
+  const breath = 0.5 + 0.5 * Math.sin(glintT * 2.3);
+  const sweep = glintT < GLINT_SWEEP ? 1 - glintT / GLINT_SWEEP : 0;
+  const f = 0.55 + 0.45 * breath + sweep * 0.9 + glintPop * 0.85;
+  tipGlint.material.rotation = edgeAng + glintPop * 0.22 * Math.sin(glintT * 41);
   tipGlint.material.opacity = Math.min(1, glintK * (0.45 + 0.55 * f));
-  tipGlint.scale.setScalar(glintK * (0.036 + 0.030 * f));
+  // and it is sized to the weapon it is on, not to a number: the streak
+  // covers about half the edge, so a sword's is long and a lip's is short
+  const len = _glintP.distanceTo(_glintE);
+  tipGlint.scale.setScalar(THREE.MathUtils.clamp(len * 1.15, 0.10, 0.46) * (0.86 + 0.14 * f));
 }
 
 function updateTrail(dt, recording) {
@@ -6214,7 +6255,7 @@ toolMount.add(katanaVM);
 const katanaItem = {
   name: 'Katana', icon: makeKatanaIcon(), onDig: true, viewmodel: katanaVM,
   inspectModel: katInspect, lip: KAT_LIP,
-  blade: true, dmgLight: 2, dmgHeavy: 3, windRate: 1.3, gore: 1.4, swingK: 0.9, recoverK: 5.0, heavyK: 0.75, alternate: true,
+  blade: true, dmgLight: 2, dmgHeavy: 3, windRate: 1.3, gore: 1.4, swingK: 0.9, recoverK: 4.0, glintSpan: 0.60, alternate: true,
   use: () => toggleEquip(katanaItem),
 };
 // a few steps from the Military Shovel, on the same stretch of sand under the cliff
@@ -7199,14 +7240,24 @@ const windupEnd = () => slashing() ? SLASH_WINDUP : DIG_WINDUP;
  * combination you can hold a rhythm in, not one that accelerates away from
  * you. */
 const comboRate = () => 1;
-/* A SWORD'S HEAVY HAS WEIGHT. At the cut's own timing a full charge went
- * from release to landing in 0.13 s and was home in a third of a second —
- * quicker than the light cut it was meant to outclass, and it read as a
- * flinch. A blade's charge is stretched by how much was put into it
- * (`heavyK`): the hang at the top is longer, the blade is seen to cross,
- * and the follow-through carries. */
-const swingSecs = (P) => (slashing() ? DIG_DUR * (0.55 + P * 0.60) / (1 + 0.34 * P) : DIG_DUR * (0.55 + P)) * ((equipped && equipped.swingK) || 1) * comboRate()
-  * (isBlade() && equipped.heavyK ? 1 + equipped.heavyK * P : 1);
+const swingSecs = (P) => (slashing() ? DIG_DUR * (0.55 + P * 0.60) / (1 + 0.34 * P) : DIG_DUR * (0.55 + P)) * ((equipped && equipped.swingK) || 1) * comboRate();
+/* A HEAVY IS QUICK WHERE IT IS SEEN AND LONG WHERE IT IS FELT. Stretching
+ * the WHOLE charged swing (`heavyK`, 1.75x) made it heavy by making it
+ * slow, which is not the same thing: the owner watched the blade wallow
+ * across the frame and called it too slow. A sword's weight is in the hold
+ * you spent charging it and in what happens after the edge lands — never in
+ * the edge's own travel, which on a real cut is the fastest part of the
+ * move. So the charge runs at nearly the light cut's pace through the
+ * strike (a quarter longer at full, just enough to read), CARRIES a third
+ * again through the follow-through, and comes home faster than a light
+ * because it has already paid up front. 34 frames became 22, with the cut
+ * itself landing in five. */
+const bladeRate = (p, P) => {
+  if (!isBlade() || digOverhead || !equipped.recoverK) return 1;
+  if (p < DIG_STRIKE) return 1 + 0.25 * P;
+  if (p < SLASH_THROUGH) return 1 + 0.35 * P;
+  return equipped.recoverK * (katBack() ? 1.8 : 1) * (1 - 0.55 * P);
+};
 let vmLagX = 0, vmLagY = 0, vmPrevYaw = 0, vmPrevPitch = 0;
 let vmSpringY = 0, vmSpringV = 0;
 const _vmEuler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -7369,9 +7420,8 @@ function updateViewmodel(dt) {
      * home at `recoverK` times the length it would otherwise take (the
      * return's a little longer again, so a pair ends on a beat), which is
      * the whole of what keeps a light hit from being spammable now that the
-     * cut itself is quick again. */
-    const rk = isBlade() && equipped.recoverK && digT >= SLASH_THROUGH && !digOverhead ? equipped.recoverK * (katBack() ? 1.8 : 1) * (1 - 0.65 * P) : 1;   // a heavy has paid up front; it comes home quicker
-    digT += dt / (swingSecs(P) * rk);
+     * cut itself is quick again — see `bladeRate`. */
+    digT += dt / (swingSecs(P) * bladeRate(digT, P));
     const p = digT, W = windupEnd(), isCut = slashing();
     if (p < W) {
       // anticipation: quick out of rest, hanging at the top of the haul
@@ -13680,9 +13730,15 @@ const mushHouse = makeMushroomHouse();
 mushHouse.group.position.set(MUSH_X, 0, MUSH_Z);
 scene.add(mushHouse.group);
 farProps.push({ obj: mushHouse.group, z: MUSH_Z, d: 320 });
+/* AND `floorY` HAS TO SURVIVE THE COPY. The room's furniture is solid five
+ * metres up and nowhere else — `pushOutOfSolids` reads `floorY` and skips
+ * anything whose bottom is over your head — but this loop rebuilt each
+ * collider field by field and quietly dropped it, so a sofa on the top
+ * floor was a post standing on the sand: the way in through the gate was
+ * blocked by an armchair nobody could see. Copy what you are given. */
 for (const c of mushHouse.colliders) {
-  if (c.r !== undefined) rockColliders.push({ x: c.x + MUSH_X, z: c.z + MUSH_Z, r: c.r, top: c.top, mat: c.mat });
-  else rockColliders.push({ x0: c.x0 + MUSH_X, x1: c.x1 + MUSH_X, z0: c.z0 + MUSH_Z, z1: c.z1 + MUSH_Z, top: c.top, mat: c.mat });
+  if (c.r !== undefined) rockColliders.push({ x: c.x + MUSH_X, z: c.z + MUSH_Z, r: c.r, top: c.top, mat: c.mat, floorY: c.floorY });
+  else rockColliders.push({ x0: c.x0 + MUSH_X, x1: c.x1 + MUSH_X, z0: c.z0 + MUSH_Z, z1: c.z1 + MUSH_Z, top: c.top, mat: c.mat, floorY: c.floorY });
 }
 {
   const prev = cliff.material.onBeforeCompile;
@@ -13728,6 +13784,14 @@ function updateMushroom(dt) {
   const ang = Math.atan2(dx, dz);
   const feet = camBaseY - playerEye();
   const clampTo = (r) => { if (d > 0.001) { camera.position.x = MUSH_X + (dx / d) * r; camera.position.z = MUSH_Z + (dz / d) * r; d = r; } };
+  /* AND THE STATE MUST NOT REACH ACROSS THE BEACH. `mushWhere` is sticky by
+   * design — it is what stops one step off the top tread putting the room's
+   * floor back under you — but on the stair the walk clamps you to the
+   * shaft's own bore from WHEREVER YOU ARE, so a state left set (a knockback
+   * out of the door, a teleport, any way out the three transitions do not
+   * name) dragged the player across the sand and posted them back inside the
+   * column. Anything this far out is not in the building. */
+  if (mushWhere !== 'out' && (d > M.R_ROOM + 2.5 || feet < -1)) { mushWhere = 'out'; mushTurns = 0; mushStairY = null; }
   const atGap = Math.abs(_angDiff(ang, M.TOP_ANG)) < 0.45;              // where the stair arrives: the gap in the well rail
   const doorOk = Math.abs(_angDiff(ang, M.DOOR_ANG)) < M.DOOR_HALF * 0.95;
   const inner = M.BORE - PLAYER_R * 0.55, outer = M.R_ROOM - 0.45;
@@ -19522,6 +19586,7 @@ window.__bw = {
     update(dt, rawDt); updateHatch(rawDt);
   },
   MUSH_X, MUSH_Z, MUSH, mushHouse, updateMushroom, mushState: () => ({ where: mushWhere, turns: mushTurns, stairY: mushStairY }),
+  mushPut: (w, y) => { mushWhere = w; mushTurns = MUSH.TURNS; mushStairY = y === undefined ? MUSH.H_ROOM : y; },
   smile, updateSmile, smileState: () => ({ phase: smilePhase, t: smileT, loaded: !!smileMixer, clips: Object.keys(smileClips) }), sfxSmileStep,
   updateHurt, hurtEl,
   militaryItem, militaryWorld, milModel, get toolVM() { return toolVM; }, vmScene, vmCamera, toolMount,
