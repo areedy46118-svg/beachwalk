@@ -1558,6 +1558,39 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**WHATEVER MOVES THE PLAYER LAST MUST RE-RUN THE ROOM'S CLAMP.**
+`updateBunkers` sits at line 17507 and `updateMutant` at 17658 — a hundred
+and fifty lines LATER — so the creature's own "you do not walk through two
+hundred kilos of it" push moved the camera after every wall and furniture
+clamp in the frame, and nothing corrected it until the next one. That is the
+whole of "I keep getting stuck in a block in combat", reported three times:
+he presses you into a desk, the push puts you inside it, the clamp takes you
+out, he presses again, and between the two you do not move at all. It was
+never a hole in the clamp, which is why three passes of strengthening the
+clamp did nothing. `clampPlayerToRoom()` is callable on its own and both the
+body push and the knockback call it; better, `shovePlayer` REFUSES a push the
+room had to correct, so a man backed against a desk stays where he is and the
+creature comes round instead. Measured, with him pressing: 13 spots backed
+into furniture, none stuck in any of eight directions.
+
+**AND TWO THINGS STEERING ONE BODY IS NEITHER OF THEM STEERING.** He was
+still catching on the table after the pathfinder went in, because
+`updateMutantUnit`'s chase and `followPath`'s route were BOTH moving him
+every frame — the chase straight at you and into the table, the route round
+it. Whoever is steering, steers: the chase branch is off while he is on a
+route. And the gate that let him ask for one was `dist > 2.4`, which is
+exactly the range at which a table between you IS the problem; anything past
+his own reach counts now. Measured: 17 of 17 with furniture between you.
+
+**A THING BREAKING SHOULD COME APART INTO WHAT IT WAS MADE OF.** The coat
+stand's first break deleted it and threw fourteen identical dowels, which is
+not a coat stand breaking — it is a coat stand being replaced by dowel. Every
+piece it is BUILT from leaves now, from where it actually stood and carrying
+the rotation it was drawn with: three feet, four hooks, four tips, the knob,
+and the post SPLIT into three lengths at the height it was struck, with the
+broken faces slanted, because a cylinder capped square at both ends is a
+dowel and not a broken post. Fifteen pieces, and the post reads as snapped.
+
 **EVERY BONE LOOKUP GOES THROUGH THE ALIAS, AND THREE OF THEM DID NOT.**
 The severing, the head burst and the limb bake name the mutant's bones
 literally — `Character1_LeftForeArm` — and the Dealer's rig answers to

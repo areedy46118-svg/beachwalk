@@ -15220,8 +15220,14 @@ function updateMutantUnit(u, dt) {
           sfxMutTell(dist, u.atk[pick].wind, u.kind.voice);
         }
       }
-    } else if (!near) {
-      /* THE SPRINT DOES NOT STOP WHEN THE TAKE DOES. They come in at nearly
+    } else if (!near && !u.path) {
+      /* AND NOT WHILE HE IS ON A ROUTE. The chase and the route were both
+       * moving him every frame in opposite directions — the chase straight
+       * at you and into the table, the route round it — and the tug of war
+       * is why he was still getting caught on it after the pathfinder went
+       * in. Whoever is steering, steers.
+       *
+       * THE SPRINT DOES NOT STOP WHEN THE TAKE DOES. They come in at nearly
        * twice speed through the cutscene, so handing back at their walking
        * chase speed was a visible gear change at the exact moment you got
        * your hands — the one frame that had to look like nothing happened.
@@ -15314,11 +15320,11 @@ function updateMutantUnit(u, dt) {
     }
   }
   mutSeparate(u, dt);
-  // and you do not walk through two hundred kilos of it
-  if (dist < 0.9) {
-    camera.position.x = p.x + (dx / dist) * 0.9;
-    camera.position.z = p.z + (dz / dist) * 0.9;
-  }
+  /* and you do not walk through two hundred kilos of it — but it does not
+   * get to press you into the furniture either. `shovePlayer` refuses the
+   * push when the room has to correct it, so a man backed against a desk
+   * stays where he is and the creature comes round instead of pinning him. */
+  if (dist < 0.9) shovePlayer(p.x + (dx / dist) * 0.9, p.z + (dz / dist) * 0.9);
   mutAnim(u, dt, moving);
   aimBar(u, dt, dist);
 }
@@ -16293,6 +16299,45 @@ function spawnBunker(x, y, z, yaw = 0, opts) {
   if (!b.hidden) farProps.push({ obj: g, z, d: 260 });
   return b;
 }
+/* THE ROOM'S CLAMP, ON ITS OWN. `updateBunkers` runs early in the frame and
+ * anything that moves the player AFTER it — a creature shouldering you out
+ * of itself, a blow's knockback — lands you inside the furniture with no
+ * correction until the next frame. That is not a rare edge: he presses you
+ * into a desk, the push puts you in it, the clamp takes you out, he presses
+ * again, and between the two you do not move at all. This is the whole of
+ * "I keep getting stuck in a block in combat", and the answer is that
+ * whatever displaces you calls this immediately afterwards. */
+const _cpL = new THREE.Vector3();
+function clampPlayerToRoom() {
+  const b = inBunker; if (!b) return;
+  const B = b.group.userData.bunker, nav = B.nav; if (!nav) return;
+  const g = b.group, R = nav.room, pr = PLAYER_R * 0.75, r = 0.22;
+  _cpL.copy(camera.position).applyMatrix4(b.inv);
+  _cpL.x = THREE.MathUtils.clamp(_cpL.x, R.x0 + pr, R.x1 - pr);
+  _cpL.z = THREE.MathUtils.clamp(_cpL.z, R.z0 + pr, R.z1 - pr);
+  if (B.blocked(_cpL.x, _cpL.z, r)) {
+    B.pushOut(_cpL, r, 5);
+    if (B.blocked(_cpL.x, _cpL.z, r)) B.escape(_cpL, r, 3.2);
+    if (B.blocked(_cpL.x, _cpL.z, r) && B.mainRegion) {
+      const m = B.mainRegion(_cpL.x, _cpL.z);
+      if (m) { _cpL.x = m.x; _cpL.z = m.z; }
+    }
+  }
+  _cpL.applyMatrix4(g.matrixWorld);
+  camera.position.x = _cpL.x; camera.position.z = _cpL.z;
+}
+/* And a body shouldering you aside must not shoulder you INTO something. It
+ * pushes you off itself, the room takes the result, and if the room had to
+ * move you the creature gives up rather than grinding you against a desk —
+ * there is nowhere for you to go, so it goes round you instead. */
+function shovePlayer(x, z) {
+  const bx = camera.position.x, bz = camera.position.z;
+  camera.position.x = x; camera.position.z = z;
+  clampPlayerToRoom();
+  const moved = Math.hypot(camera.position.x - x, camera.position.z - z);
+  if (moved > 0.02) { camera.position.x = bx; camera.position.z = bz; return false; }
+  return true;
+}
 function updateBunkers(dt) {
   const wasIn = inBunker;
   inBunker = null;
@@ -16662,7 +16707,11 @@ function unstickDealer(dt, dist) {
    * is a handful of searches in a fight and not one a frame. */
   const g0 = bunkerHome.group;
   dealer.pathAge = (dealer.pathAge || 0) + dt;
-  if (!dealer.path && dealer.pathAge > PATH_EVERY && dist > 2.4) {
+  /* AND HE MAY ASK FROM CLOSE UP. The old gate was two and a half metres,
+   * which is exactly the range at which a table between you is the whole
+   * problem: he could see you, he was nearly on you, and he was never
+   * allowed to ask the way round. Anything past his own reach counts. */
+  if (!dealer.path && dealer.pathAge > PATH_EVERY && dist > 1.3) {
     dealer.pathAge = 0;
     const alx = dealer.g.position.x - g0.position.x, alz = dealer.g.position.z - g0.position.z;
     const px = camera.position.x - g0.position.x, pz = camera.position.z - g0.position.z;
@@ -16889,29 +16938,79 @@ function makeCoatStand() {
   knob.position.y = 1.74; g.add(knob);
   return g;
 }
-/* IT GOES TO DOWEL. Not the electronics' shower of case and tube and sparks
- * — wood breaks into sticks, and the sound is a clatter, not a report. */
-function smashCoatStand(speed) {
+/* IT COMES APART INTO WHAT IT WAS MADE OF. The first version deleted the
+ * stand and threw fourteen identical dowels, and a shower of dowel where a
+ * coat stand was is not a coat stand breaking — it is a coat stand being
+ * replaced by dowel. Every piece it is BUILT from leaves instead: the three
+ * feet, the four hooks, their four tips, the knob, and the post itself SPLIT
+ * into three lengths at a break the impact chooses. Each one leaves from
+ * where it actually stood, carrying the rotation it was drawn with, and the
+ * long post pieces tumble end over end while the little parts spin. The
+ * lengths are then splintered — the split ends are cut on a slant, so a
+ * broken post reads as broken and not as sawn. */
+function smashCoatStand(speed, atY) {
   if (coatBroken || !coatStand) return;
   coatBroken = true;
+  coatStand.updateMatrixWorld(true);
   const p = coatStand.position.clone();
-  scene.remove(coatStand);
   const gy = floorFor(p);
-  const kick = Math.min(2.2, 0.5 + speed * 0.16);
-  for (let i = 0; i < 14; i++) {
-    const len = 0.12 + Math.random() * 0.34;
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.024, len, 5), COAT_MAT);
-    m.position.set(p.x + (Math.random() - 0.5) * 0.24, gy + 0.15 + Math.random() * 1.5, p.z + (Math.random() - 0.5) * 0.24);
-    m.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+  const kick = Math.min(2.6, 0.7 + speed * 0.18);
+  const hitY = (atY === undefined ? gy + 1.0 : atY) - p.y;
+  const _wp = new THREE.Vector3(), _wq = new THREE.Quaternion(), _ws = new THREE.Vector3();
+  const fling = (m, wy, heavy) => {
     scene.add(m);
-    const a = Math.random() * Math.PI * 2;
+    // out from the post, and hardest where it was struck
+    const a = Math.atan2(m.position.x - p.x, m.position.z - p.z) + (Math.random() - 0.5) * 1.1;
+    const near = 1 - Math.min(1, Math.abs(wy - (p.y + hitY)) / 1.2);
+    const out = (0.5 + Math.random() * kick) * (0.45 + near);
+    const spin = heavy ? 7 : 16;
     gibs.push({
-      m, vel: new THREE.Vector3(Math.cos(a) * (0.6 + Math.random() * kick), 1.1 + Math.random() * 1.6, Math.sin(a) * (0.6 + Math.random() * kick)),
-      spin: new THREE.Vector3((Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12),
-      rest: gy + 0.02 + Math.random() * 0.02, life: 120, bleed: false,
+      m, vel: new THREE.Vector3(Math.sin(a) * out, 0.9 + Math.random() * 1.5 + near * 0.9, Math.cos(a) * out),
+      spin: new THREE.Vector3((Math.random() - 0.5) * spin, (Math.random() - 0.5) * spin, (Math.random() - 0.5) * spin),
+      rest: gy + (heavy ? 0.03 : 0.02) + Math.random() * 0.02, life: 150, bleed: false,
     });
+  };
+  // the parts, each from where it stood
+  for (const c of [...coatStand.children]) {
+    c.updateMatrixWorld(true);
+    c.matrixWorld.decompose(_wp, _wq, _ws);
+    const isPost = c.geometry.parameters && c.geometry.parameters.height > 1.0;
+    if (!isPost) {
+      const m = new THREE.Mesh(c.geometry, COAT_MAT);
+      m.position.copy(_wp); m.quaternion.copy(_wq);
+      fling(m, _wp.y, false);
+      continue;
+    }
+    /* THE POST SPLITS. Three lengths, cut at the height it was hit and once
+     * more at random, with the broken faces slanted — a cylinder capped
+     * square at both ends is a dowel, and a dowel is not a broken post. */
+    const H = c.geometry.parameters.height;
+    // the first break is AT the height it was struck — `hitY` is already
+    // measured from the stand's foot, so it wants no offset on top
+    const cuts = [0, THREE.MathUtils.clamp(hitY / H, 0.20, 0.74), 0, 1].slice(0);
+    cuts[2] = THREE.MathUtils.clamp(cuts[1] + 0.18 + Math.random() * 0.3, cuts[1] + 0.12, 0.94);
+    cuts.sort((x, y) => x - y);
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const len = (cuts[i + 1] - cuts[i]) * H;
+      if (len < 0.05) continue;
+      const g2 = new THREE.CylinderGeometry(0.033, 0.043, len, 8, 1);
+      // slant the two broken faces, and only those
+      const pos = g2.attributes.position;
+      for (let v = 0; v < pos.count; v++) {
+        const y = pos.getY(v);
+        if (i > 0 && y < -len / 2 + 1e-3) pos.setY(v, y + pos.getX(v) * 0.35 + 0.012);
+        if (i < cuts.length - 2 && y > len / 2 - 1e-3) pos.setY(v, y + pos.getZ(v) * 0.32 - 0.012);
+      }
+      pos.needsUpdate = true; g2.computeVertexNormals();
+      const m = new THREE.Mesh(g2, COAT_MAT);
+      const mid = (cuts[i] + cuts[i + 1]) / 2;
+      m.position.set(_wp.x, p.y + (mid * H), _wp.z);
+      m.rotation.set((Math.random() - 0.5) * 0.3, Math.random() * 6, (Math.random() - 0.5) * 0.3);
+      fling(m, m.position.y, true);
+    }
   }
-  sfxCrateBreak ? sfxCrateBreak() : sfxThud(0.4);
+  scene.remove(coatStand);
+  sfxCrateBreak();
   hitstop = Math.max(hitstop, 0.03);
 }
 /* Anybody who walks into it brings it down — and a body sliding through it
@@ -16920,11 +17019,11 @@ function updateCoatStand() {
   if (coatBroken || !coatStand || !inBunker) return;
   const p = coatStand.position, R = 0.34;
   const near = (x, z, r) => (x - p.x) * (x - p.x) + (z - p.z) * (z - p.z) < (R + r) * (R + r);
-  if (near(camera.position.x, camera.position.z, 0.22)) { smashCoatStand(6); return; }
-  if (dealer.st.alive && dealer.g.visible && near(dealer.g.position.x, dealer.g.position.z, 0.32)) { smashCoatStand(7); return; }
+  if (near(camera.position.x, camera.position.z, 0.22)) { smashCoatStand(6, camBaseY - playerEye() + 1.1); return; }
+  if (dealer.st.alive && dealer.g.visible && near(dealer.g.position.x, dealer.g.position.z, 0.32)) { smashCoatStand(7, p.y + 1.1); return; }
   for (const u of mutants) {
     if (!u.rag || u.rag.asleep) continue;
-    for (const q of u.rag.parts) if (near(q.p.x, q.p.z, q.r) && q.p.y < p.y + 1.8) { smashCoatStand(9); return; }
+    for (const q of u.rag.parts) if (near(q.p.x, q.p.z, q.r) && q.p.y < p.y + 1.9) { smashCoatStand(9, q.p.y); return; }
   }
 }
 function buildBunkerProps() {
@@ -16975,12 +17074,13 @@ function buildBunkerProps() {
    * starts inside a desk. */
   if (!coatStand) {
     coatStand = makeCoatStand();
-    /* Off to one side of the fighting floor with a metre and a bit clear all
-     * round it — measured against the walk grid, not guessed: it stood
-     * inside a desk the first time. Not down the middle, where it would be
-     * the fight, and not at the foot of the ladder, where you would bring it
-     * down on the way in before you had met him. */
-    coatStand.position.set(g.position.x + 1.05, g.position.y, g.position.z - 1.74);
+    /* IN A CORNER, WHERE A COAT STAND GOES. It stood out on the open floor
+     * first and read as something dropped in the middle of a room; against
+     * the wall at the far end it is furniture, and backing into that corner
+     * away from him is a thing you do rather than a thing you have to aim
+     * for. The spot is measured against the walk grid — the very first one
+     * was inside a desk. */
+    coatStand.position.set(g.position.x + 2.45, g.position.y, g.position.z + 5.21);
     coatStand.frustumCulled = false;
     scene.add(coatStand);
   }
@@ -17475,6 +17575,7 @@ function update(dt, rawDt = dt) {
   // being nipped shoves you back a little
   if (knockback.lengthSq() > 0.0001) {
     camera.position.addScaledVector(knockback, dt);
+    clampPlayerToRoom();          // a blow must not put you inside a desk either
     knockback.multiplyScalar(1 - Math.min(1, 7 * dt));
   }
   // The drainage tunnel home is the only way through the sand wall.
