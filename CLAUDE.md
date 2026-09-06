@@ -1558,6 +1558,46 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**A RESULTANT CANCELS INSIDE THINGS, AND THAT IS WHAT A CHAIR IS.**
+`pushOut` sums the push from every cell the body overlaps, which is right
+against a bin and right along a desk front — and exactly wrong between the
+legs of the swivel chair, where every cell has an opposite number and the sum
+is nothing. The body does not move, the caller reverts the frame, and you
+hold W against a chair for ever. `S.escape` is the last word: rings of
+candidate spots at widening radius, nearest clear one wins, and it runs for
+the player and for the Dealer after the push fails. Only if even that finds
+nowhere is a move refused, and there is nowhere in this room where it does.
+The test that proves it is the one worth keeping: 364 cases — a grid of
+starts, walked hard into everything in four directions, then asked to leave
+in any of eight — and zero that could not. **And a movement test with the
+dialogue still open measures nothing**: `frozen()` stops the player dead, so
+the first run of that sweep reported all 160 cases stuck, including the
+middle of an empty floor.
+
+**BOTH SHOVELS CUT.** The stroke was the Military Shovel's alone. Nothing
+about it is the scan's: `VM_SLASH_ROT` is *identical* to that tool's own rest
+grip, which is "the cut is all arm" made literal — so `slashing()` widening
+to any dig tool moves the poses, the timing, the trail and the whoosh across
+whole, and each tool keeps its own grip through `restRot()`. The overhead was
+always shared.
+
+**WHAT A BLOW ON A BOSS FEELS LIKE.** Everything else on the beach is
+cleared out of the way; he is the fight, and the difference has to be in the
+hands. `bossHit(P, broke)` is the confirm on top of the ordinary one — twice
+the frozen time, the guard spring driven, sparks off the bar, the lens
+punched, `sfxSlam` under it — and the POISE LADDER is what makes it read:
+0.085 s on the first light, 0.085 on the second, **0.155 and a knee-dip on
+the third**, the one that finally moves him. You can feel the count. A
+charge skipped all of it at first, because it never entered the light
+branch — the one blow that should land hardest landed softest.
+
+**AND A BOSS NEEDS A BLOW YOU ARE AFRAID OF.** The fair one to make it is
+the one you can see coming from furthest away: `dHold`, a second of bar over
+his head, takes TWO of your four. Per-swing damage (`A.dmg || kind.dmg`) is
+the whole mechanism. With eighteen health, shorter recoveries on the quick
+swings and `aggr` 1.45, a passive player takes 39 damage a minute off 30
+swings — and the way through is still the parry: five ripostes.
+
 **AN ICON THAT FELL BACK IS NOT THE FINAL ANSWER — AND THE FALLBACK MUST BE
 THE RIGHT OBJECT.** `itemIcon` renders the item's own model into a tile the
 first time it is asked and caches it, and until the model arrives it shows

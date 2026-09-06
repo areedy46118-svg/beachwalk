@@ -506,9 +506,15 @@ for f in range(N + 1):
     reach = easeout(max(0.0, min(1.0, (t - 0.04) / 0.34)))
     settle = ease(max(0.0, (t - 0.44) / 0.56))
     r = reach * (1 - settle)
-    glance = bump(t, 0.0, 0.62) ** 0.7          # down and back up, inside the reach
     reach_pose(rp, r)
-    head(pitch=0.06 + 0.30 * glance, yaw=-0.42 * glance - 0.06 * r, roll=-0.08 * r)
+    # HIS HEAD STAYS ON YOU. The head is a child of the spine, so a reach
+    # that pitches the chest 1.2 rad forward carries the face down with it
+    # whatever the head is keyed to — and a man who looks at the floor while
+    # he picks up a weapon has stopped being a threat. The head counters the
+    # torso instead: the spine's own lean, twist and roll subtracted back out
+    # (the three spine joints sum to `lean`, and neck + head sum to `pitch`),
+    # so the mask holds level and pointed at you through the whole reach.
+    head(pitch=-rp['lean'] * r * 0.94, yaw=-rp['twist'] * r * 0.75, roll=-rp['roll'] * r * 0.85)
     key(f)
 stamp_grip(); finish(act)
 

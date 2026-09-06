@@ -5926,7 +5926,14 @@ function poseMix(out, a, b, t) {
  * always an overhead. The side is chosen when the swing is COMMITTED — the
  * click, or the start of a wind-up — so the cocked pose and the cut agree. */
 let slashDir = -1, lastSlashAt = -1e9;   // -1 sweeps right to left
-const slashing = () => equipped === militaryItem && !digOverhead;
+/* BOTH SHOVELS CUT. The stroke was the Military Shovel's alone and the sand
+ * shovel still chopped, so the two tools played different games; the owner
+ * asked for one. Nothing about the cut is the scan's — `VM_SLASH_ROT` is
+ * identical to the Military Shovel's own rest grip, which is the comment's
+ * "the cut is all arm" made literal — so the poses, the timing, the trail
+ * and the whoosh transfer whole, and each tool keeps its own grip through
+ * `restRot()`. The overhead was always shared. */
+const slashing = () => !!(equipped && equipped.onDig) && !digOverhead;
 /* ALWAYS RIGHT TO LEFT. A backhand on the second click was built — the
  * forehand mirrored about the middle of the frame, leaving from the far hip
  * where the first cut finished — and cut on the owner's word: two cuts in
@@ -6369,6 +6376,24 @@ function hitConnect(P, k) {
   hitstop = Math.max(hitstop, 0.03 * k);
   sfxConnect(P, k);
 }
+/* WHAT A BLOW ON THE BOSS FEELS LIKE. Everything else in the game is a
+ * creature you clear out of the way; he is the fight, and the difference
+ * has to be in the hands. On top of the ordinary confirm: twice the frozen
+ * time, the guard spring driven, sparks off the bar, the lens punched, and
+ * the sub under it — the same language the overhead slam speaks, because
+ * this is the other end of the same exchange. A stagger (his poise finally
+ * breaking) gets the whole of it and a beat longer, so the third light
+ * swing lands differently from the first two and you can feel that it did. */
+function bossHit(P, broke) {
+  hitstop = Math.max(hitstop, broke ? 0.155 : 0.085);
+  addTrauma((broke ? 0.55 : 0.30) + P * 0.30);
+  fovKick = Math.max(fovKick, (broke ? 9 : 5.5) + P * 4);
+  guardShockV += broke ? 6.2 : 3.8;
+  spawnSparks(broke ? 16 : 9, 0.9 + P * 0.5);
+  vmImpulse(-(1.25 + P * 0.35));
+  sfxSlam(Math.min(1, P + (broke ? 0.35 : 0)));
+  if (broke) { slamDip = Math.max(slamDip, 0.07); playSample('poise', 0.85); }
+}
 const _flashing = [];
 function flashMats(root) {
   root.traverse((o) => {
@@ -6589,7 +6614,7 @@ function updateViewmodel(dt) {
        * step, and it read as the animation stuttering on the hit rather than
        * as an impact. The spring's peak is roughly v0/sqrt(stiffness), so
        * anything under ~1.5 stays inside the clamp and stays a curve. */
-      const cut = equipped === militaryItem && !digOverhead;
+      const cut = slashing();
       vmImpulse(-0.95 - P * 0.5 - (digOverhead ? 0.35 : 0) - (cut ? 0.30 : 0));
       /* AND IT JARS. A hit that stops dead has to shake the hands that made
        * it. The cut lands hardest of the three: it is the fastest thing in
@@ -6672,7 +6697,7 @@ function updateViewmodel(dt) {
    * than snapped, so the change of grip happens while the shovel is going up
    * and is finished by the time it comes down. */
   const wantOh = (winding && windOverhead) || (digT > 0 && digOverhead) ? 1 : 0;
-  const wantSl = equipped === militaryItem && !wantOh
+  const wantSl = slashing() && !wantOh
     && ((winding && !windOverhead) || (digT > 0 && !digOverhead)) ? 1 : 0;
   ohBlend += (wantOh - ohBlend) * Math.min(1, dt * 9);
   slBlend += (wantSl - slBlend) * Math.min(1, dt * 11);
@@ -6706,7 +6731,7 @@ function updateViewmodel(dt) {
   // would say the tool was moving fast when it is deliberately barely moving.
   trailPower = digPower;
   // a slash draws a broad arc rather than a chop's line, so it carries further
-  trailGain = (equipped === militaryItem && !digOverhead) ? 1.55 : 1;
+  trailGain = slashing() ? 1.55 : 1;
   updateTrail(dt, toolVM.visible && digT >= windupEnd() - 0.02 && digT < (slashing() ? SLASH_THROUGH + 0.02 : DIG_STRIKE + 0.13));
   updateSparks(dt);
   updateGlint(dt);
@@ -12811,14 +12836,18 @@ const MUT_ATTACKS = {
    * because his blow is tested on the BAR (`dealerBarHit`) and a man with a
    * crowbar reaches two metres, not two and a half; the lunge and the step
    * in the overhand are what close the rest. */
-  dDown:  { wind: 0.72, strike: 0.13, recover: 0.72, hit: 0.350, reach: 1.80, lunge: 0.55, chain: 'dSide',  chainP: 0.42, w: 0.18 },
-  dSide:  { wind: 0.52, strike: 0.11, recover: 0.56, hit: 0.370, reach: 1.75, lunge: 0.30, chain: 'dDown',  chainP: 0.46, w: 0.18 },   // hit measured in the game: the hand is furthest out at 0.375, and back behind him by 0.5
+  dDown:  { wind: 0.72, strike: 0.13, recover: 0.58, hit: 0.350, reach: 1.80, lunge: 0.55, chain: 'dSide',  chainP: 0.48, w: 0.18 },
+  dSide:  { wind: 0.52, strike: 0.11, recover: 0.44, hit: 0.370, reach: 1.75, lunge: 0.30, chain: 'dDown',  chainP: 0.52, w: 0.18 },   // hit measured in the game: the hand is furthest out at 0.375, and back behind him by 0.5
   dDownM: { wind: 0.70, strike: 0.13, recover: 0.72, hit: 0.259, reach: 1.80, lunge: 0.55, chain: 'dSideM', chainP: 0.42, w: 0.14 },
   dSideM: { wind: 0.52, strike: 0.11, recover: 0.56, hit: 0.351, reach: 1.75, lunge: 0.30, chain: 'dDown',  chainP: 0.42, w: 0.14 },
   // the held one: a full second over his head, so a guard raised on the
   // first beat is a block and not a parry. It is the swing that teaches you
   // to watch the arm instead of counting.
-  dHold:  { wind: 1.08, strike: 0.13, recover: 0.66, hit: 0.719, reach: 1.95, lunge: 0.40, chain: null,     chainP: 0.00, w: 0.18 },
+  // THE ONE THAT TAKES TWO. A boss needs a blow you are afraid of, and the
+  // fair one to make it is the one you can see coming from furthest away:
+  // a second of bar over his head. Half your health, and telegraphed longer
+  // than anything else in the game.
+  dHold:  { wind: 1.08, strike: 0.13, recover: 0.62, hit: 0.719, reach: 1.95, lunge: 0.40, chain: null,     chainP: 0.00, w: 0.20, dmg: 2 },
   // and the one that covers the ground you just backed off
   dLunge: { wind: 0.60, strike: 0.15, recover: 0.90, hit: 0.457, reach: 2.40, lunge: 2.1,  chain: 'dSide',  chainP: 0.30, w: 0.18 },
 };
@@ -12900,7 +12929,7 @@ const MUT_KINDS = {
    * pressure is meant to come from his reach and his chains, not from the
    * player being unable to see him wind up. */
   dealer: { glb: 'assets/dealer.glb', human: true, solo: true, noSand: true, skin: null,
-          h: 2.05, hp: 14, dmg: 1, speedK: 1.12, windK: 1.00, reachK: 1.00, aggr: 1.20,
+          h: 2.05, hp: 18, dmg: 1, speedK: 1.14, windK: 1.00, reachK: 1.00, aggr: 1.45,
           /* NO MIRRORED SWINGS FOR HIM. The pack's mirrors work because a
            * mutant's hands are both empty; his bar is SKINNED TO THE RIGHT
            * HAND, so a mirrored swing had the empty left hand do the swinging
@@ -13411,10 +13440,18 @@ function hurtMutant(u, dmg, P = 0) {
       if (u.st.poise > 0) {
         u.st.hp -= dmg;
         if (u.st.hp <= 0) { u.st.killP = P; u.st.killOh = digOverhead; u.st.hpBefore = u.st.hp + dmg; killMutant(u); return true; }
-        flashMats(u.g); sfxMutHit(u.kind.voice); bleedMutant(u, 4, 0.25); addTrauma(0.18);
+        flashMats(u.g); sfxMutHit(u.kind.voice); bleedMutant(u, 6, 0.3); bossHit(P, false);
         camera.getWorldDirection(_hitC); sprayBlood(u.g.position.x, u.g.position.y + u.kind.h * 0.55, u.g.position.z, _hitC.x, _hitC.z, 6, 0.7);
         return false;
       }
+      u.st.poise = u.kind.poise;
+      bossHit(P, true);                    // the one that finally moves him
+    } else {
+      /* AND A CHARGE IS THE HEAVIEST THING IN THE FIGHT. A wound-up cut or
+       * an overhead goes through his poise by definition, so it never
+       * reached the light branch and never got the confirm — the one blow
+       * that should land hardest was the one that landed softest. */
+      bossHit(P, true);
       u.st.poise = u.kind.poise;
     }
   }
@@ -14640,7 +14677,7 @@ function updateMutantUnit(u, dt) {
           if (dtp <= PARRY_WINDOW && parryCool <= 0) parryMutant(u);
           else blockMutant(u);
         } else {
-          damagePlayer(u.kind.dmg);
+          damagePlayer(A.dmg || u.kind.dmg);
           if (Math.random() < 0.5) sfxMutLaugh(dist, u.kind.voice);   // it is enjoying this
         }
       }
@@ -15768,26 +15805,18 @@ function updateBunkers(dt) {
     _bkP.copy(_preMove).applyMatrix4(b.inv);
     const r = 0.22;                       // a hand narrower than the beach's body: the aisles are tight
     if (B.blocked(_bkL.x, _bkL.z, r)) {
-      if (!B.blocked(_bkP.x, _bkP.z, r)) {
-        B.pushOut(_bkL, r, 4);
-        if (B.blocked(_bkL.x, _bkL.z, r)) { _bkL.x = _bkP.x; _bkL.z = _bkP.z; }   // wedged: the move is simply not made
-      } else {
-        /* The frame BEGAN inside something — a bite's shove, a teleport, the
-         * wall clamp landing you in a desk against it. Undoing the move
-         * would leave you there, and letting it through (the first version)
-         * let you walk about inside the console bank. Step to the nearest
-         * clear spot instead: eight directions, widening. */
-        let best = null, bd = Infinity;
-        for (let k = 1; k <= 24 && !best; k++) {
-          const rr = k * 0.08;                         // out to two metres: the desks are deep
-          for (let a = 0; a < 8; a++) {
-            const x = _bkL.x + Math.cos(a * Math.PI / 4) * rr, z = _bkL.z + Math.sin(a * Math.PI / 4) * rr;
-            if (x <= R.x0 + pr || x >= R.x1 - pr || z <= R.z0 + pr || z >= R.z1 - pr) continue;
-            if (!B.blocked(x, z, r) && rr < bd) { bd = rr; best = [x, z]; }
-          }
-        }
-        if (best) { _bkL.x = best[0]; _bkL.z = best[1]; }
-      }
+      /* Push out along the resultant first — that is the slide, and it is
+       * what carries you round a bin or along a desk front. But a resultant
+       * CANCELS inside anything that surrounds you: between the legs of the
+       * swivel chair every cell pushes the opposite way to another one, the
+       * sum is nothing, and the old code then reverted the move, which is
+       * standing still — the owner stuck on a chair mid-fight. So if the
+       * push cannot free you, take the nearest clear spot outright. Only if
+       * even that fails is the move refused, and there is nowhere in this
+       * room where it can. */
+      B.pushOut(_bkL, r, 5);
+      if (B.blocked(_bkL.x, _bkL.z, r)) B.escape(_bkL, r);
+      if (B.blocked(_bkL.x, _bkL.z, r)) { _bkL.x = _bkP.x; _bkL.z = _bkP.z; }
     }
     // the ceiling
     const top = g.position.y + R.h - 0.12;
@@ -16043,6 +16072,7 @@ function clampDealer(dt) {
     _dsA.z = THREE.MathUtils.clamp(_dsA.z, R.z0 + m, R.z1 - m);
     // and if the push could not free him — wedged in a corner of the desk —
     // the last spot he stood clear in is better than standing in furniture
+    if (B.blocked(_dsA.x, _dsA.z, 0.32)) B.escape(_dsA, 0.32);
     if (B.blocked(_dsA.x, _dsA.z, 0.32) && dealer.lastGood) {
       _dsA.x = dealer.lastGood.x; _dsA.z = dealer.lastGood.z;
     }

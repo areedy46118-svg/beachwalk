@@ -192,6 +192,30 @@ export function makeUndergroundBunker(opts = {}) {
     }
     return moved;
   };
+  /* THE NEAREST WAY OUT. `pushOut` sums the push from every overlapping
+   * cell, and inside something that surrounds you — between a chair's legs,
+   * in the well of a desk — those pushes CANCEL: the resultant is zero, the
+   * body does not move, and you are stuck for as long as you hold the key.
+   * This is the answer to that case and to every other one: rings of
+   * candidate spots at widening radius, the nearest clear one wins. It is
+   * the last word, so nothing in this room can hold anything for ever. */
+  S.escape = (p, r = 0.28, maxR = 2.4) => {
+    const n = S.nav; if (!n || !S.blocked(p.x, p.z, r)) return true;
+    for (let rad = n.cell; rad <= maxR; rad += n.cell) {
+      let best = null, bd = Infinity;
+      const steps = Math.max(8, Math.round((2 * Math.PI * rad) / (n.cell * 0.9)));
+      for (let i = 0; i < steps; i++) {
+        const a = (i / steps) * Math.PI * 2;
+        const x = p.x + Math.cos(a) * rad, z = p.z + Math.sin(a) * rad;
+        if (x < n.room.x0 + r || x > n.room.x1 - r || z < n.room.z0 + r || z > n.room.z1 - r) continue;
+        if (S.blocked(x, z, r)) continue;
+        const d = (x - p.x) * (x - p.x) + (z - p.z) * (z - p.z);
+        if (d < bd) { bd = d; best = [x, z]; }
+      }
+      if (best) { p.x = best[0]; p.z = best[1]; return true; }
+    }
+    return false;
+  };
   /* Is the way ahead clear — a disc of radius r walked `dist` metres along
    * (dx, dz) from (lx, lz), in local three metres. What a creature needs to
    * know before it sets off into a desk. */
