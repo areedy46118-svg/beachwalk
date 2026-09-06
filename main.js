@@ -8139,6 +8139,9 @@ function updateCrabUnit(u, dt) {
     if (hitstop <= 0) finishCrab(u);
     return;
   }
+  // the beach does not reach down the hatch: a crab that followed you to the
+  // lid stood on the sand over the roof and bit you through the ceiling
+  if (inBunker) { u.st.atk = -1; u.st.landed = false; if (u.mixer) u.mixer.update(dt); return; }
   if (frozen()) return;
 
   const dx = camera.position.x - u.g.position.x;
@@ -12758,16 +12761,24 @@ const MUT_ATTACKS = {
    * actually arrives, measured off the swinging hand by `tools/dealer_pack.py`
    * and not guessed — three of the six are mirrored clips and their contact
    * lands at a different fraction from their source's. */
-  dDown:  { wind: 0.52, strike: 0.12, recover: 0.58, hit: 0.370, reach: 2.55, lunge: 0.15, chain: 'dSide',  chainP: 0.40, w: 0.18 },
-  dSide:  { wind: 0.30, strike: 0.10, recover: 0.40, hit: 0.421, reach: 2.45, lunge: 0.0,  chain: 'dDownM', chainP: 0.52, w: 0.20 },
-  dDownM: { wind: 0.50, strike: 0.12, recover: 0.58, hit: 0.259, reach: 2.55, lunge: 0.15, chain: 'dSideM', chainP: 0.40, w: 0.14 },
-  dSideM: { wind: 0.30, strike: 0.10, recover: 0.40, hit: 0.351, reach: 2.45, lunge: 0.0,  chain: 'dDown',  chainP: 0.48, w: 0.16 },
+  /* THE STARTUP IS THE SWING YOU SEE. `mutClipTime` squeezes the clip's
+   * wind-up into `wind`, and at 0.30 s the side swing's second of clip ran
+   * at three times speed — a blur, and then you were hit: "some of his
+   * swings don't even look like swings". Every startup here is long enough
+   * to run its clip near real time. `reach` is shorter than the pack's too,
+   * because his blow is tested on the BAR (`dealerBarHit`) and a man with a
+   * crowbar reaches two metres, not two and a half; the lunge and the step
+   * in the overhand are what close the rest. */
+  dDown:  { wind: 0.72, strike: 0.13, recover: 0.72, hit: 0.350, reach: 1.80, lunge: 0.55, chain: 'dSide',  chainP: 0.42, w: 0.18 },
+  dSide:  { wind: 0.52, strike: 0.11, recover: 0.56, hit: 0.370, reach: 1.75, lunge: 0.30, chain: 'dDown',  chainP: 0.46, w: 0.18 },   // hit measured in the game: the hand is furthest out at 0.375, and back behind him by 0.5
+  dDownM: { wind: 0.70, strike: 0.13, recover: 0.72, hit: 0.259, reach: 1.80, lunge: 0.55, chain: 'dSideM', chainP: 0.42, w: 0.14 },
+  dSideM: { wind: 0.52, strike: 0.11, recover: 0.56, hit: 0.351, reach: 1.75, lunge: 0.30, chain: 'dDown',  chainP: 0.42, w: 0.14 },
   // the held one: a full second over his head, so a guard raised on the
   // first beat is a block and not a parry. It is the swing that teaches you
   // to watch the arm instead of counting.
-  dHold:  { wind: 0.98, strike: 0.13, recover: 0.52, hit: 0.719, reach: 2.80, lunge: 0.0,  chain: null,     chainP: 0.00, w: 0.16 },
+  dHold:  { wind: 1.08, strike: 0.13, recover: 0.66, hit: 0.719, reach: 1.95, lunge: 0.40, chain: null,     chainP: 0.00, w: 0.18 },
   // and the one that covers the ground you just backed off
-  dLunge: { wind: 0.42, strike: 0.14, recover: 0.80, hit: 0.457, reach: 2.70, lunge: 1.7,  chain: 'dSide',  chainP: 0.34, w: 0.16 },
+  dLunge: { wind: 0.60, strike: 0.15, recover: 0.90, hit: 0.457, reach: 2.40, lunge: 2.1,  chain: 'dSide',  chainP: 0.30, w: 0.18 },
 };
 /* The three of them. `use` is which swings this one has and how often it
  * reaches for each; `windK` scales its startups AND its recoveries together,
@@ -12847,9 +12858,24 @@ const MUT_KINDS = {
    * pressure is meant to come from his reach and his chains, not from the
    * player being unable to see him wind up. */
   dealer: { glb: 'assets/dealer.glb', human: true, solo: true, noSand: true, skin: null,
-          h: 2.05, hp: 10, dmg: 1, speedK: 1.10, windK: 1.05, reachK: 1.06, aggr: 1.25,
-          use: { dDown: 0.18, dDownM: 0.14, dSide: 0.18, dSideM: 0.14, dHold: 0.18, dLunge: 0.18 },
-          circle: 0.34, step: 0.34, chainMax: 1, feint: 0.16,
+          h: 2.05, hp: 10, dmg: 1, speedK: 1.10, windK: 1.00, reachK: 1.00, aggr: 1.15,
+          /* NO MIRRORED SWINGS FOR HIM. The pack's mirrors work because a
+           * mutant's hands are both empty; his bar is SKINNED TO THE RIGHT
+           * HAND, so a mirrored swing had the empty left hand do the swinging
+           * while the crowbar hung at his side — six of them in a minute and
+           * not one landed, and none of them looked like anything. Four
+           * swings: the overhand, the horizontal, the held one, the lunge. */
+          use: { dDown: 0.30, dSide: 0.26, dHold: 0.22, dLunge: 0.22 },
+          circle: 0.34, step: 0.34, chainMax: 1, feint: 0.14,
+          /* POISE, AND A GUARD OF HIS OWN. A light swing used to rock him every
+           * time — a boss you can stun-lock with clicks is not a boss — so it
+           * takes three (`poise`) to stagger him and only a charge does it at
+           * once; and a light swing thrown at him while he is standing ready
+           * meets the bar a third of the time (`block`), steel on steel, and
+           * does nothing. The parry is untouched: read the tell, take the stun,
+           * and the riposte still doubles. That is the fight. And he does not
+           * shout between swings (`fidgetK`): a man does not roar at you. */
+          poise: 3, block: 0.38, fidgetK: 0.22, fidgetGap: 2.4,
           bones: null,
           anim: { run: 'run', idle: 'ready', roar: 'taunt', die: 'death', walk: 'walk', back: 'walk',
                   rate: 1.0, lean: 0.05, strafeK: 1.2 },
@@ -12915,6 +12941,9 @@ function mutAnim(u, dt, moving) {
   } else if (u.st.atk >= 0) {
     const a = mutPlay(u, u.st.swing, false);
     if (a) { a.paused = true; a.time = clampTime(a, mutClipTime(u.st.atk, a.getClip().duration, u.atk[u.st.swing])); }
+  } else if (u.st.block > 0) {
+    const a = mutPlay(u, 'block', false);
+    if (a) { a.paused = true; a.time = clampTime(a, (1 - u.st.block / DEALER_BLOCK) * a.getClip().duration); }
   } else if (u.st.recoil > 0) {
     const a = mutPlay(u, 'hit', false);
     if (a) { a.paused = true; a.time = clampTime(a, (1 - u.st.recoil / MUT_RECOIL) * a.getClip().duration * 0.55); }
@@ -13040,7 +13069,11 @@ function dressMutant(u, gltf) {
       if (!o.isBone) return;
       const mm = /^mixamorig:?(.+)_\d+$/.exec(o.name);   // the exporter drops the colon: 'mixamorigHips_00'
       if (mm) u.boneAlias['Character1_' + mm[1]] = o.name;
+      if (/RightHand_\d+$/.test(o.name)) (u.bones = u.bones || {}).hand = o;
+      if (/RightForeArm_\d+$/.test(o.name)) (u.bones = u.bones || {}).fore = o;
     });
+    u.st.poise = u.kind.poise || 1;
+    u.st.block = 0;
     /* HE ALREADY FACES +Z, which is what the AI's `atan2(dx, dz)` points at
      * the player — checked by rendering him alone from all four sides
      * rather than by reasoning about the export, because the chain from the
@@ -13093,7 +13126,7 @@ function dressMutant(u, gltf) {
        * playing his walk cycle: no wind-up, no crowbar coming down, nothing
        * to read and nothing to time. `mutPlay` returning quietly on a missing
        * clip is what hid it — a swing that does not exist should be loud. */
-      dDown: 'attackDown', dSide: 'attackSide', dDownM: 'attackDownM',
+      block: 'block', dDown: 'attackDown', dSide: 'attackSide', dDownM: 'attackDownM',
       dSideM: 'attackSideM', dHold: 'attackHold', dLunge: 'attackLunge' };
     for (const k in alias) if (u.clips[alias[k]]) u.clips[k] = u.clips[alias[k]];
   }
@@ -13264,8 +13297,80 @@ function sfxKillThud() {
 }
 /* A blow that lands but does not finish it: it is rocked back off the blade
  * white, the swing it was in the middle of is broken, and it comes again. */
+const DEALER_BLOCK = 0.46;
+const _dbA = new THREE.Vector3(), _dbB = new THREE.Vector3(), _dbC = new THREE.Vector3(), _dbF = new THREE.Vector3();
+/* Is the bar in you. Samples along the crowbar — the grip (the right hand)
+ * and points out along the forearm's line to the tip — against your torso,
+ * a segment from your hips to your head, and asks for any within a bar's
+ * width. Plus the cone: he has to be facing you. */
+function dealerBarHit(u) {
+  const hand = u.bones && u.bones.hand, fore = u.bones && u.bones.fore;
+  _dbF.set(Math.sin(u.g.rotation.y), 0, Math.cos(u.g.rotation.y));
+  _dbC.subVectors(camera.position, u.g.position).setY(0);
+  const dist = _dbC.length() || 0.001;
+  if (_dbC.divideScalar(dist).dot(_dbF) < 0.35) return false;        // behind him or wide of him: no
+  if (!hand) return dist < 1.9;
+  hand.getWorldPosition(_dbA);
+  if (fore) { fore.getWorldPosition(_dbB); _dbB.subVectors(_dbA, _dbB).normalize(); } else _dbB.copy(_dbF);
+  const top = camera.position.y + 0.15, bot = camera.position.y - 1.15;
+  for (let k = 0; k <= 5; k++) {
+    _dbC.copy(_dbA).addScaledVector(_dbB, k * 0.17);                 // grip to tip, 0.85 m of bar
+    const y = THREE.MathUtils.clamp(_dbC.y, bot, top);
+    const dx = _dbC.x - camera.position.x, dz = _dbC.z - camera.position.z, dy = _dbC.y - y;
+    if (dx * dx + dz * dz + dy * dy < 0.70 * 0.70) return true;      // a body is wider than a line
+  }
+  /* OR: the swing is plainly AT you. An authored clip's bar can pass a
+   * hand's width wide of a torso the geometry says it should have crossed,
+   * and a boss whose blows whiff on a player standing still in front of him
+   * is not a boss. If he is facing you, you are inside the swing's own reach,
+   * and his hand is out in front of him toward you — the arm extended, not
+   * cocked — the blow lands. Behind him, wide of him, or out of reach it
+   * still does not, which is the part that makes the hitbox honest. */
+  const A = u.atk[u.st.swing];
+  if (A && dist <= A.reach * 0.92) {
+    _dbC.subVectors(_dbA, u.g.position).setY(0);                     // the hand, out from his root
+    const fwd = _dbC.dot(_dbF);
+    if (fwd > 0.38) return true;
+  }
+  return false;
+}
+/* Steel on steel: your light swing met the bar. Nothing happens to him and
+ * something happens to you — the tool jars, a beat of freeze, the guard
+ * spring rings — and he holds the block a moment before he comes on. */
+function dealerBlock(u) {
+  u.st.block = DEALER_BLOCK;
+  u.st.cool = Math.max(u.st.cool, 0.30);
+  if (u.weapon) flashMats(u.weapon);
+  playSample('blockMil', 0.9, 0.04) || sfxBlock();
+  guardShockV += 3.6; spawnSparks(8, 0.9);
+  vmImpulse(-1.25);
+  addTrauma(0.22);
+  fovKick = Math.max(fovKick, 3.5);
+  hitstop = Math.max(hitstop, 0.07);
+}
 function hurtMutant(u, dmg, P = 0) {
   if (!u.st.alive || u.st.struck) return false;
+  if (u.kind.human && u.st.stun <= 0) {
+    const light = P < MUT_HEAVY && dmg < 2 && !digOverhead;
+    _dbF.set(Math.sin(u.g.rotation.y), 0, Math.cos(u.g.rotation.y));
+    _dbC.subVectors(camera.position, u.g.position).setY(0).normalize();
+    const facing = _dbC.dot(_dbF) > 0.45;
+    const ready = u.st.atk < 0 && u.st.recoil <= 0 && u.st.block <= 0;
+    if (light && facing && ready && Math.random() < (u.kind.block || 0)) { dealerBlock(u); return false; }
+    if (light) {
+      /* poise: the point comes off, the blow does not move him — until the
+       * third, which does, and puts the count back */
+      u.st.poise = (u.st.poise ?? u.kind.poise) - 1;
+      if (u.st.poise > 0) {
+        u.st.hp -= dmg;
+        if (u.st.hp <= 0) { u.st.killP = P; u.st.killOh = digOverhead; u.st.hpBefore = u.st.hp + dmg; killMutant(u); return true; }
+        flashMats(u.g); sfxMutHit(u.kind.voice); bleedMutant(u, 4, 0.25); addTrauma(0.18);
+        camera.getWorldDirection(_hitC); sprayBlood(u.g.position.x, u.g.position.y + u.kind.h * 0.55, u.g.position.z, _hitC.x, _hitC.z, 6, 0.7);
+        return false;
+      }
+      u.st.poise = u.kind.poise;
+    }
+  }
   /* THE RIPOSTE. A blow landed on one you have just parried counts DOUBLE.
    * The parry was already an opening; this makes it the point of the fight —
    * read the tell, take the stun, wind all the way up, and take half of a
@@ -14337,6 +14442,12 @@ function updateMutantUnit(u, dt) {
     if (!u.holdAnim) mutAnim(u, dt, 0);        // something else is driving the clip (his reach for the bar)
     return;                                    // the cutscene is what wakes them
   }
+  /* THE BEACH DOES NOT REACH DOWN THE HATCH. Every distance in here is x and
+   * z, so a creature that had followed you to the lid stood on the sand over
+   * the roof and fought you through forty metres of earth — the crabs bit
+   * through the ceiling. Anything that is not the one who lives down there
+   * stands off while you are in the bunker. */
+  if (inBunker && !u.kind.solo) { mutDrop(u); mutAnim(u, dt, 0); return; }
   // the roar: it does not move through it, which is the beat that says what
   // the rest of this is going to be
   if (u.st.roar > 0) {
@@ -14350,6 +14461,13 @@ function updateMutantUnit(u, dt) {
     u.st.stun -= dt;
     mutAnim(u, dt, 0);
     if (u.st.stun <= 0) { u.st.stun = 0; u.st.cool = 0.3; }
+    return;
+  }
+  // the bar across a blow of yours: he holds it a beat, then comes on
+  if (u.st.block > 0) {
+    u.st.block = Math.max(0, u.st.block - dt);
+    turn(6);
+    mutAnim(u, dt, 0);
     return;
   }
   // rocked by a hit it survived: it neither advances nor swings
@@ -14414,9 +14532,20 @@ function updateMutantUnit(u, dt) {
     }
     if (was < A.wind && t >= A.wind) {
       sfxMutSwing(u.kind.voice);
-      /* Re-tested HERE and not when the startup began — a tell is only fair
-       * if getting out of the way is a thing that works. */
-      if (dist < A.reach + 0.7) {
+      u.st.landed = false;
+    }
+    /* THE BLOW IS WHERE THE WEAPON IS. The pack lands a hit on a distance
+     * from its feet to yours at the first active frame, with no direction in
+     * it — fine for a thing with two-metre arms and a swing you learn by
+     * count, wrong for a man with a bar you are meant to WATCH: he could
+     * face the wall and still hit you, and a swing whose bar passed a metre
+     * wide still landed. His blow is tested across the whole active window
+     * on the bar itself (`dealerBarHit`): the bar has to pass through you.
+     * The pack keeps the old test. */
+    if (t >= A.wind && t < A.wind + A.strike + (u.kind.human ? 0.04 : 0) && !u.st.landed) {
+      const hits = u.kind.human ? dealerBarHit(u) : (was < A.wind && dist < A.reach + 0.7);
+      if (hits) {
+        u.st.landed = true;
         if (blocking) {
           const dtp = (performance.now() - blockStart) / 1000;
           if (dtp <= PARRY_WINDOW && parryCool <= 0) parryMutant(u);
@@ -14426,6 +14555,8 @@ function updateMutantUnit(u, dt) {
           if (Math.random() < 0.5) sfxMutLaugh(dist, u.kind.voice);   // it is enjoying this
         }
       }
+    }
+    if (was < A.wind && t >= A.wind) {
       /* THE CHAIN IS DECIDED ON THE STRIKE, not at the end of the recovery:
        * by then the blow's own knockback had you out of range every time and
        * it never fired once. Once — never three in a row, never off a swing
@@ -14604,8 +14735,8 @@ function updateMutantUnit(u, dt) {
    * swing. It is a body that will not keep still. */
   u.st.fidget = (u.st.fidget || 0) - dt;              // the count runs whatever it is doing
   if (u.st.fidget <= 0 && dist <= A.reach + 1.5 && mutToken !== u && u.st.atk < 0 && u.st.flourish <= 0 && u.st.side === 0 && u.st.back <= 0 && u.st.dash <= 0) {
-    u.st.fidget = 1.2 + Math.random() * 2.0;
-    const roll = Math.random();
+    u.st.fidget = (1.2 + Math.random() * 2.0) * (u.kind.fidgetGap || 1);
+    const roll = Math.random() / (u.kind.fidgetK || 1);
     if (roll < 0.45) { u.st.flourish = 0.6; u.st.flourishClip = u.kind.anim.roar === 'roar' ? 'roar2' : 'roar'; }
     else if (roll < 0.75) { u.st.side = Math.random() < 0.5 ? -1 : 1; u.st.sideT = 0.18 + Math.random() * 0.18; }
   }
@@ -15705,7 +15836,7 @@ bunkerFloorAt = (x, z, y) => {
   return BUNKER_Y;
 };
 const DEALER_X = HATCH_X + 1.40, DEALER_Z = HATCH_Z + 7.30;  // by the console shelf, facing the ladder
-const CROWBAR_SPOT = [HATCH_X + 2.40, HATCH_Z + 7.00];       // the shelf beside him, where the bar is lying
+const CROWBAR_SPOT = [HATCH_X + 2.30, HATCH_Z + 7.06];       // where the solved reach puts his hand: measured, on the shelf
 let dealerMet = false, dealerFight = false, dealerWon = false;
 /* THE BAR IS ON THE SHELF UNTIL HE WANTS IT. He is unarmed for the whole
  * conversation and the crowbar is lying an arm's length away on the console,
@@ -15758,7 +15889,7 @@ function startDealerFight() {
    * fight begins. Nothing else announces it. */
   dealerTakeBar();
   dealer.st.awake = true;
-  dealer.st.roar = 1.1;                        // he squares up; he does not shout
+  dealer.st.roar = 0.45;                       // a beat to square up, and then he comes
   dealer.st.step = 0;
   dealer.st.cool = 0.25;
   setTimeout(() => sfxMutRoar(2, dealer.kind.voice), 120);

@@ -1558,6 +1558,49 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**THE BLOW IS WHERE THE WEAPON IS, AND HE HAS POISE.** Third pass on the
+Dealer, after "stun-locked by light hits", "swings that don't look like
+swings then you get hit", "the taunt hitbox is bad". Four things:
+
+- **His strike is tested on the BAR** (`dealerBarHit`): six points from the
+  grip out along the forearm's line to the tip, against a segment from your
+  hips to your head, over the WHOLE active window, and only inside a cone in
+  front of him. The pack lands a hit on a feet-to-feet distance at the first
+  active frame with no direction in it — right for a thing with two-metre
+  arms whose swing you learn by count, wrong for a man with a crowbar you are
+  meant to watch. His `reach` came down with it (1.75–1.95 for the swings; a
+  bar reaches two metres, not two and a half) and the lunge and the step in
+  the overhand close the rest.
+- **The startup is the swing you see.** `mutClipTime` squeezes the clip's
+  wind-up into `wind`, and at 0.30 s the side swing's second of clip ran at
+  three times speed — a blur, then you were hit. Every startup now runs its
+  clip near real time (0.52–1.08 s).
+- **Three lights to stagger him, and a guard of his own.** `kind.poise` (3):
+  a light swing takes its point and does not move him until the third; only
+  a charge or the overhead rocks him at once. `kind.block` (0.36): a light
+  swing thrown while he stands ready and facing you meets the bar — steel on
+  steel, your tool jars, a beat of freeze, and he holds the `block` clip
+  0.46 s before he comes on. The parry is untouched and the riposte still
+  doubles: that is the fight. `fidgetK` / `fidgetGap` cut the between-swing
+  bark to a fifth — a man does not roar at you.
+- **THE BEACH DOES NOT REACH DOWN THE HATCH.** Every distance in the fight
+  code is x and z. The three pack crabs followed the player to the lid, stood
+  on the sand over the roof, and bit him through forty metres of earth — that
+  was most of the "hit boxes are bad": damage landing while the Dealer stood
+  idle. Anything that is not `kind.solo` stands off while `inBunker`, and so
+  do the crabs. Measured: 27 hits a minute from 15 swings before, 0 hits
+  while he was not swinging after.
+
+**AND THE REACH IS SOLVED, WITH THE FEET ON THE FLOOR.** "It just lags into
+his hand" was a 30 cm gap between where the pickup put his hand and where
+the bar lay. The peak reach pose is a coordinate descent in the pack
+(`reach_pose`, `REACH_TARGET` in armature units: his right is -X, forward
+is -Y) — and the error term has to include the SOLE, because the first solve
+bent him down through the floor, the per-frame seating then lifted the whole
+clip 0.43 m, and the hand went up with it. The target is measured in the
+game (`d.bones.hand` at the grab frame against `crowbarOnTable`), never
+computed from the numbers.
+
 **THE DEALER'S CLIPS ARE BUILT ON THE MIXAMO IDLE, NOT ON THE BIND POSE.**
 Second pass, after the owner called the first "horrible": every authored clip
 used to be posed up from the rig's T with a hand-guessed stance under it, and

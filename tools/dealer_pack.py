@@ -415,11 +415,49 @@ for f in range(N + 1):
 stamp_grip(); finish(act)
 
 # ---------------------------------------------------------------- PICKUP
-# The bar is on the console at his right hand, at about hip height. He turns
-# to it, drops his weight, reaches with the right hand, closes on it (0.46,
-# the frame the game moves the bar from the shelf to his fist), and comes up
-# into the stance already turning back to you. Anticipation before the reach,
-# a settle after it — never two poses and a straight line between them.
+# The bar is on the console at his right hand, at hip height, a little ahead
+# of him. THE REACH IS SOLVED, NOT GUESSED: the hand has to arrive where the
+# bar actually lies, or the game's swap from shelf to fist is a pop — which
+# is what "it just lags into his hand" was. The target is the bar's spot in
+# armature units (his right is -X, forward is -Y, up is +Z), and a small
+# coordinate descent over the peak pose's parameters puts the hand there.
+REACH_TARGET = Vector((-882.0, -265.0, 765.0))
+rp = dict(lean=0.55, twist=-0.65, roll=-0.22, drop=0.30, fwd=0.30, up=0.15, elbow=-0.25, out=0.70, atw=-0.30)
+def reach_pose(P, r=1.0):
+    torso(lean=P['lean'] * r, twist=P['twist'] * r, roll=P['roll'] * r, drop=P['drop'] * r)
+    arm_pose('Right', fwd=0.10 + P['fwd'] * r, up=-0.10 + P['up'] * r, elbow=0.35 + P['elbow'] * r,
+             twist=0.10 + P['atw'] * r, out=P['out'] * r)
+    arm_pose('Left', fwd=0.06 - 0.20 * r, up=-0.06 + 0.10 * r, elbow=0.25 - 0.15 * r)
+    leg_pose('Left', swing=0.10 * r, knee=0.55 * r * max(0.0, P['drop']) / 0.30, foot=-0.05 * r, out=0.02 + 0.05 * r)
+    leg_pose('Right', swing=-0.20 * r, knee=0.70 * r * max(0.0, P['drop']) / 0.30, foot=0.10 * r, out=0.02 + 0.10 * r)
+# the sole must stay on the floor THROUGH the reach: the first solve dropped
+# the hips through it, the seating pass then lifted the whole clip 0.43 m,
+# and the hand went up with it — 29 cm above the bar in the game
+_SHOE = None
+for _o in meshes:
+    if 'shoe' in (_o.data.name + _o.name).lower(): _SHOE = _o; break
+_ARMS = arm.matrix_world.to_scale().z or 1.0
+def _sole_units():
+    dgp = bpy.context.evaluated_depsgraph_get(); ev = _SHOE.evaluated_get(dgp); mw = _SHOE.matrix_world
+    return min((mw @ v.co).z for v in ev.data.vertices) / _ARMS
+rest(); bpy.context.view_layer.update(); _SOLE_REF = _sole_units()
+def reach_err(P):
+    rest(); reach_pose(P, 1.0); bpy.context.view_layer.update()
+    e = (pbs[B['RightHand']].tail - REACH_TARGET).length
+    sink = max(0.0, _SOLE_REF - _sole_units())          # how far the sole is through the floor, rig units
+    return e + 3.0 * sink
+lim = dict(lean=(0.0, 1.2), twist=(-1.3, 0.3), roll=(-0.7, 0.4), drop=(0.0, 0.55), fwd=(-0.6, 1.6), up=(-0.6, 1.2), elbow=(-1.4, 0.6), out=(0.0, 1.4), atw=(-1.2, 1.2))
+err = reach_err(rp); step = 0.30
+for it in range(60):
+    improved = False
+    for k in list(rp):
+        for sgn in (1, -1):
+            trial = dict(rp); trial[k] = min(lim[k][1], max(lim[k][0], rp[k] + sgn * step))
+            e = reach_err(trial)
+            if e < err - 1e-3: rp, err, improved = trial, e, True
+    if not improved: step *= 0.5
+    if step < 0.01 or err < 4.0: break
+log('reach solved: hand %.0f units off the bar (%.3f m); pose %s' % (err, err * ARM_S if 'ARM_S' in dir() else err * 0.0017, {k: round(v, 2) for k, v in rp.items()}))
 act = new_action('pickup'); N = 56
 for f in range(N + 1):
     rest(); t = f / N
@@ -427,12 +465,7 @@ for f in range(N + 1):
     reach = ease(max(0.0, min(1.0, (t - 0.08) / 0.38)))   # then the body
     settle = ease(max(0.0, (t - 0.50) / 0.50))            # and back, with the weight
     r = reach * (1 - settle)
-    # he turns to his right and bends at the hip and knee, not just the back
-    torso(lean=0.55 * r, twist=-0.65 * r + 0.05 * settle, roll=-0.22 * r, drop=0.30 * r)
-    arm_pose('Right', fwd=0.10 + 0.30 * r, up=-0.10 + 0.15 * r, elbow=0.35 - 0.25 * r, twist=0.10 - 0.30 * r, out=0.70 * r)
-    arm_pose('Left', fwd=0.06 - 0.20 * r, up=-0.06 + 0.10 * r, elbow=0.25 - 0.15 * r)
-    leg_pose('Left', swing=0.10 * r, knee=0.55 * r, foot=-0.05 * r, out=0.02 + 0.05 * r)
-    leg_pose('Right', swing=-0.20 * r, knee=0.70 * r, foot=0.10 * r, out=0.02 + 0.10 * r)
+    reach_pose(rp, r)
     head(pitch=0.06 + 0.50 * r * (0.4 + 0.6 * look), yaw=-0.55 * look * (1 - settle) - 0.10 * r, roll=-0.10 * r)
     key(f)
 stamp_grip(); finish(act)
@@ -466,9 +499,14 @@ for f in range(N + 1):
     else: u = 1.0; hang = 1.0; down = 1.0 - easeout((t - 0.74) / 0.26) * 0.30
     tremble = 0.025 * math.sin(hang * math.pi * 7) * (1 - down)
     cock = u * (1 - down)
-    torso(lean=-0.30 * cock + 0.62 * down, twist=0.22 * cock - 0.28 * down, roll=-0.08 * cock, bob=0.05 * cock - 0.07 * down)
-    arm_pose('Right', fwd=1.30 * cock - 0.70 * down + tremble, up=1.45 * cock - 0.75 * down, elbow=-1.15 * cock + 0.20 * down, twist=0.30 * cock)
-    arm_pose('Left', fwd=1.05 * cock - 0.60 * down, up=1.10 * cock - 0.55 * down, elbow=-0.95 * cock + 0.25 * down)
+    torso(lean=-0.30 * cock + 0.85 * down, twist=0.22 * cock - 0.30 * down, roll=-0.08 * cock, bob=0.05 * cock - 0.09 * down)
+    # DOWN THROUGH THE TARGET. The first down-stroke stopped with the arm
+    # still raised a third of the way, so the bar never came within a metre
+    # and a half of a man standing in front of him: measured, every held
+    # swing whiffed. It finishes with the arm forward and below level now,
+    # the bar at hip height in front of him, and the body bent over it.
+    arm_pose('Right', fwd=1.30 * cock - 1.55 * down + tremble, up=1.45 * cock - 1.60 * down, elbow=-1.15 * cock + 0.90 * down, twist=0.30 * cock)
+    arm_pose('Left', fwd=1.05 * cock - 1.25 * down, up=1.10 * cock - 1.25 * down, elbow=-0.95 * cock + 0.75 * down)
     leg_pose('Left', swing=-0.16 * cock + 0.36 * down, knee=0.12 * cock + 0.22 * down)
     leg_pose('Right', swing=-0.08 * cock - 0.26 * down, knee=0.16 * cock + 0.32 * down)
     head(pitch=-0.26 * cock + 0.48 * down, yaw=0.04)
@@ -490,6 +528,25 @@ for f in range(N + 1):
     leg_pose('Left', swing=-0.26 * back + 0.90 * push, knee=0.26 * back - 0.05 * push, foot=-0.08 * push)
     leg_pose('Right', swing=-0.16 * back - 0.50 * push, knee=0.18 * back + 0.34 * push)
     head(pitch=-0.10 * back + 0.24 * push, yaw=-0.10 * push)
+    key(f)
+stamp_grip(); finish(act)
+
+# ----------------------------------------------------------------- BLOCK
+# Your light swing met the bar. It comes up fast across his chest, both
+# hands on it, and holds; the game scrubs it over 0.46 s and lets it fall
+# back into the idle. Fast up, because a guard that arrives late is a hit.
+act = new_action('block'); N = 24
+for f in range(N + 1):
+    rest(); t = f / N
+    k = easeout(min(1.0, t / 0.40))
+    torso(lean=-0.05 * k, twist=0.16 * k, roll=0.05 * k, drop=0.04 * k)
+    # the bar ACROSS him, horizontal at the chest: the arm barely rises, the
+    # elbow folds hard and the wrist turns the bar flat. A guard held high
+    # overhead read as another wind-up.
+    arm_pose('Right', fwd=0.70 * k, up=0.15 * k, elbow=-1.60 * k, twist=0.95 * k, wrist=0.35 * k)
+    arm_pose('Left', fwd=0.85 * k, up=0.10 * k, elbow=-1.35 * k, out=-0.25 * k, twist=-0.40 * k)
+    leg_pose('Left', knee=0.12 * k, out=0.02); leg_pose('Right', knee=0.14 * k, out=0.02)
+    head(pitch=0.12 * k, roll=0.05 * k)
     key(f)
 stamp_grip(); finish(act)
 
@@ -603,7 +660,7 @@ def clip_low(act, step=2):
     return lo
 REF_LOW = clip_low(bpy.data.actions['idleSrc'])
 log('reference sole height from the source idle %.4f m' % REF_LOW)
-for nm in ('calm', 'walk', 'taunt', 'attackHold', 'attackLunge', 'hit', 'pickup'):
+for nm in ('calm', 'walk', 'taunt', 'attackHold', 'attackLunge', 'hit', 'pickup', 'block'):
     act = bpy.data.actions.get(nm)
     if not act: continue
     # PER FRAME, and only ever up. A constant lift seated the reach of the
@@ -687,7 +744,7 @@ if os.environ.get('BW_RENDER'):
     cam.location = (1.8, -5.0, 1.75)
     cam.rotation_euler = (math.radians(84), 0, math.radians(20))
     NF = 8
-    for nm in ('calm', 'walk', 'pickup', 'taunt', 'attackHold', 'attackLunge', 'hit', 'attackDown', 'attackSide', 'idleSrc', 'run'):
+    for nm in ('calm', 'walk', 'pickup', 'taunt', 'attackHold', 'attackLunge', 'hit', 'block', 'attackDown', 'attackSide', 'idleSrc', 'run'):
         a = bpy.data.actions.get(nm)
         if not a: continue
         use_action(a)
