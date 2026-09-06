@@ -1558,6 +1558,39 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**THE CURL SIGN IS +1, AND THE COMMENT SAYING IT HAD BEEN CHECKED WAS
+WRONG.** It shipped as -1 "verified by rendering the hand", and it had not
+been: at the loose curl it started with, a hand bending the wrong way looks
+merely limp, so nobody caught it. Tightening the fist made it obvious — the
+crowbar passing through an open palm with the fingers hooked away from it. A
+whole pass in between blamed the rig's MIRRORING and gave the two hands
+opposite signs, which fixed the left and left the right exactly as broken as
+it had always been, because the mirroring is in the world orientation and
+not in the local axis convention these finger bones share. **One sign, both
+hands, and the only way to know is four renders** — each hand, each sign,
+clay-shaded and close enough to see the fingers. Do not reason about it from
+the bone matrices; that is what produced the wrong answer twice.
+
+**A RAGDOLL KNOWS ONLY THE WALLS YOU GIVE IT.** The beach's cliff was the
+only one, three hundred metres from the bunker, so a body thrown across the
+control room went out through the concrete and settled in the sand over its
+roof. Every particle is held to the room box AND pushed out of the same 0.1 m
+furniture grid the player walks, so a corpse flung at the console bank piles
+against it instead of sliding through the desks. Measured: three bodies
+thrown the length of the room, zero parts outside it. **And the noise is ONE
+noise**: the loudest contact of the frame, played at the end of it, not one
+per particle per substep — thirty of those at once is a burst of static, not
+an impact. It is panned by where it happened, so a body thrown past you into
+the far wall is heard over there.
+
+**THE ROOM IS ELECTRICAL, SO MOST OF WHAT BREAKS SHOULD BE.** Eight props
+with two screens between them made a control room you could barely damage.
+Eighteen now, eleven of them sets and monitors and gauges, along the console
+bank and the desks where a thrown body actually lands — and `ragSmash`
+already routes a corpse into the same `onImpact` the shovel and a thrown
+bottle use, so all three break them the same way: case in pieces, tube in
+shards, sparks off the break.
+
 **AN AUTHORED SWING IS A SWING AT THE AIR.** It lands wherever the arm
 happens to put it, and whether that is anywhere near YOU depends on how far
 off you were standing, which way he was facing and which of six clips came

@@ -4360,7 +4360,7 @@ function smashElectronics(prop, mesh, speed, radius, threshold = 4.0) {
     const m = new THREE.Mesh(new THREE.BoxGeometry(radius * (0.3 + Math.random() * 0.5), radius * (0.1 + Math.random() * 0.3), radius * (0.3 + Math.random() * 0.4)), CASE_MAT);
     push(m, 1.4 + Math.random() * 2.0, 0.7 + Math.random() * 1.9, 40, 14);
   }
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 11; i++) {
     const m = new THREE.Mesh(new THREE.TetrahedronGeometry(radius * (0.16 + Math.random() * 0.22), 0), SCREEN_MAT);
     m.scale.set(1, 0.3 + Math.random() * 0.4, 1);
     push(m, 1.8 + Math.random() * 2.4, 1.0 + Math.random() * 2.4, 30, 20);
@@ -12851,7 +12851,7 @@ const MUT_ATTACKS = {
    * crowbar reaches two metres, not two and a half; the lunge and the step
    * in the overhand are what close the rest. */
   dDown:  { wind: 0.72, strike: 0.13, recover: 0.50, hit: 0.370, reach: 1.80, lunge: 0.55, chain: 'dSide',  chainP: 0.48, w: 0.18 },
-  dSide:  { wind: 0.52, strike: 0.11, recover: 0.38, hit: 0.421, reach: 1.75, lunge: 0.30, chain: 'dDown',  chainP: 0.52, w: 0.18 },   // hit measured in the game: the hand is furthest out at 0.375, and back behind him by 0.5
+  dSide:  { wind: 0.62, strike: 0.11, recover: 0.38, hit: 0.421, reach: 1.75, lunge: 0.30, chain: 'dDown',  chainP: 0.52, w: 0.18 },   // hit measured in the game: the hand is furthest out at 0.375, and back behind him by 0.5
   dDownM: { wind: 0.70, strike: 0.13, recover: 0.72, hit: 0.278, reach: 1.80, lunge: 0.55, chain: 'dSideM', chainP: 0.42, w: 0.14 },
   dSideM: { wind: 0.52, strike: 0.11, recover: 0.56, hit: 0.281, reach: 1.75, lunge: 0.30, chain: 'dDown',  chainP: 0.42, w: 0.14 },
   // the held one: a full second over his head, so a guard raised on the
@@ -12872,7 +12872,7 @@ const MUT_ATTACKS = {
    * A second and a half of bar over his head is a long tell, and it should
    * be: it is the slowest thing he throws, the most punishable, and the only
    * one that takes two of your four. */
-  dHold:  { wind: 1.55, strike: 0.13, recover: 0.62, hit: 0.656, reach: 1.95, lunge: 0.40, chain: null,     chainP: 0.00, w: 0.20, dmg: 2 },
+  dHold:  { wind: 1.22, strike: 0.13, recover: 0.62, hit: 0.656, reach: 1.95, lunge: 0.40, chain: null,     chainP: 0.00, w: 0.20, dmg: 2 },
   // and the one that covers the ground you just backed off
   dLunge: { wind: 0.60, strike: 0.15, recover: 0.90, hit: 0.500, reach: 2.40, lunge: 2.1,  chain: 'dSide',  chainP: 0.30, w: 0.18 },
 };
@@ -13414,6 +13414,40 @@ function sfxSlam(P = 0) {
 /* The floor under a kill: a sub thump you feel more than hear, under whatever
  * the blade did. It is the same on every kill and that is the point — it is
  * the one sound in the fight that means "that one is finished". */
+/* TWO HUNDRED POUNDS AGAINST STEEL. Not the floor thud — that is meat
+ * arriving on something that gives. A wall does not give: a hard low knock
+ * with the plate ringing over it and a scatter of grit, panned by where it
+ * happened relative to your view, so a body thrown past you and into the
+ * console bank is heard over there. */
+function sfxBodySlam(P = 1, at = null) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  let out = sfxOut();
+  if (at) {
+    const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    if (pan) {
+      camera.getWorldDirection(_rg2);
+      const rx = -_rg2.z, rz = _rg2.x;                      // the camera's right, on the floor
+      const dx = at.x - camera.position.x, dz = at.z - camera.position.z;
+      const L = Math.hypot(dx, dz) || 1;
+      pan.pan.value = THREE.MathUtils.clamp((dx * rx + dz * rz) / L, -1, 1);
+      pan.connect(out); out = pan;
+    }
+  }
+  const g = ctx.createGain(); g.gain.value = 0.5 + P * 0.5; g.connect(out);
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(96, t); o.frequency.exponentialRampToValueAtTime(38, t + 0.20);
+  const og = ctx.createGain(); og.gain.setValueAtTime(0.5, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.26);
+  o.connect(og).connect(g); o.start(t); o.stop(t + 0.28);
+  // the plate ringing, and the grit off it
+  const len = Math.floor(ctx.sampleRate * 0.42);
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 2.4;
+  const n = ctx.createBufferSource(); n.buffer = buf;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 320 + P * 260; bp.Q.value = 2.2;
+  const ng = ctx.createGain(); ng.gain.setValueAtTime(0.30 * (0.5 + P), t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.34);
+  n.connect(bp).connect(ng).connect(g); n.start(t);
+}
 function sfxKillThud(k = 1) {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime, out = sfxOut();
@@ -14511,7 +14545,18 @@ function mutRagdoll(u, dirX, dirZ, power) {
     if (A.p.distanceTo(B.p) < d) continue;          // already inside itself at rest: not our business
     hits.push({ a: A, b: B, d });
   }
-  u.rag = { parts, byName, cons, bends, hits, t: 0, asleep: false };
+  /* The room it is in, if it is in one — looked up once, because a body
+   * does not change buildings while it falls. */
+  const rec = inBunker || bunkers.find((bk) => {
+    const B = bk.group.userData.bunker, nv = B && B.nav; if (!nv) return false;
+    const lx = u.g.position.x - bk.group.position.x, lz = u.g.position.z - bk.group.position.z;
+    return lx > nv.room.x0 && lx < nv.room.x1 && lz > nv.room.z0 && lz < nv.room.z1
+      && Math.abs(u.g.position.y - bk.group.position.y) < nv.room.h;
+  });
+  const rb = rec && rec.group.userData.bunker;
+  u.rag = { parts, byName, cons, bends, hits, t: 0, asleep: false,
+            room: rb && rb.nav ? rb.nav.room : null, bunker: rb || null,
+            roomG: rec ? rec.group : null, wallHit: 0, wallAt: new THREE.Vector3() };
   u.g.rotation.set(0, u.g.rotation.y, 0);           // the body's tilt is the particles' now, not the group's
   /* And the aim's yaw dies with him. It lives on the MODEL, and a man killed
    * halfway through a swing would otherwise lie there wearing the last
@@ -14632,6 +14677,39 @@ function updateMutRagdoll(u, dt) {
             if (q.pp.y < q.p.y) q.pp.y = q.p.y + (q.p.y - q.pp.y) * (q.wet > 0 ? 0 : RAG_BOUNCE);   // and bounces, a little — not in water
           }
           q.p.x = THREE.MathUtils.clamp(q.p.x, WADE_X - 6, CLIFF_BLOCK_X + 0.6);
+          /* AND THE ROOM IS SOLID. A body thrown across the bunker went out
+           * through the concrete and came to rest in the sand over its roof:
+           * the only wall the ragdoll knew was the beach's cliff, three
+           * hundred metres away. Inside the room every particle is held to
+           * the walls and to the ceiling, and to the FURNITURE too — the
+           * same 0.1 m grid the player and the Dealer walk — so a corpse
+           * flung at the console bank piles up against it instead of
+           * sliding through the desks. Each hit is recorded, loudest wins,
+           * and the frame the body has finished settling it is played. */
+          if (r.room) {
+            const R = r.room, B = r.bunker, g = r.roomG;
+            const lx = q.p.x - g.position.x, lz = q.p.z - g.position.z;
+            let hx = 0, hz = 0, hy = 0;
+            const cx = THREE.MathUtils.clamp(lx, R.x0 + q.r, R.x1 - q.r);
+            const cz = THREE.MathUtils.clamp(lz, R.z0 + q.r, R.z1 - q.r);
+            if (cx !== lx) { hx = 1; q.p.x = g.position.x + cx; }
+            if (cz !== lz) { hz = 1; q.p.z = g.position.z + cz; }
+            const top = g.position.y + R.h - q.r;
+            if (q.p.y > top) { hy = 1; q.p.y = top; }
+            if (B && B.blocked(cx, cz, q.r * 0.9)) {
+              _rg3.set(cx, 0, cz); B.pushOut(_rg3, q.r * 0.9, 3);
+              q.p.x = g.position.x + _rg3.x; q.p.z = g.position.z + _rg3.z; hx = 1;
+            }
+            if (hx || hz || hy) {
+              // how hard it arrived, and it loses most of it to the wall
+              const vx = q.p.x - q.pp.x, vy = q.p.y - q.pp.y, vz = q.p.z - q.pp.z;
+              const sp = Math.hypot(vx, vy, vz) / Math.max(1e-4, h);
+              if (sp > r.wallHit) { r.wallHit = sp; r.wallAt.copy(q.p); }
+              if (hx) q.pp.x = q.p.x + (q.p.x - q.pp.x) * 0.35;
+              if (hz) q.pp.z = q.p.z + (q.p.z - q.pp.z) * 0.35;
+              if (hy) q.pp.y = q.p.y + (q.p.y - q.pp.y) * 0.35;
+            }
+          }
         }
       }
     }
@@ -14661,6 +14739,20 @@ function updateMutRagdoll(u, dt) {
         ragSmash(r, 3.0 + P * 5);
       }
     }
+    /* AND WHAT IT HIT ON THE WAY. The loudest contact of the frame is played
+     * once, at the end of it, rather than one sound per particle per
+     * substep — a body meeting a wall is ONE noise, and thirty of them at
+     * once is a burst of static. Under a threshold it is a scrape and gets
+     * nothing; over it, steel and concrete, with the room's own reverb
+     * already on the bus. */
+    if (r.wallHit > 2.6) {
+      const P = THREE.MathUtils.clamp((r.wallHit - 2.6) / 8, 0, 1);
+      sfxBodySlam(P, r.wallAt);
+      addTrauma(0.16 + P * 0.42);
+      hitstop = Math.max(hitstop, 0.03 + P * 0.045);
+      ragSmash(r, 4 + P * 6);
+    }
+    r.wallHit = 0;
     // still travelling fast? then it is still a hammer, and a body that
     // skids into a shelf of bottles takes the shelf with it
     if (motion > 4e-4) ragSmash(r, 6.5);
@@ -16479,10 +16571,22 @@ function makeBunkerElectronic(kind) {
   }
   return g;
 }
+/* THE ROOM IS MOSTLY ELECTRICAL, SO MOST OF WHAT BREAKS SHOULD BE. Eight
+ * props with two screens between them made a control room you could barely
+ * damage; there are eighteen now and eleven of them are sets, monitors and
+ * gauges, laid along the console bank and the desks where a man thrown
+ * across the room actually lands. Every one takes a blow from the shovel, a
+ * thrown bottle, or two hundred pounds of body arriving at speed, and every
+ * one goes the same way: the case in pieces, the tube in shards, and a
+ * fistful of sparks off the break. */
 const BUNKER_PROP_SPOTS = [
   [-2.15, -3.30, 'bottle'], [-1.55, 1.05, 'jar'],   [2.05, -0.60, 'bottle'],
   [1.35, 4.15, 'monitor'],  [-1.75, 4.35, 'radio'], [0.95, -4.60, 'valve'],
   [-2.25, 2.60, 'valve'],   [2.15, 2.35, 'jar'],
+  [-0.35, 4.45, 'monitor'], [0.55, 4.40, 'radio'],  [2.05, 3.60, 'monitor'],
+  [-2.20, 3.75, 'monitor'], [1.95, -2.40, 'radio'], [-2.10, -1.35, 'monitor'],
+  [2.10, 0.85, 'radio'],    [-2.30, -4.55, 'monitor'], [0.15, -4.70, 'radio'],
+  [-0.95, -3.55, 'valve'],
 ];
 function buildBunkerProps() {
   const g = bunkerHome.group, S = g.userData.bunker;

@@ -326,27 +326,23 @@ FINGER_SEG = {}
 for _pb in pbs:
     _m = _re.search(r'(Thumb|Index|Middle|Ring|Pinky)(\d)', _pb.name)
     if _m: FINGER_SEG[_pb.name] = (_m.group(1), int(_m.group(2)))
-# AND THE TWO HANDS CURL OPPOSITE WAYS. One `CURL_SIGN` was verified by
-# rendering — the RIGHT hand, the one holding the crowbar, which is the only
-# one anybody was looking at. The rig is mirrored, so the left hand's finger
-# bones have their local X pointing the other way down the armature's Y: the
-# same sign that closes the right hand opens the left one BACKWARDS, every
-# finger bent over the back of the hand, on every frame of every clip.
-# Measured, not assumed — LeftHandIndex1's local X reads (-0.06, 0.99, -0.14)
-# in armature space against the right's (-0.07, -0.99, 0.14) — and the sign
-# is DERIVED from that axis per bone rather than named twice, so a rig whose
-# mirroring differs cannot quietly break it again.
-def _curl_sign(pb):
-    ax = pb.bone.matrix_local.to_3x3() @ Vector((1.0, 0.0, 0.0))
-    return -1.0 if ax.y < 0 else 1.0
-CURL_SIGN = {pb.name: _curl_sign(pb) for pb in pbs if pb.name in FINGER_SEG}
-log('curl signs: %d right-handed, %d left-handed'
-    % (sum(1 for v in CURL_SIGN.values() if v < 0), sum(1 for v in CURL_SIGN.values() if v > 0)))
+# THE SIGN IS +1, AND IT WAS VERIFIED THE ONLY WAY A HAND CAN BE: BY
+# RENDERING IT. It shipped as -1 with a comment saying it had been checked,
+# and it had not — at the loose curl it started with, a hand bending the
+# wrong way looks merely limp, so nobody caught it; tightening the fist made
+# it obvious, with the crowbar passing through a palm whose fingers hooked
+# away from it. A middle pass blamed the rig's mirroring and gave the two
+# hands opposite signs, which fixed the left and left the right exactly as
+# broken as it had always been. It is one sign for both: these finger bones
+# share a local axis convention, whatever their world orientation does, and
+# the way to know that is four renders — each hand, each sign, clay-shaded
+# and close — not the numbers.
+CURL_SIGN = 1.0
 def set_fingers(k=1.0, thumb=1.0):
     """k = 0 open, 1 closed round a bar about 3 cm across."""
     for n, (which, seg) in FINGER_SEG.items():
         pb = pbs[n]
-        sg = CURL_SIGN[n]
+        sg = CURL_SIGN
         if which == 'Thumb':
             # the thumb lies ACROSS the others rather than curling under
             ang = (0.58, 0.70, 0.52, 0.18)[min(seg, 4) - 1] * thumb * k
