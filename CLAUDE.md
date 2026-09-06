@@ -1558,6 +1558,68 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**AND THEN THE REEL'S OWN MOVE SET TURNED OUT TO BE UNREADABLE IN A GAME.**
+Copying the animation faithfully produced a cross-body draw whose point left
+the frame at the cock and came back somewhere else, and the owner's verdict
+was "the blade moves all over the place ... I need a clean swing across the
+screen". What a swing has to do FIRST is be legible, and legibility is one
+property: THE POINT TRAVELS IN A STRAIGHT LINE. The shovel's cut has run
+corner to corner through the crosshair since it was laid out and nobody has
+ever complained about it. So the katana's point runs (0.86, 0.40) →
+(-0.10, -0.02) → (-1.08, -0.42), right to left, the width of the picture,
+and a charge runs the same line from (0.82, 0.94) — cocked up toward the top
+right out of the idle, so a held heavy reads as a sword about to be swung
+rather than as a guard. Faithful to a reference beats invented; legible beats
+faithful.
+
+**AND IT IS THE INTERPOLATED PATH THAT MUST BE SOLVED, NOT THE KEYFRAMES.**
+Putting three poses dead on a line is not the same as putting the SWING on
+it: a pose lerp is linear in joint angles and bows in screen space, and the
+first solve — every key exactly on target — still arced the point a third of
+the way up the frame between the cock and the mark. That arc is what the
+owner was watching. The cost samples the tip at every quarter of BOTH lerps
+and measures how far off the line it strays; worst deviation went from 0.28
+of the frame to 0.016. Two more things the solve has to be told, both learned
+by getting them wrong:
+
+- **The cock is a pose you HOLD, so it has to be on screen.** Optimising for
+  straightness alone put the cocked fist a whole half-width past the right
+  edge with the point out beside it, so a full charge showed an empty screen
+  and a stamina bar. Pin the fist inside the frame and pay a little
+  straightness for it.
+- **The strike has to land MID-SWEEP.** Solving only the two ends let the
+  mark drift a fifth of the way along, so nearly all the visible travel
+  happened in the follow-through, after the blow had landed — a swing whose
+  picture arrives late. Pin the mark to the middle of the line.
+
+**A MIRRORED STROKE IS NOT A MIRRORED PICTURE.** The obvious way to build the
+reel's combination is to flip the second hit, and `mirrorSide` exists to do
+it — but it reflects the HAND about the middle of the frame, which is a true
+mirror only if the arm is symmetric about that line, and it is not: the
+shoulder is fixed off to the right. Measured, the mirrored follow-through put
+the point at x = -3.26, three frame-widths off the left edge. So the
+combination lives in the LINE instead: three hits, all sweeping the same way,
+the first through the middle, the second rising through the upper body, the
+third lower, longer and quicker. Three visibly different swings and not one
+of them can surprise you.
+
+**AND `landBlade` HAS TO BE TURNED DOWN FOR A SWORD.** It exists so a dig
+lands where you aimed, and it does that by TRANSLATING THE WHOLE ARM until
+the lip sits on the point — right for a spade, whose stroke is short and
+whose line nobody reads, and wrong for a blade whose whole appeal is the
+sweep. At full weight it was dragging the authored line apart mid-swing. A
+third of the correction, on a short leash, keeps the blade honest about where
+you were looking without letting it throw the swing around.
+
+**A CHECKPOINT BELONGS TO THE GAME THAT MADE IT.** It lives in localStorage so
+a death can reload the page and still find it, and localStorage outlives the
+tab — so refreshing the browser left "restart from last checkpoint" lit up
+with a save from a game the player had already walked away from. The only
+arrival that legitimately carries one is the one the game asked for
+(`reloadInto('checkpoint')`, off a death or off the menu); every other way in
+is a new game and the old save goes with the old game. One line at load, next
+to where `loadMode` is read.
+
 **THE KATANA'S MOVE SET IS THE UE4 REEL'S, POSE FOR POSE.** A second
 reference arrived — a first-person katana animation set with every clip
 LABELLED on screen — and "make it exactly the same" is a much easier brief

@@ -217,6 +217,17 @@ const SAVE_KEY = 'beachwalk.save';
 function hasCheckpoint() { try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; } }
 let loadMode = 'fresh';
 try { loadMode = sessionStorage.getItem('beachwalk.load') || 'fresh'; sessionStorage.removeItem('beachwalk.load'); } catch (e) {}
+/* A CHECKPOINT BELONGS TO THE GAME THAT MADE IT. It lives in localStorage so
+ * a death can reload the page and still find it — and localStorage outlives
+ * the tab, so refreshing the browser used to leave "restart from last
+ * checkpoint" lit up with a save from a game you had already walked away
+ * from, three hundred metres down a beach you were starting again. The only
+ * arrival that legitimately carries one is the one this game asked for:
+ * `reloadInto('checkpoint')`, off a death or off the menu button. Every other
+ * way in — a refresh, a new tab, a cold open — is a NEW GAME, and the old
+ * save goes with the old game. Nothing else has to change: the walk writes a
+ * new one when you reach the pavilion. */
+if (loadMode !== 'checkpoint') { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} }
 
 let audioStarted = false, audioCtx = null, masterGain = null;
 let titleSurfGain = null;               // the sea under the title, pulled down on begin
@@ -6313,11 +6324,45 @@ const isBlade = () => !!(equipped && equipped.blade);
  * crosses the frame and crosses back, which is what a blade looks like and
  * what a spade never does. The first cut, and any cut after a pause, is the
  * forehand. */
+/* AND THE HITS COMBO. The reel throws `attack_swing_left_01`, then
+ * `attack_swing_right_01`, then `attack_swing_left_02` — three swings on the
+ * end of each other, crossing and crossing back, which is what a katana
+ * looks like in someone's hands and what a single repeated stroke never
+ * does. `comboStep` counts them: click again inside `COMBO_WINDOW` and you
+ * are on the next one, pause and you are back at the first. The direction
+ * alternates with the step, so the blade goes right to left, then left to
+ * right, then right to left again — and the THIRD is the finisher, thrown a
+ * little further and a little faster than the two before it, so a full chain
+ * has somewhere to arrive. The first cut, and any cut after a pause, is
+ * always the forehand: you always know where the blade is going. */
+const COMBO_WINDOW = 950, COMBO_LEN = 3;
+let comboStep = 0;
+/* AND EVERY ONE OF THEM GOES RIGHT TO LEFT. The obvious way to build the
+ * reel's combination is to mirror the stroke on the second hit, and it was
+ * built that way and thrown out: `mirrorSide` reflects the HAND about the
+ * middle of the frame, which is a true mirror only if the arm is symmetric
+ * about that line, and it is not — the shoulder is fixed off to the right.
+ * Measured, the mirrored follow-through put the point at x = -3.26, three
+ * frame-widths off the left edge. That is the "blade moves all over the
+ * place" in one number.
+ *
+ * So the combination is in the LINE, not in the direction. Every cut sweeps
+ * the same way — you always know where the blade is going before you click,
+ * which is the rule the shovel has followed since it learned to cut — and
+ * the three steps differ in where the line sits: the first through the
+ * middle, the second RISING through the upper body, the third lower, longer
+ * and quicker, which is the finisher. Three visibly different swings, none
+ * of which can surprise you. */
+const COMBO_LIFT = [0, 0.20, -0.07];      // where each step's line sits
+const COMBO_REACH = [0, 0.05, 0.17];      // and how far it carries
 const pickSlashDir = () => {
-  if (!(equipped && equipped.alternate)) return -1;
-  const chained = performance.now() - lastSlashAt < 900;
-  return chained ? -slashDir : -1;
+  if (!(equipped && equipped.alternate)) { comboStep = 0; return -1; }
+  const chained = performance.now() - lastSlashAt < COMBO_WINDOW;
+  comboStep = chained ? (comboStep + 1) % COMBO_LEN : 0;
+  return -1;
 };
+const comboLift = () => (equipped && equipped.alternate ? COMBO_LIFT[comboStep] : 0);
+const comboReach = () => (equipped && equipped.alternate ? COMBO_REACH[comboStep] : 0);
 /* THE BACKHAND IS THE FOREHAND IN A MIRROR — about the middle of the frame,
  * not about the hands' rest. `side` is measured from where the hands rest,
  * which is off to the right, so simply negating it sent the backhand's
@@ -6374,43 +6419,68 @@ const mirrorSide = (s, d) => d < 0 ? s : -2 * ARM_SIDE - s;
  * numbers, and every improvement ever made to the stroke still applies. */
 const bladeReach = () => (isBlade() ? 1.26 : 1);
 const bladeDrop = () => (isBlade() ? 1 : 0);
-/* THE KATANA'S CUT IS ITS OWN, AND IT IS A CROSS-BODY DRAW.
- * Scaling the shovel's stroke got it into the right half of the frame and no
- * further: the reference's `attack_swing_left_01` does something a spade
- * cannot, which is to COCK ACROSS THE BODY — the fist drops to the low left
- * with the point thrown up and back over the far shoulder — and then bring
- * the blade round through the horizontal, edge leading, and out past the
- * near hip. The hand travels left to right while the blade turns through
- * about two thirds of a half-circle, and all of that turn is the ARM'S roll,
- * so the sword never rotates in the grip. Three poses, each solved against
- * the reel frame by frame: point up over the far shoulder, then flat through
- * the middle of the screen, then away past the hip and out of frame.
- * `d` mirrors the whole thing for the return stroke. */
+/* THE KATANA'S CUT IS A STRAIGHT LINE ACROSS THE SCREEN, RIGHT TO LEFT.
+ * The cross-body draw that came out of the reel first was faithful to the
+ * reel and unreadable in a game: the point left the frame at the cock, came
+ * back in somewhere else, and the owner's verdict was "the blade moves all
+ * over the place". What a swing has to do FIRST is be legible, and the thing
+ * that makes a swing legible is that its point travels in a straight line —
+ * the shovel's cut has run corner to corner through the crosshair since it
+ * was laid out and nobody has ever complained about it.
+ *
+ * So the katana's point runs (0.86, 0.40) → (-0.10, -0.02) → (-1.08, -0.42):
+ * straight, the full width of the picture, through the middle, sloping just
+ * enough to read as a cut rather than a windscreen wiper. A CHARGE runs the
+ * same line steeper, from (0.82, 0.92) — cocked up toward the top right out
+ * of the idle, so a held heavy looks like a sword about to be swung and not
+ * like a guard.
+ *
+ * AND THE COCK IS A POSE YOU HOLD, SO IT HAS TO BE ON SCREEN. Solving for a
+ * dead-straight line and nothing else put the cocked hand a whole half-width
+ * past the right edge with the point out there beside it, so a full charge
+ * showed an empty screen and a stamina bar. The fist is pinned inside the
+ * frame at the cock; the line pays a little straightness for it, and a swing
+ * you can see beats a swing that is geometrically perfect.
+ *
+ * AND THE STRIKE HAS TO LAND MID-SWEEP. Solving only for the two ends and
+ * the straightness in between let the mark drift up to a fifth of the way
+ * along, so nearly the whole visible travel happened in the FOLLOW-THROUGH,
+ * after the blow had already landed — a swing whose picture arrives late.
+ * The mark is pinned to the middle of the line now, and the point crosses
+ * the frame at an even pace: 0.86, 0.63, 0.39, 0.15, -0.10, -0.29, -0.51,
+ * -0.77, -1.08. Worst deviation from the line: 0.016 of the frame.
+ *
+ * The arm's own pitch, lift and reach are held to small steps between poses
+ * so nothing bobs, and the roll marches one way from cock to
+ * follow-through. */
 function katCock(out, P, d) {
-  out[0] = 0.071;
-  out[1] = 0.166 + P * 0.06;
+  const F = comboReach() * 0.5, V = comboLift();
+  out[0] = -0.025;
+  out[1] = -0.168 + P * 0.215 + V;
   out[2] = 0.45;
-  out[3] = -d * (-0.974 - P * 0.16);       // the point thrown further back on a charge
-  out[4] = 0.061;
-  out[5] = mirrorSide(-(1.012 + P * 0.14), d);
+  out[3] = -d * (-0.015 + P * 0.080);
+  out[4] = -0.394 + P * 0.172;
+  out[5] = mirrorSide(0.548 - P * 0.211 + F, d);
   return out;
 }
 function katMark(out, P, d) {
-  out[0] = -0.053;
-  out[1] = 0.303;
+  const F = comboReach() * 0.8, V = comboLift() * 0.55;
+  out[0] = -0.024 + P * 0.004;
+  out[1] = -0.402 + P * 0.110 + V;
   out[2] = 0.45;
-  out[3] = -d * (1.618 + P * 0.06);
-  out[4] = 0.003 - P * 0.10;               // and it arrives further out
-  out[5] = mirrorSide(-0.474, d);
+  out[3] = -d * (0.365 + P * 0.171);
+  out[4] = -0.353 - P * 0.036;
+  out[5] = mirrorSide(-0.462 + P * 0.109 - F, d);
   return out;
 }
 function katThrough(out, P, d) {
-  out[0] = -0.140;
-  out[1] = 0.229 - P * 0.08;
+  const F = comboReach(), V = -comboLift() * 0.35;
+  out[0] = -0.013 + P * 0.026;
+  out[1] = -0.460 + V;
   out[2] = 0.45;
-  out[3] = -d * (1.825 + P * 0.10);
-  out[4] = 0.181;
-  out[5] = mirrorSide(-0.265 + P * 0.12, d);
+  out[3] = -d * (0.695 + P * 0.305);
+  out[4] = -0.105 - P * 0.038;
+  out[5] = mirrorSide(-1.080 + P * 0.113 - F, d);
   return out;
 }
 function slashCock(out, P, d) {
@@ -6585,7 +6655,14 @@ function startWind() {
   if (blocking) return;                  // no swing comes out of a guard
   if (digT > 0 || winding || !equipped || !equipped.onDig || frozen()) return;
   winding = true; windT = 0; windFull = false; windOverhead = false;
-  if (slashing()) slashDir = pickSlashDir();   // which shoulder it cocks over is decided now, not at the release
+  /* A HEAVY IS ALWAYS THE FOREHAND. The combo alternates the light cuts —
+   * that is the point of it — but a charge is a pose you HOLD, and a held
+   * pose that lands on whichever side the last click happened to leave you
+   * on is a wind-up you cannot learn. It also reads wrong on the far side:
+   * cocked over the left shoulder the blade comes up across the view and
+   * looks like a guard, which is exactly what the owner said it looked like.
+   * Winding resets the chain and takes the forehand, every time. */
+  comboStep = 0; slashDir = -1;
 }
 function releaseWind() {
   if (!winding) return;
@@ -6890,7 +6967,13 @@ const windupEnd = () => slashing() ? SLASH_WINDUP : DIG_WINDUP;
  * with the blade crossing the whole frame there is more to see than in a
  * chop, and it needs the time. A HEAVY cut stays quick for a heavy (0.69 s
  * against the chop's 1.24): a katana is not a sledgehammer. */
-const swingSecs = (P) => (slashing() ? DIG_DUR * (0.55 + P * 0.60) / (1 + 0.34 * P) : DIG_DUR * (0.55 + P)) * ((equipped && equipped.swingK) || 1);
+/* AND A CHAINED CUT IS QUICKER THAN THE ONE THAT STARTED IT. Three swings
+ * of identical length in a row is three swings, not a combination: each step
+ * of a chain runs a little shorter than the last, so a full three-hit combo
+ * accelerates into its finisher instead of plodding. The FIRST cut keeps its
+ * full length — that is the one you read. */
+const comboRate = () => (equipped && equipped.alternate ? 1 - comboStep * 0.09 : 1);
+const swingSecs = (P) => (slashing() ? DIG_DUR * (0.55 + P * 0.60) / (1 + 0.34 * P) : DIG_DUR * (0.55 + P)) * ((equipped && equipped.swingK) || 1) * comboRate();
 let vmLagX = 0, vmLagY = 0, vmPrevYaw = 0, vmPrevPitch = 0;
 let vmSpringY = 0, vmSpringV = 0;
 const _vmEuler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -6918,6 +7001,17 @@ function landBlade() {
   if (p < DIG_STRIKE) landK = easeInCubic((p - W) / (DIG_STRIKE - W));
   else if (p < DIG_STRIKE + hold) landK = 1;
   else landK = 1 - easeInOutCubic(Math.min(1, (p - DIG_STRIKE - hold) / rel));
+  /* AND A SWORD IS ONLY NUDGED. `landBlade` exists so a dig lands where you
+   * aimed, and it does that by TRANSLATING THE WHOLE ARM until the lip sits
+   * on the point — which is right for a spade, whose stroke is short and
+   * whose line nobody reads, and wrong for a katana, whose whole appeal is a
+   * clean sweep across the frame. At full weight the correction was moving
+   * the point three frame-widths off the left edge mid-swing and dragging
+   * the authored line apart with it; measured, the tip's path stopped
+   * resembling the solve at all. A third of the correction and a short leash
+   * keeps the blade honest about where you were looking without letting it
+   * throw the swing around. */
+  if (isBlade()) landK *= 0.34;
   if (landK <= 0) return;
   _landNdc.copy(landPoint()).project(camera);
   if (_landNdc.z > 1) return;             // behind you: leave the pose alone
@@ -6930,7 +7024,7 @@ function landBlade() {
   _landV.set(_landNdc.x, _landNdc.y, 0.5).unproject(vmCamera);
   _landV.multiplyScalar(depth / _landV.z);  // the point's ray at the lip's depth
   _landV.sub(_lipA);
-  if (_landV.length() > 1.2) _landV.setLength(1.2);
+  if (_landV.length() > (isBlade() ? 0.34 : 1.2)) _landV.setLength(isBlade() ? 0.34 : 1.2);
   armRig.position.addScaledVector(_landV, landK);
 }
 
@@ -7204,7 +7298,12 @@ function updateViewmodel(dt) {
   // would say the tool was moving fast when it is deliberately barely moving.
   trailPower = digPower;
   // a slash draws a broad arc rather than a chop's line, so it carries further
-  trailGain = slashing() ? 1.55 : 1;
+  /* AND A LONGER SWEEP NEEDS A THINNER RIBBON. The trail's alpha was tuned
+   * against the shovel's cut; the katana's straight line crosses twice as
+   * much of the frame, so the same per-quad alpha stacked into a solid pale
+   * wedge over a third of the picture — the additive-blending trap the trail
+   * has fallen into once before, in a new place. */
+  trailGain = slashing() ? (isBlade() ? 0.95 : 1.55) : 1;
   updateTrail(dt, toolVM.visible && digT >= windupEnd() - 0.02 && digT < (slashing() ? SLASH_THROUGH + 0.02 : DIG_STRIKE + 0.13));
   updateSparks(dt);
   updateGlint(dt);
