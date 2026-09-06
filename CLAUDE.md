@@ -1558,6 +1558,100 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**THE BOSS FIGHT HAD NO BLOOD IN IT AT ALL, AND THAT IS WHY YOU COULD NOT
+READ IT.** "You can't tell what's a successful hit" was not a feedback
+problem to be solved with more feedback — it was a bug, and the bug is the
+oldest one in this file wearing a new coat: the BEACH'S OWN y = 0 baked into
+a system that now runs forty metres under it. A blood drop was deleted at
+`y <= 0.02`, an absolute height, so every drop thrown in the bunker was
+already below its own ground on the frame it was made and was removed before
+it had ever been drawn. `bleedMutant` spawned its burst at a bare
+`0.85 + …`, which is chest height on the sand and is forty metres over the
+Dealer's head in his own room. And `stampBlood` stamped at 0.035, so what
+little survived left its mark on the beach above the roof. The net of it: a
+landed cut showed you the sparks off `bossHit` and NOTHING else, which is
+exactly what a block looks like — so every swing in that room read as
+blocked, which is also the whole of "I keep getting stuck in block when
+fighting in the bunker". A drop asks what is under it now (`bunkerFloorAt`,
+then the deck, then the sand), the burst comes out of the body's own y, and
+a stain takes the height it landed at. THE SAME THREE LINES HAVE NOW BEEN
+WRITTEN FOR THE PHYSICS BODIES, THE GIBS AND THE BLOOD: anything that knows
+one ground is broken the day the game acquires a second one.
+
+Two things went on top, once it could be seen at all. **Some of the spray
+comes BACK at you** — everything else is thrown away down the swing, so at
+the wrong angle (him against a dark wall, the blade between) a cut could
+still be read as a block, and blood crossing your view is a thing steel never
+does. And **the blow that finally breaks his poise bleeds rather than
+sparks**: it threw sixteen sparks, the loudest picture in the fight, off the
+one blow that had just gone through his guard and into his body.
+
+**A GUARD IS A BUTTON HELD, SO IT MUST BE POLLED AND NOT LATCHED.**
+`blocking` was raised on pointerdown and only ever lowered on pointerup, and
+a release that never arrives is not rare: the lock goes away to a browser
+banner, the tab loses focus, a press that began over the canvas ends
+somewhere else. Then the shovel is up across the screen for the rest of the
+fight with no way down but pressing and releasing again. `e.buttons` is the
+ground truth and it comes free with every pointermove — bit 1 is the right
+button — so the guard is now whatever the mouse is actually doing. Losing the
+lock drops it, a cutscene drops it, and `pointercancel` drops it.
+
+**AND THE WAY OUT IS THE HATCH, NOT A PATCH OF CEILING NEAR IT.** The exit
+proxy was a slab a metre and a half wider than the shaft on every side, which
+in a fight is a prompt you catch by looking up and a room you leave by
+accident. It is the shaft's own mouth now, with a `when` that asks you to be
+standing under it — walk to the spot you came down at, look up at the lid,
+press E. Everywhere else in that room there is no way out, which is the point
+of the room.
+
+**HE GOES INTO THE SEA ONCE.** The tall one bolts, goes under and is taken
+out of the scene for good — and then a checkpoint load rebuilt the world from
+seed and stood him back up on his mark, so the one thing in this game that is
+meant to happen to you exactly once happened again every time you died. It is
+a flag on the save now (`smileGone`), and it is ALSO inferred from where the
+checkpoint puts you, because the pavilion is ninety metres past him: anyone
+loading that save has already walked through that stretch. Same rule as the
+pack's cutscene — a trigger you have already crossed does not fire again —
+and it wants the same treatment for anything else that is meant to be once a
+walk. `removeSmile()` is the one door, so the two callers cannot drift.
+
+**A THING COMES APART THE WAY IT WAS HIT, AND IT FALLS RATHER THAN FLIES.**
+The coat stand's second break threw every piece RADIALLY, out from the post
+and upward — you walked into it and it jumped away from you on all sides at
+once, which is a thing bursting, not a thing being knocked over. Four
+changes, and they are the general rules for breaking anything in here:
+
+- **The blow has a direction and the pieces take it.** A body's direction is
+  its Verlet particle's own velocity (where it is now less where it was last
+  frame); yours is the line from you to the thing.
+- **How high a piece stood is how far it travels**, because the top of a
+  falling post is the end that is moving, and the vertical kick is a quarter
+  of what it was: it topples, it does not launch.
+- **A long piece turns about its FALL, not about itself.** Random spin on
+  three axes is a stick being juggled; a post knocked over rotates about the
+  axis across the blow.
+- **It comes apart in beats, top-down** (`gib.wait`), the sandcastle's own
+  lesson — everything leaving on one frame is an explosion. And the post
+  lengths leave UPRIGHT: they used to be given a random tumble on the frame
+  they appeared, so the post was already lying at an angle before it had
+  fallen, on the one frame that has to look like the thing you just hit.
+- And a break throws SPLINTERS from the break itself, so the eye is given
+  something at the height the blow landed.
+
+**A SEALED ROOM HOLDS ITS DEBRIS TOO.** The ragdoll learned this once — a
+body thrown across the control room went out through the concrete and settled
+in the sand over its roof — and a gib is the same thing smaller: splinters off
+the coat stand shot through the end wall and fell down the outside of the
+building. `bunkerConfine` is the room box for anything loose, and it returns
+WHICH wall was met so only that component of the bounce is turned round.
+
+**AND THE CORNER IS THE ONE UNDER THE POSTER.** Measured, not guessed: the
+corner itself is full of cupboards, so the stand stands at the nearest cell to
+it that a body actually fits in — 1.05 m out along the -x wall, under "IT CAN
+HAPPEN HERE". The way to find a corner someone has photographed is to raycast
+the render at the thing in the picture and read the object's name back, not to
+reason about which wall is which.
+
 **8 IS A LATCH, NOT A KEY YOU HOLD.** "Make 8 the max walk speed" was read
 as a number the first time — the constant that comes out as eight at the
 owner's own slider — and what he meant was the KEY: pressing 8 makes the top

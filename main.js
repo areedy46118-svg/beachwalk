@@ -3337,6 +3337,13 @@ document.addEventListener('pointerlockchange', () => {
     fallbackLook = false; dragging = false;          // a real lock ends the drag fallback, however we got here
     started = true; overlay.classList.add('hidden'); refreshUI();
   } else {
+    /* AND WHATEVER TOOK THE LOCK TOOK THE HAND OFF THE MOUSE. A guard is a
+     * button HELD, so it is only ever let go by a pointerup — and a lock
+     * that goes away (Esc, a browser banner, the tab losing focus) can eat
+     * that release outright, which leaves the tool up across the screen with
+     * no way down but pressing and releasing again. Every exit from the game
+     * drops it, and so does the poll in `update`. */
+    blocking = false; blockGasped = false;
     if (fallbackLook || ended) return;
     if (!started) { overlay.classList.remove('hidden'); return; }
     // an intentional exit (note / menu / dialogue / death) is handled by
@@ -3364,9 +3371,19 @@ document.addEventListener('mousemove', (e) => {
   if (locked && !frozen()) applyLook(e.movementX, e.movementY);
 });
 window.addEventListener('pointermove', (e) => {
+  /* THE GUARD IS WHATEVER THE BUTTON IS DOING, NOT WHAT THE LAST EVENT SAID.
+   * `blocking` was raised on pointerdown and only ever lowered on pointerup,
+   * so any release that never arrived — a lock lost mid-hold, a press that
+   * began over the canvas and ended somewhere else, a context menu — latched
+   * the shovel up across you for the rest of the fight. `e.buttons` is the
+   * ground truth and it comes with every move: bit 1 is the right button,
+   * and if it is not set then nothing is holding the guard up. */
+  if (blocking && !(e.buttons & 2)) blocking = false;
   if (wheelGrab && fallbackLook && dragging) { dragWheel(e.movementX); return; }
   if (fallbackLook && dragging && !frozen()) applyLook(e.movementX, e.movementY);
 });
+document.addEventListener('visibilitychange', () => { if (document.hidden) blocking = false; });
+window.addEventListener('pointercancel', () => { blocking = false; });
 
 // ------------------------------------------------------------------
 // Opening sequence — black card, the line fades in and out, then the
@@ -4113,6 +4130,12 @@ const _preMove = new THREE.Vector3();     // the player, before this frame's mov
  * grounds use, because the bunker's floor is forty metres BELOW the sand —
  * anything down there would be lifted to the beach. It replaces. */
 let bunkerFloorAt = () => null;
+/* AND THE ROOM HOLDS ITS OWN DEBRIS. The ragdoll learned this once — a body
+ * thrown across a sealed control room went out through the concrete and
+ * settled in the sand over its roof — and a gib is the same thing smaller:
+ * splinters off the coat stand shot through the end wall and fell down the
+ * outside of the building. Anything loose in there is held to the room box. */
+let bunkerConfine = () => 0;
 class PhysProp {
   constructor(mesh, opts = {}) {
     this.mesh = mesh;
@@ -8297,11 +8320,18 @@ bloodDecals.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 scene.add(bloodDecals);
 let bloodIdx = 0;
 const _bm = new THREE.Matrix4(), _bq = new THREE.Quaternion(), _be = new THREE.Euler(), _bs = new THREE.Vector3();
-function stampBlood(x, z, size) {
-  if (inWater(x, z)) return;                 // washes straight off the wet sand
+/* A STAIN LIES ON THE FLOOR IT LANDED ON, AND FORTY METRES DOWN THAT IS NOT
+ * THE BEACH. `y` was the sand plane's own 0.035, hard-coded, so every drop of
+ * blood spilt in the bunker was stamped on the beach over its roof: the fight
+ * you could not read left its mark in a place you were not standing. `atY` is
+ * roughly where the blood is, which is all `bunkerFloorAt` needs to answer
+ * which floor is under it — the same lookup the gibs have had all along. */
+function stampBlood(x, z, size, atY) {
+  const bf = atY === undefined ? null : bunkerFloorAt(x, z, atY);
+  if (bf === null && inWater(x, z)) return;  // washes straight off the wet sand
   _be.set(0, Math.random() * Math.PI * 2, 0); _bq.setFromEuler(_be);
   _bs.set(size, 1, size * (0.85 + Math.random() * 0.3));
-  _bm.compose(new THREE.Vector3(x, 0.035, z), _bq, _bs);
+  _bm.compose(new THREE.Vector3(x, (bf === null ? 0 : bf) + 0.035, z), _bq, _bs);
   bloodDecals.setMatrixAt(bloodIdx, _bm);
   bloodIdx = (bloodIdx + 1) % BLOOD_POOL;
   bloodDecals.instanceMatrix.needsUpdate = true;
@@ -8345,7 +8375,7 @@ function burstCrab(u = crabs[0]) {
       life: 4,
     });
   }
-  stampBlood(p.x, p.z, 1.1 + Math.random() * 0.5);
+  stampBlood(p.x, p.z, 1.1 + Math.random() * 0.5, p.y + 0.2);
   spawnPuffs(p.x, p.z, 12, 0, -1, 0.14);
 }
 
@@ -8355,6 +8385,12 @@ function updateGibs(dt) {
     const g = gibs[i];
     g.life -= dt;
     if (g.life <= 0) { scene.remove(g.m); g.m.geometry.dispose(); gibs.splice(i, 1); continue; }
+    /* A PIECE MAY BE HELD FOR A BEAT BEFORE IT LETS GO. The sandcastle
+     * taught this: everything leaving on one frame is an explosion, and
+     * things do not explode — they come apart top-down over a tenth of a
+     * second. A gib with `wait` hangs exactly where it was drawn until its
+     * turn, which is what makes a post SNAP and then fall rather than jump. */
+    if (g.wait > 0) { g.wait -= dt; continue; }
     /* WHAT IT LANDS ON IS ASKED EVERY FRAME, not fixed when it was thrown.
      * A crate gib carried `rest = crate.y`, so the deck crate's boards kept
      * deck height wherever they flew — the ones that cleared the edge hung
@@ -8389,6 +8425,10 @@ function updateGibs(dt) {
     if (g.settled) continue;
     g.vel.y -= 15 * dt;
     g.m.position.addScaledVector(g.vel, dt);
+    // a sealed room keeps what is thrown about inside it
+    const wall = bunkerConfine(g.m.position);
+    if (wall & 1) g.vel.x *= -0.32;
+    if (wall & 2) g.vel.z *= -0.32;
     g.m.rotation.x += g.spin.x * dt; g.m.rotation.y += g.spin.y * dt; g.m.rotation.z += g.spin.z * dt;
     if (g.m.position.y <= rest) {
       g.m.position.y = rest;
@@ -8406,20 +8446,32 @@ function updateGibs(dt) {
         // leaving blood splats under the shards and the splinters
         // and nothing stains water
         if (g.bleed !== false && Math.random() < 0.5 && submersionAt(g.m.position.x, g.m.position.z) < 0.12)
-          stampBlood(g.m.position.x, g.m.position.z, 0.3 + Math.random() * 0.35);
+          stampBlood(g.m.position.x, g.m.position.z, 0.3 + Math.random() * 0.35, g.m.position.y);
       }
     }
   }
+  /* AND A DROP OF BLOOD KNOWS ONE FLOOR — THE SAND — WHICH IS WHY THE BOSS
+   * FIGHT HAD NO BLOOD IN IT AT ALL. The test was `y <= 0.02`, an absolute
+   * height, and the bunker is forty metres UNDER that: every drop thrown in
+   * that room was already below its own ground on the frame it was made, so
+   * it was deleted before it had ever been drawn. All you ever saw of a
+   * landed blow was the sparks that come off the BAR — which is exactly
+   * "you can't tell what's a successful hit". A drop asks what is under it,
+   * the way a gib has always had to. */
   for (let i = bloodDrops.length - 1; i >= 0; i--) {
     const b = bloodDrops[i];
     b.life -= dt;
     b.vel.y -= 17 * dt;
     b.m.position.addScaledVector(b.vel, dt);
-    b.m.visible = !coveredByWater(b.m.position.x, b.m.position.y, b.m.position.z);
-    if (b.m.position.y <= 0.02 || b.life <= 0) {
-      // it lands and soaks in — into sand. Water takes it without a mark.
-      if (b.m.position.y <= 0.02 && submersionAt(b.m.position.x, b.m.position.z) < 0.12)
-        stampBlood(b.m.position.x, b.m.position.z, 0.16 + Math.random() * 0.3);
+    const bbf = bunkerFloorAt(b.m.position.x, b.m.position.z, b.m.position.y);
+    const bdk = bbf === null ? dockDeckAt(b.m.position.x, b.m.position.z) : null;
+    const bfloor = bbf !== null ? bbf : bdk !== null ? bdk + 0.02 : 0;
+    b.m.visible = bbf !== null || !coveredByWater(b.m.position.x, b.m.position.y, b.m.position.z);
+    const down = b.m.position.y <= bfloor + 0.02;
+    if (down || b.life <= 0) {
+      // it lands and soaks in — into sand, or onto steel. Water takes it without a mark.
+      if (down && (bbf !== null || submersionAt(b.m.position.x, b.m.position.z) < 0.12))
+        stampBlood(b.m.position.x, b.m.position.z, 0.16 + Math.random() * 0.3, b.m.position.y);
       scene.remove(b.m); b.m.geometry.dispose(); bloodDrops.splice(i, 1);
     }
   }
@@ -13063,16 +13115,21 @@ function updateSmile(dt) {
   if (p.x < WADE_X + 1) p.y -= 3.4 * dt;                      // it goes under like a dive, not a wade
   const water = waterSurfaceAt(p.x, p.z);
   if (p.y + SMILE_H < water - 0.25 || p.x < -14) {
-    /* REMOVED, not hidden. `visible = false` was undone the next frame by
-     * updateFarProps(), which switches every entry in `farProps` on or off
-     * by distance — so it stood back up at its last spot, head at the
-     * surface, for the rest of the game. Out of the scene and out of the
-     * list, it cannot come back. */
-    smilePhase = 2;
-    scene.remove(smile);
-    const fi = farProps.findIndex((f) => f.obj === smile);
-    if (fi >= 0) farProps.splice(fi, 1);
+    removeSmile();
   }
+}
+/* REMOVED, not hidden. `visible = false` was undone the next frame by
+ * updateFarProps(), which switches every entry in `farProps` on or off by
+ * distance — so he stood back up at his last spot, head at the surface, for
+ * the rest of the game. Out of the scene and out of the list, he cannot come
+ * back; and it is one function because a CHECKPOINT has to be able to say
+ * the same thing without watching him run. */
+function removeSmile() {
+  if (smilePhase === 2) return;
+  smilePhase = 2;
+  scene.remove(smile);
+  const fi = farProps.findIndex((f) => f.obj === smile);
+  if (fi >= 0) farProps.splice(fi, 1);
 }
 
 // ------------------------------------------------------------------
@@ -14051,12 +14108,24 @@ function hurtMutant(u, dmg, P = 0) {
       camera.getWorldDirection(_hitC);
       const _by = u.g.position.y + u.kind.h * (0.45 + Math.random() * 0.3);
       sprayBlood(u.g.position.x, _by, u.g.position.z, _hitC.x, _hitC.z, 24 + Math.round(P * 16), 1.1 + P * 0.6);
-      stampBlood(u.g.position.x + _hitC.x * 0.45, u.g.position.z + _hitC.z * 0.45, 0.34 + Math.random() * 0.3);
+      /* AND SOME OF IT COMES BACK AT YOU. Everything else the spray does
+       * goes AWAY down the swing, so at the wrong angle — him against a dark
+       * wall, the blade between — a landed cut could still be read as a
+       * block. A dozen drops thrown back along the blade's own line pass the
+       * camera, and blood crossing your view is a thing steel never does. */
+      sprayBlood(u.g.position.x, _by, u.g.position.z, -_hitC.x, -_hitC.z, 10 + Math.round(P * 6), 0.7 + P * 0.3);
+      stampBlood(u.g.position.x + _hitC.x * 0.45, u.g.position.z + _hitC.z * 0.45, 0.34 + Math.random() * 0.3, u.g.position.y + 0.2);
       return false;
     }
     u.st.poise = u.kind.poise;
     poiseBroke = true;
-    bossHit(P, true);                      // the one that finally moves him
+    /* AND THE ONE THAT FINALLY MOVES HIM IS ALSO THE ONE THAT WENT DEEPEST.
+     * It threw sixteen sparks — the loudest picture in the fight — off a
+     * blow that had just gone through his guard and into his body, so the
+     * hardest hit you can land was the one that read most like being
+     * stopped. Flesh: four off the bar and the blood the fall-through
+     * throws underneath. */
+    bossHit(P, true, true);
   }
   /* THE RIPOSTE. A blow landed on one you have just parried counts DOUBLE.
    * The parry was already an opening; this makes it the point of the fight —
@@ -14101,7 +14170,7 @@ function hurtMutant(u, dmg, P = 0) {
   sfxMutHit(u.kind.voice);
   bleedMutant(u, 8, 0.35);
   sprayBlood(u.g.position.x, u.g.position.y + u.kind.h * 0.55, u.g.position.z, u.hitDir.x, u.hitDir.z, 12 + Math.round(P * 10), 0.9 + P * 0.6);
-  stampBlood(u.g.position.x + u.hitDir.x * 0.5, u.g.position.z + u.hitDir.z * 0.5, 0.45 + Math.random() * 0.35);
+  stampBlood(u.g.position.x + u.hitDir.x * 0.5, u.g.position.z + u.hitDir.z * 0.5, 0.45 + Math.random() * 0.35, u.g.position.y + 0.2);
   addTrauma(0.3 + P * 0.2);
   return false;
 }
@@ -14148,7 +14217,7 @@ function finishMutant(u) {
     mutRagdoll(u, hx, hz, 0.6 + hP * 0.6);
     bleedMutant(u, 26, 1.0);
     sprayBlood(u.g.position.x, u.g.position.y + u.kind.h * 0.5, u.g.position.z, hx, hz, 26 + Math.round(hP * 14), 1.3 + hP * 0.5);
-    stampBlood(u.g.position.x, u.g.position.z, 1.3 + Math.random() * 0.5);
+    stampBlood(u.g.position.x, u.g.position.z, 1.3 + Math.random() * 0.5, u.g.position.y + 0.2);
     return;
   }
   /* WHAT THE LAST BLOW TOOK WITH IT. A charged cut can go through the waist;
@@ -14181,7 +14250,7 @@ function finishMutant(u) {
   mutRagdoll(u, dx, dz, 0.7 + P * 0.7 + (oh ? 0.55 : 0));
   bleedMutant(u, 26, 1.0);
   sprayBlood(u.g.position.x, u.g.position.y + u.kind.h * 0.5, u.g.position.z, dx, dz, 26 + Math.round(P * 14), 1.3 + P * 0.5);
-  stampBlood(u.g.position.x, u.g.position.z, 1.3 + Math.random() * 0.5);
+  stampBlood(u.g.position.x, u.g.position.z, 1.3 + Math.random() * 0.5, u.g.position.y + 0.2);
   sfxMutDie(u.kind.voice);
   addTrauma(0.5);
   /* AND THE OTHERS LAUGH. You kill one of them and the ones still standing
@@ -14205,11 +14274,14 @@ function sprayBlood(x, y, z, dirX, dirZ, n, force) {
     bloodDrops.push({ m, vel: new THREE.Vector3(dirX * along + Math.cos(a) * side, 0.8 + Math.random() * 2.2 * force, dirZ * along + Math.sin(a) * side), life: 4 });
   }
 }
+/* And the chest it comes out of is wherever the creature is STANDING. The
+ * height was a bare `0.85 + …`, which is chest height on the beach and is
+ * forty metres over the Dealer's head in his own room. */
 function bleedMutant(u, n, force) {
   const p = u.g.position;
   for (let i = 0; i < n; i++) {
     const m = new THREE.Mesh(new THREE.IcosahedronGeometry(0.030 * (0.5 + Math.random()), 0), BLOOD_MAT);
-    m.position.set(p.x + (Math.random() - 0.5) * 0.35, 0.85 + Math.random() * 0.7, p.z + (Math.random() - 0.5) * 0.35);
+    m.position.set(p.x + (Math.random() - 0.5) * 0.35, p.y + 0.85 + Math.random() * 0.7, p.z + (Math.random() - 0.5) * 0.35);
     scene.add(m);
     const a = Math.random() * Math.PI * 2, out = (0.9 + Math.random() * 2.2) * force;
     bloodDrops.push({
@@ -14767,7 +14839,7 @@ function burstHead(u, dirX, dirZ) {
     const a = Math.random() * Math.PI * 2, out = 1.0 + Math.random() * 3.6;
     bloodDrops.push({ m, vel: new THREE.Vector3(Math.cos(a) * out + dirX * 2.0, 0.6 + Math.random() * 3.4, Math.sin(a) * out + dirZ * 2.0), life: 4 });
   }
-  stampBlood(hp.x, hp.z, 1.2 + Math.random() * 0.5);
+  stampBlood(hp.x, hp.z, 1.2 + Math.random() * 0.5, hp.y);
   sfxMutSever();
   playSample('fleshHit', 1.0, 0.03, 0.5);        // and a second, lower, under it: something heavier than a limb
   addTrauma(0.35); fovKick = Math.max(fovKick, 3);
@@ -14863,7 +14935,7 @@ function mutSever(u, part, dirX, dirZ, force) {
   }
   bleedMutant(u, 14, 1.2);
   sprayBlood(p.x, part.y * u.kind.h, p.z, dirX, dirZ, 14, 1.2);
-  stampBlood(p.x, p.z, 0.7 + Math.random() * 0.5);
+  stampBlood(p.x, p.z, 0.7 + Math.random() * 0.5, p.y + 0.2);
   sfxMutSever();
   return true;
 }
@@ -15142,7 +15214,7 @@ function ragHit(u, q, P, dirX, dirZ) {
   hitConnect(P, 0.55);
   playSample('fleshHit', 0.9, 0.05, 0.9 - P * 0.2);
   sprayBlood(q.p.x, q.p.y, q.p.z, dirX, dirZ, 10 + Math.round(P * 12), 0.8 + P * 0.6);
-  stampBlood(q.p.x, q.p.z, 0.5 + Math.random() * 0.4);
+  stampBlood(q.p.x, q.p.z, 0.5 + Math.random() * 0.4, q.p.y);
   const part = limbFor(q.name, P);
   if (part && !u.gone[part.bone] && (P >= MUT_HEAVY || Math.random() < 0.38 * toolGore())) {
     if (mutSever(u, part, dirX, dirZ, 0.9 + P * 0.6)) ragCut(u, part.bone);
@@ -16916,13 +16988,16 @@ const bunkerHome = spawnBunker(HATCH_X + 1.05, BUNKER_Y, HATCH_Z + 3.3, 0, {
   onLoad: (S, g) => {
     const L = S.nav && S.nav.ladder;
     if (!L) return;
-    // the way out: the ladder and the shaft above it, as one thing to aim at
-    /* YOU LEAVE BY LOOKING AT THE HATCH. It used to be the ladder, and the
-     * ladder is gone — but it was the wrong thing to aim at anyway: the way
-     * out of this room is the steel lid you came in through, and it is
-     * directly overhead. The proxy is a wide slab at the ceiling over where
-     * the ladder stood, so looking up anywhere near it offers the way out. */
-    const box = new THREE.BoxGeometry(L.x1 - L.x0 + 1.6, 0.5, L.z1 - L.z0 + 1.6);
+    /* YOU LEAVE BY STANDING UNDER THE HATCH AND PRESSING E ON IT. It used to
+     * be the ladder, and the ladder is gone; then it was a slab a metre and
+     * a half wider than the shaft on every side, which is not the hatch —
+     * it is a patch of ceiling near the hatch, and in a fight you look up,
+     * catch the prompt and leave the room by accident. The proxy is the
+     * shaft's own mouth now, with only enough margin to be aimable, and
+     * `when` asks you to be UNDER it: walk to the spot you came down at,
+     * look up at the lid, press E. Anywhere else in the room there is no
+     * way out, which is the point of the room. */
+    const box = new THREE.BoxGeometry(L.x1 - L.x0 + 0.5, 0.4, L.z1 - L.z0 + 0.5);
     bunkerLadderProxy = new THREE.Mesh(box, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
     bunkerLadderProxy.name = 'hitProxy';
     // just UNDER the ceiling, not the ladder's own top — that stood 43 cm
@@ -16935,7 +17010,16 @@ const bunkerHome = spawnBunker(HATCH_X + 1.05, BUNKER_Y, HATCH_Z + 3.3, 0, {
     setTimeout(() => warmBunker(g), 0);
     g.add(bunkerLadderProxy);
     bunkerLadderProxy.updateMatrixWorld(true);       // the room is hidden until you enter, and a hover raycast wants a fresh matrix
-    addInteractable(bunkerLadderProxy, 'To Leave Bunker', 'action', { onActivate: leaveBunker, when: () => !!inBunker && !hatchBusy });
+    /* The shaft's own centre, in world, so the gate is a distance and not a
+     * guess: `LADDER_SPOT` is where you stand to leave. */
+    const lcx = (L.x0 + L.x1) / 2, lcz = (L.z0 + L.z1) / 2;
+    const spot = new THREE.Vector3(lcx, 0, lcz).applyMatrix4(g.matrixWorld);
+    addInteractable(bunkerLadderProxy, 'To Leave Bunker', 'action', {
+      onActivate: leaveBunker,
+      far: 3.4,
+      when: () => !!inBunker && !hatchBusy
+        && Math.hypot(camera.position.x - spot.x, camera.position.z - spot.z) < 1.25,
+    });
   },
 });
 bunkerHome.group.visible = false;
@@ -16960,6 +17044,21 @@ addInteractable(hatch, 'To Enter Bunker', 'action', { onActivate: enterBunker, w
  * a couple of metres of the floor — because everything else in the game
  * takes the HIGHEST surface under it, and the highest surface under a
  * bottle in the bunker would be the beach forty metres over its head. */
+bunkerConfine = (v) => {
+  const B = bunkerHome.group.userData.bunker, nav = B.nav;
+  if (!nav || v.y > BUNKER_Y + nav.room.h + 0.2 || v.y < BUNKER_Y - 2.5) return 0;
+  const g = bunkerHome.group, R = nav.room, m = 0.06;
+  const lx = v.x - g.position.x, lz = v.z - g.position.z;
+  // only things that were already in the room, so a body on the beach over
+  // the roof is never dragged sideways into a building it is not in
+  if (lx < R.x0 - 1.5 || lx > R.x1 + 1.5 || lz < R.z0 - 1.5 || lz > R.z1 + 1.5) return 0;
+  const cx = THREE.MathUtils.clamp(lx, R.x0 + m, R.x1 - m);
+  const cz = THREE.MathUtils.clamp(lz, R.z0 + m, R.z1 - m);
+  if (cx === lx && cz === lz) return 0;
+  v.x = g.position.x + cx; v.z = g.position.z + cz;
+  // which wall it met, so only that component of the bounce is turned round
+  return (cx !== lx ? 1 : 0) | (cz !== lz ? 2 : 0);
+};
 bunkerFloorAt = (x, z, y) => {
   const B = bunkerHome.group.userData.bunker, nav = B.nav;
   if (!nav || y > BUNKER_Y + nav.room.h || y < BUNKER_Y - 2.5) return null;
@@ -17374,7 +17473,7 @@ function makeCoatStand() {
  * long post pieces tumble end over end while the little parts spin. The
  * lengths are then splintered — the split ends are cut on a slant, so a
  * broken post reads as broken and not as sawn. */
-function smashCoatStand(speed, atY) {
+function smashCoatStand(speed, atY, dirX, dirZ) {
   if (coatBroken || !coatStand) return;
   coatBroken = true;
   coatStand.updateMatrixWorld(true);
@@ -17382,18 +17481,38 @@ function smashCoatStand(speed, atY) {
   const gy = floorFor(p);
   const kick = Math.min(2.6, 0.7 + speed * 0.18);
   const hitY = (atY === undefined ? gy + 1.0 : atY) - p.y;
+  /* IT GOES THE WAY IT WAS HIT. Every piece used to leave RADIALLY, out from
+   * the post and upward, which is a thing bursting rather than a thing being
+   * knocked over — you walked into it and it jumped away from you on all
+   * sides at once. The blow has a direction and the stand goes along it, with
+   * only enough spread to keep the pieces from travelling as one lump. */
+  let dx = dirX || 0, dz = dirZ || 0;
+  const dl = Math.hypot(dx, dz);
+  if (dl < 1e-3) { const a = Math.random() * Math.PI * 2; dx = Math.sin(a); dz = Math.cos(a); }
+  else { dx /= dl; dz /= dl; }
   const _wp = new THREE.Vector3(), _wq = new THREE.Quaternion(), _ws = new THREE.Vector3();
-  const fling = (m, wy, heavy) => {
+  /* AND IT FALLS RATHER THAN FLIES. `up` was 0.9–2.4 on every piece, so the
+   * whole stand went into the air; a post that has been snapped TOPPLES —
+   * along the blow, barely leaving the ground, turning about the horizontal.
+   * How high a piece stood is how far it travels, because the top of a
+   * falling post is the end that is moving. */
+  const fling = (m, wy, heavy, wait) => {
     scene.add(m);
-    // out from the post, and hardest where it was struck
-    const a = Math.atan2(m.position.x - p.x, m.position.z - p.z) + (Math.random() - 0.5) * 1.1;
-    const near = 1 - Math.min(1, Math.abs(wy - (p.y + hitY)) / 1.2);
-    const out = (0.5 + Math.random() * kick) * (0.45 + near);
-    const spin = heavy ? 7 : 16;
+    const h = THREE.MathUtils.clamp((wy - gy) / 1.75, 0, 1);       // how high it stood
+    const near = 1 - Math.min(1, Math.abs(wy - (p.y + hitY)) / 1.0);
+    const out = (0.6 + kick * (0.35 + h * 0.9)) * (0.55 + near * 0.7);
+    const sway = (Math.random() - 0.5) * 0.55;                     // a little spread, not a burst
+    const spin = heavy ? 5.5 : 13;
     gibs.push({
-      m, vel: new THREE.Vector3(Math.sin(a) * out, 0.9 + Math.random() * 1.5 + near * 0.9, Math.cos(a) * out),
-      spin: new THREE.Vector3((Math.random() - 0.5) * spin, (Math.random() - 0.5) * spin, (Math.random() - 0.5) * spin),
-      rest: gy + (heavy ? 0.03 : 0.02) + Math.random() * 0.02, life: 150, bleed: false,
+      m,
+      vel: new THREE.Vector3((dx + sway * dz) * out, 0.25 + h * 0.75 + Math.random() * 0.35, (dz - sway * dx) * out),
+      /* A LONG PIECE TURNS ABOUT ITS FALL, NOT ABOUT ITSELF. Random spin on
+       * all three axes is a stick being juggled; a post knocked over rotates
+       * mostly about the axis across the blow, which is what toppling is. */
+      spin: heavy
+        ? new THREE.Vector3(dz * (3.2 + Math.random() * 3.4), (Math.random() - 0.5) * 2.2, -dx * (3.2 + Math.random() * 3.4))
+        : new THREE.Vector3((Math.random() - 0.5) * spin, (Math.random() - 0.5) * spin, (Math.random() - 0.5) * spin),
+      rest: gy + (heavy ? 0.03 : 0.02) + Math.random() * 0.02, life: 150, bleed: false, wait: wait || 0,
     });
   };
   // the parts, each from where it stood
@@ -17404,7 +17523,10 @@ function smashCoatStand(speed, atY) {
     if (!isPost) {
       const m = new THREE.Mesh(c.geometry, COAT_MAT);
       m.position.copy(_wp); m.quaternion.copy(_wq);
-      fling(m, _wp.y, false);
+      /* TOP-DOWN, IN BEATS. The hooks and the knob are the first thing to
+       * go and the feet are the last, so the stand comes apart from the
+       * break outward instead of arriving on the floor all at once. */
+      fling(m, _wp.y, false, Math.max(0, (p.y + hitY - _wp.y)) * 0.07);
       continue;
     }
     /* THE POST SPLITS. Three lengths, cut at the height it was hit and once
@@ -17431,13 +17553,66 @@ function smashCoatStand(speed, atY) {
       const m = new THREE.Mesh(g2, COAT_MAT);
       const mid = (cuts[i] + cuts[i + 1]) / 2;
       m.position.set(_wp.x, p.y + (mid * H), _wp.z);
-      m.rotation.set((Math.random() - 0.5) * 0.3, Math.random() * 6, (Math.random() - 0.5) * 0.3);
-      fling(m, m.position.y, true);
+      /* IT STARTS STANDING. The lengths used to be given a random tumble on
+       * the frame they appeared, so the post was already lying at an angle
+       * before it had fallen — the one frame that has to look like the
+       * thing you just hit. They leave upright, in line, and turn as they
+       * go over. */
+      m.rotation.set(0, Math.random() * 6, 0);
+      // the piece BELOW the break barely moves; the one above it goes over
+      fling(m, m.position.y, true, i === 0 ? 0.075 : 0);
     }
+  }
+  /* AND A BREAK THROWS SPLINTERS. Wood does not part cleanly: a dozen
+   * slivers leave the break itself, fast, spinning hard and short-lived, so
+   * the eye is given something AT the height the blow landed. */
+  for (let i = 0; i < 14; i++) {
+    const sl = new THREE.Mesh(
+      new THREE.BoxGeometry(0.007 + Math.random() * 0.012, 0.05 + Math.random() * 0.14, 0.006 + Math.random() * 0.010),
+      COAT_MAT);
+    const a = Math.random() * Math.PI * 2, rr = 0.02 + Math.random() * 0.06;
+    sl.position.set(p.x + Math.sin(a) * rr, p.y + hitY + (Math.random() - 0.5) * 0.16, p.z + Math.cos(a) * rr);
+    sl.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+    scene.add(sl);
+    const spread = (Math.random() - 0.5) * 1.5;
+    gibs.push({
+      m: sl,
+      vel: new THREE.Vector3((dx + spread * dz) * (1.4 + Math.random() * 2.4), 1.0 + Math.random() * 2.0, (dz - spread * dx) * (1.4 + Math.random() * 2.4)),
+      spin: new THREE.Vector3((Math.random() - 0.5) * 26, (Math.random() - 0.5) * 26, (Math.random() - 0.5) * 26),
+      rest: gy + 0.01, life: 26, bleed: false, wait: 0,
+    });
   }
   scene.remove(coatStand);
   sfxCrateBreak();
-  hitstop = Math.max(hitstop, 0.03);
+  sfxWoodSnap();
+  hitstop = Math.max(hitstop, 0.045);
+}
+/* The snap itself, over the clatter: a stick of dry wood giving in one
+ * report, with the fibres tearing after it. Short — the clatter is the long
+ * part and this only has to say what started it. */
+function sfxWoodSnap() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const out = ctx.createGain(); out.gain.value = 0.9; out.connect(sfxOut());
+  // the crack
+  const cr = noiseBurst(0.08, (x) => Math.pow(1 - x, 4.5));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.6; bp.frequency.value = 1750;
+  const cg = ctx.createGain(); cg.gain.value = 0.42;
+  cr.connect(bp).connect(cg).connect(out);
+  cr.start(t); cr.stop(t + 0.08);
+  // the body of the stick under it
+  const o = ctx.createOscillator(); o.type = 'triangle';
+  o.frequency.setValueAtTime(320, t); o.frequency.exponentialRampToValueAtTime(96, t + 0.13);
+  const og = ctx.createGain();
+  og.gain.setValueAtTime(0.16, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+  o.connect(og).connect(out);
+  o.start(t); o.stop(t + 0.2);
+  // and the fibres letting go after it
+  const tr = noiseBurst(0.26, (x) => Math.sin(Math.min(1, x * 5) * Math.PI * 0.5) * Math.pow(1 - x, 2.2));
+  const hp2 = ctx.createBiquadFilter(); hp2.type = 'highpass'; hp2.frequency.value = 900;
+  const tg = ctx.createGain(); tg.gain.value = 0.16;
+  tr.connect(hp2).connect(tg).connect(out);
+  tr.start(t + 0.02); tr.stop(t + 0.28);
 }
 /* Anybody who walks into it brings it down — and a body sliding through it
  * counts, which is what `ragSmash` is already doing to the glassware. */
@@ -17445,11 +17620,20 @@ function updateCoatStand() {
   if (coatBroken || !coatStand || !inBunker) return;
   const p = coatStand.position, R = 0.34;
   const near = (x, z, r) => (x - p.x) * (x - p.x) + (z - p.z) * (z - p.z) < (R + r) * (R + r);
-  if (near(camera.position.x, camera.position.z, 0.22)) { smashCoatStand(6, camBaseY - playerEye() + 1.1); return; }
-  if (dealer.st.alive && dealer.g.visible && near(dealer.g.position.x, dealer.g.position.z, 0.32)) { smashCoatStand(7, p.y + 1.1); return; }
+  if (near(camera.position.x, camera.position.z, 0.22)) {
+    smashCoatStand(6, camBaseY - playerEye() + 1.1, p.x - camera.position.x, p.z - camera.position.z); return;
+  }
+  if (dealer.st.alive && dealer.g.visible && near(dealer.g.position.x, dealer.g.position.z, 0.32)) {
+    smashCoatStand(7, p.y + 1.1, p.x - dealer.g.position.x, p.z - dealer.g.position.z); return;
+  }
   for (const u of mutants) {
     if (!u.rag || u.rag.asleep) continue;
-    for (const q of u.rag.parts) if (near(q.p.x, q.p.z, q.r) && q.p.y < p.y + 1.9) { smashCoatStand(9, q.p.y); return; }
+    /* A body carries its own direction: a Verlet particle's velocity is
+     * where it is now less where it was last frame, which is exactly the
+     * way the corpse was travelling when it reached the stand. */
+    for (const q of u.rag.parts) if (near(q.p.x, q.p.z, q.r) && q.p.y < p.y + 1.9) {
+      smashCoatStand(9, q.p.y, q.p.x - q.pp.x, q.p.z - q.pp.z); return;
+    }
   }
 }
 function buildBunkerProps() {
@@ -17500,13 +17684,16 @@ function buildBunkerProps() {
    * starts inside a desk. */
   if (!coatStand) {
     coatStand = makeCoatStand();
-    /* IN A CORNER, WHERE A COAT STAND GOES. It stood out on the open floor
-     * first and read as something dropped in the middle of a room; against
-     * the wall at the far end it is furniture, and backing into that corner
-     * away from him is a thing you do rather than a thing you have to aim
-     * for. The spot is measured against the walk grid — the very first one
-     * was inside a desk. */
-    coatStand.position.set(g.position.x + 2.45, g.position.y, g.position.z + 5.21);
+    /* IN A CORNER, WHERE A COAT STAND GOES — the one under the poster, at
+     * the -x end of the -z wall, which is the corner the owner pointed at.
+     * It stood out on the open floor first and read as something dropped in
+     * the middle of a room; in a corner it is furniture, and backing into
+     * that corner away from him is a thing you do rather than a thing you
+     * have to aim for. The spot is measured against the walk grid, not
+     * guessed — the very first one was inside a desk, and the corner itself
+     * is full of cupboards, so this is the nearest cell to it that a body
+     * actually fits in (1.05 m out, under the poster). */
+    coatStand.position.set(g.position.x - 2.20, g.position.y, g.position.z - 4.85);
     coatStand.frustumCulled = false;
     scene.add(coatStand);
   }
@@ -17983,6 +18170,8 @@ function update(dt, rawDt = dt) {
   }
   // and a guard already up drops the moment the bar is empty
   if (blocking && (exhausted || stamina <= 0.001)) gaspOut();
+  // nor is anything blocked through a take, a page or the hatch closing
+  if (blocking && frozen()) blocking = false;
   crouchT += ((crouching ? 1 : 0) - crouchT) * Math.min(1, dt * 11);
   if (crouchT < 0.001) crouchT = 0;
   if (crouchT > 0.999) crouchT = 1;
@@ -18239,6 +18428,8 @@ function saveCheckpoint() {
     flags: {
       castleBroken, crabBled, hcrabTaken, ringsFound, eyesSeen, snorkMet,
       blood: bloodAmount, bloodSeen,
+      // he went into the sea and he does not come back out of it
+      smileGone: smilePhase === 2,
       star: !!(helmStar && helmStar.solved),
       headTaken: !!(shipHead && shipHead.userData.taken),
       boatKey: boatKeyTaken,
@@ -18303,6 +18494,16 @@ function beginRestore() {
    * left asleep where they wait: what the beach behind you actually looks
    * like once you have walked it. */
   if (camera.position.z < PACK_Z + PACK_TRIGGER) { packPhase = 2; packCut = false; }
+  /* AND THE TALL ONE STAYS IN THE SEA. He bolts once, goes under and is
+   * taken out of the scene for good — and then a checkpoint load rebuilt the
+   * world from seed and stood him back up on his mark, so the one thing in
+   * this game that is meant to happen to you exactly once happened again
+   * every time you died. It is remembered on the save; and it is ALSO
+   * inferred from where you are standing, because the checkpoint is ninety
+   * metres PAST him — anyone loading it has already walked through that
+   * stretch, whether or not the flag was written. Same rule as the pack's
+   * cutscene: a trigger you have already crossed does not fire again. */
+  if (f.smileGone || camera.position.z < SMILE_Z) removeSmile();
   restore = d; restoreT = 0;
   refreshUI();
 }
@@ -18477,6 +18678,8 @@ window.__bw = {
   spawnBunker, get bunkers() { return bunkers; }, get inBunker() { return inBunker; },
   get windT() { return windT; }, get windFull() { return windFull; }, WIND_FULL,
   enterBunker, leaveBunker, startDealerFight, startDealerPickup, get dealer() { return dealer; }, aimBar,
+  smashCoatStand, updateCoatStand, get coatStand() { return coatStand; }, get coatBroken() { return coatBroken; },
+  removeSmile, get smilePhase() { return smilePhase; },
   get crowbarOnTable() { return crowbarOnTable; }, get dealerPick() { return dealerPick; }, get bunkerProps() { return bunkerProps; },
   get dealerFight() { return dealerFight; }, get dealerMet() { return dealerMet; }, DEALER_X, DEALER_Z,
   get hatchBusy() { return hatchBusy; }, get bunkerMix() { return bunkerMix; }, get bunkerHome() { return bunkerHome; }, HATCH_X, HATCH_Z, BUNKER_Y, hatch,
