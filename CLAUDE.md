@@ -1558,6 +1558,51 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**THE SECOND CLICK IS KEPT, NOT DROPPED.** `startDig` refuses while a swing
+is running, so a double click was one cut and a wasted press, and the return
+stroke only came if you clicked again in the dead time after the recovery —
+which is why the combination felt like it needed luck. `queuedSwing`
+remembers a click that lands while the forehand is in the air and
+`chainSwing` fires the return the instant the forehand reaches its
+follow-through, FROM WHEREVER THE BLADE IS (the live `_pose`, the way a
+charged release leaves from the pose you wound into), straight into its own
+strike; a click that lands in the recovery fires at once. One click, one
+cut. Two, both. Measured: the point runs out to -1.58 on the forehand and
+comes straight back through -0.44, 0.96, 1.30 on the return, and a single
+click goes forehand → carry with nothing after it.
+
+**THE BODY REMEMBERS EVERY CUT.** A creature that had taken six slashes
+looked exactly like one that had taken none. `woundMutant` counts every blow
+it survives (`st.cuts`, a blade counting double) and draws the count on the
+MODEL: the per-copy materials `dressMutant` already clones (now kept on
+`u.mats`) are pulled toward the colour of opened flesh — the colour
+multiplies the map, so it darkens the pale sets and bloodies the red — with
+a wet emissive lift, a chip of flesh comes off every other cut, and at the
+kill the count feeds the dismemberment odds. Two traps: **`lerp` on a Color
+works in LINEAR space**, so a pull that looks strong on paper is gentle on
+screen and needs to be pushed further than you think (six cuts takes white to
+b7b0b0); and **`flashMats` restores the emissive it read a moment ago**, so a
+wound written after the flash was undone the frame the flash ended — if a
+flash is live, the wound goes into the flash's restore value instead.
+
+**A GIB LIES ALONG X OR IT STANDS UP WHEN IT LANDS.** `updateGibs` puts
+every gib to rest with its rotation zeroed, which lays a limb flat because a
+limb is baked along X — and stood every one of the coat stand's cylinders
+bolt upright, because a cylinder is built along Y, and the splinters too,
+because a box that is tall is tall. That was "it looks fake": a broken coat
+stand whose legs, hooks and splinters all landed on their ends like candles.
+Every long piece gets its geometry turned onto X before it is thrown, with
+the quarter turn put back on the mesh so it leaves from the orientation it
+was drawn in. Measured after: 34 pieces, 34 settled, 0 standing.
+
+**A THRUST'S WIND-UP HAS TO BE BIG ON SCREEN.** Hauling the hand back "past
+the hip" by the numbers put it off the bottom-right corner, and what was
+left in the picture was a sliver of blade — a powerful wind-up that nobody
+could see. The tsuka is kept large in the lower right of the frame, the blade
+level from there toward the centre with the point parked just right of the
+crosshair, and the drive does the rest: 0.6 m of travel, the lens punched and
+the knees giving when it lands.
+
 **A CUT LIES IN THE SCREEN PLANE; A CUT THAT HITS SOMEBODY DOES NOT.** The
 rule this file has carried since the Military Shovel learned to cut is that
 tilting the blade toward the camera turns a cut into a stab, and it is still

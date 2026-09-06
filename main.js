@@ -4130,7 +4130,14 @@ function attackAction() {                        // left mouse
   if (peeking) { endPeek(); return; }
   if (frozen()) return;
   if (held) { throwHeld(); return; }
-  if (equipped && equipped.onDig) { if (digT <= 0) startDig(); return; }
+  if (equipped && equipped.onDig) {
+    if (digT <= 0) startDig();
+    else if (slashing() && equipped.alternate && !digOverhead) {
+      // the return, queued; or fired now if the forehand is already recovering
+      if (digT >= SLASH_THROUGH) chainSwing(); else queuedSwing = true;
+    }
+    return;
+  }
   if (equipped && equipped.onListen) { listenToShell(); return; }
   primaryAction();                               // bare hands: a click still interacts
 }
@@ -4918,6 +4925,9 @@ function useSlot(i) {
 function toggleEquip(item) {
   if (listening) stopListening();               // whatever leaves your hand goes quiet
   equipped = (equipped === item) ? null : item;
+  // the sword makes a sound coming into the hand — off the sand, off the
+  // hotbar, off the pack: any time it arrives
+  if (equipped === katanaItem) playSample('katDraw', 0.9, 0.03);
   viewmodel.visible = !!equipped;
   toolMount.children.forEach((c) => { c.visible = false; });
   if (equipped && equipped.viewmodel) {
@@ -6162,11 +6172,10 @@ scene.add(katanaWorld);
 addItemShine(katanaWorld, { size: 1.05, height: 0.3, strength: 0.9, lift: 0.55 });
 addInteractable(katanaWorld, 'Take the katana', 'inventory', {
   onActivate: () => {
-    sfxThud(0.04);
     scene.remove(katanaWorld);
     hovered = null;
     addToInventory(katanaItem);
-    toggleEquip(katanaItem);
+    toggleEquip(katanaItem);               // and `toggleEquip` plays the draw
   },
 });
 addInteractable(militaryWorld, 'Take the military shovel', 'inventory', {
@@ -6208,6 +6217,15 @@ addInteractable(shovelWorld, "Take the sand shovel", 'inventory', {
 const WIND_FULL = 1.0;                  // seconds of holding to reach full power
 const WIND_TAP = 0.16;                  // held longer than this and you meant a heavy
 let windLatch = null, swungAt = -1;      // when a held release last landed a heavy
+/* A SECOND CLICK DURING THE FIRST CUT IS KEPT, NOT DROPPED. `startDig`
+ * refuses while a swing is running, so a double click used to be one swing
+ * and a wasted press, and the return stroke only came if you clicked again
+ * in the dead time after the recovery — which is why the combo felt like it
+ * needed luck. A click that lands while the forehand is in the air is
+ * remembered and the return fires the instant the forehand reaches its
+ * follow-through, from wherever the blade is; a click that lands in the
+ * recovery fires at once. One click, one cut. Two, both. */
+let queuedSwing = false;
 /* THE GUARD. Hold right and the shovel comes up across you. It is a real
  * guard, not a damage modifier: a strike that lands on it does nothing at
  * all. What makes it worth learning is the first fifth of a second — raise
@@ -6495,9 +6513,17 @@ function katThrough(out, P) { return katPose(out, 2, P); }
  * which is the one thing a katana does that a spade cannot do at all. It is
  * the overhead's slot in the pose system and nothing else about it is shared:
  * its own grip, its own draw and its own drive. */
-const KAT_STAB_ROT = [-2.534, -1.044, 1.592];
-const KAT_STAB = [[0.025, 0.117, 0.45, -0.308, -0.036, -0.327],     // drawn back
-                  [-0.336, -0.016, 0.45, 0.241, -0.353, -0.673]];   // and driven out
+const KAT_STAB_ROT = [-2.365, -1.540, 1.579];
+const KAT_STAB = [[-0.557, 0.060, 0.45, -0.089, 0.020, 0.091],      // hauled back, the tsuka large at the hip
+                  [-0.424, 0.041, 0.45, 0.516, -0.538, 0.346]];     // and driven 0.6 m out
+/* AND THE DRAW IS EXAGGERATED ON PURPOSE. The first thrust wound up with the
+ * hand a comfortable half-metre out and the point already near the middle,
+ * which is a fencer's guard and reads as nothing at all; the owner asked for
+ * a wind-up that looks like a very powerful hit. So the hand is hauled back
+ * past the hip and off the bottom-right corner of the frame, the blade comes
+ * in from that corner level and long with the point parked just right of the
+ * crosshair, and the drive is nearly twice what it was — 0.59 m of travel
+ * with the lens punched and the knees giving when it lands. */
 /* SOLVED SO YOU CAN SEE IT. Pointed dead down the view axis a thrust is a
  * dot: the first solve put the blade within fifteen degrees of the camera's
  * own line and the sword all but vanished on the frame it landed, which is
@@ -6656,12 +6682,24 @@ function landPoint() {
   camera.getWorldPosition(_landP);
   return _landP.addScaledVector(_aimD, landDist >= 0 ? landDist : SWING_AIR + digPower * 0.6);
 }
-function startDig(power = 0, fromPose = null) {
+/* The return stroke, thrown off the back of the one before it. It leaves
+ * from the pose the blade is actually in (`_pose`, like a charged release
+ * does), straight into its own strike, so the point comes back across the
+ * screen from wherever the forehand left it — and it counts as the next beat
+ * of the chain, not a fresh forehand. */
+function chainSwing() {
+  if (!equipped || !equipped.onDig || frozen()) return;
+  queuedSwing = false;
+  digT = 0;
+  comboStep = 1; slashDir = -1; lastSlashAt = performance.now();
+  startDig(0, _pose, true);
+}
+function startDig(power = 0, fromPose = null, chained = false) {
   if (digT > 0 || !equipped || !equipped.onDig || frozen()) return;
   camera.getWorldDirection(_aimD);            // the angle; aimRay() takes the position
   digPower = THREE.MathUtils.clamp(power, 0, 1);
   // a charged release keeps whatever it was wound as; a plain click never is
-  digOverhead = !!fromPose && windOverhead;
+  digOverhead = !!fromPose && !chained && windOverhead;
   /* RIGHT TO LEFT, always — unless you are already swinging, in which case
    * the second one comes back the other way. A lone cut should look the same
    * every time you make it; a combination should look like a combination. */
@@ -6669,6 +6707,7 @@ function startDig(power = 0, fromPose = null) {
     if (!fromPose) slashDir = pickSlashDir();   // a wind-up chose its side when it began
     lastSlashAt = performance.now();
   }
+  if (!chained) queuedSwing = false;
   aimLand(digPower);
   digImpacted = false;
   digCharged = !!fromPose;
@@ -6723,6 +6762,11 @@ function crosshairGroundPoint(maxDist = DIG_REACH) {
 }
 const _hitC = new THREE.Vector3();
 function digImpact() {
+  /* A THRUST LANDS LIKE A LUNGE. The stab's whole weight is in its drive,
+   * and a drive that arrives with no jolt through the camera reads as the
+   * sword being placed rather than put through something: the lens punches,
+   * the knees give a hand's width, the world jars and the arm rebounds. */
+  if (katStabbing()) { fovKick = Math.max(fovKick, 7.5 + digPower * 3); slamDip = Math.max(slamDip, 0.055 + digPower * 0.03); addTrauma(0.28 + digPower * 0.2); vmImpulse(-1.35); }
   _pf.copy(_aimD); _pf.y = 0; _pf.normalize();
   const P = digPower;
   if (castleStrike(P)) return;            // the blade went through the castle
@@ -6744,6 +6788,7 @@ function digImpact() {
     if (best) {
       const heavy = P >= CRAB_HEAVY;
       hitConnect(P, heavy ? 1.25 : 0.85);
+      if (isBlade()) playSample('katHit', 0.95, 0.05, 1 - P * 0.08);
       /* An overhead that lands charged is the heaviest thing in the game and
        * it gets its own report — a hard concrete crack, under the shell hit
        * rather than instead of it, so the swing still sounds like a swing. */
@@ -6770,6 +6815,7 @@ function digImpact() {
     if (best) {
       const heavy = P >= MUT_HEAVY;
       hitConnect(P, heavy ? 1.35 : 0.9);
+      if (isBlade()) playSample('katHit', 1.0, 0.05, 1 - P * 0.08);
       if (heavy && digOverhead) playSample('smash', 1.0, 0.05);
       if (equipped === militaryItem && !heavy) playSample('milLight', 1.0, 0.05);
       hurtMutant(best, toolDmg(heavy), P);
@@ -7124,7 +7170,7 @@ function updateViewmodel(dt) {
        * what you are looking at, so the whole hold says "this is going
        * forward" — the shape a thrust has before it is thrown. */
       katStab(_pose, 0, e);
-      _pose[0] += strain * 0.5; _pose[4] += strain * 0.4;
+      _pose[0] += strain * 0.9; _pose[4] += strain * 0.9; _pose[5] += strain * 0.6;   // it shakes with the whole arm loaded
     } else if (windOverhead) {
       // hauled up over the head, and shaking harder the longer it is held
       _pose[5] = 0;
@@ -7230,6 +7276,7 @@ function updateViewmodel(dt) {
       }
     }
     if (p >= 1) { digT = 0; digPower = 0; digCharged = false; digOverhead = false; }
+    else if (queuedSwing && p >= SLASH_THROUGH && slashing()) chainSwing();
   } else {
     for (let i = 0; i < 6; i++) _pose[i] = 0;
   }
@@ -10071,6 +10118,9 @@ const SAMPLES = {
    * the fallback for the frames before they have loaded. */
   katSwing: ['assets/katana-swing1.m4a', 'assets/katana-swing2.m4a', 'assets/katana-swing3.m4a', 'assets/katana-swing4.m4a'],
   katBlock: ['assets/katana-block1.m4a', 'assets/katana-block2.m4a', 'assets/katana-block3.m4a', 'assets/katana-block4.m4a'],
+  katHit: ['assets/katana-hit1.m4a', 'assets/katana-hit2.m4a', 'assets/katana-hit3.m4a', 'assets/katana-hit4.m4a'],   // the blade going INTO something
+  katDraw: ['assets/katana-draw.m4a'],     // the sword coming into your hand
+  katParry: ['assets/katana-parry.m4a'],   // a parry, on top of the block bank
 };
 const sampleBanks = {};
 function loadSamples() {
@@ -10604,6 +10654,8 @@ function sfxWindFull() {
  * the same bank a touch louder and a touch brighter, because a parry is the
  * block you meant. */
 function sfxKatBlock(parry = false) {
+  // a parry is the block you meant: the owner's parry recording goes on top
+  if (parry) playSample('katParry', 0.95, 0.03);
   if (playSample('katBlock', parry ? 1.0 : 0.82, 0.05, parry ? 1.06 : 0.98)) return;
   sfxBladeClash();
 }
@@ -13936,6 +13988,7 @@ function dressMutant(u, gltf) {
      * THE SKIN IS SWAPPED PER COPY, and the material has to be cloned to do
      * it: `parse` hands every copy the same one. */
     const mm = o.material = mat.clone();
+    (u.mats = u.mats || []).push(mm);          // so a wound can be drawn on THIS copy
     /* A MAN UNDER LAMPS IS NOT A MUTANT ON A BEACH. Everything below this is
      * for two metres of dark flesh backlit by the moon: a gamma re-expose to
      * pull it off the sand and a cold Fresnel rim so it has an edge at all.
@@ -14376,11 +14429,13 @@ function hurtMutant(u, dmg, P = 0) {
        * times the blood, thrown from the height the blade landed and along
        * the swing, and a stain under him where it falls. */
       flashMats(u.g); sfxMutHit(u.kind.voice);
-      bleedMutant(u, 22 + Math.round(P * 14), 0.55 + P * 0.35);
+      const BK = isBlade() ? 1.8 : 1;                              // a blade OPENS him
+      bleedMutant(u, Math.round((22 + P * 14) * BK), 0.55 + P * 0.35);
       bossHit(P, light ? false : true, true);
       camera.getWorldDirection(_hitC);
       const _by = u.g.position.y + u.kind.h * (0.45 + Math.random() * 0.3);
-      sprayBlood(u.g.position.x, _by, u.g.position.z, _hitC.x, _hitC.z, 24 + Math.round(P * 16), 1.1 + P * 0.6);
+      woundMutant(u, _hitC.x, _hitC.z, _by, P);
+      sprayBlood(u.g.position.x, _by, u.g.position.z, _hitC.x, _hitC.z, Math.round((24 + P * 16) * BK), 1.1 + P * 0.6);
       /* AND SOME OF IT COMES BACK AT YOU. Everything else the spray does
        * goes AWAY down the swing, so at the wrong angle — him against a dark
        * wall, the blade between — a landed cut could still be read as a
@@ -14441,8 +14496,10 @@ function hurtMutant(u, dmg, P = 0) {
   u.hitFrom.copy(u.g.position);
   flashMats(u.g);
   sfxMutHit(u.kind.voice);
-  bleedMutant(u, 8, 0.35);
-  sprayBlood(u.g.position.x, u.g.position.y + u.kind.h * 0.55, u.g.position.z, u.hitDir.x, u.hitDir.z, 12 + Math.round(P * 10), 0.9 + P * 0.6);
+  const BK = isBlade() ? 2.0 : 1;
+  bleedMutant(u, Math.round(8 * BK), 0.35);
+  woundMutant(u, u.hitDir.x, u.hitDir.z, u.g.position.y + u.kind.h * 0.55, P);
+  sprayBlood(u.g.position.x, u.g.position.y + u.kind.h * 0.55, u.g.position.z, u.hitDir.x, u.hitDir.z, Math.round((12 + P * 10) * BK), 0.9 + P * 0.6);
   stampBlood(u.g.position.x + u.hitDir.x * 0.5, u.g.position.z + u.hitDir.z * 0.5, 0.45 + Math.random() * 0.35, u.g.position.y + 0.2);
   addTrauma(0.3 + P * 0.2);
   return false;
@@ -14481,7 +14538,7 @@ function finishMutant(u) {
      * something and eleven were the head. */
     const over = u.st.hpBefore <= 1 && (hP >= MUT_HEAVY || hOh);
     let burst = false;
-    const G = u.st.killGore || 1;
+    const G = (u.st.killGore || 1) * (1 + Math.min(0.9, (u.st.cuts || 0) * 0.11));   // an opened body comes apart
     if (over && Math.random() < 0.28 * G) burst = burstHead(u, hx, hz);
     if (!burst && Math.random() < (hP >= MUT_HEAVY || hOh ? 0.30 : 0.12) * G) {
       const pick = MUT_LIMBS[Math.floor(Math.random() * MUT_LIMBS.length)];
@@ -14510,7 +14567,7 @@ function finishMutant(u) {
    * remembered at the kill because this runs after the hitstop: a shovel
    * bruises and a katana cuts, so the same blow from the katana takes a
    * limb or a head nearly twice as often. */
-  const G = u.st.killGore || 1;
+  const G = (u.st.killGore || 1) * (1 + Math.min(0.9, (u.st.cuts || 0) * 0.11));
   if (overkill && Math.random() < 0.55 * G) burst = burstHead(u, dx, dz);
   if (!burst) {
     if (P >= MUT_HEAVY && !oh && Math.random() < 0.42 * G) mutSever(u, MUT_BISECT, dx, dz, 1.4);
@@ -14550,6 +14607,50 @@ function sprayBlood(x, y, z, dirX, dirZ, n, force) {
 /* And the chest it comes out of is wherever the creature is STANDING. The
  * height was a bare `0.85 + …`, which is chest height on the beach and is
  * forty metres over the Dealer's head in his own room. */
+/* THE BODY REMEMBERS EVERY CUT. A creature that had taken six slashes looked
+ * exactly like one that had taken none, so a fight left no mark on the thing
+ * you were fighting, and the blood on the sand was the only record of it.
+ * Each blow the creature survives is counted (`st.cuts`, a blade counting
+ * double), and the count does three things, all of them on the model: the
+ * skin is drawn toward the colour of opened flesh — the material's colour
+ * multiplies the map, so a red-brown pull darkens the pale sets and bloodies
+ * the red one — a wet emissive lift so the wounds catch the moon, and every
+ * second cut a chip of flesh comes off it and lies where it fell. It is a
+ * SLOPE, not a switch: three cuts is a little worse, eight is a ruin. And at
+ * the kill the count feeds the dismemberment odds, because a body that has
+ * been opened eight times comes apart more readily than a whole one. The
+ * materials are the per-copy clones `dressMutant` already makes. */
+function woundMutant(u, dirX, dirZ, atY, P = 0) {
+  const st = u.st;
+  st.cuts = (st.cuts || 0) + (isBlade() ? 1 : 0.5);
+  const w = Math.min(1, st.cuts / 9);
+  for (const m of u.mats || []) {
+    if (!m.color) continue;
+    if (!m.userData.base) m.userData.base = { c: m.color.clone(), e: m.emissive ? m.emissive.clone() : null };
+    m.color.copy(m.userData.base.c).lerp(_woundC, w * 0.85);
+    if (m.emissive && m.userData.base.e) {
+      /* `flashMats` has just painted this emissive white and will put back
+       * whatever it read a moment ago — which was the UNWOUNDED value, so the
+       * wound's own lift was undone on the same frame it was drawn. If a
+       * flash is live, the wound goes into the flash's restore instead. */
+      _woundTmp.copy(m.userData.base.e).lerp(_woundE, w * 0.7);
+      const f = _flashing.find((q) => q.m === m);
+      if (f) f.hex = _woundTmp.getHex(); else m.emissive.copy(_woundTmp);
+    }
+  }
+  // and flesh comes off it, one chip every other cut, more on a charge
+  if (isBlade() && (st.cuts % 2 === 0 || P > 0.5)) {
+    const n = 1 + (P > 0.5 ? 2 : 0);
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.035 + Math.random() * 0.035, 0), i % 2 ? GIB_MAT_WET : GIB_MAT_DK);
+      m.position.set(u.g.position.x + (Math.random() - 0.5) * 0.3, atY + (Math.random() - 0.5) * 0.2, u.g.position.z + (Math.random() - 0.5) * 0.3);
+      scene.add(m);
+      gibs.push({ m, vel: new THREE.Vector3(dirX * (1.4 + Math.random() * 1.6) + (Math.random() - 0.5), 1.2 + Math.random() * 1.6, dirZ * (1.4 + Math.random() * 1.6) + (Math.random() - 0.5)),
+        spin: new THREE.Vector3((Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12), rest: 0, life: 200 });
+    }
+  }
+}
+const _woundC = new THREE.Color(0x4a120f), _woundE = new THREE.Color(0x2e0906), _woundTmp = new THREE.Color();
 function bleedMutant(u, n, force) {
   const p = u.g.position;
   for (let i = 0; i < n; i++) {
@@ -15530,6 +15631,7 @@ function ragHit(u, q, P, dirX, dirZ) {
   }
   hitConnect(P, 0.55);
   playSample('fleshHit', 0.9, 0.05, 0.9 - P * 0.2);
+  if (isBlade()) playSample('katHit', 0.85, 0.05, 0.96 - P * 0.08);
   sprayBlood(q.p.x, q.p.y, q.p.z, dirX, dirZ, 10 + Math.round(P * 12), 0.8 + P * 0.6);
   stampBlood(q.p.x, q.p.z, 0.5 + Math.random() * 0.4, q.p.y);
   const part = limbFor(q.name, P);
@@ -17827,6 +17929,7 @@ function smashCoatStand(speed, atY, dirX, dirZ) {
   if (dl < 1e-3) { const a = Math.random() * Math.PI * 2; dx = Math.sin(a); dz = Math.cos(a); }
   else { dx /= dl; dz /= dl; }
   const _wp = new THREE.Vector3(), _wq = new THREE.Quaternion(), _ws = new THREE.Vector3();
+  const _qZ90 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2);
   /* AND IT FALLS RATHER THAN FLIES. `up` was 0.9–2.4 on every piece, so the
    * whole stand went into the air; a post that has been snapped TOPPLES —
    * along the blow, barely leaving the ground, turning about the horizontal.
@@ -17857,8 +17960,31 @@ function smashCoatStand(speed, atY, dirX, dirZ) {
     c.matrixWorld.decompose(_wp, _wq, _ws);
     const isPost = c.geometry.parameters && c.geometry.parameters.height > 1.0;
     if (!isPost) {
-      const m = new THREE.Mesh(c.geometry, COAT_MAT);
+      /* A PIECE LIES ALONG X OR IT STANDS UP WHEN IT LANDS. `updateGibs`
+       * puts every gib to rest with its rotation zeroed, which lays a limb
+       * flat because a limb is baked along X — and stood every one of these
+       * cylinders bolt upright, because a cylinder is built along Y. That was
+       * the "it looks fake": a broken coat stand whose legs and hooks all
+       * landed on their ends like candles. Each cylinder gets a copy of its
+       * geometry turned onto X, and the extra quarter turn is put back on the
+       * mesh so it leaves from the orientation it was drawn in. */
+      const isCyl = c.geometry.parameters && c.geometry.parameters.height !== undefined;
+      const geo = isCyl ? c.geometry.clone().rotateZ(-Math.PI / 2) : c.geometry;
+      const m = new THREE.Mesh(geo, COAT_MAT);
       m.position.copy(_wp); m.quaternion.copy(_wq);
+      if (isCyl) m.quaternion.multiply(_qZ90);
+      // the legs SNAP as well: each into two, so the base does not survive whole
+      if (isCyl && c.geometry.parameters.height > 0.3) {
+        const H2 = c.geometry.parameters.height;
+        for (const half of [-0.25, 0.25]) {
+          const g2 = new THREE.CylinderGeometry(c.geometry.parameters.radiusTop, c.geometry.parameters.radiusBottom, H2 * 0.5, 6).rotateZ(-Math.PI / 2);
+          const mm = new THREE.Mesh(g2, COAT_MAT);
+          mm.position.copy(_wp).add(new THREE.Vector3(0, half * H2, 0).applyQuaternion(_wq));
+          mm.quaternion.copy(_wq).multiply(_qZ90);
+          fling(mm, mm.position.y, false, 0.12 + Math.random() * 0.06);
+        }
+        continue;
+      }
       /* TOP-DOWN, IN BEATS. The hooks and the knob are the first thing to
        * go and the feet are the last, so the stand comes apart from the
        * break outward instead of arriving on the floor all at once. */
@@ -17871,8 +17997,11 @@ function smashCoatStand(speed, atY, dirX, dirZ) {
     const H = c.geometry.parameters.height;
     // the first break is AT the height it was struck — `hitY` is already
     // measured from the stand's foot, so it wants no offset on top
-    const cuts = [0, THREE.MathUtils.clamp(hitY / H, 0.20, 0.74), 0, 1].slice(0);
-    cuts[2] = THREE.MathUtils.clamp(cuts[1] + 0.18 + Math.random() * 0.3, cuts[1] + 0.12, 0.94);
+    // FIVE lengths, not three: the break, one either side of it, and the ends
+    const c1 = THREE.MathUtils.clamp(hitY / H, 0.22, 0.72);
+    const cuts = [0, c1, THREE.MathUtils.clamp(c1 - 0.14 - Math.random() * 0.12, 0.08, c1 - 0.08),
+                  THREE.MathUtils.clamp(c1 + 0.16 + Math.random() * 0.14, c1 + 0.08, 0.92),
+                  THREE.MathUtils.clamp(c1 + 0.36 + Math.random() * 0.2, c1 + 0.20, 0.97), 1];
     cuts.sort((x, y) => x - y);
     for (let i = 0; i < cuts.length - 1; i++) {
       const len = (cuts[i + 1] - cuts[i]) * H;
@@ -17886,6 +18015,7 @@ function smashCoatStand(speed, atY, dirX, dirZ) {
         if (i < cuts.length - 2 && y > len / 2 - 1e-3) pos.setY(v, y + pos.getZ(v) * 0.32 - 0.012);
       }
       pos.needsUpdate = true; g2.computeVertexNormals();
+      g2.rotateZ(-Math.PI / 2);                  // along X, so it LIES DOWN when it lands
       const m = new THREE.Mesh(g2, COAT_MAT);
       const mid = (cuts[i] + cuts[i + 1]) / 2;
       m.position.set(_wp.x, p.y + (mid * H), _wp.z);
@@ -17894,7 +18024,7 @@ function smashCoatStand(speed, atY, dirX, dirZ) {
        * before it had fallen — the one frame that has to look like the
        * thing you just hit. They leave upright, in line, and turn as they
        * go over. */
-      m.rotation.set(0, Math.random() * 6, 0);
+      m.rotation.set(0, Math.random() * 6, Math.PI / 2);   // upright to start, on its X-long geometry
       // the piece BELOW the break barely moves; the one above it goes over
       fling(m, m.position.y, true, i === 0 ? 0.075 : 0);
     }
@@ -17903,8 +18033,9 @@ function smashCoatStand(speed, atY, dirX, dirZ) {
    * slivers leave the break itself, fast, spinning hard and short-lived, so
    * the eye is given something AT the height the blow landed. */
   for (let i = 0; i < 14; i++) {
+    // long axis on X, so a splinter comes to rest LYING and not on its end
     const sl = new THREE.Mesh(
-      new THREE.BoxGeometry(0.007 + Math.random() * 0.012, 0.05 + Math.random() * 0.14, 0.006 + Math.random() * 0.010),
+      new THREE.BoxGeometry(0.05 + Math.random() * 0.14, 0.007 + Math.random() * 0.012, 0.006 + Math.random() * 0.010),
       COAT_MAT);
     const a = Math.random() * Math.PI * 2, rr = 0.02 + Math.random() * 0.06;
     sl.position.set(p.x + Math.sin(a) * rr, p.y + hitY + (Math.random() - 0.5) * 0.16, p.z + Math.cos(a) * rr);
