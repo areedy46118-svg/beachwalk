@@ -14770,9 +14770,13 @@ function updateMutRagdoll(u, dt) {
       if (worst > 3.2) {
         r.landed = true;
         const P = THREE.MathUtils.clamp((worst - 3.2) / 7, 0, 1);
+        /* IT LANDS, IT DOES NOT PUNCH YOU. A body arriving is a noise, a
+         * puff of what it hit and whatever it broke on the way — the camera
+         * is the PLAYER's, and it should move for what the player does and
+         * for what is done to him, not for something happening across the
+         * room. In a steel box with the sound bouncing off the walls a jolt
+         * on every landing read as the building shifting. */
         sfxKillThud(0.7 + P * 0.8);
-        addTrauma(0.30 + P * 0.55);
-        hitstop = Math.max(hitstop, 0.045 + P * 0.05);
         // sand throws up; a steel floor does not
         if (bunkerFloorAt(wx, wz, wy) === null) spawnPuffs(wx, wz, 4 + Math.round(P * 7), 0, -1, wy + 0.06);
         ragSmash(r, 3.0 + P * 5);
@@ -14786,9 +14790,7 @@ function updateMutRagdoll(u, dt) {
      * already on the bus. */
     if (r.wallHit > 2.6) {
       const P = THREE.MathUtils.clamp((r.wallHit - 2.6) / 8, 0, 1);
-      sfxBodySlam(P, r.wallAt);
-      addTrauma(0.16 + P * 0.42);
-      hitstop = Math.max(hitstop, 0.03 + P * 0.045);
+      sfxBodySlam(P, r.wallAt);       // heard, not felt
       ragSmash(r, 4 + P * 6);
     }
     r.wallHit = 0;
@@ -16267,7 +16269,18 @@ function updateBunkers(dt) {
        * even that fails is the move refused, and there is nowhere in this
        * room where it can. */
       B.pushOut(_bkL, r, 5);
-      if (B.blocked(_bkL.x, _bkL.z, r)) B.escape(_bkL, r);
+      if (B.blocked(_bkL.x, _bkL.z, r)) B.escape(_bkL, r, 3.2);
+      /* AND IF EVEN THAT FAILS, THE ROOM SAYS WHERE THE FLOOR IS. Reverting
+       * the frame is standing still, and standing still is the bug: a blow's
+       * knockback can put you a metre inside the console bank in one frame,
+       * which is deeper than `escape` looks, and from in there every move is
+       * refused for ever. `mainRegion` is the largest connected piece of
+       * walkable floor, worked out once, and it is never far — so the last
+       * word is always somewhere you can stand rather than nowhere. */
+      if (B.blocked(_bkL.x, _bkL.z, r) && B.mainRegion) {
+        const m = B.mainRegion(_bkL.x, _bkL.z);
+        if (m) { _bkL.x = m.x; _bkL.z = m.z; }
+      }
       if (B.blocked(_bkL.x, _bkL.z, r)) { _bkL.x = _bkP.x; _bkL.z = _bkP.z; }
     }
     // the ceiling
@@ -16362,10 +16375,17 @@ const bunkerHome = spawnBunker(HATCH_X + 1.05, BUNKER_Y, HATCH_Z + 3.3, 0, {
     const L = S.nav && S.nav.ladder;
     if (!L) return;
     // the way out: the ladder and the shaft above it, as one thing to aim at
-    const box = new THREE.BoxGeometry(L.x1 - L.x0 + 0.5, 3.2, L.z1 - L.z0 + 0.6);
+    /* YOU LEAVE BY LOOKING AT THE HATCH. It used to be the ladder, and the
+     * ladder is gone — but it was the wrong thing to aim at anyway: the way
+     * out of this room is the steel lid you came in through, and it is
+     * directly overhead. The proxy is a wide slab at the ceiling over where
+     * the ladder stood, so looking up anywhere near it offers the way out. */
+    const box = new THREE.BoxGeometry(L.x1 - L.x0 + 1.6, 0.5, L.z1 - L.z0 + 1.6);
     bunkerLadderProxy = new THREE.Mesh(box, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
     bunkerLadderProxy.name = 'hitProxy';
-    bunkerLadderProxy.position.set((L.x0 + L.x1) / 2, 1.75, (L.z0 + L.z1) / 2);
+    // just UNDER the ceiling, not the ladder's own top — that stood 43 cm
+    // through the roof, which put the thing you aim at outside the room
+    bunkerLadderProxy.position.set((L.x0 + L.x1) / 2, S.nav.room.h - 0.30, (L.z0 + L.z1) / 2);
     /* Warmed here and not only at the top of `animate`, because the frame
      * loop is exactly the thing that cannot be relied on — the preview pane
      * never runs one, and a tab in the background does not either. A tick
@@ -16561,14 +16581,21 @@ function steerDealer(prevX, prevZ) {
  * walk the long way round. */
 function unstickDealer(dt, dist) {
   const B = bunkerHome.group.userData.bunker;
-  if (!B.nav || !B.route || !dealer.st.awake || dealer.st.atk >= 0) { dealer.grind = 0; return; }
+  if (!B.nav || !B.route || !dealer.st.awake) { dealer.grind = 0; return; }
+  /* AND HE CAN BE STUCK MID-SWING. This used to give up the moment `st.atk`
+   * went positive, which is most of the time — he is attacking, chaining or
+   * recovering for the better part of a fight — so a body wedged into the
+   * console bank between two swings never once asked for a way out. A swing
+   * does not move him much by itself, so the grind is simply slower to
+   * trigger while he is in one rather than switched off. */
+  const swinging = dealer.st.atk >= 0;
   const g = bunkerHome.group, p = dealer.g.position;
   const q = dealer.lastAt || (dealer.lastAt = { x: p.x, z: p.z });
   const moved = Math.hypot(p.x - q.x, p.z - q.z);
   q.x = p.x; q.z = p.z;
   // grinding: trying to close, and not closing
   dealer.grind = (moved < 0.035 && dist > 2.2) ? (dealer.grind || 0) + dt : 0;
-  if (dealer.grind < 0.7) return;
+  if (dealer.grind < (swinging ? 2.2 : 0.7)) return;
   dealer.grind = 0;
   /* ASK THE ROOM. The greedy fan has just proved it cannot get out of
    * wherever he is, so stop asking it: a breadth-first search over the free

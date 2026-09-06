@@ -91,7 +91,13 @@ export function makeUndergroundBunker(opts = {}) {
      * a chair aside and does not stop for it, and the worst second in this
      * game to lose is the one in the middle of the fight. Their cells come
      * out of the grid, so you walk through them. Nothing else does. */
-    if (S.nav) S.walkThrough = carveNav(S.nav, root, opts.walkThrough || /^Chair\d*[_.]/);
+    /* AND THE LADDER GOES. It stands in the middle of the only clear run in
+     * the room, it is the one thing you are forever walking round, and the
+     * way out was never really it — the way out is the hatch above it. The
+     * mesh is hidden and its cells come out of the walk grid with the
+     * chairs', so that corner of the floor is simply floor. */
+    root.traverse((o) => { if (o.isMesh && /^Ladder[_.]/.test(o.name || '')) o.visible = false; });
+    if (S.nav) S.walkThrough = carveNav(S.nav, root, opts.walkThrough || /^(Chair\d*|Ladder)[_.]/);
 
     root.traverse((o) => {
       if (!o.isMesh) return;

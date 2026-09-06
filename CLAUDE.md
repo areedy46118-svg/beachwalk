@@ -1558,6 +1558,45 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**THE CAMERA IS THE PLAYER'S.** It should move for what he does and for what
+is done to him, and not for anything else — a body landing across the room, a
+monitor coming off a desk, a bottle going. In a steel box with eighteen
+breakables and corpses being thrown into the walls, a jolt on each of those
+read as the building shifting, and the owner asked twice for it to stop. The
+killing blow still shakes it (that is the player's own hit, and it decays to
+nothing in half a second); the landing that follows adds exactly zero.
+Measured: trauma 0.598 on the blow, 0.000 through the body's arrival at
+0.88 s. A ragdoll gets sound, pieces and whatever it breaks — never the lens.
+
+**REVERTING THE FRAME IS STANDING STILL, AND STANDING STILL IS THE BUG.** The
+player's furniture clamp pushed out, then escaped, then — failing both —
+refused the move, which is exactly the state it was meant to prevent. A
+blow's knockback can put you a metre inside the console bank in ONE frame,
+deeper than `escape` looks, and from in there every move is refused for ever.
+`S.mainRegion` is the last word: the largest connected piece of walkable
+floor, worked out once. Measured: 72 starts buried in furniture, none still
+inside twenty frames later, worst ejection 1.28 m.
+
+**AND HE CAN BE STUCK MID-SWING.** `unstickDealer` gave up the moment
+`st.atk` went positive, which is most of a fight — attacking, chaining or
+recovering — so a body wedged into the console bank between two swings never
+once asked for a way out. The grind is slower to trigger while he is swinging
+now rather than switched off entirely.
+
+**THE LADDER IS GONE AND THE WAY OUT IS THE HATCH.** It stood in the middle
+of the only clear run in the room and was the thing you were forever walking
+round, and it was the wrong thing to aim at anyway: the way out is the steel
+lid you came in through, directly overhead. The mesh is hidden, its cells go
+out of the walk grid with the chairs', and the exit proxy is a 2.3 m slab
+just under the CEILING — not at the ladder's own top, which stood 43 cm
+through the roof and so put the thing you aim at outside the room. It reads
+from 34 degrees of up-pitch to straight overhead.
+
+**AND NOTHING IN HERE ELECTROCUTES YOU.** A broken set is pieces, sparks and
+a report. It has never dealt damage and must not start: the sparks are a
+picture of something breaking, not a hazard, and a room whose scenery hurts
+you is a room you stop moving around in — which is the opposite of the point.
+
 **FINDING A HEADING IS NOT THE SAME AS GETTING ANYWHERE, AND THAT IS WHAT
 HAD HIM ON THE TABLE.** `steerDealer` is a fan of headings and a fan is a
 GREEDY walk: in a pocket between the furniture and the wall the nearest clear
