@@ -1558,6 +1558,87 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**A MIRRORED RIG NEEDS TWO CURL SIGNS.** `CURL_SIGN` was one number
+"verified by rendering the hand" — the RIGHT hand, the one holding the
+crowbar, the only one anybody was looking at. The rig is mirrored, so the
+left hand's finger bones have their local X pointing the other way down the
+armature's Y (measured: LeftHandIndex1 reads (-0.06, 0.99, -0.14) against the
+right's (-0.07, -0.99, 0.14)), and the sign that closed one hand bent every
+finger of the other BACKWARDS over the knuckles — on every frame of every
+clip, for as long as he has existed. The sign is DERIVED per bone from that
+axis now, so a rig that mirrors differently cannot quietly break it again.
+And the way you find this is still a render: clay shading, both hands, the
+old GLB beside the new one.
+
+**A SOLVER ONLY BUYS WHAT YOU CHARGE IT FOR.** The reach for the crowbar was
+a coordinate descent whose only cost was distance to the bar, and the
+cheapest way to put a hand on a low table is to hinge at the waist — so it
+drove `lean` to its limit, 69 degrees, and he went down over the table like
+a man being sick, chest and forearm inside the wood. A person bends their
+KNEES for something at thigh height. The knees were in the parameters all
+along; they were simply never worth using. A quadratic cost past a
+comfortable lean and the pose comes back at 29 degrees with his head up.
+
+**AND A HAND REACHING OVER A TABLE TRAVELS IN AN ARC.** A straight line from
+his hip to a point on a table top goes through the table. `reach_pose` takes
+an `arc` that lifts the hand's PATH — zero at both ends, so the solved peak
+pose is untouched, which matters because the game's hand-off from table to
+fist happens exactly there. Measured in the game, the fist closes 8 cm from
+the bar.
+
+**HE HOLDS HIS POST.** He is a `mutants` entry, and everything that walks
+that list can nudge a man who is supposed to be standing still waiting for
+you. Come back from a checkpoint and he had drifted off his mark and turned
+round, so the one line of dialogue in the game was delivered by the back of
+his head. `DEALER_POST` writes down where he stands and which way he faces,
+and until `dealerFight` he is put back on it every frame. Do not chase which
+of a dozen systems moved him: pin the thing that must not move.
+
+**A TELL YOU CANNOT TIME IS A TELL THAT IS TOO FAST, NOT ONE THAT IS TOO
+SHORT.** The held overhead hung for half a second and then landed, and the
+owner could not block it. Widening the descent window in the clip changed
+nothing, because the easing was `t³`: at the halfway point of the fall the
+bar had moved an EIGHTH of the way and the whole stroke still happened in
+the last few frames. What matters is the fall's length IN SECONDS, and
+`mutClipTime` makes that arithmetic exact — the clip's [0, `hit`] maps
+linearly onto the startup [0, `wind`], so a fall that occupies a tenth of
+the clip lasts `0.10 / hit * wind`. It was 0.15 s against a 0.156 s parry
+window. A gentler exponent, a wider window and a longer `wind` make it
+0.29 s, nearly twice the window. A second and a half of bar over his head is
+a long tell and it should be: it is the slowest thing he throws and the only
+one that takes two of your four.
+
+**AND THE CONTACT DETECTOR SCORES SPEED, SO GIVE A CLIP A FOLLOW-THROUGH AND
+IT NAMES THE RECOVERY.** The arm coming back UP out of a held swing is
+quicker than the arm going down into it, and the build started reporting a
+contact frame a fifth of a second after the bar had passed you. A rising
+hand is not a hit; the velocity term is discounted when the hand is going
+up. The four horizontal swings never noticed — they barely change height.
+`dHold`'s `hit` is measured IN THE GAME anyway, at the bottom of the bar's
+arc, the way `dSide`'s was.
+
+**MOTION IS FLUID WHEN IT DOES NOT ALL ARRIVE AT ONCE.** Every joint in an
+authored pose ran off one number, so shoulders, elbow, hips and head started
+together, crossed together and stopped together — which is the single thing
+that makes pose-to-pose animation read as a mannequin being posed. `drag`
+shifts the driving time for the arms so the body leads and the hand is last;
+`follow` carries a limb past its stop and brings it back, one soft decaying
+bounce. It costs nothing but the shift.
+
+**A BODY FALLS HARDER THAN IT FLIES, AND THE TWO ARE SEPARATE KNOBS.** Under
+the world's own 9.8 a corpse thrown hard enough to travel FLOATED down — a
+long soft parabola that reads as weightless however far it goes, which is the
+opposite of what a killing blow should look like. Gravity under a ragdoll is
+`RAG_G`, half again the world's, and the kick is nearly doubled: a full
+charge throws a body 9.6 m and a plain click 6.0 m, both landing about a
+second later. The LANDING is its own beat — the first heavy contact only,
+gated on `r.landed` so it never fires again on the settling bounces: a thud
+pitched by how hard it came down with a slap of band-limited noise over it
+(meat is not a drum), trauma, a beat of hitstop, and a puff of whatever it
+landed in. And a body is a hammer: `ragSmash` gives anything with an
+`onImpact` inside a particle's reach the blow, so a corpse flung across the
+bunker takes the bottles with it instead of passing through them.
+
 **AND THEN THE CHAIR STOPPED BEING SOLID AT ALL.** `S.escape` got you out
 of the swivel chair, and getting out of a chair is still a second you spent
 not fighting. A chair is a thing a person shoulders past. `carveNav` takes a

@@ -326,19 +326,35 @@ FINGER_SEG = {}
 for _pb in pbs:
     _m = _re.search(r'(Thumb|Index|Middle|Ring|Pinky)(\d)', _pb.name)
     if _m: FINGER_SEG[_pb.name] = (_m.group(1), int(_m.group(2)))
-CURL_SIGN = -1.0            # verified by rendering the hand, not derived
+# AND THE TWO HANDS CURL OPPOSITE WAYS. One `CURL_SIGN` was verified by
+# rendering — the RIGHT hand, the one holding the crowbar, which is the only
+# one anybody was looking at. The rig is mirrored, so the left hand's finger
+# bones have their local X pointing the other way down the armature's Y: the
+# same sign that closes the right hand opens the left one BACKWARDS, every
+# finger bent over the back of the hand, on every frame of every clip.
+# Measured, not assumed — LeftHandIndex1's local X reads (-0.06, 0.99, -0.14)
+# in armature space against the right's (-0.07, -0.99, 0.14) — and the sign
+# is DERIVED from that axis per bone rather than named twice, so a rig whose
+# mirroring differs cannot quietly break it again.
+def _curl_sign(pb):
+    ax = pb.bone.matrix_local.to_3x3() @ Vector((1.0, 0.0, 0.0))
+    return -1.0 if ax.y < 0 else 1.0
+CURL_SIGN = {pb.name: _curl_sign(pb) for pb in pbs if pb.name in FINGER_SEG}
+log('curl signs: %d right-handed, %d left-handed'
+    % (sum(1 for v in CURL_SIGN.values() if v < 0), sum(1 for v in CURL_SIGN.values() if v > 0)))
 def set_fingers(k=1.0, thumb=1.0):
     """k = 0 open, 1 closed round a bar about 3 cm across."""
     for n, (which, seg) in FINGER_SEG.items():
         pb = pbs[n]
+        sg = CURL_SIGN[n]
         if which == 'Thumb':
             # the thumb lies ACROSS the others rather than curling under
             ang = (0.45, 0.55, 0.40, 0.15)[min(seg, 4) - 1] * thumb * k
-            pb.rotation_quaternion = Quaternion((1, 0, 0), CURL_SIGN * ang * 0.75) @ Quaternion((0, 0, 1), CURL_SIGN * 0.35 * thumb * k)
+            pb.rotation_quaternion = Quaternion((1, 0, 0), sg * ang * 0.75) @ Quaternion((0, 0, 1), sg * 0.35 * thumb * k)
         else:
             # knuckle, middle, tip, and the last joint barely moves
             ang = (0.62, 0.98, 0.72, 0.22)[min(seg, 4) - 1] * k
-            pb.rotation_quaternion = Quaternion((1, 0, 0), CURL_SIGN * ang)
+            pb.rotation_quaternion = Quaternion((1, 0, 0), sg * ang)
 def capture_fingers():
     return {n: pbs[n].rotation_quaternion.copy() for n in FINGER_SEG}
 rest_all = {pb.name: pb.rotation_quaternion.copy() for pb in pbs}
@@ -405,6 +421,23 @@ def ease(t): return t * t * (3 - 2 * t)
 def easeout(t): return 1 - (1 - t) ** 3
 def easein(t): return t ** 3
 def lerp(a, b, t): return a + (b - a) * t
+def drag(t, d):
+    """THE ARM ARRIVES AFTER THE BODY. Every joint in an authored pose runs
+    off one number, so the shoulders, the elbow, the hips and the head all
+    start together, cross together and stop together — which is the single
+    thing that makes pose-to-pose animation read as a mannequin being posed
+    rather than a man moving. Real weight travels outward: the hips lead, the
+    chest follows, the hand is last and overshoots. `drag` is that lag, as a
+    shift of the driving time — the body reads `t`, the arms `drag(t, 0.05)`,
+    the head a little more — and it costs nothing but the shift."""
+    return max(0.0, min(1.0, (t - d) / (1.0 - d)))
+def follow(t, a, amp=0.12, n=1.6):
+    """And it does not simply stop. Past `a` the limb carries on a little and
+    comes back — one soft bounce, decaying — which is the follow-through a
+    blow that landed has and a blow that was placed does not."""
+    if t <= a: return 0.0
+    x = (t - a) / max(1e-6, 1.0 - a)
+    return amp * math.sin(math.pi * n * x) * (1 - x) ** 2
 def bump(t, a, b):
     """0 → 1 → 0 across [a, b], smooth"""
     if t <= a or t >= b: return 0.0
@@ -458,10 +491,18 @@ stamp_grip(); finish(act)
 # coordinate descent over the peak pose's parameters puts the hand there.
 REACH_TARGET = Vector((-882.0, -265.0, 765.0))
 rp = dict(lean=0.55, twist=-0.65, roll=-0.22, drop=0.30, fwd=0.30, up=0.15, elbow=-0.25, out=0.70, atw=-0.30)
-def reach_pose(P, r=1.0):
-    torso(lean=P['lean'] * r, twist=P['twist'] * r, roll=P['roll'] * r, drop=P['drop'] * r)
-    arm_pose('Right', fwd=0.10 + P['fwd'] * r, up=-0.10 + P['up'] * r, elbow=0.35 + P['elbow'] * r,
-             twist=0.10 + P['atw'] * r, out=P['out'] * r)
+def reach_pose(P, r=1.0, arc=0.0):
+    """`arc` lifts the hand's PATH without moving either end of it. The bar
+    lies on a table, and a hand that travels in a straight line from his hip
+    to a point on a table top goes through the table on the way — his forearm
+    and his elbow inside the wood, which is what "he clips through the table"
+    is. Reaching over something is an ARC: the hand rises, crosses the edge
+    and comes down onto the bar. It has to be zero at BOTH ends or it would
+    move the solved peak pose, and the whole reason that pose is solved is
+    that the game's hand-off from table to fist happens exactly there."""
+    torso(lean=P['lean'] * r - 0.16 * arc, twist=P['twist'] * r, roll=P['roll'] * r, drop=P['drop'] * r - 0.10 * arc)
+    arm_pose('Right', fwd=0.10 + P['fwd'] * r - 0.10 * arc, up=-0.10 + P['up'] * r + 0.62 * arc, elbow=0.35 + P['elbow'] * r - 0.34 * arc,
+             twist=0.10 + P['atw'] * r, out=P['out'] * r + 0.18 * arc)
     arm_pose('Left', fwd=0.06 - 0.20 * r, up=-0.06 + 0.10 * r, elbow=0.25 - 0.15 * r)
     leg_pose('Left', swing=0.10 * r, knee=0.55 * r * max(0.0, P['drop']) / 0.30, foot=-0.05 * r, out=0.02 + 0.05 * r)
     leg_pose('Right', swing=-0.20 * r, knee=0.70 * r * max(0.0, P['drop']) / 0.30, foot=0.10 * r, out=0.02 + 0.10 * r)
@@ -480,7 +521,18 @@ def reach_err(P):
     rest(); reach_pose(P, 1.0); bpy.context.view_layer.update()
     e = (pbs[B['RightHand']].tail - REACH_TARGET).length
     sink = max(0.0, _SOLE_REF - _sole_units())          # how far the sole is through the floor, rig units
-    return e + 3.0 * sink
+    # AND A COST FOR FOLDING IN HALF. Distance to the bar was the only thing
+    # the solve was paying for, and the cheapest way to put a hand on a low
+    # table is to hinge at the waist — so it drove `lean` to its limit, 69
+    # degrees, and he went down over the table like a man being sick, his
+    # chest and his forearm inside the wood. A person bends their KNEES for
+    # something at thigh height and keeps their back somewhere near straight.
+    # The knees are already in the parameters (`drop`); they were just never
+    # worth using. Past a comfortable lean each radian costs more than a
+    # centimetre of reach does, so the squat takes the work — and the sole
+    # term keeps that squat standing on the floor.
+    fold = max(0.0, P['lean'] - 0.42)
+    return e + 3.0 * sink + 900.0 * fold * fold
 lim = dict(lean=(0.0, 1.2), twist=(-1.3, 0.3), roll=(-0.7, 0.4), drop=(0.0, 0.55), fwd=(-0.6, 1.6), up=(-0.6, 1.2), elbow=(-1.4, 0.6), out=(0.0, 1.4), atw=(-1.2, 1.2))
 err = reach_err(rp); step = 0.30
 for it in range(60):
@@ -506,7 +558,8 @@ for f in range(N + 1):
     reach = easeout(max(0.0, min(1.0, (t - 0.04) / 0.34)))
     settle = ease(max(0.0, (t - 0.44) / 0.56))
     r = reach * (1 - settle)
-    reach_pose(rp, r)
+    # over the table on the way out; straight up with the bar on the way back
+    reach_pose(rp, r, arc=math.sin(math.pi * reach) * (1 - settle))
     # HIS HEAD STAYS ON YOU. The head is a child of the spine, so a reach
     # that pitches the chest 1.2 rad forward carries the face down with it
     # whatever the head is keyed to — and a man who looks at the floor while
@@ -525,9 +578,10 @@ act = new_action('taunt'); N = 54
 for f in range(N + 1):
     rest(); t = f / N
     up = bump(t, 0.05, 0.80) ** 0.8
+    upA = bump(drag(t, 0.06), 0.05, 0.80) ** 0.8      # the bar follows the shoulders
     torso(lean=-0.12 * up, twist=0.20 * up, roll=0.04 * up, bob=0.02 * up)
-    arm_pose('Right', fwd=0.95 * up, up=0.35 * up, elbow=-0.85 * up, twist=0.40 * up)
-    arm_pose('Left', fwd=0.25 * up, up=0.15 * up, elbow=-0.30 * up)
+    arm_pose('Right', fwd=0.95 * upA, up=0.35 * upA, elbow=-0.85 * upA, twist=0.40 * upA)
+    arm_pose('Left', fwd=0.25 * upA, up=0.15 * upA, elbow=-0.30 * upA)
     leg_pose('Left', swing=0.06 * up, knee=0.06 * up)
     leg_pose('Right', swing=-0.06 * up, knee=0.08 * up)
     head(pitch=-0.18 * up, yaw=0.10 * up, roll=0.26 * up)
@@ -541,20 +595,43 @@ stamp_grip(); finish(act)
 act = new_action('attackHold'); N = 64
 for f in range(N + 1):
     rest(); t = f / N
-    if t < 0.30: u = ease(t / 0.30); hang = 0.0; down = 0.0
-    elif t < 0.62: u = 1.0; hang = (t - 0.30) / 0.32; down = 0.0
-    elif t < 0.74: u = 1.0; hang = 1.0; down = easein((t - 0.62) / 0.12)
-    else: u = 1.0; hang = 1.0; down = 1.0 - easeout((t - 0.74) / 0.26) * 0.30
-    tremble = 0.025 * math.sin(hang * math.pi * 7) * (1 - down)
+    # AND THE FALL IS THE HALF YOU CAN SEE. It used to hang for a third of
+    # the clip and then drop in a twelfth of it — mapped onto a 1.08 s
+    # startup that is half a second of a man standing still followed by a
+    # blur, and a guard raised off a blur is a guess. The hang is shorter
+    # and the descent is nearly twice as long, so the bar is visibly
+    # FALLING for a third of a second before it lands: long enough to time
+    # a block against, still the slowest thing he throws, and it still
+    # takes two of your four if you read it wrong. The tremble at the top
+    # grows as the hang runs out, so the moment before the release is the
+    # loudest part of the tell rather than the quietest.
+    if t < 0.24: u = ease(t / 0.24); hang = 0.0; down = 0.0
+    elif t < 0.38: u = 1.0; hang = (t - 0.24) / 0.14; down = 0.0
+    # AND THE FALL IS NOT A CUBE. Widening the window did nothing on its own,
+    # because `easein` is t³: at the halfway point of the descent the bar had
+    # moved an EIGHTH of the way and the whole stroke still happened in the
+    # last few frames. Measured on the hand, the visible drop was 0.147 s
+    # against a parry window of 0.156 — you were not reading it, you were
+    # guessing. A gentler exponent starts the bar moving as soon as the hang
+    # ends and still accelerates into the floor, so the fall is something you
+    # WATCH. It is still the slowest thing he throws and it still takes two.
+    elif t < 0.68: u = 1.0; hang = 1.0; down = ((t - 0.38) / 0.30) ** 1.25
+    else: u = 1.0; hang = 1.0; down = 1.0 - easeout((t - 0.68) / 0.32) * 0.30
+    tremble = 0.030 * math.sin(hang * math.pi * 7) * (0.35 + 0.65 * hang) * (1 - down)
     cock = u * (1 - down)
-    torso(lean=-0.30 * cock + 0.85 * down, twist=0.22 * cock - 0.30 * down, roll=-0.08 * cock, bob=0.05 * cock - 0.09 * down)
+    # the arms are a beat behind the body, and they carry past the stop
+    downA = down if down <= 0 else min(1.0, down * 1.06)
+    lagU = ease(drag(t / 0.26, 0.10)) if t < 0.26 else u
+    cockA = lagU * (1 - downA)
+    over = follow(t, 0.68, 0.10, 1.4)
+    torso(lean=-0.30 * cock + 0.85 * down + 0.10 * over, twist=0.22 * cock - 0.30 * down, roll=-0.08 * cock, bob=0.05 * cock - 0.09 * down)
     # DOWN THROUGH THE TARGET. The first down-stroke stopped with the arm
     # still raised a third of the way, so the bar never came within a metre
     # and a half of a man standing in front of him: measured, every held
     # swing whiffed. It finishes with the arm forward and below level now,
     # the bar at hip height in front of him, and the body bent over it.
-    arm_pose('Right', fwd=1.30 * cock - 1.55 * down + tremble, up=1.45 * cock - 1.60 * down, elbow=-1.15 * cock + 0.90 * down, twist=0.30 * cock)
-    arm_pose('Left', fwd=1.05 * cock - 1.25 * down, up=1.10 * cock - 1.25 * down, elbow=-0.95 * cock + 0.75 * down)
+    arm_pose('Right', fwd=1.30 * cockA - 1.55 * downA + tremble - 0.22 * over, up=1.45 * cockA - 1.60 * downA - 0.18 * over, elbow=-1.15 * cockA + 0.90 * downA + 0.20 * over, twist=0.30 * cockA)
+    arm_pose('Left', fwd=1.05 * cockA - 1.25 * downA - 0.18 * over, up=1.10 * cockA - 1.25 * downA - 0.14 * over, elbow=-0.95 * cockA + 0.75 * downA + 0.16 * over)
     leg_pose('Left', swing=-0.16 * cock + 0.36 * down, knee=0.12 * cock + 0.22 * down)
     leg_pose('Right', swing=-0.08 * cock - 0.26 * down, knee=0.16 * cock + 0.32 * down)
     head(pitch=-0.26 * cock + 0.48 * down, yaw=0.04)
@@ -570,9 +647,11 @@ for f in range(N + 1):
     if t < 0.34: back = ease(t / 0.34); push = 0.0
     elif t < 0.50: back = 1.0; push = easein((t - 0.34) / 0.16)
     else: back = 1.0 - easeout((t - 0.50) / 0.50) * 0.85; push = 1.0 - easeout((t - 0.50) / 0.50) * 0.75
+    ov = follow(t, 0.50, 0.14, 1.5)
+    pushA = min(1.0, push * 1.05)
     torso(lean=-0.14 * back + 0.55 * push, twist=-0.22 * back + 0.50 * push, bob=-0.02 * back - 0.05 * push, drop=0.10 * push)
-    arm_pose('Right', fwd=-0.35 * back + 1.55 * push, up=0.10 * back + 0.10 * push, elbow=-0.55 * back + 0.75 * push, twist=0.20 * back + 0.40 * push)
-    arm_pose('Left', fwd=0.20 * back - 0.45 * push, elbow=-0.25 * back + 0.30 * push)
+    arm_pose('Right', fwd=-0.35 * back + 1.55 * pushA + 0.20 * ov, up=0.10 * back + 0.10 * push, elbow=-0.55 * back + 0.75 * push - 0.18 * ov, twist=0.20 * back + 0.40 * push)
+    arm_pose('Left', fwd=0.20 * back - 0.45 * push - 0.14 * ov, elbow=-0.25 * back + 0.30 * push)
     leg_pose('Left', swing=-0.26 * back + 0.90 * push, knee=0.26 * back - 0.05 * push, foot=-0.08 * push)
     leg_pose('Right', swing=-0.16 * back - 0.50 * push, knee=0.18 * back + 0.34 * push)
     head(pitch=-0.10 * back + 0.24 * push, yaw=-0.10 * push)
@@ -760,7 +839,16 @@ def contact(name, bone):
         pos.append(pbs[B[bone]].matrix.translation.copy())
     for i in range(1, len(pos)):
         v = (pos[i] - pos[i-1]).length
-        score = pos[i].y * 0.6 + v * 40 - pos[i].z * 0.15
+        # A BLOW LANDS ON THE WAY DOWN. Raw speed was the whole velocity term,
+        # and the fastest thing in a clip is not always the strike: give the
+        # held swing a real follow-through and the arm coming back UP out of
+        # it is quicker than the arm going down into it, so the detector
+        # named the recovery as the contact frame and the game dealt its
+        # damage a fifth of a second after the bar had already passed you.
+        # A rising hand is not a hit. The four horizontal swings are
+        # untouched by this — they barely change height at all.
+        rising = (pos[i].z - pos[i-1].z) > 0
+        score = pos[i].y * 0.6 + v * 40 * (0.2 if rising else 1.0) - pos[i].z * 0.15
         if score > best: best, bf = score, f0 + i
     arm.animation_data.action = None
     dur = (f1 - f0) / 24.0

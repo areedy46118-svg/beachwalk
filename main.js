@@ -12850,10 +12850,10 @@ const MUT_ATTACKS = {
    * because his blow is tested on the BAR (`dealerBarHit`) and a man with a
    * crowbar reaches two metres, not two and a half; the lunge and the step
    * in the overhand are what close the rest. */
-  dDown:  { wind: 0.72, strike: 0.13, recover: 0.58, hit: 0.350, reach: 1.80, lunge: 0.55, chain: 'dSide',  chainP: 0.48, w: 0.18 },
-  dSide:  { wind: 0.52, strike: 0.11, recover: 0.44, hit: 0.370, reach: 1.75, lunge: 0.30, chain: 'dDown',  chainP: 0.52, w: 0.18 },   // hit measured in the game: the hand is furthest out at 0.375, and back behind him by 0.5
-  dDownM: { wind: 0.70, strike: 0.13, recover: 0.72, hit: 0.259, reach: 1.80, lunge: 0.55, chain: 'dSideM', chainP: 0.42, w: 0.14 },
-  dSideM: { wind: 0.52, strike: 0.11, recover: 0.56, hit: 0.351, reach: 1.75, lunge: 0.30, chain: 'dDown',  chainP: 0.42, w: 0.14 },
+  dDown:  { wind: 0.72, strike: 0.13, recover: 0.58, hit: 0.370, reach: 1.80, lunge: 0.55, chain: 'dSide',  chainP: 0.48, w: 0.18 },
+  dSide:  { wind: 0.52, strike: 0.11, recover: 0.44, hit: 0.421, reach: 1.75, lunge: 0.30, chain: 'dDown',  chainP: 0.52, w: 0.18 },   // hit measured in the game: the hand is furthest out at 0.375, and back behind him by 0.5
+  dDownM: { wind: 0.70, strike: 0.13, recover: 0.72, hit: 0.278, reach: 1.80, lunge: 0.55, chain: 'dSideM', chainP: 0.42, w: 0.14 },
+  dSideM: { wind: 0.52, strike: 0.11, recover: 0.56, hit: 0.281, reach: 1.75, lunge: 0.30, chain: 'dDown',  chainP: 0.42, w: 0.14 },
   // the held one: a full second over his head, so a guard raised on the
   // first beat is a block and not a parry. It is the swing that teaches you
   // to watch the arm instead of counting.
@@ -12861,9 +12861,20 @@ const MUT_ATTACKS = {
   // fair one to make it is the one you can see coming from furthest away:
   // a second of bar over his head. Half your health, and telegraphed longer
   // than anything else in the game.
-  dHold:  { wind: 1.08, strike: 0.13, recover: 0.62, hit: 0.719, reach: 1.95, lunge: 0.40, chain: null,     chainP: 0.00, w: 0.20, dmg: 2 },
+  /* THE ONE YOU HAVE TO BE ABLE TO SEE COMING. `hit` is measured IN THE GAME
+   * — the bottom of the bar's arc, clip 0.54 — and not taken from the build,
+   * whose detector wants the frame with the most speed in it and finds that
+   * in the recovery. And `wind` is what makes it readable: the bar visibly
+   * FALLS over a tenth of the clip, so the length of that fall in seconds is
+   * a tenth of `wind` divided by `hit`. At 1.08 that was 0.15 s against a
+   * parry window of 0.156 — you were not reading it, you were guessing, and
+   * the owner said so. At 1.55 the fall is 0.29 s, nearly twice the window.
+   * A second and a half of bar over his head is a long tell, and it should
+   * be: it is the slowest thing he throws, the most punishable, and the only
+   * one that takes two of your four. */
+  dHold:  { wind: 1.55, strike: 0.13, recover: 0.62, hit: 0.540, reach: 1.95, lunge: 0.40, chain: null,     chainP: 0.00, w: 0.20, dmg: 2 },
   // and the one that covers the ground you just backed off
-  dLunge: { wind: 0.60, strike: 0.15, recover: 0.90, hit: 0.457, reach: 2.40, lunge: 2.1,  chain: 'dSide',  chainP: 0.30, w: 0.18 },
+  dLunge: { wind: 0.60, strike: 0.15, recover: 0.90, hit: 0.500, reach: 2.40, lunge: 2.1,  chain: 'dSide',  chainP: 0.30, w: 0.18 },
 };
 /* The three of them. `use` is which swings this one has and how often it
  * reaches for each; `windK` scales its startups AND its recoveries together,
@@ -13385,13 +13396,26 @@ function sfxSlam(P = 0) {
 /* The floor under a kill: a sub thump you feel more than hear, under whatever
  * the blade did. It is the same on every kill and that is the point — it is
  * the one sound in the fight that means "that one is finished". */
-function sfxKillThud() {
+function sfxKillThud(k = 1) {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime, out = sfxOut();
   const o = ctx.createOscillator(); o.type = 'sine';
-  o.frequency.setValueAtTime(64, t); o.frequency.exponentialRampToValueAtTime(27, t + 0.32);
-  const g = ctx.createGain(); g.gain.setValueAtTime(0.42, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
+  o.frequency.setValueAtTime(64 * (0.82 + k * 0.18), t); o.frequency.exponentialRampToValueAtTime(27, t + 0.32);
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.42 * k, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
   o.connect(g).connect(out); o.start(t); o.stop(t + 0.4);
+  /* AND A BODY IS NOT A DRUM. Meat arriving on steel or on sand has a slap
+   * over the low end — a short band of noise that dies at once — and it is
+   * the half of the sound that says a thing with weight landed rather than
+   * something under the floor. Only on the hard ones. */
+  if (k > 0.9) {
+    const n = ctx.createBufferSource(), len = Math.floor(ctx.sampleRate * 0.13);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 3;
+    n.buffer = buf;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 190; bp.Q.value = 0.9;
+    const ng = ctx.createGain(); ng.gain.setValueAtTime(0.34 * k, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+    n.connect(bp).connect(ng).connect(out); n.start(t);
+  }
 }
 /* A blow that lands but does not finish it: it is rocked back off the blade
  * white, the swing it was in the middle of is broken, and it comes again. */
@@ -14344,10 +14368,39 @@ const RAG_BEND = [
   ['Character1_Hips', 'Character1_LeftUpLeg', 'Character1_LeftLeg', 0.60],
   ['Character1_Hips', 'Character1_RightUpLeg', 'Character1_RightLeg', 0.60],
 ];
-const RAG_ITER = 7, RAG_SUB = 2, RAG_DAMP = 0.985, RAG_FRICTION = 0.55, RAG_BOUNCE = 0.28;
+const RAG_ITER = 7, RAG_SUB = 2, RAG_DAMP = 0.990, RAG_FRICTION = 0.55, RAG_BOUNCE = 0.28;
+/* A BODY FALLS HARDER THAN IT FLIES. Under the beach's own 9.8 a corpse
+ * thrown hard enough to travel FLOATED on the way down — a long soft
+ * parabola that reads as weightless however far it goes, which is the
+ * opposite of what a killing blow should look like. The throw and the fall
+ * are separate knobs and they were being turned together: the kick is
+ * bigger, so it goes further, and gravity under a ragdoll is half again the
+ * world's, so it comes down fast and HITS. Less drag with it, so what leaves
+ * keeps going instead of being eaten by the air. */
+const RAG_G = 15.6;
 const _rg1 = new THREE.Vector3(), _rg2 = new THREE.Vector3(), _rg3 = new THREE.Vector3(), _rgQ = new THREE.Quaternion(), _rgQ2 = new THREE.Quaternion();
 const _rgM = new THREE.Matrix4();
 
+/* WHAT A FALLING BODY BREAKS. The room is full of glass set out to be
+ * thrown, and a corpse flung across it went straight through every bottle on
+ * the desk — the shovel broke them, a thrown jar broke them, and the two
+ * hundred pounds of man landing on them did nothing at all. Every particle
+ * that is moving is a hammer: anything with an `onImpact` inside its reach
+ * gets the blow, once, at the speed the body was doing. It is called from
+ * the landing and from any fast contact, so a body that skids into a shelf
+ * takes the shelf with it. */
+function ragSmash(r, speed) {
+  for (const pr of physProps) {
+    if (!pr.onImpact || pr.dead || pr.held || !pr.mesh.parent) continue;
+    const m = pr.mesh.position, rr = (pr.radius || 0.3) + 0.30;
+    for (const q of r.parts) {
+      const dx = q.p.x - m.x, dy = q.p.y - m.y, dz = q.p.z - m.z;
+      if (dx * dx + dy * dy + dz * dz > rr * rr) continue;
+      pr.onImpact(speed);
+      break;
+    }
+  }
+}
 function mutRagdoll(u, dirX, dirZ, power) {
   if (u.rag || !u.model) return;
   /* IT DIES FROM THE POSE IT WAS IN — so the mixer is simply never updated
@@ -14377,8 +14430,8 @@ function mutRagdoll(u, dirX, dirZ, power) {
     /* HARDER AGAIN. The owner asked twice: a killing blow has to throw the
      * body. Most of the kick goes into the top of it and it is lifted as it
      * goes, so it leaves its feet and tumbles rather than sliding off. */
-    const kick = (1.8 + power * 3.6) * (0.15 + h * 0.85);
-    const v = new THREE.Vector3(dirX * kick + (Math.random() - 0.5) * 0.5, 0.9 + h * 1.1 + Math.random() * 0.4, dirZ * kick + (Math.random() - 0.5) * 0.5);
+    const kick = (3.1 + power * 6.2) * (0.15 + h * 0.85);
+    const v = new THREE.Vector3(dirX * kick + (Math.random() - 0.5) * 0.7, 1.6 + h * 1.8 + Math.random() * 0.5, dirZ * kick + (Math.random() - 0.5) * 0.7);
     const part = { name, bone: bn, parent: parentName, child: childName, r, p, pp: p.clone().addScaledVector(v, -1 / 60), w: name.includes('Hips') ? 0.5 : name.includes('Head') ? 0.8 : 1 };
     parts.push(part); byName[name] = part;
   }
@@ -14473,7 +14526,7 @@ function updateMutRagdoll(u, dt) {
       for (const q of r.parts) {
         _rg1.subVectors(q.p, q.pp).multiplyScalar(q.wet > 0 ? RAG_DAMP - 0.10 * q.wet : RAG_DAMP);   // water is thick
         q.pp.copy(q.p);
-        q.p.add(_rg1); q.p.y -= 9.8 * h * h;
+        q.p.add(_rg1); q.p.y -= RAG_G * h * h;
         motion += _rg1.lengthSq();
       }
       // constraints
@@ -14499,6 +14552,35 @@ function updateMutRagdoll(u, dt) {
         }
       }
     }
+    /* AND IT ARRIVES. A body thrown across a room used to land in silence:
+     * the particles stopped and that was the whole event. The FIRST heavy
+     * contact — the frame the fastest part of it meets the floor — is a
+     * beat of its own: a thud pitched by how hard it came down, a shove of
+     * trauma through the camera, a puff of what it landed in, and the world
+     * hitching for a moment the way it does on any other real impact. Once,
+     * on the way down, never on the settling bounces after — `r.landed` is
+     * what keeps it from firing on every scrape for the rest of the night. */
+    if (!r.landed) {
+      let worst = 0, wx = 0, wy = 0, wz = 0;
+      for (const q of r.parts) {
+        if (q.p.y > q.floor + q.r + 0.05) continue;
+        const fall = (q.pp.y - q.p.y) / Math.max(1e-4, h);
+        if (fall > worst) { worst = fall; wx = q.p.x; wy = q.p.y; wz = q.p.z; }
+      }
+      if (worst > 3.2) {
+        r.landed = true;
+        const P = THREE.MathUtils.clamp((worst - 3.2) / 7, 0, 1);
+        sfxKillThud(0.7 + P * 0.8);
+        addTrauma(0.30 + P * 0.55);
+        hitstop = Math.max(hitstop, 0.045 + P * 0.05);
+        // sand throws up; a steel floor does not
+        if (bunkerFloorAt(wx, wz, wy) === null) spawnPuffs(wx, wz, 4 + Math.round(P * 7), 0, -1, wy + 0.06);
+        ragSmash(r, 3.0 + P * 5);
+      }
+    }
+    // still travelling fast? then it is still a hammer, and a body that
+    // skids into a shelf of bottles takes the shelf with it
+    if (motion > 4e-4) ragSmash(r, 6.5);
     if (r.t > 1.5 && motion < 1e-7 && !wet) r.asleep = true;     // it has come to rest — on sand; water never lets it
   }
   // drive the skeleton from the particles, parent first
@@ -16020,6 +16102,16 @@ const PICK_DUR = 1.05, PICK_GRAB = 0.42;   // he snatches it; a slow reach read 
 const dealer = makeMutant(DEALER_X, DEALER_Z, 'dealer', BUNKER_Y);
 dealer.g.visible = false;
 dealer.g.rotation.y = Math.PI;                 // looking down the room at the ladder
+/* AND HE HOLDS IT UNTIL THE FIGHT. He is a `mutants` entry, and everything
+ * that walks that list — the room's push-out, the separation, the clamp that
+ * ejects a body from furniture — can nudge a man who is supposed to be
+ * standing still waiting for you. Come back from a checkpoint and he had
+ * drifted off his mark and turned round, so the one line of dialogue in the
+ * game was delivered by the back of his head. Where he stands and which way
+ * he faces are WRITTEN DOWN, and until `dealerFight` he is put back on them
+ * every frame. Nothing before the fight may move him, and once it starts
+ * nothing puts him back. */
+const DEALER_POST = { x: dealer.g.position.x, z: dealer.g.position.z, yaw: Math.PI };
 const DEALER_SCRIPT = {
   start: {
     text: 'How did you get down here?',
@@ -16299,6 +16391,13 @@ function updateDealer(dt) {
     return;
   }
   dealer.g.visible = bunkerHome.group.visible && !!dealer.model;
+  /* His mark. Through the wait, the dialogue and the reach for the bar he is
+   * exactly where he was put and facing the ladder, whatever the frame did. */
+  if (!dealerFight && dealer.st.alive) {
+    dealer.g.position.set(DEALER_POST.x, BUNKER_Y, DEALER_POST.z);
+    dealer.g.rotation.y = DEALER_POST.yaw;
+    dealer.prevPos = { x: DEALER_POST.x, z: DEALER_POST.z };
+  }
   /* He does not fight the ceiling. Leave by the ladder mid-exchange and he
    * stops where he is rather than pacing the room after a player who is
    * forty metres above him; come back down and he picks it straight up. */
