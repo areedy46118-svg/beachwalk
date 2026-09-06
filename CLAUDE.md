@@ -1640,6 +1640,56 @@ same haul it always was. The cadence does not change (nine swings in
 3.3 s under a mashed button, in pairs); the dead frames at the end of a
 combination are gone.
 
+**A CLICK IS NEVER BANKED.** Three clicks were three swings: the third
+fired on its own after the recovery, from a press made half a second
+earlier, and a sword that swings when you did not just ask it to is one you
+cannot trust. The forehand queue is gone. A press from rest swings; inside
+the first cut's window it chains the return; with the blade most of the way
+home (`FORE_EARLY`) it swings at once from where the blade is; anything
+else is DROPPED. Measured: three clicks, two swings.
+
+**THE BLADE FACES THE ENEMY THROUGH THE STRIKE.** The solved cuts carried
+the blade pointing mostly UP (view-space direction y 0.85, z -0.5) and swept
+it across — a pole carried past a man. `katFace` pitches the blade forward
+about the camera's own axis (`KAT_FACE`, 24°) and takes HALF of the
+point's drift back by moving the arm (`KAT_FACE_K`): all of it back put
+the hand two frame-heights off the bottom-left corner, because the hand is
+nearer the lens than the point. And it is pitched only from the cock to just
+past the mark (`katFaceW`) — where the steel is going through something —
+and brought back up by the wrist over the follow-through. `landBlade` runs
+AFTER the grip and the tilt now, so the lip goes on the aim with the tilt in
+it. Measured at the mark: z -0.82 against -0.53, point on the same line.
+
+**AND THE FOLLOW-THROUGH POSES PARKED THE SWORD OFF THE SCREEN.** Every
+check of the cut had measured the POINT, and the point was at the left edge;
+nobody had measured the hand, which sat at (-1.07, -2.75) — two and a half
+frame-heights below the picture — so for the held beat at the end of every
+cut the sword was a sliver in the corner, and for the return it was off the
+right the same way. Swept in the pane (roll, lift, push, side of the third
+pose of each table): the hand comes UP and the arm goes BACK (`push` -0.32,
+which is what shrinks a hand that is close to the lens), and the roll is
+turned so the blade leans out to the tip. Forehand through: point
+(-0.84, -0.03), hand (-0.32, -0.77). Return: (0.89, -0.02) / (0.74, -0.81).
+The heavy's through the same way. MEASURE THE HAND AS WELL AS THE POINT.
+
+**A SWORD'S HEAVY HAS WEIGHT.** `DIG_DUR` is 0.4 (the "0.44 s" in older
+notes is stale), so at the cut's own timing a full charge went from release
+to landing in 0.13 s and was home in a third of a second — a flinch, and
+quicker than the light cut it outclasses. `heavyK` stretches a blade's
+charge by its power (1.75x at full): 34 frames now against 19, the hang at
+the top visible, and it comes home quicker than a light (`recoverK` scaled
+by 1 - 0.65 P) because it has already paid up front.
+
+**THE CASE SAYS SO WHEN IT UNLOCKS.** A locked case on a desk you walked
+past is furniture; the moment he is down it has to become a thing to go
+to. A lamp on the front goes from dim red to a green blink, a glint
+breathes over the lid, the latches are heard a second after he falls, and
+"Open the case" is on it. **And an interactable's mesh list is taken ONCE,
+at registration**: the case was registered after the scan had been put
+inside it, so `updateHover` raycast the shovel's hundred thousand triangles
+every frame near the desk — "the shovel box is lagging". Register the case
+before the tool goes in.
+
 **A BLADE SETTLES; IT DOES NOT BOUNCE.** Two things were the "flinch"
 coming back to guard. `easeOutBack`'s overshoot threw the point two
 frame-widths off the right edge and back on every recovery — a blade eases

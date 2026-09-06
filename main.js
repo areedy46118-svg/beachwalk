@@ -4133,12 +4133,20 @@ function attackAction() {                        // left mouse
   if (frozen()) return;
   if (held) { throwHeld(); return; }
   if (equipped && equipped.onDig) {
+    /* A CLICK IS NEVER BANKED. Three clicks used to be three swings — the
+     * third fired on its own after the recovery, from a press made half a
+     * second earlier, and a sword that swings when you did not just ask it
+     * to is one you cannot trust. A press does one of three things: from
+     * rest it swings; inside the first cut's window it chains the return;
+     * with the blade most of the way home (`FORE_EARLY`) it swings again
+     * from where the blade is. Anything else is dropped — you were not
+     * recovered, so you do not swing. */
     if (digT <= 0) {
       startDig();
     } else if (slashing() && equipped.alternate && !digOverhead && !katBack() && !digCharged && digT < RETURN_LATEST) {
       queuedSwing = 'return';                  // fires at the follow-through, from the left
-    } else {
-      queuedSwing = 'fore';                    // fires once this swing is done
+    } else if (isBlade() && !digOverhead && digT >= FORE_EARLY && !winding) {
+      cancelSwing(); startDig();               // recovered enough: leaves from the live pose
     }
     return;
   }
@@ -5973,6 +5981,51 @@ const blockAt = () => (equipped === katanaItem ? KAT_BLOCK_AT : BLOCK_AT);
 const blockPose = () => (equipped === katanaItem ? KAT_BLOCK_POSE : BLOCK_POSE);
 const _blkQ = new THREE.Quaternion(), _blkE = new THREE.Euler(), _blkV = new THREE.Vector3(), _blkP = new THREE.Vector3();
 const _gQ = new THREE.Quaternion(), _gQ2 = new THREE.Quaternion();
+const KAT_FACE = 0.42, KAT_FACE_K = 0.5;  // how far the blade is pitched into the screen through a cut, and how much of the point's drift is taken back
+const _kfQ = new THREE.Quaternion(), _kfP = new THREE.Quaternion(), _kfT0 = new THREE.Vector3(), _kfT1 = new THREE.Vector3();
+const _kfAx = new THREE.Vector3(), _kfN = new THREE.Vector3(), _kfW = new THREE.Vector3(), _kfD = new THREE.Vector3();
+/* THROUGH THE STRIKE, NOT THE WHOLE STROKE. Pitched forward all the way to
+ * the follow-through, the blade ended its cut with the hand two frame-
+ * heights off the bottom-left corner and only a hand's width of steel in
+ * the picture. It is pitched fully from the cock to just past the mark —
+ * where it is going through something — and the wrist brings it back up
+ * over the follow-through, so the held pose at the end of the cut is the
+ * one the reel was solved to. A charge holds it pitched; that is the point
+ * of a charge. */
+function katFaceW() {
+  if (winding) return 1;
+  if (digT <= 0) return 0;
+  const p = digT, W = windupEnd(), s1 = DIG_STRIKE + 0.04;
+  if (p < W) return Math.min(1, p / W);
+  if (p < s1) return 1;
+  if (p < SLASH_THROUGH) return 1 - easeInOutCubic((p - s1) / (SLASH_THROUGH - s1));
+  return 0;
+}
+function katFace(w) {
+  if (w <= 0.001) return;
+  armRig.updateMatrixWorld(true);
+  katModel.localToWorld(_kfT0.set(0, KAT_TIP, 0));
+  _kfN.copy(_kfT0).project(vmCamera);                       // where the point is now
+  _kfAx.set(1, 0, 0).applyQuaternion(vmCamera.quaternion);
+  _kfQ.setFromAxisAngle(_kfAx, -KAT_FACE * w);              // tip away from the lens
+  toolMount.getWorldQuaternion(_kfP);
+  // a world rotation, applied in the mount's own frame
+  toolVM.quaternion.premultiply(_kfP.clone().invert().multiply(_kfQ).multiply(_kfP));
+  armRig.updateMatrixWorld(true);
+  katModel.localToWorld(_kfT1.set(0, KAT_TIP, 0));
+  // and the point goes back to that screen spot, at its new depth
+  _kfD.copy(_kfT1).applyMatrix4(vmCamera.matrixWorldInverse);
+  _kfW.set(_kfN.x, _kfN.y, 0.5).unproject(vmCamera).sub(vmCamera.position);
+  const cz = _kfW.clone().applyQuaternion(vmCamera.quaternion.clone().invert()).z;
+  _kfW.multiplyScalar(_kfD.z / cz).add(vmCamera.position);
+  /* PART of the way back, not all of it. Holding the point exactly still
+   * moved the whole arm out along the ray, and with the hand nearer the
+   * lens than the point that threw the hand two frame-heights off the
+   * bottom-left corner through the follow-through — the sword vanished.
+   * Half the correction keeps the line close to the solve and the hand in
+   * the picture; `landBlade` (run after this) puts the lip on the aim. */
+  armRig.position.addScaledVector(_kfW.sub(_kfT1), KAT_FACE_K);
+}
 // x and y are FRACTIONS of the frame's half-extents at the ear's depth, like
 // layoutViewmodel(): an absolute offset that sat at the edge of a landscape
 // window was clean off the side of a portrait one
@@ -6161,7 +6214,7 @@ toolMount.add(katanaVM);
 const katanaItem = {
   name: 'Katana', icon: makeKatanaIcon(), onDig: true, viewmodel: katanaVM,
   inspectModel: katInspect, lip: KAT_LIP,
-  blade: true, dmgLight: 2, dmgHeavy: 3, windRate: 1.3, gore: 1.4, swingK: 0.9, recoverK: 5.0, alternate: true,
+  blade: true, dmgLight: 2, dmgHeavy: 3, windRate: 1.3, gore: 1.4, swingK: 0.9, recoverK: 5.0, heavyK: 0.75, alternate: true,
   use: () => toggleEquip(katanaItem),
 };
 // a few steps from the Military Shovel, on the same stretch of sand under the cliff
@@ -6268,11 +6321,10 @@ let queuedSwing = false;                 // false | 'return' | 'fore'
 const RETURN_LATEST = 0.82;
 const SL_GRIP_HOME = 0.82;               // where, in a blade's recovery, the grip starts back to the carry
 const REC_HOLD = 0.35;                   // the first stretch of a blade's recovery barely moves: the cut is finished
-/* AND THE NEXT CUT NEED NOT WAIT FOR HOME. A forehand asked for while the
- * blade is most of the way back leaves from where the blade IS — the haul
- * starts from the live pose, not from rest — so a held rhythm never has a
- * dead frame in it, and the last stretch of every recovery is the next
- * swing's wind-up. The cadence barely changes; the feel does. */
+/* AND THE NEXT CUT NEED NOT WAIT FOR HOME. A click while the blade is most
+ * of the way back (past FORE_EARLY) swings at once from where the blade
+ * IS — the haul starts from the live pose, not from rest. Earlier than
+ * that a click is simply dropped: nothing is queued, nothing fires later. */
 const FORE_EARLY = 0.94;
 /* THE GUARD. Hold right and the shovel comes up across you. It is a real
  * guard, not a damage modifier: a strike that lands on it does nothing at
@@ -6538,15 +6590,15 @@ const bladeDrop = () => (isBlade() ? 1 : 0);
 // the forehand, light: point from (0.90, 0.14) across to (-1.05, -0.10)
 const KAT_A0 = [[-0.719, -0.213, 0.45, 0.204, -0.382, 0.657],
                 [-0.653, -0.376, 0.45, 0.628, -0.236, -0.700],
-                [-0.382, -0.437, 0.45, 0.934, 0.064, -1.300]];
+                [-0.382, -0.080, 0.45, 1.650, -0.320, -1.050]];
 // and charged: the same line, a shade steeper and longer
 const KAT_A1 = [[-0.733, -0.080, 0.45, 0.097, -0.239, 0.472],
                 [-0.651, -0.366, 0.45, 0.596, -0.053, -0.648],
-                [-0.620, -0.460, 0.45, 0.892, 0.246, -1.300]];
+                [-0.620, -0.100, 0.45, 1.700, -0.350, -1.150]];
 // the return, left to right, from where the forehand finished: (-0.92, 0.12) to (1.02, -0.10)
 const KAT_B0 = [[-0.433, -0.027, 0.45, 1.421, -0.041, -1.300],
                 [-0.323, -0.313, 0.45, 0.780, -0.286, -0.337],
-                [-0.322, -0.389, 0.45, 0.714, -0.023, 0.973]];
+                [-0.322, -0.100, 0.45, -0.200, -0.300, 0.420]];
 /* EVERY ONE OF THESE WAS SOLVED AT 16:9. The preview pane is narrow when it
  * is left to itself, and a set solved at its portrait shape came out with
  * `side` values and screen targets for a frame half as wide — in the game
@@ -7147,7 +7199,14 @@ const windupEnd = () => slashing() ? SLASH_WINDUP : DIG_WINDUP;
  * combination you can hold a rhythm in, not one that accelerates away from
  * you. */
 const comboRate = () => 1;
-const swingSecs = (P) => (slashing() ? DIG_DUR * (0.55 + P * 0.60) / (1 + 0.34 * P) : DIG_DUR * (0.55 + P)) * ((equipped && equipped.swingK) || 1) * comboRate();
+/* A SWORD'S HEAVY HAS WEIGHT. At the cut's own timing a full charge went
+ * from release to landing in 0.13 s and was home in a third of a second —
+ * quicker than the light cut it was meant to outclass, and it read as a
+ * flinch. A blade's charge is stretched by how much was put into it
+ * (`heavyK`): the hang at the top is longer, the blade is seen to cross,
+ * and the follow-through carries. */
+const swingSecs = (P) => (slashing() ? DIG_DUR * (0.55 + P * 0.60) / (1 + 0.34 * P) : DIG_DUR * (0.55 + P)) * ((equipped && equipped.swingK) || 1) * comboRate()
+  * (isBlade() && equipped.heavyK ? 1 + equipped.heavyK * P : 1);
 let vmLagX = 0, vmLagY = 0, vmPrevYaw = 0, vmPrevPitch = 0;
 let vmSpringY = 0, vmSpringV = 0;
 const _vmEuler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -7311,7 +7370,7 @@ function updateViewmodel(dt) {
      * return's a little longer again, so a pair ends on a beat), which is
      * the whole of what keeps a light hit from being spammable now that the
      * cut itself is quick again. */
-    const rk = isBlade() && equipped.recoverK && digT >= SLASH_THROUGH && !digOverhead ? equipped.recoverK * (katBack() ? 1.8 : 1) : 1;
+    const rk = isBlade() && equipped.recoverK && digT >= SLASH_THROUGH && !digOverhead ? equipped.recoverK * (katBack() ? 1.8 : 1) * (1 - 0.65 * P) : 1;   // a heavy has paid up front; it comes home quicker
     digT += dt / (swingSecs(P) * rk);
     const p = digT, W = windupEnd(), isCut = slashing();
     if (p < W) {
@@ -7399,10 +7458,7 @@ function updateViewmodel(dt) {
      * through, so a return chained "a beat later" left from a half-recovered
      * pose and only ever swept the right of the screen. */
     else if (queuedSwing === 'return' && p >= SLASH_THROUGH && slashing() && !katBack()) chainSwing();
-    else if (queuedSwing === 'fore' && p >= FORE_EARLY && isBlade() && !winding && !blocking) { cancelSwing(); startDig(); }
   } else {
-    // a forehand asked for during a swing leaves the frame the blade is home
-    if (queuedSwing === 'fore' && !winding && !blocking) { queuedSwing = false; startDig(); }
     for (let i = 0; i < 6; i++) _pose[i] = 0;
   }
 
@@ -7460,7 +7516,6 @@ function updateViewmodel(dt) {
     milModel.position.y = gy;
     trailTip.position.y = trailRoot.position.y = -0.21 + gy;
   }
-  landBlade();
 
   /* Turn the tool over for an overhead, and back afterwards. Blended rather
    * than snapped, so the change of grip happens while the shovel is going up
@@ -7506,6 +7561,15 @@ function updateViewmodel(dt) {
      * SLERP: an Euler lerp across the flip swung it through the floor on the
      * way) and pivots at the NECK for it, where the sand shovel pivots, so
      * the bar sits exactly where it sits with that tool. */
+    /* THE BLADE FACES THE ENEMY. The solved cuts carried the blade pointing
+     * mostly UP (view-space direction y 0.85, z -0.5) and swept it across,
+     * which is a pole carried past a man, not a sword put through him. The
+     * blade is pitched forward about the camera's own axis through the
+     * whole cut, and the arm is moved so the POINT stays exactly where the
+     * solve put it on screen — so every line, target and window measured
+     * for the move set still holds, and only the angle of the steel to the
+     * thing it is going through has changed. */
+    if (equipped === katanaItem && slBlend > 0.001 && !katStabbing()) katFace(slBlend * (1 - ohBlend) * (1 - blk) * katFaceW());
     if (blk > 0.001) {
       const BR = equipped === katanaItem ? KAT_BLOCK_ROT : VM_REST_ROT;
       _blkQ.setFromEuler(_blkE.set(BR[0], BR[1], BR[2]));
@@ -7521,6 +7585,10 @@ function updateViewmodel(dt) {
       }
     }
   }
+
+  /* AFTER the grip, so a blade pitched into the screen is measured as it
+   * is: the lip goes on the aim with the tilt already in it. */
+  landBlade();
 
   // Only the strike and a beat past it leave a trail; a trail on the wind-up
   // would say the tool was moving fast when it is deliberately barely moving.
@@ -18080,6 +18148,9 @@ function makeMilCrate() {
   for (const sx of [-1, 1]) {
     const latch = box(0.05, MCRATE_LID + 0.05, 0.022, MCRATE_DARK); latch.position.set(sx * W * 0.3, MCRATE_LID / 2 - 0.02, -D - 0.006); lid.add(latch);
   }
+  // the lock lamp, on the front between the latches
+  const led = box(0.05, 0.03, 0.012, new THREE.MeshBasicMaterial({ color: 0x7a1414 }));
+  led.position.set(0, H * 0.72, D / 2 + 0.004); body.add(led); g.userData.led = led;
   const st = new THREE.Mesh(new THREE.PlaneGeometry(0.50, 0.19),
     new THREE.MeshBasicMaterial({ map: makeCrateStencil(), transparent: true, depthWrite: false }));
   // flat on the lid, reading the right way up from the room side (local -z)
@@ -18114,14 +18185,28 @@ function buildMilCrate(g, meshes, ray) {
   militaryWorld.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(
     new THREE.Vector3(0, 0, -1), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, -1, 0)));
   militaryWorld.traverse((o) => { if (o.isSprite) o.position.set(0, 0.2, -0.16); });   // the glint, over the middle of it
-  const taken = takenPickups.has('Take the military shovel#1');
-  if (!taken) milCrate.add(militaryWorld);
-  if (taken || milCrateOpen) { milCrateOpen = true; milCrateT = 1; }
+  /* REGISTERED BEFORE THE SCAN GOES IN. `addInteractable` collects the
+   * meshes under the root once, and `updateHover` raycasts them every
+   * frame; registered after the shovel was inside, the case's list carried
+   * the scan's hundred thousand triangles and the room stuttered whenever
+   * you were near the desk — "the shovel box is lagging". The case is its
+   * own few boxes; the shovel keeps its own proxy. */
   addInteractable(milCrate, () => milCrateOpen ? 'Equipment case' : dealerWon ? 'Open the case' : 'Locked case', undefined, {
     bare: () => milCrateOpen || !dealerWon,
     when: () => !milCrateOpen,
     onActivate: () => { if (dealerWon && !milCrateOpen) openMilCrate(); },
   });
+  const taken = takenPickups.has('Take the military shovel#1');
+  if (!taken) milCrate.add(militaryWorld);
+  if (taken || milCrateOpen) { milCrateOpen = true; milCrateT = 1; }
+  /* AND IT SAYS SO WHEN IT UNLOCKS. A locked case on a desk you have
+   * walked past is furniture; the moment he is down it has to become a
+   * thing to go to. A lamp on the front goes from a dim red to a green
+   * blink, a glint breathes over the lid, and the latches are heard to let
+   * go a second after he falls. All of it stops when the lid comes up. */
+  const glint = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xd8e8ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: true }));
+  glint.raycast = () => {}; glint.scale.setScalar(1.6); glint.position.set(0, MCRATE_H + 0.18, 0);
+  milCrate.add(glint); milCrate.userData.glint = glint;
 }
 function openMilCrate() {
   if (milCrateOpen) return;
@@ -18129,6 +18214,7 @@ function openMilCrate() {
   sfxGuardUp();                                       // the latches
   sfxThud(0.02);
 }
+let milCrateArmed = 0;                                // when it unlocked (0: still locked)
 function updateMilCrate(dt) {
   if (!milCrate) return;
   milCrate.visible = bunkerHome.group.visible;
@@ -18142,6 +18228,20 @@ function updateMilCrate(dt) {
   const e = easeOutBack(milCrateT);
   lid.rotation.x = 1.92 * e;
   militaryWorld.visible = milCrateOpen;               // nothing of it shows through the lid
+  // the unlock: a beat after he goes down, the latches let go and the lamp turns
+  const now = performance.now();
+  if (dealerWon && !milCrateArmed && bunkerHome.group.visible) { milCrateArmed = now + 1200; }
+  const armed = milCrateArmed && now >= milCrateArmed && !milCrateOpen;
+  if (milCrateArmed && !milCrate.userData.clicked && now >= milCrateArmed) { milCrate.userData.clicked = true; sfxGuardUp(); }
+  const led = milCrate.userData.led, glint = milCrate.userData.glint;
+  if (armed) {
+    const blink = (Math.sin(now * 0.008) > 0.2) ? 1 : 0;
+    led.material.color.setHex(blink ? 0x48ff70 : 0x0c3a18);
+    glint.material.opacity = 0.30 + 0.40 * (0.5 + 0.5 * Math.sin(now * 0.004));
+  } else {
+    led.material.color.setHex(milCrateOpen ? 0x0c3a18 : 0x7a1414);
+    glint.material.opacity = 0;
+  }
 }
 const COAT_MAT = new THREE.MeshStandardMaterial({ color: 0x6b573d, roughness: 0.95, flatShading: true, emissive: 0x140f08 });
 let coatStand = null, coatBroken = false;
@@ -19488,6 +19588,7 @@ window.__bw = {
   removeSmile, get smilePhase() { return smilePhase; },
   get crowbarOnTable() { return crowbarOnTable; }, get dealerPick() { return dealerPick; }, get bunkerProps() { return bunkerProps; },
   get milCrate() { return milCrate; }, get milCrateOpen() { return milCrateOpen; }, openMilCrate, get dealerWon() { return dealerWon; }, set dealerWon(v) { dealerWon = v; },
+  KAT_A0, KAT_A1, KAT_B0, get comboStep() { return comboStep; }, get digPower() { return digPower; },
   get dealerFight() { return dealerFight; }, get dealerMet() { return dealerMet; }, DEALER_X, DEALER_Z,
   get hatchBusy() { return hatchBusy; }, get bunkerMix() { return bunkerMix; }, get bunkerHome() { return bunkerHome; }, HATCH_X, HATCH_Z, BUNKER_Y, hatch,
   waterSurfaceAt, submersionAt, restYInWater, groundGlow, addRipple,
