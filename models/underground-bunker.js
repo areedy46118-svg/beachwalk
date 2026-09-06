@@ -192,6 +192,20 @@ export function makeUndergroundBunker(opts = {}) {
     }
     return moved;
   };
+  /* Is the way ahead clear — a disc of radius r walked `dist` metres along
+   * (dx, dz) from (lx, lz), in local three metres. What a creature needs to
+   * know before it sets off into a desk. */
+  S.clearAhead = (lx, lz, dx, dz, dist, r = 0.34) => {
+    const n = S.nav; if (!n) return true;
+    const L = Math.hypot(dx, dz) || 1;
+    const ux = dx / L, uz = dz / L;
+    const steps = Math.max(2, Math.ceil(dist / (n.cell * 0.8)));
+    for (let i = 1; i <= steps; i++) {
+      const t = (i / steps) * dist;
+      if (S.blocked(lx + ux * t, lz + uz * t, r)) return false;
+    }
+    return true;
+  };
   return group;
 }
 

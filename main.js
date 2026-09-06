@@ -4647,9 +4647,32 @@ function itemIcon(item) {
       const url = renderItemIcon(model, item.iconRot || {});
       if (url) { item._icon = url; return url; }
     }
+    iconsPending = true;      // its scan has not arrived; come back for it
   }
   return item.icon;
 }
+/* AND THE FALLBACK IS NOT THE FINAL ANSWER. The drawn icon is only there to
+ * cover the seconds before a scan lands, and nothing ever asked again — so
+ * on a checkpoint load, where the whole pack is rebuilt before any of the
+ * network models have arrived, every scanned item kept its drawing for the
+ * rest of the game. This asks again while anything is still waiting, on a
+ * TIMER rather than a frame, because a pack is not something that should
+ * depend on the render loop running. */
+let iconsPending = false;
+setInterval(() => {
+  if (!iconsPending) return;
+  let ready = false, stillWaiting = false;
+  for (const it of inventory) {
+    if (!it || it._icon) continue;
+    const m = it.iconModel || it.inspectModel;
+    if (!m) continue;
+    let empty = true;
+    m.traverse((o) => { if (o.isMesh) empty = false; });
+    if (empty) stillWaiting = true; else ready = true;
+  }
+  iconsPending = stillWaiting;
+  if (ready) { renderHotbar(); if (invOpen) renderPack(); }
+}, 600);
 const iconHTML = (item) => {
   const src = itemIcon(item);
   return src.startsWith('data:') ? `<img src="${src}" alt="">` : src;
@@ -5067,6 +5090,25 @@ function makeShovel() {
 
   g.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
   return g;
+}
+/* THE MILITARY SHOVEL IS NOT THE BEACH SHOVEL. Both items declared
+ * `icon: makeShovelIcon()` — a bright red plastic spade — as the drawn
+ * fallback for before their model has landed. On a normal walk you pick the
+ * thing up an hour in and the render has long since replaced it, so nobody
+ * saw it; on a CHECKPOINT LOAD the pack is rebuilt seconds after the page
+ * starts, before the 1.8 MB scan arrives, and the fallback is what you got:
+ * a red beach toy in the slot the Military Shovel was in. */
+function makeMilShovelIcon() {
+  const c = document.createElement('canvas'); c.width = c.height = 48;
+  const g = c.getContext('2d');
+  g.fillStyle = '#6f7360';                              // olive drab, not red
+  g.beginPath();                                        // the dished blade
+  g.moveTo(15, 26); g.lineTo(33, 26); g.lineTo(30, 42); g.lineTo(24, 45); g.lineTo(18, 42); g.closePath(); g.fill();
+  g.fillStyle = '#565a4c'; g.fillRect(21, 24, 6, 4);    // the collar
+  g.fillStyle = '#3f4238'; g.fillRect(22, 8, 4, 17);    // the shaft
+  g.strokeStyle = '#3f4238'; g.lineWidth = 3.5;         // the D-handle
+  g.beginPath(); g.moveTo(19, 10); g.lineTo(19, 6); g.lineTo(29, 6); g.lineTo(29, 10); g.stroke();
+  return c.toDataURL();
 }
 function makeShovelIcon() {
   const c = document.createElement('canvas'); c.width = c.height = 48;
@@ -5748,7 +5790,7 @@ militaryVM.rotation.set(VM_MIL_REST_ROT[0], VM_MIL_REST_ROT[1], VM_MIL_REST_ROT[
 militaryVM.visible = false;
 toolMount.add(militaryVM);
 const militaryItem = {
-  name: 'Military Shovel', icon: makeShovelIcon(), onDig: true, viewmodel: militaryVM,
+  name: 'Military Shovel', icon: makeMilShovelIcon(), onDig: true, viewmodel: militaryVM,
   inspectModel: milInspect, lip: MIL_LIP,
   use: () => toggleEquip(militaryItem),
 };
@@ -12858,7 +12900,7 @@ const MUT_KINDS = {
    * pressure is meant to come from his reach and his chains, not from the
    * player being unable to see him wind up. */
   dealer: { glb: 'assets/dealer.glb', human: true, solo: true, noSand: true, skin: null,
-          h: 2.05, hp: 10, dmg: 1, speedK: 1.10, windK: 1.00, reachK: 1.00, aggr: 1.15,
+          h: 2.05, hp: 14, dmg: 1, speedK: 1.12, windK: 1.00, reachK: 1.00, aggr: 1.20,
           /* NO MIRRORED SWINGS FOR HIM. The pack's mirrors work because a
            * mutant's hands are both empty; his bar is SKINNED TO THE RIGHT
            * HAND, so a mirrored swing had the empty left hand do the swinging
@@ -12866,7 +12908,7 @@ const MUT_KINDS = {
            * not one landed, and none of them looked like anything. Four
            * swings: the overhand, the horizontal, the held one, the lunge. */
           use: { dDown: 0.30, dSide: 0.26, dHold: 0.22, dLunge: 0.22 },
-          circle: 0.34, step: 0.34, chainMax: 1, feint: 0.14,
+          circle: 0.52, step: 0.30, chainMax: 2, feint: 0.20,
           /* POISE, AND A GUARD OF HIS OWN. A light swing used to rock him every
            * time — a boss you can stun-lock with clicks is not a boss — so it
            * takes three (`poise`) to stagger him and only a charge does it at
@@ -13339,7 +13381,12 @@ function dealerBarHit(u) {
  * spring rings — and he holds the block a moment before he comes on. */
 function dealerBlock(u) {
   u.st.block = DEALER_BLOCK;
-  u.st.cool = Math.max(u.st.cool, 0.30);
+  /* AND THE BLOCK IS HIS TURN. Steel stopped your swing, which means your
+   * swing is somewhere it cannot come back from — he comes off the block
+   * into a strike rather than standing there. It is the exchange the whole
+   * fight is meant to be made of. */
+  u.st.cool = 0.10;
+  mutToken = u;
   if (u.weapon) flashMats(u.weapon);
   playSample('blockMil', 0.9, 0.04) || sfxBlock();
   guardShockV += 3.6; spawnSparks(8, 0.9);
@@ -14462,6 +14509,48 @@ function updateMutantUnit(u, dt) {
     mutAnim(u, dt, 0);
     if (u.st.stun <= 0) { u.st.stun = 0; u.st.cool = 0.3; }
     return;
+  }
+  /* HE READS YOUR WIND-UP. Hold a charge in his face and he answers it —
+   * he steps out of the arc, or the bar comes up. This is the one thing
+   * that turns him from a creature that swings on its own clock into
+   * somebody FIGHTING you: the heavy that used to be free now has to be
+   * bought with a feint, a step, or the moment after his own recovery.
+   * On a cooldown of its own, so it is an answer and not a wall. */
+  if (u.kind.human) {
+    u.st.react = Math.max(0, (u.st.react || 0) - dt);
+    if (u.st.evade > 0) {
+      u.st.evade -= dt;
+      u.dir.set(-dx / dist, 0, -dz / dist);
+      p.addScaledVector(u.dir, 5.4 * dt);
+      turn(7);
+      /* A STEP BACK IS THE WALK RUN BACKWARDS. Playing the walk forward
+       * while he travels the other way is a moonwalk; the clip at a
+       * negative rate puts his feet where they are going. He keeps facing
+       * you the whole way, which is what makes it read as a step and not
+       * as running away. */
+      const a = mutPlay(u, 'walk', true);
+      if (a) { a.paused = false; a.timeScale = -1.5; }
+      if (u.model) { u.leanT += (-0.06 - u.leanT) * Math.min(1, dt * 6); u.model.rotation.x = u.leanT; }
+      u.mixer.update(dt);
+      return;
+    }
+    /* AND HE MAY THINK BETTER OF A SWING HE HAS STARTED. Measured: he is
+     * mid-attack 78 % of the time, so a read that only fired while he stood
+     * idle almost never fired at all. He can break out of the FIRST HALF of
+     * his own startup — before the commit — which is the exchange this
+     * fight wanted: charge as he winds and he backs out of it and answers;
+     * charge late and he is committed, so you trade. The commit is what
+     * keeps his tells honest, and it is untouched. */
+    const A0 = u.atk[u.st.swing] || MUT_ATTACKS[u.st.swing];
+    const canBreak = u.st.atk < 0 || (!u.st.chained && u.st.atk < A0.wind * 0.55);
+    if (canBreak && u.st.stun <= 0 && u.st.recoil <= 0 && u.st.block <= 0
+        && u.st.react <= 0 && winding && windT > WIND_FULL * 0.30
+        && dist < A0.reach + 1.6 && Math.random() < dt * 9.0) {
+      u.st.react = 1.4 + Math.random() * 1.0;
+      if (u.st.atk >= 0) { u.st.atk = -1; u.st.chainAt = -1; u.st.landed = false; mutDrop(u); }
+      if (Math.random() < 0.55) { u.st.evade = 0.30; u.st.cool = Math.max(u.st.cool, 0.18); }
+      else { u.st.block = DEALER_BLOCK; u.st.cool = 0.14; }     // guard, then straight back at you
+    }
   }
   // the bar across a blow of yours: he holds it a beat, then comes on
   if (u.st.block > 0) {
@@ -15845,7 +15934,7 @@ let dealerMet = false, dealerFight = false, dealerWon = false;
  * bar changes hands (shelf to fist) on the frame it closes, and the fight
  * begins when he comes up out of it. */
 let dealerPick = -1, crowbarOnTable = null;
-const PICK_DUR = 1.55, PICK_GRAB = 0.46;
+const PICK_DUR = 1.05, PICK_GRAB = 0.42;   // he snatches it; a slow reach read as a lag
 const dealer = makeMutant(DEALER_X, DEALER_Z, 'dealer', BUNKER_Y);
 dealer.g.visible = false;
 dealer.g.rotation.y = Math.PI;                 // looking down the room at the ladder
@@ -15898,24 +15987,68 @@ function startDealerFight() {
  * fight AI works in world space and knows nothing about walls, so without
  * this he would walk out through the console bank and off down the beach
  * forty metres over his head. Same nav grid the player is held by. */
-function clampDealer() {
+/* HE IS NEVER STUCK. The fight AI walks straight at you and knows nothing
+ * about the room, so against a tripod, a chair or the corner of a desk he
+ * simply pressed into it for as long as you stood behind it — and a boss you
+ * can hide from behind a bin is not a boss. Two things, in this order:
+ *
+ * STEER, so he does not walk into it in the first place. The move the AI
+ * made this frame is a direction; if the way along it is not clear for the
+ * next stride, the same stride is spent on the nearest heading that IS
+ * clear — fanned out in both directions, nearer first, so he rounds a desk
+ * the short way and keeps his speed. That reads as walking round something.
+ *
+ * SLIDE, for whatever the steering did not catch. A blocked position is
+ * pushed out along the resultant of the cells it overlaps (the same call the
+ * player uses), never reverted — reverting is what standing still IS.
+ */
+const DEALER_PROBE = 0.62;                   // how far ahead he looks
+const _dsA = new THREE.Vector3();
+function steerDealer(prevX, prevZ) {
+  const B = bunkerHome.group.userData.bunker;
+  if (!B.nav || !B.clearAhead) return;
+  const g = bunkerHome.group, p = dealer.g.position;
+  let dx = p.x - prevX, dz = p.z - prevZ;
+  const len = Math.hypot(dx, dz);
+  if (len < 1e-4) return;
+  const lx = prevX - g.position.x, lz = prevZ - g.position.z;
+  let ux = dx / len, uz = dz / len;
+  if (B.clearAhead(lx, lz, ux, uz, DEALER_PROBE, 0.32)) return;
+  // fan out: ±20°, ±40°, … out to ±115°, nearest heading first
+  for (let a = 0.35; a <= 2.05; a += 0.35) {
+    for (const sgn of (dealer.turnBias > 0 ? [1, -1] : [-1, 1])) {
+      const c = Math.cos(a * sgn), sn = Math.sin(a * sgn);
+      const cx = ux * c - uz * sn, cz = ux * sn + uz * c;
+      if (B.clearAhead(lx, lz, cx, cz, DEALER_PROBE, 0.32)) {
+        p.x = prevX + cx * len; p.z = prevZ + cz * len;
+        // keep going the same way round for a moment, or he dithers at a corner
+        dealer.turnBias = sgn; dealer.turnHold = 0.7;
+        return;
+      }
+    }
+  }
+}
+function clampDealer(dt) {
   const B = bunkerHome.group.userData.bunker, nav = B.nav;
   if (!nav) return;
   const g = bunkerHome.group, p = dealer.g.position;
-  const lx = p.x - g.position.x, lz = p.z - g.position.z;
+  dealer.turnHold = Math.max(0, (dealer.turnHold || 0) - dt);
+  if (dealer.turnHold <= 0) dealer.turnBias = 0;
   const R = nav.room, m = 0.42;
-  let cx = THREE.MathUtils.clamp(lx, R.x0 + m, R.x1 - m);
-  let cz = THREE.MathUtils.clamp(lz, R.z0 + m, R.z1 - m);
-  if (B.blocked(cx, cz, 0.34)) {
-    // out of the furniture along whichever way is shallowest, then give up
-    // and put him back where he was — he is never allowed to stand in a desk
-    const was = dealer.lastGood;
-    if (!B.blocked(was ? was.x : cx, cz, 0.34)) cx = was ? was.x : cx;
-    else if (!B.blocked(cx, was ? was.z : cz, 0.34)) cz = was ? was.z : cz;
-    else if (was) { cx = was.x; cz = was.z; }
+  _dsA.set(THREE.MathUtils.clamp(p.x - g.position.x, R.x0 + m, R.x1 - m), 0,
+           THREE.MathUtils.clamp(p.z - g.position.z, R.z0 + m, R.z1 - m));
+  if (B.blocked(_dsA.x, _dsA.z, 0.32)) {
+    B.pushOut(_dsA, 0.32, 5);
+    _dsA.x = THREE.MathUtils.clamp(_dsA.x, R.x0 + m, R.x1 - m);
+    _dsA.z = THREE.MathUtils.clamp(_dsA.z, R.z0 + m, R.z1 - m);
+    // and if the push could not free him — wedged in a corner of the desk —
+    // the last spot he stood clear in is better than standing in furniture
+    if (B.blocked(_dsA.x, _dsA.z, 0.32) && dealer.lastGood) {
+      _dsA.x = dealer.lastGood.x; _dsA.z = dealer.lastGood.z;
+    }
   }
-  if (!B.blocked(cx, cz, 0.34)) dealer.lastGood = { x: cx, z: cz };
-  p.x = g.position.x + cx; p.z = g.position.z + cz;
+  if (!B.blocked(_dsA.x, _dsA.z, 0.32)) dealer.lastGood = { x: _dsA.x, z: _dsA.z };
+  p.x = g.position.x + _dsA.x; p.z = g.position.z + _dsA.z;
   p.y = BUNKER_Y;
 }
 /* WHAT IS LYING ABOUT DOWN THERE, AND WHAT HAPPENS TO IT. The room came
@@ -16092,7 +16225,11 @@ function updateDealer(dt) {
    * a mime. `drawGait` picks the idle for him from his kind, so the idle is
    * simply held to `calm` until the fight starts. */
   if (!dealerFight && dealer.st.alive) dealer.gait = { walk: 'walk', run: 'run', idle: 'calm', idleRate: 1 };
-  if (dealer.model) clampDealer();
+  if (dealer.model) {
+    if (dealer.prevPos) steerDealer(dealer.prevPos.x, dealer.prevPos.z);
+    clampDealer(dt);
+    dealer.prevPos = { x: dealer.g.position.x, z: dealer.g.position.z };
+  }
   if (!dealerWon && !dealer.st.alive && dealer.st.deadT > 0.5) dealerWon = true;
 }
 
@@ -16972,6 +17109,7 @@ window.__bw = {
   waterBottle, waterBottleWorld, get waterBottleItem() { return waterBottleItem; },
   get insideDrain() { return insideDrain; }, get drainMix() { return drainMix; },
   spawnBunker, get bunkers() { return bunkers; }, get inBunker() { return inBunker; },
+  get windT() { return windT; }, get windFull() { return windFull; }, WIND_FULL,
   enterBunker, leaveBunker, startDealerFight, startDealerPickup, get dealer() { return dealer; },
   get crowbarOnTable() { return crowbarOnTable; }, get dealerPick() { return dealerPick; }, get bunkerProps() { return bunkerProps; },
   get dealerFight() { return dealerFight; }, get dealerMet() { return dealerMet; }, DEALER_X, DEALER_Z,

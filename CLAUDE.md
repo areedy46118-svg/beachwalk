@@ -1558,6 +1558,60 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**AN ICON THAT FELL BACK IS NOT THE FINAL ANSWER — AND THE FALLBACK MUST BE
+THE RIGHT OBJECT.** `itemIcon` renders the item's own model into a tile the
+first time it is asked and caches it, and until the model arrives it shows
+the item's DRAWN icon. Two faults, and the checkpoint is what exposed both.
+`militaryItem` declared `icon: makeShovelIcon()` — the *sand* shovel's, a
+bright red plastic beach spade — so the fallback was a different object
+entirely; and nothing ever asked again, so whatever the fallback was became
+permanent. On a normal walk you pick the thing up an hour in and the render
+has long since replaced it; on a CHECKPOINT LOAD the whole pack is rebuilt
+seconds after the page starts, before any network model has landed, so every
+scanned item kept its drawing for the rest of the game. The Military Shovel
+has its own olive icon now, and `iconsPending` makes the pack ask again on a
+TIMER — not a frame, because a pack should not depend on the render loop.
+
+**HE IS NEVER STUCK: STEER FIRST, SLIDE SECOND.** The fight AI walks at you
+and knows nothing about the room, so a tripod or a desk corner was a place to
+hide. `S.clearAhead` marches the nav grid along a heading; if the next stride
+is not clear the same stride is spent on the nearest heading that IS, fanned
+±20° to ±115°, nearer first, with a `turnBias` held for 0.7 s so he does not
+dither at a corner. Whatever the steering misses, `clampDealer` pushes out
+along the resultant (the player's own call) rather than reverting — reverting
+is what standing still IS. Measured: he reaches within 1.1–2.0 m of all four
+corners of the room, including the ones behind furniture.
+
+**AND HE READS YOUR WIND-UP — WHICH MEANS BREAKING HIS OWN SWING.** A charge
+held in his face is answered: he steps out of the arc (the walk clip at a
+NEGATIVE rate, so his feet go where he is going, and he keeps facing you) or
+the bar comes up. The first version only allowed it while he stood idle and
+fired 15 % of the time — and the measurement said why: **he is mid-attack 78 %
+of the time**, so the window almost never opened. He can now break out of the
+FIRST HALF of his own startup, before the commit, which is the exchange the
+fight wanted: charge as he winds and he backs out and answers; charge late and
+he is committed, so you trade. The commit is what keeps his tells honest and
+is untouched. Measured: 58 % of charges answered, 11 dodges and 3 guards in
+24. A block is his TURN, too — he comes off it into a strike (`cool` 0.10)
+rather than standing there.
+
+**AND A TEST THAT KILLS THE THING IT IS MEASURING MEASURES NOTHING.** Two
+whole rounds of "the read only fires 25 % of the time" were a corpse: the
+harness was releasing a real charged swing next to him every iteration and
+he was dead by the fourth. `heal()` keeps the PLAYER up and everybody knows
+it; the same rule applies to whatever you are pointing at. Top his health up
+in the loop, or the numbers are noise.
+
+**AND THE HAND HAS TO CLOSE.** The grip was lifted out of the source idle —
+but the build strips those clips' finger curves a few lines earlier, so what
+was lifted was the BIND pose: a flat open hand with a crowbar passing
+through it, on every frame of every clip. The fingers are curled joint by
+joint now (`set_fingers`, knuckle 0.62 / middle 0.98 / tip 0.72) and stamped
+into every action INCLUDING the four the scan shipped with, which carry no
+finger curves at all; `calm` gets a looser hand because he is holding
+nothing yet. The bend axis is the bone's own local X and the sign came from
+rendering the hand close up, not from reasoning about the rig.
+
 **THE BLOW IS WHERE THE WEAPON IS, AND HE HAS POISE.** Third pass on the
 Dealer, after "stun-locked by light hits", "swings that don't look like
 swings then you get hit", "the taunt hitbox is bad". Four things:

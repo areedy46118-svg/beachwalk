@@ -312,7 +312,42 @@ for pb in pbs:
     if pb.name == ROOT: HIP_BASE = pb.location.copy()
 arm.animation_data.action = None
 log('base pose lifted from the source idle; hips at', tuple(round(v, 1) for v in HIP_BASE))
-GRIP = {n: BASE[n] for n in FINGERS}
+# ---- THE HAND ACTUALLY CLOSES ON THE BAR.
+# The grip used to be lifted straight out of the idle — but the source clips
+# have their finger curves stripped a few lines above, so what was lifted was
+# the BIND pose: a flat, open hand with a crowbar passing through it, on every
+# frame of every clip. The fingers are curled here instead, joint by joint,
+# and stamped into every action including the four the scan shipped with.
+# The bend axis is the bone's OWN local X (Blender puts +Y down a bone), and
+# the sign is the one the render showed — a hand is not something to reason
+# about from the numbers.
+import re as _re
+FINGER_SEG = {}
+for _pb in pbs:
+    _m = _re.search(r'(Thumb|Index|Middle|Ring|Pinky)(\d)', _pb.name)
+    if _m: FINGER_SEG[_pb.name] = (_m.group(1), int(_m.group(2)))
+CURL_SIGN = -1.0            # verified by rendering the hand, not derived
+def set_fingers(k=1.0, thumb=1.0):
+    """k = 0 open, 1 closed round a bar about 3 cm across."""
+    for n, (which, seg) in FINGER_SEG.items():
+        pb = pbs[n]
+        if which == 'Thumb':
+            # the thumb lies ACROSS the others rather than curling under
+            ang = (0.45, 0.55, 0.40, 0.15)[min(seg, 4) - 1] * thumb * k
+            pb.rotation_quaternion = Quaternion((1, 0, 0), CURL_SIGN * ang * 0.75) @ Quaternion((0, 0, 1), CURL_SIGN * 0.35 * thumb * k)
+        else:
+            # knuckle, middle, tip, and the last joint barely moves
+            ang = (0.62, 0.98, 0.72, 0.22)[min(seg, 4) - 1] * k
+            pb.rotation_quaternion = Quaternion((1, 0, 0), CURL_SIGN * ang)
+def capture_fingers():
+    return {n: pbs[n].rotation_quaternion.copy() for n in FINGER_SEG}
+rest_all = {pb.name: pb.rotation_quaternion.copy() for pb in pbs}
+set_fingers(1.0)
+GRIP = capture_fingers()
+set_fingers(0.34, thumb=0.5)          # empty hands: loose, not a fist
+GRIP_OPEN = capture_fingers()
+for pb in pbs: pb.rotation_quaternion = rest_all[pb.name].copy()
+log('grip built on', len(GRIP), 'finger bones')
 
 def basis(pb): return pb.bone.matrix_local.to_3x3().inverted()
 def setrot(key, *pairs):
@@ -338,8 +373,8 @@ def finish(act):
     for fc in fcurves(act):
         for kp in fc.keyframe_points: kp.interpolation = 'BEZIER'
     log('  authored %-12s frames %-14s curves %d' % (act.name, tuple(round(v) for v in act.frame_range), len(fcurves(act))))
-def stamp_grip(f=0):
-    for n, q in GRIP.items():
+def stamp_grip(f=0, pose=None):
+    for n, q in (pose or GRIP).items():
         pbs[n].rotation_quaternion = q
         pbs[n].keyframe_insert('rotation_quaternion', frame=f)
 
@@ -392,7 +427,7 @@ for f in range(0, N + 1, 3):
     leg_pose('Right', swing=-0.04 * sway, knee=0.08 * sway, out=0.02)
     head(pitch=0.06 - 0.05 * turn, yaw=0.28 * turn, roll=0.04 * sway)
     key(f)
-stamp_grip(); finish(act)
+stamp_grip(pose=GRIP_OPEN); finish(act)          # nothing in his hands yet
 
 # ------------------------------------------------------------------ WALK
 # The idle carrying itself forward. Legs cycle under the stance, the hips
@@ -458,15 +493,22 @@ for it in range(60):
     if not improved: step *= 0.5
     if step < 0.01 or err < 4.0: break
 log('reach solved: hand %.0f units off the bar (%.3f m); pose %s' % (err, err * ARM_S if 'ARM_S' in dir() else err * 0.0017, {k: round(v, 2) for k, v in rp.items()}))
-act = new_action('pickup'); N = 56
+act = new_action('pickup'); N = 44
 for f in range(N + 1):
     rest(); t = f / N
-    look = ease(min(1.0, t / 0.16))                       # eyes go first
-    reach = ease(max(0.0, min(1.0, (t - 0.08) / 0.38)))   # then the body
-    settle = ease(max(0.0, (t - 0.50) / 0.50))            # and back, with the weight
+    # HE SNATCHES IT. The first version reached over half a second and held
+    # the bottom of the reach with his chin on his chest — the owner's "his
+    # head is down" and "it needs to be fast". The hand goes out on an
+    # ease-OUT (quick away, settling in), the fist closes at 0.42, and the
+    # rise is immediate; the glance down is a GLANCE, a third of the old
+    # pitch, and his eyes are back up before his body is.
+    look = ease(min(1.0, t / 0.12))
+    reach = easeout(max(0.0, min(1.0, (t - 0.04) / 0.34)))
+    settle = ease(max(0.0, (t - 0.44) / 0.56))
     r = reach * (1 - settle)
+    glance = bump(t, 0.0, 0.62) ** 0.7          # down and back up, inside the reach
     reach_pose(rp, r)
-    head(pitch=0.06 + 0.50 * r * (0.4 + 0.6 * look), yaw=-0.55 * look * (1 - settle) - 0.10 * r, roll=-0.10 * r)
+    head(pitch=0.06 + 0.30 * glance, yaw=-0.42 * glance - 0.06 * r, roll=-0.08 * r)
     key(f)
 stamp_grip(); finish(act)
 
@@ -685,6 +727,16 @@ for nm in ('calm', 'walk', 'taunt', 'attackHold', 'attackLunge', 'hit', 'pickup'
     arm.animation_data.action = None
     log('  %-12s seated per frame, max lift %.3f m' % (nm, mx))
 
+# ---- and the four the scan shipped with carry no finger curves at all, so
+# they were played with an open bind-pose hand. One key holds for the clip.
+for _nm in ('idleSrc', 'run', 'attackDown', 'attackSide'):
+    _a = bpy.data.actions.get(_nm)
+    if not _a: continue
+    use_action(_a)
+    stamp_grip(int(_a.frame_range[0]))
+    arm.animation_data.action = None
+log('grip stamped into the source clips')
+
 # --------------------------------------------------- where each blow lands
 # Measured, never guessed: the frame the swinging hand is furthest out and
 # moving fastest is the frame the bar arrives, and the game maps its clock
@@ -744,6 +796,24 @@ if os.environ.get('BW_RENDER'):
     cam.location = (1.8, -5.0, 1.75)
     cam.rotation_euler = (math.radians(84), 0, math.radians(20))
     NF = 8
+    # the hand, close enough to judge a grip
+    hand_cam = bpy.data.objects.new('handcam', bpy.data.cameras.new('hc'))
+    hand_cam.data.lens = 85; sc.collection.objects.link(hand_cam)
+    for nm in ('idleSrc', 'attackDown', 'calm'):
+        a = bpy.data.actions.get(nm)
+        if not a: continue
+        use_action(a); sc.frame_set(int(a.frame_range[0]) + 6)
+        bpy.context.view_layer.update()
+        hp = arm.matrix_world @ pbs[B['RightHand']].head
+        sc.camera = hand_cam
+        hand_cam.location = (hp.x + 0.42, hp.y - 0.62, hp.z + 0.16)
+        # a camera looks down its own -Z: the track quat wants the vector
+        # FROM the subject TO the lens, and nothing else aims it correctly
+        hand_cam.rotation_euler = (Vector(hand_cam.location) - hp).to_track_quat('Z', 'Y').to_euler()
+        sc.render.filepath = os.path.join(SP, 'hand_%s.png' % nm)
+        bpy.ops.render.render(write_still=True)
+    sc.camera = cam
+    log('  rendered hands')
     for nm in ('calm', 'walk', 'pickup', 'taunt', 'attackHold', 'attackLunge', 'hit', 'block', 'attackDown', 'attackSide', 'idleSrc', 'run'):
         a = bpy.data.actions.get(nm)
         if not a: continue
