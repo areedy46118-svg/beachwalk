@@ -15324,6 +15324,11 @@ const bunkerHome = spawnBunker(HATCH_X + 1.05, BUNKER_Y, HATCH_Z + 3.3, 0, {
     bunkerLadderProxy = new THREE.Mesh(box, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
     bunkerLadderProxy.name = 'hitProxy';
     bunkerLadderProxy.position.set((L.x0 + L.x1) / 2, 1.75, (L.z0 + L.z1) / 2);
+    /* Warmed here and not only at the top of `animate`, because the frame
+     * loop is exactly the thing that cannot be relied on — the preview pane
+     * never runs one, and a tab in the background does not either. A tick
+     * later, so the parse frame is not made longer than it already is. */
+    setTimeout(() => warmBunker(g), 0);
     g.add(bunkerLadderProxy);
     bunkerLadderProxy.updateMatrixWorld(true);       // the room is hidden until you enter, and a hover raycast wants a fresh matrix
     addInteractable(bunkerLadderProxy, 'To Leave Bunker', 'action', { onActivate: leaveBunker, when: () => !!inBunker && !hatchBusy });
@@ -15332,11 +15337,61 @@ const bunkerHome = spawnBunker(HATCH_X + 1.05, BUNKER_Y, HATCH_Z + 3.3, 0, {
 bunkerHome.group.visible = false;
 addInteractable(hatch, 'To Enter Bunker', 'action', { onActivate: enterBunker, when: () => !inBunker && !hatchBusy });
 
+/* THE FIRST LOOK MUST NOT COST A SECOND. Four hundred meshes and seventeen
+ * megabytes of texture upload and compile on the first frame they are drawn,
+ * and setting `visible` at the press put all of it in the frame you pressed
+ * E — a hard freeze exactly where the transition had to be seamless, with
+ * the fade and the sound running on behind it. So the room is warmed once,
+ * early, the way the drain is.
+ *
+ * AND IT MUST BE WARMED ON THE CANVAS, NOT INTO A RENDER TARGET. The drain's
+ * warm-up renders into an 8x8 target, and doing the same here bought
+ * nothing: a target has its own output colour space, so three compiles a
+ * DIFFERENT program for every material and the canvas pays the whole bill
+ * again the first time you really look. Measured: warmed into a target the
+ * first real frame still cost 116 ms; warmed through the canvas it is 27,
+ * and that one lands while the screen is black. A four-pixel scissor keeps
+ * the fill at nothing and keeps the clear inside the box, so the frame the
+ * player is looking at is untouched. */
+let bunkerWarmed = false;
+function warmBunker(group) {
+  const g = group || (bunkerHome && bunkerHome.group);
+  if (bunkerWarmed || !g || !g.userData.bunker.ready) return;
+  bunkerWarmed = true;
+  const wasVisible = g.visible;
+  const restore = [];
+  const pos = camera.position.clone(), quat = camera.quaternion.clone();
+  try {
+    g.visible = true;
+    // culling would leave whatever the warm camera cannot see to be paid for later
+    g.traverse((o) => { if (o.isMesh) { restore.push([o, o.frustumCulled]); o.frustumCulled = false; } });
+    camera.position.set(g.position.x, g.position.y + 1.7, g.position.z - 3);
+    camera.lookAt(g.position.x, g.position.y + 1.4, g.position.z + 5);
+    camera.updateMatrixWorld(true);
+    const size = renderer.getSize(new THREE.Vector2());
+    const prevAutoClear = renderer.autoClear;
+    renderer.setScissorTest(true);
+    renderer.setScissor(0, 0, 4, 4);
+    renderer.setViewport(0, 0, 4, 4);
+    renderer.autoClear = true;
+    renderer.compile(scene, camera);
+    renderer.render(scene, camera);
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, size.x, size.y);
+    renderer.autoClear = prevAutoClear;
+    // the mixer binds its 114 tracks by name on the first update, not at play()
+    g.userData.bunker.update(0.016);
+  } catch (e) { /* a warm-up is never worth a crash */ }
+  for (const [o, f] of restore) o.frustumCulled = f;
+  g.visible = wasVisible;
+  camera.position.copy(pos); camera.quaternion.copy(quat); camera.updateMatrixWorld(true);
+}
 function enterBunker() {
   if (hatchBusy || inBunker) return;
   hatchBusy = true; hatchDir = 1; hatchT = 0; hatchCut = false; hatchClank = false;
   hatchReturn.x = camera.position.x; hatchReturn.z = camera.position.z; hatchReturn.yaw = lookEuler.y; hatchReturn.set = true;
-  bunkerHome.group.visible = true;             // upload and compile under the black, not on the first frame you see it
+  warmBunker();                                // paid at load, not here; this is only the fallback
+  bunkerHome.group.visible = true;
   sfxHatch(true);
 }
 function leaveBunker() {
@@ -15489,9 +15544,10 @@ function sfxStepMetal() {
   const bg = ctx.createGain(); bg.gain.value = 0.25;
   body.connect(bf).connect(bg).connect(out); body.start(t); body.stop(t + 0.06);
 }
-/* The room's air, on `bunkerMix`: mains hum with its second harmonic, a
- * ventilation rumble that breathes, and a thread of CRT whine — quiet, and
- * all of it below the sea it replaces. */
+/* The room's air, on `bunkerMix`: mains hum with its second harmonic and a
+ * ventilation rumble that breathes. Quiet, and all of it low — the sea it
+ * replaces was low too, and a room forty metres down should feel like
+ * pressure, not like a noise. */
 function startBunkerAudio() {
   if (bunkerAudio || !audioCtx) return;
   const ctx = audioCtx;
@@ -15512,10 +15568,12 @@ function startBunkerAudio() {
   const lg = ctx.createGain(); lg.gain.value = 0.1;
   lfo.connect(lg).connect(vg.gain);
   vent.connect(vf).connect(vg).connect(gain);
-  const whine = ctx.createOscillator(); whine.type = 'sine'; whine.frequency.value = 7840;
-  const wg = ctx.createGain(); wg.gain.value = 0.006;
-  whine.connect(wg).connect(gain);
-  hum.start(); hum2.start(); vent.start(); lfo.start(); whine.start();
+  /* NO WHINE. A CRT's flyback was in here at 7840 Hz and it read as
+   * tinnitus: a pure high sine has no envelope, no beating and nowhere to
+   * hide, so the ear locks onto it and cannot let go — and headphones make
+   * it worse. The room is all body now: hum, fan, and the air in a concrete
+   * box. Nothing above 240 Hz belongs in a bed you stand in for minutes. */
+  hum.start(); hum2.start(); lfo.start(); vent.start();
   bunkerAudio = { gain };
 }
 // ------------------------------------------------------------------
@@ -16033,6 +16091,7 @@ function finishRestore() {
 function animate() {
   requestAnimationFrame(animate);
   if (!drainWarmed) warmDrain();
+  else if (!bunkerWarmed) warmBunker();
   let dt = Math.min(clock.getDelta(), 0.05);
   // a beat of near-frozen time on a solid hit, drained in real seconds
   /* Hitstop stalls the WORLD, not your hands. Killing the crab sets 0.075 s

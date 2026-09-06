@@ -222,38 +222,38 @@ if em_img is not None:
 
 # ---- the walk: every triangle between knee and head height, on a 0.1 m grid
 CELL = 0.1
-BAND = (0.15, 1.95)          # above the floor: below is a step, above is over your head
+BAND = (0.30, 1.95)          # above the floor: below this you step over it, above it is over your head
 SKIP = ('Wall', 'MetalFloor', 'Roof', 'Shadows', 'LightReflectd')
 gx0, gy0 = room['x0'], room['y0']
 GW = int(math.ceil((room['x1'] - gx0) / CELL)); GH = int(math.ceil((room['y1'] - gy0) / CELL))
 grid = np.zeros((GH, GW), dtype=np.uint8)
 def mark_tri(a, b, c):
-    # conservative: a cell is blocked if the triangle's edges or interior touch it
+    """Mark the cells this triangle actually OCCUPIES between knee and head
+    height. The first version marked every cell in the triangle's 2-D
+    bounding box as long as ANY corner of it was in the band — so a cable
+    hanging from the ceiling to the floor, or a roof beam sloping down,
+    laid its whole footprint on the floor as a wall, and the room came out
+    with invisible barriers across it. The height has to be interpolated at
+    the cell, not taken from the triangle as a whole: sample the surface on
+    a lattice fine enough that no cell is missed, and mark a cell only where
+    the surface passing over it is in the band."""
     xs = (a.x, b.x, c.x); ys = (a.y, b.y, c.y)
-    i0 = max(0, int((min(xs) - gx0) / CELL)); i1 = min(GW - 1, int((max(xs) - gx0) / CELL))
-    j0 = max(0, int((min(ys) - gy0) / CELL)); j1 = min(GH - 1, int((max(ys) - gy0) / CELL))
-    if i1 < i0 or j1 < j0: return
-    if i1 - i0 <= 1 and j1 - j0 <= 1:
-        grid[j0:j1 + 1, i0:i1 + 1] = 1; return
-    # sample the edges and the interior
-    n = 12
-    for s in range(n + 1):
-        t = s / n
-        for p, q in ((a, b), (b, c), (c, a)):
-            x = p.x + (q.x - p.x) * t; y = p.y + (q.y - p.y) * t
-            i = int((x - gx0) / CELL); j = int((y - gy0) / CELL)
-            if 0 <= i < GW and 0 <= j < GH: grid[j, i] = 1
-    # interior by barycentric sampling of cell centres
-    d = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y)
-    if abs(d) < 1e-12: return
-    for j in range(j0, j1 + 1):
-        y = gy0 + (j + 0.5) * CELL
-        for i in range(i0, i1 + 1):
-            x = gx0 + (i + 0.5) * CELL
-            l1 = ((b.y - c.y) * (x - c.x) + (c.x - b.x) * (y - c.y)) / d
-            l2 = ((c.y - a.y) * (x - c.x) + (a.x - c.x) * (y - c.y)) / d
-            l3 = 1 - l1 - l2
-            if l1 >= -0.02 and l2 >= -0.02 and l3 >= -0.02: grid[j, i] = 1
+    if max(xs) < gx0 or min(xs) > gx0 + GW * CELL: return
+    if max(ys) < gy0 or min(ys) > gy0 + GH * CELL: return
+    # a lattice step of half a cell never skips a cell, and never more than 64 a side
+    span = max(max(xs) - min(xs), max(ys) - min(ys))
+    n = int(min(64, max(2, math.ceil(span / (CELL * 0.5)))))
+    for i in range(n + 1):
+        u = i / n
+        for j in range(n - i + 1):
+            v = j / n
+            w = 1.0 - u - v
+            z = a.z * w + b.z * u + c.z * v
+            if z < BAND[0] or z > BAND[1]: continue
+            x = a.x * w + b.x * u + c.x * v
+            y = a.y * w + b.y * u + c.y * v
+            gi = int((x - gx0) / CELL); gj = int((y - gy0) / CELL)
+            if 0 <= gi < GW and 0 <= gj < GH: grid[gj, gi] = 1
 ntri = 0
 # `BW_DEBUG_CELL=x,y` names one spot (blender metres) and logs every triangle that marks it
 DBG = os.environ.get('BW_DEBUG_CELL')
