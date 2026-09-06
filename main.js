@@ -5391,7 +5391,7 @@ const VM_MIL_REST_ROT = [-3.142, -0.483, 0.483];
  * Battlefield V's own first-person katana holds it and is the pose the
  * reference reel comes back to between every cut. Solved in the pane against
  * that frame, not guessed — see `__solveKat`. */
-const VM_KAT_REST_ROT = [-0.533, -2.236, 1.182];
+const VM_KAT_REST_ROT = [-2.916, -0.870, 0.403];
 const restRot = () => (equipped === katanaItem ? VM_KAT_REST_ROT : VM_MIL_REST_ROT);
 /* AND THE CUT KEEPS THE SHARED GRIP, WHICH IS WHY IT TRANSFERS AT ALL. The
  * stroke was laid out NUMERICALLY against `VM_SLASH_ROT` — the lip's screen
@@ -5404,7 +5404,12 @@ const restRot = () => (equipped === katanaItem ? VM_KAT_REST_ROT : VM_MIL_REST_R
  * the low carry and into the line of the stroke, which is what drawing into
  * a cut actually looks like; what it must not do is turn while the cut is
  * happening, and it does not — the grip is constant from the mark on. */
-const slashRot = () => VM_SLASH_ROT;
+/* AND THROUGH THE KATANA'S OWN CUT THE GRIP DOES NOT MOVE. The shovels turn
+ * into `VM_SLASH_ROT` because their stroke was solved against it; the
+ * katana's was solved against its own carry, so the blade holds the angle it
+ * is held at and every degree of the sweep comes out of the arm. That is
+ * what "the cut is all arm" means when the tool is actually a sword. */
+const slashRot = () => (equipped === katanaItem ? VM_KAT_REST_ROT : VM_SLASH_ROT);
 shovelVM.rotation.set(VM_MIL_REST_ROT[0], VM_MIL_REST_ROT[1], VM_MIL_REST_ROT[2]);
 let ohBlend = 0, slBlend = 0;
 shovelVM.visible = false;
@@ -5915,6 +5920,18 @@ const BLOCK_AT = new THREE.Vector3(-0.10, 0.02, -0.52);
 // the shaft comes up ACROSS the view, blade high on your leading side: at a
 // shallower roll it read as holding the tool out rather than guarding with it
 const BLOCK_POSE = [0.35, 0.0, 0.95, -1.62, 0.06];
+/* AND THE SWORD GUARDS LIKE A SWORD. A shovel is held across you with the
+ * blade high on the leading side; the reference's `block_loop` holds the
+ * katana HORIZONTAL across the middle of the view — fist at the left, the
+ * whole length of the blade running out to the right and off the frame,
+ * flat to the camera — which is a different shape entirely and the one the
+ * owner asked for. It gets its own arm pose, its own reach and its own grip;
+ * every other tool keeps the shovel's. Solved against the reference frame. */
+const KAT_BLOCK_AT = new THREE.Vector3(-0.453, 0.055, -0.505);
+const KAT_BLOCK_POSE = [0.570, 0.0, 0.747, -1.604, 0.045];
+const KAT_BLOCK_ROT = [-3.050, -4.633, 0.162];
+const blockAt = () => (equipped === katanaItem ? KAT_BLOCK_AT : BLOCK_AT);
+const blockPose = () => (equipped === katanaItem ? KAT_BLOCK_POSE : BLOCK_POSE);
 const _blkQ = new THREE.Quaternion(), _blkE = new THREE.Euler(), _blkV = new THREE.Vector3(), _blkP = new THREE.Vector3();
 // x and y are FRACTIONS of the frame's half-extents at the ear's depth, like
 // layoutViewmodel(): an absolute offset that sat at the edge of a landscape
@@ -6088,12 +6105,15 @@ katanaWorld.add(makeKatana());
 const katanaVM = new THREE.Group();
 katanaVM.add(katModel);
 katanaVM.scale.setScalar(1);
-/* Solved with the rotation, not set by eye: the hand had to come UP the
- * frame as well as turn, because Battlefield V carries the tsuka near the
- * vertical centre and ours sat on the bottom edge, which flattened the whole
- * diagonal to five degrees. Grip at (0.42, -0.30) in the frame, point at
- * (-0.62, -0.82) — measured off the reference and hit exactly. */
-katanaVM.position.set(-0.098, 0.127, -0.100);
+/* THE IDLE IS THE UE4 REEL'S, NOT BATTLEFIELD'S. The first pass took its
+ * carry from a BFV reel — blade low and across to the left — and the owner
+ * came back with a different reference and "make it exactly the same". This
+ * one holds the sword nearly UPRIGHT on the right of the frame: the fist in
+ * the bottom-right corner, the tsuba just above it, and the blade running up
+ * and leaning a little right until the point leaves the top of the screen.
+ * Solved against `idle_breathing` frame by frame — point at (0.83, 1.30) in
+ * the frame and grip at (0.49, -0.94) — and hit within two hundredths. */
+katanaVM.position.set(-0.055, -0.031, 0.140);
 katanaVM.rotation.set(VM_KAT_REST_ROT[0], VM_KAT_REST_ROT[1], VM_KAT_REST_ROT[2]);
 katanaVM.visible = false;
 toolMount.add(katanaVM);
@@ -6354,7 +6374,47 @@ const mirrorSide = (s, d) => d < 0 ? s : -2 * ARM_SIDE - s;
  * numbers, and every improvement ever made to the stroke still applies. */
 const bladeReach = () => (isBlade() ? 1.26 : 1);
 const bladeDrop = () => (isBlade() ? 1 : 0);
+/* THE KATANA'S CUT IS ITS OWN, AND IT IS A CROSS-BODY DRAW.
+ * Scaling the shovel's stroke got it into the right half of the frame and no
+ * further: the reference's `attack_swing_left_01` does something a spade
+ * cannot, which is to COCK ACROSS THE BODY — the fist drops to the low left
+ * with the point thrown up and back over the far shoulder — and then bring
+ * the blade round through the horizontal, edge leading, and out past the
+ * near hip. The hand travels left to right while the blade turns through
+ * about two thirds of a half-circle, and all of that turn is the ARM'S roll,
+ * so the sword never rotates in the grip. Three poses, each solved against
+ * the reel frame by frame: point up over the far shoulder, then flat through
+ * the middle of the screen, then away past the hip and out of frame.
+ * `d` mirrors the whole thing for the return stroke. */
+function katCock(out, P, d) {
+  out[0] = 0.071;
+  out[1] = 0.166 + P * 0.06;
+  out[2] = 0.45;
+  out[3] = -d * (-0.974 - P * 0.16);       // the point thrown further back on a charge
+  out[4] = 0.061;
+  out[5] = mirrorSide(-(1.012 + P * 0.14), d);
+  return out;
+}
+function katMark(out, P, d) {
+  out[0] = -0.053;
+  out[1] = 0.303;
+  out[2] = 0.45;
+  out[3] = -d * (1.618 + P * 0.06);
+  out[4] = 0.003 - P * 0.10;               // and it arrives further out
+  out[5] = mirrorSide(-0.474, d);
+  return out;
+}
+function katThrough(out, P, d) {
+  out[0] = -0.140;
+  out[1] = 0.229 - P * 0.08;
+  out[2] = 0.45;
+  out[3] = -d * (1.825 + P * 0.10);
+  out[4] = 0.181;
+  out[5] = mirrorSide(-0.265 + P * 0.12, d);
+  return out;
+}
 function slashCock(out, P, d) {
+  if (equipped === katanaItem) return katCock(out, P, d);
   out[0] = -(0.06 + P * 0.04) - bladeDrop() * 0.16;
   out[1] = 0.322 + P * 0.061 + bladeDrop() * 0.10;
   out[2] = 0.45;                                // cancels the arm's turn: the blade lies in the picture
@@ -6364,6 +6424,7 @@ function slashCock(out, P, d) {
   return out;
 }
 function slashMark(out, P, d) {
+  if (equipped === katanaItem) return katMark(out, P, d);
   out[0] = 0.04 - bladeDrop() * 0.10;
   out[1] = 0.355 - bladeDrop() * 0.10;
   out[2] = 0.45;
@@ -6373,6 +6434,7 @@ function slashMark(out, P, d) {
   return out;
 }
 function slashThrough(out, P, d) {
+  if (equipped === katanaItem) return katThrough(out, P, d);
   out[0] = 0.14 + P * 0.02 + bladeDrop() * 0.30;
   out[1] = 0.123 - P * 0.135 - bladeDrop() * 0.42;             // and the hands fall away
   out[2] = 0.45;
@@ -7052,16 +7114,17 @@ function updateViewmodel(dt) {
   guardShock += guardShockV * dt;
   if (Math.abs(guardShock) < 1e-4 && Math.abs(guardShockV) < 1e-3) { guardShock = 0; guardShockV = 0; }
   const ring = guardShock;
-  const bH = Math.tan((vmCamera.fov * Math.PI) / 360) * -BLOCK_AT.z;
-  const blkX = bH * vmCamera.aspect * BLOCK_AT.x, blkY = bH * BLOCK_AT.y;
-  armRig.rotation.x = ARM_ROT_X + _pose[0] + vmLagX * lagK + ear * EAR_POSE[0] + blk * BLOCK_POSE[0] + ring;
-  armRig.rotation.y = -0.45 + _pose[2] + vmLagY * lagK + ear * EAR_POSE[2] + blk * BLOCK_POSE[2];
-  armRig.rotation.z = 0.10 + _pose[3] + vmLagY * 0.45 * lagK + ear * EAR_POSE[3] + blk * BLOCK_POSE[3] - ring;
+  const BA = blockAt(), BP = blockPose();
+  const bH = Math.tan((vmCamera.fov * Math.PI) / 360) * -BA.z;
+  const blkX = bH * vmCamera.aspect * BA.x, blkY = bH * BA.y;
+  armRig.rotation.x = ARM_ROT_X + _pose[0] + vmLagX * lagK + ear * EAR_POSE[0] + blk * BP[0] + ring;
+  armRig.rotation.y = -0.45 + _pose[2] + vmLagY * lagK + ear * EAR_POSE[2] + blk * BP[2];
+  armRig.rotation.z = 0.10 + _pose[3] + vmLagY * 0.45 * lagK + ear * EAR_POSE[3] + blk * BP[3] - ring;
   armRig.rotation.y += ring * 0.55;      // and it is knocked ACROSS you, not only up
   armRig.position.set(
     ARM_BASE.x + bx + _pose[5] * vmHalfW + vmLagY * 0.16 + ear * (earX - ARM_BASE.x) + blk * (blkX - ARM_BASE.x),
     ARM_BASE.y + by + _pose[1] + vmSpringY + ear * (earY - ARM_BASE.y) + blk * (blkY - ARM_BASE.y),
-    ARM_BASE.z + _pose[4] + ear * (EAR_AT.z - ARM_BASE.z) + blk * (BLOCK_AT.z - ARM_BASE.z)
+    ARM_BASE.z + _pose[4] + ear * (EAR_AT.z - ARM_BASE.z) + blk * (BA.z - ARM_BASE.z)
   );
   if (equipped === shovelItem) {
     // the same slide, so both tools hang at the same height and the charged
@@ -7122,7 +7185,8 @@ function updateViewmodel(dt) {
      * way) and pivots at the NECK for it, where the sand shovel pivots, so
      * the bar sits exactly where it sits with that tool. */
     if (blk > 0.001) {
-      _blkQ.setFromEuler(_blkE.set(VM_REST_ROT[0], VM_REST_ROT[1], VM_REST_ROT[2]));
+      const BR = equipped === katanaItem ? KAT_BLOCK_ROT : VM_REST_ROT;
+      _blkQ.setFromEuler(_blkE.set(BR[0], BR[1], BR[2]));
       toolVM.quaternion.slerp(_blkQ, blk);
       /* Only the SCAN needs shifting for it. The built shovel turns about
        * its own neck already, so the bar lands where it always did; the
@@ -8509,7 +8573,7 @@ function updateGibs(dt) {
  * the opening. Everything here is about making the timing feel worth it. */
 const CRAB_STUN = 1.7;
 function parryCrab(u = crabs[0]) {
-  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxBladeClash();   // steel meeting the claw, under the ring
+  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxKatBlock(true);   // steel meeting the claw, under the ring
   parryCool = 0;                         // landing one costs you nothing
   u.st.atk = -1;
   if (crabToken === u) crabToken = null;
@@ -8543,7 +8607,7 @@ function gaspOut() {
 }
 function blockCrab(u = crabs[0]) {
   // what the blow lands on: plastic rings like a paint can, steel like steel
-  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxBladeClash();
+  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxKatBlock();
   else if (equipped === shovelItem) playSample('blockSand', 1.0, 0.04);
   else sfxBlock();
   stamina = Math.max(0, stamina - BLOCK_COST);
@@ -9856,6 +9920,13 @@ const SAMPLES = {
   milHeavy: ['assets/military-heavy.m4a'], // the military shovel's heavy landing on something solid
   blockMil: ['assets/block-military.m4a'], // a blow stopped on the military shovel: solid steel
   milLight: ['assets/military-light1.m4a', 'assets/military-light2.m4a'],   // its light swing landing on a crab, one or the other
+  /* THE KATANA'S OWN, SUPPLIED BY THE OWNER — four of each, and
+   * `playSample` already picks at random out of a bank, so a swing and a
+   * block are never the same twice running. They are Sekiro effects and
+   * are NOT redistributable; the synthesised whoosh stays behind them as
+   * the fallback for the frames before they have loaded. */
+  katSwing: ['assets/katana-swing1.m4a', 'assets/katana-swing2.m4a', 'assets/katana-swing3.m4a', 'assets/katana-swing4.m4a'],
+  katBlock: ['assets/katana-block1.m4a', 'assets/katana-block2.m4a', 'assets/katana-block3.m4a', 'assets/katana-block4.m4a'],
 };
 const sampleBanks = {};
 function loadSamples() {
@@ -9872,7 +9943,7 @@ function loadSamples() {
   }
 }
 // plays a random one from the bank; returns false if nothing has loaded yet
-function playSample(name, gain = 1, rateJitter = 0, rate = 1) {
+function playSample(name, gain = 1, rateJitter = 0, rate = 1, delay = 0) {
   const ctx = audioCtx; if (!ctx) return false;
   const bank = (sampleBanks[name] || []).filter(Boolean);
   if (!bank.length) return false;
@@ -9882,7 +9953,9 @@ function playSample(name, gain = 1, rateJitter = 0, rate = 1) {
   if (rateJitter) src.playbackRate.value = rate + (Math.random() - 0.5) * 2 * rateJitter;
   const g = ctx.createGain(); g.gain.value = gain;
   src.connect(g).connect(sfxOut());
-  src.start();
+  // a blade's whoosh is delayed to the strike, so the bank needs the offset
+  // the synthesised one has always had
+  src.start(ctx.currentTime + Math.max(0, delay));
   return true;
 }
 
@@ -10380,6 +10453,16 @@ function sfxWindFull() {
  * the blade gets a synthesised clash — a sharp broadband strike, then three
  * inharmonic partials ringing down at once, which is what a sword edge does
  * against a bar and a spade never quite does. */
+/* A BLOW STOPPED ON THE KATANA. Four recordings of steel taking steel,
+ * rotated at random, with the synthesised clash kept underneath as the
+ * fallback and as a little body — the recordings are clean and dry and the
+ * game's own ring puts them in the same room as everything else. A parry is
+ * the same bank a touch louder and a touch brighter, because a parry is the
+ * block you meant. */
+function sfxKatBlock(parry = false) {
+  if (playSample('katBlock', parry ? 1.0 : 0.82, 0.05, parry ? 1.06 : 0.98)) return;
+  sfxBladeClash();
+}
 function sfxBladeClash() {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime, out = sfxOut();
@@ -10453,6 +10536,12 @@ function sfxDig(power = 0, cut = false, delay = 0) {
    * Nothing above 2.5 kHz goes into it — that band is where the old one
    * lived and it is the whole reason it did not sound like the video. */
   const blade = cut && isBlade();
+  /* AND THE KATANA HAS ITS OWN, RECORDED. Four of them, rotated at random,
+   * pitched a little by how hard the swing was thrown and jittered a hair so
+   * two of the same one back to back are still not identical. The whole
+   * synthesised whoosh below stays as the fallback for the first few frames
+   * of a session, before the bank has come off the network. */
+  if (blade && playSample('katSwing', 0.62 + power * 0.30, 0.05, 1.06 - power * 0.16, delay)) return;
   const len = cut ? (blade ? 0.27 : 0.20) + power * 0.10 : 0.34 + power * 0.16;
   // 70 ms of rise on a 250 ms event is a peak at about 0.28 of its length
   const s = noiseBurst(len, (x) => (x < 0.28 ? Math.sin((x / 0.28) * Math.PI * 0.5) : Math.pow(1 - (x - 0.28) / 0.72, 1.9)));
@@ -13906,7 +13995,7 @@ function nearestFoe(pos) {
 const mutDrop = (u) => { if (mutToken === u) mutToken = null; };
 
 function parryMutant(u) {
-  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxBladeClash();
+  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxKatBlock(true);
   parryCool = 0;                             // landing one costs you nothing
   u.st.atk = -1; u.st.chainAt = -1; u.st.chained = false;
   mutDrop(u);
@@ -13932,7 +14021,7 @@ function parryMutant(u) {
   setTimeout(() => { if (promptHTML.includes('PARRY')) setPrompt(''); }, 700);
 }
 function blockMutant(u) {
-  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxBladeClash();
+  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxKatBlock();
   else if (equipped === shovelItem) playSample('blockSand', 1.0, 0.04);
   else sfxBlock();
   // the big one costs you more to hold off than the small one does

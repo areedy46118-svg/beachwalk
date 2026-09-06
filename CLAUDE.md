@@ -1558,6 +1558,60 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**THE KATANA'S MOVE SET IS THE UE4 REEL'S, POSE FOR POSE.** A second
+reference arrived — a first-person katana animation set with every clip
+LABELLED on screen — and "make it exactly the same" is a much easier brief
+than it sounds, because a labelled reel is an index: crop the label strip at
+1 fps into a contact sheet and you have the timecode of every animation in
+the video (`idle_breathing`, `block_in`, `block_loop`, `block_out`,
+`attack_swing_left_01`, `attack_heavy_swing`, and the rest) without watching
+a second of it. Then sample only the seconds that matter, at 10–15 fps, and
+read the poses off those. Four things came out of it and all four are
+different from the Battlefield reference that preceded them:
+
+- **The idle is nearly UPRIGHT.** Fist in the bottom-right corner, tsuba just
+  above it, blade running up and leaning slightly right until the point
+  leaves the top of the frame. The BFV carry — blade low and across to the
+  left — was a different game's sword and had to go.
+- **The guard is HORIZONTAL**, fist at the far left, the whole length of the
+  blade running out to the right and off the frame. A shovel guards with the
+  shaft across you and the blade high on the leading side; this is not that
+  shape at all, so the katana carries its own `KAT_BLOCK_AT`, its own
+  `KAT_BLOCK_POSE` and its own `KAT_BLOCK_ROT`, and every other tool keeps
+  the shovel's.
+- **The cut is a CROSS-BODY DRAW.** The fist drops to the low left with the
+  point thrown up and back over the far shoulder, then the blade comes round
+  through the horizontal and out past the near hip while the hand travels
+  left to right. Scaling the shovel's stroke could never produce that: a
+  spade's cut keeps the hand on one side. The katana has its own
+  `katCock` / `katMark` / `katThrough`, and because the whole turn is in the
+  ARM's roll the sword never rotates in the grip — its slash grip is its own
+  carry grip, which is what "the cut is all arm" finally means here.
+- And the tips were SOLVED, not eyeballed: point at (0.55, 0.72) cocked,
+  (-0.95, 0.10) on the mark, (-1.05, -0.72) through, in normalised device
+  coordinates read straight off the reel's frames, all three hit exactly.
+
+**AND A THREE-POSE SOLVE NEEDS CONTINUITY OR IT CHEATS.** Solving the cut's
+poses independently against their screen targets hits every target and
+produces a flail: the first pass came back with the arm's pitch jumping 2.25
+radians between the mark and the follow-through and the hand not travelling
+at all, because rotating the wrist is a cheaper way to move a tip than moving
+the arm. Penalties on the frame-to-frame change in pitch, lift and reach, a
+requirement that the roll march one way, and a floor on how far the hand must
+cross the body are what turn three correct poses into one stroke. Over-
+constrain it and it stops hitting the targets at all — the useful setting was
+to weight the TIP heavily, the grip lightly, and the continuity in between.
+
+**AND THE OWNER'S OWN RECORDINGS BEAT ANY SYNTHESIS.** Four Sekiro swing
+bounces and four block bounces, dropped into `SAMPLES` as `katSwing` and
+`katBlock` — `playSample` already picks at random out of a bank, so a swing
+and a block are never the same twice running, and the synthesised whoosh and
+clash stay behind them as the fallback for the frames before the bank has
+come off the network. `playSample` gained a `delay`, because a blade's whoosh
+is timed to the strike and not to the click, which the synthesised one had
+always known and the bank did not. They are not redistributable, and the
+README says so.
+
 **THE KATANA IS BUILT NOW, AND THE SCAN IS GONE.** brandon_grey's "Gothic
 Katana Sword" was put in as an exact replica and the owner's verdict was
 "it's bad, it's facing the wrong way and it looks horrible" — and measuring

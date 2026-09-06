@@ -395,6 +395,10 @@ This work is based on ["Survival Shovel"](https://sketchfab.com/3d-models/surviv
 by [howittworks](https://sketchfab.com/howittworks) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Military Shovel.
 
+The **katana's swing and block sounds** are the owner's own bounces of Sekiro
+effects — four of each, rotated at random — and like `poise-broken.m4a` they
+are NOT redistributable.
+
 **Grass pack (lowpoly, game-ready)** — the grass on the headland.
 ["Grass pack (lowpoly, game-ready)"](https://sketchfab.com/3d-models/grass-pack-lowpoly-game-ready)
 by [LOLIPOP](https://sketchfab.com/lolipop_1707), [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
