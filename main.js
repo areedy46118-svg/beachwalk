@@ -4131,10 +4131,12 @@ function attackAction() {                        // left mouse
   if (frozen()) return;
   if (held) { throwHeld(); return; }
   if (equipped && equipped.onDig) {
-    if (digT <= 0) startDig();
-    else if (slashing() && equipped.alternate && !digOverhead) {
-      // the return, queued; or fired now if the forehand is already recovering
-      if (digT >= SLASH_THROUGH) chainSwing(); else queuedSwing = true;
+    if (digT <= 0) {
+      if (performance.now() >= swingReadyAt) startDig(); else queuedSwing = 'fore';
+    } else if (slashing() && equipped.alternate && !digOverhead && !katBack() && !digCharged && digT < RETURN_LATEST) {
+      queuedSwing = 'return';                  // fires at the follow-through, from the left
+    } else {
+      queuedSwing = 'fore';                    // fires once this swing is done
     }
     return;
   }
@@ -5439,8 +5441,12 @@ const restRot = () => (equipped === katanaItem ? VM_KAT_REST_ROT : VM_MIL_REST_R
  * the cut: still sweeping across, still side-on enough to read as an edge,
  * with the point out where the enemy is instead of level with your own nose.
  * Solved with the stroke, not bolted on after it. */
-const VM_KAT_CUT_ROT = [-2.908, -0.948, 0.807];
-const slashRot = () => (equipped === katanaItem ? VM_KAT_CUT_ROT : VM_SLASH_ROT);
+const slashRot = () => {
+  if (equipped !== katanaItem) return VM_SLASH_ROT;
+  if (katBack()) return KAT_CUT_ROT_B;
+  for (let i = 0; i < 3; i++) _katRot[i] = KAT_CUT_ROT_A0[i] + (KAT_CUT_ROT_A1[i] - KAT_CUT_ROT_A0[i]) * digPower;
+  return _katRot;
+};
 shovelVM.rotation.set(VM_MIL_REST_ROT[0], VM_MIL_REST_ROT[1], VM_MIL_REST_ROT[2]);
 let ohBlend = 0, slBlend = 0;
 shovelVM.visible = false;
@@ -6151,7 +6157,7 @@ toolMount.add(katanaVM);
 const katanaItem = {
   name: 'Katana', icon: makeKatanaIcon(), onDig: true, viewmodel: katanaVM,
   inspectModel: katInspect, lip: KAT_LIP,
-  blade: true, dmgLight: 2, dmgHeavy: 3, windRate: 1.3, gore: 1.4, swingK: 0.9, alternate: true,
+  blade: true, dmgLight: 2, dmgHeavy: 3, windRate: 1.3, gore: 1.4, swingK: 1.55, alternate: true,
   use: () => toggleEquip(katanaItem),
 };
 // a few steps from the Military Shovel, on the same stretch of sand under the cliff
@@ -6225,7 +6231,26 @@ let windLatch = null, swungAt = -1;      // when a held release last landed a he
  * remembered and the return fires the instant the forehand reaches its
  * follow-through, from wherever the blade is; a click that lands in the
  * recovery fires at once. One click, one cut. Two, both. */
-let queuedSwing = false;
+let queuedSwing = false;                 // false | 'return' | 'fore'
+/* AND NOTHING FIRES FROM THE MIDDLE OF A SWING. The first queue let a click
+ * in the recovery start the return from wherever the blade happened to be,
+ * so mashing the button produced a flurry of half-swings that never left
+ * the right side of the screen, each landing for full damage — the katana
+ * you could not lose with. Now a press either (a) queues the return, which
+ * fires only at the forehand's follow-through while the blade is still on
+ * the left, or (b) queues a fresh forehand, which fires only once the
+ * current swing has ENDED and `SWING_GAP` has passed. Every swing runs its
+ * whole width; the fastest possible rhythm is one full swing per swing. */
+/* AND IT IS NOT QUICK. `swingK` 0.9 on top of the cut's own 0.55 made a
+ * light katana swing 0.2 s long — twice as fast as the reel's, and with the
+ * return chained off it a pair of two-damage hits every third of a second:
+ * the Dealer's whole bar in under three seconds of holding the button. 1.55
+ * puts a swing at a third of a second, a forehand alone waits a quarter
+ * second before the next, and a forehand-and-return pair waits over half —
+ * about two swings a second at the very fastest, each of them the full
+ * width of the screen. Responsive; not a machine gun. */
+const SWING_GAP = 0.26, RETURN_GAP = 0.55, RETURN_LATEST = 0.80;
+let swingReadyAt = 0;
 /* THE GUARD. Hold right and the shovel comes up across you. It is a real
  * guard, not a damage modifier: a strike that lands on it does nothing at
  * all. What makes it worth learning is the first fifth of a second — raise
@@ -6381,12 +6406,13 @@ let comboStep = 0;
  * middle, the second RISING through the upper body, the third lower, longer
  * and quicker, which is the finisher. Three visibly different swings, none
  * of which can surprise you. */
-const pickSlashDir = () => {
-  if (!(equipped && equipped.alternate)) { comboStep = 0; return -1; }
-  const chained = performance.now() - lastSlashAt < COMBO_WINDOW;
-  comboStep = chained ? (comboStep + 1) % COMBO_LEN : 0;
-  return -1;
-};
+/* A CLICK IS ALWAYS THE FOREHAND. The return is only ever reached by
+ * chaining off a forehand that is still on the left (`chainSwing`); a
+ * click on its own, however soon after the last one, starts from the carry
+ * and goes right to left. The timing window this used to keep is gone —
+ * it let a click after the blade had come home fire a backhand from the
+ * right side of the screen. */
+const pickSlashDir = () => { comboStep = 0; return -1; };
 /* THE BACKHAND IS THE FOREHAND IN A MIRROR — about the middle of the frame,
  * not about the hands' rest. `side` is measured from where the hands rest,
  * which is off to the right, so simply negating it sent the backhand's
@@ -6486,17 +6512,37 @@ const bladeDrop = () => (isBlade() ? 1 : 0);
  * sure both ends of it are on the screen. `A` is the forehand and takes the
  * charge as well; `B` is the return, and is always a light. */
 // the forehand, light: point from (0.90, 0.14) across to (-1.05, -0.10)
-const KAT_A0 = [[-0.311, -0.055, 0.45, -0.463, -0.365, 0.565],
-                [-0.239, -0.340, 0.45, 0.583, -0.296, -0.481],
-                [-0.390, -0.020, 0.45, 1.392, 0.004, -1.300]];
+const KAT_A0 = [[-0.719, -0.213, 0.45, 0.204, -0.382, 0.657],
+                [-0.653, -0.376, 0.45, 0.628, -0.236, -0.700],
+                [-0.382, -0.437, 0.45, 0.934, 0.064, -1.300]];
 // and charged: the same line, a shade steeper and longer
-const KAT_A1 = [[-0.246, 0.023, 0.45, -0.462, 0.019, 0.081],
-                [-0.236, -0.327, 0.45, 0.390, -0.186, -0.619],
-                [-0.294, -0.250, 0.45, 1.133, 0.114, -1.300]];
+const KAT_A1 = [[-0.733, -0.080, 0.45, 0.097, -0.239, 0.472],
+                [-0.651, -0.366, 0.45, 0.596, -0.053, -0.648],
+                [-0.620, -0.460, 0.45, 0.892, 0.246, -1.300]];
 // the return, left to right, from where the forehand finished: (-0.92, 0.12) to (1.02, -0.10)
-const KAT_B0 = [[-0.334, 0.044, 0.45, 1.275, -0.064, -1.274],
-                [-0.265, -0.192, 0.45, 0.949, -0.292, 0.003],
-                [-0.245, -0.344, 0.45, 0.702, -0.085, 1.297]];
+const KAT_B0 = [[-0.433, -0.027, 0.45, 1.421, -0.041, -1.300],
+                [-0.323, -0.313, 0.45, 0.780, -0.286, -0.337],
+                [-0.322, -0.389, 0.45, 0.714, -0.023, 0.973]];
+/* EVERY ONE OF THESE WAS SOLVED AT 16:9. The preview pane is narrow when it
+ * is left to itself, and a set solved at its portrait shape came out with
+ * `side` values and screen targets for a frame half as wide — in the game
+ * the forehand stopped a third of the way across. Check `vmCamera.aspect`
+ * is 1.78 before trusting a single number out of the solver. */
+/* THE SHARP SIDE LEADS. Both strokes were solved with the blade tilted at
+ * the enemy and its flat to the camera, and the owner's word for that was
+ * "weird" — a cut whose EDGE is not the part going first is a bar being
+ * carried across. Each stroke now solves its own grip about the blade's
+ * axis so that, measured in view space at the mark, the edge points the way
+ * the blade is travelling: (-0.98, 0, 0.17) on the forehand, (0.90, 0,
+ * -0.44) on the return. The return's grip is the forehand's turned half a
+ * turn about the blade — the wrist turning over, which is what a backhand
+ * is — and because `slBlend` is already at one when the return is chained,
+ * the grip goes over on the frame the return begins instead of being
+ * interpolated through the floor. */
+const KAT_CUT_ROT_A0 = [-3.171, 0.042, 0.760];
+const KAT_CUT_ROT_A1 = [-3.144, 0.009, 0.701];
+const KAT_CUT_ROT_B = [-0.124, 0.350, 2.418];
+const _katRot = [0, 0, 0];
 const katBack = () => !!(equipped && equipped.alternate && comboStep % 2);
 function katPose(out, i, P) {
   const back = katBack();
@@ -6514,7 +6560,7 @@ function katThrough(out, P) { return katPose(out, 2, P); }
  * the overhead's slot in the pose system and nothing else about it is shared:
  * its own grip, its own draw and its own drive. */
 const KAT_STAB_ROT = [-2.365, -1.540, 1.579];
-const KAT_STAB = [[-0.557, 0.060, 0.45, -0.089, 0.020, 0.091],      // hauled back, the tsuka large at the hip
+const KAT_STAB = [[-0.435, 0.060, 0.45, -0.284, 0.061, 0.067],      // hauled back, the tsuka large at the hip
                   [-0.424, 0.041, 0.45, 0.516, -0.538, 0.346]];     // and driven 0.6 m out
 /* AND THE DRAW IS EXAGGERATED ON PURPOSE. The first thrust wound up with the
  * hand a comfortable half-metre out and the point already near the middle,
@@ -6668,6 +6714,11 @@ function aimLand(P) {
   }
   near(nearestSolidHit());
   near(digRay.intersectObject(sand, false)[0]);
+  /* A THRUST DOES NOT REACH THE GROUND. Aimed a little down, the ray meets
+   * the sand three metres out and the point was being put THERE — the stab
+   * into the beach the owner saw. Past the thrust's own reach there is
+   * nothing to meet, and the point goes to the end of the arm instead. */
+  if (katStabbing() && d > STAB_REACH + P * 0.5) d = Infinity;
   landDist = isFinite(d) ? d : -1;
 }
 /* The landing point this frame: the locked direction from where you stand
@@ -6678,9 +6729,10 @@ function aimLand(P) {
  * nothing in reach the point is on the aim line itself, an arm's length out,
  * and the blade passes through the crosshair whatever the pitch. */
 const SWING_AIR = 2.2;                    // how far out the blade passes when there is nothing to meet
+const STAB_REACH = 1.75;                  // and how far a thrust reaches, plus half a metre on a charge
 function landPoint() {
   camera.getWorldPosition(_landP);
-  return _landP.addScaledVector(_aimD, landDist >= 0 ? landDist : SWING_AIR + digPower * 0.6);
+  return _landP.addScaledVector(_aimD, landDist >= 0 ? landDist : (katStabbing() ? STAB_REACH + digPower * 0.5 : SWING_AIR + digPower * 0.6));
 }
 /* The return stroke, thrown off the back of the one before it. It leaves
  * from the pose the blade is actually in (`_pose`, like a charged release
@@ -6792,7 +6844,7 @@ function digImpact() {
       /* An overhead that lands charged is the heaviest thing in the game and
        * it gets its own report — a hard concrete crack, under the shell hit
        * rather than instead of it, so the swing still sounds like a swing. */
-      if (heavy && digOverhead) playSample('smash', 1.0, 0.05);
+      if (heavy && digOverhead && !isBlade()) playSample('smash', 1.0, 0.05);
       // the military shovel's light hit is steel on shell: one of two, at random
       if (equipped === militaryItem && !heavy) playSample('milLight', 1.0, 0.05);
       hurtCrab(best, heavy ? Math.max(CRAB_HP, toolDmg(true)) : toolDmg(false), P);
@@ -6816,7 +6868,7 @@ function digImpact() {
       const heavy = P >= MUT_HEAVY;
       hitConnect(P, heavy ? 1.35 : 0.9);
       if (isBlade()) playSample('katHit', 1.0, 0.05, 1 - P * 0.08);
-      if (heavy && digOverhead) playSample('smash', 1.0, 0.05);
+      if (heavy && digOverhead && !isBlade()) playSample('smash', 1.0, 0.05);
       if (equipped === militaryItem && !heavy) playSample('milLight', 1.0, 0.05);
       hurtMutant(best, toolDmg(heavy), P);
       return;
@@ -7094,7 +7146,11 @@ function landBlade() {
    * resembling the solve at all. A third of the correction and a short leash
    * keeps the blade honest about where you were looking without letting it
    * throw the swing around. */
-  if (isBlade()) landK *= 0.34;
+  /* EXCEPT THE THRUST, WHICH IS EXACT. A sweep is nudged; a stab is a point
+   * going to a point, and at a third of the correction the tip landed short
+   * and beside what you were looking at — "stabs the ground where the blade
+   * isn't even connecting". Full weight and the long leash for the stab. */
+  if (isBlade() && !katStabbing()) landK *= 0.34;
   if (landK <= 0) return;
   _landNdc.copy(landPoint()).project(camera);
   if (_landNdc.z > 1) return;             // behind you: leave the pose alone
@@ -7107,7 +7163,8 @@ function landBlade() {
   _landV.set(_landNdc.x, _landNdc.y, 0.5).unproject(vmCamera);
   _landV.multiplyScalar(depth / _landV.z);  // the point's ray at the lip's depth
   _landV.sub(_lipA);
-  if (_landV.length() > (isBlade() ? 0.34 : 1.2)) _landV.setLength(isBlade() ? 0.34 : 1.2);
+  const leash = isBlade() && !katStabbing() ? 0.34 : 1.2;
+  if (_landV.length() > leash) _landV.setLength(leash);
   armRig.position.addScaledVector(_landV, landK);
 }
 
@@ -7171,6 +7228,7 @@ function updateViewmodel(dt) {
        * forward" — the shape a thrust has before it is thrown. */
       katStab(_pose, 0, e);
       _pose[0] += strain * 0.9; _pose[4] += strain * 0.9; _pose[5] += strain * 0.6;   // it shakes with the whole arm loaded
+      slamDip = Math.max(slamDip, 0.05 * e);   // and you coil down into it, so the release is a lunge
     } else if (windOverhead) {
       // hauled up over the head, and shaking harder the longer it is held
       _pose[5] = 0;
@@ -7275,9 +7333,15 @@ function updateViewmodel(dt) {
         spawnPuffs(lp.x, lp.z, 14 + Math.round(P * 12), -_pf.x, -_pf.z, Math.max(0.05, lp.y), null);
       }
     }
-    if (p >= 1) { digT = 0; digPower = 0; digCharged = false; digOverhead = false; }
-    else if (queuedSwing && p >= SLASH_THROUGH && slashing()) chainSwing();
+    if (p >= 1) { digT = 0; digPower = 0; digCharged = false; digOverhead = false; swingReadyAt = performance.now() + (katBack() ? RETURN_GAP : SWING_GAP) * 1000; }
+    /* ON the follow-through, not after it: the recovery eases with
+     * `easeOutBack`, which is more than half-way home a few frames past the
+     * through, so a return chained "a beat later" left from a half-recovered
+     * pose and only ever swept the right of the screen. */
+    else if (queuedSwing === 'return' && p >= SLASH_THROUGH && slashing() && !katBack()) chainSwing();
   } else {
+    // a forehand asked for during a swing, or during the gap after one
+    if (queuedSwing === 'fore' && !winding && !blocking && performance.now() >= swingReadyAt) { queuedSwing = false; startDig(); }
     for (let i = 0; i < 6; i++) _pose[i] = 0;
   }
 

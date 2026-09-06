@@ -1558,6 +1558,54 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**`SWING_GAP` IS WALL-CLOCK TIME, AND THE HARNESS STEPS FASTER THAN THE
+CLOCK.** A hundred `__bw.step` calls run in a couple of milliseconds, so a
+gap of 140 ms between swings is hundreds of stepped frames — a test that
+clicks, steps fifty frames and clicks again finds the second click queued and
+never fired, and reads as "swings stopped working". They had not: the gap
+had not elapsed in REAL time. Any test of anything gated on
+`performance.now()` has to `await` the gap between its beats.
+
+**NOTHING FIRES FROM THE MIDDLE OF A SWING.** The first queue was
+responsive and it was an exploit: a click in the recovery started the return
+from wherever the blade happened to be, so mashing the button produced a
+flurry of half-swings that never left the right side of the screen, each one
+landing for full damage. A press now does one of two things and nothing
+else — it queues the RETURN, which fires only at the forehand's
+follow-through while the blade is still on the left (before 0.80 of the
+swing), or it queues a fresh FOREHAND, which fires only once the current
+swing has ended and `SWING_GAP` has passed. Every swing runs its full width,
+and the fastest rhythm the button can produce is one whole swing per swing.
+The swing itself was the last exploit: at `swingK` 0.9 a light cut was
+0.2 s long, so even one-whole-swing-per-swing was thirteen swings in two and
+a half seconds. It is 1.55 now with a 0.26 s gap after a forehand and 0.55
+after the return, which measures at six swings in 2.66 s — a little over two
+a second, a rhythm and not a blender.
+And a click is ALWAYS the forehand: the 950 ms timing window that let a
+click after the blade had come home fire a backhand from the right is gone;
+the return is reached by chaining and nowhere else.
+
+**THE SHARP SIDE LEADS, AND THE BACKHAND IS THE WRIST TURNED OVER.** A cut
+tilted at the enemy with its flat to the camera is still a bar being carried
+across; the owner called it weird and he was right. Each stroke solves its
+own grip about the blade's axis so that, measured in view space at the mark,
+the edge points the way the blade is travelling. The return needs the
+forehand's grip turned half a turn about the blade — the model's edge is on
+-X and there is no other way to get it facing the other way — and a solve
+seeded from the unturned grip could not find that (cost 12.7); seeded from
+the half-turn it found it at once (1.0). Because `slBlend` is already at one
+when the return is chained, the grip goes over on the frame the return
+begins rather than being Euler-interpolated through the floor.
+
+**A THRUST IS EXACT, AND IT DOES NOT REACH THE GROUND.** `landBlade` is
+turned down to a third for a blade so a sweep is not thrown about by it, and
+that third left the stab's point short and beside what you were looking at;
+a stab is a point going to a point and gets the full correction. And
+`aimLand` counts the SAND: aimed a little down, the aim ray meets the beach
+three metres out and the point was being put there — the stab into the
+ground the owner saw. Past the thrust's own reach (`STAB_REACH`) there is
+nothing to meet and the point goes to the end of the arm.
+
 **THE SECOND CLICK IS KEPT, NOT DROPPED.** `startDig` refuses while a swing
 is running, so a double click was one cut and a wasted press, and the return
 stroke only came if you clicked again in the dead time after the recovery —
