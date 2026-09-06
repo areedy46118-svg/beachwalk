@@ -1558,6 +1558,43 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**AND THE FIGHT DID NOT WORK, FOR FOUR SEPARATE REASONS.** The owner called
+it unplayable and every word of that was earned. In order of how much they
+cost:
+
+- **`MUT_ATTACKS` named his swings and the GLB named them something else.**
+  The table calls them dDown/dSide/dHold/dLunge; the clips ship as
+  attackDown/attackSide/attackHold/attackLunge. `mutPlay` looked up a key
+  that was not there, returned WITHOUT TOUCHING ANYTHING, and left the walk
+  cycle running — so he fought the entire fight walking: no wind-up, no bar
+  coming down, nothing to read and nothing to time. `mutPlay` now warns on a
+  missing clip, because a swing that does not exist should be loud.
+- **Every clip must carry every channel.** Exported without baking, the four
+  Mixamo clips came out with 22 rotation channels (the exporter drops
+  whatever does not change) and the authored ones with 63 — so crossfading
+  left forty bones holding their pose from the last clip. `export_bake_
+  animation` is why the mutant never had this: 210 channels on every clip,
+  no exceptions.
+- **The stance heights did not agree.** Mixamo carries the hips a quarter of
+  a metre below bind; the authored clips sat at bind, so every switch between
+  the two families popped him up and down. The baseline is measured off the
+  source idle now.
+- **And then the feet went through the floor.** Lowering the hips onto that
+  baseline with straighter legs than Mixamo's put the soles 12 to 28 cm
+  UNDER the steel, which is what made the professionally animated swings
+  look like hovering. Every authored clip is seated by a constant hips lift
+  measured per clip — and measured on the SHOE MESH through the depsgraph,
+  not on the foot bones: bone heads and tails over-corrected everything by
+  five to twelve centimetres, because the sole hangs below the joint. Spread
+  across all eleven clips went from 40 cm to 5.
+
+**AND A HELD PROP IS HELD ABOVE THE FLOOR UNDER IT.** `PhysProp` clamped the
+hold target with `Math.max(_pt.y, this.restH)` — an absolute height, a hand's
+width over the SAND. Pick anything up forty metres underground and the target
+was set forty metres over your head, and the spring threw it at the ceiling
+at 24 m/s: every object in the bunker flew away the instant it was touched.
+The beach's cliff clamp was in there too, three hundred metres from any cliff.
+
 **THE BLUE BLOOD DEALER IS A MUT_KINDS ENTRY.** The first boss, and almost
 none of him is new code: he is a kind in the same table the pack uses, so
 the tell, the commit, the poise, the parry window, the riposte, the chain,

@@ -3044,7 +3044,7 @@ const lookEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 // ------------------------------------------------------------------
 // Player health — three hits and the walk starts over
 // ------------------------------------------------------------------
-const MAX_HP = 3;
+const MAX_HP = 4;    // the bunker's boss is a long fight; three made it a coin toss
 const HURT_FADE = 1.1;                 // seconds for the hit's spike of red to bleed off
 /* YOU MEND. A hit used to be forever: two crabs an hour apart were the same
  * fight, and the third exchange of the night was a one-hit death. Twelve
@@ -3982,8 +3982,16 @@ class PhysProp {
       // the cliff stops it; the sea does not. Walled at WADE_X, a thing held
       // at the waterline sat pinned at your chest and every throw from there
       // began behind an invisible barrier.
-      _pt.x = Math.min(_pt.x, CLIFF_BLOCK_X - this.radius);
-      _pt.y = Math.max(_pt.y, this.restH);
+      /* THE FLOOR IT IS HELD ABOVE IS THE ONE UNDER IT. This clamped the
+       * hold target to `restH` — an absolute height, a hand's width over the
+       * SAND — so picking anything up in the bunker set a target forty
+       * metres above the player's head and the spring threw it at the
+       * ceiling at 24 m/s. That is "every item I picked up was tossed in the
+       * air". The cliff wall is the beach's too, and has no business in a
+       * room three hundred metres past it. */
+      const hf = bunkerFloorAt(_pt.x, _pt.z, _pv.y);
+      if (hf === null) _pt.x = Math.min(_pt.x, CLIFF_BLOCK_X - this.radius);
+      _pt.y = Math.max(_pt.y, (hf === null ? 0 : hf) + this.restH);
       this.vel.subVectors(_pt, p).multiplyScalar(13);
       if (this.vel.length() > 24) this.vel.setLength(24);
       p.addScaledVector(this.vel, dt);
@@ -9130,6 +9138,8 @@ function startDialog(id, npc = null) {
   dialogOpen = true;
   bradlyMet = true;
   dialogScript = npc ? npc.script : BRADLY_SCRIPT;
+  dialogFov = (npc && npc.fov) || DIALOG_FOV;
+  dialogHead = (npc && npc.head) || null;
   dialogTarget = (npc ? npc.sprite : bradlySprite).getWorldPosition(new THREE.Vector3());
   // his head, not the middle of him: a sprite's origin is its centre, which
   // on a seated man is his chest
@@ -9149,7 +9159,7 @@ function endDialog() {
   clearTimeout(dialogEndTimer); clearInterval(typeTimer); typeTimer = null; typeFull = null;
   dialogOpen = false;
   dialogCanDismiss = false;
-  dialogTarget = null;
+  if (!cineHold) { dialogTarget = null; dialogHead = null; dialogFov = DIALOG_FOV; }
   dialogEl.classList.remove('show');
   dialogEl.classList.remove('typing');
   refreshUI();
@@ -9164,6 +9174,8 @@ document.getElementById('dialog-leave').addEventListener('click', (e) => { e.sto
 // Push in on whoever's talking: ease the FOV down and swing the view onto
 // them, then let it back out when the conversation drops.
 const DIALOG_FOV = 42;
+let dialogFov = DIALOG_FOV, dialogHead = null;   // an NPC may ask for a tighter lens and a bone to hold it on
+let cineHold = false;                            // ...and may keep the lens after the talking stops
 const _lookM = new THREE.Matrix4(), _lookQ = new THREE.Quaternion();
 function updateDialogCam(dt) {
   // The peek's squeeze is the zoom — and it is also what crops the lit room
@@ -9175,13 +9187,16 @@ function updateDialogCam(dt) {
    * get your head back on. */
   const wantFov = (mutCutFov > 0 ? mutCutFov
     : peeking && !peekLeaving ? PEEK_FOV
-    : dialogOpen ? Math.min(settings.fov, DIALOG_FOV) : settings.fov) + fovKick;
+    : (dialogOpen || cineHold) ? Math.min(settings.fov, dialogFov) : settings.fov) + fovKick;
   const rate = mutCutFov > 0 ? 14 : peeking ? 2.6 : 3.5;
   if (Math.abs(camera.fov - wantFov) > 0.01) {
     camera.fov += (wantFov - camera.fov) * Math.min(1, dt * rate);
     camera.updateProjectionMatrix();
   }
-  if (dialogOpen && dialogTarget) {
+  if ((dialogOpen || cineHold) && dialogTarget) {
+    // a bone, if one was named: a man's head moves while he talks and the
+    // lens should stay on it, not on the spot he was standing when he began
+    if (dialogHead) dialogHead.getWorldPosition(dialogTarget);
     _lookM.lookAt(camera.position, dialogTarget, camera.up);
     _lookQ.setFromRotationMatrix(_lookM);
     camera.quaternion.slerp(_lookQ, Math.min(1, dt * 3.2));
@@ -12809,10 +12824,18 @@ const MUT_KINDS = {
    * parry, wind all the way up, and take four off him at once.
    * `solo` keeps him out of everything the pack shares — the dock cutscene
    * wakes every mutant on the beach, and he is not on the beach. */
+  /* BALANCE: he was built at aggr 1.70 and windK 0.90 — a fifth of a second
+   * between swings and startups shorter than anything on the beach — on top
+   * of an animation bug that meant none of it could be SEEN. With the swings
+   * visible that was simply unfair rather than hard: no gap to punish and no
+   * tell long enough to read. Startups now run at the pack's own length, he
+   * breathes between them, and ten health is five clean exchanges. The
+   * pressure is meant to come from his reach and his chains, not from the
+   * player being unable to see him wind up. */
   dealer: { glb: 'assets/dealer.glb', human: true, solo: true, noSand: true, skin: null,
-          h: 2.05, hp: 12, dmg: 1, speedK: 1.14, windK: 0.90, reachK: 1.06, aggr: 1.70,
-          use: { dDown: 0.18, dDownM: 0.14, dSide: 0.20, dSideM: 0.16, dHold: 0.16, dLunge: 0.16 },
-          circle: 0.32, step: 0.32, chainMax: 2, feint: 0.20,
+          h: 2.05, hp: 10, dmg: 1, speedK: 1.10, windK: 1.05, reachK: 1.06, aggr: 1.25,
+          use: { dDown: 0.18, dDownM: 0.14, dSide: 0.18, dSideM: 0.14, dHold: 0.18, dLunge: 0.18 },
+          circle: 0.34, step: 0.34, chainMax: 1, feint: 0.16,
           bones: null,
           anim: { run: 'run', idle: 'ready', roar: 'taunt', die: 'death', walk: 'walk', back: 'walk',
                   rate: 1.0, lean: 0.05, strafeK: 1.2 },
@@ -12821,10 +12844,12 @@ const MUT_KINDS = {
 const MUT_VOICE = MUT_KINDS.pale.voice;    // the default for anything unvoiced
 const MUT_WIND = MUT_ATTACKS.attack.wind;  // the harness and the docs name the overhand's
 const mutants = [];
+const mutPlayWarned = new Set();
 let mutToken = null;                       // whose turn it is to swing
 
 function mutPlay(u, name, loop) {
   const a = u.clips[name];
+  if (!a && name && !mutPlayWarned.has(name)) { mutPlayWarned.add(name); console.warn('[mut] no clip named', name, '— the creature will keep playing whatever it was'); }
   if (!a || u.cur === a) return a;
   for (const k in u.clips) if (u.clips[k] !== a) u.clips[k].fadeOut(0.14);
   a.reset();
@@ -12954,7 +12979,7 @@ function dressMutant(u, gltf) {
       mm.roughness = /crowbar/i.test(mat.name) ? 0.42 : 0.94;
       mm.emissive = new THREE.Color(0xffffff);
       mm.emissiveMap = mm.map;
-      mm.emissiveIntensity = 0.10;
+      mm.emissiveIntensity = 0.045;   // the grime is in the map; a lift only puts it back
       // the albedo carries a real alpha for the mask straps and the lashes;
       // BLEND on a doubleSided body sorts against itself, so it is a cut-out
       if (mm.transparent) { mm.transparent = false; mm.alphaTest = 0.5; mm.depthWrite = true; }
@@ -12993,6 +13018,7 @@ function dressMutant(u, gltf) {
    * begins on the frame it appears. */
   if (u.kind.human) {
     m.traverse((o) => { if (o.isMesh && /crowbar/i.test(o.name)) { u.weapon = o; o.visible = false; } });
+    m.traverse((o) => { if (o.isBone && /Head_/.test(o.name) && !/HeadTop/.test(o.name)) u.head = o; });
     /* HE ALREADY FACES +Z, which is what the AI's `atan2(dx, dz)` points at
      * the player — checked by rendering him alone from all four sides
      * rather than by reasoning about the export, because the chain from the
@@ -13036,7 +13062,17 @@ function dressMutant(u, gltf) {
    * actions, not keys. */
   if (u.kind.human) {
     const alias = { strafeL: 'walk', strafeR: 'walk', walk2: 'walk', run2: 'run', idle2: 'idleSrc',
-                    idle: 'ready', roar: 'taunt', roar2: 'taunt' };
+                    idle: 'ready', roar: 'taunt', roar2: 'taunt',
+      /* AND THE SWINGS ANSWER TO THE NAMES THE TABLE CALLS THEM. `MUT_ATTACKS`
+       * knows them as dDown/dSide/dHold/dLunge and the GLB ships them as
+       * attackDown/attackSide/attackHold/attackLunge — so `mutPlay` looked up
+       * a key that was not there, returned without touching anything, and
+       * left whatever was already running to run. He fought the entire fight
+       * playing his walk cycle: no wind-up, no crowbar coming down, nothing
+       * to read and nothing to time. `mutPlay` returning quietly on a missing
+       * clip is what hid it — a swing that does not exist should be loud. */
+      dDown: 'attackDown', dSide: 'attackSide', dDownM: 'attackDownM',
+      dSideM: 'attackSideM', dHold: 'attackHold', dLunge: 'attackLunge' };
     for (const k in alias) if (u.clips[alias[k]]) u.clips[k] = u.clips[alias[k]];
   }
   mutPlay(u, u.kind.human ? 'calm' : u.kind.anim.idle, true);
@@ -15638,8 +15674,17 @@ bunkerFloorAt = (x, z, y) => {
   if (lx < R.x0 || lx > R.x1 || lz < R.z0 || lz > R.z1) return null;
   return BUNKER_Y;
 };
-const DEALER_X = HATCH_X + 1.35, DEALER_Z = HATCH_Z + 7.5;   // the console end, facing the ladder
+const DEALER_X = HATCH_X + 1.40, DEALER_Z = HATCH_Z + 7.30;  // by the console shelf, facing the ladder
+const CROWBAR_SPOT = [HATCH_X + 2.40, HATCH_Z + 7.00];       // the shelf beside him, where the bar is lying
 let dealerMet = false, dealerFight = false, dealerWon = false;
+/* THE BAR IS ON THE SHELF UNTIL HE WANTS IT. He is unarmed for the whole
+ * conversation and the crowbar is lying an arm's length away on the console,
+ * in plain view — so when the talking stops and he turns and takes it, you
+ * have already seen what he is reaching for. `pickup` is its own clip; the
+ * bar changes hands (shelf to fist) on the frame it closes, and the fight
+ * begins when he comes up out of it. */
+let dealerPick = -1, crowbarOnTable = null;
+const PICK_DUR = 1.55, PICK_GRAB = 0.46;
 const dealer = makeMutant(DEALER_X, DEALER_Z, 'dealer', BUNKER_Y);
 dealer.g.visible = false;
 dealer.g.rotation.y = Math.PI;                 // looking down the room at the ladder
@@ -15647,10 +15692,33 @@ const DEALER_SCRIPT = {
   start: {
     text: 'How did you get down here?',
     // there is nothing to say to that, and saying nothing is what starts it
-    choices: [{ label: '…', act: () => startDealerFight() }],
+    choices: [{ label: '…', act: () => startDealerPickup() }],
   },
 };
-const DEALER_NPC = { name: 'Blue Blood Dealer', script: DEALER_SCRIPT, sprite: dealer.g, headY: 1.72 };
+// close on the mask: a tighter lens than anyone else gets, held on the head
+// bone rather than on the spot he was standing when he started talking
+const DEALER_NPC = { name: 'Blue Blood Dealer', script: DEALER_SCRIPT, sprite: dealer.g, headY: 1.80, fov: 13 };
+/* Take the bar off the shelf and put it in his hand. */
+function dealerTakeBar() {
+  if (crowbarOnTable) crowbarOnTable.visible = false;
+  if (dealer.weapon) dealer.weapon.visible = true;
+  sfxThud(0.05);
+}
+function startDealerPickup() {
+  if (dealerPick >= 0 || dealerFight || !dealer.st.alive) return;
+  dealerPick = 0;
+  /* AND YOU WATCH HIM TAKE IT. The push-in used to be handed back the
+   * instant the line was dismissed, so the one beat the whole scene is
+   * built around — him turning to the shelf and picking the thing up —
+   * happened as a two-inch figure at the far end of the room. The lens is
+   * held through the reach and let go as he comes at you, which is also
+   * the moment you want it back. */
+  cineHold = true;
+  dialogHead = dealer.head || null;
+  dialogFov = 20;
+  if (!dialogTarget) dialogTarget = new THREE.Vector3();
+  dealer.g.getWorldPosition(dialogTarget); dialogTarget.y += 1.55;
+}
 function startDealerFight() {
   if (dealerFight || !dealer.st.alive) return;
   dealerFight = true;
@@ -15658,9 +15726,9 @@ function startDealerFight() {
    * conversation — it is its own mesh in the scan and simply switched off —
    * and it appears on the frame the taunt begins, which is the frame the
    * fight begins. Nothing else announces it. */
-  if (dealer.weapon) dealer.weapon.visible = true;
+  dealerTakeBar();
   dealer.st.awake = true;
-  dealer.st.roar = 1.5;                        // he squares up; he does not shout
+  dealer.st.roar = 1.1;                        // he squares up; he does not shout
   dealer.st.step = 0;
   dealer.st.cool = 0.25;
   setTimeout(() => sfxMutRoar(2, dealer.kind.voice), 120);
@@ -15804,9 +15872,54 @@ function buildBunkerProps() {
     bunkerProps.push(prop);
   }
 }
-function updateDealer() {
+function buildCrowbarOnTable() {
+  if (crowbarOnTable || !dealer.weapon || !bunkerHome.group.userData.bunker.ready) return;
+  const g = bunkerHome.group;
+  const meshes = [];
+  g.userData.bunker.root.traverse((o) => { if (o.isMesh && o.name !== 'hitProxy') meshes.push(o); });
+  const ray = new THREE.Raycaster();
+  ray.set(new THREE.Vector3(CROWBAR_SPOT[0], g.position.y + 2.9, CROWBAR_SPOT[1]), new THREE.Vector3(0, -1, 0));
+  ray.far = 3.4;
+  const hit = ray.intersectObjects(meshes, false);
+  const top = hit.length ? hit[0].point.y : g.position.y + 0.9;
+  /* His own crowbar, laid down: the skinned mesh's geometry is the bind
+   * pose, which puts it out at the end of a T-posed arm, so it is centred on
+   * its own bounds first. Same mesh, same map — it has to be recognisably
+   * the thing he is about to be holding. */
+  const geo = dealer.weapon.geometry;
+  geo.computeBoundingBox();
+  const c = geo.boundingBox.getCenter(new THREE.Vector3());
+  const bar = new THREE.Mesh(geo, dealer.weapon.material);
+  bar.position.set(-c.x, -c.y, -c.z);
+  bar.frustumCulled = false;
+  const holder = new THREE.Group();
+  holder.add(bar);
+  holder.scale.setScalar(dealer.model ? dealer.model.scale.x : 1);
+  holder.position.set(CROWBAR_SPOT[0], top + 0.035, CROWBAR_SPOT[1]);
+  holder.rotation.set(0, 0.6, Math.PI / 2);      // lying on its side across the shelf
+  scene.add(holder);
+  crowbarOnTable = holder;
+}
+function updateDealer(dt) {
   const inRoom = inBunker === bunkerHome;
   buildBunkerProps();
+  buildCrowbarOnTable();
+  if (crowbarOnTable) crowbarOnTable.visible = bunkerHome.group.visible && !dealerFight && dealerPick < PICK_GRAB * PICK_DUR;
+  // the reach: driven off its own clock so the grab lands on the right frame
+  if (dealerPick >= 0 && !dealerFight) {
+    const was = dealerPick;
+    dealerPick += dt;
+    const a = mutPlay(dealer, 'pickup', false);
+    if (a) { a.paused = true; a.time = Math.min(a.getClip().duration - 0.001, (dealerPick / PICK_DUR) * a.getClip().duration); }
+    if (dealer.mixer) dealer.mixer.update(dt);
+    if (was < PICK_GRAB * PICK_DUR && dealerPick >= PICK_GRAB * PICK_DUR) dealerTakeBar();
+    if (dealerPick >= PICK_DUR) {
+      dealerPick = -1;
+      cineHold = false; dialogTarget = null; dialogHead = null; dialogFov = DIALOG_FOV;
+      startDealerFight();
+    }
+    return;
+  }
   dealer.g.visible = bunkerHome.group.visible && !!dealer.model;
   /* He does not fight the ceiling. Leave by the ladder mid-exchange and he
    * stops where he is rather than pacing the room after a player who is
@@ -15943,12 +16056,13 @@ function updateHatch(dt) {
        * been caught, and being given time to take the room in first would
        * make it your entrance rather than his. */
       if (hatchDir > 0 && !dealerMet && dealer.st.alive && dealer.model) {
-        dealerMet = true;
+            dealerMet = true;
+        DEALER_NPC.head = dealer.head || null;
         startDialog('start', DEALER_NPC);
       }
     }
   }
-  updateDealer();
+  updateDealer(dt);
   // the room's air: the sea and the wind go, a hum and a fan come
   const want = inBunker ? 1 : 0;
   const prev = bunkerMix;
@@ -16696,7 +16810,8 @@ window.__bw = {
   waterBottle, waterBottleWorld, get waterBottleItem() { return waterBottleItem; },
   get insideDrain() { return insideDrain; }, get drainMix() { return drainMix; },
   spawnBunker, get bunkers() { return bunkers; }, get inBunker() { return inBunker; },
-  enterBunker, leaveBunker, startDealerFight, get dealer() { return dealer; }, get bunkerProps() { return bunkerProps; },
+  enterBunker, leaveBunker, startDealerFight, startDealerPickup, get dealer() { return dealer; },
+  get crowbarOnTable() { return crowbarOnTable; }, get dealerPick() { return dealerPick; }, get bunkerProps() { return bunkerProps; },
   get dealerFight() { return dealerFight; }, get dealerMet() { return dealerMet; }, DEALER_X, DEALER_Z,
   get hatchBusy() { return hatchBusy; }, get bunkerMix() { return bunkerMix; }, get bunkerHome() { return bunkerHome; }, HATCH_X, HATCH_Z, BUNKER_Y, hatch,
   waterSurfaceAt, submersionAt, restYInWater, groundGlow, addRipple,

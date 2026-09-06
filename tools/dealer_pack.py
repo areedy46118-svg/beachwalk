@@ -78,6 +78,35 @@ if bpy is None:
         o.save(out)
         return out
 
+    def grime(im):
+        """He has been down there a long time. The scan ships him clean and
+        pink, which under the bunker's lamps read as somebody's holiday
+        photograph — so: the whole map comes down and loses some of its
+        blood, and then soot goes on in two grains, a broad blotchy one that
+        pools where dirt pools and a fine one over everything. Multiplied,
+        never painted over, so the tattoos and the folds still carry."""
+        rgb = np.asarray(im.convert('RGB')).astype(np.float32)
+        H, W, _ = rgb.shape
+        rng = np.random.default_rng(7)
+        def blob(cells, blur):
+            n = rng.random((cells, cells)).astype(np.float32)
+            up = np.asarray(Image.fromarray((n * 255).astype(np.uint8)).resize((W, H), Image.BICUBIC)
+                            .filter(ImageFilter.GaussianBlur(blur))).astype(np.float32) / 255.
+            return (up - up.min()) / max(1e-3, up.max() - up.min())
+        broad = blob(14, 12)          # where the dirt collects
+        fine = blob(120, 2)           # and the grain over all of it
+        # 1.0 clean .. 0.55 filthy, weighted to the broad pattern
+        dirt = 1.0 - (0.44 * (broad ** 1.3) + 0.18 * fine)
+        out = rgb * dirt[..., None]
+        # soot is cold and takes the blood out of skin
+        grey = out.mean(2, keepdims=True)
+        out = out * 0.80 + grey * 0.20
+        out[..., 2] *= 1.03           # ...and leaves it faintly blue-grey
+        out = np.clip(out * 0.80, 0, 255).astype(np.uint8)
+        o = Image.fromarray(out)
+        if im.mode == 'RGBA': o = Image.merge('RGBA', (*o.split(), im.split()[3]))
+        return o
+
     for name in sorted(os.listdir(SRCDIR)):
         base, ext = os.path.splitext(name)
         if 'transmission' in base: continue            # zeroed in the material; the map is dead weight
@@ -85,6 +114,8 @@ if bpy is None:
         if base == 'PackedMaterial0_baseColor':
             src = unflag(src, os.path.join(SP, 'noflag.png'))
         pil = Image.open(src)
+        if base == 'PackedMaterial0_baseColor':
+            pil = grime(pil)
         # the body's albedo carries the mask and the lashes in its alpha, so it
         # stays PNG; everything else is opaque or data and goes to JPEG
         keep_alpha = pil.mode == 'RGBA' and 'baseColor' in base
@@ -235,9 +266,16 @@ def setrot(key, *pairs):
 def setloc(key, v):
     name = B.get(key, key)
     if name in pbs: pbs[name].location = basis(pbs[name]) @ Vector(v)
+# ...AND AT THE SAME HEIGHT. Mixamo's clips carry the hips a quarter of a
+# metre below the bind pose (their stance is settled onto the legs); the
+# authored ones sat at bind, so every switch between the two families popped
+# him up and down — which is the floating. The baseline is measured off the
+# source idle rather than guessed, and everything authored is built on it.
+HIP_BASE = Vector((0, 0, 0))
 def rest():
     for pb in pbs:
         pb.rotation_quaternion = Quaternion((1, 0, 0, 0)); pb.location = (0, 0, 0); pb.scale = (1, 1, 1)
+    if ROOT in pbs: pbs[ROOT].location = HIP_BASE.copy()
 def key(f):
     for pb in KEYED:
         pb.keyframe_insert('rotation_quaternion', frame=f)
@@ -258,7 +296,7 @@ def fcurves(act):
     return out
 def finish(act):
     for fc in fcurves(act):
-        for kp in fc.keyframe_points: kp.interpolation = 'LINEAR'
+        for kp in fc.keyframe_points: kp.interpolation = 'BEZIER'
     log('  authored %-12s frames %-14s curves %d' % (act.name, tuple(round(v) for v in act.frame_range), len(fcurves(act))))
 
 # an arm lies along +X (his left) / -X (his right) in the rest pose, so
@@ -288,7 +326,8 @@ def torso(lean=0.0, roll=0.0, twist=0.0, bob=0.0, drop=0.0):
     setrot('Spine', (AX, lean * 0.34), (AY, roll * 0.34), (AZ, twist * 0.34))
     setrot('Spine1', (AX, lean * 0.33), (AY, roll * 0.33), (AZ, twist * 0.33))
     setrot('Spine2', (AX, lean * 0.33), (AY, roll * 0.33), (AZ, twist * 0.33))
-    setloc('Hips', (0, 0, (bob - drop) * 580))   # the rig runs ~590 units to the metre
+    # on top of the measured stance height; the rig runs ~590 units to the metre
+    pbs[ROOT].location = HIP_BASE + basis(pbs[ROOT]) @ Vector((0, 0, (bob - drop) * 580))
 def head(pitch=0.0, yaw=0.0, roll=0.0):
     setrot('Neck', (AX, pitch * 0.4), (AZ, yaw * 0.4), (AY, roll * 0.4))
     setrot('Head', (AX, pitch * 0.6), (AZ, yaw * 0.6), (AY, roll * 0.6))
@@ -309,6 +348,21 @@ def guard(k=1.0, breathe=0.0):
 # the authored ones, so they would spring open between clips. The grip is
 # lifted off the source swing once and stamped at frame 0 of everything
 # authored — one key a curve, which holds for the clip.
+# the stance height the source clips actually use
+_idle = bpy.data.actions.get('Standing Idle')
+if _idle and ROOT in pbs:
+    arm.animation_data_create() if not arm.animation_data else None
+    arm.animation_data.action = _idle
+    try: arm.animation_data.action_slot = _idle.slots[0]
+    except Exception: pass
+    acc = Vector((0, 0, 0)); n = 0
+    for f in range(int(_idle.frame_range[0]), int(_idle.frame_range[1]) + 1, 3):
+        bpy.context.scene.frame_set(f); bpy.context.view_layer.update()
+        acc += pbs[ROOT].location; n += 1
+    HIP_BASE = acc / max(1, n)
+    arm.animation_data.action = None
+    log('hip baseline from the source idle', tuple(round(v, 2) for v in HIP_BASE))
+
 GRIP = {}
 src_attack = bpy.data.actions.get('Standing Melee Attack Downward')
 if src_attack:
@@ -328,17 +382,47 @@ def stamp_grip(f=0):
 # Before he knows you are a problem: standing in the dark with his hands
 # empty, weight on one leg, breathing. He does not pace and he does not
 # fidget — he was already down here, and the stillness is the menace.
-act = new_action('calm'); N = 220
-for f in range(0, N + 1, 4):
+act = new_action('calm'); N = 240
+for f in range(0, N + 1, 3):
     rest(); t = f / N
-    br = math.sin(t * math.pi * 4) * 0.012
-    k = ease(min(1.0, abs(math.sin(t * math.pi * 1.0)) * 1.2))
-    torso(lean=0.05, roll=0.05 + 0.03 * k, twist=0.05 * k, bob=br)
-    arm_pose('Right', fwd=0.02, up=-0.04, elbow=-0.30 - 0.05 * k)
-    arm_pose('Left', fwd=0.02, up=-0.04, elbow=-0.26 - 0.04 * k)
-    leg_pose('Left', swing=0.04, knee=0.10, out=0.06)
-    leg_pose('Right', swing=-0.03, knee=0.20, out=0.10)
-    head(pitch=0.06 - 0.05 * k, yaw=0.10 * k, roll=0.04 * k)
+    # three counts running at once, none of them a multiple of another, so the
+    # loop never lands on a beat you can feel: the breath, a slow shift of
+    # weight from one leg to the other, and the head coming round and back.
+    br = math.sin(t * math.pi * 5.0) * 0.016
+    sway = math.sin(t * math.pi * 2.0)
+    look = math.sin(t * math.pi * 2.0 - 0.9)
+    turn = max(0.0, math.sin(t * math.pi * 2.0 - 1.7)) ** 1.5
+    torso(lean=0.10 + 0.02 * sway, roll=0.07 * sway, twist=0.10 * turn, bob=br - 0.012 * abs(sway))
+    # hands loose and NOT symmetrical — a man waiting has one shoulder lower
+    arm_pose('Right', fwd=0.05 + 0.05 * sway, up=0.04, elbow=-0.34 - 0.06 * sway, twist=0.16, out=0.05)
+    arm_pose('Left', fwd=-0.02 - 0.04 * sway, up=0.02, elbow=-0.22 + 0.05 * sway, twist=-0.10, out=0.08)
+    # the weight really moves: the loaded knee straightens, the other bends
+    leg_pose('Left', swing=0.03 + 0.05 * sway, knee=0.16 - 0.10 * sway, foot=0.02, out=0.07)
+    leg_pose('Right', swing=-0.02 - 0.05 * sway, knee=0.16 + 0.12 * sway, foot=0.02, out=0.11)
+    head(pitch=0.09 - 0.05 * turn, yaw=0.06 + 0.30 * turn + 0.04 * look, roll=0.05 * sway)
+    key(f)
+stamp_grip(); finish(act)
+
+# ---------------------------------------------------------------- PICKUP
+# The bar is on the table until the conversation ends. He turns to it, takes
+# it, and comes up into the guard already moving — the game shows the crowbar
+# in his hand on the frame his fist closes (0.46 of the clip) and takes the
+# one on the table away at the same instant.
+act = new_action('pickup'); N = 56
+for f in range(N + 1):
+    rest(); t = f / N
+    reach = ease(min(1.0, t / 0.46))                     # down and across to it
+    close = ease(max(0.0, min(1.0, (t - 0.42) / 0.16)))  # the fist
+    rise = ease(max(0.0, (t - 0.52) / 0.48))             # up into the stance
+    torso(lean=0.10 + 0.62 * reach - 0.56 * rise, twist=0.10 + 0.42 * reach - 0.72 * rise,
+          roll=0.05 + 0.18 * reach - 0.20 * rise, drop=0.26 * reach - 0.24 * rise)
+    arm_pose('Right', fwd=0.05 + 1.05 * reach - 1.72 * rise, up=0.04 - 0.30 * reach + 0.60 * rise,
+             elbow=-0.34 + 0.24 * reach - 0.95 * rise, twist=0.16 + 0.30 * reach, out=0.10 * reach)
+    arm_pose('Left', fwd=-0.02 + 0.30 * reach + 0.22 * rise, up=0.02 - 0.10 * reach + 0.20 * rise,
+             elbow=-0.22 - 0.20 * reach - 0.43 * rise, out=0.06)
+    leg_pose('Left', swing=0.03 + 0.30 * reach - 0.07 * rise, knee=0.16 + 0.45 * reach - 0.31 * rise, foot=0.02, out=0.07)
+    leg_pose('Right', swing=-0.02 - 0.16 * reach - 0.06 * rise, knee=0.16 + 0.38 * reach - 0.20 * rise, foot=0.02, out=0.11)
+    head(pitch=0.09 + 0.55 * reach - 0.54 * rise, yaw=0.06 + 0.34 * reach - 0.24 * rise, roll=0.04)
     key(f)
 stamp_grip(); finish(act)
 
@@ -553,6 +637,66 @@ for src_name, dst_name in (('attackDown', 'attackDownM'), ('attackSide', 'attack
     stamp_grip(f0)
     finish(dst)
 
+# ------------------------------------------------------- PLANT THE FEET
+# Every authored clip is seated so its lowest foot rests where the source
+# clips' feet rest. Lowering the hips onto Mixamo's stance height (above)
+# fixed the popping between clip families and introduced this: the authored
+# poses keep straighter legs than Mixamo's do, so a quarter of a metre of
+# hip drop went straight through the floor — the feet ended up 12 to 28 cm
+# UNDER it, which is why the professionally animated swings then looked like
+# he was hovering. The offset is measured per clip, not guessed, and it only
+# ever LIFTS: the reference is the source idle's own lowest foot.
+# ...and the thing that has to rest on the floor is the SOLE, not a bone.
+# Measuring the foot bones' heads and tails over-corrected every clip by five
+# to twelve centimetres, because the shoe geometry hangs below the joint and
+# the joint the eye judges is not the one the rig names. The shoe mesh's own
+# lowest vertex is the only honest answer, and it is measured through the
+# depsgraph so the armature is actually deforming it.
+SHOE = None
+for o in meshes:
+    if 'shoe' in (o.data.name + o.name).lower(): SHOE = o; break
+if SHOE is None: SHOE = max(meshes, key=lambda o: len(o.data.vertices))
+log('sole measured on', SHOE.name, '(' + SHOE.data.name + ')', len(SHOE.data.vertices), 'verts')
+ARM_S = arm.matrix_world.to_scale().z or 1.0
+def sole_z():
+    dgp = bpy.context.evaluated_depsgraph_get()
+    ev = SHOE.evaluated_get(dgp)
+    mw = SHOE.matrix_world
+    return min((mw @ v.co).z for v in ev.data.vertices)
+def clip_low(act, step=2):
+    arm.animation_data.action = act
+    try: arm.animation_data.action_slot = act.slots[0]
+    except Exception: pass
+    f0, f1 = int(act.frame_range[0]), int(act.frame_range[1])
+    lo = 1e9
+    for f in range(f0, f1 + 1, step):
+        bpy.context.scene.frame_set(f); bpy.context.view_layer.update()
+        lo = min(lo, sole_z())
+    arm.animation_data.action = None
+    return lo
+REF_LOW = clip_low(bpy.data.actions['idleSrc'])
+log('reference sole height from the source idle %.4f m' % REF_LOW)
+for nm in ('calm', 'ready', 'walk', 'taunt', 'attackHold', 'attackLunge', 'hit', 'pickup'):
+    act = bpy.data.actions.get(nm)
+    if not act: continue
+    low = clip_low(act)
+    lift_m = REF_LOW - low
+    if abs(lift_m) < 0.002:
+        log('  %-12s already seated (%.4f)' % (nm, low)); continue
+    lift = lift_m / ARM_S                      # metres back into the rig's own units
+    arm.animation_data.action = act
+    try: arm.animation_data.action_slot = act.slots[0]
+    except Exception: pass
+    up = basis(pbs[ROOT]) @ Vector((0, 0, lift))
+    for fc in fcurves(act):
+        if not fc.data_path.endswith('.location') or ROOT not in fc.data_path: continue
+        dv = up[fc.array_index]
+        if abs(dv) < 1e-9: continue
+        for kp in fc.keyframe_points:
+            kp.co[1] += dv; kp.handle_left[1] += dv; kp.handle_right[1] += dv
+    arm.animation_data.action = None
+    log('  %-12s seated %+.3f m' % (nm, lift_m))
+
 # --------------------------------------------------- where each blow lands
 # Measured, never guessed: the frame the swinging hand is furthest out and
 # moving fastest is the frame the bar arrives, and the game maps its clock
@@ -631,9 +775,18 @@ if os.environ.get('BW_RENDER'):
 for a in bpy.data.actions: a.use_fake_user = True
 log('actions out:', sorted(a.name for a in bpy.data.actions))
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
+# EVERY CLIP CARRIES EVERY CHANNEL, or the mixer leaves bones where the last
+# clip put them. Exported without baking, the four Mixamo clips came out with
+# 22 rotation channels (the exporter drops whatever does not change) and the
+# authored ones with 63 — so crossfading from a swing to the idle left forty
+# bones holding their pose from the swing, and back again left the swing
+# playing on top of the idle's arms. That is the "animations are glitched
+# out". The mutant's build bakes, which is why it never had this: 210
+# channels on every clip, 70 bones by three paths, no exceptions.
 bpy.ops.export_scene.gltf(filepath=OUT, export_format='GLB', export_apply=False, export_yup=True,
                           export_materials='EXPORT', export_image_format='AUTO',
                           export_animations=True, export_animation_mode='ACTIONS',
-                          export_frame_range=False, export_force_sampling=False,
-                          export_optimize_animation_size=True, export_skins=True)
+                          export_frame_range=False, export_force_sampling=True,
+                          export_bake_animation=True, export_optimize_animation_size=False,
+                          export_skins=True)
 log('DONE', os.path.getsize(OUT), 'bytes')

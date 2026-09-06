@@ -289,12 +289,15 @@ he has been for a while. Come down the ladder and the first thing that
 happens is that he asks how you got here. The only thing you can say is
 nothing, and the crowbar comes up on the frame you say it.
 
+The crowbar is lying on the console beside him the whole time you talk, in
+plain view; when the talking stops he turns, takes it, and comes at you.
+
 He is the first boss, and he fights by every rule the beach spent a
 kilometre teaching: read the tell, watch for the commit, block it or time
 the parry, and take the riposte while he is open. What is different is that
 he is a man — he does not roar, does not come apart, and falls where he
-stood — and that he is faster than anything on the sand. Twelve health,
-thirty swing-sequences a minute, two-deep chains and one feint in five.
+stood — and that he is faster than anything on the sand. Ten health,
+twenty-five swing-sequences a minute, and one feint in six. You have four.
 
 Everything loose in the room is a body you can pick up, throw and break:
 bottles, jars, valves, a set and a monitor. Glass goes at a knock, a set
