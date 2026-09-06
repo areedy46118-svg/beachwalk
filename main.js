@@ -23,9 +23,25 @@ import { makeUndergroundBunker } from './models/underground-bunker.js';
 
 const EYE_HEIGHT = 1.7;
 const WALK_SPEED = 3.4;
-const RUN_SPEED = 4.7;                    // only a little faster than a walk
+/* EIGHT IS THE TOP SPEED NOW. At 4.7 a sprint was "only a little faster than
+ * a walk", which was right for a kilometre of beach where the pace IS the
+ * game and wrong for a control room eleven metres long with a man swinging a
+ * crowbar in it: you could not cross it, could not break off, and every
+ * disengage was a slow shuffle backwards. It is the Dealer's own dash speed,
+ * so a gap you open by running is a gap he has to spend his dash to close. */
+/* And it is 8 AT THE OWNER'S OWN SETTING, which is what "make 8 the max
+ * walk speed" means: the speed slider multiplies this, and his sits at 1.4,
+ * so the constant is the number that comes out as eight in his game rather
+ * than eight before the multiplier turns it into eleven. It is written out
+ * rather than divided at load — `DEFAULT_SETTINGS` is declared a hundred and
+ * forty lines further down, and reading it here is a temporal dead zone
+ * crash that takes the whole page, which is the file's oldest trap. */
+const RUN_SPEED = 5.71;                   // = 8.0 / the 1.4 speed setting
 const RUN_SECONDS = 5;                    // how long you can sprint
-const STAM_REGEN = 9;                     // seconds to recover a full bar
+/* AND THE BAR COMES BACK QUICKER. Nine seconds for a full bar meant one
+ * emptying decided the next third of the fight; six keeps blocking a real
+ * cost without making a mistake unrecoverable. */
+const STAM_REGEN = 6;                     // seconds to recover a full bar
 const JUMP_V = 4.3;
 const P_GRAV = 15;
 const MOON_DIR = new THREE.Vector3(-0.28, 0.12, -1).normalize();
@@ -6415,12 +6431,21 @@ function hitConnect(P, k) {
  * this is the other end of the same exchange. A stagger (his poise finally
  * breaking) gets the whole of it and a beat longer, so the third light
  * swing lands differently from the first two and you can feel that it did. */
-function bossHit(P, broke) {
+/* A CUTSCENE HANDS YOU BACK A FIGHT, SO IT HANDS YOU BACK A FULL BAR. You
+ * cannot block, sprint or breathe through a take, and coming out of one with
+ * whatever you happened to be carrying — sometimes nothing, because the run
+ * TO the trigger is what emptied it — decided the opening exchange before
+ * you had your hands. */
+function catchBreath() { stamina = 1; exhausted = false; }
+function bossHit(P, broke, flesh) {
   hitstop = Math.max(hitstop, broke ? 0.155 : 0.085);
   addTrauma((broke ? 0.55 : 0.30) + P * 0.30);
   fovKick = Math.max(fovKick, (broke ? 9 : 5.5) + P * 4);
   guardShockV += broke ? 6.2 : 3.8;
-  spawnSparks(broke ? 16 : 9, 0.9 + P * 0.5);
+  // steel throws sparks; a man does not. A few off the bar's edge on a
+  // stagger, none at all on a cut that went into him.
+  if (!flesh) spawnSparks(broke ? 16 : 9, 0.9 + P * 0.5);
+  else if (broke) spawnSparks(4, 0.5);
   vmImpulse(-(1.25 + P * 0.35));
   sfxSlam(Math.min(1, P + (broke ? 0.35 : 0)));
   if (broke) { slamDip = Math.max(slamDip, 0.07); playSample('poise', 0.85); }
@@ -13594,8 +13619,19 @@ function hurtMutant(u, dmg, P = 0) {
     if (u.st.poise > 0) {
       u.st.hp -= dmg;
       if (u.st.hp <= 0) { u.st.killP = P; u.st.killOh = digOverhead; u.st.hpBefore = u.st.hp + dmg; killMutant(u); return true; }
-      flashMats(u.g); sfxMutHit(u.kind.voice); bleedMutant(u, 6, 0.3); bossHit(P, light ? false : true);
-      camera.getWorldDirection(_hitC); sprayBlood(u.g.position.x, u.g.position.y + u.kind.h * 0.55, u.g.position.z, _hitC.x, _hitC.z, 6, 0.7);
+      /* AND A BLOW THAT DRAWS BLOOD SHOULD LOOK LIKE ONE. Six drops and a
+       * short spray were lost inside `bossHit`'s shower of sparks — the
+       * owner saw sparks and nothing else and read the hit as steel on
+       * steel. Sparks are for the BAR (a block, a parry); flesh gets four
+       * times the blood, thrown from the height the blade landed and along
+       * the swing, and a stain under him where it falls. */
+      flashMats(u.g); sfxMutHit(u.kind.voice);
+      bleedMutant(u, 22 + Math.round(P * 14), 0.55 + P * 0.35);
+      bossHit(P, light ? false : true, true);
+      camera.getWorldDirection(_hitC);
+      const _by = u.g.position.y + u.kind.h * (0.45 + Math.random() * 0.3);
+      sprayBlood(u.g.position.x, _by, u.g.position.z, _hitC.x, _hitC.z, 24 + Math.round(P * 16), 1.1 + P * 0.6);
+      stampBlood(u.g.position.x + _hitC.x * 0.45, u.g.position.z + _hitC.z * 0.45, 0.34 + Math.random() * 0.3);
       return false;
     }
     u.st.poise = u.kind.poise;
@@ -13663,14 +13699,35 @@ function finishMutant(u) {
    * he stays there — which is also the only ending a boss should get: you
    * want to walk up to what you killed, not sweep up after it. */
   if (u.kind.human) {
-    /* No severing and no bursting head — but the FALL is the ragdoll's,
-     * because a man who dies on a canned clip dies the same way every time
-     * and lands through the desk he was standing against. His bones answer
-     * to the Character1_ names through `boneAlias`, built when he was
-     * dressed; the rest of the machine does not know the difference. */
+    /* HE COMES APART TOO, NOW. The rule was that a man goes down whole and
+     * you walk up to what you killed — but the beach spent a kilometre
+     * teaching that a heavy takes something with it, and the boss being the
+     * one thing in the game exempt from its own grammar read as a different,
+     * softer game. It is the mutant's machinery unchanged, and it works on
+     * him because every part of it goes through `boneAlias`: the same
+     * chance, the same overkill rule, the same bake of the limb itself.
+     * The crowbar comes out of a hand that may be about to leave. */
     if (u.weapon) u.weapon.visible = true;
     sfxKillThud();
-    mutRagdoll(u, u.hitDir.x, u.hitDir.z, 0.6 + (u.st.killP || 0) * 0.6);
+    const hx = u.hitDir.x, hz = u.hitDir.z;
+    const hP = u.st.killP || 0, hOh = !!u.st.killOh;
+    /* RARER ON HIM THAN ON THE PACK. A creature you meet three of at once
+     * can come apart half the time and still read as a thing that happened;
+     * the one man in the game, killed once, cannot — a head that bursts most
+     * times you finish him is a gore setting, which is the line the beach
+     * already drew. Measured at the first rates: thirteen of fourteen took
+     * something and eleven were the head. */
+    const over = u.st.hpBefore <= 1 && (hP >= MUT_HEAVY || hOh);
+    let burst = false;
+    if (over && Math.random() < 0.28) burst = burstHead(u, hx, hz);
+    if (!burst && Math.random() < (hP >= MUT_HEAVY || hOh ? 0.30 : 0.12)) {
+      const pick = MUT_LIMBS[Math.floor(Math.random() * MUT_LIMBS.length)];
+      mutSever(u, pick, hx, hz, 1.0);
+    }
+    mutRagdoll(u, hx, hz, 0.6 + hP * 0.6);
+    bleedMutant(u, 26, 1.0);
+    sprayBlood(u.g.position.x, u.g.position.y + u.kind.h * 0.5, u.g.position.z, hx, hz, 26 + Math.round(hP * 14), 1.3 + hP * 0.5);
+    stampBlood(u.g.position.x, u.g.position.z, 1.3 + Math.random() * 0.5);
     return;
   }
   /* WHAT THE LAST BLOW TOOK WITH IT. A charged cut can go through the waist;
@@ -14085,6 +14142,7 @@ function updateMutantCut(dt) {
     /* Dropped mid-stride. They keep the run they are in, the token is free,
      * and the first swing goes to whichever of them reaches you first. */
     mutPhase = 2; mutCut = false; mutCutOut = 0.4;
+    catchBreath();
     for (const u of mutants) { if (u.kind.solo) continue; u.st.roar = 0; u.st.cool = 0.05 + Math.random() * 0.15; u.st.sprint = MUT_CUT_SPRINT; }
   }
   return true;
@@ -14213,6 +14271,14 @@ function sfxMutSandHit() {
  * the skinning already defines. Put a piece of flesh in the air on the same
  * frame with blood behind it and the eye reads a limb coming off, which is
  * all it has to do. A charged cut can take the whole thing at the waist. */
+/* EVERY BONE LOOKUP GOES THROUGH THE ALIAS. The severing, the head burst
+ * and the limb bake were all written for the mutant and name its bones
+ * literally — `Character1_LeftForeArm` — and the Dealer's rig answers to
+ * `mixamorigLeftForeArm_NN` instead. The ragdoll learned this once and
+ * routes everything through `byName`; these three did not, so on him they
+ * simply found nothing and returned false, which is why he was the one
+ * creature in the game that never lost so much as a hand. */
+function ragBone(u, name) { return (u.boneAlias && u.boneAlias[name]) || name; }
 const MUT_LIMBS = [
   { bone: 'Character1_Head', name: 'head', y: 0.86, r: 0.16, len: 1.1, w: 1.6 },
   { bone: 'Character1_LeftArm', name: 'arm', y: 0.72, r: 0.11, len: 2.6, w: 1.0 },
@@ -14242,7 +14308,8 @@ const SKULL_MAT = new THREE.MeshStandardMaterial({ color: 0xb4a894, roughness: 0
 function burstHead(u, dirX, dirZ) {
   if (!u.model || u.gone['Character1_Head']) return false;
   let head = null;
-  u.model.traverse((o) => { if (o.isBone && o.name === 'Character1_Head') head = o; });
+  const _hn = ragBone(u, 'Character1_Head');
+  u.model.traverse((o) => { if (o.isBone && o.name === _hn) head = o; });
   if (!head) return false;
   u.model.updateMatrixWorld(true);
   const hp = head.getWorldPosition(new THREE.Vector3());
@@ -14292,7 +14359,8 @@ function burstHead(u, dirX, dirZ) {
 const _bkV = new THREE.Vector3();
 function bakeLimb(u, boneName) {
   let root = null; const meshes = [];
-  u.model.traverse((o) => { if (o.isBone && o.name === boneName) root = o; if (o.isSkinnedMesh) meshes.push(o); });
+  const _bn = ragBone(u, boneName);
+  u.model.traverse((o) => { if (o.isBone && o.name === _bn) root = o; if (o.isSkinnedMesh) meshes.push(o); });
   if (!root || !meshes.length) return null;
   u.model.updateMatrixWorld(true);
   const rootP = root.getWorldPosition(new THREE.Vector3());
@@ -14337,7 +14405,8 @@ function bakeLimb(u, boneName) {
 function mutSever(u, part, dirX, dirZ, force) {
   if (!u.model || u.gone[part.bone]) return false;
   let target = null;
-  u.model.traverse((o) => { if (o.isBone && o.name === part.bone) target = o; });
+  const _pn = ragBone(u, part.bone);
+  u.model.traverse((o) => { if (o.isBone && o.name === _pn) target = o; });
   if (!target) return false;
   const piece = bakeLimb(u, part.bone);        // before the collapse, or there is nothing to bake
   u.gone[part.bone] = 1;
@@ -15279,6 +15348,7 @@ function updateMutantUnit(u, dt) {
  * put the bar on your bearing, and then the shoulder for what is left, which
  * is mostly the height. Both are clamped and both are weighted by the same
  * ease, so a swing thrown from too far out or too far round still misses. */
+const PATH_EVERY = 0.45;                   // how often he may re-ask the room the way
 const AIM_YAW = 0.70;                      // how far his body may turn into it
 const AIM_MAX = 0.80;                      // and how far the shoulder may bend it
 const _abA = new THREE.Vector3(), _abB = new THREE.Vector3(), _abC = new THREE.Vector3();
@@ -15447,6 +15517,7 @@ function updatePack(dt) {
   camera.quaternion.slerp(_packQ, Math.min(1, dt * 2.6));
   if (packT >= PACK_SWIM + PACK_HOLD) {
     packPhase = 2; packCut = false;
+    catchBreath();
     for (const u of packCrabs) { u.st.awake = true; u.st.rear = 1; u.wake = 1e6; }
     sfxCrabTell();
   }
@@ -16581,7 +16652,26 @@ function steerDealer(prevX, prevZ) {
  * walk the long way round. */
 function unstickDealer(dt, dist) {
   const B = bunkerHome.group.userData.bunker;
-  if (!B.nav || !B.route || !dealer.st.awake) { dealer.grind = 0; return; }
+  if (!B.nav || !B.route || !dealer.st.awake) { dealer.grind = 0; dealer.path = null; return; }
+  /* AND HE ROUTES TO YOU WHENEVER THE DIRECT WAY IS SHUT, not only once he
+   * has already ground to a halt. Standing behind the table was enough: the
+   * fan would take him at it, the push-out would hold him off it, and he
+   * would work along its edge for a second before the grind noticed. If the
+   * straight line between him and you crosses furniture and he is not
+   * already on a route, he asks the room for one — every `PATH_EVERY`, so it
+   * is a handful of searches in a fight and not one a frame. */
+  const g0 = bunkerHome.group;
+  dealer.pathAge = (dealer.pathAge || 0) + dt;
+  if (!dealer.path && dealer.pathAge > PATH_EVERY && dist > 2.4) {
+    dealer.pathAge = 0;
+    const alx = dealer.g.position.x - g0.position.x, alz = dealer.g.position.z - g0.position.z;
+    const px = camera.position.x - g0.position.x, pz = camera.position.z - g0.position.z;
+    const dx0 = px - alx, dz0 = pz - alz, L0 = Math.hypot(dx0, dz0) || 1;
+    if (B.clearAhead && !B.clearAhead(alx, alz, dx0 / L0, dz0 / L0, Math.min(L0, 3.0), 0.34)) {
+      const r0 = B.route(alx, alz, px, pz, 0.32);
+      if (r0 && r0.length > 1) { dealer.path = r0; dealer.pathI = 0; }
+    }
+  }
   /* AND HE CAN BE STUCK MID-SWING. This used to give up the moment `st.atk`
    * went positive, which is most of the time — he is attacking, chaining or
    * recovering for the better part of a fight — so a body wedged into the
@@ -16627,6 +16717,16 @@ function unstickDealer(dt, dist) {
 function followPath(dt) {
   if (!dealer.path) return false;
   const g = bunkerHome.group, p = dealer.g.position;
+  /* A route is a way ROUND something. The moment the direct line is open he
+   * drops it and comes straight at you, or he would walk his corners while
+   * you stood in front of him. */
+  const B0 = g.userData.bunker;
+  const alx = p.x - g.position.x, alz = p.z - g.position.z;
+  const px = camera.position.x - g.position.x, pz = camera.position.z - g.position.z;
+  const ddx = px - alx, ddz = pz - alz, dL = Math.hypot(ddx, ddz) || 1;
+  if (B0.clearAhead && B0.clearAhead(alx, alz, ddx / dL, ddz / dL, Math.min(dL, 3.0), 0.34)) {
+    dealer.path = null; return false;
+  }
   const wp = dealer.path[dealer.pathI];
   if (!wp) { dealer.path = null; return false; }
   const tx = g.position.x + wp.x, tz = g.position.z + wp.z;
@@ -16749,6 +16849,84 @@ const BUNKER_PROP_SPOTS = [
   [2.10, 0.85, 'radio'],    [-2.30, -4.55, 'monitor'], [0.15, -4.70, 'radio'],
   [-0.95, -3.55, 'valve'],
 ];
+/* THE COAT STAND. Everything else breakable in here sits ON something and
+ * waits to be hit; this one stands in the room at head height and goes if
+ * ANYBODY walks into it — you, him, or a body arriving at speed. It is the
+ * one piece of furniture that is part of the fight rather than scenery the
+ * fight happens near: back off through it and it comes down, shove him into
+ * it and it comes down, and either way there is suddenly a pile of dowel
+ * across the floor where a second ago there was a thing to walk round.
+ *
+ * It is NOT in the nav grid. A thing that breaks when you touch it must not
+ * also be a wall — walking into it IS the interaction, and a body that
+ * stopped at it would never get to knock it over. */
+const COAT_MAT = new THREE.MeshStandardMaterial({ color: 0x6b573d, roughness: 0.95, flatShading: true, emissive: 0x140f08 });
+let coatStand = null, coatBroken = false;
+function makeCoatStand() {
+  const g = new THREE.Group();
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 1.72, 8), COAT_MAT);
+  post.position.y = 0.86; g.add(post);
+  // three splayed feet
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2;
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.03, 0.44, 6), COAT_MAT);
+    leg.position.set(Math.sin(a) * 0.15, 0.12, Math.cos(a) * 0.15);
+    leg.rotation.set(Math.cos(a) * 0.55, 0, -Math.sin(a) * 0.55);
+    g.add(leg);
+  }
+  // and four hooks near the top, turned up at the ends
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + 0.4;
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.019, 0.20, 6), COAT_MAT);
+    arm.position.set(Math.sin(a) * 0.09, 1.60, Math.cos(a) * 0.09);
+    arm.rotation.set(Math.cos(a) * 1.15, 0, -Math.sin(a) * 1.15);
+    g.add(arm);
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.026, 6, 5), COAT_MAT);
+    tip.position.set(Math.sin(a) * 0.18, 1.66, Math.cos(a) * 0.18);
+    g.add(tip);
+  }
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), COAT_MAT);
+  knob.position.y = 1.74; g.add(knob);
+  return g;
+}
+/* IT GOES TO DOWEL. Not the electronics' shower of case and tube and sparks
+ * — wood breaks into sticks, and the sound is a clatter, not a report. */
+function smashCoatStand(speed) {
+  if (coatBroken || !coatStand) return;
+  coatBroken = true;
+  const p = coatStand.position.clone();
+  scene.remove(coatStand);
+  const gy = floorFor(p);
+  const kick = Math.min(2.2, 0.5 + speed * 0.16);
+  for (let i = 0; i < 14; i++) {
+    const len = 0.12 + Math.random() * 0.34;
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.024, len, 5), COAT_MAT);
+    m.position.set(p.x + (Math.random() - 0.5) * 0.24, gy + 0.15 + Math.random() * 1.5, p.z + (Math.random() - 0.5) * 0.24);
+    m.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+    scene.add(m);
+    const a = Math.random() * Math.PI * 2;
+    gibs.push({
+      m, vel: new THREE.Vector3(Math.cos(a) * (0.6 + Math.random() * kick), 1.1 + Math.random() * 1.6, Math.sin(a) * (0.6 + Math.random() * kick)),
+      spin: new THREE.Vector3((Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12),
+      rest: gy + 0.02 + Math.random() * 0.02, life: 120, bleed: false,
+    });
+  }
+  sfxCrateBreak ? sfxCrateBreak() : sfxThud(0.4);
+  hitstop = Math.max(hitstop, 0.03);
+}
+/* Anybody who walks into it brings it down — and a body sliding through it
+ * counts, which is what `ragSmash` is already doing to the glassware. */
+function updateCoatStand() {
+  if (coatBroken || !coatStand || !inBunker) return;
+  const p = coatStand.position, R = 0.34;
+  const near = (x, z, r) => (x - p.x) * (x - p.x) + (z - p.z) * (z - p.z) < (R + r) * (R + r);
+  if (near(camera.position.x, camera.position.z, 0.22)) { smashCoatStand(6); return; }
+  if (dealer.st.alive && dealer.g.visible && near(dealer.g.position.x, dealer.g.position.z, 0.32)) { smashCoatStand(7); return; }
+  for (const u of mutants) {
+    if (!u.rag || u.rag.asleep) continue;
+    for (const q of u.rag.parts) if (near(q.p.x, q.p.z, q.r) && q.p.y < p.y + 1.8) { smashCoatStand(9); return; }
+  }
+}
 function buildBunkerProps() {
   const g = bunkerHome.group, S = g.userData.bunker;
   if (!S.ready || bunkerProps.length) return;
@@ -16790,6 +16968,21 @@ function buildBunkerProps() {
       else shatterGlass(prop, mesh, speed, 0.09, 3.0);
     };
     bunkerProps.push(prop);
+  }
+  /* And the coat stand, in the open by the -x wall where the aisle is
+   * widest — somewhere you will back into rather than somewhere you must
+   * deliberately go. Its spot is checked against the walk grid so it never
+   * starts inside a desk. */
+  if (!coatStand) {
+    coatStand = makeCoatStand();
+    /* Off to one side of the fighting floor with a metre and a bit clear all
+     * round it — measured against the walk grid, not guessed: it stood
+     * inside a desk the first time. Not down the middle, where it would be
+     * the fight, and not at the foot of the ladder, where you would bring it
+     * down on the way in before you had met him. */
+    coatStand.position.set(g.position.x + 1.05, g.position.y, g.position.z - 1.74);
+    coatStand.frustumCulled = false;
+    scene.add(coatStand);
   }
 }
 function buildCrowbarOnTable() {
@@ -16998,6 +17191,7 @@ function updateHatch(dt) {
     }
   }
   updateDealer(dt);
+  updateCoatStand();
   // the room's air: the sea and the wind go, a hum and a fan come
   const want = inBunker ? 1 : 0;
   const prev = bunkerMix;

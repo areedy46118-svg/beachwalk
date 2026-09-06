@@ -1558,6 +1558,56 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**EVERY BONE LOOKUP GOES THROUGH THE ALIAS, AND THREE OF THEM DID NOT.**
+The severing, the head burst and the limb bake name the mutant's bones
+literally — `Character1_LeftForeArm` — and the Dealer's rig answers to
+`mixamorigLeftForeArm_NN`. The ragdoll learned this once and routes
+everything through `byName`; these three never did, so on him they found
+nothing, returned false, and he was the one creature in the game that could
+not lose so much as a hand. `ragBone(u, name)` is the one door now. And the
+RATES are lower for him than for the pack: a creature you meet three of at
+once can come apart half the time and still read as a thing that happened,
+but the one man in the game, killed once, cannot. Measured at the first
+rates: thirteen of fourteen took something and eleven of those were the head,
+which is a gore setting. At 0.28 / 0.30 it is 46 % on the finishing blow and
+33 % on an ordinary heavy.
+
+**SPARKS ARE FOR STEEL.** A cut that went into him threw six drops of blood
+under `bossHit`'s shower of sixteen sparks, so every landed blow read as the
+bar being met rather than the man being opened — the owner saw sparks and
+nothing else. `bossHit` takes a `flesh` flag: sparks on a block and a parry,
+four off the bar on a stagger, none at all on a cut, and four times the
+blood thrown from the height the blade landed with a stain under it.
+Measured: 24 drops on a click, 36 on a charge, against 6 before.
+
+**A CONSTANT THAT READS A LATER ONE IS A DEAD ZONE CRASH.** `RUN_SPEED` is
+declared at line 26 and the speed setting it wants to divide by at line 167,
+and `8.0 / DEFAULT_SETTINGS.walkSpeed` took the whole page down before a
+line ran. The number is written out with the arithmetic in the comment. And
+the number that matters is the one the OWNER gets: his speed slider sits at
+1.4, so "make 8 the max walk speed" means the constant is 5.71.
+
+**A CUTSCENE HANDS YOU BACK A FIGHT, SO IT HANDS YOU BACK A FULL BAR.** You
+cannot block, sprint or breathe through a take, and the run TO the trigger is
+often what emptied it — so the opening exchange was decided before you had
+your hands. `catchBreath()` on the end of every one.
+
+**AND HE ROUTES BEFORE HE IS STUCK, NOT AFTER.** Asking the room for a way
+round only once he had ground to a halt meant a second of him working along
+the table's edge every time you stood behind it. If the straight line to you
+crosses furniture he asks for a route straight away, at most every
+`PATH_EVERY`, and drops it the moment the direct line opens — a route is a
+way ROUND something, not a way of getting about. Measured: 22 of 22 standing
+spots in the room reached, 15 of them by route.
+
+**AND ONE THING IN THE ROOM IS PART OF THE FIGHT.** The coat stand is not in
+the nav grid on purpose: a thing that breaks when you touch it must not also
+be a wall, or a body would stop at it and never knock it over. Anyone walking
+into it brings it down — you, him, or a ragdoll sliding through — and it goes
+to dowel rather than to case and tube and sparks, because it is wood. Its
+spot is checked against the walk grid rather than guessed; the first one
+stood inside a desk.
+
 **THE CAMERA IS THE PLAYER'S.** It should move for what he does and for what
 is done to him, and not for anything else — a body landing across the room, a
 monitor coming off a desk, a bottle going. In a steel box with eighteen
