@@ -1558,6 +1558,63 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**THE DEALER'S CLIPS ARE BUILT ON THE MIXAMO IDLE, NOT ON THE BIND POSE.**
+Second pass, after the owner called the first "horrible": every authored clip
+used to be posed up from the rig's T with a hand-guessed stance under it, and
+every one of them met the four source clips at a seam — a different arm, a
+different shoulder, different hips, and a crossfade that showed all three.
+The base of everything authored is now a FRAME OF THE SOURCE IDLE (`BASE`,
+`HIP_BASE`, lifted once in `tools/dealer_pack.py`) and the helpers add motion
+on top (`setrot` composes the delta onto the base quaternion). A clip that
+starts and ends on the idle's own pose blends into it for free, the bar is
+held the way Mixamo holds it in every clip, and no arm can find its way back
+to the T. What went with it: **root motion is flattened** on the source
+clips (the hips' sideways and forward curves held at their first value; the
+game moves him, and the two fought — that was the "moving glitched out");
+**seating is per frame** on the sole of the shoe mesh through the depsgraph,
+lift only, because a constant lift seated the reach of the pickup and left
+him standing a third of a metre off the floor for the rest of it; and every
+clip is rendered as an EIGHT-FRAME STRIP before it ships, because three
+stills of a swing is barely better than none. `pickup` is its own clip — he
+turns to the shelf, drops his weight, closes on the bar at 0.46 (the frame
+the game moves it from the console to his fist), and comes up already
+turning back — and `updateDealer` drives it itself with `holdAnim` set, or
+`mutAnim` fades it straight back out for the idle on the next frame.
+
+**HE DIES ON THE RAGDOLL, WITH HIS OWN BONE NAMES.** The death clip was a
+canned fall that landed him through whatever he stood against. The Verlet
+ragdoll is written to `Character1_*` names and every reference goes through
+`byName`, so a `boneAlias` built when he is dressed — `Character1_Hips` →
+`mixamorigHips_00` — is all `mutRagdoll` needs; the floor it lands on is the
+one under it (`bunkerFloorAt`, not the sand plane) and it does not ask the
+sea whether it is wet. **The exporter drops the colon**: the bones arrive as
+`mixamorigHips_00`, not `mixamorig:Hips_00`, and a regex that insisted on it
+built an alias of zero entries and a ragdoll of zero parts — he froze
+upright on the frame he died.
+
+**THE FURNITURE PUSHES YOU OUT ALONG THE RESULTANT.** The room's walk undid
+a blocked move an axis at a time, and against anything that was not a flat
+wall both axes read blocked and the whole move was thrown away — you stood
+against the trash can unable to step round it. `S.pushOut` is a disc against
+the grid's cells: every overlapping cell pushes along the line from its
+nearest point by the depth of the overlap, and the push applied is the SUM.
+That last word is the fix: the grid is square cells, so a round bin is a
+small square with a flat face, and a nearest-face push from it is exactly
+against your motion — you stop dead. Summed, a small object's cells fan out
+round you and shove you to whichever side you are already on, while a desk
+front, whose cells all push the same way, is still a wall. Measured brushing
+the can: 0.86 m and stopped, against 4.75 m and past it. The disc is 0.22
+in here, not the beach's 0.26 — the aisles are tight.
+
+**A CHECKPOINT LOAD HAS NO GESTURE.** `beginGame` asks for the pointer lock
+with nobody's hand on the mouse, the request fails, and `enterFallback` puts
+the look on drag — right for a browser that cannot lock, wrong for one that
+simply was not asked by a click. The way out of the fallback required a lock
+to have ONCE worked, and on a fresh page it never had: the owner came back
+from a checkpoint and dragged the camera round for the rest of the game. A
+press on the world is a gesture, so it asks the browser outright even in the
+fallback, and a lock that lands clears the fallback in `pointerlockchange`.
+
 **AND THE FIGHT DID NOT WORK, FOR FOUR SEPARATE REASONS.** The owner called
 it unplayable and every word of that was earned. In order of how much they
 cost:

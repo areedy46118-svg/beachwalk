@@ -3182,6 +3182,7 @@ document.addEventListener('pointerlockchange', () => {
   locked = document.pointerLockElement === renderer.domElement;
   if (locked) {
     everLocked = true; lockRetry = 0; clearTimeout(lockTimer);
+    fallbackLook = false; dragging = false;          // a real lock ends the drag fallback, however we got here
     started = true; overlay.classList.add('hidden'); refreshUI();
   } else {
     if (fallbackLook || ended) return;
@@ -3456,7 +3457,20 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
    * the way back out of it. */
   if (started && !locked && !frozen()) {
     if (fallbackLook && everLocked) { fallbackLook = false; dragging = false; }
-    if (!fallbackLook) requestLock();
+    /* A CHECKPOINT LOAD HAS NO GESTURE. `beginGame` asks for the lock with
+     * nobody's hand on the mouse, the request fails, and `enterFallback`
+     * puts the look on drag — which is right for a browser that cannot lock
+     * and wrong for one that simply was not asked by a click. The old test
+     * only let you back out of the fallback if a lock had ONCE worked, and
+     * on a fresh page it never had: the owner came back from a checkpoint
+     * and had to drag the camera round for the rest of the game. Any press
+     * on the world is a gesture, so it asks outright, and success clears
+     * the fallback in `pointerlockchange`. A browser that cannot lock says
+     * no and nothing changes. */
+    if (fallbackLook) {
+      const q = renderer.domElement.requestPointerLock && renderer.domElement.requestPointerLock();
+      if (q && q.catch) q.catch(() => {});
+    } else requestLock();
   }
   /* The LEFT button does both: a click is a light swing, and holding it
    * hauls the shovel back for a heavy. Right is deliberately left free.
@@ -13019,6 +13033,14 @@ function dressMutant(u, gltf) {
   if (u.kind.human) {
     m.traverse((o) => { if (o.isMesh && /crowbar/i.test(o.name)) { u.weapon = o; o.visible = false; } });
     m.traverse((o) => { if (o.isBone && /Head_/.test(o.name) && !/HeadTop/.test(o.name)) u.head = o; });
+    // the ragdoll is written to the mutant's bone names; a Mixamo rig's are
+    // 'mixamorig:Hips_00' — the same joints under a prefix and a number
+    u.boneAlias = {};
+    m.traverse((o) => {
+      if (!o.isBone) return;
+      const mm = /^mixamorig:?(.+)_\d+$/.exec(o.name);   // the exporter drops the colon: 'mixamorigHips_00'
+      if (mm) u.boneAlias['Character1_' + mm[1]] = o.name;
+    });
     /* HE ALREADY FACES +Z, which is what the AI's `atan2(dx, dz)` points at
      * the player — checked by rendering him alone from all four sides
      * rather than by reasoning about the export, because the chain from the
@@ -13305,8 +13327,14 @@ function finishMutant(u) {
    * he stays there — which is also the only ending a boss should get: you
    * want to walk up to what you killed, not sweep up after it. */
   if (u.kind.human) {
+    /* No severing and no bursting head — but the FALL is the ragdoll's,
+     * because a man who dies on a canned clip dies the same way every time
+     * and lands through the desk he was standing against. His bones answer
+     * to the Character1_ names through `boneAlias`, built when he was
+     * dressed; the rest of the machine does not know the difference. */
     if (u.weapon) u.weapon.visible = true;
     sfxKillThud();
+    mutRagdoll(u, u.hitDir.x, u.hitDir.z, 0.6 + (u.st.killP || 0) * 0.6);
     return;
   }
   /* WHAT THE LAST BLOW TOOK WITH IT. A charged cut can go through the waist;
@@ -14101,6 +14129,7 @@ function mutRagdoll(u, dirX, dirZ, power) {
   u.model.updateMatrixWorld(true);
   const bones = {};
   u.model.traverse((o) => { if (o.isBone) bones[o.name] = o; });
+  if (u.boneAlias) for (const k in u.boneAlias) if (bones[u.boneAlias[k]]) bones[k] = bones[u.boneAlias[k]];
   /* A SEVERED LIMB LEAVES A STUMP, AND THE STUMP IS SIMULATED. Everything
    * below a cut bone is gone and gets no particle — but the cut joint itself
    * is the END of the segment above it, and without a particle there that
@@ -14188,7 +14217,8 @@ function ragHit(u, q, P, dirX, dirZ) {
 function updateMutRagdoll(u, dt) {
   const r = u.rag; if (!r) return;
   r.t += dt;
-  const gy = 0.07;                                    // the sand plane, plus the flesh around a joint: the mesh rests ON the sand, not in it
+  const bf = bunkerFloorAt(u.g.position.x, u.g.position.z, u.g.position.y + 0.5);
+  const gy = (bf === null ? 0 : bf) + 0.07;           // the floor under it, plus the flesh around a joint: the mesh rests ON it, not in it
   /* IT FLOATS. The seabed is the sand plane and the drawn sea sits BELOW it,
    * so a body that came to rest on the sand in the surf lay on top of the
    * water like a raft — the owner's "they sit on top". In the water each
@@ -14198,12 +14228,12 @@ function updateMutRagdoll(u, dt) {
    * else wades in, and a corpse the tide reaches later is WOKEN by it. */
   let wet = false;
   const hip0 = r.byName['Character1_Hips'] || r.parts[0];
-  if (r.asleep && hip0 && submersionAt(hip0.p.x, hip0.p.z) > 0.15) r.asleep = false;
+  if (r.asleep && hip0 && bf === null && submersionAt(hip0.p.x, hip0.p.z) > 0.15) r.asleep = false;
   if (!r.asleep) {
     const h = Math.min(dt, 1 / 30) / RAG_SUB;
     let motion = 0;
     for (const q of r.parts) {
-      const sub = submersionAt(q.p.x, q.p.z);
+      const sub = bf === null ? submersionAt(q.p.x, q.p.z) : 0;
       const k = THREE.MathUtils.clamp((sub - 0.15) / 0.6, 0, 1);
       q.wet = k;
       q.floor = k > 0 ? gy + (waterSurfaceAt(q.p.x, q.p.z) - 0.10 - gy) * k : gy;
@@ -14294,7 +14324,7 @@ function updateMutantUnit(u, dt) {
    * his own line is a photograph. He keeps his idle through a dialogue,
    * and only a dialogue; the menu still stops him dead. */
   if (frozen()) {
-    if (u.kind.human && dialogOpen && !menuOpen && !inspecting) mutAnim(u, dt, 0);
+    if (u.kind.human && dialogOpen && !menuOpen && !inspecting && !u.holdAnim) mutAnim(u, dt, 0);
     return;
   }
 
@@ -14304,7 +14334,7 @@ function updateMutantUnit(u, dt) {
   const turn = (rate) => { u.g.rotation.y += _smileTurn(u.g.rotation.y, face) * Math.min(1, dt * rate); };
 
   if (!u.st.awake) {
-    mutAnim(u, dt, 0);
+    if (!u.holdAnim) mutAnim(u, dt, 0);        // something else is driving the clip (his reach for the bar)
     return;                                    // the cutscene is what wakes them
   }
   // the roar: it does not move through it, which is the beat that says what
@@ -15506,21 +15536,21 @@ function updateBunkers(dt) {
     // the walls
     _bkL.x = THREE.MathUtils.clamp(_bkL.x, R.x0 + pr, R.x1 - pr);
     _bkL.z = THREE.MathUtils.clamp(_bkL.z, R.z0 + pr, R.z1 - pr);
-    // the furniture: a blocked move is undone an axis at a time, so you slide
+    /* THE FURNITURE PUSHES YOU OUT; IT DOES NOT STOP YOU. The first walk
+     * undid a blocked move an axis at a time, and against anything that was
+     * not a flat wall — the round trash can, a desk corner, a chair leg —
+     * both axes read blocked and the whole move was thrown away: you stood
+     * against a bin unable to step round it. This is a disc against the
+     * grid's cells the way the player is a disc against the beach's rocks:
+     * every blocked cell inside the disc pushes it out along the line from
+     * the cell's nearest point, a few rounds until nothing overlaps. Round
+     * a corner that comes out as sliding, which is what a body does. */
     _bkP.copy(_preMove).applyMatrix4(b.inv);
-    const r = 0.26;
+    const r = 0.22;                       // a hand narrower than the beach's body: the aisles are tight
     if (B.blocked(_bkL.x, _bkL.z, r)) {
       if (!B.blocked(_bkP.x, _bkP.z, r)) {
-        /* Try the axis you are mostly moving along FIRST. Trying x first
-         * every time meant that in a gap between two console units a
-         * hair of sideways drift was kept and the whole stride down the
-         * gap thrown away, and you stood in the gap walking on the spot. */
-        const mx = Math.abs(_bkL.x - _bkP.x), mz = Math.abs(_bkL.z - _bkP.z);
-        const keepZ = !B.blocked(_bkP.x, _bkL.z, r), keepX = !B.blocked(_bkL.x, _bkP.z, r);
-        if (mz >= mx ? keepZ : !keepX) _bkL.x = _bkP.x;
-        else if (mz >= mx ? keepX : keepX) _bkL.z = _bkP.z;
-        else { _bkL.x = _bkP.x; _bkL.z = _bkP.z; }
-        if (B.blocked(_bkL.x, _bkL.z, r)) { _bkL.x = _bkP.x; _bkL.z = _bkP.z; }
+        B.pushOut(_bkL, r, 4);
+        if (B.blocked(_bkL.x, _bkL.z, r)) { _bkL.x = _bkP.x; _bkL.z = _bkP.z; }   // wedged: the move is simply not made
       } else {
         /* The frame BEGAN inside something — a bite's shove, a teleport, the
          * wall clamp landing you in a desk against it. Undoing the move
@@ -15909,12 +15939,13 @@ function updateDealer(dt) {
   if (dealerPick >= 0 && !dealerFight) {
     const was = dealerPick;
     dealerPick += dt;
+    dealer.holdAnim = true;                    // mutAnim would fade this straight back out for the idle
     const a = mutPlay(dealer, 'pickup', false);
     if (a) { a.paused = true; a.time = Math.min(a.getClip().duration - 0.001, (dealerPick / PICK_DUR) * a.getClip().duration); }
     if (dealer.mixer) dealer.mixer.update(dt);
     if (was < PICK_GRAB * PICK_DUR && dealerPick >= PICK_GRAB * PICK_DUR) dealerTakeBar();
     if (dealerPick >= PICK_DUR) {
-      dealerPick = -1;
+      dealerPick = -1; dealer.holdAnim = false;
       cineHold = false; dialogTarget = null; dialogHead = null; dialogFov = DIALOG_FOV;
       startDealerFight();
     }

@@ -143,6 +143,55 @@ export function makeUndergroundBunker(opts = {}) {
     }
     return false;
   };
+  /* Push a disc out of the blocked cells it overlaps. Each round, every
+   * blocked cell inside the disc pushes it along the line from the cell's
+   * nearest point by the depth of the overlap; a few rounds settle a corner.
+   * `p` is a Vector3 in local three metres and is moved in place. */
+  S.pushOut = (p, r = 0.28, rounds = 4) => {
+    /* THE PUSH IS THE RESULTANT, NOT THE NEAREST FACE. The grid is square
+     * cells, so a round bin is a small square and its face is flat: walk
+     * straight at it and the nearest-point push is exactly against your
+     * motion — you stop dead against a bin a step wide, which is the owner's
+     * "stuck by the trash can". Summing the push from EVERY overlapping cell
+     * makes a small object shove you toward whichever side of it you are
+     * already on (its cells fan out round you), while a long desk front,
+     * whose cells all push the same way, still behaves as a wall. */
+    const n = S.nav; if (!n) return false;
+    let moved = false;
+    for (let it = 0; it < rounds; it++) {
+      let sx = 0, sz = 0, deepest = 0, any = false;
+      const by = -p.z;
+      const i0 = Math.floor((p.x - r - n.x0) / n.cell), i1 = Math.floor((p.x + r - n.x0) / n.cell);
+      const j0 = Math.floor((by - r - n.y0) / n.cell), j1 = Math.floor((by + r - n.y0) / n.cell);
+      for (let j = Math.max(0, j0); j <= Math.min(n.gh - 1, j1); j++) {
+        const row = n.grid[j];
+        for (let i = Math.max(0, i0); i <= Math.min(n.gw - 1, i1); i++) {
+          if (row.charCodeAt(i) !== 49) continue;
+          const cx0 = n.x0 + i * n.cell, cy0 = n.y0 + j * n.cell;
+          const cx = Math.min(Math.max(p.x, cx0), cx0 + n.cell);
+          const cy = Math.min(Math.max(by, cy0), cy0 + n.cell);
+          let dx = p.x - cx, dy = by - cy;
+          let d = Math.hypot(dx, dy);
+          if (d >= r) continue;
+          if (d < 1e-4) {                           // centre inside the cell: out by the cell's centre
+            dx = p.x - (cx0 + n.cell / 2); dy = by - (cy0 + n.cell / 2); d = Math.hypot(dx, dy) || 1e-3;
+            dx /= d; dy /= d; d = 0;
+          } else { dx /= d; dy /= d; }
+          const pen = r - d;
+          sx += dx * pen; sz += dy * pen;
+          if (pen > deepest) deepest = pen;
+          any = true;
+        }
+      }
+      if (!any) break;
+      const L = Math.hypot(sx, sz);
+      if (L < 1e-6) break;
+      p.x += (sx / L) * (deepest + 0.002);
+      p.z -= (sz / L) * (deepest + 0.002);          // grid y is -z in three
+      moved = true;
+    }
+    return moved;
+  };
   return group;
 }
 
