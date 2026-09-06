@@ -282,6 +282,24 @@ turning. `E` on the ladder — **E To Leave Bunker** — puts you back on the sa
 where you stood. You hear the hatch open ahead of you and slam behind you
 both ways. The room cannot be reached any other way.
 
+## The Blue Blood Dealer
+
+He is already down there, standing at the far end with his hands empty, and
+he has been for a while. Come down the ladder and the first thing that
+happens is that he asks how you got here. The only thing you can say is
+nothing, and the crowbar comes up on the frame you say it.
+
+He is the first boss, and he fights by every rule the beach spent a
+kilometre teaching: read the tell, watch for the commit, block it or time
+the parry, and take the riposte while he is open. What is different is that
+he is a man — he does not roar, does not come apart, and falls where he
+stood — and that he is faster than anything on the sand. Twelve health,
+thirty swing-sequences a minute, two-deep chains and one feint in five.
+
+Everything loose in the room is a body you can pick up, throw and break:
+bottles, jars, valves, a set and a monitor. Glass goes at a knock, a set
+takes rather more, and the shovel breaks them too.
+
 ## Saving
 
 One autosave, and no save button. Reaching the mushroom house — the last
@@ -357,6 +375,11 @@ castle, crab, `startDig`, `toggleEquip`, `openMenu`, `openInspect`, `showEnd`,
 This work is based on ["The smile ( Rigged)"](https://sketchfab.com/3d-models/the-smile-rigged-6795ba0b406f4e61993fafebbb94ebd9)
 by [Vertex Mercher](https://sketchfab.com/VertexMercher) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the tall one past the snorkeler.
+
+This work is based on ["Character with animation"](https://sketchfab.com/3d-models/character-with-animation-31ea9ee9c82340bc8fd8da2343f9234d)
+by [Yury Misiyuk](https://sketchfab.com/Tim0) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Blue Blood
+Dealer (`assets/dealer.glb`, built by `tools/dealer_pack.py`).
 
 This work is based on ["Underground Bunker"](https://sketchfab.com/3d-models/underground-bunker-720d2958484345d7b535554e14122b5c)
 by [Bohdan Lvov](https://sketchfab.com/ostapblendercg) licensed under

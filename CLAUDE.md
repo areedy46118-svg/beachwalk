@@ -1558,6 +1558,61 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**THE BLUE BLOOD DEALER IS A MUT_KINDS ENTRY.** The first boss, and almost
+none of him is new code: he is a kind in the same table the pack uses, so
+the tell, the commit, the poise, the parry window, the riposte, the chain,
+the feint, the token and the closing dash are all his by construction. What
+`kind.human` turns off is everything that is a monster — the roar, the sand
+throw, the severing and the Verlet ragdoll (all of which name the mutant's
+own bones anyway) — and what it turns on is a death CLIP: a boss goes down
+where he stood and you walk up to what you killed. `kind.solo` keeps him out
+of the three loops the dock's cutscene runs over every mutant on the beach.
+He is placed at `BUNKER_Y` under the hatch and clamped to the room by the
+same nav grid the player is, because the fight AI works in world space and
+knows nothing about walls. Six things this cost:
+
+- **`skinnedBounds` measures in WORLD space.** Every creature on the beach
+  stands on a group at y = 0, so "stand it on its own feet" and "put its
+  feet at the group's origin" are the same arithmetic and the difference had
+  never shown. Forty metres down it lifted him twenty-six metres into the
+  sand over the roof.
+- **He stood in a T-POSE through his own dialogue.** `frozen()` returns
+  before the animation runs, and `mutPlay` fades a clip in over 0.14 s — so
+  a mixer frozen on the first frame holds the skeleton at eight per cent of
+  one clip, which IS the bind pose, and this rig binds in a T. The first
+  clip is set to full weight at load, and a human keeps his idle through a
+  dialogue (only a dialogue; the menu still stops him dead).
+- **A model faces where the render says it faces.** The chain from FBX
+  through two importers and an exporter flips twice; reasoning about it gave
+  the wrong answer twice and a half turn that put his back to the fight.
+  Render the thing alone from four sides and look.
+- **The rest pose is a T, not a man standing.** Authoring arm angles as if
+  0 meant "at his sides" left both arms straight out in every authored clip.
+  `ARM_DROP` is the rotation from the T to a hanging arm and everything is
+  measured from there.
+- **He faces -Y in Blender**, which the rig itself says: the foot bone runs
+  ankle to TOE and its tail is at y = -111.
+- **A death that only drops is a puppet with the strings cut.** The root has
+  to turn as well, or he collapses straight down into a heap on the spot.
+
+**AND THE ROOM IS FULL OF THINGS TO BREAK.** Eight `PhysProp` bodies —
+bottles, jars, valves, a set, a monitor — picked up with E, thrown, and
+broken on the wall, the floor or on him; `glassStrike` already walks every
+prop with an `onImpact`, so the shovel breaks them for free. Three things the
+physics needed, none of which the beach had ever asked for. **A body needs a
+FLOOR forty metres down**, and it cannot join the "highest surface wins"
+test the others use — the highest surface under a bottle in the bunker is
+the beach over its head — so `bunkerFloorAt` replaces rather than competes,
+and it is a forward hook because the room is declared thousands of lines
+below the physics. **A desk top is not a ground**: props placed by raycast
+onto the room's own meshes fell straight through the desk they were set on
+and smashed on the floor the moment they existed, so a body may carry its
+own `floorAt`, which answers for its perch and stops answering a hand's
+width off it — which is exactly when it should fall. And **a sealed room
+needs walls**: nothing in the physics knew about them, so a hard throw went
+out through the concrete and left its shards lying on the sand, which is
+what `confine` is — a world-space box the body bounces off.
+
 **THE HATCH IS A CUT, AND THE ROOM IS UNDER THE BEACH.** The bunker's only
 door is a steel lid in the sand at `HATCH_X / HATCH_Z` (halfway from the
 snorkeler to the tall one); the room stands at `BUNKER_Y` = -40 directly
@@ -1576,7 +1631,22 @@ the sand above; **you come out where you went in** (`hatchReturn`), not at
 a fixed spot, so the collar you were standing on is under you again; and
 **the scan's hatch clip spends its first 8.5 s on the cogs**, so to see the
 cover move before the black it is started at 7.9 s and run at 3.2x, then
-`stop()`ped at the cut so it is shut again next time. The room's air is
+`stop()`ped at the cut so it is shut again next time. AND NOTHING ABOVE 240 Hz LIVES IN THE ROOM'S AIR: a CRT's
+flyback at 7840 Hz was in the bed and read as tinnitus, because a pure high
+sine has no envelope and nowhere to hide and the ear locks onto it. **AND IT
+IS WARMED THROUGH THE CANVAS.** Four hundred meshes and seventeen megabytes
+compile and upload on the first frame they are drawn, which froze the game
+at the press that had to be seamless — and warming into an 8x8 render
+target, the way the drain is warmed, bought nothing: a target has its own
+output colour space, so three compiles a DIFFERENT program for every
+material and the canvas pays the whole bill again. Measured: warmed into a
+target the first real frame still cost 116 ms; warmed through the canvas
+with a four-pixel scissor it is 27, and that one lands while the screen is
+black. **AND THE COLLIDER GRID INTERPOLATES.** It marked every cell in a
+triangle's bounding box if ANY corner of it was between knee and head
+height, so a cable hanging from the ceiling and a roof beam sloping down
+laid their whole footprint on the floor as a wall; the height is sampled at
+the cell now. The room's air is
 `bunkerMix`: the surf and the wind (`windDuck`, a stage added to the wind
 chain for this) pulled to a tenth, a mains hum, a breathing fan and a thread
 of CRT whine, and steel underfoot (`sfxStepMetal`, no print).

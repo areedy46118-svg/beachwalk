@@ -3934,6 +3934,16 @@ let held = null;
 const _pv = new THREE.Vector3(), _pt = new THREE.Vector3(), _pf = new THREE.Vector3();
 const _pp = new THREE.Vector3();          // props: where a push-out would put it
 const _preMove = new THREE.Vector3();     // the player, before this frame's movement
+/* THE FLOOR IN THE BUNKER, ASKED FROM UP HERE. The physics, the gibs and
+ * the breaking glass all need to know that there is a steel floor forty
+ * metres under the beach — and the room that says so is declared thousands
+ * of lines below this, which in one long module of consts is a dead-zone
+ * crash. So it is a hook: null until the hatch section fills it in, and it
+ * answers with the floor's height only for a body that is actually down
+ * there. It cannot be folded into the "highest surface wins" test the other
+ * grounds use, because the bunker's floor is forty metres BELOW the sand —
+ * anything down there would be lifted to the beach. It replaces. */
+let bunkerFloorAt = () => null;
 class PhysProp {
   constructor(mesh, opts = {}) {
     this.mesh = mesh;
@@ -3941,6 +3951,20 @@ class PhysProp {
     this.angVel = new THREE.Vector3();
     this.radius = opts.radius ?? 0.3;
     this.restH = opts.restH ?? this.radius;
+    /* A SHELF OF ITS OWN. The world's grounds are the sand, the deck, the
+     * solids and the bunker's floor — a desk top in a scanned room is none
+     * of them, so a bottle set on one fell straight through it and broke on
+     * the floor the moment it existed. A body can carry a `floorAt` that
+     * answers for its own perch, and stops answering once it has been
+     * knocked off it, which is exactly when it should fall. */
+    this.floorAt = opts.floorAt || null;
+    /* AND A ROOM IT CANNOT LEAVE. Nothing in the physics knows about the
+     * bunker's walls, so a bottle thrown hard went straight out through
+     * the concrete, broke somewhere over the beach, and left its shards
+     * lying on the sand forty metres up. `confine` is a world-space box the
+     * body bounces off — the cheapest possible wall, and the only one a
+     * sealed room needs. */
+    this.confine = opts.confine || null;
     this.bounce = opts.bounce ?? 0.32;
     this.friction = opts.friction ?? 0.78;
     this.holdDist = opts.holdDist ?? Math.max(1.15, this.radius + 0.9);
@@ -3968,6 +3992,14 @@ class PhysProp {
     }
     this.vel.y -= GRAV * dt;
     p.addScaledVector(this.vel, dt);
+    if (this.confine) {
+      const c = this.confine, r = this.radius * 0.6;
+      if (p.x < c.x0 + r) { p.x = c.x0 + r; if (this.vel.x < 0) this.vel.x *= -this.bounce - 0.25; }
+      else if (p.x > c.x1 - r) { p.x = c.x1 - r; if (this.vel.x > 0) this.vel.x *= -this.bounce - 0.25; }
+      if (p.z < c.z0 + r) { p.z = c.z0 + r; if (this.vel.z < 0) this.vel.z *= -this.bounce - 0.25; }
+      else if (p.z > c.z1 - r) { p.z = c.z1 - r; if (this.vel.z > 0) this.vel.z *= -this.bounce - 0.25; }
+      if (c.y1 !== undefined && p.y > c.y1 - r) { p.y = c.y1 - r; if (this.vel.y > 0) this.vel.y *= -this.bounce; }
+    }
     const incoming = this.vel.length();          // speed going into any contact
     let struck = false, surface = 'sand';
     /* What is under it. A body used to know one ground — the sand — so a
@@ -3987,7 +4019,13 @@ class PhysProp {
      * already report WHICH collider they hit, so ask them. Whatever reaches
      * it brings it down, from any height and at any speed, and the collider
      * is gone by the next line so it can never be the thing you land on. */
-    const sc = rockGroundAt(p.x, p.z, p.y);
+    const bf = bunkerFloorAt(p.x, p.z, p.y);
+    if (bf !== null) { rest = bf + this.restH; surface = 'metal'; }
+    if (this.floorAt) {
+      const pf = this.floorAt(p.x, p.z, p.y);
+      if (pf !== null && pf !== undefined && pf + this.restH > rest) { rest = pf + this.restH; surface = 'metal'; }
+    }
+    const sc = bf === null ? rockGroundAt(p.x, p.z, p.y) : null;
     if (sc && sc.top + this.restH > rest) {
       /* CONTACT, not proximity. `rockGroundAt` answers "what would this land
        * on", which is true of anything merely flying over the castle — so
@@ -4228,6 +4266,11 @@ function glassStrike() {
   }
   return false;
 }
+// where the ground is under a point — the sand, or the room under the beach
+function floorFor(p) {
+  const bf = bunkerFloorAt(p.x, p.z, p.y);
+  return bf === null ? 0 : bf;
+}
 function shatterGlass(prop, mesh, speed, radius, threshold = 4.6) {
   if (prop.dead || speed < threshold) return;        // a gentle knock just clinks
   prop.dead = true;
@@ -4247,7 +4290,7 @@ function shatterGlass(prop, mesh, speed, radius, threshold = 4.6) {
     // tetrahedron scaled thin reads as a shard from any angle
     const m = new THREE.Mesh(new THREE.TetrahedronGeometry(radius * (0.22 + Math.random() * 0.3), 0), mat);
     m.scale.set(1, 0.35 + Math.random() * 0.5, 1);
-    m.position.set(p.x + (Math.random() - 0.5) * radius, Math.max(0.04, p.y), p.z + (Math.random() - 0.5) * radius);
+    m.position.set(p.x + (Math.random() - 0.5) * radius, Math.max(floorFor(p) + 0.04, p.y), p.z + (Math.random() - 0.5) * radius);
     m.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
     scene.add(m);
     const a = Math.random() * Math.PI * 2, out = 0.8 + Math.random() * 2.2;
@@ -4255,10 +4298,84 @@ function shatterGlass(prop, mesh, speed, radius, threshold = 4.6) {
       m,
       vel: new THREE.Vector3(Math.cos(a) * out, 1.6 + Math.random() * 2.4, Math.sin(a) * out),
       spin: new THREE.Vector3((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20),
-      rest: 0.015 + Math.random() * 0.03,
+      rest: floorFor(p) + 0.015 + Math.random() * 0.03,
       life: 30, bleed: false,
     });
   }
+}
+
+/* SMASHING ELECTRONICS. Glass goes to slivers; a monitor or a set goes to
+ * CASE — dark plastic and pressed steel — with its screen going separately,
+ * and it arcs. Same shape as `shatterGlass` so the shovel's `glassStrike`
+ * and a hard throw both reach it through `onImpact`, and the sparks are
+ * real gibs on an emissive material so they bounce off the floor and die
+ * rather than being a puff of sprites in the middle of the room. */
+const CASE_MAT = new THREE.MeshStandardMaterial({ color: 0x2b2f33, roughness: 0.85, metalness: 0.18, flatShading: true, emissive: 0x0a0c0e });
+const SCREEN_MAT = new THREE.MeshStandardMaterial({ color: 0x8fa7b4, roughness: 0.14, metalness: 0.0, flatShading: true, transparent: true, opacity: 0.7, emissive: 0x16242c, side: THREE.DoubleSide });
+const SPARK_MAT = new THREE.MeshBasicMaterial({ color: 0xffd9a0 });
+function smashElectronics(prop, mesh, speed, radius, threshold = 4.0) {
+  if (prop.dead || speed < threshold) return;
+  prop.dead = true;
+  const p = mesh.position.clone();
+  scene.remove(mesh);
+  removeInteractable(mesh);
+  if (hovered && hovered.root === mesh) hovered = null;
+  sfxSmashElectronics();
+  addTrauma(0.2);
+  const gy = floorFor(p);
+  const push = (m, up, out, life, spin) => {
+    m.position.set(p.x + (Math.random() - 0.5) * radius, Math.max(gy + 0.04, p.y), p.z + (Math.random() - 0.5) * radius);
+    m.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+    scene.add(m);
+    const a = Math.random() * Math.PI * 2;
+    gibs.push({
+      m, vel: new THREE.Vector3(Math.cos(a) * out, up, Math.sin(a) * out),
+      spin: new THREE.Vector3((Math.random() - 0.5) * spin, (Math.random() - 0.5) * spin, (Math.random() - 0.5) * spin),
+      rest: gy + 0.015 + Math.random() * 0.03, life, bleed: false,
+    });
+  };
+  for (let i = 0; i < 9; i++) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(radius * (0.3 + Math.random() * 0.5), radius * (0.1 + Math.random() * 0.3), radius * (0.3 + Math.random() * 0.4)), CASE_MAT);
+    push(m, 1.4 + Math.random() * 2.0, 0.7 + Math.random() * 1.9, 40, 14);
+  }
+  for (let i = 0; i < 7; i++) {
+    const m = new THREE.Mesh(new THREE.TetrahedronGeometry(radius * (0.16 + Math.random() * 0.22), 0), SCREEN_MAT);
+    m.scale.set(1, 0.3 + Math.random() * 0.4, 1);
+    push(m, 1.8 + Math.random() * 2.4, 1.0 + Math.random() * 2.4, 30, 20);
+  }
+  // it arcs as it goes: a dozen bright specks, gone in a moment
+  for (let i = 0; i < 12; i++) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.016, 0.016), SPARK_MAT);
+    push(m, 2.4 + Math.random() * 3.2, 1.4 + Math.random() * 3.0, 0.55 + Math.random() * 0.5, 30);
+  }
+}
+/* The report: the case giving, the tube letting go, and the arc. Short —
+ * this is a thing breaking, not an explosion. */
+function sfxSmashElectronics() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  const body = noiseBurst(0.16, (x) => Math.pow(1 - x, 2.2));
+  const bf = ctx.createBiquadFilter(); bf.type = 'lowpass'; bf.frequency.value = 380;
+  const bg = ctx.createGain(); bg.gain.value = 0.55;
+  body.connect(bf).connect(bg).connect(out); body.start(t); body.stop(t + 0.16);
+  // the tube: a hard implosive pop with a ring on it
+  const o = ctx.createOscillator(); o.type = 'triangle';
+  o.frequency.setValueAtTime(760, t); o.frequency.exponentialRampToValueAtTime(90, t + 0.09);
+  const og = ctx.createGain(); og.gain.setValueAtTime(0.34, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
+  o.connect(og).connect(out); o.start(t); o.stop(t + 0.14);
+  // glass off the steel floor
+  for (let i = 0; i < 7; i++) {
+    const at = 0.02 + Math.random() * 0.34;
+    const g2 = noiseBurst(0.035, (x) => Math.pow(1 - x, 5));
+    const f2 = ctx.createBiquadFilter(); f2.type = 'bandpass'; f2.Q.value = 7; f2.frequency.value = 3200 + Math.random() * 3600;
+    const gg = ctx.createGain(); gg.gain.value = 0.10 + Math.random() * 0.12;
+    g2.connect(f2).connect(gg).connect(out); g2.start(t + at); g2.stop(t + at + 0.035);
+  }
+  // and the arc
+  const arc = noiseBurst(0.22, (x) => Math.pow(1 - x, 1.4) * (Math.random() < 0.35 ? 1 : 0.12));
+  const af = ctx.createBiquadFilter(); af.type = 'highpass'; af.frequency.value = 2600;
+  const ag = ctx.createGain(); ag.gain.value = 0.16;
+  arc.connect(af).connect(ag).connect(out); arc.start(t + 0.03); arc.stop(t + 0.25);
 }
 
 {
@@ -7800,8 +7917,9 @@ function updateGibs(dt) {
      * of its thickness under, lying flat, and moves with the swell — it used
      * to be hidden the moment the sea covered it, which for a limb thrown
      * into the surf was a limb that vanished. */
-    const sub = submersionAt(g.m.position.x, g.m.position.z);
-    let rest = (deck !== null ? deck + 0.02 : g.rest) + g.half;
+    const gbf = bunkerFloorAt(g.m.position.x, g.m.position.z, g.m.position.y);
+    const sub = gbf === null ? submersionAt(g.m.position.x, g.m.position.z) : 0;
+    let rest = (gbf !== null ? gbf : deck !== null ? deck + 0.02 : g.rest) + g.half;
     if (sub > 0.15) {
       const ws = waterSurfaceAt(g.m.position.x, g.m.position.z) - g.half * 0.3;
       rest = gy_lerp(rest, ws, Math.min(1, (sub - 0.15) / 0.6));
@@ -12922,7 +13040,12 @@ function dressMutant(u, gltf) {
     for (const k in alias) if (u.clips[alias[k]]) u.clips[k] = u.clips[alias[k]];
   }
   mutPlay(u, u.kind.human ? 'calm' : u.kind.anim.idle, true);
-  u.mixer.update(Math.random() * 4);          // not caught at the top of the loop
+  /* AT FULL WEIGHT, NOT FADING IN. `mutPlay` crossfades over 0.14 s, and a
+   * mixer that is frozen before the fade lands leaves the skeleton at eight
+   * per cent of one clip — which is the BIND POSE, and this rig binds in a
+   * T. He stood through his own conversation with his arms straight out. */
+  if (u.cur) u.cur.setEffectiveWeight(1);
+  u.mixer.update(0.4 + Math.random() * 3.6);  // not caught at the top of the loop
 }
 const mutGlbWait = {};                     // one download per model, parsed per copy
 function makeMutant(x, z, kindName, y = 0) {
@@ -14129,7 +14252,15 @@ function updateMutantUnit(u, dt) {
     if (hitstop <= 0) finishMutant(u);
     return;
   }
-  if (frozen()) return;
+  /* HE BREATHES WHILE HE TALKS. `frozen()` is right for the pack — the
+   * dock's cutscene owns them and nothing else may move — but the boss
+   * opens with a conversation, and a man standing perfectly still through
+   * his own line is a photograph. He keeps his idle through a dialogue,
+   * and only a dialogue; the menu still stops him dead. */
+  if (frozen()) {
+    if (u.kind.human && dialogOpen && !menuOpen && !inspecting) mutAnim(u, dt, 0);
+    return;
+  }
 
   const dx = camera.position.x - p.x, dz = camera.position.z - p.z;
   const dist = Math.hypot(dx, dz) || 0.001;
@@ -15495,6 +15626,18 @@ addInteractable(hatch, 'To Enter Bunker', 'action', { onActivate: enterBunker, w
 // apart, and goes down where he stood. And he is the first thing in the
 // game that is faster than you.
 // ------------------------------------------------------------------
+/* The hook the physics asked for, filled in now that the room exists. It
+ * answers only for a body actually down there — inside the walls and within
+ * a couple of metres of the floor — because everything else in the game
+ * takes the HIGHEST surface under it, and the highest surface under a
+ * bottle in the bunker would be the beach forty metres over its head. */
+bunkerFloorAt = (x, z, y) => {
+  const B = bunkerHome.group.userData.bunker, nav = B.nav;
+  if (!nav || y > BUNKER_Y + nav.room.h || y < BUNKER_Y - 2.5) return null;
+  const g = bunkerHome.group, lx = x - g.position.x, lz = z - g.position.z, R = nav.room;
+  if (lx < R.x0 || lx > R.x1 || lz < R.z0 || lz > R.z1) return null;
+  return BUNKER_Y;
+};
 const DEALER_X = HATCH_X + 1.35, DEALER_Z = HATCH_Z + 7.5;   // the console end, facing the ladder
 let dealerMet = false, dealerFight = false, dealerWon = false;
 const dealer = makeMutant(DEALER_X, DEALER_Z, 'dealer', BUNKER_Y);
@@ -15546,13 +15689,134 @@ function clampDealer() {
   p.x = g.position.x + cx; p.z = g.position.z + cz;
   p.y = BUNKER_Y;
 }
+/* WHAT IS LYING ABOUT DOWN THERE, AND WHAT HAPPENS TO IT. The room came
+ * with four hundred meshes and not one of them could be touched. These six
+ * can: they are `PhysProp` bodies like everything on the beach, so you pick
+ * one up with E, throw it with a click, and it breaks — on the wall, on the
+ * floor, on him — and the shovel breaks them too, because `glassStrike`
+ * walks every prop with an `onImpact` and the swing already raycasts them.
+ *
+ * They are PLACED BY RAYCAST, not by guessed heights: a ray down the room's
+ * own meshes from ceiling height finds the desk, the console shelf, the
+ * cupboard or the floor, whichever is actually under that spot. Guessing
+ * would have put half of them inside a desk and the other half floating.
+ */
+const bunkerProps = [];
+function makeBunkerGlass(kind) {
+  const g = new THREE.Group();
+  const glass = new THREE.MeshStandardMaterial({
+    color: kind === 'jar' ? 0x9fb4a6 : 0x8fa9b8, roughness: 0.16, metalness: 0,
+    transparent: true, opacity: 0.55, emissive: 0x141c22, flatShading: true, side: THREE.DoubleSide });
+  const cap = new THREE.MeshStandardMaterial({ color: 0x6d6555, roughness: 0.8, metalness: 0.3, flatShading: true, emissive: 0x0b0a08 });
+  if (kind === 'jar') {
+    g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.08, 0.15, 10), glass));
+    const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.062, 0.03, 10), cap);
+    lid.position.y = 0.088; g.add(lid);
+  } else {
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.058, 0.20, 9), glass);
+    g.add(body);
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.038, 0.075, 8), glass);
+    neck.position.y = 0.135; g.add(neck);
+    const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.022, 8), cap);
+    lid.position.y = 0.182; g.add(lid);
+    // what is in it: the blue that the man downstairs deals in
+    const fill = new THREE.Mesh(new THREE.CylinderGeometry(0.046, 0.052, 0.12, 9),
+      new THREE.MeshStandardMaterial({ color: 0x2a6fa8, roughness: 0.3, transparent: true, opacity: 0.85, emissive: 0x0d3350, emissiveIntensity: 1.6, flatShading: true }));
+    fill.position.y = -0.04; g.add(fill);
+  }
+  return g;
+}
+function makeBunkerElectronic(kind) {
+  const g = new THREE.Group();
+  const shell = new THREE.MeshStandardMaterial({ color: kind === 'radio' ? 0x4a4335 : 0x33383c, roughness: 0.82, metalness: 0.16, flatShading: true, emissive: 0x0a0b0c });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x15181a, roughness: 0.9, flatShading: true });
+  if (kind === 'valve') {
+    g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.036, 0.11, 10),
+      new THREE.MeshStandardMaterial({ color: 0xb9c4c9, roughness: 0.1, transparent: true, opacity: 0.42, emissive: 0x2a1c0a, emissiveIntensity: 1.4, flatShading: true })));
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(0.036, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: 0xb9c4c9, roughness: 0.1, transparent: true, opacity: 0.42, flatShading: true }));
+    dome.position.y = 0.055; g.add(dome);
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.038, 0.03, 10), dark);
+    base.position.y = -0.068; g.add(base);
+    const fil = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.06, 0.006),
+      new THREE.MeshBasicMaterial({ color: 0xff9a4a }));
+    g.add(fil);
+    return g;
+  }
+  const w = kind === 'radio' ? 0.30 : 0.26, h = kind === 'radio' ? 0.17 : 0.22, d = kind === 'radio' ? 0.17 : 0.24;
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(w, h, d), shell));
+  const face = new THREE.Mesh(new THREE.BoxGeometry(w * 0.78, h * 0.66, 0.012),
+    new THREE.MeshStandardMaterial({ color: kind === 'radio' ? 0x2b2a24 : 0x1b2830, roughness: 0.24,
+      emissive: kind === 'radio' ? 0x241a06 : 0x123040, emissiveIntensity: 1.5, flatShading: true }));
+  face.position.z = d / 2 + 0.004; g.add(face);
+  for (let i = 0; i < (kind === 'radio' ? 2 : 3); i++) {
+    const k = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.02, 8), dark);
+    k.rotation.x = Math.PI / 2;
+    k.position.set(-w / 2 + 0.05 + i * 0.055, -h / 2 + 0.035, d / 2 + 0.012); g.add(k);
+  }
+  return g;
+}
+const BUNKER_PROP_SPOTS = [
+  [-2.15, -3.30, 'bottle'], [-1.55, 1.05, 'jar'],   [2.05, -0.60, 'bottle'],
+  [1.35, 4.15, 'monitor'],  [-1.75, 4.35, 'radio'], [0.95, -4.60, 'valve'],
+  [-2.25, 2.60, 'valve'],   [2.15, 2.35, 'jar'],
+];
+function buildBunkerProps() {
+  const g = bunkerHome.group, S = g.userData.bunker;
+  if (!S.ready || bunkerProps.length) return;
+  const R = S.nav.room;
+  const room = { x0: g.position.x + R.x0, x1: g.position.x + R.x1,
+                 z0: g.position.z + R.z0, z1: g.position.z + R.z1, y1: g.position.y + R.h };
+  const meshes = [];
+  S.root.traverse((o) => { if (o.isMesh && o.name !== 'hitProxy') meshes.push(o); });
+  const ray = new THREE.Raycaster();
+  const down = new THREE.Vector3(0, -1, 0);
+  for (const [lx, lz, kind] of BUNKER_PROP_SPOTS) {
+    // whatever is actually under that spot: a desk, the console shelf, the floor
+    const from = new THREE.Vector3(g.position.x + lx, g.position.y + 2.9, g.position.z + lz);
+    ray.set(from, down); ray.far = 3.4;
+    const hit = ray.intersectObjects(meshes, false);
+    const top = hit.length ? hit[0].point.y : g.position.y;
+    const glass = kind === 'bottle' || kind === 'jar' || kind === 'valve';
+    const mesh = glass && kind !== 'valve' ? makeBunkerGlass(kind) : makeBunkerElectronic(kind);
+    mesh.position.set(from.x, top + (kind === 'monitor' || kind === 'radio' ? 0.12 : 0.10), from.z);
+    mesh.rotation.y = Math.random() * Math.PI * 2;
+    const name = kind === 'bottle' ? 'bottle' : kind === 'jar' ? 'jar' : kind === 'valve' ? 'valve'
+      : kind === 'radio' ? 'set' : 'monitor';
+    const radius = kind === 'monitor' || kind === 'radio' ? 0.15 : 0.08;
+    /* It sits on whatever the ray found, and only while it is still there:
+     * a hand's width off the spot and the shelf stops answering, so knocking
+     * one off a desk drops it to the steel — which is usually the end of it. */
+    const shelfY = top, sx = from.x, sz = from.z;
+    const prop = makeProp(mesh, name, {
+      radius, restH: radius * 0.7, mass: glass ? 0.5 : 1.4, bounce: 0.14, friction: 0.72,
+      floorAt: (px, pz) => (Math.abs(px - sx) < 0.30 && Math.abs(pz - sz) < 0.30 ? shelfY : null),
+      confine: room,
+    });
+    /* Anything with an `onImpact` is breakable, and both doors into it —
+     * a hard throw and the shovel — come through here. Glass goes at a
+     * knock; a set takes rather more. */
+    prop.onImpact = (speed) => {
+      if (kind === 'monitor' || kind === 'radio') smashElectronics(prop, mesh, speed, 0.18, 4.0);
+      else if (kind === 'valve') smashElectronics(prop, mesh, speed, 0.07, 2.6);
+      else shatterGlass(prop, mesh, speed, 0.09, 3.0);
+    };
+    bunkerProps.push(prop);
+  }
+}
 function updateDealer() {
   const inRoom = inBunker === bunkerHome;
+  buildBunkerProps();
   dealer.g.visible = bunkerHome.group.visible && !!dealer.model;
   /* He does not fight the ceiling. Leave by the ladder mid-exchange and he
    * stops where he is rather than pacing the room after a player who is
    * forty metres above him; come back down and he picks it straight up. */
   if (dealer.st.alive) dealer.st.awake = dealerFight && inRoom && !hatchBusy;
+  /* Before the crowbar comes out he stands like a man waiting, not like a
+   * man on guard — the fighting stance with nothing in his hands reads as
+   * a mime. `drawGait` picks the idle for him from his kind, so the idle is
+   * simply held to `calm` until the fight starts. */
+  if (!dealerFight && dealer.st.alive) dealer.gait = { walk: 'walk', run: 'run', idle: 'calm', idleRate: 1 };
   if (dealer.model) clampDealer();
   if (!dealerWon && !dealer.st.alive && dealer.st.deadT > 0.5) dealerWon = true;
 }
@@ -16432,7 +16696,7 @@ window.__bw = {
   waterBottle, waterBottleWorld, get waterBottleItem() { return waterBottleItem; },
   get insideDrain() { return insideDrain; }, get drainMix() { return drainMix; },
   spawnBunker, get bunkers() { return bunkers; }, get inBunker() { return inBunker; },
-  enterBunker, leaveBunker, startDealerFight, get dealer() { return dealer; },
+  enterBunker, leaveBunker, startDealerFight, get dealer() { return dealer; }, get bunkerProps() { return bunkerProps; },
   get dealerFight() { return dealerFight; }, get dealerMet() { return dealerMet; }, DEALER_X, DEALER_Z,
   get hatchBusy() { return hatchBusy; }, get bunkerMix() { return bunkerMix; }, get bunkerHome() { return bunkerHome; }, HATCH_X, HATCH_Z, BUNKER_Y, hatch,
   waterSurfaceAt, submersionAt, restYInWater, groundGlow, addRipple,
