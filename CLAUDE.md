@@ -1558,6 +1558,48 @@ inside the console bank. Blender 5's `Action.fcurves` is gone (layers →
 strips → channelbags), and a Blender run piped through `head` dies of SIGPIPE
 before it renders anything: write the log to a file.
 
+**A CUT LIES IN THE SCREEN PLANE; A CUT THAT HITS SOMEBODY DOES NOT.** The
+rule this file has carried since the Military Shovel learned to cut is that
+tilting the blade toward the camera turns a cut into a stab, and it is still
+true — but held perfectly flat the point never goes anywhere near the thing
+you are swinging at, and the owner's word for that was that it does not look
+like it is slashing anyone. The blade is angled about a third of a right
+angle INTO the screen through the whole stroke now (view-space direction z of
+-0.52, measured every frame): still sweeping across, still side-on enough to
+read as an edge, with the point out where the enemy is rather than level with
+your own nose. It gets its own grip for the cut, solved with the stroke.
+
+**AND THE COMBINATION IS TWO STROKES, EACH SOLVED WHOLE.** The forehand runs
+right to left and the return runs left to right from where the forehand
+finished — both horizontal, both straight, both the same speed, so a chain is
+a rhythm you can hold rather than something that accelerates away from you.
+Mirroring the first to get the second is the obvious thing and it does not
+work (see `mirrorSide`); the return is solved in its own right against its own
+line, which is the only way to know both ends of it are on the screen.
+Measured: the forehand's point runs 0.87, 0.86, 0.76, 0.30, -0.40, -1.00 and
+the return's -0.91, -0.92, -0.77, -0.25, 0.39, 0.98.
+
+**THE SWORD'S HEAVY IS A THRUST, NOT A SLAM.** Holding sprint into a charge
+turns a shovel into an overhead; on a katana the owner asked for the point
+driven straight at what you are looking at with the tsuka coming back toward
+your own face. It takes the overhead's slot in the pose system and shares
+nothing else with it: its own grip, its own draw, its own drive, and it is
+held through the WIND as well, because you have to be able to see what you
+are charging. **And it has to be solved so you can SEE it**: pointed dead down
+the view axis a thrust is a dot, and the first solve put the blade within
+fifteen degrees of the camera's own line and the sword all but vanished on
+the frame it landed — the same complaint as the overhead it replaced. The
+draw holds it 48° off the axis and it turns to 32° and drives 32 cm forward
+as it lands, the point finishing on the crosshair. The tsuka is kept half a
+metre out, because a handle that comes at your face is not a wind-up, it is a
+camera clip.
+
+**AND THE AUTOSAVE FIRES IN DEV MODE.** Dev mode is "no deaths, no cutscenes";
+it was never meant to be "no autosave", and skipping it meant the one piece of
+feedback that says the walk has been remembered never appeared for the person
+who spends the most time walking it. A save you did not ask for is only any
+use if you are told it happened.
+
 **AND THEN THE REEL'S OWN MOVE SET TURNED OUT TO BE UNREADABLE IN A GAME.**
 Copying the animation faithfully produced a cross-body draw whose point left
 the frame at the cock and came back somewhere else, and the owner's verdict

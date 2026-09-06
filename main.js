@@ -5420,7 +5420,17 @@ const restRot = () => (equipped === katanaItem ? VM_KAT_REST_ROT : VM_MIL_REST_R
  * katana's was solved against its own carry, so the blade holds the angle it
  * is held at and every degree of the sweep comes out of the arm. That is
  * what "the cut is all arm" means when the tool is actually a sword. */
-const slashRot = () => (equipped === katanaItem ? VM_KAT_REST_ROT : VM_SLASH_ROT);
+/* AND THE CUT HAS ITS OWN GRIP, TILTED AT THE ENEMY. Carrying the blade
+ * flat in the plane of the screen is what makes a cut read as a cut rather
+ * than a stab, and that rule still holds for the SWEEP — but held perfectly
+ * flat the point never goes anywhere near the thing you are hitting, and the
+ * owner's word for it was that it does not look like it is slashing anyone.
+ * The blade is angled about a third of a right angle INTO the screen through
+ * the cut: still sweeping across, still side-on enough to read as an edge,
+ * with the point out where the enemy is instead of level with your own nose.
+ * Solved with the stroke, not bolted on after it. */
+const VM_KAT_CUT_ROT = [-2.908, -0.948, 0.807];
+const slashRot = () => (equipped === katanaItem ? VM_KAT_CUT_ROT : VM_SLASH_ROT);
 shovelVM.rotation.set(VM_MIL_REST_ROT[0], VM_MIL_REST_ROT[1], VM_MIL_REST_ROT[2]);
 let ohBlend = 0, slBlend = 0;
 shovelVM.visible = false;
@@ -6335,7 +6345,7 @@ const isBlade = () => !!(equipped && equipped.blade);
  * little further and a little faster than the two before it, so a full chain
  * has somewhere to arrive. The first cut, and any cut after a pause, is
  * always the forehand: you always know where the blade is going. */
-const COMBO_WINDOW = 950, COMBO_LEN = 3;
+const COMBO_WINDOW = 950, COMBO_LEN = 2;
 let comboStep = 0;
 /* AND EVERY ONE OF THEM GOES RIGHT TO LEFT. The obvious way to build the
  * reel's combination is to mirror the stroke on the second hit, and it was
@@ -6353,16 +6363,12 @@ let comboStep = 0;
  * middle, the second RISING through the upper body, the third lower, longer
  * and quicker, which is the finisher. Three visibly different swings, none
  * of which can surprise you. */
-const COMBO_LIFT = [0, 0.20, -0.07];      // where each step's line sits
-const COMBO_REACH = [0, 0.05, 0.17];      // and how far it carries
 const pickSlashDir = () => {
   if (!(equipped && equipped.alternate)) { comboStep = 0; return -1; }
   const chained = performance.now() - lastSlashAt < COMBO_WINDOW;
   comboStep = chained ? (comboStep + 1) % COMBO_LEN : 0;
   return -1;
 };
-const comboLift = () => (equipped && equipped.alternate ? COMBO_LIFT[comboStep] : 0);
-const comboReach = () => (equipped && equipped.alternate ? COMBO_REACH[comboStep] : 0);
 /* THE BACKHAND IS THE FOREHAND IN A MIRROR — about the middle of the frame,
  * not about the hands' rest. `side` is measured from where the hands rest,
  * which is off to the right, so simply negating it sent the backhand's
@@ -6453,38 +6459,63 @@ const bladeDrop = () => (isBlade() ? 1 : 0);
  * The arm's own pitch, lift and reach are held to small steps between poses
  * so nothing bobs, and the roll marches one way from cock to
  * follow-through. */
-function katCock(out, P, d) {
-  const F = comboReach() * 0.5, V = comboLift();
-  out[0] = -0.025;
-  out[1] = -0.168 + P * 0.215 + V;
-  out[2] = 0.45;
-  out[3] = -d * (-0.015 + P * 0.080);
-  out[4] = -0.394 + P * 0.172;
-  out[5] = mirrorSide(0.548 - P * 0.211 + F, d);
+/* THE TWO STROKES, EACH SOLVED WHOLE. The combination the owner asked for is
+ * two beats: a horizontal slash right to left, and then — with the blade
+ * already lying off the left of the frame — a slash straight back across it,
+ * left to right, at the same speed. Mirroring the first stroke to get the
+ * second was tried and thrown out (see `mirrorSide`), so the return is
+ * SOLVED IN ITS OWN RIGHT against its own line, which is the only way to be
+ * sure both ends of it are on the screen. `A` is the forehand and takes the
+ * charge as well; `B` is the return, and is always a light. */
+// the forehand, light: point from (0.90, 0.14) across to (-1.05, -0.10)
+const KAT_A0 = [[-0.311, -0.055, 0.45, -0.463, -0.365, 0.565],
+                [-0.239, -0.340, 0.45, 0.583, -0.296, -0.481],
+                [-0.390, -0.020, 0.45, 1.392, 0.004, -1.300]];
+// and charged: the same line, a shade steeper and longer
+const KAT_A1 = [[-0.246, 0.023, 0.45, -0.462, 0.019, 0.081],
+                [-0.236, -0.327, 0.45, 0.390, -0.186, -0.619],
+                [-0.294, -0.250, 0.45, 1.133, 0.114, -1.300]];
+// the return, left to right, from where the forehand finished: (-0.92, 0.12) to (1.02, -0.10)
+const KAT_B0 = [[-0.334, 0.044, 0.45, 1.275, -0.064, -1.274],
+                [-0.265, -0.192, 0.45, 0.949, -0.292, 0.003],
+                [-0.245, -0.344, 0.45, 0.702, -0.085, 1.297]];
+const katBack = () => !!(equipped && equipped.alternate && comboStep % 2);
+function katPose(out, i, P) {
+  const back = katBack();
+  const a = back ? KAT_B0[i] : KAT_A0[i], b = back ? KAT_B0[i] : KAT_A1[i];
+  for (let k = 0; k < 6; k++) out[k] = a[k] + (b[k] - a[k]) * P;
   return out;
 }
-function katMark(out, P, d) {
-  const F = comboReach() * 0.8, V = comboLift() * 0.55;
-  out[0] = -0.024 + P * 0.004;
-  out[1] = -0.402 + P * 0.110 + V;
-  out[2] = 0.45;
-  out[3] = -d * (0.365 + P * 0.171);
-  out[4] = -0.353 - P * 0.036;
-  out[5] = mirrorSide(-0.462 + P * 0.109 - F, d);
-  return out;
-}
-function katThrough(out, P, d) {
-  const F = comboReach(), V = -comboLift() * 0.35;
-  out[0] = -0.013 + P * 0.026;
-  out[1] = -0.460 + V;
-  out[2] = 0.45;
-  out[3] = -d * (0.695 + P * 0.305);
-  out[4] = -0.105 - P * 0.038;
-  out[5] = mirrorSide(-1.080 + P * 0.113 - F, d);
+function katCock(out, P) { return katPose(out, 0, P); }
+function katMark(out, P) { return katPose(out, 1, P); }
+function katThrough(out, P) { return katPose(out, 2, P); }
+/* AND THE STAB. Holding sprint into a charge turns a shovel into an overhead
+ * slam; on a sword the owner asked for a THRUST — the point driven straight
+ * at what you are looking at with the tsuka coming back toward your own face,
+ * which is the one thing a katana does that a spade cannot do at all. It is
+ * the overhead's slot in the pose system and nothing else about it is shared:
+ * its own grip, its own draw and its own drive. */
+const KAT_STAB_ROT = [-2.534, -1.044, 1.592];
+const KAT_STAB = [[0.025, 0.117, 0.45, -0.308, -0.036, -0.327],     // drawn back
+                  [-0.336, -0.016, 0.45, 0.241, -0.353, -0.673]];   // and driven out
+/* SOLVED SO YOU CAN SEE IT. Pointed dead down the view axis a thrust is a
+ * dot: the first solve put the blade within fifteen degrees of the camera's
+ * own line and the sword all but vanished on the frame it landed, which is
+ * the same complaint as the overhead it replaced. The draw holds it 48° off
+ * the axis — angled enough to read as a blade, with the point already on
+ * what you are looking at — and it turns to 32° and drives 32 cm forward as
+ * it lands, the point finishing on the crosshair. And the tsuka is kept half
+ * a metre out: a handle that comes at your face is not a wind-up, it is a
+ * camera clip. */
+const katStabbing = () => !!(equipped === katanaItem && (digOverhead || (winding && windOverhead)));
+function katStab(out, i, P) {
+  const q = KAT_STAB[i];
+  for (let k = 0; k < 6; k++) out[k] = q[k];
+  out[4] += (i ? -0.10 : 0.06) * P;     // a charge draws further back and drives further out
   return out;
 }
 function slashCock(out, P, d) {
-  if (equipped === katanaItem) return katCock(out, P, d);
+  if (equipped === katanaItem) return katCock(out, P);
   out[0] = -(0.06 + P * 0.04) - bladeDrop() * 0.16;
   out[1] = 0.322 + P * 0.061 + bladeDrop() * 0.10;
   out[2] = 0.45;                                // cancels the arm's turn: the blade lies in the picture
@@ -6494,7 +6525,7 @@ function slashCock(out, P, d) {
   return out;
 }
 function slashMark(out, P, d) {
-  if (equipped === katanaItem) return katMark(out, P, d);
+  if (equipped === katanaItem) return katMark(out, P);
   out[0] = 0.04 - bladeDrop() * 0.10;
   out[1] = 0.355 - bladeDrop() * 0.10;
   out[2] = 0.45;
@@ -6504,7 +6535,7 @@ function slashMark(out, P, d) {
   return out;
 }
 function slashThrough(out, P, d) {
-  if (equipped === katanaItem) return katThrough(out, P, d);
+  if (equipped === katanaItem) return katThrough(out, P);
   out[0] = 0.14 + P * 0.02 + bladeDrop() * 0.30;
   out[1] = 0.123 - P * 0.135 - bladeDrop() * 0.42;             // and the hands fall away
   out[2] = 0.45;
@@ -6516,6 +6547,7 @@ function slashThrough(out, P, d) {
 // the top of an ordinary left-click swing
 function haulPose(out, P) {
   out[5] = 0;
+  if (katStabbing()) return katStab(out, 0, P);
   if (digOverhead) {
     /* BOTH HANDS STRAIGHT UP, and BACK. The tool goes past vertical over the
      * head — you can feel your own arms in it — and the hands come in toward
@@ -6537,6 +6569,7 @@ function haulPose(out, P) {
  * which reads as a real lunge rather than a tuning nudge. */
 function impactPose(out, P) {
   out[5] = 0;
+  if (katStabbing()) return katStab(out, 1, P);
   if (digOverhead) {
     /* Straight down the middle and driven forward — no yaw across the body,
      * because the whole read of an overhead is that it does not swing, it
@@ -6972,7 +7005,11 @@ const windupEnd = () => slashing() ? SLASH_WINDUP : DIG_WINDUP;
  * of a chain runs a little shorter than the last, so a full three-hit combo
  * accelerates into its finisher instead of plodding. The FIRST cut keeps its
  * full length — that is the one you read. */
-const comboRate = () => (equipped && equipped.alternate ? 1 - comboStep * 0.09 : 1);
+/* BOTH BEATS RUN AT THE SAME SPEED. The return is a light hit like any
+ * other and the owner asked for it to be exactly as quick as the first — a
+ * combination you can hold a rhythm in, not one that accelerates away from
+ * you. */
+const comboRate = () => 1;
 const swingSecs = (P) => (slashing() ? DIG_DUR * (0.55 + P * 0.60) / (1 + 0.34 * P) : DIG_DUR * (0.55 + P)) * ((equipped && equipped.swingK) || 1) * comboRate();
 let vmLagX = 0, vmLagY = 0, vmPrevYaw = 0, vmPrevPitch = 0;
 let vmSpringY = 0, vmSpringV = 0;
@@ -7081,7 +7118,14 @@ function updateViewmodel(dt) {
      * again on the way out meant letting go of sprint a frame early turned
      * an overhead back into a side swing. */
     if (overheadHeld()) windOverhead = true;
-    if (windOverhead) {
+    if (windOverhead && equipped === katanaItem) {
+      /* THE STAB IS DRAWN, NOT HAULED. You have to be able to SEE what you
+       * are charging: the sword comes back level with the point already on
+       * what you are looking at, so the whole hold says "this is going
+       * forward" — the shape a thrust has before it is thrown. */
+      katStab(_pose, 0, e);
+      _pose[0] += strain * 0.5; _pose[4] += strain * 0.4;
+    } else if (windOverhead) {
       // hauled up over the head, and shaking harder the longer it is held
       _pose[5] = 0;
       _pose[0] = -(0.70 + 1.60 * e) + strain * 1.6;
@@ -7266,8 +7310,9 @@ function updateViewmodel(dt) {
     // the two grips are exclusive; the overhead wins where they overlap. The
     // base is the TOOL'S OWN rest — the Military Shovel's is scoop-up.
     const R = restRot();
+    const OH = katStabbing() ? KAT_STAB_ROT : VM_OVERHEAD_ROT;
     const grip = (i) => R[i]
-      + (VM_OVERHEAD_ROT[i] - R[i]) * ohBlend
+      + (OH[i] - R[i]) * ohBlend
       + (slashRot()[i] - R[i]) * slBlend * (1 - ohBlend);
     toolVM.rotation.set(grip(0), grip(1), grip(2));
     /* THE GUARD IS THE SAND SHOVEL'S. Held scoop-up, the Military Shovel's
@@ -18809,8 +18854,13 @@ function showAutosave() {
  * not after you have climbed it. Once a game. */
 const SAVE_Z = MUSH_Z + 26;
 let checkpointDone = false;
+/* AND IT FIRES IN DEV MODE TOO. Dev mode is "no deaths, no cutscenes" — it
+ * was never meant to be "no autosave", and skipping it meant the one piece of
+ * feedback that tells you the walk has been remembered never appeared for the
+ * person who spends the most time walking it. The badge is the whole point of
+ * a save you did not ask for: if it does not show, you do not know. */
 function updateCheckpoint() {
-  if (checkpointDone || !introDone || dying || ended || settings.devMode) return;
+  if (checkpointDone || !introDone || dying || ended) return;
   if (camera.position.z > SAVE_Z) return;
   checkpointDone = true;
   saveCheckpoint();
