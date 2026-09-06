@@ -6112,10 +6112,11 @@ militaryWorld.rotation.set(-Math.PI / 2, 0, 0.45);
   proxy.position.y = 0.25; proxy.name = 'hitProxy';
   militaryWorld.add(proxy);
 }
-scene.add(militaryWorld);
+// NOT in the scene: it goes into the crate on the Dealer's desk once the
+// bunker has loaded (`buildMilCrate`), and until then it is nowhere
 // its own glint, added first so makeNoticeable() does not add the stock one:
 // a scan this dark is swamped by the stock lift
-addItemShine(militaryWorld, { size: 0.9, height: 0.3, strength: 0.7, lift: 0.25 });
+addItemShine(militaryWorld, { size: 0.9, height: 0.3, strength: 0.7, lift: 0.55 });   // lifted a little more now that it lies in a case
 /* THE KATANA. brandon_grey's "Gothic Katana Sword [Dark] | Persephone's
  * Leaf" (CC-BY-4.0), the blade only — the scabbard stays in the download —
  * through `gltfpack.py` at 2048 with its normal and metal-rough maps kept,
@@ -6187,11 +6188,19 @@ addInteractable(katanaWorld, 'Take the katana', 'inventory', {
     toggleEquip(katanaItem);               // and `toggleEquip` plays the draw
   },
 });
+/* IT IS IN THE CRATE NOW, not on the beach: `buildMilCrate` (in the bunker
+ * section, thousands of lines down) lifts `militaryWorld` off the sand and
+ * lays it inside an equipment case on the Dealer's desk, and the case only
+ * opens once he is dead. The pickup keeps its save id, so a checkpoint that
+ * carried the shovel gives it back through this same handler — which is
+ * why it opens the lid itself if the case has not been opened yet. */
 addInteractable(militaryWorld, 'Take the military shovel', 'inventory', {
+  when: () => milCrateOpen,
   onActivate: () => {
     sfxThud(0.04);
-    scene.remove(militaryWorld);
+    if (militaryWorld.parent) militaryWorld.parent.remove(militaryWorld);
     hovered = null;
+    if (!milCrateOpen) { milCrateOpen = true; milCrateT = 1; }
     addToInventory(militaryItem);
     toggleEquip(militaryItem);
   },
@@ -6259,6 +6268,12 @@ let queuedSwing = false;                 // false | 'return' | 'fore'
 const RETURN_LATEST = 0.82;
 const SL_GRIP_HOME = 0.82;               // where, in a blade's recovery, the grip starts back to the carry
 const REC_HOLD = 0.35;                   // the first stretch of a blade's recovery barely moves: the cut is finished
+/* AND THE NEXT CUT NEED NOT WAIT FOR HOME. A forehand asked for while the
+ * blade is most of the way back leaves from where the blade IS — the haul
+ * starts from the live pose, not from rest — so a held rhythm never has a
+ * dead frame in it, and the last stretch of every recovery is the next
+ * swing's wind-up. The cadence barely changes; the feel does. */
+const FORE_EARLY = 0.94;
 /* THE GUARD. Hold right and the shovel comes up across you. It is a real
  * guard, not a damage modifier: a strike that lands on it does nothing at
  * all. What makes it worth learning is the first fifth of a second — raise
@@ -6346,6 +6361,7 @@ const _poseA = [0, 0, 0, 0, 0, 0];      // where the strike starts
 const _poseB = [0, 0, 0, 0, 0, 0];      // where it lands
 const _poseC = [0, 0, 0, 0, 0, 0];      // where a cut's follow-through ends
 const _pose = [0, 0, 0, 0, 0, 0];       // this frame, and what release captures
+const _poseF = [0, 0, 0, 0, 0, 0];      // where a click's haul leaves from (rest, or the tail of the last cut)
 function poseMix(out, a, b, t) {
   for (let i = 0; i < 6; i++) out[i] = a[i] + (b[i] - a[i]) * t;
   return out;
@@ -6776,6 +6792,7 @@ function startDig(power = 0, fromPose = null, chained = false) {
     digT = windupEnd();                 // already wound: straight into the strike
   } else {
     haulPose(_poseA, digPower);
+    for (let i = 0; i < 6; i++) _poseF[i] = _pose[i];   // from wherever the hand is
     digT = 0.0001;
   }
   impactPose(_poseB, digPower);
@@ -7299,7 +7316,7 @@ function updateViewmodel(dt) {
     const p = digT, W = windupEnd(), isCut = slashing();
     if (p < W) {
       // anticipation: quick out of rest, hanging at the top of the haul
-      poseMix(_pose, REST_POSE, _poseA, easeOutCubic(p / W));
+      poseMix(_pose, _poseF, _poseA, easeOutCubic(p / W));
     } else if (p < DIG_STRIKE) {
       /* The strike. easeInCubic starts almost stationary and ends at full
        * speed, so the blade hangs for a beat and then falls — and because
@@ -7382,6 +7399,7 @@ function updateViewmodel(dt) {
      * through, so a return chained "a beat later" left from a half-recovered
      * pose and only ever swept the right of the screen. */
     else if (queuedSwing === 'return' && p >= SLASH_THROUGH && slashing() && !katBack()) chainSwing();
+    else if (queuedSwing === 'fore' && p >= FORE_EARLY && isBlade() && !winding && !blocking) { cancelSwing(); startDig(); }
   } else {
     // a forehand asked for during a swing leaves the frame the blade is home
     if (queuedSwing === 'fore' && !winding && !blocking) { queuedSwing = false; startDig(); }
@@ -15572,22 +15590,37 @@ const RAG_STIFF = [
   ['Character1_Spine1', 'Character1_RightShoulder', 0.8],
 ];
 // joints that must not fold flat: [a, b, c, fraction of (ab + bc) they may close to]
+/* A BODY KEEPS ITS SHAPE. At the first limits a knee could close to a
+ * third of its reach and an elbow to less, the thighs could fold up onto
+ * the chest, and a corpse arrived on the floor as a parcel — the owner's
+ * "they fold up too much, it looks fake". A dead man's joints still only
+ * go where joints go: the knee closes to about ninety degrees and no
+ * further, the elbow a little past that, the neck barely, and the TRUNK
+ * does not jackknife onto the shins (`Spine2–Hips–Leg`). The result is a
+ * body that lands as a body, in a heap with the proportions of the man. */
 const RAG_BEND = [
-  ['Character1_LeftUpLeg', 'Character1_LeftLeg', 'Character1_LeftFoot', 0.55],
-  ['Character1_RightUpLeg', 'Character1_RightLeg', 'Character1_RightFoot', 0.55],
-  ['Character1_LeftArm', 'Character1_LeftForeArm', 'Character1_LeftHand', 0.45],
-  ['Character1_RightArm', 'Character1_RightForeArm', 'Character1_RightHand', 0.45],
-  ['Character1_Spine2', 'Character1_Neck', 'Character1_Head', 0.72],
-  ['Character1_Hips', 'Character1_Spine1', 'Character1_Spine2', 0.90],
-  ['Character1_Hips', 'Character1_LeftUpLeg', 'Character1_LeftLeg', 0.60],
-  ['Character1_Hips', 'Character1_RightUpLeg', 'Character1_RightLeg', 0.60],
+  ['Character1_LeftUpLeg', 'Character1_LeftLeg', 'Character1_LeftFoot', 0.72],
+  ['Character1_RightUpLeg', 'Character1_RightLeg', 'Character1_RightFoot', 0.72],
+  ['Character1_LeftArm', 'Character1_LeftForeArm', 'Character1_LeftHand', 0.62],
+  ['Character1_RightArm', 'Character1_RightForeArm', 'Character1_RightHand', 0.62],
+  ['Character1_Spine2', 'Character1_Neck', 'Character1_Head', 0.86],
+  ['Character1_Hips', 'Character1_Spine1', 'Character1_Spine2', 0.95],
+  ['Character1_Hips', 'Character1_LeftUpLeg', 'Character1_LeftLeg', 0.76],
+  ['Character1_Hips', 'Character1_RightUpLeg', 'Character1_RightLeg', 0.76],
+  ['Character1_Spine2', 'Character1_Hips', 'Character1_LeftLeg', 0.66],
+  ['Character1_Spine2', 'Character1_Hips', 'Character1_RightLeg', 0.66],
+  ['Character1_Spine2', 'Character1_LeftArm', 'Character1_LeftForeArm', 0.50],
+  ['Character1_Spine2', 'Character1_RightArm', 'Character1_RightForeArm', 0.50],
 ];
 /* AND THE SOLVER HAS TO KEEP UP WITH THE FORCES. Seven iterations over two
  * substeps converged on the old kick; against a blow twice as hard under
  * gravity half again as strong it did not, and an unconverged distance
  * constraint IS a stretched limb. Twelve over three costs nothing at the one
  * or two bodies this game ever has in the air at once. */
-const RAG_ITER = 12, RAG_SUB = 3, RAG_DAMP = 0.990, RAG_FRICTION = 0.55, RAG_BOUNCE = 0.28;
+/* AND IT LANDS HEAVY. A quarter of the fall coming back up as bounce and
+ * half the slide surviving each contact read as a body made of something
+ * light; a corpse hits, stays hit, and skids only a little. */
+const RAG_ITER = 12, RAG_SUB = 3, RAG_DAMP = 0.990, RAG_FRICTION = 0.74, RAG_BOUNCE = 0.10;
 /* AND A BODY IS NOT ALLOWED INSIDE ITSELF. Distance constraints hold the
  * skeleton's lengths and nothing at all holds its VOLUME, so an arm folded
  * through the chest, a thigh through the belly, and the whole thing settled
@@ -15597,7 +15630,7 @@ const RAG_ITER = 12, RAG_SUB = 3, RAG_DAMP = 0.990, RAG_FRICTION = 0.55, RAG_BOU
  * ragdoll and a bag. The pairs are worked out ONCE per body, and any pair
  * whose rest distance is already inside that sum is dropped, because a
  * collision that fights the skeleton is a body that shakes itself apart. */
-const RAG_SELF = 0.82;                   // how much of the summed radii it enforces
+const RAG_SELF = 0.92;                   // how much of the summed radii it enforces
 /* A BODY FALLS HARDER THAN IT FLIES. Under the beach's own 9.8 a corpse
  * thrown hard enough to travel FLOATED on the way down — a long soft
  * parabola that reads as weightless however far it goes, which is the
@@ -15606,7 +15639,7 @@ const RAG_SELF = 0.82;                   // how much of the summed radii it enfo
  * bigger, so it goes further, and gravity under a ragdoll is half again the
  * world's, so it comes down fast and HITS. Less drag with it, so what leaves
  * keeps going instead of being eaten by the air. */
-const RAG_G = 15.6;
+const RAG_G = 17.5;
 const _rg1 = new THREE.Vector3(), _rg2 = new THREE.Vector3(), _rg3 = new THREE.Vector3(), _rgQ = new THREE.Quaternion(), _rgQ2 = new THREE.Quaternion();
 const _rgM = new THREE.Matrix4();
 
@@ -15660,7 +15693,8 @@ function mutRagdoll(u, dirX, dirZ, power) {
      * body. Most of the kick goes into the top of it and it is lifted as it
      * goes, so it leaves its feet and tumbles rather than sliding off. */
     const kick = (3.1 + power * 6.2) * (0.15 + h * 0.85);
-    const v = new THREE.Vector3(dirX * kick + (Math.random() - 0.5) * 0.7, 1.6 + h * 1.8 + Math.random() * 0.5, dirZ * kick + (Math.random() - 0.5) * 0.7);
+    // less lift than throw: it goes over and DOWN, it does not float up first
+    const v = new THREE.Vector3(dirX * kick + (Math.random() - 0.5) * 0.7, 1.0 + h * 1.2 + Math.random() * 0.4, dirZ * kick + (Math.random() - 0.5) * 0.7);
     const part = { name, bone: bn, parent: parentName, child: childName, r, p, pp: p.clone().addScaledVector(v, -1 / 60), w: name.includes('Hips') ? 0.5 : name.includes('Head') ? 0.8 : 1 };
     parts.push(part); byName[name] = part;
   }
@@ -17990,6 +18024,125 @@ const BUNKER_PROP_SPOTS = [
  * It is NOT in the nav grid. A thing that breaks when you touch it must not
  * also be a wall — walking into it IS the interaction, and a body that
  * stopped at it would never get to knock it over. */
+/* THE EQUIPMENT CRATE. The Military Shovel used to lie on the sand past
+ * the drain for anyone to pick up on the first morning; it is the prize for
+ * the first boss now. A military case on the Dealer's desk — olive steel,
+ * riveted corners, two latches, a stencil — that reads LOCKED until he is
+ * dead and opens on E after, with the shovel laid inside it. You can only
+ * have this shovel by killing him: the crate is the only door to it. */
+const MCRATE_MAT = new THREE.MeshStandardMaterial({ color: 0x4a5236, roughness: 0.82, metalness: 0.18, flatShading: true, emissive: 0x0b0d08 });
+const MCRATE_DARK = new THREE.MeshStandardMaterial({ color: 0x23261c, roughness: 0.6, metalness: 0.45, flatShading: true });
+// a foam lining, pale enough that a dark tool reads against it under the room's lamps
+const MCRATE_IN = new THREE.MeshStandardMaterial({ color: 0x5c5f50, roughness: 1.0, flatShading: true, emissive: 0x0e0f0a });
+const MCRATE_W = 1.02, MCRATE_D = 0.40, MCRATE_H = 0.30, MCRATE_LID = 0.075, MCRATE_T = 0.018;
+let milCrate = null, milCrateOpen = false, milCrateT = 0;
+function makeCrateStencil() {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 96;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, 256, 96);
+  g.fillStyle = '#d8d6c4'; g.font = 'bold 64px monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('E-TOOL', 128, 36);
+  g.font = 'bold 26px monospace'; g.fillText('MK II', 128, 80);
+  // stencil bridges: a few bars knocked out of the letters
+  g.globalCompositeOperation = 'destination-out';
+  for (let x = 24; x < 256; x += 37) g.fillRect(x, 0, 3, 96);
+  return retroTex(new THREE.CanvasTexture(c));
+}
+function makeMilCrate() {
+  const W = MCRATE_W, D = MCRATE_D, H = MCRATE_H - MCRATE_LID, t = MCRATE_T;
+  const g = new THREE.Group();
+  const box = (w, h, d, m) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+  const body = new THREE.Group(); g.add(body);
+  const floor = box(W, t, D, MCRATE_IN); floor.position.y = t / 2; body.add(floor);
+  const front = box(W, H, t, MCRATE_MAT); front.position.set(0, H / 2, D / 2 - t / 2); body.add(front);
+  const back = box(W, H, t, MCRATE_MAT); back.position.set(0, H / 2, -D / 2 + t / 2); body.add(back);
+  const left = box(t, H, D, MCRATE_MAT); left.position.set(-W / 2 + t / 2, H / 2, 0); body.add(left);
+  const right = box(t, H, D, MCRATE_MAT); right.position.set(W / 2 - t / 2, H / 2, 0); body.add(right);
+  // inner skin so the box reads as a box and not as five plates
+  const lin = box(W - t * 2, H - t, t, MCRATE_IN); lin.position.set(0, H / 2 + t / 2, D / 2 - t * 1.5); body.add(lin);
+  const lin2 = lin.clone(); lin2.position.z = -D / 2 + t * 1.5; body.add(lin2);
+  // riveted corner straps
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const c = box(0.028, H + 0.004, 0.028, MCRATE_DARK); c.position.set(sx * (W / 2 - 0.006), H / 2, sz * (D / 2 - 0.006)); body.add(c);
+  }
+  // and a band round the middle — four strips on the OUTSIDE, not a slab
+  // through the box (which is what the first one was, and it hid the tool)
+  for (const sz of [-1, 1]) { const st = box(W + 0.006, 0.03, 0.008, MCRATE_DARK); st.position.set(0, H * 0.42, sz * (D / 2 + 0.001)); body.add(st); }
+  for (const sx of [-1, 1]) { const st = box(0.008, 0.03, D + 0.006, MCRATE_DARK); st.position.set(sx * (W / 2 + 0.001), H * 0.42, 0); body.add(st); }
+  // two handles on the ends
+  for (const sx of [-1, 1]) {
+    const hnd = box(0.02, 0.028, 0.16, MCRATE_DARK); hnd.position.set(sx * (W / 2 + 0.014), H * 0.62, 0); body.add(hnd);
+  }
+  // the lid, hinged along the +z top edge
+  const lid = new THREE.Group(); lid.position.set(0, H, D / 2); g.add(lid);
+  const cap = box(W + 0.012, MCRATE_LID, D + 0.012, MCRATE_MAT); cap.position.set(0, MCRATE_LID / 2, -D / 2); lid.add(cap);
+  const rim = box(W + 0.018, 0.016, D + 0.018, MCRATE_DARK); rim.position.set(0, 0.008, -D / 2); lid.add(rim);
+  for (const sx of [-1, 1]) {
+    const latch = box(0.05, MCRATE_LID + 0.05, 0.022, MCRATE_DARK); latch.position.set(sx * W * 0.3, MCRATE_LID / 2 - 0.02, -D - 0.006); lid.add(latch);
+  }
+  const st = new THREE.Mesh(new THREE.PlaneGeometry(0.50, 0.19),
+    new THREE.MeshBasicMaterial({ map: makeCrateStencil(), transparent: true, depthWrite: false }));
+  // flat on the lid, reading the right way up from the room side (local -z)
+  st.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0)));
+  st.position.set(0, MCRATE_LID + 0.002, -D / 2); lid.add(st);
+  g.userData.lid = lid;
+  g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+  return g;
+}
+function buildMilCrate(g, meshes, ray) {
+  if (milCrate) return;
+  /* On the desk with the two red chairs, at its far end by the wall, where
+   * nothing else on the desk stands — measured off the room's own surfaces
+   * (the desk top is raycast the way every other prop's perch is). The
+   * case's long side runs along the wall and its lid hinges on the wall
+   * side, so open it stands against the concrete out of the way. */
+  const CRATE_SPOT = [2.50, 3.95];
+  ray.set(new THREE.Vector3(g.position.x + CRATE_SPOT[0], g.position.y + 2.9, g.position.z + CRATE_SPOT[1]), new THREE.Vector3(0, -1, 0));
+  ray.far = 3.4;
+  const hit = ray.intersectObjects(meshes, false);
+  const top = hit.length ? hit[0].point.y : g.position.y + 0.8;
+  milCrate = makeMilCrate();
+  milCrate.position.set(g.position.x + CRATE_SPOT[0], top + 0.002, g.position.z + CRATE_SPOT[1]);
+  milCrate.rotation.y = Math.PI / 2;               // local +z (the hinge side) toward the +x wall
+  scene.add(milCrate);
+  /* THE SHOVEL GOES IN IT. `militaryWorld` comes off the sand and is laid
+   * along the case: its own length (model Y) down the case's X, and its
+   * scoop face (model -Z) turned UP, as one rotation. Its point sits at
+   * -0.21 and its grip at +0.6, so it is slid back to centre. */
+  if (militaryWorld.parent) militaryWorld.parent.remove(militaryWorld);
+  militaryWorld.position.set(-0.26, 0.075, 0.0);
+  militaryWorld.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(
+    new THREE.Vector3(0, 0, -1), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, -1, 0)));
+  militaryWorld.traverse((o) => { if (o.isSprite) o.position.set(0, 0.2, -0.16); });   // the glint, over the middle of it
+  const taken = takenPickups.has('Take the military shovel#1');
+  if (!taken) milCrate.add(militaryWorld);
+  if (taken || milCrateOpen) { milCrateOpen = true; milCrateT = 1; }
+  addInteractable(milCrate, () => milCrateOpen ? 'Equipment case' : dealerWon ? 'Open the case' : 'Locked case', undefined, {
+    bare: () => milCrateOpen || !dealerWon,
+    when: () => !milCrateOpen,
+    onActivate: () => { if (dealerWon && !milCrateOpen) openMilCrate(); },
+  });
+}
+function openMilCrate() {
+  if (milCrateOpen) return;
+  milCrateOpen = true; milCrateT = 0;
+  sfxGuardUp();                                       // the latches
+  sfxThud(0.02);
+}
+function updateMilCrate(dt) {
+  if (!milCrate) return;
+  milCrate.visible = bunkerHome.group.visible;
+  const lid = milCrate.userData.lid;
+  if (milCrateOpen && milCrateT < 1) {
+    const was = milCrateT;
+    milCrateT = Math.min(1, milCrateT + dt / 0.9);
+    if (was < 0.55 && milCrateT >= 0.55) sfxThud(0.05);   // the lid meeting the wall
+  }
+  // up past vertical and against the wall, with a little settle at the top
+  const e = easeOutBack(milCrateT);
+  lid.rotation.x = 1.92 * e;
+  militaryWorld.visible = milCrateOpen;               // nothing of it shows through the lid
+}
 const COAT_MAT = new THREE.MeshStandardMaterial({ color: 0x6b573d, roughness: 0.95, flatShading: true, emissive: 0x140f08 });
 let coatStand = null, coatBroken = false;
 function makeCoatStand() {
@@ -18267,6 +18420,7 @@ function buildBunkerProps() {
    * widest — somewhere you will back into rather than somewhere you must
    * deliberately go. Its spot is checked against the walk grid so it never
    * starts inside a desk. */
+  buildMilCrate(g, meshes, ray);
   if (!coatStand) {
     coatStand = makeCoatStand();
     /* IN A CORNER, WHERE A COAT STAND GOES — the one under the poster, at
@@ -18315,6 +18469,7 @@ function updateDealer(dt) {
   const inRoom = inBunker === bunkerHome;
   buildBunkerProps();
   buildCrowbarOnTable();
+  updateMilCrate(dt);
   if (crowbarOnTable) crowbarOnTable.visible = bunkerHome.group.visible && !dealerFight && dealerPick < PICK_GRAB * PICK_DUR;
   // the reach: driven off its own clock so the grab lands on the right frame
   if (dealerPick >= 0 && !dealerFight) {
@@ -19332,6 +19487,7 @@ window.__bw = {
   katanaItem, katModel, katanaVM, updateDealer, sfxDig, restRot, slashRot, updateViewmodel, updateTrail,
   removeSmile, get smilePhase() { return smilePhase; },
   get crowbarOnTable() { return crowbarOnTable; }, get dealerPick() { return dealerPick; }, get bunkerProps() { return bunkerProps; },
+  get milCrate() { return milCrate; }, get milCrateOpen() { return milCrateOpen; }, openMilCrate, get dealerWon() { return dealerWon; }, set dealerWon(v) { dealerWon = v; },
   get dealerFight() { return dealerFight; }, get dealerMet() { return dealerMet; }, DEALER_X, DEALER_Z,
   get hatchBusy() { return hatchBusy; }, get bunkerMix() { return bunkerMix; }, get bunkerHome() { return bunkerHome; }, HATCH_X, HATCH_Z, BUNKER_Y, hatch,
   waterSurfaceAt, submersionAt, restYInWater, groundGlow, addRipple,

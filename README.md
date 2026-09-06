@@ -102,6 +102,10 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   synth *shff → crunch → grain-spray* sound, a detailed crater (irregular
   pit, dark undercut bowl, shovel gouges, scattered clods) with a real 3D
   sunk cone + spoil mound, and a burst of tumbling low-poly sand chunks.
+- **The Military Shovel is in a case** — an olive equipment case on the desk
+  in the bunker, stencilled E-TOOL, that reads LOCKED until the Blue Blood
+  Dealer is dead and opens on `E` after. The shovel lies in its foam. It is
+  the prize for the first boss: there is no other way to it.
 - **The heavy swing** — hold the **right button** and the shovel hauls back
   and keeps straining; let go and it drops from exactly where your hands were,
   with no re-wind and nothing to snap through. Release to blade moving is one

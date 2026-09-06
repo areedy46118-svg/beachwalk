@@ -1248,6 +1248,41 @@ the scan's scale and its Z-up root matrix never enter into it, and the
 group's own tilt is zeroed — the fall is the particles' now. A severed bone's
 whole subtree is left out of the simulation.
 
+**A DEAD MAN'S JOINTS STILL ONLY GO WHERE JOINTS GO.** The bend limits
+let a knee close to a third of its reach and an elbow to less, and nothing
+at all stopped the thighs folding up onto the chest — so a corpse arrived
+on the floor as a parcel, the owner's "they fold up too much, it looks
+fake". `RAG_BEND` holds the knee at about ninety degrees (0.72 of the
+chain), the elbow a little past (0.62), the neck barely (0.86), and two new
+chains keep the TRUNK off the shins (`Spine2–Hips–Leg`, 0.66) and the
+forearm off the chest (`Spine2–Arm–ForeArm`, 0.50). Self-collision runs at
+0.92 of the summed radii. And it LANDS: a quarter of the fall coming back
+up as bounce and half the slide surviving every contact read as something
+light — `RAG_BOUNCE` 0.10, `RAG_FRICTION` 0.74, `RAG_G` 17.5, and less lift
+in the kick, so it goes over and down rather than up first. Measured at
+rest: knees 92–153°, elbows 147–159°, hips 83–107°, asleep in under four
+seconds, thrown 4.5 m.
+
+**THE MILITARY SHOVEL IS THE PRIZE FOR THE FIRST BOSS.** It used to lie on
+the sand past the drain on the first morning. It is in an equipment case
+on the Dealer's desk now (`makeMilCrate` / `buildMilCrate`, built with the
+bunker props, placed by raycast onto the desk with the two red chairs at
+the +x wall, the lid hinged on the wall side so open it stands against the
+concrete), and the case reads LOCKED until `dealerWon` and opens on E
+after. `militaryWorld` is never in the scene until the bunker has loaded —
+if it were, the first minute of the game would have the shovel on the beach
+again — and it is laid in the case by ONE rotation (model Y down the case's
+X, the scoop face turned up). The pickup keeps its save id, so a checkpoint
+that carried the shovel gives it back through the same handler, which opens
+the case itself; a case built after a restore that already took the shovel
+is built open and empty. **A decorative band round a box is four strips,
+not a slab**: the first band was a solid box the full size of the case at
+mid-height, and it hid the tool completely — a magenta debug material on
+the lining floor changed nothing, which is how you find a thing inside
+another thing. And a stencil lying on a lid wants its `up` pointing AWAY
+from the reader (`makeBasis`, not a bare `rotation.x`), or it reads
+upside-down from the room.
+
 **A BONE SCALED TO NOTHING TAKES ITS SUBTREE WITH IT.** A skinned mesh cannot
 be cut, but collapsing the arm bone removes the arm from the shoulder down
 along a seam the skinning already defines — no geometry surgery, no stretched
@@ -1595,6 +1630,15 @@ under a mashed button, in pairs. **And the held beat is the return's
 window**: a click anywhere up to `RETURN_LATEST` (0.82, about a sixth of
 the way home) throws the return from where the blade is, so a double click
 does not have to be a fast one.
+
+**THE LAST STRETCH OF A RECOVERY IS THE NEXT SWING'S WIND-UP.** A click
+while the blade was drifting home waited for it to arrive, and the owner
+felt the wait. A forehand asked for past `FORE_EARLY` (0.94 — the last
+sixth of the recovery) leaves from where the blade IS: the haul mixes from
+the live pose (`_poseF`), not from rest, which from rest is exactly the
+same haul it always was. The cadence does not change (nine swings in
+3.3 s under a mashed button, in pairs); the dead frames at the end of a
+combination are gone.
 
 **A BLADE SETTLES; IT DOES NOT BOUNCE.** Two things were the "flinch"
 coming back to guard. `easeOutBack`'s overshoot threw the point two
@@ -2139,8 +2183,8 @@ shovels' behaviour, so a tool without the field is exactly the tool it was:
 `swingK` (0.9), `blade` (the whoosh, the connect and the block are a
 sword's), and `alternate` (a light thrown inside 0.9 s of the last comes
 back along the other diagonal — the return stroke that was rightly cut for
-the shovel is the katana's whole vocabulary). It spawns beside the Military
-Shovel under the cliff.
+the shovel is the katana's whole vocabulary). It spawns under the cliff
+past the drain, where the Military Shovel used to lie.
 
 **A SCAN MAY CARRY ITS OWN 0.01, AND YOUR AXIS FIT MAY BE IN THE WRONG
 FRAME.** Two mistakes in one build. The shovel's scan arrives in raw
