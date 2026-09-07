@@ -13730,16 +13730,105 @@ const mushHouse = makeMushroomHouse();
 mushHouse.group.position.set(MUSH_X, 0, MUSH_Z);
 scene.add(mushHouse.group);
 farProps.push({ obj: mushHouse.group, z: MUSH_Z, d: 320 });
+/* ---- WHAT HAS GROWN BACK -------------------------------------------------
+ * Concrete left alone for fifty years does not stay empty. Every joint in
+ * it opens, sand blows into the opening, and the first thing that can live
+ * in a teaspoon of sand and salt spray takes it — so the cracks are where
+ * the plants are, and drawing the crack UNDER each clump is what makes it
+ * read as growing out of the building instead of standing on it. The
+ * clumps are the headland's own scan (3dhdscan's grass chunks), instanced
+ * into the pavilion's group so they far-cull with it. */
+{
+  const CRACK_MAT = new THREE.MeshBasicMaterial({ color: 0x1a1d22, transparent: true, opacity: 0.72, depthWrite: false });
+  const crackAt = (x, y, z, len, ang, w) => {
+    const q = new THREE.Mesh(new THREE.PlaneGeometry(len, w || 0.05).rotateX(-Math.PI / 2), CRACK_MAT);
+    q.position.set(x, y + 0.004, z); q.rotation.y = ang; q.renderOrder = 1;
+    mushHouse.group.add(q);
+  };
+  /* Where they are is not random: a crack runs where a slab was poured
+   * against another one. Round the platform's rim, along the foot of both
+   * walls, across the steps, and inside the room where the floor meets the
+   * sill — and in the room a couple more out of the drifts of sand that
+   * have come in through the panes that are gone. */
+  const SPOTS = [];
+  const M = MUSH;
+  for (let i = 0; i < 9; i++) {                        // the yard, between platform rim and parapet
+    const a = M.DOOR_ANG - 1.05 + i * (2.1 / 8), r = M.WALL_R - 0.45 - (i % 3) * 0.55;
+    SPOTS.push([Math.sin(a) * r, M.PLAT_TOP, Math.cos(a) * r, a + 1.2, 0.55 + (i % 2) * 0.35]);
+  }
+  for (let i = 0; i < 7; i++) {                        // the foot of the retaining wall
+    const a = 0.6 + i * (4.4 / 6), r = M.PLAT_R + 0.05;
+    SPOTS.push([Math.sin(a) * r, 0.0, Math.cos(a) * r, a, 0.5 + (i % 2) * 0.4]);
+  }
+  for (const [sx, sz] of [[-M.PLAT_R - 0.5, 0.9], [-M.PLAT_R - 1.1, -0.7], [-M.PLAT_R - 0.55, -1.05]])
+    SPOTS.push([sx, 0.13, sz, 1.1, 0.42]);             // the steps
+  for (let i = 0; i < 8; i++) {                        // and inside, at the sill and out of the drifts
+    const a = i / 8 * Math.PI * 2 + 0.3, r = M.R_ROOM - 0.30 - (i % 2) * 0.5;
+    SPOTS.push([Math.sin(a) * r, M.H_ROOM, Math.cos(a) * r, a + 1.4, 0.45 + (i % 3) * 0.3]);
+  }
+  for (const [x, y, z, ang, len] of SPOTS) crackAt(x, y, z, len, ang);
+  new GLTFLoader().load('assets/grass-clumps.glb', (gltf) => {
+    gltf.scene.updateMatrixWorld(true);
+    const kinds = [];
+    gltf.scene.traverse((o) => {
+      if (!o.isMesh) return;
+      const geo = o.geometry.clone().applyMatrix4(o.matrixWorld);
+      geo.computeBoundingBox();
+      const bb = geo.boundingBox;
+      geo.translate(-(bb.min.x + bb.max.x) / 2, -bb.min.y, -(bb.min.z + bb.max.z) / 2);
+      const mat = o.material.clone();
+      /* THE SAME NIGHT TREATMENT THE HEADLAND'S GRASS GETS: an alpha CARD
+       * has to be `alphaTest`, never `transparent`, or it sorts against
+       * everything round it; and on this beach it needs its own emissive
+       * off its own map or it is a black smear. */
+      mat.color.setHex(0x9fae98); mat.emissive.setHex(0x28352a); mat.emissiveMap = mat.map;
+      mat.roughness = 1; mat.metalness = 0; mat.side = THREE.DoubleSide;
+      mat.transparent = false; mat.alphaTest = 0.42; mat.depthWrite = true;
+      mat.needsUpdate = true;
+      kinds.push({ geo, mat, h: Math.max(0.01, bb.max.y - bb.min.y) });
+    });
+    if (!kinds.length) return;
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3();
+    let n = 0;
+    for (const k of kinds) {
+      const N = Math.ceil(SPOTS.length * 3.4 / kinds.length);
+      const inst = new THREE.InstancedMesh(k.geo, k.mat, N);
+      inst.frustumCulled = false;
+      for (let i = 0; i < N; i++) {
+        const sp = SPOTS[(n++) % SPOTS.length];
+        const jx = (Math.random() - 0.5) * sp[4] * 0.8, jz = (Math.random() - 0.5) * sp[4] * 0.8;
+        // a clump that has seeded in a crack is small and it is starved
+        const h = (0.34 + Math.random() * 0.42) / k.h;
+        e.set(0, Math.random() * Math.PI * 2, 0); q.setFromEuler(e);
+        m.compose(v.set(sp[0] + Math.cos(sp[3]) * jx, sp[1] - 0.02, sp[2] - Math.sin(sp[3]) * jz), q, sc.set(h, h, h));
+        inst.setMatrixAt(i, m);
+      }
+      inst.instanceMatrix.needsUpdate = true;
+      mushHouse.group.add(inst);
+    }
+  });
+}
 /* AND `floorY` HAS TO SURVIVE THE COPY. The room's furniture is solid five
  * metres up and nowhere else — `pushOutOfSolids` reads `floorY` and skips
  * anything whose bottom is over your head — but this loop rebuilt each
  * collider field by field and quietly dropped it, so a sofa on the top
  * floor was a post standing on the sand: the way in through the gate was
  * blocked by an armchair nobody could see. Copy what you are given. */
+/* AND THE GATE HAS TO BE HANDED THE COPIES, NOT THE ORIGINALS. This loop
+ * builds a NEW object per collider — it has to, it is adding the world
+ * offset — so the leaf's discs that `models/` kept a list of are not the
+ * discs the game collides against. Swinging the gate moved five objects
+ * nobody reads, and the doorway stayed shut whatever the iron was doing.
+ * The copies go back onto the gate as they are made. */
+const _gateCols = [];
 for (const c of mushHouse.colliders) {
-  if (c.r !== undefined) rockColliders.push({ x: c.x + MUSH_X, z: c.z + MUSH_Z, r: c.r, top: c.top, mat: c.mat, floorY: c.floorY });
-  else rockColliders.push({ x0: c.x0 + MUSH_X, x1: c.x1 + MUSH_X, z0: c.z0 + MUSH_Z, z1: c.z1 + MUSH_Z, top: c.top, mat: c.mat, floorY: c.floorY });
+  const w = c.r !== undefined
+    ? { x: c.x + MUSH_X, z: c.z + MUSH_Z, r: c.r, top: c.top, mat: c.mat, floorY: c.floorY, t: c.t }
+    : { x0: c.x0 + MUSH_X, x1: c.x1 + MUSH_X, z0: c.z0 + MUSH_Z, z1: c.z1 + MUSH_Z, top: c.top, mat: c.mat, floorY: c.floorY };
+  rockColliders.push(w);
+  if (c.t !== undefined) _gateCols.push(w);
 }
+mushHouse.gate.cols = _gateCols;
 {
   const prev = cliff.material.onBeforeCompile;
   cliff.material.onBeforeCompile = function (sh, rndr) {
@@ -13759,6 +13848,158 @@ for (const c of mushHouse.colliders) {
   };
   cliff.material.needsUpdate = true;
 }
+/* THE PAVILION COSTS 214 MILLISECONDS THE FIRST TIME IT IS DRAWN, and it
+ * is drawn the first time in the middle of a walk. Measured: showing the
+ * group compiles 33 new shader programs and holds the frame for a fifth of
+ * a second; showing it again afterwards costs six milliseconds. That is
+ * the "random lag" — it is not the geometry, it is the LIGHT COUNT. Three
+ * point lights entering the scene changes `NUM_POINT_LIGHTS` for every
+ * material in the game, and three recompiles all of them.
+ *
+ * The fix is the one the drain and the bunker already use, and the bunker's
+ * lesson holds here: warm it THROUGH THE CANVAS with a four-pixel scissor,
+ * never into a render target — a target has its own output colour space,
+ * so three compiles a different program for every material and the canvas
+ * pays the whole bill again anyway. Paid on an early frame with the title
+ * card still up, where nobody can feel it. */
+let mushWarmed = false, mushWarmError = null, mushWarmProgs = -1;
+function warmMush() {
+  if (mushWarmed) return;
+  mushWarmed = true;
+  const g = mushHouse.group;
+  const wasVisible = g.visible;
+  const restore = [];
+  const pos = camera.position.clone(), quat = camera.quaternion.clone();
+  try {
+    g.visible = true;
+    // culling would leave whatever the warm camera cannot see to be paid
+    // for later, which is most of a building you warm from one spot
+    g.traverse((o) => { if (o.isMesh) { restore.push([o, o.frustumCulled]); o.frustumCulled = false; } });
+    const size = renderer.getSize(new THREE.Vector2());
+    const prevAutoClear = renderer.autoClear;
+    renderer.setScissorTest(true);
+    renderer.setScissor(0, 0, 4, 4);
+    renderer.setViewport(0, 0, 4, 4);
+    renderer.autoClear = true;
+    // once from outside and once from IN the room: the interior's lamps are
+    // the whole reason this hitch exists, so they have to be in range
+    for (const [p2, l2] of [[[MUSH_X, 2.0, MUSH_Z + 26], [MUSH_X, 5.6, MUSH_Z]],
+                            [[MUSH_X + 2.6, MUSH.H_ROOM + 1.7, MUSH_Z], [MUSH_X - 4, MUSH.H_ROOM + 1.2, MUSH_Z]]]) {
+      camera.position.set(p2[0], p2[1], p2[2]);
+      camera.lookAt(l2[0], l2[1], l2[2]);
+      camera.updateMatrixWorld(true);
+      renderer.compile(scene, camera);
+      renderer.render(scene, camera);
+    }
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, size.x, size.y);
+    renderer.autoClear = prevAutoClear;
+  } catch (e) { mushWarmError = e; }
+  for (const [o, f] of restore) o.frustumCulled = f;
+  g.visible = wasVisible;
+  camera.position.copy(pos); camera.quaternion.copy(quat); camera.updateMatrixWorld(true);
+  mushWarmProgs = renderer.info.programs.length;
+}
+
+/* ---- THE GATE ------------------------------------------------------------
+ * The one way into the yard, and until now a picture of a gate hanging at
+ * a fixed angle that you walked past without touching. It starts SHUT and
+ * opens on E, which turns the arrival at the pavilion into a thing you do
+ * rather than a doorway you happen through — and gives the building the
+ * noise it has been missing, because a gate that has stood in salt air
+ * since 1974 does not swing quietly.
+ *
+ * The leaf's colliders ride it: `MUSH.gate.cols` keep the offset `t` they
+ * were laid at, and every frame of the swing they are rewritten round the
+ * pivot. Shut, the iron is across the doorway and the yard is closed;
+ * open, it lies back against the inside of the wall and the way is clear.
+ * Nothing else in the game moves a `rockColliders` entry, so this is the
+ * one place that pattern appears. */
+const MGATE = mushHouse.gate;
+let gateOpen = false, gateT = 0;                    // 0 shut, 1 open
+function sfxGateHinge(opening) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const out = ctx.createGain(); out.gain.value = 0.5; out.connect(sfxOut());
+  /* THE SQUEAL IS NOT A TONE, IT IS A TONE THAT CANNOT HOLD ONE. Rust in a
+   * hinge is stick-slip: the leaf catches, releases, catches again, so the
+   * pitch jumps about a rising line and the level flutters with it. Two
+   * detuned saws through a narrow resonant band, both with a hand-drawn
+   * random walk on the frequency, and the whole thing gated by an envelope
+   * that stutters — a smooth glide reads as a door in a cartoon. */
+  const D = 1.15;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1500; bp.Q.value = 9;
+  const sq = ctx.createGain(); sq.gain.value = 0.0001;
+  bp.connect(sq).connect(out);
+  for (const det of [1, 1.008, 0.6]) {
+    const o = ctx.createOscillator(); o.type = det === 0.6 ? 'square' : 'sawtooth';
+    const f0 = (opening ? 620 : 900) * det;
+    o.frequency.setValueAtTime(f0, t);
+    let f = f0;
+    for (let k = 1; k <= 26; k++) {                 // the stick-slip walk
+      const u = k / 26;
+      f = f0 * (1 + (opening ? 0.55 : -0.30) * u) * (0.86 + Math.random() * 0.30);
+      o.frequency.setValueAtTime(Math.max(140, f), t + u * D);
+    }
+    const og = ctx.createGain(); og.gain.value = det === 0.6 ? 0.22 : 0.5;
+    o.connect(og).connect(bp); o.start(t); o.stop(t + D + 0.05);
+  }
+  // the flutter: it grips and lets go, so the level is never steady
+  sq.gain.setValueAtTime(0.0001, t);
+  sq.gain.exponentialRampToValueAtTime(0.16, t + 0.05);
+  for (let k = 1; k <= 22; k++) {
+    const u = k / 22;
+    sq.gain.exponentialRampToValueAtTime(Math.max(0.004, (0.05 + Math.random() * 0.19) * (1 - u * 0.55)), t + u * D);
+  }
+  sq.gain.exponentialRampToValueAtTime(0.0001, t + D + 0.04);
+  // the dry grind of the hinge under it, and the iron's own body
+  const gr = noiseBurst(D, (x) => (0.35 + 0.65 * Math.abs(Math.sin(x * 34))) * (1 - x) * 0.5);
+  const grf = ctx.createBiquadFilter(); grf.type = 'bandpass'; grf.frequency.value = 520; grf.Q.value = 1.4;
+  const gg = ctx.createGain(); gg.gain.value = 0.5;
+  gr.connect(grf).connect(gg).connect(out); gr.start(t); gr.stop(t + D);
+  // and it arrives: the leaf meeting the post, or the wall
+  const at = D * 0.94;
+  const cl = noiseBurst(0.09, (x) => Math.pow(1 - x, 4));
+  const clf = ctx.createBiquadFilter(); clf.type = 'bandpass'; clf.frequency.value = opening ? 1200 : 1750; clf.Q.value = 4;
+  const cg = ctx.createGain(); cg.gain.value = 0.75;
+  cl.connect(clf).connect(cg).connect(out); cl.start(t + at); cl.stop(t + at + 0.09);
+  for (const [f, gn, dur] of [[184, 0.16, 1.5], [297, 0.10, 1.1], [521, 0.06, 0.7]]) {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+    const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t + at);
+    og.gain.exponentialRampToValueAtTime(gn, t + at + 0.008);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + at + dur);
+    o.connect(og).connect(out); o.start(t + at); o.stop(t + at + dur + 0.02);
+  }
+}
+function toggleGate() {
+  gateOpen = !gateOpen;
+  sfxGateHinge(gateOpen);
+}
+function updateGate(dt) {
+  if (!MGATE || !MGATE.pivot) return;
+  const want = gateOpen ? 1 : 0;
+  if (gateT === want) return;
+  gateT += (want - gateT) * Math.min(1, dt * 2.6);
+  if (Math.abs(want - gateT) < 0.004) gateT = want;
+  const a = MGATE.shut + (MGATE.open - MGATE.shut) * easeInOutCubic(gateT);
+  MGATE.pivot.rotation.y = a;
+  // and the iron is solid wherever it has got to
+  for (const c of MGATE.cols) {
+    c.x = MUSH_X + MGATE.x + Math.sin(a) * c.t;
+    c.z = MUSH_Z + MGATE.z + Math.cos(a) * c.t;
+  }
+}
+{
+  // the crosshair needs something to find: the bars are 35 mm and you are
+  // asking for them from a metre and a half away
+  const proxy = new THREE.Mesh(new THREE.BoxGeometry(0.30, 1.9, MGATE.w),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  proxy.name = 'hitProxy';
+  proxy.position.set(0, MGATE.h / 2, MGATE.w / 2);
+  MGATE.pivot.add(proxy);
+  addInteractable(proxy, () => gateOpen ? 'Close the gate' : 'Open the gate', undefined, { onActivate: toggleGate });
+}
+
 /* WHERE YOU ARE IS REMEMBERED, NOT INFERRED. The room used to be "feet high
  * enough and far enough out from the axis", and that is true of the top
  * three treads of the stair as well — so one step down off the top tread put
@@ -13779,6 +14020,7 @@ let mushTurns = 0, mushLastA = 0, mushStairY = null;
 const _angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return d; };
 function updateMushroom(dt) {
   const M = MUSH;
+  updateGate(dt);
   const dx = camera.position.x - MUSH_X, dz = camera.position.z - MUSH_Z;
   let d = Math.hypot(dx, dz);
   const ang = Math.atan2(dx, dz);
@@ -19524,6 +19766,7 @@ function finishRestore() {
 function animate() {
   requestAnimationFrame(animate);
   if (!drainWarmed) warmDrain();
+  else if (!mushWarmed) warmMush();
   else if (!bunkerWarmed) warmBunker();
   let dt = Math.min(clock.getDelta(), 0.05);
   // a beat of near-frozen time on a solid hit, drained in real seconds
@@ -19585,7 +19828,7 @@ window.__bw = {
     oceanUniforms.uTime.value += dt;
     update(dt, rawDt); updateHatch(rawDt);
   },
-  MUSH_X, MUSH_Z, MUSH, mushHouse, updateMushroom, mushState: () => ({ where: mushWhere, turns: mushTurns, stairY: mushStairY }),
+  MUSH_X, MUSH_Z, MUSH, mushHouse, updateMushroom, get mushWarm() { return { warmed: mushWarmed, err: mushWarmError && String(mushWarmError), progs: mushWarmProgs }; }, warmMush, toggleGate, get gateOpen() { return gateOpen; }, mushState: () => ({ where: mushWhere, turns: mushTurns, stairY: mushStairY }),
   mushPut: (w, y) => { mushWhere = w; mushTurns = MUSH.TURNS; mushStairY = y === undefined ? MUSH.H_ROOM : y; },
   smile, updateSmile, smileState: () => ({ phase: smilePhase, t: smileT, loaded: !!smileMixer, clips: Object.keys(smileClips) }), sfxSmileStep,
   updateHurt, hurtEl,

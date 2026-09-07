@@ -3343,6 +3343,68 @@ door's angle and half-width, the stair's rise, treads, turns, `A0` and
 convention, and `updateMushroom()` is `updateTower()`'s shape: regions and
 clamps, the climb by winding, the tread snap.
 
+**A DRUM OF WINDOWS DOES NOT WANT A BACK.** Six bays on the cliff side were
+papered over from the inside — bullseye paper, big and warm, with the
+furniture that wants a wall standing against it — and it was the wrong idea
+in a building whose whole argument is a band of glass on a column. The
+owner asked for it off, and he was right: a round room with a horizon in
+every direction wants everything in it kept BELOW THE SILL, so the glass
+runs unbroken over the top of the furniture and the sea is visible from
+anywhere you stand. Nothing in there is over 0.75 m now but the lamp, the
+palm and what hangs from the ceiling.
+
+**BOXES ON A CURVE INTERPENETRATE.** The sofa was five boxes turned to the
+tangent and laid round the arc, and adjacent boxes rotated 22 degrees apart
+bury each other's corners — every joint had one unit inside the next and
+the shading tore along the seam. That is what "the couch textures are
+lagging into each other" was, and it is not a texture problem at all. A
+round room takes a curved sofa: arcs of the drum, the same `arcBand` and
+`ringArc` the building itself is made of, with the modules read as gaps
+between the cushions. **And a sofa is a box with a BACK**: the first
+curved one was a plinth with flat plates on it and read as a red shelf.
+The back stands half a metre over the seat and there are arms, which is
+most of what tells the eye how big a piece of furniture is.
+
+**A SPHERE WITH A WEDGE OUT OF IT OPENS ON -X, NOT -Z.** Three's `phiStart`
+runs from the -X axis, so the gap a `phiLength` short of a full turn leaves
+is centred there — and a globe chair turned as if its mouth were on -Z
+faces ninety degrees away from whatever you pointed it at. Both of them
+did, which is the whole of "the circle chairs are facing different
+directions". Local -X reaches world angle `face` at `face + PI/2`. And a
+chair should face the thing the room is FOR: the pair flank the table
+across the rug from the sofa, both turned in at it, and the angle is
+DERIVED from where the chair stands and where the table is rather than
+chosen.
+
+**THE RANDOM LAG WAS THE LIGHT COUNT, AND IT IS MEASURABLE.** Showing the
+pavilion for the first time cost 214 ms and compiled 33 new shader
+programs; showing it again cost 6. It is not the geometry — three point
+lights entering the scene changes `NUM_POINT_LIGHTS` for every material in
+the game, and three recompiles all of them. `warmMush()` pays it on an
+early frame under the title card, the way the drain and the bunker are
+warmed, and the bunker's rule holds: THROUGH THE CANVAS with a four-pixel
+scissor, never into a render target, because a target has its own output
+colour space and three compiles a different program for every material.
+First show: 214 ms became 7.8, with zero new programs. **And the warm chain
+runs one per frame, so it never fires in the preview pane** — rAF there
+ticks 0 in 600 ms, which is why `warmMush` read `warmed: false` for a long
+time and looked broken. Call it off `__bw` to test it.
+
+**AND THE GATE HAS TO BE HANDED THE COPIES.** The loop that offsets the
+house's colliders into world space builds a NEW object per collider — it
+has to, it is adding the offset — so the leaf's discs that `models/` kept a
+list of are not the discs the game collides against. Swinging the gate
+moved five objects nobody reads: the pivot turned, the iron visibly swung,
+and the doorway stayed shut. Measured: shut stops you at 5.52, open lets
+you to 0.5. This is the only place in the game that moves a `rockColliders`
+entry, so it is the only place that trap exists.
+
+**AND A COLLIDER MUST NOT REACH PAST THE CLAMP IT SHARES A WALL WITH.** The
+sofa's discs were run out past the room's own outer clamp to close the
+pocket behind it, and that is the same trap wearing the other hat: the
+push-out shoves you to 5.24, the clamp pulls you back to 5.15, and the two
+fight over you every frame. They stop a hand's breadth short of it.
+
 **THE FRONT OF THE BUILDING HAD A THREE AND A HALF METRE HOLE IN IT.** The
 parapet's colliders were laid 0.9 m of arc apart at radius 0.45 — beads on
 a string, touching and no more — and the gateway skipped every sample

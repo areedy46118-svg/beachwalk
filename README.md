@@ -317,15 +317,20 @@ column, a dish of ribs under it, a band of steel-framed windows all the way
 round, a walled yard below with an iron gate, and a spiral stair inside the
 column up into the room.
 
-The top floor is furnished, and it is 1974 — a burnt-orange modular sofa
-curved round the seaward glass, two globe chairs (one over on its side), a
-wave-pattern shag rug, a smoked-glass table, a teak credenza with the deck
-still on it and the records off the shelf, a sunburst clock stopped on the
-wall, bullseye paper over the windows that never had a view, a dome lamp, a
-disco ball nobody took down. Nothing in it is ruined: it is dusty and
-sun-bleached and open to the weather through the panes that are gone, with
-the beach drifting in under them. Somebody carried all of it up that stair
-and then left.
+The glass runs unbroken all the way round, so everything in the room is
+kept below the sill and the horizon is visible from anywhere you stand.
+
+The top floor is furnished, and it is 1974 — a burnt-orange curved sofa
+facing the sea, two globe chairs turned in at a smoked-glass table across a
+wave-pattern shag rug, a teak credenza with the deck still on it and the
+records off the shelf, low open shelving, a dome lamp, a disco ball nobody
+took down. Nothing in it is ruined: it is dusty and sun-bleached and open
+to the weather through the panes that are gone, with the beach drifting in
+under them. Somebody carried all of it up that stair and then left.
+
+The iron gate in the yard wall is shut, and it opens on `E` with the noise
+fifty years of salt air makes of a hinge. Grass has seeded in every crack
+in the concrete.
 
 The furniture is solid up there and nowhere else, so you walk round the
 sofa on the top floor and not through thin air on the sand five metres
