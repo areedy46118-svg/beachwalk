@@ -374,10 +374,19 @@ through a tripod, you do not stop at one.
 ### He takes the mask off
 
 At half his health the Blue Blood Dealer stops, gets a hand under the filter
-drum and pulls the mask off his face. It costs him — he is stopped and open
-for a second and a half, and it is the biggest window in the fight — and
-after it he is faster, feints more and chains further. His voice changes with
-it: everything he has said so far has been through a drum of charcoal.
+drum and pulls the mask off his face, and it lands on the floor and stays
+there. It costs him — he is stopped and open for a second and a half, and it
+is the biggest window in the fight — and after it he is faster, feints more
+and chains further. His voice changes with it: everything he has said so far
+has been through a drum of charcoal.
+
+What is under it is a different head, not a paint job on the old one: a
+photoscanned bust, bald and heavy-browed, fitted to his own skeleton in
+Blender against the eye positions measured off both models, with its neck
+morphed onto the ring where his own neck is cut away and its skin matched
+per-texel to the colour of his chest. It moves with him because every vertex
+of it took the bones and weights of the nearest vertex of the head it
+replaced.
 
 ### The step
 
@@ -485,6 +494,12 @@ under the hatch between the snorkeler and the tall one.
 This work is based on ["Survival Shovel"](https://sketchfab.com/3d-models/survival-shovel-143de1be88704810bd14f64cfed64bb7)
 by [howittworks](https://sketchfab.com/howittworks) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Military Shovel.
+
+This work is based on ["Bust Model"](https://sketchfab.com/3d-models/bust-model-20eaab1f3e1046efb2ba1704ad048d59)
+by [tales](https://sketchfab.com/talesrt) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the face under the
+Blue Blood Dealer's gas mask (`assets/dealer-head.glb`, fitted to his own
+skeleton by `tools/dealer_head.py`).
 
 The **katana's swing, block, hit, draw and parry sounds** are the owner's own
 bounces — four swings and four blocks from Sekiro effects, four hits from a

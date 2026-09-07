@@ -2509,57 +2509,73 @@ voice comes off `throat: 'mask'` — the filter drum was literally in the sound
 what keep him fair and this file has already paid once for making them
 readable.
 
-**AND THE FACE UNDER IT IS PAINTED, NOT MODELLED.** The scan has a whole head
-under the mask and it is a plain bald man, which is the least frightening
-thing that could be there. The answer is the one this file gives about the
-mutants' occlusion and the pavilion's lamps: DO IT IN THE MAP. The head's uv
-island is rasterised once (`headTexels`) so every texel knows the point on
-the skull it belongs to, and the mutation is then painted in THREE
-DIMENSIONS — sockets where the eyes actually are, a split down the line from
-his left temple to his jaw, the blue tracking up out of his collar — rather
-than smeared over a rectangle of atlas. He is BLUE, not the pack's red: the
-walk is an hour of blue blood in a crab and a syringe and a jar, and what has
-got into him is the same colour as what is in the jar. Five things, and four
-of them were got wrong first:
+**AND THE FACE UNDER IT IS A DIFFERENT HEAD, NOT A PAINT JOB ON THE OLD ONE.**
+A whole pass was spent painting the mutation onto the scan's own head — the
+uv island rasterised so every texel knew its point on the skull, then
+lesions and sockets and a split from temple to jaw laid down in three
+dimensions — and it was the wrong idea from the first line: **the scan's own
+head is a plain bald man, and no amount of painting a face makes it a
+different face.** Three passes of that painter each fixed a real fault and
+each left something that was still recognisably the same man wearing makeup.
+What is there now is tales' "Bust Model" — a photoscanned bust, bald,
+heavy-browed, jaw like a shovel — fitted to this character by
+`tools/dealer_head.py` and arriving in his own bind space so the game does
+not place it at all. Five things it took, and the ones that were got wrong
+first are the interesting ones:
 
-- **What counts as the head is a PLACE, not a bone weight.** Selecting the
-  island by the head bone's skinning left a dome-shaped hole through the
-  middle of the face — the triangles round the nose and mouth are weighted
-  mostly to something else on this rig — so that patch kept its original
-  skin while everything round it was painted, and on the model the unpainted
-  patch is the size and shape of a gas mask. A man who has just taken his
-  mask off should not appear to be wearing one. It is `y >= 2.655` for the
-  head and a ramp down the neck, and nothing can fall through a gap in
-  somebody else's weights.
-- **A gradient over a face reads as a REGION.** The second pass drove the
-  corruption off a noise field biased down the face, and it saturated into
-  the same mask-shaped block. What reads as a disease is DISCRETE: six named
-  lesions with a raw centre, a livid ring and a dry pale edge, with ordinary
-  skin left in between, their radii chewed by a hash on the direction so
-  none of them is a circle.
-- **Two soft blobs merge into a band.** The eye sockets at radius 0.038 with
-  a ring out to 0.067, on a head 0.32 wide, joined across the bridge of the
-  nose into one dark strip over the whole face — a third way of arriving at
-  the same mask. Tight, or nothing.
-- **The eyes are their own mesh, and they are what you actually see.** At
-  the range this fight is fought at — his reach is under two metres — his
-  face is forty pixels through the retro downscale and every scar on it is
-  one pixel. What survives is the HEAD GOING COLD against a body that is
-  still warm, and blind eyes. `Object_7` gets its own material, no map, and
-  **a blind eye is DIM, not lit**: the first milky white had a real emissive
-  under it and came out as two glowing slits, which is a cataract drawn as a
-  headlamp. A clouded eye is a surface that has stopped being wet.
-- **And it is painted when the FIGHT starts, not when he pulls the mask
-  off.** Rasterising and painting is sixty milliseconds: nothing at all as
-  the dialogue closes and he turns round, a dropped frame in the middle of
-  an exchange. Same rule as the drain, the bunker and the lens spatter.
-
-**AND THE MEASURING INSTRUMENT IS A RENDER OF THE ATLAS.** Three passes were
-spent guessing why a mask-shaped block kept appearing on his face. What
-settled it in one look was drawing the head's uv rectangle of the texture
-into a canvas over the page and screenshotting it — first the original, then
-the painted one, then the COVERAGE MASK as a black-and-white image, which is
-where the hole showed up. If a painted map is wrong, look at the map.
+- **THE FIT IS ANCHORED ON THE EYES.** A head swap is right when the face is
+  where the face was, so the transform is the uniform scale that matches the
+  eye separation (0.8595) and the translation that puts the eyes on the
+  character's own — both measured off the two models' EYEBALL MESHES, which
+  are their own objects in both scans and therefore a fact rather than an
+  estimate (his at ±0.0532, 2.8448, 0.1539; the bust's at ±0.0619, −0.0352,
+  0.1186). Everything else — the crown landing 4 cm low in rig units, the
+  jaw much wider — is this being a different head, which is the point.
+- **THE NECK IS MATCHED AT ONE RING, NOT ALL THE WAY UP.** The first morph
+  tried to hold the bust's whole neck against the character's profile and
+  came out noisy, because the character's own "neck" measurement is polluted
+  by the trapezius below and the jaw above. Above the cut the character is
+  CARVED AWAY, so nothing of his neck is visible there and the bust's neck is
+  free to be its own shape: the only place the two surfaces must agree is the
+  single ring where they meet. That ring — 24 radii about the neck axis at
+  y = 2.60 — is in the tool, the morph eases to nothing by the jaw, and below
+  the cut the bust is scaled to 0.92 of it so it sits INSIDE the body rather
+  than coincident with it, because two surfaces in the same place is
+  z-fighting and a millimetre in is simply hidden.
+- **THE OLD HEAD COMES OFF THE INDEX.** You cannot part-hide a skinned mesh,
+  so `carveDealerHead` drops every triangle of `DealerBody` whose bind
+  centroid is above the cut and re-indexes the rest — the desk's own carve,
+  on a body. His eyes and lashes are separate meshes and simply go.
+- **AND IT IS SKINNED BY TRANSFER, NOT BY A RULE.** Every vertex of the new
+  head takes the bones and weights of the NEAREST vertex of the head it
+  replaced, so the new neck deforms exactly as the old one did and the join
+  cannot shear when he turns to look at you. Through a 5 cm grid, because
+  seven thousand vertices against four and a half thousand donors is
+  thirty-five million distance tests and a visible hitch.
+- **AND THE SKIN IS MATCHED PER TEXEL.** Measured, his neck and chest average
+  (94, 68, 61), the bust's neck averages (53, 40, 36) and its face (150, 109,
+  97) — a head half as bright as the body where they meet and half again as
+  bright at the brow. **One material colour cannot fix that**: the multiplier
+  that lifts the neck blows the face past white. It is a per-texel GAIN
+  toward a target that runs with height — his own skin at the neck, the same
+  skin lifted a quarter at the brow, which is what a face does above a
+  throat — so every fold and pore of the scan survives it. And **the band has
+  to know front from back**: a gain worked out per height alone averages a
+  lit face and an unphotographed back of a skull together and lifts neither,
+  which is how the back of his head came out a dark brown cap on a pale man.
+- **AND HE IS NEVER HEADLESS.** The carve is the irreversible half and the
+  new head arrives over the network, so the two are tied together: nothing
+  comes off him until there is something to put on. The GLB starts loading
+  when the ROOM is built, the skin transfer and the colour match are done
+  when the FIGHT starts, and the beat itself is a visibility flag — measured
+  at 33 ms against 55 for the build. If the file is somehow still in flight
+  the beat plays without it and `updateDealer` finishes the job on the frame
+  it lands.
+- **THE PARENT IS PART OF THE TRANSFORM.** In the tool: the scan hangs off
+  two Sketchfab empties carrying a 0.2624 scale, and assigning `matrix_world`
+  on a parented object does not remove it — the exporter put it back and the
+  head came out 3.81x too big and eleven metres in the air. Unparent keeping
+  the transform, apply it, THEN write coordinates in.
 
 **A DIRECTIONAL STEP, ON SPACE.** Before it the whole answer to a swing was
 block, parry or walk backwards — three things, all of them facing him, and
@@ -2592,6 +2608,33 @@ other's answer any more.
   spend rolling out of is a fight you cannot then back out of; and there is
   a cooldown, because a step you can mash is a step that never has to be
   timed. That is the parry's own argument.
+
+**THE THREE BREAKS ARE RECORDINGS, AND A RECORDING IS THE WHOLE EVENT.** The
+desk, the tripod camera and the coat stand play the owner's own bounces
+(`table-break` / `camera-break` / `coat-break`), and the synthesised stacks
+they replaced stay behind them as the fallback for the frames before the bank
+is off the network — the katana's own arrangement. Two things: the layered
+clatter must NOT still play underneath (the coat stand was a clatter plus a
+snap because neither alone was a coat stand going over; the bounce is already
+one mixed event and putting the clatter under it only muddies it), so
+`sfxWoodSnap` and `sfxTableBreak` return whether the bank played and the
+caller only reaches for the synth if it did not. And **AAC overshoots on
+decode**: the camera bounce peaked at 1.18 in the decoded buffer and clipped,
+so all three are encoded with 3 dB of headroom and the play gains carry the
+level back.
+
+**A GLINT YOU CANNOT SEE IS NOT A GLINT.** Every shine in this game is
+depth-tested, which is right for a shell on an open beach and wrong for the
+one moment a shine exists FOR: the Military Shovel lying among a dozen planks
+and four table legs on a steel floor, where the thing hiding it is the
+wreckage that revealed it. `addItemShine` takes `through`: a SECOND sprite
+that ignores depth, bigger, much fainter, drawn last, breathing on its own
+slower count — so a plank across the tool dims the mark instead of deleting
+it, and with a clear line of sight the two read as one brighter glint. Two
+sprites rather than one depth-ignoring sprite, because a shine that never
+occludes at all reads as a decal pasted on the lens. It is opt-in and set in
+exactly one place: a glint showing through a cliff would be the wrong thing
+everywhere else.
 
 **A ROOM YOU CAN WRECK IS A ROOM YOU ARE IN.** The bunker had eighteen
 breakables and a coat stand, and all of them were small: you could scatter

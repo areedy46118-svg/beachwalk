@@ -18268,7 +18268,8 @@ function startDealerFight() {
    * round, and a dropped frame in the middle of an exchange if it were left
    * until the beat itself. The drain, the bunker and the lens spatter are
    * all warmed for exactly this reason. */
-  paintScarredFace(dealer);
+  loadBustHead();
+  buildBustHead(dealer);
   /* THE CROWBAR IS THE STARTING GUN. He is unarmed for the whole of the
    * conversation — it is its own mesh in the scan and simply switched off —
    * and it appears on the frame the taunt begins, which is the frame the
@@ -19009,6 +19010,9 @@ function buildBunkerProps() {
   buildWorkTable(g);
   if (workTable) workTable.traverse((o) => { if (o.isMesh) meshes.push(o); });
   buildTripodCam(g);
+  // and what is under his mask starts coming down the wire the moment the
+  // room exists, which is minutes before he is at half health
+  loadBustHead();
   for (const [lx, lz, kind] of BUNKER_PROP_SPOTS) {
     // whatever is actually under that spot: a desk, the console shelf, the floor
     const from = new THREE.Vector3(g.position.x + lx, g.position.y + 2.9, g.position.z + lz);
@@ -19813,254 +19817,273 @@ function buildCrowbarOnTable() {
  * fight to show you something, which is exactly what this file already says
  * about the pack's cutscene handing you back an empty bar.
  *
- * WHAT IS UNDER IT IS PAINTED, NOT MODELLED. The scan has a whole head under
- * the mask — a plain bald man, which is the least frightening thing that
- * could be there — and the answer is the one this file gives about the
- * mutants' occlusion and the pavilion's lamps: DO IT IN THE MAP. The head's
- * uv island is rasterised once, so every texel of it knows the point on the
- * skull it belongs to, and the mutation is then painted in THREE DIMENSIONS
- * — the sockets darkened where the eyes are, a split laid down the line
- * from his left temple to his jaw, the blue tracking up out of his collar —
- * rather than smeared across a rectangle of atlas. That is what makes it
- * land on his face instead of near it.
- *
- * AND HE IS BLUE, NOT RED. The pack are pale flesh and raw red; he is the
- * Blue Blood Dealer, the walk is an hour of blue blood in a crab and a
- * syringe and a jar, and what has got into him should be the same colour as
- * what is in the jar. */
+ * AND WHAT IS UNDER IT IS A DIFFERENT HEAD, not a paint job on the old one.
+ * A whole pass was spent painting the corruption onto the scan's own head
+ * and it was the wrong idea from the start: the scan's own head is a plain
+ * bald man, and no amount of painting a face makes it a different face. See
+ * WHAT IS UNDER THE MASK below. */
 const UNMASK_AT = 0.5;              // of his health
 const UNMASK_DUR = 1.55, UNMASK_PULL = 0.60;
-let unmaskT = -1, unmasked = false, dealerRaged = false, faceTex = null, maskMesh = null;
-/* Rasterise the head's uv island once: for every texel it covers, the point
- * on the skull that lands there, in the rig's own bind frame. Everything
- * after this is painting by 3-D distance, which is why a scar can be put on
- * ONE cheek — the two sides of this head have their own uv, checked. */
-function headTexels(u, S) {
-  let body = null;
-  u.model.traverse((o) => { if (o.isSkinnedMesh && o.name === 'DealerBody') body = o; });
-  if (!body || !body.material.map || !body.material.map.image) return null;
-  const geo = body.geometry, idx = geo.index;
-  const pos = geo.attributes.position, uv = geo.attributes.uv;
-  /* WHAT COUNTS AS THE HEAD IS A PLACE, NOT A BONE WEIGHT. The first two
-   * passes selected the island by the head bone's skinning, and the
-   * coverage came back with a DOME-SHAPED HOLE through the middle of the
-   * face — the triangles round the nose and mouth are weighted mostly to
-   * something else on this rig, so they were left with the original skin
-   * on them while everything around them was painted. On the model that
-   * unpainted patch is the size and shape of a gas mask, which is how a
-   * man who has just taken his mask off ended up looking like he was
-   * wearing one. A head is where the head is: everything above the jaw at
-   * full strength, the neck fading in under it, and nothing can fall
-   * through a gap in somebody else's weights. */
-  const P = new Float32Array(S * S * 3), W = new Float32Array(S * S);
-  const headW = (i) => {
-    const y = pos.getY(i), x = pos.getX(i);
-    if (Math.abs(x) > 0.26) return 0;                  // not the shoulders
-    if (y >= 2.655) return 1;                          // the head
-    if (y > 2.430) return (y - 2.430) / 0.225;         // the neck, fading in
-    return 0;
-  };
-  const ax = [0, 0, 0], ay = [0, 0, 0], px = [0, 0, 0], py = [0, 0, 0], pz = [0, 0, 0];
-  for (let t = 0; t < idx.count; t += 3) {
-    let ok = true, wsum = 0;
-    for (let k = 0; k < 3; k++) {
-      const i = idx.getX(t + k);
-      const w = headW(i);
-      if (w <= 0.001) { ok = false; break; }
-      wsum += w / 3;
-      ax[k] = uv.getX(i) * S; ay[k] = uv.getY(i) * S;
-      px[k] = pos.getX(i); py[k] = pos.getY(i); pz[k] = pos.getZ(i);
+let unmaskT = -1, unmasked = false, dealerRaged = false, maskMesh = null;
+/* ---- WHAT IS UNDER THE MASK -----------------------------------------------
+ * The first version of this painted the corruption onto the scan's own head,
+ * and the scan's own head is a plain bald man — no amount of painting makes
+ * a different face out of a face. So the head is REPLACED: tales' "Bust
+ * Model", a photoscanned bust with a heavy brow and a jaw like a shovel,
+ * fitted to this character in Blender by `tools/dealer_head.py` and arriving
+ * in the character's own bind space, so the game does not have to place it —
+ * it is already where his head is, to the millimetre of the eye positions
+ * the fit was solved against.
+ *
+ * WHAT THE GAME STILL HAS TO DO is three things:
+ *
+ *  - SKIN IT. It arrives as static geometry, and it has to move with his
+ *    head. Every vertex takes the bones and weights of the nearest vertex of
+ *    the character's own head — a nearest-neighbour transfer, through a grid
+ *    so it is thousands of tests and not thirty-five million — which means
+ *    the new neck deforms EXACTLY as the old one did rather than as some
+ *    rule I invented, and the join cannot shear when he turns to look at you.
+ *  - CARVE THE OLD ONE OFF. `carveDealerHead` drops every triangle of
+ *    `DealerBody` above the cut, the desk's own trick: you cannot hide part
+ *    of a skinned mesh, so you take it out of the index.
+ *  - AND MAKE IT THE SAME MAN. Measured, the character's neck and chest
+ *    average (94, 68, 61) and the bust's neck averages (53, 40, 36) and its
+ *    face (150, 109, 97) — a head half as bright as the body at the join and
+ *    half again as bright at the brow. One material colour cannot fix that
+ *    (the multiplier that lifts the neck blows the face past white), so it
+ *    is done PER TEXEL, as a gain toward a target that runs with height: the
+ *    character's own skin at the neck, and the same skin lifted the way a
+ *    face is lifted above a throat at the brow. A gain rather than a
+ *    replacement, so every fold and pore of the scan survives it. */
+const BUST_URL = 'assets/dealer-head.glb';
+const HEAD_CUT_Y = 2.60;                 // the plane `tools/dealer_head.py` was built against
+const CHAR_SKIN = [94, 68, 61];          // measured off his own neck and upper chest
+let bustGltf = null, bustParts = [], bustReady = false, headCarved = false;
+function loadBustHead() {
+  if (bustGltf || loadBustHead._going) return;
+  loadBustHead._going = true;
+  new GLTFLoader().load(BUST_URL, (g) => { bustGltf = g; }, undefined, () => { loadBustHead._going = false; });
+}
+/* A GRID, NOT A SWEEP. Seven thousand vertices against four and a half
+ * thousand donors is thirty-five million distance tests and a visible hitch;
+ * bucketed at five centimetres it is a few dozen each. */
+function weightDonors(body) {
+  const P = body.geometry.attributes.position;
+  const si = body.geometry.attributes.skinIndex, sw = body.geometry.attributes.skinWeight;
+  const C = 0.05, grid = new Map();
+  const key = (x, y, z) => `${Math.floor(x / C)},${Math.floor(y / C)},${Math.floor(z / C)}`;
+  for (let i = 0; i < P.count; i++) {
+    const y = P.getY(i); if (y < HEAD_CUT_Y - 0.22) continue;
+    const k = key(P.getX(i), y, P.getZ(i));
+    let a = grid.get(k); if (!a) { a = []; grid.set(k, a); }
+    a.push(i);
+  }
+  return { grid, C, P, si, sw, key };
+}
+function nearestDonor(D, x, y, z) {
+  const ix = Math.floor(x / D.C), iy = Math.floor(y / D.C), iz = Math.floor(z / D.C);
+  let best = -1, bd = Infinity;
+  for (let r = 0; r < 6 && best < 0; r++) {
+    for (let a = -r; a <= r; a++) for (let b = -r; b <= r; b++) for (let c = -r; c <= r; c++) {
+      if (r > 0 && Math.max(Math.abs(a), Math.abs(b), Math.abs(c)) !== r) continue;
+      const list = D.grid.get(`${ix + a},${iy + b},${iz + c}`);
+      if (!list) continue;
+      for (const i of list) {
+        const dx = x - D.P.getX(i), dy = y - D.P.getY(i), dz = z - D.P.getZ(i);
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 < bd) { bd = d2; best = i; }
+      }
     }
-    if (!ok) continue;
-    const tw = Math.min(1, Math.max(0, wsum));
-    // scan-convert the triangle in atlas space, one texel of bleed all round
+  }
+  return best;
+}
+/* THE SKIN MATCH. Rasterise the head's uv island once so every texel knows
+ * the point on the head it belongs to, take the bust's own mean colour in
+ * bands of height, and lift each texel by the gain that puts that band's
+ * mean on the character's. */
+function dressBustSkin(mesh) {
+  const src = mesh.material.map;
+  if (!src || !src.image) return null;
+  const W = src.image.width, H = src.image.height;
+  const geo = mesh.geometry, idx = geo.index;
+  const pos = geo.attributes.position, uv = geo.attributes.uv;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(src.image, 0, 0, W, H);
+  const img = g.getImageData(0, 0, W, H), D = img.data;
+  const Y = new Float32Array(W * H), Z = new Float32Array(W * H), COV = new Uint8Array(W * H);
+  const ax = [0, 0, 0], ay = [0, 0, 0], py = [0, 0, 0], pz = [0, 0, 0];
+  const n = idx ? idx.count : pos.count;
+  for (let t = 0; t < n; t += 3) {
+    for (let k = 0; k < 3; k++) {
+      const i = idx ? idx.getX(t + k) : t + k;
+      ax[k] = uv.getX(i) * W; ay[k] = uv.getY(i) * H; py[k] = pos.getY(i); pz[k] = pos.getZ(i);
+    }
     const x0 = Math.max(0, Math.floor(Math.min(ax[0], ax[1], ax[2])) - 1);
-    const x1 = Math.min(S - 1, Math.ceil(Math.max(ax[0], ax[1], ax[2])) + 1);
+    const x1 = Math.min(W - 1, Math.ceil(Math.max(ax[0], ax[1], ax[2])) + 1);
     const y0 = Math.max(0, Math.floor(Math.min(ay[0], ay[1], ay[2])) - 1);
-    const y1 = Math.min(S - 1, Math.ceil(Math.max(ay[0], ay[1], ay[2])) + 1);
+    const y1 = Math.min(H - 1, Math.ceil(Math.max(ay[0], ay[1], ay[2])) + 1);
     const d = (ax[1] - ax[0]) * (ay[2] - ay[0]) - (ax[2] - ax[0]) * (ay[1] - ay[0]);
     if (Math.abs(d) < 1e-9) continue;
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
       const qx = x + 0.5, qy = y + 0.5;
       let a = ((ax[1] - qx) * (ay[2] - qy) - (ax[2] - qx) * (ay[1] - qy)) / d;
-      let b2 = ((ax[2] - qx) * (ay[0] - qy) - (ax[0] - qx) * (ay[2] - qy)) / d;
-      let c = 1 - a - b2;
-      if (a < -0.04 || b2 < -0.04 || c < -0.04) continue;
-      a = Math.max(0, a); b2 = Math.max(0, b2); c = Math.max(0, c);
-      const s = a + b2 + c; a /= s; b2 /= s; c /= s;
-      const o = y * S + x;
-      P[o * 3] = a * px[0] + b2 * px[1] + c * px[2];
-      P[o * 3 + 1] = a * py[0] + b2 * py[1] + c * py[2];
-      P[o * 3 + 2] = a * pz[0] + b2 * pz[1] + c * pz[2];
-      W[o] = Math.max(W[o], tw);
+      let b = ((ax[2] - qx) * (ay[0] - qy) - (ax[0] - qx) * (ay[2] - qy)) / d;
+      let cc = 1 - a - b;
+      if (a < -0.05 || b < -0.05 || cc < -0.05) continue;
+      a = Math.max(0, a); b = Math.max(0, b); cc = Math.max(0, cc);
+      const s = a + b + cc || 1;
+      const o = y * W + x;
+      Y[o] = (a * py[0] + b * py[1] + cc * py[2]) / s;
+      Z[o] = (a * pz[0] + b * pz[1] + cc * pz[2]) / s;
+      COV[o] = 1;
     }
   }
-  return { P, W, body };
-}
-/* The face, painted. Everything here is a distance field in the head's own
- * bind frame — the head measures x +-0.16, y 2.62 to 3.05, z -0.15 to 0.25
- * with the face on +z — so nothing depends on how the atlas is laid out.
- * Big shapes on purpose: the render is at 0.42 scale and anything finer
- * than a thumb is gone before it reaches the screen. */
-function paintScarredFace(u) {
-  if (faceTex) return faceTex;
-  const S = 1024;
-  const R = headTexels(u, S);
-  if (!R) return null;
-  const src = R.body.material.map;
-  const c = document.createElement('canvas'); c.width = c.height = S;
-  const g = c.getContext('2d', { willReadFrequently: true });
-  g.drawImage(src.image, 0, 0, S, S);
-  const img = g.getImageData(0, 0, S, S), D = img.data;
-  const { P, W } = R;
-  /* THE ANATOMY, MEASURED, NOT GUESSED. The eyes are their own mesh in this
-   * scan (`Object_7`, x +-0.08, y 2.82..2.87, z 0.13..0.18), so where they
-   * are is a fact and not an estimate — the first pass put the sockets five
-   * centimetres too high off a guess and darkened his brow instead of his
-   * eyes, which read as makeup. */
-  const EYE = [[-0.055, 2.845, 0.150], [0.055, 2.845, 0.150]];
-  const MOUTH = [0, 2.735, 0.185];
-  const SCAR_A = [-0.088, 2.930, 0.070], SCAR_B = [-0.038, 2.700, 0.155];   // his left temple to his jaw
-  const dist = (x, y, z, q) => Math.hypot(x - q[0], y - q[1], z - q[2]);
-  const seg = (x, y, z, a, b) => {
-    const vx = b[0] - a[0], vy = b[1] - a[1], vz = b[2] - a[2];
-    const wx = x - a[0], wy = y - a[1], wz = z - a[2];
-    const t = Math.max(0, Math.min(1, (wx * vx + wy * vy + wz * vz) / (vx * vx + vy * vy + vz * vz)));
-    return Math.hypot(wx - vx * t, wy - vy * t, wz - vz * t);
+  /* THE BAND HAS TO KNOW FRONT FROM BACK. A gain worked out per height alone
+   * takes the average of a lit face and an unphotographed back of a skull in
+   * the same band and lifts neither correctly — the back of his head came
+   * out a dark brown cap on a pale man. The bust was scanned from the front,
+   * so its back is nearly black and needs three times the lift its face
+   * does; they are separate buckets. */
+  const BAND = 0.02, sum = new Map();
+  const bucket = (i) => `${Math.round(Y[i] / BAND)}:${Z[i] > -0.02 ? 0 : 1}`;
+  for (let i = 0; i < W * H; i++) {
+    if (!COV[i]) continue;
+    const k = bucket(i);
+    let e = sum.get(k); if (!e) { e = [0, 0, 0, 0]; sum.set(k, e); }
+    e[0] += D[i * 4]; e[1] += D[i * 4 + 1]; e[2] += D[i * 4 + 2]; e[3]++;
+  }
+  const mean = new Map();
+  for (const [k, e] of sum) if (e[3] > 24) mean.set(k, [e[0] / e[3], e[1] / e[3], e[2] / e[3]]);
+  /* THE TARGET. His own skin at the neck, and the same skin lifted by a
+   * quarter at the brow — which is what a face does above a throat, and is
+   * measured on him rather than chosen: his chest is brighter than the
+   * shadow under his jaw by about that much. */
+  const target = (y) => {
+    const t = Math.max(0, Math.min(1, (y - 2.62) / 0.20));
+    const k = 1 + 0.26 * t * t * (3 - 2 * t);
+    return [CHAR_SKIN[0] * k, CHAR_SKIN[1] * k, CHAR_SKIN[2] * k];
   };
-  const hash = (x, y, z) => { const s = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453; return s - Math.floor(s); };
-  /* AND IT IS LESIONS, NOT A TINT — AND NOT A FIELD EITHER. Two passes were
-   * spent on this. Tinting the whole head by one curve gave a uniform purple
-   * skull, which is a bruise; driving it off a noise field biased down the
-   * face gave a smooth vertical gradient that saturated into a dark
-   * MASK-SHAPED block over his mouth and jaw — so having just taken the mask
-   * off he appeared to be wearing another one. A gradient over a face always
-   * reads as a region, because the face is where the eye goes looking for
-   * regions.
-   *
-   * What reads as a disease is DISCRETE: named places where the skin has
-   * gone, each with a raw centre, a livid ring and a dry pale edge, with
-   * ordinary skin left in between. Six of them, put where they can be seen —
-   * and he holds his head down in the fighting stance, so the ones that
-   * matter are the brow, the temples and the crown, not the chin. Their
-   * edges are chewed by a hash on the angle so none of them is a circle. */
-  const LESION = [
-    [-0.076, 2.700, 0.112, 0.030],    // his left jaw
-    [0.074, 2.812, 0.112, 0.026],     // right cheekbone, under the eye
-    [0.106, 2.925, 0.014, 0.034],     // right temple, running back
-    [-0.094, 2.955, -0.034, 0.038],   // and over the back left of the skull
-    [0.022, 2.648, 0.096, 0.032],     // the throat, where it came up from
-    [-0.034, 2.968, 0.116, 0.024],    // and one on the brow, which is what you see
-  ];
-  /* THE VEINS ARE GROWN, NOT DRAWN. Four trunks out of the collar, each
-   * splitting twice, as a list of segments — so the blue arrives on his
-   * face from BELOW, the way something coming up out of a body would. */
-  const veins = [];
-  function grow(a, dirx, diry, dirz, len, w, depth) {
-    const L = Math.hypot(dirx, diry, dirz) || 1;
-    const b = [a[0] + (dirx / L) * len, a[1] + (diry / L) * len, a[2] + (dirz / L) * len];
-    veins.push({ a, b, w });
-    if (depth <= 0) return;
-    for (const s of [-1, 1]) {
-      const k = 0.55 + hash(a[0] * 7, a[1] * 13, depth) * 0.5;
-      grow(b, dirx / L + s * 0.8 * k, (diry / L) * 0.85, dirz / L + s * 0.18, len * 0.66, w * 0.66, depth - 1);
-    }
-  }
-  for (let i = 0; i < 6; i++) {
-    const sx = (i < 3 ? -1 : 1) * (0.030 + (i % 3) * 0.048);
-    grow([sx, 2.600, 0.105 - Math.abs(sx) * 0.20], sx * 0.22, 1, 0.16, 0.080, 0.011, 2);
-  }
-  const mix = (o, r, gg, bb, k) => {
-    if (k <= 0) return;
-    D[o] += (r - D[o]) * k; D[o + 1] += (gg - D[o + 1]) * k; D[o + 2] += (bb - D[o + 2]) * k;
+  const gainAt = (y, side) => {
+    const k0 = Math.round(y / BAND);
+    let m = mean.get(`${k0}:${side}`);
+    for (let r = 1; !m && r < 10; r++) m = mean.get(`${k0 - r}:${side}`) || mean.get(`${k0 + r}:${side}`);
+    for (let r = 0; !m && r < 10; r++) m = mean.get(`${k0 - r}:${1 - side}`) || mean.get(`${k0 + r}:${1 - side}`);
+    if (!m) return [1, 1, 1];
+    // the back of a bald head is its own flat tone, a little under the face
+    const tg = target(y).map((v) => v * (side ? 0.88 : 1));
+    return [
+      Math.min(5.5, tg[0] / Math.max(4, m[0])),
+      Math.min(5.5, tg[1] / Math.max(4, m[1])),
+      Math.min(5.5, tg[2] / Math.max(4, m[2])),
+    ];
   };
-  for (let i = 0; i < S * S; i++) {
-    const wgt = W[i];
-    if (!wgt) continue;
-    const x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2], o = i * 4;
-    const front = Math.max(0, Math.min(1, (z + 0.02) / 0.20));      // 0 behind the ear, 1 on the face
-    const up = Math.min(1, Math.max(0, (y - 2.62) / 0.43));
-    const n = hash(x * 340, y * 340, z * 340);
-    /* 1. WHERE THE SKIN HAS GONE. The field, biased upward out of the
-     * collar and forward onto the face, so it is worst where it started
-     * and thins over the back of the skull. */
-    /* 1a. THE WHOLE HEAD HAS COOLED, and only a little: a face this far
-     * gone has no blood in it, but the moment the skin stops being skin
-     * anywhere it stops being a person and starts being a prop. */
-    const lum = D[o] * 0.30 + D[o + 1] * 0.59 + D[o + 2] * 0.11;
-    mix(o, lum * 0.86, lum * 0.90, lum * 1.00, 0.46 * wgt);
-    /* AND IT HAS TO READ AT THE RANGE THE FIGHT IS FOUGHT AT. His reach is
-     * under two metres and at two metres his face is forty pixels through
-     * the retro downscale — every scar on it is one pixel. What survives
-     * that is the head going COLD against a body that is still warm, and
-     * the blind eyes. The detail below is for when he is on top of you. */
-    mix(o, 62, 70, 82, 0.17 * wgt);
-    /* 1b. AND THEN THE PLACES WHERE IT HAS GONE. */
-    let rot = 0;
-    for (const L of LESION) {
-      const dx = x - L[0], dy = y - L[1], dz = z - L[2];
-      const dl = Math.hypot(dx, dy, dz);
-      // a chewed edge, not a circle: the radius wobbles with the direction
-      const r = L[3] * 1.25 * (0.72 + 0.56 * hash(Math.round(dx * 55), Math.round(dy * 55), Math.round(dz * 55)));
-      const k = Math.max(0, Math.min(1, 1 - dl / r));
-      if (k <= 0) continue;
-      rot = Math.max(rot, k);
-      mix(o, 178, 168, 160, 0.42 * Math.max(0, 1 - Math.abs(k - 0.12) / 0.12) * wgt);   // dry pale edge
-      mix(o, 96, 40, 52, 0.62 * Math.max(0, 1 - Math.abs(k - 0.42) / 0.30) * wgt);      // livid ring
-      mix(o, 26, 30, 48, 0.86 * Math.max(0, (k - 0.50) / 0.50) * wgt);                  // raw, and cold
+  const gcache = new Map();
+  for (let i = 0; i < W * H; i++) {
+    if (!COV[i]) continue;
+    const k = bucket(i);
+    let gn = gcache.get(k); if (!gn) { gn = gainAt(Y[i], Z[i] > -0.02 ? 0 : 1); gcache.set(k, gn); }
+    const o = i * 4;
+    D[o] = Math.min(255, D[o] * gn[0]);
+    D[o + 1] = Math.min(255, D[o + 1] * gn[1]);
+    D[o + 2] = Math.min(255, D[o + 2] * gn[2]);
+    /* AND HE HAS STILL GONE WRONG. The bust is a man's head and the point of
+     * taking the mask off is that what is under it is not one any more, so
+     * the same blue that is in the jar and in the crab goes up his neck out
+     * of his collar — strongest where it came from, gone by the cheekbone —
+     * with the skin cooling and losing its colour as it climbs. */
+    const yy = Y[i];
+    const rot = Math.max(0, Math.min(1, (2.80 - yy) / 0.20));
+    if (rot > 0.001) {
+      const lum = D[o] * 0.30 + D[o + 1] * 0.59 + D[o + 2] * 0.11;
+      const kk = 0.42 * rot;
+      D[o] += (lum * 0.80 - D[o]) * kk;
+      D[o + 1] += (lum * 0.86 - D[o + 1]) * kk;
+      D[o + 2] += (lum * 1.02 - D[o + 2]) * kk;
     }
-    rot *= wgt;
-    /* 2. THE MASK LEFT ITS SHAPE. What it covered never weathered, so it
-     * is a shade paler, and it ends on a raw pressure weal — the detail
-     * that says he has had that thing on his face for years. Kept light:
-     * the first pass filled the whole face pale and read as a second mask
-     * underneath the one he had just taken off. */
-    const md = Math.hypot(x / 0.086, (y - 2.790) / 0.112);
-    if (front > 0.05) {
-      const weal = Math.exp(-Math.pow((md - 1.0) / 0.040, 2));
-      mix(o, 112, 42, 54, 0.58 * weal * front * wgt);
-    }
-    /* 3. THE SOCKETS. Sunk and bruised — with the eyes themselves gone
-     * milky (that is the eye mesh's own material, not this map), it is the
-     * biggest read on his face at three metres in a dark room. */
-    for (const e of EYE) {
-      const d0 = dist(x, y, z, e);
-      mix(o, 16, 18, 28, 0.80 * Math.exp(-Math.pow(d0 / 0.022, 2)) * wgt);
-      mix(o, 54, 46, 74, 0.40 * Math.exp(-Math.pow((d0 - 0.028) / 0.011, 2)) * wgt);
-    }
-    /* 4. THE MOUTH, stained, with the stain running down out of it. */
-    const dm = dist(x, y, z, MOUTH);
-    mix(o, 26, 24, 38, 0.62 * Math.exp(-Math.pow(dm / 0.024, 2)) * wgt);
-    const run = Math.exp(-Math.pow((x - MOUTH[0]) / 0.022, 2)) * Math.max(0, Math.min(1, (MOUTH[1] - y) / 0.08)) * front;
-    mix(o, 30, 36, 62, 0.36 * run * wgt);
-    /* 5. THE SPLIT. One long scar from the temple across the cheekbone to
-     * the jaw, on his left: a dark trough with the flesh lifted pale
-     * either side of it, which is what makes it a ridge and not a pen
-     * line, and notched along its length so it is a tear. */
-    const ds = seg(x, y, z, SCAR_A, SCAR_B);
-    const notch = 0.8 + 0.4 * hash(y * 120, x * 120, 3);
-    mix(o, 176, 164, 156, 0.60 * Math.exp(-Math.pow((ds - 0.017) / 0.010, 2)) * wgt);
-    mix(o, 78, 28, 44, 0.60 * Math.exp(-Math.pow((ds - 0.007) / 0.007, 2)) * wgt);
-    mix(o, 18, 14, 22, 0.92 * Math.exp(-Math.pow(ds / (0.0090 * notch), 2)) * wgt);
-    /* 6. AND THE BLUE COMING UP OUT OF HIS COLLAR — his own blood, the
-     * same blue as the jar an hour of the walk was spent filling. */
-    let vk = 0;
-    for (const v of veins) vk = Math.max(vk, Math.exp(-Math.pow(seg(x, y, z, v.a, v.b) / v.w, 2)));
-    mix(o, 24, 46, 98, 0.88 * vk * wgt);
-    mix(o, 66, 104, 158, 0.40 * Math.exp(-Math.pow((vk - 0.30) / 0.24, 2)) * vk * wgt);
-    // 7. and grain, so none of it looks airbrushed
-    const gr = (n - 0.5) * 18 * rot;
-    D[o] += gr; D[o + 1] += gr; D[o + 2] += gr;
   }
   g.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(c);
   tex.flipY = src.flipY; tex.colorSpace = src.colorSpace;
   tex.wrapS = src.wrapS; tex.wrapT = src.wrapT;
   tex.minFilter = src.minFilter; tex.magFilter = src.magFilter;
-  tex.anisotropy = src.anisotropy;
   tex.needsUpdate = true;
-  faceTex = tex;
   return tex;
+}
+/* Build it, dress it, skin it — and leave it switched off. Called at the
+ * start of the fight, which is the warm point: the dialogue has just closed
+ * and he is turning round, and none of this may happen at the beat itself. */
+function buildBustHead(u) {
+  if (bustReady || !bustGltf || !u.model) return false;
+  let body = null;
+  u.model.traverse((o) => { if (o.isSkinnedMesh && o.name === 'DealerBody') body = o; });
+  if (!body) return false;
+  const D = weightDonors(body);
+  const v = new THREE.Vector3();
+  bustGltf.scene.updateMatrixWorld(true);
+  bustGltf.scene.traverse((o) => {
+    if (!o.isMesh) return;
+    const geo = o.geometry.clone();
+    const P = geo.attributes.position;
+    const si = new Uint16Array(P.count * 4), sw = new Float32Array(P.count * 4);
+    for (let i = 0; i < P.count; i++) {
+      v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld);
+      P.setXYZ(i, v.x, v.y, v.z);
+      const j = nearestDonor(D, v.x, v.y, v.z);
+      if (j < 0) { sw[i * 4] = 1; continue; }
+      for (let k = 0; k < 4; k++) {
+        si[i * 4 + k] = D.si.getComponent(j, k);
+        sw[i * 4 + k] = D.sw.getComponent(j, k);
+      }
+    }
+    P.needsUpdate = true;
+    geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
+    geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
+    geo.computeBoundingSphere();
+    const dressed = dressBustSkin(o);
+    const mat = new THREE.MeshStandardMaterial({
+      map: dressed || o.material.map, roughness: 0.93, metalness: 0,
+      emissive: new THREE.Color(0xffffff), emissiveMap: dressed || o.material.map,
+      emissiveIntensity: 0.045,
+    });
+    const sm = new THREE.SkinnedMesh(geo, mat);
+    sm.name = 'bustHead';
+    sm.frustumCulled = false;
+    sm.visible = false;
+    u.model.add(sm);
+    sm.bind(body.skeleton, body.bindMatrix.clone());
+    bustParts.push(sm);
+  });
+  bustReady = bustParts.length > 0;
+  return bustReady;
+}
+/* THE OLD HEAD COMES OFF THE INDEX. A skinned mesh cannot be part-hidden, so
+ * every triangle above the cut is dropped and the rest re-indexed — the
+ * desk's own carve, on a body. The cut is the plane the head was built
+ * against, and his own eyes and lashes are separate meshes and simply go. */
+function showBustHead(u) {
+  if (!bustReady || headCarved) return;
+  carveDealerHead(u);
+  for (const p of bustParts) p.visible = true;
+}
+function carveDealerHead(u) {
+  if (headCarved || !u.model) return;
+  headCarved = true;
+  u.model.traverse((o) => {
+    if (!o.isSkinnedMesh) return;
+    if (o.name === 'Object_7' || o.name === 'Object_9') { o.visible = false; return; }
+    if (o.name !== 'DealerBody') return;
+    const geo = o.geometry, idx = geo.index, P = geo.attributes.position;
+    if (!idx) return;
+    const keep = [];
+    for (let t = 0; t < idx.count; t += 3) {
+      let cy = 0;
+      for (let k = 0; k < 3; k++) cy += P.getY(idx.getX(t + k)) / 3;
+      if (cy > HEAD_CUT_Y) continue;
+      keep.push(idx.getX(t), idx.getX(t + 1), idx.getX(t + 2));
+    }
+    geo.setIndex(keep);
+  });
 }
 
 /* THE PULL. Sixty per cent of the way through the beat the mask leaves his
@@ -20071,32 +20094,16 @@ function dealerPullMask() {
   const u = dealer;
   if (!u.model) return;
   if (!maskMesh) u.model.traverse((o) => { if (o.isSkinnedMesh && o.name === 'Object_14') maskMesh = o; });
-  const tex = paintScarredFace(u);
-  if (tex) for (const m of (u.mats || [])) {
-    if (m.map && m.map !== tex) { m.map = tex; if (m.emissiveMap) m.emissiveMap = tex; m.needsUpdate = true; }
-  }
-  /* AND THE EYES GO. A face can be painted any colour at all and still read
-   * as a man in makeup while a pair of human eyes is looking out of it —
-   * that was the first pass, exactly. The eyeballs are their own mesh in
-   * this scan (`Object_7`, and the lashes `Object_9`), so they get their own
-   * material: no map, a cold milky white with the iris and the pupil gone,
-   * rough enough to have no shine, lit a little from inside so they hold in
-   * a dark room. Blind is the strongest single thing you can do to a face
-   * and it is four lines. */
-  u.model.traverse((o) => {
-    if (!o.isSkinnedMesh || o.userData.clouded) return;
-    if (o.name !== 'Object_7' && o.name !== 'Object_9') return;
-    o.userData.clouded = true;
-    o.material = new THREE.MeshStandardMaterial({
-      /* AND A BLIND EYE IS DIM, NOT LIT. The first milky white was 0xb2c0c8
-       * with a real emissive under it and it came out as two glowing slits
-       * in the dark — a cartoon, not a cataract. What a clouded eye
-       * actually is, is a surface that has STOPPED being wet: no highlight,
-       * no depth, and darker than the skin around it, not brighter. */
-      color: o.name === 'Object_7' ? 0x7b848a : 0x2e3238, roughness: 1, metalness: 0,
-      emissive: new THREE.Color(o.name === 'Object_7' ? 0x2b3238 : 0x0c0f12), emissiveIntensity: 0.16,
-    });
-  });
+  /* THE HEAD IS SWAPPED HERE AND NOWHERE ELSE. Everything expensive — the
+   * load, the skin transfer, the colour match — was done when the fight
+   * started; this is the frame it becomes true. */
+  /* AND HE IS NEVER HEADLESS. The carve is the irreversible half of the
+   * swap and the new head arrives over the network, so the two are tied
+   * together: nothing is taken off him until there is something to put on.
+   * If the file is still in flight the beat plays without it and
+   * `updateUnmask` finishes the job on the frame it lands. */
+  if (!bustReady) buildBustHead(u);
+  if (bustReady) showBustHead(u);
   if (maskMesh) {
     /* A SKINNED MESH CANNOT BE THROWN, so what goes on the floor is a bake
      * of the mask in the pose it came off in — the same walk `bakeLimb`
@@ -20267,6 +20274,8 @@ function updateDealer(dt) {
    * simply held to `calm` until the fight starts. */
   if (!dealerFight && dealer.st.alive) dealer.gait = { walk: 'walk', run: 'run', idle: 'calm', idleRate: 1 };
   checkUnmask();
+  // the head may still have been in flight when he pulled the mask off
+  if (unmasked && !headCarved) { if (!bustReady) buildBustHead(dealer); showBustHead(dealer); }
   const masking = updateUnmask(dt);
   if (dealer.model && !masking) {
     // a route out of a corner, if he was given one, comes before the fan
@@ -21380,7 +21389,7 @@ window.__bw = {
   enterBunker, leaveBunker, startDealerFight, startDealerPickup, get dealer() { return dealer; }, aimBar,
   smashCoatStand, updateCoatStand, get coatStand() { return coatStand; }, get coatBroken() { return coatBroken; },
   smashTripodCam, get tripodCam() { return tripodCam; }, get tripodBroken() { return tripodBroken; },
-  checkUnmask, paintScarredFace, get unmasked() { return unmasked; }, get unmaskT() { return unmaskT; }, get dealerRaged() { return dealerRaged; },
+  checkUnmask, get unmasked() { return unmasked; }, get unmaskT() { return unmaskT; }, get dealerRaged() { return dealerRaged; },
   startStep, inCombat, get stepT() { return stepT; }, get stepCool() { return stepCool; },
   katanaItem, katModel, katanaVM, updateDealer, sfxDig, restRot, slashRot, updateViewmodel, updateTrail,
   removeSmile, get smilePhase() { return smilePhase; },
