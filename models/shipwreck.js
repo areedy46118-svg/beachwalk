@@ -1385,7 +1385,12 @@ export function makeShipwreck(opts = {}) {
     for (let i = 0; i < 4; i++)              // her hatch boards, stacked off
       HULL.add(slab(1.5, 0.06, 0.42, M.wood, HATCH_X0 + 1.0, DECK_Y + 0.04 + i * 0.065,
         -HATCH_HZ - 0.52 - rnd(i) * 0.06, 0, rnd(i * 3.3) * 0.10, 0));
-    solid(HATCH_X0 + 1.0, -HATCH_HZ - 0.62, 1.6, 0.5);
+    /* NO COLLIDER ON THE BOARDS. They are four 6 cm boards laid flat —
+     * 26 cm of stacked timber, which is a thing you step over, not a
+     * wall. As a solid they stood across the port waist a hand's breadth
+     * from the coaming and closed the only way forward on that side. The
+     * beach's rocks have carried this rule since they went in: anything
+     * whose crown lands under a step gets no collider at all. */
   }
 
   /* ---- the companion ladder ------------------------------------------
@@ -1627,7 +1632,14 @@ export function makeShipwreck(opts = {}) {
   {
     gaff.position.set(GAFF_X, DECK_Y, 0);
     S.add(gaff);
-    const postZ = HATCH_HZ + 0.75, POST_H = 3.2, ARM_Y = 3.05;
+    /* SHE HAS TO BE WALKABLE PAST HER OWN DAVIT. At HATCH_HZ + 0.75 the
+     * king post's bedplate stood 0.75 m off the coaming — less than a
+     * body with the coaming's own margin either side of it — so the
+     * starboard waist was shut and the fore deck could not be reached
+     * from the stair at all. Out at the rail it leaves 0.92 m inboard
+     * and 1.03 outboard, and a davit swings a load over the side
+     * anyway; the boom is parametric, so it simply gets longer. */
+    const postZ = HATCH_HZ + 1.75, POST_H = 3.2, ARM_Y = 3.05;
 
     gaff.add(slab(0.62, 0.09, 0.62, M.steel, 0, 0.045, postZ));
     gaff.add(slab(0.44, 0.10, 0.44, M.steel, 0, 0.13, postZ));
@@ -1653,7 +1665,7 @@ export function makeShipwreck(opts = {}) {
       lk.rotation.set(i % 2 ? 0 : Math.PI / 2, 0, 0);
       gaff.add(lk);
     }
-    solid(GAFF_X, postZ, 0.7, 0.7);
+    solid(GAFF_X, postZ, 0.62, 0.62);
 
     const hook = new THREE.Group();
     hook.position.set(0, HOOK_Y - DECK_Y, 0);
@@ -1827,7 +1839,16 @@ export function makeShipwreck(opts = {}) {
       }
       return bakeGroup(g2);
     };
-    const stacks = [[-3.0, -3.00], [-1.4, -3.05], [1.9, 3.00], [3.2, -2.90], [0.2, -3.05]];
+    /* NOTHING STANDS IN EITHER WAIST. The route through her is breach →
+     * hold → stair → deck → wheelhouse, and the only way from the stair
+     * head to the wheelhouse door is down one side of the house. The
+     * waist there is 1.70 m of walkable deck (the house at 2.35, the rail
+     * at 4.31) and a stowed basket stack is 1.32 of it with a body's
+     * radius round it — so gear in the waist is not clutter, it is a
+     * 0.38 m slot at the rail, and the walk test could not find it at
+     * all. Her gear goes forward of the stair and aft of the house
+     * instead, which is where a working boat would stow it anyway. */
+    const stacks = [[-3.0, -3.45], [-1.4, -3.50], [9.2, -3.00], [10.6, -2.90], [0.2, -3.50]];
     for (let s = 0; s < stacks.length; s++) {
       const [x, z] = stacks[s];
       const n = 1 + Math.floor(rnd(s * 3.1) * 3);
@@ -1839,7 +1860,7 @@ export function makeShipwreck(opts = {}) {
       HULL.add(basket(HOLD_X0 + 2.0 + rnd(i * 7.7) * 3, HOLD_Y + 0.20,
         (rnd(i * 4.4) - 0.5) * 2.6, rnd(i) * 2));
 
-    for (const [x, z, r] of [[-7.2, 2.6, 0.34], [-5.3, 2.90, 0.30], [4.4, 3.05, 0.32]]) {
+    for (const [x, z, r] of [[-7.2, 2.6, 0.34], [-5.3, 2.90, 0.30], [8.2, 0.90, 0.32]]) {
       const b = new THREE.Group(); b.position.set(x, DECK_Y, z);
       b.add(cyl(r, r * 0.92, 0.82, 9, M.wood, 0, 0.41, 0));
       for (const yy of [0.14, 0.68])
@@ -1849,9 +1870,9 @@ export function makeShipwreck(opts = {}) {
       solid(x, z, r * 2 + 0.1, r * 2 + 0.1);
     }
 
-    S.add(slab(0.85, 0.55, 0.62, M.wood, -1.9, DECK_Y + 0.28, 2.95, 0, 0.22, 0));   // crate
-    S.add(slab(0.52, 0.26, 0.30, M.steel, -1.9, DECK_Y + 0.68, 2.95, 0, 0.22, 0));  // toolbox
-    solid(-1.9, 2.95, 0.95, 0.75);
+    S.add(slab(0.85, 0.55, 0.62, M.wood, -1.9, DECK_Y + 0.28, 3.45, 0, 0.22, 0));   // crate
+    S.add(slab(0.52, 0.26, 0.30, M.steel, -1.9, DECK_Y + 0.68, 3.45, 0, 0.22, 0));  // toolbox
+    solid(-1.9, 3.45, 0.95, 0.75);
     S.add(cyl(0.17, 0.13, 0.30, 8, M.steel, -8.6, DECK_Y + 0.15, -2.0));            // bucket
     S.add(new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.012, 3, 9), M.steel)
       .translateX(-8.6).translateY(DECK_Y + 0.30).translateZ(-2.0).rotateY(Math.PI / 2));
@@ -1863,9 +1884,9 @@ export function makeShipwreck(opts = {}) {
           .translateY(i * 0.055).rotateX(Math.PI / 2));
       return bakeGroup(c2);
     };
-    S.add(coil(-3.6, 3.05, 0.42));
-    S.add(coil(2.9, -3.00, 0.36));
-    solid(-3.6, 3.05, 0.9, 0.9);
+    S.add(coil(-3.6, 3.60, 0.42));
+    S.add(coil(8.4, -3.30, 0.36));
+    solid(-3.6, 3.60, 0.9, 0.9);
 
     /* NO FENDERS. Tyres hung over her side are a 0.4 m torus that has to
      * project to be a fender at all, and however they were seated they

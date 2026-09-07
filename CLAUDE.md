@@ -674,6 +674,43 @@ Two things that had to be got right, both found by walking it:
   bulwark — not a path. The stair is now on the side you come in, so climbing
   it leaves you on open deck with a clear run to the ramp.
 
+**HER GEAR WAS THE WALL, AND THE WAIST IS ONLY 1.70 m WIDE.** The route
+through her is breach → hold → stair → deck → wheelhouse → back down → shell
+door, and the only way from the stair head to the wheelhouse door is down one
+side of the house. The wheelhouse is 2.35 m off the centreline and the rail
+is at 4.31, so a waist is 1.70 m of walkable deck — and a stowed basket stack
+is 0.8 m, which with a body's radius round it is 1.32 of that. So gear in a
+waist is not clutter, it is a 0.38 m slot at the rail: measured, walking +x
+from every station across her, NOTHING got past the wheelhouse's forward
+corner, and the wheelhouse — the wheel, the star, the head, the key, the way
+off her — could not be reached at all. Three separate things were doing it
+and each looked like scenery:
+
+- a basket stack and a barrel in the starboard waist, which is the route;
+- **her own hatch boards**, four 6 cm planks laid flat beside the coaming and
+  given a full-height collider. 26 cm of stacked timber is a thing you step
+  over, and as a wall it closed the port waist a hand's breadth from the
+  coaming. The beach's rocks have carried this rule since they went in:
+  anything whose crown lands under a step gets no collider at all;
+- **the davit**, whose king post stood `HATCH_HZ + 0.75` off the centreline —
+  0.75 m from the coaming, less than a body with the coaming's own margin
+  either side. Out at the rail (`+ 1.75`) it leaves 0.92 m inboard and 1.03
+  outboard, and a davit swings a load over the SIDE anyway; the boom is
+  parametric, so it simply gets longer.
+
+Gear goes forward of the stair and aft of the house now, which is where a
+working boat would stow it. Measured after: the whole deck walks — stair head
+to the door in one leg, and round her bow, both waists and the afterdeck
+without a single leg stalling.
+
+**A DOOR YOU OPENED STAYS OPEN.** The shell door EATS the key — it goes into
+the lock and stays there — and `holdDoorOpen` was not in the save, so a
+checkpoint made on the far side of her came back with the wreck locked again
+and `boatKey` still true, which handed you back a key you had already spent.
+It is a flag now, and it is restored BEFORE the key's own gate so the two
+cannot both fire. Same rule as the smiling one and the pack's cutscene: a
+thing you have already done does not un-happen when you load.
+
 **Breakable glass is `shatterGlass(prop, mesh, speed, radius)`,** hung off a
 `PhysProp`'s `onImpact`. It kills the body, drops the prop out of the scene
 AND out of `interactables` (leave it in and you hover "Pick up glass float"

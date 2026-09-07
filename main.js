@@ -20811,6 +20811,8 @@ function saveCheckpoint() {
       star: !!(helmStar && helmStar.solved),
       headTaken: !!(shipHead && shipHead.userData.taken),
       boatKey: boatKeyTaken,
+      // the wreck's shell door: a door you opened stays open
+      holdDoor: holdDoorOpen,
       dockDoor: dockDoorOpen,
     },
   };
@@ -20902,6 +20904,17 @@ function updateRestore(dt) {
     if (takenPickups.has(id)) continue;
     const it = interactables.find((q) => q.save === id);
     if (it && it.onActivate) it.onActivate(); else missing++;
+  }
+  /* The shell door, if you opened it. It has to come back BEFORE the key
+   * does: the door eats the key, so a save made on the far side of her
+   * carried boatKey true with the key already spent, and the restore
+   * handed it back and shut the door behind you — a wreck you had already
+   * been through, locked again, with a key you had already used. */
+  if (f.holdDoor && !holdDoorOpen) {
+    holdDoorOpen = true; holdDoorSwing = 1;
+    if (holdDoor) holdDoor.rotation.y = -2.0;
+    boatKeyTaken = true;
+    if (shipHead && boatKey.parent === shipHead) shipHead.remove(boatKey);
   }
   // the key out of his mouth: its own gate, not a pickup off the beach
   if (f.boatKey && !boatKeyTaken && inventory.includes(headItem)) {

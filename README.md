@@ -219,6 +219,10 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   ever pick him up. Take him, open him in the examine screen — from the pack
   or from your hand, either works — and pull the key out of his mouth; it
   unlocks the shell door low in her far side, which is the only way off her.
+  Her whole deck walks: a clear lane down each waist between the wheelhouse
+  and the bulwark, round her bow and out onto the afterdeck, with her gear
+  stowed forward of the stair and aft of the house. A door you opened stays
+  open across a checkpoint.
 - **Footprints** — pre-stamped trail behind spawn, new prints as you go
   (toe pointing the right way), footstep sound; oldest recycle.
 - **The sand cliff** — a lofted eroded escarpment, scalloped lip, vertical
