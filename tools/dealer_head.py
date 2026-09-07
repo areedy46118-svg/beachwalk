@@ -88,6 +88,35 @@ def ring_at(ang):
     k = f - math.floor(f)
     return CUT_R[i] * (1 - k) + CUT_R[(i + 1) % NB] * k
 
+def rebuild_material(ob):
+    """THE SCAN SHIPS AN UNLIT MATERIAL. Sketchfab exports it shadeless — an
+    Emission and a Transparent through a Mix Shader, with no Principled BSDF
+    anywhere in it — so there is nothing for the glTF exporter to hang a
+    normal map on, and the first bake wrote a perfectly good map that went
+    nowhere. The material is rebuilt as a proper Principled one carrying the
+    scan's own albedo and, if it was baked, the normal; the game overwrites
+    the albedo at load anyway, but the exporter needs a real one to attach
+    the rest to."""
+    mat = ob.data.materials[0]
+    old_img = None
+    if mat.use_nodes:
+        for n in mat.node_tree.nodes:
+            if n.type == 'TEX_IMAGE' and n.image and 'Normal' not in n.image.name:
+                old_img = n.image; break
+    mat.use_nodes = True
+    nt = mat.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new('ShaderNodeOutputMaterial')
+    bsdf = nt.nodes.new('ShaderNodeBsdfPrincipled')
+    nt.links.new(bsdf.outputs['BSDF'], out.inputs['Surface'])
+    bsdf.inputs['Roughness'].default_value = 0.94
+    bsdf.inputs['Metallic'].default_value = 0.0
+    if old_img:
+        tex = nt.nodes.new('ShaderNodeTexImage'); tex.image = old_img
+        nt.links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
+    log("rebuilt", mat.name, "albedo" if old_img else "no albedo")
+
+
 def main():
     for o in list(bpy.data.objects): bpy.data.objects.remove(o, do_unlink=True)
     bpy.ops.import_scene.gltf(filepath=SRC)
@@ -204,6 +233,15 @@ def main():
     head.data.update()
 
     # ---- 4. down to a budget ----------------------------------------------
+    # A NORMAL MAP WAS BAKED HERE AND IT WAS WRONG. High-to-low in Cycles
+    # came back as saturated facets rather than a skin map — the bust is a
+    # SHELL, and `holes_fill` closes the back of the skull and the neck with
+    # flat n-gons that the cage rays hit from inside, so most of the atlas
+    # baked the inside of the head. The head's surface detail comes off the
+    # albedo in the game instead (`bustNormalMap`), which is the same
+    # information, cannot be confused by a hole, and is the exact detail the
+    # skin match is taking OUT of the albedo — so it moves from being a
+    # picture of shading to being shading.
     for ob, target in ((head, 7000), (eyes, 700)):
         tris = sum(len(p.vertices) - 2 for p in ob.data.polygons)
         if tris > target:
@@ -213,6 +251,16 @@ def main():
             bpy.ops.object.modifier_apply(modifier=m.name)
         log(ob.name, "triangles", sum(len(p.vertices) - 2 for p in ob.data.polygons))
 
+    # AND THE GEOMETRY IS NOT SMOOTHED. A pass that relaxed the low poly to
+    # take the "leather" out took the BROW, THE NOSE AND THE CHEEKBONES with
+    # it and he came back a mannequin — the sculpt IS the face, and the only
+    # thing that ever needed removing was the shading PAINTED on top of it.
+    # Shade-smooth only, so the 7k mesh reads as a head and not as facets.
+    for p2 in head.data.polygons: p2.use_smooth = True
+    for p2 in eyes.data.polygons: p2.use_smooth = True
+    rebuild_material(head)
+    rebuild_material(eyes)
+
     # what the game needs to know, printed so the constants can be copied
     ws = [to_three(v.co) for v in head.data.vertices]
     log("final bounds  x %.4f %.4f  y %.4f %.4f  z %.4f %.4f" % (
@@ -221,10 +269,19 @@ def main():
         min(p.z for p in ws), max(p.z for p in ws)))
 
     for ob in bpy.data.objects: ob.select_set(True)
+    # A NORMAL MAP WITHOUT TANGENTS SPLITS THE FACE IN HALF. three falls back
+    # to screen-space derivatives when a mesh carries no TANGENT attribute,
+    # and across this atlas's uv seam — which runs straight down the middle
+    # of the face — the derived tangent flips sign: the first bake put a hard
+    # vertical line down his nose with one cheek lit and the other not. The
+    # exporter will compute them, and it is the only place that can, because
+    # it is the only place that still has the uv layout and the smoothing
+    # together.
     bpy.ops.export_scene.gltf(filepath=OUT, export_format='GLB',
                               use_selection=False, export_apply=True,
                               export_yup=True, export_texcoords=True,
-                              export_normals=True, export_materials='EXPORT',
+                              export_normals=True, export_tangents=True,
+                              export_materials='EXPORT',
                               export_image_format='JPEG')
     log("wrote", OUT, os.path.getsize(OUT), "bytes")
 

@@ -2587,6 +2587,46 @@ first are the interesting ones:
   A normal man has normal eyes: the eye mesh is recognised by its own height
   (under 12 cm tall), keeps its own map, and is only brought down to the
   level of the room.
+- **AND THE BODY HAS A NORMAL MAP AND THE HEAD DID NOT.** Measured: every
+  mesh on this character — body, boots, trousers, scarf, even the crowbar —
+  carries a normal, a roughness AND an occlusion map at normalScale 1.1. The
+  bust arrived as a BARE ALBEDO. That is not a shade of difference, it is a
+  different KIND of material on one man, and it is most of what "stitched
+  on" and "leather face" actually were: the bust's wrinkles are PAINTED IN
+  by the photograph, and a painted wrinkle does not move when the light
+  does, which is what leather is and what skin is not. Worse, once the
+  geometry carries the same wrinkles the surface is shaded TWICE — once by
+  the light and once by the picture.
+  So the shading the skin match takes OUT of the albedo is not thrown away:
+  it is kept as it is removed, high-passed, and turned into a normal map
+  (`bustNormalMap`). The detail moves from being a picture of shading to
+  being shading. With that carrying the creases the albedo can be nearly
+  flat — HEAD_SD came from 24 to 16, a shade over his own 12.2.
+- **A NORMAL MAP WITHOUT TANGENTS SPLITS THE FACE IN HALF.** three falls back
+  to screen-space derivatives when a mesh carries no TANGENT attribute, and
+  across this atlas's uv seam — which runs straight down the middle of the
+  face — the derived tangent flips sign: one cheek lit, the other not, on a
+  hard vertical line down his nose. `export_tangents=True`, and the exporter
+  is the only place that can do it, because it is the only place that still
+  has the uv layout and the smoothing together.
+- **AND THE HIGH-TO-LOW BAKE IN BLENDER WAS THE WRONG ROAD.** It is the
+  textbook way to get that map and it came back as saturated facets, because
+  the bust is a SHELL: `holes_fill` closes the back of the skull and the neck
+  with flat n-gons, and the cage rays hit those from inside over most of the
+  atlas. Deriving the map from the albedo cannot be confused by a hole, lands
+  in the same uv layout by construction, and is the same information.
+- **AND THE RESIDUAL HAS TO BE HIGH-PASSED BEFORE IT BECOMES RELIEF.** The
+  first version fed the whole residual in and gave a face of melted wax —
+  centimetre-scale blobs standing off the skin — because the residual still
+  carried the photograph's BROAD shading, the shadow under a cheekbone and
+  the mass of the brow. Blur it and subtract the blur: what is left is pores,
+  creases and the folds round the mouth. The broad part is not moved
+  anywhere, it is simply gone, which is the whole point of flattening.
+- **AND DO NOT SMOOTH THE GEOMETRY TO FIX A TEXTURE PROBLEM.** A pass that
+  relaxed the low poly to take the leather out took the BROW, THE NOSE AND
+  THE CHEEKBONES with it and he came back a mannequin. The sculpt is the
+  face; the only thing that ever needed removing was what was painted on top
+  of it.
 - **AND HE IS NEVER HEADLESS.** The carve is the irreversible half and the
   new head arrives over the network, so the two are tied together: nothing
   comes off him until there is something to put on. The GLB starts loading

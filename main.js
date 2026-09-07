@@ -19957,13 +19957,17 @@ function nearestDonor(D, x, y, z) {
  * scanned from the front: its back averages 25 against its face's 120, and
  * one mean over both lifts neither correctly — that is what made the crown
  * chalk white and the back of the head a dark cap. */
-/* HIS OWN SPREAD IS 12.2 AND THIS HEAD NEEDS MORE THAN THAT, because his
- * texture has a NORMAL MAP under it doing the shading and this one has
- * nothing: crushed all the way to his number the brow, the sockets and the
- * mouth went flat and he came out a mannequin. 24 keeps the face readable
- * and is still nowhere near the photograph's 40. */
-const HEAD_SD = 24;
-const HEAD_CHROMA = 0.35;  // how much of the bust's own colour survives the recolour
+/* AND NOW THE ALBEDO CAN BE NEARLY FLAT, BECAUSE IT NO LONGER HAS TO DO THE
+ * SHADING. The head carries a baked normal map (`tools/dealer_head.py`), so
+ * every wrinkle and socket on it is real geometry catching the room's light
+ * — which means the wrinkles PAINTED into the photograph are now drawn
+ * twice, once by the light and once by the picture, and a surface shaded
+ * twice is the definition of leather. Held at 24 the face was a hide; at
+ * 16, a shade over his own 12.2, it is skin with a normal map on it. The
+ * chroma comes down with it: what is left of the scan's own colour is the
+ * lips and the brow, not its blotching. */
+const HEAD_SD = 16;
+const HEAD_CHROMA = 0.18;  // how much of the bust's own colour survives the recolour
 function charSkinStats(body) {
   const map = body.material.map;
   if (!map || !map.image) return null;
@@ -20078,6 +20082,7 @@ function dressBustSkin(mesh, body) {
     return v || [hm, 20];
   };
   const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+  const rel = new Float32Array(W * H);          // what the flattening removes
   for (let i = 0; i < W * H; i++) {
     if (!COV[i]) continue;
     const o = i * 4;
@@ -20090,6 +20095,8 @@ function dressBustSkin(mesh, body) {
     // because the game's own light is what should be shading this head
     const dev = clamp((st[0] - hm) / hsd, -2, 2) * 0.06;
     const L2 = Math.max(4, skin.mean * (1 + dev) + nz * HEAD_SD);
+    // the height field is the shading that is being taken out of the picture
+    rel[i] = clamp(L - st[0] - nz * HEAD_SD, -90, 90) + 128;
     // his colour, with a quarter of the bust's own kept so the lips and the
     // brow do not come out as one flat tone
     const inv = 1 / Math.max(8, L);
@@ -20104,7 +20111,82 @@ function dressBustSkin(mesh, body) {
   tex.wrapS = src.wrapS; tex.wrapT = src.wrapT;
   tex.minFilter = src.minFilter; tex.magFilter = src.magFilter;
   tex.needsUpdate = true;
-  return tex;
+  return { tex, nrm: bustNormalMap(rel, W, H, COV, src) };
+}
+/* THE DETAIL DOES NOT GO IN THE BIN, IT GOES INTO THE LIGHT. Everything the
+ * skin match takes out of the albedo is the photograph's own shading — the
+ * creases, the pores, the folds round the mouth — and that is exactly what a
+ * normal map is FOR. Painted, it is a picture of a wrinkle that does not
+ * move when the light does, which is what leather looks like; as a normal it
+ * is a wrinkle. So the residual is kept as it is removed and turned into a
+ * height field, and this is the gradient of that field.
+ *
+ * A high-to-low bake in Blender was tried first and came back as saturated
+ * facets: the bust is a SHELL, `holes_fill` closes the back of the skull and
+ * the neck with flat n-gons, and the cage rays hit those from inside over
+ * most of the atlas. Deriving it from the map cannot be confused by a hole,
+ * lands in the same uv layout by construction, and is the same information. */
+function bustNormalMap(rel, W, H, COV, src) {
+  const out = new Uint8ClampedArray(W * H * 4);
+  const at = (x, y) => {
+    const xi = x < 0 ? 0 : x >= W ? W - 1 : x, yi = y < 0 ? 0 : y >= H ? H - 1 : y;
+    const i = yi * W + xi;
+    return COV[i] ? rel[i] : 0;
+  };
+  /* AND IT HAS TO BE HIGH-PASSED FIRST. The residual still carries the
+   * photograph's BROAD shading — the shadow under a cheekbone, the mass of
+   * the brow — and turning that into relief gave a face of melted wax:
+   * centimetre-scale blobs standing off the skin. What belongs in a normal
+   * map is the fine grain only, so the residual is blurred and the blur
+   * subtracted, and what is left is pores, creases and the folds round the
+   * mouth. The broad part is not moved anywhere; it is simply gone, which
+   * is the whole point of flattening the albedo. */
+  const blur = new Float32Array(W * H), tmp = new Float32Array(W * H);
+  const R = 6;
+  for (let y = 0; y < H; y++) {
+    let acc = 0;
+    for (let x = -R; x <= R; x++) acc += at(x, y);
+    for (let x = 0; x < W; x++) {
+      tmp[y * W + x] = acc / (2 * R + 1);
+      acc += at(x + R + 1, y) - at(x - R, y);
+    }
+  }
+  const tat = (x, y) => tmp[(y < 0 ? 0 : y >= H ? H - 1 : y) * W + (x < 0 ? 0 : x >= W ? W - 1 : x)];
+  for (let x = 0; x < W; x++) {
+    let acc = 0;
+    for (let y = -R; y <= R; y++) acc += tat(x, y);
+    for (let y = 0; y < H; y++) {
+      blur[y * W + x] = acc / (2 * R + 1);
+      acc += tat(x, y + R + 1) - tat(x, y - R);
+    }
+  }
+  const hp = (x, y) => {
+    const xi = x < 0 ? 0 : x >= W ? W - 1 : x, yi = y < 0 ? 0 : y >= H ? H - 1 : y;
+    const i = yi * W + xi;
+    return COV[i] ? rel[i] - blur[i] : 0;
+  };
+  const S = 1.5;                       // how deep the height field reads
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, o = i * 4;
+    if (!COV[i]) { out[o] = 128; out[o + 1] = 128; out[o + 2] = 255; out[o + 3] = 255; continue; }
+    // Sobel, so a one-texel speck cannot become a spike
+    const dx = (hp(x + 1, y - 1) + 2 * hp(x + 1, y) + hp(x + 1, y + 1))
+             - (hp(x - 1, y - 1) + 2 * hp(x - 1, y) + hp(x - 1, y + 1));
+    const dy = (hp(x - 1, y + 1) + 2 * hp(x, y + 1) + hp(x + 1, y + 1))
+             - (hp(x - 1, y - 1) + 2 * hp(x, y - 1) + hp(x + 1, y - 1));
+    let nx = -dx * S / 255, ny = -dy * S / 255, nz = 1;
+    const l = Math.hypot(nx, ny, nz) || 1;
+    out[o] = (nx / l * 0.5 + 0.5) * 255;
+    out[o + 1] = (ny / l * 0.5 + 0.5) * 255;
+    out[o + 2] = (nz / l * 0.5 + 0.5) * 255;
+    out[o + 3] = 255;
+  }
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  c.getContext('2d').putImageData(new ImageData(out, W, H), 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.flipY = src.flipY; t.wrapS = src.wrapS; t.wrapT = src.wrapT;
+  t.needsUpdate = true;
+  return t;
 }
 /* Build it, dress it, skin it — and leave it switched off. Called at the
  * start of the fight, which is the warm point: the dialogue has just closed
@@ -20136,15 +20218,24 @@ function buildBustHead(u) {
     geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
     geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
     geo.computeBoundingSphere();
-    const dressed = dressBustSkin(o, body);
-    const eyes = !dressed;                       // the eyeball mesh keeps its own map
-    const map = dressed || o.material.map;
+    const skinned = dressBustSkin(o, body);
+    const eyes = !skinned;                       // the eyeball mesh keeps its own map
+    const map = (skinned && skinned.tex) || o.material.map;
+    /* AND IT IS THE SAME KIND OF MATERIAL AS THE REST OF HIM. Every mesh on
+     * this character carries a normal map at normalScale 1.1; the head
+     * arrived with none, and a head whose material cannot answer the light
+     * the way the body's does can never sit on it however well the colour
+     * is matched. The map is baked from the undecimated bust onto the
+     * decimated one in Blender, so what was a photograph of wrinkles is
+     * now wrinkles. */
     const mat = new THREE.MeshStandardMaterial({
       map, roughness: eyes ? 0.42 : 0.94, metalness: 0,
       color: eyes ? new THREE.Color(0x9a9a9a) : new THREE.Color(0xffffff),
+      normalMap: eyes ? null : (skinned && skinned.nrm) || null,
       emissive: new THREE.Color(0xffffff), emissiveMap: map,
       emissiveIntensity: eyes ? 0.03 : 0.045,
     });
+    if (mat.normalMap) mat.normalScale.set(1.1, 1.1);   // his body's own setting
     const sm = new THREE.SkinnedMesh(geo, mat);
     sm.name = 'bustHead';
     sm.frustumCulled = false;

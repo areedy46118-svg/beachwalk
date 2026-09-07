@@ -383,13 +383,17 @@ has been through a drum of charcoal.
 What is under it is a different head, not a paint job on the old one: a
 photoscanned bust, bald and heavy-browed, fitted to his own skeleton in
 Blender against the eye positions measured off both models, with its neck
-morphed onto the ring where his own neck is cut away. Its skin is rebuilt
-from his: the scan's luminance is measured against its own local mean, the
-photograph's contrast crushed to something near a game skin's, and the result
-put back at the brightness and in the colour of his own chest — so the head
-and the body render as the same man (forehead 92, 61, 49; chest 92, 63, 53).
-It moves with him because every vertex of it took the bones and weights of
-the nearest vertex of the head it replaced.
+morphed onto the ring where his own neck is cut away.
+
+Its skin is rebuilt from his. The scan's luminance is measured against its
+own local mean, the photograph's contrast crushed to something near a game
+skin's, and the result put back at the brightness and in the colour of his
+own chest — and the shading that is taken out of the picture is not thrown
+away, it becomes a normal map, so his creases are lit by the room instead of
+painted on. That is the difference between skin and leather. Measured on
+screen, his neck renders (95, 66, 51) against his chest's (98, 67, 56). It
+moves with him because every vertex of it took the bones and weights of the
+nearest vertex of the head it replaced.
 
 ### The step
 
