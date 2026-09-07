@@ -12513,14 +12513,20 @@ if (shipHead) {
       mat.needsUpdate = true;
     });
     shipHead.add(m);
-    /* The mouth, in metres in the head's own frame, MEASURED off the scan
-     * once it was scaled: the centreline profile puts the nose tip at
-     * y = -0.01, z = 0.123 and the chin at -0.105, and the lips sit between
-     * them at -0.078, 0.10. The key's length is its local X (see the
-     * loader below), turned to run out through the teeth along +Z, its
-     * centre a hair outside the lips so most of it shows. */
-    boatKey.position.set(0, -0.078, 0.112);
-    boatKey.rotation.set(0.1, Math.PI / 2, 0);        // bow OUT, bit between the teeth
+    /* THE KEY IS CLENCHED ACROSS HIS TEETH, NOT POINTED AT YOU. The mouth
+     * is measured off the scan once it is scaled — the centreline profile
+     * puts the nose tip at y = -0.01, z = 0.123, the chin at -0.105, and
+     * the lips between them at -0.078, 0.10 — and the key used to be turned
+     * to run OUT through them along +Z. End-on, a key is a stick: fully
+     * foreshortened, no bow, no bit, nothing on it that says key, and what
+     * you actually saw was a black rod hanging out of a dead man's mouth.
+     * Its length is its own local X and its flat is its local Z (measured:
+     * 15 cm by 5 by 1.5), so the identity rotation lays it ACROSS the mouth
+     * with the flat toward you and the whole silhouette showing — the way
+     * anyone carries something in their teeth. A few degrees off level,
+     * because nothing in a dead man's mouth is straight. */
+    boatKey.position.set(0, -0.066, 0.108);
+    boatKey.rotation.set(0.06, 0, 0.13);
     shipHead.add(boatKey);
     addItemShine(shipHead, { size: 0.34, height: 0.0, strength: 0.35, lift: 0.3 });
   }, undefined, () => {});
@@ -12532,11 +12538,18 @@ if (shipHead) {
     geo.computeBoundingBox();
     const bb = geo.boundingBox, size = bb.getSize(new THREE.Vector3()), mid = bb.getCenter(new THREE.Vector3());
     geo.translate(-mid.x, -mid.y, -mid.z); geo.computeBoundingSphere();
-    mat.emissive.setHex(0x4a3a2a); mat.emissiveMap = mat.map;
-    mat.metalness = Math.min(mat.metalness, 0.25);
-    reexpose(mat, 0.62);
+    /* AND IT HAS TO BE BRASS, NOT A SILHOUETTE. It rendered as a black
+     * stick: roughness 1 and a dark map on a surface facing away from the
+     * only light on the beach. METALNESS IS A TRAP here as everywhere — a
+     * tarnished brass key reads as a bright rough dielectric with a warm
+     * lift, and it has to hold its own against the flesh it is lying
+     * against, which is the brightest thing for ten metres. */
+    mat.color.setHex(0xd8b070);
+    mat.emissive.setHex(0x8a6a30); mat.emissiveMap = mat.map; mat.emissiveIntensity = 0.85;
+    mat.metalness = 0.15; mat.roughness = 0.5;
+    reexpose(mat, 0.55);
     const km = new THREE.Mesh(geo, mat);
-    km.scale.setScalar(0.15 / Math.max(size.x, size.y, size.z));   // 15 cm long, along its X
+    km.scale.setScalar(0.13 / Math.max(size.x, size.y, size.z));   // 13 cm long, along its X
     boatKey.add(km);
   }, undefined, () => {});
 }
@@ -12580,22 +12593,33 @@ const boatKeyItem = {
 holdable(boatKeyItem, boatKey, { scale: 3.0, pos: [0, -0.04, 0.02], rot: [0.3, 0.6, 0.2] });
 let boatKeyTaken = false;
 
+/* PULLING THE KEY IS A PROPERTY OF THE HEAD, NOT OF ONE ROUTE TO IT. It
+ * used to live in `use`, and `use` on a HOLDABLE item is the hotbar's verb
+ * — the pack's second button says "Hold" and calls exactly that — so the one
+ * place the key could be pulled from was the hand. From the pack, Inspect
+ * opened a generic examine screen with no way to take it and Hold put a head
+ * in your fist, and the owner could not get the key out of his inventory.
+ * `inspectOpts` is the door the ring already uses: whatever opens the
+ * examine screen, from the pack or from the hand, carries the option with
+ * it. `use` now does what its button says. */
+const pullTheKey = () => {
+  if (boatKeyTaken) return;
+  boatKeyTaken = true;
+  shipHead.remove(boatKey);
+  boatKey.position.set(0, 0, 0); boatKey.rotation.set(0, 0, 0);   // out of the mouth, and its own thing
+  sfxThud(0.03);
+  addToInventory(boatKeyItem);
+  setPrompt('');
+  closeInspect();
+};
 const headItem = {
   id: 'captain', name: "Captain's head", icon: makeHeadIcon(),
-  /* Examining him is where you find it. equipLabel only appears while the
-   * key is still in there, so once it is out he is just a head again. */
-  use: () => openInspect(shipHead, {
+  use: () => toggleEquip(headItem),
+  /* The label only appears while the key is still in there, so once it is
+   * out he is just a head again. */
+  inspectOpts: () => ({
     equipLabel: boatKeyTaken ? null : 'Pull the key out of his mouth',
-    onEquip: () => {
-      if (boatKeyTaken) return;
-      boatKeyTaken = true;
-      shipHead.remove(boatKey);
-      boatKey.position.set(0, 0, 0); boatKey.rotation.set(0, 0, 0);   // out of the mouth, and its own thing
-      sfxThud(0.03);
-      addToInventory(boatKeyItem);
-      setPrompt('');
-      closeInspect();
-    },
+    onEquip: pullTheKey,
   }),
 };
 holdable(headItem, shipHead, { scale: 0.8, pos: [0, -0.12, 0.04], rot: [0.2, 2.4, 0.1] });

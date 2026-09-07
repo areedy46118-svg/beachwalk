@@ -214,9 +214,11 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   not come apart when it dies; it goes down and stays down.
 - **The wreck's wheel** — one star out over the water blinks. Take the wheel,
   drag her toward it and hold her there, and the captain's head comes off
-  the davit hook and drops through the hatch into the hold. Pick it up,
-  examine it, and pull the key out of its mouth; the key unlocks the shell
-  door low in her far side, which is the only way off her.
+  the davit hook and drops through the hatch into the hold. The key is
+  clenched sideways across his teeth, so you can see it is a key before you
+  ever pick him up. Take him, open him in the examine screen — from the pack
+  or from your hand, either works — and pull the key out of his mouth; it
+  unlocks the shell door low in her far side, which is the only way off her.
 - **Footprints** — pre-stamped trail behind spawn, new prints as you go
   (toe pointing the right way), footstep sound; oldest recycle.
 - **The sand cliff** — a lofted eroded escarpment, scalloped lip, vertical

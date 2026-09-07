@@ -591,6 +591,28 @@ A full **bottle of water** (`models/water-bottle.js`) sits by the bed —
 `waterBottleItem`, takeable with `E`, examinable like the crab. It is not
 wired to `hp`; making it a consumable would just need `use` to call a heal.
 
+**A KEY POINTED AT YOU IS A STICK.** The wheelhouse key was set in the
+captain's mouth turned to run OUT through his teeth along +Z, and end-on a
+key is fully foreshortened: no bow, no bit, nothing on it that says key, and
+what you actually saw was a black rod hanging out of a dead man's mouth. Its
+length is its own local X and its flat is its local Z (measured off the
+scan: 15 cm by 5 by 1.5), so the IDENTITY rotation lays it across the mouth
+with the flat toward you and the whole silhouette showing — clenched in the
+teeth, the way anyone carries something in them. A few degrees off level,
+because nothing in a dead man's mouth is straight. And it was black for the
+usual reason: roughness 1 and a dark map on a surface facing away from the
+only light on the beach. METALNESS IS A TRAP — tarnished brass reads as a
+bright rough dielectric with a warm lift.
+
+**`use` ON A HOLDABLE ITEM IS THE HOTBAR'S VERB, SO NOTHING THE PACK NEEDS
+MAY LIVE THERE.** Pulling the key lived in `headItem.use`, and the head is
+`holdable` — so the pack's second button says "Hold" and calls exactly that,
+its Inspect button opened a generic examine screen with no way to take
+anything, and the only place in the game the key could be pulled from was
+the hand. `inspectOpts` is the door the ring already uses: whatever opens
+the examine screen, from the pack or from the hand, carries the option with
+it. If an item has a verb, ask which button the player will actually press.
+
 **THE WHEEL, THE STAR, THE HEAD, THE KEY, THE DOOR — one chain, and every
 link had a break in it.** `dragWheel` was defined and never called: the look
 handler took every mousemove, so the wheel could be grabbed and let go and
@@ -693,6 +715,44 @@ being seen from a long way down the beach:
 - The crosshair gets an **invisible box proxy**, not the model. The ropes are
   235k triangles and `updateHover()` raycasts every interactable every frame.
   Its label is `bare: true` — there is nothing to do here, which is the point.
+
+**AND SHE WAS DRAWN AND NOBODY COULD SEE IT.** Everything below was on her
+already — eighteen strakes, frames, fastenings, rust running out of every
+one of them — and from the sand she was a smooth brown wall. Four faults,
+and only the last is about the drawing:
+
+- **`map` AND `emissiveMap` WERE SEPARATE CALLS.** `hullTex()` draws with
+  `Math.random`, so `map: hullTex(...), emissiveMap: hullTex(...)` is TWO
+  DIFFERENT HULLS — the lift never landed on the marks it was lifting, and
+  half of what was drawn was cancelled by a highlight somewhere else. They
+  are cached and shared now (`hullSet`), which is also two fewer 512s.
+- **ANISOTROPY 1 ON A 28-METRE HULL.** `retroTex`'s nearest-and-no-aniso is
+  right for a 256 canvas on a flat prop and catastrophic on something you
+  walk the length of: at a glancing angle three picks the mip level off the
+  worst derivative and averages the whole map away. Sixteen, and linear
+  mips, on anything long.
+- **AND NO NORMAL MAP AT ALL.** She is lit by one low moon, so a seam that
+  is only DARK is a picture of a seam and a picture does not move when the
+  light does. Every hull surface now draws its colour and its HEIGHT in the
+  same pass — so the seam that is dark and the seam that is deep are the
+  same seam — and `heightToNormal` differentiates it. This is the wreck's
+  version of the lesson the Dealer's head taught: relief is what separates
+  a surface from a picture of a surface.
+- **THIRTY STRAKES OVER FIVE METRES IS UNDER A PIXEL.** 17 cm a plank down a
+  28 m hull is gone at any distance; eighteen strakes at 28 cm is a real
+  plank on a boat this size and survives being looked at from the sand. The
+  pavilion's rule about patterns, on a bigger object.
+
+**AND SHE WAS THE DARKEST PLACE IN THE GAME.** Measured as mean screen
+luminance: the open beach reads 19, her hold read 12.5 and HER DECK READ
+10.7. You climb aboard a wreck and find the darkest ground on the walk, and
+the hold — which is where the captain's head, the catch and the way through
+all are — was a black box you felt your way across. **One global multiplier
+cannot fix it**: at the factor that brings the hold up the deck is still
+dark, and at the factor that brings the deck up the hold goes flat. The
+lifts are per material — the interior most, her deck next, her side least,
+because her side was the one surface already catching the moon. Hold 12.5 →
+17.4, deck 10.7 → 14.
 
 **The hull had no UVs until Sep 2026.** `hullGeo()` and the deck plating set
 only `position`, so `map: hullMap` sampled one texel and the wreck drew as a

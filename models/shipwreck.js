@@ -427,86 +427,182 @@ function bakeGroup(group) {
  * from every fastening, a tarred boot top, weed below it. u tiles along
  * her length, so anything near an edge is drawn again a width over or
  * the seam shows as a hard stripe. */
-function hullTex(rep = [1, 1], opts = {}) {
+/* A HEIGHT FIELD INTO A NORMAL MAP. The one thing every surface on this
+ * wreck was missing: she is lit by a single low moon and had no relief at
+ * all, so a hull drawn with thirty plank seams on it rendered as one smooth
+ * brown wall — the seams were a PICTURE of seams, and a picture does not
+ * move when the light does. Drawn as height and differentiated, the same
+ * seams catch the moon down her whole length. Sobel rather than a plain
+ * difference so a single stray texel cannot become a spike. */
+function heightToNormal(hc, strength = 3.0) {
+  const w = hc.width, h = hc.height;
+  const src = hc.getContext('2d').getImageData(0, 0, w, h).data;
+  const at = (x, y) => src[(((y + h) % h) * w + ((x + w) % w)) * 4];   // wraps, as the map does
+  const out = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const dx = (at(x + 1, y - 1) + 2 * at(x + 1, y) + at(x + 1, y + 1))
+             - (at(x - 1, y - 1) + 2 * at(x - 1, y) + at(x - 1, y + 1));
+    const dy = (at(x - 1, y + 1) + 2 * at(x, y + 1) + at(x + 1, y + 1))
+             - (at(x - 1, y - 1) + 2 * at(x, y - 1) + at(x + 1, y - 1));
+    let nx = -dx * strength / 255, ny = -dy * strength / 255, nz = 1;
+    const l = Math.hypot(nx, ny, nz) || 1;
+    const o = (y * w + x) * 4;
+    out[o] = (nx / l * 0.5 + 0.5) * 255;
+    out[o + 1] = (ny / l * 0.5 + 0.5) * 255;
+    out[o + 2] = (nz / l * 0.5 + 0.5) * 255;
+    out[o + 3] = 255;
+  }
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  c.getContext('2d').putImageData(new ImageData(out, w, h), 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+/* HER SIDE, DRAWN AS COLOUR AND AS RELIEF IN ONE PASS, so the seam that is
+ * dark and the seam that is deep are the same seam. Two things were wrong
+ * with the old one and both were about the retro downscale:
+ *
+ *  - THIRTY STRAKES OVER FIVE METRES IS SEVENTEEN CENTIMETRES A PLANK, and
+ *    at any distance down a 28 m hull that is under a pixel. Eighteen, at
+ *    28 cm, is a real plank on a boat this size and survives being looked
+ *    at from the sand.
+ *  - AND THE CONTRAST WAS TOO LOW TO SURVIVE THE EMISSIVE. Every mark on
+ *    her sat at 0.3 alpha over mid-brown and was then lifted 20 % flat by
+ *    the emissive map. The pavilion learned this about concrete: a map that
+ *    carries no contrast cannot be given any by a material.
+ *
+ * `map` and `emissiveMap` used to be two SEPARATE CALLS to this function —
+ * two different random draws of the same hull, so the lift never landed on
+ * the marks it was meant to be lifting. They are cached and shared now. */
+const _hullCache = new Map();
+/* One draw, three slots: the colour, the lift tied to that same colour, and
+ * the relief that makes the moon find it. */
+function hullSet(rep, opts) {
+  const { map, normal } = hullMaps(rep, opts);
+  return { map, emissiveMap: map, normalMap: normal };
+}
+function hullMaps(rep = [1, 1], opts = {}) {
+  const key = `${rep[0]}:${rep[1]}:${opts.flat ? 1 : 0}`;
+  const hit = _hullCache.get(key);
+  if (hit) return hit;
   const w = 512, h = 512;
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d');
-  const wrap = (fn) => { for (const dx of [-w, 0, w]) { g.save(); g.translate(dx, 0); fn(); g.restore(); } };
+  const hc = document.createElement('canvas'); hc.width = w; hc.height = h;
+  const hg = hc.getContext('2d');
+  hg.fillStyle = '#808080'; hg.fillRect(0, 0, w, h);          // mid grey is flat
+  const wrap = (fn, ctx = g) => { for (const dx of [-w, 0, w]) { ctx.save(); ctx.translate(dx, 0); fn(ctx); ctx.restore(); } };
 
   const RAIL = 0.00, TOPS = 0.14, BOOT = 0.47, WET = 0.64;
   const band = g.createLinearGradient(0, 0, 0, h);
-  band.addColorStop(RAIL, '#c2bbac');         // sun-bleached along the sheer
-  band.addColorStop(TOPS, '#ada396');
-  band.addColorStop(BOOT - 0.02, '#8e8271');
-  band.addColorStop(BOOT + 0.02, '#6d4426');  // the rust and tar belt
-  band.addColorStop(WET, '#40301f');
-  band.addColorStop(1, '#221a14');
+  band.addColorStop(RAIL, '#cdc5b4');         // sun-bleached along the sheer
+  band.addColorStop(TOPS, '#b3a897');
+  band.addColorStop(BOOT - 0.015, '#8a7c68');
+  band.addColorStop(BOOT + 0.005, '#3a2a18');  // the boot top, and it is a HARD edge
+  band.addColorStop(BOOT + 0.03, '#6b3f20');   // the rust belt under it
+  band.addColorStop(WET, '#33241a');
+  band.addColorStop(1, '#191410');
   g.fillStyle = band; g.fillRect(0, 0, w, h);
 
-  /* PLANKING. She is timber: many fine seams running her length, not the
-   * eight plate joins a steel hull gets. */
-  for (let i = 1; i < 30; i++) {
-    const y = (i / 30) * h + Math.sin(i * 2.3) * 1.5;
-    g.strokeStyle = `rgba(38,26,16,${0.30 + (i % 3) * 0.10})`;
-    g.lineWidth = 1 + (i % 4 === 0 ? 1 : 0);
-    g.beginPath(); g.moveTo(0, y);
-    for (let x = 0; x <= w; x += 32) g.lineTo(x, y + Math.sin(x * 0.013 + i) * 1.6);
+  /* PLANKING, as colour and as a lapped edge. She is timber: seams running
+   * her length, each plank standing a hair proud of the one under it. */
+  const N = opts.flat ? 22 : 18;
+  for (let i = 1; i < N; i++) {
+    const y = (i / N) * h + Math.sin(i * 2.3) * 1.5;
+    const wob = (x) => y + Math.sin(x * 0.013 + i) * 1.8;
+    // the seam: dark, and deep
+    g.strokeStyle = `rgba(26,17,10,${0.62 + (i % 3) * 0.10})`;
+    g.lineWidth = 2 + (i % 4 === 0 ? 1 : 0);
+    g.beginPath(); g.moveTo(0, wob(0));
+    for (let x = 0; x <= w; x += 24) g.lineTo(x, wob(x));
+    g.stroke();
+    hg.strokeStyle = 'rgba(0,0,0,0.85)'; hg.lineWidth = 3;
+    hg.beginPath(); hg.moveTo(0, wob(0));
+    for (let x = 0; x <= w; x += 24) hg.lineTo(x, wob(x));
+    hg.stroke();
+    // and the plank below it rounds away from the light
+    const lip = hg.createLinearGradient(0, y, 0, y + h / N);
+    lip.addColorStop(0, 'rgba(255,255,255,0.55)');
+    lip.addColorStop(0.45, 'rgba(128,128,128,0)');
+    lip.addColorStop(1, 'rgba(0,0,0,0.30)');
+    hg.fillStyle = lip; hg.fillRect(0, y, w, h / N);
+    // the pale lip catching the moon, in colour too
+    g.strokeStyle = 'rgba(214,203,182,0.30)'; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(0, wob(0) + 3);
+    for (let x = 0; x <= w; x += 24) g.lineTo(x, wob(x) + 3);
     g.stroke();
     if (i % 2 === 0) {                        // caulking gone, iron weeping
-      const gr = g.createLinearGradient(0, y, 0, y + 30);
-      gr.addColorStop(0, 'rgba(120,62,26,0.26)'); gr.addColorStop(1, 'rgba(120,62,26,0)');
-      g.fillStyle = gr; g.fillRect(0, y, w, 30);
+      const gr = g.createLinearGradient(0, y, 0, y + 34);
+      gr.addColorStop(0, 'rgba(126,62,24,0.42)'); gr.addColorStop(1, 'rgba(126,62,24,0)');
+      g.fillStyle = gr; g.fillRect(0, y, w, 34);
     }
   }
-  for (let x = 6; x < w; x += 26) {           // fastenings, in frame lines
-    for (let i = 1; i < 30; i += 2) {
-      const y = (i / 30) * h;
-      g.fillStyle = 'rgba(30,18,10,0.46)'; g.fillRect(x, y - 2, 3, 3);
-      const gr = g.createLinearGradient(0, y, 0, y + 22);
-      gr.addColorStop(0, 'rgba(132,66,26,0.34)'); gr.addColorStop(1, 'rgba(132,66,26,0)');
-      g.fillStyle = gr; g.fillRect(x - 1, y, 5, 22);
+  /* FRAMES AND FASTENINGS. The frames stand the planking out in a faint
+   * vertical corduroy, which is most of what says "built" rather than
+   * "extruded" when you walk along her. */
+  for (let x = 0; x < w; x += 26) {
+    const fr = hg.createLinearGradient(x - 3, 0, x + 6, 0);
+    fr.addColorStop(0, 'rgba(128,128,128,0)');
+    fr.addColorStop(0.4, 'rgba(190,190,190,0.55)');
+    fr.addColorStop(1, 'rgba(128,128,128,0)');
+    hg.fillStyle = fr; hg.fillRect(x - 3, h * TOPS, 10, h * (WET - TOPS));
+    g.fillStyle = 'rgba(44,28,16,0.20)'; g.fillRect(x, h * TOPS, 4, h * (WET - TOPS));
+  }
+  for (let x = 6; x < w; x += 26) {
+    for (let i = 1; i < N; i += 1) {
+      const y = (i / N) * h;
+      g.fillStyle = 'rgba(24,14,8,0.60)'; g.fillRect(x, y - 3, 4, 4);
+      hg.fillStyle = 'rgba(48,48,48,0.85)'; hg.fillRect(x, y - 3, 4, 4);
+      const gr = g.createLinearGradient(0, y, 0, y + 26);
+      gr.addColorStop(0, 'rgba(146,74,28,0.46)'); gr.addColorStop(1, 'rgba(146,74,28,0)');
+      g.fillStyle = gr; g.fillRect(x - 1, y, 6, 26);
     }
   }
-  g.fillStyle = 'rgba(44,28,16,0.16)';        // frames showing through
-  for (let x = 0; x < w; x += 26) g.fillRect(x, h * TOPS, 4, h * (WET - TOPS));
 
   for (let i = 0; i < 200; i++) {             // weathering
     const x = Math.random() * w;
     const bias = Math.random() < 0.60 ? BOOT + (Math.random() - 0.45) * 0.26 : Math.random();
     const y = bias * h, r = 7 + Math.random() * 52;
     const pick = Math.random();
-    const col = pick < 0.40 ? '138,66,26' : pick < 0.72 ? '92,44,20' : '176,108,50';
+    const col = pick < 0.40 ? '148,70,26' : pick < 0.72 ? '86,40,18' : '190,118,54';
     wrap(() => {
       const gr = g.createRadialGradient(x, y, 0, x, y, r);
-      gr.addColorStop(0, `rgba(${col},${0.14 + Math.random() * 0.36})`);
+      gr.addColorStop(0, `rgba(${col},${0.18 + Math.random() * 0.42})`);
       gr.addColorStop(1, `rgba(${col},0)`);
       g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
     });
   }
   for (let i = 0; i < 130; i++) {             // long runs down the topsides
     const x = Math.random() * w, top = h * (Math.random() * 0.44);
-    const len = 60 + Math.random() * 200, wd = 1 + Math.random() * 3;
+    const len = 60 + Math.random() * 200, wd = 2 + Math.random() * 5;
     const gr = g.createLinearGradient(0, top, 0, top + len);
-    gr.addColorStop(0, 'rgba(108,50,20,0.46)');
-    gr.addColorStop(0.35, 'rgba(126,60,24,0.28)');
-    gr.addColorStop(1, 'rgba(108,50,20,0)');
+    gr.addColorStop(0, 'rgba(118,54,20,0.62)');
+    gr.addColorStop(0.35, 'rgba(138,66,26,0.38)');
+    gr.addColorStop(1, 'rgba(118,54,20,0)');
     wrap(() => { g.fillStyle = gr; g.fillRect(x, top, wd, len); });
   }
   for (let i = 0; i < 18; i++) {              // sprung and replaced planks
     const x = Math.random() * w, y = h * (0.08 + Math.random() * 0.52);
-    const pw = 30 + Math.random() * 90, ph = 9 + Math.random() * 16;
+    const pw = 40 + Math.random() * 110, ph = 10 + Math.random() * 16;
+    const proud = Math.random() < 0.5;
     wrap(() => {
-      g.fillStyle = Math.random() < 0.5 ? 'rgba(122,54,22,0.36)' : 'rgba(96,88,74,0.34)';
+      g.fillStyle = proud ? 'rgba(132,60,24,0.44)' : 'rgba(102,94,78,0.42)';
       g.fillRect(x, y, pw, ph);
-      g.strokeStyle = 'rgba(32,20,11,0.5)'; g.lineWidth = 1.5;
+      g.strokeStyle = 'rgba(26,16,9,0.70)'; g.lineWidth = 2;
       g.strokeRect(x, y, pw, ph);
     });
+    wrap((cx) => {
+      cx.fillStyle = proud ? 'rgba(196,196,196,0.55)' : 'rgba(64,64,64,0.55)';
+      cx.fillRect(x, y, pw, ph);
+      cx.strokeStyle = 'rgba(0,0,0,0.7)'; cx.lineWidth = 2; cx.strokeRect(x, y, pw, ph);
+    }, hg);
   }
   for (let i = 0; i < 24; i++) {              // flakes of her old green trim
     const x = Math.random() * w, y = h * (0.02 + Math.random() * 0.28), r = 10 + Math.random() * 34;
     wrap(() => {
       const gr = g.createRadialGradient(x, y, 0, x, y, r);
-      gr.addColorStop(0, `rgba(58,104,90,${0.20 + Math.random() * 0.26})`);
+      gr.addColorStop(0, `rgba(58,104,90,${0.24 + Math.random() * 0.30})`);
       gr.addColorStop(1, 'rgba(58,104,90,0)');
       g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
     });
@@ -515,8 +611,8 @@ function hullTex(rep = [1, 1], opts = {}) {
     const x = Math.random() * w, y = h * (WET + Math.random() * 0.34), r = 14 + Math.random() * 46;
     wrap(() => {
       const gr = g.createRadialGradient(x, y, 0, x, y, r);
-      gr.addColorStop(0, `rgba(34,46,32,${0.28 + Math.random() * 0.34})`);
-      gr.addColorStop(1, 'rgba(34,46,32,0)');
+      gr.addColorStop(0, `rgba(30,44,28,${0.34 + Math.random() * 0.38})`);
+      gr.addColorStop(1, 'rgba(30,44,28,0)');
       g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
     });
   }
@@ -532,9 +628,19 @@ function hullTex(rep = [1, 1], opts = {}) {
   g.putImageData(img, 0, 0);
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapNearestFilter;
-  t.anisotropy = 1; t.repeat.set(rep[0], rep[1]);
-  return t;
+  t.repeat.set(rep[0], rep[1]);
+  const n = heightToNormal(hc, opts.flat ? 2.2 : 3.4);
+  n.repeat.set(rep[0], rep[1]);
+  /* AND SHE IS TWENTY-EIGHT METRES LONG, SO ANISOTROPY IS NOT OPTIONAL.
+   * Nearest filtering with anisotropy 1 is right for a 256 canvas on a flat
+   * prop and catastrophic on a hull you walk the length of: at a glancing
+   * angle three picks the mip level off the worst derivative and averages
+   * the whole map away, which is why every mark drawn above was invisible
+   * from the sand. */
+  for (const tx of [t, n]) { tx.anisotropy = 16; tx.magFilter = THREE.LinearFilter; tx.minFilter = THREE.LinearMipmapLinearFilter; }
+  const out = { map: t, normal: n };
+  _hullCache.set(key, out);
+  return out;
 }
 
 /* Her upperworks: sea-green, blistered back to bare wood — the trim every
@@ -824,16 +930,34 @@ export function makeShipwreck(opts = {}) {
    * almost nothing else, so unlit timber is a black shape and every mark
    * on these maps might as well not exist. emissiveMap ties the lift to
    * the paint instead of washing the whole surface flat — which is what
-   * happened when this was a plain emissive colour turned up. */
+   * happened when this was a plain emissive colour turned up.
+   *
+   * AND SHE WAS THE DARKEST PLACE IN THE GAME. Measured as mean screen
+   * luminance: the open beach reads 19, her hold read 12.5 and HER DECK
+   * READ 10.7 — you climb aboard a wreck and find the darkest ground on the
+   * walk, and the hold, which is where the head and the way through both
+   * are, was a black box you felt your way across. One global multiplier
+   * cannot fix it: at the factor that brings the hold up the deck is still
+   * dark, and at the factor that brings the deck up the hold goes flat. So
+   * the lifts are per material — the interior most, her deck next, her side
+   * least, because her side was the one surface already catching the
+   * moon. */
   const M = {
-    hull: new THREE.MeshStandardMaterial({ map: hullTex([1, 1]), color: 0xbdb6ab, roughness: 0.94, metalness: 0.06, emissive: 0x8d8478, emissiveIntensity: 0.20, emissiveMap: hullTex([1, 1]), side: THREE.DoubleSide }),
-    deck: new THREE.MeshStandardMaterial({ map: hullTex([1, 1], { flat: true }), color: 0xa89e92, roughness: 0.97, metalness: 0.05, emissive: 0x7d7468, emissiveIntensity: 0.17, emissiveMap: hullTex([1, 1], { flat: true }), side: THREE.DoubleSide }),
-    plank: new THREE.MeshStandardMaterial({ map: hullTex([2, 1.4]), color: 0x9a9184, roughness: 0.95, metalness: 0.05, emissive: 0x6c6459, emissiveIntensity: 0.17, emissiveMap: hullTex([2, 1.4]), side: THREE.DoubleSide, flatShading: true }),
-    paint: new THREE.MeshStandardMaterial({ map: paintTex(), color: 0xa8b0a6, roughness: 0.93, metalness: 0.06, emissive: 0x5c6b60, emissiveIntensity: 0.22, emissiveMap: paintTex(), side: THREE.DoubleSide, flatShading: true }),
-    inner: new THREE.MeshStandardMaterial({ map: innerTex(), color: 0xa89684, roughness: 1, metalness: 0.04, emissive: 0x6e5c44, emissiveIntensity: 0.55, emissiveMap: innerTex(), side: THREE.DoubleSide }),
-    steel: new THREE.MeshStandardMaterial({ map: metalTex(), color: 0x8c8078, roughness: 0.86, metalness: 0.30, emissive: 0x3a2e22, emissiveIntensity: 0.34, emissiveMap: metalTex(), flatShading: true }),
-    dark: new THREE.MeshStandardMaterial({ map: innerTex(), color: 0x5c5248, roughness: 1, metalness: 0, emissive: 0x332c22, emissiveIntensity: 0.44, side: THREE.DoubleSide }),
-    wood: new THREE.MeshStandardMaterial({ map: woodTex(), color: 0x8a7a62, roughness: 1, metalness: 0, emissive: 0x4c412e, emissiveIntensity: 0.34, emissiveMap: woodTex(), flatShading: true }),
+    /* THE MAP AND THE EMISSIVE MAP ARE THE SAME TEXTURE. They used to be two
+     * separate calls — two different random draws of the same hull — so the
+     * lift never landed on the marks it was meant to be lifting, and half
+     * of what was drawn on her was cancelled by a highlight somewhere else.
+     * And every one of them carries its own NORMAL MAP now: she is lit by
+     * one low moon, and without relief a hull drawn with eighteen strakes
+     * on it is a smooth brown wall. */
+    hull: new THREE.MeshStandardMaterial(Object.assign({ color: 0xbdb6ab, roughness: 0.94, metalness: 0.06, emissive: 0x8d8478, emissiveIntensity: 0.23, side: THREE.DoubleSide }, hullSet([1, 1]))),
+    deck: new THREE.MeshStandardMaterial(Object.assign({ color: 0xa89e92, roughness: 0.97, metalness: 0.05, emissive: 0x7d7468, emissiveIntensity: 0.34, side: THREE.DoubleSide }, hullSet([1, 1], { flat: true }))),
+    plank: new THREE.MeshStandardMaterial(Object.assign({ color: 0x9a9184, roughness: 0.95, metalness: 0.05, emissive: 0x6c6459, emissiveIntensity: 0.28, side: THREE.DoubleSide, flatShading: true }, hullSet([2, 1.4]))),
+    paint: new THREE.MeshStandardMaterial({ map: paintTex(), color: 0xa8b0a6, roughness: 0.93, metalness: 0.06, emissive: 0x5c6b60, emissiveIntensity: 0.30, emissiveMap: paintTex(), side: THREE.DoubleSide, flatShading: true }),
+    inner: new THREE.MeshStandardMaterial({ map: innerTex(), color: 0xa89684, roughness: 1, metalness: 0.04, emissive: 0x6e5c44, emissiveIntensity: 0.86, emissiveMap: innerTex(), side: THREE.DoubleSide }),
+    steel: new THREE.MeshStandardMaterial({ map: metalTex(), color: 0x8c8078, roughness: 0.86, metalness: 0.30, emissive: 0x3a2e22, emissiveIntensity: 0.46, emissiveMap: metalTex(), flatShading: true }),
+    dark: new THREE.MeshStandardMaterial({ map: innerTex(), color: 0x5c5248, roughness: 1, metalness: 0, emissive: 0x332c22, emissiveIntensity: 0.70, side: THREE.DoubleSide }),
+    wood: new THREE.MeshStandardMaterial({ map: woodTex(), color: 0x8a7a62, roughness: 1, metalness: 0, emissive: 0x4c412e, emissiveIntensity: 0.46, emissiveMap: woodTex(), flatShading: true }),
     rope: new THREE.MeshStandardMaterial({ map: woodTex(), color: 0x6e6449, roughness: 1, metalness: 0, emissive: 0x2e2a1e, emissiveIntensity: 0.30, flatShading: true }),
     rubber: new THREE.MeshStandardMaterial({ color: 0x22201e, roughness: 1, metalness: 0, emissive: 0x0c0b0a, flatShading: true }),
     brass: new THREE.MeshStandardMaterial({ color: 0x8c7238, roughness: 0.55, metalness: 0.62, emissive: 0x2a2010, flatShading: true }),
