@@ -492,6 +492,12 @@ royalty-free sword-slash pack, a draw and a parry — rotated at random where
 there is more than one, and like `poise-broken.m4a` they are NOT
 redistributable.
 
+The **three break sounds** — `table-break.m4a`, `camera-break.m4a` and
+`coat-break.m4a`, for the desk, the tripod camera and the coat stand — are
+the owner's own bounces as well, and are NOT redistributable either. Each
+one is the whole event: the synthesised stack it replaced stays behind it as
+the fallback for the frames before the bank is off the network.
+
 **Grass pack (lowpoly, game-ready)** — the grass on the headland.
 ["Grass pack (lowpoly, game-ready)"](https://sketchfab.com/3d-models/grass-pack-lowpoly-game-ready)
 by [LOLIPOP](https://sketchfab.com/lolipop_1707), [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).

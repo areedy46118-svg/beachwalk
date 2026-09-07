@@ -844,7 +844,7 @@ const glowTex = makeGlowTexture();
 // it separates from the sand without turning into a video-game waypoint.
 // ------------------------------------------------------------------
 const shinies = [];
-function addItemShine(root, { size = 0.55, height = 0.12, strength = 1, lift = 1 } = {}) {
+function addItemShine(root, { size = 0.55, height = 0.12, strength = 1, lift = 1, through = 0 } = {}) {
   if (shinies.some((s) => s.root === root)) return;   // never twice on one thing
   const glint = new THREE.Sprite(new THREE.SpriteMaterial({
     map: glowTex, color: 0xbcd6ff, transparent: true, opacity: 0.0,
@@ -855,6 +855,30 @@ function addItemShine(root, { size = 0.55, height = 0.12, strength = 1, lift = 1
   glint.scale.setScalar(size);
   glint.raycast = () => {};        // decoration only — never a hover target
   root.add(glint);
+  /* AND A GLINT YOU CANNOT SEE IS NOT A GLINT. Every shine in this game is
+   * depth-tested, which is right for a shell on an open beach and wrong for
+   * the one moment the shine exists FOR: the Military Shovel lying among a
+   * dozen planks and four table legs on a steel floor, where the thing that
+   * hides it is the wreckage that revealed it. `through` adds a SECOND
+   * sprite that ignores depth — bigger, much fainter, drawn after
+   * everything — so a plank across the tool dims the mark instead of
+   * deleting it, and with a clear line of sight the two simply read as one
+   * brighter glint. Two sprites rather than one depth-ignoring sprite,
+   * because a shine that never occludes at all reads as a decal pasted on
+   * the lens. It is opt-in: a glint showing through a cliff would be
+   * exactly the wrong thing everywhere else. */
+  let ghost = null;
+  if (through) {
+    ghost = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTex, color: 0xa9c8ff, transparent: true, opacity: 0.0,
+      depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, fog: false,
+    }));
+    ghost.raycast = () => {};
+    ghost.position.y = height;
+    ghost.scale.setScalar(size * 1.75);
+    ghost.renderOrder = 12;
+    root.add(ghost);
+  }
 
   // brighten the object's own surfaces a touch, and remember the base so the
   // pulse rides on top of whatever the model author chose
@@ -866,14 +890,23 @@ function addItemShine(root, { size = 0.55, height = 0.12, strength = 1, lift = 1
       mats.push({ m, base: m.emissive.clone() });
     }
   });
-  shinies.push({ root, glint, mats, strength, lift, phase: Math.random() * 6.28 });
+  shinies.push({ root, glint, ghost, mats, strength, lift, through, phase: Math.random() * 6.28 });
 }
 function updateShines(t) {
   for (const s of shinies) {
-    if (!s.root.parent) { s.glint.material.opacity = 0; continue; }
+    if (!s.root.parent) { s.glint.material.opacity = 0; if (s.ghost) s.ghost.material.opacity = 0; continue; }
     // slow breath, never fully off — a wet-shell highlight catching the moon
     const k = 0.5 + 0.5 * Math.sin(t * 1.5 + s.phase);
     s.glint.material.opacity = (0.055 + 0.075 * k) * s.strength;
+    /* The through-mark breathes HARDER than the glint it sits behind — a
+     * slower, deeper pulse, because what it is doing is not catching the
+     * light, it is saying there is something here. */
+    if (s.ghost) {
+      const b2 = 0.5 + 0.5 * Math.sin(t * 0.95 + s.phase * 1.7);
+      s.ghost.material.opacity = (0.030 + 0.055 * b2) * s.through;
+      s.ghost.scale.setScalar(s.glint.scale.x * (1.60 + 0.30 * b2));
+      s.ghost.position.y = s.glint.position.y;
+    }
     for (const { m, base } of s.mats) {
       // `lift` scales the glow on the object itself: a dark textured scan
       // is swamped by the stock lift and reads as a flat grey cut-out
@@ -10457,6 +10490,15 @@ const SAMPLES = {
   katHit: ['assets/katana-hit1.m4a', 'assets/katana-hit2.m4a', 'assets/katana-hit3.m4a', 'assets/katana-hit4.m4a'],   // the blade going INTO something
   katDraw: ['assets/katana-draw.m4a'],     // the sword coming into your hand
   katParry: ['assets/katana-parry.m4a'],   // a parry, on top of the block bank
+  /* THE THREE BREAKS, RECORDED. Each one is the owner's own bounce for the
+   * thing it is named after, and each replaces a synthesised stack that was
+   * only ever standing in for it — the synthesis stays behind them as the
+   * fallback for the frames before the bank is off the network, which is
+   * the same arrangement the katana's swings and blocks have. They are not
+   * redistributable and the README says so. */
+  tableBreak: ['assets/table-break.m4a'],   // the desk going over with everything on it
+  camBreak: ['assets/camera-break.m4a'],    // the camera and its tripod hitting the steel
+  coatBreak: ['assets/coat-break.m4a'],     // the coat stand snapping and going to dowel
 };
 const sampleBanks = {};
 function loadSamples() {
@@ -18890,15 +18932,21 @@ function smashCoatStand(speed, atY, dirX, dirZ) {
     });
   }
   scene.remove(coatStand);
-  sfxCrateBreak();
-  sfxWoodSnap();
+  /* THE RECORDING IS THE WHOLE SOUND. The synthesised break was two layers
+   * — the clatter of the dowel and the snap over it — because neither on
+   * its own was a coat stand going over. The owner's bounce is already one
+   * mixed event, so putting the clatter underneath it only muddies it: if
+   * the bank has landed it plays alone, and the two synthesised layers are
+   * the fallback for the frames before it has. */
+  if (!sfxWoodSnap()) sfxCrateBreak();
   hitstop = Math.max(hitstop, 0.045);
 }
 /* The snap itself, over the clatter: a stick of dry wood giving in one
  * report, with the fibres tearing after it. Short — the clatter is the long
  * part and this only has to say what started it. */
 function sfxWoodSnap() {
-  const ctx = audioCtx; if (!ctx) return;
+  const ctx = audioCtx; if (!ctx) return false;
+  if (playSample('coatBreak', 1.2, 0.04)) return true;
   const t = ctx.currentTime;
   const out = ctx.createGain(); out.gain.value = 0.9; out.connect(sfxOut());
   // the crack
@@ -18920,6 +18968,7 @@ function sfxWoodSnap() {
   const tg = ctx.createGain(); tg.gain.value = 0.16;
   tr.connect(hp2).connect(tg).connect(out);
   tr.start(t + 0.02); tr.stop(t + 0.28);
+  return false;                    // the synthesised stand-in played instead
 }
 /* Anybody who walks into it brings it down — and a body sliding through it
  * counts, which is what `ragSmash` is already doing to the glassware. */
@@ -19294,6 +19343,7 @@ function buildTripodCam(g) {
  * room's own reverb is on the bus and a camera is not a bell. */
 function sfxTripodBreak() {
   const ctx = audioCtx; if (!ctx) return;
+  if (playSample('camBreak', 1.05, 0.04)) return;
   const t = ctx.currentTime;
   const out = ctx.createGain(); out.gain.value = 0.62; out.connect(sfxOut());
   // the case: one dead hit, low, with a short metal skin on it
@@ -19492,7 +19542,8 @@ function openDeskFloor(g) { openNavBox(g, DESK_BOX); }
  * find the floor. The owner asked for loud and dramatic, and the drama is in
  * the tail — one bang is a door slamming. */
 function sfxTableBreak() {
-  const ctx = audioCtx; if (!ctx) return;
+  const ctx = audioCtx; if (!ctx) return false;
+  if (playSample('tableBreak', 1.25, 0.03)) return true;
   const t = ctx.currentTime;
   const out = ctx.createGain(); out.gain.value = 0.95; out.connect(sfxOut());
   const burst = (at, len, cut, gain, type, q, shape) => {
@@ -19531,6 +19582,7 @@ function sfxTableBreak() {
     og.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.5);
     o.connect(og).connect(out); o.start(t + at); o.stop(t + at + 0.55);
   }
+  return false;                    // the synthesised stand-in played instead
 }
 const _tbP = new THREE.Vector3(), _tbQ = new THREE.Quaternion(), _tbS = new THREE.Vector3();
 const _tbZ90 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2);
@@ -19626,8 +19678,8 @@ function smashWorkTable(speed, dirX, dirZ) {
   tablePerched.length = 0;
   // the case goes with it, and comes open
   spillMilCrate(dx, dz, kick);
-  sfxTableBreak();
-  sfxPropHit('wood', 11);
+  // the recording is the whole crash; the timber knock is part of the synth
+  if (!sfxTableBreak()) sfxPropHit('wood', 11);
   /* LOUD IS ALSO WHAT YOU FEEL. The biggest hitstop and the biggest shake
    * anything in this room gets, a punch through the lens, and the dust of
    * forty years off the floor around it. */
@@ -19664,6 +19716,22 @@ function spillMilCrate(dx, dz, kick) {
      * wore in the case. */
     militaryWorld.traverse((o) => { if (o.isSprite) { o.position.set(0, 0.34, -0.30); o.scale.setScalar(2.4); } });
     for (const sh of shinies) if (sh.root === militaryWorld) {
+      /* AND IT HAS TO BE SEEN THROUGH THE RUBBLE. This is the one place in
+       * the game where the thing that hides the prize is the wreckage that
+       * produced it — a dozen planks, four legs and a case, all on the
+       * floor on top of it — so the shine gets its depth-ignoring mark
+       * here and nowhere else. */
+      sh.through = 1.75;
+      if (!sh.ghost) {
+        sh.ghost = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: glowTex, color: 0xa9c8ff, transparent: true, opacity: 0,
+          depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, fog: false,
+        }));
+        sh.ghost.raycast = () => {};
+        sh.ghost.renderOrder = 12;
+        militaryWorld.add(sh.ghost);
+      }
+      sh.ghost.position.set(0, 0.40, -0.30);
       /* AND A LIFT IS NOT A SPOTLIGHT. At strength 3.4 and lift 1.6 the
        * product is 5.4 and the emissive it adds is over one on every
        * channel: the tool came out of the case as a flat WHITE cut-out
