@@ -496,23 +496,21 @@ export function makeMushroomHouse() {
    * one chair is over and the records are off the shelf, and everything
    * else is exactly where it was left. Abandoned is a STATE, not a style;
    * the style is 1974. */
-  /* AND A ROOM WITH NO LIGHT IN IT IS NOT A ROOM. Everything up here was
-   * built and then could not be seen: one directional moon outside a band
-   * of glass leaves an interior that renders as a black drum, and no amount
-   * of colour on a sofa survives that. Three lamps, all COLD and all weak,
-   * hung under the ceiling — they are the moon coming through the missing
-   * panes and bouncing off a pale concrete dish, which is what it would
-   * actually do. THREE, NOT TEN: every light in a scene is a shader define,
-   * and a group that switches ten of them on as you walk up to it makes
-   * three recompile every material in the game. */
-  for (let i = 0; i < 4; i++) {
-    const a = i / 4 * TAU + 0.5;
-    const L = new THREE.PointLight(0x9fbde8, 6.4, 20, 2);
-    L.position.set(Math.sin(a) * 3.3, roofY - 0.95, Math.cos(a) * 3.3);
-    g.add(L);
-  }
-  // one low and warm across the seating, because the furniture is the point
-  { const L = new THREE.PointLight(0xd8a05c, 3.2, 11, 2); L.position.set(Math.sin(M.DOOR_ANG - 0.5) * 3.2, M.H_ROOM + 1.15, Math.cos(M.DOOR_ANG - 0.5) * 3.2); g.add(L); }
+  /* AND THERE ARE NO LIGHTS IN HERE. There were five, and they were the
+   * whole of "the game is lagging horribly". Measured: the room renders in
+   * 4.1 ms and the lamps cost 0.14 of that, so it was never the drawing —
+   * it is that EVERY LIGHT IN A SCENE IS A SHADER DEFINE. Five point lights
+   * entering the scene changes `NUM_POINT_LIGHTS` for every material in the
+   * game, and three then recompiles all of them: 193 ms in the room, 312 on
+   * the beach, and again on the way back out, at 320 m — which is in the
+   * middle of a walk, so it reads as the game randomly seizing up.
+   *
+   * Warming it only moves the bill; it does not cancel it. The answer is
+   * the one the rocks and the creatures and the tall one already use, and
+   * that this file already says twice about textures: DO IT IN THE MAP,
+   * NOT WITH A LAMP. Every material in the room carries its own emissive
+   * off its own map, hard enough to read under a quarter moon, and the
+   * scene's light count never changes for the pavilion at all. */
 
   /* ------------------------------------------------------- the seventies
    * The brief is a room somebody LIVED in — brought the sofa up that
@@ -531,16 +529,16 @@ export function makeMushroomHouse() {
    * visible from anywhere you stand. Nothing in here now stands higher
    * than 0.75 m but the lamp, the palm and what hangs from the ceiling. */
   const rugTex = rugTexture(5);
-  const rugMat = new THREE.MeshStandardMaterial({ map: rugTex, roughness: 1, metalness: 0, emissive: 0x82521f, emissiveMap: rugTex, emissiveIntensity: 1.0, side: THREE.DoubleSide });
+  const rugMat = new THREE.MeshStandardMaterial({ map: rugTex, roughness: 1, metalness: 0, emissive: 0xa86a2a, emissiveMap: rugTex, emissiveIntensity: 1.35, side: THREE.DoubleSide });
   const teakTex = woodTexture(9); teakTex.repeat.set(2.2, 2.2);
-  const teak = new THREE.MeshStandardMaterial({ map: teakTex, color: 0xb08256, roughness: 0.72, metalness: 0, flatShading: true, emissive: 0x6b4224, emissiveMap: teakTex, emissiveIntensity: 1.15 });
-  const rust = new THREE.MeshStandardMaterial({ color: 0xc85422, roughness: 0.95, metalness: 0, flatShading: true, emissive: 0x74300e });
-  const rustDk = new THREE.MeshStandardMaterial({ color: 0x93381a, roughness: 0.98, metalness: 0, flatShading: true, emissive: 0x481a0a });
-  const mustard = new THREE.MeshStandardMaterial({ color: 0xdda832, roughness: 0.95, metalness: 0, flatShading: true, emissive: 0x74561a });
-  const olive = new THREE.MeshStandardMaterial({ color: 0x767c3a, roughness: 0.95, metalness: 0, flatShading: true, emissive: 0x2e3416 });
-  const bone = new THREE.MeshStandardMaterial({ color: 0xdccfb0, roughness: 0.9, metalness: 0, flatShading: true, emissive: 0x565040 });
-  const chrome = new THREE.MeshStandardMaterial({ color: 0xb4bcc8, roughness: 0.34, metalness: 0.22, flatShading: true, emissive: 0x424b58 });
-  const gloss = new THREE.MeshStandardMaterial({ color: 0xe05e2c, roughness: 0.42, metalness: 0.05, flatShading: true, emissive: 0x5c2410 });
+  const teak = new THREE.MeshStandardMaterial({ map: teakTex, color: 0xb08256, roughness: 0.72, metalness: 0, flatShading: true, emissive: 0x8e5a2e, emissiveMap: teakTex, emissiveIntensity: 1.5 });
+  const rust = new THREE.MeshStandardMaterial({ color: 0xc85422, roughness: 0.95, metalness: 0, flatShading: true, emissive: 0xa4451a });
+  const rustDk = new THREE.MeshStandardMaterial({ color: 0x93381a, roughness: 0.98, metalness: 0, flatShading: true, emissive: 0x76300f });
+  const mustard = new THREE.MeshStandardMaterial({ color: 0xdda832, roughness: 0.95, metalness: 0, flatShading: true, emissive: 0xa87e26 });
+  const olive = new THREE.MeshStandardMaterial({ color: 0x767c3a, roughness: 0.95, metalness: 0, flatShading: true, emissive: 0x4e5426 });
+  const bone = new THREE.MeshStandardMaterial({ color: 0xdccfb0, roughness: 0.9, metalness: 0, flatShading: true, emissive: 0x86806a });
+  const chrome = new THREE.MeshStandardMaterial({ color: 0xb4bcc8, roughness: 0.34, metalness: 0.22, flatShading: true, emissive: 0x66707e });
+  const gloss = new THREE.MeshStandardMaterial({ color: 0xe05e2c, roughness: 0.42, metalness: 0.05, flatShading: true, emissive: 0x94401c });
   const smoke = new THREE.MeshPhysicalMaterial({ color: 0x241d16, roughness: 0.42, transparent: true, opacity: 0.62, side: THREE.DoubleSide, depthWrite: false, emissive: 0x0e0b08 });
   const box = (w, h, d, mat, x, y, z, ry) => { const m = mesh(new THREE.BoxGeometry(w, h, d), mat, x, y, z); if (ry) m.rotation.y = ry; return m; };
   const cyl = (r0, r1, h, mat, x, y, z, n) => mesh(new THREE.CylinderGeometry(r0, r1, h, n || 12), mat, x, y, z);
@@ -553,7 +551,7 @@ export function makeMushroomHouse() {
 
   { // the terrazzo, laid right out to the glass
     const terTex = terrazzoTexture(21); terTex.repeat.set(7, 7);
-    const ter = new THREE.MeshStandardMaterial({ map: terTex, roughness: 0.82, metalness: 0, emissive: 0x3c4048, emissiveMap: terTex, emissiveIntensity: 0.95, side: THREE.DoubleSide });
+    const ter = new THREE.MeshStandardMaterial({ map: terTex, roughness: 0.82, metalness: 0, emissive: 0x5a606c, emissiveMap: terTex, emissiveIntensity: 1.25, side: THREE.DoubleSide });
     mesh(new THREE.RingGeometry(M.BORE, M.R_ROOM - 0.02, 56).rotateX(-Math.PI / 2), ter, 0, F + 0.006, 0);
   }
 
@@ -682,8 +680,14 @@ export function makeMushroomHouse() {
     g.add(grp);
     room(x, z, 0.70, 1.4);
   };
+  /* BOTH OF THEM ON THEIR FEET. One was over on its side on the rug, and a
+   * globe chair lying down is a smooth orange sphere with its mouth in the
+   * floor: from anywhere in the room it read as a beach ball somebody had
+   * left, which is not what a chair is for. Upright and turned in at the
+   * table they are unmistakably chairs, and the pair of them makes the
+   * shape of the room's one good idea. */
   ballChair(TAB_A - 0.92, 3.55, false);
-  ballChair(TAB_A + 0.86, 3.50, true);
+  ballChair(TAB_A + 0.86, 3.50, false);
 
   // the low table between them: smoked glass on a chrome drum, and what is
   // still on it after thirty years of nobody
@@ -723,7 +727,7 @@ export function makeMushroomHouse() {
     box(0.02, 0.02, 0.22, chrome, cx + Math.cos(ry) * 0.22, F + 1.18, cz - Math.sin(ry) * 0.22, ry + 0.5);
     for (let i = 0; i < 3; i++) {
       const tx2 = sleeveTexture(i + 1);
-      const sl = new THREE.MeshStandardMaterial({ map: tx2, roughness: 1, emissive: 0x4a4030, emissiveMap: tx2, emissiveIntensity: 1.0, side: THREE.DoubleSide });
+      const sl = new THREE.MeshStandardMaterial({ map: tx2, roughness: 1, emissive: 0x6e6248, emissiveMap: tx2, emissiveIntensity: 1.25, side: THREE.DoubleSide });
       const off = -0.55 + i * 0.14;
       const s2 = mesh(new THREE.BoxGeometry(0.31, 0.31, 0.012), sl, cx + Math.cos(ry) * off - Math.sin(ry) * 0.32, F + 0.17, cz - Math.sin(ry) * off - Math.cos(ry) * 0.32);
       s2.rotation.set(0.30, ry, 0);

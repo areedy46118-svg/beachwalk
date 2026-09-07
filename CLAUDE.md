@@ -3343,6 +3343,56 @@ door's angle and half-width, the stair's rise, treads, turns, `A0` and
 convention, and `updateMushroom()` is `updateTower()`'s shape: regions and
 clamps, the climb by winding, the tread snap.
 
+**AND THE PAVILION'S LAMPS WERE THE LAG.** Five point lights in the room,
+and the owner's word for the result was "lagging horribly". Measured, once
+warm, the room renders in 4.1 ms and the lamps account for 0.14 of it — so
+it was never the drawing, and it was never the six hundred meshes either.
+EVERY LIGHT IN A SCENE IS A SHADER DEFINE. Five point lights entering
+changes `NUM_POINT_LIGHTS` for every material in the game and three
+recompiles all of them: 193 ms in the room, 312 on the beach, and again on
+the way back out — at 320 m, in the middle of a walk, which is exactly what
+"random" lag is. Warming only moves the bill; it does not cancel it, and it
+cannot cover the reverse transition at all.
+
+The answer is the one the rocks and the creatures and the tall one already
+use, and that this file says twice about textures: DO IT IN THE MAP, NOT
+WITH A LAMP. Every material in the room carries its own emissive off its
+own map, hard enough to read under a quarter moon, and the pavilion adds no
+lights at all. First draw went from 214 ms and 33 new programs to 60 ms and
+7 — its own materials, nothing else's — and a walk straight through the
+far-cull line has no frame over 7.9 ms. **Before adding a light to anything
+that far-culls, price the recompile, not the render.**
+
+**AND NOTHING GROWS UPSTAIRS.** Grass had seeded along the room's sill five
+metres up. Sand and glass get in up there; grass does not. Ground level
+only, and less of it — a crack in a slab holds a tuft, not a border.
+
+**A GLOBE CHAIR LYING DOWN IS A BALL.** One of the two was over on its side
+on the rug, which sounded like good set dressing and reads as a beach ball
+somebody left: the mouth is in the floor and what you see from anywhere in
+the room is a smooth orange sphere. Both are upright and turned in at the
+table now. If a shape only reads from one angle, it does not read.
+
+**THE BUNKER IS A STEEL BOX AND YOU SHOULD BE ABLE TO HIT IT.** Every wall
+in the game answered a blade except the ones you spend the boss fight
+standing between: down there a swing that met concrete was a whiff, and a
+sword that passes through a wall is a sword that is not really in your
+hands. It cannot be a raycast — the room is 165k triangles and a swing
+would hitch every time — so the ray is MARCHED against the same two things
+the walk itself is clamped by, the room's own box and the 0.1 m furniture
+grid. Fifty samples, no geometry touched, and it catches the desks and the
+console bank as well as the walls. `nearestSolidHit` also reaches the
+pavilion and the drain now, both guarded by distance, because a raycast
+against either from the far end of the beach is a swing's worth of work for
+nothing. Steel gets its own sound — a hard tick and then three INHARMONIC
+partials ringing for the best part of a second, because a bolted sheet is
+not a string — and a blade on steel throws sparks.
+
+**A SYNTHETIC HIT CARRIES ITS OWN WORLD NORMAL.** `stampScar` reads
+`hit.face.normal` and turns it by the struck object's matrix, which a hit
+marched against a collider has neither of. It takes `hit.n` in world space
+when there is one.
+
 **A DRUM OF WINDOWS DOES NOT WANT A BACK.** Six bays on the cliff side were
 papered over from the inside — bullseye paper, big and warm, with the
 furniture that wants a wall standing against it — and it was the wrong idea

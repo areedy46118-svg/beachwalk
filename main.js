@@ -7031,12 +7031,18 @@ function digImpact() {
     const sandHit = digRay.intersectObject(sand, false)[0];
     if (solidHit && (!sandHit || solidHit.distance < sandHit.distance)) {
       const surface = solidHit.surface;
-      hitConnect(P, surface === 'rock' ? 0.85 : 0.7);
+      hitConnect(P, surface === 'rock' ? 0.85 : surface === 'metal' ? 0.95 : 0.7);
+      // an edge on steel throws them; an edge on wood does not
+      if (surface === 'metal' || (surface === 'rock' && isBlade())) {
+        guardShockV += 3.2 * (0.5 + P);
+        spawnSparks(surface === 'metal' ? 8 + Math.round(P * 7) : 5, 0.4 + P * 0.5);
+      }
       sfxPropHit(surface, 7 + P * 6);
       sfxDigImpact(P * 0.4);
       const pt = solidHit.point;
       // chips the colour of what you hit, thrown back along the normal
-      const tint = surface === 'wood' ? [0.30, 0.24, 0.17] : [0.42, 0.44, 0.48];
+      const tint = surface === 'wood' ? [0.30, 0.24, 0.17]
+        : surface === 'metal' ? [0.52, 0.55, 0.60] : [0.42, 0.44, 0.48];
       spawnPuffs(pt.x, pt.z, 9 + Math.round(P * 8), -_pf.x, -_pf.z, pt.y, tint);
       stampScar(solidHit, surface);
       return;
@@ -7069,20 +7075,59 @@ function digImpact() {
   revealMoundNear(x, z, _pf.x, _pf.z);
 }
 
+/* THE BUNKER IS A STEEL BOX AND YOU SHOULD BE ABLE TO HIT IT. Every wall in
+ * the game answered a blade except the ones you spend the boss fight
+ * standing between: down there a swing that met concrete was a WHIFF, and a
+ * sword that passes through a wall is a sword that is not really in your
+ * hands. It cannot be a raycast — the room is a hundred and sixty-five
+ * thousand triangles and a swing would hitch every time — so the ray is
+ * MARCHED against the same two things the walk itself is clamped by: the
+ * room's own box, and the 0.1 m furniture grid. Fifty samples, no geometry
+ * touched, and it hits the desks and the console bank as well as the walls.
+ * The surface is 'metal' because everything down there is. */
+const _bhP = new THREE.Vector3(), _bhN = new THREE.Vector3();
+function bunkerBladeHit() {
+  if (!inBunker) return null;
+  const g = inBunker.group, B = g.userData.bunker;
+  if (!B || !B.nav || !B.ready) return null;
+  const R = B.nav.room, step = 0.10;
+  for (let t = 0.30; t <= digRay.far; t += step) {
+    _bhP.copy(_aimO).addScaledVector(_aimD, t);
+    const lx = _bhP.x - g.position.x, lz = _bhP.z - g.position.z, ly = _bhP.y - g.position.y;
+    let n = null;
+    if (lx < R.x0) n = [1, 0, 0]; else if (lx > R.x1) n = [-1, 0, 0];
+    else if (lz < R.z0) n = [0, 0, 1]; else if (lz > R.z1) n = [0, 0, -1];
+    else if (ly < 0) n = [0, 1, 0]; else if (ly > R.h) n = [0, -1, 0];
+    // and the furniture, at the heights a body would meet it
+    else if (ly > 0.10 && ly < 1.95 && B.blocked(lx, lz, 0.04)) n = [-_aimD.x, 0, -_aimD.z];
+    if (!n) continue;
+    return { point: _bhP.clone(), distance: t, surface: 'metal', n: _bhN.set(n[0], n[1], n[2]).normalize().clone() };
+  }
+  return null;
+}
 /* What the blade would meet before the sand: the pier, the beach rocks, the
- * wreck. Returns the nearest with the material tag its scar and its sound
- * are chosen from. */
+ * wreck, the pavilion, the drain — and, underground, the room itself.
+ * Returns the nearest with the material tag its scar and its sound are
+ * chosen from. The two BUILT structures are only tested when you are near
+ * enough to swing at one; a raycast against either from the far end of the
+ * beach is a swing's worth of work for nothing. */
 function nearestSolidHit() {
   let best = null;
   const test = (obj, surface) => {
-    if (!obj) return;
+    if (!obj || !obj.visible) return;
     const h = digRay.intersectObject(obj, true)
       .find((x) => x.object.name !== 'hitProxy' && x.object.visible);
     if (h && (!best || h.distance < best.distance)) { best = h; best.surface = surface; }
   };
+  const b = bunkerBladeHit();
+  if (b) best = b;
+  if (inBunker) return best;                 // nothing else down there is reachable
   test(dock, 'wood');
   test(rockGroup, 'rock');
   test(shipwreck, 'rock');
+  const near = (x, z, d) => Math.abs(camera.position.x - x) < d && Math.abs(camera.position.z - z) < d;
+  if (near(MUSH_X, MUSH_Z, 14)) test(mushHouse.group, 'rock');
+  if (insideDrain || near(DRAIN_X, DRAIN_Z, 16)) test(drainTunnel, 'rock');
   return best;
 }
 /* The mark it leaves. A small dark scar laid flat on the face you struck,
@@ -7124,8 +7169,10 @@ function stampScar(hit, surface) {
     scars[scarIdx] = m;
   }
   scarIdx = (scarIdx + 1) % SCAR_POOL;
-  const n = hit.face
-    ? _scarN.copy(hit.face.normal).transformDirection(hit.object.matrixWorld)
+  // a hit marched against a collider carries its own WORLD normal (`n`);
+  // one off a raycast carries a face normal in the object's frame
+  const n = hit.n ? _scarN.copy(hit.n)
+    : hit.face ? _scarN.copy(hit.face.normal).transformDirection(hit.object.matrixWorld)
     : _scarN.set(0, 1, 0);
   m.position.copy(hit.point).addScaledVector(n, 0.012);
   m.lookAt(m.position.clone().add(n));
@@ -10509,6 +10556,32 @@ function sfxPropHit(surface, speed) {
     rg.gain.exponentialRampToValueAtTime(0.16, t + 0.004);
     rg.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
     ring.connect(rg).connect(out); ring.start(t); ring.stop(t + 0.12);
+  } else if (surface === 'metal') {
+    /* STEEL: the strike is nothing, the RING is everything. A plate hit with
+     * an edge gives a hard tick and then sings on three inharmonic partials
+     * for the best part of a second — inharmonic because a bolted sheet is
+     * not a string, and it is that clash between them that says "large
+     * metal panel" rather than "bell". The room's own reverb is already on
+     * the bus, so nothing is added for it here. */
+    const tick = noiseBurst(0.035, (x) => Math.pow(1 - x, 7));
+    const tf = ctx.createBiquadFilter(); tf.type = 'highpass'; tf.frequency.value = 2600;
+    const tg = ctx.createGain(); tg.gain.value = 0.55;
+    tick.connect(tf).connect(tg).connect(out); tick.start(t); tick.stop(t + 0.035);
+    const f0 = 430 + Math.random() * 240;
+    for (const [mul, gn, dur] of [[1, 0.20, 0.85], [2.37, 0.13, 0.6], [4.11, 0.075, 0.4], [0.5, 0.09, 1.0]]) {
+      const o = ctx.createOscillator(); o.type = 'triangle';
+      o.frequency.value = f0 * mul;
+      const og = ctx.createGain();
+      og.gain.setValueAtTime(0.0001, t);
+      og.gain.exponentialRampToValueAtTime(gn, t + 0.005);
+      og.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(og).connect(out); o.start(t); o.stop(t + dur + 0.02);
+    }
+    // and the scrape of an edge dragging off it
+    const sc = noiseBurst(0.16, (x) => (1 - x) * (0.4 + 0.6 * Math.abs(Math.sin(x * 60))));
+    const sf = ctx.createBiquadFilter(); sf.type = 'bandpass'; sf.frequency.value = 1750; sf.Q.value = 2.2;
+    const sg = ctx.createGain(); sg.gain.value = 0.22;
+    sc.connect(sf).connect(sg).connect(out); sc.start(t); sc.stop(t + 0.16);
   } else {
     // sand: a dead thump, no ring at all
     const th = noiseBurst(0.1, (x) => Math.pow(1 - x, 3));
@@ -13762,10 +13835,11 @@ farProps.push({ obj: mushHouse.group, z: MUSH_Z, d: 320 });
   }
   for (const [sx, sz] of [[-M.PLAT_R - 0.5, 0.9], [-M.PLAT_R - 1.1, -0.7], [-M.PLAT_R - 0.55, -1.05]])
     SPOTS.push([sx, 0.13, sz, 1.1, 0.42]);             // the steps
-  for (let i = 0; i < 8; i++) {                        // and inside, at the sill and out of the drifts
-    const a = i / 8 * Math.PI * 2 + 0.3, r = M.R_ROOM - 0.30 - (i % 2) * 0.5;
-    SPOTS.push([Math.sin(a) * r, M.H_ROOM, Math.cos(a) * r, a + 1.4, 0.45 + (i % 3) * 0.3]);
-  }
+  /* AND NOTHING GROWS UPSTAIRS. There were clumps along the room's sill
+   * five metres up, and grass does not seed on the first floor of anything:
+   * what gets in up there is sand and glass, which is already drawn. The
+   * planting is all at ground level, and there is less of it — a crack in
+   * a slab holds a tuft, not a border. */
   for (const [x, y, z, ang, len] of SPOTS) crackAt(x, y, z, len, ang);
   new GLTFLoader().load('assets/grass-clumps.glb', (gltf) => {
     gltf.scene.updateMatrixWorld(true);
@@ -13791,14 +13865,14 @@ farProps.push({ obj: mushHouse.group, z: MUSH_Z, d: 320 });
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3();
     let n = 0;
     for (const k of kinds) {
-      const N = Math.ceil(SPOTS.length * 3.4 / kinds.length);
+      const N = Math.ceil(SPOTS.length * 1.5 / kinds.length);
       const inst = new THREE.InstancedMesh(k.geo, k.mat, N);
       inst.frustumCulled = false;
       for (let i = 0; i < N; i++) {
         const sp = SPOTS[(n++) % SPOTS.length];
         const jx = (Math.random() - 0.5) * sp[4] * 0.8, jz = (Math.random() - 0.5) * sp[4] * 0.8;
         // a clump that has seeded in a crack is small and it is starved
-        const h = (0.34 + Math.random() * 0.42) / k.h;
+        const h = (0.26 + Math.random() * 0.30) / k.h;
         e.set(0, Math.random() * Math.PI * 2, 0); q.setFromEuler(e);
         m.compose(v.set(sp[0] + Math.cos(sp[3]) * jx, sp[1] - 0.02, sp[2] - Math.sin(sp[3]) * jz), q, sc.set(h, h, h));
         inst.setMatrixAt(i, m);

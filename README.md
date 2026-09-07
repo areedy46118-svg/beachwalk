@@ -329,8 +329,12 @@ to the weather through the panes that are gone, with the beach drifting in
 under them. Somebody carried all of it up that stair and then left.
 
 The iron gate in the yard wall is shut, and it opens on `E` with the noise
-fifty years of salt air makes of a hinge. Grass has seeded in every crack
-in the concrete.
+fifty years of salt air makes of a hinge. Grass has seeded in the cracks in
+the concrete around the yard and the steps.
+
+The room carries its own light in its materials rather than in lamps: a
+light entering a scene recompiles every shader in the game, and a building
+you walk past should never do that.
 
 The furniture is solid up there and nowhere else, so you walk round the
 sofa on the top floor and not through thin air on the sand five metres
