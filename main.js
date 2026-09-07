@@ -3205,6 +3205,7 @@ function spatterLens(k) {
 }
 function damagePlayer(n = 1) {
   if (dying || ended || !introDone) return;
+  if (dodgedBlow()) return;              // it went past you: that is what the step is for
   hp -= n;
   sinceHurt = 0; regenAcc = 0;           // the mending starts over from the last blow
   // DEV MODE: a hit still lands — flash, knock, sound — but it never finishes you
@@ -18219,6 +18220,13 @@ function startDealerPickup() {
 function startDealerFight() {
   if (dealerFight || !dealer.st.alive) return;
   dealerFight = true;
+  /* AND THE FACE UNDER THE MASK IS PAINTED NOW, not when he pulls it off.
+   * Rasterising the head's uv island and painting it is sixty milliseconds
+   * — nothing here, where the dialogue has just closed and he is turning
+   * round, and a dropped frame in the middle of an exchange if it were left
+   * until the beat itself. The drain, the bunker and the lens spatter are
+   * all warmed for exactly this reason. */
+  paintScarredFace(dealer);
   /* THE CROWBAR IS THE STARTING GUN. He is unarmed for the whole of the
    * conversation — it is its own mesh in the scan and simply switched off —
    * and it appears on the frame the taunt begins, which is the frame the
@@ -18951,6 +18959,7 @@ function buildBunkerProps() {
    * used to be. */
   buildWorkTable(g);
   if (workTable) workTable.traverse((o) => { if (o.isMesh) meshes.push(o); });
+  buildTripodCam(g);
   for (const [lx, lz, kind] of BUNKER_PROP_SPOTS) {
     // whatever is actually under that spot: a desk, the console shelf, the floor
     const from = new THREE.Vector3(g.position.x + lx, g.position.y + 2.9, g.position.z + lz);
@@ -19115,6 +19124,302 @@ function carveDesk(g) {
       deskProps.push({ o, half: Math.max(0.03, (y1 - y0) / 2) });
   });
 }
+/* ---- THE CAMERA ON THE TRIPOD ---------------------------------------------
+ * The same treatment as the desk, and a better one, because this thing does
+ * not have to be re-authored to come apart: it ALREADY IS its own pieces.
+ * The desk was 150 triangles of one merged wood mesh and had to be rebuilt
+ * out of boxes, and it is a replica only as far as boxes go. The camera is
+ * nine separate CONNECTED ISLANDS inside `polySurface425_ComputerNCam_0` —
+ * body, lens barrel, film magazine, head plate, collar, a small fitting, and
+ * three legs — so every one of them is lifted out of the merged mesh
+ * VERTEX FOR VERTEX, with its own positions, its own normals and its own uv
+ * on the scan's own map. It is not a replica of the camera; it is the
+ * camera, moved. And the islands are exactly the pieces a camera on a
+ * tripod would come apart into, which is the whole reason this works.
+ *
+ * `islandsOf` is the tool: weld the triangles by ROUNDED POSITION (the scan
+ * splits vertices at every uv seam, so an index-only flood finds a camera in
+ * seventeen pieces) and flood. 3273 triangles, once, at load. */
+const CAM_BOX = { x0: 1.36, x1: 1.98, y0: -0.08, y1: 1.82, z0: 0.80, z1: 1.80 };
+const CAM_SPOT = [1.66, 1.30];          // the tripod's own centre on the floor, room-local
+const CAM_MESH = 'polySurface425_ComputerNCam_0';
+let tripodCam = null, tripodBroken = false, tripodProp = null, tripodLens = null;
+function islandsOf(geo, toRoom) {
+  const pos = geo.attributes.position, idx = geo.index;
+  const v = new THREE.Vector3(), key = new Array(pos.count);
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i).applyMatrix4(toRoom);
+    key[i] = `${Math.round(v.x * 1000)},${Math.round(v.y * 1000)},${Math.round(v.z * 1000)}`;
+  }
+  const nT = idx.count / 3, at = new Map();
+  for (let t = 0; t < nT; t++) for (let k = 0; k < 3; k++) {
+    const K = key[idx.getX(t * 3 + k)];
+    let a = at.get(K); if (!a) { a = []; at.set(K, a); }
+    a.push(t);
+  }
+  const seen = new Int8Array(nT), out = [];
+  for (let s = 0; s < nT; s++) {
+    if (seen[s]) continue;
+    const st = [s], tris = []; seen[s] = 1;
+    let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+    while (st.length) {
+      const t = st.pop(); tris.push(t);
+      for (let k = 0; k < 3; k++) {
+        const i = idx.getX(t * 3 + k);
+        v.fromBufferAttribute(pos, i).applyMatrix4(toRoom);
+        x0 = Math.min(x0, v.x); y0 = Math.min(y0, v.y); z0 = Math.min(z0, v.z);
+        x1 = Math.max(x1, v.x); y1 = Math.max(y1, v.y); z1 = Math.max(z1, v.z);
+        for (const u of at.get(key[i])) if (!seen[u]) { seen[u] = 1; st.push(u); }
+      }
+    }
+    out.push({ tris, x0, y0, z0, x1, y1, z1 });
+  }
+  return out;
+}
+/* Lift a set of triangles out of a merged mesh as their own geometry, baked
+ * into the room's frame and re-centred on `o`. The scan's node matrix is a
+ * pure scale and translation, so a normal only has to be re-normalised —
+ * but it goes through `transformDirection` anyway, in case the room is ever
+ * placed at a heading. Non-indexed: 1246 triangles all told. */
+/* AND A PIECE IS CENTRED ON ITSELF, NOT ON THE THING IT CAME OFF. The first
+ * lift re-centred every island on the TRIPOD'S floor origin, which draws
+ * perfectly while they are children of one group at that origin — and is
+ * wrong the moment they are thrown, because a gib is moved and spun about
+ * its mesh's POSITION. The camera body's vertices stood 1.7 m above its own
+ * pivot, so `updateGibs` laid the pivot on the floor and the camera went on
+ * standing exactly where it had been, in mid-air over its own wreckage. A
+ * piece's geometry is centred on its own middle and the offset goes into
+ * the mesh, the way every box in the desk already does it. */
+function liftPiece(geo, tris, toRoom, out) {
+  const pos = geo.attributes.position, nor = geo.attributes.normal, uv = geo.attributes.uv, idx = geo.index;
+  const P = [], N = [], U = [], v = new THREE.Vector3();
+  for (const t of tris) for (let k = 0; k < 3; k++) {
+    const i = idx.getX(t * 3 + k);
+    v.fromBufferAttribute(pos, i).applyMatrix4(toRoom);
+    P.push(v.x, v.y, v.z);
+    if (nor) { v.fromBufferAttribute(nor, i).transformDirection(toRoom); N.push(v.x, v.y, v.z); }
+    if (uv) U.push(uv.getX(i), uv.getY(i));
+  }
+  // its own middle, in the room's frame, handed back so the mesh can carry it
+  let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+  for (let i = 0; i < P.length; i += 3) {
+    x0 = Math.min(x0, P[i]); x1 = Math.max(x1, P[i]);
+    y0 = Math.min(y0, P[i + 1]); y1 = Math.max(y1, P[i + 1]);
+    z0 = Math.min(z0, P[i + 2]); z1 = Math.max(z1, P[i + 2]);
+  }
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, cz = (z0 + z1) / 2;
+  for (let i = 0; i < P.length; i += 3) { P[i] -= cx; P[i + 1] -= cy; P[i + 2] -= cz; }
+  if (out) out.set(cx, cy, cz);
+  const g2 = new THREE.BufferGeometry();
+  g2.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  if (N.length) g2.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+  if (U.length) g2.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2));
+  else g2.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array((P.length / 3) * 2), 2));
+  return g2;
+}
+/* Open a rectangle of the walk grid. The desk's own `openDeskFloor` was the
+ * first of these and this is that function with the box handed in. */
+function openNavBox(g, B, pad = 0) {
+  const S = g.userData.bunker, n = S && S.nav; if (!n) return;
+  const m = n.cell;
+  const x0 = B.x0 - m - pad, x1 = B.x1 + m + pad, y0 = -B.z1 - m - pad, y1 = -B.z0 + m + pad;   // grid y is -z
+  const i0 = Math.max(0, Math.floor((x0 - n.x0) / m)), i1 = Math.min(n.gw - 1, Math.floor((x1 - n.x0) / m));
+  const j0 = Math.max(0, Math.floor((y0 - n.y0) / m)), j1 = Math.min(n.gh - 1, Math.floor((y1 - n.y0) / m));
+  for (let j = j0; j <= j1; j++) { const r = n.grid[j].split(''); for (let i = i0; i <= i1; i++) r[i] = '0'; n.grid[j] = r.join(''); }
+  if (S._main) S._main = {};
+}
+function buildTripodCam(g) {
+  if (tripodCam) return;
+  const S = g.userData.bunker; if (!S || !S.root) return;
+  let src = null; S.root.traverse((o) => { if (o.isMesh && o.name === CAM_MESH) src = o; });
+  if (!src || src.userData.camCarved) return;
+  src.userData.camCarved = true;
+  const geo = src.geometry; if (!geo.index) return;
+  src.updateMatrixWorld(true); g.updateMatrixWorld(true);
+  const toRoom = new THREE.Matrix4().copy(g.matrixWorld).invert().multiply(src.matrixWorld);
+  const isl = islandsOf(geo, toRoom);
+  const B = CAM_BOX;
+  const mine = isl.filter((s) => s.x0 > B.x0 && s.x1 < B.x1 && s.z0 > B.z0 && s.z1 < B.z1 && s.y0 > B.y0 && s.y1 < B.y1);
+  if (!mine.length) return;
+  const c = new THREE.Vector3();
+  const t = new THREE.Group();
+  t.position.set(g.position.x + CAM_SPOT[0], g.position.y, g.position.z + CAM_SPOT[1]);
+  let lens = null, lensN = -1;
+  for (const s of mine) {
+    const m = new THREE.Mesh(liftPiece(geo, s.tris, toRoom, c), src.material);
+    m.position.set(c.x - CAM_SPOT[0], c.y, c.z - CAM_SPOT[1]);
+    /* A LEG IS WHATEVER REACHES THE FLOOR, and it is the only tag the break
+     * needs: the legs go first and the camera drops onto them. */
+    m.userData.part = s.y0 < 0.15 ? 'leg' : 'head';
+    m.userData.half = Math.max(0.02, Math.min(s.x1 - s.x0, s.y1 - s.y0, s.z1 - s.z0) / 2);
+    m.frustumCulled = false;
+    t.add(m);
+    // the lens is the barrel, and a lathed barrel is far the densest island
+    if (m.userData.part === 'head' && s.tris.length > lensN) { lensN = s.tris.length; lens = m; }
+  }
+  // and now the scan's own triangles go, so there are never two of it
+  const drop = new Set(); for (const s of mine) for (const q of s.tris) drop.add(q);
+  const idx = geo.index, keep = [];
+  for (let q = 0; q < idx.count / 3; q++) {
+    if (drop.has(q)) continue;
+    keep.push(idx.getX(q * 3), idx.getX(q * 3 + 1), idx.getX(q * 3 + 2));
+  }
+  geo.setIndex(keep);
+  scene.add(t);
+  t.updateMatrixWorld(true);
+  tripodCam = t; tripodLens = lens;
+  /* AND A TRIPOD IS NOT A WALL. This is the coat stand's rule and it is the
+   * one thing the desk did differently for a good reason: a desk is a piece
+   * of cover you put between you and him and it SHOULD stop a body, but
+   * three aluminium legs are a thing a person shoulders through. Its cells
+   * come out of the walk grid at build — the chairs' own treatment — so
+   * nobody catches on it in a fight, and walking into it brings it down. */
+  openNavBox(g, CAM_BOX, 0.05);
+  /* ONE DOOR IN, like every other breakable here: `physProps` with a no-op
+   * `step` and an `onImpact`, so `glassStrike` (the blade) and `ragSmash`
+   * (a corpse or a thrown prop) both find it without a third code path. */
+  tripodProp = {
+    mesh: t, radius: 0.62, dead: false, held: false, thrown: false,
+    vel: new THREE.Vector3(),
+    step: () => {},
+    onImpact: (speed) => smashTripodCam(speed),
+  };
+  physProps.push(tripodProp);
+  return t;
+}
+/* A CAMERA GOING OVER IS THREE MATERIALS AT ONCE. Aluminium tube on steel
+ * plate is the loudest part of it and it is a CLATTER, not a bang — three
+ * legs finding the floor one after another; the body is a solid dead case
+ * hitting once; and the lens is glass. Nothing here rings for long: the
+ * room's own reverb is on the bus and a camera is not a bell. */
+function sfxTripodBreak() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const out = ctx.createGain(); out.gain.value = 0.62; out.connect(sfxOut());
+  // the case: one dead hit, low, with a short metal skin on it
+  const body = ctx.createOscillator(); body.type = 'sine';
+  body.frequency.setValueAtTime(210, t + 0.05);
+  body.frequency.exponentialRampToValueAtTime(58, t + 0.20);
+  const bg = ctx.createGain();
+  bg.gain.setValueAtTime(0.0001, t + 0.05);
+  bg.gain.exponentialRampToValueAtTime(0.55, t + 0.058);
+  bg.gain.exponentialRampToValueAtTime(0.0001, t + 0.30);
+  body.connect(bg).connect(out); body.start(t + 0.05); body.stop(t + 0.34);
+  // three legs, on their own irregular count, each a bright short tube note
+  for (let i = 0; i < 3; i++) {
+    const d0 = 0.02 + i * 0.075 + Math.random() * 0.05;
+    const f = 620 + Math.random() * 460;
+    for (const [mul, gn] of [[1, 0.16], [2.71, 0.09], [5.4, 0.05]]) {
+      const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = f * mul;
+      const og = ctx.createGain();
+      og.gain.setValueAtTime(0.0001, t + d0);
+      og.gain.exponentialRampToValueAtTime(gn, t + d0 + 0.004);
+      og.gain.exponentialRampToValueAtTime(0.0001, t + d0 + 0.26);
+      o.connect(og).connect(out); o.start(t + d0); o.stop(t + d0 + 0.30);
+    }
+    const tick = noiseBurst(0.03, (x) => Math.pow(1 - x, 6));
+    const tf = ctx.createBiquadFilter(); tf.type = 'highpass'; tf.frequency.value = 2800;
+    const tg = ctx.createGain(); tg.gain.value = 0.30;
+    tick.connect(tf).connect(tg).connect(out); tick.start(t + d0); tick.stop(t + d0 + 0.03);
+  }
+  // and the glass, a beat after the case, high and scattered
+  const gl = noiseBurst(0.5, (x) => Math.pow(1 - x, 2.4) * (0.35 + 0.65 * Math.abs(Math.sin(x * 130))));
+  const gf = ctx.createBiquadFilter(); gf.type = 'highpass'; gf.frequency.value = 4200;
+  const gg = ctx.createGain(); gg.gain.value = 0.30;
+  gl.connect(gf).connect(gg).connect(out); gl.start(t + 0.11); gl.stop(t + 0.61);
+}
+const _tcP = new THREE.Vector3(), _tcQ = new THREE.Quaternion(), _tcS = new THREE.Vector3();
+function smashTripodCam(speed, dirX, dirZ) {
+  if (tripodBroken || !tripodCam) return;
+  tripodBroken = true;
+  if (tripodProp) tripodProp.dead = true;
+  tripodCam.updateMatrixWorld(true);
+  const p = tripodCam.position.clone();
+  const gy = floorFor(p);
+  const kick = Math.min(2.8, 0.7 + (speed || 6) * 0.13);
+  let dx = dirX || 0, dz = dirZ || 0;
+  const dl = Math.hypot(dx, dz);
+  if (dl < 1e-3) { const a = Math.random() * Math.PI * 2; dx = Math.sin(a); dz = Math.cos(a); }
+  else { dx /= dl; dz /= dl; }
+  /* IT TOPPLES, IT DOES NOT BURST — the coat stand's rule, and a tripod is
+   * the purest case of it. The legs go out from under it on the frame it is
+   * hit and the camera arrives a beat later, because that is the order the
+   * thing actually falls in. How high a piece stood is how far it travels,
+   * and the lift is small: this is a metre and a half of aluminium going
+   * over, not an explosion. */
+  for (const c of [...tripodCam.children]) {
+    c.updateMatrixWorld(true);
+    c.matrixWorld.decompose(_tcP, _tcQ, _tcS);
+    const leg = c.userData.part === 'leg';
+    const m = new THREE.Mesh(c.geometry, c.material);
+    m.position.copy(_tcP); m.quaternion.copy(_tcQ); m.scale.copy(_tcS);
+    m.frustumCulled = false;
+    scene.add(m);
+    const h = THREE.MathUtils.clamp((_tcP.y - gy) / 1.6, 0, 1);
+    const sway = (Math.random() - 0.5) * 0.9;
+    const out = (0.4 + kick * (0.25 + h * 0.75)) * (0.6 + Math.random() * 0.7);
+    gibs.push({
+      m, half: c.userData.half,
+      vel: new THREE.Vector3((dx + sway * dz) * out, 0.3 + h * 0.7 + Math.random() * 0.4, (dz - sway * dx) * out),
+      /* A LONG PIECE TURNS ABOUT ITS FALL. A leg is a metre of tube and a
+       * random tumble on three axes is a stick being juggled; it goes over
+       * about the axis across the blow, like the coat stand's post. */
+      spin: leg
+        ? new THREE.Vector3(dz * (3.0 + Math.random() * 3.4), (Math.random() - 0.5) * 1.6, -dx * (3.0 + Math.random() * 3.4))
+        : new THREE.Vector3((Math.random() - 0.5) * 7, (Math.random() - 0.5) * 7, (Math.random() - 0.5) * 7),
+      rest: gy + 0.02 + Math.random() * 0.02, life: 200, bleed: false,
+      wait: leg ? 0 : 0.09 + Math.random() * 0.05,
+    });
+  }
+  /* AND THE LENS GOES TO GLASS WHERE IT STOOD. The barrel itself is thrown
+   * as a piece like everything else — it is the scan's own geometry and
+   * there is no sense deleting it — but a camera going over on a steel
+   * floor has to have something bright in it, so a handful of slivers
+   * leave the lens's own place at the moment it does. */
+  if (tripodLens) {
+    const lp = new THREE.Vector3(); tripodLens.getWorldPosition(lp);
+    const gm = SHARD_MAT.clone();
+    for (let i = 0; i < 12; i++) {
+      const m = new THREE.Mesh(new THREE.TetrahedronGeometry(0.018 + Math.random() * 0.022, 0), gm);
+      m.scale.set(1, 0.3 + Math.random() * 0.5, 1);
+      m.position.set(lp.x + (Math.random() - 0.5) * 0.08, lp.y, lp.z + (Math.random() - 0.5) * 0.08);
+      m.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+      scene.add(m);
+      const a = Math.random() * Math.PI * 2, sp = 0.5 + Math.random() * 1.6;
+      gibs.push({
+        m, vel: new THREE.Vector3(Math.cos(a) * sp + dx, 0.9 + Math.random() * 1.4, Math.sin(a) * sp + dz),
+        spin: new THREE.Vector3((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20),
+        rest: gy + 0.015 + Math.random() * 0.02, life: 30, bleed: false, wait: 0.09,
+      });
+    }
+  }
+  scene.remove(tripodCam);
+  tripodCam = null; tripodLens = null;
+  sfxTripodBreak();
+  /* AND BREAKING SOMETHING DOES NOT SHAKE THE ROOM. The blow that broke it
+   * has already put trauma through the lens — from `hitConnect`, or from
+   * the body's own landing. A camera coming off a tripod adds nothing. */
+  spawnPuffs(p.x, p.z, 9, dx, dz, gy + 0.04, [0.44, 0.45, 0.47]);
+}
+/* Anybody who walks into it brings it down, the coat stand's rule — and it
+ * is out of the walk grid, so walking into it is a thing that can happen. */
+function updateTripodCam() {
+  if (tripodBroken || !tripodCam || !inBunker) return;
+  const p = tripodCam.position, R = 0.30;
+  const near = (x, z, r) => (x - p.x) * (x - p.x) + (z - p.z) * (z - p.z) < (R + r) * (R + r);
+  if (near(camera.position.x, camera.position.z, 0.22)) {
+    smashTripodCam(6, p.x - camera.position.x, p.z - camera.position.z); return;
+  }
+  if (dealer.st.alive && dealer.g.visible && near(dealer.g.position.x, dealer.g.position.z, 0.30)) {
+    smashTripodCam(7, p.x - dealer.g.position.x, p.z - dealer.g.position.z); return;
+  }
+  for (const u of mutants) {
+    if (!u.rag || u.rag.asleep) continue;
+    for (const q of u.rag.parts) if (near(q.p.x, q.p.z, q.r) && q.p.y < p.y + 1.9) {
+      smashTripodCam(9, q.p.x - q.pp.x, q.p.z - q.pp.z); return;
+    }
+  }
+}
 function buildWorkTable(g) {
   if (workTable) return;
   carveDesk(g);
@@ -19179,15 +19484,7 @@ deskWoodAt = (lx, ly, lz) => {
  * wreckage would be a two-metre patch of invisible furniture you and he
  * could not cross for the rest of the fight. The cells go, and the cached
  * "largest piece of floor" with them. */
-function openDeskFloor(g) {
-  const S = g.userData.bunker, n = S && S.nav; if (!n) return;
-  const m = n.cell, B = DESK_BOX;
-  const x0 = B.x0 - m, x1 = B.x1 + m, y0 = -B.z1 - m, y1 = -B.z0 + m;      // grid y is -z
-  const i0 = Math.max(0, Math.floor((x0 - n.x0) / m)), i1 = Math.min(n.gw - 1, Math.floor((x1 - n.x0) / m));
-  const j0 = Math.max(0, Math.floor((y0 - n.y0) / m)), j1 = Math.min(n.gh - 1, Math.floor((y1 - n.y0) / m));
-  for (let j = j0; j <= j1; j++) { const r = n.grid[j].split(''); for (let i = i0; i <= i1; i++) r[i] = '0'; n.grid[j] = r.join(''); }
-  if (S._main) S._main = {};
-}
+function openDeskFloor(g) { openNavBox(g, DESK_BOX); }
 /* THE CRASH. A table this size going over is the loudest thing in the room
  * and it has to be heard as three events, not one: the CRACK of the timber
  * letting go, the BOOM of the top hitting steel with everything on it, and
@@ -19433,6 +19730,435 @@ function buildCrowbarOnTable() {
   scene.add(holder);
   crowbarOnTable = holder;
 }
+/* ---- HE TAKES THE MASK OFF -------------------------------------------------
+ * A boss with one move set is solved once. Halfway through his health he
+ * stops, gets a hand under the filter drum and pulls the mask off his face,
+ * and what is under it is not a man's face any more — so the fight you have
+ * learned so far turns out to have been the first half of it, and the thing
+ * you have been trading blows with turns out to be the same thing as the
+ * three on the beach.
+ *
+ * IT IS AN OPENING, NOT A CUTSCENE. He is stopped, his guard is down and he
+ * takes what you give him for a second and a half — the biggest window in
+ * the fight, and it is the prize for getting him to half. The player keeps
+ * their hands the whole time. A take here would be the game stopping the
+ * fight to show you something, which is exactly what this file already says
+ * about the pack's cutscene handing you back an empty bar.
+ *
+ * WHAT IS UNDER IT IS PAINTED, NOT MODELLED. The scan has a whole head under
+ * the mask — a plain bald man, which is the least frightening thing that
+ * could be there — and the answer is the one this file gives about the
+ * mutants' occlusion and the pavilion's lamps: DO IT IN THE MAP. The head's
+ * uv island is rasterised once, so every texel of it knows the point on the
+ * skull it belongs to, and the mutation is then painted in THREE DIMENSIONS
+ * — the sockets darkened where the eyes are, a split laid down the line
+ * from his left temple to his jaw, the blue tracking up out of his collar —
+ * rather than smeared across a rectangle of atlas. That is what makes it
+ * land on his face instead of near it.
+ *
+ * AND HE IS BLUE, NOT RED. The pack are pale flesh and raw red; he is the
+ * Blue Blood Dealer, the walk is an hour of blue blood in a crab and a
+ * syringe and a jar, and what has got into him should be the same colour as
+ * what is in the jar. */
+const UNMASK_AT = 0.5;              // of his health
+const UNMASK_DUR = 1.55, UNMASK_PULL = 0.60;
+let unmaskT = -1, unmasked = false, dealerRaged = false, faceTex = null, maskMesh = null;
+/* Rasterise the head's uv island once: for every texel it covers, the point
+ * on the skull that lands there, in the rig's own bind frame. Everything
+ * after this is painting by 3-D distance, which is why a scar can be put on
+ * ONE cheek — the two sides of this head have their own uv, checked. */
+function headTexels(u, S) {
+  let body = null;
+  u.model.traverse((o) => { if (o.isSkinnedMesh && o.name === 'DealerBody') body = o; });
+  if (!body || !body.material.map || !body.material.map.image) return null;
+  const geo = body.geometry, idx = geo.index;
+  const pos = geo.attributes.position, uv = geo.attributes.uv;
+  /* WHAT COUNTS AS THE HEAD IS A PLACE, NOT A BONE WEIGHT. The first two
+   * passes selected the island by the head bone's skinning, and the
+   * coverage came back with a DOME-SHAPED HOLE through the middle of the
+   * face — the triangles round the nose and mouth are weighted mostly to
+   * something else on this rig, so they were left with the original skin
+   * on them while everything around them was painted. On the model that
+   * unpainted patch is the size and shape of a gas mask, which is how a
+   * man who has just taken his mask off ended up looking like he was
+   * wearing one. A head is where the head is: everything above the jaw at
+   * full strength, the neck fading in under it, and nothing can fall
+   * through a gap in somebody else's weights. */
+  const P = new Float32Array(S * S * 3), W = new Float32Array(S * S);
+  const headW = (i) => {
+    const y = pos.getY(i), x = pos.getX(i);
+    if (Math.abs(x) > 0.26) return 0;                  // not the shoulders
+    if (y >= 2.655) return 1;                          // the head
+    if (y > 2.430) return (y - 2.430) / 0.225;         // the neck, fading in
+    return 0;
+  };
+  const ax = [0, 0, 0], ay = [0, 0, 0], px = [0, 0, 0], py = [0, 0, 0], pz = [0, 0, 0];
+  for (let t = 0; t < idx.count; t += 3) {
+    let ok = true, wsum = 0;
+    for (let k = 0; k < 3; k++) {
+      const i = idx.getX(t + k);
+      const w = headW(i);
+      if (w <= 0.001) { ok = false; break; }
+      wsum += w / 3;
+      ax[k] = uv.getX(i) * S; ay[k] = uv.getY(i) * S;
+      px[k] = pos.getX(i); py[k] = pos.getY(i); pz[k] = pos.getZ(i);
+    }
+    if (!ok) continue;
+    const tw = Math.min(1, Math.max(0, wsum));
+    // scan-convert the triangle in atlas space, one texel of bleed all round
+    const x0 = Math.max(0, Math.floor(Math.min(ax[0], ax[1], ax[2])) - 1);
+    const x1 = Math.min(S - 1, Math.ceil(Math.max(ax[0], ax[1], ax[2])) + 1);
+    const y0 = Math.max(0, Math.floor(Math.min(ay[0], ay[1], ay[2])) - 1);
+    const y1 = Math.min(S - 1, Math.ceil(Math.max(ay[0], ay[1], ay[2])) + 1);
+    const d = (ax[1] - ax[0]) * (ay[2] - ay[0]) - (ax[2] - ax[0]) * (ay[1] - ay[0]);
+    if (Math.abs(d) < 1e-9) continue;
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const qx = x + 0.5, qy = y + 0.5;
+      let a = ((ax[1] - qx) * (ay[2] - qy) - (ax[2] - qx) * (ay[1] - qy)) / d;
+      let b2 = ((ax[2] - qx) * (ay[0] - qy) - (ax[0] - qx) * (ay[2] - qy)) / d;
+      let c = 1 - a - b2;
+      if (a < -0.04 || b2 < -0.04 || c < -0.04) continue;
+      a = Math.max(0, a); b2 = Math.max(0, b2); c = Math.max(0, c);
+      const s = a + b2 + c; a /= s; b2 /= s; c /= s;
+      const o = y * S + x;
+      P[o * 3] = a * px[0] + b2 * px[1] + c * px[2];
+      P[o * 3 + 1] = a * py[0] + b2 * py[1] + c * py[2];
+      P[o * 3 + 2] = a * pz[0] + b2 * pz[1] + c * pz[2];
+      W[o] = Math.max(W[o], tw);
+    }
+  }
+  return { P, W, body };
+}
+/* The face, painted. Everything here is a distance field in the head's own
+ * bind frame — the head measures x +-0.16, y 2.62 to 3.05, z -0.15 to 0.25
+ * with the face on +z — so nothing depends on how the atlas is laid out.
+ * Big shapes on purpose: the render is at 0.42 scale and anything finer
+ * than a thumb is gone before it reaches the screen. */
+function paintScarredFace(u) {
+  if (faceTex) return faceTex;
+  const S = 1024;
+  const R = headTexels(u, S);
+  if (!R) return null;
+  const src = R.body.material.map;
+  const c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(src.image, 0, 0, S, S);
+  const img = g.getImageData(0, 0, S, S), D = img.data;
+  const { P, W } = R;
+  /* THE ANATOMY, MEASURED, NOT GUESSED. The eyes are their own mesh in this
+   * scan (`Object_7`, x +-0.08, y 2.82..2.87, z 0.13..0.18), so where they
+   * are is a fact and not an estimate — the first pass put the sockets five
+   * centimetres too high off a guess and darkened his brow instead of his
+   * eyes, which read as makeup. */
+  const EYE = [[-0.055, 2.845, 0.150], [0.055, 2.845, 0.150]];
+  const MOUTH = [0, 2.735, 0.185];
+  const SCAR_A = [-0.088, 2.930, 0.070], SCAR_B = [-0.038, 2.700, 0.155];   // his left temple to his jaw
+  const dist = (x, y, z, q) => Math.hypot(x - q[0], y - q[1], z - q[2]);
+  const seg = (x, y, z, a, b) => {
+    const vx = b[0] - a[0], vy = b[1] - a[1], vz = b[2] - a[2];
+    const wx = x - a[0], wy = y - a[1], wz = z - a[2];
+    const t = Math.max(0, Math.min(1, (wx * vx + wy * vy + wz * vz) / (vx * vx + vy * vy + vz * vz)));
+    return Math.hypot(wx - vx * t, wy - vy * t, wz - vz * t);
+  };
+  const hash = (x, y, z) => { const s = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453; return s - Math.floor(s); };
+  /* AND IT IS LESIONS, NOT A TINT — AND NOT A FIELD EITHER. Two passes were
+   * spent on this. Tinting the whole head by one curve gave a uniform purple
+   * skull, which is a bruise; driving it off a noise field biased down the
+   * face gave a smooth vertical gradient that saturated into a dark
+   * MASK-SHAPED block over his mouth and jaw — so having just taken the mask
+   * off he appeared to be wearing another one. A gradient over a face always
+   * reads as a region, because the face is where the eye goes looking for
+   * regions.
+   *
+   * What reads as a disease is DISCRETE: named places where the skin has
+   * gone, each with a raw centre, a livid ring and a dry pale edge, with
+   * ordinary skin left in between. Six of them, put where they can be seen —
+   * and he holds his head down in the fighting stance, so the ones that
+   * matter are the brow, the temples and the crown, not the chin. Their
+   * edges are chewed by a hash on the angle so none of them is a circle. */
+  const LESION = [
+    [-0.076, 2.700, 0.112, 0.030],    // his left jaw
+    [0.074, 2.812, 0.112, 0.026],     // right cheekbone, under the eye
+    [0.106, 2.925, 0.014, 0.034],     // right temple, running back
+    [-0.094, 2.955, -0.034, 0.038],   // and over the back left of the skull
+    [0.022, 2.648, 0.096, 0.032],     // the throat, where it came up from
+    [-0.034, 2.968, 0.116, 0.024],    // and one on the brow, which is what you see
+  ];
+  /* THE VEINS ARE GROWN, NOT DRAWN. Four trunks out of the collar, each
+   * splitting twice, as a list of segments — so the blue arrives on his
+   * face from BELOW, the way something coming up out of a body would. */
+  const veins = [];
+  function grow(a, dirx, diry, dirz, len, w, depth) {
+    const L = Math.hypot(dirx, diry, dirz) || 1;
+    const b = [a[0] + (dirx / L) * len, a[1] + (diry / L) * len, a[2] + (dirz / L) * len];
+    veins.push({ a, b, w });
+    if (depth <= 0) return;
+    for (const s of [-1, 1]) {
+      const k = 0.55 + hash(a[0] * 7, a[1] * 13, depth) * 0.5;
+      grow(b, dirx / L + s * 0.8 * k, (diry / L) * 0.85, dirz / L + s * 0.18, len * 0.66, w * 0.66, depth - 1);
+    }
+  }
+  for (let i = 0; i < 6; i++) {
+    const sx = (i < 3 ? -1 : 1) * (0.030 + (i % 3) * 0.048);
+    grow([sx, 2.600, 0.105 - Math.abs(sx) * 0.20], sx * 0.22, 1, 0.16, 0.080, 0.011, 2);
+  }
+  const mix = (o, r, gg, bb, k) => {
+    if (k <= 0) return;
+    D[o] += (r - D[o]) * k; D[o + 1] += (gg - D[o + 1]) * k; D[o + 2] += (bb - D[o + 2]) * k;
+  };
+  for (let i = 0; i < S * S; i++) {
+    const wgt = W[i];
+    if (!wgt) continue;
+    const x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2], o = i * 4;
+    const front = Math.max(0, Math.min(1, (z + 0.02) / 0.20));      // 0 behind the ear, 1 on the face
+    const up = Math.min(1, Math.max(0, (y - 2.62) / 0.43));
+    const n = hash(x * 340, y * 340, z * 340);
+    /* 1. WHERE THE SKIN HAS GONE. The field, biased upward out of the
+     * collar and forward onto the face, so it is worst where it started
+     * and thins over the back of the skull. */
+    /* 1a. THE WHOLE HEAD HAS COOLED, and only a little: a face this far
+     * gone has no blood in it, but the moment the skin stops being skin
+     * anywhere it stops being a person and starts being a prop. */
+    const lum = D[o] * 0.30 + D[o + 1] * 0.59 + D[o + 2] * 0.11;
+    mix(o, lum * 0.86, lum * 0.90, lum * 1.00, 0.46 * wgt);
+    /* AND IT HAS TO READ AT THE RANGE THE FIGHT IS FOUGHT AT. His reach is
+     * under two metres and at two metres his face is forty pixels through
+     * the retro downscale — every scar on it is one pixel. What survives
+     * that is the head going COLD against a body that is still warm, and
+     * the blind eyes. The detail below is for when he is on top of you. */
+    mix(o, 62, 70, 82, 0.17 * wgt);
+    /* 1b. AND THEN THE PLACES WHERE IT HAS GONE. */
+    let rot = 0;
+    for (const L of LESION) {
+      const dx = x - L[0], dy = y - L[1], dz = z - L[2];
+      const dl = Math.hypot(dx, dy, dz);
+      // a chewed edge, not a circle: the radius wobbles with the direction
+      const r = L[3] * 1.25 * (0.72 + 0.56 * hash(Math.round(dx * 55), Math.round(dy * 55), Math.round(dz * 55)));
+      const k = Math.max(0, Math.min(1, 1 - dl / r));
+      if (k <= 0) continue;
+      rot = Math.max(rot, k);
+      mix(o, 178, 168, 160, 0.42 * Math.max(0, 1 - Math.abs(k - 0.12) / 0.12) * wgt);   // dry pale edge
+      mix(o, 96, 40, 52, 0.62 * Math.max(0, 1 - Math.abs(k - 0.42) / 0.30) * wgt);      // livid ring
+      mix(o, 26, 30, 48, 0.86 * Math.max(0, (k - 0.50) / 0.50) * wgt);                  // raw, and cold
+    }
+    rot *= wgt;
+    /* 2. THE MASK LEFT ITS SHAPE. What it covered never weathered, so it
+     * is a shade paler, and it ends on a raw pressure weal — the detail
+     * that says he has had that thing on his face for years. Kept light:
+     * the first pass filled the whole face pale and read as a second mask
+     * underneath the one he had just taken off. */
+    const md = Math.hypot(x / 0.086, (y - 2.790) / 0.112);
+    if (front > 0.05) {
+      const weal = Math.exp(-Math.pow((md - 1.0) / 0.040, 2));
+      mix(o, 112, 42, 54, 0.58 * weal * front * wgt);
+    }
+    /* 3. THE SOCKETS. Sunk and bruised — with the eyes themselves gone
+     * milky (that is the eye mesh's own material, not this map), it is the
+     * biggest read on his face at three metres in a dark room. */
+    for (const e of EYE) {
+      const d0 = dist(x, y, z, e);
+      mix(o, 16, 18, 28, 0.80 * Math.exp(-Math.pow(d0 / 0.022, 2)) * wgt);
+      mix(o, 54, 46, 74, 0.40 * Math.exp(-Math.pow((d0 - 0.028) / 0.011, 2)) * wgt);
+    }
+    /* 4. THE MOUTH, stained, with the stain running down out of it. */
+    const dm = dist(x, y, z, MOUTH);
+    mix(o, 26, 24, 38, 0.62 * Math.exp(-Math.pow(dm / 0.024, 2)) * wgt);
+    const run = Math.exp(-Math.pow((x - MOUTH[0]) / 0.022, 2)) * Math.max(0, Math.min(1, (MOUTH[1] - y) / 0.08)) * front;
+    mix(o, 30, 36, 62, 0.36 * run * wgt);
+    /* 5. THE SPLIT. One long scar from the temple across the cheekbone to
+     * the jaw, on his left: a dark trough with the flesh lifted pale
+     * either side of it, which is what makes it a ridge and not a pen
+     * line, and notched along its length so it is a tear. */
+    const ds = seg(x, y, z, SCAR_A, SCAR_B);
+    const notch = 0.8 + 0.4 * hash(y * 120, x * 120, 3);
+    mix(o, 176, 164, 156, 0.60 * Math.exp(-Math.pow((ds - 0.017) / 0.010, 2)) * wgt);
+    mix(o, 78, 28, 44, 0.60 * Math.exp(-Math.pow((ds - 0.007) / 0.007, 2)) * wgt);
+    mix(o, 18, 14, 22, 0.92 * Math.exp(-Math.pow(ds / (0.0090 * notch), 2)) * wgt);
+    /* 6. AND THE BLUE COMING UP OUT OF HIS COLLAR — his own blood, the
+     * same blue as the jar an hour of the walk was spent filling. */
+    let vk = 0;
+    for (const v of veins) vk = Math.max(vk, Math.exp(-Math.pow(seg(x, y, z, v.a, v.b) / v.w, 2)));
+    mix(o, 24, 46, 98, 0.88 * vk * wgt);
+    mix(o, 66, 104, 158, 0.40 * Math.exp(-Math.pow((vk - 0.30) / 0.24, 2)) * vk * wgt);
+    // 7. and grain, so none of it looks airbrushed
+    const gr = (n - 0.5) * 18 * rot;
+    D[o] += gr; D[o + 1] += gr; D[o + 2] += gr;
+  }
+  g.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.flipY = src.flipY; tex.colorSpace = src.colorSpace;
+  tex.wrapS = src.wrapS; tex.wrapT = src.wrapT;
+  tex.minFilter = src.minFilter; tex.magFilter = src.magFilter;
+  tex.anisotropy = src.anisotropy;
+  tex.needsUpdate = true;
+  faceTex = tex;
+  return tex;
+}
+
+/* THE PULL. Sixty per cent of the way through the beat the mask leaves his
+ * face: the mesh is hidden, a copy of it is thrown into the room as a gib
+ * so it lands on the floor and stays there for the rest of the fight, and
+ * the head under it gets its painted map. */
+function dealerPullMask() {
+  const u = dealer;
+  if (!u.model) return;
+  if (!maskMesh) u.model.traverse((o) => { if (o.isSkinnedMesh && o.name === 'Object_14') maskMesh = o; });
+  const tex = paintScarredFace(u);
+  if (tex) for (const m of (u.mats || [])) {
+    if (m.map && m.map !== tex) { m.map = tex; if (m.emissiveMap) m.emissiveMap = tex; m.needsUpdate = true; }
+  }
+  /* AND THE EYES GO. A face can be painted any colour at all and still read
+   * as a man in makeup while a pair of human eyes is looking out of it —
+   * that was the first pass, exactly. The eyeballs are their own mesh in
+   * this scan (`Object_7`, and the lashes `Object_9`), so they get their own
+   * material: no map, a cold milky white with the iris and the pupil gone,
+   * rough enough to have no shine, lit a little from inside so they hold in
+   * a dark room. Blind is the strongest single thing you can do to a face
+   * and it is four lines. */
+  u.model.traverse((o) => {
+    if (!o.isSkinnedMesh || o.userData.clouded) return;
+    if (o.name !== 'Object_7' && o.name !== 'Object_9') return;
+    o.userData.clouded = true;
+    o.material = new THREE.MeshStandardMaterial({
+      /* AND A BLIND EYE IS DIM, NOT LIT. The first milky white was 0xb2c0c8
+       * with a real emissive under it and it came out as two glowing slits
+       * in the dark — a cartoon, not a cataract. What a clouded eye
+       * actually is, is a surface that has STOPPED being wet: no highlight,
+       * no depth, and darker than the skin around it, not brighter. */
+      color: o.name === 'Object_7' ? 0x7b848a : 0x2e3238, roughness: 1, metalness: 0,
+      emissive: new THREE.Color(o.name === 'Object_7' ? 0x2b3238 : 0x0c0f12), emissiveIntensity: 0.16,
+    });
+  });
+  if (maskMesh) {
+    /* A SKINNED MESH CANNOT BE THROWN, so what goes on the floor is a bake
+     * of the mask in the pose it came off in — the same walk `bakeLimb`
+     * does for a severed arm, and for the same reason. */
+    const g2 = bakeSkinned(maskMesh);
+    maskMesh.visible = false;
+    if (g2) {
+      const m = new THREE.Mesh(g2.geo, maskMesh.material);
+      m.position.copy(g2.centre); m.frustumCulled = false;
+      scene.add(m);
+      const a = Math.atan2(camera.position.x - m.position.x, camera.position.z - m.position.z) + (Math.random() - 0.5) * 1.4;
+      gibs.push({
+        m, half: 0.09,
+        vel: new THREE.Vector3(Math.sin(a) * 2.4, 1.9, Math.cos(a) * 2.4),
+        spin: new THREE.Vector3((Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12),
+        rest: floorFor(m.position) + 0.05, life: 600, bleed: false,
+      });
+    }
+  }
+  unmasked = true;
+  sfxUnmask();
+  addTrauma(0.30);
+  fovKick = Math.max(fovKick, 6);
+}
+/* Bake a skinned mesh into a static one in the pose it is in — every vertex
+ * run through its bones and then through the mesh's world matrix, centred on
+ * its own middle so it tumbles about itself. */
+const _bkA = new THREE.Vector3(), _bkB = new THREE.Vector3(), _bkM = new THREE.Matrix4();
+function bakeSkinned(sm) {
+  const geo = sm.geometry, pos = geo.attributes.position;
+  if (!pos) return null;
+  sm.updateMatrixWorld(true);
+  const out = new Float32Array(pos.count * 3);
+  let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+  for (let i = 0; i < pos.count; i++) {
+    _bkA.fromBufferAttribute(pos, i);
+    if (sm.applyBoneTransform) sm.applyBoneTransform(i, _bkA); else sm.boneTransform(i, _bkA);
+    _bkA.applyMatrix4(sm.matrixWorld);
+    out[i * 3] = _bkA.x; out[i * 3 + 1] = _bkA.y; out[i * 3 + 2] = _bkA.z;
+    x0 = Math.min(x0, _bkA.x); x1 = Math.max(x1, _bkA.x);
+    y0 = Math.min(y0, _bkA.y); y1 = Math.max(y1, _bkA.y);
+    z0 = Math.min(z0, _bkA.z); z1 = Math.max(z1, _bkA.z);
+  }
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, cz = (z0 + z1) / 2;
+  for (let i = 0; i < pos.count; i++) { out[i * 3] -= cx; out[i * 3 + 1] -= cy; out[i * 3 + 2] -= cz; }
+  const g2 = new THREE.BufferGeometry();
+  g2.setAttribute('position', new THREE.Float32BufferAttribute(out, 3));
+  if (geo.attributes.uv) g2.setAttribute('uv', geo.attributes.uv.clone());
+  if (geo.index) g2.setIndex(geo.index.clone());
+  g2.computeVertexNormals();
+  return { geo: g2, centre: new THREE.Vector3(cx, cy, cz) };
+}
+/* WHAT COMES OFF WITH IT IS THE FILTER. Everything he has said so far has
+ * been through a drum of charcoal — `voice.throat` is literally `'mask'` —
+ * so the sound of the mask coming off is that filter being pulled away
+ * from a voice: the straps letting go, the drum knocking on the floor, and
+ * then the first unfiltered breath, which is the first time you hear what
+ * is actually in there. */
+function sfxUnmask() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const out = ctx.createGain(); out.gain.value = 0.85; out.connect(sfxOut());
+  // rubber dragging off skin and hair
+  const drag = noiseBurst(0.34, (x) => Math.sin(Math.min(1, x * 2.2) * Math.PI * 0.72) * Math.pow(1 - x, 1.5));
+  const df = ctx.createBiquadFilter(); df.type = 'bandpass'; df.Q.value = 0.8;
+  df.frequency.setValueAtTime(950, t); df.frequency.exponentialRampToValueAtTime(2600, t + 0.30);
+  const dg = ctx.createGain(); dg.gain.value = 0.34;
+  drag.connect(df).connect(dg).connect(out); drag.start(t); drag.stop(t + 0.34);
+  // and the breath under it, opening up as the filter comes away
+  const br = noiseBurst(0.95, (x) => Math.pow(Math.sin(Math.min(1, x * 1.5) * Math.PI * 0.6), 1.4) * Math.pow(1 - x, 0.9));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(430, t + 0.24);                   // still through the drum
+  lp.frequency.exponentialRampToValueAtTime(4200, t + 0.56);    // and then not
+  const bg = ctx.createGain(); bg.gain.value = 0.55;
+  br.connect(lp).connect(bg).connect(out); br.start(t + 0.24); br.stop(t + 1.19);
+  // the throat behind it: two low voiced tones sliding apart, which is what
+  // makes it a thing rather than a man
+  for (const [f0, f1, d0, gn] of [[104, 78, 0.34, 0.16], [152, 191, 0.40, 0.11]]) {
+    const o = ctx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(f0, t + d0);
+    o.frequency.exponentialRampToValueAtTime(f1, t + d0 + 0.62);
+    const of2 = ctx.createBiquadFilter(); of2.type = 'lowpass'; of2.frequency.value = 900;
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.0001, t + d0);
+    og.gain.exponentialRampToValueAtTime(gn, t + d0 + 0.09);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + d0 + 0.78);
+    o.connect(of2).connect(og).connect(out); o.start(t + d0); o.stop(t + d0 + 0.82);
+  }
+  // and the drum hitting the steel a beat later
+  const kn = noiseBurst(0.09, (x) => Math.pow(1 - x, 5));
+  const kf = ctx.createBiquadFilter(); kf.type = 'bandpass'; kf.frequency.value = 380; kf.Q.value = 1.6;
+  const kg = ctx.createGain(); kg.gain.value = 0.45;
+  kn.connect(kf).connect(kg).connect(out); kn.start(t + 0.62); kn.stop(t + 0.71);
+}
+/* THE BEAT. He is stopped and open for the whole of it — this is the prize
+ * for getting him to half, and the player never loses their hands. */
+function updateUnmask(dt) {
+  if (unmaskT < 0) return false;
+  const was = unmaskT;
+  unmaskT += dt;
+  dealer.st.atk = -1; dealer.st.chainAt = -1; dealer.st.chained = false;
+  dealer.st.cool = Math.max(dealer.st.cool, 0.45);
+  mutDrop(dealer);
+  if (was < UNMASK_DUR * UNMASK_PULL && unmaskT >= UNMASK_DUR * UNMASK_PULL) dealerPullMask();
+  if (unmaskT >= UNMASK_DUR) {
+    unmaskT = -1;
+    /* AND HE IS NOT THE SAME MAN AFTERWARDS. The second half of the fight
+     * is quicker and gives you less room between swings — a phase that
+     * only changes his face is a costume change. His startups are NOT
+     * shortened: the tells are what keep him fair, and this file has
+     * already paid for making them readable once. */
+    dealerRaged = true;
+    dealer.kind.aggr = 2.85;
+    dealer.kind.feint = 0.40;
+    dealer.kind.chainMax = 4;
+    dealer.kind.voice = Object.assign({}, dealer.kind.voice, { throat: 'wet', f: 0.92, growl: 1.0, human: false });
+  }
+  return true;
+}
+/* Half his health, once, and never on the blow that kills him. */
+function checkUnmask() {
+  if (unmasked || unmaskT >= 0 || !dealerFight) return;
+  if (!dealer.st.alive || dealer.st.hp > dealer.kind.hp * UNMASK_AT) return;
+  unmaskT = 0;
+  unmasked = true;                       // latched here, so a second blow cannot restart it
+  mutPlay(dealer, 'taunt', false);
+  dealer.st.stun = Math.max(dealer.st.stun, UNMASK_DUR);
+  dealer.st.recoil = 0;
+}
+
 function updateDealer(dt) {
   const inRoom = inBunker === bunkerHome;
   buildBunkerProps();
@@ -19472,7 +20198,9 @@ function updateDealer(dt) {
    * a mime. `drawGait` picks the idle for him from his kind, so the idle is
    * simply held to `calm` until the fight starts. */
   if (!dealerFight && dealer.st.alive) dealer.gait = { walk: 'walk', run: 'run', idle: 'calm', idleRate: 1 };
-  if (dealer.model) {
+  checkUnmask();
+  const masking = updateUnmask(dt);
+  if (dealer.model && !masking) {
     // a route out of a corner, if he was given one, comes before the fan
     const onPath = followPath(dt);
     if (dealer.prevPos && !onPath) steerDealer(dealer.prevPos.x, dealer.prevPos.z);
@@ -19613,6 +20341,7 @@ function updateHatch(dt) {
   }
   updateDealer(dt);
   updateCoatStand();
+  updateTripodCam();
   // the room's air: the sea and the wind go, a hum and a fan come
   const want = inBunker ? 1 : 0;
   const prev = bunkerMix;
@@ -19910,6 +20639,111 @@ function headroomClear() {
 }
 const snap = (v, s) => Math.round(v / s) * s;
 
+/* ---- THE STEP ---------------------------------------------------------
+ * Before this the whole answer to a swing was block, parry or walk
+ * backwards — three things, all of them facing him, and the walk backwards
+ * is not really one. So every exchange had one correct input and you found
+ * it by matching a tell to a button. A DIRECTIONAL STEP is what turns that
+ * into "read the tell AND choose where to be": his lunge is stepped, his
+ * side swing is parried, and neither of those is the other's answer any
+ * more.
+ *
+ * IT IS ON SPACE, and it takes jump's place while a fight is live. Space is
+ * the only key the left thumb can reach with four fingers locked on WASD and
+ * the pinky on shift, and every one of those is committed in a fight; and
+ * jump is worthless in the one room where the step matters, which is a flat
+ * steel box. So it is jump on the beach, a step in a fight, and the player
+ * never notices the swap because they never wanted the other one at that
+ * moment. `inCombat()` is the switch and it is deliberately narrow — a woken
+ * thing inside ten metres — or a shovel in your hand would cost you jump for
+ * a kilometre of walking.
+ *
+ * WHAT IT COSTS is the same bar a block and a sprint come out of, so a
+ * fight you spend rolling out of is a fight you cannot then back out of;
+ * that is the whole reason blocking, sprinting and stepping being one
+ * resource is worth having. And there is a cooldown, because a step you can
+ * mash is a step that never has to be timed — the parry's own argument. */
+const STEP_DUR = 0.30;             // how long the body is travelling
+const STEP_INV = 0.185;            // and how much of that nothing can touch you
+const STEP_DIST = 2.35;            // metres, into a clear room
+const STEP_COST = 0.28;            // of the bar
+const STEP_COOL = 0.40;
+let stepT = -1, stepCool = 0, stepRoll = 0, stepRollK = 0, stepDodged = false;
+const _stepD = new THREE.Vector3(), _stepF = new THREE.Vector3(), _stepR = new THREE.Vector3();
+/* A fight is live when something that can hit you is awake and near. It is
+ * not "am I holding a weapon" and it is not `dealerFight` alone: the crabs
+ * and the pack are fights too, and the step is worth as much on the sand. */
+function inCombat() {
+  if (dealerFight && dealer.st.alive && dealer.g.visible) return true;
+  for (const u of mutants) {
+    if (u === dealer || !u.st.alive || !u.st.awake) continue;
+    if (Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z) < 10) return true;
+  }
+  for (const u of crabs) {
+    if (!u.st.alive || !u.st.awake) continue;
+    if (Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z) < 10) return true;
+  }
+  return false;
+}
+function startStep() {
+  if (stepT >= 0 || stepCool > 0 || !onGround) return false;
+  if (exhausted || stamina < STEP_COST) { if (!blockGasped) gaspOut(); return false; }
+  const mx = (keys['KeyD'] ? 1 : 0) - (keys['KeyA'] ? 1 : 0);
+  const mz = (keys['KeyW'] ? 1 : 0) - (keys['KeyS'] ? 1 : 0);
+  camera.getWorldDirection(_stepF); _stepF.y = 0; _stepF.normalize();
+  _stepR.crossVectors(_stepF, camera.up).normalize();
+  /* NO INPUT IS A BACKSTEP. A man with nothing pressed who hits the button
+   * wants to be somewhere that is not here, and back is the only direction
+   * that is true of whatever is coming. */
+  const fx = mx || mz ? mx : 0, fz = mx || mz ? mz : -1;
+  _stepD.set(0, 0, 0).addScaledVector(_stepF, fz).addScaledVector(_stepR, fx).normalize();
+  stepT = 0; stepDodged = false;
+  stamina = Math.max(0, stamina - STEP_COST);
+  if (stamina <= 0.001) { exhausted = true; gaspOut(); }
+  if (crouching && headroomClear()) crouching = false;   // you come up out of a crouch — if there is room
+  cancelSwing();                          // a step is a defence: it takes the swing
+  if (winding) { winding = false; windT = 0; windFull = false; }
+  // the body leans into it, out of the way — the same language as being hit
+  stepRollK = (fx ? -fx : 0) * 0.085 + (fz < 0 ? 0 : 0) - 0.012;
+  stepRoll = 1;
+  fovKick = Math.max(fovKick, 3.2);
+  vmImpulse(-0.55);
+  // two quick contacts on whatever you are standing on, not one
+  if (inBunker) { sfxStepMetal(); setTimeout(sfxStepMetal, 95); } else { sfxStep(); setTimeout(sfxStep, 95); }
+  return true;
+}
+/* THE NEAR MISS IS THE FEEDBACK. I-frames alone are silence — the blow just
+ * does not arrive, and a player cannot tell a dodge from a miss. So the
+ * blow that goes through you while you are inside the window is HEARD going
+ * past: the bar's own air, close and off to one side, with the world held
+ * for a beat and the lens pulled. That beat is the game saying you did
+ * that on purpose. */
+function dodgedBlow() {
+  if (stepT < 0 || stepT > STEP_INV) return false;
+  if (stepDodged) return true;             // one read-out per step, however many swings
+  stepDodged = true;
+  hitstop = Math.max(hitstop, 0.055);
+  fovKick = Math.max(fovKick, 4.5);
+  addTrauma(0.12);
+  setPrompt('<b>STEP</b>');
+  setTimeout(() => { if (promptHTML.includes('STEP')) setPrompt(''); }, 520);
+  const ctx = audioCtx;
+  if (ctx) {
+    // a bar going past your ear: low, quick, and gone — never a hiss
+    const t = ctx.currentTime;
+    const out = ctx.createGain(); out.gain.value = 0.5;
+    const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    if (pan) { pan.pan.value = (Math.random() < 0.5 ? -1 : 1) * 0.6; out.connect(pan).connect(sfxOut()); }
+    else out.connect(sfxOut());
+    const n = noiseBurst(0.22, (x) => Math.sin(Math.min(1, x * 3.2) * Math.PI * 0.5) * Math.pow(1 - x, 2.6));
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 300; bp.Q.value = 1.1;
+    bp.frequency.setValueAtTime(520, t); bp.frequency.exponentialRampToValueAtTime(190, t + 0.20);
+    const gn = ctx.createGain(); gn.gain.value = 0.85;
+    n.connect(bp).connect(gn).connect(out); n.start(t); n.stop(t + 0.22);
+  }
+  return true;
+}
+
 function update(dt, rawDt = dt) {
   updateCheckpoint();
   if (restore) updateRestore(dt);
@@ -19950,6 +20784,23 @@ function update(dt, rawDt = dt) {
   right.crossVectors(forward, camera.up).normalize();
   const target = new THREE.Vector3().addScaledVector(forward, move.y).addScaledVector(right, move.x).multiplyScalar(spd);
   velocity.lerp(target, 1 - Math.pow(0.0016, dt));
+  /* THE STEP OWNS THE VELOCITY WHILE IT RUNS, so nothing you are holding on
+   * WASD can steer it half way through — a step you can turn mid-flight is a
+   * sprint. It is fast at the front and eases out at the back, which is what
+   * makes the i-frames land where the picture is. And it goes through every
+   * clamp below exactly like a walk does, so a step into a wall stops at the
+   * wall rather than putting you through it. */
+  stepCool = Math.max(0, stepCool - dt);
+  if (stepT >= 0 && !canMove) { stepT = -1; stepCool = STEP_COOL; }   // a take takes the step too
+  if (stepT >= 0) {
+    stepT += dt;
+    if (stepT >= STEP_DUR) { stepT = -1; stepCool = STEP_COOL; }
+    else {
+      const e = 1 - stepT / STEP_DUR;
+      velocity.copy(_stepD).multiplyScalar((STEP_DIST / STEP_DUR) * (0.45 + 1.05 * e * e));
+    }
+  }
+  stepRoll += (0 - stepRoll) * Math.min(1, dt * 7.5);
   camera.position.sub(_shakePrev);            // undo last frame's shake first
   _shakePrev.set(0, 0, 0);
   // where you stood before this frame moved you — what a blocked move undoes to
@@ -20003,7 +20854,13 @@ function update(dt, rawDt = dt) {
 
   // coyote time and a buffered press, so a jump you meant to make happens
   coyote = onGround ? COYOTE_TIME : Math.max(0, coyote - dt);
-  if (canMove && keys['Space'] && !jumpLatch) { jumpBuf = JUMP_BUFFER; jumpLatch = true; }
+  /* SPACE IS THE STEP WHILE A FIGHT IS LIVE, and jump everywhere else. A
+   * press is a press: the latch is the same one jump has always used, so
+   * holding the key cannot chain steps any more than it chains jumps. */
+  if (canMove && keys['Space'] && !jumpLatch) {
+    jumpLatch = true;
+    if (!(inCombat() && startStep())) jumpBuf = JUMP_BUFFER;
+  }
   if (!keys['Space']) jumpLatch = false;
   jumpBuf = Math.max(0, jumpBuf - dt);
   // jumping out of a crouch stands you up first, if there is room to
@@ -20347,7 +21204,7 @@ function animate() {
     renderer.render(inspectScene, inspectCamera);
     return;
   }
-  const hRoll = hitRoll + hurtShock * hurtRollK;
+  const hRoll = hitRoll + hurtShock * hurtRollK + stepRoll * stepRollK;
   const hPitch = hurtShock * hurtPitchK;
   if (hRoll) camera.rotateZ(hRoll);
   if (hPitch) camera.rotateX(hPitch);
@@ -20454,6 +21311,9 @@ window.__bw = {
   get windT() { return windT; }, get windFull() { return windFull; }, WIND_FULL,
   enterBunker, leaveBunker, startDealerFight, startDealerPickup, get dealer() { return dealer; }, aimBar,
   smashCoatStand, updateCoatStand, get coatStand() { return coatStand; }, get coatBroken() { return coatBroken; },
+  smashTripodCam, get tripodCam() { return tripodCam; }, get tripodBroken() { return tripodBroken; },
+  checkUnmask, paintScarredFace, get unmasked() { return unmasked; }, get unmaskT() { return unmaskT; }, get dealerRaged() { return dealerRaged; },
+  startStep, inCombat, get stepT() { return stepT; }, get stepCool() { return stepCool; },
   katanaItem, katModel, katanaVM, updateDealer, sfxDig, restRot, slashRot, updateViewmodel, updateTrail,
   removeSmile, get smilePhase() { return smilePhase; },
   get crowbarOnTable() { return crowbarOnTable; }, get dealerPick() { return dealerPick; }, get bunkerProps() { return bunkerProps; },

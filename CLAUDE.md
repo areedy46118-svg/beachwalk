@@ -2466,6 +2466,133 @@ failure this file already warns about twice for a dark textured scan. The
 big glint and the halo are what say "found thing"; the metal only has to be
 lifted enough to read as olive drab rather than as a hole. 2.6 and 0.30.
 
+**AND THE CAMERA COMES APART INTO WHAT IT ALREADY WAS.** The desk had to be
+rebuilt out of boxes to break — 150 triangles of one merged wood mesh, and a
+replica only as far as boxes go. The tripod camera did not: it is NINE
+CONNECTED ISLANDS inside `polySurface425_ComputerNCam_0` — body, lens barrel,
+film magazine, head plate, collar, a fitting and three legs — and those are
+exactly the pieces a camera on a tripod comes apart into. So every one of
+them is lifted out of the merged mesh vertex for vertex with its own
+positions, normals and uv on the scan's own map, and the scan's triangles are
+then dropped from the index. It is not a replica of the camera; it is the
+camera, moved. Three things it took:
+
+- **Weld by POSITION before you flood.** The scan splits vertices at every uv
+  seam, so an index-only flood finds this camera in seventeen pieces.
+  `islandsOf` rounds each vertex to the millimetre and floods on that.
+- **A piece is centred on ITSELF, not on the thing it came off.** The first
+  lift re-centred every island on the tripod's floor origin, which draws
+  perfectly while they are children of one group at that origin and is wrong
+  the instant they are thrown, because a gib is moved and spun about its
+  mesh's POSITION: the camera body's vertices stood 1.7 m above its own
+  pivot, so `updateGibs` laid the pivot on the floor and the camera went on
+  standing exactly where it had been, in mid-air over its own wreckage.
+- **A tripod is not a wall.** This is the one place the desk's rule is
+  wrong: a desk is cover you put between you and him and it SHOULD stop a
+  body, but three aluminium legs are a thing a person shoulders through.
+  Its cells come out of the walk grid at build (`openNavBox`, which is
+  `openDeskFloor` with the box handed in — the chairs' own treatment) and
+  walking into it brings it down, the coat stand's rule. The blade still
+  finds it, because `glassStrike` raycasts the prop's own meshes and never
+  asks the grid.
+
+**HE TAKES THE MASK OFF AT HALF HEALTH.** A boss with one move set is solved
+once. Halfway through his health he stops, gets a hand under the filter drum
+and pulls it off, and what is under it is not a man's face — so the fight you
+have learned turns out to have been the first half of it. It is an OPENING,
+not a cutscene: he is stopped and his guard is down for a second and a half
+and you keep your hands the whole time, which makes it the prize for getting
+him to half rather than the game stopping the fight to show you something.
+Afterwards `aggr` goes to 2.85, he feints more, he chains further, and his
+voice comes off `throat: 'mask'` — the filter drum was literally in the sound
+— onto the mutants' own wet rasp. His STARTUPS are untouched: the tells are
+what keep him fair and this file has already paid once for making them
+readable.
+
+**AND THE FACE UNDER IT IS PAINTED, NOT MODELLED.** The scan has a whole head
+under the mask and it is a plain bald man, which is the least frightening
+thing that could be there. The answer is the one this file gives about the
+mutants' occlusion and the pavilion's lamps: DO IT IN THE MAP. The head's uv
+island is rasterised once (`headTexels`) so every texel knows the point on
+the skull it belongs to, and the mutation is then painted in THREE
+DIMENSIONS — sockets where the eyes actually are, a split down the line from
+his left temple to his jaw, the blue tracking up out of his collar — rather
+than smeared over a rectangle of atlas. He is BLUE, not the pack's red: the
+walk is an hour of blue blood in a crab and a syringe and a jar, and what has
+got into him is the same colour as what is in the jar. Five things, and four
+of them were got wrong first:
+
+- **What counts as the head is a PLACE, not a bone weight.** Selecting the
+  island by the head bone's skinning left a dome-shaped hole through the
+  middle of the face — the triangles round the nose and mouth are weighted
+  mostly to something else on this rig — so that patch kept its original
+  skin while everything round it was painted, and on the model the unpainted
+  patch is the size and shape of a gas mask. A man who has just taken his
+  mask off should not appear to be wearing one. It is `y >= 2.655` for the
+  head and a ramp down the neck, and nothing can fall through a gap in
+  somebody else's weights.
+- **A gradient over a face reads as a REGION.** The second pass drove the
+  corruption off a noise field biased down the face, and it saturated into
+  the same mask-shaped block. What reads as a disease is DISCRETE: six named
+  lesions with a raw centre, a livid ring and a dry pale edge, with ordinary
+  skin left in between, their radii chewed by a hash on the direction so
+  none of them is a circle.
+- **Two soft blobs merge into a band.** The eye sockets at radius 0.038 with
+  a ring out to 0.067, on a head 0.32 wide, joined across the bridge of the
+  nose into one dark strip over the whole face — a third way of arriving at
+  the same mask. Tight, or nothing.
+- **The eyes are their own mesh, and they are what you actually see.** At
+  the range this fight is fought at — his reach is under two metres — his
+  face is forty pixels through the retro downscale and every scar on it is
+  one pixel. What survives is the HEAD GOING COLD against a body that is
+  still warm, and blind eyes. `Object_7` gets its own material, no map, and
+  **a blind eye is DIM, not lit**: the first milky white had a real emissive
+  under it and came out as two glowing slits, which is a cataract drawn as a
+  headlamp. A clouded eye is a surface that has stopped being wet.
+- **And it is painted when the FIGHT starts, not when he pulls the mask
+  off.** Rasterising and painting is sixty milliseconds: nothing at all as
+  the dialogue closes and he turns round, a dropped frame in the middle of
+  an exchange. Same rule as the drain, the bunker and the lens spatter.
+
+**AND THE MEASURING INSTRUMENT IS A RENDER OF THE ATLAS.** Three passes were
+spent guessing why a mask-shaped block kept appearing on his face. What
+settled it in one look was drawing the head's uv rectangle of the texture
+into a canvas over the page and screenshotting it — first the original, then
+the painted one, then the COVERAGE MASK as a black-and-white image, which is
+where the hole showed up. If a painted map is wrong, look at the map.
+
+**A DIRECTIONAL STEP, ON SPACE.** Before it the whole answer to a swing was
+block, parry or walk backwards — three things, all of them facing him, and
+the walk backwards is not really one, so every exchange had a single correct
+input. The step is what turns that into "read the tell AND choose where to
+be": his lunge is stepped and his side swing is parried, and neither is the
+other's answer any more.
+
+- **It takes jump's place while a fight is live, and only then.** Space is
+  the only key the left thumb can reach with four fingers locked on WASD and
+  the pinky on shift, and in a fight every one of those is committed; and
+  jump is worthless in the one room where the step matters, which is a flat
+  steel box. `inCombat()` is deliberately narrow — a woken thing inside ten
+  metres — or a shovel in your hand would cost you jump for a kilometre of
+  walking.
+- **No input is a BACKSTEP.** A man with nothing pressed who hits the button
+  wants to be somewhere that is not here, and back is the only direction
+  that is true of whatever is coming.
+- **The step owns the velocity while it runs**, so nothing held on WASD can
+  steer it half way through — a step you can turn mid-flight is a sprint. It
+  is fast at the front and eases out at the back, and it goes through every
+  clamp exactly like a walk, so a step into a wall stops at the wall.
+  Measured: 2.0 m in 0.30 s against 1.0 m in 0.5 s of walking.
+- **The near miss is the feedback.** I-frames alone are silence — the blow
+  simply does not arrive and the player cannot tell a dodge from a miss — so
+  a blow that goes through you inside the window is HEARD going past, low
+  and panned off to one side, with a beat of hitstop and a pull on the lens.
+  Measured: the window is 0.185 s and a blow at 0.200 lands.
+- **It comes out of the same bar as a block and a sprint**, so a fight you
+  spend rolling out of is a fight you cannot then back out of; and there is
+  a cooldown, because a step you can mash is a step that never has to be
+  timed. That is the parry's own argument.
+
 **A ROOM YOU CAN WRECK IS A ROOM YOU ARE IN.** The bunker had eighteen
 breakables and a coat stand, and all of them were small: you could scatter
 the scenery but you could not change the SHAPE of the fight. The work table

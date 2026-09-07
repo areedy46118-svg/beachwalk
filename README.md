@@ -21,7 +21,7 @@ Then open <http://localhost:4173> and click to begin. Any static server works
 | `W` `A` `S` `D` | Walk |
 | `Shift` | Run (≈5 s of stamina) |
 | `8` | Toggle the walk-speed setting between 14x and 1.4x — it drives the slider in the menu, and never persists |
-| `Space` | Jump |
+| `Space` | Jump &mdash; a directional step while a fight is live |
 | Mouse | Look (pointer lock; drag-to-look fallback if it's blocked) |
 | Click / `E` / `F` | Grab a physics object · take an item · dig (with the shovel) |
 | Click (while carrying) | Throw the held object — it's a toggle, no hold |
@@ -68,7 +68,8 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - **Run + stamina** — hold `Shift` to sprint; `RUN_SECONDS` (≈5 s) of stamina
   drains, then you're winded until it recovers. A thin bar shows near the
   crosshair. `RUN_SPEED` is only ~40 % above the walk.
-- **Jump** — `Space`, a short hop with real vertical physics.
+- **Jump** — `Space`, a short hop with real vertical physics. In a fight the
+  same key is a directional step instead; see **The step** below.
 - **Physics objects** — driftwood, a pail, a glass float, a stone, a can.
   Click to grab & carry (HL2 / Amnesia style), click again to throw, `G` to
   drop. A tiny custom rigid-body sim (gravity, ground bounce/friction, walls).
@@ -360,6 +361,32 @@ for it. His recoveries differ by swing — the quick side swing barely leaves
 him open, the held overhead and the lunge leave him open several times
 longer — so which one to answer is a thing you learn. The wind bar flashes
 on every block, so the third of it each one costs is a thing you watch go.
+
+### The camera on the tripod
+
+The scan's own camera, standing where it always stood — and it comes apart
+into what it is actually made of: the body, the lens barrel, the film
+magazine, the head, and the three legs, each one the scan's own geometry
+rather than a stand-in. Hit it, throw something at it, put a body through it
+or just walk into it, and it goes over. It is not a wall: you shoulder
+through a tripod, you do not stop at one.
+
+### He takes the mask off
+
+At half his health the Blue Blood Dealer stops, gets a hand under the filter
+drum and pulls the mask off his face. It costs him — he is stopped and open
+for a second and a half, and it is the biggest window in the fight — and
+after it he is faster, feints more and chains further. His voice changes with
+it: everything he has said so far has been through a drum of charcoal.
+
+### The step
+
+**Space** is a directional step while a fight is live, and jump everywhere
+else. It goes where you are holding — back if you are holding nothing — and
+for the first fraction of it nothing can touch you; a blow that goes through
+you in that window is heard going past your ear. It costs a chunk of the same
+bar you block and sprint on, and it has a short cooldown, so it is a thing
+you time rather than a thing you hold.
 
 ### Everything sounds like what it is
 
