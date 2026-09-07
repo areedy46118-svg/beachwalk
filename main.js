@@ -19698,6 +19698,33 @@ function smashWorkTable(speed, dirX, dirZ) {
  * open on the way down and the shovel is out of it and lying on the floor
  * before the noise has finished. This is the point of putting it there —
  * you can find the tool by tidying the room up with a corpse. */
+/* Somewhere in the room, on the floor, as near as possible to where the
+ * break threw it. The room's own walk grid already knows what is furniture
+ * and the room box already knows where the walls are; this only has to ask
+ * them in the right order — the wanted heading at the wanted distance, then
+ * the same distance either side of it, then closer in. */
+function spillSpot(p, a0) {
+  const g = bunkerHome.group, S = g.userData.bunker;
+  const R = S && S.nav && S.nav.room;
+  const M = 0.30;                       // clear of the wall by more than the tool is long
+  const at = (a, r) => ({ x: p.x + Math.sin(a) * r, z: p.z + Math.cos(a) * r, a });
+  const ok = (q) => {
+    if (!R) return true;
+    const lx = q.x - g.position.x, lz = q.z - g.position.z;
+    if (lx < R.x0 + M || lx > R.x1 - M || lz < R.z0 + M || lz > R.z1 - M) return false;
+    return !S.blocked(lx, lz, 0.26);
+  };
+  for (const r of [1.15, 0.95, 1.35, 0.75, 0.55]) {
+    for (let i = 0; i < 24; i++) {
+      // out from the wanted heading, alternating sides, so the nearest
+      // legal answer to what the break asked for is the one that wins
+      const step = Math.ceil(i / 2) * 0.32 * (i % 2 ? 1 : -1);
+      const q = at(a0 + step, r);
+      if (ok(q)) return q;
+    }
+  }
+  return at(a0, 0.5);                   // nowhere at all: at its own feet
+}
 function spillMilCrate(dx, dz, kick) {
   if (!milCrate) return;
   milCrate.updateMatrixWorld(true);
@@ -19708,9 +19735,19 @@ function spillMilCrate(dx, dz, kick) {
   if (milCrate.userData.lid) milCrate.userData.lid.rotation.x = 1.92;
   if (!taken && militaryWorld.parent === milCrate) {
     milCrate.remove(militaryWorld);
-    const a = Math.atan2(dx, dz) + 0.7 + (Math.random() - 0.5) * 0.6;
-    militaryWorld.position.set(p.x + Math.sin(a) * (0.9 + Math.random() * 0.5), gy + 0.05, p.z + Math.cos(a) * (0.9 + Math.random() * 0.5));
-    militaryWorld.rotation.set(-Math.PI / 2, 0, a + 0.5);      // flat on the floor, the way it lay on the sand
+    /* AND IT MUST LAND IN THE ROOM. The case stands 0.89 m from the +x wall
+     * and the spill threw the tool 0.9 to 1.4 m down a fan: measured over
+     * four hundred spills, MORE THAN A QUARTER of them put the prize
+     * outside the room — through forty centimetres of concrete, on the sand
+     * over the roof, gone — and a third of the rest put it inside the
+     * furniture. The direction the break threw it is still what is asked
+     * for first; it is simply not the last word. `spillSpot` walks out from
+     * that heading, widening, and takes the first place that is inside the
+     * walls and on floor a body could stand on. */
+    const a0 = Math.atan2(dx, dz) + 0.7 + (Math.random() - 0.5) * 0.6;
+    const spot = spillSpot(p, a0);
+    militaryWorld.position.set(spot.x, gy + 0.05, spot.z);
+    militaryWorld.rotation.set(-Math.PI / 2, 0, spot.a + 0.5);   // flat on the floor, the way it lay on the sand
     militaryWorld.visible = true;
     scene.add(militaryWorld);
     /* AND IT MUST NOT BE LOST IN THE WRECKAGE. A dark olive scan lying
@@ -19897,13 +19934,86 @@ function nearestDonor(D, x, y, z) {
   }
   return best;
 }
-/* THE SKIN MATCH. Rasterise the head's uv island once so every texel knows
- * the point on the head it belongs to, take the bust's own mean colour in
- * bands of height, and lift each texel by the gain that puts that band's
- * mean on the character's. */
-function dressBustSkin(mesh) {
+/* THE SKIN MATCH, AND IT IS A STATISTICS PROBLEM, NOT A TINT ONE. Measured
+ * off the two textures: his chest averages luminance 88 with a standard
+ * deviation of 12; the bust's face averages 120 with a deviation of 40. So
+ * it is a third too bright and carries THREE TIMES the contrast of a game
+ * skin — because it is a photograph with its lighting baked into it, and
+ * his is an albedo with a normal map to do the shading. That is the whole
+ * of "too bright and stitched on", and no gain or material colour fixes it,
+ * because the fault is the SPREAD and not the level.
+ *
+ * The hue turns out not to be the problem at all: normalised by luminance
+ * his skin is (1.235, 0.915, 0.819) and the bust's face (1.245, 0.905,
+ * 0.845), which is the same colour of man. So the correction is: take the
+ * bust's luminance, express it as a number of deviations from its own local
+ * mean, CRUSH that to something near his spread, and put it back at his
+ * level in his colour — keeping a quarter of the bust's own chroma so the
+ * lips and the brow do not come out monochrome. Everything the scan knows
+ * about the shape of the head survives; everything it knows about the lamp
+ * that lit it does not.
+ *
+ * The local mean is per band of height AND per side, because the bust was
+ * scanned from the front: its back averages 25 against its face's 120, and
+ * one mean over both lifts neither correctly — that is what made the crown
+ * chalk white and the back of the head a dark cap. */
+/* HIS OWN SPREAD IS 12.2 AND THIS HEAD NEEDS MORE THAN THAT, because his
+ * texture has a NORMAL MAP under it doing the shading and this one has
+ * nothing: crushed all the way to his number the brow, the sockets and the
+ * mouth went flat and he came out a mannequin. 24 keeps the face readable
+ * and is still nowhere near the photograph's 40. */
+const HEAD_SD = 24;
+const HEAD_CHROMA = 0.35;  // how much of the bust's own colour survives the recolour
+function charSkinStats(body) {
+  const map = body.material.map;
+  if (!map || !map.image) return null;
+  const img = map.image, W = img.width, H = img.height;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(img, 0, 0, W, H);
+  const D = g.getImageData(0, 0, W, H).data;
+  const geo = body.geometry, idx = geo.index, P = geo.attributes.position, UV = geo.attributes.uv;
+  const L = [], RGB = [];
+  const n = idx ? idx.count : P.count;
+  for (let t = 0; t < n; t += 3) {
+    let ax = 0, ay = 0;
+    for (let k = 0; k < 3; k++) { const i = idx ? idx.getX(t + k) : t + k; ax += P.getX(i) / 3; ay += P.getY(i) / 3; }
+    // his chest, shoulders and upper arms: the biggest stretch of plain skin on him
+    if (ay < 1.95 || ay > 2.55 || Math.abs(ax) > 0.55) continue;
+    for (let k = 0; k < 3; k++) {
+      const i = idx ? idx.getX(t + k) : t + k;
+      const px = Math.max(0, Math.min(W - 1, Math.floor(UV.getX(i) * W)));
+      const py = Math.max(0, Math.min(H - 1, Math.floor(UV.getY(i) * H)));
+      const o = (py * W + px) * 4;
+      if (D[o + 3] < 200) continue;
+      L.push(D[o] * 0.30 + D[o + 1] * 0.59 + D[o + 2] * 0.11);
+      RGB.push(D[o], D[o + 1], D[o + 2]);
+    }
+  }
+  if (L.length < 200) return null;
+  const avg = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+  let m = avg(L), sd = Math.sqrt(avg(L.map((v) => (v - m) * (v - m))));
+  // ONE ROBUSTNESS PASS: his tattoos are not his skin, and they drag both
+  const keep = [];
+  for (let i = 0; i < L.length; i++) if (Math.abs(L[i] - m) < 1.4 * sd) keep.push(i);
+  const L2 = keep.map((i) => L[i]);
+  m = avg(L2); sd = Math.sqrt(avg(L2.map((v) => (v - m) * (v - m))));
+  const r = avg(keep.map((i) => RGB[i * 3])), g2 = avg(keep.map((i) => RGB[i * 3 + 1])), b2 = avg(keep.map((i) => RGB[i * 3 + 2]));
+  return { mean: m, sd, ratio: [r / m, g2 / m, b2 / m] };
+}
+function dressBustSkin(mesh, body) {
   const src = mesh.material.map;
   if (!src || !src.image) return null;
+  /* AND THE EYEBALLS ARE NOT SKIN. They are their own mesh in this scan and
+   * they went through the skin match with everything else, which normalised
+   * an iris and a sclera onto the mean of a cheek and left him with two
+   * blank pale discs. A normal man has normal eyes: they keep their own
+   * texture and only come down to the level of the room. */
+  const pb = mesh.geometry.attributes.position;
+  let y0 = Infinity, y1 = -Infinity;
+  for (let i = 0; i < pb.count; i++) { const y = pb.getY(i); if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (y1 - y0 < 0.12) return null;
+  const skin = charSkinStats(body) || { mean: 88, sd: 12, ratio: [1.235, 0.915, 0.819] };
   const W = src.image.width, H = src.image.height;
   const geo = mesh.geometry, idx = geo.index;
   const pos = geo.attributes.position, uv = geo.attributes.uv;
@@ -19939,67 +20049,53 @@ function dressBustSkin(mesh) {
       COV[o] = 1;
     }
   }
-  /* THE BAND HAS TO KNOW FRONT FROM BACK. A gain worked out per height alone
-   * takes the average of a lit face and an unphotographed back of a skull in
-   * the same band and lifts neither correctly — the back of his head came
-   * out a dark brown cap on a pale man. The bust was scanned from the front,
-   * so its back is nearly black and needs three times the lift its face
-   * does; they are separate buckets. */
-  const BAND = 0.02, sum = new Map();
-  const bucket = (i) => `${Math.round(Y[i] / BAND)}:${Z[i] > -0.02 ? 0 : 1}`;
+  // the bust's own mean and spread, per band of height and per side
+  const BAND = 0.025, acc = new Map();
+  const key = (i) => `${Math.round(Y[i] / BAND)}:${Z[i] > -0.02 ? 0 : 1}`;
+  let hm = 0, hn = 0;
   for (let i = 0; i < W * H; i++) {
     if (!COV[i]) continue;
-    const k = bucket(i);
-    let e = sum.get(k); if (!e) { e = [0, 0, 0, 0]; sum.set(k, e); }
-    e[0] += D[i * 4]; e[1] += D[i * 4 + 1]; e[2] += D[i * 4 + 2]; e[3]++;
+    const L = D[i * 4] * 0.30 + D[i * 4 + 1] * 0.59 + D[i * 4 + 2] * 0.11;
+    const k = key(i);
+    let e = acc.get(k); if (!e) { e = [0, 0, 0]; acc.set(k, e); }
+    e[0] += L; e[1] += L * L; e[2]++;
+    hm += L; hn++;
   }
-  const mean = new Map();
-  for (const [k, e] of sum) if (e[3] > 24) mean.set(k, [e[0] / e[3], e[1] / e[3], e[2] / e[3]]);
-  /* THE TARGET. His own skin at the neck, and the same skin lifted by a
-   * quarter at the brow — which is what a face does above a throat, and is
-   * measured on him rather than chosen: his chest is brighter than the
-   * shadow under his jaw by about that much. */
-  const target = (y) => {
-    const t = Math.max(0, Math.min(1, (y - 2.62) / 0.20));
-    const k = 1 + 0.26 * t * t * (3 - 2 * t);
-    return [CHAR_SKIN[0] * k, CHAR_SKIN[1] * k, CHAR_SKIN[2] * k];
+  hm = hn ? hm / hn : 60;
+  const stat = new Map();
+  for (const [k, e] of acc) {
+    if (e[2] < 24) continue;
+    const m = e[0] / e[2];
+    stat.set(k, [m, Math.sqrt(Math.max(1, e[1] / e[2] - m * m))]);
+  }
+  let hsd = 0, hc = 0;
+  for (const [, v] of stat) { hsd += (v[0] - hm) * (v[0] - hm); hc++; }
+  hsd = Math.sqrt(hc ? hsd / hc : 1) || 1;
+  const near = (k0, side) => {
+    let v = stat.get(`${k0}:${side}`);
+    for (let r = 1; !v && r < 12; r++) v = stat.get(`${k0 - r}:${side}`) || stat.get(`${k0 + r}:${side}`);
+    for (let r = 0; !v && r < 12; r++) v = stat.get(`${k0 - r}:${1 - side}`) || stat.get(`${k0 + r}:${1 - side}`);
+    return v || [hm, 20];
   };
-  const gainAt = (y, side) => {
-    const k0 = Math.round(y / BAND);
-    let m = mean.get(`${k0}:${side}`);
-    for (let r = 1; !m && r < 10; r++) m = mean.get(`${k0 - r}:${side}`) || mean.get(`${k0 + r}:${side}`);
-    for (let r = 0; !m && r < 10; r++) m = mean.get(`${k0 - r}:${1 - side}`) || mean.get(`${k0 + r}:${1 - side}`);
-    if (!m) return [1, 1, 1];
-    // the back of a bald head is its own flat tone, a little under the face
-    const tg = target(y).map((v) => v * (side ? 0.88 : 1));
-    return [
-      Math.min(5.5, tg[0] / Math.max(4, m[0])),
-      Math.min(5.5, tg[1] / Math.max(4, m[1])),
-      Math.min(5.5, tg[2] / Math.max(4, m[2])),
-    ];
-  };
-  const gcache = new Map();
+  const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
   for (let i = 0; i < W * H; i++) {
     if (!COV[i]) continue;
-    const k = bucket(i);
-    let gn = gcache.get(k); if (!gn) { gn = gainAt(Y[i], Z[i] > -0.02 ? 0 : 1); gcache.set(k, gn); }
     const o = i * 4;
-    D[o] = Math.min(255, D[o] * gn[0]);
-    D[o + 1] = Math.min(255, D[o + 1] * gn[1]);
-    D[o + 2] = Math.min(255, D[o + 2] * gn[2]);
-    /* AND HE HAS STILL GONE WRONG. The bust is a man's head and the point of
-     * taking the mask off is that what is under it is not one any more, so
-     * the same blue that is in the jar and in the crab goes up his neck out
-     * of his collar — strongest where it came from, gone by the cheekbone —
-     * with the skin cooling and losing its colour as it climbs. */
-    const yy = Y[i];
-    const rot = Math.max(0, Math.min(1, (2.80 - yy) / 0.20));
-    if (rot > 0.001) {
-      const lum = D[o] * 0.30 + D[o + 1] * 0.59 + D[o + 2] * 0.11;
-      const kk = 0.42 * rot;
-      D[o] += (lum * 0.80 - D[o]) * kk;
-      D[o + 1] += (lum * 0.86 - D[o + 1]) * kk;
-      D[o + 2] += (lum * 1.02 - D[o + 2]) * kk;
+    const L = D[o] * 0.30 + D[o + 1] * 0.59 + D[o + 2] * 0.11;
+    const st = near(Math.round(Y[i] / BAND), Z[i] > -0.02 ? 0 : 1);
+    // how many deviations from its own band this texel is, crushed to his spread
+    const nz = clamp((L - st[0]) / Math.max(6, st[1]), -2.5, 2.5);
+    // and a LITTLE of the band's own place in the head, so the underside of a
+    // jaw is still darker than a cheekbone — but a twelfth of what it was,
+    // because the game's own light is what should be shading this head
+    const dev = clamp((st[0] - hm) / hsd, -2, 2) * 0.06;
+    const L2 = Math.max(4, skin.mean * (1 + dev) + nz * HEAD_SD);
+    // his colour, with a quarter of the bust's own kept so the lips and the
+    // brow do not come out as one flat tone
+    const inv = 1 / Math.max(8, L);
+    for (let k = 0; k < 3; k++) {
+      const rc = skin.ratio[k], rb = D[o + k] * inv;
+      D[o + k] = Math.min(255, L2 * (rc * (1 - HEAD_CHROMA) + rb * HEAD_CHROMA));
     }
   }
   g.putImageData(img, 0, 0);
@@ -20040,11 +20136,14 @@ function buildBustHead(u) {
     geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
     geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
     geo.computeBoundingSphere();
-    const dressed = dressBustSkin(o);
+    const dressed = dressBustSkin(o, body);
+    const eyes = !dressed;                       // the eyeball mesh keeps its own map
+    const map = dressed || o.material.map;
     const mat = new THREE.MeshStandardMaterial({
-      map: dressed || o.material.map, roughness: 0.93, metalness: 0,
-      emissive: new THREE.Color(0xffffff), emissiveMap: dressed || o.material.map,
-      emissiveIntensity: 0.045,
+      map, roughness: eyes ? 0.42 : 0.94, metalness: 0,
+      color: eyes ? new THREE.Color(0x9a9a9a) : new THREE.Color(0xffffff),
+      emissive: new THREE.Color(0xffffff), emissiveMap: map,
+      emissiveIntensity: eyes ? 0.03 : 0.045,
     });
     const sm = new THREE.SkinnedMesh(geo, mat);
     sm.name = 'bustHead';
@@ -21388,7 +21487,7 @@ window.__bw = {
   get windT() { return windT; }, get windFull() { return windFull; }, WIND_FULL,
   enterBunker, leaveBunker, startDealerFight, startDealerPickup, get dealer() { return dealer; }, aimBar,
   smashCoatStand, updateCoatStand, get coatStand() { return coatStand; }, get coatBroken() { return coatBroken; },
-  smashTripodCam, get tripodCam() { return tripodCam; }, get tripodBroken() { return tripodBroken; },
+  smashTripodCam, get tripodCam() { return tripodCam; }, get tripodBroken() { return tripodBroken; }, spillSpot,
   checkUnmask, get unmasked() { return unmasked; }, get unmaskT() { return unmaskT; }, get dealerRaged() { return dealerRaged; },
   startStep, inCombat, get stepT() { return stepT; }, get stepCool() { return stepCool; },
   katanaItem, katModel, katanaVM, updateDealer, sfxDig, restRot, slashRot, updateViewmodel, updateTrail,

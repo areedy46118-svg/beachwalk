@@ -2552,17 +2552,41 @@ first are the interesting ones:
   cannot shear when he turns to look at you. Through a 5 cm grid, because
   seven thousand vertices against four and a half thousand donors is
   thirty-five million distance tests and a visible hitch.
-- **AND THE SKIN IS MATCHED PER TEXEL.** Measured, his neck and chest average
-  (94, 68, 61), the bust's neck averages (53, 40, 36) and its face (150, 109,
-  97) — a head half as bright as the body where they meet and half again as
-  bright at the brow. **One material colour cannot fix that**: the multiplier
-  that lifts the neck blows the face past white. It is a per-texel GAIN
-  toward a target that runs with height — his own skin at the neck, the same
-  skin lifted a quarter at the brow, which is what a face does above a
-  throat — so every fold and pore of the scan survives it. And **the band has
-  to know front from back**: a gain worked out per height alone averages a
-  lit face and an unphotographed back of a skull together and lifts neither,
-  which is how the back of his head came out a dark brown cap on a pale man.
+- **AND THE SKIN MATCH IS A STATISTICS PROBLEM, NOT A TINT ONE.** Two passes
+  were spent on gains and neither worked, and the measurement says why:
+  his chest averages luminance **88 with a standard deviation of 12**, and
+  the bust's face averages **120 with a deviation of 40**. A third too
+  bright, and THREE TIMES the contrast of a game skin — because it is a
+  photograph with its lighting baked in and his is an albedo with a normal
+  map to do the shading. The fault is the SPREAD, and no gain or material
+  colour can touch that: the first pass's per-band gain lifted the crown to
+  chalk white and left the head a pale thing pasted onto a tan body, which
+  is exactly what the owner called it. The hue was never the problem —
+  normalised by luminance his skin is (1.235, 0.915, 0.819) and the bust's
+  face (1.245, 0.905, 0.845), the same colour of man. So each texel's
+  luminance is expressed as a NUMBER OF DEVIATIONS from its own local mean,
+  crushed to something near his spread, and put back at his level in his
+  colour, keeping a third of the bust's own chroma so the lips and the brow
+  do not come out as one flat tone. Everything the scan knows about the
+  shape of the head survives; everything it knows about the lamp that lit it
+  does not. **Measured on the screen afterwards** — which is the only test
+  that counts — his forehead renders (92, 61, 49) against his chest's
+  (92, 63, 53).
+- **AND THE TARGET SPREAD IS NOT HIS OWN NUMBER.** Crushed all the way to
+  his 12.2 the brow, the sockets and the mouth went flat and he came out a
+  mannequin — his texture has a normal map under it and this one has
+  nothing. 24 keeps the face readable and is still nowhere near the
+  photograph's 40.
+- **THE BAND HAS TO KNOW FRONT FROM BACK.** The bust was scanned from the
+  front: its back averages 25 against its face's 120, and one mean over both
+  lifts neither correctly — that is what made the back of his head a dark
+  brown cap.
+- **AND THE EYEBALLS ARE NOT SKIN.** They are their own mesh and they went
+  through the skin match with everything else, which normalised an iris and
+  a sclera onto the mean of a cheek and left him with two blank pale discs.
+  A normal man has normal eyes: the eye mesh is recognised by its own height
+  (under 12 cm tall), keeps its own map, and is only brought down to the
+  level of the room.
 - **AND HE IS NEVER HEADLESS.** The carve is the irreversible half and the
   new head arrives over the network, so the two are tied together: nothing
   comes off him until there is something to put on. The GLB starts loading
@@ -2671,6 +2695,19 @@ place: `updateGibs` rests every gib with its rotation zeroed, which lays the
 planks and rails flat because they are built along X and Z, and stands
 anything built along Y bolt upright on the floor. A leg gets its geometry
 turned onto X with the quarter turn put back on the mesh.
+
+**AND IT MUST LAND IN THE ROOM.** The equipment case stands 0.89 m from the
++x wall and the spill threw the Military Shovel 0.9 to 1.4 m down a fan of
+headings: measured over four hundred spills, **more than a quarter of them
+put the prize outside the room** — through forty centimetres of concrete, out
+on the sand over the roof, gone for the rest of the game — and a third of the
+rest put it inside the furniture. The heading the break threw it is still
+what is asked for first; it is simply no longer the last word. `spillSpot`
+walks out from that heading, alternating sides and then closing in, and takes
+the first place that is inside the walls and on floor a body could stand on —
+the room's own walk grid already knows what is furniture and the room box
+already knows where the walls are, so this only has to ask them in the right
+order. Measured after: 0 of 500 outside, 0 of 500 in furniture.
 
 **AND THE PRIZE MUST NOT BE LOST IN THE WRECKAGE.** A dark olive scan lying
 among a dozen planks on a steel floor is invisible. When the case spills, the
