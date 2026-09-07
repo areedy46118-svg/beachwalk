@@ -4132,7 +4132,6 @@ function attackAction() {                        // left mouse
   if (peeking) { endPeek(); return; }
   if (frozen()) return;
   if (held) { throwHeld(); return; }
-  if (riposteT >= 0) return;                    // the riposte has the hands
   if (equipped && equipped.onDig) {
     /* A CLICK IS NEVER BANKED. Three clicks used to be three swings — the
      * third fired on its own after the recovery, from a press made half a
@@ -6708,69 +6707,7 @@ const KAT_STAB = [[-0.435, 0.060, 0.45, -0.284, 0.061, 0.067],      // hauled ba
  * it lands, the point finishing on the crosshair. And the tsuka is kept half
  * a metre out: a handle that comes at your face is not a wind-up, it is a
  * camera clip. */
-const katStabbing = () => !!(equipped === katanaItem && (digOverhead || (winding && windOverhead) || riposteT >= 0));
-/* ---- THE RIPOSTE ----------------------------------------------------------
- * A parry bought a stun and the next blow counted double, and that was a
- * number. What Sekiro and Lies of P have, and this did not, is a BEAT: the
- * moment where the fight stops being an exchange and becomes a thing you
- * did to him. So the blow that lands on a stunned man is followed, without
- * a press, by a second one the game throws for you — the blade driven
- * straight into him from wherever the first cut left it, held there while
- * the world stops, and ripped back out. It is quick (a third of a second
- * to the drive), it is the worst thing that happens to him in the fight
- * (three more off the bar and a shove), and it cannot be interrupted or
- * spammed: it plays once per parry and takes the hands until it is done. */
-const RIP_IN = 0.11, RIP_HOLD = 0.30, RIP_OUT = 0.55;
-let riposteT = -1, riposteHit = false, riposteTarget = null;
-const _riFrom = [0, 0, 0, 0, 0, 0], _riTo = [0, 0, 0, 0, 0, 0];
-function startRiposte(u) {
-  if (riposteT >= 0) return;
-  riposteTarget = u; riposteT = 0; riposteHit = false;
-  cancelSwing();
-  if (winding) { winding = false; windT = 0; windFull = false; }
-  for (let i = 0; i < 6; i++) _riFrom[i] = _pose[i];
-  if (equipped === katanaItem) { for (let i = 0; i < 6; i++) _riTo[i] = KAT_STAB[1][i]; _riTo[4] -= 0.22; }
-  else { for (let i = 0; i < 6; i++) _riTo[i] = _riFrom[i]; _riTo[0] -= 0.30; _riTo[4] -= 0.55; _riTo[5] *= 0.4; _riTo[1] -= 0.08; }
-}
-function riposteBeat() {
-  const u = riposteTarget; riposteHit = true;
-  hitstop = Math.max(hitstop, 0.18);
-  addTrauma(0.95); fovKick = Math.max(fovKick, 14); slamDip = Math.max(slamDip, 0.12);
-  vmImpulse(-1.6); guardShockV += 6.5;
-  sfxKillThud(1.35);
-  playSample('fleshHit', 1.0, 0.04, 0.72);
-  if (isBlade()) playSample('katHit', 1.0, 0.04, 0.84);
-  if (!u || !u.st.alive) return;
-  camera.getWorldDirection(_hitC);
-  const hx = u.g.position.x, hy = u.g.position.y + u.kind.h * 0.55, hz = u.g.position.z;
-  sprayBlood(hx, hy, hz, _hitC.x, _hitC.z, 30, 1.9);
-  sprayBlood(hx, hy, hz, -_hitC.x, -_hitC.z, 12, 1.1);   // and back at you
-  bleedMutant(u, 26, 1.5);
-  stampBlood(hx, hz, 0.9, u.g.position.y);
-  flashMats(u.g);
-  const before = u.st.hp;
-  u.st.hp -= 3;
-  if (u.st.hp <= 0) { u.st.killP = 1; u.st.killOh = false; u.st.killGore = toolGore(); u.st.hpBefore = before; killMutant(u); return; }
-  // it leaves him rocked and open, and puts him back a step
-  u.st.stun = Math.max(u.st.stun, 0.85);
-  u.st.recoil = Math.max(u.st.recoil || 0, MUT_RECOIL * 1.8);
-  u.g.position.x += _hitC.x * 0.55; u.g.position.z += _hitC.z * 0.55;
-  if (u.kind.human) clampDealer(0);
-}
-function updateRiposte(dt) {
-  if (riposteT < 0) return false;
-  riposteT += dt;
-  if (riposteT < RIP_IN) poseMix(_pose, _riFrom, _riTo, easeInCubic(riposteT / RIP_IN));
-  else if (riposteT < RIP_HOLD) {
-    if (!riposteHit) riposteBeat();
-    for (let i = 0; i < 6; i++) _pose[i] = _riTo[i];
-    const tr = Math.sin(riposteT * 70) * 0.012;               // the strain of holding it in
-    _pose[0] += tr; _pose[3] += tr * 1.4;
-  } else if (riposteT < RIP_OUT) {
-    poseMix(_pose, _riTo, REST_POSE, easeOutCubic((riposteT - RIP_HOLD) / (RIP_OUT - RIP_HOLD)));
-  } else { riposteT = -1; riposteTarget = null; for (let i = 0; i < 6; i++) _pose[i] = 0; }
-  return true;
-}
+const katStabbing = () => !!(equipped === katanaItem && (digOverhead || (winding && windOverhead)));
 function katStab(out, i, P) {
   const q = KAT_STAB[i];
   for (let k = 0; k < 6; k++) out[k] = q[k];
@@ -6980,7 +6917,7 @@ function cancelSwing() {
 const WIND_IN = 0.10;                    // seconds the haul-back blends in from wherever the hand was
 const _windFrom = [0, 0, 0, 0, 0, 0];
 function startWind() {
-  if (blocking || riposteT >= 0) return; // no swing comes out of a guard, or out of a riposte
+  if (blocking) return;                 // no swing comes out of a guard
   if (winding || !equipped || !equipped.onDig || frozen()) return;
   if (digT > 0) { if (!swingLanded()) return; cancelSwing(); }
   for (let i = 0; i < 6; i++) _windFrom[i] = _pose[i];   // the haul leaves from here, not from a snap
@@ -7105,18 +7042,22 @@ function digImpact() {
     const sandHit = digRay.intersectObject(sand, false)[0];
     if (solidHit && (!sandHit || solidHit.distance < sandHit.distance)) {
       const surface = solidHit.surface;
-      hitConnect(P, surface === 'rock' ? 0.85 : surface === 'metal' ? 0.95 : 0.7);
-      // an edge on steel throws them; an edge on wood does not
-      if (surface === 'metal' || (surface === 'rock' && isBlade())) {
+      hitConnect(P, surface === 'rock' ? 0.85 : surface === 'metal' ? 0.95 : surface === 'concrete' ? 0.8 : 0.7);
+      /* An edge on steel throws them; an edge on wood does not; and an edge
+       * dragged across concrete strikes a few off the aggregate in it — a
+       * handful, not the shower a steel plate gives back. */
+      if (surface === 'metal' || ((surface === 'rock' || surface === 'concrete') && isBlade())) {
         guardShockV += 3.2 * (0.5 + P);
-        spawnSparks(surface === 'metal' ? 8 + Math.round(P * 7) : 5, 0.4 + P * 0.5);
+        spawnSparks(surface === 'metal' ? 8 + Math.round(P * 7) : surface === 'concrete' ? 4 : 5, 0.4 + P * 0.5);
       }
       sfxPropHit(surface, 7 + P * 6);
       sfxDigImpact(P * 0.4);
       const pt = solidHit.point;
       // chips the colour of what you hit, thrown back along the normal
       const tint = surface === 'wood' ? [0.30, 0.24, 0.17]
-        : surface === 'metal' ? [0.52, 0.55, 0.60] : [0.42, 0.44, 0.48];
+        : surface === 'metal' ? [0.52, 0.55, 0.60]
+        : surface === 'concrete' ? [0.58, 0.58, 0.56]      // pale dust, not blue stone
+        : [0.42, 0.44, 0.48];
       spawnPuffs(pt.x, pt.z, 9 + Math.round(P * 8), -_pf.x, -_pf.z, pt.y, tint);
       stampScar(solidHit, surface);
       return;
@@ -7158,8 +7099,20 @@ function digImpact() {
  * MARCHED against the same two things the walk itself is clamped by: the
  * room's own box, and the 0.1 m furniture grid. Fifty samples, no geometry
  * touched, and it hits the desks and the console bank as well as the walls.
- * The surface is 'metal' because everything down there is. */
+ *
+ * AND WHAT IT MET IS WHAT YOU HEAR. Every one of those surfaces answered as
+ * 'metal', so a blade laid into forty centimetres of poured concrete rang
+ * like a bolted steel plate and threw sparks off it — the owner's "swinging
+ * on to a material should match the material sound even the bunker walls".
+ * The march knows exactly which face it stopped on, so it says: the walls
+ * and the ceiling are CONCRETE, the floor is the steel deck plate you can
+ * hear yourself walking on, and the one piece of furniture in the room that
+ * is made of timber — the desk, which is also the piece you are most likely
+ * to swing at — answers wood while it is still standing. Everything else in
+ * the grid is the console bank and the steel cupboards, and those are metal
+ * as they always were. */
 const _bhP = new THREE.Vector3(), _bhN = new THREE.Vector3();
+let deskWoodAt = null;                   // set by the desk, thousands of lines below
 function bunkerBladeHit() {
   if (!inBunker) return null;
   const g = inBunker.group, B = g.userData.bunker;
@@ -7168,14 +7121,18 @@ function bunkerBladeHit() {
   for (let t = 0.30; t <= digRay.far; t += step) {
     _bhP.copy(_aimO).addScaledVector(_aimD, t);
     const lx = _bhP.x - g.position.x, lz = _bhP.z - g.position.z, ly = _bhP.y - g.position.y;
-    let n = null;
+    let n = null, surface = 'concrete';
     if (lx < R.x0) n = [1, 0, 0]; else if (lx > R.x1) n = [-1, 0, 0];
     else if (lz < R.z0) n = [0, 0, 1]; else if (lz > R.z1) n = [0, 0, -1];
-    else if (ly < 0) n = [0, 1, 0]; else if (ly > R.h) n = [0, -1, 0];
+    else if (ly < 0) { n = [0, 1, 0]; surface = 'metal'; }        // the deck plate
+    else if (ly > R.h) n = [0, -1, 0];
     // and the furniture, at the heights a body would meet it
-    else if (ly > 0.10 && ly < 1.95 && B.blocked(lx, lz, 0.04)) n = [-_aimD.x, 0, -_aimD.z];
+    else if (ly > 0.10 && ly < 1.95 && B.blocked(lx, lz, 0.04)) {
+      n = [-_aimD.x, 0, -_aimD.z];
+      surface = deskWoodAt && deskWoodAt(lx, ly, lz) ? 'wood' : 'metal';
+    }
     if (!n) continue;
-    return { point: _bhP.clone(), distance: t, surface: 'metal', n: _bhN.set(n[0], n[1], n[2]).normalize().clone() };
+    return { point: _bhP.clone(), distance: t, surface, n: _bhN.set(n[0], n[1], n[2]).normalize().clone() };
   }
   return null;
 }
@@ -7526,8 +7483,6 @@ function updateViewmodel(dt) {
      * it has just left — rather than the one-frame snap it used to be. */
     const wi = Math.min(1, windT / WIND_IN);
     if (wi < 1) poseMix(_pose, _windFrom, _pose, easeOutCubic(wi));
-  } else if (updateRiposte(dt)) {
-    // the hands are the riposte's until it lets them go
   } else if (digT > 0) {
     const P = digPower;
     /* A heavy is slower through the whole move, and slower still to recover —
@@ -7693,7 +7648,7 @@ function updateViewmodel(dt) {
   /* Turn the tool over for an overhead, and back afterwards. Blended rather
    * than snapped, so the change of grip happens while the shovel is going up
    * and is finished by the time it comes down. */
-  const wantOh = (winding && windOverhead) || (digT > 0 && digOverhead) || (riposteT >= 0 && equipped === katanaItem) ? 1 : 0;
+  const wantOh = (winding && windOverhead) || (digT > 0 && digOverhead) ? 1 : 0;
   /* AND THE GRIP COMES HOME WITH THE ARM. It used to turn back to the carry
    * only once the swing had ended — a second motion after the arm had
    * already stopped, which is a twitch. On a blade it starts back over the
@@ -10635,6 +10590,33 @@ function sfxPropHit(surface, speed) {
     rg.gain.exponentialRampToValueAtTime(0.16, t + 0.004);
     rg.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
     ring.connect(rg).connect(out); ring.start(t); ring.stop(t + 0.12);
+  } else if (surface === 'concrete') {
+    /* CONCRETE IS A DEAD MATERIAL, and that is the whole of it: a hard flat
+     * crack with no ring behind it at all, a short low body under the crack
+     * for the mass of the wall, and a hiss of grit and dust coming off the
+     * face afterwards. Stone gets a bright ring because a boulder is one
+     * lump; forty centimetres of poured wall bedded into the earth cannot
+     * ring, and anything that does read as metal — which is what it used to
+     * sound like down here. */
+    const crack = noiseBurst(0.06, (x) => Math.pow(1 - x, 6));
+    const cf = ctx.createBiquadFilter(); cf.type = 'bandpass';
+    cf.frequency.value = 1350 + Math.random() * 700; cf.Q.value = 0.55;
+    const cg = ctx.createGain(); cg.gain.value = 0.55;
+    crack.connect(cf).connect(cg).connect(out); crack.start(t); crack.stop(t + 0.06);
+    // the mass behind it: a thud that dies before it can become a note
+    const body = ctx.createOscillator(); body.type = 'sine';
+    body.frequency.setValueAtTime(190, t);
+    body.frequency.exponentialRampToValueAtTime(74, t + 0.07);
+    const bg = ctx.createGain();
+    bg.gain.setValueAtTime(0.0001, t);
+    bg.gain.exponentialRampToValueAtTime(0.34, t + 0.004);
+    bg.gain.exponentialRampToValueAtTime(0.0001, t + 0.10);
+    body.connect(bg).connect(out); body.start(t); body.stop(t + 0.14);
+    // and the dust and grit off the face
+    const grit = noiseBurst(0.22, (x) => Math.pow(1 - x, 2.2) * (0.5 + 0.5 * Math.random()));
+    const gf = ctx.createBiquadFilter(); gf.type = 'highpass'; gf.frequency.value = 3200;
+    const gg = ctx.createGain(); gg.gain.value = 0.17 + v * 0.10;
+    grit.connect(gf).connect(gg).connect(out); grit.start(t); grit.stop(t + 0.22);
   } else if (surface === 'metal') {
     /* STEEL: the strike is nothing, the RING is everything. A plate hit with
      * an edge gives a hard tick and then sings on three inharmonic partials
@@ -14374,10 +14356,10 @@ const MUT_ATTACKS = {
    * because his blow is tested on the BAR (`dealerBarHit`) and a man with a
    * crowbar reaches two metres, not two and a half; the lunge and the step
    * in the overhand are what close the rest. */
-  dDown:  { wind: 0.72, strike: 0.13, recover: 0.58, hit: 0.370, reach: 1.80, lunge: 0.55, chain: 'dSide',  chainP: 0.48, w: 0.18 },
-  dSide:  { wind: 0.62, strike: 0.11, recover: 0.26, hit: 0.421, reach: 1.75, lunge: 0.30, chain: 'dDown',  chainP: 0.52, w: 0.18 },   // hit measured in the game: the hand is furthest out at 0.375, and back behind him by 0.5
-  dDownM: { wind: 0.70, strike: 0.13, recover: 0.60, hit: 0.278, reach: 1.80, lunge: 0.55, chain: 'dSideM', chainP: 0.42, w: 0.14 },
-  dSideM: { wind: 0.52, strike: 0.11, recover: 0.30, hit: 0.281, reach: 1.75, lunge: 0.30, chain: 'dDown',  chainP: 0.42, w: 0.14 },
+  dDown:  { wind: 0.72, strike: 0.13, recover: 0.50, hit: 0.370, reach: 1.80, lunge: 0.55, chain: 'dSide',  chainP: 0.48, w: 0.18 },
+  dSide:  { wind: 0.62, strike: 0.11, recover: 0.22, hit: 0.421, reach: 1.75, lunge: 0.30, chain: 'dDown',  chainP: 0.52, w: 0.18 },   // hit measured in the game: the hand is furthest out at 0.375, and back behind him by 0.5
+  dDownM: { wind: 0.70, strike: 0.13, recover: 0.52, hit: 0.278, reach: 1.80, lunge: 0.55, chain: 'dSideM', chainP: 0.42, w: 0.14 },
+  dSideM: { wind: 0.52, strike: 0.11, recover: 0.26, hit: 0.281, reach: 1.75, lunge: 0.30, chain: 'dDown',  chainP: 0.42, w: 0.14 },
   // the held one: a full second over his head, so a guard raised on the
   // first beat is a block and not a parry. It is the swing that teaches you
   // to watch the arm instead of counting.
@@ -14396,9 +14378,18 @@ const MUT_ATTACKS = {
    * A second and a half of bar over his head is a long tell, and it should
    * be: it is the slowest thing he throws, the most punishable, and the only
    * one that takes two of your four. */
-  dHold:  { wind: 1.22, strike: 0.13, recover: 1.10, hit: 0.656, reach: 1.95, lunge: 0.40, chain: null,     chainP: 0.00, w: 0.20, dmg: 2 },
+  /* AND A PUNISH WINDOW IS A RATIO, NOT A LENGTH. Which swing to answer is
+   * a thing you learn because his recoveries differ by nearly four to one —
+   * 0.22 s on the quick side swing against 0.82 on this one — and that read
+   * is worth having. But the first pass bought it by making the two slow
+   * ones very long, which is the same as making HIM slow: a recovery is
+   * dead time, so a second and a third of standing there after every held
+   * overhead was two free swings and a boss who felt easier than he did
+   * before the windows were separated. They are pulled back in; the ratio,
+   * which is the part you play against, is untouched. */
+  dHold:  { wind: 1.22, strike: 0.13, recover: 0.82, hit: 0.656, reach: 1.95, lunge: 0.40, chain: null,     chainP: 0.00, w: 0.20, dmg: 2 },
   // and the one that covers the ground you just backed off
-  dLunge: { wind: 0.60, strike: 0.15, recover: 1.30, hit: 0.500, reach: 2.40, lunge: 2.1,  chain: 'dSide',  chainP: 0.30, w: 0.18 },
+  dLunge: { wind: 0.60, strike: 0.15, recover: 0.95, hit: 0.500, reach: 2.40, lunge: 2.1,  chain: 'dSide',  chainP: 0.30, w: 0.18 },
 };
 /* The three of them. `use` is which swings this one has and how often it
  * reaches for each; `windK` scales its startups AND its recoveries together,
@@ -14487,7 +14478,7 @@ const MUT_KINDS = {
            * down where they were only compensating and up where they now
            * mean something: he is FASTER on his feet than you are, his
            * recovery is shorter, and his health is the health of a boss. */
-          h: 2.05, hp: 24, dmg: 1, speedK: 1.30, windK: 0.92, reachK: 1.00, aggr: 2.05,
+          h: 2.05, hp: 24, dmg: 1, speedK: 1.30, windK: 0.92, reachK: 1.00, aggr: 2.20,
           /* AND THE STAGGER IS SHORTER THAN THE BEACH'S. Rocking him is the
            * prize and it still is, but a third of a second of him standing
            * there was two free swings; `recoilK` gives you one. */
@@ -15119,18 +15110,20 @@ function hurtMutant(u, dmg, P = 0) {
      * throws underneath. */
     bossHit(P, true, true);
   }
-  /* THE RIPOSTE. A blow landed on one you have just parried counts DOUBLE.
-   * The parry was already an opening; this makes it the point of the fight —
-   * read the tell, take the stun, wind all the way up, and take half of a
-   * seven-health creature off in one swing. Without it a parry only bought
-   * you time, and time is not a reward. */
+  /* THE RIPOSTE IS A MULTIPLIER, AND THAT IS ALL IT IS AGAIN. A blow landed
+   * on one you have just parried counts DOUBLE — the parry was already an
+   * opening and this is what makes it the point of the fight. An automatic
+   * follow-up drive of the blade was built on top of it and taken back out:
+   * it played itself, it took the hands for half a second in the middle of
+   * an exchange, and three free points off his bar every parry made the one
+   * fight in the game measurably easier. What a parry buys is a swing YOU
+   * throw, worth two. */
   const riposte = u.st.stun > 0;
   if (riposte) {
     dmg *= 2;
     setPrompt('<b>RIPOSTE</b>');
     setTimeout(() => { if (promptHTML.includes('RIPOSTE')) setPrompt(''); }, 700);
     addTrauma(0.3); fovKick = Math.max(fovKick, 5);
-    startRiposte(u);
   }
   const before = u.st.hp;
   u.st.hp -= dmg;
@@ -19044,10 +19037,40 @@ function buildBunkerProps() {
 const TABLE_TOP = 0.835, TABLE_W = 2.10, TABLE_D = 1.34, TABLE_T = 0.06;
 const TABLE_SPOT = [1.78, 3.91];                     // the desk's own centre, room-local
 const DESK_BOX = { x0: 0.62, x1: 2.92, z0: 3.15, z1: 4.66, y0: -0.05, y1: 0.95 };   // what is carved, room-local
-const DESK_UV = { top: [0.362, 0.7593], leg: [0.3721, 0.7128] };   // one texel each of the scan's desk
+/* AND THE WOOD IS THE SCAN'S OWN GRAIN, NOT ONE TEXEL OF IT. The first
+ * rebuild pinned every face to a single texel of the desk's map, which is
+ * exactly the right COLOUR and no wood at all — the owner's words were that
+ * it looked like brown shapes. These are the uv rectangles the desk's own
+ * triangles actually occupy in the scan's atlas, measured off a fresh parse
+ * of the GLB (the live index no longer has them: `carveDesk` dropped them),
+ * and the rebuild PROJECTS into them: the top planks through a plan
+ * projection of the desk's own footprint, so laid side by side they
+ * reassemble the original top texel for texel, and the legs and rails along
+ * their own length so the grain runs down the timber rather than across it.
+ * The aspect settles which way round it goes — the top's rectangle is 1.49
+ * wide against a desk 1.57 wide, so u runs along the length. */
+const DESK_UV = { top: [0.0601, 0.5572, 0.6628, 0.9612], leg: [0.2587, 0.6746, 0.4864, 0.7808] };   // [u0, v0, u1, v1]
+/* Project a box into one of those rectangles: `au`/`av` are which local axis
+ * feeds u and v, offset by where the piece sits and divided by how much of
+ * the rectangle it is entitled to. Done by POSITION rather than through the
+ * box's own uv because a BoxGeometry's six faces each carry their own 0..1
+ * and their own idea of which way is up — a plank whose band came out
+ * mirrored would break the join with the plank beside it. */
+function woodUV(geo, R, au, av, cu, su, cv, sv) {
+  const p = geo.attributes.position, a = geo.attributes.uv;
+  const ax = (i, k) => (k === 0 ? p.getX(i) : k === 1 ? p.getY(i) : p.getZ(i));
+  for (let i = 0; i < p.count; i++) {
+    const fu = THREE.MathUtils.clamp((ax(i, au) + cu) / su + 0.5, 0, 1);
+    const fv = THREE.MathUtils.clamp((ax(i, av) + cv) / sv + 0.5, 0, 1);
+    a.setXY(i, R[0] + fu * (R[2] - R[0]), R[1] + fv * (R[3] - R[1]));
+  }
+  a.needsUpdate = true;
+  return geo;
+}
 const TABLE_WOOD = new THREE.MeshStandardMaterial({ color: 0x6f5334, roughness: 0.94, metalness: 0, flatShading: true, emissive: 0x1a1208 });   // only if the scan never lands
 let workTable = null, tableBroken = false, tableProp = null, deskMat = null;
 const tablePerched = [];                             // what is standing on it
+const deskProps = [];                                // and what the SCAN left standing on it
 function carveDesk(g) {
   const S = g.userData.bunker; if (!S || !S.root) return;
   let tab = null; S.root.traverse((o) => { if (o.isMesh && o.name === 'TableNAblem_WoodNPaper_0') tab = o; });
@@ -19067,6 +19090,30 @@ function carveDesk(g) {
     keep.push(idx.getX(t), idx.getX(t + 1), idx.getX(t + 2));
   }
   geo.setIndex(keep);
+  /* AND WHAT THE SCAN LEFT STANDING ON IT MUST COME DOWN WITH IT. There is
+   * an enamel mug on that desk — its own 320-triangle mesh, not part of the
+   * merged wood — and the first breakable desk took the top out from under
+   * it and left it hanging in the air at 0.856 with nothing beneath it. The
+   * owner saw a mug floating where the table was. Anything of the scan's
+   * whose whole bounding box stands inside the desk's footprint above the
+   * knee is collected here and thrown when the desk goes, measured rather
+   * than named so a second thing up there cannot be missed the same way. */
+  deskProps.length = 0;
+  const _v = new THREE.Vector3();
+  S.root.traverse((o) => {
+    if (!o.isMesh || !o.geometry || !o.geometry.attributes.position || o === tab) return;
+    o.updateMatrixWorld(true);
+    const p = o.geometry.attributes.position;
+    let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+    for (let i = 0; i < p.count; i++) {
+      _v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld).sub(g.position);
+      x0 = Math.min(x0, _v.x); y0 = Math.min(y0, _v.y); z0 = Math.min(z0, _v.z);
+      x1 = Math.max(x1, _v.x); y1 = Math.max(y1, _v.y); z1 = Math.max(z1, _v.z);
+    }
+    const B = DESK_BOX;
+    if (x0 > B.x0 && x1 < B.x1 && z0 > B.z0 && z1 < B.z1 && y0 > 0.70 && y1 < 2.0)
+      deskProps.push({ o, half: Math.max(0.03, (y1 - y0) / 2) });
+  });
 }
 function buildWorkTable(g) {
   if (workTable) return;
@@ -19074,17 +19121,25 @@ function buildWorkTable(g) {
   const t = new THREE.Group();
   t.position.set(g.position.x + TABLE_SPOT[0], g.position.y, g.position.z + TABLE_SPOT[1]);
   const mat = deskMat || TABLE_WOOD;
-  // a box whose every face samples ONE texel: the desk's colour, from the desk's map
-  const pin = (geo, uv) => { const a = geo.attributes.uv; for (let i = 0; i < a.count; i++) a.setXY(i, uv[0], uv[1]); return geo; };
-  const put = (geo, x, y, z, tag, uv) => { const m = new THREE.Mesh(pin(geo, uv), mat); m.position.set(x, y, z); m.userData.part = tag; t.add(m); return m; };
-  // the top: five planks laid across with NO gap, so at rest it is one slab
-  const PL = 5, pw = TABLE_D / PL;
-  for (let i = 0; i < PL; i++) put(new THREE.BoxGeometry(TABLE_W, TABLE_T, pw), 0, TABLE_TOP - TABLE_T / 2, -TABLE_D / 2 + pw * (i + 0.5), 'plank', DESK_UV.top);
-  // four square legs, the darker wood of the scan's own, set in from the corners
+  const put = (geo, x, y, z, tag) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.userData.part = tag; t.add(m); return m; };
+  // the top: five planks laid across with NO gap, so at rest it is one slab —
+  // and each takes the band of the desk's own top that lies where it lies, so
+  // the five of them are the scan's texture put back together
+  const PL = 5, pw = TABLE_D / PL, LEG_H = TABLE_TOP - TABLE_T;
+  for (let i = 0; i < PL; i++) {
+    const z = -TABLE_D / 2 + pw * (i + 0.5);
+    put(woodUV(new THREE.BoxGeometry(TABLE_W, TABLE_T, pw), DESK_UV.top, 0, 2, 0, TABLE_W, z, TABLE_D),
+      0, TABLE_TOP - TABLE_T / 2, z, 'plank');
+  }
+  // four square legs, the darker wood of the scan's own, set in from the
+  // corners, with the grain running DOWN them: u along the leg's own length
   for (const sx of [-1, 1]) for (const sz of [-1, 1])
-    put(new THREE.BoxGeometry(0.09, TABLE_TOP - TABLE_T, 0.09), sx * (TABLE_W / 2 - 0.11), (TABLE_TOP - TABLE_T) / 2, sz * (TABLE_D / 2 - 0.11), 'leg', DESK_UV.leg);
+    put(woodUV(new THREE.BoxGeometry(0.09, LEG_H, 0.09), DESK_UV.leg, 1, 0, 0, LEG_H, 0, 0.09),
+      sx * (TABLE_W / 2 - 0.11), LEG_H / 2, sz * (TABLE_D / 2 - 0.11), 'leg');
   // a rail under the top on each long side, which is what the legs are fixed to
-  for (const sz of [-1, 1]) put(new THREE.BoxGeometry(TABLE_W - 0.24, 0.10, 0.04), 0, TABLE_TOP - TABLE_T - 0.05, sz * (TABLE_D / 2 - 0.13), 'rail', DESK_UV.leg);
+  for (const sz of [-1, 1])
+    put(woodUV(new THREE.BoxGeometry(TABLE_W - 0.24, 0.10, 0.04), DESK_UV.leg, 0, 1, 0, TABLE_W - 0.24, 0, 0.10),
+      0, TABLE_TOP - TABLE_T - 0.05, sz * (TABLE_D / 2 - 0.13), 'rail');
   t.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
   scene.add(t);
   // AND ITS MATRICES NOW, not on the next frame: the prop spots are dropped
@@ -19106,6 +19161,19 @@ function buildWorkTable(g) {
   physProps.push(tableProp);
   return t;
 }
+/* AND A BLADE THAT MEETS IT HEARS TIMBER. The room's march tags what it
+ * stopped on, and the desk is the one wooden thing in a steel and concrete
+ * box; while it is standing, a swing into its cells answers wood. It goes
+ * quiet with the desk — after the break there is nothing there. */
+/* The march's grid is a PLAN — a desk is one solid column from the knee to
+ * the head, which is what the walk needs and is what the blade is being
+ * stopped by — so the whole of that column answers wood while the desk is
+ * standing, not just the slab of it under the top. */
+deskWoodAt = (lx, ly, lz) => {
+  if (!workTable) return false;
+  const B = DESK_BOX;
+  return lx > B.x0 && lx < B.x1 && lz > B.z0 && lz < B.z1;
+};
 /* AND THE FLOOR OPENS WHERE IT STOOD. The walk grid was rasterised from the
  * scan at pack time and it still has the desk in it; without this the
  * wreckage would be a two-metre patch of invisible furniture you and he
@@ -19220,6 +19288,31 @@ function smashWorkTable(speed, dirX, dirZ) {
   scene.remove(workTable);
   workTable = null;
   openDeskFloor(bunkerHome.group);
+  /* AND THE MUG GOES OVER WITH IT. It is the scan's own mesh sitting on the
+   * desk's top, so with the top carved away and gone it would hang in the
+   * air for the rest of the fight. It is taken out of the scan, put into the
+   * world where it stood, and thrown like everything else — it lands, it
+   * rolls, and it stays on the floor. `half` is handed over because the
+   * geometry is in the scan's own units and `updateGibs` would measure it
+   * there; and it goes on the FIRST beat, because a cup does not wait. */
+  for (const q of deskProps) {
+    const o = q.o;
+    o.updateMatrixWorld(true);
+    o.matrixWorld.decompose(_tbP, _tbQ, _tbS);
+    if (o.parent) o.parent.remove(o);
+    o.position.copy(_tbP); o.quaternion.copy(_tbQ); o.scale.copy(_tbS);
+    o.frustumCulled = false;
+    scene.add(o);
+    const sway = (Math.random() - 0.5) * 1.1;
+    const out = (0.6 + kick * 0.4) * (0.7 + Math.random() * 0.7);
+    gibs.push({
+      m: o, half: q.half,
+      vel: new THREE.Vector3((dx + sway * dz) * out, 1.1 + Math.random() * 0.7, (dz - sway * dx) * out),
+      spin: new THREE.Vector3((Math.random() - 0.5) * 11, (Math.random() - 0.5) * 11, (Math.random() - 0.5) * 11),
+      rest: gy + 0.03, life: 200, bleed: false, wait: 0,
+    });
+  }
+  deskProps.length = 0;
   /* AND EVERYTHING THAT WAS STANDING ON IT FALLS. Each one is holding a
    * `floorAt` that answers with the table's top; dropping that hands them
    * back to the physics and they arrive on the steel a beat later, where
@@ -19274,7 +19367,15 @@ function spillMilCrate(dx, dz, kick) {
      * wore in the case. */
     militaryWorld.traverse((o) => { if (o.isSprite) { o.position.set(0, 0.34, -0.30); o.scale.setScalar(2.4); } });
     for (const sh of shinies) if (sh.root === militaryWorld) {
-      sh.strength = 3.4; sh.lift = 1.6;
+      /* AND A LIFT IS NOT A SPOTLIGHT. At strength 3.4 and lift 1.6 the
+       * product is 5.4 and the emissive it adds is over one on every
+       * channel: the tool came out of the case as a flat WHITE cut-out
+       * lying among the planks, which is the exact failure this file
+       * already warns about for a dark textured scan. The glint is big and
+       * the halo is on the floor under it — those are what say "found
+       * thing". The metal only has to be lifted enough to read as olive
+       * drab rather than as a hole. */
+      sh.strength = 2.6; sh.lift = 0.30;
       // its materials were not there when the shine was added (the scan
       // lands over the network) — so the lift had nothing to lift. Now it has.
       sh.mats = [];
@@ -20358,7 +20459,9 @@ window.__bw = {
   get crowbarOnTable() { return crowbarOnTable; }, get dealerPick() { return dealerPick; }, get bunkerProps() { return bunkerProps; },
   get milCrate() { return milCrate; }, get milCrateOpen() { return milCrateOpen; }, openMilCrate,
   get workTable() { return workTable; }, get tableBroken() { return tableBroken; }, smashWorkTable, TABLE_SPOT, TABLE_TOP, get tablePerched() { return tablePerched; },
-  get riposteT() { return riposteT; }, guardTick, get staminaEl() { return staminaEl; }, get dealerWon() { return dealerWon; }, set dealerWon(v) { dealerWon = v; },
+  guardTick, get staminaEl() { return staminaEl; },
+  // what a swing would meet, and what it would sound like when it met it
+  probeSolid: (P = 0) => { camera.getWorldDirection(_aimD); aimRay(P); const h = nearestSolidHit(); return h ? { surface: h.surface, d: +h.distance.toFixed(2) } : null; }, get dealerWon() { return dealerWon; }, set dealerWon(v) { dealerWon = v; },
   KAT_A0, KAT_A1, KAT_B0, get comboStep() { return comboStep; }, get digPower() { return digPower; },
   get dealerFight() { return dealerFight; }, get dealerMet() { return dealerMet; }, DEALER_X, DEALER_Z,
   get hatchBusy() { return hatchBusy; }, get bunkerMix() { return bunkerMix; }, get bunkerHome() { return bunkerHome; }, HATCH_X, HATCH_Z, BUNKER_Y, hatch,

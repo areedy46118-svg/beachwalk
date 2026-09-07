@@ -345,18 +345,30 @@ under it.
 The Dealer's desk — the one the crowbar lies on and the equipment case sits
 on — is breakable. Hit it hard enough with the blade, a thrown prop, or by
 putting the Dealer through it, and it comes apart into its own planks and
-legs and rails, everything on it falls and smashes on the steel, the floor
-where it stood opens up, and the case goes over and spills the Military
-Shovel onto the floor in a pool of light you cannot miss.
+legs and rails, everything on it falls and smashes on the steel — the mug
+included — the floor where it stood opens up, and the case goes over and
+spills the Military Shovel onto the floor in a pool of light you cannot
+miss. It is the room's own desk rebuilt in the room's own wood, grain and
+plank seams and all, so until you break it you cannot tell it from the
+scan.
 
 ### The riposte
 
-Parry him and land the next blow, and the game drives the blade into him for
-you: a hard freeze, blood back over the lens, three more off his bar and a
-shove. His recoveries differ by swing — the quick side swing barely leaves
-him open, the held overhead and the lunge leave him open for over a second —
-and the wind bar flashes on every block, so the third of it each one costs
-is a thing you watch go.
+Parry him and the next blow you land counts double. That is all it is: the
+swing is yours to throw and yours to aim, and reading the tell is what pays
+for it. His recoveries differ by swing — the quick side swing barely leaves
+him open, the held overhead and the lunge leave him open several times
+longer — so which one to answer is a thing you learn. The wind bar flashes
+on every block, so the third of it each one costs is a thing you watch go.
+
+### Everything sounds like what it is
+
+A swing that lands on something plays that thing's own material: the
+bunker's walls and ceiling are concrete — a flat dead crack with grit off
+the face and no ring — the floor is steel deck plate that sings, the desk is
+timber, and the console bank and cupboards are steel. Wood, stone, metal and
+sand on the beach do the same. What you hit and what you hear are the same
+thing.
 
 One autosave, and no save button. Reaching the mushroom house — the last
 stretch before the three come out of the dark — writes a checkpoint, and a

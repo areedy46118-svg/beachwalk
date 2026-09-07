@@ -2378,44 +2378,93 @@ falls in the desk's box in the room's frame (150 of them), and `setIndex`es
 the rest. The rebuilt desk stands where they were, to the millimetre the
 raycast measured (top 0.835, 0.73..2.83 by 3.24..4.58), so the crowbar's own
 raycast finds it at the same height and the pickup clip's hand lands on the
-bar exactly as before. **And it wears the scan's own material**: every face's
-uv is pinned to ONE texel of the desk's wood (`DESK_UV`, sampled off the map
-at load time in the pane), so it is the same colour under the same light,
-and the seams between the five planks are invisible until they come apart.
+bar exactly as before. **And it wears the scan's own material**, which is
+half the job; the other half is that it wears the scan's own GRAIN. The
+first rebuild pinned every face to ONE texel of the desk's wood — exactly
+the right colour under exactly the right light, and no wood at all: the
+owner's words were that it did not look like real wood, it looked like
+brown shapes. A single texel cannot be anything but a flat fill. `DESK_UV`
+is the two RECTANGLES the desk's own triangles occupy in the scan's atlas
+(top u 0.060–0.663 v 0.557–0.961, legs u 0.259–0.486 v 0.675–0.781),
+measured off a FRESH `GLTFLoader.parse` of the GLB in the pane, because
+`carveDesk` has already dropped those triangles out of the live index and
+there is nothing left in the running game to measure. `woodUV` then
+PROJECTS into them — the five top planks through a plan projection of the
+desk's own footprint, so laid side by side they reassemble the original top
+texel for texel and the seams are still invisible until they come apart;
+the legs and rails along their own length, so the grain runs down the
+timber and not across it. Which way round the rectangle goes is settled by
+the ASPECT and not by guessing: the top's rectangle is 1.49 wide against a
+desk 1.57 wide, so u runs along the length. And the projection is done by
+POSITION rather than through the box's own uv, because a `BoxGeometry`'s
+six faces each carry their own 0..1 and their own idea of which way is
+up — one plank's band coming out mirrored would break the join with the
+plank beside it.
 The walk grid already knew this desk from pack time, so no collider is
 added for it — and **the floor has to be OPENED when it breaks**
 (`openDeskFloor`), or the wreckage is a two-metre patch of invisible
 furniture nobody can cross for the rest of the fight. Clear `S._main` with
 it: the largest-region cache was computed with the desk in.
 
-**THE RIPOSTE IS A BEAT, NOT A MULTIPLIER.** A parry bought a stun and the
-next blow counted double, and that was a number. What Sekiro and Lies of P
-have is the moment where the fight stops being an exchange and becomes a
-thing you did to him. The blow that lands on a stunned man is followed,
-without a press, by a second one the game throws: the blade driven straight
-into him from wherever the first cut left it (`KAT_STAB[1]` for the sword,
-the live pose pushed forward for a shovel), held there through the longest
-freeze in the fight with the blood coming back at you, and ripped out.
-0.11 s to the drive, three more off the bar, a shove, and it takes the
-hands until it is done (`riposteT`, checked by `attackAction`, `startWind`
-and `katStabbing`). Measured: 18 → 14 on the parry-blow, → 11 on the
-drive, blade tip at (0.18, -0.01) on screen at the hold.
+**AND THE MUG WAS FLOATING.** There is an enamel mug on that desk —
+`Cup6_PultNPeripherals_0`, its OWN 320-triangle mesh and not part of the
+merged wood, bottom at 0.856 on a top at 0.835 — and the break carved the
+top out from under it and left it hanging in mid-air for the rest of the
+fight. The lesson is the carve's, not the mug's: **taking a surface away
+does not take away what was standing on it.** `carveDesk` now MEASURES what
+is up there — every mesh of the scan whose whole bounding box stands inside
+the desk's footprint above the knee — rather than naming the one it knows
+about, so a second thing on that desk cannot be missed the same way. On the
+break each is taken out of the scan, re-parented into the world with its
+own decomposed world transform, and thrown as a gib on the first beat,
+because a cup does not wait for the legs to go. It is handed `half`
+explicitly: its geometry is in the scan's own units and `updateGibs` would
+measure it there.
 
-**AND THE TWO CHEAP ONES.** His recovery windows now differ by a factor of
-five — the quick side swing leaves him open 0.26 s, the held overhead 1.10,
-the lunge 1.30 — so which swing to punish is a thing you learn rather than a
-thing you mash for. And `guardTick`: every block already took a third of the
+**THE RIPOSTE IS A MULTIPLIER, AND THE BEAT WAS TAKEN BACK OUT.** A version
+of this file argued the opposite — that a parry buying double damage was
+"a number", and that what Sekiro and Lies of P have is a moment the game
+throws for you — so the blow on a stunned man was followed, without a
+press, by an automatic drive of the blade into him. The owner's verdict on
+playing it: take it out, and he feels easier now, which he should not.
+Both halves were true. A follow-up that plays itself takes the hands in
+the middle of an exchange, which is the one thing a fight must not do; and
+three free points off his bar every parry is a straight difficulty cut on
+the one fight in the game. What a parry buys is a swing YOU throw, worth
+two. `riposteT` and its gates in `attackAction`, `startWind` and
+`katStabbing` are gone; `hurtMutant` keeps the doubling and the prompt.
+
+**AND A PUNISH WINDOW IS A RATIO, NOT A LENGTH.** The same pass separated
+his recoveries by a factor of five — 0.26 s on the quick side swing against
+1.10 on the held overhead and 1.30 on the lunge — and the read that buys
+(which swing to answer) is worth having and is kept. But it bought it by
+making the two slow ones very long, and a recovery is DEAD TIME: a second
+and a third of him standing there after every held overhead is two free
+swings, so the fight got slower and easier at the same time as it got more
+legible. They are pulled back in (0.22 / 0.50 / 0.82 / 0.95) and `aggr`
+goes to 2.20; the ratio, which is the part you play against, is nearly
+untouched. Measured over a minute at fighting range against a passive
+healed player: 44 swings and 34 damage before, 48 and 40 after — and three
+fewer points off him on every parry. **If a change makes something more
+readable and less dangerous at once, price the second half.**
+And `guardTick`: every block already took a third of the
 bar and nothing said so until the guard dropped; the bar flashes white on
 the blow now (`#stamina.hit`, re-triggered by removing and re-adding the
 class with a reflow between), so the third that went is a thing you watched
 go.
 
-**A FOUND THING ON A DARK FLOOR NEEDS A POOL OF LIGHT.** When the case
-spills, the shovel's glint is moved over its middle at 2.4, its `shinies`
-entry is given the scan's materials to lift (they were not there when the
-shine was added — the scan lands over the network, so `mats` was empty and
-the lift had nothing to lift), and an additive halo disc is laid on the
-floor under it, removed when it is taken.
+**A FOUND THING ON A DARK FLOOR NEEDS A POOL OF LIGHT — AND A LIFT IS NOT A
+SPOTLIGHT.** When the case spills, the shovel's glint is moved over its
+middle, its `shinies` entry is given the scan's materials to lift (they
+were not there when the shine was added — the scan lands over the network,
+so `mats` was empty and the lift had nothing to lift), and an additive halo
+disc is laid on the floor under it, removed when it is taken. The first
+pass then drove the lift itself at strength 3.4 and lift 1.6, whose product
+is 5.4 — over one on every emissive channel — and the tool came out of the
+case as a flat WHITE cut-out lying among the planks, which is the exact
+failure this file already warns about twice for a dark textured scan. The
+big glint and the halo are what say "found thing"; the metal only has to be
+lifted enough to read as olive drab rather than as a hole. 2.6 and 0.30.
 
 **A ROOM YOU CAN WRECK IS A ROOM YOU ARE IN.** The bunker had eighteen
 breakables and a coat stand, and all of them were small: you could scatter
@@ -3483,6 +3532,30 @@ against either from the far end of the beach is a swing's worth of work for
 nothing. Steel gets its own sound — a hard tick and then three INHARMONIC
 partials ringing for the best part of a second, because a bolted sheet is
 not a string — and a blade on steel throws sparks.
+
+**AND WHAT IT MET IS WHAT YOU HEAR.** Every one of those surfaces answered
+'metal', because "everything down there is" — and it is not: a blade laid
+into forty centimetres of poured concrete rang like a bolted steel plate
+and threw sparks off it. The owner's words were that swinging onto a
+material should match the material's sound, even the bunker walls. The
+march already knows exactly which face it stopped on, so it says so: the
+walls and the ceiling are CONCRETE, the floor is the steel deck plate you
+can hear yourself walking on, and the desk — the one timber thing in the
+room, and the thing you are most likely to swing at — answers wood while it
+is standing, through a `deskWoodAt` hook the desk section sets thousands of
+lines later. The rest of the grid is the console bank and the steel
+cupboards and stays metal. Concrete is its own branch of `sfxPropHit` and
+the point of it is that it is DEAD: a flat crack with a short low body
+under it for the mass of the wall and a hiss of grit off the face, and no
+ring at all. Stone rings because a boulder is one lump; a wall bedded into
+the earth cannot, and anything that does read as metal. It throws four
+sparks off the aggregate rather than a steel plate's shower, and its chips
+are pale dust rather than blue stone. `__bw.probeSolid()` reports what a
+swing from where you stand would meet and what it would sound like — the
+bug was invisible without it, because the picture was right and only the
+sound was wrong. Note the grid is a PLAN: a desk is one solid column from
+the knee to the head, so the whole of that column answers wood, not just
+the slab under the top.
 
 **A SYNTHETIC HIT CARRIES ITS OWN WORLD NORMAL.** `stampScar` reads
 `hit.face.normal` and turns it by the struck object's matrix, which a hit
