@@ -371,29 +371,17 @@ rather than a stand-in. Hit it, throw something at it, put a body through it
 or just walk into it, and it goes over. It is not a wall: you shoulder
 through a tripod, you do not stop at one.
 
-### He takes the mask off
+### He digs in at half health
 
-At half his health the Blue Blood Dealer stops, gets a hand under the filter
-drum and pulls the mask off his face, and it lands on the floor and stays
-there. It costs him — he is stopped and open for a second and a half, and it
-is the biggest window in the fight — and after it he is faster, feints more
-and chains further. His voice changes with it: everything he has said so far
-has been through a drum of charcoal.
+At half his health the Blue Blood Dealer stops, roars through the mask and
+comes back at you harder — more aggressive, more feints, longer chains. It
+costs him: he is stopped and open for a second and a half, and it is the
+biggest window in the fight. His tells are untouched, so the second half is
+faster without being unfair.
 
-What is under it is a different head, not a paint job on the old one: a
-photoscanned bust, bald and heavy-browed, fitted to his own skeleton in
-Blender against the eye positions measured off both models, with its neck
-morphed onto the ring where his own neck is cut away.
-
-Its skin is rebuilt from his. The scan's luminance is measured against its
-own local mean, the photograph's contrast crushed to something near a game
-skin's, and the result put back at the brightness and in the colour of his
-own chest — and the shading that is taken out of the picture is not thrown
-away, it becomes a normal map, so his creases are lit by the room instead of
-painted on. That is the difference between skin and leather. Measured on
-screen, his neck renders (95, 66, 51) against his chest's (98, 67, 56). It
-moves with him because every vertex of it took the bones and weights of the
-nearest vertex of the head it replaced.
+The mask never comes off. A whole head was built under it once — a
+photoscanned bust fitted to his skeleton — and it was cut: the man in the gas
+mask is the character.
 
 ### The step
 
@@ -502,11 +490,6 @@ This work is based on ["Survival Shovel"](https://sketchfab.com/3d-models/surviv
 by [howittworks](https://sketchfab.com/howittworks) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Military Shovel.
 
-This work is based on ["Bust Model"](https://sketchfab.com/3d-models/bust-model-20eaab1f3e1046efb2ba1704ad048d59)
-by [tales](https://sketchfab.com/talesrt) licensed under
-[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the face under the
-Blue Blood Dealer's gas mask (`assets/dealer-head.glb`, fitted to his own
-skeleton by `tools/dealer_head.py`).
 
 The **katana's swing, block, hit, draw and parry sounds** are the owner's own
 bounces — four swings and four blocks from Sekiro effects, four hits from a

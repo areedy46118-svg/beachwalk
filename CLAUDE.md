@@ -2496,150 +2496,48 @@ camera, moved. Three things it took:
   finds it, because `glassStrike` raycasts the prop's own meshes and never
   asks the grid.
 
-**HE TAKES THE MASK OFF AT HALF HEALTH.** A boss with one move set is solved
-once. Halfway through his health he stops, gets a hand under the filter drum
-and pulls it off, and what is under it is not a man's face — so the fight you
-have learned turns out to have been the first half of it. It is an OPENING,
-not a cutscene: he is stopped and his guard is down for a second and a half
-and you keep your hands the whole time, which makes it the prize for getting
-him to half rather than the game stopping the fight to show you something.
-Afterwards `aggr` goes to 2.85, he feints more, he chains further, and his
-voice comes off `throat: 'mask'` — the filter drum was literally in the sound
-— onto the mutants' own wet rasp. His STARTUPS are untouched: the tells are
-what keep him fair and this file has already paid once for making them
-readable.
+**HE DIGS IN AT HALF HEALTH, AND THE MASK STAYS ON.** A boss with one move
+set is solved once. Halfway through his health he stops, roars through the
+mask and comes back harder — `aggr` 2.85, more feints, longer chains — so
+the fight you have learned turns out to have been the first half of it. It is
+an OPENING, not a cutscene: he is stopped and his guard is down for a second
+and a half and you keep your hands the whole time, which makes it the prize
+for getting him to half rather than the game stopping the fight to show you
+something. His STARTUPS are untouched: the tells are what keep him fair and
+this file has already paid once for making them readable.
 
-**AND THE FACE UNDER IT IS A DIFFERENT HEAD, NOT A PAINT JOB ON THE OLD ONE.**
-A whole pass was spent painting the mutation onto the scan's own head — the
-uv island rasterised so every texel knew its point on the skull, then
-lesions and sockets and a split from temple to jaw laid down in three
-dimensions — and it was the wrong idea from the first line: **the scan's own
-head is a plain bald man, and no amount of painting a face makes it a
-different face.** Three passes of that painter each fixed a real fault and
-each left something that was still recognisably the same man wearing makeup.
-What is there now is tales' "Bust Model" — a photoscanned bust, bald,
-heavy-browed, jaw like a shovel — fitted to this character by
-`tools/dealer_head.py` and arriving in his own bind space so the game does
-not place it at all. Five things it took, and the ones that were got wrong
-first are the interesting ones:
+**AND A WHOLE HEAD UNDER THAT MASK WAS BUILT AND CUT. DO NOT PUT ONE BACK.**
+For several passes the mask came off at half health and what was under it was
+tales' photoscanned bust, fitted to his skeleton in Blender against the eye
+positions measured off both models' EYEBALL MESHES, its neck morphed onto the
+single ring where his own was carved out of the index, skinned by
+nearest-neighbour transfer from the head it replaced, its skin rebuilt from
+the statistics of his own chest (his 88/12 against the bust's 120/40 — a
+third too bright with three times the contrast of a game skin), and the
+shading lifted out of its albedo and turned into a normal map so his creases
+were lit rather than painted. Every step of that worked and every one was
+measured on screen — his neck rendered (95, 66, 51) against his chest's
+(98, 67, 56). It is all deleted. **A face grafted onto somebody else's body
+reads as a face grafted onto somebody else's body**, and no amount of
+matching statistics changes that; the owner said so of three different
+versions, and the last word was to take it off and keep the mask on at all
+times. THE MAN IN THE GAS MASK IS THE CHARACTER — a boss whose face you never
+see is not a boss missing a face, and the mask is the better design because
+it is the one this character already was. Same lesson as the scanned
+lighthouse and the scanned katana, in a place nobody expected it.
 
-- **THE FIT IS ANCHORED ON THE EYES.** A head swap is right when the face is
-  where the face was, so the transform is the uniform scale that matches the
-  eye separation (0.8595) and the translation that puts the eyes on the
-  character's own — both measured off the two models' EYEBALL MESHES, which
-  are their own objects in both scans and therefore a fact rather than an
-  estimate (his at ±0.0532, 2.8448, 0.1539; the bust's at ±0.0619, −0.0352,
-  0.1186). Everything else — the crown landing 4 cm low in rig units, the
-  jaw much wider — is this being a different head, which is the point.
-- **THE NECK IS MATCHED AT ONE RING, NOT ALL THE WAY UP.** The first morph
-  tried to hold the bust's whole neck against the character's profile and
-  came out noisy, because the character's own "neck" measurement is polluted
-  by the trapezius below and the jaw above. Above the cut the character is
-  CARVED AWAY, so nothing of his neck is visible there and the bust's neck is
-  free to be its own shape: the only place the two surfaces must agree is the
-  single ring where they meet. That ring — 24 radii about the neck axis at
-  y = 2.60 — is in the tool, the morph eases to nothing by the jaw, and below
-  the cut the bust is scaled to 0.92 of it so it sits INSIDE the body rather
-  than coincident with it, because two surfaces in the same place is
-  z-fighting and a millimetre in is simply hidden.
-- **THE OLD HEAD COMES OFF THE INDEX.** You cannot part-hide a skinned mesh,
-  so `carveDealerHead` drops every triangle of `DealerBody` whose bind
-  centroid is above the cut and re-indexes the rest — the desk's own carve,
-  on a body. His eyes and lashes are separate meshes and simply go.
-- **AND IT IS SKINNED BY TRANSFER, NOT BY A RULE.** Every vertex of the new
-  head takes the bones and weights of the NEAREST vertex of the head it
-  replaced, so the new neck deforms exactly as the old one did and the join
-  cannot shear when he turns to look at you. Through a 5 cm grid, because
-  seven thousand vertices against four and a half thousand donors is
-  thirty-five million distance tests and a visible hitch.
-- **AND THE SKIN MATCH IS A STATISTICS PROBLEM, NOT A TINT ONE.** Two passes
-  were spent on gains and neither worked, and the measurement says why:
-  his chest averages luminance **88 with a standard deviation of 12**, and
-  the bust's face averages **120 with a deviation of 40**. A third too
-  bright, and THREE TIMES the contrast of a game skin — because it is a
-  photograph with its lighting baked in and his is an albedo with a normal
-  map to do the shading. The fault is the SPREAD, and no gain or material
-  colour can touch that: the first pass's per-band gain lifted the crown to
-  chalk white and left the head a pale thing pasted onto a tan body, which
-  is exactly what the owner called it. The hue was never the problem —
-  normalised by luminance his skin is (1.235, 0.915, 0.819) and the bust's
-  face (1.245, 0.905, 0.845), the same colour of man. So each texel's
-  luminance is expressed as a NUMBER OF DEVIATIONS from its own local mean,
-  crushed to something near his spread, and put back at his level in his
-  colour, keeping a third of the bust's own chroma so the lips and the brow
-  do not come out as one flat tone. Everything the scan knows about the
-  shape of the head survives; everything it knows about the lamp that lit it
-  does not. **Measured on the screen afterwards** — which is the only test
-  that counts — his forehead renders (92, 61, 49) against his chest's
-  (92, 63, 53).
-- **AND THE TARGET SPREAD IS NOT HIS OWN NUMBER.** Crushed all the way to
-  his 12.2 the brow, the sockets and the mouth went flat and he came out a
-  mannequin — his texture has a normal map under it and this one has
-  nothing. 24 keeps the face readable and is still nowhere near the
-  photograph's 40.
-- **THE BAND HAS TO KNOW FRONT FROM BACK.** The bust was scanned from the
-  front: its back averages 25 against its face's 120, and one mean over both
-  lifts neither correctly — that is what made the back of his head a dark
-  brown cap.
-- **AND THE EYEBALLS ARE NOT SKIN.** They are their own mesh and they went
-  through the skin match with everything else, which normalised an iris and
-  a sclera onto the mean of a cheek and left him with two blank pale discs.
-  A normal man has normal eyes: the eye mesh is recognised by its own height
-  (under 12 cm tall), keeps its own map, and is only brought down to the
-  level of the room.
-- **AND THE BODY HAS A NORMAL MAP AND THE HEAD DID NOT.** Measured: every
-  mesh on this character — body, boots, trousers, scarf, even the crowbar —
-  carries a normal, a roughness AND an occlusion map at normalScale 1.1. The
-  bust arrived as a BARE ALBEDO. That is not a shade of difference, it is a
-  different KIND of material on one man, and it is most of what "stitched
-  on" and "leather face" actually were: the bust's wrinkles are PAINTED IN
-  by the photograph, and a painted wrinkle does not move when the light
-  does, which is what leather is and what skin is not. Worse, once the
-  geometry carries the same wrinkles the surface is shaded TWICE — once by
-  the light and once by the picture.
-  So the shading the skin match takes OUT of the albedo is not thrown away:
-  it is kept as it is removed, high-passed, and turned into a normal map
-  (`bustNormalMap`). The detail moves from being a picture of shading to
-  being shading. With that carrying the creases the albedo can be nearly
-  flat — HEAD_SD came from 24 to 16, a shade over his own 12.2.
-- **A NORMAL MAP WITHOUT TANGENTS SPLITS THE FACE IN HALF.** three falls back
+Two things learned in there are general and worth keeping:
+
+- **A NORMAL MAP WITHOUT TANGENTS SPLITS A FACE IN HALF.** three falls back
   to screen-space derivatives when a mesh carries no TANGENT attribute, and
-  across this atlas's uv seam — which runs straight down the middle of the
+  across a uv seam — which on a head runs straight down the middle of the
   face — the derived tangent flips sign: one cheek lit, the other not, on a
-  hard vertical line down his nose. `export_tangents=True`, and the exporter
-  is the only place that can do it, because it is the only place that still
-  has the uv layout and the smoothing together.
-- **AND THE HIGH-TO-LOW BAKE IN BLENDER WAS THE WRONG ROAD.** It is the
-  textbook way to get that map and it came back as saturated facets, because
-  the bust is a SHELL: `holes_fill` closes the back of the skull and the neck
-  with flat n-gons, and the cage rays hit those from inside over most of the
-  atlas. Deriving the map from the albedo cannot be confused by a hole, lands
-  in the same uv layout by construction, and is the same information.
-- **AND THE RESIDUAL HAS TO BE HIGH-PASSED BEFORE IT BECOMES RELIEF.** The
-  first version fed the whole residual in and gave a face of melted wax —
-  centimetre-scale blobs standing off the skin — because the residual still
-  carried the photograph's BROAD shading, the shadow under a cheekbone and
-  the mass of the brow. Blur it and subtract the blur: what is left is pores,
-  creases and the folds round the mouth. The broad part is not moved
-  anywhere, it is simply gone, which is the whole point of flattening.
-- **AND DO NOT SMOOTH THE GEOMETRY TO FIX A TEXTURE PROBLEM.** A pass that
-  relaxed the low poly to take the leather out took the BROW, THE NOSE AND
-  THE CHEEKBONES with it and he came back a mannequin. The sculpt is the
-  face; the only thing that ever needed removing was what was painted on top
-  of it.
-- **AND HE IS NEVER HEADLESS.** The carve is the irreversible half and the
-  new head arrives over the network, so the two are tied together: nothing
-  comes off him until there is something to put on. The GLB starts loading
-  when the ROOM is built, the skin transfer and the colour match are done
-  when the FIGHT starts, and the beat itself is a visibility flag — measured
-  at 33 ms against 55 for the build. If the file is somehow still in flight
-  the beat plays without it and `updateDealer` finishes the job on the frame
-  it lands.
-- **THE PARENT IS PART OF THE TRANSFORM.** In the tool: the scan hangs off
-  two Sketchfab empties carrying a 0.2624 scale, and assigning `matrix_world`
-  on a parented object does not remove it — the exporter put it back and the
-  head came out 3.81x too big and eleven metres in the air. Unparent keeping
-  the transform, apply it, THEN write coordinates in.
+  hard vertical line. Export tangents; the exporter is the only place that
+  still has the uv layout and the smoothing together.
+- **DO NOT SMOOTH GEOMETRY TO FIX A TEXTURE PROBLEM.** A pass that relaxed a
+  low poly to take the "leather" out of it took the brow, the nose and the
+  cheekbones with it and the head came back a mannequin. The sculpt is the
+  face; what needed removing was what was painted on top of it.
 
 **A DIRECTIONAL STEP, ON SPACE.** Before it the whole answer to a swing was
 block, parry or walk backwards — three things, all of them facing him, and
