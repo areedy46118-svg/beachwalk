@@ -2368,6 +2368,55 @@ crosses furniture he asks for a route straight away, at most every
 way ROUND something, not a way of getting about. Measured: 22 of 22 standing
 spots in the room reached, 15 of them by route.
 
+**IT IS THE DESK, NOT ANOTHER TABLE.** The first breakable table stood
+across the room from the desk the fight is fought over and left that desk in
+place, and the owner saw two tables. The scan's desk is part of ONE merged
+mesh with everything else made of wood in the room (`TableNAblem_WoodNPaper_0`,
+570 triangles spanning the whole floor), so it cannot be hidden — it is
+CARVED: `carveDesk` walks the index, drops every triangle whose centroid
+falls in the desk's box in the room's frame (150 of them), and `setIndex`es
+the rest. The rebuilt desk stands where they were, to the millimetre the
+raycast measured (top 0.835, 0.73..2.83 by 3.24..4.58), so the crowbar's own
+raycast finds it at the same height and the pickup clip's hand lands on the
+bar exactly as before. **And it wears the scan's own material**: every face's
+uv is pinned to ONE texel of the desk's wood (`DESK_UV`, sampled off the map
+at load time in the pane), so it is the same colour under the same light,
+and the seams between the five planks are invisible until they come apart.
+The walk grid already knew this desk from pack time, so no collider is
+added for it — and **the floor has to be OPENED when it breaks**
+(`openDeskFloor`), or the wreckage is a two-metre patch of invisible
+furniture nobody can cross for the rest of the fight. Clear `S._main` with
+it: the largest-region cache was computed with the desk in.
+
+**THE RIPOSTE IS A BEAT, NOT A MULTIPLIER.** A parry bought a stun and the
+next blow counted double, and that was a number. What Sekiro and Lies of P
+have is the moment where the fight stops being an exchange and becomes a
+thing you did to him. The blow that lands on a stunned man is followed,
+without a press, by a second one the game throws: the blade driven straight
+into him from wherever the first cut left it (`KAT_STAB[1]` for the sword,
+the live pose pushed forward for a shovel), held there through the longest
+freeze in the fight with the blood coming back at you, and ripped out.
+0.11 s to the drive, three more off the bar, a shove, and it takes the
+hands until it is done (`riposteT`, checked by `attackAction`, `startWind`
+and `katStabbing`). Measured: 18 → 14 on the parry-blow, → 11 on the
+drive, blade tip at (0.18, -0.01) on screen at the hold.
+
+**AND THE TWO CHEAP ONES.** His recovery windows now differ by a factor of
+five — the quick side swing leaves him open 0.26 s, the held overhead 1.10,
+the lunge 1.30 — so which swing to punish is a thing you learn rather than a
+thing you mash for. And `guardTick`: every block already took a third of the
+bar and nothing said so until the guard dropped; the bar flashes white on
+the blow now (`#stamina.hit`, re-triggered by removing and re-adding the
+class with a reflow between), so the third that went is a thing you watched
+go.
+
+**A FOUND THING ON A DARK FLOOR NEEDS A POOL OF LIGHT.** When the case
+spills, the shovel's glint is moved over its middle at 2.4, its `shinies`
+entry is given the scan's materials to lift (they were not there when the
+shine was added — the scan lands over the network, so `mats` was empty and
+the lift had nothing to lift), and an additive halo disc is laid on the
+floor under it, removed when it is taken.
+
 **A ROOM YOU CAN WRECK IS A ROOM YOU ARE IN.** The bunker had eighteen
 breakables and a coat stand, and all of them were small: you could scatter
 the scenery but you could not change the SHAPE of the fight. The work table

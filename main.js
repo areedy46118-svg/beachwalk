@@ -4132,6 +4132,7 @@ function attackAction() {                        // left mouse
   if (peeking) { endPeek(); return; }
   if (frozen()) return;
   if (held) { throwHeld(); return; }
+  if (riposteT >= 0) return;                    // the riposte has the hands
   if (equipped && equipped.onDig) {
     /* A CLICK IS NEVER BANKED. Three clicks used to be three swings — the
      * third fired on its own after the recovery, from a press made half a
@@ -6293,6 +6294,7 @@ addInteractable(militaryWorld, 'Take the military shovel', 'inventory', {
   onActivate: () => {
     sfxThud(0.04);
     if (militaryWorld.parent) militaryWorld.parent.remove(militaryWorld);
+    if (militaryWorld.userData.halo) { scene.remove(militaryWorld.userData.halo); militaryWorld.userData.halo = null; }
     hovered = null;
     if (!milCrateOpen) { milCrateOpen = true; milCrateT = 1; }
     addToInventory(militaryItem);
@@ -6393,6 +6395,16 @@ const PARRY_COOLDOWN = 0.55;
  * learning the tell. When the bar goes, so does the guard, and you hear
  * yourself run out. */
 const BLOCK_COST = 0.34;                 // of a full bar, per blow stopped
+/* A COST YOU CANNOT SEE IS NOT A COST. Every block took a third of the bar
+ * and nothing said so until the bar was empty and the guard dropped; the
+ * bar FLASHES on the blow now — a white tick the height of the strip and a
+ * hair of glow, gone in under half a second — so the third that went is a
+ * thing you watched go, and the choice to block the next one is a choice. */
+function guardTick() {
+  if (!staminaEl) return;
+  staminaEl.classList.add('show');
+  staminaEl.classList.remove('hit'); void staminaEl.offsetWidth; staminaEl.classList.add('hit');
+}
 let blockGasped = false;
 let blocking = false, blockT = 0, blockStart = -1, parryCool = 0;
 let parryGlow = 0;                       // the white flash on a successful parry
@@ -6696,7 +6708,69 @@ const KAT_STAB = [[-0.435, 0.060, 0.45, -0.284, 0.061, 0.067],      // hauled ba
  * it lands, the point finishing on the crosshair. And the tsuka is kept half
  * a metre out: a handle that comes at your face is not a wind-up, it is a
  * camera clip. */
-const katStabbing = () => !!(equipped === katanaItem && (digOverhead || (winding && windOverhead)));
+const katStabbing = () => !!(equipped === katanaItem && (digOverhead || (winding && windOverhead) || riposteT >= 0));
+/* ---- THE RIPOSTE ----------------------------------------------------------
+ * A parry bought a stun and the next blow counted double, and that was a
+ * number. What Sekiro and Lies of P have, and this did not, is a BEAT: the
+ * moment where the fight stops being an exchange and becomes a thing you
+ * did to him. So the blow that lands on a stunned man is followed, without
+ * a press, by a second one the game throws for you — the blade driven
+ * straight into him from wherever the first cut left it, held there while
+ * the world stops, and ripped back out. It is quick (a third of a second
+ * to the drive), it is the worst thing that happens to him in the fight
+ * (three more off the bar and a shove), and it cannot be interrupted or
+ * spammed: it plays once per parry and takes the hands until it is done. */
+const RIP_IN = 0.11, RIP_HOLD = 0.30, RIP_OUT = 0.55;
+let riposteT = -1, riposteHit = false, riposteTarget = null;
+const _riFrom = [0, 0, 0, 0, 0, 0], _riTo = [0, 0, 0, 0, 0, 0];
+function startRiposte(u) {
+  if (riposteT >= 0) return;
+  riposteTarget = u; riposteT = 0; riposteHit = false;
+  cancelSwing();
+  if (winding) { winding = false; windT = 0; windFull = false; }
+  for (let i = 0; i < 6; i++) _riFrom[i] = _pose[i];
+  if (equipped === katanaItem) { for (let i = 0; i < 6; i++) _riTo[i] = KAT_STAB[1][i]; _riTo[4] -= 0.22; }
+  else { for (let i = 0; i < 6; i++) _riTo[i] = _riFrom[i]; _riTo[0] -= 0.30; _riTo[4] -= 0.55; _riTo[5] *= 0.4; _riTo[1] -= 0.08; }
+}
+function riposteBeat() {
+  const u = riposteTarget; riposteHit = true;
+  hitstop = Math.max(hitstop, 0.18);
+  addTrauma(0.95); fovKick = Math.max(fovKick, 14); slamDip = Math.max(slamDip, 0.12);
+  vmImpulse(-1.6); guardShockV += 6.5;
+  sfxKillThud(1.35);
+  playSample('fleshHit', 1.0, 0.04, 0.72);
+  if (isBlade()) playSample('katHit', 1.0, 0.04, 0.84);
+  if (!u || !u.st.alive) return;
+  camera.getWorldDirection(_hitC);
+  const hx = u.g.position.x, hy = u.g.position.y + u.kind.h * 0.55, hz = u.g.position.z;
+  sprayBlood(hx, hy, hz, _hitC.x, _hitC.z, 30, 1.9);
+  sprayBlood(hx, hy, hz, -_hitC.x, -_hitC.z, 12, 1.1);   // and back at you
+  bleedMutant(u, 26, 1.5);
+  stampBlood(hx, hz, 0.9, u.g.position.y);
+  flashMats(u.g);
+  const before = u.st.hp;
+  u.st.hp -= 3;
+  if (u.st.hp <= 0) { u.st.killP = 1; u.st.killOh = false; u.st.killGore = toolGore(); u.st.hpBefore = before; killMutant(u); return; }
+  // it leaves him rocked and open, and puts him back a step
+  u.st.stun = Math.max(u.st.stun, 0.85);
+  u.st.recoil = Math.max(u.st.recoil || 0, MUT_RECOIL * 1.8);
+  u.g.position.x += _hitC.x * 0.55; u.g.position.z += _hitC.z * 0.55;
+  if (u.kind.human) clampDealer(0);
+}
+function updateRiposte(dt) {
+  if (riposteT < 0) return false;
+  riposteT += dt;
+  if (riposteT < RIP_IN) poseMix(_pose, _riFrom, _riTo, easeInCubic(riposteT / RIP_IN));
+  else if (riposteT < RIP_HOLD) {
+    if (!riposteHit) riposteBeat();
+    for (let i = 0; i < 6; i++) _pose[i] = _riTo[i];
+    const tr = Math.sin(riposteT * 70) * 0.012;               // the strain of holding it in
+    _pose[0] += tr; _pose[3] += tr * 1.4;
+  } else if (riposteT < RIP_OUT) {
+    poseMix(_pose, _riTo, REST_POSE, easeOutCubic((riposteT - RIP_HOLD) / (RIP_OUT - RIP_HOLD)));
+  } else { riposteT = -1; riposteTarget = null; for (let i = 0; i < 6; i++) _pose[i] = 0; }
+  return true;
+}
 function katStab(out, i, P) {
   const q = KAT_STAB[i];
   for (let k = 0; k < 6; k++) out[k] = q[k];
@@ -6906,7 +6980,7 @@ function cancelSwing() {
 const WIND_IN = 0.10;                    // seconds the haul-back blends in from wherever the hand was
 const _windFrom = [0, 0, 0, 0, 0, 0];
 function startWind() {
-  if (blocking) return;                  // no swing comes out of a guard
+  if (blocking || riposteT >= 0) return; // no swing comes out of a guard, or out of a riposte
   if (winding || !equipped || !equipped.onDig || frozen()) return;
   if (digT > 0) { if (!swingLanded()) return; cancelSwing(); }
   for (let i = 0; i < 6; i++) _windFrom[i] = _pose[i];   // the haul leaves from here, not from a snap
@@ -7452,6 +7526,8 @@ function updateViewmodel(dt) {
      * it has just left — rather than the one-frame snap it used to be. */
     const wi = Math.min(1, windT / WIND_IN);
     if (wi < 1) poseMix(_pose, _windFrom, _pose, easeOutCubic(wi));
+  } else if (updateRiposte(dt)) {
+    // the hands are the riposte's until it lets them go
   } else if (digT > 0) {
     const P = digPower;
     /* A heavy is slower through the whole move, and slower still to recover —
@@ -7617,7 +7693,7 @@ function updateViewmodel(dt) {
   /* Turn the tool over for an overhead, and back afterwards. Blended rather
    * than snapped, so the change of grip happens while the shovel is going up
    * and is finished by the time it comes down. */
-  const wantOh = (winding && windOverhead) || (digT > 0 && digOverhead) ? 1 : 0;
+  const wantOh = (winding && windOverhead) || (digT > 0 && digOverhead) || (riposteT >= 0 && equipped === katanaItem) ? 1 : 0;
   /* AND THE GRIP COMES HOME WITH THE ARM. It used to turn back to the carry
    * only once the swing had ended — a second motion after the arm had
    * already stopped, which is a twitch. On a blade it starts back over the
@@ -9105,6 +9181,7 @@ function blockCrab(u = crabs[0]) {
   else if (equipped === shovelItem) playSample('blockSand', 1.0, 0.04);
   else sfxBlock();
   stamina = Math.max(0, stamina - BLOCK_COST);
+  guardTick();
   if (stamina <= 0.001) { exhausted = true; gaspOut(); }
   flashMats(toolVM);                     // the tool goes white for the frozen frames
   guardShockV += 3.6; spawnSparks(6, 0.5);
@@ -14297,10 +14374,10 @@ const MUT_ATTACKS = {
    * because his blow is tested on the BAR (`dealerBarHit`) and a man with a
    * crowbar reaches two metres, not two and a half; the lunge and the step
    * in the overhand are what close the rest. */
-  dDown:  { wind: 0.72, strike: 0.13, recover: 0.50, hit: 0.370, reach: 1.80, lunge: 0.55, chain: 'dSide',  chainP: 0.48, w: 0.18 },
-  dSide:  { wind: 0.62, strike: 0.11, recover: 0.38, hit: 0.421, reach: 1.75, lunge: 0.30, chain: 'dDown',  chainP: 0.52, w: 0.18 },   // hit measured in the game: the hand is furthest out at 0.375, and back behind him by 0.5
-  dDownM: { wind: 0.70, strike: 0.13, recover: 0.72, hit: 0.278, reach: 1.80, lunge: 0.55, chain: 'dSideM', chainP: 0.42, w: 0.14 },
-  dSideM: { wind: 0.52, strike: 0.11, recover: 0.56, hit: 0.281, reach: 1.75, lunge: 0.30, chain: 'dDown',  chainP: 0.42, w: 0.14 },
+  dDown:  { wind: 0.72, strike: 0.13, recover: 0.58, hit: 0.370, reach: 1.80, lunge: 0.55, chain: 'dSide',  chainP: 0.48, w: 0.18 },
+  dSide:  { wind: 0.62, strike: 0.11, recover: 0.26, hit: 0.421, reach: 1.75, lunge: 0.30, chain: 'dDown',  chainP: 0.52, w: 0.18 },   // hit measured in the game: the hand is furthest out at 0.375, and back behind him by 0.5
+  dDownM: { wind: 0.70, strike: 0.13, recover: 0.60, hit: 0.278, reach: 1.80, lunge: 0.55, chain: 'dSideM', chainP: 0.42, w: 0.14 },
+  dSideM: { wind: 0.52, strike: 0.11, recover: 0.30, hit: 0.281, reach: 1.75, lunge: 0.30, chain: 'dDown',  chainP: 0.42, w: 0.14 },
   // the held one: a full second over his head, so a guard raised on the
   // first beat is a block and not a parry. It is the swing that teaches you
   // to watch the arm instead of counting.
@@ -14319,9 +14396,9 @@ const MUT_ATTACKS = {
    * A second and a half of bar over his head is a long tell, and it should
    * be: it is the slowest thing he throws, the most punishable, and the only
    * one that takes two of your four. */
-  dHold:  { wind: 1.22, strike: 0.13, recover: 0.62, hit: 0.656, reach: 1.95, lunge: 0.40, chain: null,     chainP: 0.00, w: 0.20, dmg: 2 },
+  dHold:  { wind: 1.22, strike: 0.13, recover: 1.10, hit: 0.656, reach: 1.95, lunge: 0.40, chain: null,     chainP: 0.00, w: 0.20, dmg: 2 },
   // and the one that covers the ground you just backed off
-  dLunge: { wind: 0.60, strike: 0.15, recover: 0.90, hit: 0.500, reach: 2.40, lunge: 2.1,  chain: 'dSide',  chainP: 0.30, w: 0.18 },
+  dLunge: { wind: 0.60, strike: 0.15, recover: 1.30, hit: 0.500, reach: 2.40, lunge: 2.1,  chain: 'dSide',  chainP: 0.30, w: 0.18 },
 };
 /* The three of them. `use` is which swings this one has and how often it
  * reaches for each; `windK` scales its startups AND its recoveries together,
@@ -14809,6 +14886,7 @@ function blockMutant(u) {
   else sfxBlock();
   // the big one costs you more to hold off than the small one does
   stamina = Math.max(0, stamina - BLOCK_COST * 1.35 * u.kind.reachK);
+  guardTick();
   if (stamina <= 0.001) { exhausted = true; gaspOut(); }
   flashMats(toolVM);
   /* SNAP, NOT SHOVE. A tenth of a second of frozen world under a soft spring
@@ -15052,6 +15130,7 @@ function hurtMutant(u, dmg, P = 0) {
     setPrompt('<b>RIPOSTE</b>');
     setTimeout(() => { if (promptHTML.includes('RIPOSTE')) setPrompt(''); }, 700);
     addTrauma(0.3); fovKick = Math.max(fovKick, 5);
+    startRiposte(u);
   }
   const before = u.st.hp;
   u.st.hp -= dmg;
@@ -18456,14 +18535,14 @@ function makeBunkerElectronic(kind) {
  * fistful of sparks off the break. */
 const BUNKER_PROP_SPOTS = [
   [-2.15, -3.30, 'bottle'], [-1.55, 1.05, 'jar'],   [2.05, -0.60, 'bottle'],
-  [1.35, 4.15, 'monitor'],  [-1.75, 4.35, 'radio'], [0.95, -4.60, 'valve'],
+  [1.40, 4.22, 'monitor'],  [-1.75, 4.35, 'radio'], [0.95, -4.60, 'valve'],
   [-2.25, 2.60, 'valve'],   [2.15, 2.35, 'jar'],
-  [-0.35, 4.45, 'monitor'], [0.55, 4.40, 'radio'],  [2.05, 3.60, 'monitor'],
+  [-0.35, 4.45, 'monitor'], [0.55, 4.40, 'radio'],  [2.66, 3.40, 'monitor'],
   [-2.20, 3.75, 'monitor'], [1.95, -2.40, 'radio'], [-2.10, -1.35, 'monitor'],
   [2.10, 0.85, 'radio'],    [-2.30, -4.55, 'monitor'], [0.15, -4.70, 'radio'],
   [-0.95, -3.55, 'valve'],
-  // and three on the work table, which will take them down with it
-  [0.68, -1.87, 'monitor'], [1.15, -1.77, 'bottle'], [1.05, -2.30, 'jar'],
+  // and two more on the desk, which takes everything on it down with it
+  [0.95, 4.36, 'bottle'], [2.62, 4.42, 'jar'],
 ];
 /* THE COAT STAND. Everything else breakable in here sits ON something and
  * waits to be hit; this one stands in the room at head height and goes if
@@ -18551,7 +18630,12 @@ function buildMilCrate(g, meshes, ray) {
    * (the desk top is raycast the way every other prop's perch is). The
    * case's long side runs along the wall and its lid hinges on the wall
    * side, so open it stands against the concrete out of the way. */
-  const CRATE_SPOT = [TABLE_SPOT[0] + 0.45, TABLE_SPOT[1] - 0.13];   // on the work table, at the far end from the props
+  /* ON THE DESK, HALF A METRE OFF THE WALL. It stood at the desk's edge with
+   * its hinge a hand from the concrete, and the lid, which stands up past
+   * vertical when it opens, went into the wall. The hinge still faces the
+   * wall — open, the lid is out of the way of everything on the desk — but
+   * the case is set in so the lid's swing clears it by half a metre. */
+  const CRATE_SPOT = [TABLE_SPOT[0] + 0.28, TABLE_SPOT[1] + 0.04];
   ray.set(new THREE.Vector3(g.position.x + CRATE_SPOT[0], g.position.y + 2.9, g.position.z + CRATE_SPOT[1]), new THREE.Vector3(0, -1, 0));
   ray.far = 3.4;
   const hit = ray.intersectObjects(meshes, false);
@@ -18946,43 +19030,66 @@ function buildBunkerProps() {
  * blade through `glassStrike`, a corpse or a thrown prop through `ragSmash` —
  * so it is registered in `physProps` as a body that never moves: a no-op
  * `step`, and an `onImpact` that does the whole thing. */
-const TABLE_TOP = 0.86, TABLE_W = 2.05, TABLE_D = 1.05, TABLE_T = 0.055;
-const TABLE_SPOT = [1.30, -2.05];                    // local, on clear floor: checked against the walk grid
-const TABLE_WOOD = new THREE.MeshStandardMaterial({ color: 0x6f5334, roughness: 0.94, metalness: 0, flatShading: true, emissive: 0x1a1208 });
-const TABLE_DARK = new THREE.MeshStandardMaterial({ color: 0x4a3a26, roughness: 0.98, metalness: 0, flatShading: true, emissive: 0x120c06 });
-const TABLE_IRON = new THREE.MeshStandardMaterial({ color: 0x3a3f47, roughness: 0.7, metalness: 0.3, flatShading: true, emissive: 0x14181e });
-let workTable = null, tableBroken = false, tableProp = null;
+/* IT IS THE DESK, NOT ANOTHER TABLE. The first one stood across the room
+ * from the desk the fight is fought over and left that desk in place, and
+ * the owner saw two tables. The scan's desk is part of one merged mesh with
+ * everything else made of wood in the room, so it cannot be hidden — it is
+ * CARVED: its hundred and fifty triangles are dropped from the index at
+ * load, and this stands exactly where they were, to the millimetre the
+ * raycast measured (top at 0.835, 0.73..2.83 by 3.24..4.58), in the scan's
+ * OWN material with every face's uv pinned to one texel of the desk's own
+ * wood — so it is the same colour under the same light, and the crowbar,
+ * the dialogue and the case sit on it exactly as they sat on the original.
+ * The walk grid already knew this desk; nothing is added for it. */
+const TABLE_TOP = 0.835, TABLE_W = 2.10, TABLE_D = 1.34, TABLE_T = 0.06;
+const TABLE_SPOT = [1.78, 3.91];                     // the desk's own centre, room-local
+const DESK_BOX = { x0: 0.62, x1: 2.92, z0: 3.15, z1: 4.66, y0: -0.05, y1: 0.95 };   // what is carved, room-local
+const DESK_UV = { top: [0.362, 0.7593], leg: [0.3721, 0.7128] };   // one texel each of the scan's desk
+const TABLE_WOOD = new THREE.MeshStandardMaterial({ color: 0x6f5334, roughness: 0.94, metalness: 0, flatShading: true, emissive: 0x1a1208 });   // only if the scan never lands
+let workTable = null, tableBroken = false, tableProp = null, deskMat = null;
 const tablePerched = [];                             // what is standing on it
+function carveDesk(g) {
+  const S = g.userData.bunker; if (!S || !S.root) return;
+  let tab = null; S.root.traverse((o) => { if (o.isMesh && o.name === 'TableNAblem_WoodNPaper_0') tab = o; });
+  if (!tab || tab.userData.deskCarved) return;
+  tab.userData.deskCarved = true;
+  deskMat = tab.material;
+  tab.updateMatrixWorld(true); g.updateMatrixWorld(true);
+  const toRoom = new THREE.Matrix4().copy(g.matrixWorld).invert().multiply(tab.matrixWorld);
+  const geo = tab.geometry, pos = geo.attributes.position, idx = geo.index;
+  if (!idx) return;
+  const v = new THREE.Vector3(), keep = [];
+  for (let t = 0; t < idx.count; t += 3) {
+    let cx = 0, cy = 0, cz = 0;
+    for (let k = 0; k < 3; k++) { v.fromBufferAttribute(pos, idx.getX(t + k)).applyMatrix4(toRoom); cx += v.x / 3; cy += v.y / 3; cz += v.z / 3; }
+    const B = DESK_BOX;
+    if (cx > B.x0 && cx < B.x1 && cz > B.z0 && cz < B.z1 && cy > B.y0 && cy < B.y1) continue;
+    keep.push(idx.getX(t), idx.getX(t + 1), idx.getX(t + 2));
+  }
+  geo.setIndex(keep);
+}
 function buildWorkTable(g) {
   if (workTable) return;
+  carveDesk(g);
   const t = new THREE.Group();
   t.position.set(g.position.x + TABLE_SPOT[0], g.position.y, g.position.z + TABLE_SPOT[1]);
-  t.rotation.y = 0.28;
-  const put = (geo, mat, x, y, z, tag) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.userData.part = tag; t.add(m); return m; };
-  // the top: five planks laid across, so it can come apart along the grain
+  const mat = deskMat || TABLE_WOOD;
+  // a box whose every face samples ONE texel: the desk's colour, from the desk's map
+  const pin = (geo, uv) => { const a = geo.attributes.uv; for (let i = 0; i < a.count; i++) a.setXY(i, uv[0], uv[1]); return geo; };
+  const put = (geo, x, y, z, tag, uv) => { const m = new THREE.Mesh(pin(geo, uv), mat); m.position.set(x, y, z); m.userData.part = tag; t.add(m); return m; };
+  // the top: five planks laid across with NO gap, so at rest it is one slab
   const PL = 5, pw = TABLE_D / PL;
-  for (let i = 0; i < PL; i++) {
-    put(new THREE.BoxGeometry(TABLE_W, TABLE_T, pw - 0.008), i % 2 ? TABLE_WOOD : TABLE_DARK,
-        0, TABLE_TOP - TABLE_T / 2, -TABLE_D / 2 + pw * (i + 0.5), 'plank');
-  }
-  // the apron under it, front and back and the two ends
-  put(new THREE.BoxGeometry(TABLE_W - 0.12, 0.13, 0.035), TABLE_DARK, 0, TABLE_TOP - 0.14, TABLE_D / 2 - 0.06, 'rail');
-  put(new THREE.BoxGeometry(TABLE_W - 0.12, 0.13, 0.035), TABLE_DARK, 0, TABLE_TOP - 0.14, -TABLE_D / 2 + 0.06, 'rail');
-  for (const sx of [-1, 1]) put(new THREE.BoxGeometry(0.035, 0.13, TABLE_D - 0.14), TABLE_DARK, sx * (TABLE_W / 2 - 0.06), TABLE_TOP - 0.14, 0, 'rail');
-  // four legs, and a shelf slung between them
+  for (let i = 0; i < PL; i++) put(new THREE.BoxGeometry(TABLE_W, TABLE_T, pw), 0, TABLE_TOP - TABLE_T / 2, -TABLE_D / 2 + pw * (i + 0.5), 'plank', DESK_UV.top);
+  // four square legs, the darker wood of the scan's own, set in from the corners
   for (const sx of [-1, 1]) for (const sz of [-1, 1])
-    put(new THREE.BoxGeometry(0.085, TABLE_TOP - TABLE_T, 0.085), TABLE_WOOD, sx * (TABLE_W / 2 - 0.10), (TABLE_TOP - TABLE_T) / 2, sz * (TABLE_D / 2 - 0.10), 'leg');
-  for (let i = 0; i < 3; i++)
-    put(new THREE.BoxGeometry(TABLE_W - 0.30, 0.03, TABLE_D / 3.6), TABLE_DARK, 0, 0.28, -TABLE_D / 4 + i * (TABLE_D / 4), 'shelf');
-  // and the steel corner brackets that will be left lying in the wreck
-  for (const sx of [-1, 1]) for (const sz of [-1, 1])
-    put(new THREE.BoxGeometry(0.13, 0.02, 0.13), TABLE_IRON, sx * (TABLE_W / 2 - 0.12), TABLE_TOP - TABLE_T - 0.02, sz * (TABLE_D / 2 - 0.12), 'iron');
+    put(new THREE.BoxGeometry(0.09, TABLE_TOP - TABLE_T, 0.09), sx * (TABLE_W / 2 - 0.11), (TABLE_TOP - TABLE_T) / 2, sz * (TABLE_D / 2 - 0.11), 'leg', DESK_UV.leg);
+  // a rail under the top on each long side, which is what the legs are fixed to
+  for (const sz of [-1, 1]) put(new THREE.BoxGeometry(TABLE_W - 0.24, 0.10, 0.04), 0, TABLE_TOP - TABLE_T - 0.05, sz * (TABLE_D / 2 - 0.13), 'rail', DESK_UV.leg);
   t.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
   scene.add(t);
   // AND ITS MATRICES NOW, not on the next frame: the prop spots are dropped
   // onto it by raycast in the very next few lines, and a raycaster reads
-  // `matrixWorld` — which is still identity until somebody updates it, so
-  // everything meant to stand on the table fell through where it used to be
+  // `matrixWorld` — which is still identity until somebody updates it
   t.updateMatrixWorld(true);
   workTable = t;
   /* A BODY THAT NEVER MOVES. Everything that can break something in this
@@ -18991,13 +19098,27 @@ function buildWorkTable(g) {
    * growing a third door of its own. It needs a `step` because the physics
    * calls one on every entry, and it does nothing. */
   tableProp = {
-    mesh: t, radius: 1.15, dead: false, held: false, thrown: false,
+    mesh: t, radius: 1.25, dead: false, held: false, thrown: false,
     vel: new THREE.Vector3(),
     step: () => {},
     onImpact: (speed) => smashWorkTable(speed),
   };
   physProps.push(tableProp);
   return t;
+}
+/* AND THE FLOOR OPENS WHERE IT STOOD. The walk grid was rasterised from the
+ * scan at pack time and it still has the desk in it; without this the
+ * wreckage would be a two-metre patch of invisible furniture you and he
+ * could not cross for the rest of the fight. The cells go, and the cached
+ * "largest piece of floor" with them. */
+function openDeskFloor(g) {
+  const S = g.userData.bunker, n = S && S.nav; if (!n) return;
+  const m = n.cell, B = DESK_BOX;
+  const x0 = B.x0 - m, x1 = B.x1 + m, y0 = -B.z1 - m, y1 = -B.z0 + m;      // grid y is -z
+  const i0 = Math.max(0, Math.floor((x0 - n.x0) / m)), i1 = Math.min(n.gw - 1, Math.floor((x1 - n.x0) / m));
+  const j0 = Math.max(0, Math.floor((y0 - n.y0) / m)), j1 = Math.min(n.gh - 1, Math.floor((y1 - n.y0) / m));
+  for (let j = j0; j <= j1; j++) { const r = n.grid[j].split(''); for (let i = i0; i <= i1; i++) r[i] = '0'; n.grid[j] = r.join(''); }
+  if (S._main) S._main = {};
 }
 /* THE CRASH. A table this size going over is the loudest thing in the room
  * and it has to be heard as three events, not one: the CRACK of the timber
@@ -19065,7 +19186,7 @@ function smashWorkTable(speed, dirX, dirZ) {
    * top a beat later, and the shelf under it later still. `gib.wait` is the
    * sandcastle's own trick and it is the whole difference between a collapse
    * and a burst. */
-  const WAIT = { leg: 0, iron: 0.05, rail: 0.10, plank: 0.14, shelf: 0.26 };
+  const WAIT = { leg: 0, rail: 0.08, plank: 0.14 };
   for (const c of [...workTable.children]) {
     c.updateMatrixWorld(true);
     c.matrixWorld.decompose(_tbP, _tbQ, _tbS);
@@ -19098,6 +19219,7 @@ function smashWorkTable(speed, dirX, dirZ) {
   }
   scene.remove(workTable);
   workTable = null;
+  openDeskFloor(bunkerHome.group);
   /* AND EVERYTHING THAT WAS STANDING ON IT FALLS. Each one is holding a
    * `floorAt` that answers with the table's top; dropping that hands them
    * back to the physics and they arrive on the steel a beat later, where
@@ -19150,8 +19272,20 @@ function spillMilCrate(dx, dz, kick) {
      * point of the break is that it hands you something. Its glint is put
      * back over the middle of it and driven far harder than the one it
      * wore in the case. */
-    militaryWorld.traverse((o) => { if (o.isSprite) { o.position.set(0, 0.32, -0.30); o.scale.setScalar(1.5); } });
-    for (const sh of shinies) if (sh.root === militaryWorld) { sh.strength = 2.6; sh.lift = 1.1; }
+    militaryWorld.traverse((o) => { if (o.isSprite) { o.position.set(0, 0.34, -0.30); o.scale.setScalar(2.4); } });
+    for (const sh of shinies) if (sh.root === militaryWorld) {
+      sh.strength = 3.4; sh.lift = 1.6;
+      // its materials were not there when the shine was added (the scan
+      // lands over the network) — so the lift had nothing to lift. Now it has.
+      sh.mats = [];
+      militaryWorld.traverse((o) => { if (o.isMesh && o.material && o.material.emissive && o.name !== 'hitProxy') sh.mats.push({ m: o.material, base: o.material.emissive.clone() }); });
+    }
+    // and a pool of light on the floor under it, the way a found thing is lit
+    const halo = new THREE.Mesh(new THREE.CircleGeometry(0.95, 24).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ map: glowTex, color: 0xcfe0ff, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
+    halo.position.set(militaryWorld.position.x, gy + 0.02, militaryWorld.position.z);
+    halo.name = 'shovelHalo'; halo.raycast = () => {};
+    scene.add(halo); militaryWorld.userData.halo = halo;
   }
   scene.remove(milCrate);
   const cm = milCrate; milCrate = null;
@@ -19173,6 +19307,8 @@ function buildCrowbarOnTable() {
   const g = bunkerHome.group;
   const meshes = [];
   g.userData.bunker.root.traverse((o) => { if (o.isMesh && o.name !== 'hitProxy') meshes.push(o); });
+  // the desk is ours now: the shelf the bar lies on is the rebuilt one
+  if (workTable) workTable.traverse((o) => { if (o.isMesh) meshes.push(o); });
   const ray = new THREE.Raycaster();
   ray.set(new THREE.Vector3(CROWBAR_SPOT[0], g.position.y + 2.9, CROWBAR_SPOT[1]), new THREE.Vector3(0, -1, 0));
   ray.far = 3.4;
@@ -20221,7 +20357,8 @@ window.__bw = {
   removeSmile, get smilePhase() { return smilePhase; },
   get crowbarOnTable() { return crowbarOnTable; }, get dealerPick() { return dealerPick; }, get bunkerProps() { return bunkerProps; },
   get milCrate() { return milCrate; }, get milCrateOpen() { return milCrateOpen; }, openMilCrate,
-  get workTable() { return workTable; }, get tableBroken() { return tableBroken; }, smashWorkTable, TABLE_SPOT, TABLE_TOP, get tablePerched() { return tablePerched; }, get dealerWon() { return dealerWon; }, set dealerWon(v) { dealerWon = v; },
+  get workTable() { return workTable; }, get tableBroken() { return tableBroken; }, smashWorkTable, TABLE_SPOT, TABLE_TOP, get tablePerched() { return tablePerched; },
+  get riposteT() { return riposteT; }, guardTick, get staminaEl() { return staminaEl; }, get dealerWon() { return dealerWon; }, set dealerWon(v) { dealerWon = v; },
   KAT_A0, KAT_A1, KAT_B0, get comboStep() { return comboStep; }, get digPower() { return digPower; },
   get dealerFight() { return dealerFight; }, get dealerMet() { return dealerMet; }, DEALER_X, DEALER_Z,
   get hatchBusy() { return hatchBusy; }, get bunkerMix() { return bunkerMix; }, get bunkerHome() { return bunkerHome; }, HATCH_X, HATCH_Z, BUNKER_Y, hatch,

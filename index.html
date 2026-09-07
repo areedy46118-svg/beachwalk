@@ -252,6 +252,13 @@
     flex: none;
   }
   #stamina.show { opacity: 1; }
+  #stamina.hit { animation: guardTick 0.42s ease-out; }
+  #stamina.hit #stamina-fill { animation: guardFill 0.42s ease-out; }
+  @keyframes guardTick {
+    0%   { box-shadow: 0 0 0 1px rgba(255,255,255,0.95), 0 0 14px rgba(255,190,150,0.8); transform: scaleY(2.2); }
+    100% { box-shadow: none; transform: none; }
+  }
+  @keyframes guardFill { 0% { background: #fff; } 100% { } }
   #stamina-fill {
     width: 100%;
     height: 100%;
