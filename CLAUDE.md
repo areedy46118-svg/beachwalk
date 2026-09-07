@@ -2368,6 +2368,53 @@ crosses furniture he asks for a route straight away, at most every
 way ROUND something, not a way of getting about. Measured: 22 of 22 standing
 spots in the room reached, 15 of them by route.
 
+**A ROOM YOU CAN WRECK IS A ROOM YOU ARE IN.** The bunker had eighteen
+breakables and a coat stand, and all of them were small: you could scatter
+the scenery but you could not change the SHAPE of the fight. The work table
+is the piece that does that — heavy timber in the middle of the floor, cover
+you can put between you and him, the thing a thrown body lands on, and where
+the equipment case sits, so bringing it down is also how the shovel gets out
+of the case whether you meant it or not.
+
+It breaks into WHAT IT IS MADE OF, the coat stand's rule: five planks off the
+top, four legs, the apron rails, the shelf boards, the corner brackets. And
+it collapses rather than bursting — `gib.wait` staggers it, legs first, the
+top a beat later, the shelf last, which is the sandcastle's own trick. Both
+doors in are the ones every other breakable here already uses: it is
+registered in `physProps` with a no-op `step` and an `onImpact`, so
+`glassStrike` (the blade) and `ragSmash` (a corpse or a thrown jar) find it
+without a third code path. Measured: broken by a swing, and broken by the
+Dealer's body thrown into it.
+
+**AND WHAT WAS STANDING ON IT FALLS, BUT IS NOT SMASHED THERE.** Each prop
+holds a `floorAt` that answers with the table's top; the break drops that and
+hands them back to the physics, so they arrive on the steel a beat later and
+their own `onImpact` finishes them. Bursting them in the same frame reads as
+the table exploding, and this is a collapse.
+
+**A GIB MAY BE A GROUP.** `updateGibs` measures half a piece's thickness off
+its geometry the first time it sees it, and disposes of that geometry at the
+end of its life — the equipment case goes over as one piece and a Group has
+none, which threw inside the update loop, which is the whole game. Hand it
+`half` up front (the guard is already `=== undefined`) and guard the dispose.
+
+**AND THE LEGS STOOD UP LIKE CANDLES.** Same as the coat stand, in a new
+place: `updateGibs` rests every gib with its rotation zeroed, which lays the
+planks and rails flat because they are built along X and Z, and stands
+anything built along Y bolt upright on the floor. A leg gets its geometry
+turned onto X with the quarter turn put back on the mesh.
+
+**AND THE PRIZE MUST NOT BE LOST IN THE WRECKAGE.** A dark olive scan lying
+among a dozen planks on a steel floor is invisible. When the case spills, the
+shovel's glint is moved over the middle of it and its `shinies` entry is
+driven far harder than the one it wore in the case (strength 2.6, lift 1.1).
+
+**A RAYCASTER READS `matrixWorld`, AND A JUST-ADDED OBJECT HAS NONE.** The
+table is built and then the prop spots are dropped onto it by raycast in the
+next few lines; without `updateMatrixWorld(true)` the table is still at the
+identity and everything meant to stand on it fell through to where the scan's
+floor used to be.
+
 **AND ONE THING IN THE ROOM IS PART OF THE FIGHT.** The coat stand is not in
 the nav grid on purpose: a thing that breaks when you touch it must not also
 be a wall, or a body would stop at it and never knock it over. Anyone walking

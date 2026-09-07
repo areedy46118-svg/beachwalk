@@ -340,6 +340,16 @@ The furniture is solid up there and nowhere else, so you walk round the
 sofa on the top floor and not through thin air on the sand five metres
 under it.
 
+### The work table
+
+A heavy timber table stands in the middle of the bunker with the equipment
+case on it and a monitor, a bottle and a jar beside it. It is cover, and it
+is the thing a body lands on. Hit it hard enough — with the blade, with a
+thrown prop, or by putting the Dealer through it — and it comes apart into
+its own planks and legs and rails, everything on it falls and smashes on the
+steel, and the case goes over and spills the Military Shovel onto the floor,
+where it is left with a shine you cannot miss.
+
 One autosave, and no save button. Reaching the mushroom house — the last
 stretch before the three come out of the dark — writes a checkpoint, and a
 small ring in the top right says so. It keeps where you stood, what you were

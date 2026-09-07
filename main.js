@@ -8959,7 +8959,9 @@ function updateGibs(dt) {
   for (let i = gibs.length - 1; i >= 0; i--) {
     const g = gibs[i];
     g.life -= dt;
-    if (g.life <= 0) { scene.remove(g.m); g.m.geometry.dispose(); gibs.splice(i, 1); continue; }
+    // a gib may be a GROUP (the equipment case goes over as one piece), and
+    // a group has no geometry to dispose of
+    if (g.life <= 0) { scene.remove(g.m); if (g.m.geometry) g.m.geometry.dispose(); gibs.splice(i, 1); continue; }
     /* A PIECE MAY BE HELD FOR A BEAT BEFORE IT LETS GO. The sandcastle
      * taught this: everything leaving on one frame is an explosion, and
      * things do not explode — they come apart top-down over a tenth of a
@@ -18460,6 +18462,8 @@ const BUNKER_PROP_SPOTS = [
   [-2.20, 3.75, 'monitor'], [1.95, -2.40, 'radio'], [-2.10, -1.35, 'monitor'],
   [2.10, 0.85, 'radio'],    [-2.30, -4.55, 'monitor'], [0.15, -4.70, 'radio'],
   [-0.95, -3.55, 'valve'],
+  // and three on the work table, which will take them down with it
+  [0.68, -1.87, 'monitor'], [1.15, -1.77, 'bottle'], [1.05, -2.30, 'jar'],
 ];
 /* THE COAT STAND. Everything else breakable in here sits ON something and
  * waits to be hit; this one stands in the room at head height and goes if
@@ -18547,7 +18551,7 @@ function buildMilCrate(g, meshes, ray) {
    * (the desk top is raycast the way every other prop's perch is). The
    * case's long side runs along the wall and its lid hinges on the wall
    * side, so open it stands against the concrete out of the way. */
-  const CRATE_SPOT = [2.50, 3.95];
+  const CRATE_SPOT = [TABLE_SPOT[0] + 0.45, TABLE_SPOT[1] - 0.13];   // on the work table, at the far end from the props
   ray.set(new THREE.Vector3(g.position.x + CRATE_SPOT[0], g.position.y + 2.9, g.position.z + CRATE_SPOT[1]), new THREE.Vector3(0, -1, 0));
   ray.far = 3.4;
   const hit = ray.intersectObjects(meshes, false);
@@ -18864,6 +18868,12 @@ function buildBunkerProps() {
   S.root.traverse((o) => { if (o.isMesh && o.name !== 'hitProxy') meshes.push(o); });
   const ray = new THREE.Raycaster();
   const down = new THREE.Vector3(0, -1, 0);
+  /* THE TABLE FIRST, and its own meshes into the set the spots are dropped
+   * onto — so anything whose spot falls inside its footprint stands ON it
+   * and comes down with it, rather than hovering where the scan's floor
+   * used to be. */
+  buildWorkTable(g);
+  if (workTable) workTable.traverse((o) => { if (o.isMesh) meshes.push(o); });
   for (const [lx, lz, kind] of BUNKER_PROP_SPOTS) {
     // whatever is actually under that spot: a desk, the console shelf, the floor
     const from = new THREE.Vector3(g.position.x + lx, g.position.y + 2.9, g.position.z + lz);
@@ -18895,6 +18905,9 @@ function buildBunkerProps() {
       else shatterGlass(prop, mesh, speed, 0.09, 3.0);
     };
     bunkerProps.push(prop);
+    // standing on the table? then it falls when the table does
+    if (workTable && Math.abs(top - (g.position.y + TABLE_TOP)) < 0.12
+        && Math.hypot(lx - TABLE_SPOT[0], lz - TABLE_SPOT[1]) < 1.4) tablePerched.push(prop);
   }
   /* And the coat stand, in the open by the -x wall where the aisle is
    * widest — somewhere you will back into rather than somewhere you must
@@ -18916,6 +18929,244 @@ function buildBunkerProps() {
     coatStand.frustumCulled = false;
     scene.add(coatStand);
   }
+}
+/* ---- THE WORK TABLE ------------------------------------------------------
+ * A room you can wreck is a room you are IN. The bunker had eighteen things
+ * that broke and a coat stand that came down, and all of them were small:
+ * you could scatter the scenery but you could not change the shape of the
+ * fight. A heavy timber work table in the middle of the floor is the piece
+ * that does that. It is cover, it is the thing a thrown body lands on, and
+ * it is where the equipment case sits — so bringing it down is also how you
+ * get the shovel out of the case, whether you meant to or not.
+ *
+ * It breaks into WHAT IT IS MADE OF, the coat stand's lesson: the top splits
+ * into its planks along the grain, the legs snap, the apron rails and the
+ * shelf boards go, and everything standing on it falls and smashes on the
+ * steel. Both doors in are the ones every other breakable here uses — the
+ * blade through `glassStrike`, a corpse or a thrown prop through `ragSmash` —
+ * so it is registered in `physProps` as a body that never moves: a no-op
+ * `step`, and an `onImpact` that does the whole thing. */
+const TABLE_TOP = 0.86, TABLE_W = 2.05, TABLE_D = 1.05, TABLE_T = 0.055;
+const TABLE_SPOT = [1.30, -2.05];                    // local, on clear floor: checked against the walk grid
+const TABLE_WOOD = new THREE.MeshStandardMaterial({ color: 0x6f5334, roughness: 0.94, metalness: 0, flatShading: true, emissive: 0x1a1208 });
+const TABLE_DARK = new THREE.MeshStandardMaterial({ color: 0x4a3a26, roughness: 0.98, metalness: 0, flatShading: true, emissive: 0x120c06 });
+const TABLE_IRON = new THREE.MeshStandardMaterial({ color: 0x3a3f47, roughness: 0.7, metalness: 0.3, flatShading: true, emissive: 0x14181e });
+let workTable = null, tableBroken = false, tableProp = null;
+const tablePerched = [];                             // what is standing on it
+function buildWorkTable(g) {
+  if (workTable) return;
+  const t = new THREE.Group();
+  t.position.set(g.position.x + TABLE_SPOT[0], g.position.y, g.position.z + TABLE_SPOT[1]);
+  t.rotation.y = 0.28;
+  const put = (geo, mat, x, y, z, tag) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.userData.part = tag; t.add(m); return m; };
+  // the top: five planks laid across, so it can come apart along the grain
+  const PL = 5, pw = TABLE_D / PL;
+  for (let i = 0; i < PL; i++) {
+    put(new THREE.BoxGeometry(TABLE_W, TABLE_T, pw - 0.008), i % 2 ? TABLE_WOOD : TABLE_DARK,
+        0, TABLE_TOP - TABLE_T / 2, -TABLE_D / 2 + pw * (i + 0.5), 'plank');
+  }
+  // the apron under it, front and back and the two ends
+  put(new THREE.BoxGeometry(TABLE_W - 0.12, 0.13, 0.035), TABLE_DARK, 0, TABLE_TOP - 0.14, TABLE_D / 2 - 0.06, 'rail');
+  put(new THREE.BoxGeometry(TABLE_W - 0.12, 0.13, 0.035), TABLE_DARK, 0, TABLE_TOP - 0.14, -TABLE_D / 2 + 0.06, 'rail');
+  for (const sx of [-1, 1]) put(new THREE.BoxGeometry(0.035, 0.13, TABLE_D - 0.14), TABLE_DARK, sx * (TABLE_W / 2 - 0.06), TABLE_TOP - 0.14, 0, 'rail');
+  // four legs, and a shelf slung between them
+  for (const sx of [-1, 1]) for (const sz of [-1, 1])
+    put(new THREE.BoxGeometry(0.085, TABLE_TOP - TABLE_T, 0.085), TABLE_WOOD, sx * (TABLE_W / 2 - 0.10), (TABLE_TOP - TABLE_T) / 2, sz * (TABLE_D / 2 - 0.10), 'leg');
+  for (let i = 0; i < 3; i++)
+    put(new THREE.BoxGeometry(TABLE_W - 0.30, 0.03, TABLE_D / 3.6), TABLE_DARK, 0, 0.28, -TABLE_D / 4 + i * (TABLE_D / 4), 'shelf');
+  // and the steel corner brackets that will be left lying in the wreck
+  for (const sx of [-1, 1]) for (const sz of [-1, 1])
+    put(new THREE.BoxGeometry(0.13, 0.02, 0.13), TABLE_IRON, sx * (TABLE_W / 2 - 0.12), TABLE_TOP - TABLE_T - 0.02, sz * (TABLE_D / 2 - 0.12), 'iron');
+  t.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+  scene.add(t);
+  // AND ITS MATRICES NOW, not on the next frame: the prop spots are dropped
+  // onto it by raycast in the very next few lines, and a raycaster reads
+  // `matrixWorld` — which is still identity until somebody updates it, so
+  // everything meant to stand on the table fell through where it used to be
+  t.updateMatrixWorld(true);
+  workTable = t;
+  /* A BODY THAT NEVER MOVES. Everything that can break something in this
+   * game walks `physProps` looking for an `onImpact` — the blade, a thrown
+   * jar, a corpse at speed — so the table joins that list rather than
+   * growing a third door of its own. It needs a `step` because the physics
+   * calls one on every entry, and it does nothing. */
+  tableProp = {
+    mesh: t, radius: 1.15, dead: false, held: false, thrown: false,
+    vel: new THREE.Vector3(),
+    step: () => {},
+    onImpact: (speed) => smashWorkTable(speed),
+  };
+  physProps.push(tableProp);
+  return t;
+}
+/* THE CRASH. A table this size going over is the loudest thing in the room
+ * and it has to be heard as three events, not one: the CRACK of the timber
+ * letting go, the BOOM of the top hitting steel with everything on it, and
+ * then a second and a half of splinter and scatter and rolling as the pieces
+ * find the floor. The owner asked for loud and dramatic, and the drama is in
+ * the tail — one bang is a door slamming. */
+function sfxTableBreak() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const out = ctx.createGain(); out.gain.value = 0.95; out.connect(sfxOut());
+  const burst = (at, len, cut, gain, type, q, shape) => {
+    const n = noiseBurst(len, shape || ((x) => Math.pow(1 - x, 3)));
+    const f = ctx.createBiquadFilter(); f.type = type || 'bandpass'; f.frequency.value = cut; if (q) f.Q.value = q;
+    const gg = ctx.createGain(); gg.gain.value = gain;
+    n.connect(f).connect(gg).connect(out); n.start(t + at); n.stop(t + at + len);
+  };
+  // the timber letting go: a hard dry crack with a splintering tail
+  burst(0, 0.11, 1500, 0.9, 'bandpass', 1.1, (x) => Math.pow(1 - x, 6));
+  burst(0.01, 0.34, 900, 0.5, 'bandpass', 0.7, (x) => Math.pow(1 - x, 2.2));
+  // the top arriving on steel, with the weight of everything that was on it
+  for (const [f0, f1, gn, dur] of [[92, 41, 0.85, 0.55], [148, 62, 0.5, 0.4]]) {
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(f0, t + 0.05);
+    o.frequency.exponentialRampToValueAtTime(f1, t + 0.05 + dur);
+    const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t + 0.05);
+    og.gain.exponentialRampToValueAtTime(gn, t + 0.07);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.05 + dur);
+    o.connect(og).connect(out); o.start(t + 0.05); o.stop(t + 0.05 + dur + 0.03);
+  }
+  burst(0.05, 0.20, 260, 0.85, 'lowpass', 0, (x) => Math.pow(1 - x, 2.6));
+  // and then the room full of falling wood: fourteen knocks over a second
+  // and a half, thinning out, each one a different board
+  for (let i = 0; i < 14; i++) {
+    const at = 0.12 + Math.pow(i / 14, 0.7) * 1.5 + Math.random() * 0.09;
+    burst(at, 0.055 + Math.random() * 0.05, 420 + Math.random() * 1500,
+          (0.5 - i * 0.026) * (0.5 + Math.random() * 0.7), 'bandpass', 1.4, (x) => Math.pow(1 - x, 4));
+  }
+  // the steel brackets, ringing on the floor
+  for (let i = 0; i < 3; i++) {
+    const at = 0.5 + Math.random() * 0.9;
+    const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = 700 + Math.random() * 900;
+    const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t + at);
+    og.gain.exponentialRampToValueAtTime(0.05, t + at + 0.005);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.5);
+    o.connect(og).connect(out); o.start(t + at); o.stop(t + at + 0.55);
+  }
+}
+const _tbP = new THREE.Vector3(), _tbQ = new THREE.Quaternion(), _tbS = new THREE.Vector3();
+const _tbZ90 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2);
+function smashWorkTable(speed, dirX, dirZ) {
+  if (tableBroken || !workTable) return;
+  tableBroken = true;
+  if (tableProp) tableProp.dead = true;
+  workTable.updateMatrixWorld(true);
+  const p = workTable.position.clone();
+  const gy = floorFor(p);
+  const kick = Math.min(3.4, 0.9 + (speed || 6) * 0.16);
+  let dx = dirX || 0, dz = dirZ || 0;
+  const dl = Math.hypot(dx, dz);
+  if (dl < 1e-3) { const a = Math.random() * Math.PI * 2; dx = Math.sin(a); dz = Math.cos(a); }
+  else { dx /= dl; dz /= dl; }
+  /* THE TOP GOES LAST. A table does not explode; the legs let go, it drops,
+   * and the planks come off it as it lands — so the legs leave at once, the
+   * top a beat later, and the shelf under it later still. `gib.wait` is the
+   * sandcastle's own trick and it is the whole difference between a collapse
+   * and a burst. */
+  const WAIT = { leg: 0, iron: 0.05, rail: 0.10, plank: 0.14, shelf: 0.26 };
+  for (const c of [...workTable.children]) {
+    c.updateMatrixWorld(true);
+    c.matrixWorld.decompose(_tbP, _tbQ, _tbS);
+    const tag = c.userData.part;
+    /* A PIECE LIES ALONG X OR IT STANDS UP WHEN IT LANDS. `updateGibs` puts
+     * every gib to rest with its rotation zeroed, which lays the planks and
+     * the rails flat because they are built along X and Z — and stood all
+     * four LEGS bolt upright on the floor like candles, the coat stand's own
+     * mistake in a new place. A leg gets a copy of its geometry turned onto
+     * X, with the quarter turn put back on the mesh so it leaves the table
+     * standing the way it was drawn. */
+    const upright = tag === 'leg';
+    const geo = upright ? c.geometry.clone().rotateZ(-Math.PI / 2) : c.geometry;
+    const m = new THREE.Mesh(geo, c.material);
+    m.position.copy(_tbP); m.quaternion.copy(_tbQ);
+    if (upright) m.quaternion.multiply(_tbZ90);
+    scene.add(m);
+    const h = THREE.MathUtils.clamp((_tbP.y - gy) / TABLE_TOP, 0, 1);
+    const sway = (Math.random() - 0.5) * 0.8;
+    const out = (0.5 + kick * (0.3 + h * 0.7)) * (0.6 + Math.random() * 0.6);
+    const heavy = tag === 'plank' || tag === 'shelf';
+    gibs.push({
+      m,
+      vel: new THREE.Vector3((dx + sway * dz) * out, 0.5 + h * 0.9 + Math.random() * 0.5, (dz - sway * dx) * out),
+      spin: heavy
+        ? new THREE.Vector3(dz * (2.4 + Math.random() * 3.0), (Math.random() - 0.5) * 2.4, -dx * (2.4 + Math.random() * 3.0))
+        : new THREE.Vector3((Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9),
+      rest: gy + 0.03 + Math.random() * 0.02, life: 200, bleed: false, wait: WAIT[tag] || 0,
+    });
+  }
+  scene.remove(workTable);
+  workTable = null;
+  /* AND EVERYTHING THAT WAS STANDING ON IT FALLS. Each one is holding a
+   * `floorAt` that answers with the table's top; dropping that hands them
+   * back to the physics and they arrive on the steel a beat later, where
+   * their own `onImpact` finishes them. They are not smashed HERE — a jar
+   * that bursts in mid-air while the table is still falling reads as the
+   * table exploding, and this is a collapse. */
+  for (const q of tablePerched) {
+    if (!q || q.dead) continue;
+    q.floorAt = null;
+    q.vel.x += dx * (0.8 + Math.random() * 1.2);
+    q.vel.z += dz * (0.8 + Math.random() * 1.2);
+    q.vel.y += 1.4 + Math.random() * 0.9;
+  }
+  tablePerched.length = 0;
+  // the case goes with it, and comes open
+  spillMilCrate(dx, dz, kick);
+  sfxTableBreak();
+  sfxPropHit('wood', 11);
+  /* LOUD IS ALSO WHAT YOU FEEL. The biggest hitstop and the biggest shake
+   * anything in this room gets, a punch through the lens, and the dust of
+   * forty years off the floor around it. */
+  hitstop = Math.max(hitstop, 0.085);
+  addTrauma(0.62);
+  fovKick = Math.max(fovKick, 7);
+  slamDip = Math.max(slamDip, 0.09);
+  spawnPuffs(p.x, p.z, 22, dx, dz, gy + 0.05, [0.34, 0.28, 0.20]);
+}
+/* AND THE CASE GOES WITH IT. Whatever the table was carrying ends up on
+ * the steel, and the case is the one thing on it that matters: it comes
+ * open on the way down and the shovel is out of it and lying on the floor
+ * before the noise has finished. This is the point of putting it there —
+ * you can find the tool by tidying the room up with a corpse. */
+function spillMilCrate(dx, dz, kick) {
+  if (!milCrate) return;
+  milCrate.updateMatrixWorld(true);
+  const p = new THREE.Vector3(); milCrate.getWorldPosition(p);
+  const gy = floorFor(p);
+  const taken = takenPickups.has('Take the military shovel#1');
+  milCrateOpen = true; milCrateT = 1;
+  if (milCrate.userData.lid) milCrate.userData.lid.rotation.x = 1.92;
+  if (!taken && militaryWorld.parent === milCrate) {
+    milCrate.remove(militaryWorld);
+    const a = Math.atan2(dx, dz) + 0.7 + (Math.random() - 0.5) * 0.6;
+    militaryWorld.position.set(p.x + Math.sin(a) * (0.9 + Math.random() * 0.5), gy + 0.05, p.z + Math.cos(a) * (0.9 + Math.random() * 0.5));
+    militaryWorld.rotation.set(-Math.PI / 2, 0, a + 0.5);      // flat on the floor, the way it lay on the sand
+    militaryWorld.visible = true;
+    scene.add(militaryWorld);
+    /* AND IT MUST NOT BE LOST IN THE WRECKAGE. A dark olive scan lying
+     * among a dozen planks on a steel floor is invisible, and the whole
+     * point of the break is that it hands you something. Its glint is put
+     * back over the middle of it and driven far harder than the one it
+     * wore in the case. */
+    militaryWorld.traverse((o) => { if (o.isSprite) { o.position.set(0, 0.32, -0.30); o.scale.setScalar(1.5); } });
+    for (const sh of shinies) if (sh.root === militaryWorld) { sh.strength = 2.6; sh.lift = 1.1; }
+  }
+  scene.remove(milCrate);
+  const cm = milCrate; milCrate = null;
+  gibs.push({
+    m: cm,
+    vel: new THREE.Vector3(dx * (1.1 + kick * 0.3), 1.0 + Math.random() * 0.5, dz * (1.1 + kick * 0.3)),
+    spin: new THREE.Vector3(dz * 3.2, (Math.random() - 0.5) * 2, -dx * 3.2),
+    /* A GIB IS NORMALLY A MESH, AND THE CASE IS A GROUP. `updateGibs`
+     * measures half a piece's own thickness off its geometry the first time
+     * it sees it, and a Group has none — it threw inside the update loop,
+     * which is the whole game. Handing it the half up front is all it
+     * wanted; the guard is already `=== undefined`. */
+    half: 0.16,
+    rest: gy, life: 240, bleed: false, wait: 0.18,
+  });
 }
 function buildCrowbarOnTable() {
   if (crowbarOnTable || !dealer.weapon || !bunkerHome.group.userData.bunker.ready) return;
@@ -19969,7 +20220,8 @@ window.__bw = {
   katanaItem, katModel, katanaVM, updateDealer, sfxDig, restRot, slashRot, updateViewmodel, updateTrail,
   removeSmile, get smilePhase() { return smilePhase; },
   get crowbarOnTable() { return crowbarOnTable; }, get dealerPick() { return dealerPick; }, get bunkerProps() { return bunkerProps; },
-  get milCrate() { return milCrate; }, get milCrateOpen() { return milCrateOpen; }, openMilCrate, get dealerWon() { return dealerWon; }, set dealerWon(v) { dealerWon = v; },
+  get milCrate() { return milCrate; }, get milCrateOpen() { return milCrateOpen; }, openMilCrate,
+  get workTable() { return workTable; }, get tableBroken() { return tableBroken; }, smashWorkTable, TABLE_SPOT, TABLE_TOP, get tablePerched() { return tablePerched; }, get dealerWon() { return dealerWon; }, set dealerWon(v) { dealerWon = v; },
   KAT_A0, KAT_A1, KAT_B0, get comboStep() { return comboStep; }, get digPower() { return digPower; },
   get dealerFight() { return dealerFight; }, get dealerMet() { return dealerMet; }, DEALER_X, DEALER_Z,
   get hatchBusy() { return hatchBusy; }, get bunkerMix() { return bunkerMix; }, get bunkerHome() { return bunkerHome; }, HATCH_X, HATCH_Z, BUNKER_Y, hatch,
