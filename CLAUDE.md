@@ -2734,6 +2734,80 @@ defaults so nothing on the beach moved. Measured on the screen: his lit side
 reads 72 against the lane's 62 — a body lighter than the ground it stands
 on, which is what lurking looks like.
 
+**AND THEN HE HAD TO BECOME A SOULS BOSS.** The first build fought
+correctly and read as a creature swinging near you; the owner asked for
+swings you can see coming, hands that actually connect, and something much
+harder and crazier. Five things, and the first one is the one that made the
+other four possible:
+
+- **A TELL IS MEASURED IN SECONDS OF VISIBLE APPROACH, NOT IN `wind`.** The
+  honest number is how long the claw is travelling in at you before it
+  arrives, and it is what a player actually reads. Measured: 0.47 / 0.32 /
+  1.05 / **0.23** against a 0.20 s parry window — the grab was a coin toss.
+  Every startup is longer now and the shortest is 0.33; the pounce is 1.15.
+  **He is made harder somewhere else entirely**, which is the Dealer's own
+  rage note said plainly: the startups are what keep a boss fair, and
+  aggression, chains and a gap-closer are where difficulty is supposed to
+  come from.
+- **A COMBO YOU CANNOT HOLD IS A COMBO YOU CANNOT BLOCK.** `blockMutant`
+  takes `BLOCK_COST * 1.35 * reachK` — 0.46 of the bar per blow, which is
+  TWO AND A FIFTH BLOWS to an empty bar. A boss who throws four-hit strings
+  is then a boss whose strings break your guard in the middle and you eat
+  the rest, which is the whole of "not smooth to block". `kind.blockCost`
+  and per-swing `guardK` are the two knobs: an ordinary claw is 0.26 of the
+  bar and the pounce is 0.55, so you hold a string and then you have to do
+  something else. Measured over a minute of holding the guard: phase one 21
+  blocked and 8 through, phase two 10 blocked and 20 through.
+- **A POUNCE THAT WALKS ITS OWN WIND-UP IN IS NOT A JUMP.** The fight AI
+  closes through every startup at two thirds of a run — the pack's own
+  answer to "I back up and never get hit" — so he arrived at the edge of his
+  reach before he had left the ground and then "jumped" the last metre.
+  `hold` keeps him where he is for the whole startup: he stops, rears, and
+  crosses the ground all at once. **And the travel has to be FINISHED by the
+  contact frame**, not started at it: run from the strike onward he was
+  still 3.07 m away when the claws came down and missed by 1.48. `LEAP_AIR`
+  is the flight, in the last of the coil. **And its `reach` must be inside
+  what it can actually cross** — at 4.20 against a 3.6 m leap he threw it
+  from ranges he could not close and his signature move whiffed.
+- **THE ARM THAT IS SWINGING IS THE ARM THAT GETS AIMED.** A man with a
+  crowbar has one and there is nothing to choose; a thing that mauls with
+  both has two, and correcting the right shoulder on a swing the left claw
+  is leading puts the wrong hand on your chest. `aimLimb` takes whichever
+  claw is nearer. With that and `kind.aimK` (a shoulder on a two-metre arm
+  may reach further round than a man turning into a bar swing) every swing
+  now lands inside 0.15 m of the chest at every range from 1.6 to 3.4 m.
+- **HALF HIS HEALTH, AND HE IS NOT THE SAME THING AFTERWARDS.** The single
+  most useful thing a boss can have: it turns one fight you solve once into
+  two and it tells you, with a noise you cannot miss, that you are winning
+  and that it is about to get worse. It is an OPENING and not a cutscene —
+  he is stopped and wide open for two seconds and you keep your hands. What
+  changes is everything between the swings and nothing about the tells.
+  **And turning the busy-ness dials bought almost nothing on their own**:
+  aggression up and cooldowns down took him from 22 swings a minute to 13,
+  because the moves he now favoured were his two slowest and each threw him
+  past you and cost him the ground back. What makes a boss relentless is
+  that a swing leads STRAIGHT into another swing, so the CHAIN
+  probabilities go up and the pounce — which chained into nothing in the
+  first half — comes down and keeps going.
+
+Measured at the end, against a passive player at fighting range: phase one
+43 swings and 40 damage a minute, phase two 47 and 41. The Dealer is 48 and
+40, and this one also has a move that takes two of your four.
+
+**AND `press` IS HOW OFTEN IT SWINGS WHEN IT COULD.** 0.62 is the pack's and
+it is right for three creatures taking turns — two of them should be circling
+at any moment or there is nothing to read. A boss fighting you alone has
+nobody to take turns with, and at the pack's number he spent two fifths of
+every opening walking sideways: twelve swings in forty-five seconds while the
+arithmetic of his own timings allowed thirty-six.
+
+**AND A CHAIN MUST NAME A SWING THE CREATURE OWNS.** `makeMutant` nulls a
+chain the kind does not have — but `swingOf` falls back to the SHARED table
+when a unit is holding a swing that is not in its own, and the shared entry's
+chain was never nulled. `u.atk[A.chain].wind` then threw inside `animate`,
+which is the whole game once a frame for as long as the state lasts. It is
+the same trap `swingOf` itself was written for, one line further down.
+
 **AND A SHRIEK IS NOT A ROAR AN OCTAVE UP.** A bellow is a big animal moving
 a lot of air and it is carried by the SUB; transposing it up produced a
 small angry cow. The `shriek` throat is two detuned sawtooths a fifth apart

@@ -219,11 +219,22 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   from then on it does not stop and cannot be outrun. It fights in the
   language the Dealer taught — a startup you can read, a frame the blow
   lands on, a guard that stops it, a parry that opens it, poise that takes a
-  flurry to break — and what makes it a different fight is REACH: arms that
-  hang past its knees, a leap that crosses three metres and takes two of
-  your four health, and a grab that covers two and a half inside its own
-  wind-up. Twenty-eight health. Its blows are aimed at your chest, so they
-  can be timed.
+  flurry to break. Four swings, every one of them telegraphed for at least
+  a third of a second of visible approach against a fifth-of-a-second parry
+  window, and every one aimed at your chest so it can be timed; the claw
+  arrives inside 0.15 m of you at any range from 1.6 m to 3.4.
+  - **The pounce** is the one you are afraid of: he stops dead, rears with
+    both arms over his head for a second and a bit, and then leaves the
+    ground and crosses two and a half metres to land on you for half your
+    health. It is what the closing sprint finishes with and the first thing
+    he throws after the scream, and it costs most of your guard to hold off.
+  - **Half his health and he screams again**, and the second fight is not
+    the first one: he stops breathing between swings, chains four deep,
+    feints one startup in three and pounces twice as often. His tells do not
+    change — those are what keep him fair.
+  - Thirty-four health, and blocking is not free: hold the guard through a
+    minute of him and eight gets through in the first phase and twenty in
+    the second.
 - **The wreck's wheel** — one star out over the water blinks. Take the wheel,
   drag her toward it and hold her there, and the captain's head comes off
   the davit hook and drops through the hatch into the hold. The key is

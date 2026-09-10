@@ -14489,18 +14489,42 @@ const MUT_ATTACKS = {
    * is a different fight: he threatens from a metre further out than
    * anything else in the game, so the range where you were safe from the
    * man with the crowbar is the range where this one is already on you. */
-  sSwipe: { wind: 0.50, strike: 0.12, recover: 0.26, hit: 0.400, reach: 2.90, lunge: 0.35, chain: 'sSmash', chainP: 0.50, w: 0.30 },
-  sSmash: { wind: 0.72, strike: 0.13, recover: 0.52, hit: 0.620, reach: 2.80, lunge: 0.50, chain: 'sSwipe', chainP: 0.46, w: 0.24 },
-  /* THE ONE YOU ARE AFRAID OF. Both arms thrown up and held there for the
-   * best part of a second, then down the middle — and it takes TWO of your
-   * three. The hang is what makes it fair: `wind` 1.05 against a clip whose
-   * contact is 0.42 of the way through runs the arms-up beat for half a
-   * second and the fall itself for 0.24, which is longer than the parry
-   * window. It is also the most punishable thing he throws. */
-  sLeap:  { wind: 1.05, strike: 0.15, recover: 0.92, hit: 0.375, reach: 3.30, lunge: 1.1,  chain: null,     chainP: 0.00, w: 0.20, dmg: 2 },
+  /* AND THE STARTUPS ARE LONG ON PURPOSE. Measured as the time the claw is
+   * visibly travelling in at you before it arrives — which is the only
+   * length that matters, because that is what a player reads — the first
+   * build gave the grab 0.23 s against a 0.20 s parry window. That is not a
+   * tell, it is a coin toss, and this file has paid for it once already
+   * with the Dealer's held overhead. Every one of these now runs at least
+   * twice the window, and he is made HARDER somewhere else entirely: the
+   * Dealer's own rage note says it outright — the startups are what keep a
+   * boss fair, and aggression, chains and a gap-closer are where the
+   * difficulty is supposed to come from. */
+  sSwipe: { wind: 0.62, strike: 0.12, recover: 0.30, hit: 0.400, reach: 2.90, lunge: 0.50, chain: 'sSmash', chainP: 0.62, w: 0.30 },
+  sSmash: { wind: 0.95, strike: 0.13, recover: 0.55, hit: 0.620, reach: 2.80, lunge: 0.70, chain: 'sSwipe', chainP: 0.55, w: 0.24 },
+  /* THE POUNCE, AND IT IS A JUMP. Both arms thrown up and HELD there while
+   * he coils — the longest tell in the game — and then he leaves the ground,
+   * crosses three and a half metres and lands on you with both claws for two
+   * of your four. It is the answer to standing at what you thought was a
+   * safe distance, it is what the closing dash finishes with, and it is the
+   * first thing he throws after the scream. It is also the most punishable
+   * thing he has: a full second of recovery on the far side, which is your
+   * opening and the only reliable one he gives you.
+   *
+   * `lunge` is what makes it a leap and not a swipe at the air. At 1.1 he
+   * closed a metre and the claws finished 0.70 m short of a chest three
+   * metres away — his own arms are the limit, and no amount of aim
+   * correction can lend a creature reach it does not have. At 3.6 he
+   * ARRIVES, which is the whole difference between a boss who threatens the
+   * ground you are standing on and one who threatens the ground you were
+   * about to back away to. */
+  /* AND ITS REACH IS HOW FAR IT CAN ACTUALLY JUMP. At 4.20 against a 3.6 m
+   * leap he threw the pounce from ranges he could not cross and the claws
+   * came down 0.95 m short — a boss missing on his signature move. `reach`
+   * is now inside the flight: from anywhere he will start it, he arrives. */
+  sLeap:  { wind: 1.15, strike: 0.16, recover: 1.00, hit: 0.375, reach: 3.90, lunge: 4.2,  chain: null,     chainP: 0.00, w: 0.20, dmg: 2, hold: true, guardK: 2.1 },
   // the grab: the arms come from behind him and are thrown forward together,
   // and he covers two and a half metres inside the startup doing it
-  sGrab:  { wind: 0.58, strike: 0.14, recover: 0.80, hit: 0.400, reach: 3.10, lunge: 2.4,  chain: 'sSwipe', chainP: 0.34, w: 0.26 },
+  sGrab:  { wind: 0.95, strike: 0.14, recover: 0.85, hit: 0.400, reach: 3.10, lunge: 2.6,  chain: 'sSwipe', chainP: 0.46, w: 0.26 },
 };
 /* The three of them. `use` is which swings this one has and how often it
  * reaches for each; `windK` scales its startups AND its recoveries together,
@@ -14652,9 +14676,33 @@ const MUT_KINDS = {
    * anything at you. */
   scp: { glb: 'assets/scp096.glb', solo: true, noSand: true, skin: null,
           aimed: true, reacts: true, bossDeath: true,
-          h: 2.55, hp: 28, dmg: 1, speedK: 1.42, windK: 1.00, reachK: 1.00, aggr: 2.45,
-          use: { sSwipe: 0.30, sSmash: 0.24, sLeap: 0.20, sGrab: 0.26 },
-          circle: 0.34, step: 0.26, chainMax: 2, feint: 0.22,
+          h: 2.55, hp: 34, dmg: 1, speedK: 1.42, windK: 1.00, reachK: 1.00, aggr: 3.10,
+          /* THE POUNCE IS FIRST IN THE LIST, AND THAT IS LOAD-BEARING. Three
+           * places in the fight AI reach for a swing by position rather than
+           * by weight — the first swing of a fight, the end of the closing
+           * dash and the end of a step back — and all three fall through to
+           * `Object.keys(use)[0]` for a creature that has no `attack4`. So
+           * the opening move after the scream is the leap, a dash across the
+           * ridge finishes with the leap, and backing off and being followed
+           * finishes with the leap. Its WEIGHT is low: it is what he does to
+           * ground you have given up, not what he does at reach. */
+          use: { sLeap: 0.18, sSwipe: 0.32, sSmash: 0.26, sGrab: 0.24 },
+          circle: 0.26, step: 0.26, chainMax: 3, feint: 0.26, press: 0.88,
+          /* A CLAW IS NOT A CROWBAR TO HOLD OFF. `blockMutant` takes
+           * `BLOCK_COST * 1.35 * reachK` of the bar per blow, which on him
+           * was 0.46 — TWO AND A FIFTH BLOCKS to an empty bar, and a boss
+           * who throws three-hit strings is then a boss whose combos cannot
+           * be blocked: the guard broke in the middle of one and you ate the
+           * rest of it. That is the whole of "smooth to block". At 0.5 it is
+           * four and a half blows a bar, which is a combo held and then a
+           * punish, and the bar still says no eventually. */
+          blockCost: 0.57,
+          /* AND HIS ARMS MAY REACH FURTHER ROUND. `AIM_YAW` and `AIM_MAX`
+           * are a man turning into a crowbar swing; this one is a shoulder
+           * on a two-metre arm with nothing in its hand, and the clamps that
+           * keep the Dealer's blows honest were leaving claws a hand's
+           * breadth wide of a chest they were plainly aimed at. */
+          aimK: 1.35,
           /* POISE, AND NO GUARD. The Dealer meets a light swing with the bar
            * half the time; this one has nothing to meet it with, so every
            * blow goes in — and the pool is deeper instead (`poise` 11), so
@@ -15221,6 +15269,65 @@ function wakeScp(u) {
    * is the one thing a fight must not do. He is stopped and screaming and
    * wide open for two seconds — walk up and hit him, or run. */
 }
+/* HALF HIS HEALTH, AND HE IS NOT THE SAME THING AFTERWARDS. The Dealer has
+ * this beat and it is the single most useful thing a boss can have: it turns
+ * one fight you solve once into two, and it tells you — with a noise you
+ * cannot miss — that you are winning and that it is about to get worse.
+ *
+ * It is an OPENING, not a cutscene. He is stopped and wide open for the
+ * whole of it and you keep your hands the entire time, which makes it the
+ * prize for getting him there rather than the game taking the fight away to
+ * show you something. And his STARTUPS ARE UNTOUCHED: the tells are what
+ * keep him fair, and this file has paid for shortening them twice. What
+ * changes is everything between the swings — he stops breathing between
+ * them, he chains four deep, one in three of his startups is a feint, and
+ * he pounces far more often, which is the move that takes away the ground
+ * you have been using to survive the first half. */
+const SCP_RAGE_AT = 0.5;                   // of his health
+const SCP_RAGE_DUR = 2.15;
+let scpRageT = -1, scpRagePast = false, scpRaged = false;
+function checkScpRage() {
+  const u = scp096;
+  if (scpRagePast || scpRageT >= 0 || !u.st.awake) return;
+  if (!u.st.alive || u.st.hp > u.kind.hp * SCP_RAGE_AT) return;
+  scpRageT = 0;
+  scpRagePast = true;                      // latched: a second blow cannot restart it
+  u.st.roar = SCP_RAGE_DUR;
+  u.st.roarClip = 'panic';
+  u.st.atk = -1; u.st.chainAt = -1; u.st.chained = false;
+  u.st.recoil = 0;
+  mutDrop(u);
+  sfxScpScream(Math.hypot(u.g.position.x - camera.position.x, u.g.position.z - camera.position.z));
+  addTrauma(0.5);
+}
+function updateScpRage(dt) {
+  if (scpRageT < 0) return;
+  scpRageT += dt;
+  if (scpRageT < SCP_RAGE_DUR) return;
+  scpRageT = -1;
+  scpRaged = true;
+  const K = scp096.kind;
+  K.aggr = 4.30;                           // a fifth of a second between swings
+  K.chainMax = 4;
+  K.feint = 0.34;
+  K.circle = 0.14;                         // he stops circling and comes forward
+  K.press = 0.96;                          // and he stops taking breaks at all
+  K.use.sLeap = 0.26;                      // and the pounce is more likely
+  K.speedK = 1.55;
+  /* AND THE SECOND HALF IS ABOUT STRINGS. Turning the dials that make him
+   * busier bought almost nothing on their own — measured, 22 swings a minute
+   * became 13, because the moves he now favours are his two slowest and each
+   * one throws him past you and costs him the ground back. What actually
+   * makes a boss relentless is that a swing leads STRAIGHT into another
+   * swing with no cooldown between them, so the chain probabilities go up
+   * rather than the cooldown coming down, and the pounce — which chained
+   * into nothing at all in the first half — now comes down and keeps going.
+   * The recoveries are untouched: they are the punish windows, and a boss
+   * with no openings is not hard, it is just unfair. */
+  const A = scp096.atk;
+  for (const k in A) A[k].chainP = Math.min(0.90, A[k].chainP + 0.26);
+  if (A.sLeap) { A.sLeap.chain = 'sSwipe'; A.sLeap.chainP = 0.55; }
+}
 /* The ridge, the tower and the edge. Three clamps, all of them the same
  * shape as the ones the player already walks under. */
 function updateScp(dt) {
@@ -15236,6 +15343,8 @@ function updateScp(dt) {
   }
   if (u.st.roar <= 0 && u.st.roarClip) u.st.roarClip = null;
   if (!u.st.alive) return;                 // a body lies where it fell; the ragdoll owns it
+  checkScpRage();
+  updateScpRage(dt);
   /* THE GROUND IS THE RIDGE. Every creature in this game stands at y = 0
    * because the beach is a plane, and nothing in the fight AI has ever had
    * to ask what is under it. Seven metres up a headland that answer is
@@ -15312,8 +15421,16 @@ function blockMutant(u) {
   if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxKatBlock();
   else if (equipped === shovelItem) playSample('blockSand', 1.0, 0.04);
   else sfxBlock();
-  // the big one costs you more to hold off than the small one does
-  stamina = Math.max(0, stamina - BLOCK_COST * 1.35 * u.kind.reachK);
+  /* The big one costs you more to hold off than the small one does — and so
+   * does the big SWING. A kind says how heavy its blows are in general
+   * (`blockCost`: a combo you cannot hold is a combo you cannot block) and a
+   * swing may say that IT is the one you should not be standing in front of
+   * (`guardK`). Two and a bit of a bar for a pounce is the difference
+   * between a guard that answers everything and a guard that answers
+   * everything except the thing you were supposed to move away from. */
+  const SW = u.atk && u.atk[u.st.swing];
+  stamina = Math.max(0, stamina - BLOCK_COST * 1.35 * u.kind.reachK
+    * (u.kind.blockCost || 1) * ((SW && SW.guardK) || 1));
   guardTick();
   if (stamina <= 0.001) { exhausted = true; gaspOut(); }
   flashMats(toolVM);
@@ -17214,7 +17331,14 @@ function updateMutantUnit(u, dt) {
      * so retreating buys you distance the swing simply eats, and the answers
      * left are the ones that should be — step round it, guard it, or parry.
      * It stops closing for the last fifth, which is the commit. */
-    if (t < A.wind * 0.8 && dist > A.reach * 0.75) {
+    /* UNLESS IT IS COILING. A pounce that walks its own wind-up in arrives
+     * at the edge of its reach before it has left the ground, and then the
+     * leap has nothing left to cross — measured, the thing on the headland
+     * strolled from five metres to three and a sixth during the coil and
+     * then "jumped" the last metre, which reads as a lunge and not as a
+     * jump. `hold` keeps it where it is for the whole startup: it stops,
+     * rears, and the ground is crossed all at once. */
+    if (t < A.wind * 0.8 && dist > A.reach * 0.75 && !A.hold) {
       u.dir.set(dx / dist, 0, dz / dist);
       p.addScaledVector(u.dir, MUT_SPEED * u.kind.speedK * 0.66 * dt);
     }
@@ -17228,10 +17352,19 @@ function updateMutantUnit(u, dt) {
       mutAnim(u, dt, 0);
       return;
     }
-    // the lunge covers ground through its strike
-    if (A.lunge > 0 && t >= A.wind && t < A.wind + A.strike + 0.12 && dist > 1.3) {
+    /* The lunge covers ground through its strike — and a POUNCE is the other
+     * way round: it is IN THE AIR BEFORE THE CLAWS ARRIVE and the travel has
+     * to be finished by the time they do, because a jump that is still
+     * crossing the ground on the frame it lands is a thing sliding at you.
+     * Measured with the travel running from the contact frame onward: from
+     * five metres he was still 3.07 m away when the claws came down and the
+     * blow missed by 1.48. `LEAP_AIR` is the flight — most of the crossing
+     * happens in the last of the coil, and what is left runs out through
+     * the strike so it arrives rather than stopping dead. */
+    const air = A.hold ? LEAP_AIR : 0;
+    if (A.lunge > 0 && t >= A.wind - air && t < A.wind + A.strike + 0.12 && dist > 1.3) {
       u.dir.set(dx / dist, 0, dz / dist);
-      p.addScaledVector(u.dir, (A.lunge / (A.strike + 0.12)) * dt);
+      p.addScaledVector(u.dir, (A.lunge / (air + A.strike + 0.12)) * dt);
     }
     // a chained swing STEPS IN through its startup: the first blow's own
     // knockback put you out of reach, and a follow-up that stands still is
@@ -17278,10 +17411,19 @@ function updateMutantUnit(u, dt) {
        * that was itself chained — so a combo is two and you can count on it.
        * The second swing comes out of the first's recovery at the halfway
        * mark, which is what makes it a combo and not two attacks. */
-      u.st.chainAt = (A.chain && u.st.chainN < u.kind.chainMax && Math.random() < A.chainP && dist < A.reach + 2.2)
+      /* AND THE CHAIN HAS TO BE A SWING THIS CREATURE OWNS. `makeMutant`
+       * nulls a chain the kind does not have — but `swingOf` falls back to
+       * the SHARED table when a unit is holding a swing that is not in its
+       * own, and the shared entry's chain was never nulled. So the follow-up
+       * named a key that did not exist, `u.atk[A.chain].wind` threw inside
+       * `animate`, and that is the whole game once a frame for as long as
+       * the state lasts. It is the same trap `swingOf` was written for,
+       * one line further down. */
+      u.st.chainAt = (A.chain && u.atk[A.chain] && u.st.chainN < u.kind.chainMax
+                      && Math.random() < A.chainP && dist < A.reach + 2.2)
         ? A.wind + A.strike + A.recover * 0.42 : -1;
     }
-    if (u.st.chainAt > 0 && t >= u.st.chainAt) {
+    if (u.st.chainAt > 0 && t >= u.st.chainAt && u.atk[A.chain]) {
       u.st.swings++;
       u.st.swing = A.chain; u.st.atk = 0; u.st.chained = true; u.st.chainN++; u.st.chainAt = -1;
       sfxMutTell(dist, u.atk[A.chain].wind, u.kind.voice);
@@ -17430,7 +17572,14 @@ function updateMutantUnit(u, dt) {
        * get to learn the language before it starts using all of it. And if
        * another of them holds the token, it circles instead. */
       const roll = Math.random();
-      const wantSwing = u.st.swings === 0 || roll < 0.62;
+      /* HOW OFTEN IT ACTUALLY SWINGS WHEN IT COULD. 0.62 is the pack's, and
+       * it is right for three creatures taking turns: two of them should be
+       * circling at any moment or the fight is unreadable. A boss fighting
+       * you alone has nobody to take turns with, and at the pack's number he
+       * spent two fifths of every opening walking sideways — measured, twelve
+       * swings in forty-five seconds while the arithmetic of his own timings
+       * allows thirty-six. `press` is that number, per kind. */
+      const wantSwing = u.st.swings === 0 || roll < (u.kind.press || 0.62);
       if (wantSwing && maySwing) {
         let pick = u.kind.use.attack ? 'attack' : Object.keys(u.kind.use)[0];
         if (u.st.swings > 0) {
@@ -17517,6 +17666,7 @@ function updateMutantUnit(u, dt) {
  * put the bar on your bearing, and then the shoulder for what is left, which
  * is mostly the height. Both are clamped and both are weighted by the same
  * ease, so a swing thrown from too far out or too far round still misses. */
+const LEAP_AIR = 0.55;                     // a pounce's flight, before the claws land
 const PATH_EVERY = 0.45;                   // how often he may re-ask the room the way
 const AIM_YAW = 0.70;                      // how far his body may turn into it
 const AIM_MAX = 0.80;                      // and how far the shoulder may bend it
@@ -17531,12 +17681,30 @@ const _atA = new THREE.Vector3();
  * not and carries `barLen` instead. `blowLands` already asked the same
  * question, and now the aim and the hit test are asking it the same way —
  * which is the only reason the picture and the blow cannot come apart. */
-function aimTip(u, out) {
-  const B = u.bones;
-  B.hand.getWorldPosition(out);
-  if (B.tip) { B.tip.getWorldPosition(_atA); return out.copy(_atA); }
-  B.fore.getWorldPosition(_atA);
+function aimTip(u, L, out) {
+  L.hand.getWorldPosition(out);
+  if (L.tip) { L.tip.getWorldPosition(_atA); return out.copy(_atA); }
+  L.fore.getWorldPosition(_atA);
   return out.addScaledVector(_atA.sub(out).normalize(), -(u.kind.barLen || 0));
+}
+/* WHICH ARM IS DOING IT. A man with a crowbar has one — it is skinned to
+ * his right hand and there is nothing to choose. A thing that mauls with
+ * BOTH has two, and correcting the right shoulder on a swing the left claw
+ * is leading puts the wrong hand on your chest and leaves the one you are
+ * watching a half metre wide. The arm whose claw is nearest you at the
+ * moment the correction starts is the arm that is swinging; ask once per
+ * frame, which is cheap and is always right on a two-handed slam because
+ * on those they are symmetric and either answer is the same answer. */
+const _alA = new THREE.Vector3();
+function aimLimb(u) {
+  const B = u.bones;
+  const R = { arm: B.arm, fore: B.fore, hand: B.hand, tip: B.tip };
+  if (!B.handL || !B.armL) return R;
+  const Lf = { arm: B.armL, fore: B.foreL, hand: B.handL, tip: B.tipL };
+  (R.tip || R.hand).getWorldPosition(_alA);
+  const dr = _alA.distanceToSquared(camera.position);
+  (Lf.tip || Lf.hand).getWorldPosition(_alA);
+  return _alA.distanceToSquared(camera.position) < dr ? Lf : R;
 }
 function aimBar(u, dt, dist) {
   if (!u.kind.aimed || !u.bones || !u.bones.arm || !u.bones.hand || !u.bones.fore) return;
@@ -17550,7 +17718,8 @@ function aimBar(u, dt, dist) {
   }
   u.aimW = (u.aimW || 0) + (w - (u.aimW || 0)) * Math.min(1, dt * 18);
   if (u.aimW < 0.004) { if (u.model) u.model.rotation.y = 0; return; }
-  const arm = u.bones.arm;
+  const LB = aimLimb(u);
+  const arm = LB.arm;
   /* THE BODY TURNS FIRST, and it turns the MODEL, not `u.g`: the group's
    * heading belongs to the AI and to every distance test in the fight, and
    * a correction written into it would accumulate frame on frame. The bar's
@@ -17559,19 +17728,20 @@ function aimBar(u, dt, dist) {
   if (u.model) {
     u.model.rotation.y = 0;
     u.model.updateMatrixWorld(true);
-    aimTip(u, _abC);                                   // the tip: a bar's end, or a claw
+    aimTip(u, LB, _abC);                               // the tip: a bar's end, or a claw
     const rx = u.g.position.x, rz = u.g.position.z;
     let dy = Math.atan2(camera.position.x - rx, camera.position.z - rz)
            - Math.atan2(_abC.x - rx, _abC.z - rz);
     while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
-    u.model.rotation.y = THREE.MathUtils.clamp(dy, -AIM_YAW, AIM_YAW) * u.aimW;
+    const yawMax = AIM_YAW * (u.kind.aimK || 1);
+    u.model.rotation.y = THREE.MathUtils.clamp(dy, -yawMax, yawMax) * u.aimW;
     u.model.updateMatrixWorld(true);
   }
   arm.updateWorldMatrix(true, false);
-  u.bones.hand.updateWorldMatrix(true, false);
-  u.bones.fore.updateWorldMatrix(true, false);
+  LB.hand.updateWorldMatrix(true, false);
+  LB.fore.updateWorldMatrix(true, false);
   arm.getWorldPosition(_abA);                         // the shoulder: what turns
-  aimTip(u, _abB);
+  aimTip(u, LB, _abB);
   _abB.sub(_abA);                                     // shoulder to the striking end
   // where it should be: your chest, and never further than the arm can reach
   _abC.copy(camera.position); _abC.y -= 0.45;
@@ -17581,7 +17751,7 @@ function aimBar(u, dt, dist) {
   _abB.normalize(); _abC.normalize();
   let ang = Math.acos(THREE.MathUtils.clamp(_abB.dot(_abC), -1, 1));
   if (!(ang > 1e-4)) return;
-  const use = Math.min(ang, AIM_MAX) * u.aimW;
+  const use = Math.min(ang, AIM_MAX * (u.kind.aimK || 1)) * u.aimW;
   _abQ.setFromUnitVectors(_abB, _abC);
   // only part of the way there: identity is "no correction", the full
   // rotation is "the bar on your chest", and `use / ang` is how far he gets
@@ -21615,7 +21785,7 @@ window.__bw = {
   katanaItem, katModel, katanaVM, updateDealer, sfxDig, restRot, slashRot, updateViewmodel, updateTrail,
   removeSmile, get smilePhase() { return smilePhase; },
   scp096, SCP_X, SCP_Z, wakeScp, scpLookedAt, updateScp, sfxScpScream, sliceClip, blowLands, headlandAt,
-  get scpSeen() { return scpSeen; },
+  get scpSeen() { return scpSeen; }, checkScpRage, get scpRaged() { return scpRaged; }, get scpRageT() { return scpRageT; },
   get crowbarOnTable() { return crowbarOnTable; }, get dealerPick() { return dealerPick; }, get bunkerProps() { return bunkerProps; },
   get milCrate() { return milCrate; }, get milCrateOpen() { return milCrateOpen; }, openMilCrate,
   get workTable() { return workTable; }, get tableBroken() { return tableBroken; }, smashWorkTable, TABLE_SPOT, TABLE_TOP, get tablePerched() { return tablePerched; },
