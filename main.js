@@ -15168,8 +15168,20 @@ function makeMutant(x, z, kindName, y = 0) {
       chain: (A.chain && kind.use[A.chain]) ? A.chain : null,
     });
   }
+  /* THE LONGEST SWING IT OWNS. `near` used to be measured against whatever
+   * swing it happened to be holding, and the fight AI's own orbit radius is
+   * set from that same number (`flankDir` rings it at `reach - 0.3`) — so a
+   * creature whose last swing was its SHORTEST one settles into a circle
+   * just outside its own reach, is never `near`, and never attacks again.
+   * Measured on the headland: orbiting at 2.80–3.03 m holding a 2.80 m
+   * swing, thirty-two seconds without a blow, walking sideways the whole
+   * time. It reads exactly as a boss that has stopped fighting, and it is
+   * the same trap the reaches were raised for once already — raising them
+   * moves the stall, it does not remove it. Being in range is a question
+   * about the CREATURE, not about the last thing it threw. */
+  const maxReach = Math.max(...Object.values(atk).map((a) => a.reach));
   const u = {
-    g, kind, kindName, atk, model: null, mixer: null, clips: {}, cur: null, leanT: 0,
+    g, kind, kindName, atk, maxReach, model: null, mixer: null, clips: {}, cur: null, leanT: 0,
     st: { alive: true, awake: false, roar: 0, atk: -1, flourish: 0, fidget: 0, swing: Object.keys(kind.use)[0],
           cool: 0, stun: 0, recoil: 0, struck: false, hp: kind.hp, step: 0, deadT: 0,
           side: 0, sideT: 0, back: 0, chained: false, chainN: 0, chainAt: -1, swings: 0, wait: 0,
@@ -15223,6 +15235,7 @@ const SCP_X = LH_X + pathBend(SCP_ZL);
 const SCP_Z = LH_Z + SCP_ZL;
 const SCP_SEE = 30;                        // he has to be this close before looking at him means anything
 const SCP_CONE = 0.93;                     // and inside about 22 degrees of the middle of the screen
+const SCP_HEAR = 9.0;                      // this close he notices you whatever you are looking at
 const SCP_PANIC = 2.1;                     // the scream: stopped, and you keep your hands
 /* THERE IS NO ARENA WHILE HE IS AWAKE. The first version penned him thirty
  * metres from his mark, and forty seconds of holding S walked away from the
@@ -15249,6 +15262,14 @@ let scpSeen = false;
 function scpLookedAt(u) {
   const dx = u.g.position.x - camera.position.x, dz = u.g.position.z - camera.position.z;
   const d = Math.hypot(dx, dz);
+  /* AND HE HEARS YOU EVENTUALLY. Looking at him is the trigger and it is
+   * the whole of what he is — but a trigger that can be MISSED is a boss
+   * that can be walked up to and stared past, and what that looks like from
+   * the outside is a creature standing on the lane doing nothing, which is
+   * indistinguishable from a broken one. Inside `SCP_HEAR` he notices you
+   * whatever you are looking at, so the fight always happens; the cone is
+   * how you choose to start it early, from across the ridge, on purpose. */
+  if (d < SCP_HEAR) return true;
   if (d > SCP_SEE) return false;
   camera.getWorldDirection(_scpV);
   const f = Math.hypot(_scpV.x, _scpV.z) || 1e-6;
@@ -17459,7 +17480,7 @@ function updateMutantUnit(u, dt) {
       throwSand(u, dist);
       return;
     }
-    const near = dist <= A.reach;
+    const near = dist <= (u.maxReach || A.reach);
     /* WHOSE TURN IT IS. One of them swings and the others circle: three
      * tells at once is not three times the fight, it is no fight at all,
      * because there is nothing to read. Whoever is nearest and ready takes
@@ -17583,9 +17604,30 @@ function updateMutantUnit(u, dt) {
       if (wantSwing && maySwing) {
         let pick = u.kind.use.attack ? 'attack' : Object.keys(u.kind.use)[0];
         if (u.st.swings > 0) {
-          const tot = Object.values(u.kind.use).reduce((a, w) => a + w, 0);
-          let r = Math.random() * tot;
-          for (const k in u.kind.use) { r -= u.kind.use[k]; if (r <= 0) { pick = k; break; } }
+          /* AND IT DRAWS FROM THE SWINGS THAT CAN ACTUALLY REACH YOU. The
+           * draw was over everything it owns, so at three metres it could
+           * roll its shortest swing, throw it at the air, and — because the
+           * next frame's `near` is measured against that same short swing —
+           * fall straight back into the orbit that produced no attacks at
+           * all. Anything that cannot reach is out of the hat; if nothing
+           * can, it takes the longest and closes the last of the ground
+           * with the swing's own lunge. */
+          const ok = {};
+          let tot = 0;
+          for (const k in u.kind.use) {
+            if ((u.atk[k] || MUT_ATTACKS[k]).reach + 0.25 < dist) continue;
+            ok[k] = u.kind.use[k]; tot += ok[k];
+          }
+          if (tot > 0) {
+            let r = Math.random() * tot;
+            for (const k in ok) { r -= ok[k]; if (r <= 0) { pick = k; break; } }
+          } else {
+            let far = -1;
+            for (const k in u.kind.use) {
+              const R = (u.atk[k] || MUT_ATTACKS[k]).reach;
+              if (R > far) { far = R; pick = k; }
+            }
+          }
         }
         u.st.swing = pick; u.st.atk = 0; u.st.chained = false; u.st.chainN = 0; u.st.wait = 0;
         u.st.feint = (u.st.swings > 1 && Math.random() < u.kind.feint) ? 0.55 + Math.random() * 0.2 : 0;
@@ -17781,7 +17823,8 @@ function mutGiveToken(dt) {
     const st = mutToken.st;
     const d = Math.hypot(camera.position.x - mutToken.g.position.x, camera.position.z - mutToken.g.position.z);
     const A = mutToken.atk[st.swing] || MUT_ATTACKS[st.swing];
-    if (!st.alive || st.stun > 0 || st.recoil > 0 || (st.atk < 0 && d > A.reach + 2.2)) mutToken = null;
+    if (!st.alive || st.stun > 0 || st.recoil > 0
+        || (st.atk < 0 && d > (mutToken.maxReach || A.reach) + 2.2)) mutToken = null;
     else return;
   }
   let best = null, bw = -1;
@@ -17791,7 +17834,7 @@ function mutGiveToken(dt) {
     st.wait += dt;
     const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
     const A = u.atk[st.swing] || MUT_ATTACKS[st.swing];
-    if (d > A.reach + 1.6) continue;
+    if (d > (u.maxReach || A.reach) + 1.6) continue;
     if (st.wait > bw) { bw = st.wait; best = u; }
   }
   if (best) mutToken = best;

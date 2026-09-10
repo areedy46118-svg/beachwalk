@@ -2794,6 +2794,69 @@ Measured at the end, against a passive player at fighting range: phase one
 43 swings and 40 damage a minute, phase two 47 and 41. The Dealer is 48 and
 40, and this one also has a move that takes two of your four.
 
+**AND THEN HE STOOD THERE AND DID NOT FIGHT, AND EVERY MEASUREMENT I HAD
+SAID HE DID.** The owner played it and got a boss that walked in circles.
+Forty-three swings a minute, measured, three times over — and all three
+measurements were worthless for the same reason: each one **force-fed him
+state before it counted anything**. They set `cool`, cleared `feint`, reset
+`hp`, and above all TELEPORTED HIM TO THREE METRES in front of the player
+before every sample. A test that puts the creature where it wants it cannot
+find the case where the creature cannot get there itself. The honest test is
+hands-off: wake it the way the player does and then touch nothing but the
+heal for three minutes. First run of that: **thirty-two seconds without a
+swing.**
+
+**`near` WAS ABOUT THE LAST SWING, AND THE ORBIT IS ABOUT THE LAST SWING
+TOO.** That is the whole bug, and it is a feedback loop rather than a number
+being wrong. `near = dist <= A.reach` uses whatever swing it happens to be
+holding; `flankDir` rings it at `A.reach - 0.3` off the SAME swing; and the
+separation and the circling put the equilibrium orbit a little outside that.
+So a creature whose last swing was its SHORTEST settles into a circle just
+beyond its own reach, is never `near`, never enters the branch that picks a
+swing, and therefore never gets a different reach to be measured against.
+Traced: orbiting between 2.80 and 3.03 m holding a 2.80 m swing, walking
+sideways, for half a minute at a time.
+
+Two fixes, and they belong to every creature and not just to him:
+
+- **Being in range is a question about the CREATURE, not about the last
+  thing it threw.** `u.maxReach` is the longest swing it owns, worked out
+  once at build, and `near` and the token hand-out both ask that.
+- **And the draw is over the swings that can actually reach you.** Anything
+  whose reach falls short of the current distance is out of the hat, so it
+  cannot roll its shortest swing at three metres, throw it at the air and
+  fall back into the same orbit. If nothing can reach it takes the longest
+  and closes the last of the ground with that swing's own lunge.
+
+Measured after, hands-off, five minutes, nothing touched: **207 swings (41 a
+minute), 189 damage (38 a minute), worst gap 3.9 s.** Before: 36 swings and
+a 32-second stall. The pack and the Dealer both still fight — 27 swings a
+minute between the three of them, and the Dealer's four all still land.
+
+**RAISING THE REACHES MOVED THIS STALL ONCE ALREADY AND I CALLED IT FIXED.**
+The first time he would not swing, the answer was that his reaches were the
+Dealer's and shorter than his own arms — true, and raising them made him
+attack. It did not remove the loop, it just moved the orbit to a distance
+where the numbers happened to line up, and the next change to his timings put
+it back. **If a fix makes a symptom go away without naming the mechanism,
+expect it back.**
+
+**AND A TRIGGER THAT CAN BE MISSED IS A BOSS THAT LOOKS BROKEN.** Looking at
+him is what wakes him and it is the whole of what he is — but from the
+outside, a creature sitting on the lane that has not noticed you is
+indistinguishable from one that is not working. `SCP_HEAR` is nine metres:
+that close he notices you whatever you are looking at, so the fight always
+happens, and the cone is how you choose to start it early and on purpose.
+
+**AND THE PREVIEW RUNS WHILE YOU ARE TYPING.** Every one of these tests ended
+with a live fight and no healing, and the twenty seconds it takes to compose
+the next tool call is twenty seconds of the boss hitting a player who cannot
+be healed — so the player died, `playerDied` reloaded the page, and the next
+call measured a module that had been rebuilt from scratch with the creature
+asleep. That is what "he went back to sleep between calls" was, and it wasted
+three rounds of debugging. Freeze rAF at the top of any measurement, not just
+for stills.
+
 **AND `press` IS HOW OFTEN IT SWINGS WHEN IT COULD.** 0.62 is the pack's and
 it is right for three creatures taking turns — two of them should be circling
 at any moment or there is nothing to read. A boss fighting you alone has
