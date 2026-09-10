@@ -212,6 +212,18 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   see and one frame it lands on: guard it, or raise the guard INTO it to
   parry, which leaves it doubled over and helpless for two seconds. It does
   not come apart when it dies; it goes down and stays down.
+- **The thing in front of the lighthouse** — a two-and-a-half-metre creature
+  sitting on the lane with its back to you and its face in its hands, at the
+  end of the walk. Nothing happens until you LOOK AT IT: put it near the
+  middle of the screen inside thirty metres and it is up and screaming, and
+  from then on it does not stop and cannot be outrun. It fights in the
+  language the Dealer taught — a startup you can read, a frame the blow
+  lands on, a guard that stops it, a parry that opens it, poise that takes a
+  flurry to break — and what makes it a different fight is REACH: arms that
+  hang past its knees, a leap that crosses three metres and takes two of
+  your four health, and a grab that covers two and a half inside its own
+  wind-up. Twenty-eight health. Its blows are aimed at your chest, so they
+  can be timed.
 - **The wreck's wheel** — one star out over the water blinks. Take the wheel,
   drag her toward it and hold her there, and the captain's head comes off
   the davit hook and drops through the hatch into the hold. The key is
@@ -566,6 +578,19 @@ by [alexrmartinez](https://sketchfab.com/alexrmartinez) licensed under
 this build is a personal one, and the licence does not allow the model in
 anything sold. `assets/head.glb` is the scan cut to 20k triangles by
 `tools/head_pack.py`.
+
+
+**SCP-096 Reanimated** — the thing sitting on the lane in front of the
+lighthouse. It is the first asset here that arrived with a whole fight
+already animated: `attack1`, `attackjump`, `attackrun`, `attackrunstart`,
+`idle_rage`, `panicstart`, `teslagatehit` and `die` are the creature's own
+clips out of SCP: Containment Breach. `assets/scp096.glb` is the scan through
+`tools/gltfpack.py` with twelve of its thirty-seven clips kept
+(`--clips`), 6.3k triangles and its own two maps.
+
+This work is based on ["SCP-096 Reanimated"](https://sketchfab.com/3d-models/scp-096-reanimated-9e0b35c9485d4b51864a232e9653cc3a)
+by [Sealife Fan 3](https://sketchfab.com/SealifeFan3) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
 
 
 **Mutant 01** — the thing on the beach past the pavilion.

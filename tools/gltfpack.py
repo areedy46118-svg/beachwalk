@@ -115,6 +115,11 @@ def main():
     ap.add_argument('--nodes', default=None,
                     help='regex: keep only nodes (or nodes whose mesh) matching this, plus ancestors/descendants')
     ap.add_argument('--min-tris', type=int, default=0, help='drop primitives smaller than this')
+    ap.add_argument('--clips', default=None,
+                    help='comma list: keep only these animations and RENAME them to these names. '
+                         'A Sketchfab rip names every clip "rig|rig|rig|walk", so the match is on '
+                         'the last |-separated segment. Use old=new to rename as well as keep. '
+                         'Thirty-seven clips of keyframes is most of a download; a fight wants twelve.')
     ap.add_argument('--decimate', type=int, default=0,
                     help='merge every primitive and vertex-cluster down to about this many triangles')
     a = ap.parse_args()
@@ -128,6 +133,30 @@ def main():
         uri = b.get('uri', '')
         bufs.append(base64.b64decode(uri.split(',', 1)[1]) if uri.startswith('data:')
                     else open(os.path.join(root, uri), 'rb').read())
+
+    # ---- keep only the animations asked for -----------------------------
+    # Keyframes are the bulk of a rigged download: SCP-096 arrives with 37
+    # clips over 4.2 MB of buffer, and a boss fight uses twelve of them. The
+    # match is on the last |-separated segment because every clip in a
+    # Sketchfab rip is called 'rig|rig|rig|<name>'.
+    if a.clips:
+        want = {}
+        for tok in a.clips.split(','):
+            if not tok:
+                continue
+            old, _, new = tok.partition('=')
+            want[old] = new or old
+        keep, seen = [], set()
+        for an in g.get('animations', []):
+            short = an.get('name', '').split('|')[-1]
+            if short in want:
+                an['name'] = want[short]
+                seen.add(short)
+                keep.append(an)
+        missing = set(want) - seen
+        if missing:
+            sys.exit('no such clip: ' + ', '.join(sorted(missing)))
+        g['animations'] = keep
 
     # ---- keep only the nodes asked for ---------------------------------
     # A Sketchfab scene is often one asset plus the ground it was scanned on
