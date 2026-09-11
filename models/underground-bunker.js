@@ -76,7 +76,13 @@ export function makeUndergroundBunker(opts = {}) {
   };
   group.userData.bunker = S;
 
-  new GLTFLoader().load(opts.url || 'assets/bunker.glb', (gltf) => {
+  /* THE GAME MAY HAND IN ITS OWN LOADER, and it does: twenty-two megabytes
+   * asked for at the same instant as everything else is what put the room a
+   * player cannot reach for ten minutes ahead of the hall a cutscene waits
+   * on. `opts.load` is main.js's ordered queue; the default keeps this module
+   * standalone for `models/viewer.html`. */
+  const load = opts.load || ((url, cb) => new GLTFLoader().load(url, cb));
+  load(opts.url || 'assets/bunker.glb', (gltf) => {
     const root = gltf.scene;
     S.root = root;
     let raw = null;

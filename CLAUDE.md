@@ -1051,6 +1051,1087 @@ the overlay click) requests pointer lock *on the gesture*, then runs the
 black `#intro` card: the line fades in, holds, fades out, world fades up,
 `introDone = true`, music starts. `frozen()` includes `!introDone`.
 
+**THE ABDUCTION, AND THE THING IN THE SAUCER.** It is BEHIND YOU: the drainage
+tunnel home sits at z = +34 and the walk runs -Z, so everything else in this
+game is somewhere ahead and this is the one thing that is not — you turn round
+and go back past the drain, and out there (`ABDUCT_Z`, on your Z alone like the
+pack's trigger, but GREATER than rather than less than) a light comes down and
+takes you. You finish a boss fight in a room that is not on this beach and are
+put back on the sand a little short of where it took you.
+
+**THERE IS NOTHING IN THE ROOM WHEN YOU ARRIVE.** One light in the middle of an
+empty hall, and touching it is what starts the fight. That is a better opening
+than being set down next to a boss for the same reason the crab's tell is
+better than a hit: the player is GIVEN the moment rather than having it happen
+to them, and they take it standing where they chose to stand. The orb is also
+what lights the room — a hall lit by the thing you are walking toward explains
+its own lighting — and it is the only thing to do in an empty arena, so it is
+where you go without being told. It does not go dark when it is spent; it goes
+COLD, because a fight in an unlit room is not a fight.
+
+**AND THE FLOOR IS THE ARENA, SO THE MIDDLE OF IT HAS TO BE FLOOR.** The temple
+ships an altar cluster standing on the axis. In a shrine that is the point of
+the room; in a boss arena it is a pillar in the middle of the ring that the
+fight has to be steered around, and it is why the first build's creature ground
+against the centre instead of coming at you. `tools/shrine_pack.py` takes out
+anything small, standing on the floor and near the axis — the chandelier and
+the skylight hang well above head height and stay, because they are what the
+middle of the room looks like from underneath. `altar_r` then comes back at
+nothing and the whole 28.75 m disc walks.
+
+Three assets, all in `tools/`: `ufo_pack` is just
+`gltfpack.py` (Islide's saucer, 30 MB of 4K maps to 686 KB),
+`tools/shrine_pack.py` builds the hall out of a Temple FBX (108 MB to 9.3 MB,
+96k triangles undecimated because exact is the brief), and
+`tools/monster_anim.py` authors nine clips on a 76-bone rig that shipped with
+none — the smile's situation and the smile's treatment.
+
+**AND THEN IT COMES DOWN, IN FRONT OF YOU.** The take used to end with a
+black card and the player back on the sand — you killed the thing in the ship
+and the ship simply stopped being part of the story. The hall lets go, you are
+set down on the beach UNDERNEATH the saucer still hovering where it took you,
+and it comes apart over your head and goes into the sand twenty metres away.
+Four beats on one clock (`CRASH`), each cue fired once, the camera TURNED and
+never moved so every clamp still agrees and the hand-back is exact. What it
+cost:
+
+- **YOU MUST NOT BE STANDING WHERE IT IS GOING TO LAND.** `placeBackOnBeach`
+  put you ten metres short of the saucer, which is inside the crash site's own
+  collider — so the hull came down on top of you and the push-out then
+  squeezed you across the beach and left you jammed against `CLIFF_BLOCK_X`
+  for good. Twenty-seven metres back is where the whole of a twenty-six metre
+  disc is in frame with seven metres of sand still in front of it.
+- **`spawnPuffs` PICKS THE BIG CLODS OFF `i % 3`,** so a call with n = 1 is
+  always i = 0 and always the FINE grain. The impact threw ninety separate
+  single puffs and not one clod, and from twenty metres the sand curtain was
+  invisible. Thirty calls of three.
+- **A BALL AND A RING OVER A BLACK SKY READ AS TWO GREY SMOKE RINGS,** at any
+  opacity, because additive pale-blue over nothing IS grey. What says
+  "explosion" is the FRAME going white for a moment — the eye reads the whole
+  picture, not the object — so the boom drives `flashEl`, the abduction's own
+  card, and the fireball is small, briefly white and cooling to orange rather
+  than big and pale.
+- **The kit is built AT THE CUT, behind the black.** A fireball, a shockwave
+  and forty shards of hull is a few milliseconds of geometry and the one
+  moment in this take when a few milliseconds cost nothing is the one where
+  the screen is already covered. The drain, the bunker and the pavilion are
+  all warmed on exactly that argument.
+- **The wreck STAYS.** A ship that blows up in front of you and is not on the
+  sand afterwards is a video, not a thing that happened: the hull is parked
+  driven in edge first, bedded into a `makeApron` drift in the beach's OWN
+  `sandMat`, its lights out and one warm ember lamp in it, its meshes given
+  their frustum culling back (they carried `frustumCulled = false` for the
+  take), and one 10.4 m collider under it. A 26 m disc across a 16.6 m beach
+  is a WALL — which is fine, because the abduction site is the dead end behind
+  spawn and there is nothing past it. Getting inside it is a separate job and
+  is deliberately not here.
+- **And a downed ship stays down.** `crashDone` is on the save and is also
+  inferred from `shrineWon`, the shell door's own rule — and because the model
+  lands over the network long after the save is read, it is the LOADER that
+  puts the hull on the sand when the flag is already set. Park it in the sky
+  only if it is still up there.
+
+**THE BOSS WAS FREEZING SOLID ON THE FRAME THAT KILLED IT.** Everything else
+on this beach dies into the Verlet ragdoll, and the warden cannot: the ragdoll
+is written to `Character1_*` and this rig answers to `root`, `thorax`,
+`tail07`, `legBL_2`, so `mutRagdoll` built a body of ZERO parts, the mixer was
+never updated again, and the boss of the game ended by standing there in
+whatever pose the last blow caught it in. The Dealer's own bug, silent for the
+same reason, and it gets his fix: `kind.deathClip` sends it down its own death
+clip — which `tools/monster_anim.py` had authored and NOTHING WAS PLAYING.
+Round that, the death is a sequence rather than a frame (`startWardenDeath` /
+`updateWardenDeath`), and its cues run off `st.deadT`, the clip's own clock,
+because a wall-clock cue drifts by exactly the length of the kill's hitstop
+and the thump then lands with the body already still:
+
+- a third of a second of hitstop on the killing blow — longer than a parry's,
+  which is the biggest confirm the fight otherwise has;
+- it FLARES and then goes out (`emissiveIntensity`, the one channel neither
+  `flashMats` nor `woundMutant` touches). Not to nothing: at zero, in a hall
+  whose lamps are also failing, the corpse is a black shape on a black floor,
+  and the one thing the beat after a boss fight has to do is let you see what
+  you killed;
+- the legs buckle, then the BODY lands (a sub, dust knocked off the slabs in a
+  ring rather than a puff at its middle, held time), then the TAIL lands, its
+  own smaller thump four metres behind the shoulders — that second beat is
+  what says the thing had a size;
+- and the hall fails UNDER the death rather than after it, so the death and
+  the crash are one event. Lamp INTENSITY is free to move; it is a light
+  entering or leaving a scene that recompiles every material in the game,
+  which is why they live in `shrineLights` and are only ever dimmed.
+- `QUIET` is the beat you get to look at it, and at 3.10 s the tail had only
+  just come down before the black started climbing. 4.40.
+
+**AND A DEAD TAIL FALLS BY BEING SWUNG, NOT BY BEING UNWOUND.** The die clip
+took the resting arc out with a NEGATIVE curl and tip, and measured in the
+game the tip finished a metre HIGHER than it stands in the idle (604.71 alive,
+605.82 dead) — so the corpse held the creature's whole signature silhouette up
+in the air for the rest of the game. It is the slam's own lesson a third time:
+a distributed rotation CURLS a tail in place and only a base-driven `swing`
+moves its tip. A positive swing takes the whole thing over, a yaw throws it off
+the spine so it does not come to rest lying along the body. Measured after:
+tip 4.71 → 1.98, head resting at 600.08 on a floor at 600. **And the collapse
+was already as deep as the floor allows** — a pass that slumped it further
+(lift -1.16, head 1.02) put the head half a metre THROUGH the stone.
+
+**THE CREATURE IS A QUADRUPED WITH A SCORPION TAIL**, and what it is was
+measured off the vertex weights rather than read off the hierarchy: the teeth
+settle it, because `teeth top` is bone-parented to Bone.003 and `teeth bottom`
+to Bone.027, so those two are the head and the jaw and everything else follows.
+Head low and forward at 2.7 m, four legs on the floor, two palps that hang, and
+a 22-bone tail arcing over the spine to 6.4 m. That tail is the only silhouette
+in this game nothing else has, so it is the signature attack and gets the
+longest tell in the fight.
+
+**AND A DISTRIBUTED ROTATION CURLS A TAIL; IT DOES NOT SWING IT.** Three builds
+of the slam went wrong on this one idea. Per-segment angles came first — 22
+bones at 0.6 rad each is nearly two full turns, so the tail wound into a
+spiral and then UNWOUND, which on screen is the tail extending backwards away
+from the thing it is meant to hit. Normalising the parameters to total radians
+fixed the spiral and not the slam: measured, the tip fell one metre and never
+came near the front, because rotation spread along a chain bends it in place.
+A whip is swung from the BASE. `tail()` now takes `swing` (weighted to the
+first third), `curl` (even) and `tip` (weighted to the end) as three different
+motions, and the tip travels seven metres instead of one.
+
+**A SWING'S CONTACT IS NOT THE END OF ITS WIND-UP.** The first attacks put
+`hit` where the cock finished, so the game's startup ended with the limb drawn
+all the way BACK and the damage landed on the frame the creature was least
+extended. Every attack is three keyposes and three lerps now — the shovel
+swing's own shape — with `hit` the fraction at which the contact pose is
+reached. The build then CHECKS it (the striking part should be near its own
+extreme within a couple of frames) and prints `<-- CHECK` when a pose has been
+edited and the declared contact no longer matches. That check earned its place
+three times over: it caught the swipe raking backwards, it caught the bite
+measured on the jaw (which goes forward when the mouth OPENS, so track the
+head), and it caught `surge` being written as +Y when the creature faces -Y —
+the bite drew its head back on the strike and lunged on the wind-up, and the
+report was simply "furthest forward at frame 1".
+
+**`skinnedBounds` READS `matrixWorld`, AND A GROUP ADDED THIS FRAME HAS NONE.**
+The seating in `dressMutant` subtracts `u.g.position.y` because the bounds are
+world space — which is right, and which is exactly wrong when the group's
+matrix is still the identity, because then the bounds come back in the model's
+OWN space and the correction is applied to a number that never had the group's
+height in it. On the beach every creature stands at y = 0 and the two are the
+same arithmetic, so it cannot show; the thing in the saucer stands six hundred
+metres up and came out 547 m above its own floor. `u.g.updateMatrixWorld(true)`
+before the measurement, and any creature whose group is not at y = 0 needs it.
+
+**AND THE BEACH'S WALLS ARE NOT EVERY CREATURE'S WALLS — THE THIRD TIME.**
+Five places in the chase clamped a creature to `WADE_X`..`CLIFF_BLOCK_X`, the
+surf line and the foot of the cliff. The hall is three thousand metres away, so
+on its first step toward the player the boss was teleported out of the room and
+onto the sand (measured: x 3000 to 14.7 in one frame). This is the bunker's own
+lesson wearing a third coat, after the crabs biting through forty metres of
+earth and the blood drops deleted at `y <= 0.02`: A CONSTANT THAT DESCRIBES ONE
+PLACE IS WRONG THE DAY THE GAME ACQUIRES ANOTHER. `mutClampX` asks the kind
+which world it is in; the Dealer is deliberately untouched, because his room
+sits inside the beach's x range and `clampDealer` already owns him.
+
+**A RING IS THE ONE ARENA WHERE STEERING IS FREE.** There is an altar in the
+middle of the hall, so across the room the straight line to the player goes
+through it: pinned on the inner circle the boss ground against the altar and
+closed seven metres in thirty seconds. The clamp slides it round the way that
+shortens the bearing instead, and the obstacle becomes the thing you circle —
+which is what an altar in a boss room is for. Measured after: it closes to
+1.96 m and throws eight swings in thirty seconds across all three attacks.
+
+**A FRESNEL RIM ON A THIN CREATURE IS NOT AN EDGE, IT IS A SHEEN.** The cold
+rim is what separates two metres of dark flesh from a dark beach and it must
+stay on the pack — but Fresnel is a grazing-angle term, and on a body made of
+spindly limbs and a whip tail EVERY surface grazes, so it lit the whole animal
+and it rendered as a white cut-out standing in a black room. The tall one found
+this first and went out with no rim at all. A kind may now say `rim: null`.
+
+**AND THE MAP WAS FOUR TIMES TOO BRIGHT, WHICH IS A NUMBER YOU CAN LOOK UP.**
+Before touching a shader, the albedo's mean was measured against the three
+mutants' shipped maps: 157 against 35-37. `dressMutant`'s emissive is tuned for
+maps `tools/mutant_tex.py` has already brought down, so the fix belongs at
+source and not in a lift — a lift raises the dark parts furthest and flattens
+the folds. `tools/monster_anim.py` is two-stage now (PIL under the system
+python, then Blender on itself, the way `bunker_pack.py` runs) and grades the
+map to a mean of 38. It also took the asset from 5.4 MB to 2.2.
+
+**A BACKDROP YOU DO NOT NEED CAN ONLY COST YOU.** A dark BackSide shell was
+built round the hall on the assumption that the gaps between the columns would
+show the sky dome, which is centred on the player and therefore always there.
+Standing in the middle and looking out at every bay says they do not — the
+`wall` mesh closes the colonnade. The shell was also actively wrong: three
+sorts opaque draws by distance to the object's CENTRE, and the centre of a
+shell you are standing inside is a few metres away, so it went down before the
+hall did and took the depth buffer with it. The whole arena rendered black with
+a few floor lines showing through, and neither `renderOrder` nor
+`depthTest: false` saved it. Deleted.
+
+**A ROOM IS FETCHED ON APPROACH, NOT ON THE TRIGGER — AND SO IS WHAT IS IN IT.**
+Starting the hall's load at the moment the beam closes means the take either
+stalls on a white screen or cuts to an empty room, so it begins 40 m out and
+the cut still holds the white if the hall somehow is not up, which is the
+honest failure. The CREATURE is the same problem one level down and it is
+easier to miss: `makeMutant` starts its download when the creature is made,
+which for everything on the beach is at load and is invisible — but this one is
+made the instant the player touches the light, so the light went out, the sound
+played, and nothing arrived for as long as two megabytes took. `mutGlbWait` is
+the shared one-download-per-model cache and warming it alongside the hall is
+all it takes. Same family as warming the drain and the bunker behind a screen
+that is already covered.
+
+Two smaller ones, both of which cost a run: **`makeApron()` returns a GEOMETRY,
+not a mesh** — every other caller wraps it in `sandMat`, and it is the beach
+heaped up, so it keeps that material rather than the mounds' tan. And **the
+saucer carries its own 0.01**, the katana's trap again, so it is fitted by
+measuring its span rather than by a scale factor.
+
+**THE LAG SPIKE WALKING TO THE TUNNEL WAS A LIGHT ENTERING THE SCENE.** Three
+separate costs were all being paid on the stretch of beach the player walks:
+the hall's seven-megabyte parse, the creature's 2.7 MB parse, and — the one
+that actually hurt — `warmShrine` showing the hall, rendering it and hiding it
+again, which toggled three point lights in and out and so RECOMPILED EVERY
+MATERIAL IN THE GAME, twice, mid-stride. The pavilion has the same scar and
+its answer was to have no lights at all; the answer here is that the lights
+live in a group that is NEVER HIDDEN, three thousand metres away with a 95 m
+falloff, so `NUM_POINT_LIGHTS` is fixed for the life of the page and hiding
+the hall's meshes is free. The saucer's own lamp had the identical problem
+through `farProps`. Everything else moved to boot: the fetch, the parse, the
+warm (on the chain in `animate()` behind the title card) and the creature,
+which is BUILT hidden and asleep and only revealed on the touch. Measured over
+680 frames of that stretch, cold: median 6 ms, p95 7.6, and not one frame over
+40. Before, the same walk had eight frames over 50 ms.
+
+**`farProps` IS FOR LANDMARKS, AND A CUTSCENE PROP IS NOT ONE.** Moving the
+saucer's load to boot put it in `farProps`, which sets `visible` from your
+distance down the walk every frame — right for the wreck and the dock, which
+are always there, and exactly wrong for a thing that must be seen ONCE and
+never otherwise. At the spawn the ship is 72 m away, comfortably inside the
+320 m cull, so the list switched it on at the start of the game: a twenty-six
+metre saucer standing on the sand in front of the player before they had taken
+a step, AND at the world ORIGIN, because a group nobody has positioned yet
+sits at (0, 0, 0). Two rules out of one bug — visibility for a cutscene prop
+belongs to the cutscene, and anything loaded early must be PARKED where it
+belongs at load rather than left at the origin waiting for its first update.
+
+**AND ONE LOOK IS NOT ENOUGH TO WARM A ROUND ROOM.** A drum has a far wall, a
+near wall, a floor and a dome, and what has not been SUBMITTED has not been
+compiled however hard frustum culling is switched off — a single 60-degree
+view from the middle left fifty programs for the reveal. Six views cover it.
+What is left on entering the hall is the BEACH's own far-culled lamps going
+out as you teleport three thousand metres away, which is inherent to being
+somewhere else and lands behind the beam and the flash.
+
+**AN ABDUCTION IS FOUR EVENTS, NOT A SLIDE.** The first take was a ship
+descending on a smooth curve, a cone, and one steady hum switched on at the
+trigger — nothing else in the frame moved, so it read as a picture with a
+drone behind it. What it is now: the ship DECELERATES (a cubed ease, so two
+hundred and sixty metres come down fast and the last thirty barely arrive) and
+then never quite holds still, on a decaying wobble, because a thing that stops
+dead has no mass; the beam PULSES and has grit turning over inside it, seeded
+across the whole cone rather than emitted from the bottom, which is what makes
+a shape into a force; the beach answers with sand off the ground and a lens
+that shakes harder the closer it gets; and the sound is four one-shots on four
+beats — something enormous coming down, the moment it stops, the beam taking
+hold, and the moment it has you — every one of them low, because at the ear
+any broadband hiss is a radio.
+
+**READ A LOOK CONVENTION OFF THE CODE THAT ALREADY DOES IT.** The take played
+facing the sand, and both halves of the camera aim were wrong in the same way:
+this game's convention is the one `__bw.lookAt` is written in — yaw is
+`atan2(-dx, -dz)` and POSITIVE PITCH IS UP — and the first version used
+`atan2(dx, dz)` with a negated pitch, which is a heading half a turn from the
+ship and a pitch that drives your eyes into the ground by exactly the angle
+the saucer is above you. There are two sign conventions for pitch in common
+use and this file only agrees with one; deriving it from first principles got
+it wrong twice. The same mistake had `placeInShrine` set you down facing the
+wall behind you rather than the light in the middle.
+
+**AND THE SAUCER CARRIES ITS OWN LIGHT.** Seen from underneath at night it was
+a ring of lamps with nothing between them — the hull is lit by the moon, which
+is somewhere else entirely, so the disc filling the sky above you had no shape
+at all. One point light at the emitter reads as the source of the beam, models
+the underside, and pools on the sand where the beam lands.
+
+**THE SEA DOES NOT REACH THE SHIP.** The drain and the bunker are holes in this
+beach and still belong to it, so they duck the surf and leave a little; the
+hall is not on this planet and `shrineMix` takes the wave bus and the wind to
+NOTHING. But silence is an absence, not an ambience, so the hall has a bed and
+three things that happen on it — a hull groan on inharmonic partials (a bolted
+shell is not a string), a distant knock with the room answering it, and the
+orb's own two-sine beat, which swells as you close on it so the light is
+audible before it is reachable. NOTHING ABOVE 240 Hz LIVES IN ANY OF IT: the
+bunker paid for that when a CRT whine turned out to be tinnitus.
+
+**AND A TAKE THAT HAS HANDED YOU OVER HAS FINISHED.** The lift runs from the
+beam to the flash and the CUT happens partway through that window, so without a
+`!inShrine` guard the take went on hauling the player toward the saucer's beach
+coordinates after they had been set down in the hall — three thousand metres
+away, so it dragged them clean across the floor while the white was still up.
+
+**DARKENING A MAP IS A LEVEL CHANGE AND MUST NOT BE A RANGE CHANGE.** The
+monster shipped with its albedo multiplied down to the mutants' mean of 37 and
+came back looking UNTEXTURED — the map demonstrably applied, the UVs a clean
+0..1, and nothing on it to see. Matching the mean was the wrong target: a flat
+multiply scales the CONTRAST by the same factor, and contrast is what the eye
+reads as texture. Measured, the shipped map had a p5..p95 spread of 22 against
+mutant-dark's 39 and mutant-red's 44. It is remapped to a target mean AND a
+target spread now — a shift and a scale about the mean, not a multiply — and it
+sits a little above the mutants besides, because they are lit by a quarter moon
+and this one stands in a room with three lamps in it.
+
+**A CREATURE MADE OF STICKS NEEDS ITS TOES.** Thirty-two of the monster's
+seventy-six bones are digits and the first three builds never touched one, so
+the leg swung, the ground arrived, and the foot met it as one rigid paddle —
+which is most of what "stiff and amateur" was. They grip on the plant and open
+through the swing, the ankle ROLLS over the foot instead of arriving flat, each
+of the three is offset from its neighbour, and every left/right pair carries a
+small fixed bias, because nothing alive is symmetric. The other half is timing:
+the idle runs a breath, a weight shift and a head scan on three periods that
+never line up, the tail arrives LATE to all of it, and a strike carries PAST
+its contact pose and settles back through it rather than being retracted.
+
+**THE FIGHT IN THE SHIP IS THREE FIGHTS.** One boss in an empty room is one
+fight learned once. Touching the light now runs three waves, and the reason
+they are three DIFFERENT things rather than more of one is that each takes a
+different answer out of the same four inputs: three REPTILIANS who are a
+crowd, flank, and DODGE a charge, so the heavy has to be bought; three DRONES
+who are in the air and cannot be reached at all until they come down, so the
+fight is a shot you sidestep and a swing you save; and the BEAST, ten points,
+two enormous slow attacks, no way through but the parry. The first and third
+are `MUT_KINDS` entries and are therefore almost nothing — the tell, the
+commit, the poise, the parry, the riposte, the chain, the feint and the token
+all come with the table. The drones are the only new behaviour, because
+nothing else in this game flies.
+
+**THREE ASSETS, THREE DIFFERENT STARTING POINTS.** `tools/reptilian_pack.py`
+(a mesh with NO skeleton at all), `tools/alienbeast_pack.py` (a rig AND ten
+authored clips) and `gltfpack.py` (a rigid saucer). The monster came with a
+rig and no clips; between them these four cover every case this game will
+meet again.
+
+**A RIG YOU BUILD MUST BE MEASURED, NOT PLACED.** The reptilian download is
+150,718 polys, one 2048 BMP, no armature, no vertex groups and no actions — so
+the skeleton is built here, and a skeleton placed by eye is one whose knees
+are not at the knees, which every clip authored on it then has to fight. What
+is measured, and how: the CROTCH is the first height, scanning down from the
+waist, at which the x values split into two clusters with air between them;
+the SHOULDER is where the body's half-width jumps away from the neck's; the
+ARMS are, at each height between them, the vertices outboard of the largest
+gap on that side, so their centroid IS the arm's line and the shoulder, elbow
+and wrist come off it; the LEGS are the same trick below the crotch; and the
+ANKLE is the height at which the leg's forward extent runs away from the
+shin's, because that is a foot sticking out of a leg. Its bones are named
+`Character1_*` on purpose — that is the mutant rig's own naming, which the
+Verlet ragdoll, `mutSever`, `burstHead` and `bakeLimb` all read directly — so
+unlike the beast and the warden it comes apart like everything else here.
+
+**AND HEAT WEIGHTS BIND WHATEVER IS NEAR, WHICH IN AN A-POSE IS THE THIGH.**
+Measured on the first build: vertices at (0.15, -0.02, 0.59) — a KNEE — came
+back weighted 1.0 to `Character1_LeftHand`, so bending an elbow dragged the
+thigh across the body and both arms rendered as long flat sheets hanging past
+the knees. Three masks were tried and the first two look right and are not.
+By straight-line distance against the bones the vertex ALREADY HAD: a vertex
+owned outright by the wrong bone has nothing to be compared with, since its
+one weight is by definition its own nearest, so it cut nothing. By
+straight-line distance against EVERY bone: better, and still hopeless, because
+where the hand touches the thigh the two bones really are equally close and no
+threshold separates them. By GEODESIC distance over the mesh, which is the
+right measure — a knee is four centimetres from the hand through the air and
+most of a metre from it around the body — but it failed on its SEEDS, because
+each bone was seeded from the vertices it was nearest to, and for the hand
+that included the knee.
+
+What settles it was already measured further up the same file: the arm scan
+knows WHICH VERTICES ARE THE ARM, because that is how it found the arm. A
+hand may drive hand vertices and nothing else; the two bones nearest the body
+also get a collar of trunk around their own joint, which is the shoulder and
+the hip actually deforming. Heat weights still ship wherever they were sane —
+they blend across a joint properly, which no distance falloff does — and a
+smoothing pass goes AFTER the mask and would have been actively harmful
+before it, since averaging with neighbours is how the hand got onto the leg.
+
+**A CLIP THAT WAS AUTHORED TO BE WATCHED IS NOT AN ATTACK.** The beast's
+`Attack_Bite` reaches full extension at frame 24 and then HOLDS it for another
+forty, which in a fight is a creature standing with its jaws in you; both its
+attacks end with twenty frames of it already back at rest. Every clip is
+RESAMPLED out of its source over windows worth keeping — the bite is the lunge
+spliced straight to the retraction with the hold cut out — which is also what
+makes them safe, because sampling `matrix_basis` per frame and keying it into
+a fresh action sidesteps Blender 5's layered-action API entirely and
+guarantees EVERY CLIP CARRIES EVERY CHANNEL, the thing this file has already
+paid for twice.
+
+**AND THE CONTACT METRIC HAS TO SUIT THE SWING.** Three different answers,
+all in the same two files: a LUNGE is measured where the head is furthest
+forward; a SLAM where it is lowest AFTER it was highest (peak speed reported
+frame 3 of the beast's slam, because the fastest the head ever moves in that
+clip is the rear-up); and a RAKE where it is fastest, because a horizontal
+sweep has no extreme of position at all. "Furthest forward" was tried on the
+reptilian's rake and reported frame 3 of a swing that lands at 14 — the
+crouched stance already carries both claws out in front, so the frame at which
+the striking hand is furthest along -Y is the REST pose.
+
+**A DECIMATE RATIO IS OF TRIANGLES, NOT OF FACES.** The beast's body ships as
+QUADS, so a ratio worked out against the face count comes out at twice the
+budget the moment `use_collapse_triangulate` splits them: 15,000 asked for and
+30,000 shipped, on the biggest asset here.
+
+**THE DRONES ORBIT YOU, NOT THE ROOM.** The first pass circled the middle of
+the hall, which is right until you move — and forty seconds of being shot at
+leaves you against the outer wall twenty-eight metres from the axis, watching
+three drones fly round a point you are nowhere near. Measured: not once in
+forty seconds did one come inside a blade's reach, so the half of that fight
+where you hit back did not exist. A thing hunting you circles YOU; the hall
+only says where it may not go. After: a drone is in reach 42 % of the time,
+closest approach 1.16 m.
+
+**AND `wantH` IS A HEIGHT ABOVE THE FLOOR, NOT A WORLD Y.** The hall's floor
+is six hundred metres up, so mixing the two is not a small error: the aim
+branch wrote `wantH = u.g.position.y` to mean "hold where you are" and the
+next line added the floor to it again, so the drones climbed six hundred
+metres on the frame they first took aim and kept going. The bunker's own
+lesson — a constant that describes one place is wrong the day the game
+acquires another — wearing a fourth coat.
+
+**A DODGE LEAVES THE LINE; A STEP BACK IS STILL ON IT.** `reads` is the
+Dealer's wind-up answer offered to any kind that declares it, and the
+reptilians take it — three of them that all answer a charge is what stops the
+hall being opened with a free heavy every time. What makes theirs a dodge
+rather than a step is `dodgeClip`: the Dealer goes straight backwards, which
+is right for a man with a bar who wants to stay square to you, and a creature
+with a hop in its clip goes SIDEWAYS instead, out of the arc rather than away
+from it — the one direction a committed swing cannot follow. Measured: 1.82 m
+travelled, 1.71 of it across the line and 0.62 along it.
+
+**`kind.rim` IS A COLOUR, NOT A STRENGTH.** The pack's default is
+[0.070, 0.088, 0.125] and `reexpose` writes it straight into the shader as a
+vec3, so a scalar there is a TypeError inside `onBeforeCompile` — which is to
+say on the first frame the thing is ever drawn. And WHICH creatures get one is
+a question about SHAPE, not about darkness: the warden goes out with
+`rim: null` because Fresnel is a grazing-angle term and on a body of spindly
+limbs and a whip tail every surface grazes, so it lit the whole animal; the
+beast is the opposite shape, one heavy solid mass, and without a rim it
+rendered at twelve metres as a black hole in a black hall with nothing on it
+to read.
+
+**A WAVE MAY NOT START BEFORE THERE IS A WAVE.** Everything is built at boot
+inside the hall's own loader callback, so in a real game the light cannot be
+touched before the units exist — but a wave started any other way (the
+harness, a restore, a future skip) found `shrineGuards` empty, revealed
+nothing, and left `waveClear` false for ever: a phase that can never end.
+`startShrineWave` builds on demand, which costs nothing when they are already
+there. All three waves are also WARMED, not just the boss — whatever has not
+been submitted has not been compiled, and a wave revealed mid-fight is the
+worst possible moment to find that out.
+
+**AND `skipIntro` IS CONSUMED AT MODULE LOAD.** Setting
+`sessionStorage['beachwalk.skipIntro']` and calling `beginGame()` in the SAME
+tool call does nothing: the flag is read and removed while the module
+evaluates, so a flag set afterwards is read by nobody, `beginGame` runs the
+real card, and `introDone` never becomes true because the card is on the wall
+clock and the pane's rAF is dead. Every measurement then reads zero — three
+separate runs of this fight measured "the creatures never close" when what was
+actually true was `frozen()`. Set the flag, RELOAD, and call `beginGame()` in
+the next call.
+
+**THE TAKE WAS SLOW IN TWO SEPARATE WAYS AND ONLY ONE OF THEM WAS THE CLOCK.**
+The owner's report was that you sit there for ten seconds waiting to get into
+the ship. What was actually happening:
+
+- **The abduction's assets were fetched in a CHAIN.** The reptilians, the
+  beast and the drone were asked for inside the hall's own load callback,
+  which means they could not start until the hall had finished downloading
+  AND parsing. Measured off `performance.getEntriesByType('resource')`:
+  `shrine.glb` completed at 3530 ms and the other three did not BEGIN until
+  4910, finishing at 5980 — nearly three seconds of a warm connection spent
+  idle, all of it on the wrong side of the white that `updateAbduct` holds
+  until `shrineReady`. Asked for on the same frame they now come down
+  together and everything is in by 4.0 s. The creatures are BUILT there too,
+  because nothing about a hidden sleeping creature depends on the room it
+  will stand in and the parse wants to overlap the hall's, not follow it.
+- **And the take itself was 5.30 s of locked camera.** Every beat it has is
+  worth having, but the longest single stretch was a second and a half
+  between the ship settling and the beam being open, which is the player
+  watching a cone brighten. Each beat is given the time it needs and no more:
+  4.25 s to the cut becomes 3.15, and 5.30 end to end becomes 3.95. The two
+  sounds that ran on their own absolute lengths — the approach roar and the
+  beam swell — had to come in with it, or they overrun the pictures they
+  belong to.
+
+**READ EVERY MAP IN THE FOLDER BEFORE DECIDING WHICH ONES THE MODEL NEEDS.**
+The alien animal shipped SEVEN and the first build used two. Measured, the
+three that were left on the floor were not all worth having and the way to
+tell was to look at their statistics:
+
+- **the GLOSS map** (mean 119, stddev 28) is real surface variation, and
+  without it the creature went out at one flat roughness over its whole body
+  with nothing on it reading as wet. Gloss is the inverse of roughness, which
+  is the whole conversion. It is the map that made its mouth and teeth read.
+- **the EYE map**, while the 772-vertex eye mesh — which has its own UVs —
+  was wearing the BODY's skin. Giving every mesh one material is the kind of
+  mistake that survives a look at the silhouette and not a look at the face.
+- **the METALLIC map** is deliberately not used. It ships at mean 98 stddev
+  59, which is not the near-black a real metalness map for an organic
+  creature would be; and METALNESS IS A TRAP here, for the third time — a
+  metal has no diffuse term and this game has no environment map, so any of
+  it renders as a dark shape with a couple of pinpoints on it.
+- the 8K normal is the sculpt's source, baked down into the 4K one the body
+  actually uses; and `Base-Diffuse` is a darker, lower-contrast twin of
+  `Base-Color`, which is the albedo.
+
+**AND BLENDER SHIPS A GENERATED METALLIC-ROUGHNESS PACK AS PNG.** Under
+`export_image_format='AUTO'` the 1024 roughness map went into the GLB at
+1000 KB against the albedo's 198 KB at the same size — a megabyte, on the one
+asset whose download the cut waits for. Roughness is low-frequency: 512 and
+`'JPEG'` makes it 46 KB.
+
+
+**"NOBODY HAS TEXTURES OR GOOD ANIMATIONS" WAS TWO REAL BUGS, AND NEITHER WAS
+WHERE THE STATISTICS SAID TO LOOK.** Both creatures measured fine on paper —
+the reptilian's shipped albedo reads mean 47 with a p5..p95 spread of 41
+against the warden's 48 and 38, its UVs span a clean 0..1, and its map was
+demonstrably bound. It still rendered as flat plastic at arm's length. What
+settled it was standing a BEACH MUTANT next to it in the hall, in the same
+light, at the same distance, and asking both what maps they carried:
+
+- **the mutants have a NORMAL MAP and a ROUGHNESS MAP and the reptilian had
+  neither**, because the download is one BMP and nothing else. That is the
+  wreck's lesson on a creature: a seam that is only DARK is a picture of a
+  seam, and a picture does not move when the light does. There is no height
+  map to differentiate, so one is DERIVED from the albedo's own luminance —
+  on a scanned hide the dark parts ARE the creases, so luminance is a fair
+  height field, and the scales and belly plates come straight out of it. It
+  must be derived from the RAW map and not the graded one: the grade is a
+  level change that costs contrast on the way through (53.9 of standard
+  deviation down to 16), and contrast is precisely what a height field is
+  made of — differentiated after grading, the mean surface tilt came out at
+  2.7 degrees, which is nothing. From the raw map it is 8.6.
+- **and the grade was copied off the last creature instead of measured.**
+  The monster's map arrives at a mean of 157 and has to be hauled down; this
+  one arrives at 40, which is already inside the range the three beach
+  mutants ship at. Running the same "bring it to the mutants' level" remap
+  on it was a RANGE change made for no LEVEL gain. Measured against the maps
+  that already work rather than against the last thing built: spread 41
+  becomes 57, against the pale mutant's 61.
+
+**AND `matrix_basis` DOES NOT SEE CONSTRAINTS, WHICH ON A GOOD RIG IS MOST OF
+THE ANIMATION.** The beast's ten shipped clips were resampled frame by frame
+off `pose.bones[i].matrix_basis` — which is a bone's local transform BEFORE
+any constraint is evaluated. Counted on the source, that rig carries 82
+pose-bone constraints: 36 IK, 27 FLOOR, 9 TRANSFORM, 5 TRACK_TO, 3
+COPY_ROTATION and 2 ACTION. So the resample kept what the animator keyed onto
+the control bones and threw away everything the IK chains and the foot
+planting were doing, and a professionally animated creature came out moving
+its hips and dragging four dead legs. Record `pb.matrix` off the EVALUATED
+depsgraph instead — the pose in armature space with every constraint applied
+— and convert it back to a basis a constraint-free rig reproduces:
+
+    basis[b] = (L[parent]^-1 @ L[b])^-1 @ (M[parent]^-1 @ M[b])
+
+with L the rest matrix and M the evaluated pose, both armature space; a root
+bone is L[b]^-1 @ M[b]. It uses only recorded matrices, so it needs no
+per-bone depsgraph update. Every clip must be SAMPLED before any constraint is
+removed and every constraint REMOVED before any clip is written, or the result
+is applied twice. (The exporter's own `export_force_sampling` would have got
+this right on the source actions — the mistake was resampling into new actions
+first, which destroyed the constrained result before the exporter ever saw
+it. If a clip has to be trimmed or spliced, bake the constraints yourself.)
+
+**AND A CREATURE MADE OF STICKS NEEDS ITS TOES — the second time.** The
+reptilian's rig has a `ToeBase` on each foot and the authored clips never
+drove one, so the leg swung, the ground arrived, and the foot met it as a
+rigid paddle. The toe extends as the heel comes up behind and grips as the
+foot is planted in front, harder at a run than a walk, with a small fixed
+left/right bias because nothing alive is symmetric.
+
+
+**AND THEN THE SWINGS WERE NOT PLAYING AT ALL.** "The hit animations look
+stiff" was not a quality problem, it was an absence: `mutAnim` starts an
+attack with `mutPlay(u, u.st.swing)` — the ATTACK KEY out of `MUT_ATTACKS`,
+not a clip name — so a kind whose swings are called `rLight` and `rHeavy`
+while its clips are called `light` and `heavy` resolves nothing, `mutPlay`
+returns undefined, and the creature GOES ON PLAYING WHATEVER IT WAS. Measured
+in the game: `swing: rLight`, `atk: 0.32`, `clip: run`. All three reptilians
+sprinted at the player through every wind-up and every strike, with no
+telegraph and nothing to read, and the damage still landed on the frame the
+table said. `kind.alias` is where the mapping goes and all three creatures
+were missing it — **the warden has had this bug since the day it went in**,
+which is most of why its attacks never read either.
+
+**AND `mutPlay` SAYS SO, IN A WARNING.** It has warned once per missing clip
+name since it was written. Three rounds of checking `read_console_messages`
+with `onlyErrors: true` never showed it, and a filter that hides warnings is a
+filter that hides exactly this class of bug — a name that does not resolve is
+almost never an exception, it is a silent no-op. Read the warnings.
+
+**A STILL FROM A HAND-PLACED CAMERA IS NOT A TEST.** Every check of these
+creatures until this point was `renderer.render` with the camera put where I
+wanted it, and all of them passed while the creature was running through its
+own sword-arm. What found it was PLAYING the thing: let the fight run, catch a
+unit with `st.atk` in its strike window, and ask what clip is on the mixer.
+
+**AND A JOINT THAT MOVES ON THE SAME CLOCK AS EVERY OTHER JOINT IS A DOLL.**
+With the clips finally playing, the reptilian's own swings were stiff for the
+reason the Dealer's packer already names: one number drove the hips, the
+chest, the shoulder, the elbow and the head, so they started together, crossed
+together and stopped together. The body is brought FORWARD instead of the arm
+being dragged back (`lead`, not `drag`) — because the contact fraction of
+these attacks is measured on the striking hand and the build checks it, so
+lagging the hand would move the blow off the frame the game deals damage on.
+Hips first, chest next, hand last, and the claw carries past its stop and
+settles back through it. The swings also gained the thing that makes a blow
+read as having weight at all: FOOTWORK. The light loads onto the back foot,
+turns the hips through and drives onto the front one; the heavy rises onto its
+toes at the top and lands with the knees taking it.
+
+
+**AND THE ARTIST'S OWN BAKE CONFIRMED BOTH GUESSES.** The 2.93 "Baked
+Animations" build of this asset and its `BakedTexture-Packed.fbx` arrived
+after the fact, and the useful thing about them is that they are an
+INDEPENDENT ANSWER to the two things this packer had to reconstruct:
+
+- **the constraint bake.** That file ships the same rig with 171 bones and
+  ZERO pose constraints — the artist has collapsed them. Traced against the
+  2.81a rig with its 82 constraints evaluated, over a run cycle: the head and
+  the hip match to 0.000, and the worst bone anywhere differs by 0.033 units
+  against bones that TRAVEL 4.3 to 5.0 units in the same cycle. Under one per
+  cent, and the residue is a later model revision rather than an error.
+  Recording `pb.matrix` off the depsgraph is right.
+- **the roughness.** The 2.81a download ships GLOSS and the 2.93 one ships
+  `Alien-Animal-Base-Ro.jpg`; inverting the first reproduces the second at
+  mean 135.9 against 135.9, standard deviation 29.5 against 29.5, correlation
+  0.9999 and a worst pixel of 2 out of 255. Gloss inverted IS the roughness.
+
+The 2.81a zip stays the source, because the baked file carries only six of the
+ten clips — no walk and no normal idle.
+
+**AND THE METALLIC MAP IS NOT A METALNESS MAP, WHICH IS MEASURABLE.** The FBX
+wires it straight into Principled's Metallic, so the artist did intend it —
+but a real metalness mask is BIMODAL, near 0 for dielectric and near 1 for
+metal, and this one has a 40 % plateau sitting at 0.4 with only 1.5 % above
+0.9. Nothing is forty per cent metal; that is a specular or reflectivity map
+from an older workflow. In a game with no environment map, honouring it would
+take 40 % of the diffuse off most of the creature and give nothing back. "It
+is what the source material says" is not the same as "it is what this renderer
+can use" — and the way to tell them apart is a histogram.
+
+**A BUILD THAT READS A TEMP DIRECTORY IS NOT A BUILD.** This packer read an
+extraction that happened to be sitting in a session scratchpad, so the day
+that was cleared the asset could not be rebuilt at all. It reads the delivered
+ZIP now, out of the folder the models arrive in, and unpacks it beside itself
+once.
+
+
+**AND SOMEBODY ELSE SAW IT.** A twenty-six metre saucer comes down on the sand
+and until now the only witness was you. He is standing BEHIND you when the
+black lifts, watching the same wreck — `assets/ntar.glb`, a Character Creator
+alien through `gltfpack.py` (85 MB of textures to 7), placed off the same two
+numbers `placeBackOnBeach` uses so the spot is never written down twice, and
+turned to face the WRECK rather than you, because he is looking at the thing
+you are. Four metres back and a metre and a half across: close enough to talk
+to, far enough that turning round is a moment rather than a jump scare.
+
+He is fetched WHEN THE FIRST WAVE IS SUMMONED, not at boot. Seven megabytes
+for somebody you meet at the end of a boss fight has no business on the walk
+to the tunnel, and the fight is minutes long, so the download has all of it to
+arrive in; nothing waits on him, and if he lands after the hull does he is
+placed the moment he arrives. The restore path needs the same treatment the
+wreck needed — a save past the crash never fought the fight, so nothing has
+asked for him yet and `placeCrashSite` starts the load itself.
+
+**AND HIS MIXER MUST NOT HANG OFF A PHASE THAT IS OVER.** `updateNtar` was
+called from `updateShrineFight`, which returns early on anything but phase 2 —
+and by the time he is standing on the sand the phase is 3. It never ticked
+once, so he stood in the bind pose, which on this rig is a T. Anything that
+outlives a sequence gets updated OUTSIDE it.
+
+**THE TAKE IS 2.05 s TO THE CUT NOW.** Three passes: 5.30 end to end, then
+3.95, now 2.55. Every beat is still there and in order — the ship decelerates
+onto its mark, wobbles rather than stopping dead, the beam opens with grit
+turning in it, you are lifted, it whites out — each given the time it needs
+and no more. **And the park height came down with the clock**: two hundred and
+sixty metres brought down in three quarters of a second is 350 m/s, which does
+not read as a descent, it reads as a cut. `UFO_PARK` is 105.
+
+**AND WHAT HANDS YOU A ROOM DECIDES WHERE YOU ARE LOOKING WHEN YOU ARRIVE.**
+`placeInShrine` sets you down at the rim aimed at the light — measured, 0.72
+degrees off it on the frame of the cut — and then the take's own look driver
+went on turning your head toward the saucer's BEACH coordinates, which from
+inside the hall is three thousand metres across the room: twelve frames later
+the light was 12.9 degrees off centre and still drifting. The lift got its
+`!inShrine` guard when this was first found; the AIM did not, and it is the
+same bug wearing the other half of the same coat. Measured after: 0.00 at the
+cut, 0.09 at twelve frames, 0.09 at seventy-two.
+
+**THE BEACH'S CLIFF IS A WALL TO A BODY ON THE BEACH — THE THIRD TIME, AND
+THIS IS THE COPY THAT WAS MISSED.** `PhysProp`'s HELD branch has skipped the
+`CLIFF_BLOCK_X` clamp since the bunker went in; the FREE body kept it, and got
+away with it for one reason only: the bunker sits inside the beach's own x
+range, so clamping there changes nothing. The hall does not — it is at
+x = 3000, so the first physics step on a wrecked drone snapped it from 3000 to
+13.1, two thousand nine hundred metres sideways, which put it outside the
+hall's floor disc so nothing answered underneath it and it fell for ever. The
+clamp is now gated on `bf === null`: if a body answers to another room's
+floor, it is in another room.
+
+**AND A DOWNED DRONE IS THE ONLY LOOSE OBJECT IN THE ROOM, SO IT IS THE
+ANSWER TO THE ROOM.** The second wave used to end with three wrecks lying
+there being scenery. They are table-sized, the fight is one you spend dodging,
+and they are the only thing in the hall that reaches something six metres up
+— so a wrecked saucer is a SHIELD you hold between yourself and the next bolt
+and a MISSILE that knocks the next one out of the air. Almost none of it is
+new code: `makeProp` already gives a mesh the grab, the carry, the throw and
+the hover label, and the hall already chains its floor into `bunkerFloorAt`.
+What is new is the two things a wreck does that a bottle does not — it hurts
+what it is thrown into (on its own SPEED rather than on contact, because a
+two-and-a-half metre disc tumbling through the air does not need to be precise
+to have obviously hit, with a cooldown so one throw cannot chew through all
+three), and it stops a bolt, tested BEFORE the body so a bolt can never pass
+through the thing you are holding up and hit you anyway. A wreck held at the
+cut is left behind: it belongs to the hall, not to the walk home.
+
+
+**A PER-CHANNEL REMAP IS A COLOUR REMOVER, AND BOTH CREATURES HAD IT.** "Why
+does everything look muted and grey — I gave you textures and they are not
+being used" was exactly right, and the grade was the reason. Pulling R, G and
+B each to their OWN target mean and spread, with gains near one, is the same
+target for all three channels, so whatever hue the map had was normalised
+away by construction — and then a `SCENE_BLUE` mix went over the top.
+Measured, source to shipped:
+
+| | source | shipped (per-channel) | shipped (luminance) |
+|---|---|---|---|
+| reptilian | 32, 47, 24 (green) | 44, 49, 55 — BLUE | 34, 52, 23 |
+| alien animal | 85, 81, 76 (warm) | 44, 44, 44 — NEUTRAL | 49, 42, 36 |
+
+A green reptile came out the colour of the sea and the animal came out
+neutral to three significant figures. What actually needed changing was never
+the colour, it was the LEVEL: these maps are authored for a studio and this
+game has a quarter moon. So the remap is on LUMINANCE ALONE and every pixel
+keeps its own distance from its own luminance, which passes hue and
+saturation through untouched; darkening costs apparent saturation, so the
+chroma is given a little back (`TEX_SAT`). Saturation 0.187 → 0.300 and
+0.118 → 0.323, against 0.198 and 0.070 before. **If a grade has one target
+per channel, it is a desaturator whatever it was meant to be.**
+
+**A ROUND ROOM IS NOT A BOX, AND A DOME IS NOT A FLAT LID.** `PhysProp.confine`
+was written for the bunker, which is rectangular, so the hall had nothing at
+all: the drones flew through the dome and the chandelier and a thrown wreck
+went straight out through the ceiling. `confine` now takes `r` (a radial wall
+about a centre) and `ceil` (a FUNCTION of radius), because the one number a
+drum offers — `headMin`, the ceiling's lowest point out at the colonnade —
+is the wrong number everywhere else: capping a wreck at 6.25 m while the
+drones cruise between 6.4 and 7.7 meant a thrown one could never reach a
+flying one at all, and the throw simply passed underneath. Asked at the
+radius the body is actually at, both hold: a wreck hurled straight up stops
+at 5.6 m near the rim, hurled sideways at r = 26.4 inside a 28.75 m room.
+And the drones spawn just UNDER the lid rather than dropping in from above
+it, which was the same clipping wearing an entrance.
+
+**A BODY IS AS WIDE AS THE BODY — THREE NUMBERS, NOT ONE.** "The alien animal
+is way too big and the hitbox is off, he has to stand on top of you to hit
+you and for you to hit him" is one cause with three symptoms, and the cause is
+that every distance in this fight is measured to `u.g.position`, which on this
+model is MID-BODY. At `h` 6.20 it stood twelve and a half metres long in a
+room whose clear head height is 6.65 — it filled the hall rather than fighting
+in it — and its head sat most of four metres ahead of the point its reach was
+measured from. So:
+
+- **`body`** — the push that stops you walking into a creature was a
+  hard-coded 0.9 m, which is a PERSON. On an animal four metres across that
+  let you stand with its origin less than a metre away, which is to say
+  inside it. Measured: it closed to 1.66 m before, 2.60 after, which is
+  exactly the radius it is now given.
+- **`hitR`** — the blade's own test is a 0.85 m sphere at the origin, which
+  on an eight-metre animal is a spot in the middle of its back that you had
+  to walk into to hit. At 2.70 a swing connects anywhere from 2.5 m to 5 m.
+- **and the REACHES are measured from the origin out to where its head
+  actually is** (5.6 and 6.4, not 4.4 and 5.2), so it swings from where its
+  jaws are rather than closing until its jaws are past you.
+
+`h` is 4.30 now: still the biggest thing in the game and no longer the room.
+
+**AND THE LAST WAVE IS BOTH AT ONCE.** Five drones are built, not three — the
+first three are the second wave and the last two come in WITH the beast, a
+beat after its roar, so the final phase is not simply the biggest thing in
+the room walking at you. You answer a slow enormous animal on the floor and
+two things shooting at you from the air at the same time, which is the only
+phase that asks for both. `WAVE2_DRONES` is what keeps `waveClear` honest;
+without it phase two would wait for creatures that have not been revealed.
+
+**AND A KILLING THROW TAKES THEM BOTH.** Two saucers meeting hard enough to
+end one of them do not politely separate. If the blow was fatal the thrown
+wreck goes up in the same blast — one white frame, one curtain of grit, its
+own lights out (0.20 → 0.05) and both of them thrown — rather than the target
+exploding while the thing that killed it clatters to the floor intact.
+
+
+**A DEATH CLIP THAT WAS AUTHORED TO LOOP STANDS BACK UP.** "When you kill it
+have it stay in that dead animation" was a real bug and it was in the window,
+not in the game: the beast's shipped `Die_1` rears at frame 6, staggers, drops
+over frames 33–42, lies perfectly still from 51 to 150 — and then GETS BACK ON
+ITS FEET over the last forty-eight frames, because it was made to cycle.
+`mutPlay` clamps a death clip on its final frame, so the boss of the ship ended
+the fight standing up with its health at zero. Measured out of the exported
+GLB, the skeleton's crown goes 19.6 → 11.3 over the collapse and back to 20.7
+after it; the window now ends on the collapse and three settled frames
+(`[(0, 54, 1)]`), at step 1 rather than 3 so two tonnes take two and a quarter
+seconds to arrive instead of three quarters of a second. **Before shipping any
+source death clip, plot something's height over the whole of it.**
+
+**AND THE DEATH'S BEATS BELONG TO THE CLIP, SO THEY BELONG TO THE KIND.**
+`WARDEN_DEATH`'s 0.55 / 1.05 / 1.72 are fractions of a 56-frame fall measured
+on the warden; the beast's is half again as long and its legs give at a
+completely different moment, so the two-tonne impact fired at 1.05 s while the
+animal was still on its feet. `kind.death` overrides all four and the default
+is untouched — and `QUIET`, the beat you get to look at what you killed, is
+now 4.60 against a 2.25 s clip, so the collapsed pose is held for well over two
+seconds before the hall lets go.
+
+**A PAUSED ACTION STAMPS THE POSE ONCE AND THEN STOPS STAMPING IT.** This is
+the trap under "he seems stuck in an animation where he is walking", and it is
+general. `PropertyMixer.apply` compares what it has just accumulated against
+what it wrote last time and only touches the scene graph when the two DIFFER —
+which, for an action frozen on one frame, is never after the first. So
+procedural offsets written onto a bone after `mixer.update` are not overwritten
+next frame, they are ADDED TO WHAT THEY LEFT: measured on the ntar, his spine
+went from 8 degrees off vertical to 75 over three seconds, his head finished
+26 cm above his own hips, and every "forward" measured off him was nonsense.
+The fight's creatures scrub `action.time` every frame, so their values always
+differ and they have never met this. The stance is CAPTURED once
+(`ntarBase`) and every driven bone is put back on it at the top of the frame;
+the mixer is then not needed again at all.
+
+**AND A CHARACTER CREATOR "TempMotion" IS A DEMO, NOT AN IDLE.** Traced
+through the ntar's one clip: he stands for two thirds of a second, walks a
+loop 2.3 m long, waves, and comes back to his mark — nine and a half seconds,
+looping for ever. So the man who has just watched a saucer come down was
+ambling about behind you. The clip is not thrown away, because its FIRST FRAME
+is his stance (feet 32 cm apart, spine 8 degrees off vertical, arms down); it
+is paused there, which makes it a bind pose that is actually a pose — this rig
+binds in a T, so simply not playing it is worse. What is alive on top is
+authored: a slow shake of the head IN BURSTS (two and a half turns every
+eleven seconds, then a long hold — the same motion on a metronome reads as a
+metronome with a head on it), a breath, and his weight moving over his feet.
+
+**AND THE ONLY TRUSTWORTHY FORWARD ON A HUMANOID IS THE EYES.** A forward
+built as `(rightJoint − leftJoint) × up` comes out BACKWARD on this rig and
+disagrees with itself between the hips, the shoulders and the eyes — and the
+clavicles are worse than useless, because their heads sit a few centimetres
+apart at the sternum so the vector between them is mostly noise (it reported a
+twist no neck could survive). What is unambiguous is the vector from the HEAD
+bone to the midpoint of the two EYE bones, and the way to be sure is to put
+the camera on that line and render: it comes back a face, every time. Measure
+it on the pose READ OUT OF THE GLB, not in the game, or a bug in the game's
+own posing is measured instead — which is exactly what happened here, twice.
+
+**A THING THAT CRASHES MUST LAND ON THE HEADING IT IS PARKED AT.** The
+saucer's descent spun it (`rotation.y += dt * 2.4`) from wherever it had got
+to, and `placeCrashSite` then stamped a fixed yaw on the frame it touched
+down — so a disc tilted 34 degrees snapped through up to half a turn between
+one frame and the next and changed which edge was buried in the sand. That is
+the whole of "it crashes one way then is put in as a prop another way, it
+looks as if it teleports into place". `CRASH_YAW` is written down ONCE and the
+fall's yaw is an ARC onto it: the free spin is still integrated, and the drawn
+yaw is blended off it onto `CRASH_YAW + 2π·n` — n chosen at the top of the
+fall so the end of the arc is the nearest turn to where the spin would have
+finished — over a smoothstep of the whole descent. Measured: worst yaw step
+0.066 rad a frame through the fall, and the landing pose is the parked pose.
+**And taking a FRACTION OF THE REMAINDER each frame is the trap that looks
+right**: wrapped forward, a remainder of nothing is a remainder of a whole
+turn, and the thing spun up to two turns a frame over the last stretch
+(measured: 12.6 rad in one 16 ms step).
+
+**THE REPTILIANS WERE STIFF BECAUSE THEIR HANDS AND SHOULDERS NEVER MOVED.**
+Rendered as eight-frame strips out of the shipped GLB (`tools/monster_strip.py`
+takes any `.glb`), the run reads as one pose being carried along: the legs
+cycle and the claws, the wrists and the clavicles hold exactly the guard the
+stance was authored in, for every frame of every clip. `sh`, `wrist` and
+`claw` were in the pose vocabulary from the first build and nothing had ever
+written one. A limb that ends in a frozen hand is a limb with a glove nailed
+to it. `arm_drive()` is now the one place a stride's upper body is written —
+the arm swings, the elbow folds ONLY ON THE DRIVE (a symmetric `abs(sin)`
+elbow closes twice a cycle and reads as a shiver at double the leg rate), the
+clavicle rides with it, the wrist trails the forearm and the claw closes as
+the hand comes through — and the torso counter-rotates, the hips drop at each
+contact and the head holds its line against the chest.
+
+**AND IT CIRCLES YOU MORE THAN IT WALKS AT YOU, ON THE WALK CLIP.** `strafeL`
+and `strafeR` were aliased onto `walk` for every creature in this game, so a
+reptilian holding its distance strode straight ahead while it travelled
+sideways — the feet went one way and the animal went another, which is the
+plainest version there is of "the animations are off". It spends more of a
+fight doing this than anything else (`circle: 0.55`), so it has a clip of its
+own, and the PHASE is what makes it a shuffle: each foot's body-relative
+offset along the travel line is `-cos(ph)/2` and it is off the ground exactly
+while `sin(ph) > 0` — which is precisely the half in which that offset is
+INCREASING. A foot therefore moves outward while it is in the air and inward
+while it is planted, and inward-while-planted is the body sliding over it.
+Lead foot reaches out and plants, trail foot is drawn in after it, nothing
+crosses and nothing skates. Measured in the fight: the two side-steps are on
+screen 28 % of unit-frames, against a walk cycle before.
+
+**AND A THING BACKING OFF PLAYS ITS WALK BACKWARDS.** The Dealer has done this
+since he learned to read a charge — a NEGATIVE `timeScale`, so his feet go
+where he is going — and every other creature in the game was stepping back
+through a forward stride. One sign, in `mutAnim`.
+
+**A LOOP VARIABLE MAY NOT SHARE A NAME WITH A MODULE-LEVEL HELPER.** The
+strafe's `lead = side * d > 0` bound a bool over `def lead(t, d)`, the staging
+helper `staged()` calls — so the build died on the LIGHT clip, three clips
+later, with `'bool' object is not callable`. Python has no block scope; in a
+packer that is one long script of helpers and loops, the loop variable is the
+one that has to move.
+
+**"IT LAGS" IS A BLOCKED MAIN THREAD, AND NEITHER OBVIOUS INSTRUMENT WORKS
+HERE.** rAF deltas measure whatever the host pane feels like throttling to —
+this file has read 5682 ms "frames" off a game that was fine — and
+`PerformanceObserver({entryTypes:['longtask']})`, which is the right answer in
+a real tab, reports NOTHING inside the preview's iframe: long tasks are
+delivered only to the top-level document. Verified by burning 220 ms in a loop
+and getting zero entries back. So the work times ITSELF: `bwSpan(tag, fn)` is
+wrapped round the two places where every long block in this game happens — a
+FRAME and an ASSET'S LOADER CALLBACK, the latter by wrapping
+`GLTFLoader.prototype.load` and `.parse` once so a load added later is measured
+without anybody remembering to — and `__bw.lag()` reads them back worst first.
+Every number below came out of it. **And measure with the pane VISIBLE**: a
+hidden one does not run rAF at all (so no warm ever completes, and
+`warmMush` reads `warmed: false` for ever) and Chrome deprioritises its
+network besides, which inflates every load time by seconds.
+
+**NINETY-FOUR MEGABYTES, ALL ASKED FOR ON THE SAME FRAME.** Every `.load()` in
+this file fired as the module evaluated, so the browser was handed seventy-five
+requests at once against six connections per host — and what that does is not
+"everything a bit slower", it is a QUEUE IN THE WRONG ORDER. Measured cold:
+`shrine.glb`, which the abduction's white screen waits on, took 6.1 s for a
+file that fetches in 83 ms on its own; `rust-rough.jpg`, twenty kilobytes,
+took 3.7 s because it was behind forty-eight megabytes of boat, corpse and
+bunker for places the player cannot reach for ten minutes. The same 101 MB
+fetched THREE AT A TIME takes 1.27 s; all at once 2.24; one at a time 2.23. So
+the fix is not fewer bytes, it is fewer bytes IN FLIGHT and a sane order —
+`bwGlb` / `bwFetch` / `ASSET_REACH`, three heavy downloads at a time, nearest
+first, which also leaves the browser's other sockets free for the little
+textures and the sound bank instead of starving them. Three things it took:
+
+- **The number is HOW FAR YOU HAVE TO WALK BEFORE IT MATTERS**, in metres from
+  the spawn, because that is a fact about the game rather than an invented
+  tier and anything added later has an obvious value. The abduction is 58 m
+  BEHIND you, which is why the hall and its three waves sit near the front:
+  it is the second place a player can get to and the only load a cutscene
+  ever waits on. `bwSoon(url)` moves one to the head when the game turns out
+  to want it now — the witness when the first wave is summoned, the hall and
+  the saucer once you are within forty metres of the trigger.
+- **A queue can only sort what is in it.** Leaving each `bwGlb` to enqueue
+  itself handed the first three slots to whatever was DECLARED first (the
+  lighthouse's grass at line 1900, the bunker at 20800) and the hall did not
+  start for 5.6 s. Waiting for the module to finish instead was worse:
+  BUILDING THIS WORLD IS TWO SECONDS OF SYNCHRONOUS WORK, and that is two
+  seconds of completely idle network. The table is the whole list and it is
+  known before a line of the world is built, so the queue is filled from it
+  at the top of the file and the downloads run DURING the build.
+- **And the other modules have loaders too.** `models/underground-bunker.js`
+  had its own `GLTFLoader` and put twenty-two megabytes for a room behind a
+  hatch ahead of everything; it takes `opts.load` now, and defaults to its own
+  so `models/viewer.html` still works.
+
+**AND THE PARSES TAKE A FRAME EACH.** `GLTFLoader.parse` is one blocking call
+— the bunker's is 127 ms and the hall's 278 — so two landing on the same frame
+is a third of a second of nothing. There is ONE chain now (the creatures' own
+queue and the crab's were separate, and two queues that each politely yield a
+frame will still put a creature and a building on the same frame as each
+other) with a turn of the event loop between each. **And `setTimeout` is not a
+turn**: a background tab clamps timers to a second, so a fallback written as
+`setTimeout(go, 50)` turned twenty-three parses into twenty-three SECONDS the
+moment the window lost focus. A `MessageChannel` message is a task and is not
+clamped, so whichever of it and the frame arrives first wins — the frame in a
+visible tab, which is what puts one parse on each frame, and the message in a
+hidden one, which simply gets on with it because there are no frames.
+
+**AND `no-store` MEANS EVERY RELOAD REFETCHES NINETY-FOUR MEGABYTES.** That is
+most of what "the loading takes too long" is when you are playing the game on
+the machine you are building it on. `serve.py` keeps `no-store` for the code —
+main.js is edited every few minutes and a stale copy is a terrible way to find
+out your last three commits were never loaded — and gives the ASSETS
+`no-cache`, whose name is nothing like its meaning: it still revalidates on
+every request, so a rebuilt .glb is picked up the moment its mtime moves, and
+it answers 304 with no body when it has not. 94 MB became 55. The four that
+remain (bunker 22.7, boat 13.8, corpse 11.6, shrine 7.2) are simply too big
+for Chrome's disk cache to keep — and their bytes are GEOMETRY, not maps:
+462,206 triangles in the moored tug and 277,900 in the body bag against about
+two megabytes of texture each. Decimating those two is the next real lever on
+load time and on the walk's frame rate, and neither was ever asked to be exact.
+
+**A WARM IS SEVERAL FULL RENDERS OF A ROOM AND IT MUST NOT BE ONE FRAME.**
+Measured per step: the hall's was 780 ms in a single block, the drain's 409,
+the pavilion's 293 — and THE BUNKER'S WAS 2329, four hundred meshes and
+seventeen megabytes compiled, decoded and uploaded on the one frame it is
+first drawn. That is the right idea in the wrong shape: the whole point of a
+warm is to move a cost off the frame the player would otherwise feel it on,
+and a cost is not moved by being put somewhere else ALL AT ONCE. Three
+changes, and the order they were found in is the lesson:
+
+- **Steps.** `warmStep` / `warmRunStep`: one view a frame, drained by
+  `animateFrame` before it considers starting the next room, so the chain
+  cannot run two rooms at once either. And `loadShrine` was calling
+  `warmShrine()` inline, which put six full renders on the same frame as the
+  parse and the dressing — the longest single block in the whole load.
+  `animateFrame` had asked for it since the day it was written.
+- **Slices.** A view may be a `[k, n]` slice that shows every n-th mesh, so
+  the bunker uploads a sixteenth of itself at a time.
+- **But slicing only helps where the cost is the UPLOAD.** Sixteen slices took
+  the bunker's worst frame from 2329 ms to 1206 and no further, because the
+  cost is the shader COMPILE and whichever slice first reaches a material pays
+  for it whole. `renderer.compileAsync` hands that to the driver
+  (KHR_parallel_shader_compile) and the slices that follow are uploads only:
+  2329 → 383. It is fired and forgotten — `compile` collects the materials
+  synchronously, so the room may go straight back to being hidden — and where
+  the extension is missing it is exactly the `compile` that was always there.
+
+**AND A ROOM WANTS WARMING IN THE LIGHTING STATE IT WILL BE ENTERED IN —
+WHICH IS A TRAP EVERYWHERE BUT ONE PLACE.** The frame you arrive in the hall
+cost 402 ms and compiled fifty-five programs even though the hall had been
+warmed at boot, because `updateFarProps` switches every landmark off by your Z
+the moment you are three thousand metres away and a warm taken standing on the
+beach compiled them all for the wrong light count. `warmAtZ` moves the
+player's Z for the length of the warm draw and fixes it: 402 ms → 47. Then it
+was given to the drain, the pavilion, the bunker and the saucer as well, and
+the boot produced TWO FRAMES OF TWELVE AND A HALF SECONDS — because moving the
+Z changes which far props are visible, a far prop with a lamp in it changes
+NUM_POINT_LIGHTS, and that recompiles every material in the game, forty times
+over, each time with more of the world visible to recompile. The hall is the
+one place it pays, and the reason is that the hall's Z is three thousand
+metres from everything: every far prop is OFF, which is the cheapest scene
+there is to compile, and it is the exact configuration the take hands you.
+
+**AND THE DOCK'S TWO LAMPS WERE IN `farProps`.** This is the last copy of the
+oldest performance bug in this file and it was hiding in the one list that
+looks harmless: `farProps.push` on a LIGHT. Measured across the abduction, 29
+point lights while you are in the hall and 31 the instant the crash puts you
+back on the sand — those two — so the cut paid for thirty fresh shader
+programs and, once, a frame of nearly eleven seconds. Left switched on they
+cost nothing: an 11 W lamp with a 14 m falloff at `DOCK_Z` lights nothing else
+on a kilometre of beach, which is exactly why the hall's lamps and the
+saucer's already live in a group that is never hidden. **Far-cull the boards,
+never the lamp.** With the count pinned at 31 the walk has no light transition
+anywhere in it (measured every 20 m from z = 60 to -420: one value).
+
+**AND THE TWO THINGS A CUTSCENE REVEALS WERE THE TWO THAT WERE NEVER WARMED.**
+Every room in this game is warmed and the saucer and the witness — which exist
+only to be seen in a take — were not. The saucer compiled fifty-eight programs
+on the frame the black lifts; the Character Creator alien is ten materials
+(skin, eyelashes, two tearlines, a tongue, teeth, two eyes) and twelve of the
+crash's thirty programs were his face. Both are warmed now, the saucer in four
+slices from underneath and the witness once from in front while he stands
+hidden on the sand through a fight that lasts minutes. **And the order of the
+warm chain matters**: `warmShrineBoss` WAITS — it wants the whole cast dressed
+and the drones built, and until it has them it returns without setting its
+flag — so anything behind it waits with it, which is how the saucer ended up
+never warmed at all. Anything conditional goes last.
+
+Measured end to end, with the pane visible and the real loop running: boot is
+3.8 s of blocking spread over 39 frames behind the title card (worst 434 ms,
+four frames over 250) and every asset is in by 8.3 s; the abduction take has
+NO frame over 24 ms; and the death, the crash and the hand-back have one, at
+338 ms, with two new programs where there were thirty.
+
 ## Dev mode
 
 `DEFAULT_SETTINGS` are the owner's own (music 30 %, waves 18 %, effects

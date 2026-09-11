@@ -3,8 +3,11 @@
   "configurations": [
     {
       "name": "beachwalk",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["serve.py"],
+      "runtimeExecutable": "C:/Users/areed/AppData/Local/Programs/Python/Python312/python.exe",
+      "runtimeArgs": [
+        "serve.py",
+        "4173"
+      ],
       "port": 4173,
       "autoPort": true
     }

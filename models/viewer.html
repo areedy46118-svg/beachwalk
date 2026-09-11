@@ -52,6 +52,7 @@
   <script type="importmap">
   { "imports": {
       "three": "../vendor/three/three.module.js",
+      "three/addons/loaders/GLTFLoader.js": "../vendor/three/GLTFLoader.js",
       "three/addons/utils/BufferGeometryUtils.js": "../vendor/three/BufferGeometryUtils.js"
   } }
   </script>
@@ -69,6 +70,9 @@
       'ring': () => import('./ring.js').then(m => m.makeRing()),
       'shipwreck': () => import('./shipwreck.js').then(m => m.makeShipwreck()),
       'underground-bunker': () => import('./underground-bunker.js').then(m => m.makeUndergroundBunker({ url: '../assets/bunker.glb' })),
+      // raw scan, straight off disk: no factory yet, we are still looking at her
+      'boat': () => import('three/addons/loaders/GLTFLoader.js').then(({ GLTFLoader }) =>
+        new Promise((ok, no) => new GLTFLoader().load('../assets/boat.glb', g => ok(g.scene), undefined, no))),
     };
     document.getElementById('caption').textContent = which.replace('-', ' ') + '  ·  drag to rotate  ·  scroll to zoom';
     document.title = 'Model viewer — ' + which;
