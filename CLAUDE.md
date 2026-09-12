@@ -1720,6 +1720,215 @@ ZIP now, out of the folder the models arrive in, and unpacks it beside itself
 once.
 
 
+**EVERY BLOW IN THE SHIP HAS TO PASS THROUGH YOU NOW.** The reptilians and
+the beast landed hits the pack's way — a distance from their feet to yours on
+the first active frame, no direction in it — so a claw raked a metre wide
+still took a point and a four-metre animal "bit" you with the middle of its
+back. They are `aimed` like the Dealer and the SCP, and the machinery had to
+grow one thing to take them: `mutLimbs(u)` is EVERY CHAIN A CREATURE STRIKES
+WITH, not two arms — the kind's `rig` may list extra `[arm, fore, hand, tip]`
+quads (the beast's forepaws; a warden's forelegs and tail) and `blowLands`
+sweeps all of them. A swing may say which chains it aims with (`A.limbs`,
+indices into that list): the bite aims the HEAD and only the head, a tail
+slam aims the tail whatever the head is doing. The beast's head chain is
+`Bone006 → Bone008 → Bone011 → Bone024` (the snout, 4 m out along its own
+axis — measured in the pane, because the loader strips the dots out of
+`Bone.006` and a name copied off the GLB matches nothing), and `aimK` is 0.6
+because a neck that long needs a third of a shoulder's correction to move its
+end the same distance. **And "a hand's width wide" has to mean a hand's
+width**: the Dealer's fallback — facing you, in reach, hand out in front, the
+blow lands — was the whole of a bite on the beast, whose "hand" is its head
+and is always out in front, so every bite inside reach landed (one measured
+with the snout 1.86 m from the chest). `LAND_SLOP`: the striking end nearest
+you must finish within a metre of your torso for the benefit of the doubt.
+Measured after, standing still: the beast throws 19 swings in 35 s of
+contact and lands 9, at 2.6–4.1 m; the reptilians land at 1.2–1.5 m on the
+rake and nothing from range.
+
+**THE BEAST IS FASTER EVERYWHERE BUT THE TELL.** It was slower than your walk
+(`speedK` 0.78), circled a third of the time, and its bite's recovery was as
+long as its wind-up. The startups are kept — that is where the fairness lives
+— and everything round them is tightened: speed, `aggr`, `press`, the chain
+into the slam, two chains not one, less circling; the slam `hold`s so it
+rears on the spot rather than walking its own wind-up in, and takes most of a
+guard (`guardK`); and it has the Dealer's `reacts`, so a charge in its face is
+backed out of and the free heavy has to be bought.
+
+**THE RAGDOLL HAD THE BEACH'S CLIFF IN IT — THE FOURTH COPY.** "The bodies
+disappear" was one line: every particle of every ragdoll was clamped to
+`WADE_X - 6 .. CLIFF_BLOCK_X + 0.6` unconditionally, and the hall is at
+x = 3000, so on the first step of the fall a reptilian's whole body was
+snapped to x = 13.1, three thousand metres from the skeleton it drove. It is
+gated on `bf === null` now — `PhysProp`'s own rule: a body that answers to
+another room's floor is in another room — and a ragdoll that dies in the
+drum (`rag.ring`) is held inside its wall. Measured: hips at rest 0.24 m over
+the hall floor, asleep, visible.
+
+**A BOLT IS A SWING FROM FURTHER OFF, AND THE GUARD ANSWERS IT.** Held, a
+drone's bolt is STOPPED on the guard at a cost to the bar (`blockBolt`);
+raised on the beat it is PARRIED (`parryBolt`) and goes back — steered onto
+the drone that fired it (a saucer moves a metre in the time the bolt takes to
+cross the room, and a riposte that misses is not one), for two of its three
+points, and the drone is knocked out of the air into a swoop, which is the
+stun a parry buys off everything else here in the one form a flying thing
+can be stunned. The guard only covers what it faces: the bolt's line has to
+be coming at the camera's forward. Same fifth-of-a-second window, from the
+press. A returned bolt is stopped by nothing — not a wreck, not the player —
+and the bolt carries `src`, the drone that fired it. Measured: parried at
+1.6 m, drone 3 → 1 and swooping; held early, absorbed at 0.29 of the bar.
+
+**ONE THROW, ONE KILL.** `DRONE_THROW_DMG` was two of a three-point hull, so
+a wreck hurled into a live drone bounced off a thing that kept flying. It is
+`DRONE_HP` now: the throw is the whole reason a downed drone is worth picking
+up, and it pays every time. (Testing it from the harness: place the wreck
+INSIDE the drum's confine, or it bounces off the wall before it arrives.)
+
+**THE WITNESS'S ARMS HANG, AND HE GOES TO HIS KNEES WHEN YOU SEE HIM.** Two
+things. The TempMotion's stance frame holds his right arm out a third of a
+right angle with the elbow back and the hand turned — a man about to wave,
+which is what the clip is — and the six turns that bring both arms in are on
+the upper arms and forearms about the body's forward and right, measured on
+the hands (right (-0.54, 0.76) → (-0.28, 0.65)). **The bone lookup must match
+EXACT names**: `CC_Base_L_Upperarm` is also the start of
+`CC_Base_L_UpperarmTwist01`, a helper with nothing hanging off it, and matched
+by prefix the traversal ended there — six rotations applied, four hand
+positions unchanged to the centimetre. And `ntarWatch`: the first time the
+middle of the screen is on him inside 16 m with the player's hands free
+(never through the take), he meets your eye for half a second and then his
+calves fold back through a right angle (+1.52 about the body's right, measured:
+feet at knee height 0.42 m behind the knees) and the model drops the length
+of a calf, so the knees arrive on the sand and the feet lie flat behind; he
+folds forward over it with the hands on his thighs. `ntarSt` carries it;
+`__bw.ntarSpot()` fires it from the harness. The warden's rig in `MUT_KINDS`
+carries the same chains but nothing spawns a warden any more.
+
+**THE WITNESS GETS UP SLOWLY — AND HIT HIM, AND HE IS A BOSS.**
+After the kneel holds (`NTAR_HOLD`) he rises over `NTAR_RISE` seconds on a
+long smoothstep. (He cried while he rose for one build — drops off the eye
+bones and a wet line under each eye, run along the FACE's down, not the
+world's, because bowed fifty degrees a drop run along world -y finished
+under his chin — and the owner asked for it off. If tears ever come back,
+that is the one thing to remember about them.)
+
+HE IS A `MUT_KINDS` ENTRY WITH NO FIGHT IN HIS FILE. `ntar` stands hidden
+in the witness's shoes from the moment he is placed (`placeNtar`), because
+the blade's creature test does not ask whether a creature is visible;
+`kind.provoke` (`ntarProvoke`) is what `hurtMutant` calls on the first blow
+to a sleeping creature that declares it — the witness is hidden, the
+creature stands where he stood facing you, and it opens with the roar. The
+blow that woke him is never met by his guard (`woke`). Thirty-two points, a
+ten-point poise pool, `block` 0.30, `reacts`, faster than your walk, four
+swings that chain three deep. His file carries ONE clip (the TempMotion
+demo), so `kind.author` — `authorNtarClips` — writes idle, walk, run, a
+strafe, the roar, the flinch, the guard and the four swings IN CODE, on the
+stance frame: every clip is keys of (time, per-joint angle about the body's
+up/right/forward), sampled at 30 fps and composed onto the stance in each
+bone's parent frame, which is exactly what `updateNtar` does live. Every
+bone gets a track in every clip, driven or not — a crossfade must never let
+a bone fall back to the bind pose, and this rig binds in a T. The sign
+conventions are the ones measured on the witness (a thigh's `right` positive
+swings the foot BACK, an arm's `right` negative brings it forward, an arm's
+`fwd` positive brings the right arm in). The contact pose sits at `hit` of
+the clip's length, so `mutClipTime` puts the hands on the frame the damage
+lands. `cutout` gives the creature the witness's own alpha treatment.
+Measured, standing still at 1.3–1.9 m: 18 swings in 30 s, ten landed in the
+first fifteen. **And the harness accessors only work in the ORIGINAL
+`window.__bw` literal**: `Object.assign` copies a getter's value, so a setter
+added in the later block sets a dead property — `abductDone` had to move.
+(Test on the beach with `__bw.abductDone = true`, or his knockback shoves
+you past `ABDUCT_Z` and the take fires mid-fight.)
+
+**THE BEAST HAS FOUR SWINGS OUT OF TWO CLIPS.** `bSnap` is the bite over a
+shorter clock — `mutClipTime` maps the whole clip onto the timings, so the
+same clip run faster IS a different swing — and `bRush` is the run clip as a
+charge: `minDist` (a swing that needs room) and a five-metre lunge through
+the strike. Two traps: **a charge's `reach` is where it may be thrown from,
+not how far it goes** — at 8.0 it became `maxReach`, the orbit rang you at
+seven metres after every charge and one bite in nine landed; and a swing
+with `minDist` is left out of `maxReach`. **The snap needs room too**: thrown
+inside three metres its jaws were already level with you and the lunge
+carried them past (a metre wide through the whole strike, measured). `aimK`
+went to 0.9. And **count hits against the REAL maximum**: `MAX_HP` is 4 in
+the harness, so a tally written as `hp < 3` never saw a one-point bite and
+reported the bite as never landing for two whole samples. Measured after:
+23 swings in 45 s, bites 7 of 9, slams all.
+
+**THE RED ALIEN IS WILD NOW: HE LEAPS, AND THE CLIP CARRIES THE HEIGHT.**
+`nLeap` is the SCP's pounce (`hold`, `LEAP_AIR`) with a jump in it — the
+hips' own position track rises a metre and a half at the apex with the knees
+tucked and both arms over the head, and comes down into a crouch with both
+fists in the sand on the contact frame. The flight is the fight AI's (it
+crosses four and a half metres in the last 0.55 s of the startup), the
+height is the clip's, and the two agree because the clip is authored with
+the take-off key at `wind - LEAP_AIR` and the landing key at `wind`, with
+the clip's length equal to the swing's, so clip time IS game time through
+the whole swing. Measured: hips 0.52 m in the crouch, 2.47 at the apex.
+`nSpin` is a full turn of the trunk with both arms out, and it ends on
+`up: 6.2832`, not on `{}` — a last key of zero would have eased him back
+round the other way. Forty points, `aggr` 3.0, `press` 0.92, four-deep
+chains, and the SCP's shriek for a voice (`sfxScpScream` on the provoke);
+a man's voice on a thing that leaps at you read as a man. Measured: 27
+swings in 35 s, 31 damage, on a player who stands still.
+
+**THREE REPTILIANS, THREE BUILDS, AND NOT THE MUTANTS'.** `reptilianB` and
+`reptilianC` are `Object.assign` copies of the base kind with their own
+`h`, `hp`, speed, reach, tint and `bones`; `makeShrineFoes` deals the three
+kinds out. A scaled bone scales its subtree, so an upper arm at 1.22 carries
+the forearm and hand with it — which is what makes a long limb read. The
+runner (long legs, small head, quick), the brute (deep chest, thick arms,
+short legs, slow and hard) and the reacher (long arms, big head, short
+shins) are deliberately none of the pack's three, and they stay green: the
+tints are a breath either side of white. Measured in a row: arms 0.43 /
+0.79 / 0.70 m, heights 1.88 / 2.32 / 2.08.
+
+**AND THE PREVIEW PANE DIES ON ONE LONG CALL.** A single `javascript_tool`
+call that awaits a page reload, then six seconds of loads, then two thousand
+steps, kills the pane outright ("Preview not found"), twice in a row. Reload
+in one call, `computer.wait` for the load, and keep each stepping call to a
+few thousand steps with no `await` in it.
+
+**THE BOTTLE IS A DRINK, AND IT HEALS.** A click with it in your hand
+(`onDrink`, the shell's own `onListen` door in `primaryAction` and
+`attackAction`) brings it up under the lens and tips it back —
+`MOUTH_AT` / `MOUTH_POSE`, blended into the arm the way the ear pose is,
+with a small tremor at the lips — three gulps, and `hp` is full on the
+second. Four sips in it (`waterSips`); each drains the model AND the copy in
+your hand, which is found BY NAME (`water`, set in `models/water-bottle.js`)
+and given the original's scale and position, because `holdable` clones and
+`setFill` closes over the original's mesh. Empty, it taps hollow and does
+nothing. Measured: hp 1 → 4 at 0.62 s, water column 0.176 → 0.124.
+
+**THE BEAST HAS A SECOND WIND, AND IT IS GENERAL.** `kind.rage` is the set
+of fields that change at half health; `updateMutantUnit` swaps `u.kind` for
+a copy with them in it, once, and the creature stops and screams — you keep
+your hands. Every number in the fight reads off `u.kind`, so the copy is
+the whole mechanism. Sixteen health, and the charge takes two.
+
+**THE FENCE.** `FENCE_*`, built right after the SCP (it asks `headlandAt`
+for every post, and `headlandAt` reads `pathBend`): fourteen-metre posts on
+a 3.6 m pitch from 26 m either side of the tower, rails and chain-link
+between them, arms leaning out at the walk with three barbed strands
+(barbs an InstancedMesh, two crossed boxes each), a razor coil along the
+top and a meaner one along the foot (a `Curve` subclass whose axis runs
+down the fence, `TubeGeometry` on it), and a gate on the lane: a beam with
+five caged red lamps, KEEP OUT over it, DANGER and NO ENTRY beside it, two
+leaves of heavy frame and mesh with spikes, and a chain with a padlock as
+tall as you are. Two `rockColliders` boxes either side of the opening and a
+third for the gate, `mat: 'metal'`, `top` thirty metres over the crest so
+nothing steps onto it. **The wire is live**: inside 0.75 m of the line
+(`updateFence`) it takes a point, cracks, flashes, and knocks you off it,
+every two seconds — so backing into it during the fight is a thing you do
+once. **And the gate opens itself** 2.4 s after the SCP dies: the gate box
+leaves `rockColliders`, the chain falls, the leaves swing in over 2.6 s and
+the lamps go green — a locked gate you can never open is the game ending
+two hundred metres short of the light. The `Locked` label is a `bare`
+interactable on a hit proxy across the lock. **Chain-link needs THICK
+wire**: at five pixels of sixty-four on a 0.45 m cell the strand was four
+centimetres, under a pixel at the retro scale from anywhere you can stand,
+and the panels rendered as nothing between the posts. Eleven pixels on a
+0.6 m cell, linear mips and a low alpha test, so it hazes out rather than
+vanishing.
+
 **AND SOMEBODY ELSE SAW IT.** A twenty-six metre saucer comes down on the sand
 and until now the only witness was you. He is standing BEHIND you when the
 black lifts, watching the same wreck — `assets/ntar.glb`, a Character Creator
