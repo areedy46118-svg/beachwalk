@@ -102,7 +102,6 @@ const ASSET_REACH = {
   'assets/key.glb': 150,
   'assets/head.glb': 155,             // both of them are aboard the wreck
   'assets/dock.glb': 215,
-  'assets/boat.glb': 218,             // the tug, moored off the end of the pier
   'assets/bunker.glb': 333,           // behind a hatch, behind a black screen
   'assets/dealer.glb': 334,
   'assets/smile.glb': 390,
@@ -13543,6 +13542,15 @@ function updateShip(dt) {
 // `u = -x / HALF` is "+1 at the bow" — so her bow is at NEGATIVE x, which on
 // this beach is the ocean. 26 / 9.327 = 2.8, and rotation.y = PI swings the
 // tug's own bow (at +X as authored) round to face the sea the same way.
+/* SHE IS OFF. A look pass is a thing you look at once: she was stood up the
+ * beach to be measured against the Limulus by eye, and she is 14 MB and
+ * 462,206 triangles — the heaviest asset in this game by a distance, more
+ * than twice the body bag's ropes. Nothing depends on her: `updateTugBow`
+ * and `updateTugWalk` both return on a null of their own, so with the load
+ * skipped they are no-ops and the wade line is the beach's again. The
+ * model and every line that builds her stay exactly where they are; this
+ * is one word away from being back. */
+const TUG_ON = false;
 const TUG_SCALE = 2.8;                  // 26.1 m overall, 4.28 m below deck
 const TUG_X = SHIP_X;
 const TUG_Z = SHIP_Z + 45;              // 45 m short of the Limulus, for now
@@ -13561,9 +13569,9 @@ tug.scale.setScalar(TUG_SCALE);
 const tugHull = new THREE.Group();
 tugHull.rotation.set(TUG_HEEL, 0, TUG_TRIM);
 tug.add(tugHull);
-scene.add(tug);
+if (TUG_ON) scene.add(tug);
 
-bwGlb('assets/boat.glb', (gl) => {
+if (TUG_ON) bwGlb('assets/boat.glb', (gl) => {
   /* Her 39 meshes share 25 materials, so the night lift has to be applied
    * once per MATERIAL and not once per mesh: reexpose() patches through
    * onBeforeCompile, and doing it twice to the same material wraps the
@@ -13929,7 +13937,7 @@ function updateTugBow() {
   p.x = Math.max(p.x, tugNav.bowX - TUG_BOW_CLEAR);
 }
 
-farProps.push({ obj: tug, z: TUG_Z, d: 300 });
+if (TUG_ON) farProps.push({ obj: tug, z: TUG_Z, d: 300 });
 
 
 // ------------------------------------------------------------------
@@ -19480,6 +19488,20 @@ bwGlb('assets/corpse.glb', (gltf) => {
       farProps.push({ obj: o, z: CORPSE_Z, d: 45 });
     }
   });
+  /* AND THE BODY BAG IS WARMED, BECAUSE IT IS REVEALED MID-WALK. Every room
+   * in this game is warmed and the one thing the player walks UP TO in the
+   * open was not: measured on a stepped walk from the spawn, the frame it
+   * crossed its own 150 m cull line cost 329 ms and compiled two programs —
+   * 277,900 triangles and its own materials, paid at z = -130 with the
+   * player moving. It is the saucer's case exactly, and it takes the
+   * saucer's answer: the compile goes to the driver and the upload follows
+   * it, both behind the title card. The ropes come with it — `warmView`
+   * shows every mesh in the group, so the 235k triangles they cost are
+   * compiled here rather than at the 45 m line. */
+  warmStep('corpse compile', () => warmCompile([corpse],
+    CORPSE_X + 6, 1.7, CORPSE_Z + 6, CORPSE_X, 0.5, CORPSE_Z));
+  warmStep('corpse', () => warmView([corpse],
+    CORPSE_X + 6, 1.7, CORPSE_Z + 6, CORPSE_X, 0.5, CORPSE_Z));
 
   /* Hover text. The ropes are 235k triangles between them — raycasting that
    * every frame is not on, so the crosshair gets a plain invisible box the
