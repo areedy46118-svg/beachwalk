@@ -107,6 +107,7 @@ const ASSET_REACH = {
   'assets/dealer.glb': 334,
   'assets/smile.glb': 390,
   'assets/mutant.glb': 610,
+  'assets/scp096.glb': 1175,       // on the lane in front of the tower
   'assets/stones.glb': 1180,          // the headland, at the end of the walk
   'assets/grass-clumps.glb': 1185,
   'assets/grass-patch.glb': 1190,
@@ -2723,7 +2724,13 @@ const ROCK_DRAW = 210;
 function updateFarProps() {
   const cz = camera.position.z;
   for (const m of rockGroup.children) m.visible = Math.abs(m.position.z - cz) < ROCK_DRAW;
-  for (const f of farProps) f.obj.visible = Math.abs(f.z - cz) < f.d;
+  /* AND A THING THAT FOLLOWS YOU IS CULLED BY WHERE IT IS, NOT BY WHERE IT
+   * STOOD. Every entry here is scenery keyed to the Z it was built at, which
+   * is right for a pier and a body bag and catastrophic for a creature that
+   * chases: SCP-096 run two hundred metres up the beach after you would have
+   * been switched off at the spawn's own distance and kept coming, invisible.
+   * `live` reads the object instead. */
+  for (const f of farProps) f.obj.visible = Math.abs((f.live ? f.obj.position.z : f.z) - cz) < f.d;
 }
 
 /* SOLIDS. `rockColliders` is the game's one list of things you cannot walk
@@ -15173,7 +15180,7 @@ const MUT_ATTACKS = {
    * at three times speed — a blur, and then you were hit: "some of his
    * swings don't even look like swings". Every startup here is long enough
    * to run its clip near real time. `reach` is shorter than the pack's too,
-   * because his blow is tested on the BAR (`dealerBarHit`) and a man with a
+   * because his blow is tested on the BAR (`blowLands`) and a man with a
    * crowbar reaches two metres, not two and a half; the lunge and the step
    * in the overhand are what close the rest. */
   dDown:  { wind: 0.72, strike: 0.13, recover: 0.50, hit: 0.370, reach: 1.80, lunge: 0.55, chain: 'dSide',  chainP: 0.48, w: 0.18 },
@@ -15210,6 +15217,68 @@ const MUT_ATTACKS = {
   dHold:  { wind: 1.22, strike: 0.13, recover: 0.82, hit: 0.656, reach: 1.95, lunge: 0.40, chain: null,     chainP: 0.00, w: 0.20, dmg: 2 },
   // and the one that covers the ground you just backed off
   dLunge: { wind: 0.60, strike: 0.15, recover: 0.95, hit: 0.500, reach: 2.40, lunge: 2.1,  chain: 'dSide',  chainP: 0.30, w: 0.18 },
+  /* AND THE THING ON THE HEADLAND. Four swings again, because four is what
+   * a fight you have to LEARN is made of — one quick, one heavy, one you
+   * are afraid of and one that takes back the ground you just gave up. His
+   * reach is the difference: arms that hang past his knees put the claws
+   * two and a half metres out, so the range at which you are safe from the
+   * Dealer is the range at which this one is already on you.
+   *
+   * `hit` on every one is measured, not guessed — the claw tips run through
+   * forward kinematics over the clip and the frame taken is the one where a
+   * tip is furthest out and travelling DOWNWARD fastest, the same detector
+   * the Dealer's pack uses and with the same correction on it: a rising
+   * hand is not a hit. Two of them are windows cut out of one six-second
+   * mauling clip (see `sliceClip`), so their `hit` is a fraction of the
+   * window and not of the source. */
+  /* AND THE REACHES ARE HIS, NOT THE DEALER'S. They were written at the
+   * Dealer's numbers first — 1.75 to 2.40, a man with a 0.85 m crowbar —
+   * and he stood in front of the player for a whole minute and swung
+   * thirteen times. The fight AI holds its range at about `reach`
+   * (`flankDir` rings him at `reach - 0.3`), so a creature whose arms are
+   * LONGER than the number in the table never gets inside its own swing:
+   * measured, he orbited at 2.3 m with a 2.1 m reach and `near` was never
+   * true. These are what the aim actually lands — the claw is inside 0.3 m
+   * of your chest from 1.4 m out to 3.2 — and they are the whole of why he
+   * is a different fight: he threatens from a metre further out than
+   * anything else in the game, so the range where you were safe from the
+   * man with the crowbar is the range where this one is already on you. */
+  /* AND THE STARTUPS ARE LONG ON PURPOSE. Measured as the time the claw is
+   * visibly travelling in at you before it arrives — which is the only
+   * length that matters, because that is what a player reads — the first
+   * build gave the grab 0.23 s against a 0.20 s parry window. That is not a
+   * tell, it is a coin toss, and this file has paid for it once already
+   * with the Dealer's held overhead. Every one of these now runs at least
+   * twice the window, and he is made HARDER somewhere else entirely: the
+   * Dealer's own rage note says it outright — the startups are what keep a
+   * boss fair, and aggression, chains and a gap-closer are where the
+   * difficulty is supposed to come from. */
+  sSwipe: { wind: 0.62, strike: 0.12, recover: 0.30, hit: 0.400, reach: 2.90, lunge: 0.50, chain: 'sSmash', chainP: 0.62, w: 0.30 },
+  sSmash: { wind: 0.95, strike: 0.13, recover: 0.55, hit: 0.620, reach: 2.80, lunge: 0.70, chain: 'sSwipe', chainP: 0.55, w: 0.24 },
+  /* THE POUNCE, AND IT IS A JUMP. Both arms thrown up and HELD there while
+   * he coils — the longest tell in the game — and then he leaves the ground,
+   * crosses three and a half metres and lands on you with both claws for two
+   * of your four. It is the answer to standing at what you thought was a
+   * safe distance, it is what the closing dash finishes with, and it is the
+   * first thing he throws after the scream. It is also the most punishable
+   * thing he has: a full second of recovery on the far side, which is your
+   * opening and the only reliable one he gives you.
+   *
+   * `lunge` is what makes it a leap and not a swipe at the air. At 1.1 he
+   * closed a metre and the claws finished 0.70 m short of a chest three
+   * metres away — his own arms are the limit, and no amount of aim
+   * correction can lend a creature reach it does not have. At 3.6 he
+   * ARRIVES, which is the whole difference between a boss who threatens the
+   * ground you are standing on and one who threatens the ground you were
+   * about to back away to. */
+  /* AND ITS REACH IS HOW FAR IT CAN ACTUALLY JUMP. At 4.20 against a 3.6 m
+   * leap he threw the pounce from ranges he could not cross and the claws
+   * came down 0.95 m short — a boss missing on his signature move. `reach`
+   * is now inside the flight: from anywhere he will start it, he arrives. */
+  sLeap:  { wind: 1.15, strike: 0.16, recover: 1.00, hit: 0.375, reach: 3.90, lunge: 4.2,  chain: null,     chainP: 0.00, w: 0.20, dmg: 2, hold: true, guardK: 2.1 },
+  // the grab: the arms come from behind him and are thrown forward together,
+  // and he covers two and a half metres inside the startup doing it
+  sGrab:  { wind: 0.95, strike: 0.14, recover: 0.85, hit: 0.400, reach: 3.10, lunge: 2.6,  chain: 'sSwipe', chainP: 0.46, w: 0.26 },
 };
 /* The three of them. `use` is which swings this one has and how often it
  * reaches for each; `windK` scales its startups AND its recoveries together,
@@ -15288,7 +15357,20 @@ const MUT_KINDS = {
    * breathes between them, and ten health is five clean exchanges. The
    * pressure is meant to come from his reach and his chains, not from the
    * player being unable to see him wind up. */
-  dealer: { glb: 'assets/dealer.glb', human: true, solo: true, noSand: true, skin: null,
+  /* THE FLAGS ARE INTENTIONS NOW, NOT "IS HE A MAN". Every one of these
+   * used to be `kind.human`, and the day a second boss arrived that was not
+   * a man the word stopped meaning anything: SCP-096 wants the aimed blow,
+   * the poise pool, the read on your wind-up and a death on his own clip,
+   * and he wants NONE of the lit-room material, the dialogue or the crowbar.
+   * `lit` is the bunker's lamps, `aimed` is the correction that puts the
+   * blow on your chest, `reacts` is breaking his own startup to answer a
+   * charge, `talks` is having a conversation to breathe through, `clipDeath`
+   * is going down on an animation, and `gib` is coming apart afterwards.
+   * A flag named for what it does can be given to the next thing that
+   * needs it; a flag named for what he IS cannot. */
+  dealer: { glb: 'assets/dealer.glb', human: true, lit: true, aimed: true, reacts: true,
+          talks: true, bossDeath: true, barLen: 0.62,
+          solo: true, noSand: true, skin: null, first: 'calm',
           /* HARDER AGAIN, AND THIS TIME IT IS THE BAR THAT DOES IT. The
            * last pass turned every dial that makes a creature busier —
            * aggression, chains, feints — and he was still not frightening,
@@ -15325,6 +15407,115 @@ const MUT_KINDS = {
           anim: { run: 'run', idle: 'ready', roar: 'taunt', die: 'death', walk: 'walk', back: 'walk',
                   rate: 1.0, lean: 0.05, strafeK: 1.2 },
           voice: { f: 1.00, growl: 0.80, rasp: 0.9, throat: 'mask', human: true } },
+  /* SCP-096, ON THE HEADLAND. Sealife Fan 3's "SCP-096 Reanimated" — the
+   * SCP:CB creature, 6.3k triangles and its own move set: `attack1` (six
+   * seconds of mauling), `attackjump`, `attackrun`, `attackrunstart`,
+   * `idle_rage`, `panicstart`, `teslagatehit` (a stagger reel) and `die`.
+   * It is the first asset in this game that arrived with the whole fight
+   * already animated, which is why almost nothing here is new code: he is a
+   * row in the table the pack and the Dealer already share.
+   *
+   * WHAT MAKES HIM A DIFFERENT FIGHT FROM THE DEALER. The Dealer is fast
+   * and relentless inside two metres and you beat him by reading four
+   * tells. This one is REACH: arms that hang past his knees, a leap that
+   * crosses three metres and a grab that covers two and a half inside its
+   * own startup — so backing away, which is the answer to half of the
+   * Dealer's swings, walks you into the one that takes two of your four.
+   * Twenty-eight health at a light swing's one is longer than the Dealer,
+   * and it should be: he is the last thing between the walk and the light.
+   *
+   * `solo` keeps him out of the three loops the dock's cutscene runs over
+   * every mutant on the beach — he is nine hundred metres past it — and
+   * `noSand` because a thing with those arms does not need to throw
+   * anything at you. */
+  scp: { glb: 'assets/scp096.glb', solo: true, noSand: true, skin: null,
+          aimed: true, reacts: true, bossDeath: true,
+          h: 2.55, hp: 34, dmg: 1, speedK: 1.42, windK: 1.00, reachK: 1.00, aggr: 3.10,
+          /* THE POUNCE IS FIRST IN THE LIST, AND THAT IS LOAD-BEARING. Three
+           * places in the fight AI reach for a swing by position rather than
+           * by weight — the first swing of a fight, the end of the closing
+           * dash and the end of a step back — and all three fall through to
+           * `Object.keys(use)[0]` for a creature that has no `attack4`. So
+           * the opening move after the scream is the leap, a dash across the
+           * ridge finishes with the leap, and backing off and being followed
+           * finishes with the leap. Its WEIGHT is low: it is what he does to
+           * ground you have given up, not what he does at reach. */
+          use: { sLeap: 0.18, sSwipe: 0.32, sSmash: 0.26, sGrab: 0.24 },
+          circle: 0.26, step: 0.26, chainMax: 3, feint: 0.26, press: 0.88,
+          /* A CLAW IS NOT A CROWBAR TO HOLD OFF. `blockMutant` takes
+           * `BLOCK_COST * 1.35 * reachK` of the bar per blow, which on him
+           * was 0.46 — TWO AND A FIFTH BLOCKS to an empty bar, and a boss
+           * who throws three-hit strings is then a boss whose combos cannot
+           * be blocked: the guard broke in the middle of one and you ate the
+           * rest of it. That is the whole of "smooth to block". At 0.5 it is
+           * four and a half blows a bar, which is a combo held and then a
+           * punish, and the bar still says no eventually. */
+          blockCost: 0.57,
+          /* AND HIS ARMS MAY REACH FURTHER ROUND. `AIM_YAW` and `AIM_MAX`
+           * are a man turning into a crowbar swing; this one is a shoulder
+           * on a two-metre arm with nothing in its hand, and the clamps that
+           * keep the Dealer's blows honest were leaving claws a hand's
+           * breadth wide of a chest they were plainly aimed at. */
+          aimK: 1.35,
+          /* POISE, AND NO GUARD. The Dealer meets a light swing with the bar
+           * half the time; this one has nothing to meet it with, so every
+           * blow goes in — and the pool is deeper instead (`poise` 11), so
+           * he is opened by a flurry or by a charge and not by clicking.
+           * The stagger is his `teslagatehit` reel and it is SHORT: a boss
+           * you can chain-stagger is a boss you never have to read. */
+          poise: 11, poiseBack: 2.0, poiseWait: 1.1, parryK: 0.80, recoilK: 0.66,
+          fidgetK: 0.9, fidgetGap: 3.2,
+          bones: null,
+          /* The four joints the aimed blow asks for, plus the off hand: he
+           * mauls with BOTH, so the hit test walks two arms. `tip` is the
+           * claw itself, which is why he needs no `barLen` — the reach is
+           * in the rig. */
+          rig: { arm: 'Bone_009_035', fore: 'Bone_012_036', hand: 'Bone_011_037', tip: 'Bone_023_038',
+                 armL: 'Bone_010_041', foreL: 'Bone_014_042', handL: 'Bone_013_043', tipL: 'Bone_024_044',
+                 head: 'head_020' },
+          /* His joints, under the names the ragdoll, the severing and the
+           * limb bake all use. He has four joints in the spine where the
+           * mutant has six; the two the map does not name are simply left
+           * out, which is a shorter spine and not a broken one. */
+          rag: { Character1_Hips: 'pelvis_016', Character1_Spine: 'Bone_002_017',
+                 Character1_Spine2: 'ripcage_018', Character1_Neck: 'neck_019', Character1_Head: 'head_020',
+                 Character1_RightShoulder: 'Bone_007_034', Character1_RightArm: 'Bone_009_035',
+                 Character1_RightForeArm: 'Bone_012_036', Character1_RightHand: 'Bone_011_037',
+                 Character1_LeftShoulder: 'Bone_008_040', Character1_LeftArm: 'Bone_010_041',
+                 Character1_LeftForeArm: 'Bone_014_042', Character1_LeftHand: 'Bone_013_043',
+                 Character1_RightUpLeg: 'Bone_015_046', Character1_RightLeg: 'Bone_017_047',
+                 Character1_RightFoot: 'Bone_019_048', Character1_RightToeBase: 'Bone_021_049',
+                 Character1_LeftUpLeg: 'Bone_016_051', Character1_LeftLeg: 'Bone_018_052',
+                 Character1_LeftFoot: 'Bone_020_00', Character1_LeftToeBase: 'Bone_022_053' },
+          /* TWO SWINGS CUT OUT OF ONE CLIP. `attack1` is six seconds of him
+           * mauling something on the floor, and inside it are two real
+           * strikes with dead time either side: a two-handed overhead at
+           * t 1.54 and a right-arm sweep at t 4.16. Played whole it is a
+           * creature ignoring you for six seconds; cut into its two blows
+           * it is half his move set. The windows are chosen by where the
+           * claws actually travel, and `hit` is measured inside the window. */
+          slice: [['maul', 'sSmash', 1.12, 1.80], ['maul', 'sSwipe', 3.90, 4.55]],
+          flatten: ['Armature1_015', 'pelvis_016'],
+          /* Twelve clips answering to the eighteen names the fight uses.
+           * `rush` is his run-with-the-arms-out — not a strike, a gait, and
+           * the one he closes the last stretch in. */
+          alias: { sLeap: 'leap', sGrab: 'rushstart',
+                   idle2: 'rage', walk2: 'walk', run2: 'rush', back: 'walk', back2: 'walk',
+                   strafeL: 'walk', strafeR: 'walk', roar: 'rage', roar2: 'panic' },
+          first: 'sit', sleepIdle: 'sit',
+          anim: { run: 'run', idle: 'idle', roar: 'rage', die: 'die', walk: 'walk', back: 'walk',
+                  rate: 1.15, lean: 0.16, strafeK: 1.0 },
+          /* HIS OWN THROAT. `bellow` is the red one's, and a thing that size
+           * bellowing is what you expect; SCP-096 does not bellow, he
+           * SHRIEKS — and the shriek is the whole of him. */
+          /* CHALK, BROUGHT DOWN. Measured on the screen, which is the only
+           * test that counts: at the pack's own settings his lit side read
+           * far brighter than the sand he stands on and he was a paper
+           * cut-out. The map is multiplied down, the emissive is a third of
+           * the pack's, and the rim stays — the rim is not brightness, it
+           * is the edge that says a body is standing there. */
+          tint: 0x6e6a68, emis: 0.07, rim: [0.055, 0.070, 0.105],
+          voice: { f: 1.22, growl: 1.15, rasp: 1.5, throat: 'shriek' } },
 };
 const MUT_VOICE = MUT_KINDS.pale.voice;    // the default for anything unvoiced
 const MUT_WIND = MUT_ATTACKS.attack.wind;  // the harness and the docs name the overhand's
@@ -15359,6 +15550,35 @@ function mutClipTime(t, dur, A) {
   const hit = dur * A.hit;
   if (t < A.wind) return (t / A.wind) * hit;
   return hit + ((t - A.wind) / (A.strike + A.recover)) * (dur - hit);
+}
+/* A WINDOW CUT OUT OF A LONGER CLIP, AND EVERY CHANNEL KEPT. A downloaded
+ * move set does not come one swing to a clip: SCP-096's `attack1` is six
+ * seconds of him mauling something on the floor with two real strikes
+ * inside it and dead time either side, and the two blows are half his move
+ * set. three's own `AnimationUtils.subclip` cuts a window — and DROPS every
+ * track with no key inside it, which on this rig is 38 of 122 bones. That
+ * is the oldest trap in this file wearing a new coat: a clip that does not
+ * carry every channel leaves those bones holding whatever the last clip put
+ * them in, so the swing came out with the pose of the walk cycle in its
+ * shoulders. This RESAMPLES instead — every track evaluated over the window
+ * at a fixed rate through its own interpolant, which keeps a quaternion
+ * track a quaternion track — so all 122 channels survive by construction. */
+function sliceClip(src, name, t0, t1, fps = 30) {
+  const n = Math.max(2, Math.round((t1 - t0) * fps));
+  const times = new Array(n + 1);
+  for (let i = 0; i <= n; i++) times[i] = (i / n) * (t1 - t0);
+  const tracks = [];
+  for (const tr of src.tracks) {
+    const interp = tr.createInterpolant();
+    const stride = tr.getValueSize();
+    const vals = new Array((n + 1) * stride);
+    for (let i = 0; i <= n; i++) {
+      const r = interp.evaluate(t0 + times[i]);          // the buffer is reused: copy it now
+      for (let k = 0; k < stride; k++) vals[i * stride + k] = r[k];
+    }
+    tracks.push(new tr.constructor(tr.name, times, vals));
+  }
+  return new THREE.AnimationClip(name, t1 - t0, tracks);
 }
 /* What it is doing with its body between the beats. `u.gait` is the walk,
  * the run and the idle it is using RIGHT NOW, drawn again whenever it comes
@@ -15400,8 +15620,10 @@ function mutAnim(u, dt, moving) {
     const a = mutPlay(u, 'hit', false);
     if (a) { a.paused = true; a.time = clampTime(a, (1 - u.st.recoil / MUT_RECOIL) * a.getClip().duration * 0.55); }
   } else if (u.st.roar > 0) {
-    const a = mutPlay(u, N.roar, false);
-    if (a) { a.paused = false; a.timeScale = 1.35; }
+    // the beat it opens with may be its own clip: the thing on the headland
+    // has a scream that is not the roar it uses in the middle of a fight
+    const a = mutPlay(u, u.st.roarClip || N.roar, false);
+    if (a) { a.paused = false; a.timeScale = u.st.roarClip ? 1.0 : 1.35; }
   } else if (u.st.side !== 0 && moving < 0.5) {
     // circling you at reach, or backing off a step before the lunge
     const a = mutPlay(u, u.st.side < 0 ? 'strafeL' : 'strafeR', true);
@@ -15475,7 +15697,7 @@ function dressMutant(u, gltf) {
      * silver outline traced round him under the ceiling lamps, which is a
      * ghost, not a man. He keeps his own maps, a touch of emissive so the
      * shadowed side of him is not a hole, and nothing else. */
-    if (u.kind.human) {
+    if (u.kind.lit) {
       mm.metalness = /crowbar/i.test(mat.name) ? 0.55 : 0;
       mm.roughness = /crowbar/i.test(mat.name) ? 0.42 : 0.94;
       mm.emissive = new THREE.Color(0xffffff);
@@ -15515,6 +15737,17 @@ function dressMutant(u, gltf) {
      * tall one found this first and went out with no rim at all; the thing
      * in the saucer is the same shape of problem and renders, with the rim
      * on, as a white cut-out standing in a black room. A kind may say so. */
+    /* AND A PALE ONE IS NOT A DARK ONE. Every number below this line was
+     * chosen for two metres of dark flesh that renders as a hole without
+     * help — a gamma lift, a fifth of emissive and a cold rim, and the pack
+     * needs all three. The thing on the headland is CHALK: its albedo is
+     * pale grey-pink to begin with, so the same treatment rendered it as a
+     * white cut-out standing on a black ridge, which is the Military
+     * Shovel's own failure in a new place. `tint` multiplies the map DOWN,
+     * `emis` is the lift and `rim` the Fresnel — each one a knob the kind
+     * may take over, and the pack's values are the defaults so nothing on
+     * the beach moves. */
+    if (u.kind.tint) mm.color.setHex(u.kind.tint);
     mm.emissiveIntensity = u.kind.emis === undefined ? 0.20 : u.kind.emis;
     mm.normalScale && mm.normalScale.set(1.35, 1.35);   // the sculpt is the detail now
     const rim = u.kind.rim === undefined ? [0.070, 0.088, 0.125] : u.kind.rim;
@@ -15526,7 +15759,7 @@ function dressMutant(u, gltf) {
    * skinned to whichever hand the clip has it in, so hiding it is all it
    * takes to have him standing empty-handed in the dark — and the fight
    * begins on the frame it appears. */
-  if (u.kind.human) {
+  if (u.kind.lit) {
     m.traverse((o) => { if (o.isMesh && /crowbar/i.test(o.name)) { u.weapon = o; o.visible = false; } });
     m.traverse((o) => { if (o.isBone && /Head_/.test(o.name) && !/HeadTop/.test(o.name)) u.head = o; });
     // the ragdoll is written to the mutant's bone names; a Mixamo rig's are
@@ -15541,8 +15774,6 @@ function dressMutant(u, gltf) {
       if (/RightArm_\d+$/.test(o.name)) (u.bones = u.bones || {}).arm = o;
       if (/RightShoulder_\d+$/.test(o.name)) (u.bones = u.bones || {}).shoulder = o;
     });
-    u.st.poise = u.kind.poise || 1;
-    u.st.block = 0;
     /* HE ALREADY FACES +Z, which is what the AI's `atan2(dx, dz)` points at
      * the player — checked by rendering him alone from all four sides
      * rather than by reasoning about the export, because the chain from the
@@ -15550,6 +15781,37 @@ function dressMutant(u, gltf) {
      * looked wrong from every angle but that one. Do not add a half turn
      * here; it puts his back to the fight. */
   }
+  /* A RIG THAT NAMES ITS OWN BONES. The Dealer's come out of a regex because
+   * a Mixamo skeleton is named to a scheme; a scan off Sketchfab is named
+   * `Bone_011_037` and there is no scheme to read. `kind.rig` is the four
+   * joints the fight actually asks for — the shoulder that gets turned into
+   * the blow, the elbow that gives the arm its line, the hand, and the head
+   * — written down once per kind, which is the only honest way to name a
+   * skeleton nobody controls. `aimBar` and `blowLands` want all four. */
+  /* AND A RIG THAT IS NOT A SKELETON MAY STILL BE ONE. Every part of the
+   * death — the Verlet body, the severing, the head burst, the limb bake —
+   * names the mutant's own joints (`Character1_RightForeArm`) and reaches
+   * them through `boneAlias`; the Dealer's is built by regex off a Mixamo
+   * naming scheme. A Sketchfab scan has no scheme, so `kind.rag` is the map
+   * written out by hand, once, and everything downstream works untouched.
+   * A name it does not carry is simply left out: the ragdoll skips a part
+   * it cannot find, so a spine of four joints where the mutant has six is a
+   * shorter spine and not a broken one. */
+  if (u.kind.rag) {
+    u.boneAlias = {};
+    const byBone = {};
+    m.traverse((o) => { if (o.isBone) byBone[o.name] = o; });
+    for (const k in u.kind.rag) if (byBone[u.kind.rag[k]]) u.boneAlias[k] = u.kind.rag[k];
+  }
+  if (u.kind.rig) {
+    const want = u.kind.rig;
+    m.traverse((o) => {
+      if (!o.isBone) return;
+      for (const k in want) if (want[k] === o.name) (u.bones = u.bones || {})[k] = o;
+    });
+    if (u.bones && u.bones.head) u.head = u.bones.head;
+  }
+  if (u.kind.poise) { u.st.poise = u.kind.poise; u.st.block = 0; }
   // its own build: named bones scaled before anything is measured
   if (u.kind.bones) m.traverse((o) => { if (o.isBone && u.kind.bones[o.name]) o.scale.setScalar(u.kind.bones[o.name]); });
   // Box3.setFromObject() knows nothing about skinning and answers the bind
@@ -15583,9 +15845,46 @@ function dressMutant(u, gltf) {
    * identical builds after all), and `stopAllAction` restores every bound
    * property's ORIGINAL value, which put a severed bone's scale back to 1 and
    * grew the limb back on the frame the body fell. Dropped here, at load. */
+  /* ROOT MOTION IS FLATTENED, AND IT IS THE OLDEST TRAP IN THIS FILE.
+   * The game moves a creature; a downloaded clip moves it too, and the two
+   * fight. The Dealer paid for this once ("the moving glitched out") and
+   * the thing on the headland paid for it again in a way that was much
+   * harder to see: his `attackjump` carries THIRTEEN UNITS of forward
+   * travel on the armature root — twelve metres — so the leap threw his
+   * whole skeleton across the ridge, the aim dutifully corrected an arm
+   * that was already somewhere else, and the blow measured 2.31 m from
+   * your chest at every range the trial tried. Every other swing landed
+   * inside 0.3, which is what made it look like a tuning problem.
+   * `flatten` names the roots and holds their sideways and forward curves
+   * at the BONE'S OWN REST TRANSLATION — the vertical is left alone,
+   * because a crouch, a stride bob and a body falling over are real.
+   *
+   * AND THE HOLD VALUE IS THE REST POSE, NOT THE CLIP'S FIRST KEY. Holding
+   * the first key is the obvious thing and it is right only for a clip
+   * whose travel starts from rest. This leap starts thirteen units BEHIND
+   * himself and arrives at rest, so pinning it to key zero parked his whole
+   * skeleton twelve metres back up the lane — the same swing, broken twice
+   * over, and the second break measured worse than the first. A clip may
+   * not move him off his own origin; where his origin is, is the rig's
+   * business and the bind pose is where it is written down. */
+  const restPos = {};
+  for (const name of (u.kind.flatten || [])) {
+    m.traverse((o) => { if (o.isBone && o.name === name) restPos[name] = o.position.clone(); });
+  }
   for (const c of gltf.animations) {
     c.tracks = c.tracks.filter((t) => !t.name.endsWith('.scale'));
+    for (const name in restPos) {
+      const tr = c.tracks.find((t) => t.name === name + '.position');
+      if (!tr) continue;
+      const v = tr.values, r = restPos[name];
+      for (let i = 0; i < v.length; i += 3) { v[i] = r.x; v[i + 2] = r.z; }
+    }
     u.clips[c.name] = u.mixer.clipAction(c);
+  }
+  // the windows cut out of a longer clip, under the names the table uses
+  for (const [src, name, t0, t1] of (u.kind.slice || [])) {
+    const from = gltf.animations.find((c) => c.name === src);
+    if (from) u.clips[name] = u.mixer.clipAction(sliceClip(from, name, t0, t1));
   }
   /* THE NAMES THE FIGHT ASKS FOR. `mutAnim` reaches for 'hit', 'strafeL',
    * 'strafeR' and the second gait of everything by name, and the pack has
@@ -15593,7 +15892,7 @@ function dressMutant(u, gltf) {
    * he does have: he circles at a walk, and his second idle is the one the
    * scan shipped with. An action can answer to two names — `mutPlay` compares
    * actions, not keys. */
-  if (u.kind.human) {
+  if (u.kind.lit) {
     const alias = { strafeL: 'walk', strafeR: 'walk', walk2: 'walk', run2: 'run', idle2: 'idleSrc',
                     idle: 'ready', roar: 'taunt', roar2: 'taunt',
       /* AND THE SWINGS ANSWER TO THE NAMES THE TABLE CALLS THEM. `MUT_ATTACKS`
@@ -15614,10 +15913,16 @@ function dressMutant(u, gltf) {
    * second gait of everything BY NAME, so a kind that does not carry them
    * needs to say what to play instead — and the alternative, a clip exported
    * twice under two names, puts the same curves in the file twice. */
+  /* AND A KIND MAY WRITE ITS OWN. Everything downstream of here asks for a
+   * clip BY NAME — `mutAnim` wants 'hit' and 'strafeL' and the second gait
+   * of everything, `mutPlay` wants the swing's own name — and a scan off
+   * Sketchfab has none of those. An alias map is how a rig with twelve
+   * clips answers to the eighteen names the fight uses; an action can wear
+   * two names, because `mutPlay` compares actions and not keys. */
   if (u.kind.alias) {
     for (const k in u.kind.alias) if (u.clips[u.kind.alias[k]]) u.clips[k] = u.clips[u.kind.alias[k]];
   }
-  mutPlay(u, u.kind.human ? 'calm' : u.kind.anim.idle, true);
+  mutPlay(u, u.kind.first || u.kind.anim.idle, true);
   /* AT FULL WEIGHT, NOT FADING IN. `mutPlay` crossfades over 0.14 s, and a
    * mixer that is frozen before the fade lands leaves the skeleton at eight
    * per cent of one clip — which is the BIND POSE, and this rig binds in a
@@ -15653,8 +15958,20 @@ function makeMutant(x, z, kindName, y = 0) {
       chain: (A.chain && kind.use[A.chain]) ? A.chain : null,
     });
   }
+  /* THE LONGEST SWING IT OWNS. `near` used to be measured against whatever
+   * swing it happened to be holding, and the fight AI's own orbit radius is
+   * set from that same number (`flankDir` rings it at `reach - 0.3`) — so a
+   * creature whose last swing was its SHORTEST one settles into a circle
+   * just outside its own reach, is never `near`, and never attacks again.
+   * Measured on the headland: orbiting at 2.80–3.03 m holding a 2.80 m
+   * swing, thirty-two seconds without a blow, walking sideways the whole
+   * time. It reads exactly as a boss that has stopped fighting, and it is
+   * the same trap the reaches were raised for once already — raising them
+   * moves the stall, it does not remove it. Being in range is a question
+   * about the CREATURE, not about the last thing it threw. */
+  const maxReach = Math.max(...Object.values(atk).map((a) => a.reach));
   const u = {
-    g, kind, kindName, atk, model: null, mixer: null, clips: {}, cur: null, leanT: 0,
+    g, kind, kindName, atk, maxReach, model: null, mixer: null, clips: {}, cur: null, leanT: 0,
     st: { alive: true, awake: false, roar: 0, atk: -1, flourish: 0, fidget: 0, swing: Object.keys(kind.use)[0],
           cool: 0, stun: 0, recoil: 0, struck: false, hp: kind.hp, step: 0, deadT: 0,
           side: 0, sideT: 0, back: 0, chained: false, chainN: 0, chainAt: -1, swings: 0, wait: 0,
@@ -15693,6 +16010,186 @@ function makeMutant(x, z, kindName, y = 0) {
 const MUT_SPOTS = [[MUT_X, MUT_Z, 'pale'], [12.8, MUT_Z - 3.0, 'red'], [5.0, MUT_Z - 1.0, 'dark']];
 const mutant = makeMutant(...MUT_SPOTS[0]);
 for (let i = 1; i < MUT_SPOTS.length; i++) makeMutant(...MUT_SPOTS[i]);
+
+/* ---------------------------------------------------------------------
+ * SCP-096, ON THE LANE IN FRONT OF THE LIGHTHOUSE
+ *
+ * The walk ends when you put your hand on the light, and this is what is
+ * standing between you and the door. He is a `MUT_KINDS` entry like the
+ * Dealer, so the tell, the commit, the poise, the parry, the riposte, the
+ * chain, the feint and the aimed blow are all his by construction and
+ * almost nothing down here is fight code — what is down here is the three
+ * things a creature on a HILL needs that a creature on a beach does not:
+ * ground that is not y = 0, an arena he cannot leave, and a way of
+ * starting that is his own.
+ *
+ * AND THE WAY OF STARTING IS THE WHOLE OF HIM. He is sitting on the lane
+ * with his back to you and his face in his hands, keening, and he is
+ * visible from a long way down the ridge because he is the only pale thing
+ * on it. Nothing happens until you LOOK AT HIM — the crosshair anywhere
+ * near him inside `SCP_SEE` — and then he is up and screaming and he does
+ * not stop. It is the creature's own rule and it is also the best trigger
+ * this game has: the fight starts on something the player DID, not on a
+ * line across the sand they walked over without noticing.
+ * ------------------------------------------------------------------- */
+const SCP_ZL = 15.0;                       // how far out along the lane he sits
+const SCP_X = LH_X + pathBend(SCP_ZL);
+const SCP_Z = LH_Z + SCP_ZL;
+const SCP_SEE = 30;                        // he has to be this close before looking at him means anything
+const SCP_CONE = 0.93;                     // and inside about 22 degrees of the middle of the screen
+const SCP_HEAR = 9.0;                      // this close he notices you whatever you are looking at
+const SCP_PANIC = 2.1;                     // the scream: stopped, and you keep your hands
+/* THERE IS NO ARENA WHILE HE IS AWAKE. The first version penned him thirty
+ * metres from his mark, and forty seconds of holding S walked away from the
+ * last boss in the game — measured, two hundred and twenty-six metres, one
+ * swing thrown and four damage taken. That is not what this creature is.
+ * He is faster than a sprint (`speedK` 1.42 on 4.6 against your 5.71) and he
+ * does not stop, so the pen is only there before he has seen you: he sits
+ * on his mark and does not wander off it in the hours you might spend
+ * walking up the ridge. */
+const SCP_SIT_ARENA = 3;
+const scp096 = makeMutant(SCP_X, SCP_Z, 'scp', headlandAt(SCP_X, SCP_Z));
+scp096.g.rotation.y = Math.PI;             // sitting with his back to the walk, facing the tower
+/* Drawn on the approach and not before. `kind.solo` keeps him out of the
+ * pack's own far-cull push (it is keyed to the dock's Z), so he gets his
+ * own: he is a fleck on the ridge from a hundred and eighty metres, which
+ * is about where the tower itself comes up out of the fog. */
+farProps.push({ obj: scp096.g, z: SCP_Z, d: 190, live: true });
+
+const _scpV = new THREE.Vector3();
+let scpSeen = false;
+/* Have you looked at him. Not a raycast — he is a two-metre body on an open
+ * ridge and there is nothing between you and him — just the angle from the
+ * middle of the screen, which is what "looking at" means to a player. */
+function scpLookedAt(u) {
+  const dx = u.g.position.x - camera.position.x, dz = u.g.position.z - camera.position.z;
+  const d = Math.hypot(dx, dz);
+  /* AND HE HEARS YOU EVENTUALLY. Looking at him is the trigger and it is
+   * the whole of what he is — but a trigger that can be MISSED is a boss
+   * that can be walked up to and stared past, and what that looks like from
+   * the outside is a creature standing on the lane doing nothing, which is
+   * indistinguishable from a broken one. Inside `SCP_HEAR` he notices you
+   * whatever you are looking at, so the fight always happens; the cone is
+   * how you choose to start it early, from across the ridge, on purpose. */
+  if (d < SCP_HEAR) return true;
+  if (d > SCP_SEE) return false;
+  camera.getWorldDirection(_scpV);
+  const f = Math.hypot(_scpV.x, _scpV.z) || 1e-6;
+  return (_scpV.x / f) * (dx / d) + (_scpV.z / f) * (dz / d) > SCP_CONE;
+}
+function wakeScp(u) {
+  if (scpSeen) return;
+  scpSeen = true;
+  u.st.awake = true;
+  u.st.roar = SCP_PANIC;
+  u.st.roarClip = 'panic';                 // the trigger is his own clip, not the fighting roar
+  u.st.cool = SCP_PANIC + 0.15;
+  drawGait(u);
+  sfxScpScream();
+  addTrauma(0.55);
+  /* HE KEEPS YOUR HANDS. The rule this file has carried since the Dealer
+   * learned to rage: a beat that takes the camera in the middle of a fight
+   * is the one thing a fight must not do. He is stopped and screaming and
+   * wide open for two seconds — walk up and hit him, or run. */
+}
+/* HALF HIS HEALTH, AND HE IS NOT THE SAME THING AFTERWARDS. The Dealer has
+ * this beat and it is the single most useful thing a boss can have: it turns
+ * one fight you solve once into two, and it tells you — with a noise you
+ * cannot miss — that you are winning and that it is about to get worse.
+ *
+ * It is an OPENING, not a cutscene. He is stopped and wide open for the
+ * whole of it and you keep your hands the entire time, which makes it the
+ * prize for getting him there rather than the game taking the fight away to
+ * show you something. And his STARTUPS ARE UNTOUCHED: the tells are what
+ * keep him fair, and this file has paid for shortening them twice. What
+ * changes is everything between the swings — he stops breathing between
+ * them, he chains four deep, one in three of his startups is a feint, and
+ * he pounces far more often, which is the move that takes away the ground
+ * you have been using to survive the first half. */
+const SCP_RAGE_AT = 0.5;                   // of his health
+const SCP_RAGE_DUR = 2.15;
+let scpRageT = -1, scpRagePast = false, scpRaged = false;
+function checkScpRage() {
+  const u = scp096;
+  if (scpRagePast || scpRageT >= 0 || !u.st.awake) return;
+  if (!u.st.alive || u.st.hp > u.kind.hp * SCP_RAGE_AT) return;
+  scpRageT = 0;
+  scpRagePast = true;                      // latched: a second blow cannot restart it
+  u.st.roar = SCP_RAGE_DUR;
+  u.st.roarClip = 'panic';
+  u.st.atk = -1; u.st.chainAt = -1; u.st.chained = false;
+  u.st.recoil = 0;
+  mutDrop(u);
+  sfxScpScream(Math.hypot(u.g.position.x - camera.position.x, u.g.position.z - camera.position.z));
+  addTrauma(0.5);
+}
+function updateScpRage(dt) {
+  if (scpRageT < 0) return;
+  scpRageT += dt;
+  if (scpRageT < SCP_RAGE_DUR) return;
+  scpRageT = -1;
+  scpRaged = true;
+  const K = scp096.kind;
+  K.aggr = 4.30;                           // a fifth of a second between swings
+  K.chainMax = 4;
+  K.feint = 0.34;
+  K.circle = 0.14;                         // he stops circling and comes forward
+  K.press = 0.96;                          // and he stops taking breaks at all
+  K.use.sLeap = 0.26;                      // and the pounce is more likely
+  K.speedK = 1.55;
+  /* AND THE SECOND HALF IS ABOUT STRINGS. Turning the dials that make him
+   * busier bought almost nothing on their own — measured, 22 swings a minute
+   * became 13, because the moves he now favours are his two slowest and each
+   * one throws him past you and costs him the ground back. What actually
+   * makes a boss relentless is that a swing leads STRAIGHT into another
+   * swing with no cooldown between them, so the chain probabilities go up
+   * rather than the cooldown coming down, and the pounce — which chained
+   * into nothing at all in the first half — now comes down and keeps going.
+   * The recoveries are untouched: they are the punish windows, and a boss
+   * with no openings is not hard, it is just unfair. */
+  const A = scp096.atk;
+  for (const k in A) A[k].chainP = Math.min(0.90, A[k].chainP + 0.26);
+  if (A.sLeap) { A.sLeap.chain = 'sSwipe'; A.sLeap.chainP = 0.55; }
+}
+/* The ridge, the tower and the edge. Three clamps, all of them the same
+ * shape as the ones the player already walks under. */
+function updateScp(dt) {
+  const u = scp096;
+  if (!u.mixer) return;
+  const p = u.g.position;
+  if (!u.st.awake) {
+    if (!frozen() && scpLookedAt(u)) wakeScp(u);
+    const sx = p.x - SCP_X, sz = p.z - SCP_Z, sd = Math.hypot(sx, sz);
+    if (sd > SCP_SIT_ARENA) { p.x = SCP_X + sx / sd * SCP_SIT_ARENA; p.z = SCP_Z + sz / sd * SCP_SIT_ARENA; }
+    p.y = headlandAt(p.x, p.z);
+    return;
+  }
+  if (u.st.roar <= 0 && u.st.roarClip) u.st.roarClip = null;
+  if (!u.st.alive) return;                 // a body lies where it fell; the ragdoll owns it
+  checkScpRage();
+  updateScpRage(dt);
+  /* THE GROUND IS THE RIDGE. Every creature in this game stands at y = 0
+   * because the beach is a plane, and nothing in the fight AI has ever had
+   * to ask what is under it. Seven metres up a headland that answer is
+   * wrong by seven metres: he walked the slope at the height he was spawned
+   * at and came at you through the air. It is a lookup, like everything
+   * else that learned this — the wreck's deck, the bunker's floor, the
+   * pier's boards. */
+  p.y = headlandAt(p.x, p.z);
+  /* NOTHING MAY STAND WITHIN 7 m OF THE TOWER'S AXIS — the footing skirt
+   * runs out to 6.6 and anything inside that is standing on masonry. It is
+   * the rule the grass and the fence posts already obey, and a boss who
+   * backs into the building is a boss you fight through a wall. */
+  const rx = p.x - LH_X, rz = p.z - LH_Z;
+  const r = Math.hypot(rx, rz);
+  if (r < LH_OUTER + 2.6) {
+    const k = (LH_OUTER + 2.6) / (r || 1e-6);
+    p.x = LH_X + rx * k; p.z = LH_Z + rz * k;
+  }
+  /* And that is all. He goes wherever you go — there is nothing in this
+   * game you can outrun and nowhere on the walk he will not follow you to,
+   * which is the entire point of him. */
+}
 
 // the nearest live one — what the blade, a thrown thing and the knockback want
 function nearestMutant(pos, maxD = Infinity) {
@@ -15747,8 +16244,16 @@ function blockMutant(u) {
   if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxKatBlock();
   else if (equipped === shovelItem) playSample('blockSand', 1.0, 0.04);
   else sfxBlock();
-  // the big one costs you more to hold off than the small one does
-  stamina = Math.max(0, stamina - BLOCK_COST * 1.35 * u.kind.reachK);
+  /* The big one costs you more to hold off than the small one does — and so
+   * does the big SWING. A kind says how heavy its blows are in general
+   * (`blockCost`: a combo you cannot hold is a combo you cannot block) and a
+   * swing may say that IT is the one you should not be standing in front of
+   * (`guardK`). Two and a bit of a bar for a pounce is the difference
+   * between a guard that answers everything and a guard that answers
+   * everything except the thing you were supposed to move away from. */
+  const SW = u.atk && u.atk[u.st.swing];
+  stamina = Math.max(0, stamina - BLOCK_COST * 1.35 * u.kind.reachK
+    * (u.kind.blockCost || 1) * ((SW && SW.guardK) || 1));
   guardTick();
   if (stamina <= 0.001) { exhausted = true; gaspOut(); }
   flashMats(toolVM);
@@ -15862,26 +16367,59 @@ function sfxKillThud(k = 1) {
  * white, the swing it was in the middle of is broken, and it comes again. */
 const DEALER_BLOCK = 0.46;
 const _dbA = new THREE.Vector3(), _dbB = new THREE.Vector3(), _dbC = new THREE.Vector3(), _dbF = new THREE.Vector3();
-/* Is the bar in you. Samples along the crowbar — the grip (the right hand)
- * and points out along the forearm's line to the tip — against your torso,
- * a segment from your hips to your head, and asks for any within a bar's
- * width. Plus the cone: he has to be facing you. */
-function dealerBarHit(u) {
-  const hand = u.bones && u.bones.hand, fore = u.bones && u.bones.fore;
+const _dbPts = [0, 1, 2, 3, 4].map(() => new THREE.Vector3());   // the limb, reused: this runs every frame of a strike
+/* IS THE BLOW IN YOU. The one hit test both bosses use, and it is about the
+ * WEAPON rather than about the distance between two feet: it samples the
+ * thing that is actually swinging — the crowbar from the grip out along the
+ * forearm's line, or a claw from the wrist to the fingertip — against your
+ * torso, a segment from your hips to your head, and asks for any sample
+ * within a body's width. Plus the cone: he has to be facing you.
+ *
+ * `barLen` is how far the weapon runs past the fist (a crowbar, 0.62 m); a
+ * kind with a `tip` bone is carrying its own reach in the rig and the
+ * segment runs hand → tip instead, which is exact and needs no number. And
+ * a thing that mauls with BOTH hands is tested on both: `rigL` names the
+ * off hand, and a two-handed slam that only ever landed on the right claw
+ * missed every time he came at you off-centre. */
+function blowLands(u) {
   _dbF.set(Math.sin(u.g.rotation.y), 0, Math.cos(u.g.rotation.y));
   _dbC.subVectors(camera.position, u.g.position).setY(0);
   const dist = _dbC.length() || 0.001;
   if (_dbC.divideScalar(dist).dot(_dbF) < 0.35) return false;        // behind him or wide of him: no
-  if (!hand) return dist < 1.9;
-  hand.getWorldPosition(_dbA);
-  if (fore) { fore.getWorldPosition(_dbB); _dbB.subVectors(_dbA, _dbB).normalize(); } else _dbB.copy(_dbF);
+  const B = u.bones;
+  if (!B || !B.hand) return dist < 1.9;
   const top = camera.position.y + 0.15, bot = camera.position.y - 1.15;
-  for (let k = 0; k <= 5; k++) {
-    _dbC.copy(_dbA).addScaledVector(_dbB, k * 0.17);                 // grip to tip, 0.85 m of bar
-    const y = THREE.MathUtils.clamp(_dbC.y, bot, top);
-    const dx = _dbC.x - camera.position.x, dz = _dbC.z - camera.position.z, dy = _dbC.y - y;
-    if (dx * dx + dz * dz + dy * dy < 0.70 * 0.70) return true;      // a body is wider than a line
+  /* THE WHOLE LIMB, NOT THE LAST HAND'S BREADTH OF IT. The first version
+   * sampled the weapon alone — the grip out to the tip — and it was wrong
+   * for exactly the swing it most needed to be right for: the aim puts the
+   * TIP on your chest, and when he is nearer than his own arm is long the
+   * tip cannot BE on your chest, so it goes past you and what is actually
+   * in your body is his forearm. Measured on the leap: the claws finished
+   * 2.25 m the far side of a player standing 1.6 m away and the blow was
+   * scored a miss. The polyline is shoulder → elbow → wrist → claw and
+   * every segment of it is swept, which is what a limb is. */
+  const limbs = [[B.arm, B.fore, B.hand, B.tip], [B.armL, B.foreL, B.handL, B.tipL]];
+  for (const limb of limbs) {
+    let n = 0;
+    for (const bn of limb) { if (bn) bn.getWorldPosition(_dbPts[n++]); }
+    if (!n) continue;
+    // a weapon runs on past the fist, where there is no bone to ask
+    if (!limb[3] && (u.kind.barLen || 0) > 0 && n >= 2) {
+      _dbB.subVectors(_dbPts[n - 1], _dbPts[n - 2]).normalize();
+      _dbPts[n].copy(_dbPts[n - 1]).addScaledVector(_dbB, u.kind.barLen); n++;
+    }
+    const pts = _dbPts;
+    for (let i = 1; i < n; i++) {
+      for (let k = 0; k <= 4; k++) {
+        _dbC.lerpVectors(pts[i - 1], pts[i], k / 4);
+        const y = THREE.MathUtils.clamp(_dbC.y, bot, top);
+        const dx = _dbC.x - camera.position.x, dz = _dbC.z - camera.position.z, dy = _dbC.y - y;
+        if (dx * dx + dz * dz + dy * dy < 0.70 * 0.70) return true;  // a body is wider than a line
+      }
+    }
   }
+  const hand = B.hand;
+  hand.getWorldPosition(_dbA);
   /* OR: the swing is plainly AT you. An authored clip's bar can pass a
    * hand's width wide of a torso the geometry says it should have crossed,
    * and a boss whose blows whiff on a player standing still in front of him
@@ -15919,7 +16457,7 @@ function dealerBlock(u) {
 function hurtMutant(u, dmg, P = 0) {
   if (!u.st.alive || u.st.struck) return false;
   let poiseBroke = false;
-  if (u.kind.human && u.st.stun <= 0) {
+  if ((u.kind.poise || u.kind.block) && u.st.stun <= 0) {
     /* LIGHT BY HOW IT WAS THROWN, NOT BY WHAT IT TAKES. This read `dmg < 2`,
      * which was the same thing while every click did one — and the katana's
      * click does two, so under the old test its every click was a heavy:
@@ -16042,12 +16580,13 @@ function finishMutant(u) {
   u.st.struck = false;
   u.st.deadT = 0;
   mutDrop(u);
-  /* A MAN DOES NOT COME APART. Everything below takes a limb, bursts a head
-   * or throws the body into a Verlet ragdoll, and all of it is written to
-   * the mutant's own bone names besides. He falls on his own animation and
-   * he stays there — which is also the only ending a boss should get: you
-   * want to walk up to what you killed, not sweep up after it. */
-  if (u.kind.human) {
+  /* A BOSS DIES AT DIFFERENT ODDS. Both branches ragdoll and both can take
+   * a limb; what separates them is the RATES and the fact that a boss is
+   * killed once. Everything in here goes through `boneAlias`, so any rig
+   * that writes one down can use it — which is how the thing on the
+   * headland, whose joints are called `Bone_011_037`, comes apart on the
+   * machinery built for a skeleton called `Character1_RightHand`. */
+  if (u.kind.bossDeath) {
     /* HE COMES APART TOO, NOW. The rule was that a man goes down whole and
      * you walk up to what you killed — but the beach spent a kilometre
      * teaching that a heavy takes something with it, and the boss being the
@@ -16252,6 +16791,32 @@ function sfxMutRoar(dist = 0, V = MUT_VOICE) {
   const rg = ctx.createGain(); rg.gain.value = 0.085 * g0 * V.rasp;
   r.connect(rf).connect(rg).connect(out); r.start(t); r.stop(t + D);
 }
+/* THE ONE IT OPENS WITH. Not the roar with the gain turned up: a roar
+ * arrives and ends, and this has to keep going long enough that you stop
+ * waiting for it to stop. Three seconds, rising the whole way, in three
+ * layers a fifth apart that come in a beat after each other so it seems to
+ * be getting worse rather than being loud at the start; and under all of it
+ * one low note that does not move, which is the part you feel. It is the
+ * loudest thing in the game and it is meant to be — everything else on this
+ * beach is quiet on purpose, and the one time that is spent is here. */
+function sfxScpScream(dist = 0, V = MUT_KINDS.scp.voice) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut(), g0 = 1.35 / (1 + dist / 22), D = 2.9;
+  const layers = [[196, 330, 0.260, 0.00], [262, 452, 0.180, 0.16], [146, 249, 0.170, 0.34]];
+  for (const [f0, f1, gn, at] of layers) mutTone(t + at, D - at, V, f0, f1, gn * g0, out);
+  /* AND THE NOTE UNDER IT IS A FLOOR, NOT THE SOUND. Measured on the SFX
+   * bus with an analyser, the first build put 88 % of its power below
+   * 300 Hz and peaked at 47 — which is a big animal, and this is not one.
+   * A scream is carried by the formants; the sub is there to be felt. */
+  const sub = ctx.createOscillator(); sub.type = 'sine';
+  sub.frequency.setValueAtTime(46, t);
+  const sg = ctx.createGain();
+  sg.gain.setValueAtTime(0.0001, t);
+  sg.gain.exponentialRampToValueAtTime(0.075 * g0, t + 0.5);
+  sg.gain.setValueAtTime(0.075 * g0, t + D * 0.7);
+  sg.gain.exponentialRampToValueAtTime(0.0001, t + D + 0.5);
+  sub.connect(sg).connect(out); sub.start(t); sub.stop(t + D + 0.6);
+}
 function sfxMutStep(dist = 0, V = MUT_VOICE) {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime, out = sfxOut(), g0 = 0.85 / (1 + dist / 8);
@@ -16389,6 +16954,49 @@ function mutTone(t, D, V, f0, f1, gain, out) {
     g2.gain.exponentialRampToValueAtTime(gain * 0.5, t + 0.04);
     g2.gain.exponentialRampToValueAtTime(0.0001, t + D);
     o2.connect(g2).connect(out); o2.start(t); o2.stop(t + D + 0.02);
+    return;
+  }
+  /* THE SHRIEK, AND IT IS NOT A ROAR AN OCTAVE UP. A bellow is a big animal
+   * moving a lot of air and it is carried by the SUB; a shriek is a throat
+   * being torn and it is carried by the second and third formants, which is
+   * why transposing the red one's voice up produced a small angry cow. Four
+   * things: two detuned sawtooths a fifth apart so the pitch is ambiguous
+   * (nothing that screams is in tune), a fast ragged tremolo — 42 Hz, which
+   * is above the rate you can count and reads as a throat rather than a
+   * wobble — a formant bandpass parked at 1.5 kHz where a human scream
+   * lives, and a torn noise layer riding the same envelope so the top of it
+   * is broken up. There is no broad hiss anywhere in it: the shell paid for
+   * that lesson once and any wide band at the ear is a radio. */
+  if (th === 'shriek') {
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain * V.growl, t + 0.035);
+    g.gain.setValueAtTime(gain * V.growl, t + D * 0.55);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + D);
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.6;
+    bp.frequency.setValueAtTime(1500 * V.f, t);
+    bp.frequency.exponentialRampToValueAtTime(2300 * V.f, t + D * 0.6);
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 220;
+    bp.connect(g); hp.connect(g);
+    g.connect(out);
+    for (const det of [1.0, 1.49]) {
+      const o2 = ctx.createOscillator(); o2.type = 'sawtooth';
+      o2.frequency.setValueAtTime(f0 * 2.15 * V.f * det, t);
+      o2.frequency.exponentialRampToValueAtTime(f1 * 2.35 * V.f * det, t + D * 0.8);
+      const og = ctx.createGain(); og.gain.value = det === 1 ? 0.75 : 0.42;
+      o2.connect(og).connect(bp); o2.start(t); o2.stop(t + D + 0.02);
+    }
+    // the tear: band-limited, never broad, and it dies with the note
+    const n = noiseBurst(D, (x) => Math.min(1, x * 12) * (1 - x) ** 0.6);
+    const nb = ctx.createBiquadFilter(); nb.type = 'bandpass'; nb.Q.value = 2.4;
+    nb.frequency.setValueAtTime(2600 * V.f, t);
+    nb.frequency.exponentialRampToValueAtTime(1700 * V.f, t + D);
+    const ng = ctx.createGain(); ng.gain.value = 0.30 * V.rasp;
+    n.connect(nb).connect(ng).connect(hp); n.start(t); n.stop(t + D);
+    // ragged, not smooth: the tremolo is what makes it a throat
+    const lfo = ctx.createOscillator(); lfo.type = 'sawtooth'; lfo.frequency.value = 38 + Math.random() * 10;
+    const lg = ctx.createGain(); lg.gain.value = gain * 0.42;
+    lfo.connect(lg).connect(g.gain); lfo.start(t); lfo.stop(t + D);
     return;
   }
   const o = ctx.createOscillator();
@@ -16529,6 +17137,16 @@ function updateMutantCut(dt) {
   let near = Infinity;
   for (let i = 0; i < mutants.length; i++) {
     const u = mutants[i];
+    /* AND THE TAKE DRIVES THE PACK, NOT EVERY CREATURE IN THE GAME. The
+     * loop that WAKES them skips `solo` and this one did not, so for the
+     * five seconds of the mutant cutscene both bosses were turned to face
+     * you, run at you at cutscene sprint and given footsteps — the Dealer
+     * forty metres underground, and the thing at the lighthouse dragged off
+     * his mark up the ridge and left standing there in his run cycle. It
+     * never showed while the only solo creature was the one sealed in a
+     * room nine hundred metres away. Whoever a cutscene is about, it is
+     * about them alone. */
+    if (u.kind.solo) continue;
     const p = u.g.position;
     const dx = camera.position.x - p.x, dz = camera.position.z - p.z;
     const d = Math.hypot(dx, dz) || 1;
@@ -17391,7 +18009,7 @@ function updateMutantUnit(u, dt) {
    * his own line is a photograph. He keeps his idle through a dialogue,
    * and only a dialogue; the menu still stops him dead. */
   if (frozen()) {
-    if (u.kind.human && dialogOpen && !menuOpen && !inspecting && !u.holdAnim) mutAnim(u, dt, 0);
+    if (u.kind.talks && dialogOpen && !menuOpen && !inspecting && !u.holdAnim) mutAnim(u, dt, 0);
     return;
   }
 
@@ -17401,6 +18019,19 @@ function updateMutantUnit(u, dt) {
   const turn = (rate) => { u.g.rotation.y += _smileTurn(u.g.rotation.y, face) * Math.min(1, dt * rate); };
 
   if (!u.st.awake) {
+    /* WHAT IT IS DOING BEFORE IT NOTICES YOU. The pack waits out at sea
+     * where there is nothing to see but a wake, so its idle never mattered
+     * and `mutAnim` was free to draw one; the thing on the headland is sat
+     * on the lane in plain view for the whole length of the approach, and
+     * what he is doing there is the entire reason you walk up to him.
+     * `sleepIdle` is that clip, held, and it is not in the gait table
+     * because it is not a way of standing — it is a way of not standing. */
+    if (u.kind.sleepIdle && !u.holdAnim) {
+      const a = mutPlay(u, u.kind.sleepIdle, true);
+      if (a) { a.paused = false; a.timeScale = 0.85; }
+      u.mixer.update(dt);
+      return;
+    }
     if (!u.holdAnim) mutAnim(u, dt, 0);        // something else is driving the clip (his reach for the bar)
     return;                                    // the cutscene is what wakes them
   }
@@ -17409,11 +18040,20 @@ function updateMutantUnit(u, dt) {
    * the roof and fought you through forty metres of earth — the crabs bit
    * through the ceiling. Anything that is not the one who lives down there
    * stands off while you are in the bunker. */
-  if (inBunker && !u.kind.solo) { mutDrop(u); mutAnim(u, dt, 0); return; }
+  /* AND IT IS ABOUT WHERE HE IS, NOT ABOUT WHAT KIND HE IS. This read
+   * `!u.kind.solo` — "everything except the one who lives down there" —
+   * which was true while the only solo creature in the game WAS the one who
+   * lives down there. The thing on the headland is solo too, and he follows
+   * you anywhere: wake him, walk nine hundred metres back up the beach and
+   * go down the hatch, and he would have stood on the sand over the roof
+   * swinging at you through forty metres of earth, which is the crabs' own
+   * bug with a new creature in it. A body is in the fight if it is in the
+   * same PLACE as you. */
+  if (!!inBunker !== (Math.abs(u.g.position.y - BUNKER_Y) < 5)) { mutDrop(u); mutAnim(u, dt, 0); return; }
   /* What is left of his poise grows back once you stop hitting him, which is
    * the half of a pool that makes it one: a stagger has to be paid for in a
    * flurry, and a flurry has to be survived. */
-  if (u.kind.human && u.st.alive) {
+  if (u.kind.poise && u.st.alive) {
     u.st.poiseT = (u.st.poiseT || 0) + dt;
     if (u.st.poiseT > (u.kind.poiseWait || 1.4) && u.st.poise < u.kind.poise)
       u.st.poise = Math.min(u.kind.poise, u.st.poise + (u.kind.poiseBack || 1.6) * dt);
@@ -17439,11 +18079,11 @@ function updateMutantUnit(u, dt) {
    * somebody FIGHTING you: the heavy that used to be free now has to be
    * bought with a feint, a step, or the moment after his own recovery.
    * On a cooldown of its own, so it is an answer and not a wall. */
-  /* AND IT IS NOT THE DEALER'S ALONE ANY MORE. `reads` is the same behaviour
+  /* AND IT IS NOT THE DEALER'S ALONE ANY MORE. `reacts` is the same behaviour
    * offered to anything that declares it, and the reptilians do — three of
    * them that all answer a charge is what stops the fight in the hall from
    * being opened with a free heavy every time. */
-  if (u.kind.human || u.kind.reads) {
+  if (u.kind.reacts) {
     u.st.react = Math.max(0, (u.st.react || 0) - dt);
     if (u.st.evade > 0) {
       u.st.evade -= dt;
@@ -17547,7 +18187,14 @@ function updateMutantUnit(u, dt) {
      * so retreating buys you distance the swing simply eats, and the answers
      * left are the ones that should be — step round it, guard it, or parry.
      * It stops closing for the last fifth, which is the commit. */
-    if (t < A.wind * 0.8 && dist > A.reach * 0.75) {
+    /* UNLESS IT IS COILING. A pounce that walks its own wind-up in arrives
+     * at the edge of its reach before it has left the ground, and then the
+     * leap has nothing left to cross — measured, the thing on the headland
+     * strolled from five metres to three and a sixth during the coil and
+     * then "jumped" the last metre, which reads as a lunge and not as a
+     * jump. `hold` keeps it where it is for the whole startup: it stops,
+     * rears, and the ground is crossed all at once. */
+    if (t < A.wind * 0.8 && dist > A.reach * 0.75 && !A.hold) {
       u.dir.set(dx / dist, 0, dz / dist);
       p.addScaledVector(u.dir, MUT_SPEED * u.kind.speedK * 0.66 * dt);
     }
@@ -17561,10 +18208,19 @@ function updateMutantUnit(u, dt) {
       mutAnim(u, dt, 0);
       return;
     }
-    // the lunge covers ground through its strike
-    if (A.lunge > 0 && t >= A.wind && t < A.wind + A.strike + 0.12 && dist > 1.3) {
+    /* The lunge covers ground through its strike — and a POUNCE is the other
+     * way round: it is IN THE AIR BEFORE THE CLAWS ARRIVE and the travel has
+     * to be finished by the time they do, because a jump that is still
+     * crossing the ground on the frame it lands is a thing sliding at you.
+     * Measured with the travel running from the contact frame onward: from
+     * five metres he was still 3.07 m away when the claws came down and the
+     * blow missed by 1.48. `LEAP_AIR` is the flight — most of the crossing
+     * happens in the last of the coil, and what is left runs out through
+     * the strike so it arrives rather than stopping dead. */
+    const air = A.hold ? LEAP_AIR : 0;
+    if (A.lunge > 0 && t >= A.wind - air && t < A.wind + A.strike + 0.12 && dist > 1.3) {
       u.dir.set(dx / dist, 0, dz / dist);
-      p.addScaledVector(u.dir, (A.lunge / (A.strike + 0.12)) * dt);
+      p.addScaledVector(u.dir, (A.lunge / (air + A.strike + 0.12)) * dt);
     }
     // a chained swing STEPS IN through its startup: the first blow's own
     // knockback put you out of reach, and a follow-up that stands still is
@@ -17583,10 +18239,10 @@ function updateMutantUnit(u, dt) {
      * count, wrong for a man with a bar you are meant to WATCH: he could
      * face the wall and still hit you, and a swing whose bar passed a metre
      * wide still landed. His blow is tested across the whole active window
-     * on the bar itself (`dealerBarHit`): the bar has to pass through you.
+     * on the bar itself (`blowLands`): the bar has to pass through you.
      * The pack keeps the old test. */
-    if (t >= A.wind && t < A.wind + A.strike + (u.kind.human ? 0.04 : 0) && !u.st.landed) {
-      const hits = u.kind.human ? dealerBarHit(u) : (was < A.wind && dist < A.reach + 0.7);
+    if (t >= A.wind && t < A.wind + A.strike + (u.kind.aimed ? 0.04 : 0) && !u.st.landed) {
+      const hits = u.kind.aimed ? blowLands(u) : (was < A.wind && dist < A.reach + 0.7);
       if (hits) {
         u.st.landed = true;
         if (blocking) {
@@ -17611,10 +18267,19 @@ function updateMutantUnit(u, dt) {
        * that was itself chained — so a combo is two and you can count on it.
        * The second swing comes out of the first's recovery at the halfway
        * mark, which is what makes it a combo and not two attacks. */
-      u.st.chainAt = (A.chain && u.st.chainN < u.kind.chainMax && Math.random() < A.chainP && dist < A.reach + 2.2)
+      /* AND THE CHAIN HAS TO BE A SWING THIS CREATURE OWNS. `makeMutant`
+       * nulls a chain the kind does not have — but `swingOf` falls back to
+       * the SHARED table when a unit is holding a swing that is not in its
+       * own, and the shared entry's chain was never nulled. So the follow-up
+       * named a key that did not exist, `u.atk[A.chain].wind` threw inside
+       * `animate`, and that is the whole game once a frame for as long as
+       * the state lasts. It is the same trap `swingOf` was written for,
+       * one line further down. */
+      u.st.chainAt = (A.chain && u.atk[A.chain] && u.st.chainN < u.kind.chainMax
+                      && Math.random() < A.chainP && dist < A.reach + 2.2)
         ? A.wind + A.strike + A.recover * 0.42 : -1;
     }
-    if (u.st.chainAt > 0 && t >= u.st.chainAt) {
+    if (u.st.chainAt > 0 && t >= u.st.chainAt && u.atk[A.chain]) {
       u.st.swings++;
       u.st.swing = A.chain; u.st.atk = 0; u.st.chained = true; u.st.chainN++; u.st.chainAt = -1;
       sfxMutTell(dist, u.atk[A.chain].wind, u.kind.voice);
@@ -17650,7 +18315,7 @@ function updateMutantUnit(u, dt) {
       throwSand(u, dist);
       return;
     }
-    const near = dist <= A.reach;
+    const near = dist <= (u.maxReach || A.reach);
     /* WHOSE TURN IT IS. One of them swings and the others circle: three
      * tells at once is not three times the fight, it is no fight at all,
      * because there is nothing to read. Whoever is nearest and ready takes
@@ -17763,13 +18428,41 @@ function updateMutantUnit(u, dt) {
        * get to learn the language before it starts using all of it. And if
        * another of them holds the token, it circles instead. */
       const roll = Math.random();
-      const wantSwing = u.st.swings === 0 || roll < 0.62;
+      /* HOW OFTEN IT ACTUALLY SWINGS WHEN IT COULD. 0.62 is the pack's, and
+       * it is right for three creatures taking turns: two of them should be
+       * circling at any moment or the fight is unreadable. A boss fighting
+       * you alone has nobody to take turns with, and at the pack's number he
+       * spent two fifths of every opening walking sideways — measured, twelve
+       * swings in forty-five seconds while the arithmetic of his own timings
+       * allows thirty-six. `press` is that number, per kind. */
+      const wantSwing = u.st.swings === 0 || roll < (u.kind.press || 0.62);
       if (wantSwing && maySwing) {
         let pick = u.kind.use.attack ? 'attack' : Object.keys(u.kind.use)[0];
         if (u.st.swings > 0) {
-          const tot = Object.values(u.kind.use).reduce((a, w) => a + w, 0);
-          let r = Math.random() * tot;
-          for (const k in u.kind.use) { r -= u.kind.use[k]; if (r <= 0) { pick = k; break; } }
+          /* AND IT DRAWS FROM THE SWINGS THAT CAN ACTUALLY REACH YOU. The
+           * draw was over everything it owns, so at three metres it could
+           * roll its shortest swing, throw it at the air, and — because the
+           * next frame's `near` is measured against that same short swing —
+           * fall straight back into the orbit that produced no attacks at
+           * all. Anything that cannot reach is out of the hat; if nothing
+           * can, it takes the longest and closes the last of the ground
+           * with the swing's own lunge. */
+          const ok = {};
+          let tot = 0;
+          for (const k in u.kind.use) {
+            if ((u.atk[k] || MUT_ATTACKS[k]).reach + 0.25 < dist) continue;
+            ok[k] = u.kind.use[k]; tot += ok[k];
+          }
+          if (tot > 0) {
+            let r = Math.random() * tot;
+            for (const k in ok) { r -= ok[k]; if (r <= 0) { pick = k; break; } }
+          } else {
+            let far = -1;
+            for (const k in u.kind.use) {
+              const R = (u.atk[k] || MUT_ATTACKS[k]).reach;
+              if (R > far) { far = R; pick = k; }
+            }
+          }
         }
         u.st.swing = pick; u.st.atk = 0; u.st.chained = false; u.st.chainN = 0; u.st.wait = 0;
         u.st.feint = (u.st.swings > 1 && Math.random() < u.kind.feint) ? 0.55 + Math.random() * 0.2 : 0;
@@ -17857,13 +18550,48 @@ function updateMutantUnit(u, dt) {
  * put the bar on your bearing, and then the shoulder for what is left, which
  * is mostly the height. Both are clamped and both are weighted by the same
  * ease, so a swing thrown from too far out or too far round still misses. */
+const LEAP_AIR = 0.55;                     // a pounce's flight, before the claws land
 const PATH_EVERY = 0.45;                   // how often he may re-ask the room the way
 const AIM_YAW = 0.70;                      // how far his body may turn into it
 const AIM_MAX = 0.80;                      // and how far the shoulder may bend it
 const _abA = new THREE.Vector3(), _abB = new THREE.Vector3(), _abC = new THREE.Vector3();
 const _abQ = new THREE.Quaternion(), _abP = new THREE.Quaternion(), _abInv = new THREE.Quaternion(), _abM = new THREE.Matrix4();
+const _atA = new THREE.Vector3();
+/* WHERE THE STRIKING END IS. A crowbar has no bone at its tip, so the
+ * Dealer's is found by running 0.62 m out from the fist along the forearm's
+ * line — and that number was written into `aimBar` as a constant, which
+ * meant the second boss aimed the end of a crowbar he was not holding. A
+ * claw HAS a bone at its tip and the rig knows where it is; a weapon does
+ * not and carries `barLen` instead. `blowLands` already asked the same
+ * question, and now the aim and the hit test are asking it the same way —
+ * which is the only reason the picture and the blow cannot come apart. */
+function aimTip(u, L, out) {
+  L.hand.getWorldPosition(out);
+  if (L.tip) { L.tip.getWorldPosition(_atA); return out.copy(_atA); }
+  L.fore.getWorldPosition(_atA);
+  return out.addScaledVector(_atA.sub(out).normalize(), -(u.kind.barLen || 0));
+}
+/* WHICH ARM IS DOING IT. A man with a crowbar has one — it is skinned to
+ * his right hand and there is nothing to choose. A thing that mauls with
+ * BOTH has two, and correcting the right shoulder on a swing the left claw
+ * is leading puts the wrong hand on your chest and leaves the one you are
+ * watching a half metre wide. The arm whose claw is nearest you at the
+ * moment the correction starts is the arm that is swinging; ask once per
+ * frame, which is cheap and is always right on a two-handed slam because
+ * on those they are symmetric and either answer is the same answer. */
+const _alA = new THREE.Vector3();
+function aimLimb(u) {
+  const B = u.bones;
+  const R = { arm: B.arm, fore: B.fore, hand: B.hand, tip: B.tip };
+  if (!B.handL || !B.armL) return R;
+  const Lf = { arm: B.armL, fore: B.foreL, hand: B.handL, tip: B.tipL };
+  (R.tip || R.hand).getWorldPosition(_alA);
+  const dr = _alA.distanceToSquared(camera.position);
+  (Lf.tip || Lf.hand).getWorldPosition(_alA);
+  return _alA.distanceToSquared(camera.position) < dr ? Lf : R;
+}
 function aimBar(u, dt, dist) {
-  if (!u.kind.human || !u.bones || !u.bones.arm || !u.bones.hand || !u.bones.fore) return;
+  if (!u.kind.aimed || !u.bones || !u.bones.arm || !u.bones.hand || !u.bones.fore) return;
   const A = swingOf(u);
   let w = 0;
   if (u.st.atk >= 0 && A) {
@@ -17874,7 +18602,8 @@ function aimBar(u, dt, dist) {
   }
   u.aimW = (u.aimW || 0) + (w - (u.aimW || 0)) * Math.min(1, dt * 18);
   if (u.aimW < 0.004) { if (u.model) u.model.rotation.y = 0; return; }
-  const arm = u.bones.arm;
+  const LB = aimLimb(u);
+  const arm = LB.arm;
   /* THE BODY TURNS FIRST, and it turns the MODEL, not `u.g`: the group's
    * heading belongs to the AI and to every distance test in the fight, and
    * a correction written into it would accumulate frame on frame. The bar's
@@ -17883,25 +18612,21 @@ function aimBar(u, dt, dist) {
   if (u.model) {
     u.model.rotation.y = 0;
     u.model.updateMatrixWorld(true);
-    u.bones.hand.getWorldPosition(_abA);
-    u.bones.fore.getWorldPosition(_abB);
-    _abC.copy(_abA).addScaledVector(_abB.sub(_abA).normalize(), -0.62);   // the tip
+    aimTip(u, LB, _abC);                               // the tip: a bar's end, or a claw
     const rx = u.g.position.x, rz = u.g.position.z;
     let dy = Math.atan2(camera.position.x - rx, camera.position.z - rz)
            - Math.atan2(_abC.x - rx, _abC.z - rz);
     while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
-    u.model.rotation.y = THREE.MathUtils.clamp(dy, -AIM_YAW, AIM_YAW) * u.aimW;
+    const yawMax = AIM_YAW * (u.kind.aimK || 1);
+    u.model.rotation.y = THREE.MathUtils.clamp(dy, -yawMax, yawMax) * u.aimW;
     u.model.updateMatrixWorld(true);
   }
   arm.updateWorldMatrix(true, false);
-  u.bones.hand.updateWorldMatrix(true, false);
-  u.bones.fore.updateWorldMatrix(true, false);
+  LB.hand.updateWorldMatrix(true, false);
+  LB.fore.updateWorldMatrix(true, false);
   arm.getWorldPosition(_abA);                         // the shoulder: what turns
-  u.bones.hand.getWorldPosition(_abB);
-  u.bones.fore.getWorldPosition(_abC);
-  // the bar runs on out past the fist along the forearm's line
-  _abB.addScaledVector(_abC.sub(_abB).normalize(), -0.62);
-  _abB.sub(_abA);                                     // shoulder to bar tip
+  aimTip(u, LB, _abB);
+  _abB.sub(_abA);                                     // shoulder to the striking end
   // where it should be: your chest, and never further than the arm can reach
   _abC.copy(camera.position); _abC.y -= 0.45;
   _abC.sub(_abA);
@@ -17910,7 +18635,7 @@ function aimBar(u, dt, dist) {
   _abB.normalize(); _abC.normalize();
   let ang = Math.acos(THREE.MathUtils.clamp(_abB.dot(_abC), -1, 1));
   if (!(ang > 1e-4)) return;
-  const use = Math.min(ang, AIM_MAX) * u.aimW;
+  const use = Math.min(ang, AIM_MAX * (u.kind.aimK || 1)) * u.aimW;
   _abQ.setFromUnitVectors(_abB, _abC);
   // only part of the way there: identity is "no correction", the full
   // rotation is "the bar on your chest", and `use / ang` is how far he gets
@@ -17940,7 +18665,8 @@ function mutGiveToken(dt) {
     const st = mutToken.st;
     const d = Math.hypot(camera.position.x - mutToken.g.position.x, camera.position.z - mutToken.g.position.z);
     const A = mutToken.atk[st.swing] || MUT_ATTACKS[st.swing];
-    if (!st.alive || st.stun > 0 || st.recoil > 0 || (st.atk < 0 && d > A.reach + 2.2)) mutToken = null;
+    if (!st.alive || st.stun > 0 || st.recoil > 0
+        || (st.atk < 0 && d > (mutToken.maxReach || A.reach) + 2.2)) mutToken = null;
     else return;
   }
   let best = null, bw = -1;
@@ -17950,7 +18676,7 @@ function mutGiveToken(dt) {
     st.wait += dt;
     const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
     const A = u.atk[st.swing] || MUT_ATTACKS[st.swing];
-    if (d > A.reach + 1.6) continue;
+    if (d > (u.maxReach || A.reach) + 1.6) continue;
     if (st.wait > bw) { bw = st.wait; best = u; }
   }
   if (best) mutToken = best;
@@ -19074,7 +19800,19 @@ bunkerConfine = (v) => {
   // which wall it met, so only that component of the bounce is turned round
   return (cx !== lx ? 1 : 0) | (cz !== lz ? 2 : 0);
 };
+/* THE GROUND THAT IS NOT THE BEACH. It was named for the bunker because the
+ * bunker was the first place in this game that had one, and the day a fight
+ * moved onto the HEADLAND it turned out to be the general question: a drop
+ * of blood, a severed limb, a thrown bottle, a puff of sand and every
+ * particle of a Verlet ragdoll all ask exactly this, and all of them had the
+ * beach's own y = 0 as their answer. Seven metres up a ridge that is wrong
+ * by seven metres — a body killed at the lighthouse fell through the hill
+ * and settled on the sand underneath it, which is the same bug the boss
+ * fight in the bunker had, upside down. `headlandAt` returns 0 everywhere
+ * off the ridge, so this only speaks where there is something to say. */
 bunkerFloorAt = (x, z, y) => {
+  const hl = headlandAt(x, z);
+  if (hl > 0.05 && y > hl - 3.0) return hl;
   const B = bunkerHome.group.userData.bunker, nav = B.nav;
   if (!nav || y > BUNKER_Y + nav.room.h || y < BUNKER_Y - 2.5) return null;
   const g = bunkerHome.group, lx = x - g.position.x, lz = z - g.position.z, R = nav.room;
@@ -21593,6 +22331,10 @@ function update(dt, rawDt = dt) {
   updateSmile(dt);
   updateCrab(dt);
   updateMutant(dt);
+  /* AFTER the fight AI, never before: whatever moves him last has to be the
+   * thing that puts him back on the ground and inside the arena, or a swing's
+   * own lunge carries him off the ridge for a frame every time. */
+  updateScp(dt);
   updateGibs(dt);
   updateBradlyBlink(dt);
   updateHurt(dt);
@@ -22405,7 +23147,7 @@ MUT_KINDS.reptilian = {
    * retreating is answering it with a thing it already does — what makes this
    * legible is that it LEAVES the line you are swinging along, which is also
    * the one direction a charged swing cannot follow. */
-  reads: true, dodgeClip: 'dodge', dodgeSide: 4.9, dodgeT: 0.38,
+  reacts: true, dodgeClip: 'dodge', dodgeSide: 4.9, dodgeT: 0.38,
   /* `rim` IS A COLOUR, NOT A STRENGTH. The pack's default is [0.070, 0.088,
    * 0.125] and `reexpose` writes it straight into the shader as a vec3, so a
    * scalar here is a TypeError inside `onBeforeCompile` — which is to say on
@@ -25110,6 +25852,8 @@ window.__bw = {
   startStep, inCombat, get stepT() { return stepT; }, get stepCool() { return stepCool; },
   katanaItem, katModel, katanaVM, updateDealer, sfxDig, restRot, slashRot, updateViewmodel, updateTrail,
   removeSmile, get smilePhase() { return smilePhase; },
+  scp096, SCP_X, SCP_Z, wakeScp, scpLookedAt, updateScp, sfxScpScream, sliceClip, blowLands, headlandAt,
+  get scpSeen() { return scpSeen; }, checkScpRage, get scpRaged() { return scpRaged; }, get scpRageT() { return scpRageT; },
   get crowbarOnTable() { return crowbarOnTable; }, get dealerPick() { return dealerPick; }, get bunkerProps() { return bunkerProps; },
   get milCrate() { return milCrate; }, get milCrateOpen() { return milCrateOpen; }, openMilCrate,
   get workTable() { return workTable; }, get tableBroken() { return tableBroken; }, smashWorkTable, TABLE_SPOT, TABLE_TOP, get tablePerched() { return tablePerched; },

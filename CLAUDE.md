@@ -3717,6 +3717,252 @@ Two things learned in there are general and worth keeping:
   cheekbones with it and the head came back a mannequin. The sculpt is the
   face; what needed removing was what was painted on top of it.
 
+**SCP-096, IN FRONT OF THE LIGHTHOUSE — AND ALMOST NONE OF HIM IS NEW
+CODE.** Sealife Fan 3's "SCP-096 Reanimated" (`assets/scp096.glb`), 6.3k
+triangles, 68 joints and THIRTY-SEVEN CLIPS — the first asset in this game
+that arrived with a whole fight already animated. He is a row in
+`MUT_KINDS`, so the tell, the commit, the poise pool, the parry window, the
+riposte, the chain, the feint, the token and the aimed blow are all his by
+construction. He sits on the lane with his back to you and his face in his
+hands, and NOTHING HAPPENS UNTIL YOU LOOK AT HIM (`scpLookedAt`: the middle
+of the screen on him, inside thirty metres) — which is the creature's own
+rule and also the best trigger this game has, because the fight starts on
+something the player DID rather than on a line across the sand.
+
+**THE FLAGS ARE INTENTIONS NOW, NOT `kind.human`.** Ten places asked "is he
+a man" to mean ten different things, and the day a second boss arrived that
+was not a man the word stopped meaning anything. `lit` is the bunker's
+lamps, `aimed` is the correction that puts the blow on your chest, `reacts`
+is breaking his own startup to answer a charge, `talks` is having a
+conversation to breathe through, `poise` is the pool, `bossDeath` is the
+boss's own dismemberment rates. A flag named for what it DOES can be given
+to the next thing that needs it.
+
+Six things this cost, and five of them are the same lesson this file has
+already learned somewhere else:
+
+- **ROOT MOTION, AGAIN, AND IT LOOKED LIKE A TUNING PROBLEM.** His
+  `attackjump` carries THIRTEEN UNITS of forward travel on the armature root
+  — twelve metres — so the leap threw his whole skeleton across the ridge,
+  the aim dutifully corrected an arm that was already somewhere else, and
+  the blow measured 2.31 m from your chest at every range the trial tried
+  while the other three landed inside 0.3. `kind.flatten` names the roots
+  and holds their sideways and forward curves — and **the hold value is the
+  REST POSE, not the clip's first key**: this clip starts thirteen units
+  BEHIND himself and arrives at rest, so pinning key zero parked him twelve
+  metres back up the lane and measured *worse* than the bug.
+- **A WINDOW CUT OUT OF A CLIP MUST KEEP EVERY CHANNEL.** `attack1` is six
+  seconds of him mauling something on the floor with two real strikes inside
+  it and dead time either side; cut into its two blows it is half his move
+  set. three's `AnimationUtils.subclip` drops every track with no key in the
+  window — 38 of 122 bones — so the swing came out wearing the walk cycle's
+  shoulders. `sliceClip` RESAMPLES every track through its own interpolant
+  instead, so all of them survive by construction.
+- **THE WHOLE LIMB IS THE HITBOX, NOT THE LAST HAND'S BREADTH OF IT.**
+  `blowLands` (was `dealerBarHit`) sampled the weapon alone — grip to tip —
+  and that is wrong for exactly the swing it most needs to be right for: the
+  aim puts the TIP on your chest, and when he is nearer than his own arm is
+  long the tip cannot BE there, so it goes past you and what is actually in
+  your body is his forearm. It sweeps shoulder → elbow → wrist → claw now.
+  A kind with a `tip` bone carries its reach in the rig; one with a weapon
+  carries `barLen`, and `aimTip` is the one place either question is asked,
+  which is the only reason the picture and the blow cannot come apart.
+- **A REACH SHORTER THAN THE ARM IS A CREATURE THAT NEVER SWINGS.** His
+  numbers were written at the Dealer's — 1.75 to 2.40, a man with a 0.85 m
+  crowbar — and he stood in front of the player for a whole minute and swung
+  thirteen times. The fight AI holds its range at about `reach`
+  (`flankDir` rings him at `reach - 0.3`), so a creature whose arms are
+  LONGER than the number in the table orbits outside its own swing and
+  `near` is never true. Measured, then set to what the aim actually lands:
+  2.80–3.30, claw inside 0.3 m of your chest from 1.4 m out to 3.2.
+- **THE GROUND IS NOT y = 0, AND `bunkerFloorAt` IS THE QUESTION.** It was
+  named for the bunker because the bunker was the first place with a second
+  ground; it is the general question, and blood, gibs, thrown props, puffs
+  and every particle of the Verlet ragdoll all ask it. Seven metres up a
+  headland the beach's own zero is wrong by seven metres — his corpse fell
+  through the hill and settled on the sand under it. It answers `headlandAt`
+  now, which is 0 everywhere off the ridge, so it only speaks where there is
+  something to say.
+- **AND THE STAND-OFF IS ABOUT WHERE HE IS, NOT WHAT KIND HE IS.**
+  `if (inBunker && !u.kind.solo)` meant "everything except the one who lives
+  down there", which was true while the only solo creature WAS him. This one
+  is solo too and follows you anywhere: wake him, walk nine hundred metres
+  back and go down the hatch, and he would have stood on the sand over the
+  roof swinging through forty metres of earth — the crabs' own bug wearing a
+  new creature. A body is in the fight if it is in the same PLACE as you.
+
+**AND A THING THAT FOLLOWS YOU IS CULLED BY WHERE IT IS.** Every `farProps`
+entry is scenery keyed to the Z it was built at, which is right for a pier
+and catastrophic for a creature that chases: run two hundred metres and he
+was switched off at his spawn's distance and kept coming, invisible. `live`
+reads the object instead.
+
+**AND THERE IS NO ARENA.** The first version penned him thirty metres from
+his mark and forty seconds of holding S walked away from the last boss in
+the game — measured: 226 m, one swing thrown, four damage taken. He is
+faster than a sprint (`speedK` 1.42 on 4.6 against your 5.71) and he does
+not stop. Measured after: standing still, 26 swings and 29 damage a minute;
+walking backwards for forty seconds, 11 damage; sprinting away, he holds
+6 m and never loses you. **A boss you can walk away from is scenery.**
+
+**AND A PALE CREATURE IS NOT A DARK ONE.** The pack's material — a gamma
+lift, a fifth of emissive and a cold rim — is for two metres of dark flesh
+that renders as a hole without help. His albedo is chalk to begin with and
+the same treatment made him a white cut-out on a black ridge, which is the
+Military Shovel's failure in a new place. `tint` multiplies the map down,
+`emis` is the lift, `rim` the Fresnel, and the pack's values are the
+defaults so nothing on the beach moved. Measured on the screen: his lit side
+reads 72 against the lane's 62 — a body lighter than the ground it stands
+on, which is what lurking looks like.
+
+**AND THEN HE HAD TO BECOME A SOULS BOSS.** The first build fought
+correctly and read as a creature swinging near you; the owner asked for
+swings you can see coming, hands that actually connect, and something much
+harder and crazier. Five things, and the first one is the one that made the
+other four possible:
+
+- **A TELL IS MEASURED IN SECONDS OF VISIBLE APPROACH, NOT IN `wind`.** The
+  honest number is how long the claw is travelling in at you before it
+  arrives, and it is what a player actually reads. Measured: 0.47 / 0.32 /
+  1.05 / **0.23** against a 0.20 s parry window — the grab was a coin toss.
+  Every startup is longer now and the shortest is 0.33; the pounce is 1.15.
+  **He is made harder somewhere else entirely**, which is the Dealer's own
+  rage note said plainly: the startups are what keep a boss fair, and
+  aggression, chains and a gap-closer are where difficulty is supposed to
+  come from.
+- **A COMBO YOU CANNOT HOLD IS A COMBO YOU CANNOT BLOCK.** `blockMutant`
+  takes `BLOCK_COST * 1.35 * reachK` — 0.46 of the bar per blow, which is
+  TWO AND A FIFTH BLOWS to an empty bar. A boss who throws four-hit strings
+  is then a boss whose strings break your guard in the middle and you eat
+  the rest, which is the whole of "not smooth to block". `kind.blockCost`
+  and per-swing `guardK` are the two knobs: an ordinary claw is 0.26 of the
+  bar and the pounce is 0.55, so you hold a string and then you have to do
+  something else. Measured over a minute of holding the guard: phase one 21
+  blocked and 8 through, phase two 10 blocked and 20 through.
+- **A POUNCE THAT WALKS ITS OWN WIND-UP IN IS NOT A JUMP.** The fight AI
+  closes through every startup at two thirds of a run — the pack's own
+  answer to "I back up and never get hit" — so he arrived at the edge of his
+  reach before he had left the ground and then "jumped" the last metre.
+  `hold` keeps him where he is for the whole startup: he stops, rears, and
+  crosses the ground all at once. **And the travel has to be FINISHED by the
+  contact frame**, not started at it: run from the strike onward he was
+  still 3.07 m away when the claws came down and missed by 1.48. `LEAP_AIR`
+  is the flight, in the last of the coil. **And its `reach` must be inside
+  what it can actually cross** — at 4.20 against a 3.6 m leap he threw it
+  from ranges he could not close and his signature move whiffed.
+- **THE ARM THAT IS SWINGING IS THE ARM THAT GETS AIMED.** A man with a
+  crowbar has one and there is nothing to choose; a thing that mauls with
+  both has two, and correcting the right shoulder on a swing the left claw
+  is leading puts the wrong hand on your chest. `aimLimb` takes whichever
+  claw is nearer. With that and `kind.aimK` (a shoulder on a two-metre arm
+  may reach further round than a man turning into a bar swing) every swing
+  now lands inside 0.15 m of the chest at every range from 1.6 to 3.4 m.
+- **HALF HIS HEALTH, AND HE IS NOT THE SAME THING AFTERWARDS.** The single
+  most useful thing a boss can have: it turns one fight you solve once into
+  two and it tells you, with a noise you cannot miss, that you are winning
+  and that it is about to get worse. It is an OPENING and not a cutscene —
+  he is stopped and wide open for two seconds and you keep your hands. What
+  changes is everything between the swings and nothing about the tells.
+  **And turning the busy-ness dials bought almost nothing on their own**:
+  aggression up and cooldowns down took him from 22 swings a minute to 13,
+  because the moves he now favoured were his two slowest and each threw him
+  past you and cost him the ground back. What makes a boss relentless is
+  that a swing leads STRAIGHT into another swing, so the CHAIN
+  probabilities go up and the pounce — which chained into nothing in the
+  first half — comes down and keeps going.
+
+Measured at the end, against a passive player at fighting range: phase one
+43 swings and 40 damage a minute, phase two 47 and 41. The Dealer is 48 and
+40, and this one also has a move that takes two of your four.
+
+**AND THEN HE STOOD THERE AND DID NOT FIGHT, AND EVERY MEASUREMENT I HAD
+SAID HE DID.** The owner played it and got a boss that walked in circles.
+Forty-three swings a minute, measured, three times over — and all three
+measurements were worthless for the same reason: each one **force-fed him
+state before it counted anything**. They set `cool`, cleared `feint`, reset
+`hp`, and above all TELEPORTED HIM TO THREE METRES in front of the player
+before every sample. A test that puts the creature where it wants it cannot
+find the case where the creature cannot get there itself. The honest test is
+hands-off: wake it the way the player does and then touch nothing but the
+heal for three minutes. First run of that: **thirty-two seconds without a
+swing.**
+
+**`near` WAS ABOUT THE LAST SWING, AND THE ORBIT IS ABOUT THE LAST SWING
+TOO.** That is the whole bug, and it is a feedback loop rather than a number
+being wrong. `near = dist <= A.reach` uses whatever swing it happens to be
+holding; `flankDir` rings it at `A.reach - 0.3` off the SAME swing; and the
+separation and the circling put the equilibrium orbit a little outside that.
+So a creature whose last swing was its SHORTEST settles into a circle just
+beyond its own reach, is never `near`, never enters the branch that picks a
+swing, and therefore never gets a different reach to be measured against.
+Traced: orbiting between 2.80 and 3.03 m holding a 2.80 m swing, walking
+sideways, for half a minute at a time.
+
+Two fixes, and they belong to every creature and not just to him:
+
+- **Being in range is a question about the CREATURE, not about the last
+  thing it threw.** `u.maxReach` is the longest swing it owns, worked out
+  once at build, and `near` and the token hand-out both ask that.
+- **And the draw is over the swings that can actually reach you.** Anything
+  whose reach falls short of the current distance is out of the hat, so it
+  cannot roll its shortest swing at three metres, throw it at the air and
+  fall back into the same orbit. If nothing can reach it takes the longest
+  and closes the last of the ground with that swing's own lunge.
+
+Measured after, hands-off, five minutes, nothing touched: **207 swings (41 a
+minute), 189 damage (38 a minute), worst gap 3.9 s.** Before: 36 swings and
+a 32-second stall. The pack and the Dealer both still fight — 27 swings a
+minute between the three of them, and the Dealer's four all still land.
+
+**RAISING THE REACHES MOVED THIS STALL ONCE ALREADY AND I CALLED IT FIXED.**
+The first time he would not swing, the answer was that his reaches were the
+Dealer's and shorter than his own arms — true, and raising them made him
+attack. It did not remove the loop, it just moved the orbit to a distance
+where the numbers happened to line up, and the next change to his timings put
+it back. **If a fix makes a symptom go away without naming the mechanism,
+expect it back.**
+
+**AND A TRIGGER THAT CAN BE MISSED IS A BOSS THAT LOOKS BROKEN.** Looking at
+him is what wakes him and it is the whole of what he is — but from the
+outside, a creature sitting on the lane that has not noticed you is
+indistinguishable from one that is not working. `SCP_HEAR` is nine metres:
+that close he notices you whatever you are looking at, so the fight always
+happens, and the cone is how you choose to start it early and on purpose.
+
+**AND THE PREVIEW RUNS WHILE YOU ARE TYPING.** Every one of these tests ended
+with a live fight and no healing, and the twenty seconds it takes to compose
+the next tool call is twenty seconds of the boss hitting a player who cannot
+be healed — so the player died, `playerDied` reloaded the page, and the next
+call measured a module that had been rebuilt from scratch with the creature
+asleep. That is what "he went back to sleep between calls" was, and it wasted
+three rounds of debugging. Freeze rAF at the top of any measurement, not just
+for stills.
+
+**AND `press` IS HOW OFTEN IT SWINGS WHEN IT COULD.** 0.62 is the pack's and
+it is right for three creatures taking turns — two of them should be circling
+at any moment or there is nothing to read. A boss fighting you alone has
+nobody to take turns with, and at the pack's number he spent two fifths of
+every opening walking sideways: twelve swings in forty-five seconds while the
+arithmetic of his own timings allowed thirty-six.
+
+**AND A CHAIN MUST NAME A SWING THE CREATURE OWNS.** `makeMutant` nulls a
+chain the kind does not have — but `swingOf` falls back to the SHARED table
+when a unit is holding a swing that is not in its own, and the shared entry's
+chain was never nulled. `u.atk[A.chain].wind` then threw inside `animate`,
+which is the whole game once a frame for as long as the state lasts. It is
+the same trap `swingOf` itself was written for, one line further down.
+
+**AND A SHRIEK IS NOT A ROAR AN OCTAVE UP.** A bellow is a big animal moving
+a lot of air and it is carried by the SUB; transposing it up produced a
+small angry cow. The `shriek` throat is two detuned sawtooths a fifth apart
+(nothing that screams is in tune), a 38 Hz ragged tremolo, a formant
+bandpass at 1.5 kHz where a human scream lives, and a band-limited tear over
+the top — no broad hiss anywhere, because the shell already paid for that.
+`sfxScpScream` is three of those a beat apart so it seems to be getting
+worse rather than being loud at the start. Measured on the SFX bus: the
+first build was 88 % below 300 Hz and peaked at 47, which is the sub being
+the sound instead of the floor; it is 46 % in the 1–3 kHz formant now.
+
 **A DIRECTIONAL STEP, ON SPACE.** Before it the whole answer to a swing was
 block, parry or walk backwards — three things, all of them facing him, and
 the walk backwards is not really one, so every exchange had a single correct
