@@ -1264,6 +1264,7 @@ const lhParts = {};
 const lighthouse = new THREE.Group();
 lighthouse.position.set(LH_X, HL_CREST, LH_Z);
 let lampCore, beamPivot, lanternGlass = null;
+let lhStair = null;                 // the spiral inside the shaft; far-culled below
 const lhWindows = [];          // {y, ang} — cut through the scan, framed below
 {
   const DOOR_HALF = Math.atan2(LH_DOOR_W + 0.15, LH_OUTER);
@@ -1576,6 +1577,7 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
     stairs.add(moonWash);
   }
   lighthouse.add(stairs);
+  lhStair = stairs;                  // kept so the far cull below can reach it
 
   // ---- windows up the shaft ---------------------------------------
   // Each is a hole cut clean through the scan (see the loader), lined with
@@ -1860,6 +1862,92 @@ lighthouse.add(lhGround);
 const lhDress = new THREE.Group();
 lhGround.add(lhDress);
 farProps.push({ obj: lhDress, z: LH_Z, d: 320 });
+
+/* AND THE SPIRAL IS 397 DRAW CALLS INSIDE A SEALED BRICK TUBE. The tower is
+ * the destination and has to carry from down the beach, so it stays; the
+ * stair wound up the inside of it does not. Measured, hiding the stair
+ * changes between 0 and 10 pixels at EVERY range from 7 m to 400 m — the ten
+ * are a glimpse through the open door — and a quarter of the screen the
+ * moment you are in there. At the spawn it was 397 of the game's 1531 draw
+ * calls, submitted every frame for a kilometre, through a wall.
+ *
+ * FAR-CULL THE TREADS, NEVER THE LAMP. This is the dock's rule and the
+ * hall's, and it is why the group could not simply be switched off where it
+ * stood: it carries SIXTEEN PointLights, and hiding a light is nothing like
+ * hiding a mesh — it changes NUM_POINT_LIGHTS and so recompiles every
+ * material in the game. Measured, toggling this group with its lamps still
+ * inside cost a FOURTEEN SECOND frame and 48 fresh shader programs. So the
+ * lamps move out into a holder that is never hidden, the way `shrineLights`
+ * holds the hall's, with their world position baked in — the holder sits at
+ * the origin, so world and local are the same thing. The count is then
+ * pinned for the life of the page and hiding the treads is free. */
+const lhLights = new THREE.Group();
+scene.add(lhLights);
+if (lhStair) {
+  const lamps = [];
+  lhStair.traverse((o) => { if (o.isLight) lamps.push(o); });
+  const _lp = new THREE.Vector3();
+  for (const l of lamps) {
+    l.getWorldPosition(_lp);
+    lhLights.add(l);                 // add() detaches it from the stair first
+    l.position.copy(_lp);
+  }
+  farProps.push({ obj: lhStair, z: LH_Z, d: 60 });
+
+  /* AND THE LAMPS GO WITH IT, WHICH IS THE WHOLE POINT OF MOVING THEM.
+   * Measured at the spawn: 29 of the game's 31 point lights are outside
+   * their OWN falloff — eighteen of them are these, seven hundred metres
+   * past where anything they light can be seen, with a radius of eleven.
+   * They are uploaded to every draw call and looped over for every fragment
+   * for the whole kilometre, and switching them off is worth 9 ms of a 27 ms
+   * frame at the resolution this game actually renders at.
+   *
+   * The reason they were left on is real and is written up the file: a light
+   * entering or leaving recompiles every material in the game. But that bill
+   * is per light COUNT and three CACHES the result — measured, the first
+   * toggle cost 14 s and 48 new programs and every toggle after it cost 16 ms
+   * and none. So it is not a cost that has to be paid on the walk, it is a
+   * cost that has to be paid EARLY, which is what the warm chain is for: the
+   * tower's configuration is compiled behind the title card, and the frame
+   * you walk into the lamps has nothing left to compile.
+   *
+   * AND A LAMP CARRIES FURTHER THAN ITS OWN FALLOFF, because what you see is
+   * not the lamp, it is what the lamp LIGHTS. At the treads' own 60 m the
+   * warm interior showing through the door and the stair windows switched on
+   * as you crossed the line — measured, 188 pixels with a delta of 147, which
+   * is a lighthouse turning its windows on in front of you. It is under ten
+   * pixels by 140 m. So the lamps get their own, wider radius, and it is
+   * deliberately larger than the treads': whenever there is a stair to light,
+   * the lamps that light it are already on. */
+  farProps.push({ obj: lhLights, z: LH_Z, d: 160 });
+  /* AND BOTH START OFF, OR THE BOOT COMPILES THE GAME TWICE. `updateFarProps`
+   * does not run until the first frame, so leaving these switched on meant
+   * the opening frames were drawn at 31 point lights and the first cull then
+   * recompiled every material in the game down to 15 — measured, a 7302 ms
+   * frame behind the title card. Starting in the state the beach is actually
+   * in means the walk's configuration is the only one ever compiled on this
+   * thread; the tower's is the warm's business, and the warm hands it to the
+   * driver. */
+  lhStair.visible = false;
+  lhLights.visible = false;
+
+  /* AND A COST IS NOT REMOVED BY BEING MOVED. The stair used to be drawn
+   * from the spawn, so its shaders were compiled and its 397 geometries
+   * uploaded on the first frame of the game, behind the title card, where
+   * nobody felt it. Culling it hands that bill to whichever frame you first
+   * walk within 60 m of the door — measured, 3993 ms and eight fresh
+   * programs at the end of a kilometre walk, which is far worse than the
+   * waste it replaced. So it is warmed at boot like every other room here:
+   * the programs handed to the driver up front, then the uploads a slice at
+   * a time, one slice a frame, while the title card is still up. No `atZ` —
+   * the lamps live outside the group now, so the light count the stair is
+   * compiled against at the spawn is the one it is drawn with at the tower. */
+  const _sx = LH_X + 0.9, _sy = HL_CREST + 2, _sz = LH_Z;
+  warmStep('lh stair compile', () => warmCompile([lhStair, lhLights], _sx, _sy, _sz, LH_X, HL_CREST + 14, LH_Z));
+  for (let k = 0; k < 6; k++) {
+    warmStep('lh stair', () => warmView([lhStair, lhLights], _sx, _sy, _sz, LH_X, HL_CREST + 14, LH_Z, [k, 6]));
+  }
+}
 
 // A trodden path runs from the beach up to the door. The doorway sits at
 // local +Z (three measures cylinder theta from +Z), which is the side you
@@ -6475,7 +6563,17 @@ function holdable(item, model, { scale = 1, pos = [0, -0.02, 0], rot = [0, 0, 0]
   vm.visible = false;
   vm.userData.build = () => {
     const m = model.clone(true);
-    m.traverse((o) => { o.visible = true; });
+    /* AND THE PICKUP GLINT DOES NOT COME WITH IT. `addItemShine` hangs
+     * Sprites on the world object so you can find the thing on a dark
+     * beach, and `clone(true)` brings them along — then this loop, which
+     * exists to undo whatever was hidden on the original, switches them
+     * ON. In your fist that is an additive marker a hand's width from the
+     * near plane: it covered the captain's head completely and read as a
+     * pale red blob in the corner of the screen. A shine belongs on the
+     * floor, never in the hand. */
+    const glints = [];
+    m.traverse((o) => { if (o.isSprite) glints.push(o); else o.visible = true; });
+    for (const g of glints) g.removeFromParent();
     m.scale.setScalar(scale);
     m.position.set(pos[0], pos[1], pos[2]);
     m.rotation.set(rot[0], rot[1], rot[2]);
@@ -12688,6 +12786,87 @@ const SN = shipwreck.userData.nav;
   }
   oceanUniforms.uShipC.value.set(SHIP_X, SHIP_Z);
   oceanUniforms.uShipHalf.value = SN.HALF;
+
+  /* ---- AND THE HOLE HAS TO HAVE A BOTTOM ---------------------------
+   * Punching her out of the sea leaves NOTHING there, and the beach does
+   * not fill it: the sand plane discards every fragment seaward of
+   * `shoreLine`, and at her station that line sweeps from x = -6.7 to
+   * x = +6.5 over the tide — measured off `shoreLineJS` — while she spans
+   * -7.0 to +19.0. So for most of the cycle the ground under her forward
+   * half is neither sand nor sea but a hole straight through the world,
+   * and her bow at -7.0 is seaward of the line at every state of the tide
+   * and therefore ALWAYS standing over one. That is the see-through at her
+   * bow, and because the line moves it is also the "textures fading in and
+   * out": what you can see through her torn sole changes with the swash.
+   *
+   * A bed of the beach's own sand, cut to exactly the same half-widths the
+   * punch uses — one array, so the hole and its bottom can never disagree —
+   * and sunk 2 cm under the sand plane, so where the beach IS drawn it
+   * covers this without z-fighting and where it is not this is the ground.
+   * It is a strip rather than an apron because what it has to fill is the
+   * punch, and the punch is her waterline. */
+  /* HER FOREFOOT IS 1.5 m OFF THE GROUND, so a flat bed fills nothing.
+   * Measured by raycast down her centreline: at the stem the lowest thing
+   * on her is y = 1.55, because the stem RISES the way a boat's does — so
+   * under the bow there is a metre and a half of daylight, and with the
+   * sand discarded and the sea punched out it is a metre and a half of
+   * nothing. A boat driven up a beach heaps sand under her forefoot; this
+   * is that heap, and it is worked out from her OWN section rather than
+   * drawn: for each station the bed rises to just under the lowest point
+   * of her plating, and falls away to beach level a little outboard of
+   * her, so she is bedded in and there is no line to see under. */
+  const bedBottom = (lx) => {
+    for (let y = SN.KEEL_Y; y < SN.DECK_Y; y += 0.05) if (SN.halfAtY(lx, y) > 0.05) return y;
+    return SN.DECK_Y;
+  };
+  const bedN = hw.length, ring = 4;
+  const pos = new Float32Array(bedN * ring * 3);
+  const uv = new Float32Array(bedN * ring * 2);
+  const idx = [];
+  for (let i = 0; i < bedN; i++) {
+    const lx = -SN.HALF + (i / (bedN - 1)) * SN.LEN;
+    const w = hw[i] + 0.10, W = w + 1.9;
+    /* AND HER STERN IS DRIVEN INTO THE DUNE, SO SAND IS BANKED AGAINST IT.
+     * She is 26 m long across a 16.6 m beach, so her after end stands well
+     * inside the sand wall and there is no arrangement in which it does
+     * not — checked for real z-fighting along her quarter and there is
+     * none, so what reads as "her textures colliding with the sand" is the
+     * hull INTERPENETRATING the dune on a hard seam. A hull that simply
+     * stops inside a wall looks broken; one with sand heaped up its
+     * quarters looks driven in, which is what happened to her. The bank
+     * starts where the hold ends and climbs to the transom. */
+    const aft = Math.max(0, (lx - 7.5) / (SN.HALF - 7.5));
+    const bank = aft * aft * 1.30;
+    const h = Math.max(-0.02, Math.min(1.55, bedBottom(lx) - 0.18) + bank);
+    const zs = [-W, -w, w, W], ys = [-0.02, h, h, -0.02];
+    for (let k = 0; k < ring; k++) {
+      const o = (i * ring + k) * 3;
+      pos[o] = lx; pos[o + 1] = ys[k]; pos[o + 2] = zs[k];
+      const u = (i * ring + k) * 2;
+      // the beach's own grain, in WORLD space at its own density and phase
+      uv[u] = (SHIP_X + lx + 800) / SAND_TILE;
+      uv[u + 1] = (SHIP_Z + zs[k] + 800) / SAND_TILE;
+    }
+    if (i < bedN - 1) for (let k = 0; k < ring - 1; k++) {
+      const a0 = i * ring + k, b0 = a0 + 1, a1 = a0 + ring, b1 = b0 + ring;
+      idx.push(a0, b0, a1, b0, b1, a1);
+    }
+  }
+  const bedGeo = new THREE.BufferGeometry();
+  bedGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  bedGeo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  bedGeo.setIndex(idx);
+  bedGeo.computeVertexNormals();
+  /* AND IT HAS TO SIT WELL CLEAR OF THE BEACH PLANE. At -0.02 it was two
+   * centimetres under the sand, which is not separation at a grazing angle
+   * — measured along her quarter, the bed and the beach came back as
+   * coplanar pairs, and that shimmer where her stern meets the ground is
+   * the "textures colliding" at the back of her. Seven centimetres is far
+   * enough to sort cleanly and still under everything that draws over it. */
+  const bed = new THREE.Mesh(bedGeo, sandMat);
+  bed.position.set(SHIP_X, -0.05, SHIP_Z);
+  scene.add(bed);
+  farProps.push({ obj: bed, z: SHIP_Z, d: 220 });
 }
 
 // onShip / inBridge are declared with the collision block below.
@@ -12770,63 +12949,171 @@ const SHIP_Y_FLOOR = SN.HOLD_Y + 0.16;
  * bearing. Turn her toward the star and hold her there, and the hook lets
  * go. It sits off her PORT bow, framed in the front glass from the helm,
  * a few degrees over the horizon so it lands inside the window band. */
-const helmStar = { g: null, core: null, halo: null, lit: 0, solved: false };
+/* ---- THE THREE STARS, AND THE WHEEL THAT ANSWERS THEM ----------------
+ * Three stars stand in the sky off her bow, framed in the wheelhouse glass
+ * from the helm: one out on the PORT bow, one dead ahead, one to
+ * STARBOARD. They are there whatever you are doing — you can see them from
+ * the beach — and they are the reason the front of her is kept clear
+ * (invariants 9 and 10: nothing on the centreline forward of the helm, and
+ * nothing across the windscreen).
+ *
+ * Take the wheel and they become a sequence. ONE of them lights at a time,
+ * and where it stands is where you must put the wheel: the port star is
+ * hard to port, the middle one is midships, the starboard one is hard to
+ * starboard. Hold her there and that star sets and the next one lights.
+ * Follow all three and the hook lets the captain go.
+ *
+ * WHICH DETENT A STAR MEANS IS ITS OWN POSITION IN THE SKY, not a number
+ * written down beside it: the star's z offset and the wheel's detent come
+ * out of the same table, so a star cannot end up meaning the opposite of
+ * where it is. Seaward is -X and +Z is her port side, which is screen-left
+ * from the helm — the same convention the old single star was placed in. */
+const HELM_HOLD = 0.70;            // how long she has to sit on a star
+const HELM_WRONG = 0.45;           // and how long on a wrong one loses it
+/* HOW FAR APART THEY STAND IS THE WHOLE READ. At the 34 m offset the first
+ * build used they landed at ndcX -0.13, 0.00 and +0.13 — three lights
+ * inside an eighth of the frame of each other, which is a row, not a left,
+ * a middle and a right. At 110 m over a 190 m throw they subtend 30 degrees
+ * each side and come out at about -0.40, 0.00, +0.40: unmistakably one to
+ * port, one ahead and one to starboard, and still well inside the window,
+ * whose opening is 47 degrees each side of the helm. */
+/* AND WHAT A STAR MEANS IS THE ANGLE THAT POINTS THE CAP AT IT. She has a
+ * brass KING SPOKE standing off the rim — the thing you read her by — and
+ * the puzzle is to lay it on the star that is lit. These angles are not
+ * guessed: the spoke's tip was projected to the screen from the helm at a
+ * range of wheel angles and matched against where each star actually
+ * lands. Measured, hub at ndc (0.00, -0.72):
+ *
+ *     wheel +45 deg -> tip at ndc -0.391, port star      at -0.42
+ *     wheel   0 deg -> tip at ndc  0.000, midships star  at  0.00
+ *     wheel -45 deg -> tip at ndc +0.391, starboard star at +0.42
+ *
+ * So a quarter turn each way IS the answer, and the old 0.62-pi detents
+ * were 111 degrees — the spoke swung past the star and came back down the
+ * far side, which is most of why this never read as pointing at anything. */
+const HELM_STARS = [
+  { theta: Math.PI / 4, dz: 110, dy: 20, r: 1.15 },   // port — cap to screen left
+  /* THE MIDDLE ONE IS MOVED OFF THE CENTRE POST. Dead ahead it sat behind
+   * the windscreen's own mullion from the helm, which is the one place it
+   * has to be read from. How far it may go is not free: the cap answers it
+   * at the midships detent, theta 0, and the tolerance is 0.20 rad — the
+   * measured screen relation is ndcX ~ -dz * 0.0038 for the star and
+   * ~ -theta * 0.498 for the cap, so anything past |ndcX| 0.10 could not be
+   * pointed at from a detent. -22 puts it at about 0.084, clear of the post
+   * with the answer still comfortably inside the window. Bigger, too. */
+  { theta: 0, dz: -22, dy: 23, r: 1.38 },             // midships — cap straight up
+  { theta: -Math.PI / 4, dz: -110, dy: 21, r: 1.15 }, // starboard — cap to screen right
+];
+const HELM_TOL = 0.20;             // how near the cap has to be, in radians
+const HELM_SEQ = [0, 2, 1];        // the order they light in
+const helmStar = { g: null, core: null, halo: null, lit: 0, solved: false, stars: [], step: 0 };
 {
   const wx = SHIP_X + SN.BR_X0 + 1.30;         // the wheel
   const eye = SHIP_Y_DECK + SN.BR_STEP + 1.72; // your eye at the helm, measured
   const D = 190;                                // out over the sea
-  const g = new THREE.Group();
-  // seaward is -X; +Z is her port side, which is screen-left from the helm
-  g.position.set(wx - D, eye + 21, SHIP_Z + 30);
-  const core = new THREE.Mesh(new THREE.SphereGeometry(1.15, 8, 6),
-    new THREE.MeshBasicMaterial({ color: 0xbfd0f4, fog: false, transparent: true, opacity: 0.9 }));
-  const halo = new THREE.Mesh(new THREE.SphereGeometry(3.6, 8, 6),
-    new THREE.MeshBasicMaterial({ color: 0x9fb2d8, fog: false, transparent: true, opacity: 0.12, depthWrite: false }));
-  g.add(core, halo);
-  scene.add(g);
-  helmStar.g = g; helmStar.core = core; helmStar.halo = halo;
+  for (const S0 of HELM_STARS) {
+    const g = new THREE.Group();
+    g.position.set(wx - D, eye + S0.dy, SHIP_Z + S0.dz);
+    const core = new THREE.Mesh(new THREE.SphereGeometry(S0.r, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0xbfd0f4, fog: false, transparent: true, opacity: 0.9 }));
+    const halo = new THREE.Mesh(new THREE.SphereGeometry(S0.r * 3.1, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0x9fb2d8, fog: false, transparent: true, opacity: 0.12, depthWrite: false }));
+    g.add(core, halo);
+    scene.add(g);
+    helmStar.stars.push({ theta: S0.theta, g, core, halo, lit: 0 });
+  }
+  // the old single-star handles still name something, so the save and the
+  // harness keep working
+  helmStar.g = helmStar.stars[0].g;
+  helmStar.core = helmStar.stars[0].core;
+  helmStar.halo = helmStar.stars[0].halo;
 }
-const HELM_STAR_DETENT = 0;        // hard to port: the side it is on
+const HELM_STAR_DETENT = 0;        // kept: the first star of the sequence
 
 const starPuzzle = {
-  held: -1, holdT: 0, active: false,
-  begin() { if (helmStar.solved) return; this.active = true; },
-  letGo() { this.active = false; this.held = -1; this.holdT = 0; },
-  holding(idx) { if (this.held !== idx) { this.held = idx; this.holdT = 0; } },
+  held: -1, aimT: 0, holdT: 0, wrongT: 0, active: false,
+  get step() { return helmStar.step; },
+  begin() { if (helmStar.solved) return; this.active = true; helmStar.step = 0; this.holdT = 0; this.wrongT = 0; this.justDid = null; },
+  letGo() { this.active = false; this.held = -1; this.holdT = 0; this.wrongT = 0; },
+  /* WHERE THE CAP IS POINTING, every frame she is in your hands — not a
+   * detent index. The wheel is free between its stops, so what the puzzle
+   * reads is the angle itself and how near it is to the lit star's own. */
+  aim(theta) { this.aimT = theta; },
+  /* THE STAR YOU HAVE JUST SET IS NOT A WRONG ANSWER. The moment a star is
+   * accepted the cap is, by definition, still lying on it — and that star
+   * is now not the one being asked for, so the wrong-answer timer started
+   * the instant you got one right and threw the sequence away half a
+   * second later. Measured: it reached step 1, sat there, and reset. It is
+   * forgiven until the cap actually leaves it. */
+  justDid: null,
+  holding(idx) { this.held = idx; },
+  /* The angle that answers the star lit NOW. Once she is solved they all
+   * simply burn steadily, which is what says the thing is done. */
+  want() { return helmStar.solved ? null : HELM_STARS[HELM_SEQ[helmStar.step]].theta; },
+  onStar(st) { const w = this.want(); return w !== null && st.theta === w; },
   update(dt) {
-    const st = helmStar;
-    if (!st.g) return;
+    if (!helmStar.stars.length) return;
+    const now = performance.now() * 0.001;
+    const want = this.want();
     /* THE BLINK. Not a sine — a star that swells and fades is a lamp on a
      * dimmer. It is ON, and then for a beat it is not, on an irregular
      * count, the way a light a long way off is when something is between
-     * you and it. Once she is turned to it, it holds steady. */
-    const now = performance.now() * 0.001;
-    let want;
-    if (st.solved) want = 1;
-    else {
-      const k = Math.floor(now / 1.35), ph = now / 1.35 - k;
-      const off = 0.22 + bwHashJS(k * 7.1) * 0.18;             // how long it is dark this time
-      const on = ph > off;
-      const near = this.active && this.held === HELM_STAR_DETENT;   // answering the wheel
-      want = on ? (near ? 1 : 0.78) : (near ? 0.55 : 0.06);
+     * you and it. A star that is not the one being asked for sits at the
+     * brightness of any other star in this sky, so you can see there are
+     * three of them without being told which one matters. */
+    const k = Math.floor(now / 1.35), ph = now / 1.35 - k;
+    const off = 0.22 + bwHashJS(k * 7.1) * 0.18;
+    const on = ph > off;
+    const near = want !== null && Math.abs(this.aimT - want) < HELM_TOL;
+    for (const st of helmStar.stars) {
+      let target;
+      if (helmStar.solved) target = 0.85;
+      else if (!this.active) target = this.onStar(st) ? (on ? 0.80 : 0.10) : 0.20;
+      else if (this.onStar(st)) target = on ? (near ? 1 : 0.85) : (near ? 0.55 : 0.06);
+      else target = 0.14;
+      st.lit += (target - st.lit) * Math.min(1, dt * (target > st.lit ? 18 : 9));
+      st.core.material.opacity = 0.06 + st.lit * 0.94;
+      st.halo.material.opacity = 0.01 + st.lit * 0.22;
+      st.g.scale.setScalar(0.75 + st.lit * 0.55);
     }
-    st.lit += (want - st.lit) * Math.min(1, dt * (want > st.lit ? 18 : 9));
-    st.core.material.opacity = 0.10 + st.lit * 0.90;
-    st.halo.material.opacity = 0.02 + st.lit * 0.20;
-    st.g.scale.setScalar(0.8 + st.lit * 0.5);
-    if (!this.active || st.solved) return;
-    // you have to hold her there, so brushing past the detent does not count
-    if (this.held === HELM_STAR_DETENT) {
+    helmStar.lit = helmStar.stars[0].lit;
+    if (!this.active || helmStar.solved) return;
+    /* You have to HOLD her there, so brushing past a detent on the way
+     * somewhere else does not count — and settling on the wrong one long
+     * enough to mean it loses the sequence, which is what makes the lights
+     * worth following rather than a thing you can sweep out. */
+    if (near) {
+      this.wrongT = 0;
       this.holdT += dt;
-      if (this.holdT > 0.8) {
-        st.solved = true;
-        shipWheel.solved = true;
-        shipWheel.relabel();
-        sfxStarSet();
-        dropShipHead();
-        setPrompt('');
+      if (this.holdT > HELM_HOLD) {
+        this.holdT = 0;
+        helmStar.step++;
+        this.justDid = want;
+        if (helmStar.step >= HELM_SEQ.length) {
+          helmStar.solved = true;
+          shipWheel.solved = true;
+          shipWheel.relabel();
+          sfxStarSet();
+          dropShipHead();
+          setPrompt('');
+        } else sfxWheelDetent();
       }
-    } else this.holdT = 0;
+    } else {
+      /* AND LAYING THE CAP ON THE WRONG STAR LOSES THE SEQUENCE. Anywhere
+       * between the stars is simply not an answer and costs nothing — you
+       * have to actually settle on another one to undo your work. */
+      this.holdT = 0;
+      if (this.justDid !== null && Math.abs(this.aimT - this.justDid) >= HELM_TOL) this.justDid = null;
+      const onWrong = helmStar.stars.some((st) => !this.onStar(st)
+        && !(this.justDid !== null && st.theta === this.justDid)
+        && Math.abs(this.aimT - st.theta) < HELM_TOL);
+      if (onWrong) {
+        this.wrongT += dt;
+        if (this.wrongT > HELM_WRONG && helmStar.step > 0) {
+          helmStar.step = 0; this.wrongT = 0; sfxWheelCreak();
+        }
+      } else this.wrongT = 0;
+    }
   },
 };
 
@@ -12984,7 +13271,16 @@ const headItem = {
     onEquip: pullTheKey,
   }),
 };
-holdable(headItem, shipHead, { scale: 0.8, pos: [0, -0.12, 0.04], rot: [0.2, 2.4, 0.1] });
+/* FRAMED IN THE HAND, MEASURED RATHER THAN GUESSED. At 0.8 and -0.12 he
+ * projected to ndc x [0.33, 1.04], y [-1.85, -0.47] in `vmCamera` — two
+ * thirds of the frame tall with most of him off the bottom and the right,
+ * so what you held was a pale curve in the corner and not a head. Fitted by
+ * projecting his bounding box and iterating to half the frame height, low
+ * and to the right where a carried thing sits: x [0.39, 0.68],
+ * y [-0.77, -0.28], entirely on screen. */
+holdable(headItem, shipHead, { scale: 0.372, pos: [-0.043, 0.083, 0.04], rot: [0.2, 5.542, 0.1] });
+// 5.542 is 2.4 + PI: at 2.4 he was carried facing AWAY and what you held was
+// the back of his head. Checked by rendering, not reasoned about.
 
 /* ---- her deck lantern, off the wheelhouse step ------------------------
  * One of her fittings you can actually take, so the gear on deck is not
@@ -13068,7 +13364,15 @@ function updateHoldDoor(dt) {
   const want = holdDoorOpen ? 1 : 0;
   if (Math.abs(holdDoorSwing - want) < 0.001) return;
   holdDoorSwing += (want - holdDoorSwing) * Math.min(1, dt * 3.2);
-  holdDoor.rotation.y = -holdDoorSwing * 2.0;
+  /* SHE OPENS INWARD, AND SHE HAS TO. The leaf hangs in the hold's own
+   * lining at |z| = 3.70 and her plating at that station is out at about
+   * 4.40, so there is only 0.7 m of air outboard of the door and the leaf
+   * is 1.30 long: swung OUT it was through her side before it was a third
+   * open, which is the door phasing through the wall. Measured at the old
+   * -2.0 rad the far corner sat at z = -4.90 against plating at -4.45.
+   * Swung the other way it opens into the hold, which is empty there, and
+   * 1.85 rad lays it back along the lining without folding past it. */
+  holdDoor.rotation.y = holdDoorSwing * 1.85;
 }
 
 function dropShipHead() {
@@ -13152,11 +13456,21 @@ const _preHelmPos = new THREE.Vector3(), _preHelmQ = new THREE.Quaternion();
 let _preHelmBaseY = 0;
 {
   const w = shipwreck.userData.wheel;
-  const WHEEL_STEP = Math.PI * 0.62;
+  /* A QUARTER TURN EACH WAY, because that is what lays the king spoke on
+   * the stars — see HELM_STARS, where the angles were measured off the
+   * screen rather than chosen. At the old 0.62 pi the spoke swung 111
+   * degrees and sailed past the star it was meant to be pointing at. */
+  const WHEEL_STEP = Math.PI / 4;
   let wheelTarget = 0, wheelSpin = 0, wheelCreak = 0;
+  /* 0 = hard to port, 1 = midships, 2 = hard to starboard — and PORT is a
+   * POSITIVE wheel angle, because rotating about +Z carries the spoke to
+   * screen left. Measured, not reasoned: +45 deg puts the tip at ndc
+   * -0.391, which is the port star. */
+  const angOf = (i) => (1 - THREE.MathUtils.clamp(i, 0, 2)) * WHEEL_STEP;
+  const idxOf = (th) => THREE.MathUtils.clamp(1 - Math.round(th / WHEEL_STEP), 0, 2);
   const setWheel = (i) => {
     shipWheel.index = THREE.MathUtils.clamp(i, 0, 2);
-    wheelTarget = (shipWheel.index - 1) * WHEEL_STEP;
+    wheelTarget = angOf(shipWheel.index);
   };
   shipWheel.set = setWheel;
 
@@ -13173,6 +13487,8 @@ let _preHelmBaseY = 0;
     wheelSpin += (wheelTarget - wheelSpin) * Math.min(1, dt * (wheelGrab ? 22 : 7));
     w.rotation.z = wheelSpin;
     if (!wheelGrab) wheelFree = wheelSpin;
+    // where the cap is actually pointing, every frame she is in your hands
+    if (wheelGrab) starPuzzle.aim(wheelSpin);
     // ease into and out of the helm stance rather than snapping there
     const want = wheelGrab ? 1 : 0;
     helmT += (want - helmT) * Math.min(1, dt * 7);
@@ -13218,27 +13534,30 @@ let _preHelmBaseY = 0;
     _preHelmBaseY = camBaseY;
     helmStance();
     setPrompt(shipWheel.solved ? 'Drag to turn her \u00b7 Esc to step away'
-      : 'Drag to turn her toward the blinking star \u00b7 hold her there \u00b7 Esc to step away');
+      : 'One star lights at a time \u00b7 point the brass cap at it and hold \u00b7 Esc to step away');
     starPuzzle.begin();
   };
   shipWheel.release = () => {
     if (!wheelGrab) return;
     wheelGrab = false;
     const before = shipWheel.index;
-    setWheel(Math.round(wheelFree / WHEEL_STEP) + 1);
+    setWheel(idxOf(wheelFree));
     relabel();
     if (shipWheel.index !== before) sfxWheelDetent();
     setPrompt('');
     starPuzzle.letGo();
   };
   dragWheel = (dx) => {
-    // drag left and she goes to port: the wheel turns the way your hand does
+    /* THE CAP FOLLOWS YOUR HAND. Dragging right has to carry the king
+     * spoke right, and a positive rotation about +Z carries it LEFT — so
+     * the sign is negative. It read backwards before: you pulled the wheel
+     * toward the star and the spoke walked away from it, which on a puzzle
+     * about pointing is the whole thing broken. */
     wheelFree = THREE.MathUtils.clamp(
-      wheelFree + dx * 0.0075 * settings.sensitivity, -WHEEL_STEP * 1.2, WHEEL_STEP * 1.2);
+      wheelFree - dx * 0.0075 * settings.sensitivity, -WHEEL_STEP * 1.35, WHEEL_STEP * 1.35);
     if (Math.abs(wheelFree - wheelCreak) > 0.16) { wheelCreak = wheelFree; sfxWheelCreak(); }
     wheelTarget = wheelFree;
-    // while you hold it, the detent it is nearest is what counts
-    starPuzzle.holding(Math.round(wheelFree / WHEEL_STEP) + 1);
+    starPuzzle.holding(idxOf(wheelFree));
   };
 
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.62, 8, 6),
@@ -13248,6 +13567,320 @@ let _preHelmBaseY = 0;
   addInteractable(w, 'Take the wheel \u2014 midships', 'wheel', { onActivate: () => shipWheel.grab() });
   shipWheel._it = interactables[interactables.length - 1];
 }
+
+/* ---- BIG MOUTH BILLY BASS, ON THE BRIDGE BULKHEAD --------------------
+ * A singing-fish plaque screwed to the after bulkhead of her wheelhouse,
+ * where a man who spent his life in that box would have hung one.
+ *
+ * DRAWN, NOT PHOTOGRAPHED. Every other cut-out on this beach is a real
+ * photograph through `bakeCutout`, and this one cannot be: the frames have
+ * to MOVE — head out, mouth open, mouth shut, tail up — which is the whole
+ * joke of the thing, and a still photograph gives you one of those. So it
+ * is drawn to the reference the way the lighthouse and the pavilion are,
+ * and the phases fall out of it for free: one draw taking `mouth`, `head`
+ * and `tail` and three canvases off it.
+ *
+ * AND IT IS A PLANE, NOT A SPRITE. A Sprite billboards, and a thing
+ * screwed to a wall that turns to follow you round a 4 m room reads as a
+ * bug, not a decoration. It hangs on the bulkhead and you walk round it. */
+/* Sized to the pane he hangs on. The blanked-off window in her after
+ * bulkhead is 1.00 m by 0.53 — measured by raycasting its four edges — and
+ * a plaque screwed over a dead window is exactly where a man would put
+ * one. He sits inside it with a margin all round. */
+const BILLY_W = 0.72, BILLY_H = 0.52;
+function billyTex(mouth, head, tail) {
+  const W = 512, H = 384;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  /* ---- the plaque: a shield with CONCAVE scalloped corners and a heavy
+   * dark moulded edge. That silhouette is most of what makes the thing
+   * recognisable before you have even looked at the fish. */
+  const shield = (inset) => {
+    const x0 = 20 + inset, x1 = W - 20 - inset, y0 = 16 + inset, y1 = H - 16 - inset;
+    const k = 56 - inset * 0.6, b = k * 0.42;
+    g.beginPath();
+    g.moveTo(x0 + k, y0);
+    g.lineTo(x1 - k, y0); g.quadraticCurveTo(x1 - b, y0 + b, x1, y0 + k);
+    g.lineTo(x1, y1 - k); g.quadraticCurveTo(x1 - b, y1 - b, x1 - k, y1);
+    g.lineTo(x0 + k, y1); g.quadraticCurveTo(x0 + b, y1 - b, x0, y1 - k);
+    g.lineTo(x0, y0 + k); g.quadraticCurveTo(x0 + b, y0 + b, x0 + k, y0);
+    g.closePath();
+  };
+  shield(0); g.fillStyle = '#2a1d14'; g.fill();
+  shield(13); g.fillStyle = '#b07d3f'; g.fill();
+  g.save(); shield(13); g.clip();
+  for (let i = 0; i < 40; i++) {                       // oak grain
+    g.strokeStyle = `rgba(108,68,26,${0.10 + Math.random() * 0.20})`; g.lineWidth = 1 + Math.random();
+    const y = 20 + Math.random() * (H - 40);
+    g.beginPath(); g.moveTo(10, y);
+    for (let x = 10; x < W - 10; x += 22) g.lineTo(x, y + Math.sin(x * 0.05 + i) * 2.5);
+    g.stroke();
+  }
+  g.restore();
+
+  /* ---- the fish. A largemouth bass: head a third of her, dark olive back,
+   * a yellow-green scaled flank, a white belly carrying two rows of dark
+   * spots, a spiny dorsal and a fan tail — and the huge pale lower jaw,
+   * which is the whole reason the toy is called what it is. */
+  const cx = W * 0.52, cy = H * 0.44, L = W * 0.74;
+  const bodyTop = -L * 0.215, bodyBot = L * 0.215;
+
+  // --- tail, which lifts on its own
+  g.save(); g.translate(cx + L * 0.34, cy - L * 0.02); g.rotate(-tail * 0.42);
+  g.beginPath(); g.moveTo(0, -L * 0.07); g.lineTo(L * 0.19, -L * 0.20);
+  g.quadraticCurveTo(L * 0.14, 0, L * 0.19, L * 0.20); g.lineTo(0, L * 0.07);
+  g.closePath();
+  const tg = g.createLinearGradient(0, -L * 0.2, 0, L * 0.2);
+  tg.addColorStop(0, '#2f4a23'); tg.addColorStop(0.5, '#6f8a3a'); tg.addColorStop(1, '#2f4a23');
+  g.fillStyle = tg; g.fill(); g.strokeStyle = '#20331a'; g.lineWidth = 2; g.stroke();
+  g.save();                                            // rays, clipped to the fin
+  g.beginPath(); g.moveTo(0, -L * 0.07); g.lineTo(L * 0.19, -L * 0.20);
+  g.quadraticCurveTo(L * 0.14, 0, L * 0.19, L * 0.20); g.lineTo(0, L * 0.07);
+  g.closePath(); g.clip();
+  for (let i = 1; i < 7; i++) {
+    g.strokeStyle = 'rgba(26,40,20,0.42)'; g.lineWidth = 1.3;
+    g.beginPath(); g.moveTo(L * 0.02, 0); g.lineTo(L * 0.21, -L * 0.22 + (i / 6) * L * 0.44); g.stroke();
+  }
+  g.restore();
+  g.restore();
+
+  // --- spiny dorsal, then the soft dorsal
+  /* SHORT, AND ON HER BACK. Long triangles standing off the spine read as
+   * a row of little fir trees, which is exactly what the first draw looked
+   * like: a bass's spiny dorsal is a low serrated comb sitting IN the
+   * back, not a picket fence floating over it. */
+  g.beginPath(); g.moveTo(cx - L * 0.20, cy + bodyTop + 17);
+  for (let i = 0; i <= 8; i++) {
+    const t = i / 8, x = cx - L * 0.20 + t * L * 0.30;
+    g.lineTo(x, cy + bodyTop + 17 - (i % 2 ? L * 0.048 : L * 0.026) * (1 - t * 0.35));
+    g.lineTo(x + L * 0.019, cy + bodyTop + 15);
+  }
+  g.closePath(); g.fillStyle = '#2c4520'; g.fill();
+  g.strokeStyle = '#1d2e15'; g.lineWidth = 1.5; g.stroke();
+  g.beginPath(); g.moveTo(cx + L * 0.13, cy + bodyTop + 8);
+  g.quadraticCurveTo(cx + L * 0.20, cy + bodyTop - L * 0.07, cx + L * 0.31, cy + bodyTop + 2);
+  g.lineTo(cx + L * 0.30, cy + bodyTop + 12); g.closePath();
+  g.fillStyle = '#35522a'; g.fill(); g.strokeStyle = '#1d2e15'; g.stroke();
+
+  // --- the body
+  const body = () => {
+    g.beginPath();
+    g.moveTo(cx - L * 0.36, cy - L * 0.10);
+    g.bezierCurveTo(cx - L * 0.22, cy + bodyTop - 6, cx - L * 0.02, cy + bodyTop, cx + L * 0.14, cy - L * 0.15);
+    g.bezierCurveTo(cx + L * 0.26, cy - L * 0.11, cx + L * 0.32, cy - L * 0.08, cx + L * 0.36, cy - L * 0.05);
+    g.lineTo(cx + L * 0.36, cy + L * 0.05);
+    g.bezierCurveTo(cx + L * 0.30, cy + L * 0.10, cx + L * 0.20, cy + L * 0.17, cx + L * 0.06, cy + bodyBot);
+    g.bezierCurveTo(cx - L * 0.10, cy + L * 0.23, cx - L * 0.26, cy + L * 0.18, cx - L * 0.36, cy + L * 0.10);
+    g.closePath();
+  };
+  body();
+  const fg = g.createLinearGradient(0, cy + bodyTop, 0, cy + bodyBot);
+  fg.addColorStop(0.00, '#263c1c');    // the dark olive back
+  fg.addColorStop(0.22, '#4a6b28');
+  fg.addColorStop(0.44, '#97b446');    // the yellow-green flank
+  fg.addColorStop(0.66, '#cfd68e');
+  fg.addColorStop(0.82, '#eae7d2');
+  fg.addColorStop(1.00, '#f6f4ea');    // the white belly
+  g.fillStyle = fg; g.fill();
+  g.save(); body(); g.clip();
+  for (let r = 0; r < 12; r++) for (let i = 0; i < 28; i++) {   // scales, barely there
+    const sx = cx - L * 0.34 + i * L * 0.026 + (r % 2) * L * 0.013;
+    const sy = cy + bodyTop + 10 + r * (L * 0.034);
+    g.strokeStyle = `rgba(44,62,28,${0.10 - r * 0.006})`; g.lineWidth = 1;
+    g.beginPath(); g.arc(sx, sy, L * 0.015, Math.PI * 0.18, Math.PI * 0.82); g.stroke();
+  }
+  /* THE SPOTS ARE SCATTERED, NOT RULED. Two evenly spaced rows read as a
+   * dotted line drawn on a fish; on the real one they wander along the
+   * lateral line and thin out toward the tail. */
+  for (let row = 0; row < 2; row++)
+    for (let i = 0; i < 14; i++) {
+      const h1 = Math.sin((i + row * 9) * 12.9898) * 43758.5453;
+      const h2 = Math.sin((i + row * 4) * 78.233) * 43758.5453;
+      const j1 = h1 - Math.floor(h1), j2 = h2 - Math.floor(h2);
+      const sx = cx - L * 0.22 + i * L * 0.040 + (j1 - 0.5) * L * 0.022;
+      const sy = cy + L * 0.070 + row * L * 0.058 + (j2 - 0.5) * L * 0.030;
+      const rr = L * (0.009 + j1 * 0.007);
+      g.fillStyle = `rgba(58,76,42,${0.52 - row * 0.14 - i * 0.018})`;
+      g.beginPath(); g.ellipse(sx, sy, rr, rr * 0.8, j2, 0, Math.PI * 2); g.fill();
+    }
+  g.restore();
+  g.strokeStyle = '#233519'; g.lineWidth = 2; body(); g.stroke();
+
+  // --- pectoral and anal fins
+  g.fillStyle = '#b9c06a';
+  g.beginPath(); g.ellipse(cx - L * 0.16, cy + L * 0.10, L * 0.055, L * 0.028, 0.5, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#8fa543';
+  g.beginPath(); g.moveTo(cx + L * 0.06, cy + L * 0.19); g.lineTo(cx + L * 0.16, cy + L * 0.25);
+  g.lineTo(cx + L * 0.19, cy + L * 0.16); g.closePath(); g.fill();
+
+  /* --- THE HEAD, which swings out at you and whose jaw drops. It is drawn
+   * in its own transform so `head` turns it toward the camera and widens
+   * it (that is the foreshortening you see in the photograph) and `mouth`
+   * drops the jaw. */
+  g.save();
+  g.translate(cx - L * 0.30, cy + L * 0.005);
+  g.rotate(-head * 0.26);
+  g.scale(1 + head * 0.30, 1 + head * 0.06);
+  const HL = L * 0.30;
+  // gill plate and skull
+  g.beginPath();
+  g.moveTo(HL * 0.52, -L * 0.155);
+  g.bezierCurveTo(-HL * 0.30, -L * 0.175, -HL * 0.80, -L * 0.09, -HL * 0.95, -L * 0.012);
+  g.bezierCurveTo(-HL * 0.80, L * 0.04, -HL * 0.30, L * 0.07, HL * 0.20, L * 0.06);
+  g.lineTo(HL * 0.56, L * 0.10); g.closePath();
+  const hg = g.createLinearGradient(0, -L * 0.17, 0, L * 0.09);
+  hg.addColorStop(0, '#22371a'); hg.addColorStop(0.55, '#3d5a26'); hg.addColorStop(1, '#7d9a45');
+  g.fillStyle = hg; g.fill(); g.strokeStyle = '#1b2a14'; g.lineWidth = 2; g.stroke();
+  g.strokeStyle = 'rgba(22,34,16,0.55)'; g.lineWidth = 2;      // the gill cover line
+  g.beginPath(); g.moveTo(HL * 0.42, -L * 0.14); g.quadraticCurveTo(HL * 0.16, 0, HL * 0.40, L * 0.085); g.stroke();
+  // the huge pale lower jaw — it drops with `mouth`
+  const drop = mouth * L * 0.20;
+  g.save(); g.translate(-HL * 0.30, L * 0.02); g.rotate(mouth * 0.52);
+  g.beginPath();
+  g.moveTo(HL * 0.56, -L * 0.005);
+  g.bezierCurveTo(-HL * 0.10, L * 0.045, -HL * 0.66, L * 0.055, -HL * 0.90, L * 0.010);
+  g.bezierCurveTo(-HL * 0.60, L * 0.105, -HL * 0.05, L * 0.120, HL * 0.58, L * 0.075);
+  g.closePath();
+  const jg = g.createLinearGradient(0, -L * 0.01, 0, L * 0.12);
+  jg.addColorStop(0, '#f2efe2'); jg.addColorStop(1, '#cfcab2');
+  g.fillStyle = jg; g.fill(); g.strokeStyle = '#20301a'; g.lineWidth = 2; g.stroke();
+  g.restore();
+  if (mouth > 0.15) {                                   // the inside of the mouth
+    g.beginPath();
+    g.moveTo(-HL * 0.88, -L * 0.004);
+    g.bezierCurveTo(-HL * 0.30, L * 0.03, HL * 0.30, L * 0.035, HL * 0.52, L * 0.02);
+    g.lineTo(HL * 0.46, L * 0.02 + drop * 0.55);
+    g.bezierCurveTo(-HL * 0.10, L * 0.05 + drop, -HL * 0.60, L * 0.05 + drop * 0.7, -HL * 0.86, L * 0.012);
+    g.closePath(); g.fillStyle = '#5d2b2c'; g.fill();
+  }
+  // the eye: big, gold ring, black pupil, one highlight
+  /* AND THE EYE IS SMALL. At 0.046 of her length it was a gold headlamp
+   * on the side of her head — on the real one it is about a third of that
+   * and sits high and well forward, with a thin amber ring. */
+  const ex = -HL * 0.22, ey = -L * 0.082;
+  g.beginPath(); g.arc(ex, ey, L * 0.029, 0, Math.PI * 2); g.fillStyle = '#c8a446'; g.fill();
+  g.beginPath(); g.arc(ex, ey, L * 0.021, 0, Math.PI * 2); g.fillStyle = '#0b0806'; g.fill();
+  g.beginPath(); g.arc(ex + L * 0.008, ey - L * 0.009, L * 0.007, 0, Math.PI * 2);
+  g.fillStyle = 'rgba(255,255,255,0.9)'; g.fill();
+  g.restore();
+
+  /* ---- the nameplate: ivory, black caps, a RED button above it and a
+   * black one below — that is how it reads in every photograph of one. */
+  const px = W * 0.50, py = H - 46;
+  g.beginPath(); g.arc(px, py - 15, 6.5, 0, Math.PI * 2); g.fillStyle = '#c02a20'; g.fill();
+  g.strokeStyle = '#3a140f'; g.lineWidth = 1.5; g.stroke();
+  g.fillStyle = '#e9e2c9'; g.fillRect(px - 86, py, 172, 24);
+  g.strokeStyle = '#4a3a24'; g.lineWidth = 2; g.strokeRect(px - 86, py, 172, 24);
+  g.fillStyle = '#1a140d'; g.font = 'bold 15px Georgia, serif'; g.textAlign = 'center';
+  g.fillText('BIG MOUTH BILLY BASS', px, py + 17);
+  g.beginPath(); g.arc(px, py + 36, 6, 0, Math.PI * 2); g.fillStyle = '#191510'; g.fill();
+
+  const t = new THREE.CanvasTexture(c);
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapNearestFilter;
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const billy = { mesh: null, frames: null, photo: [null, null, null], t: 0, mouth: 0 };
+/* ---- THE REAL FISH -------------------------------------------------
+ * He is a PHOTO CUT-OUT, like Bradly and the fisherman, not a drawing —
+ * the drawing below is only what stands on the bulkhead until the
+ * photographs are on disk, so the wall is never empty and nothing throws
+ * if they are missing.
+ *
+ * Three frames, and which one is showing is the whole joke:
+ *   billy-idle.png   he is flat on the plaque, side on, mouth shut
+ *   billy-shut.png   the head has come round at YOU, mouth closed   (optional)
+ *   billy-talk.png   the head is round at you and the mouth is OPEN
+ *
+ * Talking alternates the two head-out frames so the mouth works; with only
+ * two files it alternates idle and open, which is how the toy reads at a
+ * glance anyway. Put the pictures through the knockout the drain's eyes
+ * already use, which takes the wall behind them out to alpha:
+ *
+ *   python3 tools/knockout.py raw-idle.jpg assets/billy-idle.png --thresh 200 --soft 60
+ *
+ * AND THE PLANE TAKES THE PHOTOGRAPH'S OWN ASPECT. A plaque is wider than
+ * it is tall and every one of these frames is a different crop, so the
+ * width is set from the image once it lands and the height is what is
+ * fixed — otherwise the first frame to load decides the shape and the
+ * others are stretched into it. */
+{
+  // rest, head-out-shut, head-out-open, tail up
+  billy.frames = [billyTex(0, 0, 0), billyTex(0.08, 1, 0), billyTex(1, 1, 0), billyTex(0.05, 0.2, 1)];
+  const mat = new THREE.MeshStandardMaterial({
+    map: billy.frames[0], transparent: true, alphaTest: 0.35, roughness: 0.85, metalness: 0.05,
+    emissive: 0xffffff, emissiveMap: billy.frames[0], emissiveIntensity: 0.34, side: THREE.DoubleSide,
+  });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(BILLY_W, BILLY_H), mat);
+  // centred on the dead pane in her after bulkhead, a hair proud of the
+  // glass so he is in the room rather than in the window
+  m.position.set(SHIP_X + SN.BR_X1 - 0.16, SHIP_Y_DECK + SN.BR_STEP + 1.45, SHIP_Z + 0.04);
+  m.rotation.y = -Math.PI / 2;
+  scene.add(m);
+  billy.mesh = m;
+  billy.setFrame = (i) => {
+    // a photograph wherever there is one, the drawing where there is not
+    const f = billy.photo[i] || billy.frames[i === 3 ? 3 : i] || billy.frames[0];
+    if (mat.map === f) return;
+    mat.map = f; mat.emissiveMap = f; mat.needsUpdate = true;
+    const ar = f.userData && f.userData.aspect;
+    if (ar) m.scale.x = (BILLY_H * ar) / BILLY_W;
+  };
+  /* idle, mouth open, mouth shut — index 0/1/2, matching setFrame's own
+   * numbering so a missing file simply falls through to the drawing. */
+  [['assets/billy-idle.png', 0], ['assets/billy-shut.png', 1], ['assets/billy-talk.png', 2]]
+    .forEach(([url, i]) => texLoader.load(url, (t) => {
+      t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapNearestFilter;
+      t.colorSpace = THREE.SRGBColorSpace;
+      const im = t.image;
+      t.userData = { aspect: im && im.height ? im.width / im.height : null };
+      billy.photo[i] = t;
+      billy.real = !!(billy.photo[0] && billy.photo[2]);   // idle + open is enough
+      if (i === 0) { mat.map = t; mat.emissiveMap = t; mat.needsUpdate = true;
+        if (t.userData.aspect) m.scale.x = (BILLY_H * t.userData.aspect) / BILLY_W; }
+    }, undefined, () => {}));
+  addInteractable(m, 'Fish?', 'default', { onActivate: () => startDialog('start', BILLY_NPC), far: 3.4 });
+}
+/* HE CYCLES WHILE HE IS TALKING, and hangs dead still when he is not —
+ * which is the whole of the joke: a plastic fish on a plank that comes to
+ * life only while it has something to say. The phases are the toy's own,
+ * on an irregular count so it is not a metronome: head out, mouth open,
+ * mouth shut, and every so often the tail instead. */
+function updateBilly(dt) {
+  if (!billy.mesh) return;
+  const on = dialogOpen && dialogScript === BILLY_SCRIPT;
+  // idle is idle: side on, mouth shut, dead still until he has something to say
+  if (!on) { billy.t = 0; billy.setFrame(0); return; }
+  billy.t += dt;
+  /* THE MOUTH WORKS WHILE HE TALKS. Open and shut on an irregular count so
+   * it is a mouth and not a metronome, and with only the two photographs
+   * the shut half falls back to the idle — which is the head going back
+   * down between words, and reads right. */
+  const k = Math.floor(billy.t * 5.5);
+  const open = k % 2 === 0 || bwHashJS(k * 3.7) < 0.22;
+  /* Slot 1 is head-out-mouth-shut. With only the two photographs there is
+   * no such picture, so the shut half goes back to the IDLE — his head
+   * dropping between words, which is what the toy does and is exactly the
+   * swap that was asked for. The drawing has all three, so it uses them. */
+  billy.setFrame(open ? 2 : (billy.photo[1] ? 1 : (billy.real ? 0 : 1)));
+}
+const BILLY_SCRIPT = {
+  start: {
+    text: 'What do you want?',
+    choices: [
+      { label: 'Ask about the head on the hook', to: 'head' },
+      { label: 'Just looking around', to: 'looking' },
+    ],
+  },
+  head: {
+    text: "Who, the captain? There's a reason he's up there; fucking asshole.",
+    choices: [{ label: 'Just looking around', to: 'looking' }],
+  },
+  looking: { text: "Ok just don't do anything stupid.", choices: [] },
+};
+const BILLY_NPC = { name: 'Fish?', script: BILLY_SCRIPT, sprite: null, headY: 0.06 };
+// the plaque is what the dialogue camera pushes in on; it is built above
+BILLY_NPC.sprite = billy.mesh;
 
 
 
@@ -13297,8 +13930,15 @@ function shipFloorAt(lx, lz, feet) {
   let best = null;
   const take = (y) => { if (y <= tol && (best === null || y > best)) best = y; };
 
-  // the hold, and the mouth of the breach outside it
-  if (lx > SN.HOLD_X0 && lx < SN.HOLD_X1 && Math.abs(lz) < SN.HOLD_HZ) take(SN.HOLD_Y);
+  /* THE HOLD IS ONLY AS WIDE AS ITS FLOOR. HOLD_HZ is 3.70 and her sole is
+   * built to `min(HOLD_HZ + 0.2, halfAtY(x, HOLD_Y) - 0.02)`, which forward
+   * of about lx -6 is a good deal less — at the forward bulkhead the floor
+   * is 2.86 half-width against a 3.70 box, so there was 0.84 m of walkable
+   * nothing each side. You stood out past the boards on an invisible floor
+   * and looked straight down at open moonlit beach. Same expression the
+   * geometry uses, so the two cannot drift. */
+  const holdHZ = Math.min(SN.HOLD_HZ, SN.halfAtY(_lxc(lx), SN.HOLD_Y) - 0.02);
+  if (lx > SN.HOLD_X0 && lx < SN.HOLD_X1 && Math.abs(lz) < holdHZ) take(SN.HOLD_Y);
 
   /* Out through the shell door once it is unlocked. Same shape as the
    * breach apron: a RAMP down to sand level, because a flat patch at
@@ -13369,7 +14009,16 @@ let SHIP_END_LO = 0, SHIP_END_HI = 0;
 function shipEnds() {
   if (SHIP_END_HI) return;
   buildDeckEdge();
-  SHIP_END_LO = DECK_X0; SHIP_END_HI = DECK_X1;    // in the planking's frame, rake and all
+  /* AND THE STOP MUST BE INSIDE THE PLANKING, NOT ON ITS EDGE. This is the
+   * teleport at her stern, and it is an off-by-one-frame: the clamp below
+   * parked you at exactly DECK_X1 (13.03), the deck test in shipFloorAt is
+   * `lx < DECK_X1`, so the one spot the clamp puts you in is the one spot
+   * that answers with NO FLOOR. onShip dropped, and on the very next frame
+   * the beach's own wall — her stern stands 4.8 m past CLIFF_BLOCK_X —
+   * snapped you from x 19.1 to 14.2 and you did it again, and again.
+   * Measured with a write trap on camera.position.x: main.js:22261, every
+   * time. A player's radius of margin is a stop you can lean on. */
+  SHIP_END_LO = DECK_X0 + PLAYER_R; SHIP_END_HI = DECK_X1 - PLAYER_R;
   while (SHIP_END_LO < 0 && deckHalfAt(SHIP_END_LO) < PLAYER_R + 0.12) SHIP_END_LO += 0.05;
   while (SHIP_END_HI > 0 && deckHalfAt(SHIP_END_HI) < PLAYER_R + 0.12) SHIP_END_HI -= 0.05;
 }
@@ -13394,6 +14043,7 @@ function pushOutOfShipGear(lx, lz, feet) {
 
 function updateShip(dt) {
   shipEnds();
+  updateBilly(dt);
   shipWheel._tick(dt);
   starPuzzle.update(dt);
   updateShipHead(dt);
@@ -13424,7 +14074,8 @@ function updateShip(dt) {
   pushOutOfShipGear(lx, lz, feet);
 
   if (inHold) {
-    const hz = SN.HOLD_HZ - PLAYER_R;
+    // her sole narrows toward the bow; the walk follows it (see shipFloorAt)
+    const hz = Math.min(SN.HOLD_HZ, SN.halfAtY(_lxc(lx), SN.HOLD_Y) - 0.02) - PLAYER_R;
     const atBreach = lx > SN.BREACH_X0 && lx < SN.BREACH_X1;
     const atDoor = holdDoorOpen
       && Math.abs(lx - SN.DOOR_X) < SN.DOOR_W / 2 - PLAYER_R * 0.4;
@@ -13514,6 +14165,85 @@ function updateShip(dt) {
   }
 }
 
+
+/* ---- THE BARRICADE ACROSS THE QUARTERS DOOR ------------------------
+ * They shut themselves in and piled the mess table and its stools against
+ * the door, and it is still holding. It is the only thing in her you have
+ * to BREAK to get past, so it goes through the doors everything breakable
+ * in this game already uses rather than growing a third: a `physProps`
+ * entry with a no-op `step` and an `onImpact`, which is what the blade
+ * (`glassStrike`), a thrown prop and a body at speed all walk looking for.
+ *
+ * AND IT COMES APART INTO WHAT IT IS MADE OF, top-down. The coat stand's
+ * rule and the work table's: everything leaving on one frame is an
+ * explosion, so the boards nailed across go first, then the stools that
+ * were holding it up, then the legs, and the table top last — it is a pile
+ * collapsing, not a burst.
+ *
+ * The doorway opens by SPLICING THE MODEL'S OWN BOX out of `SN.props`,
+ * which is the same array `pushOutOfShipGear` walks — so the wall stops
+ * being solid on the frame the last board leaves, and there is no second
+ * copy of where the barricade stood. */
+const shipBarricade = shipwreck.userData.barricade || null;
+let barricadeBroken = false, barricadeProp = null;
+function smashBarricade(speed) {
+  if (barricadeBroken || !shipBarricade) return;
+  barricadeBroken = true;
+  if (barricadeProp) barricadeProp.dead = true;
+  const g = shipBarricade.group;
+  g.updateMatrixWorld(true);
+  removeInteractable(g);
+  if (hovered && hovered.root === g) hovered = null;
+  // the doorway is a doorway again
+  const i = SN.props.indexOf(shipBarricade.box);
+  if (i >= 0) SN.props.splice(i, 1);
+  const kick = Math.min(3.2, 0.8 + (speed || 10) * 0.15);
+  const WAIT = { plank: 0, stool: 0.09, leg: 0.15, top: 0.23 };
+  for (const c of [...g.children]) {
+    c.updateMatrixWorld(true);
+    c.matrixWorld.decompose(_tbP, _tbQ, _tbS);
+    /* A PIECE LIES ALONG X OR IT STANDS UP WHEN IT LANDS. `updateGibs`
+     * rests every gib with its rotation zeroed, which lays a board flat and
+     * stands a stool leg on its end like a candle — the coat stand's own
+     * mistake. Anything built tall gets its geometry turned onto X, with the
+     * quarter turn put back on the mesh so it leaves as it was drawn. */
+    const tag = c.userData.part;
+    const upright = tag === 'leg' || tag === 'stool';
+    const geo = upright ? c.geometry.clone().rotateZ(-Math.PI / 2) : c.geometry;
+    const m = new THREE.Mesh(geo, c.material);
+    m.position.copy(_tbP); m.quaternion.copy(_tbQ);
+    if (upright) m.quaternion.multiply(_tbZ90);
+    scene.add(m);
+    // it falls INTO the hold, which is the side you are standing on
+    const out = (0.5 + kick) * (0.5 + Math.random() * 0.7);
+    gibs.push({
+      m,
+      vel: new THREE.Vector3(-out * (0.6 + Math.random() * 0.6), 0.8 + Math.random() * 0.9,
+        (Math.random() - 0.5) * out * 0.9),
+      spin: new THREE.Vector3((Math.random() - 0.5) * 7, (Math.random() - 0.5) * 7, (Math.random() - 0.5) * 7),
+      rest: SN.HOLD_Y + 0.03 + Math.random() * 0.02, life: 220, bleed: false, wait: WAIT[tag] || 0,
+    });
+  }
+  /* AND IT IS A CHILD OF THE WRECK, NOT OF THE SCENE. `scene.remove(g)` is
+   * a no-op on an object whose parent is the shipwreck group — measured:
+   * the collision went, you walked through, and the barricade was still
+   * standing there in the doorway. Take it off whatever is actually
+   * holding it. */
+  g.removeFromParent();
+  if (!sfxWoodSnap()) sfxCrateBreak();
+}
+if (shipBarricade) {
+  shipBarricade.group.updateMatrixWorld(true);
+  barricadeProp = {
+    mesh: shipBarricade.group, radius: 1.0, dead: false, held: false, thrown: false,
+    vel: new THREE.Vector3(), step: () => {},
+    onImpact: (speed) => smashBarricade(speed),
+  };
+  physProps.push(barricadeProp);
+  // there is nothing to pick up here — it is a thing in your way, and the
+  // label is what says the way past it is the blade
+  addInteractable(shipBarricade.group, 'Barricaded from the inside', 'default', { bare: true });
+}
 
 // ------------------------------------------------------------------
 // The tug — gogiart's "Boat QQQ" (assets/boat.glb, CC-BY-4.0), the wreck
@@ -26020,6 +26750,23 @@ const _floorBeforeShrine = bunkerFloorAt;
 bunkerFloorAt = (x, z, y) => {
   const s = shrineFloorAt(x, z, y);
   return s === null ? _floorBeforeShrine(x, z, y) : s;
+};
+
+/* AND HER HOLD IS A GROUND TOO — the fourth, and the same lesson again.
+ * Everything loose asks `bunkerFloorAt` what is under it, and inside her
+ * the honest answer is her sole at HOLD_Y and not the beach 25 cm below
+ * it: without this the boards off the barricade fall THROUGH her floor and
+ * lie under it on the sand, and `submersionAt` — which is asked only when
+ * this returns null — decides a piece in her hold is floating in the sea,
+ * because the swash at her station reaches x = 6.5 and she is at 6.
+ * Chained last so it sits on top of the beach, the bunker and the hall,
+ * and it answers only between her sole and her deck. */
+const _floorBeforeShip = bunkerFloorAt;
+bunkerFloorAt = (x, z, y) => {
+  const lx = x - SHIP_X, lz = z - SHIP_Z;
+  if (y !== undefined && lx > SN.HOLD_X0 && lx < SN.HOLD_X1 && Math.abs(lz) < SN.HOLD_HZ
+      && y > SN.HOLD_Y - 0.5 && y < SN.DECK_Y) return SN.HOLD_Y;
+  return _floorBeforeShip(x, z, y);
 };
 
 /* EVERYTHING THE SAUCER NEEDS, FETCHED AND WARMED UNDER THE TITLE CARD. This
