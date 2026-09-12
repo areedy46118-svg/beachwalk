@@ -100,6 +100,7 @@ export function makeWaterBottle() {
     water.scale.x = water.scale.z = R * 0.955 * (t > 0.86 ? 0.72 : 1);
     water.visible = t > 0.004;
   };
+  water.name = 'water';                   // so a copy in the hand can be found and drained
   b.userData.parts = { water, cap, label };
   b.userData.setFill(0.94);
   return b;

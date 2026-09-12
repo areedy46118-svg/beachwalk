@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "beachwalk",
-      "runtimeExecutable": "C:/Users/areed/AppData/Local/Programs/Python/Python312/python.exe",
+      "runtimeExecutable": "python3",
       "runtimeArgs": [
         "serve.py",
         "4173"

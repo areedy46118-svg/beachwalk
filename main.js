@@ -4563,6 +4563,7 @@ function primaryAction() {                       // E / F
     return;
   }
   if (equipped && equipped.onListen) listenToShell();
+  if (equipped && equipped.onDrink) drinkWater();
 }
 function attackAction() {                        // left mouse
   if (peeking) { endPeek(); return; }
@@ -4587,6 +4588,7 @@ function attackAction() {                        // left mouse
     return;
   }
   if (equipped && equipped.onListen) { listenToShell(); return; }
+  if (equipped && equipped.onDrink) { drinkWater(); return; }
   primaryAction();                               // bare hands: a click still interacts
 }
 
@@ -6546,6 +6548,11 @@ function katFace(w) {
 // window was clean off the side of a portrait one
 const EAR_AT = new THREE.Vector3(0.88, 0.02, -0.25);   // straddling the right edge, at ear height
 const EAR_POSE = [0.35, 0, 1.25, 0.55, 0];        // [pitch, lift, yaw, roll, push]
+/* The drink: the bottle comes up under the lens, a little right of centre,
+ * and the hand tips back so the neck points at your mouth; the curve rises
+ * in a third of a second, holds through the gulps, and comes down slower. */
+const MOUTH_AT = new THREE.Vector3(0.22, -0.34, -0.30);
+const MOUTH_POSE = [-1.05, 0, 0.35, -0.30, 0];
 /* EVERYTHING CAN BE HELD. Half the items used to have no model in the hand
  * at all: picking one up put an icon in the hotbar and using it threw you
  * straight into the examine screen, so the ring, the key, the bottle and the
@@ -8101,9 +8108,23 @@ function updateViewmodel(dt) {
   blockT = THREE.MathUtils.clamp(blockT + (blocking ? dt / 0.10 : -dt / 0.22), 0, 1);
   const blk = easeOutCubic(blockT);
   listenT = THREE.MathUtils.clamp(listenT + (listening ? dt / 0.55 : -dt / 0.45), 0, 1);
-  const ear = easeOutCubic(listenT), lagK = 1 - ear * 0.85;
-  const earH = Math.tan((vmCamera.fov * Math.PI) / 360) * -EAR_AT.z;
-  const earX = earH * vmCamera.aspect * EAR_AT.x, earY = earH * EAR_AT.y;
+  // the drink runs on its own clock: up, three gulps, down — and heals on the second
+  if (drinking) {
+    drinkT += dt;
+    if (equipped !== waterBottleItem) drinking = false;
+    if (!drinkHealed && drinkT > 0.62) { drinkHealed = true; hp = MAX_HP; hurtFlash = 0; sinceHurt = 0; regenAcc = 0; }
+    if (drinkT >= DRINK_DUR) drinking = false;
+  }
+  const dk = !drinking ? 0
+    : drinkT < 0.34 ? drinkT / 0.34
+    : drinkT < DRINK_DUR - 0.42 ? 1 : Math.max(0, (DRINK_DUR - drinkT) / 0.42);
+  const sip = easeOutCubic(dk) * (1 - easeOutCubic(listenT));
+  // and a small tremor at the lips while it is up, the way a bottle wobbles
+  const sipTilt = sip * (Math.sin(performance.now() * 0.021) * 0.05);
+  const ear = Math.max(easeOutCubic(listenT), sip), lagK = 1 - ear * 0.85;
+  const earH = Math.tan((vmCamera.fov * Math.PI) / 360) * -(sip > 0 ? MOUTH_AT.z : EAR_AT.z);
+  const AT = sip > 0 ? MOUTH_AT : EAR_AT, EP = sip > 0 ? MOUTH_POSE : EAR_POSE;
+  const earX = earH * vmCamera.aspect * AT.x, earY = earH * AT.y;
   hitRoll += (0 - hitRoll) * Math.min(1, dt * 9);
   slamDip += (0 - slamDip) * Math.min(1, dt * 7);
   // the blow that landed on YOU, ringing out
@@ -8118,14 +8139,14 @@ function updateViewmodel(dt) {
   const BA = blockAt(), BP = blockPose();
   const bH = Math.tan((vmCamera.fov * Math.PI) / 360) * -BA.z;
   const blkX = bH * vmCamera.aspect * BA.x, blkY = bH * BA.y;
-  armRig.rotation.x = ARM_ROT_X + _pose[0] + vmLagX * lagK + ear * EAR_POSE[0] + blk * BP[0] + ring;
-  armRig.rotation.y = -0.45 + _pose[2] + vmLagY * lagK + ear * EAR_POSE[2] + blk * BP[2];
-  armRig.rotation.z = 0.10 + _pose[3] + vmLagY * 0.45 * lagK + ear * EAR_POSE[3] + blk * BP[3] - ring;
+  armRig.rotation.x = ARM_ROT_X + _pose[0] + vmLagX * lagK + ear * EP[0] + sipTilt + blk * BP[0] + ring;
+  armRig.rotation.y = -0.45 + _pose[2] + vmLagY * lagK + ear * EP[2] + blk * BP[2];
+  armRig.rotation.z = 0.10 + _pose[3] + vmLagY * 0.45 * lagK + ear * EP[3] + blk * BP[3] - ring;
   armRig.rotation.y += ring * 0.55;      // and it is knocked ACROSS you, not only up
   armRig.position.set(
     ARM_BASE.x + bx + _pose[5] * vmHalfW + vmLagY * 0.16 + ear * (earX - ARM_BASE.x) + blk * (blkX - ARM_BASE.x),
     ARM_BASE.y + by + _pose[1] + vmSpringY + ear * (earY - ARM_BASE.y) + blk * (blkY - ARM_BASE.y),
-    ARM_BASE.z + _pose[4] + ear * (EAR_AT.z - ARM_BASE.z) + blk * (BA.z - ARM_BASE.z)
+    ARM_BASE.z + _pose[4] + ear * (AT.z - ARM_BASE.z) + blk * (BA.z - ARM_BASE.z)
   );
   if (equipped === shovelItem) {
     // the same slide, so both tools hang at the same height and the charged
@@ -12419,10 +12440,68 @@ waterBottleWorld.rotation.set(0, 0.7, 0);
 scene.add(waterBottleWorld);
 addItemShine(waterBottleWorld, { size: 0.5, height: 0.10 });
 let waterBottleTaken = false;
+/* IT HEALS, AND YOU DRINK IT. A click with the bottle in your hand is a
+ * drink: the arm brings it up under the lens and tips it back, three gulps,
+ * and you are whole again by the second one — quickly, because a fight is
+ * where you drink. Four sips in a bottle (`waterSips`), and the water in
+ * the copy in your hand goes down with each; empty, it taps hollow and
+ * does nothing. `onDrink` is the shell's own `onListen` door: the primary
+ * action asks the held item what it does. */
 const waterBottleItem = {
   id: 'waterbottle', name: 'Bottle of water', icon: makeWaterBottleIcon(),
   use: () => toggleEquip(waterBottleItem),
+  onDrink: true,
 };
+let waterSips = 4, drinking = false, drinkT = 0, drinkHealed = false, drinkZap = 0;
+const DRINK_DUR = 1.45;
+function drinkWater() {
+  if (drinking || frozen() || equipped !== waterBottleItem) return;
+  if (waterSips <= 0) {
+    sfxBottleEmpty();
+    setPrompt('<b>EMPTY</b>');
+    setTimeout(() => { if (promptHTML.includes('EMPTY')) setPrompt(''); }, 600);
+    vmImpulse(-0.5);
+    return;
+  }
+  drinking = true; drinkT = 0; drinkHealed = false;
+  waterSips--;
+  waterBottle.userData.setFill(0.94 * waterSips / 4);
+  // and the copy in your hand: the original's water mesh, mirrored by name
+  const src = waterBottle.userData.parts.water;
+  const vm = waterBottleItem.viewmodel && waterBottleItem.viewmodel.getObjectByName('water');
+  if (vm) { vm.scale.copy(src.scale); vm.position.copy(src.position); vm.visible = src.visible; }
+  sfxGulp();
+}
+/* Three swallows, low and wet — a sine that dips as the throat closes,
+ * with a soft lowpassed knock of water under each. Nothing above a whisper. */
+function sfxGulp() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t0 = ctx.currentTime + 0.32, out = sfxOut();
+  for (let i = 0; i < 3; i++) {
+    const t = t0 + i * 0.26;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.16, t + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.20);
+    g.connect(out);
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(210 - i * 12, t); o.frequency.exponentialRampToValueAtTime(95, t + 0.18);
+    o.connect(g); o.start(t); o.stop(t + 0.22);
+    const n = noiseBurst(0.16, (x) => Math.pow(1 - x, 2.2));
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520;
+    const ng = ctx.createGain(); ng.gain.value = 0.10;
+    n.connect(lp).connect(ng).connect(g); n.start(t + 0.02); n.stop(t + 0.18);
+  }
+}
+function sfxBottleEmpty() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.14, t + 0.006);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+  g.connect(out);
+  const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = 640;
+  o.connect(g); o.start(t); o.stop(t + 0.16);
+}
 holdable(waterBottleItem, waterBottle, { scale: 0.85, pos: [0, -0.05, 0], rot: [0.1, 0.5, 0.15] });
 addInteractable(waterBottleWorld, 'Take the bottle of water', 'inventory', {
   onActivate: () => {
@@ -16486,6 +16565,11 @@ function dressMutant(u, gltf) {
      * may take over, and the pack's values are the defaults so nothing on
      * the beach moves. */
     if (u.kind.tint) mm.color.setHex(u.kind.tint);
+    /* A CHARACTER CREATOR HEAD IS ALPHA PLANES — lashes, tearlines, the eye
+     * occlusion — feathered by a studio renderer and sorted against itself
+     * by this one, which on a face is a black smear across the eye. The
+     * witness cuts them out; the creature built from the same file must too. */
+    if (u.kind.cutout && mm.transparent) { mm.transparent = false; mm.alphaTest = 0.5; mm.depthWrite = true; mm.side = THREE.FrontSide; }
     mm.emissiveIntensity = u.kind.emis === undefined ? 0.20 : u.kind.emis;
     mm.normalScale && mm.normalScale.set(1.35, 1.35);   // the sculpt is the detail now
     const rim = u.kind.rim === undefined ? [0.070, 0.088, 0.125] : u.kind.rim;
@@ -16548,6 +16632,18 @@ function dressMutant(u, gltf) {
       for (const k in want) if (want[k] === o.name) (u.bones = u.bones || {})[k] = o;
     });
     if (u.bones && u.bones.head) u.head = u.bones.head;
+    /* And the chains beyond the two arms: `limbs` is a list of
+     * [arm, fore, hand, tip] name quads — the beast's forepaws, the
+     * warden's forelegs and tail. A name the rig does not carry is left
+     * null, and `blowLands` skips what it cannot find. */
+    if (want.limbs && want.limbs.length) {
+      const byBone = {};
+      m.traverse((o) => { if (o.isBone) byBone[o.name] = o; });
+      const B = (u.bones = u.bones || {});
+      B.extra = want.limbs.map(([a, f, h, t]) => ({
+        arm: byBone[a] || null, fore: byBone[f] || null, hand: byBone[h] || null, tip: t ? (byBone[t] || null) : null,
+      })).filter((L) => L.hand);
+    }
   }
   if (u.kind.poise) { u.st.poise = u.kind.poise; u.st.block = 0; }
   // its own build: named bones scaled before anything is measured
@@ -16619,6 +16715,12 @@ function dressMutant(u, gltf) {
     }
     u.clips[c.name] = u.mixer.clipAction(c);
   }
+  /* AND A KIND MAY AUTHOR ITS OWN. The witness's file carries one clip and
+   * it is a demo walk; everything a fight asks for — the gaits, the roar,
+   * the flinch, the guard, four swings — is written here in code, on the
+   * stance the file does carry, by `kind.author`. It runs on this mixer so
+   * the clips it returns are actions like any other. */
+  if (u.kind.author) for (const c of u.kind.author(u, m, gltf)) u.clips[c.name] = u.mixer.clipAction(c);
   // the windows cut out of a longer clip, under the names the table uses
   for (const [src, name, t0, t1] of (u.kind.slice || [])) {
     const from = gltf.animations.find((c) => c.name === src);
@@ -16707,7 +16809,7 @@ function makeMutant(x, z, kindName, y = 0) {
    * the same trap the reaches were raised for once already — raising them
    * moves the stall, it does not remove it. Being in range is a question
    * about the CREATURE, not about the last thing it threw. */
-  const maxReach = Math.max(...Object.values(atk).map((a) => a.reach));
+  const maxReach = Math.max(...Object.values(atk).filter((a) => !a.minDist).map((a) => a.reach));
   const u = {
     g, kind, kindName, atk, maxReach, model: null, mixer: null, clips: {}, cur: null, leanT: 0,
     st: { alive: true, awake: false, roar: 0, atk: -1, flourish: 0, fidget: 0, swing: Object.keys(kind.use)[0],
@@ -16788,6 +16890,383 @@ const SCP_PANIC = 2.1;                     // the scream: stopped, and you keep 
 const SCP_SIT_ARENA = 3;
 const scp096 = makeMutant(SCP_X, SCP_Z, 'scp', headlandAt(SCP_X, SCP_Z));
 scp096.g.rotation.y = Math.PI;             // sitting with his back to the walk, facing the tower
+
+/* ============================ THE FENCE ============================
+ * Somebody fenced the lighthouse off, and they were not thinking about
+ * scale. Fourteen-metre posts the whole width of the headland and on down
+ * into the sea on one side and the cliff on the other, chain-link between
+ * them, three strands of barbed wire on arms leaning out at the walk, a
+ * coil of razor wire along the top the size of a car, and in the middle a
+ * gate you could drive a ship through, chained shut with a padlock as tall
+ * as you are, lamps burning red along the beam over it. It stands across
+ * the lane NINE metres out from the door — behind the thing that sits on
+ * the lane, so the fight is fought against it — and it is live: touch it
+ * and it takes a point off you.
+ *
+ * THE GATE OPENS ITSELF, ONCE THE THING IN FRONT OF IT IS DEAD. A locked
+ * gate you can never open is the end of the game two hundred metres short
+ * of the light, and the walk ends when you put your hand on the light. The
+ * chain drops and the leaves swing in a beat after he goes down.
+ *
+ * It is built here rather than up with the tower because every post asks
+ * `headlandAt` where the ground is, and `headlandAt` reads `pathBend`,
+ * which is declared long after the masonry — the footing skirt learned
+ * this. Everything solid about it is in `rockColliders` — two boxes and a
+ * gate box — and the blade meets it as metal.
+ * ------------------------------------------------------------------- */
+const FENCE_ZL = 9.0;                       // metres out along the lane from the door
+const FENCE_Z = LH_Z + FENCE_ZL;
+const FENCE_H = 14.0;                       // post height above the ground
+const FENCE_X0 = LH_X - 26, FENCE_X1 = LH_X + 26;
+const FENCE_GATE_W = 7.4;                   // the opening
+const FENCE_GATE_X = LH_X + pathBend(FENCE_ZL);
+const FENCE_COIL_R = 1.15;
+let fenceOpen = false, fenceSwing = 0, fenceZap = 0, fenceGateCol = null, fenceLeaves = null, fenceChain = null, fenceLamps = [];
+const fenceGroup = new THREE.Group();
+{
+  const G = fenceGroup;
+  const groundAt = (x) => headlandAt(x, FENCE_Z);
+  const steelMat = new THREE.MeshStandardMaterial({ color: 0x7e878e, roughness: 0.72, metalness: 0.12, flatShading: true,
+    emissive: 0x2c333a, emissiveIntensity: 0.55 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x4b5157, roughness: 0.85, metalness: 0.10, flatShading: true,
+    emissive: 0x1a1e22, emissiveIntensity: 0.6 });
+  const rustMat = new THREE.MeshStandardMaterial({ color: 0x8a6a52, roughness: 0.9, metalness: 0.05, flatShading: true,
+    emissive: 0x3a2a20, emissiveIntensity: 0.55 });
+  const brassMat = new THREE.MeshStandardMaterial({ color: 0xb08d4a, roughness: 0.55, metalness: 0.15, flatShading: true,
+    emissive: 0x4a3a1c, emissiveIntensity: 0.6 });
+  // chain-link: a diamond lattice drawn once, big cells, so the retro scale keeps it
+  const linkTex = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const x = c.getContext('2d');
+    x.clearRect(0, 0, 64, 64);
+    /* THICK WIRE, OR THERE IS NO WIRE. At five pixels of sixty-four on a
+     * 0.45 m cell the strand was four centimetres, which at the retro scale
+     * is under a pixel from anywhere you can stand: the panels rendered as
+     * nothing at all between the posts. Eleven pixels on a 0.6 m cell is a
+     * ten-centimetre bar — a weird fence's mesh. */
+    x.strokeStyle = '#c8d0d8'; x.lineWidth = 11; x.lineCap = 'round';
+    x.beginPath();
+    x.moveTo(0, 32); x.lineTo(32, 0); x.lineTo(64, 32); x.lineTo(32, 64); x.closePath();
+    x.moveTo(-32, 32); x.lineTo(0, 0); x.moveTo(0, 64); x.lineTo(-32, 32);
+    x.moveTo(32, 64); x.lineTo(64, 96); x.moveTo(64, 32); x.lineTo(96, 64);
+    x.stroke();
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.magFilter = THREE.NearestFilter; t.minFilter = THREE.LinearMipmapLinearFilter;   // a mesh should haze out, not vanish
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })();
+  const linkMat = new THREE.MeshStandardMaterial({ map: linkTex, transparent: true, alphaTest: 0.28, side: THREE.DoubleSide,
+    color: 0x9aa3aa, roughness: 0.8, metalness: 0.1, emissive: 0x2a3036, emissiveIntensity: 0.9, depthWrite: true });
+  const signTex = (lines, bg, fg) => {
+    const c = document.createElement('canvas'); c.width = 256; c.height = 128;
+    const x = c.getContext('2d');
+    x.fillStyle = bg; x.fillRect(0, 0, 256, 128);
+    x.strokeStyle = fg; x.lineWidth = 8; x.strokeRect(8, 8, 240, 112);
+    x.fillStyle = fg; x.textAlign = 'center'; x.textBaseline = 'middle';
+    lines.forEach((ln, i) => { x.font = `bold ${lines.length > 1 ? 40 : 56}px sans-serif`; x.fillText(ln, 128, 64 + (i - (lines.length - 1) / 2) * 46); });
+    const t = new THREE.CanvasTexture(c);
+    t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  };
+  const signMat = (lines, bg, fg) => new THREE.MeshBasicMaterial({ map: signTex(lines, bg, fg), fog: true });
+
+  // ---- posts, with the ground under each
+  const gateL = FENCE_GATE_X - FENCE_GATE_W / 2, gateR = FENCE_GATE_X + FENCE_GATE_W / 2;
+  const posts = [];
+  for (let x = FENCE_X0; x <= FENCE_X1 + 0.01; x += 3.6) {
+    if (x > gateL - 0.6 && x < gateR + 0.6) continue;
+    posts.push(x);
+  }
+  posts.push(gateL, gateR);
+  posts.sort((a, b) => a - b);
+  const postGeo = new THREE.CylinderGeometry(0.24, 0.30, FENCE_H + 1.0, 8);
+  const postMesh = new THREE.InstancedMesh(postGeo, steelMat, posts.length);
+  const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(1, 1, 1), _p = new THREE.Vector3();
+  posts.forEach((x, i) => {
+    const gy = groundAt(x);
+    const big = Math.abs(x - gateL) < 0.01 || Math.abs(x - gateR) < 0.01;
+    _s.set(big ? 1.9 : 1, 1, big ? 1.9 : 1);
+    _p.set(x, gy - 0.6 + (FENCE_H + 1.0) / 2, FENCE_Z);
+    _m.compose(_p, _q, _s);
+    postMesh.setMatrixAt(i, _m);
+  });
+  postMesh.frustumCulled = false;
+  G.add(postMesh);
+  // ---- rails and panels between neighbouring posts (not across the gate)
+  const railGeo = new THREE.BoxGeometry(1, 0.16, 0.16);
+  const spans = [];
+  for (let i = 0; i < posts.length - 1; i++) {
+    const a = posts[i], b = posts[i + 1];
+    if (a >= gateL - 0.01 && b <= gateR + 0.01) continue;   // the opening
+    spans.push([a, b]);
+  }
+  const railMesh = new THREE.InstancedMesh(railGeo, steelMat, spans.length * 4);
+  let ri = 0;
+  for (const [a, b] of spans) {
+    const ga = groundAt(a), gb = groundAt(b), len = b - a;
+    for (let k = 0; k < 4; k++) {
+      const hA = ga + [0.6, FENCE_H * 0.36, FENCE_H * 0.72, FENCE_H][k], hB = gb + [0.6, FENCE_H * 0.36, FENCE_H * 0.72, FENCE_H][k];
+      const ang = Math.atan2(hB - hA, len);
+      _p.set((a + b) / 2, (hA + hB) / 2, FENCE_Z);
+      _q.setFromAxisAngle(new THREE.Vector3(0, 0, 1), ang);
+      _s.set(Math.hypot(len, hB - hA) + 0.3, 1, 1);
+      _m.compose(_p, _q, _s);
+      railMesh.setMatrixAt(ri++, _m);
+    }
+    // the mesh panel, hung from the top rail and buried at the bottom
+    const top = Math.max(ga, gb) + FENCE_H, bot = Math.min(ga, gb) - 0.5;
+    const panel = new THREE.Mesh(new THREE.PlaneGeometry(len, top - bot), linkMat);
+    panel.position.set((a + b) / 2, (top + bot) / 2, FENCE_Z);
+    linkTex.repeat.set(1, 1);
+    panel.geometry.attributes.uv.array.forEach((v, j, arr) => { arr[j] = j % 2 === 0 ? v * (len / 0.6) : v * ((top - bot) / 0.6); });
+    panel.geometry.attributes.uv.needsUpdate = true;
+    G.add(panel);
+  }
+  railMesh.frustumCulled = false;
+  G.add(railMesh);
+  // ---- the arms leaning out at the walk, and three strands of barbed wire on them
+  const armGeo = new THREE.CylinderGeometry(0.07, 0.09, 1.9, 6);
+  const armMesh = new THREE.InstancedMesh(armGeo, steelMat, posts.length);
+  posts.forEach((x, i) => {
+    _p.set(x, groundAt(x) + FENCE_H + 0.75, FENCE_Z + 0.62);
+    _q.setFromAxisAngle(new THREE.Vector3(1, 0, 0), 0.72);     // out toward +Z: the walk
+    _s.set(1, 1, 1);
+    _m.compose(_p, _q, _s);
+    armMesh.setMatrixAt(i, _m);
+  });
+  armMesh.frustumCulled = false;
+  G.add(armMesh);
+  const wireGeo = new THREE.BoxGeometry(1, 0.035, 0.035);
+  const wireMesh = new THREE.InstancedMesh(wireGeo, darkMat, spans.length * 3);
+  const barbGeo = new THREE.BoxGeometry(0.05, 0.22, 0.05);
+  const barbs = [];
+  let wi = 0;
+  for (const [a, b] of spans) {
+    const ga = groundAt(a), gb = groundAt(b), len = b - a;
+    for (let k = 0; k < 3; k++) {
+      const up = 0.42 + k * 0.5, out = 0.5 + k * 0.45;
+      const hA = ga + FENCE_H + up, hB = gb + FENCE_H + up;
+      _p.set((a + b) / 2, (hA + hB) / 2, FENCE_Z + out);
+      _q.setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.atan2(hB - hA, len));
+      _s.set(Math.hypot(len, hB - hA) + 0.1, 1, 1);
+      _m.compose(_p, _q, _s);
+      wireMesh.setMatrixAt(wi++, _m);
+      for (let t = 0.25; t < len; t += 0.42) {
+        const x = a + t, y = hA + (hB - hA) * (t / len);
+        barbs.push([x, y, FENCE_Z + out, (t * 7.3) % 3.14]);
+      }
+    }
+  }
+  wireMesh.frustumCulled = false;
+  G.add(wireMesh);
+  const barbMesh = new THREE.InstancedMesh(barbGeo, darkMat, barbs.length * 2);
+  barbs.forEach(([x, y, z, a], i) => {
+    _p.set(x, y, z);
+    _q.setFromAxisAngle(new THREE.Vector3(1, 0, 0), a); _s.set(1, 1, 1);
+    _m.compose(_p, _q, _s); barbMesh.setMatrixAt(i * 2, _m);
+    _q.setFromAxisAngle(new THREE.Vector3(1, 0, 0), a + Math.PI / 2);
+    _m.compose(_p, _q, _s); barbMesh.setMatrixAt(i * 2 + 1, _m);
+  });
+  barbMesh.frustumCulled = false;
+  G.add(barbMesh);
+  // ---- the razor coil along the top: a helix with its axis down the fence
+  class FenceCoil extends THREE.Curve {
+    constructor(x0, x1, cy, r, turns, z) { super(); Object.assign(this, { x0, x1, cy, r, turns, z }); }
+    getPoint(t, target = new THREE.Vector3()) {
+      const x = this.x0 + (this.x1 - this.x0) * t, a = t * this.turns * Math.PI * 2;
+      return target.set(x, this.cy(x) + this.r * Math.cos(a), this.z + this.r * Math.sin(a));
+    }
+  }
+  const coilTop = (x) => groundAt(x) + FENCE_H + FENCE_COIL_R * 0.55;
+  for (const [x0, x1] of [[FENCE_X0, gateL - 0.3], [gateR + 0.3, FENCE_X1]]) {
+    const turns = Math.round((x1 - x0) / 0.62);
+    const curve = new FenceCoil(x0, x1, coilTop, FENCE_COIL_R, turns, FENCE_Z + 0.15);
+    const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, turns * 10, 0.032, 4, false), rustMat);
+    tube.frustumCulled = false;
+    G.add(tube);
+    // and a second, meaner one lying along the foot on the walk's side
+    const foot = new FenceCoil(x0, x1, (x) => groundAt(x) + 0.55, 0.62, Math.round((x1 - x0) / 0.5), FENCE_Z + 0.95);
+    const tube2 = new THREE.Mesh(new THREE.TubeGeometry(foot, Math.round((x1 - x0) / 0.5) * 8, 0.026, 4, false), rustMat);
+    tube2.frustumCulled = false;
+    G.add(tube2);
+  }
+  // ---- the gate: a beam over the opening, two leaves on the big posts, the chain and the lock
+  const gy = Math.max(groundAt(gateL), groundAt(gateR), groundAt(FENCE_GATE_X));
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(FENCE_GATE_W + 2.4, 0.9, 0.9), steelMat);
+  beam.position.set(FENCE_GATE_X, gy + FENCE_H + 0.6, FENCE_Z);
+  G.add(beam);
+  const lampGeo = new THREE.SphereGeometry(0.22, 8, 6);
+  for (let i = -2; i <= 2; i++) {
+    const lamp = new THREE.Mesh(lampGeo, new THREE.MeshBasicMaterial({ color: 0xff2a1a, fog: false }));
+    lamp.position.set(FENCE_GATE_X + i * 1.7, gy + FENCE_H + 1.25, FENCE_Z + 0.2);
+    G.add(lamp); fenceLamps.push(lamp);
+    const cage = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.34, 0.5, 6, 1, true), darkMat);
+    cage.position.copy(lamp.position); cage.position.y += 0.05;
+    G.add(cage);
+  }
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 2.1), signMat(['KEEP OUT'], '#b3201a', '#f2f2f2'));
+  sign.position.set(FENCE_GATE_X, gy + FENCE_H - 1.6, FENCE_Z + 0.5);
+  G.add(sign);
+  const sign2 = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 1.4), signMat(['DANGER', 'HIGH VOLTAGE'], '#f2d23a', '#111111'));
+  sign2.position.set(gateR + 2.2, gy + 2.6, FENCE_Z + 0.55);
+  G.add(sign2);
+  const sign3 = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 1.4), signMat(['NO ENTRY'], '#f2f2f2', '#b3201a'));
+  sign3.position.set(gateL - 2.2, gy + 2.6, FENCE_Z + 0.55);
+  G.add(sign3);
+  const leafW = FENCE_GATE_W / 2 - 0.15, leafH = FENCE_H - 1.0;
+  fenceLeaves = [];
+  for (const side of [-1, 1]) {
+    const pivot = new THREE.Group();
+    pivot.position.set(side < 0 ? gateL : gateR, gy, FENCE_Z);
+    const leaf = new THREE.Group();
+    leaf.position.x = side * leafW / 2;
+    const frame = (w, h, d, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), steelMat); m.position.set(x, y, z); leaf.add(m); };
+    frame(0.40, leafH, 0.40, -side * leafW / 2 + side * 0.20, leafH / 2 + 0.5, 0);
+    frame(0.40, leafH, 0.40, side * leafW / 2 - side * 0.20, leafH / 2 + 0.5, 0);
+    frame(leafW, 0.40, 0.40, 0, 0.5 + 0.20, 0);
+    frame(leafW, 0.40, 0.40, 0, leafH + 0.5 - 0.20, 0);
+    frame(leafW, 0.30, 0.30, 0, leafH * 0.5 + 0.5, 0);
+    const diag = new THREE.Mesh(new THREE.BoxGeometry(Math.hypot(leafW, leafH * 0.5), 0.24, 0.24), steelMat);
+    diag.position.set(0, leafH * 0.25 + 0.5, 0); diag.rotation.z = Math.atan2(leafH * 0.5, leafW) * side; leaf.add(diag);
+    const diag2 = diag.clone(); diag2.position.y = leafH * 0.75 + 0.5; diag2.rotation.z = -diag.rotation.z; leaf.add(diag2);
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(leafW, leafH), linkMat.clone());
+    mesh.position.set(0, leafH / 2 + 0.5, 0.02);
+    mesh.geometry.attributes.uv.array.forEach((v, j, arr) => { arr[j] = j % 2 === 0 ? v * (leafW / 0.6) : v * (leafH / 0.6); });
+    mesh.geometry.attributes.uv.needsUpdate = true;
+    leaf.add(mesh);
+    // spikes along the top of each leaf
+    for (let x = -leafW / 2 + 0.3; x < leafW / 2; x += 0.6) {
+      const sp = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.7, 4), darkMat);
+      sp.position.set(x, leafH + 0.5 + 0.35, 0); leaf.add(sp);
+    }
+    pivot.add(leaf);
+    G.add(pivot);
+    fenceLeaves.push(pivot);
+  }
+  // the chain across the join, sagging, and the lock hanging off it
+  fenceChain = new THREE.Group();
+  {
+    const links = 22, span = 2.6;
+    for (let i = 0; i < links; i++) {
+      const t = (i + 0.5) / links;
+      const link = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.05, 6, 8), darkMat);
+      link.position.set(FENCE_GATE_X - span / 2 + span * t, gy + 2.9 - Math.sin(t * Math.PI) * 0.55, FENCE_Z + 0.24);
+      link.rotation.y = i % 2 ? Math.PI / 2 : 0; link.rotation.x = 0.2;
+      fenceChain.add(link);
+    }
+    // THE LOCK. As tall as you are, which is the joke and the point.
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.1, 0.34), brassMat);
+    body.position.set(FENCE_GATE_X, gy + 1.55, FENCE_Z + 0.34);
+    fenceChain.add(body);
+    const shackle = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.09, 8, 12, Math.PI), steelMat);
+    shackle.position.set(FENCE_GATE_X, gy + 2.15, FENCE_Z + 0.34);
+    fenceChain.add(shackle);
+    const key = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.06, 10), darkMat);
+    key.rotation.x = Math.PI / 2; key.position.set(FENCE_GATE_X, gy + 1.35, FENCE_Z + 0.52);
+    fenceChain.add(key);
+  }
+  G.add(fenceChain);
+  G.traverse((o) => { if (o.isMesh) o.castShadow = o.receiveShadow = false; });
+  scene.add(G);
+  farProps.push({ obj: G, z: FENCE_Z, d: 340 });
+  // ---- solid: two walls either side of the opening, and the gate itself while it is shut
+  const topY = gy + FENCE_H + 30;
+  rockColliders.push({ x0: FENCE_X0 - 2, z0: FENCE_Z - 0.45, x1: gateL - 0.05, z1: FENCE_Z + 0.45, top: topY, mat: 'metal' });
+  rockColliders.push({ x0: gateR + 0.05, z0: FENCE_Z - 0.45, x1: FENCE_X1 + 2, z1: FENCE_Z + 0.45, top: topY, mat: 'metal' });
+  fenceGateCol = { x0: gateL - 0.05, z0: FENCE_Z - 0.35, x1: gateR + 0.05, z1: FENCE_Z + 0.35, top: topY, mat: 'metal' };
+  rockColliders.push(fenceGateCol);
+  // the crosshair reads the lock, not the mesh
+  const proxy = new THREE.Mesh(new THREE.BoxGeometry(FENCE_GATE_W, 4, 1.2),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  proxy.name = 'hitProxy';
+  proxy.position.set(FENCE_GATE_X, gy + 2, FENCE_Z + 0.3);
+  G.add(proxy);
+  addInteractable(proxy, 'Locked', 'default', { bare: true, far: 7, when: () => !fenceOpen });
+}
+/* The gate: shut until the thing in front of it is dead, then the chain
+ * comes down and the leaves swing in. And the wire is LIVE: stand against
+ * it and it takes a point, with a crack and a flash, every two seconds —
+ * which makes backing into it during the fight a thing you learn once. */
+function updateFence(dt) {
+  if (!fenceOpen && scp096 && !scp096.st.alive && scp096.st.deadT > 2.4) {
+    fenceOpen = true;
+    const i = rockColliders.indexOf(fenceGateCol);
+    if (i >= 0) rockColliders.splice(i, 1);
+    sfxChainDrop();
+    for (const l of fenceLamps) l.material.color.setHex(0x3aff5a);
+  }
+  if (fenceOpen) {
+    fenceSwing = Math.min(1, fenceSwing + dt / 2.6);
+    const k = fenceSwing * fenceSwing * (3 - 2 * fenceSwing);
+    if (fenceChain) {
+      fenceChain.position.y = -Math.min(2.3, fenceSwing * 9) * fenceSwing;   // it falls
+      fenceChain.rotation.z = fenceSwing * 0.35;
+      if (fenceSwing > 0.6) fenceChain.visible = false;
+    }
+    if (fenceLeaves) for (const [n, pv] of fenceLeaves.entries()) pv.rotation.y = (n === 0 ? 1 : -1) * 1.45 * k;
+  }
+  fenceZap = Math.max(0, fenceZap - dt);
+  if (fenceZap <= 0 && !frozen() && introDone) {
+    const c = camera.position;
+    const gateGap = fenceOpen && c.x > FENCE_GATE_X - FENCE_GATE_W / 2 && c.x < FENCE_GATE_X + FENCE_GATE_W / 2;
+    if (!gateGap && c.x > FENCE_X0 - 1 && c.x < FENCE_X1 + 1 && Math.abs(c.z - FENCE_Z) < 0.75 + PLAYER_R) {
+      fenceZap = 2.0;
+      damagePlayer(1);
+      sfxFenceZap();
+      spawnPuffs(c.x, FENCE_Z, 6, 0, (c.z > FENCE_Z ? 1 : -1) * 2.0, c.y - 0.3, [0.75, 0.90, 1.00]);
+      flashEl.style.opacity = '0.22';
+      setTimeout(() => { flashEl.style.opacity = '0'; }, 70);
+      knockback.set(0, 0, (c.z > FENCE_Z ? 1 : -1) * 5.0);
+    }
+  }
+  // the lamps breathe
+  const pulse = 0.6 + 0.4 * Math.sin(performance.now() * 0.006);
+  for (const l of fenceLamps) l.scale.setScalar(0.85 + pulse * 0.3);
+}
+/* A crackle and a slap: a burst of noise through a high bandpass over a
+ * 50 Hz buzz that dies in a tenth of a second. An event, so it may be bright. */
+function sfxFenceZap() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.42, t + 0.006);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+  g.connect(out);
+  const n = noiseBurst(0.22, (x) => Math.pow(1 - x, 1.4) * (0.5 + 0.5 * Math.sin(x * 190)));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2400; bp.Q.value = 0.9;
+  n.connect(bp).connect(g); n.start(t); n.stop(t + 0.22);
+  const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 52;
+  const og = ctx.createGain(); og.gain.setValueAtTime(0.35, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+  o.connect(og).connect(g); o.start(t); o.stop(t + 0.15);
+}
+/* The chain going: a rattle of small strikes falling in pitch, and a heavy
+ * lock landing on rock a beat after. */
+function sfxChainDrop() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t0 = ctx.currentTime, out = sfxOut();
+  for (let i = 0; i < 14; i++) {
+    const t = t0 + i * 0.055 + Math.random() * 0.02;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.10 + Math.random() * 0.06, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+    g.connect(out);
+    const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = 900 + Math.random() * 700 - i * 25;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = o.frequency.value; bp.Q.value = 6;
+    o.connect(bp).connect(g); o.start(t); o.stop(t + 0.1);
+  }
+  const t = t0 + 0.95;
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.5, t + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+  g.connect(out);
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(48, t + 0.4);
+  o.connect(g); o.start(t); o.stop(t + 0.5);
+  const n = noiseBurst(0.3, (x) => Math.pow(1 - x, 3));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
+  const ng = ctx.createGain(); ng.gain.value = 0.5;
+  n.connect(lp).connect(ng).connect(g); n.start(t); n.stop(t + 0.3);
+}
 /* Drawn on the approach and not before. `kind.solo` keeps him out of the
  * pack's own far-cull push (it is keyed to the dock's Z), so he gets his
  * own: he is a fleck on the ridge from a hundred and eighty metres, which
@@ -17136,13 +17615,18 @@ function blowLands(u) {
    * 2.25 m the far side of a player standing 1.6 m away and the blow was
    * scored a miss. The polyline is shoulder → elbow → wrist → claw and
    * every segment of it is swept, which is what a limb is. */
-  const limbs = [[B.arm, B.fore, B.hand, B.tip], [B.armL, B.foreL, B.handL, B.tipL]];
-  for (const limb of limbs) {
+  /* AND EVERY CHAIN THE CREATURE FIGHTS WITH. Two arms was the whole list
+   * while the only aimed things were a man and a thing with two arms; the
+   * beast bites with its head and slams with its forepaws, the warden has a
+   * head, two forelegs and a tail. `mutLimbs` is whatever the kind wrote
+   * down, and a blow lands if ANY of them passes through you. */
+  for (const L of mutLimbs(u)) {
+    const limb = [L.arm, L.fore, L.hand, L.tip];
     let n = 0;
     for (const bn of limb) { if (bn) bn.getWorldPosition(_dbPts[n++]); }
     if (!n) continue;
     // a weapon runs on past the fist, where there is no bone to ask
-    if (!limb[3] && (u.kind.barLen || 0) > 0 && n >= 2) {
+    if (!L.tip && (u.kind.barLen || 0) > 0 && n >= 2) {
       _dbB.subVectors(_dbPts[n - 1], _dbPts[n - 2]).normalize();
       _dbPts[n].copy(_dbPts[n - 1]).addScaledVector(_dbB, u.kind.barLen); n++;
     }
@@ -17165,14 +17649,37 @@ function blowLands(u) {
    * and his hand is out in front of him toward you — the arm extended, not
    * cocked — the blow lands. Behind him, wide of him, or out of reach it
    * still does not, which is the part that makes the hitbox honest. */
+  /* AND "A HAND'S WIDTH WIDE" HAS TO MEAN A HAND'S WIDTH. On a man with a
+   * crowbar the test above was the whole of it; on the beast the "hand" is
+   * its HEAD, which is always out in front of it, so every bite inside its
+   * reach landed — measured, one with the snout 1.86 m from the chest. The
+   * striking end nearest you has to be within `LAND_SLOP` of your torso for
+   * the benefit of the doubt: the Dealer's aimed bar finishes inside a
+   * quarter of a metre and keeps it, a snout that went over your head
+   * does not. */
   const A = u.atk[u.st.swing];
   if (A && dist <= A.reach * 0.92) {
     _dbC.subVectors(_dbA, u.g.position).setY(0);                     // the hand, out from his root
     const fwd = _dbC.dot(_dbF);
-    if (fwd > 0.38) return true;
+    if (fwd > 0.38) {
+      let best = Infinity;
+      for (const L of mutLimbs(u)) {
+        if (!L.hand) continue;
+        (L.tip || L.hand).getWorldPosition(_dbC);
+        if (!L.tip && (u.kind.barLen || 0) > 0 && L.fore) {
+          L.fore.getWorldPosition(_dbB);
+          _dbB.subVectors(_dbC, _dbB).normalize();
+          _dbC.addScaledVector(_dbB, u.kind.barLen);
+        }
+        const y = THREE.MathUtils.clamp(_dbC.y, bot, top);
+        best = Math.min(best, Math.hypot(_dbC.x - camera.position.x, _dbC.z - camera.position.z, _dbC.y - y));
+      }
+      if (best <= LAND_SLOP) return true;
+    }
   }
   return false;
 }
+const LAND_SLOP = 1.0;                     // how wide of the torso a striking end may finish and still count
 /* Steel on steel: your light swing met the bar. Nothing happens to him and
  * something happens to you — the tool jars, a beat of freeze, the guard
  * spring rings — and he holds the block a moment before he comes on. */
@@ -17194,6 +17701,12 @@ function dealerBlock(u) {
 }
 function hurtMutant(u, dmg, P = 0) {
   if (!u.st.alive || u.st.struck) return false;
+  /* SOME THINGS ARE ASLEEP UNTIL YOU HIT THEM. The witness is a bystander
+   * until the blade touches him; `provoke` is the kind's own way of waking
+   * (the witness swaps his standing self for the creature), and the blow
+   * that woke it still lands. */
+  let woke = false;
+  if (u.kind.provoke && !u.st.awake) { u.kind.provoke(u); woke = true; }
   let poiseBroke = false;
   if ((u.kind.poise || u.kind.block) && u.st.stun <= 0) {
     /* LIGHT BY HOW IT WAS THROWN, NOT BY WHAT IT TAKES. This read `dmg < 2`,
@@ -17206,7 +17719,8 @@ function hurtMutant(u, dmg, P = 0) {
     _dbC.subVectors(camera.position, u.g.position).setY(0).normalize();
     const facing = _dbC.dot(_dbF) > 0.45;
     const ready = u.st.atk < 0 && u.st.recoil <= 0 && u.st.block <= 0;
-    if (light && facing && ready && Math.random() < (u.kind.block || 0)) { dealerBlock(u); return false; }
+    // the blow that woke it is never met: he was not guarding, he was standing there
+    if (light && facing && ready && !woke && Math.random() < (u.kind.block || 0)) { dealerBlock(u); return false; }
     /* POISE IS A POOL, AND IT REFILLS. It used to be a COUNT of light
      * swings — three and he rocked — and a charge skipped it outright and
      * rocked him every single time. So the answer to a boss was to hold the
@@ -18490,6 +19004,7 @@ function mutRagdoll(u, dirX, dirZ, power) {
   const rb = rec && rec.group.userData.bunker;
   u.rag = { parts, byName, cons, bends, hits, t: 0, asleep: false,
             room: rb && rb.nav ? rb.nav.room : null, bunker: rb || null,
+            ring: !!(u.kind.ring && SH && shrineReady),     // it dies inside the drum
             roomG: rec ? rec.group : null, wallHit: 0, wallAt: new THREE.Vector3() };
   u.g.rotation.set(0, u.g.rotation.y, 0);           // the body's tilt is the particles' now, not the group's
   /* And the aim's yaw dies with him. It lives on the MODEL, and a man killed
@@ -18611,7 +19126,31 @@ function updateMutRagdoll(u, dt) {
             q.pp.z = q.p.z - (q.p.z - q.pp.z) * (1 - RAG_FRICTION);
             if (q.pp.y < q.p.y) q.pp.y = q.p.y + (q.p.y - q.pp.y) * (q.wet > 0 ? 0 : RAG_BOUNCE);   // and bounces, a little — not in water
           }
-          q.p.x = THREE.MathUtils.clamp(q.p.x, WADE_X - 6, CLIFF_BLOCK_X + 0.6);
+          /* THE BEACH'S CLIFF IS A WALL TO A BODY ON THE BEACH — the fourth
+           * copy, and the one that made the aliens' corpses VANISH. This was
+           * an unconditional clamp to the surf line and the cliff foot, and
+           * the hall is at x = 3000: on the first step of the fall every
+           * particle of a reptilian's body was snapped to x = 13.1, three
+           * thousand metres from its own skeleton, and the mesh it drove went
+           * with it — "the bodies disappear". `PhysProp` learned this on the
+           * wrecked drones: if a body answers to another room's floor, it is
+           * in another room, and the beach's walls are not its walls. */
+          if (bf === null) q.p.x = THREE.MathUtils.clamp(q.p.x, WADE_X - 6, CLIFF_BLOCK_X + 0.6);
+          /* AND THE HALL IS A DRUM. A corpse thrown at the colonnade went out
+           * through the wall the way the bunker's did through the concrete —
+           * the radial wall is the same one the living creatures and the
+           * thrown wrecks are held by. */
+          if (r.ring) {
+            const rx = q.p.x - SHRINE_X, rz = q.p.z - SHRINE_Z;
+            const rr = Math.hypot(rx, rz) || 1e-4, lim = SH.walkR - 0.6 - q.r;
+            if (rr > lim) {
+              q.p.x = SHRINE_X + rx / rr * lim; q.p.z = SHRINE_Z + rz / rr * lim;
+              const vx = q.p.x - q.pp.x, vy = q.p.y - q.pp.y, vz = q.p.z - q.pp.z;
+              const sp = Math.hypot(vx, vy, vz) / Math.max(1e-4, h);
+              if (sp > r.wallHit) { r.wallHit = sp; r.wallAt.copy(q.p); }
+              q.pp.x = q.p.x + vx * 0.35; q.pp.z = q.p.z + vz * 0.35;
+            }
+          }
           /* AND THE ROOM IS SOLID. A body thrown across the bunker went out
            * through the concrete and came to rest in the sand over its roof:
            * the only wall the ragdoll knew was the beach's cliff, three
@@ -18754,6 +19293,18 @@ function updateMutantUnit(u, dt) {
   const dx = camera.position.x - p.x, dz = camera.position.z - p.z;
   const dist = Math.hypot(dx, dz) || 0.001;
   const face = Math.atan2(dx / dist, dz / dist);      // the model's front is +Z
+  /* THE SECOND WIND, for any kind that declares one. `u.kind` is replaced by
+   * a copy with the rage's fields in it — every number below reads off
+   * `u.kind`, so the swap is the whole mechanism — and it announces itself:
+   * the creature stops, roars, and you keep your hands. Once. */
+  if (u.kind.rage && !u.st.raged && u.st.awake && u.st.hp <= u.kind.hp * 0.5) {
+    u.st.raged = true;
+    u.kind = Object.assign({}, u.kind, u.kind.rage, { rage: null });
+    u.st.atk = -1; u.st.chainAt = -1; u.st.chained = false; u.st.roar = 1.15; u.st.cool = 0.15;
+    mutDrop(u);
+    sfxScpScream(dist, u.kind.voice);
+    addTrauma(0.5);
+  }
   const turn = (rate) => { u.g.rotation.y += _smileTurn(u.g.rotation.y, face) * Math.min(1, dt * rate); };
 
   if (!u.st.awake) {
@@ -19188,7 +19739,9 @@ function updateMutantUnit(u, dt) {
           const ok = {};
           let tot = 0;
           for (const k in u.kind.use) {
-            if ((u.atk[k] || MUT_ATTACKS[k]).reach + 0.25 < dist) continue;
+            const AK = u.atk[k] || MUT_ATTACKS[k];
+            if (AK.reach + 0.25 < dist) continue;
+            if (AK.minDist && dist < AK.minDist) continue;    // a charge needs ground to charge across
             ok[k] = u.kind.use[k]; tot += ok[k];
           }
           if (tot > 0) {
@@ -19318,20 +19871,44 @@ function aimTip(u, L, out) {
  * frame, which is cheap and is always right on a two-handed slam because
  * on those they are symmetric and either answer is the same answer. */
 const _alA = new THREE.Vector3();
-function aimLimb(u) {
+/* THE CHAINS A CREATURE STRIKES WITH, as {arm, fore, hand, tip} bone sets:
+ * the right arm, the left if it has one, and anything else the kind's `rig`
+ * lists under `limbs` — a beast's forepaws, a warden's forelegs and its
+ * tail. Built once. A chain without a `tip` runs on by `barLen`. */
+function mutLimbs(u) {
+  if (u.limbs) return u.limbs;
   const B = u.bones;
-  const R = { arm: B.arm, fore: B.fore, hand: B.hand, tip: B.tip };
-  if (!B.handL || !B.armL) return R;
-  const Lf = { arm: B.armL, fore: B.foreL, hand: B.handL, tip: B.tipL };
-  (R.tip || R.hand).getWorldPosition(_alA);
-  const dr = _alA.distanceToSquared(camera.position);
-  (Lf.tip || Lf.hand).getWorldPosition(_alA);
-  return _alA.distanceToSquared(camera.position) < dr ? Lf : R;
+  if (!B) return (u.limbs = []);
+  const L = [];
+  if (B.hand) L.push({ arm: B.arm, fore: B.fore, hand: B.hand, tip: B.tip });
+  if (B.handL) L.push({ arm: B.armL, fore: B.foreL, hand: B.handL, tip: B.tipL });
+  if (B.extra) for (const e of B.extra) L.push(e);
+  return (u.limbs = L);
+}
+function aimLimb(u) {
+  const all = mutLimbs(u);
+  const A = swingOf(u);
+  /* A SWING NAMES ITS OWN LIMB. Nearest-to-you is right for two arms that
+   * are interchangeable and wrong for a tail: the warden's tail slam has to
+   * aim the TAIL whatever its head happens to be doing, and the beast's
+   * bite must never be corrected through a forepaw. `A.limbs` is the set
+   * of chain indices a swing may aim with; without it, any of them. */
+  let best = null, bd = Infinity;
+  for (let i = 0; i < all.length; i++) {
+    if (A && A.limbs && !A.limbs.includes(i)) continue;
+    const L = all[i];
+    if (!L.arm || !L.fore || !L.hand) continue;
+    (L.tip || L.hand).getWorldPosition(_alA);
+    const d = _alA.distanceToSquared(camera.position);
+    if (d < bd) { bd = d; best = L; }
+  }
+  return best || all[0];
 }
 function aimBar(u, dt, dist) {
   if (!u.kind.aimed || !u.bones || !u.bones.arm || !u.bones.hand || !u.bones.fore) return;
   const A = swingOf(u);
   let w = 0;
+  if (!mutLimbs(u).length) return;
   if (u.st.atk >= 0 && A) {
     const t = u.st.atk;
     // nothing during the wind-up you are meant to read; all of it on the way in
@@ -19341,6 +19918,7 @@ function aimBar(u, dt, dist) {
   u.aimW = (u.aimW || 0) + (w - (u.aimW || 0)) * Math.min(1, dt * 18);
   if (u.aimW < 0.004) { if (u.model) u.model.rotation.y = 0; return; }
   const LB = aimLimb(u);
+  if (!LB || !LB.arm || !LB.fore || !LB.hand) return;
   const arm = LB.arm;
   /* THE BODY TURNS FIRST, and it turns the MODEL, not `u.g`: the group's
    * heading belongs to the AI and to every distance test in the fight, and
@@ -23087,6 +23665,7 @@ function update(dt, rawDt = dt) {
    * thing that puts him back on the ground and inside the arena, or a swing's
    * own lunge carries him off the ridge for a frame every time. */
   updateScp(dt);
+  updateFence(dt);
   updateGibs(dt);
   updateBradlyBlink(dt);
   updateHurt(dt);
@@ -23799,13 +24378,13 @@ const shrineFloorAt = (x, z, y) => {
  * `Character1_*` bones and this rig has none of them, so it dies on the
  * `die` clip the build authored — which is the right picture anyway. A thing
  * this size should go down where it stood. */
-MUT_ATTACKS.mSwipe = { wind: 0.62, strike: 0.13, recover: 0.58, hit: 0.647, reach: 4.20, lunge: 0.6, chain: 'mBite', chainP: 0.34, w: 0.34 };
-MUT_ATTACKS.mBite  = { wind: 0.55, strike: 0.12, recover: 0.62, hit: 0.667, reach: 3.60, lunge: 1.5, chain: 'mSwipe', chainP: 0.28, w: 0.30 };
+MUT_ATTACKS.mSwipe = { wind: 0.62, strike: 0.13, recover: 0.58, hit: 0.647, reach: 4.20, lunge: 0.6, chain: 'mBite', chainP: 0.34, w: 0.34, limbs: [1, 2] };
+MUT_ATTACKS.mBite  = { wind: 0.55, strike: 0.12, recover: 0.62, hit: 0.667, reach: 3.60, lunge: 1.5, chain: 'mSwipe', chainP: 0.28, w: 0.30, limbs: [0] };
 /* The signature. A second and a quarter of tail hauled back behind it before
  * anything comes down, which is the longest tell in the game and should be:
  * it is the slowest thing here, the most punishable, and the only one that
  * takes two of your four. The held overhead's own argument. */
-MUT_ATTACKS.mTail  = { wind: 1.25, strike: 0.17, recover: 0.92, hit: 0.729, reach: 5.00, lunge: 0.0, chain: null, chainP: 0, w: 0.22, dmg: 2 };
+MUT_ATTACKS.mTail  = { wind: 1.25, strike: 0.17, recover: 0.92, hit: 0.729, reach: 5.00, lunge: 0.0, chain: null, chainP: 0, w: 0.22, dmg: 2, guardK: 1.5, limbs: [3] };
 
 MUT_KINDS.warden = {
   glb: 'assets/monster.glb', solo: true, noSand: true, skin: null, bones: null,
@@ -23826,6 +24405,16 @@ MUT_KINDS.warden = {
   hp: 15, dmg: 1,
   speedK: 0.86, windK: 1.00, reachK: 1.00, aggr: 1.35,
   use: { mSwipe: 0.34, mBite: 0.30, mTail: 0.26 },
+  /* EVERY BLOW IT THROWS IS SWEPT ON THE PART THAT THROWS IT — the head for
+   * the bite, either foreleg for the swipe, the last third of the tail for
+   * the slam — and aimed with it, per swing (`limbs` on the attack). A
+   * tail slam that lands on a distance from its rump to your feet is not a
+   * tail slam. */
+  aimed: true, aimK: 0.75, barLen: 0.30, recoilK: 0.80, press: 0.80,
+  rig: { arm: 'neck', fore: 'head_base', hand: 'head', tip: 'jaw', head: 'head',
+         limbs: [['legFR_1', 'legFR_2', 'legFR_3', 'legFR_3_t2'],
+                 ['legFL_1', 'legFL_2', 'legFL_3', 'legFL_3_t2'],
+                 ['tail12', 'tail17', 'tail20', 'tail22']] },
   circle: 0.42, step: 0.24, chainMax: 1, feint: 0.14,
   /* POISE, so a boss cannot be stun-locked with clicks: eight points, a light
    * swing spends one and a charge three, and what is left grows back once you
@@ -23880,18 +24469,44 @@ MUT_KINDS.warden = {
  * the most punishable. `rLight` is the rake and it chains; `rHeavy` is the
  * two-clawed smash and it takes two of your four, and it is the one the
  * dodge exists to make you earn. */
-MUT_ATTACKS.rLight = { wind: 0.46, strike: 0.11, recover: 0.34, hit: 0.550, reach: 2.30, lunge: 1.1, chain: 'rHeavy', chainP: 0.24, w: 0.44 };
-MUT_ATTACKS.rHeavy = { wind: 0.88, strike: 0.14, recover: 0.60, hit: 0.720, reach: 2.55, lunge: 0.5, chain: null, chainP: 0, w: 0.26, dmg: 2 };
+MUT_ATTACKS.rLight = { wind: 0.46, strike: 0.11, recover: 0.34, hit: 0.550, reach: 2.30, lunge: 1.1, chain: 'rHeavy', chainP: 0.40, w: 0.44 };
+MUT_ATTACKS.rHeavy = { wind: 0.88, strike: 0.14, recover: 0.60, hit: 0.720, reach: 2.55, lunge: 0.5, chain: 'rLight', chainP: 0.30, w: 0.26, dmg: 2, guardK: 1.25 };
 
+/* THREE OF THEM, AND THREE BUILDS — the pack's own trick, on the reptilian's
+ * `Character1_*` rig: `kind.bones` scales named bones on each parsed copy
+ * before `skinnedBounds` fits the height, so a longer leg or a bigger head
+ * changes the silhouette and the thing is still stood on its feet. A scaled
+ * bone scales everything below it (an upper arm carries the forearm and the
+ * hand with it), which is what makes a long limb read as a long limb. They
+ * are NOT the mutants' builds — those are a split head, a small head on a
+ * long neck with long forearms and shins, and a long forearm and neck. These
+ * are a RUNNER (long legs, short trunk, small head, the quick one), a BRUTE
+ * (deep chest, thick arms and big hands on short legs, the slow one that
+ * hits hard) and a REACHER (long arms out to huge hands, a big head, short
+ * shins, the one whose rake lands from furthest out). All three stay green:
+ * the skin is the one the packer made, and the tints are a breath either
+ * side of white so no build goes dark. */
 MUT_KINDS.reptilian = {
-  glb: 'assets/reptilian.glb', solo: true, noSand: true, skin: null, bones: null,
+  glb: 'assets/reptilian.glb', solo: true, noSand: true, skin: null,
+  bones: { Character1_LeftUpLeg: 1.30, Character1_RightUpLeg: 1.30, Character1_LeftLeg: 1.10, Character1_RightLeg: 1.10,
+           Character1_Spine: 0.88, Character1_Head: 0.78, Character1_LeftArm: 0.90, Character1_RightArm: 0.90,
+           Character1_LeftHand: 0.90, Character1_RightHand: 0.90 },
+  /* THREE GREENS. The map is the same green skin on all three; the tint
+   * multiplies it — yellow-olive on the runner, a deeper green on the brute,
+   * pale mint on the reacher — and the lift is set per build so the dark
+   * one does not vanish in the hall. */
+  tint: 0xc4dca6, emis: 0.22,
   /* Its rig IS named `Character1_*` — the packer does that on purpose — so
    * unlike the beast it comes apart and ragdolls like everything on the
    * beach, and it gets no `deathClip`. */
-  h: 2.05, hp: 7, dmg: 1,
-  speedK: 1.05, windK: 1.00, reachK: 1.00, aggr: 1.55,
+  h: 1.90, hp: 6, dmg: 1,
+  /* QUICKER, AND THEY CHAIN. At 1.05 they were barely faster than a walk
+   * and one swing was the whole of an exchange; three of them now close at
+   * a run, come back on you sooner, rake twice and finish with the smash,
+   * and feint more — the Dealer's manners on a lizard, one at a time. */
+  speedK: 1.30, windK: 0.92, reachK: 1.00, aggr: 1.90,
   use: { rLight: 0.44, rHeavy: 0.26 },
-  circle: 0.55, step: 0.30, chainMax: 1, feint: 0.18,
+  circle: 0.45, step: 0.30, chainMax: 2, feint: 0.24,
   poise: 4, poiseBack: 1.4, poiseWait: 1.0, parryK: 0.85,
   /* IT READS YOUR WIND-UP AND IT GOES SIDEWAYS. `reads` is the Dealer's own
    * behaviour widened to anything that declares it; `dodgeClip` is what makes
@@ -23900,6 +24515,22 @@ MUT_KINDS.reptilian = {
    * legible is that it LEAVES the line you are swinging along, which is also
    * the one direction a charged swing cannot follow. */
   reacts: true, dodgeClip: 'dodge', dodgeSide: 4.9, dodgeT: 0.38,
+  /* ITS BLOW HAS TO PASS THROUGH YOU. The pack lands a hit on a distance
+   * between two pairs of feet at the first active frame, with no direction
+   * in it — so a claw raked a metre wide of you still took a point, and
+   * nothing about where you stood or where it was facing mattered. It is
+   * the Dealer's own test now: the arm is swept shoulder → elbow → wrist →
+   * claw across the whole active window, on both arms, and the shoulder is
+   * turned into the blow so a swing thrown at you lands ON you. `barLen`
+   * is the claws past the wrist bone. */
+  aimed: true, barLen: 0.30, aimK: 1.05,
+  rig: { arm: 'Character1_RightArm', fore: 'Character1_RightForeArm', hand: 'Character1_RightHand',
+         armL: 'Character1_LeftArm', foreL: 'Character1_LeftForeArm', handL: 'Character1_LeftHand',
+         head: 'Character1_Head' },
+  /* AND THE DEALER'S OWN MANNERS, where they fit a lizard: a light swing
+   * does not rock it (`poise` above), the stagger is short, and it does not
+   * shout between swings. `press` is the pack's: three take turns. */
+  recoilK: 0.80, press: 0.74,
   /* `rim` IS A COLOUR, NOT A STRENGTH. The pack's default is [0.070, 0.088,
    * 0.125] and `reexpose` writes it straight into the shader as a vec3, so a
    * scalar here is a TypeError inside `onBeforeCompile` — which is to say on
@@ -23928,8 +24559,24 @@ MUT_KINDS.reptilian = {
   alias: { idle2: 'idle', walk2: 'walk', run2: 'run', roar2: 'roar', die2: 'die',
            back: 'walk', hit: 'hurt', calm: 'idle',
            rLight: 'light', rHeavy: 'heavy' },
-  voice: { f: 1.18, growl: 0.85, rasp: 1.25, throat: 'chitter' },
+  voice: { f: 1.28, growl: 0.85, rasp: 1.25, throat: 'chitter' },
 };
+MUT_KINDS.reptilianB = Object.assign({}, MUT_KINDS.reptilian, {
+  h: 2.38, hp: 10, speedK: 0.98, windK: 1.12, reachK: 1.08, poise: 6, blockCost: 0.72, tint: 0x8fb494, emis: 0.28,
+  bones: { Character1_Spine1: 1.12, Character1_Spine2: 1.12, Character1_Head: 0.80,
+           Character1_LeftArm: 1.28, Character1_RightArm: 1.28, Character1_LeftForeArm: 1.10, Character1_RightForeArm: 1.10,
+           Character1_LeftHand: 1.35, Character1_RightHand: 1.35,
+           Character1_LeftUpLeg: 0.80, Character1_RightUpLeg: 0.80, Character1_LeftLeg: 0.92, Character1_RightLeg: 0.92 },
+  voice: { f: 0.88, growl: 1.15, rasp: 1.0, throat: 'chitter' },
+});
+MUT_KINDS.reptilianC = Object.assign({}, MUT_KINDS.reptilian, {
+  h: 2.10, hp: 7, speedK: 1.12, windK: 1.00, reachK: 1.24, tint: 0xd8ffe8, emis: 0.17,
+  bones: { Character1_LeftArm: 1.36, Character1_RightArm: 1.36, Character1_LeftForeArm: 1.35, Character1_RightForeArm: 1.35,
+           Character1_LeftHand: 1.20, Character1_RightHand: 1.20,
+           Character1_Neck: 1.30, Character1_Head: 1.40, Character1_LeftLeg: 0.74, Character1_RightLeg: 0.74,
+           Character1_LeftUpLeg: 0.92, Character1_RightUpLeg: 0.92 },
+  voice: { f: 1.08, growl: 0.95, rasp: 1.4, throat: 'chitter' },
+});
 
 // --------------------------------------------------------------- the beast
 /* Ten points, and it is the last thing in the ship. Both of its attacks were
@@ -23939,8 +24586,42 @@ MUT_KINDS.reptilian = {
  * quickly would be unfair rather than frightening. The slam is the signature:
  * it rears up onto its hind legs, HOLDS there (which is the tell, and it is
  * the biggest silhouette in the game), and comes down. */
-MUT_ATTACKS.bBite = { wind: 0.72, strike: 0.14, recover: 0.54, hit: 0.585, reach: 5.60, lunge: 1.7, chain: 'bSlam', chainP: 0.22, w: 0.38 };
-MUT_ATTACKS.bSlam = { wind: 1.15, strike: 0.17, recover: 0.90, hit: 0.789, reach: 6.40, lunge: 0.2, chain: null, chainP: 0, w: 0.26, dmg: 2 };
+/* A BEAST, NOT A BARGE. The first numbers made it slow everywhere: slow on
+ * its feet, slow between swings, and a bite whose recovery was as long as
+ * its wind-up. What reads as an aggressive animal is a SHORT gap and a
+ * long TELL — the tell is where the fairness lives (the Dealer's rage note,
+ * the SCP's own lesson), so the startups are kept and everything round
+ * them is tightened: the bite lunges further and comes back sooner, the
+ * bite chains into the slam more often, and the slam HOLDS — it rears on
+ * the spot rather than walking its own wind-up in, which is the biggest
+ * silhouette in the fight and the one you step out of (`guardK`: a guard
+ * held against two tonnes coming down takes most of the bar). `limbs` is
+ * which chains a swing may aim with: the bite aims the HEAD and only the
+ * head; the slam may come down on either forepaw or the jaws. */
+MUT_ATTACKS.bBite = { wind: 0.80, strike: 0.16, recover: 0.42, hit: 0.585, reach: 5.60, lunge: 2.3, chain: 'bSlam', chainP: 0.50, w: 0.40, limbs: [0] };
+MUT_ATTACKS.bSlam = { wind: 1.15, strike: 0.20, recover: 0.70, hit: 0.789, reach: 6.40, lunge: 0.2, chain: 'bBite', chainP: 0.30, w: 0.26, dmg: 2, hold: true, guardK: 1.6, limbs: [0, 1, 2] };
+/* TWO MORE OUT OF THE SAME TWO CLIPS. `mutClipTime` maps the whole clip onto
+ * the startup and the recovery, so the same bite run over a shorter clock IS
+ * a different swing: `bSnap` is the bite at nearly twice the pace — a quick
+ * snap, one point, still well outside the parry window — and it is what
+ * makes the slow one a choice rather than the only thing it does. `bRush` is
+ * the run clip as an attack: it needs ground (`minDist`) and then crosses
+ * five metres through its strike with its head down, which is the one swing
+ * in the fight you answer by leaving the LINE rather than the range — the
+ * drones taught the step, and this is what the step is for on the floor. */
+/* The snap is thrown from a little way out (`minDist`): inside three metres
+ * its jaws are already level with you and the lunge carries them PAST, and
+ * measured that way it missed every time — the head a metre wide of the
+ * torso through the whole strike. From three to four and a half the lunge
+ * brings the jaws onto you. */
+MUT_ATTACKS.bSnap = { wind: 0.46, strike: 0.13, recover: 0.36, hit: 0.585, reach: 4.60, lunge: 1.8, chain: 'bSlam', chainP: 0.45, w: 0.26, minDist: 3.0, limbs: [0] };
+/* AND ITS `reach` IS WHERE IT MAY BE THROWN FROM, NOT HOW FAR IT GOES. At
+ * 8.0 it became the creature's longest swing, `near` and the orbit radius
+ * both read off that, and after one charge the beast rang you at seven
+ * metres and bit at the air — measured, one bite in nine landed. The
+ * lunge is what crosses the ground; the reach is the window (4.5–6 m) and
+ * a swing that needs room is left out of `maxReach` besides. */
+MUT_ATTACKS.bRush = { wind: 0.62, strike: 0.26, recover: 0.55, hit: 0.500, reach: 6.00, lunge: 5.2, chain: 'bSnap', chainP: 0.60, w: 0.22, minDist: 4.5, guardK: 1.3, dmg: 2, limbs: [0] };
 
 MUT_KINDS.beast = {
   glb: 'assets/alienbeast.glb', solo: true, noSand: true, skin: null, bones: null,
@@ -23960,10 +24641,30 @@ MUT_KINDS.beast = {
    * which on an eight-metre animal is a spot in the middle of its back that
    * you had to walk into to hit. `hitR` gives a body the size of its body,
    * and the reaches are measured from the origin OUT TO WHERE ITS HEAD IS. */
-  /* THREE HEAVIES WITH THE KATANA, WHICH IS THE BRIEF AS A NUMBER. A blade's
-   * charged cut is `dmgHeavy` 3, so nine is exactly three of them — ten was
-   * four, and the fourth was the one that made it feel like chipping. */
-  h: 4.30, hp: 9, dmg: 1, hitR: 2.70, body: 2.60,
+  /* HARDER. Nine was three charged cuts with the katana and the owner asked
+   * for more of a fight: thirteen is four heavies and a light, and the
+   * pressure between them went up with it — quicker on its feet, quicker
+   * back on you, three-deep chains, a charge it throws more often. */
+  h: 4.30, hp: 16, dmg: 1, hitR: 2.70, body: 2.60,
+  /* AND IT HAS A SECOND WIND. Half its health gone and it stops, bellows, and
+   * comes back faster in everything between the swings — the Dealer's own
+   * rage, made general (`kind.rage` is the set of fields that change, and
+   * `updateMutantUnit` swaps them in once, on the frame it crosses half).
+   * The tells are untouched: that is where the fairness lives. */
+  rage: { aggr: 3.4, speedK: 1.30, press: 0.96, chainMax: 4, feint: 0.28, circle: 0.10 },
+  /* ITS JAWS HAVE TO REACH YOU. The bite used to land on a distance between
+   * its origin and your feet — a four-metre animal's origin is the middle of
+   * its back, so it "bit" you with its rump and the picture and the blow
+   * had nothing to do with each other. The head chain is swept and AIMED
+   * now, the way the Dealer's bar is: the neck (`Bone006` → `Bone008`) is
+   * turned so the snout (`Bone024`, four metres out along its own axis)
+   * comes onto your chest, and the forepaws are swept too for the slam.
+   * `aimK` is low: a neck this long needs a third of the correction a man's
+   * shoulder does to move the snout the same distance. */
+  aimed: true, aimK: 0.90, barLen: 0.35,
+  rig: { arm: 'Bone006', fore: 'Bone008', hand: 'Bone011', tip: 'Bone024', head: 'Bone011',
+         limbs: [['Bone005_L001', 'Bone005_L003', 'Bone005_L004', null],
+                 ['Bone005_R001', 'Bone005_R003', 'Bone005_R004', null]] },
   /* ITS COLLAPSE IS ITS OWN, BECAUSE THE CLIP IS ITS OWN. `WARDEN_DEATH`'s
    * beats are fractions of a 56-frame fall; this one takes two and a quarter
    * seconds to go down (it rears, staggers, the legs give at 1.35 and two
@@ -23973,10 +24674,20 @@ MUT_KINDS.beast = {
    * "have it stay in that dead animation, then send the player to the
    * beach". */
   death: { BUCKLE: 1.35, DROP: 1.78, TAIL: 2.15, QUIET: 4.60 },
-  speedK: 0.78, windK: 1.00, reachK: 1.00, aggr: 1.25,
-  use: { bBite: 0.38, bSlam: 0.26 },
-  circle: 0.34, step: 0.20, chainMax: 1, feint: 0.12,
-  poise: 9, poiseBack: 1.6, poiseWait: 1.2, parryK: 0.80,
+  /* FASTER ON ITS FEET AND QUICKER BACK ON YOU. 0.78 was slower than your
+   * walk, and an animal you can stroll away from is scenery (the headland's
+   * own lesson). It closes at nearly your walk now, the gap between swings
+   * is the Dealer's, it swings most of the time it could (`press`), chains
+   * twice, and it circles LESS: a beast does not orbit, it comes at you.
+   * `reacts` is the Dealer's read — charge in its face and it backs out of
+   * the arc, so the free heavy has to be bought. `recoilK` makes the
+   * stagger the prize and not two free swings; `blockCost` is what two
+   * tonnes does to a guard. */
+  speedK: 1.12, windK: 1.00, reachK: 1.00, aggr: 2.60, press: 0.92,
+  use: { bBite: 0.32, bSnap: 0.24, bSlam: 0.22, bRush: 0.22 },
+  circle: 0.18, step: 0.20, chainMax: 3, feint: 0.20,
+  reacts: true, recoilK: 0.70, blockCost: 1.00,
+  poise: 10, poiseBack: 1.7, poiseWait: 1.2, parryK: 0.80,
   /* AND THIS ONE KEEPS ITS RIM. The warden goes out with `rim: null` because
    * a Fresnel term is a GRAZING-ANGLE term and on a body made of spindly
    * limbs and a whip tail every surface grazes, so it lit the whole animal.
@@ -23994,7 +24705,7 @@ MUT_KINDS.beast = {
           rate: 1.0, lean: 0.04, strafeK: 0.8 },
   alias: { idle2: 'idle', walk2: 'walk', run2: 'run', roar2: 'roar', die2: 'die',
            back: 'walk', strafeL: 'walk', strafeR: 'walk', hit: 'hurt', calm: 'idle',
-           bBite: 'bite', bSlam: 'swipe' },      // see the reptilian's note
+           bBite: 'bite', bSlam: 'swipe', bSnap: 'bite', bRush: 'run' },      // see the reptilian's note
   voice: { f: 0.46, growl: 1.70, rasp: 0.75, throat: 'bellow' },
 };
 
@@ -24026,8 +24737,8 @@ const DRONE = {
    * them landed 31 points in forty seconds, which is right in that it says
    * standing still is fatal and wrong in that a shot arrives before you have
    * finished stepping out of the last one. */
-  GAP: [2.6, 4.8],    // seconds between shots
-  DIVE: [4.5, 8.0],   // and between swoops
+  GAP: [2.2, 4.2],    // seconds between shots
+  DIVE: [3.8, 7.0],   // and between swoops
   DOWN: 1.55,         // how long a swoop keeps it in reach
 };
 let droneModel = null, droneWait = null;
@@ -24117,10 +24828,12 @@ function makeBolt() {
   return { m, live: false, p: new THREE.Vector3(), v: new THREE.Vector3(), t: 0 };
 }
 
-function fireBolt(from, at) {
+function fireBolt(from, at, src = null) {
   let b = droneBolts.find((x) => !x.live);
   if (!b) { b = makeBolt(); droneBolts.push(b); }
-  b.live = true; b.t = 0;
+  b.live = true; b.t = 0; b.src = src; b.back = false;
+  b.m.material.color.setHex(0xcdeaff);
+  b.m.scale.set(1, 1, 3.4);
   b.p.copy(from);
   b.v.copy(at).sub(from).normalize().multiplyScalar(DRONE.BOLT);
   b.m.visible = true;
@@ -24147,6 +24860,31 @@ function updateBolts(dt) {
      * carrying one — held, it is a shield out at arm's length; on the floor
      * it is cover you can crouch behind. It is tested BEFORE the body, so a
      * bolt can never go through the thing you are holding up and hit you. */
+    /* SENT BACK. A parried bolt belongs to the drone that fired it: it
+     * steers onto that drone (a saucer moves a metre in the time the bolt
+     * takes to cross the room, and a riposte that misses is not a riposte),
+     * goes in for most of its hull, and knocks it out of the air INTO REACH
+     * — which is the stun the parry buys off everything else in this game,
+     * in the one form a flying thing can be stunned. Nothing else stops a
+     * returned bolt: not a wreck, not the player. */
+    if (b.back) {
+      const t = b.src;
+      if (t && t.st.alive && t.g.visible) {
+        _bTmp.copy(t.g.position).sub(b.p);
+        const d = _bTmp.length() || 1e-4;
+        b.v.copy(_bTmp).multiplyScalar(DRONE.BOLT * 1.15 / d);
+        b.m.quaternion.setFromUnitVectors(_bZ, _bTmp.divideScalar(d));
+        if (d < DRONE.SPAN * 0.55) {
+          b.live = false; b.m.visible = false;
+          boltBurst(b.p);
+          hurtDrone(t, DRONE_RETURN_DMG, 0.9);
+          if (t.st.alive) { t.st.phase = 'swoop'; t.st.t = 0; t.st.fire = Math.max(t.st.fire, 2.2); }
+          continue;
+        }
+      }
+      if (b.t > 2.4) { b.live = false; b.m.visible = false; boltBurst(b.p); }
+      continue;
+    }
     let blocked = false;
     for (const w of drones) {
       const prop = w.st.prop;
@@ -24162,6 +24900,22 @@ function updateBolts(dt) {
     const e = camera.position;
     const dy = THREE.MathUtils.clamp(b.p.y, e.y - playerHeight() * 0.85, e.y + 0.12);
     const miss = Math.hypot(b.p.x - e.x, b.p.z - e.z, b.p.y - dy);
+    /* THE GUARD MEETS IT. A bolt is a swing that arrives from further off,
+     * and the guard answers it the way it answers a bar: held, it is
+     * STOPPED — at a cost to the bar, the way every block costs — and
+     * raised on the beat it is PARRIED and goes back where it came from.
+     * The guard only covers what it faces: a bolt in the back is a bolt in
+     * the back. The window is the same fifth of a second every parry in
+     * this game is timed to, from the press, not from the pose. */
+    if (miss < 0.95 && blocking && !frozen()) {
+      camera.getWorldDirection(_bTmp); _bTmp.y = 0; _bTmp.normalize();
+      const vx = b.v.x, vz = b.v.z, vl = Math.hypot(vx, vz) || 1e-4;
+      if ((vx * _bTmp.x + vz * _bTmp.z) / vl < -0.35) {
+        const dtp = (performance.now() - blockStart) / 1000;
+        if (dtp <= PARRY_WINDOW && parryCool <= 0) parryBolt(b); else blockBolt(b);
+        continue;
+      }
+    }
     if (miss < 0.52 && !frozen()) {
       b.live = false; b.m.visible = false;
       boltBurst(b.p);
@@ -24179,6 +24933,54 @@ function updateBolts(dt) {
 function boltBurst(p) {
   sfxDroneHit(p);
   spawnPuffs(p.x, p.z, 4, 0, -1, p.y, [0.62, 0.84, 1.00]);
+}
+/* What a returned bolt takes off the hull that fired it. Two of three — the
+ * parry is the read and the swing when it drops is the finish, which is the
+ * same shape as the riposte doubling a blow on a stunned man. */
+const DRONE_RETURN_DMG = 2;
+function parryBolt(b) {
+  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxKatBlock(true);
+  parryCool = 0;                             // landing one costs you nothing
+  b.back = true; b.t = 0;
+  b.m.material.color.setHex(0xffe2a8);       // it is yours now, and it is warm
+  // it leaves from the guard, upward and at the thing that sent it
+  const t = b.src;
+  if (t) _bTmp.copy(t.g.position).sub(b.p).normalize();
+  else _bTmp.copy(b.v).multiplyScalar(-1).normalize();
+  b.v.copy(_bTmp).multiplyScalar(DRONE.BOLT * 1.15);
+  b.m.quaternion.setFromUnitVectors(_bZ, _bTmp);
+  b.m.scale.set(1.3, 1.3, 4.2);
+  parryGlow = 0.5;
+  guardShockV += 6.4; spawnSparks(16, 1.3);
+  if (t) flashMats(t.g);
+  sfxParry();
+  playSample('poise', 1.0);
+  addTrauma(0.5);
+  fovKick = Math.max(fovKick, 8);
+  vmImpulse(-1.3);
+  hitstop = Math.max(hitstop, 0.14);
+  setPrompt('<b>PARRY</b>');
+  setTimeout(() => { if (promptHTML.includes('PARRY')) setPrompt(''); }, 700);
+}
+function blockBolt(b) {
+  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxKatBlock();
+  else if (equipped === shovelItem) playSample('blockSand', 1.0, 0.04);
+  else sfxBlock();
+  b.live = false; b.m.visible = false;
+  boltBurst(b.p);
+  stamina = Math.max(0, stamina - BLOCK_COST * 0.85);
+  guardTick();
+  if (stamina <= 0.001) { exhausted = true; gaspOut(); }
+  flashMats(toolVM);
+  guardShockV += 5.6; spawnSparks(12, 1.0);
+  parryGlow = Math.max(parryGlow, 0.30);
+  fovKick = Math.max(fovKick, 4.5);
+  addTrauma(0.42);
+  vmImpulse(-1.2);
+  slamDip = Math.max(slamDip, 0.025);
+  hitstop = Math.max(hitstop, 0.06);
+  setPrompt('<b>BLOCKED</b>');
+  setTimeout(() => { if (promptHTML.includes('BLOCKED')) setPrompt(''); }, 380);
 }
 
 // ------------------------------------------------------------ the flying
@@ -24231,7 +25033,7 @@ function updateDrone(u, dt) {
     if (S.t >= DRONE.CHARGE) {
       const from = u.g.position.clone(); from.y -= 0.42;
       const at = camera.position.clone(); at.y -= 0.25;
-      fireBolt(from, at);
+      fireBolt(from, at, u);
       S.phase = 'cruise'; S.t = 0;
       S.fire = DRONE.GAP[0] + Math.random() * (DRONE.GAP[1] - DRONE.GAP[0]);
     }
@@ -24349,7 +25151,13 @@ function updateDroneDeath(u, dt) {
  * falling three thousand metres to the beach and taking the cliff clamp on
  * the way. What is new is the two things a wreck does that a bottle does not:
  * it hurts what it is thrown into, and it stops a bolt. */
-const DRONE_THROW_DMG = 2;          // a saucer in the face is worth two swings
+/* ONE THROW, ONE KILL. It was two of a three-point hull, so a wreck hurled
+ * into a live drone bounced off a thing that was still flying and the owner
+ * asked for what the picture already promises: two and a half metres of
+ * saucer meeting another at ten metres a second is not a wound, it is the
+ * end of both. The throw is the whole reason a downed drone is worth
+ * picking up, and it has to pay every time. */
+const DRONE_THROW_DMG = DRONE_HP;
 function makeDroneWreck(u) {
   if (u.st.prop) return;
   u.g.rotation.set(Math.random() * 0.4 - 0.2, u.g.rotation.y, 1.35 + Math.random() * 0.5);
@@ -24440,8 +25248,9 @@ const WAVE_GAP = 2.4;              // the beat between one wave and the next
 
 function makeShrineFoes() {
   if (shrineGuards.length || shrineWon) return;
+  const kinds = ['reptilian', 'reptilianB', 'reptilianC'];
   for (let i = 0; i < 3; i++) {
-    const u = makeMutant(SHRINE_X, SHRINE_Z, 'reptilian', SHRINE_Y);
+    const u = makeMutant(SHRINE_X, SHRINE_Z, kinds[i], SHRINE_Y);
     u.g.visible = false;
     u.st.awake = false;
     shrineGuards.push(u);
@@ -25585,6 +26394,21 @@ const NTAR_H = 1.84;                       // how tall he is fitted, in metres
 const NTAR_X = UFO_X + 3.5, NTAR_Z = UFO_Z - 31.2;
 let ntarWorld = null, ntarMixer = null, ntarAction = null, ntarNPC = null;
 let ntarWait = null, ntarPlaced = false, ntarHit = null, ntarBones = null;
+let ntarModel = null, ntarFootY = 0, ntarUnit = null, ntarFight = false;
+/* HE GOES DOWN WHEN YOU SEE HIM. `spotted` is set the first time the middle
+ * of your screen is on him inside `NTAR_SEE`, and `kneel` eases him from
+ * the stance onto his knees over the next second and a half: it is the
+ * creature's own trigger (the thing on the headland wakes on being looked
+ * at), turned round — here the thing that happens on being looked at is a
+ * man giving up. `HOLD` is how long he holds your eye before his legs go. */
+const NTAR_SEE = 16, NTAR_KNEEL_DROP = 0.42;   // metres; the calf, measured
+/* AND THEN HE GETS UP, SLOWLY. The kneel holds for `NTAR_HOLD`, then
+ * `riseT` runs over `NTAR_RISE` seconds — a long smoothstep, because a man
+ * getting up off his knees after that is not quick about it. (He cried
+ * while he rose for one build, two drops a second off the eye bones and a
+ * wet line under each eye; the owner asked for it off.) */
+const NTAR_HOLD = 2.6, NTAR_RISE = 4.6;
+let ntarSt = { spotted: false, spotT: 0, kneel: 0, riseT: -1 };
 /* WHICH WAY A POSITIVE TURN ABOUT WORLD RIGHT TAKES HIS CHIN — settled by
  * rendering him and looking, the way every other axis sign in this file
  * that mattered was settled. He is looking at a twenty-six metre disc lying
@@ -25654,12 +26478,22 @@ function loadNtar() {
         ntarAction.paused = true;
         ntarAction.time = 0;
         ntarBones = {};
+        /* EXACT NAMES, NOT PREFIXES. `CC_Base_L_Upperarm` is also the start
+         * of `CC_Base_L_UpperarmTwist01`, a helper bone with nothing hanging
+         * off it — matched by prefix, the traversal ended on the twist and
+         * every turn put on "the arm" moved nothing. Measured: six rotations
+         * applied, four hand positions unchanged to the centimetre. */
         const want = { head: 'CC_Base_Head', neck: 'CC_Base_NeckTwist01',
-                       chest: 'CC_Base_Spine02', waist: 'CC_Base_Waist' };
+                       chest: 'CC_Base_Spine02', waist: 'CC_Base_Waist',
+                       armL: 'CC_Base_L_Upperarm', armR: 'CC_Base_R_Upperarm',
+                       foreL: 'CC_Base_L_Forearm', foreR: 'CC_Base_R_Forearm',
+                       calfL: 'CC_Base_L_Calf', calfR: 'CC_Base_R_Calf',
+                       thighL: 'CC_Base_L_Thigh', thighR: 'CC_Base_R_Thigh' };
         m.traverse((o) => {
           if (!o.isBone) return;
-          for (const q in want) if (o.name.startsWith(want[q])) ntarBones[q] = o;
+          for (const q in want) if (new RegExp('^' + want[q] + '_\\d+$').test(o.name)) ntarBones[q] = o;
         });
+        ntarModel = m; ntarFootY = m.position.y;
       }
       ntarNPC = { name: '???', script: NTAR_SCRIPT, sprite: ntarWorld, headY: NTAR_H * 0.92 };
       /* THE CROSSHAIR GETS A PROXY, NOT THE MODEL. `updateHover` raycasts an
@@ -25672,7 +26506,7 @@ function loadNtar() {
       ntarWorld.add(ntarHit);
       addInteractable(ntarWorld, 'Talk', undefined, {
         far: 5.5,
-        when: () => crashDone && ntarPlaced && !dialogOpen,
+        when: () => crashDone && ntarPlaced && !dialogOpen && !ntarFight,
         onActivate: () => startDialog('start', ntarNPC),
       });
       /* AND HE IS WARMED LIKE EVERYTHING ELSE. He is fetched mid-fight and
@@ -25696,6 +26530,254 @@ function loadNtar() {
   return ntarWait;
 }
 
+/* ======================= THE WITNESS, PROVOKED =======================
+ * Hit him and he is a creature. He is a `MUT_KINDS` entry like everything
+ * else that fights here, so the tell, the commit, the poise, the parry, the
+ * riposte, the chain, the feint, the read on your wind-up and the aimed blow
+ * are all his by construction — and, like the Dealer's bar, his hands have
+ * to pass through you. What is new is that HIS FILE HAS NO FIGHT IN IT: one
+ * demo clip, so every clip below is authored in code (`authorNtarClips`) on
+ * the stance the file does carry, the way the smile's and the crab's were
+ * authored in Blender. He is hard to kill on purpose: thirty-two points, a
+ * deep poise pool, a guard he meets a light swing with, and he is faster on
+ * his feet than you are. */
+MUT_ATTACKS.nSwipe  = { wind: 0.52, strike: 0.12, recover: 0.36, hit: 0.560, reach: 2.05, lunge: 0.9, chain: 'nSwipeL', chainP: 0.55, w: 0.24, limbs: [0] };
+MUT_ATTACKS.nSwipeL = { wind: 0.44, strike: 0.12, recover: 0.38, hit: 0.560, reach: 2.05, lunge: 0.8, chain: 'nSpin', chainP: 0.42, w: 0.16, limbs: [1] };
+MUT_ATTACKS.nHeavy  = { wind: 0.98, strike: 0.14, recover: 0.60, hit: 0.620, reach: 2.20, lunge: 0.6, chain: 'nSpin', chainP: 0.35, w: 0.16, dmg: 2, guardK: 1.4 };
+MUT_ATTACKS.nLunge  = { wind: 0.60, strike: 0.14, recover: 0.46, hit: 0.580, reach: 3.20, lunge: 2.4, chain: 'nSwipe', chainP: 0.45, w: 0.14 };
+/* THE LEAP, AND THE SPIN — what makes him wild. `nLeap` is the SCP's pounce
+ * with a HEIGHT in it: `hold` keeps him on the spot through the coil, the
+ * flight (`LEAP_AIR`, the last 0.55 s of the startup) crosses four and a
+ * half metres, and the CLIP carries the jump — the hips' own track rises a
+ * metre and a half at the apex with the knees tucked and both arms over the
+ * head, and comes down into a crouch with both fists driven into the ground
+ * on the contact frame. Two of your four, and most of a guard. `nSpin` is a
+ * full turn of the trunk with both arms out — the swipes chain into it and
+ * it chains into the leap, so a string from him is rake, rake, spin, and
+ * then he is in the air. Its contact is measured on both arms. */
+MUT_ATTACKS.nLeap   = { wind: 1.05, strike: 0.16, recover: 0.62, hit: 0.5738, reach: 5.60, lunge: 4.6, chain: 'nSwipe', chainP: 0.50, w: 0.20, dmg: 2, hold: true, guardK: 1.7, minDist: 2.6 };
+MUT_ATTACKS.nSpin   = { wind: 0.55, strike: 0.20, recover: 0.45, hit: 0.4583, reach: 2.40, lunge: 1.0, chain: 'nLeap', chainP: 0.45, w: 0.12 };
+MUT_KINDS.ntar = {
+  glb: 'assets/ntar.glb', solo: true, noSand: true, skin: null, bones: null, cutout: true,
+  /* HARD, AGGRESSIVE, AND NOT A MAN ANY MORE. Forty points is thirteen
+   * charged cuts with the katana; he is half again as fast as your walk,
+   * the gap between his swings is the shortest of any creature here, he
+   * swings nearly every time he could, chains four deep and feints a third
+   * of the time. The tells are what keep him fair and they are untouched. */
+  h: 1.84, hp: 40, dmg: 1, hitR: 0.85,
+  speedK: 1.50, windK: 1.00, reachK: 1.00, aggr: 3.00, press: 0.92,
+  use: { nSwipe: 0.24, nSwipeL: 0.16, nHeavy: 0.16, nLunge: 0.14, nLeap: 0.18, nSpin: 0.12 },
+  circle: 0.24, step: 0.30, chainMax: 4, feint: 0.34,
+  poise: 12, poiseBack: 2.2, poiseWait: 1.0, parryK: 0.72, recoilK: 0.66, blockCost: 0.95,
+  block: 0.30, fidgetK: 0.30, fidgetGap: 2.2,
+  reacts: true, aimed: true, barLen: 0.14, aimK: 1.15, bossDeath: true,
+  rig: { arm: 'CC_Base_R_Upperarm_078', fore: 'CC_Base_R_Forearm_079', hand: 'CC_Base_R_Hand_083',
+         armL: 'CC_Base_L_Upperarm_050', foreL: 'CC_Base_L_Forearm_051', handL: 'CC_Base_L_Hand_055',
+         head: 'CC_Base_Head_038' },
+  rag: { Character1_Hips: 'CC_Base_Hip_02', Character1_Spine: 'CC_Base_Waist_033',
+         Character1_Spine1: 'CC_Base_Spine01_034', Character1_Spine2: 'CC_Base_Spine02_035',
+         Character1_Neck: 'CC_Base_NeckTwist01_036', Character1_Head: 'CC_Base_Head_038',
+         Character1_RightShoulder: 'CC_Base_R_Clavicle_077', Character1_RightArm: 'CC_Base_R_Upperarm_078',
+         Character1_RightForeArm: 'CC_Base_R_Forearm_079', Character1_RightHand: 'CC_Base_R_Hand_083',
+         Character1_LeftShoulder: 'CC_Base_L_Clavicle_049', Character1_LeftArm: 'CC_Base_L_Upperarm_050',
+         Character1_LeftForeArm: 'CC_Base_L_Forearm_051', Character1_LeftHand: 'CC_Base_L_Hand_055',
+         Character1_RightUpLeg: 'CC_Base_R_Thigh_00', Character1_RightLeg: 'CC_Base_R_Calf_019',
+         Character1_RightFoot: 'CC_Base_R_Foot_021', Character1_RightToeBase: 'CC_Base_R_ToeBase_022',
+         Character1_LeftUpLeg: 'CC_Base_L_Thigh_04', Character1_LeftLeg: 'CC_Base_L_Calf_05',
+         Character1_LeftFoot: 'CC_Base_L_Foot_06', Character1_LeftToeBase: 'CC_Base_L_ToeBase_08' },
+  // the witness's own look, so the swap is not a swap of materials
+  emis: 0.075, rim: [0.058, 0.076, 0.112], gamma: 0.72,
+  author: authorNtarClips, first: 'idle',
+  anim: { run: 'run', idle: 'idle', roar: 'roar', die: 'hurt', walk: 'walk', back: 'walk',
+          rate: 1.0, lean: 0.10, strafeK: 1.0 },
+  alias: { idle2: 'idle', walk2: 'walk', run2: 'run', roar2: 'roar', die: 'hurt', die2: 'hurt',
+           back: 'walk', hit: 'hurt', calm: 'idle', strafeL: 'strafe', strafeR: 'strafe' },
+  provoke: ntarProvoke,
+  /* HE SHRIEKS. The SCP's throat, a little higher: a man's voice on a thing
+   * that leaps at you read as a man, and the scream is most of the scary. */
+  voice: { f: 1.12, growl: 1.05, rasp: 1.45, throat: 'shriek' },
+};
+
+/* WRITING CLIPS ON A RIG NOBODY ANIMATED. Every clip is a list of KEYS —
+ * a time and, per bone, an angle about the body's up, right and forward —
+ * sampled at 30 fps and composed onto the STANCE (the demo clip's first
+ * frame, with the arms brought to his sides the way the witness's are) as
+ * turns in each bone's parent frame, which is exactly what `updateNtar`
+ * does live. Every bone gets a track in every clip, driven or not, so a
+ * crossfade between two of them can never let a bone fall back to the bind
+ * pose — and this rig binds in a T. Sign conventions are the ones measured
+ * on the witness: a thigh's `right` positive swings the foot BACK, a calf's
+ * `right` positive folds it back, an arm's `right` negative brings it
+ * FORWARD, an arm's `fwd` positive brings the right arm IN to the body (and
+ * the left arm out). The contact pose of every swing is at the fraction
+ * `MUT_ATTACKS` calls `hit`. */
+const NTAR_JOINTS = {
+  hip: 'CC_Base_Hip_02', waist: 'CC_Base_Waist_033', chest: 'CC_Base_Spine02_035',
+  neck: 'CC_Base_NeckTwist01_036', head: 'CC_Base_Head_038',
+  clavL: 'CC_Base_L_Clavicle_049', clavR: 'CC_Base_R_Clavicle_077',
+  armL: 'CC_Base_L_Upperarm_050', armR: 'CC_Base_R_Upperarm_078',
+  foreL: 'CC_Base_L_Forearm_051', foreR: 'CC_Base_R_Forearm_079',
+  thighL: 'CC_Base_L_Thigh_04', thighR: 'CC_Base_R_Thigh_00',
+  calfL: 'CC_Base_L_Calf_05', calfR: 'CC_Base_R_Calf_019',
+  footL: 'CC_Base_L_Foot_06', footR: 'CC_Base_R_Foot_021',
+};
+// the arms brought to his sides: the witness's own numbers
+const NTAR_HANG = { armR: { fwd: 0.33, right: -0.28 }, foreR: { fwd: 0.30, right: -0.12 }, armL: { fwd: -0.14 }, foreL: { fwd: -0.08 } };
+function authorNtarClips(u, m, gltf) {
+  const src = gltf.animations && gltf.animations[0];
+  if (!src) return [];
+  const a = u.mixer.clipAction(src);
+  a.play(); a.time = 0; u.mixer.update(0);
+  m.updateMatrixWorld(true);
+  const bones = [];
+  m.traverse((o) => { if (o.isBone) bones.push(o); });
+  const J = {};
+  for (const k in NTAR_JOINTS) J[k] = bones.find((b) => b.name === NTAR_JOINTS[k]) || null;
+  const base = new Map();
+  for (const b of bones) base.set(b, b.quaternion.clone());
+  const hipPos = J.hip ? J.hip.position.clone() : null;
+  // the body's axes, in each driven bone's parent frame, at the stance
+  const gq = new THREE.Quaternion(); m.getWorldQuaternion(gq);
+  const W = { up: new THREE.Vector3(0, 1, 0), right: new THREE.Vector3(1, 0, 0).applyQuaternion(gq), fwd: new THREE.Vector3(0, 0, 1).applyQuaternion(gq) };
+  const axes = {}, pq = new THREE.Quaternion();
+  for (const k in J) {
+    if (!J[k]) continue;
+    (J[k].parent || J[k]).getWorldQuaternion(pq).invert();
+    axes[k] = { up: W.up.clone().applyQuaternion(pq).normalize(), right: W.right.clone().applyQuaternion(pq).normalize(), fwd: W.fwd.clone().applyQuaternion(pq).normalize() };
+  }
+  // the hip's world up in its own parent's frame, per metre
+  let hipUp = null;
+  if (J.hip) {
+    const ps = new THREE.Vector3(); (J.hip.parent || J.hip).getWorldScale(ps);
+    hipUp = axes.hip.up.clone().divideScalar(Math.max(1e-6, ps.y));
+  }
+  a.stop();
+  const tq = new THREE.Quaternion();
+  const compose = (k, ang) => {
+    const q = base.get(J[k]).clone();
+    if (ang.up) q.premultiply(tq.setFromAxisAngle(axes[k].up, ang.up));
+    if (ang.right) q.premultiply(tq.setFromAxisAngle(axes[k].right, ang.right));
+    if (ang.fwd) q.premultiply(tq.setFromAxisAngle(axes[k].fwd, ang.fwd));
+    return q;
+  };
+  const sm = (x) => x * x * (3 - 2 * x);
+  /* one clip: keys are [t, {joint: {up, right, fwd}, hipY}] and every angle
+   * is eased between the keys either side of the sample */
+  const build = (name, dur, keys, loop) => {
+    const fps = 30, n = Math.max(2, Math.round(dur * fps));
+    const times = []; for (let i = 0; i <= n; i++) times.push((i / n) * dur);
+    const at = (t, k, ax) => {
+      let k0 = keys[0], k1 = keys[keys.length - 1];
+      for (let i = 0; i < keys.length - 1; i++) if (t >= keys[i][0] && t <= keys[i + 1][0]) { k0 = keys[i]; k1 = keys[i + 1]; break; }
+      const v0 = ax === 'hipY' ? (k0[1].hipY || 0) : ((k0[1][k] && k0[1][k][ax]) || 0);
+      const v1 = ax === 'hipY' ? (k1[1].hipY || 0) : ((k1[1][k] && k1[1][k][ax]) || 0);
+      const span = k1[0] - k0[0];
+      const s = span > 1e-6 ? sm(THREE.MathUtils.clamp((t - k0[0]) / span, 0, 1)) : 1;
+      return v0 + (v1 - v0) * s;
+    };
+    const tracks = [];
+    for (const b of bones) {
+      const k = Object.keys(J).find((kk) => J[kk] === b);
+      const vals = [];
+      for (let i = 0; i <= n; i++) {
+        const t = times[i];
+        let q;
+        if (k) {
+          const ang = { up: at(t, k, 'up'), right: at(t, k, 'right'), fwd: at(t, k, 'fwd') };
+          if (NTAR_HANG[k]) { ang.fwd += NTAR_HANG[k].fwd || 0; ang.right += NTAR_HANG[k].right || 0; }
+          q = compose(k, ang);
+        } else q = base.get(b);
+        vals.push(q.x, q.y, q.z, q.w);
+      }
+      tracks.push(new THREE.QuaternionKeyframeTrack(b.name + '.quaternion', times, vals));
+    }
+    if (J.hip && hipUp) {
+      const vals = [];
+      for (let i = 0; i <= n; i++) { const dy = at(times[i], 'hip', 'hipY'); vals.push(hipPos.x + hipUp.x * dy, hipPos.y + hipUp.y * dy, hipPos.z + hipUp.z * dy); }
+      tracks.push(new THREE.VectorKeyframeTrack(J.hip.name + '.position', times, vals));
+    }
+    return new THREE.AnimationClip(name, dur, tracks);
+  };
+  const stride = (A, C, arm, foreBend, lean, bob) => [
+    [0,    { thighL: { right: -A }, calfL: { right: 0.15 }, thighR: { right: A }, calfR: { right: C }, armR: { right: -arm }, armL: { right: arm }, foreR: { right: -foreBend }, foreL: { right: -foreBend }, chest: { up: 0.08, right: lean }, head: { right: -lean * 0.6 }, hipY: -bob }],
+    [0.25, { thighL: { right: -A * 0.2 }, calfL: { right: 0.05 }, thighR: { right: A * 0.1 }, calfR: { right: C * 1.4 }, armR: { right: -arm * 0.3 }, armL: { right: arm * 0.3 }, foreR: { right: -foreBend }, foreL: { right: -foreBend }, chest: { right: lean }, head: { right: -lean * 0.6 }, hipY: 0 }],
+    [0.5,  { thighL: { right: A }, calfL: { right: C }, thighR: { right: -A }, calfR: { right: 0.15 }, armR: { right: arm }, armL: { right: -arm }, foreR: { right: -foreBend }, foreL: { right: -foreBend }, chest: { up: -0.08, right: lean }, head: { right: -lean * 0.6 }, hipY: -bob }],
+    [0.75, { thighL: { right: A * 0.1 }, calfL: { right: C * 1.4 }, thighR: { right: -A * 0.2 }, calfR: { right: 0.05 }, armR: { right: arm * 0.3 }, armL: { right: -arm * 0.3 }, foreR: { right: -foreBend }, foreL: { right: -foreBend }, chest: { right: lean }, head: { right: -lean * 0.6 }, hipY: 0 }],
+    [1.0,  { thighL: { right: -A }, calfL: { right: 0.15 }, thighR: { right: A }, calfR: { right: C }, armR: { right: -arm }, armL: { right: arm }, foreR: { right: -foreBend }, foreL: { right: -foreBend }, chest: { up: 0.08, right: lean }, head: { right: -lean * 0.6 }, hipY: -bob }],
+  ];
+  const scaleT = (keys, dur) => keys.map(([t, p]) => [t * dur, p]);
+  const clips = [];
+  clips.push(build('idle', 2.4, [[0, {}], [1.2, { chest: { right: 0.03 }, head: { right: 0.02 }, waist: { up: 0.03 } }], [2.4, {}]], true));
+  clips.push(build('walk', 1.0, stride(0.42, 0.55, 0.32, 0.2, 0.04, 0.02), true));
+  clips.push(build('run', 0.62, scaleT(stride(0.72, 1.15, 0.65, 0.95, 0.24, 0.045), 0.62), true));
+  clips.push(build('strafe', 0.8, [
+    [0,   { thighL: { fwd: 0.26 }, thighR: { fwd: 0.26 }, calfL: { right: 0.45 }, chest: { fwd: -0.05 }, hipY: -0.02 }],
+    [0.4, { thighL: { fwd: -0.26 }, thighR: { fwd: -0.26 }, calfR: { right: 0.45 }, chest: { fwd: 0.05 }, hipY: -0.02 }],
+    [0.8, { thighL: { fwd: 0.26 }, thighR: { fwd: 0.26 }, calfL: { right: 0.45 }, chest: { fwd: -0.05 }, hipY: -0.02 }]], true));
+  clips.push(build('roar', 1.3, [
+    [0, {}],
+    [0.35, { armR: { fwd: -0.9, right: -1.1 }, armL: { fwd: 0.9, right: -1.1 }, foreR: { right: -0.6 }, foreL: { right: -0.6 }, head: { right: -0.35 }, chest: { right: -0.15 }, hipY: -0.03 }],
+    [0.95, { armR: { fwd: -1.0, right: -1.2 }, armL: { fwd: 1.0, right: -1.2 }, foreR: { right: -0.7 }, foreL: { right: -0.7 }, head: { right: -0.4 }, chest: { right: -0.18 }, hipY: -0.03 }],
+    [1.3, {}]], false));
+  clips.push(build('hurt', 0.5, [
+    [0, {}],
+    [0.12, { chest: { right: 0.28 }, waist: { right: 0.10 }, head: { right: 0.35 }, armR: { right: -0.5 }, armL: { right: -0.5 }, hipY: -0.03 }],
+    [0.5, {}]], false));
+  clips.push(build('block', 0.5, [
+    [0, {}],
+    [0.15, { armR: { right: -1.5, fwd: 0.45 }, foreR: { right: -1.4 }, armL: { right: -1.5, fwd: -0.45 }, foreL: { right: -1.4 }, head: { right: 0.1 }, chest: { right: 0.06 }, hipY: -0.04 }],
+    [0.5, { armR: { right: -1.5, fwd: 0.45 }, foreR: { right: -1.4 }, armL: { right: -1.5, fwd: -0.45 }, foreL: { right: -1.4 }, head: { right: 0.1 }, chest: { right: 0.06 }, hipY: -0.04 }]], false));
+  // the right-hand swipe: cocked out and back, through across the body, and past
+  clips.push(build('nSwipe', 1.0, [
+    [0, {}],
+    [0.40, { armR: { fwd: -1.25, right: -0.35 }, foreR: { right: -0.6 }, clavR: { fwd: -0.15 }, waist: { up: -0.32 }, chest: { up: -0.28 }, head: { up: 0.22 }, thighR: { right: -0.10 }, hipY: -0.02 }],
+    [0.56, { armR: { fwd: -0.15, right: -1.55 }, foreR: { right: -0.35 }, waist: { up: 0.30 }, chest: { up: 0.34 }, head: { up: -0.12 }, thighL: { right: -0.18 }, calfR: { right: 0.2 }, hipY: -0.05 }],
+    [0.70, { armR: { fwd: 0.35, right: -1.2 }, foreR: { right: -0.5 }, waist: { up: 0.40 }, chest: { up: 0.42 }, head: { up: -0.2 }, thighL: { right: -0.15 }, hipY: -0.04 }],
+    [1.0, {}]], false));
+  clips.push(build('nSwipeL', 1.0, [
+    [0, {}],
+    [0.40, { armL: { fwd: 1.25, right: -0.35 }, foreL: { right: -0.6 }, clavL: { fwd: 0.15 }, waist: { up: 0.32 }, chest: { up: 0.28 }, head: { up: -0.22 }, thighL: { right: -0.10 }, hipY: -0.02 }],
+    [0.56, { armL: { fwd: 0.15, right: -1.55 }, foreL: { right: -0.35 }, waist: { up: -0.30 }, chest: { up: -0.34 }, head: { up: 0.12 }, thighR: { right: -0.18 }, calfL: { right: 0.2 }, hipY: -0.05 }],
+    [0.70, { armL: { fwd: -0.35, right: -1.2 }, foreL: { right: -0.5 }, waist: { up: -0.40 }, chest: { up: -0.42 }, head: { up: 0.2 }, thighR: { right: -0.15 }, hipY: -0.04 }],
+    [1.0, {}]], false));
+  // both hands over the head, a hang, and down with the whole body behind it
+  clips.push(build('nHeavy', 1.3, [
+    [0, {}],
+    [0.55, { armR: { right: -2.5 }, armL: { right: -2.5 }, foreR: { right: -0.3 }, foreL: { right: -0.3 }, chest: { right: -0.2 }, waist: { right: -0.1 }, head: { right: -0.25 }, hipY: 0.02 }],
+    [0.72, { armR: { right: -2.6 }, armL: { right: -2.6 }, foreR: { right: -0.35 }, foreL: { right: -0.35 }, chest: { right: -0.22 }, waist: { right: -0.12 }, head: { right: -0.28 }, hipY: 0.02 }],
+    [0.806, { armR: { right: -0.6 }, armL: { right: -0.6 }, foreR: { right: -0.4 }, foreL: { right: -0.4 }, chest: { right: 0.45 }, waist: { right: 0.35 }, head: { right: 0.15 }, thighL: { right: 0.35 }, thighR: { right: 0.35 }, calfL: { right: 0.55 }, calfR: { right: 0.55 }, hipY: -0.18 }],
+    [0.95, { armR: { right: -0.5 }, armL: { right: -0.5 }, foreR: { right: -0.4 }, foreL: { right: -0.4 }, chest: { right: 0.40 }, waist: { right: 0.30 }, head: { right: 0.12 }, thighL: { right: 0.30 }, thighR: { right: 0.30 }, calfL: { right: 0.5 }, calfR: { right: 0.5 }, hipY: -0.15 }],
+    [1.3, {}]], false));
+  // the leap: a crouch, the ground left, a metre and a half of air with the
+  // knees tucked and the arms over the head, and both fists into the floor
+  clips.push(build('nLeap', 1.83, [
+    [0, {}],
+    [0.30, { thighL: { right: -0.65 }, thighR: { right: -0.65 }, calfL: { right: 1.05 }, calfR: { right: 1.05 }, chest: { right: 0.32 }, waist: { right: 0.12 }, armR: { right: 0.55 }, armL: { right: 0.55 }, foreR: { right: -0.2 }, foreL: { right: -0.2 }, head: { right: -0.1 }, hipY: -0.34 }],
+    [0.50, { thighL: { right: -0.15 }, thighR: { right: -0.15 }, calfL: { right: 0.15 }, calfR: { right: 0.15 }, chest: { right: 0.05 }, armR: { right: -0.9 }, armL: { right: -0.9 }, head: { right: -0.2 }, hipY: 0.0 }],
+    [0.78, { thighL: { right: -1.0 }, thighR: { right: -1.0 }, calfL: { right: 1.35 }, calfR: { right: 1.35 }, chest: { right: -0.18 }, waist: { right: -0.05 }, armR: { right: -2.7 }, armL: { right: -2.7 }, foreR: { right: -0.4 }, foreL: { right: -0.4 }, head: { right: -0.35 }, hipY: 1.55 }],
+    [0.94, { thighL: { right: -0.7 }, thighR: { right: -0.7 }, calfL: { right: 1.0 }, calfR: { right: 1.0 }, chest: { right: 0.15 }, armR: { right: -2.3 }, armL: { right: -2.3 }, foreR: { right: -0.35 }, foreL: { right: -0.35 }, hipY: 0.95 }],
+    [1.05, { thighL: { right: -0.85 }, thighR: { right: -0.85 }, calfL: { right: 1.35 }, calfR: { right: 1.35 }, chest: { right: 0.55 }, waist: { right: 0.35 }, armR: { right: -0.45 }, armL: { right: -0.45 }, foreR: { right: -0.35 }, foreL: { right: -0.35 }, head: { right: 0.25 }, hipY: -0.42 }],
+    [1.25, { thighL: { right: -0.75 }, thighR: { right: -0.75 }, calfL: { right: 1.2 }, calfR: { right: 1.2 }, chest: { right: 0.45 }, waist: { right: 0.30 }, armR: { right: -0.3 }, armL: { right: -0.3 }, foreR: { right: -0.3 }, foreL: { right: -0.3 }, head: { right: 0.15 }, hipY: -0.36 }],
+    [1.83, {}]], false));
+  // the spin: wound back, then the whole trunk through a full turn with both
+  // arms out — it ends where it began, because two pi is where it began
+  clips.push(build('nSpin', 1.2, [
+    [0, {}],
+    [0.22, { waist: { up: -0.75 }, chest: { up: -0.5 }, armR: { fwd: -1.3, right: -0.5 }, armL: { fwd: 1.3, right: -0.5 }, foreR: { right: -0.3 }, foreL: { right: -0.3 }, head: { up: 0.5 }, hipY: -0.06 }],
+    [0.55, { waist: { up: 2.2 }, chest: { up: 1.5 }, armR: { fwd: -1.3, right: -0.5 }, armL: { fwd: 1.3, right: -0.5 }, foreR: { right: -0.3 }, foreL: { right: -0.3 }, head: { up: -0.6 }, thighL: { right: -0.2 }, hipY: -0.08 }],
+    [0.85, { waist: { up: 5.3 }, chest: { up: 1.0 }, armR: { fwd: -1.3, right: -0.5 }, armL: { fwd: 1.3, right: -0.5 }, foreR: { right: -0.3 }, foreL: { right: -0.3 }, head: { up: -0.3 }, hipY: -0.04 }],
+    [1.0, { waist: { up: 6.2832 }, armR: { fwd: -0.5, right: -0.2 }, armL: { fwd: 0.5, right: -0.2 }, hipY: -0.02 }],
+    [1.2, { waist: { up: 6.2832 } }]], false));
+  // the lunge: coiled back, then both hands driven at you off a long step
+  clips.push(build('nLunge', 0.95, [
+    [0, {}],
+    [0.32, { chest: { right: -0.12 }, armR: { right: 0.3 }, armL: { right: 0.3 }, thighR: { right: 0.2 }, calfR: { right: 0.4 }, hipY: -0.05 }],
+    [0.551, { armR: { right: -1.55 }, armL: { right: -1.55 }, foreR: { right: -0.2 }, foreL: { right: -0.2 }, chest: { right: 0.3 }, waist: { right: 0.15 }, head: { right: -0.1 }, thighL: { right: -0.5 }, calfL: { right: 0.1 }, thighR: { right: 0.3 }, calfR: { right: 0.6 }, hipY: -0.10 }],
+    [0.72, { armR: { right: -1.3 }, armL: { right: -1.3 }, foreR: { right: -0.3 }, foreL: { right: -0.3 }, chest: { right: 0.25 }, waist: { right: 0.12 }, thighL: { right: -0.4 }, thighR: { right: 0.25 }, calfR: { right: 0.5 }, hipY: -0.08 }],
+    [0.95, {}]], false));
+  return clips;
+}
+
 /* He is put on the sand facing the WRECK, not facing you — he is looking at
  * the same thing you are, which is the only reason he is standing there. */
 function placeNtar() {
@@ -25704,6 +26786,31 @@ function placeNtar() {
   ntarWorld.position.set(NTAR_X, 0, NTAR_Z);
   ntarWorld.rotation.y = Math.atan2(CRASH_X - NTAR_X, CRASH_Z - NTAR_Z) + NTAR_FACE;
   ntarWorld.visible = true;
+  /* AND THE THING HE TURNS INTO STANDS IN HIS SHOES, HIDDEN. The blade's
+   * creature test does not ask whether a creature is visible, so a blow
+   * aimed at the man finds this — `provoke` then swaps them. Built here,
+   * not at boot: he is the last thing in the game and seven megabytes. */
+  if (!ntarUnit) {
+    ntarUnit = makeMutant(NTAR_X, NTAR_Z, 'ntar', 0);
+    ntarUnit.g.visible = false;
+    ntarUnit.g.rotation.y = ntarWorld.rotation.y;
+  }
+}
+/* THE BLOW THAT WAKES HIM. The witness goes, the creature stands where he
+ * stood facing you, and it opens with the roar every fight here opens with —
+ * the beat that says what the rest of this will be. */
+function ntarProvoke(u) {
+  if (ntarFight) return;
+  ntarFight = true;
+  if (ntarWorld) ntarWorld.visible = false;
+  u.g.position.set(ntarWorld ? ntarWorld.position.x : NTAR_X, 0, ntarWorld ? ntarWorld.position.z : NTAR_Z);
+  u.g.rotation.y = Math.atan2(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
+  u.g.visible = true;
+  u.st.awake = true; u.st.roar = 1.3; u.st.roarClip = 'roar'; u.st.cool = 0.25; u.st.step = 0;
+  const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
+  sfxScpScream(d, u.kind.voice);           // three shrieks a beat apart: it is getting worse, not louder
+  addTrauma(0.45);
+  setPrompt('');
 }
 /* WHICH WAY THE MODEL'S OWN FRONT POINTS, settled by rendering it and looking
  * rather than by reasoning about the export chain — this file has got that
@@ -25744,6 +26851,7 @@ function updateNtar(dt) {
   if (!ntarMixer || !ntarPlaced || !ntarWorld.visible) return;
   const B = ntarBones;
   if (!B || !B.head) return;
+  ntarWatch(dt);
   /* AND A PAUSED ACTION STAMPS THE POSE ONCE AND THEN STOPS STAMPING IT.
    * `PropertyMixer.apply` compares what it has just accumulated against what
    * it wrote last time and only touches the scene graph when the two differ —
@@ -25760,10 +26868,11 @@ function updateNtar(dt) {
     ntarWorld.updateMatrixWorld(true);
     const up = new THREE.Vector3(0, 1, 0);
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(ntarWorld.quaternion);
+    const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(ntarWorld.quaternion);
     ntarBase = {}; ntarAxes = {};
     for (const q in B) {
       ntarBase[q] = B[q].quaternion.clone();
-      ntarAxes[q] = { up: ntarLocalAxis(B[q], up), right: ntarLocalAxis(B[q], right) };
+      ntarAxes[q] = { up: ntarLocalAxis(B[q], up), right: ntarLocalAxis(B[q], right), fwd: ntarLocalAxis(B[q], fwd) };
     }
   }
   for (const q in B) B[q].quaternion.copy(ntarBase[q]);
@@ -25790,6 +26899,98 @@ function updateNtar(dt) {
   turn('neck', 'right', NTAR_CHIN * 0.55);
   turn('head', 'up', shake * 0.26);
   turn('head', 'right', NTAR_CHIN + br * 0.012);   // chin up: he is looking at a wreck
+  /* HIS ARMS HANG. The stance frame of the TempMotion holds the right arm
+   * out a third of a right angle with the hand turned away and the elbow
+   * back, and the left a little less — a man about to wave, which is what
+   * the clip is. Measured on the hands: right at (-0.54, 0.76) off a
+   * shoulder at -0.14, left at 0.31 off 0.15. These bring both elbows in
+   * under the shoulders and the hands under the elbows: right (-0.28, 0.65),
+   * left (0.18, 0.59). Turns about the BODY's forward and right, expressed
+   * per bone, the same way the shake is. */
+  turn('armR', 'fwd', 0.33); turn('armR', 'right', -0.28);
+  turn('foreR', 'fwd', 0.30); turn('foreR', 'right', -0.12);
+  turn('armL', 'fwd', -0.14); turn('foreL', 'fwd', -0.08);
+  /* AND THEN HIS KNEES GO. The calves fold back through a right angle
+   * (measured: +1.5 about the body's right puts the feet at knee height
+   * 0.42 m behind the knees) and the whole of him drops the length of a
+   * calf, so the knees arrive on the sand and the feet lie flat behind.
+   * He folds forward over it — waist, chest, neck, head each a little more
+   * — and the hands come forward onto the thighs. Eased, with the drop
+   * running ahead of the fold so it reads as legs giving rather than a man
+   * sitting down carefully; a small tremble stays on afterwards. */
+  const K = ntarSt.kneel;
+  if (K > 0) {
+    const kk = K * K * (3 - 2 * K);
+    const tr = (1 - kk) * 0 + kk * Math.sin(t * 9.3) * 0.012;       // the shake in the legs
+    turn('calfL', 'right', 1.52 * kk); turn('calfR', 'right', 1.52 * kk);
+    turn('thighL', 'right', 0.06 * kk); turn('thighR', 'right', 0.06 * kk);
+    turn('waist', 'right', 0.16 * kk + tr);
+    turn('chest', 'right', 0.20 * kk + tr);
+    turn('neck', 'right', 0.18 * kk);
+    turn('head', 'right', 0.30 * kk);
+    turn('foreL', 'right', -0.55 * kk); turn('foreR', 'right', -0.55 * kk);
+    turn('armL', 'right', -0.18 * kk); turn('armR', 'right', -0.18 * kk);
+  }
+  if (ntarModel) ntarModel.position.y = ntarFootY - NTAR_KNEEL_DROP * (K * K * (3 - 2 * K));
+}
+
+/* Has the player looked at him yet — and if so, how far down is he. The
+ * look test is the SCP's: the middle of the screen on his chest, inside
+ * `NTAR_SEE`, while the player has their hands (the take that puts him on
+ * the sand ends with the camera on the crash, and a thing you were made to
+ * look at is not a thing you spotted). He meets your eye for a beat, and
+ * then he goes. */
+const _ntV = new THREE.Vector3(), _ntF = new THREE.Vector3();
+function ntarWatch(dt) {
+  if (ntarSt.spotted) {
+    ntarSt.spotT += dt;
+    if (ntarSt.riseT >= 0) {
+      // the rise: a long smoothstep out of the kneel
+      ntarSt.riseT = Math.min(1, ntarSt.riseT + dt / NTAR_RISE);
+      const r = ntarSt.riseT;
+      ntarSt.kneel = 1 - r * r * (3 - 2 * r);
+      return;
+    }
+    const want = ntarSt.spotT > 0.55 ? 1 : 0;
+    ntarSt.kneel = Math.min(1, Math.max(0, ntarSt.kneel + (want - ntarSt.kneel) * Math.min(1, dt * 2.1)));
+    if (want && ntarSt.kneel > 0.985) { ntarSt.kneel = 1; ntarSt.down = (ntarSt.down || 0) + dt; }
+    if (ntarSt.kneel >= 1 && ntarSt.down > NTAR_HOLD) ntarSt.riseT = 0;
+    return;
+  }
+  if (frozen() || !ntarWorld) return;
+  _ntV.copy(ntarWorld.position); _ntV.y += NTAR_H * 0.6; _ntV.sub(camera.position);
+  const d = _ntV.length();
+  if (d > NTAR_SEE) return;
+  camera.getWorldDirection(_ntF);
+  if (_ntV.divideScalar(d).dot(_ntF) > Math.cos(0.20)) ntarSpotted();
+}
+function ntarSpotted() {
+  if (ntarSt.spotted) return;
+  ntarSt.spotted = true; ntarSt.spotT = 0;
+  sfxNtarDrop();
+}
+/* The breath going out of him, and the sand taking his knees a beat later:
+ * low, short, and nothing above a whisper — the shell's rule. */
+function sfxNtarDrop() {
+  if (!audioCtx) return;
+  const ctx = audioCtx, t0 = ctx.currentTime;
+  const out = _dronePan ? (_dronePan(ntarWorld.position) || sfxOut()) : sfxOut();
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.16, t0 + 0.12);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9);
+  g.connect(out);
+  const n = noiseBurst(0.9, (x) => Math.pow(1 - x, 1.6));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 420; bp.Q.value = 0.8;
+  n.connect(bp).connect(g); n.start(t0); n.stop(t0 + 0.9);
+  // the knees, on the sand, when they arrive
+  const t1 = t0 + 0.95;
+  const g2 = ctx.createGain(); g2.gain.setValueAtTime(0.0001, t1);
+  g2.gain.exponentialRampToValueAtTime(0.22, t1 + 0.02);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t1 + 0.34);
+  g2.connect(out);
+  const n2 = noiseBurst(0.34, (x) => Math.pow(1 - x, 2.4));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 260;
+  n2.connect(lp).connect(g2); n2.start(t1); n2.stop(t1 + 0.34);
 }
 
 function updateShrineFight(dt) {
@@ -26631,6 +27832,12 @@ window.__bw = {
   get insideTower() { return insideTower; },
   rockColliders, rockGroundAt, pushOutOfRocks, rockGroup, headroomClear, solidDepth,
   parryCrab, blockCrab, breakCastle, get blocking() { return blocking; }, set blocking(v) { blocking = v; blockStart = performance.now(); },
+  /* accessors only work in THIS literal: `Object.assign` copies a getter's
+   * VALUE, so a setter added down there sets a dead property on the harness */
+  get abductDone() { return abductDone; }, set abductDone(v) { abductDone = v; },
+  get fenceOpen() { return fenceOpen; }, get fenceSwing() { return fenceSwing; }, fenceGroup, FENCE_Z, FENCE_GATE_X, FENCE_GATE_W,
+  drinkWater, get waterSips() { return waterSips; }, set waterSips(v) { waterSips = v; }, get drinking() { return drinking; }, get drinkT() { return drinkT; },
+  get hp() { return hp; }, set hp(v) { hp = v; },
   get parryCool() { return parryCool; }, get blockStart() { return blockStart; },
   onPier, deckHeightAt, fisherman, FISHERMAN_SCRIPT,
   get crouching() { return crouching; }, set crouching(v) { crouching = v; },
@@ -26720,6 +27927,9 @@ Object.assign(window.__bw, {
   drones, bolts: () => droneBolts, frozen: () => frozen(),
   hurtDrone, startShrineWave,
   bossUnit: () => shrineBoss,
+  guards: () => shrineGuards,
+  loadNtar, placeNtar, ntar: () => ntarWorld, ntarBones: () => ntarBones, ntarSt: () => ntarSt,
+  ntarSpot: () => { ntarSpotted(); },
   ufoGroup: () => ufoWorld, ufoBeamObj: () => ufoBeam, orbObj: () => shrineOrb,
   shrineMix: () => shrineMix,
   crash: () => ({ crashing, t: crashT, done: crashDone, cue: Object.assign({}, crashCue),
