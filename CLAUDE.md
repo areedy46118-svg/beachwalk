@@ -1905,8 +1905,14 @@ your hands. Every number in the fight reads off `u.kind`, so the copy is
 the whole mechanism. Sixteen health, and the charge takes two.
 
 **THE FENCE.** `FENCE_*`, built right after the SCP (it asks `headlandAt`
-for every post, and `headlandAt` reads `pathBend`): fourteen-metre posts on
-a 3.6 m pitch from 26 m either side of the tower, rails and chain-link
+for every post, and `headlandAt` reads `pathBend`). It stood nine metres
+from the door on the headland for one build and opened when the SCP died;
+the owner wants it ON THE BEACH and SHUT: it stands 92 m from the door,
+where the ridge has finished coming down, across the whole beach from the
+sea to the cliff, the gate centred on the sand, and nothing opens it —
+`openFenceGate` is kept and nothing calls it. The tower and the thing on
+its lane are seen through the bars. Fourteen-metre posts on
+a 3.6 m pitch, rails and chain-link
 between them, arms leaning out at the walk with three barbed strands
 (barbs an InstancedMesh, two crossed boxes each), a razor coil along the
 top and a meaner one along the foot (a `Curve` subclass whose axis runs
@@ -1918,16 +1924,577 @@ third for the gate, `mat: 'metal'`, `top` thirty metres over the crest so
 nothing steps onto it. **The wire is live**: inside 0.75 m of the line
 (`updateFence`) it takes a point, cracks, flashes, and knocks you off it,
 every two seconds — so backing into it during the fight is a thing you do
-once. **And the gate opens itself** 2.4 s after the SCP dies: the gate box
-leaves `rockColliders`, the chain falls, the leaves swing in over 2.6 s and
-the lamps go green — a locked gate you can never open is the game ending
-two hundred metres short of the light. The `Locked` label is a `bare`
-interactable on a hit proxy across the lock. **Chain-link needs THICK
+once. The `Locked` label is a `bare` interactable on a hit proxy across the
+lock. (The gate does not open, by the owner's word: the walk's last
+hundred metres are a thing you look at through it.) **Chain-link needs THICK
 wire**: at five pixels of sixty-four on a 0.45 m cell the strand was four
 centimetres, under a pixel at the retro scale from anywhere you can stand,
 and the panels rendered as nothing between the posts. Eleven pixels on a
 0.6 m cell, linear mips and a low alpha test, so it hazes out rather than
 vanishing.
+
+**THE HALL WAS DRAWING THE BEACH THROUGH ITS OWN WALLS.** "It lags in the
+ufo before pressing the light" was 440k triangles a frame in a room of 96k:
+the camera's far plane is five kilometres and the hall is three away, so
+everything on the beach that is not in `farProps` sat inside the frustum —
+the crabs and every other skinned mesh (`frustumCulled = false`, because a
+skinned bounding box is the bind pose), the ocean plane (115k triangles,
+left on the beach because the recentring does not run in the hall), the
+horseshoe crabs, the wreck, the captain's head, the tower's lantern — and
+was rasterised behind the colonnade every frame. `cullWorldInHall`: while
+`inShrine`, every top-level scene child further than a kilometre and a half
+from the camera is switched off and remembered, restored on the first
+beach frame; the instanced pools and the lights are left alone. It is
+called from `updateShrineFight`, because `update()` returns before
+`updateFarProps` in the hall. The crabs write their own `visible` every
+frame off the tide, so they carry a distance gate of their own
+(`nearEnoughZ`). Measured in the hall: 360k triangles and 1064 draw calls
+became 74k and 24. **And the pane's live loop was not running at all** —
+`bw.lag()` read empty and `hallHid` stayed null until the function was
+called by hand; the per-frame path was checked in the source instead.
+
+**A CHARGE IS A BUTTON HELD, AND A REFUSED WIND RETRIES.** "My weapon gets
+stuck charging a heavy" was two things. `startWind` REFUSES while a swing
+is in the air, and the latch gave up on the first no — so a button held
+through a light cut charged nothing until it was let go and pressed again.
+The latch tries again every 45 ms for as long as `windHeld`. And a
+pointer-up that never arrives (the lock going to a banner, a press ending
+off the canvas) left the haul pose up; the guard learned this first, and
+the wind now reads `e.buttons` bit 1 off every move and is released when
+the button is not there. Measured: a button held through a swing lands a
+full heavy on release; a wind at 0.87 s with no button under it is
+released into a swing on the next move.
+
+**THE BEAST STOPS AT ITS OWN BODY.** The lunge ran while `dist > 1.3`,
+which is a person's width; a four-metre animal drove its origin to within
+a metre and a half of yours and its front half was drawn through you. The
+lunge stops at `kind.body` now, and the blow still lands because the sweep
+is on the head chain out in front. Measured over forty seconds: never
+nearer than 2.56 m, through every swing.
+
+**A TWO-HANDED BLOW AIMS BOTH HANDS.** `aimBar` corrected one chain — the
+nearer claw — which on the red alien's lunge left the aimed arm 5 degrees
+off the line to your chest and the other 43, one arm at you and one at the
+sea. `A.twoHanded` runs the same shoulder turn on both. His tells are a
+fifth longer, every contact pose has the arm straight with the shoulder
+rolled forward, and `barLen` / the reaches grew to match; the three
+reptilians are 1.72 / 2.58 / 2.14 m tall now.
+
+**THE FENCE IS BARE, AND THE SAUCER IS HOW YOU GET PAST IT.** The signs,
+the chain, the padlock and the live wire all came off on the owner's word:
+it is fourteen metres of shut gate and nothing else (`fenceChain` stays
+null, `fenceZap` is never set, the label is `Shut`). And the abduction
+moved from behind the spawn to RIGHT BEFORE IT: `UFO_Z` is `FENCE_Z + 6`,
+`ABDUCT_Z` four metres short of that, and the trigger reads the walk's own
+way round again (`z <= ABDUCT_Z`; the restore's inference flipped with it).
+The beam takes you ten metres short of the wire — never through it — and
+`placeBackOnBeach` hands you back on the FAR side, on the toe of the ridge
+(`groundY` off `headlandAt`), facing back at the ship still hanging over
+the sand beyond the fence. It then falls twenty metres down the walk and
+goes in at `FENCE_Z - 14`: a rim's width past the posts, between you and
+the gate, so the way back is shut twice and the way on is the tower. The
+witness stands off the same numbers and asks `headlandAt` for his feet.
+The hall's assets went to the back of `ASSET_REACH` with it. Measured:
+the take fires at -1098, the ship lies at (7.2, 3.4, -1122), you stand at
+-1140 with 0.47 m of ridge under you.
+
+**AND THE SHARDS WEAR THE HULL.** Forty planks in a grey box material under
+a brown lift did not match the blue-grey saucer they came off — "the
+pieces are brown". `makeCrashKit` clones the ship's own material (map,
+normal, metal-rough) and `shedHull` gives each shard a hand-sized window
+onto the atlas rather than the whole map per face; the glow is
+`SHARD_HOT` in the air and cools to `SHARD_DEAD` at 0.48, which are the
+numbers `placeCrashSite` writes onto the dead hull, so what lies on the
+sand is one wreck. The clone carries `bwDead` so the site's own grade
+leaves it alone.
+
+**THE SCP IS IN FRONT OF THE PAVILION, AND THE HOUSE IS THE TRIGGER.** He
+sat on the lane below the tower; he stands on the dry sand under the round
+room's windows now (`SCP_X` 10.6, `SCP_Z` MUSH_Z - 15), facing the house,
+in the standing `idle` with the neck and head turned back about the body's
+right (`scpLookUp`, composed AFTER the mixer's stamp, which is why
+`updateScp` runs after `updateMutant`). Three phases (`scpPhase`): HIDDEN
+— `visible` false and NOT in `farProps`, because a far-prop entry writes
+`visible` every frame; REVEALED the frame `mushWhere` leaves 'out', so
+from the glass you look down and he is looking up; AWAKE when you come
+out of the gate — `mushInYard` true, then false, read only while
+`mushWhere` is 'out' so the climb cannot count as leaving. The look cone
+and the hearing are off until then (`scpLookedAt` returns false below
+phase 2). And a trigger that can be missed is a boss that looks broken:
+walk straight past the house and he is revealed and awake thirty metres
+on. Measured on a clean load: hidden on the approach, visible from the
+stair, asleep in the yard, roaring on the sand outside the gate.
+
+**HE STARES; HE DOES NOT LOOK ABOUT.** The standing idle turns the head,
+and a thing that is meant to be staring up at your window must not. The
+clip is held on its first frame (`kind.sleepStill` → `timeScale` 0 in the
+sleep branch), which means the mixer stamps the pose ONCE and never again
+— so `scpLookUp` captures the chest, the neck and the head the first frame
+the clip is fully in, puts them back on that base at the top of every
+frame, and composes on top: the neck and head back so the face is on the
+glass, and a breath on the chest (fifteen a minute, a degree either way)
+with the neck taking half of it back. The witness's own arrangement.
+Measured: the head's direction moves 0.01 across six seconds.
+
+**AND HE IS QUICK NOW, WITH A CHARGE.** "His animations are way too slow":
+gaits at 1.5x, `windK` 0.80 (every startup and recovery a fifth shorter —
+the shortest tell is 0.26 s against a 0.20 s parry window), `speedK` 1.62,
+`aggr` 3.7, four-deep chains, more feints, and `sRush`: the `rush` clip as
+the beast's own charge, a `minDist` swing that crosses five and a half
+metres through the strike and chains into the swipe, so backing off buys
+a charge and not a breather. Measured: 17 swings and 16 damage in thirty
+seconds on a player standing at reach; from range the charge comes.
+
+**THE GATE HUNG ITS LEAVES THE WRONG WAY, AND THAT WAS "WIDE OPEN".**
+`leaf.position.x = side * leafW / 2` put each leaf OUTWARD from its post,
+over the panel beside it, and the gateway itself was empty: two frames
+either side of a hole with the tower in it. `-side`, so they meet in the
+middle — and they are steel PLATE now with ribs and bars over it, because
+chain-link on a leaf is drawn faint by design and a gate you can see
+through does not read as shut.
+
+**AND THE SAUCER COMES DOWN THROUGH THE GATE.** `CRASH_X` is the gate's
+own x and `CRASH_Z` three metres past the fence line, so the fence runs
+through the middle of the disc. `smashFence` (from `placeCrashSite`, so a
+restore gets the same wreck) takes everything within `FENCE_SMASH_R` of
+the gate: the posts, rails, arms, wires and barbs are instances and are
+scaled to nothing, the panels and coils and beam and lamps and leaves are
+hidden — the coils had to become ONE TUBE PER SPAN for that, a tube the
+whole width cannot lose its middle — and when it happens live the posts,
+the beam, the leaves' frames and plates and a few sheets of mesh leave as
+gibs thrown down the walk and out to the sides. A post gib is built along
+X and stood up with `rotation.z`, so it leaves standing and lands flat.
+The gate's collider goes; the hull's spans the beach. `fenceParts` is the
+handle the build block leaves behind for it.
+
+**THE CARD IS BLACK, THE BOTTLE IS ONE DRINK, AND THE FISH TALKS ON THE
+WALL CLOCK.** The intro's two lines came off on the owner's word: 2.6 s of
+black under the heartbeat and the beach fades up (`INTRO_LINES` kept,
+unused). `waterSips` is 1 and the empty is `removeFromInventory`'d as the
+drink ends; and the drink's pitch was NEGATIVE — cap tipped up and away,
+the base at the lips, "backwards" — so `MOUTH_POSE` is +1.95 with a little
+lift, tuned live off `__bw.MOUTH_POSE`. `updateBilly` ran from `updateShip`
+inside `update()`, which returns while a dialogue is open, so the one time
+the fish had lines his mouth was never driven; it runs beside
+`updateBradlyBlink` now.
+
+**SEEN THROUGH THE WINDOW, AND ONLY THAT.** Entering the column revealed
+the SCP for one build and a fallback woke him on anyone who walked past —
+the owner was killed coming back from the checkpoint. `scpInView`: the
+middle of the screen on his spot from the round room's floor (`mushWhere`
+'floor'), inside 45 m and 37 degrees, and there is no other trigger. The
+`scpPhase` getter had to move into the ORIGINAL `__bw` literal, the
+`abductDone` lesson again.
+
+**"SLOW-MO" WAS A SHORT CLIP ON A LONG CLOCK.** His attack clips are 0.42
+to 0.75 s and `mutClipTime` mapped the whole wind-up onto a startup twice
+as long: measured rates 0.31 to 0.55 of real time on every swing. A swing
+marked `real` is played the Dealer's way — the limb drawn back to `cock`
+over the first part of the startup, HELD (that is the tell you block on),
+and the strike from the cock to the contact at `clipRate` in the last part,
+so it still lands on the damage frame; the recovery at no less than real
+speed, holding its last frame. The leap runs its jump at 0.42 so the clip's
+flight matches `LEAP_AIR`. Measured: 12 swings, 22 damage, in thirty
+seconds at reach.
+
+**THE LEAVES ARE MESH AGAIN, BARRED.** Plate hid the lighthouse; the owner
+wants the gate fence like the rest of it and the tower seen through it, so
+chain-link with three ribs and a bar every three quarters of a metre, and
+they meet in the middle (the `-side` fix).
+
+**THE FENCE GOES DOWN AS A WAVE, AND THE CRASH HAS WEIGHT NOW.** Posts
+thrown as gibs from mid-air were "fake": each post under the hull is stood
+back on a pivot at its own foot (`fenceFalling`) and TOPPLED down the walk
+on a delay that runs out from the impact, eased in, with a bounce, and the
+pivot stays as wreckage. Sparks and a wall of dust run the width of the
+line; `sfxFenceSmash` is a saw tear through a band under grit with seven
+inharmonic clanks over the second the wave takes. The impact itself: a
+second white frame, `K.ring` run out across the SAND from under the hull
+(the boom's ring is gated off `crashCue.hit` so the two cannot fight),
+fifty-six shards and forty embers off the rim, a dust curtain twice the
+size and three seconds of it settling, and the hull ROCKS on the sand for
+two seconds (`crashCue.still` parks it exactly on `placeCrashSite`'s pose
+after). `sfxUfoImpact` is the crack, the sub, four crunches through bands,
+six inharmonic plate partials, the sand, a four-second rumble and
+twenty-six pieces of debris landing over three seconds — it was a thump
+with sand on it.
+
+**AND THE STEEL IS DRAWN.** Flat colours on fourteen metres of post read as
+plastic. `grimeTex`: a cold base, speckle, rust running DOWN out of every
+joint, a band of grime toward the foot, scuffs, quantised and nearest-
+filtered like the game's own canvases, and every fence material is lifted
+off its own map. The witness stands ON THE LANE now (`LH_X + pathBend`) so
+he is in line with the door when you look back at the tower, and the
+creature he becomes asks `headlandAt` for his feet every frame in
+`updateNtar` — he walked the ridge at his spawn height before.
+
+**THE FISH SWITCHES ONCE.** Strobing between the two photographs at five
+and a half a second was "moves too much, flashing": while he talks the
+head comes round once and stays, and what moves is the plaque — a small
+bob and a scale wobble at a mouth's rate. One switch in, one out.
+
+**A RAGDOLL PARTICLE MAY NOT OUTRUN A THROWN BODY.** Twelve passes of
+constraints, bend limits and full-strength self-collision can pump a joint
+pinned between the floor and its neighbours, a little more each pass, and
+a corpse at rest was across the beach — "ragdolls sometimes fly around".
+`RAG_VMAX` (14 m/s) caps the displacement a particle carries out of a
+substep, with a NaN guard; nothing here throws a body that fast. Measured:
+a kill's own throw peaks near it and the body sleeps.
+
+**THE FENCE IS TAKEN A PIECE AT A TIME, BY TWO THINGS.** `takePost`,
+`takeSpan`, `takeBeam`, `takeLeaf` are the only takers, and `smashFence`
+is all of them within the footprint. The LEAVES are `physProps` entries —
+the Dealer's table's own door — so the blade (`glassStrike`) and a thrown
+body (`ragSmash`) break them: three blows each, a charge counting two,
+into uprights, rails, bars and sheets of mesh thrown away from whoever hit
+it; both gone and the gate's collider goes. And the HULL takes the fence
+ON THE WAY DOWN (`fenceContact`, every frame of the fall and the settle):
+its underside is a tilted plane, and a post whose top is under it goes
+over now in half a second with sparks at the height it was struck, a span
+loses its rails, mesh and coil at that height, the beam and the leaves the
+same. The disc is tilted, so its low edge arrives first and the fence goes
+down in the order the hull reaches it. Measured: the first post goes at
+t 5.70 of the take, three are down by 5.90, the hull lands at 6.55 (the
+fall was given half a second more so the contact can be watched). Before
+this it clipped through and the wreckage appeared on the landing frame.
+`fenceGate` had to be declared ABOVE the fence build — the build registers
+the leaves at module time.
+
+**THE BEACH ENDS PAST THE MUTANTS, AND THE WAY ON IS UNDER IT.** `ROCK_Z`
+(42 m past `MUT_Z`) is a heap of the first formation's own granite at four
+times the scale — three masses whose colliders overlap the whole width,
+two riding on top, chunks shed down the walk's side, the beach heaped
+against it — built in the same `rocks.glb` callback with the same
+`placeMass`. Thirty metres short of it (`HOLE_Z`) a round hole is cut into
+the talus at the foot of the sand wall (a fourth chained discard on the
+cliff's material; a black BackSide box WHOLLY behind the face, because
+half a metre of it proud of the wall drew as black slabs), with a
+`hitProxy` and "Crawl in". Through it is THE UNDERCROFT.
+
+**THE UNDERCROFT IS TWO SCANS WITH THE WALK PACKED INSIDE THEM.** Valsev's
+"Cave 5.0" and Aurélien Martel's "Old church modeling" (both CC-BY-4.0)
+through `tools/undercroft_pack.py`, pure Python: every node baked to world
+space, decimated PER NODE with the uv carried on the cluster's first
+vertex (the cave is 46 chunks of one surface and is merged before it is
+clustered — a chunk decimated alone is specks), spec-gloss to
+metal-rough, textures to 1024, and `bw_walk` on the root: a 0.2 m grid of
+floor, roof (`ceil`), and a solid flag, with a `floor0` computed without
+the pews. `models/undercroft.js` loads both, TRANSLATES THE CHURCH so its
+door (a box the packer wrote) sits at the cave's last floor cell, bridges
+the half metre between, cuts the end wall over the doorway in its own
+shader, hides the void round the join and the entrance behind black
+shells, grimes every material (dust by the world normal's y, grained;
+desaturated; multiplied down; a COLD lift off its own map), and drifts
+motes. The game (`UC_*`) places it at (3000, 400, 2400) — POSITIVE z on
+purpose: every trigger on the walk is "z less than a line", and at
+z = -2000 the saucer took you the frame you crawled in — hides the sky,
+closes the fog, culls the beach (the hall's cull), stands the beach's
+clamps down, and turns up three point lights that live in the scene from
+boot. The way out is behind the altar, onto the sand past the rock.
+
+**WHAT THE WALK COST, in the order it was found:**
+- **A 40 m floor plane sampled 48 ways leaves most cells floorless.** The
+  first sampler capped subdivisions; the church's door cell read the roof.
+- **THE OUTSIDE OF THE ROOF IS NOT A FLOOR.** It faces up and has sky over
+  it, and wherever the tunnel under it was too low the grid took it for
+  the floor, two metres up. Normals cannot settle it — half the cave's
+  chunks wind the wrong way — so a floor is decided by ORDER: a
+  near-horizontal surface with something over it, far enough up to stand.
+- **The cave is a squeeze.** Head-room 1.25, body band 0.35–1.20 (a mine
+  frame's crossbeam is 1.65 m up), and the game DUCKS the camera under
+  `ceil` as the last word before the camera is written — the standing
+  snap runs after every clamp, so a clamp before it does nothing.
+- **THE FEET ARE ON THE FLOOR, NOT UNDER THE HEAD.** With the eye pressed
+  to a low roof, `camBaseY - eye` is under the floor you stand on, so a
+  rubble slope read as a wall and the walk pushed you back off it for
+  ever. `feet` is the grid's floor under the disc.
+- **A pew's seat is 0.45 up and a cave floor is rubble**: the step height
+  is per grid (`stepMax` 0.62 cave, 0.40 church).
+- **The spots come from the LOW floor of a column**, and a bulb's box is
+  measured after `updateMatrixWorld` (the church had just been moved).
+- **The section must sit ABOVE `animate()`**, which is kicked
+  synchronously at module time and read `ucWarmed` before it existed —
+  and above the harness block, which named `UC` the same way.
+Measured: the entry to the nave, 6.8 s of stepped walk, no stall; a BFS
+over the cave's grid reaches 591 cells and the mouth in 85.
+
+**THE PEWS ARE FORTY BENCHES, AND EVERY ONE BREAKS.** The scan's pews are
+one mesh in three primitives; the packer welds, floods islands, groups
+them by footprint (40) and writes each as `bench_N` with its box. The
+module centres each on itself (the tripod's lesson) and gives it a
+`hitProxy` box — a pew is a plank, a back and two ends with AIR between,
+and the blade's ray through the middle found the air: four swings,
+nothing. Each is a `physProps` entry with `onImpact`, the table's own
+door; `breakBench` cuts the mesh by its triangles into half-metre cells,
+every chunk centred on itself in the bench's own wood, thrown the way the
+blow came, and `clearBench` puts the cells back to `floor0`. Measured:
+one swing, fourteen pieces.
+
+**SOMEBODY ELSE'S MOTION CAPTURE, ON A RIG IT WAS NOT MADE FOR.** Three
+Mixamo clips — a capoeira compass kick, a side handspring, and the one
+where a man is knocked onto his back — go onto the red alien, who is a
+Character Creator rig with different bone names, a different rest pose and
+a different bone-axis convention. `tools/ntar_moves.py` dumps, per bone per
+frame,
+
+    D = (world rotation this frame) * (world rotation at rest)^-1
+
+the rotation the bone has UNDERGONE — and that is the whole trick, because
+D is convention-free: it knows nothing about Mixamo's naming, nothing about
+which way Blender lays a bone's local Y, and nothing about either file's
+axis convention. `ntarRetarget` applies it to the alien's own bind pose
+(`W = D * A * bind`, then down the hierarchy into local space) and the same
+motion comes out on a different body. Four things it took:
+
+- **THE MAP WAS ALREADY IN THE FILE.** `kind.rag` is written in the mutant's
+  naming (`Character1_Hips`), which is Mixamo's naming with a prefix — so
+  the ragdoll's own table is the retarget's table and there is no second
+  list to keep in step.
+- **A IS NOT T.** D is measured from MIXAMO's rest, which is an A-pose;
+  this rig binds in a T, so applied raw every limb sits forty-five degrees
+  off for the whole clip. Each bone is first turned by the SMALLEST
+  rotation that takes where it points its own child to where Mixamo's rest
+  points — the ragdoll's rule for driving one skeleton from another, and
+  smallest-rotation rather than look-at for the same reason: neither rig
+  runs its bone axes along its bones. The rest HEADS go in the file for it.
+- **THE BIND POSE, NOT THE STANCE.** `authorNtarClips` plays the demo clip
+  at t = 0 and builds everything on that frame — arms at his sides. Using
+  it as the retarget's reference folds his arms-down pose into every frame
+  of somebody else's motion. The bind is captured at the top of the
+  function, before the mixer has ever stamped anything.
+- **AND A MIXAMO CLIP IS A PERFORMANCE, NOT A MOVE.** All three are 250
+  frames and none moves for more than about a hundred: the beast's `Die_1`
+  again. The tail is measured and cut, and so is the HEAD — the uppercut
+  spends its first second ambling into the punch, which he does not do in a
+  fight. Measured off the hips and written down as `WINDOW`.
+
+**AND THE ROOT TURN IS ROOT MOTION TOO.** The game turns a creature toward
+the player every frame, so a clip that also turns the hips fights it. The
+yaw is measured over the window: one that ends where it started keeps its
+spin (a capoeira turn IS the move) and one that does not is de-yawed frame
+by frame. The knockdown is de-yawed whatever it measures, because the reel
+turns him right round and the owner wants him FACING you when it lands —
+`mutKnockdown` sets the heading and the clip no longer argues with it.
+Measured: he faces the player within 7 degrees.
+
+**ONCE A FIGHT, HE GOES ON HIS BACK.** `knockClip` / `knockP` on the kind,
+and it fires only on the blow that BREAKS HIS POISE — already the hardest
+thing to land on him — one time in four, never on the blow that wakes him,
+and never twice. Three beats on one clock (`NTAR_KNOCK`): the fall, a beat
+lying there, and the get-up. While `st.down > 0` he is ahead of the roar,
+the stun and the recoil in `updateMutantUnit`, and `hurtMutant` returns
+early with the damage and the blood and nothing else — every branch below
+it would stand him up on the frame you hit him, which is the one thing a
+knockdown must not do.
+
+**AND A FALL REVERSED IS A GET-UP, EXCEPT FOR THE HIPS.** There is no
+get-up in the file — the source lies still for the rest of its 250 frames —
+so the rise is the same reel run BACKWARDS, which is the right shape and is
+the walk-played-backwards trick one move along. What it also does is un-do
+the punch: measured, his hips came back up to 1.74 m on the way to
+standing, so he got to his feet by flying two metres into the air. The hips
+are clamped to the straight line from where he lies to where he stands and
+what is left is his own tumble at ground level, which reads as a body
+rocking back over its shoulders and onto its feet. Measured after: the
+hips never pass 0.91 against a standing 0.94.
+
+**THE KICK LANDS WITH A LEG, WHICH HE DID NOT HAVE.** `nSweep`'s contact is
+where the clip's own striking toe is moving FASTEST (0.696 — a sweep has no
+extreme of position, the reptilian rake's lesson), and `limbs: [2]` is the
+right leg, which the rig now carries as its one extra chain so the blow
+sweeps the shin and the foot and never a hand. Two thirds of the clip's
+travel is in the wind-up, so the lunge is too. Measured at the contact
+frame over twenty samples: the toe is within 1.2 m of the chest in
+nineteen, median 0.45 — and the one that looked like a miss was sampled
+thirty milliseconds BEFORE contact, mid-travel. **Measure a swing on the
+frame the game deals the damage, not near it.**
+
+**AND THE HANDSPRING IS HIS DODGE.** `dodgeClip` was the reptilians'; he
+takes it now, and his is a macaco — he drops onto his hands and throws
+himself sideways over them. It is long for a dodge (a handspring is), so it
+costs him the swing he would have had, and `dodgeRate` was added because
+his clip is not the reptilians' length. The window was cut twice: the first
+guess ended while he was still INVERTED, which the hips' own curve says
+plainly (his spine's up reaches -0.99 at frame 52 and he is not upright
+again until 80). Measured: three dodges in five seconds of a held charge.
+
+**THE UNDERCROFT WAS LIT BY A MOON THREE THOUSAND METRES AWAY.** "Fix the
+church textures, they look so bad — they should look exactly like the model"
+was three separate faults and not one of them was in the church's maps, all
+three of which were doing exactly what the artist authored:
+
+- **THE NIGHT'S OWN LIGHTS REACH FORTY METRES UNDER A BEACH.** The beach
+  carries an ambient at 0.95, a hemisphere at 0.7 and three directionals, and
+  they are in the scene for ever because a light ENTERING OR LEAVING
+  recompiles every material in the game. So a buried cave and a buried church
+  were both flooded with an even, directionless 1.65 of sky, which is the
+  whole of "washed out": no falloff, no shape, no dark. Intensity is free to
+  move, so they are DUCKED to six per cent at the cut, behind the black, and
+  restored the same way (`SKY_LIGHTS` / `setSkyDuck`). Nothing else in this
+  file touches them, and the recompile is never paid.
+- **HALF THE CHURCH SHIPPED UNLIT.** Most of this scan's materials arrive
+  with `emissiveMap` ALREADY SET TO THE ALBEDO at `emissiveIntensity` 1 —
+  the walls, the arches, the altar, the dais — which means three adds the
+  whole map on top of the lighting and the surface renders as its own
+  texture at full brightness whatever the light is doing. The grime pass
+  only touched a material that had NO emissive map, so it walked straight
+  past every one of them. **If a scan looks flat and bright, read its
+  `emissive` and `emissiveIntensity` before you touch anything else** — this
+  is the Military Shovel's "read its emissive first" on a building.
+- **AND THE GRADE WAS A COLOUR REMOVER.** It mixed 55 % of the way to
+  luminance and then multiplied the lot by 0.56, which is the reptilian's own
+  per-channel remap wearing a different coat: hue gone, contrast gone, one
+  flat brown for stone, timber, gilding and glass alike. Dirt is a MULTIPLY
+  — the same scalar on all three channels leaves colour and relative
+  contrast exactly where the artist put them — so dust settles where a
+  surface faces up, damp blotches it, the level comes down, and that is all.
+  `UC.setLook('cave', { level: 0.6 })` retunes it live, because the only way
+  to settle a look is to look at it.
+
+**AND THE WINDOWS HAD A SKY BEHIND THEM.** The scan hangs a lit backdrop
+behind every window (`vitrail-fond*`) so the glass reads against daylight,
+and forty metres underground that backdrop is six slabs of white burning
+through the sanctuary wall — the blown-out patches round the apse. It is
+dropped to almost nothing with a cold cast: a memory of a sky. The exterior
+walls (`*-ext`), seen through the openings, are in the ground and go dark
+with them.
+
+**AND ONE LAMP IS NOT THREE LAMPS.** Three point lights at 55 apiece: the
+tunnel bulb, which you walk within a metre of, blew eighteen metres of rock
+out to white, while forty metres of nave thirteen metres under its own lamps
+got almost nothing. Five now, each with its own reach and its own dying
+colour — two in the tunnel with a dark stretch between them, two in the
+vault, one over the altar — and none of them brighter than it has to be,
+because what carries the rock and the stone is each map's own emissive lift.
+The pavilion's rule: do it in the map, not with a lamp. Measured as mean
+screen luminance against an open beach's 7.3: tunnel 19.7, the join 19.1,
+the nave 16, the breach seen from the nave 7, the altar 29.
+
+**THE BLACK SCREEN AT THE JOIN WAS A BOX THE PLAYER WAS STANDING INSIDE.**
+The church's front doorway is ALREADY an opening in the scan — 4.1 m wide by
+5.5 tall — so the discard cut into its end wall was doing nothing at all,
+and what hid the void round the ragged tunnel mouth was a BackSide box eight
+metres deep whose far interior face stood a metre and a half INSIDE the
+nave. Walk out of the tunnel and you walked into it: a black wall, and no
+church. The doorway is FILLED instead — one unlit black panel in the plane
+of the wall's outer face with the tunnel's own silhouette discarded out of
+it, a rough arch standing on the floor and a shade wider than the mouth so
+the cave's rock always covers its edge — and it is `FrontSide` with its
+normal toward the nave, so from the tunnel it is not drawn at all and there
+is never anything between you and the church. **A shell that hides a void is
+a wall in some direction: ask which direction the player walks.**
+
+**YOU HIT YOUR HEAD NOW, AND IT STOPS YOU.** The cave squeezes to 1.57 m
+against a 1.88 m body and the first build simply DUCKED the camera under the
+roof, which is the game playing the crouch for you and reads as your eye
+sliding through the rock. Two refusals and no automation: `headroomClear`
+answers false under a low roof, so Ctrl will not stand you up in one; and
+`updateUndercroft` reverts the frame's movement when the cell ahead has less
+headroom than you are tall, with a knock on the timber, a dip and a little
+trauma (`ucHeadBump`, once a second at most, or walking into a beam is a
+drum). It is gated on where you CAME FROM — if the cell behind you was low
+too you may still move — or anyone who found a way to stand under a beam
+would be walled in on every side. The camera duck stays as the backstop for
+exactly that case. Measured with a flood over the cave's grid: crouched, 607
+cells and the mouth reached in 86 steps; standing, 82 cells and the walk
+ends at x = -12.55, a metre and a half in. And walked hands-off with a
+steering harness: the whole tunnel in 435 frames, no stall.
+
+**A HOLE THAT SITS ON THE GROUND IS A DRAIN.** The way in was a circle cut
+into the TALUS with its bottom edge on the beach and a heap of spoil in
+front of it, and the owner's word for it was horrible. It is a hole IN THE
+WALL now — its floor most of a metre clear of the sand, its middle at eye
+height, so you look straight into it from where you stand — and three things
+make it a hole rather than a disc of black: the edge is RAGGED (three sine
+terms on the angle, because sand does not break in a circle); the wall
+darkens into it over the last THIRTY centimetres, which is the shadow a
+recess throws on its own lip and is most of what says depth — at the half
+metre it was first drawn at, the lip read as a blurred smudge on the dune;
+and behind it is nothing at all, pure black, unfogged and unlit, in a box
+wholly behind the face. The spoil heap is gone: it made a found thing into a
+dug one.
+
+**A HOLE IS A PLACE, NOT A PICTURE.** The ragged black disc on the sand
+wall moved with you like a decal, and the owner said so: he wanted the
+drain's outfall, in sand. So it is a BORE now — an open-ended tube of the
+beach's own grain driven three metres into the dune behind the cut, its
+walls knocked out of round in the geometry the way a thing dug by hand is,
+its diffuse AND its emissive taken to black by the second metre in the
+shader (take only the diffuse and the far end glows), and a black box
+across the end so there is no end to see. Walk past it and the inside
+parallaxes; that is the whole difference.
+
+**THE WALL'S MAP IS AN ATLAS, NOT A TILE.** The tunnel had to come out of a
+church WALL, so the doorway's filler wears the end wall's own material —
+and tiled over seven metres that map drew a grid of the scan's baked window
+bays, because a scan's texture is an atlas of every face it covers. The
+panel is ASHLAR instead: half-metre blocks in running bond, each mapped
+onto one of the plain-stone cells of the atlas (found by scanning it for
+64-px blocks of low variance at the wall's tone — u 0.375–0.5, v 0.31–0.63),
+a different cell per block and each turned a random quarter, so it is the
+wall's own stone laid as courses with the joints reading as joints. **A
+scan's texture cannot be tiled; it can be QUARRIED.** `Material.clone`
+drops `onBeforeCompile` and copies `userData`, so the clone's `userData`
+is cleared and the grime put back on it before the breach's discard chains
+after.
+
+**SIXTEEN RAYS IN FIFTEEN HUNDRED HIT NOTHING.** The church scan has holes
+in its vault and its walls, and through them you saw out — forty metres
+under a beach, which is wrong twice. A black BackSide box round both scans
+closes every one (0 of 1500 after). It is drawn FIRST and WITHOUT WRITING
+DEPTH: the hall's shell rendered the whole arena black because it wrote
+depth and sorted late, and this one can only ever show where nothing else
+is drawn. And the windows had a sky behind them — the scan's `vitrail-fond`
+backdrops and its `-ext` outside walls, which lit read as daylight through
+the glass. They are earth now: near-black, a fixed emissive `setLook` may
+not touch.
+
+**A LAMP INSIDE A WALL IS A WALL AT FULL WHITE.** The altar's point light
+stood at distance zero from the end wall and the arches, and every surface
+within two metres of it blew out — the white wall the owner photographed.
+Box-to-point clearance cannot find a spot in a scan whose biggest meshes
+have bounding boxes the size of the building (everything measured zero);
+RAYCAST clearance in twenty-six directions can. It hangs 5.2 m clear of
+everything over the chancel now, and every view measures 0.00 % of pixels
+over 235.
+
+**THE ARCH IS CUT IN THE PANEL'S OWN FRAME.** Two wrong cuts before the
+right one: the first compared world-space fragments against group-space
+numbers three thousand metres apart and never discarded a pixel (what
+looked like an arch was the cave's own mouth poking through the panel);
+the second read `transformed.z`, which is zero on every vertex of a plane,
+so the whole lower band went. Local `x` runs ACROSS a plane. The test that
+found it: turn the cut's half-width to nothing and see whether anything
+changes — it did not.
+
+**A JUMP ONTO A PEW IS A FALL OF A FOOT, AND IT BREAKS THE PEW.**
+`stompBreakables` on any landing from the air (`vy < -1.6`, far under the
+hard landing's -3.5): the nearest `physProps` entry with an `onImpact`
+whose box is under your feet takes a blow scaled by the fall — the same
+door the blade and a thrown body already use, so every breakable in the
+game breaks under you without a third code path. Two traps in testing it:
+`onGround` only ever goes false on a JUMP — a walk off a ledge is never
+airborne here — so the harness has `__bw.airborne`; and the harness
+literal already carried a `camBaseY` setter further down, and A LATER
+DUPLICATE KEY WINS, so a new one added beside `crouching` set nothing for
+two rounds. Measured: a 2.2 m drop, the pew dead on frame 33.
+
+**THE CHURCH ANSWERS EVERYTHING, AND IT IS QUIET.** One convolver hangs off
+the SFX bus from boot (`ucVerbGain`, a parallel send, dry untouched): a
+2.8 s impulse with a 15 ms gap, seven early taps and a tail that DARKENS as
+it goes (a one-pole lowpass closing down — stone eats the top end first).
+0.62 in the nave, 0.16 in the tunnel, 0 on the beach, so a footstep, a
+drip, a pew and a sword all get the room while you are in it and nothing
+outside ever does. The sea and the wind go to 1.5 and 2.5 % and a drip
+lands once in eight seconds, quietly, because the silence between them is
+the thing you hear. **A suspended `AudioContext` never advances
+`setTargetAtTime`** — the harness's send read 0 for three rounds until a
+real click resumed it; and a getter added in the `Object.assign` block is
+a snapshot (the `abductDone` lesson, fourth time). The church's floor is
+RECORDED: eleven footfalls cut from a walk down a stone corridor
+(freesound_community, via Pixabay; 99 % of the energy below a kilohertz),
+normalised, faded, one at random per step (`churchStep`), with the sand
+step kept for the tunnel's rubble.
 
 **AND SOMEBODY ELSE SAW IT.** A twenty-six metre saucer comes down on the sand
 and until now the only witness was you. He is standing BEHIND you when the

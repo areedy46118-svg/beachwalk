@@ -500,6 +500,22 @@ castle, crab, `startDig`, `toggleEquip`, `openMenu`, `openInspect`, `showEnd`,
 
 ## Credits
 
+Three of the red alien's moves — the compass kick, the side handspring and
+the knockdown — are Mixamo animations (Adobe), retargeted onto his rig by
+- `assets/church-step*.m4a` — eleven footfalls cut from "Steps in corridor" by freesound_community (via Pixabay, Pixabay Content License), normalised and faded.
+`tools/ntar_moves.py` into `assets/ntar-moves.json`.
+
+This work is based on ["Cave 5.0"](https://sketchfab.com/3d-models/cave-50-7c4df6d7354b4ed39b50db47d66f96f8)
+by [Valsev](https://sketchfab.com/Valsev) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the tunnel under the sand
+wall past the mutants (`assets/cave.glb`, decimated and packed with its walk by
+`tools/undercroft_pack.py`).
+
+This work is based on ["Old church modeling - Interior Scene"](https://sketchfab.com/3d-models/old-church-modeling-interior-scene-eb6cf543aa7d45e3acee49887ae3135c)
+by [Aurélien Martel](https://sketchfab.com/aurelien_martel) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the church at the bottom of
+it (`assets/church.glb`, same packer; its pews come out as forty breakable benches).
+
 This work is based on ["The smile ( Rigged)"](https://sketchfab.com/3d-models/the-smile-rigged-6795ba0b406f4e61993fafebbb94ebd9)
 by [Vertex Mercher](https://sketchfab.com/VertexMercher) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the tall one past the snorkeler.
