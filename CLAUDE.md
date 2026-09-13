@@ -2496,6 +2496,142 @@ RECORDED: eleven footfalls cut from a walk down a stone corridor
 normalised, faded, one at random per step (`churchStep`), with the sand
 step kept for the tunnel's rubble.
 
+**SOL STANDS ON THE ALTAR, IN A RING OF CANDLES.** The owner's own `SOL.fbx`
+— a robed figure in a gold sun mask holding a bleeding heart with eight
+daggers through it — through `tools/sol_pack.py`: 205k faces to 42k, 4096
+maps to 1024 (roughness 512), every METALLIC map dropped, stood on its own
+feet, facing +Z like every factory in `models/`. Four things it cost:
+
+- **`l.to_node is bsdf` IS FALSE IN BLENDER.** Every access to a node socket's
+  `to_node` hands back a fresh Python wrapper round the same node, so
+  identity never holds — the material loop matched nothing, said nothing, and
+  three builds shipped 4096 maps in a 35.8 MB GLB. Compare NAMES; they are
+  unique inside one node tree.
+- **THE FBX IMPORTER LOADS PIXELS LAZILY** (`head_pack.py`'s lesson again):
+  `image.size` comes off the header long before there is a buffer, so
+  `image.scale()` + `save()` dies with "does not have any image data". The
+  resize is done on DISK with `sips` — it ships with macOS, needs nothing
+  installed — and the datablock is pointed at the small file, because the
+  exporter reads `filepath` and not the buffer you just scaled.
+- **THE ROBE'S TEXTURES POINT AT A FOLDER THAT DOES NOT EXIST** (`.../tex/robe
+  lp _robe_BaseColor.jpg` against a delivered `textures/robe_lp__robe_…`), so
+  every missing image is re-found by its name with the spaces and underscores
+  taken out. The heart's roughness map was never sent; it goes without one.
+- **AND METALNESS IS A TRAP, for the fourth time.** Three quarters of this
+  asset is metal by material — the mask, the armour, the daggers — and there
+  is no environment map in this game. Every metallic map is dropped and the
+  factor zeroed; what carries the gold under a candle is the map's own
+  emissive lift, which the room's grime pass gives it through a THIRD `LOOK`
+  (`altar`: almost no dirt and a WARM tint, because nothing else in that
+  building is lit by a flame).
+
+**THE ALTAR IS FOUND, AND A PLATEAU IS NOT A PLATEAU UNTIL IT IS FLOODED.**
+The church's own walk grid already knows where the altar is — the chancel
+floor is a step up from the nave and the altar is a metre over THAT — so
+nothing here is a coordinate typed in. Two wrong versions first, and both
+looked reasonable: averaging every cell over the dais mixed the altar with
+the reredos ledge behind it and stood the idol a hand above its own altar;
+bucketing them by HEIGHT alone gathered every surface in the apse that
+happens to stand a metre up — the altar, the ledge, the tops of the stalls,
+both sides of the sanctuary — into one blob nineteen metres across. They have
+to be FLOOD-FILLED: a plateau is a connected run of cells at one height, and
+the altar is the one that is TABLE-SHAPED (a metre or three both ways, where
+a ledge is one and a half deep by nearly seven wide) and standing on the
+church's own axis. Measured after: (31.44, -0.24, 0.41) against a raycast's
+30.75–32.25 by -0.75–1.5, top -0.21.
+
+**THIRTY CANDLES ARE THREE DRAW CALLS.** The wax is two InstancedMeshes (a
+tapered cylinder scaled per candle, and a puddle of run wax under it) and
+every flame is a point in ONE `Points` batch. The guttering is injected into
+three's own points shader, per flame, off an `aSeed` attribute — a flame that
+breathes on the same count as every other flame is a string of fairy lights.
+Two things: `gl_PointSize` is written by three's own size chunk with the
+RESOLUTION scale in it, so the flicker MULTIPLIES what it wrote (a hand-rolled
+`300.0 / -mvPosition.z` is right at exactly one canvas height and wrong at
+every other); and it is CLAMPED, because a point sprite is a quad that grows
+as 1/z and the nearest flame was a hand-sized orange blob lying on the floor.
+A candle's ground is a LOOKUP too (`floorAt`), not the height of the thing it
+is arranged around: the dais is a step and the ring reaches past its front
+edge, so the ones at the bottom of it stood a third of a metre in the air.
+
+**AND THE CHANCEL IS LIT BY THE CANDLES, NOT BY A LAMP IN THE VAULT.** Forty
+units at thirty metres over the apse lit it evenly and read as a room with the
+light on. The two lamps that are left are a flame's colour, they stand ON the
+altar and at its foot, and they reach three or four metres — so the idol is
+modelled from below by its own offering and everything behind it goes dark.
+The foot one hangs a metre over the ring rather than standing in it: at a
+third of a metre off the dais it burned a hard orange disc into the floor a
+stride in front of the altar with no candle at the middle of it. Measured as
+mean screen luminance against an open beach's 7.3: nave 7.4, altar 11.6 with
+0.04 % of pixels over 235.
+
+**AND NOTHING DOWN THERE BURNS STEADILY.** Two counts that never line up, so
+the guttering has no period you can hear, and on the tunnel's two bulbs a rare
+DROPOUT on top of it. The factor is applied AFTER the lamp's ramp, never to
+it — the ramp is a third of a second long and eats every flicker inside it.
+
+**THE CAVE IS HALF WHAT IT WAS.** `LOOK.cave` level 0.62 → 0.46 and emis 0.20
+→ 0.14, the two tunnel bulbs 1.5 → 1.1 over a 12 m reach instead of 14.
+Measured: tunnel 5.1–6.3 against the open beach's 7.3, where it used to read
+13.5 — darker than the sand you came in off, which is what a hole in the
+ground should be. It was taken to 3.6 first and that is too far: you cannot
+see the timber, and a tunnel you cannot read is annoying rather than
+frightening.
+
+**A HOLE THAT STANDS PROUD OF THE WALL IS A BLACK LUMP.** The bore's mouth was
+at x = 15.4 and the dune's face at that height is at 16.07 — measured by
+raycast across the hole's whole footprint, 15.98 to 16.17 — so two thirds of a
+metre of an open-ended BackSide tube stood in FRONT of the wall, and what a
+BackSide tube shows you from outside is its own far interior wall, which its
+shader takes to black. That is the whole of "the hole looks terrible": not a
+hole, a black polygonal blob pasted on a smooth dune with the end box's
+straight edge showing beside it. This file's own note warned about exactly
+this ("half a metre of it standing proud drew as black slabs") and the bore
+was built in front of it anyway. Three things fix it:
+
+- it starts BEHIND the deepest point of the face (`BORE_X0`), and its mouth is
+  flared wider than the ragged cut so every ray through the hole lands on the
+  inside of the tube;
+- **the first half metre of it is FULLY LIT.** A fade that starts at the mouth
+  means the only thing you can ever see through a hole is deep bore, which is
+  black by construction. The wall you are LOOKING AT when you put your face to
+  it is the near ring of sand a step inside; at `emissiveIntensity` 0.75 it
+  measured black against a black end, and 1.7 is the level at which it reads
+  as the wall's own THICKNESS. Walk up and the inside opens; stand back and it
+  is black, which is what a hole in a dune does;
+- **and the gap round the mouth is closed with a black plate** — a disc with
+  the bore's mouth punched out of it, unlit and unfogged, behind the face, so
+  a look from off to one side cannot see out of the cut and into the night.
+  It has to be SMALL: raycast round the hole and the face holds within 16.20
+  out to a radius of 1.6 and then it is GONE — over about y = 3.2 there is no
+  cliff at all, you are past the crest — so a plate any bigger stands in the
+  open air above the dune as a black rectangle, which is what the first one
+  did. The lip is not the same all the way round either: an OVERHANG throws
+  the deepest shadow just inside the upper edge and a lit SILL stands at the
+  bottom, both narrow, because it is an edge and not a fade.
+
+**A PEW IS TIMBER, AND `updateGibs` BLEEDS ANYTHING THAT DOES NOT SAY
+OTHERWISE.** The flag defaults to on because the system was written for
+severed limbs, so every chunk of a broken bench dripped blood and stained the
+church floor. Glass, crate boards and hull shards have all had to say
+`bleed: false`; so does a bench.
+
+**AND A JUMP INTO A PEW BREAKS THE PEW, LANDED ON OR NOT.** You cannot land on
+one: a bench's seat is 0.45 up against the church's 0.40 step, so the walk
+grid refuses the cell and the push-out bounces you off the side — which meant
+`stompBreakables`, which asks whether your FEET arrived on top of something,
+never fired at a pew whatever you did. While you are in the air down there,
+any breakable your body is beside takes the blow (`loose`): the footprint with
+a hand's slack round it and your own height overlapping its box. It is gated
+on the undercroft on purpose — the bunker's fight is fought between a desk and
+a work table, and a jump beside either of those is not a player breaking it.
+
+**AND THE GLOWSTICK IS A CRACKED LIGHT-STICK, NOT A LAMP.** At 17 over eleven
+metres it washed a room out, which never showed on an open beach and showed
+badly in the tunnel, where the owner was carrying it: the one place in the
+game that is meant to be dark was the one place it was brightest. Eight over
+seven metres.
+
 **AND SOMEBODY ELSE SAW IT.** A twenty-six metre saucer comes down on the sand
 and until now the only witness was you. He is standing BEHIND you when the
 black lifts, watching the same wreck — `assets/ntar.glb`, a Character Creator

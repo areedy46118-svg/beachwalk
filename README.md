@@ -516,6 +516,13 @@ by [Aurélien Martel](https://sketchfab.com/aurelien_martel) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the church at the bottom of
 it (`assets/church.glb`, same packer; its pews come out as forty breakable benches).
 
+`assets/sol.glb` is the owner's own model — SOL, the robed figure in the gold
+sun mask holding a bleeding heart, which stands on the undercroft church's
+altar in a ring of lit candles. Packed by `tools/sol_pack.py` from `SOL.fbx`
+and its texture folder: 205k faces down to 42k, 4096 maps down to 1024
+colour/normal and 512 roughness, and every metallic map dropped (there is no
+environment map in this game).
+
 This work is based on ["The smile ( Rigged)"](https://sketchfab.com/3d-models/the-smile-rigged-6795ba0b406f4e61993fafebbb94ebd9)
 by [Vertex Mercher](https://sketchfab.com/VertexMercher) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the tall one past the snorkeler.

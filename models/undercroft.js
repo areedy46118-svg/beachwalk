@@ -189,14 +189,17 @@ export function makeUndercroft(opts = {}) {
    * all. The cave takes it hard — it is rock in the dark and the owner
    * wants the tunnel much darker — and the church takes barely any. */
   const LOOK = {
-    cave:   { dust: 0.42, damp: 0.34, level: 0.62, emis: 0.20, tint: 0xb9b4a8 },
+    cave:   { dust: 0.52, damp: 0.42, level: 0.46, emis: 0.14, tint: 0xa9a69c },
     church: { dust: 0.16, damp: 0.14, level: 0.92, emis: 0.52, tint: 0xc9c6c0 },
+    /* the idol takes almost no dirt and a WARM lift: it stands in a ring of
+     * candles and nothing else in this building is lit by a flame. */
+    altar:  { dust: 0.08, damp: 0.05, level: 0.98, emis: 0.34, tint: 0xc7a97c },
   };
   S.look = LOOK;
   function grime(mat, kind) {
     if (!mat || mat.userData.bwGrime) return;
     mat.userData.bwGrime = true;
-    mat.userData.bwKind = kind === 'church' ? 'church' : 'cave';
+    mat.userData.bwKind = (kind === 'church' || kind === 'altar') ? kind : 'cave';
     const L = LOOK[kind] || LOOK.cave;
     mat.metalness = 0; mat.roughness = Math.max(0.82, mat.roughness || 1);
     if (mat.map) {
@@ -534,10 +537,223 @@ export function makeUndercroft(opts = {}) {
       group.worldToLocal(c);
       S.spots.lamps.push({ x: c.x, y: c.y, z: c.z, kind: b.material.name === 'ampoule' ? 'church' : 'cave' });
     }
+    // the idol on the altar and the candles round it
+    dressAltar();
     // dust in the air of both rooms
     makeMotes(cw, ch);
     S.ready = true;
     if (opts.onReady) opts.onReady(S);
+  }
+
+  /* ---- THE ALTAR, THE IDOL, AND THE CANDLES ROUND IT.
+   * The owner's own `SOL.fbx` — a robed figure in a gold sun mask holding a
+   * bleeding heart with eight daggers through it — stands on the church's
+   * altar in a ring of lit candles. Three things it takes:
+   *
+   *   THE ALTAR IS FOUND, NOT TYPED. The church's own walk grid already
+   *   knows where it is: the chancel floor is a step up from the nave and
+   *   the altar is a metre over THAT, so it is the one plateau in the
+   *   chancel a body cannot step onto. Measured off the grid (top -0.21
+   *   against a nave at -1.33), which costs nothing and cannot leave the
+   *   idol standing in mid-air the day the scan is repacked.
+   *
+   *   THE CANDLES ARE TWO DRAW CALLS, NOT SIXTY. The wax is one
+   *   InstancedMesh (a tapered cylinder scaled per candle) and every flame
+   *   is a point in ONE `Points` batch, with the guttering injected into
+   *   `PointsMaterial`'s own shader so each flame has its own irregular
+   *   count — the bulbs' trick, on a light small enough to be a texture.
+   *   Nothing here is a lamp: the two real lights the altar gets live in
+   *   the game's own list, because a light entering a scene recompiles
+   *   every material in it.
+   *
+   *   AND HE IS LIT BY A FLAME, WHICH NOTHING ELSE IN HERE IS. The grime
+   *   pass takes a third `LOOK` — almost no dirt and a WARM lift — so the
+   *   gold reads as gold in candlelight rather than as one more cold stone
+   *   surface. */
+  const CANDLES = { flames: null, seedAttr: null, mat: null };
+  function findAltar() {
+    const w = S.church && S.church.walk;
+    if (!w) return null;
+    const ex = S.spots.exit.x;
+    const dais = S.floorAt(ex - 9, w.off.z + 0) ?? (S.spots.exit.y + 0.34);
+    /* AND THE CHANCEL IS NOT TWO PLATEAUX, IT IS A DOZEN. Bucketing the
+     * cells by height alone gathered every surface in the apse that happens
+     * to stand a metre off the dais — the altar, the reredos ledge, the
+     * tops of the stalls, both sides of the sanctuary — into one blob
+     * nineteen metres across, and the idol went up on whichever blob won.
+     * They have to be FLOOD-FILLED: a plateau is a connected run of cells
+     * at the same height, and the altar is the one that is table-shaped
+     * (a metre or three both ways, where a ledge is one and a half deep by
+     * nearly seven wide) and standing on the church's own axis. */
+    const cand = new Map();      // j*gw+i -> y
+    for (let j = 0; j < w.gh; j++) {
+      for (let i = 0; i < w.gw; i++) {
+        const f = w.floor[j][i];
+        if (f <= -90) continue;
+        const y = f + w.off.y;
+        if (y < dais + 0.6 || y > dais + 1.7) continue;
+        const x = w.off.x + w.x0 + (i + 0.5) * w.cell;
+        if (x < ex - 12 || x > ex - 2) continue;
+        cand.set(j * w.gw + i, y);
+      }
+    }
+    const seen = new Set();
+    let best = null, bs = -1;
+    const fit = (v) => (v < 0.8 ? v / 0.8 : v > 3.4 ? 3.4 / v : 1);
+    for (const start of cand.keys()) {
+      if (seen.has(start)) continue;
+      const stack = [start]; seen.add(start);
+      let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9, top = -1e9, n = 0;
+      while (stack.length) {
+        const c = stack.pop(), y = cand.get(c);
+        const i = c % w.gw, j = (c - i) / w.gw;
+        const x = w.off.x + w.x0 + (i + 0.5) * w.cell, z = w.off.z + w.z0 + (j + 0.5) * w.cell;
+        x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z);
+        top = Math.max(top, y); n++;
+        for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const ii = i + di, jj = j + dj;
+          if (ii < 0 || jj < 0 || ii >= w.gw || jj >= w.gh) continue;
+          const k = jj * w.gw + ii;
+          if (seen.has(k) || !cand.has(k)) continue;
+          if (Math.abs(cand.get(k) - y) > 0.12) continue;
+          seen.add(k); stack.push(k);
+        }
+      }
+      if (n < 8) continue;
+      const dx = x1 - x0 + w.cell, dz = z1 - z0 + w.cell;
+      const zc = (z0 + z1) / 2;
+      const score = n * fit(dx) * fit(dz) / (1 + Math.abs(zc - S.spots.exit.z) * 0.9);   // and it stands on the church's own axis
+      if (score > bs) { bs = score; best = { x0, x1, z0, z1, y: top, n }; }
+    }
+    if (!best) return null;
+    return { x: (best.x0 + best.x1) / 2, z: (best.z0 + best.z1) / 2, y: best.y,
+             x0: best.x0, x1: best.x1, z0: best.z0, z1: best.z1, dais };
+  }
+  function flameTexture() {
+    const c = document.createElement('canvas'); c.width = c.height = 48;
+    const x = c.getContext('2d');
+    // a teardrop, not a dot: hot and white at the wick, orange at the tip
+    const g = x.createRadialGradient(24, 30, 0, 24, 30, 22);
+    g.addColorStop(0.00, 'rgba(255,246,214,1)');
+    g.addColorStop(0.22, 'rgba(255,196,104,0.92)');
+    g.addColorStop(0.55, 'rgba(232,124,40,0.40)');
+    g.addColorStop(1.00, 'rgba(120,40,0,0)');
+    x.fillStyle = g;
+    x.save(); x.translate(24, 30); x.scale(0.78, 1.25); x.beginPath(); x.arc(0, 0, 22, 0, 6.284); x.fill(); x.restore();
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  }
+  function dressAltar() {
+    const A = findAltar();
+    if (!A) return;
+    S.spots.altar = { x: A.x, y: A.y, z: A.z, dais: A.dais };
+
+    /* where the candles stand: a horseshoe on the altar itself, open at the
+     * back where the idol is, and a wider ring on the dais at its foot.
+     * Nothing is placed at random about the room — a candle is somebody's
+     * offering and they are set down where a person could reach. */
+    let h = 19;
+    const rnd = () => { h = (h * 1103515245 + 12345) & 0x7fffffff; return h / 0x7fffffff; };
+    const spots = [];
+    const rx = Math.max(0.42, (A.x1 - A.x0) / 2 - 0.16), rz = Math.max(0.55, (A.z1 - A.z0) / 2 - 0.16);
+    for (let k = 0; k < 13; k++) {
+      const a = -Math.PI * 0.86 + (k / 12) * Math.PI * 1.72;    // the open side faces down the nave
+      spots.push({ x: A.x + Math.cos(a) * rx * (0.86 + rnd() * 0.2),
+                   z: A.z + Math.sin(a) * rz * (0.86 + rnd() * 0.2),
+                   y: A.y, hgt: 0.13 + rnd() * 0.20, r: 0.026 + rnd() * 0.012 });
+    }
+    for (let k = 0; k < 18; k++) {
+      const a = (k / 18) * Math.PI * 2 + rnd() * 0.12;
+      const q = 0.9 + rnd() * 0.5;
+      const x = A.x + Math.cos(a) * (A.x1 - A.x0 + 0.9) * 0.5 * q;
+      const z = A.z + Math.sin(a) * (A.z1 - A.z0 + 1.1) * 0.5 * q;
+      /* A CANDLE'S GROUND IS A LOOKUP, not the height of the thing it is
+       * arranged around: the dais is a step and the ring reaches past its
+       * front edge, so the ones at the bottom of it stood a third of a
+       * metre in the air over the nave floor. The gibs learned this once. */
+      const f = S.floorAt(x, z);
+      spots.push({ x, z, y: f === null || Math.abs(f - A.dais) > 1.2 ? A.dais : f,
+                   hgt: 0.16 + rnd() * 0.30, r: 0.030 + rnd() * 0.016 });
+    }
+    // a few burnt down to stubs, because a shrine is old
+    for (const sp of spots) if (rnd() < 0.22) sp.hgt *= 0.32;
+
+    const taper = new THREE.CylinderGeometry(0.82, 1.0, 1.0, 7, 1, false);
+    taper.translate(0, 0.5, 0);                       // stand it on its own foot
+    const waxMat = new THREE.MeshStandardMaterial({ color: 0xb9aa90, roughness: 0.86, metalness: 0,
+                                                    emissive: 0x6b4520, emissiveIntensity: 0.50, flatShading: true });
+    const wax = new THREE.InstancedMesh(taper, waxMat, spots.length);
+    const pool = new THREE.CylinderGeometry(1.0, 1.15, 1.0, 8, 1, false);
+    pool.translate(0, 0.5, 0);
+    const pools = new THREE.InstancedMesh(pool, waxMat, spots.length);
+    const m4 = new THREE.Matrix4(), qi = new THREE.Quaternion(), pv = new THREE.Vector3(), sv = new THREE.Vector3();
+    const fpos = new Float32Array(spots.length * 3), fseed = new Float32Array(spots.length), fsize = new Float32Array(spots.length);
+    spots.forEach((sp, k) => {
+      const lean = (rnd() - 0.5) * 0.14;              // nothing hand-set is plumb
+      qi.setFromEuler(new THREE.Euler(lean, rnd() * 3, (rnd() - 0.5) * 0.14));
+      wax.setMatrixAt(k, m4.compose(pv.set(sp.x, sp.y, sp.z), qi, sv.set(sp.r, sp.hgt, sp.r)));
+      pools.setMatrixAt(k, m4.compose(pv.set(sp.x, sp.y + 0.002, sp.z), new THREE.Quaternion(), sv.set(sp.r * 1.5, 0.018 + rnd() * 0.02, sp.r * 1.5)));
+      fpos[k * 3] = sp.x; fpos[k * 3 + 1] = sp.y + sp.hgt + 0.035; fpos[k * 3 + 2] = sp.z;
+      fseed[k] = rnd() * 90; fsize[k] = 0.10 + rnd() * 0.05;
+    });
+    wax.instanceMatrix.needsUpdate = true; pools.instanceMatrix.needsUpdate = true;
+    wax.frustumCulled = false; pools.frustumCulled = false;
+    group.add(wax, pools);
+
+    const fg = new THREE.BufferGeometry();
+    fg.setAttribute('position', new THREE.BufferAttribute(fpos, 3));
+    fg.setAttribute('aSeed', new THREE.BufferAttribute(fseed, 1));
+    fg.setAttribute('aSize', new THREE.BufferAttribute(fsize, 1));
+    const fm = new THREE.PointsMaterial({ color: 0xffbe72, size: 1.0, sizeAttenuation: true, map: flameTexture(),
+                                          transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: true });
+    /* PER-FLAME GUTTERING, IN THE STOCK POINTS SHADER. A flame that breathes
+     * on the same count as every other flame is a string of fairy lights;
+     * what says "candle" is that they are all out of step. `gl_PointSize` is
+     * written by three's own `size` chunk with the resolution scale in it, so
+     * the flicker MULTIPLIES what it wrote rather than replacing it — a
+     * hand-rolled `300.0 / -mvPosition.z` is right at exactly one canvas
+     * height and wrong at every other. */
+    fm.onBeforeCompile = (sh) => {
+      sh.uniforms.uFlameT = { value: 0 };
+      CANDLES.mat = sh;
+      sh.vertexShader = 'attribute float aSeed;\nattribute float aSize;\nuniform float uFlameT;\nvarying float vFlame;\n' + sh.vertexShader
+        .replace('#include <fog_vertex>', `#include <fog_vertex>
+  float fk = 0.62 + 0.30 * sin(uFlameT * 8.7 + aSeed * 6.1) + 0.22 * sin(uFlameT * 3.1 + aSeed * 2.7);
+  fk = clamp(fk, 0.34, 1.15);
+  vFlame = fk;
+  gl_PointSize *= aSize * (0.80 + 0.20 * fk);
+  /* AND A POINT SPRITE IS A QUAD THAT GROWS AS 1/z. Walk up to the altar and
+   * the nearest flame was a hand-sized orange blob lying on the floor —
+   * which is the one thing a candle must never be. A flame is a flame's
+   * size; past a metre or so it simply stops getting bigger. */
+  gl_PointSize = min(gl_PointSize, 16.0);`);
+      sh.fragmentShader = 'varying float vFlame;\n' + sh.fragmentShader
+        .replace('#include <premultiplied_alpha_fragment>', '  gl_FragColor.rgb *= vFlame;\n#include <premultiplied_alpha_fragment>');
+    };
+    const flames = new THREE.Points(fg, fm);
+    flames.frustumCulled = false;
+    flames.renderOrder = 3;
+    group.add(flames);
+    CANDLES.flames = flames;
+
+    /* the idol. It arrives over the network long after the room is composed,
+     * so the group is here from the start and the scan lands in it — the
+     * captain's head's own arrangement. He faces DOWN THE NAVE (-x): the
+     * model's own forward is +z, so that is a quarter turn back. */
+    const idol = new THREE.Group();
+    idol.position.set(A.x, A.y, A.z);
+    idol.rotation.y = -Math.PI / 2;
+    group.add(idol);
+    S.idol = idol;
+    load('assets/sol.glb', (g2) => {
+      const m = g2.scene;
+      m.traverse((o) => {
+        if (!o.isMesh) return;
+        o.castShadow = o.receiveShadow = false;
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const mm of mats) { grime(mm, 'altar'); S.mats.push(mm); }
+      });
+      idol.add(m);
+    });
   }
 
   /* THE AIR IS FULL OF IT. A few hundred points drifting slowly in each
@@ -589,6 +805,8 @@ export function makeUndercroft(opts = {}) {
       }
       M.pts.geometry.attributes.position.needsUpdate = true;
     }
+    // the candles
+    if (CANDLES.mat) CANDLES.mat.uniforms.uFlameT.value += dt;
     // the bulbs gutter, each on its own count
     const tt = performance.now() * 0.001;
     for (let k = 0; k < S.bulbs.length; k++) {

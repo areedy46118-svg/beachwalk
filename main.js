@@ -104,6 +104,7 @@ const ASSET_REACH = {
   'assets/mutant.glb': 610,
   'assets/cave.glb': 640,             // the hole in the sand wall, past the mutants
   'assets/church.glb': 645,           // and what is at the bottom of it
+  'assets/sol.glb': 646,              // and what is standing on its altar
   'assets/scp096.glb': 470,           // on the beach in front of the pavilion
   'assets/ufo.glb': 1090,             // the take, ten metres short of the fence
   'assets/shrine.glb': 1092,          // and the room it puts you in
@@ -8867,7 +8868,7 @@ function makeGlowstick() {
   // The glow comes from `groundGlow` below, which exists from startup.
   // faint additive halo so the stick itself blooms a little
   const halo = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: glowTex, color: GLOWSTICK_COLOR, transparent: true, opacity: 0.16,
+    map: glowTex, color: GLOWSTICK_COLOR, transparent: true, opacity: 0.11,
     depthWrite: false, fog: false, blending: THREE.AdditiveBlending,
   }));
   halo.scale.setScalar(0.4);
@@ -8910,11 +8911,16 @@ function placeGroundGlow(obj) {
   if (!obj) { groundGlow.intensity = 0; return; }
   obj.getWorldPosition(groundGlow.position);
   groundGlow.position.y += 0.04;
-  groundGlow.intensity = 0.9;
+  groundGlow.intensity = 0.62;
 }
 
-const HELD_GLOW_RANGE = 11;           // metres of usable light around you
-const HELD_GLOW_MAX = 17;             // dimmer in the hand: it lights your way, it is not a torch
+/* AND IT IS A CRACKED LIGHT-STICK, NOT A LAMP. At 17 over eleven metres it
+ * washed a room out — which never showed on an open beach and shows badly in
+ * a tunnel, where the owner was carrying it: the one place in the game that
+ * is meant to be dark was the one place it was brightest. Eight over seven
+ * metres puts a pool round your own feet and leaves the dark where it is. */
+const HELD_GLOW_RANGE = 7.0;          // metres of usable light around you
+const HELD_GLOW_MAX = 8.0;            // dimmer in the hand: it lights your way, it is not a torch
 const heldGlow = new THREE.PointLight(GLOWSTICK_COLOR, 0, HELD_GLOW_RANGE, 1.35);
 heldGlow.visible = true;      // never toggled, for the same reason as groundGlow
 scene.add(heldGlow);
@@ -24262,6 +24268,17 @@ function update(dt, rawDt = dt) {
     vy = JUMP_V; onGround = false; coyote = 0; jumpBuf = 0;
     vmImpulse(1.5);                     // the tool hangs back as you leave the ground
   }
+  /* AND A JUMP INTO A PEW BREAKS THE PEW, LANDED ON OR NOT. You cannot land
+   * on one: a bench's seat is 0.45 up against the church's 0.40 step, so the
+   * walk grid refuses the cell and the push-out bounces you off the side —
+   * which meant a jump at a pew did nothing at all, whatever you did. So
+   * while you are in the air down there, ANY breakable your body is beside
+   * takes the blow (`loose`): the footprint with a hand's slack round it and
+   * your own height overlapping its box, rather than your feet having to
+   * arrive on top of it. It is gated on the undercroft on purpose — the
+   * bunker's fight is fought between a desk and a work table and a jump
+   * beside either of those is not a player breaking it. */
+  if (!onGround && inUndercroft) stompBreakables(0.5, true);
   vy -= P_GRAV * dt;
   camBaseY += vy * dt;
   const floorLimit = playerEye() + groundY;
@@ -28895,16 +28912,47 @@ const ucLamps = [];
  * own dying colour, and NOTHING here is brighter than it has to be: what
  * carries the rock and the stone is each map's own emissive lift, which is
  * the pavilion's lesson — do it in the map, not with a lamp. */
-const UC_LAMP = [{ want: 1.5, dist: 14, col: 0xd8bf94 },      // the tunnel, high end
-                 { want: 1.5, dist: 14, col: 0xd2b98e },      // the tunnel, low end
-                 { want: 56, dist: 50, col: 0xc2b79c },       // the nave, thirteen metres up
-                 { want: 48, dist: 50, col: 0xb8ae9a },       // the nave, further in
-                 { want: 40, dist: 30, col: 0xa8a898 }];      // over the chancel
+const UC_LAMP = [{ want: 1.1, dist: 12, col: 0xd8bf94, flick: [0.62, 6.1] },   // the tunnel, high end — and it is failing
+                 { want: 1.1, dist: 12, col: 0xd2b98e, flick: [0.62, 5.3] },   // the tunnel, low end
+                 { want: 34, dist: 50, col: 0xc2b79c, flick: [0.10, 3.1] },    // the nave, thirteen metres up
+                 { want: 26, dist: 50, col: 0xb8ae9a, flick: [0.10, 2.6] },    // the nave, further in
+                 /* AND THE CHANCEL IS LIT BY THE CANDLES ON THE ALTAR, not
+                  * by a lamp in the vault over it. Forty units at thirty
+                  * metres lit the whole apse evenly and read as a room with
+                  * the light on; what the owner asked for is eerie and not
+                  * too lit up, so the two that are left are the colour of a
+                  * flame, they stand ON the altar and at its foot, and they
+                  * reach three or four metres — the idol is modelled from
+                  * below by its own offering and the apse behind it goes
+                  * dark, which is the picture. */
+                 { want: 6.0, dist: 7.5, col: 0xffa951, flick: [0.26, 9.4] },  // the candles on the altar
+                 { want: 2.2, dist: 6.5, col: 0xff9a45, flick: [0.30, 8.1] }]; // and the ring of them at its foot
 for (let i = 0; i < UC_LAMP.length; i++) {
   const l = new THREE.PointLight(UC_LAMP[i].col, 0, UC_LAMP[i].dist, 1.6);   // a failing bulb's colour, not a fire's
   l.position.set(UC_X, UC_Y - 60, UC_Z);
   l.userData.ucWant = UC_LAMP[i].want;
+  l.userData.ucFlick = UC_LAMP[i].flick || null;
+  l.userData.ucBase = 0;
   scene.add(l); ucLamps.push(l);
+}
+/* AND NOTHING DOWN THERE BURNS STEADILY. Two counts that never line up, so
+ * the guttering has no period you can hear; and on the tunnel's two bulbs a
+ * rare DROPOUT on top of it, because the one thing a strip of pit lighting
+ * forty metres under a beach does is go out for a moment and come back. The
+ * candles take the same function at a quicker rate and a gentler amount: a
+ * flame breathes, it does not fail. The FACTOR is applied after the ramp,
+ * not to it — the ramp is a third of a second long and would eat every
+ * flicker inside it. */
+let ucFlickT = 0;
+function ucLampFlicker(k, fl, t) {
+  const q = k * 1.93, r = fl[1];
+  const w = 0.5 + 0.5 * Math.sin(t * r + q) * Math.sin(t * r * 0.29 + q * 0.61);
+  let f = 1 - fl[0] * (1 - w);
+  if (fl[0] > 0.5) {
+    const g = Math.sin(t * 0.83 + q) * Math.sin(t * 0.31 + q * 1.7);
+    if (g > 0.88) f *= 0.16;
+  }
+  return f;
 }
 function armUndercroft(S) {
   const sp = S.spots;
@@ -28915,14 +28963,24 @@ function armUndercroft(S) {
   const cave = sp.lamps.filter((l) => l.kind === 'cave').sort((a, b) => a.x - b.x);
   const church = sp.lamps.filter((l) => l.kind === 'church').sort((a, b) => a.x - b.x);
   const pick = (a, f) => a[Math.min(a.length - 1, Math.max(0, Math.round((a.length - 1) * f)))];
-  /* A LAMP INSIDE A WALL IS A WALL AT FULL WHITE. The altar's stood at
-   * distance zero from the end wall and the arches (measured), and every
-   * surface within two metres of it blew out — the white wall the owner
-   * photographed. It hangs over the middle of the chancel now, well down
-   * from the vault and clear of everything. */
-  const altar = { x: sp.exit.x - 9, y: sp.exit.y + 6.0, z: sp.exit.z };    // 5.2 m clear of everything, raycast in twenty-six directions
+  /* A LAMP INSIDE A WALL IS A WALL AT FULL WHITE — which is how the altar's
+   * light got moved off the end wall and hung over the middle of the chancel
+   * in the first place. It is not a lamp at all any more:
+   *
+   * THE CANDLES ARE THE LIGHT AT THAT END. `S.spots.altar` is the plateau
+   * the module found in the church's own walk grid — the altar's top — so
+   * one light sits a little over it, in among the tapers, and one at the
+   * foot of it on the dais among the ring. Both are a flame's colour and
+   * neither reaches past the chancel. */
+  const A = sp.altar;
+  const altar = A ? { x: A.x, y: A.y + 0.55, z: A.z } : { x: sp.exit.x - 9, y: sp.exit.y + 6.0, z: sp.exit.z };
+  /* AND THE FOOT LIGHT HANGS OVER THE RING, NOT IN IT. At a third of a metre
+   * off the dais it burned a hard orange disc into the floor a stride in
+   * front of the altar with no candle at the middle of it — a lamp on the
+   * ground, which is what the candles are there so as not to be. */
+  const foot = A ? { x: A.x - 0.9, y: A.dais + 1.25, z: A.z } : altar;
   const at = [pick(cave, 0.28) || sp.entry, pick(cave, 0.86) || sp.mouth,   // the second is the bulb nearest the mouth, so the break is lit from behind
-              church[0] || sp.exit, church[church.length - 1] || sp.exit, altar];
+              church[0] || sp.exit, church[church.length - 1] || sp.exit, altar, foot];
   at.forEach((p, i) => { if (p && ucLamps[i]) ucLamps[i].position.set(UC_X + p.x, UC_Y + p.y - 0.3, UC_Z + p.z); });
   // the way out, behind the altar
   const proxy = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.6, 2.4), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
@@ -28963,6 +29021,20 @@ function armUndercroft(S) {
  *   proud drew as black slabs over the hole, once).
  * ------------------------------------------------------------------- */
 const HOLE_Y = 1.62, HOLE_R = 0.82;
+/* WHERE THE BORE STARTS, AND IT IS THE WHOLE BUG. The tube's mouth stood at
+ * x = 15.4 and the dune's face at this height is at 16.07 (measured by
+ * raycast across the hole's whole footprint: 15.98 to 16.17) — so two thirds
+ * of a metre of an open-ended BackSide tube stood PROUD of the wall, and
+ * what a BackSide tube shows you from outside is its own far interior wall,
+ * which this shader takes to black. That is what the owner was looking at:
+ * not a hole, a black polygonal lump pasted on a smooth dune, with the end
+ * box's straight edge showing beside it. The file's own note warned about
+ * exactly this ("half a metre of it standing proud drew as black slabs") and
+ * the bore was built in front of it anyway. It starts BEHIND the deepest
+ * point of the face now, its mouth is wider than the ragged cut (1.05
+ * against 0.93) so a ray through the hole lands on the inside of the tube,
+ * and a black plate closes the ring of air between the two. */
+const BORE_X0 = 16.30;
 {
   const prev = cliff.material.onBeforeCompile;
   cliff.material.onBeforeCompile = function (sh, rndr) {
@@ -28977,9 +29049,18 @@ const HOLE_Y = 1.62, HOLE_R = 0.82;
     sh.fragmentShader = 'uniform vec3 uHole;\n' + sh.fragmentShader
       .replace('#include <clipping_planes_fragment>',
         '#include <clipping_planes_fragment>\n' + RAG + '  if (hd < hr) discard;')
-      // the lip: the wall falls away into its own shadow over the last half metre
-      .replace('#include <dithering_fragment>',
-        '#include <dithering_fragment>\n  gl_FragColor.rgb *= mix(0.13, 1.0, smoothstep(0.0, 0.30, hd - hr));');   // NARROW: over half a metre the lip reads as a blurred smudge on the dune rather than as an edge
+      /* THE LIP, AND IT IS NOT THE SAME ALL THE WAY ROUND. A symmetrical
+       * ring of shadow is a vignette, and a vignette on a dune is a smudge
+       * — which is what the owner was looking at. A hole in a wall of sand
+       * has an OVERHANG at the top, which throws the deepest shadow of the
+       * whole thing onto the sand just inside its upper edge, and a SILL at
+       * the bottom, where the sand has slumped out and stands in the moon.
+       * Both are narrow: it is an edge, not a fade. */
+      .replace('#include <dithering_fragment>', `#include <dithering_fragment>
+  float hdd = hd - hr;
+  float hup = clamp(hy / max(hr, 0.001), -1.0, 1.0);
+  gl_FragColor.rgb *= mix(mix(0.22, 0.06, clamp(hup, 0.0, 1.0)), 1.0, smoothstep(0.0, 0.22, hdd));
+  gl_FragColor.rgb *= 1.0 + 0.5 * smoothstep(0.26, 0.04, hdd) * smoothstep(-0.2, -0.8, hup) * smoothstep(0.0, 0.05, hdd);`);
   };
   cliff.material.needsUpdate = true;
   /* A HOLE IS A PLACE, NOT A PICTURE. A black disc on the face — however
@@ -28993,32 +29074,62 @@ const HOLE_Y = 1.62, HOLE_R = 0.82;
    * end to see. Walk past it and the inside parallaxes; stand at it and
    * the grain runs into the dark. */
   {
-    const bg = new THREE.CylinderGeometry(0.97, 0.62, 3.4, 16, 8, true);
+    const bg = new THREE.CylinderGeometry(1.05, 0.62, 3.6, 16, 8, true);
     bg.rotateZ(-Math.PI / 2);                // along +x: the wide mouth at the face, narrowing in
     const bp = bg.attributes.position;
     for (let i = 0; i < bp.count; i++) {     // dug by hand, not turned on a lathe
       const x = bp.getX(i), y = bp.getY(i), z = bp.getZ(i);
-      const k = 0.55 + 0.45 * Math.min(1, (x + 1.7) / 3.4);
+      const k = 0.55 + 0.45 * Math.min(1, (x + 1.8) / 3.6);
       const n = Math.sin(y * 7.1 + z * 5.3 + x * 3.7) * 0.06 + Math.sin(y * 13.7 - z * 11.1) * 0.035;
       bp.setXYZ(i, x, y + n * k * Math.sign(y || 1), z + n * k * 1.3 * Math.sign(z || 1));
     }
     bg.computeVertexNormals();
     const bt = sandTex.clone(); bt.needsUpdate = true; bt.repeat.set(2.2, 1.1);
     const bm = new THREE.MeshStandardMaterial({ map: bt, color: 0x6d7d99, roughness: 0.97, metalness: 0,
-                                                 emissive: 0x27324a, emissiveMap: bt, emissiveIntensity: 0.75, side: THREE.BackSide });
+                                                 /* AND THE INSIDE HAS TO BE VISIBLE, or a hole is a disc of paint.
+                                                  * At 0.75 the near wall measured black against a black end; 1.7 is
+                                                  * the level at which the ring of sand a step inside the rim reads as
+                                                  * the WALL'S OWN THICKNESS and everything past it still goes. */
+                                                 emissive: 0x27324a, emissiveMap: bt, emissiveIntensity: 1.7, side: THREE.BackSide });
     bm.onBeforeCompile = (sh) => {
-      sh.uniforms.uBoreX0 = { value: CLIFF_X - 0.6 };
+      sh.uniforms.uBoreX0 = { value: BORE_X0 };
       sh.vertexShader = 'varying vec3 vBoreW;\n' + sh.vertexShader.replace('#include <fog_vertex>', '#include <fog_vertex>\n  vBoreW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
       sh.fragmentShader = 'varying vec3 vBoreW; uniform float uBoreX0;\n' + sh.fragmentShader
-        .replace('#include <map_fragment>', '#include <map_fragment>\n  float boreK = clamp(1.0 - (vBoreW.x - uBoreX0) / 2.7, 0.0, 1.0); boreK *= sqrt(boreK);\n  diffuseColor.rgb *= boreK;')
+        /* AND THE FIRST HALF METRE OF IT IS FULLY LIT. A fade that starts at
+         * the mouth means the only thing you can ever see through the hole
+         * is deep bore, which is black by construction — so the hole read as
+         * a disc of paint however it was cut. The wall you are LOOKING AT
+         * when you put your face to it is the near ring of sand a step
+         * inside; it keeps the dune's own grain, and everything past it
+         * goes. Walk up and the inside opens; stand back and it is black,
+         * which is what a hole in a dune does. */
+        .replace('#include <map_fragment>', '#include <map_fragment>\n  float boreK = clamp(1.0 - (vBoreW.x - uBoreX0 - 0.55) / 2.35, 0.0, 1.0); boreK *= boreK * sqrt(boreK);\n  diffuseColor.rgb *= boreK;')
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance *= boreK;');
     };
     const bore = new THREE.Mesh(bg, bm);
-    bore.position.set(CLIFF_X - 0.6 + 1.7, HOLE_Y, HOLE_Z);
+    bore.position.set(BORE_X0 + 1.80, HOLE_Y, HOLE_Z);
     rockGroup.add(bore);                     // far-culled by its own z, with the rocks
-    const dark = new THREE.Mesh(new THREE.BoxGeometry(2.0, 3.0, 3.0),
+    /* AND THE GAP ROUND THE BORE'S MOUTH IS CLOSED WITH A BLACK PLATE. The
+     * tube stands a hand behind the dune's face so it can never draw in
+     * front of it, and that leaves a ring of open air between the two that
+     * a look from off to one side can see straight through — out of the
+     * cut and into the night. A disc with the bore's own mouth punched out
+     * of it, unlit and unfogged, behind the face: every ray through the
+     * hole now ends on either the inside of the bore or on black. */
+    const back = new THREE.Mesh(new THREE.RingGeometry(1.00, 1.40, 20),
+      new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide, fog: false }));
+    back.rotation.y = -Math.PI / 2;
+    /* AND IT IS SMALL. Raycast round the hole: the dune's face holds within
+     * 16.20 out to a radius of 1.6 and then it is GONE — over about y = 3.2
+     * there is no cliff at all, you are past the crest — so a plate any
+     * bigger stands in the open air above the dune as a black rectangle,
+     * which is what the first one did. Nothing through a 0.93 m cut can
+     * diverge past 1.40 in the 0.2 m behind it, so 1.40 is the whole job. */
+    back.position.set(BORE_X0, HOLE_Y, HOLE_Z);
+    rockGroup.add(back);
+    const dark = new THREE.Mesh(new THREE.BoxGeometry(2.0, 2.0, 2.0),
       new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide, fog: false }));
-    dark.position.set(CLIFF_X + 3.4, HOLE_Y, HOLE_Z);
+    dark.position.set(BORE_X0 + 4.6, HOLE_Y, HOLE_Z);
     rockGroup.add(dark);
   }
   const proxy = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.5, 1.6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
@@ -29048,7 +29159,7 @@ function placeInUndercroft() {
    * its rake, the cliff fill, the ambient and the hemisphere all duck while
    * the screen is still black, and the lamps come up with them. */
   setSkyDuck(1);
-  for (const l of ucLamps) l.intensity = l.userData.ucWant;
+  for (const l of ucLamps) { l.userData.ucBase = l.userData.ucWant; l.intensity = l.userData.ucWant; }
   lookEuler.set(-0.10, e.yaw, 0, lookEuler.order);   // facing down the tunnel
   camera.quaternion.setFromEuler(lookEuler);
   velocity.set(0, 0, 0); knockback.set(0, 0, 0);
@@ -29060,7 +29171,7 @@ function placeOutOfUndercroft() {
   inUndercroft = false;
   undercroft.visible = false;
   setSkyDuck(0);
-  for (const l of ucLamps) l.intensity = 0;
+  for (const l of ucLamps) { l.userData.ucBase = 0; l.intensity = 0; }
   lookEuler.set(0.02, ucReturn.yaw, 0, lookEuler.order);   // looking on down the beach: the tower is that way
   camera.quaternion.setFromEuler(lookEuler);
   velocity.set(0, 0, 0); knockback.set(0, 0, 0);
@@ -29086,7 +29197,12 @@ function updateUndercroftCut(dt) {
     scene.fog.color.copy(_ucFogSaved.color); scene.fog.density = _ucFogSaved.density; sky.visible = _ucFogSaved.sky;
     _ucFogSaved = null;
   }
-  for (const l of ucLamps) l.intensity += ((inUndercroft ? l.userData.ucWant : 0) - l.intensity) * Math.min(1, dt * 3);
+  ucFlickT += dt;
+  for (let k = 0; k < ucLamps.length; k++) {
+    const l = ucLamps[k], u = l.userData;
+    u.ucBase += ((inUndercroft ? u.ucWant : 0) - u.ucBase) * Math.min(1, dt * 3);
+    l.intensity = u.ucFlick ? u.ucBase * ucLampFlicker(k, u.ucFlick, ucFlickT) : u.ucBase;
+  }
   if (undercroft.visible && UC.ready) UC.update(dt);
   // the air: the sea and the wind gone, water somewhere
   const want = inUndercroft ? 1 : 0, prev = ucMix;
@@ -29162,15 +29278,24 @@ function updateUndercroft(dt) {
  * its footprint with a little slack) takes a blow scaled by the fall.
  * Nothing you are holding, nothing already dead, nothing hidden. */
 const _stB = new THREE.Box3();
-function stompBreakables(force) {
-  const feet = camBaseY - playerEye();
+function stompBreakables(force, loose) {
+  const feet = camBaseY - playerEye(), head = feet + playerHeight();
   let best = null, bd = 1e9;
   for (const p of physProps) {
     if (!p.onImpact || p.dead || p.held || !p.mesh || !p.mesh.visible) continue;
     _stB.setFromObject(p.mesh);
     if (_stB.isEmpty()) continue;
-    if (camera.position.x < _stB.min.x - 0.25 || camera.position.x > _stB.max.x + 0.25 ||
-        camera.position.z < _stB.min.z - 0.25 || camera.position.z > _stB.max.z + 0.25) continue;
+    const slack = loose ? 0.42 : 0.25;
+    if (camera.position.x < _stB.min.x - slack || camera.position.x > _stB.max.x + slack ||
+        camera.position.z < _stB.min.z - slack || camera.position.z > _stB.max.z + slack) continue;
+    if (loose) {
+      // JUMPED INTO, NOT LANDED ON: your body has only to be alongside it
+      if (head < _stB.min.y || feet > _stB.max.y + 0.55) continue;
+      const d = Math.abs(feet - _stB.max.y);
+      if (d >= bd) continue;
+      bd = d; best = p;
+      continue;
+    }
     const d = Math.abs(feet - _stB.max.y);
     if (d > 0.55 || d >= bd) continue;
     bd = d; best = p;
@@ -29257,7 +29382,12 @@ function breakBench(b, speed) {
     gibs.push({ m, half: 0.05, rest: 0.05,
       vel: new THREE.Vector3(dx * out + sway * dz, 1.2 + kick * 0.8 * (0.5 + h), dz * out - sway * dx),
       spin: new THREE.Vector3((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 8),
-      life: 600, wait: Math.min(0.22, (n++) * 0.012) });
+      /* A PEW IS TIMBER, AND `updateGibs` BLEEDS ANYTHING THAT DOES NOT SAY
+       * OTHERWISE: the flag defaults to on because the system was written
+       * for severed limbs, so every chunk of a broken bench dripped and
+       * stained the church floor. Glass, crate boards and hull shards have
+       * all had to say this; so does a bench. */
+      life: 600, bleed: false, wait: Math.min(0.22, (n++) * 0.012) });
   }
   if (!sfxTableBreak()) sfxWoodSnap();
   spawnPuffs(_bbW.x, _bbW.z, 8, dx, dz, _bbW.y + 0.3, [0.45, 0.43, 0.40]);
