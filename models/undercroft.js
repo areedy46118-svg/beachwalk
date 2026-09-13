@@ -3,53 +3,57 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 /* THE UNDERCROFT — two tunnels and a church, forty metres under the beach.
  *
- * ONE SCAN AND TWO BORES. Aurélien Martel's "Old church modeling - Interior
- * Scene" (`assets/church.glb`, Sketchfab, CC-BY-4.0, packed by
- * `tools/undercroft_pack.py` with THE WALK INSIDE IT: the root carries
- * `bw_walk`, a 0.2 m grid of floor heights and a solid flag in the model's
- * own metres) is the room at the bottom. The two tunnels are not scans any
- * more, and the reason is one number: Ant leader's 3DRT tunnel — a hundred
- * and seventy metres of it — ships ONE 256 by 256 base colour and no normal
- * and no roughness, and Valsev's cave ships three materials of which one
- * carries no map at all. Those are the owner's "the textures are stretched",
- * "it looks untextured", "a lot of this looks bad" and "the black parts",
- * and no amount of projection or grading fixes a texture that is not there.
- * Measured on top of that, the 3DRT tunnel has a TWO-METRE HOLE in it eleven
- * metres short of the church — no floor, no roof, no wall — which is why the
- * walk could not reach the nave at all.
+ * THREE SCANS, ALL OF THEM DRAWN. Ant leader's "3DRT-uderground for game"
+ * (`assets/passage.glb`) is the way in, Aurelien Martel's "Old church
+ * modeling - Interior Scene" (`assets/church.glb`) is the room at the bottom,
+ * and Valsev's "Cave 5.0" (`assets/cave.glb`) is the way out behind the
+ * altar — all Sketchfab, CC-BY-4.0, packed by `tools/undercroft_pack.py` with
+ * THE WALK INSIDE THEM: each root carries `bw_walk`, a 0.2 m grid of floor
+ * heights and a solid flag in the model's own metres.
  *
- * So the passage scan is still LOADED and still READ, because the shape of
- * its descent is a good long winding route somebody else drew, and it is
- * never DRAWN. What you walk and look at is a BORE: a twenty-nine point
- * section swept down a smoothed centreline, floor flat, roof never under two
- * and a half metres, walls displaced by world-space noise, wearing the huge
- * rock's own granite (`assets/cave-rock.jpg`, cut out of JJ's 4096 diffuse by
- * `tools/cave_rock.py`) on uvs measured in metres. The owner asked for the
- * two caves to be the same colour as the huge rock outside: they are cut
- * from the same stone. The second bore is the way out behind the altar, and
- * it starts INSIDE the apse wall, so the hole in the wall is full of tunnel
- * from every angle — which is what "flush with the church" means.
+ * A pass of this file replaced the two caves with a tube it generated itself,
+ * and the owner's word was plain: keep the models, improve crawling through
+ * them. So the models ARE the cave, wearing their own maps and their own
+ * grime; what is done to them is three things and every one is about WALKING
+ * rather than about looking:
  *
- * The church is dark, dirty and dusty by construction: every material is
- * multiplied down, dust settles on whatever faces up (a pale grey mixed in
- * by the world normal's y, grained so it is not a wash), the lift that lets
- * it read at all comes off each map's own emissive, and motes drift in the
- * air of all three. The game adds the lamps (every light is a shader define,
- * and they belong in the group that is never hidden); this module says where
- * they go, and NEITHER BORE GETS ONE — a cave has no lighting in it.
+ *   THE LINE IS FITTED TO THE ROCK THAT IS DRAWN. A cell grid over somebody
+ *   else's low-poly tunnel is a minefield, so the grid is used once to find a
+ *   centreline and the game walks a corridor round it — but that corridor's
+ *   radius, roof and floor are measured off the GEOMETRY (every triangle
+ *   sampled by area into a one-metre bin), not off the grid.
+ *
+ *   THE TUBE IS CARVED OUT OF THE MODEL. A scan of a cave has lumps that sit
+ *   where the line has to go; every triangle whose middle falls inside the
+ *   walk, between a hand over the floor and a hand under the roof, is dropped
+ *   from the index. The bunker desk's `carveDesk`, on a cave.
+ *
+ *   AND THE HOLES IN THE MESH ARE CLOSED FROM BEHIND. The 3DRT tunnel has a
+ *   two-metre gap in it eleven metres short of the church and never reached
+ *   the door at all; a sleeve swept down the line at the measured wall plus a
+ *   hand's breadth sits behind the model everywhere the model is there, and
+ *   is the rock everywhere it is not. It wears a CLONE OF THE MODEL'S OWN
+ *   MATERIAL, so the seam cannot be found.
+ *
+ * Everything is dark, dirty and dusty by construction: every material is
+ * multiplied down, dust settles on whatever faces up, the lift that lets it
+ * read comes off each map's own emissive, and motes drift in the air of all
+ * three. The game adds the lamps (every light is a shader define, and they
+ * belong in the group that is never hidden); NEITHER TUNNEL GETS ONE.
  *
  *   group.userData.undercroft:
- *     ready                    the scan in, both bores built, composed
+ *     ready                    all three scans in and composed
  *     floorAt(lx, lz)          the walkable floor under a local point, or null
  *     blocked(lx, lz, r, feet) a disc of radius r about the point meets something a body cannot pass
  *     pushOut(p, r, feet)      move a local Vector3 out of whatever it is in (returns true if it moved)
  *     escape(p, r, feet)       the nearest clear spot, when the push cancels
- *     corridors                [{ pts, lo, hi }] the two bores' centrelines
+ *     corridors                [{ pts, lo, hi }] the two tunnels' centrelines
  *     spots                    { entry, exit, lamps: [...] } — local metres and a yaw
  *     benches                  [{ mesh, box }] the church's pews, each its own mesh
  *     clearBench(n)            take a broken bench out of the walk
  *     update(dt)               the motes and the bulbs
- */export function makeUndercroft(opts = {}) {
+ */
+export function makeUndercroft(opts = {}) {
   const group = new THREE.Group();
   const S = { group, ready: false, walks: [], bridges: [], benches: [], spots: null, mats: [], bulbs: [], motes: null,
               corridors: [], church: null, passage: null };
@@ -222,34 +226,21 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
     }
     return false;
   };
-  /* ---- THE CORRIDOR, AND THE BORE ROUND IT.
+  /* ---- THE CORRIDOR, AND THE SLEEVE BEHIND IT.
    *
-   * THE CAVE YOU WALK IS BUILT, NOT SCANNED, and the reason is one number:
-   * the 3DRT tunnel ships ONE 256 by 256 base colour and no normal and no
-   * roughness, for three hundred and forty metres of rock. Nothing can make
-   * that read — it is the whole of "the textures are stretched", "it looks
-   * untextured" and "a lot of this looks bad". Measured on top of that, the
-   * model's own tunnel has a TWO-METRE HOLE in it eleven metres short of the
-   * church (no floor, no roof, no wall: rays go clean through), which is
-   * why the walk could not reach the nave and why the last stretch was a
-   * corridor through nothing; and forty-six of a hundred and fifty-nine
-   * points along it had no surface within six metres in at least one of up,
-   * down, left and right.
+   * A cell grid over somebody else's low-poly tunnel is a minefield: its
+   * floor strip has holes the sampler fell through, lumps of wall the grid
+   * calls floor, ledges no step rule crosses and edges you slide off. So the
+   * grid is used ONCE, at load, to find the tunnel's CENTRELINE — breadth
+   * first from the entry cell to the mouth, resampled and smoothed — and the
+   * game walks a TUBE round that line. Everything about that tube's shape is
+   * then measured off the geometry the model actually draws (`fitCorridor`),
+   * never off the grid.
    *
-   * So the scan is kept for ONE thing — its layout, a long winding descent
-   * somebody else drew — and the cave itself is a TUBE built along that
-   * line: a fourteen-point section swept down a smoothed centreline, its
-   * floor flat, its roof never under two and a half metres, its walls
-   * displaced by noise so it is rock and not pipe, wearing the huge rock's
-   * own granite (`assets/cave-rock.jpg`, cut out of JJ's 4096 diffuse by
-   * `tools/cave_rock.py`) on uvs measured in METRES along and around it.
-   * The owner asked for the caves to be the same colour as the huge rock:
-   * they are the same stone.
-   *
-   * What that buys, which three passes of grid-fixing never could: the
-   * walls are exactly where the walk says they are, the roof is always over
-   * your head, there is no hole to fall through and no rock to clip, and
-   * the two ends go exactly where they have to go. */
+   * `makeBore` sweeps a section down a line. It is NOT the cave — the cave is
+   * the scan — it is what stands BEHIND the scan to close the holes in it,
+   * and it wears a clone of the scan's own material so the join cannot be
+   * found. */
   function buildCorridor(w, s0, s1) {
     const cellOf = (x, z) => [Math.floor((x - w.off.x - w.x0) / w.cell), Math.floor((z - w.off.z - w.z0) / w.cell)];
     /* the grid is dilated to close the sampler's own holes — it is used ONLY
@@ -1108,6 +1099,14 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
       const m = o.material;
       if (!m) return;
       const name = m.name || '';
+      if (kind === 'cave' && name === 'Material.002') {
+        /* the bulbs on the posts. THE ONE MATERIAL IN EITHER CAVE WITH NO MAP
+         * — it is a light fitting, not rock, which is why it has none, and
+         * treating it as untextured stone was what made it read as black. */
+        m.emissive = new THREE.Color(0xffc48a); m.emissiveIntensity = 1.6; m.color.setHex(0x604020);
+        m.userData.bwGrime = true; S.bulbs.push(o);
+        return;
+      }
       if (kind === 'church' && name === 'ampoule') {
         m.emissive = new THREE.Color(0xffb070); m.emissiveIntensity = 0.9; m.transparent = false; m.opacity = 1; m.depthWrite = true;
         m.userData.bwGrime = true; S.bulbs.push(o);
@@ -1133,129 +1132,71 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
       }
     });
   }
-  /* ---- THE STONE. One 1024 tile cut out of the huge rock's own 4096 diffuse
-   * (`tools/cave_rock.py`) with the light it was shot in divided out of it,
-   * and a normal map derived from its own luminance — because on stone the
-   * dark parts ARE the hollows, and a seam that is only dark is a picture of
-   * a seam. The grade is the ROCK MOUNTAIN'S, which is what the owner asked
-   * for: the same cold cast the outcrop outside wears, so the cave you crawl
-   * into is the rock you crawled into.
-   *
-   * TWO MATERIALS OUT OF ONE PAIR OF MAPS. The built patches carry uvs in
-   * METRES and read them straight; the two SCANS carry uvs that run down
-   * their own bore and cannot be used at any scale (that is the whole of
-   * "the textures are stretched"), so they get the same stone PROJECTED
-   * triplanar in world space — the ring's own trick, with the blend normal
-   * derived from the fragment's own derivatives because the packer ships
-   * none. Either way it is the same rock at the same size. */
-  let _rockMaps = null;
-  function rockMaps() {
-    if (_rockMaps) return _rockMaps;
-    const tl = new THREE.TextureLoader();
-    const map = tl.load(opts.rockUrl || 'assets/cave-rock.jpg');
-    const nrm = tl.load(opts.rockNormalUrl || 'assets/cave-rock-n.jpg');
-    for (const t of [map, nrm]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 16; }
-    map.colorSpace = THREE.SRGBColorSpace;
-    _rockMaps = { map, nrm };
-    return _rockMaps;
-  }
-  /* MEASURED, not chosen. The whole frame down the tunnel reads about level
-   * with an open beach from the same instrument, which on rock a metre from
-   * your face in a closed tube is a good deal darker than it sounds, and it
-   * is what stops any of it going to the untextured black the owner
-   * complained of. At 0.26 it read twice the beach; at 0.08 it is the
-   * complaint again in a different cause. There is no lamp in either tunnel
-   * — the pavilion's rule, do it in the map. */
-  const ROCK_EMIS = 0.17;
-  let _boreMat = null;
-  function boreMat() {
-    if (_boreMat) return _boreMat;
-    const { map, nrm } = rockMaps();
-    _boreMat = new THREE.MeshStandardMaterial({
-      map, normalMap: nrm, normalScale: new THREE.Vector2(0.9, 0.9),
-      color: 0x9aa6b4, roughness: 1.0, metalness: 0.0,
-      emissive: 0xffffff, emissiveMap: map, emissiveIntensity: ROCK_EMIS,
-      side: THREE.DoubleSide, fog: true,
+  /* ---- THE TWO CAVES ARE THE OWNER'S MODELS, WEARING THEIR OWN MAPS.
+   * A pass of this file put the huge rock's granite on them instead, and the
+   * owner's word was plain: stop changing the textures, keep the models I
+   * gave you, improve crawling through them. So `dress` and the grime are
+   * exactly what they were; the only thing done to a map is the PROJECTION
+   * below, which is not a different texture, it is the same one applied in a
+   * way that does not smear. */
+  function passageTriplanar(root) {
+    /* A GAME TUNNEL'S UVs RUN DOWN THE BORE, so stretched over a hundred and
+     * seventy metres of scaled-up rock they draw as long smeared streaks.
+     * The map goes on TRIPLANAR instead (the ring's own trick): sampled along
+     * each world axis at a fixed size and blended by the face normal, which
+     * the fragment derives itself because the packer ships none. */
+    root.traverse((o) => {
+      if (!o.isMesh) return;
+      for (const m of (Array.isArray(o.material) ? o.material : [o.material])) triplanar(m);
     });
-    /* AND ONE TILE IS A TILE. Two and a half metres of stone repeated down a
-     * hundred and seventy is a wallpaper, however good the tile is — so the
-     * map is multiplied by ITSELF at a third of the rate and a quarter turn
-     * round, which is one extra sample and turns a period of two and a half
-     * metres into one of eight that nothing lines up with. It is GUARDED:
-     * `map_fragment`'s body is inside `#ifdef USE_MAP` and three compiles
-     * variants that do not define it, which is a shader that does not
-     * compile and a material that draws nothing at all. */
-    _boreMat.onBeforeCompile = (sh) => {
-      sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
-#ifdef USE_MAP
-  {
-    vec2 bu = vec2(vMapUv.y, -vMapUv.x) * 0.31 + 0.37;
-    vec4 big = texture2D(map, bu);
-    diffuseColor.rgb *= mix(1.0, dot(big.rgb, vec3(0.333)) / 0.30, 0.55);
   }
-#endif`);
-    };
-    S.boreMat = _boreMat;
-    return _boreMat;
-  }
-  /* the scans' own material: the same stone, projected. A scan's uvs are the
-   * one thing about it that cannot be salvaged. */
-  /* the exit cave's copy carries a world-x CLIP: its ragged mouth flares
-   * metres past its first floor cell and, put down by the floor, it stood as
-   * a boulder in the middle of the chancel. It cannot share the passage's
-   * material — the passage is entirely on the wrong side of that x and would
-   * discard whole. */
-  const CLIP_X = { value: -1e9 };
-  let _scanMat = null, _caveMat = null;
-  function scanRockMat(clip) {
-    if (clip && _caveMat) return _caveMat;
-    if (!clip && _scanMat) return _scanMat;
-    const { map, nrm } = rockMaps();
-    const mat = new THREE.MeshStandardMaterial({
-      map, color: 0x9aa6b4, roughness: 1.0, metalness: 0.0,
-      emissive: 0xffffff, emissiveMap: map, emissiveIntensity: ROCK_EMIS,
-      side: THREE.DoubleSide, fog: true, flatShading: true,
-    });
-    mat.onBeforeCompile = (sh) => {
-      sh.uniforms.uRockScale = { value: 0.40 };        // one tile every two and a half metres, as the built rock
-      sh.uniforms.uClipX = clip ? CLIP_X : { value: -1e9 };
-      sh.vertexShader = 'varying vec3 vRockW;\n' + sh.vertexShader
-        .replace('#include <fog_vertex>', '#include <fog_vertex>\n  vRockW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-      sh.fragmentShader = 'varying vec3 vRockW; uniform float uRockScale; uniform float uClipX;\n' + sh.fragmentShader
-        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n  if (vRockW.x < uClipX) discard;')
+  function triplanar(m) {
+    if (!m || !m.map || m.userData.bwTri) return m;
+    m.userData.bwTri = true;
+    m.map.wrapS = m.map.wrapT = THREE.RepeatWrapping;
+    const prev = m.onBeforeCompile;
+    m.onBeforeCompile = function (sh, rndr) {
+      if (prev) prev.call(this, sh, rndr);
+      sh.uniforms.uTriScale = { value: 0.42 };      // metres per texture tile
+      sh.fragmentShader = 'uniform float uTriScale;\n' + sh.fragmentShader
         .replace('#include <map_fragment>', `{
-  vec3 tp = vRockW * uRockScale;
-  vec3 tn = abs(normalize(cross(dFdx(vRockW), dFdy(vRockW))));
+  vec3 tp = vGrimeP * uTriScale;
+  vec3 tn = abs(normalize(cross(dFdx(vGrimeP), dFdy(vGrimeP))));
   tn = tn / max(1e-4, tn.x + tn.y + tn.z);
   vec4 tx = texture2D(map, tp.yz) * tn.x + texture2D(map, tp.xz) * tn.y + texture2D(map, tp.xy) * tn.z;
-  vec2 bu = vec2(tp.z, -tp.x) * 0.31 + 0.37;
-  tx.rgb *= mix(1.0, dot(texture2D(map, bu).rgb, vec3(0.333)) / 0.30, 0.55);
   diffuseColor *= tx;
-}`)
-        .replace('#include <emissivemap_fragment>', `{
-  vec3 tp = vRockW * uRockScale;
-  vec3 tn = abs(normalize(cross(dFdx(vRockW), dFdy(vRockW))));
-  tn = tn / max(1e-4, tn.x + tn.y + tn.z);
-  totalEmissiveRadiance *= (texture2D(emissiveMap, tp.yz) * tn.x + texture2D(emissiveMap, tp.xz) * tn.y + texture2D(emissiveMap, tp.xy) * tn.z).rgb;
 }`);
     };
-    if (clip) { _caveMat = mat; S.caveMat = mat; } else { _scanMat = mat; S.scanMat = mat; }
-    return mat;
+    m.needsUpdate = true;
+    return m;
   }
-  /* AND THE SCAN KEEPS ITS GEOMETRY, WHICH IS THE POINT OF IT. Every mesh of
-   * either cave is put on the one projected stone: the 3DRT tunnel's own
-   * 256-pixel map and Valsev's cave's three materials — one of which carries
-   * NO MAP AT ALL, and is the untextured black the owner photographed — are
-   * what was wrong with them, and neither is the model. */
-  function reskin(root, clip) {
-    const m = scanRockMat(clip);
-    root.traverse((o) => { if (o.isMesh) o.material = m; });
+  /* AND THE REPAIR WEARS THE SAME MAP AS THE THING IT REPAIRS. Where the
+   * model has a hole in it, the patch behind it is a clone of that model's
+   * OWN material — grimed and projected the same way — so the seam between
+   * what the artist made and what closes its gaps cannot be found.
+   * `Material.clone` drops `onBeforeCompile` and copies `userData`, so the
+   * copy's userData is cleared and both passes put back on it. */
+  function patchMat(src) {
+    if (!src) return new THREE.MeshStandardMaterial({ color: 0x2a2724, roughness: 1 });
+    const m = src.clone();
+    m.userData = {};
+    m.name = (src.name || 'rock') + '-patch';
+    m.side = THREE.DoubleSide;
+    grime(m, 'cave');
+    triplanar(m);
+    return m;
   }
+  const findMat = (root, want) => {
+    let hit = null;
+    root.traverse((o) => { if (!hit && o.isMesh && o.material && o.material.map && (!want || (o.material.name || '') === want)) hit = o.material; });
+    return hit;
+  };
 
   load(opts.passageUrl || 'assets/passage.glb', (gltf) => {
     const root = gltf.scene;
     const w = parseWalk(root);
-    reskin(root);
+    dress(root, 'cave');
+    passageTriplanar(root);
     group.add(root);
     S.passage = { root, walk: w };
     compose();
@@ -1263,7 +1204,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
   load(opts.caveUrl || 'assets/cave.glb', (gltf) => {
     const root = gltf.scene;
     const w = parseWalk(root);
-    reskin(root, true);
+    dress(root, 'cave');
     group.add(root);
     S.cave = { root, walk: w };
     compose();
@@ -1421,7 +1362,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
        * and is the rock everywhere it is not. The cave you look at is still
        * the owner's model; what is behind it is no longer the void. */
       gapRuns(inbound);
-      group.add(makeBore({ pts: P.map((q) => ({ ...q, r: q.wall ?? q.r })) }, boreMat(),
+      group.add(makeBore({ pts: P.map((q) => ({ ...q, r: q.wall ?? q.r })) }, patchMat(findMat(S.passage.root)),
                          { cap: [true, false], rough: 0.22, grow: 0.45, measure: false }));
       corridorBox(inbound);
       S.corridors.push(inbound);
@@ -1599,7 +1540,14 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         const wc = group.localToWorld(new THREE.Vector3(exitEdge, exitFloor + 1.05, off.z));
         CUT.value.set(wc.x, wc.y, wc.z, 1.25);
         CUT_X.value = 1.3;
-        CLIP_X.value = group.localToWorld(new THREE.Vector3(exitEdge + 0.12, 0, 0)).x;
+        const clipX = group.localToWorld(new THREE.Vector3(exitEdge + 0.12, 0, 0)).x;
+        S.cave.root.traverse((o) => {
+          if (!o.isMesh) return;
+          for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+            m.userData.bwClipX = clipX;
+            if (m.userData.bwSh && m.userData.bwSh.uniforms.uUcClipX) m.userData.bwSh.uniforms.uUcClipX.value = clipX;
+          }
+        });
         /* AND THE OLD CAVE IS WALKED AS A TUBE TOO. Its walkable channel,
          * measured off the packer's grid, is ONE CELL WIDE for most of its
          * length and wanders a metre sideways per metre along — which is a
@@ -1624,7 +1572,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
           }
           Q.unshift(...pre);
           gapRuns(outbound);
-          group.add(makeBore({ pts: Q.map((q) => ({ ...q, r: q.wall ?? q.r })) }, boreMat(),
+          group.add(makeBore({ pts: Q.map((q) => ({ ...q, r: q.wall ?? q.r })) }, patchMat(findMat(S.cave.root, 'MaterialKEInGLANZ') || findMat(S.cave.root)),
                              { cap: [false, true], rough: 0.22, grow: 0.45, measure: false }));
           corridorBox(outbound);
           S.corridors.push(outbound);
@@ -1633,7 +1581,6 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         }
         const plate = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 3.2), new THREE.MeshStandardMaterial({ color: 0x2a2724, roughness: 1 }));
         plate.rotation.x = -Math.PI / 2; plate.position.set(exitEdge + GAP * 0.4, exitFloor + 0.01, off.z);
-        plate.material = scanRockMat();
         group.add(plate);
       }
     }

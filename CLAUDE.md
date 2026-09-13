@@ -2496,67 +2496,64 @@ RECORDED: eleven footfalls cut from a walk down a stone corridor
 normalised, faded, one at random per step (`churchStep`), with the sand
 step kept for the tunnel's rubble.
 
-**THE CAVES ARE THE OWNER'S MODELS, REPAIRED — AND THE FIRST ANSWER, WHICH
-WAS TO REPLACE THEM, WAS WRONG.** The measurements that led there were right
-and are worth keeping: the 3DRT tunnel ships ONE 256 by 256 base colour and
-nothing else for a hundred and seventy metres of cave, Valsev's cave ships
-three materials of which one has NO MAP AT ALL (the untextured black in the
-photograph), the 3DRT tunnel has a TWO-METRE HOLE in it eleven metres short of
-the church where rays go clean through, and forty-six of a hundred and
-fifty-nine points down the old walked line had no surface within six metres in
-at least one direction. All of that is true and all of it had to be fixed.
-None of it is a reason to take somebody's models out of their game. **"Make
-this better" is not "replace this", and the difference is the owner's to
-draw.** What is here now is four repairs, each aimed at one of those
-measurements, with the models themselves untouched:
+**THE CAVES ARE THE OWNER'S MODELS. TWO PASSES TOOK THEM AWAY AND BOTH WERE
+WRONG.** The first replaced them with a generated tube; the second put the
+models back but re-textured them with the huge rock's granite. His word on
+each: "why did you take away my cave models, i just wanted them better not
+gone", and then "why are you changing the textures? make it the same 3d models
+i gave you but improve crawling through them". **"MAKE THIS BETTER" IS NOT
+"REPLACE THIS", AND IT IS NOT "RE-SKIN THIS" EITHER — and the line is the
+owner's to draw, not this file's.** A measurement that says an asset is poor
+is a reason to work harder on it, never a licence to swap it out.
 
-- **THE STONE IS PROJECTED, NOT READ.** A scan's uvs are the one thing about
-  it that cannot be salvaged — the 3DRT tunnel's run down its own bore and
-  smear over any scale — so both caves wear the huge rock's own granite
-  (`assets/cave-rock.jpg`, cut out of JJ's 4096 diffuse by
-  `tools/cave_rock.py`) TRIPLANAR in world space at one tile every two and a
-  half metres, with the blend normal derived from the fragment's own
-  derivatives because the packer ships none. That is the stretching, the
-  256-pixel mush and the mapless black, all three, and the geometry is
-  exactly what the artist made.
-- **THE LINE IS FITTED TO THE ROCK THAT IS ACTUALLY DRAWN.** The corridor
-  stays (a cell grid over a low-poly tunnel is still a minefield) but its
-  radius, its roof and its floor are no longer read off the packer's grid —
-  every triangle of the tunnel is sampled BY AREA into a one-metre bin and
-  each station asks that bin, in its own frame, what is under it, over it and
-  how far the floor reaches each way. The point is recentred in what it
-  finds. Sampling by area is the whole of whether it works: seven points per
-  triangle on faces a metre across put the samples half a metre apart and a
+What the models keep: their geometry, their maps, their grime. The 3DRT
+tunnel keeps its TRIPLANAR projection, which is not a different texture —
+it is the same 256-pixel map applied in a way that does not smear over a
+hundred and seventy metres — and Valsev's cave keeps its three materials,
+including the mapless one, which is a LIGHT FITTING and not rock (treating it
+as untextured stone is what made it read as black).
+
+What is done to them is three things and every one is about WALKING:
+
+- **THE LINE IS FITTED TO THE ROCK THAT IS DRAWN.** A cell grid over somebody
+  else's low-poly tunnel is a minefield, so the grid is used once to find a
+  centreline and the game walks a corridor round it — but that corridor's
+  radius, roof and floor come off the GEOMETRY, not the grid: every triangle
+  sampled BY AREA into a one-metre bin, and each station asking that bin, in
+  its own frame, what is under it, over it and how far the floor reaches each
+  way. **Sampling by area is the whole of whether it works**: seven points per
+  triangle on faces a metre across puts the samples half a metre apart, and a
   march that steps fifteen centimetres then reports a wall inside arm's reach
   down the entire passage.
-- **A CONTINUOUS SKIN BEHIND THE MODEL, NOT A PATCH PER HOLE.** A sleeve over
-  each run the probe called open still left black in the frame, because
-  "open" is measured on the CENTRELINE and this model's holes are as often a
-  metre off to one side or a gap in the floor. One tube swept down the whole
-  line at the measured wall PLUS a hand's breadth sits behind the scan
-  everywhere the scan is there — you never see it — and is the rock
-  everywhere it is not. Measured after: 0 of 6048 rays cast from every
-  station of both tunnels reach the black shell.
-- **AND THE TUBE IS CARVED OUT OF THE MODEL.** A scan of a cave has lumps in
-  it that sit where the line has to go, and the corridor cannot measure its
-  way round them — walking the finished tunnel and asking how near the rock
-  was every tenth frame found a hundred and thirty-seven contacts inside six
-  centimetres, every one of them the scan. Every triangle whose middle falls
-  inside the corridor's clear radius, between a hand above the floor and a
-  hand under the roof, is dropped from the index (the bunker desk's
-  `carveDesk`, on a cave). The floor survives, the walls survive, and what
-  goes is exactly what was in your way: 137 contacts became 30, and the
-  passage lost 151 of its 3848 triangles.
+- **THE TUBE IS CARVED OUT OF THE MODEL.** A scan of a cave has lumps that sit
+  where the line has to go and the corridor cannot measure its way round them
+  — walking the finished tunnel and asking how near the rock was every tenth
+  frame found 137 contacts inside six centimetres, every one of them the scan.
+  Every triangle whose middle falls inside the corridor's clear radius,
+  between a hand above the floor and a hand under the roof, is dropped from
+  the index (the bunker desk's `carveDesk`, on a cave). The floor survives,
+  the walls survive: 137 contacts became 30, and the passage lost 151 of its
+  3848 triangles.
+- **AND THE HOLES IN THE MESH ARE CLOSED FROM BEHIND, IN THE MODEL'S OWN
+  MATERIAL.** The 3DRT tunnel has a genuine two-metre hole in it eleven metres
+  short of the church and never reaches the door at all. A sleeve over each
+  run the probe called open still left black in the frame — "open" is measured
+  on the CENTRELINE and this model's holes are as often a metre off to one
+  side or a gap in the floor — so it is ONE tube swept down the whole line at
+  the measured wall PLUS a hand's breadth: behind the scan everywhere the scan
+  is there, and the rock everywhere it is not. It wears a CLONE of the scan's
+  own material (`Material.clone` drops `onBeforeCompile` and copies
+  `userData`, so the copy's userData is cleared and the grime and the
+  projection put back on it), so the seam cannot be found. Measured: 0 of 6048
+  rays cast from every station of both tunnels reach the black shell.
 
 Measured at the end, hands-off: the whole 170 m passage walks in 4975 ticks
 with **zero stalled frames** and the old cave in 449 with zero; entry to exit
-connects crouched; the camera never passes through the roof (at a 0.16 m duck
-margin the worst spot in the tunnel left 3 cm of rock over the eye, so it is
-0.22); and the tunnel is a CRAWL — its own drawn headroom runs 1.15 m to 2.4,
-which is what the owner asked for when he asked for something crawlable, so
-the head-bump REFUSAL is off inside a corridor and the camera simply ducks.
-Refusing every step whose roof is under a standing body would be refusing most
-of the tunnel, one stride at a time.
+connects crouched; and the tunnel IS a crawl — its own drawn headroom runs
+1.15 m to 2.4 — which is what the owner asked for when he asked for something
+crawlable, so the head-bump REFUSAL is off inside a corridor and the camera
+ducks instead. Refusing every step whose roof is under a standing body would
+be refusing most of the tunnel, one stride at a time.
 
 Four traps in the machinery, all of which cost a build:
 
@@ -2574,6 +2571,19 @@ Four traps in the machinery, all of which cost a build:
 - **THE FIT COMES BEFORE THE RUN INTO THE NAVE.** Laid first, the straight run
   at the church dragged the last real stations off the tunnel's centre when it
   was smoothed into them — and those are the narrowest stations in the model.
+
+**AND THE MOUTH'S DARKENING IS AN ELLIPSE, NOT A SLAB.** "I should not see
+black png peeking out the top of the rocks" was not a png at all: the
+rockmouth's shader blacked out the inside of the arch with two `step()` calls
+— a band in z and a ceiling in y — which is a RECTANGLE of world space, and
+where that rectangle crossed stone it drew a hard black-edged patch on the
+outcrop's own face. Centred on the opening and faded out with a smoothstep
+there is no edge anywhere for it to draw. (A PANEL across the aperture was
+tried twice before and is the same mistake in geometry: a flat rectangle big
+enough to cover an opening is bigger than the stone round it wherever that
+stone is narrow. What is behind the arch now is a box deep in the rock's own
+hollow, which the rock encloses.) Measured from four approaches: under 0.1 %
+of the frame is anything but rock and night.
 
 **THE ROCK IS SOLID BECAUSE THE COLLIDERS COME OUT OF THE SCAN.** "I clip
 through the entrance rock" was a footprint thirty metres across answered by a

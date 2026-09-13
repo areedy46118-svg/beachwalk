@@ -509,8 +509,8 @@ This work is based on ["Cave 5.0"](https://sketchfab.com/3d-models/cave-50-7c4df
 by [Valsev](https://sketchfab.com/Valsev) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the way OUT, behind
 the altar (`assets/cave.glb`, decimated and packed with its walk by
-`tools/undercroft_pack.py`), wearing the same projected granite: one of its
-three materials carries no texture at all, which was the untextured black.
+`tools/undercroft_pack.py`). One of its three materials carries no texture at
+all — it is the lamps on the posts, not rock.
 
 This work is based on ["Old church modeling - Interior Scene"](https://sketchfab.com/3d-models/old-church-modeling-interior-scene-eb6cf543aa7d45e3acee49887ae3135c)
 by [Aurélien Martel](https://sketchfab.com/aurelien_martel) licensed under
@@ -528,19 +528,15 @@ This work is based on ["3DRT-uderground for game"](https://sketchfab.com/3d-mode
 by [Ant leader](https://sketchfab.com/Jguyfioy) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the tunnel you crawl
 in through (`assets/passage.glb`, turned and scaled to metres and packed with
-its walk by `tools/undercroft_pack.py`). It ships one 256-pixel texture for a
-hundred and seventy metres of cave, so it wears the rock outcrop's own granite
-projected over it instead of its own uvs, and a skin swept along its
-centreline stands behind it to close the holes in the mesh; the geometry you
-walk through is the model's.
+its walk by `tools/undercroft_pack.py`). Its own map is projected triplanar
+rather than read off its uvs, which run down the bore and smear; a sleeve in a
+clone of its own material stands behind it to close the holes in the mesh, and
+the walk is a corridor fitted to the rock it actually draws.
 
 This work is based on ["Rock Mountain with cave realistic 85k by JJ"](https://sketchfab.com/3d-models/rock-mountain-with-cave-realistic-85k-by-jj)
 (Sketchfab) — the rock outcrop at the foot of the sand wall, past the mutants,
 with the cave mouth you crawl into (`assets/rockmouth.glb`, through
-`tools/gltfpack.py`), and — through `tools/cave_rock.py`, which cuts a
-tileable 1024 patch out of its 4096 diffuse and derives a normal map from it —
-the stone both undercroft tunnels are built of (`assets/cave-rock.jpg`,
-`assets/cave-rock-n.jpg`).
+`tools/gltfpack.py`).
 
 `assets/sol.glb` is the owner's own model — SOL, the robed figure in the gold
 sun mask holding a bleeding heart, which stands on the undercroft church's

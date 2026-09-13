@@ -29145,15 +29145,23 @@ bwGlb('assets/rockmouth.glb', (gltf) => {
     if (mat.map) { mat.map.anisotropy = 8; mat.map.minFilter = THREE.LinearMipmapLinearFilter; }
     mat.polygonOffset = true; mat.polygonOffsetFactor = 1; mat.polygonOffsetUnits = 1;   // the two halves of the scan are coplanar in places: this is the black speckle
     mat.onBeforeCompile = (sh) => {
-      sh.uniforms.uMouth = { value: new THREE.Vector4(MOUNT_FRONT_X, MOUNT_MOUTH_Z, 2.8, 6.0) };
+      sh.uniforms.uMouth = { value: new THREE.Vector4(MOUNT_FRONT_X, MOUNT_MOUTH_Z, 2.7, 2.9) };
       sh.vertexShader = 'varying vec3 vMouthW;\n' + sh.vertexShader.replace('#include <fog_vertex>', '#include <fog_vertex>\n  vMouthW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
       sh.fragmentShader = 'varying vec3 vMouthW; uniform vec4 uMouth;\n' + sh.fragmentShader
         .replace('#include <map_fragment>', `#include <map_fragment>
   diffuseColor.rgb = pow(diffuseColor.rgb, vec3(1.25)) * 0.62;   // granite by moonlight, not by day
   {
-    float inMouth = step(abs(vMouthW.z - uMouth.y), uMouth.z) * step(vMouthW.y, uMouth.w);
-    float deep = smoothstep(uMouth.x - 0.6, uMouth.x + 0.9, vMouthW.x) * inMouth;
-    diffuseColor.rgb *= 1.0 - 0.995 * deep;
+    /* THE MOUTH'S DARKENING IS AN ELLIPSE WITH A SOFT EDGE, NOT A SLAB.
+       Two step() calls — a band in z and a ceiling in y — black out a RECTANGLE of
+       world space, and where that rectangle crosses rock it draws a hard
+       black-edged patch on the outcrop's face: the owner's "black png peeking
+       out the top of the rocks". Centred on the opening and faded out, there
+       is no edge anywhere for it to draw. */
+    float mz = (vMouthW.z - uMouth.y) / uMouth.z;
+    float my = (vMouthW.y - 1.9) / uMouth.w;
+    float m = 1.0 - smoothstep(0.55, 1.0, sqrt(mz * mz + my * my));
+    float deep = smoothstep(uMouth.x - 0.6, uMouth.x + 1.4, vMouthW.x);
+    diffuseColor.rgb *= 1.0 - 0.99 * deep * m;
   }`);
     };
     o.material = mat;
@@ -29165,15 +29173,17 @@ bwGlb('assets/rockmouth.glb', (gltf) => {
     if (!o.isMesh) return;
     const m = o.material.clone();
     m.onBeforeCompile = (sh) => {
-      sh.uniforms.uMouth = { value: new THREE.Vector4(EXIT_FRONT_Z, EXIT_X, 2.8, 6.0) };
+      sh.uniforms.uMouth = { value: new THREE.Vector4(EXIT_FRONT_Z, EXIT_X, 2.7, 2.9) };
       sh.vertexShader = 'varying vec3 vMouthW;\n' + sh.vertexShader.replace('#include <fog_vertex>', '#include <fog_vertex>\n  vMouthW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
       sh.fragmentShader = 'varying vec3 vMouthW; uniform vec4 uMouth;\n' + sh.fragmentShader
         .replace('#include <map_fragment>', `#include <map_fragment>
   diffuseColor.rgb = pow(diffuseColor.rgb, vec3(1.25)) * 0.62;
   {
-    float inMouth = step(abs(vMouthW.x - uMouth.y), uMouth.z) * step(vMouthW.y, uMouth.w);
-    float deep = smoothstep(uMouth.x + 0.6, uMouth.x - 0.9, vMouthW.z) * inMouth;   // this one opens down -z
-    diffuseColor.rgb *= 1.0 - 0.995 * deep;
+    float mz = (vMouthW.x - uMouth.y) / uMouth.z;
+    float my = (vMouthW.y - 1.9) / uMouth.w;
+    float m = 1.0 - smoothstep(0.55, 1.0, sqrt(mz * mz + my * my));
+    float deep = smoothstep(uMouth.x + 0.6, uMouth.x - 1.4, vMouthW.z);   // this one opens down -z
+    diffuseColor.rgb *= 1.0 - 0.99 * deep * m;
   }`);
     };
     m.needsUpdate = true;
@@ -29189,24 +29199,44 @@ bwGlb('assets/rockmouth.glb', (gltf) => {
    * seven metres short of the thing it is meant to crawl into */
   rockShellColliders(mountain, (x, z) => x < MOUNT_X + 2.0 && Math.abs(z - MOUNT_MOUTH_Z) < 2.3);
   rockShellColliders(mountainExit, (x, z) => z < EXIT_Z + 2.0 && Math.abs(x - EXIT_X) < 2.3);
-  /* AND LOOKING IN IS PITCH BLACK. The scan is an ARCH, not a dome: rays go
-   * clean through it, and what stands behind is the SAND WALL — so you put
-   * your face to the cave and saw the dune. The black has to go BETWEEN the
-   * arch and the cliff (a plug behind the cliff is drawn behind it and the
-   * dune still shows), and it has to be small: every box or plane big enough
-   * to feel safe put a black rectangle out over the rock's own outline,
-   * because its corners stand where the rock is narrow. A 5.2 by 6.2 panel
-   * a metre inside the mouth is the size that covers the aperture and stays
-   * within the stone — measured from four approaches, under 0.7 % of the
-   * frame is anything but rock and night. */
-  for (const [holder, px, pz, ry] of [[mountain, 15.2, MOUNT_MOUTH_Z - 0.7, -Math.PI / 2],
-                                      [mountainExit, EXIT_X - 0.7, EXIT_FRONT_Z + 1.8, 0]]) {
-    const dark = new THREE.Mesh(new THREE.PlaneGeometry(5.2, 6.2),
-      new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide, fog: false }));
-    dark.rotation.y = ry;
-    dark.position.set(px, 2.3, pz);
-    holder.parent.add(dark);                       // in `rockGroup`, in world metres: the holders are scaled 18
-  }
+  /* AND LOOKING IN IS PITCH BLACK — BUT THE BLACK IS CUT TO THE APERTURE,
+   * NOT GUESSED AT. The scan is an ARCH, not a dome: rays go clean through
+   * it, and what stands behind is the SAND WALL, so without something in the
+   * way you put your face to the cave and see the dune. The black has to go
+   * BETWEEN the arch and the cliff — a plug behind the cliff is drawn behind
+   * it and the dune still shows — and a hand-sized guess at how big it should
+   * be is exactly what the owner photographed: "black png peeking out the top
+   * of the rocks".
+   *
+   * So the opening is MEASURED. A grid of rays is cast at the rock from in
+   * front of it; the cells nothing is hit in are the hole, and the panel is
+   * the largest rectangle that fits inside those cells with a cell of stone
+   * left round it. It cannot stand proud of an outline it was cut from. */
+  /* AND LOOKING IN IS PITCH BLACK — WITH THE BLACK INSIDE THE ROCK'S OWN
+   * HOLLOW. The scan is an ARCH over a real cave: rays through the mouth go
+   * a long way before they meet anything, and what stands beyond is the SAND
+   * WALL, so with nothing in the way you put your face to the cave and see
+   * the dune. Two builds hung a PANEL across the opening instead and the
+   * second is what the owner photographed — "black png peeking out the top
+   * of the rocks" — because a flat rectangle big enough to cover an aperture
+   * is bigger than the stone round it wherever that stone is narrow.
+   *
+   * A BOX DEEP IN THE HOLLOW cannot do that: the rock encloses it, so the
+   * only direction it can be seen from is through the mouth, and its size is
+   * bounded by the hollow rather than guessed against the silhouette. The
+   * mouth's own darkening stays in the shader; this is what is behind it. */
+  const darkPlug = (holder, axis, front, mid, name) => {
+    const deep = 5.0, w = 3.6, h = 3.4;   // inside the hollow, and measured against the arch: bigger and its corners come out through the stone
+    const g = axis === 'x' ? new THREE.BoxGeometry(6.0, h, w) : new THREE.BoxGeometry(w, h, 6.0);
+    const plug = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide, fog: false }));
+    if (axis === 'x') plug.position.set(front + deep, h / 2 - 0.4, mid);
+    else plug.position.set(mid, h / 2 - 0.4, front - deep);
+    plug.name = name;
+    holder.parent.add(plug);                       // in `rockGroup`, in world metres: the holders are scaled 18
+    return plug;
+  };
+  darkPlug(mountain, 'x', MOUNT_FRONT_X, MOUNT_MOUTH_Z, 'mouthDark');
+  darkPlug(mountainExit, 'z', EXIT_FRONT_Z, EXIT_X, 'exitDark');
 });
 /* AND THE ROCK IS SOLID, WHICH THREE CYLINDERS COULD NEVER MAKE IT. "I clip
  * through the entrance rock" was a footprint thirty metres across answered by
