@@ -412,6 +412,41 @@
     white-space: nowrap;
   }
   #prompt.show { opacity: 1; }
+
+  /* AND THE ONE THAT TAKES YOU SOMEWHERE SITS IN THE MIDDLE. A prompt down
+   * beside the stamina bar is right for picking a shell up and wrong for the
+   * mouth of a cave — the owner walked into it and never saw it. An
+   * interactable with `mid` puts its prompt under the crosshair in white. */
+  #promptmid {
+    position: fixed;
+    left: 50%; top: 54%;
+    transform: translate(-50%, 0);
+    color: #ffffff;
+    font-family: "Georgia", serif;
+    font-size: 1.02rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 1), 0 0 26px rgba(0, 0, 0, 0.9);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 6;
+  }
+  #promptmid.show { opacity: 1; }
+  #promptmid .key {
+    display: inline-block;
+    min-width: 1.5em;
+    padding: 2px 7px;
+    margin-right: 0.45em;
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    border-radius: 3px;
+    font-size: 0.9rem;
+    letter-spacing: 0.06em;
+    color: #ffffff;
+    background: rgba(0, 0, 0, 0.55);
+    text-align: center;
+  }
   #prompt .key {
     display: inline-block;
     min-width: 1.5em;
@@ -1106,6 +1141,10 @@
   <div id="hurt-blood"></div>
   <div id="death"></div>
   <div id="crosshair"></div>
+  <!-- AND IT LIVES BESIDE THE CROSSHAIR, not in the HUD strip: an ancestor
+       with a `transform` contains `position: fixed`, so inside the bottom
+       strip the middle prompt rendered at the bottom of the screen. -->
+  <div id="promptmid"></div>
 
   <div id="hud">
     <div id="stamina"><div id="stamina-fill"></div></div>

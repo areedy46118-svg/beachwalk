@@ -2496,6 +2496,85 @@ RECORDED: eleven footfalls cut from a walk down a stone corridor
 normalised, faded, one at random per step (`churchStep`), with the sand
 step kept for the tunnel's rubble.
 
+**THE PASSAGE IS WALKED AS A TUBE, NOT AS A GRID.** A cell grid over somebody
+else's low-poly tunnel is a minefield — its floor strip has holes the sampler
+fell through, lumps of wall the grid calls floor (so you walk into rock),
+ledges no step rule crosses, and edges you slide off. Three passes of dilating
+and auto-ramping fought it and lost. What works is a CORRIDOR: the grid is
+used ONCE, at load, to find the centreline (breadth-first from the entry cell
+to the mouth, resampled every 1.2 m, lightly smoothed), and the game walks a
+tube round that line. Five things it took:
+
+- **The line ends where the TUNNEL does, not where the door is.** The last ten
+  metres to the church were never tunnel floor, so a corridor that insisted on
+  reaching the mouth found no path at all and the passage got no walk. It
+  takes the furthest reachable cell and then RUNS ITS OWN POINTS into the
+  church — a bridge could not do it, because a bridge is read before the
+  corridor and its flat height stood 0.64 m off the tube that was climbing
+  into it, so the walk simply ended there.
+- **A dilated copy finds the line; the RAW floor measures the width.** Dilate
+  for connectivity or two-cell holes break the path; measure the radius on the
+  dilation and the corridor is three cells wider than the tunnel and runs into
+  the rock.
+- **AND THE POINT IS RECENTRED IN THE FREE SPAN.** The line comes off a
+  dilated grid so it runs along one WALL as often as down the middle, and a
+  radius taken as the smaller of the two sides is therefore nothing — every
+  point pinned at its floor, a corridor a metre wide down the whole tunnel.
+  Measure both sides, move the point to the middle, radius is half the span:
+  median 0.55 m became 1.2.
+- **`walkable` must FALL THROUGH when the corridor says no.** An early return
+  walled the church off: the corridor answers for anything within a few metres
+  of its line and its last points stand in the nave, so every cell round the
+  doorway came back "not walkable".
+- Measured after: entry to exit and exit to entry both connect, standing, and
+  the tunnel has no rock in it, no ledge and no edge to fall off.
+
+**AND THE PACKER LEARNED TO CUT.** `--trim` drops everything below an x (344 m
+of tunnel was a slog; 171 is the half the owner asked for, and the cut end is
+the new entry, capped by the game's own black box), `--islands` drops
+connected islands under a triangle count (a game tunnel ships decoration
+modelled as slabs floating in the bore — "weird things floating" — 430
+triangles of it), and `--sparse` writes only the cells that have a floor. Two
+traps: the cut leaves ORPHANED VERTICES, so the bounds still span the whole
+untrimmed model and everything measured off them is sized for geometry that
+is not there; and a group the cut empties is not a mesh — an accessor with no
+positions has no min/max and the writer dies on it.
+
+**A GAME TUNNEL'S UVs RUN DOWN THE BORE**, so scaled over a hundred and
+seventy metres they draw as long smeared streaks. The map goes on TRIPLANAR
+instead (the ring's own trick), sampled along each world axis at a fixed size
+and blended by a normal the fragment derives itself, because the packer ships
+none. Every square metre of rock gets the same grain.
+
+**A LIT MATERIAL ON THE ENTRANCE SCAN RENDERS BLACK, AND AN UNLIT ONE IS
+MEASURED AGAINST THE SAND.** No moon reaches the face (it stands in the
+cliff) and `emissive * a granite map` is nothing however hard it is driven —
+a red emissive at 6 rendered black while a magenta BASIC override filled the
+frame. So it is `MeshBasicMaterial`, DoubleSide (the shell's winding faces the
+hill: FrontSide is invisible head-on). Its grade is not chosen but SWEPT: the
+first read 12 against an open beach's 7 ("the textures dont match at all...
+too bright"), the correction overshot to 3.6, and 0x9aabc6 puts it at 7.3,
+which is the beach's own value.
+
+**AND THE SCAN IS AN ARCH, SO LOOKING IN SHOWED THE SAND WALL.** Rays go clean
+through it. The black has to go BETWEEN the arch and the cliff — a plug behind
+the cliff is drawn behind it and the dune still shows — and it has to be
+SMALL: every box or panel big enough to feel safe put a black rectangle out
+over the rock's own outline, because its corners stand where the rock is
+narrow. A black copy of the rock pushed deeper does not work either: offset
+along the view axis its own arch lines up with the front one. A 5.2 by 6.2
+panel a metre inside the mouth covers the aperture and stays within the stone
+— measured from four approaches, under 0.7 % of the frame is anything but rock
+and night.
+
+**AND THE PROMPT THAT TAKES YOU SOMEWHERE SITS IN THE MIDDLE.** A prompt down
+beside the stamina bar is right for picking a shell up and wrong for the mouth
+of a cave — the owner walked into it and never saw it. An interactable with
+`mid` puts its prompt under the crosshair in white. It lives BESIDE THE
+CROSSHAIR and not in the HUD strip: an ancestor with a `transform` contains
+`position: fixed`, so inside the strip it rendered at the bottom of the screen
+anyway.
+
 **THE WAY IN IS A ROCK MOUNTAIN, THE TUNNEL IS THE 3DRT PASSAGE, AND THE OLD
 CAVE IS THE WAY OUT.** Three scans now, `tools/undercroft_pack.py` grew a
 `passage` kind plus `--yaw`, `--scale` and `--sparse`:

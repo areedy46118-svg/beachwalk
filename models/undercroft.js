@@ -139,6 +139,8 @@ export function makeUndercroft(opts = {}) {
    * grid chose — so the game can duck the camera under a low stretch of
    * tunnel instead of drawing it through the rock. 99 where there is none. */
   S.ceilAt = (lx, lz) => {
+    const cc = corridorAt(lx, lz);
+    if (cc && cc.d <= cc.r + 0.45) return cc.y + cc.h;
     /* A RAMP HAS ITS OWN ROOF. A bridge laid up a ledge climbs through cells
      * whose roof was measured over the floor BELOW it, so read against the
      * ramp's own height that roof was under a crouch and the walk refused
@@ -168,6 +170,8 @@ export function makeUndercroft(opts = {}) {
   S.floorAt = (lx, lz) => {
     const bf = bridgeFloor(lx, lz);
     if (bf !== null) return bf;
+    const c = corridorAt(lx, lz);
+    if (c && c.d <= c.r + 0.45) return c.y;
     for (const w of S.walks) {
       const f = gridFloor(w, lx, lz);
       if (f !== null) return f;
@@ -181,6 +185,16 @@ export function makeUndercroft(opts = {}) {
   S.walkable = (lx, lz, feet) => {
     const bf = bridgeFloor(lx, lz);
     if (bf !== null) return Math.abs(bf - feet) < 0.6;
+    /* INSIDE THE TUBE AND NOWHERE ELSE. The corridor is the whole of the
+     * passage's walk: within its radius you are on its floor, outside it
+     * you are in rock. Nothing to clip into and no edge to fall off. */
+    /* INSIDE THE TUBE you are on its floor; OUTSIDE it, ask the grids. An
+     * early `return` here walled the church off: the corridor answers for
+     * anything within a few metres of its line, and its last points stand
+     * in the nave, so every cell round the doorway came back "not walkable"
+     * and the walk ended a stride inside the church. */
+    const c = corridorAt(lx, lz);
+    if (c && c.d <= c.r) return Math.abs(c.y - feet) < 2.6;
     for (const w of S.walks) {
       const i = Math.floor((lx - w.off.x - w.x0) / w.cell), j = Math.floor((lz - w.off.z - w.z0) / w.cell);
       if (i < 0 || j < 0 || i >= w.gw || j >= w.gh) continue;
@@ -197,6 +211,157 @@ export function makeUndercroft(opts = {}) {
     }
     return false;
   };
+  /* ---- THE CORRIDOR. A cell grid over somebody else's low-poly tunnel is
+   * a minefield: its floor strip has holes the sampler fell through, lumps
+   * of wall the grid calls floor (so you walk into rock), ledges no step
+   * rule crosses, and edges you slide off. The owner's word was that it is
+   * glitchy and that the walk should be seamless with nothing blocking it.
+   *
+   * So the passage does not use its grid to WALK on at all. The grid is used
+   * once, at load, to find the tunnel's CENTRELINE — a breadth-first path
+   * from the entry cell to the mouth cell over the floor cells, resampled
+   * every 1.2 m and lightly smoothed — and each point of that line is given
+   * the free radius measured out from it until the floor runs out. What the
+   * game then walks is a TUBE round that line: the floor is the line's own
+   * height, you are held inside its radius, and there is nothing else in it.
+   * No holes, no lumps, no ledges, no edge to fall off. */
+  function buildCorridor(w, s0, s1) {
+    const cellOf = (x, z) => [Math.floor((x - w.off.x - w.x0) / w.cell), Math.floor((z - w.off.z - w.z0) / w.cell)];
+    /* THE FLOOR STRIP HAS HOLES IN IT — the sampler falls between a low-poly
+     * tube's faces — and a hole two cells wide is a break in the path even
+     * though the tunnel plainly goes on. A LOCAL copy is dilated to close
+     * them, and it is used only to FIND the line; the free radius is still
+     * measured on the raw floor, or the corridor would be three cells wider
+     * than the tunnel and run into the rock. */
+    const F = new Float32Array(w.gw * w.gh).fill(-99);
+    for (let j = 0; j < w.gh; j++) for (let i = 0; i < w.gw; i++) F[j * w.gw + i] = w.floor[j][i];
+    for (let pass = 0; pass < 4; pass++) {
+      const add = [];
+      for (let j = 1; j < w.gh - 1; j++) for (let i = 1; i < w.gw - 1; i++) {
+        if (F[j * w.gw + i] > -90) continue;
+        let n = 0, sf = 0;
+        for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const f = F[(j + dj) * w.gw + i + di]; if (f > -90) { n++; sf += f; } }
+        if (n >= 2) add.push([j * w.gw + i, sf / n]);
+      }
+      for (const [k, f] of add) F[k] = f;
+    }
+    const has = (i, j) => i >= 0 && j >= 0 && i < w.gw && j < w.gh && F[j * w.gw + i] > -90;
+    const hasRaw = (i, j) => i >= 0 && j >= 0 && i < w.gw && j < w.gh && w.floor[j][i] > -90;
+    const [ai, aj] = cellOf(s0.x, s0.z), [bi, bj] = cellOf(s1.x, s1.z);
+    if (!has(ai, aj) || !has(bi, bj)) return null;
+    const prev = new Int32Array(w.gw * w.gh).fill(-1);
+    const start = aj * w.gw + ai, goal = bj * w.gw + bi;
+    prev[start] = start;
+    const q = [start];
+    for (let head = 0; head < q.length; head++) {
+      const c = q[head];
+      if (c === goal) break;
+      const i = c % w.gw, j = (c - i) / w.gw;
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const ii = i + di, jj = j + dj;
+        if (!has(ii, jj)) continue;
+        const k = jj * w.gw + ii;
+        if (prev[k] !== -1) continue;
+        prev[k] = c; q.push(k);
+      }
+    }
+    /* AND THE LINE ENDS WHERE THE TUNNEL DOES, not where the door is. The
+     * last ten metres to the church were never tunnel floor — the join
+     * bridge has always carried them — so a corridor that INSISTS on
+     * reaching the mouth finds no path at all and the passage gets no walk.
+     * If the mouth is not reachable the furthest cell that is becomes the
+     * end, and the bridge takes over from there. */
+    let goalC = goal;
+    if (prev[goalC] === -1) {
+      let best = -1, bx = -1e9;
+      for (let k = 0; k < prev.length; k++) {
+        if (prev[k] === -1) continue;
+        const i = k % w.gw;
+        const x = w.off.x + w.x0 + (i + 0.5) * w.cell;
+        if (x > bx) { bx = x; best = k; }
+      }
+      if (best < 0) return null;
+      goalC = best;
+    }
+    const cells = [];
+    for (let c = goalC; c !== start; c = prev[c]) cells.push(c);
+    cells.push(start); cells.reverse();
+    // resample every 1.2 m along the cell path
+    const raw = cells.map((c) => {
+      const i = c % w.gw, j = (c - i) / w.gw;
+      return { x: w.off.x + w.x0 + (i + 0.5) * w.cell, z: w.off.z + w.z0 + (j + 0.5) * w.cell, y: F[j * w.gw + i] + w.off.y };
+    });
+    const pts = [raw[0]]; let acc = 0;
+    for (let k = 1; k < raw.length; k++) {
+      acc += Math.hypot(raw[k].x - raw[k - 1].x, raw[k].z - raw[k - 1].z);
+      if (acc >= 1.2 || k === raw.length - 1) { pts.push(raw[k]); acc = 0; }
+    }
+    // a light smooth — heavy smoothing cuts corners into the rock
+    for (let pass = 0; pass < 3; pass++) {
+      for (let k = 1; k < pts.length - 1; k++) {
+        pts[k] = { x: pts[k].x * 0.6 + (pts[k - 1].x + pts[k + 1].x) * 0.2,
+                   z: pts[k].z * 0.6 + (pts[k - 1].z + pts[k + 1].z) * 0.2,
+                   y: pts[k].y * 0.6 + (pts[k - 1].y + pts[k + 1].y) * 0.2 };
+      }
+    }
+    // the free radius at each point, measured across the line
+    for (let k = 0; k < pts.length; k++) {
+      const a = pts[Math.max(0, k - 1)], b = pts[Math.min(pts.length - 1, k + 1)];
+      let tx = b.x - a.x, tz = b.z - a.z; const L = Math.hypot(tx, tz) || 1; tx /= L; tz /= L;
+      const nx = -tz, nz = tx;
+      /* THE POINT IS RECENTRED IN THE FREE SPAN, and that is the whole of
+       * it. The line comes off a dilated grid so it runs along one WALL as
+       * often as down the middle, and a radius taken as the smaller of the
+       * two sides was therefore nothing — every point pinned at the 0.55
+       * floor, a corridor a metre wide down the whole tunnel. Measure both
+       * sides, move the point to the middle of what is free, and the radius
+       * is half the span. The march tolerates a hole or two on the way:
+       * the raw floor is peppered with cells the sampler fell through. */
+      const span = [0, 0];
+      for (let si = 0; si < 2; si++) {
+        const sgn = si ? -1 : 1;
+        let good = 0, miss = 0;
+        for (let d = 0.15; d <= 2.4; d += 0.15) {
+          const [ii, jj] = cellOf(pts[k].x + nx * sgn * d, pts[k].z + nz * sgn * d);
+          if (hasRaw(ii, jj)) { good = d; miss = 0; }
+          else if (++miss >= 3) break;
+        }
+        span[si] = good;
+      }
+      const shift = (span[0] - span[1]) / 2;
+      pts[k].x += nx * shift; pts[k].z += nz * shift;
+      pts[k].r = Math.max(0.55, Math.min(1.9, (span[0] + span[1]) / 2));
+      const [ii, jj] = cellOf(pts[k].x, pts[k].z);
+      const c = hasRaw(ii, jj) ? w.ceil[jj][ii] : 99;
+      pts[k].h = c >= 90 ? 2.4 : Math.max(1.95, c + w.off.y - pts[k].y);   // never low enough to refuse a step: the walk must not block
+    }
+    return { pts, lo: [0, 0], hi: [0, 0] };
+  }
+  /* the nearest point on the corridor: its height, its radius, how far off
+   * the line you are. Scanned straight — a hundred and forty segments is
+   * nothing beside what the grid it replaces was doing. */
+  const _cq = { y: 0, r: 0, d: 1e9, h: 2.0 };
+  function corridorAt(lx, lz) {
+    const C = S.corridor;
+    if (!C) return null;
+    if (lx < C.lo[0] - 3 || lx > C.hi[0] + 3 || lz < C.lo[1] - 3 || lz > C.hi[1] + 3) return null;
+    let bd = 1e9, by = 0, br = 0, bh = 2.0;
+    const P = C.pts;
+    for (let k = 0; k < P.length - 1; k++) {
+      const a = P[k], b = P[k + 1];
+      const dx = b.x - a.x, dz = b.z - a.z;
+      const L2 = dx * dx + dz * dz || 1e-9;
+      let t = ((lx - a.x) * dx + (lz - a.z) * dz) / L2;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const px = a.x + dx * t, pz = a.z + dz * t;
+      const d = (lx - px) * (lx - px) + (lz - pz) * (lz - pz);
+      if (d < bd) { bd = d; by = a.y + (b.y - a.y) * t; br = a.r + (b.r - a.r) * t; bh = a.h + (b.h - a.h) * t; }
+    }
+    _cq.d = Math.sqrt(bd); _cq.y = by; _cq.r = br; _cq.h = bh;
+    return _cq;
+  }
+  S.corridorAt = corridorAt;
+
   /* how wide a body is here: the passage says narrower */
   S.bodyR = (lx, lz) => {
     for (const w of S.walks) {
@@ -478,6 +643,36 @@ export function makeUndercroft(opts = {}) {
     const root = gltf.scene;
     const w = parseWalk(root);
     dress(root, 'cave');
+    /* AND ITS TEXTURE IS PROJECTED, NOT READ. A game tunnel's uvs run down
+     * the bore, so stretched over a hundred and seventy metres of scaled-up
+     * rock they draw as long smeared streaks — the owner's word was that the
+     * textures are stretched. The map goes on TRIPLANAR instead (the ring's
+     * own trick): sampled along each world axis at a fixed size and blended
+     * by the face normal, which the fragment derives itself because the
+     * packer ships no normals. Every square metre of rock gets the same
+     * grain whatever the model's uvs were doing. */
+    root.traverse((o) => {
+      if (!o.isMesh) return;
+      for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+        if (!m.map || m.userData.bwTri) continue;
+        m.userData.bwTri = true;
+        m.map.wrapS = m.map.wrapT = THREE.RepeatWrapping;
+        const prev = m.onBeforeCompile;
+        m.onBeforeCompile = function (sh, rndr) {
+          if (prev) prev.call(this, sh, rndr);
+          sh.uniforms.uTriScale = { value: 0.42 };      // metres per texture tile
+          sh.fragmentShader = 'uniform float uTriScale;\n' + sh.fragmentShader
+            .replace('#include <map_fragment>', `{
+  vec3 tp = vGrimeP * uTriScale;
+  vec3 tn = abs(normalize(cross(dFdx(vGrimeP), dFdy(vGrimeP))));
+  tn = tn / max(1e-4, tn.x + tn.y + tn.z);
+  vec4 tx = texture2D(map, tp.yz) * tn.x + texture2D(map, tp.xz) * tn.y + texture2D(map, tp.xy) * tn.z;
+  diffuseColor *= tx;
+}`);
+        };
+        m.needsUpdate = true;
+      }
+    });
     group.add(root);
     S.passage = { root, walk: w };
     compose();
@@ -583,34 +778,12 @@ export function makeUndercroft(opts = {}) {
     ch.off.copy(off);
     S.church.root.position.copy(off);
     S.walks = [pw, ch, cw];
-    /* THE PASSAGE IS A CRAWL-TUBE, NOT A STAIRCASE. Three hundred metres of
-     * somebody else's low-poly tunnel drops and climbs in three-metre ledges
-     * that no step rule anticipates, and the owner's brief is that NOTHING
-     * blocks the path either way. So its floor is taken as one connected
-     * surface — a big step and a big drop — so a ledge is something you
-     * clamber up or slide down rather than a wall, and the camera follows
-     * the floor, popping up or down where the tube is that steep, which in a
-     * pitch-dark hand-dug crawl reads as the ground under you and not as a
-     * bug. It is FLOODED from the entry to prove the mouth is reachable, and
-     * where the flood still stops it is WIDENED a cell (a pinch), never
-     * ramped — the ramp machinery was three passes of fighting the scan and
-     * this is the honest shape of the thing. */
+    /* THE PASSAGE IS WALKED AS A TUBE, NOT AS A GRID — see `buildCorridor`.
+     * Its centreline is found once from the grid and the game walks a
+     * corridor round it: seamless, nothing in it, no edge to fall off. */
+    S.corridor = buildCorridor(pw, { x: high.x + 2.0, z: high.z }, { x: low.x - 0.4, z: low.z });
+    if (!S.corridor) console.warn('[undercroft] the passage has no centreline from entry to mouth');
     pw.stepMax = 3.6; pw.dropMax = 4.5;
-    pw.ramps = [];
-    /* dilate the grid a few times up front: a low-poly tube's floor strip
-     * has a handful of two-cell holes in it where the sampler fell between
-     * faces, and each is a full-width gap to a disc. Then flood from the
-     * entry, crouched, and widen once more per stall until the mouth is
-     * reached — the owner's brief: nothing blocks the path. */
-    pw.dilate(3);
-    for (let tries = 0; tries < 6; tries++) {
-      const r = S.reach(high.x + 2.2, high.z, 1.03);
-      pw.reachStop = [+r.fx.toFixed(1), +r.fz.toFixed(1), tries];
-      if (r.x >= low.x - 11) { pw.reachOk = tries; break; }   // the join bridge covers the last ten metres to the door
-      pw.dilate(1);
-    }
-    if (pw.reachOk === undefined) console.warn('[undercroft] passage flood did not reach the mouth', pw.reachStop);
-    delete S._tubeDist;
     cw.stepMax = 1.2; cw.dropMax = 2.0;   // the old cave is rubble too
     ch.stepMax = 0.40;                  // a pew's seat is 0.45 up, and that is not a step
     /* THE JOIN IS BLANKETED, not bridged with a hairline. The passage's
@@ -620,7 +793,24 @@ export function makeUndercroft(opts = {}) {
      * ten metres short of the door. A wide flat strip the walk answers for,
      * from well back in the tunnel to well inside the nave, is one floor
      * over the join and there is nothing to step across. */
-    S.bridges.push({ x0: low.x - 13, x1: low.x + GAP + 3, z0: low.z - 7, z1: low.z + 7, y0: low.y, y1: low.y });
+    /* AND THE CORRIDOR GOES ALL THE WAY IN. Handing over to a bridge at the
+     * tunnel's last floor cell put a flat strip at one height against a tube
+     * climbing at another, and the two would not meet — the walk ended ten
+     * metres short of the door. The tube simply CONTINUES instead: a
+     * straight run of its own points from where the tunnel's floor gives out
+     * to the church's doorway, at the doorway's height. One floor, no seam,
+     * nothing to step across. */
+    if (S.corridor) {
+      const P = S.corridor.pts, CE = P[P.length - 1];
+      const dx = (low.x + GAP + 1.2) - CE.x, dz = low.z - CE.z, dy = low.y - CE.y;
+      const n = Math.max(2, Math.ceil(Math.hypot(dx, dz) / 1.2));
+      for (let k = 1; k <= n; k++) {
+        const t = k / n;
+        P.push({ x: CE.x + dx * t, z: CE.z + dz * t, y: CE.y + dy * t, r: 1.5, h: 2.6 });
+      }
+      S.corridor.lo = [Math.min(...P.map((p) => p.x)), Math.min(...P.map((p) => p.z))];
+      S.corridor.hi = [Math.max(...P.map((p) => p.x)), Math.max(...P.map((p) => p.z))];
+    }
     /* THE BREACH. The church's front doorway is ALREADY AN OPENING in the
      * scan — four metres by five and a half — and the first two builds
      * closed it with black: a BackSide box eight metres deep whose far

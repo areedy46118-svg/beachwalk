@@ -516,6 +516,12 @@ by [Aurélien Martel](https://sketchfab.com/aurelien_martel) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the church at the bottom of
 it (`assets/church.glb`, same packer; its pews come out as forty breakable benches).
 
+`assets/cave-ambience.m4a` and `assets/cave-step*.m4a` are the owner's own
+recordings — a 45-minute cave ambience cut to a 75 s seamless loop, and ten
+footfalls cut from a reverberant cave-steps take. The ambience loops in both
+caves and never in the church; the steps play in both caves and in the sewer
+drain. Neither is redistributable.
+
 This work is based on ["3DRT-uderground for game"](https://sketchfab.com/3d-models/3drt-uderground-for-game-a146bf2f80e24640abe951fa97d127af)
 by [Ant leader](https://sketchfab.com/Jguyfioy) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the tunnel you crawl

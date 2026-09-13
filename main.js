@@ -3606,6 +3606,7 @@ scene.add(ocean);
 const overlay = document.getElementById('overlay');
 const crosshair = document.getElementById('crosshair');
 const promptEl = document.getElementById('prompt');
+const promptMidEl = document.getElementById('promptmid');
 const noteEl = document.getElementById('note');
 const noteText = document.getElementById('note-text');
 const hotbarEl = document.getElementById('hotbar');
@@ -4595,12 +4596,17 @@ function removeInteractable(root) {
   if (i >= 0) interactables.splice(i, 1);
 }
 const kbd = (k) => `<span class="key">${k}</span>`;
-let promptHTML = '';
-function setPrompt(html) {
-  if (html === promptHTML) return;
-  promptHTML = html;
-  promptEl.innerHTML = html;
-  promptEl.classList.toggle('show', !!html);
+let promptHTML = '', promptMid = false;
+/* `mid` puts it under the crosshair in white instead of down beside the
+ * stamina bar — for the two or three prompts that take you somewhere. */
+function setPrompt(html, mid) {
+  mid = !!mid;
+  if (html === promptHTML && mid === promptMid) return;
+  promptHTML = html; promptMid = mid;
+  promptEl.innerHTML = mid ? '' : html;
+  promptEl.classList.toggle('show', !mid && !!html);
+  promptMidEl.innerHTML = mid ? html : '';
+  promptMidEl.classList.toggle('show', mid && !!html);
 }
 function updateHover() {
   if (peeking) { hovered = null; return; }       // the peek owns the prompt
@@ -4634,7 +4640,7 @@ function updateHover() {
      * key) has to be asked, not read once at registration. */
     const lbl = typeof best.label === 'function' ? best.label() : best.label;
     const br = typeof best.bare === 'function' ? best.bare() : best.bare;
-    setPrompt(br ? lbl : kbd('E') + lbl);
+    setPrompt(br ? lbl : kbd('E') + lbl, best.mid);
   } else if (equipped && equipped.onListen && !listening) {
     crosshair.className = 'active';
     setPrompt(kbd('LMB') + 'Hold it to your ear');
@@ -11131,6 +11137,8 @@ const SAMPLES = {
   wade: ['assets/wade1.m4a', 'assets/wade2.m4a', 'assets/wade3.m4a', 'assets/wade4.m4a'],
   slosh: ['assets/slosh1.m4a', 'assets/slosh2.m4a', 'assets/slosh3.m4a', 'assets/slosh4.m4a'],
   splash: ['assets/water-splash1.m4a', 'assets/water-splash2.m4a', 'assets/water-splash3.m4a'],
+  caveStep: ['assets/cave-step1.m4a', 'assets/cave-step2.m4a', 'assets/cave-step3.m4a', 'assets/cave-step4.m4a', 'assets/cave-step5.m4a',
+             'assets/cave-step6.m4a', 'assets/cave-step7.m4a', 'assets/cave-step8.m4a', 'assets/cave-step9.m4a', 'assets/cave-step10.m4a'],
   poise: ['assets/poise-broken.m4a'],      // the parry landing: its guard is gone
   smash: ['assets/overhead-hit.m4a'],      // a charged overhead going through shell
   blockSand: ['assets/block-sand.m4a'],    // a blow stopped on the plastic shovel: a paint can, not steel
@@ -11392,7 +11400,17 @@ function sfxStepWood() {
  * rubble is the beach's own step, quieter, because it is grit either way.
  * `ucInChurch` is a forward reference — the undercroft is declared far below. */
 function sfxStepUnder() {
-  if (ucInChurch()) { stepAlt ^= 1; if (playSample('churchStep', 0.62 * (stepAlt ? 1 : 0.86), 0.05)) return; }
+  stepAlt ^= 1;
+  if (ucInChurch()) { if (playSample('churchStep', 0.62 * (stepAlt ? 1 : 0.86), 0.05)) return; }
+  else if (playSample('caveStep', 0.55 * (stepAlt ? 1 : 0.86), 0.06)) return;   // both caves: rock, with the recording's own tail on it
+  sfxStep();
+}
+/* AND THE DRAIN IS ROCK UNDERFOOT TOO — the owner's word: both caves and the
+ * sewer drain. The synthesised sand step is the fallback until the bank is
+ * off the network. */
+function sfxStepDrain() {
+  stepAlt ^= 1;
+  if (playSample('caveStep', 0.5 * (stepAlt ? 1 : 0.86), 0.06)) return;
   sfxStep();
 }
 function sfxStep() {
@@ -24299,6 +24317,7 @@ function update(dt, rawDt = dt) {
       else if (onDock) sfxStepWood();
       else if (inBunker) sfxStepMetal();
       else if (inUndercroft) sfxStepUnder();
+      else if (insideDrain) sfxStepDrain();
       else sfxStep();
     }
     camBaseY = floorLimit; vy = 0; onGround = true;
@@ -24365,6 +24384,8 @@ function update(dt, rawDt = dt) {
         sfxStepMetal();                    // steel plate: a clank, and no print
       } else if (inUndercroft) {
         sfxStepUnder();                    // stone, or rubble: no print either way
+      } else if (insideDrain) {
+        sfxStepDrain();                    // concrete pipe: the caves' own recording
       } else {
         stampFoot(camera.position.x, camera.position.z, moveDir.x, moveDir.z, footSide);
         sfxStep();
@@ -28896,7 +28917,11 @@ let inUndercroft = false, ucBusy = false, ucDir = 0, ucT = 0, ucCut = false, ucM
 /* TWO WAYS OUT. Back the way you came puts you on the sand in front of the
  * rock's mouth, facing the sea; the far end of the old cave, behind the
  * altar, puts you on the beach past the rock, the way it always did. */
-const UC_RETURN = { mouth: { x: 12.4, z: HOLE_Z - 0.4, yaw: Math.PI / 2 }, far: { x: 11.2, z: ROCK_Z - 20, yaw: 0 } };
+/* WHERE THE WAY OUT COMES UP, declared HERE because `UC_RETURN` reads it and
+ * the rock that stands on it is built two hundred lines further down — a
+ * const that reads a later one is a dead-zone crash that takes the page. */
+const EXIT_Z = ROCK_Z - 4.0, EXIT_X = 11.0, EXIT_FRONT_Z = EXIT_Z - 4.6;
+const UC_RETURN = { mouth: { x: 12.4, z: HOLE_Z - 0.4, yaw: Math.PI / 2 }, far: { x: EXIT_X, z: EXIT_FRONT_Z - 3.2, yaw: 0 } };
 let ucReturn = UC_RETURN.far;
 const _ucL = new THREE.Vector3();
 const undercroft = makeUndercroft({ load: bwGlb, onReady: (S) => { armUndercroft(S); } });
@@ -28918,13 +28943,11 @@ const ucLamps = [];
  * own dying colour, and NOTHING here is brighter than it has to be: what
  * carries the rock and the stone is each map's own emissive lift, which is
  * the pavilion's lesson — do it in the map, not with a lamp. */
-const UC_LAMP = [{ want: 2.8, dist: 17, col: 0xd8bf94, flick: [0.55, 6.1] },   // the passage: six failing bulbs down three hundred metres of it, pools with long dark between
-                 { want: 2.6, dist: 17, col: 0xd2b98e, flick: [0.55, 5.3] },
-                 { want: 2.8, dist: 17, col: 0xd8bf94, flick: [0.55, 4.7] },
-                 { want: 2.6, dist: 17, col: 0xd2b98e, flick: [0.55, 6.9] },
-                 { want: 2.8, dist: 17, col: 0xd8bf94, flick: [0.55, 5.9] },
-                 { want: 2.6, dist: 17, col: 0xd2b98e, flick: [0.55, 4.3] },
-                 { want: 34, dist: 50, col: 0xc2b79c, flick: [0.10, 3.1] },    // the nave, thirteen metres up
+/* AND THE CAVE HAS NO LAMPS AT ALL. Six failing bulbs down a tunnel was a
+ * MINE; the owner's word is that it should just be a cave, so the only
+ * light in it is whatever you carry. The six entries are gone and the
+ * church's own lamps start the list. */
+const UC_LAMP = [{ want: 34, dist: 50, col: 0xc2b79c, flick: [0.10, 3.1] },    // the nave, thirteen metres up
                  { want: 26, dist: 50, col: 0xb8ae9a, flick: [0.10, 2.6] },    // the nave, further in
                  /* AND THE CHANCEL IS LIT BY THE CANDLES ON THE ALTAR, not
                   * by a lamp in the vault over it. Forty units at thirty
@@ -28955,6 +28978,25 @@ for (let i = 0; i < UC_LAMP.length; i++) {
  * flame breathes, it does not fail. The FACTOR is applied after the ramp,
  * not to it — the ramp is a third of a second long and would eat every
  * flicker inside it. */
+/* ---- THE CAVE'S OWN AIR. A recording on a loop, up in the tunnel and down
+ * to nothing in the church — the owner's word: in the first cave, not the
+ * nave. It is an element rather than a synth bed because that is what it is,
+ * and `createMediaElementSource` may only be called ONCE per element (the
+ * shell's own lesson), so the graph is built once and the gain is all that
+ * ever moves. The element is only created on the first crawl in, so nothing
+ * downloads it until somebody goes underground. */
+let caveAmbEl = null, caveAmbGain = null;
+function startCaveAmbience() {
+  if (caveAmbEl || !audioCtx) return;
+  caveAmbEl = new Audio('assets/cave-ambience.m4a');
+  caveAmbEl.crossOrigin = 'anonymous';
+  caveAmbEl.loop = true;
+  const src = audioCtx.createMediaElementSource(caveAmbEl);
+  caveAmbGain = audioCtx.createGain();
+  caveAmbGain.gain.value = 0.0001;
+  src.connect(caveAmbGain).connect(masterGain);
+  caveAmbEl.play().catch(() => {});
+}
 let ucFlickT = 0;
 function ucLampFlicker(k, fl, t) {
   const q = k * 1.93, r = fl[1];
@@ -28991,9 +29033,7 @@ function armUndercroft(S) {
    * front of the altar with no candle at the middle of it — a lamp on the
    * ground, which is what the candles are there so as not to be. */
   const foot = A ? { x: A.x - 0.9, y: A.dais + 1.25, z: A.z } : altar;
-  const P = sp.passage || [];
-  const at = [P[0] || sp.entry, P[1] || sp.entry, P[2] || sp.mouth, P[3] || sp.mouth, P[4] || sp.mouth, P[5] || sp.mouth,   // down the passage, from the grid
-              church[0] || sp.exit, church[church.length - 1] || sp.exit, altar, foot,
+  const at = [church[0] || sp.exit, church[church.length - 1] || sp.exit, altar, foot,
               pick(cave, 0.0) || sp.exit, pick(cave, 0.72) || sp.exit];                  // the old cave's own bulbs: the first is the one at its mouth, so the hole in the apse shows a lit floor going in
   at.forEach((p, i) => { if (p && ucLamps[i]) ucLamps[i].position.set(UC_X + p.x, UC_Y + p.y - 0.3, UC_Z + p.z); });
   // the way out, behind the altar
@@ -29001,7 +29041,7 @@ function armUndercroft(S) {
   proxy.name = 'hitProxy';
   proxy.position.set(sp.exit.x, sp.exit.y + 1.3, sp.exit.z);
   undercroft.add(proxy);
-  addInteractable(proxy, 'Climb out', 'default', { far: 3.2, onActivate: () => leaveUndercroft('far'), when: () => inUndercroft && !ucBusy });
+  addInteractable(proxy, 'To climb out', 'default', { far: 3.2, mid: true, onActivate: () => leaveUndercroft('far'), when: () => inUndercroft && !ucBusy });
   /* AND THE WAY YOU CAME IN IS A WAY OUT. At the passage's start, a step
    * short of where you are set down, "Climb out" takes you back to the sand
    * in front of the rock — the owner's word, and a tunnel three hundred
@@ -29010,7 +29050,7 @@ function armUndercroft(S) {
   back.name = 'hitProxy';
   back.position.set(sp.entry.x - 2.6, sp.entry.y + 1.2, sp.entry.z);
   undercroft.add(back);
-  addInteractable(back, 'Climb out', 'default', { far: 3.4, onActivate: () => leaveUndercroft('mouth'), when: () => inUndercroft && !ucBusy });
+  addInteractable(back, 'To climb out', 'default', { far: 4.2, mid: true, onActivate: () => leaveUndercroft('mouth'), when: () => inUndercroft && !ucBusy });
   // the pews
   for (const b of S.benches) {
     const prop = { mesh: b.mesh, radius: 1.7, dead: false, held: false, thrown: false, vel: new THREE.Vector3(),
@@ -29068,6 +29108,16 @@ mountain.position.set(MOUNT_X, -0.6, MOUNT_Z);       // sunk so the mouth's floo
 mountain.rotation.y = -Math.PI / 2;                   // the scan's mouth faces +z; the beach is -x
 mountain.scale.setScalar(MOUNT_S);
 rockGroup.add(mountain);                              // far-culled by its own z, with the rocks
+/* AND THE WAY OUT COMES OUT OF ROCK TOO. Behind the altar the old cave used
+ * to set you down on open sand a little past the wall of rock that shuts the
+ * beach, which is a teleport, not a way out. The same scan stands in that
+ * wall with its mouth facing DOWN THE WALK, so you climb out of the far side
+ * of the huge rock and the beach goes on in front of you. */
+const mountainExit = new THREE.Group();
+mountainExit.position.set(EXIT_X, -0.6, EXIT_Z);
+mountainExit.rotation.y = Math.PI;                    // the scan's mouth faces +z: turn it to -z, down the walk
+mountainExit.scale.setScalar(MOUNT_S);
+rockGroup.add(mountainExit);
 bwGlb('assets/rockmouth.glb', (gltf) => {
   gltf.scene.traverse((o) => {
     if (!o.isMesh) return;
@@ -29082,25 +29132,82 @@ bwGlb('assets/rockmouth.glb', (gltf) => {
      * faces the hill. It reads the same from every angle, which is exactly
      * what an unlit rock wants, and the mouth is darkened to black in the
      * same shader — a slab of world space straight behind the opening. */
+    /* AND IT IS GRADED TO THE BEACH, NOT LIFTED OFF IT. The first pass put
+     * the granite up at its own brightness with a gamma on top and it read
+     * as a pale limestone model dropped on a blue-black beach — "the
+     * textures dont match at all... too bright". The map is multiplied DOWN
+     * and pulled toward the sand's own cold blue instead, which is the
+     * beach formation's grade arrived at the other way round. */
     const src = o.material;
-    const mat = new THREE.MeshBasicMaterial({ map: src.map, side: THREE.DoubleSide, fog: true, color: 0x9fb0c8 });
+    /* MEASURED AGAINST THE SAND, not chosen. The first grade read 12 against
+     * an open beach's 7 — "the textures dont match at all... too bright" — and
+     * the correction overshot to 3.6, which is a black lump. Swept live:
+     * 0x9aabc6 puts the rock at 7.3, which is the beach's own value, so the
+     * outcrop belongs to the beach it stands on. */
+    const mat = new THREE.MeshBasicMaterial({ map: src.map, side: THREE.DoubleSide, fog: true, color: 0x9aabc6 });
     if (mat.map) { mat.map.anisotropy = 8; mat.map.minFilter = THREE.LinearMipmapLinearFilter; }
+    mat.polygonOffset = true; mat.polygonOffsetFactor = 1; mat.polygonOffsetUnits = 1;   // the two halves of the scan are coplanar in places: this is the black speckle
     mat.onBeforeCompile = (sh) => {
-      sh.uniforms.uMouth = { value: new THREE.Vector4(MOUNT_FRONT_X, MOUNT_MOUTH_Z, 2.6, 5.4) };
+      sh.uniforms.uMouth = { value: new THREE.Vector4(MOUNT_FRONT_X, MOUNT_MOUTH_Z, 2.8, 6.0) };
       sh.vertexShader = 'varying vec3 vMouthW;\n' + sh.vertexShader.replace('#include <fog_vertex>', '#include <fog_vertex>\n  vMouthW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
       sh.fragmentShader = 'varying vec3 vMouthW; uniform vec4 uMouth;\n' + sh.fragmentShader
         .replace('#include <map_fragment>', `#include <map_fragment>
-  diffuseColor.rgb = pow(diffuseColor.rgb, vec3(0.72)) * 1.15;   // lift the granite to moonlit stone
+  diffuseColor.rgb = pow(diffuseColor.rgb, vec3(1.25)) * 0.62;   // granite by moonlight, not by day
   {
     float inMouth = step(abs(vMouthW.z - uMouth.y), uMouth.z) * step(vMouthW.y, uMouth.w);
-    float deep = smoothstep(uMouth.x - 0.2, uMouth.x + 1.6, vMouthW.x) * inMouth;
-    diffuseColor.rgb *= 1.0 - 0.97 * deep;
+    float deep = smoothstep(uMouth.x - 0.6, uMouth.x + 0.9, vMouthW.x) * inMouth;
+    diffuseColor.rgb *= 1.0 - 0.995 * deep;
   }`);
     };
     o.material = mat;
   });
   mountain.add(gltf.scene);
+  // the same rock again in the wall that shuts the beach, its mouth down the walk
+  const twin = gltf.scene.clone(true);
+  twin.traverse((o) => {
+    if (!o.isMesh) return;
+    const m = o.material.clone();
+    m.onBeforeCompile = (sh) => {
+      sh.uniforms.uMouth = { value: new THREE.Vector4(EXIT_FRONT_Z, EXIT_X, 2.8, 6.0) };
+      sh.vertexShader = 'varying vec3 vMouthW;\n' + sh.vertexShader.replace('#include <fog_vertex>', '#include <fog_vertex>\n  vMouthW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = 'varying vec3 vMouthW; uniform vec4 uMouth;\n' + sh.fragmentShader
+        .replace('#include <map_fragment>', `#include <map_fragment>
+  diffuseColor.rgb = pow(diffuseColor.rgb, vec3(1.25)) * 0.62;
+  {
+    float inMouth = step(abs(vMouthW.x - uMouth.y), uMouth.z) * step(vMouthW.y, uMouth.w);
+    float deep = smoothstep(uMouth.x + 0.6, uMouth.x - 0.9, vMouthW.z) * inMouth;   // this one opens down -z
+    diffuseColor.rgb *= 1.0 - 0.995 * deep;
+  }`);
+    };
+    m.needsUpdate = true;
+    o.material = m;
+  });
+  mountainExit.add(twin);
+  /* AND LOOKING IN IS PITCH BLACK. The scan is an ARCH, not a dome: rays go
+   * clean through it, and what stands behind is the SAND WALL — so you put
+   * your face to the cave and saw the dune. The black has to go BETWEEN the
+   * arch and the cliff (a plug behind the cliff is drawn behind it and the
+   * dune still shows), and it has to be small: every box or plane big enough
+   * to feel safe put a black rectangle out over the rock's own outline,
+   * because its corners stand where the rock is narrow. A 5.2 by 6.2 panel
+   * a metre inside the mouth is the size that covers the aperture and stays
+   * within the stone — measured from four approaches, under 0.7 % of the
+   * frame is anything but rock and night. */
+  for (const [holder, px, pz, ry] of [[mountain, 15.2, MOUNT_MOUTH_Z - 0.7, -Math.PI / 2],
+                                      [mountainExit, EXIT_X - 0.7, EXIT_FRONT_Z + 1.8, 0]]) {
+    const dark = new THREE.Mesh(new THREE.PlaneGeometry(5.2, 6.2),
+      new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide, fog: false }));
+    dark.rotation.y = ry;
+    dark.position.set(px, 2.3, pz);
+    holder.parent.add(dark);                       // in `rockGroup`, in world metres: the holders are scaled 18
+  }
 });
+{
+  // the exit rock is solid but for its mouth, the entrance's own arrangement
+  rockColliders.push({ x: EXIT_X, z: EXIT_Z + 3.2, r: 6.0, top: 30, mat: 'rock' },
+                     { x: EXIT_X - 5.2, z: EXIT_FRONT_Z + 1.6, r: 3.0, top: 30, mat: 'rock' },
+                     { x: EXIT_X + 5.2, z: EXIT_FRONT_Z + 1.6, r: 3.0, top: 30, mat: 'rock' });
+}
 rockColliders.push({ x: MOUNT_X + 3.0, z: MOUNT_Z, r: 6.0, top: 30, mat: 'rock' },               // the mass, in the dune
                    { x: MOUNT_FRONT_X + 1.6, z: MOUNT_MOUTH_Z - 5.2, r: 3.0, top: 30, mat: 'rock' },   // a flank, clear of the wide mouth
                    { x: MOUNT_FRONT_X + 1.6, z: MOUNT_MOUTH_Z + 5.2, r: 3.0, top: 30, mat: 'rock' });  // and the other
@@ -29113,10 +29220,11 @@ rockColliders.push({ x: MOUNT_X + 3.0, z: MOUNT_Z, r: 6.0, top: 30, mat: 'rock' 
   proxy.name = 'hitProxy';
   proxy.position.set(MOUNT_FRONT_X + 0.5, HOLE_Y, MOUNT_MOUTH_Z);
   rockGroup.add(proxy);
-  addInteractable(proxy, 'Crawl in', 'default', { far: 3.4, onActivate: () => enterUndercroft(), when: () => !inUndercroft && !ucBusy });
+  addInteractable(proxy, 'To crawl in', 'default', { far: 4.6, mid: true, onActivate: () => enterUndercroft(), when: () => !inUndercroft && !ucBusy });
 }
 function enterUndercroft() {
   if (ucBusy || inUndercroft || !UC.ready) return;
+  startCaveAmbience();
   ucBusy = true; ucDir = 1; ucT = 0; ucCut = false;
   blocking = false;
   undercroft.visible = true;
@@ -29201,6 +29309,12 @@ function updateUndercroftCut(dt) {
    * sword through the air all get the church's tail while you are in it,
    * and nothing on the beach ever does. The tunnel gets a little of it —
    * rock a metre from your head answers too, but shortly. */
+  /* the cave's bed: up in either tunnel, out in the nave, gone on the beach */
+  if (caveAmbGain && audioCtx) {
+    const want = inUndercroft && !ucInChurch() ? 0.9 * settings.volume : 0.0001;
+    caveAmbGain.gain.setTargetAtTime(want, audioCtx.currentTime, 0.7);
+    if (caveAmbEl && caveAmbEl.paused && inUndercroft) caveAmbEl.play().catch(() => {});
+  }
   if (ucVerbGain && audioCtx) {
     const want = !inUndercroft ? 0 : (ucInChurch() ? 0.62 : 0.16);
     ucVerbGain.gain.setTargetAtTime(want, audioCtx.currentTime, 0.5);

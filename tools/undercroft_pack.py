@@ -318,6 +318,8 @@ def main():
     ap.add_argument('--yaw', type=float, default=0.0, help='turn the whole model about +Y by this many degrees before anything is measured')
     ap.add_argument('--scale', type=float, default=1.0, help='and scale it: a game asset in its own units becomes metres here, once')
     ap.add_argument('--sparse', action='store_true', help='write the walk as a list of the cells that have a floor (a long thin tunnel is 95%% empty bounding box)')
+    ap.add_argument('--trim', type=float, default=None, help='drop everything whose baked x is below this (halve a tunnel that is too long; the cut end is capped by the game)')
+    ap.add_argument('--islands', type=int, default=0, help='drop connected islands smaller than this many triangles — a game tunnel is full of loose decoration slabs floating in the bore')
     ap.add_argument('--headroom', type=float, default=HEADROOM, help='the least roof a cell may have over its floor and still be floor (the crouch is 1.03)')
     a = ap.parse_args()
     budget = a.budget or {'cave': 240000, 'church': 260000, 'passage': 60000}[a.kind]
@@ -370,6 +372,81 @@ def main():
         walk(ni, ident)
     total = sum(len(G[2]) // 3 for G in groups.values())
     log('%d groups, %d tris' % (len(groups), total))
+
+    # ---- HALF THE TUNNEL. Three hundred and forty metres is a slog; the cut
+    # end becomes the new entry and the game's black cap closes it.
+    if a.trim is not None:
+        for key, G in groups.items():
+            P, UV, I = G
+            keep = []
+            for t in range(0, len(I) - 2, 3):
+                cx = (P[I[t]][0] + P[I[t + 1]][0] + P[I[t + 2]][0]) / 3.0
+                if cx >= a.trim:
+                    keep.extend((I[t], I[t + 1], I[t + 2]))
+            G[2] = keep
+        n2 = sum(len(G[2]) // 3 for G in groups.values())
+        log('trimmed at x >= %.1f: %d -> %d tris' % (a.trim, total, n2))
+        total = n2
+
+    # ---- AND THE LOOSE SLABS GO. A game tunnel ships decoration — planks,
+    # boards, bits of frame — modelled as islands floating in the bore, and
+    # welded into one mesh they read as "weird things floating". Anything
+    # that is its own small connected island is not the tunnel.
+    if a.islands:
+        for key, G in groups.items():
+            P, UV, I = G
+            if not I:
+                continue
+            canon = {}
+            cmap = [0] * len(P)
+            for vi, pp in enumerate(P):
+                k = (round(pp[0], 3), round(pp[1], 3), round(pp[2], 3))
+                cmap[vi] = canon.setdefault(k, vi)
+            parent = list(range(len(P)))
+            def find(x):
+                while parent[x] != x:
+                    parent[x] = parent[parent[x]]; x = parent[x]
+                return x
+            for t in range(0, len(I) - 2, 3):
+                r = [find(cmap[I[t + k]]) for k in range(3)]
+                for k in (1, 2):
+                    if r[k] != r[0]:
+                        parent[r[k]] = r[0]; r[k] = r[0]
+            cnt = {}
+            for t in range(0, len(I) - 2, 3):
+                r = find(cmap[I[t]]); cnt[r] = cnt.get(r, 0) + 1
+            keep = []
+            dropped = 0
+            for t in range(0, len(I) - 2, 3):
+                if cnt[find(cmap[I[t]])] >= a.islands:
+                    keep.extend((I[t], I[t + 1], I[t + 2]))
+                else:
+                    dropped += 1
+            G[2] = keep
+            if dropped:
+                log('  %s: dropped %d tris in islands under %d' % (str(key), dropped, a.islands))
+        total = sum(len(G[2]) // 3 for G in groups.values())
+
+    # ---- AND THE VERTICES THE CUT ORPHANED HAVE TO GO, or the model's
+    # BOUNDS still span the whole untrimmed tunnel and everything measured
+    # off them — the walk grid, the black shell, the body-radius region —
+    # is sized for geometry that is no longer there.
+    if a.trim is not None or a.islands:
+        for key, G in groups.items():
+            P, UV, I = G
+            vmap, p2, u2, i2 = {}, [], [], []
+            for v in I:
+                m = vmap.get(v)
+                if m is None:
+                    m = vmap[v] = len(p2); p2.append(P[v]); u2.append(UV[v])
+                i2.append(m)
+            G[0], G[1], G[2] = p2, u2, i2
+
+    # ---- a group the trim emptied is not a mesh: an accessor with no
+    # positions has no min/max and the writer dies on it
+    for key in [k for k, G in groups.items() if len(G[2]) < 3]:
+        groups.pop(key); order.remove(key)
+        log('dropped empty group %s' % str(key))
 
     # ---- benches out of the pews
     out_meshes = []      # (name, material, P, UV, tris, is_bench)
