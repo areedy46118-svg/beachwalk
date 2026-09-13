@@ -308,14 +308,20 @@ def split_benches(P, UV, I):
 
 
 def main():
+    global HEADROOM
     ap = argparse.ArgumentParser()
-    ap.add_argument('kind', choices=['cave', 'church'])
+    ap.add_argument('kind', choices=['cave', 'church', 'passage'])
     ap.add_argument('src'); ap.add_argument('dst')
     ap.add_argument('--tex', type=int, default=1024)
     ap.add_argument('--quality', type=int, default=86)
     ap.add_argument('--budget', type=int, default=0, help='triangle budget for the whole model (0: the kind\'s default)')
+    ap.add_argument('--yaw', type=float, default=0.0, help='turn the whole model about +Y by this many degrees before anything is measured')
+    ap.add_argument('--scale', type=float, default=1.0, help='and scale it: a game asset in its own units becomes metres here, once')
+    ap.add_argument('--sparse', action='store_true', help='write the walk as a list of the cells that have a floor (a long thin tunnel is 95%% empty bounding box)')
+    ap.add_argument('--headroom', type=float, default=HEADROOM, help='the least roof a cell may have over its floor and still be floor (the crouch is 1.03)')
     a = ap.parse_args()
-    budget = a.budget or (240000 if a.kind == 'cave' else 260000)
+    budget = a.budget or {'cave': 240000, 'church': 260000, 'passage': 60000}[a.kind]
+    HEADROOM = a.headroom
 
     root = os.path.dirname(os.path.abspath(a.src))
     g = json.load(open(a.src))
@@ -330,7 +336,7 @@ def main():
     # ---- gather every primitive in world space, merged per (node, material)
     groups = {}          # (node name, material index) -> [P, UV, I]
     order = []
-    skip_re = {'church': ('Sun', 'Doors_Old_Wooden_1.003'), 'cave': ()}[a.kind]
+    skip_re = {'church': ('Sun', 'Doors_Old_Wooden_1.003'), 'cave': (), 'passage': ()}[a.kind]
     def walk(ni, parent):
         n = nodes[ni]
         m = mat_mul(parent, node_matrix(n))
@@ -352,7 +358,14 @@ def main():
                 G[2].extend(v + off for v in idx)
         for c in n.get('children', []):
             walk(c, m)
-    ident = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]
+    # THE MODEL IS TURNED AND SCALED HERE, ONCE. The 3DRT passage is a game
+    # asset in its own units with its long axis down -z; the game wants it in
+    # metres with its entry at -x and its far end at +x, and the walk grid is
+    # axis-aligned, so the turn has to happen before a single cell is sampled.
+    # The old cave is turned half round the same way when it becomes the way
+    # OUT: its mouth has to face the church's back wall.
+    th = math.radians(a.yaw); cs, sn = math.cos(th), math.sin(th); sc = a.scale
+    ident = [cs * sc, 0, -sn * sc, 0,  0, sc, 0, 0,  sn * sc, 0, cs * sc, 0,  0, 0, 0, 1]
     for ni in g['scenes'][g.get('scene', 0)]['nodes']:
         walk(ni, ident)
     total = sum(len(G[2]) // 3 for G in groups.values())
@@ -402,7 +415,7 @@ def main():
         if 0 <= i < walk['gw'] and 0 <= j < walk['gh']:
             return walk['floor'][j][i]
         return None
-    if a.kind == 'cave':
+    if a.kind in ('cave', 'passage'):
         b = walk['bounds']
         for x in (b[0][0] + 1.0, b[0][0] + 3.0, (b[0][0] + b[1][0]) / 2, b[1][0] - 3.0, b[1][0] - 1.0):
             zs = [(z, floor_at(x, z)) for z in [b[0][2] + k * 0.2 for k in range(int((b[1][2] - b[0][2]) / 0.2))]]
@@ -412,6 +425,22 @@ def main():
                 log('  cave floor at x=%.1f: z %.1f..%.1f, floor %.2f at z %.1f' % (x, zs[0][0], zs[-1][0], mid[1], mid[0]))
     else:
         log('  church floor at the door: %s, at the altar: %s' % (floor_at(-23.5, 0), floor_at(3, 0)))
+
+    if a.sparse:
+        # A LONG THIN TUNNEL IS NINETY-FIVE PER CENT EMPTY BOUNDING BOX: the
+        # passage's dense grid is 1700 by 250 cells and nearly all of them
+        # say "no floor" three times over, at four megabytes of JSON. Only
+        # the cells WITH a floor are written; the game expands them back.
+        cells = []
+        for j in range(walk['gh']):
+            fr, cr, sr = walk['floor'][j], walk['ceil'][j], walk['solid'][j]
+            for i in range(walk['gw']):
+                if fr[i] > -90:
+                    cells.append([i, j, fr[i], cr[i], 1 if sr[i] == '1' else 0])
+        for k in ('floor', 'floor0', 'solid', 'ceil'):
+            del walk[k]
+        walk['sparse'] = cells
+        log('walk: sparse, %d cells written' % len(cells))
 
     # ---- materials: spec-gloss -> metallic-roughness (gltfpack's own code)
     for m in mats:

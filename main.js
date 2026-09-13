@@ -102,9 +102,11 @@ const ASSET_REACH = {
   'assets/dealer.glb': 334,
   'assets/smile.glb': 390,
   'assets/mutant.glb': 610,
-  'assets/cave.glb': 640,             // the hole in the sand wall, past the mutants
+  'assets/rockmouth.glb': 636,        // the rock at the foot of the sand wall, past the mutants
+  'assets/passage.glb': 640,          // the tunnel in it
   'assets/church.glb': 645,           // and what is at the bottom of it
   'assets/sol.glb': 646,              // and what is standing on its altar
+  'assets/cave.glb': 648,             // and the way out, behind the altar
   'assets/scp096.glb': 470,           // on the beach in front of the pavilion
   'assets/ufo.glb': 1090,             // the take, ten metres short of the fence
   'assets/shrine.glb': 1092,          // and the room it puts you in
@@ -28891,7 +28893,11 @@ function sfxHullGroan() {
  * saucer took you. Behind the spawn nothing fires. */
 const UC_X = 3000, UC_Y = 400, UC_Z = 2400;
 let inUndercroft = false, ucBusy = false, ucDir = 0, ucT = 0, ucCut = false, ucMix = 0;
-const ucReturn = { x: 11.2, z: ROCK_Z - 20, yaw: 0 };
+/* TWO WAYS OUT. Back the way you came puts you on the sand in front of the
+ * rock's mouth, facing the sea; the far end of the old cave, behind the
+ * altar, puts you on the beach past the rock, the way it always did. */
+const UC_RETURN = { mouth: { x: 12.4, z: HOLE_Z - 0.4, yaw: Math.PI / 2 }, far: { x: 11.2, z: ROCK_Z - 20, yaw: 0 } };
+let ucReturn = UC_RETURN.far;
 const _ucL = new THREE.Vector3();
 const undercroft = makeUndercroft({ load: bwGlb, onReady: (S) => { armUndercroft(S); } });
 undercroft.position.set(UC_X, UC_Y, UC_Z);
@@ -28912,8 +28918,12 @@ const ucLamps = [];
  * own dying colour, and NOTHING here is brighter than it has to be: what
  * carries the rock and the stone is each map's own emissive lift, which is
  * the pavilion's lesson — do it in the map, not with a lamp. */
-const UC_LAMP = [{ want: 1.1, dist: 12, col: 0xd8bf94, flick: [0.62, 6.1] },   // the tunnel, high end — and it is failing
-                 { want: 1.1, dist: 12, col: 0xd2b98e, flick: [0.62, 5.3] },   // the tunnel, low end
+const UC_LAMP = [{ want: 2.8, dist: 17, col: 0xd8bf94, flick: [0.55, 6.1] },   // the passage: six failing bulbs down three hundred metres of it, pools with long dark between
+                 { want: 2.6, dist: 17, col: 0xd2b98e, flick: [0.55, 5.3] },
+                 { want: 2.8, dist: 17, col: 0xd8bf94, flick: [0.55, 4.7] },
+                 { want: 2.6, dist: 17, col: 0xd2b98e, flick: [0.55, 6.9] },
+                 { want: 2.8, dist: 17, col: 0xd8bf94, flick: [0.55, 5.9] },
+                 { want: 2.6, dist: 17, col: 0xd2b98e, flick: [0.55, 4.3] },
                  { want: 34, dist: 50, col: 0xc2b79c, flick: [0.10, 3.1] },    // the nave, thirteen metres up
                  { want: 26, dist: 50, col: 0xb8ae9a, flick: [0.10, 2.6] },    // the nave, further in
                  /* AND THE CHANCEL IS LIT BY THE CANDLES ON THE ALTAR, not
@@ -28926,7 +28936,9 @@ const UC_LAMP = [{ want: 1.1, dist: 12, col: 0xd8bf94, flick: [0.62, 6.1] },   /
                   * below by its own offering and the apse behind it goes
                   * dark, which is the picture. */
                  { want: 6.0, dist: 7.5, col: 0xffa951, flick: [0.26, 9.4] },  // the candles on the altar
-                 { want: 2.2, dist: 6.5, col: 0xff9a45, flick: [0.30, 8.1] }]; // and the ring of them at its foot
+                 { want: 2.2, dist: 6.5, col: 0xff9a45, flick: [0.30, 8.1] },  // and the ring of them at its foot
+                 { want: 2.4, dist: 12, col: 0xd8bf94, flick: [0.62, 5.7] },   // the old cave, the way out: its own two bulbs, the first bright enough to be seen through the hole
+                 { want: 1.4, dist: 12, col: 0xd2b98e, flick: [0.62, 6.3] }];
 for (let i = 0; i < UC_LAMP.length; i++) {
   const l = new THREE.PointLight(UC_LAMP[i].col, 0, UC_LAMP[i].dist, 1.6);   // a failing bulb's colour, not a fire's
   l.position.set(UC_X, UC_Y - 60, UC_Z);
@@ -28979,15 +28991,26 @@ function armUndercroft(S) {
    * front of the altar with no candle at the middle of it — a lamp on the
    * ground, which is what the candles are there so as not to be. */
   const foot = A ? { x: A.x - 0.9, y: A.dais + 1.25, z: A.z } : altar;
-  const at = [pick(cave, 0.28) || sp.entry, pick(cave, 0.86) || sp.mouth,   // the second is the bulb nearest the mouth, so the break is lit from behind
-              church[0] || sp.exit, church[church.length - 1] || sp.exit, altar, foot];
+  const P = sp.passage || [];
+  const at = [P[0] || sp.entry, P[1] || sp.entry, P[2] || sp.mouth, P[3] || sp.mouth, P[4] || sp.mouth, P[5] || sp.mouth,   // down the passage, from the grid
+              church[0] || sp.exit, church[church.length - 1] || sp.exit, altar, foot,
+              pick(cave, 0.0) || sp.exit, pick(cave, 0.72) || sp.exit];                  // the old cave's own bulbs: the first is the one at its mouth, so the hole in the apse shows a lit floor going in
   at.forEach((p, i) => { if (p && ucLamps[i]) ucLamps[i].position.set(UC_X + p.x, UC_Y + p.y - 0.3, UC_Z + p.z); });
   // the way out, behind the altar
   const proxy = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.6, 2.4), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   proxy.name = 'hitProxy';
   proxy.position.set(sp.exit.x, sp.exit.y + 1.3, sp.exit.z);
   undercroft.add(proxy);
-  addInteractable(proxy, 'Climb out', 'default', { far: 3.2, onActivate: () => leaveUndercroft(), when: () => inUndercroft && !ucBusy });
+  addInteractable(proxy, 'Climb out', 'default', { far: 3.2, onActivate: () => leaveUndercroft('far'), when: () => inUndercroft && !ucBusy });
+  /* AND THE WAY YOU CAME IN IS A WAY OUT. At the passage's start, a step
+   * short of where you are set down, "Climb out" takes you back to the sand
+   * in front of the rock — the owner's word, and a tunnel three hundred
+   * metres long with no way back is a trap, not a place. */
+  const back = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.6, 3.0), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  back.name = 'hitProxy';
+  back.position.set(sp.entry.x - 2.6, sp.entry.y + 1.2, sp.entry.z);
+  undercroft.add(back);
+  addInteractable(back, 'Climb out', 'default', { far: 3.4, onActivate: () => leaveUndercroft('mouth'), when: () => inUndercroft && !ucBusy });
   // the pews
   for (const b of S.benches) {
     const prop = { mesh: b.mesh, radius: 1.7, dead: false, held: false, thrown: false, vel: new THREE.Vector3(),
@@ -29002,6 +29025,7 @@ function armUndercroft(S) {
     warmStep('undercroft', () => warmView([undercroft], px, py, pz, UC_X + M.x, UC_Y + M.y + 1, UC_Z + M.z));
     warmStep('undercroft', () => warmView([undercroft], UC_X + M.x - 1, UC_Y + M.y + 1.6, UC_Z + M.z, UC_X + X.x, UC_Y + X.y + 1, UC_Z + X.z));
     warmStep('undercroft', () => warmView([undercroft], UC_X + X.x, UC_Y + X.y + 1.6, UC_Z + X.z, UC_X + M.x, UC_Y + M.y + 1, UC_Z + M.z));
+    warmStep('undercroft', () => warmView([undercroft], UC_X + M.x + 12, UC_Y + M.y + 1.6, UC_Z + M.z, UC_X + X.x, UC_Y + X.y + 1, UC_Z + X.z));
   };
 }
 /* ---- THE HOLE IN THE SAND WALL.
@@ -29020,121 +29044,74 @@ function armUndercroft(S) {
  *   lighting, a box wholly behind the face (half a metre of it standing
  *   proud drew as black slabs over the hole, once).
  * ------------------------------------------------------------------- */
-const HOLE_Y = 1.62, HOLE_R = 0.82;
-/* WHERE THE BORE STARTS, AND IT IS THE WHOLE BUG. The tube's mouth stood at
- * x = 15.4 and the dune's face at this height is at 16.07 (measured by
- * raycast across the hole's whole footprint: 15.98 to 16.17) — so two thirds
- * of a metre of an open-ended BackSide tube stood PROUD of the wall, and
- * what a BackSide tube shows you from outside is its own far interior wall,
- * which this shader takes to black. That is what the owner was looking at:
- * not a hole, a black polygonal lump pasted on a smooth dune, with the end
- * box's straight edge showing beside it. The file's own note warned about
- * exactly this ("half a metre of it standing proud drew as black slabs") and
- * the bore was built in front of it anyway. It starts BEHIND the deepest
- * point of the face now, its mouth is wider than the ragged cut (1.05
- * against 0.93) so a ray through the hole lands on the inside of the tube,
- * and a black plate closes the ring of air between the two. */
-const BORE_X0 = 16.30;
-{
-  const prev = cliff.material.onBeforeCompile;
-  cliff.material.onBeforeCompile = function (sh, rndr) {
-    if (prev) prev.call(this, sh, rndr);
-    sh.uniforms.uHole = { value: new THREE.Vector3(HOLE_Z, HOLE_Y, HOLE_R) };
-    const RAG = `
-  float hz = vDrainW.z - uHole.x, hy = (vDrainW.y - uHole.y) * 1.06;
-  float ha = atan(hy, hz);
-  float hr = uHole.z * (0.90 + 0.13 * sin(ha * 3.0 + 1.7) + 0.07 * sin(ha * 7.0 - 0.9) + 0.04 * sin(ha * 13.0 + 2.2));
-  float hd = length(vec2(hz, hy));
-`;
-    sh.fragmentShader = 'uniform vec3 uHole;\n' + sh.fragmentShader
-      .replace('#include <clipping_planes_fragment>',
-        '#include <clipping_planes_fragment>\n' + RAG + '  if (hd < hr) discard;')
-      /* THE LIP, AND IT IS NOT THE SAME ALL THE WAY ROUND. A symmetrical
-       * ring of shadow is a vignette, and a vignette on a dune is a smudge
-       * — which is what the owner was looking at. A hole in a wall of sand
-       * has an OVERHANG at the top, which throws the deepest shadow of the
-       * whole thing onto the sand just inside its upper edge, and a SILL at
-       * the bottom, where the sand has slumped out and stands in the moon.
-       * Both are narrow: it is an edge, not a fade. */
-      .replace('#include <dithering_fragment>', `#include <dithering_fragment>
-  float hdd = hd - hr;
-  float hup = clamp(hy / max(hr, 0.001), -1.0, 1.0);
-  gl_FragColor.rgb *= mix(mix(0.22, 0.06, clamp(hup, 0.0, 1.0)), 1.0, smoothstep(0.0, 0.22, hdd));
-  gl_FragColor.rgb *= 1.0 + 0.5 * smoothstep(0.26, 0.04, hdd) * smoothstep(-0.2, -0.8, hup) * smoothstep(0.0, 0.05, hdd);`);
-  };
-  cliff.material.needsUpdate = true;
-  /* A HOLE IS A PLACE, NOT A PICTURE. A black disc on the face — however
-   * ragged its edge — moved with you like a decal, and the owner said so:
-   * it wanted to be the drain's outfall in sand. So it is a BORE: an
-   * open-ended tube of the beach's own grain driven three metres into the
-   * dune behind the cut, its walls knocked out of round the way a thing
-   * dug by hand is, going from the cliff's colour at the lip to black by
-   * the second metre (in the shader — the emissive has to go with it, or
-   * the far end glows), and a black box across the end so there is no
-   * end to see. Walk past it and the inside parallaxes; stand at it and
-   * the grain runs into the dark. */
+const HOLE_Y = 1.62;
+/* ---- THE ROCK, AND THE MOUTH IN IT.
+ * The hole in the sand wall is gone; what stands at the foot of the cliff
+ * now is a rock outcrop — "Rock Mountain with cave" by JJ (Sketchfab), a
+ * scan with a real cave mouth in one face — put down so its back half is
+ * in the dune and the mouth faces the beach. The scan is 0.9 units across
+ * with the mouth a fifth of that, so at 13.5 the mouth is 2.7 m wide and
+ * two high, its floor a hand over the sand, its face at x = 14.0 — a
+ * quarter metre behind the cliff clamp, so you walk into it. Its front
+ * faces +z in the file; the beach is -x. What is behind the mouth's face
+ * goes to black in the shader (a slab of world space straight behind the
+ * opening, and nothing else — the peak is at the same x and must not),
+ * because the scan's own cave is four metres deep and closed, and a lit
+ * dead end is a niche, not a way in. Colliders are three cylinders: the
+ * mass in the dune and a flank either side of the mouth, so the mouth is
+ * the one way through the front of it. A sand apron banks the beach
+ * against its foot, the formation's own treatment, so the skirt does not
+ * meet the sand on a line. */
+const MOUNT_S = 18.0, MOUNT_X = 17.4, MOUNT_Z = HOLE_Z, MOUNT_MOUTH_Z = HOLE_Z - 0.5, MOUNT_FRONT_X = 13.4;
+const mountain = new THREE.Group();
+mountain.position.set(MOUNT_X, -0.6, MOUNT_Z);       // sunk so the mouth's floor is a step, not a wall
+mountain.rotation.y = -Math.PI / 2;                   // the scan's mouth faces +z; the beach is -x
+mountain.scale.setScalar(MOUNT_S);
+rockGroup.add(mountain);                              // far-culled by its own z, with the rocks
+bwGlb('assets/rockmouth.glb', (gltf) => {
+  gltf.scene.traverse((o) => {
+    if (!o.isMesh) return;
+    /* A LIT MATERIAL ON THIS SCAN RENDERS BLACK, and hours proved it: no
+     * moon reaches the face (it stands in the cliff), and `emissive * a
+     * granite map` comes out near-nothing however hard it is driven —
+     * measured, a red emissive at 6 rendered black, and a magenta BASIC
+     * override filled the frame from the same camera. So the rock is
+     * `MeshBasicMaterial`: the scanned granite shown at its own brightness,
+     * graded cold to the beach's blue-grey and put through a gamma that
+     * lifts it to a moonlit stone, DoubleSide because the shell's winding
+     * faces the hill. It reads the same from every angle, which is exactly
+     * what an unlit rock wants, and the mouth is darkened to black in the
+     * same shader — a slab of world space straight behind the opening. */
+    const src = o.material;
+    const mat = new THREE.MeshBasicMaterial({ map: src.map, side: THREE.DoubleSide, fog: true, color: 0x9fb0c8 });
+    if (mat.map) { mat.map.anisotropy = 8; mat.map.minFilter = THREE.LinearMipmapLinearFilter; }
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.uMouth = { value: new THREE.Vector4(MOUNT_FRONT_X, MOUNT_MOUTH_Z, 2.6, 5.4) };
+      sh.vertexShader = 'varying vec3 vMouthW;\n' + sh.vertexShader.replace('#include <fog_vertex>', '#include <fog_vertex>\n  vMouthW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = 'varying vec3 vMouthW; uniform vec4 uMouth;\n' + sh.fragmentShader
+        .replace('#include <map_fragment>', `#include <map_fragment>
+  diffuseColor.rgb = pow(diffuseColor.rgb, vec3(0.72)) * 1.15;   // lift the granite to moonlit stone
   {
-    const bg = new THREE.CylinderGeometry(1.05, 0.62, 3.6, 16, 8, true);
-    bg.rotateZ(-Math.PI / 2);                // along +x: the wide mouth at the face, narrowing in
-    const bp = bg.attributes.position;
-    for (let i = 0; i < bp.count; i++) {     // dug by hand, not turned on a lathe
-      const x = bp.getX(i), y = bp.getY(i), z = bp.getZ(i);
-      const k = 0.55 + 0.45 * Math.min(1, (x + 1.8) / 3.6);
-      const n = Math.sin(y * 7.1 + z * 5.3 + x * 3.7) * 0.06 + Math.sin(y * 13.7 - z * 11.1) * 0.035;
-      bp.setXYZ(i, x, y + n * k * Math.sign(y || 1), z + n * k * 1.3 * Math.sign(z || 1));
-    }
-    bg.computeVertexNormals();
-    const bt = sandTex.clone(); bt.needsUpdate = true; bt.repeat.set(2.2, 1.1);
-    const bm = new THREE.MeshStandardMaterial({ map: bt, color: 0x6d7d99, roughness: 0.97, metalness: 0,
-                                                 /* AND THE INSIDE HAS TO BE VISIBLE, or a hole is a disc of paint.
-                                                  * At 0.75 the near wall measured black against a black end; 1.7 is
-                                                  * the level at which the ring of sand a step inside the rim reads as
-                                                  * the WALL'S OWN THICKNESS and everything past it still goes. */
-                                                 emissive: 0x27324a, emissiveMap: bt, emissiveIntensity: 1.7, side: THREE.BackSide });
-    bm.onBeforeCompile = (sh) => {
-      sh.uniforms.uBoreX0 = { value: BORE_X0 };
-      sh.vertexShader = 'varying vec3 vBoreW;\n' + sh.vertexShader.replace('#include <fog_vertex>', '#include <fog_vertex>\n  vBoreW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-      sh.fragmentShader = 'varying vec3 vBoreW; uniform float uBoreX0;\n' + sh.fragmentShader
-        /* AND THE FIRST HALF METRE OF IT IS FULLY LIT. A fade that starts at
-         * the mouth means the only thing you can ever see through the hole
-         * is deep bore, which is black by construction — so the hole read as
-         * a disc of paint however it was cut. The wall you are LOOKING AT
-         * when you put your face to it is the near ring of sand a step
-         * inside; it keeps the dune's own grain, and everything past it
-         * goes. Walk up and the inside opens; stand back and it is black,
-         * which is what a hole in a dune does. */
-        .replace('#include <map_fragment>', '#include <map_fragment>\n  float boreK = clamp(1.0 - (vBoreW.x - uBoreX0 - 0.55) / 2.35, 0.0, 1.0); boreK *= boreK * sqrt(boreK);\n  diffuseColor.rgb *= boreK;')
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance *= boreK;');
+    float inMouth = step(abs(vMouthW.z - uMouth.y), uMouth.z) * step(vMouthW.y, uMouth.w);
+    float deep = smoothstep(uMouth.x - 0.2, uMouth.x + 1.6, vMouthW.x) * inMouth;
+    diffuseColor.rgb *= 1.0 - 0.97 * deep;
+  }`);
     };
-    const bore = new THREE.Mesh(bg, bm);
-    bore.position.set(BORE_X0 + 1.80, HOLE_Y, HOLE_Z);
-    rockGroup.add(bore);                     // far-culled by its own z, with the rocks
-    /* AND THE GAP ROUND THE BORE'S MOUTH IS CLOSED WITH A BLACK PLATE. The
-     * tube stands a hand behind the dune's face so it can never draw in
-     * front of it, and that leaves a ring of open air between the two that
-     * a look from off to one side can see straight through — out of the
-     * cut and into the night. A disc with the bore's own mouth punched out
-     * of it, unlit and unfogged, behind the face: every ray through the
-     * hole now ends on either the inside of the bore or on black. */
-    const back = new THREE.Mesh(new THREE.RingGeometry(1.00, 1.40, 20),
-      new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide, fog: false }));
-    back.rotation.y = -Math.PI / 2;
-    /* AND IT IS SMALL. Raycast round the hole: the dune's face holds within
-     * 16.20 out to a radius of 1.6 and then it is GONE — over about y = 3.2
-     * there is no cliff at all, you are past the crest — so a plate any
-     * bigger stands in the open air above the dune as a black rectangle,
-     * which is what the first one did. Nothing through a 0.93 m cut can
-     * diverge past 1.40 in the 0.2 m behind it, so 1.40 is the whole job. */
-    back.position.set(BORE_X0, HOLE_Y, HOLE_Z);
-    rockGroup.add(back);
-    const dark = new THREE.Mesh(new THREE.BoxGeometry(2.0, 2.0, 2.0),
-      new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide, fog: false }));
-    dark.position.set(BORE_X0 + 4.6, HOLE_Y, HOLE_Z);
-    rockGroup.add(dark);
-  }
-  const proxy = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.5, 1.6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    o.material = mat;
+  });
+  mountain.add(gltf.scene);
+});
+rockColliders.push({ x: MOUNT_X + 3.0, z: MOUNT_Z, r: 6.0, top: 30, mat: 'rock' },               // the mass, in the dune
+                   { x: MOUNT_FRONT_X + 1.6, z: MOUNT_MOUTH_Z - 5.2, r: 3.0, top: 30, mat: 'rock' },   // a flank, clear of the wide mouth
+                   { x: MOUNT_FRONT_X + 1.6, z: MOUNT_MOUTH_Z + 5.2, r: 3.0, top: 30, mat: 'rock' });  // and the other
+{
+  const apron = new THREE.Mesh(makeApron(8.5), sandMat);
+  apron.scale.set(8.5, 0.34, 8.5);
+  apron.position.set(MOUNT_FRONT_X - 1.0, -0.02, MOUNT_MOUTH_Z);
+  rockGroup.add(apron);
+  const proxy = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.2, 2.4), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   proxy.name = 'hitProxy';
-  proxy.position.set(CLIFF_BLOCK_X + 0.9, HOLE_Y - 0.05, HOLE_Z);
+  proxy.position.set(MOUNT_FRONT_X + 0.5, HOLE_Y, MOUNT_MOUTH_Z);
   rockGroup.add(proxy);
   addInteractable(proxy, 'Crawl in', 'default', { far: 3.4, onActivate: () => enterUndercroft(), when: () => !inUndercroft && !ucBusy });
 }
@@ -29145,8 +29122,9 @@ function enterUndercroft() {
   undercroft.visible = true;
   sfxCrawl();
 }
-function leaveUndercroft() {
+function leaveUndercroft(where = 'far') {
   if (ucBusy || !inUndercroft) return;
+  ucReturn = UC_RETURN[where] || UC_RETURN.far;
   ucBusy = true; ucDir = -1; ucT = 0; ucCut = false;
   sfxCrawl();
 }
@@ -29243,7 +29221,7 @@ function updateUndercroft(dt) {
    * back, for ever. The floor under the disc's centre is where the feet are. */
   const f0 = UC.floorAt(_ucL.x, _ucL.z);
   const feet = f0 !== null ? f0 : camBaseY - playerEye() - UC_Y;
-  const r = 0.24;
+  const r = UC.bodyR ? UC.bodyR(_ucL.x, _ucL.z) : 0.24;   // a hand narrower in the passage
   if (UC.blocked(_ucL.x, _ucL.z, r, feet)) {
     UC.pushOut(_ucL, r, feet, 5);
     if (UC.blocked(_ucL.x, _ucL.z, r, feet)) UC.escape(_ucL, r, feet, 2.5);
@@ -29303,7 +29281,8 @@ function stompBreakables(force, loose) {
   if (best) best.onImpact(4.5 + force * 6);
 }
 function ucInChurch() {
-  return inUndercroft && UC.ready && UC.spots && (camera.position.x - UC_X) > UC.spots.mouth.x + 1.0;
+  const x = camera.position.x - UC_X;
+  return inUndercroft && UC.ready && UC.spots && x > UC.spots.mouth.x + 1.0 && x < UC.spots.exitEdge + 0.5;
 }
 /* THE KNOCK. Not a hit — it costs nothing but a beat — but it has to be
  * unmistakably your own head on somebody's pit prop: a dull low thump with
@@ -29390,8 +29369,7 @@ function breakBench(b, speed) {
       life: 600, bleed: false, wait: Math.min(0.22, (n++) * 0.012) });
   }
   if (!sfxTableBreak()) sfxWoodSnap();
-  spawnPuffs(_bbW.x, _bbW.z, 8, dx, dz, _bbW.y + 0.3, [0.45, 0.43, 0.40]);
-  spawnPuffs(_bbW.x, _bbW.z, 4, -dx * 0.5, -dz * 0.5, _bbW.y + 0.6, [0.45, 0.43, 0.40]);
+  // no dust: the owner's word — a pew is chunks and a noise, and the "flying particles" were the puffs
 }
 /* Crawling in: sand shifting under you, twice, and a breath held. Coming
  * out: the same the other way. Nothing above a whisper, nothing that rings. */

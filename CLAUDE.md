@@ -2496,6 +2496,59 @@ RECORDED: eleven footfalls cut from a walk down a stone corridor
 normalised, faded, one at random per step (`churchStep`), with the sand
 step kept for the tunnel's rubble.
 
+**THE WAY IN IS A ROCK MOUNTAIN, THE TUNNEL IS THE 3DRT PASSAGE, AND THE OLD
+CAVE IS THE WAY OUT.** Three scans now, `tools/undercroft_pack.py` grew a
+`passage` kind plus `--yaw`, `--scale` and `--sparse`:
+
+- **The way in is JJ's "Rock Mountain with cave"** at the foot of the sand
+  wall (`assets/rockmouth.glb`, `gltfpack.py`), replacing the hole-in-the-sand.
+  A LIT MATERIAL ON THIS SCAN RENDERS BLACK and hours proved it: no moon
+  reaches the face (it stands in the cliff), and `emissive * a granite map`
+  comes out near-nothing however hard it is driven — a red emissive at 6
+  rendered black, while a magenta BASIC override filled the frame from the
+  same camera. So the rock is `MeshBasicMaterial` — the granite at its own
+  brightness, graded cold and gamma-lifted, DoubleSide because the shell's
+  winding faces the hill (FrontSide is invisible head-on). The mouth is a
+  dark slab of world space behind the opening. **When a scan won't light,
+  stop lighting it: show the map unlit.**
+- **The tunnel is Ant leader's "3DRT-uderground"** (`assets/passage.glb`),
+  340 m turned and scaled to metres so its long axis runs +x and its far
+  end meets the church's front door. It is SPARSE-packed: 1724×251 cells,
+  32k with a floor, so only those are written (four megabytes of JSON
+  becomes 0.7). **A LONG THIN TUNNEL IS 95 % EMPTY BOUNDING BOX.**
+- **THE PASSAGE IS A CRAWL-TUBE, NOT A STAIRCASE.** Three passes of an
+  auto-ramp machinery fought the scan's three-metre ledges and lost; the
+  honest answer is a big step (3.6) and drop (4.5), so a ledge is something
+  you clamber up or slide down and the camera follows the floor. It is
+  FLOODED from the entry crouched to prove the mouth is reachable and
+  DILATED where a pinch stops it — a tube's floor strip has two-cell holes
+  the sampler fell through. **A grid with no floor at a point must ask the
+  NEXT grid, not answer "not walkable"** — three grids overlap at the joins
+  and the church's box runs over the cave's mouth. The passage-church seam
+  is BLANKETED with one wide flat bridge, not a hairline: the two floors
+  are the same height but separate grids and the flood would not cross the
+  exact seam.
+- **The old cave is the WAY OUT, behind the altar** — turned half round by
+  the packer so its ragged mouth faces the apse. The apse wall is CUT by a
+  world-space cylinder through every church material (shared uniform in the
+  grime shader, walls only — a floor or vault inside the radius is kept),
+  and the cave's own rock is CLIPPED in world x at the wall so none of it
+  stands in the chancel. Two ways out now: back the way you came (a proxy
+  at the passage start, to the sand in front of the rock) or the old cave
+  (behind the altar, to the beach past the rock).
+- **THE SCAN CARRIES NO NORMALS.** The packer writes positions and uvs and
+  three flat-shades the rest, so `objectNormal` is zero and the grime's
+  world normal — which drives the dust and the apse cut — was nothing. It
+  is taken off the world position's derivatives in the fragment instead,
+  which is what flat shading does for the lighting anyway.
+- **EVERY FLAME HAS A BODY, not just a point sprite** (a lit cone on the
+  wick, `MeshBasicMaterial`), and the candle RING stands clear of the
+  altar's plinth — at the old radius the walk's disc stopped a body 0.4 m
+  short of it, which was "the candles block me at the altar". Nothing has a
+  collider; you walk through them. And a broken pew throws no dust — the
+  owner's word, the puffs were the "flying particles". The church is 2048
+  now, not 1024: the stretched cheap look was a resize too far.
+
 **SOL STANDS ON THE ALTAR, IN A RING OF CANDLES.** The owner's own `SOL.fbx`
 — a robed figure in a gold sun mask holding a bleeding heart with eight
 daggers through it — through `tools/sol_pack.py`: 205k faces to 42k, 4096

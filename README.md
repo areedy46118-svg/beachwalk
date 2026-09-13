@@ -516,6 +516,18 @@ by [Aurélien Martel](https://sketchfab.com/aurelien_martel) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the church at the bottom of
 it (`assets/church.glb`, same packer; its pews come out as forty breakable benches).
 
+This work is based on ["3DRT-uderground for game"](https://sketchfab.com/3d-models/3drt-uderground-for-game-a146bf2f80e24640abe951fa97d127af)
+by [Ant leader](https://sketchfab.com/Jguyfioy) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the tunnel you crawl
+IN through (`assets/passage.glb`, turned and scaled to metres and packed with
+its walk by `tools/undercroft_pack.py`). Valsev's cave is now the way OUT,
+behind the altar.
+
+This work is based on ["Rock Mountain with cave realistic 85k by JJ"](https://sketchfab.com/3d-models/rock-mountain-with-cave-realistic-85k-by-jj)
+(Sketchfab) — the rock outcrop at the foot of the sand wall, past the mutants,
+with the cave mouth you crawl into (`assets/rockmouth.glb`, through
+`tools/gltfpack.py`).
+
 `assets/sol.glb` is the owner's own model — SOL, the robed figure in the gold
 sun mask holding a bleeding heart, which stands on the undercroft church's
 altar in a ring of lit candles. Packed by `tools/sol_pack.py` from `SOL.fbx`

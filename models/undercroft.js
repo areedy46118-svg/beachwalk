@@ -51,7 +51,54 @@ export function makeUndercroft(opts = {}) {
     root.traverse((o) => { if (!raw && o.userData && o.userData.bw_walk) raw = o.userData.bw_walk; });
     if (!raw) return null;
     const w = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    w.solid = w.solid.map((row) => Uint8Array.from(row, (c) => (c === '1' ? 1 : 0)));
+    if (w.sparse) {
+      /* A LONG THIN TUNNEL IS NINETY-FIVE PER CENT EMPTY BOUNDING BOX. The
+       * passage's grid is 1724 by 251 cells and 31,718 of them have a floor;
+       * the packer writes only those and this puts the dense arrays back —
+       * typed, so the four hundred thousand empty cells cost a byte or four
+       * apiece and no JSON at all. */
+      const F = [], C = [], Sd = [];
+      for (let j = 0; j < w.gh; j++) { F.push(new Float32Array(w.gw).fill(-99)); C.push(new Float32Array(w.gw).fill(99)); Sd.push(new Uint8Array(w.gw)); }
+      for (const [i, j, f, c, sol] of w.sparse) { F[j][i] = f; C[j][i] = c; Sd[j][i] = sol; }
+      w.floor = F; w.floor0 = F; w.ceil = C; w.solid = Sd;
+      delete w.sparse;
+      /* AND THE CHANNEL IS WIDENED. A low-poly tube's floor is the strip
+       * along its bottom that is flat enough to count and has a crouch of
+       * roof over it, and where the 3DRT passage pinches that strip comes
+       * out two or three cells wide — under a body. The owner's word was
+       * that nothing may block the path, so the grid is dilated twice: an
+       * empty cell with two or more floored neighbours becomes floor at
+       * their mean height, with the roof they have. Forty centimetres of
+       * rock a side that the walk treats as floor; the camera clips it
+       * where the tube is that tight, which is the price. */
+      /* and nothing in it is SOLID: the flag is "something in the body band
+       * over this floor", which in a rough round tube is every cell where
+       * the wall curves in over the floor's edge — and at the pinches that
+       * left a rock in the middle of a three-cell channel that no disc could
+       * pass. The floor itself still says where the tube is. */
+      for (let j = 0; j < w.gh; j++) Sd[j].fill(0);
+      /* and the ROOF is never under a crouch: where the tube's rough ceiling
+       * dips below 1.15 m over its floor the walk refused the cell even
+       * crouched, and one such dip across the whole channel is a wall. The
+       * game's camera ducks under the drawn roof there (its backstop). */
+      for (let j = 0; j < w.gh; j++) for (let i = 0; i < w.gw; i++) if (F[j][i] > -90 && C[j][i] - F[j][i] < 1.15) C[j][i] = F[j][i] + 1.15;
+      w.dilate = (passes) => {
+        for (let pass = 0; pass < passes; pass++) {
+          const add = [];
+          for (let j = 1; j < w.gh - 1; j++) for (let i = 1; i < w.gw - 1; i++) {
+            if (F[j][i] > -90) continue;
+            let n = 0, sf = 0, mc = -1e9;
+            for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const f = F[j + dj][i + di]; if (f > -90) { n++; sf += f; mc = Math.max(mc, C[j + dj][i + di]); } }
+            if (n >= 2) add.push([i, j, sf / n, mc]);
+          }
+          for (const [i, j, f, c] of add) { F[j][i] = f; C[j][i] = c; Sd[j][i] = 0; }
+        }
+      };
+      w.dilate(3);
+      w.bodyR = 0.19;                 // and the body is a hand narrower in it
+    } else {
+      w.solid = w.solid.map((row) => Uint8Array.from(row, (c) => (c === '1' ? 1 : 0)));
+    }
     w.off = new THREE.Vector3();
     return w;
   }
@@ -83,7 +130,7 @@ export function makeUndercroft(opts = {}) {
   function bridgeFloor(lx, lz) {
     for (const b of S.bridges) {
       if (lx < b.x0 || lx > b.x1 || lz < b.z0 || lz > b.z1) continue;
-      const t = (lx - b.x0) / Math.max(1e-6, b.x1 - b.x0);
+      const t = b.axis === 'z' ? (lz - b.z0) / Math.max(1e-6, b.z1 - b.z0) : (lx - b.x0) / Math.max(1e-6, b.x1 - b.x0);
       return b.y0 + (b.y1 - b.y0) * t;
     }
     return null;
@@ -92,6 +139,22 @@ export function makeUndercroft(opts = {}) {
    * grid chose — so the game can duck the camera under a low stretch of
    * tunnel instead of drawing it through the rock. 99 where there is none. */
   S.ceilAt = (lx, lz) => {
+    /* A RAMP HAS ITS OWN ROOF. A bridge laid up a ledge climbs through cells
+     * whose roof was measured over the floor BELOW it, so read against the
+     * ramp's own height that roof was under a crouch and the walk refused
+     * every step of the climb it had just been given. Over a bridge the
+     * roof is the rock's or 1.6 m over the ramp, whichever is higher. */
+    const bf = bridgeFloor(lx, lz);
+    if (bf !== null) {
+      let c = null;
+      for (const w of S.walks) {
+        if (!w.ceil) continue;
+        const i = Math.floor((lx - w.off.x - w.x0) / w.cell), j = Math.floor((lz - w.off.z - w.z0) / w.cell);
+        if (i < 0 || j < 0 || i >= w.gw || j >= w.gh || w.floor[j][i] <= -90) continue;
+        const cc = w.ceil[j][i]; if (cc < 90) { c = cc + w.off.y; break; }
+      }
+      return c === null ? null : Math.max(c, bf + 1.6);
+    }
     for (const w of S.walks) {
       if (!w.ceil) continue;
       const i = Math.floor((lx - w.off.x - w.x0) / w.cell), j = Math.floor((lz - w.off.z - w.z0) / w.cell);
@@ -122,11 +185,81 @@ export function makeUndercroft(opts = {}) {
       const i = Math.floor((lx - w.off.x - w.x0) / w.cell), j = Math.floor((lz - w.off.z - w.z0) / w.cell);
       if (i < 0 || j < 0 || i >= w.gw || j >= w.gh) continue;
       const f = cellFloor(w, i, j);
-      if (f === null || cellSolid(w, i, j)) return false;
-      if (f - feet > (w.stepMax || STEP) || feet - f > DROP) return false;
+      /* THREE GRIDS OVERLAP AT THE JOINS. The church's box runs two metres
+       * past its apse wall, over the cave's mouth, and a grid with no floor
+       * at a point used to answer "not walkable" for everyone — so the way
+       * out was shut at the church's own bounding box. No floor here means
+       * ask the next grid; a solid here is a wall. */
+      if (f === null) continue;
+      if (cellSolid(w, i, j)) return false;
+      if (f - feet > (w.stepMax || STEP) || feet - f > (w.dropMax || DROP)) return false;
       return true;
     }
     return false;
+  };
+  /* how wide a body is here: the passage says narrower */
+  S.bodyR = (lx, lz) => {
+    for (const w of S.walks) {
+      if (!w.bodyR) continue;
+      const b = w.bounds;
+      if (lx >= b[0][0] + w.off.x && lx <= b[1][0] + w.off.x && lz >= b[0][2] + w.off.z && lz <= b[1][2] + w.off.z) return w.bodyR;
+    }
+    return 0.24;
+  };
+  /* how far along +x a crouched body can get from a spot, over the walk as
+   * the game walks it — the harness's own flood, kept here so the compose
+   * can ask it and widen the passage until it answers with the mouth */
+  S.reach = (x0, z0, h = 1.03, limit = 400000) => {
+    const seen = new Set(); const q = [[x0, z0]]; const key = (x, z) => Math.round(x * 5) + ',' + Math.round(z * 5);
+    seen.add(key(x0, z0)); let best = -1e9, bestZ = z0, n = 0, head = 0;
+    while (head < q.length && n < limit) {
+      const [x, z] = q[head++]; n++;
+      if (x > best) { best = x; bestZ = z; }
+      for (const [dx, dz] of [[0.2, 0], [-0.2, 0], [0, 0.2], [0, -0.2]]) {
+        const nx = x + dx, nz = z + dz, k = key(nx, nz);
+        if (seen.has(k)) continue;
+        const f0 = S.floorAt(x, z), f = S.floorAt(nx, nz);
+        if (f === null || f0 === null) continue;
+        if (S.blocked(nx, nz, S.bodyR(nx, nz), f0)) continue;
+        const ce = S.ceilAt(nx, nz);
+        if (ce !== null && ce - f < h + 0.06) continue;
+        seen.add(k); q.push([nx, nz]);
+      }
+    }
+    /* the FRONTIER: not the furthest cell along x — the tube snakes, and
+     * where it runs back in z the furthest-x cell is nowhere near where the
+     * flood is stopped — but the reached cell furthest along the tunnel
+     * (by a plain floor-connectivity distance from the start, no step rules)
+     * that has an unreached floor cell beside it */
+    let fx = best, fz = bestZ;
+    if (S._tubeDist) {
+      let bd = -1;
+      for (const k of seen) {
+        const d = S._tubeDist.get(k); if (d === undefined || d <= bd) continue;
+        const [kx, kz] = k.split(',').map(Number);
+        const x = kx / 5, z = kz / 5;
+        let open = false;
+        for (const [dx, dz] of [[0.2, 0], [-0.2, 0], [0, 0.2], [0, -0.2]]) { if (!seen.has(key(x + dx, z + dz)) && S.floorAt(x + dx, z + dz) !== null) { open = true; break; } }
+        if (open) { bd = d; fx = x; fz = z; }
+      }
+    }
+    return { cells: seen.size, x: best, z: bestZ, seen, fx, fz };
+  };
+  /* floor connectivity from a spot, every cell's distance in steps, no step
+   * or roof rule — how far along the tunnel a cell is */
+  S.tubeDistances = (x0, z0, limit = 400000) => {
+    const key = (x, z) => Math.round(x * 5) + ',' + Math.round(z * 5);
+    const dist = new Map(); const q = [[x0, z0]]; dist.set(key(x0, z0), 0); let head = 0;
+    while (head < q.length && head < limit) {
+      const [x, z] = q[head++]; const d = dist.get(key(x, z));
+      for (const [dx, dz] of [[0.2, 0], [-0.2, 0], [0, 0.2], [0, -0.2]]) {
+        const nx = x + dx, nz = z + dz, k = key(nx, nz);
+        if (dist.has(k) || S.floorAt(nx, nz) === null) continue;
+        dist.set(k, d + 1); q.push([nx, nz]);
+      }
+    }
+    S._tubeDist = dist;
+    return dist;
   };
   S.blocked = (lx, lz, r, feet) => {
     // sample the disc: its centre and a ring — cheaper than walking two grids' cells
@@ -235,13 +368,41 @@ export function makeUndercroft(opts = {}) {
       sh.uniforms.uUcDust = { value: L.dust };
       sh.uniforms.uUcDamp = { value: L.damp };
       sh.uniforms.uUcLevel = { value: L.level };
+      sh.uniforms.uUcCut = CUT; sh.uniforms.uUcCutX = CUT_X;      // shared: set once, every material sees it
+      sh.uniforms.uUcClipX = { value: mat.userData.bwClipX ?? -1e9 };   // the old cave's rock stops at the apse wall
       mat.userData.bwSh = sh;
       sh.vertexShader = 'varying vec3 vGrimeN; varying vec3 vGrimeP;\n' + sh.vertexShader
         .replace('#include <fog_vertex>', '#include <fog_vertex>\n  vGrimeN = normalize((modelMatrix * vec4(objectNormal, 0.0)).xyz);\n  vGrimeP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-      sh.fragmentShader = 'varying vec3 vGrimeN; varying vec3 vGrimeP;\nuniform float uUcDust, uUcDamp, uUcLevel;\n' + sh.fragmentShader
+      sh.fragmentShader = 'varying vec3 vGrimeN; varying vec3 vGrimeP;\nuniform float uUcDust, uUcDamp, uUcLevel; uniform vec4 uUcCut; uniform float uUcCutX; uniform float uUcClipX;\n' + sh.fragmentShader
+        /* THE WAY OUT IS CUT THROUGH THE APSE. A cylinder along x through the
+         * back wall, WALLS ONLY — a floor or a vault inside the radius is
+         * left alone, or the arch stands over a black disc — and the stone
+         * falls into shadow over the last half metre to the break, the
+         * breach's own lip. Radius zero is no cut, which is every material
+         * until the cave has been placed. */
+        .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+  float ucCutEdge = 9.0;
+  /* THE SCAN CARRIES NO NORMALS. The packer writes positions and uvs and
+   * three flat-shades the rest, so objectNormal in the vertex shader is
+   * the attribute's default — zero — and the world normal carried down
+   * here was nothing: the dust never settled and the cut never cut, and
+   * neither said a word. The face's normal is taken off the world
+   * position's derivatives instead, which is exactly what flat shading
+   * does for the lighting. */
+  vec3 ucN = normalize(cross(dFdx(vGrimeP), dFdy(vGrimeP)));
+  if (vGrimeP.x < uUcClipX) discard;
+  if (uUcCut.w > 0.0 && abs(ucN.y) < 0.6 && abs(vGrimeP.x - uUcCut.x) < uUcCutX) {
+    float cdy = vGrimeP.y - uUcCut.y, cdz = vGrimeP.z - uUcCut.z;
+    float ca = atan(cdy, cdz);
+    float cr = uUcCut.w * (0.92 + 0.08 * sin(ca * 3.0 + 0.9) + 0.05 * sin(ca * 7.0 - 1.3));
+    float cd = length(vec2(cdy, cdz));
+    if (cd < cr) discard;
+    ucCutEdge = cd - cr;
+  }`)
+        .replace('#include <dithering_fragment>', '#include <dithering_fragment>\n  gl_FragColor.rgb *= mix(0.28, 1.0, smoothstep(0.0, 0.55, ucCutEdge));')
         .replace('#include <map_fragment>', `#include <map_fragment>
   {
-    float up = clamp(vGrimeN.y, 0.0, 1.0);
+    float up = clamp(ucN.y, 0.0, 1.0);
     float g1 = fract(sin(dot(floor(vGrimeP.xz * 6.0), vec2(12.9898, 78.233))) * 43758.5453);
     float g2 = fract(sin(dot(floor(vGrimeP.xy * 3.1 + vGrimeP.zz), vec2(39.3468, 11.135))) * 24634.6345);
     // dust on whatever faces up — grey-brown, MULTIPLIED, so the grain under it survives
@@ -307,6 +468,20 @@ export function makeUndercroft(opts = {}) {
       }
     });
   }
+  /* THREE SCANS NOW. Ant leader's "3DRT-uderground for game" is the way IN —
+   * three hundred and forty metres of low-poly tunnel, turned and scaled to
+   * metres by the packer so its entry is at -x and its far end meets the
+   * church's front door; Valsev's cave, which used to be the way in, is the
+   * way OUT: turned half round so its ragged mouth faces the church's back
+   * wall, with the climb-out at its high end. */
+  load(opts.passageUrl || 'assets/passage.glb', (gltf) => {
+    const root = gltf.scene;
+    const w = parseWalk(root);
+    dress(root, 'cave');
+    group.add(root);
+    S.passage = { root, walk: w };
+    compose();
+  });
   load(opts.caveUrl || 'assets/cave.glb', (gltf) => {
     const root = gltf.scene;
     const w = parseWalk(root);
@@ -361,9 +536,12 @@ export function makeUndercroft(opts = {}) {
    * shape for the one direction that mattered. */
   const GAP = 0.9;
   function compose() {
-    if (!S.cave || !S.church || S.ready) return;
-    const cw = S.cave.walk, ch = S.church.walk;
-    if (!cw || !ch) return;
+    try { composeInner(); } catch (e) { console.error('[undercroft] compose failed', e); throw e; }
+  }
+  function composeInner() {
+    if (!S.cave || !S.church || !S.passage || S.ready) return;
+    const cw = S.cave.walk, ch = S.church.walk, pw = S.passage.walk;
+    if (!cw || !ch || !pw) return;
     // the mouth: the column with the greatest x that has a floor, and where on it
     /* A column's floor is its LOW floor. The cave's roof has an outside,
      * and where the tunnel under it is too low to walk the grid's floor is
@@ -380,9 +558,21 @@ export function makeUndercroft(opts = {}) {
       return { x: w.x0 + (i + 0.5) * w.cell, z: mid[0], y: mid[1], n: zs.length };
     };
     let low = null, high = null;
-    for (let i = cw.gw - 1; i >= 0 && !low; i--) { const s = colStats(cw, i); if (s && s.n >= 4) low = s; }
-    for (let i = 0; i < cw.gw && !high; i++) { const s = colStats(cw, i); if (s && s.n >= 4) high = s; }
+    for (let i = pw.gw - 1; i >= 0 && !low; i--) { const s = colStats(pw, i); if (s && s.n >= 4) low = s; }
+    for (let i = 0; i < pw.gw && !high; i++) { const s = colStats(pw, i); if (s && s.n >= 4) high = s; }
     if (!low || !high) return;
+    /* how big the passage's mouth is, for the breach to hug: the floor
+     * cells of its last column and the roof over them */
+    const mouthCol = { w: 0, h: 0 };
+    {
+      const i = Math.round((low.x - pw.x0) / pw.cell - 0.5);
+      const zs = [];
+      for (let j = 0; j < pw.gh; j++) { const f = cellFloor(pw, i, j); if (f !== null && f < low.y + 1.0) zs.push([pw.z0 + (j + 0.5) * pw.cell, pw.ceil[j][i]]); }
+      if (zs.length) {
+        mouthCol.w = zs[zs.length - 1][0] - zs[0][0] + pw.cell;
+        mouthCol.h = Math.max(...zs.map((c) => (c[1] >= 90 ? 0 : c[1] - low.y)));
+      }
+    }
     // the door, in the church's own frame
     const D = ch.door;
     const doorX = (D[0] + D[3]) / 2, doorZ = (D[2] + D[5]) / 2;
@@ -392,10 +582,45 @@ export function makeUndercroft(opts = {}) {
     const off = new THREE.Vector3(low.x + GAP - doorX, low.y - doorFloor, low.z - doorZ);
     ch.off.copy(off);
     S.church.root.position.copy(off);
-    S.walks = [cw, ch];
-    cw.stepMax = 0.62;                  // a cave floor is rubble: a knee-high lip is a step, not a wall
+    S.walks = [pw, ch, cw];
+    /* THE PASSAGE IS A CRAWL-TUBE, NOT A STAIRCASE. Three hundred metres of
+     * somebody else's low-poly tunnel drops and climbs in three-metre ledges
+     * that no step rule anticipates, and the owner's brief is that NOTHING
+     * blocks the path either way. So its floor is taken as one connected
+     * surface — a big step and a big drop — so a ledge is something you
+     * clamber up or slide down rather than a wall, and the camera follows
+     * the floor, popping up or down where the tube is that steep, which in a
+     * pitch-dark hand-dug crawl reads as the ground under you and not as a
+     * bug. It is FLOODED from the entry to prove the mouth is reachable, and
+     * where the flood still stops it is WIDENED a cell (a pinch), never
+     * ramped — the ramp machinery was three passes of fighting the scan and
+     * this is the honest shape of the thing. */
+    pw.stepMax = 3.6; pw.dropMax = 4.5;
+    pw.ramps = [];
+    /* dilate the grid a few times up front: a low-poly tube's floor strip
+     * has a handful of two-cell holes in it where the sampler fell between
+     * faces, and each is a full-width gap to a disc. Then flood from the
+     * entry, crouched, and widen once more per stall until the mouth is
+     * reached — the owner's brief: nothing blocks the path. */
+    pw.dilate(3);
+    for (let tries = 0; tries < 6; tries++) {
+      const r = S.reach(high.x + 2.2, high.z, 1.03);
+      pw.reachStop = [+r.fx.toFixed(1), +r.fz.toFixed(1), tries];
+      if (r.x >= low.x - 11) { pw.reachOk = tries; break; }   // the join bridge covers the last ten metres to the door
+      pw.dilate(1);
+    }
+    if (pw.reachOk === undefined) console.warn('[undercroft] passage flood did not reach the mouth', pw.reachStop);
+    delete S._tubeDist;
+    cw.stepMax = 1.2; cw.dropMax = 2.0;   // the old cave is rubble too
     ch.stepMax = 0.40;                  // a pew's seat is 0.45 up, and that is not a step
-    S.bridges.push({ x0: low.x - 0.8, x1: low.x + GAP + 0.6, z0: low.z - 1.7, z1: low.z + 1.7, y0: low.y, y1: low.y });
+    /* THE JOIN IS BLANKETED, not bridged with a hairline. The passage's
+     * walkable floor and the church's are at the same height here (both
+     * ~-10.88, measured) but they are separate grids and the flood would
+     * not cross between them at the exact seam — the passage frontier sat
+     * ten metres short of the door. A wide flat strip the walk answers for,
+     * from well back in the tunnel to well inside the nave, is one floor
+     * over the join and there is nothing to step across. */
+    S.bridges.push({ x0: low.x - 13, x1: low.x + GAP + 3, z0: low.z - 7, z1: low.z + 7, y0: low.y, y1: low.y });
     /* THE BREACH. The church's front doorway is ALREADY AN OPENING in the
      * scan — four metres by five and a half — and the first two builds
      * closed it with black: a BackSide box eight metres deep whose far
@@ -423,7 +648,7 @@ export function makeUndercroft(opts = {}) {
        * tone: u 0.375–0.5, v 0.31–0.63), a different cell per block and
        * each one turned a random quarter, so it is the wall's own stone
        * laid as courses, with the seams between blocks reading as joints. */
-      const W = 7.2, H = 9.0, BX = 0.72, BY = 0.45, nx = Math.round(W / BX), ny = Math.round(H / BY);
+      const W = 10.8, H = 11.7, BX = 0.72, BY = 0.45, nx = Math.round(W / BX), ny = Math.round(H / BY);
       const P = [], N = [], UVs = [], I = [];
       const cellsU = [0.375, 0.4375], cellsV = [0.3125, 0.375, 0.4375, 0.5, 0.5625];
       let h = 7;
@@ -462,8 +687,13 @@ export function makeUndercroft(opts = {}) {
          * never discarded a pixel; what looked like an arch was the cave's
          * own mouth poking through the panel. Local: x across, y up. */
         // and it HUGS the mouth: cut wider than the cave's rock and the surplus is the void
-        sh.uniforms.uArch = { value: new THREE.Vector4(0, -3.2, 1.12, 2.25) };
-        sh.uniforms.uArchS = { value: new THREE.Vector2(1.15, -1.20) };
+        /* sized off the passage's own last column: half its floor width
+         * with a hand over, and its roof — the cave's numbers (1.12 by 2.25)
+         * were the cave's, and a panel cut for one tunnel and stood in
+         * front of another is a gap or a wall. */
+        const hw = Math.max(0.9, mouthCol.w / 2 + 0.18), ht = Math.max(1.9, mouthCol.h + 0.25);
+        sh.uniforms.uArch = { value: new THREE.Vector4(0, -3.2, hw, ht) };
+        sh.uniforms.uArchS = { value: new THREE.Vector2(ht * 0.55, -1.20) };
         sh.vertexShader = 'varying vec3 vArchW;\n' + sh.vertexShader
           .replace('#include <fog_vertex>', '#include <fog_vertex>\n  vArchW = transformed;');
         sh.fragmentShader = 'varying vec3 vArchW; uniform vec4 uArch; uniform vec2 uArchS;\n' + sh.fragmentShader
@@ -498,15 +728,12 @@ export function makeUndercroft(opts = {}) {
      * show where nothing else is drawn. */
     {
       const bb = new THREE.Box3();
-      const cb = cw.bounds, hb = ch.bounds;
-      bb.expandByPoint(new THREE.Vector3(cb[0][0], cb[0][1], cb[0][2])); bb.expandByPoint(new THREE.Vector3(cb[1][0], cb[1][1], cb[1][2]));
+      const pb = pw.bounds, hb = ch.bounds;
+      bb.expandByPoint(new THREE.Vector3(pb[0][0], pb[0][1], pb[0][2])); bb.expandByPoint(new THREE.Vector3(pb[1][0], pb[1][1], pb[1][2]));
       bb.expandByPoint(new THREE.Vector3(hb[0][0] + off.x, hb[0][1] + off.y, hb[0][2] + off.z));
       bb.expandByPoint(new THREE.Vector3(hb[1][0] + off.x, hb[1][1] + off.y, hb[1][2] + off.z));
-      const size = bb.getSize(new THREE.Vector3()).addScalar(6), c = bb.getCenter(new THREE.Vector3());
-      const shell = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z),
-        new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide, fog: false, depthWrite: false }));
-      shell.position.copy(c); shell.renderOrder = -5; shell.frustumCulled = false;
-      group.add(shell);
+      // the exit cave is placed a few lines down; its box is added to the shell there
+      S._shellBox = bb;
     }
     const plate = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 3.6), new THREE.MeshStandardMaterial({ color: 0x2a2724, roughness: 1 }));
     plate.rotation.x = -Math.PI / 2; plate.position.set(low.x + GAP * 0.25, low.y + 0.01, low.z);
@@ -516,16 +743,109 @@ export function makeUndercroft(opts = {}) {
     const cap = new THREE.Mesh(new THREE.BoxGeometry(3.0, 8.0, 8.0), new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide, fog: false }));
     cap.position.set(high.x - 1.6, high.y + 2.5, high.z);
     group.add(cap);
+
+    /* ---- THE WAY OUT: the old cave, behind the altar.
+     * The church's walk runs out a metre and a half short of the apse wall
+     * (blocked from 38.9, wall at 39.2, measured), so the last free cell on
+     * the church's axis is the exit's threshold. Valsev's cave — turned half
+     * round by the packer, its ragged mouth now at its -x end — is put down
+     * with that mouth a step past the wall at the threshold's own height, a
+     * bridge answers for the floor between, and the WALL IS CUT: a cylinder
+     * along x through every church material (the grime shader carries the
+     * uniform), walls only — a floor or a roof inside the radius is kept, or
+     * there is a black disc in the floor under the arch. The cave's own
+     * rock covers the hole from behind. */
+    let exitEdge = null, exitFloor = null;
+    {
+      const zc = off.z;
+      let lastFree = null;
+      /* the scan starts BEHIND THE ALTAR. Started ten metres short of the
+       * end wall it began on the altar's own plinth, took the first free
+       * cell past it for the threshold, and put the way out six metres
+       * short of the wall — the cave's rock stood in the chancel. */
+      const A0 = findAltar();
+      for (let x = (A0 ? A0.x1 + 1.0 : altarX0()); x < ch.bounds[1][0] + off.x; x += 0.1) {
+        const f = S.floorAt(x, zc);
+        if (f === null) break;
+        if (S.blocked(x, zc, 0.24, f)) { if (lastFree !== null) break; else continue; }
+        lastFree = x; exitFloor = f;
+      }
+      if (lastFree !== null) exitEdge = lastFree + 0.55;
+    }
+    let caveFar = null;
+    if (exitEdge !== null) {
+      let cm = null, cf = null;
+      for (let i = 0; i < cw.gw && !cm; i++) { const s = colStats(cw, i); if (s && s.n >= 4) cm = s; }
+      for (let i = cw.gw - 1; i >= 0 && !cf; i--) { const s = colStats(cw, i); if (s && s.n >= 4) cf = s; }
+      if (cm && cf) {
+        const coff = new THREE.Vector3(exitEdge + GAP - cm.x, exitFloor - cm.y, off.z - cm.z);
+        cw.off.copy(coff);
+        S.cave.root.position.copy(coff);
+        S.bridges.push({ x0: exitEdge - 1.4, x1: exitEdge + GAP + 0.8, z0: off.z - 1.5, z1: off.z + 1.5, y0: exitFloor, y1: exitFloor });
+        caveFar = { x: cf.x + coff.x, y: cf.y + coff.y, z: cf.z + coff.z };
+        const cb = cw.bounds;
+        S._shellBox.expandByPoint(new THREE.Vector3(cb[0][0] + coff.x, cb[0][1] + coff.y, cb[0][2] + coff.z));
+        S._shellBox.expandByPoint(new THREE.Vector3(cb[1][0] + coff.x, cb[1][1] + coff.y, cb[1][2] + coff.z));
+        // the cut, in WORLD space: the grime shader compares the mesh's world position
+        group.updateMatrixWorld(true);
+        /* sized to the cave's own mouth — a metre and a half of roof over
+         * its first floor cells (measured) — so the hole shows the tunnel
+         * and not the rock over it */
+        const wc = group.localToWorld(new THREE.Vector3(exitEdge, exitFloor + 1.05, off.z));
+        CUT.value.set(wc.x, wc.y, wc.z, 1.2);
+        CUT_X.value = 1.3;
+        /* AND THE CAVE'S OWN ROCK STOPS AT THE WALL. Its ragged mouth flares
+         * metres past its first floor cell, and put down by the floor it
+         * stood as a boulder in the middle of the chancel. Every one of its
+         * materials is clipped in world x at the apse's face; behind the
+         * cut you look into its tube, and nothing of it is in the room. */
+        const clipX = group.localToWorld(new THREE.Vector3(exitEdge + 0.12, 0, 0)).x;
+        S.cave.root.traverse((o) => {
+          if (!o.isMesh) return;
+          for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+            m.userData.bwClipX = clipX;
+            if (m.userData.bwSh && m.userData.bwSh.uniforms.uUcClipX) m.userData.bwSh.uniforms.uUcClipX.value = clipX;
+          }
+        });
+        const plate2 = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 3.2), new THREE.MeshStandardMaterial({ color: 0x2a2724, roughness: 1 }));
+        plate2.rotation.x = -Math.PI / 2; plate2.position.set(exitEdge + GAP * 0.4, exitFloor + 0.01, off.z);
+        grime(plate2.material, 'cave');
+        group.add(plate2);
+      }
+    }
+    {
+      const bb = S._shellBox;
+      const size = bb.getSize(new THREE.Vector3()).addScalar(6), c = bb.getCenter(new THREE.Vector3());
+      const shell = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z),
+        new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide, fog: false, depthWrite: false }));
+      shell.position.copy(c); shell.renderOrder = -5; shell.frustumCulled = false;
+      group.add(shell);
+    }
     // where things are: you arrive a metre in from the high end facing down the tunnel (+x);
     // the way out is behind the altar, at the far end of the nave
     const altarX = ch.bounds[1][0] - 3.2 + off.x;
     let altarFloor = S.floorAt(altarX, off.z) ?? (doorFloor + off.y);
+    const exitSpot = caveFar ? { x: caveFar.x - 1.2, y: S.floorAt(caveFar.x - 1.2, caveFar.z) ?? caveFar.y, z: caveFar.z, yaw: Math.PI / 2 }
+                             : { x: altarX, y: altarFloor, z: off.z, yaw: Math.PI / 2 };
     S.spots = {
       entry: { x: high.x + 2.2, y: S.floorAt(high.x + 2.2, high.z) ?? high.y, z: high.z, yaw: -Math.PI / 2 },   // two metres in: the very mouth is a crawl
       mouth: { x: low.x, y: low.y, z: low.z },
-      exit: { x: altarX, y: altarFloor, z: off.z, yaw: Math.PI / 2 },
+      exit: exitSpot,                                  // the far end of the old cave, behind the altar
+      exitEdge: exitEdge === null ? altarX : exitEdge, // where the church ends and the way out begins
       lamps: [],
+      passage: [],
     };
+    /* LAMPS ALONG THE PASSAGE. It has no fixtures of its own, so the game's
+     * bulbs hang off the grid: a few columns a long way apart, each over the
+     * middle of that column's floor, so the tunnel is dark with pools in it. */
+    for (const f of [0.09, 0.26, 0.44, 0.62, 0.80, 0.975]) {   // six down the tube; the last is the bulb nearest the mouth, so the break is lit from behind
+      const i = Math.round(f * (pw.gw - 1));
+      let st = null;
+      for (let d = 0; d < 40 && !st; d++) { st = colStats(pw, Math.min(pw.gw - 1, i + d)) || colStats(pw, Math.max(0, i - d)); if (st && st.n < 3) st = null; }
+      if (!st) continue;
+      const c = S.ceilAt(st.x, st.z);
+      S.spots.passage.push({ x: st.x, y: st.y + (c === null ? 1.6 : Math.min(1.9, Math.max(1.1, c - st.y - 0.3))), z: st.z });
+    }
     /* A RAYCASTER READS matrixWorld, AND SO DOES A BOX: the church root was
      * moved a line ago and nothing has updated the matrices since, so the
      * bulbs measured in the scan's raw frame and the lamps went to the
@@ -571,11 +891,21 @@ export function makeUndercroft(opts = {}) {
    *   gold reads as gold in candlelight rather than as one more cold stone
    *   surface. */
   const CANDLES = { flames: null, seedAttr: null, mat: null };
+  // where to start looking for the church's back edge: a little past the altar's own column
+  function altarX0() { return S.church.walk.bounds[1][0] - 10 + S.church.walk.off.x; }
+  /* THE EXIT'S CUT, shared by every church material through the grime shader:
+   * a cylinder along x (xyz = centre in WORLD space, w = radius; CUT_X the
+   * half-length), zero until the cave is placed. */
+  const CUT = { value: new THREE.Vector4(0, 0, 0, 0) };
+  const CUT_X = { value: 0 };
   function findAltar() {
     const w = S.church && S.church.walk;
     if (!w) return null;
-    const ex = S.spots.exit.x;
-    const dais = S.floorAt(ex - 9, w.off.z + 0) ?? (S.spots.exit.y + 0.34);
+    /* measured from where the CHURCH ends, not from the way out: the exit
+     * spot is the far end of the old cave now, twenty metres past the apse,
+     * and a window hung off that found no altar at all */
+    const ex = w.bounds[1][0] + w.off.x - 1.0;                       // the church's own end, which is where a chancel is
+    const dais = S.floorAt(ex - 6, w.off.z) ?? ((S.floorAt(ex - 9, w.off.z) ?? 0) + 0.34);
     /* AND THE CHANCEL IS NOT TWO PLATEAUX, IT IS A DOZEN. Bucketing the
      * cells by height alone gathered every surface in the apse that happens
      * to stand a metre off the dais — the altar, the reredos ledge, the
@@ -593,7 +923,7 @@ export function makeUndercroft(opts = {}) {
         const y = f + w.off.y;
         if (y < dais + 0.6 || y > dais + 1.7) continue;
         const x = w.off.x + w.x0 + (i + 0.5) * w.cell;
-        if (x < ex - 12 || x > ex - 2) continue;
+        if (x < ex - 13 || x > ex - 1.2) continue;
         cand.set(j * w.gw + i, y);
       }
     }
@@ -622,7 +952,7 @@ export function makeUndercroft(opts = {}) {
       if (n < 8) continue;
       const dx = x1 - x0 + w.cell, dz = z1 - z0 + w.cell;
       const zc = (z0 + z1) / 2;
-      const score = n * fit(dx) * fit(dz) / (1 + Math.abs(zc - S.spots.exit.z) * 0.9);   // and it stands on the church's own axis
+      const score = n * fit(dx) * fit(dz) / (1 + Math.abs(zc - w.off.z) * 0.9);   // and it stands on the church's own axis (off.z: the door's z is the axis)
       if (score > bs) { bs = score; best = { x0, x1, z0, z1, y: top, n }; }
     }
     if (!best) return null;
@@ -664,8 +994,13 @@ export function makeUndercroft(opts = {}) {
     for (let k = 0; k < 18; k++) {
       const a = (k / 18) * Math.PI * 2 + rnd() * 0.12;
       const q = 0.9 + rnd() * 0.5;
-      const x = A.x + Math.cos(a) * (A.x1 - A.x0 + 0.9) * 0.5 * q;
-      const z = A.z + Math.sin(a) * (A.z1 - A.z0 + 1.1) * 0.5 * q;
+      /* AND THE RING STANDS CLEAR OF THE PLINTH. The altar's step is a wall
+       * to the walk (0.65 up against a 0.40 step) and the disc stops a body
+       * 0.4 m short of it — right where the first ring stood, so "the
+       * candles block me at the altar". Nothing here has ever had a
+       * collider; they stand where you can walk through them now. */
+      const x = A.x + Math.cos(a) * (A.x1 - A.x0 + 2.0) * 0.5 * q;
+      const z = A.z + Math.sin(a) * (A.z1 - A.z0 + 2.2) * 0.5 * q;
       /* A CANDLE'S GROUND IS A LOOKUP, not the height of the thing it is
        * arranged around: the dais is a step and the ring reaches past its
        * front edge, so the ones at the bottom of it stood a third of a
@@ -685,6 +1020,15 @@ export function makeUndercroft(opts = {}) {
     const pool = new THREE.CylinderGeometry(1.0, 1.15, 1.0, 8, 1, false);
     pool.translate(0, 0.5, 0);
     const pools = new THREE.InstancedMesh(pool, waxMat, spots.length);
+    /* A FLAME THAT IS ONLY A POINT SPRITE CAN BE MISSED. At the retro scale a
+     * point is a few pixels, and past ten metres it is one — so the owner's
+     * word was "make the candles lit". Every flame has a BODY now: a small
+     * lit cone on the wick, unlit by anything (`MeshBasicMaterial`, its own
+     * colour), which is on screen from any distance, and the sprite breathes
+     * over it. */
+    const tongue = new THREE.ConeGeometry(0.018, 0.075, 6); tongue.translate(0, 0.0375, 0);
+    const tongueMat = new THREE.MeshBasicMaterial({ color: 0xffb75a, fog: true });
+    const tongues = new THREE.InstancedMesh(tongue, tongueMat, spots.length);
     const m4 = new THREE.Matrix4(), qi = new THREE.Quaternion(), pv = new THREE.Vector3(), sv = new THREE.Vector3();
     const fpos = new Float32Array(spots.length * 3), fseed = new Float32Array(spots.length), fsize = new Float32Array(spots.length);
     spots.forEach((sp, k) => {
@@ -692,12 +1036,13 @@ export function makeUndercroft(opts = {}) {
       qi.setFromEuler(new THREE.Euler(lean, rnd() * 3, (rnd() - 0.5) * 0.14));
       wax.setMatrixAt(k, m4.compose(pv.set(sp.x, sp.y, sp.z), qi, sv.set(sp.r, sp.hgt, sp.r)));
       pools.setMatrixAt(k, m4.compose(pv.set(sp.x, sp.y + 0.002, sp.z), new THREE.Quaternion(), sv.set(sp.r * 1.5, 0.018 + rnd() * 0.02, sp.r * 1.5)));
-      fpos[k * 3] = sp.x; fpos[k * 3 + 1] = sp.y + sp.hgt + 0.035; fpos[k * 3 + 2] = sp.z;
-      fseed[k] = rnd() * 90; fsize[k] = 0.10 + rnd() * 0.05;
+      fpos[k * 3] = sp.x; fpos[k * 3 + 1] = sp.y + sp.hgt + 0.045; fpos[k * 3 + 2] = sp.z;
+      fseed[k] = rnd() * 90; fsize[k] = 0.16 + rnd() * 0.07;
+      tongues.setMatrixAt(k, m4.compose(pv.set(sp.x, sp.y + sp.hgt - 0.005, sp.z), new THREE.Quaternion(), sv.set(1, 1, 1)));
     });
-    wax.instanceMatrix.needsUpdate = true; pools.instanceMatrix.needsUpdate = true;
-    wax.frustumCulled = false; pools.frustumCulled = false;
-    group.add(wax, pools);
+    wax.instanceMatrix.needsUpdate = true; pools.instanceMatrix.needsUpdate = true; tongues.instanceMatrix.needsUpdate = true;
+    wax.frustumCulled = false; pools.frustumCulled = false; tongues.frustumCulled = false;
+    group.add(wax, pools, tongues);
 
     const fg = new THREE.BufferGeometry();
     fg.setAttribute('position', new THREE.BufferAttribute(fpos, 3));
@@ -725,7 +1070,7 @@ export function makeUndercroft(opts = {}) {
    * the nearest flame was a hand-sized orange blob lying on the floor —
    * which is the one thing a candle must never be. A flame is a flame's
    * size; past a metre or so it simply stops getting bigger. */
-  gl_PointSize = min(gl_PointSize, 16.0);`);
+  gl_PointSize = min(gl_PointSize, 22.0);`);
       sh.fragmentShader = 'varying float vFlame;\n' + sh.fragmentShader
         .replace('#include <premultiplied_alpha_fragment>', '  gl_FragColor.rgb *= vFlame;\n#include <premultiplied_alpha_fragment>');
     };
