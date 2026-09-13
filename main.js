@@ -2957,16 +2957,32 @@ function rockGroundAt(x, z, feetY) {
 }
 // shove a point out of every solid it is inside, along the shallowest face,
 // and report the last thing it was pushed out of
+/* DEEPEST FIRST, AND THEN AGAIN — NOT EVERY COLLIDER IN TURN.
+ * Walking a shoulder along anything built out of more than one solid used to
+ * SHAKE, and the reason is the order: the loop pushed you out of each
+ * overlapping collider in the order they were declared, so the last one to
+ * speak had the last word and the next frame's input put you back into the
+ * one before it. Measured running along the rock outcrop, fifty reversals of
+ * direction in three hundred frames. Pushing out of the ONE you are deepest
+ * in and asking again converges — after the first push you are usually
+ * outside all of them, and where you are not, the second is a smaller
+ * correction in the same direction. */
 function pushOutOfSolids(pos, feetY, grow, headY = Infinity) {
   let hit = null;
-  for (const c of rockColliders) {
-    /* Anything whose top is within a STEP of your feet is a floor, not a
-     * wall — `rockGroundAt()` lifts you onto it in the same frame. The two
-     * used to disagree (0.06 here against ROCK_STEP there), so a stair tread
-     * you were meant to walk up shoved you back off it instead. */
-    if (feetY >= c.top - ROCK_STEP) continue;
-    if (c.floorY !== undefined && headY < c.floorY) continue;   // you are under it
-    if (solidDepth(c, pos.x, pos.z, grow) <= 0) continue;
+  for (let pass = 0; pass < 4; pass++) {
+    let worst = null, wd = 0;
+    for (const c of rockColliders) {
+      /* Anything whose top is within a STEP of your feet is a floor, not a
+       * wall — `rockGroundAt()` lifts you onto it in the same frame. The two
+       * used to disagree (0.06 here against ROCK_STEP there), so a stair tread
+       * you were meant to walk up shoved you back off it instead. */
+      if (feetY >= c.top - ROCK_STEP) continue;
+      if (c.floorY !== undefined && headY < c.floorY) continue;   // you are under it
+      const d = solidDepth(c, pos.x, pos.z, grow);
+      if (d > wd) { wd = d; worst = c; }
+    }
+    if (!worst) break;
+    const c = worst;
     if (c.r !== undefined) {
       const dx = pos.x - c.x, dz = pos.z - c.z, rr = c.r + grow;
       const d = Math.hypot(dx, dz) || 1e-6;
@@ -29225,18 +29241,50 @@ bwGlb('assets/rockmouth.glb', (gltf) => {
    * only direction it can be seen from is through the mouth, and its size is
    * bounded by the hollow rather than guessed against the silhouette. The
    * mouth's own darkening stays in the shader; this is what is behind it. */
+  /* AND WHAT IS BEHIND THE ARCH IS MEASURED, NOT GUESSED. The scan is an
+   * arch over a real hollow, and beyond it stands the SAND WALL — so with
+   * nothing in the way you put your face to the cave and see the dune. Three
+   * builds put something in the way by eye and all three came out through the
+   * stone somewhere: the owner has photographed a black panel over the top of
+   * the rock and then a black box lying on the sand beside it.
+   *
+   * The box is INSCRIBED IN THE HOLLOW instead. From a point well inside the
+   * mouth, rays are cast in twenty-six directions at the rock itself; the
+   * nearest of them is how much room there is, and a cube of that half-width
+   * fits inside by construction and can be seen from exactly one direction —
+   * through the opening. If the hollow turns out too small to hold one, none
+   * is built and the mouth's own darkening carries it. */
   const darkPlug = (holder, axis, front, mid, name) => {
-    const deep = 5.0, w = 3.6, h = 3.4;   // inside the hollow, and measured against the arch: bigger and its corners come out through the stone
-    const g = axis === 'x' ? new THREE.BoxGeometry(6.0, h, w) : new THREE.BoxGeometry(w, h, 6.0);
-    const plug = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide, fog: false }));
-    if (axis === 'x') plug.position.set(front + deep, h / 2 - 0.4, mid);
-    else plug.position.set(mid, h / 2 - 0.4, front - deep);
+    holder.updateWorldMatrix(true, true);
+    const rc = new THREE.Raycaster(); rc.far = 40;
+    const dirs = [];
+    for (const x of [-1, 0, 1]) for (const y of [-1, 0, 1]) for (const z of [-1, 0, 1]) {
+      if (!x && !y && !z) continue;
+      dirs.push(new THREE.Vector3(x, y, z).normalize());
+    }
+    let best = null;
+    for (const depth of [3.0, 4.0, 5.0, 6.0, 7.0]) for (const yc of [1.6, 2.2, 2.8]) {
+      /* INWARD IS +x AT THE ENTRANCE AND +z AT THE EXIT. Both mouths face the
+       * walk — the entrance's toward -x and the exit's toward -z — so the
+       * hollow is at greater x and greater z respectively. Probing the wrong
+       * way found no room at the exit at all and built nothing. */
+      const c = axis === 'x' ? new THREE.Vector3(front + depth, yc, mid) : new THREE.Vector3(mid, yc, front + depth);
+      let room = 1e9;
+      for (const d of dirs) { rc.set(c, d); const h = rc.intersectObject(holder, true); room = Math.min(room, h.length ? h[0].distance : 0); }
+      if (room > 1e8 || room <= 0) continue;
+      if (!best || room > best.room) best = { c, room };
+    }
+    if (!best || best.room < 1.0) return null;
+    const half = (best.room - 0.25) / Math.sqrt(3);
+    const plug = new THREE.Mesh(new THREE.BoxGeometry(half * 2, half * 2, half * 2),
+      new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide, fog: false }));
+    plug.position.copy(best.c);
     plug.name = name;
     holder.parent.add(plug);                       // in `rockGroup`, in world metres: the holders are scaled 18
-    return plug;
+    return [+best.room.toFixed(2), +(half * 2).toFixed(2), best.c.toArray().map((v) => +v.toFixed(1))];
   };
-  darkPlug(mountain, 'x', MOUNT_FRONT_X, MOUNT_MOUTH_Z, 'mouthDark');
-  darkPlug(mountainExit, 'z', EXIT_FRONT_Z, EXIT_X, 'exitDark');
+  window.__bwPlug = [darkPlug(mountain, 'x', MOUNT_FRONT_X, MOUNT_MOUTH_Z, 'mouthDark'),
+                     darkPlug(mountainExit, 'z', EXIT_FRONT_Z, EXIT_X, 'exitDark')];
 });
 /* AND THE ROCK IS SOLID, WHICH THREE CYLINDERS COULD NEVER MAKE IT. "I clip
  * through the entrance rock" was a footprint thirty metres across answered by
@@ -29261,15 +29309,25 @@ function rockShellColliders(root, inMouth) {
       occ.set(key(Math.round(v.x / CELL), Math.round(v.z / CELL)), 1);
     }
   });
-  let n = 0;
+  /* AND THE CELLS ARE MERGED INTO RUNS. Thirty separate two-metre boxes down
+   * one flank is thirty faces to catch on; one twenty-metre box is a wall. */
+  const wanted = new Set();
   for (const k of occ.keys()) {
     const [i, j] = k.split(',').map(Number);
     let edge = false;
     for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (!occ.has(key(i + di, j + dj))) { edge = true; break; }
-    if (!edge) continue;
-    const x = i * CELL, z = j * CELL;
-    if (inMouth(x, z)) continue;
-    rockColliders.push({ x, z, r: CELL * 0.72, top: 30, mat: 'rock' });
+    if (edge && !inMouth(i * CELL, j * CELL)) wanted.add(k);
+  }
+  let n = 0;
+  const used = new Set();
+  for (const k of wanted) {
+    if (used.has(k)) continue;
+    const [i, j] = k.split(',').map(Number);
+    let i1 = i;
+    while (wanted.has(key(i1 + 1, j)) && !used.has(key(i1 + 1, j))) i1++;
+    for (let q = i; q <= i1; q++) used.add(key(q, j));
+    rockColliders.push({ x0: i * CELL - CELL / 2, z0: j * CELL - CELL / 2,
+                         x1: i1 * CELL + CELL / 2, z1: j * CELL + CELL / 2, top: 30, mat: 'rock' });
     n++;
   }
   return n;
@@ -29402,10 +29460,33 @@ function updateUndercroft(dt) {
   const f0 = UC.floorAt(_ucL.x, _ucL.z);
   const feet = f0 !== null ? f0 : camBaseY - playerEye() - UC_Y;
   const r = UC.bodyR ? UC.bodyR(_ucL.x, _ucL.z) : 0.24;   // a hand narrower in the passage
+  /* A WALL IS SLID ALONG, NOT BOUNCED OFF. Holding a key into rock used to
+   * SHAKE: the push-out moves you out along the resultant of every bad
+   * sample and the next frame's input puts you straight back, sixty times a
+   * second. Two answers, in order. Inside a tube the cylinder has an exact
+   * one: project the position back onto it, which is a slide and has nothing
+   * to oscillate about. Everywhere else, keep whichever ONE AXIS of the
+   * frame's movement is clear — the oldest trick there is, and it turns a
+   * wall you are pressed against into a wall you run along. Only when
+   * neither works does the push-out and the revert come out.
+   *
+   * A CYLINDER CLAMP WAS TRIED FIRST AND IS WORSE THAN THE SHAKE. Projecting
+   * the position back onto the tube is exact on a straight run and wrong at
+   * every corner, because the nearest point on a polyline at a bend is the
+   * VERTEX, and projecting radially from a vertex moves you back down the
+   * tunnel. Measured: the hands-off walk went from 5011 ticks and fifteen
+   * stalled frames to stuck at x = 85 with three quarters of its frames
+   * stalled. The axis slide has no such failure: it only ever keeps a
+   * component of a move the player asked for. */
   if (UC.blocked(_ucL.x, _ucL.z, r, feet)) {
-    UC.pushOut(_ucL, r, feet, 5);
-    if (UC.blocked(_ucL.x, _ucL.z, r, feet)) UC.escape(_ucL, r, feet, 2.5);
-    if (UC.blocked(_ucL.x, _ucL.z, r, feet)) { _ucL.x = _preMove.x - UC_X; _ucL.z = _preMove.z - UC_Z; }
+    const px = _preMove.x - UC_X, pz = _preMove.z - UC_Z;
+    if (!UC.blocked(_ucL.x, pz, r, feet)) _ucL.z = pz;
+    else if (!UC.blocked(px, _ucL.z, r, feet)) _ucL.x = px;
+    else {
+      UC.pushOut(_ucL, r, feet, 5);
+      if (UC.blocked(_ucL.x, _ucL.z, r, feet)) UC.escape(_ucL, r, feet, 2.5);
+      if (UC.blocked(_ucL.x, _ucL.z, r, feet)) { _ucL.x = px; _ucL.z = pz; }
+    }
   }
   /* YOU HIT YOUR HEAD, AND IT STOPS YOU. A step into a stretch of tunnel
    * you cannot stand up in is REFUSED — the frame's movement is reverted,

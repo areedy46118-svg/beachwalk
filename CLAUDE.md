@@ -2572,6 +2572,78 @@ Four traps in the machinery, all of which cost a build:
   at the church dragged the last real stations off the tunnel's centre when it
   was smoothed into them — and those are the narrowest stations in the model.
 
+**AND THE THINGS THAT WERE STILL IN THE WAY, ONE ROUND LATER.** The owner
+played it and listed six; every one is a general lesson.
+
+- **A TRIANGLE'S CENTROID IS NOT THE TRIANGLE.** The carve dropped a face
+  whose MIDDLE fell in the walk, and on a model whose faces are a metre and
+  more across that leaves the ones lying clean ACROSS the tunnel with their
+  centroid in the wall — the big flat sheets hanging in the bore that he
+  photographed. Fifty-nine of them, measured. Seven points now: three
+  corners, three edge midpoints and the middle, with the corners and edges
+  asked only about the inner three quarters (a wall triangle's corners ARE at
+  the wall and have to survive). Crossings: 59 → 3.
+- **AND THE CARVE IS CAPPED.** At a station the model does not cover, the
+  radius is an interpolation across a hole and can be far wider than the
+  tunnel really is; carving to it eats real walls, which the sleeve then has
+  to stand in for — which is how a repair turns into a replacement one metre
+  at a time.
+- **A SLEEVE SWEPT OUTSIDE A MODEL MUST NOT BE DISPLACED INWARD.** Signed
+  noise on a tube that is only a hand's breadth clear puts a lobe of it
+  through the scan's wall, and what that draws is another flat sheet. Sixty
+  one of them. `Math.abs` on the displacement, and the sleeve is carved too.
+- **A LONE RAISED CELL IN A WALK GRID IS AN INVISIBLE WALL.** The packer's
+  floor grid carries whatever it found, and in a church that is the pews,
+  which are meant to stop you. It also catches a lamp chain or a boss on the
+  vault sampled down onto ONE cell of open nave — a wall in the middle of the
+  aisle with nothing there to see, which is exactly what the owner kept
+  running into. The grid carries `floor0` (the floor without the furniture),
+  so a raised cell can be checked against what is under it: flood the
+  connected run and, if it is smaller than a piece of furniture, put it back
+  on the bare floor. A bench is forty cells; a speckle is one or two.
+  Eighteen cleaned.
+- **A WALL IS SLID ALONG, NOT BOUNCED OFF.** "Running against any 3d model
+  surface you glitch and shake a lot" is the push-out arguing with the input:
+  the push moves you out, the next frame's key moves you back, sixty times a
+  second. Two fixes, and one failed attempt worth remembering:
+    - underground, keep whichever ONE AXIS of the frame's movement is clear
+      before reaching for the push-out at all. Measured pressing into rock for
+      three hundred frames: 0 reversals of direction, and the hands-off walk
+      is unchanged at 13 stalled frames in 5013.
+    - **A CYLINDER CLAMP IS WORSE THAN THE SHAKE.** Projecting the position
+      back onto the tube is exact on a straight run and wrong at every corner,
+      because the nearest point on a polyline at a bend is the VERTEX and
+      projecting radially from a vertex moves you back down the tunnel.
+      Measured: the walk went from 5011 ticks to stuck at x = 85 with three
+      quarters of its frames stalled.
+    - on the beach, `pushOutOfSolids` pushed out of EVERY overlapping collider
+      in declaration order, so the last one to speak had the last word. It
+      takes the one you are DEEPEST in and asks again — after the first push
+      you are usually outside all of them. And the rock shell's cells are
+      BOXES MERGED INTO RUNS rather than overlapping discs: a grid of
+      cylinders is a scalloped wall and thirty separate boxes are thirty faces
+      to catch on, where one twenty-metre box is a wall. Running a shoulder
+      along the outcrop: 50 reversals in 300 frames became 15.
+- **AND THE APSE NEEDS A BACK.** The church is a single-sided scan, so from
+  the tunnel behind it its end wall is not drawn at all and you look straight
+  through at the chancel's windows; the cave's own ragged mouth used to cover
+  that and the carve took it away. A ring of the cave's own stone in the plane
+  of the wall, with the cut's hole through the middle — the front door's
+  `breach` panel, at the other end of the church. And **the collar starts PAST
+  the wall**: begun inside the apse, the sleeve's own tube stood in the
+  chancel as a boulder in the middle of the arch.
+- **AND WHAT IS BEHIND AN ARCH IS MEASURED, NOT GUESSED.** Three builds put
+  something black behind the rock mouth by eye and all three came out through
+  the stone somewhere — a panel over the top of the outcrop, then a box lying
+  on the sand beside it. It is INSCRIBED IN THE HOLLOW now: from a point well
+  inside the mouth, rays in twenty-six directions say how much room there is,
+  and a cube of that half-width fits by construction and can be seen from
+  exactly one direction. Two traps: the rock HAS a cave in it, so nothing
+  "passes through" and the aperture is where the first hit is DEEP rather than
+  where there is no hit; and inward is +x at the entrance and +z at the exit —
+  probing the wrong way found no room at all and built nothing. Measured from
+  the mouth: 0 of 108 rays reach anything but the rock.
+
 **AND THE MOUTH'S DARKENING IS AN ELLIPSE, NOT A SLAB.** "I should not see
 black png peeking out the top of the rocks" was not a png at all: the
 rockmouth's shader blacked out the inside of the arch with two `step()` calls

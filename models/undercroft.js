@@ -56,7 +56,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 export function makeUndercroft(opts = {}) {
   const group = new THREE.Group();
   const S = { group, ready: false, walks: [], bridges: [], benches: [], spots: null, mats: [], bulbs: [], motes: null,
-              corridors: [], church: null, passage: null };
+              corridors: [], sleeves: [], church: null, passage: null };
   group.userData.undercroft = S;
   const load = opts.load || ((url, cb) => new GLTFLoader().load(url, cb));
 
@@ -125,6 +125,43 @@ export function makeUndercroft(opts = {}) {
   const cellSolid = (w, i, j) => (i < 0 || j < 0 || i >= w.gw || j >= w.gh) ? true : w.solid[j][i] === 1;
   // the floor of one grid under a local point: bilinear where all four
   // neighbours have one, the nearest that has one otherwise
+  /* ---- AND A LONE RAISED CELL IS AN INVISIBLE WALL.
+   * The packer's floor grid carries whatever it found at each cell, and in a
+   * church that is the pews — which are meant to stop you, and do. But it
+   * also catches the odd stray: a hanging lamp, a boss on the vault, a chain,
+   * a corner of a chandelier, sampled down onto one or two cells of open
+   * floor. Two cells 0.66 m above a flat nave is not furniture, it is a
+   * SPECKLE, and to a body it is a wall in the middle of the aisle with
+   * nothing there to see. Measured in the nave: eleven of them, and the owner
+   * ran into one.
+   *
+   * The grid carries `floor0` — the floor WITHOUT the pews — so a raised cell
+   * can be checked against what is under it: flood the connected run of cells
+   * that stand proud, and if the run is smaller than a piece of furniture,
+   * put those cells back on the bare floor. A bench is forty cells; a speckle
+   * is one or two. */
+  function despeckle(w, rise = 0.25, minRun = 10) {
+    if (!w || !w.floor || !w.floor0) return 0;
+    const proud = (i, j) => i >= 0 && j >= 0 && i < w.gw && j < w.gh
+      && w.floor[j][i] > -90 && w.floor0[j][i] > -90 && w.floor[j][i] - w.floor0[j][i] > rise;
+    const seen = new Uint8Array(w.gw * w.gh);
+    let cleaned = 0;
+    for (let j = 0; j < w.gh; j++) for (let i = 0; i < w.gw; i++) {
+      if (seen[j * w.gw + i] || !proud(i, j)) continue;
+      const run = [[i, j]]; seen[j * w.gw + i] = 1;
+      for (let h = 0; h < run.length && run.length < minRun * 4; h++) {
+        const [ci, cj] = run[h];
+        for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const ii = ci + di, jj = cj + dj;
+          if (ii < 0 || jj < 0 || ii >= w.gw || jj >= w.gh || seen[jj * w.gw + ii] || !proud(ii, jj)) continue;
+          seen[jj * w.gw + ii] = 1; run.push([ii, jj]);
+        }
+      }
+      if (run.length >= minRun) continue;
+      for (const [ii, jj] of run) { w.floor[jj][ii] = w.floor0[jj][ii]; cleaned++; }
+    }
+    return cleaned;
+  }
   function gridFloor(w, lx, lz) {
     const gx = (lx - w.off.x - w.x0) / w.cell - 0.5, gz = (lz - w.off.z - w.z0) / w.cell - 0.5;
     const i0 = Math.floor(gx), j0 = Math.floor(gz), fx = gx - i0, fz = gz - j0;
@@ -460,6 +497,11 @@ export function makeUndercroft(opts = {}) {
         const u0 = fu * W, v0 = fv * H;
         const X0 = p.x + rx * u0, Y0 = p.y + v0, Z0 = p.z + rz * u0;
         let d = rockNoise(X0, Y0, Z0, amp);
+        /* A SLEEVE IS SWEPT OUTSIDE THE MODEL AND MUST STAY THERE. Signed
+         * noise on a tube that is already only a hand's breadth clear pushes
+         * a lobe of it through the scan's wall, and what that draws is a flat
+         * sheet hanging in the tunnel. */
+        if (opts.outward) d = Math.abs(d);
         /* THE FLOOR ONLY EVER DIPS AND THE ROOF ONLY EVER LIFTS. The walk
          * stands you at the station's own height and refuses nothing under
          * the station's own headroom, so a lump of noise that raised the
@@ -797,6 +839,7 @@ export function makeUndercroft(opts = {}) {
    * survives (it is below the band), the walls survive (they are outside the
    * radius), and what goes is exactly what was in your way. It is the
    * bunker desk's `carveDesk` on a cave. */
+  const _carveE = new THREE.Vector3();
   function carveTube(root, pad = 0.06) {
     let dropped = 0, kept = 0;
     const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), M = new THREE.Vector3();
@@ -807,14 +850,43 @@ export function makeUndercroft(opts = {}) {
       const g = o.geometry, pos = g.attributes.position, idx = g.index;
       MM.multiplyMatrices(toLocal, o.matrixWorld);
       const keep = [];
+      /* SEVEN POINTS, NOT ONE. A triangle's CENTROID is in the wall while the
+       * triangle itself lies clean across the tunnel — and this model's faces
+       * are a metre and more across, so that is not a corner case, it is the
+       * big flat sheets the owner photographed hanging in the bore. The three
+       * corners, the three edge midpoints and the middle all have to miss. */
+      /* AND THE CARVE IS CAPPED. At an OPEN station the radius is an
+       * interpolation across a hole in the model and can be far wider than
+       * the tunnel really is; carving to it eats real walls, which the
+       * sleeve then has to stand in for, which is how a repair turns into a
+       * replacement one metre at a time. A body is 0.24 m wide. */
+      const CARVE_MAX = 1.25;
+      const inTube = (p) => {
+        const c = corridorAt(p.x, p.z);
+        return c && c.d < Math.min(c.r + pad, CARVE_MAX) && p.y > c.y + 0.14 && p.y < c.y + c.h - 0.10;
+      };
+      const inCore = (p) => {
+        const c = corridorAt(p.x, p.z);
+        return c && c.d < Math.min(c.r * 0.78, CARVE_MAX * 0.8) && p.y > c.y + 0.22 && p.y < c.y + c.h - 0.22;
+      };
       for (let i = 0; i + 2 < idx.count; i += 3) {
         const i0 = idx.getX(i), i1 = idx.getX(i + 1), i2 = idx.getX(i + 2);
         A.fromBufferAttribute(pos, i0).applyMatrix4(MM);
         B.fromBufferAttribute(pos, i1).applyMatrix4(MM);
         C.fromBufferAttribute(pos, i2).applyMatrix4(MM);
         M.copy(A).add(B).add(C).multiplyScalar(1 / 3);
-        const c = corridorAt(M.x, M.z);
-        if (c && c.d < c.r + pad && M.y > c.y + 0.14 && M.y < c.y + c.h - 0.10) { dropped++; continue; }
+        let hit = inTube(M);
+        if (!hit) {
+          /* the CORE, for the samples that are not the middle: a wall triangle
+           * has corners AT the wall and must survive, so the edges are only
+           * asked about the inner three quarters of the tube. */
+          const E = _carveE;
+          if (inCore(A) || inCore(B) || inCore(C)
+              || inCore(E.copy(A).add(B).multiplyScalar(0.5))
+              || inCore(E.copy(B).add(C).multiplyScalar(0.5))
+              || inCore(E.copy(C).add(A).multiplyScalar(0.5))) hit = true;
+        }
+        if (hit) { dropped++; continue; }
         keep.push(i0, i1, i2); kept += 1;
       }
       if (dropped) g.setIndex(keep);
@@ -1305,6 +1377,7 @@ export function makeUndercroft(opts = {}) {
      * passage's own grid is used ONCE, to find a centreline; what the walk
      * then uses is a corridor fitted to the tunnel's own drawn surface. */
     S.walks = [ch, cw];
+    S.despeckled = despeckle(ch) + despeckle(cw) + despeckle(pw);
     ch.stepMax = 0.40;                  // a pew's seat is 0.45 up, and that is not a step
     cw.stepMax = 1.2; cw.dropMax = 2.0;  // the old cave is rubble
     const inbound = buildCorridor(pw, { x: high.x + 2.0, z: high.z }, { x: low.x - 0.4, z: low.z });
@@ -1362,8 +1435,9 @@ export function makeUndercroft(opts = {}) {
        * and is the rock everywhere it is not. The cave you look at is still
        * the owner's model; what is behind it is no longer the void. */
       gapRuns(inbound);
-      group.add(makeBore({ pts: P.map((q) => ({ ...q, r: q.wall ?? q.r })) }, patchMat(findMat(S.passage.root)),
-                         { cap: [true, false], rough: 0.22, grow: 0.45, measure: false }));
+      const sleeve = makeBore({ pts: P.map((q) => ({ ...q, r: q.wall ?? q.r })) }, patchMat(findMat(S.passage.root)),
+                              { cap: [true, false], rough: 0.22, grow: 0.60, measure: false, outward: true });
+      group.add(sleeve); S.sleeves.push(sleeve);
       corridorBox(inbound);
       S.corridors.push(inbound);
       mouthCol.w = P[P.length - 1].r * 2;
@@ -1540,6 +1614,23 @@ export function makeUndercroft(opts = {}) {
         const wc = group.localToWorld(new THREE.Vector3(exitEdge, exitFloor + 1.05, off.z));
         CUT.value.set(wc.x, wc.y, wc.z, 1.25);
         CUT_X.value = 1.3;
+        /* AND THE APSE NEEDS A BACK. The church is a single-sided scan, so
+         * from the tunnel its end wall is not drawn at all and you look
+         * straight through it at the chancel's windows — the cave's own
+         * ragged mouth used to cover that and the carve has taken it away.
+         * A ring of the cave's own stone in the plane of the wall, with the
+         * cut's hole through the middle of it, is the wall from this side:
+         * the front door's `breach` panel, at the other end of the church. */
+        {
+          const ring = new THREE.Mesh(new THREE.RingGeometry(1.28, 9.0, 28, 1),
+                                      patchMat(findMat(S.cave.root, 'MaterialKEInGLANZ') || findMat(S.cave.root)));
+          ring.material.side = THREE.DoubleSide;
+          ring.rotation.y = Math.PI / 2;                 // its normal down +x, toward the tunnel
+          ring.position.set(exitEdge + 0.06, exitFloor + 1.05, off.z);
+          ring.renderOrder = -2;
+          group.add(ring);
+          S.apseRing = ring;
+        }
         const clipX = group.localToWorld(new THREE.Vector3(exitEdge + 0.12, 0, 0)).x;
         S.cave.root.traverse((o) => {
           if (!o.isMesh) return;
@@ -1562,26 +1653,34 @@ export function makeUndercroft(opts = {}) {
                                            { x: cf.x + coff.x - 0.5, z: cf.z + coff.z });
         if (outbound) {
           fitCorridor(outbound, surfaceBins(S.cave.root));
-          const Q = outbound.pts, X0 = exitEdge - 1.1, F = Q[0];
+          /* THE COLLAR STARTS PAST THE WALL, NOT INSIDE IT. Begun a metre
+           * inside the apse, the sleeve's own tube — the measured wall plus
+           * a hand's breadth, so nearly two metres across — stood in the
+           * chancel as a boulder in the middle of the arch, which is what
+           * the owner photographed. The cut in the wall is narrower than the
+           * sleeve, so starting a hand PAST the face the stone covers its
+           * mouth from every angle and nothing of it is in the room. */
+          const Q = outbound.pts, X0 = exitEdge + 0.15, F = Q[0];
           const np = Math.max(2, Math.ceil(Math.hypot(F.x - X0, F.z - off.z) / 1.2));
           const pre = [];
           for (let k = 0; k < np; k++) {
             const t = k / np;
             pre.push({ x: X0 + (F.x - X0) * t, z: off.z + (F.z - off.z) * t, y: exitFloor + (F.y - exitFloor) * t,
-                       r: 1.22, h: 2.62, wall: 1.42, open: true });
+                       r: Math.min(1.22, (F.wall ?? 1.42) - BODY_MARGIN), h: 2.62, wall: F.wall ?? 1.42, open: true });
           }
           Q.unshift(...pre);
           gapRuns(outbound);
-          group.add(makeBore({ pts: Q.map((q) => ({ ...q, r: q.wall ?? q.r })) }, patchMat(findMat(S.cave.root, 'MaterialKEInGLANZ') || findMat(S.cave.root)),
-                             { cap: [false, true], rough: 0.22, grow: 0.45, measure: false }));
+          const sleeve2 = makeBore({ pts: Q.map((q) => ({ ...q, r: q.wall ?? q.r })) }, patchMat(findMat(S.cave.root, 'MaterialKEInGLANZ') || findMat(S.cave.root)),
+                                   { cap: [false, true], rough: 0.22, grow: 0.60, measure: false, outward: true });
+          group.add(sleeve2); S.sleeves.push(sleeve2);
           corridorBox(outbound);
           S.corridors.push(outbound);
           const E = Q[Q.length - 1];
           caveFar = { x: E.x, y: E.y, z: E.z };
         }
-        const plate = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 3.2), new THREE.MeshStandardMaterial({ color: 0x2a2724, roughness: 1 }));
-        plate.rotation.x = -Math.PI / 2; plate.position.set(exitEdge + GAP * 0.4, exitFloor + 0.01, off.z);
-        group.add(plate);
+        /* (there was a flat grey plate here to floor the join. The sleeve is
+         * the floor now, and the plate was two pale triangles showing
+         * through it.) */
       }
     }
     {
@@ -1627,6 +1726,7 @@ export function makeUndercroft(opts = {}) {
     /* the model is carved back out of the walk — both tunnels, once both
      * corridors are in `S.corridors` */
     S.carved = carveTube(S.passage.root) + carveTube(S.cave.root);
+    for (const m of S.sleeves) S.carved += carveTube(m, 0.0);
     // the idol on the altar and the candles round it
     dressAltar();
     // dust in the air of both tunnels and the nave
