@@ -2496,55 +2496,125 @@ RECORDED: eleven footfalls cut from a walk down a stone corridor
 normalised, faded, one at random per step (`churchStep`), with the sand
 step kept for the tunnel's rubble.
 
-**THE PASSAGE IS WALKED AS A TUBE, NOT AS A GRID.** A cell grid over somebody
-else's low-poly tunnel is a minefield — its floor strip has holes the sampler
-fell through, lumps of wall the grid calls floor (so you walk into rock),
-ledges no step rule crosses, and edges you slide off. Three passes of dilating
-and auto-ramping fought it and lost. What works is a CORRIDOR: the grid is
-used ONCE, at load, to find the centreline (breadth-first from the entry cell
-to the mouth, resampled every 1.2 m, lightly smoothed), and the game walks a
-tube round that line. Five things it took:
+**AND THEN THE TUNNEL WAS BUILT, BECAUSE IT COULD NOT BE FIXED.** Four passes
+of grid-fixing, dilating, auto-ramping, corridor-walking and triplanar
+projecting went into making somebody else's tunnel walkable and it was never
+going to work, and the number that says so is the one nobody looked at for
+three builds: **the 3DRT tunnel ships ONE 256 by 256 base colour and nothing
+else** — no normal, no roughness — for a hundred and seventy metres of cave,
+and Valsev's cave ships three materials of which one has no map at all. Those
+two facts are the whole of "the textures are stretched", "it looks
+untextured", "the black parts" and "a lot of this looks bad". Two more,
+measured after: the 3DRT tunnel has a TWO-METRE HOLE in it eleven metres short
+of the church where rays go clean through — which is why the walk could not
+reach the nave and why "the end of the cave doesnt even connect to the
+church" — and forty-six of a hundred and fifty-nine points down the walked
+centreline had no surface within six metres in at least one of up, down, left
+and right.
 
-- **The line ends where the TUNNEL does, not where the door is.** The last ten
-  metres to the church were never tunnel floor, so a corridor that insisted on
-  reaching the mouth found no path at all and the passage got no walk. It
-  takes the furthest reachable cell and then RUNS ITS OWN POINTS into the
-  church — a bridge could not do it, because a bridge is read before the
-  corridor and its flat height stood 0.64 m off the tube that was climbing
-  into it, so the walk simply ended there.
-- **A dilated copy finds the line; the RAW floor measures the width.** Dilate
-  for connectivity or two-cell holes break the path; measure the radius on the
-  dilation and the corridor is three cells wider than the tunnel and runs into
-  the rock.
-- **AND THE POINT IS RECENTRED IN THE FREE SPAN.** The line comes off a
-  dilated grid so it runs along one WALL as often as down the middle, and a
-  radius taken as the smaller of the two sides is therefore nothing — every
-  point pinned at its floor, a corridor a metre wide down the whole tunnel.
-  Measure both sides, move the point to the middle, radius is half the span:
-  median 0.55 m became 1.2.
-- **`walkable` must FALL THROUGH when the corridor says no.** An early return
-  walled the church off: the corridor answers for anything within a few metres
-  of its line and its last points stand in the nave, so every cell round the
-  doorway came back "not walkable".
-- Measured after: entry to exit and exit to entry both connect, standing, and
-  the tunnel has no rock in it, no ledge and no edge to fall off.
+So the scan is READ and not DRAWN. Its grid is used once, to find a
+centreline — a long winding descent somebody else drew, which is the one
+thing it is good for — and the cave is a BORE swept along that line:
+`PROFILE` is twenty-nine points of section, `makeBore` sweeps it, and the
+same two functions build the way out behind the altar. **READ WHAT AN ASSET
+ACTUALLY SHIPS BEFORE BUILDING A WEEK OF MACHINERY ROUND IT.**
+
+Six things the bore had to get right, and five of them were got wrong first:
+
+- **THE DISPLACEMENT IS IN WORLD SPACE, NOT IN (station, vertex).** Noise
+  taken off the two indices puts exactly one bump on every vertex of every
+  ring — a regular lattice — and what it rendered as was SCALES. Sampled at
+  the vertex's own POSITION a lump has a size in metres whatever the
+  tessellation is, and it cannot seam where the ring closes.
+- **AND NO OCTAVE FINER THAN THE MESH CAN CARRY IT.** The next build ran a
+  band at eighteen centimetres against vertices a third of a metre apart,
+  which is the same lattice wearing a different cause. The finest band is two
+  thirds of a metre; anything smaller is the normal map's job.
+- **A LOW BAND ALONE IS NOT ROCK EITHER.** One octave at two and a half
+  metres against a tube a metre and a half across simply swells and shrinks
+  the whole section — measured off the built vertices, every point of a ring
+  displaced the same way by the same amount, and it rendered as a smooth
+  PIPE. What reads as stone is the metre and the half-metre.
+- **THE FLOOR ONLY EVER DIPS AND THE ROOF ONLY EVER LIFTS.** The walk stands
+  you at the station's height and never refuses a step under the station's
+  headroom, so a lump that raised the drawn floor buries your feet and one
+  that lowered the drawn roof puts your head through the rock. Signed at
+  source, not clamped afterwards. Measured after: the worst roof anywhere in
+  either tunnel is 2.53 m against a 1.88 m body, and the drawn floor is never
+  more than seven centimetres under the floor you stand on.
+- **AND THE TUBE IS SHUT AT BOTH ENDS.** Clamping the projection parameter to
+  the segment makes the distance past the last point purely RADIAL, so a body
+  walks a whole radius past the dead end and stands inside the cap it is
+  looking at. Past an end the radius closes over half a metre.
+- **The uv is in METRES** — along the bore and round the section — which is
+  what a scan cannot give you and is the whole reason the rock reads. One
+  tile every two and a half metres; the tile itself is cut out of the huge
+  rock's own 4096 diffuse (`tools/cave_rock.py`) so the owner's "make the
+  caves the same colour as the huge rock" is true by construction rather
+  than by grading.
+
+**AND A PHOTOGRAMMETRY ATLAS DOES NOT TILE UNTIL THE LIGHT IS DIVIDED OUT OF
+IT HARD.** Three versions of `cave-rock.jpg`. MIRRORING the tile makes the
+edges match by construction and comes back a KALEIDOSCOPE, because this rock
+has strong diagonal streaks and a mirror turns every one into a V; a
+half-offset with the cross healed by a quarter-offset copy is right. And
+dividing by a 96-pixel blur only removes features bigger than a fifth of the
+tile, which leaves a handful of recognisable BLOBS — so the tile reads as a
+tile the moment it repeats and a hundred and seventy metres of tunnel renders
+as a lattice. At 40 nothing coarser than a twelfth of the tile survives:
+what is left is grain, and grain has no shape to recognise.
+
+**A CELL GRID OVER SOMEBODY ELSE'S LOW-POLY TUNNEL IS A MINEFIELD** — kept
+here because it is why the corridor exists at all. Its floor strip has holes
+the sampler fell through, lumps of wall the grid calls floor, ledges no step
+rule crosses and edges you slide off. The corridor (a centreline, resampled
+and smoothed, with a tube round it) was the right idea; what it needed was
+for the tube to be REAL. Its own lessons still hold: a dilated copy finds the
+line and the RAW floor measures the width; the line ends where the TUNNEL
+does, not where the door is; `walkable` must FALL THROUGH when the corridor
+says no, or the church is walled off a stride inside its own door; and
+**THE SEARCH LEAPS A GAP** — a cell with no ordinary neighbour left may jump
+four metres to any floored cell near its own height, because a hole in
+somebody's mesh is not a fork in the tunnel.
 
 **AND THE PACKER LEARNED TO CUT.** `--trim` drops everything below an x (344 m
-of tunnel was a slog; 171 is the half the owner asked for, and the cut end is
-the new entry, capped by the game's own black box), `--islands` drops
+of tunnel was a slog; 171 is the half the owner asked for), `--islands` drops
 connected islands under a triangle count (a game tunnel ships decoration
-modelled as slabs floating in the bore — "weird things floating" — 430
-triangles of it), and `--sparse` writes only the cells that have a floor. Two
-traps: the cut leaves ORPHANED VERTICES, so the bounds still span the whole
-untrimmed model and everything measured off them is sized for geometry that
-is not there; and a group the cut empties is not a mesh — an accessor with no
-positions has no min/max and the writer dies on it.
+modelled as slabs floating in the bore), and `--sparse` writes only the cells
+that have a floor. Two traps: the cut leaves ORPHANED VERTICES, so the bounds
+still span the whole untrimmed model and everything measured off them is
+sized for geometry that is not there; and a group the cut empties is not a
+mesh — an accessor with no positions has no min/max and the writer dies on it.
 
-**A GAME TUNNEL'S UVs RUN DOWN THE BORE**, so scaled over a hundred and
-seventy metres they draw as long smeared streaks. The map goes on TRIPLANAR
-instead (the ring's own trick), sampled along each world axis at a fixed size
-and blended by a normal the fragment derives itself, because the packer ships
-none. Every square metre of rock gets the same grain.
+**THE ROCK IS SOLID BECAUSE THE COLLIDERS COME OUT OF THE SCAN.** "I clip
+through the entrance rock" was a footprint thirty metres across answered by a
+six-metre disc and two three-metre ones. `rockShellColliders` is the pier's
+own `columnsOf` on a bigger object: every vertex under head height bucketed
+onto a two-metre grid, and a cylinder on each occupied cell that has an empty
+one beside it — the OUTLINE, because the inside of a mass nobody can reach
+needs no collider and the list has to stay short. The one thing left out is
+the corridor of the mouth, and **that corridor has to start on the open
+beach**: the shell's own skirt stands five metres in FRONT of the arch, and
+leaving it in stopped a body seven metres short of the thing it is meant to
+crawl into.
+
+**AND THE .BLEND IS THE SOURCE, NOT THE .FBX, AND THE HANDS ARE WHY.** Three
+builds of SOL put the bleeding heart and its eight daggers at the figure's
+THIGHS — "the heart and knives are not in its hands". Measured in both files
+against the hem of the robe: in the .blend the heart stands at 1.118–1.313 m
+and the hands at 0.974–1.233, which is a heart held in two hands at the
+chest; in the .fbx the same heart is at 0.762–0.965 and the daggers are
+squeezed from a 0.42 m span across to 0.21. The heart carries a GEOMETRY
+NODES modifier and all eight daggers are PARENTED TO IT, and none of that
+survives an FBX export. The blend also carries every texture PACKED,
+including the heart's roughness map, which was never in the delivered
+`textures/` folder at all. Two smaller ones from the same build: **a map
+reached through anything but a bare link is still a map** (walking the socket
+from the BSDF found fourteen of sixteen, and the robe's base colour came
+through a mix node and shipped at 4096 — two and a third megabytes of the
+asset on its own), and **a shift only works on an identity transform** —
+writing `o.location` moved every object but the one that was neither parented
+nor joined, which is a heart half a metre below its own body.
 
 **A LIT MATERIAL ON THE ENTRANCE SCAN RENDERS BLACK, AND AN UNLIT ONE IS
 MEASURED AGAINST THE SAND.** No moon reaches the face (it stands in the
@@ -2575,9 +2645,12 @@ CROSSHAIR and not in the HUD strip: an ancestor with a `transform` contains
 `position: fixed`, so inside the strip it rendered at the bottom of the screen
 anyway.
 
-**THE WAY IN IS A ROCK MOUNTAIN, THE TUNNEL IS THE 3DRT PASSAGE, AND THE OLD
-CAVE IS THE WAY OUT.** Three scans now, `tools/undercroft_pack.py` grew a
-`passage` kind plus `--yaw`, `--scale` and `--sparse`:
+**THE WAY IN IS A ROCK MOUNTAIN, THE TUNNELS ARE BUILT, AND THE CHURCH IS THE
+ONE SCAN LEFT.** (What follows is how the three-scan build worked; the two
+tunnel scans are gone — see "AND THEN THE TUNNEL WAS BUILT" — but the
+packer's kinds, the apse cut and the entrance's unlit grade are all still
+live.) `tools/undercroft_pack.py` grew a `passage` kind plus `--yaw`,
+`--scale` and `--sparse`:
 
 - **The way in is JJ's "Rock Mountain with cave"** at the foot of the sand
   wall (`assets/rockmouth.glb`, `gltfpack.py`), replacing the hole-in-the-sand.

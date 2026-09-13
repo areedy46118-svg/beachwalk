@@ -8,3 +8,4 @@ incoming/
 
 # local MCP server config — contains an API token, never commit
 .mcp.json
+__pycache__/

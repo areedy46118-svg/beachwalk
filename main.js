@@ -106,7 +106,6 @@ const ASSET_REACH = {
   'assets/passage.glb': 640,          // the tunnel in it
   'assets/church.glb': 645,           // and what is at the bottom of it
   'assets/sol.glb': 646,              // and what is standing on its altar
-  'assets/cave.glb': 648,             // and the way out, behind the altar
   'assets/scp096.glb': 470,           // on the beach in front of the pavilion
   'assets/ufo.glb': 1090,             // the take, ten metres short of the fence
   'assets/shrine.glb': 1092,          // and the room it puts you in
@@ -11137,8 +11136,6 @@ const SAMPLES = {
   wade: ['assets/wade1.m4a', 'assets/wade2.m4a', 'assets/wade3.m4a', 'assets/wade4.m4a'],
   slosh: ['assets/slosh1.m4a', 'assets/slosh2.m4a', 'assets/slosh3.m4a', 'assets/slosh4.m4a'],
   splash: ['assets/water-splash1.m4a', 'assets/water-splash2.m4a', 'assets/water-splash3.m4a'],
-  caveStep: ['assets/cave-step1.m4a', 'assets/cave-step2.m4a', 'assets/cave-step3.m4a', 'assets/cave-step4.m4a', 'assets/cave-step5.m4a',
-             'assets/cave-step6.m4a', 'assets/cave-step7.m4a', 'assets/cave-step8.m4a', 'assets/cave-step9.m4a', 'assets/cave-step10.m4a'],
   poise: ['assets/poise-broken.m4a'],      // the parry landing: its guard is gone
   smash: ['assets/overhead-hit.m4a'],      // a charged overhead going through shell
   blockSand: ['assets/block-sand.m4a'],    // a blow stopped on the plastic shovel: a paint can, not steel
@@ -11399,20 +11396,19 @@ function sfxStepWood() {
 /* Underground: the church's stone under a boot, from the bank; the tunnel's
  * rubble is the beach's own step, quieter, because it is grit either way.
  * `ucInChurch` is a forward reference — the undercroft is declared far below. */
+/* AND THE CAVE-STEP RECORDING CAME BACK OFF, on the owner's word. Ten
+ * reverbed footfalls were cut from his own take and put under both tunnels
+ * and the drain; what they actually did was put a room's tail on every step
+ * in a place that already has the convolver on it, and he asked for them
+ * out. The nave keeps its recorded stone floor — that one is a church and
+ * should sound like one — and everywhere else underground is the game's own
+ * step, which is what the drain had before any of this. */
 function sfxStepUnder() {
   stepAlt ^= 1;
-  if (ucInChurch()) { if (playSample('churchStep', 0.62 * (stepAlt ? 1 : 0.86), 0.05)) return; }
-  else if (playSample('caveStep', 0.55 * (stepAlt ? 1 : 0.86), 0.06)) return;   // both caves: rock, with the recording's own tail on it
+  if (ucInChurch() && playSample('churchStep', 0.62 * (stepAlt ? 1 : 0.86), 0.05)) return;
   sfxStep();
 }
-/* AND THE DRAIN IS ROCK UNDERFOOT TOO — the owner's word: both caves and the
- * sewer drain. The synthesised sand step is the fallback until the bank is
- * off the network. */
-function sfxStepDrain() {
-  stepAlt ^= 1;
-  if (playSample('caveStep', 0.5 * (stepAlt ? 1 : 0.86), 0.06)) return;
-  sfxStep();
-}
+function sfxStepDrain() { sfxStep(); }
 function sfxStep() {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime;
@@ -29048,7 +29044,7 @@ function armUndercroft(S) {
    * metres long with no way back is a trap, not a place. */
   const back = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.6, 3.0), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   back.name = 'hitProxy';
-  back.position.set(sp.entry.x - 2.6, sp.entry.y + 1.2, sp.entry.z);
+  back.position.set(sp.entry.x - 1.1, sp.entry.y + 1.2, sp.entry.z);
   undercroft.add(back);
   addInteractable(back, 'To climb out', 'default', { far: 4.2, mid: true, onActivate: () => leaveUndercroft('mouth'), when: () => inUndercroft && !ucBusy });
   // the pews
@@ -29183,6 +29179,15 @@ bwGlb('assets/rockmouth.glb', (gltf) => {
     o.material = m;
   });
   mountainExit.add(twin);
+  /* the mouths stay open: a corridor through the front of each, wide enough
+   * to walk and deep enough to reach the interactable at the back of it */
+  /* the mouth is a corridor from the open beach to the middle of the mass and
+   * no further, so the way in is walkable to the prompt and the far side is
+   * still solid rock — measured, not guessed: the shell's own skirt stands
+   * five metres in FRONT of the arch, and leaving that in stopped a body
+   * seven metres short of the thing it is meant to crawl into */
+  rockShellColliders(mountain, (x, z) => x < MOUNT_X + 2.0 && Math.abs(z - MOUNT_MOUTH_Z) < 2.3);
+  rockShellColliders(mountainExit, (x, z) => z < EXIT_Z + 2.0 && Math.abs(x - EXIT_X) < 2.3);
   /* AND LOOKING IN IS PITCH BLACK. The scan is an ARCH, not a dome: rays go
    * clean through it, and what stands behind is the SAND WALL — so you put
    * your face to the cave and saw the dune. The black has to go BETWEEN the
@@ -29202,15 +29207,42 @@ bwGlb('assets/rockmouth.glb', (gltf) => {
     holder.parent.add(dark);                       // in `rockGroup`, in world metres: the holders are scaled 18
   }
 });
-{
-  // the exit rock is solid but for its mouth, the entrance's own arrangement
-  rockColliders.push({ x: EXIT_X, z: EXIT_Z + 3.2, r: 6.0, top: 30, mat: 'rock' },
-                     { x: EXIT_X - 5.2, z: EXIT_FRONT_Z + 1.6, r: 3.0, top: 30, mat: 'rock' },
-                     { x: EXIT_X + 5.2, z: EXIT_FRONT_Z + 1.6, r: 3.0, top: 30, mat: 'rock' });
+/* AND THE ROCK IS SOLID, WHICH THREE CYLINDERS COULD NEVER MAKE IT. "I clip
+ * through the entrance rock" was a footprint thirty metres across answered by
+ * a six-metre disc and two three-metre ones: every flank of it, and the whole
+ * of the two sides, was air you could walk into. The colliders come OUT OF
+ * THE SCAN now, the pier's own `columnsOf` on a bigger object — every vertex
+ * under head height bucketed onto a two-metre grid, and a cylinder on each
+ * occupied cell that has an empty one beside it. The INSIDE of a mass nobody
+ * can reach needs no collider, so it is the outline that is built and the
+ * list stays short; the one thing left out is the corridor of the mouth, or
+ * the way in would be walled up. */
+function rockShellColliders(root, inMouth) {
+  const CELL = 2.0, occ = new Map(), key = (i, j) => i + ',' + j;
+  root.updateMatrixWorld(true);
+  const v = new THREE.Vector3();
+  root.traverse((o) => {
+    if (!o.isMesh || !o.geometry || !o.geometry.attributes.position) return;
+    const pa = o.geometry.attributes.position;
+    for (let k = 0; k < pa.count; k += 3) {                       // every third vertex is plenty at this size
+      v.fromBufferAttribute(pa, k).applyMatrix4(o.matrixWorld);
+      if (v.y < -0.5 || v.y > 5.0) continue;                      // what a body could meet, not the summit
+      occ.set(key(Math.round(v.x / CELL), Math.round(v.z / CELL)), 1);
+    }
+  });
+  let n = 0;
+  for (const k of occ.keys()) {
+    const [i, j] = k.split(',').map(Number);
+    let edge = false;
+    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (!occ.has(key(i + di, j + dj))) { edge = true; break; }
+    if (!edge) continue;
+    const x = i * CELL, z = j * CELL;
+    if (inMouth(x, z)) continue;
+    rockColliders.push({ x, z, r: CELL * 0.72, top: 30, mat: 'rock' });
+    n++;
+  }
+  return n;
 }
-rockColliders.push({ x: MOUNT_X + 3.0, z: MOUNT_Z, r: 6.0, top: 30, mat: 'rock' },               // the mass, in the dune
-                   { x: MOUNT_FRONT_X + 1.6, z: MOUNT_MOUTH_Z - 5.2, r: 3.0, top: 30, mat: 'rock' },   // a flank, clear of the wide mouth
-                   { x: MOUNT_FRONT_X + 1.6, z: MOUNT_MOUTH_Z + 5.2, r: 3.0, top: 30, mat: 'rock' });  // and the other
 {
   const apron = new THREE.Mesh(makeApron(8.5), sandMat);
   apron.scale.set(8.5, 0.34, 8.5);
@@ -29311,7 +29343,10 @@ function updateUndercroftCut(dt) {
    * rock a metre from your head answers too, but shortly. */
   /* the cave's bed: up in either tunnel, out in the nave, gone on the beach */
   if (caveAmbGain && audioCtx) {
-    const want = inUndercroft && !ucInChurch() ? 0.9 * settings.volume : 0.0001;
+    /* LOUDER, on the owner's word — and it plays in BOTH tunnels, which is
+     * what "the first cave" means now that the way out is a tunnel too. In
+     * the nave it goes out: a church is not a cave. */
+    const want = inUndercroft && !ucInChurch() ? 1.9 * settings.volume : 0.0001;
     caveAmbGain.gain.setTargetAtTime(want, audioCtx.currentTime, 0.7);
     if (caveAmbEl && caveAmbEl.paused && inUndercroft) caveAmbEl.play().catch(() => {});
   }

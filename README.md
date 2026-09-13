@@ -505,41 +505,46 @@ the knockdown — are Mixamo animations (Adobe), retargeted onto his rig by
 - `assets/church-step*.m4a` — eleven footfalls cut from "Steps in corridor" by freesound_community (via Pixabay, Pixabay Content License), normalised and faded.
 `tools/ntar_moves.py` into `assets/ntar-moves.json`.
 
-This work is based on ["Cave 5.0"](https://sketchfab.com/3d-models/cave-50-7c4df6d7354b4ed39b50db47d66f96f8)
-by [Valsev](https://sketchfab.com/Valsev) licensed under
-[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the tunnel under the sand
-wall past the mutants (`assets/cave.glb`, decimated and packed with its walk by
-`tools/undercroft_pack.py`).
-
 This work is based on ["Old church modeling - Interior Scene"](https://sketchfab.com/3d-models/old-church-modeling-interior-scene-eb6cf543aa7d45e3acee49887ae3135c)
 by [Aurélien Martel](https://sketchfab.com/aurelien_martel) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the church at the bottom of
 it (`assets/church.glb`, same packer; its pews come out as forty breakable benches).
 
-`assets/cave-ambience.m4a` and `assets/cave-step*.m4a` are the owner's own
-recordings — a 45-minute cave ambience cut to a 75 s seamless loop, and ten
-footfalls cut from a reverberant cave-steps take. The ambience loops in both
-caves and never in the church; the steps play in both caves and in the sewer
-drain. Neither is redistributable.
+`assets/cave-ambience.m4a` is the owner's own recording — a 45-minute cave
+ambience cut to a 75 s seamless loop. It plays in both tunnels and never in
+the church, and it is not redistributable. (A bank of ten reverbed footfalls
+from the same session shipped for a while and came back off on his word: the
+undercroft already has a convolver on the sfx bus, and a recorded tail under
+it was a room inside a room.)
 
 This work is based on ["3DRT-uderground for game"](https://sketchfab.com/3d-models/3drt-uderground-for-game-a146bf2f80e24640abe951fa97d127af)
 by [Ant leader](https://sketchfab.com/Jguyfioy) licensed under
-[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the tunnel you crawl
-IN through (`assets/passage.glb`, turned and scaled to metres and packed with
-its walk by `tools/undercroft_pack.py`). Valsev's cave is now the way OUT,
-behind the altar.
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the LAYOUT of the
+tunnel you crawl in through (`assets/passage.glb`, turned and scaled to metres
+and packed with its walk by `tools/undercroft_pack.py`). The model is read for
+its route and never drawn: it ships one 256-pixel texture for a hundred and
+seventy metres of cave, so what you walk through is a tube built along its
+centreline in the rock outcrop's own granite. Valsev's "Cave 5.0", which used
+to be the way out behind the altar, came out of the game entirely for the same
+reason and a second built tube stands there instead.
 
 This work is based on ["Rock Mountain with cave realistic 85k by JJ"](https://sketchfab.com/3d-models/rock-mountain-with-cave-realistic-85k-by-jj)
 (Sketchfab) — the rock outcrop at the foot of the sand wall, past the mutants,
 with the cave mouth you crawl into (`assets/rockmouth.glb`, through
-`tools/gltfpack.py`).
+`tools/gltfpack.py`), and — through `tools/cave_rock.py`, which cuts a
+tileable 1024 patch out of its 4096 diffuse and derives a normal map from it —
+the stone both undercroft tunnels are built of (`assets/cave-rock.jpg`,
+`assets/cave-rock-n.jpg`).
 
 `assets/sol.glb` is the owner's own model — SOL, the robed figure in the gold
 sun mask holding a bleeding heart, which stands on the undercroft church's
-altar in a ring of lit candles. Packed by `tools/sol_pack.py` from `SOL.fbx`
-and its texture folder: 205k faces down to 42k, 4096 maps down to 1024
-colour/normal and 512 roughness, and every metallic map dropped (there is no
-environment map in this game).
+altar in a ring of lit candles. Packed by `tools/sol_pack.py` from `SOL.blend`
+— the .blend and not the .fbx, because the heart carries a geometry-nodes
+modifier and the eight daggers are parented to it, and none of that survived
+the FBX export: measured, the heart came out at the figure's thighs instead of
+in its hands. 205k faces down to 51k, 4096 maps down to 1024 colour/normal and
+512 roughness, and every metallic map dropped (there is no environment map in
+this game).
 
 This work is based on ["The smile ( Rigged)"](https://sketchfab.com/3d-models/the-smile-rigged-6795ba0b406f4e61993fafebbb94ebd9)
 by [Vertex Mercher](https://sketchfab.com/VertexMercher) licensed under
