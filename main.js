@@ -105,6 +105,7 @@ const ASSET_REACH = {
   'assets/rockmouth.glb': 636,        // the rock at the foot of the sand wall, past the mutants
   'assets/passage.glb': 640,          // the tunnel in it
   'assets/church.glb': 645,           // and what is at the bottom of it
+  'assets/cave.glb': 648,             // and the way out, behind the altar
   'assets/sol.glb': 646,              // and what is standing on its altar
   'assets/scp096.glb': 470,           // on the beach in front of the pavilion
   'assets/ufo.glb': 1090,             // the take, ten metres short of the fence
@@ -24340,7 +24341,7 @@ function update(dt, rawDt = dt) {
    * has to be the last word on the base before the camera is written. */
   if (inUndercroft && UC.ready) {
     const c = UC.ceilAt(camera.position.x - UC_X, camera.position.z - UC_Z);
-    if (c !== null) { const top = UC_Y + c - 0.16; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }
+    if (c !== null) { const top = UC_Y + c - 0.22; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }   // measured: at 0.16 the worst spot in the tunnel left 3 cm of rock over the eye
   }
   camera.position.y = camBaseY + bob - landDip;
 
@@ -29384,8 +29385,18 @@ function updateUndercroft(dt) {
    * player who found a way to stand under the beam would be walled in on
    * every side. Standing up under one is refused separately, in
    * `headroomClear`, so the ordinary way to meet this is walking. */
+  /* AND NOT IN THE TUNNEL, WHERE THE WHOLE THING IS LOW. Measured on the
+   * passage's own drawn roof, its headroom runs between 1.15 m and 2.4 —
+   * the owner asked for a cave you crawl through and that is what it is —
+   * so refusing every step whose roof is under a standing body would be
+   * refusing most of the tunnel, one stride at a time. Inside a corridor
+   * the camera simply DUCKS under the rock (the clamp a few lines down),
+   * which is the thing that stops a head clipping through it; the bump and
+   * the revert are for the church and the old cave, where a low beam is a
+   * beam and not the shape of the room. */
+  const inTube = UC.corridorAt && (() => { const c = UC.corridorAt(_ucL.x, _ucL.z); return c && c.d <= c.r + 0.45; })();
   const ceil = UC.ceilAt(_ucL.x, _ucL.z);
-  if (ceil !== null && ceil - feet < playerHeight() + 0.06) {
+  if (!inTube && ceil !== null && ceil - feet < playerHeight() + 0.06) {
     const px = _preMove.x - UC_X, pz = _preMove.z - UC_Z;
     const c0 = UC.ceilAt(px, pz), f1 = UC.floorAt(px, pz);
     if (c0 === null || f1 === null || c0 - f1 >= playerHeight() + 0.06) {

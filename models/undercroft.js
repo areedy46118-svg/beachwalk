@@ -457,7 +457,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
       let tx = b.x - a.x, tz = b.z - a.z; const L = Math.hypot(tx, tz) || 1; tx /= L; tz /= L;
       const rx = tz, rz = -tx;                       // right = t x up
       if (k) along += Math.hypot(p.x - P[k - 1].x, p.z - P[k - 1].z);
-      const W = p.r, H = p.h;
+      const grow = opts.grow || 0;
+      const W = p.r + grow, H = p.h + grow * 0.8;
       const amp = (opts.rough === undefined ? 0.62 : opts.rough);
       let arc = 0, prevX = 0, prevY = 0, prevZ = 0;
       for (let i = 0; i < NP; i++) {
@@ -480,7 +481,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         else if (fv > 0.90) d = Math.abs(d) * 0.80;
         const u = u0 + (nx2 / nl) * d;
         let v = v0 + (ny2 / nl) * d * (fv < 0.02 ? 0.4 : 1);
-        if (fv < 0.02) v = Math.min(v, v0);
+        if (fv < 0.02) v = Math.min(v, v0) - grow * 0.6;    // a skin's invert is BELOW the floor it backs
         if (fv > 0.90) v = Math.max(v, v0);
         const X = p.x + rx * u, Y = p.y + v, Z = p.z + rz * u;
         if (i) arc += Math.hypot(X - prevX, Y - prevY, Z - prevZ);
@@ -534,6 +535,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
      * narrowest wall between the floor and head height at each station, less
      * a body's own margin: inside that you can never touch the rock, and the
      * rock is never anywhere you can walk. */
+    if (opts.measure === false) return mesh;
     const wall = new Float32Array(C.pts.length).fill(1e9);
     for (let k = 0; k < P.length; k++) {
       let rw = 1e9;
@@ -550,6 +552,285 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
     for (let j = 0; j < C.pts.length; j++) C.pts[j].r = Math.max(0.55, (wall[j] > 1e8 ? C.pts[j].r : wall[j]) - 0.30);
     return mesh;
   }
+  /* ---- FITTING THE LINE TO THE ROCK THAT IS ACTUALLY DRAWN.
+   *
+   * The cave you walk is the SCAN again — the owner's models, kept — and the
+   * one thing a corridor round a scan has to be is honest about where that
+   * scan's walls are, or you clip through them (which is what a radius taken
+   * off the packer's 0.2 m grid gave: the grid calls the outside of a roof a
+   * floor, falls through holes, and misses lumps of wall entirely).
+   *
+   * So the measurement is taken off the GEOMETRY. Every triangle of the
+   * tunnel is sampled at its corners, its edge midpoints and its centroid
+   * into a one-metre bin, and each station of the line then asks that bin,
+   * in its own frame: what is under me, what is over me, and how far is the
+   * rock on each side between my knee and my head. The point is recentred in
+   * what it finds, the line is smoothed again, and the radius is the nearer
+   * wall less a body's margin. Twenty-seven thousand points and a hundred
+   * stations: it costs about as much as one raycast used to.
+   *
+   * A station that finds NO floor, NO wall or NO roof is not a station in a
+   * tunnel — it is a HOLE IN THE MODEL, and there are two of them: a run of
+   * two metres eleven metres short of the church where rays go clean through,
+   * and the last stretch to the door which was never tunnel at all. Those
+   * runs get a built sleeve in the same stone (`makeBore`), overlapping the
+   * real rock at each end. The model is repaired, not replaced. */
+  function surfaceBins(root, cell = 1.0) {
+    const bins = new Map();
+    const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), M = new THREE.Vector3();
+    const E1 = new THREE.Vector3(), E2 = new THREE.Vector3();
+    const put = (p) => {
+      const k = Math.floor(p.x / cell) + ',' + Math.floor(p.y / cell) + ',' + Math.floor(p.z / cell);
+      let a = bins.get(k); if (!a) bins.set(k, a = []);
+      a.push(p.x, p.y, p.z);
+    };
+    /* IN THE GROUP'S FRAME, NOT THE WORLD'S. The corridor's points are local
+     * metres and the undercroft stands at (3000, 400, 2400): binned in world
+     * space every probe came back empty and every station of the tunnel was
+     * reported as a hole in it. */
+    group.updateMatrixWorld(true);
+    root.updateMatrixWorld(true);
+    const toLocal = new THREE.Matrix4().copy(group.matrixWorld).invert();
+    const MM = new THREE.Matrix4();
+    root.traverse((o) => {
+      if (!o.isMesh || !o.geometry || !o.geometry.attributes.position) return;
+      const g = o.geometry, pos = g.attributes.position, idx = g.index;
+      MM.multiplyMatrices(toLocal, o.matrixWorld);
+      const n = idx ? idx.count : pos.count;
+      for (let i = 0; i + 2 < n; i += 3) {
+        const i0 = idx ? idx.getX(i) : i, i1 = idx ? idx.getX(i + 1) : i + 1, i2 = idx ? idx.getX(i + 2) : i + 2;
+        A.fromBufferAttribute(pos, i0).applyMatrix4(MM);
+        B.fromBufferAttribute(pos, i1).applyMatrix4(MM);
+        C.fromBufferAttribute(pos, i2).applyMatrix4(MM);
+        /* SAMPLED BY AREA, and that is the whole of whether any of this works.
+         * This tunnel is 3848 triangles over a hundred and seventy metres —
+         * faces a metre and more across — so seven points per triangle put
+         * the samples half a metre apart, and a march that steps fifteen
+         * centimetres and stops at the first gap then reported a wall inside
+         * arm's reach down the whole passage. A barycentric grid at about
+         * twelve centimetres is dense enough for the march to mean something. */
+        E1.subVectors(B, A); E2.subVectors(C, A);
+        const area = E1.cross(E2).length() * 0.5;
+        const nn = Math.max(1, Math.min(12, Math.ceil(Math.sqrt(area) / 0.12)));
+        for (let u = 0; u <= nn; u++) for (let v = 0; v + u <= nn; v++) {
+          const fu = u / nn, fv = v / nn, fw = 1 - fu - fv;
+          M.set(A.x * fw + B.x * fu + C.x * fv, A.y * fw + B.y * fu + C.y * fv, A.z * fw + B.z * fu + C.z * fv);
+          put(M);
+        }
+      }
+    });
+    bins.cell = cell;
+    return bins;
+  }
+  /* WHAT THE ROCK SAYS AT ONE STATION, in that station's own frame — and the
+   * wall is measured by MARCHING THE FLOOR, not by asking for the nearest
+   * surface. The first version took the nearest sample between knee and head
+   * height on each side and the radius collapsed to its floor down the whole
+   * tunnel: in a low-poly tube the floor itself curves up into the wall, so
+   * the nearest thing at knee height is very often the ground you are
+   * standing on. How far the FLOOR reaches is the question a walk is asking,
+   * and the head-height rock only ever narrows the answer. */
+  function probe(bins, p, tx, tz, R) {
+    const nx = tz, nz = -tx;                 // right, as in the sweep
+    const cell = bins.cell;
+    const pts = [];                          // (along, across, dy) of everything near this station
+    const i0 = Math.floor((p.x - R) / cell), i1 = Math.floor((p.x + R) / cell);
+    const j0 = Math.floor((p.y - 3.5) / cell), j1 = Math.floor((p.y + 5.0) / cell);
+    const k0 = Math.floor((p.z - R) / cell), k1 = Math.floor((p.z + R) / cell);
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) for (let k = k0; k <= k1; k++) {
+      const a = bins.get(i + ',' + j + ',' + k); if (!a) continue;
+      for (let m = 0; m < a.length; m += 3) {
+        const dx = a[m] - p.x, dy = a[m + 1] - p.y, dz = a[m + 2] - p.z;
+        const along = dx * tx + dz * tz;
+        if (Math.abs(along) > 0.75) continue;
+        pts.push(dx * nx + dz * nz, dy);
+      }
+    }
+    const out = { floor: null, roof: null, span: [0, 0], head: [9, 9] };
+    for (let m = 0; m < pts.length; m += 2) {
+      const across = pts[m], dy = pts[m + 1];
+      if (Math.abs(across) < 0.55) {
+        if (dy <= 0.55 && dy > -3.0 && (out.floor === null || dy > out.floor)) out.floor = dy;
+        if (dy > 1.15 && dy < 5.0 && (out.roof === null || dy < out.roof)) out.roof = dy;
+      }
+    }
+    if (out.floor === null) return out;
+    // how far the floor reaches to each side, allowing the odd gap in it
+    for (let si = 0; si < 2; si++) {
+      const sg = si ? -1 : 1;
+      let good = 0, miss = 0;
+      for (let d = 0.15; d <= 2.6; d += 0.15) {
+        let hit = false;
+        for (let m = 0; m < pts.length; m += 2) {
+          const across = pts[m] * sg, dy = pts[m + 1];
+          if (across < d - 0.12 || across > d + 0.12) continue;
+          if (dy > out.floor - 0.55 && dy < out.floor + 0.60) { hit = true; break; }
+        }
+        /* ONE MISS, NOT TWO. At two the march stepped clean over a wall and
+         * reported floor half a metre inside the rock — measured at x = 176,
+         * where the tunnel is 1.8 m wide, the walk was letting a body to
+         * within 0.15 m of a wall it thought was 0.95 away. */
+        if (hit) { good = d; miss = 0; } else if (++miss >= 1) break;
+      }
+      out.span[si] = good;
+    }
+    /* and the rock between knee and head only ever narrows it — but it must
+     * stop BELOW THE ROOF. This tunnel's roof is often only a metre and a
+     * half over its floor, so the ceiling's own samples pass right over the
+     * centreline and were being read as a wall a hand's width away: measured,
+     * `head` came back at 0.08 m down a passage whose floor is two metres
+     * wide, and the walk collapsed to its minimum for the whole length. */
+    const top = Math.min(1.35, (out.roof === null ? 9 : out.roof) - out.floor - 0.25);   // a crouched body, which is what this tunnel is for
+    if (top > 0.60) for (let m = 0; m < pts.length; m += 2) {
+      const across = pts[m], dy = pts[m + 1] - out.floor;
+      if (dy < 0.55 || dy > top) continue;
+      const i = across > 0 ? 0 : 1, v = Math.abs(across);
+      if (v > 0.06 && v < out.head[i]) out.head[i] = v;
+    }
+    return out;
+  }
+  const BODY_MARGIN = 0.20;
+  function fitCorridor(C, bins) {
+    const P = C.pts, R = 3.2;
+    const tang = (k) => {
+      const a = P[Math.max(0, k - 1)], b = P[Math.min(P.length - 1, k + 1)];
+      let tx = b.x - a.x, tz = b.z - a.z; const L = Math.hypot(tx, tz) || 1; return [tx / L, tz / L];
+    };
+    // one pass to recentre, smoothed, then one to measure
+    const shift = new Float32Array(P.length);
+    for (let k = 0; k < P.length; k++) {
+      const [tx, tz] = tang(k), q = probe(bins, P[k], tx, tz, R);
+      if (q.floor !== null) shift[k] = Math.max(-0.9, Math.min(0.9, (q.span[0] - q.span[1]) / 2));
+    }
+    for (let k = 1; k < P.length - 1; k++) shift[k] = shift[k] * 0.6 + (shift[k - 1] + shift[k + 1]) * 0.2;
+    for (let k = 0; k < P.length; k++) {
+      const [tx, tz] = tang(k);
+      P[k].x += tz * shift[k]; P[k].z += -tx * shift[k];
+    }
+    const fy = new Float32Array(P.length);
+    for (let k = 0; k < P.length; k++) {
+      const [tx, tz] = tang(k), q = probe(bins, P[k], tx, tz, R);
+      P[k].probe = q;
+      fy[k] = q.floor === null ? 0 : q.floor;
+      /* A STATION WITH NOTHING UNDER IT, NOTHING OVER IT OR NOTHING BESIDE IT
+       * IS A HOLE IN THE MODEL, not a stretch of tunnel. */
+      /* OPEN means the MODEL IS NOT THERE — no floor under the line, no roof
+       * over it, or no floor to either side. A floor that runs out on ONE
+       * side is not a hole, it is a wall, which is what a tunnel has. */
+      /* OPEN means THE MODEL IS NOT THERE — nothing under the line and
+       * nothing over it. A narrow span is a narrow tunnel, which this one
+       * often is, and calling that a hole put sixty of a hundred stations
+       * into the repair. */
+      P[k].open = q.floor === null || q.roof === null;
+    }
+    // the floor the scan actually draws, lightly smoothed and grade-clamped
+    for (let pass = 0; pass < 3; pass++)
+      for (let k = 1; k < P.length - 1; k++) if (!P[k].open) fy[k] = fy[k] * 0.5 + (fy[k - 1] + fy[k + 1]) * 0.25;
+    for (let k = 0; k < P.length; k++) P[k].y += fy[k];
+    for (let k = 1; k < P.length; k++) {
+      const d = Math.hypot(P[k].x - P[k - 1].x, P[k].z - P[k - 1].z) || 1e-3, m = d * 0.34;
+      const dy = P[k].y - P[k - 1].y;
+      if (dy > m) P[k].y = P[k - 1].y + m; else if (dy < -m) P[k].y = P[k - 1].y - m;
+    }
+    const wall = new Float32Array(P.length).fill(-1);
+    for (let k = 0; k < P.length; k++) {
+      const q = P[k].probe;
+      if (P[k].open) continue;
+      wall[k] = Math.min(q.span[0], q.span[1], q.head[0], q.head[1]);
+      P[k].h = Math.max(1.15, Math.min(4.0, q.roof - q.floor - 0.05));
+    }
+    /* A STATION NARROWER THAN A BODY IS A MEASUREMENT, NOT A TUNNEL. The
+     * march stops at the first gap in the samples, so a sparse patch of a
+     * low-poly wall reads as rock a hand's width away; clamping that up to a
+     * walkable minimum is the thing that lets a body stand inside the rock.
+     * It is filled in from the stations either side of it instead, which is
+     * what the tunnel there is actually like. */
+    for (let k = 0; k < P.length; k++) {
+      if (wall[k] >= 0.52 || P[k].open) continue;
+      let a = k - 1, b = k + 1;
+      while (a >= 0 && wall[a] < 0.52) a--;
+      while (b < P.length && wall[b] < 0.52) b++;
+      const va = a >= 0 ? wall[a] : -1, vb = b < P.length ? wall[b] : -1;
+      wall[k] = va < 0 && vb < 0 ? 0.80 : va < 0 ? vb : vb < 0 ? va : Math.min(va, vb);
+    }
+    for (let k = 0; k < P.length; k++) {
+      if (P[k].open) continue;
+      P[k].wall = Math.max(0.52, Math.min(2.4, wall[k]));
+      P[k].r = Math.max(0.32, Math.min(2.2, P[k].wall - BODY_MARGIN));
+    }
+    return C;
+  }
+  /* the runs of stations the model does not cover, each grown by one station
+   * at each end so the sleeve starts and finishes inside real rock */
+  function gapRuns(C) {
+    const P = C.pts, runs = [];
+    let a = -1;
+    for (let k = 0; k < P.length; k++) {
+      if (P[k].open) { if (a < 0) a = k; }
+      else if (a >= 0) { runs.push([Math.max(0, a - 1), Math.min(P.length - 1, k)]); a = -1; }
+    }
+    if (a >= 0) runs.push([Math.max(0, a - 1), P.length - 1]);
+    /* A SLEEVE IS THE SIZE OF THE TUNNEL IT REPAIRS, and it is swept a hand's
+     * breadth OUTSIDE it. Built at the walk's own radius it showed as a step
+     * in the wall wherever it met real rock, and — worse — a hole in the scan
+     * BEYOND it still showed the void through the gap between the two. Outside
+     * the rock it is hidden everywhere the model is there and is the only
+     * thing there where the model is not. */
+    for (const [i, j] of runs) {
+      const w0 = P[i].wall ?? 1.2, w1 = P[j].wall ?? 1.2, h0 = P[i].h, h1 = P[j].h;
+      for (let k = i + 1; k < j; k++) {
+        if (!P[k].open) continue;
+        const t = (k - i) / Math.max(1, j - i);
+        P[k].wall = Math.max(0.95, w0 + (w1 - w0) * t);
+        P[k].h = Math.max(2.10, h0 + (h1 - h0) * t);
+        P[k].r = Math.max(0.55, P[k].wall - BODY_MARGIN);
+      }
+    }
+    return runs;
+  }
+
+  /* ---- AND NOTHING OF THE MODEL MAY STAND IN THE WALK.
+   *
+   * A scan of a tunnel has lumps in it — a boulder modelled on the floor, a
+   * strut, a shelf of rock, a stray island the trim left behind — and the
+   * corridor cannot always measure its way round them: they sit where the
+   * line has to go, and what the owner sees is his own head passing through
+   * stone ("I shouldn't be phasing through anything"). Measured by walking
+   * the finished tunnel and asking how near the rock was every tenth frame:
+   * a hundred and thirty-seven contacts inside six centimetres, every one of
+   * them the scan.
+   *
+   * So the tube is CARVED out of the model: every triangle whose middle
+   * falls inside the corridor's own clear radius, between a hand above the
+   * floor and a hand under the roof, is dropped from the index. The floor
+   * survives (it is below the band), the walls survive (they are outside the
+   * radius), and what goes is exactly what was in your way. It is the
+   * bunker desk's `carveDesk` on a cave. */
+  function carveTube(root, pad = 0.06) {
+    let dropped = 0, kept = 0;
+    const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), M = new THREE.Vector3();
+    const toLocal = new THREE.Matrix4().copy(group.matrixWorld).invert(), MM = new THREE.Matrix4();
+    group.updateMatrixWorld(true);
+    root.traverse((o) => {
+      if (!o.isMesh || !o.geometry || !o.geometry.index) return;
+      const g = o.geometry, pos = g.attributes.position, idx = g.index;
+      MM.multiplyMatrices(toLocal, o.matrixWorld);
+      const keep = [];
+      for (let i = 0; i + 2 < idx.count; i += 3) {
+        const i0 = idx.getX(i), i1 = idx.getX(i + 1), i2 = idx.getX(i + 2);
+        A.fromBufferAttribute(pos, i0).applyMatrix4(MM);
+        B.fromBufferAttribute(pos, i1).applyMatrix4(MM);
+        C.fromBufferAttribute(pos, i2).applyMatrix4(MM);
+        M.copy(A).add(B).add(C).multiplyScalar(1 / 3);
+        const c = corridorAt(M.x, M.z);
+        if (c && c.d < c.r + pad && M.y > c.y + 0.14 && M.y < c.y + c.h - 0.10) { dropped++; continue; }
+        keep.push(i0, i1, i2); kept += 1;
+      }
+      if (dropped) g.setIndex(keep);
+    });
+    return dropped;
+  }
+
   /* the nearest point on the corridor: its height, its radius, how far off
    * the line you are. Scanned straight — a hundred and forty segments is
    * nothing beside what the grid it replaces was doing. */
@@ -852,78 +1133,139 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
       }
     });
   }
-  /* ---- THE STONE BOTH BORES ARE MADE OF. One 1024 tile cut out of the
-   * huge rock's own 4096 diffuse (`tools/cave_rock.py`) with the light it
-   * was shot in divided out of it, and a normal map derived from its own
-   * luminance — because on stone the dark parts ARE the hollows, and a
-   * seam that is only dark is a picture of a seam. The uvs are in metres,
-   * so nothing stretches and nothing has to be projected.
+  /* ---- THE STONE. One 1024 tile cut out of the huge rock's own 4096 diffuse
+   * (`tools/cave_rock.py`) with the light it was shot in divided out of it,
+   * and a normal map derived from its own luminance — because on stone the
+   * dark parts ARE the hollows, and a seam that is only dark is a picture of
+   * a seam. The grade is the ROCK MOUNTAIN'S, which is what the owner asked
+   * for: the same cold cast the outcrop outside wears, so the cave you crawl
+   * into is the rock you crawled into.
    *
-   * The grade is the ROCK MOUNTAIN'S, which is what the owner asked for:
-   * the same cold cast and the same gamma the outcrop outside wears, so the
-   * cave you crawl into is the rock you crawled into. It carries its own
-   * emissive off its own map, hard enough that no face is ever black —
-   * `grime` would do that, but this material is ours and wants no dirt pass
-   * on top of a texture that is already dirt. */
-  let _boreMat = null;
-  function boreMat() {
-    if (_boreMat) return _boreMat;
+   * TWO MATERIALS OUT OF ONE PAIR OF MAPS. The built patches carry uvs in
+   * METRES and read them straight; the two SCANS carry uvs that run down
+   * their own bore and cannot be used at any scale (that is the whole of
+   * "the textures are stretched"), so they get the same stone PROJECTED
+   * triplanar in world space — the ring's own trick, with the blend normal
+   * derived from the fragment's own derivatives because the packer ships
+   * none. Either way it is the same rock at the same size. */
+  let _rockMaps = null;
+  function rockMaps() {
+    if (_rockMaps) return _rockMaps;
     const tl = new THREE.TextureLoader();
     const map = tl.load(opts.rockUrl || 'assets/cave-rock.jpg');
     const nrm = tl.load(opts.rockNormalUrl || 'assets/cave-rock-n.jpg');
     for (const t of [map, nrm]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 16; }
     map.colorSpace = THREE.SRGBColorSpace;
+    _rockMaps = { map, nrm };
+    return _rockMaps;
+  }
+  /* MEASURED, not chosen. The whole frame down the tunnel reads about level
+   * with an open beach from the same instrument, which on rock a metre from
+   * your face in a closed tube is a good deal darker than it sounds, and it
+   * is what stops any of it going to the untextured black the owner
+   * complained of. At 0.26 it read twice the beach; at 0.08 it is the
+   * complaint again in a different cause. There is no lamp in either tunnel
+   * — the pavilion's rule, do it in the map. */
+  const ROCK_EMIS = 0.17;
+  let _boreMat = null;
+  function boreMat() {
+    if (_boreMat) return _boreMat;
+    const { map, nrm } = rockMaps();
     _boreMat = new THREE.MeshStandardMaterial({
       map, normalMap: nrm, normalScale: new THREE.Vector2(0.9, 0.9),
       color: 0x9aa6b4, roughness: 1.0, metalness: 0.0,
-            /* MEASURED, not chosen. The whole frame down the tunnel reads 14.8
-       * against an open beach's 13.7 from the same instrument — level with
-       * the night above it, which on a surface you are looking at from a
-       * metre away in a closed tube is a good deal darker than it sounds,
-       * and it is what stops any of it going to the untextured black the
-       * owner complained of. At 0.26 it read 26, brighter than the beach;
-       * at 0.08, 5.5, which is the complaint again in a different cause.
-       * The two tunnel lamps this replaces are gone, so it carries the rock
-       * on its own: the pavilion's rule, do it in the map. */
-      emissive: 0xffffff, emissiveMap: map, emissiveIntensity: 0.17,
+      emissive: 0xffffff, emissiveMap: map, emissiveIntensity: ROCK_EMIS,
       side: THREE.DoubleSide, fog: true,
     });
-    /* AND ONE TILE IS A TILE. Three metres of stone repeated down a hundred
-     * and seventy is a wallpaper, however good the tile is — so the map is
-     * multiplied by ITSELF at a third of the rate and a quarter turn round,
-     * which is one extra sample and turns a period of three metres into a
-     * period of ten that nothing lines up with. */
+    /* AND ONE TILE IS A TILE. Two and a half metres of stone repeated down a
+     * hundred and seventy is a wallpaper, however good the tile is — so the
+     * map is multiplied by ITSELF at a third of the rate and a quarter turn
+     * round, which is one extra sample and turns a period of two and a half
+     * metres into one of eight that nothing lines up with. It is GUARDED:
+     * `map_fragment`'s body is inside `#ifdef USE_MAP` and three compiles
+     * variants that do not define it, which is a shader that does not
+     * compile and a material that draws nothing at all. */
     _boreMat.onBeforeCompile = (sh) => {
-      /* AND IT MUST BE GUARDED. `map_fragment`'s own body is inside
-       * `#ifdef USE_MAP`, and three compiles this material in variants that
-       * do not define it — the block came out referring to `map` and
-       * `vMapUv` in a program that has neither, which is a shader that does
-       * not compile and a material that renders nothing at all. */
       sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
 #ifdef USE_MAP
   {
     vec2 bu = vec2(vMapUv.y, -vMapUv.x) * 0.31 + 0.37;
     vec4 big = texture2D(map, bu);
-    float bl = dot(big.rgb, vec3(0.333));
-    diffuseColor.rgb *= mix(1.0, bl / 0.30, 0.55);
+    diffuseColor.rgb *= mix(1.0, dot(big.rgb, vec3(0.333)) / 0.30, 0.55);
   }
 #endif`);
     };
     S.boreMat = _boreMat;
     return _boreMat;
   }
+  /* the scans' own material: the same stone, projected. A scan's uvs are the
+   * one thing about it that cannot be salvaged. */
+  /* the exit cave's copy carries a world-x CLIP: its ragged mouth flares
+   * metres past its first floor cell and, put down by the floor, it stood as
+   * a boulder in the middle of the chancel. It cannot share the passage's
+   * material — the passage is entirely on the wrong side of that x and would
+   * discard whole. */
+  const CLIP_X = { value: -1e9 };
+  let _scanMat = null, _caveMat = null;
+  function scanRockMat(clip) {
+    if (clip && _caveMat) return _caveMat;
+    if (!clip && _scanMat) return _scanMat;
+    const { map, nrm } = rockMaps();
+    const mat = new THREE.MeshStandardMaterial({
+      map, color: 0x9aa6b4, roughness: 1.0, metalness: 0.0,
+      emissive: 0xffffff, emissiveMap: map, emissiveIntensity: ROCK_EMIS,
+      side: THREE.DoubleSide, fog: true, flatShading: true,
+    });
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.uRockScale = { value: 0.40 };        // one tile every two and a half metres, as the built rock
+      sh.uniforms.uClipX = clip ? CLIP_X : { value: -1e9 };
+      sh.vertexShader = 'varying vec3 vRockW;\n' + sh.vertexShader
+        .replace('#include <fog_vertex>', '#include <fog_vertex>\n  vRockW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = 'varying vec3 vRockW; uniform float uRockScale; uniform float uClipX;\n' + sh.fragmentShader
+        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n  if (vRockW.x < uClipX) discard;')
+        .replace('#include <map_fragment>', `{
+  vec3 tp = vRockW * uRockScale;
+  vec3 tn = abs(normalize(cross(dFdx(vRockW), dFdy(vRockW))));
+  tn = tn / max(1e-4, tn.x + tn.y + tn.z);
+  vec4 tx = texture2D(map, tp.yz) * tn.x + texture2D(map, tp.xz) * tn.y + texture2D(map, tp.xy) * tn.z;
+  vec2 bu = vec2(tp.z, -tp.x) * 0.31 + 0.37;
+  tx.rgb *= mix(1.0, dot(texture2D(map, bu).rgb, vec3(0.333)) / 0.30, 0.55);
+  diffuseColor *= tx;
+}`)
+        .replace('#include <emissivemap_fragment>', `{
+  vec3 tp = vRockW * uRockScale;
+  vec3 tn = abs(normalize(cross(dFdx(vRockW), dFdy(vRockW))));
+  tn = tn / max(1e-4, tn.x + tn.y + tn.z);
+  totalEmissiveRadiance *= (texture2D(emissiveMap, tp.yz) * tn.x + texture2D(emissiveMap, tp.xz) * tn.y + texture2D(emissiveMap, tp.xy) * tn.z).rgb;
+}`);
+    };
+    if (clip) { _caveMat = mat; S.caveMat = mat; } else { _scanMat = mat; S.scanMat = mat; }
+    return mat;
+  }
+  /* AND THE SCAN KEEPS ITS GEOMETRY, WHICH IS THE POINT OF IT. Every mesh of
+   * either cave is put on the one projected stone: the 3DRT tunnel's own
+   * 256-pixel map and Valsev's cave's three materials — one of which carries
+   * NO MAP AT ALL, and is the untextured black the owner photographed — are
+   * what was wrong with them, and neither is the model. */
+  function reskin(root, clip) {
+    const m = scanRockMat(clip);
+    root.traverse((o) => { if (o.isMesh) o.material = m; });
+  }
 
-  /* ONE SCAN IS LEFT, AND ONE LAYOUT. Aurélien Martel's church is the room
-   * at the bottom; Ant leader's "3DRT-uderground for game" is no longer
-   * DRAWN at all — its 256-pixel texture is why the tunnel looked the way
-   * it did — but its walk grid is still the shape of the descent, so it is
-   * loaded, read, and hidden. Valsev's cave, which used to be the way out,
-   * is gone entirely: a second bore stands behind the altar instead. */
   load(opts.passageUrl || 'assets/passage.glb', (gltf) => {
     const root = gltf.scene;
     const w = parseWalk(root);
-    root.visible = false;
+    reskin(root);
+    group.add(root);
     S.passage = { root, walk: w };
+    compose();
+  });
+  load(opts.caveUrl || 'assets/cave.glb', (gltf) => {
+    const root = gltf.scene;
+    const w = parseWalk(root);
+    reskin(root, true);
+    group.add(root);
+    S.cave = { root, walk: w };
     compose();
   });
   load(opts.churchUrl || 'assets/church.glb', (gltf) => {
@@ -975,9 +1317,9 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
     try { composeInner(); } catch (e) { console.error('[undercroft] compose failed', e); throw e; }
   }
   function composeInner() {
-    if (!S.church || !S.passage || S.ready) return;
-    const ch = S.church.walk, pw = S.passage.walk;
-    if (!ch || !pw) return;
+    if (!S.church || !S.passage || !S.cave || S.ready) return;
+    const ch = S.church.walk, pw = S.passage.walk, cw = S.cave.walk;
+    if (!ch || !pw || !cw) return;
     // the mouth: the column with the greatest x that has a floor, and where on it
     /* A column's floor is its LOW floor. The cave's roof has an outside,
      * and where the tunnel under it is too low to walk the grid's floor is
@@ -1018,11 +1360,12 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
     const off = new THREE.Vector3(low.x + GAP - doorX, low.y - doorFloor, low.z - doorZ);
     ch.off.copy(off);
     S.church.root.position.copy(off);
-    /* THE CHURCH IS THE ONE THING HERE THAT IS STILL WALKED AS A GRID. Both
-     * tunnels are BORES now — a line and a tube round it — so the passage's
-     * grid is used once, to find that line, and never asked again. */
-    S.walks = [ch];
+    /* THE PASSAGE IS WALKED AS A TUBE AND THE OTHER TWO AS GRIDS. The
+     * passage's own grid is used ONCE, to find a centreline; what the walk
+     * then uses is a corridor fitted to the tunnel's own drawn surface. */
+    S.walks = [ch, cw];
     ch.stepMax = 0.40;                  // a pew's seat is 0.45 up, and that is not a step
+    cw.stepMax = 1.2; cw.dropMax = 2.0;  // the old cave is rubble
     const inbound = buildCorridor(pw, { x: high.x + 2.0, z: high.z }, { x: low.x - 0.4, z: low.z });
     if (!inbound) { console.warn('[undercroft] the passage has no centreline'); return; }
     /* THE JOIN IS BLANKETED, not bridged with a hairline. The passage's
@@ -1040,6 +1383,12 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
      * to the church's doorway, at the doorway's height. One floor, no seam,
      * nothing to step across. */
     {
+      /* THE FIT COMES FIRST. Laid before it, the straight run at the church
+       * dragged the last real stations off the tunnel's centre when it was
+       * smoothed into them — and those are the narrowest stations in the
+       * model, where being a foot off centre is the difference between a
+       * corridor and a wall. */
+      fitCorridor(inbound, surfaceBins(S.passage.root));
       /* AND IT RUNS ALL THE WAY INTO THE NAVE. The last stations are laid
        * straight at the church's doorway at the doorway's own height and a
        * stride PAST its wall, so the bore's mouth is inside the breach and
@@ -1053,19 +1402,31 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         P.push({ x: CE.x + dx * e, z: CE.z + dz * e, y: CE.y + dy * e,
                  r: CE.r + (1.62 - CE.r) * e, h: CE.h + (2.95 - CE.h) * e });
       }
-      // ease the last few so the join to the straight run is not a corner
-      for (let pass = 0; pass < 6; pass++) for (let k = P.length - n - 4; k < P.length - 1; k++) {
+      // ease the run itself so its start is not a corner — and NOT the fitted
+      // stations before it, which are the narrowest in the model
+      for (let pass = 0; pass < 6; pass++) for (let k = P.length - n; k < P.length - 1; k++) {
         if (k < 1) continue;
         P[k] = { x: P[k].x * 0.5 + (P[k - 1].x + P[k + 1].x) * 0.25,
                  z: P[k].z * 0.5 + (P[k - 1].z + P[k + 1].z) * 0.25,
                  y: P[k].y * 0.5 + (P[k - 1].y + P[k + 1].y) * 0.25,
                  r: P[k].r, h: P[k].h };
       }
-      group.add(makeBore(inbound, boreMat(), { cap: [true, false] }));   // capped where you crawl in, OPEN where it breaks into the nave
+      for (let k = Math.max(0, P.length - n - 1); k < P.length; k++) P[k].open = true;   // the run into the nave was never tunnel floor
+      /* AND THE REPAIR IS ONE CONTINUOUS SKIN, NOT A PATCH PER HOLE. Sleeves
+       * over the runs the probe called open left black in the frame anyway:
+       * "open" is measured on the CENTRELINE, and this model's holes are as
+       * often a metre off to one side or a gap in the floor. A tube swept
+       * down the whole line at the measured wall plus a hand's breadth sits
+       * BEHIND the scan everywhere the scan is there — you never see it —
+       * and is the rock everywhere it is not. The cave you look at is still
+       * the owner's model; what is behind it is no longer the void. */
+      gapRuns(inbound);
+      group.add(makeBore({ pts: P.map((q) => ({ ...q, r: q.wall ?? q.r })) }, boreMat(),
+                         { cap: [true, false], rough: 0.22, grow: 0.45, measure: false }));
       corridorBox(inbound);
       S.corridors.push(inbound);
-      mouthCol.w = inbound.pts[inbound.pts.length - 1].r * 2;
-      mouthCol.h = inbound.pts[inbound.pts.length - 1].h;
+      mouthCol.w = P[P.length - 1].r * 2;
+      mouthCol.h = P[P.length - 1].h;
     }
     /* THE BREACH. The church's front doorway is ALREADY AN OPENING in the
      * scan — four metres by five and a half — and the first two builds
@@ -1185,25 +1546,32 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
       // the exit cave is placed a few lines down; its box is added to the shell there
       S._shellBox = bb;
     }
-    /* ---- THE WAY OUT, BEHIND THE ALTAR, AND IT IS BUILT TOO.
-     * Valsev's cave stood here for three builds and the owner's word on it
-     * was that it looks horrible and is not flush with the church. It could
-     * not be: it is a photogrammetry shell with a ragged mouth metres
-     * across, one of whose three materials CARRIES NO MAP AT ALL — which is
-     * the untextured black he saw — and hanging it against a flat apse wall
-     * meant clipping it in world x and hoping. It is gone. What is here now
-     * is a second BORE, the same stone as the first and as the huge rock
-     * outside: it starts a stride INSIDE the apse wall so the cut in the
-     * wall is full of tunnel from any angle, and runs twenty-odd metres out
-     * and up to a dead end you climb from. Flush by construction. */
+    /* ---- THE WAY OUT: Valsev's cave, behind the altar.
+     * The church's walk runs out a metre and a half short of the apse wall,
+     * so the last free cell on the church's axis is the exit's threshold. The
+     * cave — turned half round by the packer, its ragged mouth now at its -x
+     * end — is put down with that mouth a step past the wall at the
+     * threshold's own height, a bridge answers for the floor between, and the
+     * WALL IS CUT: a cylinder along x through every church material (the
+     * grime shader carries the uniform), walls only, or there is a black disc
+     * in the floor under the arch. Its own rock covers the hole from behind
+     * and is clipped in world x at the apse's face, so none of it stands in
+     * the chancel.
+     *
+     * AND A COLLAR MAKES IT FLUSH. "The exit cave looks horrible" was two
+     * things and neither was the model: one of its three materials carries NO
+     * MAP AT ALL (the untextured black), which the projected stone fixes, and
+     * a ragged photogrammetry mouth clipped flat against a flat wall is a cut
+     * EDGE — so a short built sleeve in the same stone runs from inside the
+     * wall out to where the cave's own tube begins, and what you walk into is
+     * a piece of tunnel rather than a section through one. */
     let exitEdge = null, exitFloor = null;
     {
       const zc = off.z;
       let lastFree = null;
       /* the search starts BEHIND THE ALTAR. Started ten metres short of the
-       * end wall it began on the altar's own plinth, took the first free
-       * cell past it for the threshold, and put the way out six metres
-       * short of the wall. */
+       * end wall it began on the altar's own plinth and put the way out six
+       * metres short of the wall — the cave's rock stood in the chancel. */
       const A0 = findAltar();
       for (let x = (A0 ? A0.x1 + 1.0 : altarX0()); x < ch.bounds[1][0] + off.x; x += 0.1) {
         const f = S.floorAt(x, zc);
@@ -1211,38 +1579,63 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         if (S.blocked(x, zc, 0.24, f)) { if (lastFree !== null) break; else continue; }
         lastFree = x; exitFloor = f;
       }
-      if (lastFree !== null) exitEdge = lastFree + 0.35;
+      if (lastFree !== null) exitEdge = lastFree + 0.55;
     }
     let caveFar = null;
     if (exitEdge !== null) {
-      /* the line: out along +x, wandering, and climbing back toward the
-       * beach. Nothing about it is a scan, so it is written down — but it is
-       * written as a LINE and the same sweep builds the rock round it, so
-       * there is still only one description of where the tunnel is. */
-      const zc = off.z;
-      const raw = [];
-      const LEG = [[-1.6, 0, 0], [2.0, 0.1, 0.15], [5.0, 1.0, 0.35], [8.4, 2.6, 0.95],
-                   [11.8, 2.2, 1.75], [15.2, 0.3, 2.45], [18.6, -1.4, 3.15], [21.6, -1.9, 3.75],
-                   [24.2, -0.9, 4.05], [26.0, 0.2, 4.15]];
-      for (const [dx, dz, dy] of LEG) raw.push({ x: exitEdge + dx, z: zc + dz, y: exitFloor + dy });
-      const out = smoothLine(raw, 2.0);
-      for (const q of out.pts) { q.r = Math.min(q.r, 1.62); q.h = Math.min(q.h, 2.78); }
-      group.add(makeBore(out, boreMat(), { rough: 0.50, cap: [false, true] }));   // open at the apse, a dead end at the far end
-      corridorBox(out);
-      S.corridors.push(out);
-      const CE = out.pts[out.pts.length - 1];
-      caveFar = { x: CE.x, y: CE.y, z: CE.z };
-      S._shellBox.expandByPoint(new THREE.Vector3(CE.x + 4, CE.y + 6, CE.z + 4));
-      S._shellBox.expandByPoint(new THREE.Vector3(exitEdge - 4, exitFloor - 4, zc - 4));
-      /* THE CUT IN THE APSE, in WORLD space: the grime shader compares the
-       * mesh's own world position. It is sized off the bore's own first
-       * station, so the hole in the wall is exactly the hole the tunnel
-       * makes and the stone always covers its edge. */
-      group.updateMatrixWorld(true);
-      const F0 = out.pts[0];
-      const wc = group.localToWorld(new THREE.Vector3(exitEdge, F0.y + F0.h * 0.40, zc));
-      CUT.value.set(wc.x, wc.y, wc.z, Math.max(1.15, F0.r * 0.95));
-      CUT_X.value = 1.4;
+      let cm = null, cf = null;
+      for (let i = 0; i < cw.gw && !cm; i++) { const st = colStats(cw, i); if (st && st.n >= 4) cm = st; }
+      for (let i = cw.gw - 1; i >= 0 && !cf; i--) { const st = colStats(cw, i); if (st && st.n >= 4) cf = st; }
+      if (cm && cf) {
+        const coff = new THREE.Vector3(exitEdge + GAP - cm.x, exitFloor - cm.y, off.z - cm.z);
+        cw.off.copy(coff);
+        S.cave.root.position.copy(coff);
+        S.bridges.push({ x0: exitEdge - 1.4, x1: exitEdge + GAP + 0.8, z0: off.z - 1.5, z1: off.z + 1.5, y0: exitFloor, y1: exitFloor });
+        caveFar = { x: cf.x + coff.x, y: cf.y + coff.y, z: cf.z + coff.z };
+        const cb = cw.bounds;
+        S._shellBox.expandByPoint(new THREE.Vector3(cb[0][0] + coff.x, cb[0][1] + coff.y, cb[0][2] + coff.z));
+        S._shellBox.expandByPoint(new THREE.Vector3(cb[1][0] + coff.x, cb[1][1] + coff.y, cb[1][2] + coff.z));
+        group.updateMatrixWorld(true);
+        const wc = group.localToWorld(new THREE.Vector3(exitEdge, exitFloor + 1.05, off.z));
+        CUT.value.set(wc.x, wc.y, wc.z, 1.25);
+        CUT_X.value = 1.3;
+        CLIP_X.value = group.localToWorld(new THREE.Vector3(exitEdge + 0.12, 0, 0)).x;
+        /* AND THE OLD CAVE IS WALKED AS A TUBE TOO. Its walkable channel,
+         * measured off the packer's grid, is ONE CELL WIDE for most of its
+         * length and wanders a metre sideways per metre along — which is a
+         * corridor you can only follow by luck, and is the "glitchy" the
+         * owner reported at this end as much as at the other. Its own
+         * centreline, fitted to its own drawn rock, with a sleeve where the
+         * scan has nothing: the same treatment as the passage, and the
+         * COLLAR through the apse wall falls out of it for free, because
+         * the run from inside the wall to the cave's mouth is a stretch the
+         * model does not cover. */
+        const outbound = buildCorridor(cw, { x: cm.x + coff.x + 0.5, z: cm.z + coff.z },
+                                           { x: cf.x + coff.x - 0.5, z: cf.z + coff.z });
+        if (outbound) {
+          fitCorridor(outbound, surfaceBins(S.cave.root));
+          const Q = outbound.pts, X0 = exitEdge - 1.1, F = Q[0];
+          const np = Math.max(2, Math.ceil(Math.hypot(F.x - X0, F.z - off.z) / 1.2));
+          const pre = [];
+          for (let k = 0; k < np; k++) {
+            const t = k / np;
+            pre.push({ x: X0 + (F.x - X0) * t, z: off.z + (F.z - off.z) * t, y: exitFloor + (F.y - exitFloor) * t,
+                       r: 1.22, h: 2.62, wall: 1.42, open: true });
+          }
+          Q.unshift(...pre);
+          gapRuns(outbound);
+          group.add(makeBore({ pts: Q.map((q) => ({ ...q, r: q.wall ?? q.r })) }, boreMat(),
+                             { cap: [false, true], rough: 0.22, grow: 0.45, measure: false }));
+          corridorBox(outbound);
+          S.corridors.push(outbound);
+          const E = Q[Q.length - 1];
+          caveFar = { x: E.x, y: E.y, z: E.z };
+        }
+        const plate = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 3.2), new THREE.MeshStandardMaterial({ color: 0x2a2724, roughness: 1 }));
+        plate.rotation.x = -Math.PI / 2; plate.position.set(exitEdge + GAP * 0.4, exitFloor + 0.01, off.z);
+        plate.material = scanRockMat();
+        group.add(plate);
+      }
     }
     {
       const bb = S._shellBox;
@@ -1284,10 +1677,13 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
       group.worldToLocal(c);
       S.spots.lamps.push({ x: c.x, y: c.y, z: c.z, kind: b.material.name === 'ampoule' ? 'church' : 'cave' });
     }
+    /* the model is carved back out of the walk — both tunnels, once both
+     * corridors are in `S.corridors` */
+    S.carved = carveTube(S.passage.root) + carveTube(S.cave.root);
     // the idol on the altar and the candles round it
     dressAltar();
     // dust in the air of both tunnels and the nave
-    makeMotes(ch);
+    makeMotes(ch, cw);
     S.ready = true;
     if (opts.onReady) opts.onReady(S);
   }
@@ -1535,7 +1931,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
    * in the world, thinner in the nave, which is big. It is the one thing
    * that says the air down here has not moved in a long time, and it is
    * SUBTLE on purpose: a fog of it reads as snow. */
-  function makeMotes(ch) {
+  function makeMotes(ch, cw) {
     const N = 1100;
     const pos = new Float32Array(N * 3), seed = new Float32Array(N);
     const putGrid = (k, w, hi) => {
@@ -1563,7 +1959,9 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
       return true;
     };
     for (let k = 0; k < N; k++) {
-      if (k >= N * 0.42 || !putBore(k)) putGrid(k, ch, 6.5);
+      if (k < N * 0.34) { if (!putBore(k)) putGrid(k, ch, 6.5); }
+      else if (k < N * 0.46) { if (!putGrid(k, cw, 2.4)) putGrid(k, ch, 6.5); }
+      else putGrid(k, ch, 6.5);
       seed[k] = Math.random() * 100;
     }
     const g = new THREE.BufferGeometry();

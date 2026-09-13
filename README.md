@@ -505,6 +505,13 @@ the knockdown — are Mixamo animations (Adobe), retargeted onto his rig by
 - `assets/church-step*.m4a` — eleven footfalls cut from "Steps in corridor" by freesound_community (via Pixabay, Pixabay Content License), normalised and faded.
 `tools/ntar_moves.py` into `assets/ntar-moves.json`.
 
+This work is based on ["Cave 5.0"](https://sketchfab.com/3d-models/cave-50-7c4df6d7354b4ed39b50db47d66f96f8)
+by [Valsev](https://sketchfab.com/Valsev) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the way OUT, behind
+the altar (`assets/cave.glb`, decimated and packed with its walk by
+`tools/undercroft_pack.py`), wearing the same projected granite: one of its
+three materials carries no texture at all, which was the untextured black.
+
 This work is based on ["Old church modeling - Interior Scene"](https://sketchfab.com/3d-models/old-church-modeling-interior-scene-eb6cf543aa7d45e3acee49887ae3135c)
 by [Aurélien Martel](https://sketchfab.com/aurelien_martel) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the church at the bottom of
@@ -519,14 +526,13 @@ it was a room inside a room.)
 
 This work is based on ["3DRT-uderground for game"](https://sketchfab.com/3d-models/3drt-uderground-for-game-a146bf2f80e24640abe951fa97d127af)
 by [Ant leader](https://sketchfab.com/Jguyfioy) licensed under
-[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the LAYOUT of the
-tunnel you crawl in through (`assets/passage.glb`, turned and scaled to metres
-and packed with its walk by `tools/undercroft_pack.py`). The model is read for
-its route and never drawn: it ships one 256-pixel texture for a hundred and
-seventy metres of cave, so what you walk through is a tube built along its
-centreline in the rock outcrop's own granite. Valsev's "Cave 5.0", which used
-to be the way out behind the altar, came out of the game entirely for the same
-reason and a second built tube stands there instead.
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the tunnel you crawl
+in through (`assets/passage.glb`, turned and scaled to metres and packed with
+its walk by `tools/undercroft_pack.py`). It ships one 256-pixel texture for a
+hundred and seventy metres of cave, so it wears the rock outcrop's own granite
+projected over it instead of its own uvs, and a skin swept along its
+centreline stands behind it to close the holes in the mesh; the geometry you
+walk through is the model's.
 
 This work is based on ["Rock Mountain with cave realistic 85k by JJ"](https://sketchfab.com/3d-models/rock-mountain-with-cave-realistic-85k-by-jj)
 (Sketchfab) — the rock outcrop at the foot of the sand wall, past the mutants,
