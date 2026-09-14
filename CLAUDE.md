@@ -4132,6 +4132,29 @@ and that buys the two metres: at x = 8.6 the seaward stones and the seaward
 third of the base take the surf, which is as far out as it can go and still be
 standing on the beach rather than in it.
 
+**AND A LIVING CREATURE'S HEIGHT IS NEVER UPDATED — WHICH NOTHING NOTICED
+UNTIL A ROOM HAD A STEP IN IT.** `makeMutant` is handed a y and that y is never
+touched again for as long as the thing is alive; only the RAGDOLL asks
+`bunkerFloorAt` what is under it. That is correct on a flat beach, a flat
+bunker floor and a flat hall, and every room in this game was flat until the
+dojo — whose yard is at -0.15 and whose boards are at +0.09. So the samurai,
+who arrives OUTSIDE and walks up into the building, kept the yard's height and
+stood a quarter of a metre over the deck.
+
+Both of the owner's symptoms are that one fact. "Floating at you" is the lift
+itself; "not hitting" is the same lift, because `blowLands` sweeps his limb
+against your torso segment and a quarter metre puts the whole swing over your
+head. He follows the floor under him now, eased rather than snapped — a step
+taken in one frame reads as the body jumping.
+
+**AND IT DID NOT SHOW UP IN THE HARNESS, WHICH IS THE REAL LESSON.** Every
+measurement of this fight walked the player straight in along one line and the
+creature spawned near the same spot, so both were on the SAME side of the step
+and the gap was zero. It took standing deep inside the building — which puts
+his spawn out in the yard and makes him cross the step to reach you — to
+reproduce it at all. A test that always starts the fight in the same place
+cannot find a bug that is about crossing between two places.
+
 ## Dev mode
 
 `DEFAULT_SETTINGS` are the owner's own (music 30 %, waves 18 %, effects

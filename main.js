@@ -31603,6 +31603,27 @@ const DOJO_QUIET = 3.6;
 let dojoWinT = -1;
 function updateSamurai(dt) {
   if (!samurai || !inDojo) return;
+  /* HE HAS TO STAND ON THE FLOOR HE IS OVER, and nothing else in this game
+   * has ever had to: a living creature's y is whatever `makeMutant` was
+   * handed and it is never touched again, which is correct on a flat beach,
+   * a flat bunker and a flat hall. THE DOJO IS THE FIRST ROOM WITH A STEP IN
+   * IT — the yard is at -0.15 and the boards at +0.09 — so a man who arrives
+   * outside and walks up into the building keeps the yard's height and is
+   * floating a quarter of a metre over the deck. That is the owner's "sitting
+   * there floating at you", and it is also why he stopped landing blows:
+   * `blowLands` sweeps his limb against your torso, and a quarter metre of
+   * lift puts the whole swing over your head.
+   *
+   * Eased rather than snapped, because a step taken in one frame reads as the
+   * body jumping; at this rate he walks up onto the boards in about a fifth
+   * of a second. */
+  {
+    const f = dojoFloorAt(samurai.g.position.x, samurai.g.position.z, DOJO_Y + 1.0);
+    if (f !== null) {
+      const dy = f - samurai.g.position.y;
+      samurai.g.position.y += Math.abs(dy) < 0.01 ? dy : dy * Math.min(1, dt * 12);
+    }
+  }
   if (samurai.wakeIn > 0) {
     samurai.wakeIn -= dt;
     if (samurai.wakeIn <= 0) { samurai.wakeIn = 0; samurai.holdAnim = false; samurai.st.awake = true; }
