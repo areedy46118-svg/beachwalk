@@ -3615,6 +3615,46 @@ has been walked since it went in; adding `pw` to `S.walks` naively makes it
 worse (the grid's own roof drives the duck), so it wants the bridge treatment
 at the church seam rather than a one-line change.
 
+**THE KNIGHT IN THE CHURCH, AND THE THING ON THE ALTAR.** IronSpear's "Iron
+Juggernaut" stands against the wall to the left of the altar, in the dark,
+from the moment you walk in. Touch the idol and a second passes in which
+nothing happens and you are standing there having done it; then it goes over
+about its own foot, lands, and comes apart across the floor, and the wall
+stops being a wall. The beat between is the point — a jump scare arrives
+before you can understand it, and being given a second to realise what you
+have just done is worse.
+
+- **WHERE HE STANDS IS MEASURED, NOT TYPED.** From the altar, step toward the
+  wall on your left — walking up the nave (+x), that is -z — until the floor
+  runs out, then come back a body's width. Two things it needed: the floor is
+  RE-READ at every step (holding the altar's own height stops the scan dead at
+  the dais, and the "wall" came back forty centimetres from the altar), and it
+  steps over a GAP, because a grid sampled off a scan has lone blocked cells
+  in it and there is one at z = 4.5 on exactly that line.
+- **AND THE BEACH'S WALLS ARE NOT EVERY CREATURE'S WALLS — THE FOURTH TIME.**
+  `mutClampX` would have snapped a knight forty metres under a beach out onto
+  the sand. `kind.uc` holds him with the undercroft's own `pushOut` instead.
+- **HIS FILE SHIPS SIX CLIPS AND NOT ONE SWING.** Idle, walk, run, walk in
+  place, jump, land — all locomotion. So the fight is authored, and the
+  machinery the witness needed for exactly this is now shared: `poseRig`
+  returns the stance, each driven joint's parent frame expressed in the BODY's
+  axes, and a builder that eases a list of keys into an `AnimationClip`.
+- **HE IS A `MUT_KINDS` ENTRY, so almost none of the fight is new code** — the
+  tell, the commit, the poise pool, the parry window, the riposte, the chain,
+  the feint and the token all come with the table. What is his: three and a
+  half metres, thirty points, the longest startups in the game (the overhead
+  hangs a second and a half before it comes down, which is what makes two
+  damage fair), a guard that costs a whole bar, and a shoulder charge for
+  when you back off.
+- **AND THE MEASUREMENT THAT SAID HE COULD NOT HIT WAS THE MEASUREMENT.**
+  Three rounds of "0 damage" were a harness that called `heal()` BEFORE it
+  read `hp`, so every landed blow was erased in the same iteration that dealt
+  it. Read the health first, heal second. (And `devMode` turns a creature's
+  swinging off outright, so a sample taken with it on reads zero swings for a
+  different reason again.) Measured properly, standing still at the altar:
+  33 swings and 35 damage a minute, all three close swings used evenly,
+  closing to 1.1 m — the Dealer is 48 and 40, the SCP 43 and 41.
+
 ## Dev mode
 
 `DEFAULT_SETTINGS` are the owner's own (music 30 %, waves 18 %, effects

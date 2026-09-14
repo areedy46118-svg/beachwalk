@@ -115,6 +115,7 @@ const ASSET_REACH = {
   'assets/rockmouth.glb': 636,        // the rock at the foot of the sand wall, past the mutants
   'assets/tunnel.glb': 640,           // the tunnel in it
   'assets/church.glb': 645,           // and what is at the bottom of it
+  'assets/knight.glb': 647,           // and what is standing against its wall
   'assets/cave.glb': 648,             // and the way out, behind the altar
   'assets/sol.glb': 646,              // and what is standing on its altar
   'assets/scp096.glb': 470,           // on the beach in front of the pavilion
@@ -25033,6 +25034,7 @@ function animateFrame() {
   oceanUniforms.uTime.value += dt;
   if (!introStarted) titleCam(rawDt);
   update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
+  updateIdol(rawDt);
   updateHover();
   /* After everything that may have moved a lamp or the player, and before
    * anything is drawn: point the twelve real lights at the twelve that
@@ -25413,7 +25415,22 @@ function updateShrineOrb(dt) {
  *
  * A function DECLARATION on purpose: it is called from `updateMutantCut` five
  * thousand lines above this, and only hoisting makes that legal. */
+const _mcL = new THREE.Vector3();
 function mutClampX(u, p, dt) {
+  /* AND THE BEACH'S WALLS ARE NOT EVERY CREATURE'S WALLS — THE FOURTH TIME.
+   * The crabs bit through forty metres of earth, the boss was teleported out
+   * of the hall on its first step, the ragdolls were snapped three thousand
+   * metres sideways, and here is a knight forty metres under a beach whose
+   * x clamp would put him on the sand outside. He is held by the undercroft's
+   * own walk instead, which is the only thing that knows where its walls are. */
+  if (u.kind.uc) {
+    if (!UC.ready) return;
+    _mcL.set(p.x - UC_X, 0, p.z - UC_Z);
+    const f = UC.floorAt(_mcL.x, _mcL.z);
+    UC.pushOut(_mcL, u.kind.body || 0.9, f === null ? p.y - UC_Y : f);
+    p.x = UC_X + _mcL.x; p.z = UC_Z + _mcL.z;
+    return;
+  }
   if (!u.kind.ring) {
     p.x = THREE.MathUtils.clamp(p.x, WADE_X - 1.5, CLIFF_BLOCK_X + 0.5);
     return;
@@ -27962,9 +27979,22 @@ const NTAR_JOINTS = {
 };
 // the arms brought to his sides: the witness's own numbers
 const NTAR_HANG = { armR: { fwd: 0.33, right: -0.28 }, foreR: { fwd: 0.30, right: -0.12 }, armL: { fwd: -0.14 }, foreL: { fwd: -0.08 } };
-function authorNtarClips(u, m, gltf) {
-  const src = gltf.animations && gltf.animations[0];
-  if (!src) return [];
+/* ---------------------------------------------------------- writing a clip
+ * A RIG THAT SHIPS NO FIGHT IS POSED IN CODE, and two creatures do it now —
+ * the witness, whose file carries one demo clip, and the knight, whose file
+ * carries six gaits and not one swing. What both need is the same three
+ * things: the pose everything is built ON (a frame of a clip the file does
+ * carry, because a rig's BIND pose is a T and nothing composed on a T looks
+ * like a body), each driven joint's own parent frame expressed in the
+ * BODY's axes (so a key can say "turn the shoulder about the body's right"
+ * without knowing which way this rig lays its bone axes), and a builder that
+ * eases a list of keys into a real `AnimationClip`.
+ *
+ * `JOINTS` maps this file's joint names onto the rig's bone names; `HANG` is
+ * a fixed bias added to every key, which is how the witness's arms are
+ * brought down to his sides. Returns the builder and the pieces a retarget
+ * needs afterwards. */
+function poseRig(u, m, src, JOINTS, HANG) {
   const bones = [];
   m.traverse((o) => { if (o.isBone) bones.push(o); });
   /* THE BIND POSE, BEFORE THE DEMO CLIP IS EVER PLAYED. The stance below is
@@ -27977,7 +28007,7 @@ function authorNtarClips(u, m, gltf) {
   a.play(); a.time = 0; u.mixer.update(0);
   m.updateMatrixWorld(true);
   const J = {};
-  for (const k in NTAR_JOINTS) J[k] = bones.find((b) => b.name === NTAR_JOINTS[k]) || null;
+  for (const k in JOINTS) J[k] = bones.find((b) => b.name === JOINTS[k]) || null;
   const base = new Map();
   for (const b of bones) base.set(b, b.quaternion.clone());
   const hipPos = J.hip ? J.hip.position.clone() : null;
@@ -28029,7 +28059,7 @@ function authorNtarClips(u, m, gltf) {
         let q;
         if (k) {
           const ang = { up: at(t, k, 'up'), right: at(t, k, 'right'), fwd: at(t, k, 'fwd') };
-          if (NTAR_HANG[k]) { ang.fwd += NTAR_HANG[k].fwd || 0; ang.right += NTAR_HANG[k].right || 0; }
+          if (HANG[k]) { ang.fwd += HANG[k].fwd || 0; ang.right += HANG[k].right || 0; }
           q = compose(k, ang);
         } else q = base.get(b);
         vals.push(q.x, q.y, q.z, q.w);
@@ -28051,6 +28081,14 @@ function authorNtarClips(u, m, gltf) {
     [1.0,  { thighL: { right: -A }, calfL: { right: 0.15 }, thighR: { right: A }, calfR: { right: C }, armR: { right: -arm }, armL: { right: arm }, foreR: { right: -foreBend }, foreL: { right: -foreBend }, chest: { up: 0.08, right: lean }, head: { right: -lean * 0.6 }, hipY: -bob }],
   ];
   const scaleT = (keys, dur) => keys.map(([t, p]) => [t * dur, p]);
+  return { bones, bind, J, base, hipPos, hipUp, build, compose, stride, scaleT };
+}
+
+function authorNtarClips(u, m, gltf) {
+  const src = gltf.animations && gltf.animations[0];
+  if (!src) return [];
+  const R = poseRig(u, m, src, NTAR_JOINTS, NTAR_HANG);
+  const { bones, bind, J, hipPos, hipUp, build, stride, scaleT } = R;
   const clips = [];
   clips.push(build('idle', 2.4, [[0, {}], [1.2, { chest: { right: 0.03 }, head: { right: 0.02 }, waist: { up: 0.03 } }], [2.4, {}]], true));
   clips.push(build('walk', 1.0, stride(0.42, 0.55, 0.32, 0.2, 0.04, 0.02), true));
@@ -28135,6 +28173,311 @@ function authorNtarClips(u, m, gltf) {
   if (ntarMoves) for (const c of add()) clips.push(c);
   else ntarMovesLate = () => { for (const c of add()) u.clips[c.name] = u.mixer.clipAction(c); };
   return clips;
+}
+
+
+/* ================================================================== *
+ *  THE KNIGHT IN THE CHURCH
+ * ------------------------------------------------------------------ *
+ * IronSpear's "Iron Juggernaut" — an armoured figure two metres tall in its
+ * own file and THREE AND A HALF here, because the owner asked for big and
+ * because a thing you meet in a nave should not be a man's size. He stands
+ * against the wall to the left of the altar in the dark and he is not lit,
+ * not rimmed and not moving: the first two things the room gives you are the
+ * candles and the idol, and he is the third, after you have touched it.
+ *
+ * ALMOST NONE OF THE FIGHT IS NEW CODE. He is a `MUT_KINDS` entry, so the
+ * tell, the commit, the poise pool, the parry window, the riposte, the
+ * chain, the feint and the token all come with the table — the grammar the
+ * beach spends a kilometre teaching is the grammar you answer him in.
+ *
+ * WHAT HIS FILE DOES NOT CARRY IS A SINGLE SWING. Six clips ship with him
+ * and all six are locomotion: idle, walk, run, walk-in-place, jump, land. So
+ * the fight is AUTHORED, the witness's way, on the stance his own idle
+ * carries — `poseRig` is the machinery both of them use now.
+ */
+const KNIGHT_JOINTS = {
+  hip: 'pelvis', waist: 'spine_02', chest: 'spine_04', neck: 'neck_01', head: 'head',
+  clavL: 'clavicle_l', clavR: 'clavicle_r',
+  armL: 'upperarm_l', armR: 'upperarm_r',
+  foreL: 'lowerarm_l', foreR: 'lowerarm_r',
+  thighL: 'thigh_l', thighR: 'thigh_r',
+  calfL: 'calf_l', calfR: 'calf_r',
+  footL: 'foot_l', footR: 'foot_r',
+};
+/* nothing to bias: unlike the witness, whose demo clip holds an arm out to
+ * wave, this rig's idle already stands with its arms down */
+const KNIGHT_HANG = {};
+function authorKnightClips(u, m, gltf) {
+  const src = (gltf.animations || []).find((c) => c.name === 'idle') || (gltf.animations || [])[0];
+  if (!src) return [];
+  const { build } = poseRig(u, m, src, KNIGHT_JOINTS, KNIGHT_HANG);
+  const clips = [];
+  /* THE ROAR IS NOT A ROAR, IT IS A HEAD COMING UP. He has been standing
+   * against that wall since before you were born; what says so is that the
+   * first thing he does is lift his head and straighten, slowly, and only
+   * then come at you. */
+  clips.push(build('roar', 1.80, [
+    [0,    { head: { right: 0.55 }, neck: { right: 0.30 }, chest: { right: 0.18 }, hipY: -0.04 }],
+    [0.70, { head: { right: 0.10 }, neck: { right: 0.10 }, chest: { right: 0.08 }, hipY: -0.02 }],
+    [1.15, { head: { right: -0.34 }, neck: { right: -0.18 }, chest: { right: -0.16 }, waist: { right: -0.06 },
+             armR: { right: -0.55, fwd: -0.30 }, armL: { right: -0.55, fwd: 0.30 },
+             foreR: { right: -0.35 }, foreL: { right: -0.35 }, hipY: 0.02 }],
+    [1.80, {}]], false));
+  /* the guard: a pauldron turned into the blow and both forearms up. He is
+   * a wall of plate and it should read as one. */
+  clips.push(build('block', 0.45, [
+    [0, {}],
+    [0.14, { armR: { right: -1.25, fwd: 0.40 }, foreR: { right: -1.55 },
+             armL: { right: -1.20, fwd: -0.35 }, foreL: { right: -1.45 },
+             chest: { up: -0.22 }, waist: { up: -0.10 }, head: { up: 0.16, right: 0.10 }, hipY: -0.05 }],
+    [0.45, { armR: { right: -1.25, fwd: 0.40 }, foreR: { right: -1.55 },
+             armL: { right: -1.20, fwd: -0.35 }, foreL: { right: -1.45 },
+             chest: { up: -0.22 }, waist: { up: -0.10 }, head: { up: 0.16, right: 0.10 }, hipY: -0.05 }]], false));
+  /* AND HE BARELY FLINCHES. Two tonnes of plate does not rock back when a
+   * shovel lands on it, and the whole point of his poise pool is that you
+   * have to spend it before he gives you anything. */
+  clips.push(build('hurt', 0.42, [
+    [0, {}],
+    [0.10, { chest: { right: 0.10, up: 0.08 }, head: { right: 0.14 }, waist: { right: 0.04 }, hipY: -0.02 }],
+    [0.42, {}]], false));
+  clips.push(build('strafe', 0.95, [
+    [0,    { thighL: { fwd: 0.20 }, thighR: { fwd: 0.20 }, calfL: { right: 0.35 }, chest: { fwd: -0.04 }, hipY: -0.03 }],
+    [0.48, { thighL: { fwd: -0.20 }, thighR: { fwd: -0.20 }, calfR: { right: 0.35 }, chest: { fwd: 0.04 }, hipY: -0.03 }],
+    [0.95, { thighL: { fwd: 0.20 }, thighR: { fwd: 0.20 }, calfL: { right: 0.35 }, chest: { fwd: -0.04 }, hipY: -0.03 }]], true));
+  /* THE BACKHAND. Cocked across his body and HELD — that hold is the tell —
+   * then through the middle of its travel in a key of its own so the arc is
+   * seen rather than snapped, arriving with the arm straight and the whole
+   * trunk turned behind it, and carrying past before it settles back. */
+  clips.push(build('kSwing', 1.30, [
+    [0, {}],
+    [0.34, { armR: { fwd: -1.15, right: -0.45 }, foreR: { right: -0.85 }, clavR: { fwd: -0.20 },
+             waist: { up: -0.42 }, chest: { up: -0.36 }, head: { up: 0.30 }, thighR: { right: -0.12 }, hipY: -0.03 }],
+    [0.52, { armR: { fwd: -1.10, right: -0.62 }, foreR: { right: -0.75 }, clavR: { fwd: -0.20 },
+             waist: { up: -0.38 }, chest: { up: -0.32 }, head: { up: 0.26 }, thighR: { right: -0.12 }, hipY: -0.04 }],
+    [0.63, { armR: { fwd: -0.55, right: -1.30 }, foreR: { right: -0.30 }, clavR: { right: -0.16 },
+             waist: { up: 0.04 }, chest: { up: 0.10 }, head: { up: 0.02 }, thighL: { right: -0.14 }, hipY: -0.06 }],
+    [0.718, { armR: { fwd: -0.62, right: -1.32 }, foreR: { right: -0.30 }, clavR: { right: -0.32, fwd: -0.22 },
+              waist: { up: 0.42, right: 0.12 }, chest: { up: 0.46, right: 0.18 }, head: { up: -0.16 },
+              thighL: { right: -0.24 }, calfR: { right: 0.24 }, hipY: -0.09 }],
+    [0.88, { armR: { fwd: 0.48, right: -1.20 }, foreR: { right: -0.45 }, clavR: { right: -0.10 },
+             waist: { up: 0.50 }, chest: { up: 0.52, right: 0.10 }, head: { up: -0.24 },
+             thighL: { right: -0.18 }, hipY: -0.06 }],
+    [1.30, {}]], false));
+  // the same from the other side, which is what his backhand chains into
+  clips.push(build('kSwingL', 1.22, [
+    [0, {}],
+    [0.30, { armL: { fwd: 1.15, right: -0.45 }, foreL: { right: -0.85 }, clavL: { fwd: 0.20 },
+             waist: { up: 0.42 }, chest: { up: 0.36 }, head: { up: -0.30 }, thighL: { right: -0.12 }, hipY: -0.03 }],
+    [0.48, { armL: { fwd: 1.10, right: -0.62 }, foreL: { right: -0.75 }, clavL: { fwd: 0.20 },
+             waist: { up: 0.38 }, chest: { up: 0.32 }, head: { up: -0.26 }, thighL: { right: -0.12 }, hipY: -0.04 }],
+    [0.58, { armL: { fwd: 0.55, right: -1.30 }, foreL: { right: -0.30 }, clavL: { right: -0.16 },
+             waist: { up: -0.04 }, chest: { up: -0.10 }, head: { up: -0.02 }, thighR: { right: -0.14 }, hipY: -0.06 }],
+    [0.672, { armL: { fwd: 0.62, right: -1.32 }, foreL: { right: -0.30 }, clavL: { right: -0.32, fwd: 0.22 },
+              waist: { up: -0.42, right: 0.12 }, chest: { up: -0.46, right: 0.18 }, head: { up: 0.16 },
+              thighR: { right: -0.24 }, calfL: { right: 0.24 }, hipY: -0.09 }],
+    [0.84, { armL: { fwd: -0.48, right: -1.20 }, foreL: { right: -0.45 }, clavL: { right: -0.10 },
+             waist: { up: -0.50 }, chest: { up: -0.52, right: 0.10 }, head: { up: 0.24 },
+             thighR: { right: -0.18 }, hipY: -0.06 }],
+    [1.22, {}]], false));
+  /* THE ONE YOU ARE AFRAID OF. Both gauntlets over the helm, a long HANG at
+   * the top — a second and a half of it, which is the longest tell in the
+   * game and is the whole of what makes two damage fair — and then down the
+   * middle with the knees taking it. */
+  clips.push(build('kOver', 1.95, [
+    [0, {}],
+    [0.62, { armR: { right: -2.35 }, armL: { right: -2.35 }, foreR: { right: -0.40 }, foreL: { right: -0.40 },
+             chest: { right: -0.26 }, waist: { right: -0.14 }, head: { right: -0.30 }, hipY: 0.03 }],
+    [0.80, { armR: { right: -2.50 }, armL: { right: -2.50 }, foreR: { right: -0.46 }, foreL: { right: -0.46 },
+             chest: { right: -0.30 }, waist: { right: -0.16 }, head: { right: -0.34 }, hipY: 0.04 }],
+    [0.846, { armR: { right: -0.90 }, armL: { right: -0.90 }, foreR: { right: 0.02 }, foreL: { right: 0.02 },
+              clavR: { right: -0.28 }, clavL: { right: -0.28 }, chest: { right: 0.56 }, waist: { right: 0.42 },
+              head: { right: 0.18 }, thighL: { right: 0.38 }, thighR: { right: 0.38 },
+              calfL: { right: 0.62 }, calfR: { right: 0.62 }, hipY: -0.22 }],
+    [0.96, { armR: { right: -0.72 }, armL: { right: -0.72 }, foreR: { right: -0.12 }, foreL: { right: -0.12 },
+             clavR: { right: -0.16 }, clavL: { right: -0.16 }, chest: { right: 0.46 }, waist: { right: 0.34 },
+             head: { right: 0.14 }, thighL: { right: 0.32 }, thighR: { right: 0.32 },
+             calfL: { right: 0.54 }, calfR: { right: 0.54 }, hipY: -0.18 }],
+    [1.95, {}]], false));
+  /* AND HE CLOSES THE ROOM. A shoulder charge: he drops, sets, and comes
+   * across the nave behind the pauldron. It is the answer to backing away,
+   * which against something this slow is otherwise free. */
+  clips.push(build('kCharge', 1.55, [
+    [0, {}],
+    [0.42, { chest: { right: -0.18, up: -0.30 }, waist: { up: -0.20 }, armR: { right: -0.40, fwd: -0.35 },
+             armL: { right: -0.30 }, foreR: { right: -1.10 }, foreL: { right: -0.80 },
+             thighR: { right: 0.30 }, calfR: { right: 0.55 }, head: { up: 0.24, right: -0.10 }, hipY: -0.12 }],
+    [0.55, { chest: { right: 0.22, up: -0.16 }, waist: { up: -0.10 }, armR: { right: -0.70, fwd: -0.20 },
+             foreR: { right: -1.20 }, thighL: { right: -0.45 }, calfL: { right: 0.30 },
+             thighR: { right: 0.20 }, head: { right: 0.10 }, hipY: -0.06 }],
+    [0.645, { chest: { right: 0.40, up: -0.08 }, waist: { right: 0.22 }, armR: { right: -0.85, fwd: -0.10 },
+              foreR: { right: -1.25 }, clavR: { fwd: -0.30 }, thighL: { right: -0.62 }, calfL: { right: 0.18 },
+              thighR: { right: 0.34 }, calfR: { right: 0.42 }, head: { right: 0.22 }, hipY: -0.05 }],
+    [0.86, { chest: { right: 0.26 }, waist: { right: 0.12 }, armR: { right: -0.60 }, foreR: { right: -1.00 },
+             thighL: { right: -0.35 }, thighR: { right: 0.22 }, calfR: { right: 0.35 }, hipY: -0.06 }],
+    [1.55, {}]], false));
+  return clips;
+}
+/* THE TABLE. His startups are the longest in the game and that is the whole
+ * of his fairness: measured as seconds of visible approach, the shortest
+ * thing he throws is 0.58 s against a 0.20 s parry window, and the overhead
+ * hangs for a second and a half before it comes down. What makes him hard is
+ * what happens between the swings — he chains three deep, he answers a
+ * charge, and he closes the room when you back off. */
+MUT_ATTACKS.kSwing  = { wind: 0.72, strike: 0.16, recover: 0.46, hit: 0.718, reach: 2.70, lunge: 1.3, chain: 'kSwingL', chainP: 0.48, w: 0.30, guardK: 1.05, limbs: [0] };
+MUT_ATTACKS.kSwingL = { wind: 0.64, strike: 0.16, recover: 0.44, hit: 0.672, reach: 2.70, lunge: 1.2, chain: 'kOver', chainP: 0.30, w: 0.24, guardK: 1.05, limbs: [1] };
+MUT_ATTACKS.kOver   = { wind: 1.45, strike: 0.20, recover: 0.80, hit: 0.846, reach: 2.90, lunge: 0.8, chain: 'kSwing', chainP: 0.26, w: 0.22, dmg: 2, hold: true, guardK: 1.75, twoHanded: true };
+MUT_ATTACKS.kCharge = { wind: 0.78, strike: 0.28, recover: 0.72, hit: 0.645, reach: 6.20, lunge: 5.0, chain: 'kSwing', chainP: 0.55, w: 0.24, minDist: 4.2, guardK: 1.40, limbs: [0] };
+MUT_KINDS.knight = {
+  glb: 'assets/knight.glb', solo: true, noSand: true, skin: null, bones: null,
+  /* BIG. Three and a half metres of plate in a nave whose vault is thirteen
+   * up: he is half again your height at the shoulder and the reaches and the
+   * body radius are measured off the model rather than off a man. */
+  h: 3.45, hp: 30, dmg: 1, hitR: 1.35, body: 1.15, uc: true,
+  speedK: 0.92, windK: 1.00, reachK: 1.00, aggr: 1.85, press: 0.74,
+  use: { kSwing: 0.30, kSwingL: 0.22, kOver: 0.26, kCharge: 0.22 },
+  circle: 0.30, step: 0.24, chainMax: 3, feint: 0.24,
+  poise: 11, poiseBack: 1.7, poiseWait: 1.2, parryK: 0.80, recoilK: 0.72, blockCost: 1.00,
+  block: 0.34, fidgetK: 0.22, fidgetGap: 3.0,
+  reacts: true, aimed: true, barLen: 0.34, aimK: 1.55, bossDeath: true,
+  rig: { arm: 'upperarm_r', fore: 'lowerarm_r', hand: 'hand_r',
+         armL: 'upperarm_l', foreL: 'lowerarm_l', handL: 'hand_l', head: 'head' },
+  rag: { Character1_Hips: 'pelvis', Character1_Spine: 'spine_01', Character1_Spine1: 'spine_03',
+         Character1_Spine2: 'spine_05', Character1_Neck: 'neck_01', Character1_Head: 'head',
+         Character1_RightShoulder: 'clavicle_r', Character1_RightArm: 'upperarm_r',
+         Character1_RightForeArm: 'lowerarm_r', Character1_RightHand: 'hand_r',
+         Character1_LeftShoulder: 'clavicle_l', Character1_LeftArm: 'upperarm_l',
+         Character1_LeftForeArm: 'lowerarm_l', Character1_LeftHand: 'hand_l',
+         Character1_RightUpLeg: 'thigh_r', Character1_RightLeg: 'calf_r',
+         Character1_RightFoot: 'foot_r', Character1_RightToeBase: 'ball_r',
+         Character1_LeftUpLeg: 'thigh_l', Character1_LeftLeg: 'calf_l',
+         Character1_LeftFoot: 'foot_l', Character1_LeftToeBase: 'ball_l' },
+  /* AND HE IS NOT LIT. He is standing in the dark against a wall and the
+   * whole of the first beat is that you did not know he was there — so the
+   * emissive lift is a third of what the pack carries and the rim barely
+   * separates him. Under the altar's own candles that is enough to read as
+   * plate; away from them he is a shape. */
+  emis: 0.055, rim: [0.046, 0.056, 0.082], gamma: 0.80,
+  author: authorKnightClips, first: 'idle', sleepIdle: 'idle', sleepStill: true,
+  anim: { idle: 'idle', walk: 'walk', run: 'run', roar: 'roar', die: 'hurt', back: 'walk',
+          rate: 0.92, lean: 0.05, strafeK: 1.0 },
+  alias: { idle2: 'idle', walk2: 'walk', run2: 'run', roar2: 'roar', die: 'hurt', die2: 'hurt',
+           back: 'walk', hit: 'hurt', calm: 'idle', strafeL: 'strafe', strafeR: 'strafe' },
+  provoke: knightProvoke,
+  /* a voice out of a helmet: the bellow, pitched down, with the rasp taken
+   * off it — there is no throat in there */
+  voice: { f: 0.62, growl: 1.30, rasp: 0.45, throat: 'bellow' },
+};
+
+
+/* ---------------------------------------------------------------- the idol
+ * WHAT TOUCHING IT DOES. One clock, three beats, each fired once: a second
+ * of nothing, then it goes over about its own foot, then it lands and comes
+ * apart and the knight is awake. The tip is about the base and not the
+ * middle, because a thing that falls off a table rotates about the edge it
+ * catches on. */
+let ucTouched = false, ucTipT = -1, ucTipped = false, ucBroke = false;
+let knightUnit = null, knightFight = false;
+const UC_TIP_WAIT = 1.0, UC_TIP_FALL = 0.62;
+const _idW = new THREE.Vector3(), _idQ = new THREE.Quaternion(), _idE = new THREE.Euler();
+function updateIdol(dt) {
+  if (ucTipT < 0 || ucBroke || !UC.ready || !UC.idol) return;
+  ucTipT += dt;
+  const t = ucTipT - UC_TIP_WAIT;
+  if (t < 0) return;
+  if (!ucTipped) {
+    ucTipped = true;
+    UC.idol.userData.tipBase = UC.idol.rotation.z || 0;
+    /* it falls the way you are standing, so it comes at you rather than
+     * away — the one thing that makes a falling object read as an event */
+    const sp = UC.spots.altar;
+    UC.idol.userData.tipAway = Math.sign((camera.position.z - UC_Z) - sp.z) || 1;
+  }
+  const k = THREE.MathUtils.clamp(t / UC_TIP_FALL, 0, 1);
+  /* an object going over accelerates: it hangs on the edge and then it is
+   * gone, which is t squared and not a smoothstep */
+  const e = k * k;
+  UC.idol.rotation.x = UC.idol.userData.tipAway * e * (Math.PI * 0.52);
+  UC.idol.position.y = (UC.idol.userData.tipY === undefined
+    ? (UC.idol.userData.tipY = UC.idol.position.y) : UC.idol.userData.tipY) - e * 0.55;
+  if (k < 1) return;
+  ucBroke = true;
+  shatterIdol();
+  if (knightUnit) knightProvoke(knightUnit);
+}
+/* IT COMES APART INTO WHAT IT IS MADE OF, the coat stand's rule and the
+ * pew's machinery: every mesh of it cut on a half-metre grid, each chunk
+ * centred on ITSELF (or `updateGibs` lays the model's origin on the floor
+ * and the piece goes on standing where it stood), thrown away from the
+ * altar and down, and NOT BLEEDING — the flag defaults to on because the
+ * system was written for severed limbs. */
+function shatterIdol() {
+  const root = UC.idol;
+  if (!root) return;
+  root.updateMatrixWorld(true);
+  const A = UC.spots.altar;
+  const ax = UC_X + A.x, az = UC_Z + A.z;
+  let n = 0;
+  root.traverse((o) => {
+    if (!o.isMesh || !o.geometry || !o.geometry.attributes.position) return;
+    const geo = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry;
+    const pos = geo.attributes.position, uv = geo.attributes.uv;
+    const CELL = 0.26, cells = new Map();
+    const w = new THREE.Vector3();
+    for (let t = 0; t + 2 < pos.count; t += 3) {
+      let mx = 0, my = 0, mz = 0;
+      const P = [];
+      for (let v = t; v < t + 3; v++) {
+        w.fromBufferAttribute(pos, v).applyMatrix4(o.matrixWorld);
+        P.push(w.x, w.y, w.z); mx += w.x; my += w.y; mz += w.z;
+      }
+      mx /= 3; my /= 3; mz /= 3;
+      const key = Math.floor(mx / CELL) + ',' + Math.floor(my / CELL) + ',' + Math.floor(mz / CELL);
+      let c = cells.get(key);
+      if (!c) cells.set(key, c = { p: [], u: [], cx: 0, cy: 0, cz: 0, k: 0 });
+      c.p.push(...P);
+      if (uv) for (let v = t; v < t + 3; v++) c.u.push(uv.getX(v), uv.getY(v));
+      c.cx += mx; c.cy += my; c.cz += mz; c.k++;
+    }
+    for (const c of cells.values()) {
+      const ccx = c.cx / c.k, ccy = c.cy / c.k, ccz = c.cz / c.k;
+      const g = new THREE.BufferGeometry();
+      const arr = new Float32Array(c.p.length);
+      for (let i = 0; i < c.p.length; i += 3) { arr[i] = c.p[i] - ccx; arr[i + 1] = c.p[i + 1] - ccy; arr[i + 2] = c.p[i + 2] - ccz; }
+      g.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+      if (c.u.length) g.setAttribute('uv', new THREE.BufferAttribute(Float32Array.from(c.u), 2));
+      g.computeVertexNormals();
+      const m = new THREE.Mesh(g, o.material);
+      m.position.set(ccx, ccy, ccz);
+      scene.add(m);
+      let dx = ccx - ax, dz = ccz - az;
+      const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+      const out = 0.9 + Math.random() * 1.9;
+      gibs.push({ m, half: 0.06, rest: 0.05,
+        vel: new THREE.Vector3(dx * out + (Math.random() - 0.5) * 1.1, 0.9 + Math.random() * 1.4, dz * out + (Math.random() - 0.5) * 1.1),
+        spin: new THREE.Vector3((Math.random() - 0.5) * 9, (Math.random() - 0.5) * 7, (Math.random() - 0.5) * 9),
+        life: 900, bleed: false, wait: Math.min(0.18, (n++) * 0.006) });
+    }
+    o.visible = false;
+  });
+  root.visible = false;
+  if (!sfxTableBreak()) sfxWoodSnap();
+  sfxSlam();
+  addTrauma(0.35);
+}
+/* THE WALL STOPS BEING A WALL. He has been standing there since you walked
+ * in — hidden, asleep, and in the blade's own creature test the whole time,
+ * because that test does not ask whether a creature is visible. */
+function knightProvoke(u) {
+  if (knightFight) return;
+  knightFight = true;
+  u.g.visible = true;
+  u.st.awake = true; u.st.roar = 1.8; u.st.roarClip = 'roar'; u.st.cool = 0.55; u.st.step = 0;
+  u.g.rotation.y = Math.atan2(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
+  const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
+  sfxMutRoar(d, u.kind.voice);
+  addTrauma(0.5);
+  setPrompt('');
 }
 
 /* He is put on the sand facing the WRECK, not facing you — he is looking at
@@ -29383,6 +29726,62 @@ function armUndercroft(S) {
     b.prop = prop;
     physProps.push(prop);
   }
+  /* ---------------------------------------------------------- the altar
+   * TOUCH IT AND IT GOES OVER. The idol on the altar is the only thing in
+   * the building the room is arranged around — the candles ring it, both
+   * lamps point at it, the dais steps up to it — so it is the thing you walk
+   * up to, and "Touch" is the whole of the invitation. A second passes, in
+   * which nothing happens and you are standing there having done it, and
+   * then it tips and breaks across the floor and the wall to your left stops
+   * being a wall.
+   *
+   * The beat between is the point: a jump scare arrives before you can
+   * understand it, and being given a second to realise what you have just
+   * done is worse. */
+  /* ------------------------------------------------- and who is beside it
+   * WHERE HE STANDS IS MEASURED, NOT TYPED. From the altar, step toward the
+   * wall on your LEFT — which walking up the nave (+x) is -z — until the
+   * floor runs out, then come back a body's width. He faces down the nave,
+   * the way you will be coming, and he is hidden: `provoke` is what reveals
+   * him, and until then he is a creature nobody can see standing in a place
+   * the walk agrees he fits. */
+  if (MUT_KINDS.knight && !knightUnit) {
+    const A = sp.altar;
+    const kx = A.x - 1.6;
+    /* AND THE FLOOR IS RE-READ AT EVERY STEP. Holding the altar's own floor
+     * height for the whole scan stops the walk dead at the dais — the first
+     * step down off it is a bigger drop than the walk allows from where it
+     * thinks your feet are — and the wall came back forty centimetres from
+     * the altar instead of six metres. */
+    /* AND IT STEPS OVER A GAP, because a walk grid sampled off a scan has
+     * lone blocked cells in it — this file has flooded and cleaned eighteen
+     * of them in the church already, and there is one more at z = 4.5 on
+     * exactly this line. Stopping at the first miss put the "wall" forty
+     * centimetres from the altar; three in a row is a wall. */
+    const f0 = UC.floorAt(kx, A.z);
+    let wz = A.z, miss = 0;
+    for (let z = A.z; z > A.z - 18; z -= 0.2) {
+      const fz = UC.floorAt(kx, z);
+      if (fz === null || !UC.walkable(kx, z, fz)) { if (++miss >= 3) break; continue; }
+      miss = 0; wz = z;
+    }
+    const kz = wz + 1.15;
+    const ky = UC.floorAt(kx, kz);
+    knightUnit = makeMutant(UC_X + kx, UC_Z + kz, 'knight', UC_Y + (ky === null ? (f0 === null ? 0 : f0) : ky));
+    knightUnit.g.visible = false;
+    knightUnit.g.rotation.y = Math.PI / 2;          // facing down the nave, at the door
+    window.__bwKnight = [kx.toFixed(2), kz.toFixed(2), (wz).toFixed(2)];
+  }
+  if (S.idol) {
+    const A = sp.altar;
+    const touch = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.2, 1.8), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    touch.name = 'hitProxy'; touch.visible = false;
+    touch.position.set(A.x, A.y + 0.9, A.z);
+    undercroft.add(touch);
+    addInteractable(touch, 'Touch', 'default', { far: 3.4, mid: true,
+      when: () => inUndercroft && !ucTouched,
+      onActivate: () => { if (ucTouched) return; ucTouched = true; ucTipT = 0; setPrompt(''); sfxThud(0.05); } });
+  }
   ucWarm = () => {
     const E = sp.entry, M = sp.mouth, X = sp.exit;
     const px = UC_X + E.x, py = UC_Y + E.y + 1.6, pz = UC_Z + E.z;
@@ -29977,6 +30376,7 @@ window.__bw = {
     if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
     oceanUniforms.uTime.value += dt;
     update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
+    updateIdol(rawDt);
     updateLightPool();
   },
   /* The lamp pool, for a still: a frozen loop never points the twelve at

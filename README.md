@@ -732,3 +732,13 @@ by [Pasha](https://sketchfab.com/Pasha.), under the
 by [TwilightFox](https://sketchfab.com/twilightfox), under the
 [Sketchfab Standard licence](https://sketchfab.com/licenses) — commercial use
 and derivative works allowed.
+
+"Iron Juggernaut" by IronSpear — the armoured knight standing against the wall
+to the left of the altar in the church (`assets/knight.glb`, through
+`tools/knight_pack.py`). Its two UDIM texture tiles are packed side by side
+into one atlas and every u halved, so the whole knight is three materials; its
+metallic map is dropped, because a metal has no diffuse term and this game has
+no environment map; and its occlusion is multiplied into its albedo, because
+one directional light that is somewhere else entirely never shades a crease.
+Its file ships six locomotion clips and NOT ONE SWING — the fight is authored
+in code on the stance its own idle carries, the way the witness's is.
