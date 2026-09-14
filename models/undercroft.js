@@ -1487,7 +1487,16 @@ export function makeUndercroft(opts = {}) {
     /* nothing wears `cave` any more — both tunnels are bores with their own
      * material — but the default kind is still 'cave', so it stays as the
      * thing an unlabelled material would get. */
-    cave:   { dust: 0.52, damp: 0.42, level: 0.46, emis: 0.14, tint: 0xa9a69c, knee: 0.0 },
+    /* DARKER, on the owner's word — and it can be, now: the glowstick comes
+     * out of the crate at the top of the beach rather than a cache halfway
+     * down it, so you have a light in your hand before you ever reach the
+     * hole in the sand wall, and the altar's beacon is at the end of the
+     * bore whatever the fog does. Measured as mean screen luminance against
+     * an open beach's 7.3, the tunnel read 5.1-6.3; it is a hole in the
+     * ground and it should read as one. (3.6 was tried once and is too far
+     * — you cannot see the timber, and a tunnel you cannot read is annoying
+     * rather than frightening.) */
+    cave:   { dust: 0.52, damp: 0.46, level: 0.30, emis: 0.085, tint: 0xa9a69c, knee: 0.0 },
     /* THE SCAN CARRIES THE DAYLIGHT IT WAS BAKED IN, AND AN EMISSIVE LIFT
      * TURNS EVERY BAKED HIGHLIGHT INTO A LAMP. This church's albedo was lit
      * from outside before anybody photographed it, so the sunlit edge of
@@ -1776,12 +1785,27 @@ export function makeUndercroft(opts = {}) {
     root.traverse((o) => {
       if (!o.isMesh || !o.material || (o.material.name || '') !== 'Water') return;
       o.userData.bwDecor = true;
+      /* AND THE GAME HAS TO KNOW WHERE IT IS, so a footstep in the channel
+       * can sound like one. It is MEASURED LATER, in `composeInner`: here the
+       * root has not been added to the group yet, so its world matrix is
+       * still its local one and `worldToLocal` takes the group's offset off a
+       * number that never had it — measured, the box came back three
+       * thousand metres out. `Box3.setFromObject` reads `matrixWorld`, and
+       * this file has now paid for that four times. */
+      S.waterMesh = o;
       const m = o.material;
-      m.color.setHex(0x1d2630);
-      m.emissive.setHex(0x0a1119);
+      /* AND IT COMES DOWN WITH THE ROCK. The water's look is set HERE, after
+       * `dress`, so it does not move when `LOOK.cave` does — and with the
+       * tunnel taken down to a third of its old level the channel was
+       * suddenly the brightest thing in the bore, a pale band at the
+       * threshold where the clip cuts it. What has to survive is that it
+       * takes a HIGHLIGHT, which is the only thing that says water; the
+       * level underneath it can go wherever the stone goes. */
+      m.color.setHex(0x151c25);
+      m.emissive.setHex(0x060b12);
       m.emissiveIntensity = 1;
-      m.roughness = 0.18;
-      m.metalness = 0.30;
+      m.roughness = 0.16;
+      m.metalness = 0.34;
       m.needsUpdate = true;
     });
     smoothRock(root);
@@ -2042,7 +2066,18 @@ export function makeUndercroft(opts = {}) {
        * end is clipped in — a hand PAST the doorway, so the bore's mouth is
        * inside the breach and the join has no seam on either side of it. */
       {
-        const hiX = group.localToWorld(new THREE.Vector3(low.x + GAP + 0.55, 0, 0)).x;
+        /* AND IT STOPS AT THE WALL, NOT A METRE AND A QUARTER PAST IT.
+         * The clip was written as "a hand past the mouth" — `low.x + GAP +
+         * 0.55` — and the doorway's filler panel stands at `D[0] + off.x +
+         * 0.14`, which measured is 1.21 m BEHIND that. So the last metre of
+         * the tunnel's rock came through the hole and hung in the nave: a
+         * rounded brown boulder plugging the arch, which is the entry the
+         * owner photographed. It is cut on the PANEL'S OWN PLANE now, a
+         * finger past it, so from the nave what you see is the church's wall
+         * with a hole broken through it and the bore receding into the dark
+         * — and from the tunnel the panel faces away and is not drawn, so
+         * there is still nothing between you and the room. */
+        const hiX = group.localToWorld(new THREE.Vector3(D[0] + off.x + 0.26, 0, 0)).x;
         S.passage.root.traverse((o) => {
           if (!o.isMesh) return;
           for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
@@ -2210,6 +2245,58 @@ export function makeUndercroft(opts = {}) {
       fm.needsUpdate = true;
       group.add(fill);
       S.doorFill = fill;
+      /* ---- AND A WALL THAT WAS BROKEN THROUGH LEAVES ITS WALL ON THE FLOOR.
+       *
+       * With the tunnel cut back to the wall's own plane the arch reads as a
+       * hole — and a hole with a clean floor under it reads as a hole that
+       * was CUT, which is the wrong story: the front door of this church has
+       * been walled up and something has come through the bottom of it. The
+       * spoil is what says so. A double handful of broken stone in the
+       * WALL'S OWN material, spilling out of the break and thinning into the
+       * nave, each lump sunk to half its own depth so nothing sits on the
+       * flags like a dropped prop — the beach's caches have settled their
+       * clods this way since they went in.
+       *
+       * It is scattered on a FIXED hash, not `Math.random`: everything in
+       * this game is rebuilt from seed on a checkpoint load, and rubble that
+       * moves when you die is rubble you notice. */
+      {
+        let rh = 1337;
+        const rnd = () => { rh = (rh * 1103515245 + 12345) & 0x7fffffff; return rh / 0x7fffffff; };
+        const rubMat = patchMat(S.wallMat || findMat(S.church.root));
+        const spill = new THREE.Group();
+        for (let k = 0; k < 26; k++) {
+          /* out of the break and into the room: dense at the arch, thinning
+           * over three metres, and never further from the line than the
+           * opening is wide */
+          /* AND IT STAYS AT THE BREAK. Thrown three and a half metres into
+           * the nave it is not spoil any more, it is scenery you walk
+           * through — and since nothing here has a collider, a lump out on
+           * the flags ends up inside your boots. Two metres, thinning. */
+          const t = rnd();
+          const out = 0.15 + t * t * 1.95;
+          const sz = (0.10 + rnd() * 0.30) * (1 - t * 0.45);
+          const m = new THREE.Mesh(new THREE.IcosahedronGeometry(sz, 0), rubMat);
+          const spread = (0.5 + t * 1.4) * mouthCol.w * 0.32;
+          m.position.set(wallX + out, cy - sz * 0.55, cz + (rnd() - 0.5) * 2 * spread);
+          m.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3);
+          m.scale.set(1, 0.62 + rnd() * 0.4, 1);         // a broken block is flatter than a ball
+          spill.add(m);
+        }
+        /* and a low bank of it right in the mouth, so the break has a
+         * threshold to step over rather than an edge */
+        for (let k = 0; k < 9; k++) {
+          const sz = 0.16 + rnd() * 0.26;
+          const m = new THREE.Mesh(new THREE.IcosahedronGeometry(sz, 0), rubMat);
+          m.position.set(wallX - 0.12 - rnd() * 0.5, cy - sz * 0.55, cz + (rnd() - 0.5) * mouthCol.w * 0.7);
+          m.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3);
+          m.scale.set(1, 0.55 + rnd() * 0.3, 1);
+          spill.add(m);
+        }
+        spill.traverse((o) => { if (o.isMesh) o.frustumCulled = true; });
+        group.add(spill);
+        S.spill = spill;
+      }
     }
     /* AND NOTHING OUTSIDE IT. Sixteen of fifteen hundred rays cast from
      * the middle of the nave hit no geometry at all — the scan has holes
@@ -2464,6 +2551,15 @@ export function makeUndercroft(opts = {}) {
       const c = box.getCenter(new THREE.Vector3());
       group.worldToLocal(c);
       S.spots.lamps.push({ x: c.x, y: c.y, z: c.z, kind: b.material.name === 'ampoule' ? 'church' : 'cave' });
+    }
+    /* the water channel's plane, in the group's own frame, now that the
+     * passage really is in the group and the matrices are up to date */
+    if (S.waterMesh) {
+      group.updateMatrixWorld(true);
+      const bb = new THREE.Box3().setFromObject(S.waterMesh);
+      const a = group.worldToLocal(bb.min.clone()), b = group.worldToLocal(bb.max.clone());
+      S.water = { y: Math.max(a.y, b.y), x0: Math.min(a.x, b.x), x1: Math.max(a.x, b.x),
+                  z0: Math.min(a.z, b.z), z1: Math.max(a.z, b.z) };
     }
     /* the model is carved back out of the walk — both tunnels, once both
      * corridors are in `S.corridors` */

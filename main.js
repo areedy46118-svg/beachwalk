@@ -4619,7 +4619,33 @@ S_SFX.addEventListener('input', () => { settings.sfxVolume = +S_SFX.value; apply
 S_MUSIC.addEventListener('input', () => { settings.musicVolume = +S_MUSIC.value; applySettings(); saveSettings(); });
 S_SPEED.addEventListener('input', () => { settings.walkSpeed = +S_SPEED.value; applySettings(); saveSettings(); });
 S_INVERT.addEventListener('change', () => { settings.invertY = S_INVERT.checked; saveSettings(); });
-S_DEV.addEventListener('change', () => { settings.devMode = S_DEV.checked; saveSettings(); });
+S_DEV.addEventListener('change', () => {
+  settings.devMode = S_DEV.checked;
+  saveSettings();
+  if (settings.devMode) devGrantWeapons();
+});
+/* ---- AND DEV MODE HANDS YOU THE TOOLS, FOR GOOD.
+ *
+ * Dev mode is for walking the beach and testing the fights, and both of
+ * those need something in your hands — the two shovels are an hour's walk
+ * apart and the katana is past the drain, so testing the knight meant
+ * playing most of the game first. Turning it on gives you every dig tool
+ * you do not already have; turning it OFF does not take them back, which is
+ * the owner's word and is also the only behaviour that makes sense: an
+ * inventory is a thing you have, not a mode you are in.
+ *
+ * They are the SAME item objects the world hands out, so the view model,
+ * the icon, the pack, the examine screen and the save's own replay all
+ * behave exactly as if you had picked each one up. The world copies stay
+ * where they are; `addToInventory` is only reached for a tool the pack does
+ * not already hold, so taking one afterwards cannot double it. */
+function devGrantWeapons() {
+  for (const it of [shovelItem, militaryItem, katanaItem]) {
+    if (!it || inventory.includes(it)) continue;
+    addToInventory(it);
+  }
+  if (!equipped && inventory.includes(shovelItem)) toggleEquip(shovelItem);
+}
 document.getElementById('m-resume').addEventListener('click', closeMenu);
 document.getElementById('m-reset').addEventListener('click', () => {
   settings = { ...DEFAULT_SETTINGS };
@@ -5648,6 +5674,13 @@ function takeOffRing(i) {
 }
 
 function addToInventory(item) {
+  /* AND THE SAME THING CANNOT BE HAD TWICE. Every takeable that can be
+   * picked up more than once (the shells, the note) builds a FRESH item
+   * object, so identity is a safe test — and it is needed now that dev mode
+   * hands out the dig tools whose world copies are still lying on the sand
+   * waiting to be taken. `wearRing` has refused a duplicate this way since
+   * the day a ring appeared twice. */
+  if (inventory.includes(item)) return true;
   if (inventory.length >= INV_MAX) return false;
   inventory.push(item);
   renderHotbar();
@@ -9360,16 +9393,23 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
 
   const first = m === mounds[0];               // THE first mound, not the first you happen to dig
   const second = m === mounds[1];              // and the second one has the CD in it
-  const relic = first ? makeGlowstick() : (second ? makeCdCase() : makeBuriedObject());
-  relic.position.set(m.x, first ? 0.055 : (second ? 0.052 : 0.09), m.z);
+  /* THE FIRST CACHE HAS THE RING IN IT, AND THE CRATE HAS THE LIGHT. They
+   * were the other way round; the owner swapped them. It reads better this
+   * way round anyway — the shovel's first use turns up the smallest and
+   * strangest thing in the game, and the crate you have to break open gives
+   * you the thing that lets you see. `dropRing` places itself wherever it is
+   * told now, so nothing here knows how a ring is built. */
+  if (first) { dropRing(m.x, 0.10, m.z, 0.7); return; }
+  const relic = second ? makeCdCase() : makeBuriedObject();
+  relic.position.set(m.x, second ? 0.052 : 0.09, m.z);
   /* The CD is STOOD UP in the sand, not laid flat. Face up it is a
    * hand-sized rectangle seen edge-on from standing height and it read as a
    * sliver; leaning back out of the hole the cover faces you and catches
    * the moon. */
   relic.rotation.set(
-    first ? 0 : (second ? -0.62 : (Math.random() - 0.5) * 0.5),
+    second ? -0.62 : (Math.random() - 0.5) * 0.5,
     second ? Math.PI * 0.12 : Math.random() * Math.PI * 2,
-    first ? 0 : (second ? -0.16 : (Math.random() - 0.5) * 0.4));
+    second ? -0.16 : (Math.random() - 0.5) * 0.4);
   const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.36, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   proxy.name = 'hitProxy'; proxy.visible = false; relic.add(proxy);
@@ -9380,16 +9420,13 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
    * past people. Everything a mound gives up now carries the same shine
    * every other takeable does, at a good size, so there is something
    * standing where you dug once the sand settles. */
-  if (!first) addItemShine(relic, { size: 0.85, height: 0.16, strength: 1.5 });
-  if (first) { relic.updateMatrixWorld(true); placeGroundGlow(relic); }
-  addInteractable(relic, first ? 'Take the glowstick' : (second ? 'Take the CD' : 'Take the buried object'), 'inventory', {
+  addItemShine(relic, { size: 0.85, height: 0.16, strength: 1.5 });
+  addInteractable(relic, second ? 'Take the CD' : 'Take the buried object', 'inventory', {
     onActivate: () => {
-      if (first) sfxGlassPick(); else sfxThud(0.04);
+      sfxThud(0.04);
       scene.remove(relic);
-      if (first) placeGroundGlow(null);       // the held light takes over
       hovered = null;
-      if (first) { addToInventory(glowstickItem); toggleEquip(glowstickItem); }
-      else if (second) { addToInventory(cdItem); }
+      if (second) { addToInventory(cdItem); }
       else {
         const buried = { name: 'Buried object', icon: '📦' };
         buried.use = () => toggleEquip(buried);
@@ -10798,7 +10835,7 @@ if (lhParts.lampProxy) {
 // a metre and a half off the cliff foot, where the moon actually reaches — at
 // x = 12.8 it stood in the cliff's own shadow and read as a dark box at best
 const CRATE_X = 11.4, CRATE_R = 0.52, CRATE_H = 0.72;
-const CRATE_POWER = 0.75;              // ~0.64 s of charge — a real haul-back
+const CRATE_POWER = 0.75;              // kept for the save's sake; no longer a gate — any hit opens a crate
 const crateZ = bradly.position.z - 2.5;
 /* There is more than one now — the dock has its own — so the crate is a
  * factory: `buildCrate(x, y, z, yaw, onBreak)` builds the boards, stands a
@@ -10907,7 +10944,7 @@ function buildCrate(x, y, z, yaw, onBreak) {
   crates.push(entry);
   return entry;
 }
-const crateEntry = buildCrate(CRATE_X, 0, crateZ, -0.32, () => dropRing());
+const crateEntry = buildCrate(CRATE_X, 0, crateZ, -0.32, (c) => dropGlowstick(c));
 const crate = crateEntry.group;
 
 /* The castle under the blade. Any swing takes it — it is sand — and the
@@ -10930,30 +10967,37 @@ function crateStrike(P) {
   for (const c of crates) {
     if (c.broken) continue;
     if (!digRay.intersectObject(c.group, true).length) continue;
-    if (P >= CRATE_POWER) { hitConnect(P, 1); flashMats(c.group); breakCrate(c); return true; }
-    hitConnect(P, 0.45); flashMats(c.group);
-    // it holds. The blade jars back at you, and a puff of dust off the boards
-    // says you connected — a swing that hits and does nothing must not feel
-    // the same as a swing that hit nothing at all.
-    sfxCrateThud();
-    addTrauma(0.17);
-    vmImpulse(-1.15);
-    spawnPuffs(c.x, c.z, 5, _pf.x, _pf.z, c.y + CRATE_H * 0.7, [0.52, 0.42, 0.30]);
+    /* ANY HIT BREAKS IT, LIGHT OR HEAVY — the owner's word. It was the game's
+     * one lock (`CRATE_POWER`, about two thirds of a charge) and the one
+     * place that asked for the heavy swing by name; a click thudded off the
+     * boards and did nothing, which is a thing you can do three times before
+     * you work out the game wants something else from you. The charge is
+     * still worth holding everywhere it was — it is two points of damage
+     * against one, it reaches further, and it breaks poise — it simply no
+     * longer gates a box. The blow still SCALES: a click taps it apart, a
+     * charge throws the boards. */
+    hitConnect(P, Math.max(0.55, P));
+    flashMats(c.group);
+    breakCrate(c, P);
     return true;
   }
   return false;
 }
 
-function breakCrate(c = crates[0]) {
+function breakCrate(c = crates[0], P = 1) {
   if (!c || c.broken) return;
   c.broken = true;
   scene.remove(c.group);
   const ci = rockColliders.indexOf(c.collider);
   if (ci >= 0) rockColliders.splice(ci, 1);
   sfxCrateBreak();
-  addTrauma(0.5);
-  hitstop = 0.06;
-  spawnPuffs(c.x, c.z, 18, _pf.x, _pf.z, c.y + CRATE_H * 0.6, [0.52, 0.42, 0.30]);
+  /* HOW HARD IT CAME APART IS HOW HARD IT WAS HIT. Now that a click opens a
+   * crate, the charge has to be worth something here anyway: a tap drops the
+   * boards at your feet and a full swing throws them. */
+  const k = 0.55 + P * 0.75;
+  addTrauma(0.5 * k);
+  hitstop = 0.04 + P * 0.04;
+  spawnPuffs(c.x, c.z, Math.round(10 + P * 12), _pf.x, _pf.z, c.y + CRATE_H * 0.6, [0.52, 0.42, 0.30]);
 
   // the boards, as real gibs so they bounce and settle with everything else
   const splint = new THREE.MeshStandardMaterial({
@@ -10967,15 +11011,45 @@ function breakCrate(c = crates[0]) {
       c.y + 0.1 + Math.random() * CRATE_H, c.z + (Math.random() - 0.5) * 0.5);
     m.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
     scene.add(m);
-    const a = Math.random() * Math.PI * 2, out = 0.9 + Math.random() * 2.0;
+    const a = Math.random() * Math.PI * 2, out = (0.9 + Math.random() * 2.0) * k;
     gibs.push({
       m,
-      vel: new THREE.Vector3(Math.cos(a) * out, 1.9 + Math.random() * 2.4, Math.sin(a) * out),
+      vel: new THREE.Vector3(Math.cos(a) * out, (1.9 + Math.random() * 2.4) * k, Math.sin(a) * out),
       spin: new THREE.Vector3((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14),
       rest: 0.02, life: 40, bleed: false,   // the deck, if any, is found per frame
     });
   }
   if (c.onBreak) c.onBreak(c);
+}
+
+/* ---- WHAT THE CRATE HAS IN IT: THE LIGHT.
+ *
+ * It lands on the sand where the boards were, already lit — which is the
+ * whole reason it is the crate's and not a cache's now. You break a box open
+ * in the dark and something in it is glowing; there is no shine to add and
+ * nothing to miss, because the thing IS the light. */
+function dropGlowstick(c) {
+  const g = makeGlowstick();
+  g.position.set(c.x + (Math.random() - 0.5) * 0.22, c.y + 0.055, c.z + (Math.random() - 0.5) * 0.22);
+  g.rotation.set(0, Math.random() * Math.PI * 2, 0);
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.32, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy'; hit.visible = false; hit.position.y = 0.05;
+  g.add(hit);
+  scene.add(g);
+  g.updateMatrixWorld(true);
+  placeGroundGlow(g);
+  addInteractable(g, 'Take the glowstick', 'inventory', {
+    onActivate: () => {
+      sfxGlassPick();
+      scene.remove(g);
+      removeInteractable(g);
+      placeGroundGlow(null);                 // the held light takes over
+      hovered = null;
+      addToInventory(glowstickItem);
+      toggleEquip(glowstickItem);
+    },
+  });
 }
 
 /* What was in it. The ring goes down on the sand where the crate stood, with
@@ -11141,10 +11215,15 @@ function dropKey(c) {
 }
 
 let ringProp = null;
-function dropRing() {
+/* WHERE IT COMES FROM IS THE CALLER'S BUSINESS. It was thrown out of the
+ * crate under Bradly; it is dug out of the first cache now, and the only
+ * difference between those is where it lands and how hard it is tossed —
+ * a thing that comes out of a hole in the sand is lifted out of it, not
+ * flung across the beach. */
+function dropRing(sx = CRATE_X, sy = CRATE_H * 0.55, sz = crateZ, toss = 1.6) {
   ring.position.set(0, 0.012, 0);
   ring.rotation.set(Math.PI / 2 - 0.35, 0.4, 0);      // flat, tipped a little
-  ringWorld.position.set(CRATE_X, CRATE_H * 0.55, crateZ);
+  ringWorld.position.set(sx, sy, sz);
   scene.add(ringWorld);
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
@@ -11154,9 +11233,9 @@ function dropRing() {
   // a body of its own, but NOT makeProp(): that would register it as a
   // grab-and-throw physics prop, and a ring is a thing you take
   ringProp = new PhysProp(ringWorld, { radius: 0.05, restH: 0.012, bounce: 0.38, friction: 0.55 });
-  const tx = camera.position.x - CRATE_X, tz = camera.position.z - crateZ;
+  const tx = camera.position.x - sx, tz = camera.position.z - sz;
   const td = Math.hypot(tx, tz) || 1;
-  ringProp.vel.set((tx / td) * 1.6 + (Math.random() - 0.5) * 0.4, 3.4, (tz / td) * 1.6 + (Math.random() - 0.5) * 0.4);
+  ringProp.vel.set((tx / td) * toss + (Math.random() - 0.5) * 0.4, 2.0 + toss, (tz / td) * toss + (Math.random() - 0.5) * 0.4);
   ringProp.angVel.set(6, 9, 4);
   let rang = false;
   ringProp.onImpact = (speed) => { if (!rang && speed > 1.2) { rang = true; sfxRingLand(); } };
@@ -11774,10 +11853,59 @@ function sfxStepWood() {
  * out. The nave keeps its recorded stone floor — that one is a church and
  * should sound like one — and everywhere else underground is the game's own
  * step, which is what the drain had before any of this. */
+/* ---- ARE YOU IN THE CHANNEL? The tunnel's floor is a plane of standing
+ * water down the middle of the bore — it is what you actually wade along —
+ * and it made no sound at all, so the one stretch of the game where you can
+ * see you are walking through water was the one where you could not hear it.
+ * The module hands over the plane's top and its footprint; a foot is in it
+ * when it is inside that footprint and within a boot's depth of the top. */
+function ucInWater() {
+  if (!inUndercroft || !UC.ready || !UC.water) return false;
+  const lx = camera.position.x - UC_X, lz = camera.position.z - UC_Z;
+  /* AND IT IS THE TUNNEL'S CHANNEL, NOT ANY FLOOR AT THAT HEIGHT. The
+   * water's BOUNDING BOX is fifteen metres wide and a hundred and fifty
+   * long — far bigger than the plane's drawn extent — and its far end laps
+   * seven metres into the nave, so a box test alone splashed on the
+   * church's flags. `inPassage` is the model's own footprint and it is the
+   * question actually being asked. */
+  if (UC.inPassage && !UC.inPassage(lx, lz)) return false;
+  const W = UC.water;
+  if (lx < W.x0 || lx > W.x1 || lz < W.z0 || lz > W.z1) return false;
+  const feet = camBaseY - playerEye() - UC_Y;
+  return feet < W.y + 0.10 && feet > W.y - 0.55;
+}
+/* AND IT IS A PUDDLE, NOT THE SURF. The beach's splash is a wave breaking
+ * over you; this is an inch of still water in a stone channel — a short
+ * bright tick of spray on top of the step and nothing underneath it. The
+ * owner's word was subtle and not too loud, so it is a THIRD of the level
+ * the sea's is and it rides over the footstep rather than replacing it:
+ * what you hear is a boot going down in a puddle, which is one sound. */
+function sfxStepPuddle() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const out = ctx.createGain();
+  out.gain.value = 0.17 * (0.72 + Math.random() * 0.5);
+  out.connect(sfxOut());
+  // the break of the surface: bright, very short
+  const sp = noiseBurst(0.10, (x) => Math.pow(1 - x, 2.6));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
+  bp.frequency.value = 1500 + Math.random() * 1400; bp.Q.value = 0.85;
+  sp.connect(bp).connect(out);
+  sp.start(t); sp.stop(t + 0.10);
+  // and the little slap of water closing back over the boot, a beat later
+  const sl = noiseBurst(0.13, (x) => Math.pow(1 - x, 3.2));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
+  lp.frequency.value = 620 + Math.random() * 260;
+  const lg = ctx.createGain(); lg.gain.value = 0.55;
+  sl.connect(lp).connect(lg).connect(out);
+  sl.start(t + 0.018); sl.stop(t + 0.15);
+}
 function sfxStepUnder() {
   stepAlt ^= 1;
+  const wet = ucInWater();
   if (ucInChurch() && playSample('churchStep', 0.62 * (stepAlt ? 1 : 0.86), 0.05)) return;
   sfxStep();
+  if (wet) sfxStepPuddle();
 }
 function sfxStepDrain() { sfxStep(); }
 function sfxStep() {
@@ -16567,6 +16695,21 @@ function flankDir(u, list, token, slotAng, dist, ring, out) {
   out.x = out.x * (1 - k) + (tx / td) * k; out.z = out.z * (1 - k) + (tz / td) * k;
   const l = Math.hypot(out.x, out.z) || 1e-4; out.x /= l; out.z /= l;
 }
+/* ---- A FIGHTER PICKS A SIDE AND WORKS IT.
+ *
+ * `flankSide` exists to spread a PACK round you, and for a creature fighting
+ * alone `slotAngle` has nothing to say — so it fell through to a coin toss,
+ * fresh on every shuffle. What that draws is a two-tonne knight wobbling
+ * left-right-left between swings, which is the opposite of "calculated": it
+ * is a thing with no plan. A restless kind keeps the side it is already
+ * working and only changes its mind now and then, so the circle reads as him
+ * walking round to your weak side rather than as indecision. */
+function steadySide(u, list, token, slotAng) {
+  if (u.kind.restless && u.st.lastSide && Math.random() < 0.80) return u.st.lastSide;
+  const s = flankSide(u, list, token, slotAng);
+  u.st.lastSide = s;
+  return s;
+}
 function flankSide(u, list, token, slotAng) {
   const ta = slotAngle(u, list, token, slotAng);
   if (ta === null || Math.random() < 0.25) return Math.random() < 0.5 ? -1 : 1;
@@ -21016,8 +21159,13 @@ function updateMutantUnit(u, dt) {
        * while you decide what to do with the room he just gave you. He is
        * out of your reach the whole time and keeps the turn; it is pacing,
        * not mercy, and it is the beat that makes the aggression readable. */
+      /* AND A GUARD HELD IN HIS FACE IS A REASON TO WAIT. Throwing into a
+       * raised shovel is what the bar is for; a good fighter circles until
+       * you have to do something about him, which with the guard draining
+       * stamina you shortly do. */
+      const sizeP = (u.kind.sizeUp || 0) * (u.kind.smart && blocking ? 1.7 : 1);
       if (maySwing && u.kind.sizeUp && u.st.swings > 1 && (u.st.sinceSize || 0) >= 2
-          && dist < A.reach + 1.2 && Math.random() < u.kind.sizeUp) {
+          && dist < A.reach + 1.2 && Math.random() < sizeP) {
         u.st.sizing = true;
         wantSwing = false;
         u.st.sinceSize = 0;
@@ -21027,7 +21175,7 @@ function updateMutantUnit(u, dt) {
          * same beat either way. */
         if (u.kind.stepClip) u.st.sideStep = 0.80;
         u.st.back = 0.75 + Math.random() * 0.5;
-        u.st.side = flankSide(u, mutants, mutToken, MUT_SLOT_ANG);
+        u.st.side = steadySide(u, mutants, mutToken, MUT_SLOT_ANG);
         u.st.sideT = 1.2 + Math.random() * 1.3;
         u.st.cool = Math.max(u.st.cool, 0.5 + Math.random() * 0.55);
       }
@@ -21049,7 +21197,30 @@ function updateMutantUnit(u, dt) {
             const AK = u.atk[k] || MUT_ATTACKS[k];
             if (AK.reach + 0.25 < dist) continue;
             if (AK.minDist && dist < AK.minDist) continue;    // a charge needs ground to charge across
-            ok[k] = u.kind.use[k]; tot += ok[k];
+            let w = u.kind.use[k];
+            if (u.kind.smart) {
+              /* ---- WHAT MAKES A CREATURE READ AS A FIGHTER RATHER THAN AS A
+               * WEIGHTED DIE. Two things, and both of them are things the
+               * player can learn and use:
+               *
+               * HE DOES NOT THROW THE SAME BLOW TWICE RUNNING. A draw with no
+               * memory rolls its favourite swing twice in a row often enough
+               * to look like it is stuck, and the one thing a boss must never
+               * look is stuck. (A CHAIN is the exception and is chosen
+               * elsewhere — a deliberate repeat is a combination.)
+               *
+               * AND HE ANSWERS A RAISED GUARD WITH THE THING THAT BREAKS ONE.
+               * Every swing already carries `guardK`, how much of your bar it
+               * takes — 0.95 for the punch against 1.75 for the overhead — and
+               * nothing had ever read it as an intention. Hold the guard and
+               * he reaches for the overhead, the stomp and the leap; drop it
+               * and he goes back to the quick ones. That is a fighter looking
+               * at what you are doing, and it is the whole argument against
+               * standing there holding block. */
+              if (k === u.st.lastSwing) w *= 0.22;
+              if (blocking) w *= 0.45 + 0.75 * (AK.guardK || 1);
+            }
+            ok[k] = w; tot += w;
           }
           if (tot > 0) {
             let r = Math.random() * tot;
@@ -21062,6 +21233,7 @@ function updateMutantUnit(u, dt) {
             }
           }
         }
+        u.st.lastSwing = pick;
         u.st.swing = pick; u.st.atk = 0; u.st.chained = false; u.st.chainN = 0; u.st.wait = 0;
         u.st.feint = (u.st.swings > 1 && Math.random() < u.kind.feint) ? 0.55 + Math.random() * 0.2 : 0;
         sfxMutTell(dist, u.atk[pick].wind, u.kind.voice);
@@ -21098,7 +21270,7 @@ function updateMutantUnit(u, dt) {
        * is the statue's opposite and just as bad. The shuffle is bounded by
        * the breath he has left, and it does not start on the last of it. */
       if (u.st.side === 0 && u.st.back <= 0 && u.st.dash <= 0 && u.st.cool > 0.18) {
-        u.st.side = flankSide(u, mutants, mutToken, MUT_SLOT_ANG);
+        u.st.side = steadySide(u, mutants, mutToken, MUT_SLOT_ANG);
         u.st.sideT = Math.min(u.st.cool - 0.06, 0.28 + Math.random() * 0.45);
       }
     }
@@ -25079,12 +25251,14 @@ function update(dt, rawDt = dt) {
   // put in camera.position, and restores it exactly when you back out.
   updatePeek(dt);
 
-  // walking up on Bradly starts the exchange the first time, so you can't
-  // miss him; after that he's a normal E-to-talk interactable
-  if (!bradlyMet && started && !frozen()) {
-    const bx = camera.position.x - bradly.position.x, bz = camera.position.z - bradly.position.z;
-    if (bx * bx + bz * bz < 7.5 * 7.5) startDialog('start');
-  }
+  /* AND HE WAITS TO BE SPOKEN TO. Walking within seven and a half metres of
+   * him used to open the exchange by itself, on the theory that you must not
+   * be able to miss him — and what that actually does is take the player's
+   * hands away for a conversation they did not ask for, on a beach whose
+   * whole subject is choosing where to walk. He is a `Talk to him`
+   * interactable like everybody else now; the prompt is what stops you
+   * missing him. (The trigger is the owner's word, and it is the same call
+   * the fisherman and the fish already got.) */
 
 }
 
@@ -28716,7 +28890,7 @@ MUT_KINDS.knight = {
    * then, a third of the openings, he gives ground instead and watches. The
    * aggression is what makes him hard; the beat where he stops is what makes
    * him readable, and a fight you can read is the only kind you can learn. */
-  circle: 0.20, step: 0.22, chainMax: 4, feint: 0.30, sizeUp: 0.34, restless: 1,
+  circle: 0.20, step: 0.22, chainMax: 4, feint: 0.30, sizeUp: 0.34, restless: 1, smart: 1,
   poise: 11, poiseBack: 1.7, poiseWait: 1.2, parryK: 0.80, recoilK: 0.72, blockCost: 1.00,
   block: 0.34, fidgetK: 0.22, fidgetGap: 3.0,
   /* AND THE SHOULDER TURNS FURTHER THAN A MAN'S. `aimK` is how much of the
@@ -28773,7 +28947,12 @@ MUT_KINDS.knight = {
    * slide" this file has already paid for twice. They stay in the file (a
    * stationary stride is the right thing for a creature holding its ground)
    * and they are out of the pools that travel. */
-  gaits: { walk: ['walk', 'walkC'], run: ['run', 'runB'], idle: ['idle', 'idleB'],
+  /* AND THE RUN IS THE MUTANT ONE AND NOTHING ELSE. The locomotion pack's
+   * run is a man's jog and it reads wrong on two tonnes of plate — the
+   * owner's word — so the pool has one entry. Everything else he has two or
+   * three of, which is where the variety was wanted anyway: you see him walk
+   * and stand and circle far more than you see him run. */
+  gaits: { walk: ['walk', 'walkC'], run: ['run'], idle: ['idle', 'idleB'],
            strafeL: ['strafeL', 'strafeL2'], strafeR: ['strafeR2', 'strafeR3'] },
   /* THE REEL A PARRY BUYS. A parry is the biggest thing you can do to him
    * and it used to play the same small flinch as a shovel tap. */
@@ -28786,7 +28965,7 @@ MUT_KINDS.knight = {
    * OVERWRITES a clip of the same name, so `hit: 'hurt'` was quietly
    * shadowing the owner's own Head Hit — the clip he sent for exactly this —
    * with the four-key rock written before it arrived. */
-  alias: { idle2: 'idleB', walk2: 'walkC', run2: 'runB', roar2: 'roar', die: 'hurt', die2: 'hurt',
+  alias: { idle2: 'idleB', walk2: 'walkC', run2: 'run', roar2: 'roar', die: 'hurt', die2: 'hurt',
            back: 'walk', calm: 'idle' },
   provoke: knightProvoke,
   /* a voice out of a helmet: the bellow, pitched down, with the rasp taken

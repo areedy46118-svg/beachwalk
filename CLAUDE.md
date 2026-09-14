@@ -4332,6 +4332,136 @@ swings and 37.7 damage a minute, 98 % of blows on screen, still between
 swings 21 % (was ~100), worst step 0.10 m, worst tick 3.7 ms** — and every
 one of the new clips on screen.
 
+**THE LIGHT IS IN THE CRATE AND THE RING IS IN THE FIRST CACHE.** They were
+the other way round, and the owner swapped them. It reads better this way
+round anyway: the shovel's first use turns up the smallest and strangest
+object in the game, and the box you have to break open gives you the thing
+that lets you see — a crate comes apart in the dark and something inside it
+is glowing, so there is no shine to add and nothing to miss, because the
+thing IS the light. `dropRing` takes a spot now (a thing lifted out of a hole
+is not flung across a beach, so the toss is a parameter too) and
+`revealMoundNear`'s first branch simply hands over to it.
+
+**AND ANY HIT OPENS A CRATE.** It was the game's one lock — `CRATE_POWER`,
+about two thirds of a charge — and the one place that asked for the heavy
+swing by name; a click thudded off the boards and did nothing, which is a
+thing you can do three times before you work out the game wants something
+else from you. The charge is still worth holding everywhere it was (two
+points against one, more reach, poise) and it still SHOWS here: how hard it
+came apart is how hard it was hit, so a tap drops the boards at your feet and
+a full swing throws them.
+
+**AND THE SAME THING CANNOT BE HAD TWICE.** `addToInventory` refuses an item
+already in the pack. Every takeable that can be picked up more than once —
+the shells, the note — builds a FRESH item object, so identity is a safe
+test, and it is needed the moment anything hands out an item whose world copy
+is still lying on the sand waiting to be taken.
+
+**BRADLY WAITS TO BE SPOKEN TO.** Walking within seven and a half metres of
+him opened the exchange by itself, on the theory that you must not be able to
+miss him — and what that actually does is take the player's hands away for a
+conversation they did not ask for, on a beach whose whole subject is choosing
+where to walk. He is a `Talk to him` interactable like everybody else; the
+prompt is what stops you missing him.
+
+**AND DEV MODE HANDS YOU THE TOOLS, FOR GOOD.** It is for walking the beach
+and testing the fights, and both need something in your hands — the two
+shovels are an hour apart and the katana is past the drain, so testing the
+knight meant playing most of the game first. Turning it on gives you every
+dig tool you do not have; turning it OFF does not take them back, which is
+the only behaviour that makes sense: an inventory is a thing you have, not a
+mode you are in. They are the SAME item objects the world hands out, so the
+view model, the icon, the pack and the save's own replay all behave as if you
+had picked each one up.
+
+**THE ENTRY TO THE CHURCH WAS A BOULDER IN THE DOORWAY, AND IT WAS THE CLIP.**
+The tunnel was cut at `low.x + GAP + 0.55` — "a hand past the mouth" — and the
+doorway's filler panel stands at `D[0] + off.x + 0.14`, which measured is
+**1.21 m behind that**. So the last metre of the scan's rock came through the
+hole and hung in the nave as a rounded brown mass plugging the arch. It is
+cut on the PANEL'S OWN PLANE now, a finger past it, so from the nave you see
+the church's wall with a hole broken through it and the bore receding into
+the dark — and from the tunnel the panel faces away and is not drawn, so
+there is still nothing between you and the room. **And a wall that was broken
+through leaves its wall on the floor**: a hole with clean flags under it
+reads as a hole that was CUT, so there is a spill of broken stone in the
+wall's own material coming out of the break and thinning over two metres,
+each lump sunk past half its own depth. It is scattered on a FIXED hash, not
+`Math.random` — everything here is rebuilt from seed on a checkpoint load,
+and rubble that moves when you die is rubble you notice. Thrown further than
+about two metres it stops being spoil and becomes scenery you walk through,
+and since none of it has a collider it ends up inside your boots.
+
+**THE TUNNEL IS MUCH DARKER, AND IT CAN BE NOW.** `LOOK.cave` goes from level
+0.46 / emis 0.14 to 0.30 / 0.085 — because the glowstick comes out of the
+crate at the top of the beach rather than a cache halfway down it, so you
+have a light in your hand before you ever reach the hole in the sand wall,
+and the altar's beacon is at the end of the bore whatever the fog does.
+**And the water has to come down with it**: its look is set explicitly AFTER
+`dress`, so it does not move when `LOOK.cave` does, and at a third of the old
+level the channel was suddenly the brightest thing in the bore — a pale band
+at the threshold where the clip cuts it. What has to survive is that it takes
+a HIGHLIGHT, which is the only thing that says water; the level under it can
+go wherever the stone goes.
+
+**AND YOU CAN HEAR THE CHANNEL NOW.** The tunnel's floor is standing water —
+it is what you actually wade along — and it made no sound at all, so the one
+stretch of the game where you can SEE you are walking through water was the
+one where you could not hear it. A short bright tick of spray over the
+footstep and a small slap of water closing back over the boot, at a third of
+the sea's level: it rides over the step rather than replacing it, because a
+boot going down in a puddle is one sound. Two things it needed:
+
+- **`Box3.setFromObject` READS `matrixWorld`, AND A JUST-LOADED ROOT HAS
+  NONE.** The plane was measured inside the passage's own loader, before
+  `group.add(root)` — so its world matrix was still its local one and
+  `worldToLocal` took the group's offset off a number that never had it.
+  Measured, the box came back three thousand metres out. It is measured in
+  `composeInner`, after the group is built. This file has now paid for that
+  trap four times.
+- **AND A BOUNDING BOX IS NOT THE PLANE.** The water's box is fifteen metres
+  wide against a four-metre bore and its far end laps seven metres into the
+  nave, so a box test alone splashed on the church's flags. `inPassage` is
+  the model's own footprint and is the question actually being asked.
+
+**AND THE KNIGHT FIGHTS LIKE SOMEBODY WITH A PLAN.** Three things, and each
+is something the player can learn and use:
+
+- **HE PICKS A SIDE AND WORKS IT.** `flankSide` exists to spread a PACK round
+  you, and for a creature fighting alone `slotAngle` has nothing to say — so
+  it fell through to a coin toss, fresh on every shuffle, and what that draws
+  is a two-tonne knight wobbling left-right-left between swings. That is the
+  opposite of calculated: it is a thing with no plan. `steadySide` keeps the
+  side he is already working. Measured: **3.7 direction changes a minute**
+  against one per shuffle.
+- **HE DOES NOT THROW THE SAME BLOW TWICE RUNNING.** A draw with no memory
+  rolls its favourite swing twice in a row often enough to look stuck, and
+  the one thing a boss must never look is stuck. Measured: **6 %** repeats.
+  (A CHAIN is the exception and is chosen elsewhere — a deliberate repeat is
+  a combination.)
+- **AND HE ANSWERS A RAISED GUARD WITH THE THING THAT BREAKS ONE.** Every
+  swing already carried `guardK`, how much of your bar it takes — 0.95 for
+  the punch against 1.75 for the overhead — and nothing had ever read it as
+  an intention. Hold the guard and he both circles more and reaches for the
+  overhead, the stomp and the spin. Measured with the size-up held out of the
+  comparison so only the draw is under test: guard-breakers **40 % → 49 %**,
+  and with it back in he throws **48 swings a minute against 34**, because
+  waiting you out is the other half of the same idea. **And measuring this
+  needs the harness to hold the guard**: the preview cannot pointer-lock, so
+  a dispatched pointerdown does nothing — `__bw.blocking` has a setter, and
+  the size-up has to be switched off or it masks the draw in a small sample.
+
+His run is the mutant one and nothing else: the locomotion pack's run is a
+man's jog and reads wrong on two tonnes of plate. Everything else he has two
+or three of, which is where the variety was wanted anyway — you see him
+walk and stand and circle far more than you see him run.
+
+Measured after, hands-off at fighting range over three minutes: **39 swings
+and 40.7 damage a minute, 97 % of contacts on screen at 0.30-0.44 m from the
+chest, still between swings 19 %, worst step 0.157 m, worst tick 3.9 ms**;
+and the walk from the entrance to the altar is unchanged at 97.8 m with zero
+stalls and zero reversals.
+
 ## Dev mode
 
 `DEFAULT_SETTINGS` are the owner's own (music 30 %, waves 18 %, effects
