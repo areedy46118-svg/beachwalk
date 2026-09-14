@@ -8946,6 +8946,13 @@ function placeGroundGlow(obj) {
 const HELD_GLOW_RANGE = 7.0;          // metres of usable light around you
 const HELD_GLOW_MAX = 8.0;            // dimmer in the hand: it lights your way, it is not a torch
 const heldGlow = new THREE.PointLight(GLOWSTICK_COLOR, 0, HELD_GLOW_RANGE, 1.35);
+/* AND IN A CRAWL IT SITS AT THE EYE. Half a metre out and to the right is
+ * where the hand is, and on a beach nothing stands in the half metre between
+ * the hand and your face. In a tunnel a body's width across, a face of rock
+ * does — and a face between the eye and the light is lit from behind, which
+ * under flat shading is a black wedge the width of the screen. The owner
+ * photographed four of them. */
+let heldGlowTight = false;
 heldGlow.visible = true;      // never toggled, for the same reason as groundGlow
 scene.add(heldGlow);
 const _glowRight = new THREE.Vector3(), _glowFwd = new THREE.Vector3();
@@ -8957,10 +8964,11 @@ function updateHeldGlow(dt) {
   // sit it out to the right and a little below eye line, where the hand is
   camera.getWorldDirection(_glowFwd);
   _glowRight.crossVectors(_glowFwd, camera.up).normalize();
+  const k = heldGlowTight ? 0.25 : 1;
   heldGlow.position.copy(camera.position)
-    .addScaledVector(_glowFwd, 0.45)
-    .addScaledVector(_glowRight, 0.34);
-  heldGlow.position.y = camera.position.y - 0.5;
+    .addScaledVector(_glowFwd, 0.45 * k)
+    .addScaledVector(_glowRight, 0.34 * k);
+  heldGlow.position.y = camera.position.y - 0.5 * k;
 }
 
 const glowstickItem = {
@@ -29325,7 +29333,7 @@ function placeInUndercroft() {
   const e = UC.spots.entry;
   camera.position.set(UC_X + e.x, UC_Y + e.y + playerEye(), UC_Z + e.z);
   camBaseY = camera.position.y; vy = 0; onGround = true; groundY = UC_Y + e.y;
-  inUndercroft = true;
+  inUndercroft = true; heldGlowTight = true;
   /* THE NIGHT GOES OUT AT THE CUT, not over a second afterwards: the moon,
    * its rake, the cliff fill, the ambient and the hemisphere all duck while
    * the screen is still black, and the lamps come up with them. */
@@ -29339,7 +29347,7 @@ function placeInUndercroft() {
 function placeOutOfUndercroft() {
   camera.position.set(ucReturn.x, playerEye(), ucReturn.z);
   groundY = 0; camBaseY = playerEye(); vy = 0; onGround = true;
-  inUndercroft = false;
+  inUndercroft = false; heldGlowTight = false;
   undercroft.visible = false;
   setSkyDuck(0);
   for (const l of ucLamps) { l.userData.ucBase = 0; l.intensity = 0; }

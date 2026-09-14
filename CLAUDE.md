@@ -2733,6 +2733,61 @@ approaches. Entrance 0.017 % of the frame, exit 0.002 %. It is written down
 rather than measured at load, because that scan is eighty-five thousand
 triangles and this is a dozen thousand rays.
 
+**AND THEN THE GLOWSTICK SHOWED THE EDGES.** The owner walked it with the
+light-stick in his hand and photographed four hard lines across the frame:
+a black wedge the width of the screen, a dark crevasse, a slab with a
+polygon edge, a thin black band. Under the tunnels' own even lift none of
+them shows; a point light in the hand shades every facet apart. Six rounds,
+and the one that mattered was the one measured last:
+
+- **A FACE BETWEEN THE EYE AND THE LIGHT IS LIT FROM BEHIND, AND THAT IS
+  BLACK.** The held glow sits half a metre out and to the right, where the
+  hand is, and in a tunnel a body's width across a face of rock stands in
+  that half metre. `heldGlowTight` pulls it to a quarter of its offsets
+  underground. Two of the four photographs were this and nothing else.
+- **A LOW-POLY TUNNEL UNDER A LIGHT IN YOUR HAND IS A ROOM OF FACETS.** The
+  scans ship no normals, GLTFLoader answers with `flatShading`, and every
+  face a metre across takes one shade. `smoothRock`: a vertex normal, which
+  the grime and the projection never read (they derive their own).
+- **THE SKIN LIES ON THE FACE, IN FRONT OF IT, NOT BEHIND.** Ten centimetres
+  behind, then three: at every open edge of the scan the skin dropped away
+  behind the face and the face drew its own edge. A centimetre in front
+  with the depth buffer told the skin wins, and the scan's edges are inside
+  one surface. And **its rim is a fillet**: a jump of more than a hand
+  between neighbouring cells is relaxed over three cells, and a measured
+  cell may only ever be brought NEARER — pushed away it stands behind the
+  face and hands the edge back. (Carrying the face's slope into a hole was
+  tried first: it extends every flat face into a flat sheet.)
+- **A SWEEP ONLY SEES WHAT CROSSES ITS SECTIONS.** A face lying oblique to
+  the tunnel is missed by the ray in the section plane and met by the eye a
+  stride later, in front of the skin with its own edge (stations 50 and
+  58). Two more rays per cell leaned thirty degrees up and down the tunnel,
+  and the nearest of the three: 94 ms became 165, and those two went.
+- **AND THE ONE THAT SURVIVED EVERYTHING WAS THE HEAD CLEARANCE.** A build
+  gave the head seventy centimetres of carve and held the skin out to match,
+  to keep faces out of your face; what it made was a clean pipe a metre and
+  a half wide with the owner's rock hung on it wherever the model was
+  tighter — which is most of it — and every drawn roof plate inside the
+  clearance stood in FRONT of the skin with a hard edge (station 34: a
+  ceiling from 0.99 m to 1.83 m, the skin pushed out past it). Hiding the
+  scan, hiding the skin, five changes to the fill: nothing moved that line,
+  because it was the clamp. `HEAD_CLEAR` is 0. **When five fixes change
+  nothing, the thing you are fixing is not the thing.**
+- **AND A STRAY-HIT FILTER THROWS AWAY REAL ROCK.** A pass that dropped any
+  measured cell much nearer than its neighbours (to kill a spike) dropped
+  every face that stands nearer than the wall behind it, and the skin then
+  sat behind all of them. Gone; the fillet rounds a spike anyway.
+
+**A SCREENSHOT INSIDE `browser_batch` IS THE PREVIOUS FRAME.** Three rounds
+of this were judged on stale pictures — a render and a screenshot in one
+batch returned the sheet from the call before, identically, and every
+change read as "no effect". Render in one call, screenshot in the next;
+this file has said so before and it cost an hour anyway.
+
+Measured after: the passage walks in 2329 ticks with zero stalls, the shell
+shows in 0.005 % of the frame, and the twelve stations photographed under
+the glowstick read as one bore.
+
 **AND THE MOUTH'S DARKENING IS AN ELLIPSE, NOT A SLAB.** "I should not see
 black png peeking out the top of the rocks" was not a png at all: the
 rockmouth's shader blacked out the inside of the arch with two `step()` calls

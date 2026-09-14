@@ -537,7 +537,7 @@ export function makeUndercroft(opts = {}) {
       const qx = ty * e1z - tz * e1y, qy = tz * e1x - tx * e1z, qz = tx * e1y - ty * e1x;
       const v = (dx * qx + dy * qy + dz * qz) * inv; if (v < 0 || u + v > 1) continue;
       const t = (e2x * qx + e2y * qy + e2z * qz) * inv;
-      if (t > 0.02 && t < maxT && (best < 0 || t < best)) best = t;
+      if (t > 0.02 && t < maxT && (best < 0 || t < best)) { best = t; ix.hitTri = b; }
     }
     return best;
   }
@@ -587,10 +587,12 @@ export function makeUndercroft(opts = {}) {
      * the drawn stone flush at every edge instead of standing in front of
      * it. Nothing is ever nearer the line than the walk's own tube. */
     const SK = opts.skin || null, SKIN_MAX = 5.0;
-    let fitD = null, fitted = null;
+    let fitD = null, fitted = null, fitN = null, wlA = null, clamped = null;
     if (SK) {
       fitD = new Float64Array(P.length * NP);
       fitted = new Uint8Array(P.length * NP);
+      fitN = new Float32Array(P.length * NP * 3);
+      wlA = new Float64Array(P.length * NP); clamped = new Uint8Array(P.length * NP);
       for (let k = 0; k < P.length; k++) {
         const p = P[k];
         const a = P[Math.max(0, k - 1)], b = P[Math.min(P.length - 1, k + 1)];
@@ -601,10 +603,54 @@ export function makeUndercroft(opts = {}) {
           const [fu, fv] = PROFILE[i];
           const su = fu * W, sv = (fv - 0.45) * H;
           const dl = Math.hypot(su, sv) || 1;
-          const t = rayHit(SK, p.x, cy, p.z, rx * su / dl, sv / dl, rz * su / dl, SKIN_MAX);
-          if (t > 0) { fitD[k * NP + i] = t + 0.10; fitted[k * NP + i] = 1; }
+          const wr = fv * H > 0.45 ? Math.max(W, HEAD_CLEAR) : W;
+          wlA[k * NP + i] = Math.hypot(fu * wr, sv) + 0.06;
+          /* THREE RAYS, NOT ONE: A SWEEP ONLY SEES WHAT CROSSES ITS SECTIONS.
+           * A face lying oblique to the tunnel — the slab at station 50, the
+           * roof plate at 58 — is missed by the ray in the section plane and
+           * met by the eye a stride later, standing in FRONT of the skin with
+           * its own hard edge. Two more rays leaned thirty degrees up and
+           * down the tunnel, and the nearest of the three: the skin can then
+           * never be behind a face within thirty degrees of its section, and
+           * a face it would have missed is swallowed in a bulge of skin that
+           * carries the rock on past it with no edge to see. */
+          const ox = rx * su / dl, oy = sv / dl, oz = rz * su / dl, TL = 0.577, CT = 0.866;
+          let t = rayHit(SK, p.x, cy, p.z, ox, oy, oz, SKIN_MAX);
+          for (const sg of [-1, 1]) {
+            const ax = ox + tx * TL * sg, az = oz + tz * TL * sg, al = Math.hypot(ax, oy, az);
+            const t2 = rayHit(SK, p.x, cy, p.z, ax / al, oy / al, az / al, SKIN_MAX);
+            if (t2 > 0 && (t < 0 || t2 * CT < t)) t = t2 * CT;   // its reach in the section plane
+          }
+          /* a centimetre IN FRONT of the face, not behind it: the skin is
+           * half of what you see in this tunnel — the scan is that open —
+           * and drawn behind the rock every open edge of the scan was a
+           * ledge with a hard line under the glowstick. On the face, with
+           * the depth buffer told the skin wins, the scan's edges are inside
+           * one smooth surface. (Ten centimetres behind, then three, were
+           * both tried and both drew the line.) */
+          if (t > 0) {
+            fitD[k * NP + i] = t - 0.012; fitted[k * NP + i] = 1;
+            /* and the face's own normal, turned to face the bore: the seam
+             * between the scan and the skin is a LIGHTING seam, and the skin
+             * will wear the rock's normal where it lies on the rock */
+            const T = SK.tri, q = SK.hitTri;
+            const e1x = T[q + 3] - T[q], e1y = T[q + 4] - T[q + 1], e1z = T[q + 5] - T[q + 2];
+            const e2x = T[q + 6] - T[q], e2y = T[q + 7] - T[q + 1], e2z = T[q + 8] - T[q + 2];
+            let nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
+            const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+            const dx = rx * su / dl, dy = sv / dl, dz = rz * su / dl;
+            if (nx * dx + ny * dy + nz * dz > 0) { nx = -nx; ny = -ny; nz = -nz; }
+            fitN[(k * NP + i) * 3] = nx; fitN[(k * NP + i) * 3 + 1] = ny; fitN[(k * NP + i) * 3 + 2] = nz;
+          }
         }
       }
+      const at = (k, i) => fitD[k * NP + ((i + NP) % NP)];
+      const isF = (k, i) => k >= 0 && k < P.length && fitted[k * NP + ((i + NP) % NP)] === 1;
+      /* (A pass here threw away any measured cell much nearer than its
+       * neighbours as a "stray hit", to kill a spike in the skin. It threw
+       * away every real face that stands nearer than the rock behind it —
+       * the skin then sat behind those faces and handed every one of them
+       * its hard edge back. The ledge relaxing below rounds a spike anyway.) */
       /* THE HOLES ARE RELAXED, NOT GUESSED. A hundred passes of averaging
        * the four neighbours with the measured cells pinned is a Laplace
        * solve on the gap: a membrane that meets the rock exactly at the rim
@@ -623,6 +669,67 @@ export function makeUndercroft(opts = {}) {
           if (n) { const v = sum / n; if (Math.abs(v - fitD[q]) > 1e-4) moved++; fitD[q] = v; }
         }
         if (!moved) break;
+      }
+      /* AND THE RIM IS A FILLET, NOT A CREASE. Flat over the drawn face and
+       * then bending to reach the far rock, the skin had a KINK at every
+       * hole's rim, and under the glowstick a kink is a hard line. (Carrying
+       * the face's slope into the hole was tried first and extends every
+       * flat face into a flat sheet — the exact thing being removed.) The
+       * two cells either side of a rim are relaxed together for a few passes
+       * instead, so the bend is rounded over a metre and a half; the rest
+       * of the fit, which is the rock itself, is not touched. */
+      /* AND WHERE THE WALK IS WIDER THAN THE ROCK, THAT IS A RIM TOO. This
+       * was the crease that survived every fix to the fill: where the model
+       * is narrower than the head's clearance the skin is held out at the
+       * walk's own smooth section, and that section met the fitted rock on
+       * a hard line — a clean pipe with rock hung on it, and hiding the scan
+       * changed nothing because none of it was the scan. The clamp goes on
+       * BEFORE the fillet, so the bend from rock to clearance is rounded
+       * like a hole's rim, and a clamped cell is roughened like a patch. */
+      for (let q = 0; q < P.length * NP; q++) if (fitD[q] < wlA[q]) { fitD[q] = wlA[q]; clamped[q] = 1; }
+      {
+        /* AND A LEDGE IN THE FIT IS A RIM AS WELL — the one that survived
+         * everything above. The scan is full of faces that simply END, with
+         * the next rock a hand or an arm further back; the fit follows the
+         * face to its edge and then drops to that rock, and the skin carries
+         * the scan's every open edge as a step of its own. Hiding the scan
+         * changed nothing because the skin had copied it. So a jump of more
+         * than a hand between neighbouring cells is a rim too, and the
+         * relaxing may only ever bring a measured cell NEARER: pushed away
+         * it would stand behind the face and hand the hard edge back to it.
+         * Nearer, the step becomes a ramp in front of the deeper rock. */
+        const edge = new Uint8Array(P.length * NP);
+        for (let k = 0; k < P.length; k++) for (let i = 0; i < NP; i++) {
+          const q = k * NP + i;
+          if (!fitted[q] || clamped[q]) { edge[q] = 1; continue; }
+          for (const [dk, di] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const kk = k + dk; if (kk < 0 || kk >= P.length) continue;
+            if (Math.abs(fitD[kk * NP + ((i + di + NP) % NP)] - fitD[q]) > 0.10) { edge[q] = 1; break; }
+          }
+        }
+        const near = new Uint8Array(P.length * NP);
+        for (let k = 0; k < P.length; k++) for (let i = 0; i < NP; i++) {
+          let open = false;
+          for (let dk = -3; dk <= 3 && !open; dk++) for (let di = -3; di <= 3 && !open; di++) {
+            const kk = k + dk; if (kk < 0 || kk >= P.length) continue;
+            if (edge[kk * NP + ((i + di + NP) % NP)]) open = true;
+          }
+          near[k * NP + i] = open ? 1 : 0;
+        }
+        const D0 = new Float64Array(fitD), D2 = new Float64Array(fitD);
+        for (let pass = 0; pass < 8; pass++) {
+          for (let k = 0; k < P.length; k++) for (let i = 0; i < NP; i++) {
+            const q = k * NP + i; if (!near[q]) continue;
+            let sum = fitD[q] * 2, n = 2;
+            for (const [dk, di] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+              const kk = k + dk; if (kk < 0 || kk >= P.length) continue;
+              sum += fitD[kk * NP + ((i + di + NP) % NP)]; n++;
+            }
+            const v = sum / n;
+            D2[q] = (fitted[q] && !clamped[q]) ? Math.min(v, D0[q]) : v;
+          }
+          fitD.set(D2);
+        }
       }
     }
     for (let k = 0; k < P.length; k++) {
@@ -646,9 +753,10 @@ export function makeUndercroft(opts = {}) {
           const dl = Math.hypot(su, sv) || 1;
           const ux = rx * su / dl, uy = sv / dl, uz = rz * su / dl;
           const cy = p.y + p.h * 0.45;
-          let dist = Math.max(fitD[k * NP + i], dl + 0.06);
+          let dist = Math.max(fitD[k * NP + i], wlA[k * NP + i] - 0.02);   // the fillet may have rounded a clamped cell a hair in
           const X0 = p.x + ux * dist, Y0 = cy + uy * dist, Z0 = p.z + uz * dist;
-          dist += Math.abs(rockNoise(X0, Y0, Z0, fitted[k * NP + i] ? 0.06 : 0.30));
+          // a measured cell is not roughened — it lies on the rock and any lobe is a step; a patch and a clearance are
+          if (!fitted[k * NP + i] || clamped[k * NP + i]) dist += Math.abs(rockNoise(X0, Y0, Z0, 0.22));
           const X = p.x + ux * dist, Y = cy + uy * dist, Z = p.z + uz * dist;
           if (i) arc += Math.hypot(X - prevX, Y - prevY, Z - prevZ);
           prevX = X; prevY = Y; prevZ = Z;
@@ -726,6 +834,33 @@ export function makeUndercroft(opts = {}) {
         for (let i = 0; i < a.length; i += 3) { const t = a[i + 1]; a[i + 1] = a[i + 2]; a[i + 2] = t; }
         g.index.needsUpdate = true; g.computeVertexNormals();
       }
+    }
+    /* THE SEAM BETWEEN THE ROCK AND ITS SKIN IS A LIGHTING SEAM. With the
+     * skin lying on the drawn face, what still drew a hard line at every
+     * hole's rim under the glowstick was the NORMAL: the scan's on one side,
+     * a swept tube's on the other, and a point light shades the two apart.
+     * (Carrying the rock's slope into the hole was tried first and extends
+     * every flat face into a flat sheet — the exact thing being removed.)
+     * So where the skin lies on the rock it wears the rock's own normal, and
+     * the field is relaxed a few passes so the membrane's normals turn into
+     * the rock's over the last half metre before the rim rather than at it. */
+    if (SK) {
+      const nrm = g.getAttribute('normal'), N = new Float32Array(nrm.array);
+      for (let q = 0; q < P.length * NP; q++) if (fitted[q]) { N[q * 3] = fitN[q * 3]; N[q * 3 + 1] = fitN[q * 3 + 1]; N[q * 3 + 2] = fitN[q * 3 + 2]; }
+      const N2 = new Float32Array(N);
+      for (let pass = 0; pass < 3; pass++) {
+        for (let k = 0; k < P.length; k++) for (let i = 0; i < NP; i++) {
+          const q = k * NP + i; let x = N[q * 3] * 2, y = N[q * 3 + 1] * 2, z = N[q * 3 + 2] * 2;
+          for (const [dk, di] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const kk = k + dk; if (kk < 0 || kk >= P.length) continue;
+            const r = kk * NP + ((i + di + NP) % NP);
+            x += N[r * 3]; y += N[r * 3 + 1]; z += N[r * 3 + 2];
+          }
+          const l = Math.hypot(x, y, z) || 1; N2[q * 3] = x / l; N2[q * 3 + 1] = y / l; N2[q * 3 + 2] = z / l;
+        }
+        N.set(N2);
+      }
+      nrm.array.set(N, 0); nrm.needsUpdate = true;
     }
     const mesh = new THREE.Mesh(g, mat);
     mesh.frustumCulled = false;
@@ -1005,7 +1140,7 @@ export function makeUndercroft(opts = {}) {
    * radius), and what goes is exactly what was in your way. It is the
    * bunker desk's `carveDesk` on a cave. */
   const _carveE = new THREE.Vector3();
-  function carveTube(root, pad = 0.06) {
+  function carveTube(root, pad = 0.06, sheetMax = 1.15) {
     let dropped = 0, kept = 0, sheets = 0;
     const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), M = new THREE.Vector3();
     const toLocal = new THREE.Matrix4().copy(group.matrixWorld).invert(), MM = new THREE.Matrix4();
@@ -1026,13 +1161,20 @@ export function makeUndercroft(opts = {}) {
        * sleeve then has to stand in for, which is how a repair turns into a
        * replacement one metre at a time. A body is 0.24 m wide. */
       const CARVE_MAX = 1.25;
+      /* AND THE HEAD GETS MORE ROOM THAN THE FEET. The carve radius was the
+       * walk's own, and the walk lets a body's centre wander to that radius
+       * less its own width — so a face could stand a few centimetres from
+       * the eye and still be legal, and under the glowstick a face that
+       * close is a black wedge across the whole frame (the light sits in the
+       * hand, so the face is between the eye and the light). From knee
+       * height up nothing may stand inside `HEAD_CLEAR` of the line. */
       const inTube = (p) => {
         const c = corridorAt(p.x, p.z);
-        return c && c.d < Math.min(c.r + pad, CARVE_MAX) && p.y > c.y + 0.14 && p.y < c.y + c.h - 0.10;
+        return c && c.d < Math.min(clearR(c, p.y) + pad, CARVE_MAX) && p.y > c.y + 0.14 && p.y < c.y + c.h - 0.10;
       };
       const inCore = (p) => {
         const c = corridorAt(p.x, p.z);
-        return c && c.d < Math.min(c.r * 0.78, CARVE_MAX * 0.8) && p.y > c.y + 0.22 && p.y < c.y + c.h - 0.22;
+        return c && c.d < Math.min(clearR(c, p.y) * 0.78, CARVE_MAX * 0.8) && p.y > c.y + 0.22 && p.y < c.y + c.h - 0.22;
       };
       /* AND A FACE THAT LIES ACROSS THE BORE IS NOT A WALL, WHATEVER ITS
        * DISTANCE. A tunnel's walls run ALONG it, so their normals are
@@ -1042,10 +1184,18 @@ export function makeUndercroft(opts = {}) {
        * normal within forty degrees of the tunnel's own tangent, and
        * anything of it inside a walk and a half: that is the "rock edge
        * sticking out" and nothing else in this model looks like it. */
-      const SHEET_MAX = 1.15;
+      /* HOW FAR OUT A SHEET IS STILL A SHEET depends on the model. The 3DRT
+       * passage is sparse — a face a metre and a half from the line, lying
+       * across the bore, is not a wall of anything, it is a plate the skin
+       * cannot follow (a sweep only sees what crosses its section planes)
+       * and so stands in front of the skin with its own hard edge: the
+       * crease at station 34. Valsev's cave is dense and twists, and at a
+       * bend a real wall's normal lies along the incoming tangent, so there
+       * the reach stays at a walk and a half. */
+      const SHEET_MAX = sheetMax;
       const inSheet = (p) => {
         const c = corridorAt(p.x, p.z);
-        return c && c.d < Math.min(c.r * 1.9, SHEET_MAX) && p.y > c.y + 0.10 && p.y < c.y + c.h - 0.08;
+        return c && c.d < Math.min(Math.max(c.r * 1.9, sheetMax > 1.2 ? sheetMax : 0), SHEET_MAX) && p.y > c.y + 0.10 && p.y < c.y + c.h + (sheetMax > 1.2 ? 1.2 : -0.08);
       };
       const acrossBore = (a, b, c2) => {
         const ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z;
@@ -1086,6 +1236,16 @@ export function makeUndercroft(opts = {}) {
   /* the nearest point on the corridor: its height, its radius, how far off
    * the line you are. Scanned straight — a hundred and forty segments is
    * nothing beside what the grid it replaces was doing. */
+  /* HEAD_CLEAR was 0.70 for one build: everything at head height inside
+   * seventy centimetres of the line carved, and the skin held out to match.
+   * What that made was a clean pipe a metre and a half wide with the
+   * owner's rock hung on it wherever the model was tighter — which is most
+   * of it — and every drawn roof face inside the clearance stood in FRONT
+   * of the skin with a hard edge (station 34: a ceiling slab from 0.99 m to
+   * 1.83 m, the skin pushed out past it). The black faces it was meant to
+   * cure were the glowstick's, and the glowstick moved to the eye instead. */
+  const HEAD_CLEAR = 0;
+  const clearR = (c, y) => (y > c.y + 0.45 ? Math.max(c.r, HEAD_CLEAR) : c.r);
   const _cq = { y: 0, r: 0, d: 1e9, h: 2.0, tx: 1, tz: 0 };
   function corridorAt(lx, lz) {
     if (!S.corridors.length) return null;
@@ -1470,11 +1630,28 @@ export function makeUndercroft(opts = {}) {
     return hit;
   };
 
+  /* A LOW-POLY TUNNEL LIT BY A LIGHT IN YOUR HAND IS A ROOM OF FACETS. These
+   * scans ship no normals, and GLTFLoader answers that with `flatShading` —
+   * fine under the even lift the tunnels wear on their own, and under the
+   * glowstick every face a metre across takes one flat shade and meets its
+   * neighbour on a hard line: the owner's "bad edges". Both meshes share
+   * their vertices, so a smoothed normal costs one pass and the bore reads
+   * as a curved surface under a moving light instead of a set of plates.
+   * The grime and the projection never read this — they take their normal
+   * off the derivatives — so nothing else moves. */
+  function smoothRock(root) {
+    root.traverse((o) => {
+      if (!o.isMesh || !o.geometry) return;
+      if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+      for (const m of (Array.isArray(o.material) ? o.material : [o.material])) if (m) { m.flatShading = false; m.needsUpdate = true; }
+    });
+  }
   load(opts.passageUrl || 'assets/passage.glb', (gltf) => {
     const root = gltf.scene;
     const w = parseWalk(root);
     dress(root, 'cave');
     passageTriplanar(root);
+    smoothRock(root);
     group.add(root);
     S.passage = { root, walk: w };
     compose();
@@ -1483,6 +1660,7 @@ export function makeUndercroft(opts = {}) {
     const root = gltf.scene;
     const w = parseWalk(root);
     dress(root, 'cave');
+    smoothRock(root);
     group.add(root);
     S.cave = { root, walk: w };
     compose();
@@ -1985,13 +2163,19 @@ export function makeUndercroft(opts = {}) {
     }
     /* the model is carved back out of the walk — both tunnels, once both
      * corridors are in `S.corridors` */
-    S.carved = carveTube(S.passage.root) + carveTube(S.cave.root);
+    S.carved = carveTube(S.passage.root, 0.06, 2.4) + carveTube(S.cave.root, 0.06, 1.15);
     /* and NOW the skin, on what is left of the rock */
     const t0 = performance.now();
     for (const K of skins) {
       const root = K.root();
       const m = makeBore({ pts: K.C.pts }, patchMat((K.want && findMat(root, K.want)) || findMat(root)),
                          { cap: K.cap, measure: false, skin: triIndex(root) });
+      /* the skin lies ON the drawn face, not behind it: at the rim of a hole
+       * a membrane that starts flush with the face is tangent to it, and the
+       * crease that a step of even three centimetres drew under the
+       * glowstick is gone. Where the two coincide the depth buffer is told
+       * the scan wins. */
+      m.material.polygonOffset = true; m.material.polygonOffsetFactor = -2; m.material.polygonOffsetUnits = -2;
       group.add(m); S.sleeves.push(m);
     }
     S.skinMs = Math.round(performance.now() - t0);
