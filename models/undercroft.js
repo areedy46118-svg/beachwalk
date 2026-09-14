@@ -2068,6 +2068,28 @@ export function makeUndercroft(opts = {}) {
     const off = new THREE.Vector3(low.x + GAP - doorX, low.y - doorFloor, low.z - doorZ);
     ch.off.copy(off);
     S.church.root.position.copy(off);
+    /* ---- AND A BENCH'S BOX IS IN THE CHURCH'S OWN FRAME UNTIL IT IS MOVED.
+     *
+     * `w.benches[n]` comes out of the packer in the scan's coordinates, and
+     * the church is then translated across the world to meet the tunnel — so
+     * every reader of a box was a hundred metres out. The candles paid for
+     * it: the pew loop places a taper at the middle of a bench's box, which
+     * put THIRTY-TWO of them at x = -6 instead of x = 94 — floating in the
+     * tunnel, tagged as belonging to pews they were nowhere near. They were
+     * doused correctly when their bench broke, which is why it looked like
+     * the feature worked; what you could actually see standing on the pews
+     * were the nave clusters, and those knew nothing about any bench.
+     * Offset ONCE, here, the moment the church has a position. */
+    if (ch.benches) {
+      for (const n in ch.benches) {
+        const b = ch.benches[n];
+        if (!b || b.bwMoved) continue;
+        b[0] += off.x; b[3] += off.x;
+        b[1] += off.y; b[4] += off.y;
+        b[2] += off.z; b[5] += off.z;
+        b.bwMoved = true;
+      }
+    }
     /* THE PASSAGE IS WALKED AS A TUBE AND THE OTHER TWO AS GRIDS. The
      * passage's own grid is used ONCE, to find a centreline; what the walk
      * then uses is a corridor fitted to the tunnel's own drawn surface. */
@@ -2477,7 +2499,30 @@ export function makeUndercroft(opts = {}) {
         const coff = new THREE.Vector3(exitEdge + GAP - cm.x, exitFloor - cm.y, off.z - cm.z);
         cw.off.copy(coff);
         S.cave.root.position.copy(coff);
-        S.bridges.push({ x0: exitEdge - 1.4, x1: exitEdge + GAP + 0.8, z0: off.z - 1.5, z1: off.z + 1.5, y0: exitFloor, y1: exitFloor });
+        /* ---- AND THE WAY BACK IN IS A RAMP, NOT A SHELF.
+         *
+         * This bridge was FLAT at the church's own floor and stopped a
+         * stride past the threshold — and the cave beyond it climbs: half a
+         * metre in the first metre, a metre and a quarter by the third. Off
+         * the end of the shelf that is a 0.86 m step UP against the church's
+         * own 0.40 limit, so the walk let you out of the apse and would not
+         * let you back in. Measured: walking back from the exit you stop
+         * dead at x = 109.4 and stall 3552 frames out of 3600.
+         *
+         * It is one ramp from the church's floor to the cave's own, its far
+         * end MEASURED rather than assumed — the first station past the
+         * threshold that the cave actually has a floor at. */
+        {
+          let rx = exitEdge + GAP + 0.8, ry = exitFloor;
+          for (let d = 1.0; d <= 5.0; d += 0.4) {
+            const x = exitEdge + GAP + d;
+            const f = gridFloor(cw, x, off.z);
+            if (f === null) continue;
+            rx = x; ry = f;
+          }
+          S.bridges.push({ x0: exitEdge - 1.4, x1: Math.max(rx, exitEdge + GAP + 0.8),
+                           z0: off.z - 1.6, z1: off.z + 1.6, y0: exitFloor, y1: ry, axis: 'x' });
+        }
         caveFar = { x: cf.x + coff.x, y: cf.y + coff.y, z: cf.z + coff.z };
         const cb = cw.bounds;
         S._shellBox.expandByPoint(new THREE.Vector3(cb[0][0] + coff.x, cb[0][1] + coff.y, cb[0][2] + coff.z));
@@ -2913,6 +2958,26 @@ export function makeUndercroft(opts = {}) {
         spots.push({ x: bx + (rnd() - 0.5) * (bch.box[3] - bch.box[0]) * 0.6,
                      z: bz + (rnd() - 0.5) * 0.16, y: top,
                      hgt: 0.10 + rnd() * 0.18, r: 0.024 + rnd() * 0.010, bench: bch.n });
+      }
+    }
+    /* ---- AND A CANDLE THAT ENDED UP ON A PEW KNOWS WHICH PEW.
+     *
+     * Only the pew loop set `bench`, and it is not the only loop that can
+     * put a candle on one: the nave CLUSTERS stand their candles on
+     * `S.floorAt`, which over a bench returns the BENCH'S TOP — so a cluster
+     * that lands in the pews is standing on them and did not know it, and
+     * when the bench came apart those candles stayed in the air. Every spot
+     * is checked against every bench's own box at the end, which is the one
+     * place that cannot be forgotten by a loop added later. */
+    for (const sp of spots) {
+      if (sp.bench !== undefined) continue;
+      for (const b of S.benches) {
+        const bx = b.box; if (!bx) continue;
+        if (sp.x < bx[0] - 0.12 || sp.x > bx[3] + 0.12) continue;
+        if (sp.z < bx[2] - 0.12 || sp.z > bx[5] + 0.12) continue;
+        if (Math.abs(sp.y - bx[4]) > 0.22) continue;      // standing ON it, not beside it
+        sp.bench = b.n;
+        break;
       }
     }
     // a few burnt down to stubs, because a shrine is old

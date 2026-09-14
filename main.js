@@ -11974,8 +11974,12 @@ function ucStepSplash() {
   if (!ucInWater() || !UC.water) return;
   camera.getWorldDirection(_pf);
   const y = UC_Y + UC.water.y;
+  /* SIX DROPS, NOT THREE. Verified firing — a walk down the tunnel puts eleven
+   * live drops in the pool — and the owner still could not see them, which for
+   * three specks a step at a third power is fair enough. Subtle is the brief;
+   * invisible is not. */
   spawnSplash(camera.position.x + _pf.x * 0.25, camera.position.z + _pf.z * 0.25,
-              3, _pf.x, _pf.z, 0.30, y + 0.01);
+              6, _pf.x, _pf.z, 0.48, y + 0.01);
 }
 function sfxStepUnder() {
   stepAlt ^= 1;
@@ -20523,7 +20527,17 @@ function updateMutRagdoll(u, dt) {
    * else wades in, and a corpse the tide reaches later is WOKEN by it. */
   let wet = false;
   const hip0 = r.byName['Character1_Hips'] || r.parts[0];
-  if (r.asleep && hip0 && bf === null && submersionAt(hip0.p.x, hip0.p.z) > 0.15) r.asleep = false;
+  /* IT IS WOKEN BY THE TIDE ARRIVING, not by being wet. The old test woke any
+   * sleeping body that was submerged at all — which for a corpse lying in the
+   * swash is every frame, so it could never stay asleep and the solver never
+   * stopped. What should wake it is the water CHANGING. */
+  if (r.asleep && hip0 && bf === null) {
+    const sub = submersionAt(hip0.p.x, hip0.p.z);
+    if (sub > 0.15) {
+      const wy = waterSurfaceAt(hip0.p.x, hip0.p.z);
+      if (r.wetY === null || r.wetY === undefined || Math.abs(wy - r.wetY) > 0.12) { r.asleep = false; r.wetY = wy; }
+    }
+  }
   if (!r.asleep) {
     const h = Math.min(dt, 1 / 30) / RAG_SUB;
     let motion = 0;
@@ -20537,7 +20551,11 @@ function updateMutRagdoll(u, dt) {
     for (let s = 0; s < RAG_SUB; s++) {
       // integrate
       for (const q of r.parts) {
-        _rg1.subVectors(q.p, q.pp).multiplyScalar(q.wet > 0 ? RAG_DAMP - 0.10 * q.wet : RAG_DAMP);   // water is thick
+        /* WATER IS THICK, AND IT WAS NOT THICK ENOUGH. At 0.89 a wet particle
+         * keeps 89 % of its speed every substep, which against a floor that
+         * moves under the body every frame is nowhere near enough to stop the
+         * constraints pumping it along. */
+        _rg1.subVectors(q.p, q.pp).multiplyScalar(q.wet > 0 ? RAG_DAMP - 0.34 * q.wet : RAG_DAMP);   // water is thick
         q.pp.copy(q.p);
         q.p.add(_rg1); q.p.y -= RAG_G * h * h;
         motion += _rg1.lengthSq();
@@ -20689,7 +20707,27 @@ function updateMutRagdoll(u, dt) {
     // still travelling fast? then it is still a hammer, and a body that
     // skids into a shelf of bottles takes the shelf with it
     if (motion > 4e-4) ragSmash(r, 6.5);
-    if (r.t > 1.5 && motion < 1e-7 && !wet) r.asleep = true;     // it has come to rest — on sand; water never lets it
+    /* ---- AND A BODY IN THE SURF HAS TO BE ABLE TO COME TO REST TOO.
+     *
+     * "A wet ragdoll never sleeps (the swash moving under it is motion)"
+     * was written so a floating corpse would ride the swell — and what it
+     * actually buys is a body SOLVED FOR EVER on a floor that moves under it
+     * every frame. The wave is not level across a two-metre body, so each
+     * particle is lifted by a different amount, twelve iterations of distance
+     * constraints turn that vertical disagreement into horizontal motion, and
+     * the thing surfs. Measured: three mutants killed in the surf, and the one
+     * that ended up in the water travelled 12.9 metres in twenty seconds at up
+     * to 15 m/s while the two on sand drifted 0.2. That is the owner's
+     * "ragdolls fly around after death".
+     *
+     * It sleeps at a looser threshold when wet — the swash will never let it
+     * be as still as sand does — and it is woken again when the water over it
+     * CHANGES by more than a hand, which is the ride the note wanted without
+     * the drive. */
+    if (r.t > 1.5 && motion < (wet ? 1.2e-5 : 1e-7)) {
+      r.asleep = true;
+      r.wetY = (wet && hip0) ? waterSurfaceAt(hip0.p.x, hip0.p.z) : null;
+    }
   }
   // drive the skeleton from the particles, parent first
   const hips = r.byName['Character1_Hips'];
@@ -20783,6 +20821,25 @@ function updateMutantUnit(u, dt) {
     u.g.rotation.y += d;
   };
 
+  /* ---- AND HIS FEET ARE ON THE FLOOR HE IS STANDING ON.
+   *
+   * Nothing had ever set a creature's HEIGHT down here: `restYInWater` is the
+   * beach's, and the knight was simply left at whatever y he was placed at —
+   * so the step up to the dais went through his shins and he fought at the
+   * altar with his boots inside the stone. It runs EVERY FRAME rather than
+   * inside a movement branch, because he is most often standing still (in a
+   * wind-up, in a recovery) at the moment he needs to be on the step. Eased,
+   * with a floor speed under it so a 0.6 m riser is crossed in a fifth of a
+   * second rather than a third — a snap is the thing this file has spent a
+   * fortnight taking out of him. */
+  if (u.kind.uc && UC.ready) {
+    const gf = UC.floorAt(u.g.position.x - UC_X, u.g.position.z - UC_Z);
+    if (gf !== null) {
+      const dy = (UC_Y + gf) - u.g.position.y, ad = Math.abs(dy);
+      u.g.position.y += ad < 0.02 ? dy
+        : Math.sign(dy) * Math.min(ad, Math.max(ad * dt * 10, 3.5 * dt));
+    }
+  }
   if (!u.st.awake) {
     /* WHAT IT IS DOING BEFORE IT NOTICES YOU. The pack waits out at sea
      * where there is nothing to see but a wake, so its idle never mattered
@@ -29078,17 +29135,17 @@ function authorKnightClips(u, m, gltf) {
  * fifth of a second, he swings nearly every time he could and chains four
  * deep. The tells are what keep him fair and they are the longest in the
  * game — the jump hangs before it comes down. */
-MUT_ATTACKS.kPunch = { wind: 0.42, strike: 0.13, recover: 0.30, hit: 0.560, reach: 2.15, lunge: 1.5, chain: 'kSwipe', chainP: 0.58, w: 0.34, guardK: 0.95, limbs: [0] };
-MUT_ATTACKS.kSwipe = { wind: 0.62, strike: 0.16, recover: 0.38, hit: 0.600, reach: 2.60, lunge: 1.3, chain: 'kPunch', chainP: 0.50, w: 0.32, guardK: 1.15, limbs: [0, 1] };
+MUT_ATTACKS.kPunch = { wind: 0.42, strike: 0.13, recover: 0.30, hit: 0.560, reach: 2.15, lunge: 1.5, chain: 'kSwipe', chainP: 0.7, w: 0.34, guardK: 0.95, limbs: [0] };
+MUT_ATTACKS.kSwipe = { wind: 0.62, strike: 0.16, recover: 0.38, hit: 0.600, reach: 2.60, lunge: 1.3, chain: 'kPunch', chainP: 0.62, w: 0.32, guardK: 1.15, limbs: [0, 1] };
 /* THE TURN. A full revolution with the arm out high — it has no lunge and it
  * hits everything around him, so it is what he answers being circled with.
  * Its contact is late in the clip because the arm has to come all the way
  * round; `hold` keeps him on the spot rather than walking his own wind-up in. */
-MUT_ATTACKS.k360   = { wind: 0.88, strike: 0.24, recover: 0.58, hit: 0.620, reach: 3.20, lunge: 0.5, chain: 'kSwipe', chainP: 0.46, w: 0.20, hold: true, guardK: 1.40, limbs: [0, 1] };
-MUT_ATTACKS.kOver  = { wind: 1.45, strike: 0.20, recover: 0.78, hit: 0.846, reach: 2.50, lunge: 0.8, chain: 'kPunch', chainP: 0.40, w: 0.22, dmg: 2, hold: true, guardK: 1.75, twoHanded: true };
-MUT_ATTACKS.kBack  = { wind: 0.66, strike: 0.16, recover: 0.40, hit: 0.690, reach: 2.55, lunge: 1.2, chain: 'kSwipe', chainP: 0.52, w: 0.28, guardK: 1.10, limbs: [1] };
-MUT_ATTACKS.kStomp = { wind: 0.92, strike: 0.18, recover: 0.52, hit: 0.716, reach: 2.70, lunge: 1.0, stop: 1.32, chain: 'kBack', chainP: 0.44, w: 0.20, guardK: 1.35, limbs: [2] };
-MUT_ATTACKS.kJump  = { wind: 1.05, strike: 0.20, recover: 0.62, hit: 0.640, reach: 5.40, lunge: 5.2, chain: 'kPunch', chainP: 0.55, w: 0.22, dmg: 2, hold: true, guardK: 1.70, minDist: 3.2, twoHanded: true };
+MUT_ATTACKS.k360   = { wind: 0.88, strike: 0.24, recover: 0.58, hit: 0.620, reach: 3.20, lunge: 0.5, chain: 'kSwipe', chainP: 0.56, w: 0.20, hold: true, guardK: 1.40, limbs: [0, 1] };
+MUT_ATTACKS.kOver  = { wind: 1.45, strike: 0.20, recover: 0.78, hit: 0.846, reach: 2.50, lunge: 0.8, chain: 'kPunch', chainP: 0.5, w: 0.22, dmg: 2, hold: true, guardK: 1.75, twoHanded: true };
+MUT_ATTACKS.kBack  = { wind: 0.66, strike: 0.16, recover: 0.40, hit: 0.690, reach: 2.55, lunge: 1.2, chain: 'kSwipe', chainP: 0.64, w: 0.28, guardK: 1.10, limbs: [1] };
+MUT_ATTACKS.kStomp = { wind: 0.92, strike: 0.18, recover: 0.52, hit: 0.716, reach: 2.70, lunge: 1.0, stop: 1.32, chain: 'kBack', chainP: 0.54, w: 0.20, guardK: 1.35, limbs: [2] };
+MUT_ATTACKS.kJump  = { wind: 1.05, strike: 0.20, recover: 0.62, hit: 0.640, reach: 5.40, lunge: 5.2, chain: 'kPunch', chainP: 0.66, w: 0.22, dmg: 2, hold: true, guardK: 1.70, minDist: 3.2, twoHanded: true };
 MUT_KINDS.knight = {
   glb: 'assets/knight.glb', solo: true, noSand: true, skin: null, bones: null,
   /* BIG. Three and a half metres of plate in a nave whose vault is thirteen
@@ -29103,7 +29160,9 @@ MUT_KINDS.knight = {
    * from his origin at full extension, measured) — so he could never put a
    * fist on you whatever the aim did. He is tall, not broad. */
   h: 2.85, hp: 38, dmg: 1, hitR: 1.15, body: 0.78, uc: true, lungeStop: 1.18,
-  speedK: 1.18, windK: 1.00, reachK: 1.00, aggr: 3.20, press: 0.94,
+  /* MORE AGGRESSIVE, on the owner's word, and NOT in the startups: those are
+   * where the fairness lives and this file has paid for shortening them. */
+  speedK: 1.22, windK: 1.00, reachK: 1.00, aggr: 3.70, press: 0.96,
   /* AND THE STOMP IS THE RAREST OF THEM, because it is the one blow of his
    * that cannot be framed. Swept in the pane, its boot is on screen 62 % of
    * the time at best (1.30) against 100 % for every hand blow: it arrives at
@@ -29115,7 +29174,13 @@ MUT_KINDS.knight = {
    * then, a third of the openings, he gives ground instead and watches. The
    * aggression is what makes him hard; the beat where he stops is what makes
    * him readable, and a fight you can read is the only kind you can learn. */
-  circle: 0.20, step: 0.22, chainMax: 4, feint: 0.30, sizeUp: 0.34, restless: 1, smart: 1, crushes: 1,
+  /* THE CHAIN IS THE AGGRESSION. `aggr` divides the between-swing cooldown and
+   * at 3.7 that is already 0.02-0.10 s — saturated, and not what limits his
+   * rate. What does is the swings' own lengths, and those are his tells. A
+   * CHAINED swing has no cooldown at all, so a deeper chain (and the raised
+   * `chainP` on each of his attacks) is the one lever that presses harder
+   * without making him less readable. */
+  circle: 0.16, step: 0.22, chainMax: 5, feint: 0.30, sizeUp: 0.28, restless: 1, smart: 1, crushes: 1,
   turnMax: 5.2,                       // rad/s — he is two tonnes of plate and he comes round like it
   poise: 11, poiseBack: 1.7, poiseWait: 1.2, parryK: 0.80, recoilK: 0.72, blockCost: 1.00,
   block: 0.34, fidgetK: 0.22, fidgetGap: 3.0,
@@ -29327,17 +29392,23 @@ let _kcPrev = null;
  * from behind the post — so the fight starts with him in the open and the
  * chase never has to solve a pier. It is a WALK, eased, not a teleport: the
  * one thing this must not look like is him appearing somewhere else. */
+/* ---- HE COMES STRAIGHT AT YOU, AND HE USED TO GO SIDEWAYS FIRST.
+ *
+ * The step-out walked him from his alcove to a measured spot clear of the
+ * arcade before the fight began — put in because the chase is a straight line
+ * and the pier he stands behind was in the way of it. It reads as exactly
+ * what it is: a boss sliding a couple of metres to his right while the roar
+ * plays, going somewhere rather than coming for you.
+ *
+ * He can simply run now, and nothing had to be added for it: the pews are not
+ * walls to him (`crushes`, the bare floor) and the pier IS one, so `ucSteer`
+ * hands him a way round it the moment the line is shut. What was a scripted
+ * slide is the fight's own pathfinding doing the same job, at the player,
+ * through the furniture. */
 function knightStepOut(dt) {
   const u = knightUnit;
   if (!knightFight || !u || u.dead || !u.st.awake) return;
-  if (u.outDone || u.outX === undefined) return;
-  const tx = UC_X + u.outX, tz = UC_Z + u.outZ;
-  const p = u.g.position;
-  const dx = tx - p.x, dz = tz - p.z, l = Math.hypot(dx, dz);
-  if (l < 0.12) { u.outDone = true; return; }
-  const step = Math.min(l, 2.6 * dt);
-  p.x += dx / l * step; p.z += dz / l * step;
-  u.g.rotation.y = Math.atan2(camera.position.x - p.x, camera.position.z - p.z);
+  u.outDone = true;
 }
 /* ---- AND HE STEPS ROUND A PIER RATHER THAN SHOULDERING IT.
  *
@@ -31181,9 +31252,35 @@ function updateUndercroft(dt) {
     if (!UC.blocked(_ucL.x, pz, r, feet)) _ucL.z = pz;
     else if (!UC.blocked(px, _ucL.z, r, feet)) _ucL.x = px;
     else {
-      UC.pushOut(_ucL, r, feet, 5);
-      if (UC.blocked(_ucL.x, _ucL.z, r, feet)) UC.escape(_ucL, r, feet, 2.5);
-      if (UC.blocked(_ucL.x, _ucL.z, r, feet)) { _ucL.x = px; _ucL.z = pz; }
+      /* ---- AND A WALL IS SLID ALONG, NOT STOPPED AT.
+       *
+       * Keeping whichever ONE AXIS is clear is the oldest trick there is and
+       * it only works where the wall runs along an axis. A church's piers are
+       * round and its apse is a curve, so against either of those both axes
+       * are blocked and the frame is thrown away — you stop dead, hold W, and
+       * nothing happens. Nothing is WEDGED (measured: 408 cases of pressing
+       * into every wall and pillar in the nave from eight headings, and every
+       * one of them walks away); it is the grinding that reads as stuck.
+       *
+       * The move is TURNED instead, a little at a time, and the first angle
+       * that is clear is taken at the speed that survives the turn — which is
+       * what sliding along a curved wall actually is. It only ever keeps a
+       * move the player asked for, so there is nothing to oscillate about. */
+      const mx = _ucL.x - px, mz = _ucL.z - pz;
+      let slid = false;
+      if (mx * mx + mz * mz > 1e-8) {
+        for (const a of [0.45, -0.45, 0.85, -0.85, 1.2, -1.2, 1.45, -1.45]) {
+          const c = Math.cos(a), s2 = Math.sin(a), k = Math.cos(a);
+          const nx2 = px + (mx * c - mz * s2) * k, nz2 = pz + (mx * s2 + mz * c) * k;
+          if (UC.blocked(nx2, nz2, r, feet)) continue;
+          _ucL.x = nx2; _ucL.z = nz2; slid = true; break;
+        }
+      }
+      if (!slid) {
+        UC.pushOut(_ucL, r, feet, 5);
+        if (UC.blocked(_ucL.x, _ucL.z, r, feet)) UC.escape(_ucL, r, feet, 2.5);
+        if (UC.blocked(_ucL.x, _ucL.z, r, feet)) { _ucL.x = px; _ucL.z = pz; }
+      }
     }
   }
   /* YOU HIT YOUR HEAD, AND IT STOPS YOU. A step into a stretch of tunnel

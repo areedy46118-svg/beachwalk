@@ -4628,6 +4628,97 @@ worst turn 5 degrees a frame, worst tick 4.3 ms** — and crossing the nave
 from his alcove he takes **eleven pews** with him and arrives in four
 seconds.
 
+**A CORPSE IN THE SURF WAS BEING SOLVED FOR EVER ON A FLOOR THAT MOVED.**
+"A wet ragdoll never sleeps (the swash moving under it is motion)" was
+written so a floating body would ride the swell, and what it actually bought
+was a body the solver never stopped working on. The wave is not level across
+a two-metre corpse, so every particle is lifted by a different amount, twelve
+iterations of distance constraints turn that vertical disagreement into
+horizontal motion, and the thing SURFS. Measured: three mutants killed in the
+water, and the one that ended up in it travelled **12.9 metres in twenty
+seconds at up to 15 m/s** while the two on sand drifted 0.2. That is the
+owner's "ragdolls fly around after death", and the `RAG_VMAX` cap could not
+see it because the cap is per substep and the pumping is per frame.
+
+Three things: a wet body may SLEEP, at a looser threshold than sand allows;
+it is woken by the water CHANGING rather than by being wet (the old test woke
+any submerged sleeper, which in a swash is every frame, so it could never
+stay asleep); and water is thick — the drag went from 0.10 to 0.34 of the
+speed a substep, which is what a body in water actually does. Measured after:
+**drift 1.32 m, peak 5.9 m/s**, two of three asleep.
+
+**AND A BENCH'S BOX IS IN THE CHURCH'S OWN FRAME UNTIL THE CHURCH IS MOVED.**
+`w.benches[n]` comes out of the packer in the scan's coordinates and the
+church is then translated across the world to meet the tunnel, so every
+reader of a box was a hundred metres out. The candles paid for it: the pew
+loop stands a taper at the middle of a bench's box, which put THIRTY-TWO of
+them at x = -6 instead of x = 94 — floating in the tunnel, tagged as
+belonging to pews they were nowhere near. They were doused correctly when
+their bench broke, which is exactly why it looked like the feature worked;
+what you could see standing on the pews were the nave clusters, and those
+knew nothing about any bench. Offset ONCE, the moment the church has a
+position. **And a candle that ends up on a pew knows which pew** however it
+was placed — the clusters stand theirs on `S.floorAt`, which over a bench
+returns the BENCH'S TOP — so every spot is checked against every bench's box
+at the end, which is the one place a loop added later cannot forget.
+Measured: 23 tagged, 23 actually standing on the bench they name, 0 misplaced.
+
+**THE WAY OUT OF THE APSE WAS A ONE-WAY DOOR.** The bridge over that
+threshold was FLAT at the church's floor and stopped a stride past it — and
+the cave beyond climbs half a metre in the first metre. Off the end of the
+shelf that is a 0.86 m step UP against the church's own 0.40 limit, so the
+walk let you out and would not let you back in: measured, walking back from
+the exit you stop dead at x = 109.4 and stall 3552 frames out of 3600. It is
+one RAMP now, from the church's floor to the cave's own, its far end measured
+rather than assumed — the last station past the threshold the cave actually
+has a floor at.
+
+**AND A WALL IS SLID ALONG, NOT STOPPED AT — WHERE THERE IS ANYWHERE TO
+SLIDE.** Keeping whichever ONE AXIS is clear only works where the wall runs
+along an axis, and a church's piers are round and its apse is a curve. The
+move is turned instead, a little at a time, and the first angle that is clear
+is taken at the speed that survives the turn. **And the thing to be clear
+about is what "stuck" was**: measured over 408 cases — pressing into every
+wall, pier and altar in the nave from eight headings and then trying to leave
+in eight more — NOTHING is wedged, and nothing was before. What the owner was
+feeling is the grind, and walking square into a wall and not moving is the
+one case that is simply correct.
+
+**AND HE COMES STRAIGHT AT YOU NOW.** The step-out walked him from his alcove
+to a measured spot clear of the arcade before the fight began — put in
+because the chase is a straight line and the pier he stands behind was in the
+way of it — and it reads as a boss sliding two metres to his right while the
+roar plays, going somewhere rather than coming for you. Nothing had to be
+added to delete it: the pews are not walls to him and the pier is, so
+`ucSteer` hands him the way round the moment the line is shut. Measured: he
+crosses the nave straight at the altar and takes **seventeen pews** with him.
+
+**AND NOTHING HAD EVER SET A CREATURE'S HEIGHT DOWN THERE.** `restYInWater`
+is the beach's; the knight was left at whatever y he was placed at, so the
+step up to the dais went through his shins and he fought at the altar with
+his boots in the stone. The floor is followed EVERY FRAME rather than inside
+a movement branch — he is most often standing still, in a wind-up or a
+recovery, at the moment he needs to be on the step — eased, with a floor
+speed under it so a 0.6 m riser is crossed in a fifth of a second rather than
+a third. Worst foot gap 0.66 m → **0.175**.
+
+**AND THE CHAIN IS THE AGGRESSION.** `aggr` divides the between-swing
+cooldown and at 3.7 that is already 0.02-0.10 s — saturated, and not what
+limits his rate. What limits it is the swings' own lengths, and those are his
+TELLS: this file has paid for shortening them before. A CHAINED swing has no
+cooldown at all, so a deeper chain and a raised `chainP` on every attack is
+the one lever that presses harder without making him less readable.
+Measured: **41.2 swings and 43.2 damage a minute at 100 % connect**, against
+37.6 and 38 before, with 98 % of contacts still on screen and the startups
+untouched.
+
+**AND A `git checkout` ON A FILE YOU HAVE NOT COMMITTED THROWS THE WORK
+AWAY.** Reached for to undo one bad edit mid-session; it reverted `main.js`
+to the last commit and took six unrelated fixes with it. They were all in the
+transcript and were redone in two passes, but the rule is worth writing down:
+in a session that edits one enormous file over hours, `git checkout <file>`
+is not an undo, it is a discard of everything since the last commit.
+
 ## Dev mode
 
 `DEFAULT_SETTINGS` are the owner's own (music 30 %, waves 18 %, effects
