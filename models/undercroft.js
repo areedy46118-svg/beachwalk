@@ -927,6 +927,14 @@ export function makeUndercroft(opts = {}) {
     const MM = new THREE.Matrix4();
     root.traverse((o) => {
       if (!o.isMesh || !o.geometry || !o.geometry.attributes.position) return;
+      /* THE WATER IS THE FLOOR HERE, SO THE FIT MUST SEE IT. local.yany's
+       * tunnel runs a channel down its middle and the rock does not close
+       * under it — one flat plane of water at the floor's own height is what
+       * you actually stand on. Taking it out of the bins (tried, because a
+       * surface near the line looks like a wall) left the floor march dying
+       * after thirty centimetres and every station reading as a ledge: the
+       * measured clear height collapsed from two metres to 0.62. It is only
+       * the CARVE that must leave it alone, or the tunnel comes out dry. */
       const g = o.geometry, pos = g.attributes.position, idx = g.index;
       MM.multiplyMatrices(toLocal, o.matrixWorld);
       const n = idx ? idx.count : pos.count;
@@ -944,7 +952,14 @@ export function makeUndercroft(opts = {}) {
          * twelve centimetres is dense enough for the march to mean something. */
         E1.subVectors(B, A); E2.subVectors(C, A);
         const area = E1.cross(E2).length() * 0.5;
-        const nn = Math.max(1, Math.min(12, Math.ceil(Math.sqrt(area) / 0.12)));
+        /* AND THE CAP HAS TO SUIT THE BIGGEST FACE IN THE MODEL. At twelve a
+         * triangle bigger than about two square metres samples coarser than
+         * the march steps, and the march stops at the first gap — which on
+         * local.yany's cave is its water plane (720 triangles over two
+         * thousand square metres) and that plane IS the floor, so the span
+         * came back at 0.15 m down the entire tunnel and the corridor
+         * collapsed to its minimum. */
+        const nn = Math.max(1, Math.min(28, Math.ceil(Math.sqrt(area) / 0.12)));
         for (let u = 0; u <= nn; u++) for (let v = 0; v + u <= nn; v++) {
           const fu = u / nn, fv = v / nn, fw = 1 - fu - fv;
           M.set(A.x * fw + B.x * fu + C.x * fv, A.y * fw + B.y * fu + C.y * fv, A.z * fw + B.z * fu + C.z * fv);
@@ -1023,7 +1038,38 @@ export function makeUndercroft(opts = {}) {
     return out;
   }
   const BODY_MARGIN = 0.20;
-  function fitCorridor(C, bins) {
+  /* AND ON A SCANNED CAVE THE WALL IS CAST FOR, NOT MARCHED TO. Marching the
+   * floor outward through the sampled surface is the right question for the
+   * 3DRT passage, whose floor is a flat strip and whose walls stand off it —
+   * and it is the wrong one for local.yany's cave, where the floor is a
+   * water channel that falls away from the centre: the march leaves the
+   * floor's own height window after two steps, reports a ledge 0.15 m wide,
+   * and every station collapses to the minimum radius. Measured, the same
+   * stations raycast 1.4 to 2.3 m of clear rock either side. So where the
+   * caller hands in a triangle index, the wall is the nearest rock a
+   * HORIZONTAL ray meets — at three heights, because one ray can find a gap
+   * — which is a question about the bore and cannot be confused by the
+   * shape of the floor. Horizontal on purpose: the water lies flat, so it
+   * can never be mistaken for a wall. */
+  function rayWall(ix, x, y, z, nx, nz, roof) {
+    /* AND THE RAY HAS TO STAY UNDER THE HAUNCH — the roof's own lesson, in
+     * the other instrument. In an arched bore a ray at head height meets the
+     * ceiling curving down a hand's width away, so taking the nearest over
+     * three heights measured the ARCH and reported a wall at 0.72 m in a
+     * tunnel four metres wide. Only heights that are clear of the roof by a
+     * good margin are asking about the wall at all. */
+    const hs = [0.35];
+    if (roof > 1.45) hs.push(roof - 0.55);
+    let best = 3.2;
+    for (const dy of hs) {
+      for (const sg of [1, -1]) {
+        const t = rayHit(ix, x, y + dy, z, nx * sg, 0, nz * sg, 3.2);
+        if (t > 0.05 && t < best) best = t;
+      }
+    }
+    return best;
+  }
+  function fitCorridor(C, bins, ix) {
     const P = C.pts, R = 3.2;
     const tang = (k) => {
       const a = P[Math.max(0, k - 1)], b = P[Math.min(P.length - 1, k + 1)];
@@ -1071,6 +1117,25 @@ export function makeUndercroft(opts = {}) {
       if (P[k].open) continue;
       wall[k] = Math.min(q.span[0], q.span[1], q.head[0], q.head[1]);
       P[k].h = Math.max(1.15, Math.min(4.0, q.roof - q.floor - 0.05));
+      if (ix) {
+        const [tx, tz] = tang(k);
+        /* AND THE FLOOR IS CAST FOR FIRST, because everything else is
+         * measured from it. The sampled floor is capped at 0.55 above the
+         * station, so where the grid put the line below the real ground the
+         * probe returns that cap — and then the roof ray, fired from under
+         * the floor, hits the floor, and the tunnel reports a crawl. A ray
+         * DOWN from well overhead cannot be confused: it finds the surface
+         * you would actually stand on. */
+        const H0 = 1.8;
+        const dn = rayHit(ix, P[k].x, P[k].y + H0, P[k].z, 0, -1, 0, 5.0);
+        const fy0 = dn > 0.02 ? P[k].y + H0 - dn : P[k].y + (q.floor === null ? 0 : q.floor);
+        P[k].y = fy0;
+        const up = rayHit(ix, P[k].x, fy0 + 0.12, P[k].z, 0, 1, 0, 6.0);
+        const roof = up > 0.6 ? up + 0.12 : q.roof - q.floor;
+        if (up > 0.6) P[k].h = Math.max(1.15, Math.min(4.0, roof - 0.05));
+        const w = rayWall(ix, P[k].x, fy0, P[k].z, tz, -tx, roof);
+        if (w > wall[k]) wall[k] = w;
+      }
     }
     /* A STATION NARROWER THAN A BODY IS A MEASUREMENT, NOT A TUNNEL. The
      * march stops at the first gap in the samples, so a sparse patch of a
@@ -1147,6 +1212,7 @@ export function makeUndercroft(opts = {}) {
     group.updateMatrixWorld(true);
     root.traverse((o) => {
       if (!o.isMesh || !o.geometry || !o.geometry.index) return;
+      if (o.userData.bwDecor) return;      // the water is the floor, and carving it leaves a dry tunnel
       const g = o.geometry, pos = g.attributes.position, idx = g.index;
       MM.multiplyMatrices(toLocal, o.matrixWorld);
       const keep = [];
@@ -1342,6 +1408,21 @@ export function makeUndercroft(opts = {}) {
     S._tubeDist = dist;
     return dist;
   };
+  /* IS THIS THE TUNNEL? — asked because a low roof means two different
+   * things in this place. In the church and the old cave a beam under head
+   * height is a BEAM and walking into it should stop you; in the tunnel the
+   * low roof IS the shape of the room, and refusing every step under it
+   * refuses the whole tunnel one stride at a time. That used to be answered
+   * by "are you inside the corridor", which was true down the whole passage
+   * while the passage was walked as a tube; now that it is walked as its own
+   * floor, the question has to be asked of the model instead. */
+  S.inPassage = (lx, lz) => {
+    const w = S.passage && S.passage.walk;
+    if (!w) return false;
+    const i = Math.floor((lx - w.off.x - w.x0) / w.cell), j = Math.floor((lz - w.off.z - w.z0) / w.cell);
+    if (i < 0 || j < 0 || i >= w.gw || j >= w.gh) return false;
+    return cellFloor(w, i, j) !== null;
+  };
   S.blocked = (lx, lz, r, feet) => {
     // sample the disc: its centre and a ring — cheaper than walking two grids' cells
     if (!S.walkable(lx, lz, feet)) return true;
@@ -1407,7 +1488,7 @@ export function makeUndercroft(opts = {}) {
      * material — but the default kind is still 'cave', so it stays as the
      * thing an unlabelled material would get. */
     cave:   { dust: 0.52, damp: 0.42, level: 0.46, emis: 0.14, tint: 0xa9a69c },
-    church: { dust: 0.16, damp: 0.14, level: 0.92, emis: 0.52, tint: 0xc9c6c0 },
+    church: { dust: 0.16, damp: 0.14, level: 0.98, emis: 0.66, tint: 0xc9c6c0 },
     /* the idol takes almost no dirt and a WARM lift: it stands in a ring of
      * candles and nothing else in this building is lit by a flame. */
     altar:  { dust: 0.08, damp: 0.05, level: 0.98, emis: 0.34, tint: 0xc7a97c },
@@ -1646,11 +1727,31 @@ export function makeUndercroft(opts = {}) {
       for (const m of (Array.isArray(o.material) ? o.material : [o.material])) if (m) { m.flatShading = false; m.needsUpdate = true; }
     });
   }
-  load(opts.passageUrl || 'assets/passage.glb', (gltf) => {
+  load(opts.passageUrl || 'assets/tunnel.glb', (gltf) => {
     const root = gltf.scene;
     const w = parseWalk(root);
     dress(root, 'cave');
-    passageTriplanar(root);
+    /* THE WATER IS DRESSING, NOT ROCK — and A MATERIAL WITH NO MAP AND NO
+     * LIFT IS BLACK DOWN HERE, which is the lamp-in-a-wall lesson wearing a
+     * puddle. The grime pass lifts a surface off its OWN map, and this one
+     * has no map at all, so it came through the dress as pure black and read
+     * as a hole in the floor the length of the tunnel. Standing water in a
+     * dark cave is not black: it is the darkest thing in the room and it is
+     * also the only WET thing, so what says water is that it takes a
+     * highlight — low roughness, a little metalness, and just enough cold
+     * emissive to separate it from the rock it lies on. The carve leaves it
+     * alone as well, or the tunnel comes out dry. */
+    root.traverse((o) => {
+      if (!o.isMesh || !o.material || (o.material.name || '') !== 'Water') return;
+      o.userData.bwDecor = true;
+      const m = o.material;
+      m.color.setHex(0x1d2630);
+      m.emissive.setHex(0x0a1119);
+      m.emissiveIntensity = 1;
+      m.roughness = 0.18;
+      m.metalness = 0.30;
+      m.needsUpdate = true;
+    });
     smoothRock(root);
     group.add(root);
     S.passage = { root, walk: w };
@@ -1765,7 +1866,19 @@ export function makeUndercroft(opts = {}) {
     /* THE PASSAGE IS WALKED AS A TUBE AND THE OTHER TWO AS GRIDS. The
      * passage's own grid is used ONCE, to find a centreline; what the walk
      * then uses is a corridor fitted to the tunnel's own drawn surface. */
-    S.walks = [ch, cw];
+    /* THE TUNNEL IS THE MODEL, SO THE WALK IS THE MODEL'S OWN FLOOR. The
+     * corridor tube was built for the 3DRT passage — 3,848 triangles over
+     * 170 m, faces a metre across, decoration slabs floating in the bore —
+     * and for THAT a cell grid really is a minefield. local.yany's cave is
+     * the other kind of model and the tube was the whole problem: fitted to
+     * a floor that falls into a water channel it measured a ledge 0.15 m
+     * wide, and what the owner got was a pipe half a metre across down the
+     * middle of a four-metre tunnel, which is "I can't even walk through".
+     * It is walked the way the exit cave — also a scan — has been walked
+     * since the day it went in: by the grid the packer sampled off its own
+     * triangles. The floor you stand on is the floor it draws. */
+    S.walks = [ch, cw, pw];
+    pw.stepMax = 0.75; pw.dropMax = 1.5;
     S.despeckled = despeckle(ch) + despeckle(cw) + despeckle(pw);
     ch.stepMax = 0.40;                  // a pew's seat is 0.45 up, and that is not a step
     cw.stepMax = 1.2; cw.dropMax = 2.0;  // the old cave is rubble
@@ -1791,7 +1904,18 @@ export function makeUndercroft(opts = {}) {
        * smoothed into them — and those are the narrowest stations in the
        * model, where being a foot off centre is the difference between a
        * corridor and a wall. */
-      fitCorridor(inbound, surfaceBins(S.passage.root));
+      fitCorridor(inbound, surfaceBins(S.passage.root), triIndex(S.passage.root));
+      /* AND THE TUBE IS KEPT ONLY FOR THE SEAM. `walkable` asks the corridor
+       * BEFORE the grids, so a tube down the whole tunnel overrides the
+       * model's own floor everywhere it reaches — which is exactly the cage
+       * this used to be. All it is needed for now is the last few metres:
+       * the church's wall is solid across its thickness in the grid, so
+       * something has to carry the walk from the tunnel's floor into the
+       * nave. Everything before that is the model's. */
+      {
+        const k0 = inbound.pts.findIndex((q) => q.x >= low.x - 9);
+        if (k0 > 0) inbound.pts.splice(0, k0);
+      }
       /* AND IT RUNS ALL THE WAY INTO THE NAVE. The last stations are laid
        * straight at the church's doorway at the doorway's own height and a
        * stride PAST its wall, so the bore's mouth is inside the breach and
@@ -1823,8 +1947,31 @@ export function makeUndercroft(opts = {}) {
        * BEHIND the scan everywhere the scan is there — you never see it —
        * and is the rock everywhere it is not. The cave you look at is still
        * the owner's model; what is behind it is no longer the void. */
+      /* AND THE TUNNEL STOPS AT THE CHURCH'S DOOR. local.yany's cave is 147 m
+       * of rock and the church is set against the last station the WALK uses,
+       * which is not the last rock the model draws — so the far end of the
+       * tunnel carried on straight through the doorway and what you saw
+       * standing five metres short of the nave was stone filling the frame.
+       * "It doesn't match up right when you walk in the church."
+       *
+       * It is clipped, in world x, in the same shader the church's own far
+       * end is clipped in — a hand PAST the doorway, so the bore's mouth is
+       * inside the breach and the join has no seam on either side of it. */
+      {
+        const hiX = group.localToWorld(new THREE.Vector3(low.x + GAP + 0.55, 0, 0)).x;
+        S.passage.root.traverse((o) => {
+          if (!o.isMesh) return;
+          for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+            if (!m) continue;
+            m.userData.bwClipHi = hiX;
+            if (m.userData.bwSh && m.userData.bwSh.uniforms.uUcClipHi) m.userData.bwSh.uniforms.uUcClipHi.value = hiX;
+          }
+        });
+      }
       gapRuns(inbound);
-      skins.push({ C: inbound, root: () => S.passage.root, want: null, cap: [true, false] });
+      /* AND NOTHING IS SWEPT BEHIND IT. A skin exists to close the holes in a
+       * model; this one is a closed cave and the owner's word is an exact
+       * replica of it. Where it has a hole there is black. */
       corridorBox(inbound);
       S.corridors.push(inbound);
       mouthCol.w = P[P.length - 1].r * 2;
@@ -2140,8 +2287,17 @@ export function makeUndercroft(opts = {}) {
        * from the scan's first column the player stood a stride BEHIND the
        * tube's first station, where its radius is already closing into the
        * cap — the third station is inside the cave by construction. */
-      entry: (() => { const p = inbound.pts[Math.min(2, inbound.pts.length - 1)];
-                      return { x: p.x, y: p.y, z: p.z, yaw: Math.atan2(-(inbound.pts[Math.min(5, inbound.pts.length - 1)].x - p.x), -(inbound.pts[Math.min(5, inbound.pts.length - 1)].z - p.z)) }; })(),
+      /* WHERE YOU CRAWL IN IS THE TUNNEL'S OWN MOUTH, not the corridor's
+       * first station — the tube is only the church seam now, so its first
+       * point stands a hundred and forty metres away at the FAR end. It is
+       * taken off the grid's own first floored column instead, a stride in
+       * so you are inside the rock rather than standing in its doorway, and
+       * aimed at the column three metres further on. */
+      entry: (() => {
+        const a = colStats(pw, Math.round((high.x + 1.2 - pw.x0) / pw.cell - 0.5)) || high;
+        const c = colStats(pw, Math.round((high.x + 4.2 - pw.x0) / pw.cell - 0.5)) || low;
+        return { x: a.x, y: a.y, z: a.z, yaw: Math.atan2(-(c.x - a.x), -(c.z - a.z)) };
+      })(),
       mouth: { x: low.x, y: low.y, z: low.z },
       exit: exitSpot,                                  // the far end of the old cave, behind the altar
       exitEdge: exitEdge === null ? altarX : exitEdge, // where the church ends and the way out begins
@@ -2163,7 +2319,12 @@ export function makeUndercroft(opts = {}) {
     }
     /* the model is carved back out of the walk — both tunnels, once both
      * corridors are in `S.corridors` */
-    S.carved = carveTube(S.passage.root, 0.06, 2.4) + carveTube(S.cave.root, 0.06, 1.15);
+    /* AND THE TUNNEL IS NOT CARVED. The carve drops the model's own faces
+     * where they poke into the tube, which is right when the tube IS the
+     * walk and is vandalism when the walk is the model's own floor: every
+     * face it takes is a hole in an exact replica. The exit cave keeps its
+     * carve — it is still walked with a tube at the apse. */
+    S.carved = carveTube(S.cave.root, 0.06, 1.15);
     /* and NOW the skin, on what is left of the rock */
     const t0 = performance.now();
     for (const K of skins) {
@@ -2309,10 +2470,19 @@ export function makeUndercroft(opts = {}) {
     const rx = Math.max(0.42, (A.x1 - A.x0) / 2 - 0.16), rz = Math.max(0.55, (A.z1 - A.z0) / 2 - 0.16);
     for (let k = 0; k < 13; k++) {
       const a = -Math.PI * 0.86 + (k / 12) * Math.PI * 1.72;    // the open side faces down the nave
-      spots.push({ x: A.x + Math.cos(a) * rx * (0.86 + rnd() * 0.2),
-                   z: A.z + Math.sin(a) * rz * (0.86 + rnd() * 0.2),
-                   y: A.y, hgt: 0.13 + rnd() * 0.20, r: 0.026 + rnd() * 0.012 });
+      const hx = A.x + Math.cos(a) * rx * (0.86 + rnd() * 0.2);
+      const hz = A.z + Math.sin(a) * rz * (0.86 + rnd() * 0.2);
+      spots.push({ x: hx, z: hz, y: A.y, hgt: 0.13 + rnd() * 0.20, r: 0.026 + rnd() * 0.012 });
     }
+    /* AND THE DARK CORNER IS DECIDED BEFORE ANY CANDLE IS PLACED. The wall to
+     * the left of the altar is where the knight stands and the whole of the
+     * first beat is that you did not see him — so the ring at the foot of the
+     * dais is kept out of it as well as the clusters down the nave. It reaches
+     * a long way round, and with it in, the nearest flame to him was 0.72 m. */
+    /* and the dark he stands in moved down the nave with him: eighteen
+     * metres back from the altar, behind the arcade on the left */
+    const DARK = { x: A.x - 18, z: A.z - 5.0 }, DARK_R = 6.8;
+    const clear = (x, z) => (x - DARK.x) * (x - DARK.x) + (z - DARK.z) * (z - DARK.z) > DARK_R * DARK_R;
     for (let k = 0; k < 18; k++) {
       const a = (k / 18) * Math.PI * 2 + rnd() * 0.12;
       const q = 0.9 + rnd() * 0.5;
@@ -2327,9 +2497,59 @@ export function makeUndercroft(opts = {}) {
        * arranged around: the dais is a step and the ring reaches past its
        * front edge, so the ones at the bottom of it stood a third of a
        * metre in the air over the nave floor. The gibs learned this once. */
+      if (!clear(x, z)) continue;
       const f = S.floorAt(x, z);
       spots.push({ x, z, y: f === null || Math.abs(f - A.dais) > 1.2 ? A.dais : f,
                    hgt: 0.16 + rnd() * 0.30, r: 0.030 + rnd() * 0.016 });
+    }
+    /* ---- AND THE REST OF THE ROOM IS LIT BY THEM TOO, EXCEPT ONE CORNER.
+     * Thirty-one candles round the altar leave a forty-metre nave that is
+     * black past the dais, and the owner asked for the room dimly lit — so
+     * there are clusters down it: at the foot of the piers, along both
+     * walls, and a few knocked-over handfuls on the floor where somebody
+     * stood. They are somebody's offerings, so they go in GROUPS of three to
+     * seven with dark between, never scattered evenly: an even scatter reads
+     * as lighting and a group reads as people.
+     *
+     * AND THE DARK CORNER IS KEPT DARK, BY CONSTRUCTION. The wall to the
+     * left of the altar is where the knight stands, and the whole of the
+     * first beat is that you did not see him — so nothing is placed within
+     * `DARK_R` of it. It is derived from the altar the same way his own
+     * position is, rather than written down twice. */
+    let groups = 0;
+    for (let g = 0; g < 30 && groups < 13; g++) {
+      // somewhere down the nave, biased to the sides where a pier would be
+      const back = 4 + rnd() * 30;                       // metres back from the altar
+      const side = (rnd() < 0.5 ? -1 : 1) * (2.2 + rnd() * 5.0);
+      const cx = A.x - back, cz = A.z + side;
+      if (!clear(cx, cz)) continue;
+      const f = S.floorAt(cx, cz);
+      if (f === null) continue;
+      groups++;
+      const n = 3 + Math.floor(rnd() * 5);
+      for (let k = 0; k < n; k++) {
+        const x = cx + (rnd() - 0.5) * 0.85, z = cz + (rnd() - 0.5) * 0.85;
+        if (!clear(x, z)) continue;
+        const ff = S.floorAt(x, z);
+        spots.push({ x, z, y: ff === null ? f : ff, hgt: 0.12 + rnd() * 0.26, r: 0.026 + rnd() * 0.014 });
+      }
+    }
+    /* ---- AND SOME OF THEM ARE STOOD ON THE PEWS. Somebody set them down on
+     * the benches, which is what you do with a candle when your hands are
+     * full, and it means the room has light down at seat height as well as
+     * on the floor. It also means a bench that comes apart takes its candles
+     * with it — each one remembers WHICH pew it is on, and `breakBench`
+     * throws them off it and puts them out. */
+    for (const bch of S.benches) {
+      if (!bch.box || rnd() > 0.55) continue;
+      const bx = (bch.box[0] + bch.box[3]) / 2, bz = (bch.box[2] + bch.box[5]) / 2, top = bch.box[4];
+      if (!clear(bx, bz)) continue;
+      const n = 1 + Math.floor(rnd() * 2);
+      for (let k = 0; k < n; k++) {
+        spots.push({ x: bx + (rnd() - 0.5) * (bch.box[3] - bch.box[0]) * 0.6,
+                     z: bz + (rnd() - 0.5) * 0.16, y: top,
+                     hgt: 0.10 + rnd() * 0.18, r: 0.024 + rnd() * 0.010, bench: bch.n });
+      }
     }
     // a few burnt down to stubs, because a shrine is old
     for (const sp of spots) if (rnd() < 0.22) sp.hgt *= 0.32;
@@ -2337,7 +2557,7 @@ export function makeUndercroft(opts = {}) {
     const taper = new THREE.CylinderGeometry(0.82, 1.0, 1.0, 7, 1, false);
     taper.translate(0, 0.5, 0);                       // stand it on its own foot
     const waxMat = new THREE.MeshStandardMaterial({ color: 0xb9aa90, roughness: 0.86, metalness: 0,
-                                                    emissive: 0x6b4520, emissiveIntensity: 0.50, flatShading: true });
+                                                    emissive: 0x6b4520, emissiveIntensity: 0.78, flatShading: true });
     const wax = new THREE.InstancedMesh(taper, waxMat, spots.length);
     const pool = new THREE.CylinderGeometry(1.0, 1.15, 1.0, 8, 1, false);
     pool.translate(0, 0.5, 0);
@@ -2401,6 +2621,22 @@ export function makeUndercroft(opts = {}) {
     flames.renderOrder = 3;
     group.add(flames);
     CANDLES.flames = flames;
+    /* what a broken pew needs to take its candles with it: the spots, the two
+     * instanced meshes they live in and the flame batch, so the game can put
+     * one out and throw it without knowing how any of this is built */
+    S.candles = { spots, wax, pools, flames, mat: waxMat };
+    S.douseCandle = (i) => {
+      const sp = spots[i];
+      if (!sp || sp.out) return null;
+      sp.out = true;
+      const m = new THREE.Matrix4().makeScale(0, 0, 0);
+      wax.setMatrixAt(i, m); pools.setMatrixAt(i, m);
+      wax.instanceMatrix.needsUpdate = true; pools.instanceMatrix.needsUpdate = true;
+      const fp = flames.geometry.attributes.position;
+      fp.setXYZ(i, sp.x, -9999, sp.z);            // the flame goes out with it
+      fp.needsUpdate = true;
+      return sp;
+    };
 
     /* the idol. It arrives over the network long after the room is composed,
      * so the group is here from the start and the scan lands in it — the

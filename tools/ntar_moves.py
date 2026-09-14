@@ -55,7 +55,13 @@ What else it does, and why:
 import bpy, json, math, os, sys
 from mathutils import Vector, Quaternion, Matrix
 
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', 'ntar-moves.json')
+# AND IT DOES TWO CREATURES NOW. The red alien's three moves and the
+# knight's six come off the same Mixamo rig and go onto two different
+# skeletons, and neither of them cares which — the quantity this writes is
+# the rotation a bone has UNDERGONE, which knows nothing about either rig.
+#   blender -b -P tools/ntar_moves.py -- knight
+SET = 'knight' if 'knight' in sys.argv else 'ntar'
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', SET + '-moves.json')
 SRC = os.path.expanduser('~/Downloads')
 FPS = 30
 
@@ -73,6 +79,17 @@ CLIPS = [
     ('Surprise Uppercut',       'knock',   'knocked onto his back'),
     ('Meia Lua De Compasso',    'nSweep',  'the compass kick'),
     ('Macaco Side',             'dodge',   'the side handspring'),
+] if SET == 'ntar' else [
+    ('Mutant Walking',          'walk',    'the walk — heavy, and his'),
+    ('Walking',                 'walkB',    'a second walk, so the gait is drawn'),
+    ('Walk Strafe Right',       'strafeR', 'a stride sideways, feet crossing'),
+    ('Medium Right Side Step',  'sideR',   'a short side step'),
+    ('Mutant Punch',            'kPunch',  'a straight punch'),
+    ('Mutant Swiping',          'kSwipe',  'a sweep across with the arm'),
+    ('Mutant Jump Attack',      'kJump',   'off the ground and down on you'),
+    ('Mutant Run',              'run',     'the run'),
+    ('Block',                   'block',   'the guard'),
+    ('Center Block',            'blockC',  'the guard, square on'),
 ]
 # THE BEATS, measured off the hips (see the log's own curve). A Mixamo clip
 # is a performance with an approach and a recovery either side of the thing
@@ -85,10 +102,11 @@ CLIPS = [
 #          his hands f48-60 (measured in the game: the spine's up reaches
 #          -0.99), and is back on his feet and upright by f80. What follows
 #          is a step out and back that reads as idling.
-WINDOW = {'knock': (30, 78), 'nSweep': (0, None), 'dodge': (20, 82)}
+WINDOW = ({'knock': (30, 78), 'nSweep': (0, None), 'dodge': (20, 82)} if SET == 'ntar'
+          else {})          # filled in below, once the curves have been read
 # He is knocked down FACING YOU, by the owner's word, so this one is de-yawed
 # whatever it measures.
-FORCE_FLAT_YAW = {'knock'}
+FORCE_FLAT_YAW = {'knock'} if SET == 'ntar' else {'kPunch', 'kSwipe', 'kJump', 'block', 'blockC', 'strafeR', 'sideR'}
 
 
 def log(*a):

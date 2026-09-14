@@ -3464,6 +3464,315 @@ four frames over 250) and every asset is in by 8.3 s; the abduction take has
 NO frame over 24 ms; and the death, the crash and the hand-back have one, at
 338 ms, with two new programs where there were thirty.
 
+**"IT LAGS, ESPECIALLY ON WINDOWS" WAS THREE COSTS, AND NONE OF THEM WAS THE
+TRIANGLES.** Measured standing still at the spawn, doing nothing: **1123 draw
+calls, 506k triangles, 497 shader programs and 46 point lights in every
+shader.** A Mac absorbs all of that — Metal will take a thousand draws a frame
+and say nothing, which is why every one of these had been walked past. Windows
+runs WebGL through ANGLE onto D3D11, where a draw call is a validated API call
+costing several times what it costs on Metal, and where every shader program
+must first be TRANSLATED to HLSL and compiled by the D3D compiler. So the three
+things that were nearly free here are the three things that are not there.
+
+- **SIX HUNDRED AND SIXTY DRAWS WERE SPENT PAST THE FOG.** `FogExp2` at 0.014
+  leaves under one per cent of a surface at 153 m; the camera's far plane is
+  five thousand. 821 of the 1123 draws, carrying 230k triangles, were beyond
+  that line — the lighthouse's masonry from a kilometre and a quarter, the
+  bunker forty metres underground, every cache down the whole walk.
+  `farProps` is the hand-kept version of this idea and it works; what it
+  cannot do is cover what nobody remembered to register, and by the time the
+  walk was a kilometre long that was most of the world. `cullBeyondFog` takes
+  it by the SCENE instead of by the list: the highest subtree with nothing
+  un-cullable in it is a unit, measured once for its own radius and culled
+  against `DRAW_FAR`. The list's own distances — 260, 300, 320, 340, every one
+  of them at least ninety metres past the point where there is nothing left to
+  see — are clamped to the same number.
+- **AND FOG HIDES A THING BUT IT DOES NOT HIDE A HOLE IN THE SKY.** That is
+  the one place the reasoning above is wrong and it took a pixel diff to find:
+  rendering with and without the cull, everything that still showed a
+  difference at 920 m was 27 to 93 metres across. Fully fogged, a landform is
+  not gone — it is a shape of fog colour standing in front of a brighter
+  horizon and in front of the moon, and culling it does not remove a dim
+  object, it opens a hole. Anything bigger than `SKYLINE_R` keeps whatever
+  `farProps` already said about it: 43 units out of 595, which costs nothing,
+  because the draw calls were never in the big things (the median culled unit
+  is 0.7 m across). What is left is 2 to 9 pixels of moon where a speck at
+  700–1000 m used to cross it.
+- **FORTY-SIX POINT LIGHTS WERE IN EVERY SHADER AND NONE OF THEM REACHED
+  YOU.** `NUM_POINT_LIGHTS` is a #define, so a fragment of sand on an empty
+  beach ran the point-light loop forty-six times and every draw bound
+  forty-six lights' worth of uniforms. They are all in the scene for ever
+  because this file learned early that a light ENTERING OR LEAVING recompiles
+  every material in the game — true, and the price of obeying it had quietly
+  become the whole problem. So the lights are VIRTUALISED: twelve real
+  `PointLight`s are added at boot and are the only ones the camera ever sees,
+  and every other point light in the game stays exactly where it is, keeps its
+  name and its parent and its intensity, goes on being animated by whatever
+  owns it, and is moved to a layer the camera does not watch (three gathers a
+  light only if `layers.test(camera.layers)` passes, and unlike `visible` that
+  is not something anything else in this file reads). Each frame the twelve are
+  pointed at the twelve that actually reach you. **Twelve is measured**:
+  sampling every light's own position and the whole walk, the most that are
+  ever within 1 % of the brightest at one spot is NINE, under the lighthouse's
+  lantern. Verified by rendering the same frame both ways at sixteen light
+  clusters — pixel-identical. Programs went 497 → 114, which is the load-time
+  bill on Windows cut by four fifths. **And the side effect is worth as much as
+  the saving: hiding a lamp is FREE now**, so `farProps` may cull a group with
+  lights in it and the hall's lamps need no longer be kept alive in a group
+  that is never hidden.
+- **A BUILDING MADE OF SIX HUNDRED LITTLE MESHES IS SIX HUNDRED DRAW CALLS,
+  AND THE TRIANGLES ARE NOT THE POINT.** The pavilion is 583 objects — every
+  astragal, every pane, every rib of the gills — and together they are under
+  ten thousand triangles: twenty-two triangles a draw. This file has already
+  argued once that the pavilion's six hundred meshes were not its cost, and on
+  a Mac that was true. `bakeStatic` is `bakeScatter` with the nesting handled
+  (a pavilion is a tree, a scatter is a flat list): merged by material, in the
+  root's frame, skipping anything that moves on its own, carries children, is
+  instanced or skinned, or is NAMED — a name means somebody holds it. The gate
+  is kept out by hand because it swings. Pavilion 563 → 41, drain 122 → 27,
+  and the two decorative horseshoe crabs — 86 meshes and 49,000 triangles each
+  for a prop the size of a dinner plate — 172 → 18, the beach copy merged from
+  a CLONE so the one in your hand and on the examine screen stays whole.
+  Merging gives up per-mesh frustum culling, which is the right trade for a
+  building and the wrong one for things scattered over a kilometre, so this is
+  called on BUILDINGS.
+- **AND THE INVISIBLE RAYCAST PROXIES WERE BEING DRAWN.** All 34 `hitProxy`
+  spheres are transparent at opacity 0, and every one was a draw call and a
+  place in the depth-sorted transparent pass. `Raycaster` tests `layers` and
+  never `.visible` (`intersectObject` in three r160 is two lines and there is
+  no visibility check in either of them), so a proxy can be `visible = false`
+  and stay hoverable. Everything that reads them already excluded them by
+  name.
+- **AND THIRTY THOUSAND TRIANGLES AN INSTANCE IS A DISTANCE, NOT A BUDGET.**
+  The headland's dense grass is twelve instances of Pasha's blade patch —
+  368,640 triangles, more than half of everything in the frame at the fence,
+  for blades a quarter of a metre high rendered at 0.42 of the screen, where
+  every one of them is a fraction of a pixel. It is the body bag's ropes
+  again. It lines the last twenty metres of the lane, so it gets thirty
+  metres and nothing further.
+
+Measured over the walk after, at fifteen stations from the spawn to the
+lighthouse: **draws 1123 → 336 at the spawn and 235 on average, worst 663 at
+the fence** (which stays in pieces because it is destructible), **programs
+497 → 114, point lights 46 → 12, and the render call 2.69 ms → 1.00 ms.** The
+place that gained most is the pavilion, 1100 draws and 4.48 ms → 157 and
+0.70. Nothing in the walk changed by more than 0.014 % of the frame.
+
+**AND A THROW INSIDE A NAMED SPAN SHOULD SAY WHICH SPAN.** An exception in
+`animate` reports the line of the `bwSpan` call and nothing else, which is a
+one-line stack for a crash that can be anywhere in the game; `bwSpan` names it
+now. (The one it caught was the harness's own: teleporting the player past
+`ABDUCT_Z` before the hall has loaded runs `placeInShrine` with `SH` still
+null. Walking there cannot do it, but a test that teleports can.)
+
+**THE TUNNEL IS local.yany's NOW, AND THE 3DRT ONE IS GONE.** The owner sent a
+new cave ("Tunnel", CC-BY-4.0) and asked for it to replace the passage, to
+match the game, to go seamlessly to the church and to be walkable.
+`assets/tunnel.glb` is it, through `tools/undercroft_pack.py passage --scale
+3.8 --yaw 90 --sparse` — 146 m of bore, 52k triangles, 2.4 MB. What it cost:
+
+- **IT IS SPEC-GLOSS, WHICH THREE DROPPED.** `KHR_materials_pbrSpecularGlossiness`
+  is in its `extensionsRequired`; the packer already rewrites it to
+  metallic-roughness, which is the only reason this asset renders at all.
+- **ITS THREE ROCK MESHES ARE CHUNKS, NOT LODs** — 128k, 128k and 5k triangles
+  over the SAME bounding box. The packer groups by node name and they all
+  carry one, so they merge before the decimation and come out welded rather
+  than as a cloud of specks.
+- **ITS "PARTICLES" TUBE IS A LIGHT-SHAFT, AND IT HANGS IN THE BORE.** An
+  alpha cylinder down the middle of the tunnel is a god-ray for a scene with a
+  sun in it; forty metres underground there is nothing to shaft. Worse, the
+  corridor fit measures every surface in the model, so a tube in the middle of
+  the bore is measured as the WALL. Dropped at pack time.
+- **THE WATER IS THE FLOOR, AND IT CAME OUT BLACK.** The model runs a channel
+  of standing water the length of itself, and that plane is what you wade
+  through. Two rules fell out of it: the CARVE must leave it alone or the
+  tunnel comes out dry, and it must be lifted off black BY HAND — the grime
+  pass lifts a surface off its own map and the water has no map, so it dressed
+  to pure black and read as a hole in the floor the whole way down. It is a
+  cold near-black with low roughness now, so the thing that says "water" is
+  that it takes the glowstick's highlight.
+- **AND ON A SCANNED CAVE THE WALL IS CAST FOR, NOT MARCHED TO.** Marching the
+  floor outward through the sampled surface is the right question for the 3DRT
+  passage, whose floor is a flat strip; on this one the floor falls away from
+  the centre into the channel, so the march leaves the floor's height window
+  after two steps and reports a ledge 0.15 m wide — every station collapsed to
+  the minimum radius. `rayWall` casts horizontally instead (horizontal on
+  purpose: water lies flat and can never be mistaken for a wall), and the roof
+  and the floor are cast for too. The rays must stay UNDER THE HAUNCH: in an
+  arched bore a ray at head height meets the ceiling curving down a hand's
+  width away, which measured the arch and reported a 0.72 m wall in a tunnel
+  four metres wide.
+
+**WHAT IS NOT FINISHED: THE WALK GRINDS.** It goes in at the mouth and comes
+out in the nave every run, the church sits at the tunnel's end with no seam,
+and the worst it is ever stuck is under a second — but about half of all
+frames make no forward progress, against ZERO stalls on the old passage. The
+cause is named above and only half fixed: the corridor fit is tuned to a
+low-poly game tunnel and this is a scan, so `h` still pins at its 1.15 m floor
+down most of the length and the walk crouches where it should stand. The next
+thing to try is walking it as a GRID, the way the exit cave — also a scan —
+has been walked since it went in; adding `pw` to `S.walks` naively makes it
+worse (the grid's own roof drives the duck), so it wants the bridge treatment
+at the church seam rather than a one-line change.
+
+**THE KNIGHT IN THE CHURCH, AND THE THING ON THE ALTAR.** IronSpear's "Iron
+Juggernaut" stands against the wall to the left of the altar, in the dark,
+from the moment you walk in. Touch the idol and a second passes in which
+nothing happens and you are standing there having done it; then it goes over
+about its own foot, lands, and comes apart across the floor, and the wall
+stops being a wall. The beat between is the point — a jump scare arrives
+before you can understand it, and being given a second to realise what you
+have just done is worse.
+
+- **WHERE HE STANDS IS MEASURED, NOT TYPED.** From the altar, step toward the
+  wall on your left — walking up the nave (+x), that is -z — until the floor
+  runs out, then come back a body's width. Two things it needed: the floor is
+  RE-READ at every step (holding the altar's own height stops the scan dead at
+  the dais, and the "wall" came back forty centimetres from the altar), and it
+  steps over a GAP, because a grid sampled off a scan has lone blocked cells
+  in it and there is one at z = 4.5 on exactly that line.
+- **AND THE BEACH'S WALLS ARE NOT EVERY CREATURE'S WALLS — THE FOURTH TIME.**
+  `mutClampX` would have snapped a knight forty metres under a beach out onto
+  the sand. `kind.uc` holds him with the undercroft's own `pushOut` instead.
+- **HIS FILE SHIPS SIX CLIPS AND NOT ONE SWING.** Idle, walk, run, walk in
+  place, jump, land — all locomotion. So the fight is authored, and the
+  machinery the witness needed for exactly this is now shared: `poseRig`
+  returns the stance, each driven joint's parent frame expressed in the BODY's
+  axes, and a builder that eases a list of keys into an `AnimationClip`.
+- **HE IS A `MUT_KINDS` ENTRY, so almost none of the fight is new code** — the
+  tell, the commit, the poise pool, the parry window, the riposte, the chain,
+  the feint and the token all come with the table. What is his: three and a
+  half metres, thirty points, the longest startups in the game (the overhead
+  hangs a second and a half before it comes down, which is what makes two
+  damage fair), a guard that costs a whole bar, and a shoulder charge for
+  when you back off.
+- **AND THE MEASUREMENT THAT SAID HE COULD NOT HIT WAS THE MEASUREMENT.**
+  Three rounds of "0 damage" were a harness that called `heal()` BEFORE it
+  read `hp`, so every landed blow was erased in the same iteration that dealt
+  it. Read the health first, heal second. (And `devMode` turns a creature's
+  swinging off outright, so a sample taken with it on reads zero swings for a
+  different reason again.) Measured properly, standing still at the altar:
+  33 swings and 35 damage a minute, all three close swings used evenly,
+  closing to 1.1 m — the Dealer is 48 and 40, the SCP 43 and 41.
+
+**AND THE KNIGHT GOT THE OWNER'S OWN MOVES, AND THREE OF MINE.** Six Mixamo
+clips — a punch, a sweep, a jump attack, a run and two guards — off the same
+rig the red alien's three came off, and `ntarRetarget` did not need a line
+changed to put them on an Unreal mannequin instead: what the file carries is
+the rotation a bone has UNDERGONE, which knows nothing about either skeleton,
+and the map between the namings is `kind.rag`, which every creature that can
+fall over already has. `tools/ntar_moves.py` takes a set name now. Mixed in
+with them: a two-handed overhead with a second and a half of hang, a backhand
+the other way, and a STOMP — the one blow of his that comes from a leg, so the
+answer to it is not the answer to the others, and his rig carries the right
+leg as an extra chain for it.
+
+- **HE IS IN THE ROOM WHEN YOU WALK IN, DRAWN.** Not `visible = false` — that
+  is a thing appearing, and this is a thing you did not see. He stands there
+  asleep and dead still in the one part of the room the candles are kept out
+  of, and what keeps him dark is the LIGHTING.
+- **NINETY-FIVE CANDLES, AND A HOLE IN THEM.** Thirty-one round the altar left
+  a forty-metre nave that was black past the dais. There are clusters down it
+  now — in GROUPS of three to seven with dark between, because an even scatter
+  reads as lighting and a group reads as people — and nothing at all within
+  5.6 m of the wall he stands against. The dais ring is subject to it too: with
+  it in, the nearest flame to him was 0.72 m.
+- **"HE KEEPS LAGGING ALL OVER" WAS A BODY WEDGED IN A WALL.** His body radius
+  is 1.15 m and he was stood exactly that off the last walkable cell — which is
+  to say touching it, permanently overlapping, so the room's push-out fought
+  his chase every frame and he crossed the nave in jumps. Measured before: a
+  single frame of 0.317 m, an implied 19 m/s. He is stood clear of it now and
+  the spot is CHECKED against the walk, and the room's clamp uses three
+  quarters of his body — the Dealer's own lesson, that a disc wide enough for
+  the fight is wider than anything can stand in. After: median 6.0 m/s, peak
+  9.4, no jumps.
+- **AND HE GOES THROUGH THE PEWS.** Every breakable here has one door — a
+  `physProps` entry with an `onImpact` — and the blade, a thrown body and a
+  landing all use it; a three-and-a-half-metre knight is the fourth. The blow
+  is his own speed, so shouldering one aside taps it apart and running one
+  down throws it across the nave.
+- **AND THE TUNNEL STOPS AT THE CHURCH'S DOOR.** local.yany's cave is 147 m of
+  rock and the church is set against the last station the WALK uses, which is
+  not the last rock the model DRAWS — so the far end carried on through the
+  doorway. Clipped in world x in the same shader the church's own far end is.
+
+Measured, standing at the altar: 49 swings and 46 damage a minute, all five
+close moves used (punch 17, sweep 16, backhand 6, overhead 5, stomp 5). The
+Dealer is 48 and 40. **And three readings of "0 damage" before it were the
+harness calling `heal()` BEFORE it read `hp`**, which erases every landed blow
+in the frame that dealt it; a fourth was `devMode`, which turns a creature's
+swinging off outright.
+
+**AND THEN THE KNIGHT WAS POLISHED, AND EVERY ITEM WAS A MEASUREMENT.**
+
+- **BEHIND THE POST, LIKE A STATUE.** Not beside the altar in the open: in
+  the slot between the pier on your left and the wall. Both are FOUND, by
+  walking out from the altar along -z and reading the walk — open floor, then
+  a run of blocked cells (the pier), then open floor, then the wall — and he
+  stands in the middle of the second band. Measured: pier at z -1.3, wall at
+  -5.5, him at -3.4.
+- **AND STANDING BEHIND A PIER IS THE WRONG PLACE TO START A FIGHT FROM.**
+  The chase is a straight line at the player and the post is in the way, so
+  he ground against it for ever and never arrived. The first thing he does
+  when the altar goes is come OUT of the alcove — a walk, eased, over the
+  1.8 s of the roar, which is exactly the beat to spend on it. Measured:
+  z -3.4 to 4.1 as the roar runs out, and he is in the open before the fight
+  starts.
+- **SHORTER, SO THE BLOW IS IN THE FRAME.** At 3.45 m his shoulders were over
+  the top of the screen at fighting range and every swing arrived from
+  off-camera. 2.85 is still half again your height.
+- **AND THE BLOW HAS TO ARRIVE AT YOU, WHICH IS A NUMBER.** The hand at the
+  contact frame, measured against the player's chest: it was 2.0 to 2.1 m —
+  the fight was happening BESIDE you. The reaches came in with the height and
+  `aimK` went to 1.70, and now the punch finishes 0.52 m off the chest, the
+  sweep 0.64 and the overhead 0.77. That is what "the hits connect visibly"
+  is: not a hitbox, a hand you can watch arrive.
+- **A PUSH-OUT IS A TELEPORT, AND ON A STEERED BODY THAT IS THE GLITCHING.**
+  The room's clamp put him wherever he had to be in one frame. It is capped
+  at a walking pace now, so a correction is a lean and never a jump: worst
+  step 0.317 m before (an implied 19 m/s), 0.10 after.
+- **HE NEVER STANDS ON A PEW; HE GOES THROUGH IT.** The crush gate is a
+  shuffle rather than a stride and the reach is his whole body and then some,
+  so a bench is gone before his feet could be over it. Measured crossing the
+  nave: five of them.
+
+Measured after, standing at the altar: 49 swings and 44 damage a minute, all
+five close moves used. **And `bwSpan`'s throw-naming earned its keep**: the
+whole placement silently vanished one build because `makeMutant` returns a
+UNIT, not an `Object3D`, so `knightUnit.userData` is undefined — the span
+said "threw inside cave.glb" and named it in one line.
+
+**AND HIS FEET STOPPED SLIDING, WHICH WAS FOUR CLIPS AND ONE SIGN.** The
+owner sent a walk, a second walk, a strafe and a side step. What they fix is
+the oldest animation bug this file has: `strafeL` and `strafeR` were the WALK,
+so a thing holding its distance strode forward while it travelled sideways —
+the plainest version there is of the feet going one way and the animal going
+another, and the whole of "his feet slide". He has a real sideways stride now
+(0.90 m a cycle, measured) and the Mutant Walking for his walk (1.88 m).
+
+- **A SIDE-STEP PLAYED BACKWARDS IS THE OTHER SIDE-STEP.** Mixamo gives one
+  direction. `kind.strafeMirror` runs the same clip at a NEGATIVE rate for the
+  other, which is the walk-backwards trick one step along and costs nothing.
+- **AND THE RATE IS THE STRIDE OVER THE SPEED.** A clip that travels 1.88 m a
+  cycle played at the wrong rate is a creature skating; `anim.rate` and
+  `strafeK` are set from the clips' own measured travel rather than by eye.
+
+**HE STANDS IN THE ARCADE NOW, NOT AT THE ALTAR.** The owner stood where he
+wanted him and sent the picture: well down the nave, beside the columns, with
+the altar small and lit in the distance. Eighteen metres back and five to the
+left of the line you walk — in shot from the door, dark enough to read as one
+more black shape, one stride from the nave when he comes. Walking out to the
+WALL instead (tried) put him fourteen metres off the centreline, which is not
+hidden-in-the-frame, it is somewhere else. Measured: he crosses the nave in
+6.3 s when the altar goes, and takes thirteen pews with him on the way.
+
+**AND A BENCH TAKES ITS CANDLES WITH IT.** Thirty-two of the hundred and
+thirty-four stand on the pews, because that is where you put a candle down
+when your hands are full — and it is the carve's own lesson (taking a surface
+away does not take away what was on it): when the bench comes apart they are
+put OUT, taken out of the instanced batch, and thrown off it as their own
+gibs in the wax's material.
+
 **THE PORTAL, AND THE DOJO THROUGH IT.** A stone circle on the dry sand a
 hundred metres past the cave mouth (`PORTAL_X` / `PORTAL_Z` = `HOLE_Z - 100`),
 and the scorched dojo on the other side of it (`DOJO_X/Y/Z`, six thousand
