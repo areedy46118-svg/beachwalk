@@ -117,9 +117,17 @@ export function makeUndercroft(opts = {}) {
     w.off = new THREE.Vector3();
     return w;
   }
-  const cellFloor = (w, i, j) => {
+  /* `bare` IS THE ROOM WITHOUT ITS FURNITURE. The packer writes two floors:
+   * `floor` is what it found (in a church, the pews) and `floor0` is the
+   * bare slab under them. A person is stopped by a pew, which is the point
+   * of a pew; two tonnes of plate is not, and the owner's word is that the
+   * knight should run STRAIGHT THROUGH them. Reading `floor0` is how he does
+   * it without a second code path — the walls and the piers are `solid` and
+   * are still walls to everybody. */
+  const cellFloor = (w, i, j, bare) => {
     if (i < 0 || j < 0 || i >= w.gw || j >= w.gh) return null;
-    const f = w.floor[j][i];
+    const F = (bare && w.floor0) ? w.floor0 : w.floor;
+    const f = F[j][i];
     return f <= -90 ? null : f + w.off.y;
   };
   const cellSolid = (w, i, j) => (i < 0 || j < 0 || i >= w.gw || j >= w.gh) ? true : w.solid[j][i] === 1;
@@ -234,7 +242,7 @@ export function makeUndercroft(opts = {}) {
   /* Is this point somewhere a body with its feet at `feet` can stand: a
    * floor under it, nothing in the band above that floor, and the floor
    * within a step up or a drop down of where the feet already are. */
-  S.walkable = (lx, lz, feet) => {
+  S.walkable = (lx, lz, feet, bare) => {
     const bf = bridgeFloor(lx, lz);
     if (bf !== null) return Math.abs(bf - feet) < 0.6;
     /* INSIDE THE TUBE AND NOWHERE ELSE. The corridor is the whole of the
@@ -250,7 +258,7 @@ export function makeUndercroft(opts = {}) {
     for (const w of S.walks) {
       const i = Math.floor((lx - w.off.x - w.x0) / w.cell), j = Math.floor((lz - w.off.z - w.z0) / w.cell);
       if (i < 0 || j < 0 || i >= w.gw || j >= w.gh) continue;
-      const f = cellFloor(w, i, j);
+      const f = cellFloor(w, i, j, bare);
       /* THREE GRIDS OVERLAP AT THE JOINS. The church's box runs two metres
        * past its apse wall, over the cave's mouth, and a grid with no floor
        * at a point used to answer "not walkable" for everyone — so the way
@@ -1431,12 +1439,12 @@ export function makeUndercroft(opts = {}) {
     if (i < 0 || j < 0 || i >= w.gw || j >= w.gh) return false;
     return cellFloor(w, i, j) !== null;
   };
-  S.blocked = (lx, lz, r, feet) => {
+  S.blocked = (lx, lz, r, feet, bare) => {
     // sample the disc: its centre and a ring — cheaper than walking two grids' cells
-    if (!S.walkable(lx, lz, feet)) return true;
+    if (!S.walkable(lx, lz, feet, bare)) return true;
     for (let k = 0; k < 8; k++) {
       const a = (k / 8) * Math.PI * 2;
-      if (!S.walkable(lx + Math.cos(a) * r, lz + Math.sin(a) * r, feet)) return true;
+      if (!S.walkable(lx + Math.cos(a) * r, lz + Math.sin(a) * r, feet, bare)) return true;
     }
     return false;
   };
@@ -1444,13 +1452,13 @@ export function makeUndercroft(opts = {}) {
   /* The push is the RESULTANT of every bad sample's push (the bunker's own
    * lesson: a nearest-face push stops you dead against a small thing),
    * a few rounds; and the last word is `escape`. */
-  S.pushOut = (p, r, feet, rounds = 4) => {
+  S.pushOut = (p, r, feet, rounds = 4, bare = false) => {
     let moved = false;
     for (let it = 0; it < rounds; it++) {
       let sx = 0, sz = 0, n = 0;
       for (let k = 0; k < 12; k++) {
         const a = (k / 12) * Math.PI * 2, cx = Math.cos(a), cz = Math.sin(a);
-        if (S.walkable(p.x + cx * r, p.z + cz * r, feet)) continue;
+        if (S.walkable(p.x + cx * r, p.z + cz * r, feet, bare)) continue;
         sx -= cx; sz -= cz; n++;
       }
       if (!n) break;
@@ -1460,6 +1468,87 @@ export function makeUndercroft(opts = {}) {
       moved = true;
     }
     return moved;
+  };
+  /* ---- A WAY ROUND, WHEN THE WAY THROUGH IS A PIER.
+   *
+   * The knight walks a straight line at you and slides along whatever he
+   * meets, which is right against a wall and wrong against a COLUMN: a
+   * nave's piers are a metre of stone with open floor either side, and
+   * grinding down one of them for a second is not what a thing that size
+   * would do. He should see it and go round, which means the room has to be
+   * able to answer "which way". This is the bunker's own pair, on the
+   * undercroft's grids: `clearAhead` marches a heading and says whether a
+   * body of radius `r` can walk it, and `route` is a breadth-first search
+   * over the free cells thinned to its CORNERS, so following it is three or
+   * four waypoints rather than four hundred. Both take `bare`, because to
+   * him a pew is not an obstacle. */
+  S.clearAhead = (x, z, dx, dz, len, r, feet, bare) => {
+    const n = Math.max(1, Math.round(len / 0.3));
+    for (let i = 1; i <= n; i++) {
+      const t = (i / n) * len;
+      if (S.blocked(x + dx * t, z + dz * t, r, feet, bare)) return false;
+    }
+    return true;
+  };
+  /* The search runs on a 0.4 m lattice of its own — the grids are 0.2 m and
+   * a church is forty metres by twenty-three, which is far more cells than a
+   * fight can afford to flood twice a second. */
+  const RT_CELL = 0.4, RT_MAX = 9000;
+  S.route = (x0, z0, x1, z1, r, feet, bare) => {
+    const key = (i, j) => i * 100000 + j;
+    const ci = (v) => Math.round(v / RT_CELL);
+    const si = ci(x0), sj = ci(z0), gi = ci(x1), gj = ci(z1);
+    const ok = (i, j) => !S.blocked(i * RT_CELL, j * RT_CELL, r, feet, bare);
+    /* BOTH ENDS MAY BE INSIDE SOMETHING — you standing against a pier, him
+     * mid-shove — so each walks outward to the nearest cell a body fits in
+     * before the search starts. The bunker learned this. */
+    const nearestFree = (i, j) => {
+      if (ok(i, j)) return [i, j];
+      for (let rad = 1; rad <= 8; rad++) {
+        for (let a = -rad; a <= rad; a++) for (const [ii, jj] of [[i + a, j - rad], [i + a, j + rad], [i - rad, j + a], [i + rad, j + a]]) {
+          if (ok(ii, jj)) return [ii, jj];
+        }
+      }
+      return null;
+    };
+    const A = nearestFree(si, sj), B = nearestFree(gi, gj);
+    if (!A || !B) return null;
+    const prev = new Map(), q = [[A[0], A[1]]];
+    prev.set(key(A[0], A[1]), null);
+    let found = null, n = 0;
+    while (n < q.length && n < RT_MAX) {
+      const [i, j] = q[n++];
+      if (i === B[0] && j === B[1]) { found = [i, j]; break; }
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+        const ii = i + di, jj = j + dj, k = key(ii, jj);
+        if (prev.has(k) || !ok(ii, jj)) continue;
+        prev.set(k, [i, j]); q.push([ii, jj]);
+      }
+    }
+    /* AND WHERE THERE IS NO WAY ALL THE WAY THERE IS STILL A WAY CLOSER.
+     * Returning null drops him back on the straight line that got him
+     * stuck; the reachable cell nearest you is a better answer. */
+    if (!found) {
+      let bd = Infinity;
+      for (const k of prev.keys()) {
+        const i = Math.floor(k / 100000), j = k - i * 100000;
+        const d = (i - B[0]) ** 2 + (j - B[1]) ** 2;
+        if (d < bd) { bd = d; found = [i, j]; }
+      }
+      if (!found) return null;
+    }
+    const cells = [];
+    for (let c = found; c; c = prev.get(key(c[0], c[1]))) cells.push(c);
+    cells.reverse();
+    // thinned to corners: keep a point only where the direction changes
+    const out = [];
+    for (let k = 0; k < cells.length; k++) {
+      const a = cells[k - 1], b = cells[k], c = cells[k + 1];
+      if (!a || !c || (c[0] - b[0]) !== (b[0] - a[0]) || (c[1] - b[1]) !== (b[1] - a[1])) {
+        out.push({ x: b[0] * RT_CELL, z: b[1] * RT_CELL });
+      }
+    }
+    return out;
   };
   S.escape = (p, r, feet, maxR = 2.0) => {
     if (!S.blocked(p.x, p.z, r, feet)) return true;

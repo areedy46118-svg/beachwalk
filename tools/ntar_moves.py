@@ -159,6 +159,11 @@ FORCE_FLAT_YAW = {'knock'} if SET == 'ntar' else {'kPunch', 'kSwipe', 'kJump', '
       'knockOut', 'getUp', 'hitHead'}
 
 
+# A clip whose hips are measured from its LAST frame, not its first: it
+# begins on the floor and ends standing, so the stance is at the END.
+HIP_ZERO_END = {'getUp'}
+
+
 def log(*a):
     print('[ntar-moves]', *a); sys.stdout.flush()
 
@@ -301,6 +306,20 @@ def main():
             hipY.append(r4(hp.y))
             travel.append([r4(hp.x), r4(hp.z)])
 
+        # ---- AND A CLIP THAT STARTS ON THE FLOOR IS MEASURED FROM ITS END.
+        #
+        # `hipY` is an OFFSET from the creature's own stance, taken from the
+        # clip's FIRST frame — which is right for every clip that begins with
+        # him standing up, and exactly wrong for the get-up, which begins with
+        # him lying on his back. Measured in the game: `getUp` ran its hips
+        # from the standing height to A METRE ABOVE IT and then snapped back
+        # the frame the clip ended. That is the owner's "he just flies
+        # around". Zeroing it at the LAST frame instead puts the start of the
+        # rise on the floor (-0.85) and its end at the stance, which is where
+        # the fall left him (-0.86) and where he has to finish.
+        if name in HIP_ZERO_END and hipY:
+            off = hipY[-1]
+            hipY = [r4(v - off) for v in hipY]
         dur = (end) / FPS
         land = r4(hipY.index(min(hipY)) / max(1, end))
         # ---- where the striking foot is fastest (a sweep has no extreme of position)

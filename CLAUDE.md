@@ -4572,6 +4572,62 @@ one number is the dial. Measuring it with `drawImage` off the WebGL canvas
 does not work — there is no `preserveDrawingBuffer`, so every reading comes
 back 0; judge it from a screenshot.)
 
+**A PEW IS NOT A WALL TO HIM, AND THE GRID ALREADY KNEW IT.** "He should run
+straight through the benches — it looks like he avoids them for a second" was
+the room's own push-out doing its job: `UC.pushOut` reads the walk, the walk
+reads `floor`, and in a church `floor` is the pews. So he was held off every
+bench until `knightCrush` caught up, which is the second of shouldering the
+owner saw. The packer writes TWO floors — `floor` is what it found and
+`floor0` is the bare slab under the furniture — and reading the second is the
+whole fix: `cellFloor(w, i, j, bare)`, threaded through `walkable`, `blocked`
+and `pushOut`, and a kind that says `crushes` gets it. The walls and the
+piers are `solid` and stop everybody.
+
+**AND HE STEPS ROUND A PIER RATHER THAN SHOULDERING IT.** The chase is a
+straight line at you and a nave's piers are a metre of stone with open floor
+either side, so he met one, the push-out held him off it, and he worked along
+its face — which on a thing this size reads as stupid rather than as strong.
+The Dealer has had the answer since the bunker's table and nothing else in
+this game had it: `S.clearAhead` marches a heading and says whether a body of
+a given radius can walk it, `S.route` is a breadth-first search over the free
+cells thinned to its CORNERS, and the route is dropped the moment the direct
+line opens — a route is a way ROUND something, not a way of getting about.
+Both take `bare`, so the only things he ever routes around are the walls and
+the columns. Measured with a pier between them: he is on a seven-waypoint
+route within half a second, past it in one, and closing straight after.
+
+**AND THE GET-UP PUT HIM A METRE ABOVE HIS OWN HEAD.** "The fall animation
+isn't working, he just flies around" was one number. `hipY` is an OFFSET from
+the creature's stance taken from the clip's FIRST frame — right for every
+clip that begins with him standing, and exactly wrong for a get-up, which
+begins with him lying on his back. Measured in the game: `getUp` ran his hips
+from the standing height to **2.44 m** — a metre above where he stands — and
+snapped back the frame the clip ended. `HIP_ZERO_END` measures such a clip
+from its LAST frame instead, so the rise starts on the floor (-0.84) and ends
+at the stance, which is where the fall left him (-0.86). Measured after:
+standing hips 1.34 and head 2.29; he goes over to hips 0.16 and **head 0.19**
+on a floor at -0.07; he lies; he rises to 1.31 and 2.28. Exactly the clip.
+
+**AND A HEADING IS A TURN, NOT A SNAP.** The other half of "he flies around",
+and it came in with the routing: `S.route` starts from the nearest cell a
+body FITS in, which when he is pressed against a pier is a cell back the way
+he came — so the route's first waypoint could be BEHIND him and he spun to
+face it. Measured: **48 degrees of heading in one frame**. Two fixes, and
+both are about mass: the route skips any leading waypoint inside a stride,
+because anything that close is already behind him; and `kind.turnMax` is
+radians a second, a cap on how fast the thing can physically come round.
+Measured after, over a three-minute fight: **5.0 degrees a frame, worst** —
+and he still routes past the pier every time. A corner is rounded too rather
+than turned, the aim blending toward the waypoint AFTER this one as he closes
+on it, so a route reads as something with momentum walking a curve.
+
+Measured at the end, hands-off at fighting range over three minutes: **39
+swings and 40 damage a minute at 97 % connect, 98 % of contacts on screen at
+0.31-0.55 m from the chest, still between swings 15 %, worst step 0.128 m,
+worst turn 5 degrees a frame, worst tick 4.3 ms** — and crossing the nave
+from his alcove he takes **eleven pews** with him and arrives in four
+seconds.
+
 ## Dev mode
 
 `DEFAULT_SETTINGS` are the owner's own (music 30 %, waves 18 %, effects

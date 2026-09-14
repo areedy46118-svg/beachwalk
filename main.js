@@ -20749,7 +20749,17 @@ function updateMutantUnit(u, dt) {
 
   const dx = camera.position.x - p.x, dz = camera.position.z - p.z;
   const dist = Math.hypot(dx, dz) || 0.001;
-  const face = Math.atan2(dx / dist, dz / dist);      // the model's front is +Z
+  /* WHICH WAY HE IS FACING, and it is not always at you: a creature stepping
+   * round a pier looks where it is GOING, or it moonwalks past the stone. It
+   * goes back to your face the moment the route runs out, which is normally
+   * a stride or two later. */
+  let face = Math.atan2(dx / dist, dz / dist);      // the model's front is +Z
+  if (u.path && u.pathI < u.path.length && dist > 2.2) {
+    const w = u.path[u.pathI];
+    const wx = UC_X + w.x - u.g.position.x, wz = UC_Z + w.z - u.g.position.z;
+    const wl = Math.hypot(wx, wz);
+    if (wl > 0.2) face = Math.atan2(wx / wl, wz / wl);
+  }
   /* THE SECOND WIND, for any kind that declares one. `u.kind` is replaced by
    * a copy with the rage's fields in it — every number below reads off
    * `u.kind`, so the swap is the whole mechanism — and it announces itself:
@@ -20762,7 +20772,16 @@ function updateMutantUnit(u, dt) {
     sfxScpScream(dist, u.kind.voice);
     addTrauma(0.5);
   }
-  const turn = (rate) => { u.g.rotation.y += _smileTurn(u.g.rotation.y, face) * Math.min(1, dt * rate); };
+  /* AND A HEADING IS A TURN, NOT A SNAP. `kind.turnMax` is radians a second
+   * — how fast the thing can physically come round — and it is what stops a
+   * creature that has just been handed a new direction (a route, a
+   * waypoint, a player who walked behind it) arriving at it in one frame. */
+  const turn = (rate) => {
+    let d = _smileTurn(u.g.rotation.y, face) * Math.min(1, dt * rate);
+    const cap = (u.kind.turnMax || 0) * dt;
+    if (cap > 0 && Math.abs(d) > cap) d = Math.sign(d) * cap;
+    u.g.rotation.y += d;
+  };
 
   if (!u.st.awake) {
     /* WHAT IT IS DOING BEFORE IT NOTICES YOU. The pack waits out at sea
@@ -21145,7 +21164,15 @@ function updateMutantUnit(u, dt) {
      * because there is nothing to read. Whoever is nearest and ready takes
      * the token; a creature that cannot have it holds its range instead. */
     const maySwing = mutToken === u;
-    if (u.st.side !== 0) {
+    // if the straight line is shut, he walks round — and drops it when it opens
+    if (u.kind.uc) ucSteer(u, dt, dist);
+    if (!near && u.path) {
+      /* ON A ROUTE. Whoever is steering, steers: the chase and the route
+       * were the tug of war that kept the Dealer stuck on his table. */
+      moving = ucFollowPath(u, dt);
+      u.st.step -= dt;
+      if (u.st.step <= 0) { u.st.step = u.kind.step / Math.max(0.35, moving || 1); sfxMutStep(dist, u.kind.voice); }
+    } else if (u.st.side !== 0) {
       /* Circling: sidelong at reach, keeping the range. It stops when its
        * time runs out or you close in, and what it does next is drawn
        * again — so its rhythm is not a rhythm. */
@@ -26109,7 +26136,13 @@ function mutClampX(u, p, dt) {
      * everywhere it can stand, and the push then cancels every step it
      * takes. The fight keeps the wide body; the walls get three quarters. */
     const wx = _mcL.x, wz = _mcL.z;
-    UC.pushOut(_mcL, (u.kind.body || 0.9) * 0.75, f === null ? p.y - UC_Y : f);
+    /* AND A PEW IS NOT A WALL TO HIM. `crushes` means he goes through the
+     * furniture — `knightCrush` takes out whatever he touches — so the walk
+     * he is held by is the room WITHOUT it (`floor0`). Without this the
+     * room's push-out held him off every bench until the crush caught up,
+     * which is the second of shouldering the owner saw: "it looks like he
+     * avoids them". The piers and the walls are `solid` and still stop him. */
+    UC.pushOut(_mcL, (u.kind.body || 0.9) * 0.75, f === null ? p.y - UC_Y : f, 4, !!u.kind.crushes);
     /* AND THE CORRECTION IS DAMPED. A push-out is a TELEPORT — it puts a
      * body wherever it has to go in one frame — and on something that is
      * also being steered that reads as the thing glitching about the room.
@@ -29082,7 +29115,8 @@ MUT_KINDS.knight = {
    * then, a third of the openings, he gives ground instead and watches. The
    * aggression is what makes him hard; the beat where he stops is what makes
    * him readable, and a fight you can read is the only kind you can learn. */
-  circle: 0.20, step: 0.22, chainMax: 4, feint: 0.30, sizeUp: 0.34, restless: 1, smart: 1,
+  circle: 0.20, step: 0.22, chainMax: 4, feint: 0.30, sizeUp: 0.34, restless: 1, smart: 1, crushes: 1,
+  turnMax: 5.2,                       // rad/s — he is two tonnes of plate and he comes round like it
   poise: 11, poiseBack: 1.7, poiseWait: 1.2, parryK: 0.80, recoilK: 0.72, blockCost: 1.00,
   block: 0.34, fidgetK: 0.22, fidgetGap: 3.0,
   /* AND THE SHOULDER TURNS FURTHER THAN A MAN'S. `aimK` is how much of the
@@ -29304,6 +29338,77 @@ function knightStepOut(dt) {
   const step = Math.min(l, 2.6 * dt);
   p.x += dx / l * step; p.z += dz / l * step;
   u.g.rotation.y = Math.atan2(camera.position.x - p.x, camera.position.z - p.z);
+}
+/* ---- AND HE STEPS ROUND A PIER RATHER THAN SHOULDERING IT.
+ *
+ * A nave's piers are a metre of stone with open floor either side, and the
+ * chase is a straight line at you: he met one, the push-out held him off it,
+ * and he worked along its face for a second — which on a thing this size
+ * reads as stupid rather than as strong. The Dealer has had the answer since
+ * the bunker's table: if the straight line is shut, ask the room for a way
+ * round, and drop it the moment the line opens. This is that pair on the
+ * undercroft's grids, for any creature that says `kind.uc`.
+ *
+ * `bare` means the pews are not in it — he goes through those — so the only
+ * things he ever routes around are the walls and the columns. */
+const UC_PATH_EVERY = 0.40;
+function ucSteer(u, dt, dist) {
+  if (!u.kind.uc || !UC.ready || !UC.route || !UC.clearAhead) return;
+  const bare = !!u.kind.crushes;
+  const lx = u.g.position.x - UC_X, lz = u.g.position.z - UC_Z;
+  const px = camera.position.x - UC_X, pz = camera.position.z - UC_Z;
+  const f = UC.floorAt(lx, lz);
+  const feet = f === null ? u.g.position.y - UC_Y : f;
+  const r = (u.kind.body || 0.9) * 0.75;
+  const ddx = px - lx, ddz = pz - lz, L = Math.hypot(ddx, ddz) || 1;
+  /* A ROUTE IS A WAY ROUND SOMETHING, NOT A WAY OF GETTING ABOUT. The moment
+   * he can see his way to you he walks at you. */
+  if (UC.clearAhead(lx, lz, ddx / L, ddz / L, Math.min(L, 5.0), r, feet, bare)) { u.path = null; return; }
+  u.pathAge = (u.pathAge || 0) + dt;
+  if (u.path || u.pathAge < UC_PATH_EVERY || dist < 1.6) return;
+  u.pathAge = 0;
+  const P = UC.route(lx, lz, px, pz, r, feet, bare);
+  u.path = (P && P.length > 1) ? P : null;
+  u.pathI = 0;
+  /* AND HE DOES NOT WHIP ROUND TO A WAYPOINT HE IS ALREADY STANDING ON. The
+   * search starts from the nearest cell a body FITS in, which when he is
+   * pressed against a pier is a cell back the way he came — so the route's
+   * first point could be behind him and he spun to face it. Measured: 48
+   * degrees of heading in a single frame, which on two tonnes of plate is
+   * the whole of "he flies around". Anything inside a stride is already
+   * behind him; the route starts at the first point he actually has to walk
+   * to. */
+  if (u.path) {
+    while (u.pathI < u.path.length - 1
+           && Math.hypot(u.path[u.pathI].x - lx, u.path[u.pathI].z - lz) < 0.9) u.pathI++;
+  }
+}
+const _ufD = new THREE.Vector3();
+function ucFollowPath(u, dt) {
+  const P = u.path;
+  if (!P) return 0;
+  const lx = u.g.position.x - UC_X, lz = u.g.position.z - UC_Z;
+  while (u.pathI < P.length && Math.hypot(P[u.pathI].x - lx, P[u.pathI].z - lz) < 0.6) u.pathI++;
+  if (u.pathI >= P.length) { u.path = null; return 0; }
+  /* AND A CORNER IS ROUNDED, NOT TURNED. Aiming dead at the current
+   * waypoint and switching to the next the instant it is reached makes a
+   * route a sequence of hard turns — which on two tonnes of plate reads as
+   * snapping. The aim is blended toward the waypoint AFTER this one as he
+   * closes on this one, so he cuts the corner the way anything with mass
+   * does; and the heading itself is eased rather than set, so even a route
+   * that doubles back is a turn you watch him make. */
+  const w = P[u.pathI], nx = P[u.pathI + 1] || w;
+  const dWp = Math.hypot(w.x - lx, w.z - lz);
+  const blend = THREE.MathUtils.clamp(1 - (dWp - 0.6) / 1.4, 0, 0.65);
+  const tx = w.x + (nx.x - w.x) * blend, tz = w.z + (nx.z - w.z) * blend;
+  const wx = tx - lx, wz = tz - lz, L = Math.hypot(wx, wz) || 1;
+  _ufD.set(wx / L, 0, wz / L);
+  if (u.dir.lengthSq() < 1e-6) u.dir.copy(_ufD);
+  else { u.dir.lerp(_ufD, Math.min(1, dt * 7)); if (u.dir.lengthSq() > 1e-8) u.dir.normalize(); }
+  const sp = MUT_SPEED * u.kind.speedK * (1 + (u.st.sprint || 0));
+  u.g.position.addScaledVector(u.dir, sp * dt);
+  mutClampX(u, u.g.position, dt);
+  return 1;
 }
 function knightCrush(dt) {
   if (!knightFight || !knightUnit || knightUnit.dead || !UC.ready) return;
