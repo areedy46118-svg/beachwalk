@@ -1487,11 +1487,25 @@ export function makeUndercroft(opts = {}) {
     /* nothing wears `cave` any more — both tunnels are bores with their own
      * material — but the default kind is still 'cave', so it stays as the
      * thing an unlabelled material would get. */
-    cave:   { dust: 0.52, damp: 0.42, level: 0.46, emis: 0.14, tint: 0xa9a69c },
-    church: { dust: 0.16, damp: 0.14, level: 0.98, emis: 0.66, tint: 0xc9c6c0 },
+    cave:   { dust: 0.52, damp: 0.42, level: 0.46, emis: 0.14, tint: 0xa9a69c, knee: 0.0 },
+    /* THE SCAN CARRIES THE DAYLIGHT IT WAS BAKED IN, AND AN EMISSIVE LIFT
+     * TURNS EVERY BAKED HIGHLIGHT INTO A LAMP. This church's albedo was lit
+     * from outside before anybody photographed it, so the sunlit edge of
+     * every pier and every string course is already near-white in the map —
+     * and `emissiveMap = map` at a flat 0.66 hands those texels straight
+     * back as light. What that draws is a bright seam running up the edge of
+     * the stone, which is the owner's "light coming through the edges": not
+     * a gap in the geometry at all, and no amount of closing holes was ever
+     * going to fix it.
+     *
+     * `knee` rolls the TOP of the emissive off (x / (1 + k x)) and leaves the
+     * bottom alone, so the lift still carries the dark stone — which is the
+     * only reason it is there — and stops carrying the sun. At 2.4 a texel
+     * lifting 0.66 gives back 0.25 and one lifting 0.10 gives back 0.08. */
+    church: { dust: 0.16, damp: 0.14, level: 0.98, emis: 0.90, tint: 0xc9c6c0, knee: 2.4 },
     /* the idol takes almost no dirt and a WARM lift: it stands in a ring of
      * candles and nothing else in this building is lit by a flame. */
-    altar:  { dust: 0.08, damp: 0.05, level: 0.98, emis: 0.34, tint: 0xc7a97c },
+    altar:  { dust: 0.08, damp: 0.05, level: 0.98, emis: 0.38, tint: 0xc7a97c, knee: 0.7 },
   };
   S.look = LOOK;
   function grime(mat, kind) {
@@ -1533,6 +1547,7 @@ export function makeUndercroft(opts = {}) {
       sh.uniforms.uUcDust = { value: L.dust };
       sh.uniforms.uUcDamp = { value: L.damp };
       sh.uniforms.uUcLevel = { value: L.level };
+      sh.uniforms.uUcEmisK = { value: L.knee || 0 };
       sh.uniforms.uUcCut = CUT; sh.uniforms.uUcCutX = CUT_X;      // shared: set once, every material sees it
       /* AND THE CUT IS THE CHURCH'S ALONE. Every material in here goes
        * through this shader, so a cylinder meant to open the back wall was
@@ -1553,7 +1568,7 @@ export function makeUndercroft(opts = {}) {
       mat.userData.bwSh = sh;
       sh.vertexShader = 'varying vec3 vGrimeN; varying vec3 vGrimeP;\n' + sh.vertexShader
         .replace('#include <fog_vertex>', '#include <fog_vertex>\n  vGrimeN = normalize((modelMatrix * vec4(objectNormal, 0.0)).xyz);\n  vGrimeP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-      sh.fragmentShader = 'varying vec3 vGrimeN; varying vec3 vGrimeP;\nuniform float uUcDust, uUcDamp, uUcLevel; uniform vec4 uUcCut; uniform float uUcCutX; uniform float uUcClipX; uniform float uUcClipHi; uniform float uUcCutOn;\n' + sh.fragmentShader
+      sh.fragmentShader = 'varying vec3 vGrimeN; varying vec3 vGrimeP;\nuniform float uUcDust, uUcDamp, uUcLevel, uUcEmisK; uniform vec4 uUcCut; uniform float uUcCutX; uniform float uUcClipX; uniform float uUcClipHi; uniform float uUcCutOn;\n' + sh.fragmentShader
         /* THE WAY OUT IS CUT THROUGH THE APSE. A cylinder along x through the
          * back wall, WALLS ONLY — a floor or a vault inside the radius is
          * left alone, or the arch stands over a black disc — and the stone
@@ -1581,6 +1596,13 @@ export function makeUndercroft(opts = {}) {
     ucCutEdge = cd - cr;
   }`)
         .replace('#include <dithering_fragment>', '#include <dithering_fragment>\n  gl_FragColor.rgb *= mix(0.28, 1.0, smoothstep(0.0, 0.55, ucCutEdge));')
+        /* THE KNEE ON THE LIFT. A scan's albedo is a photograph of a lit
+         * building, so its brightest texels are SUNLIGHT — and handing those
+         * back as emissive is what draws a glowing seam up the edge of every
+         * pier. Compressed at the top, the lift still carries the dark stone
+         * out of the black and no longer carries the sun. */
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  if (uUcEmisK > 0.0) totalEmissiveRadiance /= (1.0 + totalEmissiveRadiance * uUcEmisK);`)
         .replace('#include <map_fragment>', `#include <map_fragment>
   {
     float up = clamp(ucN.y, 0.0, 1.0);
@@ -1606,6 +1628,7 @@ export function makeUndercroft(opts = {}) {
       if (!sh || !sh.uniforms.uUcDust) continue;
       if ((m.userData.bwKind || 'cave') !== kind) continue;
       sh.uniforms.uUcDust.value = L.dust; sh.uniforms.uUcDamp.value = L.damp; sh.uniforms.uUcLevel.value = L.level;
+      if (sh.uniforms.uUcEmisK) sh.uniforms.uUcEmisK.value = L.knee || 0;
       if (m.emissiveMap === m.map && !m.userData.bwFixedEmis) m.emissiveIntensity = L.emis;
     }
   };
@@ -1644,7 +1667,16 @@ export function makeUndercroft(opts = {}) {
         m.emissive = new THREE.Color(0x6d7f9c); m.emissiveIntensity = 0.035;
         m.color.setHex(0x1b2028); m.userData.bwFixedEmis = true;
       } else if (kind === 'church' && /vitrail|verre/.test(name)) {
-        m.emissiveIntensity = 0.14; m.userData.bwFixedEmis = true;
+        /* AND THE GLASS ITSELF IS DARK, BECAUSE THERE IS NO SKY BEHIND IT.
+         * The backdrops were taken down to a memory of daylight and the
+         * GLASS was left at `color: 0xffffff` — so its own pale map was lit
+         * at full albedo and the aisle windows came out the brightest
+         * surfaces in the building: a wall of daylight honeycomb forty
+         * metres under a beach, which is the window the owner photographed
+         * and called light coming through the edges. Leaded glass at night
+         * with candles behind you is nearly black and takes a cold sheen,
+         * and that is all it may be. */
+        m.color.setHex(0x2b323c); m.emissiveIntensity = 0.085; m.userData.bwFixedEmis = true;
       } else if (kind === 'church' && /-ext$/.test(name)) {
         // the OUTSIDE of the church, seen through the openings: it is in the ground
         m.color.setHex(0x141412); m.emissiveIntensity = 0.015; m.userData.bwFixedEmis = true;
@@ -1838,10 +1870,62 @@ export function makeUndercroft(opts = {}) {
       const mid = zs[Math.floor(zs.length / 2)];
       return { x: w.x0 + (i + 0.5) * w.cell, z: mid[0], y: mid[1], n: zs.length };
     };
+    /* AND THE MOUTH IS THE BORE, NOT THE CHAMBER IT OPENS INTO. The last
+     * floored column of this model is not the end of a tunnel — it is the
+     * middle of a room the tunnel flares into, six and a half metres wide,
+     * whose median z sits FIVE METRES off the line you have just walked a
+     * hundred and forty metres down. The church was hung off that median,
+     * so the last stride of the walk was a five-metre jog sideways: walk
+     * straight and you dead-end in rock at x = 71.6 (measured, hands-off),
+     * the altar is never on the bore's line, and the flare itself is where
+     * every hole in this scan is (nine of sixteen rays out of it hit
+     * nothing at all, against zero anywhere on the straight run).
+     *
+     * So the mouth is taken back to the last station that is still a BORE —
+     * the last column whose floored span is a tunnel's width — and its z is
+     * the MEDIAN OF THE RUN behind it rather than one column's own, which is
+     * the line the player actually walks. The church then stands on that
+     * line, the flare is clipped away with the rest of the far end, and the
+     * walk from the entrance to the altar is one straight look. */
+    const colSpan = (w, i) => {
+      let zs = [];
+      for (let j = 0; j < w.gh; j++) { const f = cellFloor(w, i, j); if (f !== null) zs.push([w.z0 + (j + 0.5) * w.cell, f]); }
+      if (!zs.length) return null;
+      const lo = Math.min(...zs.map((c) => c[1]));
+      zs = zs.filter((c) => c[1] < lo + 1.0).sort((a, b) => a[0] - b[0]);
+      return zs.length ? zs[zs.length - 1][0] - zs[0][0] + w.cell : null;
+    };
     let low = null, high = null;
-    for (let i = pw.gw - 1; i >= 0 && !low; i--) { const s = colStats(pw, i); if (s && s.n >= 4) low = s; }
+    const BORE_W = 4.6;                       // measured: the bore runs 3.4-4.2 wide, the flare 7.2
     for (let i = 0; i < pw.gw && !high; i++) { const s = colStats(pw, i); if (s && s.n >= 4) high = s; }
-    if (!low || !high) return;
+    if (!high) return;
+    /* THE AXIS IS MEASURED IN THE MIDDLE, WHERE IT IS NOT IN DOUBT. Both
+     * ends of this model wander — the entrance swings five metres one way
+     * and the far chamber five the other — so the line is taken from the
+     * middle sixty per cent of the run, which is a hundred metres of bore
+     * whose column medians never leave a cell of each other. Measured: 0.10.
+     * A width test ALONE cannot find the mouth, because past the flare the
+     * model tapers to a narrow lobe four metres off the line and that lobe
+     * is bore-width by the numbers — which is exactly the cell the church
+     * was hung off. A station is the mouth only if it is bore-width AND ON
+     * THE LINE. */
+    let axis = 0;
+    {
+      const zs = [];
+      for (let i = Math.floor(pw.gw * 0.20); i < Math.floor(pw.gw * 0.80); i += 4) {
+        const s = colStats(pw, i);
+        if (s && s.n >= 4) zs.push(s.z);
+      }
+      if (!zs.length) return;
+      zs.sort((a, b) => a - b); axis = zs[Math.floor(zs.length / 2)];
+    }
+    for (let i = pw.gw - 1; i >= 0 && !low; i--) {
+      const s = colStats(pw, i), sp = colSpan(pw, i);
+      if (s && s.n >= 4 && sp !== null && sp <= BORE_W && Math.abs(s.z - axis) <= 1.2) low = s;
+    }
+    if (!low) for (let i = pw.gw - 1; i >= 0 && !low; i--) { const s = colStats(pw, i); if (s && s.n >= 4) low = s; }
+    if (!low) return;
+    low.z = axis;                             // the church stands on the line you walk, not on one cell's median
     /* how big the passage's mouth is, for the breach to hug: the floor
      * cells of its last column and the roof over them */
     const mouthCol = { w: 0, h: 0 };
@@ -1967,6 +2051,55 @@ export function makeUndercroft(opts = {}) {
             if (m.userData.bwSh && m.userData.bwSh.uniforms.uUcClipHi) m.userData.bwSh.uniforms.uUcClipHi.value = hiX;
           }
         });
+      }
+      /* AND THE HALF YOU NO LONGER WALK IS NOT DRAWN EITHER. Clipping it in
+       * world x is the far end's own trick (`uUcClipX` is already the low
+       * clip the exit cave uses), but a clip on its own leaves an OPEN
+       * cross-section with the black shell behind it — a flat black wall,
+       * which is the one thing this file has been told twice not to ship.
+       * So a short capped bore is swept at the cut, a shade WIDER than the
+       * tunnel there and running a couple of metres forward into it: the
+       * scan covers its flanks, its domed cap closes the tube, and what is
+       * behind you is rock you crawled through rather than a hole in the
+       * world. */
+      {
+        const cutX = low.x - (low.x - high.x) * 0.5 - 2.6;
+        const i = Math.round((cutX - pw.x0) / pw.cell - 0.5);
+        let zs = [], roof = 0, fl = null;
+        for (let j = 0; j < pw.gh; j++) {
+          const f = cellFloor(pw, i, j);
+          if (f === null) continue;
+          zs.push([pw.z0 + (j + 0.5) * pw.cell, f, pw.ceil[j][i]]);
+        }
+        if (zs.length) {
+          const lo = Math.min(...zs.map((c) => c[1]));
+          zs = zs.filter((c) => c[1] < lo + 1.0).sort((a, b) => a[0] - b[0]);
+          fl = lo;
+          roof = Math.max(...zs.map((c) => (c[2] >= 90 ? 0 : c[2] - lo)));
+        }
+        if (fl !== null) {
+          const halfW = Math.max(1.5, (zs[zs.length - 1][0] - zs[0][0]) * 0.5);
+          const cz = (zs[0][0] + zs[zs.length - 1][0]) * 0.5;
+          const pts = [];
+          for (let d = 0; d <= 3.0; d += 0.75) pts.push({ x: cutX + d, y: fl - 0.06, z: cz, r: halfW + 0.55, h: Math.max(2.6, roof) + 0.55 });
+          const plug = makeBore({ pts }, patchMat(findMat(S.passage.root)), { cap: [true, false], measure: false });
+          group.add(plug); S.sleeves.push(plug);
+          const loW = group.localToWorld(new THREE.Vector3(cutX + 0.10, 0, 0)).x;
+          S.passage.root.traverse((o) => {
+            if (!o.isMesh) return;
+            for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+              if (!m) continue;
+              m.userData.bwClipX = loW;
+              if (m.userData.bwSh && m.userData.bwSh.uniforms.uUcClipX) m.userData.bwSh.uniforms.uUcClipX.value = loW;
+            }
+          });
+          /* AND THE WALK STOPS WHERE THE ROCK STOPS BEING DRAWN. A clip is a
+           * shader, and the grid knows nothing about it — left alone, the
+           * floor behind the cap is still walkable and the player strolls
+           * out of the world through their own back wall. */
+          const iCut = Math.round((cutX + 0.55 - pw.x0) / pw.cell - 0.5);
+          for (let j = 0; j < pw.gh; j++) for (let ii = 0; ii <= iCut && ii < pw.gw; ii++) pw.floor[j][ii] = -99;
+        }
       }
       gapRuns(inbound);
       /* AND NOTHING IS SWEPT BEHIND IT. A skin exists to close the holes in a
@@ -2293,11 +2426,26 @@ export function makeUndercroft(opts = {}) {
        * taken off the grid's own first floored column instead, a stride in
        * so you are inside the rock rather than standing in its doorway, and
        * aimed at the column three metres further on. */
+      /* AND IT IS HALF THE TUNNEL. A hundred and forty metres of identical
+       * bore is not suspense, it is a corridor — the owner's word — so you
+       * are set down at the MIDDLE of the straight run and the half behind
+       * you is clipped away and capped (`tunnelLo`). What is left is
+       * seventy metres, dead straight, with the church's doorway on the
+       * line and the altar's candles at the end of it: the whole walk is
+       * one look at the thing you are walking toward.
+       *
+       * And the heading is the BORE'S, not the next column's — the yaw used
+       * to be measured off two columns three metres apart, which on a
+       * sampler that wanders a cell either way is a few degrees of squint at
+       * a light seventy metres off. */
       entry: (() => {
-        const a = colStats(pw, Math.round((high.x + 1.2 - pw.x0) / pw.cell - 0.5)) || high;
-        const c = colStats(pw, Math.round((high.x + 4.2 - pw.x0) / pw.cell - 0.5)) || low;
-        return { x: a.x, y: a.y, z: a.z, yaw: Math.atan2(-(c.x - a.x), -(c.z - a.z)) };
+        const ex = low.x - (low.x - high.x) * 0.5;
+        const a = colStats(pw, Math.round((ex - pw.x0) / pw.cell - 0.5)) || high;
+        /* you stand ON the line and look ALONG it: straight down +x at the
+         * doorway, which is where the altar's candles are */
+        return { x: a.x, y: a.y, z: low.z, yaw: Math.atan2(-(low.x - a.x), 0) };
       })(),
+      tunnelLo: low.x - (low.x - high.x) * 0.5 - 2.6,
       mouth: { x: low.x, y: low.y, z: low.z },
       exit: exitSpot,                                  // the far end of the old cave, behind the altar
       exitEdge: exitEdge === null ? altarX : exitEdge, // where the church ends and the way out begins
@@ -2343,7 +2491,7 @@ export function makeUndercroft(opts = {}) {
     // the idol on the altar and the candles round it
     dressAltar();
     // dust in the air of both tunnels and the nave
-    makeMotes(ch, cw);
+    makeMotes(ch, cw, pw);
     S.ready = true;
     if (opts.onReady) opts.onReady(S);
   }
@@ -2373,7 +2521,7 @@ export function makeUndercroft(opts = {}) {
    *   pass takes a third `LOOK` — almost no dirt and a WARM lift — so the
    *   gold reads as gold in candlelight rather than as one more cold stone
    *   surface. */
-  const CANDLES = { flames: null, seedAttr: null, mat: null };
+  const CANDLES = { flames: null, seedAttr: null, mat: null, halo: null, halos: null };
   // where to start looking for the church's back edge: a little past the altar's own column
   function altarX0() { return S.church.walk.bounds[1][0] - 10 + S.church.walk.off.x; }
   /* THE EXIT'S CUT, shared by every church material through the grime shader:
@@ -2517,6 +2665,7 @@ export function makeUndercroft(opts = {}) {
      * `DARK_R` of it. It is derived from the altar the same way his own
      * position is, rather than written down twice. */
     let groups = 0;
+    const clusters = [];                  // where a handful of candles stands, for the room's own lamps
     for (let g = 0; g < 30 && groups < 13; g++) {
       // somewhere down the nave, biased to the sides where a pier would be
       const back = 4 + rnd() * 30;                       // metres back from the altar
@@ -2526,6 +2675,7 @@ export function makeUndercroft(opts = {}) {
       const f = S.floorAt(cx, cz);
       if (f === null) continue;
       groups++;
+      clusters.push({ x: cx, y: f, z: cz });
       const n = 3 + Math.floor(rnd() * 5);
       for (let k = 0; k < n; k++) {
         const x = cx + (rnd() - 0.5) * 0.85, z = cz + (rnd() - 0.5) * 0.85;
@@ -2556,8 +2706,13 @@ export function makeUndercroft(opts = {}) {
 
     const taper = new THREE.CylinderGeometry(0.82, 1.0, 1.0, 7, 1, false);
     taper.translate(0, 0.5, 0);                       // stand it on its own foot
-    const waxMat = new THREE.MeshStandardMaterial({ color: 0xb9aa90, roughness: 0.86, metalness: 0,
-                                                    emissive: 0x6b4520, emissiveIntensity: 0.78, flatShading: true });
+    /* AND THE WAX ITSELF IS LIT FROM INSIDE. A candle is translucent and the
+     * flame is IN it — the one at the top glows through the top centimetre
+     * of the taper — so a stick of wax that only takes light from outside
+     * reads as a peg. The lift is the same trick the whole undercroft uses:
+     * do it in the material, not with a lamp. */
+    const waxMat = new THREE.MeshStandardMaterial({ color: 0xc4b295, roughness: 0.82, metalness: 0,
+                                                    emissive: 0x8a5a26, emissiveIntensity: 1.22, flatShading: true });
     const wax = new THREE.InstancedMesh(taper, waxMat, spots.length);
     const pool = new THREE.CylinderGeometry(1.0, 1.15, 1.0, 8, 1, false);
     pool.translate(0, 0.5, 0);
@@ -2621,10 +2776,84 @@ export function makeUndercroft(opts = {}) {
     flames.renderOrder = 3;
     group.add(flames);
     CANDLES.flames = flames;
+    /* ---- AND EVERY FLAME CARRIES A HALO, WHICH IS WHAT A CANDLE LOOKS
+     * LIKE IN A ROOM WITH DUST IN IT. The tongue and the sprite are the
+     * flame; what says "this is the only light in here" is the soft bloom
+     * of air AROUND it, and without one the candles read as bright pips
+     * pasted on a dark room rather than as things lighting it. It is a
+     * second Points batch at the same positions — five times the size, a
+     * tenth of the brightness, guttering on the SAME seed so a flame and
+     * its own glow breathe together — drawn UNDER the flames. */
+    const halo = (() => {
+      const c = document.createElement('canvas'); c.width = c.height = 64;
+      const x = c.getContext('2d');
+      const g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+      g.addColorStop(0.00, 'rgba(255,214,150,0.85)');
+      g.addColorStop(0.28, 'rgba(255,170,86,0.30)');
+      g.addColorStop(0.65, 'rgba(216,116,36,0.08)');
+      g.addColorStop(1.00, 'rgba(160,70,0,0)');
+      x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+    })();
+    const hm = new THREE.PointsMaterial({ color: 0xffa653, size: 1.0, sizeAttenuation: true, map: halo,
+                                          transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: true });
+    hm.onBeforeCompile = (sh) => {
+      sh.uniforms.uFlameT = { value: 0 };
+      CANDLES.halo = sh;
+      sh.vertexShader = 'attribute float aSeed;\nattribute float aSize;\nuniform float uFlameT;\nvarying float vFlame;\n' + sh.vertexShader
+        .replace('#include <fog_vertex>', `#include <fog_vertex>
+  float hk = 0.62 + 0.30 * sin(uFlameT * 8.7 + aSeed * 6.1) + 0.22 * sin(uFlameT * 3.1 + aSeed * 2.7);
+  hk = clamp(hk, 0.34, 1.15);
+  vFlame = hk * 0.34;
+  gl_PointSize *= aSize * 5.2 * (0.84 + 0.16 * hk);
+  gl_PointSize = min(gl_PointSize, 96.0);`);
+      sh.fragmentShader = 'varying float vFlame;\n' + sh.fragmentShader
+        .replace('#include <premultiplied_alpha_fragment>', '  gl_FragColor.rgb *= vFlame;\n#include <premultiplied_alpha_fragment>');
+    };
+    const halos = new THREE.Points(fg, hm);
+    halos.frustumCulled = false;
+    halos.renderOrder = 2;
+    group.add(halos);
+    CANDLES.halos = halos;
+    /* ---- AND YOU SEE IT FROM THE FAR END OF THE TUNNEL.
+     *
+     * The walk is a hundred metres of dead straight bore with the altar on
+     * its line, and the whole point of that line is that the thing you are
+     * walking toward is AT THE END OF IT. Fog will not carry it: at 0.030 a
+     * surface a hundred metres off is down to nothing, and dropping the
+     * density far enough to show the chancel would take the close dark with
+     * it — which is the one thing the undercroft has.
+     *
+     * A bright source does not obey a haze the way a surface does, so the
+     * beacon is UNFOGGED and its size and brightness are read off how far
+     * away you are: a warm smudge the size of a doorway at seventy metres,
+     * shrinking and fading to nothing by the time you are close enough to
+     * see the tapers themselves. It is depth-tested like anything else, so
+     * a shoulder of rock or the church's own wall hides it — walk off the
+     * line and the light goes behind the stone, which is the whole reason it
+     * is worth walking the line. */
+    {
+      const c = document.createElement('canvas'); c.width = c.height = 128;
+      const x = c.getContext('2d');
+      const g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+      g.addColorStop(0.00, 'rgba(255,226,170,0.95)');
+      g.addColorStop(0.20, 'rgba(255,178,92,0.52)');
+      g.addColorStop(0.52, 'rgba(226,120,36,0.16)');
+      g.addColorStop(1.00, 'rgba(150,60,0,0)');
+      x.fillStyle = g; x.fillRect(0, 0, 128, 128);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, color: 0xffb266, transparent: true,
+        opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+      sp.position.set(A.x - 0.35, A.y + 0.62, A.z);
+      sp.renderOrder = 4;
+      sp.frustumCulled = false;
+      group.add(sp);
+      S.beacon = sp;
+    }
     /* what a broken pew needs to take its candles with it: the spots, the two
      * instanced meshes they live in and the flame batch, so the game can put
      * one out and throw it without knowing how any of this is built */
-    S.candles = { spots, wax, pools, flames, mat: waxMat };
+    S.candles = { spots, wax, pools, flames, halos, clusters, mat: waxMat };
     S.douseCandle = (i) => {
       const sp = spots[i];
       if (!sp || sp.out) return null;
@@ -2666,8 +2895,15 @@ export function makeUndercroft(opts = {}) {
    * in the world, thinner in the nave, which is big. It is the one thing
    * that says the air down here has not moved in a long time, and it is
    * SUBTLE on purpose: a fog of it reads as snow. */
-  function makeMotes(ch, cw) {
-    const N = 1100;
+  /* AND THE TUNNEL HAD NO DUST IN IT. The motes were dealt out to the church,
+   * the old cave and the CORRIDORS — and the corridor is not the tunnel any
+   * more, it is the nine metres of church seam left over from the day the
+   * passage was walked as a tube. So seventy metres of the walk had nothing
+   * in the air at all. The passage's own grid takes the biggest share now:
+   * it is the one place in this game where the only light is the one in your
+   * hand, and dust turning in it is most of what says the air is close. */
+  function makeMotes(ch, cw, pw) {
+    const N = 1400;
     const pos = new Float32Array(N * 3), seed = new Float32Array(N);
     const putGrid = (k, w, hi) => {
       for (let tries = 0; tries < 40; tries++) {
@@ -2694,8 +2930,9 @@ export function makeUndercroft(opts = {}) {
       return true;
     };
     for (let k = 0; k < N; k++) {
-      if (k < N * 0.34) { if (!putBore(k)) putGrid(k, ch, 6.5); }
-      else if (k < N * 0.46) { if (!putGrid(k, cw, 2.4)) putGrid(k, ch, 6.5); }
+      if (k < N * 0.32) { if (!(pw && putGrid(k, pw, 2.3))) putGrid(k, ch, 6.5); }      // the tunnel you crawl
+      else if (k < N * 0.40) { if (!putBore(k)) putGrid(k, ch, 6.5); }                  // the church seam and the exit bore
+      else if (k < N * 0.52) { if (!putGrid(k, cw, 2.4)) putGrid(k, ch, 6.5); }         // the old cave behind the altar
       else putGrid(k, ch, 6.5);
       seed[k] = Math.random() * 100;
     }
@@ -2716,7 +2953,21 @@ export function makeUndercroft(opts = {}) {
     group.add(pts);
     S.motes = { pts, pos, seed, base: Float32Array.from(pos), t: 0 };
   }
-  S.update = (dt) => {
+  const _bcam = new THREE.Vector3();
+  S.update = (dt, camWorld) => {
+    /* the beacon: big and warm down the bore, gone by the time you are at
+     * the rail. NEAR is where the candles themselves start to read. */
+    if (S.beacon && camWorld) {
+      group.worldToLocal(_bcam.copy(camWorld));
+      const d = Math.hypot(_bcam.x - S.beacon.position.x, _bcam.z - S.beacon.position.z);
+      const FAR = 62, NEAR = 15;
+      const k = Math.max(0, Math.min(1, (d - NEAR) / (FAR - NEAR)));
+      const e = k * k * (3 - 2 * k);
+      S.beacon.material.opacity = 0.80 * e;
+      const w = 1.1 + 5.4 * e;
+      S.beacon.scale.set(w, w * 0.92, 1);
+      S.beacon.visible = e > 0.01;
+    }
     if (S.motes) {
       const M = S.motes; M.t += dt;
       const p = M.pos, b = M.base, s = M.seed, t = M.t;
@@ -2730,6 +2981,7 @@ export function makeUndercroft(opts = {}) {
     }
     // the candles
     if (CANDLES.mat) CANDLES.mat.uniforms.uFlameT.value += dt;
+    if (CANDLES.halo) CANDLES.halo.uniforms.uFlameT.value += dt;   // a flame and its own glow breathe together
     // the bulbs gutter, each on its own count
     const tt = performance.now() * 0.001;
     for (let k = 0; k < S.bulbs.length; k++) {

@@ -97,6 +97,22 @@ CLIPS = [
     ('Mutant Run',              'run',     'the run'),
     ('Block',                   'block',   'the guard'),
     ('Center Block',            'blockC',  'the guard, square on'),
+    # and the parry has a reel of its own
+    ('Zombie Reaction Hit',     'parry',   'the reel when his guard is broken by a parry'),
+    # ---- THE LOCOMOTION PACK. Everything above is a move; this is how he
+    # CARRIES himself between them, which is most of what a fight looks like.
+    # He keeps every clip he already had — these are drawn against them, so
+    # the same creature stands, strides and circles differently from one
+    # exchange to the next instead of running one cycle for ever.
+    ('idle',                    'idleB',   'a second way of standing',            'Locomotion Pack'),
+    ('walking',                 'walkC',   'a third walk',                        'Locomotion Pack'),
+    ('running',                 'runB',    'a second run',                        'Locomotion Pack'),
+    ('left strafe walking',     'strafeL2','a second sideways stride, to his left',  'Locomotion Pack'),
+    ('right strafe walking',    'strafeR3','a second sideways stride, to his right', 'Locomotion Pack'),
+    ('left strafe',             'sideL',   'a short side step, left',             'Locomotion Pack'),
+    ('right strafe',            'sideR2',  'a short side step, right',            'Locomotion Pack'),
+    ('left turn 90',            'turnL',   'a quarter turn on the spot, left',    'Locomotion Pack'),
+    ('right turn 90',           'turnR',   'a quarter turn on the spot, right',   'Locomotion Pack'),
 ]
 # THE BEATS, measured off the hips (see the log's own curve). A Mixamo clip
 # is a performance with an approach and a recovery either side of the thing
@@ -118,7 +134,11 @@ WINDOW = ({'knock': (30, 78), 'nSweep': (0, None), 'dodge': (20, 82)} if SET == 
           else {'hitSide': (0, 46), 'hitBack': (0, 50)})
 # He is knocked down FACING YOU, by the owner's word, so this one is de-yawed
 # whatever it measures.
-FORCE_FLAT_YAW = {'knock'} if SET == 'ntar' else {'kPunch', 'kSwipe', 'kJump', 'block', 'blockC', 'strafeR', 'sideR', 'k360', 'hit', 'hitBig', 'hitSide', 'hitBack'}
+FORCE_FLAT_YAW = {'knock'} if SET == 'ntar' else {'kPunch', 'kSwipe', 'kJump', 'block', 'blockC', 'strafeR', 'sideR', 'k360', 'hit', 'hitBig', 'hitSide', 'hitBack',
+      # the locomotion pack and the parry reel: the GAME turns him at you
+      # every frame, so nothing here may turn his hips as well — a quarter
+      # turn de-yawed is a pivot step, which is what it is wanted for
+      'parry', 'idleB', 'walkC', 'runB', 'strafeL2', 'strafeR3', 'sideL', 'sideR2', 'turnL', 'turnR'}
 
 
 def log(*a):
@@ -130,11 +150,39 @@ def r4(v):
 
 
 def main():
+    # ---- IT MERGES; IT DOES NOT REWRITE.
+    #
+    # The sources live in ~/Downloads, which is the owner's own folder and is
+    # cleared whenever he likes — so a build that insists on every FBX being
+    # present is a build that can only be run on the day the clips arrive.
+    # (This file already knows the shape of that mistake: "a build that reads
+    # a temp directory is not a build".) What is already in the JSON is a
+    # successful build of a clip whose source has since gone; a source that IS
+    # here is rebuilt over it, and a source that is not is left exactly as it
+    # was. Adding a clip is then a one-file drop and a re-run.
     out = {'fps': FPS, 'clips': {}}
-    for fname, name, what in CLIPS:
-        path = os.path.join(SRC, fname + '.fbx')
+    if os.path.exists(OUT):
+        try:
+            with open(OUT) as fh:
+                prev = json.load(fh)
+            out['clips'] = prev.get('clips', {})
+            log('merging into', len(out['clips']), 'clips already built')
+        except Exception as e:
+            log('could not read the existing', OUT, '-', e)
+    missing, built = [], []
+    for entry in CLIPS:
+        fname, name, what = entry[0], entry[1], entry[2]
+        # a clip may name a subfolder of ~/Downloads it was delivered in
+        sub = entry[3] if len(entry) > 3 else ''
+        path = os.path.join(SRC, sub, fname + '.fbx')
         if not os.path.exists(path):
-            sys.exit('missing ' + path)
+            if name in out['clips']:
+                log('KEEPING', name, '- its source is gone from', os.path.dirname(path) or SRC)
+            else:
+                log('MISSING', name, '-', path)
+                missing.append(name)
+            continue
+        built.append(name)
         bpy.ops.wm.read_factory_settings(use_empty=True)
         bpy.ops.import_scene.fbx(filepath=path)
         arm = next(o for o in bpy.data.objects if o.type == 'ARMATURE')
@@ -265,9 +313,12 @@ def main():
         if contact is not None:
             out['clips'][name]['hit'] = contact
 
+    if missing:
+        sys.exit('no source and nothing already built for: ' + ', '.join(missing))
     with open(OUT, 'w') as f:
         json.dump(out, f, separators=(',', ':'))
-    log('wrote %s: %.1f KB' % (os.path.relpath(OUT), os.path.getsize(OUT) / 1024))
+    log('built', len(built), 'of', len(CLIPS), '-', ', '.join(built))
+    log('wrote %s: %d clips, %.1f KB' % (os.path.relpath(OUT), len(out['clips']), os.path.getsize(OUT) / 1024))
 
 
 main()

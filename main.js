@@ -17053,14 +17053,40 @@ function sliceClip(src, name, t0, t1, fps = 30) {
  * to rest or sets off, with its own kind's clip favoured. A creature that
  * always ran the same cycle and always stood the same way read as a
  * recording; one that comes at you differently each time reads as alive. */
+/* WHICH CLIP IT MOVES ON, DRAWN AFRESH EVERY TIME IT SETS OFF. A kind with
+ * `gaits` hands over whole POOLS — three walks, two runs, two idles, three
+ * strafes a side — instead of the old pair, and any name in a pool that the
+ * creature does not actually own is skipped, so a pool is safe to write
+ * before the clip exists. */
+function pickGait(u, key, fallback) {
+  const pool = u.kind.gaits && u.kind.gaits[key];
+  if (pool && pool.length) {
+    const ok = pool.filter((n) => u.clips[n]);
+    if (ok.length) return ok[(Math.random() * ok.length) | 0];
+  }
+  return fallback;
+}
 function drawGait(u) {
   const N = u.kind.anim, r = Math.random;
   u.gait = {
-    walk: r() < 0.6 ? N.walk : (N.walk === 'walk' ? 'walk2' : 'walk'),
-    run: r() < 0.7 ? N.run : (N.run === 'run' ? 'run2' : 'run'),
-    idle: r() < 0.65 ? N.idle : (N.idle === 'idle' ? 'idle2' : 'idle'),
+    walk: pickGait(u, 'walk', r() < 0.6 ? N.walk : (N.walk === 'walk' ? 'walk2' : 'walk')),
+    run: pickGait(u, 'run', r() < 0.7 ? N.run : (N.run === 'run' ? 'run2' : 'run')),
+    idle: pickGait(u, 'idle', r() < 0.65 ? N.idle : (N.idle === 'idle' ? 'idle2' : 'idle')),
+    strafeL: pickGait(u, 'strafeL', 'strafeL'),
+    strafeR: pickGait(u, 'strafeR', 'strafeR'),
     idleRate: 0.85 + r() * 0.4,
   };
+}
+/* THE RATE IS THE STRIDE OVER THE SPEED — and with a dozen gaits drawn
+ * against each other it cannot be one number per kind. A clip whose own
+ * ground speed was measured at build is played at whatever rate makes it
+ * travel as fast as the game is actually moving him; anything with no
+ * measurement falls back to the kind's constant, which is what every
+ * creature but the knight still uses. */
+function gaitRate(u, name, want, fallback) {
+  const s = u.clipSpeed && u.clipSpeed[name];
+  if (!s || s < 0.05 || !want) return fallback;
+  return THREE.MathUtils.clamp(want / s, 0.45, 2.6);
 }
 function mutAnim(u, dt, moving) {
   if (!u.mixer) return;
@@ -17080,7 +17106,12 @@ function mutAnim(u, dt, moving) {
   } else if (u.st.stun > 0) {
     // the reel, run off the stun clock, so it is helpless for exactly as long
     // as it looks helpless
-    const a = mutPlay(u, 'hit', false);
+    /* AND THE REEL A PARRY BUYS MAY BE ITS OWN CLIP. A parry is the biggest
+     * thing you can do to this creature and it played the same small flinch
+     * as an ordinary hit, so the one moment the fight hands you outright
+     * looked like being tapped. `stunClip` is the reel; it runs off the stun
+     * clock, so he is helpless for exactly as long as he looks it. */
+    const a = mutPlay(u, u.kind.stunClip || 'hit', false);
     if (a) { a.paused = true; a.time = clampTime(a, (1 - u.st.stun / MUT_STUN) * a.getClip().duration); }
   } else if (u.st.atk >= 0) {
     const a = mutPlay(u, u.st.swing, false);
@@ -17102,6 +17133,13 @@ function mutAnim(u, dt, moving) {
     // has a scream that is not the roar it uses in the middle of a fight
     const a = mutPlay(u, u.st.roarClip || N.roar, false);
     if (a) { a.paused = false; a.timeScale = u.st.roarClip ? 1.0 : 1.35; }
+  } else if ((u.st.sideStep || 0) > 0 && u.kind.stepClip) {
+    /* THE STEP THAT OPENS A SIZE-UP. Its own clip, run once on its own clock
+     * — the side it goes is the side he is circling — and then the strafe
+     * walk takes over for the rest of the beat. */
+    const nm = u.kind.stepClip[u.st.side < 0 ? 0 : 1] || u.kind.stepClip[0];
+    const a = mutPlay(u, nm, false);
+    if (a) { a.paused = true; a.time = clampTime(a, (1 - u.st.sideStep / 0.80) * a.getClip().duration); }
   } else if (u.st.side !== 0 && moving < 0.5) {
     // circling you at reach, or backing off a step before the lunge
     /* AND A SIDE-STEP PLAYED BACKWARDS IS THE OTHER SIDE-STEP. Mixamo gives
@@ -17110,8 +17148,13 @@ function mutAnim(u, dt, moving) {
      * trick one step along and is the difference between feet that go where
      * the body goes and feet that scrub the floor. */
     const mir = u.kind.strafeMirror && u.st.side < 0;
-    const a = mutPlay(u, mir ? 'strafeR' : (u.st.side < 0 ? 'strafeL' : 'strafeR'), true);
-    if (a) { a.paused = false; a.timeScale = (mir ? -1 : 1) * 1.25 * N.strafeK; }
+    const nm = mir ? (u.gait.strafeR || 'strafeR')
+                   : (u.st.side < 0 ? (u.gait.strafeL || 'strafeL') : (u.gait.strafeR || 'strafeR'));
+    const a = mutPlay(u, nm, true);
+    if (a) {
+      a.paused = false;
+      a.timeScale = (mir ? -1 : 1) * gaitRate(u, nm, MUT_STRAFE * N.strafeK, 1.25 * N.strafeK);
+    }
   } else if (u.st.back > 0) {
     /* AND A THING BACKING OFF PLAYS ITS WALK BACKWARDS. The Dealer has done
      * this since he learned to read a charge — a NEGATIVE rate, so his feet
@@ -17131,8 +17174,13 @@ function mutAnim(u, dt, moving) {
      * every time it sets off (`u.gait`), so the same creature closes
      * differently from one exchange to the next. */
     const slow = moving < 0.5;
-    const a = mutPlay(u, slow ? u.gait.walk : u.gait.run, true);
-    if (a) { a.paused = false; a.timeScale = slow ? (1.1 + moving * 1.2) * N.rate : (1.5 + moving * 0.55) * N.rate; }
+    const nm = slow ? u.gait.walk : u.gait.run;
+    const a = mutPlay(u, nm, true);
+    if (a) {
+      a.paused = false;
+      const fb = slow ? (1.1 + moving * 1.2) * N.rate : (1.5 + moving * 0.55) * N.rate;
+      a.timeScale = gaitRate(u, nm, MUT_SPEED * u.kind.speedK * Math.max(0.28, moving), fb);
+    }
   } else {
     // and it does not stand the same way twice: the idle is drawn too, and its pace
     const a = mutPlay(u, u.gait.idle, true);
@@ -17477,8 +17525,30 @@ function makeMutant(x, z, kindName, y = 0) {
    * moves the stall, it does not remove it. Being in range is a question
    * about the CREATURE, not about the last thing it threw. */
   const maxReach = Math.max(...Object.values(atk).filter((a) => !a.minDist).map((a) => a.reach));
+  /* AND WHERE IT WANTS TO STAND IS NOT ITS LONGEST SWING. `maxReach` answers
+   * "could I hit you from here", which is the right question for the token
+   * and the wrong one for footwork: a creature carrying one long swing among
+   * six short ones counts itself in range the moment that one could reach,
+   * stops closing, and fights the rest of the exchange from a distance where
+   * nothing else it owns will land. Measured on the knight, whose jump is
+   * 5.40 against a punch of 2.15: he settled at 3.89 m and threw 27 swings a
+   * minute where his own timings allow far more.
+   *
+   * `ring` is the range his ORDINARY swings want — the use-weighted mean of
+   * everything that is not a gap-closer — and it is what the footwork holds
+   * him at. It only ever pulls him IN; how far he may hit from is still
+   * `maxReach`. */
+  const ring = (() => {
+    let w = 0, acc = 0;
+    for (const k in kind.use) {
+      const a = atk[k] || MUT_ATTACKS[k];
+      if (!a || a.minDist) continue;
+      acc += a.reach * kind.use[k]; w += kind.use[k];
+    }
+    return w > 0 ? acc / w : maxReach;
+  })();
   const u = {
-    g, kind, kindName, atk, maxReach, model: null, mixer: null, clips: {}, cur: null, leanT: 0,
+    g, kind, kindName, atk, maxReach, ring, model: null, mixer: null, clips: {}, clipSpeed: {}, cur: null, leanT: 0,
     st: { alive: true, awake: false, roar: 0, atk: -1, flourish: 0, fidget: 0, swing: Object.keys(kind.use)[0],
           cool: 0, stun: 0, recoil: 0, struck: false, hp: kind.hp, step: 0, deadT: 0,
           side: 0, sideT: 0, back: 0, chained: false, chainN: 0, chainAt: -1, swings: 0, wait: 0,
@@ -20660,7 +20730,33 @@ function updateMutantUnit(u, dt) {
      * drawn through you — "it clips through the player". A creature's
      * lunge stops where its body would meet yours; the blow still lands,
      * because the sweep is on the head chain out in front of it. */
-    if (A.lunge > 0 && t >= A.wind - air && t < A.wind + A.strike + 0.12 && dist > Math.max(1.3, (u.kind.body || 0.9) + 0.15)) {
+    /* AND 1.3 WAS A PERSON'S WIDTH, WHICH IS NOT EVERY CREATURE'S. The floor
+     * went in so a four-metre animal would stop at its own body instead of
+     * driving its front half through you — and as a CONSTANT it does the
+     * opposite job on anything smaller: the knight's striking hand extends
+     * 0.89 m from his own origin (measured at the contact frame, every
+     * swing), so a lunge that refuses to close inside 1.3 leaves his fist
+     * more than half a metre short of your chest on every blow he throws.
+     * The damage still landed — `LAND_SLOP` gives a metre of benefit of the
+     * doubt — so the game said he hit you and the picture said he did not.
+     * That is the whole of "tighten his hits so they actually visibly hit
+     * you". A creature stops at ITS OWN body, which is what the number after
+     * the max was always for. */
+    /* AND HOW NEAR IS A MEASURED NUMBER PER KIND, BECAUSE BOTH ENDS ARE
+     * WRONG. Too far and his fist stops half a metre short of you (the game
+     * lands the blow, the picture does not); too near and the blow arrives
+     * BELOW THE FRAME — measured on the knight at his own body radius, the
+     * overhead finished at ndc y -0.97 and the stomp at -2.45, on screen
+     * half the time and never. What a blow has to do is arrive where you
+     * are looking. `lungeStop` is that distance, swept in the pane. */
+    /* AND A SWING MAY SET ITS OWN. A blow from a LEG lands at thigh height,
+     * so the nearer he is the further below the picture it arrives: measured
+     * at the kind's own stop, the stomp's boot finished at ndc y -1.63 —
+     * off the bottom of the frame, every time. A kick is thrown from further
+     * out than a punch, which is also simply what a kick is. */
+    const stop = A.stop != null ? A.stop
+      : (u.kind.lungeStop != null ? u.kind.lungeStop : Math.max(1.3, (u.kind.body || 0.9) + 0.15));
+    if (A.lunge > 0 && t >= A.wind - air && t < A.wind + A.strike + 0.12 && dist > stop) {
       u.dir.set(dx / dist, 0, dz / dist);
       p.addScaledVector(u.dir, (A.lunge / (air + A.strike + 0.12)) * dt);
     }
@@ -20773,8 +20869,23 @@ function updateMutantUnit(u, dt) {
        * from all three at once; the ones without the turn close to just
        * inside their own reach while they wait, so backing away is a thing
        * you do into somebody. */
-      const r = THREE.MathUtils.clamp((dist - (A.reach - 0.9)) * 1.6, -1, 1);
-      const sw = MUT_STRAFE * u.kind.anim.strafeK;
+      /* AND HE CIRCLES AT THE RANGE HE FIGHTS AT. `A.reach` is whatever swing
+       * he happens to be holding, so after a gap-closer he orbited at the
+       * gap-closer's distance and none of his ordinary swings could land
+       * from there. `u.ring` is where his hands actually reach. */
+      /* AND A SIZE-UP GIVES GROUND WHILE IT CIRCLES. The beat exists to open
+       * the distance and watch you; orbiting at the fighting ring while
+       * "backing off" is the two halves of it arguing. */
+      const base = (u.kind.restless && u.ring ? u.ring : A.reach);
+      const want = u.st.sizing ? base + 1.0 : base - 0.9;
+      const r = THREE.MathUtils.clamp((dist - want) * 1.6, -1, 1);
+      /* AND THE GROUND GOES UNDER HIM AS FAST AS THE CLIP SAYS. The step
+       * clip covers three metres in eight tenths of a second; walked at the
+       * circling speed his feet would cross that distance while his body
+       * covered a third of it, which is the oldest bug in this file. */
+      const stepSp = (u.st.sideStep > 0 && u.kind.stepClip
+        && u.clipSpeed[u.kind.stepClip[u.st.side < 0 ? 0 : 1]]) || 0;
+      const sw = stepSp || MUT_STRAFE * u.kind.anim.strafeK * (u.st.sizing ? 1.15 : 1);
       p.x += (tx * u.st.side * sw + (dx / dist) * r * 1.5) * dt;
       p.z += (tz * u.st.side * sw + (dz / dist) * r * 1.5) * dt;
       mutClampX(u, p, dt);
@@ -20791,7 +20902,19 @@ function updateMutantUnit(u, dt) {
        * to put distance between you: measured, `side` was cleared every
        * frame and the strafe clips never played once in ninety seconds. It
        * holds while he is giving ground. */
-      if (u.st.sideT <= 0 || (dist < 1.4 && !(u.st.back > 0))) { u.st.side = 0; u.st.cool = Math.max(u.st.cool, 0.15); }
+      /* AND A RESTLESS KIND KEEPS CIRCLING RIGHT UP TO THE BODY. The 1.4 m
+       * cancel is right for a creature that should be swinging rather than
+       * walking round you — and inside a recovery there is nothing to swing
+       * with, so all it bought was the statue. He may circle in to his own
+       * body radius; he simply cannot do it instead of attacking, because
+       * the decision to swing is taken before this branch is ever reached. */
+      const hold = u.kind.restless ? (u.kind.body || 0.9) + 0.25 : 1.4;
+      if (u.st.sideT <= 0 || (dist < hold && !(u.st.back > 0))) {
+        u.st.side = 0; u.st.sizing = false;
+        // a restless kind pays no toll for stopping: the shuffle ran inside
+        // its own recovery and must not extend it
+        if (!u.kind.restless) u.st.cool = Math.max(u.st.cool, 0.15);
+      }
     } else if (u.st.back > 0) {
       // a step back, and then the lunge out of it
       u.st.back -= dt;
@@ -20895,8 +21018,14 @@ function updateMutantUnit(u, dt) {
        * not mercy, and it is the beat that makes the aggression readable. */
       if (maySwing && u.kind.sizeUp && u.st.swings > 1 && (u.st.sinceSize || 0) >= 2
           && dist < A.reach + 1.2 && Math.random() < u.kind.sizeUp) {
+        u.st.sizing = true;
         wantSwing = false;
         u.st.sinceSize = 0;
+        /* AND IT OPENS WITH A STEP. A size-up that begins by strolling
+         * sideways reads as him losing interest; three metres in eight
+         * tenths of a second reads as a fighter making room, and it is the
+         * same beat either way. */
+        if (u.kind.stepClip) u.st.sideStep = 0.80;
         u.st.back = 0.75 + Math.random() * 0.5;
         u.st.side = flankSide(u, mutants, mutToken, MUT_SLOT_ANG);
         u.st.sideT = 1.2 + Math.random() * 1.3;
@@ -20942,6 +21071,36 @@ function updateMutantUnit(u, dt) {
         u.st.side = flankSide(u, mutants, mutToken, MUT_SLOT_ANG);   // and the circling spreads them
         u.st.sideT = 0.5 + Math.random() * 0.8;
       }
+    } else if (u.kind.restless && u.st.atk < 0 && u.st.recoil <= 0 && u.st.stun <= 0 && u.st.roar <= 0) {
+      /* ---- AND THERE WAS NO BRANCH AT ALL FOR "AT REACH, CATCHING MY
+       * BREATH", WHICH IS A THIRD OF THE FIGHT.
+       *
+       * The chain is circle / step back / dash / chase / decide, and `decide`
+       * only runs once the cooldown is spent — so a creature standing inside
+       * its own reach with `cool` still running fell out of the bottom of the
+       * whole thing and was moved by nothing. Measured on the knight over
+       * ninety seconds: SEVENTY PER CENT of frames with his position
+       * unchanged to four decimal places. That is the owner's "he stands
+       * still way too much", and it is not a tuning number, it is a missing
+       * else.
+       *
+       * A restless kind keeps its feet going through the recovery: a short
+       * circle, redrawn often enough that you cannot lead him, and the
+       * circle's own radial term walks him back to his ring while he does
+       * it. He is never not moving between swings now, which is the whole
+       * difference between a boss and a statue that hits you. */
+      /* AND IT MAY ONLY USE TIME HE WAS GOING TO SPEND ANYWAY. The first
+       * build re-armed the circle whenever it was not already circling, and
+       * the cancel at the end of a circle nudged the cooldown up by a frame
+       * or two — so he re-entered the circle before the cooldown could ever
+       * reach zero and the branch that picks a swing was never reached at
+       * all. Measured: 94 % of frames strafing and 0.7 swings a minute, which
+       * is the statue's opposite and just as bad. The shuffle is bounded by
+       * the breath he has left, and it does not start on the last of it. */
+      if (u.st.side === 0 && u.st.back <= 0 && u.st.dash <= 0 && u.st.cool > 0.18) {
+        u.st.side = flankSide(u, mutants, mutToken, MUT_SLOT_ANG);
+        u.st.sideT = Math.min(u.st.cool - 0.06, 0.28 + Math.random() * 0.45);
+      }
     }
   }
   /* AND IT DOES THINGS WHILE IT WAITS. Standing at reach without the turn it
@@ -20949,6 +21108,7 @@ function updateMutantUnit(u, dt) {
    * speed, so it is a bark and not the opening — or a twitch of a side-step,
    * on an irregular count. None of it is a tell; a tell is only ever the
    * swing. It is a body that will not keep still. */
+  u.st.sideStep = Math.max(0, (u.st.sideStep || 0) - dt);
   u.st.fidget = (u.st.fidget || 0) - dt;              // the count runs whatever it is doing
   if (u.st.fidget <= 0 && dist <= A.reach + 1.5 && mutToken !== u && u.st.atk < 0 && u.st.flourish <= 0 && u.st.side === 0 && u.st.back <= 0 && u.st.dash <= 0) {
     u.st.fidget = (1.2 + Math.random() * 2.0) * (u.kind.fidgetGap || 1);
@@ -28131,6 +28291,14 @@ function ntarRetarget(u, m, bones, bind, J, hipUp, hipPos, src) {
        * is lying, and the line they may not rise above on the way up. */
       if (name === 'knock') u.ntarHip = { bone: J.hip, pos: hipPos.clone(), up: hipUp.clone(), lie: C.hipY[n - 1] * hipK };
     }
+    /* AND HOW FAST THE CLIP ITSELF TRAVELS, so the game can play it at the
+     * speed it is actually moving him. "The rate is the stride over the
+     * speed" was set by hand for two clips; with a dozen gaits drawn against
+     * each other it has to come off the data, or half of them skate. */
+    if (C.travel && C.travel.length && C.dur > 0) {
+      const T = C.travel[C.travel.length - 1];
+      u.clipSpeed[name] = Math.hypot(T[0], T[1]) / C.dur;
+    }
     out.push(new THREE.AnimationClip(name, C.dur, tracks));
   }
   return out;
@@ -28520,7 +28688,7 @@ MUT_ATTACKS.kSwipe = { wind: 0.62, strike: 0.16, recover: 0.38, hit: 0.600, reac
 MUT_ATTACKS.k360   = { wind: 0.88, strike: 0.24, recover: 0.58, hit: 0.620, reach: 3.20, lunge: 0.5, chain: 'kSwipe', chainP: 0.46, w: 0.20, hold: true, guardK: 1.40, limbs: [0, 1] };
 MUT_ATTACKS.kOver  = { wind: 1.45, strike: 0.20, recover: 0.78, hit: 0.846, reach: 2.50, lunge: 0.8, chain: 'kPunch', chainP: 0.40, w: 0.22, dmg: 2, hold: true, guardK: 1.75, twoHanded: true };
 MUT_ATTACKS.kBack  = { wind: 0.66, strike: 0.16, recover: 0.40, hit: 0.690, reach: 2.55, lunge: 1.2, chain: 'kSwipe', chainP: 0.52, w: 0.28, guardK: 1.10, limbs: [1] };
-MUT_ATTACKS.kStomp = { wind: 0.92, strike: 0.18, recover: 0.52, hit: 0.716, reach: 2.70, lunge: 1.0, chain: 'kBack', chainP: 0.44, w: 0.20, guardK: 1.35, limbs: [2] };
+MUT_ATTACKS.kStomp = { wind: 0.92, strike: 0.18, recover: 0.52, hit: 0.716, reach: 2.70, lunge: 1.0, stop: 1.32, chain: 'kBack', chainP: 0.44, w: 0.20, guardK: 1.35, limbs: [2] };
 MUT_ATTACKS.kJump  = { wind: 1.05, strike: 0.20, recover: 0.62, hit: 0.640, reach: 5.40, lunge: 5.2, chain: 'kPunch', chainP: 0.55, w: 0.22, dmg: 2, hold: true, guardK: 1.70, minDist: 3.2, twoHanded: true };
 MUT_KINDS.knight = {
   glb: 'assets/knight.glb', solo: true, noSand: true, skin: null, bones: null,
@@ -28531,14 +28699,24 @@ MUT_KINDS.knight = {
    * frame at fighting range and every blow arrived from off-screen; 2.85 is
    * still half again your height and his hands are where you can watch them.
    * The body and the hit radius come down with him. */
-  h: 2.85, hp: 38, dmg: 1, hitR: 1.15, body: 0.95, uc: true,
+  /* AND HIS BODY IS NARROWER THAN HIS HEIGHT SUGGESTS. `body` is how near
+   * you may stand, and at 0.95 it was wider than his own arm is long (0.89
+   * from his origin at full extension, measured) — so he could never put a
+   * fist on you whatever the aim did. He is tall, not broad. */
+  h: 2.85, hp: 38, dmg: 1, hitR: 1.15, body: 0.78, uc: true, lungeStop: 1.18,
   speedK: 1.18, windK: 1.00, reachK: 1.00, aggr: 3.20, press: 0.94,
-  use: { kPunch: 0.22, kSwipe: 0.20, kJump: 0.14, kOver: 0.12, kBack: 0.14, kStomp: 0.10, k360: 0.16 },
+  /* AND THE STOMP IS THE RAREST OF THEM, because it is the one blow of his
+   * that cannot be framed. Swept in the pane, its boot is on screen 62 % of
+   * the time at best (1.30) against 100 % for every hand blow: it arrives at
+   * thigh height beside you and a first-person camera at 1.63 m is looking
+   * over the top of it. It stays — it is the one answer that is not the
+   * answer to his hands — and it is thrown least. */
+  use: { kPunch: 0.22, kSwipe: 0.21, kJump: 0.14, kOver: 0.13, kBack: 0.15, kStomp: 0.07, k360: 0.16 },
   /* PACING. He chains four deep and swings nearly every time he could — and
    * then, a third of the openings, he gives ground instead and watches. The
    * aggression is what makes him hard; the beat where he stops is what makes
    * him readable, and a fight you can read is the only kind you can learn. */
-  circle: 0.20, step: 0.22, chainMax: 4, feint: 0.30, sizeUp: 0.34,
+  circle: 0.20, step: 0.22, chainMax: 4, feint: 0.30, sizeUp: 0.34, restless: 1,
   poise: 11, poiseBack: 1.7, poiseWait: 1.2, parryK: 0.80, recoilK: 0.72, blockCost: 1.00,
   block: 0.34, fidgetK: 0.22, fidgetGap: 3.0,
   /* AND THE SHOULDER TURNS FURTHER THAN A MAN'S. `aimK` is how much of the
@@ -28547,7 +28725,7 @@ MUT_KINDS.knight = {
    * and the fight reads as happening beside you instead of to you. Measured
    * at the contact frame: the sweep now finishes 0.28 to 0.53 m off the
    * chest and the punch 0.4 to 0.6, where they were both over two metres. */
-  reacts: true, aimed: true, barLen: 0.34, aimK: 1.70, bossDeath: true,
+  reacts: true, aimed: true, barLen: 0.34, aimK: 1.90, bossDeath: true,
   rig: { arm: 'upperarm_r', fore: 'lowerarm_r', hand: 'hand_r',
          armL: 'upperarm_l', foreL: 'lowerarm_l', handL: 'hand_l', head: 'head',
          // his one extra chain: the right leg, so the stomp lands with the BOOT
@@ -28577,8 +28755,39 @@ MUT_KINDS.knight = {
    * are set so the clip's own ground speed matches his, measured. */
   anim: { idle: 'idle', walk: 'walk', run: 'run', roar: 'roar', die: 'hurt', back: 'walk',
           rate: 0.62, lean: 0.05, strafeK: 0.78 },
-  alias: { idle2: 'idle', walk2: 'walk', run2: 'run', roar2: 'roar', die: 'hurt', die2: 'hurt',
-           back: 'walk', hit: 'hurt', calm: 'idle', strafeL: 'strafe', strafeR: 'strafe' },
+  /* ---- AND HE CARRIES HIMSELF DIFFERENTLY FROM ONE EXCHANGE TO THE NEXT.
+   * A locomotion pack on top of the moves he already had: three walks, two
+   * runs, two idles and three sideways strides a side, drawn afresh every
+   * time he sets off or comes to rest. None of his attacks changed — the
+   * owner's word was to keep his moves and add to them — what changed is
+   * everything BETWEEN them, which is most of what you are looking at.
+   * Every one of these is played at whatever rate makes its own measured
+   * stride match the speed the game is moving him at, so none of them
+   * skates. */
+  /* AND A CLIP THAT DOES NOT TRAVEL IS NOT A GAIT. Measured off the clips
+   * themselves: walk 1.76 m/s, walkC 1.48, run 2.58, runB 3.68, strafeL and
+   * strafeL2 1.53, strafeR2 1.70, strafeR3 1.53 — against walkB at 0.26 and
+   * strafeR at 0.56, which are walked ON THE SPOT. Those two were in the
+   * pool and one of them was the strafe he actually used: played at the
+   * speed he was moving they slide a metre a second, which is the "his feet
+   * slide" this file has already paid for twice. They stay in the file (a
+   * stationary stride is the right thing for a creature holding its ground)
+   * and they are out of the pools that travel. */
+  gaits: { walk: ['walk', 'walkC'], run: ['run', 'runB'], idle: ['idle', 'idleB'],
+           strafeL: ['strafeL', 'strafeL2'], strafeR: ['strafeR2', 'strafeR3'] },
+  /* THE REEL A PARRY BUYS. A parry is the biggest thing you can do to him
+   * and it used to play the same small flinch as a shovel tap. */
+  stunClip: 'parry',
+  /* AND HE OPENS THE SIZE-UP WITH A STEP, NOT A STROLL. Three metres in
+   * eight tenths of a second, measured off the clip: he is simply somewhere
+   * else, and then he walks the circle watching you. */
+  stepClip: ['sideL', 'sideR2'],
+  /* AND `hit` IS NO LONGER ALIASED ONTO THE AUTHORED FLINCH. An alias
+   * OVERWRITES a clip of the same name, so `hit: 'hurt'` was quietly
+   * shadowing the owner's own Head Hit — the clip he sent for exactly this —
+   * with the four-key rock written before it arrived. */
+  alias: { idle2: 'idleB', walk2: 'walkC', run2: 'runB', roar2: 'roar', die: 'hurt', die2: 'hurt',
+           back: 'walk', calm: 'idle' },
   provoke: knightProvoke,
   /* a voice out of a helmet: the bellow, pitched down, with the rasp taken
    * off it — there is no throat in there */
@@ -29895,7 +30104,23 @@ const UC_LAMP = [{ want: 46, dist: 56, col: 0xc2b79c, flick: [0.10, 3.1] },    /
                  { want: 9.0, dist: 10.0, col: 0xffa951, flick: [0.26, 9.4] }, // the candles on the altar
                  { want: 4.2, dist: 9.5, col: 0xff9a45, flick: [0.30, 8.1] },  // and the ring of them at its foot
                  { want: 2.4, dist: 12, col: 0xd8bf94, flick: [0.62, 5.7] },   // the old cave, the way out: its own two bulbs, the first bright enough to be seen through the hole
-                 { want: 1.4, dist: 12, col: 0xd2b98e, flick: [0.62, 6.3] }];
+                 { want: 1.4, dist: 12, col: 0xd2b98e, flick: [0.62, 6.3] },
+                 /* AND THE CANDLES DOWN THE NAVE LIGHT IT TOO. A hundred and
+                  * thirty tapers were drawing themselves and lighting
+                  * nothing: the room's only lamps stood at the altar, so the
+                  * clusters at the piers were bright pips in a black nave
+                  * and the owner's word was that the candles should light
+                  * the room. Four go on the biggest clusters the module
+                  * placed (`S.candles.clusters`) — a flame's colour, a
+                  * flame's reach, and each guttering on its own count, so
+                  * what lights the aisle is the thing you can see lighting
+                  * it. They cost nothing: point lights have been pooled
+                  * since the Windows pass, and only the twelve nearest are
+                  * ever in a shader. */
+                 { want: 3.6, dist: 11.0, col: 0xff9f48, flick: [0.34, 7.3] },
+                 { want: 3.6, dist: 11.0, col: 0xffa14c, flick: [0.34, 6.1] },
+                 { want: 3.2, dist: 10.0, col: 0xff9a45, flick: [0.34, 8.6] },
+                 { want: 3.2, dist: 10.0, col: 0xffa350, flick: [0.34, 5.4] }];
 for (let i = 0; i < UC_LAMP.length; i++) {
   const l = new THREE.PointLight(UC_LAMP[i].col, 0, UC_LAMP[i].dist, 1.6);   // a failing bulb's colour, not a fire's
   l.position.set(UC_X, UC_Y - 60, UC_Z);
@@ -29967,8 +30192,16 @@ function armUndercroft(S) {
    * front of the altar with no candle at the middle of it — a lamp on the
    * ground, which is what the candles are there so as not to be. */
   const foot = A ? { x: A.x - 0.9, y: A.dais + 1.25, z: A.z } : altar;
+  /* THE FOUR CANDLE LAMPS GO ON THE CLUSTERS FURTHEST DOWN THE NAVE, spread
+   * along it rather than bunched: sorted by distance from the altar and
+   * taken at four points through that list, so the aisle is lit all the way
+   * to the door instead of twice over at one pier. */
+  const cl = ((S.candles && S.candles.clusters) || []).slice().sort((a, b) => (A ? (A.x - a.x) - (A.x - b.x) : a.x - b.x));
+  const clAt = (f) => (cl.length ? cl[Math.min(cl.length - 1, Math.round((cl.length - 1) * f))] : null);
+  const lift = (p) => (p ? { x: p.x, y: p.y + 1.35, z: p.z } : null);
   const at = [church[0] || sp.exit, church[church.length - 1] || sp.exit, altar, foot,
-              pick(cave, 0.0) || sp.exit, pick(cave, 0.72) || sp.exit];                  // the old cave's own bulbs: the first is the one at its mouth, so the hole in the apse shows a lit floor going in
+              pick(cave, 0.0) || sp.exit, pick(cave, 0.72) || sp.exit,                   // the old cave's own bulbs: the first is the one at its mouth, so the hole in the apse shows a lit floor going in
+              lift(clAt(0.08)), lift(clAt(0.36)), lift(clAt(0.64)), lift(clAt(0.94))];
   at.forEach((p, i) => { if (p && ucLamps[i]) ucLamps[i].position.set(UC_X + p.x, UC_Y + p.y - 0.3, UC_Z + p.z); });
   // the way out, behind the altar
   const proxy = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.6, 2.4), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
@@ -30383,7 +30616,7 @@ function updateUndercroftCut(dt) {
     u.ucBase += ((inUndercroft ? u.ucWant : 0) - u.ucBase) * Math.min(1, dt * 3);
     l.intensity = u.ucFlick ? u.ucBase * ucLampFlicker(k, u.ucFlick, ucFlickT) : u.ucBase;
   }
-  if (undercroft.visible && UC.ready) UC.update(dt);
+  if (undercroft.visible && UC.ready) UC.update(dt, camera.position);
   // the air: the sea and the wind gone, water somewhere
   const want = inUndercroft ? 1 : 0, prev = ucMix;
   ucMix += (want - ucMix) * Math.min(1, dt * 2.2);

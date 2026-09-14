@@ -4168,6 +4168,170 @@ walk. What they bought, and what each one cost:
 Measured: 49 swings and 41 damage a minute, all seven attacks used, seven
 size-ups, worst step 0.10 m, worst tick 4.2 ms.
 
+**THE TUNNEL IS HALF AS LONG, DEAD STRAIGHT, AND THE ALTAR IS AT THE END OF
+IT.** The owner walked it and reported clipping through the rock, a turn at
+the church, and nothing to walk toward. Three of those are one fault, and it
+is in how the church was JOINED:
+
+- **THE MOUTH IS THE BORE, NOT THE CHAMBER IT OPENS INTO.** The church was
+  hung off the last floored column of local.yany's cave — and that column is
+  not the end of a tunnel, it is the middle of a room the tunnel flares into,
+  seven metres wide, whose median z sits FIVE METRES off the line you have
+  just walked. Measured hands-off: the walk runs dead straight down z = 0.10
+  for a hundred and forty metres and then DEAD-ENDS IN ROCK at x = 71.6,
+  because the doorway is off to one side. That is the "turn", that is why the
+  altar was never on the line, and the flare is also where every hole in this
+  scan is — nine of sixteen rays out of it hit nothing at all, against zero
+  anywhere on the straight run, which is the clipping.
+- **A WIDTH TEST ALONE CANNOT FIND THE MOUTH.** Past the flare the model
+  tapers to a narrow lobe four metres off the line, and that lobe is
+  bore-width by the numbers — it is exactly the cell the church was hung off.
+  A station is the mouth only if it is bore-width AND ON THE LINE, and the
+  line is measured in the MIDDLE of the run, where both ends' wandering
+  cannot reach it (the middle sixty per cent, whose column medians never
+  leave a cell of each other: 0.10).
+- **AND HALF OF IT WAS CORRIDOR NOBODY NEEDED.** You are set down at the
+  middle of the straight run now and the half behind you is clipped in world
+  x (`uUcClipX`, the exit cave's own low clip) — but a clip on its own leaves
+  an OPEN CROSS-SECTION with the black shell behind it, which is the one
+  thing this file has been told twice not to ship. A short capped bore is
+  swept at the cut in the scan's own material, a shade wider than the tunnel
+  so the rock covers its flanks; and THE WALK GRID IS CUT WITH IT, because a
+  clip is a shader and the grid knows nothing about it — left alone, the
+  floor behind the cap is still walkable and you stroll out of the world
+  through your own back wall.
+
+Measured after: 74 m of tunnel with NO station under a metre of wall (worst
+was 0.02) and no ray-miss cluster anywhere; and the whole walk, entrance to
+altar, is **97.8 m dead straight at z = 0.10 in 1241 ticks with zero stalled
+frames and zero reversals**.
+
+**AND FOG WILL NOT CARRY A LIGHT A HUNDRED METRES, SO THE BEACON IS
+UNFOGGED.** The point of a straight bore is that the thing you are walking
+toward is at the end of it, and at `FogExp2` 0.030 a surface a hundred metres
+off is gone — while dropping the density far enough to show the chancel would
+take the close dark with it, which is the only thing the undercroft has. A
+bright source does not obey a haze the way a surface does: the altar carries
+a `fog: false` sprite whose size and opacity are read off your distance — a
+warm smudge the size of a doorway at seventy metres, gone by the time the
+tapers themselves read. It is depth-tested like anything else, so a shoulder
+of rock hides it and walking off the line puts it behind the stone, which is
+the whole reason the line is worth walking.
+
+**AND THE TUNNEL HAD NO DUST IN IT.** The motes were dealt out to the church,
+the old cave and the CORRIDORS — and the corridor has not been the tunnel
+since the day the passage went back to being walked as its own floor; it is
+the nine metres of church seam left over from that. Seventy metres of the
+walk had nothing in the air at all. The passage's own grid takes the biggest
+share now.
+
+**A CANDLE THAT LIGHTS NOTHING IS A PICTURE OF A CANDLE.** A hundred and
+thirty tapers were drawing themselves while the room's only lamps stood at
+the altar, so the clusters down the nave were bright pips in a black aisle.
+Three things, and none of them is a bigger lamp: every flame carries a HALO
+(a second Points batch at five times the size and a tenth of the brightness,
+guttering on the SAME seed, drawn under the flames — what says "this is the
+only light in here" is the bloom of air around it); the wax is lit from
+inside, because a candle is translucent and the flame is IN it; and four
+point lights hang on the biggest clusters the module placed, spread along the
+nave rather than bunched. They cost nothing — point lights have been pooled
+since the Windows pass and only the twelve nearest are ever in a shader.
+
+**A SCAN CARRIES THE DAYLIGHT IT WAS BAKED IN, AND AN EMISSIVE LIFT TURNS
+EVERY BAKED HIGHLIGHT INTO A LAMP.** "The church textures have light coming
+through the edges" was not a gap in the geometry and no amount of closing
+holes would have touched it: this church's albedo was lit from outside before
+anybody photographed it, so the sunlit edge of every pier is already
+near-white in the map, and `emissiveMap = map` at a flat intensity hands
+those texels straight back as light. `LOOK.knee` rolls the TOP of the
+emissive off (`x / (1 + kx)`) and leaves the bottom alone, so the lift still
+carries the dark stone — which is the only reason it is there — and stops
+carrying the sun.
+
+**AND THE GLASS WAS THE BRIGHTEST THING IN THE BUILDING.** The backdrops
+behind the windows were taken down to a memory of daylight years ago and the
+GLASS ITSELF was left at `color: 0xffffff`, so its own pale map was lit at
+full albedo: a wall of daylight honeycomb forty metres under a beach, which
+is the window the owner photographed. Leaded glass at night with candles
+behind you is nearly black and takes a cold sheen, and that is all it may be.
+
+**THE KNIGHT STOOD STILL FOR SEVENTY PER CENT OF THE FIGHT, AND IT WAS A
+MISSING `else`.** The movement chain is circle / step back / dash / chase /
+decide, and `decide` only runs once the cooldown is spent — so a creature
+standing inside its own reach with `cool` still running fell out of the
+bottom of the whole thing and was moved by nothing at all. Measured over
+ninety seconds: 70 % of frames with his position unchanged to four decimal
+places. That is not a tuning number.
+
+A `restless` kind keeps its feet going through the recovery — and the first
+build of that overcorrected into the opposite failure, 94 % of frames
+strafing and 0.7 swings a minute, because the shuffle re-armed itself
+whenever it was not already running and the cooldown could never reach zero.
+The shuffle is BOUNDED BY THE BREATH HE HAS LEFT (`sideT <= cool - 0.06`) and
+does not start on the last of it.
+
+**AND `maxReach` IS "COULD I HIT YOU", NOT "WHERE DO I WANT TO STAND".** A
+creature carrying one long swing among six short ones counts itself in range
+the moment that one could reach, stops closing, and fights the rest of the
+exchange from a distance where nothing else it owns will land — measured, the
+knight settled at 3.89 m on the strength of a 5.40 m jump while his punch is
+2.15. `u.ring` is the use-weighted mean of everything that is not a
+gap-closer, and the footwork holds him there.
+
+**AND 1.3 WAS A PERSON'S WIDTH.** The lunge's stopping distance was
+`Math.max(1.3, body + 0.15)` — a floor put in so a four-metre animal would
+stop at its own body instead of driving its front half through you, and as a
+CONSTANT it does the opposite job on anything smaller. Measured at the
+contact frame, every swing: the knight's striking hand extends **0.89 m from
+his own origin**, so a lunge that refuses to close inside 1.3 leaves his fist
+more than half a metre short of your chest on every blow he throws. The
+damage still landed — `LAND_SLOP` gives a metre of benefit of the doubt — so
+the game said he hit you and the picture said he did not. That is the whole
+of "tighten his hits so they actually visibly hit you".
+
+Both ends are wrong, which is why it is a swept number and not a formula: at
+his own body radius the blows arrive BELOW THE FRAME (the overhead finished
+at ndc y -0.97, the stomp at -2.45, on screen half the time and never).
+`kind.lungeStop` is the distance, and `A.stop` overrides it per swing —
+because a blow from a LEG lands at thigh height, so the nearer he is the
+further under the picture it arrives. Measured after: every hand blow lands
+0.36–0.51 m from the chest with **98 % of contacts on screen**, against
+0.5–2.4 m and a third of them off-frame.
+
+**AND HIS MOVE SET WAS KEPT; WHAT CHANGED IS EVERYTHING BETWEEN THE MOVES.**
+A Mixamo locomotion pack and a reaction reel go on top of the clips he
+already had (the owner's word: add to it, do not replace it) — three walks,
+two runs, two idles, three sideways strides a side, two quick side steps and
+a parry reel, drawn afresh every time he sets off or comes to rest
+(`kind.gaits`). Three things it took:
+
+- **THE RATE IS THE STRIDE OVER THE SPEED, AND WITH A DOZEN GAITS IT CANNOT
+  BE ONE NUMBER PER KIND.** Each clip's own ground speed is measured at build
+  and written into the moves file; the game plays it at whatever rate makes it
+  travel as fast as he is actually moving.
+- **AND A CLIP THAT DOES NOT TRAVEL IS NOT A GAIT.** Measured: walk 1.76 m/s,
+  walkC 1.48, strafeL 1.53, strafeR2 1.70 — against walkB at 0.26 and strafeR
+  at 0.56, which are walked ON THE SPOT, and one of those two was the strafe
+  he actually used. Played at the speed he was moving they slide a metre a
+  second, which is the "his feet slide" this file has now paid for three
+  times. They stay in the file and they are out of the pools that travel.
+- **AND AN ALIAS OVERWRITES A CLIP OF THE SAME NAME.** `hit: 'hurt'` was
+  quietly shadowing the owner's own Head Hit — the clip he sent for exactly
+  that job — with the four-key rock written before it arrived. Read the alias
+  map before concluding a clip is not playing.
+
+**AND THE BUILD MERGES; IT DOES NOT REWRITE.** `tools/ntar_moves.py` reads
+its FBXs out of ~/Downloads, which is the owner's own folder and is cleared
+whenever he likes — so a build that insists on every source being present is
+one that can only ever be run on the day the clips arrive. It loads the
+existing JSON, rebuilds whatever sources are actually there, and leaves the
+rest exactly as they were: adding a clip is a one-file drop and a re-run.
+
+Measured at the end, hands-off at fighting range over three minutes: **37.7
+swings and 37.7 damage a minute, 98 % of blows on screen, still between
+swings 21 % (was ~100), worst step 0.10 m, worst tick 3.7 ms** — and every
+one of the new clips on screen.
+
 ## Dev mode
 
 `DEFAULT_SETTINGS` are the owner's own (music 30 %, waves 18 %, effects
