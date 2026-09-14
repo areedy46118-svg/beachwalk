@@ -4155,6 +4155,44 @@ his spawn out in the yard and makes him cross the step to reach you — to
 reproduce it at all. A test that always starts the fight in the same place
 cannot find a bug that is about crossing between two places.
 
+**AND WATCHING HIM MOVE FOUND THREE THINGS NO NUMBER DID.** Every check of
+this fight until now was a still or a counter — hit rate, swings a minute,
+bounding boxes — and all of them said he was fine while the owner was looking
+at a man standing there with his arms out and his face smeared. Stepping the
+live fight and capturing a RUN of consecutive frames is what found all three.
+
+- **87 FACE BONES PARENTED TO NOTHING THAT SHIPS.** Rigify's face DEF bones
+  hang off `MCH-` controls — checked, and not ONE of their parents is a deform
+  bone — so `export_def_bones` drops every parent and reparents the lot to
+  whatever distant ancestor survives. Their motion then has nothing to do with
+  a face, and they drive 1,448 vertices of the body, 1,601 of the helmet, 2,294
+  of the helmet band and 448 of the horns: his whole head. He is wearing a
+  kabuto and a menpo, so there is no face to animate — the whole face rig is
+  merged into `DEF-spine.006` (6,305 weights moved) and stops deforming, which
+  makes the head RIGID with the neck and means it cannot smear. 163 joints
+  became 77 and the file went from 12.5 MB to 8.6.
+
+- **AND THE ARMS-OUT WAS A SHIELD HE DOES NOT HAVE.** Measured on the exported
+  rig, hands apart per clip: `Sword And Shield Slash` holds them 1.07 m apart
+  on average and 1.49 at worst, because THE LEFT ARM IS CARRYING A SHIELD.
+  Dropped. `Great Sword Crouching` was nearly as wide at 0.91 and it was the
+  IDLE, which is the pose you look at longest, so the guard out of `Blocking`
+  (0.68) takes that and the crouch becomes the brace. **Read the clip's name:
+  a set that mixes weapons has clips whose off hand is holding something.**
+
+- **AND THE SOURCE ACTIONS RODE ALONG IN THE FILE.** Removing the imported FBX
+  objects leaves their ACTIONS behind and the exporter ships every action it
+  can find: eight `Armature|mixamo.com|Layer0` clips were in the GLB driving
+  nothing, and they measure a T-pose because they belong to a skeleton that is
+  no longer there. Remove the action with the armature.
+
+One hypothesis this cost, and it is worth writing down because it was
+confidently wrong: the splayed arms looked exactly like the aim correction
+wrenching his shoulder, and I had raised `aimK` to 2.60 chasing a hit rate.
+Measured across `aimK` from 0 to 2.6, the mean distance between his hands
+moved from 0.84 to 0.86 — the aim was not touching it at all. **Measure the
+thing you are about to blame before you change it.**
+
 ## Dev mode
 
 `DEFAULT_SETTINGS` are the owner's own (music 30 %, waves 18 %, effects

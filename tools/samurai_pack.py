@@ -187,6 +187,49 @@ def stage_rig():
         if nm in arm.data.bones:
             arm.data.bones[nm].use_deform = True
 
+    # ---- HIS FACE RIG IS 87 BONES PARENTED TO NOTHING THAT SHIPS.
+    # Rigify's face DEF bones hang off `MCH-` controls — checked, and not ONE
+    # of their parents is a deform bone — so `export_def_bones` drops every
+    # parent and reparents the lot to whatever distant ancestor is left. Their
+    # motion then has nothing to do with a face, and they drive 1,448 vertices
+    # of the body, 1,601 of the helmet, 2,294 of the helmet band and 448 of the
+    # horns: his whole head. That is the smeared face.
+    #
+    # HE IS WEARING A KABUTO AND A MENPO. There is no face to animate — so the
+    # whole face rig is merged into the head: every face group's weight is
+    # added to `DEF-spine.006` and the bones stop deforming, which makes the
+    # head RIGID with the neck (correct for a helmeted man) and means it cannot
+    # smear. It also takes the skin from 163 joints to about 76.
+    FACEWORDS = ('nose', 'lip', 'jaw', 'chin', 'cheek', 'brow', 'lid', 'ear',
+                 'temple', 'forehead', 'eye', 'tongue', 'teeth', 'nostril', 'face')
+
+    def is_face(nm):
+        t = nm.replace('DEF-', '').replace('ORG-', '').lower()
+        return any(t.startswith(w) for w in FACEWORDS)
+
+    HEADB = 'DEF-spine.006'
+    face_bones = [b.name for b in arm.data.bones if b.name.startswith('DEF-') and is_face(b.name)]
+    moved = 0
+    for ob in meshes:
+        names = {vg.name for vg in ob.vertex_groups}
+        mine = [n for n in face_bones if n in names]
+        if not mine:
+            continue
+        head = ob.vertex_groups.get(HEADB) or ob.vertex_groups.new(name=HEADB)
+        idx = {vg.name: vg.index for vg in ob.vertex_groups}
+        want = {idx[n] for n in mine}
+        for v in ob.data.vertices:
+            w = sum(g.weight for g in v.groups if g.group in want)
+            if w > 0.0:
+                head.add([v.index], w, 'ADD')
+                moved += 1
+        for n in mine:
+            ob.vertex_groups.remove(ob.vertex_groups[n])
+    for n in face_bones:
+        arm.data.bones[n].use_deform = False
+    log('face rig merged into the head: %d bones off, %d vertex weights moved'
+        % (len(face_bones), moved))
+
     # ---- AND THE FIGHT NEEDS A BONE AT THE POINT OF THE BLADE.
     # `aimTip` puts the weapon on the player's chest and `blowLands` sweeps the
     # hitbox down it, and both ask the kind's `rig` for a `tip`. Without one the
@@ -1000,8 +1043,18 @@ def stage_rig():
             f += step
         finish(act)
         CLIPS[name] = {'frames': out_f - 1, 'hit': None, 'loop': loop}
+        # AND THE SOURCE ACTION GOES WITH THE SOURCE ARMATURE. Removing the
+        # imported objects leaves their ACTIONS behind, and the exporter ships
+        # every action it can find: eight `Armature|mixamo.com|Layer0` clips
+        # rode along in the GLB, driving nothing and measuring a T-pose,
+        # because they belong to a skeleton that is no longer there.
         for o in new:
             bpy.data.objects.remove(o, do_unlink=True)
+        if sact.users == 0 or sact.name.startswith('Armature|'):
+            try:
+                bpy.data.actions.remove(sact)
+            except Exception:
+                pass
         return True
 
     MOVES = os.path.join(ROOT, 'incoming', 'mixamo', 'samurai one moves')
@@ -1012,13 +1065,22 @@ def stage_rig():
     # WHICH CLIP BECOMES WHAT. Five swings out of the set, and two of them are
     # KICKS - which is the best thing in it, because a kick is a mixup no
     # amount of sword-reading prepares you for.
+    # WHICH CLIP BECOMES WHAT, AND IT IS MEASURED RATHER THAN GUESSED. The
+    # first pass took the names at face value and shipped a man with his arms
+    # out: measured on the exported rig, `Sword And Shield Slash` holds its
+    # hands 1.07 m apart on average and 1.49 at worst, because THE LEFT ARM IS
+    # CARRYING A SHIELD — and he has no shield, so it reads as a samurai
+    # standing there with his hands out. It is dropped outright. `Great Sword
+    # Crouching` is nearly as wide (0.91) and was the IDLE, which is the pose
+    # you look at longest, so the guard from `Blocking` (0.68) takes that and
+    # the crouch becomes the brace. What is left is two greatsword cuts and
+    # two kicks, all of which hold a plausible two-handed grip.
     RETARGET = [
-        ('Great Sword Crouching', 'idle', True),
+        ('Great Sword Blocking', 'idle', True),
         ('Great Sword Run', 'run', True),
-        ('Great Sword Blocking', 'block', False),
+        ('Great Sword Crouching', 'block', False),
         ('Great Sword Slash', 'sDown', False),
         ('Great Sword Slash-2', 'sSide', False),
-        ('Sword And Shield Slash', 'sRise', False),
         ('Great Sword Kick', 'sSpin', False),
         ('Great Sword Kick-2', 'sStab', False),
     ]
@@ -1080,7 +1142,6 @@ def stage_rig():
     # actual blade on three clips out of five. A kick is also aimed lower
     # than a cut, so it gets its own target.
     STRIKER = {'sDown': ('DEF-katana_tip',), 'sSide': ('DEF-katana_tip',),
-               'sRise': ('DEF-katana_tip',),
                'sSpin': ('DEF-toe.R', 'DEF-toe.L'), 'sStab': ('DEF-toe.R', 'DEF-toe.L')}
     KICK = ('sSpin', 'sStab')
 
@@ -1123,7 +1184,7 @@ def stage_rig():
         CLIPS[name] = {'frames': len(rows) - 1, 'hit': None}
         log('  %-6s trimmed %d -> %d frames (peak was %d)' % (name, n, len(rows) - 1, bf))
 
-    for _a in ('sDown', 'sSide', 'sRise', 'sStab', 'sSpin'):
+    for _a in ('sDown', 'sSide', 'sStab', 'sSpin'):
         trim(_a)
 
     # THE CONTACT FRAME IS WHERE THE BLADE MEETS A BODY, AND FOR A RETARGETED
@@ -1142,7 +1203,7 @@ def stage_rig():
     _lo, _hi = ev_bounds()
     U = (_hi.z - _lo.z) / TARGET_H
     CHEST = Vector((0.0, FWD * 1.5 * U, 1.25 * U))
-    for nm in ('sDown', 'sSide', 'sRise', 'sStab', 'sSpin'):
+    for nm in ('sDown', 'sSide', 'sStab', 'sSpin'):
         if nm not in CLIPS:
             continue
         n = CLIPS[nm]['frames']
