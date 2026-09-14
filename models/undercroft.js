@@ -170,10 +170,116 @@ export function makeUndercroft(opts = {}) {
     }
     return cleaned;
   }
-  function gridFloor(w, lx, lz) {
+  /* ---- A HOLE IN THE GRID IS A HOLE IN THE FLOOR YOU CAN SEE.
+   *
+   * The sampler writes a cell's floor from the triangles that land in it, and
+   * on a big flat slab it occasionally lands none — so there are single cells
+   * in the middle of the nave with NO floor at all, surrounded on every side
+   * by cells that have one. Nothing is drawn there and nothing is missing
+   * from the picture: the slab is continuous and you are looking straight at
+   * it.
+   *
+   * What makes that a WALL rather than a dip is that the two questions
+   * disagree. `floorAt` falls back to the nearest neighbour that has a floor
+   * and answers -0.07 like everywhere else; `walkable` sees `null` and, by a
+   * rule that exists for a good reason — three grids overlap at the joins, so
+   * "no floor here" has to mean "ask the next grid" — passes it on, and there
+   * is no next grid, so the cell is refused. Measured in the nave: two of
+   * them, one of which, (87.2, -0.2), is ON THE LINE YOU WALK UP.
+   *
+   * So the hole is filled rather than the rule changed, and the difference
+   * between a hole and the edge of the grid's coverage is measured, not
+   * assumed: flood the run of floorless cells, and fill it only if it is
+   * SMALL AND FULLY ENCLOSED by floor. The open ground past the apse is
+   * thousands of cells and is never touched; a sampling hole is one or two.
+   * The tunnel skin's own rule — a gap with a measured rim is solved from
+   * its edges, and anything unbounded is left alone. */
+  function fillHoles(w, maxRun = 12) {
+    if (!w || !w.floor) return 0;
+    const has = (i, j) => i >= 0 && j >= 0 && i < w.gw && j < w.gh && w.floor[j][i] > -90;
+    const inside = (i, j) => i >= 0 && j >= 0 && i < w.gw && j < w.gh;
+    const seen = new Uint8Array(w.gw * w.gh);
+    let filled = 0;
+    for (let j = 0; j < w.gh; j++) for (let i = 0; i < w.gw; i++) {
+      if (seen[j * w.gw + i] || has(i, j)) continue;
+      const run = [[i, j]]; seen[j * w.gw + i] = 1;
+      let bounded = true;
+      for (let h = 0; h < run.length; h++) {
+        if (run.length > maxRun) { bounded = false; break; }
+        const [ci, cj] = run[h];
+        for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const ii = ci + di, jj = cj + dj;
+          if (!inside(ii, jj)) { bounded = false; continue; }   // it touches the edge: it is the outside
+          if (has(ii, jj) || seen[jj * w.gw + ii]) continue;
+          seen[jj * w.gw + ii] = 1; run.push([ii, jj]);
+        }
+        if (!bounded) break;
+      }
+      if (!bounded || run.length > maxRun) continue;
+      for (const [ii, jj] of run) {
+        let f = 0, f0 = 0, c = 0, n = 0;
+        for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+          if (!has(ii + di, jj + dj)) continue;
+          f += w.floor[jj + dj][ii + di];
+          f0 += (w.floor0 ? w.floor0[jj + dj][ii + di] : w.floor[jj + dj][ii + di]);
+          c += w.ceil[jj + dj][ii + di]; n++;
+        }
+        if (!n) continue;
+        w.floor[jj][ii] = f / n;
+        if (w.floor0) w.floor0[jj][ii] = f0 / n;
+        w.ceil[jj][ii] = c / n;
+        w.solid[jj][ii] = 0;              // nothing is drawn there: nothing stands there
+        filled++;
+      }
+    }
+    return filled;
+  }
+  /* ---- AND `solid` HAS ITS OWN SPECKLE, WHICH IS THE SAME INVISIBLE WALL.
+   *
+   * `despeckle` above cleans a lone raised FLOOR cell. The other half of the
+   * grid is `solid` — anything standing in the body band over the floor —
+   * and it speckles for the same reason and worse: a hanging chain, a lamp
+   * chain, a boss or a corner of the chandelier comes down into that band
+   * over one or two cells of otherwise open nave, and to a body that is a
+   * post in the middle of the aisle with nothing there to walk into.
+   *
+   * Measured in the nave, sweeping all 4836 cells that have a floor and
+   * raycasting the DRAWN geometry round every blocked one: 23 blocked cells
+   * had nothing drawn within half a metre of them in any direction, and two
+   * of them — (87.2, -0.2) and (91.2, -4.2), the second one a stride off the
+   * line you walk up — had all four neighbours open and nothing at all
+   * within THREE metres. That is the owner's "I keep getting stuck on
+   * something I can't see", and it is not even wrong to walk through: a
+   * chain thin enough to be missed by eight rays is thin enough to walk
+   * through.
+   *
+   * A wall is hundreds of cells and a column is twenty-five; anything under
+   * `minRun` is not a thing you would expect to stop you. */
+  function despeckleSolid(w, minRun = 9) {
+    if (!w || !w.solid || !w.floor) return 0;
+    const solid = (i, j) => i >= 0 && j >= 0 && i < w.gw && j < w.gh && w.solid[j][i] === 1;
+    const seen = new Uint8Array(w.gw * w.gh);
+    let cleaned = 0;
+    for (let j = 0; j < w.gh; j++) for (let i = 0; i < w.gw; i++) {
+      if (seen[j * w.gw + i] || !solid(i, j)) continue;
+      const run = [[i, j]]; seen[j * w.gw + i] = 1;
+      for (let h = 0; h < run.length && run.length < minRun * 4; h++) {
+        const [ci, cj] = run[h];
+        for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+          const ii = ci + di, jj = cj + dj;
+          if (ii < 0 || jj < 0 || ii >= w.gw || jj >= w.gh || seen[jj * w.gw + ii] || !solid(ii, jj)) continue;
+          seen[jj * w.gw + ii] = 1; run.push([ii, jj]);
+        }
+      }
+      if (run.length >= minRun) continue;
+      for (const [ii, jj] of run) { w.solid[jj][ii] = 0; cleaned++; }
+    }
+    return cleaned;
+  }
+  function gridFloor(w, lx, lz, bare) {
     const gx = (lx - w.off.x - w.x0) / w.cell - 0.5, gz = (lz - w.off.z - w.z0) / w.cell - 0.5;
     const i0 = Math.floor(gx), j0 = Math.floor(gz), fx = gx - i0, fz = gz - j0;
-    const a = cellFloor(w, i0, j0), b = cellFloor(w, i0 + 1, j0), c = cellFloor(w, i0, j0 + 1), d = cellFloor(w, i0 + 1, j0 + 1);
+    const a = cellFloor(w, i0, j0, bare), b = cellFloor(w, i0 + 1, j0, bare), c = cellFloor(w, i0, j0 + 1, bare), d = cellFloor(w, i0 + 1, j0 + 1, bare);
     if (a !== null && b !== null && c !== null && d !== null) {
       // a bench top beside the floor must not be averaged into the floor
       const lo = Math.min(a, b, c, d), hi = Math.max(a, b, c, d);
@@ -227,13 +333,19 @@ export function makeUndercroft(opts = {}) {
     }
     return null;
   };
-  S.floorAt = (lx, lz) => {
+  /* AND `bare` ANSWERS WITH THE SLAB, NOT WITH THE PEW ON IT. `walkable`,
+   * `blocked` and `pushOut` have taken it since the knight learned to go
+   * straight through the benches; the FLOOR had not, and the floor is what
+   * sets a creature's height — so every bench he ran through lifted him
+   * 0.45 m and put him down again, which is the owner's "he should not be
+   * lifting up when running". A person still stands on a pew. */
+  S.floorAt = (lx, lz, bare) => {
     const bf = bridgeFloor(lx, lz);
     if (bf !== null) return bf;
     const c = corridorAt(lx, lz);
     if (c && c.d <= c.r + 0.45) return c.y;
     for (const w of S.walks) {
-      const f = gridFloor(w, lx, lz);
+      const f = gridFloor(w, lx, lz, bare);
       if (f !== null) return f;
     }
     return null;
@@ -2128,6 +2240,8 @@ export function makeUndercroft(opts = {}) {
     pw.bodyR = 0.62;
     pw.bodyRMaxX = low.x - 1.2;        // ...and not through the breach, which is the mouth's own width
     S.despeckled = despeckle(ch) + despeckle(cw) + despeckle(pw);
+    S.unspeckled = despeckleSolid(ch) + despeckleSolid(cw) + despeckleSolid(pw);
+    S.filled = fillHoles(ch) + fillHoles(cw) + fillHoles(pw);
     ch.stepMax = 0.40;                  // a pew's seat is 0.45 up, and that is not a step
     cw.stepMax = 1.2; cw.dropMax = 2.0;  // the old cave is rubble
     const inbound = buildCorridor(pw, { x: high.x + 2.0, z: high.z }, { x: low.x - 0.4, z: low.z });

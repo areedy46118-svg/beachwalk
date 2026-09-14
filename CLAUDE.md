@@ -4719,6 +4719,190 @@ transcript and were redone in two passes, but the rule is worth writing down:
 in a session that edits one enormous file over hours, `git checkout <file>`
 is not an undo, it is a discard of everything since the last commit.
 
+**THE KNOCKDOWN SPUN BECAUSE A FALLING BODY HAS NO HEADING.** "His fall down
+animations do not look like the animations I sent — he just spins around in
+the air" was one line in the packer, and the reasoning behind it was wrong in
+a way that is worth keeping. `ntar_moves.py` de-yaws a clip frame by frame —
+it holds the hips' own forward axis at a constant azimuth — because the game
+turns a creature toward the player every frame and a clip that also turns
+fights it. That is right while the creature is STANDING. The moment it goes
+over, the pelvis's +Z points at the CEILING, its horizontal part collapses
+(measured on `knockOut`: 1.00 to 0.30), and the azimuth read off it is the
+body TIPPING rather than the body turning. Correcting a turn that never
+happened applies a world-Y rotation to a horizontal body, which is a roll
+about its own length: a corpse swinging round like a compass needle.
+
+Measured as the azimuth the body's long axis sweeps over the frames it is
+horizontal — which is the thing you actually watch, "which way his head is
+pointing":
+
+| | knockOut | getUp |
+|---|---|---|
+| the source animation | -11 deg | -27 deg |
+| de-yawed on the forward axis (shipped) | **+62** | -27 |
+| de-yawed on the left-right axis | -38 | -35 |
+| kept (now) | -11 | -27 |
+
+Choosing a better AXIS is the obvious fix and it is not enough — the second
+row is the pelvis's left-right axis, which does stay horizontal through a
+fall (worst 0.73 against the forward axis's 0.30) and still injects 38
+degrees. **There is no such thing as the heading of a body that is falling
+over**, so `KEEP_YAW` names the clips that leave the vertical and they keep
+their own root turn exactly as drawn. The axis choice stayed anyway, because
+it is measured per clip and strictly better for everything that does stay
+upright.
+
+Three things the game had to learn with it:
+
+- **THE HEADING IS SET ONCE, AT THE BLOW.** It costs nothing, because a
+  creature on the ground is not being turned toward the player by anything —
+  the `down` branch returns long before `turn()`.
+- **AND TWO REELS ARE TWO FILES.** Left alone the rise begins lying in a
+  different direction from the one the fall ended in and he snaps round on
+  the floor between them. The only thing two prone poses can be matched on is
+  the direction the BODY lies in, so the packer measures it at both ends of
+  every clip (`az`, with how horizontal it is, since standing up the same
+  number means nothing) and `mutKnockdown` turns the rise by the difference.
+  Measured: the fall ends lying at -136 deg and the rise starts at +170, so
+  the rise carries +54.
+- **AND HE GOES WHERE THE REEL TAKES HIM.** `knock.slide` is a hand-set
+  distance along the line the blow came in on — a fair guess for a clip whose
+  travel nobody has, and wrong for one whose travel is in the file. Measured,
+  `knockOut` carries him 1.41 m and mostly ACROSS that line. `slide: null`
+  means walk the clip's own root motion, turned by the heading that clip is
+  played on. The horizontal travel is still left out of the HIPS, because a
+  gait's speed belongs to the game; a knockdown is a scripted beat and the
+  reel is the authority.
+
+Measured in the game, hips and head against the floor: he stands at 1.29 /
+2.26, goes over to 0.16 / 0.26, lies still for a third of a second, and
+rises to 1.30 / 2.28 — and the model's yaw does not move through the fall.
+Rendered as a strip it is the Mixamo clip: rocked, off his feet, flat on his
+back, rolled onto a knee, up.
+
+**THE CHURCH TEXTURES WERE STRETCHED BY THE PACKER'S OWN WELD.** `cluster_uv`
+snapped vertices to a grid, averaged their positions and kept **the FIRST
+vertex's uv** — and "first" is whatever order the file lists them in. This
+scan is mapped the way a modelled scene usually is: every face independently,
+with its corners SPLIT, into a baked atlas. Weld those and each face's
+corners are dragged to a single arbitrary point in the map. Measured as TEXEL
+DENSITY (uv units per metre, per triangle), the upper quartile over the lower
+on each material:
+
+    banc 24.5   autel 23.1   arche.001 18.2   colonne 16.0   colonne-ext 14.7
+
+against every material whose parameterisation survived — the stained glass,
+the altar cloth, the low wall, all flat quads that were never welded —
+reading exactly **1.0**. The separation is not close, which is what makes it
+safe to test for. On screen it is a barcode of horizontal bands up every
+column, which is what the owner photographed.
+
+A vertex may only merge with one that is near it in the ATLAS as well as in
+space (`UV_CELL`). Two things make that safe: the POSITION is still averaged
+over the whole position cell across every uv bucket in it, so splitting a
+seam can never open a crack; and a triangle still COLLAPSES on position
+alone, so the decimation is exactly as strong and the budget means the same
+thing. After: every damaged material 1.1-1.5, at the cost of 2.3 MB of extra
+vertices.
+
+**AND A PROJECTION IS NOT THE ANSWER WHEN THE MAP IS AN ATLAS.** The obvious
+repair for a destroyed uv is the octopus ring's — sample the map triplanar
+and blend by the normal — and it was built, measured and deleted. It works
+only for a TILE. Drawing this church's own maps to a canvas settles it in one
+look: `mur-bas_diffuse` is a grid of rounded panels with black gutters
+between them, `colonne_diffuse` is a row of tall unwrapped strips. Projected
+at the density the geometry implies the surface is nearly a flat colour
+(1 tile per 47 m); projected at anything you can see, it draws the gutters as
+bright and dark stripes. **Look at the map before deciding a projection can
+stand in for a uv.**
+
+**AND THE SOURCE SCANS ARE ON THE DESKTOP, NOT IN ~/Downloads.**
+`~/Desktop/BEACHWALK ASSETS/` is where the owner keeps them; ~/Downloads is
+cleared. And **the flags matter**: the cave repacked without `--yaw 180` came
+out mirrored (x -1.41..16.45 became -16.45..1.41) and the way out of the apse
+moved seven metres. The church is `--tex 2048` — 1024 is the resize too far
+this file has already paid for once. `sips` is not enough for this packer;
+PIL goes in a venv.
+
+**"STUCK ON SOMETHING I CAN'T SEE" WAS A HOLE IN THE GRID, AND THE TWO
+QUESTIONS DISAGREED ABOUT IT.** The sampler writes a cell's floor from the
+triangles that land in it, and on a big flat slab it occasionally lands none
+— so there are single cells in the middle of the nave with NO floor at all,
+surrounded on every side by cells that have one. Nothing is missing from the
+picture: you are looking straight at the flags.
+
+What makes that a wall is that `floorAt` falls back to the nearest neighbour
+that has a floor and answers -0.07 like everywhere else, while `walkable`
+sees `null` and — by a rule that exists for a good reason, since three grids
+overlap at the joins and "no floor here" has to mean "ask the next grid" —
+passes it on to nobody. So the floor is drawn, the floor is answered for, and
+the step is refused.
+
+The hole is filled rather than the rule changed, and the difference between a
+hole and the edge of the grid's coverage is MEASURED: flood the run of
+floorless cells and fill it only if it is small AND fully enclosed by floor.
+The open ground past the apse is thousands of cells and is never touched.
+`solid` got the same treatment `floor` already had (`despeckleSolid`) — a
+lone solid cell is a hanging chain or a lamp sampled into the body band, and
+a chain thin enough to be missed by eight rays is thin enough to walk
+through. Measured by sweeping every cell with a floor and raycasting the
+DRAWN geometry round each blocked one: **629 holes filled, 152 solid speckles
+cleared, invisible blockers 23 -> 4** (and the four left are the true outer
+edge of the aisle floor). The walk from the entrance to the altar is
+unchanged at zero stalls and zero reversals.
+
+**THE SHELL DOOR'S FLOOR AND ITS CLAMP WERE MEASURED DIFFERENTLY.** The ramp
+out through it laid floor across the full `DOOR_W`; the hold's lateral clamp
+only let you past a player's radius short of that. In the ten-centimetre band
+between the two there was floor out at lz -5.19 that the clamp would not let
+you stand on, so walking along her side and turning in at the door snapped
+you back to the hold's own wall at -3.30 — **a metre and a half, through her
+plating, at exactly the spot you walk to**. `doorPass()` is asked in one
+place now. This is the pier's lesson on a boat: the push-out and the thing it
+pushes you off have to be measured the same way. Measured over 35 approaches:
+one jump of 1.59 m became a worst correction of 0.23.
+
+**AND `use` ON A HOLDABLE ITEM IS THE HOTBAR'S VERB — the captain's head's
+own lesson, broken again one item along.** The wheelhouse key is `holdable`,
+so the pack's second button says HOLD and the hotbar's digit means hold; both
+call `use`, and `use` opened the examine screen. The one thing you could not
+do with the key you had just pulled out of a dead man's mouth was hold it.
+
+**AND THE KEY COMES OUT OF THE HEAD IN YOUR HAND.** The examine screen was
+the only door, which is a door you have to know about: you are standing there
+holding a head with a key in its teeth and the obvious thing to do is reach
+for it. `onPull` is the shell's own `onListen` door — a click, or E — and it
+is a GETTER, so once the key is out the head is just a head. **And what you
+hold is a CLONE**, so a change to the world object does not reach it and the
+key stayed in the teeth of the head in your fist: `holdable` keeps its
+builder (`vm.userData.make`) and clears the group first, so anything that
+changes an object under a held copy can ask for it again.
+
+**A BOOT IN WATER IS NOT A BOOT WITH WATER ADDED TO IT.** "The first tunnel
+footsteps do not sound like water at all" was a MIX, not a missing sound: the
+channel's step played the full dry SAND footstep — thud, packed grains, grit
+scattering, the odd shell chip — and laid a short bright tick over the top at
+half the level. There is no amount of tick that turns a dry step into a wet
+one, because the dry layers are the ones that are wrong: grains do not
+scatter under water and nothing crunches. The water IS the footstep there
+now, in the four parts a boot going into an inch of water over stone has —
+the surface breaking, the column shoved aside (the part that gives it mass,
+and the part the old one had none of), the stone UNDER it muffled, and the
+water closing back over with a scatter of drops. Measured as what the step
+adds over the room tone: 18.5 % below 900 Hz against the game's own
+`sfxSplash` at 8.4 %, which is right — a puddle over stone is heavier and
+closer than surf. And it carries the step's own level now (0.62), because it
+IS the step: at 0.30 it measured 9 dB under the church's recorded one.
+
+**AND THE FLOOR A CREATURE FOLLOWS IS THE BARE ONE.** `walkable`, `blocked`
+and `pushOut` have taken `bare` since the knight learned to go straight
+through the benches; `floorAt` had not — and the floor is what sets a
+creature's HEIGHT. So every pew he ran through lifted him 0.45 m and put him
+down again, which is the owner's "he should not be lifting up when running".
+Measured across the pew line at z = 3.0, where the floor alternates 0.57-0.63
+(bench tops) against -0.07 (bare slab): his y is -0.07 the whole way and
+still rises to 0.27 on the dais. A person still stands on a pew.
+
 ## Dev mode
 
 `DEFAULT_SETTINGS` are the owner's own (music 30 %, waves 18 %, effects

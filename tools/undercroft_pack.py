@@ -85,25 +85,63 @@ def read_accessor(g, bufs, i):
 
 
 # ---- decimation that keeps a uv per vertex -------------------------------
+#
+# A SCAN'S TEXTURE IS AN ATLAS, AND A CLUSTER THAT STRADDLES A SEAM IN IT
+# DRAGS ITS TRIANGLES ACROSS THE WHOLE MAP.
+#
+# The first version snapped vertices to a grid, averaged their positions and
+# kept the FIRST vertex's uv for the cell — and "first" is whatever order the
+# file happens to list them in. Wherever a cell gathered vertices from two
+# different islands of the atlas (which on a scan is every uv seam, and a
+# church is covered in them) the survivor took one island's uv and every
+# triangle hanging off it was stretched across to it. Measured in the game as
+# TEXEL DENSITY — uv units per metre, per triangle — the nave's own columns
+# ran from 0.014 to 2.74 on ONE surface, a factor of 192 between neighbouring
+# faces. That is the owner's "the church textures look stretched", and no
+# amount of resizing the map could have touched it.
+#
+# So a vertex may only merge with another that is near it in the ATLAS as
+# well as in space. Two things make that safe:
+#
+#   * the POSITION is still averaged over the whole position cell, across
+#     every uv bucket in it — so the sub-clusters of one cell sit at exactly
+#     the same point and splitting a seam can never open a crack in the mesh;
+#   * a triangle still COLLAPSES on position alone, so the decimation is
+#     every bit as strong as it was and the budget means the same thing. All
+#     that is gained is that the seam keeps its two uvs instead of one.
+UV_CELL = 1.0 / 24.0          # ~85 texels of a 2048 atlas: inside an island, not across one
+
+
 def cluster_uv(P, UV, I, cell):
-    """Snap every vertex to a grid of `cell`, average the positions in each
-    cell, keep the FIRST vertex's uv for it, and drop the triangles that
+    """Snap every vertex to a grid of `cell`; average the positions in each
+    cell and the uvs within each uv bucket of it; drop the triangles that
     collapse. Returns (positions, uvs, triangles)."""
-    rep, acc, remap = {}, [], [0] * len(P)
+    pcell, pacc, vcell, vacc = {}, [], {}, []
+    remap = [0] * len(P)          # vertex -> emitted vertex (position AND uv)
+    pmap = [0] * len(P)           # vertex -> position cell (what decides a collapse)
     for vi, p in enumerate(P):
+        u = UV[vi]
         key = (int(math.floor(p[0] / cell)), int(math.floor(p[1] / cell)), int(math.floor(p[2] / cell)))
-        j = rep.get(key)
+        pi = pcell.get(key)
+        if pi is None:
+            pi = pcell[key] = len(pacc); pacc.append([0.0, 0.0, 0.0, 0])
+        a = pacc[pi]; a[0] += p[0]; a[1] += p[1]; a[2] += p[2]; a[3] += 1
+        pmap[vi] = pi
+        vkey = (pi, int(math.floor(u[0] / UV_CELL)), int(math.floor(u[1] / UV_CELL)))
+        j = vcell.get(vkey)
         if j is None:
-            j = rep[key] = len(acc); acc.append([0.0, 0.0, 0.0, 0, UV[vi]])
-        s = acc[j]; s[0] += p[0]; s[1] += p[1]; s[2] += p[2]; s[3] += 1
+            j = vcell[vkey] = len(vacc); vacc.append([0.0, 0.0, 0, pi])
+        b = vacc[j]; b[0] += u[0]; b[1] += u[1]; b[2] += 1
         remap[vi] = j
-    pos = [(s[0] / s[3], s[1] / s[3], s[2] / s[3]) for s in acc]
-    uvs = [s[4] for s in acc]
+    pos = [(pacc[b[3]][0] / pacc[b[3]][3], pacc[b[3]][1] / pacc[b[3]][3], pacc[b[3]][2] / pacc[b[3]][3])
+           for b in vacc]
+    uvs = [(b[0] / b[2], b[1] / b[2]) for b in vacc]
     tris, seen = [], set()
     for t in range(0, len(I) - 2, 3):
-        a, b, c = remap[I[t]], remap[I[t + 1]], remap[I[t + 2]]
-        if a == b or b == c or a == c:
+        pa, pb, pc = pmap[I[t]], pmap[I[t + 1]], pmap[I[t + 2]]
+        if pa == pb or pb == pc or pa == pc:       # collapsed in SPACE: gone
             continue
+        a, b, c = remap[I[t]], remap[I[t + 1]], remap[I[t + 2]]
         k = (a, b, c) if a < b and a < c else (b, c, a) if b < c else (c, a, b)
         if k in seen:
             continue

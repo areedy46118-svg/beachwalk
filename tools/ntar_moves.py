@@ -156,7 +156,26 @@ FORCE_FLAT_YAW = {'knock'} if SET == 'ntar' else {'kPunch', 'kSwipe', 'kJump', '
       # every frame, so nothing here may turn his hips as well — a quarter
       # turn de-yawed is a pivot step, which is what it is wanted for
       'parry', 'idleB', 'walkC', 'runB', 'strafeL2', 'strafeR3', 'sideL', 'sideR2', 'turnL', 'turnR',
-      'knockOut', 'getUp', 'hitHead'}
+      'hitHead'}
+
+# ---- AND A CLIP WHOSE BODY LEAVES THE VERTICAL MAY NOT BE DE-YAWED AT ALL.
+#
+# There is no such thing as the heading of a body that is falling over, and
+# every attempt to name one injects a spin. Measured on `knockOut`, as the
+# azimuth the body's own long axis sweeps over the frames it is horizontal —
+# which is the thing you actually watch, "which way his head is pointing":
+#
+#     the source animation    -11 deg      (he lands about where he fell)
+#     de-yawed on the forward axis  +62     <- the owner's "spins in the air"
+#     de-yawed on the left-right axis  -38  <- better measurement, same fault
+#
+# A per-frame de-yaw is a world-Y rotation, and a world-Y rotation applied to
+# a HORIZONTAL body is a roll about its own length: it cannot help but turn a
+# tipping body into a turning one. So the fall and the rise keep their own
+# root turn exactly as the animator drew it, and the game puts him on the
+# heading it wants ONCE, at the blow — which costs nothing, because a
+# creature on the ground is not being turned toward the player anyway.
+KEEP_YAW = {'knockOut', 'getUp'}
 
 
 # A clip whose hips are measured from its LAST frame, not its first: it
@@ -271,14 +290,50 @@ def main():
         log('   forward (blender) %s -> yaw %+.1f deg to +Z' % (tuple(r4(v) for v in fwd), math.degrees(yaw)))
 
         # ---- the root's own turn over the window
+        #
+        # A HEADING READ OFF A BONE'S FORWARD AXIS IS NOT A HEADING ONCE THE
+        # BODY HAS LEFT THE VERTICAL, AND THAT IS THE WHOLE OF "HE JUST SPINS
+        # AROUND IN THE AIR". The de-yaw held the hips' own +Z at a constant
+        # azimuth every frame — which is a real de-yaw while he is standing,
+        # and nonsense the moment he goes over, because a pelvis lying on its
+        # back points its +Z at the CEILING. Measured on `knockOut`, that
+        # vector's horizontal part collapses from 1.00 to 0.30, so most of
+        # the -61 deg of "drift" it reported was the body TIPPING and not the
+        # body turning — and the correction for a turn that never happened is
+        # a world-Y rotation applied to a horizontal body, which is a corpse
+        # swinging round like a compass needle.
+        #
+        # The axis to measure on is the one that stays horizontal, and which
+        # that is depends on the clip: a fall forwards or backwards hinges
+        # about the pelvis's LEFT-RIGHT axis, so that one survives (worst
+        # horizontal 0.73 on `knockOut`, 0.87 on `getUp`) where the forward
+        # axis does not. So it is chosen rather than assumed — the axis whose
+        # worst horizontal projection over the window is largest, once per
+        # clip, so it can never switch mid-clip and put a step in the turn.
+        # On a standing clip X and Z are both exactly horizontal and give the
+        # same answer, so nothing that already worked moves.
+        AXES = (('left-right', Vector((1, 0, 0))),
+                ('up the spine', Vector((0, 1, 0))),
+                ('forward', Vector((0, 0, 1))))
+
+        def hipax(i, ax):
+            return (CONV @ raw[i]['Hips']) @ ax
+
+        def worstH(ax):
+            return min(math.hypot(v.x, v.z) for v in (hipax(i, ax) for i in range(end + 1)))
+        axName, AX = max(AXES, key=lambda p: worstH(p[1]))
+        log('   heading axis: the pelvis\'s %s (worst horizontal %.2f of 1.00)'
+            % (axName, worstH(AX)))
+
         def hipyaw(i):
-            q = CONV @ raw[i]['Hips']
-            v = q @ Vector((0, 0, 1))                # the hips' own +Z, in three's frame
+            # only DIFFERENCES of this are ever used, so which axis it is
+            # measured on sets an offset that cancels
+            v = hipax(i, AX)
             return math.atan2(v.x, v.z)
         y0 = hipyaw(0)
         drift = math.degrees((hipyaw(end) - y0 + math.pi) % (2 * math.pi) - math.pi)
         swing = max(abs(math.degrees((hipyaw(i) - y0 + math.pi) % (2 * math.pi) - math.pi)) for i in range(end + 1))
-        flat = name in FORCE_FLAT_YAW or abs(drift) > 40
+        flat = name not in KEEP_YAW and (name in FORCE_FLAT_YAW or abs(drift) > 40)
         log('   root yaw: swings to %.0f deg, ends %+.0f deg  -> %s' % (swing, drift, 'DE-YAWED' if flat else 'kept'))
 
         # ---- rest, and every frame, in three's frame
@@ -336,6 +391,24 @@ def main():
             contact = r4(bi / max(1, end))
             log('   contact: right toe fastest at frame %d of %d -> hit %.3f' % (bi, end, contact))
 
+        # ---- AND WHERE HE IS LYING, SO THE RISE CAN BE JOINED TO THE FALL.
+        # With neither clip de-yawed they are each in their own frame — the
+        # fall ends lying one way and the rise begins lying another, and
+        # played back to back that is a body snapping round on the floor. The
+        # only thing that can be matched between two prone poses is the
+        # direction the body itself lies in, so that is measured at both ends
+        # of every clip: the azimuth of the body's own long axis (hips to
+        # spine — which way his head points) and how horizontal it is, since
+        # standing up the same number means nothing. The game turns the rise
+        # by the difference and the two become one motion.
+        def lieAz(i):
+            undo = Quaternion((0, 1, 0), -(hipyaw(i) - y0)) if flat else Quaternion()
+            v = (undo @ (CONV @ raw[i]['Hips'])) @ Vector((0, 1, 0))
+            return r4(math.degrees(math.atan2(v.x, v.z))), r4(math.hypot(v.x, v.z))
+        az0, azh0 = lieAz(0)
+        az1, azh1 = lieAz(end)
+        log('   lying: starts %+.0f deg (flat %.2f), ends %+.0f deg (flat %.2f)'
+            % (az0, azh0, az1, azh1))
         log('   %-7s %.2f s, %d frames, %d bones, travel %.2f m, hips y %.2f..%.2f, lowest at %.2f'
             % (name, dur, end + 1, len(bones), math.hypot(travel[-1][0], travel[-1][1]),
                min(hipY), max(hipY), land))
@@ -345,6 +418,7 @@ def main():
             'restPos': {b: [r4(restPos[b].x), r4(restPos[b].y), r4(restPos[b].z)] for b in bones},
             'd': tracks, 'hipY': hipY, 'travel': travel,
             'yaw': {'flat': flat, 'drift': r4(drift), 'swing': r4(swing)},
+            'az': {'start': az0, 'startH': azh0, 'end': az1, 'endH': azh1},
             'land': land,
         }
         if contact is not None:

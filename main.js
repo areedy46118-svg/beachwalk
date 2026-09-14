@@ -4981,6 +4981,10 @@ function updateHover() {
   } else if (equipped && equipped.onListen && !listening) {
     crosshair.className = 'active';
     setPrompt(kbd('LMB') + 'Hold it to your ear');
+  } else if (equipped && equipped.onPull) {
+    crosshair.className = 'active';
+    setPrompt(kbd('LMB') + 'Pull the key out of his mouth'
+      + ' &nbsp;&nbsp; ' + kbd('G') + 'Drop');
   } else if (equipped && equipped.onDig && digT <= 0
              && crosshairGroundPoint(winding ? DIG_REACH + DIG_HEAVY_REACH : DIG_REACH)) {
     const onMound = !inWater(_digHit.x, _digHit.z) && moundAt(_digHit.x, _digHit.z);
@@ -5020,6 +5024,7 @@ function primaryAction() {                       // E / F
   }
   if (equipped && equipped.onListen) listenToShell();
   if (equipped && equipped.onDrink) drinkWater();
+  if (equipped && equipped.onPull) equipped.onPull();
 }
 function attackAction() {                        // left mouse
   if (peeking) { endPeek(); return; }
@@ -5045,6 +5050,7 @@ function attackAction() {                        // left mouse
   }
   if (equipped && equipped.onListen) { listenToShell(); return; }
   if (equipped && equipped.onDrink) { drinkWater(); return; }
+  if (equipped && equipped.onPull) { equipped.onPull(); return; }
   primaryAction();                               // bare hands: a click still interacts
 }
 
@@ -7091,7 +7097,13 @@ const MOUTH_POSE = [1.95, 0.15, 0.35, -0.30, 0];
 function holdable(item, model, { scale = 1, pos = [0, -0.02, 0], rot = [0, 0, 0] } = {}) {
   const vm = new THREE.Group();
   vm.visible = false;
-  vm.userData.build = () => {
+  /* AND IT CAN BE BUILT AGAIN. What you hold is a CLONE, so a change to the
+   * world object — the key coming out of the captain's mouth — does not
+   * reach it, and the key stayed in the teeth of the head in your fist. The
+   * builder is kept and clears the group first, so anything that changes the
+   * object under a held copy can simply ask for it again. */
+  const make = () => {
+    while (vm.children.length) vm.remove(vm.children[0]);
     const m = model.clone(true);
     /* AND THE PICKUP GLINT DOES NOT COME WITH IT. `addItemShine` hangs
      * Sprites on the world object so you can find the thing on a dark
@@ -7109,6 +7121,8 @@ function holdable(item, model, { scale = 1, pos = [0, -0.02, 0], rot = [0, 0, 0]
     m.rotation.set(rot[0], rot[1], rot[2]);
     vm.add(m);
   };
+  vm.userData.make = make;
+  vm.userData.build = make;
   toolMount.add(vm);
   item.viewmodel = vm;
   item.inspectModel = model;          // what the pack's Inspect button shows
@@ -11940,31 +11954,87 @@ function ucInWater() {
   const feet = camBaseY - playerEye() - UC_Y;
   return feet < W.y + 0.10 && feet > W.y - 0.55;
 }
-/* AND IT IS A PUDDLE, NOT THE SURF. The beach's splash is a wave breaking
- * over you; this is an inch of still water in a stone channel — a short
- * bright tick of spray on top of the step and nothing underneath it. The
- * owner's word was subtle and not too loud, so it is a THIRD of the level
- * the sea's is and it rides over the footstep rather than replacing it:
- * what you hear is a boot going down in a puddle, which is one sound. */
+/* AND A BOOT IN WATER IS NOT A BOOT WITH WATER ADDED TO IT.
+ *
+ * "The first tunnel footsteps do not sound like water at all" was a MIX, not
+ * a missing sound: the channel's step played the full dry SAND footstep —
+ * thud, packed grains, grit scattering, the odd shell chip — and laid a
+ * short bright tick over the top of it at half the level. What you heard was
+ * sand, because sand was nearly all of it; there is no amount of tick that
+ * turns a dry step into a wet one, because the dry layers are the ones that
+ * are wrong. Grains do not scatter under water and nothing crunches.
+ *
+ * So the water IS the footstep here, and it has the four parts a boot going
+ * down into an inch of water over stone actually has:
+ *
+ *   1. the surface breaking — broad and fast, the loudest thing in it, which
+ *      is what says water rather than dust;
+ *   2. the column being shoved out of the way — low-mid, swept down, and the
+ *      part that gives a splash any mass at all. The old one had none of
+ *      this and that is most of why it read as a tick;
+ *   3. the stone UNDER the water, muted, because the channel has a floor and
+ *      a step that does not land on anything is a splash in deep water;
+ *   4. the water closing back over the boot a beat later, with a scatter of
+ *      drops off it — shallow water is loose, and the scatter is the
+ *      difference between a puddle and a pool.
+ *
+ * It is still well under the sea's own level: the brief was walking through
+ * puddles, not wading into surf. */
 function sfxStepPuddle() {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime;
   const out = ctx.createGain();
-  out.gain.value = 0.30 * (0.72 + Math.random() * 0.5);
+  /* AND IT IS THE STEP'S OWN LEVEL, because it IS the step now. At 0.30 it
+   * was a layer over a dry footstep and measured 9 dB under the church's
+   * recorded one — audible only if you knew to listen for it. */
+  out.gain.value = 0.62 * (0.78 + Math.random() * 0.4);
   out.connect(sfxOut());
-  // the break of the surface: bright, very short
-  const sp = noiseBurst(0.10, (x) => Math.pow(1 - x, 2.6));
+
+  // 1. the surface breaking: broad, immediate, gone in a twelfth of a second
+  const sp = noiseBurst(0.12, (x) => Math.pow(1 - x, 2.2));
   const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
-  bp.frequency.value = 1500 + Math.random() * 1400; bp.Q.value = 0.85;
-  sp.connect(bp).connect(out);
-  sp.start(t); sp.stop(t + 0.10);
-  // and the little slap of water closing back over the boot, a beat later
-  const sl = noiseBurst(0.13, (x) => Math.pow(1 - x, 3.2));
-  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
-  lp.frequency.value = 620 + Math.random() * 260;
-  const lg = ctx.createGain(); lg.gain.value = 0.55;
-  sl.connect(lp).connect(lg).connect(out);
-  sl.start(t + 0.018); sl.stop(t + 0.15);
+  bp.frequency.setValueAtTime(1150 + Math.random() * 500, t);
+  bp.frequency.exponentialRampToValueAtTime(520, t + 0.11);
+  bp.Q.value = 0.55;                       // WIDE: a narrow band is a hiss, not a splash
+  const spg = ctx.createGain(); spg.gain.value = 0.95;
+  sp.connect(bp).connect(spg).connect(out);
+  sp.start(t); sp.stop(t + 0.12);
+
+  // 2. the column shoved aside — the mass of it
+  const bod = noiseBurst(0.17, (x) => Math.pow(1 - x, 1.5) * Math.min(1, x * 14));
+  const lf = ctx.createBiquadFilter(); lf.type = 'lowpass';
+  lf.frequency.setValueAtTime(520 + Math.random() * 160, t);
+  lf.frequency.exponentialRampToValueAtTime(155, t + 0.16);
+  lf.Q.value = 3.0;
+  const bg = ctx.createGain(); bg.gain.value = 0.85;
+  bod.connect(lf).connect(bg).connect(out);
+  bod.start(t); bod.stop(t + 0.17);
+
+  // 3. the stone under it, muffled by the water over it
+  const st = noiseBurst(0.07, (x) => Math.pow(1 - x, 4.2));
+  const sf = ctx.createBiquadFilter(); sf.type = 'lowpass';
+  sf.frequency.value = 220 + Math.random() * 70;
+  const sg = ctx.createGain(); sg.gain.value = 0.42;
+  st.connect(sf).connect(sg).connect(out);
+  st.start(t + 0.012); st.stop(t + 0.082);
+
+  // 4. the water closing back over, and the drops that come off it
+  const cl = noiseBurst(0.15, (x) => Math.pow(1 - x, 2.6) * Math.min(1, x * 9));
+  const cf = ctx.createBiquadFilter(); cf.type = 'bandpass';
+  cf.frequency.value = 760 + Math.random() * 300; cf.Q.value = 0.8;
+  const cg = ctx.createGain(); cg.gain.value = 0.5;
+  cl.connect(cf).connect(cg).connect(out);
+  cl.start(t + 0.055); cl.stop(t + 0.205);
+  for (let i = 0; i < 3; i++) {
+    if (Math.random() > 0.72) continue;
+    const d = 0.07 + Math.random() * 0.17;
+    const dr = noiseBurst(0.035, (x) => Math.pow(1 - x, 5));
+    const df = ctx.createBiquadFilter(); df.type = 'bandpass';
+    df.frequency.value = 2100 + Math.random() * 1900; df.Q.value = 1.6;
+    const dg = ctx.createGain(); dg.gain.value = 0.10 + Math.random() * 0.12;
+    dr.connect(df).connect(dg).connect(out);
+    dr.start(t + d); dr.stop(t + d + 0.035);
+  }
 }
 /* AND YOU SEE IT AS WELL AS HEAR IT. A puddle you can only hear is a sound
  * effect; what says you are wading is water coming up off your boot. A
@@ -11983,10 +12053,14 @@ function ucStepSplash() {
 }
 function sfxStepUnder() {
   stepAlt ^= 1;
-  const wet = ucInWater();
   if (ucInChurch() && playSample('churchStep', 0.62 * (stepAlt ? 1 : 0.86), 0.05)) return;
+  /* IN THE CHANNEL THE WATER IS THE STEP. It used to be the dry sand step
+   * with a splash laid over it, and a dry step under a splash still sounds
+   * dry — the grit and the shell chips are the two loudest things in it and
+   * neither happens under water. The puddle carries its own muffled stone,
+   * so the floor is still there. */
+  if (ucInWater()) { sfxStepPuddle(); ucStepSplash(); return; }
   sfxStep();
-  if (wet) { sfxStepPuddle(); ucStepSplash(); }
 }
 function sfxStepDrain() { sfxStep(); }
 function sfxStep() {
@@ -14088,9 +14162,16 @@ function makeBoatKeyIcon() {
   g.beginPath(); g.moveTo(36, 38); g.lineTo(30, 43); g.stroke();
   return c.toDataURL();
 }
+/* AND `use` ON A HOLDABLE ITEM IS THE HOTBAR'S VERB — the rule the captain's
+ * head already cost this file once, broken again one item along. The key is
+ * `holdable`, so the pack's second button says HOLD and the hotbar's digit
+ * means hold; both called `use`, and `use` opened the examine screen. So the
+ * one thing you could not do with the key you had just pulled out of a dead
+ * man's mouth was hold it. Inspect has its own button and reaches the same
+ * model through `inspectModel`. */
 const boatKeyItem = {
   id: 'boatkey', name: "Wheelhouse key", icon: makeBoatKeyIcon(),
-  use: () => openInspect(boatKey, { name: 'Wheelhouse key' }),
+  use: () => toggleEquip(boatKeyItem),
 };
 holdable(boatKeyItem, boatKey, { scale: 3.0, pos: [0, -0.04, 0.02], rot: [0.3, 0.6, 0.2] });
 let boatKeyTaken = false;
@@ -14109,6 +14190,9 @@ const pullTheKey = () => {
   boatKeyTaken = true;
   shipHead.remove(boatKey);
   boatKey.position.set(0, 0, 0); boatKey.rotation.set(0, 0, 0);   // out of the mouth, and its own thing
+  // and out of the copy in your hand, which is a clone and knows nothing
+  const hvm = headItem.viewmodel;
+  if (hvm && !hvm.userData.build) hvm.userData.make();
   sfxThud(0.03);
   addToInventory(boatKeyItem);
   setPrompt('');
@@ -14123,6 +14207,14 @@ const headItem = {
     equipLabel: boatKeyTaken ? null : 'Pull the key out of his mouth',
     onEquip: pullTheKey,
   }),
+  /* AND YOU CAN PULL IT WITH HIM IN YOUR HAND. The examine screen was the
+   * only door, which is a door you have to know about: you are standing
+   * there holding a head with a key in its teeth and the obvious thing to
+   * do is reach for it. `onPull` is the shell's own `onListen` door — a
+   * click, or E — so the thing in your hands answers the button that
+   * everything else in your hands answers. It is a getter because
+   * `boatKeyTaken` moves, and once it has moved the head is just a head. */
+  get onPull() { return boatKeyTaken ? null : pullTheKey; },
 };
 /* FRAMED IN THE HAND, MEASURED RATHER THAN GUESSED. At 0.8 and -0.12 he
  * projected to ndc x [0.33, 1.04], y [-1.85, -0.47] in `vmCamera` — two
@@ -14779,6 +14871,22 @@ function deckHalfAt(lx) {
   return _rakeB[lo] + (_rakeB[hi] - _rakeB[lo]) * t;
 }
 
+/* HOW WIDE THE SHELL DOOR IS TO WALK THROUGH — asked in ONE place, because
+ * the floor through it and the clamp beside it must be the same width.
+ *
+ * They were not: the ramp out through the door laid floor across the full
+ * `DOOR_W`, and the hold's lateral clamp only let you past a player's radius
+ * short of that. So in the 10 cm band between the two there was floor out at
+ * lz -5.19 that the clamp would not let you stand on, and stepping into it
+ * snapped you back to the hold's own wall at -3.30 — a metre and a half,
+ * through her plating, at exactly the spot you walk to. Measured coming
+ * along her side and turning in at the door: one jump of 1.59 m.
+ *
+ * This is the pier's lesson on a boat: THE PUSH-OUT AND THE THING IT PUSHES
+ * YOU OFF HAVE TO BE MEASURED THE SAME WAY. Whichever number is chosen, it
+ * has to be chosen once. */
+const doorPass = () => SN.DOOR_W / 2 - PLAYER_R * 0.4;
+
 function shipFloorAt(lx, lz, feet) {
   const tol = feet + 0.5;
   let best = null;
@@ -14797,7 +14905,7 @@ function shipFloorAt(lx, lz, feet) {
   /* Out through the shell door once it is unlocked. Same shape as the
    * breach apron: a RAMP down to sand level, because a flat patch at
    * HOLD_Y out on open beach is a 25 cm invisible step. */
-  if (holdDoorOpen && Math.abs(lx - SN.DOOR_X) < SN.DOOR_W / 2 && lz < 0) {
+  if (holdDoorOpen && Math.abs(lx - SN.DOOR_X) < doorPass() && lz < 0) {
     const inner = -(SN.HOLD_HZ - 0.25);
     const outer = -(SN.halfAtY(_lxc(lx), SN.HOLD_Y) + 1.2);
     if (lz <= inner && lz > outer)
@@ -14930,8 +15038,7 @@ function updateShip(dt) {
     // her sole narrows toward the bow; the walk follows it (see shipFloorAt)
     const hz = Math.min(SN.HOLD_HZ, SN.halfAtY(_lxc(lx), SN.HOLD_Y) - 0.02) - PLAYER_R;
     const atBreach = lx > SN.BREACH_X0 && lx < SN.BREACH_X1;
-    const atDoor = holdDoorOpen
-      && Math.abs(lx - SN.DOOR_X) < SN.DOOR_W / 2 - PLAYER_R * 0.4;
+    const atDoor = holdDoorOpen && Math.abs(lx - SN.DOOR_X) < doorPass();
     if (lz > hz && !atBreach) camera.position.z = SHIP_Z + hz;
     if (lz < -hz && !atDoor) camera.position.z = SHIP_Z - hz;
     camera.position.x = THREE.MathUtils.clamp(camera.position.x,
@@ -16703,6 +16810,19 @@ const _knV = new THREE.Vector3();
  * fall and a real rise of his own lengths, and the whole thing has to be
  * short enough that the fight does not stop while it plays. */
 const knockOf = (u) => (u && u.kind && u.kind.knock) || NTAR_KNOCK;
+/* WHERE A CLIP'S OWN ROOT HAS GOT TO, a fraction of the way through it, in
+ * the clip's own frame. The retarget keeps the whole curve for exactly this:
+ * a gait's travel belongs to the game, which owns the speed, but a knockdown
+ * is a scripted beat and the reel is the authority on where the body goes. */
+const _knT = new THREE.Vector2();
+function clipTravelAt(u, name, f) {
+  const T = u.clipTravel && u.clipTravel[name];
+  if (!T || T.length < 2) return null;
+  const x = THREE.MathUtils.clamp(f, 0, 1) * (T.length - 1);
+  const i = Math.min(T.length - 2, Math.floor(x)), t = x - i;
+  const a = T[i], b = T[i + 1];
+  return _knT.set(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t);
+}
 const knockTotal = (u) => { const K = knockOf(u); return K.fall + K.lie + K.rise; };
 /* Where the clip should be, for a knockdown `s` seconds old: down through
  * the fall, held on the floor, and back up the way it came. */
@@ -16727,7 +16847,25 @@ function mutKnockdown(u) {
   u.st.poise = u.kind.poise;
   u.st.cool = knockTotal(u) + 0.3;
   mutDrop(u);
-  u.g.rotation.y = Math.atan2(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
+  /* THE HEADING IS SET ONCE, HERE, AND THE REELS KEEP THEIR OWN TURN.
+   * De-yawing a clip in which the body goes horizontal is what made him spin
+   * in the air (see `KEEP_YAW` in tools/ntar_moves.py), so the fall and the
+   * rise play exactly as drawn and this is the only place a heading is
+   * written — which costs nothing, because a creature on the ground is not
+   * being turned toward the player by anything. He goes over facing you.
+   *
+   * AND THE TWO REELS ARE SEPARATE FILES, so left alone the rise begins
+   * lying in a different direction from the one the fall ended in and he
+   * snaps round on the floor between them. The one thing two prone poses can
+   * be matched on is the direction the BODY lies in, which the packer
+   * measures at both ends of every clip: the rise is turned by the
+   * difference and the two become one motion. Measured: the fall ends lying
+   * at -136 deg and the rise starts at +170, so the rise carries +54. */
+  u.st.knockYaw = Math.atan2(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
+  const fa = u.clipAz[u.kind.knockClip], ra = u.kind.riseClip && u.clipAz[u.kind.riseClip];
+  u.st.riseYaw = (fa && ra && fa.endH > 0.5 && ra.startH > 0.5)
+    ? _angDiff((fa.end - ra.start) * Math.PI / 180, 0) : 0;
+  u.g.rotation.y = u.st.knockYaw;
   u.hitFrom.copy(u.g.position);
   camera.getWorldDirection(u.hitDir); u.hitDir.y = 0; u.hitDir.normalize();
   sfxKillThud(0.9);
@@ -17791,7 +17929,7 @@ function makeMutant(x, z, kindName, y = 0) {
     return w > 0 ? acc / w : maxReach;
   })();
   const u = {
-    g, kind, kindName, atk, maxReach, ring, model: null, mixer: null, clips: {}, clipSpeed: {}, cur: null, leanT: 0,
+    g, kind, kindName, atk, maxReach, ring, model: null, mixer: null, clips: {}, clipSpeed: {}, clipTravel: {}, clipAz: {}, cur: null, leanT: 0,
     st: { alive: true, awake: false, roar: 0, atk: -1, flourish: 0, fidget: 0, swing: Object.keys(kind.use)[0],
           cool: 0, stun: 0, recoil: 0, struck: false, hp: kind.hp, step: 0, deadT: 0,
           side: 0, sideT: 0, back: 0, chained: false, chainN: 0, chainAt: -1, swings: 0, wait: 0,
@@ -20833,7 +20971,7 @@ function updateMutantUnit(u, dt) {
    * second rather than a third — a snap is the thing this file has spent a
    * fortnight taking out of him. */
   if (u.kind.uc && UC.ready) {
-    const gf = UC.floorAt(u.g.position.x - UC_X, u.g.position.z - UC_Z);
+    const gf = UC.floorAt(u.g.position.x - UC_X, u.g.position.z - UC_Z, u.kind.crushes);
     if (gf !== null) {
       const dy = (UC_Y + gf) - u.g.position.y, ad = Math.abs(dy);
       u.g.position.y += ad < 0.02 ? dy
@@ -20894,14 +21032,34 @@ function updateMutantUnit(u, dt) {
     const KN = knockOf(u);
     u.st.down = Math.max(0, u.st.down - dt);
     const s = knockTotal(u) - u.st.down;
-    if (s < KN.fall) {
+    /* AND HE GOES WHERE THE REEL TAKES HIM. `slide` is a hand-set distance
+     * along the line the blow came in on, which is a fair guess for a clip
+     * whose travel nobody has and exactly wrong for one whose travel is in
+     * the file: measured, `knockOut` carries him 1.41 m mostly ACROSS his
+     * own line, so sliding him straight back was the body and the floor
+     * disagreeing under it. A kind whose `slide` is null walks its own
+     * clips' root motion instead — the fall's, then the rise's on top of it
+     * — each turned by the heading that clip is played on. */
+    const yaw = s >= KN.fall + KN.lie ? u.st.knockYaw + (u.st.riseYaw || 0) : u.st.knockYaw;
+    u.g.rotation.y = yaw;
+    if (KN.slide == null) {
+      const cf = Math.cos(u.st.knockYaw), sf = Math.sin(u.st.knockYaw);
+      p.copy(u.hitFrom);
+      const tf = clipTravelAt(u, u.kind.knockClip, s / KN.fall);
+      if (tf) p.x += tf.x * cf + tf.y * sf, p.z += -tf.x * sf + tf.y * cf;
+      if (s >= KN.fall + KN.lie && u.kind.riseClip) {
+        const cr = Math.cos(yaw), sr = Math.sin(yaw);
+        const tr = clipTravelAt(u, u.kind.riseClip, (s - KN.fall - KN.lie) / KN.rise);
+        if (tr) p.x += tr.x * cr + tr.y * sr, p.z += -tr.x * sr + tr.y * cr;
+      }
+    } else if (s < KN.fall) {
       const k = Math.min(1, s / KN.fall);
       p.copy(u.hitFrom).addScaledVector(u.hitDir, KN.slide * k * (2 - k));
-      if (!u.st.downThud && s >= KN.fall * KN.land) {
-        u.st.downThud = true;                       // the frame he actually lands
-        sfxKillThud(1.1); addTrauma(0.4);
-        spawnPuffs(p.x, p.z, 7, u.hitDir.x, u.hitDir.z, p.y + 0.1);
-      }
+    }
+    if (!u.st.downThud && s >= KN.fall * KN.land) {
+      u.st.downThud = true;                         // the frame he actually lands
+      sfxKillThud(1.1); addTrauma(0.4);
+      spawnPuffs(p.x, p.z, 7, u.hitDir.x, u.hitDir.z, p.y + 0.1);
     }
     mutAnim(u, dt, 0);
     /* HE ROLLS UP; HE DOES NOT FLY UP. The reel reversed takes his hips back
@@ -28754,7 +28912,15 @@ function ntarRetarget(u, m, bones, bind, J, hipUp, hipPos, src) {
     if (C.travel && C.travel.length && C.dur > 0) {
       const T = C.travel[C.travel.length - 1];
       u.clipSpeed[name] = Math.hypot(T[0], T[1]) / C.dur;
+      /* AND A ONE-OFF BEAT IS MOVED BY ITS OWN ROOT, NOT BY A NUMBER. The
+       * horizontal travel is left out of the hips for a GAIT, because there
+       * the game owns the speed — but a knockdown is a scripted beat where
+       * the clip is the authority, and a fall slid along a hand-set vector
+       * while the body goes somewhere else is the animation and the motion
+       * disagreeing. The whole curve is kept so the knockdown can walk it. */
+      u.clipTravel[name] = C.travel;
     }
+    if (C.az) u.clipAz[name] = C.az;
     out.push(new THREE.AnimationClip(name, C.dur, tracks));
   }
   return out;
@@ -29263,7 +29429,12 @@ MUT_KINDS.knight = {
    * and a half. And he has a real `riseClip`, so he stands up the way the
    * animator drew it rather than by playing his own fall backwards. */
   knockClip: 'knockOut', riseClip: 'getUp', knockAfter: 3,
-  knock: { fall: 1.27, lie: 0.34, rise: 1.33, land: 0.78, slide: 1.35 },
+  /* AND `slide` IS NULL BECAUSE THE REELS CARRY THEIR OWN TRAVEL. A number
+   * here is a distance along the line the blow came in on, which is a guess;
+   * `knockOut` moves him 1.41 m and mostly ACROSS that line, and the game
+   * sliding him one way while the animation takes him another is the floor
+   * and the body disagreeing. Null means walk the clip. */
+  knock: { fall: 1.27, lie: 0.34, rise: 1.33, land: 0.78, slide: null },
   /* AND HE OPENS THE SIZE-UP WITH A STEP, NOT A STROLL. Three metres in
    * eight tenths of a second, measured off the clip: he is simply somewhere
    * else, and then he walks the circle watching you. */
