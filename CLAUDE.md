@@ -2644,6 +2644,95 @@ played it and listed six; every one is a general lesson.
   probing the wrong way found no room at all and built nothing. Measured from
   the mouth: 0 of 108 rays reach anything but the rock.
 
+**AND A REPAIR THAT DOES NOT FOLLOW THE THING IT REPAIRS IS THE MESS.** The
+owner played it again and the report was that flat rock textures stand in the
+way of the crawl and that the rock is full of pointless edges sticking out
+like pngs. Rendering the two in two colours settles it in one picture: the
+scan in magenta, the skin behind it in grey, and what came back was a smooth
+grey pipe with magenta shards of the owner's tunnel poking through it every
+couple of metres. THE TWO WERE INTERPENETRATING. The skin was swept at a
+number PER STATION — the wall the probe measured, which for most of this
+model is the clamp it falls back to when it measures nothing — and a station
+is two metres of a cave. So it cut in and out of the drawn rock down the
+whole passage, and every crossing drew as a flat sheet with a hard edge.
+
+- **EVERY VERTEX OF THE SKIN ASKS ITS OWN DIRECTION WHERE THE ROCK IS.** A
+  ray from the station's axis out through that vertex's own profile point,
+  and the vertex goes a hand's breadth BEHIND the first surface it meets:
+  inside the model everywhere the model is there, and the model's own wall
+  everywhere it is not. `surfaceBins` cannot answer this — it is a cloud of
+  samples and a ray through a cloud hits nothing — so the scan goes into a
+  triangle grid and is actually cast at.
+- **AND THE HOLES ARE RELAXED, NOT GUESSED.** Where no ray comes back there
+  is no measurement, and a hundred and twenty passes of averaging the four
+  neighbours with the measured cells PINNED is a Laplace solve on the gap:
+  a membrane that meets the drawn stone exactly at the rim of the hole and
+  has no edge anywhere. Nothing is ever nearer the line than the walk's own
+  tube, so the repair can never become the thing in your way.
+- **AND THE SKIN IS BUILT AFTER THE CARVE, NOT BEFORE.** Fitted to the
+  uncarved scan it sits behind faces the carve then takes away — a hole with
+  the repair a hand's breadth in front of where the rock used to be, which is
+  to say still in the way.
+- **A FACE THAT LIES ACROSS THE BORE IS NOT A WALL, WHATEVER ITS DISTANCE.**
+  A tunnel's walls run ALONG it, so their normals are radial; a face whose
+  normal is within forty degrees of the tunnel's own tangent is a sheet
+  hanging in the crawl. At a walk radius that is often only a body's own
+  width the distance test alone never reached them. `corridorAt` carries the
+  segment's tangent for it.
+- **AND A RAY IS WALKED THROUGH THE GRID, NOT GIVEN THE NEIGHBOURHOOD.**
+  Valsev's cave is 191,183 triangles, so taking everything within five metres
+  of a station and testing it against twenty-nine rays cost A SECOND on the
+  frame the church lands — the one thing this file has said over and over
+  about a long block mid-walk. Amanatides & Woo down the ray, with a stamp so
+  a triangle is never tested twice: 1013 ms became 74. A fixed step with the
+  cell around each sample is NOT the same thing — it skips a cell the ray
+  clips at a corner, and a missed hit is the one error that matters here,
+  because it puts a patch of skin in front of drawn rock.
+
+Measured after: geometry in the walk 3 → 0 by eye over twenty-four views down
+both tunnels, the black shell visible in 0.018 % of the frame against 0.378
+before, and the whole 170 m passage walks hands-off in 2329 ticks with ZERO
+stalled frames and one reversal (the way out in 241, none of either).
+
+**AND THE APSE CUT WAS CUTTING THE CAVE.** Every material down there goes
+through the grime shader, so the cylinder that opens the church's back wall
+was punching the same hole through the OWNER'S OWN ROCK and through the skin
+behind it — a black window in the side of the exit tunnel a metre past the
+threshold, which is most of "the exit is all see through and messed up". The
+old cave only got away with it because its rock was clipped short of the
+wall. `uUcCutOn` is 1 for a church material and 0 for everything else.
+
+**AND THE CHURCH STOPS AT ITS OWN BACK WALL.** Its floor is ONE plane forty
+metres by twenty-three and it runs nearly two metres PAST the apse, so
+through the break you looked at a pale grey shelf lying in the mouth of the
+cave. `uUcClipHi` ends the building at exitEdge + 0.14 — and that number is
+measured, not picked: raycast down the chancel's axis and the first church
+surface is at exitEdge + 0.06 (its outer skin and the window backdrop behind
+it, in the same plane). Clip any nearer and THE APSE WALL ITSELF goes, and
+from the tunnel you look into an open chancel.
+
+**AND THE RING IS BEHIND THE WALL, WITH THE BREAK'S OWN RIM.** It stood at
+exitEdge + 0.06, which is the plane the wall is in, so from the nave a disc
+of cave stone eighteen metres across hung in front of the apse and fought it
+for the depth buffer. It is behind the wall now, and its inner rim is built
+to the SAME wobble the shader cuts with, a finger's width inside it, so it
+plugs the cut exactly instead of leaving a crescent of open wall wherever a
+round hole and a ragged one disagree.
+
+**AND WHAT YOU SEE THROUGH THE ARCH IS THE SAND WALL, NOT THE HOLLOW.** The
+black behind the entrance was a cube inscribed deep in the rock's own cave —
+measured, fitted, and completely useless, because the thing you actually see
+through the mouth stands in FRONT of that cave: the cliff. Cast down the
+mouth's own axis and the first surface is the dune at x = 16.08 against a
+plug at 20.4, four metres behind it. So the owner put his face to a cave and
+looked at a moonlit beach. The black goes BETWEEN the arch and the dune, and
+how big it may be is a question about the STONE and not about the hollow:
+swept live with the rock rendered near/deep by world depth and the box
+rendered in and out, the largest box that never covers NEAR rock from twelve
+approaches. Entrance 0.017 % of the frame, exit 0.002 %. It is written down
+rather than measured at load, because that scan is eighty-five thousand
+triangles and this is a dozen thousand rays.
+
 **AND THE MOUTH'S DARKENING IS AN ELLIPSE, NOT A SLAB.** "I should not see
 black png peeking out the top of the rocks" was not a png at all: the
 rockmouth's shader blacked out the inside of the arch with two `step()` calls

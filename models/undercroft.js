@@ -455,6 +455,93 @@ export function makeUndercroft(opts = {}) {
           + (vnoise3(x * 0.70 + 9.1, y * 0.70, z * 0.70 + 4.3) - 0.5) * 0.55
           + (vnoise3(x * 1.55 + 2.7, y * 1.55, z * 1.55 + 7.9) - 0.5) * 0.20) * amp;
   }
+  /* ---- THE SCAN, AS SOMETHING A RAY CAN BE ASKED.
+   *
+   * The skin behind the model is only invisible if it is laid ON the rock
+   * that is drawn, and the only honest way to know where that is, in a given
+   * direction, is to cast at it. `surfaceBins` cannot answer this: it is a
+   * cloud of samples and a ray through a cloud hits nothing.
+   *
+   * Every triangle goes into the group's own frame once, into a one-metre
+   * grid in all three axes — the vertical one matters as much as the others,
+   * because a tunnel is thin and a column index hands back the whole height
+   * of the rock above and below it. */
+  function triIndex(root, cell = 1.0) {
+    const tri = [], grid = new Map();
+    group.updateMatrixWorld(true); root.updateMatrixWorld(true);
+    const toLocal = new THREE.Matrix4().copy(group.matrixWorld).invert(), MM = new THREE.Matrix4();
+    const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3();
+    root.traverse((o) => {
+      if (!o.isMesh || !o.geometry || !o.geometry.attributes.position) return;
+      const g = o.geometry, pos = g.attributes.position, idx = g.index;
+      MM.multiplyMatrices(toLocal, o.matrixWorld);
+      const n = idx ? idx.count : pos.count;
+      for (let i = 0; i + 2 < n; i += 3) {
+        const i0 = idx ? idx.getX(i) : i, i1 = idx ? idx.getX(i + 1) : i + 1, i2 = idx ? idx.getX(i + 2) : i + 2;
+        A.fromBufferAttribute(pos, i0).applyMatrix4(MM);
+        B.fromBufferAttribute(pos, i1).applyMatrix4(MM);
+        C.fromBufferAttribute(pos, i2).applyMatrix4(MM);
+        const base = tri.length;
+        tri.push(A.x, A.y, A.z, B.x, B.y, B.z, C.x, C.y, C.z);
+        const x0 = Math.floor(Math.min(A.x, B.x, C.x) / cell), x1 = Math.floor(Math.max(A.x, B.x, C.x) / cell);
+        const y0 = Math.floor(Math.min(A.y, B.y, C.y) / cell), y1 = Math.floor(Math.max(A.y, B.y, C.y) / cell);
+        const z0 = Math.floor(Math.min(A.z, B.z, C.z) / cell), z1 = Math.floor(Math.max(A.z, B.z, C.z) / cell);
+        for (let a = x0; a <= x1; a++) for (let c = y0; c <= y1; c++) for (let b = z0; b <= z1; b++) {
+          const k = a + ',' + c + ',' + b; let L = grid.get(k); if (!L) grid.set(k, L = []); L.push(base);
+        }
+      }
+    });
+    return { tri: Float64Array.from(tri), grid, cell, n: tri.length / 9,
+             stamp: new Int32Array(tri.length / 9), tick: 0, cand: [] };
+  }
+  /* A RAY IS WALKED THROUGH THE GRID, NOT GIVEN THE WHOLE NEIGHBOURHOOD.
+   * Valsev's cave is 191,183 triangles, so taking everything within five
+   * metres of a station and testing it against twenty-nine rays cost a
+   * SECOND on the frame the church lands — which is the one thing this file
+   * has said over and over about a long block mid-walk. Stepping down the
+   * ray and collecting only the cells it passes through, with a stamp to
+   * keep a triangle from being tested twice, is the same answer for a
+   * fiftieth of the work. */
+  function rayHit(ix, ox, oy, oz, dx, dy, dz, maxT) {
+    const T = ix.tri, c = ix.cell, cand = ix.cand, stamp = ix.stamp;
+    const mark = ++ix.tick; cand.length = 0;
+    /* Amanatides & Woo: every cell the ray actually crosses, once. Stepping
+     * a fixed distance and taking the cell around each sample skips a cell
+     * the ray clips at a corner, and a MISSED hit is the one error that
+     * matters here — it puts a patch of skin in front of drawn rock. */
+    let ix0 = Math.floor(ox / c), iy0 = Math.floor(oy / c), iz0 = Math.floor(oz / c);
+    const sx = dx > 0 ? 1 : -1, sy = dy > 0 ? 1 : -1, sz = dz > 0 ? 1 : -1;
+    const inf = 1e30;
+    const tdx = dx === 0 ? inf : Math.abs(c / dx), tdy = dy === 0 ? inf : Math.abs(c / dy), tdz = dz === 0 ? inf : Math.abs(c / dz);
+    let tmx = dx === 0 ? inf : (((dx > 0 ? ix0 + 1 : ix0) * c) - ox) / dx;
+    let tmy = dy === 0 ? inf : (((dy > 0 ? iy0 + 1 : iy0) * c) - oy) / dy;
+    let tmz = dz === 0 ? inf : (((dz > 0 ? iz0 + 1 : iz0) * c) - oz) / dz;
+    for (let guard = 0; guard < 400; guard++) {
+      const L = ix.grid.get(ix0 + ',' + iy0 + ',' + iz0);
+      if (L) for (let n = 0; n < L.length; n++) { const id = L[n] / 9; if (stamp[id] === mark) continue; stamp[id] = mark; cand.push(L[n]); }
+      if (tmx < tmy && tmx < tmz) { if (tmx > maxT) break; ix0 += sx; tmx += tdx; }
+      else if (tmy < tmz) { if (tmy > maxT) break; iy0 += sy; tmy += tdy; }
+      else { if (tmz > maxT) break; iz0 += sz; tmz += tdz; }
+    }
+    let best = -1;
+    for (let n = 0; n < cand.length; n++) {
+      const b = cand[n];
+      const ax = T[b], ay = T[b + 1], az = T[b + 2];
+      const e1x = T[b + 3] - ax, e1y = T[b + 4] - ay, e1z = T[b + 5] - az;
+      const e2x = T[b + 6] - ax, e2y = T[b + 7] - ay, e2z = T[b + 8] - az;
+      const px = dy * e2z - dz * e2y, py = dz * e2x - dx * e2z, pz = dx * e2y - dy * e2x;
+      const det = e1x * px + e1y * py + e1z * pz;
+      if (det > -1e-9 && det < 1e-9) continue;
+      const inv = 1 / det, tx = ox - ax, ty = oy - ay, tz = oz - az;
+      const u = (tx * px + ty * py + tz * pz) * inv; if (u < 0 || u > 1) continue;
+      const qx = ty * e1z - tz * e1y, qy = tz * e1x - tx * e1z, qz = tx * e1y - ty * e1x;
+      const v = (dx * qx + dy * qy + dz * qz) * inv; if (v < 0 || u + v > 1) continue;
+      const t = (e2x * qx + e2y * qy + e2z * qz) * inv;
+      if (t > 0.02 && t < maxT && (best < 0 || t < best)) best = t;
+    }
+    return best;
+  }
+
   function makeBore(C, mat, opts = {}) {
     const NP = PROFILE.length;
     /* THE BORE IS TESSELLATED FINER THAN THE WALK IS. The line's stations are
@@ -479,6 +566,65 @@ export function makeUndercroft(opts = {}) {
     const pos = [], uvs = [], idx = [];
     let along = 0;
     const capAt = opts.cap === undefined ? [true, true] : opts.cap;   // [start, end]
+
+    /* ---- THE SKIN IS LAID ON THE ROCK, NOT NEAR IT.
+     *
+     * A sleeve swept at a per-station radius is a smooth pipe threaded
+     * through somebody else's cave, and the two INTERPENETRATE: rendered in
+     * two colours, the tunnel came back a grey tube with magenta shards of
+     * the scan poking through it every couple of metres. That is the whole
+     * of "random textures that look like pngs in the way of the crawl" —
+     * not one bad face, a repair that did not follow the thing it was
+     * repairing. The measured "wall" it swept at is a number per station,
+     * and a station is two metres of a cave.
+     *
+     * So every vertex of the skin asks its OWN direction where the rock is:
+     * a ray from the station's axis out through the profile point, and the
+     * vertex goes a hand's breadth BEHIND the first surface it meets. Where
+     * the model is there, the skin is inside it and can never be seen; where
+     * the model has a hole, no ray comes back and the gap is filled by
+     * relaxing the distances of the rock all round it, so the patch meets
+     * the drawn stone flush at every edge instead of standing in front of
+     * it. Nothing is ever nearer the line than the walk's own tube. */
+    const SK = opts.skin || null, SKIN_MAX = 5.0;
+    let fitD = null, fitted = null;
+    if (SK) {
+      fitD = new Float64Array(P.length * NP);
+      fitted = new Uint8Array(P.length * NP);
+      for (let k = 0; k < P.length; k++) {
+        const p = P[k];
+        const a = P[Math.max(0, k - 1)], b = P[Math.min(P.length - 1, k + 1)];
+        let tx = b.x - a.x, tz = b.z - a.z; const L = Math.hypot(tx, tz) || 1; tx /= L; tz /= L;
+        const rx = tz, rz = -tx;
+        const W = p.r, H = p.h, cy = p.y + H * 0.45;
+        for (let i = 0; i < NP; i++) {
+          const [fu, fv] = PROFILE[i];
+          const su = fu * W, sv = (fv - 0.45) * H;
+          const dl = Math.hypot(su, sv) || 1;
+          const t = rayHit(SK, p.x, cy, p.z, rx * su / dl, sv / dl, rz * su / dl, SKIN_MAX);
+          if (t > 0) { fitD[k * NP + i] = t + 0.10; fitted[k * NP + i] = 1; }
+        }
+      }
+      /* THE HOLES ARE RELAXED, NOT GUESSED. A hundred passes of averaging
+       * the four neighbours with the measured cells pinned is a Laplace
+       * solve on the gap: a membrane that meets the rock exactly at the rim
+       * of the hole and has no edge anywhere. A ring with nothing measured
+       * at all falls back to the station's own section. */
+      for (let pass = 0; pass < 120; pass++) {
+        let moved = 0;
+        for (let k = 0; k < P.length; k++) for (let i = 0; i < NP; i++) {
+          const q = k * NP + i; if (fitted[q]) continue;
+          let sum = 0, n = 0;
+          for (const [dk, di] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const kk = k + dk; if (kk < 0 || kk >= P.length) continue;
+            const ii = (i + di + NP) % NP, r = kk * NP + ii;
+            if (fitD[r] > 0) { sum += fitD[r]; n++; }
+          }
+          if (n) { const v = sum / n; if (Math.abs(v - fitD[q]) > 1e-4) moved++; fitD[q] = v; }
+        }
+        if (!moved) break;
+      }
+    }
     for (let k = 0; k < P.length; k++) {
       const p = P[k];
       const a = P[Math.max(0, k - 1)], b = P[Math.min(P.length - 1, k + 1)];
@@ -491,6 +637,25 @@ export function makeUndercroft(opts = {}) {
       let arc = 0, prevX = 0, prevY = 0, prevZ = 0;
       for (let i = 0; i < NP; i++) {
         const [fu, fv] = PROFILE[i];
+        if (SK) {
+          /* the fitted skin: out along this vertex's own ray, never nearer
+           * the line than the walk's own tube, and roughened only OUTWARD —
+           * a patch wants to be rock, and a lobe of noise that came inward
+           * would be the flat sheet this whole pass exists to remove */
+          const su = fu * p.r, sv = (fv - 0.45) * p.h;
+          const dl = Math.hypot(su, sv) || 1;
+          const ux = rx * su / dl, uy = sv / dl, uz = rz * su / dl;
+          const cy = p.y + p.h * 0.45;
+          let dist = Math.max(fitD[k * NP + i], dl + 0.06);
+          const X0 = p.x + ux * dist, Y0 = cy + uy * dist, Z0 = p.z + uz * dist;
+          dist += Math.abs(rockNoise(X0, Y0, Z0, fitted[k * NP + i] ? 0.06 : 0.30));
+          const X = p.x + ux * dist, Y = cy + uy * dist, Z = p.z + uz * dist;
+          if (i) arc += Math.hypot(X - prevX, Y - prevY, Z - prevZ);
+          prevX = X; prevY = Y; prevZ = Z;
+          pos.push(X, Y, Z);
+          uvs.push(along * 0.40, arc * 0.40);
+          continue;
+        }
         // the wall's outward direction in the section plane
         const nx2 = fu, ny2 = (fv - 0.45) * 0.9;
         const nl = Math.hypot(nx2, ny2) || 1;
@@ -841,7 +1006,7 @@ export function makeUndercroft(opts = {}) {
    * bunker desk's `carveDesk` on a cave. */
   const _carveE = new THREE.Vector3();
   function carveTube(root, pad = 0.06) {
-    let dropped = 0, kept = 0;
+    let dropped = 0, kept = 0, sheets = 0;
     const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), M = new THREE.Vector3();
     const toLocal = new THREE.Matrix4().copy(group.matrixWorld).invert(), MM = new THREE.Matrix4();
     group.updateMatrixWorld(true);
@@ -869,6 +1034,27 @@ export function makeUndercroft(opts = {}) {
         const c = corridorAt(p.x, p.z);
         return c && c.d < Math.min(c.r * 0.78, CARVE_MAX * 0.8) && p.y > c.y + 0.22 && p.y < c.y + c.h - 0.22;
       };
+      /* AND A FACE THAT LIES ACROSS THE BORE IS NOT A WALL, WHATEVER ITS
+       * DISTANCE. A tunnel's walls run ALONG it, so their normals are
+       * radial; a face whose normal points up or down the tunnel is a sheet
+       * hanging in the way of the crawl, and at a radius that is often only
+       * a body's own width the distance test alone never reached them. Its
+       * normal within forty degrees of the tunnel's own tangent, and
+       * anything of it inside a walk and a half: that is the "rock edge
+       * sticking out" and nothing else in this model looks like it. */
+      const SHEET_MAX = 1.15;
+      const inSheet = (p) => {
+        const c = corridorAt(p.x, p.z);
+        return c && c.d < Math.min(c.r * 1.9, SHEET_MAX) && p.y > c.y + 0.10 && p.y < c.y + c.h - 0.08;
+      };
+      const acrossBore = (a, b, c2) => {
+        const ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z;
+        const vx = c2.x - a.x, vy = c2.y - a.y, vz = c2.z - a.z;
+        const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        const nl = Math.hypot(nx, ny, nz) || 1;
+        const c = corridorAt((a.x + b.x + c2.x) / 3, (a.z + b.z + c2.z) / 3);
+        return !!c && Math.abs((nx * c.tx + nz * c.tz) / nl) > 0.72;
+      };
       for (let i = 0; i + 2 < idx.count; i += 3) {
         const i0 = idx.getX(i), i1 = idx.getX(i + 1), i2 = idx.getX(i + 2);
         A.fromBufferAttribute(pos, i0).applyMatrix4(MM);
@@ -886,21 +1072,24 @@ export function makeUndercroft(opts = {}) {
               || inCore(E.copy(B).add(C).multiplyScalar(0.5))
               || inCore(E.copy(C).add(A).multiplyScalar(0.5))) hit = true;
         }
+        if (!hit && acrossBore(A, B, C)
+            && (inSheet(M) || inSheet(A) || inSheet(B) || inSheet(C))) { hit = true; sheets++; }
         if (hit) { dropped++; continue; }
         keep.push(i0, i1, i2); kept += 1;
       }
       if (dropped) g.setIndex(keep);
     });
+    S.sheets = (S.sheets || 0) + sheets;
     return dropped;
   }
 
   /* the nearest point on the corridor: its height, its radius, how far off
    * the line you are. Scanned straight — a hundred and forty segments is
    * nothing beside what the grid it replaces was doing. */
-  const _cq = { y: 0, r: 0, d: 1e9, h: 2.0 };
+  const _cq = { y: 0, r: 0, d: 1e9, h: 2.0, tx: 1, tz: 0 };
   function corridorAt(lx, lz) {
     if (!S.corridors.length) return null;
-    let bd = 1e9, by = 0, br = 0, bh = 2.0, found = false;
+    let bd = 1e9, by = 0, br = 0, bh = 2.0, btx = 1, btz = 0, found = false;
     for (const C of S.corridors) {
       if (lx < C.lo[0] - 3 || lx > C.hi[0] + 3 || lz < C.lo[1] - 3 || lz > C.hi[1] + 3) continue;
       const P = C.pts;
@@ -919,11 +1108,12 @@ export function makeUndercroft(opts = {}) {
         t = t < 0 ? 0 : t > 1 ? 1 : t;
         const px = a.x + dx * t, pz = a.z + dz * t;
         const d = (lx - px) * (lx - px) + (lz - pz) * (lz - pz);
-        if (d < bd) { bd = d; found = true; by = a.y + (b.y - a.y) * t; br = (a.r + (b.r - a.r) * t) * shut; bh = a.h + (b.h - a.h) * t; }
+        if (d < bd) { bd = d; found = true; by = a.y + (b.y - a.y) * t; br = (a.r + (b.r - a.r) * t) * shut; bh = a.h + (b.h - a.h) * t;
+                      const tl = Math.sqrt(L2); btx = dx / tl; btz = dz / tl; }
       }
     }
     if (!found) return null;
-    _cq.d = Math.sqrt(bd); _cq.y = by; _cq.r = br; _cq.h = bh;
+    _cq.d = Math.sqrt(bd); _cq.y = by; _cq.r = br; _cq.h = bh; _cq.tx = btx; _cq.tz = btz;
     return _cq;
   }
   S.corridorAt = corridorAt;
@@ -1103,11 +1293,26 @@ export function makeUndercroft(opts = {}) {
       sh.uniforms.uUcDamp = { value: L.damp };
       sh.uniforms.uUcLevel = { value: L.level };
       sh.uniforms.uUcCut = CUT; sh.uniforms.uUcCutX = CUT_X;      // shared: set once, every material sees it
+      /* AND THE CUT IS THE CHURCH'S ALONE. Every material in here goes
+       * through this shader, so a cylinder meant to open the back wall was
+       * punching the same hole through the CAVE'S OWN ROCK and through the
+       * skin behind it — which is precisely the black hole in the side of
+       * the exit tunnel, a metre past the threshold, that reads as the way
+       * out being "all see through and messed up". The old cave got away
+       * with it only because its rock was clipped short of the wall. */
+      sh.uniforms.uUcCutOn = { value: mat.userData.bwKind === 'church' ? 1 : 0 };
       sh.uniforms.uUcClipX = { value: mat.userData.bwClipX ?? -1e9 };   // the old cave's rock stops at the apse wall
+      /* AND THE CHURCH STOPS AT THE APSE WALL. Its floor slab is one plane
+       * forty metres by twenty-three, and it runs nearly two metres PAST the
+       * back wall — so through the break you looked at a pale grey shelf
+       * lying in the mouth of the cave, which is most of what "the exit is
+       * all see through and messed up" was. Nothing of the building is drawn
+       * beyond its own wall; what floors the threshold is the cave's skin. */
+      sh.uniforms.uUcClipHi = { value: mat.userData.bwClipHi ?? 1e9 };
       mat.userData.bwSh = sh;
       sh.vertexShader = 'varying vec3 vGrimeN; varying vec3 vGrimeP;\n' + sh.vertexShader
         .replace('#include <fog_vertex>', '#include <fog_vertex>\n  vGrimeN = normalize((modelMatrix * vec4(objectNormal, 0.0)).xyz);\n  vGrimeP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-      sh.fragmentShader = 'varying vec3 vGrimeN; varying vec3 vGrimeP;\nuniform float uUcDust, uUcDamp, uUcLevel; uniform vec4 uUcCut; uniform float uUcCutX; uniform float uUcClipX;\n' + sh.fragmentShader
+      sh.fragmentShader = 'varying vec3 vGrimeN; varying vec3 vGrimeP;\nuniform float uUcDust, uUcDamp, uUcLevel; uniform vec4 uUcCut; uniform float uUcCutX; uniform float uUcClipX; uniform float uUcClipHi; uniform float uUcCutOn;\n' + sh.fragmentShader
         /* THE WAY OUT IS CUT THROUGH THE APSE. A cylinder along x through the
          * back wall, WALLS ONLY — a floor or a vault inside the radius is
          * left alone, or the arch stands over a black disc — and the stone
@@ -1125,7 +1330,8 @@ export function makeUndercroft(opts = {}) {
    * does for the lighting. */
   vec3 ucN = normalize(cross(dFdx(vGrimeP), dFdy(vGrimeP)));
   if (vGrimeP.x < uUcClipX) discard;
-  if (uUcCut.w > 0.0 && abs(ucN.y) < 0.6 && abs(vGrimeP.x - uUcCut.x) < uUcCutX) {
+  if (vGrimeP.x > uUcClipHi) discard;
+  if (uUcCutOn > 0.5 && uUcCut.w > 0.0 && abs(ucN.y) < 0.6 && abs(vGrimeP.x - uUcCut.x) < uUcCutX) {
     float cdy = vGrimeP.y - uUcCut.y, cdz = vGrimeP.z - uUcCut.z;
     float ca = atan(cdy, cdz);
     float cr = uUcCut.w * (0.92 + 0.08 * sin(ca * 3.0 + 0.9) + 0.05 * sin(ca * 7.0 - 1.3));
@@ -1331,6 +1537,11 @@ export function makeUndercroft(opts = {}) {
   }
   function composeInner() {
     if (!S.church || !S.passage || !S.cave || S.ready) return;
+    /* THE SKIN IS BUILT LAST, BEHIND A MODEL THAT HAS ALREADY BEEN CARVED.
+     * Fitted to the uncarved scan it would sit behind faces that the carve
+     * then takes away — a hole with the repair a hand's breadth in front of
+     * where the rock used to be, which is to say still in the way. */
+    const skins = [];
     const ch = S.church.walk, pw = S.passage.walk, cw = S.cave.walk;
     if (!ch || !pw || !cw) return;
     // the mouth: the column with the greatest x that has a floor, and where on it
@@ -1435,9 +1646,7 @@ export function makeUndercroft(opts = {}) {
        * and is the rock everywhere it is not. The cave you look at is still
        * the owner's model; what is behind it is no longer the void. */
       gapRuns(inbound);
-      const sleeve = makeBore({ pts: P.map((q) => ({ ...q, r: q.wall ?? q.r })) }, patchMat(findMat(S.passage.root)),
-                              { cap: [true, false], rough: 0.22, grow: 0.60, measure: false, outward: true });
-      group.add(sleeve); S.sleeves.push(sleeve);
+      skins.push({ C: inbound, root: () => S.passage.root, want: null, cap: [true, false] });
       corridorBox(inbound);
       S.corridors.push(inbound);
       mouthCol.w = P[P.length - 1].r * 2;
@@ -1611,9 +1820,34 @@ export function makeUndercroft(opts = {}) {
         S._shellBox.expandByPoint(new THREE.Vector3(cb[0][0] + coff.x, cb[0][1] + coff.y, cb[0][2] + coff.z));
         S._shellBox.expandByPoint(new THREE.Vector3(cb[1][0] + coff.x, cb[1][1] + coff.y, cb[1][2] + coff.z));
         group.updateMatrixWorld(true);
-        const wc = group.localToWorld(new THREE.Vector3(exitEdge, exitFloor + 1.05, off.z));
-        CUT.value.set(wc.x, wc.y, wc.z, 1.25);
+        /* THE BREAK'S BOTTOM SITS ON THE FLOOR, not a hand under it. Centred
+         * 1.05 up with a 1.25 radius the circle reached twenty centimetres
+         * BELOW the chancel's own paving, so the last sliver of it was a
+         * lune with nothing behind it at all. */
+        const CUT_R = 1.42, CUT_Y = 1.46;
+        const wc = group.localToWorld(new THREE.Vector3(exitEdge, exitFloor + CUT_Y, off.z));
+        CUT.value.set(wc.x, wc.y, wc.z, CUT_R);
         CUT_X.value = 1.3;
+        /* and nothing of the building past its own back wall */
+        {
+          /* MEASURED, NOT PICKED: raycast down the chancel's axis and the first
+           * church surface is at exitEdge + 0.06 (its outer skin and the window
+           * backdrop behind it, both in the same plane). Clipped any nearer than
+           * that the APSE WALL ITSELF goes and the tunnel looks into an open
+           * chancel; clipped further and the floor slab — one plane forty metres
+           * by twenty-three that runs nearly two metres past the back wall —
+           * lies in the mouth of the cave as a pale grey shelf, which is what
+           * "the exit is all see through and messed up" was. */
+          const hi = group.localToWorld(new THREE.Vector3(exitEdge + 0.14, 0, 0)).x;
+          S.church.root.traverse((o) => {
+            if (!o.isMesh) return;
+            for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+              if (!m) continue;
+              m.userData.bwClipHi = hi;
+              if (m.userData.bwSh && m.userData.bwSh.uniforms.uUcClipHi) m.userData.bwSh.uniforms.uUcClipHi.value = hi;
+            }
+          });
+        }
         /* AND THE APSE NEEDS A BACK. The church is a single-sided scan, so
          * from the tunnel its end wall is not drawn at all and you look
          * straight through it at the chancel's windows — the cave's own
@@ -1622,11 +1856,31 @@ export function makeUndercroft(opts = {}) {
          * cut's hole through the middle of it, is the wall from this side:
          * the front door's `breach` panel, at the other end of the church. */
         {
-          const ring = new THREE.Mesh(new THREE.RingGeometry(1.28, 9.0, 28, 1),
-                                      patchMat(findMat(S.cave.root, 'MaterialKEInGLANZ') || findMat(S.cave.root)));
+          /* AND THE RING'S INNER RIM IS THE BREAK'S OWN RIM. A round hole in
+           * a ragged one leaves a crescent of wall standing over the arch at
+           * every angle the two disagree — so the annulus is built to the
+           * SAME wobble the shader cuts with, a finger's width inside it, and
+           * plugs the wall exactly. It is the wall from the tunnel side (the
+           * church is a single-sided scan and its back is simply not drawn)
+           * and it is behind the stone from the nave. */
+          const NA = 96, pos = [], idx = [];
+          const rim = (a) => CUT_R * (0.92 + 0.08 * Math.sin(a * 3.0 + 0.9) + 0.05 * Math.sin(a * 7.0 - 1.3)) - 0.06;
+          for (let i = 0; i < NA; i++) {
+            const a = i / NA * Math.PI * 2, r0 = rim(a);
+            pos.push(0, Math.sin(a) * r0, Math.cos(a) * r0);
+            pos.push(0, Math.sin(a) * 9.0, Math.cos(a) * 9.0);
+          }
+          for (let i = 0; i < NA; i++) {
+            const j = (i + 1) % NA, a = i * 2, b = j * 2;
+            idx.push(a, a + 1, b + 1, a, b + 1, b);
+          }
+          const rg = new THREE.BufferGeometry();
+          rg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+          rg.setAttribute('uv', new THREE.Float32BufferAttribute(pos.filter((_, k) => k % 3 !== 0).map((v) => v * 0.3), 2));
+          rg.setIndex(idx); rg.computeVertexNormals();
+          const ring = new THREE.Mesh(rg, patchMat(findMat(S.cave.root, 'MaterialKEInGLANZ') || findMat(S.cave.root)));
           ring.material.side = THREE.DoubleSide;
-          ring.rotation.y = Math.PI / 2;                 // its normal down +x, toward the tunnel
-          ring.position.set(exitEdge + 0.06, exitFloor + 1.05, off.z);
+          ring.position.set(exitEdge + 0.17, exitFloor + CUT_Y, off.z);   // BEHIND the wall's own plane, or it is a slab hung in the chancel
           ring.renderOrder = -2;
           group.add(ring);
           S.apseRing = ring;
@@ -1660,19 +1914,25 @@ export function makeUndercroft(opts = {}) {
            * the owner photographed. The cut in the wall is narrower than the
            * sleeve, so starting a hand PAST the face the stone covers its
            * mouth from every angle and nothing of it is in the room. */
-          const Q = outbound.pts, X0 = exitEdge + 0.15, F = Q[0];
-          const np = Math.max(2, Math.ceil(Math.hypot(F.x - X0, F.z - off.z) / 1.2));
+          const Q = outbound.pts, X0 = exitEdge + 0.24, F = Q[0];
+          const np = Math.max(3, Math.ceil(Math.hypot(F.x - X0, F.z - off.z) / 0.8));
           const pre = [];
+          /* AND THE COLLAR IS WIDER THAN THE BREAK WHERE IT MEETS IT. The
+           * skin is laid on the rock it can see, and at the threshold there
+           * is no rock to see — so what decides it there is the station's own
+           * section, and a section narrower than the hole leaves a rim of the
+           * break with the ring's far side showing through it. It closes onto
+           * the cave's own mouth over a metre and a half. */
           for (let k = 0; k < np; k++) {
-            const t = k / np;
-            pre.push({ x: X0 + (F.x - X0) * t, z: off.z + (F.z - off.z) * t, y: exitFloor + (F.y - exitFloor) * t,
-                       r: Math.min(1.22, (F.wall ?? 1.42) - BODY_MARGIN), h: 2.62, wall: F.wall ?? 1.42, open: true });
+            const t = k / np, e = t * t * (3 - 2 * t);
+            const wide = CUT_R + 0.22, into = Math.min(1.22, (F.wall ?? 1.42) - BODY_MARGIN);
+            pre.push({ x: X0 + (F.x - X0) * t, z: off.z + (F.z - off.z) * t, y: (exitFloor - 0.02) + (F.y - exitFloor + 0.02) * t,
+                       r: wide + (into - wide) * e, h: (CUT_Y + CUT_R) + (2.62 - CUT_Y - CUT_R) * e,
+                       wall: F.wall ?? 1.42, open: true });
           }
           Q.unshift(...pre);
           gapRuns(outbound);
-          const sleeve2 = makeBore({ pts: Q.map((q) => ({ ...q, r: q.wall ?? q.r })) }, patchMat(findMat(S.cave.root, 'MaterialKEInGLANZ') || findMat(S.cave.root)),
-                                   { cap: [false, true], rough: 0.22, grow: 0.60, measure: false, outward: true });
-          group.add(sleeve2); S.sleeves.push(sleeve2);
+          skins.push({ C: outbound, root: () => S.cave.root, want: 'MaterialKEInGLANZ', cap: [false, true] });
           corridorBox(outbound);
           S.corridors.push(outbound);
           const E = Q[Q.length - 1];
@@ -1726,7 +1986,15 @@ export function makeUndercroft(opts = {}) {
     /* the model is carved back out of the walk — both tunnels, once both
      * corridors are in `S.corridors` */
     S.carved = carveTube(S.passage.root) + carveTube(S.cave.root);
-    for (const m of S.sleeves) S.carved += carveTube(m, 0.0);
+    /* and NOW the skin, on what is left of the rock */
+    const t0 = performance.now();
+    for (const K of skins) {
+      const root = K.root();
+      const m = makeBore({ pts: K.C.pts }, patchMat((K.want && findMat(root, K.want)) || findMat(root)),
+                         { cap: K.cap, measure: false, skin: triIndex(root) });
+      group.add(m); S.sleeves.push(m);
+    }
+    S.skinMs = Math.round(performance.now() - t0);
     // the idol on the altar and the candles round it
     dressAltar();
     // dust in the air of both tunnels and the nave

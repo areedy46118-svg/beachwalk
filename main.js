@@ -29215,76 +29215,40 @@ bwGlb('assets/rockmouth.glb', (gltf) => {
    * seven metres short of the thing it is meant to crawl into */
   rockShellColliders(mountain, (x, z) => x < MOUNT_X + 2.0 && Math.abs(z - MOUNT_MOUTH_Z) < 2.3);
   rockShellColliders(mountainExit, (x, z) => z < EXIT_Z + 2.0 && Math.abs(x - EXIT_X) < 2.3);
-  /* AND LOOKING IN IS PITCH BLACK — BUT THE BLACK IS CUT TO THE APERTURE,
-   * NOT GUESSED AT. The scan is an ARCH, not a dome: rays go clean through
-   * it, and what stands behind is the SAND WALL, so without something in the
-   * way you put your face to the cave and see the dune. The black has to go
-   * BETWEEN the arch and the cliff — a plug behind the cliff is drawn behind
-   * it and the dune still shows — and a hand-sized guess at how big it should
-   * be is exactly what the owner photographed: "black png peeking out the top
-   * of the rocks".
-   *
-   * So the opening is MEASURED. A grid of rays is cast at the rock from in
-   * front of it; the cells nothing is hit in are the hole, and the panel is
-   * the largest rectangle that fits inside those cells with a cell of stone
-   * left round it. It cannot stand proud of an outline it was cut from. */
-  /* AND LOOKING IN IS PITCH BLACK — WITH THE BLACK INSIDE THE ROCK'S OWN
-   * HOLLOW. The scan is an ARCH over a real cave: rays through the mouth go
-   * a long way before they meet anything, and what stands beyond is the SAND
-   * WALL, so with nothing in the way you put your face to the cave and see
-   * the dune. Two builds hung a PANEL across the opening instead and the
-   * second is what the owner photographed — "black png peeking out the top
-   * of the rocks" — because a flat rectangle big enough to cover an aperture
-   * is bigger than the stone round it wherever that stone is narrow.
-   *
-   * A BOX DEEP IN THE HOLLOW cannot do that: the rock encloses it, so the
-   * only direction it can be seen from is through the mouth, and its size is
-   * bounded by the hollow rather than guessed against the silhouette. The
-   * mouth's own darkening stays in the shader; this is what is behind it. */
-  /* AND WHAT IS BEHIND THE ARCH IS MEASURED, NOT GUESSED. The scan is an
-   * arch over a real hollow, and beyond it stands the SAND WALL — so with
-   * nothing in the way you put your face to the cave and see the dune. Three
-   * builds put something in the way by eye and all three came out through the
-   * stone somewhere: the owner has photographed a black panel over the top of
-   * the rock and then a black box lying on the sand beside it.
-   *
-   * The box is INSCRIBED IN THE HOLLOW instead. From a point well inside the
-   * mouth, rays are cast in twenty-six directions at the rock itself; the
-   * nearest of them is how much room there is, and a cube of that half-width
-   * fits inside by construction and can be seen from exactly one direction —
-   * through the opening. If the hollow turns out too small to hold one, none
-   * is built and the mouth's own darkening carries it. */
-  const darkPlug = (holder, axis, front, mid, name) => {
+  const darkPlug = (holder, axis, box, name) => {
+    /* AND WHAT IS BEHIND THE ARCH IS NOT THE HOLLOW — IT IS THE SAND WALL.
+     * A cube was inscribed deep in the rock's own cave here and it did
+     * nothing at all, because the thing you actually see through the mouth
+     * stands in FRONT of that cave: the cliff. Measured down the mouth's own
+     * axis, the first surface a ray meets is the dune at x = 16.08, while the
+     * inscribed cube sat at 20.4 — four metres behind it. So the owner put
+     * his face to a cave and looked at a moonlit beach.
+     *
+     * The black goes BETWEEN the arch and the dune, and how big it may be is
+     * a question about the STONE, not about the hollow: swept live against
+     * the scan, with the rock rendered near/deep by world depth and the box
+     * rendered in and out, the largest one that never covers NEAR rock from
+     * twelve approaches. Entrance 0.017 % of the frame over twelve views,
+     * exit 0.002 %; what it covers of the aperture is 2.4 % and 0.45 %.
+     * Written down rather than measured at load, because the scan is eighty-
+     * five thousand triangles and this is a dozen thousand rays. */
     holder.updateWorldMatrix(true, true);
-    const rc = new THREE.Raycaster(); rc.far = 40;
-    const dirs = [];
-    for (const x of [-1, 0, 1]) for (const y of [-1, 0, 1]) for (const z of [-1, 0, 1]) {
-      if (!x && !y && !z) continue;
-      dirs.push(new THREE.Vector3(x, y, z).normalize());
-    }
-    let best = null;
-    for (const depth of [3.0, 4.0, 5.0, 6.0, 7.0]) for (const yc of [1.6, 2.2, 2.8]) {
-      /* INWARD IS +x AT THE ENTRANCE AND +z AT THE EXIT. Both mouths face the
-       * walk — the entrance's toward -x and the exit's toward -z — so the
-       * hollow is at greater x and greater z respectively. Probing the wrong
-       * way found no room at the exit at all and built nothing. */
-      const c = axis === 'x' ? new THREE.Vector3(front + depth, yc, mid) : new THREE.Vector3(mid, yc, front + depth);
-      let room = 1e9;
-      for (const d of dirs) { rc.set(c, d); const h = rc.intersectObject(holder, true); room = Math.min(room, h.length ? h[0].distance : 0); }
-      if (room > 1e8 || room <= 0) continue;
-      if (!best || room > best.room) best = { c, room };
-    }
-    if (!best || best.room < 1.0) return null;
-    const half = (best.room - 0.25) / Math.sqrt(3);
-    const plug = new THREE.Mesh(new THREE.BoxGeometry(half * 2, half * 2, half * 2),
-      new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide, fog: false }));
-    plug.position.copy(best.c);
+    /* FrontSide, not Double: the mouth is walkable a few metres in, and a
+     * black box you can stand inside blacks out the whole screen. Seen from
+     * the beach its outward faces are drawn; seen from within, they are
+     * culled and you are simply in the rock. */
+    const plug = new THREE.Mesh(new THREE.BoxGeometry(box[1] - box[0], box[3] - box[2], box[5] - box[4]),
+      new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.FrontSide, fog: false }));
+    plug.position.set((box[0] + box[1]) / 2, (box[2] + box[3]) / 2, (box[4] + box[5]) / 2);
     plug.name = name;
     holder.parent.add(plug);                       // in `rockGroup`, in world metres: the holders are scaled 18
-    return [+best.room.toFixed(2), +(half * 2).toFixed(2), best.c.toArray().map((v) => +v.toFixed(1))];
+    return [name, plug.position.toArray().map((v) => +v.toFixed(2))];
   };
-  window.__bwPlug = [darkPlug(mountain, 'x', MOUNT_FRONT_X, MOUNT_MOUTH_Z, 'mouthDark'),
-                     darkPlug(mountainExit, 'z', EXIT_FRONT_Z, EXIT_X, 'exitDark')];
+  window.__bwPlug = [
+    darkPlug(mountain, 'x', [MOUNT_FRONT_X + 1.0, MOUNT_FRONT_X + 2.7, -1.2, 4.2,
+                             MOUNT_MOUTH_Z - 2.2, MOUNT_MOUTH_Z + 2.0], 'mouthDark'),
+    darkPlug(mountainExit, 'z', [EXIT_X - 0.9, EXIT_X + 2.9, -1.2, 3.6,
+                                 EXIT_FRONT_Z + 2.2, EXIT_FRONT_Z + 6.1], 'exitDark')];
 });
 /* AND THE ROCK IS SOLID, WHICH THREE CYLINDERS COULD NEVER MAKE IT. "I clip
  * through the entrance rock" was a footprint thirty metres across answered by
