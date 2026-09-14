@@ -4533,12 +4533,45 @@ second down, 1.33 s up — **2.94 s**, against the alien's three and a half,
 because the owner has to be able to keep fighting.
 
 And `knockP` is a die, which is right for a creature you meet once. The
-knight's is a COUNT: three blows that are both HEAVY and through his poise —
-the hardest thing in the fight to do once, let alone three times — and he
-goes over, gets up, and the tally starts again. You cannot land it by luck
-and you cannot be denied it by luck. **`u.st.down` is undefined until the
-first knockdown and `undefined <= 0` is FALSE**, so the first build counted
-to eight and never put him down.
+knight's is a COUNT, and he goes over, gets up, and the tally starts again.
+You cannot land it by luck and you cannot be denied it by luck. **`u.st.down`
+is undefined until the first knockdown and `undefined <= 0` is FALSE**, so
+the first build counted to eight and never put him down.
+
+**AND THE COUNT WAS OF THE WRONG THING, WHICH MADE IT UNREACHABLE.** It was
+written as three blows both heavy AND through his poise — "the hardest thing
+in the fight to do once, let alone three times", which was the point and was
+also the fault. Modelled and then measured against the real `hurtMutant`:
+with an eleven-point pool refilling at 1.7 a second, a break lands on a heavy
+only when every heavy lands and none is blocked, the third break arrives on
+the TWELFTH heavy, and the katana at three a blow has him dead on the
+thirteenth. One knockdown a fight, on the frame before the kill, in a fight
+played perfectly; in a real one, none. The owner's "the animations where he
+falls over are not working at all" was a fall that could not be earned, and
+nothing was wrong with the fall. It counts what he asked for — heavies that
+LAND, five of them inside one stretch of pressure (`knockLapse`, on the same
+idle clock the poise refills on) — and a fight that keeps the pressure on
+sees him go over once or twice. **When a mechanic gated on a rare event
+never appears, count how often the event can happen before the fight ends.**
+
+**AND THE FIRST FIX OF THAT MADE IT WORSE, BECAUSE OF WHERE THE TALLY
+LIVED.** `hurtMutant`'s poise block RETURNS on a blow he absorbs (`if
+(u.st.poise > 0) { ...; return false; }`), and the tally sat below it — so
+dropping the `poiseBroke` condition changed nothing, since the line was only
+ever reached on a break, and raising the count from three to five turned
+twelve heavies into twenty. Measured on the real path: zero knockdowns in
+every fight. A count of "blows that land" has to be taken on EVERY exit the
+landing blow can leave by. Measured after, katana at a heavy every 1.5 s:
+two knockdowns a fight, the first at 23 of his 38; spaced 8.5 s apart, none.
+
+**AND A REEL THAT MOVES HIM STILL OBEYS THE ROOM.** `mutClampX` is called
+from every movement branch and the knockdown is not one — it rebuilds his
+position from `hitFrom` plus the clip's own travel and returns — so a fall's
+metre and a half could carry him through a pier and stand him up inside it,
+where the chase's own clamp then shoved him out a hand a frame. The down
+branch clamps too now, and the correction is folded back into `hitFrom`,
+because a position that is rebuilt from a stored point every frame forgets
+any clamp it is not told about and re-fights it every frame.
 
 **AND THE BENEFIT OF THE DOUBT WENT TO WHICHEVER LIMB HAPPENED TO BE NEAR
 YOU.** `blowLands` falls back to "he is facing you, you are in reach, his

@@ -19229,6 +19229,7 @@ function hurtMutant(u, dmg, P = 0) {
     return false;
   }
   let poiseBroke = false;
+  const heavyBlow = P >= MUT_HEAVY || digOverhead;   // read on both exits of the poise block, and past a riposte
   if ((u.kind.poise || u.kind.block) && u.st.stun <= 0) {
     /* LIGHT BY HOW IT WAS THROWN, NOT BY WHAT IT TAKES. This read `dmg < 2`,
      * which was the same thing while every click did one — and the katana's
@@ -19281,6 +19282,16 @@ function hurtMutant(u, dmg, P = 0) {
        * camera, and blood crossing your view is a thing steel never does. */
       sprayBlood(u.g.position.x, _by, u.g.position.z, -_hitC.x, -_hitC.z, 10 + Math.round(P * 6), 0.7 + P * 0.3);
       stampBlood(u.g.position.x + _hitC.x * 0.45, u.g.position.z + _hitC.z * 0.45, 0.34 + Math.random() * 0.3, u.g.position.y + 0.2);
+      /* AND A HEAVY HE ABSORBS STILL COUNTS TOWARD PUTTING HIM DOWN. This
+       * branch returns — the blow was taken on his poise and he does not
+       * flinch — and the tally used to live below it, so only a heavy that
+       * BROKE the pool was ever counted: one in four at best, and with the
+       * katana he was dead before the third. The count is of heavies that
+       * land, whichever way they land. */
+      if (u.kind.knockAfter && heavyBlow && !woke) {
+        u.st.headHits = (u.st.headHits || 0) + 1;
+        if (u.st.headHits >= u.kind.knockAfter) { u.st.headHits = 0; mutKnockdown(u); }
+      }
       return false;
     }
     u.st.poise = u.kind.poise;
@@ -19341,12 +19352,24 @@ function hurtMutant(u, dmg, P = 0) {
    * a die is right for a creature you meet once — but the owner's word for
    * the knight is that ENOUGH HEAVIES TO THE HEAD put him down, which is a
    * count, not a chance: you cannot land it by luck and you cannot be
-   * denied it by luck either. A heavy that goes through his poise is the
-   * hardest thing in the fight to land; `knockAfter` of them and he goes
-   * over. The tally resets when he does, so it is a thing you can do more
-   * than once and have to earn every time. */
-  const heavyBlow = P >= MUT_HEAVY || digOverhead;
-  if (u.kind.knockAfter && poiseBroke && heavyBlow && !woke) {
+   * denied it by luck either. `knockAfter` heavies landed in one stretch
+   * of pressure and he goes over. The tally resets when he does, so it is a
+   * thing you can do more than once and have to earn every time. */
+  /* AND IT IS A COUNT OF HEAVIES, NOT OF POISE BREAKS — because the second
+   * was never reachable. Gated on the blow ALSO breaking his poise, the
+   * tally needed three breaks that each happened to land on a heavy: with an
+   * eleven-point pool refilling at 1.7 a second, that is a heavy landed every
+   * 1.2 s or better with none blocked — and with the katana taking three a
+   * blow, the third break arrives on the twelfth heavy and he is dead on the
+   * thirteenth. Modelled at any real cadence: ZERO knockdowns a fight. The
+   * owner's "the animations where he falls over are not working at all" was
+   * a fight in which the fall could not be earned. His word was "enough
+   * heavies to the head", and that is what is counted: a heavy that LANDS
+   * (a blocked one never reaches this line), inside a stretch of pressure —
+   * the tally lapses if he is left alone (`knockLapse`, on the same idle
+   * clock his poise refills on), so it is a thing you do in one push and
+   * not a sum over the whole fight. */
+  if (u.kind.knockAfter && heavyBlow && !woke) {
     u.st.headHits = (u.st.headHits || 0) + 1;
     // `down` is undefined until the first knockdown, and `undefined <= 0` is
     // FALSE — so the count climbed for ever and he never went over
@@ -21022,6 +21045,8 @@ function updateMutantUnit(u, dt) {
     u.st.poiseT = (u.st.poiseT || 0) + dt;
     if (u.st.poiseT > (u.kind.poiseWait || 1.4) && u.st.poise < u.kind.poise)
       u.st.poise = Math.min(u.kind.poise, u.st.poise + (u.kind.poiseBack || 1.6) * dt);
+    // and the heavies-to-the-head tally lapses on the same idle clock
+    if (u.st.headHits && u.st.poiseT > (u.kind.knockLapse || 8)) u.st.headHits = 0;
   }
   /* ON HIS BACK, AND NOTHING ELSE MATTERS WHILE HE IS. Ahead of the roar,
    * the stun and the recoil: a creature on the ground is not guarding, not
@@ -21052,6 +21077,17 @@ function updateMutantUnit(u, dt) {
         const tr = clipTravelAt(u, u.kind.riseClip, (s - KN.fall - KN.lie) / KN.rise);
         if (tr) p.x += tr.x * cr + tr.y * sr, p.z += -tr.x * sr + tr.y * cr;
       }
+      /* AND THE REEL STILL OBEYS THE ROOM. `mutClampX` runs from every
+       * movement branch and none of them is this one, so a fall's metre and
+       * a half of travel went straight through a pier and stood him up
+       * inside it — where the chase's own clamp then shoved him out a hand
+       * at a time, which is the glitching this file has spent a fortnight
+       * taking out of him. The correction is folded back into `hitFrom`,
+       * because the position is rebuilt from it every frame and a clamp
+       * that is not remembered is re-fought every frame. */
+      const cx = p.x, cz = p.z;
+      mutClampX(u, p, dt);
+      u.hitFrom.x += p.x - cx; u.hitFrom.z += p.z - cz;
     } else if (s < KN.fall) {
       const k = Math.min(1, s / KN.fall);
       p.copy(u.hitFrom).addScaledVector(u.hitDir, KN.slide * k * (2 - k));
@@ -29428,7 +29464,12 @@ MUT_KINDS.knight = {
    * a 1.33 s get-up — a shade under three seconds, against the alien's three
    * and a half. And he has a real `riseClip`, so he stands up the way the
    * animator drew it rather than by playing his own fall backwards. */
-  knockClip: 'knockOut', riseClip: 'getUp', knockAfter: 3,
+  /* FIVE heavies landed inside a stretch (the tally lapses after seven
+   * seconds without a hit). Five is fifteen of his thirty-eight to the
+   * katana and ten to the shovel, so a fight that keeps the pressure on sees
+   * him go over once or twice and a fight that does not never does — which
+   * is "fairly rare" measured against the whole fight, not against luck. */
+  knockClip: 'knockOut', riseClip: 'getUp', knockAfter: 5, knockLapse: 7,
   /* AND `slide` IS NULL BECAUSE THE REELS CARRY THEIR OWN TRAVEL. A number
    * here is a distance along the line the blow came in on, which is a guess;
    * `knockOut` moves him 1.41 m and mostly ACROSS that line, and the game
