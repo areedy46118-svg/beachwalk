@@ -3655,6 +3655,54 @@ have just done is worse.
   33 swings and 35 damage a minute, all three close swings used evenly,
   closing to 1.1 m — the Dealer is 48 and 40, the SCP 43 and 41.
 
+**AND THE KNIGHT GOT THE OWNER'S OWN MOVES, AND THREE OF MINE.** Six Mixamo
+clips — a punch, a sweep, a jump attack, a run and two guards — off the same
+rig the red alien's three came off, and `ntarRetarget` did not need a line
+changed to put them on an Unreal mannequin instead: what the file carries is
+the rotation a bone has UNDERGONE, which knows nothing about either skeleton,
+and the map between the namings is `kind.rag`, which every creature that can
+fall over already has. `tools/ntar_moves.py` takes a set name now. Mixed in
+with them: a two-handed overhead with a second and a half of hang, a backhand
+the other way, and a STOMP — the one blow of his that comes from a leg, so the
+answer to it is not the answer to the others, and his rig carries the right
+leg as an extra chain for it.
+
+- **HE IS IN THE ROOM WHEN YOU WALK IN, DRAWN.** Not `visible = false` — that
+  is a thing appearing, and this is a thing you did not see. He stands there
+  asleep and dead still in the one part of the room the candles are kept out
+  of, and what keeps him dark is the LIGHTING.
+- **NINETY-FIVE CANDLES, AND A HOLE IN THEM.** Thirty-one round the altar left
+  a forty-metre nave that was black past the dais. There are clusters down it
+  now — in GROUPS of three to seven with dark between, because an even scatter
+  reads as lighting and a group reads as people — and nothing at all within
+  5.6 m of the wall he stands against. The dais ring is subject to it too: with
+  it in, the nearest flame to him was 0.72 m.
+- **"HE KEEPS LAGGING ALL OVER" WAS A BODY WEDGED IN A WALL.** His body radius
+  is 1.15 m and he was stood exactly that off the last walkable cell — which is
+  to say touching it, permanently overlapping, so the room's push-out fought
+  his chase every frame and he crossed the nave in jumps. Measured before: a
+  single frame of 0.317 m, an implied 19 m/s. He is stood clear of it now and
+  the spot is CHECKED against the walk, and the room's clamp uses three
+  quarters of his body — the Dealer's own lesson, that a disc wide enough for
+  the fight is wider than anything can stand in. After: median 6.0 m/s, peak
+  9.4, no jumps.
+- **AND HE GOES THROUGH THE PEWS.** Every breakable here has one door — a
+  `physProps` entry with an `onImpact` — and the blade, a thrown body and a
+  landing all use it; a three-and-a-half-metre knight is the fourth. The blow
+  is his own speed, so shouldering one aside taps it apart and running one
+  down throws it across the nave.
+- **AND THE TUNNEL STOPS AT THE CHURCH'S DOOR.** local.yany's cave is 147 m of
+  rock and the church is set against the last station the WALK uses, which is
+  not the last rock the model DRAWS — so the far end carried on through the
+  doorway. Clipped in world x in the same shader the church's own far end is.
+
+Measured, standing at the altar: 49 swings and 46 damage a minute, all five
+close moves used (punch 17, sweep 16, backhand 6, overhead 5, stomp 5). The
+Dealer is 48 and 40. **And three readings of "0 damage" before it were the
+harness calling `heal()` BEFORE it read `hp`**, which erases every landed blow
+in the frame that dealt it; a fourth was `devMode`, which turns a creature's
+swinging off outright.
+
 ## Dev mode
 
 `DEFAULT_SETTINGS` are the owner's own (music 30 %, waves 18 %, effects

@@ -1947,6 +1947,27 @@ export function makeUndercroft(opts = {}) {
        * BEHIND the scan everywhere the scan is there — you never see it —
        * and is the rock everywhere it is not. The cave you look at is still
        * the owner's model; what is behind it is no longer the void. */
+      /* AND THE TUNNEL STOPS AT THE CHURCH'S DOOR. local.yany's cave is 147 m
+       * of rock and the church is set against the last station the WALK uses,
+       * which is not the last rock the model draws — so the far end of the
+       * tunnel carried on straight through the doorway and what you saw
+       * standing five metres short of the nave was stone filling the frame.
+       * "It doesn't match up right when you walk in the church."
+       *
+       * It is clipped, in world x, in the same shader the church's own far
+       * end is clipped in — a hand PAST the doorway, so the bore's mouth is
+       * inside the breach and the join has no seam on either side of it. */
+      {
+        const hiX = group.localToWorld(new THREE.Vector3(low.x + GAP + 0.55, 0, 0)).x;
+        S.passage.root.traverse((o) => {
+          if (!o.isMesh) return;
+          for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+            if (!m) continue;
+            m.userData.bwClipHi = hiX;
+            if (m.userData.bwSh && m.userData.bwSh.uniforms.uUcClipHi) m.userData.bwSh.uniforms.uUcClipHi.value = hiX;
+          }
+        });
+      }
       gapRuns(inbound);
       /* AND NOTHING IS SWEPT BEHIND IT. A skin exists to close the holes in a
        * model; this one is a closed cave and the owner's word is an exact
@@ -2449,10 +2470,17 @@ export function makeUndercroft(opts = {}) {
     const rx = Math.max(0.42, (A.x1 - A.x0) / 2 - 0.16), rz = Math.max(0.55, (A.z1 - A.z0) / 2 - 0.16);
     for (let k = 0; k < 13; k++) {
       const a = -Math.PI * 0.86 + (k / 12) * Math.PI * 1.72;    // the open side faces down the nave
-      spots.push({ x: A.x + Math.cos(a) * rx * (0.86 + rnd() * 0.2),
-                   z: A.z + Math.sin(a) * rz * (0.86 + rnd() * 0.2),
-                   y: A.y, hgt: 0.13 + rnd() * 0.20, r: 0.026 + rnd() * 0.012 });
+      const hx = A.x + Math.cos(a) * rx * (0.86 + rnd() * 0.2);
+      const hz = A.z + Math.sin(a) * rz * (0.86 + rnd() * 0.2);
+      spots.push({ x: hx, z: hz, y: A.y, hgt: 0.13 + rnd() * 0.20, r: 0.026 + rnd() * 0.012 });
     }
+    /* AND THE DARK CORNER IS DECIDED BEFORE ANY CANDLE IS PLACED. The wall to
+     * the left of the altar is where the knight stands and the whole of the
+     * first beat is that you did not see him — so the ring at the foot of the
+     * dais is kept out of it as well as the clusters down the nave. It reaches
+     * a long way round, and with it in, the nearest flame to him was 0.72 m. */
+    const DARK = { x: A.x - 1.6, z: A.z - 4.2 }, DARK_R = 5.6;
+    const clear = (x, z) => (x - DARK.x) * (x - DARK.x) + (z - DARK.z) * (z - DARK.z) > DARK_R * DARK_R;
     for (let k = 0; k < 18; k++) {
       const a = (k / 18) * Math.PI * 2 + rnd() * 0.12;
       const q = 0.9 + rnd() * 0.5;
@@ -2467,9 +2495,42 @@ export function makeUndercroft(opts = {}) {
        * arranged around: the dais is a step and the ring reaches past its
        * front edge, so the ones at the bottom of it stood a third of a
        * metre in the air over the nave floor. The gibs learned this once. */
+      if (!clear(x, z)) continue;
       const f = S.floorAt(x, z);
       spots.push({ x, z, y: f === null || Math.abs(f - A.dais) > 1.2 ? A.dais : f,
                    hgt: 0.16 + rnd() * 0.30, r: 0.030 + rnd() * 0.016 });
+    }
+    /* ---- AND THE REST OF THE ROOM IS LIT BY THEM TOO, EXCEPT ONE CORNER.
+     * Thirty-one candles round the altar leave a forty-metre nave that is
+     * black past the dais, and the owner asked for the room dimly lit — so
+     * there are clusters down it: at the foot of the piers, along both
+     * walls, and a few knocked-over handfuls on the floor where somebody
+     * stood. They are somebody's offerings, so they go in GROUPS of three to
+     * seven with dark between, never scattered evenly: an even scatter reads
+     * as lighting and a group reads as people.
+     *
+     * AND THE DARK CORNER IS KEPT DARK, BY CONSTRUCTION. The wall to the
+     * left of the altar is where the knight stands, and the whole of the
+     * first beat is that you did not see him — so nothing is placed within
+     * `DARK_R` of it. It is derived from the altar the same way his own
+     * position is, rather than written down twice. */
+    let groups = 0;
+    for (let g = 0; g < 30 && groups < 13; g++) {
+      // somewhere down the nave, biased to the sides where a pier would be
+      const back = 4 + rnd() * 30;                       // metres back from the altar
+      const side = (rnd() < 0.5 ? -1 : 1) * (2.2 + rnd() * 5.0);
+      const cx = A.x - back, cz = A.z + side;
+      if (!clear(cx, cz)) continue;
+      const f = S.floorAt(cx, cz);
+      if (f === null) continue;
+      groups++;
+      const n = 3 + Math.floor(rnd() * 5);
+      for (let k = 0; k < n; k++) {
+        const x = cx + (rnd() - 0.5) * 0.85, z = cz + (rnd() - 0.5) * 0.85;
+        if (!clear(x, z)) continue;
+        const ff = S.floorAt(x, z);
+        spots.push({ x, z, y: ff === null ? f : ff, hgt: 0.12 + rnd() * 0.26, r: 0.026 + rnd() * 0.014 });
+      }
     }
     // a few burnt down to stubs, because a shrine is old
     for (const sp of spots) if (rnd() < 0.22) sp.hgt *= 0.32;
