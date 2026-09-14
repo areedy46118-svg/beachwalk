@@ -42,6 +42,9 @@ NC = {'SCALAR': 1, 'VEC2': 2, 'VEC3': 3, 'VEC4': 4, 'MAT2': 4, 'MAT3': 9, 'MAT4'
 ARRAY_BUFFER, ELEMENT_ARRAY_BUFFER = 34962, 34963
 
 
+OPEN_SKY = False       # a roofless place: a floor needs nothing over it
+
+
 def log(*a):
     print('[undercroft]', *a); sys.stdout.flush()
 
@@ -136,6 +139,7 @@ def decimate(P, UV, I, budget):
 # ---- the walk ------------------------------------------------------------
 CELL = 0.20
 HEADROOM = 1.25          # the cave squeezes to a metre and a half in places; the game ducks the camera under the roof (`ceil`)
+STEP = 0.42              # the game's own ROCK_STEP: under this you step up, over it you walk into
 BAND = (0.35, 1.20)      # the body: below it you step over a thing, above it you duck under one (a low roof, a mine frame's beam)
 STEP = 0.42
 
@@ -196,6 +200,30 @@ def build_walk(meshes, bench_ids, door_box):
         ys = sorted(y for (y, ny, b) in samples)
         floor = None; ceil = None
         last = None
+        if OPEN_SKY:
+            # AN OPEN-AIR PLACE HAS ONE FLOOR AND EVERYTHING ELSE IS IN THE
+            # WAY. Climbing to the first surface with head-room over it is how
+            # you choose a STOREY in a cave, and under the sky it is actively
+            # wrong: a wall cell fails the test at the ground (the wall is the
+            # thing over it), climbs, and reports the TOP OF THE WALL as the
+            # floor. Measured on the dojo: every wall in the place came out
+            # walkable and not one cell in the whole arena was solid. The
+            # lowest near-horizontal surface is the ground; what stands on it
+            # is what `solid` is for.
+            if not ups:
+                return None, True, None
+            # AND THE LOWEST SURFACE IN A CELL IS THE UNDERSIDE OF THE FLOOR.
+            # Winding is not read here (it is not read anywhere in this file),
+            # so a slab contributes its bottom face as well as its top, and the
+            # bottom is lower: the dojo's floor came out at -0.33 against a top
+            # at 0.03, which is knee-deep in it. Everything within a STEP of the
+            # lowest is the same ground — the game's own `ROCK_STEP` rule, that
+            # anything whose crown lands under a step is walked up rather than
+            # walked into — so the slab's top wins and the shelf above it does
+            # not.
+            base = ups[0]
+            floor = max(y for y in ups if y <= base + STEP)
+            return floor, any(floor + BAND[0] < y < floor + BAND[1] for y in ys), None
         for h in ups:
             if last is not None and h - last < 0.15:
                 continue                                  # the same surface, resampled
@@ -205,7 +233,15 @@ def build_walk(meshes, bench_ids, door_box):
                 if y > h + 0.30:
                     above = y; break
             if above is None:
-                break                                     # nothing over it: the top of the rock
+                # NOTHING OVER IT IS THE TOP OF THE ROCK — OR THE SKY. In a
+                # cave a surface with no roof is the outside of the hill and
+                # must never be walkable, which is the whole of this test. The
+                # dojo is roofless: it burnt down. Under an open sky the same
+                # test throws away every floor in the place (measured: 56
+                # walkable cells out of 60,099), so there it is the ground.
+                if OPEN_SKY:
+                    floor = h; ceil = None; break
+                break
             if above - h >= HEADROOM:
                 floor = h; ceil = above; break
         if floor is None:
@@ -308,9 +344,9 @@ def split_benches(P, UV, I):
 
 
 def main():
-    global HEADROOM
+    global HEADROOM, OPEN_SKY
     ap = argparse.ArgumentParser()
-    ap.add_argument('kind', choices=['cave', 'church', 'passage'])
+    ap.add_argument('kind', choices=['cave', 'church', 'passage', 'dojo'])
     ap.add_argument('src'); ap.add_argument('dst')
     ap.add_argument('--tex', type=int, default=1024)
     ap.add_argument('--quality', type=int, default=86)
@@ -320,10 +356,12 @@ def main():
     ap.add_argument('--sparse', action='store_true', help='write the walk as a list of the cells that have a floor (a long thin tunnel is 95%% empty bounding box)')
     ap.add_argument('--trim', type=float, default=None, help='drop everything whose baked x is below this (halve a tunnel that is too long; the cut end is capped by the game)')
     ap.add_argument('--islands', type=int, default=0, help='drop connected islands smaller than this many triangles — a game tunnel is full of loose decoration slabs floating in the bore')
+    ap.add_argument('--open-sky', action='store_true', help='a roofless place: a near-horizontal surface is a floor with nothing over it')
     ap.add_argument('--headroom', type=float, default=HEADROOM, help='the least roof a cell may have over its floor and still be floor (the crouch is 1.03)')
     a = ap.parse_args()
-    budget = a.budget or {'cave': 240000, 'church': 260000, 'passage': 60000}[a.kind]
+    budget = a.budget or {'cave': 240000, 'church': 260000, 'passage': 60000, 'dojo': 180000}[a.kind]
     HEADROOM = a.headroom
+    OPEN_SKY = a.open_sky or a.kind == 'dojo'
 
     root = os.path.dirname(os.path.abspath(a.src))
     g = json.load(open(a.src))
@@ -338,7 +376,7 @@ def main():
     # ---- gather every primitive in world space, merged per (node, material)
     groups = {}          # (node name, material index) -> [P, UV, I]
     order = []
-    skip_re = {'church': ('Sun', 'Doors_Old_Wooden_1.003'), 'cave': (), 'passage': ()}[a.kind]
+    skip_re = {'church': ('Sun', 'Doors_Old_Wooden_1.003'), 'cave': (), 'passage': (), 'dojo': ()}[a.kind]
     def walk(ni, parent):
         n = nodes[ni]
         m = mat_mul(parent, node_matrix(n))
@@ -481,8 +519,20 @@ def main():
     if a.kind == 'church':
         # the end wall's door: measured off the door plane (x -24.5, y -15.1..-9.3, z ±2)
         door_box = [-25.3, -14.7, -2.05, -23.7, -9.3, 2.05]   # the WALL over the doorway, not the floor under it
+    # THE RAIN IS NOT A WALL AND THE GRASS IS NOT A FLOOR. The dojo ships two
+    # rain meshes that span the whole scene from the ground to thirty metres
+    # up, a sky dome and five grass fields — rasterise those into the walk and
+    # the arena is one solid block with a lawn for a ceiling. Weather, sky and
+    # ground cover are drawn and never collided; the building, its props and
+    # the floor under them are what you can stand on and walk into.
+    # `SkyAndGround1` is NOT in this list: it is the sky dome AND the ground
+    # under the whole scene in one mesh, so dropping it leaves the yard with
+    # nothing to stand on. Its dome rises through the body band out at the
+    # horizon, which is exactly the wall that keeps you in the place.
+    NO_WALK = ('Rain', 'Grass1', 'Splash248')
     walk_in = [(pos, tris, is_bench) for (name, mi, pos, uvs, tris, is_bench) in packed
-               if not (a.kind == 'church' and mats[mi].get('name') == 'ampoule')]
+               if not (a.kind == 'church' and mats[mi].get('name') == 'ampoule')
+               and not (a.kind == 'dojo' and mats[mi].get('name') in NO_WALK)]
     walk = build_walk(walk_in, None, door_box)
     if door_box: walk['door'] = door_box
     if bench_boxes: walk['benches'] = bench_boxes
@@ -500,6 +550,13 @@ def main():
             if zs:
                 mid = zs[len(zs) // 2]
                 log('  cave floor at x=%.1f: z %.1f..%.1f, floor %.2f at z %.1f' % (x, zs[0][0], zs[-1][0], mid[1], mid[0]))
+    elif a.kind == 'dojo':
+        b = walk['bounds']
+        cx, cz = (b[0][0] + b[1][0]) / 2, (b[0][2] + b[1][2]) / 2
+        log('  dojo bounds %s .. %s' % ([round(v, 2) for v in b[0]], [round(v, 2) for v in b[1]]))
+        log('  dojo floor at the middle: %s' % floor_at(cx, cz))
+        n = sum(1 for j in range(walk['gh']) for i in range(walk['gw']) if walk['floor'][j][i] > -90)
+        log('  dojo walkable cells: %d of %d' % (n, walk['gw'] * walk['gh']))
     else:
         log('  church floor at the door: %s, at the altar: %s' % (floor_at(-23.5, 0), floor_at(3, 0)))
 
@@ -565,7 +622,7 @@ def main():
         ia = len(accessors); accessors.append({'bufferView': emit(ib, ELEMENT_ARRAY_BUFFER), 'componentType': 5125 if wide else 5123, 'count': len(tris) * 3, 'type': 'SCALAR'})
         meshes.append({'name': name, 'primitives': [{'attributes': {'POSITION': pa, 'TEXCOORD_0': ua}, 'indices': ia, 'material': mi}]})
         out_nodes.append({'name': name, 'mesh': len(meshes) - 1})
-    root_node = {'name': 'undercroft_' + a.kind, 'children': list(range(1, len(out_nodes) + 1)),
+    root_node = {'name': ('bw_' if a.kind == 'dojo' else 'undercroft_') + a.kind, 'children': list(range(1, len(out_nodes) + 1)),
                  'extras': {'bw_walk': json.dumps(walk, separators=(',', ':'))}}
     g['nodes'] = [root_node] + out_nodes
     g['meshes'] = meshes

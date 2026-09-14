@@ -512,6 +512,42 @@ the altar (`assets/cave.glb`, decimated and packed with its walk by
 `tools/undercroft_pack.py`). One of its three materials carries no texture at
 all — it is the lamps on the posts, not rock.
 
+This work is based on ["Portal"](https://sketchfab.com/3d-models/portal-3279b8d99fe244059c40a66e8aa39590)
+by [DJMaesen](https://sketchfab.com/bumstrum) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the stone circle on the
+sand a hundred metres past the cave (`assets/portal.glb`, through
+`tools/gltfpack.py`; its spec-gloss material is rewritten to metallic-roughness,
+which three r160 needs). The light turning over inside the ring is not the
+model — it is built round it.
+
+This work is based on ["Scorched Dojo"](https://sketchfab.com/3d-models/scorched-dojo-b6fc27abbe984d4ea3997941382b665f)
+by [matiasmgru](https://sketchfab.com/matiasmgru) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — what is on the other
+side of the portal (`assets/dojo.glb`, packed by `tools/undercroft_pack.py` with
+its walk grid inside it). Its rain is driven by the game, not by the model's own
+clip, which cannot survive a world-space bake.
+
+"Samurai japanese free low-poly 3d model" by
+[adrigon](https://www.cgtrader.com/adrigon) (CGTrader, free licence) — the man
+who wants his sword back (`assets/samurai.glb`, through
+`tools/samurai_pack.py`). He ships a Rigify control rig with 678 pose
+constraints and exactly one animation, a 38-frame `Swing`. His move set - a
+side cut, a rising kesa, a turning cut, a thrust and an overhead - is authored
+in that packer instead. It is RETARGETED Mixamo animation now - eight clips
+supplied by the owner (Great Sword Slash x2, Sword and Shield Slash, two
+Kicks, Blocking, Crouching, Run), mapped onto his Rigify skeleton by
+`tools/samurai_pack.py`, trimmed to the strike and measured for their
+contact frames. The taunt, the stagger and the death stay authored. The
+shipped swing ships under its own name and the
+fight does not draw it, because it begins and ends in the artist's stance while
+every authored swing begins and ends on the guard.
+
+The Elden Ring katana animations (MCO/SCAR, for Skyrim) supplied alongside are
+NOT in the build and cannot be: they are Havok spline-compressed `.hkx` and the
+archive carries no skeleton, so the tracks are bare indices into a bone list
+that is not there. Their annotation track IS readable, and the startup and
+contact timings in `MUT_ATTACKS.s*` are taken from it.
+
 This work is based on ["Old church modeling - Interior Scene"](https://sketchfab.com/3d-models/old-church-modeling-interior-scene-eb6cf543aa7d45e3acee49887ae3135c)
 by [Aurélien Martel](https://sketchfab.com/aurelien_martel) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the church at the bottom of
