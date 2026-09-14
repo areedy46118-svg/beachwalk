@@ -1488,7 +1488,7 @@ export function makeUndercroft(opts = {}) {
      * material — but the default kind is still 'cave', so it stays as the
      * thing an unlabelled material would get. */
     cave:   { dust: 0.52, damp: 0.42, level: 0.46, emis: 0.14, tint: 0xa9a69c },
-    church: { dust: 0.16, damp: 0.14, level: 0.92, emis: 0.52, tint: 0xc9c6c0 },
+    church: { dust: 0.16, damp: 0.14, level: 0.98, emis: 0.66, tint: 0xc9c6c0 },
     /* the idol takes almost no dirt and a WARM lift: it stands in a ring of
      * candles and nothing else in this building is lit by a flame. */
     altar:  { dust: 0.08, damp: 0.05, level: 0.98, emis: 0.34, tint: 0xc7a97c },
@@ -2538,7 +2538,7 @@ export function makeUndercroft(opts = {}) {
     const taper = new THREE.CylinderGeometry(0.82, 1.0, 1.0, 7, 1, false);
     taper.translate(0, 0.5, 0);                       // stand it on its own foot
     const waxMat = new THREE.MeshStandardMaterial({ color: 0xb9aa90, roughness: 0.86, metalness: 0,
-                                                    emissive: 0x6b4520, emissiveIntensity: 0.50, flatShading: true });
+                                                    emissive: 0x6b4520, emissiveIntensity: 0.78, flatShading: true });
     const wax = new THREE.InstancedMesh(taper, waxMat, spots.length);
     const pool = new THREE.CylinderGeometry(1.0, 1.15, 1.0, 8, 1, false);
     pool.translate(0, 0.5, 0);

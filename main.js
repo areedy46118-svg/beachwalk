@@ -25034,7 +25034,7 @@ function animateFrame() {
   oceanUniforms.uTime.value += dt;
   if (!introStarted) titleCam(rawDt);
   update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
-  updateIdol(rawDt); knightCrush(rawDt);
+  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt);
   updateHover();
   /* After everything that may have moved a lamp or the player, and before
    * anything is drawn: point the twelve real lights at the twelve that
@@ -25431,7 +25431,17 @@ function mutClampX(u, p, dt) {
      * at the full body radius a creature this wide is inside a wall
      * everywhere it can stand, and the push then cancels every step it
      * takes. The fight keeps the wide body; the walls get three quarters. */
+    const wx = _mcL.x, wz = _mcL.z;
     UC.pushOut(_mcL, (u.kind.body || 0.9) * 0.75, f === null ? p.y - UC_Y : f);
+    /* AND THE CORRECTION IS DAMPED. A push-out is a TELEPORT — it puts a
+     * body wherever it has to go in one frame — and on something that is
+     * also being steered that reads as the thing glitching about the room.
+     * At most a walking pace of it per frame, so a correction is a lean and
+     * never a jump; anything that genuinely has to move further gets there
+     * over a few frames and you watch it happen. */
+    const mx = _mcL.x - wx, mz = _mcL.z - wz, ml = Math.hypot(mx, mz);
+    const cap = 0.06;
+    if (ml > cap) { _mcL.x = wx + mx / ml * cap; _mcL.z = wz + mz / ml * cap; }
     p.x = UC_X + _mcL.x; p.z = UC_Z + _mcL.z;
     return;
   }
@@ -28346,24 +28356,34 @@ function authorKnightClips(u, m, gltf) {
  * fifth of a second, he swings nearly every time he could and chains four
  * deep. The tells are what keep him fair and they are the longest in the
  * game — the jump hangs before it comes down. */
-MUT_ATTACKS.kPunch = { wind: 0.42, strike: 0.13, recover: 0.30, hit: 0.560, reach: 2.90, lunge: 1.5, chain: 'kSwipe', chainP: 0.58, w: 0.34, guardK: 0.95, limbs: [0] };
-MUT_ATTACKS.kSwipe = { wind: 0.62, strike: 0.16, recover: 0.38, hit: 0.600, reach: 3.10, lunge: 1.3, chain: 'kPunch', chainP: 0.50, w: 0.32, guardK: 1.15, limbs: [0, 1] };
-MUT_ATTACKS.kOver  = { wind: 1.45, strike: 0.20, recover: 0.78, hit: 0.846, reach: 2.90, lunge: 0.8, chain: 'kPunch', chainP: 0.40, w: 0.22, dmg: 2, hold: true, guardK: 1.75, twoHanded: true };
-MUT_ATTACKS.kBack  = { wind: 0.66, strike: 0.16, recover: 0.40, hit: 0.690, reach: 3.00, lunge: 1.2, chain: 'kSwipe', chainP: 0.52, w: 0.28, guardK: 1.10, limbs: [1] };
-MUT_ATTACKS.kStomp = { wind: 0.92, strike: 0.18, recover: 0.52, hit: 0.716, reach: 3.20, lunge: 1.0, chain: 'kBack', chainP: 0.44, w: 0.20, guardK: 1.35, limbs: [2] };
-MUT_ATTACKS.kJump  = { wind: 1.05, strike: 0.20, recover: 0.62, hit: 0.640, reach: 6.40, lunge: 5.2, chain: 'kPunch', chainP: 0.55, w: 0.22, dmg: 2, hold: true, guardK: 1.70, minDist: 3.2, twoHanded: true };
+MUT_ATTACKS.kPunch = { wind: 0.42, strike: 0.13, recover: 0.30, hit: 0.560, reach: 2.15, lunge: 1.5, chain: 'kSwipe', chainP: 0.58, w: 0.34, guardK: 0.95, limbs: [0] };
+MUT_ATTACKS.kSwipe = { wind: 0.62, strike: 0.16, recover: 0.38, hit: 0.600, reach: 2.60, lunge: 1.3, chain: 'kPunch', chainP: 0.50, w: 0.32, guardK: 1.15, limbs: [0, 1] };
+MUT_ATTACKS.kOver  = { wind: 1.45, strike: 0.20, recover: 0.78, hit: 0.846, reach: 2.50, lunge: 0.8, chain: 'kPunch', chainP: 0.40, w: 0.22, dmg: 2, hold: true, guardK: 1.75, twoHanded: true };
+MUT_ATTACKS.kBack  = { wind: 0.66, strike: 0.16, recover: 0.40, hit: 0.690, reach: 2.55, lunge: 1.2, chain: 'kSwipe', chainP: 0.52, w: 0.28, guardK: 1.10, limbs: [1] };
+MUT_ATTACKS.kStomp = { wind: 0.92, strike: 0.18, recover: 0.52, hit: 0.716, reach: 2.70, lunge: 1.0, chain: 'kBack', chainP: 0.44, w: 0.20, guardK: 1.35, limbs: [2] };
+MUT_ATTACKS.kJump  = { wind: 1.05, strike: 0.20, recover: 0.62, hit: 0.640, reach: 5.40, lunge: 5.2, chain: 'kPunch', chainP: 0.55, w: 0.22, dmg: 2, hold: true, guardK: 1.70, minDist: 3.2, twoHanded: true };
 MUT_KINDS.knight = {
   glb: 'assets/knight.glb', solo: true, noSand: true, skin: null, bones: null,
   /* BIG. Three and a half metres of plate in a nave whose vault is thirteen
    * up: he is half again your height at the shoulder and the reaches and the
    * body radius are measured off the model rather than off a man. */
-  h: 3.45, hp: 38, dmg: 1, hitR: 1.35, body: 1.15, uc: true,
+  /* SHORTER THAN HE WAS. At 3.45 m his shoulders were above the top of the
+   * frame at fighting range and every blow arrived from off-screen; 2.85 is
+   * still half again your height and his hands are where you can watch them.
+   * The body and the hit radius come down with him. */
+  h: 2.85, hp: 38, dmg: 1, hitR: 1.15, body: 0.95, uc: true,
   speedK: 1.18, windK: 1.00, reachK: 1.00, aggr: 3.20, press: 0.94,
   use: { kPunch: 0.24, kSwipe: 0.22, kJump: 0.16, kOver: 0.14, kBack: 0.16, kStomp: 0.12 },
   circle: 0.20, step: 0.22, chainMax: 4, feint: 0.30,
   poise: 11, poiseBack: 1.7, poiseWait: 1.2, parryK: 0.80, recoilK: 0.72, blockCost: 1.00,
   block: 0.34, fidgetK: 0.22, fidgetGap: 3.0,
-  reacts: true, aimed: true, barLen: 0.34, aimK: 1.55, bossDeath: true,
+  /* AND THE SHOULDER TURNS FURTHER THAN A MAN'S. `aimK` is how much of the
+   * correction the shoulder takes rather than the whole body: on a creature
+   * with this much arm it has to be most of it, or the blow sweeps PAST you
+   * and the fight reads as happening beside you instead of to you. Measured
+   * at the contact frame: the sweep now finishes 0.28 to 0.53 m off the
+   * chest and the punch 0.4 to 0.6, where they were both over two metres. */
+  reacts: true, aimed: true, barLen: 0.34, aimK: 1.70, bossDeath: true,
   rig: { arm: 'upperarm_r', fore: 'lowerarm_r', hand: 'hand_r',
          armL: 'upperarm_l', foreL: 'lowerarm_l', handL: 'hand_l', head: 'head',
          // his one extra chain: the right leg, so the stomp lands with the BOOT
@@ -28502,6 +28522,23 @@ function shatterIdol() {
  * it apart and running one down at a charge throws it across the nave. */
 const _kcW = new THREE.Vector3();
 let _kcPrev = null;
+/* HE COMES OUT OF THE ALCOVE FIRST. The roar is 1.8 s of him straightening
+ * up and lifting his head, and that is exactly the beat to spend walking out
+ * from behind the post — so the fight starts with him in the open and the
+ * chase never has to solve a pier. It is a WALK, eased, not a teleport: the
+ * one thing this must not look like is him appearing somewhere else. */
+function knightStepOut(dt) {
+  const u = knightUnit;
+  if (!knightFight || !u || u.dead || !u.st.awake) return;
+  if (u.outDone || u.outX === undefined) return;
+  const tx = UC_X + u.outX, tz = UC_Z + u.outZ;
+  const p = u.g.position;
+  const dx = tx - p.x, dz = tz - p.z, l = Math.hypot(dx, dz);
+  if (l < 0.12) { u.outDone = true; return; }
+  const step = Math.min(l, 2.6 * dt);
+  p.x += dx / l * step; p.z += dz / l * step;
+  u.g.rotation.y = Math.atan2(camera.position.x - p.x, camera.position.z - p.z);
+}
 function knightCrush(dt) {
   if (!knightFight || !knightUnit || knightUnit.dead || !UC.ready) return;
   const p = knightUnit.g.position;
@@ -28509,8 +28546,13 @@ function knightCrush(dt) {
   if (_kcPrev) sp = Math.hypot(p.x - _kcPrev.x, p.z - _kcPrev.z) / Math.max(1e-3, dt);
   else _kcPrev = new THREE.Vector3();
   _kcPrev.copy(p);
-  if (sp < 0.35) return;                       // standing still does not break anything
-  const r = (knightUnit.kind.body || 1.1) + 0.55;
+  /* AND HE NEVER STANDS ON ONE. The owner's word: he should run THROUGH
+   * them. So the gate is a shuffle rather than a stride — anything that is
+   * not him standing perfectly still takes out whatever he is touching —
+   * and the reach is his whole body and then some, so a bench is gone
+   * before his feet could ever be over it. */
+  if (sp < 0.06) return;
+  const r = (knightUnit.kind.body || 1.0) + 1.05;
   for (const b of (UC.benches || [])) {
     if (!b.prop || b.prop.dead || !b.mesh || !b.mesh.visible) continue;
     b.mesh.getWorldPosition(_kcW);
@@ -29669,8 +29711,8 @@ const ucLamps = [];
  * MINE; the owner's word is that it should just be a cave, so the only
  * light in it is whatever you carry. The six entries are gone and the
  * church's own lamps start the list. */
-const UC_LAMP = [{ want: 34, dist: 50, col: 0xc2b79c, flick: [0.10, 3.1] },    // the nave, thirteen metres up
-                 { want: 26, dist: 50, col: 0xb8ae9a, flick: [0.10, 2.6] },    // the nave, further in
+const UC_LAMP = [{ want: 46, dist: 56, col: 0xc2b79c, flick: [0.10, 3.1] },    // the nave, thirteen metres up
+                 { want: 36, dist: 56, col: 0xb8ae9a, flick: [0.10, 2.6] },    // the nave, further in
                  /* AND THE CHANCEL IS LIT BY THE CANDLES ON THE ALTAR, not
                   * by a lamp in the vault over it. Forty units at thirty
                   * metres lit the whole apse evenly and read as a room with
@@ -29680,8 +29722,8 @@ const UC_LAMP = [{ want: 34, dist: 50, col: 0xc2b79c, flick: [0.10, 3.1] },    /
                   * reach three or four metres — the idol is modelled from
                   * below by its own offering and the apse behind it goes
                   * dark, which is the picture. */
-                 { want: 6.0, dist: 7.5, col: 0xffa951, flick: [0.26, 9.4] },  // the candles on the altar
-                 { want: 2.2, dist: 6.5, col: 0xff9a45, flick: [0.30, 8.1] },  // and the ring of them at its foot
+                 { want: 9.0, dist: 10.0, col: 0xffa951, flick: [0.26, 9.4] }, // the candles on the altar
+                 { want: 4.2, dist: 9.5, col: 0xff9a45, flick: [0.30, 8.1] },  // and the ring of them at its foot
                  { want: 2.4, dist: 12, col: 0xd8bf94, flick: [0.62, 5.7] },   // the old cave, the way out: its own two bulbs, the first bright enough to be seen through the hole
                  { want: 1.4, dist: 12, col: 0xd2b98e, flick: [0.62, 6.3] }];
 for (let i = 0; i < UC_LAMP.length; i++) {
@@ -29800,50 +29842,56 @@ function armUndercroft(S) {
    * him, and until then he is a creature nobody can see standing in a place
    * the walk agrees he fits. */
   if (MUT_KINDS.knight && !knightUnit) {
+    /* BEHIND THE POST, LIKE A STATUE. Not standing in the open beside the
+     * altar — BEHIND the pier on your left, in the slot between it and the
+     * wall, which is where a thing that has been in a church a very long
+     * time would be. Both are found rather than typed: walking out from the
+     * altar along -z the walk gives back open floor, then the PIER (a run of
+     * blocked cells), then open floor again, then the WALL. He stands in the
+     * middle of that second band, so the pier is between him and the nave
+     * and the wall is at his back. */
     const A = sp.altar;
-    const kx = A.x - 1.6;
-    /* AND THE FLOOR IS RE-READ AT EVERY STEP. Holding the altar's own floor
-     * height for the whole scan stops the walk dead at the dais — the first
-     * step down off it is a bigger drop than the walk allows from where it
-     * thinks your feet are — and the wall came back forty centimetres from
-     * the altar instead of six metres. */
-    /* AND IT STEPS OVER A GAP, because a walk grid sampled off a scan has
-     * lone blocked cells in it — this file has flooded and cleaned eighteen
-     * of them in the church already, and there is one more at z = 4.5 on
-     * exactly this line. Stopping at the first miss put the "wall" forty
-     * centimetres from the altar; three in a row is a wall. */
-    const f0 = UC.floorAt(kx, A.z);
-    let wz = A.z, miss = 0;
-    for (let z = A.z; z > A.z - 18; z -= 0.2) {
-      const fz = UC.floorAt(kx, z);
-      if (fz === null || !UC.walkable(kx, z, fz)) { if (++miss >= 3) break; continue; }
-      miss = 0; wz = z;
-    }
-    /* AND HE HAS TO FIT WHERE HE STANDS. A body radius is 1.15 m and the
-     * first version stood him exactly that off the last walkable cell —
-     * which is to say TOUCHING the wall, permanently overlapping it, so the
-     * room's push-out fought his chase every frame and he crossed the nave
-     * in stutters instead of walking. That is the "lagging all over". He is
-     * stood clear of it, and the spot is CHECKED: if the walk still says he
-     * is in something, he comes out until it does not. */
-    const kb = (MUT_KINDS.knight.body || 1.15);
-    let kz = wz + kb + 0.55;
-    for (let t = 0; t < 14; t++) {
+    const kx = A.x - 2.4;
+    const at = (z) => { const f = UC.floorAt(kx, z); return f !== null && UC.walkable(kx, z, f); };
+    let z = A.z - 1.0, guard = 0;
+    while (at(z) && guard++ < 60) z -= 0.2;            // out to the pier's near face
+    while (!at(z) && guard++ < 90) z -= 0.2;           // through the pier
+    const behind = z;                                  // first open cell past it
+    while (at(z) && guard++ < 120) z -= 0.2;           // on to the wall
+    const wall = z;
+    const kb = (MUT_KINDS.knight.body || 1.0);
+    let kz = (behind + wall) / 2;
+    /* and the slot has to fit him: if it does not, he comes back toward the
+     * nave until the walk says he is in nothing */
+    for (let t = 0; t < 18; t++) {
       const fz = UC.floorAt(kx, kz);
       if (fz !== null && !UC.blocked(kx, kz, kb, fz)) break;
-      kz += 0.3;
+      kz += 0.25;
     }
     const ky = UC.floorAt(kx, kz);
-    knightUnit = makeMutant(UC_X + kx, UC_Z + kz, 'knight', UC_Y + (ky === null ? (f0 === null ? 0 : f0) : ky));
+    knightUnit = makeMutant(UC_X + kx, UC_Z + kz, 'knight', UC_Y + (ky === null ? A.dais : ky));
     /* AND HE IS THERE WHEN YOU WALK IN. Not hidden by a flag — STANDING
      * THERE, drawn, asleep and dead still, in the one part of the room the
      * candles are kept out of. The whole beat is that he was in the frame
-     * the entire time and you took him for the wall, which a `visible` of
-     * false cannot give you: that is a thing appearing, and this is a thing
-     * you did not see. What keeps him dark is the lighting, not the draw. */
+     * the entire time and you took him for the stonework, which a `visible`
+     * of false cannot give you: that is a thing appearing, and this is a
+     * thing you did not see. What keeps him dark is the lighting. */
     knightUnit.g.visible = true;
     knightUnit.g.rotation.y = Math.PI / 2;          // facing down the nave, at the door
-    window.__bwKnight = [kx.toFixed(2), kz.toFixed(2), (wz).toFixed(2)];
+    /* AND WHERE HE STEPS OUT TO. Standing behind a pier is the right picture
+     * and the wrong place to start a fight from: the chase is a straight line
+     * at the player and the post is in the way, so he would grind against it
+     * for ever. The first thing he does when the altar goes is come OUT of
+     * the alcove — measured here, on the nave side of the pier, the nearest
+     * spot the walk says a body his size fits in. */
+    let ox = kx, oz = A.z - 0.8;
+    for (let t = 0; t < 24; t++) {
+      const fz = UC.floorAt(ox, oz);
+      if (fz !== null && !UC.blocked(ox, oz, kb, fz)) break;
+      oz -= 0.25;
+    }
+    knightUnit.outX = ox; knightUnit.outZ = oz;   // a unit is not an Object3D: it has no userData
+    window.__bwKnight = [kx.toFixed(2), kz.toFixed(2), 'pier@' + behind.toFixed(1), 'wall@' + wall.toFixed(1), 'out@' + oz.toFixed(1)];
   }
   if (S.idol) {
     const A = sp.altar;
@@ -30449,7 +30497,7 @@ window.__bw = {
     if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
     oceanUniforms.uTime.value += dt;
     update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
-    updateIdol(rawDt); knightCrush(rawDt);
+    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt);
     updateLightPool();
   },
   /* The lamp pool, for a still: a frozen loop never points the twelve at

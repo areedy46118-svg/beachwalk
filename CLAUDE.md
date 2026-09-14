@@ -3703,6 +3703,45 @@ harness calling `heal()` BEFORE it read `hp`**, which erases every landed blow
 in the frame that dealt it; a fourth was `devMode`, which turns a creature's
 swinging off outright.
 
+**AND THEN THE KNIGHT WAS POLISHED, AND EVERY ITEM WAS A MEASUREMENT.**
+
+- **BEHIND THE POST, LIKE A STATUE.** Not beside the altar in the open: in
+  the slot between the pier on your left and the wall. Both are FOUND, by
+  walking out from the altar along -z and reading the walk — open floor, then
+  a run of blocked cells (the pier), then open floor, then the wall — and he
+  stands in the middle of the second band. Measured: pier at z -1.3, wall at
+  -5.5, him at -3.4.
+- **AND STANDING BEHIND A PIER IS THE WRONG PLACE TO START A FIGHT FROM.**
+  The chase is a straight line at the player and the post is in the way, so
+  he ground against it for ever and never arrived. The first thing he does
+  when the altar goes is come OUT of the alcove — a walk, eased, over the
+  1.8 s of the roar, which is exactly the beat to spend on it. Measured:
+  z -3.4 to 4.1 as the roar runs out, and he is in the open before the fight
+  starts.
+- **SHORTER, SO THE BLOW IS IN THE FRAME.** At 3.45 m his shoulders were over
+  the top of the screen at fighting range and every swing arrived from
+  off-camera. 2.85 is still half again your height.
+- **AND THE BLOW HAS TO ARRIVE AT YOU, WHICH IS A NUMBER.** The hand at the
+  contact frame, measured against the player's chest: it was 2.0 to 2.1 m —
+  the fight was happening BESIDE you. The reaches came in with the height and
+  `aimK` went to 1.70, and now the punch finishes 0.52 m off the chest, the
+  sweep 0.64 and the overhead 0.77. That is what "the hits connect visibly"
+  is: not a hitbox, a hand you can watch arrive.
+- **A PUSH-OUT IS A TELEPORT, AND ON A STEERED BODY THAT IS THE GLITCHING.**
+  The room's clamp put him wherever he had to be in one frame. It is capped
+  at a walking pace now, so a correction is a lean and never a jump: worst
+  step 0.317 m before (an implied 19 m/s), 0.10 after.
+- **HE NEVER STANDS ON A PEW; HE GOES THROUGH IT.** The crush gate is a
+  shuffle rather than a stride and the reach is his whole body and then some,
+  so a bench is gone before his feet could be over it. Measured crossing the
+  nave: five of them.
+
+Measured after, standing at the altar: 49 swings and 44 damage a minute, all
+five close moves used. **And `bwSpan`'s throw-naming earned its keep**: the
+whole placement silently vanished one build because `makeMutant` returns a
+UNIT, not an `Object3D`, so `knightUnit.userData` is undefined — the span
+said "threw inside cave.glb" and named it in one line.
+
 ## Dev mode
 
 `DEFAULT_SETTINGS` are the owner's own (music 30 %, waves 18 %, effects
