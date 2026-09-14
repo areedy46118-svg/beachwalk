@@ -524,14 +524,19 @@ from the same session shipped for a while and came back off on his word: the
 undercroft already has a convolver on the sfx bus, and a recorded tail under
 it was a room inside a room.)
 
-This work is based on ["3DRT-uderground for game"](https://sketchfab.com/3d-models/3drt-uderground-for-game-a146bf2f80e24640abe951fa97d127af)
-by [Ant leader](https://sketchfab.com/Jguyfioy) licensed under
+This work is based on ["Tunnel"](https://sketchfab.com/3d-models/tunnel-5a1ce8da91684583a917b613a521161f)
+by [local.yany](https://sketchfab.com/local.yany) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the tunnel you crawl
-in through (`assets/passage.glb`, turned and scaled to metres and packed with
-its walk by `tools/undercroft_pack.py`). Its own map is projected triplanar
-rather than read off its uvs, which run down the bore and smear; a sleeve in a
-clone of its own material stands behind it to close the holes in the mesh, and
-the walk is a corridor fitted to the rock it actually draws.
+in through (`assets/tunnel.glb`, turned onto +x and scaled to metres and packed
+with its walk by `tools/undercroft_pack.py`). It keeps its own rock map and its
+own uvs; its spec-gloss materials are rewritten to metallic-roughness on the
+way in, because three dropped that extension. It has standing water down the
+middle of it, which is the floor you wade through — so the carve leaves it
+alone, and it is lifted off black by hand because the grime pass lifts a
+surface off its own map and the water has none. Its "Particles" tube — a
+light-shaft for a scene with a sun in it — is dropped at pack time. (It
+replaces Ant leader's "3DRT-uderground for game", which was the tunnel here
+until Sep 2026.)
 
 This work is based on ["Rock Mountain with cave realistic 85k by JJ"](https://sketchfab.com/3d-models/rock-mountain-with-cave-realistic-85k-by-jj)
 (Sketchfab) — the rock outcrop at the foot of the sand wall, past the mutants,

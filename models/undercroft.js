@@ -927,6 +927,14 @@ export function makeUndercroft(opts = {}) {
     const MM = new THREE.Matrix4();
     root.traverse((o) => {
       if (!o.isMesh || !o.geometry || !o.geometry.attributes.position) return;
+      /* THE WATER IS THE FLOOR HERE, SO THE FIT MUST SEE IT. local.yany's
+       * tunnel runs a channel down its middle and the rock does not close
+       * under it — one flat plane of water at the floor's own height is what
+       * you actually stand on. Taking it out of the bins (tried, because a
+       * surface near the line looks like a wall) left the floor march dying
+       * after thirty centimetres and every station reading as a ledge: the
+       * measured clear height collapsed from two metres to 0.62. It is only
+       * the CARVE that must leave it alone, or the tunnel comes out dry. */
       const g = o.geometry, pos = g.attributes.position, idx = g.index;
       MM.multiplyMatrices(toLocal, o.matrixWorld);
       const n = idx ? idx.count : pos.count;
@@ -944,7 +952,14 @@ export function makeUndercroft(opts = {}) {
          * twelve centimetres is dense enough for the march to mean something. */
         E1.subVectors(B, A); E2.subVectors(C, A);
         const area = E1.cross(E2).length() * 0.5;
-        const nn = Math.max(1, Math.min(12, Math.ceil(Math.sqrt(area) / 0.12)));
+        /* AND THE CAP HAS TO SUIT THE BIGGEST FACE IN THE MODEL. At twelve a
+         * triangle bigger than about two square metres samples coarser than
+         * the march steps, and the march stops at the first gap — which on
+         * local.yany's cave is its water plane (720 triangles over two
+         * thousand square metres) and that plane IS the floor, so the span
+         * came back at 0.15 m down the entire tunnel and the corridor
+         * collapsed to its minimum. */
+        const nn = Math.max(1, Math.min(28, Math.ceil(Math.sqrt(area) / 0.12)));
         for (let u = 0; u <= nn; u++) for (let v = 0; v + u <= nn; v++) {
           const fu = u / nn, fv = v / nn, fw = 1 - fu - fv;
           M.set(A.x * fw + B.x * fu + C.x * fv, A.y * fw + B.y * fu + C.y * fv, A.z * fw + B.z * fu + C.z * fv);
@@ -1023,7 +1038,38 @@ export function makeUndercroft(opts = {}) {
     return out;
   }
   const BODY_MARGIN = 0.20;
-  function fitCorridor(C, bins) {
+  /* AND ON A SCANNED CAVE THE WALL IS CAST FOR, NOT MARCHED TO. Marching the
+   * floor outward through the sampled surface is the right question for the
+   * 3DRT passage, whose floor is a flat strip and whose walls stand off it —
+   * and it is the wrong one for local.yany's cave, where the floor is a
+   * water channel that falls away from the centre: the march leaves the
+   * floor's own height window after two steps, reports a ledge 0.15 m wide,
+   * and every station collapses to the minimum radius. Measured, the same
+   * stations raycast 1.4 to 2.3 m of clear rock either side. So where the
+   * caller hands in a triangle index, the wall is the nearest rock a
+   * HORIZONTAL ray meets — at three heights, because one ray can find a gap
+   * — which is a question about the bore and cannot be confused by the
+   * shape of the floor. Horizontal on purpose: the water lies flat, so it
+   * can never be mistaken for a wall. */
+  function rayWall(ix, x, y, z, nx, nz, roof) {
+    /* AND THE RAY HAS TO STAY UNDER THE HAUNCH — the roof's own lesson, in
+     * the other instrument. In an arched bore a ray at head height meets the
+     * ceiling curving down a hand's width away, so taking the nearest over
+     * three heights measured the ARCH and reported a wall at 0.72 m in a
+     * tunnel four metres wide. Only heights that are clear of the roof by a
+     * good margin are asking about the wall at all. */
+    const hs = [0.35];
+    if (roof > 1.45) hs.push(roof - 0.55);
+    let best = 3.2;
+    for (const dy of hs) {
+      for (const sg of [1, -1]) {
+        const t = rayHit(ix, x, y + dy, z, nx * sg, 0, nz * sg, 3.2);
+        if (t > 0.05 && t < best) best = t;
+      }
+    }
+    return best;
+  }
+  function fitCorridor(C, bins, ix) {
     const P = C.pts, R = 3.2;
     const tang = (k) => {
       const a = P[Math.max(0, k - 1)], b = P[Math.min(P.length - 1, k + 1)];
@@ -1071,6 +1117,25 @@ export function makeUndercroft(opts = {}) {
       if (P[k].open) continue;
       wall[k] = Math.min(q.span[0], q.span[1], q.head[0], q.head[1]);
       P[k].h = Math.max(1.15, Math.min(4.0, q.roof - q.floor - 0.05));
+      if (ix) {
+        const [tx, tz] = tang(k);
+        /* AND THE FLOOR IS CAST FOR FIRST, because everything else is
+         * measured from it. The sampled floor is capped at 0.55 above the
+         * station, so where the grid put the line below the real ground the
+         * probe returns that cap — and then the roof ray, fired from under
+         * the floor, hits the floor, and the tunnel reports a crawl. A ray
+         * DOWN from well overhead cannot be confused: it finds the surface
+         * you would actually stand on. */
+        const H0 = 1.8;
+        const dn = rayHit(ix, P[k].x, P[k].y + H0, P[k].z, 0, -1, 0, 5.0);
+        const fy0 = dn > 0.02 ? P[k].y + H0 - dn : P[k].y + (q.floor === null ? 0 : q.floor);
+        P[k].y = fy0;
+        const up = rayHit(ix, P[k].x, fy0 + 0.12, P[k].z, 0, 1, 0, 6.0);
+        const roof = up > 0.6 ? up + 0.12 : q.roof - q.floor;
+        if (up > 0.6) P[k].h = Math.max(1.15, Math.min(4.0, roof - 0.05));
+        const w = rayWall(ix, P[k].x, fy0, P[k].z, tz, -tx, roof);
+        if (w > wall[k]) wall[k] = w;
+      }
     }
     /* A STATION NARROWER THAN A BODY IS A MEASUREMENT, NOT A TUNNEL. The
      * march stops at the first gap in the samples, so a sparse patch of a
@@ -1147,6 +1212,7 @@ export function makeUndercroft(opts = {}) {
     group.updateMatrixWorld(true);
     root.traverse((o) => {
       if (!o.isMesh || !o.geometry || !o.geometry.index) return;
+      if (o.userData.bwDecor) return;      // the water is the floor, and carving it leaves a dry tunnel
       const g = o.geometry, pos = g.attributes.position, idx = g.index;
       MM.multiplyMatrices(toLocal, o.matrixWorld);
       const keep = [];
@@ -1646,11 +1712,31 @@ export function makeUndercroft(opts = {}) {
       for (const m of (Array.isArray(o.material) ? o.material : [o.material])) if (m) { m.flatShading = false; m.needsUpdate = true; }
     });
   }
-  load(opts.passageUrl || 'assets/passage.glb', (gltf) => {
+  load(opts.passageUrl || 'assets/tunnel.glb', (gltf) => {
     const root = gltf.scene;
     const w = parseWalk(root);
     dress(root, 'cave');
-    passageTriplanar(root);
+    /* THE WATER IS DRESSING, NOT ROCK — and A MATERIAL WITH NO MAP AND NO
+     * LIFT IS BLACK DOWN HERE, which is the lamp-in-a-wall lesson wearing a
+     * puddle. The grime pass lifts a surface off its OWN map, and this one
+     * has no map at all, so it came through the dress as pure black and read
+     * as a hole in the floor the length of the tunnel. Standing water in a
+     * dark cave is not black: it is the darkest thing in the room and it is
+     * also the only WET thing, so what says water is that it takes a
+     * highlight — low roughness, a little metalness, and just enough cold
+     * emissive to separate it from the rock it lies on. The carve leaves it
+     * alone as well, or the tunnel comes out dry. */
+    root.traverse((o) => {
+      if (!o.isMesh || !o.material || (o.material.name || '') !== 'Water') return;
+      o.userData.bwDecor = true;
+      const m = o.material;
+      m.color.setHex(0x1d2630);
+      m.emissive.setHex(0x0a1119);
+      m.emissiveIntensity = 1;
+      m.roughness = 0.18;
+      m.metalness = 0.30;
+      m.needsUpdate = true;
+    });
     smoothRock(root);
     group.add(root);
     S.passage = { root, walk: w };
@@ -1791,7 +1877,7 @@ export function makeUndercroft(opts = {}) {
        * smoothed into them — and those are the narrowest stations in the
        * model, where being a foot off centre is the difference between a
        * corridor and a wall. */
-      fitCorridor(inbound, surfaceBins(S.passage.root));
+      fitCorridor(inbound, surfaceBins(S.passage.root), triIndex(S.passage.root));
       /* AND IT RUNS ALL THE WAY INTO THE NAVE. The last stations are laid
        * straight at the church's doorway at the doorway's own height and a
        * stride PAST its wall, so the bore's mouth is inside the breach and

@@ -3565,6 +3565,56 @@ now. (The one it caught was the harness's own: teleporting the player past
 `ABDUCT_Z` before the hall has loaded runs `placeInShrine` with `SH` still
 null. Walking there cannot do it, but a test that teleports can.)
 
+**THE TUNNEL IS local.yany's NOW, AND THE 3DRT ONE IS GONE.** The owner sent a
+new cave ("Tunnel", CC-BY-4.0) and asked for it to replace the passage, to
+match the game, to go seamlessly to the church and to be walkable.
+`assets/tunnel.glb` is it, through `tools/undercroft_pack.py passage --scale
+3.8 --yaw 90 --sparse` — 146 m of bore, 52k triangles, 2.4 MB. What it cost:
+
+- **IT IS SPEC-GLOSS, WHICH THREE DROPPED.** `KHR_materials_pbrSpecularGlossiness`
+  is in its `extensionsRequired`; the packer already rewrites it to
+  metallic-roughness, which is the only reason this asset renders at all.
+- **ITS THREE ROCK MESHES ARE CHUNKS, NOT LODs** — 128k, 128k and 5k triangles
+  over the SAME bounding box. The packer groups by node name and they all
+  carry one, so they merge before the decimation and come out welded rather
+  than as a cloud of specks.
+- **ITS "PARTICLES" TUBE IS A LIGHT-SHAFT, AND IT HANGS IN THE BORE.** An
+  alpha cylinder down the middle of the tunnel is a god-ray for a scene with a
+  sun in it; forty metres underground there is nothing to shaft. Worse, the
+  corridor fit measures every surface in the model, so a tube in the middle of
+  the bore is measured as the WALL. Dropped at pack time.
+- **THE WATER IS THE FLOOR, AND IT CAME OUT BLACK.** The model runs a channel
+  of standing water the length of itself, and that plane is what you wade
+  through. Two rules fell out of it: the CARVE must leave it alone or the
+  tunnel comes out dry, and it must be lifted off black BY HAND — the grime
+  pass lifts a surface off its own map and the water has no map, so it dressed
+  to pure black and read as a hole in the floor the whole way down. It is a
+  cold near-black with low roughness now, so the thing that says "water" is
+  that it takes the glowstick's highlight.
+- **AND ON A SCANNED CAVE THE WALL IS CAST FOR, NOT MARCHED TO.** Marching the
+  floor outward through the sampled surface is the right question for the 3DRT
+  passage, whose floor is a flat strip; on this one the floor falls away from
+  the centre into the channel, so the march leaves the floor's height window
+  after two steps and reports a ledge 0.15 m wide — every station collapsed to
+  the minimum radius. `rayWall` casts horizontally instead (horizontal on
+  purpose: water lies flat and can never be mistaken for a wall), and the roof
+  and the floor are cast for too. The rays must stay UNDER THE HAUNCH: in an
+  arched bore a ray at head height meets the ceiling curving down a hand's
+  width away, which measured the arch and reported a 0.72 m wall in a tunnel
+  four metres wide.
+
+**WHAT IS NOT FINISHED: THE WALK GRINDS.** It goes in at the mouth and comes
+out in the nave every run, the church sits at the tunnel's end with no seam,
+and the worst it is ever stuck is under a second — but about half of all
+frames make no forward progress, against ZERO stalls on the old passage. The
+cause is named above and only half fixed: the corridor fit is tuned to a
+low-poly game tunnel and this is a scan, so `h` still pins at its 1.15 m floor
+down most of the length and the walk crouches where it should stand. The next
+thing to try is walking it as a GRID, the way the exit cave — also a scan —
+has been walked since it went in; adding `pw` to `S.walks` naively makes it
+worse (the grid's own roof drives the duck), so it wants the bridge treatment
+at the church seam rather than a one-line change.
+
 ## Dev mode
 
 `DEFAULT_SETTINGS` are the owner's own (music 30 %, waves 18 %, effects

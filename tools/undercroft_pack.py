@@ -338,7 +338,13 @@ def main():
     # ---- gather every primitive in world space, merged per (node, material)
     groups = {}          # (node name, material index) -> [P, UV, I]
     order = []
-    skip_re = {'church': ('Sun', 'Doors_Old_Wooden_1.003'), 'cave': (), 'passage': ()}[a.kind]
+    # AND A LIGHT-SHAFT IS NOT A TUNNEL. local.yany's cave ships a "Particles"
+    # tube — an alpha cylinder hanging down the middle of the bore, which is a
+    # god-ray for a scene with a sun in it. Forty metres underground there is
+    # nothing to shaft, and worse: the corridor fit measures every surface in
+    # the model, so a tube in the middle of the bore is measured as the WALL
+    # and the walk closes to nothing around it.
+    skip_re = {'church': ('Sun', 'Doors_Old_Wooden_1.003'), 'cave': (), 'passage': ('CC Particles',)}[a.kind]
     def walk(ni, parent):
         n = nodes[ni]
         m = mat_mul(parent, node_matrix(n))

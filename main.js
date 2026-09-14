@@ -113,7 +113,7 @@ const ASSET_REACH = {
   'assets/smile.glb': 390,
   'assets/mutant.glb': 610,
   'assets/rockmouth.glb': 636,        // the rock at the foot of the sand wall, past the mutants
-  'assets/passage.glb': 640,          // the tunnel in it
+  'assets/tunnel.glb': 640,           // the tunnel in it
   'assets/church.glb': 645,           // and what is at the bottom of it
   'assets/cave.glb': 648,             // and the way out, behind the altar
   'assets/sol.glb': 646,              // and what is standing on its altar
