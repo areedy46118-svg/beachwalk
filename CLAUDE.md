@@ -4462,6 +4462,116 @@ chest, still between swings 19 %, worst step 0.157 m, worst tick 3.9 ms**;
 and the walk from the entrance to the altar is unchanged at 97.8 m with zero
 stalls and zero reversals.
 
+**THE WALK GRID IS A PLAN OF THE FLOOR, AND AN ARCHED BORE IS NARROWER AT
+HEAD HEIGHT.** "I can still clip through" survived the straightening, and
+measuring the AXIS was why it looked fixed: every station down the middle had
+a metre of wall, and the player does not walk down the middle. Sweeping all
+1104 walkable cells of the passage with rays at eye height, **86 of them
+(7.8 %) had drawn rock within 22 cm of the camera and the worst was 0.00** —
+the lens inside the stone — and almost every one sat at z = ±1.6, which is
+exactly where this bore's wall begins to curve over. A cell whose floor is
+clear can have rock over its outer half at head height; your feet are on the
+ground and your head is in the haunch.
+
+The fix is the BODY, not the grid. `bodyR` is how far the walk keeps your
+centre off a solid cell and it was 0.24 — a shoulder, which is the wrong
+measurement for a tunnel you meet with your head. At 0.62 the bad cells go
+**86 → 1** and the worst clearance 0.00 → 0.21 m. **And a wide body must not
+be carried through the doorway**: the passage's bounding box runs on past its
+own mouth and over the church's threshold, so the fat body was being applied
+in the breach — which is an arch the width of the tunnel's mouth and no wider
+— and the hands-off walk stopped dead at x = 73.3, seven metres short of the
+nave, wedged in the hole. `bodyRMaxX` ends it where the tunnel ends.
+
+**A DROPPED THING WAS DROPPED ON THE BEACH, WHEREVER YOU WERE STANDING.**
+Every line of `dropPoint` was the beach's: it raycast the sand, the pier and
+the banks; where nothing was hit it put the item at **y = 0**, the sand
+plane; and then it CLAMPED x between `WADE_X` and `CLIFF_BLOCK_X`, the surf
+and the foot of the cliff. Drop a sword in the church — three thousand metres
+away and four hundred up — and all three fired at once: snapped to x = 14.2,
+dropped to y = 0, gone. The ray is cast at whatever room you are in, the
+floor comes from `bunkerFloorAt` (which every room answers and which
+REPLACES rather than competing), and the beach's two walls only apply on the
+beach. A CONSTANT THAT DESCRIBES ONE PLACE IS WRONG THE DAY THE GAME ACQUIRES
+ANOTHER — this is the sixth coat.
+
+**AND YOU CAN SET A THING DOWN ON A FLOOR, NOT ON A WALL.** The hit point is
+kept as a height so a thing put on the pier's boards stays on the boards —
+right for a deck, and on a near-vertical face it hangs the item on the rock
+at eye level, which in a tunnel is most of what the crosshair meets
+(measured: a shovel dropped at y = 1.71 against a floor at -0.03). If the
+surface is not something you could stand on, the point's POSITION is kept and
+the floor under it decides the height.
+
+**AND THE RESTORE CAN ONLY REPLAY A PICKUP WHOSE HANDLER EXISTS.** The
+checkpoint remembers which pickups you took and fires those same handlers
+again, which is the right design — the handler is what builds the view model,
+names the thing and puts it in the pack. What it cannot do is find a handler
+that has not been registered, and there are real ways for that: an item
+registered by something ELSE breaking (the crate's glowstick), a scan that
+has not landed inside the eight-second window, an interactable behind a gate
+the restore has not opened. When that happens the item is gone for the rest
+of the game with no error anywhere — and the owner lost his WEAPONS to it.
+
+The replay stays the mechanism; `finishRestore` is the floor under it.
+Anything the save says you were carrying that is still not in the pack when
+the window closes is granted outright from a name lookup. It is a last resort
+by construction — if the replay worked it finds nothing — and it can only
+hand back something you are recorded as having had. **And a box you broke
+stays broken**: `crates` is on the save now, restored quietly (no bang, no
+boards in the air), which is both how the beach comes back right and how the
+crate's own pickup gets registered at all.
+
+**A KNOCKDOWN IS TWO CLIPS, AND IT IS EARNED RATHER THAN ROLLED.** The
+alien's reverses its own fall because his file has no get-up in it; the
+knight has a real `Knocked Out` and a real `Getting Up`, so each runs
+forwards on its own beat and the floor is the fall's last frame held — and
+the hip clamp that stops the alien standing up by flying two metres into the
+air is skipped for anything with a `riseClip`. The beats are the kind's
+(`kind.knock`), because they belong to the clips: 1.27 s over, a third of a
+second down, 1.33 s up — **2.94 s**, against the alien's three and a half,
+because the owner has to be able to keep fighting.
+
+And `knockP` is a die, which is right for a creature you meet once. The
+knight's is a COUNT: three blows that are both HEAVY and through his poise —
+the hardest thing in the fight to do once, let alone three times — and he
+goes over, gets up, and the tally starts again. You cannot land it by luck
+and you cannot be denied it by luck. **`u.st.down` is undefined until the
+first knockdown and `undefined <= 0` is FALSE**, so the first build counted
+to eight and never put him down.
+
+**AND THE BENEFIT OF THE DOUBT WENT TO WHICHEVER LIMB HAPPENED TO BE NEAR
+YOU.** `blowLands` falls back to "he is facing you, you are in reach, his
+hand is out in front" — and `best` was the minimum over EVERY chain the
+creature owns, so a right-hand punch could be scored on the LEFT hand simply
+because it was hanging within a metre. What the player sees is a blow landing
+while the fist that threw it is nowhere near them: the owner's "there is a
+right swing that hits you when it's not even close". A swing already declares
+which chains it strikes with (`A.limbs`, the same indices the aim uses) and
+the fallback asks those and nothing else. `LAND_SLOP` is a kind's own number
+too — a metre was set for a man with a crowbar whose bar finishes inside a
+quarter of a metre, and on a creature measured landing 0.30-0.45 m from the
+chest it is most of an arm's worth of charity.
+
+**THE SPLASH POOL WAS PINNED TO THE SAND PLANE.** Every drop in it was born
+at y = 0.02 and died there — which is the sea, and is the wrong height the
+moment anything else in this game has water in it. The tunnel's channel is
+four hundred metres up. `spawnSplash` takes the water it came out of, and
+`updateSplashes` kills a drop at its own base rather than at the beach's.
+The gibs learned this once: A GIB'S GROUND IS A LOOKUP, NOT A NUMBER IT WAS
+BORN WITH.
+
+**AND THE TUNNEL CAN BE ALMOST BLACK NOW, BECAUSE YOU CARRY THE LIGHT.**
+`LOOK.cave` goes to level 0.19 / emis 0.055 — a third of what it was two
+passes ago. That is only playable because the glowstick comes out of the
+CRATE at the top of the beach rather than a cache halfway down it, so you
+have a light in your hand before you ever reach the hole in the sand wall;
+what the rock gets from its own material is now almost nothing and what you
+see is what your own light falls on. (If it ever needs to come back up, that
+one number is the dial. Measuring it with `drawImage` off the WebGL canvas
+does not work — there is no `preserveDrawingBuffer`, so every reading comes
+back 0; judge it from a screenshot.)
+
 ## Dev mode
 
 `DEFAULT_SETTINGS` are the owner's own (music 30 %, waves 18 %, effects

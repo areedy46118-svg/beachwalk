@@ -3695,14 +3695,21 @@ const splashes = Array.from({ length: SPLASH_POOL }, () => ({
 }));
 { const hide = new THREE.Matrix4().makeScale(0, 0, 0); for (let i = 0; i < SPLASH_POOL; i++) splash.setMatrixAt(i, hide); }
 let splashIdx = 0;
-function spawnSplash(x, z, n, dirX = 0, dirZ = 0, power = 1) {
+/* `baseY` is THE WATER IT CAME OUT OF. Every drop in this pool was born at
+ * the sand plane and died there — which is the sea, and is the wrong height
+ * the moment anything else in this game has water in it. The tunnel's
+ * channel is four hundred metres up; a splash that spawns at y = 0.02 is
+ * four hundred metres under the floor you are standing on. The gibs learned
+ * this once ("a gib's ground is a LOOKUP, not a number it was born with"). */
+function spawnSplash(x, z, n, dirX = 0, dirZ = 0, power = 1, baseY = 0.02) {
   addRipple(x, z, Math.min(1.4, 0.5 + power * 0.7));
   for (let i = 0; i < n; i++) {
     const p = splashes[splashIdx];
     splashIdx = (splashIdx + 1) % SPLASH_POOL;
     p.ttl = p.life = 0.34 + Math.random() * 0.42;
     p.sz = (0.45 + Math.random() * 0.95) * (0.6 + power * 0.6);
-    p.pos.set(x + (Math.random() - 0.5) * 0.35, 0.02 + Math.random() * 0.05, z + (Math.random() - 0.5) * 0.35);
+    p.base = baseY;
+    p.pos.set(x + (Math.random() - 0.5) * 0.35, baseY + Math.random() * 0.05, z + (Math.random() - 0.5) * 0.35);
     const out = 1.0 + Math.random() * 2.4;
     p.vel.set(
       dirX * 1.6 * power + (Math.random() - 0.5) * out,
@@ -3723,7 +3730,7 @@ function updateSplashes(dt) {
     p.vel.y -= 16 * dt;
     p.pos.addScaledVector(p.vel, dt);
     p.rot.x += p.vel.x * dt * 3; p.rot.z += p.vel.z * dt * 3;
-    if (p.pos.y <= 0.02) p.life = 0;
+    if (p.pos.y <= (p.base === undefined ? 0.02 : p.base)) p.life = 0;
     const k = Math.max(0, p.life / p.ttl);
     const sc = p.sz * 0.055 * (0.35 + 0.65 * k);
     _spq.setFromEuler(p.rot);
@@ -5363,7 +5370,17 @@ function dropEquipped() {
  * crosshair meets within arm's reach, else the ground in front of you. */
 const _dropRay = new THREE.Raycaster();
 const _dropPt = new THREE.Vector3();
-function groundUnder(x, z) {
+function groundUnder(x, z, atY) {
+  /* AND IT IS NOT ALWAYS THE BEACH. `bunkerFloorAt` is this game's general
+   * "what is the floor here" — the bunker, the hall, the dojo and the
+   * undercroft all answer it, and the blood, the gibs and every physics body
+   * have asked it for a long time. It REPLACES rather than competing,
+   * because a room's floor is forty metres under the sand and a
+   * highest-surface test would lift anything in one up onto the beach. */
+  if (atY !== undefined) {
+    const bf = bunkerFloorAt(x, z, atY);
+    if (bf !== null) return bf;
+  }
   let y = driftAt(x, z);                       // the banks are terrain
   const deck = dockDeckAt(x, z);
   if (deck !== null && deck > y) y = deck;     // and the boards are a floor
@@ -5371,20 +5388,65 @@ function groundUnder(x, z) {
   if (rk && rk.top > y) y = rk.top;
   return y;
 }
+/* ---- WHERE A DROPPED THING LANDS, AND THE ROOM IT LANDS IN.
+ *
+ * Every line of this used to be the beach's. It raycast the sand, the pier
+ * and the banks; where nothing was hit it put the item at **y = 0**, which
+ * is the sand plane; and then it CLAMPED x between `WADE_X` and
+ * `CLIFF_BLOCK_X`, which are the surf and the foot of the cliff. Drop a
+ * sword in the church — three thousand metres away and four hundred up —
+ * and all three fired: the item was snapped to x = 14.2, dropped to y = 0,
+ * and was on a beach you were not on. That is the owner's "when I drop my
+ * weapons in the church or tunnel they disappear", and it is this file's
+ * oldest lesson wearing yet another coat: A CONSTANT THAT DESCRIBES ONE
+ * PLACE IS WRONG THE DAY THE GAME ACQUIRES ANOTHER.
+ *
+ * So the ray is cast at whatever room you are standing in, the floor comes
+ * from `bunkerFloorAt` (which every room answers), and the beach's two walls
+ * are only applied when you are on the beach. */
+const inRoom = () => inBunker || inShrine || inDojo || inUndercroft;
+function dropTargets() {
+  if (inUndercroft) return [undercroft];
+  if (inBunker) return bunkers.map((b) => b.group).filter(Boolean);
+  if (inShrine) return shrineWorld ? [shrineWorld] : [];
+  if (inDojo) return dojoWorld ? [dojoWorld] : [];
+  return [sand, dock, DOCK_STEPS, driftGroup, rockGroup];
+}
 function dropPoint() {
   _dropRay.setFromCamera({ x: 0, y: 0 }, camera);
   _dropRay.far = 3.0;
-  const hits = _dropRay.intersectObjects([sand, dock, DOCK_STEPS, driftGroup, rockGroup], true)
-    .filter((h) => h.object.name !== 'hitProxy' && h.object.visible);
+  const targets = dropTargets().filter(Boolean);
+  const hits = targets.length
+    ? _dropRay.intersectObjects(targets, true)
+        .filter((h) => h.object.name !== 'hitProxy' && h.object.visible)
+    : [];
   if (hits.length) {
     _dropPt.copy(hits[0].point);
+    /* AND YOU CAN SET A THING DOWN ON A FLOOR, NOT ON A WALL. The hit point
+     * is kept as a height (`Math.max` below) so a thing put down on the
+     * pier's boards stays on the boards — right for a deck, and on a
+     * near-vertical face it hangs the item on the rock at eye level, which
+     * in a tunnel is most of what the crosshair meets. If the surface the
+     * ray found is not something you could stand on, take the point's
+     * position and let the floor under it decide the height. */
+    const nrm = hits[0].face && hits[0].normal;
+    if (nrm && Math.abs(nrm.y) < 0.5) _dropPt.y = -1e6;
   } else {
     camera.getWorldDirection(_dropDir); _dropDir.y = 0;
     if (_dropDir.lengthSq() < 1e-4) _dropDir.set(0, 0, -1); else _dropDir.normalize();
-    _dropPt.set(camera.position.x + _dropDir.x * 1.1, 0, camera.position.z + _dropDir.z * 1.1);
+    /* AND WHERE THE RAY MEETS NOTHING, THE FALLBACK IS YOUR OWN FEET — not
+     * y = 0, which is the sand and is the wrong planet in four of the five
+     * places this can now be called from. */
+    _dropPt.set(camera.position.x + _dropDir.x * 1.1,
+                camBaseY - playerEye(),
+                camera.position.z + _dropDir.z * 1.1);
   }
-  _dropPt.x = THREE.MathUtils.clamp(_dropPt.x, WADE_X + 0.4, CLIFF_BLOCK_X - 0.4);
-  _dropPt.y = Math.max(_dropPt.y, groundUnder(_dropPt.x, _dropPt.z)) + 0.04;
+  if (!inRoom()) _dropPt.x = THREE.MathUtils.clamp(_dropPt.x, WADE_X + 0.4, CLIFF_BLOCK_X - 0.4);
+  /* the floor is asked at YOUR feet's height, not the ray's — a wall hit has
+   * just thrown its own height away and a room's floor test needs a y that
+   * is actually in the room */
+  const g = groundUnder(_dropPt.x, _dropPt.z, camBaseY - playerEye() + 0.6);
+  _dropPt.y = Math.max(_dropPt.y, g) + 0.04;
   return _dropPt;
 }
 function throwHeld() {
@@ -10984,12 +11046,16 @@ function crateStrike(P) {
   return false;
 }
 
-function breakCrate(c = crates[0], P = 1) {
+/* `quiet` is the RESTORE: a crate you broke an hour ago comes back broken,
+ * and it must not come back EXPLODING — no bang, no shake, no boards in the
+ * air, just the thing already open and whatever was in it on the sand. */
+function breakCrate(c = crates[0], P = 1, quiet = false) {
   if (!c || c.broken) return;
   c.broken = true;
   scene.remove(c.group);
   const ci = rockColliders.indexOf(c.collider);
   if (ci >= 0) rockColliders.splice(ci, 1);
+  if (quiet) { if (c.onBreak) c.onBreak(c); return; }
   sfxCrateBreak();
   /* HOW HARD IT CAME APART IS HOW HARD IT WAS HIT. Now that a click opens a
    * crate, the charge has to be worth something here anyway: a tap drops the
@@ -11884,7 +11950,7 @@ function sfxStepPuddle() {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime;
   const out = ctx.createGain();
-  out.gain.value = 0.17 * (0.72 + Math.random() * 0.5);
+  out.gain.value = 0.30 * (0.72 + Math.random() * 0.5);
   out.connect(sfxOut());
   // the break of the surface: bright, very short
   const sp = noiseBurst(0.10, (x) => Math.pow(1 - x, 2.6));
@@ -11900,12 +11966,23 @@ function sfxStepPuddle() {
   sl.connect(lp).connect(lg).connect(out);
   sl.start(t + 0.018); sl.stop(t + 0.15);
 }
+/* AND YOU SEE IT AS WELL AS HEAR IT. A puddle you can only hear is a sound
+ * effect; what says you are wading is water coming up off your boot. A
+ * handful of drops out of the channel's own surface, thrown the way you are
+ * going — the beach's own splash pool, told which water it came out of. */
+function ucStepSplash() {
+  if (!ucInWater() || !UC.water) return;
+  camera.getWorldDirection(_pf);
+  const y = UC_Y + UC.water.y;
+  spawnSplash(camera.position.x + _pf.x * 0.25, camera.position.z + _pf.z * 0.25,
+              3, _pf.x, _pf.z, 0.30, y + 0.01);
+}
 function sfxStepUnder() {
   stepAlt ^= 1;
   const wet = ucInWater();
   if (ucInChurch() && playSample('churchStep', 0.62 * (stepAlt ? 1 : 0.86), 0.05)) return;
   sfxStep();
-  if (wet) sfxStepPuddle();
+  if (wet) { sfxStepPuddle(); ucStepSplash(); }
 }
 function sfxStepDrain() { sfxStep(); }
 function sfxStep() {
@@ -16617,11 +16694,16 @@ const MUT_RECOIL = 0.32;                   // how long a survived hit rocks it
  * the game will not take from it. */
 const NTAR_KNOCK = { fall: 1.60, lie: 0.85, rise: 0.95, land: 0.62, slide: 0.95 };
 const _knV = new THREE.Vector3();
-const knockTotal = () => NTAR_KNOCK.fall + NTAR_KNOCK.lie + NTAR_KNOCK.rise;
+/* AND THE BEATS BELONG TO THE CLIPS, SO THEY BELONG TO THE KIND — the
+ * death's own lesson. The alien reverses a 1.6 s reel; the knight has a real
+ * fall and a real rise of his own lengths, and the whole thing has to be
+ * short enough that the fight does not stop while it plays. */
+const knockOf = (u) => (u && u.kind && u.kind.knock) || NTAR_KNOCK;
+const knockTotal = (u) => { const K = knockOf(u); return K.fall + K.lie + K.rise; };
 /* Where the clip should be, for a knockdown `s` seconds old: down through
  * the fall, held on the floor, and back up the way it came. */
-function knockClipTime(s, dur) {
-  const K = NTAR_KNOCK;
+function knockClipTime(s, dur, u) {
+  const K = knockOf(u);
   if (s < K.fall) return (s / K.fall) * dur;
   if (s < K.fall + K.lie) return dur;
   return dur * Math.max(0, 1 - (s - K.fall - K.lie) / K.rise);
@@ -16634,12 +16716,12 @@ function knockClipTime(s, dur) {
  * opening, not a free kill. */
 function mutKnockdown(u) {
   u.st.knocked = true;
-  u.st.down = knockTotal();
+  u.st.down = knockTotal(u);
   u.st.atk = -1; u.st.chainAt = -1; u.st.chained = false; u.st.chainN = 0;
   u.st.stun = 0; u.st.recoil = 0; u.st.block = 0; u.st.evade = 0;
   u.st.side = 0; u.st.back = 0; u.st.roar = 0;
   u.st.poise = u.kind.poise;
-  u.st.cool = knockTotal() + 0.3;
+  u.st.cool = knockTotal(u) + 0.3;
   mutDrop(u);
   u.g.rotation.y = Math.atan2(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
   u.hitFrom.copy(u.g.position);
@@ -17244,8 +17326,22 @@ function mutAnim(u, dt, moving) {
     if (a) { a.paused = false; a.timeScale = 1; }
   } else if (u.st.down > 0) {
     // down, held there, and back up the way he went: one reel, three beats
-    const a = mutPlay(u, u.kind.knockClip, false);
-    if (a) { a.paused = true; a.time = clampTime(a, knockClipTime(knockTotal() - u.st.down, a.getClip().duration)); }
+    /* TWO CLIPS, NOT ONE PLAYED BACKWARDS. A kind that carries a `riseClip`
+     * has a real fall and a real get-up, so each runs forwards on its own
+     * beat and the floor is the fall's last frame held; a kind without one
+     * keeps the alien's arrangement, which reverses its fall because its
+     * file has no rise in it. */
+    const KN = knockOf(u), s = knockTotal(u) - u.st.down;
+    if (u.kind.riseClip && s >= KN.fall + KN.lie) {
+      const a = mutPlay(u, u.kind.riseClip, false);
+      if (a) { a.paused = true; a.time = clampTime(a, Math.min(1, (s - KN.fall - KN.lie) / KN.rise) * a.getClip().duration); }
+    } else if (u.kind.riseClip) {
+      const a = mutPlay(u, u.kind.knockClip, false);
+      if (a) { a.paused = true; a.time = clampTime(a, Math.min(1, s / KN.fall) * a.getClip().duration); }
+    } else {
+      const a = mutPlay(u, u.kind.knockClip, false);
+      if (a) { a.paused = true; a.time = clampTime(a, knockClipTime(s, a.getClip().duration, u)); }
+    }
   } else if (u.st.stun > 0) {
     // the reel, run off the stun clock, so it is helpless for exactly as long
     // as it looks helpless
@@ -18912,7 +19008,19 @@ function blowLands(u) {
     const fwd = _dbC.dot(_dbF);
     if (fwd > 0.38) {
       let best = Infinity;
-      for (const L of mutLimbs(u)) {
+      /* AND THE BENEFIT OF THE DOUBT GOES TO THE LIMB THAT IS SWINGING.
+       * `best` was the minimum over EVERY chain the creature owns — so a
+       * right-hand punch could be scored on the LEFT hand simply because it
+       * happened to be hanging within a metre of you, and what the player
+       * sees is a blow that lands while the fist that threw it is nowhere
+       * near them. The owner's words: "there is a right swing that hits you
+       * when it's not even close". A swing already says which chains it
+       * strikes with (`A.limbs`, the same indices the aim uses); the
+       * fallback asks those and nothing else. */
+      const all = mutLimbs(u);
+      const chains = (A.limbs && A.limbs.length)
+        ? A.limbs.map((i) => all[i]).filter(Boolean) : all;
+      for (const L of chains) {
         if (!L.hand) continue;
         (L.tip || L.hand).getWorldPosition(_dbC);
         if (!L.tip && (u.kind.barLen || 0) > 0 && L.fore) {
@@ -18923,7 +19031,11 @@ function blowLands(u) {
         const y = THREE.MathUtils.clamp(_dbC.y, bot, top);
         best = Math.min(best, Math.hypot(_dbC.x - camera.position.x, _dbC.z - camera.position.z, _dbC.y - y));
       }
-      if (best <= LAND_SLOP) return true;
+      /* AND HOW WIDE IS THE KIND'S OWN NUMBER. A metre was set for a man
+       * with a crowbar whose bar finishes inside a quarter of a metre; on a
+       * creature whose blows are measured landing 0.30-0.45 m from the chest
+       * it is most of an arm's worth of charity. */
+      if (best <= (u.kind.landSlop || LAND_SLOP)) return true;
     }
   }
   return false;
@@ -19083,7 +19195,26 @@ function hurtMutant(u, dmg, P = 0) {
    * hardest thing to land on him, and then only sometimes and only once.
    * Never on the blow that wakes him: being knocked down by the first touch
    * would be the whole fight's biggest moment thrown away on an ambush. */
-  if (u.kind.knockClip && !u.st.knocked && !woke && poiseBroke
+  /* AND A KIND MAY EARN IT RATHER THAN ROLL FOR IT. `knockP` is a die and
+   * a die is right for a creature you meet once — but the owner's word for
+   * the knight is that ENOUGH HEAVIES TO THE HEAD put him down, which is a
+   * count, not a chance: you cannot land it by luck and you cannot be
+   * denied it by luck either. A heavy that goes through his poise is the
+   * hardest thing in the fight to land; `knockAfter` of them and he goes
+   * over. The tally resets when he does, so it is a thing you can do more
+   * than once and have to earn every time. */
+  const heavyBlow = P >= MUT_HEAVY || digOverhead;
+  if (u.kind.knockAfter && poiseBroke && heavyBlow && !woke) {
+    u.st.headHits = (u.st.headHits || 0) + 1;
+    // `down` is undefined until the first knockdown, and `undefined <= 0` is
+    // FALSE — so the count climbed for ever and he never went over
+    if (u.st.headHits >= u.kind.knockAfter && !(u.st.down > 0)) {
+      u.st.headHits = 0;
+      mutKnockdown(u);
+      return false;
+    }
+  }
+  if (u.kind.knockClip && !u.kind.knockAfter && !u.st.knocked && !woke && poiseBroke
       && u.st.hp < u.kind.hp * 0.9 && Math.random() < (u.kind.knockP || 0)) {
     mutKnockdown(u);
     return false;
@@ -19115,6 +19246,12 @@ function hurtMutant(u, dmg, P = 0) {
     const r = Math.random();
     if (fromBehind && u.clips.hitBack && r < 0.30) { u.st.hitClip = 'hitBack'; u.st.hitFull = true; rk *= 2.6; }
     else if (u.clips.hitSide && r < 0.18) { u.st.hitClip = 'hitSide'; u.st.hitFull = true; rk *= 2.4; }
+    /* AND ONE MORE RARE ONE: CAUGHT ON THE SIDE OF THE HEAD. It is the
+     * shortest of the three (0.80 s against the stagger's own) and it is the
+     * one that reads as a blow to the HELMET, which is what the count that
+     * puts him down is made of — so seeing it now and then is the fight
+     * telling you what you are working toward. */
+    else if (u.clips.hitHead && r < 0.34) { u.st.hitClip = 'hitHead'; u.st.hitFull = true; rk *= 2.0; }
     else { u.st.hitClip = 'hitBig'; u.st.hitFull = true; rk *= 2.1; }
   }
   u.st.recoilT = MUT_RECOIL * rk;
@@ -20678,12 +20815,13 @@ function updateMutantUnit(u, dt) {
    * over the fall only — the reel's own travel, which the pack step does
    * not take from it — and then he is still. */
   if (u.st.down > 0) {
+    const KN = knockOf(u);
     u.st.down = Math.max(0, u.st.down - dt);
-    const s = knockTotal() - u.st.down;
-    if (s < NTAR_KNOCK.fall) {
-      const k = Math.min(1, s / NTAR_KNOCK.fall);
-      p.copy(u.hitFrom).addScaledVector(u.hitDir, NTAR_KNOCK.slide * k * (2 - k));
-      if (!u.st.downThud && s >= NTAR_KNOCK.fall * NTAR_KNOCK.land) {
+    const s = knockTotal(u) - u.st.down;
+    if (s < KN.fall) {
+      const k = Math.min(1, s / KN.fall);
+      p.copy(u.hitFrom).addScaledVector(u.hitDir, KN.slide * k * (2 - k));
+      if (!u.st.downThud && s >= KN.fall * KN.land) {
         u.st.downThud = true;                       // the frame he actually lands
         sfxKillThud(1.1); addTrauma(0.4);
         spawnPuffs(p.x, p.z, 7, u.hitDir.x, u.hitDir.z, p.y + 0.1);
@@ -20696,9 +20834,14 @@ function updateMutantUnit(u, dt) {
      * hips are held to the straight line from where he is lying to where he
      * stands, and what is left is his own tumble run backwards at ground
      * level — a body rocking back over its shoulders and onto its feet. */
-    const H = u.ntarHip;
-    if (H && H.bone && s > NTAR_KNOCK.fall + NTAR_KNOCK.lie) {
-      const k = Math.min(1, (s - NTAR_KNOCK.fall - NTAR_KNOCK.lie) / NTAR_KNOCK.rise);
+    /* AND A KIND WITH A REAL GET-UP NEEDS NONE OF THIS. The hip clamp is
+     * here because the alien's rise is his own FALL played backwards, which
+     * takes his hips back through the apex of the punch — he would stand up
+     * by flying two metres into the air. A creature with an authored
+     * `riseClip` gets to its feet the way the animator drew it. */
+    const H = u.kind.riseClip ? null : u.ntarHip;
+    if (H && H.bone && s > KN.fall + KN.lie) {
+      const k = Math.min(1, (s - KN.fall - KN.lie) / KN.rise);
       const want = H.lie * (1 - k * k * (3 - 2 * k));
       const up2 = Math.max(1e-6, H.up.lengthSq());
       const cur = _knV.copy(H.bone.position).sub(H.pos).dot(H.up) / up2;
@@ -25315,6 +25458,14 @@ function saveCheckpoint() {
        * fight you have already won does not un-happen when you load, and a
        * sword you have already taken off its stand is not on it again. */
       dojoWon, heroSword: heroSwordTaken,
+      /* AND A BOX YOU BROKE STAYS BROKEN. It was never on the save, which
+       * did not matter while the crate only held a ring the beach could do
+       * without — and now the first crate holds the LIGHT, and a restore
+       * that stands it back up whole means the handler that hands the
+       * glowstick over is never registered and the pickup can never be
+       * replayed. (The pack backstop catches the item; this is so the beach
+       * is the beach you left.) */
+      crates: crates.map((c, i) => (c.broken ? i : -1)).filter((i) => i >= 0),
     },
   };
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (err) { return; }
@@ -25430,6 +25581,9 @@ function updateRestore(dt) {
   /* THE DOJO, BEFORE ANYTHING ELSE READS IT. `dojoWon` also implies the
    * sword: you cannot have killed him without taking it off the stand, so a
    * save that only carried the win still puts the rack back empty. */
+  /* the crates you opened, BEFORE the pickups are replayed: breaking one is
+   * what registers whatever was inside it */
+  for (const i of f.crates || []) if (crates[i] && !crates[i].broken) breakCrate(crates[i], 1, true);
   if (f.dojoWon) dojoWon = true;
   if (f.heroSword || f.dojoWon) heroSwordTaken = true;
   if (f.holdDoor && !holdDoorOpen) {
@@ -25448,9 +25602,47 @@ function updateRestore(dt) {
   if (missing && restoreT < 8) return;
   finishRestore();
 }
+/* ---- AND NOTHING IN YOUR PACK MAY BE LOST TO A SPAWNER THAT DID NOT RUN.
+ *
+ * The restore replays PICKUPS: it looks up each saved id among the
+ * interactables and fires that handler again, which is the right design —
+ * the handler is what builds the view model, names the thing and puts it in
+ * the pack, and every one of the fourteen is different. What it cannot do is
+ * find a handler that does not exist yet, and there are real ways for that
+ * to happen: an item that is registered by something ELSE breaking (the
+ * crate's glowstick), a scan that has not landed inside the eight-second
+ * window, an interactable behind a gate the restore has not opened. When
+ * that happens the item is simply gone, for the rest of the game, with no
+ * error anywhere — and the owner lost his WEAPONS to it, which is the worst
+ * possible version.
+ *
+ * So the replay is the mechanism and this is the floor under it: anything
+ * the save says you were carrying that is still not in the pack when the
+ * window closes is granted outright. It is a last resort by construction —
+ * if the replay worked, this finds nothing — and it can only ever hand back
+ * something you are recorded as having had. */
+function packByName(name) {
+  /* The named, module-scope items — which is every one the replay can lose.
+   * The shells, the note and the blood jar are BUILT at the moment they are
+   * taken and have no standing object to hand back; they are also not things
+   * a fight depends on. The three dig tools are, and they are all here. */
+  for (const it of [shovelItem, militaryItem, katanaItem, glowstickItem, ringItem,
+                    keyItem, boatKeyItem, cdItem, crabItem, syringeItem,
+                    waterBottleItem, headItem]) {
+    if (it && it.name === name) return it;
+  }
+  return null;
+}
 function finishRestore() {
   const d = restore; restore = null;
   if (!d) return;
+  for (const name of d.pack || []) {
+    if (inventory.some((i) => i.name === name)) continue;
+    const it = packByName(name);
+    if (!it) { console.warn('[restore] no item known by the name', name); continue; }
+    console.warn('[restore] the pickup for', name, 'never appeared — granting it outright');
+    addToInventory(it);
+  }
   /* THE PACK COMES BACK IN ORDER. Replaying pickups puts things in whatever
    * order they landed, and the hotbar is muscle memory — 3 was the shovel all
    * game. Sort what you actually have by the order you were carrying it. */
@@ -28899,7 +29091,7 @@ MUT_KINDS.knight = {
    * and the fight reads as happening beside you instead of to you. Measured
    * at the contact frame: the sweep now finishes 0.28 to 0.53 m off the
    * chest and the punch 0.4 to 0.6, where they were both over two metres. */
-  reacts: true, aimed: true, barLen: 0.34, aimK: 1.90, bossDeath: true,
+  reacts: true, aimed: true, barLen: 0.34, aimK: 1.90, bossDeath: true, landSlop: 0.62,
   rig: { arm: 'upperarm_r', fore: 'lowerarm_r', hand: 'hand_r',
          armL: 'upperarm_l', foreL: 'lowerarm_l', handL: 'hand_l', head: 'head',
          // his one extra chain: the right leg, so the stomp lands with the BOOT
@@ -28957,6 +29149,22 @@ MUT_KINDS.knight = {
   /* THE REEL A PARRY BUYS. A parry is the biggest thing you can do to him
    * and it used to play the same small flinch as a shovel tap. */
   stunClip: 'parry',
+  /* ---- AND ENOUGH HEAVIES TO THE HEAD PUT HIM ON HIS BACK.
+   *
+   * Three blows that are BOTH heavy and through his poise — which is the
+   * hardest thing in this fight to do once, let alone three times — and he
+   * goes over, gets up, and the tally starts again. It is a count and not a
+   * die on purpose: a roll can hand it to you on a lucky tap or withhold it
+   * through a perfect exchange, and this is meant to be the thing you were
+   * working toward.
+   *
+   * The beats are SHORT, because the owner has to be able to keep fighting:
+   * the fall is the clip's own 1.27 s, a third of a second on the floor, and
+   * a 1.33 s get-up — a shade under three seconds, against the alien's three
+   * and a half. And he has a real `riseClip`, so he stands up the way the
+   * animator drew it rather than by playing his own fall backwards. */
+  knockClip: 'knockOut', riseClip: 'getUp', knockAfter: 3,
+  knock: { fall: 1.27, lie: 0.34, rise: 1.33, land: 0.78, slide: 1.35 },
   /* AND HE OPENS THE SIZE-UP WITH A STEP, NOT A STROLL. Three metres in
    * eight tenths of a second, measured off the clip: he is simply somewhere
    * else, and then he walks the circle watching you. */

@@ -1348,6 +1348,14 @@ export function makeUndercroft(opts = {}) {
   S.bodyR = (lx, lz) => {
     for (const w of S.walks) {
       if (!w.bodyR) continue;
+      /* AND A WIDE BODY MUST NOT BE CARRIED THROUGH THE DOORWAY. The
+       * passage's own bounding box runs on past its mouth and over the
+       * church's threshold, so the fat body the BORE wants was being applied
+       * in the breach — which is an arch the width of the tunnel's mouth and
+       * no wider. Measured: the hands-off walk stopped dead at x = 73.3,
+       * seven metres short of the nave, wedged in the hole. `bodyRMaxX` ends
+       * it where the tunnel ends. */
+      if (w.bodyRMaxX !== undefined && lx > w.bodyRMaxX) continue;
       const b = w.bounds;
       if (lx >= b[0][0] + w.off.x && lx <= b[1][0] + w.off.x && lz >= b[0][2] + w.off.z && lz <= b[1][2] + w.off.z) return w.bodyR;
     }
@@ -1496,7 +1504,7 @@ export function makeUndercroft(opts = {}) {
      * ground and it should read as one. (3.6 was tried once and is too far
      * — you cannot see the timber, and a tunnel you cannot read is annoying
      * rather than frightening.) */
-    cave:   { dust: 0.52, damp: 0.46, level: 0.30, emis: 0.085, tint: 0xa9a69c, knee: 0.0 },
+    cave:   { dust: 0.55, damp: 0.50, level: 0.19, emis: 0.055, tint: 0xa9a69c, knee: 0.0 },
     /* THE SCAN CARRIES THE DAYLIGHT IT WAS BAKED IN, AND AN EMISSIVE LIFT
      * TURNS EVERY BAKED HIGHLIGHT INTO A LAMP. This church's albedo was lit
      * from outside before anybody photographed it, so the sunlit edge of
@@ -1987,6 +1995,27 @@ export function makeUndercroft(opts = {}) {
      * triangles. The floor you stand on is the floor it draws. */
     S.walks = [ch, cw, pw];
     pw.stepMax = 0.75; pw.dropMax = 1.5;
+    /* ---- AND THE BORE IS NARROWER AT HEAD HEIGHT THAN AT THE FLOOR.
+     *
+     * The walk grid is a PLAN of the floor, and an arched tunnel's walls
+     * lean in as they rise — so a cell whose floor is perfectly clear can
+     * have rock over the outer half of it at eye height. Standing there puts
+     * your feet on the ground and your head in the haunch, which is the
+     * owner's "I can still clip through". Measured over all 1104 walkable
+     * cells of the passage with rays at eye height: 86 of them (7.8 %) had
+     * drawn rock within 22 cm of the camera and the worst was 0.00 — the
+     * lens inside the wall — and almost every one of them sat at z = +/-1.6,
+     * which is exactly where this bore's wall starts to curve over.
+     *
+     * The answer is the body, not the grid: `bodyR` is how far the walk
+     * keeps your centre off a solid cell, and at 0.24 (a shoulder) it lets
+     * you stand with your head in the curve. A body's width at the SHOULDER
+     * is the wrong measurement for a tunnel you meet with your head. It is
+     * the one number, it costs no load time, and it cannot disconnect the
+     * walk the way eroding the grid can — the bore is four metres across and
+     * this keeps you inside the middle three. */
+    pw.bodyR = 0.62;
+    pw.bodyRMaxX = low.x - 1.2;        // ...and not through the breach, which is the mouth's own width
     S.despeckled = despeckle(ch) + despeckle(cw) + despeckle(pw);
     ch.stepMax = 0.40;                  // a pew's seat is 0.45 up, and that is not a step
     cw.stepMax = 1.2; cw.dropMax = 2.0;  // the old cave is rubble

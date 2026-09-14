@@ -113,6 +113,13 @@ CLIPS = [
     ('right strafe',            'sideR2',  'a short side step, right',            'Locomotion Pack'),
     ('left turn 90',            'turnL',   'a quarter turn on the spot, left',    'Locomotion Pack'),
     ('right turn 90',           'turnR',   'a quarter turn on the spot, right',   'Locomotion Pack'),
+    # ---- AND HE CAN BE PUT ON HIS BACK. Two clips, not one played backwards:
+    # the alien's knockdown reverses its own fall because his file has no
+    # get-up in it, and a reversed fall is a shape that reads right and a
+    # motion that does not. These are a real fall and a real rise.
+    ('Knocked Out',             'knockOut','enough heavies to the head and he goes over'),
+    ('Getting Up',              'getUp',   'and back onto his feet'),
+    ('Hit On Side Of Head',     'hitHead', 'rare: caught on the side of the head'),
 ]
 # THE BEATS, measured off the hips (see the log's own curve). A Mixamo clip
 # is a performance with an approach and a recovery either side of the thing
@@ -131,14 +138,25 @@ WINDOW = ({'knock': (30, 78), 'nSweep': (0, None), 'dodge': (20, 82)} if SET == 
           # away, finding his feet and walking back. What a fight wants is the
           # rock and the first of the recovery; the rest is him idling, and at
           # three seconds it is an interruption rather than a hit.
-          else {'hitSide': (0, 46), 'hitBack': (0, 50)})
+          # AND THE KNOCKDOWN IS THE FALL, NOT THE PERFORMANCE ROUND IT.
+          # Read off the hips (the log prints the curve): `knockOut` stands
+          # still for 28 frames, goes over between 28 and 56 (hips 0 ->
+          # -0.79) and then lies there for twenty more — and the game holds
+          # him on the floor itself, so those twenty are dead time in the one
+          # beat that has to be short enough to fight through. `getUp` rises
+          # over frames 6-36 and settles; `hitHead` is a man reeling SIX
+          # METRES and finding his feet, of which a flinch wants the first
+          # rock and nothing else.
+          else {'hitSide': (0, 46), 'hitBack': (0, 50),
+                'knockOut': (20, 58), 'getUp': (0, 40), 'hitHead': (0, 24)})
 # He is knocked down FACING YOU, by the owner's word, so this one is de-yawed
 # whatever it measures.
 FORCE_FLAT_YAW = {'knock'} if SET == 'ntar' else {'kPunch', 'kSwipe', 'kJump', 'block', 'blockC', 'strafeR', 'sideR', 'k360', 'hit', 'hitBig', 'hitSide', 'hitBack',
       # the locomotion pack and the parry reel: the GAME turns him at you
       # every frame, so nothing here may turn his hips as well — a quarter
       # turn de-yawed is a pivot step, which is what it is wanted for
-      'parry', 'idleB', 'walkC', 'runB', 'strafeL2', 'strafeR3', 'sideL', 'sideR2', 'turnL', 'turnR'}
+      'parry', 'idleB', 'walkC', 'runB', 'strafeL2', 'strafeR3', 'sideL', 'sideR2', 'turnL', 'turnR',
+      'knockOut', 'getUp', 'hitHead'}
 
 
 def log(*a):
