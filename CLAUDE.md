@@ -3464,6 +3464,107 @@ four frames over 250) and every asset is in by 8.3 s; the abduction take has
 NO frame over 24 ms; and the death, the crash and the hand-back have one, at
 338 ms, with two new programs where there were thirty.
 
+**"IT LAGS, ESPECIALLY ON WINDOWS" WAS THREE COSTS, AND NONE OF THEM WAS THE
+TRIANGLES.** Measured standing still at the spawn, doing nothing: **1123 draw
+calls, 506k triangles, 497 shader programs and 46 point lights in every
+shader.** A Mac absorbs all of that — Metal will take a thousand draws a frame
+and say nothing, which is why every one of these had been walked past. Windows
+runs WebGL through ANGLE onto D3D11, where a draw call is a validated API call
+costing several times what it costs on Metal, and where every shader program
+must first be TRANSLATED to HLSL and compiled by the D3D compiler. So the three
+things that were nearly free here are the three things that are not there.
+
+- **SIX HUNDRED AND SIXTY DRAWS WERE SPENT PAST THE FOG.** `FogExp2` at 0.014
+  leaves under one per cent of a surface at 153 m; the camera's far plane is
+  five thousand. 821 of the 1123 draws, carrying 230k triangles, were beyond
+  that line — the lighthouse's masonry from a kilometre and a quarter, the
+  bunker forty metres underground, every cache down the whole walk.
+  `farProps` is the hand-kept version of this idea and it works; what it
+  cannot do is cover what nobody remembered to register, and by the time the
+  walk was a kilometre long that was most of the world. `cullBeyondFog` takes
+  it by the SCENE instead of by the list: the highest subtree with nothing
+  un-cullable in it is a unit, measured once for its own radius and culled
+  against `DRAW_FAR`. The list's own distances — 260, 300, 320, 340, every one
+  of them at least ninety metres past the point where there is nothing left to
+  see — are clamped to the same number.
+- **AND FOG HIDES A THING BUT IT DOES NOT HIDE A HOLE IN THE SKY.** That is
+  the one place the reasoning above is wrong and it took a pixel diff to find:
+  rendering with and without the cull, everything that still showed a
+  difference at 920 m was 27 to 93 metres across. Fully fogged, a landform is
+  not gone — it is a shape of fog colour standing in front of a brighter
+  horizon and in front of the moon, and culling it does not remove a dim
+  object, it opens a hole. Anything bigger than `SKYLINE_R` keeps whatever
+  `farProps` already said about it: 43 units out of 595, which costs nothing,
+  because the draw calls were never in the big things (the median culled unit
+  is 0.7 m across). What is left is 2 to 9 pixels of moon where a speck at
+  700–1000 m used to cross it.
+- **FORTY-SIX POINT LIGHTS WERE IN EVERY SHADER AND NONE OF THEM REACHED
+  YOU.** `NUM_POINT_LIGHTS` is a #define, so a fragment of sand on an empty
+  beach ran the point-light loop forty-six times and every draw bound
+  forty-six lights' worth of uniforms. They are all in the scene for ever
+  because this file learned early that a light ENTERING OR LEAVING recompiles
+  every material in the game — true, and the price of obeying it had quietly
+  become the whole problem. So the lights are VIRTUALISED: twelve real
+  `PointLight`s are added at boot and are the only ones the camera ever sees,
+  and every other point light in the game stays exactly where it is, keeps its
+  name and its parent and its intensity, goes on being animated by whatever
+  owns it, and is moved to a layer the camera does not watch (three gathers a
+  light only if `layers.test(camera.layers)` passes, and unlike `visible` that
+  is not something anything else in this file reads). Each frame the twelve are
+  pointed at the twelve that actually reach you. **Twelve is measured**:
+  sampling every light's own position and the whole walk, the most that are
+  ever within 1 % of the brightest at one spot is NINE, under the lighthouse's
+  lantern. Verified by rendering the same frame both ways at sixteen light
+  clusters — pixel-identical. Programs went 497 → 114, which is the load-time
+  bill on Windows cut by four fifths. **And the side effect is worth as much as
+  the saving: hiding a lamp is FREE now**, so `farProps` may cull a group with
+  lights in it and the hall's lamps need no longer be kept alive in a group
+  that is never hidden.
+- **A BUILDING MADE OF SIX HUNDRED LITTLE MESHES IS SIX HUNDRED DRAW CALLS,
+  AND THE TRIANGLES ARE NOT THE POINT.** The pavilion is 583 objects — every
+  astragal, every pane, every rib of the gills — and together they are under
+  ten thousand triangles: twenty-two triangles a draw. This file has already
+  argued once that the pavilion's six hundred meshes were not its cost, and on
+  a Mac that was true. `bakeStatic` is `bakeScatter` with the nesting handled
+  (a pavilion is a tree, a scatter is a flat list): merged by material, in the
+  root's frame, skipping anything that moves on its own, carries children, is
+  instanced or skinned, or is NAMED — a name means somebody holds it. The gate
+  is kept out by hand because it swings. Pavilion 563 → 41, drain 122 → 27,
+  and the two decorative horseshoe crabs — 86 meshes and 49,000 triangles each
+  for a prop the size of a dinner plate — 172 → 18, the beach copy merged from
+  a CLONE so the one in your hand and on the examine screen stays whole.
+  Merging gives up per-mesh frustum culling, which is the right trade for a
+  building and the wrong one for things scattered over a kilometre, so this is
+  called on BUILDINGS.
+- **AND THE INVISIBLE RAYCAST PROXIES WERE BEING DRAWN.** All 34 `hitProxy`
+  spheres are transparent at opacity 0, and every one was a draw call and a
+  place in the depth-sorted transparent pass. `Raycaster` tests `layers` and
+  never `.visible` (`intersectObject` in three r160 is two lines and there is
+  no visibility check in either of them), so a proxy can be `visible = false`
+  and stay hoverable. Everything that reads them already excluded them by
+  name.
+- **AND THIRTY THOUSAND TRIANGLES AN INSTANCE IS A DISTANCE, NOT A BUDGET.**
+  The headland's dense grass is twelve instances of Pasha's blade patch —
+  368,640 triangles, more than half of everything in the frame at the fence,
+  for blades a quarter of a metre high rendered at 0.42 of the screen, where
+  every one of them is a fraction of a pixel. It is the body bag's ropes
+  again. It lines the last twenty metres of the lane, so it gets thirty
+  metres and nothing further.
+
+Measured over the walk after, at fifteen stations from the spawn to the
+lighthouse: **draws 1123 → 336 at the spawn and 235 on average, worst 663 at
+the fence** (which stays in pieces because it is destructible), **programs
+497 → 114, point lights 46 → 12, and the render call 2.69 ms → 1.00 ms.** The
+place that gained most is the pavilion, 1100 draws and 4.48 ms → 157 and
+0.70. Nothing in the walk changed by more than 0.014 % of the frame.
+
+**AND A THROW INSIDE A NAMED SPAN SHOULD SAY WHICH SPAN.** An exception in
+`animate` reports the line of the `bwSpan` call and nothing else, which is a
+one-line stack for a crash that can be anywhere in the game; `bwSpan` names it
+now. (The one it caught was the harness's own: teleporting the player past
+`ABDUCT_Z` before the hall has loaded runs `placeInShrine` with `SH` still
+null. Walking there cannot do it, but a test that teleports can.)
+
 ## Dev mode
 
 `DEFAULT_SETTINGS` are the owner's own (music 30 %, waves 18 %, effects

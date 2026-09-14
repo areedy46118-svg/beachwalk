@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeHorseshoeCrab, makeHorseshoeCrabIcon } from './models/horseshoe-crab.js';
 import { makeSyringe, makeSyringeIcon } from './models/syringe.js';
 import { makeBloodJar } from './models/blood-jar.js';
@@ -37,10 +38,19 @@ import { makeUndercroft } from './models/undercroft.js';
  * callback — and keeps anything over a frame's budget with a name on it.
  * `__bw.lag()` reads them back, worst first. */
 const bwLag = [];
+const bwThrew = [];
 function bwSpan(tag, fn) {
   const t0 = performance.now();
   try {
     return fn();
+  } catch (e) {
+    /* AND A THROW INSIDE A NAMED SPAN SHOULD SAY WHICH SPAN. An exception in
+     * `animate` reports the line of the `bwSpan` call and nothing about what
+     * was being warmed or loaded, which is a one-line stack for a crash that
+     * can be anywhere in the game. */
+    bwThrew.push([Math.round(t0), tag, (e && e.message) || String(e), (e && e.stack) || '']);
+    console.warn('[bw] threw inside', tag, e);
+    throw e;
   } finally {
     const d = performance.now() - t0;
     if (d >= 16) {
@@ -622,6 +632,101 @@ function setSkyDuck(k) {
   if (Math.abs(k - skyDuck) < 0.0005) return;
   skyDuck = k;
   for (const e of SKY_LIGHTS) e.l.intensity = e.base * (1 - 0.94 * k);
+}
+
+
+/* ---------------------------------------------------------- the lamp pool
+ * FORTY-SIX POINT LIGHTS WERE IN EVERY SHADER IN THE GAME, AND AT THE SPAWN
+ * NOT ONE OF THEM REACHED YOU. Every lamp this world has ever needed — the
+ * drain's, the dock's, the bunker's six, the hall's, the saucer's, the
+ * undercroft's five, thirty candles' worth over the altar — lives in the
+ * scene for ever, because this file learned early that a light ENTERING OR
+ * LEAVING recompiles every material in the game. That rule is true and the
+ * price of obeying it had quietly become the whole problem: `NUM_POINT_LIGHTS`
+ * is a #define, so a fragment of sand on an empty beach ran the point-light
+ * loop forty-six times, and every draw call bound forty-six lights' worth of
+ * uniforms. Measured standing at the spawn: 46 lights in the shader, 0 of
+ * them within their own falloff of the camera. On a Mac that is slack the
+ * driver absorbs; through ANGLE on Windows it is the frame.
+ *
+ * So the lights are VIRTUALISED. Twelve real PointLights are added here, at
+ * boot, before anything is drawn, and they are the only point lights the
+ * camera ever sees — the count is pinned at twelve from the first frame to
+ * the last, which is the old rule kept absolutely rather than approximately.
+ * Every other point light in the game stays exactly where it is, keeps its
+ * name, its parent, its position and its intensity, and goes on being
+ * animated by whatever code owns it (the guttering candles, the failing
+ * bulbs, `setSkyDuck`, the drain's mix, the saucer's emitter) — it is simply
+ * moved to a layer the camera does not watch, so three never gathers it.
+ * Each frame the twelve are pointed at the twelve that actually reach you.
+ *
+ * Twelve is measured, not chosen: sampling every light's own position and
+ * the whole walk, the most that are ever within 1 % of the brightest at one
+ * spot is NINE — under the lighthouse's lantern, which is the densest
+ * cluster in the game. Twelve can never drop one you could see.
+ *
+ * The side effect is worth as much as the saving: hiding or showing a lamp
+ * is FREE now. `farProps` may cull a group with lights in it, a room may go
+ * dark, the hall's lamps need no longer be kept alive in a group that is
+ * never hidden — none of it can change the count, because the count is no
+ * longer anything to do with how many lamps are lit. */
+const LIGHT_SLOTS = 12;
+const lightPool = [], virtualLights = [];
+const LAMP_LAYER = 1;                    // the camera watches layer 0 and only layer 0
+for (let i = 0; i < LIGHT_SLOTS; i++) {
+  const l = new THREE.PointLight(0x000000, 0, 1, 2);
+  l.name = 'poolLamp';
+  l.userData.bwPooled = true;
+  scene.add(l);
+  lightPool.push(l);
+}
+/* Catching them ALL, including the ones that land over the network minutes
+ * from now: `Object3D.add` is the one door every light in this game goes
+ * through, and wrapping it once is how `GLTFLoader.load` is already measured
+ * — nobody has to remember. It has to happen inside `add` and not on a scan,
+ * because a point light that is on layer 0 for even one rendered frame is
+ * the recompile this whole arrangement exists to avoid. */
+const _o3dAdd = THREE.Object3D.prototype.add;
+THREE.Object3D.prototype.add = function (...objs) {
+  const r = _o3dAdd.apply(this, objs);
+  for (const o of objs) {
+    if (!o || !o.isPointLight || o.userData.bwPooled || o.userData.bwVirtual) continue;
+    o.userData.bwVirtual = true;
+    o.layers.set(LAMP_LAYER);
+    virtualLights.push(o);
+  }
+  return r;
+};
+const _lpP = new THREE.Vector3();
+const _lpPick = [];
+/* three's own falloff: intensity / (1 + d²), windowed to nothing at `distance`.
+ * It only has to RANK, so the constant terms do not matter. */
+function lampReach(l) {
+  if (l.intensity <= 0) return 0;
+  for (let a = l; a; a = a.parent) if (!a.visible) return 0;
+  l.getWorldPosition(_lpP);
+  const d = _lpP.distanceTo(camera.position), R = l.distance;
+  if (R > 0 && d >= R) return 0;
+  const w = R > 0 ? (1 - (d / R) ** 4) ** 2 : 1;
+  return l.intensity * Math.max(0, w) / (1 + d * d);
+}
+function updateLightPool() {
+  _lpPick.length = 0;
+  for (const l of virtualLights) {
+    const s = lampReach(l);
+    if (s > 0) _lpPick.push({ l, s });
+  }
+  _lpPick.sort((a, b) => b.s - a.s);
+  for (let i = 0; i < LIGHT_SLOTS; i++) {
+    const slot = lightPool[i], src = _lpPick[i];
+    if (!src) { slot.intensity = 0; continue; }
+    src.l.getWorldPosition(_lpP);
+    slot.position.copy(_lpP);
+    slot.color.copy(src.l.color);
+    slot.intensity = src.l.intensity;
+    slot.distance = src.l.distance;
+    slot.decay = src.l.decay;
+  }
 }
 
 // ------------------------------------------------------------------
@@ -1857,7 +1962,7 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
    * the file, because `addInteractable` does not exist yet up here. */
   const lampProxy = new THREE.Mesh(new THREE.CylinderGeometry(LENS_R + 0.18, LENS_R + 0.18, LENS_H + 0.5, 10),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  lampProxy.name = 'hitProxy';
+  lampProxy.name = 'hitProxy'; lampProxy.visible = false;
   lampProxy.position.y = LAMP_Y;
   lighthouse.add(lampProxy);
   lhParts.lampProxy = lampProxy;
@@ -2339,6 +2444,15 @@ function onHeadland(wx, wz) { return headlandAt(wx, wz) > 0.35; }
     }
     inst.instanceMatrix.needsUpdate = true;
     lhDress.add(inst);
+    /* AND THIS ONE GETS ITS OWN DISTANCE, BECAUSE IT IS THIRTY THOUSAND
+     * TRIANGLES AN INSTANCE. Twelve of them is 368,640 triangles — measured
+     * standing eighty metres off, more than half of everything in the frame
+     * — for blades a quarter of a metre high, rendered at 0.42 of the screen,
+     * where every one of them is a fraction of a pixel. It is the body bag's
+     * ropes again: the thing is detail, and detail has a distance past which
+     * it is not detail, it is a bill. It lines the last twenty metres of the
+     * lane, so forty-five metres is the whole of where it can be read. */
+    farProps.push({ obj: inst, z: LH_Z, d: 30 });
   });
 
   // ---- the path surface itself -------------------------------------
@@ -2868,18 +2982,36 @@ bwGlb('assets/rocks.glb', (gltf) => {
  * draw at a distance it cannot be seen from; the body bag's ropes are 235k
  * triangles and stop being legible about 40 m out. */
 const ROCK_DRAW = 210;
+const DRAW_FAR = 170;            // 153 m is where the fog is done; a little slack for the walk-in
+/* AND FOG HIDES A THING; IT DOES NOT HIDE A HOLE IN THE SKY. The distance
+ * above is where a surface stops ADDING anything to the picture, which is
+ * the right test for a mound or a lamp post and the wrong one for a
+ * landform: fully fogged, the headland is still a shape of fog colour
+ * standing in front of a brighter horizon and in front of the moon, and
+ * taking it away does not remove a dim object, it opens a hole. Measured by
+ * rendering with and without the cull: everything that showed a difference
+ * at 920 m was 27 to 93 metres across. So anything big enough to be a
+ * SKYLINE keeps whatever `farProps` already said about it — 43 units of 595,
+ * which is nothing off the saving, because the draw calls were never in the
+ * big things. */
+const SKYLINE_R = 12;
 // `farProps` itself is declared up by lhGround — the headland registers into
 // it at module load, long before this section runs
 function updateFarProps() {
   const cz = camera.position.z;
-  for (const m of rockGroup.children) m.visible = Math.abs(m.position.z - cz) < ROCK_DRAW;
+  for (const m of rockGroup.children) m.visible = Math.abs(m.position.z - cz) < Math.min(ROCK_DRAW, DRAW_FAR);
   /* AND A THING THAT FOLLOWS YOU IS CULLED BY WHERE IT IS, NOT BY WHERE IT
    * STOOD. Every entry here is scenery keyed to the Z it was built at, which
    * is right for a pier and a body bag and catastrophic for a creature that
    * chases: SCP-096 run two hundred metres up the beach after you would have
    * been switched off at the spawn's own distance and kept coming, invisible.
    * `live` reads the object instead. */
-  for (const f of farProps) f.obj.visible = Math.abs((f.live ? f.obj.position.z : f.z) - cz) < f.d;
+  /* and every one of these distances is clamped to the fog: the list was
+   * written object by object with a comfortable margin — 260, 300, 320, 340
+   * — and every one of those is at least ninety metres past the point where
+   * there is nothing left to see. */
+  for (const f of farProps) f.obj.visible = Math.abs((f.live ? f.obj.position.z : f.z) - cz) < Math.min(f.d, DRAW_FAR);
+  cullBeyondFog();
   /* THE HALL WAS DRAWING THE BEACH THROUGH ITS OWN WALLS. The camera's far
    * plane is five kilometres and the hall is three away, so everything on
    * the beach that is not in `farProps` sat inside the frustum and was
@@ -2904,6 +3036,156 @@ function updateFarProps() {
  * off the beach are set in the same call). */
 let hallHid = null;
 const _hcP = new THREE.Vector3();
+/* ------------------------------------------------------- beyond the fog
+ * SIX HUNDRED AND SIXTY DRAW CALLS WERE SPENT ON THINGS THE FOG HAD ALREADY
+ * EATEN. `FogExp2` at 0.014 leaves under one per cent of a surface at 153 m
+ * — past that a thing is not dim, it is GONE — and the camera's far plane is
+ * five kilometres. Measured standing at the spawn: 1250 draw calls, and 821
+ * of them, with 230k triangles behind them, were beyond that line. The
+ * lighthouse's masonry was drawn from a kilometre and a quarter away, the
+ * bunker forty metres underground, and every cache down the whole walk.
+ *
+ * `farProps` is the hand-kept version of this idea and it works; what it
+ * cannot do is cover what nobody remembered to register, which by the time
+ * the walk was a kilometre long was most of the world. This is the same
+ * idea taken by the scene instead of by the list: every subtree that can be
+ * culled at all is culled by its own bounding sphere against the fog.
+ *
+ * WHAT MAY NOT BE CULLED, and why each one bit:
+ *   - anything wearing a material with `fog: false` — the sky dome, the
+ *     moon, the stars, an item's glint, the lantern itself. Those are drawn
+ *     to be seen from a kilometre off and the fog is not applied to them,
+ *     so the distance says nothing about whether you can see them. The rule
+ *     descends: a unit is the HIGHEST subtree with no fog-less material
+ *     anywhere in it, so the tower's stonework is culled and the lantern
+ *     burning on top of it is not.
+ *   - an `InstancedMesh` — its object sits at the origin and its instances
+ *     are scattered over the whole beach, so its own position is not where
+ *     it is. The prints, the puffs and the blood would vanish the moment
+ *     you walked a hundred and seventy metres from the world origin.
+ *   - anything `farProps` already owns, which keeps one thing in charge of
+ *     one object; the list's own distances are clamped to the fog instead.
+ * Lights need no exemption any more — see the lamp pool: what a lamp costs
+ * no longer depends on whether it is switched on. */
+const cullUnits = [];
+let cullScan = 0, farManaged = new Set();
+const _cuP = new THREE.Vector3(), _cuB = new THREE.Box3(), _cuC = new THREE.Vector3();
+/* Returns whether this subtree contains anything that must never be culled.
+ * Units are collected on the way back up, so the deepest safe subtree wins. */
+function scanCullUnits(o, out) {
+  let draws = false, exempt = false;
+  if (o.isInstancedMesh) exempt = true;
+  else if (o.isMesh || o.isPoints || o.isSprite) {
+    draws = true;
+    const ms = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of ms) if (m && m.fog === false) { exempt = true; break; }
+  }
+  const mine = [];
+  for (const c of o.children) {
+    const r = scanCullUnits(c, mine);
+    if (r.draws) draws = true;
+    if (r.exempt) exempt = true;
+  }
+  if (exempt) { for (const u of mine) out.push(u); return { draws, exempt: true }; }
+  if (draws && !farManaged.has(o)) out.push(o);
+  return { draws, exempt: false };
+}
+function rebuildCullUnits() {
+  farManaged = new Set(farProps.map((f) => f.obj));
+  for (const m of rockGroup.children) farManaged.add(m);
+  cullUnits.length = 0;
+  for (const o of scene.children) {
+    if (o.isLight || o.isInstancedMesh || farManaged.has(o)) continue;
+    const mine = [];
+    const r = scanCullUnits(o, mine);
+    if (r.exempt) for (const u of mine) cullUnits.push(u);
+    else if (r.draws) cullUnits.push(o);
+  }
+}
+/* A unit's reach is measured ONCE and kept: `setFromObject` walks every
+ * geometry in the subtree, which for this world is half a million vertices
+ * and not a thing to do on a frame. Until a unit has been measured it is
+ * left alone, and only a few are measured per frame, so a scan that turns up
+ * thirty new units after a load cannot itself become the hitch. */
+function cullReach(o) {
+  let r = o.userData.bwCullR;
+  if (r !== undefined) return r;
+  _cuB.setFromObject(o);
+  if (_cuB.isEmpty()) { o.userData.bwCullR = -1; return -1; }
+  o.getWorldPosition(_cuP);
+  _cuB.getCenter(_cuC);
+  r = _cuC.distanceTo(_cuP) + _cuB.min.distanceTo(_cuB.max) / 2;
+  o.userData.bwCullR = r;
+  return r;
+}
+/* ------------------------------------------------------ one thing, one draw
+ * A BUILDING MADE OF SIX HUNDRED LITTLE MESHES IS SIX HUNDRED DRAW CALLS,
+ * AND THE TRIANGLES ARE NOT THE POINT. The pavilion is 583 objects — every
+ * astragal, every pane, every rib of the gills, every tread — and together
+ * they are under ten thousand triangles: twenty-two triangles a draw. This
+ * file has already argued once that the pavilion's six hundred meshes were
+ * not its cost, and on a Mac that was true, because Metal will take a
+ * thousand draws a frame and not complain. Through ANGLE on Windows every
+ * draw is a validated D3D11 call and four hundred of them is the frame.
+ *
+ * So a static building is merged, by material, into one mesh each — the
+ * drain and the wreck have done this since they were built (`bakeScatter`,
+ * `bakeGroup`); this is the same idea with the nesting handled, because a
+ * pavilion is a tree and a scatter is a flat list.
+ *
+ * WHAT IT MUST NOT TAKE. Anything that moves on its own (the gate hangs on
+ * a pivot and swings), anything that carries children, anything instanced
+ * or skinned, and anything the caller names. Merging also gives up per-mesh
+ * frustum culling, which is the right trade for a building you either see
+ * or are a hundred and seventy metres away from, and the wrong one for
+ * things scattered over a kilometre — so this is called on BUILDINGS. */
+const _bkM = new THREE.Matrix4(), _bkI = new THREE.Matrix4();
+function bakeStatic(root, keep = () => false) {
+  root.updateMatrixWorld(true);
+  _bkI.copy(root.matrixWorld).invert();
+  const byMat = new Map(), doomed = [];
+  root.traverse((o) => {
+    if (o === root || !o.isMesh || o.isInstancedMesh || o.isSkinnedMesh) return;
+    if (!o.material || Array.isArray(o.material) || o.children.length) return;
+    if (o.userData.noBake || o.name) return;         // a name means somebody holds it
+    for (let a = o; a && a !== root; a = a.parent) if (keep(a) || a.userData.noBake) return;
+    let g = o.geometry.clone();
+    g.applyMatrix4(_bkM.copy(_bkI).multiply(o.matrixWorld));
+    if (g.index) g = g.toNonIndexed();
+    g.deleteAttribute('uv1'); g.deleteAttribute('uv2');
+    if (!g.getAttribute('uv')) {
+      const n = g.getAttribute('position').count;
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(n * 2), 2));
+    }
+    if (!g.getAttribute('normal')) g.computeVertexNormals();
+    if (!byMat.has(o.material)) byMat.set(o.material, []);
+    byMat.get(o.material).push(g);
+    doomed.push(o);
+  });
+  for (const o of doomed) if (o.parent) o.parent.remove(o);
+  let made = 0;
+  for (const [mat, geos] of byMat) {
+    let merged = null;
+    if (geos.length === 1) merged = geos[0];
+    else { try { merged = mergeGeometries(geos, false); } catch (e) { merged = null; } }
+    if (merged) { const m = new THREE.Mesh(merged, mat); m.userData.noBake = true; root.add(m); made++; }
+    else { for (const g of geos) { const m = new THREE.Mesh(g, mat); m.userData.noBake = true; root.add(m); made++; } }
+  }
+  return { from: doomed.length, to: made };
+}
+function cullBeyondFog() {
+  if (cullScan-- <= 0) { cullScan = 90; rebuildCullUnits(); }
+  let budget = 6;
+  for (const o of cullUnits) {
+    let r = o.userData.bwCullR;
+    if (r === undefined) { if (budget-- <= 0) continue; r = cullReach(o); }
+    if (r < 0 || r > SKYLINE_R) continue;
+    o.getWorldPosition(_cuP);
+    const beyond = _cuP.distanceTo(camera.position) - r > DRAW_FAR;
+    if (beyond) { if (o.visible) { o.visible = false; o.userData.bwCulled = true; } }
+    else if (o.userData.bwCulled) { o.visible = true; o.userData.bwCulled = false; }
+  }
+}
 function cullWorldInHall() {
   if (inShrine || inUndercroft) {
     if (!hallHid) {
@@ -5033,7 +5315,7 @@ function dropEquipped() {
   scene.add(m);
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  hit.name = 'hitProxy'; m.add(hit);
+  hit.name = 'hitProxy'; hit.visible = false; m.add(hit);
   removeFromInventory(item);
   addInteractable(m, 'Take the ' + (item.name || 'item').toLowerCase(), 'inventory', {
     onActivate: () => {
@@ -5090,7 +5372,7 @@ function makeProp(mesh, name, opts) {
   const prop = new PhysProp(mesh, opts);
   const proxy = new THREE.Mesh(new THREE.SphereGeometry(Math.max(0.4, prop.radius * 1.25), 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  proxy.name = 'hitProxy';
+  proxy.name = 'hitProxy'; proxy.visible = false;
   mesh.add(proxy);
   addInteractable(mesh, 'Pick up ' + name, 'physics', { prop });
   return prop;
@@ -6593,7 +6875,7 @@ shovelWorld.rotation.set(0.55, 0.4, -0.4);
 addItemShine(shovelWorld, { size: 0.7, height: 0.45, strength: 0.8 });
 {
   const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  proxy.position.y = 0.3; proxy.name = 'hitProxy';
+  proxy.position.y = 0.3; proxy.name = 'hitProxy'; proxy.visible = false;
   shovelWorld.add(proxy);
 }
 scene.add(shovelWorld);
@@ -6834,7 +7116,7 @@ militaryWorld.position.set(CLIFF_BLOCK_X - 2.0, 0.06, 34 + 4.5);
 militaryWorld.rotation.set(-Math.PI / 2, 0, 0.45);
 {
   const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  proxy.position.y = 0.25; proxy.name = 'hitProxy';
+  proxy.position.y = 0.25; proxy.name = 'hitProxy'; proxy.visible = false;
   militaryWorld.add(proxy);
 }
 // NOT in the scene: it goes into the crate on the Dealer's desk once the
@@ -6895,7 +7177,7 @@ katanaWorld.rotation.set(-Math.PI / 2, 0, -0.6);
 katanaWorld.scale.setScalar(1);
 {
   const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  proxy.position.y = 0.25; proxy.name = 'hitProxy';
+  proxy.position.y = 0.25; proxy.name = 'hitProxy'; proxy.visible = false;
   katanaWorld.add(proxy);
 }
 scene.add(katanaWorld);
@@ -8421,7 +8703,7 @@ const bottle = new THREE.Group();
   const cork = new THREE.Mesh(new THREE.CylinderGeometry(0.021, 0.018, 0.04, 8), new THREE.MeshStandardMaterial({ color: 0x6b5030, roughness: 1, flatShading: true })); cork.position.y = 0.242;
   const paper = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.15, 6), new THREE.MeshStandardMaterial({ color: 0xd8c9a2, roughness: 1, emissive: 0x2b2416 })); paper.rotation.z = 0.35; paper.position.y = 0.01;
   bottle.add(body, shoulder, neck, cork, paper);
-  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.32, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })); hit.position.y = 0.08; hit.name = 'hitProxy';
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.32, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })); hit.position.y = 0.08; hit.name = 'hitProxy'; hit.visible = false;
   bottle.add(hit);
 }
 bottle.scale.setScalar(1.35);
@@ -8454,7 +8736,7 @@ bottleProp.onImpact = (speed) => {
   note.add(paper);
   const nhit = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  nhit.name = 'hitProxy'; note.add(nhit);
+  nhit.name = 'hitProxy'; nhit.visible = false; note.add(nhit);
   note.position.set(p.x, 0.03, p.z);
   note.rotation.y = Math.random() * Math.PI;
   scene.add(note);
@@ -8565,7 +8847,7 @@ let lhDoorEntry = null;
   const hit = new THREE.Mesh(new THREE.BoxGeometry(DW * 2, DH, 0.5),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   hit.position.set(DW, DH / 2, 0);
-  hit.name = 'hitProxy';
+  hit.name = 'hitProxy'; hit.visible = false;
   lhDoor.add(hit);
 
   // A lamp over the threshold. Without it the doorway is a black hole in a
@@ -8616,11 +8898,18 @@ function updateDoor(dt) {
 // (renamed hcrab* to avoid the enemy `crab` added on main)
 const hcrab = makeHorseshoeCrab();
 const hcrabWorld = new THREE.Group();
-hcrabWorld.add(hcrab);
+/* 86 meshes and 49,000 triangles for a prop the size of a dinner plate —
+ * which is right for the examine screen, where it fills the frame, and is
+ * eighty-six draw calls for a thing lying in the wrack line. The one in the
+ * world is a merged COPY; `hcrab` itself stays whole, because that is what
+ * the hand and the examine screen clone. */
+const hcrabShown = hcrab.clone(true);
+bakeStatic(hcrabShown);
+hcrabWorld.add(hcrabShown);
 {
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.30, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  hit.name = 'hitProxy';
+  hit.name = 'hitProxy'; hit.visible = false;
   hcrabWorld.add(hit);
 }
 hcrabWorld.position.set(2.7, 0.03, -58);
@@ -8659,7 +8948,7 @@ syringeWorld.add(syringe);
 {
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  hit.name = 'hitProxy';
+  hit.name = 'hitProxy'; hit.visible = false;
   syringeWorld.add(hit);
 }
 syringe.scale.setScalar(1.6);
@@ -9026,7 +9315,7 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
     first ? 0 : (second ? -0.16 : (Math.random() - 0.5) * 0.4));
   const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.36, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  proxy.name = 'hitProxy'; relic.add(proxy);
+  proxy.name = 'hitProxy'; proxy.visible = false; relic.add(proxy);
   scene.add(relic);
   /* AND YOU HAVE TO SEE IT COME OUT. The glowstick lights itself, so it was
    * obvious; everything else was a dark object dropped on a dark beach at
@@ -9121,7 +9410,7 @@ bwGlb('assets/shell.glb', (gltf) => {
     g.rotation.set((rnd() - 0.5) * 0.2, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.25);
     const hit = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6),
       new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-    hit.name = 'hitProxy'; hit.position.y = 0.025; g.add(hit);
+    hit.name = 'hitProxy'; hit.visible = false; hit.position.y = 0.025; g.add(hit);
     scene.add(g);
     shells.push(g);
     addInteractable(g, 'Take the shell', 'inventory', {
@@ -10415,7 +10704,7 @@ new THREE.TextureLoader().load('assets/bradly.png', (tex) => {
 {
   const hit = new THREE.Mesh(new THREE.BoxGeometry(1.1, BRADLY_H, 0.8),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  hit.position.y = BRADLY_H / 2; hit.name = 'hitProxy';
+  hit.position.y = BRADLY_H / 2; hit.name = 'hitProxy'; hit.visible = false;
   bradly.add(hit);
   // on the cliff top, ~10 m past the first buried cache. Feet sunk a touch
   // below the lip so the runnels in the cliff face don't leave him floating,
@@ -10780,7 +11069,7 @@ function dropKey(c) {
   keyWorld.position.set(c.x + 0.12, c.y + 0.006, c.z - 0.08);
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  hit.name = 'hitProxy'; hit.position.y = 0.05; keyWorld.add(hit);
+  hit.name = 'hitProxy'; hit.visible = false; hit.position.y = 0.05; keyWorld.add(hit);
   scene.add(keyWorld);
   addItemShine(keyWorld, { size: 1.1, height: 0.45, strength: 2.6 });
   addInteractable(keyWorld, 'Take the key', 'inventory', {
@@ -10802,7 +11091,7 @@ function dropRing() {
   scene.add(ringWorld);
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  hit.name = 'hitProxy';
+  hit.name = 'hitProxy'; hit.visible = false;
   hit.position.y = 0.06;
   ringWorld.add(hit);
   // a body of its own, but NOT makeProp(): that would register it as a
@@ -12364,6 +12653,12 @@ const drainTunnel = makeDrainageTunnelHome({
 });
 drainTunnel.position.set(DRAIN_X, 0, DRAIN_Z);
 scene.add(drainTunnel);
+/* and merged, here, before the gate and the eyes and the drips are hung on
+ * it below — 129 draws for fifteen thousand triangles, which is the ribs of
+ * the bore and every fixture on the wall drawn one at a time. `bakeScatter`
+ * inside the model already did this for the decorative scatter; this takes
+ * the structure, which is most of what is left. */
+window.__bwDrainBake = bakeStatic(drainTunnel);
 const DN = drainTunnel.userData.nav;
 
 // ------------------------------------------------------------------
@@ -12642,7 +12937,7 @@ waterBottleWorld.add(waterBottle);
 {
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.20, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  hit.name = 'hitProxy';
+  hit.name = 'hitProxy'; hit.visible = false;
   waterBottleWorld.add(hit);
 }
 // keyed off the room, not a fixed offset — a longer bore used to leave
@@ -13201,11 +13496,12 @@ function sfxLockerOpen() {
 // and uses exactly the same way.
 {
   const holdCrab = makeHorseshoeCrab();
+  bakeStatic(holdCrab);                 // decorative here; the hand's copy is hcrab's
   const holdCrabWorld = new THREE.Group();
   holdCrabWorld.add(holdCrab);
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.30, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  hit.name = 'hitProxy';
+  hit.name = 'hitProxy'; hit.visible = false;
   holdCrabWorld.add(hit);
   const [cx, cy, cz] = SN.crabSpot || [SN.HOLD_X0 + 2.6, SN.HOLD_Y + 0.03, -1.3];
   holdCrabWorld.position.set(SHIP_X + cx, cy, SHIP_Z + cz);
@@ -13597,7 +13893,7 @@ if (shipLantern) {
   holdable(lanternItem, shipLantern, { scale: 1.0, pos: [0.02, -0.12, 0.03], rot: [0.2, 0.5, 0.1] });
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  hit.name = 'hitProxy'; shipLantern.add(hit);
+  hit.name = 'hitProxy'; hit.visible = false; shipLantern.add(hit);
   addItemShine(shipLantern, { size: 0.34, height: 0.02, strength: 0.4 });
   let lanternTaken = false;
   addInteractable(shipLantern, 'Take the lantern', 'inventory', {
@@ -13621,7 +13917,7 @@ let holdDoorOpen = false, holdDoorSwing = 0;
 if (holdDoor) {
   const hit = new THREE.Mesh(new THREE.BoxGeometry(SN.DOOR_W, SN.DOOR_H, 0.5),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  hit.name = 'hitProxy'; hit.position.set(-SN.DOOR_W / 2, 0, -0.1);
+  hit.name = 'hitProxy'; hit.visible = false; hit.position.set(-SN.DOOR_W / 2, 0, -0.1);
   holdDoor.add(hit);
   const relabel = () => {
     if (holdDoorOpen) return;
@@ -13696,7 +13992,7 @@ function updateShipHead(dt) {
     shipHead.userData.takeable = true;
     const hit = new THREE.Mesh(new THREE.SphereGeometry(0.26, 8, 6),
       new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-    hit.name = 'hitProxy'; shipHead.add(hit);
+    hit.name = 'hitProxy'; hit.visible = false; shipHead.add(hit);
     addInteractable(shipHead, "Take the captain's head", 'inventory', {
       onActivate: () => {
         if (shipHead.userData.taken) return;
@@ -13853,7 +14149,7 @@ let _preHelmBaseY = 0;
 
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.62, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  hit.name = 'hitProxy';
+  hit.name = 'hitProxy'; hit.visible = false;
   w.add(hit);
   addInteractable(w, 'Take the wheel \u2014 midships', 'wheel', { onActivate: () => shipWheel.grab() });
   shipWheel._it = interactables[interactables.length - 1];
@@ -15498,7 +15794,7 @@ const snorkHit = new THREE.Group();
 {
   const hit = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.5, 1.4),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  hit.name = 'hitProxy';
+  hit.name = 'hitProxy'; hit.visible = false;
   snorkHit.add(hit);
   snorkHit.position.set(SNORK_X, 0, SNORK_Z);
   scene.add(snorkHit);
@@ -15738,6 +16034,10 @@ const MUSH_X = 16.0, MUSH_Z = SMILE_Z - 90;   // the column's axis ON the cliff 
 const mushHouse = makeMushroomHouse();
 mushHouse.group.position.set(MUSH_X, 0, MUSH_Z);
 scene.add(mushHouse.group);
+/* 583 meshes for 9,700 triangles, and the gate kept out of it because it
+ * swings. Done here, before the cracks and the grass are hung on the group
+ * below, so those stay their own objects. */
+window.__bwMushBake = bakeStatic(mushHouse.group, (o) => o === mushHouse.gate.pivot);
 farProps.push({ obj: mushHouse.group, z: MUSH_Z, d: 320 });
 /* ---- WHAT HAS GROWN BACK -------------------------------------------------
  * Concrete left alone for fifty years does not stay empty. Every joint in
@@ -15985,7 +16285,7 @@ function updateGate(dt) {
   // asking for them from a metre and a half away
   const proxy = new THREE.Mesh(new THREE.BoxGeometry(0.30, 1.9, MGATE.w),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  proxy.name = 'hitProxy';
+  proxy.name = 'hitProxy'; proxy.visible = false;
   proxy.position.set(0, MGATE.h / 2, MGATE.w / 2);
   MGATE.pivot.add(proxy);
   addInteractable(proxy, () => gateOpen ? 'Close the gate' : 'Open the gate', undefined, { onActivate: toggleGate });
@@ -17550,7 +17850,7 @@ const fenceGroup = new THREE.Group();
   // the crosshair reads the lock, not the mesh
   const proxy = new THREE.Mesh(new THREE.BoxGeometry(FENCE_GATE_W, 4, 1.2),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  proxy.name = 'hitProxy';
+  proxy.name = 'hitProxy'; proxy.visible = false;
   proxy.position.set(FENCE_GATE_X, gy + 2, FENCE_Z + 0.3);
   G.add(proxy);
   addInteractable(proxy, 'Shut', 'default', { bare: true, far: 7, when: () => !fenceOpen && !fenceSmashed && !!fenceGateCol });
@@ -21462,7 +21762,7 @@ function updateFisherman(dt) {
 {
   const hit = new THREE.Mesh(new THREE.BoxGeometry(0.9, FISH_H + FISH_TUB_H, 0.9),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  hit.position.y = (FISH_H + FISH_TUB_H) / 2; hit.name = 'hitProxy';
+  hit.position.y = (FISH_H + FISH_TUB_H) / 2; hit.name = 'hitProxy'; hit.visible = false;
   fisherman.add(hit);
 }
 function talkToFisherman() {
@@ -21583,7 +21883,7 @@ bwGlb('assets/corpse.glb', (gltf) => {
     new THREE.BoxGeometry(2.05, 0.42, 0.7),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   proxy.position.y = 0.18;
-  proxy.name = 'hitProxy';
+  proxy.name = 'hitProxy'; proxy.visible = false;
   corpse.add(proxy);
   addInteractable(proxy, 'Who was this?', 'default', { bare: true });
 });
@@ -21809,7 +22109,7 @@ let hatchLid = null, hatchBeacon = null;
   hatchBeacon.scale.setScalar(0.22); hatchBeacon.position.set(0.72, 0.66, 0.62); hatchBeacon.raycast = () => {}; hatch.add(hatchBeacon);
   // the crosshair finds the lid, open or shut
   const hit = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.7, 1.4), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  hit.name = 'hitProxy'; hit.position.y = 0.35; hatch.add(hit);
+  hit.name = 'hitProxy'; hit.visible = false; hit.position.y = 0.35; hatch.add(hit);
   // bedded in a low drift of the beach's own sand, and the collar a step you stand on
   const drift = new THREE.Mesh(makeApron(3.2), sandMat);
   drift.scale.set(3.2, 0.11, 3.2); drift.position.set(HATCH_X, 0, HATCH_Z); driftGroup.add(drift);
@@ -21834,7 +22134,7 @@ const bunkerHome = spawnBunker(HATCH_X + 1.05, BUNKER_Y, HATCH_Z + 3.3, 0, {
      * way out, which is the point of the room. */
     const box = new THREE.BoxGeometry(L.x1 - L.x0 + 0.5, 0.4, L.z1 - L.z0 + 0.5);
     bunkerLadderProxy = new THREE.Mesh(box, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-    bunkerLadderProxy.name = 'hitProxy';
+    bunkerLadderProxy.name = 'hitProxy'; bunkerLadderProxy.visible = false;
     // just UNDER the ceiling, not the ladder's own top — that stood 43 cm
     // through the roof, which put the thing you aim at outside the room
     bunkerLadderProxy.position.set((L.x0 + L.x1) / 2, S.nav.room.h - 0.30, (L.z0 + L.z1) / 2);
@@ -24734,6 +25034,10 @@ function animateFrame() {
   if (!introStarted) titleCam(rawDt);
   update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
   updateHover();
+  /* After everything that may have moved a lamp or the player, and before
+   * anything is drawn: point the twelve real lights at the twelve that
+   * actually reach the camera. */
+  updateLightPool();
   if (inspecting) {
     updateInspect(dt);
     renderer.render(inspectScene, inspectCamera);
@@ -24900,7 +25204,7 @@ function makeShrineOrb() {
   // the crosshair must not have to thread a 0.9 m ball across a 28 m room
   const proxy = new THREE.Mesh(new THREE.SphereGeometry(3.0, 8, 6),
     new THREE.MeshBasicMaterial({ visible: false }));
-  proxy.name = 'hitProxy';
+  proxy.name = 'hitProxy'; proxy.visible = false;
   const lamp = new THREE.PointLight(0xbfe0ff, 26, 95, 1.5);
   lamp.position.set(SHRINE_X, SHRINE_Y + 1.9, SHRINE_Z);
   shrineLights.add(lamp);              // never hidden: see the note above
@@ -27349,7 +27653,7 @@ function loadNtar() {
        * the equipment case taught this one ("the shovel box is lagging"). */
       ntarHit = new THREE.Mesh(new THREE.BoxGeometry(0.9, NTAR_H, 0.9),
         new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-      ntarHit.name = 'hitProxy';
+      ntarHit.name = 'hitProxy'; ntarHit.visible = false;
       ntarHit.position.y = NTAR_H * 0.5;
       ntarWorld.add(ntarHit);
       addInteractable(ntarWorld, 'Talk', undefined, {
@@ -29059,7 +29363,7 @@ function armUndercroft(S) {
   at.forEach((p, i) => { if (p && ucLamps[i]) ucLamps[i].position.set(UC_X + p.x, UC_Y + p.y - 0.3, UC_Z + p.z); });
   // the way out, behind the altar
   const proxy = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.6, 2.4), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  proxy.name = 'hitProxy';
+  proxy.name = 'hitProxy'; proxy.visible = false;
   proxy.position.set(sp.exit.x, sp.exit.y + 1.3, sp.exit.z);
   undercroft.add(proxy);
   addInteractable(proxy, 'To climb out', 'default', { far: 3.2, mid: true, onActivate: () => leaveUndercroft('far'), when: () => inUndercroft && !ucBusy });
@@ -29068,7 +29372,7 @@ function armUndercroft(S) {
    * in front of the rock — the owner's word, and a tunnel three hundred
    * metres long with no way back is a trap, not a place. */
   const back = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.6, 3.0), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  back.name = 'hitProxy';
+  back.name = 'hitProxy'; back.visible = false;
   back.position.set(sp.entry.x - 1.1, sp.entry.y + 1.2, sp.entry.z);
   undercroft.add(back);
   addInteractable(back, 'To climb out', 'default', { far: 4.2, mid: true, onActivate: () => leaveUndercroft('mouth'), when: () => inUndercroft && !ucBusy });
@@ -29310,7 +29614,7 @@ function rockShellColliders(root, inMouth) {
   apron.position.set(MOUNT_FRONT_X - 1.0, -0.02, MOUNT_MOUTH_Z);
   rockGroup.add(apron);
   const proxy = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.2, 2.4), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  proxy.name = 'hitProxy';
+  proxy.name = 'hitProxy'; proxy.visible = false;
   proxy.position.set(MOUNT_FRONT_X + 0.5, HOLE_Y, MOUNT_MOUTH_Z);
   rockGroup.add(proxy);
   addInteractable(proxy, 'To crawl in', 'default', { far: 4.6, mid: true, onActivate: () => enterUndercroft(), when: () => !inUndercroft && !ucBusy });
@@ -29669,7 +29973,11 @@ window.__bw = {
     if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
     oceanUniforms.uTime.value += dt;
     update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
+    updateLightPool();
   },
+  /* The lamp pool, for a still: a frozen loop never points the twelve at
+   * anything, so a hand-placed camera renders an unlit room. */
+  lamps: () => updateLightPool(),
   MUSH_X, MUSH_Z, MUSH, mushHouse, updateMushroom, get mushWarm() { return { warmed: mushWarmed, err: mushWarmError && String(mushWarmError), progs: mushWarmProgs }; }, warmMush, toggleGate, get gateOpen() { return gateOpen; }, mushState: () => ({ where: mushWhere, turns: mushTurns, stairY: mushStairY }),
   mushPut: (w, y) => { mushWhere = w; mushTurns = MUSH.TURNS; mushStairY = y === undefined ? MUSH.H_ROOM : y; },
   smile, updateSmile, smileState: () => ({ phase: smilePhase, t: smileT, loaded: !!smileMixer, clips: Object.keys(smileClips) }), sfxSmileStep,
