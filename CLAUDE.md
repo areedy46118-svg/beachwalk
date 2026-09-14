@@ -3773,6 +3773,365 @@ away does not take away what was on it): when the bench comes apart they are
 put OUT, taken out of the instanced batch, and thrown off it as their own
 gibs in the wax's material.
 
+**THE PORTAL, AND THE DOJO THROUGH IT.** A stone circle on the dry sand a
+hundred metres past the cave mouth (`PORTAL_X` / `PORTAL_Z` = `HOLE_Z - 100`),
+and the scorched dojo on the other side of it (`DOJO_X/Y/Z`, six thousand
+metres out, the hall's own arrangement). Stand in the middle of the ring for
+`PORTAL_HOLD` and it takes you; take the katana off its stand and the man it
+belongs to says so and comes for you; kill him and it puts you back beside the
+stones. Three downloads — DJMaesen's portal, matiasmgru's dojo, adrigon's
+samurai — and the traps they set, in the order they bit:
+
+- **`Box3.setFromObject` READS `matrixWorld`, AND A JUST-ADDED OBJECT HAS
+  NONE.** The raycaster's own trap wearing a different tool. The portal is
+  added and measured on the same frame, so without an `updateMatrixWorld(true)`
+  the box comes back in the SCAN'S units: measured, the base read a top of
+  69.19 and a radius of 686.93, which went into `rockColliders` as a
+  687-metre cylinder and threw the player the length of the beach the moment
+  they came near it. Anything measured at load measures the identity.
+- **THE GLOW HAS TO SIT ON THE BASE, AND THE BASE HAS TO BE MEASURED.** The
+  first build put the vortex at y = 0.05 — the sand — and the model's own
+  stone platform tops out at 0.381, so the whole light was a third of a metre
+  INSIDE the rock and invisible from everywhere. The base mesh is found by
+  name, boxed, and the disc is built to its radius and stood on its top. It
+  also gets a collider at that height, which is under `ROCK_STEP`, so the
+  beach's own rule applies with no special case: you step onto it rather than
+  wading through it.
+- **A CAVE'S FLOOR RULE IS NOT AN OPEN-AIR FLOOR RULE.** `build_walk` calls a
+  surface a floor only if something is ABOVE it, which is what stops the
+  outside of the cave's hill being walkable — and the dojo is roofless,
+  because it burnt down. Run as-is it found 56 walkable cells out of 60,099.
+  Under `--open-sky` the lowest near-horizontal surface is the ground, and
+  everything standing on it is what `solid` is for. Then the LOWEST surface
+  turned out to be the UNDERSIDE of the floor slab (winding is not read
+  anywhere in that file), which put the floor 0.36 m under the boards;
+  everything within a `STEP` of the lowest is the same ground, so the slab's
+  top wins and the shelf above it does not.
+- **THE PACKER DROPS ANIMATIONS, SO THE RAIN IS THE GAME'S JOB.** The dojo's
+  `Take 001` drives the rain, and a clip that targets nodes cannot survive a
+  bake that flattens every node into world space. Both rain shells scroll
+  their own map (at different rates, so the far one does not march in step
+  with the near one) and the fifty-five ground splashes flicker on their own
+  offsets — one phase for all of them reads as the lights failing, not as
+  rain.
+- **A RIGIFY RIG IS 678 POSE CONSTRAINTS, AND `matrix_basis` SEES NONE OF
+  THEM.** The alien beast's lesson at four times the scale: record `pb.matrix`
+  off the evaluated depsgraph, convert back to a constraint-free basis, and
+  remove the constraints only after every clip has been sampled.
+- **AN ARM IN A T-POSE LIES ALONG X, SO A ROTATION ABOUT X IS A TWIST.** The
+  first pose set lifted the arms about X and measured 2.33 rad on the upper
+  arm — and rendered eight frames of a man standing in a T turning his wrists
+  over. Nothing about a pose can be checked by reasoning; every sign in
+  `tools/samurai_pack.py` was settled by looking at a strip.
+- **AND `Plane` WAS HIS HAKAMA.** Two meshes were dropped as "helper
+  geometry" on the strength of their datablock names. The render came back
+  with a samurai whose legs stopped at the armour skirt and started again at
+  the boots. A mesh that is weighted to the rig and carries a material is part
+  of the man, whatever Blender called it.
+- **A PER-PART REMAP IS A FLATTENER**, one level up from the per-channel
+  remap's own mistake: pulling every texture part to the same mean made the
+  trousers (13.8) and the eye (138.5) both mid grey. What is wrong with these
+  maps is the LEVEL, shared by all of them, so the shift and the scale are
+  worked out once over every part together.
+- **`bossDeath` IS CHECKED BEFORE `deathClip`, AND IT RAGDOLLS.** It works on
+  the Dealer only because every bone lookup there goes through a `boneAlias`
+  onto `Character1_*`; this rig answers to `DEF-spine`, so the body came out
+  with ZERO parts and the boss finished the fight frozen upright in whatever
+  frame killed him — measured, `rag` built and the mixer stuck on `sStab`. He
+  goes down his own authored `die` instead, and the beats are `kind.death`
+  because they belong to the clip.
+- **AND `drawGait` DRAWS FROM A PAIR.** `mutPlay` was handed `run2`, resolved
+  nothing and RETURNED WITHOUT TOUCHING ANYTHING, so he crossed thirteen
+  metres and threw a swing with his TAUNT still on the mixer. The warning has
+  been in `mutPlay` since it was written and says exactly this — READ THE
+  WARNINGS. `kind.alias` needs `walk2`, `run2` and `idle2` as well as the
+  strafes.
+- **AND THE BEACH'S CLAMPS ARE NOT THE DOJO'S — the fourth and fifth coats.**
+  `mutClampX` would have teleported the samurai onto the sand on his first
+  step (he is held by the room's own grid instead), and the player's own
+  `CLIFF_BLOCK_X` clamp yanked them back to x = 14.2 the moment they arrived
+  six thousand metres away. `inDojo` joins the list that lifts it.
+- **AND THE RETURN SPOT WAS ON THE CLAMP.** `PORTAL_X + 2.6` is 14.2 and
+  `CLIFF_BLOCK_X` is 14.2 — measured — so the first version handed you back
+  jammed against the foot of the cliff. It steps back along Z instead.
+
+The portal carries NO light: the glow is two additive shader meshes, because a
+PointLight in a far-culling group changes `NUM_POINT_LIGHTS` and recompiles
+every material in the game as you walk up to it, which is the pavilion's whole
+scar. The dojo carries none either — the moon is directional and reaches
+everywhere, and the rest is each material's own map through its emissive.
+
+Measuring any of this in the preview has two traps of its own. The pane cannot
+pointer-lock, so `canMove` is false and `keys.KeyW` moves nobody — nudge the
+body and let the clamps answer instead. And teleporting to the portal crosses
+the MUTANT trigger on the way, so `updateMutantCut` returns true, the whole
+creature loop is skipped and the samurai stands there dead-looking with
+`struck` set and `hitstop` at zero; the tell is a field of view of 24. Step it
+out before measuring anything.
+
+**AND THEN HE HAD TO ACTUALLY FIGHT.** Four things, and the middle two are the
+same bug this file has already written down for three other creatures.
+
+- **HE IS NOT IN THE ROOM UNTIL YOU TAKE IT.** Standing him at the back from
+  the moment you walk in makes the dojo a room with a man in it — you spend the
+  approach watching him instead of looking at the place, and he gives the sword
+  away, because the only thing worth guarding is the thing on the rack. He
+  arrives BEHIND you the moment you lift it, which is the one direction you are
+  not looking, since you are looking at the sword. The spot is the player's own
+  heading (six metres back, a little to one side) walked outward to the nearest
+  cell the walk grid agrees is floor, so he can never arrive inside a wall.
+
+- **`kind.rig` IS WHAT MAKES A BLOW LAND, AND NOTHING SAYS SO WHEN IT IS
+  MISSING.** `u.bones` is only built from that map; with no map `mutLimbs`
+  returns an empty list and `aimBar` and `blowLands` both run and do nothing.
+  That is a boss whose sword goes past you and whose damage comes from a
+  distance test you cannot see — which is exactly what "the hit registration
+  doesn't make sense" was. The Dealer has to run `barLen` out along his
+  FOREARM because that is where a crowbar lies; this rig carries a real bone at
+  the point of the blade, measured off the sword mesh in the packer, so the
+  hitbox is swept down the steel itself. Measured after: the tip passes within
+  0.12–0.48 m of the chest on all five swings, and he lands 43 hits a minute
+  off 42 swings — the Dealer is 48 and 40.
+
+- **AND three's LOADER SANITISES NODE NAMES.** `PropertyBinding.sanitizeNodeName`
+  strips the dots a Rigify rig is full of: `DEF-shoulder.R` arrives as
+  `DEF-shoulderR` and `DEF-spine.006` as `DEF-spine006`. Written the way
+  Blender spells them, four of five lookups matched nothing and `u.bones` came
+  back holding only `tip` — the one name with no dot in it. Read the names off
+  the LOADED rig, never off the exporter.
+
+- **HIS SWORD WAS CONSTRAINED TO HIS HAND AND THE CONSTRAINTS ARE STRIPPED.**
+  `Katana` and `Wakizashi` are root bones the swords are weighted to, held in
+  his fists by COPY_TRANSFORMS; every constraint has to go before a clip is
+  written, or the recorded pose is applied twice. So in an AUTHORED clip
+  nothing drives them at all — measured, the blade tip travelled 0.00 through
+  four of five swings while his arms did the whole stroke. They are pinned per
+  frame instead, and WHERE is the trap: at rest both swords are SHEATHED AT HIS
+  HIP, so an offset taken from the hand's rest transform is "a hip, expressed
+  relative to a hand", and carrying that through a swing throws the katana
+  across the room — rendered, it left his fist on the third frame and flew. The
+  held offset is taken from a frame of the SHIPPED clip, where the constraint's
+  own answer is baked in. The wakizashi is the opposite case and wants the
+  opposite fix: it stays sheathed, so it is pinned to the pelvis, where its
+  rest offset is already right.
+
+- **AND THE CONTACT FRAME IS WHERE THE BLADE MEETS A BODY.** The warden needed
+  three different proxies — lowest, furthest forward, fastest — because no one
+  of them suits every swing. There is a better question and it is the one the
+  fight asks: a man stands in front of him at chest height, and the contact is
+  the frame at which the POINT passes nearest him. It suits a chop, a sweep, a
+  rising cut and a thrust without being told which is which. It must be
+  measured in the RIG'S OWN UNITS — this model is 4.82 units to a 1.86 m man,
+  so a chest written as "1.25" is a chest half a metre off the floor.
+
+**THE ELDEN RING KATANA SET CANNOT BE USED, AND ITS TIMINGS CAN.** The owner
+supplied an MCO/SCAR Skyrim mod — 168 `.hkx`, Havok 2010 packfiles holding
+`hkaSplineCompressedAnimation`. Two things kill the pose data and the second is
+fatal on its own: it is spline-compressed (a decompressor is days of
+bit-unpacking), and THE ARCHIVE SHIPS NO SKELETON, so the tracks are bare
+indices into Skyrim's bone list with nothing to map them to — and even decoded
+they would need retargeting onto Rigify. What IS readable is the ANNOTATION
+TRACK, in plain text: `preHitFrame`, `weaponSwing`, `HitFrame`, `MCO_WinOpen`.
+Across its light attacks contact lands at 0.37–0.50 s, the early cancel at
+0.17–0.25 and the combo window near 0.6, and every startup in `MUT_ATTACKS.s*`
+sits in that band. **A reference you cannot decode may still be a measuring
+instrument.**
+
+His move set is five swings now, not three — a flat side cut, a rising kesa, a
+turning cut, a thrust and the overhead — each built from waypoints with EVERY
+JOINT GROUP ON ITS OWN CLOCK (the body leads, the chest follows, the sword arm
+is last and carries past its stop), and footwork under all of them, because a
+blow reads as having weight when the body went with it. They chain into each
+other rather than into one answer, so no two exchanges are the same shape.
+
+**THE DOJO'S SKY IS THE ONE THING IN THERE THAT MUST NOT BE LIT.** It ships as
+a painted dome and came out the brightest surface in the place — a pale lid
+over a night scene with a hard line where it met the fog, which is the whole of
+"you can see the skybox". Three things together: it goes UNLIT
+(`MeshBasicMaterial` takes no light and so cannot be brightened by the moon),
+it is graded to the beach's own night level, and it FADES WITH HEIGHT into the
+scene's fog colour so the top of the dome and the distance are the same colour
+and there is no edge left to see. Fog does not reach a basic material's far
+distance the way it does a lit one, so the fade is written into the shader.
+
+**AND THE KATANA IN YOUR HAND HAS A SHINE ON IT.** The blade is deliberately
+dark and the shinogi ridge catching the one directional light is what says
+"sword" — but held still, the ridge has nothing to catch and it reads as a
+black bar. A slow breath on the emissive, opened up by how fast the sword is
+actually moving, so it lives on the swing. IT IS THE HELD COPY ONLY: the
+material is cloned for the view model, because `katModel`'s materials are
+shared with the one on the sand, the examine screen and the pack icon — the
+Military Shovel's own scar, where a lift on a shared material made a dark scan
+glow flat grey everywhere at once. And slight means slight: the first pass ran
+nearly three times the material's own emissive and the sword came out a pale
+bar.
+
+**AND THEN HE GOT REAL ANIMATION.** The owner's verdict on the authored set
+was that he slid about with his hands out and never swung, and he was right:
+hand-posed waypoints on a rig this complicated were never going to read. What
+arrived next was eight **Mixamo FBX** clips — Great Sword Slash ×2, Sword and
+Shield Slash, two Kicks, Blocking, Crouching and a Run — and unlike the Elden
+Ring `.hkx`, THESE CAN BE USED, for exactly one reason: a Mixamo rig is a
+standard humanoid with named bones and a rest pose, which is the only thing
+that makes a retarget possible at all. They replace the idle, the walk, the
+run, the block and all five swings; the taunt, the stagger and the death stay
+authored, because nothing in the set is either.
+
+What the retarget cost, in the order it bit:
+
+- **THE DELTA MUST BE EXPRESSED IN THE DESTINATION'S FRAME.** Both
+  `matrix_local` and `pb.matrix` are ARMATURE space, which is self-consistent
+  per rig — and the two rigs do not share one, because the FBX importer turns
+  Mixamo's Y-up armature on its side. A rotation meaning "lean forward" over
+  there means "roll over" here. Rendered, he cartwheeled: upside down by the
+  third frame, flat on his back by the fifth. The delta is taken to WORLD space
+  on the source and brought back into armature space on the destination.
+
+- **RIGIFY PUTS TWIST SEGMENTS IN THE MIDDLE OF EVERY LIMB.**
+  `DEF-upper_arm.L.001` sits between the arm and the forearm and Mixamo has
+  nothing to map to it. They are walked through as IDENTITY rather than
+  skipped: miss that and the forearm hangs off a bone nobody posed.
+
+- **AND THE PELVIS HAS TO BE DRIVEN OR HIS SCABBARDS STAY BEHIND.** Both
+  scabbards and the sash are weighted to `DEF-pelvis.L`, which hangs off
+  `ORG-spine` — a bone Mixamo cannot map. Left as identity it keeps its REST
+  orientation while the body turns, so the swords and the sash detached from
+  his hip and stood in the air behind him, which rendered as a flat panel over
+  his shoulder. The pelvis bones are driven from the hips.
+
+- **A CLIP AUTHORED TO BE WATCHED IS NOT AN ATTACK — the beast's lesson, on a
+  second asset.** These arrive as complete performances: the sword-and-shield
+  slash is a hundred and six frames and most of every clip is standing in an
+  idle at each end. Measured before trimming, TWO OF THE FIVE had their contact
+  frame at FRAME ZERO, because the pose a greatsword clip starts in is nearer
+  the player than anything the swing does. The strike is found rather than
+  declared — the frame at which the striking end is moving fastest — and the
+  window is a wind-up before it and a follow-through after. 106 frames becomes
+  25.
+
+- **AND THE STRIKING END IS NOT THE SAME THING ON EVERY CLIP: TWO OF THESE ARE
+  KICKS.** Asking "what passes nearest the chest" over every end at once picks
+  the wrong one — a foot planted on the floor a metre and a half in front is
+  1.25 m from a chest, which beat the actual blade on three clips out of five.
+  The striking end is written down per clip, and a kick is aimed lower than a
+  cut so it gets its own target height. The kicks are the best thing in the
+  set: a kick is a mixup no amount of sword-reading prepares you for, and it is
+  the one attack of his whose tell is in his legs.
+
+Measured after, hands-off at fighting range: all eight clips on screen, 41
+swings and 37 hits a minute. The Dealer is 48 and 40.
+
+**AND THE PACKER'S WORLD BAKE PUTS EVERY NODE AT THE ORIGIN.**
+`undercroft_pack.py` bakes geometry into world space and leaves the node
+transforms at identity, so `getWorldPosition` returns (0, 0, 0) for every mesh
+in the dojo and "the sword nearest the picture" came back as whichever one was
+walked first. The geometry is the only thing that knows where anything is:
+measure a `Box3`. Measured that way the picture sits at (0.71, 0.90, -2.57),
+`HeroSword2` is 0.88 m from it on the wall at 1.47 m with its sheath beside
+it, and `HeroSword1` is 1.5 m away down at 0.45 m — so the one by the picture
+is the one on the stand, and that is the one you take. Note also that
+`HeroSwordHolder` is the RACK and matches any looser prefix than
+`/^HeroSword\d/`, which is how the first build offered you the furniture.
+
+**THE PORTAL'S DISTANCE FROM THE WATER IS NOT A TASTE QUESTION.** It sat at
+x = 11.6, tucked under the cliff, and wanted to be further out — but
+`shoreLine()` reaches 8.6 and the sand plane discards a metre further seaward,
+so anything whose FOOT crosses that is drawn standing on the water (the body
+bag's own arithmetic). The base course is 1.57 m across, so the middle may come
+to 10.2 and no closer: the platform and the light on it stay dry and only the
+seaward stones take the swash, which is what a stone circle on a beach should
+look like anyway.
+
+**AND HE MAY NOT ARRIVE IN YOUR FACE, OR INDOORS BY DEFAULT.** The spawn is the
+nearest cell behind you that the walk grid calls floor AND has room around it —
+the free cells within a body's radius are counted, so a cramped interior corner
+loses to the open ground through the doorway and the fight can start in the
+yard, which is the better arena of the two. Scoring on clearance alone walked
+him back off the open ground and into the room (measured: 1.2 m behind the
+player, which is not "at your back", it is on top of you), so anything nearer
+than `MIN_BACK` is refused outright.
+
+**AND A MEASUREMENT TAKEN OFF A DEAD MODULE IS NOISE.** Two runs of the fight
+reported one swing a minute and a creature frozen in a single clip. Nothing was
+frozen: the player had died between tool calls, `playerDied` had reloaded the
+page, and `sam` was a stale reference into a module that no longer existed. The
+same trap the SCP fight already records, one layer out — freeze rAF at the top
+of any measurement AND heal every frame, not every twentieth.
+
+**AND THEN HE CAME OUT STRETCHED, FLOATING, AND SWINGING AT NOTHING.** The
+owner sent a picture: legs twice his own height and thin as wire, the body
+pulled out of shape, the face smeared, and the whole man hanging off the edge
+of the deck. Three separate faults, and the first one is the one that made the
+other two unreadable.
+
+- **SCALE LEAKED THROUGH THE RETARGET.** A Mixamo FBX imports with scale on the
+  armature object AND on the bone matrices, and `pb.matrix.to_3x3()` carries
+  it — so the deltas were not rotations, they were rotations WITH SCALE IN
+  THEM, and the `want[parent]^-1 @ want[child]` chain multiplied that scale
+  down every limb. It compounds: a hand is four joints from the hips, so the
+  error is the fourth power of it. He floated because `skinnedBounds` then
+  measured a body that was no longer a body and `dressMutant` seated it on
+  that. Every matrix that crosses the retarget now goes through a quaternion
+  and back (`rot3`), which is the only way to be sure. `.normalized()` is NOT
+  enough — it fixes the columns and leaves shear.
+
+- **AND THE ORG- CHAIN CARRIES HALF HIS BODY.** In Rigify `DEF-thigh.L` is
+  parented to `ORG-spine`, `DEF-pelvis.L` (which carries BOTH scabbards and
+  the sash) to `ORG-pelvis.L`, and eight face bones to `ORG-face`. None of
+  those is a bone Mixamo has, so left unmapped they keep their REST
+  orientation while the body moves: the legs hung off a hip that never turned
+  and the face stayed behind the head. That is the "legs up" and the smeared
+  face. Every ORG- bone takes its DEF- counterpart's source now, and the
+  handful with no counterpart — the face, the breasts, the four palms — are
+  named outright.
+
+- **AND NO CLIP MAY DEFORM HIM AGAIN.** A retarget that leaks scale does not
+  fail loudly, it ships. The packer now walks every clip, takes the SKINNED
+  bounds at four frames of each, and says so if any clip makes him taller or
+  wider than a man. All twelve read 0.92–1.12 of his own height.
+
+**A SWING THAT NEVER CONNECTS IS WORSE THAN NOT HAVING IT.** With the model
+fixed, four of his five attacks landed and the OVERHEAD landed nothing at all —
+twenty-seven throws over four minutes, zero hits, while the other four ran at
+83–86 %. It is not a tuning problem: `Great Sword Slash` is a two-handed chop
+whose blade comes down in FRONT of him at a range this fight never uses.
+Traced, its limb DOES pass inside the 0.70 m hit radius — at `atk` 0.00, before
+the window opens, because at a metre his own shoulder is already that close —
+and no placing of the window catches the blade itself. Moving the window,
+widening the window and raising the aim all failed in turn. The clip stays in
+the file; the fight draws the four that land, and the RISING cut carries the
+two-damage heavy instead. **Measure which of a creature's swings actually
+connect before tuning how often it throws them.**
+
+Two smaller things came out of the same pass:
+
+- **THE KICKS NEEDED A LEG.** `blowLands` sweeps the chains `mutLimbs` builds,
+  and with only the sword arm declared a kick was tested on the BLADE — which
+  on a kick is behind him doing nothing. Measured: the two kicks passed 1.10 m
+  from the chest on the steel while the foot went through the player. Both
+  legs are listed in `kind.rig.limbs` now.
+- **AND THE AIM HAD TO BE ABLE TO CLOSE A METRE.** These are real Mixamo arcs,
+  not poses solved against a target, so they pass wider than the hand-authored
+  ones did — the rising cut went by 1.15 m at `aimK` 1.15. At 2.60 it is still
+  clamped, so a swing thrown from too far out still misses and backing away
+  still works.
+
+Measured at the end, hands-off at fighting range over two minutes: every clip
+on screen, **46 swings and 51 damage a minute at 89 % connect**, with all four
+swings landing. The Dealer is 48 and 40.
+
+**AND THE PORTAL IS SUNK SO IT CAN STAND FURTHER OUT.** How far out it may go
+is a measured number: sampling `shoreLineJS(PORTAL_Z, t)` over an hour of game
+time the swash peaks at **8.12** — the corpse's own 8.13, one place further
+down the beach — and the sand plane discards seaward of it, so anything
+standing proud out there is drawn hanging over open water. At its shipped
+height the stone base stood 0.38 m off the sand, which is the body bag's raft
+again. Bedded nearly flush (`PORTAL_SINK`, base top 0.10) there is no gap for
+the sea to show through, so the swash runs OVER the base instead of under it —
+and that buys the two metres: at x = 8.6 the seaward stones and the seaward
+third of the base take the surf, which is as far out as it can go and still be
+standing on the beach rather than in it.
+
 **AND THEN THE KNIGHT LEARNED TO PACE HIMSELF.** Seven more of the owner's
 clips: a 360 attack, four hit reactions, and a real left and right strafe
 walk. What they bought, and what each one cost:

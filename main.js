@@ -124,6 +124,9 @@ const ASSET_REACH = {
   'assets/reptilian.glb': 1094,       // and the three waves of what is in there
   'assets/drone.glb': 1095,
   'assets/alienbeast.glb': 1096,
+  'assets/portal.glb': 740,            // the stone circle, a hundred metres past the cave
+  'assets/dojo.glb': 742,              // and what is on the other side of it
+  'assets/samurai.glb': 744,           // and who is waiting in there
   'assets/stones.glb': 1180,          // the headland, at the end of the walk
   'assets/grass-clumps.glb': 1185,
   'assets/grass-patch.glb': 1190,
@@ -4135,7 +4138,7 @@ function updateHurt(dt) {
   hurtEl.style.opacity = String(Math.max(hurtFlash * hurtFlash, rim));
 }
 
-function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || inspecting || peeking || packCut || mutCut || hatchBusy || ucBusy || abductCut || dying || ended || !introDone; }
+function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || inspecting || peeking || packCut || mutCut || hatchBusy || ucBusy || abductCut || portalCut || dying || ended || !introDone; }
 function refreshUI() {
   const playing = started && !menuOpen && !noteOpen && !dialogOpen && !invOpen && !inspecting && !dying && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
@@ -4212,7 +4215,7 @@ document.addEventListener('pointerlockchange', () => {
     if (!started) { overlay.classList.remove('hidden'); return; }
     // an intentional exit (note / menu / dialogue / death) is handled by
     // those; a stray exit while still playing means the user hit Esc → menu
-    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !inspecting && !peeking && !packCut && !mutCut && !abductCut && !hatchBusy && !ucBusy && !dying) openMenu();
+    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !inspecting && !peeking && !packCut && !mutCut && !abductCut && !portalCut && !hatchBusy && !ucBusy && !dying) openMenu();
   }
 });
 window.addEventListener('unhandledrejection', (e) => {
@@ -7167,6 +7170,57 @@ katanaVM.scale.setScalar(1);
 katanaVM.position.set(-0.055, -0.031, 0.140);
 katanaVM.rotation.set(VM_KAT_REST_ROT[0], VM_KAT_REST_ROT[1], VM_KAT_REST_ROT[2]);
 katanaVM.visible = false;
+/* AND A LITTLE SHINE ON THE STEEL IN YOUR HAND. The blade is deliberately
+ * dark — it is steel under a quarter moon, and the shinogi ridge catching the
+ * one directional light is what says "sword" — but at rest, held still, the
+ * ridge has nothing to catch and the whole thing reads as a black bar. This
+ * is a slow breath on the emissive with a HIGHLIGHT that runs the length of
+ * the edge as the blade turns: it is driven by how fast the sword is actually
+ * moving, so it lives on the swing rather than sitting on the picture.
+ *
+ * IT IS THE HELD COPY ONLY. `katModel`'s materials are shared with the one on
+ * the sand, the examine screen and the pack icon — the Military Shovel's own
+ * scar, where a lift on a shared material made a dark scan glow flat grey
+ * everywhere at once — so the steel is cloned for the view model here and
+ * nothing else in the game can see it. */
+const katVMSteel = [];
+katanaVM.traverse((o2) => {
+  if (!o2.isMesh) return;
+  const ms = Array.isArray(o2.material) ? o2.material : [o2.material];
+  const out = ms.map((m) => {
+    if (!m || !m.vertexColors) return m;      // the steel is the one with the hamon in it
+    const c = m.clone();
+    c.roughness = Math.max(0.16, (m.roughness || 0.28) - 0.07);
+    c.userData.baseEmis = 0.85;
+    katVMSteel.push(c);
+    return c;
+  });
+  o2.material = Array.isArray(o2.material) ? out : out[0];
+});
+let katShineT = 0, katShineV = 0;
+function updateKatanaShine(dt) {
+  if (!katVMSteel.length) return;
+  const on = equipped === katanaItem && !!viewmodel.visible;
+  katShineT += dt;
+  // how hard the blade is being moved: the swing's own clock, eased out
+  const moving = digT > 0 ? 1 - Math.abs(digT * 2 - 1) : 0;
+  katShineV += ((on ? moving : 0) - katShineV) * Math.min(1, dt * 7);
+  const breath = 0.5 + 0.5 * Math.sin(katShineT * 1.15);
+  /* SLIGHT. The first pass set the emissive to 0.055/0.068/0.092 and drove the
+   * intensity to 1.55 — against the built blade's own 0x06080c that is nearly
+   * three times the light, and the sword came out a pale bar. It is a shine on
+   * dark steel, not a lamp: at rest it barely moves off the material's own
+   * value and only the SWING opens it up, which is where a real edge catches
+   * anything. */
+  for (const m of katVMSteel) {
+    m.emissiveIntensity = on
+      ? m.userData.baseEmis * (1.0 + breath * 0.16 + katShineV * 1.15)
+      : m.userData.baseEmis;
+    m.emissive.setRGB(0.030 + katShineV * 0.075,
+                      0.038 + katShineV * 0.090,
+                      0.052 + katShineV * 0.120);
+  }
+}
 toolMount.add(katanaVM);
 const katanaItem = {
   name: 'Katana', icon: makeKatanaIcon(), onDig: true, viewmodel: katanaVM,
@@ -24622,7 +24676,7 @@ function update(dt, rawDt = dt) {
    * applied you hit an invisible wall 4.6 m short of her bow while
    * standing on her own deck. Her bulwark keeps you aboard. */
   updateTugBow();           // her stem stands past WADE_X: moves the wade line, before the clamp reads it
-  if (!insideTower && !insideDrain && !inBunker && !inShrine && !inUndercroft && !onDock && !onShip && !atTugBow && !onTug && mushWhere === 'out' && !mushInYard) {    // the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line; the saucer is not on the beach at all
+  if (!insideTower && !insideDrain && !inBunker && !inShrine && !inDojo && !inUndercroft && !onDock && !onShip && !atTugBow && !onTug && mushWhere === 'out' && !mushInYard) {    // the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line; the saucer and the dojo are not on the beach at all
     camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
     camera.position.x = Math.max(camera.position.x, WADE_X);
   }
@@ -24649,6 +24703,9 @@ function update(dt, rawDt = dt) {
   updateHoldDoor(dt);           // and the wreck overrides the sand where you're on it
   updateDock(dt);           // the pier's drift, boards and shed walls
   updateBunkers(dt);        // the room's own frame: walls, furniture, ceiling
+  updatePortal(dt);         // the stone circle on the sand, and its hum
+  updateDojo(dt);           // the floor and the walls on the other side of it
+  updateSamurai(dt);        // and the man who wants his sword back
   updateUndercroft(dt);     // the cave's floor and the church's, off the grids the packer wrote
   updateFisherman(rawDt);   // he blinks and breathes, like Bradly
   /* ...and then out of anything solid again. updateDock() clamps you to the
@@ -24834,6 +24891,7 @@ function update(dt, rawDt = dt) {
   if (cll) cll.material.opacity = 0.30 + 0.05 * Math.sin(oceanUniforms.uTime.value * 2.3);
 
   updateViewmodel(rawDt);       // real time: a swing must not stall in hitstop
+  updateKatanaShine(rawDt);     // the steel in your hand, on the same clock
   updateFlashes(rawDt);
   updateHeldGlow(dt);
   updateDialogCam(dt);
@@ -24919,6 +24977,10 @@ function saveCheckpoint() {
       // the wreck's shell door: a door you opened stays open
       holdDoor: holdDoorOpen,
       dockDoor: dockDoorOpen,
+      /* AND THE DOJO. The same rule as the shell door and the smiling one: a
+       * fight you have already won does not un-happen when you load, and a
+       * sword you have already taken off its stand is not on it again. */
+      dojoWon, heroSword: heroSwordTaken,
     },
   };
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (err) { return; }
@@ -25031,6 +25093,11 @@ function updateRestore(dt) {
    * carried boatKey true with the key already spent, and the restore
    * handed it back and shut the door behind you — a wreck you had already
    * been through, locked again, with a key you had already used. */
+  /* THE DOJO, BEFORE ANYTHING ELSE READS IT. `dojoWon` also implies the
+   * sword: you cannot have killed him without taking it off the stand, so a
+   * save that only carried the win still puts the rack back empty. */
+  if (f.dojoWon) dojoWon = true;
+  if (f.heroSword || f.dojoWon) heroSwordTaken = true;
   if (f.holdDoor && !holdDoorOpen) {
     holdDoorOpen = true; holdDoorSwing = 1;
     if (holdDoor) holdDoor.rotation.y = -2.0;
@@ -25103,7 +25170,7 @@ function animateFrame() {
   oceanUniforms.uTime.value += dt;
   if (!introStarted) titleCam(rawDt);
   update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
-  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt);
+  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); updatePortalCut(rawDt);
   updateHover();
   /* After everything that may have moved a lamp or the player, and before
    * anything is drawn: point the twelve real lights at the twelve that
@@ -25492,6 +25559,15 @@ function updateShrineOrb(dt) {
  * thousand lines above this, and only hoisting makes that legal. */
 const _mcL = new THREE.Vector3();
 function mutClampX(u, p, dt) {
+  /* THE BEACH'S WALLS ARE NOT EVERY CREATURE'S WALLS — and by now there are
+   * two rooms below that prove it. The dojo is six thousand metres from the
+   * surf, so clamping the samurai between the wading line and the foot of the
+   * cliff would teleport him onto the sand on his first step. He is held by
+   * the room's own grid instead, which is the thing that knows its walls. */
+  if (u.kind.dojo) {
+    pushOutOfDojo(p, 0.34);
+    return;
+  }
   /* AND THE BEACH'S WALLS ARE NOT EVERY CREATURE'S WALLS — THE FOURTH TIME.
    * The crabs bit through forty metres of earth, the boss was teleported out
    * of the hall on its first step, the ragdolls were snapped three thousand
@@ -30598,6 +30674,1038 @@ bunkerFloorAt = (x, z, y) => {
 };
 
 
+// ------------------------------------------------- the portal, and the dojo
+/* A STONE CIRCLE ON THE DRY SAND, A HUNDRED METRES PAST THE CAVE — and the
+ * one thing on this beach that is not on this beach. You come up out of the
+ * undercroft at the rock, walk on, and there it is: six monoliths round a
+ * flat base with something turning over in the middle of them.
+ *
+ * WHERE IT STANDS IS THE BODY BAG'S OWN ARITHMETIC. `shoreLine()` can reach
+ * x = 8.6 and the sand plane discards a metre further seaward, so anything
+ * below that is drawn standing in the surf. At x = 11.6 with a 2.65 m ring
+ * the seaward stones are at 8.95 and the circle is never wet.
+ *
+ * THE MODEL IS THE MODEL. DJMaesen's stones are placed and scaled and not
+ * otherwise touched; everything that makes it read as a portal — the light
+ * in the middle, the lift on the stones, the hum — is added round it.
+ *
+ * AND THE MIDDLE IS OPEN ON PURPOSE. The six stones are `rockColliders`
+ * cylinders, so you walk BETWEEN them; the disc they stand round is clear,
+ * because standing in the middle of it is the whole interaction. */
+/* AND IT STANDS OUT ON THE OPEN SAND. It sat at 11.6 tucked under the cliff,
+ * and how far out it may go is a MEASURED number, not a taste one: sampling
+ * `shoreLineJS(PORTAL_Z, t)` over an hour of game time the swash peaks at
+ * 8.12 — the corpse's own 8.13, one place further down the beach — and the
+ * sand plane discards seaward of it, so anything standing proud of the beach
+ * out there is drawn hanging over open water.
+ *
+ * WHICH IS WHY THE CIRCLE IS SUNK. At its shipped height the stone base stood
+ * 0.38 m off the sand, and a 0.38 m step with the sea running under it is the
+ * body bag's raft all over again. Bedded nearly flush (`PORTAL_SINK`) there is
+ * no gap for the water to show through, so the swash can run OVER the base
+ * instead of under it — and that buys the two metres: at 8.6 the seaward
+ * stones and the seaward third of the base take the surf, which is what a
+ * stone circle on a beach ought to be doing. It is as far out as it can go and
+ * still be standing on the beach rather than in the sea. */
+const PORTAL_X = 8.6, PORTAL_Z = HOLE_Z - 100;
+const PORTAL_SINK = 0.40;          // bedded into the sand, so the surf runs over it
+const PORTAL_RING = 2.65;          // the stone circle's own radius, once fitted
+const PORTAL_HOLD = 0.85;          // stand in the middle this long and it takes you
+const PORTAL_STEP = 1.05;          // "the middle" is this close to the axis
+const PORTAL_HEAR = 34;            // the hum reaches this far
+
+const DOJO_X = 6000, DOJO_Y = 800, DOJO_Z = 6000;
+const DOJO_IN = { x: 0, z: 13.5 };  // where it sets you down: outside, facing the open side
+
+let portalWorld = null, portalGlow = null, portalReady = false;
+let portalT = 0, portalMix = 0;
+let dojoWorld = null, dojoReady = false, dojoWalk = null;
+let dojoRain = [], dojoSplash = [], dojoRainMat = null, dojoSky = null;
+let inDojo = false, dojoWarmed = false, dojoT = 0;
+let portalCut = false, portalPhase = 0, portalCutT = 0, portalOut = false;
+let dojoWon = false, heroSwordTaken = false;
+let samurai = null, samuraiSpoke = false;
+let heroSword = null, heroSwordShine = null, dojoSwords = [], dojoPic = null;
+
+// ---------------------------------------------------------------- the stones
+function loadPortal() {
+  if (portalWorld) return;
+  portalWorld = new THREE.Group();
+  portalWorld.position.set(PORTAL_X, 0, PORTAL_Z);
+  scene.add(portalWorld);
+  bwGlb('assets/portal.glb', (gltf) => {
+    const s = gltf.scene;
+    /* FITTED BY MEASURING ITS SPAN, never by a scale factor — the saucer's
+     * own lesson, and this one ships at 2280 units across. */
+    const b = new THREE.Box3().setFromObject(s);
+    const span = Math.max(b.max.x - b.min.x, b.max.z - b.min.z);
+    const k = (PORTAL_RING * 2) / Math.max(1e-4, span);
+    s.scale.setScalar(k);
+    s.position.set(-(b.min.x + b.max.x) * 0.5 * k, -b.min.y * k - PORTAL_SINK,
+                   -(b.min.z + b.max.z) * 0.5 * k);
+    s.traverse((o) => {
+      if (!o.isMesh) return;
+      o.castShadow = o.receiveShadow = false;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) {
+        /* SCANS LIT FOR DAYLIGHT GO BLACK AT NIGHT, and this one is meant to
+         * be the brightest thing on a kilometre of sand besides the moon.
+         * METALNESS IS A TRAP with no environment map, so it is a rough
+         * dielectric with its own map carrying the lift. */
+        m.metalness = 0.0;
+        m.roughness = 0.85;
+        m.emissive = new THREE.Color(0x6f86b8);
+        m.emissiveMap = m.map;
+        m.emissiveIntensity = 0.55;
+      }
+    });
+    portalWorld.add(s);
+    /* THE LIGHT SITS ON THE BASE, AND THE BASE IS MEASURED. The first build
+     * put the disc at y = 0.05 — the sand — and the model's own stone platform
+     * tops out at 0.381, so the whole of it was a third of a metre INSIDE the
+     * rock and nothing was visible at all from anywhere. Nothing here is
+     * guessed: the base mesh is found by name, boxed, and the glow is built to
+     * its radius and stood on its top. */
+    /* AND A JUST-ADDED OBJECT HAS NO `matrixWorld`. `Box3.setFromObject` reads
+     * it exactly the way a raycaster does, and this model is added and
+     * measured on the same frame, so without this the box comes back in the
+     * scan's OWN units: measured, the base read a top of 69.19 and a radius of
+     * 686.93, which went into `rockColliders` as a 687-metre cylinder centred
+     * on the portal and threw the player the length of the beach on the first
+     * frame they were anywhere near it. */
+    portalWorld.updateMatrixWorld(true);
+    let baseTop = 0.38, baseR = 1.55;
+    s.traverse((o2) => {
+      if (!o2.isMesh || (o2.name || '').indexOf('portalbase') !== 0) return;
+      const bb = new THREE.Box3().setFromObject(o2);
+      baseTop = bb.max.y;
+      baseR = Math.min(bb.max.x - PORTAL_X, bb.max.z - PORTAL_Z) * 0.92;
+    });
+    portalGlow = makePortalGlow(baseR, baseTop);
+    portalWorld.add(portalGlow);
+    /* AND YOU STAND ON IT. A 0.38 m step is under `ROCK_STEP`, so the beach's
+     * own rule applies without a special case: `rockGroundAt` lifts you onto
+     * it and `pushOutOfSolids` does not treat it as a wall. Without a collider
+     * at all you wade through the stone up to the knee. */
+    rockColliders.push({ x: PORTAL_X, z: PORTAL_Z, r: baseR + 0.10, top: baseTop, mat: 'rock' });
+    /* A LANDMARK, SO IT FAR-CULLS — and it may, because there is not one
+     * light in it. The glow is two additive shader meshes; a PointLight here
+     * would change NUM_POINT_LIGHTS as you walked up to it and recompile
+     * every material in the game, which is the pavilion's whole scar. */
+    farProps.push({ obj: portalWorld, z: PORTAL_Z, d: 240 });
+    portalReady = true;
+    /* THE STONES ARE SOLID AND THE MIDDLE IS NOT. Six cylinders on the ring,
+     * a body's width apart from each other — you walk between them. Anything
+     * whose crown lands under a step gets no collider, which is the beach's
+     * own rule, so the base course is walked over rather than into. */
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + 0.26;
+      rockColliders.push({
+        x: PORTAL_X + Math.cos(a) * PORTAL_RING * 0.92,
+        z: PORTAL_Z + Math.sin(a) * PORTAL_RING * 0.92,
+        r: 0.46, top: 2.05, mat: 'rock',
+      });
+    }
+  }, undefined, () => {});
+}
+
+/* THE LIGHT IN THE MIDDLE IS THE ONLY THING HERE THAT IS NOT THE MODEL.
+ * A disc lying on the sand inside the ring and a shaft standing out of it,
+ * both additive, both turning — and the shaft is what you see from down the
+ * beach, because a disc flat on the ground is invisible at head height from
+ * two hundred metres. It is cold on purpose: everything warm in this game is
+ * a lamp somebody lit, and nobody lit this. */
+function makePortalGlow(R, y0) {
+  const g = new THREE.Group();
+  g.position.y = y0 + 0.015;
+  const uni = { uT: { value: 0 }, uK: { value: 1 } };
+  const disc = new THREE.Mesh(
+    new THREE.CircleGeometry(R, 40),
+    new THREE.ShaderMaterial({
+      uniforms: uni, transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      vertexShader: 'varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+      fragmentShader: [
+        'uniform float uT; uniform float uK; varying vec2 vP;',
+        'float h(vec2 p){ return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5453); }',
+        'float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);',
+        '  return mix(mix(h(i), h(i+vec2(1,0)), f.x), mix(h(i+vec2(0,1)), h(i+vec2(1,1)), f.x), f.y); }',
+        'void main(){',
+        '  float r = length(vP) / 2.2; float a = atan(vP.y, vP.x);',
+        // A SPIRAL, NOT A RING: the angle is carried by the radius, so the
+        // pattern winds inward and the eye reads it as going somewhere.
+        '  float sp = a * 1.6 + r * 5.5 - uT * 1.5;',
+        '  float v = n(vec2(sp, r * 3.0 - uT * 0.8)) * 0.7 + n(vec2(sp * 2.1, r * 6.0 + uT)) * 0.3;',
+        '  float edge = smoothstep(1.0, 0.35, r);',
+        '  float core = smoothstep(0.55, 0.0, r);',
+        '  float m = (v * 0.85 + core * 0.9) * edge * uK;',
+        '  vec3 c = mix(vec3(0.18, 0.34, 0.72), vec3(0.62, 0.82, 1.0), core + v * 0.4);',
+        '  gl_FragColor = vec4(c * m, m * 0.9);',
+        '}',
+      ].join('\n'),
+    }));
+  disc.rotation.x = -Math.PI / 2;
+  disc.position.y = 0.0;
+  g.add(disc);
+
+  const col = new THREE.Mesh(
+    new THREE.CylinderGeometry(R * 0.70, R * 0.98, 5.2, 26, 1, true),
+    new THREE.ShaderMaterial({
+      uniforms: uni, transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      vertexShader: 'varying vec2 vU; void main(){ vU = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+      fragmentShader: [
+        'uniform float uT; uniform float uK; varying vec2 vU;',
+        'float h(vec2 p){ return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5453); }',
+        'float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);',
+        '  return mix(mix(h(i), h(i+vec2(1,0)), f.x), mix(h(i+vec2(0,1)), h(i+vec2(1,1)), f.x), f.y); }',
+        'void main(){',
+        '  float v = n(vec2(vU.x * 9.0, vU.y * 3.0 - uT * 1.1)) * 0.6',
+        '          + n(vec2(vU.x * 18.0 + 3.0, vU.y * 7.0 - uT * 2.0)) * 0.4;',
+        '  float fade = smoothstep(1.0, 0.05, vU.y);',      // strongest at the sand
+        '  float m = v * fade * 0.55 * uK;',
+        '  gl_FragColor = vec4(mix(vec3(0.16, 0.30, 0.66), vec3(0.55, 0.76, 1.0), v) * m, m);',
+        '}',
+      ].join('\n'),
+    }));
+  col.position.y = 2.6;   // its base is the disc; the fade makes it brightest there
+  g.add(col);
+  g.userData.uni = uni;
+  return g;
+}
+
+/* THE HUM. Nothing above 240 Hz lives in it — the bunker paid for that when a
+ * CRT whine turned out to be tinnitus, and the shell paid for it again when
+ * broadband hiss turned out to be a radio. Two sines a fifth apart that beat
+ * against each other, a sub under them that breathes, and a slow ring
+ * modulation so it swells rather than sits. It is gated on distance and it
+ * comes up as you close, which is the whole of "a strange hum in the air". */
+let portalAudio = null;
+function startPortalAudio() {
+  const ctx = audioCtx; if (portalAudio || !ctx) return;
+  const g = ctx.createGain(); g.gain.value = 0;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 240;
+  lp.connect(g); g.connect(sfxOut());
+  const parts = [];
+  for (const [f, a] of [[58, 0.50], [87, 0.34], [116.5, 0.20]]) {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+    const og = ctx.createGain(); og.gain.value = a;
+    o.connect(og); og.connect(lp); o.start();
+    // a slow detune so the two never quite agree and the beat wanders
+    const l = ctx.createOscillator(); l.type = 'sine'; l.frequency.value = 0.07 + Math.random() * 0.05;
+    const ld = ctx.createGain(); ld.gain.value = 2.6;
+    l.connect(ld); ld.connect(o.detune); l.start();
+    parts.push(o, l);
+  }
+  const sub = ctx.createOscillator(); sub.type = 'sine'; sub.frequency.value = 29;
+  const sg = ctx.createGain(); sg.gain.value = 0.0;
+  const br = ctx.createOscillator(); br.type = 'sine'; br.frequency.value = 0.11;
+  const brg = ctx.createGain(); brg.gain.value = 0.34;
+  br.connect(brg); brg.connect(sg.gain);
+  sub.connect(sg); sg.connect(lp); sub.start(); br.start();
+  portalAudio = { g, parts };
+}
+
+function updatePortal(dt) {
+  if (!portalReady || inDojo) return;
+  portalT += dt;
+  const uni = portalGlow && portalGlow.userData.uni;
+  const d = Math.hypot(camera.position.x - PORTAL_X, camera.position.z - PORTAL_Z);
+
+  /* THE HUM IS A DISTANCE, AND THE LIGHT ANSWERS THE SAME NUMBER. Standing
+   * in it, both are at full; from the far end of its reach there is a note
+   * you are not sure you heard, which is what a thing like this should do. */
+  /* THE ROOM IS FETCHED ON APPROACH, NOT ON THE TRIGGER. Starting the dojo's
+   * eleven megabytes at the moment the light closes over you means the take
+   * either stalls on a white screen or cuts to an empty room; it begins forty
+   * metres out, and the white still holds if it somehow is not up. */
+  if (d < 45) loadDojo();
+  const want = portalCut ? 1 : Math.max(0, 1 - d / PORTAL_HEAR);
+  portalMix += (want - portalMix) * Math.min(1, dt * 1.8);
+  if (portalMix > 0.01) startPortalAudio();
+  if (portalAudio && audioCtx) {
+    const lvl = portalMix * portalMix * 0.34 * (1 + portalCharge * 1.6);
+    portalAudio.g.gain.setTargetAtTime(lvl, audioCtx.currentTime, 0.10);
+  }
+  if (uni) {
+    uni.uT.value = portalT;
+    // it brightens as you come in, and hard while it is taking you
+    uni.uK.value = (0.75 + portalMix * 0.5) * (1 + portalCharge * 2.6)
+                   * (portalCut ? 1 + portalCutT * 2.2 : 1);
+  }
+
+  /* IT STILL WORKS AFTERWARDS. Killing him does not switch the place off:
+   * the dojo is somewhere you have been, not a level you have spent, and the
+   * only thing the win changes is that he is lying in it. Coming back cannot
+   * loop either — the return sets you down 4.6 m out, well clear of the
+   * middle, and the win's own beat only fires once (`dojoWinT`). */
+  if (portalCut) { portalCharge = 0; return; }
+  /* STAND IN THE MIDDLE. A trigger you cross is a trigger you fall through by
+   * accident — this one wants you to STOP on it, which is why it is a hold
+   * and not a line, and why the light and the hum both climb while you do. */
+  const feetOn = Math.abs(camera.position.y - playerEye() - groundY) < 0.9;
+  if (d < PORTAL_STEP && feetOn && !frozen()) {
+    portalCharge = Math.min(1, portalCharge + dt / PORTAL_HOLD);
+    if (portalCharge >= 1) startPortalTake();
+  } else {
+    portalCharge = Math.max(0, portalCharge - dt * 1.6);
+  }
+}
+let portalCharge = 0;
+
+// ------------------------------------------------------------------ the dojo
+function loadDojo() {
+  if (dojoWorld) return;
+  dojoWorld = new THREE.Group();
+  dojoWorld.position.set(DOJO_X, DOJO_Y, DOJO_Z);
+  dojoWorld.visible = false;
+  scene.add(dojoWorld);
+  // the man in it is built here, not in the callback: nothing about a hidden
+  // sleeping creature depends on the room, and the two parses want to overlap
+  if (!mutGlbWait['assets/samurai.glb']) mutGlbWait['assets/samurai.glb'] = bwFetch('assets/samurai.glb');
+  bwGlb('assets/dojo.glb', (gltf) => {
+    const root = gltf.scene;
+    /* THE WALK RIDES INSIDE THE FILE. `undercroft_pack.py` rasterises every
+     * triangle of the place onto a 0.2 m grid at pack time and writes the
+     * floor and the solid band into the root node's extras, so there is not
+     * one collider hand-placed in here and nothing to keep in step with the
+     * model. */
+    let ex = null;
+    root.traverse((o) => { if (!ex && o.userData && o.userData.bw_walk) ex = o.userData.bw_walk; });
+    if (ex) dojoWalk = typeof ex === 'string' ? JSON.parse(ex) : ex;
+    root.traverse((o) => {
+      if (!o.isMesh) return;
+      o.frustumCulled = true;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) {
+        /* NO LIGHTS IN HERE AT ALL — the pavilion's scar. Every light in a
+         * scene is a shader define, so a room that far-culls five of them
+         * recompiles every material in the game twice on the walk up to it.
+         * The moon is directional and reaches everywhere, and the rest is
+         * the map carrying its own lift. */
+        m.metalness = 0.0;
+        if (!m.emissiveMap && m.map) {
+          m.emissive = new THREE.Color(0xffffff);
+          m.emissiveMap = m.map;
+          m.emissiveIntensity = 0.30;
+        }
+        if (m.map) { m.map.anisotropy = 8; }
+      }
+      const mn = (o.name || '');
+      /* THE SKY IS THE ONE THING IN HERE THAT MUST NOT BE LIT. It ships as a
+       * painted dome and it came out the brightest surface in the place — a
+       * pale lid over a night scene, with a hard line where it met the fog,
+       * which is the whole of "you can see the skybox". Three things fix it
+       * and they have to be done together: it goes UNLIT (`MeshBasicMaterial`
+       * takes no light and cannot be brightened by the moon), it is graded
+       * down to the beach's own night level, and it FADES with height into
+       * the scene's fog colour so the top of the dome and the distance are
+       * the same colour and there is no edge left to see. Fog does not touch
+       * a basic material's far distance the way it does a lit one, so the
+       * fade is written into the shader. */
+      if (mn.indexOf('SkyAndGround') === 0) {
+        const src = mats[0];
+        const sky = new THREE.MeshBasicMaterial({ map: src.map, fog: true, side: src.side });
+        sky.color.setRGB(0.30, 0.34, 0.44);
+        sky.onBeforeCompile = (sh) => {
+          sh.uniforms.uFog = { value: new THREE.Color(0x05070d) };
+          sh.uniforms.uY0 = { value: DOJO_Y + 1.0 };
+          sh.uniforms.uY1 = { value: DOJO_Y + 24.0 };
+          sh.vertexShader = ['varying float vSkyY;', sh.vertexShader.replace(
+            '#include <begin_vertex>',
+            ['#include <begin_vertex>',
+             '  vSkyY = (modelMatrix * vec4(transformed, 1.0)).y;'].join('\n'))].join('\n');
+          sh.fragmentShader = [
+            'uniform vec3 uFog; uniform float uY0; uniform float uY1; varying float vSkyY;',
+            sh.fragmentShader.replace('#include <fog_fragment>', [
+              '  {',
+              '    float k = clamp((vSkyY - uY0) / max(0.001, uY1 - uY0), 0.0, 1.0);',
+              '    gl_FragColor.rgb = mix(gl_FragColor.rgb, uFog, k * k * 0.94);',
+              '  }',
+              '  #include <fog_fragment>',
+            ].join('\n')),
+          ].join('\n');
+        };
+        o.material = sky;
+        o.renderOrder = -1;
+        dojoSky = o;
+        return;                         // a traverse callback is a function: `continue` is a syntax error
+      }
+      if (mn.indexOf('Rain') === 0) { dojoRain.push(o); dojoRainMat = mats[0]; }
+      if (mn.indexOf('Splash') === 0) {
+        /* AND ALL FIFTY-FIVE OF THEM SHARE ONE MATERIAL. `parse` hands every
+         * mesh the same one — the crabs' own trap — so writing an opacity per
+         * splash wrote it fifty-five times to the same object and the last
+         * one won: measured, every splash read 0.54 whatever its own phase
+         * was. Cloned per mesh they can actually fade. */
+        o.material = (Array.isArray(o.material) ? o.material[0] : o.material).clone();
+        o.material.transparent = true;
+        o.material.depthWrite = false;
+        dojoSplash.push(o);
+      }
+      /* THE ONE ON THE STAND, BY THE PICTURE. The dojo ships more than one
+       * hero sword and the first build took whichever was called `HeroSword1`
+       * — which is the one lying on the floor. The one that matters is on its
+       * rack under the sensei's portrait, and the way to find it is to ask
+       * WHERE THE PICTURE IS and take the sword nearest it, rather than to
+       * trust a number in a name. Both candidates are collected here and the
+       * choice is made once the whole model is walked, because the picture may
+       * arrive after the swords do. */
+      // `HeroSword1`/`HeroSword2` only: `HeroSwordHolder` is the RACK and it
+      // matches any looser prefix, which is how the first build ended up
+      // offering you the furniture. And the picture is `PictureFrame_SensiePic_0`
+      // — the material is what names it, not the object, so the test is on the
+      // whole string rather than the front of it.
+      if (/^HeroSword\d/.test(mn)) dojoSwords.push(o);
+      if (mn.indexOf('SensiePic') >= 0) dojoPic = o;
+    });
+    dojoWorld.add(root);
+    /* PICKED BY MEASUREMENT. The stand is the better anchor than the picture
+     * if it is there — a sword ON a rack is nearer the rack than anything
+     * else — and the picture is the fallback the owner actually named. */
+    /* AND IT IS MEASURED ON THE BOUNDING BOX, NOT THE NODE. The packer bakes
+     * every node into world space and leaves the transforms at identity, so
+     * `getWorldPosition` returns the ORIGIN for every mesh in the building and
+     * "nearest the picture" came back as whichever one was walked first. The
+     * geometry is the only thing that knows where anything is. Measured: the
+     * picture sits at (0.71, 0.90, -2.57), `HeroSword2` is 0.88 m from it on
+     * the wall at 1.47 m with its sheath beside it, and `HeroSword1` is 1.5 m
+     * away down at 0.45 m. The one by the picture is the one on the stand. */
+    if (dojoSwords.length) {
+      const mid = (m) => new THREE.Box3().setFromObject(m).getCenter(new THREE.Vector3());
+      if (dojoPic) {
+        const ap = mid(dojoPic);
+        let best = null, bd = 1e9;
+        for (const sw of dojoSwords) {
+          const d = mid(sw).distanceTo(ap);
+          if (d < bd) { bd = d; best = sw; }
+        }
+        heroSword = best;
+      } else {
+        heroSword = dojoSwords[0];
+      }
+    }
+    dojoReady = true;
+    armDojo();
+  }, undefined, () => {});
+}
+
+/* THE FLOOR AND THE WALLS, OUT OF THE GRID. Chained into `bunkerFloorAt`
+ * like every other room in this game — which is the general question "what is
+ * under this", not the bunker's — so blood, gibs, thrown props and every
+ * particle of a ragdoll ask it for free. */
+function dojoGridAt(x, z) {
+  if (!dojoWalk) return null;
+  const i = Math.floor((x - DOJO_X - dojoWalk.x0) / dojoWalk.cell);
+  const j = Math.floor((z - DOJO_Z - dojoWalk.z0) / dojoWalk.cell);
+  if (i < 0 || j < 0 || i >= dojoWalk.gw || j >= dojoWalk.gh) return null;
+  return { i, j, f: dojoWalk.floor[j][i], s: dojoWalk.solid[j][i] === '1' };
+}
+function dojoFloorAt(x, z, y) {
+  if (!dojoReady || !dojoWalk || y === undefined) return null;
+  if (Math.abs(y - DOJO_Y) > 60) return null;
+  const c = dojoGridAt(x, z);
+  if (!c || c.f <= -90) return null;
+  return DOJO_Y + c.f;
+}
+const _floorBeforeDojo = bunkerFloorAt;
+bunkerFloorAt = (x, z, y) => {
+  const d = dojoFloorAt(x, z, y);
+  return d === null ? _floorBeforeDojo(x, z, y) : d;
+};
+
+/* PUSHED OUT ALONG THE RESULTANT, not an axis at a time. The bunker paid for
+ * this one: against anything that is not a flat wall both axes read blocked
+ * and the whole move is thrown away, so you stand against a post unable to
+ * step round it. Every solid cell the body overlaps pushes along the line
+ * from its nearest point, and what is applied is the SUM. */
+function pushOutOfDojo(p, r) {
+  if (!dojoWalk) return false;
+  const cell = dojoWalk.cell;
+  const i0 = Math.floor((p.x - DOJO_X - dojoWalk.x0 - r) / cell);
+  const i1 = Math.floor((p.x - DOJO_X - dojoWalk.x0 + r) / cell);
+  const j0 = Math.floor((p.z - DOJO_Z - dojoWalk.z0 - r) / cell);
+  const j1 = Math.floor((p.z - DOJO_Z - dojoWalk.z0 + r) / cell);
+  let dx = 0, dz = 0, hit = false;
+  for (let j = j0; j <= j1; j++) {
+    if (j < 0 || j >= dojoWalk.gh) continue;
+    for (let i = i0; i <= i1; i++) {
+      if (i < 0 || i >= dojoWalk.gw) continue;
+      if (dojoWalk.solid[j][i] !== '1') continue;
+      const cx = DOJO_X + dojoWalk.x0 + (i + 0.5) * cell;
+      const cz = DOJO_Z + dojoWalk.z0 + (j + 0.5) * cell;
+      const nx = THREE.MathUtils.clamp(p.x, cx - cell / 2, cx + cell / 2);
+      const nz = THREE.MathUtils.clamp(p.z, cz - cell / 2, cz + cell / 2);
+      let ox = p.x - nx, oz = p.z - nz;
+      const d = Math.hypot(ox, oz);
+      if (d >= r) continue;
+      if (d < 1e-5) { ox = p.x - cx; oz = p.z - cz; }
+      const L = Math.hypot(ox, oz) || 1;
+      const push = r - d;
+      dx += (ox / L) * push; dz += (oz / L) * push;
+      hit = true;
+    }
+  }
+  if (hit) { p.x += dx; p.z += dz; }
+  return hit;
+}
+
+/* THE RAIN. The packer bakes every node into world space, so the model's own
+ * `Take 001` — which is what moved the rain — cannot survive it: the clip
+ * targets nodes that no longer exist. It is driven here instead, which is
+ * cheaper anyway. Two shells scrolling their own map downward at different
+ * rates (so the far one does not march in step with the near one), and the
+ * fifty-five ground splashes flickering on their own counts, because rain you
+ * cannot see LAND is just a texture on the air. */
+function updateDojoRain(dt, t) {
+  if (dojoRainMat && dojoRainMat.map) {
+    const m = dojoRainMat.map;
+    m.wrapS = m.wrapT = THREE.RepeatWrapping;
+    m.offset.y = (m.offset.y - dt * 1.9) % 1;
+    m.offset.x = (m.offset.x + dt * 0.05) % 1;   // a little drift, so it is not a curtain
+    m.needsUpdate = false;
+  }
+  for (let k = 0; k < dojoRain.length; k++) {
+    const o = dojoRain[k];
+    // the shells turn slowly and in opposite directions: parallax, for free
+    o.rotation.y = t * (k % 2 ? 0.035 : -0.055);
+  }
+  for (let k = 0; k < dojoSplash.length; k++) {
+    const o = dojoSplash[k];
+    /* EACH ONE ON ITS OWN COUNT. A single phase makes the whole floor blink
+     * together, which reads as the lights flickering rather than as rain. */
+    const ph = (t * 1.7 + k * 0.6180339) % 1;
+    const a = ph < 0.34 ? Math.sin(ph / 0.34 * Math.PI) : 0;
+    o.visible = a > 0.02;
+    o.scale.setScalar(0.55 + a * 0.75);
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of mats) { m.transparent = true; m.opacity = a * 0.55; m.depthWrite = false; }
+  }
+}
+
+function warmDojo() {
+  if (dojoWarmed || !dojoWorld || !dojoReady) return;
+  dojoWarmed = true;
+  warmThrough([dojoWorld]);
+}
+
+function updateDojo(dt) {
+  if (!dojoReady) return;
+  /* ITS OWN CLOCK. The rain used to run off `portalT`, and `updatePortal`
+   * RETURNS EARLY while you are in the dojo — so the moment you arrived the
+   * phase froze and the ground splashes stopped cycling for the whole fight.
+   * A room six thousand metres from the thing that was counting for it. */
+  dojoT += dt;
+  const t = dojoT;
+  if (inDojo || dojoWorld.visible) updateDojoRain(dt, t);
+  if (!inDojo) return;
+  /* THE ROOM'S OWN FRAME. The floor is the grid's, the walls are the grid's,
+   * and the clamp runs AFTER the move — and then the push-out runs again
+   * after anything else that moves you, which is the dock's own rule. */
+  const p = camera.position;
+  pushOutOfDojo(p, PLAYER_R);
+  const f = dojoFloorAt(p.x, p.z, p.y);
+  if (f !== null) groundY = Math.max(groundY, f);
+}
+
+// ---------------------------------------------------------- the take, and back
+/* IT IS A CAMERA MOVE, NOT A PLAYER MOVE. Everything else in this game that
+ * takes the player learned this the hard way: the clamps below have to keep
+ * agreeing with where the body is, so the body stays where it is standing and
+ * only the lens is driven, and the hand-back is then exact. Four beats on one
+ * clock — the light takes hold, it pulls you down into it, white, and you are
+ * somewhere else — and every cue fires once. */
+function startPortalTake() {
+  if (portalCut || inDojo) return;
+  portalCut = true; portalPhase = 0; portalCutT = 0; portalOut = false;
+  blocking = false;
+  loadDojo();
+  sfxPortalTake();
+}
+function startPortalReturn() {
+  if (portalCut) return;
+  portalCut = true; portalPhase = 0; portalCutT = 0; portalOut = true;
+  blocking = false;
+  sfxPortalTake();
+}
+
+/* ON THE WALL CLOCK, beside update() — the hatch's own rule, so a beat of
+ * hitstop from the last blow cannot stretch the take. */
+function updatePortalCut(dt) {
+  if (!portalCut) return;
+  portalCutT += dt;
+  const T = portalCutT;
+  const el = flashEl;
+  if (portalPhase === 0) {
+    // the light closes over you: the lens pulls in and the world tips
+    const k = Math.min(1, T / 0.85);
+    settings.fov = THREE.MathUtils.lerp(settings.fov, 34, Math.min(1, dt * 3.2));
+    camera.rotation.z = Math.sin(T * 7.0) * 0.03 * k;
+    if (el) el.style.opacity = String(Math.max(0, (T - 0.55) / 0.55));
+    if (T > 1.10) {
+      portalPhase = 1;
+      if (portalOut) placeBackAtPortal(); else placeInDojo();
+    }
+  } else if (portalPhase === 1) {
+    if (el) el.style.opacity = String(Math.max(0, 1 - (T - 1.10) / 0.55));
+    camera.rotation.z *= Math.max(0, 1 - dt * 6);
+    if (T > 1.80) {
+      portalCut = false; portalPhase = 0;
+      camera.rotation.z = 0;
+      if (el) el.style.opacity = '0';
+      catchBreath();
+    }
+  }
+}
+
+function placeInDojo() {
+  inDojo = true;
+  if (dojoWorld) dojoWorld.visible = true;
+  warmDojo();
+  const gx = DOJO_X + DOJO_IN.x, gz = DOJO_Z + DOJO_IN.z;
+  const f = dojoFloorAt(gx, gz, DOJO_Y);
+  groundY = f === null ? DOJO_Y : f;
+  camera.position.set(gx, groundY + playerEye(), gz);
+  camBaseY = camera.position.y; vy = 0; onGround = true;
+  /* FACING THE WAY IN. The building's open side is +z — the burnt panels are
+   * out of that wall — and by this game's own `atan2(-dx, -dz)` looking down
+   * -z from +z is yaw 0. Read the convention off the code that already does
+   * it; deriving it from first principles got the saucer wrong twice. */
+  lookEuler.set(0.0, 0, 0, lookEuler.order);
+  camera.quaternion.setFromEuler(lookEuler);
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0);
+  settings.fov = DEFAULT_SETTINGS.fov;
+  startDojoAudio();
+}
+
+function placeBackAtPortal() {
+  inDojo = false;
+  if (dojoWorld) dojoWorld.visible = false;
+  stopDojoAudio();
+  /* SET DOWN JUST OUTSIDE THE RING, not in the middle of it: the middle is
+   * the trigger, and handing you back standing on it would take you straight
+   * back through. It steps back along Z rather than out along X, because
+   * `PORTAL_X + 2.6` is 14.2 and `CLIFF_BLOCK_X` is 14.2 — measured — so the
+   * old spot handed you back jammed against the foot of the cliff. */
+  const x = PORTAL_X, z = PORTAL_Z + 4.6;
+  groundY = 0;
+  camera.position.set(x, playerEye(), z);
+  camBaseY = camera.position.y; vy = 0; onGround = true;
+  const dx = PORTAL_X - x, dz = PORTAL_Z - z;
+  lookEuler.set(0, Math.atan2(-dx, -dz), 0, lookEuler.order);
+  camera.quaternion.setFromEuler(lookEuler);
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0);
+  settings.fov = DEFAULT_SETTINGS.fov;
+  portalCharge = 0;
+}
+
+/* THE DOJO'S AIR. The surf and the wind are not here — this is not on that
+ * beach — but silence is an absence and not an ambience, so what fills it is
+ * the rain: a wide bed of it on the boards and the ground, a gutter running
+ * somewhere off to one side, and the odd heavier gust. Nothing above 240 Hz
+ * has a pure tone in it; rain IS broadband, which is the one place in this
+ * game where that is the right answer rather than a radio. */
+let dojoAudio = null;
+function startDojoAudio() {
+  const ctx = audioCtx; if (!ctx) return;
+  if (dojoAudio) { dojoAudio.g.gain.setTargetAtTime(0.30, ctx.currentTime, 0.6); return; }
+  const g = ctx.createGain(); g.gain.value = 0;
+  g.connect(sfxOut());
+  const n = ctx.createBufferSource();
+  const len = Math.floor(ctx.sampleRate * 4);
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  let b0 = 0, b1 = 0;
+  for (let i = 0; i < len; i++) {
+    const w = Math.random() * 2 - 1;
+    b0 = 0.99 * b0 + w * 0.06;            // a little brown under it, for the weight
+    b1 = 0.72 * b1 + w * 0.28;
+    d[i] = b1 * 0.7 + b0 * 1.6;
+  }
+  n.buffer = buf; n.loop = true;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1100; bp.Q.value = 0.5;
+  const hi = ctx.createBiquadFilter(); hi.type = 'highshelf'; hi.frequency.value = 2600; hi.gain.value = -8;
+  n.connect(bp); bp.connect(hi); hi.connect(g); n.start();
+  // the gusts: the whole bed swells every ten seconds or so, never on a count
+  const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 0.09;
+  const lg = ctx.createGain(); lg.gain.value = 0.09;
+  lfo.connect(lg); lg.connect(g.gain); lfo.start();
+  dojoAudio = { g, n, lfo };
+  g.gain.setTargetAtTime(0.30, ctx.currentTime, 0.8);
+}
+function stopDojoAudio() {
+  if (dojoAudio && audioCtx) dojoAudio.g.gain.setTargetAtTime(0, audioCtx.currentTime, 0.4);
+}
+
+function sfxPortalTake() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const g = ctx.createGain(); g.connect(sfxOut());
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.55, t + 0.35);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 1.7);
+  // something enormous drawing breath: a low sweep UP, which is the one
+  // direction this game's machines never go
+  const o = ctx.createOscillator(); o.type = 'sawtooth';
+  o.frequency.setValueAtTime(38, t);
+  o.frequency.exponentialRampToValueAtTime(150, t + 1.1);
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(180, t);
+  lp.frequency.exponentialRampToValueAtTime(900, t + 1.0);
+  o.connect(lp); lp.connect(g); o.start(t); o.stop(t + 1.8);
+  const sub = ctx.createOscillator(); sub.type = 'sine'; sub.frequency.setValueAtTime(46, t);
+  sub.frequency.exponentialRampToValueAtTime(28, t + 1.5);
+  const sg = ctx.createGain(); sg.gain.setValueAtTime(0.5, t);
+  sg.gain.exponentialRampToValueAtTime(0.0001, t + 1.6);
+  sub.connect(sg); sg.connect(g); sub.start(t); sub.stop(t + 1.7);
+}
+
+// ------------------------------------------------------------- the hero sword
+/* THE KATANA ON THE STAND IS THE GAME'S OWN KATANA. The dojo ships a hero
+ * sword modelled on its rack and that is what you SEE; what you get is
+ * `katanaItem`, the built one from `models/katana.js`, which already has the
+ * cut, the guard, the thrust, the chain and the glint. One weapon in this
+ * game, found twice. If you are already carrying it, the stand is still the
+ * thing he objects to — taking it is what starts the fight either way. */
+function armDojo() {
+  if (!heroSword) return;
+  heroSwordShine = addItemShine(heroSword, { size: 0.9, height: 0.25, strength: 1.5, lift: 0.6, through: true });
+  addInteractable(heroSword, 'Take the katana', undefined, {
+    far: 4.0,
+    when: () => inDojo && !heroSwordTaken,
+    onActivate: () => {
+      if (heroSwordTaken) return;
+      heroSwordTaken = true;
+      heroSword.visible = false;
+      hovered = null;
+      /* `toggleEquip` TOGGLES, so it must never be called blind. Adding the
+       * item can leave it in your hand already, and a second call then takes
+       * it straight back out again: measured, the katana went into the pack
+       * and `equipped` came back null, so you picked up a sword and were
+       * holding nothing. Ask first. */
+      if (!inventory.includes(katanaItem)) addToInventory(katanaItem);
+      if (equipped !== katanaItem) toggleEquip(katanaItem);
+      wakeSamurai();
+    },
+  });
+}
+
+// ---------------------------------------------------------------- the samurai
+/* HIS WHOLE SHIPPED MOVE SET IS ONE 38-FRAME SWING, so `sSide` is his and the
+ * other two are authored — see `tools/samurai_pack.py`. Everything else about
+ * the fight comes with the table: the tell, the commit, the poise, the parry
+ * window, the riposte, the chain and the feint.
+ *
+ * HE IS NOT A MONSTER AND HE DOES NOT COME APART. `human` keeps the roar, the
+ * sand throw and the severing off him; his rig is Rigify and answers to
+ * `DEF-*`, so the Verlet ragdoll would build a body of zero parts — the
+ * Dealer's own bug — and he goes down on his own `die` clip instead, which is
+ * the right picture for a swordsman anyway. */
+/* FIVE SWINGS, AND EVERY `hit` IS THE CLIP'S OWN MEASURED CONTACT — the frame
+ * at which the point of his sword passes nearest a body standing in front of
+ * him, printed by the packer and checked on every build. The startups come
+ * from the reference the owner supplied: its annotation track puts contact at
+ * 0.37–0.50 s, the early cancel at 0.17–0.25 and the combo window near 0.6,
+ * and these sit in that band.
+ *
+ * THEY CHAIN INTO EACH OTHER RATHER THAN INTO ONE ANSWER. The side cut runs
+ * into the rising cut, the rising cut into the spin, the spin into the stab —
+ * so a parry is not the end of an exchange and no two exchanges are the same
+ * shape. Only the overhead ends a string, because it is the one that takes
+ * two of your four. */
+/* EVERY `hit` IS THE CLIP'S OWN MEASURED CONTACT — the frame at which the
+ * striking end passes nearest a body standing in front of him, printed by the
+ * packer on every build — AND THE `wind` IS MEASURED IN THE GAME. The packer
+ * measures against a target 1.5 m in front; in the fight he stands at 1.16 and
+ * `aimBar` has turned him, so the frame at which the blade is really nearest
+ * moves. Traced over ninety seconds of live fighting: the overhead was nearest
+ * at atk 0.42 and its damage window opened at 0.71, and the rising cut was
+ * nearest at 0.83 and opened at 0.45 — so both swings genuinely went past you
+ * and scored nothing at all over a whole minute. The windows bracket the
+ * measured moment now. The striking end is not the same thing on every
+ * swing: three of these are sword cuts and TWO ARE KICKS, so the packer
+ * measures the blade on one set and the foot on the other.
+ *
+ * THE KICKS ARE THE BEST THING IN THE SET. A kick is a mixup no amount of
+ * sword-reading prepares you for — it comes in under a high guard and it is
+ * the one attack of his whose tell is in his LEGS. They reach shorter than
+ * the cuts, because a foot is shorter than a sword.
+ *
+ * The startups come from the reference the owner supplied first: its
+ * annotation track puts contact at 0.37–0.50 s, the cancel at 0.17–0.25 and
+ * the combo window near 0.6, and these sit in that band. */
+MUT_ATTACKS.sSide = { wind: 0.46, strike: 0.12, recover: 0.30, hit: 0.52, reach: 2.40, lunge: 0.9, chain: 'sRise', chainP: 0.34, w: 0.28, limbs: [0] };
+MUT_ATTACKS.sRise = { wind: 0.78, strike: 0.14, recover: 0.40, hit: 0.60, reach: 2.35, lunge: 1.0, chain: null, chainP: 0, w: 0.26, dmg: 2, guardK: 1.35, limbs: [0] };
+MUT_ATTACKS.sSpin = { wind: 0.50, strike: 0.12, recover: 0.44, hit: 0.60, reach: 1.95, lunge: 1.1, chain: 'sSide', chainP: 0.24, w: 0.18, limbs: [1, 2] };
+MUT_ATTACKS.sStab = { wind: 0.46, strike: 0.12, recover: 0.42, hit: 0.56, reach: 2.05, lunge: 1.3, chain: null, chainP: 0, w: 0.16, limbs: [1, 2] };
+MUT_ATTACKS.sDown = { wind: 0.32, strike: 0.22, recover: 0.48, hit: 0.60, reach: 2.55, lunge: 0.7, chain: null, chainP: 0, w: 0.16, dmg: 2, guardK: 1.35, limbs: [0] };
+
+MUT_KINDS.samurai = {
+  glb: 'assets/samurai.glb', human: true, solo: true, noSand: true, lit: false,
+  /* NO `bossDeath`, AND THAT IS NOT A STYLE CHOICE. It is checked BEFORE
+   * `deathClip` and it goes down the Dealer's road — the Verlet ragdoll and
+   * the severing — which works on him only because every bone lookup there
+   * goes through a `boneAlias` onto `Character1_*`. This rig is Rigify and
+   * answers to `DEF-spine`, so the body came out with ZERO parts and the boss
+   * of the dojo finished the fight frozen upright in whatever frame the last
+   * blow caught him: measured, `rag` built and the mixer stuck on `sStab` for
+   * the rest of the game. That is the warden's bug and the Dealer's before
+   * it, and it gets their fix — he goes down his own authored `die`. */
+  aimed: true, reacts: true, deathClip: true, skin: null, bones: null,
+  /* AND THE BEATS BELONG TO THE CLIP. `WARDEN_DEATH`'s are fractions of a
+   * 56-frame fall measured on something with a tail; his is a swordsman going
+   * down on one knee first and then over, so the knee, the body and the
+   * settle are his own. */
+  death: { BUCKLE: 0.62, DROP: 1.35, TAIL: 1.95, QUIET: 4.20 },
+  barLen: 1.02,                       // his katana, measured from the fist
+  h: 1.86, hp: 22, dmg: 1,
+  /* HARDER. `aggr` is the gap between swings and `press` is how often he takes
+   * a turn he could have taken — the pack's 0.62 is right for three creatures
+   * sharing one token and wrong for a man fighting you alone, who has nobody
+   * to take turns with and spent two fifths of every opening walking sideways.
+   * He circles less, chains further, and is quicker on his feet than you are. */
+  speedK: 1.24, windK: 1.02, reachK: 1.05, aggr: 2.40, press: 0.82,
+  recoilK: 0.80,
+  /* AND THE OVERHEAD IS NOT IN THE ROTATION. `Great Sword Slash` is a
+   * two-handed chop whose blade comes down in FRONT of him at a range this
+   * fight never uses: traced over four minutes of live fighting it was thrown
+   * twenty-seven times and landed NOT ONCE, while the other four ran at
+   * 83–86 %. Its limb does pass within the hit radius — at `atk` 0.00, before
+   * the window opens, because at a metre his own shoulder is already that
+   * close — and no placing of the window catches the blade itself. A swing
+   * that never connects reads as the boss passing through you, which is worse
+   * than not having it. The clip stays in the file; the fight draws the four
+   * that land, and the RISING cut carries the two-damage heavy instead. */
+  use: { sSide: 0.34, sRise: 0.26, sSpin: 0.22, sStab: 0.18 },
+  circle: 0.38, step: 0.30, chainMax: 4, feint: 0.30,
+  poise: 8, poiseBack: 1.7, poiseWait: 1.1, parryK: 0.75,
+  block: 0.46, blockCost: 0.30, fidgetK: 0.20, fidgetGap: 2.6,
+  /* A PALE MAN IN DARK LACQUER IS NOT A DARK CREATURE. The pack's gamma lift
+   * and cold rim are for two metres of dark flesh that renders as a hole; his
+   * armour is already graded to the game's own level in the packer, so the
+   * lift is small and the rim is only enough to cut him off the boards. */
+  tint: 0xffffff, emis: 0.16,
+  rim: [0.055, 0.070, 0.100],
+  /* EVERY BONE LOOKUP GOES THROUGH THE ALIAS, and the warden has had this bug
+   * since the day it went in: `mutAnim` starts an attack with the ATTACK KEY,
+   * so a kind whose swings are called one thing and whose clips are called
+   * another resolves nothing, `mutPlay` returns undefined, and the creature
+   * goes on playing whatever it was — sprinting at you through every
+   * wind-up with no telegraph at all. His clips are named for his swings on
+   * purpose; what is left is the gait. */
+  /* AND `drawGait` DRAWS FROM A PAIR. It picks a fresh walk, run and idle
+   * every time the creature sets off or comes to rest, so a kind that owns
+   * only one of each has to say so — otherwise `mutPlay` is handed `run2`,
+   * resolves nothing and RETURNS WITHOUT TOUCHING ANYTHING, and the creature
+   * keeps playing whatever it had. Measured in the fight: he crossed thirteen
+   * metres and threw a swing with his TAUNT still on the mixer. The warning
+   * has been in `mutPlay` since it was written and says exactly this. */
+  alias: { strafeL: 'walk', strafeR: 'walk', back: 'walk', roar: 'taunt',
+           walk2: 'walk', run2: 'run', idle2: 'idle', idleSrc: 'idle' },
+  /* AND THIS IS WHAT MAKES THE BLOWS LAND. `kind.rig` is the four joints the
+   * fight asks for, and WITHOUT IT `u.bones` is never built, `mutLimbs`
+   * returns an empty list, and `aimBar` and `blowLands` both quietly do
+   * nothing — which is a boss whose sword goes past you and whose damage
+   * comes from a distance test you cannot see. It is the Dealer's own
+   * arrangement, with one difference in his favour: a man with a crowbar has
+   * to run `barLen` out along his forearm, and this rig carries a REAL BONE
+   * at the point of the blade (`tools/samurai_pack.py` measures it off the
+   * sword mesh), so the hitbox is swept down the steel itself. */
+  /* AND THE NAMES ARE THE SANITISED ONES. three's GLTFLoader runs every node
+   * name through `PropertyBinding.sanitizeNodeName`, which strips the dots a
+   * Rigify rig is full of — `DEF-shoulder.R` arrives as `DEF-shoulderR` and
+   * `DEF-spine.006` as `DEF-spine006`. Written the way Blender spells them,
+   * four of the five lookups matched nothing and `u.bones` came back holding
+   * only `tip`, which is the one name with no dot in it; `mutLimbs` then built
+   * an empty list and the aim and the hitbox both did nothing. Read the names
+   * off the loaded rig, not off the exporter. */
+  rig: { shoulder: 'DEF-shoulderR', arm: 'DEF-upper_armR', fore: 'DEF-forearmR',
+         hand: 'DEF-handR', tip: 'DEF-katana_tip', head: 'DEF-spine006',
+         /* AND TWO OF HIS FIVE ARE KICKS, SO TWO OF THEM STRIKE WITH A LEG.
+          * `blowLands` sweeps the chains `mutLimbs` builds, and with only the
+          * sword arm declared a kick was tested on the BLADE — which on a kick
+          * is behind him doing nothing. Measured: the two kicks passed 1.10 m
+          * from the chest on the steel while the foot went through the player.
+          * Both legs are listed, and `MUT_ATTACKS[].limbs` picks which chain a
+          * given swing is tested on. */
+         limbs: [['DEF-thighR', 'DEF-shinR', 'DEF-footR', 'DEF-toeR'],
+                 ['DEF-thighL', 'DEF-shinL', 'DEF-footL', 'DEF-toeL']] },
+  /* THE CORRECTION HAS TO BE ABLE TO CLOSE A METRE. These are real Mixamo
+   * greatsword arcs, not poses solved against a target, so they pass wider
+   * than the hand-authored ones did: measured before raising this, the
+   * overhead went by 1.41 m and the rising cut 1.15. It is still clamped, so a
+   * swing thrown from too far out still misses and backing away still works. */
+  aimK: 2.60,
+  anim: { run: 'run', idle: 'idle', roar: 'taunt', die: 'die', walk: 'walk', back: 'walk',
+          rate: 1.0, lean: 0.06, strafeK: 1.15 },
+  voice: { f: 1.0, growl: 0.5, rasp: 0.7, throat: 'mask', human: true },
+  dojo: true,                         // his world is the dojo, not the beach
+};
+
+/* HE IS NOT IN THE ROOM UNTIL YOU HAVE TAKEN IT. Standing him at the back
+ * from the moment you walk in makes the dojo a room with a man in it, and you
+ * spend the whole approach watching him instead of looking at the place; and
+ * it gives the sword away, because the only thing worth guarding is the thing
+ * on the rack. He arrives BEHIND YOU when you lift it — which is the one
+ * direction you are not looking, since you are looking at the sword — so the
+ * first you know of him is his voice. Six metres back and a little to one
+ * side: far enough that he is not on top of you, near enough that turning
+ * round puts him in frame. */
+function spawnSamurai(behind) {
+  if (samurai) return;
+  /* AT THE BACK OF THE HALL, standing over his own rack. He is there when you
+   * walk in and he does nothing at all until you touch the sword, which is a
+   * better opening than a creature that charges the door: you are GIVEN the
+   * room, and what happens next is something you did. */
+  /* ON A CELL THE ROOM AGREES IS FLOOR. Hand-placed at (2.4, -2.6) he stood
+   * BEHIND the back wall — measured by walking in: the deck stops you at
+   * z = -1.9 and he was three quarters of a metre past it, in the burnt
+   * timber. The grid already knows where the floor is, so the spot is the
+   * nearest free cell to where he ought to stand rather than a number. */
+  /* BEHIND THE PLAYER, ON A CELL THE ROOM AGREES IS FLOOR. The heading is
+   * taken off where you are LOOKING, not off the room, so he is at your back
+   * wherever in the dojo you were standing when you took it — and the search
+   * below walks outward from that spot until it finds floor, so he can never
+   * arrive inside the wall the way the hand-placed version did. */
+  let wx = 2.6, wz = 0.2;
+  if (behind) {
+    const f = new THREE.Vector3();
+    camera.getWorldDirection(f);
+    const L = Math.hypot(f.x, f.z) || 1;
+    wx = (camera.position.x - DOJO_X) - (f.x / L) * 6.0 + 0.9;
+    wz = (camera.position.z - DOJO_Z) - (f.z / L) * 6.0;
+  }
+  /* AND HE MAY ARRIVE OUTSIDE. The building is a burnt shell with posts in it
+   * and the spot behind you is often a corner you could not swing a sword in;
+   * the yard is the same walk grid and there is nothing special about being
+   * indoors. So the spot is not merely the nearest FLOOR behind you, it is the
+   * nearest floor with ROOM AROUND IT — the free cells in a body's radius are
+   * counted, and a cramped interior corner loses to the open ground through
+   * the doorway. It costs nothing and it means the fight can start in the
+   * yard, which is the better arena of the two. */
+  let sx = wx, sz = wz, sBest = -1;
+  const clearance = (x, z) => {
+    let n = 0;
+    for (let a = 0; a < 8; a++) {
+      const th = a / 8 * Math.PI * 2;
+      const g2 = dojoGridAt(DOJO_X + x + Math.cos(th) * 0.9, DOJO_Z + z + Math.sin(th) * 0.9);
+      if (g2 && !g2.s && g2.f > -90) n++;
+    }
+    return n;
+  };
+  /* AND HE MAY NOT ARRIVE IN YOUR FACE. Scoring on clearance alone walked him
+   * back off the open ground and into the room: measured, he came out 1.2 m
+   * behind the player, which is not "at your back", it is on top of you. A
+   * candidate nearer than `MIN_BACK` is refused outright, and after that it is
+   * room first and nearness to the spot second. */
+  const px = camera.position.x - DOJO_X, pz = camera.position.z - DOJO_Z;
+  const MIN_BACK = 3.4;
+  for (let r = 0; r < 26 && dojoWalk; r++) {
+    for (let a = 0; a < 16; a++) {
+      const th = a / 16 * Math.PI * 2;
+      const x = wx + Math.cos(th) * r * 0.4, z = wz + Math.sin(th) * r * 0.4;
+      if (Math.hypot(x - px, z - pz) < MIN_BACK) continue;
+      const g = dojoGridAt(DOJO_X + x, DOJO_Z + z);
+      if (!g || g.s || g.f <= -90 || g.f < -0.05) continue;
+      const score = clearance(x, z) * 10 - Math.hypot(x - wx, z - wz);
+      if (score > sBest) { sBest = score; sx = x; sz = z; }
+    }
+    if (sBest >= 70) break;               // eight clear sides: good enough
+  }
+  if (sBest < 0) { sx = wx; sz = wz; }    // nothing clear anywhere: stand where he was asked to
+  samurai = makeMutant(DOJO_X + sx, DOJO_Z + sz, 'samurai', DOJO_Y);
+  samurai.st.awake = false;            // until his own line is out
+  // facing YOU, by the game's own convention
+  samurai.g.rotation.y = Math.atan2(camera.position.x - (DOJO_X + sx),
+                                    camera.position.z - (DOJO_Z + sz));
+}
+
+function wakeSamurai() {
+  if (samuraiSpoke) return;
+  samuraiSpoke = true;
+  spawnSamurai(true);                  // he arrives now, at your back
+  if (!samurai) return;
+  bossLine('THAT’S MY SWORD.');
+  mutPlay(samurai, 'taunt');
+  samurai.holdAnim = true;             // or mutAnim fades it straight back out for the idle
+  sfxSamuraiShout();
+  // and he comes for you at the END of the line, not on top of it
+  samurai.wakeIn = 1.15;
+}
+
+/* HIS LINE. Not a dialogue: a conversation is a thing you are invited into
+ * and this is a man shouting at you across a room with his hand going to his
+ * sword. It is the HUD's own language — mono, letter-spaced, hairline, no
+ * colour — held for two and a half seconds and gone. */
+let bossLineEl = null;
+function bossLine(text) {
+  if (!bossLineEl) {
+    bossLineEl = document.createElement('div');
+    bossLineEl.style.cssText = [
+      'position:fixed', 'left:50%', 'top:26%', 'transform:translate(-50%,0)',
+      'color:#fff', 'font-family:ui-monospace,SFMono-Regular,Menlo,monospace',
+      'font-size:1.15rem', 'letter-spacing:0.26em', 'text-transform:uppercase',
+      'text-shadow:0 2px 16px rgba(0,0,0,1),0 0 30px rgba(0,0,0,.95)',
+      'opacity:0', 'transition:opacity .25s ease', 'pointer-events:none',
+      'z-index:7', 'white-space:nowrap',
+    ].join(';');
+    document.body.appendChild(bossLineEl);
+  }
+  bossLineEl.textContent = text;
+  bossLineEl.style.opacity = '1';
+  clearTimeout(bossLineEl._t);
+  bossLineEl._t = setTimeout(() => { bossLineEl.style.opacity = '0'; }, 2500);
+}
+
+function sfxSamuraiShout() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const g = ctx.createGain(); g.connect(sfxOut());
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.42, t + 0.05);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.75);
+  // a man, not a creature: a formant round 620 Hz and nothing screaming
+  for (const [f, a, q] of [[240, 0.5, 6], [620, 0.38, 7], [1150, 0.16, 9]]) {
+    const o = ctx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(f * 0.55, t);
+    o.frequency.exponentialRampToValueAtTime(f * 0.42, t + 0.7);
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q;
+    const og = ctx.createGain(); og.gain.value = a;
+    o.connect(bp); bp.connect(og); og.connect(g); o.start(t); o.stop(t + 0.8);
+  }
+}
+
+/* AND WHEN HE IS DOWN THE PLACE LETS GO OF YOU. A beat to look at what you
+ * killed — the warden's `QUIET`, and for the same reason — then the light
+ * comes up and you are back on the sand beside the stones, with his katana.
+ * `dojoWon` is on the save: a thing you have already done does not un-happen
+ * when you load. */
+const DOJO_QUIET = 3.6;
+let dojoWinT = -1;
+function updateSamurai(dt) {
+  if (!samurai || !inDojo) return;
+  if (samurai.wakeIn > 0) {
+    samurai.wakeIn -= dt;
+    if (samurai.wakeIn <= 0) { samurai.wakeIn = 0; samurai.holdAnim = false; samurai.st.awake = true; }
+  }
+  if (!dojoWon && !samurai.st.alive) {
+    dojoWon = true;
+    dojoWinT = 0;
+  }
+  if (dojoWon && dojoWinT >= 0) {
+    dojoWinT += dt;
+    if (dojoWinT > DOJO_QUIET) { dojoWinT = -1; startPortalReturn(); }
+  }
+}
+
+/* AND THIS ONE GOES AT THE VERY BOTTOM, for the reason the checkpoint restore
+ * does: `loadPortal` reads `PORTAL_X` and `PORTAL_Z`, which are `const`s in
+ * the section above, and a `const` read before the line that initialises it
+ * is a temporal dead zone crash that takes the whole page — a blank screen,
+ * not a degraded one. Called from beside `loadUfo()` it did exactly that. */
+loadPortal();
+
+
 animate();
 
 window.addEventListener('resize', () => {
@@ -30623,7 +31731,7 @@ window.__bw = {
     if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
     oceanUniforms.uTime.value += dt;
     update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
-    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt);
+    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); updatePortalCut(rawDt);
     updateLightPool();
   },
   /* The lamp pool, for a still: a frozen loop never points the twelve at
@@ -30632,6 +31740,18 @@ window.__bw = {
   MUSH_X, MUSH_Z, MUSH, mushHouse, updateMushroom, get mushWarm() { return { warmed: mushWarmed, err: mushWarmError && String(mushWarmError), progs: mushWarmProgs }; }, warmMush, toggleGate, get gateOpen() { return gateOpen; }, mushState: () => ({ where: mushWhere, turns: mushTurns, stairY: mushStairY }),
   mushPut: (w, y) => { mushWhere = w; mushTurns = MUSH.TURNS; mushStairY = y === undefined ? MUSH.H_ROOM : y; },
   smile, updateSmile, smileState: () => ({ phase: smilePhase, t: smileT, loaded: !!smileMixer, clips: Object.keys(smileClips) }), sfxSmileStep,
+  PORTAL_X, PORTAL_Z, DOJO_X, DOJO_Y, DOJO_Z, DOJO_IN,
+  portalState: () => ({
+    ready: portalReady, mix: +portalMix.toFixed(3), charge: +portalCharge.toFixed(3),
+    cut: portalCut, phase: portalPhase, t: +portalCutT.toFixed(2), out: portalOut,
+    inDojo, dojoReady, walk: !!dojoWalk, won: dojoWon, sword: heroSwordTaken,
+    rain: dojoRain.length, splash: dojoSplash.length,
+    sam: samurai ? { awake: samurai.st.awake, alive: samurai.st.alive, hp: samurai.st.hp,
+                     clip: samurai.cur && samurai.cur.getClip().name,
+                     at: [+samurai.g.position.x.toFixed(1), +samurai.g.position.z.toFixed(1)] } : null,
+  }),
+  startPortalTake, startPortalReturn, placeInDojo, placeBackAtPortal, wakeSamurai, warmDojo,
+  dojoFloorAt, dojoGridAt, pushOutOfDojo,
   updateHurt, hurtEl,
   militaryItem, militaryWorld, milModel, get toolVM() { return toolVM; }, vmScene, vmCamera, toolMount,
   get settings() { return settings; }, get hp() { return hp; },
