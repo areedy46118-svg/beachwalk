@@ -1408,6 +1408,21 @@ export function makeUndercroft(opts = {}) {
     S._tubeDist = dist;
     return dist;
   };
+  /* IS THIS THE TUNNEL? — asked because a low roof means two different
+   * things in this place. In the church and the old cave a beam under head
+   * height is a BEAM and walking into it should stop you; in the tunnel the
+   * low roof IS the shape of the room, and refusing every step under it
+   * refuses the whole tunnel one stride at a time. That used to be answered
+   * by "are you inside the corridor", which was true down the whole passage
+   * while the passage was walked as a tube; now that it is walked as its own
+   * floor, the question has to be asked of the model instead. */
+  S.inPassage = (lx, lz) => {
+    const w = S.passage && S.passage.walk;
+    if (!w) return false;
+    const i = Math.floor((lx - w.off.x - w.x0) / w.cell), j = Math.floor((lz - w.off.z - w.z0) / w.cell);
+    if (i < 0 || j < 0 || i >= w.gw || j >= w.gh) return false;
+    return cellFloor(w, i, j) !== null;
+  };
   S.blocked = (lx, lz, r, feet) => {
     // sample the disc: its centre and a ring — cheaper than walking two grids' cells
     if (!S.walkable(lx, lz, feet)) return true;
@@ -1851,7 +1866,19 @@ export function makeUndercroft(opts = {}) {
     /* THE PASSAGE IS WALKED AS A TUBE AND THE OTHER TWO AS GRIDS. The
      * passage's own grid is used ONCE, to find a centreline; what the walk
      * then uses is a corridor fitted to the tunnel's own drawn surface. */
-    S.walks = [ch, cw];
+    /* THE TUNNEL IS THE MODEL, SO THE WALK IS THE MODEL'S OWN FLOOR. The
+     * corridor tube was built for the 3DRT passage — 3,848 triangles over
+     * 170 m, faces a metre across, decoration slabs floating in the bore —
+     * and for THAT a cell grid really is a minefield. local.yany's cave is
+     * the other kind of model and the tube was the whole problem: fitted to
+     * a floor that falls into a water channel it measured a ledge 0.15 m
+     * wide, and what the owner got was a pipe half a metre across down the
+     * middle of a four-metre tunnel, which is "I can't even walk through".
+     * It is walked the way the exit cave — also a scan — has been walked
+     * since the day it went in: by the grid the packer sampled off its own
+     * triangles. The floor you stand on is the floor it draws. */
+    S.walks = [ch, cw, pw];
+    pw.stepMax = 0.75; pw.dropMax = 1.5;
     S.despeckled = despeckle(ch) + despeckle(cw) + despeckle(pw);
     ch.stepMax = 0.40;                  // a pew's seat is 0.45 up, and that is not a step
     cw.stepMax = 1.2; cw.dropMax = 2.0;  // the old cave is rubble
@@ -1878,6 +1905,17 @@ export function makeUndercroft(opts = {}) {
        * model, where being a foot off centre is the difference between a
        * corridor and a wall. */
       fitCorridor(inbound, surfaceBins(S.passage.root), triIndex(S.passage.root));
+      /* AND THE TUBE IS KEPT ONLY FOR THE SEAM. `walkable` asks the corridor
+       * BEFORE the grids, so a tube down the whole tunnel overrides the
+       * model's own floor everywhere it reaches — which is exactly the cage
+       * this used to be. All it is needed for now is the last few metres:
+       * the church's wall is solid across its thickness in the grid, so
+       * something has to carry the walk from the tunnel's floor into the
+       * nave. Everything before that is the model's. */
+      {
+        const k0 = inbound.pts.findIndex((q) => q.x >= low.x - 9);
+        if (k0 > 0) inbound.pts.splice(0, k0);
+      }
       /* AND IT RUNS ALL THE WAY INTO THE NAVE. The last stations are laid
        * straight at the church's doorway at the doorway's own height and a
        * stride PAST its wall, so the bore's mouth is inside the breach and
@@ -1910,7 +1948,9 @@ export function makeUndercroft(opts = {}) {
        * and is the rock everywhere it is not. The cave you look at is still
        * the owner's model; what is behind it is no longer the void. */
       gapRuns(inbound);
-      skins.push({ C: inbound, root: () => S.passage.root, want: null, cap: [true, false] });
+      /* AND NOTHING IS SWEPT BEHIND IT. A skin exists to close the holes in a
+       * model; this one is a closed cave and the owner's word is an exact
+       * replica of it. Where it has a hole there is black. */
       corridorBox(inbound);
       S.corridors.push(inbound);
       mouthCol.w = P[P.length - 1].r * 2;
@@ -2226,8 +2266,17 @@ export function makeUndercroft(opts = {}) {
        * from the scan's first column the player stood a stride BEHIND the
        * tube's first station, where its radius is already closing into the
        * cap — the third station is inside the cave by construction. */
-      entry: (() => { const p = inbound.pts[Math.min(2, inbound.pts.length - 1)];
-                      return { x: p.x, y: p.y, z: p.z, yaw: Math.atan2(-(inbound.pts[Math.min(5, inbound.pts.length - 1)].x - p.x), -(inbound.pts[Math.min(5, inbound.pts.length - 1)].z - p.z)) }; })(),
+      /* WHERE YOU CRAWL IN IS THE TUNNEL'S OWN MOUTH, not the corridor's
+       * first station — the tube is only the church seam now, so its first
+       * point stands a hundred and forty metres away at the FAR end. It is
+       * taken off the grid's own first floored column instead, a stride in
+       * so you are inside the rock rather than standing in its doorway, and
+       * aimed at the column three metres further on. */
+      entry: (() => {
+        const a = colStats(pw, Math.round((high.x + 1.2 - pw.x0) / pw.cell - 0.5)) || high;
+        const c = colStats(pw, Math.round((high.x + 4.2 - pw.x0) / pw.cell - 0.5)) || low;
+        return { x: a.x, y: a.y, z: a.z, yaw: Math.atan2(-(c.x - a.x), -(c.z - a.z)) };
+      })(),
       mouth: { x: low.x, y: low.y, z: low.z },
       exit: exitSpot,                                  // the far end of the old cave, behind the altar
       exitEdge: exitEdge === null ? altarX : exitEdge, // where the church ends and the way out begins
@@ -2249,7 +2298,12 @@ export function makeUndercroft(opts = {}) {
     }
     /* the model is carved back out of the walk — both tunnels, once both
      * corridors are in `S.corridors` */
-    S.carved = carveTube(S.passage.root, 0.06, 2.4) + carveTube(S.cave.root, 0.06, 1.15);
+    /* AND THE TUNNEL IS NOT CARVED. The carve drops the model's own faces
+     * where they poke into the tube, which is right when the tube IS the
+     * walk and is vandalism when the walk is the model's own floor: every
+     * face it takes is a hole in an exact replica. The exit cave keeps its
+     * carve — it is still walked with a tube at the apse. */
+    S.carved = carveTube(S.cave.root, 0.06, 1.15);
     /* and NOW the skin, on what is left of the rock */
     const t0 = performance.now();
     for (const K of skins) {

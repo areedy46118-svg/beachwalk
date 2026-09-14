@@ -29781,7 +29781,11 @@ function updateUndercroft(dt) {
    * which is the thing that stops a head clipping through it; the bump and
    * the revert are for the church and the old cave, where a low beam is a
    * beam and not the shape of the room. */
-  const inTube = UC.corridorAt && (() => { const c = UC.corridorAt(_ucL.x, _ucL.z); return c && c.d <= c.r + 0.45; })();
+  /* ...and the tunnel answers for itself now that it is walked as its own
+   * floor rather than as a tube: `inPassage` is the same exemption keyed on
+   * the model instead of on a corridor that only covers the church seam. */
+  const inTube = (UC.corridorAt && (() => { const c = UC.corridorAt(_ucL.x, _ucL.z); return c && c.d <= c.r + 0.45; })())
+    || (UC.inPassage && UC.inPassage(_ucL.x, _ucL.z));
   const ceil = UC.ceilAt(_ucL.x, _ucL.z);
   if (!inTube && ceil !== null && ceil - feet < playerHeight() + 0.06) {
     const px = _preMove.x - UC_X, pz = _preMove.z - UC_Z;
