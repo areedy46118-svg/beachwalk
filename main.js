@@ -17042,8 +17042,14 @@ function mutAnim(u, dt, moving) {
     if (a) { a.paused = false; a.timeScale = u.st.roarClip ? 1.0 : 1.35; }
   } else if (u.st.side !== 0 && moving < 0.5) {
     // circling you at reach, or backing off a step before the lunge
-    const a = mutPlay(u, u.st.side < 0 ? 'strafeL' : 'strafeR', true);
-    if (a) { a.paused = false; a.timeScale = 1.25 * N.strafeK; }
+    /* AND A SIDE-STEP PLAYED BACKWARDS IS THE OTHER SIDE-STEP. Mixamo gives
+     * you one direction; a kind that says `strafeMirror` gets the other by
+     * running the same clip at a NEGATIVE rate, which is the walk-backwards
+     * trick one step along and is the difference between feet that go where
+     * the body goes and feet that scrub the floor. */
+    const mir = u.kind.strafeMirror && u.st.side < 0;
+    const a = mutPlay(u, mir ? 'strafeR' : (u.st.side < 0 ? 'strafeL' : 'strafeR'), true);
+    if (a) { a.paused = false; a.timeScale = (mir ? -1 : 1) * 1.25 * N.strafeK; }
   } else if (u.st.back > 0) {
     /* AND A THING BACKING OFF PLAYS ITS WALK BACKWARDS. The Dealer has done
      * this since he learned to read a charge — a NEGATIVE rate, so his feet
@@ -27801,7 +27807,7 @@ MUT_KINDS.ntar = {
   anim: { run: 'run', idle: 'idle', roar: 'roar', die: 'hurt', walk: 'walk', back: 'walk',
           rate: 1.0, lean: 0.10, strafeK: 1.0 },
   alias: { idle2: 'idle', walk2: 'walk', run2: 'run', roar2: 'roar', die: 'hurt', die2: 'hurt',
-           back: 'walk', hit: 'hurt', calm: 'idle', strafeL: 'strafe', strafeR: 'strafe' },
+           back: 'walk', hit: 'hurt', calm: 'idle', strafeL: 'strafeR' },
   provoke: ntarProvoke,
   /* HE SHRIEKS. The SCP's throat, a little higher: a man's voice on a thing
    * that leaps at you read as a man, and the scream is most of the scary. */
@@ -28405,8 +28411,15 @@ MUT_KINDS.knight = {
    * plate; away from them he is a shape. */
   emis: 0.055, rim: [0.046, 0.056, 0.082], gamma: 0.80,
   author: authorKnightClips, first: 'idle', sleepIdle: 'idle', sleepStill: true,
+  /* HIS GAITS ARE HIS OWN NOW. The walk is the owner's Mutant Walking — a
+   * heavy stride that travels 1.88 m a cycle — and the strafe is a real
+   * sideways stride instead of the walk played while moving sideways, which
+   * is the whole of "his feet slide": the plainest version there is of the
+   * feet going one way and the animal going another. `rate` and `strafeK`
+   * are set so the clip's own ground speed matches his, measured. */
   anim: { idle: 'idle', walk: 'walk', run: 'run', roar: 'roar', die: 'hurt', back: 'walk',
-          rate: 1.0, lean: 0.06, strafeK: 1.0 },
+          rate: 0.62, lean: 0.05, strafeK: 0.80 },
+  strafeMirror: true,
   alias: { idle2: 'idle', walk2: 'walk', run2: 'run', roar2: 'roar', die: 'hurt', die2: 'hurt',
            back: 'walk', hit: 'hurt', calm: 'idle', strafeL: 'strafe', strafeR: 'strafe' },
   provoke: knightProvoke,
@@ -29850,23 +29863,30 @@ function armUndercroft(S) {
      * blocked cells), then open floor again, then the WALL. He stands in the
      * middle of that second band, so the pier is between him and the nave
      * and the wall is at his back. */
+    /* DOWN THE NAVE, NOT AT THE ALTAR. The owner stood where he wants him and
+     * sent the picture: well back from the chancel, beside the arcade, with
+     * the altar small and lit in the distance. So it is measured off the
+     * NAVE — eighteen metres back from the altar, which on a thirty-one
+     * metre nave is about halfway — and the arcade's pier line there is what
+     * he stands behind. The whole beat is that he is in the frame the
+     * moment you walk in and reads as one more black shape between the
+     * columns, and then the altar goes and he comes down the room at you. */
     const A = sp.altar;
-    const kx = A.x - 2.4;
-    const at = (z) => { const f = UC.floorAt(kx, z); return f !== null && UC.walkable(kx, z, f); };
-    let z = A.z - 1.0, guard = 0;
-    while (at(z) && guard++ < 60) z -= 0.2;            // out to the pier's near face
-    while (!at(z) && guard++ < 90) z -= 0.2;           // through the pier
-    const behind = z;                                  // first open cell past it
-    while (at(z) && guard++ < 120) z -= 0.2;           // on to the wall
-    const wall = z;
+    const kx = A.x - 18;
+    /* AND HE IS IN THE ARCADE, NOT DOWN A SIDE AISLE. Walking out to the wall
+     * put him fourteen metres off the centreline, which is not hidden-in-the
+     * -frame, it is simply somewhere else — you would never see him and he
+     * would have a side aisle to get out of. Five metres to the left of the
+     * line you walk is the shadow between the columns: in shot from the door,
+     * dark enough to read as one more black shape, and one stride from the
+     * nave when he comes. The spot is still CHECKED against the walk, and he
+     * comes back toward the aisle until a body his size fits. */
     const kb = (MUT_KINDS.knight.body || 1.0);
-    let kz = (behind + wall) / 2;
-    /* and the slot has to fit him: if it does not, he comes back toward the
-     * nave until the walk says he is in nothing */
-    for (let t = 0; t < 18; t++) {
+    let kz = A.z - 5.0;
+    for (let t = 0; t < 20; t++) {
       const fz = UC.floorAt(kx, kz);
       if (fz !== null && !UC.blocked(kx, kz, kb, fz)) break;
-      kz += 0.25;
+      kz += 0.3;
     }
     const ky = UC.floorAt(kx, kz);
     knightUnit = makeMutant(UC_X + kx, UC_Z + kz, 'knight', UC_Y + (ky === null ? A.dais : ky));
@@ -29884,14 +29904,14 @@ function armUndercroft(S) {
      * for ever. The first thing he does when the altar goes is come OUT of
      * the alcove — measured here, on the nave side of the pier, the nearest
      * spot the walk says a body his size fits in. */
-    let ox = kx, oz = A.z - 0.8;
+    let ox = kx + 1.2, oz = A.z - 0.8;
     for (let t = 0; t < 24; t++) {
       const fz = UC.floorAt(ox, oz);
       if (fz !== null && !UC.blocked(ox, oz, kb, fz)) break;
       oz -= 0.25;
     }
     knightUnit.outX = ox; knightUnit.outZ = oz;   // a unit is not an Object3D: it has no userData
-    window.__bwKnight = [kx.toFixed(2), kz.toFixed(2), 'pier@' + behind.toFixed(1), 'wall@' + wall.toFixed(1), 'out@' + oz.toFixed(1)];
+    window.__bwKnight = [kx.toFixed(2), kz.toFixed(2), 'out@' + oz.toFixed(1)];
   }
   if (S.idol) {
     const A = sp.altar;
@@ -30438,6 +30458,31 @@ function breakBench(b, speed) {
        * stained the church floor. Glass, crate boards and hull shards have
        * all had to say this; so does a bench. */
       life: 600, bleed: false, wait: Math.min(0.22, (n++) * 0.012) });
+  }
+  /* AND WHAT WAS STANDING ON IT GOES WITH IT. The carve learned this once on
+   * the bunker desk — taking a surface away does not take away what was on
+   * it — and a pew with candles on it is the same thing: they are put OUT,
+   * taken out of the instanced batch, and thrown off the bench as their own
+   * little gibs, wearing the wax's own material. */
+  const C = UC.candles;
+  if (C && UC.douseCandle) {
+    let lit = 0;
+    for (let i = 0; i < C.spots.length; i++) {
+      const sp = C.spots[i];
+      if (!sp || sp.bench !== b.n || sp.out) continue;
+      UC.douseCandle(i);
+      const g2 = new THREE.CylinderGeometry(sp.r * 0.82, sp.r, sp.hgt, 6, 1, false);
+      g2.translate(0, sp.hgt / 2, 0);
+      const m2 = new THREE.Mesh(g2, C.mat);
+      m2.position.set(UC_X + sp.x, UC_Y + sp.y, UC_Z + sp.z);
+      scene.add(m2);
+      const ang = Math.random() * Math.PI * 2, out = 0.7 + Math.random() * 1.5;
+      gibs.push({ m: m2, half: sp.hgt / 2, rest: sp.hgt / 2,
+        vel: new THREE.Vector3(Math.cos(ang) * out + dx * kick * 0.5, 1.1 + Math.random() * 1.0, Math.sin(ang) * out + dz * kick * 0.5),
+        spin: new THREE.Vector3((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 10),
+        life: 600, bleed: false, wait: 0.02 + Math.random() * 0.10 });
+      lit++;
+    }
   }
   if (!sfxTableBreak()) sfxWoodSnap();
   // no dust: the owner's word — a pew is chunks and a noise, and the "flying particles" were the puffs

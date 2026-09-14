@@ -2479,7 +2479,9 @@ export function makeUndercroft(opts = {}) {
      * first beat is that you did not see him — so the ring at the foot of the
      * dais is kept out of it as well as the clusters down the nave. It reaches
      * a long way round, and with it in, the nearest flame to him was 0.72 m. */
-    const DARK = { x: A.x - 1.6, z: A.z - 4.2 }, DARK_R = 5.6;
+    /* and the dark he stands in moved down the nave with him: eighteen
+     * metres back from the altar, behind the arcade on the left */
+    const DARK = { x: A.x - 18, z: A.z - 5.0 }, DARK_R = 6.8;
     const clear = (x, z) => (x - DARK.x) * (x - DARK.x) + (z - DARK.z) * (z - DARK.z) > DARK_R * DARK_R;
     for (let k = 0; k < 18; k++) {
       const a = (k / 18) * Math.PI * 2 + rnd() * 0.12;
@@ -2530,6 +2532,23 @@ export function makeUndercroft(opts = {}) {
         if (!clear(x, z)) continue;
         const ff = S.floorAt(x, z);
         spots.push({ x, z, y: ff === null ? f : ff, hgt: 0.12 + rnd() * 0.26, r: 0.026 + rnd() * 0.014 });
+      }
+    }
+    /* ---- AND SOME OF THEM ARE STOOD ON THE PEWS. Somebody set them down on
+     * the benches, which is what you do with a candle when your hands are
+     * full, and it means the room has light down at seat height as well as
+     * on the floor. It also means a bench that comes apart takes its candles
+     * with it — each one remembers WHICH pew it is on, and `breakBench`
+     * throws them off it and puts them out. */
+    for (const bch of S.benches) {
+      if (!bch.box || rnd() > 0.55) continue;
+      const bx = (bch.box[0] + bch.box[3]) / 2, bz = (bch.box[2] + bch.box[5]) / 2, top = bch.box[4];
+      if (!clear(bx, bz)) continue;
+      const n = 1 + Math.floor(rnd() * 2);
+      for (let k = 0; k < n; k++) {
+        spots.push({ x: bx + (rnd() - 0.5) * (bch.box[3] - bch.box[0]) * 0.6,
+                     z: bz + (rnd() - 0.5) * 0.16, y: top,
+                     hgt: 0.10 + rnd() * 0.18, r: 0.024 + rnd() * 0.010, bench: bch.n });
       }
     }
     // a few burnt down to stubs, because a shrine is old
@@ -2602,6 +2621,22 @@ export function makeUndercroft(opts = {}) {
     flames.renderOrder = 3;
     group.add(flames);
     CANDLES.flames = flames;
+    /* what a broken pew needs to take its candles with it: the spots, the two
+     * instanced meshes they live in and the flame batch, so the game can put
+     * one out and throw it without knowing how any of this is built */
+    S.candles = { spots, wax, pools, flames, mat: waxMat };
+    S.douseCandle = (i) => {
+      const sp = spots[i];
+      if (!sp || sp.out) return null;
+      sp.out = true;
+      const m = new THREE.Matrix4().makeScale(0, 0, 0);
+      wax.setMatrixAt(i, m); pools.setMatrixAt(i, m);
+      wax.instanceMatrix.needsUpdate = true; pools.instanceMatrix.needsUpdate = true;
+      const fp = flames.geometry.attributes.position;
+      fp.setXYZ(i, sp.x, -9999, sp.z);            // the flame goes out with it
+      fp.needsUpdate = true;
+      return sp;
+    };
 
     /* the idol. It arrives over the network long after the room is composed,
      * so the group is here from the start and the scan lands in it — the

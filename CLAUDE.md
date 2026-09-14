@@ -3742,6 +3742,37 @@ whole placement silently vanished one build because `makeMutant` returns a
 UNIT, not an `Object3D`, so `knightUnit.userData` is undefined — the span
 said "threw inside cave.glb" and named it in one line.
 
+**AND HIS FEET STOPPED SLIDING, WHICH WAS FOUR CLIPS AND ONE SIGN.** The
+owner sent a walk, a second walk, a strafe and a side step. What they fix is
+the oldest animation bug this file has: `strafeL` and `strafeR` were the WALK,
+so a thing holding its distance strode forward while it travelled sideways —
+the plainest version there is of the feet going one way and the animal going
+another, and the whole of "his feet slide". He has a real sideways stride now
+(0.90 m a cycle, measured) and the Mutant Walking for his walk (1.88 m).
+
+- **A SIDE-STEP PLAYED BACKWARDS IS THE OTHER SIDE-STEP.** Mixamo gives one
+  direction. `kind.strafeMirror` runs the same clip at a NEGATIVE rate for the
+  other, which is the walk-backwards trick one step along and costs nothing.
+- **AND THE RATE IS THE STRIDE OVER THE SPEED.** A clip that travels 1.88 m a
+  cycle played at the wrong rate is a creature skating; `anim.rate` and
+  `strafeK` are set from the clips' own measured travel rather than by eye.
+
+**HE STANDS IN THE ARCADE NOW, NOT AT THE ALTAR.** The owner stood where he
+wanted him and sent the picture: well down the nave, beside the columns, with
+the altar small and lit in the distance. Eighteen metres back and five to the
+left of the line you walk — in shot from the door, dark enough to read as one
+more black shape, one stride from the nave when he comes. Walking out to the
+WALL instead (tried) put him fourteen metres off the centreline, which is not
+hidden-in-the-frame, it is somewhere else. Measured: he crosses the nave in
+6.3 s when the altar goes, and takes thirteen pews with him on the way.
+
+**AND A BENCH TAKES ITS CANDLES WITH IT.** Thirty-two of the hundred and
+thirty-four stand on the pews, because that is where you put a candle down
+when your hands are full — and it is the carve's own lesson (taking a surface
+away does not take away what was on it): when the bench comes apart they are
+put OUT, taken out of the instanced batch, and thrown off it as their own
+gibs in the wax's material.
+
 ## Dev mode
 
 `DEFAULT_SETTINGS` are the owner's own (music 30 %, waves 18 %, effects

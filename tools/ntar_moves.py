@@ -80,6 +80,10 @@ CLIPS = [
     ('Meia Lua De Compasso',    'nSweep',  'the compass kick'),
     ('Macaco Side',             'dodge',   'the side handspring'),
 ] if SET == 'ntar' else [
+    ('Mutant Walking',          'walk',    'the walk — heavy, and his'),
+    ('Walking',                 'walkB',    'a second walk, so the gait is drawn'),
+    ('Walk Strafe Right',       'strafeR', 'a stride sideways, feet crossing'),
+    ('Medium Right Side Step',  'sideR',   'a short side step'),
     ('Mutant Punch',            'kPunch',  'a straight punch'),
     ('Mutant Swiping',          'kSwipe',  'a sweep across with the arm'),
     ('Mutant Jump Attack',      'kJump',   'off the ground and down on you'),
@@ -102,7 +106,7 @@ WINDOW = ({'knock': (30, 78), 'nSweep': (0, None), 'dodge': (20, 82)} if SET == 
           else {})          # filled in below, once the curves have been read
 # He is knocked down FACING YOU, by the owner's word, so this one is de-yawed
 # whatever it measures.
-FORCE_FLAT_YAW = {'knock'} if SET == 'ntar' else {'kPunch', 'kSwipe', 'kJump', 'block', 'blockC'}
+FORCE_FLAT_YAW = {'knock'} if SET == 'ntar' else {'kPunch', 'kSwipe', 'kJump', 'block', 'blockC', 'strafeR', 'sideR'}
 
 
 def log(*a):
