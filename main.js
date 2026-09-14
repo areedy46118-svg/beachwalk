@@ -3962,6 +3962,8 @@ let hp = MAX_HP, hurtFlash = 0, dying = false, sinceHurt = 1e9, regenAcc = 0;
 const bloodLensEl = document.getElementById('hurt-blood');
 let lensBlood = 0, lensBloodPeak = 0;
 const _hurtF = new THREE.Vector3(), _hurtR = new THREE.Vector3();
+// and the flinch picker's own two, so it can never clobber the hurt shake's
+const _flinchF = new THREE.Vector3(), _flinchD = new THREE.Vector3();
 function makeLensBloodURL() {
   const S = 640, c = document.createElement('canvas');
   c.width = c.height = S;
@@ -17033,8 +17035,14 @@ function mutAnim(u, dt, moving) {
     const a = mutPlay(u, 'block', false);
     if (a) { a.paused = true; a.time = clampTime(a, (1 - u.st.block / DEALER_BLOCK) * a.getClip().duration); }
   } else if (u.st.recoil > 0) {
-    const a = mutPlay(u, 'hit', false);
-    if (a) { a.paused = true; a.time = clampTime(a, (1 - u.st.recoil / MUT_RECOIL) * a.getClip().duration * 0.55); }
+    /* AND A HIT IS NOT ALWAYS THE SAME HIT. A kind may carry several flinches
+     * and the blow that landed picks one — the ordinary rock, the one that
+     * takes his poise, and two rare ones for being caught in the ribs or
+     * from behind. The clip is chosen where the damage is dealt; this only
+     * plays what it was given, over whatever recoil that blow set. */
+    const rTot = u.st.recoilT || MUT_RECOIL;
+    const a = mutPlay(u, u.st.hitClip || 'hit', false);
+    if (a) { a.paused = true; a.time = clampTime(a, (1 - u.st.recoil / rTot) * a.getClip().duration * (u.st.hitFull ? 1 : 0.55)); }
   } else if (u.st.roar > 0) {
     // the beat it opens with may be its own clip: the thing on the headland
     // has a scream that is not the roar it uses in the middle of a fight
@@ -18813,7 +18821,37 @@ function hurtMutant(u, dmg, P = 0) {
     mutKnockdown(u);
     return false;
   }
-  u.st.recoil = MUT_RECOIL * (u.kind.recoilK || 1);
+  /* WHICH FLINCH. A kind that carries more than one gets the one the blow
+   * earned, and the two RARE ones are rare on purpose: a reaction you see
+   * every third hit is a reaction you stop reading, and one you see twice a
+   * fight is a thing that happened. The big one is the STAGGER and it is not
+   * random at all — it is the blow that went through his poise, which is
+   * already the hardest thing to land, so the longest opening in the fight
+   * is the one you earned rather than the one you were given. And "from
+   * behind" means from behind: the back-of-the-head reaction is only ever
+   * played when the blade actually came at his back. */
+  /* WHICH FLINCH — AND THEY ARE ALL VARIANTS OF THE STAGGER, because this is
+   * the only blow that rocks him. A light hit SPENDS POISE and returns above
+   * without moving him: that is the design and it is what makes the pool
+   * worth emptying. So the reaction you get here is always the one you
+   * earned, and the rare two are rare within it — a couple of times a fight
+   * rather than every third hit, which is the difference between a thing
+   * that happened and a thing you stop reading. "From behind" is measured,
+   * not rolled: the back-of-the-head reaction only plays when the blade
+   * actually came at his back. */
+  u.st.hitClip = null; u.st.hitFull = false;
+  let rk = (u.kind.recoilK || 1);
+  if (u.clips && u.clips.hitBig) {
+    const fwd = _flinchF.set(0, 0, 1).applyQuaternion(u.g.quaternion);
+    camera.getWorldDirection(_flinchD);
+    const fromBehind = (fwd.x * _flinchD.x + fwd.z * _flinchD.z) > 0.45;
+    const r = Math.random();
+    if (fromBehind && u.clips.hitBack && r < 0.30) { u.st.hitClip = 'hitBack'; u.st.hitFull = true; rk *= 2.6; }
+    else if (u.clips.hitSide && r < 0.18) { u.st.hitClip = 'hitSide'; u.st.hitFull = true; rk *= 2.4; }
+    else { u.st.hitClip = 'hitBig'; u.st.hitFull = true; rk *= 2.1; }
+  }
+  u.st.recoilT = MUT_RECOIL * rk;
+  u.st.recoil = u.st.recoilT;
   camera.getWorldDirection(u.hitDir); u.hitDir.y = 0; u.hitDir.normalize();
   u.hitFrom.copy(u.g.position);
   flashMats(u.g);
@@ -20693,7 +20731,13 @@ function updateMutantUnit(u, dt) {
        * did — which is how two of them ended up thirty metres behind a player
        * who only ever held S. Break off and run the moment the range is gone. */
       if (dist > A.reach + 1.5) u.st.side = 0;
-      if (u.st.sideT <= 0 || dist < 1.4) { u.st.side = 0; u.st.cool = Math.max(u.st.cool, 0.15); }
+      /* AND A SIZE-UP KEEPS ITS CIRCLE. Circling is cancelled inside 1.4 m
+       * because a creature that close should be swinging, not walking round
+       * you — which is right, and it also cancelled the one beat that exists
+       * to put distance between you: measured, `side` was cleared every
+       * frame and the strafe clips never played once in ninety seconds. It
+       * holds while he is giving ground. */
+      if (u.st.sideT <= 0 || (dist < 1.4 && !(u.st.back > 0))) { u.st.side = 0; u.st.cool = Math.max(u.st.cool, 0.15); }
     } else if (u.st.back > 0) {
       // a step back, and then the lunge out of it
       u.st.back -= dt;
@@ -20785,8 +20829,27 @@ function updateMutantUnit(u, dt) {
        * spent two fifths of every opening walking sideways — measured, twelve
        * swings in forty-five seconds while the arithmetic of his own timings
        * allows thirty-six. `press` is that number, per kind. */
-      const wantSwing = u.st.swings === 0 || roll < (u.kind.press || 0.62);
+      let wantSwing = u.st.swings === 0 || roll < (u.kind.press || 0.62);
+      /* AND THE BEAT WHERE HE DOES NOT. A kind that presses nearly every
+       * opening never reaches the leftover branches at all — measured, the
+       * size-up fired ONCE in ninety seconds — so it cannot be what is left
+       * when he decides not to swing: it has to be its own decision, taken
+       * BEFORE the swing. After a couple of exchanges he gives ground
+       * instead, holds it at the edge of his own reach and circles watching
+       * while you decide what to do with the room he just gave you. He is
+       * out of your reach the whole time and keeps the turn; it is pacing,
+       * not mercy, and it is the beat that makes the aggression readable. */
+      if (maySwing && u.kind.sizeUp && u.st.swings > 1 && (u.st.sinceSize || 0) >= 2
+          && dist < A.reach + 1.2 && Math.random() < u.kind.sizeUp) {
+        wantSwing = false;
+        u.st.sinceSize = 0;
+        u.st.back = 0.75 + Math.random() * 0.5;
+        u.st.side = flankSide(u, mutants, mutToken, MUT_SLOT_ANG);
+        u.st.sideT = 1.2 + Math.random() * 1.3;
+        u.st.cool = Math.max(u.st.cool, 0.5 + Math.random() * 0.55);
+      }
       if (wantSwing && maySwing) {
+        u.st.sinceSize = (u.st.sinceSize || 0) + 1;
         let pick = u.kind.use.attack ? 'attack' : Object.keys(u.kind.use)[0];
         if (u.st.swings > 0) {
           /* AND IT DRAWS FROM THE SWINGS THAT CAN ACTUALLY REACH YOU. The
@@ -25333,7 +25396,13 @@ let bossWarmed = false;
  * a far wall, one level down. The guards and the drones are put beside the
  * boss for the pass and put back. */
 function warmShrineBoss() {
-  if (bossWarmed || !shrineWorld) return;
+  /* AND THE HALL'S OWN DIMENSIONS HAVE TO BE THERE. `shrineWorld` exists the
+   * moment the group is made and `SH` is filled in when the scan is measured,
+   * so between those two this ran and threw on `SH.walkR` — inside the warm
+   * chain, which then ABORTED, so the boss's programs were never compiled and
+   * the hall paid for them on the frame it was revealed. Found by name the
+   * day `bwSpan` learned to say which span threw. */
+  if (bossWarmed || !shrineWorld || !SH) return;
   /* NOTHING IS WARMED UNTIL EVERYTHING IS READY. This used to fire the moment
    * `shrineBoss.model` existed and then latch — but `model` is set on the
    * first line of `dressMutant`, before the materials are cloned, tinted,
@@ -27806,8 +27875,12 @@ MUT_KINDS.ntar = {
   author: authorNtarClips, first: 'idle',
   anim: { run: 'run', idle: 'idle', roar: 'roar', die: 'hurt', walk: 'walk', back: 'walk',
           rate: 1.0, lean: 0.10, strafeK: 1.0 },
-  alias: { idle2: 'idle', walk2: 'walk', run2: 'run', roar2: 'roar', die: 'hurt', die2: 'hurt',
-           back: 'walk', hit: 'hurt', calm: 'idle', strafeL: 'strafeR' },
+  /* BOTH SIDES ARE THEIR OWN CLIP NOW. The mirror — the strafe run at a
+   * negative rate — was the right trick with one clip and is not needed with
+   * two: a left strafe walk and a right one, 1.79 and 1.82 m a cycle, so
+   * sizing you up is a real sideways stride in the direction he is going. */
+  alias: { idle2: 'idle', walk2: 'walkB', run2: 'run', roar2: 'roar', die: 'hurt', die2: 'hurt',
+           back: 'walk', calm: 'idle', strafeR: 'strafeR2' },
   provoke: ntarProvoke,
   /* HE SHRIEKS. The SCP's throat, a little higher: a man's voice on a thing
    * that leaps at you read as a man, and the scream is most of the scary. */
@@ -28364,6 +28437,11 @@ function authorKnightClips(u, m, gltf) {
  * game — the jump hangs before it comes down. */
 MUT_ATTACKS.kPunch = { wind: 0.42, strike: 0.13, recover: 0.30, hit: 0.560, reach: 2.15, lunge: 1.5, chain: 'kSwipe', chainP: 0.58, w: 0.34, guardK: 0.95, limbs: [0] };
 MUT_ATTACKS.kSwipe = { wind: 0.62, strike: 0.16, recover: 0.38, hit: 0.600, reach: 2.60, lunge: 1.3, chain: 'kPunch', chainP: 0.50, w: 0.32, guardK: 1.15, limbs: [0, 1] };
+/* THE TURN. A full revolution with the arm out high — it has no lunge and it
+ * hits everything around him, so it is what he answers being circled with.
+ * Its contact is late in the clip because the arm has to come all the way
+ * round; `hold` keeps him on the spot rather than walking his own wind-up in. */
+MUT_ATTACKS.k360   = { wind: 0.88, strike: 0.24, recover: 0.58, hit: 0.620, reach: 3.20, lunge: 0.5, chain: 'kSwipe', chainP: 0.46, w: 0.20, hold: true, guardK: 1.40, limbs: [0, 1] };
 MUT_ATTACKS.kOver  = { wind: 1.45, strike: 0.20, recover: 0.78, hit: 0.846, reach: 2.50, lunge: 0.8, chain: 'kPunch', chainP: 0.40, w: 0.22, dmg: 2, hold: true, guardK: 1.75, twoHanded: true };
 MUT_ATTACKS.kBack  = { wind: 0.66, strike: 0.16, recover: 0.40, hit: 0.690, reach: 2.55, lunge: 1.2, chain: 'kSwipe', chainP: 0.52, w: 0.28, guardK: 1.10, limbs: [1] };
 MUT_ATTACKS.kStomp = { wind: 0.92, strike: 0.18, recover: 0.52, hit: 0.716, reach: 2.70, lunge: 1.0, chain: 'kBack', chainP: 0.44, w: 0.20, guardK: 1.35, limbs: [2] };
@@ -28379,8 +28457,12 @@ MUT_KINDS.knight = {
    * The body and the hit radius come down with him. */
   h: 2.85, hp: 38, dmg: 1, hitR: 1.15, body: 0.95, uc: true,
   speedK: 1.18, windK: 1.00, reachK: 1.00, aggr: 3.20, press: 0.94,
-  use: { kPunch: 0.24, kSwipe: 0.22, kJump: 0.16, kOver: 0.14, kBack: 0.16, kStomp: 0.12 },
-  circle: 0.20, step: 0.22, chainMax: 4, feint: 0.30,
+  use: { kPunch: 0.22, kSwipe: 0.20, kJump: 0.14, kOver: 0.12, kBack: 0.14, kStomp: 0.10, k360: 0.16 },
+  /* PACING. He chains four deep and swings nearly every time he could — and
+   * then, a third of the openings, he gives ground instead and watches. The
+   * aggression is what makes him hard; the beat where he stops is what makes
+   * him readable, and a fight you can read is the only kind you can learn. */
+  circle: 0.20, step: 0.22, chainMax: 4, feint: 0.30, sizeUp: 0.34,
   poise: 11, poiseBack: 1.7, poiseWait: 1.2, parryK: 0.80, recoilK: 0.72, blockCost: 1.00,
   block: 0.34, fidgetK: 0.22, fidgetGap: 3.0,
   /* AND THE SHOULDER TURNS FURTHER THAN A MAN'S. `aimK` is how much of the
@@ -28418,8 +28500,7 @@ MUT_KINDS.knight = {
    * feet going one way and the animal going another. `rate` and `strafeK`
    * are set so the clip's own ground speed matches his, measured. */
   anim: { idle: 'idle', walk: 'walk', run: 'run', roar: 'roar', die: 'hurt', back: 'walk',
-          rate: 0.62, lean: 0.05, strafeK: 0.80 },
-  strafeMirror: true,
+          rate: 0.62, lean: 0.05, strafeK: 0.78 },
   alias: { idle2: 'idle', walk2: 'walk', run2: 'run', roar2: 'roar', die: 'hurt', die2: 'hurt',
            back: 'walk', hit: 'hurt', calm: 'idle', strafeL: 'strafe', strafeR: 'strafe' },
   provoke: knightProvoke,

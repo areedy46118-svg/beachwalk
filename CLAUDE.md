@@ -3773,6 +3773,42 @@ away does not take away what was on it): when the bench comes apart they are
 put OUT, taken out of the instanced batch, and thrown off it as their own
 gibs in the wax's material.
 
+**AND THEN THE KNIGHT LEARNED TO PACE HIMSELF.** Seven more of the owner's
+clips: a 360 attack, four hit reactions, and a real left and right strafe
+walk. What they bought, and what each one cost:
+
+- **THE STRAFES ARE BOTH THEIR OWN CLIP NOW.** The mirror — one clip at a
+  negative rate — was the right trick with one and is not needed with two:
+  1.79 and 1.82 m a cycle, so sizing you up is a stride in the direction he
+  is actually going.
+- **AND CIRCLING WAS CANCELLED EVERY FRAME.** `side` is cleared inside 1.4 m,
+  which is right (a creature that close should be swinging, not walking round
+  you) and which also cancelled the one beat that exists to MAKE distance:
+  measured, the strafe clips played for 0 frames in ninety seconds. It holds
+  while he is giving ground. After: 7 %.
+- **A BEAT THAT IS WHAT IS LEFT OVER NEVER HAPPENS.** The size-up was written
+  as the `else` of "does he want to swing", and at `press` 0.94 he wants to
+  swing nearly always — it fired ONCE in ninety seconds. It is its own
+  decision now, taken BEFORE the swing, gated on having thrown a couple since
+  the last one. After: seven times in ninety seconds, and he opens to three
+  metres doing it. **If a behaviour is the leftover branch of an aggressive
+  creature, it is not a behaviour.**
+- **AND EVERY FLINCH HE HAS IS A STAGGER, BECAUSE THAT IS THE ONLY BLOW THAT
+  ROCKS HIM.** A light hit SPENDS POISE and returns without moving him — that
+  is the design, and it is what makes the pool worth emptying — so a picker
+  put where ordinary hits arrive can never run. The rare two are rare WITHIN
+  the poise break: measured over 65 breaks, 44 the ordinary stagger and 21 the
+  back-of-the-head, which only ever plays when the blade actually came at his
+  back. The stagger's recoil is 0.6 s against a base of 0.28: the longest
+  opening in the fight, and the one you earned.
+- **AND `bwSpan` FOUND A SECOND ONE.** `warmShrineBoss` read `SH.walkR`
+  between the hall's group existing and the hall being measured, threw inside
+  the warm chain, and ABORTED it — so the boss's programs were never compiled
+  and the hall paid for them on the frame it was revealed. One guard.
+
+Measured: 49 swings and 41 damage a minute, all seven attacks used, seven
+size-ups, worst step 0.10 m, worst tick 4.2 ms.
+
 ## Dev mode
 
 `DEFAULT_SETTINGS` are the owner's own (music 30 %, waves 18 %, effects
