@@ -399,28 +399,16 @@
   #crosshair.active { background: rgba(235, 244, 255, 0.9); transform: scale(1.5); }
   #crosshair.holding { background: rgba(150, 200, 255, 0.8); transform: scale(0.7); }
 
-  /* contextual button prompt, sits beside the stamina bar */
-  #prompt {
-    color: rgba(232, 240, 252, 0.9);
-    font-family: "Georgia", serif;
-    font-size: 0.78rem;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    text-shadow: 0 1px 6px rgba(0, 0, 0, 0.95);
-    opacity: 0;
-    transition: opacity 0.15s ease;
-    white-space: nowrap;
-  }
-  #prompt.show { opacity: 1; }
-
-  /* AND THE ONE THAT TAKES YOU SOMEWHERE SITS IN THE MIDDLE. A prompt down
-   * beside the stamina bar is right for picking a shell up and wrong for the
-   * mouth of a cave — the owner walked into it and never saw it. An
-   * interactable with `mid` puts its prompt under the crosshair in white. */
-  #promptmid {
-    position: fixed;
-    left: 50%; top: 54%;
-    transform: translate(-50%, 0);
+  /* THE TWO PROMPTS ARE ONE TYPEFACE, IN ONE BLOCK. There have always been
+   * two of these — the strip one beside the stamina bar for picking a shell
+   * up, and the middle one under the crosshair for the mouth of a cave and
+   * for the idol on the altar — and they were styled separately, so the
+   * strip one drifted small, dim and blue-grey while the altar's read white
+   * and large. Pressing E is ONE verb and it should look the same wherever
+   * the prompt happens to sit, so everything about the type is shared here
+   * and only the POSITION is per-prompt. Anything added later inherits it
+   * by construction rather than by somebody remembering. */
+  #prompt, #promptmid {
     color: #ffffff;
     font-family: "Georgia", serif;
     font-size: 1.02rem;
@@ -430,11 +418,21 @@
     opacity: 0;
     transition: opacity 0.15s ease;
     white-space: nowrap;
+  }
+  #prompt.show, #promptmid.show { opacity: 1; }
+
+  /* AND THE ONE THAT TAKES YOU SOMEWHERE SITS IN THE MIDDLE. A prompt down
+   * beside the stamina bar is right for picking a shell up and wrong for the
+   * mouth of a cave — the owner walked into it and never saw it. An
+   * interactable with `mid` puts its prompt under the crosshair. */
+  #promptmid {
+    position: fixed;
+    left: 50%; top: 54%;
+    transform: translate(-50%, 0);
     pointer-events: none;
     z-index: 6;
   }
-  #promptmid.show { opacity: 1; }
-  #promptmid .key {
+  #prompt .key, #promptmid .key {
     display: inline-block;
     min-width: 1.5em;
     padding: 2px 7px;
@@ -445,19 +443,6 @@
     letter-spacing: 0.06em;
     color: #ffffff;
     background: rgba(0, 0, 0, 0.55);
-    text-align: center;
-  }
-  #prompt .key {
-    display: inline-block;
-    min-width: 1.5em;
-    padding: 1px 5px;
-    margin-right: 0.35em;
-    border: 1px solid rgba(190, 208, 236, 0.55);
-    border-radius: 3px;
-    font-size: 0.72rem;
-    letter-spacing: 0.06em;
-    color: #eef4ff;
-    background: rgba(10, 16, 28, 0.6);
     text-align: center;
   }
 

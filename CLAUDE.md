@@ -8753,3 +8753,17 @@ reads "10% Stamina Increase" and, worn, that is exactly what it does —
 breath and the bar all read it, and the STRIP ITSELF grows by the tenth
 (150 px to 165) rather than drawing a bigger reserve inside the same width,
 which would be a ring that changes a number you cannot see.
+
+**AND PRESSING E LOOKS THE SAME WHEREVER THE PROMPT SITS.** There have
+always been two of these — `#prompt` beside the stamina bar for picking a
+shell up, and `#promptmid` under the crosshair for the mouth of a cave and
+for the idol on the altar — and they were styled in two separate blocks, so
+the strip one had drifted to 0.78rem of dim blue-grey with a small dark key
+badge while the altar's read white at 1.02rem with a white-bordered one. E
+is ONE verb; only the POSITION is per-prompt. The type, the tracking, the
+colour, the shadow and the key badge are declared once against both
+selectors, so anything added later inherits it by construction rather than
+by somebody remembering. Measured: every computed property identical on
+both, badge included. The strip is wider for it (564 px at the longest
+label, "Take the Military Shovel") and still centred inside any real
+window; only a pane under about 570 px reaches the edges.
