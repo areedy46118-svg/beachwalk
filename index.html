@@ -907,6 +907,14 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  #invpanel .detail .desc {
+    font-size: 0.62rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.5);
+    margin: -0.35rem 0 0.55rem;
+    text-align: center;
+  }
   #invpanel .detail .act {
     font: inherit;
     font-size: 0.86rem;
@@ -991,6 +999,23 @@
     text-transform: uppercase;
     color: rgba(232, 240, 255, 0.92);
     text-shadow: 0 2px 14px rgba(0, 0, 0, 0.95);
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  /* and what it DOES, under its name — the one line an item gets to argue
+     for being worn. Small, wide-spaced and dimmer than the name, so it
+     reads as a property of the thing and not as a second title. */
+  #inspect .idesc {
+    position: absolute;
+    left: 50%;
+    top: 4.6rem;
+    transform: translateX(-50%);
+    font-family: "Georgia", "Times New Roman", serif;
+    font-size: 0.78rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgba(196, 214, 244, 0.62);
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.95);
     white-space: nowrap;
     pointer-events: none;
   }
@@ -1167,7 +1192,7 @@
 
   <div id="blood">
     <div id="blood-jar"></div>
-    <span class="amt"><span id="blood-amt">0</span><span class="unit">mL</span></span>
+    <span class="amt"><span id="blood-amt">0</span><span class="unit" id="blood-unit">jars</span></span>
   </div>
 
   <div id="invpanel">
@@ -1196,6 +1221,7 @@
 
   <div id="inspect">
     <div class="iname"></div>
+    <div class="idesc"></div>
     <div class="hint">Hold right-click to turn it over &nbsp;·&nbsp; scroll to zoom &nbsp;·&nbsp; click to put it away</div>
   </div>
 

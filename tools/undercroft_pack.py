@@ -142,7 +142,20 @@ def cluster_uv(P, UV, I, cell):
         if pa == pb or pb == pc or pa == pc:       # collapsed in SPACE: gone
             continue
         a, b, c = remap[I[t]], remap[I[t + 1]], remap[I[t + 2]]
-        k = (a, b, c) if a < b and a < c else (b, c, a) if b < c else (c, a, b)
+        # AND A DUPLICATE IS A DUPLICATE IN SPACE, NOT IN THE ATLAS. This key
+        # used to be built from `remap`, which before the uv split WAS the
+        # position cell — so it caught every twin. Splitting vertices by uv
+        # bucket to save the church's texel density quietly broke it: two
+        # source triangles landing on the same three position cells from
+        # different corners of the atlas now emit two faces at EXACTLY the
+        # same depth, and what that draws is the flicker the owner
+        # photographed in the nave. Measured in the game before this: 34 %
+        # of `arche.002`, 17 % of `mur-bas-ext`, 11 % of `arche`, and every
+        # flickering pixel in the nave was one mesh fighting itself.
+        # SORTED, so a twin with the opposite winding goes too — that is a
+        # zero-volume sliver and these materials are all DoubleSide anyway.
+        k = (pa, pb, pc) if pa < pb and pa < pc else (pb, pc, pa) if pb < pc else (pc, pa, pb)
+        k = tuple(sorted(k))
         if k in seen:
             continue
         seen.add(k); tris.append((a, b, c))

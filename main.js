@@ -101,7 +101,7 @@ const ASSET_REACH = {
   'assets/sandcastle.glb': 13,        // the castle is in front of you at the spawn
   'assets/shell.glb': 15,             // the first of the three is at z = -12
   'assets/military-shovel.glb': 70,   // under the cliff past the drain
-  'assets/octopus-ring.glb': 75,
+  'assets/octopus-ring.glb': 647,   // the knight drops it, so it is wanted where he is
   'assets/rocks.glb': 80,             // the formation below Bradly
   'assets/crab.glb': 90,
   'assets/corpse.glb': 126,           // the body bag
@@ -400,6 +400,13 @@ function toggleFastWalk() {
  * emptying decided the next third of the fight; six keeps blocking a real
  * cost without making a mistake unrecoverable. */
 const STAM_REGEN = 6;                     // seconds to recover a full bar
+/* HOW BIG THE BAR IS, which is not always one. A worn ring can raise it, and
+ * `ringItem` is declared eleven thousand lines below this — so it is a
+ * forward hook, the way `bunkerFloorAt` is, and it answers 1 until the ring
+ * section replaces it. Everything that fills, clamps or draws the bar asks
+ * this rather than assuming; a bar with a hard-coded top is a bar no item
+ * can ever make bigger. */
+let stamMax = () => 1;
 const JUMP_V = 4.3;
 const P_GRAV = 15;
 const MOON_DIR = new THREE.Vector3(-0.28, 0.12, -1).normalize();
@@ -3932,11 +3939,18 @@ const deathEl = document.getElementById('death');
 const bloodEl = document.getElementById('blood');
 const bloodAmtEl = document.getElementById('blood-amt');
 const bloodJarEl = document.getElementById('blood-jar');
+const bloodUnitEl = document.getElementById('blood-unit');
 
-// blue blood you've drawn. The HUD stays hidden until the first extraction.
-const BLOOD_PER_CRAB = 120;        // mL out of one horseshoe crab
-const BLOOD_JAR_CAP = 140;         // mL the jar gauge reads full at
-let bloodAmount = 0, bloodSeen = false;
+/* Blue blood you have drawn. The HUD stays hidden until the first jar.
+ *
+ * AND IT COUNTS JARS NOW, NOT MILLILITRES. "120 mL" is the yield of one
+ * crab, which is a fact about crabs and not a thing the player is
+ * collecting — it never went up except in one step, it could not be spent,
+ * and a second source of the stuff (the one buried in the first cache) had
+ * nowhere sensible to land in it. A jar is the unit you actually hold, so
+ * the corner counts jars and the little jar beside the number is an icon of
+ * one rather than a gauge of a number nobody was reading. */
+let bloodJars = 0, bloodSeen = false;
 
 let started = false, locked = false, fallbackLook = false, dragging = false;
 let packCut = false;            // the three coming in: the player watches
@@ -4771,7 +4785,7 @@ function inspectSetModel(model) {
  * "put it away" in here, and a screen where the same button both wears the
  * item and pockets it is a screen you cannot use twice in a row. */
 let inspectEquip = null;
-function openInspect(model, { rotX = -0.55, rotY = 0.7, equipLabel = null, onEquip = null, name = '' } = {}) {
+function openInspect(model, { rotX = -0.55, rotY = 0.7, equipLabel = null, onEquip = null, name = '', desc = '' } = {}) {
   if (inspecting) return;
   inspecting = true;
   inspectEquip = equipLabel ? onEquip : null;
@@ -4779,6 +4793,11 @@ function openInspect(model, { rotX = -0.55, rotY = 0.7, equipLabel = null, onEqu
     inspectEquip ? kbd('E') + equipLabel + '  ·  ' + INSPECT_HINT : INSPECT_HINT;
   const nameEl = inspectEl.querySelector('.iname');
   if (nameEl) { nameEl.textContent = name; nameEl.style.display = name ? '' : 'none'; }
+  /* WHAT IT DOES, under what it is called. An item that changes a number
+   * has to say which number, in the one place you are actually looking at
+   * it — otherwise it is a trinket with a secret. */
+  const descEl = inspectEl.querySelector('.idesc');
+  if (descEl) { descEl.textContent = desc; descEl.style.display = desc ? '' : 'none'; }
   inspectSetModel(model);
   inspectRotX = rotX; inspectRotY = rotY; inspectDist = 3.3; inspectAuto = 0;
   inspectCamera.aspect = window.innerWidth / window.innerHeight;
@@ -4797,6 +4816,7 @@ function closeInspect() {
   inspectEquip = null;
   inspectEl.classList.remove('show');
   inspectEl.querySelector('.hint').innerHTML = INSPECT_HINT;
+  { const d = inspectEl.querySelector('.idesc'); if (d) { d.textContent = ''; d.style.display = 'none'; } }
   crosshair.style.display = '';
   refreshUI();
   if (inspectReturnLock && !fallbackLook) requestLock();
@@ -6005,7 +6025,7 @@ function inspectFromPack(item) {
    * reason. Same trap the combine recipes hit. */
   packReturnLock = false;
   closePack();
-  openInspect(model, { ...opts, name: item.name });
+  openInspect(model, { ...opts, name: item.name, desc: item.desc || '' });
 }
 function renderPackDetail() {
   if (!invDetailEl) return;
@@ -6021,6 +6041,7 @@ function renderPackDetail() {
   const verb = item.viewmodel ? (item === equipped ? 'Holster' : 'Hold') : 'Use';
   invDetailEl.innerHTML = `<div class="big">${iconHTML(item)}</div>
     <div class="name">${item.name}</div>
+    ${item.desc ? `<div class="desc">${item.desc}</div>` : ''}
     <button type="button" class="act insp">Inspect</button>
     <button type="button" class="act hold">${verb}</button>
     <div class="hint">Drag onto another item to combine</div>`;
@@ -8343,7 +8364,7 @@ function hitConnect(P, k) {
  * whatever you happened to be carrying — sometimes nothing, because the run
  * TO the trigger is what emptied it — decided the opening exchange before
  * you had your hands. */
-function catchBreath() { stamina = 1; exhausted = false; }
+function catchBreath() { stamina = stamMax(); exhausted = false; }
 function bossHit(P, broke, flesh) {
   hitstop = Math.max(hitstop, broke ? 0.155 : 0.085);
   addTrauma((broke ? 0.55 : 0.30) + P * 0.30);
@@ -9202,12 +9223,7 @@ function finishExtraction() {
   // the corner, which is the only place it's ever shown.
   removeFromInventory(crabItem);
   renderHotbar();
-  bloodAmount += BLOOD_PER_CRAB;
-  bloodSeen = true;
-  bloodPulse = 1;
-  hudJar.userData.setFill(Math.min(1, bloodAmount / BLOOD_JAR_CAP));
-  updateBloodReadout();
-  sfxBloodGained();
+  gainJar();
   // show the jar as the payoff, then it's gone
   inspectSetModel(bloodJar);
   inspectRotX = 0.12; inspectRotY = 0.45; inspectDist = 3.7; inspectAuto = 0;
@@ -9469,13 +9485,14 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
 
   const first = m === mounds[0];               // THE first mound, not the first you happen to dig
   const second = m === mounds[1];              // and the second one has the CD in it
-  /* THE FIRST CACHE HAS THE RING IN IT, AND THE CRATE HAS THE LIGHT. They
-   * were the other way round; the owner swapped them. It reads better this
-   * way round anyway — the shovel's first use turns up the smallest and
-   * strangest thing in the game, and the crate you have to break open gives
-   * you the thing that lets you see. `dropRing` places itself wherever it is
-   * told now, so nothing here knows how a ring is built. */
-  if (first) { dropRing(m.x, 0.10, m.z, 0.7); return; }
+  /* THE FIRST CACHE HAS A JAR OF BLUE BLOOD IN IT. The ring was here and has
+   * gone to the knight, which is the better place for it — a thing you fight
+   * for rather than a thing you dig up in the first five minutes — and what
+   * is buried here instead is a jar of the crab's own haemolymph. Somebody
+   * was out here bleeding them before you were, and that is the whole of
+   * what the cache says. It is also the second way to come by a jar, which
+   * is what turned the corner readout from a volume into a count. */
+  if (first) { dropJar(m.x, m.z); return; }
   const relic = second ? makeCdCase() : makeBuriedObject();
   relic.position.set(m.x, second ? 0.052 : 0.09, m.z);
   /* The CD is STOOD UP in the sand, not laid flat. Face up it is a
@@ -9509,6 +9526,43 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
         holdable(buried, makeBuriedObject(), { scale: 0.9, pos: [0, -0.03, 0], rot: [0.3, 0.6, 0.2] });
         addToInventory(buried);
       }
+    },
+  });
+}
+
+/* WHAT THE FIRST CACHE GIVES UP. A jar stood upright in the hole it came out
+ * of, under the same shine everything else a mound gives up carries — the
+ * mound's own convention, and the right one for glass: the ring was THROWN
+ * because a 20 mm ring set down quietly on a dark beach is a thing you walk
+ * over, and a 150 mm jar is not. Taking it runs the same `gainJar` the
+ * extraction does, so the corner cannot get out of step with what you have.
+ *
+ * The model is its OWN instance: `bloodJar` is the one the examine screen
+ * re-parents at the end of the extraction, and handing the same Group to two
+ * places is how a thing ends up in neither. */
+function dropJar(sx, sz) {
+  const jar = makeBloodJar();
+  jar.position.set(sx, 0.02, sz);
+  jar.rotation.y = Math.random() * Math.PI * 2;
+  jar.rotation.z = 0.05;                       // it has been lying in sand, not on a shelf
+  const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  proxy.name = 'hitProxy'; proxy.visible = false; proxy.position.y = 0.07;
+  jar.add(proxy);
+  scene.add(jar);
+  /* AND THE LIFT IS A THIRD, BECAUSE THE JAR HAS ITS OWN COLOUR. The stock
+   * shine raises the emissive of every material under it, which is right
+   * for a dark scan and swamps a thing whose whole point is that it is
+   * BLUE: at the full lift the glass, the blood and the label all came up
+   * together and what stood in the sand was a pale bottle. The sprite is
+   * what finds it in the dark; the lift only has to keep it off black. */
+  addItemShine(jar, { size: 0.85, height: 0.18, strength: 1.5, lift: 0.3 });
+  addInteractable(jar, 'Take the jar', 'inventory', {
+    onActivate: () => {
+      scene.remove(jar);
+      removeInteractable(jar);
+      hovered = null;
+      gainJar();
     },
   });
 }
@@ -10706,7 +10760,21 @@ hudJarPivot.add(hudJar);
   hudJar.userData.setFill(0);
 }
 let jarSpin = 0, bloodPulse = 0;
-function updateBloodReadout() { bloodAmtEl.textContent = String(bloodAmount); }
+function updateBloodReadout() {
+  bloodAmtEl.textContent = String(bloodJars);
+  if (bloodUnitEl) bloodUnitEl.textContent = bloodJars === 1 ? 'jar' : 'jars';
+}
+/* ONE DOOR, because there are two ways to come by a jar now — bleeding the
+ * crab yourself, and the one somebody left in the first cache — and a tally
+ * with two entrances is a tally that gets out of step with the corner. */
+function gainJar(n = 1) {
+  bloodJars += n;
+  bloodSeen = true;
+  bloodPulse = 1;
+  hudJar.userData.setFill(0.86);       // a jar is a jar: the icon is always full
+  updateBloodReadout();
+  sfxBloodGained();
+}
 function renderBloodJar(dt) {
   if (!bloodSeen || !bloodEl.classList.contains('show')) return;
   jarSpin += dt * 1.1;
@@ -11137,9 +11205,24 @@ function dropGlowstick(c) {
  * the smallest object in the game, and without the glint you would walk over
  * it in the dark. */
 /* The ring is a scan — Thunk3D's "Octopus Ring" — not the built signet that
- * was here before. `assets/octopus-ring.glb` is the lowest of the seven LODs
- * the download ships (7k triangles, which is plenty at 20 mm), packed with
- * `--nodes`; it carries no maps at all, being a raw STL scan, so the metal is
+ * was here before.
+ *
+ * AND IT SHIPPED AS ONE SEVENTH OF ITSELF FOR MONTHS. The download splits
+ * into `Object_0..6` and the triangle counts fall away like an LOD chain
+ * (84k, 83k, 79k, 67k, 47k, 33k, 7k), so the smallest was packed with
+ * `--nodes` and a comment written calling it "the lowest of the seven LODs".
+ * This file's own first note about this model says otherwise and says why:
+ * a Sketchfab splitter walks the TRIANGLE LIST, not the surface, so those
+ * are CHUNKS — seven scatters of triangles over the whole ring — and the
+ * smallest is 7,165 of the model's 400,540, which is under two per cent of
+ * it. What the owner has been looking at is a cloud of specks in the shape
+ * of a ring, which is exactly what the note predicted and nobody checked.
+ *
+ * `--decimate` is the answer and always was: it merges every primitive in
+ * world space FIRST and then vertex-clusters the result, which welds where
+ * dropping shreds. 400,540 triangles down to 45,000 is 0.5 MB — the whole
+ * octopus, at a density that survives being turned over on the examine
+ * screen. It carries no maps at all, being a raw STL scan, so the metal is
  * all in the material. It loads async, so `ring` is a Group that stays empty
  * until it lands and everything downstream — the world drop, the inspect
  * view, the hotbar icon — works off the Group either way. */
@@ -11172,9 +11255,19 @@ bwGlb('assets/octopus-ring.glb', (gltf) => {
   const rustDiff = retroTex(new THREE.TextureLoader().load('assets/rust-diff.jpg'));
   rustDiff.colorSpace = THREE.SRGBColorSpace;
   const rustRough = retroTex(new THREE.TextureLoader().load('assets/rust-rough.jpg'));
+  /* AND THE LEVEL HAD NEVER BEEN LOOKED AT, BECAUSE THERE WAS NOTHING TO
+   * LOOK AT. A near-white base under an orange rust map with an orange
+   * emissive lift over the top is only a colour choice if the surface it
+   * lands on is visible — and for months this was two per cent of a scan
+   * rendering as speckle, so nobody could see what it was doing. With the
+   * whole octopus finally on the screen it measured (168, 114, 65) on the
+   * examine lamps: bright orange batter, not metal out of the sea. Taken
+   * to (85, 59, 36) it is corroded bronze with the rust still reading in
+   * the pits, and the pits are the whole point of a 45,000-triangle scan.
+   * The glint is what finds it on dark sand, not the lift. */
   const iron = new THREE.MeshStandardMaterial({
-    color: 0xe0d6c8, map: rustDiff, roughnessMap: rustRough, roughness: 1.0, metalness: 0.14,
-    emissive: 0x9a6a3c, side: THREE.DoubleSide, flatShading: true,
+    color: 0x7b6e5e, map: rustDiff, roughnessMap: rustRough, roughness: 1.0, metalness: 0.14,
+    emissive: 0x46301c, side: THREE.DoubleSide, flatShading: true,
   });
   iron.onBeforeCompile = (sh) => {
     sh.uniforms.uTri = { value: 0.062 };
@@ -11210,6 +11303,7 @@ vec4 triSample(sampler2D t, vec3 p, vec3 n) {
 });
 const ringItem = {
   id: 'ring', name: 'The Octopus Ring', icon: makeRingIcon(), ring: true,
+  desc: '10% Stamina Increase',
   use: () => toggleEquip(ringItem),
   // Putting it ON still happens in the examine screen — which you now reach
   // from the pack — because that is where you can see what you are wearing.
@@ -11220,6 +11314,13 @@ const ringItem = {
   }),
 };
 holdable(ringItem, ring, { scale: 2.2, pos: [0, -0.02, 0], rot: [1.1, 0.3, 0.2] });
+/* AND WEARING IT IS WORTH SOMETHING. A tenth more bar is a tenth more
+ * blocking, sprinting and stepping out of the way — the three things the
+ * bar is spent on — so it reads in a fight rather than on a sheet. It is
+ * the WORN ring that pays, not the one in your pack: `rings[]` is what is
+ * on your hand, which is the whole reason it is a separate list. */
+const RING_STAM = 0.10;
+stamMax = () => 1 + (rings.includes(ringItem) ? RING_STAM : 0);
 /* It comes OUT. Set down quietly on the sand where the crate stood, a 20 mm
  * ring is the easiest thing in the game to walk away from; so it is thrown
  * up out of the boards on a real body, toward you, rings off the sand when
@@ -11321,7 +11422,12 @@ function dropRing(sx = CRATE_X, sy = CRATE_H * 0.55, sz = crateZ, toss = 1.6) {
   ringProp.onImpact = (speed) => { if (!rang && speed > 1.2) { rang = true; sfxRingLand(); } };
   // the glint sits well up off the sand: at height 0.12 a 1.5 m sprite had
   // its lower half under the beach and drew a hard line where the sand cut it
-  addItemShine(ringWorld, { size: 1.2, height: 0.5, strength: 3.2 });
+  /* AND IT SHOWS THROUGH WHAT IT LANDED IN. It comes off the knight now, so
+   * where it lands is the middle of a nave he has just driven seventeen pews
+   * through — the one case `through` exists for: a second, fainter sprite
+   * that ignores depth, so a plank across the ring dims the mark instead of
+   * deleting it. */
+  addItemShine(ringWorld, { size: 1.3, height: 0.5, strength: 3.2, through: true });
   // and the metal itself catches the moon while it lies out here — a 20 mm
   // ring with the inspect view's emissive is invisible on night sand
   ring.traverse((o) => { if (o.isMesh && o.material.emissive) o.material.emissive.setHex(0xe0a868); });
@@ -11954,87 +12060,94 @@ function ucInWater() {
   const feet = camBaseY - playerEye() - UC_Y;
   return feet < W.y + 0.10 && feet > W.y - 0.55;
 }
-/* AND A BOOT IN WATER IS NOT A BOOT WITH WATER ADDED TO IT.
+/* AND A SPLASH WITHOUT BUBBLES IS A NOISE BURST, AND A NOISE BURST IS SAND.
  *
- * "The first tunnel footsteps do not sound like water at all" was a MIX, not
- * a missing sound: the channel's step played the full dry SAND footstep —
- * thud, packed grains, grit scattering, the odd shell chip — and laid a
- * short bright tick over the top of it at half the level. What you heard was
- * sand, because sand was nearly all of it; there is no amount of tick that
- * turns a dry step into a wet one, because the dry layers are the ones that
- * are wrong. Grains do not scatter under water and nothing crunches.
+ * The last pass took the dry footstep out from under the splash, which was
+ * right and was not enough: what replaced it was four layers of FILTERED
+ * NOISE, and filtered noise is exactly what sand is. Band-limit it, sweep
+ * the filter, stack four of them — it is still a shaped hiss, so the owner
+ * heard sand a second time.
  *
- * So the water IS the footstep here, and it has the four parts a boot going
- * down into an inch of water over stone actually has:
+ * What makes water sound like water is not its spectrum, it is that it
+ * RINGS. A bubble entrained by a splash is a Helmholtz resonator: it
+ * oscillates at f = 3.26 / r Hz (Minnaert), and because it shrinks and
+ * damps as it collapses the tone slides UP as it dies. That is the "plink",
+ * and a few dozen of them at once over a couple of hundred milliseconds is
+ * the whole difference between a puddle and a handful of gravel. Nothing
+ * dry does it: sand has no cavity to resonate in.
  *
- *   1. the surface breaking — broad and fast, the loudest thing in it, which
- *      is what says water rather than dust;
- *   2. the column being shoved out of the way — low-mid, swept down, and the
- *      part that gives a splash any mass at all. The old one had none of
- *      this and that is most of why it read as a tick;
- *   3. the stone UNDER the water, muted, because the channel has a floor and
- *      a step that does not land on anything is a splash in deep water;
- *   4. the water closing back over the boot a beat later, with a scatter of
- *      drops off it — shallow water is loose, and the scatter is the
- *      difference between a puddle and a pool.
- *
- * It is still well under the sea's own level: the brief was walking through
- * puddles, not wading into surf. */
+ * So the step is the four movements it always had — the surface breaking,
+ * the column shoved aside, the stone muffled under it, the water closing
+ * back — with a SCATTER OF BUBBLES through the middle of it, each a short
+ * sine chirped upward, small ones bright and quick and the odd big one low
+ * and slower. They are what you actually hear; the noise is the bed they
+ * sit on, and it is quieter than it was because it no longer has to carry
+ * the sound on its own. */
 function sfxStepPuddle() {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime;
   const out = ctx.createGain();
-  /* AND IT IS THE STEP'S OWN LEVEL, because it IS the step now. At 0.30 it
-   * was a layer over a dry footstep and measured 9 dB under the church's
-   * recorded one — audible only if you knew to listen for it. */
   out.gain.value = 0.62 * (0.78 + Math.random() * 0.4);
   out.connect(sfxOut());
 
   // 1. the surface breaking: broad, immediate, gone in a twelfth of a second
-  const sp = noiseBurst(0.12, (x) => Math.pow(1 - x, 2.2));
+  const sp = noiseBurst(0.10, (x) => Math.pow(1 - x, 2.6));
   const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
-  bp.frequency.setValueAtTime(1150 + Math.random() * 500, t);
-  bp.frequency.exponentialRampToValueAtTime(520, t + 0.11);
-  bp.Q.value = 0.55;                       // WIDE: a narrow band is a hiss, not a splash
-  const spg = ctx.createGain(); spg.gain.value = 0.95;
+  bp.frequency.setValueAtTime(1050 + Math.random() * 420, t);
+  bp.frequency.exponentialRampToValueAtTime(480, t + 0.09);
+  bp.Q.value = 0.7;
+  const spg = ctx.createGain(); spg.gain.value = 0.62;
   sp.connect(bp).connect(spg).connect(out);
-  sp.start(t); sp.stop(t + 0.12);
+  sp.start(t); sp.stop(t + 0.10);
 
   // 2. the column shoved aside — the mass of it
-  const bod = noiseBurst(0.17, (x) => Math.pow(1 - x, 1.5) * Math.min(1, x * 14));
+  const bod = noiseBurst(0.16, (x) => Math.pow(1 - x, 1.6) * Math.min(1, x * 14));
   const lf = ctx.createBiquadFilter(); lf.type = 'lowpass';
-  lf.frequency.setValueAtTime(520 + Math.random() * 160, t);
-  lf.frequency.exponentialRampToValueAtTime(155, t + 0.16);
+  lf.frequency.setValueAtTime(500 + Math.random() * 150, t);
+  lf.frequency.exponentialRampToValueAtTime(150, t + 0.15);
   lf.Q.value = 3.0;
-  const bg = ctx.createGain(); bg.gain.value = 0.85;
+  const bg = ctx.createGain(); bg.gain.value = 0.7;
   bod.connect(lf).connect(bg).connect(out);
-  bod.start(t); bod.stop(t + 0.17);
+  bod.start(t); bod.stop(t + 0.16);
 
   // 3. the stone under it, muffled by the water over it
   const st = noiseBurst(0.07, (x) => Math.pow(1 - x, 4.2));
   const sf = ctx.createBiquadFilter(); sf.type = 'lowpass';
-  sf.frequency.value = 220 + Math.random() * 70;
-  const sg = ctx.createGain(); sg.gain.value = 0.42;
+  sf.frequency.value = 210 + Math.random() * 70;
+  const sg = ctx.createGain(); sg.gain.value = 0.34;
   st.connect(sf).connect(sg).connect(out);
   st.start(t + 0.012); st.stop(t + 0.082);
 
-  // 4. the water closing back over, and the drops that come off it
-  const cl = noiseBurst(0.15, (x) => Math.pow(1 - x, 2.6) * Math.min(1, x * 9));
-  const cf = ctx.createBiquadFilter(); cf.type = 'bandpass';
-  cf.frequency.value = 760 + Math.random() * 300; cf.Q.value = 0.8;
-  const cg = ctx.createGain(); cg.gain.value = 0.5;
-  cl.connect(cf).connect(cg).connect(out);
-  cl.start(t + 0.055); cl.stop(t + 0.205);
-  for (let i = 0; i < 3; i++) {
-    if (Math.random() > 0.72) continue;
-    const d = 0.07 + Math.random() * 0.17;
-    const dr = noiseBurst(0.035, (x) => Math.pow(1 - x, 5));
-    const df = ctx.createBiquadFilter(); df.type = 'bandpass';
-    df.frequency.value = 2100 + Math.random() * 1900; df.Q.value = 1.6;
-    const dg = ctx.createGain(); dg.gain.value = 0.10 + Math.random() * 0.12;
-    dr.connect(df).connect(dg).connect(out);
-    dr.start(t + d); dr.stop(t + d + 0.035);
+  /* 4. THE BUBBLES. Fourteen of them over the first fifth of a second, each
+   * a sine that starts at its Minnaert tone and slides a third to a half of
+   * an octave UP as it collapses — the rise is what stops it reading as a
+   * bell. The big slow ones come first (a boot displaces the large cavities
+   * as it goes in) and the fine spray follows. */
+  const nB = 11 + Math.floor(Math.random() * 5);
+  for (let i = 0; i < nB; i++) {
+    const early = i / nB;                              // big and low first, fine and bright after
+    const f0 = 430 + Math.pow(early, 0.7) * 2300 * (0.6 + Math.random() * 0.8);
+    const d = 0.012 + early * 0.16 * Math.random() + Math.random() * 0.02;
+    const life = 0.035 + (1 - early) * 0.055 + Math.random() * 0.02;
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(f0, t + d);
+    o.frequency.exponentialRampToValueAtTime(f0 * (1.28 + Math.random() * 0.3), t + d + life);
+    const g = ctx.createGain();
+    const amp = (0.055 + (1 - early) * 0.05) * (0.5 + Math.random() * 0.8);
+    g.gain.setValueAtTime(0.0001, t + d);
+    g.gain.exponentialRampToValueAtTime(amp, t + d + 0.0035);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + d + life);
+    o.connect(g).connect(out);
+    o.start(t + d); o.stop(t + d + life + 0.01);
   }
+
+  // 5. the water closing back over the boot
+  const cl = noiseBurst(0.14, (x) => Math.pow(1 - x, 2.8) * Math.min(1, x * 9));
+  const cf = ctx.createBiquadFilter(); cf.type = 'bandpass';
+  cf.frequency.value = 700 + Math.random() * 280; cf.Q.value = 0.9;
+  const cg = ctx.createGain(); cg.gain.value = 0.34;
+  cl.connect(cf).connect(cg).connect(out);
+  cl.start(t + 0.055); cl.stop(t + 0.195);
 }
 /* AND YOU SEE IT AS WELL AS HEAR IT. A puddle you can only hear is a sound
  * effect; what says you are wading is water coming up off your boot. A
@@ -12136,17 +12249,55 @@ function sfxRingOn() {
 }
 // a ring landing on sand: a bright ting that rings on a moment, then stops
 // dead as the sand takes it
+/* A RING LANDING ON STONE, AND THE SETTLE IS THE WHOLE TELL. Three pure
+ * sines was a doorbell: a metal ring is a free circular body and its
+ * flexural modes are INHARMONIC — near 1 : 2.76 : 5.4 : 8.9 — so any stack
+ * of harmonics reads as a chime rather than as metal. And the thing that
+ * makes a small hard ring unmistakable is not the impact at all, it is what
+ * happens afterwards: it lands, tips, and spins down flat, tapping the
+ * floor faster and faster over the best part of a second. Nothing else in
+ * this game sounds like that, and nothing else needs to. */
 function sfxRingLand() {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime;
-  for (const [f, g0, dur] of [[3120, 0.06, 0.34], [4660, 0.03, 0.22], [1980, 0.02, 0.4]]) {
-    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+  const out = ctx.createGain(); out.gain.value = 0.9; out.connect(sfxOut());
+  const f0 = 2350 + Math.random() * 500;
+
+  // the contact itself: a hard bright tick, over before you can hear a pitch
+  const tick = noiseBurst(0.025, (x) => Math.pow(1 - x, 6));
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2600;
+  const tg = ctx.createGain(); tg.gain.value = 0.09;
+  tick.connect(hp).connect(tg).connect(out);
+  tick.start(t); tick.stop(t + 0.025);
+
+  // and the ring's own modes under it
+  for (const [r, g0, dur] of [[1, 0.055, 0.42], [2.76, 0.035, 0.30], [5.4, 0.018, 0.20], [8.9, 0.010, 0.13]]) {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f0 * r;
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(g0, t + 0.003);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g).connect(sfxOut());
+    o.connect(g).connect(out);
     o.start(t); o.stop(t + dur + 0.02);
+  }
+
+  /* THE SPIN-DOWN. Each tap is the rim meeting the floor once per turn, and
+   * the turns get quicker as it flattens, so the gap closes geometrically
+   * until it is a buzz and stops. */
+  let d = 0.26, gap = 0.085;
+  for (let i = 0; i < 26 && d < 1.25; i++) {
+    const a = 0.030 * Math.pow(1 - d / 1.3, 1.4);
+    if (a > 0.0006) {
+      const o = ctx.createOscillator(); o.type = 'sine';
+      o.frequency.value = f0 * (1 + i * 0.012);        // it tightens as it flattens
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t + d);
+      g.gain.exponentialRampToValueAtTime(a, t + d + 0.001);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.035);
+      o.connect(g).connect(out);
+      o.start(t + d); o.stop(t + d + 0.045);
+    }
+    d += gap; gap *= 0.86;
   }
 }
 // taking it off - the same tick, lower, and without the cloth
@@ -25377,7 +25528,7 @@ function update(dt, rawDt = dt) {
   const running = wantRun && moving && stamina > 0 && !exhausted && onGround;
   if (running) { stamina = Math.max(0, stamina - dt / RUN_SECONDS); if (stamina <= 0) exhausted = true; }
   else {
-    stamina = Math.min(1, stamina + dt / STAM_REGEN);
+    stamina = Math.min(stamMax(), stamina + dt / STAM_REGEN);
     if (exhausted && stamina > 0.35) exhausted = false;
     if (stamina > 0.35) blockGasped = false;    // you can hold it up again
   }
@@ -25561,8 +25712,13 @@ function update(dt, rawDt = dt) {
     camera.position.add(_shakePrev);
   }
 
-  staminaEl.classList.toggle('show', stamina < 0.999);
-  staminaFill.style.transform = `scaleX(${Math.max(0, stamina)})`;
+  /* AND THE BAR GROWS WITH IT. Drawing a bigger reserve inside the same
+   * 150 px would be a ring that changes a number you cannot see: the strip
+   * itself gets the extra tenth, and the fill is the fraction of it. */
+  const sMax = stamMax();
+  staminaEl.classList.toggle('show', stamina < sMax - 0.001);
+  if (staminaEl._max !== sMax) { staminaEl._max = sMax; staminaEl.style.width = (150 * sMax).toFixed(1) + 'px'; }
+  staminaFill.style.transform = `scaleX(${Math.max(0, stamina / sMax)})`;
   staminaFill.classList.toggle('low', exhausted);
 
   /* Splashing is for walking THROUGH water, never over it. On the pier's
@@ -25719,7 +25875,7 @@ function saveCheckpoint() {
     // and the handful of things the walk latches on
     flags: {
       castleBroken, crabBled, hcrabTaken, ringsFound, eyesSeen, snorkMet,
-      blood: bloodAmount, bloodSeen,
+      jars: bloodJars, bloodSeen,
       // he went into the sea and he does not come back out of it
       smileGone: smilePhase === 2,
       // and the saucer took you once: `abductDone` is the latch, `shrineWon`
@@ -25799,8 +25955,10 @@ function beginRestore() {
   crabBled = !!f.crabBled; hcrabTaken = !!f.hcrabTaken;
   eyesSeen = !!f.eyesSeen; snorkMet = !!f.snorkMet;
   dockDoorOpen = !!f.dockDoor;
-  bloodAmount = f.blood || 0; bloodSeen = !!f.bloodSeen;
-  if (bloodSeen) { hudJar.userData.setFill(Math.min(1, bloodAmount / BLOOD_JAR_CAP)); updateBloodReadout(); }
+  // a save written before the tally counted jars carries millilitres
+  bloodJars = f.jars != null ? f.jars : (f.blood ? 1 : 0);
+  bloodSeen = !!f.bloodSeen;
+  if (bloodSeen) { hudJar.userData.setFill(0.86); updateBloodReadout(); }
   for (const i of d.mounds || []) if (mounds[i] && !mounds[i].taken) revealMoundNear(mounds[i].x, mounds[i].z);
   /* THE THREE AT THE DOCK ARE BEHIND YOU. Their cutscene fires on your Z
    * alone, and the pavilion is three hundred metres past it — so a restore
@@ -25974,7 +26132,7 @@ function animateFrame() {
   oceanUniforms.uTime.value += dt;
   if (!introStarted) titleCam(rawDt);
   update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
-  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); updatePortalCut(rawDt);
+  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt);
   updateHover();
   /* After everything that may have moved a lamp or the player, and before
    * anything is drawn: point the twelve real lights at the twelve that
@@ -28886,6 +29044,56 @@ function ntarRetarget(u, m, bones, bind, J, hipUp, hipPos, src) {
     A.set(b, q);
   }
 
+  /* THE TWIST BONES, WHICH NOTHING HAS EVER DRIVEN — and they are most of
+   * "some of his moves are awkward, his limbs should look natural when he
+   * swings". An Unreal mannequin runs two twist joints down the middle of
+   * every limb (`lowerarm_twist_01_r` and friends: sixteen of them on this
+   * rig) and the skin along a forearm is weighted to THEM, not to the
+   * forearm bone. The retarget maps what `kind.rag` names — the ragdoll's
+   * twenty-two joints — so every twist bone fell through to the fallback
+   * and simply inherited its parent. What that draws is the candy-wrapper:
+   * the whole roll of a joint absorbed by one ring of vertices at the joint
+   * itself, with the length of the limb dead. Measured on his own clips,
+   * peak roll taken in a single step: 65 degrees at the wrist on the swipe,
+   * 46 at the elbow on the spin, 28 at the ankle.
+   *
+   * A twist bone at a fraction f along its limb takes f of the DISTAL
+   * joint's roll about that limb's own axis, so the skin ramps from nothing
+   * at one end to the whole turn at the other instead of stepping. Nothing
+   * is taken away from the joint itself, so the pose is untouched and only
+   * the ramp between changes. The fractions are MEASURED off the rig rather
+   * than assumed (they come out at clean thirds here, and 01 is the far end
+   * on a forearm and the near end on an upper arm, which is exactly the
+   * kind of thing not to hard-code). */
+  const TWIST = [];
+  for (const b of bones) {
+    if (!/twist/i.test(b.name)) continue;
+    const P = b.parent && b.parent.isBone ? b.parent : null;
+    if (!P || !mxOf[P.name]) continue;
+    const D = P.children.find((c) => c.isBone && mxOf[c.name]);   // the joint at the far end of this limb
+    if (!D) continue;
+    const L = D.position.length();
+    if (L < 1e-6) continue;
+    const f = Math.min(1, b.position.length() / L);
+    if (f < 0.02) continue;
+    TWIST.push({ b, D, f, axis: D.position.clone().normalize(), bq: bind.get(b).q });
+  }
+  /* The swing-twist split: the part of a rotation that is ABOUT the axis.
+   * Project the quaternion's vector onto the axis and renormalise — the
+   * remainder is the swing, which belongs to the joint and not to the
+   * length of the limb. */
+  const _tv = new THREE.Vector3(), _tp = new THREE.Vector3(), _tq = new THREE.Quaternion();
+  const _bi = new THREE.Quaternion(), _id = new THREE.Quaternion();
+  function twistAbout(q, axis, k, into) {
+    _tv.set(q.x, q.y, q.z);
+    _tp.copy(axis).multiplyScalar(_tv.dot(axis));
+    _tq.set(_tp.x, _tp.y, _tp.z, q.w);
+    if (_tq.lengthSq() < 1e-12) return into.identity();
+    _tq.normalize();
+    if (_tq.w < 0) { _tq.x = -_tq.x; _tq.y = -_tq.y; _tq.z = -_tq.z; _tq.w = -_tq.w; }
+    return into.copy(_id).slerp(_tq, k);
+  }
+
   const out = [];
   const _d = new THREE.Quaternion(), _w = new THREE.Quaternion(), _pi = new THREE.Quaternion();
   for (const name in data.clips) {
@@ -28912,6 +29120,21 @@ function ntarRetarget(u, m, bones, bind, J, hipUp, hipPos, src) {
         }
         _pi.copy(pW).invert().multiply(w);
         const v = vals.get(b), o2 = i * 4;
+        v[o2] = _pi.x; v[o2 + 1] = _pi.y; v[o2 + 2] = _pi.z; v[o2 + 3] = _pi.w;
+      }
+      /* and THEN the twists, because a twist bone reads the joint at the far
+       * end of its own limb and that joint is a sibling — it may be written
+       * before or after it depending on nothing but the order the file lists
+       * them in. Both are local rotations in the same parent's frame, which
+       * is the frame the limb's axis is measured in, so the share is simply
+       * pre-multiplied onto the twist bone's own bind. */
+      for (const t of TWIST) {
+        const dv = vals.get(t.D), o = i * 4;
+        _d.set(dv[o], dv[o + 1], dv[o + 2], dv[o + 3]);
+        _bi.copy(bind.get(t.D).q).invert().multiply(_d);        // what the joint has DONE, not where it sits
+        twistAbout(_bi, t.axis, t.f, _w);
+        _pi.copy(_w).multiply(t.bq);
+        const v = vals.get(t.b), o2 = i * 4;
         v[o2] = _pi.x; v[o2 + 1] = _pi.y; v[o2 + 2] = _pi.z; v[o2 + 3] = _pi.w;
       }
     }
@@ -29715,6 +29938,31 @@ function knightCrush(dt) {
     breakBench(b, 3.5 + sp * 1.6);
   }
 }
+/* AND HE IS CARRYING THE RING. It used to be in the first cache, five
+ * minutes into the walk, which is the wrong end of the game for the only
+ * thing you can WEAR: a ring that changes a number wants to be the thing
+ * the hardest fight in the building pays out, not a thing the shovel turns
+ * up before you have met anything. So it comes off him, and it comes off
+ * him the way everything else here arrives — thrown, ringing, and under a
+ * glint you can find among the wreckage he has just made of forty pews.
+ *
+ * `through` on the shine is the Military Shovel's own lesson: a takeable
+ * lying among the debris of the thing that dropped it is hidden BY that
+ * debris, so the mark carries a second sprite that ignores depth. And the
+ * drop waits a beat past the kill — `deadT` is the clip's own clock — so it
+ * lands while you are still watching him go down rather than during the
+ * hitstop, where nothing reads. */
+let knightSpoils = false;
+function knightSpoilsDrop() {
+  const u = knightUnit;
+  if (knightSpoils || !u || !knightFight || u.st.alive || (u.st.deadT || 0) < 0.55) return;
+  if (ringsFound || inventory.includes(ringItem) || rings.includes(ringItem)) { knightSpoils = true; return; }
+  knightSpoils = true;
+  const p = u.g.position;
+  const f = UC.ready ? UC.floorAt(p.x - UC_X, p.z - UC_Z) : null;
+  dropRing(p.x, (f === null ? p.y : UC_Y + f) + 0.85, p.z, 0.9);
+}
+
 /* THE WALL STOPS BEING A WALL. He has been standing there since you walked
  * in — hidden, asleep, and in the blade's own creature test the whole time,
  * because that test does not ask whether a creature is visible. */
@@ -32765,7 +33013,7 @@ window.__bw = {
     if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
     oceanUniforms.uTime.value += dt;
     update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
-    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); updatePortalCut(rawDt);
+    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt);
     updateLightPool();
   },
   /* The lamp pool, for a still: a frozen loop never points the twelve at
@@ -32818,7 +33066,7 @@ window.__bw = {
   hcrab, hcrabWorld, syringe, syringeWorld, bloodJar,
   renderer, inspectScene, inspectCamera,
   mounds, moundAt, revealMoundNear, makeGlowstick, inWater, shoreLineJS,
-  sfxSplash, bradly, startDialog, endDialog, heldGlow,
+  sfxSplash, sfxStepPuddle, sfxStepUnder, bradly, startDialog, endDialog, heldGlow,
   crab, crabState, killCrab, damagePlayer, playerDied, burstCrab, addTrauma, updateGibs,
   get gibCount() { return gibs.length; },
   get bloodCount() { return bloodDrops.length; },
@@ -32906,7 +33154,10 @@ window.__bw = {
   get stairTurns() { return stairTurns; },
   get bottleBroken() { return bottleBroken; },
   get hp() { return hp; },
-  get blood() { return bloodAmount; },
+  get blood() { return bloodJars; },
+  // and a door to the tally, because the only other way to add a jar is to
+  // walk down the beach and bleed a crab
+  gainJar: (n) => gainJar(n),
   get bloodSeen() { return bloodSeen; },
   get syringeItem() { return syringeItem; },
   // live-tune the fake eyelid once the real cut-out is in:

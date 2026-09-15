@@ -8658,3 +8658,98 @@ with a screenshot before reading state.
 
 Real note art for the bottle · more items and scripted events along the walk
 · prop-vs-prop physics · persistent dig holes · a nicer two-handed dig anim.
+
+**THE JARS ARE COUNTED, AND THE MILLILITRES MOVED ONTO THE GLASS.** The
+corner of the screen read "120 mL" out of a tank that filled up; what you
+actually carry is JARS, so it counts them ("1 jar", "5 jars", the unit its
+own span so the singular is right). `bloodAmount`, `BLOOD_PER_CRAB` and
+`BLOOD_JAR_CAP` are gone and `gainJar(n)` is the one door — the tally, the
+icon, the pulse and the sound in one place, so a jar handed over by an
+extraction and a jar lifted out of a hole cannot drift apart. 120 mL is a
+fact about one crab and it is PRINTED ON THE LABEL now, where a number that
+never changes belongs. The first dig mound gives up a jar instead of the
+ring (`dropJar`), and the ring comes off the knight.
+
+**AND THE JAR ITSELF WAS A SHAPE, NOT A BOTTLE.** What makes a prop read as
+old is the record of how it was MADE and what has HAPPENED to it since, and
+the first build had neither: one clean lathe, a cap turned on the same
+lathe, and a label that was four black boxes. It now carries the two MOULD
+SEAMS it was blown in, a heel ring it stands on, a crimped foil cap whose
+segments are pushed in and out so the highlight breaks up round it (a lathe
+is a perfect surface of revolution, which is exactly what foil pressed down
+by hand is not), a run of dried haemolymph from under the seal, sediment,
+bubbles clinging up one side, and a drawn label — foxed, ink run, a ring
+where something wet stood on it, a batch number in a different hand, and
+torn away at both ends through an alpha map, because a label peels from its
+ends first. Two things measured on screen: **the meniscus is a RING, not a
+lid** (at full opacity the little dome on top of the blood is a flat pale
+disc the width of the jar and it reads as milk), and **a mould seam may not
+run under the label** — both the geometry and the label arc are in three's
+(sin, cos) convention where theta 0 is +Z, so seams at 0 and PI put one of
+them straight down the middle of the printing.
+
+**AND THE GLINT'S LIFT SWAMPED THE ONE THING THE PROP IS FOR.**
+`addItemShine` raises the emissive of every material under it, which is
+right for a dark scan and wrong for a jar whose whole point is that it is
+BLUE: at the stock lift the glass, the blood and the label came up together
+and what stood in the sand was a pale bottle. `lift: 0.3`. The sprite is
+what finds it in the dark; the lift only has to keep it off black.
+
+**THE CHURCH'S FLICKER WAS THE UV FIX, EATING ITS OWN TAIL.**
+`cluster_uv` has always dropped a triangle whose three cells it has already
+emitted — and that key was built from `remap`, which BEFORE the uv split
+was the position cell, so it caught every twin. Splitting vertices by uv
+bucket to save the texel density (the round-6 fix for the stretched
+columns) quietly broke it: two source triangles landing on the same three
+position cells from different corners of the atlas now emit two faces at
+exactly the same depth. Measured in the game — render each view twice with
+the camera moved six tenths of a millimetre and diff the pixels, then
+raycast the pixels that changed — **every flickering pixel in the nave was
+one mesh fighting itself**, and counting exact duplicate triangles per mesh
+found 34 % of `arche.002`, 17 % of `mur-bas-ext`, 11 % of `arche`. The key
+is the POSITION cells now, sorted so a twin with the opposite winding goes
+with it. After: zero doubled faces in the church, and zero flickering views
+over twenty-six sweeps of the nave, the apse and the tunnel. The walk is
+unchanged (entrance to altar 99.8 m, 1318 ticks, zero stalls, zero
+reversals). **A z-fight is measurable: move the camera a fraction of a
+millimetre and diff.**
+
+**THE KNIGHT'S LIMBS WERE STIFF BECAUSE SIXTEEN OF HIS BONES WERE NEVER
+DRIVEN.** An Unreal mannequin runs two TWIST joints down the middle of
+every limb — `lowerarm_twist_01_r` and its fifteen relatives — and the skin
+along a forearm is weighted to THEM, not to the forearm bone. The retarget
+maps what `kind.rag` names, which is the ragdoll's twenty-two joints, so
+every twist bone fell through to the fallback and inherited its parent.
+What that draws is the candy-wrapper: the whole roll of a joint absorbed by
+one ring of vertices at the joint itself with the length of the limb dead.
+Measured on his own clips, the roll taken in a single step: **65 degrees at
+the wrist on the swipe, 46 at the elbow on the spin, 28 at the ankle**. A
+twist bone at fraction f along its limb now takes f of the DISTAL joint's
+roll about that limb's own axis (a swing-twist split: project the
+quaternion's vector onto the axis and renormalise, so the joint's SWING is
+left where it belongs), and the fractions are measured off the rig rather
+than assumed — they are clean thirds here, and `01` is the far end on a
+forearm and the near end on an upper arm, which is exactly the sort of
+thing not to hard-code. Nothing is taken away from the joint, so the pose
+is untouched and only the ramp between changes. Every clip's worst step
+roughly halves and none is worse; it costs nothing and it is general, so
+the red alien's Character Creator twists get it too.
+
+**AND THE OCTOPUS RING HAD NEVER ACTUALLY BEEN SEEN.** Its level was set
+years of passes ago on a surface that was two per cent of a scan rendering
+as speckle — near-white base, orange rust map, orange emissive over the
+top. With the whole 45,000-triangle octopus finally on the screen it
+measured (168, 114, 65) under the examine lamps: bright orange batter, not
+metal out of the sea. At (85, 59, 36) it is corroded bronze with the rust
+still reading in the pits, and the pits are the whole point of decimating
+rather than chunking. The tiling was already right (`uTri` 0.062 on a
+31-unit span is 1.9 repeats round it) — **check the level before the
+tiling, and check both only once there is something to look at.**
+
+**AND THE RING SAYS WHAT IT DOES.** `desc` on an item is drawn under its
+name on the examine screen and in the pack's detail pane; the octopus ring
+reads "10% Stamina Increase" and, worn, that is exactly what it does —
+`stamMax()` is a forward hook filled in beside `ringItem`, the regen, the
+breath and the bar all read it, and the STRIP ITSELF grows by the tenth
+(150 px to 165) rather than drawing a bigger reserve inside the same width,
+which would be a ring that changes a number you cannot see.
