@@ -8881,3 +8881,73 @@ screen that is nothing but the thing you are reading: 1280, wider gaps, and
 a detail pane that grows with it. The RINGS row went from a 40 px footnote
 to its own section — its own heading, its own rule, 84 px slots — because
 what you are wearing is half of what you are carrying.
+
+**THE FISHERMAN'S BOAT SAILS, AND WHERE IT GOES IS JESSEL'S SEA KEEP.**
+Stand on the boat tied up at the sea end of his pier and the crosshair says
+`E Set Sail`; the screen goes black to a mooring line creaking and the water
+taking her, and you are standing at the end of a long timber pier under
+"Fantasy Sea Keep" (CC-BY-4.0, `assets/keep.glb`), with the same boat moored
+alongside — look at it from the pier and E brings you home. The owner's
+word was a PERFECT REPLICA, so `tools/undercroft_pack.py keep` is the first
+EXACT kind: nothing decimated, the NORMALS carried through the bake (a
+smooth stylised build under a normal map is not a scan, and flat-shading it
+is a different object), a reflection in the node chain caught by the
+determinant and the winding flipped back, every material extension left in
+the file for three to honour, and the one liberty the 4096 normal maps
+resized to 2048. 168,477 triangles in seven draws; 15.6 MB, of which 2.3 is
+the walk. It stands eight kilometres off like the dojo (`KEEP_X/Y/Z`), the
+beach's sand and sea and sky stay put while you are there (the undercroft's
+arrangement), and the night's five lights, the fog and the sky dome are
+SWAPPED for a sunset at the cut and back at the return — colour and
+intensity are free; a light entering or leaving is not.
+
+- **THE PINK SKY WAS NEVER IN THE FILE.** The sphere ships as transmissive
+  clearcoat glass with a strip of blue clouds in its emissive map, and what
+  Sketchfab shows THROUGH it is its own HDR environment. Painted here on the
+  sphere's own geometry, by height over the sea (pink at the waterline,
+  violet overhead, teal under the line) with the file's cloud strip laid over
+  as luminance; its normals point INWARD, so it is FrontSide from where you
+  stand. The sea is the one material rewritten — a transmission plane whose
+  whole look is what a refracting renderer puts through it — as translucent
+  turquoise over the file's own caustic seabed; the seabed shipped with a
+  violet emissive at strength ten, which was the one thing in the file that
+  could not have been meant. Every material ships as BLEND (the bunker's
+  lamp housings again): opaque with a cutout for the rock and the timber.
+- **THE WALK IS STOREYED.** A keep has a ground floor, a hall over it and a
+  roof walk over that, and its pier stands over open water — one floor per
+  cell cannot say any of it. Every cell carries EVERY floor it has, as
+  `[floor, solid, roof]` triples, and `keepStandAt` answers the floor
+  nearest under your feet: no more than a step above (0.62, the cave's own),
+  no more than a drop below (1.3). A cell with no floor at your level is a
+  wall or the pier's edge — the move keeps whichever axis is clear or
+  reverts — so nothing here can drop you into the sea. The island has an
+  UNDERSIDE, so `--floor-min` throws away every sample under the sea before
+  a floor is chosen; and a stair that turns back under itself has the flight
+  above for a roof, so the roof rides in the triple and the camera ducks
+  under it the way the tunnel's does.
+- **THE MODEL'S WAY UP IS STAIRS AND LADDERS, AND A LADDER IS A VERB.**
+  Measured at the east stair: the lower flight ends at 2.0 m, the landing
+  above is at 4.4, and between them the only geometry is a face at eighty
+  degrees. The tower's levels are joined the same way, by two, four and five
+  and a half metres at a time — a minimax over the grid put the cheapest
+  route to the plateau at a 5.98 m rise, so no step allowance and no jump
+  reaches it. Face a free storey within `KEEP_CLIMB` above you (or a drop
+  beyond `KEEP_DROP`) and the crosshair says `E Climb`; the camera rides the
+  height at a climber's pace with a rung underfoot every half second and
+  goes over onto the ledge last. It is offered at the rock's ledges too,
+  because the island is a thing you climb about on as much as walk.
+- **AND THE BODY IS THE BUNKER'S.** At the beach's 0.40 a flood over the
+  grid reached 9,604 cells and 10.8 m — a stylised stair is a body's width
+  between its walls; at `KEEP_BODY` 0.26 it reaches 41,864 and the plateau.
+  Measured hands-off with the game's own movement: the pier's end to the
+  crow's nest at 31.8 m in 5,048 ticks, ZERO stalls, 46 climbs.
+- The moored boat is a CLONE of the dock's Boat mesh, so it is the same boat
+  by construction — with its own material, because the beach copy's night
+  lift rendered white under a sunset. `Material.clone` drops the lift, which
+  is exactly what was wanted.
+- The pack: `tools/undercroft_pack.py keep "$HOME/Downloads/fantasy_sea_keep/scene.gltf"
+  assets/keep.glb --tex 2048 --scale 0.1 --floor-min -0.9 --headroom 0.95`
+  (PIL in a venv, as for the church). 0.1 is measured off the model: a
+  45-unit pier, stair rises of one to two and a half units, a 377-unit tower
+  — 4.5 m, 10–25 cm and 38 m. The source is in ~/Downloads and that folder
+  is cleared; it belongs beside the others in `~/Desktop/BEACHWALK ASSETS/`.
