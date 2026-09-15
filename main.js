@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeHorseshoeCrab, makeHorseshoeCrabIcon } from './models/horseshoe-crab.js';
 import { makeSyringe, makeSyringeIcon } from './models/syringe.js';
-import { makeBloodJar } from './models/blood-jar.js';
+import { makeBloodJar, makeBloodJarIcon } from './models/blood-jar.js';
 import { makeDrainageTunnelHome } from './models/drainage-tunnel-home.js';
 import { makeWaterBottle, makeWaterBottleIcon } from './models/water-bottle.js';
 import { makeShipwreck } from './models/shipwreck.js';
@@ -4998,13 +4998,15 @@ function updateHover() {
     const lbl = typeof best.label === 'function' ? best.label() : best.label;
     const br = typeof best.bare === 'function' ? best.bare() : best.bare;
     setPrompt(br ? lbl : kbd('E') + lbl, best.mid);
+  } else if (canWearHeld(equipped)) {
+    crosshair.className = 'active';
+    setPrompt(kbd('LMB') + 'Put it on');
   } else if (equipped && equipped.onListen && !listening) {
     crosshair.className = 'active';
     setPrompt(kbd('LMB') + 'Hold it to your ear');
   } else if (equipped && equipped.onPull) {
     crosshair.className = 'active';
-    setPrompt(kbd('LMB') + 'Pull the key out of his mouth'
-      + ' &nbsp;&nbsp; ' + kbd('G') + 'Drop');
+    setPrompt(kbd('LMB') + 'Pull the key out of his mouth');
   } else if (equipped && equipped.onDig && digT <= 0
              && crosshairGroundPoint(winding ? DIG_REACH + DIG_HEAVY_REACH : DIG_REACH)) {
     const onMound = !inWater(_digHit.x, _digHit.z) && moundAt(_digHit.x, _digHit.z);
@@ -5014,11 +5016,15 @@ function updateHover() {
      * left one, and holding sprint with it turns the swing overhead. */
     setPrompt(kbd('LMB') + (onMound ? 'Dig up the mound' : 'Dig here')
       + ' &nbsp;&nbsp; ' + kbd('Hold LMB') + 'Heavy'
-      + ' &nbsp;&nbsp; ' + kbd('Shift') + '+ hold: overhead'
-      + ' &nbsp;&nbsp; ' + kbd('G') + 'Drop');
+      + ' &nbsp;&nbsp; ' + kbd('Shift') + '+ hold: overhead');
   } else if (equipped) {
+    /* AND "G DROP" IS NOT A PROMPT. A prompt says what the thing you are
+     * LOOKING AT will do; this said what a key does, and it said it on every
+     * frame you had anything in your hand, which is most of the game. It was
+     * the one piece of text on the screen that never changed and never
+     * needed reading. G still drops; it is in the controls sheet. */
     crosshair.className = '';
-    setPrompt(kbd('G') + 'Drop ' + (equipped.name || 'item').toLowerCase());
+    setPrompt('');
   } else {
     crosshair.className = '';
     setPrompt('');
@@ -5042,6 +5048,7 @@ function primaryAction() {                       // E / F
     else if (hovered.onActivate) hovered.onActivate();
     return;
   }
+  if (canWearHeld(equipped)) { wearRing(equipped); return; }
   if (equipped && equipped.onListen) listenToShell();
   if (equipped && equipped.onDrink) drinkWater();
   if (equipped && equipped.onPull) equipped.onPull();
@@ -5068,6 +5075,7 @@ function attackAction() {                        // left mouse
     }
     return;
   }
+  if (canWearHeld(equipped)) { wearRing(equipped); return; }
   if (equipped && equipped.onListen) { listenToShell(); return; }
   if (equipped && equipped.onDrink) { drinkWater(); return; }
   if (equipped && equipped.onPull) { equipped.onPull(); return; }
@@ -5442,9 +5450,19 @@ function dropPoint() {
   _dropRay.setFromCamera({ x: 0, y: 0 }, camera);
   _dropRay.far = 3.0;
   const targets = dropTargets().filter(Boolean);
+  /* AND A MOTE IS NOT A SURFACE. This is the whole of "things float when I
+   * drop them in the church": the undercroft drifts dust as a `Points` batch
+   * and stands its candle flames in another, both of them in the air right
+   * in front of your face, and a `Points` intersection carries NO `face` —
+   * so the ray stopped on a speck 0.78 m out, the "is this a wall" test
+   * below skipped for want of a normal, and the item was set down at the
+   * height of the mote, which is chest height. Measured: a syringe dropped
+   * in the nave rested at y 401.30 against a floor at 399.93, a metre and a
+   * third in the air. Only a MESH TRIANGLE is a place to put something
+   * down; everything else the ray can reach is weather. */
   const hits = targets.length
     ? _dropRay.intersectObjects(targets, true)
-        .filter((h) => h.object.name !== 'hitProxy' && h.object.visible)
+        .filter((h) => h.object.isMesh && h.face && h.object.name !== 'hitProxy' && h.object.visible)
     : [];
   if (hits.length) {
     _dropPt.copy(hits[0].point);
@@ -5723,22 +5741,29 @@ const RING_SLOTS = 2;
 const rings = [];
 let ringsFound = false;
 const ringsEl = document.getElementById('rings');
-const ringSlotsEl = ringsEl.querySelector('.rslots');
+/* TWO PLACES SHOW THE SAME TWO SLOTS: the strip under the hotbar, which is
+ * what you glance at while you walk, and the pack, which is where you go to
+ * look at your things and which did not show them at all. One loop fills
+ * both, so a ring cannot be on one finger in one of them. */
+const ringSlotEls = [ringsEl.querySelector('.rslots'),
+                     document.querySelector('#pack-rings .rslots')].filter(Boolean);
 function renderRings() {
-  ringSlotsEl.innerHTML = '';
-  for (let i = 0; i < RING_SLOTS; i++) {
-    const item = rings[i];
-    const slot = document.createElement('div');
-    slot.className = 'rslot' + (item ? ' worn' : ' empty');
-    if (item) {
-      slot.innerHTML = iconHTML(item);
-      const lab = document.createElement('span');
-      lab.className = 'label';
-      lab.textContent = item.name + ' — take off';
-      slot.appendChild(lab);
-      slot.addEventListener('click', (e) => { e.stopPropagation(); takeOffRing(i); });
+  for (const host of ringSlotEls) {
+    host.innerHTML = '';
+    for (let i = 0; i < RING_SLOTS; i++) {
+      const item = rings[i];
+      const slot = document.createElement('div');
+      slot.className = 'rslot' + (item ? ' worn' : ' empty');
+      if (item) {
+        slot.innerHTML = iconHTML(item);
+        const lab = document.createElement('span');
+        lab.className = 'label';
+        lab.textContent = item.name + ' — take off';
+        slot.appendChild(lab);
+        slot.addEventListener('click', (e) => { e.stopPropagation(); takeOffRing(i); });
+      }
+      host.appendChild(slot);
     }
-    ringSlotsEl.appendChild(slot);
   }
   refreshUI();
 }
@@ -5752,6 +5777,14 @@ function wearRing(item) {
   sfxRingOn();
   return true;
 }
+/* AND A RING IN YOUR HAND GOES ON YOUR HAND. Putting one on was only ever
+ * reachable from the examine screen, on the argument that that is where you
+ * can see what you are wearing — true, and it also meant the one gesture
+ * everybody tries first, holding the thing up and pressing the button, did
+ * nothing at all. It is the shell's own `onListen` door: a held ring answers
+ * the primary action, and `updateHover` says so. Asked of the ITEM rather
+ * than of `ringItem`, so the next ring inherits it. */
+const canWearHeld = (it) => !!it && !!it.ring && !rings.includes(it) && rings.length < RING_SLOTS;
 function takeOffRing(i) {
   const item = rings[i];
   if (!item || inventory.length >= INV_MAX) return;
@@ -5923,9 +5956,14 @@ setInterval(() => {
   iconsPending = stillWaiting;
   if (ready) { renderHotbar(); if (invOpen) renderPack(); }
 }, 600);
+/* AND A STACK SAYS HOW MANY. `iconHTML` is the ONE door every slot goes
+ * through — the hotbar, the pack grid and the ring row all call it — so an
+ * item carrying a `count` shows it in all three by construction rather than
+ * by three loops remembering to. Only past one: a lone jar is a jar. */
 const iconHTML = (item) => {
   const src = itemIcon(item);
-  return src.startsWith('data:') ? `<img src="${src}" alt="">` : src;
+  const icon = src.startsWith('data:') ? `<img src="${src}" alt="">` : src;
+  return icon + (item.count > 1 ? `<span class="count">${item.count}</span>` : '');
 };
 /* The wheel walks the hotbar. Scroll down is the next thing in the strip,
  * up is the previous, wrapping — and it EQUIPS, because everything can be
@@ -7353,7 +7391,7 @@ function updateKatanaShine(dt) {
 }
 toolMount.add(katanaVM);
 const katanaItem = {
-  name: 'Katana', icon: makeKatanaIcon(), onDig: true, viewmodel: katanaVM,
+  name: 'Katana', desc: 'A Holy Blade', icon: makeKatanaIcon(), onDig: true, viewmodel: katanaVM,
   inspectModel: katInspect, lip: KAT_LIP,
   blade: true, dmgLight: 2, dmgHeavy: 3, windRate: 1.3, gore: 1.4, swingK: 0.9, recoverK: 4.0, glintSpan: 0.60, alternate: true,
   use: () => toggleEquip(katanaItem),
@@ -9145,9 +9183,19 @@ syringeWorld.rotation.set(0.1, 1.1, 0.5);
 
 let syringeTaken = false;
 const bloodJar = makeBloodJar();
-// The jar is never carried — it only exists as the model shown at the end
-// of an extraction, and as the running tally in the corner of the screen.
-const jarItem = null;
+/* AND THE JARS ARE CARRIED, AND THEY STACK. For a long time a jar was only
+ * ever two things — the model shown at the end of an extraction, and a
+ * number in the corner — so the one object in this game you collect more
+ * than one of was the one object you could not find in your own pack. It is
+ * an ITEM now, and because it is the same item object every time, `count` is
+ * the whole of stacking: `addToInventory` already refuses a duplicate by
+ * identity, so a second jar lands on the first instead of taking a slot. */
+const jarItem = {
+  id: 'bloodjar', name: 'Blood Jar', icon: makeBloodJarIcon(), count: 0,
+  desc: '120 mL of horseshoe-crab haemolymph',
+  use: () => toggleEquip(jarItem),
+};
+holdable(jarItem, bloodJar, { scale: 2.1, pos: [0, -0.04, 0], rot: [0.12, 0.45, 0.06] });
 const syringeItem = {
   id: 'syringe', name: 'Bleeding syringe', icon: makeSyringeIcon(),
   use: () => {
@@ -10762,7 +10810,7 @@ hudJarPivot.add(hudJar);
 let jarSpin = 0, bloodPulse = 0;
 function updateBloodReadout() {
   bloodAmtEl.textContent = String(bloodJars);
-  if (bloodUnitEl) bloodUnitEl.textContent = bloodJars === 1 ? 'jar' : 'jars';
+  if (bloodUnitEl) bloodUnitEl.textContent = bloodJars === 1 ? 'Blood Jar' : 'Blood Jars';
 }
 /* ONE DOOR, because there are two ways to come by a jar now — bleeding the
  * crab yourself, and the one somebody left in the first cache — and a tally
@@ -10772,9 +10820,19 @@ function gainJar(n = 1) {
   bloodSeen = true;
   bloodPulse = 1;
   hudJar.userData.setFill(0.86);       // a jar is a jar: the icon is always full
+  /* AND IT GOES IN THE PACK. The tally and the slot are the same number, so
+   * they are written in the same place: `count` first, THEN the add, because
+   * `renderHotbar`/`renderPack` draw the badge off it. A jar already in the
+   * pack simply has a bigger number on it — `addToInventory` refuses the
+   * duplicate by identity and returns true, which is exactly the behaviour a
+   * stack wants out of it. */
+  jarItem.count = bloodJars;
+  addToInventory(jarItem);
+  renderHotbar(); renderPack();
   updateBloodReadout();
   sfxBloodGained();
 }
+
 function renderBloodJar(dt) {
   if (!bloodSeen || !bloodEl.classList.contains('show')) return;
   jarSpin += dt * 1.1;
@@ -11230,76 +11288,49 @@ const ring = new THREE.Group();
 const ringWorld = new THREE.Group();
 ringWorld.add(ring);
 bwGlb('assets/octopus-ring.glb', (gltf) => {
+  /* THE SCAN, WHOLE. Every earlier build of this took the model apart in one
+   * way or another — first one of its seven CHUNKS as if the split were an
+   * LOD chain (7,165 of 400,540 triangles, which renders as a cloud of
+   * specks), then `--decimate` down to 45,000, which welds rather than
+   * shreds but throws the NORMALS away and leaves a surface with no uv, so
+   * the metal had to come from Poly Haven's rust on a triplanar projection.
+   * The owner's word is to scrap all of that and ship what Sketchfab ships.
+   *
+   * So this is Thunk3D's file untouched: all 400,540 triangles across its
+   * own seven meshes, its own per-vertex NORMALS — which is the whole reason
+   * it reads as a sculpted animal rather than a bag of facets — and its own
+   * material, which carries no map of any kind (measured on the source: no
+   * images, no textures, no TEXCOORD, no COLOR_0; one material at metallic
+   * 0, roughness 0.6). There is nothing to project because there was never
+   * anything to project ONTO, and inventing rust for it was the liberty.
+   * It costs 12.3 MB and it is at the back of `ASSET_REACH`, because you
+   * take it off a knight at the end of a church.
+   *
+   * What it does need is this beach's own night. A white rough dielectric
+   * under one quarter moon is a pale grey blob, so it is graded the way
+   * every other scan here is graded — the map's own level brought to dark
+   * metal and an emissive lift that is the only thing carrying the face you
+   * are walking toward, since you walk INTO the moon and every surface
+   * ahead of you is backlit. METALNESS STAYS AT ZERO: the source says so,
+   * and this game has no environment map. */
   gltf.scene.updateMatrixWorld(true);
-  /* RUSTED IRON, and the texture is projected, not mapped. The scan has no
-   * UVs — it is a raw STL, and an STL cannot carry them — so Poly Haven's
-   * "Rusty Metal 02" (assets/rust-diff.jpg, rust-rough.jpg, cut to 512 and
-   * 256) goes on TRIPLANAR: sampled three times in the ring's own object
-   * space, along each axis, and blended by the face normal. No seams, no
-   * unwrap, and it follows every pit in the scan. `uTri` is the tiling — the
-   * geometry is ~28 units across, so 0.062 puts about two repeats round it,
-   * which is the scale at which the rust reads as rust and not as noise.
-   *
-   * DoubleSide because a raw STL's winding cannot be relied on, and low
-   * metalness because there is no environment map here and a true metal
-   * has no diffuse — at 0.6 the ring is a scatter of lit specks on black.
-   * The emissive is multiplied by the same sample, so the lift that keeps it
-   * visible on dark sand follows the rust instead of flattening it.
-   *
-   * The blend normal comes from screen derivatives of the object-space
-   * position, NOT from the normal attribute: the decimated pack carries only
-   * positions and indices, so `normal` reads as zero, the three weights sum
-   * to nothing, and every sample is black — the ring rendered as a cut-out.
-   * Flat shading never noticed, because three derives its lighting normal
-   * the same way; the projection has to as well. */
-  const rustDiff = retroTex(new THREE.TextureLoader().load('assets/rust-diff.jpg'));
-  rustDiff.colorSpace = THREE.SRGBColorSpace;
-  const rustRough = retroTex(new THREE.TextureLoader().load('assets/rust-rough.jpg'));
-  /* AND THE LEVEL HAD NEVER BEEN LOOKED AT, BECAUSE THERE WAS NOTHING TO
-   * LOOK AT. A near-white base under an orange rust map with an orange
-   * emissive lift over the top is only a colour choice if the surface it
-   * lands on is visible — and for months this was two per cent of a scan
-   * rendering as speckle, so nobody could see what it was doing. With the
-   * whole octopus finally on the screen it measured (168, 114, 65) on the
-   * examine lamps: bright orange batter, not metal out of the sea. Taken
-   * to (85, 59, 36) it is corroded bronze with the rust still reading in
-   * the pits, and the pits are the whole point of a 45,000-triangle scan.
-   * The glint is what finds it on dark sand, not the lift. */
-  const iron = new THREE.MeshStandardMaterial({
-    color: 0x7b6e5e, map: rustDiff, roughnessMap: rustRough, roughness: 1.0, metalness: 0.14,
-    emissive: 0x46301c, side: THREE.DoubleSide, flatShading: true,
+  const metal = new THREE.MeshStandardMaterial({
+    color: 0x6f6a63, roughness: 0.6, metalness: 0,
+    emissive: 0x2a2620, emissiveIntensity: 1, side: THREE.DoubleSide,
   });
-  iron.onBeforeCompile = (sh) => {
-    sh.uniforms.uTri = { value: 0.062 };
-    sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTri; varying vec3 vTriP;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvTriP = position * uTri;');
-    sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>
-varying vec3 vTriP;
-vec4 triSample(sampler2D t, vec3 p, vec3 n) {
-  vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y + w.z + 1e-4);
-  return texture2D(t, p.yz) * w.x + texture2D(t, p.xz) * w.y + texture2D(t, p.xy) * w.z;
-}`)
-      .replace('#include <map_fragment>',
-        'vec3 triN = normalize(cross(dFdx(vTriP), dFdy(vTriP)));\n  vec4 triCol = triSample(map, vTriP, triN);\n  diffuseColor *= triCol;')
-      .replace('#include <roughnessmap_fragment>',
-        'float roughnessFactor = roughness * triSample(roughnessMap, vTriP, triN).g;')
-      .replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance *= triCol.rgb * 1.8;');
-  };
-  let geo = null;
-  gltf.scene.traverse((o) => { if (o.isMesh && !geo) geo = o.geometry.clone().applyMatrix4(o.matrixWorld); });
-  if (!geo) return;
-  // the scan arrives ~30 units across and centred on nothing in particular:
-  // recentre it and fit it to a ring you could actually wear
-  geo.computeBoundingBox();
-  const bb = geo.boundingBox, size = bb.getSize(new THREE.Vector3()), mid = bb.getCenter(new THREE.Vector3());
-  geo.translate(-mid.x, -mid.y, -mid.z);
-  // USE_MAP wants a uv attribute even though the projection never reads it
-  geo.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2));
-  const m = new THREE.Mesh(geo, iron);
-  m.scale.setScalar(0.055 / Math.max(size.x, size.y, size.z));   // big enough to spot on dark sand
-  ring.add(m);
+  const box = new THREE.Box3().setFromObject(gltf.scene);
+  const size = box.getSize(new THREE.Vector3()), mid = box.getCenter(new THREE.Vector3());
+  const k = 0.055 / Math.max(size.x, size.y, size.z);   // big enough to spot on dark sand
+  /* The seven meshes are kept as seven meshes — they are chunks of one
+   * surface, so merging them would be exact and would also mean rebuilding
+   * buffers this file has no reason to touch. They are re-centred as a
+   * GROUP, which is the only way to keep them in register with each other. */
+  const inner = new THREE.Group();
+  gltf.scene.traverse((o) => { if (o.isMesh) o.material = metal; });
+  inner.add(gltf.scene);
+  gltf.scene.position.sub(mid);
+  inner.scale.setScalar(k);
+  ring.add(inner);
 });
 const ringItem = {
   id: 'ring', name: 'The Octopus Ring', icon: makeRingIcon(), ring: true,
@@ -25717,7 +25748,7 @@ function update(dt, rawDt = dt) {
    * itself gets the extra tenth, and the fill is the fraction of it. */
   const sMax = stamMax();
   staminaEl.classList.toggle('show', stamina < sMax - 0.001);
-  if (staminaEl._max !== sMax) { staminaEl._max = sMax; staminaEl.style.width = (150 * sMax).toFixed(1) + 'px'; }
+  if (staminaEl._max !== sMax) { staminaEl._max = sMax; staminaEl.style.width = (240 * sMax).toFixed(1) + 'px'; }
   staminaFill.style.transform = `scaleX(${Math.max(0, stamina / sMax)})`;
   staminaFill.classList.toggle('low', exhausted);
 
@@ -25959,6 +25990,9 @@ function beginRestore() {
   bloodJars = f.jars != null ? f.jars : (f.blood ? 1 : 0);
   bloodSeen = !!f.bloodSeen;
   if (bloodSeen) { hudJar.userData.setFill(0.86); updateBloodReadout(); }
+  // and the jars come back as a stack, not as a number with no slot under it
+  jarItem.count = bloodJars;
+  if (bloodJars > 0) { addToInventory(jarItem); renderHotbar(); renderPack(); }
   for (const i of d.mounds || []) if (mounds[i] && !mounds[i].taken) revealMoundNear(mounds[i].x, mounds[i].z);
   /* THE THREE AT THE DOCK ARE BEHIND YOU. Their cutscene fires on your Z
    * alone, and the pavilion is three hundred metres past it — so a restore

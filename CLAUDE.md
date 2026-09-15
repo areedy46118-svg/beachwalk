@@ -8767,3 +8767,82 @@ by somebody remembering. Measured: every computed property identical on
 both, badge included. The strip is wider for it (564 px at the longest
 label, "Take the Military Shovel") and still centred inside any real
 window; only a pane under about 570 px reaches the edges.
+
+**THE OCTOPUS RING IS THE SKETCHFAB FILE, UNTOUCHED.** Every earlier build
+took this model apart: first ONE of its seven chunks as if the split were an
+LOD chain (7,165 of 400,540 triangles, a cloud of specks), then
+`--decimate 45000`, which welds rather than shreds and is still not the
+model — vertex clustering keeps positions and indices, so it threw the
+NORMALS away, and with no normals and no uv the metal had to be invented:
+Poly Haven's rust on a triplanar projection, with a level nobody could judge
+because there had never been a surface to judge it on. The owner's word was
+to scrap all of it. So it ships whole — 400,540 triangles across its own
+seven meshes, its own per-vertex normals, and its own material. **There was
+never anything to project onto**: measured on the source, no images, no
+textures, no TEXCOORD and no COLOR_0, one material at metallic 0 roughness
+0.6. The rust was a liberty taken to fill a gap the decimation had made.
+12.3 MB, at the back of `ASSET_REACH`. **And it is cheap to draw**: with the
+whole octopus filling the screen at 25 cm the frame carries 430,496
+triangles against 29,956 and the render call goes 0.69 ms to 0.95 — a
+quarter of a millisecond, in seven draws. Triangles were never this game's
+problem; draw calls and shader programs were.
+
+**A STACK IS ONE ITEM WITH A COUNT, AND `iconHTML` IS WHERE IT SHOWS.** The
+one object in this game you collect more than one of was the one object you
+could not find in your own pack: a jar was a model at the end of an
+extraction and a number in the corner, and `jarItem` was literally `null`.
+It is an item now, and because it is the SAME item object every time,
+`count` is the whole of stacking — `addToInventory` has refused a duplicate
+by identity since the day a ring appeared twice, so a second jar lands on
+the first instead of taking a slot. The badge goes on `iconHTML`, which is
+the one door the hotbar, the pack grid and the ring row all draw through, so
+all three show it by construction. `gainJar` writes the count BEFORE the
+add, because the render reads it.
+
+**AND THE CORNER NAMES WHAT IT COUNTS, IN THE GAME'S OWN HAND.** It read a
+monospace number and a small dim "jars" — a different voice from every other
+piece of text on the screen, and the thing it counted was never named. "1
+BLOOD JAR" in the prompt's Georgia, letter-spaced, uppercase and white.
+
+**"G DROP" WAS NOT A PROMPT.** A prompt says what the thing you are LOOKING
+AT will do. This said what a key does, on every frame you had anything in
+your hand, which is most of the game — the one piece of text on the screen
+that never changed and never needed reading. G still drops; the controls
+sheet still says so.
+
+**AND THE BAR YOU SPEND IS AT THE BOTTOM, ON ITS OWN CENTRE.** Two things.
+It was four pixels of ten-per-cent white at a quarter opacity — a scratch,
+for the meter the block, the sprint and the step all come out of; it is
+eight pixels with a visible track and a hairline, and never below half. And
+the PROMPT has left the strip: a flex row centred as a whole is re-centred
+by whatever is widest in it, so every label that came up shoved the bar
+sideways, which is the one element that has to be in the same place every
+time. It sits above the strip on its own centre — and it can be
+`position: fixed` out there and could not in there, because an ancestor with
+a `transform` contains a fixed child, the same trap `#promptmid` already
+carries a comment about.
+
+**WHAT A THING DOES IS NOT A FOOTNOTE.** "10% Stamina Increase" was 0.62rem
+and half-transparent under a name twice its size — the one line on the
+screen carrying a mechanic and the easiest to miss on it. Body size, white,
+and ruled off above and below so the eye stops on it; the examine screen's
+copy went the same way. The katana reads "A Holy Blade".
+
+**AND A RING IN YOUR HAND GOES ON YOUR HAND.** Putting one on was only ever
+reachable from the examine screen, on the argument that that is where you
+can see what you are wearing — true, and it also meant the gesture everybody
+tries first, holding the thing up and pressing the button, did nothing.
+`canWearHeld` is the shell's own `onListen` door and is asked of the ITEM,
+so the next ring inherits it. The pack shows the ring slots too, drawn by
+the same `renderRings` into both hosts so they cannot drift.
+
+**"THINGS FLOAT WHEN I DROP THEM IN THE CHURCH" WAS THE DUST.** The
+undercroft drifts motes as a `Points` batch and stands its candle flames in
+another, both of them in the air in front of your face — and a `Points`
+intersection carries NO `face`. So `dropPoint`'s ray stopped on a speck
+0.78 m out, the "is this a wall, or a floor" test below skipped for want of
+a normal, and the item was set down at the height of the mote. Measured: a
+syringe rested at y 401.30 against a floor at 399.93, a metre and a third in
+the air. **Only a mesh triangle is a place to put something down**;
+everything else a ray can reach down there is weather. After: 4 cm off the
+floor at every pitch.

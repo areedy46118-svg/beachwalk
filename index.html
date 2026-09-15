@@ -241,13 +241,19 @@
     z-index: 5;
     pointer-events: none;
   }
+  /* THE BAR IS THE THING YOU SPEND, SO IT HAS TO BE THERE. Four pixels of
+     ten-per-cent white at a quarter opacity is a scratch on the bottom of
+     the screen, and everything that matters in a fight — the block, the
+     sprint, the step out of the way — comes out of it. Eight pixels, a
+     visible track, a hairline round it, and it never falls below half. */
   #stamina {
-    width: 150px;
-    height: 4px;
-    background: rgba(255, 255, 255, 0.10);
-    border-radius: 2px;
+    width: 240px;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.14);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.30);
+    border-radius: 4px;
     overflow: hidden;
-    opacity: 0.25;
+    opacity: 0.55;
     transition: opacity 0.35s ease;
     flex: none;
   }
@@ -425,6 +431,14 @@
    * beside the stamina bar is right for picking a shell up and wrong for the
    * mouth of a cave — the owner walked into it and never saw it. An
    * interactable with `mid` puts its prompt under the crosshair. */
+  #prompt {
+    position: fixed;
+    left: 50%;
+    bottom: 3.5rem;
+    transform: translateX(-50%);
+    pointer-events: none;
+    z-index: 6;
+  }
   #promptmid {
     position: fixed;
     left: 50%; top: 54%;
@@ -736,14 +750,68 @@
   }
   #blood.show { display: flex; }
   #blood #blood-jar { width: 52px; height: 52px; flex: none; }
+  /* AND IT READS "1 BLOOD JAR", IN THE PROMPT'S OWN TYPE. It was a monospace
+     number and a small dim unit — a different voice from every other piece
+     of text the game puts in front of you — and what it counted was not
+     named. Georgia, letter-spaced, uppercase and white is the hand E is
+     written in, and this is the same game speaking. */
   #blood .amt {
-    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-    font-size: 0.9rem;
-    letter-spacing: 0.08em;
-    color: #9fe4f5;
-    text-shadow: 0 0 10px rgba(80, 190, 225, 0.5), 0 1px 5px rgba(0, 0, 0, 0.95);
+    font-family: "Georgia", serif;
+    font-size: 1.02rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #ffffff;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 1), 0 0 26px rgba(0, 0, 0, 0.9);
   }
-  #blood .amt .unit { font-size: 0.66rem; opacity: 0.6; margin-left: 2px; }
+  #blood .amt .unit { margin-left: 0.5em; }
+
+  /* A STACK'S COUNT, on whichever slot the icon was drawn into — the hotbar,
+     the pack grid or a ring. Bottom right, over the icon, in the HUD's own
+     square monospace so it reads as a quantity and not as a label. */
+  .slot .count, .islot .count, .rslot .count {
+    position: absolute;
+    right: 3px;
+    bottom: 2px;
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.02em;
+    color: #ffffff;
+    text-shadow: 0 1px 4px #000, 0 0 8px #000;
+    pointer-events: none;
+  }
+
+  /* the pack's own copy of the ring row, under the grid */
+  #invpanel .rings {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 0.9rem 0 0.2rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.16);
+    margin-top: 0.9rem;
+  }
+  #invpanel .rings .rlabel {
+    font-size: 0.6rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.55);
+  }
+  #invpanel .rings .rslots { display: flex; gap: 8px; }
+  #invpanel .rings .rslot {
+    position: relative;
+    width: 40px;
+    height: 40px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  #invpanel .rings .rslot.worn { border-color: rgba(255, 255, 255, 0.75); cursor: pointer; }
+  #invpanel .rings .rslot.empty { opacity: 0.3; }
+  #invpanel .rings .rslot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  #invpanel .rings .rslot .label { display: none; }
 
   /* THE PACK — Tab. Black and white and one hairline, like the dialogue:
      a grid of ten square slots, and beside it a pane for the selected item
@@ -892,13 +960,22 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  /* WHAT A THING DOES IS NOT A FOOTNOTE. At 0.62rem and half-transparent
+     under a name twice its size, "10% Stamina Increase" was the one line on
+     the screen carrying a mechanic and the easiest to miss on it. It is the
+     size of the body text now, white, and RULED off above and below so the
+     eye stops on it. */
   #invpanel .detail .desc {
-    font-size: 0.62rem;
-    letter-spacing: 0.14em;
+    font-size: 0.8rem;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.5);
-    margin: -0.35rem 0 0.55rem;
+    color: #ffffff;
+    margin: -0.1rem 0 0.8rem;
+    padding: 0.42rem 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.28);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.28);
     text-align: center;
+    text-shadow: 0 0 14px rgba(255, 255, 255, 0.22);
   }
   #invpanel .detail .act {
     font: inherit;
@@ -996,11 +1073,11 @@
     top: 4.6rem;
     transform: translateX(-50%);
     font-family: "Georgia", "Times New Roman", serif;
-    font-size: 0.78rem;
+    font-size: 0.95rem;
     letter-spacing: 0.22em;
     text-transform: uppercase;
-    color: rgba(196, 214, 244, 0.62);
-    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.95);
+    color: #ffffff;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.95), 0 0 22px rgba(255, 255, 255, 0.2);
     white-space: nowrap;
     pointer-events: none;
   }
@@ -1156,10 +1233,17 @@
        strip the middle prompt rendered at the bottom of the screen. -->
   <div id="promptmid"></div>
 
+  <!-- AND THE PROMPT IS NOT IN THE ROW ANY MORE. A flex row centred as a
+       whole is re-centred by whatever is widest in it, so every label that
+       came up shoved the stamina bar sideways — the one element that has to
+       be in the same place every time. It sits above the strip on its own
+       centre now. It can be `position: fixed` out here and could not in
+       there: an ancestor with a `transform` contains a fixed child, which is
+       the same trap the middle prompt already carries a comment about. -->
+  <div id="prompt"></div>
   <div id="hud">
     <div id="stamina"><div id="stamina-fill"></div></div>
     <div id="fastwalk">FAST</div>
-    <div id="prompt"></div>
   </div>
   <div id="health"><i></i><i></i><i></i><i></i></div>
   <div id="autosave">
@@ -1186,6 +1270,15 @@
       <div class="body">
         <div class="grid" id="inv-grid"></div>
         <div class="detail empty" id="inv-detail"></div>
+      </div>
+      <!-- WHAT YOU ARE WEARING BELONGS WITH WHAT YOU ARE CARRYING. The ring
+           slots live under the hotbar, which is where you glance at them
+           mid-walk — and the pack is where you go to look at your things,
+           and it did not show them at all. The same two slots, drawn by the
+           same `renderRings` into both, so they cannot drift. -->
+      <div class="rings" id="pack-rings">
+        <span class="rlabel">Rings</span>
+        <div class="rslots"></div>
       </div>
       <div class="tip">
         <span><b>Click</b> select</span>
