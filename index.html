@@ -757,13 +757,12 @@
      written in, and this is the same game speaking. */
   #blood .amt {
     font-family: "Georgia", serif;
-    font-size: 1.02rem;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: #ffffff;
-    text-shadow: 0 2px 12px rgba(0, 0, 0, 1), 0 0 26px rgba(0, 0, 0, 0.9);
+    font-size: 1.3rem;
+    letter-spacing: 0.1em;
+    color: #5fa8ff;
+    text-shadow: 0 0 14px rgba(70, 150, 255, 0.55), 0 2px 10px rgba(0, 0, 0, 1);
   }
-  #blood .amt .unit { margin-left: 0.5em; }
+  #blood .amt .unit { display: none; }
 
   /* A STACK'S COUNT, on whichever slot the icon was drawn into — the hotbar,
      the pack grid or a ring. Bottom right, over the icon, in the HUD's own
@@ -781,25 +780,29 @@
   }
 
   /* the pack's own copy of the ring row, under the grid */
+  /* RINGS ARE A SECTION OF THE PACK, not a line under it. What you are
+     WEARING is half of what you are carrying, and at 40 px in a corner it
+     read as an afterthought beside slots twice the size. Its own heading,
+     its own rule, and slots big enough to see the ring on. */
   #invpanel .rings {
     display: flex;
     align-items: center;
-    gap: 0.9rem;
-    padding: 0.9rem 0 0.2rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.16);
-    margin-top: 0.9rem;
+    gap: 1.6rem;
+    padding: 1.4rem 0 0.4rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.28);
+    margin-top: 1.4rem;
   }
   #invpanel .rings .rlabel {
-    font-size: 0.6rem;
-    letter-spacing: 0.3em;
+    font-size: 0.9rem;
+    letter-spacing: 0.34em;
     text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.55);
+    color: #ffffff;
   }
-  #invpanel .rings .rslots { display: flex; gap: 8px; }
+  #invpanel .rings .rslots { display: flex; gap: 12px; }
   #invpanel .rings .rslot {
     position: relative;
-    width: 40px;
-    height: 40px;
+    width: 84px;
+    height: 84px;
     border: 1px solid rgba(255, 255, 255, 0.22);
     border-radius: 50%;
     background: rgba(0, 0, 0, 0.55);
@@ -834,11 +837,16 @@
     -webkit-font-smoothing: antialiased;
   }
   #invpanel.show { opacity: 1; pointer-events: auto; }
+  /* AND THE PACK FILLS THE SCREEN IT IS ON. At 880 px it was a band across
+     the middle of a 2560-wide display with most of the picture left over,
+     so the slots you are meant to read were small on the one screen that
+     is nothing but them. It takes the width it can get and the detail pane
+     grows with it. */
   #invpanel .panel {
-    width: min(94vw, 880px);
+    width: min(94vw, 1280px);
     border-top: 1px solid rgba(255, 255, 255, 0.3);
     border-bottom: 1px solid rgba(255, 255, 255, 0.3);
-    padding: 1.1rem 0 1.0rem;
+    padding: 1.5rem 0 1.3rem;
   }
   #invpanel .head {
     display: flex;
@@ -861,14 +869,14 @@
   }
   #invpanel .body {
     display: grid;
-    grid-template-columns: 1fr 290px;
-    gap: 1.8rem;
+    grid-template-columns: 1fr minmax(290px, 26%);
+    gap: 2.2rem;
     align-items: stretch;
   }
   #invpanel .grid {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    gap: 8px;
+    gap: 12px;
     align-content: start;
   }
   #invpanel .islot {

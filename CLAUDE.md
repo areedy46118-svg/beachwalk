@@ -8846,3 +8846,38 @@ syringe rested at y 401.30 against a floor at 399.93, a metre and a third in
 the air. **Only a mesh triangle is a place to put something down**;
 everything else a ray can reach down there is weather. After: 4 cm off the
 floor at every pitch.
+
+**A SHINE IS A MARK IN THE AIR, NOT A DECORATION BOLTED ON.** The glint was
+a sprite parented to the item at a local +Y, which is the same as world up
+for everything that stands still — and is not for the one item in this game
+that TUMBLES. The ring comes off the knight as a `PhysProp` and rests at
+whatever angle it fell, so its own up can point at the floor. Measured where
+it landed in the nave: ring at y 399.942 on a floor at 399.930, glint at
+**398.573** — a metre and a third UNDERNEATH the flags, which is the owner's
+"the aura is beneath the floor". The offset is rebuilt in world up every
+frame now: take the root's own rotation out of it and divide by its SCALE,
+because `makeNoticeable` blows a 20 mm ring up by 3.2 and a local offset is
+in the root's units. Nothing static moves by a pixel; after, both sprites sit
+0.512 m over the floor whatever angle the ring came to rest at.
+
+**AND "THE RIGHT TEXTURE, LIKE THE SKETCHFAB MODEL" WAS THE MATERIAL.**
+Checked twice, in two copies of the download (the zip in ~/Downloads and the
+`octopus_ring.glb` on the Desktop): no images, no textures, no TEXCOORD, no
+COLOR_0, one material at metallic 0 and roughness 0.6, and the base colour
+left at white. So the viewer is showing a plain white PBR material on a scan
+of a pale resin print, and matching it means matching THAT — near-white, not
+the 0x6f6a63 under an orange lift the previous pass graded it to, which came
+out as tan batter. The Poly Haven rust beside it in that folder is what an
+earlier build reached for when the decimation left the model with no uv; it
+was never part of the asset.
+
+**A COUNT BESIDE A PICTURE OF A JAR DOES NOT NEED THE WORD "JAR".** The
+corner reads "2x" in the blood's own blue — the icon says what it is, and a
+label naming its own drawing is the caption on a photograph of a caption.
+
+**AND THE PACK TAKES THE SCREEN IT IS ON.** 880 px was a band across the
+middle of a wide display with most of the picture left over, on the one
+screen that is nothing but the thing you are reading: 1280, wider gaps, and
+a detail pane that grows with it. The RINGS row went from a 40 px footnote
+to its own section — its own heading, its own rule, 84 px slots — because
+what you are wearing is half of what you are carrying.

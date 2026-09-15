@@ -1341,11 +1341,32 @@ function addItemShine(root, { size = 0.55, height = 0.12, strength = 1, lift = 1
       mats.push({ m, base: m.emissive.clone() });
     }
   });
-  shinies.push({ root, glint, ghost, mats, strength, lift, through, phase: Math.random() * 6.28 });
+  shinies.push({ root, glint, ghost, mats, strength, lift, through, height, phase: Math.random() * 6.28 });
 }
+/* A SHINE IS A MARK IN THE AIR ABOVE A THING, NOT A DECORATION BOLTED TO
+ * IT. The sprite is a child of the root and sat at a local +Y — which is
+ * the same as world up for everything static, and is not for the one item
+ * in this game that TUMBLES: the ring comes off the knight as a `PhysProp`
+ * and comes to rest at whatever angle it fell, so its own up can be
+ * pointing at the floor. Measured where it landed in the nave: the ring at
+ * y 399.942 on a floor at 399.930, and its glint at 398.573 — a metre and a
+ * third UNDERNEATH the flags, which is the owner's "the aura is beneath the
+ * floor". The offset is put back into world up every frame instead: take
+ * the root's own rotation out of it, and divide by its scale, because
+ * `makeNoticeable` blows a 20 mm ring up by 3.2 and a local offset is in
+ * the root's units. Nothing static moves by a pixel. */
+const _shineUp = new THREE.Vector3(), _shineQ = new THREE.Quaternion(), _shineS = new THREE.Vector3();
 function updateShines(t) {
   for (const s of shinies) {
     if (!s.root.parent) { s.glint.material.opacity = 0; if (s.ghost) s.ghost.material.opacity = 0; continue; }
+    if (s.height) {
+      s.root.getWorldQuaternion(_shineQ).invert();
+      s.root.getWorldScale(_shineS);
+      _shineUp.set(0, s.height, 0).applyQuaternion(_shineQ);
+      _shineUp.x /= (_shineS.x || 1); _shineUp.y /= (_shineS.y || 1); _shineUp.z /= (_shineS.z || 1);
+      s.glint.position.copy(_shineUp);
+      if (s.ghost) s.ghost.position.copy(_shineUp);
+    }
     // slow breath, never fully off — a wet-shell highlight catching the moon
     const k = 0.5 + 0.5 * Math.sin(t * 1.5 + s.phase);
     s.glint.material.opacity = (0.055 + 0.075 * k) * s.strength;
@@ -1356,7 +1377,7 @@ function updateShines(t) {
       const b2 = 0.5 + 0.5 * Math.sin(t * 0.95 + s.phase * 1.7);
       s.ghost.material.opacity = (0.030 + 0.055 * b2) * s.through;
       s.ghost.scale.setScalar(s.glint.scale.x * (1.60 + 0.30 * b2));
-      s.ghost.position.y = s.glint.position.y;
+      if (!s.height) s.ghost.position.y = s.glint.position.y;
     }
     for (const { m, base } of s.mats) {
       // `lift` scales the glow on the object itself: a dark textured scan
@@ -10808,9 +10829,12 @@ hudJarPivot.add(hudJar);
   hudJar.userData.setFill(0);
 }
 let jarSpin = 0, bloodPulse = 0;
+/* A COUNT BESIDE THE JAR, AND NOTHING ELSE. The icon is a jar, so the words
+ * "blood jar" beside a picture of one were the label naming its own drawing.
+ * "1x" is what a tally reads as, and it is the blood's own blue. */
 function updateBloodReadout() {
-  bloodAmtEl.textContent = String(bloodJars);
-  if (bloodUnitEl) bloodUnitEl.textContent = bloodJars === 1 ? 'Blood Jar' : 'Blood Jars';
+  bloodAmtEl.textContent = bloodJars + 'x';
+  if (bloodUnitEl) bloodUnitEl.textContent = '';
 }
 /* ONE DOOR, because there are two ways to come by a jar now — bleeding the
  * crab yourself, and the one somebody left in the first cache — and a tally
@@ -11314,9 +11338,17 @@ bwGlb('assets/octopus-ring.glb', (gltf) => {
    * ahead of you is backlit. METALNESS STAYS AT ZERO: the source says so,
    * and this game has no environment map. */
   gltf.scene.updateMatrixWorld(true);
+  /* AND THE MATERIAL IS THE ONE IN THE FILE. There is no map to fetch — the
+   * download carries no image, no texture and no COLOR_0 — so "the right
+   * texture, like the Sketchfab model" is the material the viewer is
+   * showing: white, metallic 0, roughness 0.6, which on a scan of a pale
+   * resin print reads as bone. The build before this graded it to a brown
+   * (0x6f6a63 under an orange lift) and it came out as tan batter. It is
+   * held just off white here and lifted enough to carry under a quarter
+   * moon, which is the only liberty this beach takes with any scan. */
   const metal = new THREE.MeshStandardMaterial({
-    color: 0x6f6a63, roughness: 0.6, metalness: 0,
-    emissive: 0x2a2620, emissiveIntensity: 1, side: THREE.DoubleSide,
+    color: 0xd9d4cb, roughness: 0.6, metalness: 0,
+    emissive: 0x4a4740, emissiveIntensity: 1, side: THREE.DoubleSide,
   });
   const box = new THREE.Box3().setFromObject(gltf.scene);
   const size = box.getSize(new THREE.Vector3()), mid = box.getCenter(new THREE.Vector3());
@@ -11461,7 +11493,7 @@ function dropRing(sx = CRATE_X, sy = CRATE_H * 0.55, sz = crateZ, toss = 1.6) {
   addItemShine(ringWorld, { size: 1.3, height: 0.5, strength: 3.2, through: true });
   // and the metal itself catches the moon while it lies out here — a 20 mm
   // ring with the inspect view's emissive is invisible on night sand
-  ring.traverse((o) => { if (o.isMesh && o.material.emissive) o.material.emissive.setHex(0xe0a868); });
+  ring.traverse((o) => { if (o.isMesh && o.material.emissive) o.material.emissive.setHex(0x8e8a80); });
   addInteractable(ringWorld, 'Take the ring', 'inventory', {
     onActivate: () => {
       ringProp.dead = true;
