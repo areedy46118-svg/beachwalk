@@ -1783,10 +1783,24 @@ export function makeUndercroft(opts = {}) {
        * all see through and messed up" was. Nothing of the building is drawn
        * beyond its own wall; what floors the threshold is the cave's skin. */
       sh.uniforms.uUcClipHi = { value: mat.userData.bwClipHi ?? 1e9 };
+      /* AND TWO ROOMS THAT MEET IN A DOORWAY MUST NOT MEET ON A LINE. The
+       * church is dressed at level 0.98 with its emissive at 0.9 and the
+       * tunnel at 0.19 and 0.055 — five times the diffuse and sixteen times
+       * the lift — which is right for each of them and catastrophic where
+       * they touch: at the breach the two dressings butt together in the
+       * same doorway and what you see is a pale band of church stone with
+       * black cave rock against it. "The shades are off, this part is too
+       * light." A room's LOOK is a constant per material, so the only place
+       * a gradient can live is here: `uUcFade` is the world-x band to ease
+       * over and `uUcFadeTo` what to ease to, and both sides of the door
+       * are given the SAME values to arrive at, so the seam has nothing to
+       * draw. Off by default — x0 equal to x1 is no fade at all. */
+      sh.uniforms.uUcFade = { value: mat.userData.bwFade || new THREE.Vector2(0, 0) };
+      sh.uniforms.uUcFadeTo = { value: mat.userData.bwFadeTo || new THREE.Vector3(1, 0, 1) };
       mat.userData.bwSh = sh;
       sh.vertexShader = 'varying vec3 vGrimeN; varying vec3 vGrimeP;\n' + sh.vertexShader
         .replace('#include <fog_vertex>', '#include <fog_vertex>\n  vGrimeN = normalize((modelMatrix * vec4(objectNormal, 0.0)).xyz);\n  vGrimeP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-      sh.fragmentShader = 'varying vec3 vGrimeN; varying vec3 vGrimeP;\nuniform float uUcDust, uUcDamp, uUcLevel, uUcEmisK; uniform vec4 uUcCut; uniform float uUcCutX; uniform float uUcClipX; uniform float uUcClipHi; uniform float uUcCutOn;\n' + sh.fragmentShader
+      sh.fragmentShader = 'varying vec3 vGrimeN; varying vec3 vGrimeP;\nuniform float uUcDust, uUcDamp, uUcLevel, uUcEmisK; uniform vec4 uUcCut; uniform float uUcCutX; uniform float uUcClipX; uniform float uUcClipHi; uniform float uUcCutOn; uniform vec2 uUcFade; uniform vec3 uUcFadeTo; float ucLevel; float ucKnee; float ucEmisMul;\n' + sh.fragmentShader
         /* THE WAY OUT IS CUT THROUGH THE APSE. A cylinder along x through the
          * back wall, WALLS ONLY — a floor or a vault inside the radius is
          * left alone, or the arch stands over a black disc — and the stone
@@ -1803,6 +1817,14 @@ export function makeUndercroft(opts = {}) {
    * position's derivatives instead, which is exactly what flat shading
    * does for the lighting. */
   vec3 ucN = normalize(cross(dFdx(vGrimeP), dFdy(vGrimeP)));
+  float ucF = 0.0;
+  if (uUcFade.y != uUcFade.x) {
+    ucF = clamp((vGrimeP.x - uUcFade.x) / (uUcFade.y - uUcFade.x), 0.0, 1.0);
+    ucF = ucF * ucF * (3.0 - 2.0 * ucF);
+  }
+  ucLevel = mix(uUcLevel, uUcFadeTo.x, ucF);
+  ucKnee = mix(uUcEmisK, uUcFadeTo.y, ucF);
+  ucEmisMul = mix(1.0, uUcFadeTo.z, ucF);
   if (vGrimeP.x < uUcClipX) discard;
   if (vGrimeP.x > uUcClipHi) discard;
   if (uUcCutOn > 0.5 && uUcCut.w > 0.0 && abs(ucN.y) < 0.6 && abs(vGrimeP.x - uUcCut.x) < uUcCutX) {
@@ -1820,7 +1842,8 @@ export function makeUndercroft(opts = {}) {
          * pier. Compressed at the top, the lift still carries the dark stone
          * out of the black and no longer carries the sun. */
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-  if (uUcEmisK > 0.0) totalEmissiveRadiance /= (1.0 + totalEmissiveRadiance * uUcEmisK);`)
+  totalEmissiveRadiance *= ucEmisMul;
+  if (ucKnee > 0.0) totalEmissiveRadiance /= (1.0 + totalEmissiveRadiance * ucKnee);`)
         .replace('#include <map_fragment>', `#include <map_fragment>
   {
     float up = clamp(ucN.y, 0.0, 1.0);
@@ -1830,7 +1853,7 @@ export function makeUndercroft(opts = {}) {
     diffuseColor.rgb *= mix(vec3(1.0), vec3(0.78, 0.77, 0.71), up * (0.55 + 0.45 * g1) * uUcDust);
     // and damp in patches, which is a level change and nothing else
     diffuseColor.rgb *= 1.0 - uUcDamp * (0.35 + 0.65 * g2);
-    diffuseColor.rgb *= uUcLevel;
+    diffuseColor.rgb *= ucLevel;
   }`);
     };
     mat.needsUpdate = true;
@@ -1945,13 +1968,20 @@ export function makeUndercroft(opts = {}) {
    * what the artist made and what closes its gaps cannot be found.
    * `Material.clone` drops `onBeforeCompile` and copies `userData`, so the
    * copy's userData is cleared and both passes put back on it. */
-  function patchMat(src) {
+  /* AND A PATCH IS DRESSED AS THE ROOM IT IS IN, NOT ALWAYS AS THE CAVE.
+   * This dressed every clone as cave rock, which is right for a sleeve
+   * behind the tunnel's own wall and wrong for the stone that fell OUT of
+   * the church's wall and is lying on the church's floor: measured, the
+   * spill came out at level 0.19 against the flags' 0.98 and an emissive of
+   * 0.055 against 0.9, so the rubble at the threshold was a black heap on a
+   * lit floor. The kind is a parameter now and the default is unchanged. */
+  function patchMat(src, kind = 'cave') {
     if (!src) return new THREE.MeshStandardMaterial({ color: 0x2a2724, roughness: 1 });
     const m = src.clone();
     m.userData = {};
     m.name = (src.name || 'rock') + '-patch';
     m.side = THREE.DoubleSide;
-    grime(m, 'cave');
+    grime(m, kind);
     triplanar(m);
     return m;
   }
@@ -2340,6 +2370,64 @@ export function makeUndercroft(opts = {}) {
             if (m.userData.bwSh && m.userData.bwSh.uniforms.uUcClipHi) m.userData.bwSh.uniforms.uUcClipHi.value = hiX;
           }
         });
+        /* AND THE CHANNEL MUST NOT END AT THE DOOR. The water is a flat plane
+         * at y = 0.019 lying on a bore floor that runs about -0.05, so it
+         * stands the better part of a hand PROUD of what it lies on — which
+         * is right in the middle of the tunnel, where it reads as standing
+         * water, and wrong at the threshold, where the clip cuts it off
+         * square: measured, the church's own flagstones start at -0.071, so
+         * the cut edge is a nine-centimetre lip of the one surface down here
+         * with a specular highlight on it, lit by the lamps either side of
+         * the doorway and pointing straight at the camera. That is the pale
+         * band across the bottom of the breach — "this part is too light",
+         * and the file had already named it ("a pale band at the threshold
+         * where the clip cuts it") and answered it by taking the LEVEL down,
+         * which is the one thing that cannot help: the edge is geometry.
+         *
+         * The channel ends a stride and a half INSIDE the bore instead, well
+         * under the arch where neither room's lamps reach, and the last of
+         * the tunnel's floor and the church's threshold are the same dry
+         * stone. Nothing else moves: the water is still there to wade
+         * through for a hundred and forty metres. */
+        {
+          const wEnd = group.localToWorld(new THREE.Vector3(D[0] + off.x - 1.45, 0, 0)).x;
+          S.passage.root.traverse((o) => {
+            if (!o.isMesh) return;
+            for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+              if (!m || (m.name || '') !== 'Water') continue;
+              m.userData.bwClipHi = wEnd;
+              if (m.userData.bwSh && m.userData.bwSh.uniforms.uUcClipHi) m.userData.bwSh.uniforms.uUcClipHi.value = wEnd;
+            }
+          });
+        }
+        /* AND THE TWO DRESSINGS MEET IN THE MIDDLE, NOT ON A LINE. Both
+         * sides of the doorway ease over the last three and a half metres
+         * to the SAME values — a level between the two, the knee half on,
+         * and an emissive that brings the church's 0.9 and the tunnel's
+         * 0.055 to the same place — so at the breach itself there is nothing
+         * for the seam to draw. It reads as what it should be anyway: the
+         * nave's light falling into the mouth of the bore and dying, and the
+         * church's own threshold standing in the dark under its arch. */
+        const doorX = group.localToWorld(new THREE.Vector3(D[0] + off.x, 0, 0)).x;
+        /* AND IT IS RE-RUN AFTER EVERYTHING IS BUILT, because the rubble out
+         * of the break and anything else patched in later is not in `S.mats`
+         * yet when this first runs — and a lump of unfaded stone lying in a
+         * faded doorway is the same seam one object smaller. */
+        S.doorBlend = () => {
+          const band = (m, from, mul) => {
+            if (!m) return;
+            m.userData.bwFade = new THREE.Vector2(from, doorX);
+            m.userData.bwFadeTo = new THREE.Vector3(0.45, 1.0, mul);   // level, knee, emissive multiplier
+            const sh = m.userData.bwSh;
+            if (sh && sh.uniforms.uUcFade) { sh.uniforms.uUcFade.value = m.userData.bwFade; sh.uniforms.uUcFadeTo.value = m.userData.bwFadeTo; }
+          };
+          for (const m of S.mats) {
+            const n = m.name || '';
+            if (m.userData.bwKind === 'church') band(m, doorX + 3.6, 0.14);
+            else if (/^Rock01/.test(n)) band(m, doorX - 3.6, 2.3);
+          }
+        };
+        S.doorBlend();
       }
       /* AND THE HALF YOU NO LONGER WALK IS NOT DRAWN EITHER. Clipping it in
        * world x is the far end's own trick (`uUcClipX` is already the low
@@ -2517,7 +2605,7 @@ export function makeUndercroft(opts = {}) {
       {
         let rh = 1337;
         const rnd = () => { rh = (rh * 1103515245 + 12345) & 0x7fffffff; return rh / 0x7fffffff; };
-        const rubMat = patchMat(S.wallMat || findMat(S.church.root));
+        const rubMat = patchMat(S.wallMat || findMat(S.church.root), 'church');
         const spill = new THREE.Group();
         for (let k = 0; k < 26; k++) {
           /* out of the break and into the room: dense at the arch, thinning
@@ -2551,6 +2639,7 @@ export function makeUndercroft(opts = {}) {
         group.add(spill);
         S.spill = spill;
       }
+      if (S.doorBlend) S.doorBlend();        // the rubble is in `S.mats` now
     }
     /* AND NOTHING OUTSIDE IT. Sixteen of fifteen hundred rays cast from
      * the middle of the nave hit no geometry at all — the scan has holes

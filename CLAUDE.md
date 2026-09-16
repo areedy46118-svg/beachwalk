@@ -9362,3 +9362,53 @@ worst frame of the boot 412 → 161 ms.** The way to find any of this again is
 the one used here: freeze rAF, put the camera at a station, `step` it a few
 frames so the far-cull runs, then hide each scene child in turn and read the
 draw count back.
+
+**THE CHURCH AND THE TUNNEL MET ON A LINE, AND THE LINE WAS THE DRESSING.**
+"Make this blend better, the shades are off, this part is too light, and you
+can see out of the church." Every one of those is the same fault measured
+three ways, and it is not geometry: it is that a room's LOOK is a constant
+per material. The church is dressed at `level` 0.98 with its emissive at 0.9
+and a knee of 2.4; the tunnel is 0.19, 0.055 and no knee — **five times the
+diffuse and sixteen times the lift** — which is right for each room on its
+own and catastrophic in the one doorway where they touch. What you see
+standing at the breach is a pale band of church stone with black cave rock
+butted against it.
+
+- **A GRADIENT IS THE ONLY THING THAT CAN LIVE IN A DOORWAY.** `uUcFade` is
+  the world-x band to ease over and `uUcFadeTo` the level, knee and emissive
+  multiplier to ease TO, and both sides are given the SAME values to arrive
+  at — level 0.45, the knee half on, and multipliers that bring 0.9 and
+  0.055 to the same place — so at the breach itself the seam has nothing to
+  draw. Three and a half metres each way, which reads as what it should be
+  anyway: the nave's light falling into the mouth of the bore and dying, and
+  the church's threshold standing in the dark under its own arch.
+- **AND `patchMat` DRESSED EVERY CLONE AS CAVE ROCK.** It is right for a
+  sleeve swept behind the tunnel's own wall and wrong for the spill of
+  broken stone that came OUT of the church's wall and is lying on the
+  church's floor: measured, the rubble at the threshold shipped at level
+  0.19 against the flags' 0.98 and an emissive of 0.055 against 0.9 — a
+  black heap on a lit floor, in the exact spot the owner photographed. The
+  kind is a parameter now; the default is unchanged.
+- **AND THE BLEND IS RE-RUN AFTER EVERYTHING IS BUILT.** The rubble is not
+  in `S.mats` when the band is first handed out, and one lump of unfaded
+  stone lying in a faded doorway is the same seam one object smaller.
+- **AND THE CHANNEL MUST NOT END AT THE DOOR.** The tunnel's water is a flat
+  plane at y = 0.019 lying on a bore floor that runs about -0.05, so it
+  stands the better part of a hand PROUD of what it lies on. In the middle
+  of the tunnel that is standing water; at the threshold the clip cuts it
+  off square and the church's own flagstones start at -0.071, so the cut
+  edge is a nine-centimetre lip of the one specular surface down there,
+  lit by the lamps either side of the doorway and pointing at the camera.
+  This file had already named that band ("a pale band at the threshold where
+  the clip cuts it") and answered it by taking the LEVEL down, which is the
+  one thing that cannot help: **the edge is geometry, not brightness.** The
+  channel is clipped a stride and a half back into the bore instead, where
+  neither room's lamps reach, and the threshold is dry stone on both sides.
+
+**AND A SHADER DISCARD IS INVISIBLE TO A RAYCAST.** Half an hour of this
+round went on a probe that reported the tunnel's rock and the tunnel's water
+standing well inside the nave, which is exactly what the clips exist to
+prevent — `uUcClipX` and `uUcClipHi` are `discard` in the fragment, so
+`intersectObjects` walks straight through them and answers with geometry
+nobody can see. Read the material's own `bwClipHi` beside every hit, or
+judge it from a screenshot.
