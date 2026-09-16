@@ -33694,7 +33694,9 @@ function updateKeep(dt) {
 const LIFT = {
   x0: -4.50, x1: -0.70, y0: 13.55, y1: 15.20, z0: 11.85, z1: 17.15,  // the car, as the model draws it
   deck: 14.10,          // its plank top, raycast
+  up: 16.15,            // AND IT GOES TO THE DOOR: the terrace outside the keep reads 16.1
   clear: 0.08,          // how far it stands over the landing when it is down
+  slim: 0.36,           // a deck timber is thin in SOME axis; a cannon is not
   dur: 7.6,
 };
 function buildKeepLift() {
@@ -33708,7 +33710,8 @@ function buildKeepLift() {
   const want = new THREE.Box3(lo, hi);
   const car = new THREE.Group();
   let took = 0;
-  const grab = new THREE.Box3();
+  const grab = new THREE.Box3(), falls = [];
+  const kOff = new THREE.Vector3().setFromMatrixPosition(keepWorld.matrixWorld);
 
   const meshes = [];
   keepWorld.traverse((o) => { if (o.isMesh && o.geometry && o.geometry.index && o.name !== 'hitProxy') meshes.push(o); });
@@ -33743,33 +33746,77 @@ function buildKeepLift() {
       let e = box.get(r); if (!e) { e = new THREE.Box3(); box.set(r, e); }
       for (let k = 0; k < 3; k++) { v.fromBufferAttribute(pos, idx.getX(t * 3 + k)); v.applyMatrix4(src.matrixWorld); e.expandByPoint(v); }
     }
-    const mine = new Set();
-    for (const [r, e] of box) if (want.containsBox(e)) mine.add(r);
-    if (!mine.size) continue;
+    /* THREE KINDS OF ISLAND, AND ONLY ONE OF THEM IS THE CAR.
+     *  - the DECK: inside the car's box and thin in some axis, because every
+     *    piece of it is a plank, a bearer, a stanchion or a rail;
+     *  - the CARGO: inside the car's box and thick in every axis — the model
+     *    stands a CANNON and its crates on the deck, and the owner's word is
+     *    that the hoist should be the platform and nothing else, so they are
+     *    dropped from the model rather than carried up and down on it;
+     *  - the ROPES: four falls that leave the deck at 14.03 and run up to the
+     *    head beam at 22. They are not the car and they do not travel with
+     *    it — they STRETCH, which is the only way a rope can look like one.
+     *    Each is cut a hand under its own top so the run along the head beam
+     *    stays put and only the hanging part scales, pivoted exactly at the
+     *    cut so there is no seam to see. */
+    const deckY = KEEP_Y + LIFT.deck, sz = new THREE.Vector3();
+    const kind = new Map(), cutAt = new Map();
+    for (const [r, e] of box) {
+      e.getSize(sz);
+      if (want.containsBox(e)) kind.set(r, Math.min(sz.x, sz.y, sz.z) <= LIFT.slim ? 'car' : 'cargo');
+      else if (Math.abs(e.min.y - deckY) < 0.35 && e.max.y > deckY + 4.5 && Math.max(sz.x, sz.z) < 9
+        && e.min.x > KEEP_X + LIFT.x0 - 1.2 && e.max.x < KEEP_X + LIFT.x1 + 1.2) {
+        kind.set(r, 'rope'); cutAt.set(r, e.max.y - 0.45);
+      }
+    }
+    if (!kind.size) continue;
 
-    const keep = [], move = [];
+    const keep = [], move = [], ropes = new Map();
     for (let t = 0; t < nT; t++) {
       const a = idx.getX(t * 3), b = idx.getX(t * 3 + 1), c = idx.getX(t * 3 + 2);
-      (mine.has(find(rep[a])) ? move : keep).push(a, b, c);
+      const r = find(rep[a]), k = kind.get(r);
+      if (!k) { keep.push(a, b, c); continue; }
+      if (k === 'cargo') continue;                       // off the platform for good
+      if (k === 'car') { move.push(a, b, c); continue; }
+      const cut = cutAt.get(r);
+      let below = true;
+      for (const i of [a, b, c]) { v.fromBufferAttribute(pos, i); v.applyMatrix4(src.matrixWorld); if (v.y >= cut) below = false; }
+      if (!below) { keep.push(a, b, c); continue; }
+      let list = ropes.get(r); if (!list) { list = []; ropes.set(r, list); }
+      list.push(a, b, c);
     }
-    if (!move.length) continue;
-    /* THE PIECE SHARES ITS SOURCE'S ATTRIBUTES AND CARRIES ONLY ITS OWN
-     * INDEX — no vertices are copied and the uv is the scan's own, so the
-     * car cannot come out a different colour from the frame it hangs in. */
-    const cg = new THREE.BufferGeometry();
-    for (const name of Object.keys(g.attributes)) cg.setAttribute(name, g.attributes[name]);
-    cg.setIndex(move);
-    const cm = new THREE.Mesh(cg, src.material);
-    // the car hangs off keepWorld and its source may be nested under the
-    // model's own root, so the piece carries the transform that keeps it
-    // exactly where it was drawn
-    cm.matrixAutoUpdate = false;
-    cm.matrix.copy(toCar.copy(keepWorld.matrixWorld).invert().multiply(src.matrixWorld));
-    cm.frustumCulled = false;
-    car.add(cm);
+
+    /* A PIECE SHARES ITS SOURCE'S ATTRIBUTES AND CARRIES ONLY ITS OWN INDEX
+     * — no vertices are copied and the uv is the scan's own, so nothing that
+     * moves can come out a different colour from the frame it hangs in. */
+    const piece = (tris) => {
+      const cg = new THREE.BufferGeometry();
+      for (const name of Object.keys(g.attributes)) cg.setAttribute(name, g.attributes[name]);
+      cg.setIndex(tris);
+      const cm = new THREE.Mesh(cg, src.material);
+      // the source may be nested under the model's own root, so the piece
+      // carries the transform that keeps it exactly where it was drawn
+      cm.matrixAutoUpdate = false;
+      cm.matrix.copy(toCar.copy(keepWorld.matrixWorld).invert().multiply(src.matrixWorld));
+      cm.frustumCulled = false;
+      return cm;
+    };
+    if (move.length) {
+      car.add(piece(move));
+      took += move.length / 3;
+      for (const [r, e] of box) if (kind.get(r) === 'car') grab.union(e);
+    }
+    for (const [r, tris] of ropes) {
+      const e = box.get(r), pivot = cutAt.get(r) - kOff.y;   // keepWorld is a pure translation
+      const grp = new THREE.Group();
+      grp.position.y = pivot;
+      const cm = piece(tris);
+      cm.matrix.premultiply(new THREE.Matrix4().makeTranslation(0, -pivot, 0));
+      grp.add(cm);
+      keepWorld.add(grp);
+      falls.push({ grp, base: e.min.y - KEEP_Y, cut: cutAt.get(r) - KEEP_Y });
+    }
     g.setIndex(keep);
-    took += move.length / 3;
-    for (const [r, e] of box) if (mine.has(r)) grab.union(e);
   }
   if (!took) return;                                  // no hoist, no lift
 
@@ -33827,7 +33874,8 @@ function buildKeepLift() {
   const landY = floors.length ? floors[floors.length >> 1] : 2.35;
   const drop = LIFT.deck - (landY + LIFT.clear);      // how far the car falls
 
-  keepLift = { state: 'up', t: 1, dir: -1, drop, landY, y: KEEP_Y + LIFT.deck, creak: 0, first: true };
+  keepLift = { state: 'up', t: 1, dir: -1, drop, landY, upOff: LIFT.up - LIFT.deck, downOff: -drop,
+    y: KEEP_Y + LIFT.up, creak: 0, first: true };
   /* AND THE CAR'S FLOOR REACHES A HAND PAST ITS OWN TIMBER. The model draws
    * the car inside a well with a finger's clearance all round, and the
    * packer wrote no floor in that clearance — so stepping off at the top you
@@ -33837,7 +33885,7 @@ function buildKeepLift() {
    * the lip of the deck, which is where you are standing anyway. */
   const plan = (cut.isEmpty() ? grab.clone() : cut.clone().union(grab));
   plan.min.x -= 0.25; plan.max.x += 0.25; plan.min.z -= 0.25; plan.max.z += 0.25;
-  keepLiftParts = { car, grab, plan, proxies: [] };
+  keepLiftParts = { car, grab, plan, falls, proxies: [] };
 
   /* AND THE CONTROL IS THE HOIST, NOT A LEVER SOMEBODY ADDED. Two invisible
    * proxies — the file's own way of giving a crosshair something to find —
@@ -33874,9 +33922,16 @@ function buildKeepLift() {
  * standing on can never disagree. */
 function setKeepLift(k) {
   const L = keepLift, P = keepLiftParts; if (!L || !P) return;
-  const off = -(1 - k) * L.drop;                       // 0 at the top, -drop at the bottom
+  /* ZERO IS WHERE THE MODEL DRAWS THE CAR, and the travel runs either side
+   * of it: down to a hand over the jetty, and UP PAST ITS OWN HOME to the
+   * terrace outside the keep's door. The model parks it at the foot of its
+   * guides, which is two metres short of the only floor up there worth
+   * standing on. */
+  const off = L.downOff + (L.upOff - L.downOff) * k;
   P.car.position.y = off;
   L.y = KEEP_Y + LIFT.deck + off;
+  // and the falls pay out: pinned at the head, they reach the deck at any height
+  for (const f of P.falls) f.grp.scale.y = Math.max(0.02, (f.cut - (f.base + off)) / (f.cut - f.base));
   // the car is a floor like the boat is: a box the walk reads
   /* AND THE BOX HAS TO COVER EXACTLY WHAT THE GRID GAVE UP — WHICH IS CELLS,
    * NOT METRES. A cell is given up when its CENTRE lies under the car, so

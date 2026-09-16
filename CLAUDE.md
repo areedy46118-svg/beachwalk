@@ -9045,20 +9045,46 @@ beside a real one anything hand-built is a stack of boxes.
 - **AND THE HEIGHT IS THE POINT, WHICH IS A MEASUREMENT.** Flooded with the
   body disc and the game's own standability test, the walk from the pier
   reaches **4.87 m and no higher**; the hoist's car as drawn sits at 14.10
-  with the keep's terrace at 13.8 either side of it and its jetty at 2.3.
-  So the one thing on this island a body cannot do is exactly the thing the
-  hoist is for, and nothing had to be invented to find that out.
+  and its jetty at 2.3. So the one thing on this island a body cannot do is
+  exactly the thing the hoist is for, and nothing had to be invented to find
+  that out. **AND ZERO IS WHERE THE MODEL DRAWS THE CAR, NOT WHERE IT
+  STOPS.** Parked at its own drawn height the car lands on a 13.8 shelf two
+  metres under the only floor up there worth having: the terrace outside the
+  keep's DOOR reads 16.1 all the way from the well to the threshold. The
+  travel runs either side of the drawn position — down to a hand over the
+  jetty and UP PAST ITS OWN HOME to 16.15 — and the car's deck arrives flush
+  with the flagstones. Measured: ride up, walk off, and you are at the door
+  at 16.11 without a step in between.
 - **THE PACKER BAKES EVERY NODE INTO WORLD SPACE, SO THE CAR IS NOT AN
   OBJECT.** It is triangles inside three 44,000-triangle meshes, and the
   source `scene.gltf` is no help — twenty-five nodes, not one of them named
   for a part. It comes out the way the bunker's tripod camera came out of
-  its merged mesh: WELD BY POSITION, FLOOD THE ISLANDS, AND TAKE THE ONES
-  WHOSE WHOLE BOUNDING BOX LIES INSIDE THE CAR. A box test on triangles
-  alone tears the bottom metre off both guide frames, which stand ON the
-  car's deck and pass through its plan. The piece SHARES its source's
-  attributes and carries only its own index — no vertices are copied, the uv
-  is the scan's own, and the car cannot come out a different colour from the
-  frame it hangs in. 147 ms at load, on the beach, long before you sail.
+  its merged mesh: WELD BY POSITION, FLOOD THE ISLANDS, AND SORT THEM. A box
+  test on triangles alone tears the bottom metre off both guide frames,
+  which stand ON the car's deck and pass through its plan. A piece SHARES
+  its source's attributes and carries only its own index — no vertices are
+  copied, the uv is the scan's own, and nothing that moves can come out a
+  different colour from the frame it hangs in. 152 ms at load, on the beach,
+  long before you sail.
+- **AND THERE ARE THREE KINDS OF ISLAND IN THERE, NOT ONE.** The DECK is
+  every island inside the car's box that is THIN IN SOME AXIS, because each
+  piece of it is a plank, a bearer, a stanchion or a rail. The CARGO is the
+  islands inside that box that are thick in every axis — the model stands a
+  CANNON and its crates on the deck, and the owner's word is that the hoist
+  should be the platform and nothing else, so they come out of the model
+  rather than ride up and down on it. The smallest side of the box is the
+  whole discriminator: a plank is 0.2 through, a cannon is 1.0.
+- **AND THE ROPES STRETCH; THEY DO NOT TRAVEL.** Four falls leave the deck
+  at 14.03 and run up to the head beam at 22, and left in the fixed mesh
+  they hang in the air pointing at a car that is no longer there. They are
+  their own pieces, each in a group pivoted at its own top and scaled in y
+  so the bottom sits on the deck at any height. Each is CUT a hand under its
+  own top — the island carries the hanging fall AND the run along the head
+  beam, and scaling that run with it sags the whole thing by a third of a
+  metre — and the pivot is exactly the cut, so there is no seam anywhere.
+  What they are is worth knowing: the island has vertices at y 14.03 and at
+  y 21.9 and NOTHING in between, which is what a rope drawn as one long
+  section looks like and is why scaling it reads as rope paying out.
 - **`matrixWorld` IS ONLY WRITTEN BY A RENDER** — this file's oldest trap,
   and it bit again: run in the loader, every mesh measures in its own space,
   nothing intersects the car's box and the whole thing silently finds
@@ -9105,8 +9131,9 @@ freeboard would be wrong again. Measured after: sole -0.91 to -0.97 against
 the sea at -1.07, and "E Set Sail" still reads from the boards beside her
 and standing on her.
 
-Measured at the end: the walk from the pier still reaches 44,500 cells and
+Measured at the end: the walk from the pier still reaches 44,454 cells and
 all 36 bearings, still tops out at 4.87 m on foot — and the hoist takes you
-from the jetty at 2.53 to 14.10 in seven and a half seconds, called down
+from the jetty at 2.50 to 16.15 in seven and a half seconds, called down
 from the ground, walked onto, ridden, and walked off at the top onto the
-keep's own terrace at 13.8.
+terrace outside the keep's door at 16.11. Rays down all four corners of the
+car say the shaft is clear the whole way: nothing but the jetty at 2.26.
