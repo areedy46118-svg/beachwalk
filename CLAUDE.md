@@ -9292,3 +9292,73 @@ overhangs, and at every spot it stalls the measurement says the way is
 clear — floor in all eight directions, no face crossed at any of the three
 heights, nothing within the body — so it is the steering and not the new
 collision. It was not chased further this round.
+
+**THE BIGGEST THING ON THE BEACH WAS DRAWN FOR THE WHOLE WALK, AND THE RULE
+THAT SHOULD HAVE CAUGHT IT WAS WRITTEN TO LEAVE HER ALONE.** Profiled by
+hiding each top-level scene child in turn and reading `renderer.info.calls`
+back, at sixteen stations from the spawn to the fence: **the shipwreck was
+162 draw calls at EVERY ONE OF THEM** — at the pavilion a third of the frame,
+at the tower half of it, and at the fence she is nine hundred and eighty-five
+metres behind you. She was in no `farProps` entry (her DRIFT was, at 220; she
+was not), and `cullBeyondFog` deliberately exempts anything bigger than
+`SKYLINE_R`, because culling a landform does not remove a dim object, it
+opens a hole in the fog. So the one rule that covers everything nobody
+remembered to register is the one rule that could not cover her.
+
+- **`farProps` at 240 m.** `FogExp2` 0.014 leaves 0.007 % of her there; the
+  list's own numbers are 260–340 for the same reason.
+- **AND `bakeStatic` HAD NEVER BEEN RUN ON HER.** It is for BUILDINGS and she
+  is the biggest one in the game: 158 meshes, 85 of them unnamed, childless
+  and unflagged, merged by material into 17. Her hull quads already carry
+  `noBake` (they are lifted off their own maps and must keep them) and every
+  part this file holds — the wheel, the gaff, the head, the lantern, the hold
+  door, the barricade — is named or flagged, so all six survive the merge and
+  were checked to still be in the scene afterwards. It runs on a `warmStep`,
+  which is after the module has finished hanging things on her.
+- **And the drainage tunnel home was the same bug, smaller**: 29 draws a
+  frame for a building that stands at the dead end BEHIND the spawn and is
+  never looked at again after the first hundred metres.
+
+**AND THE ISLAND IS BUILT AT THE CUT, BEHIND THE BLACK.** The sea keep's walk
+faces, its two grid repairs, its hoist and its moored boat are half a second
+of blocking between them (147,541 faces 200 ms, the storeys 188, the ground
+81) and they ran in the keep's own LOADER CALLBACK — which fires the moment
+you come within loading distance of the DOCK. One six-hundred-millisecond
+frame in the middle of a walk, for a place you may not sail to for another
+minute, or ever. `startSail` already blacks the screen and already waits on
+`keepReady`, and behind a black card half a second costs nothing: the crash
+kit's own argument, and the drain's, and the bunker's. `buildKeepIsland` is
+called there and from `placeInKeep`, so a restore or the harness cannot
+arrive on an island with no walls. Measured: nothing at load, 381 ms at the
+cut, and the clip walk after it is unchanged at 0 frames of 3,600 with the
+body in a wall.
+
+**AND A WARM IS ONLY MOVED IF IT IS SPREAD — the bunker's lesson, unlearnt
+twice.** `warmView` has taken a `[k, n]` SLICE since the bunker's 2329 ms
+frame, and two rooms built after it never used one: the undercroft's first
+view was **397 ms in a single frame** (a church, a cave and a hundred and
+forty metres of bore uploaded together) and the drain's inner view 117. Six
+slices and eight. Measured: the worst frame of the whole boot went 412 → 161
+ms. What is left is `cave.glb` at 465 ms, which is the undercroft module's
+own build — the skin fit, the carve and the ray walk — and is not a warm.
+
+**AND THE OCEAN'S GRADED GRID WAS BUILT, MEASURED AND REVERTED.** It is
+115,200 triangles, a quarter of the frame, at one uniform 9.2 m facet whether
+it is under your boots or eleven hundred metres out; and the plane snaps onto
+the player in 8 m steps, so warping the rows toward the middle gives finer
+water close up out of a third of the vertices. It rendered identically on the
+clock and it cost the HORIZON: the sea's far edge stands against the sky as a
+line whatever the fog does, the rim rows are what draw it, and at 2 m facets
+in the middle the rim goes to 47 m and that line becomes a staircase you can
+count. The number that settles it was measured first and ignored anyway —
+hiding EVERY mesh over 8,000 triangles in the frame is worth 0.35 ms of 1.23.
+**TRIANGLES WERE NEVER THIS GAME'S PROBLEM. Draw calls and shader programs
+were**, and a saving that does not show on the clock is not worth a pixel of
+the sea.
+
+Measured over sixteen stations, spawn to fence: **draw calls 310 → 188 on
+average and 489 → 330 at the worst, the render call 1.13 → 0.82 ms, and the
+worst frame of the boot 412 → 161 ms.** The way to find any of this again is
+the one used here: freeze rAF, put the camera at a station, `step` it a few
+frames so the far-cull runs, then hide each scene child in turn and read the
+draw count back.

@@ -3800,6 +3800,20 @@ const waveGLSL = `
     return w;
   }
 `;
+/* A GRADED GRID WAS TRIED HERE AND PUT BACK. This is 115,200 triangles — a
+ * quarter of everything in the frame — and every facet is the same 9.2 m
+ * whether it is under your boots or eleven hundred metres out, so warping
+ * the rows toward the middle (the plane snaps onto the player in 8 m steps,
+ * so the middle is always where you are) gives finer water close up out of a
+ * third of the vertices. Built, measured and reverted: the rows at the RIM
+ * are what draw the horizon, and the sea's far edge stands against the sky
+ * as a visible line whatever the fog does — at 2 m facets in the middle the
+ * rim goes to 47 m and that line turns into a staircase you can count. The
+ * render measured the same either way (removing every mesh over 8,000
+ * triangles in the frame is worth 0.35 ms of 1.23), which is this file's own
+ * rule a second time: TRIANGLES WERE NEVER THIS GAME'S PROBLEM, draw calls
+ * and shader programs were. Do not trade the sea's horizon for a saving that
+ * does not show on the clock. */
 const oceanGeo = new THREE.PlaneGeometry(2200, 2200, 240, 240);   // ~9 m facets
 oceanGeo.rotateX(-Math.PI / 2);
 const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
@@ -13219,6 +13233,10 @@ const drainTunnel = makeDrainageTunnelHome({
 });
 drainTunnel.position.set(DRAIN_X, 0, DRAIN_Z);
 scene.add(drainTunnel);
+// and it stands at the dead end behind the spawn, so it is drawn for a
+// kilometre of walking that never looks at it: 29 draws a frame, culled
+// the same way the pier and the camp are
+farProps.push({ obj: drainTunnel, z: DRAIN_Z, d: 300 });
 /* and merged, here, before the gate and the eyes and the drips are hung on
  * it below — 129 draws for fifteen thousand triangles, which is the ribs of
  * the bore and every fixture on the wall drawn one at a time. `bakeScatter`
@@ -13643,7 +13661,10 @@ function warmDrain() {
   const IN = [DRAIN_X + DN.ROOM_X0 + 1, 1.7, DRAIN_Z, DRAIN_X + DN.ROOM_X1, 1.6, DRAIN_Z];
   warmStep('drain compile', () => warmCompile([drainTunnel], ...OUT));
   for (let k = 0; k < 16; k++) warmStep('drain', () => warmView([drainTunnel], ...OUT, [k, 16]));
-  warmStep('drain', () => warmView([drainTunnel], ...IN));
+  // and the chamber from within is the OTHER half of the room's meshes, so
+  // it wants slicing too: unsliced it was the worst frame of the boot after
+  // the undercroft's
+  for (let k = 0; k < 8; k++) warmStep('drain', () => warmView([drainTunnel], ...IN, [k, 8]));
 }
 
 
@@ -13930,6 +13951,28 @@ if (mounds.length > 1) {
 const shipwreck = makeShipwreck({ sandMat });
 shipwreck.position.set(SHIP_X, 0, SHIP_Z);
 scene.add(shipwreck);
+/* AND THE BIGGEST THING ON THE BEACH WAS DRAWN FROM A KILOMETRE AWAY, EVERY
+ * FRAME, FOR THE WHOLE WALK. She is 158 meshes and she was in no far list at
+ * all, and `cullBeyondFog` deliberately exempts anything bigger than
+ * `SKYLINE_R` — because culling a landform does not remove a dim object, it
+ * opens a hole in the fog — so the one rule that would have caught her was
+ * the one rule written to leave her alone. Measured: 162 draw calls at EVERY
+ * station down the walk, from the spawn to the fence, which at the pavilion
+ * is a third of the frame and at the tower is half of it. A twenty-eight
+ * metre hull is a skyline object at two hundred metres and nothing at all at
+ * two hundred and forty: `FogExp2` 0.014 leaves 0.007 % of her there. She
+ * goes in the list beside her own drift.
+ *
+ * AND SHE IS MERGED BY MATERIAL, so what it costs to stand on her deck is
+ * seventeen draws and not a hundred and sixty-two — `bakeStatic`'s own rule,
+ * that this is for BUILDINGS, and she is the biggest one in the game. Her
+ * hull quads carry `noBake` (they are lifted off their own maps and must
+ * keep them) and every named part is held by something, so both are left
+ * exactly where they are. */
+farProps.push({ obj: shipwreck, z: SHIP_Z, d: 240 });
+/* on a warm step, so it runs after everything this file hangs on her — the
+ * gear, the head, the catch, the door — has been built */
+warmStep('wreck merge', () => bakeStatic(shipwreck));
 const SN = shipwreck.userData.nav;
 
 /* ---- punch her out of the sea ---------------------------------------
@@ -31511,10 +31554,20 @@ function armUndercroft(S) {
     const E = sp.entry, M = sp.mouth, X = sp.exit;
     const px = UC_X + E.x, py = UC_Y + E.y + 1.6, pz = UC_Z + E.z;
     warmStep('undercroft compile', () => warmCompile([undercroft], px, py, pz, UC_X + M.x, UC_Y + M.y + 1, UC_Z + M.z));
-    warmStep('undercroft', () => warmView([undercroft], px, py, pz, UC_X + M.x, UC_Y + M.y + 1, UC_Z + M.z));
-    warmStep('undercroft', () => warmView([undercroft], UC_X + M.x - 1, UC_Y + M.y + 1.6, UC_Z + M.z, UC_X + X.x, UC_Y + X.y + 1, UC_Z + X.z));
-    warmStep('undercroft', () => warmView([undercroft], UC_X + X.x, UC_Y + X.y + 1.6, UC_Z + X.z, UC_X + M.x, UC_Y + M.y + 1, UC_Z + M.z));
-    warmStep('undercroft', () => warmView([undercroft], UC_X + M.x + 12, UC_Y + M.y + 1.6, UC_Z + M.z, UC_X + X.x, UC_Y + X.y + 1, UC_Z + X.z));
+    /* AND A WARM IS ONLY MOVED IF IT IS SPREAD. Measured, the first of these
+     * views was 397 ms in ONE frame — a church, a cave and a hundred and
+     * forty metres of bore, decoded and uploaded together, which is the
+     * bunker's own 2329 ms wearing a smaller coat and is not a warm at all,
+     * it is the hitch put somewhere else. `warmView`'s `part` has taken a
+     * slice since the bunker paid for it: every sixth mesh, six frames. */
+    const SL = 6;
+    const view = (ax, ay, az, bx, by, bz) => {
+      for (let k = 0; k < SL; k++) warmStep('undercroft', () => warmView([undercroft], ax, ay, az, bx, by, bz, [k, SL]));
+    };
+    view(px, py, pz, UC_X + M.x, UC_Y + M.y + 1, UC_Z + M.z);
+    view(UC_X + M.x - 1, UC_Y + M.y + 1.6, UC_Z + M.z, UC_X + X.x, UC_Y + X.y + 1, UC_Z + X.z);
+    view(UC_X + X.x, UC_Y + X.y + 1.6, UC_Z + X.z, UC_X + M.x, UC_Y + M.y + 1, UC_Z + M.z);
+    view(UC_X + M.x + 12, UC_Y + M.y + 1.6, UC_Z + M.z, UC_X + X.x, UC_Y + X.y + 1, UC_Z + X.z);
   };
 }
 /* ---- THE HOLE IN THE SAND WALL.
@@ -33277,7 +33330,6 @@ function loadKeep() {
       keepWalk = typeof ex === 'string' ? JSON.parse(ex) : ex;
       keepCells = new Map();
       for (const c of keepWalk.cells) keepCells.set(c[1] * keepWalk.gw + c[0], c[2]);
-      repairKeepGround();
     }
     root.traverse((o) => {
       if (!o.isMesh) return;
@@ -33351,14 +33403,32 @@ function loadKeep() {
     voidDisc.rotation.x = -Math.PI / 2; voidDisc.position.y = KEEP_SEA - 1.5; voidDisc.renderOrder = -1;
     keepWorld.add(voidDisc);
     keepReady = true;
-    /* THE FACES FIRST — the storey repair asks them what is drawn — then the
-     * repair, and the lift LAST, because the lift takes its car's storeys out
-     * of the grid and a repair run after that would put them straight back. */
-    buildKeepWalls();
-    repairKeepStoreys();
-    buildKeepLift();
-    ensureKeepBoat();
   }, undefined, () => {});
+}
+/* AND THE ISLAND IS BUILT AT THE CUT, BEHIND THE BLACK. The walk's faces, the
+ * two repairs, the hoist and the moored boat are half a second of blocking
+ * between them — measured 200 ms for 147,541 faces, 179 for the storeys, 64
+ * for the ground — and they used to run in the keep's own loader callback,
+ * which fires the moment you come within loading distance of the DOCK: one
+ * six-hundred-millisecond frame in the middle of a walk, for a place you may
+ * not sail to for another minute. `startSail` already blacks the screen and
+ * already waits on `keepReady`, and that is the one moment in this sequence
+ * when half a second costs nothing — the crash kit's own argument, and the
+ * drain's and the bunker's. Nothing before the cut ever asks the island a
+ * question, so there is nothing to be early for.
+ *
+ * THE FACES FIRST — the storey repair asks them what is drawn — then the
+ * repairs, and the lift LAST, because the lift takes its car's storeys out
+ * of the grid and a repair run after that would put them straight back. */
+let keepBuilt = false;
+function buildKeepIsland() {
+  if (keepBuilt || !keepReady || !keepWalk) return;
+  keepBuilt = true;
+  repairKeepGround();
+  buildKeepWalls();
+  repairKeepStoreys();
+  buildKeepLift();
+  ensureKeepBoat();
 }
 
 /* THE GROUND HAD HOLES IN IT, AND A HOLE READS AS A WALL. A cell's floor is
@@ -34444,12 +34514,14 @@ function updateSailCut(dt) {
   blackoutEl.style.opacity = black.toFixed(3);
   if (!sailCut && t >= SAIL_OUT + 0.05) {
     if (sailDir > 0 && !keepReady) { sailT = SAIL_OUT + 0.05; return; }
+    if (sailDir > 0) buildKeepIsland();          // half a second, behind full black
     sailCut = true;
     if (sailDir > 0) placeInKeep(); else placeBackOnBoat();
   }
   if (t >= D) { sailBusy = false; blackoutEl.style.opacity = '0'; catchBreath(); }
 }
 function placeInKeep() {
+  buildKeepIsland();                 // a restore or the harness may arrive without the cut
   inKeep = true;
   if (keepWorld) keepWorld.visible = true;
   warmKeep();
