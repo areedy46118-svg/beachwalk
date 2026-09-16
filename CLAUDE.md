@@ -8945,9 +8945,94 @@ intensity are free; a light entering or leaving is not.
   by construction — with its own material, because the beach copy's night
   lift rendered white under a sunset. `Material.clone` drops the lift, which
   is exactly what was wanted.
-- The pack: `tools/undercroft_pack.py keep "$HOME/Downloads/fantasy_sea_keep/scene.gltf"
-  assets/keep.glb --tex 2048 --scale 0.1 --floor-min -0.9 --headroom 0.95`
+- The pack: `tools/undercroft_pack.py keep "$HOME/Desktop/BEACHWALK ASSETS/fantasy_sea_keep/scene.gltf"
+  assets/keep.glb --tex 2048 --scale 0.1 --floor-min -1.75 --headroom 0.95`
   (PIL in a venv, as for the church). 0.1 is measured off the model: a
   45-unit pier, stair rises of one to two and a half units, a 377-unit tower
-  — 4.5 m, 10–25 cm and 38 m. The source is in ~/Downloads and that folder
-  is cleared; it belongs beside the others in `~/Desktop/BEACHWALK ASSETS/`.
+  — 4.5 m, 10–25 cm and 38 m.
+
+**AND THEN THE CLIMB VERB CAME OFF AND THE ISLAND HAD TO BE WALKED.** The
+owner's six: Set Sail from the DOCK when you are near the boat, no `E Climb`
+at all — things you jump onto and ledges you walk off — the moored boat not
+awash, night at the keep, a lever under the timber hoist that drops the
+counterweight and takes you to the second level, and the whole island walked
+round with ease.
+
+- **THE STEP ALLOWANCE DEPENDS ON WHERE YOU ARE, AND THAT IS THE WHOLE
+  VOCABULARY.** With the climb gone there are three numbers and no verbs:
+  `KEEP_STEP` 0.62 is a lip you walk up, `KEEP_AIR` 0.35 is what your feet
+  catch in the air — so a jump gets you onto about a metre, which is what
+  "jumped on if high enough" means as a measurement — and `KEEP_OUT` 2.4 is
+  what you climb out of the sea, because the shelf is 1.95 under the beach
+  and at a walking step a wade could never be ended. A drop is simply a
+  drop: you walk off a ledge and fall to whatever is under you.
+- **A HOLE IN A WALK GRID READS AS A WALL, AND THAT IS AN INVISIBLE FENCE.**
+  The packer writes a cell's floor from the triangles that land in it, and on
+  a big low-poly shore it now and then lands none at ground level — the cell
+  keeps only its high storeys, and "no floor at or under my feet" is the
+  game's own definition of a wall. Measured: a flood from the pier reached
+  9,808 of 56,714 cells. `repairKeepGround()` runs at load over the cells'
+  own bounding box — three passes, a cheap four-neighbour median as a
+  pre-test and then a 5×5 median — and **A REPAIR MAY ONLY EVER ADD A FLOOR
+  UNDERNEATH**: added above a cell's own lowest storey it hangs a shelf
+  inside a cliff, and `if (med4 > fl[0] - 0.3) continue;` is the whole
+  guard. A "local gap under 2.5 m" guard was tried first and regressed the
+  flood, because it rejected exactly the case that matters (a cell whose own
+  floor is 4.89 over neighbours at 0.07). Patched 1,909 cells, added 1,778,
+  68 ms.
+- **AND `--floor-min` THROWS SAMPLES AWAY.** At -0.9 the shore's own dips (to
+  -1.1) were discarded at pack time, so a two-metre band of the beach came
+  out with only its 2.0 and 8.0 storeys — a wall you could see the sand
+  through. Repacked at -1.75.
+- **AND THE WALK AND THE PUSH-OUT HAVE TO ASK THE SAME QUESTION.** The pier's
+  own lesson on an island, and the last invisible fence. `keepFloorAt`
+  answers "what is the ground here" and answers with a floor even where the
+  packer marked the BODY BAND over it as full; `pushOutOfKeep` calls exactly
+  those cells solid. So a cell with the band set was one the walk let you
+  stand on and the push-out shoved you off, on the same frame, for ever:
+  measured on the east shore, a two-frame limit cycle six centimetres wide
+  that pinned the body on ground with nothing drawn on it. `keepStandable`
+  is the one question the walk asks now. It costs 2,380 of 46,687 reachable
+  cells — the ones your shoulders were inside anyway — and every one of the
+  36 bearings round the island is still walked.
+- **A COUNTERWEIGHT IS THE MECHANISM.** The lift's weight and its platform
+  are the two ends of one rope driven from one number (`setKeepLift(k)`), so
+  the rope, the weight, the platform and the floor you stand on cannot
+  disagree. Where it stands is measured off the model: rays down the shaft
+  put the sand under (-16.6, 24) at 0.15 with open sky the whole way, and
+  rays across put the shelf's top at 7.0 two and a half metres east — 1,546
+  cells of walkable terrace. Nothing is carved and the model is untouched.
+  Both levers carry an invisible `hitProxy`, because a lever arm is a stick
+  and the crosshair goes past it.
+- **A BOX FLOOR IS READ BY THE SAME LOOKUP AS THE MODEL'S OWN GRID.** The
+  boat, the lift platform and the gangway are planks the game laid after the
+  pack, so the walk grid knows nothing about them; `keepBoatBox`,
+  `keepLiftBox` and `keepGangBox` win inside the floor lookup when they are
+  higher and in range.
+- **THE MOORED BOAT WAS HUNG OFF THE PIER DECK, NOT OFF THE SEA.** It sat at
+  deck height less its own height, which on a hull deeper than the pier is
+  high stands it under the water. It floats on `KEEP_SEA` now.
+- **AND THE PROMPT COMES OFF THE HULL'S OWN BOX.** `boatHail` is a reach
+  measured from the boat's bounding box rather than from a point, so "E Set
+  Sail" reads standing ON her and standing on the dock BESIDE her — measured
+  at 2.6 m and at 4.4.
+- **AND THE SKY IS PAINTED, SO NIGHT IS PAINTED.** The sphere ships as glass
+  and what Sketchfab shows through it is its own HDR environment, so there
+  was never a sunset in the file to turn off: the fragment is rewritten to a
+  deep blue by height over the sea with a moon disc and a halo at
+  `normalize(vec3(-0.62, 0.36, 0.70))`, hash stars thinning at the horizon,
+  and the file's own cloud strip laid over at low weight. The five lights,
+  the fog, the sea and the windows come down with it — colour and intensity
+  are free, a light entering or leaving is not.
+
+Measured at the end: 44,307 cells reachable from the pier spawn with a full
+body disc and the game's own standability test, **all 36 bearings round the
+island** at radii 16–40 m, and every one of twelve ring stations routes to
+the next. Hands-off with the real movement code, the 454 m loop from the
+pier, round the island and back walks in **7,128 ticks (114 s) with 9 % of
+frames stalled and fifteen jumps** — and the two places it needs help are
+both two-storey shelves where the harness's own route carries no storey, not
+walls: standing on the terrace instead of the shelf under it, the same
+ground walks straight through. **A ROUTE OVER A GRID OF STOREYS MUST CARRY
+THE STOREY**; an (x, z) waypoint is not a place on an island with an
+overhang on it.

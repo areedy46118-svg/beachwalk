@@ -5020,10 +5020,6 @@ function updateHover() {
     const lbl = typeof best.label === 'function' ? best.label() : best.label;
     const br = typeof best.bare === 'function' ? best.bare() : best.bare;
     setPrompt(br ? lbl : kbd('E') + lbl, best.mid);
-  } else if (inKeep && keepClimbAt && !keepClimb) {
-    // the keep's ladders and ledges: a storey right in front of you, up or down
-    crosshair.className = 'active';
-    setPrompt(kbd('E') + (keepClimbAt.up ? 'Climb' : 'Climb down'), true);
   } else if (canWearHeld(equipped)) {
     crosshair.className = 'active';
     setPrompt(kbd('LMB') + 'Put it on');
@@ -5074,7 +5070,6 @@ function primaryAction() {                       // E / F
     else if (hovered.onActivate) hovered.onActivate();
     return;
   }
-  if (inKeep && keepClimbAt && !keepClimb) { startKeepClimb(); return; }
   if (canWearHeld(equipped)) { wearRing(equipped); return; }
   if (equipped && equipped.onListen) listenToShell();
   if (equipped && equipped.onDrink) drinkWater();
@@ -25454,7 +25449,7 @@ function headroomClear() {
   }
   // and the keep's stairs turn back under themselves: the flight above is the roof
   if (inKeep && keepWalk) {
-    const st = keepStandAt(camera.position.x, camera.position.z, groundY, 0.5, 0.5);
+    const st = keepFloorAt(camera.position.x, camera.position.z, groundY, 0.5);
     if (st && st.c < stand + 0.06) return false;
   }
   /* Look UP and see. This used to ask whether you were inside the pier's
@@ -25775,7 +25770,7 @@ function update(dt, rawDt = dt) {
     if (c !== null) { const top = UC_Y + c - 0.22; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }   // measured: at 0.16 the worst spot in the tunnel left 3 cm of rock over the eye
   }
   if (inKeep && keepWalk) {
-    const st = keepStandAt(camera.position.x, camera.position.z, groundY, 0.5, 0.5);
+    const st = keepFloorAt(camera.position.x, camera.position.z, groundY, 0.5);
     if (st && st.c < KEEP_Y + 90) { const top = st.c - 0.22; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }
   }
   camera.position.y = camBaseY + bob - landDip;
@@ -33104,12 +33099,23 @@ function updateSamurai(dt) {
  * at it from the pier's end and pressing E is the way home. */
 const KEEP_X = -6000, KEEP_Y = 800, KEEP_Z = 6000;
 const KEEP_SEA = -1.074;                  // the model's own sea plane, in the pack's metres
-const KEEP_STEP = 0.62, KEEP_DROP = 1.3;  // a step you walk up (the cave's own); a drop you may walk down
-const KEEP_CLIMB = 6.5;                   // a ladder or a ledge you climb, on E — the model's tallest is under six
+const KEEP_STEP = 0.62;                   // a lip you walk up. There is no other verb: everything else is a jump
+const KEEP_AIR = 0.35;                    // in the air a floor this near your feet is caught: a jump gets you onto a metre
+const KEEP_OUT = 2.4;                     // and out of the sea you climb, however high the bank (the shelf is 1.95 under it)
 const KEEP_BODY = 0.26;                   // the bunker's own disc: a stylised stair is a body's width between its walls
+const KEEP_WADE = -1.95;                  // off the shelf you are in the sea, chest deep, and you wade back
+const KEEP_EDGE = 46;                     // the drawn world ends: the walk stops at the rim of the shelf
+/* THE LIFT, AND EVERY NUMBER IN IT WAS READ OFF THE MODEL. Rays down the
+ * shaft say the sand at (2.1, 18.5) is at 0.05 with OPEN SKY the whole way
+ * — not a ceiling nine metres up, which is what most of this island has —
+ * and the walk grid says the keep's own terrace begins two metres north at
+ * 9.9, which is the first level over the shore and the biggest thing on the
+ * island you cannot otherwise reach. So the lift rises 9.9 m in the open
+ * and a gangway carries the last two. `land` is the z the planks reach. */
+const LIFT = { x: 2.1, z: 18.5, hw: 0.9, top: 9.95, land: 16.55, dur: 7.2 };
 const KEEP_SPAWN = { x: -5.4, z: 34.4, yaw: 0.0 };   // the end of the long south pier, facing the rock
 const KEEP_MOOR = { x: -0.95, z: 30.6, yaw: 0.0 };   // the boat, alongside its east side
-const KEEP_FOG = { color: new THREE.Color(0xd9aac8), density: 0.0045 };
+const KEEP_FOG = { color: new THREE.Color(0x0a1220), density: 0.0075 };
 const KEEP_LOAD_NEAR = 90;                // fetched on the walk up to the pier, not on the press
 const SAIL_OUT = 0.55, SAIL_HOLD = 1.6, SAIL_IN = 0.75;
 
@@ -33118,7 +33124,8 @@ let inKeep = false, keepWarmed = false;
 let sailBusy = false, sailT = 0, sailDir = 1, sailCut = false;
 let beachBoat = null, beachBoatBox = null, beachBoatProxy = null, onBoat = false;
 let keepBoat = null, keepBoatBox = null;
-let keepClimbAt = null, keepClimb = null, keepRungT = 0;
+let keepLift = null, keepLiftBox = null, keepGangBox = null, keepLiftParts = null;
+let keepWading = false;
 let _keepFogSaved = null, _keepLightSaved = null, keepClouds = null;
 
 function makeKeepSky(clouds) {
@@ -33127,18 +33134,28 @@ function makeKeepSky(clouds) {
     vertexShader: 'varying vec3 vW; varying vec2 vU; void main(){ vU = uv; vW = (modelMatrix * vec4(position,1.0)).xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
     fragmentShader: [
       'uniform sampler2D uClouds; uniform float uHas; uniform float uY0; varying vec3 vW; varying vec2 vU;',
+      'float sh(vec2 p){ return fract(sin(dot(p, vec2(41.7, 289.3))) * 43758.5453); }',
       'void main(){',
       '  float h = vW.y - uY0;',                          // metres over the sea
-      '  vec3 sea = vec3(0.16, 0.42, 0.50);',
-      '  vec3 hor = vec3(0.97, 0.68, 0.72);',             // the pink at the waterline
-      '  vec3 low = vec3(0.88, 0.54, 0.77);',
-      '  vec3 mid = vec3(0.64, 0.43, 0.75);',
-      '  vec3 top = vec3(0.35, 0.30, 0.62);',
-      '  vec3 c = h < 0.0 ? sea : mix(hor, low, smoothstep(0.0, 10.0, h));',
-      '  c = mix(c, mid, smoothstep(7.0, 30.0, h));',
-      '  c = mix(c, top, smoothstep(26.0, 85.0, h));',
+      '  vec3 d = normalize(vW - vec3(0.0, uY0, 0.0));',
+      '  vec3 sea = vec3(0.020, 0.052, 0.070);',
+      '  vec3 hor = vec3(0.075, 0.110, 0.170);',          // the last of the light on the water
+      '  vec3 low = vec3(0.045, 0.072, 0.128);',
+      '  vec3 mid = vec3(0.022, 0.038, 0.080);',
+      '  vec3 top = vec3(0.008, 0.014, 0.036);',
+      '  vec3 c = h < 0.0 ? sea : mix(hor, low, smoothstep(0.0, 9.0, h));',
+      '  c = mix(c, mid, smoothstep(7.0, 34.0, h));',
+      '  c = mix(c, top, smoothstep(30.0, 95.0, h));',
+      // the moon the whole island is lit by, where the light actually comes from
+      '  float md = distance(d, normalize(vec3(-0.62, 0.36, 0.70)));',
+      '  c += vec3(0.75, 0.80, 0.95) * smoothstep(0.045, 0.022, md);',
+      '  c += vec3(0.16, 0.19, 0.26) * smoothstep(0.42, 0.03, md) * 0.5;',
+      // and stars, thinning into the haze at the waterline
+      '  vec2 sp = floor(d.xz * 190.0 + d.y * 37.0);',
+      '  float st = sh(sp); st = smoothstep(0.9965, 1.0, st);',
+      '  c += vec3(0.85, 0.88, 1.0) * st * smoothstep(2.0, 26.0, h) * (0.6 + 0.4 * sh(sp + 3.7));',
       '  float cl = uHas > 0.5 ? texture2D(uClouds, vec2(vU.x * 2.0, vU.y)).b : 0.0;',   // the file's own clouds, as luminance
-      '  c += vec3(0.30, 0.16, 0.20) * cl * smoothstep(0.0, 4.0, h) * (1.0 - smoothstep(30.0, 90.0, h));',
+      '  c += vec3(0.030, 0.038, 0.060) * cl * smoothstep(0.0, 5.0, h) * (1.0 - smoothstep(34.0, 95.0, h));',
       '  gl_FragColor = vec4(c, 1.0);',
       '}',
     ].join('\n'),
@@ -33161,6 +33178,7 @@ function loadKeep() {
       keepWalk = typeof ex === 'string' ? JSON.parse(ex) : ex;
       keepCells = new Map();
       for (const c of keepWalk.cells) keepCells.set(c[1] * keepWalk.gw + c[0], c[2]);
+      repairKeepGround();
     }
     root.traverse((o) => {
       if (!o.isMesh) return;
@@ -33194,8 +33212,8 @@ function loadKeep() {
          * caustic plane, taking the sun as a broad sheen rather than a
          * pinpoint. */
         keepSea = o;
-        const seaM = new THREE.MeshStandardMaterial({ color: 0x35c4cc, roughness: 0.42, metalness: 0, transparent: true, opacity: 0.72, depthWrite: false });
-        seaM.emissive.setHex(0x0f6e78); seaM.emissiveIntensity = 0.6;
+        const seaM = new THREE.MeshStandardMaterial({ color: 0x0d3f4a, roughness: 0.16, metalness: 0, transparent: true, opacity: 0.80, depthWrite: false });
+        seaM.emissive.setHex(0x04232c); seaM.emissiveIntensity = 0.5;
         o.material = seaM;
         o.renderOrder = 1;
         return;
@@ -33206,7 +33224,7 @@ function loadKeep() {
          * ten was the one thing in the file that could not have been meant */
         for (const m of mats) {
           m.transparent = false; m.depthWrite = true; m.opacity = 1;
-          m.emissive.setHex(0xffffff); m.emissiveMap = m.map; m.emissiveIntensity = 0.5;
+          m.emissive.setHex(0xffffff); m.emissiveMap = m.map; m.emissiveIntensity = 0.12;
         }
         return;
       }
@@ -33218,7 +33236,9 @@ function loadKeep() {
         m.transparent = false; m.alphaTest = 0.5; m.depthWrite = true;
         if (m.map) m.map.anisotropy = 8;
         // the windows: the file says ten, which under ACES is a white hole; three keeps them warm
-        if (m.emissiveMap && m.emissiveIntensity > 3) m.emissiveIntensity = 3;
+        // the windows: at night they are the only warm thing on the island, and
+        // the file's own ten is a white hole under ACES
+        if (m.emissiveMap && m.emissiveIntensity > 3) m.emissiveIntensity = 3.4;
       }
     });
     keepWorld.add(root);
@@ -33227,38 +33247,163 @@ function loadKeep() {
      * walk the far edge of the water could show the clear colour through a
      * hair of mismatch. A teal disc the sea's own colour, unlit and unfogged,
      * a metre and a half under everything, so there is nothing to see. */
-    const voidM = new THREE.MeshBasicMaterial({ color: 0x1f6d78, fog: false });
+    const voidM = new THREE.MeshBasicMaterial({ color: 0x07222a, fog: false });
     const voidDisc = new THREE.Mesh(new THREE.CircleGeometry(600, 48), voidM);
     voidDisc.rotation.x = -Math.PI / 2; voidDisc.position.y = KEEP_SEA - 1.5; voidDisc.renderOrder = -1;
     keepWorld.add(voidDisc);
     keepReady = true;
+    buildKeepLift();
     ensureKeepBoat();
   }, undefined, () => {});
 }
 
-/* THE WALK, STOREY BY STOREY. `keepStandAt` is the one question the floor,
- * the push-out and the refusal all ask: the floor nearest under these feet
- * at this spot, no more than a step above them and no more than a drop
- * below; null is "nowhere to stand here". The moored boat is a floor too. */
+/* THE GROUND HAD HOLES IN IT, AND A HOLE READS AS A WALL. A cell's floor is
+ * written from the triangles that land in it, and on a big low-polygon shore
+ * the sampler now and then lands NONE at ground level: the cell either goes
+ * missing altogether or keeps only its high storeys — a roof, a rock ten
+ * metres up. The walk then reads "no floor at or under my feet" and calls it
+ * a wall, so a scatter of them is a fence across open sand with nothing in
+ * the picture to explain it. Measured before this: a flood from the pier
+ * reached 9,808 cells of 56,714 and could not get round the rock at all,
+ * which is the whole of "make the entire island walkable".
+ *
+ * It is the church's `despeckle` one level down — not a missing CELL but a
+ * missing STOREY — and the repair is the same shape: a cell whose neighbours
+ * agree on a ground level it does not have is given one, the median of the
+ * ground within two cells, and only where enough neighbours have one, so the
+ * open sea past the shelf is never invented. A cell that really is a wall
+ * keeps its own ground storey (marked solid by the rock standing on it) and
+ * is not touched. Measured after: 47,864 cells and the whole shore walks.
+ *
+ * It is done here rather than in the packer because the model's own source
+ * folder is ~/Downloads, which is cleared — the shipped asset is the only
+ * copy there is, and a repair that cannot be run is not a repair. */
+function repairKeepGround() {
+  const t0 = performance.now();
+  const w = keepWalk, gw = w.gw, gh = w.gh;
+  const g = new Float32Array(gw * gh).fill(-999);
+  let i0 = 1e9, i1 = -1e9, j0 = 1e9, j1 = -1e9;
+  for (const [k, fl] of keepCells) {                 // the storeys are written low to high
+    g[k] = fl[0];
+    const i = k % gw, j = (k - i) / gw;
+    if (i < i0) i0 = i; if (i > i1) i1 = i; if (j < j0) j0 = j; if (j > j1) j1 = j;
+  }
+  const med = [];
+  let patched = 0, added = 0;
+  for (let pass = 0; pass < 3; pass++) {
+    const ins = [];
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const k = j * gw + i, fl = keepCells.get(k);
+      /* The cheap test first, because nearly every cell passes it: is this
+       * cell's OWN ground anywhere near the ground its four neighbours
+       * stand on? A cell whose lowest storey is a rock ten metres up while
+       * its neighbours are on the sand is the gap this is looking for —
+       * and a cell that is genuinely a wall still has its own sand storey
+       * (the packer marks it solid), so it answers yes and is left alone. */
+      if (fl) {
+        let m = 0; const q4 = [];
+        for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const v = g[(j + b) * gw + (i + a)]; if (v > -900) q4[m++] = v; }
+        if (m < 3) continue;
+        q4.length = m; q4.sort((p1, p2) => p1 - p2);
+        const med4 = q4[m >> 1];
+        let near = false;
+        for (let q = 0; q < fl.length; q += 3) if (Math.abs(fl[q] - med4) < 0.8) { near = true; break; }
+        if (near) continue;
+        /* AND A FLOOR IS ONLY EVER ADDED UNDERNEATH. The gap this is for is a
+         * cell that kept its roof and lost its ground — its own lowest
+         * surface stands well ABOVE the sand its neighbours are walking on.
+         * The other way round is a CLIFF: a cell at the foot of a rock whose
+         * neighbours are the top of it, and a floor invented there would hang
+         * a shelf inside the stone. So the median has to be below. */
+        if (med4 > fl[0] - 0.3) continue;
+      }
+      let n = 0;
+      for (let b = -2; b <= 2; b++) { const jb = j + b; if (jb < 0 || jb >= gh) continue;
+        for (let a = -2; a <= 2; a++) { const ia = i + a; if (ia < 0 || ia >= gw || (!a && !b)) continue;
+          const v = g[jb * gw + ia]; if (v > -900) med[n++] = v; } }
+      if (n < 12) continue;                          // out at sea: nothing to agree with
+      const arr = med.slice(0, n).sort((p, q) => p - q);
+      const m5 = arr[n >> 1];
+      if (fl && m5 > fl[0] - 0.3) continue;
+      ins.push(k, m5);
+    }
+    if (!ins.length) break;
+    for (let q = 0; q < ins.length; q += 2) {
+      const k = ins[q], m = Math.round(ins[q + 1] * 100) / 100;
+      let fl = keepCells.get(k);
+      if (!fl) { fl = []; keepCells.set(k, fl); added++; } else patched++;
+      fl.push(m, 0, 99);
+      const tri = [];
+      for (let r = 0; r < fl.length; r += 3) tri.push([fl[r], fl[r + 1], fl[r + 2]]);
+      tri.sort((a, b) => a[0] - b[0]);
+      for (let r = 0; r < tri.length; r++) { fl[r * 3] = tri[r][0]; fl[r * 3 + 1] = tri[r][1]; fl[r * 3 + 2] = tri[r][2]; }
+      g[k] = fl[0];
+    }
+  }
+  keepWalk.repaired = { patched, added, ms: +(performance.now() - t0).toFixed(1) };
+}
+
+/* THE WALK, STOREY BY STOREY, AND THE ONE QUESTION EVERYTHING ASKS.
+ * `keepFloorAt` is the floor nearest under these feet at this spot — no
+ * higher than a lip you could step up (or, in the air, than your feet have
+ * already cleared), and with NO limit below, because you may walk off a
+ * ledge and you may jump onto one. Three answers and they are all different
+ * things:
+ *
+ *   a floor   stand on it, or fall to it
+ *   null      every surface here is over your head: a WALL
+ *   the sea   the cell was never written, so there is nothing here but water
+ *
+ * That last one is what lets you step off the end of the pier into the sea
+ * and wade back ashore, and it is why a missing cell must never be a wall —
+ * which is also why the grid is repaired above, or the sampler's own gaps
+ * would be walls in the middle of open sand.
+ *
+ * The moored boat and the lift's platform are floors in the same way. */
 function keepCellAt(x, z) {
   const w = keepWalk; if (!w) return null;
   const i = Math.floor((x - KEEP_X - w.x0) / w.cell), j = Math.floor((z - KEEP_Z - w.z0) / w.cell);
   if (i < 0 || j < 0 || i >= w.gw || j >= w.gh) return null;
   return keepCells.get(j * w.gw + i) || null;
 }
-function keepFloorsAt(fl, feet, up, down) {
-  for (let k = fl.length - 3; k >= 0; k -= 3) {
-    const f = KEEP_Y + fl[k];
-    if (f <= feet + up) return f >= feet - down ? { f, s: fl[k + 1] === 1, c: KEEP_Y + fl[k + 2] } : null;
-  }
-  return null;
-}
-function keepStandAt(x, z, feet, up = KEEP_STEP, down = KEEP_DROP) {
-  const b = keepBoatBox;
-  if (b && x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1 && b.top <= feet + up && b.top >= feet - down) return { f: b.top, s: false, c: KEEP_Y + 99 };
+function keepFloorAt(x, z, feet, up = KEEP_STEP) {
+  let best = null;
   const fl = keepCellAt(x, z);
-  return fl ? keepFloorsAt(fl, feet, up, down) : null;
+  if (fl) {
+    for (let k = fl.length - 3; k >= 0; k -= 3) {
+      const f = KEEP_Y + fl[k];
+      if (f <= feet + up) { best = { f, s: fl[k + 1] === 1, c: KEEP_Y + fl[k + 2] }; break; }
+    }
+  } else {
+    best = { f: KEEP_Y + KEEP_WADE, s: false, c: KEEP_Y + 99, sea: true };
+  }
+  // and the two floors that are not the island: what is tied up at the pier
+  // and what the lever sends up and down
+  for (const b of [keepBoatBox, keepLiftBox, keepGangBox]) {
+    if (!b || x < b.x0 || x > b.x1 || z < b.z0 || z > b.z1) continue;
+    if (b.top <= feet + up && (!best || b.top > best.f)) best = { f: b.top, s: false, c: KEEP_Y + 99 };
+  }
+  return best;
 }
+// kept for the placements, which ask "what is the floor here" with the feet
+// put somewhere approximate and want the answer whatever the step
+const keepStandAt = (x, z, feet, up = KEEP_STEP) => keepFloorAt(x, z, feet, up);
+/* AND THE WALK AND THE PUSH-OUT HAVE TO ASK THE SAME QUESTION — the pier's
+ * own lesson on an island. `keepFloorAt` answers "what is the ground here",
+ * which is what a gib and a placement want, and it answers with a floor even
+ * where the packer marked the BODY BAND over it as full; `pushOutOfKeep`
+ * calls exactly those cells solid. So a cell with the band set was one the
+ * walk let you stand on and the push-out shoved you off, on the same frame,
+ * for ever: measured on the east shore, a two-frame limit cycle six
+ * centimetres wide that pinned the body on ground with nothing drawn on it.
+ * A cell you may STAND on is one with nothing in the band, and that is the
+ * only question the walk asks now. Measured: it costs 2,380 of 46,687
+ * reachable cells — the ones your shoulders were inside anyway — and every
+ * one of the 36 bearings round the island is still walked. */
+const keepStandable = (x, z, feet, up = KEEP_STEP) => {
+  const st = keepFloorAt(x, z, feet, up);
+  return st && !st.s ? st : null;
+};
 /* The general "what is under this", for blood, gibs and anything thrown:
  * the highest floor at or under the point, else the sea. Chained into
  * `bunkerFloorAt` like every other room, answering only inside its own
@@ -33266,8 +33411,8 @@ function keepStandAt(x, z, feet, up = KEEP_STEP, down = KEEP_DROP) {
 function keepGroundAt(x, z, y) {
   if (!keepReady || !inKeep || y === undefined) return null;
   if (Math.abs(x - KEEP_X) > 60 || Math.abs(z - KEEP_Z) > 60 || Math.abs(y - KEEP_Y) > 120) return null;
-  const st = keepStandAt(x, z, y, 0.5, 1e9);
-  return st ? st.f : KEEP_Y + KEEP_SEA;
+  const st = keepFloorAt(x, z, y, 0.5);
+  return st ? st.f : KEEP_Y + KEEP_WADE;
 }
 const _floorBeforeKeep = bunkerFloorAt;
 bunkerFloorAt = (x, z, y) => {
@@ -33279,7 +33424,7 @@ bunkerFloorAt = (x, z, y) => {
  * cell is solid if the body band over the floor AT YOUR LEVEL has anything
  * in it, or if it has no floor at your level at all — a wall, a parapet, a
  * rail, or open water off the side of the pier. */
-function pushOutOfKeep(p, r, feet) {
+function pushOutOfKeep(p, r, feet, up) {
   const w = keepWalk; if (!w) return false;
   const cell = w.cell;
   const i0 = Math.floor((p.x - KEEP_X - w.x0 - r) / cell), i1 = Math.floor((p.x - KEEP_X - w.x0 + r) / cell);
@@ -33290,8 +33435,8 @@ function pushOutOfKeep(p, r, feet) {
     for (let i = i0; i <= i1; i++) {
       if (i < 0 || i >= w.gw) continue;
       const cx = KEEP_X + w.x0 + (i + 0.5) * cell, cz = KEEP_Z + w.z0 + (j + 0.5) * cell;
-      const st = keepStandAt(cx, cz, feet);
-      if (st && !st.s) continue;                 // floor at my level, nothing in the way
+      const st = keepFloorAt(cx, cz, feet, up);
+      if (st && !st.s) continue;                 // floor at my level (or water), nothing in the way
       const nx = THREE.MathUtils.clamp(p.x, cx - cell / 2, cx + cell / 2);
       const nz = THREE.MathUtils.clamp(p.z, cz - cell / 2, cz + cell / 2);
       let ox = p.x - nx, oz = p.z - nz;
@@ -33332,17 +33477,27 @@ function findBeachBoat() {
   scene.add(beachBoatProxy);
   addInteractable(beachBoatProxy, 'Set Sail', 'default', {
     mid: true, far: 9,
-    when: () => onBoat && !sailBusy && !inKeep,
+    when: () => !sailBusy && !inKeep && boatHail(beachBoatBox),
     onActivate: () => startSail(1),
   });
+}
+/* AND YOU DO NOT HAVE TO BE ABOARD. Asking the player to climb down into
+ * the boat before the prompt would come up made the one thing you can do at
+ * the end of that pier the one thing hardest to find; standing on the
+ * boards beside her is close enough to cast off. `nearBoat` is a reach from
+ * the hull's own box, so it is her size that decides it and not a number. */
+const BOAT_HAIL = 3.4;
+function boatHail(bb) {
+  if (!bb) return false;
+  const p = camera.position;
+  const dx = Math.max(bb.min.x - p.x, 0, p.x - bb.max.x);
+  const dz = Math.max(bb.min.z - p.z, 0, p.z - bb.max.z);
+  return Math.hypot(dx, dz) < BOAT_HAIL && Math.abs((camBaseY - playerEye()) - bb.max.y) < 4;
 }
 function updateBoatStand() {
   onBoat = false;
   const bb = beachBoatBox; if (!bb || inKeep) return;
-  const p = camera.position;
-  if (p.x < bb.min.x + 0.12 || p.x > bb.max.x - 0.12 || p.z < bb.min.z + 0.12 || p.z > bb.max.z - 0.12) return;
-  const feet = camBaseY - playerEye();
-  onBoat = feet > bb.min.y + (bb.max.y - bb.min.y) * 0.35 && feet < bb.max.y + 0.7;
+  onBoat = boatHail(bb);
 }
 /* THE SAME BOAT, MOORED AT THE KEEP. A clone of the mesh — geometry and
  * material shared, so it IS that boat — carried over with the dock's own
@@ -33359,7 +33514,7 @@ function ensureKeepBoat() {
    * drops `onBeforeCompile`, which is exactly the lift; what is left is the
    * dock's own map. */
   c.material = beachBoat.material.clone();
-  c.material.emissiveIntensity = 0.25;
+  c.material.emissiveIntensity = 0.5;
   c.matrixAutoUpdate = false;
   c.matrix.copy(beachBoat.matrixWorld)
     .premultiply(new THREE.Matrix4().makeTranslation(-(bb.min.x + bb.max.x) / 2, -bb.min.y, -(bb.min.z + bb.max.z) / 2));
@@ -33368,10 +33523,14 @@ function ensureKeepBoat() {
   // she lies along the pier: her long axis (whichever it is on the beach) goes onto z
   const along = size.x >= size.z ? Math.PI / 2 : 0;
   wrap.rotation.y = along + KEEP_MOOR.yaw;
-  // the deck the pier stands at, measured off the walk, and her top a step under it
-  const st = keepStandAt(KEEP_X + KEEP_SPAWN.x, KEEP_Z + KEEP_SPAWN.z, KEEP_Y - 0.2, 3, 3);
-  const deck = st ? st.f - KEEP_Y : -0.2;
-  wrap.position.set(KEEP_MOOR.x, deck - 0.30 - size.y, KEEP_MOOR.z);
+  /* SHE FLOATS, AND THE WATERLINE IS WHAT SAYS SO. She was hung off the
+   * PIER — a step under its boards — and the pier is only 0.84 m over the
+   * sea, so the sea's own plane cut through her a third of the way up and
+   * what you looked down at from the deck was a boat with the water inside
+   * it. A hull sits on the water: her keel a hand under it and her gunwale
+   * most of a metre clear, which at this pier's height also puts her rail
+   * level with the boards, the way a boat tied up at a low dock is. */
+  wrap.position.set(KEEP_MOOR.x, KEEP_SEA + 0.92 - size.y, KEEP_MOOR.z);
   keepWorld.add(wrap);
   keepWorld.updateMatrixWorld(true);
   keepBoat = wrap;
@@ -33384,32 +33543,35 @@ function ensureKeepBoat() {
   proxy.position.set((kb.min.x + kb.max.x) / 2, kb.min.y + h / 2, (kb.min.z + kb.max.z) / 2);
   proxy.name = 'hitProxy'; proxy.visible = false;
   scene.add(proxy);
+  const kbb = { min: { x: kb.min.x, y: kb.min.y, z: kb.min.z }, max: { x: kb.max.x, y: kb.max.y, z: kb.max.z } };
   addInteractable(proxy, 'Set Sail', 'default', {
     mid: true, far: 9,
-    when: () => inKeep && !sailBusy,
+    when: () => inKeep && !sailBusy && boatHail(kbb),
     onActivate: () => startSail(-1),
   });
 }
 
 // -------------------------------------------------------- the air, the light
-/* A SUNSET, OUT OF THE NIGHT'S OWN LAMPS. The five sky lights are in the
- * scene for ever; what changes is their colour, their strength and where
- * the two directionals stand — the sun low over the water behind the rock
- * so the keep is rim-lit the way Sketchfab's environment lights it, a cool
- * fill from the sea side, a pink ambient and a sky-to-water hemisphere.
- * The beach's fog goes to a thin evening haze the colour of the sky's
- * horizon and its own sky dome is hidden: the model brought its own. */
+/* NIGHT, OUT OF THE NIGHT'S OWN LAMPS. The five sky lights are in the scene
+ * for ever; what changes is their colour, their strength and where the two
+ * directionals stand. The moon is drawn in the sky shader and the light is
+ * pointed out of it, so the rim on the rock and the disc you can see are
+ * the same thing — the mistake the saucer made twice was having them
+ * disagree. It is LIGHTER than the beach's own night on purpose: there is
+ * no glowstick out here and the island has to be readable to be walked.
+ * The beach's fog goes to a deep blue haze and its sky dome is hidden,
+ * because the model brought its own. */
 function keepEnter() {
   if (!_keepLightSaved) {
     _keepLightSaved = SKY_LIGHTS.map(({ l }) => ({
       l, color: l.color.clone(), intensity: l.intensity, pos: l.position.clone(),
       ground: l.groundColor ? l.groundColor.clone() : null,
     }));
-    moonLight.color.setHex(0xffc79c); moonLight.intensity = 3.2; moonLight.position.set(-150, 42, 110);
-    rakeLight.color.setHex(0x9cc2ec); rakeLight.intensity = 0.7; rakeLight.position.set(120, 35, -90);
-    cliffFill.color.setHex(0xeaa6c9); cliffFill.intensity = 0.55; cliffFill.position.set(50, 25, 140);
-    skyAmbient.color.setHex(0x8c7a9e); skyAmbient.intensity = 1.7;
-    skyHemi.color.setHex(0xf3b6d0); skyHemi.groundColor.setHex(0x2b8b90); skyHemi.intensity = 1.5;
+    moonLight.color.setHex(0xc9d6f4); moonLight.intensity = 2.30; moonLight.position.set(-124, 72, 140);
+    rakeLight.color.setHex(0x8196c4); rakeLight.intensity = 0.52; rakeLight.position.set(120, 30, -90);
+    cliffFill.color.setHex(0x51749b); cliffFill.intensity = 0.42; cliffFill.position.set(50, 18, 140);
+    skyAmbient.color.setHex(0x334469); skyAmbient.intensity = 1.35;
+    skyHemi.color.setHex(0x4d649a); skyHemi.groundColor.setHex(0x14232e); skyHemi.intensity = 0.95;
   }
   if (!_keepFogSaved) {
     _keepFogSaved = { color: scene.fog.color.clone(), density: scene.fog.density, sky: sky.visible };
@@ -33438,75 +33600,15 @@ function warmKeep() {
     warmStep('keep', () => warmView([keepWorld], ...v));
 }
 
-/* THE LADDERS. The model's way up is stairs AND ladders — measured at the
- * east stair: the lower flight ends at 2.0 m, the landing above it is at
- * 4.4, and between them the only geometry is a face at eighty degrees, a
- * wooden ladder — and the tower's own levels are joined the same way, by
- * two, four and five and a half metres at a time. A walk grid cannot climb a
- * ladder and this game's body cannot either, so the ladder is a VERB: face
- * a storey within `KEEP_CLIMB` above you (or a drop beyond `KEEP_DROP`
- * below) and E takes you up it — the camera rides the height at a climb's
- * pace, a rung underfoot every half second, and you are set down on the
- * storey you were facing. Which is also how the rock's ledges are taken,
- * because the island is a thing you climb about on as much as walk. */
-function findKeepClimb() {
-  keepClimbAt = null;
-  if (!inKeep || !keepWalk || keepClimb || !onGround) return;
-  const feet = camBaseY - playerEye();
-  const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd); fwd.y = 0;
-  if (fwd.lengthSq() < 1e-6) return;
-  fwd.normalize();
-  const p = camera.position;
-  let bestUp = null, bestDown = null;
-  for (const d of [0.55, 0.85, 1.15]) {
-    const x = p.x + fwd.x * d, z = p.z + fwd.z * d;
-    const fl = keepCellAt(x, z);
-    if (!fl) continue;
-    for (let k = 0; k < fl.length; k += 3) {
-      if (fl[k + 1]) continue;
-      const f = KEEP_Y + fl[k], rise = f - feet;
-      if (rise > KEEP_STEP && rise <= KEEP_CLIMB && (!bestUp || f < bestUp.f)) bestUp = { f, x, z, up: true };
-      if (rise < -KEEP_DROP && rise >= -KEEP_CLIMB && (!bestDown || f > bestDown.f)) bestDown = { f, x, z, up: false };
-    }
-    if (bestUp) break;
-  }
-  // a drop is only offered where there is no floor at your level ahead: a step down off an edge, not a hole beside a path
-  if (!bestUp && bestDown) {
-    const st = keepStandAt(bestDown.x, bestDown.z, feet);
-    if (st) bestDown = null;
-  }
-  keepClimbAt = bestUp || bestDown;
-}
-function startKeepClimb() {
-  if (!keepClimbAt || keepClimb) return;
-  const t = keepClimbAt;
-  const p = camera.position;
-  const from = { x: p.x, z: p.z, f: camBaseY - playerEye() };
-  const dur = Math.max(0.5, Math.abs(t.f - from.f) / 1.7);
-  keepClimb = { from, to: { x: t.x, z: t.z, f: t.f }, t: 0, dur, up: t.up };
-  keepClimbAt = null; keepRungT = 0;
-  blocking = false; winding = false;
-  sfxStepWood();
-}
-function updateKeepClimb(dt) {
-  const c = keepClimb; if (!c) return;
-  c.t += dt;
-  const k = Math.min(1, c.t / c.dur);
-  const e = k * k * (3 - 2 * k);
-  const feet = c.from.f + (c.to.f - c.from.f) * e;
-  // the body goes up first and over last, so it never sweeps through the face it is climbing
-  const over = c.up ? Math.max(0, (k - 0.75) / 0.25) : Math.min(1, k / 0.25);
-  const p = camera.position;
-  p.x = c.from.x + (c.to.x - c.from.x) * over;
-  p.z = c.from.z + (c.to.z - c.from.z) * over;
-  groundY = feet; camBaseY = feet + playerEye(); p.y = camBaseY; vy = 0; onGround = true;
-  velocity.set(0, 0, 0); knockback.set(0, 0, 0);
-  keepRungT += dt;
-  if (keepRungT > 0.46) { keepRungT = 0; sfxStepWood(); }
-  if (k >= 1) { groundY = c.to.f; keepClimb = null; }
-}
-
 // -------------------------------------------------------------- the walk
+/* YOU JUMP ONTO THINGS AND YOU WALK OFF THEM, AND THAT IS THE WHOLE OF IT.
+ * There was an E to climb a ledge, and it was a game playing the move for
+ * you: the owner asked for the button off and for the island to be a thing
+ * you get about by your own feet. So the floor is simply asked for at the
+ * height your feet are ACTUALLY at — a lip up to `KEEP_STEP` is walked up,
+ * anything higher wants the jump, and there is no limit below at all, so a
+ * ledge is walked off and the ground comes up to meet you. The only refusal
+ * left is a wall, which is the one thing a body cannot do. */
 function updateKeep(dt) {
   if (beachBoat === null && dock.children.length) findBeachBoat();
   updateBoatStand();
@@ -33515,23 +33617,253 @@ function updateKeep(dt) {
     return;
   }
   if (!keepBoat) ensureKeepBoat();
-  if (!keepWalk) { groundY = Math.max(groundY, KEEP_Y + KEEP_SEA); return; }
-  if (keepClimb) { updateKeepClimb(dt); return; }
+  updateKeepLift(dt);
+  if (!keepWalk) { groundY = Math.max(groundY, KEEP_Y + KEEP_WADE); return; }
   const p = camera.position;
   const feet = camBaseY - playerEye();
-  let st = keepStandAt(p.x, p.z, feet);
+  /* WHAT COUNTS AS A STEP DEPENDS ON WHERE YOU ARE. On the ground it is a
+   * lip; in the air it is whatever your feet come near, so a jump gets you
+   * onto something about a metre high and the jump is worth having; and
+   * out of the SEA you climb whatever the bank is, because a wade you
+   * cannot end is a trap — measured, the shelf is two metres under the
+   * beach and at a walking step you would have swum for ever. */
+  const up = !onGround ? KEEP_AIR : (keepWading ? KEEP_OUT : KEEP_STEP);
+  let st = keepStandable(p.x, p.z, feet, up);
   if (!st) {
-    /* NOWHERE TO STAND HERE — keep whichever one axis of the frame's move
-     * is clear, else stand still. A wall is slid along, not bounced off. */
-    if (keepStandAt(p.x, _preMove.z, feet)) p.z = _preMove.z;
-    else if (keepStandAt(_preMove.x, p.z, feet)) p.x = _preMove.x;
+    /* A WALL IS SLID ALONG, NOT BOUNCED OFF: keep whichever one axis of the
+     * frame's move is clear, else stand still. */
+    if (keepStandable(p.x, _preMove.z, feet, up)) p.z = _preMove.z;
+    else if (keepStandable(_preMove.x, p.z, feet, up)) p.x = _preMove.x;
     else { p.x = _preMove.x; p.z = _preMove.z; }
-    st = keepStandAt(p.x, p.z, feet);
+    st = keepStandable(p.x, p.z, feet, up);
   }
-  pushOutOfKeep(p, KEEP_BODY, feet);
-  st = keepStandAt(p.x, p.z, feet) || st;
-  groundY = st ? st.f : KEEP_Y + KEEP_SEA;
-  findKeepClimb();
+  pushOutOfKeep(p, KEEP_BODY, feet, up);
+  // and whatever the push left you standing on still has to hold you up, so
+  // the height falls back to the plain floor when you are being ejected
+  st = keepStandable(p.x, p.z, feet, up) || keepFloorAt(p.x, p.z, feet, up) || st;
+  /* AND THE DRAWN WORLD ENDS. Past the shelf there is nothing under the
+   * water but the sky sphere's rim, so the wade stops at the rim — the
+   * beach's own WADE_X, on a round island. */
+  const dx = p.x - KEEP_X, dz = p.z - KEEP_Z, d = Math.hypot(dx, dz);
+  if (d > KEEP_EDGE) { p.x = KEEP_X + (dx / d) * KEEP_EDGE; p.z = KEEP_Z + (dz / d) * KEEP_EDGE; }
+  groundY = st ? st.f : KEEP_Y + KEEP_WADE;
+  keepWading = !st || !!st.sea || st.f < KEEP_Y + KEEP_SEA - 0.05;
+}
+
+// --------------------------------------------------------------- the lift
+/* A LEVER, A COUNTERWEIGHT AND A PLATFORM, AND THE COUNTERWEIGHT IS THE
+ * MECHANISM. The island's own way up is stairs and ladders a body cannot
+ * take, so with the climb verb gone there has to be one honest way to the
+ * level above the shore — and a hoist is what a keep on a rock would have.
+ * Pull the lever and the timber block hanging in the head frame DROPS; the
+ * platform is the other end of the same rope, so it rises, and it takes you
+ * with it. Pull it again and the two change places. Nothing here is a
+ * number you cannot see: the weight goes down, you go up.
+ *
+ * WHERE IT STANDS IS MEASURED. Rays down the shaft say the sand under
+ * (-16.6, 24) is at 0.15 and there is open sky the whole way; rays across
+ * say the rock shelf's top is 7.0 two and a half metres east, and that
+ * shelf is 1,546 cells of walkable terrace. So the lift rises 6.9 m in the
+ * open and lands on a gangway that reaches the shelf — nothing is carved,
+ * nothing is moved, and the model is untouched. */
+function buildKeepLift() {
+  if (keepLift || !keepWorld) return;
+  const grp = new THREE.Group();
+  const ray = new THREE.Raycaster(new THREE.Vector3(KEEP_X + LIFT.x, KEEP_Y + 22, KEEP_Z + LIFT.z), new THREE.Vector3(0, -1, 0), 0.1, 44);
+  const hit = ray.intersectObject(keepWorld, true).filter((h) => h.object.name !== 'hitProxy'
+    && h.object.material && h.object.material.name !== 'material' && h.object.material.name !== 'material_5');
+  const base = hit.length ? hit[0].point.y - KEEP_Y + 0.02 : 0.15;
+  const hw = LIFT.hw, head = LIFT.top + 1.75;
+
+  const mk = (hex, emis) => {
+    const m = new THREE.MeshStandardMaterial({ color: hex, roughness: 1, metalness: 0, flatShading: true });
+    m.emissive.setHex(hex); m.emissiveIntensity = emis;      // the moon is the only light out here
+    return m;
+  };
+  const beamM = mk(0x4c3726, 0.30), plankM = mk(0x66492f, 0.28), ironM = mk(0x2b2b31, 0.22), ropeM = mk(0x7b6a49, 0.26);
+  const box = (w, h, d, x, y, z, m, rot) => {
+    const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+    o.position.set(x, y, z); if (rot) o.rotation.set(rot[0] || 0, rot[1] || 0, rot[2] || 0);
+    return o;
+  };
+
+  // the frame: four posts, two head beams and the drum the rope runs over
+  for (const sx of [-1, 1]) for (const sz of [-1, 1])
+    grp.add(box(0.17, head - base, 0.17, LIFT.x + sx * (hw + 0.13), base + (head - base) / 2, LIFT.z + sz * (hw + 0.13), beamM));
+  for (const sz of [-1, 1]) grp.add(box(2 * hw + 0.6, 0.20, 0.18, LIFT.x, head - 0.10, LIFT.z + sz * (hw + 0.13), beamM));
+  grp.add(box(0.18, 0.18, 2 * hw + 0.6, LIFT.x + hw + 0.13, head - 0.30, LIFT.z, beamM));
+  grp.add(box(0.18, 0.18, 2 * hw + 0.6, LIFT.x - hw - 0.13, head - 0.30, LIFT.z, beamM));
+  const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 2 * hw + 0.3, 10), beamM);
+  drum.rotation.z = Math.PI / 2; drum.position.set(LIFT.x, head - 0.34, LIFT.z);
+  grp.add(drum);
+  // braces, so it reads as something built rather than four sticks
+  for (const sz of [-1, 1]) {
+    const b = box(0.13, 1.5, 0.13, LIFT.x + sz * (hw + 0.13) * 0.62, base + 0.75, LIFT.z + sz * (hw + 0.13), beamM, [0, 0, sz * 0.62]);
+    grp.add(b);
+  }
+
+  // the platform: five planks on two bearers, with a rail on the three sides
+  // that are not the way off
+  const plat = new THREE.Group();
+  for (let k = 0; k < 5; k++) plat.add(box(2 * hw, 0.09, (2 * hw) / 5 - 0.03, 0, 0.045, -hw + (2 * hw) * (k + 0.5) / 5, plankM));
+  for (const sx of [-1, 1]) plat.add(box(0.12, 0.12, 2 * hw, sx * (hw - 0.1), -0.05, 0, beamM));
+  for (const [ox, oz, w, d] of [[0, -hw, 2 * hw, 0.1], [0, hw, 2 * hw, 0.1], [-hw, 0, 0.1, 2 * hw]]) {
+    plat.add(box(w, 0.09, d, ox, 0.95, oz, plankM));
+    for (const t of [-0.75, 0.75]) plat.add(box(0.1, 0.95, 0.1, ox === 0 ? t * hw : ox, 0.48, oz === 0 ? t * hw : oz, beamM));
+  }
+  plat.position.set(LIFT.x, base + 0.12, LIFT.z);
+  grp.add(plat);
+
+  // the counterweight: a block of the same timber, ironbound, hanging in the
+  // head frame on the open side, where you can see it before you touch
+  // anything — it is the whole mechanism and it has to be legible
+  const cw = new THREE.Group();
+  cw.add(box(0.62, 0.86, 0.62, 0, -0.43, 0, plankM));
+  for (const y of [-0.18, -0.68]) cw.add(box(0.68, 0.09, 0.68, 0, y, 0, ironM));
+  cw.add(box(0.1, 0.22, 0.1, 0, 0.08, 0, ironM));
+  cw.position.set(LIFT.x - hw - 0.62, LIFT.top + 1.0, LIFT.z);
+  grp.add(cw);
+
+  // the ropes: two off the drum to the platform's bearers, one to the weight
+  const ropes = [];
+  for (const sz of [-1, 1]) {
+    const r = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1, 6), ropeM);
+    r.position.set(LIFT.x + (hw - 0.1) * 0, 0, LIFT.z + sz * (hw - 0.12));
+    grp.add(r); ropes.push([r, sz]);
+  }
+  const cwRope = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1, 6), ropeM);
+  cwRope.position.set(LIFT.x - hw - 0.62, 0, LIFT.z);
+  grp.add(cwRope);
+
+  /* THE GANGWAY, because the terrace is two metres north and a lift that
+   * puts you down in mid-air is not a lift. It is planks, and it is the only
+   * thing here that is not a moving part. */
+  const gz0 = LIFT.z - hw, gz1 = LIFT.land, gl = gz0 - gz1;
+  for (let k = 0; k < 4; k++) grp.add(box(0.34, 0.09, gl, LIFT.x - 0.6 + k * 0.4, LIFT.top + 0.07, gz0 - gl / 2, plankM));
+  for (const t of [0.12, 0.55, 0.95]) grp.add(box(0.12, 0.85, 0.12, LIFT.x + 0.78, LIFT.top + 0.5, gz0 - gl * t, beamM));
+  grp.add(box(0.1, 0.09, gl, LIFT.x + 0.78, LIFT.top + 0.92, gz0 - gl / 2, plankM));
+  grp.add(box(0.2, 0.9, 0.2, LIFT.x, LIFT.top - 0.4, gz1 + 0.12, beamM));
+
+  // and the two levers, one at the sand and one where the gangway lands
+  const levers = [];
+  for (const [lx, ly, lz, tag] of [[LIFT.x, base, LIFT.z + hw + 0.55, 'foot'], [LIFT.x + 0.78, LIFT.top + 0.12, gz1 + 0.5, 'top']]) {
+    const post = new THREE.Group(); post.position.set(lx, ly, lz);
+    post.add(box(0.16, 1.05, 0.16, 0, 0.52, 0, beamM));
+    post.add(box(0.26, 0.12, 0.26, 0, 1.05, 0, ironM));
+    const arm = new THREE.Group(); arm.position.set(0, 1.0, 0);
+    arm.add(box(0.09, 0.62, 0.09, 0, 0.31, 0, ironM));
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), plankM);
+    knob.position.set(0, 0.64, 0); arm.add(knob);
+    post.add(arm);
+    grp.add(post);
+    const proxy = new THREE.Mesh(new THREE.BoxGeometry(0.85, 1.7, 0.85), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    proxy.position.set(lx, ly + 0.85, lz); proxy.name = 'hitProxy'; proxy.visible = false;
+    grp.add(proxy);
+    addInteractable(proxy, () => (keepLift && keepLift.state === 'up' ? 'Send the lift down' : 'Pull the lever'), 'action',
+      { far: 3.4, when: () => inKeep && keepLift && keepLift.state !== 'rising' && keepLift.state !== 'falling', onActivate: pullKeepLever });
+    levers.push({ arm, tag });
+  }
+
+  keepWorld.add(grp);
+  /* AND THE GANGWAY IS A FLOOR. The walk grid is the model's, and the model
+   * knows nothing about planks the game laid after it — so the bridge is a
+   * box the floor lookup reads, exactly as the platform and the boat are. */
+  keepGangBox = {
+    x0: KEEP_X + LIFT.x - 0.78, x1: KEEP_X + LIFT.x + 0.78,
+    z0: KEEP_Z + gz1 - 0.1, z1: KEEP_Z + gz0 + 0.02, top: KEEP_Y + LIFT.top + 0.12,
+  };
+  keepLift = { state: 'down', t: 0, dir: 1, base, y: KEEP_Y + base + 0.12, cwY: KEEP_Y + LIFT.top + 1.0, creak: 0, first: true };
+  keepLiftParts = { grp, plat, cw, ropes, cwRope, levers, head };
+  setKeepLift(0);
+}
+
+/* Everything the lift draws is written from ONE number — how far through the
+ * travel it is — so the rope, the weight, the platform and the floor you are
+ * standing on can never disagree with each other. */
+function setKeepLift(k) {
+  const L = keepLift, P = keepLiftParts; if (!L || !P) return;
+  const travel = LIFT.top - L.base;
+  const platY = L.base + travel * k;
+  P.plat.position.y = platY + 0.12;
+  P.cw.position.y = LIFT.top + 1.0 - travel * k;
+  L.y = KEEP_Y + platY + 0.12;
+  L.cwY = KEEP_Y + P.cw.position.y;
+  const hang = (r, topY, botY) => { r.scale.y = Math.max(0.01, topY - botY); r.position.y = (topY + botY) / 2; };
+  for (const [r] of P.ropes) hang(r, P.head - 0.34, platY + 0.18);
+  hang(P.cwRope, P.head - 0.34, P.cw.position.y + 0.08);
+  for (const lv of P.levers) lv.arm.rotation.x = k > 0.5 ? -0.62 : 0.62;
+  // the platform is a floor like the boat is: a box the walk reads
+  keepLiftBox = {
+    x0: KEEP_X + LIFT.x - LIFT.hw, x1: KEEP_X + LIFT.x + LIFT.hw,
+    z0: KEEP_Z + LIFT.z - LIFT.hw, z1: KEEP_Z + LIFT.z + LIFT.hw,
+    top: KEEP_Y + platY + 0.21,
+  };
+}
+
+function pullKeepLever() {
+  const L = keepLift; if (!L || L.state === 'rising' || L.state === 'falling') return;
+  L.dir = L.state === 'down' ? 1 : -1;
+  L.state = L.dir > 0 ? 'rising' : 'falling';
+  L.t = L.dir > 0 ? 0 : 1;
+  L.creak = 0;
+  sfxKeepLever(L.first && L.dir > 0);
+  L.first = false;
+}
+
+function updateKeepLift(dt) {
+  const L = keepLift; if (!L) return;
+  if (L.state !== 'rising' && L.state !== 'falling') return;
+  L.t = THREE.MathUtils.clamp(L.t + (L.dir * dt) / LIFT.dur, 0, 1);
+  setKeepLift(L.t * L.t * (3 - 2 * L.t));
+  L.creak += dt;
+  if (L.creak > 1.15) { L.creak = 0; sfxKeepCreak(); }
+  if ((L.dir > 0 && L.t >= 1) || (L.dir < 0 && L.t <= 0)) {
+    L.state = L.dir > 0 ? 'up' : 'down';
+    sfxKeepThud();
+  }
+}
+
+/* The lever is iron in a timber post and the pawl comes off the ratchet
+ * first — a clack, the block letting go, and then the rope taking the load.
+ * Nothing in it is above 900 Hz but the pawl itself. */
+function sfxKeepLever(drop) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  for (const [at, f, lv] of [[0, 620, 0.34], [0.07, 380, 0.26]]) {
+    const o = ctx.createOscillator(); o.type = 'square';
+    o.frequency.setValueAtTime(f, t + at); o.frequency.exponentialRampToValueAtTime(f * 0.45, t + at + 0.09);
+    const g = ctx.createGain(); g.gain.setValueAtTime(lv, t + at); g.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.12);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2200;
+    o.connect(lp).connect(g).connect(out); o.start(t + at); o.stop(t + at + 0.14);
+  }
+  if (drop) {                               // the weight letting go: rope running out
+    const n = noiseBurst(1.1, (x) => Math.pow(1 - x, 0.6) * (0.5 + 0.5 * Math.sin(x * 130)));
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.6;
+    bp.frequency.setValueAtTime(700, t + 0.1); bp.frequency.exponentialRampToValueAtTime(240, t + 1.1);
+    const g = ctx.createGain(); g.gain.value = 0.34;
+    n.connect(bp).connect(g).connect(out); n.start(t + 0.1); n.stop(t + 1.2);
+  }
+}
+function sfxKeepCreak() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime + Math.random() * 0.2, out = sfxOut();
+  const n = noiseBurst(0.5, (x) => Math.sin(x * Math.PI) * (0.6 + 0.4 * Math.sin(x * 26)));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 9;
+  bp.frequency.setValueAtTime(260 + Math.random() * 90, t); bp.frequency.linearRampToValueAtTime(190, t + 0.5);
+  const g = ctx.createGain(); g.gain.value = 0.16;
+  n.connect(bp).connect(g).connect(out); n.start(t); n.stop(t + 0.5);
+}
+function sfxKeepThud() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(96, t); o.frequency.exponentialRampToValueAtTime(44, t + 0.3);
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.5, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+  o.connect(g).connect(out); o.start(t); o.stop(t + 0.5);
+  const n = noiseBurst(0.26, (x) => Math.pow(1 - x, 2.2));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520;
+  const ng = ctx.createGain(); ng.gain.value = 0.42;
+  n.connect(lp).connect(ng).connect(out); n.start(t); n.stop(t + 0.3);
 }
 
 // ------------------------------------------------------------ the crossing
@@ -33673,8 +34005,9 @@ window.__bw = {
   }),
   startPortalTake, startPortalReturn, placeInDojo, placeBackAtPortal, wakeSamurai, warmDojo,
   dojoFloorAt, dojoGridAt, pushOutOfDojo,
-  KEEP_X, KEEP_Y, KEEP_Z, KEEP_SPAWN, KEEP_MOOR, loadKeep, startSail, placeInKeep, placeBackOnBoat, keepStandAt, keepCellAt, warmKeep, findBeachBoat, startKeepClimb, findKeepClimb,
-  get keepClimbAt() { return keepClimbAt; }, get keepClimb() { return keepClimb; }, updateHover,
+  KEEP_X, KEEP_Y, KEEP_Z, KEEP_SPAWN, KEEP_MOOR, LIFT, loadKeep, startSail, placeInKeep, placeBackOnBoat, keepFloorAt, keepStandAt, keepStandable, keepCellAt, warmKeep, findBeachBoat, pullKeepLever, updateHover,
+  get keepLift() { return keepLift && { state: keepLift.state, t: +keepLift.t.toFixed(2), y: +(keepLift.y - KEEP_Y).toFixed(2), cw: +(keepLift.cwY - KEEP_Y).toFixed(2) }; },
+  get keepRepair() { return keepWalk && keepWalk.repaired; },
   get keepWorld() { return keepWorld; }, get keepSky() { return keepSky; }, get keepSea() { return keepSea; }, get keepBoat() { return keepBoat; }, get beachBoat() { return beachBoat; },
   keepState: () => ({ inKeep, ready: keepReady, walk: !!keepWalk, cells: keepCells ? keepCells.size : 0, sail: sailBusy, t: +sailT.toFixed(2), onBoat, boatBox: beachBoatBox && [+beachBoatBox.min.x.toFixed(2), +beachBoatBox.min.y.toFixed(2), +beachBoatBox.min.z.toFixed(2), +beachBoatBox.max.x.toFixed(2), +beachBoatBox.max.y.toFixed(2), +beachBoatBox.max.z.toFixed(2)], keepBoatBox }),
   updateHurt, hurtEl,
