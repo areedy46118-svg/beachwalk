@@ -33409,7 +33409,8 @@ function repairKeepStoreys() {
   const w = keepWalk; if (!w || !keepCells || !keepWalls) return;
   const t0 = performance.now();
   let added = 0, asked = 0;
-  const lv = [], cnt = [], ceilOf = [];
+  const lv = [], cnt = [], sum = [], ceilOf = [];
+  let filled = 0;
   const sortCell = (fl) => {
     const t = []; for (let k = 0; k < fl.length; k += 3) t.push([fl[k], fl[k + 1], fl[k + 2]]);
     t.sort((p, q) => p[0] - q[0]); fl.length = 0;
@@ -33417,15 +33418,15 @@ function repairKeepStoreys() {
   };
   for (const [key, fl] of keepCells) {
     const i0 = key % w.gw, j0 = (key - i0) / w.gw;
-    lv.length = 0; cnt.length = 0; ceilOf.length = 0;
+    lv.length = 0; cnt.length = 0; sum.length = 0; ceilOf.length = 0;
     for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
       if (!di && !dj) continue;
       const nf = keepCells.get((j0 + dj) * w.gw + (i0 + di)); if (!nf) continue;
       for (let k = 0; k < nf.length; k += 3) {
         const f = nf[k]; let m = -1;
         for (let q = 0; q < lv.length; q++) if (Math.abs(lv[q] - f) < 0.30) { m = q; break; }
-        if (m < 0) { lv.push(f); cnt.push(1); ceilOf.push(nf[k + 2]); }
-        else { cnt[m]++; ceilOf[m] = Math.min(ceilOf[m], nf[k + 2]); }
+        if (m < 0) { lv.push(f); cnt.push(1); sum.push(f); ceilOf.push(nf[k + 2]); }
+        else { cnt[m]++; sum[m] += f; ceilOf[m] = Math.min(ceilOf[m], nf[k + 2]); }
       }
     }
     let did = false;
@@ -33437,14 +33438,36 @@ function repairKeepStoreys() {
       for (let k = 0; k < fl.length; k += 3) if (Math.abs(fl[k] - L) < 0.30) { have = true; break; }
       if (have) continue;
       asked++;
-      const y = keepDrawnFloor(cx, cz, KEEP_Y + L - 0.28, KEEP_Y + L + 0.28);
-      if (y === null) continue;                        // nothing drawn there: a real opening
+      /* AND THE CENTRE OF A CELL IS NOT THE CELL. A doorway's threshold is a
+       * slot narrower than the grid, so a single probe down the middle of
+       * the cell falls through the gap the repair exists to close; five
+       * points over the cell find whatever of it is actually drawn. */
+      const h = w.cell * 0.3;
+      let y = keepDrawnFloor(cx, cz, KEEP_Y + L - 0.28, KEEP_Y + L + 0.28);
+      if (y === null) for (const [ox, oz] of [[-h, -h], [h, -h], [-h, h], [h, h]]) {
+        y = keepDrawnFloor(cx + ox, cz + oz, KEEP_Y + L - 0.28, KEEP_Y + L + 0.28);
+        if (y !== null) break;
+      }
+      /* AND A LONE HOLE IN A FLOOR IS A SAMPLING GAP, NOT AN OPENING. The
+       * geometry probe answers the doorway slots; what it cannot answer is
+       * a cell in the middle of a terrace where the packer happened to land
+       * no triangle and nothing is drawn at the cell's five probe points
+       * either — and a body walking over one falls sixteen metres through a
+       * floor it is standing on. The undercroft's own rule: fill it only if
+       * it is ENCLOSED, which here is six of its eight neighbours carrying
+       * the level. The hoist's shaft is twenty cells across, so no cell in
+       * it ever has six, and a hole you are meant to fall down stays. */
+      if (y === null) {
+        if (cnt[q] < 6) continue;                      // a real opening
+        fl.push(sum[q] / cnt[q], 0, ceilOf[q]);
+        filled++; did = true; continue;
+      }
       fl.push(y - KEEP_Y, 0, ceilOf[q]);
       added++; did = true;
     }
     if (did) sortCell(fl);
   }
-  keepWalk.storeys = { added, asked, ms: Math.round(performance.now() - t0) };
+  keepWalk.storeys = { added, filled, asked, ms: Math.round(performance.now() - t0) };
 }
 function repairKeepGround() {
   const t0 = performance.now();
@@ -33558,20 +33581,23 @@ function keepFloorAt(x, z, feet, up = KEEP_STEP) {
 const keepStandAt = (x, z, feet, up = KEEP_STEP) => keepFloorAt(x, z, feet, up);
 /* AND THE WALK AND THE PUSH-OUT HAVE TO ASK THE SAME QUESTION — the pier's
  * own lesson on an island. `keepFloorAt` answers "what is the ground here",
- * which is what a gib and a placement want, and it answers with a floor even
- * where the packer marked the BODY BAND over it as full; `pushOutOfKeep`
- * calls exactly those cells solid. So a cell with the band set was one the
- * walk let you stand on and the push-out shoved you off, on the same frame,
- * for ever: measured on the east shore, a two-frame limit cycle six
- * centimetres wide that pinned the body on ground with nothing drawn on it.
- * A cell you may STAND on is one with nothing in the band, and that is the
- * only question the walk asks now. Measured: it costs 2,380 of 46,687
- * reachable cells — the ones your shoulders were inside anyway — and every
- * one of the 36 bearings round the island is still walked. */
-const keepStandable = (x, z, feet, up = KEEP_STEP) => {
-  const st = keepFloorAt(x, z, feet, up);
-  return st && !st.s ? st : null;
-};
+ * which is what a gib and a placement want.
+ *
+ * IT USED TO ASK THE BODY BAND AS WELL, AND THE BAND IS HALF A METRE WIDE.
+ * The packer marks a cell's band full if ANY triangle stands in it, so a
+ * handrail post ten centimetres thick refuses the whole cell it is in — and
+ * a row of them, or a pier, or a doorway's jamb, is a scatter of half-metre
+ * squares across a floor you are looking straight at. Measured on the
+ * terrace outside the keep's door: nineteen cells of it, every one drawn,
+ * every one a hole you walk into and fall sixteen metres down. That is the
+ * whole of "I should be able to walk around the second floor".
+ *
+ * What is in the way is now asked of the DRAWN FACES instead (`keepWallPush`
+ * — a quarter of a metre from a real triangle rather than a whole cell from
+ * the middle of one), so the grid is left to answer the one question it is
+ * good at: where is there ground. The band is still what stops a gib and
+ * still rides in the triple; the walk no longer reads it. */
+const keepStandable = (x, z, feet, up = KEEP_STEP) => keepFloorAt(x, z, feet, up);
 /* The general "what is under this", for blood, gibs and anything thrown:
  * the highest floor at or under the point, else the sea. Chained into
  * `bunkerFloorAt` like every other room, answering only inside its own
@@ -33620,14 +33646,14 @@ bunkerFloorAt = (x, z, y) => {
  * taken at your CHEST: a 0.6 m kerb's faces are all below it, a jump lifts
  * the segment with your feet, and a wall is a wall at any triangle size. */
 const KEEP_WALL_MIN = 0.12;               // under this is a sliver, not a surface
-const KEEP_WALL_NY = 0.35;                // steeper than about 70 degrees: a face, not a slope
+const KEEP_WALL_NY = 0.55;                // and a face is a FLOOR or a WALL, nothing between: whatever is too steep to stand on is in the way
 let keepWalls = null;
 function buildKeepWalls() {
   if (keepWalls || !keepWorld) return;
   keepWorld.updateMatrixWorld(true);
   const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
   const ab = new THREE.Vector3(), ac = new THREE.Vector3(), n = new THREE.Vector3();
-  const tris = [], steep = [], cell = 1.0, map = new Map();
+  const tris = [], steep = [], ylo = [], yhi = [], cell = 1.0, map = new Map();
   const key = (i, j) => (i + 4096) * 16384 + (j + 4096);
   keepWorld.traverse((o) => {
     if (!o.isMesh || o.name === 'hitProxy' || !o.geometry || !o.geometry.index) return;
@@ -33646,7 +33672,7 @@ function buildKeepWalls() {
       const isFloor = ny > 0.55;                                 // something you could stand on
       if (!isWall && !isFloor) continue;
       const id = tris.length / 9;
-      steep.push(isWall ? 1 : 0);
+      steep.push(isWall ? 1 : 0); ylo.push(lo); yhi.push(hi);
       tris.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
       const i0 = Math.floor((Math.min(a.x, b.x, c.x) - KEEP_X) / cell), i1 = Math.floor((Math.max(a.x, b.x, c.x) - KEEP_X) / cell);
       const j0 = Math.floor((Math.min(a.z, b.z, c.z) - KEEP_Z) / cell), j1 = Math.floor((Math.max(a.z, b.z, c.z) - KEEP_Z) / cell);
@@ -33656,7 +33682,75 @@ function buildKeepWalls() {
       }
     }
   });
-  keepWalls = { v: new Float32Array(tris), steep: new Uint8Array(steep), map, cell, key };
+  keepWalls = { v: new Float32Array(tris), steep: new Uint8Array(steep),
+    ylo: new Float32Array(ylo), yhi: new Float32Array(yhi), map, cell, key };
+}
+/* AND A CROSSING TEST HAS NO THICKNESS, WHICH IS HOW YOU GET INSIDE A WALL.
+ * The sweep only ever asked whether the frame's own movement CROSSED a face
+ * — and a frame's movement is ten centimetres. Creep at it, be nudged at it
+ * by the grid's own push-out, or arrive on a frame that hitched, and you
+ * finish the frame a few centimetres PAST the face; from in there every
+ * later segment is on the far side of it and crosses nothing at all, so the
+ * wall is behind you for good. That is the whole of "I keep walking through
+ * rocks and walls and brick". A body has a WIDTH: the drawn faces push it
+ * out the way the packer's own cells do, and the sweep is left as the
+ * safety net for a frame long enough to jump the band.
+ *
+ * It is a PLAN distance, because a wall is vertical: the nearest point of
+ * the triangle's own footprint to where you are standing. And the y band is
+ * what keeps a STEP a step — it starts a lip's height over your feet, so a
+ * riser you are meant to walk up is under the body entirely and only what
+ * stands between your knee and your head is a wall. */
+function keepWallNear(x, z, r, lo, hi) {
+  const W = keepWalls; if (!W) return null;
+  const v = W.v, ic = Math.floor((x - KEEP_X) / W.cell), jc = Math.floor((z - KEEP_Z) / W.cell);
+  let bd = -1, bx = 0, bz = 0;
+  for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+    const list = W.map.get(W.key(ic + di, jc + dj)); if (!list) continue;
+    for (let m = 0; m < list.length; m++) {
+      const id = list[m];
+      if (!W.steep[id] || W.yhi[id] <= lo || W.ylo[id] >= hi) continue;
+      const o = id * 9;
+      seg2(x, z, v[o], v[o + 2], v[o + 3], v[o + 5]);
+      let nx = _s2.x, nz = _s2.z, d2 = (x - nx) * (x - nx) + (z - nz) * (z - nz);
+      seg2(x, z, v[o + 3], v[o + 5], v[o + 6], v[o + 8]);
+      let d = (x - _s2.x) * (x - _s2.x) + (z - _s2.z) * (z - _s2.z);
+      if (d < d2) { d2 = d; nx = _s2.x; nz = _s2.z; }
+      seg2(x, z, v[o + 6], v[o + 8], v[o], v[o + 2]);
+      d = (x - _s2.x) * (x - _s2.x) + (z - _s2.z) * (z - _s2.z);
+      if (d < d2) { d2 = d; nx = _s2.x; nz = _s2.z; }
+      if (d2 >= r * r) continue;
+      const depth = r - Math.sqrt(d2);
+      if (depth > bd) { bd = depth; bx = nx; bz = nz; }
+    }
+  }
+  return bd < 0 ? null : { x: bx, z: bz, depth: bd };
+}
+const _s2 = { x: 0, z: 0 };
+function seg2(px, pz, ax, az, bx, bz) {          // nearest point on a plan segment
+  const dx = bx - ax, dz = bz - az, L = dx * dx + dz * dz;
+  let t = L > 1e-12 ? ((px - ax) * dx + (pz - az) * dz) / L : 0;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  _s2.x = ax + dx * t; _s2.z = az + dz * t; return _s2;
+}
+/* AND IT IS THE DEEPEST ONE, ASKED AGAIN — never the sum. `pushOutOfKeep`
+ * sums because its cells are a grid and a small object's cells fan out
+ * round you; a wall is thirty coplanar TRIANGLES all pushing the same way,
+ * and summing those throws a body across the island. The beach's own rule
+ * for overlapping colliders: take the one you are deepest in, push out of
+ * that, and ask again. */
+function keepWallPush(p, r, feet) {
+  const lo = feet + KEEP_STEP + 0.04, hi = feet + 1.75;
+  let moved = false;
+  for (let k = 0; k < 4; k++) {
+    const h = keepWallNear(p.x, p.z, r, lo, hi); if (!h) break;
+    let ox = p.x - h.x, oz = p.z - h.z;
+    const L = Math.hypot(ox, oz);
+    if (L < 1e-5) break;                          // dead on the face: nowhere to go
+    p.x += (ox / L) * (h.depth + 0.002); p.z += (oz / L) * (h.depth + 0.002);
+    moved = true;
+  }
+  return moved;
 }
 /* Möller–Trumbore against the faces in the cells the segment touches. */
 const _kwA = new THREE.Vector3(), _kwD = new THREE.Vector3(), _kwE1 = new THREE.Vector3(),
@@ -33733,8 +33827,7 @@ function pushOutOfKeep(p, r, feet, up) {
     for (let i = i0; i <= i1; i++) {
       if (i < 0 || i >= w.gw) continue;
       const cx = KEEP_X + w.x0 + (i + 0.5) * cell, cz = KEEP_Z + w.z0 + (j + 0.5) * cell;
-      const st = keepFloorAt(cx, cz, feet, up);
-      if (st && !st.s) continue;                 // floor at my level (or water), nothing in the way
+      if (keepFloorAt(cx, cz, feet, up)) continue;   // there is ground at my level here
       const nx = THREE.MathUtils.clamp(p.x, cx - cell / 2, cx + cell / 2);
       const nz = THREE.MathUtils.clamp(p.z, cz - cell / 2, cz + cell / 2);
       let ox = p.x - nx, oz = p.z - nz;
@@ -33956,8 +34049,15 @@ function updateKeep(dt) {
    * BETWEEN. The grid answers the first and the model itself answers the
    * second, swept at chest height from where you stood before the frame
    * moved you. */
-  const chest = feet + 0.95;
-  const legal = (x, z) => keepStandable(x, z, feet, up) && !keepHitsWall(_preMove.x, _preMove.z, x, z, chest);
+  /* AND THE SWEEP IS A BODY, NOT A LINE AT ONE HEIGHT. At the chest alone a
+   * handrail is a bar that passes clean over the segment and its posts are
+   * gaps either side of it, which is the whole of "I walk through the
+   * railings": three heights between a lip's height and the crown cover
+   * what a person is actually as wide as. */
+  const hits = (x0, z0, x1, z1) => keepHitsWall(x0, z0, x1, z1, feet + 0.80)
+    || keepHitsWall(x0, z0, x1, z1, feet + 1.25)
+    || keepHitsWall(x0, z0, x1, z1, feet + 1.68);
+  const legal = (x, z) => keepStandable(x, z, feet, up) && !hits(_preMove.x, _preMove.z, x, z);
   let st = legal(p.x, p.z);
   if (!st) {
     /* A WALL IS SLID ALONG, NOT BOUNCED OFF: keep whichever one axis of the
@@ -33968,6 +34068,7 @@ function updateKeep(dt) {
     st = keepStandable(p.x, p.z, feet, up);
   }
   pushOutOfKeep(p, KEEP_BODY, feet, up);
+  keepWallPush(p, KEEP_BODY, feet);
   // and whatever the push left you standing on still has to hold you up, so
   // the height falls back to the plain floor when you are being ejected
   st = keepStandable(p.x, p.z, feet, up) || keepFloorAt(p.x, p.z, feet, up) || st;
@@ -34459,7 +34560,7 @@ window.__bw = {
   }),
   startPortalTake, startPortalReturn, placeInDojo, placeBackAtPortal, wakeSamurai, warmDojo,
   dojoFloorAt, dojoGridAt, pushOutOfDojo,
-  KEEP_X, KEEP_Y, KEEP_Z, KEEP_SPAWN, KEEP_MOOR, LIFT, loadKeep, startSail, placeInKeep, placeBackOnBoat, keepFloorAt, keepStandAt, keepStandable, keepHitsWall, keepCellAt, warmKeep, findBeachBoat, pullKeepLever, updateHover,
+  KEEP_X, KEEP_Y, KEEP_Z, KEEP_SPAWN, KEEP_MOOR, LIFT, loadKeep, startSail, placeInKeep, placeBackOnBoat, keepFloorAt, keepStandAt, keepStandable, keepHitsWall, keepWallNear, keepWallPush, keepDrawnFloor, keepCellAt, warmKeep, findBeachBoat, pullKeepLever, updateHover,
   get keepWalls() { return keepWalls && { faces: keepWalls.v.length / 9, cells: keepWalls.map.size }; },
   get keepLift() { return keepLift && { state: keepLift.state, t: +keepLift.t.toFixed(2), y: +(keepLift.y - KEEP_Y).toFixed(2), drop: +keepLift.drop.toFixed(2), landY: +keepLift.landY.toFixed(2), box: keepLiftBox && { top: +(keepLiftBox.top - KEEP_Y).toFixed(2), x: [+(keepLiftBox.x0 - KEEP_X).toFixed(1), +(keepLiftBox.x1 - KEEP_X).toFixed(1)], z: [+(keepLiftBox.z0 - KEEP_Z).toFixed(1), +(keepLiftBox.z1 - KEEP_Z).toFixed(1)] } }; },
   get keepRepair() { return keepWalk && { ground: keepWalk.repaired, storeys: keepWalk.storeys }; },

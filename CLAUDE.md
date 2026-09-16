@@ -9218,3 +9218,77 @@ sand a rim's width outside the mouth. **And testing it needs the pane
 VISIBLE** — the cut is on the wall clock inside `animate`, so a hidden pane
 runs no frames, `updateUndercroftCut` never advances and `leaveUndercroft`
 never completes; `ucBusy` stuck true is the tell.
+
+**A CROSSING TEST HAS NO THICKNESS, AND THE BODY BAND IS HALF A METRE WIDE —
+THE TWO FAULTS THAT MADE THE KEEP UNPLAYABLE.** The round before put the
+drawn faces in the walk as a swept segment and measured 5 of 56 hands-off
+walks still crossing one; the owner played it and walked through rocks,
+walls and brick. Both halves were wrong and they are opposite mistakes.
+
+- **A SEGMENT ONLY EVER ASKED WHETHER THE FRAME'S OWN MOVEMENT CROSSED A
+  FACE, AND A FRAME'S MOVEMENT IS TEN CENTIMETRES.** Creep at a wall, be
+  nudged into it by the grid's own push-out, or arrive on a frame that
+  hitched, and you finish a few centimetres PAST the face — and from in
+  there every later segment is on the far side and crosses nothing at all,
+  so the wall is behind you for good. A body has a WIDTH. `keepWallNear` is
+  the nearest steep triangle's own footprint in PLAN (a wall is vertical,
+  so the plan distance is the distance), and `keepWallPush` ejects the body
+  out of the DEEPEST one and asks again — never the sum, because a wall is
+  thirty coplanar triangles all pushing the same way and summing those
+  throws a body across the island. The sweep stays as the safety net for a
+  frame long enough to jump the band, at THREE heights: at the chest alone
+  a handrail is a bar that passes clean over the segment with its posts to
+  either side, which is the whole of "I walk through the railings".
+- **AND THE Y BAND IS WHAT KEEPS A STEP A STEP.** It starts a lip's height
+  over your feet (`KEEP_STEP + 0.04`) and ends at the crown, so a riser you
+  are meant to walk up is under the body entirely and only what stands
+  between your knee and your head is a wall. A floor slab's own edge — a
+  steep face two metres deep — is below the band of anyone standing on it.
+- **AND A FACE IS A FLOOR OR A WALL, NOTHING BETWEEN.** `KEEP_WALL_NY` was
+  0.35, about seventy degrees, so a rounded boulder's flank at sixty was
+  neither: not a floor you could stand on and not a wall that stopped you.
+  0.55 is the same number `isFloor` uses, so the two partition every face
+  the grid keeps.
+- **AND THE PACKER'S BODY BAND IS HALF A METRE WIDE.** It marks a cell full
+  if ANY triangle stands in it, so a handrail post ten centimetres thick
+  refuses the whole cell — and a row of them, a pier, a doorway's jamb, is
+  a scatter of half-metre squares across a floor you are looking straight
+  at. Measured on the terrace outside the keep's door: **nineteen cells of
+  it**, every one drawn, every one a hole you walk into and fall sixteen
+  metres down. That is the whole of "I should be able to walk around the
+  second floor". The walk no longer reads the band at all — what is in the
+  way is asked of the drawn faces, a quarter of a metre from a real
+  triangle rather than a whole cell from the middle of one — so the grid is
+  left to answer the one question it is good at: WHERE IS THERE GROUND.
+  `keepStandable` is `keepFloorAt` now, and `pushOutOfKeep` ejects only
+  from cells with no floor at your level at all.
+- **AND A LONE HOLE IN A FLOOR IS A SAMPLING GAP, NOT AN OPENING.** The
+  geometry probe answers a doorway's threshold; what it cannot answer is a
+  cell in the middle of a terrace where the packer landed no triangle and
+  nothing is drawn at the probe points either. The undercroft's own rule:
+  fill it only if it is ENCLOSED, which here is six of its eight neighbours
+  carrying the level. The hoist's shaft is twenty cells across, so no cell
+  in it ever has six and a hole you are MEANT to fall down stays. 1,348
+  filled. **And the centre of a cell is not the cell** — a threshold is a
+  slot narrower than the grid, so the drawn-floor probe takes five points
+  over the cell rather than one down its middle.
+
+Measured after. Thirty-six hands-off walks straight at the keep from three
+rings, 14,400 frames: **8 frames with the body touching a drawn wall at all
+(0.06 %) and a worst overlap of 0.187 m against a 0.26 m body — never
+inside one**, against a baseline where the keep's own studded door could be
+walked straight through. The terrace outside that door has **no floorless
+cell anywhere** over an 11 × 9 m sweep at 25 cm (nineteen before), and
+walked from a spot clear of the hoist's shaft, 9 of 12 headings stay on it
+at 16.1 and the three that do not go down the shaft itself, with 1 grazing
+frame in 1,560. The island still floods to 81,043 cells with **all 36
+bearings**, and it now TERMINATES — before the walls it leaked through the
+rock and out over the sea and never closed. The tick is 0.365 ms (worst
+4.0) and the keep's storey repair 97 → 209 ms at load.
+
+**WHAT IS NOT VERIFIED:** the full ring loop round the island. A harness
+that follows a route over the walk grid stalls on the shore under the
+overhangs, and at every spot it stalls the measurement says the way is
+clear — floor in all eight directions, no face crossed at any of the three
+heights, nothing within the body — so it is the steering and not the new
+collision. It was not chased further this round.
