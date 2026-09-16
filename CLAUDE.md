@@ -8995,15 +8995,9 @@ round with ease.
   is the one question the walk asks now. It costs 2,380 of 46,687 reachable
   cells — the ones your shoulders were inside anyway — and every one of the
   36 bearings round the island is still walked.
-- **A COUNTERWEIGHT IS THE MECHANISM.** The lift's weight and its platform
-  are the two ends of one rope driven from one number (`setKeepLift(k)`), so
-  the rope, the weight, the platform and the floor you stand on cannot
-  disagree. Where it stands is measured off the model: rays down the shaft
-  put the sand under (-16.6, 24) at 0.15 with open sky the whole way, and
-  rays across put the shelf's top at 7.0 two and a half metres east — 1,546
-  cells of walkable terrace. Nothing is carved and the model is untouched.
-  Both levers carry an invisible `hitProxy`, because a lever arm is a stick
-  and the crosshair goes past it.
+- **A COUNTERWEIGHT WAS THE MECHANISM, AND IT WAS BUILT AND THEN DELETED** —
+  four posts, a drum, a hanging weight and a gangway. See the round below:
+  the model already has a hoist and the owner's word was to use it.
 - **A BOX FLOOR IS READ BY THE SAME LOOKUP AS THE MODEL'S OWN GRID.** The
   boat, the lift platform and the gangway are planks the game laid after the
   pack, so the walk grid knows nothing about them; `keepBoatBox`,
@@ -9036,3 +9030,83 @@ walls: standing on the terrace instead of the shelf under it, the same
 ground walks straight through. **A ROUTE OVER A GRID OF STOREYS MUST CARRY
 THE STOREY**; an (x, z) waypoint is not a place on an island with an
 overhang on it.
+
+
+**AND THE HOIST WAS ALREADY IN THE MODEL — TAKE OUT THE ONE YOU BUILT.** The
+owner's word on the timber lift of the round before: take it out and make
+the one that is already there work, use the assets in the model, and — the
+part that says what it is FOR — *I need to reach that height*. He is right,
+and it is the undercroft's rule a second time: MAKE THIS BETTER IS NOT BUILD
+YOUR OWN. JesseL drew a cargo hoist against the cliff — a planked car with
+rails and a crate on it, two guide frames eight metres tall, a head beam
+with pulley blocks at 21.8, and a timber jetty under it at the shore — and
+beside a real one anything hand-built is a stack of boxes.
+
+- **AND THE HEIGHT IS THE POINT, WHICH IS A MEASUREMENT.** Flooded with the
+  body disc and the game's own standability test, the walk from the pier
+  reaches **4.87 m and no higher**; the hoist's car as drawn sits at 14.10
+  with the keep's terrace at 13.8 either side of it and its jetty at 2.3.
+  So the one thing on this island a body cannot do is exactly the thing the
+  hoist is for, and nothing had to be invented to find that out.
+- **THE PACKER BAKES EVERY NODE INTO WORLD SPACE, SO THE CAR IS NOT AN
+  OBJECT.** It is triangles inside three 44,000-triangle meshes, and the
+  source `scene.gltf` is no help — twenty-five nodes, not one of them named
+  for a part. It comes out the way the bunker's tripod camera came out of
+  its merged mesh: WELD BY POSITION, FLOOD THE ISLANDS, AND TAKE THE ONES
+  WHOSE WHOLE BOUNDING BOX LIES INSIDE THE CAR. A box test on triangles
+  alone tears the bottom metre off both guide frames, which stand ON the
+  car's deck and pass through its plan. The piece SHARES its source's
+  attributes and carries only its own index — no vertices are copied, the uv
+  is the scan's own, and the car cannot come out a different colour from the
+  frame it hangs in. 147 ms at load, on the beach, long before you sail.
+- **`matrixWorld` IS ONLY WRITTEN BY A RENDER** — this file's oldest trap,
+  and it bit again: run in the loader, every mesh measures in its own space,
+  nothing intersects the car's box and the whole thing silently finds
+  nothing. And **a proxy hung under the keep's own group is in the keep's
+  frame**: the island stands at (-6000, 800, 6000), so a world position
+  written straight into `position` lands twice as far out and the crosshair
+  finds nothing at all.
+- **TAKING A SURFACE AWAY DOES NOT TAKE AWAY WHAT THE GRID REMEMBERS OF IT.**
+  The desk's own lesson: the car's storeys come out of the cells under its
+  plan, or the walk goes on offering a floor at 14.44 where there is now
+  nothing. Three ways to get that wrong, all measured: written as a loop over
+  METRES it runs a cell wide on every side and takes the KEEP'S OWN TERRACE
+  with it — a half-metre moat round the car at the top; written to the car's
+  own timber, the half of each cleared CELL that sticks out past the timber
+  is a 20 cm slot you fall fourteen metres through; and the model draws the
+  car inside a well with a finger's clearance all round that never had a
+  floor in it either. The plan is the cells the car took ground from, the
+  car's own measured box, and a hand's width over.
+- **AND WHERE DOWN IS, IS MEASURED ON THE FLOOR THE FEET USE.** The jetty is
+  a RAMP — its walk runs 2.70 at the landward end to 1.94 at the seaward one,
+  and a corner of the car's plan clips the rock the hoist is bolted to at
+  3.42. Parked over the highest of those the car is a metre in the air;
+  parked a step over the middle of the ramp it is a 0.68 m climb from the far
+  end, over the 0.62 the walk allows — measured, you stroll straight past it
+  and off the other side instead of stepping aboard. It rests a hand over the
+  MEDIAN of the floors under its own plan, so it is a quarter of a step up
+  from one end and a third of one down from the other, and a drop is free.
+- **AND THE CONTROL IS THE HOIST, NOT A LEVER SOMEBODY ADDED.** Two invisible
+  proxies — the file's own way of giving a crosshair something to find — one
+  standing on the jetty under it so you can call it down, and one riding the
+  car so you can send yourself up once you are aboard. `E Lower the hoist` /
+  `E Raise the hoist`, under the crosshair.
+
+**AND SHE FLOATS BY HER SOLE, NOT BY HER RAIL.** The moored boat was hung a
+measured 0.92 m of freeboard under the pier's boards, which is what a boat
+tied up at a low dock looks like FROM THE DOCK and says nothing about where
+her floor is: on a shallow open boat the sole is most of that metre down.
+Measured, it lay at -1.29 against a sea plane at -1.07, so the water was
+drawn inside her and you boarded a swamped boat — the owner's report two
+rounds running. Rays down her centreline find the deepest surface a body
+could stand on and she is floated until that is clear of the sea. It is a
+measurement and not a number because the hull is a scan: repack it and the
+freeboard would be wrong again. Measured after: sole -0.91 to -0.97 against
+the sea at -1.07, and "E Set Sail" still reads from the boards beside her
+and standing on her.
+
+Measured at the end: the walk from the pier still reaches 44,500 cells and
+all 36 bearings, still tops out at 4.87 m on foot — and the hoist takes you
+from the jetty at 2.53 to 14.10 in seven and a half seconds, called down
+from the ground, walked onto, ridden, and walked off at the top onto the
+keep's own terrace at 13.8.

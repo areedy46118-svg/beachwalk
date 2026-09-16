@@ -33105,14 +33105,6 @@ const KEEP_OUT = 2.4;                     // and out of the sea you climb, howev
 const KEEP_BODY = 0.26;                   // the bunker's own disc: a stylised stair is a body's width between its walls
 const KEEP_WADE = -1.95;                  // off the shelf you are in the sea, chest deep, and you wade back
 const KEEP_EDGE = 46;                     // the drawn world ends: the walk stops at the rim of the shelf
-/* THE LIFT, AND EVERY NUMBER IN IT WAS READ OFF THE MODEL. Rays down the
- * shaft say the sand at (2.1, 18.5) is at 0.05 with OPEN SKY the whole way
- * — not a ceiling nine metres up, which is what most of this island has —
- * and the walk grid says the keep's own terrace begins two metres north at
- * 9.9, which is the first level over the shore and the biggest thing on the
- * island you cannot otherwise reach. So the lift rises 9.9 m in the open
- * and a gangway carries the last two. `land` is the z the planks reach. */
-const LIFT = { x: 2.1, z: 18.5, hw: 0.9, top: 9.95, land: 16.55, dur: 7.2 };
 const KEEP_SPAWN = { x: -5.4, z: 34.4, yaw: 0.0 };   // the end of the long south pier, facing the rock
 const KEEP_MOOR = { x: -0.95, z: 30.6, yaw: 0.0 };   // the boat, alongside its east side
 const KEEP_FOG = { color: new THREE.Color(0x0a1220), density: 0.0075 };
@@ -33124,7 +33116,7 @@ let inKeep = false, keepWarmed = false;
 let sailBusy = false, sailT = 0, sailDir = 1, sailCut = false;
 let beachBoat = null, beachBoatBox = null, beachBoatProxy = null, onBoat = false;
 let keepBoat = null, keepBoatBox = null;
-let keepLift = null, keepLiftBox = null, keepGangBox = null, keepLiftParts = null;
+let keepLift = null, keepLiftBox = null, keepLiftParts = null;
 let keepWading = false;
 let _keepFogSaved = null, _keepLightSaved = null, keepClouds = null;
 
@@ -33379,7 +33371,7 @@ function keepFloorAt(x, z, feet, up = KEEP_STEP) {
   }
   // and the two floors that are not the island: what is tied up at the pier
   // and what the lever sends up and down
-  for (const b of [keepBoatBox, keepLiftBox, keepGangBox]) {
+  for (const b of [keepBoatBox, keepLiftBox]) {
     if (!b || x < b.x0 || x > b.x1 || z < b.z0 || z > b.z1) continue;
     if (b.top <= feet + up && (!best || b.top > best.f)) best = { f: b.top, s: false, c: KEEP_Y + 99 };
   }
@@ -33533,6 +33525,32 @@ function ensureKeepBoat() {
   wrap.position.set(KEEP_MOOR.x, KEEP_SEA + 0.92 - size.y, KEEP_MOOR.z);
   keepWorld.add(wrap);
   keepWorld.updateMatrixWorld(true);
+  /* AND HOW HIGH SHE FLOATS IS MEASURED INSIDE HER, NOT AT HER RAIL. Hanging
+   * her by the gunwale — most of a metre of freeboard, which is what a boat
+   * tied up at a low pier looks like from the pier — says nothing about where
+   * her SOLE is, and on a shallow open boat the sole is most of that metre
+   * down: measured, her floor lay at -1.29 against a sea plane at -1.07, so
+   * the water was drawn INSIDE her and you boarded a swamped boat. Rays down
+   * her centreline find the deepest surface a body could stand on and she is
+   * floated until that is clear of the sea. It is a measurement rather than
+   * a number because the hull is a scan and the day it is repacked the
+   * freeboard would be wrong again. */
+  const sole = (() => {
+    const b0 = new THREE.Box3().setFromObject(wrap);
+    const cx = (b0.min.x + b0.max.x) / 2, z0 = b0.min.z, z1 = b0.max.z;
+    const ray = new THREE.Raycaster(new THREE.Vector3(), new THREE.Vector3(0, -1, 0), 0.05, 14);
+    let low = Infinity;
+    for (let t = 0.22; t <= 0.78; t += 0.055) for (const dx of [-0.34, 0, 0.34]) {
+      ray.ray.origin.set(cx + dx, b0.max.y + 1.2, z0 + (z1 - z0) * t);
+      const h = ray.intersectObject(c, true)[0];
+      if (h && h.point.y < low) low = h.point.y;
+    }
+    return low;
+  })();
+  if (isFinite(sole)) {
+    wrap.position.y += (KEEP_Y + KEEP_SEA + 0.08) - sole;
+    keepWorld.updateMatrixWorld(true);
+  }
   keepBoat = wrap;
   const kb = new THREE.Box3().setFromObject(wrap);
   keepBoatBox = { x0: kb.min.x + 0.15, x1: kb.max.x - 0.15, z0: kb.min.z + 0.15, z1: kb.max.z - 0.15, top: kb.max.y };
@@ -33651,153 +33669,222 @@ function updateKeep(dt) {
 }
 
 // --------------------------------------------------------------- the lift
-/* A LEVER, A COUNTERWEIGHT AND A PLATFORM, AND THE COUNTERWEIGHT IS THE
- * MECHANISM. The island's own way up is stairs and ladders a body cannot
- * take, so with the climb verb gone there has to be one honest way to the
- * level above the shore — and a hoist is what a keep on a rock would have.
- * Pull the lever and the timber block hanging in the head frame DROPS; the
- * platform is the other end of the same rope, so it rises, and it takes you
- * with it. Pull it again and the two change places. Nothing here is a
- * number you cannot see: the weight goes down, you go up.
+/* THE HOIST IS THE MODEL'S OWN, AND IT IS LIFTED OUT OF THE MESH IT WAS
+ * BAKED INTO. A whole timber lift was BUILT here first — four posts, a drum,
+ * a counterweight, a gangway — and the owner's word was to take it out and
+ * make the one the model already has work. He is right, and the reason is
+ * the undercroft's own: MAKE THIS BETTER IS NOT REPLACE THIS. JesseL drew a
+ * cargo hoist against the cliff — a planked car with rails and a crate on
+ * it, two guide frames eight metres tall and a head beam with pulley blocks
+ * at 21.8 — and next to a real one anything hand-built is a stack of boxes.
  *
- * WHERE IT STANDS IS MEASURED. Rays down the shaft say the sand under
- * (-16.6, 24) is at 0.15 and there is open sky the whole way; rays across
- * say the rock shelf's top is 7.0 two and a half metres east, and that
- * shelf is 1,546 cells of walkable terrace. So the lift rises 6.9 m in the
- * open and lands on a gangway that reaches the shelf — nothing is carved,
- * nothing is moved, and the model is untouched. */
+ * WHAT IT COSTS is that the packer bakes every node into world space and
+ * merges by material, so the car is not an object: it is triangles inside
+ * three 44,000-triangle meshes. It comes out the way the bunker's tripod
+ * camera came out of its merged mesh — WELD BY POSITION, FLOOD THE ISLANDS,
+ * AND TAKE THE ONES WHOSE WHOLE BOUNDING BOX LIES INSIDE THE CAR. A box
+ * test on triangles alone would tear the bottom metre off both guide
+ * frames, which stand ON the car's deck and pass through its plan.
+ *
+ * AND THE HEIGHT IS THE POINT. Measured: the walk from the pier reaches
+ * 4.87 m and no higher, the hoist's lower landing is a timber jetty at
+ * 2.35, and the car as drawn sits at 14.10 with the keep's terrace at 14.30
+ * either side of it. So the one thing on this island a body cannot do is
+ * exactly the thing the hoist is for. */
+const LIFT = {
+  x0: -4.50, x1: -0.70, y0: 13.55, y1: 15.20, z0: 11.85, z1: 17.15,  // the car, as the model draws it
+  deck: 14.10,          // its plank top, raycast
+  clear: 0.08,          // how far it stands over the landing when it is down
+  dur: 7.6,
+};
 function buildKeepLift() {
   if (keepLift || !keepWorld) return;
-  const grp = new THREE.Group();
-  const ray = new THREE.Raycaster(new THREE.Vector3(KEEP_X + LIFT.x, KEEP_Y + 22, KEEP_Z + LIFT.z), new THREE.Vector3(0, -1, 0), 0.1, 44);
-  const hit = ray.intersectObject(keepWorld, true).filter((h) => h.object.name !== 'hitProxy'
-    && h.object.material && h.object.material.name !== 'material' && h.object.material.name !== 'material_5');
-  const base = hit.length ? hit[0].point.y - KEEP_Y + 0.02 : 0.15;
-  const hw = LIFT.hw, head = LIFT.top + 1.75;
+  // `matrixWorld` IS ONLY WRITTEN BY A RENDER, and this runs in the loader:
+  // without this the model's meshes measure in their own space and nothing
+  // is ever found. The file has paid for this five times.
+  keepWorld.updateMatrixWorld(true);
+  const lo = new THREE.Vector3(KEEP_X + LIFT.x0, KEEP_Y + LIFT.y0, KEEP_Z + LIFT.z0);
+  const hi = new THREE.Vector3(KEEP_X + LIFT.x1, KEEP_Y + LIFT.y1, KEEP_Z + LIFT.z1);
+  const want = new THREE.Box3(lo, hi);
+  const car = new THREE.Group();
+  let took = 0;
+  const grab = new THREE.Box3();
 
-  const mk = (hex, emis) => {
-    const m = new THREE.MeshStandardMaterial({ color: hex, roughness: 1, metalness: 0, flatShading: true });
-    m.emissive.setHex(hex); m.emissiveIntensity = emis;      // the moon is the only light out here
-    return m;
-  };
-  const beamM = mk(0x4c3726, 0.30), plankM = mk(0x66492f, 0.28), ironM = mk(0x2b2b31, 0.22), ropeM = mk(0x7b6a49, 0.26);
-  const box = (w, h, d, x, y, z, m, rot) => {
-    const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
-    o.position.set(x, y, z); if (rot) o.rotation.set(rot[0] || 0, rot[1] || 0, rot[2] || 0);
-    return o;
-  };
+  const meshes = [];
+  keepWorld.traverse((o) => { if (o.isMesh && o.geometry && o.geometry.index && o.name !== 'hitProxy') meshes.push(o); });
+  const toCar = new THREE.Matrix4();
+  for (const src of meshes) {
+    const g = src.geometry, pos = g.attributes.position, idx = g.index;
+    const nT = idx.count / 3;
+    // nothing to do unless some of this mesh is inside the car's box at all
+    const gb = g.boundingBox || (g.computeBoundingBox(), g.boundingBox);
+    const wb = gb.clone().applyMatrix4(src.matrixWorld);
+    if (!wb.intersectsBox(want)) continue;
 
-  // the frame: four posts, two head beams and the drum the rope runs over
-  for (const sx of [-1, 1]) for (const sz of [-1, 1])
-    grp.add(box(0.17, head - base, 0.17, LIFT.x + sx * (hw + 0.13), base + (head - base) / 2, LIFT.z + sz * (hw + 0.13), beamM));
-  for (const sz of [-1, 1]) grp.add(box(2 * hw + 0.6, 0.20, 0.18, LIFT.x, head - 0.10, LIFT.z + sz * (hw + 0.13), beamM));
-  grp.add(box(0.18, 0.18, 2 * hw + 0.6, LIFT.x + hw + 0.13, head - 0.30, LIFT.z, beamM));
-  grp.add(box(0.18, 0.18, 2 * hw + 0.6, LIFT.x - hw - 0.13, head - 0.30, LIFT.z, beamM));
-  const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 2 * hw + 0.3, 10), beamM);
-  drum.rotation.z = Math.PI / 2; drum.position.set(LIFT.x, head - 0.34, LIFT.z);
-  grp.add(drum);
-  // braces, so it reads as something built rather than four sticks
-  for (const sz of [-1, 1]) {
-    const b = box(0.13, 1.5, 0.13, LIFT.x + sz * (hw + 0.13) * 0.62, base + 0.75, LIFT.z + sz * (hw + 0.13), beamM, [0, 0, sz * 0.62]);
-    grp.add(b);
+    /* WELD BY POSITION BEFORE YOU FLOOD. The bake splits a vertex at every
+     * uv seam, so an index-only flood finds one plank in half a dozen
+     * pieces. */
+    const rep = new Int32Array(pos.count), seen = new Map();
+    for (let i = 0; i < pos.count; i++) {
+      const k = Math.round(pos.getX(i) * 1000) + ',' + Math.round(pos.getY(i) * 1000) + ',' + Math.round(pos.getZ(i) * 1000);
+      let r = seen.get(k); if (r === undefined) { r = i; seen.set(k, i); }
+      rep[i] = r;
+    }
+    const par = new Int32Array(pos.count); for (let i = 0; i < pos.count; i++) par[i] = rep[i];
+    const find = (a) => { while (par[a] !== a) { par[a] = par[par[a]]; a = par[a]; } return a; };
+    for (let t = 0; t < nT; t++) {
+      const a = find(rep[idx.getX(t * 3)]), b = find(rep[idx.getX(t * 3 + 1)]), c = find(rep[idx.getX(t * 3 + 2)]);
+      par[b] = a; par[c] = a;
+    }
+    // every island's own world bounding box
+    const box = new Map(), v = new THREE.Vector3();
+    for (let t = 0; t < nT; t++) {
+      const r = find(rep[idx.getX(t * 3)]);
+      let e = box.get(r); if (!e) { e = new THREE.Box3(); box.set(r, e); }
+      for (let k = 0; k < 3; k++) { v.fromBufferAttribute(pos, idx.getX(t * 3 + k)); v.applyMatrix4(src.matrixWorld); e.expandByPoint(v); }
+    }
+    const mine = new Set();
+    for (const [r, e] of box) if (want.containsBox(e)) mine.add(r);
+    if (!mine.size) continue;
+
+    const keep = [], move = [];
+    for (let t = 0; t < nT; t++) {
+      const a = idx.getX(t * 3), b = idx.getX(t * 3 + 1), c = idx.getX(t * 3 + 2);
+      (mine.has(find(rep[a])) ? move : keep).push(a, b, c);
+    }
+    if (!move.length) continue;
+    /* THE PIECE SHARES ITS SOURCE'S ATTRIBUTES AND CARRIES ONLY ITS OWN
+     * INDEX — no vertices are copied and the uv is the scan's own, so the
+     * car cannot come out a different colour from the frame it hangs in. */
+    const cg = new THREE.BufferGeometry();
+    for (const name of Object.keys(g.attributes)) cg.setAttribute(name, g.attributes[name]);
+    cg.setIndex(move);
+    const cm = new THREE.Mesh(cg, src.material);
+    // the car hangs off keepWorld and its source may be nested under the
+    // model's own root, so the piece carries the transform that keeps it
+    // exactly where it was drawn
+    cm.matrixAutoUpdate = false;
+    cm.matrix.copy(toCar.copy(keepWorld.matrixWorld).invert().multiply(src.matrixWorld));
+    cm.frustumCulled = false;
+    car.add(cm);
+    g.setIndex(keep);
+    took += move.length / 3;
+    for (const [r, e] of box) if (mine.has(r)) grab.union(e);
+  }
+  if (!took) return;                                  // no hoist, no lift
+
+  keepWorld.add(car);
+  keepWorld.updateMatrixWorld(true);
+
+  /* AND THE FLOOR IT USED TO BE GOES WITH IT. Taking a surface away does
+   * not take away what the walk grid remembers of it — the desk's own
+   * lesson — so the car's storeys come out of every cell under its plan and
+   * the only thing that speaks for it afterwards is its box. */
+  const cut = new THREE.Box3();
+  if (keepCells && keepWalk) {
+    /* AND ONLY THE CELLS THE CAR ACTUALLY COVERS. Walked as a loop over
+     * metres this ran a cell wide on every side and took the KEEP'S OWN
+     * TERRACE with it — a half-metre moat round the car at the top that you
+     * fell down the moment you stepped off. The cell's own centre decides. */
+    const w = keepWalk, C = w.cell;
+    const i0 = Math.floor((grab.min.x - KEEP_X - w.x0) / C), i1 = Math.floor((grab.max.x - KEEP_X - w.x0) / C);
+    const j0 = Math.floor((grab.min.z - KEEP_Z - w.z0) / C), j1 = Math.floor((grab.max.z - KEEP_Z - w.z0) / C);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const cx = KEEP_X + w.x0 + (i + 0.5) * C, cz = KEEP_Z + w.z0 + (j + 0.5) * C;
+      if (cx < grab.min.x || cx > grab.max.x || cz < grab.min.z || cz > grab.max.z) continue;
+      const fl = keepCells.get(j * w.gw + i); if (!fl) continue;
+      let cleared = false;
+      for (let k = fl.length - 3; k >= 0; k -= 3)
+        if (KEEP_Y + fl[k] >= grab.min.y - 0.35 && KEEP_Y + fl[k] <= grab.max.y + 0.35) { fl.splice(k, 3); cleared = true; }
+      // the car's own floor has to cover the CELL, edge to edge, or the half
+      // of it that sticks out past the timber is a hole to fall down
+      if (cleared) { cut.expandByPoint(new THREE.Vector3(cx - C / 2, 0, cz - C / 2));
+                     cut.expandByPoint(new THREE.Vector3(cx + C / 2, 0, cz + C / 2)); }
+    }
   }
 
-  // the platform: five planks on two bearers, with a rail on the three sides
-  // that are not the way off
-  const plat = new THREE.Group();
-  for (let k = 0; k < 5; k++) plat.add(box(2 * hw, 0.09, (2 * hw) / 5 - 0.03, 0, 0.045, -hw + (2 * hw) * (k + 0.5) / 5, plankM));
-  for (const sx of [-1, 1]) plat.add(box(0.12, 0.12, 2 * hw, sx * (hw - 0.1), -0.05, 0, beamM));
-  for (const [ox, oz, w, d] of [[0, -hw, 2 * hw, 0.1], [0, hw, 2 * hw, 0.1], [-hw, 0, 0.1, 2 * hw]]) {
-    plat.add(box(w, 0.09, d, ox, 0.95, oz, plankM));
-    for (const t of [-0.75, 0.75]) plat.add(box(0.1, 0.95, 0.1, ox === 0 ? t * hw : ox, 0.48, oz === 0 ? t * hw : oz, beamM));
+  /* WHERE DOWN IS, IS MEASURED — AND IT IS MEASURED ON THE FLOOR THE FEET
+   * USE, NOT ON A RAY. The jetty the hoist stands over is a RAMP: its walk
+   * runs 2.70 at the landward end to 1.94 at the seaward one, and a corner
+   * of the car's plan clips the rock the hoist is bolted to at 3.42. Parked
+   * over the HIGHEST of those the car is a metre in the air; parked a step
+   * over the middle of the ramp it is a 0.68 m climb from the far end, over
+   * the 0.62 the walk allows — measured, you stroll straight past it and off
+   * the other side instead of stepping aboard. It rests a hand over the
+   * MEDIAN, so it is a quarter of a step up from the low end of the ramp and
+   * a third of one down from the high end, and a drop is always free. */
+  const floors = [];
+  for (let x = LIFT.x0 + 0.4; x <= LIFT.x1 - 0.4; x += 0.3) for (let z = LIFT.z0 + 0.4; z <= LIFT.z1 - 0.4; z += 0.3) {
+    const st = keepStandable(KEEP_X + x, KEEP_Z + z, KEEP_Y + LIFT.y0 - 0.5, 0.62);
+    if (st && !st.sea) floors.push(st.f - KEEP_Y);
   }
-  plat.position.set(LIFT.x, base + 0.12, LIFT.z);
-  grp.add(plat);
+  floors.sort((a, b) => a - b);
+  /* AND THE HIGHEST FLOOR UNDER IT IS NOT ALWAYS THE LANDING. A corner of
+   * the plan clips the rock the hoist is bolted to, which stands a metre
+   * over the timber — take that for the landing and the car parks a metre
+   * in the air. The jetty is the CLUSTER: the highest floor still within a
+   * metre of the median of them. */
+  const landY = floors.length ? floors[floors.length >> 1] : 2.35;
+  const drop = LIFT.deck - (landY + LIFT.clear);      // how far the car falls
 
-  // the counterweight: a block of the same timber, ironbound, hanging in the
-  // head frame on the open side, where you can see it before you touch
-  // anything — it is the whole mechanism and it has to be legible
-  const cw = new THREE.Group();
-  cw.add(box(0.62, 0.86, 0.62, 0, -0.43, 0, plankM));
-  for (const y of [-0.18, -0.68]) cw.add(box(0.68, 0.09, 0.68, 0, y, 0, ironM));
-  cw.add(box(0.1, 0.22, 0.1, 0, 0.08, 0, ironM));
-  cw.position.set(LIFT.x - hw - 0.62, LIFT.top + 1.0, LIFT.z);
-  grp.add(cw);
+  keepLift = { state: 'up', t: 1, dir: -1, drop, landY, y: KEEP_Y + LIFT.deck, creak: 0, first: true };
+  /* AND THE CAR'S FLOOR REACHES A HAND PAST ITS OWN TIMBER. The model draws
+   * the car inside a well with a finger's clearance all round, and the
+   * packer wrote no floor in that clearance — so stepping off at the top you
+   * walked into a 15 cm slot with nothing in it and fell the whole fourteen
+   * metres. The plan is the cells the car took ground from, the car's own
+   * measured box, and a hand's width over: at the edge you are standing on
+   * the lip of the deck, which is where you are standing anyway. */
+  const plan = (cut.isEmpty() ? grab.clone() : cut.clone().union(grab));
+  plan.min.x -= 0.25; plan.max.x += 0.25; plan.min.z -= 0.25; plan.max.z += 0.25;
+  keepLiftParts = { car, grab, plan, proxies: [] };
 
-  // the ropes: two off the drum to the platform's bearers, one to the weight
-  const ropes = [];
-  for (const sz of [-1, 1]) {
-    const r = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1, 6), ropeM);
-    r.position.set(LIFT.x + (hw - 0.1) * 0, 0, LIFT.z + sz * (hw - 0.12));
-    grp.add(r); ropes.push([r, sz]);
-  }
-  const cwRope = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1, 6), ropeM);
-  cwRope.position.set(LIFT.x - hw - 0.62, 0, LIFT.z);
-  grp.add(cwRope);
+  /* AND THE CONTROL IS THE HOIST, NOT A LEVER SOMEBODY ADDED. Two invisible
+   * proxies — the file's own way of giving a crosshair something to find —
+   * one standing on the jetty under it so you can call it down, and one
+   * riding the car so you can send yourself up once you are aboard. */
+  const label = () => (keepLift && keepLift.state === 'up' ? 'Lower the hoist' : 'Raise the hoist');
+  const when = () => inKeep && keepLift && keepLift.state !== 'rising' && keepLift.state !== 'falling';
+  const w = grab.max.x - grab.min.x, d = grab.max.z - grab.min.z;
+  /* AND A PROXY HUNG UNDER THE KEEP'S OWN GROUP IS IN THE KEEP'S OWN FRAME.
+   * `grab` is world — it was measured off `matrixWorld` — and the group
+   * carries the island's six kilometres, so a world position written
+   * straight into `position` lands twice as far out and the crosshair finds
+   * nothing at all. */
+  const at = (y) => keepWorld.worldToLocal(new THREE.Vector3((grab.min.x + grab.max.x) / 2, y, (grab.min.z + grab.max.z) / 2));
+  const foot = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 2.2, d + 0.4),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+  foot.position.copy(at(KEEP_Y + landY + 1.1));
+  foot.name = 'hitProxy'; foot.visible = false;
+  keepWorld.add(foot);
+  addInteractable(foot, label, 'action', { far: 4.6, mid: true, when, onActivate: pullKeepLever });
+  const ride = new THREE.Mesh(new THREE.BoxGeometry(w - 0.3, 1.9, d - 0.3),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+  ride.position.copy(at(KEEP_Y + LIFT.deck + 0.95));
+  ride.name = 'hitProxy'; ride.visible = false;
+  car.add(ride);
+  addInteractable(ride, label, 'action', { far: 4.6, mid: true, when, onActivate: pullKeepLever });
+  keepLiftParts.proxies = [foot, ride];
 
-  /* THE GANGWAY, because the terrace is two metres north and a lift that
-   * puts you down in mid-air is not a lift. It is planks, and it is the only
-   * thing here that is not a moving part. */
-  const gz0 = LIFT.z - hw, gz1 = LIFT.land, gl = gz0 - gz1;
-  for (let k = 0; k < 4; k++) grp.add(box(0.34, 0.09, gl, LIFT.x - 0.6 + k * 0.4, LIFT.top + 0.07, gz0 - gl / 2, plankM));
-  for (const t of [0.12, 0.55, 0.95]) grp.add(box(0.12, 0.85, 0.12, LIFT.x + 0.78, LIFT.top + 0.5, gz0 - gl * t, beamM));
-  grp.add(box(0.1, 0.09, gl, LIFT.x + 0.78, LIFT.top + 0.92, gz0 - gl / 2, plankM));
-  grp.add(box(0.2, 0.9, 0.2, LIFT.x, LIFT.top - 0.4, gz1 + 0.12, beamM));
-
-  // and the two levers, one at the sand and one where the gangway lands
-  const levers = [];
-  for (const [lx, ly, lz, tag] of [[LIFT.x, base, LIFT.z + hw + 0.55, 'foot'], [LIFT.x + 0.78, LIFT.top + 0.12, gz1 + 0.5, 'top']]) {
-    const post = new THREE.Group(); post.position.set(lx, ly, lz);
-    post.add(box(0.16, 1.05, 0.16, 0, 0.52, 0, beamM));
-    post.add(box(0.26, 0.12, 0.26, 0, 1.05, 0, ironM));
-    const arm = new THREE.Group(); arm.position.set(0, 1.0, 0);
-    arm.add(box(0.09, 0.62, 0.09, 0, 0.31, 0, ironM));
-    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), plankM);
-    knob.position.set(0, 0.64, 0); arm.add(knob);
-    post.add(arm);
-    grp.add(post);
-    const proxy = new THREE.Mesh(new THREE.BoxGeometry(0.85, 1.7, 0.85), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-    proxy.position.set(lx, ly + 0.85, lz); proxy.name = 'hitProxy'; proxy.visible = false;
-    grp.add(proxy);
-    addInteractable(proxy, () => (keepLift && keepLift.state === 'up' ? 'Send the lift down' : 'Pull the lever'), 'action',
-      { far: 3.4, when: () => inKeep && keepLift && keepLift.state !== 'rising' && keepLift.state !== 'falling', onActivate: pullKeepLever });
-    levers.push({ arm, tag });
-  }
-
-  keepWorld.add(grp);
-  /* AND THE GANGWAY IS A FLOOR. The walk grid is the model's, and the model
-   * knows nothing about planks the game laid after it — so the bridge is a
-   * box the floor lookup reads, exactly as the platform and the boat are. */
-  keepGangBox = {
-    x0: KEEP_X + LIFT.x - 0.78, x1: KEEP_X + LIFT.x + 0.78,
-    z0: KEEP_Z + gz1 - 0.1, z1: KEEP_Z + gz0 + 0.02, top: KEEP_Y + LIFT.top + 0.12,
-  };
-  keepLift = { state: 'down', t: 0, dir: 1, base, y: KEEP_Y + base + 0.12, cwY: KEEP_Y + LIFT.top + 1.0, creak: 0, first: true };
-  keepLiftParts = { grp, plat, cw, ropes, cwRope, levers, head };
-  setKeepLift(0);
+  setKeepLift(1);
 }
 
-/* Everything the lift draws is written from ONE number — how far through the
- * travel it is — so the rope, the weight, the platform and the floor you are
- * standing on can never disagree with each other. */
+/* Everything the hoist does is written from ONE number — how far through
+ * the travel it is — so the timber you are looking at and the floor you are
+ * standing on can never disagree. */
 function setKeepLift(k) {
   const L = keepLift, P = keepLiftParts; if (!L || !P) return;
-  const travel = LIFT.top - L.base;
-  const platY = L.base + travel * k;
-  P.plat.position.y = platY + 0.12;
-  P.cw.position.y = LIFT.top + 1.0 - travel * k;
-  L.y = KEEP_Y + platY + 0.12;
-  L.cwY = KEEP_Y + P.cw.position.y;
-  const hang = (r, topY, botY) => { r.scale.y = Math.max(0.01, topY - botY); r.position.y = (topY + botY) / 2; };
-  for (const [r] of P.ropes) hang(r, P.head - 0.34, platY + 0.18);
-  hang(P.cwRope, P.head - 0.34, P.cw.position.y + 0.08);
-  for (const lv of P.levers) lv.arm.rotation.x = k > 0.5 ? -0.62 : 0.62;
-  // the platform is a floor like the boat is: a box the walk reads
-  keepLiftBox = {
-    x0: KEEP_X + LIFT.x - LIFT.hw, x1: KEEP_X + LIFT.x + LIFT.hw,
-    z0: KEEP_Z + LIFT.z - LIFT.hw, z1: KEEP_Z + LIFT.z + LIFT.hw,
-    top: KEEP_Y + platY + 0.21,
-  };
+  const off = -(1 - k) * L.drop;                       // 0 at the top, -drop at the bottom
+  P.car.position.y = off;
+  L.y = KEEP_Y + LIFT.deck + off;
+  // the car is a floor like the boat is: a box the walk reads
+  /* AND THE BOX HAS TO COVER EXACTLY WHAT THE GRID GAVE UP — WHICH IS CELLS,
+   * NOT METRES. A cell is given up when its CENTRE lies under the car, so
+   * the ground it took with it reaches half a cell further out than the
+   * car's own timber does; a box drawn on the timber leaves a 20 cm strip
+   * with no floor at all, and measured, that is a hole you fall the whole
+   * fourteen metres through on the way to the terrace. */
+  keepLiftBox = { x0: P.plan.min.x, x1: P.plan.max.x, z0: P.plan.min.z, z1: P.plan.max.z, top: L.y };
 }
 
 function pullKeepLever() {
@@ -33806,7 +33893,7 @@ function pullKeepLever() {
   L.state = L.dir > 0 ? 'rising' : 'falling';
   L.t = L.dir > 0 ? 0 : 1;
   L.creak = 0;
-  sfxKeepLever(L.first && L.dir > 0);
+  sfxKeepLever(L.first && L.dir < 0);
   L.first = false;
 }
 
@@ -34006,7 +34093,7 @@ window.__bw = {
   startPortalTake, startPortalReturn, placeInDojo, placeBackAtPortal, wakeSamurai, warmDojo,
   dojoFloorAt, dojoGridAt, pushOutOfDojo,
   KEEP_X, KEEP_Y, KEEP_Z, KEEP_SPAWN, KEEP_MOOR, LIFT, loadKeep, startSail, placeInKeep, placeBackOnBoat, keepFloorAt, keepStandAt, keepStandable, keepCellAt, warmKeep, findBeachBoat, pullKeepLever, updateHover,
-  get keepLift() { return keepLift && { state: keepLift.state, t: +keepLift.t.toFixed(2), y: +(keepLift.y - KEEP_Y).toFixed(2), cw: +(keepLift.cwY - KEEP_Y).toFixed(2) }; },
+  get keepLift() { return keepLift && { state: keepLift.state, t: +keepLift.t.toFixed(2), y: +(keepLift.y - KEEP_Y).toFixed(2), drop: +keepLift.drop.toFixed(2), landY: +keepLift.landY.toFixed(2), box: keepLiftBox && { top: +(keepLiftBox.top - KEEP_Y).toFixed(2), x: [+(keepLiftBox.x0 - KEEP_X).toFixed(1), +(keepLiftBox.x1 - KEEP_X).toFixed(1)], z: [+(keepLiftBox.z0 - KEEP_Z).toFixed(1), +(keepLiftBox.z1 - KEEP_Z).toFixed(1)] } }; },
   get keepRepair() { return keepWalk && keepWalk.repaired; },
   get keepWorld() { return keepWorld; }, get keepSky() { return keepSky; }, get keepSea() { return keepSea; }, get keepBoat() { return keepBoat; }, get beachBoat() { return beachBoat; },
   keepState: () => ({ inKeep, ready: keepReady, walk: !!keepWalk, cells: keepCells ? keepCells.size : 0, sail: sailBusy, t: +sailT.toFixed(2), onBoat, boatBox: beachBoatBox && [+beachBoatBox.min.x.toFixed(2), +beachBoatBox.min.y.toFixed(2), +beachBoatBox.min.z.toFixed(2), +beachBoatBox.max.x.toFixed(2), +beachBoatBox.max.y.toFixed(2), +beachBoatBox.max.z.toFixed(2)], keepBoatBox }),
