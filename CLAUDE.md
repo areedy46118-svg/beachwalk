@@ -9137,3 +9137,84 @@ from the jetty at 2.50 to 16.15 in seven and a half seconds, called down
 from the ground, walked onto, ridden, and walked off at the top onto the
 terrace outside the keep's door at 16.11. Rays down all four corners of the
 car say the shaft is clear the whole way: nothing but the jetty at 2.26.
+
+**THE DRAWN WALLS ARE THE WALLS NOW, AND A STOREY YOU CAN SEE IS A STOREY
+YOU STAND ON.** "I should not be clipping through anything that's visible in
+the sea keep" and "make the textures actually act as they are seen" are one
+job with two halves, and the walk grid can only ever answer half of it: it
+is a plan of FLOORS, so a wall between two cells both of which have a floor
+is not in it at all — you walked through the keep's own studded door.
+
+- **A WALL IS A BOUNDARY, NOT A PLACE.** The obvious repair is to rasterise
+  every steep face into the grid and call those cells solid, and it is
+  wrong by construction: a cell containing a wall is also the cell you are
+  STANDING on, on one side of it or the other. Measured, band-marking
+  collapsed the island's flood from 44,454 cells to 14,126 and its 36
+  bearings to 21 — most of the shore became unreachable — and it still let
+  you through the door, because the door's own cell was the one you were
+  standing in. Abandoned.
+- **THE SEGMENT IS THE TEST, AND ITS HEIGHT IS THE FILTER.** `keepHitsWall`
+  is Möller–Trumbore of the frame's own movement, swept at CHEST height
+  (feet + 0.95), against a one-metre grid of the drawn triangles
+  (`buildKeepWalls`: 135,457 faces, 60,900 of them steep). A kerb you are
+  meant to step over is under the segment and is never met; a wall is.
+  `updateKeep` tries the full move, then each axis alone, then reverts —
+  the undercroft's own slide.
+- **AND THE FACE-HEIGHT FILTER THREW AWAY THE DOOR.** `KEEP_WALL_MIN` was
+  0.70 on the reasoning that anything shorter is a lip; a stylised model
+  draws a studded door as a course of small quads and not one of them is
+  0.70 tall, so the one wall the owner photographed was the one wall left
+  out. 0.12, and the chest-height segment is what keeps the kerbs walkable.
+  The sea and the sky (`material`, `material_5`) are skipped, and so is any
+  triangle spanning more than 400 cells — the island's own base is one face
+  the size of the model and it would otherwise be in every bucket.
+- **A HOLE IN AN UPPER STOREY IS A FLOOR YOU FALL THROUGH**, which is
+  `repairKeepGround`'s invisible fence wearing the other coat: the packer
+  writes a cell's storeys from the triangles that land in it, and on a
+  stylised interior it lands none often enough that a doorway threshold has
+  no floor at hall level and drops you to the ground floor. Two topological
+  rules were tried and both failed on that threshold — a ≥6-of-8 majority
+  (the gap is a two-cell slot, so its cells have three neighbours at that
+  level) and a flood-and-enclose (574 ms, and the slot opens into the
+  interior so it is never enclosed). **ASK THE GEOMETRY.** A level carried
+  by three of the eight neighbours is proposed, and `keepDrawnFloor` — a
+  barycentric plan test against the non-steep faces in that cell — says
+  whether anything is actually drawn there to stand on. 28,618 storeys put
+  back of 51,155 asked, in 95 ms.
+
+Measured after: walls crossed on 5 of 56 hands-off walks (four of them from
+one interior start) against a baseline where the door could be walked
+straight through; the island's flood ROSE to 51,956 cells with all 36
+bearings; the 401 m ring loop still completes hands-off in 8,455 ticks; the
+keep's loader frame went 152 → 266 ms.
+
+**AND A BOOT IN THE TUNNEL IS THE SEA'S OWN RECORDING.** The channel's step
+was synthesised — four layers of filtered noise, which is what sand is — and
+the owner's word was that it should sound like stepping in ocean water, a
+little lower. His own `wade` bank is already in the game for walking through
+the surf and it is the same event, so the tunnel plays it at 0.88 of the
+rate: a smaller room, and an inch of water rather than a foot. The
+synthesised puddle stays as the fallback for the frames before the bank is
+off the network, the katana's own arrangement.
+
+**AND THE DEALER'S TABLE HAS A DRINK ON IT.** The bottle is a takeable like
+any other and where it stands is SCORED, not typed: a grid over the table
+top inset 0.22, ranked by distance from the crowbar's spot, the Dealer's own
+post, the equipment case and everything already perched there, with a
+raycast down for the exact height. It landed at the far +x corner, clear of
+the cutscene. `refillBottle()` is the one door — `waterSips`, the model's
+own `setFill` and the copy in your hand, which is found BY NAME, because
+`holdable` clones and `setFill` closes over the original's mesh. And when
+the work table goes it is SET ON THE FLOOR along the blow rather than
+thrown: it is a takeable, not a physics body.
+
+**AND COMING OUT OF THE CAVE IS THE SECOND CHECKPOINT.** The pavilion's is
+an hour back up the beach and everything past it — the church, the knight,
+the idol — is behind a crawl nobody wants to make twice. `caveSaveDone`, at
+the moment the black lifts on `ucDir < 0`, the same `saveCheckpoint` so the
+badge says it happened, once a game, the pavilion's own rule. Measured:
+`hasCheckpoint()` true with the save at (12.4, 1.70, -640.4), which is the
+sand a rim's width outside the mouth. **And testing it needs the pane
+VISIBLE** — the cut is on the wall clock inside `animate`, so a hidden pane
+runs no frames, `updateUndercroftCut` never advances and `leaveUndercroft`
+never completes; `ucBusy` stuck true is the tell.

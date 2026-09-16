@@ -12232,12 +12232,22 @@ function ucStepSplash() {
 function sfxStepUnder() {
   stepAlt ^= 1;
   if (ucInChurch() && playSample('churchStep', 0.62 * (stepAlt ? 1 : 0.86), 0.05)) return;
-  /* IN THE CHANNEL THE WATER IS THE STEP. It used to be the dry sand step
-   * with a splash laid over it, and a dry step under a splash still sounds
-   * dry — the grit and the shell chips are the two loudest things in it and
-   * neither happens under water. The puddle carries its own muffled stone,
-   * so the floor is still there. */
-  if (ucInWater()) { sfxStepPuddle(); ucStepSplash(); return; }
+  /* IN THE CHANNEL THE WATER IS THE STEP — AND IT IS THE SEA'S OWN STEP.
+   * It used to be the dry sand step with a splash laid over it, and a dry
+   * step under a splash still sounds dry; then it was synthesised, and a
+   * synthesised one is four layers of filtered noise, which is what sand is.
+   * The owner's own WADE recordings are already in the game for walking
+   * through the surf and they are the same event — a boot going into shallow
+   * water over something hard — so the channel plays those, a little lower
+   * (0.88 of the rate) because a tunnel is a smaller room than an ocean and
+   * the water in it is an inch deep rather than a foot. The synthesised
+   * puddle stays as the fallback for the frames before the bank is off the
+   * network, the katana's own arrangement. */
+  if (ucInWater()) {
+    if (!playSample('wade', 0.5 * (stepAlt ? 1 : 0.86), 0.05, 0.88)) sfxStepPuddle();
+    ucStepSplash();
+    return;
+  }
   sfxStep();
 }
 function sfxStepDrain() { sfxStep(); }
@@ -13554,6 +13564,17 @@ function sfxGulp() {
     const ng = ctx.createGain(); ng.gain.value = 0.10;
     n.connect(lp).connect(ng).connect(g); n.start(t + 0.02); n.stop(t + 0.18);
   }
+}
+/* A FOUND BOTTLE IS A FULL ONE. The sips live on a counter and the water is
+ * drawn on TWO models — the world one the examine screen and the hand both
+ * clone from, and the copy actually in your hand — so filling it has to
+ * write all three or the bottle you just picked up comes up empty. */
+function refillBottle() {
+  waterSips = 1;
+  waterBottle.userData.setFill(0.94);
+  const src = waterBottle.userData.parts.water;
+  const vm = waterBottleItem.viewmodel && waterBottleItem.viewmodel.getObjectByName('water');
+  if (vm) { vm.scale.copy(src.scale); vm.position.copy(src.position); vm.visible = src.visible; }
 }
 function sfxBottleEmpty() {
   const ctx = audioCtx; if (!ctx) return;
@@ -24146,6 +24167,7 @@ function buildBunkerProps() {
    * deliberately go. Its spot is checked against the walk grid so it never
    * starts inside a desk. */
   buildMilCrate(g, meshes, ray);
+  buildTableBottle(g, meshes, ray);
   if (!coatStand) {
     coatStand = makeCoatStand();
     /* IN A CORNER, WHERE A COAT STAND GOES — the one under the poster, at
@@ -24161,6 +24183,67 @@ function buildBunkerProps() {
     coatStand.frustumCulled = false;
     scene.add(coatStand);
   }
+}
+/* A BOTTLE ON HIS TABLE, AND WHERE IT STANDS IS THE ONE THING THAT MATTERS.
+ * The fight in this room is the longest in the game and the only water in it
+ * used to be four hundred metres away by a bed you walked past an hour ago —
+ * so there is a full one on the Dealer's own table, which is also the one
+ * piece of furniture you are certain to be near when it goes badly.
+ *
+ * NOT IN THE WAY OF THE TAKE. Two things happen on that table before the
+ * fight: the conversation is framed on him at his post off the -x end, and
+ * he TURNS AND PICKS THE CROWBAR UP off it, with his hand solved onto
+ * `CROWBAR_SPOT`. Put a bottle there and it is in the shot and inside his
+ * reach. So the spot is not chosen, it is SCORED: a grid over the table top,
+ * inset from the edges, ranked on how far it is from the bar, from the
+ * equipment case, from everything else already perched there and from where
+ * he stands. It comes out at the far +x corner, which is the one part of
+ * that table nothing else in the room wants. */
+function buildTableBottle(g, meshes, ray) {
+  if (tableBottle || !workTable) return;
+  const cx = g.position.x + TABLE_SPOT[0], cz = g.position.z + TABLE_SPOT[1];
+  const busy = [[CROWBAR_SPOT[0], CROWBAR_SPOT[1]], [DEALER_X, DEALER_Z]];   // both already world
+  if (milCrate) busy.push([milCrate.position.x, milCrate.position.z]);
+  for (const q of tablePerched) if (q && q.g) busy.push([q.g.position.x, q.g.position.z]);
+  let best = null;
+  for (let ox = -TABLE_W / 2 + 0.22; ox <= TABLE_W / 2 - 0.22; ox += 0.08)
+    for (let oz = -TABLE_D / 2 + 0.22; oz <= TABLE_D / 2 - 0.22; oz += 0.08) {
+      const x = cx + ox, z = cz + oz;
+      let near = 99;
+      for (const [bx, bz] of busy) near = Math.min(near, Math.hypot(x - bx, z - bz));
+      if (!best || near > best.near) best = { x, z, near };
+    }
+  if (!best || best.near < 0.30) return;               // no room on it: leave it off
+  ray.set(new THREE.Vector3(best.x, g.position.y + 2.6, best.z), new THREE.Vector3(0, -1, 0));
+  ray.far = 3.2;
+  const hit = ray.intersectObjects(meshes, false);
+  const top = hit.length ? hit[0].point.y : g.position.y + TABLE_TOP;
+
+  const world = new THREE.Group();
+  world.add(makeWaterBottle());
+  const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.20, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  proxy.name = 'hitProxy'; proxy.visible = false;
+  world.add(proxy);
+  world.position.set(best.x, top + 0.002, best.z);
+  world.rotation.y = Math.random() * Math.PI * 2;
+  scene.add(world);
+  addItemShine(world, { size: 0.42, height: 0.10 });
+  tableBottle = world;
+  addInteractable(world, 'Take the bottle of water', 'inventory', {
+    onActivate: () => {
+      if (!tableBottle) return;
+      scene.remove(tableBottle); tableBottle = null;
+      hovered = null;
+      sfxThud(0.03);
+      /* A SECOND BOTTLE IS A FULL ONE. `addToInventory` refuses a duplicate
+       * by identity — which is what stops the pack filling up with bottles —
+       * so on a player who is already carrying one this is a REFILL, and
+       * that is exactly what finding another bottle is. */
+      refillBottle();
+      addToInventory(waterBottleItem);
+    },
+  });
 }
 /* ---- THE WORK TABLE ------------------------------------------------------
  * A room you can wreck is a room you are IN. The bunker had eighteen things
@@ -24224,6 +24307,7 @@ function woodUV(geo, R, au, av, cu, su, cv, sv) {
 }
 const TABLE_WOOD = new THREE.MeshStandardMaterial({ color: 0x6f5334, roughness: 0.94, metalness: 0, flatShading: true, emissive: 0x1a1208 });   // only if the scan never lands
 let workTable = null, tableBroken = false, tableProp = null, deskMat = null;
+let tableBottle = null;                              // the full bottle standing on it
 const tablePerched = [];                             // what is standing on it
 const deskProps = [];                                // and what the SCAN left standing on it
 function carveDesk(g) {
@@ -24773,6 +24857,15 @@ function smashWorkTable(speed, dirX, dirZ) {
     q.vel.y += 1.4 + Math.random() * 0.9;
   }
   tablePerched.length = 0;
+  /* AND THE BOTTLE GOES WITH IT. It is a TAKEABLE, not a physics body, so
+   * nothing else would move it and it would hang in the air over the
+   * wreckage; it is set on the floor a little along the blow instead, on
+   * the one frame in this room where the dust hides everything. */
+  if (tableBottle) {
+    tableBottle.position.set(p.x + dx * (0.7 + Math.random() * 0.5), gy + 0.002,
+      p.z + dz * (0.7 + Math.random() * 0.5));
+    tableBottle.rotation.set(Math.PI / 2, 0, Math.random() * Math.PI * 2);   // knocked over
+  }
   // the case goes with it, and comes open
   spillMilCrate(dx, dz, kick);
   // the recording is the whole crash; the timber knock is part of the synth
@@ -31690,6 +31783,7 @@ function placeOutOfUndercroft() {
   camera.quaternion.setFromEuler(lookEuler);
   velocity.set(0, 0, 0); knockback.set(0, 0, 0);
 }
+let caveSaveDone = false;                            // the save outside the cave mouth, once a game
 const UC_FOG = { color: new THREE.Color(0x030405), density: 0.030 };   // close, not blind: at fifteen metres a quarter of the light is gone, and what it fades TO is black — 0x07080b is a grey haze and a grey haze underground is daylight
 let _ucFogSaved = null;
 /* ON THE WALL CLOCK, beside the hatch: the cut, the air, the lamps. */
@@ -31701,7 +31795,20 @@ function updateUndercroftCut(dt) {
       : t < HATCH_BLACK + HATCH_HOLD + 0.45 ? 1 : 1 - smooth01(HATCH_BLACK + HATCH_HOLD + 0.45, D, t);
     blackoutEl.style.opacity = black.toFixed(3);
     if (!ucCut && t >= HATCH_BLACK + 0.04) { ucCut = true; if (ucDir > 0) placeInUndercroft(); else placeOutOfUndercroft(); }
-    if (t >= D) { ucBusy = false; blackoutEl.style.opacity = '0'; }
+    if (t >= D) {
+      ucBusy = false; blackoutEl.style.opacity = '0';
+      /* AND COMING OUT OF THE CAVE IS THE SECOND CHECKPOINT. The pavilion's
+       * is an hour back up the beach and everything past it — the church,
+       * the knight, the idol — is on the other side of a crawl nobody wants
+       * to make twice. The moment the black lifts on the sand outside, where
+       * you are standing and what you are carrying are written down. Once a
+       * game, the pavilion's own rule, and it is the SAME `saveCheckpoint`,
+       * so the badge says it happened. */
+      if (ucDir < 0 && !caveSaveDone && introDone && !dying && !ended) {
+        caveSaveDone = true;
+        saveCheckpoint();
+      }
+    }
   }
   // the sky and the fog go with the beach
   if (inUndercroft && !_ucFogSaved) {
@@ -33244,6 +33351,11 @@ function loadKeep() {
     voidDisc.rotation.x = -Math.PI / 2; voidDisc.position.y = KEEP_SEA - 1.5; voidDisc.renderOrder = -1;
     keepWorld.add(voidDisc);
     keepReady = true;
+    /* THE FACES FIRST — the storey repair asks them what is drawn — then the
+     * repair, and the lift LAST, because the lift takes its car's storeys out
+     * of the grid and a repair run after that would put them straight back. */
+    buildKeepWalls();
+    repairKeepStoreys();
     buildKeepLift();
     ensureKeepBoat();
   }, undefined, () => {});
@@ -33270,6 +33382,70 @@ function loadKeep() {
  * It is done here rather than in the packer because the model's own source
  * folder is ~/Downloads, which is cleared — the shipped asset is the only
  * copy there is, and a repair that cannot be run is not a repair. */
+/* AND A HOLE IN AN UPPER STOREY IS A FLOOR YOU FALL THROUGH. `repairKeepGround`
+ * puts back the GROUND the sampler lost — a cell with no floor at all reads as
+ * a wall, which is the invisible fence — and this is the same fault one level
+ * up, where it does the opposite: a single cell on the terrace outside the
+ * keep's door carries [0.09, 11.03, 22.16] while every neighbour carries 16.1
+ * and the stone at 16.1 is drawn right across it. Walk over that cell and the
+ * walk hands you the floor five metres below: you drop through flags you can
+ * see, which is the whole of "the textures should act as they are seen".
+ *
+ * A LEVEL SIX OF EIGHT NEIGHBOURS AGREE ON IS A FLOOR. A real opening — a
+ * stair well, the hoist's shaft — is many cells across, so a cell inside it
+ * has at most three neighbours carrying the level and is never filled; a
+ * one-cell hole has all eight — and a SLOT is neither: the doorway's own
+ * threshold came out as two whole rows of cells missing 16.1 in a row, and
+ * a cell in the middle of that has three neighbours carrying the level, not
+ * six. So a missing level is FLOODED, exactly the way the church's holes
+ * were: take the connected run of cells that lack it, and fill the run only
+ * if it is small AND every cell around it has the level. A stair well and
+ * the hoist's shaft are hundreds of cells and open at an edge, so they are
+ * never touched; a hole in a floor is a few, and enclosed. It is the
+ * church's despeckle with the test turned round — there a lone RAISED cell
+ * was a wall in the middle of the nave, here a missing storey is a hole in
+ * the middle of a floor. */
+function repairKeepStoreys() {
+  const w = keepWalk; if (!w || !keepCells || !keepWalls) return;
+  const t0 = performance.now();
+  let added = 0, asked = 0;
+  const lv = [], cnt = [], ceilOf = [];
+  const sortCell = (fl) => {
+    const t = []; for (let k = 0; k < fl.length; k += 3) t.push([fl[k], fl[k + 1], fl[k + 2]]);
+    t.sort((p, q) => p[0] - q[0]); fl.length = 0;
+    for (const e of t) fl.push(e[0], e[1], e[2]);
+  };
+  for (const [key, fl] of keepCells) {
+    const i0 = key % w.gw, j0 = (key - i0) / w.gw;
+    lv.length = 0; cnt.length = 0; ceilOf.length = 0;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      if (!di && !dj) continue;
+      const nf = keepCells.get((j0 + dj) * w.gw + (i0 + di)); if (!nf) continue;
+      for (let k = 0; k < nf.length; k += 3) {
+        const f = nf[k]; let m = -1;
+        for (let q = 0; q < lv.length; q++) if (Math.abs(lv[q] - f) < 0.30) { m = q; break; }
+        if (m < 0) { lv.push(f); cnt.push(1); ceilOf.push(nf[k + 2]); }
+        else { cnt[m]++; ceilOf[m] = Math.min(ceilOf[m], nf[k + 2]); }
+      }
+    }
+    let did = false;
+    const cx = KEEP_X + w.x0 + (i0 + 0.5) * w.cell, cz = KEEP_Z + w.z0 + (j0 + 0.5) * w.cell;
+    for (let q = 0; q < lv.length; q++) {
+      const L = lv[q];
+      if (cnt[q] < 3) continue;
+      let have = false;
+      for (let k = 0; k < fl.length; k += 3) if (Math.abs(fl[k] - L) < 0.30) { have = true; break; }
+      if (have) continue;
+      asked++;
+      const y = keepDrawnFloor(cx, cz, KEEP_Y + L - 0.28, KEEP_Y + L + 0.28);
+      if (y === null) continue;                        // nothing drawn there: a real opening
+      fl.push(y - KEEP_Y, 0, ceilOf[q]);
+      added++; did = true;
+    }
+    if (did) sortCell(fl);
+  }
+  keepWalk.storeys = { added, asked, ms: Math.round(performance.now() - t0) };
+}
 function repairKeepGround() {
   const t0 = performance.now();
   const w = keepWalk, gw = w.gw, gh = w.gh;
@@ -33412,6 +33588,136 @@ bunkerFloorAt = (x, z, y) => {
   return k === null ? _floorBeforeKeep(x, z, y) : k;
 };
 
+/* AND THE DRAWN STONE IS THE WALL. The packed grid is a PLAN OF THE FLOOR:
+ * a cell carries the floors it has and a solid flag for the body band, and
+ * on this model that is not enough to stop you walking through what you can
+ * see. The keep's own door has the same floor drawn on both sides of it, so
+ * the walk hands you a storey at 16.1 inside the doorway and you stroll
+ * through a shut door into the keep; measured, walking eight headings from
+ * seven spots on the terrace, the camera passed through drawn geometry on
+ * 23 of 56 runs.
+ *
+ * MARKING THE CELLS SOLID IS THE OBVIOUS FIX AND IT IS WRONG. Rasterising
+ * every steep face into the cells it crosses marks the cell you STAND on as
+ * well as the one you cannot enter, because a face at a cell boundary falls
+ * in both — measured, the island's walk collapsed from 44,454 cells and all
+ * 36 bearings to 14,126 and 21. A wall is not a place, it is a BOUNDARY
+ * between two places.
+ *
+ * So the move itself is swept against the model. Every steep face taller
+ * than a step you could take goes into a one-metre grid at load; a frame's
+ * movement is a segment at chest height, and a segment that crosses one of
+ * those faces is refused exactly the way a missing floor is refused — keep
+ * whichever one axis is clear, else stand still. It costs nothing (the
+ * segment is 5 cm long and touches four cells), it takes nothing away from
+ * the walk, and what it makes solid is precisely what is drawn. */
+/* AND THE FACE'S OWN HEIGHT IS NOT THE FILTER — THE SEGMENT'S IS. A first
+ * pass kept only faces taller than a step, on the reasoning that a kerb is
+ * not a wall; what that actually did was throw away the KEEP'S OWN DOOR,
+ * because a stylised model draws a studded door as a few dozen small quads
+ * and not one of them is 0.7 m tall. Every steep face goes in, however
+ * small, and the thing that lets you step over a lip is that the sweep is
+ * taken at your CHEST: a 0.6 m kerb's faces are all below it, a jump lifts
+ * the segment with your feet, and a wall is a wall at any triangle size. */
+const KEEP_WALL_MIN = 0.12;               // under this is a sliver, not a surface
+const KEEP_WALL_NY = 0.35;                // steeper than about 70 degrees: a face, not a slope
+let keepWalls = null;
+function buildKeepWalls() {
+  if (keepWalls || !keepWorld) return;
+  keepWorld.updateMatrixWorld(true);
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  const ab = new THREE.Vector3(), ac = new THREE.Vector3(), n = new THREE.Vector3();
+  const tris = [], steep = [], cell = 1.0, map = new Map();
+  const key = (i, j) => (i + 4096) * 16384 + (j + 4096);
+  keepWorld.traverse((o) => {
+    if (!o.isMesh || o.name === 'hitProxy' || !o.geometry || !o.geometry.index) return;
+    const mn = o.material && o.material.name;
+    if (mn === 'material' || mn === 'material_5') return;        // the sea and the sky are not walls
+    const g = o.geometry, pos = g.attributes.position, idx = g.index;
+    for (let t = 0; t < idx.count; t += 3) {
+      a.fromBufferAttribute(pos, idx.getX(t)).applyMatrix4(o.matrixWorld);
+      b.fromBufferAttribute(pos, idx.getX(t + 1)).applyMatrix4(o.matrixWorld);
+      c.fromBufferAttribute(pos, idx.getX(t + 2)).applyMatrix4(o.matrixWorld);
+      const lo = Math.min(a.y, b.y, c.y), hi = Math.max(a.y, b.y, c.y);
+      ab.subVectors(b, a); ac.subVectors(c, a); n.crossVectors(ab, ac);
+      const L = n.length(); if (L < 1e-9) continue;
+      const ny = Math.abs(n.y / L);
+      const isWall = ny <= KEEP_WALL_NY && hi - lo >= KEEP_WALL_MIN;
+      const isFloor = ny > 0.55;                                 // something you could stand on
+      if (!isWall && !isFloor) continue;
+      const id = tris.length / 9;
+      steep.push(isWall ? 1 : 0);
+      tris.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+      const i0 = Math.floor((Math.min(a.x, b.x, c.x) - KEEP_X) / cell), i1 = Math.floor((Math.max(a.x, b.x, c.x) - KEEP_X) / cell);
+      const j0 = Math.floor((Math.min(a.z, b.z, c.z) - KEEP_Z) / cell), j1 = Math.floor((Math.max(a.z, b.z, c.z) - KEEP_Z) / cell);
+      if ((i1 - i0) * (j1 - j0) > 400) continue;                 // a wall the size of the island: it is in the grid already
+      for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+        const k = key(i, j); let e = map.get(k); if (!e) { e = []; map.set(k, e); } e.push(id);
+      }
+    }
+  });
+  keepWalls = { v: new Float32Array(tris), steep: new Uint8Array(steep), map, cell, key };
+}
+/* Möller–Trumbore against the faces in the cells the segment touches. */
+const _kwA = new THREE.Vector3(), _kwD = new THREE.Vector3(), _kwE1 = new THREE.Vector3(),
+  _kwE2 = new THREE.Vector3(), _kwP = new THREE.Vector3(), _kwQ = new THREE.Vector3(), _kwT = new THREE.Vector3();
+const _kwSeen = new Set();
+function keepHitsWall(x0, z0, x1, z1, y) {
+  const W = keepWalls; if (!W) return false;
+  const dx = x1 - x0, dz = z1 - z0, L = Math.hypot(dx, dz);
+  if (L < 1e-5) return false;
+  _kwA.set(x0, y, z0); _kwD.set(dx / L, 0, dz / L);
+  _kwSeen.clear();
+  for (const [px, pz] of [[x0, z0], [x1, z1]]) {
+    const i = Math.floor((px - KEEP_X) / W.cell), j = Math.floor((pz - KEEP_Z) / W.cell);
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) _kwSeen.add(W.key(i + di, j + dj));
+  }
+  const v = W.v;
+  for (const k of _kwSeen) {
+    const list = W.map.get(k); if (!list) continue;
+    for (let m = 0; m < list.length; m++) {
+      if (!W.steep[list[m]]) continue;                 // a floor is not a wall
+      const o = list[m] * 9;
+      _kwE1.set(v[o + 3] - v[o], v[o + 4] - v[o + 1], v[o + 5] - v[o + 2]);
+      _kwE2.set(v[o + 6] - v[o], v[o + 7] - v[o + 1], v[o + 8] - v[o + 2]);
+      _kwP.crossVectors(_kwD, _kwE2);
+      const det = _kwE1.dot(_kwP); if (det > -1e-9 && det < 1e-9) continue;
+      const inv = 1 / det;
+      _kwT.set(_kwA.x - v[o], _kwA.y - v[o + 1], _kwA.z - v[o + 2]);
+      const u = _kwT.dot(_kwP) * inv; if (u < 0 || u > 1) continue;
+      _kwQ.crossVectors(_kwT, _kwE1);
+      const vv = _kwD.dot(_kwQ) * inv; if (vv < 0 || u + vv > 1) continue;
+      const t = _kwE2.dot(_kwQ) * inv;
+      if (t > 0.0005 && t < L) return true;
+    }
+  }
+  return false;
+}
+/* AND THE SAME FACES ANSWER "IS THERE A FLOOR DRAWN HERE". A plan test, not
+ * a ray: for the near-horizontal faces in this cell, is (x, z) inside the
+ * triangle's plan, and if it is, what is its height there. */
+function keepDrawnFloor(x, z, lo, hi) {
+  const W = keepWalls; if (!W) return null;
+  const list = W.map.get(W.key(Math.floor((x - KEEP_X) / W.cell), Math.floor((z - KEEP_Z) / W.cell)));
+  if (!list) return null;
+  const v = W.v; let best = null;
+  for (let m = 0; m < list.length; m++) {
+    const id = list[m]; if (W.steep[id]) continue;
+    const o = id * 9;
+    const ax = v[o], az = v[o + 2], bx = v[o + 3], bz = v[o + 5], cx = v[o + 6], cz = v[o + 8];
+    const d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
+    if (d > -1e-9 && d < 1e-9) continue;
+    const l1 = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / d;
+    if (l1 < -0.001 || l1 > 1.001) continue;
+    const l2 = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / d;
+    if (l2 < -0.001 || l2 > 1.001) continue;
+    const l3 = 1 - l1 - l2; if (l3 < -0.001 || l3 > 1.001) continue;
+    const y = l1 * v[o + 1] + l2 * v[o + 4] + l3 * v[o + 7];
+    if (y < lo || y > hi) continue;
+    if (best === null || y > best) best = y;
+  }
+  return best;
+}
 /* Pushed out along the resultant, the dojo's own push, with one change: a
  * cell is solid if the body band over the floor AT YOUR LEVEL has anything
  * in it, or if it has no floor at your level at all — a wall, a parapet, a
@@ -33646,12 +33952,18 @@ function updateKeep(dt) {
    * cannot end is a trap — measured, the shelf is two metres under the
    * beach and at a walking step you would have swum for ever. */
   const up = !onGround ? KEEP_AIR : (keepWading ? KEEP_OUT : KEEP_STEP);
-  let st = keepStandable(p.x, p.z, feet, up);
+  /* A MOVE IS LEGAL WHEN THERE IS SOMEWHERE TO STAND AND NOTHING DRAWN IN
+   * BETWEEN. The grid answers the first and the model itself answers the
+   * second, swept at chest height from where you stood before the frame
+   * moved you. */
+  const chest = feet + 0.95;
+  const legal = (x, z) => keepStandable(x, z, feet, up) && !keepHitsWall(_preMove.x, _preMove.z, x, z, chest);
+  let st = legal(p.x, p.z);
   if (!st) {
     /* A WALL IS SLID ALONG, NOT BOUNCED OFF: keep whichever one axis of the
      * frame's move is clear, else stand still. */
-    if (keepStandable(p.x, _preMove.z, feet, up)) p.z = _preMove.z;
-    else if (keepStandable(_preMove.x, p.z, feet, up)) p.x = _preMove.x;
+    if (legal(p.x, _preMove.z)) p.z = _preMove.z;
+    else if (legal(_preMove.x, p.z)) p.x = _preMove.x;
     else { p.x = _preMove.x; p.z = _preMove.z; }
     st = keepStandable(p.x, p.z, feet, up);
   }
@@ -34147,9 +34459,10 @@ window.__bw = {
   }),
   startPortalTake, startPortalReturn, placeInDojo, placeBackAtPortal, wakeSamurai, warmDojo,
   dojoFloorAt, dojoGridAt, pushOutOfDojo,
-  KEEP_X, KEEP_Y, KEEP_Z, KEEP_SPAWN, KEEP_MOOR, LIFT, loadKeep, startSail, placeInKeep, placeBackOnBoat, keepFloorAt, keepStandAt, keepStandable, keepCellAt, warmKeep, findBeachBoat, pullKeepLever, updateHover,
+  KEEP_X, KEEP_Y, KEEP_Z, KEEP_SPAWN, KEEP_MOOR, LIFT, loadKeep, startSail, placeInKeep, placeBackOnBoat, keepFloorAt, keepStandAt, keepStandable, keepHitsWall, keepCellAt, warmKeep, findBeachBoat, pullKeepLever, updateHover,
+  get keepWalls() { return keepWalls && { faces: keepWalls.v.length / 9, cells: keepWalls.map.size }; },
   get keepLift() { return keepLift && { state: keepLift.state, t: +keepLift.t.toFixed(2), y: +(keepLift.y - KEEP_Y).toFixed(2), drop: +keepLift.drop.toFixed(2), landY: +keepLift.landY.toFixed(2), box: keepLiftBox && { top: +(keepLiftBox.top - KEEP_Y).toFixed(2), x: [+(keepLiftBox.x0 - KEEP_X).toFixed(1), +(keepLiftBox.x1 - KEEP_X).toFixed(1)], z: [+(keepLiftBox.z0 - KEEP_Z).toFixed(1), +(keepLiftBox.z1 - KEEP_Z).toFixed(1)] } }; },
-  get keepRepair() { return keepWalk && keepWalk.repaired; },
+  get keepRepair() { return keepWalk && { ground: keepWalk.repaired, storeys: keepWalk.storeys }; },
   get keepWorld() { return keepWorld; }, get keepSky() { return keepSky; }, get keepSea() { return keepSea; }, get keepBoat() { return keepBoat; }, get beachBoat() { return beachBoat; },
   keepState: () => ({ inKeep, ready: keepReady, walk: !!keepWalk, cells: keepCells ? keepCells.size : 0, sail: sailBusy, t: +sailT.toFixed(2), onBoat, boatBox: beachBoatBox && [+beachBoatBox.min.x.toFixed(2), +beachBoatBox.min.y.toFixed(2), +beachBoatBox.min.z.toFixed(2), +beachBoatBox.max.x.toFixed(2), +beachBoatBox.max.y.toFixed(2), +beachBoatBox.max.z.toFixed(2)], keepBoatBox }),
   updateHurt, hurtEl,
