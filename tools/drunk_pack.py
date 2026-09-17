@@ -62,11 +62,32 @@ def blender_main():
     import bpy
     cfg = json.load(open(os.path.join(WORK, 'cfg.json')))
     maps, clips, dst = cfg['maps'], cfg['clips'], cfg['dst']
-    bpy.ops.wm.read_factory_settings(use_empty=True)
-    bpy.ops.import_scene.fbx(filepath=cfg['mesh'])
+    # THE .BLEND IS THE SOURCE, NOT THE .FBX — SOL's lesson on a monster. The
+    # FBX parents fourteen meshes at scale 10 under an armature at 0.001 with
+    # its bones in centimetres, a 3ds Max arrangement Blender's modifier copes
+    # with and the glTF exporter does not: it wrote the joined mesh a tenth
+    # the size of the bones that drive it, and the first frame that moved a
+    # bone tore the skin into black ribbons across the room. The shipped
+    # .blend carries the same rig with the meshes at scale 1 under a 0.01
+    # armature — the knight's own arrangement, which exports clean.
+    bpy.ops.wm.open_mainfile(filepath=cfg['mesh'])
+    for o in list(bpy.data.objects):
+        if o.type in ('CAMERA', 'LIGHT'):
+            bpy.data.objects.remove(o, do_unlink=True)
     arm = next(o for o in bpy.data.objects if o.type == 'ARMATURE')
     meshes = [o for o in bpy.data.objects if o.type == 'MESH']
     log('imported %d meshes, rig %d bones' % (len(meshes), len(arm.data.bones)))
+    # THE ARMATURE'S OWN QUARTER TURN IS APPLIED INTO ITS BONES. The FBX
+    # importer stands a Y-up rig up by rotating the armature OBJECT ninety
+    # degrees, and this rig also carries a `root` bone turned half round;
+    # exported like that, the glTF came out with the pelvis lying along -z
+    # (measured in the game: a body 1.88 m long and 0.4 m tall, which
+    # `dressMutant` then scaled up four and a half times to make it "tall").
+    # Rotation only — applying the SCALE as well collapsed the skin to two
+    # centimetres.
+    bpy.ops.object.select_all(action='DESELECT')
+    arm.select_set(True); bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
 
     def mat_for(slot):
         m = bpy.data.materials.new('drunk_' + slot)
@@ -147,7 +168,7 @@ if __name__ == '__main__':
         A = os.path.join(SRC, 'Basic+Demo+Animations')
         clips = {'idle': 'Idle.fbx', 'walk': 'Walk.FBX', 'run': 'Run.FBX', 'die': 'Death.fbx', 'talk': 'Talk.FBX'}
         clips = {k: os.path.join(A, v) for k, v in clips.items()}
-        json.dump({'maps': maps, 'clips': clips, 'mesh': os.path.join(SRC, 'Monster1_1.fbx'),
+        json.dump({'maps': maps, 'clips': clips, 'mesh': os.path.join(SRC, 'Monster1_1.blend'),
                    'dst': os.path.join(ROOT, 'assets/drunk.glb')}, open(os.path.join(WORK, 'cfg.json'), 'w'))
         log('running blender')
         env = dict(os.environ, DRUNK_IN_BLENDER='1')

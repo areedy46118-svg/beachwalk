@@ -9538,6 +9538,21 @@ each other until one is dead — and the survivor comes for you. What it took:
   each is written on the pack's own idle — `poseRig` takes a null clip now,
   because Wong's file carries none at all and the bind pose is the only
   stance there is until his idle has been retargeted.
+- **THE DRUNK LAY ON HIS SIDE, TWO METRES LONG AND FOUR TIMES TOO BIG, AND
+  IT WAS THE EXPORT.** Three packs before the right one. The FBX parents
+  fourteen meshes at scale 10 under an armature at 0.001 (a 3ds Max
+  arrangement) and the glTF exporter wrote the joined mesh a tenth the size
+  of its bones; the shipped `.blend` has the clean rig, but its armature
+  OBJECT carries the importer's quarter turn and the rig a `root` bone
+  turned half round, and exported like that the pelvis came out along -z —
+  measured on the raw file with `applyBoneTransform`: 0.4 m tall, 1.88 m
+  across, which `dressMutant` then scaled up 4.6 times to make "tall" and
+  the fight tore into black ribbons across the room. **Apply the armature's
+  ROTATION only** (`tools/drunk_pack.py`): applying its scale as well
+  collapsed the skin to two centimetres. Measure a packed rig off its
+  skinned vertices before anything else looks at it — `Box3.setFromObject`
+  on a skinned mesh reads the bind pose through the node chain and says
+  nothing, and the first primitive's POSITION range is one belt.
 - **A FILE WHOSE FRONT IS NOT +Z IS TURNED ON A PIVOT** (`kind.faceFix`),
   never on the model, whose yaw the aim owns and zeroes every frame. Both
   of these measured +Z off their own toes, so it is zero.
