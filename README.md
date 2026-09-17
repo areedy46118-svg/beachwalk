@@ -548,7 +548,8 @@ by [davisthegamelord](https://sketchfab.com/davisthegamelord) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the barman in the tavern
 (`assets/wong.glb`, through `tools/gltfpack.py`). He moves on Mixamo's Male
 Locomotion Pack, retargeted (`assets/wong-moves.json`, `tools/ntar_moves.py`), and
-fights with the pulls the knight and the red alien already carry.
+fights with the pulls the knight and the red alien already carry — plus two of
+the owner's own, Mixamo's "Ginga Sideways To Au" (his dodge) and "Flying Kick".
 
 The drunk at his bar is the owner's own "Monster1_1" (`assets/drunk.glb`, through
 `tools/drunk_pack.py`), on Mixamo's Male Drunk Pack retargeted the same way

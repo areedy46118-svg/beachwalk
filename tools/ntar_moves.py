@@ -90,6 +90,13 @@ WONG_CLIPS = [
     ('left turn 90',          'turnL',   'a quarter turn, left', 'Male Locomotion Pack'),
     ('right turn 90',         'turnR',   'a quarter turn, right', 'Male Locomotion Pack'),
     ('jump',                  'jump',    'over the bar', 'Male Locomotion Pack'),
+    # ---- AND TWO OF THE OWNER'S OWN, dropped loose in ~/Downloads. A barman
+    # who fights capoeira is a barman with an answer nobody in this game has:
+    # the ginga rocks him sideways and takes him up onto his hands, which is
+    # a dodge that LEAVES THE LINE rather than stepping back down it, and the
+    # flying kick is the one blow of his that comes off the ground.
+    ('Ginga Sideways To Au',  'ginga',   'the rocking step, sideways, up onto his hands', ''),
+    ('Flying Kick',           'wFlyC',   'off the ground, both feet', ''),
 ]
 DRUNK_CLIPS = [
     ('drunk idle',                'idle',     'swaying', 'Male Drunk Pack'),
@@ -212,9 +219,21 @@ KEEP_YAW = {'knockOut', 'getUp'}
 # the two tavern sets are all gaits and stands: the game turns them, so every
 # clip is de-yawed, and nothing in either leaves the vertical
 if SET in ('wong', 'drunk'):
-    WINDOW = {}
-    FORCE_FLAT_YAW = {c[1] for c in CLIPS}
-    KEEP_YAW = set()
+    # THE TWO LOOSE CLIPS ARE PERFORMANCES, the beast's `Die_1` again, and the
+    # hips say where the move is (the log prints the curve). `Flying Kick`
+    # leaves the ground at once, peaks at frame 12 and is down by 24; what
+    # follows is him walking BACKWARDS out of shot (travel +2.11 -> -1.44).
+    # `Ginga Sideways To Au` is four seconds of capoeira that walks three and
+    # a half metres forward and back again before it does the one thing a
+    # fight wants — the last second, which travels 0.88 m SIDEWAYS and is the
+    # au itself. That is a dodge: it leaves the line rather than stepping
+    # back down it.
+    WINDOW = {'wFlyC': (0, 30), 'ginga': (84, 118)}
+    # AND A BODY THAT LEAVES THE VERTICAL KEEPS ITS OWN TURN — `knockOut`'s
+    # lesson: the au takes him onto his hands, and a world-Y de-yaw applied
+    # to a horizontal body is a roll about its own length.
+    KEEP_YAW = {'ginga'}
+    FORCE_FLAT_YAW = {c[1] for c in CLIPS} - KEEP_YAW
 
 
 # A clip whose hips are measured from its LAST frame, not its first: it

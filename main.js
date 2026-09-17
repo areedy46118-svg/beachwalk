@@ -21342,6 +21342,7 @@ function updateMutantUnit(u, dt) {
   if (u.kind.tav) {
     u.g.visible = inTavern;
     if (!inTavern) { mutDrop(u); mutAnim(u, dt, 0); return; }
+    if (u.st.vault) { tavVaultStep(u, dt); return; }
     const st = tavWalk ? keepFloorAt(u.g.position.x, u.g.position.z, u.g.position.y + 0.15, 0.30, TAV_SITE) : null;
     if (st) {
       const dy = st.f - u.g.position.y, ad = Math.abs(dy);
@@ -35374,7 +35375,7 @@ const TAV_SITE = {
   get group() { return tavWorld; }, get walk() { return tavWalk; }, get cells() { return tavCells; },
   get walls() { return tavWalls; }, set walls(v) { tavWalls = v; },
   skip: (mn) => mn === 'TextureMaterial_15',       // the invisible back faces, had the packer left them
-  extra: () => [],
+  extra: () => (tavPlankBox ? [tavPlankBox] : []),   // and the plank, once it is laid over the break
   sea: null,                                        // a cell that was never written is a wall in here
 };
 
@@ -35424,6 +35425,8 @@ function buildTavern() {
   moveTavBarrel();
   buildTavCrates();
   buildKeepWalls(TAV_SITE);
+  buildTavBarrelStep();
+  buildTavPlank();
   buildTavChairs();
   tavWalls = null; buildKeepWalls(TAV_SITE);
   repairKeepStoreys(TAV_SITE);
@@ -35619,7 +35622,7 @@ function smashTavTable(t, speed) {
   }
   tavWorld.remove(t.grp);
   clearTavStoreys(t.plan, t.top - 0.5, t.top + 0.4);
-  tavWallsDirty = true;
+  tavWallsDirty = true; TAV_G.dirty = true;
   if (!sfxTableBreak()) sfxWoodSnap();
 }
 /* Taking a surface away does not take away what the grid remembers of it. */
@@ -35718,6 +35721,139 @@ function buildTavCrates() {
   tavWorld.updateMatrixWorld(true);
 }
 
+/* ---- THE WAY UP, AND THE WAY ACROSS.
+ *
+ * THE FIRST RUNG IS A BARREL. The climb to the gallery started on a stool at
+ * 0.58 and a box at 1.15, and the owner asked for a barrel to begin it. WHERE
+ * it goes is measured rather than typed, the way everything else in this room
+ * is: the nearest spot to the stack's foot that is the FLAGS (not a crate
+ * top), has a body's room round it, and nothing drawn overhead. */
+function buildTavBarrelStep() {
+  if (!tavWorld || tavWorld.userData.barrelStep || !tavCells) return;
+  const src = tavWorld.getObjectByName('tavBarrel');
+  if (!src) return;
+  tavWorld.userData.barrelStep = true;
+  const fy = TAV_Y + TAV_FLOOR, [sx, sz] = TAV_STACKS[0];
+  let best = null, bd = 1e9;
+  for (let a = 0; a < 64; a++) for (let r = 1.15; r <= 2.8; r += 0.15) {
+    const th = a / 64 * Math.PI * 2, x = sx + Math.cos(th) * r, z = sz + Math.sin(th) * r;
+    const st = keepStandAt(TAV_X + x, TAV_Z + z, fy + 0.30, 0.5, TAV_SITE);
+    if (!st || Math.abs(st.f - fy) > 0.10) continue;
+    if (keepWallNear(TAV_X + x, TAV_Z + z, 0.70, fy + 0.12, fy + 2.0, TAV_SITE)) continue;
+    if (keepDrawnFloor(TAV_X + x, TAV_Z + z, fy + 0.12, fy + 2.2, TAV_SITE) !== null) continue;
+    /* AND A RUNG IS ONLY A RUNG IF SOMETHING IS ABOVE IT. A barrel standing
+     * in the open is a barrel; one you can step OFF is the first step of the
+     * climb, so the spot has to have a surface a barrel's height above the
+     * flags within a stride of it. */
+    let up = false;
+    for (let b = 0; b < 12 && !up; b++) for (let rr = 0.55; rr <= 1.25; rr += 0.2) {
+      const th2 = b / 12 * Math.PI * 2;
+      const st2 = keepStandAt(TAV_X + x + Math.cos(th2) * rr, TAV_Z + z + Math.sin(th2) * rr, fy + 2.0, 2.0, TAV_SITE);
+      if (st2 && st2.f - fy > 0.95 && st2.f - fy < 1.60) { up = true; break; }
+    }
+    const score = r - (up ? 3 : 0);                   // a rung first, and failing that the nearest spot
+    if (score < bd) { bd = score; best = [x, z]; }
+  }
+  if (!best) return;
+  src.geometry.computeBoundingBox();
+  const bb = src.geometry.boundingBox, h = bb.max.y - bb.min.y;
+  const m = new THREE.Mesh(src.geometry, src.material);
+  m.position.set(best[0], TAV_FLOOR - bb.min.y, best[1]);
+  m.rotation.y = 0.7;
+  m.frustumCulled = false; m.name = 'tavBarrel';
+  tavWorld.add(m);
+  tavCellTop(best[0], best[1], Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) * 0.62, TAV_FLOOR + h);
+  tavWorld.updateMatrixWorld(true);
+}
+/* A thing put in the room after the pack has to say so in the grid, or the
+ * walk goes on answering with the flags underneath it. */
+function tavCellTop(x, z, r, top) {
+  const w = tavWalk, C = w.cell;
+  const i0 = Math.floor((x - r - w.x0) / C), i1 = Math.floor((x + r - w.x0) / C);
+  const j0 = Math.floor((z - r - w.z0) / C), j1 = Math.floor((z + r - w.z0) / C);
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const cx = w.x0 + (i + 0.5) * C, cz = w.z0 + (j + 0.5) * C;
+    if (Math.hypot(cx - x, cz - z) > r) continue;
+    let fl = tavCells.get(j * w.gw + i);
+    if (!fl) { fl = []; tavCells.set(j * w.gw + i, fl); }
+    const tri = [];
+    for (let q = 0; q < fl.length; q += 3) tri.push([fl[q], fl[q + 1], fl[q + 2]]);
+    tri.push([Math.round(top * 100) / 100, 0, 99]);
+    tri.sort((a, b) => a[0] - b[0]);
+    fl.length = 0; for (const e of tri) fl.push(e[0], e[1], e[2]);
+  }
+}
+/* AND THE WAY ON IS A PLANK YOU CARRY. Out of the gallery a stone ledge runs
+ * east along the south wall at head height over the hall — and it is BROKEN.
+ * Measured by standing on it cell by cell: floor at 4.53 where you drop onto
+ * it, easing down to 4.14 at x = -4.5, then NOTHING from -4.25 to -2.25, and
+ * 4.36 again at -2.0 running on to the east wall. Two and a quarter metres of
+ * air with the hall's flags four metres below.
+ *
+ * The plank is a real physics body — it falls, you pick it up with E, you
+ * carry it up the crates and you can throw it off the ledge and go back down
+ * for it. Laying it is its own verb, at the break, because a 2.7 m board
+ * dropped by hand onto a 0.4 m ledge is a board in the hall: the prompt is
+ * under the crosshair and the board goes down square. */
+const TAV_PLANK = { x0: -4.62, x1: -1.88, z: -6.45, top: 4.44, w: 0.46, t: 0.10 };
+const TAV_PLANK_HOME = { x: -10.4, z: -8.9 };
+let tavPlankMesh = null, tavPlankProp = null, tavPlankBox = null, tavPlankTexC = null;
+function tavPlankTex() {
+  if (tavPlankTexC) return tavPlankTexC;
+  const c = document.createElement('canvas'); c.width = 128; c.height = 32;
+  const g = c.getContext('2d');
+  g.fillStyle = '#6a5136'; g.fillRect(0, 0, 128, 32);
+  for (let i = 0; i < 90; i++) {                      // grain, quantised like every other canvas here
+    const y = Math.random() * 32, l = 18 + Math.random() * 70, d = Math.random() < 0.5;
+    g.strokeStyle = d ? 'rgba(40,28,16,0.45)' : 'rgba(150,122,86,0.28)';
+    g.lineWidth = 1;
+    g.beginPath(); g.moveTo(Math.random() * 128, y); g.lineTo(Math.random() * 128 + l, y + (Math.random() - 0.5) * 2); g.stroke();
+  }
+  g.fillStyle = 'rgba(28,20,12,0.5)'; g.fillRect(0, 0, 128, 2); g.fillRect(0, 30, 128, 2);
+  tavPlankTexC = retroTex(new THREE.CanvasTexture(c));
+  return tavPlankTexC;
+}
+function buildTavPlank() {
+  if (tavPlankMesh || !tavWorld) return;
+  const L = TAV_PLANK.x1 - TAV_PLANK.x0;
+  const geo = new THREE.BoxGeometry(L, TAV_PLANK.t, TAV_PLANK.w);
+  const mat = new THREE.MeshBasicMaterial({ map: tavPlankTex() });
+  mat.toneMapped = false;                              // the room is baked and unlit; so is what stands in it
+  const m = new THREE.Mesh(geo, mat);
+  m.name = 'tavPlank';
+  const st = keepStandAt(TAV_X + TAV_PLANK_HOME.x, TAV_Z + TAV_PLANK_HOME.z, TAV_Y + TAV_FLOOR + 5.8, 1.4, TAV_SITE);
+  m.position.set(TAV_X + TAV_PLANK_HOME.x, (st ? st.f : TAV_Y + TAV_FLOOR + 5.3) + TAV_PLANK.t / 2 + 0.02, TAV_Z + TAV_PLANK_HOME.z);
+  m.rotation.y = 0.35;
+  tavPlankMesh = m;
+  tavPlankProp = makeProp(m, 'the plank', { radius: 0.34, restH: TAV_PLANK.t / 2 + 0.01, bounce: 0.12, friction: 0.9 });
+  /* THE VERB, at the break, and only with the plank in your hands. It is a
+   * `mid` prompt — a thing that takes you somewhere belongs under the
+   * crosshair, not down beside the stamina bar. */
+  const proxy = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.9, 1.5),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  proxy.name = 'hitProxy'; proxy.visible = false;
+  proxy.position.set(TAV_X + (TAV_PLANK.x0 + TAV_PLANK.x1) / 2, TAV_Y + TAV_FLOOR + TAV_PLANK.top + 0.7, TAV_Z + TAV_PLANK.z);
+  scene.add(proxy);
+  addInteractable(proxy, 'Lay the plank across', 'prop', {
+    mid: true, far: 4.2,
+    when: () => inTavern && !tavPlankBox && held === tavPlankProp,
+    onActivate: () => layTavPlank(),
+  });
+}
+function layTavPlank() {
+  if (!tavPlankMesh || tavPlankBox) return;
+  if (held === tavPlankProp) dropHeld();
+  tavPlankProp.dead = true;                            // it is masonry now, not a body
+  tavPlankProp.vel.set(0, 0, 0); tavPlankProp.held = false;
+  for (let i = interactables.length - 1; i >= 0; i--) if (interactables[i].root === tavPlankMesh) interactables.splice(i, 1);
+  tavPlankMesh.position.set(TAV_X + (TAV_PLANK.x0 + TAV_PLANK.x1) / 2, TAV_Y + TAV_FLOOR + TAV_PLANK.top - TAV_PLANK.t / 2, TAV_Z + TAV_PLANK.z);
+  tavPlankMesh.rotation.set(0, 0, 0);
+  tavPlankBox = { x0: TAV_X + TAV_PLANK.x0, x1: TAV_X + TAV_PLANK.x1,
+                  z0: TAV_Z + TAV_PLANK.z - TAV_PLANK.w / 2, z1: TAV_Z + TAV_PLANK.z + TAV_PLANK.w / 2,
+                  top: TAV_Y + TAV_FLOOR + TAV_PLANK.top };
+  sfxPropHit('wood', 3.4);
+  TAV_G.dirty = true;
+}
 /* A FLOOR NOBODY CAN STAND UNDER IS NOT A FLOOR. The storey repair puts back
  * levels a cell's neighbours agree on, with the roof the NEIGHBOURS see —
  * so under every table, the bar counter and the rack's shelves it wrote
@@ -35841,7 +35977,7 @@ function smashTavChair(c, speed) {
     tavThrow(m, _tvP, gy, kick, dx, dz, THREE.MathUtils.clamp((_tvP.y - gy) / 0.9, 0, 1), WAIT[tag] || 0, upright);
   }
   tavWorld.remove(c.grp);
-  tavWallsDirty = true;
+  tavWallsDirty = true; TAV_G.dirty = true;
   sfxWoodSnap();                                  // the coat stand's own snap, bank or synth
 }
 
@@ -36162,14 +36298,30 @@ function authorDrunkClips(u, m, gltf) {
  * clip it is cut from — the same clip, the same fraction — and the reaches
  * are a man's, not the knight's. `plain` on the headbutt: it is thrown with
  * no arm, so it lands on reach and facing the way the pack's do. */
-MUT_ATTACKS.wPunch = { wind: 0.40, strike: 0.13, recover: 0.30, hit: 0.560, reach: 2.05, lunge: 1.5, chain: 'wJab', chainP: 0.72, w: 0.30, guardK: 0.90, limbs: [0] };
-MUT_ATTACKS.wJab   = { wind: 0.26, strike: 0.10, recover: 0.24, hit: 0.460, reach: 1.95, lunge: 1.2, chain: 'wKick', chainP: 0.55, w: 0.26, guardK: 0.80, limbs: [1] };
-MUT_ATTACKS.wKick  = { wind: 1.00, strike: 0.18, recover: 0.50, hit: 0.696, reach: 2.90, lunge: 1.9, chain: 'wPunch', chainP: 0.40, w: 0.24, dmg: 2, guardK: 1.30, limbs: [2] };
-MUT_ATTACKS.wSpin  = { wind: 0.86, strike: 0.24, recover: 0.56, hit: 0.620, reach: 2.80, lunge: 0.5, chain: 'wPunch', chainP: 0.50, w: 0.20, hold: true, guardK: 1.40, limbs: [0, 1] };
-MUT_ATTACKS.dSwipe = { wind: 0.60, strike: 0.16, recover: 0.38, hit: 0.600, reach: 2.40, lunge: 1.4, chain: 'dButt', chainP: 0.62, w: 0.34, guardK: 1.15, limbs: [0, 1] };
-MUT_ATTACKS.dButt  = { wind: 0.50, strike: 0.12, recover: 0.42, hit: 0.547, reach: 1.90, lunge: 1.7, chain: 'dSwipe', chainP: 0.50, w: 0.24, guardK: 1.20, plain: true, stop: 1.05 };
-MUT_ATTACKS.dSpin  = { wind: 0.86, strike: 0.24, recover: 0.56, hit: 0.620, reach: 2.90, lunge: 0.5, chain: 'dSwipe', chainP: 0.45, w: 0.22, hold: true, guardK: 1.40, limbs: [0, 1] };
-MUT_ATTACKS.dJump  = { wind: 1.05, strike: 0.20, recover: 0.62, hit: 0.640, reach: 5.00, lunge: 4.8, chain: 'dSwipe', chainP: 0.60, w: 0.20, dmg: 2, hold: true, guardK: 1.70, minDist: 3.0, twoHanded: true };
+/* AND EVERY CLOSE SWING IS `real`. These clips are a second or so long and
+ * the startups they were mapped onto are longer, so the whole wind-up played
+ * at a fraction of real speed — SCP-096's "slow-mo" on a third creature, and
+ * most of what "the animations look weird" was. The limb is drawn back to
+ * the cock over the first of the startup, HELD there (that is the tell), and
+ * the blow runs from the cock to the contact at better than the clip's own
+ * speed in the last of it, still landing on the frame the damage does.
+ * AND THE STOPPING DISTANCE IS PER SWING, because it is measured: a blow
+ * from a leg lands at thigh height, so the nearer he is the further under
+ * the picture it arrives. */
+MUT_ATTACKS.wPunch = { wind: 0.40, strike: 0.13, recover: 0.30, hit: 0.560, reach: 2.05, lunge: 1.5, chain: 'wJab', chainP: 0.72, w: 0.28, guardK: 0.90, limbs: [0], real: true, cock: 0.42, clipRate: 1.30, stop: 0.78 };
+MUT_ATTACKS.wJab   = { wind: 0.26, strike: 0.10, recover: 0.24, hit: 0.460, reach: 1.95, lunge: 1.2, chain: 'wKick', chainP: 0.55, w: 0.24, guardK: 0.80, limbs: [1], real: true, cock: 0.40, clipRate: 1.25 };
+MUT_ATTACKS.wKick  = { wind: 1.00, strike: 0.18, recover: 0.50, hit: 0.696, reach: 2.90, lunge: 1.9, chain: 'wPunch', chainP: 0.40, w: 0.20, dmg: 2, guardK: 1.30, limbs: [2], real: true, cock: 0.46, clipRate: 1.15, stop: 1.45 };
+MUT_ATTACKS.wSpin  = { wind: 0.86, strike: 0.24, recover: 0.56, hit: 0.620, reach: 2.80, lunge: 0.5, chain: 'wPunch', chainP: 0.50, w: 0.18, hold: true, guardK: 1.40, limbs: [0, 1], real: true, cock: 0.44, clipRate: 1.25 };
+/* AND THE OWNER'S OWN FLYING KICK. The one blow of his that comes off the
+ * ground: he holds through the whole startup and crosses the floor all at
+ * once, which is what makes a leap a leap rather than a walk with a hop on
+ * the end of it (the SCP's pounce paid for that). Its `reach` is where it
+ * may be THROWN from, so it is inside what the lunge can actually cross. */
+MUT_ATTACKS.wFly   = { wind: 0.85, strike: 0.18, recover: 0.52, hit: 0.400, reach: 4.40, lunge: 4.0, chain: 'wPunch', chainP: 0.55, w: 0.10, dmg: 2, hold: true, guardK: 1.60, minDist: 2.6, limbs: [2], stop: 1.55 };
+MUT_ATTACKS.dSwipe = { wind: 0.60, strike: 0.16, recover: 0.38, hit: 0.600, reach: 2.40, lunge: 1.4, chain: 'dButt', chainP: 0.62, w: 0.34, guardK: 1.15, limbs: [0, 1], real: true, cock: 0.42, clipRate: 1.25 };
+MUT_ATTACKS.dButt  = { wind: 0.50, strike: 0.12, recover: 0.42, hit: 0.547, reach: 1.90, lunge: 1.7, chain: 'dSwipe', chainP: 0.50, w: 0.24, guardK: 1.20, plain: true, stop: 1.05, real: true, cock: 0.44, clipRate: 1.15 };
+MUT_ATTACKS.dSpin  = { wind: 0.86, strike: 0.24, recover: 0.56, hit: 0.620, reach: 2.90, lunge: 0.5, chain: 'dSwipe', chainP: 0.45, w: 0.22, hold: true, guardK: 1.40, limbs: [0, 1], real: true, cock: 0.44, clipRate: 1.25 };
+MUT_ATTACKS.dJump  = { wind: 1.05, strike: 0.20, recover: 0.62, hit: 0.640, reach: 5.00, lunge: 4.8, chain: 'dSwipe', chainP: 0.60, w: 0.20, dmg: 2, hold: true, guardK: 1.70, minDist: 3.0, twoHanded: true, stop: 1.50 };
 const TAV_CAST_COMMON = {
   solo: true, noSand: true, skin: null, bones: null, tav: true,
   /* AND THEY DO NOT FIDGET. Measured over twenty seconds of the two of
@@ -36179,21 +36331,34 @@ const TAV_CAST_COMMON = {
    * every change of mind. The lunge stops where the separation holds them,
    * the shuffle is off, the circling and the size-up are rare, and a man
    * comes round no faster than the knight does. */
-  dmg: 1, hitR: 0.85, body: 0.45, lungeStop: 1.10, landSlop: 0.70,
+  /* AND THE BLOW HAS TO ARRIVE AT YOU, WHICH IS A DISTANCE. `lungeStop` is
+   * where the lunge stops and it was 1.10 against a 0.45 m body — 0.65 m of
+   * daylight outside his own shoulders, so a man's arm finished short and
+   * `landSlop` gave him the benefit of the doubt anyway: the game said he hit
+   * you and the picture said he did not. These are real Mixamo arcs, not
+   * poses solved against a target, so they pass wider than an authored swing
+   * and the shoulder correction has to be able to close it — the samurai
+   * needed 2.60 for the same reason. The slop comes DOWN with it, because a
+   * metre of charity on a creature whose hands arrive inside half of one is
+   * most of an arm. */
+  dmg: 1, hitR: 0.85, body: 0.45, lungeStop: 0.84, landSlop: 0.55,
   windK: 1.00, reachK: 1.00, press: 0.86,
   circle: 0.10, step: 0.12, feint: 0.22, sizeUp: 0.10, restless: 0,
   poiseBack: 1.8, poiseWait: 1.1, parryK: 0.80, recoilK: 0.70, blockCost: 0.50,
   fidgetK: 0.12, fidgetGap: 3.5, turnMax: 5.2, fade: 0.24,
-  reacts: true, aimed: true, barLen: 0.22, aimK: 1.40, bossDeath: true,
+  reacts: true, aimed: true, barLen: 0.22, aimK: 2.90, bossDeath: true,
   knockClip: 'knockOut', riseClip: 'getUp', knockAfter: 4, knockLapse: 7,
   knock: { fall: 1.27, lie: 0.34, rise: 1.33, land: 0.78, slide: null },
   stunClip: 'parry', first: 'idle', sleepIdle: 'idle',
 };
 MUT_KINDS.wong = Object.assign({}, TAV_CAST_COMMON, {
   glb: 'assets/wong.glb', cutout: true, faceFix: 0,
-  h: 1.80, hp: 28, speedK: 0.92, aggr: 2.60, chainMax: 3, poise: 8, block: 0.28,
-  use: { wPunch: 0.30, wJab: 0.26, wKick: 0.24, wSpin: 0.20 },
-  dodgeClip: 'dodge', dodgeSide: 1.45, dodgeT: 1.20, dodgeRate: 1.72,
+  h: 1.80, hp: 15, speedK: 0.95, aggr: 2.60, chainMax: 3, poise: 7, block: 0.28,
+  use: { wPunch: 0.28, wJab: 0.24, wKick: 0.20, wSpin: 0.16, wFly: 0.12 },
+  /* AND HIS DODGE IS THE AU, NOT THE ALIEN'S MACACO. A barman who fights
+   * capoeira leaves the LINE rather than stepping back down it — measured on
+   * the windowed clip, 1.13 s and 1.19 m of it sideways. */
+  dodgeClip: 'ginga', dodgeSide: 1.50, dodgeT: 1.08, dodgeRate: 1.0,
   rig: { arm: 'CC_Base_R_Upperarm_080', fore: 'CC_Base_R_Forearm_081', hand: 'CC_Base_R_Hand_085',
          armL: 'CC_Base_L_Upperarm_052', foreL: 'CC_Base_L_Forearm_053', handL: 'CC_Base_L_Hand_057', head: 'CC_Base_Head_038',
          limbs: [['CC_Base_R_Thigh_018', 'CC_Base_R_Calf_019', 'CC_Base_R_Foot_021', 'CC_Base_R_ToeBase_022']] },
@@ -36215,13 +36380,13 @@ MUT_KINDS.wong = Object.assign({}, TAV_CAST_COMMON, {
   gaits: { walk: ['walk'], run: ['run'], idle: ['idle'], strafeL: ['strafeL'], strafeR: ['strafeR'] },
   stepClip: ['sideL', 'sideR'],
   alias: { idle2: 'idle', walk2: 'walk', run2: 'run', roar2: 'block', die: 'hitBig', die2: 'hitBig', back: 'walk', calm: 'idle',
-           wPunch: 'kPunch', wKick: 'nSweep', wSpin: 'k360' },
+           wPunch: 'kPunch', wKick: 'nSweep', wSpin: 'k360', wFly: 'wFlyC' },
   provoke: tavProvoke,
   voice: { f: 1.05, growl: 0.55, rasp: 1.0, throat: 'wet' },
 });
 MUT_KINDS.drunk = Object.assign({}, TAV_CAST_COMMON, {
   glb: 'assets/drunk.glb', faceFix: 0,
-  h: 1.92, hp: 34, speedK: 0.82, aggr: 3.00, chainMax: 4, poise: 10, block: 0.14,
+  h: 1.92, hp: 18, speedK: 0.74, aggr: 3.00, chainMax: 4, poise: 8, block: 0.14,
   use: { dSwipe: 0.34, dButt: 0.26, dSpin: 0.20, dJump: 0.20 },
   rig: { arm: 'upperarm_r', fore: 'lowerarm_r', hand: 'hand_r',
          armL: 'upperarm_l', foreL: 'lowerarm_l', handL: 'hand_l', head: 'head',
@@ -36253,7 +36418,28 @@ MUT_KINDS.drunk = Object.assign({}, TAV_CAST_COMMON, {
  * asleep, in their idles, until both have landed — then: the drink goes
  * across, the drunk takes it, nearly goes over, raises it, and puts it
  * through the floor, and the two of them go for each other. */
-const TAV_WONG = { x: -9.7, z: -3.9 }, TAV_DRUNK = { x: -9.7, z: -1.35 };
+/* IT HAPPENS AT THE BAR, WHICH IS THE ONE THE MEAT IS BEHIND. The first
+ * build stood them in the middle of the floor on the rug — "they are in the
+ * wrong spot", and they were: a barman serves from behind a counter. There
+ * is exactly one in this hall, along the east wall (probed down over the
+ * whole floor: a top at 0.99 m running x -1.5..-0.75 by z -6..+1.5, seven
+ * metres of it, with the kegs behind and the shelf of cuts let into the wall
+ * at z = -2). Wong stands in the barman's pocket behind it, the drunk at the
+ * rail in front, and the shelf of meat is the backdrop to the whole beat. */
+const TAV_WONG = { x: 0.05, z: -1.90 }, TAV_DRUNK = { x: -2.55, z: -1.90 };
+/* AND THE POCKET BEHIND A BAR IS A DEAD END. Measured: 0.65 m by 3, shut by
+ * the counter on one side, the kegs at one end and the counter's return at
+ * the other — a creature put there could never reach the fight, which is the
+ * "getting stuck" this round is about. So he does not walk out of it, he
+ * VAULTS, which is what a barman does and what his own file already has a
+ * clip for. It is a scripted beat: it owns his position for its length. */
+const TAV_VAULT = 0.95, TAV_VAULT_LIFT = 1.25;
+const TAV_VAULT_TO = { x: -3.40, z: -2.60 };
+/* AND IT WAITS FOR YOU. The bar is seventeen metres from the door, so on the
+ * old clock the drink went across, the glass went down and the fight was
+ * under way before the player had taken ten steps. Nothing starts until you
+ * have come to the bar. */
+const TAV_SCENE_NEAR = 13.0;
 let wongUnit = null, drunkUnit = null, tavMug = null;
 const tavScene = { t: 0, phase: 0, started: false };
 function buildTavCast() {
@@ -36318,6 +36504,13 @@ function tavProvoke(u, quiet) {
     q.st.foe = q === wongUnit ? drunkUnit : wongUnit;
   }
   if (u) u.st.foe = null;                         // the one you hit is yours now
+  /* AND THE BARMAN COMES OVER HIS OWN BAR. Only from behind it, so a later
+   * provoke cannot throw him across the room. */
+  if (wongUnit.st.alive && wongUnit.g.position.x - TAV_X > -0.7) {
+    wongUnit.st.vault = { t: 0, x0: wongUnit.g.position.x, z0: wongUnit.g.position.z,
+      x1: TAV_X + TAV_VAULT_TO.x, z1: TAV_Z + TAV_VAULT_TO.z, y: wongUnit.g.position.y };
+    wongUnit.st.roar = 0; wongUnit.holdAnim = true;
+  }
   tavScene.phase = 9;
   if (tavMug && tavMug.parent) tavMugSmash();
   if (!quiet) {
@@ -36332,7 +36525,11 @@ function updateTavScene(dt) {
   const W = wongUnit, D = drunkUnit;
   if (tavScene.phase >= 9) return;
   if (!W.mixer || !D.mixer || !W.clips.idle || !D.clips.idle) return;   // both landed
-  if (!tavScene.started) { tavScene.started = true; tavScene.t = 0; tavMugTo(W); }
+  if (!tavScene.started) {
+    const dx = camera.position.x - (TAV_X + TAV_DRUNK.x), dz = camera.position.z - (TAV_Z + TAV_DRUNK.z);
+    if (dx * dx + dz * dz > TAV_SCENE_NEAR * TAV_SCENE_NEAR) return;
+    tavScene.started = true; tavScene.t = 0; tavMugTo(W);
+  }
   const was = tavScene.t; tavScene.t += dt; const t = tavScene.t;
   const beat = (k) => was < TAV_BEATS[k] && t >= TAV_BEATS[k];
   const hold = (u, name, loop) => { const a = mutPlay(u, name, !!loop); if (a) { a.paused = false; a.timeScale = 1; } u.holdAnim = true; };
@@ -36346,6 +36543,21 @@ function updateTavScene(dt) {
   if (t >= TAV_BEATS.serve + 1.3 && W.holdAnim) W.holdAnim = false;
   if (t >= TAV_BEATS.fight) tavProvoke(null);
 }
+/* OVER THE BAR. A scripted beat, so it owns his position and his mixer for
+ * its length: an eased slide from the pocket to the floor in front, a
+ * parabola over the counter's own 0.99 m top, and his file's own jump played
+ * from its take-off across the whole of it. */
+function tavVaultStep(u, dt) {
+  const V = u.st.vault; V.t += dt;
+  const k = Math.min(1, V.t / TAV_VAULT), e = k * k * (3 - 2 * k);
+  u.g.position.set(V.x0 + (V.x1 - V.x0) * e, V.y + Math.sin(Math.PI * k) * TAV_VAULT_LIFT,
+                   V.z0 + (V.z1 - V.z0) * e);
+  u.g.rotation.y = Math.atan2(V.x1 - V.x0, V.z1 - V.z0);
+  const a = mutPlay(u, 'jump', false);
+  if (a) { a.paused = true; a.time = clampTime(a, (0.12 + k * 0.78) * a.getClip().duration); }
+  u.mixer.update(dt);
+  if (k >= 1) { u.st.vault = null; u.holdAnim = false; u.st.cool = 0.20; u.g.position.y = V.y; }
+}
 /* THE FAN. The straight line to the foe is tried a stride ahead against the
  * hall's floor and its drawn faces; if it is shut the nearest clear heading
  * either side is walked instead, as a one-point route, and dropped the
@@ -36358,15 +36570,108 @@ function tavClear(x, z, dx, dz, len, feet) {
   for (const h of [0.6, 1.2]) if (keepHitsWall(x, z, x1, z1, feet + h, TAV_SITE)) return false;
   return !keepWallNear(x1, z1, 0.30, feet + 0.46, feet + 1.6, TAV_SITE);
 }
+/* AND FINDING A HEADING IS NOT THE SAME AS GETTING ANYWHERE — the Dealer's
+ * own lesson, which the tavern's first steering never learned. A fan of
+ * headings is GREEDY: in the pocket between a table and a wall the nearest
+ * clear heading points further into the pocket, the body takes it, the
+ * push-out cancels the step, and next frame the same heading is nearest
+ * again. Traced on the knight, that was the same turn chosen for four
+ * seconds while the position moved two centimetres. So the room is asked
+ * instead: a breadth-first search over the hall's own floor, thinned to its
+ * corners, with the fan kept only as the last resort.
+ *
+ * The grid is built once and rebuilt when the furniture changes, because
+ * `keepStandAt` and `keepWallNear` are the expensive part and the hall is
+ * 2,400 cells. Both ends may be INSIDE something — you against the counter,
+ * him mid-shove — so each walks out to the nearest cell a body fits in. */
+const TAV_G = { cell: 0.35, x0: -19.6, z0: -5.9, x1: 0.6, z1: 6.9, w: 0, h: 0, free: null, dirty: true };
+const TAV_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+function tavGrid() {
+  if (TAV_G.free && !TAV_G.dirty) return TAV_G;
+  const C = TAV_G.cell, fy = TAV_Y + TAV_FLOOR;
+  TAV_G.w = Math.ceil((TAV_G.x1 - TAV_G.x0) / C) + 1;
+  TAV_G.h = Math.ceil((TAV_G.z1 - TAV_G.z0) / C) + 1;
+  const free = new Uint8Array(TAV_G.w * TAV_G.h);
+  for (let i = 0; i < TAV_G.w; i++) for (let j = 0; j < TAV_G.h; j++) {
+    const x = TAV_X + TAV_G.x0 + i * C, z = TAV_Z + TAV_G.z0 + j * C;
+    const st = keepStandAt(x, z, fy + 0.35, 0.55, TAV_SITE);
+    if (!st || Math.abs(st.f - fy) > 0.7) continue;
+    if (keepWallNear(x, z, 0.34, st.f + 0.40, st.f + 1.55, TAV_SITE)) continue;
+    free[j * TAV_G.w + i] = 1;
+  }
+  TAV_G.free = free; TAV_G.dirty = false;
+  return TAV_G;
+}
+const _tavQ = [];
+let _tavPrev = null;
+function tavCellNear(G, i0, j0) {
+  const ok = (i, j) => i >= 0 && j >= 0 && i < G.w && j < G.h && G.free[j * G.w + i];
+  if (ok(i0, j0)) return [i0, j0];
+  for (let r = 1; r <= 6; r++) for (let di = -r; di <= r; di++) for (let dj = -r; dj <= r; dj++) {
+    if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
+    if (ok(i0 + di, j0 + dj)) return [i0 + di, j0 + dj];
+  }
+  return null;
+}
+function tavRoute(u, tx, tz) {
+  const G = tavGrid(), C = G.cell, N = G.w * G.h;
+  const free = (i, j) => i >= 0 && j >= 0 && i < G.w && j < G.h && G.free[j * G.w + i];
+  const a = tavCellNear(G, Math.round((u.g.position.x - TAV_X - G.x0) / C), Math.round((u.g.position.z - TAV_Z - G.z0) / C));
+  const b = tavCellNear(G, Math.round((tx - TAV_X - G.x0) / C), Math.round((tz - TAV_Z - G.z0) / C));
+  if (!a || !b) return false;
+  const s = a[1] * G.w + a[0], e = b[1] * G.w + b[0];
+  if (s === e) return false;
+  if (!_tavPrev || _tavPrev.length !== N) _tavPrev = new Int32Array(N);
+  _tavPrev.fill(-1); _tavPrev[s] = s;
+  _tavQ.length = 0; _tavQ.push(s);
+  let head = 0, found = false;
+  while (head < _tavQ.length) {
+    const k = _tavQ[head++];
+    if (k === e) { found = true; break; }
+    const i = k % G.w, j = (k - i) / G.w;
+    for (let d = 0; d < 8; d++) {
+      const di = TAV_DIRS[d][0], dj = TAV_DIRS[d][1], ni = i + di, nj = j + dj;
+      if (!free(ni, nj)) continue;
+      if (di && dj && (!free(i + di, j) || !free(i, j + dj))) continue;   // never cut a corner
+      const nk = nj * G.w + ni;
+      if (_tavPrev[nk] !== -1) continue;
+      _tavPrev[nk] = k; _tavQ.push(nk);
+    }
+  }
+  if (!found) return false;
+  const pts = [];
+  for (let k = e; k !== s; k = _tavPrev[k]) { const i = k % G.w; pts.push([i, (k - i) / G.w]); }
+  pts.push([a[0], a[1]]); pts.reverse();
+  const out = [];
+  for (let n = 1; n < pts.length; n++) {
+    const p0 = pts[n - 1], p1 = pts[n], p2 = pts[n + 1];
+    if (!p2 || (p1[0] - p0[0]) !== (p2[0] - p1[0]) || (p1[1] - p0[1]) !== (p2[1] - p1[1]))
+      out.push({ x: G.x0 + p1[0] * C, z: G.z0 + p1[1] * C });
+  }
+  /* A ROUTE IS A WAY ROUND SOMETHING, NOT A WAY OF GETTING ABOUT: anything
+   * inside a stride is already behind him and turning to it is the snap the
+   * knight paid for. */
+  while (out.length > 1 && Math.hypot(TAV_X + out[0].x - u.g.position.x, TAV_Z + out[0].z - u.g.position.z) < 0.7) out.shift();
+  if (!out.length) return false;
+  u.path = out; u.pathI = 0;
+  return true;
+}
 function tavSteer(u, dt, dist, foe) {
   if (!tavWalk) return;
   const p = u.g.position, feet = p.y;
   const ddx = foe.x - p.x, ddz = foe.z - p.z, L = Math.hypot(ddx, ddz) || 1;
   const nx = ddx / L, nz = ddz / L, look = Math.min(L - 0.4, 1.6);
-  if (look <= 0.2 || tavClear(p.x, p.z, nx, nz, look, feet)) { u.path = null; return; }
+  if (look <= 0.2 || tavClear(p.x, p.z, nx, nz, look, feet)) { u.path = null; u.tavGrind = 0; return; }
+  /* THE PROGRESS TEST. Every frame the line is shut and he still has not
+   * moved is a frame the steering's opinion is worthless. */
+  const moved = Math.hypot(p.x - (u.tavWasX === undefined ? p.x : u.tavWasX), p.z - (u.tavWasZ === undefined ? p.z : u.tavWasZ));
+  u.tavWasX = p.x; u.tavWasZ = p.z;
+  u.tavGrind = moved < 0.008 ? (u.tavGrind || 0) + dt : 0;
   u.pathAge = (u.pathAge || 0) + dt;
+  if (u.tavGrind > 0.7) { u.path = null; u.pathAge = 1; u.tavGrind = 0; }
   if (u.path || u.pathAge < 0.35 || dist < 1.4) return;
   u.pathAge = 0;
+  if (tavRoute(u, foe.x, foe.z)) return;
   const base = Math.atan2(nx, nz);
   for (const off of [0.5, -0.5, 0.95, -0.95, 1.4, -1.4, 1.9, -1.9, 2.4, -2.4]) {
     const a = base + off, sx = Math.sin(a), sz = Math.cos(a);
@@ -36435,6 +36740,7 @@ window.__bw = {
   get keepRepair() { return keepWalk && { ground: keepWalk.repaired, storeys: keepWalk.storeys }; },
   get keepWorld() { return keepWorld; }, get keepSky() { return keepSky; }, get keepSea() { return keepSea; }, get keepBoat() { return keepBoat; }, get beachBoat() { return beachBoat; },
   TAV_X, TAV_Y, TAV_Z, TAV_SPAWN, TAV_SITE, KEEP_DOOR, loadTavern, startTavern, placeInTavern, placeBackAtKeepDoor, buildTavern, smashTavTable, smashTavChair,
+  layTavPlank, get tavPlank() { return tavPlankMesh && { laid: !!tavPlankBox, p: [+(tavPlankMesh.position.x - TAV_X).toFixed(2), +(tavPlankMesh.position.y - TAV_Y).toFixed(2), +(tavPlankMesh.position.z - TAV_Z).toFixed(2)] }; },
   get interactables() { return interactables; }, set fallbackLook(v) { fallbackLook = v; },   // a prompt can only be read with a look in charge, and the pane cannot lock
   get tavWorld() { return tavWorld; }, get tavTables() { return tavTables; }, get tavChairs() { return tavChairs; },
   get wongUnit() { return wongUnit; }, get drunkUnit() { return drunkUnit; }, tavScene, tavProvoke, buildTavCast, get tavMug() { return tavMug; },

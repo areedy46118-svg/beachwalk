@@ -10050,3 +10050,93 @@ the lying barrel that crossed the crate row goes to the flags by the rack's
 other end (`moveTavBarrel`, a piece lifted the way a table is). A crate must
 not overhang the box you climb it from: the prune takes away the 1.15 top
 under it, correctly, and the route is gone.
+
+**THE BAR FIGHT MOVED TO THE BAR, AND THE POCKET BEHIND ONE IS A DEAD END.**
+"Make the sea-keep script event be by the bar with the meat — they are in the
+wrong spot." They were: the two stood in the middle of the floor on the rug.
+There is exactly one bar in this hall and it was never typed in, it was PROBED
+— a downward raycast on a half-metre grid over the whole floor, asking what
+surfaces stand between 0.7 and 1.45 m. One answer is seven metres long: a top
+at 0.99 running x -1.5..-0.75 by z -6..+1.5 against the east wall, with the
+kegs behind it and, let into the wall at z = -2, the shelf of cuts that is the
+"meat". Wong stands in the barman's pocket, the drunk at the rail, and the meat
+is the backdrop to the whole beat.
+
+- **AND THE POCKET IS 0.65 m BY 3, SHUT ON EVERY SIDE.** Measured with the
+  walk's own standability test: the counter one way, the kegs at one end, its
+  own return at the other. A creature put there could never reach the fight —
+  which would have been the owner's "they keep getting stuck" made worse, not
+  better. He does not walk out of it: he VAULTS, which is what a barman does
+  and what his own file already had a clip for. It is a scripted beat and owns
+  his position and his mixer for its length (the knockdown's arrangement), so
+  nothing else can argue with it.
+- **AND IT WAITS FOR YOU.** The bar is seventeen metres from the door, so on
+  the old clock the drink went across, the glass went down and the fight was
+  under way before the player had taken ten steps. Nothing starts until you
+  are within `TAV_SCENE_NEAR` of the drunk.
+
+**AND FINDING A HEADING IS NOT THE SAME AS GETTING ANYWHERE — the Dealer's
+lesson, which the tavern's own steering never learned.** `tavSteer` was a fan
+of headings, and a fan is GREEDY: in the pocket between a table and a wall the
+nearest clear heading points further into the pocket, the body takes it, the
+push-out cancels the step, and next frame the same heading is nearest again.
+The room is asked instead — `tavGrid` rasterises the hall once (2,400 cells,
+rebuilt when the furniture breaks) and `tavRoute` is a breadth-first search
+over it thinned to its corners, with the fan kept only as the last resort.
+Both ends may be inside something, so each walks out to the nearest cell a
+body fits in; and a PROGRESS TEST above it (the line is shut and he still has
+not moved for 0.7 s) throws the current opinion away.
+
+**AND A LEDGE WITH A BREAK IN IT IS A PLANK.** "Put a barrel to get to the
+first concrete tunnel, then a piece of wood plank to walk to the other side —
+make the plank have physics and you have to lift it and lay it down." Where
+the break is was measured rather than invented: out of the gallery at 5.3 m a
+stone ledge runs east along the south wall, 4.53 where you drop onto it easing
+to 4.14 at x = -4.5 — and then NOTHING from -4.25 to -2.25, with the flags four
+metres below, and 4.36 again at -2.0 running on to the east wall. Two and a
+quarter metres of air.
+
+- **THE PLANK IS A REAL BODY** (`makeProp`), so it falls, you pick it up with
+  E, you carry it up the crates and you can throw it off and go back down for
+  it. LAYING it is its own verb at the break, under the crosshair, because a
+  2.7 m board dropped by hand onto a 0.4 m ledge is a board in the hall.
+- **AND IT IS A FLOOR THE KEEP'S OWN WAY.** `S.extra()` is the hook the moored
+  boat and the hoist's car already use; the plank joins it and every question
+  the walk asks answers with it, with no second code path.
+- **AND A HEIGHT IN THIS ROOM IS OVER THE FLAGS, NOT OVER `TAV_Y`.** Written
+  as `TAV_Y + top` the board's floor sat three metres under the hall and the
+  walk never saw it, while the drawn plank was somewhere else again. Every
+  height in here is `TAV_Y + TAV_FLOOR + …`. Measured after: the walk along
+  the ledge stops dead at x = -4.44 without it and reaches -1.44 with it.
+- **AND A RUNG IS ONLY A RUNG IF SOMETHING IS ABOVE IT.** The barrel's spot is
+  searched for, not typed: the nearest place to the stack's foot that is the
+  FLAGS, has a body's room round it, nothing drawn overhead — and something
+  0.95-1.60 m up within a stride, or it is a barrel standing in the open
+  rather than the first step of a climb.
+
+**AND EVERY CLOSE SWING IN THE TAVERN IS `real` NOW.** Their clips are about a
+second and the startups they were mapped onto are longer, so the whole wind-up
+played at a fraction of real speed — SCP-096's "slow-mo" on a third creature,
+and most of what "the animations look weird" was.
+
+**AND THE BLOW HAS TO ARRIVE AT YOU, WHICH IS A DISTANCE YOU MEASURE.** Caught
+on the frame the game deals the damage, over a fight played hands-off at the
+bar, the striking chain's nearest joint against the player's chest:
+
+| | before | after |
+|---|---|---|
+| wPunch | 1.34 m | 0.87 |
+| wJab | 0.72 | 0.47 |
+| dButt | 0.76 | 0.29 |
+| dSwipe | 0.92 | 1.10 |
+
+`lungeStop` was 1.10 against a 0.45 m body — 0.65 m of daylight outside his own
+shoulders, with `landSlop` giving him the benefit of the doubt anyway, so the
+game said he hit you and the picture said he did not. 0.84 and 0.55, `aimK`
+1.40 to 2.90 (these are real Mixamo arcs, not poses solved against a target, so
+they pass wider than an authored swing — the samurai needed 2.60 for the same
+reason), and a per-swing `stop` on the straight punch, which was the worst of
+them. The drunk's sweep is still wide and is the one left to fix. Measured
+after: 46 damage a minute against the Dealer's 40, and 11 % of frames still.
+Health came down with it — Wong 28 to 15, the drunk 34 to 18 — so the bar
+fight is over in twenty seconds and whoever wins can be finished.
