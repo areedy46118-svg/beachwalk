@@ -81,6 +81,13 @@ CLIPS = [
     ('Macaco Side',             'dodge',   'the side handspring'),
 ] if SET == 'ntar' else [
     ('Mutant Walking',          'walk',    'the walk — heavy, and his'),
+    ('Left Strafe Walking',     'strafeL', 'sizing you up, to his left'),
+    ('Right Strafe Walk',       'strafeR2','sizing you up, to his right'),
+    ('Standing Melee Attack 360 High', 'k360', 'a full turn with the arm out high'),
+    ('Head Hit',                'hit',     'the ordinary flinch'),
+    ('Big Hit To Head',         'hitBig',  'the one that rocks him — the poise break'),
+    ('Hit To Side Of Body',     'hitSide', 'rare: caught in the ribs'),
+    ('Hit On Back Of Head',     'hitBack', 'rare: caught from behind'),
     ('Walking',                 'walkB',    'a second walk, so the gait is drawn'),
     ('Walk Strafe Right',       'strafeR', 'a stride sideways, feet crossing'),
     ('Medium Right Side Step',  'sideR',   'a short side step'),
@@ -103,10 +110,15 @@ CLIPS = [
 #          -0.99), and is back on his feet and upright by f80. What follows
 #          is a step out and back that reads as idling.
 WINDOW = ({'knock': (30, 78), 'nSweep': (0, None), 'dodge': (20, 82)} if SET == 'ntar'
-          else {})          # filled in below, once the curves have been read
+          # THE RARE TWO ARE A PERFORMANCE, NOT A REACTION. Both run three and
+          # a half seconds and travel FOUR METRES — they are a man reeling
+          # away, finding his feet and walking back. What a fight wants is the
+          # rock and the first of the recovery; the rest is him idling, and at
+          # three seconds it is an interruption rather than a hit.
+          else {'hitSide': (0, 46), 'hitBack': (0, 50)})
 # He is knocked down FACING YOU, by the owner's word, so this one is de-yawed
 # whatever it measures.
-FORCE_FLAT_YAW = {'knock'} if SET == 'ntar' else {'kPunch', 'kSwipe', 'kJump', 'block', 'blockC', 'strafeR', 'sideR'}
+FORCE_FLAT_YAW = {'knock'} if SET == 'ntar' else {'kPunch', 'kSwipe', 'kJump', 'block', 'blockC', 'strafeR', 'sideR', 'k360', 'hit', 'hitBig', 'hitSide', 'hitBack'}
 
 
 def log(*a):
