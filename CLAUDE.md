@@ -9564,6 +9564,23 @@ each other until one is dead — and the survivor comes for you. What it took:
   on the keep's machinery, a one-point route round whatever shuts the line.
   Measured after, thirty seconds hands-off: 0 frames outside, distance
   0.71–2.74 m, 24 and 20 swings, the drunk dead at the end of it.
+- **AND THEY GLITCHED BECAUSE TWO RULES DISAGREED ABOUT A METRE.** Measured
+  over twenty seconds of the two of them: 72 and 88 reversals of direction
+  and two clip changes a second. The lunge drove each in to `lungeStop`
+  0.95 while `mutSeparate` pushed foes back out to 1.25, sixty times a
+  second; the shuffle (`restless`) re-armed between every swing; the gait
+  was redrawn at every change of mind; and `speedK` 1.28 on the pack's
+  4.6 m/s played a man's 3.7 m/s run clip half again too fast. The lunge
+  stops where the separation holds them (1.05 / 1.10), the shuffle is off,
+  circling and the size-up are rare, a man turns no faster than the knight,
+  the pace is a man's (0.92 / 0.82), and `kind.fade` gives them a 0.24 s
+  crossfade in `mutPlay`. After: 2 and 10 reversals, no step over 0.19 m.
+- **AND THE PLAYER SLIDES ROUND THE FURNITURE.** Keeping one axis of a
+  refused move is right against a flat wall and wrong against chairs,
+  round tables and barrels; the tavern turns the move a little at a time,
+  the church's rule. Measured, walking obliquely into the pedestal table,
+  the end wall and a row of chairs: 3.7, 2.2 and 4.2 m in a second where
+  the axis rule stopped you.
 - **AND A CREATURE THAT IS AWAKE IS AWAKE BETWEEN TOOL CALLS.** The
   survivor turned on the player standing at the spawn and killed him
   while the next call was being written; the page reloaded and the next

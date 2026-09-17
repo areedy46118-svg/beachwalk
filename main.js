@@ -17632,11 +17632,13 @@ function mutPlay(u, name, loop) {
   const a = u.clips[name];
   if (!a && name && !mutPlayWarned.has(name)) { mutPlayWarned.add(name); console.warn('[mut] no clip named', name, '— the creature will keep playing whatever it was'); }
   if (!a || u.cur === a) return a;
-  for (const k in u.clips) if (u.clips[k] !== a) u.clips[k].fadeOut(0.14);
+  // a kind may ask for a longer crossfade: two men in a bar are not a crab
+  const fade = u.kind.fade || 0.14;
+  for (const k in u.clips) if (u.clips[k] !== a) u.clips[k].fadeOut(fade);
   a.reset();
   a.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
   a.clampWhenFinished = !loop;
-  a.fadeIn(0.14).play();
+  a.fadeIn(fade).play();
   u.cur = a;
   return a;
 }
@@ -20410,7 +20412,7 @@ function mutSeparate(u, dt) {
     /* TWO CREATURES FIGHTING EACH OTHER STAND AT ARM'S LENGTH, not at the
      * pack's polite two and a half metres — which is outside both their
      * reaches, and measured, left the tavern's two swinging at the air. */
-    const sep = (u.st.foe === o || o.st.foe === u) ? 1.25 : MUT_SEP;
+    const sep = (u.st.foe === o || o.st.foe === u) ? 1.05 : MUT_SEP;
     if (d > sep || d < 1e-4) continue;
     const push = (sep - d) * dt * 5.0;
     u.g.position.x += (dx / d) * push;
@@ -35214,9 +35216,24 @@ function updateTavern(dt) {
   const legal = (x, z) => keepFloorAt(x, z, feet, up, S) && !hits(_preMove.x, _preMove.z, x, z);
   let st = legal(p.x, p.z);
   if (!st) {
-    if (legal(p.x, _preMove.z)) p.z = _preMove.z;
-    else if (legal(_preMove.x, p.z)) p.x = _preMove.x;
-    else { p.x = _preMove.x; p.z = _preMove.z; }
+    /* A WALL IS SLID ALONG, NOT STOPPED AT — the church's rule, because a
+     * tavern's walls are chairs and round tables and barrels: keeping one
+     * AXIS of the move is right against a flat wall and wrong against
+     * everything in here. The move is turned a little at a time, either
+     * way, and the first angle that is clear is taken at the speed that
+     * survives the turn. */
+    const mx = p.x - _preMove.x, mz = p.z - _preMove.z, ml = Math.hypot(mx, mz);
+    let took = false;
+    if (ml > 1e-4) {
+      const base = Math.atan2(mx, mz);
+      for (const off of [0.35, -0.35, 0.7, -0.7, 1.05, -1.05, 1.4, -1.4]) {
+        const k = Math.cos(off) * ml, a = base + off;
+        const nx = _preMove.x + Math.sin(a) * k, nz = _preMove.z + Math.cos(a) * k;
+        if (!legal(nx, nz)) continue;
+        p.x = nx; p.z = nz; took = true; break;
+      }
+    }
+    if (!took) { p.x = _preMove.x; p.z = _preMove.z; }
     st = keepFloorAt(p.x, p.z, feet, up, S);
   }
   pushOutOfKeep(p, TAV_BODY, feet, up, S);
@@ -35512,11 +35529,18 @@ MUT_ATTACKS.dSpin  = { wind: 0.86, strike: 0.24, recover: 0.56, hit: 0.620, reac
 MUT_ATTACKS.dJump  = { wind: 1.05, strike: 0.20, recover: 0.62, hit: 0.640, reach: 5.00, lunge: 4.8, chain: 'dSwipe', chainP: 0.60, w: 0.20, dmg: 2, hold: true, guardK: 1.70, minDist: 3.0, twoHanded: true };
 const TAV_CAST_COMMON = {
   solo: true, noSand: true, skin: null, bones: null, tav: true,
-  dmg: 1, hitR: 0.85, body: 0.45, lungeStop: 0.95, landSlop: 0.70,
+  /* AND THEY DO NOT FIDGET. Measured over twenty seconds of the two of
+   * them: 72 and 88 reversals of direction and two clip changes a second —
+   * the lunge driving in to 0.95 m while the separation pushed back out to
+   * 1.25, the shuffle re-arming between every swing, the gait redrawn at
+   * every change of mind. The lunge stops where the separation holds them,
+   * the shuffle is off, the circling and the size-up are rare, and a man
+   * comes round no faster than the knight does. */
+  dmg: 1, hitR: 0.85, body: 0.45, lungeStop: 1.10, landSlop: 0.70,
   windK: 1.00, reachK: 1.00, press: 0.86,
-  circle: 0.22, step: 0.26, feint: 0.26, sizeUp: 0.22, restless: 1,
+  circle: 0.10, step: 0.12, feint: 0.22, sizeUp: 0.10, restless: 0,
   poiseBack: 1.8, poiseWait: 1.1, parryK: 0.80, recoilK: 0.70, blockCost: 0.50,
-  fidgetK: 0.22, fidgetGap: 2.6, turnMax: 7.0,
+  fidgetK: 0.12, fidgetGap: 3.5, turnMax: 5.2, fade: 0.24,
   reacts: true, aimed: true, barLen: 0.22, aimK: 1.40, bossDeath: true,
   knockClip: 'knockOut', riseClip: 'getUp', knockAfter: 4, knockLapse: 7,
   knock: { fall: 1.27, lie: 0.34, rise: 1.33, land: 0.78, slide: null },
@@ -35524,7 +35548,7 @@ const TAV_CAST_COMMON = {
 };
 MUT_KINDS.wong = Object.assign({}, TAV_CAST_COMMON, {
   glb: 'assets/wong.glb', cutout: true, faceFix: 0,
-  h: 1.80, hp: 28, speedK: 1.28, aggr: 2.60, chainMax: 3, poise: 8, block: 0.28,
+  h: 1.80, hp: 28, speedK: 0.92, aggr: 2.60, chainMax: 3, poise: 8, block: 0.28,
   use: { wPunch: 0.30, wJab: 0.26, wKick: 0.24, wSpin: 0.20 },
   dodgeClip: 'dodge', dodgeSide: 1.45, dodgeT: 1.20, dodgeRate: 1.72,
   rig: { arm: 'CC_Base_R_Upperarm_080', fore: 'CC_Base_R_Forearm_081', hand: 'CC_Base_R_Hand_085',
@@ -35554,7 +35578,7 @@ MUT_KINDS.wong = Object.assign({}, TAV_CAST_COMMON, {
 });
 MUT_KINDS.drunk = Object.assign({}, TAV_CAST_COMMON, {
   glb: 'assets/drunk.glb', faceFix: 0,
-  h: 1.92, hp: 34, speedK: 1.15, aggr: 3.00, chainMax: 4, poise: 10, block: 0.14,
+  h: 1.92, hp: 34, speedK: 0.82, aggr: 3.00, chainMax: 4, poise: 10, block: 0.14,
   use: { dSwipe: 0.34, dButt: 0.26, dSpin: 0.20, dJump: 0.20 },
   rig: { arm: 'upperarm_r', fore: 'lowerarm_r', hand: 'hand_r',
          armL: 'upperarm_l', foreL: 'lowerarm_l', handL: 'hand_l', head: 'head',
