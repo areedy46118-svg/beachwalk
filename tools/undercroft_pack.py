@@ -71,6 +71,19 @@ def apply_m(m, p):
             m[2]*x + m[6]*y + m[10]*z + m[14])
 
 
+def mat_det(m):
+    return (m[0] * (m[5] * m[10] - m[9] * m[6]) - m[4] * (m[1] * m[10] - m[9] * m[2]) + m[8] * (m[1] * m[6] - m[5] * m[2]))
+
+
+def apply_n(m, n):
+    """A normal under the bake's rotation and uniform scale: the 3x3, then
+    renormalised (an orthogonal 3x3's inverse-transpose is itself)."""
+    x, y, z = n[0], n[1], n[2]
+    nx, ny, nz = m[0]*x + m[4]*y + m[8]*z, m[1]*x + m[5]*y + m[9]*z, m[2]*x + m[6]*y + m[10]*z
+    L = math.sqrt(nx*nx + ny*ny + nz*nz) or 1.0
+    return (nx / L, ny / L, nz / L)
+
+
 def read_accessor(g, bufs, i):
     a = g['accessors'][i]
     fmt, size = CT[a['componentType']]
@@ -85,26 +98,77 @@ def read_accessor(g, bufs, i):
 
 
 # ---- decimation that keeps a uv per vertex -------------------------------
+#
+# A SCAN'S TEXTURE IS AN ATLAS, AND A CLUSTER THAT STRADDLES A SEAM IN IT
+# DRAGS ITS TRIANGLES ACROSS THE WHOLE MAP.
+#
+# The first version snapped vertices to a grid, averaged their positions and
+# kept the FIRST vertex's uv for the cell — and "first" is whatever order the
+# file happens to list them in. Wherever a cell gathered vertices from two
+# different islands of the atlas (which on a scan is every uv seam, and a
+# church is covered in them) the survivor took one island's uv and every
+# triangle hanging off it was stretched across to it. Measured in the game as
+# TEXEL DENSITY — uv units per metre, per triangle — the nave's own columns
+# ran from 0.014 to 2.74 on ONE surface, a factor of 192 between neighbouring
+# faces. That is the owner's "the church textures look stretched", and no
+# amount of resizing the map could have touched it.
+#
+# So a vertex may only merge with another that is near it in the ATLAS as
+# well as in space. Two things make that safe:
+#
+#   * the POSITION is still averaged over the whole position cell, across
+#     every uv bucket in it — so the sub-clusters of one cell sit at exactly
+#     the same point and splitting a seam can never open a crack in the mesh;
+#   * a triangle still COLLAPSES on position alone, so the decimation is
+#     every bit as strong as it was and the budget means the same thing. All
+#     that is gained is that the seam keeps its two uvs instead of one.
+UV_CELL = 1.0 / 24.0          # ~85 texels of a 2048 atlas: inside an island, not across one
+
+
 def cluster_uv(P, UV, I, cell):
-    """Snap every vertex to a grid of `cell`, average the positions in each
-    cell, keep the FIRST vertex's uv for it, and drop the triangles that
+    """Snap every vertex to a grid of `cell`; average the positions in each
+    cell and the uvs within each uv bucket of it; drop the triangles that
     collapse. Returns (positions, uvs, triangles)."""
-    rep, acc, remap = {}, [], [0] * len(P)
+    pcell, pacc, vcell, vacc = {}, [], {}, []
+    remap = [0] * len(P)          # vertex -> emitted vertex (position AND uv)
+    pmap = [0] * len(P)           # vertex -> position cell (what decides a collapse)
     for vi, p in enumerate(P):
+        u = UV[vi]
         key = (int(math.floor(p[0] / cell)), int(math.floor(p[1] / cell)), int(math.floor(p[2] / cell)))
-        j = rep.get(key)
+        pi = pcell.get(key)
+        if pi is None:
+            pi = pcell[key] = len(pacc); pacc.append([0.0, 0.0, 0.0, 0])
+        a = pacc[pi]; a[0] += p[0]; a[1] += p[1]; a[2] += p[2]; a[3] += 1
+        pmap[vi] = pi
+        vkey = (pi, int(math.floor(u[0] / UV_CELL)), int(math.floor(u[1] / UV_CELL)))
+        j = vcell.get(vkey)
         if j is None:
-            j = rep[key] = len(acc); acc.append([0.0, 0.0, 0.0, 0, UV[vi]])
-        s = acc[j]; s[0] += p[0]; s[1] += p[1]; s[2] += p[2]; s[3] += 1
+            j = vcell[vkey] = len(vacc); vacc.append([0.0, 0.0, 0, pi])
+        b = vacc[j]; b[0] += u[0]; b[1] += u[1]; b[2] += 1
         remap[vi] = j
-    pos = [(s[0] / s[3], s[1] / s[3], s[2] / s[3]) for s in acc]
-    uvs = [s[4] for s in acc]
+    pos = [(pacc[b[3]][0] / pacc[b[3]][3], pacc[b[3]][1] / pacc[b[3]][3], pacc[b[3]][2] / pacc[b[3]][3])
+           for b in vacc]
+    uvs = [(b[0] / b[2], b[1] / b[2]) for b in vacc]
     tris, seen = [], set()
     for t in range(0, len(I) - 2, 3):
-        a, b, c = remap[I[t]], remap[I[t + 1]], remap[I[t + 2]]
-        if a == b or b == c or a == c:
+        pa, pb, pc = pmap[I[t]], pmap[I[t + 1]], pmap[I[t + 2]]
+        if pa == pb or pb == pc or pa == pc:       # collapsed in SPACE: gone
             continue
-        k = (a, b, c) if a < b and a < c else (b, c, a) if b < c else (c, a, b)
+        a, b, c = remap[I[t]], remap[I[t + 1]], remap[I[t + 2]]
+        # AND A DUPLICATE IS A DUPLICATE IN SPACE, NOT IN THE ATLAS. This key
+        # used to be built from `remap`, which before the uv split WAS the
+        # position cell — so it caught every twin. Splitting vertices by uv
+        # bucket to save the church's texel density quietly broke it: two
+        # source triangles landing on the same three position cells from
+        # different corners of the atlas now emit two faces at EXACTLY the
+        # same depth, and what that draws is the flicker the owner
+        # photographed in the nave. Measured in the game before this: 34 %
+        # of `arche.002`, 17 % of `mur-bas-ext`, 11 % of `arche`, and every
+        # flickering pixel in the nave was one mesh fighting itself.
+        # SORTED, so a twin with the opposite winding goes too — that is a
+        # zero-volume sliver and these materials are all DoubleSide anyway.
+        k = (pa, pb, pc) if pa < pb and pa < pc else (pb, pc, pa) if pb < pc else (pc, pa, pb)
+        k = tuple(sorted(k))
         if k in seen:
             continue
         seen.add(k); tris.append((a, b, c))
@@ -163,6 +227,84 @@ def sample_tris(pos, tris, put):
             for j in range(n + 1 - i):
                 s = i / n; t = j / n
                 put(pa[0] + ux * s + vx * t, pa[1] + uy * s + vy * t, pa[2] + uz * s + vz * t, ny)
+
+
+def tex_refs(m):
+    """Every {index: n} texture reference in a material, extensions included."""
+    out = []
+    def walk(o):
+        if isinstance(o, dict):
+            if 'index' in o and isinstance(o['index'], int) and len(o) <= 4:
+                out.append(o)
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+    walk(m)
+    return out
+
+
+def build_walk_multi(meshes, floor_min):
+    """THE STOREYED GRID. A keep has a ground floor, a hall over it and a
+    roof walk over that, and its pier stands over open water — one floor per
+    cell cannot say any of it. Every cell carries EVERY floor it has: each
+    distinct near-horizontal surface with head-room (or sky) over it, and
+    whether the body band above that floor has anything in it. The game asks
+    for the floor nearest under your feet. Written sparse: [i, j, [f, s, f, s, ...]]."""
+    lo = [1e9] * 3; hi = [-1e9] * 3
+    for pos, tris, _ in meshes:
+        for p in pos:
+            for k in range(3):
+                lo[k] = min(lo[k], p[k]); hi[k] = max(hi[k], p[k])
+    x0 = lo[0] - CELL; z0 = lo[2] - CELL
+    gw = int(math.ceil((hi[0] - lo[0] + 2 * CELL) / CELL)); gh = int(math.ceil((hi[2] - lo[2] + 2 * CELL) / CELL))
+    cells = {}
+    log('storeyed walk grid %dx%d cells of %.2f m over x %.1f..%.1f z %.1f..%.1f' % (gw, gh, CELL, lo[0], hi[0], lo[2], hi[2]))
+    for pos, tris, _ in meshes:
+        def put(x, y, z, ny):
+            if floor_min is not None and y < floor_min:
+                return
+            i = int((x - x0) / CELL); j = int((z - z0) / CELL)
+            if 0 <= i < gw and 0 <= j < gh:
+                cells.setdefault(j * gw + i, []).append((y, ny))
+        sample_tris(pos, tris, put)
+    out = []
+    nfloor = nstorey = 0
+    for key in sorted(cells):
+        s = cells[key]
+        ups = sorted(y for (y, ny) in s if abs(ny) > 0.35)
+        if not ups:
+            continue
+        ys = sorted(y for (y, ny) in s)
+        # one surface is a run of samples within 0.15 of each other; its
+        # height is its TOP (a plank contributes its underside too)
+        surfaces = []
+        run = [ups[0]]
+        for y in ups[1:]:
+            if y - run[-1] < 0.15:
+                run.append(y)
+            else:
+                surfaces.append(run[-1]); run = [y]
+        surfaces.append(run[-1])
+        floors = []
+        for h in surfaces:
+            above = None
+            for y in ys:
+                if y > h + 0.30:
+                    above = y; break
+            if above is not None and above - h < HEADROOM:
+                continue
+            solid = any(h + BAND[0] < y < h + BAND[1] for y in ys)
+            # [floor, solid, roof]: a stair that turns back under itself has
+            # the flight above for a roof, and the game ducks the camera
+            floors.append(round(h, 2)); floors.append(1 if solid else 0); floors.append(99.0 if above is None else round(above, 2))
+        if floors:
+            out.append([key % gw, key // gw, floors])
+            nfloor += 1; nstorey += len(floors) // 3
+    log('walk: %d cells with a floor, %d storeys' % (nfloor, nstorey))
+    return dict(cell=CELL, gw=gw, gh=gh, x0=round(x0, 4), z0=round(z0, 4), cells=out, storeyed=True,
+                bounds=[[round(v, 3) for v in lo], [round(v, 3) for v in hi]])
 
 
 def build_walk(meshes, bench_ids, door_box):
@@ -346,7 +488,7 @@ def split_benches(P, UV, I):
 def main():
     global HEADROOM, OPEN_SKY
     ap = argparse.ArgumentParser()
-    ap.add_argument('kind', choices=['cave', 'church', 'passage', 'dojo'])
+    ap.add_argument('kind', choices=['cave', 'church', 'passage', 'dojo', 'keep'])
     ap.add_argument('src'); ap.add_argument('dst')
     ap.add_argument('--tex', type=int, default=1024)
     ap.add_argument('--quality', type=int, default=86)
@@ -358,10 +500,19 @@ def main():
     ap.add_argument('--islands', type=int, default=0, help='drop connected islands smaller than this many triangles — a game tunnel is full of loose decoration slabs floating in the bore')
     ap.add_argument('--open-sky', action='store_true', help='a roofless place: a near-horizontal surface is a floor with nothing over it')
     ap.add_argument('--headroom', type=float, default=HEADROOM, help='the least roof a cell may have over its floor and still be floor (the crouch is 1.03)')
+    ap.add_argument('--floor-min', type=float, default=None, help='a surface under this height is not a floor (the sea: an island has an underside, and it is in the water)')
     a = ap.parse_args()
-    budget = a.budget or {'cave': 240000, 'church': 260000, 'passage': 60000, 'dojo': 180000}[a.kind]
+    budget = a.budget or {'cave': 240000, 'church': 260000, 'passage': 60000, 'dojo': 180000, 'keep': 10 ** 9}[a.kind]
+    # AN EXACT KIND IS THE FILE, MOVED. The keep is the owner's word — a
+    # perfect replica — so nothing is decimated, the normals ride through
+    # the bake (a smooth-shaded stylised build under a normal map is not a
+    # scan, and flat-shading it is a different object), every material
+    # extension the file declares is kept for three to honour, and the only
+    # liberty is resizing the 4096 normal maps to --tex.
+    EXACT = a.kind == 'keep'
+    FLOOR_MIN = a.floor_min
     HEADROOM = a.headroom
-    OPEN_SKY = a.open_sky or a.kind == 'dojo'
+    OPEN_SKY = a.open_sky or a.kind in ('dojo', 'keep')
 
     root = os.path.dirname(os.path.abspath(a.src))
     g = json.load(open(a.src))
@@ -383,7 +534,7 @@ def main():
     # the model, so a tube in the middle of the bore is measured as the WALL
     # and the walk closes to nothing around it.
     skip_re = {'church': ('Sun', 'Doors_Old_Wooden_1.003'), 'cave': (), 'passage': ('CC Particles',),
-               'dojo': ()}[a.kind]
+               'dojo': (), 'keep': ()}[a.kind]
     def walk(ni, parent):
         n = nodes[ni]
         m = mat_mul(parent, node_matrix(n))
@@ -397,12 +548,20 @@ def main():
                 idx = [v[0] for v in read_accessor(g, bufs, pr['indices'])] if 'indices' in pr else list(range(len(pos)))
                 key = (name.split('_')[0] if a.kind == 'cave' and name.startswith('Cube_') else name, pr.get('material', 0))
                 if key not in groups:
-                    groups[key] = [[], [], []]; order.append(key)
+                    groups[key] = [[], [], [], []]; order.append(key)
                 G = groups[key]
                 off = len(G[0])
                 G[0].extend(apply_m(m, p) for p in pos)
                 G[1].extend((u[0], u[1]) for u in uv)
+                # A BAKE UNDER A REFLECTION TURNS EVERY TRIANGLE INSIDE OUT. The
+                # cave and the church never noticed because their materials are
+                # all DoubleSide; an exact kind keeps the file's own sidedness,
+                # so a negative determinant flips the winding back.
+                if mat_det(m) < 0:
+                    idx = [idx[t + k] for t in range(0, len(idx) - 2, 3) for k in (0, 2, 1)]
                 G[2].extend(v + off for v in idx)
+                if EXACT and 'NORMAL' in pr['attributes']:
+                    G[3].extend(apply_n(m, nn) for nn in read_accessor(g, bufs, pr['attributes']['NORMAL']))
         for c in n.get('children', []):
             walk(c, m)
     # THE MODEL IS TURNED AND SCALED HERE, ONCE. The 3DRT passage is a game
@@ -422,7 +581,7 @@ def main():
     # end becomes the new entry and the game's black cap closes it.
     if a.trim is not None:
         for key, G in groups.items():
-            P, UV, I = G
+            P, UV, I = G[0], G[1], G[2]
             keep = []
             for t in range(0, len(I) - 2, 3):
                 cx = (P[I[t]][0] + P[I[t + 1]][0] + P[I[t + 2]][0]) / 3.0
@@ -439,7 +598,7 @@ def main():
     # that is its own small connected island is not the tunnel.
     if a.islands:
         for key, G in groups.items():
-            P, UV, I = G
+            P, UV, I = G[0], G[1], G[2]
             if not I:
                 continue
             canon = {}
@@ -478,7 +637,7 @@ def main():
     # is sized for geometry that is no longer there.
     if a.trim is not None or a.islands:
         for key, G in groups.items():
-            P, UV, I = G
+            P, UV, I = G[0], G[1], G[2]
             vmap, p2, u2, i2 = {}, [], [], []
             for v in I:
                 m = vmap.get(v)
@@ -496,15 +655,18 @@ def main():
     # ---- benches out of the pews
     out_meshes = []      # (name, material, P, UV, tris, is_bench)
     bench_boxes = []
+    normals_of = {}      # out_meshes index -> normals (exact kinds only)
     if a.kind == 'church':
         for key in list(order):
             if mats[key[1]].get('name') == 'banc':
-                P, UV, I = groups.pop(key); order.remove(key)
+                P, UV, I = groups.pop(key)[:3]; order.remove(key)
                 for n, (p2, u2, i2, lo, hi) in enumerate(split_benches(P, UV, I)):
                     out_meshes.append(('bench_%d' % n, key[1], p2, u2, i2, True))
                     bench_boxes.append([round(v, 3) for v in lo] + [round(v, 3) for v in hi])
     for key in order:
-        P, UV, I = groups[key]
+        P, UV, I, N = groups[key]
+        if EXACT and N:
+            normals_of[len(out_meshes)] = N
         out_meshes.append((key[0], key[1], P, UV, I, False))
 
     # ---- decimate, proportionally, sparing anything already small
@@ -514,12 +676,20 @@ def main():
     ratio = max(0.02, min(1.0, (budget - spare) / max(1, heavy)))
     log('decimating the heavy meshes to %.0f%% (budget %d)' % (ratio * 100, budget))
     packed = []
-    for (name, mi, P, UV, I, is_bench) in out_meshes:
+    packed_n = []        # aligned with packed: the normals, or None
+    for k, (name, mi, P, UV, I, is_bench) in enumerate(out_meshes):
         ntri = len(I) // 3
+        if EXACT:
+            # not welded either: a weld merges vertices whose NORMALS differ
+            tris = [(I[t], I[t + 1], I[t + 2]) for t in range(0, len(I) - 2, 3)]
+            pos, uvs = list(P), list(UV)
+            log('  %-40s %-18s %7d tris, exact' % (name, mats[mi].get('name'), ntri))
+            packed.append((name, mi, pos, uvs, tris, is_bench)); packed_n.append(normals_of.get(k))
+            continue
         want = ntri if ntri <= 4000 else max(1500, int(ntri * ratio))
         pos, uvs, tris = decimate(P, UV, I, want)
         log('  %-40s %-18s %7d -> %6d tris' % (name, mats[mi].get('name'), ntri, len(tris)))
-        packed.append((name, mi, pos, uvs, tris, is_bench))
+        packed.append((name, mi, pos, uvs, tris, is_bench)); packed_n.append(None)
 
     # ---- the walk
     door_box = None
@@ -537,10 +707,15 @@ def main():
     # nothing to stand on. Its dome rises through the body band out at the
     # horizon, which is exactly the wall that keeps you in the place.
     NO_WALK = ('Rain', 'Grass1', 'Splash248')
+    # THE SEA IS NOT A FLOOR AND THE SKY IS NOT A WALL. The keep ships its own
+    # sea plane, a seabed under it and a sky sphere round the lot; all three
+    # are drawn and none is walked.
+    KEEP_NO_WALK = ('material', 'material_5', 'Sand')
     walk_in = [(pos, tris, is_bench) for (name, mi, pos, uvs, tris, is_bench) in packed
                if not (a.kind == 'church' and mats[mi].get('name') == 'ampoule')
-               and not (a.kind == 'dojo' and mats[mi].get('name') in NO_WALK)]
-    walk = build_walk(walk_in, None, door_box)
+               and not (a.kind == 'dojo' and mats[mi].get('name') in NO_WALK)
+               and not (a.kind == 'keep' and mats[mi].get('name') in KEEP_NO_WALK)]
+    walk = build_walk_multi(walk_in, FLOOR_MIN) if a.kind == 'keep' else build_walk(walk_in, None, door_box)
     if door_box: walk['door'] = door_box
     if bench_boxes: walk['benches'] = bench_boxes
     # where the floor is at a few named spots, for the notes and the placement
@@ -557,6 +732,10 @@ def main():
             if zs:
                 mid = zs[len(zs) // 2]
                 log('  cave floor at x=%.1f: z %.1f..%.1f, floor %.2f at z %.1f' % (x, zs[0][0], zs[-1][0], mid[1], mid[0]))
+    elif a.kind == 'keep':
+        b = walk['bounds']
+        log('  keep bounds %s .. %s' % ([round(v, 2) for v in b[0]], [round(v, 2) for v in b[1]]))
+        log('  keep: %d cells with a floor, %d storeys in all' % (len(walk['cells']), sum(len(c[2]) // 3 for c in walk['cells'])))
     elif a.kind == 'dojo':
         b = walk['bounds']
         cx, cz = (b[0][0] + b[1][0]) / 2, (b[0][2] + b[1][2]) / 2
@@ -567,7 +746,7 @@ def main():
     else:
         log('  church floor at the door: %s, at the altar: %s' % (floor_at(-23.5, 0), floor_at(3, 0)))
 
-    if a.sparse:
+    if a.sparse and a.kind != 'keep':
         # A LONG THIN TUNNEL IS NINETY-FIVE PER CENT EMPTY BOUNDING BOX: the
         # passage's dense grid is 1700 by 250 cells and nearly all of them
         # say "no floor" three times over, at four megabytes of JSON. Only
@@ -596,13 +775,22 @@ def main():
             if not m['extensions']:
                 del m['extensions']
         pbr = m.setdefault('pbrMetallicRoughness', {})
+        if EXACT:
+            # the second uv set is identical to the first on every mesh that
+            # has one (measured), and only the first is written
+            for t in tex_refs(m):
+                t['texCoord'] = 0
+            continue
         pbr.pop('metallicRoughnessTexture', None)
         pbr['metallicFactor'] = 0.0
         pbr.setdefault('roughnessFactor', 1.0)
         for t in (pbr.get('baseColorTexture'), m.get('emissiveTexture'), m.get('normalTexture')):
             if t: t['texCoord'] = 0
-    for k in ('extensionsUsed', 'extensionsRequired'):
-        g.pop(k, None)
+    if EXACT:
+        g.pop('extensionsRequired', None)     # three reads what it can; nothing here is required to draw
+    else:
+        for k in ('extensionsUsed', 'extensionsRequired'):
+            g.pop(k, None)
 
     # ---- rebuild: one flat scene of baked meshes under a root with extras
     blob = bytearray()
@@ -616,10 +804,11 @@ def main():
         if target is not None: v['target'] = target
         views.append(v); return len(views) - 1
     accessors, meshes, out_nodes = [], [], []
-    for (name, mi, pos, uvs, tris, is_bench) in packed:
+    for pk, (name, mi, pos, uvs, tris, is_bench) in enumerate(packed):
         vb = bytearray(); ub = bytearray()
         for p in pos: vb.extend(struct.pack('<fff', *p))
         for u in uvs: ub.extend(struct.pack('<ff', u[0], u[1]))
+        nrm = packed_n[pk] if pk < len(packed_n) else None
         wide = len(pos) > 65535
         ib = bytearray()
         for t in tris: ib.extend(struct.pack('<III' if wide else '<HHH', *t))
@@ -627,9 +816,14 @@ def main():
         pa = len(accessors); accessors.append({'bufferView': emit(vb, ARRAY_BUFFER), 'componentType': 5126, 'count': len(pos), 'type': 'VEC3', 'min': mn, 'max': mx})
         ua = len(accessors); accessors.append({'bufferView': emit(ub, ARRAY_BUFFER), 'componentType': 5126, 'count': len(uvs), 'type': 'VEC2'})
         ia = len(accessors); accessors.append({'bufferView': emit(ib, ELEMENT_ARRAY_BUFFER), 'componentType': 5125 if wide else 5123, 'count': len(tris) * 3, 'type': 'SCALAR'})
-        meshes.append({'name': name, 'primitives': [{'attributes': {'POSITION': pa, 'TEXCOORD_0': ua}, 'indices': ia, 'material': mi}]})
+        attrs = {'POSITION': pa, 'TEXCOORD_0': ua}
+        if nrm and len(nrm) == len(pos):
+            nb = bytearray()
+            for nn in nrm: nb.extend(struct.pack('<fff', *nn))
+            attrs['NORMAL'] = len(accessors); accessors.append({'bufferView': emit(nb, ARRAY_BUFFER), 'componentType': 5126, 'count': len(nrm), 'type': 'VEC3'})
+        meshes.append({'name': name, 'primitives': [{'attributes': attrs, 'indices': ia, 'material': mi}]})
         out_nodes.append({'name': name, 'mesh': len(meshes) - 1})
-    root_node = {'name': ('bw_' if a.kind == 'dojo' else 'undercroft_') + a.kind, 'children': list(range(1, len(out_nodes) + 1)),
+    root_node = {'name': ('bw_' if a.kind in ('dojo', 'keep') else 'undercroft_') + a.kind, 'children': list(range(1, len(out_nodes) + 1)),
                  'extras': {'bw_walk': json.dumps(walk, separators=(',', ':'))}}
     g['nodes'] = [root_node] + out_nodes
     g['meshes'] = meshes
@@ -648,6 +842,9 @@ def main():
         pbr = m.get('pbrMetallicRoughness', {})
         for t in (pbr.get('baseColorTexture'), m.get('emissiveTexture'), m.get('normalTexture')):
             if t: live.add(t['index'])
+        if EXACT:
+            for t in tex_refs(m):
+                live.add(t['index'])
     cutout = set()
     for m in g['materials']:
         bt = m.get('pbrMetallicRoughness', {}).get('baseColorTexture')

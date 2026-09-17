@@ -97,6 +97,29 @@ CLIPS = [
     ('Mutant Run',              'run',     'the run'),
     ('Block',                   'block',   'the guard'),
     ('Center Block',            'blockC',  'the guard, square on'),
+    # and the parry has a reel of its own
+    ('Zombie Reaction Hit',     'parry',   'the reel when his guard is broken by a parry'),
+    # ---- THE LOCOMOTION PACK. Everything above is a move; this is how he
+    # CARRIES himself between them, which is most of what a fight looks like.
+    # He keeps every clip he already had — these are drawn against them, so
+    # the same creature stands, strides and circles differently from one
+    # exchange to the next instead of running one cycle for ever.
+    ('idle',                    'idleB',   'a second way of standing',            'Locomotion Pack'),
+    ('walking',                 'walkC',   'a third walk',                        'Locomotion Pack'),
+    ('running',                 'runB',    'a second run',                        'Locomotion Pack'),
+    ('left strafe walking',     'strafeL2','a second sideways stride, to his left',  'Locomotion Pack'),
+    ('right strafe walking',    'strafeR3','a second sideways stride, to his right', 'Locomotion Pack'),
+    ('left strafe',             'sideL',   'a short side step, left',             'Locomotion Pack'),
+    ('right strafe',            'sideR2',  'a short side step, right',            'Locomotion Pack'),
+    ('left turn 90',            'turnL',   'a quarter turn on the spot, left',    'Locomotion Pack'),
+    ('right turn 90',           'turnR',   'a quarter turn on the spot, right',   'Locomotion Pack'),
+    # ---- AND HE CAN BE PUT ON HIS BACK. Two clips, not one played backwards:
+    # the alien's knockdown reverses its own fall because his file has no
+    # get-up in it, and a reversed fall is a shape that reads right and a
+    # motion that does not. These are a real fall and a real rise.
+    ('Knocked Out',             'knockOut','enough heavies to the head and he goes over'),
+    ('Getting Up',              'getUp',   'and back onto his feet'),
+    ('Hit On Side Of Head',     'hitHead', 'rare: caught on the side of the head'),
 ]
 # THE BEATS, measured off the hips (see the log's own curve). A Mixamo clip
 # is a performance with an approach and a recovery either side of the thing
@@ -115,10 +138,49 @@ WINDOW = ({'knock': (30, 78), 'nSweep': (0, None), 'dodge': (20, 82)} if SET == 
           # away, finding his feet and walking back. What a fight wants is the
           # rock and the first of the recovery; the rest is him idling, and at
           # three seconds it is an interruption rather than a hit.
-          else {'hitSide': (0, 46), 'hitBack': (0, 50)})
+          # AND THE KNOCKDOWN IS THE FALL, NOT THE PERFORMANCE ROUND IT.
+          # Read off the hips (the log prints the curve): `knockOut` stands
+          # still for 28 frames, goes over between 28 and 56 (hips 0 ->
+          # -0.79) and then lies there for twenty more — and the game holds
+          # him on the floor itself, so those twenty are dead time in the one
+          # beat that has to be short enough to fight through. `getUp` rises
+          # over frames 6-36 and settles; `hitHead` is a man reeling SIX
+          # METRES and finding his feet, of which a flinch wants the first
+          # rock and nothing else.
+          else {'hitSide': (0, 46), 'hitBack': (0, 50),
+                'knockOut': (20, 58), 'getUp': (0, 40), 'hitHead': (0, 24)})
 # He is knocked down FACING YOU, by the owner's word, so this one is de-yawed
 # whatever it measures.
-FORCE_FLAT_YAW = {'knock'} if SET == 'ntar' else {'kPunch', 'kSwipe', 'kJump', 'block', 'blockC', 'strafeR', 'sideR', 'k360', 'hit', 'hitBig', 'hitSide', 'hitBack'}
+FORCE_FLAT_YAW = {'knock'} if SET == 'ntar' else {'kPunch', 'kSwipe', 'kJump', 'block', 'blockC', 'strafeR', 'sideR', 'k360', 'hit', 'hitBig', 'hitSide', 'hitBack',
+      # the locomotion pack and the parry reel: the GAME turns him at you
+      # every frame, so nothing here may turn his hips as well — a quarter
+      # turn de-yawed is a pivot step, which is what it is wanted for
+      'parry', 'idleB', 'walkC', 'runB', 'strafeL2', 'strafeR3', 'sideL', 'sideR2', 'turnL', 'turnR',
+      'hitHead'}
+
+# ---- AND A CLIP WHOSE BODY LEAVES THE VERTICAL MAY NOT BE DE-YAWED AT ALL.
+#
+# There is no such thing as the heading of a body that is falling over, and
+# every attempt to name one injects a spin. Measured on `knockOut`, as the
+# azimuth the body's own long axis sweeps over the frames it is horizontal —
+# which is the thing you actually watch, "which way his head is pointing":
+#
+#     the source animation    -11 deg      (he lands about where he fell)
+#     de-yawed on the forward axis  +62     <- the owner's "spins in the air"
+#     de-yawed on the left-right axis  -38  <- better measurement, same fault
+#
+# A per-frame de-yaw is a world-Y rotation, and a world-Y rotation applied to
+# a HORIZONTAL body is a roll about its own length: it cannot help but turn a
+# tipping body into a turning one. So the fall and the rise keep their own
+# root turn exactly as the animator drew it, and the game puts him on the
+# heading it wants ONCE, at the blow — which costs nothing, because a
+# creature on the ground is not being turned toward the player anyway.
+KEEP_YAW = {'knockOut', 'getUp'}
+
+
+# A clip whose hips are measured from its LAST frame, not its first: it
+# begins on the floor and ends standing, so the stance is at the END.
+HIP_ZERO_END = {'getUp'}
 
 
 def log(*a):
@@ -130,11 +192,39 @@ def r4(v):
 
 
 def main():
+    # ---- IT MERGES; IT DOES NOT REWRITE.
+    #
+    # The sources live in ~/Downloads, which is the owner's own folder and is
+    # cleared whenever he likes — so a build that insists on every FBX being
+    # present is a build that can only be run on the day the clips arrive.
+    # (This file already knows the shape of that mistake: "a build that reads
+    # a temp directory is not a build".) What is already in the JSON is a
+    # successful build of a clip whose source has since gone; a source that IS
+    # here is rebuilt over it, and a source that is not is left exactly as it
+    # was. Adding a clip is then a one-file drop and a re-run.
     out = {'fps': FPS, 'clips': {}}
-    for fname, name, what in CLIPS:
-        path = os.path.join(SRC, fname + '.fbx')
+    if os.path.exists(OUT):
+        try:
+            with open(OUT) as fh:
+                prev = json.load(fh)
+            out['clips'] = prev.get('clips', {})
+            log('merging into', len(out['clips']), 'clips already built')
+        except Exception as e:
+            log('could not read the existing', OUT, '-', e)
+    missing, built = [], []
+    for entry in CLIPS:
+        fname, name, what = entry[0], entry[1], entry[2]
+        # a clip may name a subfolder of ~/Downloads it was delivered in
+        sub = entry[3] if len(entry) > 3 else ''
+        path = os.path.join(SRC, sub, fname + '.fbx')
         if not os.path.exists(path):
-            sys.exit('missing ' + path)
+            if name in out['clips']:
+                log('KEEPING', name, '- its source is gone from', os.path.dirname(path) or SRC)
+            else:
+                log('MISSING', name, '-', path)
+                missing.append(name)
+            continue
+        built.append(name)
         bpy.ops.wm.read_factory_settings(use_empty=True)
         bpy.ops.import_scene.fbx(filepath=path)
         arm = next(o for o in bpy.data.objects if o.type == 'ARMATURE')
@@ -200,14 +290,50 @@ def main():
         log('   forward (blender) %s -> yaw %+.1f deg to +Z' % (tuple(r4(v) for v in fwd), math.degrees(yaw)))
 
         # ---- the root's own turn over the window
+        #
+        # A HEADING READ OFF A BONE'S FORWARD AXIS IS NOT A HEADING ONCE THE
+        # BODY HAS LEFT THE VERTICAL, AND THAT IS THE WHOLE OF "HE JUST SPINS
+        # AROUND IN THE AIR". The de-yaw held the hips' own +Z at a constant
+        # azimuth every frame — which is a real de-yaw while he is standing,
+        # and nonsense the moment he goes over, because a pelvis lying on its
+        # back points its +Z at the CEILING. Measured on `knockOut`, that
+        # vector's horizontal part collapses from 1.00 to 0.30, so most of
+        # the -61 deg of "drift" it reported was the body TIPPING and not the
+        # body turning — and the correction for a turn that never happened is
+        # a world-Y rotation applied to a horizontal body, which is a corpse
+        # swinging round like a compass needle.
+        #
+        # The axis to measure on is the one that stays horizontal, and which
+        # that is depends on the clip: a fall forwards or backwards hinges
+        # about the pelvis's LEFT-RIGHT axis, so that one survives (worst
+        # horizontal 0.73 on `knockOut`, 0.87 on `getUp`) where the forward
+        # axis does not. So it is chosen rather than assumed — the axis whose
+        # worst horizontal projection over the window is largest, once per
+        # clip, so it can never switch mid-clip and put a step in the turn.
+        # On a standing clip X and Z are both exactly horizontal and give the
+        # same answer, so nothing that already worked moves.
+        AXES = (('left-right', Vector((1, 0, 0))),
+                ('up the spine', Vector((0, 1, 0))),
+                ('forward', Vector((0, 0, 1))))
+
+        def hipax(i, ax):
+            return (CONV @ raw[i]['Hips']) @ ax
+
+        def worstH(ax):
+            return min(math.hypot(v.x, v.z) for v in (hipax(i, ax) for i in range(end + 1)))
+        axName, AX = max(AXES, key=lambda p: worstH(p[1]))
+        log('   heading axis: the pelvis\'s %s (worst horizontal %.2f of 1.00)'
+            % (axName, worstH(AX)))
+
         def hipyaw(i):
-            q = CONV @ raw[i]['Hips']
-            v = q @ Vector((0, 0, 1))                # the hips' own +Z, in three's frame
+            # only DIFFERENCES of this are ever used, so which axis it is
+            # measured on sets an offset that cancels
+            v = hipax(i, AX)
             return math.atan2(v.x, v.z)
         y0 = hipyaw(0)
         drift = math.degrees((hipyaw(end) - y0 + math.pi) % (2 * math.pi) - math.pi)
         swing = max(abs(math.degrees((hipyaw(i) - y0 + math.pi) % (2 * math.pi) - math.pi)) for i in range(end + 1))
-        flat = name in FORCE_FLAT_YAW or abs(drift) > 40
+        flat = name not in KEEP_YAW and (name in FORCE_FLAT_YAW or abs(drift) > 40)
         log('   root yaw: swings to %.0f deg, ends %+.0f deg  -> %s' % (swing, drift, 'DE-YAWED' if flat else 'kept'))
 
         # ---- rest, and every frame, in three's frame
@@ -235,6 +361,20 @@ def main():
             hipY.append(r4(hp.y))
             travel.append([r4(hp.x), r4(hp.z)])
 
+        # ---- AND A CLIP THAT STARTS ON THE FLOOR IS MEASURED FROM ITS END.
+        #
+        # `hipY` is an OFFSET from the creature's own stance, taken from the
+        # clip's FIRST frame — which is right for every clip that begins with
+        # him standing up, and exactly wrong for the get-up, which begins with
+        # him lying on his back. Measured in the game: `getUp` ran its hips
+        # from the standing height to A METRE ABOVE IT and then snapped back
+        # the frame the clip ended. That is the owner's "he just flies
+        # around". Zeroing it at the LAST frame instead puts the start of the
+        # rise on the floor (-0.85) and its end at the stance, which is where
+        # the fall left him (-0.86) and where he has to finish.
+        if name in HIP_ZERO_END and hipY:
+            off = hipY[-1]
+            hipY = [r4(v - off) for v in hipY]
         dur = (end) / FPS
         land = r4(hipY.index(min(hipY)) / max(1, end))
         # ---- where the striking foot is fastest (a sweep has no extreme of position)
@@ -251,6 +391,24 @@ def main():
             contact = r4(bi / max(1, end))
             log('   contact: right toe fastest at frame %d of %d -> hit %.3f' % (bi, end, contact))
 
+        # ---- AND WHERE HE IS LYING, SO THE RISE CAN BE JOINED TO THE FALL.
+        # With neither clip de-yawed they are each in their own frame — the
+        # fall ends lying one way and the rise begins lying another, and
+        # played back to back that is a body snapping round on the floor. The
+        # only thing that can be matched between two prone poses is the
+        # direction the body itself lies in, so that is measured at both ends
+        # of every clip: the azimuth of the body's own long axis (hips to
+        # spine — which way his head points) and how horizontal it is, since
+        # standing up the same number means nothing. The game turns the rise
+        # by the difference and the two become one motion.
+        def lieAz(i):
+            undo = Quaternion((0, 1, 0), -(hipyaw(i) - y0)) if flat else Quaternion()
+            v = (undo @ (CONV @ raw[i]['Hips'])) @ Vector((0, 1, 0))
+            return r4(math.degrees(math.atan2(v.x, v.z))), r4(math.hypot(v.x, v.z))
+        az0, azh0 = lieAz(0)
+        az1, azh1 = lieAz(end)
+        log('   lying: starts %+.0f deg (flat %.2f), ends %+.0f deg (flat %.2f)'
+            % (az0, azh0, az1, azh1))
         log('   %-7s %.2f s, %d frames, %d bones, travel %.2f m, hips y %.2f..%.2f, lowest at %.2f'
             % (name, dur, end + 1, len(bones), math.hypot(travel[-1][0], travel[-1][1]),
                min(hipY), max(hipY), land))
@@ -260,14 +418,18 @@ def main():
             'restPos': {b: [r4(restPos[b].x), r4(restPos[b].y), r4(restPos[b].z)] for b in bones},
             'd': tracks, 'hipY': hipY, 'travel': travel,
             'yaw': {'flat': flat, 'drift': r4(drift), 'swing': r4(swing)},
+            'az': {'start': az0, 'startH': azh0, 'end': az1, 'endH': azh1},
             'land': land,
         }
         if contact is not None:
             out['clips'][name]['hit'] = contact
 
+    if missing:
+        sys.exit('no source and nothing already built for: ' + ', '.join(missing))
     with open(OUT, 'w') as f:
         json.dump(out, f, separators=(',', ':'))
-    log('wrote %s: %.1f KB' % (os.path.relpath(OUT), os.path.getsize(OUT) / 1024))
+    log('built', len(built), 'of', len(CLIPS), '-', ', '.join(built))
+    log('wrote %s: %d clips, %.1f KB' % (os.path.relpath(OUT), len(out['clips']), os.path.getsize(OUT) / 1024))
 
 
 main()

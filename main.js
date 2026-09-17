@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeHorseshoeCrab, makeHorseshoeCrabIcon } from './models/horseshoe-crab.js';
 import { makeSyringe, makeSyringeIcon } from './models/syringe.js';
-import { makeBloodJar } from './models/blood-jar.js';
+import { makeBloodJar, makeBloodJarIcon } from './models/blood-jar.js';
 import { makeDrainageTunnelHome } from './models/drainage-tunnel-home.js';
 import { makeWaterBottle, makeWaterBottleIcon } from './models/water-bottle.js';
 import { makeShipwreck } from './models/shipwreck.js';
@@ -101,13 +101,14 @@ const ASSET_REACH = {
   'assets/sandcastle.glb': 13,        // the castle is in front of you at the spawn
   'assets/shell.glb': 15,             // the first of the three is at z = -12
   'assets/military-shovel.glb': 70,   // under the cliff past the drain
-  'assets/octopus-ring.glb': 75,
+  'assets/octopus-ring.glb': 647,   // the knight drops it, so it is wanted where he is
   'assets/rocks.glb': 80,             // the formation below Bradly
   'assets/crab.glb': 90,
   'assets/corpse.glb': 126,           // the body bag
   'assets/key.glb': 150,
   'assets/head.glb': 155,             // both of them are aboard the wreck
   'assets/dock.glb': 215,
+  'assets/keep.glb': 216,              // and where its boat goes: fetched on the walk up to the pier
   'assets/bunker.glb': 333,           // behind a hatch, behind a black screen
   'assets/dealer.glb': 334,
   'assets/smile.glb': 390,
@@ -400,6 +401,13 @@ function toggleFastWalk() {
  * emptying decided the next third of the fight; six keeps blocking a real
  * cost without making a mistake unrecoverable. */
 const STAM_REGEN = 6;                     // seconds to recover a full bar
+/* HOW BIG THE BAR IS, which is not always one. A worn ring can raise it, and
+ * `ringItem` is declared eleven thousand lines below this — so it is a
+ * forward hook, the way `bunkerFloorAt` is, and it answers 1 until the ring
+ * section replaces it. Everything that fills, clamps or draws the bar asks
+ * this rather than assuming; a bar with a hard-coded top is a bar no item
+ * can ever make bigger. */
+let stamMax = () => 1;
 const JUMP_V = 4.3;
 const P_GRAV = 15;
 const MOON_DIR = new THREE.Vector3(-0.28, 0.12, -1).normalize();
@@ -1334,11 +1342,32 @@ function addItemShine(root, { size = 0.55, height = 0.12, strength = 1, lift = 1
       mats.push({ m, base: m.emissive.clone() });
     }
   });
-  shinies.push({ root, glint, ghost, mats, strength, lift, through, phase: Math.random() * 6.28 });
+  shinies.push({ root, glint, ghost, mats, strength, lift, through, height, phase: Math.random() * 6.28 });
 }
+/* A SHINE IS A MARK IN THE AIR ABOVE A THING, NOT A DECORATION BOLTED TO
+ * IT. The sprite is a child of the root and sat at a local +Y — which is
+ * the same as world up for everything static, and is not for the one item
+ * in this game that TUMBLES: the ring comes off the knight as a `PhysProp`
+ * and comes to rest at whatever angle it fell, so its own up can be
+ * pointing at the floor. Measured where it landed in the nave: the ring at
+ * y 399.942 on a floor at 399.930, and its glint at 398.573 — a metre and a
+ * third UNDERNEATH the flags, which is the owner's "the aura is beneath the
+ * floor". The offset is put back into world up every frame instead: take
+ * the root's own rotation out of it, and divide by its scale, because
+ * `makeNoticeable` blows a 20 mm ring up by 3.2 and a local offset is in
+ * the root's units. Nothing static moves by a pixel. */
+const _shineUp = new THREE.Vector3(), _shineQ = new THREE.Quaternion(), _shineS = new THREE.Vector3();
 function updateShines(t) {
   for (const s of shinies) {
     if (!s.root.parent) { s.glint.material.opacity = 0; if (s.ghost) s.ghost.material.opacity = 0; continue; }
+    if (s.height) {
+      s.root.getWorldQuaternion(_shineQ).invert();
+      s.root.getWorldScale(_shineS);
+      _shineUp.set(0, s.height, 0).applyQuaternion(_shineQ);
+      _shineUp.x /= (_shineS.x || 1); _shineUp.y /= (_shineS.y || 1); _shineUp.z /= (_shineS.z || 1);
+      s.glint.position.copy(_shineUp);
+      if (s.ghost) s.ghost.position.copy(_shineUp);
+    }
     // slow breath, never fully off — a wet-shell highlight catching the moon
     const k = 0.5 + 0.5 * Math.sin(t * 1.5 + s.phase);
     s.glint.material.opacity = (0.055 + 0.075 * k) * s.strength;
@@ -1349,7 +1378,7 @@ function updateShines(t) {
       const b2 = 0.5 + 0.5 * Math.sin(t * 0.95 + s.phase * 1.7);
       s.ghost.material.opacity = (0.030 + 0.055 * b2) * s.through;
       s.ghost.scale.setScalar(s.glint.scale.x * (1.60 + 0.30 * b2));
-      s.ghost.position.y = s.glint.position.y;
+      if (!s.height) s.ghost.position.y = s.glint.position.y;
     }
     for (const { m, base } of s.mats) {
       // `lift` scales the glow on the object itself: a dark textured scan
@@ -3695,14 +3724,21 @@ const splashes = Array.from({ length: SPLASH_POOL }, () => ({
 }));
 { const hide = new THREE.Matrix4().makeScale(0, 0, 0); for (let i = 0; i < SPLASH_POOL; i++) splash.setMatrixAt(i, hide); }
 let splashIdx = 0;
-function spawnSplash(x, z, n, dirX = 0, dirZ = 0, power = 1) {
+/* `baseY` is THE WATER IT CAME OUT OF. Every drop in this pool was born at
+ * the sand plane and died there — which is the sea, and is the wrong height
+ * the moment anything else in this game has water in it. The tunnel's
+ * channel is four hundred metres up; a splash that spawns at y = 0.02 is
+ * four hundred metres under the floor you are standing on. The gibs learned
+ * this once ("a gib's ground is a LOOKUP, not a number it was born with"). */
+function spawnSplash(x, z, n, dirX = 0, dirZ = 0, power = 1, baseY = 0.02) {
   addRipple(x, z, Math.min(1.4, 0.5 + power * 0.7));
   for (let i = 0; i < n; i++) {
     const p = splashes[splashIdx];
     splashIdx = (splashIdx + 1) % SPLASH_POOL;
     p.ttl = p.life = 0.34 + Math.random() * 0.42;
     p.sz = (0.45 + Math.random() * 0.95) * (0.6 + power * 0.6);
-    p.pos.set(x + (Math.random() - 0.5) * 0.35, 0.02 + Math.random() * 0.05, z + (Math.random() - 0.5) * 0.35);
+    p.base = baseY;
+    p.pos.set(x + (Math.random() - 0.5) * 0.35, baseY + Math.random() * 0.05, z + (Math.random() - 0.5) * 0.35);
     const out = 1.0 + Math.random() * 2.4;
     p.vel.set(
       dirX * 1.6 * power + (Math.random() - 0.5) * out,
@@ -3723,7 +3759,7 @@ function updateSplashes(dt) {
     p.vel.y -= 16 * dt;
     p.pos.addScaledVector(p.vel, dt);
     p.rot.x += p.vel.x * dt * 3; p.rot.z += p.vel.z * dt * 3;
-    if (p.pos.y <= 0.02) p.life = 0;
+    if (p.pos.y <= (p.base === undefined ? 0.02 : p.base)) p.life = 0;
     const k = Math.max(0, p.life / p.ttl);
     const sc = p.sz * 0.055 * (0.35 + 0.65 * k);
     _spq.setFromEuler(p.rot);
@@ -3764,6 +3800,20 @@ const waveGLSL = `
     return w;
   }
 `;
+/* A GRADED GRID WAS TRIED HERE AND PUT BACK. This is 115,200 triangles — a
+ * quarter of everything in the frame — and every facet is the same 9.2 m
+ * whether it is under your boots or eleven hundred metres out, so warping
+ * the rows toward the middle (the plane snaps onto the player in 8 m steps,
+ * so the middle is always where you are) gives finer water close up out of a
+ * third of the vertices. Built, measured and reverted: the rows at the RIM
+ * are what draw the horizon, and the sea's far edge stands against the sky
+ * as a visible line whatever the fog does — at 2 m facets in the middle the
+ * rim goes to 47 m and that line turns into a staircase you can count. The
+ * render measured the same either way (removing every mesh over 8,000
+ * triangles in the frame is worth 0.35 ms of 1.23), which is this file's own
+ * rule a second time: TRIANGLES WERE NEVER THIS GAME'S PROBLEM, draw calls
+ * and shader programs were. Do not trade the sea's horizon for a saving that
+ * does not show on the clock. */
 const oceanGeo = new THREE.PlaneGeometry(2200, 2200, 240, 240);   // ~9 m facets
 oceanGeo.rotateX(-Math.PI / 2);
 const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
@@ -3925,11 +3975,18 @@ const deathEl = document.getElementById('death');
 const bloodEl = document.getElementById('blood');
 const bloodAmtEl = document.getElementById('blood-amt');
 const bloodJarEl = document.getElementById('blood-jar');
+const bloodUnitEl = document.getElementById('blood-unit');
 
-// blue blood you've drawn. The HUD stays hidden until the first extraction.
-const BLOOD_PER_CRAB = 120;        // mL out of one horseshoe crab
-const BLOOD_JAR_CAP = 140;         // mL the jar gauge reads full at
-let bloodAmount = 0, bloodSeen = false;
+/* Blue blood you have drawn. The HUD stays hidden until the first jar.
+ *
+ * AND IT COUNTS JARS NOW, NOT MILLILITRES. "120 mL" is the yield of one
+ * crab, which is a fact about crabs and not a thing the player is
+ * collecting — it never went up except in one step, it could not be spent,
+ * and a second source of the stuff (the one buried in the first cache) had
+ * nowhere sensible to land in it. A jar is the unit you actually hold, so
+ * the corner counts jars and the little jar beside the number is an icon of
+ * one rather than a gauge of a number nobody was reading. */
+let bloodJars = 0, bloodSeen = false;
 
 let started = false, locked = false, fallbackLook = false, dragging = false;
 let packCut = false;            // the three coming in: the player watches
@@ -4138,7 +4195,7 @@ function updateHurt(dt) {
   hurtEl.style.opacity = String(Math.max(hurtFlash * hurtFlash, rim));
 }
 
-function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || inspecting || peeking || packCut || mutCut || hatchBusy || ucBusy || abductCut || portalCut || dying || ended || !introDone; }
+function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || inspecting || peeking || packCut || mutCut || hatchBusy || ucBusy || abductCut || portalCut || sailBusy || dying || ended || !introDone; }
 function refreshUI() {
   const playing = started && !menuOpen && !noteOpen && !dialogOpen && !invOpen && !inspecting && !dying && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
@@ -4619,7 +4676,33 @@ S_SFX.addEventListener('input', () => { settings.sfxVolume = +S_SFX.value; apply
 S_MUSIC.addEventListener('input', () => { settings.musicVolume = +S_MUSIC.value; applySettings(); saveSettings(); });
 S_SPEED.addEventListener('input', () => { settings.walkSpeed = +S_SPEED.value; applySettings(); saveSettings(); });
 S_INVERT.addEventListener('change', () => { settings.invertY = S_INVERT.checked; saveSettings(); });
-S_DEV.addEventListener('change', () => { settings.devMode = S_DEV.checked; saveSettings(); });
+S_DEV.addEventListener('change', () => {
+  settings.devMode = S_DEV.checked;
+  saveSettings();
+  if (settings.devMode) devGrantWeapons();
+});
+/* ---- AND DEV MODE HANDS YOU THE TOOLS, FOR GOOD.
+ *
+ * Dev mode is for walking the beach and testing the fights, and both of
+ * those need something in your hands — the two shovels are an hour's walk
+ * apart and the katana is past the drain, so testing the knight meant
+ * playing most of the game first. Turning it on gives you every dig tool
+ * you do not already have; turning it OFF does not take them back, which is
+ * the owner's word and is also the only behaviour that makes sense: an
+ * inventory is a thing you have, not a mode you are in.
+ *
+ * They are the SAME item objects the world hands out, so the view model,
+ * the icon, the pack, the examine screen and the save's own replay all
+ * behave exactly as if you had picked each one up. The world copies stay
+ * where they are; `addToInventory` is only reached for a tool the pack does
+ * not already hold, so taking one afterwards cannot double it. */
+function devGrantWeapons() {
+  for (const it of [shovelItem, militaryItem, katanaItem]) {
+    if (!it || inventory.includes(it)) continue;
+    addToInventory(it);
+  }
+  if (!equipped && inventory.includes(shovelItem)) toggleEquip(shovelItem);
+}
 document.getElementById('m-resume').addEventListener('click', closeMenu);
 document.getElementById('m-reset').addEventListener('click', () => {
   settings = { ...DEFAULT_SETTINGS };
@@ -4738,7 +4821,7 @@ function inspectSetModel(model) {
  * "put it away" in here, and a screen where the same button both wears the
  * item and pockets it is a screen you cannot use twice in a row. */
 let inspectEquip = null;
-function openInspect(model, { rotX = -0.55, rotY = 0.7, equipLabel = null, onEquip = null, name = '' } = {}) {
+function openInspect(model, { rotX = -0.55, rotY = 0.7, equipLabel = null, onEquip = null, name = '', desc = '' } = {}) {
   if (inspecting) return;
   inspecting = true;
   inspectEquip = equipLabel ? onEquip : null;
@@ -4746,6 +4829,11 @@ function openInspect(model, { rotX = -0.55, rotY = 0.7, equipLabel = null, onEqu
     inspectEquip ? kbd('E') + equipLabel + '  ·  ' + INSPECT_HINT : INSPECT_HINT;
   const nameEl = inspectEl.querySelector('.iname');
   if (nameEl) { nameEl.textContent = name; nameEl.style.display = name ? '' : 'none'; }
+  /* WHAT IT DOES, under what it is called. An item that changes a number
+   * has to say which number, in the one place you are actually looking at
+   * it — otherwise it is a trinket with a secret. */
+  const descEl = inspectEl.querySelector('.idesc');
+  if (descEl) { descEl.textContent = desc; descEl.style.display = desc ? '' : 'none'; }
   inspectSetModel(model);
   inspectRotX = rotX; inspectRotY = rotY; inspectDist = 3.3; inspectAuto = 0;
   inspectCamera.aspect = window.innerWidth / window.innerHeight;
@@ -4764,6 +4852,7 @@ function closeInspect() {
   inspectEquip = null;
   inspectEl.classList.remove('show');
   inspectEl.querySelector('.hint').innerHTML = INSPECT_HINT;
+  { const d = inspectEl.querySelector('.idesc'); if (d) { d.textContent = ''; d.style.display = 'none'; } }
   crosshair.style.display = '';
   refreshUI();
   if (inspectReturnLock && !fallbackLook) requestLock();
@@ -4945,9 +5034,15 @@ function updateHover() {
     const lbl = typeof best.label === 'function' ? best.label() : best.label;
     const br = typeof best.bare === 'function' ? best.bare() : best.bare;
     setPrompt(br ? lbl : kbd('E') + lbl, best.mid);
+  } else if (canWearHeld(equipped)) {
+    crosshair.className = 'active';
+    setPrompt(kbd('LMB') + 'Put it on');
   } else if (equipped && equipped.onListen && !listening) {
     crosshair.className = 'active';
     setPrompt(kbd('LMB') + 'Hold it to your ear');
+  } else if (equipped && equipped.onPull) {
+    crosshair.className = 'active';
+    setPrompt(kbd('LMB') + 'Pull the key out of his mouth');
   } else if (equipped && equipped.onDig && digT <= 0
              && crosshairGroundPoint(winding ? DIG_REACH + DIG_HEAVY_REACH : DIG_REACH)) {
     const onMound = !inWater(_digHit.x, _digHit.z) && moundAt(_digHit.x, _digHit.z);
@@ -4957,11 +5052,15 @@ function updateHover() {
      * left one, and holding sprint with it turns the swing overhead. */
     setPrompt(kbd('LMB') + (onMound ? 'Dig up the mound' : 'Dig here')
       + ' &nbsp;&nbsp; ' + kbd('Hold LMB') + 'Heavy'
-      + ' &nbsp;&nbsp; ' + kbd('Shift') + '+ hold: overhead'
-      + ' &nbsp;&nbsp; ' + kbd('G') + 'Drop');
+      + ' &nbsp;&nbsp; ' + kbd('Shift') + '+ hold: overhead');
   } else if (equipped) {
+    /* AND "G DROP" IS NOT A PROMPT. A prompt says what the thing you are
+     * LOOKING AT will do; this said what a key does, and it said it on every
+     * frame you had anything in your hand, which is most of the game. It was
+     * the one piece of text on the screen that never changed and never
+     * needed reading. G still drops; it is in the controls sheet. */
     crosshair.className = '';
-    setPrompt(kbd('G') + 'Drop ' + (equipped.name || 'item').toLowerCase());
+    setPrompt('');
   } else {
     crosshair.className = '';
     setPrompt('');
@@ -4985,8 +5084,10 @@ function primaryAction() {                       // E / F
     else if (hovered.onActivate) hovered.onActivate();
     return;
   }
+  if (canWearHeld(equipped)) { wearRing(equipped); return; }
   if (equipped && equipped.onListen) listenToShell();
   if (equipped && equipped.onDrink) drinkWater();
+  if (equipped && equipped.onPull) equipped.onPull();
 }
 function attackAction() {                        // left mouse
   if (peeking) { endPeek(); return; }
@@ -5010,8 +5111,10 @@ function attackAction() {                        // left mouse
     }
     return;
   }
+  if (canWearHeld(equipped)) { wearRing(equipped); return; }
   if (equipped && equipped.onListen) { listenToShell(); return; }
   if (equipped && equipped.onDrink) { drinkWater(); return; }
+  if (equipped && equipped.onPull) { equipped.onPull(); return; }
   primaryAction();                               // bare hands: a click still interacts
 }
 
@@ -5337,7 +5440,17 @@ function dropEquipped() {
  * crosshair meets within arm's reach, else the ground in front of you. */
 const _dropRay = new THREE.Raycaster();
 const _dropPt = new THREE.Vector3();
-function groundUnder(x, z) {
+function groundUnder(x, z, atY) {
+  /* AND IT IS NOT ALWAYS THE BEACH. `bunkerFloorAt` is this game's general
+   * "what is the floor here" — the bunker, the hall, the dojo and the
+   * undercroft all answer it, and the blood, the gibs and every physics body
+   * have asked it for a long time. It REPLACES rather than competing,
+   * because a room's floor is forty metres under the sand and a
+   * highest-surface test would lift anything in one up onto the beach. */
+  if (atY !== undefined) {
+    const bf = bunkerFloorAt(x, z, atY);
+    if (bf !== null) return bf;
+  }
   let y = driftAt(x, z);                       // the banks are terrain
   const deck = dockDeckAt(x, z);
   if (deck !== null && deck > y) y = deck;     // and the boards are a floor
@@ -5345,20 +5458,76 @@ function groundUnder(x, z) {
   if (rk && rk.top > y) y = rk.top;
   return y;
 }
+/* ---- WHERE A DROPPED THING LANDS, AND THE ROOM IT LANDS IN.
+ *
+ * Every line of this used to be the beach's. It raycast the sand, the pier
+ * and the banks; where nothing was hit it put the item at **y = 0**, which
+ * is the sand plane; and then it CLAMPED x between `WADE_X` and
+ * `CLIFF_BLOCK_X`, which are the surf and the foot of the cliff. Drop a
+ * sword in the church — three thousand metres away and four hundred up —
+ * and all three fired: the item was snapped to x = 14.2, dropped to y = 0,
+ * and was on a beach you were not on. That is the owner's "when I drop my
+ * weapons in the church or tunnel they disappear", and it is this file's
+ * oldest lesson wearing yet another coat: A CONSTANT THAT DESCRIBES ONE
+ * PLACE IS WRONG THE DAY THE GAME ACQUIRES ANOTHER.
+ *
+ * So the ray is cast at whatever room you are standing in, the floor comes
+ * from `bunkerFloorAt` (which every room answers), and the beach's two walls
+ * are only applied when you are on the beach. */
+const inRoom = () => inBunker || inShrine || inDojo || inUndercroft || inKeep;
+function dropTargets() {
+  if (inUndercroft) return [undercroft];
+  if (inBunker) return bunkers.map((b) => b.group).filter(Boolean);
+  if (inShrine) return shrineWorld ? [shrineWorld] : [];
+  if (inDojo) return dojoWorld ? [dojoWorld] : [];
+  if (inKeep) return keepWorld ? [keepWorld] : [];
+  return [sand, dock, DOCK_STEPS, driftGroup, rockGroup];
+}
 function dropPoint() {
   _dropRay.setFromCamera({ x: 0, y: 0 }, camera);
   _dropRay.far = 3.0;
-  const hits = _dropRay.intersectObjects([sand, dock, DOCK_STEPS, driftGroup, rockGroup], true)
-    .filter((h) => h.object.name !== 'hitProxy' && h.object.visible);
+  const targets = dropTargets().filter(Boolean);
+  /* AND A MOTE IS NOT A SURFACE. This is the whole of "things float when I
+   * drop them in the church": the undercroft drifts dust as a `Points` batch
+   * and stands its candle flames in another, both of them in the air right
+   * in front of your face, and a `Points` intersection carries NO `face` —
+   * so the ray stopped on a speck 0.78 m out, the "is this a wall" test
+   * below skipped for want of a normal, and the item was set down at the
+   * height of the mote, which is chest height. Measured: a syringe dropped
+   * in the nave rested at y 401.30 against a floor at 399.93, a metre and a
+   * third in the air. Only a MESH TRIANGLE is a place to put something
+   * down; everything else the ray can reach is weather. */
+  const hits = targets.length
+    ? _dropRay.intersectObjects(targets, true)
+        .filter((h) => h.object.isMesh && h.face && h.object.name !== 'hitProxy' && h.object.visible)
+    : [];
   if (hits.length) {
     _dropPt.copy(hits[0].point);
+    /* AND YOU CAN SET A THING DOWN ON A FLOOR, NOT ON A WALL. The hit point
+     * is kept as a height (`Math.max` below) so a thing put down on the
+     * pier's boards stays on the boards — right for a deck, and on a
+     * near-vertical face it hangs the item on the rock at eye level, which
+     * in a tunnel is most of what the crosshair meets. If the surface the
+     * ray found is not something you could stand on, take the point's
+     * position and let the floor under it decide the height. */
+    const nrm = hits[0].face && hits[0].normal;
+    if (nrm && Math.abs(nrm.y) < 0.5) _dropPt.y = -1e6;
   } else {
     camera.getWorldDirection(_dropDir); _dropDir.y = 0;
     if (_dropDir.lengthSq() < 1e-4) _dropDir.set(0, 0, -1); else _dropDir.normalize();
-    _dropPt.set(camera.position.x + _dropDir.x * 1.1, 0, camera.position.z + _dropDir.z * 1.1);
+    /* AND WHERE THE RAY MEETS NOTHING, THE FALLBACK IS YOUR OWN FEET — not
+     * y = 0, which is the sand and is the wrong planet in four of the five
+     * places this can now be called from. */
+    _dropPt.set(camera.position.x + _dropDir.x * 1.1,
+                camBaseY - playerEye(),
+                camera.position.z + _dropDir.z * 1.1);
   }
-  _dropPt.x = THREE.MathUtils.clamp(_dropPt.x, WADE_X + 0.4, CLIFF_BLOCK_X - 0.4);
-  _dropPt.y = Math.max(_dropPt.y, groundUnder(_dropPt.x, _dropPt.z)) + 0.04;
+  if (!inRoom()) _dropPt.x = THREE.MathUtils.clamp(_dropPt.x, WADE_X + 0.4, CLIFF_BLOCK_X - 0.4);
+  /* the floor is asked at YOUR feet's height, not the ray's — a wall hit has
+   * just thrown its own height away and a room's floor test needs a y that
+   * is actually in the room */
+  const g = groundUnder(_dropPt.x, _dropPt.z, camBaseY - playerEye() + 0.6);
+  _dropPt.y = Math.max(_dropPt.y, g) + 0.04;
   return _dropPt;
 }
 function throwHeld() {
@@ -5609,22 +5778,29 @@ const RING_SLOTS = 2;
 const rings = [];
 let ringsFound = false;
 const ringsEl = document.getElementById('rings');
-const ringSlotsEl = ringsEl.querySelector('.rslots');
+/* TWO PLACES SHOW THE SAME TWO SLOTS: the strip under the hotbar, which is
+ * what you glance at while you walk, and the pack, which is where you go to
+ * look at your things and which did not show them at all. One loop fills
+ * both, so a ring cannot be on one finger in one of them. */
+const ringSlotEls = [ringsEl.querySelector('.rslots'),
+                     document.querySelector('#pack-rings .rslots')].filter(Boolean);
 function renderRings() {
-  ringSlotsEl.innerHTML = '';
-  for (let i = 0; i < RING_SLOTS; i++) {
-    const item = rings[i];
-    const slot = document.createElement('div');
-    slot.className = 'rslot' + (item ? ' worn' : ' empty');
-    if (item) {
-      slot.innerHTML = iconHTML(item);
-      const lab = document.createElement('span');
-      lab.className = 'label';
-      lab.textContent = item.name + ' — take off';
-      slot.appendChild(lab);
-      slot.addEventListener('click', (e) => { e.stopPropagation(); takeOffRing(i); });
+  for (const host of ringSlotEls) {
+    host.innerHTML = '';
+    for (let i = 0; i < RING_SLOTS; i++) {
+      const item = rings[i];
+      const slot = document.createElement('div');
+      slot.className = 'rslot' + (item ? ' worn' : ' empty');
+      if (item) {
+        slot.innerHTML = iconHTML(item);
+        const lab = document.createElement('span');
+        lab.className = 'label';
+        lab.textContent = item.name + ' — take off';
+        slot.appendChild(lab);
+        slot.addEventListener('click', (e) => { e.stopPropagation(); takeOffRing(i); });
+      }
+      host.appendChild(slot);
     }
-    ringSlotsEl.appendChild(slot);
   }
   refreshUI();
 }
@@ -5638,6 +5814,14 @@ function wearRing(item) {
   sfxRingOn();
   return true;
 }
+/* AND A RING IN YOUR HAND GOES ON YOUR HAND. Putting one on was only ever
+ * reachable from the examine screen, on the argument that that is where you
+ * can see what you are wearing — true, and it also meant the one gesture
+ * everybody tries first, holding the thing up and pressing the button, did
+ * nothing at all. It is the shell's own `onListen` door: a held ring answers
+ * the primary action, and `updateHover` says so. Asked of the ITEM rather
+ * than of `ringItem`, so the next ring inherits it. */
+const canWearHeld = (it) => !!it && !!it.ring && !rings.includes(it) && rings.length < RING_SLOTS;
 function takeOffRing(i) {
   const item = rings[i];
   if (!item || inventory.length >= INV_MAX) return;
@@ -5648,6 +5832,13 @@ function takeOffRing(i) {
 }
 
 function addToInventory(item) {
+  /* AND THE SAME THING CANNOT BE HAD TWICE. Every takeable that can be
+   * picked up more than once (the shells, the note) builds a FRESH item
+   * object, so identity is a safe test — and it is needed now that dev mode
+   * hands out the dig tools whose world copies are still lying on the sand
+   * waiting to be taken. `wearRing` has refused a duplicate this way since
+   * the day a ring appeared twice. */
+  if (inventory.includes(item)) return true;
   if (inventory.length >= INV_MAX) return false;
   inventory.push(item);
   renderHotbar();
@@ -5802,9 +5993,14 @@ setInterval(() => {
   iconsPending = stillWaiting;
   if (ready) { renderHotbar(); if (invOpen) renderPack(); }
 }, 600);
+/* AND A STACK SAYS HOW MANY. `iconHTML` is the ONE door every slot goes
+ * through — the hotbar, the pack grid and the ring row all call it — so an
+ * item carrying a `count` shows it in all three by construction rather than
+ * by three loops remembering to. Only past one: a lone jar is a jar. */
 const iconHTML = (item) => {
   const src = itemIcon(item);
-  return src.startsWith('data:') ? `<img src="${src}" alt="">` : src;
+  const icon = src.startsWith('data:') ? `<img src="${src}" alt="">` : src;
+  return icon + (item.count > 1 ? `<span class="count">${item.count}</span>` : '');
 };
 /* The wheel walks the hotbar. Scroll down is the next thing in the strip,
  * up is the previous, wrapping — and it EQUIPS, because everything can be
@@ -5904,7 +6100,7 @@ function inspectFromPack(item) {
    * reason. Same trap the combine recipes hit. */
   packReturnLock = false;
   closePack();
-  openInspect(model, { ...opts, name: item.name });
+  openInspect(model, { ...opts, name: item.name, desc: item.desc || '' });
 }
 function renderPackDetail() {
   if (!invDetailEl) return;
@@ -5920,6 +6116,7 @@ function renderPackDetail() {
   const verb = item.viewmodel ? (item === equipped ? 'Holster' : 'Hold') : 'Use';
   invDetailEl.innerHTML = `<div class="big">${iconHTML(item)}</div>
     <div class="name">${item.name}</div>
+    ${item.desc ? `<div class="desc">${item.desc}</div>` : ''}
     <button type="button" class="act insp">Inspect</button>
     <button type="button" class="act hold">${verb}</button>
     <div class="hint">Drag onto another item to combine</div>`;
@@ -6996,7 +7193,13 @@ const MOUTH_POSE = [1.95, 0.15, 0.35, -0.30, 0];
 function holdable(item, model, { scale = 1, pos = [0, -0.02, 0], rot = [0, 0, 0] } = {}) {
   const vm = new THREE.Group();
   vm.visible = false;
-  vm.userData.build = () => {
+  /* AND IT CAN BE BUILT AGAIN. What you hold is a CLONE, so a change to the
+   * world object — the key coming out of the captain's mouth — does not
+   * reach it, and the key stayed in the teeth of the head in your fist. The
+   * builder is kept and clears the group first, so anything that changes the
+   * object under a held copy can simply ask for it again. */
+  const make = () => {
+    while (vm.children.length) vm.remove(vm.children[0]);
     const m = model.clone(true);
     /* AND THE PICKUP GLINT DOES NOT COME WITH IT. `addItemShine` hangs
      * Sprites on the world object so you can find the thing on a dark
@@ -7014,6 +7217,8 @@ function holdable(item, model, { scale = 1, pos = [0, -0.02, 0], rot = [0, 0, 0]
     m.rotation.set(rot[0], rot[1], rot[2]);
     vm.add(m);
   };
+  vm.userData.make = make;
+  vm.userData.build = make;
   toolMount.add(vm);
   item.viewmodel = vm;
   item.inspectModel = model;          // what the pack's Inspect button shows
@@ -7223,7 +7428,7 @@ function updateKatanaShine(dt) {
 }
 toolMount.add(katanaVM);
 const katanaItem = {
-  name: 'Katana', icon: makeKatanaIcon(), onDig: true, viewmodel: katanaVM,
+  name: 'Katana', desc: 'A Holy Blade', icon: makeKatanaIcon(), onDig: true, viewmodel: katanaVM,
   inspectModel: katInspect, lip: KAT_LIP,
   blade: true, dmgLight: 2, dmgHeavy: 3, windRate: 1.3, gore: 1.4, swingK: 0.9, recoverK: 4.0, glintSpan: 0.60, alternate: true,
   use: () => toggleEquip(katanaItem),
@@ -8234,7 +8439,7 @@ function hitConnect(P, k) {
  * whatever you happened to be carrying — sometimes nothing, because the run
  * TO the trigger is what emptied it — decided the opening exchange before
  * you had your hands. */
-function catchBreath() { stamina = 1; exhausted = false; }
+function catchBreath() { stamina = stamMax(); exhausted = false; }
 function bossHit(P, broke, flesh) {
   hitstop = Math.max(hitstop, broke ? 0.155 : 0.085);
   addTrauma((broke ? 0.55 : 0.30) + P * 0.30);
@@ -9015,9 +9220,19 @@ syringeWorld.rotation.set(0.1, 1.1, 0.5);
 
 let syringeTaken = false;
 const bloodJar = makeBloodJar();
-// The jar is never carried — it only exists as the model shown at the end
-// of an extraction, and as the running tally in the corner of the screen.
-const jarItem = null;
+/* AND THE JARS ARE CARRIED, AND THEY STACK. For a long time a jar was only
+ * ever two things — the model shown at the end of an extraction, and a
+ * number in the corner — so the one object in this game you collect more
+ * than one of was the one object you could not find in your own pack. It is
+ * an ITEM now, and because it is the same item object every time, `count` is
+ * the whole of stacking: `addToInventory` already refuses a duplicate by
+ * identity, so a second jar lands on the first instead of taking a slot. */
+const jarItem = {
+  id: 'bloodjar', name: 'Blood Jar', icon: makeBloodJarIcon(), count: 0,
+  desc: '120 mL of horseshoe-crab haemolymph',
+  use: () => toggleEquip(jarItem),
+};
+holdable(jarItem, bloodJar, { scale: 2.1, pos: [0, -0.04, 0], rot: [0.12, 0.45, 0.06] });
 const syringeItem = {
   id: 'syringe', name: 'Bleeding syringe', icon: makeSyringeIcon(),
   use: () => {
@@ -9093,12 +9308,7 @@ function finishExtraction() {
   // the corner, which is the only place it's ever shown.
   removeFromInventory(crabItem);
   renderHotbar();
-  bloodAmount += BLOOD_PER_CRAB;
-  bloodSeen = true;
-  bloodPulse = 1;
-  hudJar.userData.setFill(Math.min(1, bloodAmount / BLOOD_JAR_CAP));
-  updateBloodReadout();
-  sfxBloodGained();
+  gainJar();
   // show the jar as the payoff, then it's gone
   inspectSetModel(bloodJar);
   inspectRotX = 0.12; inspectRotY = 0.45; inspectDist = 3.7; inspectAuto = 0;
@@ -9360,16 +9570,24 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
 
   const first = m === mounds[0];               // THE first mound, not the first you happen to dig
   const second = m === mounds[1];              // and the second one has the CD in it
-  const relic = first ? makeGlowstick() : (second ? makeCdCase() : makeBuriedObject());
-  relic.position.set(m.x, first ? 0.055 : (second ? 0.052 : 0.09), m.z);
+  /* THE FIRST CACHE HAS A JAR OF BLUE BLOOD IN IT. The ring was here and has
+   * gone to the knight, which is the better place for it — a thing you fight
+   * for rather than a thing you dig up in the first five minutes — and what
+   * is buried here instead is a jar of the crab's own haemolymph. Somebody
+   * was out here bleeding them before you were, and that is the whole of
+   * what the cache says. It is also the second way to come by a jar, which
+   * is what turned the corner readout from a volume into a count. */
+  if (first) { dropJar(m.x, m.z); return; }
+  const relic = second ? makeCdCase() : makeBuriedObject();
+  relic.position.set(m.x, second ? 0.052 : 0.09, m.z);
   /* The CD is STOOD UP in the sand, not laid flat. Face up it is a
    * hand-sized rectangle seen edge-on from standing height and it read as a
    * sliver; leaning back out of the hole the cover faces you and catches
    * the moon. */
   relic.rotation.set(
-    first ? 0 : (second ? -0.62 : (Math.random() - 0.5) * 0.5),
+    second ? -0.62 : (Math.random() - 0.5) * 0.5,
     second ? Math.PI * 0.12 : Math.random() * Math.PI * 2,
-    first ? 0 : (second ? -0.16 : (Math.random() - 0.5) * 0.4));
+    second ? -0.16 : (Math.random() - 0.5) * 0.4);
   const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.36, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   proxy.name = 'hitProxy'; proxy.visible = false; relic.add(proxy);
@@ -9380,22 +9598,56 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
    * past people. Everything a mound gives up now carries the same shine
    * every other takeable does, at a good size, so there is something
    * standing where you dug once the sand settles. */
-  if (!first) addItemShine(relic, { size: 0.85, height: 0.16, strength: 1.5 });
-  if (first) { relic.updateMatrixWorld(true); placeGroundGlow(relic); }
-  addInteractable(relic, first ? 'Take the glowstick' : (second ? 'Take the CD' : 'Take the buried object'), 'inventory', {
+  addItemShine(relic, { size: 0.85, height: 0.16, strength: 1.5 });
+  addInteractable(relic, second ? 'Take the CD' : 'Take the buried object', 'inventory', {
     onActivate: () => {
-      if (first) sfxGlassPick(); else sfxThud(0.04);
+      sfxThud(0.04);
       scene.remove(relic);
-      if (first) placeGroundGlow(null);       // the held light takes over
       hovered = null;
-      if (first) { addToInventory(glowstickItem); toggleEquip(glowstickItem); }
-      else if (second) { addToInventory(cdItem); }
+      if (second) { addToInventory(cdItem); }
       else {
         const buried = { name: 'Buried object', icon: '📦' };
         buried.use = () => toggleEquip(buried);
         holdable(buried, makeBuriedObject(), { scale: 0.9, pos: [0, -0.03, 0], rot: [0.3, 0.6, 0.2] });
         addToInventory(buried);
       }
+    },
+  });
+}
+
+/* WHAT THE FIRST CACHE GIVES UP. A jar stood upright in the hole it came out
+ * of, under the same shine everything else a mound gives up carries — the
+ * mound's own convention, and the right one for glass: the ring was THROWN
+ * because a 20 mm ring set down quietly on a dark beach is a thing you walk
+ * over, and a 150 mm jar is not. Taking it runs the same `gainJar` the
+ * extraction does, so the corner cannot get out of step with what you have.
+ *
+ * The model is its OWN instance: `bloodJar` is the one the examine screen
+ * re-parents at the end of the extraction, and handing the same Group to two
+ * places is how a thing ends up in neither. */
+function dropJar(sx, sz) {
+  const jar = makeBloodJar();
+  jar.position.set(sx, 0.02, sz);
+  jar.rotation.y = Math.random() * Math.PI * 2;
+  jar.rotation.z = 0.05;                       // it has been lying in sand, not on a shelf
+  const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  proxy.name = 'hitProxy'; proxy.visible = false; proxy.position.y = 0.07;
+  jar.add(proxy);
+  scene.add(jar);
+  /* AND THE LIFT IS A THIRD, BECAUSE THE JAR HAS ITS OWN COLOUR. The stock
+   * shine raises the emissive of every material under it, which is right
+   * for a dark scan and swamps a thing whose whole point is that it is
+   * BLUE: at the full lift the glass, the blood and the label all came up
+   * together and what stood in the sand was a pale bottle. The sprite is
+   * what finds it in the dark; the lift only has to keep it off black. */
+  addItemShine(jar, { size: 0.85, height: 0.18, strength: 1.5, lift: 0.3 });
+  addInteractable(jar, 'Take the jar', 'inventory', {
+    onActivate: () => {
+      scene.remove(jar);
+      removeInteractable(jar);
+      hovered = null;
+      gainJar();
     },
   });
 }
@@ -10593,7 +10845,34 @@ hudJarPivot.add(hudJar);
   hudJar.userData.setFill(0);
 }
 let jarSpin = 0, bloodPulse = 0;
-function updateBloodReadout() { bloodAmtEl.textContent = String(bloodAmount); }
+/* A COUNT BESIDE THE JAR, AND NOTHING ELSE. The icon is a jar, so the words
+ * "blood jar" beside a picture of one were the label naming its own drawing.
+ * "1x" is what a tally reads as, and it is the blood's own blue. */
+function updateBloodReadout() {
+  bloodAmtEl.textContent = bloodJars + 'x';
+  if (bloodUnitEl) bloodUnitEl.textContent = '';
+}
+/* ONE DOOR, because there are two ways to come by a jar now — bleeding the
+ * crab yourself, and the one somebody left in the first cache — and a tally
+ * with two entrances is a tally that gets out of step with the corner. */
+function gainJar(n = 1) {
+  bloodJars += n;
+  bloodSeen = true;
+  bloodPulse = 1;
+  hudJar.userData.setFill(0.86);       // a jar is a jar: the icon is always full
+  /* AND IT GOES IN THE PACK. The tally and the slot are the same number, so
+   * they are written in the same place: `count` first, THEN the add, because
+   * `renderHotbar`/`renderPack` draw the badge off it. A jar already in the
+   * pack simply has a bigger number on it — `addToInventory` refuses the
+   * duplicate by identity and returns true, which is exactly the behaviour a
+   * stack wants out of it. */
+  jarItem.count = bloodJars;
+  addToInventory(jarItem);
+  renderHotbar(); renderPack();
+  updateBloodReadout();
+  sfxBloodGained();
+}
+
 function renderBloodJar(dt) {
   if (!bloodSeen || !bloodEl.classList.contains('show')) return;
   jarSpin += dt * 1.1;
@@ -10798,7 +11077,7 @@ if (lhParts.lampProxy) {
 // a metre and a half off the cliff foot, where the moon actually reaches — at
 // x = 12.8 it stood in the cliff's own shadow and read as a dark box at best
 const CRATE_X = 11.4, CRATE_R = 0.52, CRATE_H = 0.72;
-const CRATE_POWER = 0.75;              // ~0.64 s of charge — a real haul-back
+const CRATE_POWER = 0.75;              // kept for the save's sake; no longer a gate — any hit opens a crate
 const crateZ = bradly.position.z - 2.5;
 /* There is more than one now — the dock has its own — so the crate is a
  * factory: `buildCrate(x, y, z, yaw, onBreak)` builds the boards, stands a
@@ -10907,7 +11186,7 @@ function buildCrate(x, y, z, yaw, onBreak) {
   crates.push(entry);
   return entry;
 }
-const crateEntry = buildCrate(CRATE_X, 0, crateZ, -0.32, () => dropRing());
+const crateEntry = buildCrate(CRATE_X, 0, crateZ, -0.32, (c) => dropGlowstick(c));
 const crate = crateEntry.group;
 
 /* The castle under the blade. Any swing takes it — it is sand — and the
@@ -10930,30 +11209,41 @@ function crateStrike(P) {
   for (const c of crates) {
     if (c.broken) continue;
     if (!digRay.intersectObject(c.group, true).length) continue;
-    if (P >= CRATE_POWER) { hitConnect(P, 1); flashMats(c.group); breakCrate(c); return true; }
-    hitConnect(P, 0.45); flashMats(c.group);
-    // it holds. The blade jars back at you, and a puff of dust off the boards
-    // says you connected — a swing that hits and does nothing must not feel
-    // the same as a swing that hit nothing at all.
-    sfxCrateThud();
-    addTrauma(0.17);
-    vmImpulse(-1.15);
-    spawnPuffs(c.x, c.z, 5, _pf.x, _pf.z, c.y + CRATE_H * 0.7, [0.52, 0.42, 0.30]);
+    /* ANY HIT BREAKS IT, LIGHT OR HEAVY — the owner's word. It was the game's
+     * one lock (`CRATE_POWER`, about two thirds of a charge) and the one
+     * place that asked for the heavy swing by name; a click thudded off the
+     * boards and did nothing, which is a thing you can do three times before
+     * you work out the game wants something else from you. The charge is
+     * still worth holding everywhere it was — it is two points of damage
+     * against one, it reaches further, and it breaks poise — it simply no
+     * longer gates a box. The blow still SCALES: a click taps it apart, a
+     * charge throws the boards. */
+    hitConnect(P, Math.max(0.55, P));
+    flashMats(c.group);
+    breakCrate(c, P);
     return true;
   }
   return false;
 }
 
-function breakCrate(c = crates[0]) {
+/* `quiet` is the RESTORE: a crate you broke an hour ago comes back broken,
+ * and it must not come back EXPLODING — no bang, no shake, no boards in the
+ * air, just the thing already open and whatever was in it on the sand. */
+function breakCrate(c = crates[0], P = 1, quiet = false) {
   if (!c || c.broken) return;
   c.broken = true;
   scene.remove(c.group);
   const ci = rockColliders.indexOf(c.collider);
   if (ci >= 0) rockColliders.splice(ci, 1);
+  if (quiet) { if (c.onBreak) c.onBreak(c); return; }
   sfxCrateBreak();
-  addTrauma(0.5);
-  hitstop = 0.06;
-  spawnPuffs(c.x, c.z, 18, _pf.x, _pf.z, c.y + CRATE_H * 0.6, [0.52, 0.42, 0.30]);
+  /* HOW HARD IT CAME APART IS HOW HARD IT WAS HIT. Now that a click opens a
+   * crate, the charge has to be worth something here anyway: a tap drops the
+   * boards at your feet and a full swing throws them. */
+  const k = 0.55 + P * 0.75;
+  addTrauma(0.5 * k);
+  hitstop = 0.04 + P * 0.04;
+  spawnPuffs(c.x, c.z, Math.round(10 + P * 12), _pf.x, _pf.z, c.y + CRATE_H * 0.6, [0.52, 0.42, 0.30]);
 
   // the boards, as real gibs so they bounce and settle with everything else
   const splint = new THREE.MeshStandardMaterial({
@@ -10967,10 +11257,10 @@ function breakCrate(c = crates[0]) {
       c.y + 0.1 + Math.random() * CRATE_H, c.z + (Math.random() - 0.5) * 0.5);
     m.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
     scene.add(m);
-    const a = Math.random() * Math.PI * 2, out = 0.9 + Math.random() * 2.0;
+    const a = Math.random() * Math.PI * 2, out = (0.9 + Math.random() * 2.0) * k;
     gibs.push({
       m,
-      vel: new THREE.Vector3(Math.cos(a) * out, 1.9 + Math.random() * 2.4, Math.sin(a) * out),
+      vel: new THREE.Vector3(Math.cos(a) * out, (1.9 + Math.random() * 2.4) * k, Math.sin(a) * out),
       spin: new THREE.Vector3((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14),
       rest: 0.02, life: 40, bleed: false,   // the deck, if any, is found per frame
     });
@@ -10978,14 +11268,59 @@ function breakCrate(c = crates[0]) {
   if (c.onBreak) c.onBreak(c);
 }
 
+/* ---- WHAT THE CRATE HAS IN IT: THE LIGHT.
+ *
+ * It lands on the sand where the boards were, already lit — which is the
+ * whole reason it is the crate's and not a cache's now. You break a box open
+ * in the dark and something in it is glowing; there is no shine to add and
+ * nothing to miss, because the thing IS the light. */
+function dropGlowstick(c) {
+  const g = makeGlowstick();
+  g.position.set(c.x + (Math.random() - 0.5) * 0.22, c.y + 0.055, c.z + (Math.random() - 0.5) * 0.22);
+  g.rotation.set(0, Math.random() * Math.PI * 2, 0);
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.32, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy'; hit.visible = false; hit.position.y = 0.05;
+  g.add(hit);
+  scene.add(g);
+  g.updateMatrixWorld(true);
+  placeGroundGlow(g);
+  addInteractable(g, 'Take the glowstick', 'inventory', {
+    onActivate: () => {
+      sfxGlassPick();
+      scene.remove(g);
+      removeInteractable(g);
+      placeGroundGlow(null);                 // the held light takes over
+      hovered = null;
+      addToInventory(glowstickItem);
+      toggleEquip(glowstickItem);
+    },
+  });
+}
+
 /* What was in it. The ring goes down on the sand where the crate stood, with
  * the same shine every other takeable thing carries — at 20 mm across it is
  * the smallest object in the game, and without the glint you would walk over
  * it in the dark. */
 /* The ring is a scan — Thunk3D's "Octopus Ring" — not the built signet that
- * was here before. `assets/octopus-ring.glb` is the lowest of the seven LODs
- * the download ships (7k triangles, which is plenty at 20 mm), packed with
- * `--nodes`; it carries no maps at all, being a raw STL scan, so the metal is
+ * was here before.
+ *
+ * AND IT SHIPPED AS ONE SEVENTH OF ITSELF FOR MONTHS. The download splits
+ * into `Object_0..6` and the triangle counts fall away like an LOD chain
+ * (84k, 83k, 79k, 67k, 47k, 33k, 7k), so the smallest was packed with
+ * `--nodes` and a comment written calling it "the lowest of the seven LODs".
+ * This file's own first note about this model says otherwise and says why:
+ * a Sketchfab splitter walks the TRIANGLE LIST, not the surface, so those
+ * are CHUNKS — seven scatters of triangles over the whole ring — and the
+ * smallest is 7,165 of the model's 400,540, which is under two per cent of
+ * it. What the owner has been looking at is a cloud of specks in the shape
+ * of a ring, which is exactly what the note predicted and nobody checked.
+ *
+ * `--decimate` is the answer and always was: it merges every primitive in
+ * world space FIRST and then vertex-clusters the result, which welds where
+ * dropping shreds. 400,540 triangles down to 45,000 is 0.5 MB — the whole
+ * octopus, at a density that survives being turned over on the examine
+ * screen. It carries no maps at all, being a raw STL scan, so the metal is
  * all in the material. It loads async, so `ring` is a Group that stays empty
  * until it lands and everything downstream — the world drop, the inspect
  * view, the hotbar icon — works off the Group either way. */
@@ -10993,69 +11328,61 @@ const ring = new THREE.Group();
 const ringWorld = new THREE.Group();
 ringWorld.add(ring);
 bwGlb('assets/octopus-ring.glb', (gltf) => {
+  /* THE SCAN, WHOLE. Every earlier build of this took the model apart in one
+   * way or another — first one of its seven CHUNKS as if the split were an
+   * LOD chain (7,165 of 400,540 triangles, which renders as a cloud of
+   * specks), then `--decimate` down to 45,000, which welds rather than
+   * shreds but throws the NORMALS away and leaves a surface with no uv, so
+   * the metal had to come from Poly Haven's rust on a triplanar projection.
+   * The owner's word is to scrap all of that and ship what Sketchfab ships.
+   *
+   * So this is Thunk3D's file untouched: all 400,540 triangles across its
+   * own seven meshes, its own per-vertex NORMALS — which is the whole reason
+   * it reads as a sculpted animal rather than a bag of facets — and its own
+   * material, which carries no map of any kind (measured on the source: no
+   * images, no textures, no TEXCOORD, no COLOR_0; one material at metallic
+   * 0, roughness 0.6). There is nothing to project because there was never
+   * anything to project ONTO, and inventing rust for it was the liberty.
+   * It costs 12.3 MB and it is at the back of `ASSET_REACH`, because you
+   * take it off a knight at the end of a church.
+   *
+   * What it does need is this beach's own night. A white rough dielectric
+   * under one quarter moon is a pale grey blob, so it is graded the way
+   * every other scan here is graded — the map's own level brought to dark
+   * metal and an emissive lift that is the only thing carrying the face you
+   * are walking toward, since you walk INTO the moon and every surface
+   * ahead of you is backlit. METALNESS STAYS AT ZERO: the source says so,
+   * and this game has no environment map. */
   gltf.scene.updateMatrixWorld(true);
-  /* RUSTED IRON, and the texture is projected, not mapped. The scan has no
-   * UVs — it is a raw STL, and an STL cannot carry them — so Poly Haven's
-   * "Rusty Metal 02" (assets/rust-diff.jpg, rust-rough.jpg, cut to 512 and
-   * 256) goes on TRIPLANAR: sampled three times in the ring's own object
-   * space, along each axis, and blended by the face normal. No seams, no
-   * unwrap, and it follows every pit in the scan. `uTri` is the tiling — the
-   * geometry is ~28 units across, so 0.062 puts about two repeats round it,
-   * which is the scale at which the rust reads as rust and not as noise.
-   *
-   * DoubleSide because a raw STL's winding cannot be relied on, and low
-   * metalness because there is no environment map here and a true metal
-   * has no diffuse — at 0.6 the ring is a scatter of lit specks on black.
-   * The emissive is multiplied by the same sample, so the lift that keeps it
-   * visible on dark sand follows the rust instead of flattening it.
-   *
-   * The blend normal comes from screen derivatives of the object-space
-   * position, NOT from the normal attribute: the decimated pack carries only
-   * positions and indices, so `normal` reads as zero, the three weights sum
-   * to nothing, and every sample is black — the ring rendered as a cut-out.
-   * Flat shading never noticed, because three derives its lighting normal
-   * the same way; the projection has to as well. */
-  const rustDiff = retroTex(new THREE.TextureLoader().load('assets/rust-diff.jpg'));
-  rustDiff.colorSpace = THREE.SRGBColorSpace;
-  const rustRough = retroTex(new THREE.TextureLoader().load('assets/rust-rough.jpg'));
-  const iron = new THREE.MeshStandardMaterial({
-    color: 0xe0d6c8, map: rustDiff, roughnessMap: rustRough, roughness: 1.0, metalness: 0.14,
-    emissive: 0x9a6a3c, side: THREE.DoubleSide, flatShading: true,
+  /* AND THE MATERIAL IS THE ONE IN THE FILE. There is no map to fetch — the
+   * download carries no image, no texture and no COLOR_0 — so "the right
+   * texture, like the Sketchfab model" is the material the viewer is
+   * showing: white, metallic 0, roughness 0.6, which on a scan of a pale
+   * resin print reads as bone. The build before this graded it to a brown
+   * (0x6f6a63 under an orange lift) and it came out as tan batter. It is
+   * held just off white here and lifted enough to carry under a quarter
+   * moon, which is the only liberty this beach takes with any scan. */
+  const metal = new THREE.MeshStandardMaterial({
+    color: 0xd9d4cb, roughness: 0.6, metalness: 0,
+    emissive: 0x4a4740, emissiveIntensity: 1, side: THREE.DoubleSide,
   });
-  iron.onBeforeCompile = (sh) => {
-    sh.uniforms.uTri = { value: 0.062 };
-    sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTri; varying vec3 vTriP;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvTriP = position * uTri;');
-    sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>
-varying vec3 vTriP;
-vec4 triSample(sampler2D t, vec3 p, vec3 n) {
-  vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y + w.z + 1e-4);
-  return texture2D(t, p.yz) * w.x + texture2D(t, p.xz) * w.y + texture2D(t, p.xy) * w.z;
-}`)
-      .replace('#include <map_fragment>',
-        'vec3 triN = normalize(cross(dFdx(vTriP), dFdy(vTriP)));\n  vec4 triCol = triSample(map, vTriP, triN);\n  diffuseColor *= triCol;')
-      .replace('#include <roughnessmap_fragment>',
-        'float roughnessFactor = roughness * triSample(roughnessMap, vTriP, triN).g;')
-      .replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance *= triCol.rgb * 1.8;');
-  };
-  let geo = null;
-  gltf.scene.traverse((o) => { if (o.isMesh && !geo) geo = o.geometry.clone().applyMatrix4(o.matrixWorld); });
-  if (!geo) return;
-  // the scan arrives ~30 units across and centred on nothing in particular:
-  // recentre it and fit it to a ring you could actually wear
-  geo.computeBoundingBox();
-  const bb = geo.boundingBox, size = bb.getSize(new THREE.Vector3()), mid = bb.getCenter(new THREE.Vector3());
-  geo.translate(-mid.x, -mid.y, -mid.z);
-  // USE_MAP wants a uv attribute even though the projection never reads it
-  geo.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2));
-  const m = new THREE.Mesh(geo, iron);
-  m.scale.setScalar(0.055 / Math.max(size.x, size.y, size.z));   // big enough to spot on dark sand
-  ring.add(m);
+  const box = new THREE.Box3().setFromObject(gltf.scene);
+  const size = box.getSize(new THREE.Vector3()), mid = box.getCenter(new THREE.Vector3());
+  const k = 0.055 / Math.max(size.x, size.y, size.z);   // big enough to spot on dark sand
+  /* The seven meshes are kept as seven meshes — they are chunks of one
+   * surface, so merging them would be exact and would also mean rebuilding
+   * buffers this file has no reason to touch. They are re-centred as a
+   * GROUP, which is the only way to keep them in register with each other. */
+  const inner = new THREE.Group();
+  gltf.scene.traverse((o) => { if (o.isMesh) o.material = metal; });
+  inner.add(gltf.scene);
+  gltf.scene.position.sub(mid);
+  inner.scale.setScalar(k);
+  ring.add(inner);
 });
 const ringItem = {
   id: 'ring', name: 'The Octopus Ring', icon: makeRingIcon(), ring: true,
+  desc: '10% Stamina Increase',
   use: () => toggleEquip(ringItem),
   // Putting it ON still happens in the examine screen — which you now reach
   // from the pack — because that is where you can see what you are wearing.
@@ -11066,6 +11393,13 @@ const ringItem = {
   }),
 };
 holdable(ringItem, ring, { scale: 2.2, pos: [0, -0.02, 0], rot: [1.1, 0.3, 0.2] });
+/* AND WEARING IT IS WORTH SOMETHING. A tenth more bar is a tenth more
+ * blocking, sprinting and stepping out of the way — the three things the
+ * bar is spent on — so it reads in a fight rather than on a sheet. It is
+ * the WORN ring that pays, not the one in your pack: `rings[]` is what is
+ * on your hand, which is the whole reason it is a separate list. */
+const RING_STAM = 0.10;
+stamMax = () => 1 + (rings.includes(ringItem) ? RING_STAM : 0);
 /* It comes OUT. Set down quietly on the sand where the crate stood, a 20 mm
  * ring is the easiest thing in the game to walk away from; so it is thrown
  * up out of the boards on a real body, toward you, rings off the sand when
@@ -11141,10 +11475,15 @@ function dropKey(c) {
 }
 
 let ringProp = null;
-function dropRing() {
+/* WHERE IT COMES FROM IS THE CALLER'S BUSINESS. It was thrown out of the
+ * crate under Bradly; it is dug out of the first cache now, and the only
+ * difference between those is where it lands and how hard it is tossed —
+ * a thing that comes out of a hole in the sand is lifted out of it, not
+ * flung across the beach. */
+function dropRing(sx = CRATE_X, sy = CRATE_H * 0.55, sz = crateZ, toss = 1.6) {
   ring.position.set(0, 0.012, 0);
   ring.rotation.set(Math.PI / 2 - 0.35, 0.4, 0);      // flat, tipped a little
-  ringWorld.position.set(CRATE_X, CRATE_H * 0.55, crateZ);
+  ringWorld.position.set(sx, sy, sz);
   scene.add(ringWorld);
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
@@ -11154,18 +11493,23 @@ function dropRing() {
   // a body of its own, but NOT makeProp(): that would register it as a
   // grab-and-throw physics prop, and a ring is a thing you take
   ringProp = new PhysProp(ringWorld, { radius: 0.05, restH: 0.012, bounce: 0.38, friction: 0.55 });
-  const tx = camera.position.x - CRATE_X, tz = camera.position.z - crateZ;
+  const tx = camera.position.x - sx, tz = camera.position.z - sz;
   const td = Math.hypot(tx, tz) || 1;
-  ringProp.vel.set((tx / td) * 1.6 + (Math.random() - 0.5) * 0.4, 3.4, (tz / td) * 1.6 + (Math.random() - 0.5) * 0.4);
+  ringProp.vel.set((tx / td) * toss + (Math.random() - 0.5) * 0.4, 2.0 + toss, (tz / td) * toss + (Math.random() - 0.5) * 0.4);
   ringProp.angVel.set(6, 9, 4);
   let rang = false;
   ringProp.onImpact = (speed) => { if (!rang && speed > 1.2) { rang = true; sfxRingLand(); } };
   // the glint sits well up off the sand: at height 0.12 a 1.5 m sprite had
   // its lower half under the beach and drew a hard line where the sand cut it
-  addItemShine(ringWorld, { size: 1.2, height: 0.5, strength: 3.2 });
+  /* AND IT SHOWS THROUGH WHAT IT LANDED IN. It comes off the knight now, so
+   * where it lands is the middle of a nave he has just driven seventeen pews
+   * through — the one case `through` exists for: a second, fainter sprite
+   * that ignores depth, so a plank across the ring dims the mark instead of
+   * deleting it. */
+  addItemShine(ringWorld, { size: 1.3, height: 0.5, strength: 3.2, through: true });
   // and the metal itself catches the moon while it lies out here — a 20 mm
   // ring with the inspect view's emissive is invisible on night sand
-  ring.traverse((o) => { if (o.isMesh && o.material.emissive) o.material.emissive.setHex(0xe0a868); });
+  ring.traverse((o) => { if (o.isMesh && o.material.emissive) o.material.emissive.setHex(0x8e8a80); });
   addInteractable(ringWorld, 'Take the ring', 'inventory', {
     onActivate: () => {
       ringProp.dead = true;
@@ -11774,9 +12118,150 @@ function sfxStepWood() {
  * out. The nave keeps its recorded stone floor — that one is a church and
  * should sound like one — and everywhere else underground is the game's own
  * step, which is what the drain had before any of this. */
+/* ---- ARE YOU IN THE CHANNEL? The tunnel's floor is a plane of standing
+ * water down the middle of the bore — it is what you actually wade along —
+ * and it made no sound at all, so the one stretch of the game where you can
+ * see you are walking through water was the one where you could not hear it.
+ * The module hands over the plane's top and its footprint; a foot is in it
+ * when it is inside that footprint and within a boot's depth of the top. */
+function ucInWater() {
+  if (!inUndercroft || !UC.ready || !UC.water) return false;
+  const lx = camera.position.x - UC_X, lz = camera.position.z - UC_Z;
+  /* AND IT IS THE TUNNEL'S CHANNEL, NOT ANY FLOOR AT THAT HEIGHT. The
+   * water's BOUNDING BOX is fifteen metres wide and a hundred and fifty
+   * long — far bigger than the plane's drawn extent — and its far end laps
+   * seven metres into the nave, so a box test alone splashed on the
+   * church's flags. `inPassage` is the model's own footprint and it is the
+   * question actually being asked. */
+  if (UC.inPassage && !UC.inPassage(lx, lz)) return false;
+  const W = UC.water;
+  if (lx < W.x0 || lx > W.x1 || lz < W.z0 || lz > W.z1) return false;
+  const feet = camBaseY - playerEye() - UC_Y;
+  return feet < W.y + 0.10 && feet > W.y - 0.55;
+}
+/* AND A SPLASH WITHOUT BUBBLES IS A NOISE BURST, AND A NOISE BURST IS SAND.
+ *
+ * The last pass took the dry footstep out from under the splash, which was
+ * right and was not enough: what replaced it was four layers of FILTERED
+ * NOISE, and filtered noise is exactly what sand is. Band-limit it, sweep
+ * the filter, stack four of them — it is still a shaped hiss, so the owner
+ * heard sand a second time.
+ *
+ * What makes water sound like water is not its spectrum, it is that it
+ * RINGS. A bubble entrained by a splash is a Helmholtz resonator: it
+ * oscillates at f = 3.26 / r Hz (Minnaert), and because it shrinks and
+ * damps as it collapses the tone slides UP as it dies. That is the "plink",
+ * and a few dozen of them at once over a couple of hundred milliseconds is
+ * the whole difference between a puddle and a handful of gravel. Nothing
+ * dry does it: sand has no cavity to resonate in.
+ *
+ * So the step is the four movements it always had — the surface breaking,
+ * the column shoved aside, the stone muffled under it, the water closing
+ * back — with a SCATTER OF BUBBLES through the middle of it, each a short
+ * sine chirped upward, small ones bright and quick and the odd big one low
+ * and slower. They are what you actually hear; the noise is the bed they
+ * sit on, and it is quieter than it was because it no longer has to carry
+ * the sound on its own. */
+function sfxStepPuddle() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const out = ctx.createGain();
+  out.gain.value = 0.62 * (0.78 + Math.random() * 0.4);
+  out.connect(sfxOut());
+
+  // 1. the surface breaking: broad, immediate, gone in a twelfth of a second
+  const sp = noiseBurst(0.10, (x) => Math.pow(1 - x, 2.6));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
+  bp.frequency.setValueAtTime(1050 + Math.random() * 420, t);
+  bp.frequency.exponentialRampToValueAtTime(480, t + 0.09);
+  bp.Q.value = 0.7;
+  const spg = ctx.createGain(); spg.gain.value = 0.62;
+  sp.connect(bp).connect(spg).connect(out);
+  sp.start(t); sp.stop(t + 0.10);
+
+  // 2. the column shoved aside — the mass of it
+  const bod = noiseBurst(0.16, (x) => Math.pow(1 - x, 1.6) * Math.min(1, x * 14));
+  const lf = ctx.createBiquadFilter(); lf.type = 'lowpass';
+  lf.frequency.setValueAtTime(500 + Math.random() * 150, t);
+  lf.frequency.exponentialRampToValueAtTime(150, t + 0.15);
+  lf.Q.value = 3.0;
+  const bg = ctx.createGain(); bg.gain.value = 0.7;
+  bod.connect(lf).connect(bg).connect(out);
+  bod.start(t); bod.stop(t + 0.16);
+
+  // 3. the stone under it, muffled by the water over it
+  const st = noiseBurst(0.07, (x) => Math.pow(1 - x, 4.2));
+  const sf = ctx.createBiquadFilter(); sf.type = 'lowpass';
+  sf.frequency.value = 210 + Math.random() * 70;
+  const sg = ctx.createGain(); sg.gain.value = 0.34;
+  st.connect(sf).connect(sg).connect(out);
+  st.start(t + 0.012); st.stop(t + 0.082);
+
+  /* 4. THE BUBBLES. Fourteen of them over the first fifth of a second, each
+   * a sine that starts at its Minnaert tone and slides a third to a half of
+   * an octave UP as it collapses — the rise is what stops it reading as a
+   * bell. The big slow ones come first (a boot displaces the large cavities
+   * as it goes in) and the fine spray follows. */
+  const nB = 11 + Math.floor(Math.random() * 5);
+  for (let i = 0; i < nB; i++) {
+    const early = i / nB;                              // big and low first, fine and bright after
+    const f0 = 430 + Math.pow(early, 0.7) * 2300 * (0.6 + Math.random() * 0.8);
+    const d = 0.012 + early * 0.16 * Math.random() + Math.random() * 0.02;
+    const life = 0.035 + (1 - early) * 0.055 + Math.random() * 0.02;
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(f0, t + d);
+    o.frequency.exponentialRampToValueAtTime(f0 * (1.28 + Math.random() * 0.3), t + d + life);
+    const g = ctx.createGain();
+    const amp = (0.055 + (1 - early) * 0.05) * (0.5 + Math.random() * 0.8);
+    g.gain.setValueAtTime(0.0001, t + d);
+    g.gain.exponentialRampToValueAtTime(amp, t + d + 0.0035);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + d + life);
+    o.connect(g).connect(out);
+    o.start(t + d); o.stop(t + d + life + 0.01);
+  }
+
+  // 5. the water closing back over the boot
+  const cl = noiseBurst(0.14, (x) => Math.pow(1 - x, 2.8) * Math.min(1, x * 9));
+  const cf = ctx.createBiquadFilter(); cf.type = 'bandpass';
+  cf.frequency.value = 700 + Math.random() * 280; cf.Q.value = 0.9;
+  const cg = ctx.createGain(); cg.gain.value = 0.34;
+  cl.connect(cf).connect(cg).connect(out);
+  cl.start(t + 0.055); cl.stop(t + 0.195);
+}
+/* AND YOU SEE IT AS WELL AS HEAR IT. A puddle you can only hear is a sound
+ * effect; what says you are wading is water coming up off your boot. A
+ * handful of drops out of the channel's own surface, thrown the way you are
+ * going — the beach's own splash pool, told which water it came out of. */
+function ucStepSplash() {
+  if (!ucInWater() || !UC.water) return;
+  camera.getWorldDirection(_pf);
+  const y = UC_Y + UC.water.y;
+  /* SIX DROPS, NOT THREE. Verified firing — a walk down the tunnel puts eleven
+   * live drops in the pool — and the owner still could not see them, which for
+   * three specks a step at a third power is fair enough. Subtle is the brief;
+   * invisible is not. */
+  spawnSplash(camera.position.x + _pf.x * 0.25, camera.position.z + _pf.z * 0.25,
+              6, _pf.x, _pf.z, 0.48, y + 0.01);
+}
 function sfxStepUnder() {
   stepAlt ^= 1;
   if (ucInChurch() && playSample('churchStep', 0.62 * (stepAlt ? 1 : 0.86), 0.05)) return;
+  /* IN THE CHANNEL THE WATER IS THE STEP — AND IT IS THE SEA'S OWN STEP.
+   * It used to be the dry sand step with a splash laid over it, and a dry
+   * step under a splash still sounds dry; then it was synthesised, and a
+   * synthesised one is four layers of filtered noise, which is what sand is.
+   * The owner's own WADE recordings are already in the game for walking
+   * through the surf and they are the same event — a boot going into shallow
+   * water over something hard — so the channel plays those, a little lower
+   * (0.88 of the rate) because a tunnel is a smaller room than an ocean and
+   * the water in it is an inch deep rather than a foot. The synthesised
+   * puddle stays as the fallback for the frames before the bank is off the
+   * network, the katana's own arrangement. */
+  if (ucInWater()) {
+    if (!playSample('wade', 0.5 * (stepAlt ? 1 : 0.86), 0.05, 0.88)) sfxStepPuddle();
+    ucStepSplash();
+    return;
+  }
   sfxStep();
 }
 function sfxStepDrain() { sfxStep(); }
@@ -11853,17 +12338,55 @@ function sfxRingOn() {
 }
 // a ring landing on sand: a bright ting that rings on a moment, then stops
 // dead as the sand takes it
+/* A RING LANDING ON STONE, AND THE SETTLE IS THE WHOLE TELL. Three pure
+ * sines was a doorbell: a metal ring is a free circular body and its
+ * flexural modes are INHARMONIC — near 1 : 2.76 : 5.4 : 8.9 — so any stack
+ * of harmonics reads as a chime rather than as metal. And the thing that
+ * makes a small hard ring unmistakable is not the impact at all, it is what
+ * happens afterwards: it lands, tips, and spins down flat, tapping the
+ * floor faster and faster over the best part of a second. Nothing else in
+ * this game sounds like that, and nothing else needs to. */
 function sfxRingLand() {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime;
-  for (const [f, g0, dur] of [[3120, 0.06, 0.34], [4660, 0.03, 0.22], [1980, 0.02, 0.4]]) {
-    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+  const out = ctx.createGain(); out.gain.value = 0.9; out.connect(sfxOut());
+  const f0 = 2350 + Math.random() * 500;
+
+  // the contact itself: a hard bright tick, over before you can hear a pitch
+  const tick = noiseBurst(0.025, (x) => Math.pow(1 - x, 6));
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2600;
+  const tg = ctx.createGain(); tg.gain.value = 0.09;
+  tick.connect(hp).connect(tg).connect(out);
+  tick.start(t); tick.stop(t + 0.025);
+
+  // and the ring's own modes under it
+  for (const [r, g0, dur] of [[1, 0.055, 0.42], [2.76, 0.035, 0.30], [5.4, 0.018, 0.20], [8.9, 0.010, 0.13]]) {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f0 * r;
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(g0, t + 0.003);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g).connect(sfxOut());
+    o.connect(g).connect(out);
     o.start(t); o.stop(t + dur + 0.02);
+  }
+
+  /* THE SPIN-DOWN. Each tap is the rim meeting the floor once per turn, and
+   * the turns get quicker as it flattens, so the gap closes geometrically
+   * until it is a buzz and stops. */
+  let d = 0.26, gap = 0.085;
+  for (let i = 0; i < 26 && d < 1.25; i++) {
+    const a = 0.030 * Math.pow(1 - d / 1.3, 1.4);
+    if (a > 0.0006) {
+      const o = ctx.createOscillator(); o.type = 'sine';
+      o.frequency.value = f0 * (1 + i * 0.012);        // it tightens as it flattens
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t + d);
+      g.gain.exponentialRampToValueAtTime(a, t + d + 0.001);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.035);
+      o.connect(g).connect(out);
+      o.start(t + d); o.stop(t + d + 0.045);
+    }
+    d += gap; gap *= 0.86;
   }
 }
 // taking it off - the same tick, lower, and without the cloth
@@ -12710,6 +13233,10 @@ const drainTunnel = makeDrainageTunnelHome({
 });
 drainTunnel.position.set(DRAIN_X, 0, DRAIN_Z);
 scene.add(drainTunnel);
+// and it stands at the dead end behind the spawn, so it is drawn for a
+// kilometre of walking that never looks at it: 29 draws a frame, culled
+// the same way the pier and the camp are
+farProps.push({ obj: drainTunnel, z: DRAIN_Z, d: 300 });
 /* and merged, here, before the gate and the eyes and the drips are hung on
  * it below — 129 draws for fifteen thousand triangles, which is the ribs of
  * the bore and every fixture on the wall drawn one at a time. `bakeScatter`
@@ -13056,6 +13583,17 @@ function sfxGulp() {
     n.connect(lp).connect(ng).connect(g); n.start(t + 0.02); n.stop(t + 0.18);
   }
 }
+/* A FOUND BOTTLE IS A FULL ONE. The sips live on a counter and the water is
+ * drawn on TWO models — the world one the examine screen and the hand both
+ * clone from, and the copy actually in your hand — so filling it has to
+ * write all three or the bottle you just picked up comes up empty. */
+function refillBottle() {
+  waterSips = 1;
+  waterBottle.userData.setFill(0.94);
+  const src = waterBottle.userData.parts.water;
+  const vm = waterBottleItem.viewmodel && waterBottleItem.viewmodel.getObjectByName('water');
+  if (vm) { vm.scale.copy(src.scale); vm.position.copy(src.position); vm.visible = src.visible; }
+}
 function sfxBottleEmpty() {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime, out = sfxOut();
@@ -13123,7 +13661,10 @@ function warmDrain() {
   const IN = [DRAIN_X + DN.ROOM_X0 + 1, 1.7, DRAIN_Z, DRAIN_X + DN.ROOM_X1, 1.6, DRAIN_Z];
   warmStep('drain compile', () => warmCompile([drainTunnel], ...OUT));
   for (let k = 0; k < 16; k++) warmStep('drain', () => warmView([drainTunnel], ...OUT, [k, 16]));
-  warmStep('drain', () => warmView([drainTunnel], ...IN));
+  // and the chamber from within is the OTHER half of the room's meshes, so
+  // it wants slicing too: unsliced it was the worst frame of the boot after
+  // the undercroft's
+  for (let k = 0; k < 8; k++) warmStep('drain', () => warmView([drainTunnel], ...IN, [k, 8]));
 }
 
 
@@ -13410,6 +13951,28 @@ if (mounds.length > 1) {
 const shipwreck = makeShipwreck({ sandMat });
 shipwreck.position.set(SHIP_X, 0, SHIP_Z);
 scene.add(shipwreck);
+/* AND THE BIGGEST THING ON THE BEACH WAS DRAWN FROM A KILOMETRE AWAY, EVERY
+ * FRAME, FOR THE WHOLE WALK. She is 158 meshes and she was in no far list at
+ * all, and `cullBeyondFog` deliberately exempts anything bigger than
+ * `SKYLINE_R` — because culling a landform does not remove a dim object, it
+ * opens a hole in the fog — so the one rule that would have caught her was
+ * the one rule written to leave her alone. Measured: 162 draw calls at EVERY
+ * station down the walk, from the spawn to the fence, which at the pavilion
+ * is a third of the frame and at the tower is half of it. A twenty-eight
+ * metre hull is a skyline object at two hundred metres and nothing at all at
+ * two hundred and forty: `FogExp2` 0.014 leaves 0.007 % of her there. She
+ * goes in the list beside her own drift.
+ *
+ * AND SHE IS MERGED BY MATERIAL, so what it costs to stand on her deck is
+ * seventeen draws and not a hundred and sixty-two — `bakeStatic`'s own rule,
+ * that this is for BUILDINGS, and she is the biggest one in the game. Her
+ * hull quads carry `noBake` (they are lifted off their own maps and must
+ * keep them) and every named part is held by something, so both are left
+ * exactly where they are. */
+farProps.push({ obj: shipwreck, z: SHIP_Z, d: 240 });
+/* on a warm step, so it runs after everything this file hangs on her — the
+ * gear, the head, the catch, the door — has been built */
+warmStep('wreck merge', () => bakeStatic(shipwreck));
 const SN = shipwreck.userData.nav;
 
 /* ---- punch her out of the sea ---------------------------------------
@@ -13879,9 +14442,16 @@ function makeBoatKeyIcon() {
   g.beginPath(); g.moveTo(36, 38); g.lineTo(30, 43); g.stroke();
   return c.toDataURL();
 }
+/* AND `use` ON A HOLDABLE ITEM IS THE HOTBAR'S VERB — the rule the captain's
+ * head already cost this file once, broken again one item along. The key is
+ * `holdable`, so the pack's second button says HOLD and the hotbar's digit
+ * means hold; both called `use`, and `use` opened the examine screen. So the
+ * one thing you could not do with the key you had just pulled out of a dead
+ * man's mouth was hold it. Inspect has its own button and reaches the same
+ * model through `inspectModel`. */
 const boatKeyItem = {
   id: 'boatkey', name: "Wheelhouse key", icon: makeBoatKeyIcon(),
-  use: () => openInspect(boatKey, { name: 'Wheelhouse key' }),
+  use: () => toggleEquip(boatKeyItem),
 };
 holdable(boatKeyItem, boatKey, { scale: 3.0, pos: [0, -0.04, 0.02], rot: [0.3, 0.6, 0.2] });
 let boatKeyTaken = false;
@@ -13900,6 +14470,9 @@ const pullTheKey = () => {
   boatKeyTaken = true;
   shipHead.remove(boatKey);
   boatKey.position.set(0, 0, 0); boatKey.rotation.set(0, 0, 0);   // out of the mouth, and its own thing
+  // and out of the copy in your hand, which is a clone and knows nothing
+  const hvm = headItem.viewmodel;
+  if (hvm && !hvm.userData.build) hvm.userData.make();
   sfxThud(0.03);
   addToInventory(boatKeyItem);
   setPrompt('');
@@ -13914,6 +14487,14 @@ const headItem = {
     equipLabel: boatKeyTaken ? null : 'Pull the key out of his mouth',
     onEquip: pullTheKey,
   }),
+  /* AND YOU CAN PULL IT WITH HIM IN YOUR HAND. The examine screen was the
+   * only door, which is a door you have to know about: you are standing
+   * there holding a head with a key in its teeth and the obvious thing to
+   * do is reach for it. `onPull` is the shell's own `onListen` door — a
+   * click, or E — so the thing in your hands answers the button that
+   * everything else in your hands answers. It is a getter because
+   * `boatKeyTaken` moves, and once it has moved the head is just a head. */
+  get onPull() { return boatKeyTaken ? null : pullTheKey; },
 };
 /* FRAMED IN THE HAND, MEASURED RATHER THAN GUESSED. At 0.8 and -0.12 he
  * projected to ndc x [0.33, 1.04], y [-1.85, -0.47] in `vmCamera` — two
@@ -14570,6 +15151,22 @@ function deckHalfAt(lx) {
   return _rakeB[lo] + (_rakeB[hi] - _rakeB[lo]) * t;
 }
 
+/* HOW WIDE THE SHELL DOOR IS TO WALK THROUGH — asked in ONE place, because
+ * the floor through it and the clamp beside it must be the same width.
+ *
+ * They were not: the ramp out through the door laid floor across the full
+ * `DOOR_W`, and the hold's lateral clamp only let you past a player's radius
+ * short of that. So in the 10 cm band between the two there was floor out at
+ * lz -5.19 that the clamp would not let you stand on, and stepping into it
+ * snapped you back to the hold's own wall at -3.30 — a metre and a half,
+ * through her plating, at exactly the spot you walk to. Measured coming
+ * along her side and turning in at the door: one jump of 1.59 m.
+ *
+ * This is the pier's lesson on a boat: THE PUSH-OUT AND THE THING IT PUSHES
+ * YOU OFF HAVE TO BE MEASURED THE SAME WAY. Whichever number is chosen, it
+ * has to be chosen once. */
+const doorPass = () => SN.DOOR_W / 2 - PLAYER_R * 0.4;
+
 function shipFloorAt(lx, lz, feet) {
   const tol = feet + 0.5;
   let best = null;
@@ -14588,7 +15185,7 @@ function shipFloorAt(lx, lz, feet) {
   /* Out through the shell door once it is unlocked. Same shape as the
    * breach apron: a RAMP down to sand level, because a flat patch at
    * HOLD_Y out on open beach is a 25 cm invisible step. */
-  if (holdDoorOpen && Math.abs(lx - SN.DOOR_X) < SN.DOOR_W / 2 && lz < 0) {
+  if (holdDoorOpen && Math.abs(lx - SN.DOOR_X) < doorPass() && lz < 0) {
     const inner = -(SN.HOLD_HZ - 0.25);
     const outer = -(SN.halfAtY(_lxc(lx), SN.HOLD_Y) + 1.2);
     if (lz <= inner && lz > outer)
@@ -14721,8 +15318,7 @@ function updateShip(dt) {
     // her sole narrows toward the bow; the walk follows it (see shipFloorAt)
     const hz = Math.min(SN.HOLD_HZ, SN.halfAtY(_lxc(lx), SN.HOLD_Y) - 0.02) - PLAYER_R;
     const atBreach = lx > SN.BREACH_X0 && lx < SN.BREACH_X1;
-    const atDoor = holdDoorOpen
-      && Math.abs(lx - SN.DOOR_X) < SN.DOOR_W / 2 - PLAYER_R * 0.4;
+    const atDoor = holdDoorOpen && Math.abs(lx - SN.DOOR_X) < doorPass();
     if (lz > hz && !atBreach) camera.position.z = SHIP_Z + hz;
     if (lz < -hz && !atDoor) camera.position.z = SHIP_Z - hz;
     camera.position.x = THREE.MathUtils.clamp(camera.position.x,
@@ -16489,11 +17085,29 @@ const MUT_RECOIL = 0.32;                   // how long a survived hit rocks it
  * the game will not take from it. */
 const NTAR_KNOCK = { fall: 1.60, lie: 0.85, rise: 0.95, land: 0.62, slide: 0.95 };
 const _knV = new THREE.Vector3();
-const knockTotal = () => NTAR_KNOCK.fall + NTAR_KNOCK.lie + NTAR_KNOCK.rise;
+/* AND THE BEATS BELONG TO THE CLIPS, SO THEY BELONG TO THE KIND — the
+ * death's own lesson. The alien reverses a 1.6 s reel; the knight has a real
+ * fall and a real rise of his own lengths, and the whole thing has to be
+ * short enough that the fight does not stop while it plays. */
+const knockOf = (u) => (u && u.kind && u.kind.knock) || NTAR_KNOCK;
+/* WHERE A CLIP'S OWN ROOT HAS GOT TO, a fraction of the way through it, in
+ * the clip's own frame. The retarget keeps the whole curve for exactly this:
+ * a gait's travel belongs to the game, which owns the speed, but a knockdown
+ * is a scripted beat and the reel is the authority on where the body goes. */
+const _knT = new THREE.Vector2();
+function clipTravelAt(u, name, f) {
+  const T = u.clipTravel && u.clipTravel[name];
+  if (!T || T.length < 2) return null;
+  const x = THREE.MathUtils.clamp(f, 0, 1) * (T.length - 1);
+  const i = Math.min(T.length - 2, Math.floor(x)), t = x - i;
+  const a = T[i], b = T[i + 1];
+  return _knT.set(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t);
+}
+const knockTotal = (u) => { const K = knockOf(u); return K.fall + K.lie + K.rise; };
 /* Where the clip should be, for a knockdown `s` seconds old: down through
  * the fall, held on the floor, and back up the way it came. */
-function knockClipTime(s, dur) {
-  const K = NTAR_KNOCK;
+function knockClipTime(s, dur, u) {
+  const K = knockOf(u);
   if (s < K.fall) return (s / K.fall) * dur;
   if (s < K.fall + K.lie) return dur;
   return dur * Math.max(0, 1 - (s - K.fall - K.lie) / K.rise);
@@ -16506,14 +17120,32 @@ function knockClipTime(s, dur) {
  * opening, not a free kill. */
 function mutKnockdown(u) {
   u.st.knocked = true;
-  u.st.down = knockTotal();
+  u.st.down = knockTotal(u);
   u.st.atk = -1; u.st.chainAt = -1; u.st.chained = false; u.st.chainN = 0;
   u.st.stun = 0; u.st.recoil = 0; u.st.block = 0; u.st.evade = 0;
   u.st.side = 0; u.st.back = 0; u.st.roar = 0;
   u.st.poise = u.kind.poise;
-  u.st.cool = knockTotal() + 0.3;
+  u.st.cool = knockTotal(u) + 0.3;
   mutDrop(u);
-  u.g.rotation.y = Math.atan2(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
+  /* THE HEADING IS SET ONCE, HERE, AND THE REELS KEEP THEIR OWN TURN.
+   * De-yawing a clip in which the body goes horizontal is what made him spin
+   * in the air (see `KEEP_YAW` in tools/ntar_moves.py), so the fall and the
+   * rise play exactly as drawn and this is the only place a heading is
+   * written — which costs nothing, because a creature on the ground is not
+   * being turned toward the player by anything. He goes over facing you.
+   *
+   * AND THE TWO REELS ARE SEPARATE FILES, so left alone the rise begins
+   * lying in a different direction from the one the fall ended in and he
+   * snaps round on the floor between them. The one thing two prone poses can
+   * be matched on is the direction the BODY lies in, which the packer
+   * measures at both ends of every clip: the rise is turned by the
+   * difference and the two become one motion. Measured: the fall ends lying
+   * at -136 deg and the rise starts at +170, so the rise carries +54. */
+  u.st.knockYaw = Math.atan2(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
+  const fa = u.clipAz[u.kind.knockClip], ra = u.kind.riseClip && u.clipAz[u.kind.riseClip];
+  u.st.riseYaw = (fa && ra && fa.endH > 0.5 && ra.startH > 0.5)
+    ? _angDiff((fa.end - ra.start) * Math.PI / 180, 0) : 0;
+  u.g.rotation.y = u.st.knockYaw;
   u.hitFrom.copy(u.g.position);
   camera.getWorldDirection(u.hitDir); u.hitDir.y = 0; u.hitDir.normalize();
   sfxKillThud(0.9);
@@ -16566,6 +17198,21 @@ function flankDir(u, list, token, slotAng, dist, ring, out) {
   const k = THREE.MathUtils.clamp((dist - ring) / 1.2, 0, 1) * Math.min(1, td / 1.5);
   out.x = out.x * (1 - k) + (tx / td) * k; out.z = out.z * (1 - k) + (tz / td) * k;
   const l = Math.hypot(out.x, out.z) || 1e-4; out.x /= l; out.z /= l;
+}
+/* ---- A FIGHTER PICKS A SIDE AND WORKS IT.
+ *
+ * `flankSide` exists to spread a PACK round you, and for a creature fighting
+ * alone `slotAngle` has nothing to say — so it fell through to a coin toss,
+ * fresh on every shuffle. What that draws is a two-tonne knight wobbling
+ * left-right-left between swings, which is the opposite of "calculated": it
+ * is a thing with no plan. A restless kind keeps the side it is already
+ * working and only changes its mind now and then, so the circle reads as him
+ * walking round to your weak side rather than as indecision. */
+function steadySide(u, list, token, slotAng) {
+  if (u.kind.restless && u.st.lastSide && Math.random() < 0.80) return u.st.lastSide;
+  const s = flankSide(u, list, token, slotAng);
+  u.st.lastSide = s;
+  return s;
 }
 function flankSide(u, list, token, slotAng) {
   const ta = slotAngle(u, list, token, slotAng);
@@ -17053,14 +17700,40 @@ function sliceClip(src, name, t0, t1, fps = 30) {
  * to rest or sets off, with its own kind's clip favoured. A creature that
  * always ran the same cycle and always stood the same way read as a
  * recording; one that comes at you differently each time reads as alive. */
+/* WHICH CLIP IT MOVES ON, DRAWN AFRESH EVERY TIME IT SETS OFF. A kind with
+ * `gaits` hands over whole POOLS — three walks, two runs, two idles, three
+ * strafes a side — instead of the old pair, and any name in a pool that the
+ * creature does not actually own is skipped, so a pool is safe to write
+ * before the clip exists. */
+function pickGait(u, key, fallback) {
+  const pool = u.kind.gaits && u.kind.gaits[key];
+  if (pool && pool.length) {
+    const ok = pool.filter((n) => u.clips[n]);
+    if (ok.length) return ok[(Math.random() * ok.length) | 0];
+  }
+  return fallback;
+}
 function drawGait(u) {
   const N = u.kind.anim, r = Math.random;
   u.gait = {
-    walk: r() < 0.6 ? N.walk : (N.walk === 'walk' ? 'walk2' : 'walk'),
-    run: r() < 0.7 ? N.run : (N.run === 'run' ? 'run2' : 'run'),
-    idle: r() < 0.65 ? N.idle : (N.idle === 'idle' ? 'idle2' : 'idle'),
+    walk: pickGait(u, 'walk', r() < 0.6 ? N.walk : (N.walk === 'walk' ? 'walk2' : 'walk')),
+    run: pickGait(u, 'run', r() < 0.7 ? N.run : (N.run === 'run' ? 'run2' : 'run')),
+    idle: pickGait(u, 'idle', r() < 0.65 ? N.idle : (N.idle === 'idle' ? 'idle2' : 'idle')),
+    strafeL: pickGait(u, 'strafeL', 'strafeL'),
+    strafeR: pickGait(u, 'strafeR', 'strafeR'),
     idleRate: 0.85 + r() * 0.4,
   };
+}
+/* THE RATE IS THE STRIDE OVER THE SPEED — and with a dozen gaits drawn
+ * against each other it cannot be one number per kind. A clip whose own
+ * ground speed was measured at build is played at whatever rate makes it
+ * travel as fast as the game is actually moving him; anything with no
+ * measurement falls back to the kind's constant, which is what every
+ * creature but the knight still uses. */
+function gaitRate(u, name, want, fallback) {
+  const s = u.clipSpeed && u.clipSpeed[name];
+  if (!s || s < 0.05 || !want) return fallback;
+  return THREE.MathUtils.clamp(want / s, 0.45, 2.6);
 }
 function mutAnim(u, dt, moving) {
   if (!u.mixer) return;
@@ -17075,12 +17748,31 @@ function mutAnim(u, dt, moving) {
     if (a) { a.paused = false; a.timeScale = 1; }
   } else if (u.st.down > 0) {
     // down, held there, and back up the way he went: one reel, three beats
-    const a = mutPlay(u, u.kind.knockClip, false);
-    if (a) { a.paused = true; a.time = clampTime(a, knockClipTime(knockTotal() - u.st.down, a.getClip().duration)); }
+    /* TWO CLIPS, NOT ONE PLAYED BACKWARDS. A kind that carries a `riseClip`
+     * has a real fall and a real get-up, so each runs forwards on its own
+     * beat and the floor is the fall's last frame held; a kind without one
+     * keeps the alien's arrangement, which reverses its fall because its
+     * file has no rise in it. */
+    const KN = knockOf(u), s = knockTotal(u) - u.st.down;
+    if (u.kind.riseClip && s >= KN.fall + KN.lie) {
+      const a = mutPlay(u, u.kind.riseClip, false);
+      if (a) { a.paused = true; a.time = clampTime(a, Math.min(1, (s - KN.fall - KN.lie) / KN.rise) * a.getClip().duration); }
+    } else if (u.kind.riseClip) {
+      const a = mutPlay(u, u.kind.knockClip, false);
+      if (a) { a.paused = true; a.time = clampTime(a, Math.min(1, s / KN.fall) * a.getClip().duration); }
+    } else {
+      const a = mutPlay(u, u.kind.knockClip, false);
+      if (a) { a.paused = true; a.time = clampTime(a, knockClipTime(s, a.getClip().duration, u)); }
+    }
   } else if (u.st.stun > 0) {
     // the reel, run off the stun clock, so it is helpless for exactly as long
     // as it looks helpless
-    const a = mutPlay(u, 'hit', false);
+    /* AND THE REEL A PARRY BUYS MAY BE ITS OWN CLIP. A parry is the biggest
+     * thing you can do to this creature and it played the same small flinch
+     * as an ordinary hit, so the one moment the fight hands you outright
+     * looked like being tapped. `stunClip` is the reel; it runs off the stun
+     * clock, so he is helpless for exactly as long as he looks it. */
+    const a = mutPlay(u, u.kind.stunClip || 'hit', false);
     if (a) { a.paused = true; a.time = clampTime(a, (1 - u.st.stun / MUT_STUN) * a.getClip().duration); }
   } else if (u.st.atk >= 0) {
     const a = mutPlay(u, u.st.swing, false);
@@ -17102,6 +17794,13 @@ function mutAnim(u, dt, moving) {
     // has a scream that is not the roar it uses in the middle of a fight
     const a = mutPlay(u, u.st.roarClip || N.roar, false);
     if (a) { a.paused = false; a.timeScale = u.st.roarClip ? 1.0 : 1.35; }
+  } else if ((u.st.sideStep || 0) > 0 && u.kind.stepClip) {
+    /* THE STEP THAT OPENS A SIZE-UP. Its own clip, run once on its own clock
+     * — the side it goes is the side he is circling — and then the strafe
+     * walk takes over for the rest of the beat. */
+    const nm = u.kind.stepClip[u.st.side < 0 ? 0 : 1] || u.kind.stepClip[0];
+    const a = mutPlay(u, nm, false);
+    if (a) { a.paused = true; a.time = clampTime(a, (1 - u.st.sideStep / 0.80) * a.getClip().duration); }
   } else if (u.st.side !== 0 && moving < 0.5) {
     // circling you at reach, or backing off a step before the lunge
     /* AND A SIDE-STEP PLAYED BACKWARDS IS THE OTHER SIDE-STEP. Mixamo gives
@@ -17110,8 +17809,13 @@ function mutAnim(u, dt, moving) {
      * trick one step along and is the difference between feet that go where
      * the body goes and feet that scrub the floor. */
     const mir = u.kind.strafeMirror && u.st.side < 0;
-    const a = mutPlay(u, mir ? 'strafeR' : (u.st.side < 0 ? 'strafeL' : 'strafeR'), true);
-    if (a) { a.paused = false; a.timeScale = (mir ? -1 : 1) * 1.25 * N.strafeK; }
+    const nm = mir ? (u.gait.strafeR || 'strafeR')
+                   : (u.st.side < 0 ? (u.gait.strafeL || 'strafeL') : (u.gait.strafeR || 'strafeR'));
+    const a = mutPlay(u, nm, true);
+    if (a) {
+      a.paused = false;
+      a.timeScale = (mir ? -1 : 1) * gaitRate(u, nm, MUT_STRAFE * N.strafeK, 1.25 * N.strafeK);
+    }
   } else if (u.st.back > 0) {
     /* AND A THING BACKING OFF PLAYS ITS WALK BACKWARDS. The Dealer has done
      * this since he learned to read a charge — a NEGATIVE rate, so his feet
@@ -17131,8 +17835,13 @@ function mutAnim(u, dt, moving) {
      * every time it sets off (`u.gait`), so the same creature closes
      * differently from one exchange to the next. */
     const slow = moving < 0.5;
-    const a = mutPlay(u, slow ? u.gait.walk : u.gait.run, true);
-    if (a) { a.paused = false; a.timeScale = slow ? (1.1 + moving * 1.2) * N.rate : (1.5 + moving * 0.55) * N.rate; }
+    const nm = slow ? u.gait.walk : u.gait.run;
+    const a = mutPlay(u, nm, true);
+    if (a) {
+      a.paused = false;
+      const fb = slow ? (1.1 + moving * 1.2) * N.rate : (1.5 + moving * 0.55) * N.rate;
+      a.timeScale = gaitRate(u, nm, MUT_SPEED * u.kind.speedK * Math.max(0.28, moving), fb);
+    }
   } else {
     // and it does not stand the same way twice: the idle is drawn too, and its pace
     const a = mutPlay(u, u.gait.idle, true);
@@ -17477,8 +18186,30 @@ function makeMutant(x, z, kindName, y = 0) {
    * moves the stall, it does not remove it. Being in range is a question
    * about the CREATURE, not about the last thing it threw. */
   const maxReach = Math.max(...Object.values(atk).filter((a) => !a.minDist).map((a) => a.reach));
+  /* AND WHERE IT WANTS TO STAND IS NOT ITS LONGEST SWING. `maxReach` answers
+   * "could I hit you from here", which is the right question for the token
+   * and the wrong one for footwork: a creature carrying one long swing among
+   * six short ones counts itself in range the moment that one could reach,
+   * stops closing, and fights the rest of the exchange from a distance where
+   * nothing else it owns will land. Measured on the knight, whose jump is
+   * 5.40 against a punch of 2.15: he settled at 3.89 m and threw 27 swings a
+   * minute where his own timings allow far more.
+   *
+   * `ring` is the range his ORDINARY swings want — the use-weighted mean of
+   * everything that is not a gap-closer — and it is what the footwork holds
+   * him at. It only ever pulls him IN; how far he may hit from is still
+   * `maxReach`. */
+  const ring = (() => {
+    let w = 0, acc = 0;
+    for (const k in kind.use) {
+      const a = atk[k] || MUT_ATTACKS[k];
+      if (!a || a.minDist) continue;
+      acc += a.reach * kind.use[k]; w += kind.use[k];
+    }
+    return w > 0 ? acc / w : maxReach;
+  })();
   const u = {
-    g, kind, kindName, atk, maxReach, model: null, mixer: null, clips: {}, cur: null, leanT: 0,
+    g, kind, kindName, atk, maxReach, ring, model: null, mixer: null, clips: {}, clipSpeed: {}, clipTravel: {}, clipAz: {}, cur: null, leanT: 0,
     st: { alive: true, awake: false, roar: 0, atk: -1, flourish: 0, fidget: 0, swing: Object.keys(kind.use)[0],
           cool: 0, stun: 0, recoil: 0, struck: false, hp: kind.hp, step: 0, deadT: 0,
           side: 0, sideT: 0, back: 0, chained: false, chainN: 0, chainAt: -1, swings: 0, wait: 0,
@@ -18699,7 +19430,19 @@ function blowLands(u) {
     const fwd = _dbC.dot(_dbF);
     if (fwd > 0.38) {
       let best = Infinity;
-      for (const L of mutLimbs(u)) {
+      /* AND THE BENEFIT OF THE DOUBT GOES TO THE LIMB THAT IS SWINGING.
+       * `best` was the minimum over EVERY chain the creature owns — so a
+       * right-hand punch could be scored on the LEFT hand simply because it
+       * happened to be hanging within a metre of you, and what the player
+       * sees is a blow that lands while the fist that threw it is nowhere
+       * near them. The owner's words: "there is a right swing that hits you
+       * when it's not even close". A swing already says which chains it
+       * strikes with (`A.limbs`, the same indices the aim uses); the
+       * fallback asks those and nothing else. */
+      const all = mutLimbs(u);
+      const chains = (A.limbs && A.limbs.length)
+        ? A.limbs.map((i) => all[i]).filter(Boolean) : all;
+      for (const L of chains) {
         if (!L.hand) continue;
         (L.tip || L.hand).getWorldPosition(_dbC);
         if (!L.tip && (u.kind.barLen || 0) > 0 && L.fore) {
@@ -18710,7 +19453,11 @@ function blowLands(u) {
         const y = THREE.MathUtils.clamp(_dbC.y, bot, top);
         best = Math.min(best, Math.hypot(_dbC.x - camera.position.x, _dbC.z - camera.position.z, _dbC.y - y));
       }
-      if (best <= LAND_SLOP) return true;
+      /* AND HOW WIDE IS THE KIND'S OWN NUMBER. A metre was set for a man
+       * with a crowbar whose bar finishes inside a quarter of a metre; on a
+       * creature whose blows are measured landing 0.30-0.45 m from the chest
+       * it is most of an arm's worth of charity. */
+      if (best <= (u.kind.landSlop || LAND_SLOP)) return true;
     }
   }
   return false;
@@ -18762,6 +19509,7 @@ function hurtMutant(u, dmg, P = 0) {
     return false;
   }
   let poiseBroke = false;
+  const heavyBlow = P >= MUT_HEAVY || digOverhead;   // read on both exits of the poise block, and past a riposte
   if ((u.kind.poise || u.kind.block) && u.st.stun <= 0) {
     /* LIGHT BY HOW IT WAS THROWN, NOT BY WHAT IT TAKES. This read `dmg < 2`,
      * which was the same thing while every click did one — and the katana's
@@ -18814,6 +19562,16 @@ function hurtMutant(u, dmg, P = 0) {
        * camera, and blood crossing your view is a thing steel never does. */
       sprayBlood(u.g.position.x, _by, u.g.position.z, -_hitC.x, -_hitC.z, 10 + Math.round(P * 6), 0.7 + P * 0.3);
       stampBlood(u.g.position.x + _hitC.x * 0.45, u.g.position.z + _hitC.z * 0.45, 0.34 + Math.random() * 0.3, u.g.position.y + 0.2);
+      /* AND A HEAVY HE ABSORBS STILL COUNTS TOWARD PUTTING HIM DOWN. This
+       * branch returns — the blow was taken on his poise and he does not
+       * flinch — and the tally used to live below it, so only a heavy that
+       * BROKE the pool was ever counted: one in four at best, and with the
+       * katana he was dead before the third. The count is of heavies that
+       * land, whichever way they land. */
+      if (u.kind.knockAfter && heavyBlow && !woke) {
+        u.st.headHits = (u.st.headHits || 0) + 1;
+        if (u.st.headHits >= u.kind.knockAfter) { u.st.headHits = 0; mutKnockdown(u); }
+      }
       return false;
     }
     u.st.poise = u.kind.poise;
@@ -18870,7 +19628,38 @@ function hurtMutant(u, dmg, P = 0) {
    * hardest thing to land on him, and then only sometimes and only once.
    * Never on the blow that wakes him: being knocked down by the first touch
    * would be the whole fight's biggest moment thrown away on an ambush. */
-  if (u.kind.knockClip && !u.st.knocked && !woke && poiseBroke
+  /* AND A KIND MAY EARN IT RATHER THAN ROLL FOR IT. `knockP` is a die and
+   * a die is right for a creature you meet once — but the owner's word for
+   * the knight is that ENOUGH HEAVIES TO THE HEAD put him down, which is a
+   * count, not a chance: you cannot land it by luck and you cannot be
+   * denied it by luck either. `knockAfter` heavies landed in one stretch
+   * of pressure and he goes over. The tally resets when he does, so it is a
+   * thing you can do more than once and have to earn every time. */
+  /* AND IT IS A COUNT OF HEAVIES, NOT OF POISE BREAKS — because the second
+   * was never reachable. Gated on the blow ALSO breaking his poise, the
+   * tally needed three breaks that each happened to land on a heavy: with an
+   * eleven-point pool refilling at 1.7 a second, that is a heavy landed every
+   * 1.2 s or better with none blocked — and with the katana taking three a
+   * blow, the third break arrives on the twelfth heavy and he is dead on the
+   * thirteenth. Modelled at any real cadence: ZERO knockdowns a fight. The
+   * owner's "the animations where he falls over are not working at all" was
+   * a fight in which the fall could not be earned. His word was "enough
+   * heavies to the head", and that is what is counted: a heavy that LANDS
+   * (a blocked one never reaches this line), inside a stretch of pressure —
+   * the tally lapses if he is left alone (`knockLapse`, on the same idle
+   * clock his poise refills on), so it is a thing you do in one push and
+   * not a sum over the whole fight. */
+  if (u.kind.knockAfter && heavyBlow && !woke) {
+    u.st.headHits = (u.st.headHits || 0) + 1;
+    // `down` is undefined until the first knockdown, and `undefined <= 0` is
+    // FALSE — so the count climbed for ever and he never went over
+    if (u.st.headHits >= u.kind.knockAfter && !(u.st.down > 0)) {
+      u.st.headHits = 0;
+      mutKnockdown(u);
+      return false;
+    }
+  }
+  if (u.kind.knockClip && !u.kind.knockAfter && !u.st.knocked && !woke && poiseBroke
       && u.st.hp < u.kind.hp * 0.9 && Math.random() < (u.kind.knockP || 0)) {
     mutKnockdown(u);
     return false;
@@ -18902,6 +19691,12 @@ function hurtMutant(u, dmg, P = 0) {
     const r = Math.random();
     if (fromBehind && u.clips.hitBack && r < 0.30) { u.st.hitClip = 'hitBack'; u.st.hitFull = true; rk *= 2.6; }
     else if (u.clips.hitSide && r < 0.18) { u.st.hitClip = 'hitSide'; u.st.hitFull = true; rk *= 2.4; }
+    /* AND ONE MORE RARE ONE: CAUGHT ON THE SIDE OF THE HEAD. It is the
+     * shortest of the three (0.80 s against the stagger's own) and it is the
+     * one that reads as a blow to the HELMET, which is what the count that
+     * puts him down is made of — so seeing it now and then is the fight
+     * telling you what you are working toward. */
+    else if (u.clips.hitHead && r < 0.34) { u.st.hitClip = 'hitHead'; u.st.hitFull = true; rk *= 2.0; }
     else { u.st.hitClip = 'hitBig'; u.st.hitFull = true; rk *= 2.1; }
   }
   u.st.recoilT = MUT_RECOIL * rk;
@@ -20173,7 +20968,17 @@ function updateMutRagdoll(u, dt) {
    * else wades in, and a corpse the tide reaches later is WOKEN by it. */
   let wet = false;
   const hip0 = r.byName['Character1_Hips'] || r.parts[0];
-  if (r.asleep && hip0 && bf === null && submersionAt(hip0.p.x, hip0.p.z) > 0.15) r.asleep = false;
+  /* IT IS WOKEN BY THE TIDE ARRIVING, not by being wet. The old test woke any
+   * sleeping body that was submerged at all — which for a corpse lying in the
+   * swash is every frame, so it could never stay asleep and the solver never
+   * stopped. What should wake it is the water CHANGING. */
+  if (r.asleep && hip0 && bf === null) {
+    const sub = submersionAt(hip0.p.x, hip0.p.z);
+    if (sub > 0.15) {
+      const wy = waterSurfaceAt(hip0.p.x, hip0.p.z);
+      if (r.wetY === null || r.wetY === undefined || Math.abs(wy - r.wetY) > 0.12) { r.asleep = false; r.wetY = wy; }
+    }
+  }
   if (!r.asleep) {
     const h = Math.min(dt, 1 / 30) / RAG_SUB;
     let motion = 0;
@@ -20187,7 +20992,11 @@ function updateMutRagdoll(u, dt) {
     for (let s = 0; s < RAG_SUB; s++) {
       // integrate
       for (const q of r.parts) {
-        _rg1.subVectors(q.p, q.pp).multiplyScalar(q.wet > 0 ? RAG_DAMP - 0.10 * q.wet : RAG_DAMP);   // water is thick
+        /* WATER IS THICK, AND IT WAS NOT THICK ENOUGH. At 0.89 a wet particle
+         * keeps 89 % of its speed every substep, which against a floor that
+         * moves under the body every frame is nowhere near enough to stop the
+         * constraints pumping it along. */
+        _rg1.subVectors(q.p, q.pp).multiplyScalar(q.wet > 0 ? RAG_DAMP - 0.34 * q.wet : RAG_DAMP);   // water is thick
         q.pp.copy(q.p);
         q.p.add(_rg1); q.p.y -= RAG_G * h * h;
         motion += _rg1.lengthSq();
@@ -20339,7 +21148,27 @@ function updateMutRagdoll(u, dt) {
     // still travelling fast? then it is still a hammer, and a body that
     // skids into a shelf of bottles takes the shelf with it
     if (motion > 4e-4) ragSmash(r, 6.5);
-    if (r.t > 1.5 && motion < 1e-7 && !wet) r.asleep = true;     // it has come to rest — on sand; water never lets it
+    /* ---- AND A BODY IN THE SURF HAS TO BE ABLE TO COME TO REST TOO.
+     *
+     * "A wet ragdoll never sleeps (the swash moving under it is motion)"
+     * was written so a floating corpse would ride the swell — and what it
+     * actually buys is a body SOLVED FOR EVER on a floor that moves under it
+     * every frame. The wave is not level across a two-metre body, so each
+     * particle is lifted by a different amount, twelve iterations of distance
+     * constraints turn that vertical disagreement into horizontal motion, and
+     * the thing surfs. Measured: three mutants killed in the surf, and the one
+     * that ended up in the water travelled 12.9 metres in twenty seconds at up
+     * to 15 m/s while the two on sand drifted 0.2. That is the owner's
+     * "ragdolls fly around after death".
+     *
+     * It sleeps at a looser threshold when wet — the swash will never let it
+     * be as still as sand does — and it is woken again when the water over it
+     * CHANGES by more than a hand, which is the ride the note wanted without
+     * the drive. */
+    if (r.t > 1.5 && motion < (wet ? 1.2e-5 : 1e-7)) {
+      r.asleep = true;
+      r.wetY = (wet && hip0) ? waterSurfaceAt(hip0.p.x, hip0.p.z) : null;
+    }
   }
   // drive the skeleton from the particles, parent first
   const hips = r.byName['Character1_Hips'];
@@ -20399,7 +21228,17 @@ function updateMutantUnit(u, dt) {
 
   const dx = camera.position.x - p.x, dz = camera.position.z - p.z;
   const dist = Math.hypot(dx, dz) || 0.001;
-  const face = Math.atan2(dx / dist, dz / dist);      // the model's front is +Z
+  /* WHICH WAY HE IS FACING, and it is not always at you: a creature stepping
+   * round a pier looks where it is GOING, or it moonwalks past the stone. It
+   * goes back to your face the moment the route runs out, which is normally
+   * a stride or two later. */
+  let face = Math.atan2(dx / dist, dz / dist);      // the model's front is +Z
+  if (u.path && u.pathI < u.path.length && dist > 2.2) {
+    const w = u.path[u.pathI];
+    const wx = UC_X + w.x - u.g.position.x, wz = UC_Z + w.z - u.g.position.z;
+    const wl = Math.hypot(wx, wz);
+    if (wl > 0.2) face = Math.atan2(wx / wl, wz / wl);
+  }
   /* THE SECOND WIND, for any kind that declares one. `u.kind` is replaced by
    * a copy with the rage's fields in it — every number below reads off
    * `u.kind`, so the swap is the whole mechanism — and it announces itself:
@@ -20412,8 +21251,36 @@ function updateMutantUnit(u, dt) {
     sfxScpScream(dist, u.kind.voice);
     addTrauma(0.5);
   }
-  const turn = (rate) => { u.g.rotation.y += _smileTurn(u.g.rotation.y, face) * Math.min(1, dt * rate); };
+  /* AND A HEADING IS A TURN, NOT A SNAP. `kind.turnMax` is radians a second
+   * — how fast the thing can physically come round — and it is what stops a
+   * creature that has just been handed a new direction (a route, a
+   * waypoint, a player who walked behind it) arriving at it in one frame. */
+  const turn = (rate) => {
+    let d = _smileTurn(u.g.rotation.y, face) * Math.min(1, dt * rate);
+    const cap = (u.kind.turnMax || 0) * dt;
+    if (cap > 0 && Math.abs(d) > cap) d = Math.sign(d) * cap;
+    u.g.rotation.y += d;
+  };
 
+  /* ---- AND HIS FEET ARE ON THE FLOOR HE IS STANDING ON.
+   *
+   * Nothing had ever set a creature's HEIGHT down here: `restYInWater` is the
+   * beach's, and the knight was simply left at whatever y he was placed at —
+   * so the step up to the dais went through his shins and he fought at the
+   * altar with his boots inside the stone. It runs EVERY FRAME rather than
+   * inside a movement branch, because he is most often standing still (in a
+   * wind-up, in a recovery) at the moment he needs to be on the step. Eased,
+   * with a floor speed under it so a 0.6 m riser is crossed in a fifth of a
+   * second rather than a third — a snap is the thing this file has spent a
+   * fortnight taking out of him. */
+  if (u.kind.uc && UC.ready) {
+    const gf = UC.floorAt(u.g.position.x - UC_X, u.g.position.z - UC_Z, u.kind.crushes);
+    if (gf !== null) {
+      const dy = (UC_Y + gf) - u.g.position.y, ad = Math.abs(dy);
+      u.g.position.y += ad < 0.02 ? dy
+        : Math.sign(dy) * Math.min(ad, Math.max(ad * dt * 10, 3.5 * dt));
+    }
+  }
   if (!u.st.awake) {
     /* WHAT IT IS DOING BEFORE IT NOTICES YOU. The pack waits out at sea
      * where there is nothing to see but a wake, so its idle never mattered
@@ -20458,6 +21325,8 @@ function updateMutantUnit(u, dt) {
     u.st.poiseT = (u.st.poiseT || 0) + dt;
     if (u.st.poiseT > (u.kind.poiseWait || 1.4) && u.st.poise < u.kind.poise)
       u.st.poise = Math.min(u.kind.poise, u.st.poise + (u.kind.poiseBack || 1.6) * dt);
+    // and the heavies-to-the-head tally lapses on the same idle clock
+    if (u.st.headHits && u.st.poiseT > (u.kind.knockLapse || 8)) u.st.headHits = 0;
   }
   /* ON HIS BACK, AND NOTHING ELSE MATTERS WHILE HE IS. Ahead of the roar,
    * the stun and the recoil: a creature on the ground is not guarding, not
@@ -20465,16 +21334,48 @@ function updateMutantUnit(u, dt) {
    * over the fall only — the reel's own travel, which the pack step does
    * not take from it — and then he is still. */
   if (u.st.down > 0) {
+    const KN = knockOf(u);
     u.st.down = Math.max(0, u.st.down - dt);
-    const s = knockTotal() - u.st.down;
-    if (s < NTAR_KNOCK.fall) {
-      const k = Math.min(1, s / NTAR_KNOCK.fall);
-      p.copy(u.hitFrom).addScaledVector(u.hitDir, NTAR_KNOCK.slide * k * (2 - k));
-      if (!u.st.downThud && s >= NTAR_KNOCK.fall * NTAR_KNOCK.land) {
-        u.st.downThud = true;                       // the frame he actually lands
-        sfxKillThud(1.1); addTrauma(0.4);
-        spawnPuffs(p.x, p.z, 7, u.hitDir.x, u.hitDir.z, p.y + 0.1);
+    const s = knockTotal(u) - u.st.down;
+    /* AND HE GOES WHERE THE REEL TAKES HIM. `slide` is a hand-set distance
+     * along the line the blow came in on, which is a fair guess for a clip
+     * whose travel nobody has and exactly wrong for one whose travel is in
+     * the file: measured, `knockOut` carries him 1.41 m mostly ACROSS his
+     * own line, so sliding him straight back was the body and the floor
+     * disagreeing under it. A kind whose `slide` is null walks its own
+     * clips' root motion instead — the fall's, then the rise's on top of it
+     * — each turned by the heading that clip is played on. */
+    const yaw = s >= KN.fall + KN.lie ? u.st.knockYaw + (u.st.riseYaw || 0) : u.st.knockYaw;
+    u.g.rotation.y = yaw;
+    if (KN.slide == null) {
+      const cf = Math.cos(u.st.knockYaw), sf = Math.sin(u.st.knockYaw);
+      p.copy(u.hitFrom);
+      const tf = clipTravelAt(u, u.kind.knockClip, s / KN.fall);
+      if (tf) p.x += tf.x * cf + tf.y * sf, p.z += -tf.x * sf + tf.y * cf;
+      if (s >= KN.fall + KN.lie && u.kind.riseClip) {
+        const cr = Math.cos(yaw), sr = Math.sin(yaw);
+        const tr = clipTravelAt(u, u.kind.riseClip, (s - KN.fall - KN.lie) / KN.rise);
+        if (tr) p.x += tr.x * cr + tr.y * sr, p.z += -tr.x * sr + tr.y * cr;
       }
+      /* AND THE REEL STILL OBEYS THE ROOM. `mutClampX` runs from every
+       * movement branch and none of them is this one, so a fall's metre and
+       * a half of travel went straight through a pier and stood him up
+       * inside it — where the chase's own clamp then shoved him out a hand
+       * at a time, which is the glitching this file has spent a fortnight
+       * taking out of him. The correction is folded back into `hitFrom`,
+       * because the position is rebuilt from it every frame and a clamp
+       * that is not remembered is re-fought every frame. */
+      const cx = p.x, cz = p.z;
+      mutClampX(u, p, dt);
+      u.hitFrom.x += p.x - cx; u.hitFrom.z += p.z - cz;
+    } else if (s < KN.fall) {
+      const k = Math.min(1, s / KN.fall);
+      p.copy(u.hitFrom).addScaledVector(u.hitDir, KN.slide * k * (2 - k));
+    }
+    if (!u.st.downThud && s >= KN.fall * KN.land) {
+      u.st.downThud = true;                         // the frame he actually lands
+      sfxKillThud(1.1); addTrauma(0.4);
+      spawnPuffs(p.x, p.z, 7, u.hitDir.x, u.hitDir.z, p.y + 0.1);
     }
     mutAnim(u, dt, 0);
     /* HE ROLLS UP; HE DOES NOT FLY UP. The reel reversed takes his hips back
@@ -20483,9 +21384,14 @@ function updateMutantUnit(u, dt) {
      * hips are held to the straight line from where he is lying to where he
      * stands, and what is left is his own tumble run backwards at ground
      * level — a body rocking back over its shoulders and onto its feet. */
-    const H = u.ntarHip;
-    if (H && H.bone && s > NTAR_KNOCK.fall + NTAR_KNOCK.lie) {
-      const k = Math.min(1, (s - NTAR_KNOCK.fall - NTAR_KNOCK.lie) / NTAR_KNOCK.rise);
+    /* AND A KIND WITH A REAL GET-UP NEEDS NONE OF THIS. The hip clamp is
+     * here because the alien's rise is his own FALL played backwards, which
+     * takes his hips back through the apex of the punch — he would stand up
+     * by flying two metres into the air. A creature with an authored
+     * `riseClip` gets to its feet the way the animator drew it. */
+    const H = u.kind.riseClip ? null : u.ntarHip;
+    if (H && H.bone && s > KN.fall + KN.lie) {
+      const k = Math.min(1, (s - KN.fall - KN.lie) / KN.rise);
       const want = H.lie * (1 - k * k * (3 - 2 * k));
       const up2 = Math.max(1e-6, H.up.lengthSq());
       const cur = _knV.copy(H.bone.position).sub(H.pos).dot(H.up) / up2;
@@ -20660,7 +21566,33 @@ function updateMutantUnit(u, dt) {
      * drawn through you — "it clips through the player". A creature's
      * lunge stops where its body would meet yours; the blow still lands,
      * because the sweep is on the head chain out in front of it. */
-    if (A.lunge > 0 && t >= A.wind - air && t < A.wind + A.strike + 0.12 && dist > Math.max(1.3, (u.kind.body || 0.9) + 0.15)) {
+    /* AND 1.3 WAS A PERSON'S WIDTH, WHICH IS NOT EVERY CREATURE'S. The floor
+     * went in so a four-metre animal would stop at its own body instead of
+     * driving its front half through you — and as a CONSTANT it does the
+     * opposite job on anything smaller: the knight's striking hand extends
+     * 0.89 m from his own origin (measured at the contact frame, every
+     * swing), so a lunge that refuses to close inside 1.3 leaves his fist
+     * more than half a metre short of your chest on every blow he throws.
+     * The damage still landed — `LAND_SLOP` gives a metre of benefit of the
+     * doubt — so the game said he hit you and the picture said he did not.
+     * That is the whole of "tighten his hits so they actually visibly hit
+     * you". A creature stops at ITS OWN body, which is what the number after
+     * the max was always for. */
+    /* AND HOW NEAR IS A MEASURED NUMBER PER KIND, BECAUSE BOTH ENDS ARE
+     * WRONG. Too far and his fist stops half a metre short of you (the game
+     * lands the blow, the picture does not); too near and the blow arrives
+     * BELOW THE FRAME — measured on the knight at his own body radius, the
+     * overhead finished at ndc y -0.97 and the stomp at -2.45, on screen
+     * half the time and never. What a blow has to do is arrive where you
+     * are looking. `lungeStop` is that distance, swept in the pane. */
+    /* AND A SWING MAY SET ITS OWN. A blow from a LEG lands at thigh height,
+     * so the nearer he is the further below the picture it arrives: measured
+     * at the kind's own stop, the stomp's boot finished at ndc y -1.63 —
+     * off the bottom of the frame, every time. A kick is thrown from further
+     * out than a punch, which is also simply what a kick is. */
+    const stop = A.stop != null ? A.stop
+      : (u.kind.lungeStop != null ? u.kind.lungeStop : Math.max(1.3, (u.kind.body || 0.9) + 0.15));
+    if (A.lunge > 0 && t >= A.wind - air && t < A.wind + A.strike + 0.12 && dist > stop) {
       u.dir.set(dx / dist, 0, dz / dist);
       p.addScaledVector(u.dir, (A.lunge / (air + A.strike + 0.12)) * dt);
     }
@@ -20763,7 +21695,15 @@ function updateMutantUnit(u, dt) {
      * because there is nothing to read. Whoever is nearest and ready takes
      * the token; a creature that cannot have it holds its range instead. */
     const maySwing = mutToken === u;
-    if (u.st.side !== 0) {
+    // if the straight line is shut, he walks round — and drops it when it opens
+    if (u.kind.uc) ucSteer(u, dt, dist);
+    if (!near && u.path) {
+      /* ON A ROUTE. Whoever is steering, steers: the chase and the route
+       * were the tug of war that kept the Dealer stuck on his table. */
+      moving = ucFollowPath(u, dt);
+      u.st.step -= dt;
+      if (u.st.step <= 0) { u.st.step = u.kind.step / Math.max(0.35, moving || 1); sfxMutStep(dist, u.kind.voice); }
+    } else if (u.st.side !== 0) {
       /* Circling: sidelong at reach, keeping the range. It stops when its
        * time runs out or you close in, and what it does next is drawn
        * again — so its rhythm is not a rhythm. */
@@ -20773,8 +21713,23 @@ function updateMutantUnit(u, dt) {
        * from all three at once; the ones without the turn close to just
        * inside their own reach while they wait, so backing away is a thing
        * you do into somebody. */
-      const r = THREE.MathUtils.clamp((dist - (A.reach - 0.9)) * 1.6, -1, 1);
-      const sw = MUT_STRAFE * u.kind.anim.strafeK;
+      /* AND HE CIRCLES AT THE RANGE HE FIGHTS AT. `A.reach` is whatever swing
+       * he happens to be holding, so after a gap-closer he orbited at the
+       * gap-closer's distance and none of his ordinary swings could land
+       * from there. `u.ring` is where his hands actually reach. */
+      /* AND A SIZE-UP GIVES GROUND WHILE IT CIRCLES. The beat exists to open
+       * the distance and watch you; orbiting at the fighting ring while
+       * "backing off" is the two halves of it arguing. */
+      const base = (u.kind.restless && u.ring ? u.ring : A.reach);
+      const want = u.st.sizing ? base + 1.0 : base - 0.9;
+      const r = THREE.MathUtils.clamp((dist - want) * 1.6, -1, 1);
+      /* AND THE GROUND GOES UNDER HIM AS FAST AS THE CLIP SAYS. The step
+       * clip covers three metres in eight tenths of a second; walked at the
+       * circling speed his feet would cross that distance while his body
+       * covered a third of it, which is the oldest bug in this file. */
+      const stepSp = (u.st.sideStep > 0 && u.kind.stepClip
+        && u.clipSpeed[u.kind.stepClip[u.st.side < 0 ? 0 : 1]]) || 0;
+      const sw = stepSp || MUT_STRAFE * u.kind.anim.strafeK * (u.st.sizing ? 1.15 : 1);
       p.x += (tx * u.st.side * sw + (dx / dist) * r * 1.5) * dt;
       p.z += (tz * u.st.side * sw + (dz / dist) * r * 1.5) * dt;
       mutClampX(u, p, dt);
@@ -20791,7 +21746,19 @@ function updateMutantUnit(u, dt) {
        * to put distance between you: measured, `side` was cleared every
        * frame and the strafe clips never played once in ninety seconds. It
        * holds while he is giving ground. */
-      if (u.st.sideT <= 0 || (dist < 1.4 && !(u.st.back > 0))) { u.st.side = 0; u.st.cool = Math.max(u.st.cool, 0.15); }
+      /* AND A RESTLESS KIND KEEPS CIRCLING RIGHT UP TO THE BODY. The 1.4 m
+       * cancel is right for a creature that should be swinging rather than
+       * walking round you — and inside a recovery there is nothing to swing
+       * with, so all it bought was the statue. He may circle in to his own
+       * body radius; he simply cannot do it instead of attacking, because
+       * the decision to swing is taken before this branch is ever reached. */
+      const hold = u.kind.restless ? (u.kind.body || 0.9) + 0.25 : 1.4;
+      if (u.st.sideT <= 0 || (dist < hold && !(u.st.back > 0))) {
+        u.st.side = 0; u.st.sizing = false;
+        // a restless kind pays no toll for stopping: the shuffle ran inside
+        // its own recovery and must not extend it
+        if (!u.kind.restless) u.st.cool = Math.max(u.st.cool, 0.15);
+      }
     } else if (u.st.back > 0) {
       // a step back, and then the lunge out of it
       u.st.back -= dt;
@@ -20893,12 +21860,23 @@ function updateMutantUnit(u, dt) {
        * while you decide what to do with the room he just gave you. He is
        * out of your reach the whole time and keeps the turn; it is pacing,
        * not mercy, and it is the beat that makes the aggression readable. */
+      /* AND A GUARD HELD IN HIS FACE IS A REASON TO WAIT. Throwing into a
+       * raised shovel is what the bar is for; a good fighter circles until
+       * you have to do something about him, which with the guard draining
+       * stamina you shortly do. */
+      const sizeP = (u.kind.sizeUp || 0) * (u.kind.smart && blocking ? 1.7 : 1);
       if (maySwing && u.kind.sizeUp && u.st.swings > 1 && (u.st.sinceSize || 0) >= 2
-          && dist < A.reach + 1.2 && Math.random() < u.kind.sizeUp) {
+          && dist < A.reach + 1.2 && Math.random() < sizeP) {
+        u.st.sizing = true;
         wantSwing = false;
         u.st.sinceSize = 0;
+        /* AND IT OPENS WITH A STEP. A size-up that begins by strolling
+         * sideways reads as him losing interest; three metres in eight
+         * tenths of a second reads as a fighter making room, and it is the
+         * same beat either way. */
+        if (u.kind.stepClip) u.st.sideStep = 0.80;
         u.st.back = 0.75 + Math.random() * 0.5;
-        u.st.side = flankSide(u, mutants, mutToken, MUT_SLOT_ANG);
+        u.st.side = steadySide(u, mutants, mutToken, MUT_SLOT_ANG);
         u.st.sideT = 1.2 + Math.random() * 1.3;
         u.st.cool = Math.max(u.st.cool, 0.5 + Math.random() * 0.55);
       }
@@ -20920,7 +21898,30 @@ function updateMutantUnit(u, dt) {
             const AK = u.atk[k] || MUT_ATTACKS[k];
             if (AK.reach + 0.25 < dist) continue;
             if (AK.minDist && dist < AK.minDist) continue;    // a charge needs ground to charge across
-            ok[k] = u.kind.use[k]; tot += ok[k];
+            let w = u.kind.use[k];
+            if (u.kind.smart) {
+              /* ---- WHAT MAKES A CREATURE READ AS A FIGHTER RATHER THAN AS A
+               * WEIGHTED DIE. Two things, and both of them are things the
+               * player can learn and use:
+               *
+               * HE DOES NOT THROW THE SAME BLOW TWICE RUNNING. A draw with no
+               * memory rolls its favourite swing twice in a row often enough
+               * to look like it is stuck, and the one thing a boss must never
+               * look is stuck. (A CHAIN is the exception and is chosen
+               * elsewhere — a deliberate repeat is a combination.)
+               *
+               * AND HE ANSWERS A RAISED GUARD WITH THE THING THAT BREAKS ONE.
+               * Every swing already carries `guardK`, how much of your bar it
+               * takes — 0.95 for the punch against 1.75 for the overhead — and
+               * nothing had ever read it as an intention. Hold the guard and
+               * he reaches for the overhead, the stomp and the leap; drop it
+               * and he goes back to the quick ones. That is a fighter looking
+               * at what you are doing, and it is the whole argument against
+               * standing there holding block. */
+              if (k === u.st.lastSwing) w *= 0.22;
+              if (blocking) w *= 0.45 + 0.75 * (AK.guardK || 1);
+            }
+            ok[k] = w; tot += w;
           }
           if (tot > 0) {
             let r = Math.random() * tot;
@@ -20933,6 +21934,7 @@ function updateMutantUnit(u, dt) {
             }
           }
         }
+        u.st.lastSwing = pick;
         u.st.swing = pick; u.st.atk = 0; u.st.chained = false; u.st.chainN = 0; u.st.wait = 0;
         u.st.feint = (u.st.swings > 1 && Math.random() < u.kind.feint) ? 0.55 + Math.random() * 0.2 : 0;
         sfxMutTell(dist, u.atk[pick].wind, u.kind.voice);
@@ -20942,6 +21944,36 @@ function updateMutantUnit(u, dt) {
         u.st.side = flankSide(u, mutants, mutToken, MUT_SLOT_ANG);   // and the circling spreads them
         u.st.sideT = 0.5 + Math.random() * 0.8;
       }
+    } else if (u.kind.restless && u.st.atk < 0 && u.st.recoil <= 0 && u.st.stun <= 0 && u.st.roar <= 0) {
+      /* ---- AND THERE WAS NO BRANCH AT ALL FOR "AT REACH, CATCHING MY
+       * BREATH", WHICH IS A THIRD OF THE FIGHT.
+       *
+       * The chain is circle / step back / dash / chase / decide, and `decide`
+       * only runs once the cooldown is spent — so a creature standing inside
+       * its own reach with `cool` still running fell out of the bottom of the
+       * whole thing and was moved by nothing. Measured on the knight over
+       * ninety seconds: SEVENTY PER CENT of frames with his position
+       * unchanged to four decimal places. That is the owner's "he stands
+       * still way too much", and it is not a tuning number, it is a missing
+       * else.
+       *
+       * A restless kind keeps its feet going through the recovery: a short
+       * circle, redrawn often enough that you cannot lead him, and the
+       * circle's own radial term walks him back to his ring while he does
+       * it. He is never not moving between swings now, which is the whole
+       * difference between a boss and a statue that hits you. */
+      /* AND IT MAY ONLY USE TIME HE WAS GOING TO SPEND ANYWAY. The first
+       * build re-armed the circle whenever it was not already circling, and
+       * the cancel at the end of a circle nudged the cooldown up by a frame
+       * or two — so he re-entered the circle before the cooldown could ever
+       * reach zero and the branch that picks a swing was never reached at
+       * all. Measured: 94 % of frames strafing and 0.7 swings a minute, which
+       * is the statue's opposite and just as bad. The shuffle is bounded by
+       * the breath he has left, and it does not start on the last of it. */
+      if (u.st.side === 0 && u.st.back <= 0 && u.st.dash <= 0 && u.st.cool > 0.18) {
+        u.st.side = steadySide(u, mutants, mutToken, MUT_SLOT_ANG);
+        u.st.sideT = Math.min(u.st.cool - 0.06, 0.28 + Math.random() * 0.45);
+      }
     }
   }
   /* AND IT DOES THINGS WHILE IT WAITS. Standing at reach without the turn it
@@ -20949,6 +21981,7 @@ function updateMutantUnit(u, dt) {
    * speed, so it is a bark and not the opening — or a twitch of a side-step,
    * on an irregular count. None of it is a tell; a tell is only ever the
    * swing. It is a body that will not keep still. */
+  u.st.sideStep = Math.max(0, (u.st.sideStep || 0) - dt);
   u.st.fidget = (u.st.fidget || 0) - dt;              // the count runs whatever it is doing
   if (u.st.fidget <= 0 && dist <= A.reach + 1.5 && mutToken !== u && u.st.atk < 0 && u.st.flourish <= 0 && u.st.side === 0 && u.st.back <= 0 && u.st.dash <= 0) {
     u.st.fidget = (1.2 + Math.random() * 2.0) * (u.kind.fidgetGap || 1);
@@ -23177,6 +24210,7 @@ function buildBunkerProps() {
    * deliberately go. Its spot is checked against the walk grid so it never
    * starts inside a desk. */
   buildMilCrate(g, meshes, ray);
+  buildTableBottle(g, meshes, ray);
   if (!coatStand) {
     coatStand = makeCoatStand();
     /* IN A CORNER, WHERE A COAT STAND GOES — the one under the poster, at
@@ -23192,6 +24226,67 @@ function buildBunkerProps() {
     coatStand.frustumCulled = false;
     scene.add(coatStand);
   }
+}
+/* A BOTTLE ON HIS TABLE, AND WHERE IT STANDS IS THE ONE THING THAT MATTERS.
+ * The fight in this room is the longest in the game and the only water in it
+ * used to be four hundred metres away by a bed you walked past an hour ago —
+ * so there is a full one on the Dealer's own table, which is also the one
+ * piece of furniture you are certain to be near when it goes badly.
+ *
+ * NOT IN THE WAY OF THE TAKE. Two things happen on that table before the
+ * fight: the conversation is framed on him at his post off the -x end, and
+ * he TURNS AND PICKS THE CROWBAR UP off it, with his hand solved onto
+ * `CROWBAR_SPOT`. Put a bottle there and it is in the shot and inside his
+ * reach. So the spot is not chosen, it is SCORED: a grid over the table top,
+ * inset from the edges, ranked on how far it is from the bar, from the
+ * equipment case, from everything else already perched there and from where
+ * he stands. It comes out at the far +x corner, which is the one part of
+ * that table nothing else in the room wants. */
+function buildTableBottle(g, meshes, ray) {
+  if (tableBottle || !workTable) return;
+  const cx = g.position.x + TABLE_SPOT[0], cz = g.position.z + TABLE_SPOT[1];
+  const busy = [[CROWBAR_SPOT[0], CROWBAR_SPOT[1]], [DEALER_X, DEALER_Z]];   // both already world
+  if (milCrate) busy.push([milCrate.position.x, milCrate.position.z]);
+  for (const q of tablePerched) if (q && q.g) busy.push([q.g.position.x, q.g.position.z]);
+  let best = null;
+  for (let ox = -TABLE_W / 2 + 0.22; ox <= TABLE_W / 2 - 0.22; ox += 0.08)
+    for (let oz = -TABLE_D / 2 + 0.22; oz <= TABLE_D / 2 - 0.22; oz += 0.08) {
+      const x = cx + ox, z = cz + oz;
+      let near = 99;
+      for (const [bx, bz] of busy) near = Math.min(near, Math.hypot(x - bx, z - bz));
+      if (!best || near > best.near) best = { x, z, near };
+    }
+  if (!best || best.near < 0.30) return;               // no room on it: leave it off
+  ray.set(new THREE.Vector3(best.x, g.position.y + 2.6, best.z), new THREE.Vector3(0, -1, 0));
+  ray.far = 3.2;
+  const hit = ray.intersectObjects(meshes, false);
+  const top = hit.length ? hit[0].point.y : g.position.y + TABLE_TOP;
+
+  const world = new THREE.Group();
+  world.add(makeWaterBottle());
+  const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.20, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  proxy.name = 'hitProxy'; proxy.visible = false;
+  world.add(proxy);
+  world.position.set(best.x, top + 0.002, best.z);
+  world.rotation.y = Math.random() * Math.PI * 2;
+  scene.add(world);
+  addItemShine(world, { size: 0.42, height: 0.10 });
+  tableBottle = world;
+  addInteractable(world, 'Take the bottle of water', 'inventory', {
+    onActivate: () => {
+      if (!tableBottle) return;
+      scene.remove(tableBottle); tableBottle = null;
+      hovered = null;
+      sfxThud(0.03);
+      /* A SECOND BOTTLE IS A FULL ONE. `addToInventory` refuses a duplicate
+       * by identity — which is what stops the pack filling up with bottles —
+       * so on a player who is already carrying one this is a REFILL, and
+       * that is exactly what finding another bottle is. */
+      refillBottle();
+      addToInventory(waterBottleItem);
+    },
+  });
 }
 /* ---- THE WORK TABLE ------------------------------------------------------
  * A room you can wreck is a room you are IN. The bunker had eighteen things
@@ -23255,6 +24350,7 @@ function woodUV(geo, R, au, av, cu, su, cv, sv) {
 }
 const TABLE_WOOD = new THREE.MeshStandardMaterial({ color: 0x6f5334, roughness: 0.94, metalness: 0, flatShading: true, emissive: 0x1a1208 });   // only if the scan never lands
 let workTable = null, tableBroken = false, tableProp = null, deskMat = null;
+let tableBottle = null;                              // the full bottle standing on it
 const tablePerched = [];                             // what is standing on it
 const deskProps = [];                                // and what the SCAN left standing on it
 function carveDesk(g) {
@@ -23804,6 +24900,15 @@ function smashWorkTable(speed, dirX, dirZ) {
     q.vel.y += 1.4 + Math.random() * 0.9;
   }
   tablePerched.length = 0;
+  /* AND THE BOTTLE GOES WITH IT. It is a TAKEABLE, not a physics body, so
+   * nothing else would move it and it would hang in the air over the
+   * wreckage; it is set on the floor a little along the blow instead, on
+   * the one frame in this room where the dust hides everything. */
+  if (tableBottle) {
+    tableBottle.position.set(p.x + dx * (0.7 + Math.random() * 0.5), gy + 0.002,
+      p.z + dz * (0.7 + Math.random() * 0.5));
+    tableBottle.rotation.set(Math.PI / 2, 0, Math.random() * Math.PI * 2);   // knocked over
+  }
   // the case goes with it, and comes open
   spillMilCrate(dx, dz, kick);
   // the recording is the whole crash; the timber knock is part of the synth
@@ -24478,6 +25583,11 @@ function headroomClear() {
     const c = UC.ceilAt(camera.position.x - UC_X, camera.position.z - UC_Z);
     if (c !== null && UC_Y + c < stand + 0.06) return false;
   }
+  // and the keep's stairs turn back under themselves: the flight above is the roof
+  if (inKeep && keepWalk) {
+    const st = keepFloorAt(camera.position.x, camera.position.z, groundY, 0.5);
+    if (st && st.c < stand + 0.06) return false;
+  }
   /* Look UP and see. This used to ask whether you were inside the pier's
    * plan rectangle, which is a much bigger thing than the pier's roof: the
    * boat is moored inside that rectangle with nothing at all above it, so
@@ -24624,7 +25734,7 @@ function update(dt, rawDt = dt) {
   const running = wantRun && moving && stamina > 0 && !exhausted && onGround;
   if (running) { stamina = Math.max(0, stamina - dt / RUN_SECONDS); if (stamina <= 0) exhausted = true; }
   else {
-    stamina = Math.min(1, stamina + dt / STAM_REGEN);
+    stamina = Math.min(stamMax(), stamina + dt / STAM_REGEN);
     if (exhausted && stamina > 0.35) exhausted = false;
     if (stamina > 0.35) blockGasped = false;    // you can hold it up again
   }
@@ -24676,7 +25786,7 @@ function update(dt, rawDt = dt) {
    * applied you hit an invisible wall 4.6 m short of her bow while
    * standing on her own deck. Her bulwark keeps you aboard. */
   updateTugBow();           // her stem stands past WADE_X: moves the wade line, before the clamp reads it
-  if (!insideTower && !insideDrain && !inBunker && !inShrine && !inDojo && !inUndercroft && !onDock && !onShip && !atTugBow && !onTug && mushWhere === 'out' && !mushInYard) {    // the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line; the saucer and the dojo are not on the beach at all
+  if (!insideTower && !insideDrain && !inBunker && !inShrine && !inDojo && !inUndercroft && !inKeep && !onDock && !onShip && !atTugBow && !onTug && mushWhere === 'out' && !mushInYard) {    // the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line; the saucer and the dojo are not on the beach at all
     camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
     camera.position.x = Math.max(camera.position.x, WADE_X);
   }
@@ -24705,6 +25815,7 @@ function update(dt, rawDt = dt) {
   updateBunkers(dt);        // the room's own frame: walls, furniture, ceiling
   updatePortal(dt);         // the stone circle on the sand, and its hum
   updateDojo(dt);           // the floor and the walls on the other side of it
+  updateKeep(dt);           // the sea keep's storeyed floors, and the boat that goes there
   updateSamurai(dt);        // and the man who wants his sword back
   updateUndercroft(dt);     // the cave's floor and the church's, off the grids the packer wrote
   updateFisherman(rawDt);   // he blinks and breathes, like Bradly
@@ -24794,6 +25905,10 @@ function update(dt, rawDt = dt) {
     const c = UC.ceilAt(camera.position.x - UC_X, camera.position.z - UC_Z);
     if (c !== null) { const top = UC_Y + c - 0.22; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }   // measured: at 0.16 the worst spot in the tunnel left 3 cm of rock over the eye
   }
+  if (inKeep && keepWalk) {
+    const st = keepFloorAt(camera.position.x, camera.position.z, groundY, 0.5);
+    if (st && st.c < KEEP_Y + 90) { const top = st.c - 0.22; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }
+  }
   camera.position.y = camBaseY + bob - landDip;
 
   // camera trauma — shoved, not jittered, so it reads as impact
@@ -24808,8 +25923,13 @@ function update(dt, rawDt = dt) {
     camera.position.add(_shakePrev);
   }
 
-  staminaEl.classList.toggle('show', stamina < 0.999);
-  staminaFill.style.transform = `scaleX(${Math.max(0, stamina)})`;
+  /* AND THE BAR GROWS WITH IT. Drawing a bigger reserve inside the same
+   * 150 px would be a ring that changes a number you cannot see: the strip
+   * itself gets the extra tenth, and the fill is the fraction of it. */
+  const sMax = stamMax();
+  staminaEl.classList.toggle('show', stamina < sMax - 0.001);
+  if (staminaEl._max !== sMax) { staminaEl._max = sMax; staminaEl.style.width = (240 * sMax).toFixed(1) + 'px'; }
+  staminaFill.style.transform = `scaleX(${Math.max(0, stamina / sMax)})`;
   staminaFill.classList.toggle('low', exhausted);
 
   /* Splashing is for walking THROUGH water, never over it. On the pier's
@@ -24868,7 +25988,7 @@ function update(dt, rawDt = dt) {
   updatePuffs(dt);
   updateSplashes(dt);
 
-  const px = inUndercroft ? sand.position.x : camera.position.x, pz = inUndercroft ? sand.position.z : camera.position.z;   // underground the beach stays where it is, and is culled
+  const px = (inUndercroft || inKeep) ? sand.position.x : camera.position.x, pz = (inUndercroft || inKeep) ? sand.position.z : camera.position.z;   // underground the beach stays where it is, and is culled
   sand.position.set(snap(px, SAND_TILE), 0, snap(pz, SAND_TILE));
   ocean.position.x = snap(px, 8);
   ocean.position.z = snap(pz, 8);
@@ -24919,12 +26039,14 @@ function update(dt, rawDt = dt) {
   // put in camera.position, and restores it exactly when you back out.
   updatePeek(dt);
 
-  // walking up on Bradly starts the exchange the first time, so you can't
-  // miss him; after that he's a normal E-to-talk interactable
-  if (!bradlyMet && started && !frozen()) {
-    const bx = camera.position.x - bradly.position.x, bz = camera.position.z - bradly.position.z;
-    if (bx * bx + bz * bz < 7.5 * 7.5) startDialog('start');
-  }
+  /* AND HE WAITS TO BE SPOKEN TO. Walking within seven and a half metres of
+   * him used to open the exchange by itself, on the theory that you must not
+   * be able to miss him — and what that actually does is take the player's
+   * hands away for a conversation they did not ask for, on a beach whose
+   * whole subject is choosing where to walk. He is a `Talk to him`
+   * interactable like everybody else now; the prompt is what stops you
+   * missing him. (The trigger is the owner's word, and it is the same call
+   * the fisherman and the fish already got.) */
 
 }
 
@@ -24964,7 +26086,7 @@ function saveCheckpoint() {
     // and the handful of things the walk latches on
     flags: {
       castleBroken, crabBled, hcrabTaken, ringsFound, eyesSeen, snorkMet,
-      blood: bloodAmount, bloodSeen,
+      jars: bloodJars, bloodSeen,
       // he went into the sea and he does not come back out of it
       smileGone: smilePhase === 2,
       // and the saucer took you once: `abductDone` is the latch, `shrineWon`
@@ -24981,6 +26103,14 @@ function saveCheckpoint() {
        * fight you have already won does not un-happen when you load, and a
        * sword you have already taken off its stand is not on it again. */
       dojoWon, heroSword: heroSwordTaken,
+      /* AND A BOX YOU BROKE STAYS BROKEN. It was never on the save, which
+       * did not matter while the crate only held a ring the beach could do
+       * without — and now the first crate holds the LIGHT, and a restore
+       * that stands it back up whole means the handler that hands the
+       * glowstick over is never registered and the pickup can never be
+       * replayed. (The pack backstop catches the item; this is so the beach
+       * is the beach you left.) */
+      crates: crates.map((c, i) => (c.broken ? i : -1)).filter((i) => i >= 0),
     },
   };
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (err) { return; }
@@ -25036,8 +26166,13 @@ function beginRestore() {
   crabBled = !!f.crabBled; hcrabTaken = !!f.hcrabTaken;
   eyesSeen = !!f.eyesSeen; snorkMet = !!f.snorkMet;
   dockDoorOpen = !!f.dockDoor;
-  bloodAmount = f.blood || 0; bloodSeen = !!f.bloodSeen;
-  if (bloodSeen) { hudJar.userData.setFill(Math.min(1, bloodAmount / BLOOD_JAR_CAP)); updateBloodReadout(); }
+  // a save written before the tally counted jars carries millilitres
+  bloodJars = f.jars != null ? f.jars : (f.blood ? 1 : 0);
+  bloodSeen = !!f.bloodSeen;
+  if (bloodSeen) { hudJar.userData.setFill(0.86); updateBloodReadout(); }
+  // and the jars come back as a stack, not as a number with no slot under it
+  jarItem.count = bloodJars;
+  if (bloodJars > 0) { addToInventory(jarItem); renderHotbar(); renderPack(); }
   for (const i of d.mounds || []) if (mounds[i] && !mounds[i].taken) revealMoundNear(mounds[i].x, mounds[i].z);
   /* THE THREE AT THE DOCK ARE BEHIND YOU. Their cutscene fires on your Z
    * alone, and the pavilion is three hundred metres past it — so a restore
@@ -25096,6 +26231,9 @@ function updateRestore(dt) {
   /* THE DOJO, BEFORE ANYTHING ELSE READS IT. `dojoWon` also implies the
    * sword: you cannot have killed him without taking it off the stand, so a
    * save that only carried the win still puts the rack back empty. */
+  /* the crates you opened, BEFORE the pickups are replayed: breaking one is
+   * what registers whatever was inside it */
+  for (const i of f.crates || []) if (crates[i] && !crates[i].broken) breakCrate(crates[i], 1, true);
   if (f.dojoWon) dojoWon = true;
   if (f.heroSword || f.dojoWon) heroSwordTaken = true;
   if (f.holdDoor && !holdDoorOpen) {
@@ -25114,9 +26252,47 @@ function updateRestore(dt) {
   if (missing && restoreT < 8) return;
   finishRestore();
 }
+/* ---- AND NOTHING IN YOUR PACK MAY BE LOST TO A SPAWNER THAT DID NOT RUN.
+ *
+ * The restore replays PICKUPS: it looks up each saved id among the
+ * interactables and fires that handler again, which is the right design —
+ * the handler is what builds the view model, names the thing and puts it in
+ * the pack, and every one of the fourteen is different. What it cannot do is
+ * find a handler that does not exist yet, and there are real ways for that
+ * to happen: an item that is registered by something ELSE breaking (the
+ * crate's glowstick), a scan that has not landed inside the eight-second
+ * window, an interactable behind a gate the restore has not opened. When
+ * that happens the item is simply gone, for the rest of the game, with no
+ * error anywhere — and the owner lost his WEAPONS to it, which is the worst
+ * possible version.
+ *
+ * So the replay is the mechanism and this is the floor under it: anything
+ * the save says you were carrying that is still not in the pack when the
+ * window closes is granted outright. It is a last resort by construction —
+ * if the replay worked, this finds nothing — and it can only ever hand back
+ * something you are recorded as having had. */
+function packByName(name) {
+  /* The named, module-scope items — which is every one the replay can lose.
+   * The shells, the note and the blood jar are BUILT at the moment they are
+   * taken and have no standing object to hand back; they are also not things
+   * a fight depends on. The three dig tools are, and they are all here. */
+  for (const it of [shovelItem, militaryItem, katanaItem, glowstickItem, ringItem,
+                    keyItem, boatKeyItem, cdItem, crabItem, syringeItem,
+                    waterBottleItem, headItem]) {
+    if (it && it.name === name) return it;
+  }
+  return null;
+}
 function finishRestore() {
   const d = restore; restore = null;
   if (!d) return;
+  for (const name of d.pack || []) {
+    if (inventory.some((i) => i.name === name)) continue;
+    const it = packByName(name);
+    if (!it) { console.warn('[restore] no item known by the name', name); continue; }
+    console.warn('[restore] the pickup for', name, 'never appeared — granting it outright');
+    addToInventory(it);
+  }
   /* THE PACK COMES BACK IN ORDER. Replaying pickups puts things in whatever
    * order they landed, and the hotbar is muscle memory — 3 was the shovel all
    * game. Sort what you actually have by the order you were carrying it. */
@@ -25170,7 +26346,7 @@ function animateFrame() {
   oceanUniforms.uTime.value += dt;
   if (!introStarted) titleCam(rawDt);
   update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
-  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); updatePortalCut(rawDt);
+  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt);
   updateHover();
   /* After everything that may have moved a lamp or the player, and before
    * anything is drawn: point the twelve real lights at the twelve that
@@ -25583,7 +26759,13 @@ function mutClampX(u, p, dt) {
      * everywhere it can stand, and the push then cancels every step it
      * takes. The fight keeps the wide body; the walls get three quarters. */
     const wx = _mcL.x, wz = _mcL.z;
-    UC.pushOut(_mcL, (u.kind.body || 0.9) * 0.75, f === null ? p.y - UC_Y : f);
+    /* AND A PEW IS NOT A WALL TO HIM. `crushes` means he goes through the
+     * furniture — `knightCrush` takes out whatever he touches — so the walk
+     * he is held by is the room WITHOUT it (`floor0`). Without this the
+     * room's push-out held him off every bench until the crush caught up,
+     * which is the second of shouldering the owner saw: "it looks like he
+     * avoids them". The piers and the walls are `solid` and still stop him. */
+    UC.pushOut(_mcL, (u.kind.body || 0.9) * 0.75, f === null ? p.y - UC_Y : f, 4, !!u.kind.crushes);
     /* AND THE CORRECTION IS DAMPED. A push-out is a TELEPORT — it puts a
      * body wherever it has to go in one frame — and on something that is
      * also being steered that reads as the thing glitching about the room.
@@ -28076,6 +29258,56 @@ function ntarRetarget(u, m, bones, bind, J, hipUp, hipPos, src) {
     A.set(b, q);
   }
 
+  /* THE TWIST BONES, WHICH NOTHING HAS EVER DRIVEN — and they are most of
+   * "some of his moves are awkward, his limbs should look natural when he
+   * swings". An Unreal mannequin runs two twist joints down the middle of
+   * every limb (`lowerarm_twist_01_r` and friends: sixteen of them on this
+   * rig) and the skin along a forearm is weighted to THEM, not to the
+   * forearm bone. The retarget maps what `kind.rag` names — the ragdoll's
+   * twenty-two joints — so every twist bone fell through to the fallback
+   * and simply inherited its parent. What that draws is the candy-wrapper:
+   * the whole roll of a joint absorbed by one ring of vertices at the joint
+   * itself, with the length of the limb dead. Measured on his own clips,
+   * peak roll taken in a single step: 65 degrees at the wrist on the swipe,
+   * 46 at the elbow on the spin, 28 at the ankle.
+   *
+   * A twist bone at a fraction f along its limb takes f of the DISTAL
+   * joint's roll about that limb's own axis, so the skin ramps from nothing
+   * at one end to the whole turn at the other instead of stepping. Nothing
+   * is taken away from the joint itself, so the pose is untouched and only
+   * the ramp between changes. The fractions are MEASURED off the rig rather
+   * than assumed (they come out at clean thirds here, and 01 is the far end
+   * on a forearm and the near end on an upper arm, which is exactly the
+   * kind of thing not to hard-code). */
+  const TWIST = [];
+  for (const b of bones) {
+    if (!/twist/i.test(b.name)) continue;
+    const P = b.parent && b.parent.isBone ? b.parent : null;
+    if (!P || !mxOf[P.name]) continue;
+    const D = P.children.find((c) => c.isBone && mxOf[c.name]);   // the joint at the far end of this limb
+    if (!D) continue;
+    const L = D.position.length();
+    if (L < 1e-6) continue;
+    const f = Math.min(1, b.position.length() / L);
+    if (f < 0.02) continue;
+    TWIST.push({ b, D, f, axis: D.position.clone().normalize(), bq: bind.get(b).q });
+  }
+  /* The swing-twist split: the part of a rotation that is ABOUT the axis.
+   * Project the quaternion's vector onto the axis and renormalise — the
+   * remainder is the swing, which belongs to the joint and not to the
+   * length of the limb. */
+  const _tv = new THREE.Vector3(), _tp = new THREE.Vector3(), _tq = new THREE.Quaternion();
+  const _bi = new THREE.Quaternion(), _id = new THREE.Quaternion();
+  function twistAbout(q, axis, k, into) {
+    _tv.set(q.x, q.y, q.z);
+    _tp.copy(axis).multiplyScalar(_tv.dot(axis));
+    _tq.set(_tp.x, _tp.y, _tp.z, q.w);
+    if (_tq.lengthSq() < 1e-12) return into.identity();
+    _tq.normalize();
+    if (_tq.w < 0) { _tq.x = -_tq.x; _tq.y = -_tq.y; _tq.z = -_tq.z; _tq.w = -_tq.w; }
+    return into.copy(_id).slerp(_tq, k);
+  }
+
   const out = [];
   const _d = new THREE.Quaternion(), _w = new THREE.Quaternion(), _pi = new THREE.Quaternion();
   for (const name in data.clips) {
@@ -28102,6 +29334,21 @@ function ntarRetarget(u, m, bones, bind, J, hipUp, hipPos, src) {
         }
         _pi.copy(pW).invert().multiply(w);
         const v = vals.get(b), o2 = i * 4;
+        v[o2] = _pi.x; v[o2 + 1] = _pi.y; v[o2 + 2] = _pi.z; v[o2 + 3] = _pi.w;
+      }
+      /* and THEN the twists, because a twist bone reads the joint at the far
+       * end of its own limb and that joint is a sibling — it may be written
+       * before or after it depending on nothing but the order the file lists
+       * them in. Both are local rotations in the same parent's frame, which
+       * is the frame the limb's axis is measured in, so the share is simply
+       * pre-multiplied onto the twist bone's own bind. */
+      for (const t of TWIST) {
+        const dv = vals.get(t.D), o = i * 4;
+        _d.set(dv[o], dv[o + 1], dv[o + 2], dv[o + 3]);
+        _bi.copy(bind.get(t.D).q).invert().multiply(_d);        // what the joint has DONE, not where it sits
+        twistAbout(_bi, t.axis, t.f, _w);
+        _pi.copy(_w).multiply(t.bq);
+        const v = vals.get(t.b), o2 = i * 4;
         v[o2] = _pi.x; v[o2 + 1] = _pi.y; v[o2 + 2] = _pi.z; v[o2 + 3] = _pi.w;
       }
     }
@@ -28131,6 +29378,22 @@ function ntarRetarget(u, m, bones, bind, J, hipUp, hipPos, src) {
        * is lying, and the line they may not rise above on the way up. */
       if (name === 'knock') u.ntarHip = { bone: J.hip, pos: hipPos.clone(), up: hipUp.clone(), lie: C.hipY[n - 1] * hipK };
     }
+    /* AND HOW FAST THE CLIP ITSELF TRAVELS, so the game can play it at the
+     * speed it is actually moving him. "The rate is the stride over the
+     * speed" was set by hand for two clips; with a dozen gaits drawn against
+     * each other it has to come off the data, or half of them skate. */
+    if (C.travel && C.travel.length && C.dur > 0) {
+      const T = C.travel[C.travel.length - 1];
+      u.clipSpeed[name] = Math.hypot(T[0], T[1]) / C.dur;
+      /* AND A ONE-OFF BEAT IS MOVED BY ITS OWN ROOT, NOT BY A NUMBER. The
+       * horizontal travel is left out of the hips for a GAIT, because there
+       * the game owns the speed — but a knockdown is a scripted beat where
+       * the clip is the authority, and a fall slid along a hand-set vector
+       * while the body goes somewhere else is the animation and the motion
+       * disagreeing. The whole curve is kept so the knockdown can walk it. */
+      u.clipTravel[name] = C.travel;
+    }
+    if (C.az) u.clipAz[name] = C.az;
     out.push(new THREE.AnimationClip(name, C.dur, tracks));
   }
   return out;
@@ -28511,17 +29774,17 @@ function authorKnightClips(u, m, gltf) {
  * fifth of a second, he swings nearly every time he could and chains four
  * deep. The tells are what keep him fair and they are the longest in the
  * game — the jump hangs before it comes down. */
-MUT_ATTACKS.kPunch = { wind: 0.42, strike: 0.13, recover: 0.30, hit: 0.560, reach: 2.15, lunge: 1.5, chain: 'kSwipe', chainP: 0.58, w: 0.34, guardK: 0.95, limbs: [0] };
-MUT_ATTACKS.kSwipe = { wind: 0.62, strike: 0.16, recover: 0.38, hit: 0.600, reach: 2.60, lunge: 1.3, chain: 'kPunch', chainP: 0.50, w: 0.32, guardK: 1.15, limbs: [0, 1] };
+MUT_ATTACKS.kPunch = { wind: 0.42, strike: 0.13, recover: 0.30, hit: 0.560, reach: 2.15, lunge: 1.5, chain: 'kSwipe', chainP: 0.7, w: 0.34, guardK: 0.95, limbs: [0] };
+MUT_ATTACKS.kSwipe = { wind: 0.62, strike: 0.16, recover: 0.38, hit: 0.600, reach: 2.60, lunge: 1.3, chain: 'kPunch', chainP: 0.62, w: 0.32, guardK: 1.15, limbs: [0, 1] };
 /* THE TURN. A full revolution with the arm out high — it has no lunge and it
  * hits everything around him, so it is what he answers being circled with.
  * Its contact is late in the clip because the arm has to come all the way
  * round; `hold` keeps him on the spot rather than walking his own wind-up in. */
-MUT_ATTACKS.k360   = { wind: 0.88, strike: 0.24, recover: 0.58, hit: 0.620, reach: 3.20, lunge: 0.5, chain: 'kSwipe', chainP: 0.46, w: 0.20, hold: true, guardK: 1.40, limbs: [0, 1] };
-MUT_ATTACKS.kOver  = { wind: 1.45, strike: 0.20, recover: 0.78, hit: 0.846, reach: 2.50, lunge: 0.8, chain: 'kPunch', chainP: 0.40, w: 0.22, dmg: 2, hold: true, guardK: 1.75, twoHanded: true };
-MUT_ATTACKS.kBack  = { wind: 0.66, strike: 0.16, recover: 0.40, hit: 0.690, reach: 2.55, lunge: 1.2, chain: 'kSwipe', chainP: 0.52, w: 0.28, guardK: 1.10, limbs: [1] };
-MUT_ATTACKS.kStomp = { wind: 0.92, strike: 0.18, recover: 0.52, hit: 0.716, reach: 2.70, lunge: 1.0, chain: 'kBack', chainP: 0.44, w: 0.20, guardK: 1.35, limbs: [2] };
-MUT_ATTACKS.kJump  = { wind: 1.05, strike: 0.20, recover: 0.62, hit: 0.640, reach: 5.40, lunge: 5.2, chain: 'kPunch', chainP: 0.55, w: 0.22, dmg: 2, hold: true, guardK: 1.70, minDist: 3.2, twoHanded: true };
+MUT_ATTACKS.k360   = { wind: 0.88, strike: 0.24, recover: 0.58, hit: 0.620, reach: 3.20, lunge: 0.5, chain: 'kSwipe', chainP: 0.56, w: 0.20, hold: true, guardK: 1.40, limbs: [0, 1] };
+MUT_ATTACKS.kOver  = { wind: 1.45, strike: 0.20, recover: 0.78, hit: 0.846, reach: 2.50, lunge: 0.8, chain: 'kPunch', chainP: 0.5, w: 0.22, dmg: 2, hold: true, guardK: 1.75, twoHanded: true };
+MUT_ATTACKS.kBack  = { wind: 0.66, strike: 0.16, recover: 0.40, hit: 0.690, reach: 2.55, lunge: 1.2, chain: 'kSwipe', chainP: 0.64, w: 0.28, guardK: 1.10, limbs: [1] };
+MUT_ATTACKS.kStomp = { wind: 0.92, strike: 0.18, recover: 0.52, hit: 0.716, reach: 2.70, lunge: 1.0, stop: 1.32, chain: 'kBack', chainP: 0.54, w: 0.20, guardK: 1.35, limbs: [2] };
+MUT_ATTACKS.kJump  = { wind: 1.05, strike: 0.20, recover: 0.62, hit: 0.640, reach: 5.40, lunge: 5.2, chain: 'kPunch', chainP: 0.66, w: 0.22, dmg: 2, hold: true, guardK: 1.70, minDist: 3.2, twoHanded: true };
 MUT_KINDS.knight = {
   glb: 'assets/knight.glb', solo: true, noSand: true, skin: null, bones: null,
   /* BIG. Three and a half metres of plate in a nave whose vault is thirteen
@@ -28531,14 +29794,33 @@ MUT_KINDS.knight = {
    * frame at fighting range and every blow arrived from off-screen; 2.85 is
    * still half again your height and his hands are where you can watch them.
    * The body and the hit radius come down with him. */
-  h: 2.85, hp: 38, dmg: 1, hitR: 1.15, body: 0.95, uc: true,
-  speedK: 1.18, windK: 1.00, reachK: 1.00, aggr: 3.20, press: 0.94,
-  use: { kPunch: 0.22, kSwipe: 0.20, kJump: 0.14, kOver: 0.12, kBack: 0.14, kStomp: 0.10, k360: 0.16 },
+  /* AND HIS BODY IS NARROWER THAN HIS HEIGHT SUGGESTS. `body` is how near
+   * you may stand, and at 0.95 it was wider than his own arm is long (0.89
+   * from his origin at full extension, measured) — so he could never put a
+   * fist on you whatever the aim did. He is tall, not broad. */
+  h: 2.85, hp: 38, dmg: 1, hitR: 1.15, body: 0.78, uc: true, lungeStop: 1.18,
+  /* MORE AGGRESSIVE, on the owner's word, and NOT in the startups: those are
+   * where the fairness lives and this file has paid for shortening them. */
+  speedK: 1.22, windK: 1.00, reachK: 1.00, aggr: 3.70, press: 0.96,
+  /* AND THE STOMP IS THE RAREST OF THEM, because it is the one blow of his
+   * that cannot be framed. Swept in the pane, its boot is on screen 62 % of
+   * the time at best (1.30) against 100 % for every hand blow: it arrives at
+   * thigh height beside you and a first-person camera at 1.63 m is looking
+   * over the top of it. It stays — it is the one answer that is not the
+   * answer to his hands — and it is thrown least. */
+  use: { kPunch: 0.22, kSwipe: 0.21, kJump: 0.14, kOver: 0.13, kBack: 0.15, kStomp: 0.07, k360: 0.16 },
   /* PACING. He chains four deep and swings nearly every time he could — and
    * then, a third of the openings, he gives ground instead and watches. The
    * aggression is what makes him hard; the beat where he stops is what makes
    * him readable, and a fight you can read is the only kind you can learn. */
-  circle: 0.20, step: 0.22, chainMax: 4, feint: 0.30, sizeUp: 0.34,
+  /* THE CHAIN IS THE AGGRESSION. `aggr` divides the between-swing cooldown and
+   * at 3.7 that is already 0.02-0.10 s — saturated, and not what limits his
+   * rate. What does is the swings' own lengths, and those are his tells. A
+   * CHAINED swing has no cooldown at all, so a deeper chain (and the raised
+   * `chainP` on each of his attacks) is the one lever that presses harder
+   * without making him less readable. */
+  circle: 0.16, step: 0.22, chainMax: 5, feint: 0.30, sizeUp: 0.28, restless: 1, smart: 1, crushes: 1,
+  turnMax: 5.2,                       // rad/s — he is two tonnes of plate and he comes round like it
   poise: 11, poiseBack: 1.7, poiseWait: 1.2, parryK: 0.80, recoilK: 0.72, blockCost: 1.00,
   block: 0.34, fidgetK: 0.22, fidgetGap: 3.0,
   /* AND THE SHOULDER TURNS FURTHER THAN A MAN'S. `aimK` is how much of the
@@ -28547,7 +29829,7 @@ MUT_KINDS.knight = {
    * and the fight reads as happening beside you instead of to you. Measured
    * at the contact frame: the sweep now finishes 0.28 to 0.53 m off the
    * chest and the punch 0.4 to 0.6, where they were both over two metres. */
-  reacts: true, aimed: true, barLen: 0.34, aimK: 1.70, bossDeath: true,
+  reacts: true, aimed: true, barLen: 0.34, aimK: 1.90, bossDeath: true, landSlop: 0.62,
   rig: { arm: 'upperarm_r', fore: 'lowerarm_r', hand: 'hand_r',
          armL: 'upperarm_l', foreL: 'lowerarm_l', handL: 'hand_l', head: 'head',
          // his one extra chain: the right leg, so the stomp lands with the BOOT
@@ -28577,8 +29859,70 @@ MUT_KINDS.knight = {
    * are set so the clip's own ground speed matches his, measured. */
   anim: { idle: 'idle', walk: 'walk', run: 'run', roar: 'roar', die: 'hurt', back: 'walk',
           rate: 0.62, lean: 0.05, strafeK: 0.78 },
-  alias: { idle2: 'idle', walk2: 'walk', run2: 'run', roar2: 'roar', die: 'hurt', die2: 'hurt',
-           back: 'walk', hit: 'hurt', calm: 'idle', strafeL: 'strafe', strafeR: 'strafe' },
+  /* ---- AND HE CARRIES HIMSELF DIFFERENTLY FROM ONE EXCHANGE TO THE NEXT.
+   * A locomotion pack on top of the moves he already had: three walks, two
+   * runs, two idles and three sideways strides a side, drawn afresh every
+   * time he sets off or comes to rest. None of his attacks changed — the
+   * owner's word was to keep his moves and add to them — what changed is
+   * everything BETWEEN them, which is most of what you are looking at.
+   * Every one of these is played at whatever rate makes its own measured
+   * stride match the speed the game is moving him at, so none of them
+   * skates. */
+  /* AND A CLIP THAT DOES NOT TRAVEL IS NOT A GAIT. Measured off the clips
+   * themselves: walk 1.76 m/s, walkC 1.48, run 2.58, runB 3.68, strafeL and
+   * strafeL2 1.53, strafeR2 1.70, strafeR3 1.53 — against walkB at 0.26 and
+   * strafeR at 0.56, which are walked ON THE SPOT. Those two were in the
+   * pool and one of them was the strafe he actually used: played at the
+   * speed he was moving they slide a metre a second, which is the "his feet
+   * slide" this file has already paid for twice. They stay in the file (a
+   * stationary stride is the right thing for a creature holding its ground)
+   * and they are out of the pools that travel. */
+  /* AND THE RUN IS THE MUTANT ONE AND NOTHING ELSE. The locomotion pack's
+   * run is a man's jog and it reads wrong on two tonnes of plate — the
+   * owner's word — so the pool has one entry. Everything else he has two or
+   * three of, which is where the variety was wanted anyway: you see him walk
+   * and stand and circle far more than you see him run. */
+  gaits: { walk: ['walk', 'walkC'], run: ['run'], idle: ['idle', 'idleB'],
+           strafeL: ['strafeL', 'strafeL2'], strafeR: ['strafeR2', 'strafeR3'] },
+  /* THE REEL A PARRY BUYS. A parry is the biggest thing you can do to him
+   * and it used to play the same small flinch as a shovel tap. */
+  stunClip: 'parry',
+  /* ---- AND ENOUGH HEAVIES TO THE HEAD PUT HIM ON HIS BACK.
+   *
+   * Three blows that are BOTH heavy and through his poise — which is the
+   * hardest thing in this fight to do once, let alone three times — and he
+   * goes over, gets up, and the tally starts again. It is a count and not a
+   * die on purpose: a roll can hand it to you on a lucky tap or withhold it
+   * through a perfect exchange, and this is meant to be the thing you were
+   * working toward.
+   *
+   * The beats are SHORT, because the owner has to be able to keep fighting:
+   * the fall is the clip's own 1.27 s, a third of a second on the floor, and
+   * a 1.33 s get-up — a shade under three seconds, against the alien's three
+   * and a half. And he has a real `riseClip`, so he stands up the way the
+   * animator drew it rather than by playing his own fall backwards. */
+  /* FIVE heavies landed inside a stretch (the tally lapses after seven
+   * seconds without a hit). Five is fifteen of his thirty-eight to the
+   * katana and ten to the shovel, so a fight that keeps the pressure on sees
+   * him go over once or twice and a fight that does not never does — which
+   * is "fairly rare" measured against the whole fight, not against luck. */
+  knockClip: 'knockOut', riseClip: 'getUp', knockAfter: 5, knockLapse: 7,
+  /* AND `slide` IS NULL BECAUSE THE REELS CARRY THEIR OWN TRAVEL. A number
+   * here is a distance along the line the blow came in on, which is a guess;
+   * `knockOut` moves him 1.41 m and mostly ACROSS that line, and the game
+   * sliding him one way while the animation takes him another is the floor
+   * and the body disagreeing. Null means walk the clip. */
+  knock: { fall: 1.27, lie: 0.34, rise: 1.33, land: 0.78, slide: null },
+  /* AND HE OPENS THE SIZE-UP WITH A STEP, NOT A STROLL. Three metres in
+   * eight tenths of a second, measured off the clip: he is simply somewhere
+   * else, and then he walks the circle watching you. */
+  stepClip: ['sideL', 'sideR2'],
+  /* AND `hit` IS NO LONGER ALIASED ONTO THE AUTHORED FLINCH. An alias
+   * OVERWRITES a clip of the same name, so `hit: 'hurt'` was quietly
+   * shadowing the owner's own Head Hit — the clip he sent for exactly this —
+   * with the four-key rock written before it arrived. */
+  alias: { idle2: 'idleB', walk2: 'walkC', run2: 'run', roar2: 'roar', die: 'hurt', die2: 'hurt',
+           back: 'walk', calm: 'idle' },
   provoke: knightProvoke,
   /* a voice out of a helmet: the bellow, pitched down, with the rasp taken
    * off it — there is no throat in there */
@@ -28697,17 +30041,94 @@ let _kcPrev = null;
  * from behind the post — so the fight starts with him in the open and the
  * chase never has to solve a pier. It is a WALK, eased, not a teleport: the
  * one thing this must not look like is him appearing somewhere else. */
+/* ---- HE COMES STRAIGHT AT YOU, AND HE USED TO GO SIDEWAYS FIRST.
+ *
+ * The step-out walked him from his alcove to a measured spot clear of the
+ * arcade before the fight began — put in because the chase is a straight line
+ * and the pier he stands behind was in the way of it. It reads as exactly
+ * what it is: a boss sliding a couple of metres to his right while the roar
+ * plays, going somewhere rather than coming for you.
+ *
+ * He can simply run now, and nothing had to be added for it: the pews are not
+ * walls to him (`crushes`, the bare floor) and the pier IS one, so `ucSteer`
+ * hands him a way round it the moment the line is shut. What was a scripted
+ * slide is the fight's own pathfinding doing the same job, at the player,
+ * through the furniture. */
 function knightStepOut(dt) {
   const u = knightUnit;
   if (!knightFight || !u || u.dead || !u.st.awake) return;
-  if (u.outDone || u.outX === undefined) return;
-  const tx = UC_X + u.outX, tz = UC_Z + u.outZ;
-  const p = u.g.position;
-  const dx = tx - p.x, dz = tz - p.z, l = Math.hypot(dx, dz);
-  if (l < 0.12) { u.outDone = true; return; }
-  const step = Math.min(l, 2.6 * dt);
-  p.x += dx / l * step; p.z += dz / l * step;
-  u.g.rotation.y = Math.atan2(camera.position.x - p.x, camera.position.z - p.z);
+  u.outDone = true;
+}
+/* ---- AND HE STEPS ROUND A PIER RATHER THAN SHOULDERING IT.
+ *
+ * A nave's piers are a metre of stone with open floor either side, and the
+ * chase is a straight line at you: he met one, the push-out held him off it,
+ * and he worked along its face for a second — which on a thing this size
+ * reads as stupid rather than as strong. The Dealer has had the answer since
+ * the bunker's table: if the straight line is shut, ask the room for a way
+ * round, and drop it the moment the line opens. This is that pair on the
+ * undercroft's grids, for any creature that says `kind.uc`.
+ *
+ * `bare` means the pews are not in it — he goes through those — so the only
+ * things he ever routes around are the walls and the columns. */
+const UC_PATH_EVERY = 0.40;
+function ucSteer(u, dt, dist) {
+  if (!u.kind.uc || !UC.ready || !UC.route || !UC.clearAhead) return;
+  const bare = !!u.kind.crushes;
+  const lx = u.g.position.x - UC_X, lz = u.g.position.z - UC_Z;
+  const px = camera.position.x - UC_X, pz = camera.position.z - UC_Z;
+  const f = UC.floorAt(lx, lz);
+  const feet = f === null ? u.g.position.y - UC_Y : f;
+  const r = (u.kind.body || 0.9) * 0.75;
+  const ddx = px - lx, ddz = pz - lz, L = Math.hypot(ddx, ddz) || 1;
+  /* A ROUTE IS A WAY ROUND SOMETHING, NOT A WAY OF GETTING ABOUT. The moment
+   * he can see his way to you he walks at you. */
+  if (UC.clearAhead(lx, lz, ddx / L, ddz / L, Math.min(L, 5.0), r, feet, bare)) { u.path = null; return; }
+  u.pathAge = (u.pathAge || 0) + dt;
+  if (u.path || u.pathAge < UC_PATH_EVERY || dist < 1.6) return;
+  u.pathAge = 0;
+  const P = UC.route(lx, lz, px, pz, r, feet, bare);
+  u.path = (P && P.length > 1) ? P : null;
+  u.pathI = 0;
+  /* AND HE DOES NOT WHIP ROUND TO A WAYPOINT HE IS ALREADY STANDING ON. The
+   * search starts from the nearest cell a body FITS in, which when he is
+   * pressed against a pier is a cell back the way he came — so the route's
+   * first point could be behind him and he spun to face it. Measured: 48
+   * degrees of heading in a single frame, which on two tonnes of plate is
+   * the whole of "he flies around". Anything inside a stride is already
+   * behind him; the route starts at the first point he actually has to walk
+   * to. */
+  if (u.path) {
+    while (u.pathI < u.path.length - 1
+           && Math.hypot(u.path[u.pathI].x - lx, u.path[u.pathI].z - lz) < 0.9) u.pathI++;
+  }
+}
+const _ufD = new THREE.Vector3();
+function ucFollowPath(u, dt) {
+  const P = u.path;
+  if (!P) return 0;
+  const lx = u.g.position.x - UC_X, lz = u.g.position.z - UC_Z;
+  while (u.pathI < P.length && Math.hypot(P[u.pathI].x - lx, P[u.pathI].z - lz) < 0.6) u.pathI++;
+  if (u.pathI >= P.length) { u.path = null; return 0; }
+  /* AND A CORNER IS ROUNDED, NOT TURNED. Aiming dead at the current
+   * waypoint and switching to the next the instant it is reached makes a
+   * route a sequence of hard turns — which on two tonnes of plate reads as
+   * snapping. The aim is blended toward the waypoint AFTER this one as he
+   * closes on this one, so he cuts the corner the way anything with mass
+   * does; and the heading itself is eased rather than set, so even a route
+   * that doubles back is a turn you watch him make. */
+  const w = P[u.pathI], nx = P[u.pathI + 1] || w;
+  const dWp = Math.hypot(w.x - lx, w.z - lz);
+  const blend = THREE.MathUtils.clamp(1 - (dWp - 0.6) / 1.4, 0, 0.65);
+  const tx = w.x + (nx.x - w.x) * blend, tz = w.z + (nx.z - w.z) * blend;
+  const wx = tx - lx, wz = tz - lz, L = Math.hypot(wx, wz) || 1;
+  _ufD.set(wx / L, 0, wz / L);
+  if (u.dir.lengthSq() < 1e-6) u.dir.copy(_ufD);
+  else { u.dir.lerp(_ufD, Math.min(1, dt * 7)); if (u.dir.lengthSq() > 1e-8) u.dir.normalize(); }
+  const sp = MUT_SPEED * u.kind.speedK * (1 + (u.st.sprint || 0));
+  u.g.position.addScaledVector(u.dir, sp * dt);
+  mutClampX(u, u.g.position, dt);
+  return 1;
 }
 function knightCrush(dt) {
   if (!knightFight || !knightUnit || knightUnit.dead || !UC.ready) return;
@@ -28731,6 +30152,31 @@ function knightCrush(dt) {
     breakBench(b, 3.5 + sp * 1.6);
   }
 }
+/* AND HE IS CARRYING THE RING. It used to be in the first cache, five
+ * minutes into the walk, which is the wrong end of the game for the only
+ * thing you can WEAR: a ring that changes a number wants to be the thing
+ * the hardest fight in the building pays out, not a thing the shovel turns
+ * up before you have met anything. So it comes off him, and it comes off
+ * him the way everything else here arrives — thrown, ringing, and under a
+ * glint you can find among the wreckage he has just made of forty pews.
+ *
+ * `through` on the shine is the Military Shovel's own lesson: a takeable
+ * lying among the debris of the thing that dropped it is hidden BY that
+ * debris, so the mark carries a second sprite that ignores depth. And the
+ * drop waits a beat past the kill — `deadT` is the clip's own clock — so it
+ * lands while you are still watching him go down rather than during the
+ * hitstop, where nothing reads. */
+let knightSpoils = false;
+function knightSpoilsDrop() {
+  const u = knightUnit;
+  if (knightSpoils || !u || !knightFight || u.st.alive || (u.st.deadT || 0) < 0.55) return;
+  if (ringsFound || inventory.includes(ringItem) || rings.includes(ringItem)) { knightSpoils = true; return; }
+  knightSpoils = true;
+  const p = u.g.position;
+  const f = UC.ready ? UC.floorAt(p.x - UC_X, p.z - UC_Z) : null;
+  dropRing(p.x, (f === null ? p.y : UC_Y + f) + 0.85, p.z, 0.9);
+}
+
 /* THE WALL STOPS BEING A WALL. He has been standing there since you walked
  * in — hidden, asleep, and in the blade's own creature test the whole time,
  * because that test does not ask whether a creature is visible. */
@@ -29895,7 +31341,23 @@ const UC_LAMP = [{ want: 46, dist: 56, col: 0xc2b79c, flick: [0.10, 3.1] },    /
                  { want: 9.0, dist: 10.0, col: 0xffa951, flick: [0.26, 9.4] }, // the candles on the altar
                  { want: 4.2, dist: 9.5, col: 0xff9a45, flick: [0.30, 8.1] },  // and the ring of them at its foot
                  { want: 2.4, dist: 12, col: 0xd8bf94, flick: [0.62, 5.7] },   // the old cave, the way out: its own two bulbs, the first bright enough to be seen through the hole
-                 { want: 1.4, dist: 12, col: 0xd2b98e, flick: [0.62, 6.3] }];
+                 { want: 1.4, dist: 12, col: 0xd2b98e, flick: [0.62, 6.3] },
+                 /* AND THE CANDLES DOWN THE NAVE LIGHT IT TOO. A hundred and
+                  * thirty tapers were drawing themselves and lighting
+                  * nothing: the room's only lamps stood at the altar, so the
+                  * clusters at the piers were bright pips in a black nave
+                  * and the owner's word was that the candles should light
+                  * the room. Four go on the biggest clusters the module
+                  * placed (`S.candles.clusters`) — a flame's colour, a
+                  * flame's reach, and each guttering on its own count, so
+                  * what lights the aisle is the thing you can see lighting
+                  * it. They cost nothing: point lights have been pooled
+                  * since the Windows pass, and only the twelve nearest are
+                  * ever in a shader. */
+                 { want: 3.6, dist: 11.0, col: 0xff9f48, flick: [0.34, 7.3] },
+                 { want: 3.6, dist: 11.0, col: 0xffa14c, flick: [0.34, 6.1] },
+                 { want: 3.2, dist: 10.0, col: 0xff9a45, flick: [0.34, 8.6] },
+                 { want: 3.2, dist: 10.0, col: 0xffa350, flick: [0.34, 5.4] }];
 for (let i = 0; i < UC_LAMP.length; i++) {
   const l = new THREE.PointLight(UC_LAMP[i].col, 0, UC_LAMP[i].dist, 1.6);   // a failing bulb's colour, not a fire's
   l.position.set(UC_X, UC_Y - 60, UC_Z);
@@ -29967,8 +31429,16 @@ function armUndercroft(S) {
    * front of the altar with no candle at the middle of it — a lamp on the
    * ground, which is what the candles are there so as not to be. */
   const foot = A ? { x: A.x - 0.9, y: A.dais + 1.25, z: A.z } : altar;
+  /* THE FOUR CANDLE LAMPS GO ON THE CLUSTERS FURTHEST DOWN THE NAVE, spread
+   * along it rather than bunched: sorted by distance from the altar and
+   * taken at four points through that list, so the aisle is lit all the way
+   * to the door instead of twice over at one pier. */
+  const cl = ((S.candles && S.candles.clusters) || []).slice().sort((a, b) => (A ? (A.x - a.x) - (A.x - b.x) : a.x - b.x));
+  const clAt = (f) => (cl.length ? cl[Math.min(cl.length - 1, Math.round((cl.length - 1) * f))] : null);
+  const lift = (p) => (p ? { x: p.x, y: p.y + 1.35, z: p.z } : null);
   const at = [church[0] || sp.exit, church[church.length - 1] || sp.exit, altar, foot,
-              pick(cave, 0.0) || sp.exit, pick(cave, 0.72) || sp.exit];                  // the old cave's own bulbs: the first is the one at its mouth, so the hole in the apse shows a lit floor going in
+              pick(cave, 0.0) || sp.exit, pick(cave, 0.72) || sp.exit,                   // the old cave's own bulbs: the first is the one at its mouth, so the hole in the apse shows a lit floor going in
+              lift(clAt(0.08)), lift(clAt(0.36)), lift(clAt(0.64)), lift(clAt(0.94))];
   at.forEach((p, i) => { if (p && ucLamps[i]) ucLamps[i].position.set(UC_X + p.x, UC_Y + p.y - 0.3, UC_Z + p.z); });
   // the way out, behind the altar
   const proxy = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.6, 2.4), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
@@ -30084,10 +31554,20 @@ function armUndercroft(S) {
     const E = sp.entry, M = sp.mouth, X = sp.exit;
     const px = UC_X + E.x, py = UC_Y + E.y + 1.6, pz = UC_Z + E.z;
     warmStep('undercroft compile', () => warmCompile([undercroft], px, py, pz, UC_X + M.x, UC_Y + M.y + 1, UC_Z + M.z));
-    warmStep('undercroft', () => warmView([undercroft], px, py, pz, UC_X + M.x, UC_Y + M.y + 1, UC_Z + M.z));
-    warmStep('undercroft', () => warmView([undercroft], UC_X + M.x - 1, UC_Y + M.y + 1.6, UC_Z + M.z, UC_X + X.x, UC_Y + X.y + 1, UC_Z + X.z));
-    warmStep('undercroft', () => warmView([undercroft], UC_X + X.x, UC_Y + X.y + 1.6, UC_Z + X.z, UC_X + M.x, UC_Y + M.y + 1, UC_Z + M.z));
-    warmStep('undercroft', () => warmView([undercroft], UC_X + M.x + 12, UC_Y + M.y + 1.6, UC_Z + M.z, UC_X + X.x, UC_Y + X.y + 1, UC_Z + X.z));
+    /* AND A WARM IS ONLY MOVED IF IT IS SPREAD. Measured, the first of these
+     * views was 397 ms in ONE frame — a church, a cave and a hundred and
+     * forty metres of bore, decoded and uploaded together, which is the
+     * bunker's own 2329 ms wearing a smaller coat and is not a warm at all,
+     * it is the hitch put somewhere else. `warmView`'s `part` has taken a
+     * slice since the bunker paid for it: every sixth mesh, six frames. */
+    const SL = 6;
+    const view = (ax, ay, az, bx, by, bz) => {
+      for (let k = 0; k < SL; k++) warmStep('undercroft', () => warmView([undercroft], ax, ay, az, bx, by, bz, [k, SL]));
+    };
+    view(px, py, pz, UC_X + M.x, UC_Y + M.y + 1, UC_Z + M.z);
+    view(UC_X + M.x - 1, UC_Y + M.y + 1.6, UC_Z + M.z, UC_X + X.x, UC_Y + X.y + 1, UC_Z + X.z);
+    view(UC_X + X.x, UC_Y + X.y + 1.6, UC_Z + X.z, UC_X + M.x, UC_Y + M.y + 1, UC_Z + M.z);
+    view(UC_X + M.x + 12, UC_Y + M.y + 1.6, UC_Z + M.z, UC_X + X.x, UC_Y + X.y + 1, UC_Z + X.z);
   };
 }
 /* ---- THE HOLE IN THE SAND WALL.
@@ -30356,6 +31836,7 @@ function placeOutOfUndercroft() {
   camera.quaternion.setFromEuler(lookEuler);
   velocity.set(0, 0, 0); knockback.set(0, 0, 0);
 }
+let caveSaveDone = false;                            // the save outside the cave mouth, once a game
 const UC_FOG = { color: new THREE.Color(0x030405), density: 0.030 };   // close, not blind: at fifteen metres a quarter of the light is gone, and what it fades TO is black — 0x07080b is a grey haze and a grey haze underground is daylight
 let _ucFogSaved = null;
 /* ON THE WALL CLOCK, beside the hatch: the cut, the air, the lamps. */
@@ -30367,7 +31848,20 @@ function updateUndercroftCut(dt) {
       : t < HATCH_BLACK + HATCH_HOLD + 0.45 ? 1 : 1 - smooth01(HATCH_BLACK + HATCH_HOLD + 0.45, D, t);
     blackoutEl.style.opacity = black.toFixed(3);
     if (!ucCut && t >= HATCH_BLACK + 0.04) { ucCut = true; if (ucDir > 0) placeInUndercroft(); else placeOutOfUndercroft(); }
-    if (t >= D) { ucBusy = false; blackoutEl.style.opacity = '0'; }
+    if (t >= D) {
+      ucBusy = false; blackoutEl.style.opacity = '0';
+      /* AND COMING OUT OF THE CAVE IS THE SECOND CHECKPOINT. The pavilion's
+       * is an hour back up the beach and everything past it — the church,
+       * the knight, the idol — is on the other side of a crawl nobody wants
+       * to make twice. The moment the black lifts on the sand outside, where
+       * you are standing and what you are carrying are written down. Once a
+       * game, the pavilion's own rule, and it is the SAME `saveCheckpoint`,
+       * so the badge says it happened. */
+      if (ucDir < 0 && !caveSaveDone && introDone && !dying && !ended) {
+        caveSaveDone = true;
+        saveCheckpoint();
+      }
+    }
   }
   // the sky and the fog go with the beach
   if (inUndercroft && !_ucFogSaved) {
@@ -30383,7 +31877,7 @@ function updateUndercroftCut(dt) {
     u.ucBase += ((inUndercroft ? u.ucWant : 0) - u.ucBase) * Math.min(1, dt * 3);
     l.intensity = u.ucFlick ? u.ucBase * ucLampFlicker(k, u.ucFlick, ucFlickT) : u.ucBase;
   }
-  if (undercroft.visible && UC.ready) UC.update(dt);
+  if (undercroft.visible && UC.ready) UC.update(dt, camera.position);
   // the air: the sea and the wind gone, water somewhere
   const want = inUndercroft ? 1 : 0, prev = ucMix;
   ucMix += (want - ucMix) * Math.min(1, dt * 2.2);
@@ -30456,9 +31950,35 @@ function updateUndercroft(dt) {
     if (!UC.blocked(_ucL.x, pz, r, feet)) _ucL.z = pz;
     else if (!UC.blocked(px, _ucL.z, r, feet)) _ucL.x = px;
     else {
-      UC.pushOut(_ucL, r, feet, 5);
-      if (UC.blocked(_ucL.x, _ucL.z, r, feet)) UC.escape(_ucL, r, feet, 2.5);
-      if (UC.blocked(_ucL.x, _ucL.z, r, feet)) { _ucL.x = px; _ucL.z = pz; }
+      /* ---- AND A WALL IS SLID ALONG, NOT STOPPED AT.
+       *
+       * Keeping whichever ONE AXIS is clear is the oldest trick there is and
+       * it only works where the wall runs along an axis. A church's piers are
+       * round and its apse is a curve, so against either of those both axes
+       * are blocked and the frame is thrown away — you stop dead, hold W, and
+       * nothing happens. Nothing is WEDGED (measured: 408 cases of pressing
+       * into every wall and pillar in the nave from eight headings, and every
+       * one of them walks away); it is the grinding that reads as stuck.
+       *
+       * The move is TURNED instead, a little at a time, and the first angle
+       * that is clear is taken at the speed that survives the turn — which is
+       * what sliding along a curved wall actually is. It only ever keeps a
+       * move the player asked for, so there is nothing to oscillate about. */
+      const mx = _ucL.x - px, mz = _ucL.z - pz;
+      let slid = false;
+      if (mx * mx + mz * mz > 1e-8) {
+        for (const a of [0.45, -0.45, 0.85, -0.85, 1.2, -1.2, 1.45, -1.45]) {
+          const c = Math.cos(a), s2 = Math.sin(a), k = Math.cos(a);
+          const nx2 = px + (mx * c - mz * s2) * k, nz2 = pz + (mx * s2 + mz * c) * k;
+          if (UC.blocked(nx2, nz2, r, feet)) continue;
+          _ucL.x = nx2; _ucL.z = nz2; slid = true; break;
+        }
+      }
+      if (!slid) {
+        UC.pushOut(_ucL, r, feet, 5);
+        if (UC.blocked(_ucL.x, _ucL.z, r, feet)) UC.escape(_ucL, r, feet, 2.5);
+        if (UC.blocked(_ucL.x, _ucL.z, r, feet)) { _ucL.x = px; _ucL.z = pz; }
+      }
     }
   }
   /* YOU HIT YOUR HEAD, AND IT STOPS YOU. A step into a stretch of tunnel
@@ -31724,6 +33244,1366 @@ function updateSamurai(dt) {
  * the section above, and a `const` read before the line that initialises it
  * is a temporal dead zone crash that takes the whole page — a blank screen,
  * not a degraded one. Called from beside `loadUfo()` it did exactly that. */
+// ------------------------------------------------- the sea keep, by boat
+/* "E SET SAIL" ON THE FISHERMAN'S BOAT, AND WHERE IT TAKES YOU. Stand on
+ * the boat tied up at the sea end of his pier, press E, and the screen goes
+ * black to the sound of the line creaking and the water taking her; when it
+ * comes back you are standing at the end of a long timber pier under a
+ * fantasy keep on a rock in the sea — JesseL's "Fantasy Sea Keep"
+ * (assets/keep.glb, CC-BY-4.0), the owner's word being a PERFECT REPLICA.
+ * So it is the file, moved: `tools/undercroft_pack.py keep` bakes every
+ * node to world space at 0.1 and touches nothing else — no decimation, the
+ * normals kept (a smooth stylised build under a normal map is not a scan),
+ * every material extension the file declares left for three to honour, and
+ * the 4096 normal maps resized to 2048 as the one liberty. Its own sea, its
+ * own seabed and its own sky sphere all ship inside it and are all drawn.
+ *
+ * IT IS NOT ON THIS BEACH. Like the dojo it stands eight kilometres off
+ * (`KEEP_X/Y/Z`), which is past the camera's far plane, so nothing of the
+ * beach can ever be in the frame; the beach's own sand, sea and sky stay
+ * where they were while you are here (the undercroft's own arrangement),
+ * and the night's five lights, the fog and the sky are SWAPPED for a sunset
+ * at the cut and swapped back on the way home — intensity and colour are
+ * free to move, and a light entering or leaving is not.
+ *
+ * THE WALK IS STOREYED. A keep has a ground floor, a hall over it and a
+ * roof walk over that, and its pier stands over open water: one floor per
+ * cell (the dojo's grid) cannot say any of that. Every cell carries EVERY
+ * floor it has, with whether the body band above each is clear, and the
+ * game asks for the floor nearest under your feet — up to a step above,
+ * down to a drop below. A cell with no floor at your level is a wall, or
+ * the edge of the pier, and the frame's move is kept on whichever axis is
+ * clear or reverted; nothing in here can drop you into the sea.
+ *
+ * THE MOORED BOAT IS THE FISHERMAN'S OWN, cloned off the dock model when
+ * both have landed, so it is the same boat twice by construction; looking
+ * at it from the pier's end and pressing E is the way home. */
+const KEEP_X = -6000, KEEP_Y = 800, KEEP_Z = 6000;
+const KEEP_SEA = -1.074;                  // the model's own sea plane, in the pack's metres
+const KEEP_STEP = 0.62;                   // a lip you walk up. There is no other verb: everything else is a jump
+const KEEP_AIR = 0.35;                    // in the air a floor this near your feet is caught: a jump gets you onto a metre
+const KEEP_OUT = 2.4;                     // and out of the sea you climb, however high the bank (the shelf is 1.95 under it)
+const KEEP_BODY = 0.26;                   // the bunker's own disc: a stylised stair is a body's width between its walls
+const KEEP_WADE = -1.95;                  // off the shelf you are in the sea, chest deep, and you wade back
+const KEEP_EDGE = 46;                     // the drawn world ends: the walk stops at the rim of the shelf
+const KEEP_SPAWN = { x: -5.4, z: 34.4, yaw: 0.0 };   // the end of the long south pier, facing the rock
+const KEEP_MOOR = { x: -0.95, z: 30.6, yaw: 0.0 };   // the boat, alongside its east side
+const KEEP_FOG = { color: new THREE.Color(0x0a1220), density: 0.0075 };
+const KEEP_LOAD_NEAR = 90;                // fetched on the walk up to the pier, not on the press
+const SAIL_OUT = 0.55, SAIL_HOLD = 1.6, SAIL_IN = 0.75;
+
+let keepWorld = null, keepReady = false, keepWalk = null, keepCells = null, keepSky = null, keepSea = null;
+let inKeep = false, keepWarmed = false;
+let sailBusy = false, sailT = 0, sailDir = 1, sailCut = false;
+let beachBoat = null, beachBoatBox = null, beachBoatProxy = null, onBoat = false;
+let keepBoat = null, keepBoatBox = null;
+let keepLift = null, keepLiftBox = null, keepLiftParts = null;
+let keepWading = false;
+let _keepFogSaved = null, _keepLightSaved = null, keepClouds = null;
+
+function makeKeepSky(clouds) {
+  return new THREE.ShaderMaterial({
+    uniforms: { uClouds: { value: clouds }, uHas: { value: clouds ? 1 : 0 }, uY0: { value: KEEP_Y + KEEP_SEA } },
+    vertexShader: 'varying vec3 vW; varying vec2 vU; void main(){ vU = uv; vW = (modelMatrix * vec4(position,1.0)).xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    fragmentShader: [
+      'uniform sampler2D uClouds; uniform float uHas; uniform float uY0; varying vec3 vW; varying vec2 vU;',
+      'float sh(vec2 p){ return fract(sin(dot(p, vec2(41.7, 289.3))) * 43758.5453); }',
+      'void main(){',
+      '  float h = vW.y - uY0;',                          // metres over the sea
+      '  vec3 d = normalize(vW - vec3(0.0, uY0, 0.0));',
+      '  vec3 sea = vec3(0.020, 0.052, 0.070);',
+      '  vec3 hor = vec3(0.075, 0.110, 0.170);',          // the last of the light on the water
+      '  vec3 low = vec3(0.045, 0.072, 0.128);',
+      '  vec3 mid = vec3(0.022, 0.038, 0.080);',
+      '  vec3 top = vec3(0.008, 0.014, 0.036);',
+      '  vec3 c = h < 0.0 ? sea : mix(hor, low, smoothstep(0.0, 9.0, h));',
+      '  c = mix(c, mid, smoothstep(7.0, 34.0, h));',
+      '  c = mix(c, top, smoothstep(30.0, 95.0, h));',
+      // the moon the whole island is lit by, where the light actually comes from
+      '  float md = distance(d, normalize(vec3(-0.62, 0.36, 0.70)));',
+      '  c += vec3(0.75, 0.80, 0.95) * smoothstep(0.045, 0.022, md);',
+      '  c += vec3(0.16, 0.19, 0.26) * smoothstep(0.42, 0.03, md) * 0.5;',
+      // and stars, thinning into the haze at the waterline
+      '  vec2 sp = floor(d.xz * 190.0 + d.y * 37.0);',
+      '  float st = sh(sp); st = smoothstep(0.9965, 1.0, st);',
+      '  c += vec3(0.85, 0.88, 1.0) * st * smoothstep(2.0, 26.0, h) * (0.6 + 0.4 * sh(sp + 3.7));',
+      '  float cl = uHas > 0.5 ? texture2D(uClouds, vec2(vU.x * 2.0, vU.y)).b : 0.0;',   // the file's own clouds, as luminance
+      '  c += vec3(0.030, 0.038, 0.060) * cl * smoothstep(0.0, 5.0, h) * (1.0 - smoothstep(34.0, 95.0, h));',
+      '  gl_FragColor = vec4(c, 1.0);',
+      '}',
+    ].join('\n'),
+    side: THREE.FrontSide, depthWrite: false, fog: false,
+  });
+}
+
+// ------------------------------------------------------------- the model
+function loadKeep() {
+  if (keepWorld) return;
+  keepWorld = new THREE.Group();
+  keepWorld.position.set(KEEP_X, KEEP_Y, KEEP_Z);
+  keepWorld.visible = false;
+  scene.add(keepWorld);
+  bwGlb('assets/keep.glb', (gltf) => {
+    const root = gltf.scene;
+    let ex = null;
+    root.traverse((o) => { if (!ex && o.userData && o.userData.bw_walk) ex = o.userData.bw_walk; });
+    if (ex) {
+      keepWalk = typeof ex === 'string' ? JSON.parse(ex) : ex;
+      keepCells = new Map();
+      for (const c of keepWalk.cells) keepCells.set(c[1] * keepWalk.gw + c[0], c[2]);
+    }
+    root.traverse((o) => {
+      if (!o.isMesh) return;
+      o.frustumCulled = true;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      const name = mats[0].name || '';
+      if (name === 'material_5') {
+        /* THE PINK SKY IS NOT IN THE FILE. The sphere ships as a transmissive
+         * clearcoat glass with a strip of blue clouds in its emissive map,
+         * and what Sketchfab shows THROUGH that glass is its own HDR
+         * environment — the evening the whole reference is lit by. So the
+         * sky is painted here to match it, on the sphere's own geometry: a
+         * gradient by height over the sea (pink at the waterline, violet
+         * overhead, the water's own teal under the line), with the file's
+         * own cloud strip laid over it as luminance. Its normals point
+         * inward, so it is FrontSide from where you stand; unlit, unfogged,
+         * drawn first. */
+        const src = mats[0];
+        keepClouds = src.emissiveMap || src.map || null;
+        o.material = makeKeepSky(keepClouds);
+        o.renderOrder = -2; o.frustumCulled = false;
+        keepSky = o;
+        return;
+      }
+      if (name === 'material') {
+        /* THE SEA IS THE ONE MATERIAL REWRITTEN, because as shipped it is a
+         * transmission plane whose whole look is what Sketchfab's renderer
+         * refracts through it. What the reference shows is a saturated
+         * turquoise with the seabed's caustics reading up through it and the
+         * sky lying on it: a translucent turquoise over the file's own
+         * caustic plane, taking the sun as a broad sheen rather than a
+         * pinpoint. */
+        keepSea = o;
+        const seaM = new THREE.MeshStandardMaterial({ color: 0x0d3f4a, roughness: 0.16, metalness: 0, transparent: true, opacity: 0.80, depthWrite: false });
+        seaM.emissive.setHex(0x04232c); seaM.emissiveIntensity = 0.5;
+        o.material = seaM;
+        o.renderOrder = 1;
+        return;
+      }
+      if (name === 'Sand') {
+        /* the seabed: the file's caustic map, lit from within so it reads up
+         * through the water; the violet emissive it ships with at strength
+         * ten was the one thing in the file that could not have been meant */
+        for (const m of mats) {
+          m.transparent = false; m.depthWrite = true; m.opacity = 1;
+          m.emissive.setHex(0xffffff); m.emissiveMap = m.map; m.emissiveIntensity = 0.12;
+        }
+        return;
+      }
+      /* EVERY MATERIAL SHIPS AS BLEND, and GLTFLoader turns depth write off
+       * for BLEND — on a keep that is the bunker's lamp housings again, walls
+       * sorting against each other. The rock and the timber are opaque with
+       * a cutout for the leaves and the vines. */
+      for (const m of mats) {
+        m.transparent = false; m.alphaTest = 0.5; m.depthWrite = true;
+        if (m.map) m.map.anisotropy = 8;
+        // the windows: the file says ten, which under ACES is a white hole; three keeps them warm
+        // the windows: at night they are the only warm thing on the island, and
+        // the file's own ten is a white hole under ACES
+        if (m.emissiveMap && m.emissiveIntensity > 3) m.emissiveIntensity = 3.4;
+      }
+    });
+    keepWorld.add(root);
+    /* AND A FLOOR UNDER THE VOID. The sky sphere's rim sits two metres under
+     * the sea and the sea plane ends where the rim does, so from the roof
+     * walk the far edge of the water could show the clear colour through a
+     * hair of mismatch. A teal disc the sea's own colour, unlit and unfogged,
+     * a metre and a half under everything, so there is nothing to see. */
+    const voidM = new THREE.MeshBasicMaterial({ color: 0x07222a, fog: false });
+    const voidDisc = new THREE.Mesh(new THREE.CircleGeometry(600, 48), voidM);
+    voidDisc.rotation.x = -Math.PI / 2; voidDisc.position.y = KEEP_SEA - 1.5; voidDisc.renderOrder = -1;
+    keepWorld.add(voidDisc);
+    keepReady = true;
+  }, undefined, () => {});
+}
+/* AND THE ISLAND IS BUILT AT THE CUT, BEHIND THE BLACK. The walk's faces, the
+ * two repairs, the hoist and the moored boat are half a second of blocking
+ * between them — measured 200 ms for 147,541 faces, 179 for the storeys, 64
+ * for the ground — and they used to run in the keep's own loader callback,
+ * which fires the moment you come within loading distance of the DOCK: one
+ * six-hundred-millisecond frame in the middle of a walk, for a place you may
+ * not sail to for another minute. `startSail` already blacks the screen and
+ * already waits on `keepReady`, and that is the one moment in this sequence
+ * when half a second costs nothing — the crash kit's own argument, and the
+ * drain's and the bunker's. Nothing before the cut ever asks the island a
+ * question, so there is nothing to be early for.
+ *
+ * THE FACES FIRST — the storey repair asks them what is drawn — then the
+ * repairs, and the lift LAST, because the lift takes its car's storeys out
+ * of the grid and a repair run after that would put them straight back. */
+let keepBuilt = false;
+function buildKeepIsland() {
+  if (keepBuilt || !keepReady || !keepWalk) return;
+  keepBuilt = true;
+  repairKeepGround();
+  buildKeepWalls();
+  repairKeepStoreys();
+  buildKeepLift();
+  ensureKeepBoat();
+}
+
+/* THE GROUND HAD HOLES IN IT, AND A HOLE READS AS A WALL. A cell's floor is
+ * written from the triangles that land in it, and on a big low-polygon shore
+ * the sampler now and then lands NONE at ground level: the cell either goes
+ * missing altogether or keeps only its high storeys — a roof, a rock ten
+ * metres up. The walk then reads "no floor at or under my feet" and calls it
+ * a wall, so a scatter of them is a fence across open sand with nothing in
+ * the picture to explain it. Measured before this: a flood from the pier
+ * reached 9,808 cells of 56,714 and could not get round the rock at all,
+ * which is the whole of "make the entire island walkable".
+ *
+ * It is the church's `despeckle` one level down — not a missing CELL but a
+ * missing STOREY — and the repair is the same shape: a cell whose neighbours
+ * agree on a ground level it does not have is given one, the median of the
+ * ground within two cells, and only where enough neighbours have one, so the
+ * open sea past the shelf is never invented. A cell that really is a wall
+ * keeps its own ground storey (marked solid by the rock standing on it) and
+ * is not touched. Measured after: 47,864 cells and the whole shore walks.
+ *
+ * It is done here rather than in the packer because the model's own source
+ * folder is ~/Downloads, which is cleared — the shipped asset is the only
+ * copy there is, and a repair that cannot be run is not a repair. */
+/* AND A HOLE IN AN UPPER STOREY IS A FLOOR YOU FALL THROUGH. `repairKeepGround`
+ * puts back the GROUND the sampler lost — a cell with no floor at all reads as
+ * a wall, which is the invisible fence — and this is the same fault one level
+ * up, where it does the opposite: a single cell on the terrace outside the
+ * keep's door carries [0.09, 11.03, 22.16] while every neighbour carries 16.1
+ * and the stone at 16.1 is drawn right across it. Walk over that cell and the
+ * walk hands you the floor five metres below: you drop through flags you can
+ * see, which is the whole of "the textures should act as they are seen".
+ *
+ * A LEVEL SIX OF EIGHT NEIGHBOURS AGREE ON IS A FLOOR. A real opening — a
+ * stair well, the hoist's shaft — is many cells across, so a cell inside it
+ * has at most three neighbours carrying the level and is never filled; a
+ * one-cell hole has all eight — and a SLOT is neither: the doorway's own
+ * threshold came out as two whole rows of cells missing 16.1 in a row, and
+ * a cell in the middle of that has three neighbours carrying the level, not
+ * six. So a missing level is FLOODED, exactly the way the church's holes
+ * were: take the connected run of cells that lack it, and fill the run only
+ * if it is small AND every cell around it has the level. A stair well and
+ * the hoist's shaft are hundreds of cells and open at an edge, so they are
+ * never touched; a hole in a floor is a few, and enclosed. It is the
+ * church's despeckle with the test turned round — there a lone RAISED cell
+ * was a wall in the middle of the nave, here a missing storey is a hole in
+ * the middle of a floor. */
+function repairKeepStoreys() {
+  const w = keepWalk; if (!w || !keepCells || !keepWalls) return;
+  const t0 = performance.now();
+  let added = 0, asked = 0;
+  const lv = [], cnt = [], sum = [], ceilOf = [];
+  let filled = 0;
+  const sortCell = (fl) => {
+    const t = []; for (let k = 0; k < fl.length; k += 3) t.push([fl[k], fl[k + 1], fl[k + 2]]);
+    t.sort((p, q) => p[0] - q[0]); fl.length = 0;
+    for (const e of t) fl.push(e[0], e[1], e[2]);
+  };
+  for (const [key, fl] of keepCells) {
+    const i0 = key % w.gw, j0 = (key - i0) / w.gw;
+    lv.length = 0; cnt.length = 0; sum.length = 0; ceilOf.length = 0;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      if (!di && !dj) continue;
+      const nf = keepCells.get((j0 + dj) * w.gw + (i0 + di)); if (!nf) continue;
+      for (let k = 0; k < nf.length; k += 3) {
+        const f = nf[k]; let m = -1;
+        for (let q = 0; q < lv.length; q++) if (Math.abs(lv[q] - f) < 0.30) { m = q; break; }
+        if (m < 0) { lv.push(f); cnt.push(1); sum.push(f); ceilOf.push(nf[k + 2]); }
+        else { cnt[m]++; sum[m] += f; ceilOf[m] = Math.min(ceilOf[m], nf[k + 2]); }
+      }
+    }
+    let did = false;
+    const cx = KEEP_X + w.x0 + (i0 + 0.5) * w.cell, cz = KEEP_Z + w.z0 + (j0 + 0.5) * w.cell;
+    for (let q = 0; q < lv.length; q++) {
+      const L = lv[q];
+      if (cnt[q] < 3) continue;
+      let have = false;
+      for (let k = 0; k < fl.length; k += 3) if (Math.abs(fl[k] - L) < 0.30) { have = true; break; }
+      if (have) continue;
+      asked++;
+      /* AND THE CENTRE OF A CELL IS NOT THE CELL. A doorway's threshold is a
+       * slot narrower than the grid, so a single probe down the middle of
+       * the cell falls through the gap the repair exists to close; five
+       * points over the cell find whatever of it is actually drawn. */
+      const h = w.cell * 0.3;
+      let y = keepDrawnFloor(cx, cz, KEEP_Y + L - 0.28, KEEP_Y + L + 0.28);
+      if (y === null) for (const [ox, oz] of [[-h, -h], [h, -h], [-h, h], [h, h]]) {
+        y = keepDrawnFloor(cx + ox, cz + oz, KEEP_Y + L - 0.28, KEEP_Y + L + 0.28);
+        if (y !== null) break;
+      }
+      /* AND A LONE HOLE IN A FLOOR IS A SAMPLING GAP, NOT AN OPENING. The
+       * geometry probe answers the doorway slots; what it cannot answer is
+       * a cell in the middle of a terrace where the packer happened to land
+       * no triangle and nothing is drawn at the cell's five probe points
+       * either — and a body walking over one falls sixteen metres through a
+       * floor it is standing on. The undercroft's own rule: fill it only if
+       * it is ENCLOSED, which here is six of its eight neighbours carrying
+       * the level. The hoist's shaft is twenty cells across, so no cell in
+       * it ever has six, and a hole you are meant to fall down stays. */
+      if (y === null) {
+        if (cnt[q] < 6) continue;                      // a real opening
+        fl.push(sum[q] / cnt[q], 0, ceilOf[q]);
+        filled++; did = true; continue;
+      }
+      fl.push(y - KEEP_Y, 0, ceilOf[q]);
+      added++; did = true;
+    }
+    if (did) sortCell(fl);
+  }
+  keepWalk.storeys = { added, filled, asked, ms: Math.round(performance.now() - t0) };
+}
+function repairKeepGround() {
+  const t0 = performance.now();
+  const w = keepWalk, gw = w.gw, gh = w.gh;
+  const g = new Float32Array(gw * gh).fill(-999);
+  let i0 = 1e9, i1 = -1e9, j0 = 1e9, j1 = -1e9;
+  for (const [k, fl] of keepCells) {                 // the storeys are written low to high
+    g[k] = fl[0];
+    const i = k % gw, j = (k - i) / gw;
+    if (i < i0) i0 = i; if (i > i1) i1 = i; if (j < j0) j0 = j; if (j > j1) j1 = j;
+  }
+  const med = [];
+  let patched = 0, added = 0;
+  for (let pass = 0; pass < 3; pass++) {
+    const ins = [];
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const k = j * gw + i, fl = keepCells.get(k);
+      /* The cheap test first, because nearly every cell passes it: is this
+       * cell's OWN ground anywhere near the ground its four neighbours
+       * stand on? A cell whose lowest storey is a rock ten metres up while
+       * its neighbours are on the sand is the gap this is looking for —
+       * and a cell that is genuinely a wall still has its own sand storey
+       * (the packer marks it solid), so it answers yes and is left alone. */
+      if (fl) {
+        let m = 0; const q4 = [];
+        for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const v = g[(j + b) * gw + (i + a)]; if (v > -900) q4[m++] = v; }
+        if (m < 3) continue;
+        q4.length = m; q4.sort((p1, p2) => p1 - p2);
+        const med4 = q4[m >> 1];
+        let near = false;
+        for (let q = 0; q < fl.length; q += 3) if (Math.abs(fl[q] - med4) < 0.8) { near = true; break; }
+        if (near) continue;
+        /* AND A FLOOR IS ONLY EVER ADDED UNDERNEATH. The gap this is for is a
+         * cell that kept its roof and lost its ground — its own lowest
+         * surface stands well ABOVE the sand its neighbours are walking on.
+         * The other way round is a CLIFF: a cell at the foot of a rock whose
+         * neighbours are the top of it, and a floor invented there would hang
+         * a shelf inside the stone. So the median has to be below. */
+        if (med4 > fl[0] - 0.3) continue;
+      }
+      let n = 0;
+      for (let b = -2; b <= 2; b++) { const jb = j + b; if (jb < 0 || jb >= gh) continue;
+        for (let a = -2; a <= 2; a++) { const ia = i + a; if (ia < 0 || ia >= gw || (!a && !b)) continue;
+          const v = g[jb * gw + ia]; if (v > -900) med[n++] = v; } }
+      if (n < 12) continue;                          // out at sea: nothing to agree with
+      const arr = med.slice(0, n).sort((p, q) => p - q);
+      const m5 = arr[n >> 1];
+      if (fl && m5 > fl[0] - 0.3) continue;
+      ins.push(k, m5);
+    }
+    if (!ins.length) break;
+    for (let q = 0; q < ins.length; q += 2) {
+      const k = ins[q], m = Math.round(ins[q + 1] * 100) / 100;
+      let fl = keepCells.get(k);
+      if (!fl) { fl = []; keepCells.set(k, fl); added++; } else patched++;
+      fl.push(m, 0, 99);
+      const tri = [];
+      for (let r = 0; r < fl.length; r += 3) tri.push([fl[r], fl[r + 1], fl[r + 2]]);
+      tri.sort((a, b) => a[0] - b[0]);
+      for (let r = 0; r < tri.length; r++) { fl[r * 3] = tri[r][0]; fl[r * 3 + 1] = tri[r][1]; fl[r * 3 + 2] = tri[r][2]; }
+      g[k] = fl[0];
+    }
+  }
+  keepWalk.repaired = { patched, added, ms: +(performance.now() - t0).toFixed(1) };
+}
+
+/* THE WALK, STOREY BY STOREY, AND THE ONE QUESTION EVERYTHING ASKS.
+ * `keepFloorAt` is the floor nearest under these feet at this spot — no
+ * higher than a lip you could step up (or, in the air, than your feet have
+ * already cleared), and with NO limit below, because you may walk off a
+ * ledge and you may jump onto one. Three answers and they are all different
+ * things:
+ *
+ *   a floor   stand on it, or fall to it
+ *   null      every surface here is over your head: a WALL
+ *   the sea   the cell was never written, so there is nothing here but water
+ *
+ * That last one is what lets you step off the end of the pier into the sea
+ * and wade back ashore, and it is why a missing cell must never be a wall —
+ * which is also why the grid is repaired above, or the sampler's own gaps
+ * would be walls in the middle of open sand.
+ *
+ * The moored boat and the lift's platform are floors in the same way. */
+function keepCellAt(x, z) {
+  const w = keepWalk; if (!w) return null;
+  const i = Math.floor((x - KEEP_X - w.x0) / w.cell), j = Math.floor((z - KEEP_Z - w.z0) / w.cell);
+  if (i < 0 || j < 0 || i >= w.gw || j >= w.gh) return null;
+  return keepCells.get(j * w.gw + i) || null;
+}
+function keepFloorAt(x, z, feet, up = KEEP_STEP) {
+  let best = null;
+  const fl = keepCellAt(x, z);
+  if (fl) {
+    for (let k = fl.length - 3; k >= 0; k -= 3) {
+      const f = KEEP_Y + fl[k];
+      if (f <= feet + up) { best = { f, s: fl[k + 1] === 1, c: KEEP_Y + fl[k + 2] }; break; }
+    }
+  } else {
+    best = { f: KEEP_Y + KEEP_WADE, s: false, c: KEEP_Y + 99, sea: true };
+  }
+  // and the two floors that are not the island: what is tied up at the pier
+  // and what the lever sends up and down
+  for (const b of [keepBoatBox, keepLiftBox]) {
+    if (!b || x < b.x0 || x > b.x1 || z < b.z0 || z > b.z1) continue;
+    if (b.top <= feet + up && (!best || b.top > best.f)) best = { f: b.top, s: false, c: KEEP_Y + 99 };
+  }
+  return best;
+}
+// kept for the placements, which ask "what is the floor here" with the feet
+// put somewhere approximate and want the answer whatever the step
+const keepStandAt = (x, z, feet, up = KEEP_STEP) => keepFloorAt(x, z, feet, up);
+/* AND THE WALK AND THE PUSH-OUT HAVE TO ASK THE SAME QUESTION — the pier's
+ * own lesson on an island. `keepFloorAt` answers "what is the ground here",
+ * which is what a gib and a placement want.
+ *
+ * IT USED TO ASK THE BODY BAND AS WELL, AND THE BAND IS HALF A METRE WIDE.
+ * The packer marks a cell's band full if ANY triangle stands in it, so a
+ * handrail post ten centimetres thick refuses the whole cell it is in — and
+ * a row of them, or a pier, or a doorway's jamb, is a scatter of half-metre
+ * squares across a floor you are looking straight at. Measured on the
+ * terrace outside the keep's door: nineteen cells of it, every one drawn,
+ * every one a hole you walk into and fall sixteen metres down. That is the
+ * whole of "I should be able to walk around the second floor".
+ *
+ * What is in the way is now asked of the DRAWN FACES instead (`keepWallPush`
+ * — a quarter of a metre from a real triangle rather than a whole cell from
+ * the middle of one), so the grid is left to answer the one question it is
+ * good at: where is there ground. The band is still what stops a gib and
+ * still rides in the triple; the walk no longer reads it. */
+const keepStandable = (x, z, feet, up = KEEP_STEP) => keepFloorAt(x, z, feet, up);
+/* The general "what is under this", for blood, gibs and anything thrown:
+ * the highest floor at or under the point, else the sea. Chained into
+ * `bunkerFloorAt` like every other room, answering only inside its own
+ * footprint. */
+function keepGroundAt(x, z, y) {
+  if (!keepReady || !inKeep || y === undefined) return null;
+  if (Math.abs(x - KEEP_X) > 60 || Math.abs(z - KEEP_Z) > 60 || Math.abs(y - KEEP_Y) > 120) return null;
+  const st = keepFloorAt(x, z, y, 0.5);
+  return st ? st.f : KEEP_Y + KEEP_WADE;
+}
+const _floorBeforeKeep = bunkerFloorAt;
+bunkerFloorAt = (x, z, y) => {
+  const k = keepGroundAt(x, z, y);
+  return k === null ? _floorBeforeKeep(x, z, y) : k;
+};
+
+/* AND THE DRAWN STONE IS THE WALL. The packed grid is a PLAN OF THE FLOOR:
+ * a cell carries the floors it has and a solid flag for the body band, and
+ * on this model that is not enough to stop you walking through what you can
+ * see. The keep's own door has the same floor drawn on both sides of it, so
+ * the walk hands you a storey at 16.1 inside the doorway and you stroll
+ * through a shut door into the keep; measured, walking eight headings from
+ * seven spots on the terrace, the camera passed through drawn geometry on
+ * 23 of 56 runs.
+ *
+ * MARKING THE CELLS SOLID IS THE OBVIOUS FIX AND IT IS WRONG. Rasterising
+ * every steep face into the cells it crosses marks the cell you STAND on as
+ * well as the one you cannot enter, because a face at a cell boundary falls
+ * in both — measured, the island's walk collapsed from 44,454 cells and all
+ * 36 bearings to 14,126 and 21. A wall is not a place, it is a BOUNDARY
+ * between two places.
+ *
+ * So the move itself is swept against the model. Every steep face taller
+ * than a step you could take goes into a one-metre grid at load; a frame's
+ * movement is a segment at chest height, and a segment that crosses one of
+ * those faces is refused exactly the way a missing floor is refused — keep
+ * whichever one axis is clear, else stand still. It costs nothing (the
+ * segment is 5 cm long and touches four cells), it takes nothing away from
+ * the walk, and what it makes solid is precisely what is drawn. */
+/* AND THE FACE'S OWN HEIGHT IS NOT THE FILTER — THE SEGMENT'S IS. A first
+ * pass kept only faces taller than a step, on the reasoning that a kerb is
+ * not a wall; what that actually did was throw away the KEEP'S OWN DOOR,
+ * because a stylised model draws a studded door as a few dozen small quads
+ * and not one of them is 0.7 m tall. Every steep face goes in, however
+ * small, and the thing that lets you step over a lip is that the sweep is
+ * taken at your CHEST: a 0.6 m kerb's faces are all below it, a jump lifts
+ * the segment with your feet, and a wall is a wall at any triangle size. */
+const KEEP_WALL_MIN = 0.12;               // under this is a sliver, not a surface
+const KEEP_WALL_NY = 0.55;                // and a face is a FLOOR or a WALL, nothing between: whatever is too steep to stand on is in the way
+let keepWalls = null;
+function buildKeepWalls() {
+  if (keepWalls || !keepWorld) return;
+  keepWorld.updateMatrixWorld(true);
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  const ab = new THREE.Vector3(), ac = new THREE.Vector3(), n = new THREE.Vector3();
+  const tris = [], steep = [], ylo = [], yhi = [], cell = 1.0, map = new Map();
+  const key = (i, j) => (i + 4096) * 16384 + (j + 4096);
+  keepWorld.traverse((o) => {
+    if (!o.isMesh || o.name === 'hitProxy' || !o.geometry || !o.geometry.index) return;
+    const mn = o.material && o.material.name;
+    if (mn === 'material' || mn === 'material_5') return;        // the sea and the sky are not walls
+    const g = o.geometry, pos = g.attributes.position, idx = g.index;
+    for (let t = 0; t < idx.count; t += 3) {
+      a.fromBufferAttribute(pos, idx.getX(t)).applyMatrix4(o.matrixWorld);
+      b.fromBufferAttribute(pos, idx.getX(t + 1)).applyMatrix4(o.matrixWorld);
+      c.fromBufferAttribute(pos, idx.getX(t + 2)).applyMatrix4(o.matrixWorld);
+      const lo = Math.min(a.y, b.y, c.y), hi = Math.max(a.y, b.y, c.y);
+      ab.subVectors(b, a); ac.subVectors(c, a); n.crossVectors(ab, ac);
+      const L = n.length(); if (L < 1e-9) continue;
+      const ny = Math.abs(n.y / L);
+      const isWall = ny <= KEEP_WALL_NY && hi - lo >= KEEP_WALL_MIN;
+      const isFloor = ny > 0.55;                                 // something you could stand on
+      if (!isWall && !isFloor) continue;
+      const id = tris.length / 9;
+      steep.push(isWall ? 1 : 0); ylo.push(lo); yhi.push(hi);
+      tris.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+      const i0 = Math.floor((Math.min(a.x, b.x, c.x) - KEEP_X) / cell), i1 = Math.floor((Math.max(a.x, b.x, c.x) - KEEP_X) / cell);
+      const j0 = Math.floor((Math.min(a.z, b.z, c.z) - KEEP_Z) / cell), j1 = Math.floor((Math.max(a.z, b.z, c.z) - KEEP_Z) / cell);
+      if ((i1 - i0) * (j1 - j0) > 400) continue;                 // a wall the size of the island: it is in the grid already
+      for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+        const k = key(i, j); let e = map.get(k); if (!e) { e = []; map.set(k, e); } e.push(id);
+      }
+    }
+  });
+  keepWalls = { v: new Float32Array(tris), steep: new Uint8Array(steep),
+    ylo: new Float32Array(ylo), yhi: new Float32Array(yhi), map, cell, key };
+}
+/* AND A CROSSING TEST HAS NO THICKNESS, WHICH IS HOW YOU GET INSIDE A WALL.
+ * The sweep only ever asked whether the frame's own movement CROSSED a face
+ * — and a frame's movement is ten centimetres. Creep at it, be nudged at it
+ * by the grid's own push-out, or arrive on a frame that hitched, and you
+ * finish the frame a few centimetres PAST the face; from in there every
+ * later segment is on the far side of it and crosses nothing at all, so the
+ * wall is behind you for good. That is the whole of "I keep walking through
+ * rocks and walls and brick". A body has a WIDTH: the drawn faces push it
+ * out the way the packer's own cells do, and the sweep is left as the
+ * safety net for a frame long enough to jump the band.
+ *
+ * It is a PLAN distance, because a wall is vertical: the nearest point of
+ * the triangle's own footprint to where you are standing. And the y band is
+ * what keeps a STEP a step — it starts a lip's height over your feet, so a
+ * riser you are meant to walk up is under the body entirely and only what
+ * stands between your knee and your head is a wall. */
+function keepWallNear(x, z, r, lo, hi) {
+  const W = keepWalls; if (!W) return null;
+  const v = W.v, ic = Math.floor((x - KEEP_X) / W.cell), jc = Math.floor((z - KEEP_Z) / W.cell);
+  let bd = -1, bx = 0, bz = 0;
+  for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+    const list = W.map.get(W.key(ic + di, jc + dj)); if (!list) continue;
+    for (let m = 0; m < list.length; m++) {
+      const id = list[m];
+      if (!W.steep[id] || W.yhi[id] <= lo || W.ylo[id] >= hi) continue;
+      const o = id * 9;
+      seg2(x, z, v[o], v[o + 2], v[o + 3], v[o + 5]);
+      let nx = _s2.x, nz = _s2.z, d2 = (x - nx) * (x - nx) + (z - nz) * (z - nz);
+      seg2(x, z, v[o + 3], v[o + 5], v[o + 6], v[o + 8]);
+      let d = (x - _s2.x) * (x - _s2.x) + (z - _s2.z) * (z - _s2.z);
+      if (d < d2) { d2 = d; nx = _s2.x; nz = _s2.z; }
+      seg2(x, z, v[o + 6], v[o + 8], v[o], v[o + 2]);
+      d = (x - _s2.x) * (x - _s2.x) + (z - _s2.z) * (z - _s2.z);
+      if (d < d2) { d2 = d; nx = _s2.x; nz = _s2.z; }
+      if (d2 >= r * r) continue;
+      const depth = r - Math.sqrt(d2);
+      if (depth > bd) { bd = depth; bx = nx; bz = nz; }
+    }
+  }
+  return bd < 0 ? null : { x: bx, z: bz, depth: bd };
+}
+const _s2 = { x: 0, z: 0 };
+function seg2(px, pz, ax, az, bx, bz) {          // nearest point on a plan segment
+  const dx = bx - ax, dz = bz - az, L = dx * dx + dz * dz;
+  let t = L > 1e-12 ? ((px - ax) * dx + (pz - az) * dz) / L : 0;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  _s2.x = ax + dx * t; _s2.z = az + dz * t; return _s2;
+}
+/* AND IT IS THE DEEPEST ONE, ASKED AGAIN — never the sum. `pushOutOfKeep`
+ * sums because its cells are a grid and a small object's cells fan out
+ * round you; a wall is thirty coplanar TRIANGLES all pushing the same way,
+ * and summing those throws a body across the island. The beach's own rule
+ * for overlapping colliders: take the one you are deepest in, push out of
+ * that, and ask again. */
+function keepWallPush(p, r, feet) {
+  const lo = feet + KEEP_STEP + 0.04, hi = feet + 1.75;
+  let moved = false;
+  for (let k = 0; k < 4; k++) {
+    const h = keepWallNear(p.x, p.z, r, lo, hi); if (!h) break;
+    let ox = p.x - h.x, oz = p.z - h.z;
+    const L = Math.hypot(ox, oz);
+    if (L < 1e-5) break;                          // dead on the face: nowhere to go
+    p.x += (ox / L) * (h.depth + 0.002); p.z += (oz / L) * (h.depth + 0.002);
+    moved = true;
+  }
+  return moved;
+}
+/* Möller–Trumbore against the faces in the cells the segment touches. */
+const _kwA = new THREE.Vector3(), _kwD = new THREE.Vector3(), _kwE1 = new THREE.Vector3(),
+  _kwE2 = new THREE.Vector3(), _kwP = new THREE.Vector3(), _kwQ = new THREE.Vector3(), _kwT = new THREE.Vector3();
+const _kwSeen = new Set();
+function keepHitsWall(x0, z0, x1, z1, y) {
+  const W = keepWalls; if (!W) return false;
+  const dx = x1 - x0, dz = z1 - z0, L = Math.hypot(dx, dz);
+  if (L < 1e-5) return false;
+  _kwA.set(x0, y, z0); _kwD.set(dx / L, 0, dz / L);
+  _kwSeen.clear();
+  for (const [px, pz] of [[x0, z0], [x1, z1]]) {
+    const i = Math.floor((px - KEEP_X) / W.cell), j = Math.floor((pz - KEEP_Z) / W.cell);
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) _kwSeen.add(W.key(i + di, j + dj));
+  }
+  const v = W.v;
+  for (const k of _kwSeen) {
+    const list = W.map.get(k); if (!list) continue;
+    for (let m = 0; m < list.length; m++) {
+      if (!W.steep[list[m]]) continue;                 // a floor is not a wall
+      const o = list[m] * 9;
+      _kwE1.set(v[o + 3] - v[o], v[o + 4] - v[o + 1], v[o + 5] - v[o + 2]);
+      _kwE2.set(v[o + 6] - v[o], v[o + 7] - v[o + 1], v[o + 8] - v[o + 2]);
+      _kwP.crossVectors(_kwD, _kwE2);
+      const det = _kwE1.dot(_kwP); if (det > -1e-9 && det < 1e-9) continue;
+      const inv = 1 / det;
+      _kwT.set(_kwA.x - v[o], _kwA.y - v[o + 1], _kwA.z - v[o + 2]);
+      const u = _kwT.dot(_kwP) * inv; if (u < 0 || u > 1) continue;
+      _kwQ.crossVectors(_kwT, _kwE1);
+      const vv = _kwD.dot(_kwQ) * inv; if (vv < 0 || u + vv > 1) continue;
+      const t = _kwE2.dot(_kwQ) * inv;
+      if (t > 0.0005 && t < L) return true;
+    }
+  }
+  return false;
+}
+/* AND THE SAME FACES ANSWER "IS THERE A FLOOR DRAWN HERE". A plan test, not
+ * a ray: for the near-horizontal faces in this cell, is (x, z) inside the
+ * triangle's plan, and if it is, what is its height there. */
+function keepDrawnFloor(x, z, lo, hi) {
+  const W = keepWalls; if (!W) return null;
+  const list = W.map.get(W.key(Math.floor((x - KEEP_X) / W.cell), Math.floor((z - KEEP_Z) / W.cell)));
+  if (!list) return null;
+  const v = W.v; let best = null;
+  for (let m = 0; m < list.length; m++) {
+    const id = list[m]; if (W.steep[id]) continue;
+    const o = id * 9;
+    const ax = v[o], az = v[o + 2], bx = v[o + 3], bz = v[o + 5], cx = v[o + 6], cz = v[o + 8];
+    const d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
+    if (d > -1e-9 && d < 1e-9) continue;
+    const l1 = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / d;
+    if (l1 < -0.001 || l1 > 1.001) continue;
+    const l2 = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / d;
+    if (l2 < -0.001 || l2 > 1.001) continue;
+    const l3 = 1 - l1 - l2; if (l3 < -0.001 || l3 > 1.001) continue;
+    const y = l1 * v[o + 1] + l2 * v[o + 4] + l3 * v[o + 7];
+    if (y < lo || y > hi) continue;
+    if (best === null || y > best) best = y;
+  }
+  return best;
+}
+/* Pushed out along the resultant, the dojo's own push, with one change: a
+ * cell is solid if the body band over the floor AT YOUR LEVEL has anything
+ * in it, or if it has no floor at your level at all — a wall, a parapet, a
+ * rail, or open water off the side of the pier. */
+function pushOutOfKeep(p, r, feet, up) {
+  const w = keepWalk; if (!w) return false;
+  const cell = w.cell;
+  const i0 = Math.floor((p.x - KEEP_X - w.x0 - r) / cell), i1 = Math.floor((p.x - KEEP_X - w.x0 + r) / cell);
+  const j0 = Math.floor((p.z - KEEP_Z - w.z0 - r) / cell), j1 = Math.floor((p.z - KEEP_Z - w.z0 + r) / cell);
+  let dx = 0, dz = 0, hit = false;
+  for (let j = j0; j <= j1; j++) {
+    if (j < 0 || j >= w.gh) continue;
+    for (let i = i0; i <= i1; i++) {
+      if (i < 0 || i >= w.gw) continue;
+      const cx = KEEP_X + w.x0 + (i + 0.5) * cell, cz = KEEP_Z + w.z0 + (j + 0.5) * cell;
+      if (keepFloorAt(cx, cz, feet, up)) continue;   // there is ground at my level here
+      const nx = THREE.MathUtils.clamp(p.x, cx - cell / 2, cx + cell / 2);
+      const nz = THREE.MathUtils.clamp(p.z, cz - cell / 2, cz + cell / 2);
+      let ox = p.x - nx, oz = p.z - nz;
+      const d = Math.hypot(ox, oz);
+      if (d >= r) continue;
+      if (d < 1e-5) { ox = p.x - cx; oz = p.z - cz; }
+      const L = Math.hypot(ox, oz) || 1;
+      const push = r - d;
+      dx += (ox / L) * push; dz += (oz / L) * push;
+      hit = true;
+    }
+  }
+  if (hit) { p.x += dx; p.z += dz; }
+  return hit;
+}
+
+// -------------------------------------------------------------- the boats
+/* THE FISHERMAN'S BOAT, FOUND ONCE THE DOCK HAS LANDED. Its hull is a
+ * `rockColliders` box per slice already (that is what you stand on); what
+ * is added is knowing WHEN you are standing on it, and a box round it for
+ * the crosshair — DoubleSide, so from inside it the ray always meets it and
+ * the prompt is up for as long as you are aboard. `mid`, because this is a
+ * prompt that takes you somewhere. */
+function findBeachBoat() {
+  let mesh = null;
+  dock.traverse((o) => { if (!mesh && o.isMesh && o.material && o.material.name === 'Boat') mesh = o; });
+  if (!mesh) { beachBoat = false; return; }
+  mesh.updateWorldMatrix(true, false);
+  beachBoat = mesh;
+  beachBoatBox = new THREE.Box3().setFromObject(mesh);
+  const bb = beachBoatBox, size = bb.getSize(new THREE.Vector3());
+  const h = size.y + 2.4;
+  beachBoatProxy = new THREE.Mesh(
+    new THREE.BoxGeometry(size.x + 0.3, h, size.z + 0.3),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+  beachBoatProxy.position.set((bb.min.x + bb.max.x) / 2, bb.min.y + h / 2, (bb.min.z + bb.max.z) / 2);
+  beachBoatProxy.name = 'hitProxy'; beachBoatProxy.visible = false;
+  scene.add(beachBoatProxy);
+  addInteractable(beachBoatProxy, 'Set Sail', 'default', {
+    mid: true, far: 9,
+    when: () => !sailBusy && !inKeep && boatHail(beachBoatBox),
+    onActivate: () => startSail(1),
+  });
+}
+/* AND YOU DO NOT HAVE TO BE ABOARD. Asking the player to climb down into
+ * the boat before the prompt would come up made the one thing you can do at
+ * the end of that pier the one thing hardest to find; standing on the
+ * boards beside her is close enough to cast off. `nearBoat` is a reach from
+ * the hull's own box, so it is her size that decides it and not a number. */
+const BOAT_HAIL = 3.4;
+function boatHail(bb) {
+  if (!bb) return false;
+  const p = camera.position;
+  const dx = Math.max(bb.min.x - p.x, 0, p.x - bb.max.x);
+  const dz = Math.max(bb.min.z - p.z, 0, p.z - bb.max.z);
+  return Math.hypot(dx, dz) < BOAT_HAIL && Math.abs((camBaseY - playerEye()) - bb.max.y) < 4;
+}
+function updateBoatStand() {
+  onBoat = false;
+  const bb = beachBoatBox; if (!bb || inKeep) return;
+  onBoat = boatHail(bb);
+}
+/* THE SAME BOAT, MOORED AT THE KEEP. A clone of the mesh — geometry and
+ * material shared, so it IS that boat — carried over with the dock's own
+ * world transform and its keel and its middle brought to the origin, then
+ * stood in the keep's water alongside the pier with its gunwale a step
+ * under the deck. Its floor is a box, and its prompt is the way home. */
+function ensureKeepBoat() {
+  if (keepBoat || !keepReady || !beachBoat) return;
+  const bb = beachBoatBox, size = bb.getSize(new THREE.Vector3());
+  const c = beachBoat.clone();
+  /* HER OWN MATERIAL. The beach copy wears the night's lift — a gamma
+   * re-expose and a blue-grey emissive for a hull seen under a quarter moon
+   * — and under a sunset that came out as a white cut-out. `Material.clone`
+   * drops `onBeforeCompile`, which is exactly the lift; what is left is the
+   * dock's own map. */
+  c.material = beachBoat.material.clone();
+  c.material.emissiveIntensity = 0.5;
+  c.matrixAutoUpdate = false;
+  c.matrix.copy(beachBoat.matrixWorld)
+    .premultiply(new THREE.Matrix4().makeTranslation(-(bb.min.x + bb.max.x) / 2, -bb.min.y, -(bb.min.z + bb.max.z) / 2));
+  const wrap = new THREE.Group();
+  wrap.add(c);
+  // she lies along the pier: her long axis (whichever it is on the beach) goes onto z
+  const along = size.x >= size.z ? Math.PI / 2 : 0;
+  wrap.rotation.y = along + KEEP_MOOR.yaw;
+  /* SHE FLOATS, AND THE WATERLINE IS WHAT SAYS SO. She was hung off the
+   * PIER — a step under its boards — and the pier is only 0.84 m over the
+   * sea, so the sea's own plane cut through her a third of the way up and
+   * what you looked down at from the deck was a boat with the water inside
+   * it. A hull sits on the water: her keel a hand under it and her gunwale
+   * most of a metre clear, which at this pier's height also puts her rail
+   * level with the boards, the way a boat tied up at a low dock is. */
+  wrap.position.set(KEEP_MOOR.x, KEEP_SEA + 0.92 - size.y, KEEP_MOOR.z);
+  keepWorld.add(wrap);
+  keepWorld.updateMatrixWorld(true);
+  /* AND HOW HIGH SHE FLOATS IS MEASURED INSIDE HER, NOT AT HER RAIL. Hanging
+   * her by the gunwale — most of a metre of freeboard, which is what a boat
+   * tied up at a low pier looks like from the pier — says nothing about where
+   * her SOLE is, and on a shallow open boat the sole is most of that metre
+   * down: measured, her floor lay at -1.29 against a sea plane at -1.07, so
+   * the water was drawn INSIDE her and you boarded a swamped boat. Rays down
+   * her centreline find the deepest surface a body could stand on and she is
+   * floated until that is clear of the sea. It is a measurement rather than
+   * a number because the hull is a scan and the day it is repacked the
+   * freeboard would be wrong again. */
+  const sole = (() => {
+    const b0 = new THREE.Box3().setFromObject(wrap);
+    const cx = (b0.min.x + b0.max.x) / 2, z0 = b0.min.z, z1 = b0.max.z;
+    const ray = new THREE.Raycaster(new THREE.Vector3(), new THREE.Vector3(0, -1, 0), 0.05, 14);
+    let low = Infinity;
+    for (let t = 0.22; t <= 0.78; t += 0.055) for (const dx of [-0.34, 0, 0.34]) {
+      ray.ray.origin.set(cx + dx, b0.max.y + 1.2, z0 + (z1 - z0) * t);
+      const h = ray.intersectObject(c, true)[0];
+      if (h && h.point.y < low) low = h.point.y;
+    }
+    return low;
+  })();
+  if (isFinite(sole)) {
+    wrap.position.y += (KEEP_Y + KEEP_SEA + 0.08) - sole;
+    keepWorld.updateMatrixWorld(true);
+  }
+  keepBoat = wrap;
+  const kb = new THREE.Box3().setFromObject(wrap);
+  keepBoatBox = { x0: kb.min.x + 0.15, x1: kb.max.x - 0.15, z0: kb.min.z + 0.15, z1: kb.max.z - 0.15, top: kb.max.y };
+  const h = size.y + 2.4;
+  const proxy = new THREE.Mesh(
+    new THREE.BoxGeometry(kb.max.x - kb.min.x + 0.3, h, kb.max.z - kb.min.z + 0.3),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+  proxy.position.set((kb.min.x + kb.max.x) / 2, kb.min.y + h / 2, (kb.min.z + kb.max.z) / 2);
+  proxy.name = 'hitProxy'; proxy.visible = false;
+  scene.add(proxy);
+  const kbb = { min: { x: kb.min.x, y: kb.min.y, z: kb.min.z }, max: { x: kb.max.x, y: kb.max.y, z: kb.max.z } };
+  addInteractable(proxy, 'Set Sail', 'default', {
+    mid: true, far: 9,
+    when: () => inKeep && !sailBusy && boatHail(kbb),
+    onActivate: () => startSail(-1),
+  });
+}
+
+// -------------------------------------------------------- the air, the light
+/* NIGHT, OUT OF THE NIGHT'S OWN LAMPS. The five sky lights are in the scene
+ * for ever; what changes is their colour, their strength and where the two
+ * directionals stand. The moon is drawn in the sky shader and the light is
+ * pointed out of it, so the rim on the rock and the disc you can see are
+ * the same thing — the mistake the saucer made twice was having them
+ * disagree. It is LIGHTER than the beach's own night on purpose: there is
+ * no glowstick out here and the island has to be readable to be walked.
+ * The beach's fog goes to a deep blue haze and its sky dome is hidden,
+ * because the model brought its own. */
+function keepEnter() {
+  if (!_keepLightSaved) {
+    _keepLightSaved = SKY_LIGHTS.map(({ l }) => ({
+      l, color: l.color.clone(), intensity: l.intensity, pos: l.position.clone(),
+      ground: l.groundColor ? l.groundColor.clone() : null,
+    }));
+    moonLight.color.setHex(0xc9d6f4); moonLight.intensity = 2.30; moonLight.position.set(-124, 72, 140);
+    rakeLight.color.setHex(0x8196c4); rakeLight.intensity = 0.52; rakeLight.position.set(120, 30, -90);
+    cliffFill.color.setHex(0x51749b); cliffFill.intensity = 0.42; cliffFill.position.set(50, 18, 140);
+    skyAmbient.color.setHex(0x334469); skyAmbient.intensity = 1.35;
+    skyHemi.color.setHex(0x4d649a); skyHemi.groundColor.setHex(0x14232e); skyHemi.intensity = 0.95;
+  }
+  if (!_keepFogSaved) {
+    _keepFogSaved = { color: scene.fog.color.clone(), density: scene.fog.density, sky: sky.visible };
+    scene.fog.color.copy(KEEP_FOG.color); scene.fog.density = KEEP_FOG.density; sky.visible = false;
+  }
+}
+function keepLeave() {
+  if (_keepLightSaved) {
+    for (const e of _keepLightSaved) {
+      e.l.color.copy(e.color); e.l.intensity = e.intensity; e.l.position.copy(e.pos);
+      if (e.ground) e.l.groundColor.copy(e.ground);
+    }
+    _keepLightSaved = null;
+  }
+  if (_keepFogSaved) {
+    scene.fog.color.copy(_keepFogSaved.color); scene.fog.density = _keepFogSaved.density; sky.visible = _keepFogSaved.sky;
+    _keepFogSaved = null;
+  }
+}
+function warmKeep() {
+  if (keepWarmed || !keepWorld || !keepReady) return;
+  keepWarmed = true;
+  const x = KEEP_X + KEEP_SPAWN.x, y = KEEP_Y + 1.5, z = KEEP_Z + KEEP_SPAWN.z;
+  warmStep('keep compile', () => warmCompile([keepWorld], x, y, z, KEEP_X, KEEP_Y + 10, KEEP_Z));
+  for (const v of [[x, y, z, KEEP_X, KEEP_Y + 10, KEEP_Z], [x, y, z, x, y, z + 40], [x, y, z, x + 40, y, z], [x, y, z, x - 40, y, z], [x, y, z, x, y + 40, z]])
+    warmStep('keep', () => warmView([keepWorld], ...v));
+}
+
+// -------------------------------------------------------------- the walk
+/* YOU JUMP ONTO THINGS AND YOU WALK OFF THEM, AND THAT IS THE WHOLE OF IT.
+ * There was an E to climb a ledge, and it was a game playing the move for
+ * you: the owner asked for the button off and for the island to be a thing
+ * you get about by your own feet. So the floor is simply asked for at the
+ * height your feet are ACTUALLY at — a lip up to `KEEP_STEP` is walked up,
+ * anything higher wants the jump, and there is no limit below at all, so a
+ * ledge is walked off and the ground comes up to meet you. The only refusal
+ * left is a wall, which is the one thing a body cannot do. */
+function updateKeep(dt) {
+  if (beachBoat === null && dock.children.length) findBeachBoat();
+  updateBoatStand();
+  if (!inKeep) {
+    if (!keepWorld && Math.hypot(camera.position.x - DOCK_X, camera.position.z - DOCK_Z) < KEEP_LOAD_NEAR) loadKeep();
+    return;
+  }
+  if (!keepBoat) ensureKeepBoat();
+  updateKeepLift(dt);
+  if (!keepWalk) { groundY = Math.max(groundY, KEEP_Y + KEEP_WADE); return; }
+  const p = camera.position;
+  const feet = camBaseY - playerEye();
+  /* WHAT COUNTS AS A STEP DEPENDS ON WHERE YOU ARE. On the ground it is a
+   * lip; in the air it is whatever your feet come near, so a jump gets you
+   * onto something about a metre high and the jump is worth having; and
+   * out of the SEA you climb whatever the bank is, because a wade you
+   * cannot end is a trap — measured, the shelf is two metres under the
+   * beach and at a walking step you would have swum for ever. */
+  const up = !onGround ? KEEP_AIR : (keepWading ? KEEP_OUT : KEEP_STEP);
+  /* A MOVE IS LEGAL WHEN THERE IS SOMEWHERE TO STAND AND NOTHING DRAWN IN
+   * BETWEEN. The grid answers the first and the model itself answers the
+   * second, swept at chest height from where you stood before the frame
+   * moved you. */
+  /* AND THE SWEEP IS A BODY, NOT A LINE AT ONE HEIGHT. At the chest alone a
+   * handrail is a bar that passes clean over the segment and its posts are
+   * gaps either side of it, which is the whole of "I walk through the
+   * railings": three heights between a lip's height and the crown cover
+   * what a person is actually as wide as. */
+  const hits = (x0, z0, x1, z1) => keepHitsWall(x0, z0, x1, z1, feet + 0.80)
+    || keepHitsWall(x0, z0, x1, z1, feet + 1.25)
+    || keepHitsWall(x0, z0, x1, z1, feet + 1.68);
+  const legal = (x, z) => keepStandable(x, z, feet, up) && !hits(_preMove.x, _preMove.z, x, z);
+  let st = legal(p.x, p.z);
+  if (!st) {
+    /* A WALL IS SLID ALONG, NOT BOUNCED OFF: keep whichever one axis of the
+     * frame's move is clear, else stand still. */
+    if (legal(p.x, _preMove.z)) p.z = _preMove.z;
+    else if (legal(_preMove.x, p.z)) p.x = _preMove.x;
+    else { p.x = _preMove.x; p.z = _preMove.z; }
+    st = keepStandable(p.x, p.z, feet, up);
+  }
+  pushOutOfKeep(p, KEEP_BODY, feet, up);
+  keepWallPush(p, KEEP_BODY, feet);
+  // and whatever the push left you standing on still has to hold you up, so
+  // the height falls back to the plain floor when you are being ejected
+  st = keepStandable(p.x, p.z, feet, up) || keepFloorAt(p.x, p.z, feet, up) || st;
+  /* AND THE DRAWN WORLD ENDS. Past the shelf there is nothing under the
+   * water but the sky sphere's rim, so the wade stops at the rim — the
+   * beach's own WADE_X, on a round island. */
+  const dx = p.x - KEEP_X, dz = p.z - KEEP_Z, d = Math.hypot(dx, dz);
+  if (d > KEEP_EDGE) { p.x = KEEP_X + (dx / d) * KEEP_EDGE; p.z = KEEP_Z + (dz / d) * KEEP_EDGE; }
+  groundY = st ? st.f : KEEP_Y + KEEP_WADE;
+  keepWading = !st || !!st.sea || st.f < KEEP_Y + KEEP_SEA - 0.05;
+}
+
+// --------------------------------------------------------------- the lift
+/* THE HOIST IS THE MODEL'S OWN, AND IT IS LIFTED OUT OF THE MESH IT WAS
+ * BAKED INTO. A whole timber lift was BUILT here first — four posts, a drum,
+ * a counterweight, a gangway — and the owner's word was to take it out and
+ * make the one the model already has work. He is right, and the reason is
+ * the undercroft's own: MAKE THIS BETTER IS NOT REPLACE THIS. JesseL drew a
+ * cargo hoist against the cliff — a planked car with rails and a crate on
+ * it, two guide frames eight metres tall and a head beam with pulley blocks
+ * at 21.8 — and next to a real one anything hand-built is a stack of boxes.
+ *
+ * WHAT IT COSTS is that the packer bakes every node into world space and
+ * merges by material, so the car is not an object: it is triangles inside
+ * three 44,000-triangle meshes. It comes out the way the bunker's tripod
+ * camera came out of its merged mesh — WELD BY POSITION, FLOOD THE ISLANDS,
+ * AND TAKE THE ONES WHOSE WHOLE BOUNDING BOX LIES INSIDE THE CAR. A box
+ * test on triangles alone would tear the bottom metre off both guide
+ * frames, which stand ON the car's deck and pass through its plan.
+ *
+ * AND THE HEIGHT IS THE POINT. Measured: the walk from the pier reaches
+ * 4.87 m and no higher, the hoist's lower landing is a timber jetty at
+ * 2.35, and the car as drawn sits at 14.10 with the keep's terrace at 14.30
+ * either side of it. So the one thing on this island a body cannot do is
+ * exactly the thing the hoist is for. */
+const LIFT = {
+  x0: -4.50, x1: -0.70, y0: 13.55, y1: 15.20, z0: 11.85, z1: 17.15,  // the car, as the model draws it
+  deck: 14.10,          // its plank top, raycast
+  up: 16.15,            // AND IT GOES TO THE DOOR: the terrace outside the keep reads 16.1
+  clear: 0.08,          // how far it stands over the landing when it is down
+  slim: 0.36,           // a deck timber is thin in SOME axis; a cannon is not
+  dur: 7.6,
+};
+function buildKeepLift() {
+  if (keepLift || !keepWorld) return;
+  // `matrixWorld` IS ONLY WRITTEN BY A RENDER, and this runs in the loader:
+  // without this the model's meshes measure in their own space and nothing
+  // is ever found. The file has paid for this five times.
+  keepWorld.updateMatrixWorld(true);
+  const lo = new THREE.Vector3(KEEP_X + LIFT.x0, KEEP_Y + LIFT.y0, KEEP_Z + LIFT.z0);
+  const hi = new THREE.Vector3(KEEP_X + LIFT.x1, KEEP_Y + LIFT.y1, KEEP_Z + LIFT.z1);
+  const want = new THREE.Box3(lo, hi);
+  const car = new THREE.Group();
+  let took = 0;
+  const grab = new THREE.Box3(), falls = [];
+  const kOff = new THREE.Vector3().setFromMatrixPosition(keepWorld.matrixWorld);
+
+  const meshes = [];
+  keepWorld.traverse((o) => { if (o.isMesh && o.geometry && o.geometry.index && o.name !== 'hitProxy') meshes.push(o); });
+  const toCar = new THREE.Matrix4();
+  for (const src of meshes) {
+    const g = src.geometry, pos = g.attributes.position, idx = g.index;
+    const nT = idx.count / 3;
+    // nothing to do unless some of this mesh is inside the car's box at all
+    const gb = g.boundingBox || (g.computeBoundingBox(), g.boundingBox);
+    const wb = gb.clone().applyMatrix4(src.matrixWorld);
+    if (!wb.intersectsBox(want)) continue;
+
+    /* WELD BY POSITION BEFORE YOU FLOOD. The bake splits a vertex at every
+     * uv seam, so an index-only flood finds one plank in half a dozen
+     * pieces. */
+    const rep = new Int32Array(pos.count), seen = new Map();
+    for (let i = 0; i < pos.count; i++) {
+      const k = Math.round(pos.getX(i) * 1000) + ',' + Math.round(pos.getY(i) * 1000) + ',' + Math.round(pos.getZ(i) * 1000);
+      let r = seen.get(k); if (r === undefined) { r = i; seen.set(k, i); }
+      rep[i] = r;
+    }
+    const par = new Int32Array(pos.count); for (let i = 0; i < pos.count; i++) par[i] = rep[i];
+    const find = (a) => { while (par[a] !== a) { par[a] = par[par[a]]; a = par[a]; } return a; };
+    for (let t = 0; t < nT; t++) {
+      const a = find(rep[idx.getX(t * 3)]), b = find(rep[idx.getX(t * 3 + 1)]), c = find(rep[idx.getX(t * 3 + 2)]);
+      par[b] = a; par[c] = a;
+    }
+    // every island's own world bounding box
+    const box = new Map(), v = new THREE.Vector3();
+    for (let t = 0; t < nT; t++) {
+      const r = find(rep[idx.getX(t * 3)]);
+      let e = box.get(r); if (!e) { e = new THREE.Box3(); box.set(r, e); }
+      for (let k = 0; k < 3; k++) { v.fromBufferAttribute(pos, idx.getX(t * 3 + k)); v.applyMatrix4(src.matrixWorld); e.expandByPoint(v); }
+    }
+    /* THREE KINDS OF ISLAND, AND ONLY ONE OF THEM IS THE CAR.
+     *  - the DECK: inside the car's box and thin in some axis, because every
+     *    piece of it is a plank, a bearer, a stanchion or a rail;
+     *  - the CARGO: inside the car's box and thick in every axis — the model
+     *    stands a CANNON and its crates on the deck, and the owner's word is
+     *    that the hoist should be the platform and nothing else, so they are
+     *    dropped from the model rather than carried up and down on it;
+     *  - the ROPES: four falls that leave the deck at 14.03 and run up to the
+     *    head beam at 22. They are not the car and they do not travel with
+     *    it — they STRETCH, which is the only way a rope can look like one.
+     *    Each is cut a hand under its own top so the run along the head beam
+     *    stays put and only the hanging part scales, pivoted exactly at the
+     *    cut so there is no seam to see. */
+    const deckY = KEEP_Y + LIFT.deck, sz = new THREE.Vector3();
+    const kind = new Map(), cutAt = new Map();
+    for (const [r, e] of box) {
+      e.getSize(sz);
+      if (want.containsBox(e)) kind.set(r, Math.min(sz.x, sz.y, sz.z) <= LIFT.slim ? 'car' : 'cargo');
+      else if (Math.abs(e.min.y - deckY) < 0.35 && e.max.y > deckY + 4.5 && Math.max(sz.x, sz.z) < 9
+        && e.min.x > KEEP_X + LIFT.x0 - 1.2 && e.max.x < KEEP_X + LIFT.x1 + 1.2) {
+        kind.set(r, 'rope'); cutAt.set(r, e.max.y - 0.45);
+      }
+    }
+    if (!kind.size) continue;
+
+    const keep = [], move = [], ropes = new Map();
+    for (let t = 0; t < nT; t++) {
+      const a = idx.getX(t * 3), b = idx.getX(t * 3 + 1), c = idx.getX(t * 3 + 2);
+      const r = find(rep[a]), k = kind.get(r);
+      if (!k) { keep.push(a, b, c); continue; }
+      if (k === 'cargo') continue;                       // off the platform for good
+      if (k === 'car') { move.push(a, b, c); continue; }
+      const cut = cutAt.get(r);
+      let below = true;
+      for (const i of [a, b, c]) { v.fromBufferAttribute(pos, i); v.applyMatrix4(src.matrixWorld); if (v.y >= cut) below = false; }
+      if (!below) { keep.push(a, b, c); continue; }
+      let list = ropes.get(r); if (!list) { list = []; ropes.set(r, list); }
+      list.push(a, b, c);
+    }
+
+    /* A PIECE SHARES ITS SOURCE'S ATTRIBUTES AND CARRIES ONLY ITS OWN INDEX
+     * — no vertices are copied and the uv is the scan's own, so nothing that
+     * moves can come out a different colour from the frame it hangs in. */
+    const piece = (tris) => {
+      const cg = new THREE.BufferGeometry();
+      for (const name of Object.keys(g.attributes)) cg.setAttribute(name, g.attributes[name]);
+      cg.setIndex(tris);
+      const cm = new THREE.Mesh(cg, src.material);
+      // the source may be nested under the model's own root, so the piece
+      // carries the transform that keeps it exactly where it was drawn
+      cm.matrixAutoUpdate = false;
+      cm.matrix.copy(toCar.copy(keepWorld.matrixWorld).invert().multiply(src.matrixWorld));
+      cm.frustumCulled = false;
+      return cm;
+    };
+    if (move.length) {
+      car.add(piece(move));
+      took += move.length / 3;
+      for (const [r, e] of box) if (kind.get(r) === 'car') grab.union(e);
+    }
+    for (const [r, tris] of ropes) {
+      const e = box.get(r), pivot = cutAt.get(r) - kOff.y;   // keepWorld is a pure translation
+      const grp = new THREE.Group();
+      grp.position.y = pivot;
+      const cm = piece(tris);
+      cm.matrix.premultiply(new THREE.Matrix4().makeTranslation(0, -pivot, 0));
+      grp.add(cm);
+      keepWorld.add(grp);
+      falls.push({ grp, base: e.min.y - KEEP_Y, cut: cutAt.get(r) - KEEP_Y });
+    }
+    g.setIndex(keep);
+  }
+  if (!took) return;                                  // no hoist, no lift
+
+  keepWorld.add(car);
+  keepWorld.updateMatrixWorld(true);
+
+  /* AND THE FLOOR IT USED TO BE GOES WITH IT. Taking a surface away does
+   * not take away what the walk grid remembers of it — the desk's own
+   * lesson — so the car's storeys come out of every cell under its plan and
+   * the only thing that speaks for it afterwards is its box. */
+  const cut = new THREE.Box3();
+  if (keepCells && keepWalk) {
+    /* AND ONLY THE CELLS THE CAR ACTUALLY COVERS. Walked as a loop over
+     * metres this ran a cell wide on every side and took the KEEP'S OWN
+     * TERRACE with it — a half-metre moat round the car at the top that you
+     * fell down the moment you stepped off. The cell's own centre decides. */
+    const w = keepWalk, C = w.cell;
+    const i0 = Math.floor((grab.min.x - KEEP_X - w.x0) / C), i1 = Math.floor((grab.max.x - KEEP_X - w.x0) / C);
+    const j0 = Math.floor((grab.min.z - KEEP_Z - w.z0) / C), j1 = Math.floor((grab.max.z - KEEP_Z - w.z0) / C);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const cx = KEEP_X + w.x0 + (i + 0.5) * C, cz = KEEP_Z + w.z0 + (j + 0.5) * C;
+      if (cx < grab.min.x || cx > grab.max.x || cz < grab.min.z || cz > grab.max.z) continue;
+      const fl = keepCells.get(j * w.gw + i); if (!fl) continue;
+      let cleared = false;
+      for (let k = fl.length - 3; k >= 0; k -= 3)
+        if (KEEP_Y + fl[k] >= grab.min.y - 0.35 && KEEP_Y + fl[k] <= grab.max.y + 0.35) { fl.splice(k, 3); cleared = true; }
+      // the car's own floor has to cover the CELL, edge to edge, or the half
+      // of it that sticks out past the timber is a hole to fall down
+      if (cleared) { cut.expandByPoint(new THREE.Vector3(cx - C / 2, 0, cz - C / 2));
+                     cut.expandByPoint(new THREE.Vector3(cx + C / 2, 0, cz + C / 2)); }
+    }
+  }
+
+  /* WHERE DOWN IS, IS MEASURED — AND IT IS MEASURED ON THE FLOOR THE FEET
+   * USE, NOT ON A RAY. The jetty the hoist stands over is a RAMP: its walk
+   * runs 2.70 at the landward end to 1.94 at the seaward one, and a corner
+   * of the car's plan clips the rock the hoist is bolted to at 3.42. Parked
+   * over the HIGHEST of those the car is a metre in the air; parked a step
+   * over the middle of the ramp it is a 0.68 m climb from the far end, over
+   * the 0.62 the walk allows — measured, you stroll straight past it and off
+   * the other side instead of stepping aboard. It rests a hand over the
+   * MEDIAN, so it is a quarter of a step up from the low end of the ramp and
+   * a third of one down from the high end, and a drop is always free. */
+  const floors = [];
+  for (let x = LIFT.x0 + 0.4; x <= LIFT.x1 - 0.4; x += 0.3) for (let z = LIFT.z0 + 0.4; z <= LIFT.z1 - 0.4; z += 0.3) {
+    const st = keepStandable(KEEP_X + x, KEEP_Z + z, KEEP_Y + LIFT.y0 - 0.5, 0.62);
+    if (st && !st.sea) floors.push(st.f - KEEP_Y);
+  }
+  floors.sort((a, b) => a - b);
+  /* AND THE HIGHEST FLOOR UNDER IT IS NOT ALWAYS THE LANDING. A corner of
+   * the plan clips the rock the hoist is bolted to, which stands a metre
+   * over the timber — take that for the landing and the car parks a metre
+   * in the air. The jetty is the CLUSTER: the highest floor still within a
+   * metre of the median of them. */
+  const landY = floors.length ? floors[floors.length >> 1] : 2.35;
+  const drop = LIFT.deck - (landY + LIFT.clear);      // how far the car falls
+
+  keepLift = { state: 'up', t: 1, dir: -1, drop, landY, upOff: LIFT.up - LIFT.deck, downOff: -drop,
+    y: KEEP_Y + LIFT.up, creak: 0, first: true };
+  /* AND THE CAR'S FLOOR REACHES A HAND PAST ITS OWN TIMBER. The model draws
+   * the car inside a well with a finger's clearance all round, and the
+   * packer wrote no floor in that clearance — so stepping off at the top you
+   * walked into a 15 cm slot with nothing in it and fell the whole fourteen
+   * metres. The plan is the cells the car took ground from, the car's own
+   * measured box, and a hand's width over: at the edge you are standing on
+   * the lip of the deck, which is where you are standing anyway. */
+  const plan = (cut.isEmpty() ? grab.clone() : cut.clone().union(grab));
+  plan.min.x -= 0.25; plan.max.x += 0.25; plan.min.z -= 0.25; plan.max.z += 0.25;
+  keepLiftParts = { car, grab, plan, falls, proxies: [] };
+
+  /* AND THE CONTROL IS THE HOIST, NOT A LEVER SOMEBODY ADDED. Two invisible
+   * proxies — the file's own way of giving a crosshair something to find —
+   * one standing on the jetty under it so you can call it down, and one
+   * riding the car so you can send yourself up once you are aboard. */
+  const label = () => (keepLift && keepLift.state === 'up' ? 'Lower the hoist' : 'Raise the hoist');
+  const when = () => inKeep && keepLift && keepLift.state !== 'rising' && keepLift.state !== 'falling';
+  const w = grab.max.x - grab.min.x, d = grab.max.z - grab.min.z;
+  /* AND A PROXY HUNG UNDER THE KEEP'S OWN GROUP IS IN THE KEEP'S OWN FRAME.
+   * `grab` is world — it was measured off `matrixWorld` — and the group
+   * carries the island's six kilometres, so a world position written
+   * straight into `position` lands twice as far out and the crosshair finds
+   * nothing at all. */
+  const at = (y) => keepWorld.worldToLocal(new THREE.Vector3((grab.min.x + grab.max.x) / 2, y, (grab.min.z + grab.max.z) / 2));
+  const foot = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 2.2, d + 0.4),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+  foot.position.copy(at(KEEP_Y + landY + 1.1));
+  foot.name = 'hitProxy'; foot.visible = false;
+  keepWorld.add(foot);
+  addInteractable(foot, label, 'action', { far: 4.6, mid: true, when, onActivate: pullKeepLever });
+  const ride = new THREE.Mesh(new THREE.BoxGeometry(w - 0.3, 1.9, d - 0.3),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+  ride.position.copy(at(KEEP_Y + LIFT.deck + 0.95));
+  ride.name = 'hitProxy'; ride.visible = false;
+  car.add(ride);
+  addInteractable(ride, label, 'action', { far: 4.6, mid: true, when, onActivate: pullKeepLever });
+  keepLiftParts.proxies = [foot, ride];
+
+  setKeepLift(1);
+}
+
+/* Everything the hoist does is written from ONE number — how far through
+ * the travel it is — so the timber you are looking at and the floor you are
+ * standing on can never disagree. */
+function setKeepLift(k) {
+  const L = keepLift, P = keepLiftParts; if (!L || !P) return;
+  /* ZERO IS WHERE THE MODEL DRAWS THE CAR, and the travel runs either side
+   * of it: down to a hand over the jetty, and UP PAST ITS OWN HOME to the
+   * terrace outside the keep's door. The model parks it at the foot of its
+   * guides, which is two metres short of the only floor up there worth
+   * standing on. */
+  const off = L.downOff + (L.upOff - L.downOff) * k;
+  P.car.position.y = off;
+  L.y = KEEP_Y + LIFT.deck + off;
+  // and the falls pay out: pinned at the head, they reach the deck at any height
+  for (const f of P.falls) f.grp.scale.y = Math.max(0.02, (f.cut - (f.base + off)) / (f.cut - f.base));
+  // the car is a floor like the boat is: a box the walk reads
+  /* AND THE BOX HAS TO COVER EXACTLY WHAT THE GRID GAVE UP — WHICH IS CELLS,
+   * NOT METRES. A cell is given up when its CENTRE lies under the car, so
+   * the ground it took with it reaches half a cell further out than the
+   * car's own timber does; a box drawn on the timber leaves a 20 cm strip
+   * with no floor at all, and measured, that is a hole you fall the whole
+   * fourteen metres through on the way to the terrace. */
+  keepLiftBox = { x0: P.plan.min.x, x1: P.plan.max.x, z0: P.plan.min.z, z1: P.plan.max.z, top: L.y };
+}
+
+function pullKeepLever() {
+  const L = keepLift; if (!L || L.state === 'rising' || L.state === 'falling') return;
+  L.dir = L.state === 'down' ? 1 : -1;
+  L.state = L.dir > 0 ? 'rising' : 'falling';
+  L.t = L.dir > 0 ? 0 : 1;
+  L.creak = 0;
+  sfxKeepLever(L.first && L.dir < 0);
+  L.first = false;
+}
+
+function updateKeepLift(dt) {
+  const L = keepLift; if (!L) return;
+  if (L.state !== 'rising' && L.state !== 'falling') return;
+  L.t = THREE.MathUtils.clamp(L.t + (L.dir * dt) / LIFT.dur, 0, 1);
+  setKeepLift(L.t * L.t * (3 - 2 * L.t));
+  L.creak += dt;
+  if (L.creak > 1.15) { L.creak = 0; sfxKeepCreak(); }
+  if ((L.dir > 0 && L.t >= 1) || (L.dir < 0 && L.t <= 0)) {
+    L.state = L.dir > 0 ? 'up' : 'down';
+    sfxKeepThud();
+  }
+}
+
+/* The lever is iron in a timber post and the pawl comes off the ratchet
+ * first — a clack, the block letting go, and then the rope taking the load.
+ * Nothing in it is above 900 Hz but the pawl itself. */
+function sfxKeepLever(drop) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  for (const [at, f, lv] of [[0, 620, 0.34], [0.07, 380, 0.26]]) {
+    const o = ctx.createOscillator(); o.type = 'square';
+    o.frequency.setValueAtTime(f, t + at); o.frequency.exponentialRampToValueAtTime(f * 0.45, t + at + 0.09);
+    const g = ctx.createGain(); g.gain.setValueAtTime(lv, t + at); g.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.12);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2200;
+    o.connect(lp).connect(g).connect(out); o.start(t + at); o.stop(t + at + 0.14);
+  }
+  if (drop) {                               // the weight letting go: rope running out
+    const n = noiseBurst(1.1, (x) => Math.pow(1 - x, 0.6) * (0.5 + 0.5 * Math.sin(x * 130)));
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.6;
+    bp.frequency.setValueAtTime(700, t + 0.1); bp.frequency.exponentialRampToValueAtTime(240, t + 1.1);
+    const g = ctx.createGain(); g.gain.value = 0.34;
+    n.connect(bp).connect(g).connect(out); n.start(t + 0.1); n.stop(t + 1.2);
+  }
+}
+function sfxKeepCreak() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime + Math.random() * 0.2, out = sfxOut();
+  const n = noiseBurst(0.5, (x) => Math.sin(x * Math.PI) * (0.6 + 0.4 * Math.sin(x * 26)));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 9;
+  bp.frequency.setValueAtTime(260 + Math.random() * 90, t); bp.frequency.linearRampToValueAtTime(190, t + 0.5);
+  const g = ctx.createGain(); g.gain.value = 0.16;
+  n.connect(bp).connect(g).connect(out); n.start(t); n.stop(t + 0.5);
+}
+function sfxKeepThud() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(96, t); o.frequency.exponentialRampToValueAtTime(44, t + 0.3);
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.5, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+  o.connect(g).connect(out); o.start(t); o.stop(t + 0.5);
+  const n = noiseBurst(0.26, (x) => Math.pow(1 - x, 2.2));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520;
+  const ng = ctx.createGain(); ng.gain.value = 0.42;
+  n.connect(lp).connect(ng).connect(out); n.start(t); n.stop(t + 0.3);
+}
+
+// ------------------------------------------------------------ the crossing
+/* BLACK, THE BOAT, AND THE OTHER SHORE. On the wall clock beside the hatch
+ * and the portal, so a beat of hitstop cannot stretch it: the screen goes
+ * to black over half a second, holds while the line creaks and the water
+ * takes her, cuts in the middle of the black, and comes up on the pier. If
+ * the keep is somehow not down yet the black holds until it is, which is
+ * the honest failure. */
+function startSail(dir) {
+  if (sailBusy || frozen()) return;
+  if (dir > 0) loadKeep();
+  sailBusy = true; sailDir = dir; sailT = 0; sailCut = false;
+  blocking = false;
+  sfxSetSail();
+}
+function updateSailCut(dt) {
+  if (!sailBusy) return;
+  sailT += dt;
+  const t = sailT, D = SAIL_OUT + SAIL_HOLD + SAIL_IN;
+  const black = t < SAIL_OUT ? smooth01(0.04, SAIL_OUT, t)
+    : t < SAIL_OUT + SAIL_HOLD ? 1 : 1 - smooth01(SAIL_OUT + SAIL_HOLD, D, t);
+  blackoutEl.style.opacity = black.toFixed(3);
+  if (!sailCut && t >= SAIL_OUT + 0.05) {
+    if (sailDir > 0 && !keepReady) { sailT = SAIL_OUT + 0.05; return; }
+    if (sailDir > 0) buildKeepIsland();          // half a second, behind full black
+    sailCut = true;
+    if (sailDir > 0) placeInKeep(); else placeBackOnBoat();
+  }
+  if (t >= D) { sailBusy = false; blackoutEl.style.opacity = '0'; catchBreath(); }
+}
+function placeInKeep() {
+  buildKeepIsland();                 // a restore or the harness may arrive without the cut
+  inKeep = true;
+  if (keepWorld) keepWorld.visible = true;
+  warmKeep();
+  keepEnter();
+  const gx = KEEP_X + KEEP_SPAWN.x, gz = KEEP_Z + KEEP_SPAWN.z;
+  const st = keepStandAt(gx, gz, KEEP_Y - 0.2, 3, 3);
+  groundY = st ? st.f : KEEP_Y;
+  camera.position.set(gx, groundY + playerEye(), gz);
+  camBaseY = camera.position.y; vy = 0; onGround = true;
+  lookEuler.set(0.03, KEEP_SPAWN.yaw, 0, lookEuler.order);   // down the pier, at the rock
+  camera.quaternion.setFromEuler(lookEuler);
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0);
+  crouching = false;
+}
+function placeBackOnBoat() {
+  inKeep = false;
+  if (keepWorld) keepWorld.visible = false;
+  keepLeave();
+  const bb = beachBoatBox;
+  const x = bb ? (bb.min.x + bb.max.x) / 2 : DOCK_X, z = bb ? (bb.min.z + bb.max.z) / 2 : DOCK_Z;
+  const rk = rockGroundAt(x, z, (bb ? bb.max.y : 0) + 0.6);
+  groundY = rk ? rk.top : (bb ? bb.max.y : 0);
+  camera.position.set(x, groundY + playerEye(), z);
+  camBaseY = camera.position.y; vy = 0; onGround = true;
+  // facing back along the pier at the shed
+  const door = dock.localToWorld(new THREE.Vector3(-1.94, 1.03, -0.93));
+  lookEuler.set(0, Math.atan2(-(door.x - x), -(door.z - z)), 0, lookEuler.order);
+  camera.quaternion.setFromEuler(lookEuler);
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0);
+}
+
+/* Casting off: the mooring line taking the weight twice, a knock of the
+ * hull on the piles, and the water closing under her — brown noise under a
+ * low pass, swelling and falling away, because at the ear any broadband
+ * hiss is a radio. */
+function sfxSetSail() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  for (const [at, f0, f1, len, lv] of [[0.05, 360, 540, 0.30, 0.40], [0.66, 300, 480, 0.36, 0.34]]) {
+    const n = noiseBurst(len, (x) => Math.pow(Math.sin(x * Math.PI), 0.6) * (0.55 + 0.45 * Math.sin(x * 90)));
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 7;
+    bp.frequency.setValueAtTime(f0, t + at); bp.frequency.exponentialRampToValueAtTime(f1, t + at + len);
+    const g = ctx.createGain(); g.gain.value = lv;
+    n.connect(bp).connect(g).connect(out); n.start(t + at); n.stop(t + at + len);
+  }
+  for (const at of [0.42, 1.15]) {
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(190, t + at); o.frequency.exponentialRampToValueAtTime(95, t + at + 0.12);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.30, t + at); g.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.16);
+    o.connect(g).connect(out); o.start(t + at); o.stop(t + at + 0.2);
+  }
+  const len = 2.4;
+  const w = noiseBurst(len, (x) => Math.pow(Math.sin(x * Math.PI), 1.4));
+  const src = w.buffer.getChannelData(0);
+  let b = 0;
+  for (let i = 0; i < src.length; i++) { b = 0.985 * b + src[i] * 0.09; src[i] = b; }   // brown
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 300;
+  const wg = ctx.createGain(); wg.gain.value = 2.2;
+  w.connect(lp).connect(wg).connect(out); w.start(t + 0.3); w.stop(t + 0.3 + len);
+}
+
 loadPortal();
 
 
@@ -31752,7 +34632,7 @@ window.__bw = {
     if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
     oceanUniforms.uTime.value += dt;
     update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
-    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); updatePortalCut(rawDt);
+    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt);
     updateLightPool();
   },
   /* The lamp pool, for a still: a frozen loop never points the twelve at
@@ -31773,6 +34653,12 @@ window.__bw = {
   }),
   startPortalTake, startPortalReturn, placeInDojo, placeBackAtPortal, wakeSamurai, warmDojo,
   dojoFloorAt, dojoGridAt, pushOutOfDojo,
+  KEEP_X, KEEP_Y, KEEP_Z, KEEP_SPAWN, KEEP_MOOR, LIFT, loadKeep, startSail, placeInKeep, placeBackOnBoat, keepFloorAt, keepStandAt, keepStandable, keepHitsWall, keepWallNear, keepWallPush, keepDrawnFloor, keepCellAt, warmKeep, findBeachBoat, pullKeepLever, updateHover,
+  get keepWalls() { return keepWalls && { faces: keepWalls.v.length / 9, cells: keepWalls.map.size }; },
+  get keepLift() { return keepLift && { state: keepLift.state, t: +keepLift.t.toFixed(2), y: +(keepLift.y - KEEP_Y).toFixed(2), drop: +keepLift.drop.toFixed(2), landY: +keepLift.landY.toFixed(2), box: keepLiftBox && { top: +(keepLiftBox.top - KEEP_Y).toFixed(2), x: [+(keepLiftBox.x0 - KEEP_X).toFixed(1), +(keepLiftBox.x1 - KEEP_X).toFixed(1)], z: [+(keepLiftBox.z0 - KEEP_Z).toFixed(1), +(keepLiftBox.z1 - KEEP_Z).toFixed(1)] } }; },
+  get keepRepair() { return keepWalk && { ground: keepWalk.repaired, storeys: keepWalk.storeys }; },
+  get keepWorld() { return keepWorld; }, get keepSky() { return keepSky; }, get keepSea() { return keepSea; }, get keepBoat() { return keepBoat; }, get beachBoat() { return beachBoat; },
+  keepState: () => ({ inKeep, ready: keepReady, walk: !!keepWalk, cells: keepCells ? keepCells.size : 0, sail: sailBusy, t: +sailT.toFixed(2), onBoat, boatBox: beachBoatBox && [+beachBoatBox.min.x.toFixed(2), +beachBoatBox.min.y.toFixed(2), +beachBoatBox.min.z.toFixed(2), +beachBoatBox.max.x.toFixed(2), +beachBoatBox.max.y.toFixed(2), +beachBoatBox.max.z.toFixed(2)], keepBoatBox }),
   updateHurt, hurtEl,
   militaryItem, militaryWorld, milModel, get toolVM() { return toolVM; }, vmScene, vmCamera, toolMount,
   get settings() { return settings; }, get hp() { return hp; },
@@ -31805,7 +34691,7 @@ window.__bw = {
   hcrab, hcrabWorld, syringe, syringeWorld, bloodJar,
   renderer, inspectScene, inspectCamera,
   mounds, moundAt, revealMoundNear, makeGlowstick, inWater, shoreLineJS,
-  sfxSplash, bradly, startDialog, endDialog, heldGlow,
+  sfxSplash, sfxStepPuddle, sfxStepUnder, bradly, startDialog, endDialog, heldGlow,
   crab, crabState, killCrab, damagePlayer, playerDied, burstCrab, addTrauma, updateGibs,
   get gibCount() { return gibs.length; },
   get bloodCount() { return bloodDrops.length; },
@@ -31893,7 +34779,10 @@ window.__bw = {
   get stairTurns() { return stairTurns; },
   get bottleBroken() { return bottleBroken; },
   get hp() { return hp; },
-  get blood() { return bloodAmount; },
+  get blood() { return bloodJars; },
+  // and a door to the tally, because the only other way to add a jar is to
+  // walk down the beach and bleed a crab
+  gainJar: (n) => gainJar(n),
   get bloodSeen() { return bloodSeen; },
   get syringeItem() { return syringeItem; },
   // live-tune the fake eyelid once the real cut-out is in:

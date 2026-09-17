@@ -527,6 +527,14 @@ side of the portal (`assets/dojo.glb`, packed by `tools/undercroft_pack.py` with
 its walk grid inside it). Its rain is driven by the game, not by the model's own
 clip, which cannot survive a world-space bake.
 
+This work is based on ["Fantasy Sea Keep"](https://sketchfab.com/3d-models/fantasy-sea-keep-daa54937ce844ed390101fa9318843ba)
+by [JesseL](https://sketchfab.com/JesseL) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — where the fisherman's
+boat takes you (`assets/keep.glb`, through `tools/undercroft_pack.py keep`: the
+file untouched, every triangle and every map, with a storeyed walk grid inside
+it). Its sky is painted by the game, because the pink evening in Sketchfab's
+viewer is the viewer's own environment and not in the file.
+
 "Samurai japanese free low-poly 3d model" by
 [adrigon](https://www.cgtrader.com/adrigon) (CGTrader, free licence) — the man
 who wants his sword back (`assets/samurai.glb`, through

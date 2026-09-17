@@ -4229,6 +4229,774 @@ walk. What they bought, and what each one cost:
 Measured: 49 swings and 41 damage a minute, all seven attacks used, seven
 size-ups, worst step 0.10 m, worst tick 4.2 ms.
 
+**THE TUNNEL IS HALF AS LONG, DEAD STRAIGHT, AND THE ALTAR IS AT THE END OF
+IT.** The owner walked it and reported clipping through the rock, a turn at
+the church, and nothing to walk toward. Three of those are one fault, and it
+is in how the church was JOINED:
+
+- **THE MOUTH IS THE BORE, NOT THE CHAMBER IT OPENS INTO.** The church was
+  hung off the last floored column of local.yany's cave — and that column is
+  not the end of a tunnel, it is the middle of a room the tunnel flares into,
+  seven metres wide, whose median z sits FIVE METRES off the line you have
+  just walked. Measured hands-off: the walk runs dead straight down z = 0.10
+  for a hundred and forty metres and then DEAD-ENDS IN ROCK at x = 71.6,
+  because the doorway is off to one side. That is the "turn", that is why the
+  altar was never on the line, and the flare is also where every hole in this
+  scan is — nine of sixteen rays out of it hit nothing at all, against zero
+  anywhere on the straight run, which is the clipping.
+- **A WIDTH TEST ALONE CANNOT FIND THE MOUTH.** Past the flare the model
+  tapers to a narrow lobe four metres off the line, and that lobe is
+  bore-width by the numbers — it is exactly the cell the church was hung off.
+  A station is the mouth only if it is bore-width AND ON THE LINE, and the
+  line is measured in the MIDDLE of the run, where both ends' wandering
+  cannot reach it (the middle sixty per cent, whose column medians never
+  leave a cell of each other: 0.10).
+- **AND HALF OF IT WAS CORRIDOR NOBODY NEEDED.** You are set down at the
+  middle of the straight run now and the half behind you is clipped in world
+  x (`uUcClipX`, the exit cave's own low clip) — but a clip on its own leaves
+  an OPEN CROSS-SECTION with the black shell behind it, which is the one
+  thing this file has been told twice not to ship. A short capped bore is
+  swept at the cut in the scan's own material, a shade wider than the tunnel
+  so the rock covers its flanks; and THE WALK GRID IS CUT WITH IT, because a
+  clip is a shader and the grid knows nothing about it — left alone, the
+  floor behind the cap is still walkable and you stroll out of the world
+  through your own back wall.
+
+Measured after: 74 m of tunnel with NO station under a metre of wall (worst
+was 0.02) and no ray-miss cluster anywhere; and the whole walk, entrance to
+altar, is **97.8 m dead straight at z = 0.10 in 1241 ticks with zero stalled
+frames and zero reversals**.
+
+**AND FOG WILL NOT CARRY A LIGHT A HUNDRED METRES, SO THE BEACON IS
+UNFOGGED.** The point of a straight bore is that the thing you are walking
+toward is at the end of it, and at `FogExp2` 0.030 a surface a hundred metres
+off is gone — while dropping the density far enough to show the chancel would
+take the close dark with it, which is the only thing the undercroft has. A
+bright source does not obey a haze the way a surface does: the altar carries
+a `fog: false` sprite whose size and opacity are read off your distance — a
+warm smudge the size of a doorway at seventy metres, gone by the time the
+tapers themselves read. It is depth-tested like anything else, so a shoulder
+of rock hides it and walking off the line puts it behind the stone, which is
+the whole reason the line is worth walking.
+
+**AND THE TUNNEL HAD NO DUST IN IT.** The motes were dealt out to the church,
+the old cave and the CORRIDORS — and the corridor has not been the tunnel
+since the day the passage went back to being walked as its own floor; it is
+the nine metres of church seam left over from that. Seventy metres of the
+walk had nothing in the air at all. The passage's own grid takes the biggest
+share now.
+
+**A CANDLE THAT LIGHTS NOTHING IS A PICTURE OF A CANDLE.** A hundred and
+thirty tapers were drawing themselves while the room's only lamps stood at
+the altar, so the clusters down the nave were bright pips in a black aisle.
+Three things, and none of them is a bigger lamp: every flame carries a HALO
+(a second Points batch at five times the size and a tenth of the brightness,
+guttering on the SAME seed, drawn under the flames — what says "this is the
+only light in here" is the bloom of air around it); the wax is lit from
+inside, because a candle is translucent and the flame is IN it; and four
+point lights hang on the biggest clusters the module placed, spread along the
+nave rather than bunched. They cost nothing — point lights have been pooled
+since the Windows pass and only the twelve nearest are ever in a shader.
+
+**A SCAN CARRIES THE DAYLIGHT IT WAS BAKED IN, AND AN EMISSIVE LIFT TURNS
+EVERY BAKED HIGHLIGHT INTO A LAMP.** "The church textures have light coming
+through the edges" was not a gap in the geometry and no amount of closing
+holes would have touched it: this church's albedo was lit from outside before
+anybody photographed it, so the sunlit edge of every pier is already
+near-white in the map, and `emissiveMap = map` at a flat intensity hands
+those texels straight back as light. `LOOK.knee` rolls the TOP of the
+emissive off (`x / (1 + kx)`) and leaves the bottom alone, so the lift still
+carries the dark stone — which is the only reason it is there — and stops
+carrying the sun.
+
+**AND THE GLASS WAS THE BRIGHTEST THING IN THE BUILDING.** The backdrops
+behind the windows were taken down to a memory of daylight years ago and the
+GLASS ITSELF was left at `color: 0xffffff`, so its own pale map was lit at
+full albedo: a wall of daylight honeycomb forty metres under a beach, which
+is the window the owner photographed. Leaded glass at night with candles
+behind you is nearly black and takes a cold sheen, and that is all it may be.
+
+**THE KNIGHT STOOD STILL FOR SEVENTY PER CENT OF THE FIGHT, AND IT WAS A
+MISSING `else`.** The movement chain is circle / step back / dash / chase /
+decide, and `decide` only runs once the cooldown is spent — so a creature
+standing inside its own reach with `cool` still running fell out of the
+bottom of the whole thing and was moved by nothing at all. Measured over
+ninety seconds: 70 % of frames with his position unchanged to four decimal
+places. That is not a tuning number.
+
+A `restless` kind keeps its feet going through the recovery — and the first
+build of that overcorrected into the opposite failure, 94 % of frames
+strafing and 0.7 swings a minute, because the shuffle re-armed itself
+whenever it was not already running and the cooldown could never reach zero.
+The shuffle is BOUNDED BY THE BREATH HE HAS LEFT (`sideT <= cool - 0.06`) and
+does not start on the last of it.
+
+**AND `maxReach` IS "COULD I HIT YOU", NOT "WHERE DO I WANT TO STAND".** A
+creature carrying one long swing among six short ones counts itself in range
+the moment that one could reach, stops closing, and fights the rest of the
+exchange from a distance where nothing else it owns will land — measured, the
+knight settled at 3.89 m on the strength of a 5.40 m jump while his punch is
+2.15. `u.ring` is the use-weighted mean of everything that is not a
+gap-closer, and the footwork holds him there.
+
+**AND 1.3 WAS A PERSON'S WIDTH.** The lunge's stopping distance was
+`Math.max(1.3, body + 0.15)` — a floor put in so a four-metre animal would
+stop at its own body instead of driving its front half through you, and as a
+CONSTANT it does the opposite job on anything smaller. Measured at the
+contact frame, every swing: the knight's striking hand extends **0.89 m from
+his own origin**, so a lunge that refuses to close inside 1.3 leaves his fist
+more than half a metre short of your chest on every blow he throws. The
+damage still landed — `LAND_SLOP` gives a metre of benefit of the doubt — so
+the game said he hit you and the picture said he did not. That is the whole
+of "tighten his hits so they actually visibly hit you".
+
+Both ends are wrong, which is why it is a swept number and not a formula: at
+his own body radius the blows arrive BELOW THE FRAME (the overhead finished
+at ndc y -0.97, the stomp at -2.45, on screen half the time and never).
+`kind.lungeStop` is the distance, and `A.stop` overrides it per swing —
+because a blow from a LEG lands at thigh height, so the nearer he is the
+further under the picture it arrives. Measured after: every hand blow lands
+0.36–0.51 m from the chest with **98 % of contacts on screen**, against
+0.5–2.4 m and a third of them off-frame.
+
+**AND HIS MOVE SET WAS KEPT; WHAT CHANGED IS EVERYTHING BETWEEN THE MOVES.**
+A Mixamo locomotion pack and a reaction reel go on top of the clips he
+already had (the owner's word: add to it, do not replace it) — three walks,
+two runs, two idles, three sideways strides a side, two quick side steps and
+a parry reel, drawn afresh every time he sets off or comes to rest
+(`kind.gaits`). Three things it took:
+
+- **THE RATE IS THE STRIDE OVER THE SPEED, AND WITH A DOZEN GAITS IT CANNOT
+  BE ONE NUMBER PER KIND.** Each clip's own ground speed is measured at build
+  and written into the moves file; the game plays it at whatever rate makes it
+  travel as fast as he is actually moving.
+- **AND A CLIP THAT DOES NOT TRAVEL IS NOT A GAIT.** Measured: walk 1.76 m/s,
+  walkC 1.48, strafeL 1.53, strafeR2 1.70 — against walkB at 0.26 and strafeR
+  at 0.56, which are walked ON THE SPOT, and one of those two was the strafe
+  he actually used. Played at the speed he was moving they slide a metre a
+  second, which is the "his feet slide" this file has now paid for three
+  times. They stay in the file and they are out of the pools that travel.
+- **AND AN ALIAS OVERWRITES A CLIP OF THE SAME NAME.** `hit: 'hurt'` was
+  quietly shadowing the owner's own Head Hit — the clip he sent for exactly
+  that job — with the four-key rock written before it arrived. Read the alias
+  map before concluding a clip is not playing.
+
+**AND THE BUILD MERGES; IT DOES NOT REWRITE.** `tools/ntar_moves.py` reads
+its FBXs out of ~/Downloads, which is the owner's own folder and is cleared
+whenever he likes — so a build that insists on every source being present is
+one that can only ever be run on the day the clips arrive. It loads the
+existing JSON, rebuilds whatever sources are actually there, and leaves the
+rest exactly as they were: adding a clip is a one-file drop and a re-run.
+
+Measured at the end, hands-off at fighting range over three minutes: **37.7
+swings and 37.7 damage a minute, 98 % of blows on screen, still between
+swings 21 % (was ~100), worst step 0.10 m, worst tick 3.7 ms** — and every
+one of the new clips on screen.
+
+**THE LIGHT IS IN THE CRATE AND THE RING IS IN THE FIRST CACHE.** They were
+the other way round, and the owner swapped them. It reads better this way
+round anyway: the shovel's first use turns up the smallest and strangest
+object in the game, and the box you have to break open gives you the thing
+that lets you see — a crate comes apart in the dark and something inside it
+is glowing, so there is no shine to add and nothing to miss, because the
+thing IS the light. `dropRing` takes a spot now (a thing lifted out of a hole
+is not flung across a beach, so the toss is a parameter too) and
+`revealMoundNear`'s first branch simply hands over to it.
+
+**AND ANY HIT OPENS A CRATE.** It was the game's one lock — `CRATE_POWER`,
+about two thirds of a charge — and the one place that asked for the heavy
+swing by name; a click thudded off the boards and did nothing, which is a
+thing you can do three times before you work out the game wants something
+else from you. The charge is still worth holding everywhere it was (two
+points against one, more reach, poise) and it still SHOWS here: how hard it
+came apart is how hard it was hit, so a tap drops the boards at your feet and
+a full swing throws them.
+
+**AND THE SAME THING CANNOT BE HAD TWICE.** `addToInventory` refuses an item
+already in the pack. Every takeable that can be picked up more than once —
+the shells, the note — builds a FRESH item object, so identity is a safe
+test, and it is needed the moment anything hands out an item whose world copy
+is still lying on the sand waiting to be taken.
+
+**BRADLY WAITS TO BE SPOKEN TO.** Walking within seven and a half metres of
+him opened the exchange by itself, on the theory that you must not be able to
+miss him — and what that actually does is take the player's hands away for a
+conversation they did not ask for, on a beach whose whole subject is choosing
+where to walk. He is a `Talk to him` interactable like everybody else; the
+prompt is what stops you missing him.
+
+**AND DEV MODE HANDS YOU THE TOOLS, FOR GOOD.** It is for walking the beach
+and testing the fights, and both need something in your hands — the two
+shovels are an hour apart and the katana is past the drain, so testing the
+knight meant playing most of the game first. Turning it on gives you every
+dig tool you do not have; turning it OFF does not take them back, which is
+the only behaviour that makes sense: an inventory is a thing you have, not a
+mode you are in. They are the SAME item objects the world hands out, so the
+view model, the icon, the pack and the save's own replay all behave as if you
+had picked each one up.
+
+**THE ENTRY TO THE CHURCH WAS A BOULDER IN THE DOORWAY, AND IT WAS THE CLIP.**
+The tunnel was cut at `low.x + GAP + 0.55` — "a hand past the mouth" — and the
+doorway's filler panel stands at `D[0] + off.x + 0.14`, which measured is
+**1.21 m behind that**. So the last metre of the scan's rock came through the
+hole and hung in the nave as a rounded brown mass plugging the arch. It is
+cut on the PANEL'S OWN PLANE now, a finger past it, so from the nave you see
+the church's wall with a hole broken through it and the bore receding into
+the dark — and from the tunnel the panel faces away and is not drawn, so
+there is still nothing between you and the room. **And a wall that was broken
+through leaves its wall on the floor**: a hole with clean flags under it
+reads as a hole that was CUT, so there is a spill of broken stone in the
+wall's own material coming out of the break and thinning over two metres,
+each lump sunk past half its own depth. It is scattered on a FIXED hash, not
+`Math.random` — everything here is rebuilt from seed on a checkpoint load,
+and rubble that moves when you die is rubble you notice. Thrown further than
+about two metres it stops being spoil and becomes scenery you walk through,
+and since none of it has a collider it ends up inside your boots.
+
+**THE TUNNEL IS MUCH DARKER, AND IT CAN BE NOW.** `LOOK.cave` goes from level
+0.46 / emis 0.14 to 0.30 / 0.085 — because the glowstick comes out of the
+crate at the top of the beach rather than a cache halfway down it, so you
+have a light in your hand before you ever reach the hole in the sand wall,
+and the altar's beacon is at the end of the bore whatever the fog does.
+**And the water has to come down with it**: its look is set explicitly AFTER
+`dress`, so it does not move when `LOOK.cave` does, and at a third of the old
+level the channel was suddenly the brightest thing in the bore — a pale band
+at the threshold where the clip cuts it. What has to survive is that it takes
+a HIGHLIGHT, which is the only thing that says water; the level under it can
+go wherever the stone goes.
+
+**AND YOU CAN HEAR THE CHANNEL NOW.** The tunnel's floor is standing water —
+it is what you actually wade along — and it made no sound at all, so the one
+stretch of the game where you can SEE you are walking through water was the
+one where you could not hear it. A short bright tick of spray over the
+footstep and a small slap of water closing back over the boot, at a third of
+the sea's level: it rides over the step rather than replacing it, because a
+boot going down in a puddle is one sound. Two things it needed:
+
+- **`Box3.setFromObject` READS `matrixWorld`, AND A JUST-LOADED ROOT HAS
+  NONE.** The plane was measured inside the passage's own loader, before
+  `group.add(root)` — so its world matrix was still its local one and
+  `worldToLocal` took the group's offset off a number that never had it.
+  Measured, the box came back three thousand metres out. It is measured in
+  `composeInner`, after the group is built. This file has now paid for that
+  trap four times.
+- **AND A BOUNDING BOX IS NOT THE PLANE.** The water's box is fifteen metres
+  wide against a four-metre bore and its far end laps seven metres into the
+  nave, so a box test alone splashed on the church's flags. `inPassage` is
+  the model's own footprint and is the question actually being asked.
+
+**AND THE KNIGHT FIGHTS LIKE SOMEBODY WITH A PLAN.** Three things, and each
+is something the player can learn and use:
+
+- **HE PICKS A SIDE AND WORKS IT.** `flankSide` exists to spread a PACK round
+  you, and for a creature fighting alone `slotAngle` has nothing to say — so
+  it fell through to a coin toss, fresh on every shuffle, and what that draws
+  is a two-tonne knight wobbling left-right-left between swings. That is the
+  opposite of calculated: it is a thing with no plan. `steadySide` keeps the
+  side he is already working. Measured: **3.7 direction changes a minute**
+  against one per shuffle.
+- **HE DOES NOT THROW THE SAME BLOW TWICE RUNNING.** A draw with no memory
+  rolls its favourite swing twice in a row often enough to look stuck, and
+  the one thing a boss must never look is stuck. Measured: **6 %** repeats.
+  (A CHAIN is the exception and is chosen elsewhere — a deliberate repeat is
+  a combination.)
+- **AND HE ANSWERS A RAISED GUARD WITH THE THING THAT BREAKS ONE.** Every
+  swing already carried `guardK`, how much of your bar it takes — 0.95 for
+  the punch against 1.75 for the overhead — and nothing had ever read it as
+  an intention. Hold the guard and he both circles more and reaches for the
+  overhead, the stomp and the spin. Measured with the size-up held out of the
+  comparison so only the draw is under test: guard-breakers **40 % → 49 %**,
+  and with it back in he throws **48 swings a minute against 34**, because
+  waiting you out is the other half of the same idea. **And measuring this
+  needs the harness to hold the guard**: the preview cannot pointer-lock, so
+  a dispatched pointerdown does nothing — `__bw.blocking` has a setter, and
+  the size-up has to be switched off or it masks the draw in a small sample.
+
+His run is the mutant one and nothing else: the locomotion pack's run is a
+man's jog and reads wrong on two tonnes of plate. Everything else he has two
+or three of, which is where the variety was wanted anyway — you see him
+walk and stand and circle far more than you see him run.
+
+Measured after, hands-off at fighting range over three minutes: **39 swings
+and 40.7 damage a minute, 97 % of contacts on screen at 0.30-0.44 m from the
+chest, still between swings 19 %, worst step 0.157 m, worst tick 3.9 ms**;
+and the walk from the entrance to the altar is unchanged at 97.8 m with zero
+stalls and zero reversals.
+
+**THE WALK GRID IS A PLAN OF THE FLOOR, AND AN ARCHED BORE IS NARROWER AT
+HEAD HEIGHT.** "I can still clip through" survived the straightening, and
+measuring the AXIS was why it looked fixed: every station down the middle had
+a metre of wall, and the player does not walk down the middle. Sweeping all
+1104 walkable cells of the passage with rays at eye height, **86 of them
+(7.8 %) had drawn rock within 22 cm of the camera and the worst was 0.00** —
+the lens inside the stone — and almost every one sat at z = ±1.6, which is
+exactly where this bore's wall begins to curve over. A cell whose floor is
+clear can have rock over its outer half at head height; your feet are on the
+ground and your head is in the haunch.
+
+The fix is the BODY, not the grid. `bodyR` is how far the walk keeps your
+centre off a solid cell and it was 0.24 — a shoulder, which is the wrong
+measurement for a tunnel you meet with your head. At 0.62 the bad cells go
+**86 → 1** and the worst clearance 0.00 → 0.21 m. **And a wide body must not
+be carried through the doorway**: the passage's bounding box runs on past its
+own mouth and over the church's threshold, so the fat body was being applied
+in the breach — which is an arch the width of the tunnel's mouth and no wider
+— and the hands-off walk stopped dead at x = 73.3, seven metres short of the
+nave, wedged in the hole. `bodyRMaxX` ends it where the tunnel ends.
+
+**A DROPPED THING WAS DROPPED ON THE BEACH, WHEREVER YOU WERE STANDING.**
+Every line of `dropPoint` was the beach's: it raycast the sand, the pier and
+the banks; where nothing was hit it put the item at **y = 0**, the sand
+plane; and then it CLAMPED x between `WADE_X` and `CLIFF_BLOCK_X`, the surf
+and the foot of the cliff. Drop a sword in the church — three thousand metres
+away and four hundred up — and all three fired at once: snapped to x = 14.2,
+dropped to y = 0, gone. The ray is cast at whatever room you are in, the
+floor comes from `bunkerFloorAt` (which every room answers and which
+REPLACES rather than competing), and the beach's two walls only apply on the
+beach. A CONSTANT THAT DESCRIBES ONE PLACE IS WRONG THE DAY THE GAME ACQUIRES
+ANOTHER — this is the sixth coat.
+
+**AND YOU CAN SET A THING DOWN ON A FLOOR, NOT ON A WALL.** The hit point is
+kept as a height so a thing put on the pier's boards stays on the boards —
+right for a deck, and on a near-vertical face it hangs the item on the rock
+at eye level, which in a tunnel is most of what the crosshair meets
+(measured: a shovel dropped at y = 1.71 against a floor at -0.03). If the
+surface is not something you could stand on, the point's POSITION is kept and
+the floor under it decides the height.
+
+**AND THE RESTORE CAN ONLY REPLAY A PICKUP WHOSE HANDLER EXISTS.** The
+checkpoint remembers which pickups you took and fires those same handlers
+again, which is the right design — the handler is what builds the view model,
+names the thing and puts it in the pack. What it cannot do is find a handler
+that has not been registered, and there are real ways for that: an item
+registered by something ELSE breaking (the crate's glowstick), a scan that
+has not landed inside the eight-second window, an interactable behind a gate
+the restore has not opened. When that happens the item is gone for the rest
+of the game with no error anywhere — and the owner lost his WEAPONS to it.
+
+The replay stays the mechanism; `finishRestore` is the floor under it.
+Anything the save says you were carrying that is still not in the pack when
+the window closes is granted outright from a name lookup. It is a last resort
+by construction — if the replay worked it finds nothing — and it can only
+hand back something you are recorded as having had. **And a box you broke
+stays broken**: `crates` is on the save now, restored quietly (no bang, no
+boards in the air), which is both how the beach comes back right and how the
+crate's own pickup gets registered at all.
+
+**A KNOCKDOWN IS TWO CLIPS, AND IT IS EARNED RATHER THAN ROLLED.** The
+alien's reverses its own fall because his file has no get-up in it; the
+knight has a real `Knocked Out` and a real `Getting Up`, so each runs
+forwards on its own beat and the floor is the fall's last frame held — and
+the hip clamp that stops the alien standing up by flying two metres into the
+air is skipped for anything with a `riseClip`. The beats are the kind's
+(`kind.knock`), because they belong to the clips: 1.27 s over, a third of a
+second down, 1.33 s up — **2.94 s**, against the alien's three and a half,
+because the owner has to be able to keep fighting.
+
+And `knockP` is a die, which is right for a creature you meet once. The
+knight's is a COUNT, and he goes over, gets up, and the tally starts again.
+You cannot land it by luck and you cannot be denied it by luck. **`u.st.down`
+is undefined until the first knockdown and `undefined <= 0` is FALSE**, so
+the first build counted to eight and never put him down.
+
+**AND THE COUNT WAS OF THE WRONG THING, WHICH MADE IT UNREACHABLE.** It was
+written as three blows both heavy AND through his poise — "the hardest thing
+in the fight to do once, let alone three times", which was the point and was
+also the fault. Modelled and then measured against the real `hurtMutant`:
+with an eleven-point pool refilling at 1.7 a second, a break lands on a heavy
+only when every heavy lands and none is blocked, the third break arrives on
+the TWELFTH heavy, and the katana at three a blow has him dead on the
+thirteenth. One knockdown a fight, on the frame before the kill, in a fight
+played perfectly; in a real one, none. The owner's "the animations where he
+falls over are not working at all" was a fall that could not be earned, and
+nothing was wrong with the fall. It counts what he asked for — heavies that
+LAND, five of them inside one stretch of pressure (`knockLapse`, on the same
+idle clock the poise refills on) — and a fight that keeps the pressure on
+sees him go over once or twice. **When a mechanic gated on a rare event
+never appears, count how often the event can happen before the fight ends.**
+
+**AND THE FIRST FIX OF THAT MADE IT WORSE, BECAUSE OF WHERE THE TALLY
+LIVED.** `hurtMutant`'s poise block RETURNS on a blow he absorbs (`if
+(u.st.poise > 0) { ...; return false; }`), and the tally sat below it — so
+dropping the `poiseBroke` condition changed nothing, since the line was only
+ever reached on a break, and raising the count from three to five turned
+twelve heavies into twenty. Measured on the real path: zero knockdowns in
+every fight. A count of "blows that land" has to be taken on EVERY exit the
+landing blow can leave by. Measured after, katana at a heavy every 1.5 s:
+two knockdowns a fight, the first at 23 of his 38; spaced 8.5 s apart, none.
+
+**AND A REEL THAT MOVES HIM STILL OBEYS THE ROOM.** `mutClampX` is called
+from every movement branch and the knockdown is not one — it rebuilds his
+position from `hitFrom` plus the clip's own travel and returns — so a fall's
+metre and a half could carry him through a pier and stand him up inside it,
+where the chase's own clamp then shoved him out a hand a frame. The down
+branch clamps too now, and the correction is folded back into `hitFrom`,
+because a position that is rebuilt from a stored point every frame forgets
+any clamp it is not told about and re-fights it every frame.
+
+**AND THE BENEFIT OF THE DOUBT WENT TO WHICHEVER LIMB HAPPENED TO BE NEAR
+YOU.** `blowLands` falls back to "he is facing you, you are in reach, his
+hand is out in front" — and `best` was the minimum over EVERY chain the
+creature owns, so a right-hand punch could be scored on the LEFT hand simply
+because it was hanging within a metre. What the player sees is a blow landing
+while the fist that threw it is nowhere near them: the owner's "there is a
+right swing that hits you when it's not even close". A swing already declares
+which chains it strikes with (`A.limbs`, the same indices the aim uses) and
+the fallback asks those and nothing else. `LAND_SLOP` is a kind's own number
+too — a metre was set for a man with a crowbar whose bar finishes inside a
+quarter of a metre, and on a creature measured landing 0.30-0.45 m from the
+chest it is most of an arm's worth of charity.
+
+**THE SPLASH POOL WAS PINNED TO THE SAND PLANE.** Every drop in it was born
+at y = 0.02 and died there — which is the sea, and is the wrong height the
+moment anything else in this game has water in it. The tunnel's channel is
+four hundred metres up. `spawnSplash` takes the water it came out of, and
+`updateSplashes` kills a drop at its own base rather than at the beach's.
+The gibs learned this once: A GIB'S GROUND IS A LOOKUP, NOT A NUMBER IT WAS
+BORN WITH.
+
+**AND THE TUNNEL CAN BE ALMOST BLACK NOW, BECAUSE YOU CARRY THE LIGHT.**
+`LOOK.cave` goes to level 0.19 / emis 0.055 — a third of what it was two
+passes ago. That is only playable because the glowstick comes out of the
+CRATE at the top of the beach rather than a cache halfway down it, so you
+have a light in your hand before you ever reach the hole in the sand wall;
+what the rock gets from its own material is now almost nothing and what you
+see is what your own light falls on. (If it ever needs to come back up, that
+one number is the dial. Measuring it with `drawImage` off the WebGL canvas
+does not work — there is no `preserveDrawingBuffer`, so every reading comes
+back 0; judge it from a screenshot.)
+
+**A PEW IS NOT A WALL TO HIM, AND THE GRID ALREADY KNEW IT.** "He should run
+straight through the benches — it looks like he avoids them for a second" was
+the room's own push-out doing its job: `UC.pushOut` reads the walk, the walk
+reads `floor`, and in a church `floor` is the pews. So he was held off every
+bench until `knightCrush` caught up, which is the second of shouldering the
+owner saw. The packer writes TWO floors — `floor` is what it found and
+`floor0` is the bare slab under the furniture — and reading the second is the
+whole fix: `cellFloor(w, i, j, bare)`, threaded through `walkable`, `blocked`
+and `pushOut`, and a kind that says `crushes` gets it. The walls and the
+piers are `solid` and stop everybody.
+
+**AND HE STEPS ROUND A PIER RATHER THAN SHOULDERING IT.** The chase is a
+straight line at you and a nave's piers are a metre of stone with open floor
+either side, so he met one, the push-out held him off it, and he worked along
+its face — which on a thing this size reads as stupid rather than as strong.
+The Dealer has had the answer since the bunker's table and nothing else in
+this game had it: `S.clearAhead` marches a heading and says whether a body of
+a given radius can walk it, `S.route` is a breadth-first search over the free
+cells thinned to its CORNERS, and the route is dropped the moment the direct
+line opens — a route is a way ROUND something, not a way of getting about.
+Both take `bare`, so the only things he ever routes around are the walls and
+the columns. Measured with a pier between them: he is on a seven-waypoint
+route within half a second, past it in one, and closing straight after.
+
+**AND THE GET-UP PUT HIM A METRE ABOVE HIS OWN HEAD.** "The fall animation
+isn't working, he just flies around" was one number. `hipY` is an OFFSET from
+the creature's stance taken from the clip's FIRST frame — right for every
+clip that begins with him standing, and exactly wrong for a get-up, which
+begins with him lying on his back. Measured in the game: `getUp` ran his hips
+from the standing height to **2.44 m** — a metre above where he stands — and
+snapped back the frame the clip ended. `HIP_ZERO_END` measures such a clip
+from its LAST frame instead, so the rise starts on the floor (-0.84) and ends
+at the stance, which is where the fall left him (-0.86). Measured after:
+standing hips 1.34 and head 2.29; he goes over to hips 0.16 and **head 0.19**
+on a floor at -0.07; he lies; he rises to 1.31 and 2.28. Exactly the clip.
+
+**AND A HEADING IS A TURN, NOT A SNAP.** The other half of "he flies around",
+and it came in with the routing: `S.route` starts from the nearest cell a
+body FITS in, which when he is pressed against a pier is a cell back the way
+he came — so the route's first waypoint could be BEHIND him and he spun to
+face it. Measured: **48 degrees of heading in one frame**. Two fixes, and
+both are about mass: the route skips any leading waypoint inside a stride,
+because anything that close is already behind him; and `kind.turnMax` is
+radians a second, a cap on how fast the thing can physically come round.
+Measured after, over a three-minute fight: **5.0 degrees a frame, worst** —
+and he still routes past the pier every time. A corner is rounded too rather
+than turned, the aim blending toward the waypoint AFTER this one as he closes
+on it, so a route reads as something with momentum walking a curve.
+
+Measured at the end, hands-off at fighting range over three minutes: **39
+swings and 40 damage a minute at 97 % connect, 98 % of contacts on screen at
+0.31-0.55 m from the chest, still between swings 15 %, worst step 0.128 m,
+worst turn 5 degrees a frame, worst tick 4.3 ms** — and crossing the nave
+from his alcove he takes **eleven pews** with him and arrives in four
+seconds.
+
+**A CORPSE IN THE SURF WAS BEING SOLVED FOR EVER ON A FLOOR THAT MOVED.**
+"A wet ragdoll never sleeps (the swash moving under it is motion)" was
+written so a floating body would ride the swell, and what it actually bought
+was a body the solver never stopped working on. The wave is not level across
+a two-metre corpse, so every particle is lifted by a different amount, twelve
+iterations of distance constraints turn that vertical disagreement into
+horizontal motion, and the thing SURFS. Measured: three mutants killed in the
+water, and the one that ended up in it travelled **12.9 metres in twenty
+seconds at up to 15 m/s** while the two on sand drifted 0.2. That is the
+owner's "ragdolls fly around after death", and the `RAG_VMAX` cap could not
+see it because the cap is per substep and the pumping is per frame.
+
+Three things: a wet body may SLEEP, at a looser threshold than sand allows;
+it is woken by the water CHANGING rather than by being wet (the old test woke
+any submerged sleeper, which in a swash is every frame, so it could never
+stay asleep); and water is thick — the drag went from 0.10 to 0.34 of the
+speed a substep, which is what a body in water actually does. Measured after:
+**drift 1.32 m, peak 5.9 m/s**, two of three asleep.
+
+**AND A BENCH'S BOX IS IN THE CHURCH'S OWN FRAME UNTIL THE CHURCH IS MOVED.**
+`w.benches[n]` comes out of the packer in the scan's coordinates and the
+church is then translated across the world to meet the tunnel, so every
+reader of a box was a hundred metres out. The candles paid for it: the pew
+loop stands a taper at the middle of a bench's box, which put THIRTY-TWO of
+them at x = -6 instead of x = 94 — floating in the tunnel, tagged as
+belonging to pews they were nowhere near. They were doused correctly when
+their bench broke, which is exactly why it looked like the feature worked;
+what you could see standing on the pews were the nave clusters, and those
+knew nothing about any bench. Offset ONCE, the moment the church has a
+position. **And a candle that ends up on a pew knows which pew** however it
+was placed — the clusters stand theirs on `S.floorAt`, which over a bench
+returns the BENCH'S TOP — so every spot is checked against every bench's box
+at the end, which is the one place a loop added later cannot forget.
+Measured: 23 tagged, 23 actually standing on the bench they name, 0 misplaced.
+
+**THE WAY OUT OF THE APSE WAS A ONE-WAY DOOR.** The bridge over that
+threshold was FLAT at the church's floor and stopped a stride past it — and
+the cave beyond climbs half a metre in the first metre. Off the end of the
+shelf that is a 0.86 m step UP against the church's own 0.40 limit, so the
+walk let you out and would not let you back in: measured, walking back from
+the exit you stop dead at x = 109.4 and stall 3552 frames out of 3600. It is
+one RAMP now, from the church's floor to the cave's own, its far end measured
+rather than assumed — the last station past the threshold the cave actually
+has a floor at.
+
+**AND A WALL IS SLID ALONG, NOT STOPPED AT — WHERE THERE IS ANYWHERE TO
+SLIDE.** Keeping whichever ONE AXIS is clear only works where the wall runs
+along an axis, and a church's piers are round and its apse is a curve. The
+move is turned instead, a little at a time, and the first angle that is clear
+is taken at the speed that survives the turn. **And the thing to be clear
+about is what "stuck" was**: measured over 408 cases — pressing into every
+wall, pier and altar in the nave from eight headings and then trying to leave
+in eight more — NOTHING is wedged, and nothing was before. What the owner was
+feeling is the grind, and walking square into a wall and not moving is the
+one case that is simply correct.
+
+**AND HE COMES STRAIGHT AT YOU NOW.** The step-out walked him from his alcove
+to a measured spot clear of the arcade before the fight began — put in
+because the chase is a straight line and the pier he stands behind was in the
+way of it — and it reads as a boss sliding two metres to his right while the
+roar plays, going somewhere rather than coming for you. Nothing had to be
+added to delete it: the pews are not walls to him and the pier is, so
+`ucSteer` hands him the way round the moment the line is shut. Measured: he
+crosses the nave straight at the altar and takes **seventeen pews** with him.
+
+**AND NOTHING HAD EVER SET A CREATURE'S HEIGHT DOWN THERE.** `restYInWater`
+is the beach's; the knight was left at whatever y he was placed at, so the
+step up to the dais went through his shins and he fought at the altar with
+his boots in the stone. The floor is followed EVERY FRAME rather than inside
+a movement branch — he is most often standing still, in a wind-up or a
+recovery, at the moment he needs to be on the step — eased, with a floor
+speed under it so a 0.6 m riser is crossed in a fifth of a second rather than
+a third. Worst foot gap 0.66 m → **0.175**.
+
+**AND THE CHAIN IS THE AGGRESSION.** `aggr` divides the between-swing
+cooldown and at 3.7 that is already 0.02-0.10 s — saturated, and not what
+limits his rate. What limits it is the swings' own lengths, and those are his
+TELLS: this file has paid for shortening them before. A CHAINED swing has no
+cooldown at all, so a deeper chain and a raised `chainP` on every attack is
+the one lever that presses harder without making him less readable.
+Measured: **41.2 swings and 43.2 damage a minute at 100 % connect**, against
+37.6 and 38 before, with 98 % of contacts still on screen and the startups
+untouched.
+
+**AND A `git checkout` ON A FILE YOU HAVE NOT COMMITTED THROWS THE WORK
+AWAY.** Reached for to undo one bad edit mid-session; it reverted `main.js`
+to the last commit and took six unrelated fixes with it. They were all in the
+transcript and were redone in two passes, but the rule is worth writing down:
+in a session that edits one enormous file over hours, `git checkout <file>`
+is not an undo, it is a discard of everything since the last commit.
+
+**THE KNOCKDOWN SPUN BECAUSE A FALLING BODY HAS NO HEADING.** "His fall down
+animations do not look like the animations I sent — he just spins around in
+the air" was one line in the packer, and the reasoning behind it was wrong in
+a way that is worth keeping. `ntar_moves.py` de-yaws a clip frame by frame —
+it holds the hips' own forward axis at a constant azimuth — because the game
+turns a creature toward the player every frame and a clip that also turns
+fights it. That is right while the creature is STANDING. The moment it goes
+over, the pelvis's +Z points at the CEILING, its horizontal part collapses
+(measured on `knockOut`: 1.00 to 0.30), and the azimuth read off it is the
+body TIPPING rather than the body turning. Correcting a turn that never
+happened applies a world-Y rotation to a horizontal body, which is a roll
+about its own length: a corpse swinging round like a compass needle.
+
+Measured as the azimuth the body's long axis sweeps over the frames it is
+horizontal — which is the thing you actually watch, "which way his head is
+pointing":
+
+| | knockOut | getUp |
+|---|---|---|
+| the source animation | -11 deg | -27 deg |
+| de-yawed on the forward axis (shipped) | **+62** | -27 |
+| de-yawed on the left-right axis | -38 | -35 |
+| kept (now) | -11 | -27 |
+
+Choosing a better AXIS is the obvious fix and it is not enough — the second
+row is the pelvis's left-right axis, which does stay horizontal through a
+fall (worst 0.73 against the forward axis's 0.30) and still injects 38
+degrees. **There is no such thing as the heading of a body that is falling
+over**, so `KEEP_YAW` names the clips that leave the vertical and they keep
+their own root turn exactly as drawn. The axis choice stayed anyway, because
+it is measured per clip and strictly better for everything that does stay
+upright.
+
+Three things the game had to learn with it:
+
+- **THE HEADING IS SET ONCE, AT THE BLOW.** It costs nothing, because a
+  creature on the ground is not being turned toward the player by anything —
+  the `down` branch returns long before `turn()`.
+- **AND TWO REELS ARE TWO FILES.** Left alone the rise begins lying in a
+  different direction from the one the fall ended in and he snaps round on
+  the floor between them. The only thing two prone poses can be matched on is
+  the direction the BODY lies in, so the packer measures it at both ends of
+  every clip (`az`, with how horizontal it is, since standing up the same
+  number means nothing) and `mutKnockdown` turns the rise by the difference.
+  Measured: the fall ends lying at -136 deg and the rise starts at +170, so
+  the rise carries +54.
+- **AND HE GOES WHERE THE REEL TAKES HIM.** `knock.slide` is a hand-set
+  distance along the line the blow came in on — a fair guess for a clip whose
+  travel nobody has, and wrong for one whose travel is in the file. Measured,
+  `knockOut` carries him 1.41 m and mostly ACROSS that line. `slide: null`
+  means walk the clip's own root motion, turned by the heading that clip is
+  played on. The horizontal travel is still left out of the HIPS, because a
+  gait's speed belongs to the game; a knockdown is a scripted beat and the
+  reel is the authority.
+
+Measured in the game, hips and head against the floor: he stands at 1.29 /
+2.26, goes over to 0.16 / 0.26, lies still for a third of a second, and
+rises to 1.30 / 2.28 — and the model's yaw does not move through the fall.
+Rendered as a strip it is the Mixamo clip: rocked, off his feet, flat on his
+back, rolled onto a knee, up.
+
+**THE CHURCH TEXTURES WERE STRETCHED BY THE PACKER'S OWN WELD.** `cluster_uv`
+snapped vertices to a grid, averaged their positions and kept **the FIRST
+vertex's uv** — and "first" is whatever order the file lists them in. This
+scan is mapped the way a modelled scene usually is: every face independently,
+with its corners SPLIT, into a baked atlas. Weld those and each face's
+corners are dragged to a single arbitrary point in the map. Measured as TEXEL
+DENSITY (uv units per metre, per triangle), the upper quartile over the lower
+on each material:
+
+    banc 24.5   autel 23.1   arche.001 18.2   colonne 16.0   colonne-ext 14.7
+
+against every material whose parameterisation survived — the stained glass,
+the altar cloth, the low wall, all flat quads that were never welded —
+reading exactly **1.0**. The separation is not close, which is what makes it
+safe to test for. On screen it is a barcode of horizontal bands up every
+column, which is what the owner photographed.
+
+A vertex may only merge with one that is near it in the ATLAS as well as in
+space (`UV_CELL`). Two things make that safe: the POSITION is still averaged
+over the whole position cell across every uv bucket in it, so splitting a
+seam can never open a crack; and a triangle still COLLAPSES on position
+alone, so the decimation is exactly as strong and the budget means the same
+thing. After: every damaged material 1.1-1.5, at the cost of 2.3 MB of extra
+vertices.
+
+**AND A PROJECTION IS NOT THE ANSWER WHEN THE MAP IS AN ATLAS.** The obvious
+repair for a destroyed uv is the octopus ring's — sample the map triplanar
+and blend by the normal — and it was built, measured and deleted. It works
+only for a TILE. Drawing this church's own maps to a canvas settles it in one
+look: `mur-bas_diffuse` is a grid of rounded panels with black gutters
+between them, `colonne_diffuse` is a row of tall unwrapped strips. Projected
+at the density the geometry implies the surface is nearly a flat colour
+(1 tile per 47 m); projected at anything you can see, it draws the gutters as
+bright and dark stripes. **Look at the map before deciding a projection can
+stand in for a uv.**
+
+**AND THE SOURCE SCANS ARE ON THE DESKTOP, NOT IN ~/Downloads.**
+`~/Desktop/BEACHWALK ASSETS/` is where the owner keeps them; ~/Downloads is
+cleared. And **the flags matter**: the cave repacked without `--yaw 180` came
+out mirrored (x -1.41..16.45 became -16.45..1.41) and the way out of the apse
+moved seven metres. The church is `--tex 2048` — 1024 is the resize too far
+this file has already paid for once. `sips` is not enough for this packer;
+PIL goes in a venv.
+
+**"STUCK ON SOMETHING I CAN'T SEE" WAS A HOLE IN THE GRID, AND THE TWO
+QUESTIONS DISAGREED ABOUT IT.** The sampler writes a cell's floor from the
+triangles that land in it, and on a big flat slab it occasionally lands none
+— so there are single cells in the middle of the nave with NO floor at all,
+surrounded on every side by cells that have one. Nothing is missing from the
+picture: you are looking straight at the flags.
+
+What makes that a wall is that `floorAt` falls back to the nearest neighbour
+that has a floor and answers -0.07 like everywhere else, while `walkable`
+sees `null` and — by a rule that exists for a good reason, since three grids
+overlap at the joins and "no floor here" has to mean "ask the next grid" —
+passes it on to nobody. So the floor is drawn, the floor is answered for, and
+the step is refused.
+
+The hole is filled rather than the rule changed, and the difference between a
+hole and the edge of the grid's coverage is MEASURED: flood the run of
+floorless cells and fill it only if it is small AND fully enclosed by floor.
+The open ground past the apse is thousands of cells and is never touched.
+`solid` got the same treatment `floor` already had (`despeckleSolid`) — a
+lone solid cell is a hanging chain or a lamp sampled into the body band, and
+a chain thin enough to be missed by eight rays is thin enough to walk
+through. Measured by sweeping every cell with a floor and raycasting the
+DRAWN geometry round each blocked one: **629 holes filled, 152 solid speckles
+cleared, invisible blockers 23 -> 4** (and the four left are the true outer
+edge of the aisle floor). The walk from the entrance to the altar is
+unchanged at zero stalls and zero reversals.
+
+**THE SHELL DOOR'S FLOOR AND ITS CLAMP WERE MEASURED DIFFERENTLY.** The ramp
+out through it laid floor across the full `DOOR_W`; the hold's lateral clamp
+only let you past a player's radius short of that. In the ten-centimetre band
+between the two there was floor out at lz -5.19 that the clamp would not let
+you stand on, so walking along her side and turning in at the door snapped
+you back to the hold's own wall at -3.30 — **a metre and a half, through her
+plating, at exactly the spot you walk to**. `doorPass()` is asked in one
+place now. This is the pier's lesson on a boat: the push-out and the thing it
+pushes you off have to be measured the same way. Measured over 35 approaches:
+one jump of 1.59 m became a worst correction of 0.23.
+
+**AND `use` ON A HOLDABLE ITEM IS THE HOTBAR'S VERB — the captain's head's
+own lesson, broken again one item along.** The wheelhouse key is `holdable`,
+so the pack's second button says HOLD and the hotbar's digit means hold; both
+call `use`, and `use` opened the examine screen. The one thing you could not
+do with the key you had just pulled out of a dead man's mouth was hold it.
+
+**AND THE KEY COMES OUT OF THE HEAD IN YOUR HAND.** The examine screen was
+the only door, which is a door you have to know about: you are standing there
+holding a head with a key in its teeth and the obvious thing to do is reach
+for it. `onPull` is the shell's own `onListen` door — a click, or E — and it
+is a GETTER, so once the key is out the head is just a head. **And what you
+hold is a CLONE**, so a change to the world object does not reach it and the
+key stayed in the teeth of the head in your fist: `holdable` keeps its
+builder (`vm.userData.make`) and clears the group first, so anything that
+changes an object under a held copy can ask for it again.
+
+**A BOOT IN WATER IS NOT A BOOT WITH WATER ADDED TO IT.** "The first tunnel
+footsteps do not sound like water at all" was a MIX, not a missing sound: the
+channel's step played the full dry SAND footstep — thud, packed grains, grit
+scattering, the odd shell chip — and laid a short bright tick over the top at
+half the level. There is no amount of tick that turns a dry step into a wet
+one, because the dry layers are the ones that are wrong: grains do not
+scatter under water and nothing crunches. The water IS the footstep there
+now, in the four parts a boot going into an inch of water over stone has —
+the surface breaking, the column shoved aside (the part that gives it mass,
+and the part the old one had none of), the stone UNDER it muffled, and the
+water closing back over with a scatter of drops. Measured as what the step
+adds over the room tone: 18.5 % below 900 Hz against the game's own
+`sfxSplash` at 8.4 %, which is right — a puddle over stone is heavier and
+closer than surf. And it carries the step's own level now (0.62), because it
+IS the step: at 0.30 it measured 9 dB under the church's recorded one.
+
+**AND THE FLOOR A CREATURE FOLLOWS IS THE BARE ONE.** `walkable`, `blocked`
+and `pushOut` have taken `bare` since the knight learned to go straight
+through the benches; `floorAt` had not — and the floor is what sets a
+creature's HEIGHT. So every pew he ran through lifted him 0.45 m and put him
+down again, which is the owner's "he should not be lifting up when running".
+Measured across the pew line at z = 3.0, where the floor alternates 0.57-0.63
+(bench tops) against -0.07 (bare slab): his y is -0.07 the whole way and
+still rises to 0.27 on the dais. A person still stands on a pew.
+
 ## Dev mode
 
 `DEFAULT_SETTINGS` are the owner's own (music 30 %, waves 18 %, effects
@@ -7951,3 +8719,757 @@ with a screenshot before reading state.
 
 Real note art for the bottle · more items and scripted events along the walk
 · prop-vs-prop physics · persistent dig holes · a nicer two-handed dig anim.
+
+**THE JARS ARE COUNTED, AND THE MILLILITRES MOVED ONTO THE GLASS.** The
+corner of the screen read "120 mL" out of a tank that filled up; what you
+actually carry is JARS, so it counts them ("1 jar", "5 jars", the unit its
+own span so the singular is right). `bloodAmount`, `BLOOD_PER_CRAB` and
+`BLOOD_JAR_CAP` are gone and `gainJar(n)` is the one door — the tally, the
+icon, the pulse and the sound in one place, so a jar handed over by an
+extraction and a jar lifted out of a hole cannot drift apart. 120 mL is a
+fact about one crab and it is PRINTED ON THE LABEL now, where a number that
+never changes belongs. The first dig mound gives up a jar instead of the
+ring (`dropJar`), and the ring comes off the knight.
+
+**AND THE JAR ITSELF WAS A SHAPE, NOT A BOTTLE.** What makes a prop read as
+old is the record of how it was MADE and what has HAPPENED to it since, and
+the first build had neither: one clean lathe, a cap turned on the same
+lathe, and a label that was four black boxes. It now carries the two MOULD
+SEAMS it was blown in, a heel ring it stands on, a crimped foil cap whose
+segments are pushed in and out so the highlight breaks up round it (a lathe
+is a perfect surface of revolution, which is exactly what foil pressed down
+by hand is not), a run of dried haemolymph from under the seal, sediment,
+bubbles clinging up one side, and a drawn label — foxed, ink run, a ring
+where something wet stood on it, a batch number in a different hand, and
+torn away at both ends through an alpha map, because a label peels from its
+ends first. Two things measured on screen: **the meniscus is a RING, not a
+lid** (at full opacity the little dome on top of the blood is a flat pale
+disc the width of the jar and it reads as milk), and **a mould seam may not
+run under the label** — both the geometry and the label arc are in three's
+(sin, cos) convention where theta 0 is +Z, so seams at 0 and PI put one of
+them straight down the middle of the printing.
+
+**AND THE GLINT'S LIFT SWAMPED THE ONE THING THE PROP IS FOR.**
+`addItemShine` raises the emissive of every material under it, which is
+right for a dark scan and wrong for a jar whose whole point is that it is
+BLUE: at the stock lift the glass, the blood and the label came up together
+and what stood in the sand was a pale bottle. `lift: 0.3`. The sprite is
+what finds it in the dark; the lift only has to keep it off black.
+
+**THE CHURCH'S FLICKER WAS THE UV FIX, EATING ITS OWN TAIL.**
+`cluster_uv` has always dropped a triangle whose three cells it has already
+emitted — and that key was built from `remap`, which BEFORE the uv split
+was the position cell, so it caught every twin. Splitting vertices by uv
+bucket to save the texel density (the round-6 fix for the stretched
+columns) quietly broke it: two source triangles landing on the same three
+position cells from different corners of the atlas now emit two faces at
+exactly the same depth. Measured in the game — render each view twice with
+the camera moved six tenths of a millimetre and diff the pixels, then
+raycast the pixels that changed — **every flickering pixel in the nave was
+one mesh fighting itself**, and counting exact duplicate triangles per mesh
+found 34 % of `arche.002`, 17 % of `mur-bas-ext`, 11 % of `arche`. The key
+is the POSITION cells now, sorted so a twin with the opposite winding goes
+with it. After: zero doubled faces in the church, and zero flickering views
+over twenty-six sweeps of the nave, the apse and the tunnel. The walk is
+unchanged (entrance to altar 99.8 m, 1318 ticks, zero stalls, zero
+reversals). **A z-fight is measurable: move the camera a fraction of a
+millimetre and diff.**
+
+**THE KNIGHT'S LIMBS WERE STIFF BECAUSE SIXTEEN OF HIS BONES WERE NEVER
+DRIVEN.** An Unreal mannequin runs two TWIST joints down the middle of
+every limb — `lowerarm_twist_01_r` and its fifteen relatives — and the skin
+along a forearm is weighted to THEM, not to the forearm bone. The retarget
+maps what `kind.rag` names, which is the ragdoll's twenty-two joints, so
+every twist bone fell through to the fallback and inherited its parent.
+What that draws is the candy-wrapper: the whole roll of a joint absorbed by
+one ring of vertices at the joint itself with the length of the limb dead.
+Measured on his own clips, the roll taken in a single step: **65 degrees at
+the wrist on the swipe, 46 at the elbow on the spin, 28 at the ankle**. A
+twist bone at fraction f along its limb now takes f of the DISTAL joint's
+roll about that limb's own axis (a swing-twist split: project the
+quaternion's vector onto the axis and renormalise, so the joint's SWING is
+left where it belongs), and the fractions are measured off the rig rather
+than assumed — they are clean thirds here, and `01` is the far end on a
+forearm and the near end on an upper arm, which is exactly the sort of
+thing not to hard-code. Nothing is taken away from the joint, so the pose
+is untouched and only the ramp between changes. Every clip's worst step
+roughly halves and none is worse; it costs nothing and it is general, so
+the red alien's Character Creator twists get it too.
+
+**AND THE OCTOPUS RING HAD NEVER ACTUALLY BEEN SEEN.** Its level was set
+years of passes ago on a surface that was two per cent of a scan rendering
+as speckle — near-white base, orange rust map, orange emissive over the
+top. With the whole 45,000-triangle octopus finally on the screen it
+measured (168, 114, 65) under the examine lamps: bright orange batter, not
+metal out of the sea. At (85, 59, 36) it is corroded bronze with the rust
+still reading in the pits, and the pits are the whole point of decimating
+rather than chunking. The tiling was already right (`uTri` 0.062 on a
+31-unit span is 1.9 repeats round it) — **check the level before the
+tiling, and check both only once there is something to look at.**
+
+**AND THE RING SAYS WHAT IT DOES.** `desc` on an item is drawn under its
+name on the examine screen and in the pack's detail pane; the octopus ring
+reads "10% Stamina Increase" and, worn, that is exactly what it does —
+`stamMax()` is a forward hook filled in beside `ringItem`, the regen, the
+breath and the bar all read it, and the STRIP ITSELF grows by the tenth
+(150 px to 165) rather than drawing a bigger reserve inside the same width,
+which would be a ring that changes a number you cannot see.
+
+**AND PRESSING E LOOKS THE SAME WHEREVER THE PROMPT SITS.** There have
+always been two of these — `#prompt` beside the stamina bar for picking a
+shell up, and `#promptmid` under the crosshair for the mouth of a cave and
+for the idol on the altar — and they were styled in two separate blocks, so
+the strip one had drifted to 0.78rem of dim blue-grey with a small dark key
+badge while the altar's read white at 1.02rem with a white-bordered one. E
+is ONE verb; only the POSITION is per-prompt. The type, the tracking, the
+colour, the shadow and the key badge are declared once against both
+selectors, so anything added later inherits it by construction rather than
+by somebody remembering. Measured: every computed property identical on
+both, badge included. The strip is wider for it (564 px at the longest
+label, "Take the Military Shovel") and still centred inside any real
+window; only a pane under about 570 px reaches the edges.
+
+**THE OCTOPUS RING IS THE SKETCHFAB FILE, UNTOUCHED.** Every earlier build
+took this model apart: first ONE of its seven chunks as if the split were an
+LOD chain (7,165 of 400,540 triangles, a cloud of specks), then
+`--decimate 45000`, which welds rather than shreds and is still not the
+model — vertex clustering keeps positions and indices, so it threw the
+NORMALS away, and with no normals and no uv the metal had to be invented:
+Poly Haven's rust on a triplanar projection, with a level nobody could judge
+because there had never been a surface to judge it on. The owner's word was
+to scrap all of it. So it ships whole — 400,540 triangles across its own
+seven meshes, its own per-vertex normals, and its own material. **There was
+never anything to project onto**: measured on the source, no images, no
+textures, no TEXCOORD and no COLOR_0, one material at metallic 0 roughness
+0.6. The rust was a liberty taken to fill a gap the decimation had made.
+12.3 MB, at the back of `ASSET_REACH`. **And it is cheap to draw**: with the
+whole octopus filling the screen at 25 cm the frame carries 430,496
+triangles against 29,956 and the render call goes 0.69 ms to 0.95 — a
+quarter of a millisecond, in seven draws. Triangles were never this game's
+problem; draw calls and shader programs were.
+
+**A STACK IS ONE ITEM WITH A COUNT, AND `iconHTML` IS WHERE IT SHOWS.** The
+one object in this game you collect more than one of was the one object you
+could not find in your own pack: a jar was a model at the end of an
+extraction and a number in the corner, and `jarItem` was literally `null`.
+It is an item now, and because it is the SAME item object every time,
+`count` is the whole of stacking — `addToInventory` has refused a duplicate
+by identity since the day a ring appeared twice, so a second jar lands on
+the first instead of taking a slot. The badge goes on `iconHTML`, which is
+the one door the hotbar, the pack grid and the ring row all draw through, so
+all three show it by construction. `gainJar` writes the count BEFORE the
+add, because the render reads it.
+
+**AND THE CORNER NAMES WHAT IT COUNTS, IN THE GAME'S OWN HAND.** It read a
+monospace number and a small dim "jars" — a different voice from every other
+piece of text on the screen, and the thing it counted was never named. "1
+BLOOD JAR" in the prompt's Georgia, letter-spaced, uppercase and white.
+
+**"G DROP" WAS NOT A PROMPT.** A prompt says what the thing you are LOOKING
+AT will do. This said what a key does, on every frame you had anything in
+your hand, which is most of the game — the one piece of text on the screen
+that never changed and never needed reading. G still drops; the controls
+sheet still says so.
+
+**AND THE BAR YOU SPEND IS AT THE BOTTOM, ON ITS OWN CENTRE.** Two things.
+It was four pixels of ten-per-cent white at a quarter opacity — a scratch,
+for the meter the block, the sprint and the step all come out of; it is
+eight pixels with a visible track and a hairline, and never below half. And
+the PROMPT has left the strip: a flex row centred as a whole is re-centred
+by whatever is widest in it, so every label that came up shoved the bar
+sideways, which is the one element that has to be in the same place every
+time. It sits above the strip on its own centre — and it can be
+`position: fixed` out there and could not in there, because an ancestor with
+a `transform` contains a fixed child, the same trap `#promptmid` already
+carries a comment about.
+
+**WHAT A THING DOES IS NOT A FOOTNOTE.** "10% Stamina Increase" was 0.62rem
+and half-transparent under a name twice its size — the one line on the
+screen carrying a mechanic and the easiest to miss on it. Body size, white,
+and ruled off above and below so the eye stops on it; the examine screen's
+copy went the same way. The katana reads "A Holy Blade".
+
+**AND A RING IN YOUR HAND GOES ON YOUR HAND.** Putting one on was only ever
+reachable from the examine screen, on the argument that that is where you
+can see what you are wearing — true, and it also meant the gesture everybody
+tries first, holding the thing up and pressing the button, did nothing.
+`canWearHeld` is the shell's own `onListen` door and is asked of the ITEM,
+so the next ring inherits it. The pack shows the ring slots too, drawn by
+the same `renderRings` into both hosts so they cannot drift.
+
+**"THINGS FLOAT WHEN I DROP THEM IN THE CHURCH" WAS THE DUST.** The
+undercroft drifts motes as a `Points` batch and stands its candle flames in
+another, both of them in the air in front of your face — and a `Points`
+intersection carries NO `face`. So `dropPoint`'s ray stopped on a speck
+0.78 m out, the "is this a wall, or a floor" test below skipped for want of
+a normal, and the item was set down at the height of the mote. Measured: a
+syringe rested at y 401.30 against a floor at 399.93, a metre and a third in
+the air. **Only a mesh triangle is a place to put something down**;
+everything else a ray can reach down there is weather. After: 4 cm off the
+floor at every pitch.
+
+**A SHINE IS A MARK IN THE AIR, NOT A DECORATION BOLTED ON.** The glint was
+a sprite parented to the item at a local +Y, which is the same as world up
+for everything that stands still — and is not for the one item in this game
+that TUMBLES. The ring comes off the knight as a `PhysProp` and rests at
+whatever angle it fell, so its own up can point at the floor. Measured where
+it landed in the nave: ring at y 399.942 on a floor at 399.930, glint at
+**398.573** — a metre and a third UNDERNEATH the flags, which is the owner's
+"the aura is beneath the floor". The offset is rebuilt in world up every
+frame now: take the root's own rotation out of it and divide by its SCALE,
+because `makeNoticeable` blows a 20 mm ring up by 3.2 and a local offset is
+in the root's units. Nothing static moves by a pixel; after, both sprites sit
+0.512 m over the floor whatever angle the ring came to rest at.
+
+**AND "THE RIGHT TEXTURE, LIKE THE SKETCHFAB MODEL" WAS THE MATERIAL.**
+Checked twice, in two copies of the download (the zip in ~/Downloads and the
+`octopus_ring.glb` on the Desktop): no images, no textures, no TEXCOORD, no
+COLOR_0, one material at metallic 0 and roughness 0.6, and the base colour
+left at white. So the viewer is showing a plain white PBR material on a scan
+of a pale resin print, and matching it means matching THAT — near-white, not
+the 0x6f6a63 under an orange lift the previous pass graded it to, which came
+out as tan batter. The Poly Haven rust beside it in that folder is what an
+earlier build reached for when the decimation left the model with no uv; it
+was never part of the asset.
+
+**A COUNT BESIDE A PICTURE OF A JAR DOES NOT NEED THE WORD "JAR".** The
+corner reads "2x" in the blood's own blue — the icon says what it is, and a
+label naming its own drawing is the caption on a photograph of a caption.
+
+**AND THE PACK TAKES THE SCREEN IT IS ON.** 880 px was a band across the
+middle of a wide display with most of the picture left over, on the one
+screen that is nothing but the thing you are reading: 1280, wider gaps, and
+a detail pane that grows with it. The RINGS row went from a 40 px footnote
+to its own section — its own heading, its own rule, 84 px slots — because
+what you are wearing is half of what you are carrying.
+
+**THE FISHERMAN'S BOAT SAILS, AND WHERE IT GOES IS JESSEL'S SEA KEEP.**
+Stand on the boat tied up at the sea end of his pier and the crosshair says
+`E Set Sail`; the screen goes black to a mooring line creaking and the water
+taking her, and you are standing at the end of a long timber pier under
+"Fantasy Sea Keep" (CC-BY-4.0, `assets/keep.glb`), with the same boat moored
+alongside — look at it from the pier and E brings you home. The owner's
+word was a PERFECT REPLICA, so `tools/undercroft_pack.py keep` is the first
+EXACT kind: nothing decimated, the NORMALS carried through the bake (a
+smooth stylised build under a normal map is not a scan, and flat-shading it
+is a different object), a reflection in the node chain caught by the
+determinant and the winding flipped back, every material extension left in
+the file for three to honour, and the one liberty the 4096 normal maps
+resized to 2048. 168,477 triangles in seven draws; 15.6 MB, of which 2.3 is
+the walk. It stands eight kilometres off like the dojo (`KEEP_X/Y/Z`), the
+beach's sand and sea and sky stay put while you are there (the undercroft's
+arrangement), and the night's five lights, the fog and the sky dome are
+SWAPPED for a sunset at the cut and back at the return — colour and
+intensity are free; a light entering or leaving is not.
+
+- **THE PINK SKY WAS NEVER IN THE FILE.** The sphere ships as transmissive
+  clearcoat glass with a strip of blue clouds in its emissive map, and what
+  Sketchfab shows THROUGH it is its own HDR environment. Painted here on the
+  sphere's own geometry, by height over the sea (pink at the waterline,
+  violet overhead, teal under the line) with the file's cloud strip laid over
+  as luminance; its normals point INWARD, so it is FrontSide from where you
+  stand. The sea is the one material rewritten — a transmission plane whose
+  whole look is what a refracting renderer puts through it — as translucent
+  turquoise over the file's own caustic seabed; the seabed shipped with a
+  violet emissive at strength ten, which was the one thing in the file that
+  could not have been meant. Every material ships as BLEND (the bunker's
+  lamp housings again): opaque with a cutout for the rock and the timber.
+- **THE WALK IS STOREYED.** A keep has a ground floor, a hall over it and a
+  roof walk over that, and its pier stands over open water — one floor per
+  cell cannot say any of it. Every cell carries EVERY floor it has, as
+  `[floor, solid, roof]` triples, and `keepStandAt` answers the floor
+  nearest under your feet: no more than a step above (0.62, the cave's own),
+  no more than a drop below (1.3). A cell with no floor at your level is a
+  wall or the pier's edge — the move keeps whichever axis is clear or
+  reverts — so nothing here can drop you into the sea. The island has an
+  UNDERSIDE, so `--floor-min` throws away every sample under the sea before
+  a floor is chosen; and a stair that turns back under itself has the flight
+  above for a roof, so the roof rides in the triple and the camera ducks
+  under it the way the tunnel's does.
+- **THE MODEL'S WAY UP IS STAIRS AND LADDERS, AND A LADDER IS A VERB.**
+  Measured at the east stair: the lower flight ends at 2.0 m, the landing
+  above is at 4.4, and between them the only geometry is a face at eighty
+  degrees. The tower's levels are joined the same way, by two, four and five
+  and a half metres at a time — a minimax over the grid put the cheapest
+  route to the plateau at a 5.98 m rise, so no step allowance and no jump
+  reaches it. Face a free storey within `KEEP_CLIMB` above you (or a drop
+  beyond `KEEP_DROP`) and the crosshair says `E Climb`; the camera rides the
+  height at a climber's pace with a rung underfoot every half second and
+  goes over onto the ledge last. It is offered at the rock's ledges too,
+  because the island is a thing you climb about on as much as walk.
+- **AND THE BODY IS THE BUNKER'S.** At the beach's 0.40 a flood over the
+  grid reached 9,604 cells and 10.8 m — a stylised stair is a body's width
+  between its walls; at `KEEP_BODY` 0.26 it reaches 41,864 and the plateau.
+  Measured hands-off with the game's own movement: the pier's end to the
+  crow's nest at 31.8 m in 5,048 ticks, ZERO stalls, 46 climbs.
+- The moored boat is a CLONE of the dock's Boat mesh, so it is the same boat
+  by construction — with its own material, because the beach copy's night
+  lift rendered white under a sunset. `Material.clone` drops the lift, which
+  is exactly what was wanted.
+- The pack: `tools/undercroft_pack.py keep "$HOME/Desktop/BEACHWALK ASSETS/fantasy_sea_keep/scene.gltf"
+  assets/keep.glb --tex 2048 --scale 0.1 --floor-min -1.75 --headroom 0.95`
+  (PIL in a venv, as for the church). 0.1 is measured off the model: a
+  45-unit pier, stair rises of one to two and a half units, a 377-unit tower
+  — 4.5 m, 10–25 cm and 38 m.
+
+**AND THEN THE CLIMB VERB CAME OFF AND THE ISLAND HAD TO BE WALKED.** The
+owner's six: Set Sail from the DOCK when you are near the boat, no `E Climb`
+at all — things you jump onto and ledges you walk off — the moored boat not
+awash, night at the keep, a lever under the timber hoist that drops the
+counterweight and takes you to the second level, and the whole island walked
+round with ease.
+
+- **THE STEP ALLOWANCE DEPENDS ON WHERE YOU ARE, AND THAT IS THE WHOLE
+  VOCABULARY.** With the climb gone there are three numbers and no verbs:
+  `KEEP_STEP` 0.62 is a lip you walk up, `KEEP_AIR` 0.35 is what your feet
+  catch in the air — so a jump gets you onto about a metre, which is what
+  "jumped on if high enough" means as a measurement — and `KEEP_OUT` 2.4 is
+  what you climb out of the sea, because the shelf is 1.95 under the beach
+  and at a walking step a wade could never be ended. A drop is simply a
+  drop: you walk off a ledge and fall to whatever is under you.
+- **A HOLE IN A WALK GRID READS AS A WALL, AND THAT IS AN INVISIBLE FENCE.**
+  The packer writes a cell's floor from the triangles that land in it, and on
+  a big low-poly shore it now and then lands none at ground level — the cell
+  keeps only its high storeys, and "no floor at or under my feet" is the
+  game's own definition of a wall. Measured: a flood from the pier reached
+  9,808 of 56,714 cells. `repairKeepGround()` runs at load over the cells'
+  own bounding box — three passes, a cheap four-neighbour median as a
+  pre-test and then a 5×5 median — and **A REPAIR MAY ONLY EVER ADD A FLOOR
+  UNDERNEATH**: added above a cell's own lowest storey it hangs a shelf
+  inside a cliff, and `if (med4 > fl[0] - 0.3) continue;` is the whole
+  guard. A "local gap under 2.5 m" guard was tried first and regressed the
+  flood, because it rejected exactly the case that matters (a cell whose own
+  floor is 4.89 over neighbours at 0.07). Patched 1,909 cells, added 1,778,
+  68 ms.
+- **AND `--floor-min` THROWS SAMPLES AWAY.** At -0.9 the shore's own dips (to
+  -1.1) were discarded at pack time, so a two-metre band of the beach came
+  out with only its 2.0 and 8.0 storeys — a wall you could see the sand
+  through. Repacked at -1.75.
+- **AND THE WALK AND THE PUSH-OUT HAVE TO ASK THE SAME QUESTION.** The pier's
+  own lesson on an island, and the last invisible fence. `keepFloorAt`
+  answers "what is the ground here" and answers with a floor even where the
+  packer marked the BODY BAND over it as full; `pushOutOfKeep` calls exactly
+  those cells solid. So a cell with the band set was one the walk let you
+  stand on and the push-out shoved you off, on the same frame, for ever:
+  measured on the east shore, a two-frame limit cycle six centimetres wide
+  that pinned the body on ground with nothing drawn on it. `keepStandable`
+  is the one question the walk asks now. It costs 2,380 of 46,687 reachable
+  cells — the ones your shoulders were inside anyway — and every one of the
+  36 bearings round the island is still walked.
+- **A COUNTERWEIGHT WAS THE MECHANISM, AND IT WAS BUILT AND THEN DELETED** —
+  four posts, a drum, a hanging weight and a gangway. See the round below:
+  the model already has a hoist and the owner's word was to use it.
+- **A BOX FLOOR IS READ BY THE SAME LOOKUP AS THE MODEL'S OWN GRID.** The
+  boat, the lift platform and the gangway are planks the game laid after the
+  pack, so the walk grid knows nothing about them; `keepBoatBox`,
+  `keepLiftBox` and `keepGangBox` win inside the floor lookup when they are
+  higher and in range.
+- **THE MOORED BOAT WAS HUNG OFF THE PIER DECK, NOT OFF THE SEA.** It sat at
+  deck height less its own height, which on a hull deeper than the pier is
+  high stands it under the water. It floats on `KEEP_SEA` now.
+- **AND THE PROMPT COMES OFF THE HULL'S OWN BOX.** `boatHail` is a reach
+  measured from the boat's bounding box rather than from a point, so "E Set
+  Sail" reads standing ON her and standing on the dock BESIDE her — measured
+  at 2.6 m and at 4.4.
+- **AND THE SKY IS PAINTED, SO NIGHT IS PAINTED.** The sphere ships as glass
+  and what Sketchfab shows through it is its own HDR environment, so there
+  was never a sunset in the file to turn off: the fragment is rewritten to a
+  deep blue by height over the sea with a moon disc and a halo at
+  `normalize(vec3(-0.62, 0.36, 0.70))`, hash stars thinning at the horizon,
+  and the file's own cloud strip laid over at low weight. The five lights,
+  the fog, the sea and the windows come down with it — colour and intensity
+  are free, a light entering or leaving is not.
+
+Measured at the end: 44,307 cells reachable from the pier spawn with a full
+body disc and the game's own standability test, **all 36 bearings round the
+island** at radii 16–40 m, and every one of twelve ring stations routes to
+the next. Hands-off with the real movement code, the 454 m loop from the
+pier, round the island and back walks in **7,128 ticks (114 s) with 9 % of
+frames stalled and fifteen jumps** — and the two places it needs help are
+both two-storey shelves where the harness's own route carries no storey, not
+walls: standing on the terrace instead of the shelf under it, the same
+ground walks straight through. **A ROUTE OVER A GRID OF STOREYS MUST CARRY
+THE STOREY**; an (x, z) waypoint is not a place on an island with an
+overhang on it.
+
+
+**AND THE HOIST WAS ALREADY IN THE MODEL — TAKE OUT THE ONE YOU BUILT.** The
+owner's word on the timber lift of the round before: take it out and make
+the one that is already there work, use the assets in the model, and — the
+part that says what it is FOR — *I need to reach that height*. He is right,
+and it is the undercroft's rule a second time: MAKE THIS BETTER IS NOT BUILD
+YOUR OWN. JesseL drew a cargo hoist against the cliff — a planked car with
+rails and a crate on it, two guide frames eight metres tall, a head beam
+with pulley blocks at 21.8, and a timber jetty under it at the shore — and
+beside a real one anything hand-built is a stack of boxes.
+
+- **AND THE HEIGHT IS THE POINT, WHICH IS A MEASUREMENT.** Flooded with the
+  body disc and the game's own standability test, the walk from the pier
+  reaches **4.87 m and no higher**; the hoist's car as drawn sits at 14.10
+  and its jetty at 2.3. So the one thing on this island a body cannot do is
+  exactly the thing the hoist is for, and nothing had to be invented to find
+  that out. **AND ZERO IS WHERE THE MODEL DRAWS THE CAR, NOT WHERE IT
+  STOPS.** Parked at its own drawn height the car lands on a 13.8 shelf two
+  metres under the only floor up there worth having: the terrace outside the
+  keep's DOOR reads 16.1 all the way from the well to the threshold. The
+  travel runs either side of the drawn position — down to a hand over the
+  jetty and UP PAST ITS OWN HOME to 16.15 — and the car's deck arrives flush
+  with the flagstones. Measured: ride up, walk off, and you are at the door
+  at 16.11 without a step in between.
+- **THE PACKER BAKES EVERY NODE INTO WORLD SPACE, SO THE CAR IS NOT AN
+  OBJECT.** It is triangles inside three 44,000-triangle meshes, and the
+  source `scene.gltf` is no help — twenty-five nodes, not one of them named
+  for a part. It comes out the way the bunker's tripod camera came out of
+  its merged mesh: WELD BY POSITION, FLOOD THE ISLANDS, AND SORT THEM. A box
+  test on triangles alone tears the bottom metre off both guide frames,
+  which stand ON the car's deck and pass through its plan. A piece SHARES
+  its source's attributes and carries only its own index — no vertices are
+  copied, the uv is the scan's own, and nothing that moves can come out a
+  different colour from the frame it hangs in. 152 ms at load, on the beach,
+  long before you sail.
+- **AND THERE ARE THREE KINDS OF ISLAND IN THERE, NOT ONE.** The DECK is
+  every island inside the car's box that is THIN IN SOME AXIS, because each
+  piece of it is a plank, a bearer, a stanchion or a rail. The CARGO is the
+  islands inside that box that are thick in every axis — the model stands a
+  CANNON and its crates on the deck, and the owner's word is that the hoist
+  should be the platform and nothing else, so they come out of the model
+  rather than ride up and down on it. The smallest side of the box is the
+  whole discriminator: a plank is 0.2 through, a cannon is 1.0.
+- **AND THE ROPES STRETCH; THEY DO NOT TRAVEL.** Four falls leave the deck
+  at 14.03 and run up to the head beam at 22, and left in the fixed mesh
+  they hang in the air pointing at a car that is no longer there. They are
+  their own pieces, each in a group pivoted at its own top and scaled in y
+  so the bottom sits on the deck at any height. Each is CUT a hand under its
+  own top — the island carries the hanging fall AND the run along the head
+  beam, and scaling that run with it sags the whole thing by a third of a
+  metre — and the pivot is exactly the cut, so there is no seam anywhere.
+  What they are is worth knowing: the island has vertices at y 14.03 and at
+  y 21.9 and NOTHING in between, which is what a rope drawn as one long
+  section looks like and is why scaling it reads as rope paying out.
+- **`matrixWorld` IS ONLY WRITTEN BY A RENDER** — this file's oldest trap,
+  and it bit again: run in the loader, every mesh measures in its own space,
+  nothing intersects the car's box and the whole thing silently finds
+  nothing. And **a proxy hung under the keep's own group is in the keep's
+  frame**: the island stands at (-6000, 800, 6000), so a world position
+  written straight into `position` lands twice as far out and the crosshair
+  finds nothing at all.
+- **TAKING A SURFACE AWAY DOES NOT TAKE AWAY WHAT THE GRID REMEMBERS OF IT.**
+  The desk's own lesson: the car's storeys come out of the cells under its
+  plan, or the walk goes on offering a floor at 14.44 where there is now
+  nothing. Three ways to get that wrong, all measured: written as a loop over
+  METRES it runs a cell wide on every side and takes the KEEP'S OWN TERRACE
+  with it — a half-metre moat round the car at the top; written to the car's
+  own timber, the half of each cleared CELL that sticks out past the timber
+  is a 20 cm slot you fall fourteen metres through; and the model draws the
+  car inside a well with a finger's clearance all round that never had a
+  floor in it either. The plan is the cells the car took ground from, the
+  car's own measured box, and a hand's width over.
+- **AND WHERE DOWN IS, IS MEASURED ON THE FLOOR THE FEET USE.** The jetty is
+  a RAMP — its walk runs 2.70 at the landward end to 1.94 at the seaward one,
+  and a corner of the car's plan clips the rock the hoist is bolted to at
+  3.42. Parked over the highest of those the car is a metre in the air;
+  parked a step over the middle of the ramp it is a 0.68 m climb from the far
+  end, over the 0.62 the walk allows — measured, you stroll straight past it
+  and off the other side instead of stepping aboard. It rests a hand over the
+  MEDIAN of the floors under its own plan, so it is a quarter of a step up
+  from one end and a third of one down from the other, and a drop is free.
+- **AND THE CONTROL IS THE HOIST, NOT A LEVER SOMEBODY ADDED.** Two invisible
+  proxies — the file's own way of giving a crosshair something to find — one
+  standing on the jetty under it so you can call it down, and one riding the
+  car so you can send yourself up once you are aboard. `E Lower the hoist` /
+  `E Raise the hoist`, under the crosshair.
+
+**AND SHE FLOATS BY HER SOLE, NOT BY HER RAIL.** The moored boat was hung a
+measured 0.92 m of freeboard under the pier's boards, which is what a boat
+tied up at a low dock looks like FROM THE DOCK and says nothing about where
+her floor is: on a shallow open boat the sole is most of that metre down.
+Measured, it lay at -1.29 against a sea plane at -1.07, so the water was
+drawn inside her and you boarded a swamped boat — the owner's report two
+rounds running. Rays down her centreline find the deepest surface a body
+could stand on and she is floated until that is clear of the sea. It is a
+measurement and not a number because the hull is a scan: repack it and the
+freeboard would be wrong again. Measured after: sole -0.91 to -0.97 against
+the sea at -1.07, and "E Set Sail" still reads from the boards beside her
+and standing on her.
+
+Measured at the end: the walk from the pier still reaches 44,454 cells and
+all 36 bearings, still tops out at 4.87 m on foot — and the hoist takes you
+from the jetty at 2.50 to 16.15 in seven and a half seconds, called down
+from the ground, walked onto, ridden, and walked off at the top onto the
+terrace outside the keep's door at 16.11. Rays down all four corners of the
+car say the shaft is clear the whole way: nothing but the jetty at 2.26.
+
+**THE DRAWN WALLS ARE THE WALLS NOW, AND A STOREY YOU CAN SEE IS A STOREY
+YOU STAND ON.** "I should not be clipping through anything that's visible in
+the sea keep" and "make the textures actually act as they are seen" are one
+job with two halves, and the walk grid can only ever answer half of it: it
+is a plan of FLOORS, so a wall between two cells both of which have a floor
+is not in it at all — you walked through the keep's own studded door.
+
+- **A WALL IS A BOUNDARY, NOT A PLACE.** The obvious repair is to rasterise
+  every steep face into the grid and call those cells solid, and it is
+  wrong by construction: a cell containing a wall is also the cell you are
+  STANDING on, on one side of it or the other. Measured, band-marking
+  collapsed the island's flood from 44,454 cells to 14,126 and its 36
+  bearings to 21 — most of the shore became unreachable — and it still let
+  you through the door, because the door's own cell was the one you were
+  standing in. Abandoned.
+- **THE SEGMENT IS THE TEST, AND ITS HEIGHT IS THE FILTER.** `keepHitsWall`
+  is Möller–Trumbore of the frame's own movement, swept at CHEST height
+  (feet + 0.95), against a one-metre grid of the drawn triangles
+  (`buildKeepWalls`: 135,457 faces, 60,900 of them steep). A kerb you are
+  meant to step over is under the segment and is never met; a wall is.
+  `updateKeep` tries the full move, then each axis alone, then reverts —
+  the undercroft's own slide.
+- **AND THE FACE-HEIGHT FILTER THREW AWAY THE DOOR.** `KEEP_WALL_MIN` was
+  0.70 on the reasoning that anything shorter is a lip; a stylised model
+  draws a studded door as a course of small quads and not one of them is
+  0.70 tall, so the one wall the owner photographed was the one wall left
+  out. 0.12, and the chest-height segment is what keeps the kerbs walkable.
+  The sea and the sky (`material`, `material_5`) are skipped, and so is any
+  triangle spanning more than 400 cells — the island's own base is one face
+  the size of the model and it would otherwise be in every bucket.
+- **A HOLE IN AN UPPER STOREY IS A FLOOR YOU FALL THROUGH**, which is
+  `repairKeepGround`'s invisible fence wearing the other coat: the packer
+  writes a cell's storeys from the triangles that land in it, and on a
+  stylised interior it lands none often enough that a doorway threshold has
+  no floor at hall level and drops you to the ground floor. Two topological
+  rules were tried and both failed on that threshold — a ≥6-of-8 majority
+  (the gap is a two-cell slot, so its cells have three neighbours at that
+  level) and a flood-and-enclose (574 ms, and the slot opens into the
+  interior so it is never enclosed). **ASK THE GEOMETRY.** A level carried
+  by three of the eight neighbours is proposed, and `keepDrawnFloor` — a
+  barycentric plan test against the non-steep faces in that cell — says
+  whether anything is actually drawn there to stand on. 28,618 storeys put
+  back of 51,155 asked, in 95 ms.
+
+Measured after: walls crossed on 5 of 56 hands-off walks (four of them from
+one interior start) against a baseline where the door could be walked
+straight through; the island's flood ROSE to 51,956 cells with all 36
+bearings; the 401 m ring loop still completes hands-off in 8,455 ticks; the
+keep's loader frame went 152 → 266 ms.
+
+**AND A BOOT IN THE TUNNEL IS THE SEA'S OWN RECORDING.** The channel's step
+was synthesised — four layers of filtered noise, which is what sand is — and
+the owner's word was that it should sound like stepping in ocean water, a
+little lower. His own `wade` bank is already in the game for walking through
+the surf and it is the same event, so the tunnel plays it at 0.88 of the
+rate: a smaller room, and an inch of water rather than a foot. The
+synthesised puddle stays as the fallback for the frames before the bank is
+off the network, the katana's own arrangement.
+
+**AND THE DEALER'S TABLE HAS A DRINK ON IT.** The bottle is a takeable like
+any other and where it stands is SCORED, not typed: a grid over the table
+top inset 0.22, ranked by distance from the crowbar's spot, the Dealer's own
+post, the equipment case and everything already perched there, with a
+raycast down for the exact height. It landed at the far +x corner, clear of
+the cutscene. `refillBottle()` is the one door — `waterSips`, the model's
+own `setFill` and the copy in your hand, which is found BY NAME, because
+`holdable` clones and `setFill` closes over the original's mesh. And when
+the work table goes it is SET ON THE FLOOR along the blow rather than
+thrown: it is a takeable, not a physics body.
+
+**AND COMING OUT OF THE CAVE IS THE SECOND CHECKPOINT.** The pavilion's is
+an hour back up the beach and everything past it — the church, the knight,
+the idol — is behind a crawl nobody wants to make twice. `caveSaveDone`, at
+the moment the black lifts on `ucDir < 0`, the same `saveCheckpoint` so the
+badge says it happened, once a game, the pavilion's own rule. Measured:
+`hasCheckpoint()` true with the save at (12.4, 1.70, -640.4), which is the
+sand a rim's width outside the mouth. **And testing it needs the pane
+VISIBLE** — the cut is on the wall clock inside `animate`, so a hidden pane
+runs no frames, `updateUndercroftCut` never advances and `leaveUndercroft`
+never completes; `ucBusy` stuck true is the tell.
+
+**A CROSSING TEST HAS NO THICKNESS, AND THE BODY BAND IS HALF A METRE WIDE —
+THE TWO FAULTS THAT MADE THE KEEP UNPLAYABLE.** The round before put the
+drawn faces in the walk as a swept segment and measured 5 of 56 hands-off
+walks still crossing one; the owner played it and walked through rocks,
+walls and brick. Both halves were wrong and they are opposite mistakes.
+
+- **A SEGMENT ONLY EVER ASKED WHETHER THE FRAME'S OWN MOVEMENT CROSSED A
+  FACE, AND A FRAME'S MOVEMENT IS TEN CENTIMETRES.** Creep at a wall, be
+  nudged into it by the grid's own push-out, or arrive on a frame that
+  hitched, and you finish a few centimetres PAST the face — and from in
+  there every later segment is on the far side and crosses nothing at all,
+  so the wall is behind you for good. A body has a WIDTH. `keepWallNear` is
+  the nearest steep triangle's own footprint in PLAN (a wall is vertical,
+  so the plan distance is the distance), and `keepWallPush` ejects the body
+  out of the DEEPEST one and asks again — never the sum, because a wall is
+  thirty coplanar triangles all pushing the same way and summing those
+  throws a body across the island. The sweep stays as the safety net for a
+  frame long enough to jump the band, at THREE heights: at the chest alone
+  a handrail is a bar that passes clean over the segment with its posts to
+  either side, which is the whole of "I walk through the railings".
+- **AND THE Y BAND IS WHAT KEEPS A STEP A STEP.** It starts a lip's height
+  over your feet (`KEEP_STEP + 0.04`) and ends at the crown, so a riser you
+  are meant to walk up is under the body entirely and only what stands
+  between your knee and your head is a wall. A floor slab's own edge — a
+  steep face two metres deep — is below the band of anyone standing on it.
+- **AND A FACE IS A FLOOR OR A WALL, NOTHING BETWEEN.** `KEEP_WALL_NY` was
+  0.35, about seventy degrees, so a rounded boulder's flank at sixty was
+  neither: not a floor you could stand on and not a wall that stopped you.
+  0.55 is the same number `isFloor` uses, so the two partition every face
+  the grid keeps.
+- **AND THE PACKER'S BODY BAND IS HALF A METRE WIDE.** It marks a cell full
+  if ANY triangle stands in it, so a handrail post ten centimetres thick
+  refuses the whole cell — and a row of them, a pier, a doorway's jamb, is
+  a scatter of half-metre squares across a floor you are looking straight
+  at. Measured on the terrace outside the keep's door: **nineteen cells of
+  it**, every one drawn, every one a hole you walk into and fall sixteen
+  metres down. That is the whole of "I should be able to walk around the
+  second floor". The walk no longer reads the band at all — what is in the
+  way is asked of the drawn faces, a quarter of a metre from a real
+  triangle rather than a whole cell from the middle of one — so the grid is
+  left to answer the one question it is good at: WHERE IS THERE GROUND.
+  `keepStandable` is `keepFloorAt` now, and `pushOutOfKeep` ejects only
+  from cells with no floor at your level at all.
+- **AND A LONE HOLE IN A FLOOR IS A SAMPLING GAP, NOT AN OPENING.** The
+  geometry probe answers a doorway's threshold; what it cannot answer is a
+  cell in the middle of a terrace where the packer landed no triangle and
+  nothing is drawn at the probe points either. The undercroft's own rule:
+  fill it only if it is ENCLOSED, which here is six of its eight neighbours
+  carrying the level. The hoist's shaft is twenty cells across, so no cell
+  in it ever has six and a hole you are MEANT to fall down stays. 1,348
+  filled. **And the centre of a cell is not the cell** — a threshold is a
+  slot narrower than the grid, so the drawn-floor probe takes five points
+  over the cell rather than one down its middle.
+
+Measured after. Thirty-six hands-off walks straight at the keep from three
+rings, 14,400 frames: **8 frames with the body touching a drawn wall at all
+(0.06 %) and a worst overlap of 0.187 m against a 0.26 m body — never
+inside one**, against a baseline where the keep's own studded door could be
+walked straight through. The terrace outside that door has **no floorless
+cell anywhere** over an 11 × 9 m sweep at 25 cm (nineteen before), and
+walked from a spot clear of the hoist's shaft, 9 of 12 headings stay on it
+at 16.1 and the three that do not go down the shaft itself, with 1 grazing
+frame in 1,560. The island still floods to 81,043 cells with **all 36
+bearings**, and it now TERMINATES — before the walls it leaked through the
+rock and out over the sea and never closed. The tick is 0.365 ms (worst
+4.0) and the keep's storey repair 97 → 209 ms at load.
+
+**WHAT IS NOT VERIFIED:** the full ring loop round the island. A harness
+that follows a route over the walk grid stalls on the shore under the
+overhangs, and at every spot it stalls the measurement says the way is
+clear — floor in all eight directions, no face crossed at any of the three
+heights, nothing within the body — so it is the steering and not the new
+collision. It was not chased further this round.
+
+**THE BIGGEST THING ON THE BEACH WAS DRAWN FOR THE WHOLE WALK, AND THE RULE
+THAT SHOULD HAVE CAUGHT IT WAS WRITTEN TO LEAVE HER ALONE.** Profiled by
+hiding each top-level scene child in turn and reading `renderer.info.calls`
+back, at sixteen stations from the spawn to the fence: **the shipwreck was
+162 draw calls at EVERY ONE OF THEM** — at the pavilion a third of the frame,
+at the tower half of it, and at the fence she is nine hundred and eighty-five
+metres behind you. She was in no `farProps` entry (her DRIFT was, at 220; she
+was not), and `cullBeyondFog` deliberately exempts anything bigger than
+`SKYLINE_R`, because culling a landform does not remove a dim object, it
+opens a hole in the fog. So the one rule that covers everything nobody
+remembered to register is the one rule that could not cover her.
+
+- **`farProps` at 240 m.** `FogExp2` 0.014 leaves 0.007 % of her there; the
+  list's own numbers are 260–340 for the same reason.
+- **AND `bakeStatic` HAD NEVER BEEN RUN ON HER.** It is for BUILDINGS and she
+  is the biggest one in the game: 158 meshes, 85 of them unnamed, childless
+  and unflagged, merged by material into 17. Her hull quads already carry
+  `noBake` (they are lifted off their own maps and must keep them) and every
+  part this file holds — the wheel, the gaff, the head, the lantern, the hold
+  door, the barricade — is named or flagged, so all six survive the merge and
+  were checked to still be in the scene afterwards. It runs on a `warmStep`,
+  which is after the module has finished hanging things on her.
+- **And the drainage tunnel home was the same bug, smaller**: 29 draws a
+  frame for a building that stands at the dead end BEHIND the spawn and is
+  never looked at again after the first hundred metres.
+
+**AND THE ISLAND IS BUILT AT THE CUT, BEHIND THE BLACK.** The sea keep's walk
+faces, its two grid repairs, its hoist and its moored boat are half a second
+of blocking between them (147,541 faces 200 ms, the storeys 188, the ground
+81) and they ran in the keep's own LOADER CALLBACK — which fires the moment
+you come within loading distance of the DOCK. One six-hundred-millisecond
+frame in the middle of a walk, for a place you may not sail to for another
+minute, or ever. `startSail` already blacks the screen and already waits on
+`keepReady`, and behind a black card half a second costs nothing: the crash
+kit's own argument, and the drain's, and the bunker's. `buildKeepIsland` is
+called there and from `placeInKeep`, so a restore or the harness cannot
+arrive on an island with no walls. Measured: nothing at load, 381 ms at the
+cut, and the clip walk after it is unchanged at 0 frames of 3,600 with the
+body in a wall.
+
+**AND A WARM IS ONLY MOVED IF IT IS SPREAD — the bunker's lesson, unlearnt
+twice.** `warmView` has taken a `[k, n]` SLICE since the bunker's 2329 ms
+frame, and two rooms built after it never used one: the undercroft's first
+view was **397 ms in a single frame** (a church, a cave and a hundred and
+forty metres of bore uploaded together) and the drain's inner view 117. Six
+slices and eight. Measured: the worst frame of the whole boot went 412 → 161
+ms. What is left is `cave.glb` at 465 ms, which is the undercroft module's
+own build — the skin fit, the carve and the ray walk — and is not a warm.
+
+**AND THE OCEAN'S GRADED GRID WAS BUILT, MEASURED AND REVERTED.** It is
+115,200 triangles, a quarter of the frame, at one uniform 9.2 m facet whether
+it is under your boots or eleven hundred metres out; and the plane snaps onto
+the player in 8 m steps, so warping the rows toward the middle gives finer
+water close up out of a third of the vertices. It rendered identically on the
+clock and it cost the HORIZON: the sea's far edge stands against the sky as a
+line whatever the fog does, the rim rows are what draw it, and at 2 m facets
+in the middle the rim goes to 47 m and that line becomes a staircase you can
+count. The number that settles it was measured first and ignored anyway —
+hiding EVERY mesh over 8,000 triangles in the frame is worth 0.35 ms of 1.23.
+**TRIANGLES WERE NEVER THIS GAME'S PROBLEM. Draw calls and shader programs
+were**, and a saving that does not show on the clock is not worth a pixel of
+the sea.
+
+Measured over sixteen stations, spawn to fence: **draw calls 310 → 188 on
+average and 489 → 330 at the worst, the render call 1.13 → 0.82 ms, and the
+worst frame of the boot 412 → 161 ms.** The way to find any of this again is
+the one used here: freeze rAF, put the camera at a station, `step` it a few
+frames so the far-cull runs, then hide each scene child in turn and read the
+draw count back.
+
+**THE CHURCH AND THE TUNNEL MET ON A LINE, AND THE LINE WAS THE DRESSING.**
+"Make this blend better, the shades are off, this part is too light, and you
+can see out of the church." Every one of those is the same fault measured
+three ways, and it is not geometry: it is that a room's LOOK is a constant
+per material. The church is dressed at `level` 0.98 with its emissive at 0.9
+and a knee of 2.4; the tunnel is 0.19, 0.055 and no knee — **five times the
+diffuse and sixteen times the lift** — which is right for each room on its
+own and catastrophic in the one doorway where they touch. What you see
+standing at the breach is a pale band of church stone with black cave rock
+butted against it.
+
+- **A GRADIENT IS THE ONLY THING THAT CAN LIVE IN A DOORWAY.** `uUcFade` is
+  the world-x band to ease over and `uUcFadeTo` the level, knee and emissive
+  multiplier to ease TO, and both sides are given the SAME values to arrive
+  at — level 0.45, the knee half on, and multipliers that bring 0.9 and
+  0.055 to the same place — so at the breach itself the seam has nothing to
+  draw. Three and a half metres each way, which reads as what it should be
+  anyway: the nave's light falling into the mouth of the bore and dying, and
+  the church's threshold standing in the dark under its own arch.
+- **AND `patchMat` DRESSED EVERY CLONE AS CAVE ROCK.** It is right for a
+  sleeve swept behind the tunnel's own wall and wrong for the spill of
+  broken stone that came OUT of the church's wall and is lying on the
+  church's floor: measured, the rubble at the threshold shipped at level
+  0.19 against the flags' 0.98 and an emissive of 0.055 against 0.9 — a
+  black heap on a lit floor, in the exact spot the owner photographed. The
+  kind is a parameter now; the default is unchanged.
+- **AND THE BLEND IS RE-RUN AFTER EVERYTHING IS BUILT.** The rubble is not
+  in `S.mats` when the band is first handed out, and one lump of unfaded
+  stone lying in a faded doorway is the same seam one object smaller.
+- **AND THE CHANNEL MUST NOT END AT THE DOOR.** The tunnel's water is a flat
+  plane at y = 0.019 lying on a bore floor that runs about -0.05, so it
+  stands the better part of a hand PROUD of what it lies on. In the middle
+  of the tunnel that is standing water; at the threshold the clip cuts it
+  off square and the church's own flagstones start at -0.071, so the cut
+  edge is a nine-centimetre lip of the one specular surface down there,
+  lit by the lamps either side of the doorway and pointing at the camera.
+  This file had already named that band ("a pale band at the threshold where
+  the clip cuts it") and answered it by taking the LEVEL down, which is the
+  one thing that cannot help: **the edge is geometry, not brightness.** The
+  channel is clipped a stride and a half back into the bore instead, where
+  neither room's lamps reach, and the threshold is dry stone on both sides.
+
+**AND A SHADER DISCARD IS INVISIBLE TO A RAYCAST.** Half an hour of this
+round went on a probe that reported the tunnel's rock and the tunnel's water
+standing well inside the nave, which is exactly what the clips exist to
+prevent — `uUcClipX` and `uUcClipHi` are `discard` in the fragment, so
+`intersectObjects` walks straight through them and answers with geometry
+nobody can see. Read the material's own `bwClipHi` beside every hit, or
+judge it from a screenshot.
