@@ -110,6 +110,8 @@ const ASSET_REACH = {
   'assets/dock.glb': 215,
   'assets/keep.glb': 216,              // and where its boat goes: fetched on the walk up to the pier
   'assets/tavern.glb': 216,            // and the hall behind its door
+  'assets/wong.glb': 216,              // the barman
+  'assets/drunk.glb': 216,             // and the drunk he serves
   'assets/bunker.glb': 333,           // behind a hatch, behind a black screen
   'assets/dealer.glb': 334,
   'assets/smile.glb': 390,
@@ -17193,8 +17195,8 @@ function slotAngle(u, list, token, slotAng) {
 function flankDir(u, list, token, slotAng, dist, ring, out) {
   const ta = slotAngle(u, list, token, slotAng);
   if (ta === null) return;
-  const tx = camera.position.x + Math.sin(ta) * ring - u.g.position.x;
-  const tz = camera.position.z + Math.cos(ta) * ring - u.g.position.z;
+  const tx = mutFoePos(u).x + Math.sin(ta) * ring - u.g.position.x;
+  const tz = mutFoePos(u).z + Math.cos(ta) * ring - u.g.position.z;
   const td = Math.hypot(tx, tz) || 1e-4;
   // toward the slot while there is ground to cover, toward you when close: a slot is a way to arrive, not a place to stand
   const k = THREE.MathUtils.clamp((dist - ring) / 1.2, 0, 1) * Math.min(1, td / 1.5);
@@ -17955,6 +17957,12 @@ function dressMutant(u, gltf) {
     mm.needsUpdate = true;
   });
   u.g.add(m);
+  /* A FILE WHOSE FRONT IS NOT +Z IS TURNED ON A PIVOT UNDER THE MODEL —
+   * not on the model itself, whose yaw the aim owns and zeroes every frame. */
+  if (u.kind.faceFix) {
+    const piv = new THREE.Group(); piv.rotation.y = u.kind.faceFix;
+    u.g.remove(m); piv.add(m); u.g.add(piv);
+  }
   /* HE DOES NOT HOLD IT YET. The crowbar is its own mesh in the scan,
    * skinned to whichever hand the clip has it in, so hiding it is all it
    * takes to have him standing empty-handed in the dark — and the fight
@@ -19367,14 +19375,33 @@ const _dbPts = [0, 1, 2, 3, 4].map(() => new THREE.Vector3());   // the limb, re
  * a thing that mauls with BOTH hands is tested on both: `rigL` names the
  * off hand, and a two-handed slam that only ever landed on the right claw
  * missed every time he came at you off-centre. */
+/* WHO A CREATURE IS FIGHTING. Every distance, aim and blow in this file was
+ * measured to the CAMERA, because until the tavern the player was the only
+ * thing anything ever fought. `u.st.foe` is another unit, and while it is
+ * set and alive that unit's head is where the player's eye would be —
+ * `mutFoePos` is the one door, so the chase, the aim, the sweep and the
+ * token all ask it and none of them knows the difference. */
+const _foeP = new THREE.Vector3(), _hitFrom = new THREE.Vector3();
+function mutFoePos(u) {
+  const f = u.st.foe;
+  if (f && f.st.alive) return _foeP.set(f.g.position.x, f.g.position.y + f.kind.h * 0.85, f.g.position.z);
+  return _foeP.copy(camera.position);
+}
+/* AND A BLOW LANDS ON WHOEVER IT WAS THROWN AT. */
+function mutLandBlow(u, dmg) {
+  const f = u.st.foe;
+  if (f && f.st.alive) { hurtMutant(f, dmg, 0, u); return; }
+  damagePlayer(dmg);
+}
 function blowLands(u) {
+  const foe = mutFoePos(u);
   _dbF.set(Math.sin(u.g.rotation.y), 0, Math.cos(u.g.rotation.y));
-  _dbC.subVectors(camera.position, u.g.position).setY(0);
+  _dbC.subVectors(foe, u.g.position).setY(0);
   const dist = _dbC.length() || 0.001;
   if (_dbC.divideScalar(dist).dot(_dbF) < 0.35) return false;        // behind him or wide of him: no
   const B = u.bones;
   if (!B || !B.hand) return dist < 1.9;
-  const top = camera.position.y + 0.15, bot = camera.position.y - 1.15;
+  const top = foe.y + 0.15, bot = foe.y - 1.15;
   /* THE WHOLE LIMB, NOT THE LAST HAND'S BREADTH OF IT. The first version
    * sampled the weapon alone — the grip out to the tip — and it was wrong
    * for exactly the swing it most needed to be right for: the aim puts the
@@ -19404,7 +19431,7 @@ function blowLands(u) {
       for (let k = 0; k <= 4; k++) {
         _dbC.lerpVectors(pts[i - 1], pts[i], k / 4);
         const y = THREE.MathUtils.clamp(_dbC.y, bot, top);
-        const dx = _dbC.x - camera.position.x, dz = _dbC.z - camera.position.z, dy = _dbC.y - y;
+        const dx = _dbC.x - foe.x, dz = _dbC.z - foe.z, dy = _dbC.y - y;
         if (dx * dx + dz * dz + dy * dy < 0.70 * 0.70) return true;  // a body is wider than a line
       }
     }
@@ -19453,7 +19480,7 @@ function blowLands(u) {
           _dbC.addScaledVector(_dbB, u.kind.barLen);
         }
         const y = THREE.MathUtils.clamp(_dbC.y, bot, top);
-        best = Math.min(best, Math.hypot(_dbC.x - camera.position.x, _dbC.z - camera.position.z, _dbC.y - y));
+        best = Math.min(best, Math.hypot(_dbC.x - foe.x, _dbC.z - foe.z, _dbC.y - y));
       }
       /* AND HOW WIDE IS THE KIND'S OWN NUMBER. A metre was set for a man
        * with a crowbar whose bar finishes inside a quarter of a metre; on a
@@ -19484,8 +19511,15 @@ function dealerBlock(u) {
   fovKick = Math.max(fovKick, 5.0);
   hitstop = Math.max(hitstop, 0.075);
 }
-function hurtMutant(u, dmg, P = 0) {
+function hurtMutant(u, dmg, P = 0, from = null) {
   if (!u.st.alive || u.st.struck) return false;
+  /* WHOEVER YOU HIT LOCKS ON TO YOU. `from` is the creature that threw the
+   * blow, or null for the player; a blow of yours makes you its foe, and
+   * everything below that is feedback for YOUR hands — the hitstop, the
+   * sparks, the lens — is skipped for a blow that was not yours. */
+  const mine = !from;
+  if (mine && u.st.foe) u.st.foe = null;
+  if (from) _hitFrom.subVectors(u.g.position, from.g.position).setY(0).normalize();
   /* SOME THINGS ARE ASLEEP UNTIL YOU HIT THEM. The witness is a bystander
    * until the blade touches him; `provoke` is the kind's own way of waking
    * (the witness swaps his standing self for the creature), and the blow
@@ -19501,13 +19535,13 @@ function hurtMutant(u, dmg, P = 0) {
     u.st.hp -= dmg;
     if (u.st.hp <= 0) { u.st.killP = P; u.st.killOh = digOverhead; u.st.killGore = toolGore(); u.st.hpBefore = u.st.hp + dmg; killMutant(u); return true; }
     flashMats(u.g); sfxMutHit(u.kind.voice);
-    camera.getWorldDirection(_hitC);
+    if (mine) camera.getWorldDirection(_hitC); else _hitC.copy(_hitFrom);
     const dy = u.g.position.y + 0.35;
     bleedMutant(u, Math.round(16 + P * 12), 0.45 + P * 0.3);
     sprayBlood(u.g.position.x, dy, u.g.position.z, _hitC.x, _hitC.z, Math.round(18 + P * 14), 0.9 + P * 0.5);
     stampBlood(u.g.position.x, u.g.position.z, 0.4 + Math.random() * 0.3, u.g.position.y + 0.1);
     woundMutant(u, _hitC.x, _hitC.z, dy, P);
-    bossHit(P, true, true);
+    mine && bossHit(P, true, true);
     return false;
   }
   let poiseBroke = false;
@@ -19520,7 +19554,7 @@ function hurtMutant(u, dmg, P = 0) {
      * third click. The blade's advantage is the damage, not free staggers. */
     const light = P < MUT_HEAVY && !digOverhead;
     _dbF.set(Math.sin(u.g.rotation.y), 0, Math.cos(u.g.rotation.y));
-    _dbC.subVectors(camera.position, u.g.position).setY(0).normalize();
+    _dbC.subVectors(from ? from.g.position : camera.position, u.g.position).setY(0).normalize();
     const facing = _dbC.dot(_dbF) > 0.45;
     const ready = u.st.atk < 0 && u.st.recoil <= 0 && u.st.block <= 0;
     // the blow that woke it is never met: he was not guarding, he was standing there
@@ -19552,8 +19586,8 @@ function hurtMutant(u, dmg, P = 0) {
       flashMats(u.g); sfxMutHit(u.kind.voice);
       const BK = isBlade() ? 1.8 : 1;                              // a blade OPENS him
       bleedMutant(u, Math.round((22 + P * 14) * BK), 0.55 + P * 0.35);
-      bossHit(P, light ? false : true, true);
-      camera.getWorldDirection(_hitC);
+      mine && bossHit(P, light ? false : true, true);
+      if (mine) camera.getWorldDirection(_hitC); else _hitC.copy(_hitFrom);
       const _by = u.g.position.y + u.kind.h * (0.45 + Math.random() * 0.3);
       woundMutant(u, _hitC.x, _hitC.z, _by, P);
       sprayBlood(u.g.position.x, _by, u.g.position.z, _hitC.x, _hitC.z, Math.round((24 + P * 16) * BK), 1.1 + P * 0.6);
@@ -19584,7 +19618,7 @@ function hurtMutant(u, dmg, P = 0) {
      * hardest hit you can land was the one that read most like being
      * stopped. Flesh: four off the bar and the blood the fall-through
      * throws underneath. */
-    bossHit(P, true, true);
+    mine && bossHit(P, true, true);
   }
   /* THE RIPOSTE IS A MULTIPLIER, AND THAT IS ALL IT IS AGAIN. A blow landed
    * on one you have just parried counts DOUBLE — the parry was already an
@@ -19599,7 +19633,7 @@ function hurtMutant(u, dmg, P = 0) {
     dmg *= 2;
     setPrompt('<b>RIPOSTE</b>');
     setTimeout(() => { if (promptHTML.includes('RIPOSTE')) setPrompt(''); }, 700);
-    addTrauma(0.3); fovKick = Math.max(fovKick, 5);
+    mine && addTrauma(0.3); fovKick = Math.max(fovKick, 5);
   }
   const before = u.st.hp;
   u.st.hp -= dmg;
@@ -19616,8 +19650,8 @@ function hurtMutant(u, dmg, P = 0) {
   const A = swingOf(u);
   const committed = u.st.atk >= 0 && u.st.atk > A.wind * 0.55 && u.st.atk < A.wind + A.strike;
   if (!poiseBroke && committed && P < MUT_HEAVY && !digOverhead) {
-    flashMats(u.g); sfxMutHit(u.kind.voice); bleedMutant(u, 5, 0.3); addTrauma(0.22);
-    camera.getWorldDirection(_hitC); sprayBlood(u.g.position.x, u.g.position.y + u.kind.h * 0.55, u.g.position.z, _hitC.x, _hitC.z, 8, 0.8);
+    flashMats(u.g); sfxMutHit(u.kind.voice); bleedMutant(u, 5, 0.3); mine && addTrauma(0.22);
+    if (mine) camera.getWorldDirection(_hitC); else _hitC.copy(_hitFrom); sprayBlood(u.g.position.x, u.g.position.y + u.kind.h * 0.55, u.g.position.z, _hitC.x, _hitC.z, 8, 0.8);
     return false;
   }
   u.st.atk = -1; u.st.chainAt = -1; u.st.chained = false; u.st.chainN = 0;
@@ -19712,7 +19746,7 @@ function hurtMutant(u, dmg, P = 0) {
   woundMutant(u, u.hitDir.x, u.hitDir.z, u.g.position.y + u.kind.h * 0.55, P);
   sprayBlood(u.g.position.x, u.g.position.y + u.kind.h * 0.55, u.g.position.z, u.hitDir.x, u.hitDir.z, Math.round((12 + P * 10) * BK), 0.9 + P * 0.6);
   stampBlood(u.g.position.x + u.hitDir.x * 0.5, u.g.position.z + u.hitDir.z * 0.5, 0.45 + Math.random() * 0.35, u.g.position.y + 0.2);
-  addTrauma(0.3 + P * 0.2);
+  mine && addTrauma(0.3 + P * 0.2);
   return false;
 }
 /* IT DOES NOT COME APART. A crab is shell and the shovel takes it to pieces;
@@ -20373,8 +20407,12 @@ function mutSeparate(u, dt) {
     if (o === u || !o.st.alive) continue;
     const dx = u.g.position.x - o.g.position.x, dz = u.g.position.z - o.g.position.z;
     const d = Math.hypot(dx, dz);
-    if (d > MUT_SEP || d < 1e-4) continue;
-    const push = (MUT_SEP - d) * dt * 5.0;
+    /* TWO CREATURES FIGHTING EACH OTHER STAND AT ARM'S LENGTH, not at the
+     * pack's polite two and a half metres — which is outside both their
+     * reaches, and measured, left the tavern's two swinging at the air. */
+    const sep = (u.st.foe === o || o.st.foe === u) ? 1.25 : MUT_SEP;
+    if (d > sep || d < 1e-4) continue;
+    const push = (sep - d) * dt * 5.0;
     u.g.position.x += (dx / d) * push;
     u.g.position.z += (dz / d) * push;
   }
@@ -21228,7 +21266,11 @@ function updateMutantUnit(u, dt) {
     return;
   }
 
-  const dx = camera.position.x - p.x, dz = camera.position.z - p.z;
+  /* A DEAD FOE IS NOBODY'S FOE: the survivor of the tavern's fight turns on
+   * the one thing left in the room, which is you. */
+  if (u.st.foe && !u.st.foe.st.alive) u.st.foe = null;
+  const foe = mutFoePos(u);
+  const dx = foe.x - p.x, dz = foe.z - p.z;
   const dist = Math.hypot(dx, dz) || 0.001;
   /* WHICH WAY HE IS FACING, and it is not always at you: a creature stepping
    * round a pier looks where it is GOING, or it moonwalks past the stone. It
@@ -21237,7 +21279,7 @@ function updateMutantUnit(u, dt) {
   let face = Math.atan2(dx / dist, dz / dist);      // the model's front is +Z
   if (u.path && u.pathI < u.path.length && dist > 2.2) {
     const w = u.path[u.pathI];
-    const wx = UC_X + w.x - u.g.position.x, wz = UC_Z + w.z - u.g.position.z;
+    const wx = (u.pathOx ?? UC_X) + w.x - u.g.position.x, wz = (u.pathOz ?? UC_Z) + w.z - u.g.position.z;
     const wl = Math.hypot(wx, wz);
     if (wl > 0.2) face = Math.atan2(wx / wl, wz / wl);
   }
@@ -21281,6 +21323,17 @@ function updateMutantUnit(u, dt) {
       const dy = (UC_Y + gf) - u.g.position.y, ad = Math.abs(dy);
       u.g.position.y += ad < 0.02 ? dy
         : Math.sign(dy) * Math.min(ad, Math.max(ad * dt * 10, 3.5 * dt));
+    }
+  }
+  /* AND THE TAVERN'S TWO STAND ON ITS FLAGS — or its crates, if the fight
+   * takes them up there — and are drawn only while the room is. */
+  if (u.kind.tav) {
+    u.g.visible = inTavern;
+    if (!inTavern) { mutDrop(u); mutAnim(u, dt, 0); return; }
+    const st = tavWalk ? keepFloorAt(u.g.position.x, u.g.position.z, u.g.position.y + 0.15, 0.30, TAV_SITE) : null;
+    if (st) {
+      const dy = st.f - u.g.position.y, ad = Math.abs(dy);
+      u.g.position.y += ad < 0.02 ? dy : Math.sign(dy) * Math.min(ad, Math.max(ad * dt * 10, 3.5 * dt));
     }
   }
   if (!u.st.awake) {
@@ -21618,10 +21671,10 @@ function updateMutantUnit(u, dt) {
      * on the bar itself (`blowLands`): the bar has to pass through you.
      * The pack keeps the old test. */
     if (t >= A.wind && t < A.wind + A.strike + (u.kind.aimed ? 0.04 : 0) && !u.st.landed) {
-      const hits = u.kind.aimed ? blowLands(u) : (was < A.wind && dist < A.reach + 0.7);
+      const hits = (u.kind.aimed && !A.plain) ? blowLands(u) : (was < A.wind && dist < A.reach + 0.7);
       if (hits) {
         u.st.landed = true;
-        if (blocking) {
+        if (blocking && !u.st.foe) {
           /* AND HIS IS A TIGHTER WINDOW. `parryK` scales it per creature —
            * the pack keeps the full fifth of a second, he gives you a little
            * over three quarters of it. The tell is still the whole of the
@@ -21631,7 +21684,7 @@ function updateMutantUnit(u, dt) {
           if (dtp <= PARRY_WINDOW * (u.kind.parryK || 1) && parryCool <= 0) parryMutant(u);
           else blockMutant(u);
         } else {
-          damagePlayer(A.dmg || u.kind.dmg);
+          mutLandBlow(u, A.dmg || u.kind.dmg);
           if (Math.random() < 0.5) sfxMutLaugh(dist, u.kind.voice);   // it is enjoying this
         }
       }
@@ -21696,9 +21749,10 @@ function updateMutantUnit(u, dt) {
      * tells at once is not three times the fight, it is no fight at all,
      * because there is nothing to read. Whoever is nearest and ready takes
      * the token; a creature that cannot have it holds its range instead. */
-    const maySwing = mutToken === u;
+    const maySwing = mutToken === u || !!u.st.foe;   // a creature fighting another creature takes no turn from you
     // if the straight line is shut, he walks round — and drops it when it opens
     if (u.kind.uc) ucSteer(u, dt, dist);
+    if (u.kind.tav) tavSteer(u, dt, dist, foe);
     if (!near && u.path) {
       /* ON A ROUTE. Whoever is steering, steers: the chase and the route
        * were the tug of war that kept the Dealer stuck on his table. */
@@ -22112,7 +22166,7 @@ function aimLimb(u) {
     const L = all[i];
     if (!L.arm || !L.fore || !L.hand) continue;
     (L.tip || L.hand).getWorldPosition(_alA);
-    const d = _alA.distanceToSquared(camera.position);
+    const d = _alA.distanceToSquared(mutFoePos(u));
     if (d < bd) { bd = d; best = L; }
   }
   return best || all[0];
@@ -22150,7 +22204,8 @@ function aimBar(u, dt, dist) {
     u.model.updateMatrixWorld(true);
     aimTip(u, LB, _abC);                               // the tip: a bar's end, or a claw
     const rx = u.g.position.x, rz = u.g.position.z;
-    let dy = Math.atan2(camera.position.x - rx, camera.position.z - rz)
+    const foe = mutFoePos(u);
+    let dy = Math.atan2(foe.x - rx, foe.z - rz)
            - Math.atan2(_abC.x - rx, _abC.z - rz);
     while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
     const yawMax = AIM_YAW * (u.kind.aimK || 1);
@@ -22166,7 +22221,7 @@ function aimBar(u, dt, dist) {
     aimTip(u, C, _abB);
     _abB.sub(_abA);                                     // shoulder to the striking end
     // where it should be: your chest, and never further than the arm can reach
-    _abC.copy(camera.position); _abC.y -= 0.45;
+    _abC.copy(mutFoePos(u)); _abC.y -= 0.45;
     _abC.sub(_abA);
     const L = _abB.length() || 1e-6;
     _abC.normalize().multiplyScalar(L);
@@ -22211,7 +22266,7 @@ function mutGiveToken(dt) {
   let best = null, bw = -1;
   for (const u of mutants) {
     const st = u.st;
-    if (!st.alive || !st.awake || st.struck || st.stun > 0 || st.recoil > 0 || st.roar > 0) continue;
+    if (!st.alive || !st.awake || st.struck || st.stun > 0 || st.recoil > 0 || st.roar > 0 || st.foe) continue;
     st.wait += dt;
     const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
     const A = u.atk[st.swing] || MUT_ATTACKS[st.swing];
@@ -26761,6 +26816,22 @@ function mutClampX(u, p, dt) {
    * metres sideways, and here is a knight forty metres under a beach whose
    * x clamp would put him on the sand outside. He is held by the undercroft's
    * own walk instead, which is the only thing that knows where its walls are. */
+  if (u.kind.tav) {
+    if (!tavWalk) return;
+    /* THE HALL IS THE ARENA. The model's grid runs on past the arch and out
+     * into rooms nobody walks, and measured, the two of them fought their way
+     * fifteen metres out of the door in ten seconds. */
+    p.x = THREE.MathUtils.clamp(p.x, TAV_X - 19.6, TAV_X + 0.6);
+    p.z = THREE.MathUtils.clamp(p.z, TAV_Z - 5.9, TAV_Z + 6.9);
+    const r = (u.kind.body || 0.9) * 0.75;
+    const wx = p.x, wz = p.z, feet = p.y;
+    pushOutOfKeep(p, r, feet, 0.45, TAV_SITE);
+    keepWallPush(p, r, feet, TAV_SITE);
+    // damped, the knight's own rule: a push-out is a teleport
+    const mx = p.x - wx, mz = p.z - wz, ml = Math.hypot(mx, mz), cap = 0.06;
+    if (ml > cap) { p.x = wx + mx / ml * cap; p.z = wz + mz / ml * cap; }
+    return;
+  }
   if (u.kind.uc) {
     if (!UC.ready) return;
     _mcL.set(p.x - UC_X, 0, p.z - UC_Z);
@@ -29459,8 +29530,8 @@ function poseRig(u, m, src, JOINTS, HANG) {
    * two lines from now the mixer will have stamped over it. */
   const bind = new Map();
   for (const b of bones) bind.set(b, { q: b.quaternion.clone(), p: b.position.clone() });
-  const a = u.mixer.clipAction(src);
-  a.play(); a.time = 0; u.mixer.update(0);
+  const a = src ? u.mixer.clipAction(src) : null;
+  if (a) { a.play(); a.time = 0; u.mixer.update(0); }
   m.updateMatrixWorld(true);
   const J = {};
   for (const k in JOINTS) J[k] = bones.find((b) => b.name === JOINTS[k]) || null;
@@ -29482,7 +29553,7 @@ function poseRig(u, m, src, JOINTS, HANG) {
     const ps = new THREE.Vector3(); (J.hip.parent || J.hip).getWorldScale(ps);
     hipUp = axes.hip.up.clone().divideScalar(Math.max(1e-6, ps.y));
   }
-  a.stop();
+  if (a) a.stop();
   const tq = new THREE.Quaternion();
   const compose = (k, ang) => {
     const q = base.get(J[k]).clone();
@@ -30118,7 +30189,7 @@ const _ufD = new THREE.Vector3();
 function ucFollowPath(u, dt) {
   const P = u.path;
   if (!P) return 0;
-  const lx = u.g.position.x - UC_X, lz = u.g.position.z - UC_Z;
+  const lx = u.g.position.x - (u.pathOx ?? UC_X), lz = u.g.position.z - (u.pathOz ?? UC_Z);
   while (u.pathI < P.length && Math.hypot(P[u.pathI].x - lx, P[u.pathI].z - lz) < 0.6) u.pathI++;
   if (u.pathI >= P.length) { u.path = null; return 0; }
   /* AND A CORNER IS ROUNDED, NOT TURNED. Aiming dead at the current
@@ -34643,7 +34714,7 @@ function sfxSetSail() {
 const TAV_X = -6000, TAV_Y = 800, TAV_Z = 12000;
 const TAV_FLOOR = 7.52;                   // the flags, in the pack's metres (the file's own 0.57 at 0.8, plus its own offset)
 const TAV_STEP = 0.42;                    // a lip you walk up (three crates onto the stall's roof is 0.39); a chair's seat (0.50) is a thing you sit on, not a step
-const TAV_AIR = 0.50;                     // in the air a floor this near your feet is caught: a crate is 1.06 and a jump lifts you 0.62
+const TAV_AIR = 0.72;                     // in the air a floor this near your feet is caught: a jump lifts you 0.62 and the tallest step on the way to the tunnel is 1.32
 const TAV_BODY = 0.26;
 const TAV_SPAWN = { x: -18.7, z: 1.7, yaw: -Math.PI / 2 - 0.06, pitch: -0.04 };   // Katydid's own thumbnail: bottle rack and barrel front-left, hex crate front-centre, pedestal table front-right, the arch right of centre — matched in the pane
 const TAV_FOG = { color: new THREE.Color(0x07080b), density: 0.0045 };
@@ -34705,12 +34776,15 @@ function buildTavern() {
   tavBuilt = true;
   const t0 = performance.now();
   extractTavTables();
+  moveTavBarrel();
   buildTavCrates();
   buildKeepWalls(TAV_SITE);
   buildTavChairs();
   tavWalls = null; buildKeepWalls(TAV_SITE);
   repairKeepStoreys(TAV_SITE);
+  pruneTavStoreys();
   buildTavDoor();
+  buildTavCast();
   tavWalk.built = Math.round(performance.now() - t0);
 }
 
@@ -34931,10 +35005,16 @@ function clearTavStoreys(plan, y0, y1) {
  * tunnel a jump away. Each is a COPY of one of the file's own crates — same triangles,
  * same map — so nothing here looks added; it is written into the grid as a
  * storey and into the wall index like anything else drawn. */
-const TAV_STACKS = [[-8.95, 0.25, 1, 0], [-8.95, -0.95, 2, 0], [-8.95, -2.15, 3, 0], [-8.95, -3.35, 3, 0], [-10.1, -5.2, 1, 3.53]];   // x, z, crates high, base over the flags
-// x -8.95 is measured: a stool stands at x -10.6..-10.2 and a valance hangs
-// under the roof's edge out to x -9.4, and the file's own small crate at
-// x -9.5..-8.8 sits wholly INSIDE the last stack's bottom crate
+/* TWO CRATES, NOT NINE. A stair of nine was built first and the owner's
+ * word was one or two, on the pile already there — and there IS a pile: a
+ * stack of the file's own hex crates in front of the barrel rack's left end
+ * (tops at 1.15, 1.44 and 1.72 over the flags, measured), whose top is a
+ * crate's height short of the rack's top, which is a crate's height short of
+ * the tunnel. One crate on the hex stack's end, one on the rack. */
+const TAV_STACKS = [[-13.5, -2.25, 1, 1.15], [-12.3, -5.3, 1, 3.53]];   // x, z, crates high, base over the flags
+// the first sits on the LEFT end of the big hex crate (its two little boxes end up inside it), so the
+// right end and the 1.44 box beside it stay clear to be climbed; measured: flags -> the stool 0.58 -> the 1.44 box -> 2.21 -> the rack's top at 3.53 -> 4.59 -> the tunnel at 5.27
+// (a 1.15 box cannot be jumped onto from the flags: the sweep's band starts 1.08 over the feet at the apex, under its top)
 // the second three-high stack runs the stair up to the stall's roof edge, which
 // the grid puts at z -4.4: from its top the roof is a short jump, half a metre
 // across and 0.39 up (measured: the cells between carry nothing but the flags)
@@ -34991,6 +35071,66 @@ function buildTavCrates() {
     }
   }
   tavWorld.updateMatrixWorld(true);
+}
+
+/* A FLOOR NOBODY CAN STAND UNDER IS NOT A FLOOR. The storey repair puts back
+ * levels a cell's neighbours agree on, with the roof the NEIGHBOURS see —
+ * so under every table, the bar counter and the rack's shelves it wrote
+ * flags with a roof twelve metres up while the table's underside is eighty
+ * centimetres over them. The walk then offered those cells, the camera duck
+ * (which reads the drawn roof) put your eye at knee height, and that is the
+ * whole of "I got stuck in the ground". Every storey is asked what is drawn
+ * over it; under a crouch's worth it goes, and the cell is a wall. */
+function pruneTavStoreys() {
+  const w = tavWalk; if (!w || !tavCells || !tavWalls) return;
+  let cut = 0;
+  const h = w.cell * 0.3;
+  for (const [k, fl] of tavCells) {
+    const i = k % w.gw, j = (k - i) / w.gw;
+    const cx = TAV_X + w.x0 + (i + 0.5) * w.cell, cz = TAV_Z + w.z0 + (j + 0.5) * w.cell;
+    for (let q = fl.length - 3; q >= 0; q -= 3) {
+      const f = TAV_Y + fl[q];
+      let over = null;
+      for (const [ox, oz] of [[0, 0], [-h, -h], [h, -h], [-h, h], [h, h]]) {
+        over = keepDrawnFloor(cx + ox, cz + oz, f + 0.12, f + 1.30, TAV_SITE);
+        if (over !== null) break;
+      }
+      if (over === null) continue;
+      fl.splice(q, 3); cut++;
+    }
+    if (!fl.length) tavCells.delete(k);
+  }
+  w.pruned = cut;
+}
+/* AND THE BARREL COMES OFF THE CRATES. One barrel lies across the crate
+ * pile's second row where the way up has to go; it is lifted out of the mesh
+ * like a table piece and set down on the flags against the wall. */
+function moveTavBarrel() {
+  if (!tavWorld || tavWorld.userData.barrel) return;
+  tavWorld.userData.barrel = true;
+  tavWorld.updateMatrixWorld(true);
+  let src = null;
+  tavWorld.traverse((o) => { if (!src && o.isMesh && o.material && o.material.name === 'TextureMaterial_4' && o.geometry.index) src = o; });
+  if (!src) return;
+  const { roots, box } = meshIslands(src, tavWorld.position);
+  const want = new THREE.Box3(new THREE.Vector3(TAV_X - 12.0, TAV_Y + TAV_FLOOR + 1.8, TAV_Z - 6.0), new THREE.Vector3(TAV_X - 9.9, TAV_Y + TAV_FLOOR + 2.9, TAV_Z - 4.6));
+  let root = -1;
+  for (const [r, e] of box) if (want.containsBox(e)) { root = r; break; }
+  if (root < 0) return;
+  const tris = [], idx = src.geometry.index, keep = [];
+  for (let q = 0; q < roots.length; q++) {
+    const a = idx.getX(q * 3), b = idx.getX(q * 3 + 1), c = idx.getX(q * 3 + 2);
+    if (roots[q] === root) tris.push(a, b, c); else keep.push(a, b, c);
+  }
+  const e = box.get(root), c = e.getCenter(new THREE.Vector3());
+  const geo = tavGibGeo(src, tris, c.x, e.min.y, c.z);
+  geo.setIndex(Array.from({ length: geo.attributes.position.count }, (_, i) => i));
+  const m = new THREE.Mesh(geo, src.material);
+  m.name = 'tavBarrel'; m.frustumCulled = false;
+  m.position.set(-7.6, TAV_FLOOR, -2.6);               // the flags by the rack's right end, clear of the stool and the stair
+  m.rotation.y = 0.35;
+  tavWorld.add(m);
+  src.geometry.setIndex(keep);
 }
 
 /* THE CHAIRS. The file sets tables and no chairs; three to a table go in
@@ -35063,6 +35203,7 @@ function smashTavChair(c, speed) {
 // -------------------------------------------------------------- the walk
 function updateTavern(dt) {
   if (!inTavern || !tavWalk) return;
+  updateTavScene(dt);
   if (tavWallsDirty) { tavWallsDirty = false; tavWalls = null; buildKeepWalls(TAV_SITE); }
   const p = camera.position, S = TAV_SITE;
   const feet = camBaseY - playerEye();
@@ -35243,6 +35384,332 @@ function sfxTavernDoor() {
   th.connect(lp).connect(tg).connect(out); th.start(t + 1.05); th.stop(t + 1.3);
 }
 
+// -------------------------------------------------- the two at the bar
+/* WONG BEHIND THE BAR, THE DRUNK IN FRONT OF IT, AND A DRINK BETWEEN THEM.
+ * Two more `MUT_KINDS` rows, and almost none of the fight is new code — the
+ * tell, the commit, the poise, the parry, the chain, the token, the aimed
+ * blow, the knockdown all come with the table. What IS new is that they fight
+ * EACH OTHER: `u.st.foe` (see `mutFoePos`) makes another creature the thing
+ * every distance and aim is measured to, and a blow of yours on either turns
+ * it on you.
+ *
+ * THE MOVES ARE SOMEBODY'S MOTION CAPTURE, RETARGETED — three sets of it.
+ * Wong (davisthegamelord's, a Character Creator rig: the witness's own bone
+ * naming, one export later) carries the Male Locomotion Pack whole; the
+ * drunk (the owner's "Monster1_1", an Unreal mannequin: the knight's naming to
+ * the bone) carries the Male Drunk Pack whole and his own file's death and
+ * shout. And because what `ntarRetarget` applies is the rotation a bone has
+ * UNDERGONE, which knows nothing about whose skeleton it lands on, the
+ * knight's and the alien's pulls fit them too: the punch, the sweep, the
+ * jump, the turn, the compass kick, the handspring, the hit reels, the fall
+ * and the get-up. The two move sets are cut from those so that no swing is
+ * shared — and one blow each is written on top, on the stance the pack's own
+ * idle stands in. */
+const WONG_MOVES_URL = 'assets/wong-moves.json', DRUNK_MOVES_URL = 'assets/drunk-moves.json';
+let wongMoves = null, drunkMoves = null, wongMovesLate = null, drunkMovesLate = null;
+bwFetch(WONG_MOVES_URL, 216).then((buf) => {
+  try { wongMoves = JSON.parse(new TextDecoder().decode(buf)); } catch (e) { return; }
+  if (wongMovesLate) { wongMovesLate(); wongMovesLate = null; }
+}, () => {});
+bwFetch(DRUNK_MOVES_URL, 216).then((buf) => {
+  try { drunkMoves = JSON.parse(new TextDecoder().decode(buf)); } catch (e) { return; }
+  if (drunkMovesLate) { drunkMovesLate(); drunkMovesLate = null; }
+}, () => {});
+// Wong's rig: the witness's, with this export's own suffixes (read off the file)
+const WONG_JOINTS = {
+  hip: 'CC_Base_Hip_02', waist: 'CC_Base_Waist_033', chest: 'CC_Base_Spine02_035',
+  neck: 'CC_Base_NeckTwist01_036', head: 'CC_Base_Head_038',
+  clavL: 'CC_Base_L_Clavicle_051', clavR: 'CC_Base_R_Clavicle_079',
+  armL: 'CC_Base_L_Upperarm_052', armR: 'CC_Base_R_Upperarm_080',
+  foreL: 'CC_Base_L_Forearm_053', foreR: 'CC_Base_R_Forearm_081',
+  thighL: 'CC_Base_L_Thigh_04', thighR: 'CC_Base_R_Thigh_018',
+  calfL: 'CC_Base_L_Calf_05', calfR: 'CC_Base_R_Calf_019',
+  footL: 'CC_Base_L_Foot_06', footR: 'CC_Base_R_Foot_021',
+};
+// the drunk's: the knight's mannequin with three spine bones instead of five
+const DRUNK_JOINTS = {
+  hip: 'pelvis', waist: 'spine_02', chest: 'spine_03', neck: 'neck_01', head: 'head',
+  clavL: 'clavicle_l', clavR: 'clavicle_r', armL: 'upperarm_l', armR: 'upperarm_r',
+  foreL: 'lowerarm_l', foreR: 'lowerarm_r', thighL: 'thigh_l', thighR: 'thigh_r',
+  calfL: 'calf_l', calfR: 'calf_r', footL: 'foot_l', footR: 'foot_r',
+};
+/* THE RETARGET, ON WHATEVER SETS HAVE LANDED. A creature's own pack comes
+ * LAST so its idle, walk and run win over the knight's of the same name; the
+ * ones that have not arrived yet are added the moment they do. */
+function tavRetargetAll(u, R, own, ownLate) {
+  const clips = [];
+  const take = (src) => { for (const c of ntarRetarget(u, u.model, R.bones, R.bind, R.J, R.hipUp, R.hipPos, src)) clips.push(c); };
+  if (knightMoves) take(knightMoves); else { const prev = knightMovesLate; knightMovesLate = () => { if (prev) prev(); for (const c of ntarRetarget(u, u.model, R.bones, R.bind, R.J, R.hipUp, R.hipPos, knightMoves)) if (!u.clips[c.name]) u.clips[c.name] = u.mixer.clipAction(c); }; }
+  if (ntarMoves) take(ntarMoves); else { const prev = ntarMovesLate; ntarMovesLate = () => { if (prev) prev(); for (const c of ntarRetarget(u, u.model, R.bones, R.bind, R.J, R.hipUp, R.hipPos, ntarMoves)) if (!u.clips[c.name]) u.clips[c.name] = u.mixer.clipAction(c); }; }
+  if (own()) take(own()); else ownLate(() => { for (const c of ntarRetarget(u, u.model, R.bones, R.bind, R.J, R.hipUp, R.hipPos, own())) u.clips[c.name] = u.mixer.clipAction(c); });
+  return clips;
+}
+function authorWongClips(u, m, gltf) {
+  /* HIS FILE CARRIES NO CLIP AT ALL, so the bind pose is the only stance
+   * there is to measure from — a T, which is exactly what the retarget
+   * wants. The moves are then read back on his own retargeted idle, which
+   * is the stance everything written here is composed on. */
+  const R = poseRig(u, m, null, WONG_JOINTS, {});
+  const clips = tavRetargetAll(u, R, () => wongMoves, (f) => { wongMovesLate = f; });
+  const idle = clips.find((c) => c.name === 'idle');
+  const R2 = poseRig(u, m, idle || null, WONG_JOINTS, {});
+  const { build } = R2;
+  /* THE JAB: the left hand, straight, quick, and back — the one blow of his
+   * that is not somebody else's, so his three-hit string has a rhythm of its
+   * own: punch, jab, kick. */
+  clips.push(build('wJab', 0.66, [
+    [0, {}],
+    [0.16, { armL: { fwd: 0.35, right: -0.55 }, foreL: { right: -1.10 }, chest: { up: 0.14 }, waist: { up: 0.08 }, hipY: -0.02 }],
+    [0.304, { armL: { fwd: 0.05, right: -1.55 }, foreL: { right: -0.05 }, clavL: { right: -0.25 }, chest: { up: -0.30 }, waist: { up: -0.16 }, head: { up: 0.10 }, thighR: { right: -0.12 }, hipY: -0.04 }],
+    [0.42, { armL: { fwd: 0.10, right: -1.35 }, foreL: { right: -0.25 }, clavL: { right: -0.15 }, chest: { up: -0.22 }, waist: { up: -0.12 }, hipY: -0.03 }],
+    [0.66, {}]], false));
+  /* AND THE SERVE: the right hand out across the bar with the drink in it,
+   * held a beat, and back. */
+  clips.push(build('wServe', 1.3, [
+    [0, {}],
+    [0.45, { armR: { right: -1.25, fwd: -0.15 }, foreR: { right: -0.25 }, clavR: { right: -0.15 }, chest: { right: 0.12 }, waist: { right: 0.06 }, head: { right: 0.08 }, hipY: -0.02 }],
+    [0.95, { armR: { right: -1.25, fwd: -0.15 }, foreR: { right: -0.25 }, clavR: { right: -0.15 }, chest: { right: 0.12 }, waist: { right: 0.06 }, head: { right: 0.08 }, hipY: -0.02 }],
+    [1.3, {}]], false));
+  return clips;
+}
+function authorDrunkClips(u, m, gltf) {
+  const src = (gltf.animations || []).find((c) => c.name === 'idle') || (gltf.animations || [])[0] || null;
+  const R = poseRig(u, m, src, DRUNK_JOINTS, {});
+  const clips = tavRetargetAll(u, R, () => drunkMoves, (f) => { drunkMovesLate = f; });
+  const { build } = R;
+  /* THE HEADBUTT: the whole trunk reared back, a hang, and thrown forward
+   * off a step — a drunk's own blow, and the one of his that comes from no
+   * arm, so the answer to it is not the answer to the swipe. */
+  clips.push(build('dButt', 0.95, [
+    [0, {}],
+    [0.30, { chest: { right: -0.42 }, waist: { right: -0.22 }, neck: { right: -0.30 }, head: { right: -0.25 }, armR: { right: 0.35, fwd: -0.25 }, armL: { right: 0.35, fwd: 0.25 }, thighR: { right: 0.15 }, hipY: 0.02 }],
+    [0.42, { chest: { right: -0.48 }, waist: { right: -0.26 }, neck: { right: -0.34 }, head: { right: -0.28 }, armR: { right: 0.40, fwd: -0.25 }, armL: { right: 0.40, fwd: 0.25 }, thighR: { right: 0.15 }, hipY: 0.03 }],
+    [0.52, { chest: { right: 0.62 }, waist: { right: 0.40 }, neck: { right: 0.30 }, head: { right: 0.35 }, armR: { right: -0.30, fwd: -0.30 }, armL: { right: -0.30, fwd: 0.30 }, thighL: { right: -0.35 }, calfL: { right: 0.30 }, thighR: { right: 0.30 }, calfR: { right: 0.55 }, hipY: -0.14 }],
+    [0.68, { chest: { right: 0.45 }, waist: { right: 0.30 }, neck: { right: 0.20 }, head: { right: 0.22 }, armR: { right: -0.20, fwd: -0.25 }, armL: { right: -0.20, fwd: 0.25 }, thighL: { right: -0.25 }, thighR: { right: 0.22 }, calfR: { right: 0.45 }, hipY: -0.10 }],
+    [0.95, {}]], false));
+  /* AND THE SLAM: the drink raised to the ceiling and driven into the floor
+   * with the whole body behind it. */
+  clips.push(build('dSlam', 1.15, [
+    [0, {}],
+    [0.40, { armR: { right: -2.50, fwd: -0.30 }, foreR: { right: -0.35 }, chest: { right: -0.22 }, waist: { right: -0.12 }, head: { right: -0.30 }, hipY: 0.03 }],
+    [0.52, { armR: { right: -2.60, fwd: -0.30 }, foreR: { right: -0.40 }, chest: { right: -0.26 }, waist: { right: -0.14 }, head: { right: -0.34 }, hipY: 0.04 }],
+    [0.64, { armR: { right: -0.35, fwd: -0.10 }, foreR: { right: -0.05 }, clavR: { right: -0.25 }, chest: { right: 0.62 }, waist: { right: 0.45 }, head: { right: 0.25 }, thighL: { right: 0.40 }, thighR: { right: 0.40 }, calfL: { right: 0.65 }, calfR: { right: 0.65 }, hipY: -0.30 }],
+    [0.80, { armR: { right: -0.30 }, foreR: { right: -0.10 }, clavR: { right: -0.15 }, chest: { right: 0.50 }, waist: { right: 0.38 }, head: { right: 0.20 }, thighL: { right: 0.34 }, thighR: { right: 0.34 }, calfL: { right: 0.55 }, calfR: { right: 0.55 }, hipY: -0.24 }],
+    [1.15, {}]], false));
+  return clips;
+}
+/* THE TABLES. Each swing keeps the contact fraction that was measured on the
+ * clip it is cut from — the same clip, the same fraction — and the reaches
+ * are a man's, not the knight's. `plain` on the headbutt: it is thrown with
+ * no arm, so it lands on reach and facing the way the pack's do. */
+MUT_ATTACKS.wPunch = { wind: 0.40, strike: 0.13, recover: 0.30, hit: 0.560, reach: 2.05, lunge: 1.5, chain: 'wJab', chainP: 0.72, w: 0.30, guardK: 0.90, limbs: [0] };
+MUT_ATTACKS.wJab   = { wind: 0.26, strike: 0.10, recover: 0.24, hit: 0.460, reach: 1.95, lunge: 1.2, chain: 'wKick', chainP: 0.55, w: 0.26, guardK: 0.80, limbs: [1] };
+MUT_ATTACKS.wKick  = { wind: 1.00, strike: 0.18, recover: 0.50, hit: 0.696, reach: 2.90, lunge: 1.9, chain: 'wPunch', chainP: 0.40, w: 0.24, dmg: 2, guardK: 1.30, limbs: [2] };
+MUT_ATTACKS.wSpin  = { wind: 0.86, strike: 0.24, recover: 0.56, hit: 0.620, reach: 2.80, lunge: 0.5, chain: 'wPunch', chainP: 0.50, w: 0.20, hold: true, guardK: 1.40, limbs: [0, 1] };
+MUT_ATTACKS.dSwipe = { wind: 0.60, strike: 0.16, recover: 0.38, hit: 0.600, reach: 2.40, lunge: 1.4, chain: 'dButt', chainP: 0.62, w: 0.34, guardK: 1.15, limbs: [0, 1] };
+MUT_ATTACKS.dButt  = { wind: 0.50, strike: 0.12, recover: 0.42, hit: 0.547, reach: 1.90, lunge: 1.7, chain: 'dSwipe', chainP: 0.50, w: 0.24, guardK: 1.20, plain: true, stop: 1.05 };
+MUT_ATTACKS.dSpin  = { wind: 0.86, strike: 0.24, recover: 0.56, hit: 0.620, reach: 2.90, lunge: 0.5, chain: 'dSwipe', chainP: 0.45, w: 0.22, hold: true, guardK: 1.40, limbs: [0, 1] };
+MUT_ATTACKS.dJump  = { wind: 1.05, strike: 0.20, recover: 0.62, hit: 0.640, reach: 5.00, lunge: 4.8, chain: 'dSwipe', chainP: 0.60, w: 0.20, dmg: 2, hold: true, guardK: 1.70, minDist: 3.0, twoHanded: true };
+const TAV_CAST_COMMON = {
+  solo: true, noSand: true, skin: null, bones: null, tav: true,
+  dmg: 1, hitR: 0.85, body: 0.45, lungeStop: 0.95, landSlop: 0.70,
+  windK: 1.00, reachK: 1.00, press: 0.86,
+  circle: 0.22, step: 0.26, feint: 0.26, sizeUp: 0.22, restless: 1,
+  poiseBack: 1.8, poiseWait: 1.1, parryK: 0.80, recoilK: 0.70, blockCost: 0.50,
+  fidgetK: 0.22, fidgetGap: 2.6, turnMax: 7.0,
+  reacts: true, aimed: true, barLen: 0.22, aimK: 1.40, bossDeath: true,
+  knockClip: 'knockOut', riseClip: 'getUp', knockAfter: 4, knockLapse: 7,
+  knock: { fall: 1.27, lie: 0.34, rise: 1.33, land: 0.78, slide: null },
+  stunClip: 'parry', first: 'idle', sleepIdle: 'idle',
+};
+MUT_KINDS.wong = Object.assign({}, TAV_CAST_COMMON, {
+  glb: 'assets/wong.glb', cutout: true, faceFix: 0,
+  h: 1.80, hp: 28, speedK: 1.28, aggr: 2.60, chainMax: 3, poise: 8, block: 0.28,
+  use: { wPunch: 0.30, wJab: 0.26, wKick: 0.24, wSpin: 0.20 },
+  dodgeClip: 'dodge', dodgeSide: 1.45, dodgeT: 1.20, dodgeRate: 1.72,
+  rig: { arm: 'CC_Base_R_Upperarm_080', fore: 'CC_Base_R_Forearm_081', hand: 'CC_Base_R_Hand_085',
+         armL: 'CC_Base_L_Upperarm_052', foreL: 'CC_Base_L_Forearm_053', handL: 'CC_Base_L_Hand_057', head: 'CC_Base_Head_038',
+         limbs: [['CC_Base_R_Thigh_018', 'CC_Base_R_Calf_019', 'CC_Base_R_Foot_021', 'CC_Base_R_ToeBase_022']] },
+  rag: { Character1_Hips: 'CC_Base_Hip_02', Character1_Spine: 'CC_Base_Waist_033',
+         Character1_Spine1: 'CC_Base_Spine01_034', Character1_Spine2: 'CC_Base_Spine02_035',
+         Character1_Neck: 'CC_Base_NeckTwist01_036', Character1_Head: 'CC_Base_Head_038',
+         Character1_RightShoulder: 'CC_Base_R_Clavicle_079', Character1_RightArm: 'CC_Base_R_Upperarm_080',
+         Character1_RightForeArm: 'CC_Base_R_Forearm_081', Character1_RightHand: 'CC_Base_R_Hand_085',
+         Character1_LeftShoulder: 'CC_Base_L_Clavicle_051', Character1_LeftArm: 'CC_Base_L_Upperarm_052',
+         Character1_LeftForeArm: 'CC_Base_L_Forearm_053', Character1_LeftHand: 'CC_Base_L_Hand_057',
+         Character1_RightUpLeg: 'CC_Base_R_Thigh_018', Character1_RightLeg: 'CC_Base_R_Calf_019',
+         Character1_RightFoot: 'CC_Base_R_Foot_021', Character1_RightToeBase: 'CC_Base_R_ToeBase_022',
+         Character1_LeftUpLeg: 'CC_Base_L_Thigh_04', Character1_LeftLeg: 'CC_Base_L_Calf_05',
+         Character1_LeftFoot: 'CC_Base_L_Foot_06', Character1_LeftToeBase: 'CC_Base_L_ToeBase_08' },
+  // lit by a moon twelve kilometres away in a room that is baked: the lift does the work
+  emis: 0.24, rim: [0.05, 0.06, 0.09], gamma: 0.90,
+  author: authorWongClips,
+  anim: { idle: 'idle', walk: 'walk', run: 'run', roar: 'block', die: 'hitBig', back: 'walk', rate: 1.0, lean: 0.05, strafeK: 1.0 },
+  gaits: { walk: ['walk'], run: ['run'], idle: ['idle'], strafeL: ['strafeL'], strafeR: ['strafeR'] },
+  stepClip: ['sideL', 'sideR'],
+  alias: { idle2: 'idle', walk2: 'walk', run2: 'run', roar2: 'block', die: 'hitBig', die2: 'hitBig', back: 'walk', calm: 'idle',
+           wPunch: 'kPunch', wKick: 'nSweep', wSpin: 'k360' },
+  provoke: tavProvoke,
+  voice: { f: 1.05, growl: 0.55, rasp: 1.0, throat: 'wet' },
+});
+MUT_KINDS.drunk = Object.assign({}, TAV_CAST_COMMON, {
+  glb: 'assets/drunk.glb', faceFix: 0,
+  h: 1.92, hp: 34, speedK: 1.15, aggr: 3.00, chainMax: 4, poise: 10, block: 0.14,
+  use: { dSwipe: 0.34, dButt: 0.26, dSpin: 0.20, dJump: 0.20 },
+  rig: { arm: 'upperarm_r', fore: 'lowerarm_r', hand: 'hand_r',
+         armL: 'upperarm_l', foreL: 'lowerarm_l', handL: 'hand_l', head: 'head',
+         limbs: [['thigh_r', 'calf_r', 'foot_r', 'ball_r']] },
+  rag: { Character1_Hips: 'pelvis', Character1_Spine: 'spine_01', Character1_Spine1: 'spine_02',
+         Character1_Spine2: 'spine_03', Character1_Neck: 'neck_01', Character1_Head: 'head',
+         Character1_RightShoulder: 'clavicle_r', Character1_RightArm: 'upperarm_r',
+         Character1_RightForeArm: 'lowerarm_r', Character1_RightHand: 'hand_r',
+         Character1_LeftShoulder: 'clavicle_l', Character1_LeftArm: 'upperarm_l',
+         Character1_LeftForeArm: 'lowerarm_l', Character1_LeftHand: 'hand_l',
+         Character1_RightUpLeg: 'thigh_r', Character1_RightLeg: 'calf_r',
+         Character1_RightFoot: 'foot_r', Character1_RightToeBase: 'ball_r',
+         Character1_LeftUpLeg: 'thigh_l', Character1_LeftLeg: 'calf_l',
+         Character1_LeftFoot: 'foot_l', Character1_LeftToeBase: 'ball_l' },
+  emis: 0.20, rim: [0.06, 0.07, 0.10], gamma: 0.90,
+  author: authorDrunkClips,
+  anim: { idle: 'idle', walk: 'walk', run: 'run', roar: 'talk', die: 'die', back: 'back', rate: 1.0, lean: 0.06, strafeK: 1.0 },
+  gaits: { walk: ['walk', 'walkTurn'], run: ['run', 'runTurnL'], idle: ['idle', 'idleB', 'idleC'], strafeL: ['walk'], strafeR: ['walk'] },
+  alias: { idle2: 'idleB', walk2: 'walk', run2: 'run', roar2: 'talk', die2: 'die', back: 'back', calm: 'idle',
+           strafeL: 'walk', strafeR: 'walk', dSwipe: 'kSwipe', dSpin: 'k360', dJump: 'kJump' },
+  provoke: tavProvoke,
+  voice: { f: 0.78, growl: 1.35, rasp: 1.25, throat: 'bellow' },
+});
+
+/* ---- the scene
+ * Wong stands in the mouth of the barrel rack, which is the nearest thing
+ * this hall has to a bar you can stand behind; the drunk stands at its front
+ * by the stool. They are built behind the black with the room and they wait,
+ * asleep, in their idles, until both have landed — then: the drink goes
+ * across, the drunk takes it, nearly goes over, raises it, and puts it
+ * through the floor, and the two of them go for each other. */
+const TAV_WONG = { x: -9.7, z: -3.9 }, TAV_DRUNK = { x: -9.7, z: -1.35 };
+let wongUnit = null, drunkUnit = null, tavMug = null;
+const tavScene = { t: 0, phase: 0, started: false };
+function buildTavCast() {
+  if (wongUnit || !tavWorld) return;
+  const fy = TAV_Y + TAV_FLOOR;
+  wongUnit = makeMutant(TAV_X + TAV_WONG.x, TAV_Z + TAV_WONG.z, 'wong', fy);
+  drunkUnit = makeMutant(TAV_X + TAV_DRUNK.x, TAV_Z + TAV_DRUNK.z, 'drunk', fy);
+  wongUnit.g.rotation.y = Math.atan2(TAV_DRUNK.x - TAV_WONG.x, TAV_DRUNK.z - TAV_WONG.z);
+  drunkUnit.g.rotation.y = Math.atan2(TAV_WONG.x - TAV_DRUNK.x, TAV_WONG.z - TAV_DRUNK.z);
+  for (const u of [wongUnit, drunkUnit]) { u.g.visible = inTavern; u.pathOx = TAV_X; u.pathOz = TAV_Z; }
+}
+/* A PEWTER TANKARD, in the hand and then on the floor in pieces. */
+function makeTavMug() {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x8a8d90, roughness: 0.55, metalness: 0.0, emissive: 0x2a2c30, emissiveIntensity: 0.6 });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.046, 0.040, 0.13, 10, 1, true), mat);
+  body.material.side = THREE.DoubleSide;
+  const base = new THREE.Mesh(new THREE.CircleGeometry(0.040, 10), mat); base.rotation.x = Math.PI / 2; base.position.y = -0.065;
+  const handle = new THREE.Mesh(new THREE.TorusGeometry(0.034, 0.008, 6, 10, Math.PI), mat); handle.position.set(0.05, 0, 0); handle.rotation.z = -Math.PI / 2;
+  g.add(body, base, handle);
+  g.userData.mat = mat;
+  return g;
+}
+const _mgS = new THREE.Vector3(), _mgP = new THREE.Vector3();
+function tavMugTo(u) {
+  if (!tavMug) tavMug = makeTavMug();
+  const hand = u.bones && u.bones.hand; if (!hand) return;
+  if (tavMug.parent) tavMug.parent.remove(tavMug);
+  hand.add(tavMug);
+  hand.getWorldScale(_mgS);
+  tavMug.scale.set(1 / _mgS.x, 1 / _mgS.y, 1 / _mgS.z);
+  tavMug.position.set(0.0, 0.10 * _mgS.y, 0.0).divide(_mgS);   // a hand's length past the wrist, in the fist
+  tavMug.rotation.set(0, 0, 0);
+  tavMug.visible = true;
+}
+function tavMugSmash() {
+  if (!tavMug || !tavMug.parent) return;
+  tavMug.getWorldPosition(_mgP);
+  tavMug.parent.remove(tavMug);
+  const gy = TAV_Y + TAV_FLOOR;
+  const mat = tavMug.userData.mat;
+  for (let i = 0; i < 9; i++) {
+    const m = new THREE.Mesh(new THREE.TetrahedronGeometry(0.02 + Math.random() * 0.025, 0), mat);
+    m.position.set(_mgP.x + (Math.random() - 0.5) * 0.2, gy + 0.05, _mgP.z + (Math.random() - 0.5) * 0.2);
+    scene.add(m);
+    const a = Math.random() * Math.PI * 2, out = 0.6 + Math.random() * 1.6;
+    gibs.push({ m, half: 0.02, rest: gy + 0.02, vel: new THREE.Vector3(Math.cos(a) * out, 0.8 + Math.random() * 1.2, Math.sin(a) * out),
+      spin: new THREE.Vector3((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14), life: 240, bleed: false, wait: 0 });
+  }
+  sfxGlassBreak();
+  sfxMutHit(MUT_KINDS.drunk.voice);
+  spawnPuffs(_mgP.x, _mgP.z, 3, 0, 0, gy + 0.05, [0.5, 0.5, 0.52]);
+}
+/* Both of them wake, on the blow or on the slam: whoever was hit turns on
+ * you; the other keeps his quarrel. */
+function tavProvoke(u, quiet) {
+  if (!wongUnit || !drunkUnit) return;
+  for (const q of [wongUnit, drunkUnit]) {
+    if (q.st.awake || !q.st.alive) continue;
+    q.st.awake = true; q.st.roar = 1.2; q.st.roarClip = q.kind.anim.roar; q.st.cool = 0.4; q.st.step = 0;
+    q.holdAnim = false;
+    q.st.foe = q === wongUnit ? drunkUnit : wongUnit;
+  }
+  if (u) u.st.foe = null;                         // the one you hit is yours now
+  tavScene.phase = 9;
+  if (tavMug && tavMug.parent) tavMugSmash();
+  if (!quiet) {
+    const d = Math.hypot(camera.position.x - drunkUnit.g.position.x, camera.position.z - drunkUnit.g.position.z);
+    sfxMutRoar(d, drunkUnit.kind.voice);
+    addTrauma(0.3);
+  }
+}
+const TAV_BEATS = { serve: 1.2, hand: 1.85, sway: 2.6, slam: 4.0, smash: 4.64, fight: 5.3 };
+function updateTavScene(dt) {
+  if (!inTavern || !wongUnit || !drunkUnit) return;
+  const W = wongUnit, D = drunkUnit;
+  if (tavScene.phase >= 9) return;
+  if (!W.mixer || !D.mixer || !W.clips.idle || !D.clips.idle) return;   // both landed
+  if (!tavScene.started) { tavScene.started = true; tavScene.t = 0; tavMugTo(W); }
+  const was = tavScene.t; tavScene.t += dt; const t = tavScene.t;
+  const beat = (k) => was < TAV_BEATS[k] && t >= TAV_BEATS[k];
+  const hold = (u, name, loop) => { const a = mutPlay(u, name, !!loop); if (a) { a.paused = false; a.timeScale = 1; } u.holdAnim = true; };
+  if (beat('serve') && W.clips.wServe) hold(W, 'wServe');
+  if (beat('hand')) tavMugTo(D);
+  if (beat('sway') && D.clips.idleC) hold(D, 'idleC', true);
+  if (beat('slam') && D.clips.dSlam) hold(D, 'dSlam');
+  if (beat('smash')) tavMugSmash();
+  // while a clip is held the sleep branch leaves the mixer alone: it is driven here
+  for (const u of [W, D]) if (u.holdAnim) u.mixer.update(dt);
+  if (t >= TAV_BEATS.serve + 1.3 && W.holdAnim) W.holdAnim = false;
+  if (t >= TAV_BEATS.fight) tavProvoke(null);
+}
+/* THE FAN. The straight line to the foe is tried a stride ahead against the
+ * hall's floor and its drawn faces; if it is shut the nearest clear heading
+ * either side is walked instead, as a one-point route, and dropped the
+ * moment the line opens — the Dealer's steering on the keep's machinery. */
+const _tsF = { x: 0, z: 0 };
+function tavClear(x, z, dx, dz, len, feet) {
+  const x1 = x + dx * len, z1 = z + dz * len;
+  const st = keepFloorAt(x1, z1, feet, 0.45, TAV_SITE);
+  if (!st || Math.abs(st.f - feet) > 0.5) return false;
+  for (const h of [0.6, 1.2]) if (keepHitsWall(x, z, x1, z1, feet + h, TAV_SITE)) return false;
+  return !keepWallNear(x1, z1, 0.30, feet + 0.46, feet + 1.6, TAV_SITE);
+}
+function tavSteer(u, dt, dist, foe) {
+  if (!tavWalk) return;
+  const p = u.g.position, feet = p.y;
+  const ddx = foe.x - p.x, ddz = foe.z - p.z, L = Math.hypot(ddx, ddz) || 1;
+  const nx = ddx / L, nz = ddz / L, look = Math.min(L - 0.4, 1.6);
+  if (look <= 0.2 || tavClear(p.x, p.z, nx, nz, look, feet)) { u.path = null; return; }
+  u.pathAge = (u.pathAge || 0) + dt;
+  if (u.path || u.pathAge < 0.35 || dist < 1.4) return;
+  u.pathAge = 0;
+  const base = Math.atan2(nx, nz);
+  for (const off of [0.5, -0.5, 0.95, -0.95, 1.4, -1.4, 1.9, -1.9, 2.4, -2.4]) {
+    const a = base + off, sx = Math.sin(a), sz = Math.cos(a);
+    if (!tavClear(p.x, p.z, sx, sz, 1.5, feet)) continue;
+    u.path = [{ x: p.x + sx * 1.5 - TAV_X, z: p.z + sz * 1.5 - TAV_Z }];
+    u.pathI = 0;
+    return;
+  }
+}
+
 loadPortal();
 
 
@@ -35300,6 +35767,7 @@ window.__bw = {
   TAV_X, TAV_Y, TAV_Z, TAV_SPAWN, TAV_SITE, KEEP_DOOR, loadTavern, startTavern, placeInTavern, placeBackAtKeepDoor, buildTavern, smashTavTable, smashTavChair,
   get interactables() { return interactables; }, set fallbackLook(v) { fallbackLook = v; },   // a prompt can only be read with a look in charge, and the pane cannot lock
   get tavWorld() { return tavWorld; }, get tavTables() { return tavTables; }, get tavChairs() { return tavChairs; },
+  get wongUnit() { return wongUnit; }, get drunkUnit() { return drunkUnit; }, tavScene, tavProvoke, buildTavCast, get tavMug() { return tavMug; },
   tavState: () => ({ inTavern, ready: tavReady, built: tavBuilt, walk: !!tavWalk, cells: tavCells ? tavCells.size : 0, busy: tavBusy, t: +tavT.toFixed(2),
     walls: tavWalls && { faces: tavWalls.v.length / 9, cells: tavWalls.map.size }, repair: tavWalk && { storeys: tavWalk.storeys, ms: tavWalk.built },
     tables: tavTables.map((t) => ({ x: +(t.cx - TAV_X).toFixed(2), z: +(t.cz - TAV_Z).toFixed(2), r: +t.r.toFixed(2), top: +(t.top - TAV_Y).toFixed(2), pieces: t.pieces.length, kinds: t.pieces.map((p) => p.userData.part).join(','), dead: t.dead })),

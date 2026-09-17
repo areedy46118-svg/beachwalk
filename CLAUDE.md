@@ -9501,3 +9501,84 @@ What it cost:
   fallback is on; `__bw.fallbackLook = true` first, or every door reads
   `null`. And a hidden pane paints nothing: a screenshot after a change that
   demonstrably happened showed the old frame until the tab was fronted.
+
+**TWO MEN AT THE BAR, AND THEY FIGHT EACH OTHER — WHICH THE FIGHT CODE HAD
+NEVER DONE.** Wong the barman (davisthegamelord's, CC-BY-4.0, `assets/wong.glb`
+through `gltfpack.py`) stands in the mouth of the barrel rack; the drunk (the
+owner's "Monster1_1", `tools/drunk_pack.py`) stands at its front. When the room
+has landed both of them, the drink goes across the bar, the drunk takes it,
+nearly goes over, raises it and puts it through the floor, and the two go for
+each other until one is dead — and the survivor comes for you. What it took:
+
+- **EVERY DISTANCE IN THE FIGHT WAS MEASURED TO THE CAMERA**, because until
+  now the player was the only thing anything fought. `u.st.foe` is another
+  unit; `mutFoePos(u)` answers its head where the player's eye would be, and
+  the chase, the sweep (`blowLands`), the aim (`aimBar`, `aimLimb`), the
+  flank and the token all ask it — a creature with a foe of its own takes no
+  turn from you, stands at arm's length rather than the pack's polite two
+  and a half metres (`mutSeparate`: measured, at 2.6 m they swung at the
+  air), and lands its blow through `mutLandBlow`, which is `hurtMutant`
+  with a `from`. **And a blow that was not yours carries no feedback for
+  your hands**: every `bossHit` and `addTrauma` in `hurtMutant` is gated on
+  `mine`, or the lens punched every time the drunk landed one on Wong.
+  Whoever YOU hit drops his quarrel and locks on to you (`foe = null`).
+- **BOTH RIGS ARE RIGS THIS FILE ALREADY MAPS.** Wong is a Character
+  Creator export — the witness's bone naming with this export's own numeric
+  suffixes (`_052` where the alien has `_050`: read them off the file, never
+  copy a table); the drunk is an Unreal mannequin, the knight's naming to
+  the bone with three spine joints instead of five. So `ntarRetarget` puts
+  the Male Locomotion Pack on one and the Male Drunk Pack on the other with
+  no new machinery (`tools/ntar_moves.py -- wong` / `-- drunk`, every clip
+  in each folder, all de-yawed because the game turns them), and because a
+  retargeted delta knows nothing about whose skeleton it lands on, the
+  knight's and the alien's pulls fit both: the punch, the sweep, the jump,
+  the turn, the compass kick, the handspring, the hit reels, the fall and
+  the get-up. The two move sets are cut so no swing is shared (`alias`
+  maps `wPunch` → `kPunch`, `dSwipe` → `kSwipe` and so on), and one blow
+  each is written on the pack's own idle — `poseRig` takes a null clip now,
+  because Wong's file carries none at all and the bind pose is the only
+  stance there is until his idle has been retargeted.
+- **A FILE WHOSE FRONT IS NOT +Z IS TURNED ON A PIVOT** (`kind.faceFix`),
+  never on the model, whose yaw the aim owns and zeroes every frame. Both
+  of these measured +Z off their own toes, so it is zero.
+- **THE HALL IS THE ARENA.** The model's grid runs on past the arch into
+  rooms nobody walks; measured, the two fought their way fifteen metres out
+  of the door in ten seconds. `mutClampX`'s `tav` branch clamps to the hall
+  and holds them with the tavern's own site (`pushOutOfKeep`,
+  `keepWallPush`), damped the knight's way; `tavSteer` is the Dealer's fan
+  on the keep's machinery, a one-point route round whatever shuts the line.
+  Measured after, thirty seconds hands-off: 0 frames outside, distance
+  0.71–2.74 m, 24 and 20 swings, the drunk dead at the end of it.
+- **AND A CREATURE THAT IS AWAKE IS AWAKE BETWEEN TOOL CALLS.** The
+  survivor turned on the player standing at the spawn and killed him
+  while the next call was being written; the page reloaded and the next
+  measurement ran against a fresh title card. `setInterval(heal)` in the
+  page, not `heal()` in the loop.
+
+**"STUCK IN THE GROUND" WAS A FLOOR NOBODY COULD STAND UNDER.** The storey
+repair puts back a level a cell's neighbours agree on, with the roof the
+NEIGHBOURS see — so under every table, the bar and the rack's shelves it
+wrote flags with a roof twelve metres up while the table's underside is
+eighty centimetres over them. The walk then offered those cells, the camera
+duck read the drawn roof and put the eye at knee height. `pruneTavStoreys`
+asks every storey what is drawn over it (`keepDrawnFloor`, five points, up
+to 1.30 m) and drops it: 2,894 gone, and every one of them was a place you
+could walk into and not stand up in.
+
+**AND THE STAIR IS TWO CRATES, ON THE PILE ALREADY THERE.** Nine were built
+and the owner's word was one or two; what makes two enough is that the file
+already stacks hex crates in front of the barrel rack's left end (tops at
+1.15, 1.44 and 1.72, measured) and the rack's own top is a standable storey a
+crate short of the tunnel. One crate on the big hex crate's END (its two
+little boxes end up inside it, so its other end and the 1.44 box beside it
+stay clear), one on the rack — and the way onto the pile is the STOOL beside
+it (0.58), because a 1.15 m box cannot be jumped onto from the flags: the
+sweep runs from `TAV_STEP` + 0.04 over the feet, and at the apex of a
+0.62 m jump that is 1.08, seven centimetres under the box's own top face.
+Measured, every step by the walk's own questions: flags, the stool 0.58, the
+1.44 box, the crate at 2.21, the rack's top 3.53, the crate at 4.59, the
+tunnel 5.27 — the tallest jump 1.32 against a catch of `TAV_AIR` 0.72 — and
+the lying barrel that crossed the crate row goes to the flags by the rack's
+other end (`moveTavBarrel`, a piece lifted the way a table is). A crate must
+not overhang the box you climb it from: the prune takes away the 1.15 top
+under it, correctly, and the route is gone.

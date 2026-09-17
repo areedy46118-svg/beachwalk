@@ -60,7 +60,7 @@ from mathutils import Vector, Quaternion, Matrix
 # skeletons, and neither of them cares which — the quantity this writes is
 # the rotation a bone has UNDERGONE, which knows nothing about either rig.
 #   blender -b -P tools/ntar_moves.py -- knight
-SET = 'knight' if 'knight' in sys.argv else 'ntar'
+SET = next((a for a in ('knight', 'wong', 'drunk') if a in sys.argv), 'ntar')
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', SET + '-moves.json')
 SRC = os.path.expanduser('~/Downloads')
 FPS = 30
@@ -74,6 +74,37 @@ KEEP = ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head',
         'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase',
         'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase']
 
+# ---- AND TWO MORE SETS, FOR THE TAVERN. Wong the barman gets the Male
+# Locomotion Pack whole — every clip in the folder, exactly as Mixamo drew it —
+# and the drunk gets the Male Drunk Pack the same way; their fights are drawn
+# from the moves the knight and the alien already carry (the deltas know
+# nothing about whose skeleton they land on) plus what the game writes.
+WONG_CLIPS = [
+    ('idle',                  'idle',    'standing', 'Male Locomotion Pack'),
+    ('walking',               'walk',    'the walk', 'Male Locomotion Pack'),
+    ('standard run',          'run',     'the run', 'Male Locomotion Pack'),
+    ('left strafe walking',   'strafeL', 'sideways, left', 'Male Locomotion Pack'),
+    ('right strafe walking',  'strafeR', 'sideways, right', 'Male Locomotion Pack'),
+    ('left strafe',           'sideL',   'a short side step, left', 'Male Locomotion Pack'),
+    ('right strafe',          'sideR',   'a short side step, right', 'Male Locomotion Pack'),
+    ('left turn 90',          'turnL',   'a quarter turn, left', 'Male Locomotion Pack'),
+    ('right turn 90',         'turnR',   'a quarter turn, right', 'Male Locomotion Pack'),
+    ('jump',                  'jump',    'over the bar', 'Male Locomotion Pack'),
+]
+DRUNK_CLIPS = [
+    ('drunk idle',                'idle',     'swaying', 'Male Drunk Pack'),
+    ('drunk idle variation',      'idleB',    'swaying, the other way', 'Male Drunk Pack'),
+    ('drunk idle variation (2)',  'idleC',    'and nearly going over', 'Male Drunk Pack'),
+    ('drunk walk',                'walk',     'the stagger', 'Male Drunk Pack'),
+    ('drunk walk backwards',      'back',     'the stagger, backwards', 'Male Drunk Pack'),
+    ('drunk run forward',         'run',      'the lurching run', 'Male Drunk Pack'),
+    ('drunk run backward',        'runBack',  'and backwards', 'Male Drunk Pack'),
+    ('drunk turn',                'turn',     'a turn on the spot', 'Male Drunk Pack'),
+    ('drunk walking turn',        'walkTurn', 'a turn in the walk', 'Male Drunk Pack'),
+    ('backward walking turn',     'backTurn', 'a turn walking backwards', 'Male Drunk Pack'),
+    ('drunk running left turn',   'runTurnL', 'a turn in the run', 'Male Drunk Pack'),
+    ('run backward arc right',    'runArcR',  'the run, backwards and round', 'Male Drunk Pack'),
+]
 CLIPS = [
     # file,                     name,      what it is
     ('Surprise Uppercut',       'knock',   'knocked onto his back'),
@@ -121,6 +152,8 @@ CLIPS = [
     ('Getting Up',              'getUp',   'and back onto his feet'),
     ('Hit On Side Of Head',     'hitHead', 'rare: caught on the side of the head'),
 ]
+if SET == 'wong': CLIPS = WONG_CLIPS
+if SET == 'drunk': CLIPS = DRUNK_CLIPS
 # THE BEATS, measured off the hips (see the log's own curve). A Mixamo clip
 # is a performance with an approach and a recovery either side of the thing
 # you want, and the game needs the thing:
@@ -176,6 +209,12 @@ FORCE_FLAT_YAW = {'knock'} if SET == 'ntar' else {'kPunch', 'kSwipe', 'kJump', '
 # heading it wants ONCE, at the blow — which costs nothing, because a
 # creature on the ground is not being turned toward the player anyway.
 KEEP_YAW = {'knockOut', 'getUp'}
+# the two tavern sets are all gaits and stands: the game turns them, so every
+# clip is de-yawed, and nothing in either leaves the vertical
+if SET in ('wong', 'drunk'):
+    WINDOW = {}
+    FORCE_FLAT_YAW = {c[1] for c in CLIPS}
+    KEEP_YAW = set()
 
 
 # A clip whose hips are measured from its LAST frame, not its first: it

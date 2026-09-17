@@ -543,6 +543,17 @@ file untouched and unlit, every triangle and every map, with a storeyed walk gri
 inside it). The chairs and the crate stair up to the tunnel are the game's, in the
 file's own timber.
 
+This work is based on ["Wong- 3D Character Model (Rigged)"](https://sketchfab.com/3d-models/wong-3d-character-model-rigged-ab3eca7de3eb4ec38aaade89e73b4860)
+by [davisthegamelord](https://sketchfab.com/davisthegamelord) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the barman in the tavern
+(`assets/wong.glb`, through `tools/gltfpack.py`). He moves on Mixamo's Male
+Locomotion Pack, retargeted (`assets/wong-moves.json`, `tools/ntar_moves.py`), and
+fights with the pulls the knight and the red alien already carry.
+
+The drunk at his bar is the owner's own "Monster1_1" (`assets/drunk.glb`, through
+`tools/drunk_pack.py`), on Mixamo's Male Drunk Pack retargeted the same way
+(`assets/drunk-moves.json`); neither is redistributable.
+
 "Samurai japanese free low-poly 3d model" by
 [adrigon](https://www.cgtrader.com/adrigon) (CGTrader, free licence) — the man
 who wants his sword back (`assets/samurai.glb`, through
