@@ -9412,3 +9412,92 @@ prevent — `uUcClipX` and `uUcClipHi` are `discard` in the fragment, so
 `intersectObjects` walks straight through them and answers with geometry
 nobody can see. Read the material's own `bwClipHi` beside every hit, or
 judge it from a screenshot.
+
+**THE TAVERN IS BEHIND THE KEEP'S DOOR, AND IT IS THE KEEP'S OWN MACHINERY ON
+A SECOND SITE.** Katydid's "Medieval Tavern" (CC-BY-4.0, `assets/tavern.glb`,
+`tools/undercroft_pack.py tavern … --scale 0.8`): a SketchUp hall, baked and
+UNLIT — every material ships `KHR_materials_unlit`, three honours that as
+`MeshBasicMaterial`, so the room draws exactly what the file draws whatever
+the lamps do, and it is `toneMapped = false` because ACES over an already-lit
+texture is a second exposure. E on the studded door at the top of the hoist
+(`KEEP_DOOR`, measured off the car's own axis: its face is at keep-local z 8.3
+straight down it), black, and you are standing in Katydid's own thumbnail
+(`TAV_SPAWN`, matched in the pane: bottle rack and barrel front-left, hex
+crate front-centre, pedestal table front-right, the arch right of centre).
+What it cost:
+
+- **THE FILE STANDS ITSELF UP.** Its root node carries the Z-up turn, the
+  0.01 and an offset, so a `--pitch` (added for the next SketchUp export
+  that does not) applied on top folded the hall onto its side and the scale
+  came out a hundred times too small. Read the node matrices before
+  correcting a file's frame. And its `BackSide_0` — 16,594 triangles — wears
+  a 32×16 texture that is entirely alpha zero: SketchUp draws every face
+  twice and the back copy is invisible, so the packer drops it.
+- **EVERY WALK FUNCTION THE KEEP HAD TAKES A SITE NOW.** `buildKeepWalls`,
+  `keepWallNear`, `keepWallPush`, `keepHitsWall`, `keepDrawnFloor`,
+  `pushOutOfKeep`, `keepFloorAt` and the two repairs read `KEEP_SITE` by
+  default and `TAV_SITE` when handed it — the same drawn-face index, the
+  same body push, the same three-height sweep, the same storeyed grid — so
+  every wall, cabinet, rail and crate in the hall is solid by construction
+  and a crate top is a storey you jump onto. A site says which materials are
+  drawn and never walked, which floors were laid after the pack, and what a
+  cell that was never written MEANS: the sea at the keep, a wall indoors.
+- **AND IT IS AT POSITIVE Z, LIKE EVERY OTHER ROOM.** Every trigger on the
+  walk is "z less than a line"; parked at z = -6000 the abduction took you
+  the frame you walked in and set you down by the shrine — the undercroft's
+  own lesson, learned again at twelve kilometres. `TAV_Z` is 12000.
+- **A TABLE IS LIFTED OUT OF THE MESH THE WALLS ARE READ FROM.** The packer
+  bakes every node into one mesh per material and the file has no names, so
+  a table is found, not named: a top is a thin disc in the table-top material,
+  the discs at one spot are one table, and every island whose whole box
+  stands inside that table's plan between the flags and the top is that
+  table (the hoist's own weld-flood-and-box). **AND ONE MESH IS SPLIT ONCE,
+  FOR EVERY TABLE TOGETHER**: the islands are read off a mesh's index and the
+  index SHRINKS when a table's triangles are lifted out, so a second table
+  read off the same island table took the wrong triangles and the first
+  table stayed drawn in place. Decide every island's owner first, rewrite
+  the index once. The pieces share the source's attributes and carry only
+  their own index, so a piece cannot come out a different colour from the
+  hall it came off; `Box3.setFromObject` on one measures the whole room,
+  which is the price of that. An iron leg is an ANGLE — thin one way, 0.6 m
+  the other, a metre tall — so it is a leg by its thinnest side, not its
+  widest.
+- **AND IT BREAKS THROUGH THE ONE DOOR.** Each table is a `physProps` entry
+  with an `onImpact` — the desk's own — so the blade, a thrown body and a
+  landing all find it; a round top comes apart in quarters about its own
+  axis, the legs turn onto X so they lie down, legs first and the top a beat
+  after. Its storeys come out of the grid and the drawn-face index is
+  rebuilt on the next frame (`tavWallsDirty`; 16k triangles is nothing).
+- **THE CHAIRS ARE BUILT, in the tables' own timber**, three to a table,
+  stood only where the walk has flags and the drawn faces leave a body's
+  room, each turned in at its table; they are in the wall index like
+  everything else and come apart into seat, legs, posts and slats. **The
+  seat sits OVER the step band**: at 0.46 a seat sat exactly on the band's
+  lower edge (feet + `TAV_STEP` + 0.04) and a chair was a thing you walked
+  into up to its back. 0.50.
+- **THE WAY UP TO THE TUNNEL IS CRATES, AND THEY ARE THE FILE'S OWN CRATE.**
+  Over the covered stall at the back runs a vaulted passage with its floor
+  5.3 m over the flags, and the file's own crate stack stands INSIDE the
+  stall under its roof. Measured: a jump lifts the feet 0.62 and the walk
+  catches a floor `TAV_AIR` (0.50) over that, so one crate (1.06) is one
+  jump; stacks of three, two and one run out from the stall's front along
+  the one strip of clear floor beside it (x -9.5..-8.4, measured by
+  raycasting the strip with the game's own crates hidden: a stool stands at
+  x -10.6..-10.2, a valance hangs under the roof's edge out to x -9.4, and
+  the file's own small crate at x -9.5..-8.8 ends up wholly INSIDE the last
+  stack's bottom crate), two three-high
+  stacks run to the roof's edge — the roof begins half a metre behind the
+  last of them (the cells between carry nothing but the flags, measured
+  after a first stair stopped one stack short), so the last step is a short
+  jump, half a metre across and 0.39 up — and one more crate on the open
+  part of that roof puts the tunnel a jump away. Each is a COPY of
+  the file's crate — same triangles, same map — written into the grid as a
+  storey and into the wall index like anything drawn — **and a copy made
+  the gib way has no index, which the wall index reads and nothing else**:
+  the first stacks were floors on top and open air from the side, and the
+  face count said so (12,782 with ten crates and without).
+- **A PROMPT CANNOT BE READ FROM THE HARNESS WITHOUT A LOOK IN CHARGE.**
+  `updateHover` returns nothing unless the pointer is locked or the drag
+  fallback is on; `__bw.fallbackLook = true` first, or every door reads
+  `null`. And a hidden pane paints nothing: a screenshot after a change that
+  demonstrably happened showed the old frame until the tab was fronted.

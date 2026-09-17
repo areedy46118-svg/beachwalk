@@ -535,6 +535,14 @@ file untouched, every triangle and every map, with a storeyed walk grid inside
 it). Its sky is painted by the game, because the pink evening in Sketchfab's
 viewer is the viewer's own environment and not in the file.
 
+This work is based on ["Medieval Tavern"](https://sketchfab.com/3d-models/medieval-tavern-2a1669778d1b4b27b899ff9f42b7438f)
+by [Katydid](https://sketchfab.com/Katydid.) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the hall behind the sea
+keep's door (`assets/tavern.glb`, through `tools/undercroft_pack.py tavern`: the
+file untouched and unlit, every triangle and every map, with a storeyed walk grid
+inside it). The chairs and the crate stair up to the tunnel are the game's, in the
+file's own timber.
+
 "Samurai japanese free low-poly 3d model" by
 [adrigon](https://www.cgtrader.com/adrigon) (CGTrader, free licence) — the man
 who wants his sword back (`assets/samurai.glb`, through

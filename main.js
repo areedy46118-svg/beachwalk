@@ -109,6 +109,7 @@ const ASSET_REACH = {
   'assets/head.glb': 155,             // both of them are aboard the wreck
   'assets/dock.glb': 215,
   'assets/keep.glb': 216,              // and where its boat goes: fetched on the walk up to the pier
+  'assets/tavern.glb': 216,            // and the hall behind its door
   'assets/bunker.glb': 333,           // behind a hatch, behind a black screen
   'assets/dealer.glb': 334,
   'assets/smile.glb': 390,
@@ -4195,7 +4196,7 @@ function updateHurt(dt) {
   hurtEl.style.opacity = String(Math.max(hurtFlash * hurtFlash, rim));
 }
 
-function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || inspecting || peeking || packCut || mutCut || hatchBusy || ucBusy || abductCut || portalCut || sailBusy || dying || ended || !introDone; }
+function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || inspecting || peeking || packCut || mutCut || hatchBusy || ucBusy || abductCut || portalCut || sailBusy || tavBusy || dying || ended || !introDone; }
 function refreshUI() {
   const playing = started && !menuOpen && !noteOpen && !dialogOpen && !invOpen && !inspecting && !dying && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
@@ -5474,13 +5475,14 @@ function groundUnder(x, z, atY) {
  * So the ray is cast at whatever room you are standing in, the floor comes
  * from `bunkerFloorAt` (which every room answers), and the beach's two walls
  * are only applied when you are on the beach. */
-const inRoom = () => inBunker || inShrine || inDojo || inUndercroft || inKeep;
+const inRoom = () => inBunker || inShrine || inDojo || inUndercroft || inKeep || inTavern;
 function dropTargets() {
   if (inUndercroft) return [undercroft];
   if (inBunker) return bunkers.map((b) => b.group).filter(Boolean);
   if (inShrine) return shrineWorld ? [shrineWorld] : [];
   if (inDojo) return dojoWorld ? [dojoWorld] : [];
   if (inKeep) return keepWorld ? [keepWorld] : [];
+  if (inTavern) return tavWorld ? [tavWorld] : [];
   return [sand, dock, DOCK_STEPS, driftGroup, rockGroup];
 }
 function dropPoint() {
@@ -25588,6 +25590,10 @@ function headroomClear() {
     const st = keepFloorAt(camera.position.x, camera.position.z, groundY, 0.5);
     if (st && st.c < stand + 0.06) return false;
   }
+  if (inTavern && tavWalk) {
+    const st = keepFloorAt(camera.position.x, camera.position.z, groundY, 0.5, TAV_SITE);
+    if (st && st.c < stand + 0.06) return false;
+  }
   /* Look UP and see. This used to ask whether you were inside the pier's
    * plan rectangle, which is a much bigger thing than the pier's roof: the
    * boat is moored inside that rectangle with nothing at all above it, so
@@ -25786,7 +25792,7 @@ function update(dt, rawDt = dt) {
    * applied you hit an invisible wall 4.6 m short of her bow while
    * standing on her own deck. Her bulwark keeps you aboard. */
   updateTugBow();           // her stem stands past WADE_X: moves the wade line, before the clamp reads it
-  if (!insideTower && !insideDrain && !inBunker && !inShrine && !inDojo && !inUndercroft && !inKeep && !onDock && !onShip && !atTugBow && !onTug && mushWhere === 'out' && !mushInYard) {    // the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line; the saucer and the dojo are not on the beach at all
+  if (!insideTower && !insideDrain && !inBunker && !inShrine && !inDojo && !inUndercroft && !inKeep && !inTavern && !onDock && !onShip && !atTugBow && !onTug && mushWhere === 'out' && !mushInYard) {    // the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line; the saucer and the dojo are not on the beach at all
     camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
     camera.position.x = Math.max(camera.position.x, WADE_X);
   }
@@ -25816,6 +25822,7 @@ function update(dt, rawDt = dt) {
   updatePortal(dt);         // the stone circle on the sand, and its hum
   updateDojo(dt);           // the floor and the walls on the other side of it
   updateKeep(dt);           // the sea keep's storeyed floors, and the boat that goes there
+  updateTavern(dt);         // and the hall behind its door
   updateSamurai(dt);        // and the man who wants his sword back
   updateUndercroft(dt);     // the cave's floor and the church's, off the grids the packer wrote
   updateFisherman(rawDt);   // he blinks and breathes, like Bradly
@@ -25857,7 +25864,7 @@ function update(dt, rawDt = dt) {
    * arrive on top of it. It is gated on the undercroft on purpose — the
    * bunker's fight is fought between a desk and a work table and a jump
    * beside either of those is not a player breaking it. */
-  if (!onGround && inUndercroft) stompBreakables(0.5, true);
+  if (!onGround && (inUndercroft || inTavern)) stompBreakables(0.5, true);
   vy -= P_GRAV * dt;
   camBaseY += vy * dt;
   const floorLimit = playerEye() + groundY;
@@ -25908,6 +25915,10 @@ function update(dt, rawDt = dt) {
   if (inKeep && keepWalk) {
     const st = keepFloorAt(camera.position.x, camera.position.z, groundY, 0.5);
     if (st && st.c < KEEP_Y + 90) { const top = st.c - 0.22; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }
+  }
+  if (inTavern && tavWalk) {   // the crates under the vault: the flight above is the roof
+    const st = keepFloorAt(camera.position.x, camera.position.z, groundY, 0.5, TAV_SITE);
+    if (st && st.c < TAV_Y + 90) { const top = st.c - 0.22; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }
   }
   camera.position.y = camBaseY + bob - landDip;
 
@@ -25988,7 +25999,7 @@ function update(dt, rawDt = dt) {
   updatePuffs(dt);
   updateSplashes(dt);
 
-  const px = (inUndercroft || inKeep) ? sand.position.x : camera.position.x, pz = (inUndercroft || inKeep) ? sand.position.z : camera.position.z;   // underground the beach stays where it is, and is culled
+  const px = (inUndercroft || inKeep || inTavern) ? sand.position.x : camera.position.x, pz = (inUndercroft || inKeep || inTavern) ? sand.position.z : camera.position.z;   // underground the beach stays where it is, and is culled
   sand.position.set(snap(px, SAND_TILE), 0, snap(pz, SAND_TILE));
   ocean.position.x = snap(px, 8);
   ocean.position.z = snap(pz, 8);
@@ -26346,7 +26357,7 @@ function animateFrame() {
   oceanUniforms.uTime.value += dt;
   if (!introStarted) titleCam(rawDt);
   update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
-  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt);
+  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateTavernCut(rawDt);
   updateHover();
   /* After everything that may have moved a lamp or the player, and before
    * anything is drawn: point the twelve real lights at the twelve that
@@ -33429,6 +33440,7 @@ function buildKeepIsland() {
   repairKeepStoreys();
   buildKeepLift();
   ensureKeepBoat();
+  buildKeepDoor();
 }
 
 /* THE GROUND HAD HOLES IN IT, AND A HOLE READS AS A WALL. A cell's floor is
@@ -33475,8 +33487,8 @@ function buildKeepIsland() {
  * church's despeckle with the test turned round — there a lone RAISED cell
  * was a wall in the middle of the nave, here a missing storey is a hole in
  * the middle of a floor. */
-function repairKeepStoreys() {
-  const w = keepWalk; if (!w || !keepCells || !keepWalls) return;
+function repairKeepStoreys(S = KEEP_SITE) {
+  const w = S.walk, cells = S.cells; if (!w || !cells || !S.walls) return;
   const t0 = performance.now();
   let added = 0, asked = 0;
   const lv = [], cnt = [], sum = [], ceilOf = [];
@@ -33486,12 +33498,12 @@ function repairKeepStoreys() {
     t.sort((p, q) => p[0] - q[0]); fl.length = 0;
     for (const e of t) fl.push(e[0], e[1], e[2]);
   };
-  for (const [key, fl] of keepCells) {
+  for (const [key, fl] of cells) {
     const i0 = key % w.gw, j0 = (key - i0) / w.gw;
     lv.length = 0; cnt.length = 0; sum.length = 0; ceilOf.length = 0;
     for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
       if (!di && !dj) continue;
-      const nf = keepCells.get((j0 + dj) * w.gw + (i0 + di)); if (!nf) continue;
+      const nf = cells.get((j0 + dj) * w.gw + (i0 + di)); if (!nf) continue;
       for (let k = 0; k < nf.length; k += 3) {
         const f = nf[k]; let m = -1;
         for (let q = 0; q < lv.length; q++) if (Math.abs(lv[q] - f) < 0.30) { m = q; break; }
@@ -33500,7 +33512,7 @@ function repairKeepStoreys() {
       }
     }
     let did = false;
-    const cx = KEEP_X + w.x0 + (i0 + 0.5) * w.cell, cz = KEEP_Z + w.z0 + (j0 + 0.5) * w.cell;
+    const cx = S.X + w.x0 + (i0 + 0.5) * w.cell, cz = S.Z + w.z0 + (j0 + 0.5) * w.cell;
     for (let q = 0; q < lv.length; q++) {
       const L = lv[q];
       if (cnt[q] < 3) continue;
@@ -33513,9 +33525,9 @@ function repairKeepStoreys() {
        * the cell falls through the gap the repair exists to close; five
        * points over the cell find whatever of it is actually drawn. */
       const h = w.cell * 0.3;
-      let y = keepDrawnFloor(cx, cz, KEEP_Y + L - 0.28, KEEP_Y + L + 0.28);
+      let y = keepDrawnFloor(cx, cz, S.Y + L - 0.28, S.Y + L + 0.28, S);
       if (y === null) for (const [ox, oz] of [[-h, -h], [h, -h], [-h, h], [h, h]]) {
-        y = keepDrawnFloor(cx + ox, cz + oz, KEEP_Y + L - 0.28, KEEP_Y + L + 0.28);
+        y = keepDrawnFloor(cx + ox, cz + oz, S.Y + L - 0.28, S.Y + L + 0.28, S);
         if (y !== null) break;
       }
       /* AND A LONE HOLE IN A FLOOR IS A SAMPLING GAP, NOT AN OPENING. The
@@ -33532,19 +33544,19 @@ function repairKeepStoreys() {
         fl.push(sum[q] / cnt[q], 0, ceilOf[q]);
         filled++; did = true; continue;
       }
-      fl.push(y - KEEP_Y, 0, ceilOf[q]);
+      fl.push(y - S.Y, 0, ceilOf[q]);
       added++; did = true;
     }
     if (did) sortCell(fl);
   }
-  keepWalk.storeys = { added, filled, asked, ms: Math.round(performance.now() - t0) };
+  w.storeys = { added, filled, asked, ms: Math.round(performance.now() - t0) };
 }
-function repairKeepGround() {
+function repairKeepGround(S = KEEP_SITE) {
   const t0 = performance.now();
-  const w = keepWalk, gw = w.gw, gh = w.gh;
+  const w = S.walk, cells = S.cells, gw = w.gw, gh = w.gh;
   const g = new Float32Array(gw * gh).fill(-999);
   let i0 = 1e9, i1 = -1e9, j0 = 1e9, j1 = -1e9;
-  for (const [k, fl] of keepCells) {                 // the storeys are written low to high
+  for (const [k, fl] of cells) {                 // the storeys are written low to high
     g[k] = fl[0];
     const i = k % gw, j = (k - i) / gw;
     if (i < i0) i0 = i; if (i > i1) i1 = i; if (j < j0) j0 = j; if (j > j1) j1 = j;
@@ -33554,7 +33566,7 @@ function repairKeepGround() {
   for (let pass = 0; pass < 3; pass++) {
     const ins = [];
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-      const k = j * gw + i, fl = keepCells.get(k);
+      const k = j * gw + i, fl = cells.get(k);
       /* The cheap test first, because nearly every cell passes it: is this
        * cell's OWN ground anywhere near the ground its four neighbours
        * stand on? A cell whose lowest storey is a rock ten metres up while
@@ -33591,8 +33603,8 @@ function repairKeepGround() {
     if (!ins.length) break;
     for (let q = 0; q < ins.length; q += 2) {
       const k = ins[q], m = Math.round(ins[q + 1] * 100) / 100;
-      let fl = keepCells.get(k);
-      if (!fl) { fl = []; keepCells.set(k, fl); added++; } else patched++;
+      let fl = cells.get(k);
+      if (!fl) { fl = []; cells.set(k, fl); added++; } else patched++;
       fl.push(m, 0, 99);
       const tri = [];
       for (let r = 0; r < fl.length; r += 3) tri.push([fl[r], fl[r + 1], fl[r + 2]]);
@@ -33601,7 +33613,7 @@ function repairKeepGround() {
       g[k] = fl[0];
     }
   }
-  keepWalk.repaired = { patched, added, ms: +(performance.now() - t0).toFixed(1) };
+  w.repaired = { patched, added, ms: +(performance.now() - t0).toFixed(1) };
 }
 
 /* THE WALK, STOREY BY STOREY, AND THE ONE QUESTION EVERYTHING ASKS.
@@ -33621,34 +33633,34 @@ function repairKeepGround() {
  * would be walls in the middle of open sand.
  *
  * The moored boat and the lift's platform are floors in the same way. */
-function keepCellAt(x, z) {
-  const w = keepWalk; if (!w) return null;
-  const i = Math.floor((x - KEEP_X - w.x0) / w.cell), j = Math.floor((z - KEEP_Z - w.z0) / w.cell);
+function keepCellAt(x, z, S = KEEP_SITE) {
+  const w = S.walk; if (!w) return null;
+  const i = Math.floor((x - S.X - w.x0) / w.cell), j = Math.floor((z - S.Z - w.z0) / w.cell);
   if (i < 0 || j < 0 || i >= w.gw || j >= w.gh) return null;
-  return keepCells.get(j * w.gw + i) || null;
+  return S.cells.get(j * w.gw + i) || null;
 }
-function keepFloorAt(x, z, feet, up = KEEP_STEP) {
+function keepFloorAt(x, z, feet, up = KEEP_STEP, S = KEEP_SITE) {
   let best = null;
-  const fl = keepCellAt(x, z);
+  const fl = keepCellAt(x, z, S);
   if (fl) {
     for (let k = fl.length - 3; k >= 0; k -= 3) {
-      const f = KEEP_Y + fl[k];
-      if (f <= feet + up) { best = { f, s: fl[k + 1] === 1, c: KEEP_Y + fl[k + 2] }; break; }
+      const f = S.Y + fl[k];
+      if (f <= feet + up) { best = { f, s: fl[k + 1] === 1, c: S.Y + fl[k + 2] }; break; }
     }
   } else {
-    best = { f: KEEP_Y + KEEP_WADE, s: false, c: KEEP_Y + 99, sea: true };
+    best = S.sea ? S.sea() : null;                // never written: the sea at the keep, a wall indoors
   }
   // and the two floors that are not the island: what is tied up at the pier
   // and what the lever sends up and down
-  for (const b of [keepBoatBox, keepLiftBox]) {
+  for (const b of S.extra()) {
     if (!b || x < b.x0 || x > b.x1 || z < b.z0 || z > b.z1) continue;
-    if (b.top <= feet + up && (!best || b.top > best.f)) best = { f: b.top, s: false, c: KEEP_Y + 99 };
+    if (b.top <= feet + up && (!best || b.top > best.f)) best = { f: b.top, s: false, c: S.Y + 99 };
   }
   return best;
 }
 // kept for the placements, which ask "what is the floor here" with the feet
 // put somewhere approximate and want the answer whatever the step
-const keepStandAt = (x, z, feet, up = KEEP_STEP) => keepFloorAt(x, z, feet, up);
+const keepStandAt = (x, z, feet, up = KEEP_STEP, S = KEEP_SITE) => keepFloorAt(x, z, feet, up, S);
 /* AND THE WALK AND THE PUSH-OUT HAVE TO ASK THE SAME QUESTION — the pier's
  * own lesson on an island. `keepFloorAt` answers "what is the ground here",
  * which is what a gib and a placement want.
@@ -33667,7 +33679,7 @@ const keepStandAt = (x, z, feet, up = KEEP_STEP) => keepFloorAt(x, z, feet, up);
  * the middle of one), so the grid is left to answer the one question it is
  * good at: where is there ground. The band is still what stops a gib and
  * still rides in the triple; the walk no longer reads it. */
-const keepStandable = (x, z, feet, up = KEEP_STEP) => keepFloorAt(x, z, feet, up);
+const keepStandable = (x, z, feet, up = KEEP_STEP, S = KEEP_SITE) => keepFloorAt(x, z, feet, up, S);
 /* The general "what is under this", for blood, gibs and anything thrown:
  * the highest floor at or under the point, else the sea. Chained into
  * `bunkerFloorAt` like every other room, answering only inside its own
@@ -33718,17 +33730,34 @@ bunkerFloorAt = (x, z, y) => {
 const KEEP_WALL_MIN = 0.12;               // under this is a sliver, not a surface
 const KEEP_WALL_NY = 0.55;                // and a face is a FLOOR or a WALL, nothing between: whatever is too steep to stand on is in the way
 let keepWalls = null;
-function buildKeepWalls() {
-  if (keepWalls || !keepWorld) return;
-  keepWorld.updateMatrixWorld(true);
+/* A SITE IS A MODEL WITH A STOREYED WALK IN IT, AND THE KEEP IS ONE OF TWO.
+ * Everything below — the drawn-face index, the push-out, the sweep, the
+ * floor lookup and the two grid repairs — was written for the island and
+ * read its globals; the tavern behind the keep's door is the same kind of
+ * place (an exact model, a storeyed grid, walls that are the drawn faces),
+ * so each of them takes a site and the keep is the default. `skip` names
+ * the materials that are drawn and never walked (the sea, the sky), `extra`
+ * the floors laid after the pack (the boat, the hoist), and `sea` what a
+ * cell that was never written means — water at the keep, a wall indoors. */
+const KEEP_SITE = {
+  X: KEEP_X, Y: KEEP_Y, Z: KEEP_Z, step: KEEP_STEP,
+  get group() { return keepWorld; }, get walk() { return keepWalk; }, get cells() { return keepCells; },
+  get walls() { return keepWalls; }, set walls(v) { keepWalls = v; },
+  skip: (mn) => mn === 'material' || mn === 'material_5',
+  extra: () => [keepBoatBox, keepLiftBox],
+  sea: () => ({ f: KEEP_Y + KEEP_WADE, s: false, c: KEEP_Y + 99, sea: true }),
+};
+function buildKeepWalls(S = KEEP_SITE) {
+  if (S.walls || !S.group) return;
+  S.group.updateMatrixWorld(true);
   const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
   const ab = new THREE.Vector3(), ac = new THREE.Vector3(), n = new THREE.Vector3();
   const tris = [], steep = [], ylo = [], yhi = [], cell = 1.0, map = new Map();
   const key = (i, j) => (i + 4096) * 16384 + (j + 4096);
-  keepWorld.traverse((o) => {
+  S.group.traverse((o) => {
     if (!o.isMesh || o.name === 'hitProxy' || !o.geometry || !o.geometry.index) return;
     const mn = o.material && o.material.name;
-    if (mn === 'material' || mn === 'material_5') return;        // the sea and the sky are not walls
+    if (S.skip(mn)) return;                                   // the sea and the sky are not walls
     const g = o.geometry, pos = g.attributes.position, idx = g.index;
     for (let t = 0; t < idx.count; t += 3) {
       a.fromBufferAttribute(pos, idx.getX(t)).applyMatrix4(o.matrixWorld);
@@ -33744,15 +33773,15 @@ function buildKeepWalls() {
       const id = tris.length / 9;
       steep.push(isWall ? 1 : 0); ylo.push(lo); yhi.push(hi);
       tris.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
-      const i0 = Math.floor((Math.min(a.x, b.x, c.x) - KEEP_X) / cell), i1 = Math.floor((Math.max(a.x, b.x, c.x) - KEEP_X) / cell);
-      const j0 = Math.floor((Math.min(a.z, b.z, c.z) - KEEP_Z) / cell), j1 = Math.floor((Math.max(a.z, b.z, c.z) - KEEP_Z) / cell);
+      const i0 = Math.floor((Math.min(a.x, b.x, c.x) - S.X) / cell), i1 = Math.floor((Math.max(a.x, b.x, c.x) - S.X) / cell);
+      const j0 = Math.floor((Math.min(a.z, b.z, c.z) - S.Z) / cell), j1 = Math.floor((Math.max(a.z, b.z, c.z) - S.Z) / cell);
       if ((i1 - i0) * (j1 - j0) > 400) continue;                 // a wall the size of the island: it is in the grid already
       for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
         const k = key(i, j); let e = map.get(k); if (!e) { e = []; map.set(k, e); } e.push(id);
       }
     }
   });
-  keepWalls = { v: new Float32Array(tris), steep: new Uint8Array(steep),
+  S.walls = { v: new Float32Array(tris), steep: new Uint8Array(steep),
     ylo: new Float32Array(ylo), yhi: new Float32Array(yhi), map, cell, key };
 }
 /* AND A CROSSING TEST HAS NO THICKNESS, WHICH IS HOW YOU GET INSIDE A WALL.
@@ -33771,9 +33800,9 @@ function buildKeepWalls() {
  * what keeps a STEP a step — it starts a lip's height over your feet, so a
  * riser you are meant to walk up is under the body entirely and only what
  * stands between your knee and your head is a wall. */
-function keepWallNear(x, z, r, lo, hi) {
-  const W = keepWalls; if (!W) return null;
-  const v = W.v, ic = Math.floor((x - KEEP_X) / W.cell), jc = Math.floor((z - KEEP_Z) / W.cell);
+function keepWallNear(x, z, r, lo, hi, S = KEEP_SITE) {
+  const W = S.walls; if (!W) return null;
+  const v = W.v, ic = Math.floor((x - S.X) / W.cell), jc = Math.floor((z - S.Z) / W.cell);
   let bd = -1, bx = 0, bz = 0;
   for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
     const list = W.map.get(W.key(ic + di, jc + dj)); if (!list) continue;
@@ -33809,11 +33838,11 @@ function seg2(px, pz, ax, az, bx, bz) {          // nearest point on a plan segm
  * and summing those throws a body across the island. The beach's own rule
  * for overlapping colliders: take the one you are deepest in, push out of
  * that, and ask again. */
-function keepWallPush(p, r, feet) {
-  const lo = feet + KEEP_STEP + 0.04, hi = feet + 1.75;
+function keepWallPush(p, r, feet, S = KEEP_SITE) {
+  const lo = feet + S.step + 0.04, hi = feet + 1.75;
   let moved = false;
   for (let k = 0; k < 4; k++) {
-    const h = keepWallNear(p.x, p.z, r, lo, hi); if (!h) break;
+    const h = keepWallNear(p.x, p.z, r, lo, hi, S); if (!h) break;
     let ox = p.x - h.x, oz = p.z - h.z;
     const L = Math.hypot(ox, oz);
     if (L < 1e-5) break;                          // dead on the face: nowhere to go
@@ -33826,14 +33855,14 @@ function keepWallPush(p, r, feet) {
 const _kwA = new THREE.Vector3(), _kwD = new THREE.Vector3(), _kwE1 = new THREE.Vector3(),
   _kwE2 = new THREE.Vector3(), _kwP = new THREE.Vector3(), _kwQ = new THREE.Vector3(), _kwT = new THREE.Vector3();
 const _kwSeen = new Set();
-function keepHitsWall(x0, z0, x1, z1, y) {
-  const W = keepWalls; if (!W) return false;
+function keepHitsWall(x0, z0, x1, z1, y, S = KEEP_SITE) {
+  const W = S.walls; if (!W) return false;
   const dx = x1 - x0, dz = z1 - z0, L = Math.hypot(dx, dz);
   if (L < 1e-5) return false;
   _kwA.set(x0, y, z0); _kwD.set(dx / L, 0, dz / L);
   _kwSeen.clear();
   for (const [px, pz] of [[x0, z0], [x1, z1]]) {
-    const i = Math.floor((px - KEEP_X) / W.cell), j = Math.floor((pz - KEEP_Z) / W.cell);
+    const i = Math.floor((px - S.X) / W.cell), j = Math.floor((pz - S.Z) / W.cell);
     for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) _kwSeen.add(W.key(i + di, j + dj));
   }
   const v = W.v;
@@ -33860,9 +33889,9 @@ function keepHitsWall(x0, z0, x1, z1, y) {
 /* AND THE SAME FACES ANSWER "IS THERE A FLOOR DRAWN HERE". A plan test, not
  * a ray: for the near-horizontal faces in this cell, is (x, z) inside the
  * triangle's plan, and if it is, what is its height there. */
-function keepDrawnFloor(x, z, lo, hi) {
-  const W = keepWalls; if (!W) return null;
-  const list = W.map.get(W.key(Math.floor((x - KEEP_X) / W.cell), Math.floor((z - KEEP_Z) / W.cell)));
+function keepDrawnFloor(x, z, lo, hi, S = KEEP_SITE) {
+  const W = S.walls; if (!W) return null;
+  const list = W.map.get(W.key(Math.floor((x - S.X) / W.cell), Math.floor((z - S.Z) / W.cell)));
   if (!list) return null;
   const v = W.v; let best = null;
   for (let m = 0; m < list.length; m++) {
@@ -33886,18 +33915,18 @@ function keepDrawnFloor(x, z, lo, hi) {
  * cell is solid if the body band over the floor AT YOUR LEVEL has anything
  * in it, or if it has no floor at your level at all — a wall, a parapet, a
  * rail, or open water off the side of the pier. */
-function pushOutOfKeep(p, r, feet, up) {
-  const w = keepWalk; if (!w) return false;
+function pushOutOfKeep(p, r, feet, up, S = KEEP_SITE) {
+  const w = S.walk; if (!w) return false;
   const cell = w.cell;
-  const i0 = Math.floor((p.x - KEEP_X - w.x0 - r) / cell), i1 = Math.floor((p.x - KEEP_X - w.x0 + r) / cell);
-  const j0 = Math.floor((p.z - KEEP_Z - w.z0 - r) / cell), j1 = Math.floor((p.z - KEEP_Z - w.z0 + r) / cell);
+  const i0 = Math.floor((p.x - S.X - w.x0 - r) / cell), i1 = Math.floor((p.x - S.X - w.x0 + r) / cell);
+  const j0 = Math.floor((p.z - S.Z - w.z0 - r) / cell), j1 = Math.floor((p.z - S.Z - w.z0 + r) / cell);
   let dx = 0, dz = 0, hit = false;
   for (let j = j0; j <= j1; j++) {
     if (j < 0 || j >= w.gh) continue;
     for (let i = i0; i <= i1; i++) {
       if (i < 0 || i >= w.gw) continue;
-      const cx = KEEP_X + w.x0 + (i + 0.5) * cell, cz = KEEP_Z + w.z0 + (j + 0.5) * cell;
-      if (keepFloorAt(cx, cz, feet, up)) continue;   // there is ground at my level here
+      const cx = S.X + w.x0 + (i + 0.5) * cell, cz = S.Z + w.z0 + (j + 0.5) * cell;
+      if (keepFloorAt(cx, cz, feet, up, S)) continue;   // there is ground at my level here
       const nx = THREE.MathUtils.clamp(p.x, cx - cell / 2, cx + cell / 2);
       const nz = THREE.MathUtils.clamp(p.z, cz - cell / 2, cz + cell / 2);
       let ox = p.x - nx, oz = p.z - nz;
@@ -34527,7 +34556,7 @@ function placeInKeep() {
   warmKeep();
   keepEnter();
   const gx = KEEP_X + KEEP_SPAWN.x, gz = KEEP_Z + KEEP_SPAWN.z;
-  const st = keepStandAt(gx, gz, KEEP_Y - 0.2, 3, 3);
+  const st = keepStandAt(gx, gz, KEEP_Y - 0.2, 3);
   groundY = st ? st.f : KEEP_Y;
   camera.position.set(gx, groundY + playerEye(), gz);
   camBaseY = camera.position.y; vy = 0; onGround = true;
@@ -34583,6 +34612,637 @@ function sfxSetSail() {
   w.connect(lp).connect(wg).connect(out); w.start(t + 0.3); w.stop(t + 0.3 + len);
 }
 
+// ------------------------------------------------------------- the tavern
+/* THE HALL BEHIND THE KEEP'S DOOR. Katydid's "Medieval Tavern" (CC-BY-4.0,
+ * `assets/tavern.glb`, through `tools/undercroft_pack.py tavern` at 0.8 with
+ * nothing decimated and every map kept) — a SketchUp hall, BAKED AND UNLIT:
+ * every material ships `KHR_materials_unlit`, three honours that as
+ * MeshBasicMaterial, and so the room draws exactly what the file draws
+ * whatever the night's lamps are doing. It stands six kilometres past the
+ * keep (`TAV_X/Y/Z`), beyond the far plane from everywhere,
+ * and the way in is the studded door on the terrace at the top of the hoist:
+ * E at the door, black, and you are standing in the picture.
+ *
+ * IT IS THE KEEP'S OWN MACHINERY, ON A SECOND SITE. The storeyed walk, the
+ * drawn-face index, the body push, the three-height sweep and the storey
+ * repair all take a site now (`KEEP_SITE` / `TAV_SITE`), so every wall,
+ * rail, cabinet and crate the file draws is solid by construction, and a
+ * crate top or a barrel is a storey you can jump onto — the crates under the
+ * vault are the way up to the little tunnel over them.
+ *
+ * AND THE TABLES BREAK, AND THE CHAIRS. The packer bakes every node into one
+ * mesh per material, so a table is not an object: it is lifted out the way
+ * the hoist's car was — weld by position, flood the islands, take every
+ * island whose whole box stands inside a table top's plan — and put back as
+ * a group of pieces that the blade, a thrown body and a jump all find
+ * through `physProps`, the desk's own door. The chairs are built here in the
+ * tables' own timber, because the file has none. */
+/* AT POSITIVE Z, LIKE EVERY OTHER ROOM. Every trigger on the walk is "z less
+ * than a line", and at z = -6000 the abduction took you the frame you walked
+ * in — the undercroft's own lesson, learned again at twelve kilometres. */
+const TAV_X = -6000, TAV_Y = 800, TAV_Z = 12000;
+const TAV_FLOOR = 7.52;                   // the flags, in the pack's metres (the file's own 0.57 at 0.8, plus its own offset)
+const TAV_STEP = 0.42;                    // a lip you walk up (three crates onto the stall's roof is 0.39); a chair's seat (0.50) is a thing you sit on, not a step
+const TAV_AIR = 0.50;                     // in the air a floor this near your feet is caught: a crate is 1.06 and a jump lifts you 0.62
+const TAV_BODY = 0.26;
+const TAV_SPAWN = { x: -18.7, z: 1.7, yaw: -Math.PI / 2 - 0.06, pitch: -0.04 };   // Katydid's own thumbnail: bottle rack and barrel front-left, hex crate front-centre, pedestal table front-right, the arch right of centre — matched in the pane
+const TAV_FOG = { color: new THREE.Color(0x07080b), density: 0.0045 };
+const TAV_OUT = 0.5, TAV_HOLD = 0.9, TAV_IN = 0.65;
+const KEEP_DOOR = { x: -2.6, y: 16.1, z: 8.6, yaw: 0 };   // the studded door on the terrace, keep-local, measured off the hoist: its face is at z 8.3 straight down the car's axis; `yaw` is the look that faces INTO it
+let tavWorld = null, tavReady = false, tavWalk = null, tavCells = null, tavWalls = null, tavBuilt = false, tavWarmed = false;
+let inTavern = false, tavBusy = false, tavT = 0, tavDir = 1, tavCutDone = false, tavWallsDirty = false;
+let _tavFogSaved = null, tavLastFloor = null;
+const tavTables = [], tavChairs = [];
+const TAV_SITE = {
+  X: TAV_X, Y: TAV_Y, Z: TAV_Z, step: TAV_STEP,
+  get group() { return tavWorld; }, get walk() { return tavWalk; }, get cells() { return tavCells; },
+  get walls() { return tavWalls; }, set walls(v) { tavWalls = v; },
+  skip: (mn) => mn === 'TextureMaterial_15',       // the invisible back faces, had the packer left them
+  extra: () => [],
+  sea: null,                                        // a cell that was never written is a wall in here
+};
+
+function loadTavern() {
+  if (tavWorld) return;
+  tavWorld = new THREE.Group();
+  tavWorld.position.set(TAV_X, TAV_Y, TAV_Z);
+  tavWorld.visible = false;
+  scene.add(tavWorld);
+  bwGlb('assets/tavern.glb', (gltf) => {
+    const root = gltf.scene;
+    let ex = null;
+    root.traverse((o) => { if (!ex && o.userData && o.userData.bw_walk) ex = o.userData.bw_walk; });
+    if (ex) {
+      tavWalk = typeof ex === 'string' ? JSON.parse(ex) : ex;
+      tavCells = new Map();
+      for (const c of tavWalk.cells) tavCells.set(c[1] * tavWalk.gw + c[0], c[2]);
+    }
+    root.traverse((o) => {
+      if (!o.isMesh) return;
+      o.frustumCulled = true;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) {
+        /* FOUR MATERIALS SHIP AS BLEND and GLTFLoader turns depth write off
+         * for BLEND — the keep's own lesson: the cabinets and the rugs are
+         * opaque with a cutout, and drawn sorted against each other they
+         * tear. And the whole file is a baked picture: it is NOT tone-mapped,
+         * because ACES over an already-lit texture is a second exposure. */
+        m.transparent = false; m.alphaTest = 0.5; m.depthWrite = true; m.toneMapped = false;
+        if (m.map) { m.map.anisotropy = 8; }
+      }
+    });
+    tavWorld.add(root);
+    tavReady = true;
+  }, undefined, () => {});
+}
+
+/* BUILT AT THE CUT, BEHIND THE BLACK — the keep's own arrangement. Tables
+ * first (they come OUT of the meshes the walls are read from), then a first
+ * wall pass so the chairs can be placed against something, the chairs, the
+ * walls again with the chairs in them, and the storey repair last. */
+function buildTavern() {
+  if (tavBuilt || !tavReady || !tavWalk) return;
+  tavBuilt = true;
+  const t0 = performance.now();
+  extractTavTables();
+  buildTavCrates();
+  buildKeepWalls(TAV_SITE);
+  buildTavChairs();
+  tavWalls = null; buildKeepWalls(TAV_SITE);
+  repairKeepStoreys(TAV_SITE);
+  buildTavDoor();
+  tavWalk.built = Math.round(performance.now() - t0);
+}
+
+/* WELD BY POSITION, FLOOD, AND BOX EVERY ISLAND — the hoist's own lift, as
+ * a helper: `roots[t]` is the island a triangle belongs to and `box` is
+ * each island's world bounds. */
+function meshIslands(src, offset) {
+  const g = src.geometry, pos = g.attributes.position, idx = g.index;
+  const nT = idx.count / 3;
+  const rep = new Int32Array(pos.count), seen = new Map();
+  for (let i = 0; i < pos.count; i++) {
+    const k = Math.round(pos.getX(i) * 1000) + ',' + Math.round(pos.getY(i) * 1000) + ',' + Math.round(pos.getZ(i) * 1000);
+    let r = seen.get(k); if (r === undefined) { r = i; seen.set(k, i); }
+    rep[i] = r;
+  }
+  const par = new Int32Array(pos.count); for (let i = 0; i < pos.count; i++) par[i] = rep[i];
+  const find = (a) => { while (par[a] !== a) { par[a] = par[par[a]]; a = par[a]; } return a; };
+  for (let t = 0; t < nT; t++) {
+    const a = find(rep[idx.getX(t * 3)]), b = find(rep[idx.getX(t * 3 + 1)]), c = find(rep[idx.getX(t * 3 + 2)]);
+    par[b] = a; par[c] = a;
+  }
+  const roots = new Int32Array(nT), box = new Map(), v = new THREE.Vector3();
+  for (let t = 0; t < nT; t++) {
+    const r = find(rep[idx.getX(t * 3)]); roots[t] = r;
+    let e = box.get(r); if (!e) { e = new THREE.Box3(); box.set(r, e); }
+    for (let k = 0; k < 3; k++) { v.fromBufferAttribute(pos, idx.getX(t * 3 + k)); v.applyMatrix4(src.matrixWorld); e.expandByPoint(v); }
+  }
+  return { roots, box };
+}
+/* A piece shares its source's attributes and carries only its own index
+ * (the hoist's rule: no vertices copied, the file's own uv), placed so it
+ * sits exactly where it was drawn, expressed in `parent`'s frame. */
+const _tvM = new THREE.Matrix4();
+function tavPiece(src, tris, parent) {
+  const g = src.geometry, cg = new THREE.BufferGeometry();
+  for (const name of Object.keys(g.attributes)) cg.setAttribute(name, g.attributes[name]);
+  cg.setIndex(tris);
+  const m = new THREE.Mesh(cg, src.material);
+  m.matrixAutoUpdate = false;
+  m.matrix.copy(_tvM.copy(parent.matrixWorld).invert().multiply(src.matrixWorld));
+  m.frustumCulled = false;
+  return m;
+}
+/* THE TABLES. A top is a thin disc in the table-top material (two per
+ * table: the top and its underside); the discs at one spot are one table,
+ * and everything whose whole box stands inside that table's plan between
+ * the flags and the top — the legs, the pedestal, the underside — is that
+ * table. Nothing is guessed by name because the file has no names. */
+function extractTavTables() {
+  if (!tavWorld || tavTables.length) return;
+  tavWorld.updateMatrixWorld(true);
+  const meshes = [];
+  tavWorld.traverse((o) => { if (o.isMesh && o.geometry && o.geometry.index && o.name !== 'hitProxy') meshes.push(o); });
+  const isl = new Map();
+  for (const m of meshes) isl.set(m, meshIslands(m, tavWorld.position));
+  const floorY = TAV_Y + TAV_FLOOR, sz = new THREE.Vector3(), c = new THREE.Vector3();
+  // the tops
+  const tops = [];
+  for (const m of meshes) {
+    if (!m.material || m.material.name !== 'TextureMaterial_10') continue;
+    for (const [r, e] of isl.get(m).box) {
+      e.getSize(sz);
+      if (sz.y > 0.05 || sz.x < 1.0 || sz.z < 1.0 || sz.x > 3.0) continue;
+      e.getCenter(c);
+      let t = tops.find((q) => Math.hypot(q.cx - c.x, q.cz - c.z) < 0.6);
+      if (!t) { t = { cx: c.x, cz: c.z, r: 0, top: -1e9, n: 0 }; tops.push(t); }
+      t.r = Math.max(t.r, sz.x / 2, sz.z / 2); t.top = Math.max(t.top, e.max.y); t.n++;
+    }
+  }
+  /* ONE MESH IS SPLIT ONCE, FOR EVERY TABLE TOGETHER. The islands are read
+   * off a mesh's index, and the index SHRINKS when a table's triangles are
+   * lifted out of it — so a second table read off the same island table
+   * took the wrong triangles and left the first table drawn in place. The
+   * owner of every island is decided first and the index is rewritten once. */
+  const tables = tops.map((t) => {
+    const plan = new THREE.Box3(new THREE.Vector3(t.cx - t.r - 0.06, floorY - 0.08, t.cz - t.r - 0.06),
+                                new THREE.Vector3(t.cx + t.r + 0.06, t.top + 0.06, t.cz + t.r + 0.06));
+    const grp = new THREE.Group();
+    grp.position.set(t.cx - TAV_X, floorY - TAV_Y, t.cz - TAV_Z);
+    tavWorld.add(grp);
+    grp.updateMatrixWorld(true);
+    return { grp, pieces: [], cx: t.cx, cz: t.cz, r: t.r, top: t.top, plan, dead: false, prop: null };
+  });
+  for (const m of meshes) {
+    const { roots, box } = isl.get(m), idx = m.geometry.index;
+    const owner = new Map();
+    for (const [r, e] of box) { const ti = tables.findIndex((t) => t.plan.containsBox(e)); if (ti >= 0) owner.set(r, ti); }
+    if (!owner.size) continue;
+    const keep = [], byRoot = new Map();
+    for (let q = 0; q < roots.length; q++) {
+      const a = idx.getX(q * 3), b = idx.getX(q * 3 + 1), d = idx.getX(q * 3 + 2);
+      if (!owner.has(roots[q])) { keep.push(a, b, d); continue; }
+      let list = byRoot.get(roots[q]); if (!list) { list = []; byRoot.set(roots[q], list); }
+      list.push(a, b, d);
+    }
+    for (const [r, tris] of byRoot) {
+      const t = tables[owner.get(r)];
+      const e = box.get(r); e.getSize(sz);
+      const kind = (m.material.name === 'TextureMaterial_10' && sz.y < 0.05) ? 'top'
+        : (sz.y > 0.55 && Math.min(sz.x, sz.z) < 0.2 && sz.y > Math.max(sz.x, sz.z)) ? 'leg' : 'base';   // an iron leg is an angle: thin one way, tall
+      const pm = tavPiece(m, tris, t.grp);
+      pm.userData.part = kind; pm.userData.box = e.clone();
+      t.grp.add(pm); t.pieces.push(pm);
+    }
+    m.geometry.setIndex(keep);
+  }
+  for (const table of tables) {
+    table.prop = {
+      mesh: table.grp, radius: table.r + 0.2, dead: false, held: false, thrown: false,
+      vel: new THREE.Vector3(), step: () => {},
+      onImpact: (speed) => smashTavTable(table, speed),
+    };
+    physProps.push(table.prop);
+    tavTables.push(table);
+  }
+}
+/* A ROUND TOP COMES APART IN QUARTERS AND THE LEGS GO THEIR OWN WAY. Every
+ * piece is re-centred on ITSELF (the tripod camera's lesson) out of the
+ * shared attributes, a top is cut into sectors about the table's own axis,
+ * a leg is turned onto X so it lands lying down, and the legs leave first
+ * and the top a beat after — the work table's own collapse. */
+const _tvP = new THREE.Vector3(), _tvQ = new THREE.Quaternion(), _tvS = new THREE.Vector3();
+const _tvZ90 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2);
+function tavGibGeo(src, tris, cx, cy, cz) {
+  const g = src.geometry, pos = g.attributes.position, uv = g.attributes.uv;
+  const P = new Float32Array(tris.length * 3), U = uv ? new Float32Array(tris.length * 2) : null;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < tris.length; i++) {
+    v.fromBufferAttribute(pos, tris[i]).applyMatrix4(src.matrixWorld);
+    P[i * 3] = v.x - cx; P[i * 3 + 1] = v.y - cy; P[i * 3 + 2] = v.z - cz;
+    if (U) { U[i * 2] = uv.getX(tris[i]); U[i * 2 + 1] = uv.getY(tris[i]); }
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(P, 3));
+  if (U) out.setAttribute('uv', new THREE.BufferAttribute(U, 2));
+  out.computeVertexNormals();
+  return out;
+}
+function tavThrow(m, at, gy, kick, dx, dz, h, wait, upright) {
+  if (upright) { m.geometry.rotateZ(-Math.PI / 2); m.quaternion.multiply(_tvZ90); }
+  scene.add(m);
+  const sway = (Math.random() - 0.5) * 0.9;
+  const out = (0.5 + kick * (0.3 + h * 0.7)) * (0.6 + Math.random() * 0.6);
+  gibs.push({ m,
+    vel: new THREE.Vector3((dx + sway * dz) * out, 0.6 + h * 0.9 + Math.random() * 0.5, (dz - sway * dx) * out),
+    spin: new THREE.Vector3((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 8),
+    rest: gy + 0.03 + Math.random() * 0.02, life: 300, bleed: false, wait });
+}
+function smashTavTable(t, speed) {
+  if (t.dead) return;
+  t.dead = true; t.prop.dead = true;
+  const gy = TAV_Y + TAV_FLOOR;
+  const kick = Math.min(3.4, 0.9 + (speed || 6) * 0.16);
+  let dx = t.cx - camera.position.x, dz = t.cz - camera.position.z;
+  const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+  const SEC = 4, sectors = [];
+  for (let k = 0; k < SEC; k++) sectors.push([]);
+  const v = new THREE.Vector3();
+  for (const pm of t.pieces) {
+    pm.updateMatrixWorld(true);
+    const tris = pm.geometry.index.array, kind = pm.userData.part;
+    if (kind === 'top') {
+      // sector by the triangle's own middle about the table's axis
+      const pos = pm.geometry.attributes.position;
+      for (let q = 0; q < tris.length; q += 3) {
+        let mx = 0, mz = 0;
+        for (let k = 0; k < 3; k++) { v.fromBufferAttribute(pos, tris[q + k]).applyMatrix4(pm.matrixWorld); mx += v.x / 3; mz += v.z / 3; }
+        const a = Math.atan2(mz - t.cz, mx - t.cx) + Math.PI;
+        sectors[Math.min(SEC - 1, Math.floor(a / (2 * Math.PI) * SEC))].push(tris[q], tris[q + 1], tris[q + 2]);
+      }
+      continue;
+    }
+    const e = pm.userData.box; e.getCenter(_tvP);
+    const g = tavGibGeo(pm, Array.from(tris), _tvP.x, _tvP.y, _tvP.z);
+    const m = new THREE.Mesh(g, pm.material); m.position.copy(_tvP);
+    tavThrow(m, _tvP, gy, kick, dx, dz, THREE.MathUtils.clamp((_tvP.y - gy) / 1.0, 0, 1), kind === 'leg' ? 0 : 0.06, kind === 'leg');
+  }
+  const topPiece = t.pieces.find((p) => p.userData.part === 'top');
+  if (topPiece) for (let k = 0; k < SEC; k++) {
+    if (!sectors[k].length) continue;
+    const a = (k + 0.5) / SEC * 2 * Math.PI - Math.PI;
+    const cx = t.cx + Math.cos(a) * t.r * 0.5, cz = t.cz + Math.sin(a) * t.r * 0.5;
+    // every top piece shares the source geometry, so any of them can carve a sector
+    const g = tavGibGeo(topPiece, sectors[k], cx, t.top - 0.03, cz);
+    const m = new THREE.Mesh(g, topPiece.material); m.position.set(cx, t.top - 0.03, cz);
+    tavThrow(m, m.position, gy, kick, dx, dz, 1, 0.14, false);
+  }
+  tavWorld.remove(t.grp);
+  clearTavStoreys(t.plan, t.top - 0.5, t.top + 0.4);
+  tavWallsDirty = true;
+  if (!sfxTableBreak()) sfxWoodSnap();
+}
+/* Taking a surface away does not take away what the grid remembers of it. */
+function clearTavStoreys(plan, y0, y1) {
+  const w = tavWalk; if (!w || !tavCells) return;
+  const C = w.cell;
+  const i0 = Math.floor((plan.min.x - TAV_X - w.x0) / C), i1 = Math.floor((plan.max.x - TAV_X - w.x0) / C);
+  const j0 = Math.floor((plan.min.z - TAV_Z - w.z0) / C), j1 = Math.floor((plan.max.z - TAV_Z - w.z0) / C);
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const fl = tavCells.get(j * w.gw + i); if (!fl) continue;
+    for (let k = fl.length - 3; k >= 0; k -= 3) if (TAV_Y + fl[k] >= y0 && TAV_Y + fl[k] <= y1) fl.splice(k, 3);
+    if (!fl.length) tavCells.delete(j * w.gw + i);
+  }
+}
+
+/* THE WAY UP TO THE TUNNEL IS CRATES, AND THEY ARE THE FILE'S OWN CRATE.
+ * Over the covered stall at the back of the hall runs a vaulted passage —
+ * the little tunnel — with its floor 5.3 m over the flags, and the model
+ * offers no way up to it: its own crate stack stands INSIDE the stall under
+ * the stall's roof, and the roof is 3.5 m up. Measured, a jump lifts the
+ * feet 0.62 and the walk catches a floor half a metre over that, so a crate
+ * (1.06 tall) is exactly one jump. Stacks of three, two and one run out
+ * from the stall's front along the one strip of clear floor beside it
+ * (x -9.5..-8.4 — a stool stands to one side of it and a valance hangs
+ * over the other), two three-high stacks reach the roof's edge —
+ * the roof begins half a metre behind the last of them, so the last step is
+ * a short jump — and one more crate on the open part of that roof puts the
+ * tunnel a jump away. Each is a COPY of one of the file's own crates — same triangles,
+ * same map — so nothing here looks added; it is written into the grid as a
+ * storey and into the wall index like anything else drawn. */
+const TAV_STACKS = [[-8.95, 0.25, 1, 0], [-8.95, -0.95, 2, 0], [-8.95, -2.15, 3, 0], [-8.95, -3.35, 3, 0], [-10.1, -5.2, 1, 3.53]];   // x, z, crates high, base over the flags
+// x -8.95 is measured: a stool stands at x -10.6..-10.2 and a valance hangs
+// under the roof's edge out to x -9.4, and the file's own small crate at
+// x -9.5..-8.8 sits wholly INSIDE the last stack's bottom crate
+// the second three-high stack runs the stair up to the stall's roof edge, which
+// the grid puts at z -4.4: from its top the roof is a short jump, half a metre
+// across and 0.39 up (measured: the cells between carry nothing but the flags)
+let tavCrateGeo = null;
+function buildTavCrates() {
+  if (!tavWorld || tavWorld.userData.crates) return;
+  tavWorld.userData.crates = true;
+  tavWorld.updateMatrixWorld(true);
+  let src = null;
+  tavWorld.traverse((o) => { if (!src && o.isMesh && o.material && o.material.name === 'TextureMaterial_12' && o.geometry.index) src = o; });
+  if (!src) return;
+  const { roots, box } = meshIslands(src, tavWorld.position);
+  // the file's own bottom-row crate under the stall: 1.1 by 1.2 in plan, 1.06 tall
+  const want = new THREE.Vector3(TAV_X - 9.65, TAV_Y + TAV_FLOOR + 0.72, TAV_Z - 5.3), c = new THREE.Vector3(), sz = new THREE.Vector3();
+  let root = -1, bd = 1e9, cb = null;
+  for (const [r, e] of box) {
+    e.getSize(sz); if (sz.y < 0.9 || sz.y > 1.2 || sz.x > 1.4 || sz.z > 1.4) continue;
+    const d = e.getCenter(c).distanceTo(want);
+    if (d < bd) { bd = d; root = r; cb = e; }
+  }
+  if (root < 0 || bd > 1.5) return;
+  const tris = [];
+  for (let q = 0; q < roots.length; q++) if (roots[q] === root) tris.push(src.geometry.index.getX(q * 3), src.geometry.index.getX(q * 3 + 1), src.geometry.index.getX(q * 3 + 2));
+  cb.getCenter(c); cb.getSize(sz);
+  tavCrateGeo = tavGibGeo(src, tris, c.x, cb.min.y, c.z);   // centred on the middle of its own bottom
+  // AND INDEXED, or the wall index walks straight past it: `buildKeepWalls`
+  // reads a mesh's index and a gib geometry has none, so a stack was a floor
+  // on top and open air from the side (measured: 12,782 faces with and
+  // without ten crates)
+  tavCrateGeo.setIndex(Array.from({ length: tavCrateGeo.attributes.position.count }, (_, i) => i));
+  const h = sz.y, w = tavWalk, C = w.cell;
+  for (const [x, z, count, base] of TAV_STACKS) {
+    for (let k = 0; k < count; k++) {
+      const m = new THREE.Mesh(tavCrateGeo, src.material);
+      m.position.set(x, TAV_FLOOR + base + k * h, z);
+      m.rotation.y = (k % 2) * Math.PI / 2;               // a stack is never squared up
+      m.frustumCulled = false; m.name = 'tavCrate';
+      tavWorld.add(m);
+    }
+    const top = TAV_FLOOR + base + count * h;
+    if (!tavCells) continue;
+    const i0 = Math.floor((x - sz.x / 2 - w.x0) / C), i1 = Math.floor((x + sz.x / 2 - w.x0) / C);
+    const j0 = Math.floor((z - sz.z / 2 - w.z0) / C), j1 = Math.floor((z + sz.z / 2 - w.z0) / C);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const cx = w.x0 + (i + 0.5) * C, cz = w.z0 + (j + 0.5) * C;
+      if (cx < x - sz.x / 2 || cx > x + sz.x / 2 || cz < z - sz.z / 2 || cz > z + sz.z / 2) continue;
+      let fl = tavCells.get(j * w.gw + i);
+      if (!fl) { fl = []; tavCells.set(j * w.gw + i, fl); }
+      const tri = [];
+      for (let q = 0; q < fl.length; q += 3) tri.push([fl[q], fl[q + 1], fl[q + 2]]);
+      tri.push([Math.round(top * 100) / 100, 0, 99]);
+      tri.sort((a, b) => a[0] - b[0]);
+      fl.length = 0; for (const e of tri) fl.push(e[0], e[1], e[2]);
+    }
+  }
+  tavWorld.updateMatrixWorld(true);
+}
+
+/* THE CHAIRS. The file sets tables and no chairs; three to a table go in
+ * here, in the tables' own dark timber — a plank seat, four legs, two back
+ * posts and two slats — each turned in at its table and stood only where the
+ * walk has flags and the drawn faces leave a body's room. They are in the
+ * wall index like everything else, so they stop you, and they come apart
+ * into what they are made of. */
+const CHAIR = { seat: 0.44, seatY: 0.50, leg: 0.045, back: 0.96, slat: [0.66, 0.84] };   // the seat sits OVER the step band (feet + 0.46), or a chair is a thing you walk into up to its back
+let tavChairMat = null;
+function buildTavChairs() {
+  if (!tavWorld || tavChairs.length) return;
+  let src = null;
+  tavWorld.traverse((o) => { if (!src && o.isMesh && o.material && o.material.name === 'TextureMaterial_13') src = o.material; });
+  tavChairMat = src ? src.clone() : new THREE.MeshBasicMaterial({ color: 0x3a2e24 });
+  tavChairMat.name = 'tavChair';
+  const floorY = TAV_Y + TAV_FLOOR;
+  for (const t of tavTables) {
+    const R = t.r + 0.32;
+    let made = 0;
+    for (let k = 0; k < 8 && made < 3; k++) {
+      const a = (k / 8) * Math.PI * 2 + 0.4;
+      const x = t.cx + Math.cos(a) * R, z = t.cz + Math.sin(a) * R;
+      const st = keepFloorAt(x, z, floorY + 0.05, 0.3, TAV_SITE);
+      if (!st || Math.abs(st.f - floorY) > 0.08) continue;
+      if (keepWallNear(x, z, 0.42, floorY + 0.10, floorY + 1.3, TAV_SITE)) continue;
+      if (tavChairs.some((c) => Math.hypot(c.x - x, c.z - z) < 0.75)) continue;
+      const g = new THREE.Group();
+      g.position.set(x - TAV_X, floorY - TAV_Y, z - TAV_Z);
+      g.rotation.y = -a + Math.PI / 2;     // its back to the room, its front at the table (+z faces the table)
+      const put = (w, h, d, px, py, pz, tag) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), tavChairMat); m.position.set(px, py, pz); m.userData.part = tag; g.add(m); return m; };
+      const S = CHAIR.seat, L = CHAIR.leg, in_ = S / 2 - L / 2 - 0.01;
+      put(S, 0.035, S, 0, CHAIR.seatY, 0, 'seat');
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) put(L, CHAIR.seatY, L, sx * in_, CHAIR.seatY / 2, sz * in_, 'leg');
+      for (const sx of [-1, 1]) put(L, CHAIR.back - CHAIR.seatY, L, sx * in_, CHAIR.seatY + (CHAIR.back - CHAIR.seatY) / 2, -in_, 'post');
+      for (const y of CHAIR.slat) put(S - L * 2 - 0.02, 0.07, 0.02, 0, y, -in_, 'slat');
+      g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+      tavWorld.add(g);
+      const chair = { grp: g, x, z, dead: false, prop: null };
+      chair.prop = { mesh: g, radius: 0.4, dead: false, held: false, thrown: false, vel: new THREE.Vector3(), step: () => {},
+        onImpact: (speed) => smashTavChair(chair, speed) };
+      physProps.push(chair.prop);
+      tavChairs.push(chair);
+      made++;
+    }
+  }
+  tavWorld.updateMatrixWorld(true);
+}
+function smashTavChair(c, speed) {
+  if (c.dead) return;
+  c.dead = true; c.prop.dead = true;
+  const gy = TAV_Y + TAV_FLOOR;
+  const kick = Math.min(3.0, 0.8 + (speed || 6) * 0.14);
+  let dx = c.x - camera.position.x, dz = c.z - camera.position.z;
+  const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+  c.grp.updateMatrixWorld(true);
+  const WAIT = { leg: 0, post: 0.03, slat: 0.06, seat: 0.09 };
+  for (const ch of [...c.grp.children]) {
+    ch.matrixWorld.decompose(_tvP, _tvQ, _tvS);
+    const tag = ch.userData.part, upright = tag === 'leg' || tag === 'post';
+    const m = new THREE.Mesh(upright ? ch.geometry.clone() : ch.geometry, ch.material);
+    m.position.copy(_tvP); m.quaternion.copy(_tvQ);
+    tavThrow(m, _tvP, gy, kick, dx, dz, THREE.MathUtils.clamp((_tvP.y - gy) / 0.9, 0, 1), WAIT[tag] || 0, upright);
+  }
+  tavWorld.remove(c.grp);
+  tavWallsDirty = true;
+  sfxWoodSnap();                                  // the coat stand's own snap, bank or synth
+}
+
+// -------------------------------------------------------------- the walk
+function updateTavern(dt) {
+  if (!inTavern || !tavWalk) return;
+  if (tavWallsDirty) { tavWallsDirty = false; tavWalls = null; buildKeepWalls(TAV_SITE); }
+  const p = camera.position, S = TAV_SITE;
+  const feet = camBaseY - playerEye();
+  const up = !onGround ? TAV_AIR : TAV_STEP;
+  const hits = (x0, z0, x1, z1) => keepHitsWall(x0, z0, x1, z1, feet + 0.80, S)
+    || keepHitsWall(x0, z0, x1, z1, feet + 1.25, S)
+    || keepHitsWall(x0, z0, x1, z1, feet + 1.68, S);
+  const legal = (x, z) => keepFloorAt(x, z, feet, up, S) && !hits(_preMove.x, _preMove.z, x, z);
+  let st = legal(p.x, p.z);
+  if (!st) {
+    if (legal(p.x, _preMove.z)) p.z = _preMove.z;
+    else if (legal(_preMove.x, p.z)) p.x = _preMove.x;
+    else { p.x = _preMove.x; p.z = _preMove.z; }
+    st = keepFloorAt(p.x, p.z, feet, up, S);
+  }
+  pushOutOfKeep(p, TAV_BODY, feet, up, S);
+  keepWallPush(p, TAV_BODY, feet, S);
+  st = keepFloorAt(p.x, p.z, feet, up, S) || st;
+  if (!st) { p.x = _preMove.x; p.z = _preMove.z; st = keepFloorAt(p.x, p.z, feet, up, S); }
+  if (st) tavLastFloor = st.f;
+  groundY = st ? st.f : (tavLastFloor === null ? TAV_Y + TAV_FLOOR : tavLastFloor);
+}
+function tavGroundAt(x, z, y) {
+  if (!tavReady || !inTavern || y === undefined) return null;
+  if (Math.abs(x - TAV_X) > 60 || Math.abs(z - TAV_Z) > 60 || Math.abs(y - TAV_Y) > 60) return null;
+  const st = keepFloorAt(x, z, y, 0.5, TAV_SITE);
+  return st ? st.f : TAV_Y + TAV_FLOOR;
+}
+const _floorBeforeTavern = bunkerFloorAt;
+bunkerFloorAt = (x, z, y) => {
+  const k = tavGroundAt(x, z, y);
+  return k === null ? _floorBeforeTavern(x, z, y) : k;
+};
+
+// ------------------------------------------------------- the air, the door
+function tavEnter() {
+  if (!_tavFogSaved) {
+    _tavFogSaved = { color: scene.fog.color.clone(), density: scene.fog.density, sky: sky.visible };
+    scene.fog.color.copy(TAV_FOG.color); scene.fog.density = TAV_FOG.density; sky.visible = false;
+  }
+}
+function tavLeave() {
+  if (_tavFogSaved) {
+    scene.fog.color.copy(_tavFogSaved.color); scene.fog.density = _tavFogSaved.density; sky.visible = _tavFogSaved.sky;
+    _tavFogSaved = null;
+  }
+}
+function warmTavern() {
+  if (tavWarmed || !tavWorld || !tavReady) return;
+  tavWarmed = true;
+  const x = TAV_X + TAV_SPAWN.x, y = TAV_Y + TAV_FLOOR + 1.6, z = TAV_Z + TAV_SPAWN.z;
+  const lx = x - Math.sin(TAV_SPAWN.yaw) * 10, lz = z - Math.cos(TAV_SPAWN.yaw) * 10;
+  warmStep('tavern compile', () => warmCompile([tavWorld], x, y, z, lx, y, lz));
+  for (const v of [[x, y, z, lx, y, lz], [x, y, z, x, y, z + 20], [x, y, z, x + 20, y, z], [x, y, z, x - 20, y, z], [x, y, z, x, y, z - 20]])
+    warmStep('tavern', () => warmView([tavWorld], ...v));
+}
+/* THE DOOR. Black over half a second, the latch and the hinge under it, a
+ * cut in the middle of the black, and up on the other side — the sail's own
+ * shape, on the wall clock beside it. If the hall is somehow not down yet
+ * the black holds until it is. */
+function startTavern(dir) {
+  if (tavBusy || frozen()) return;
+  if (dir > 0) loadTavern();
+  tavBusy = true; tavDir = dir; tavT = 0; tavCutDone = false;
+  blocking = false;
+  sfxTavernDoor();
+}
+function updateTavernCut(dt) {
+  if (!tavBusy) return;
+  tavT += dt;
+  const t = tavT, D = TAV_OUT + TAV_HOLD + TAV_IN;
+  const black = t < TAV_OUT ? smooth01(0.04, TAV_OUT, t)
+    : t < TAV_OUT + TAV_HOLD ? 1 : 1 - smooth01(TAV_OUT + TAV_HOLD, D, t);
+  blackoutEl.style.opacity = black.toFixed(3);
+  if (!tavCutDone && t >= TAV_OUT + 0.05) {
+    if (tavDir > 0 && !tavReady) { tavT = TAV_OUT + 0.05; return; }
+    tavCutDone = true;
+    if (tavDir > 0) placeInTavern(); else placeBackAtKeepDoor();
+  }
+  if (t >= D) { tavBusy = false; blackoutEl.style.opacity = '0'; catchBreath(); }
+}
+function placeInTavern() {
+  loadTavern();
+  buildTavern();
+  inKeep = false; inTavern = true;
+  if (keepWorld) keepWorld.visible = false;
+  if (tavWorld) tavWorld.visible = true;
+  keepLeave();
+  tavEnter();
+  warmTavern();
+  const gx = TAV_X + TAV_SPAWN.x, gz = TAV_Z + TAV_SPAWN.z;
+  const st = keepStandAt(gx, gz, TAV_Y + TAV_FLOOR + 0.3, 1.0, TAV_SITE);
+  groundY = st ? st.f : TAV_Y + TAV_FLOOR;
+  tavLastFloor = groundY;
+  camera.position.set(gx, groundY + playerEye(), gz);
+  camBaseY = camera.position.y; vy = 0; onGround = true;
+  lookEuler.set(TAV_SPAWN.pitch, TAV_SPAWN.yaw, 0, lookEuler.order);
+  camera.quaternion.setFromEuler(lookEuler);
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0);
+  crouching = false;
+}
+function placeBackAtKeepDoor() {
+  inTavern = false;
+  if (tavWorld) tavWorld.visible = false;
+  tavLeave();
+  inKeep = true;
+  if (keepWorld) keepWorld.visible = true;
+  keepEnter();
+  // a stride out from the door, facing away from it (a look's forward is (-sin, -cos), so behind is (+sin, +cos))
+  const gx = KEEP_X + KEEP_DOOR.x + Math.sin(KEEP_DOOR.yaw) * 1.4, gz = KEEP_Z + KEEP_DOOR.z + Math.cos(KEEP_DOOR.yaw) * 1.4;
+  const st = keepStandAt(gx, gz, KEEP_Y + KEEP_DOOR.y + 0.3, 1.0);
+  groundY = st ? st.f : KEEP_Y + KEEP_DOOR.y;
+  camera.position.set(gx, groundY + playerEye(), gz);
+  camBaseY = camera.position.y; vy = 0; onGround = true;
+  lookEuler.set(0, KEEP_DOOR.yaw + Math.PI, 0, lookEuler.order);
+  camera.quaternion.setFromEuler(lookEuler);
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0);
+}
+/* The keep's door on the terrace and the tavern's own doorway, each an
+ * invisible box the crosshair can find — in their GROUPS' frames, because a
+ * world position written into a child of a group six kilometres out lands
+ * twice as far (the hoist's own trap). */
+function buildKeepDoor() {
+  if (!keepWorld || keepWorld.userData.tavDoor) return;
+  keepWorld.userData.tavDoor = true;
+  const proxy = new THREE.Mesh(new THREE.BoxGeometry(2.2, 3.0, 0.6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+  proxy.position.set(KEEP_DOOR.x, KEEP_DOOR.y + 1.4, KEEP_DOOR.z);
+  proxy.rotation.y = KEEP_DOOR.yaw;
+  proxy.name = 'hitProxy'; proxy.visible = false;
+  keepWorld.add(proxy);
+  addInteractable(proxy, 'Enter the keep', 'default', {
+    mid: true, far: 3.6,
+    when: () => inKeep && !sailBusy && !tavBusy,
+    onActivate: () => startTavern(1),
+  });
+}
+function buildTavDoor() {
+  if (!tavWorld || tavWorld.userData.door) return;
+  tavWorld.userData.door = true;
+  const proxy = new THREE.Mesh(new THREE.BoxGeometry(2.4, 3.0, 0.8),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+  proxy.position.set(TAV_SPAWN.x + Math.sin(TAV_SPAWN.yaw) * 1.3, TAV_FLOOR + 1.4, TAV_SPAWN.z + Math.cos(TAV_SPAWN.yaw) * 1.3);
+  proxy.rotation.y = TAV_SPAWN.yaw;
+  proxy.name = 'hitProxy'; proxy.visible = false;
+  tavWorld.add(proxy);
+  addInteractable(proxy, 'Back to the terrace', 'default', {
+    mid: true, far: 3.2,
+    when: () => inTavern && !tavBusy,
+    onActivate: () => startTavern(-1),
+  });
+}
+/* Oak and iron: the latch lifting, the hinge taking the weight over most of
+ * a second, and the door meeting the frame. Nothing above two kilohertz but
+ * the latch. */
+function sfxTavernDoor() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  for (const [at, f, lv] of [[0, 900, 0.30], [0.05, 520, 0.24]]) {
+    const o = ctx.createOscillator(); o.type = 'square';
+    o.frequency.setValueAtTime(f, t + at); o.frequency.exponentialRampToValueAtTime(f * 0.5, t + at + 0.06);
+    const g = ctx.createGain(); g.gain.setValueAtTime(lv, t + at); g.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.09);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2000;
+    o.connect(lp).connect(g).connect(out); o.start(t + at); o.stop(t + at + 0.1);
+  }
+  const n = noiseBurst(0.9, (x) => Math.sin(x * Math.PI) * (0.55 + 0.45 * Math.sin(x * 38)));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 8;
+  bp.frequency.setValueAtTime(300, t + 0.12); bp.frequency.linearRampToValueAtTime(210, t + 1.0);
+  const g = ctx.createGain(); g.gain.value = 0.20;
+  n.connect(bp).connect(g).connect(out); n.start(t + 0.12); n.stop(t + 1.05);
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(110, t + 1.05); o.frequency.exponentialRampToValueAtTime(48, t + 1.35);
+  const og = ctx.createGain(); og.gain.setValueAtTime(0.45, t + 1.05); og.gain.exponentialRampToValueAtTime(0.0001, t + 1.5);
+  o.connect(og).connect(out); o.start(t + 1.05); o.stop(t + 1.55);
+  const th = noiseBurst(0.22, (x) => Math.pow(1 - x, 2.4));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 480;
+  const tg = ctx.createGain(); tg.gain.value = 0.36;
+  th.connect(lp).connect(tg).connect(out); th.start(t + 1.05); th.stop(t + 1.3);
+}
+
 loadPortal();
 
 
@@ -34611,7 +35271,7 @@ window.__bw = {
     if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
     oceanUniforms.uTime.value += dt;
     update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
-    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt);
+    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateTavernCut(rawDt);
     updateLightPool();
   },
   /* The lamp pool, for a still: a frozen loop never points the twelve at
@@ -34637,6 +35297,13 @@ window.__bw = {
   get keepLift() { return keepLift && { state: keepLift.state, t: +keepLift.t.toFixed(2), y: +(keepLift.y - KEEP_Y).toFixed(2), drop: +keepLift.drop.toFixed(2), landY: +keepLift.landY.toFixed(2), box: keepLiftBox && { top: +(keepLiftBox.top - KEEP_Y).toFixed(2), x: [+(keepLiftBox.x0 - KEEP_X).toFixed(1), +(keepLiftBox.x1 - KEEP_X).toFixed(1)], z: [+(keepLiftBox.z0 - KEEP_Z).toFixed(1), +(keepLiftBox.z1 - KEEP_Z).toFixed(1)] } }; },
   get keepRepair() { return keepWalk && { ground: keepWalk.repaired, storeys: keepWalk.storeys }; },
   get keepWorld() { return keepWorld; }, get keepSky() { return keepSky; }, get keepSea() { return keepSea; }, get keepBoat() { return keepBoat; }, get beachBoat() { return beachBoat; },
+  TAV_X, TAV_Y, TAV_Z, TAV_SPAWN, TAV_SITE, KEEP_DOOR, loadTavern, startTavern, placeInTavern, placeBackAtKeepDoor, buildTavern, smashTavTable, smashTavChair,
+  get interactables() { return interactables; }, set fallbackLook(v) { fallbackLook = v; },   // a prompt can only be read with a look in charge, and the pane cannot lock
+  get tavWorld() { return tavWorld; }, get tavTables() { return tavTables; }, get tavChairs() { return tavChairs; },
+  tavState: () => ({ inTavern, ready: tavReady, built: tavBuilt, walk: !!tavWalk, cells: tavCells ? tavCells.size : 0, busy: tavBusy, t: +tavT.toFixed(2),
+    walls: tavWalls && { faces: tavWalls.v.length / 9, cells: tavWalls.map.size }, repair: tavWalk && { storeys: tavWalk.storeys, ms: tavWalk.built },
+    tables: tavTables.map((t) => ({ x: +(t.cx - TAV_X).toFixed(2), z: +(t.cz - TAV_Z).toFixed(2), r: +t.r.toFixed(2), top: +(t.top - TAV_Y).toFixed(2), pieces: t.pieces.length, kinds: t.pieces.map((p) => p.userData.part).join(','), dead: t.dead })),
+    chairs: tavChairs.map((c) => ({ x: +(c.x - TAV_X).toFixed(2), z: +(c.z - TAV_Z).toFixed(2), dead: c.dead })) }),
   keepState: () => ({ inKeep, ready: keepReady, walk: !!keepWalk, cells: keepCells ? keepCells.size : 0, sail: sailBusy, t: +sailT.toFixed(2), onBoat, boatBox: beachBoatBox && [+beachBoatBox.min.x.toFixed(2), +beachBoatBox.min.y.toFixed(2), +beachBoatBox.min.z.toFixed(2), +beachBoatBox.max.x.toFixed(2), +beachBoatBox.max.y.toFixed(2), +beachBoatBox.max.z.toFixed(2)], keepBoatBox }),
   updateHurt, hurtEl,
   militaryItem, militaryWorld, milModel, get toolVM() { return toolVM; }, vmScene, vmCamera, toolMount,
