@@ -488,7 +488,7 @@ def split_benches(P, UV, I):
 def main():
     global HEADROOM, OPEN_SKY
     ap = argparse.ArgumentParser()
-    ap.add_argument('kind', choices=['cave', 'church', 'passage', 'dojo', 'keep', 'tavern'])
+    ap.add_argument('kind', choices=['cave', 'church', 'passage', 'dojo', 'keep', 'tavern', 'courtyard'])
     ap.add_argument('src'); ap.add_argument('dst')
     ap.add_argument('--tex', type=int, default=1024)
     ap.add_argument('--quality', type=int, default=86)
@@ -503,7 +503,7 @@ def main():
     ap.add_argument('--headroom', type=float, default=HEADROOM, help='the least roof a cell may have over its floor and still be floor (the crouch is 1.03)')
     ap.add_argument('--floor-min', type=float, default=None, help='a surface under this height is not a floor (the sea: an island has an underside, and it is in the water)')
     a = ap.parse_args()
-    budget = a.budget or {'cave': 240000, 'church': 260000, 'passage': 60000, 'dojo': 180000, 'keep': 10 ** 9, 'tavern': 10 ** 9}[a.kind]
+    budget = a.budget or {'cave': 240000, 'church': 260000, 'passage': 60000, 'dojo': 180000, 'keep': 10 ** 9, 'tavern': 10 ** 9, 'courtyard': 10 ** 9}[a.kind]
     # AN EXACT KIND IS THE FILE, MOVED. The keep is the owner's word — a
     # perfect replica — so nothing is decimated, the normals ride through
     # the bake (a smooth-shaded stylised build under a normal map is not a
@@ -513,10 +513,10 @@ def main():
     # THE TAVERN IS EXACT TOO — Katydid's SketchUp hall, baked and unlit
     # (`KHR_materials_unlit`, which three honours as MeshBasicMaterial, so
     # what the file shows is what the game shows whatever the lamps do).
-    EXACT = a.kind in ('keep', 'tavern')
+    EXACT = a.kind in ('keep', 'tavern', 'courtyard')
     FLOOR_MIN = a.floor_min
     HEADROOM = a.headroom
-    OPEN_SKY = a.open_sky or a.kind in ('dojo', 'keep')
+    OPEN_SKY = a.open_sky or a.kind in ('dojo', 'keep', 'courtyard')
 
     root = os.path.dirname(os.path.abspath(a.src))
     g = json.load(open(a.src))
@@ -541,7 +541,7 @@ def main():
                # AND THE TAVERN'S BACK FACES ARE INVISIBLE. SketchUp exports every
                # face twice, and the back copy wears a 32x16 texture that is
                # entirely alpha zero: 16,594 triangles that draw nothing.
-               'dojo': (), 'keep': (), 'tavern': ('BackSide',)}[a.kind]
+               'dojo': (), 'keep': (), 'tavern': ('BackSide',), 'courtyard': ()}[a.kind]
     def walk(ni, parent):
         n = nodes[ni]
         m = mat_mul(parent, node_matrix(n))
@@ -722,11 +722,24 @@ def main():
     # sea plane, a seabed under it and a sky sphere round the lot; all three
     # are drawn and none is walked.
     KEEP_NO_WALK = ('material', 'material_5', 'Sand')
+    # AND A NO-WALK LIST BELONGS TO A FILE, NOT TO A NAMING CONVENTION. Every
+    # Sketchfab export calls its materials `material`, `material_2`, … so the
+    # keep's list LOOKS reusable and is a trap: in the courtyard `material` is
+    # the GROUND — the flagstones, the dais and the terrain outside the wall —
+    # and dropping it leaves the arena with nothing to stand on, which is the
+    # dojo's `SkyAndGround1` lesson wearing a different file's names. Each was
+    # settled by rendering every material in its own colour and looking:
+    # `Material` is the sky sphere and `material_5` the eight hundred alpha
+    # cards of grass and ivy, which are drawn and never collided; the wall
+    # (2, 3, 4) and the buildings (7) are what stops you.
+    YARD_NO_WALK = ('Material', 'material_5')
     walk_in = [(pos, tris, is_bench) for (name, mi, pos, uvs, tris, is_bench) in packed
                if not (a.kind == 'church' and mats[mi].get('name') == 'ampoule')
                and not (a.kind == 'dojo' and mats[mi].get('name') in NO_WALK)
-               and not (a.kind == 'keep' and mats[mi].get('name') in KEEP_NO_WALK)]
-    walk = build_walk_multi(walk_in, FLOOR_MIN) if a.kind in ('keep', 'tavern') else build_walk(walk_in, None, door_box)
+               and not (a.kind == 'keep' and mats[mi].get('name') in KEEP_NO_WALK)
+               and not (a.kind == 'courtyard' and mats[mi].get('name') in YARD_NO_WALK)]
+    walk = (build_walk_multi(walk_in, FLOOR_MIN) if a.kind in ('keep', 'tavern', 'courtyard')
+            else build_walk(walk_in, None, door_box))
     if door_box: walk['door'] = door_box
     if bench_boxes: walk['benches'] = bench_boxes
     # where the floor is at a few named spots, for the notes and the placement
@@ -747,6 +760,10 @@ def main():
         b = walk['bounds']
         log('  keep bounds %s .. %s' % ([round(v, 2) for v in b[0]], [round(v, 2) for v in b[1]]))
         log('  keep: %d cells with a floor, %d storeys in all' % (len(walk['cells']), sum(len(c[2]) // 3 for c in walk['cells'])))
+    elif a.kind == 'courtyard':
+        b = walk['bounds']
+        log('  courtyard bounds %s .. %s' % ([round(v, 2) for v in b[0]], [round(v, 2) for v in b[1]]))
+        log('  courtyard: %d cells with a floor, %d storeys in all' % (len(walk['cells']), sum(len(c[2]) // 3 for c in walk['cells'])))
     elif a.kind == 'dojo':
         b = walk['bounds']
         cx, cz = (b[0][0] + b[1][0]) / 2, (b[0][2] + b[1][2]) / 2
@@ -757,7 +774,7 @@ def main():
     else:
         log('  church floor at the door: %s, at the altar: %s' % (floor_at(-23.5, 0), floor_at(3, 0)))
 
-    if a.sparse and a.kind not in ('keep', 'tavern'):
+    if a.sparse and a.kind not in ('keep', 'tavern', 'courtyard'):
         # A LONG THIN TUNNEL IS NINETY-FIVE PER CENT EMPTY BOUNDING BOX: the
         # passage's dense grid is 1700 by 250 cells and nearly all of them
         # say "no floor" three times over, at four megabytes of JSON. Only
@@ -834,7 +851,7 @@ def main():
             attrs['NORMAL'] = len(accessors); accessors.append({'bufferView': emit(nb, ARRAY_BUFFER), 'componentType': 5126, 'count': len(nrm), 'type': 'VEC3'})
         meshes.append({'name': name, 'primitives': [{'attributes': attrs, 'indices': ia, 'material': mi}]})
         out_nodes.append({'name': name, 'mesh': len(meshes) - 1})
-    root_node = {'name': ('bw_' if a.kind in ('dojo', 'keep', 'tavern') else 'undercroft_') + a.kind, 'children': list(range(1, len(out_nodes) + 1)),
+    root_node = {'name': ('bw_' if a.kind in ('dojo', 'keep', 'tavern', 'courtyard') else 'undercroft_') + a.kind, 'children': list(range(1, len(out_nodes) + 1)),
                  'extras': {'bw_walk': json.dumps(walk, separators=(',', ':'))}}
     g['nodes'] = [root_node] + out_nodes
     g['meshes'] = meshes

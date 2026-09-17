@@ -4132,6 +4132,67 @@ and that buys the two metres: at x = 8.6 the seaward stones and the seaward
 third of the base take the surf, which is as far out as it can go and still be
 standing on the beach rather than in it.
 
+**AND A LIVING CREATURE'S HEIGHT IS NEVER UPDATED — WHICH NOTHING NOTICED
+UNTIL A ROOM HAD A STEP IN IT.** `makeMutant` is handed a y and that y is never
+touched again for as long as the thing is alive; only the RAGDOLL asks
+`bunkerFloorAt` what is under it. That is correct on a flat beach, a flat
+bunker floor and a flat hall, and every room in this game was flat until the
+dojo — whose yard is at -0.15 and whose boards are at +0.09. So the samurai,
+who arrives OUTSIDE and walks up into the building, kept the yard's height and
+stood a quarter of a metre over the deck.
+
+Both of the owner's symptoms are that one fact. "Floating at you" is the lift
+itself; "not hitting" is the same lift, because `blowLands` sweeps his limb
+against your torso segment and a quarter metre puts the whole swing over your
+head. He follows the floor under him now, eased rather than snapped — a step
+taken in one frame reads as the body jumping.
+
+**AND IT DID NOT SHOW UP IN THE HARNESS, WHICH IS THE REAL LESSON.** Every
+measurement of this fight walked the player straight in along one line and the
+creature spawned near the same spot, so both were on the SAME side of the step
+and the gap was zero. It took standing deep inside the building — which puts
+his spawn out in the yard and makes him cross the step to reach you — to
+reproduce it at all. A test that always starts the fight in the same place
+cannot find a bug that is about crossing between two places.
+
+**AND WATCHING HIM MOVE FOUND THREE THINGS NO NUMBER DID.** Every check of
+this fight until now was a still or a counter — hit rate, swings a minute,
+bounding boxes — and all of them said he was fine while the owner was looking
+at a man standing there with his arms out and his face smeared. Stepping the
+live fight and capturing a RUN of consecutive frames is what found all three.
+
+- **87 FACE BONES PARENTED TO NOTHING THAT SHIPS.** Rigify's face DEF bones
+  hang off `MCH-` controls — checked, and not ONE of their parents is a deform
+  bone — so `export_def_bones` drops every parent and reparents the lot to
+  whatever distant ancestor survives. Their motion then has nothing to do with
+  a face, and they drive 1,448 vertices of the body, 1,601 of the helmet, 2,294
+  of the helmet band and 448 of the horns: his whole head. He is wearing a
+  kabuto and a menpo, so there is no face to animate — the whole face rig is
+  merged into `DEF-spine.006` (6,305 weights moved) and stops deforming, which
+  makes the head RIGID with the neck and means it cannot smear. 163 joints
+  became 77 and the file went from 12.5 MB to 8.6.
+
+- **AND THE ARMS-OUT WAS A SHIELD HE DOES NOT HAVE.** Measured on the exported
+  rig, hands apart per clip: `Sword And Shield Slash` holds them 1.07 m apart
+  on average and 1.49 at worst, because THE LEFT ARM IS CARRYING A SHIELD.
+  Dropped. `Great Sword Crouching` was nearly as wide at 0.91 and it was the
+  IDLE, which is the pose you look at longest, so the guard out of `Blocking`
+  (0.68) takes that and the crouch becomes the brace. **Read the clip's name:
+  a set that mixes weapons has clips whose off hand is holding something.**
+
+- **AND THE SOURCE ACTIONS RODE ALONG IN THE FILE.** Removing the imported FBX
+  objects leaves their ACTIONS behind and the exporter ships every action it
+  can find: eight `Armature|mixamo.com|Layer0` clips were in the GLB driving
+  nothing, and they measure a T-pose because they belong to a skeleton that is
+  no longer there. Remove the action with the armature.
+
+One hypothesis this cost, and it is worth writing down because it was
+confidently wrong: the splayed arms looked exactly like the aim correction
+wrenching his shoulder, and I had raised `aimK` to 2.60 chasing a hit rate.
+Measured across `aimK` from 0 to 2.6, the mean distance between his hands
+moved from 0.84 to 0.86 — the aim was not touching it at all. **Measure the
+thing you are about to blame before you change it.**
+
 **AND THEN THE KNIGHT LEARNED TO PACE HIMSELF.** Seven more of the owner's
 clips: a 360 attack, four hit reactions, and a real left and right strafe
 walk. What they bought, and what each one cost:
@@ -9412,6 +9473,381 @@ prevent — `uUcClipX` and `uUcClipHi` are `discard` in the fragment, so
 `intersectObjects` walks straight through them and answers with geometry
 nobody can see. Read the material's own `bwClipHi` beside every hit, or
 judge it from a screenshot.
+
+**AND HE WAS NOT HOLDING THE SWORD, WHICH IS ALSO WHY HIS HEAD LOOKED OFF.**
+The owner's two reports — "his head is literally off of him" and, watching the
+same figure, "hes not even holding the sword XDXD" — are one bug. Rendered
+frame by frame, the head is ON: measured in the shipped GLB the helmet spans
+y 1.25–1.59 against a chestplate topping out at 1.30 and a neck guard between
+them, and over every clip the head bone never drifts more than a centimetre
+from the chest. What was actually wrong is that the KATANA hung in the air
+beside him with both hands empty, and a figure whose parts do not move
+together reads as a figure coming apart.
+
+- **`stick()` CANNOT SEE THE POSE IT IS PINNING TO.** The packer pins the
+  sword by reading `pbs[hand].matrix` live and writing the katana onto it —
+  and a live read is only the pose you just wrote if nothing has re-evaluated
+  the armature since. That holds while a clip is being AUTHORED and is false
+  inside `retarget()`, whose every frame begins `sc.frame_set(f)` to advance
+  the SOURCE clip, which re-runs the animation system on the destination rig
+  too, against the half-written action being keyed. Measured on the shipped
+  file: the authored clips held the hilt 0.05 m from his fist on every frame
+  and the seven retargeted ones held it 0.14 to 1.22 m away. `pin_all()` is a
+  pass of its own — record the host's matrix over a FINISHED clip, then
+  rebuild the action writing the sword onto what was recorded. Two passes,
+  nothing live, which is the shape `trim` already had. It has to run after the
+  trims and BEFORE the contact measurement, which tracks `DEF-katana_tip` — a
+  bone parented to `Katana` — and was therefore measuring the flight of a
+  sword nobody was holding.
+- **AND A ROOT BONE DOES NOT FOLLOW A SHOULDER, SO THE GAME RE-HANGS IT.**
+  `aimBar` turns his shoulder by up to `AIM_MAX * 2.60` to put the blow on
+  your chest; the katana is a root bone, so measured over six hundred live
+  frames the hilt still wandered 0.10 to 0.44 m off his hand — the sword slid
+  through his grip on exactly the swings you are meant to be reading. Worse,
+  `kind.rig.tip` is a CHILD of that root bone, so the correction was steering
+  a hitbox it could not move and the blade it swept was not the blade on
+  screen. `pinSamuraiSword()` takes the offset once while he is not swinging
+  and puts the bone back on it after `updateMutant` — the room clamp's own
+  rule, that whatever moves a thing last is what everything hung off it must
+  follow. Measured after: hilt 0.199 and tip 0.62 from the hand, CONSTANT
+  across every clip, and the fight unchanged at 47 swings and 51 damage a
+  minute.
+
+**THE DOJO'S GROUND WAS THE SKY, AND THE SKY FIX FLATTENED IT.**
+`SkyAndGround` is ONE mesh — a dome, and in the same eighteen triangles at its
+foot the disc you walk on. Making the whole thing an unlit `MeshBasicMaterial`
+graded to (0.30, 0.34, 0.44) is right for a dome and, measured, left the yard
+reading 181 as mean screen luminance: a near-white slab, which is the owner's
+"untextured and grey ... it really dampens it down". Three things, and two of
+them are traps this file already knew:
+
+- **the atlas is no use under your feet either.** The disc's own uv wanders
+  over most of the sheet (u 0.18–0.97 by v 0.15–0.94) while the painted green
+  field is one corner of it (u < 0.55, v < 0.52) — so what the ground was
+  sampling is the BLUE OF THE SKY. Not a missing texture: the wrong one. A
+  drawn grass is the map now, PROJECTED in world space (`vMapUv`,
+  `vEmissiveMapUv` and `vBumpMapUv` all written from the world position), with
+  a second sample nine times larger multiplied over it so a 2.4 m tile does
+  not read as a 2.4 m tile.
+- **`flatShading` IS NOT A LOOK HERE, IT IS THE ONLY WAY IT DRAWS.**
+  `undercroft_pack.py` writes positions and uvs and NO NORMALS; GLTFLoader
+  answers that by flat-shading the materials IT makes, and a material written
+  by hand gets the missing attribute as (0, 0, 0), whose `normalize` is NaN,
+  and the whole fragment comes out NaN — which renders BLACK, emissive and
+  all. A pure magenta emissive at full strength measured 0 while the same mesh
+  under a `MeshBasicMaterial` measured 92.
+- **and a level is read from EYE HEIGHT.** A flat plane seen along itself is a
+  quarter of what it is seen from above: the same material measured 15.5
+  looking down at it and 3.9 standing on it, and two rounds of tuning fought
+  each other until both readings came from where the player is. The open beach
+  reads 7.3 and the dojo's own boards 13.5, so the field sits with the
+  building at 12.9.
+
+**AND THE RAIN WAS A FEW ENORMOUS WHITE LINES.** Both shells hang the map at
+ONE TILE over seventy-three metres and its streaks are drawn ten pixels by a
+hundred and fifty on a 1024 — a metre and a half across and TWENTY-TWO METRES
+LONG. That is "flashing white lines that show up randomly", and no opacity
+fixes it: a streak that size is a line whatever it is drawn at. Three things:
+it is tiled to a real drop (16 by 12, so 9 cm by 1.8 m); `Rain1`, which hung
+from thirty metres UP to a hundred and four over a building five metres tall,
+is dropped onto the play area so the two shells are the near and far layers of
+one weather; and **a shell seen edge-on is not rain, it is a smear** — where
+you look ALONG one of these cylinders its texture is stretched over the width
+of the screen, which no amount of tiling fixes because it is a projection and
+not a size. The fade is on the uv's own SCREEN DERIVATIVE (`fwidth(vMapUv)`):
+where a pixel covers a large stretch of the map there is nothing left to draw,
+so it goes. It cannot be done on the normal — this model has none.
+
+**AND A MARKER-BASED EDIT MUST ASSERT ITS ANCHOR IS UNIQUE.** `main.js` is
+thirty-two thousand lines of one module, so `mat.onBeforeCompile = (sh) => {`
+appears in it many times: an edit script that took `s.index(...)` for the
+start of a block and `s.index(..., i)` for its end found the CLIFF's material
+and the DOJO's closing line and deleted the 29,543 lines between them. Every
+anchor in a patch against this file is asserted to match exactly once.
+
+**"IF YOU STAND STILL HE JUST SITS AND TWEAKS OUT" WAS A RETARGET THAT CARRIES
+NO HEIGHT.** The retarget writes ROTATIONS and nothing else, so whatever the
+source clip did VERTICALLY is simply lost — and half of this set does something
+vertical. `Great Sword Blocking` and `Great Sword Crouching` both SINK: the
+body drops into a stance. With the hips pinned the legs have nowhere to put
+that, so they fold up underneath and THE FEET COME OFF THE FLOOR. Measured on
+the shipped file, over the idle's twelve frames the toes ramp 0.03 → 0.33 and
+0.00 → 0.25 and never come back, and over the block's sixteen they ramp to 0.70
+and 0.59 — monotonically, a ramp and not a cycle, with the hips reading 0.90 on
+every frame of every clip. Looped at half a second that is a man hoisting both
+knees and snapping back, for ever. Two things fix it and they are separate:
+
+- **SEAT THE CLIP.** The lowest point of the sandals is measured per frame
+  through the depsgraph — on the MESH, never the foot bones, because the sole
+  hangs below the joint (the Dealer paid for that one) — and the root bone is
+  moved so it rests on the floor it rested on at rest. A crouch then reads as
+  the body going down, which is what a crouch is. Measured after: the planted
+  toe holds 0.00–0.01 through the whole idle and the hips sink 0.83 → 0.61.
+  **A GAIT IS THE EXCEPTION**: a run has a flight phase where both feet are
+  legitimately off the ground, so seating it per frame would pin a running man
+  to the floor. Those take ONE offset, the clip's own minimum.
+- **AND AN IDLE IS A POSE HELD, NOT A CLIP PLAYED.** Seating fixes the feet; it
+  cannot fix the fact that the source is a ONE-WAY RAMP — he drops into a guard
+  over half a second and the clip ends, so looped he sinks and pops back twice a
+  second whatever his feet are doing. The pose you look at longest has to be
+  still. `breathe()` takes the FIRST part of the clip — up to where the hips
+  have only just begun to settle, found by asking the hips rather than by
+  picking a number — and plays it out and back over three seconds on a
+  smoothstep. Measured live, five frames across a second: identical.
+
+**AND THE DEATH WENT BACK ON THE RAGDOLL.** `deathClip` sent him down an
+authored `die`, and the owner's word for it was that his body and textures
+deform — rendered, that is exactly right: from a third of the way in he folds
+into a knot, limbs through the torso, and holds it. Every hand-authored pose on
+this rig has read badly and that was the last of them. The Verlet body cannot
+deform, because it drives each bone by the SMALLEST rotation that takes where
+it points its child to where the child's particle is — there is no pose to get
+wrong, and bend limits and self-collision hold the rest. `bossDeath` was left
+off because the ragdoll answers to `Character1_*` and this rig is Rigify, so it
+built a body of ZERO parts — but that was the wrong half of the fix: **the
+ragdoll takes a NAME MAP, and `kind.rag` is it**, which the thing on the
+headland has used on joints called `Bone_011_037` ever since. Measured after:
+22 parts, landed, asleep, the body lying between 12 and 34 cm off the floor.
+
+**AND SMALL FAST RAIN IS WORSE THAN BIG SLOW RAIN AT 222 PIXELS.** Tiling the
+rain to a realistic drop and scrolling it at a realistic nine metres a second
+made the flashing WORSE, not better, and the reason is the retro scale: a
+streak a tenth of a metre wide is one pixel at ten metres and moves three
+pixels a frame, so it samples in and out of itself and sparkles. The pictures
+have to be BIG and SLOW for the same reason the pavilion's patterns are big —
+anything finer than the downscale is noise. Measured by diffing consecutive
+live frames of an empty dojo:
+
+| | bright jumps | rain pixels on screen |
+|---|---|---|
+| 10×8 at 1.0 tiles/s | 22483 | 3033 |
+| 6×5 at 0.62 | 7 | 1905 |
+| 5×4 at 0.75 | 0 | 1907 |
+
+**And the second column is the point of the table**: "pixels that jump" is a
+metric you win by deleting the rain, so it is never read on its own — the
+presence measure is what stops a fix that is really a removal. Both readings
+then have to be checked against the picture, because a streak's leading edge
+lighting new pixels IS a bright jump and a moving streak can never score zero.
+
+**A BONE IN EULER MODE IGNORES EVERY QUATERNION YOU WRITE TO IT, AND TWO OF
+THEM WERE HIS COLLARBONES.** "The animation I am seeing looks nothing like the
+ones I gave you" was one line in `tools/samurai_pack.py`. Nothing in that file
+speaks Euler - `rest`, `setrot`, `put`, the retarget, the trims, the seating
+and the pin all write `rotation_quaternion` and `key` keyframes that channel -
+but a Rigify rig does NOT bind every bone to quaternions: this one ships 82 in
+Euler, and `ORG-shoulder.L/R` are two of them. Both `DEF-upper_arm` and
+`DEF-shoulder` hang off a clavicle, so the retarget worked out each arm's local
+basis RELATIVE TO a collarbone it believed it had rotated, wrote that rotation
+into a property the evaluator does not read, and the collarbone stayed at rest.
+Every arm in every retargeted clip was off by whatever its own clavicle was
+meant to be doing, and a greatsword swing rolls the clavicles hard.
+
+**AND THE MEASUREMENT THAT FOUND IT IS THE ONE THAT SHOULD HAVE BEEN TAKEN
+FIRST: THE SHIPPED CLIP AGAINST ITS OWN SOURCE.** Hands apart, as a fraction of
+the rig's OWN arm reach - the one normaliser that cannot be thrown off by two
+figures having different proportions, and here the two reaches measure 0.562
+and 0.563, so the comparison is direct:
+
+| | Mixamo source | shipped before | shipped after |
+|---|---|---|---|
+| Blocking -> idle | 0.12 / 0.28 | 0.79 / 0.88 | 0.32 / 0.39 |
+| Crouching -> block | 0.19 / 0.22 | 1.50 / 2.03 | 0.24 / 0.32 |
+| Slash -> sDown | 0.28 / 0.37 | 0.97 / 1.45 | 0.35 / 0.48 |
+| Slash-2 -> sSide | 0.27 / 0.33 | 1.36 / 2.08 | 0.39 / 0.49 |
+| Kick -> sSpin | 0.27 / 0.29 | 0.96 / 1.51 | 0.42 / 0.49 |
+| Kick-2 -> sStab | 0.27 / 0.29 | 1.37 / 1.82 | 0.42 / 0.52 |
+| Sword And Shield (dropped) | 1.28 / 2.39 | - | - |
+
+Two of what shipped were WIDER THAN THE SHIELD CLIP that had been thrown out
+for being too wide. The round that dropped it measured the shipped clips
+against each other and never against the files they were made from; measuring a
+build against the last build only tells you it changed. `sSwing` - the artist's
+own clip, resampled and never retargeted - reads 0.15 throughout, and that is
+the control that says the rig and the export are fine.
+
+The hunt is worth writing down because three plausible causes were eliminated
+by measurement and all three were wrong. **A IS NOT T** is the retarget lesson
+this file already carries, and it does not apply here: measured, both rigs bind
+in a T within two degrees at the shoulder. **THE ORG CHAIN IS DRIVEN AND NOT
+KEYED** is real and was fixed (`KEYED` is now every deform bone AND every
+ancestor of one, because `DEF-upper_arm.L` hangs off `ORG-shoulder.L` and none
+of the 159 ORG bones is a deform bone) and it changed the hands by nothing.
+What settled it was reproducing the retarget maths OUTSIDE the packer, where it
+came back correct - 0.32-0.51 against the sources' 0.22-0.37 - and the only
+difference between the two was one line in the probe:
+`pb.rotation_mode = 'QUATERNION'`. **WHEN A FAITHFUL REIMPLEMENTATION OF A
+THING GIVES A DIFFERENT ANSWER, THE DIFFERENCE BETWEEN THE TWO IS THE BUG.**
+
+**AND THE ARTIST'S OWN ACTION WAS SHIPPING AS A T-POSE.** `Swing` is adrigon's
+clip on adrigon's control rig; it is sampled at the top of the packer and
+re-keyed onto the deform bones as `sSwing`, and the source action itself was
+never removed. The exporter ships every action it can find, so 31 frames of it
+went into the GLB - and rendered as a strip it is a man standing in a T with
+the katana waving about in front of him, because it drives control bones the
+export drops. Anything that played it would T-pose the boss. This is the
+`Armature|mixamo.com|Layer0` trap wearing the source file's own name.
+
+**AND EVERY CLIP HE HAD WAS STANDING IN THE FLOOR.** The seating pass was
+written for the retargeted set, on the reasoning that only a retarget loses
+height - and an authored stance that bends the knees loses it just as surely.
+Measured on the shipped file, `sRise`, `stagger` and `taunt` all stood
+0.13-0.14 through the boards on every frame they had. Worse, **THE ONE OFFSET A
+GAIT TAKES IS THE ONE THE DEEPEST FRAME NEEDS, NOT THE SHALLOWEST**: `min(drop)`
+picks the frame whose foot is already highest - the flight phase - lands THAT on
+the boards and leaves every planted foot under them, so the run measured -0.242
+and the walk -0.111. `max(drop)`. After: every clip's sole sits at 0.000 and
+the gaits' flight phases are the only thing above it.
+
+**AND THE WALK WAS EASING HIM BACK INTO THE BIND POSE.** It is built off the
+run by slerping every rotation toward rest at 0.62 - which shortens the stride
+and also walks the whole upper body back toward a T, so his guard opened as he
+slowed down and by the time he was walking his hands were 1.10 of his own reach
+apart against the run's 0.40. He holds his sword the same way at every speed;
+only his feet know the difference. The ease is the leg chain and nothing else.
+
+**AND A CLIP WITH NO ROOT MOTION STILL STATES ITS STRIDE.** `clipSpeed` came
+off the ntar-style move sets' own travel curves, so anything packed as a GLB
+had none - and the samurai's gaits are retargeted, which writes rotations and
+nothing else, so his feet ran at a hand-set number while the fight moved his
+body at another and the two agreed only by luck. THE RATE IS THE STRIDE OVER
+THE SPEED, and an in-place cycle cannot hide its stride in one place: the
+PLANTED FOOT. Whichever toe is lowest is the one on the ground, and how far it
+travels backwards through the frames it stays down is the distance the ground
+covered; a frame where the plant CHANGES is a step and is not counted, or the
+swap reads as a metre of travel. Measured after the scale fit, so it is already
+metres: 2.03 m/s walking, 3.50 running.
+
+**HIS SWINGS ARE `real` NOW, WHICH IS THE WHOLE OF THE PACING.** His clips are
+about seven tenths of a second and his startups are longer, so mapping a
+wind-up linearly onto a startup plays the blade at a fraction of real speed -
+SCP-096's "slow-mo" on a second creature. `real` does it the Dealer's way: the
+sword is drawn back to the COCK over the first part of the startup, HELD there,
+and the cut runs from the cock to the contact at better than the clip's own
+speed in the last part, still landing on the frame the table deals damage. A
+long readable tell and a blade that arrives fast is what a Japanese sword fight
+is, and it is what Sekiro does with every swing. The RECOVERIES came down and
+the CHAINS went up rather than the startups coming down, because the startup is
+where the fairness lives and this file has paid for shortening one twice.
+
+**AND THE OVERHEAD LANDS NOW, BECAUSE THE REASON IT MISSED WAS THE ARMS.** It
+was thrown twenty-seven times over four minutes and landed not once, and the
+conclusion drawn was that `Great Sword Slash` is a chop this fight has no range
+for. It is not: with the clavicles fixed it lands 12 of 17. The rising cut it
+was replaced by is the last hand-authored swing in the set, reads worst of the
+five, and is now the one that stays in the file and out of the draw. **A SWING
+THAT NEVER CONNECTS IS EVIDENCE ABOUT THE RIG BEFORE IT IS EVIDENCE ABOUT THE
+SWING.**
+
+**AND HE KNOWS WHAT IS IN THE ROOM.** His whole answer to the courtyard was
+`pushOutOfDojo` - a shove out of whatever he was already inside, undamped, with
+no steering above it, which is a creature that walks into the wall between it
+and you and grinds there. He gets what the Dealer and the knight already have:
+a nav grid built once off the DRAWN FACES (not the packer's body band - the
+keep's lesson, that a band marks a whole half-metre cell full for one lantern
+post), `dojoClearAhead` marched in strides so the body's WIDTH is asked at
+every step and not only the line between them, `dojoRoute` as a breadth-first
+search thinned to its corners, and a push-out capped at a walking pace so a
+correction is a lean and never a jump.
+
+**AND TWO WAYS OUT OF THE WORLD, BOTH FOUND BY PLAYING IT RATHER THAN LOOKING
+AT IT.** `groundY` in the courtyard was the LARGER of whatever it held and the
+room's floor, and where the grid had nothing to say it was left alone - which
+eight hundred metres over the sand means the beach's own zero. Measured in a
+live fight: knocked onto a cell the packer sampled no floor into, the camera
+went from 801.84 to 1.70 and `dojoFloorAt`'s own sixty-metre guard then refused
+to answer ever again, so there was no way back. The room owns the floor while
+you are in it, it remembers the last good one, and a body below it is put back
+on it. And **WHATEVER MOVES THE PLAYER LAST MUST RE-RUN THE ROOM'S CLAMP** -
+the bunker's own lesson, which this room never got: `updateDojo` reverts a step
+that leaves the walk, and the samurai's KNOCKBACK is applied from
+`updateMutant`, which runs after it, so each shove moved the body a little
+further out with nothing to answer. Measured over eighty seconds of being hit
+thirty-one times, the player was walked twenty-five metres clear of the
+courtyard with the boss following him out. `clampPlayerToRoom` speaks for the
+dojo now, which is the one door every knockback already goes through; and HE is
+walked back onto the grid when he is off it, because outside the model there
+are no faces to push off and no floor to stand on.
+
+Measured at the end, hands-off at fighting range over eighty-three seconds:
+**76 swings and 73 damage (55 and 53 a minute) at 61 % connect, all four swings
+landing - side 14/25, stab 13/18, overhead 12/17, spin 7/16 - worst step
+0.141 m, and neither the player nor the boss ever left the courtyard or fell
+out of it.** The Dealer is 48 and 40.
+
+**WHAT IS NOT DONE:** `sRise`, `stagger` and `taunt` are the last hand-posed
+clips on this rig and all three measure wide at the hands, because they are
+built up from the bind pose and the bind pose is a T. `sRise` is out of the
+fight's draw; the stagger plays on every poise break and the taunt on the wake.
+The Dealer's answer - base every authored clip on a frame of the SOURCE idle -
+is the fix, and it needs the retarget moved ahead of the authoring so there is
+an idle to base them on. He also has no true sideways stride: `strafeL/R` are
+aliased to the walk, which is the oldest animation bug in this file, and the
+eight Mixamo clips that exist do not include one. And he still stands very
+still between swings (96 % of frames under 5 mm) even with `restless` on.
+
+**AND THE HAND HAS TO CLOSE — the Dealer's own bug, on a second rig and for a
+second reason.** His fingers were stripped and never re-keyed; this one's are
+never DRIVEN. `MIX` maps a spine, two arms and two legs and not one finger, so
+every finger bone walks through the retarget as identity, which is the BIND
+pose, and this rig binds with the hands flat and open. Rendered CLOSE ON THE
+RIGHT FIST at four frames of the side cut, the tsuka floats past a splayed palm
+on every one of them. That is "it's not in his hand", and no distance test
+could have found it: measured on the MESH, the nearest sword vertex to the fist
+is 0.026 on every frame of every clip, because the sword is pinned to the hand
+and the hand is simply open. **A DISTANCE FROM A BONE IS NOT A GRIP. Render the
+fist.**
+
+**AND THE CURL SIGN IS DERIVED, NOT REASONED ABOUT.** This file has twice
+shipped a hand bending backwards over its own knuckles on the strength of an
+axis convention read off a rig. The sign is now taken per bone by the one test
+with no convention in it: a closed fist brings the fingertip back toward the
+WRIST and an open one extends it away, so the sign is whichever shortens that
+distance. A mirrored rig gets the right answer on both hands by construction.
+
+**AND THE GRIP GOES IN THE PALM, NOT AT THE WRIST.** The pin offset is the
+artist's own, taken from a frame of the shipped `Swing` where the
+COPY_TRANSFORMS is baked in — and it puts the Katana bone's head on
+`DEF-hand.R`'s head, which is the WRIST JOINT. A fist closes five to eight
+centimetres further along, so once the fingers finally curled shut the tsuka
+was landing behind the palm and the hand closed BESIDE it. The palm is measured
+rather than nudged — the midpoint of the wrist and the middle finger's first
+knuckle — and the bone head goes there; the ROTATION is untouched, because that
+is the angle the artist held it at and it reads. 0.057 units, and the fist
+closes round the handle.
+
+**AND "HIS HEAD IS IN HIS BODY" WAS THE COLLARBONE, WHICH IS A IS NOT T.** The
+delta transfer says "turn this bone by the rotation the source's bone
+underwent", and that is only the same POSE if the two bones start in the same
+place. Measured between these two rests in world: the arms agree to 7 degrees,
+the shins to 3, the toes to 0 — and the CLAVICLES are 24 apart, because this
+artist drew a collarbone pointing up and out (0.84, 0.49, 0.22) where Mixamo's
+points nearly straight out (0.98, 0.21, -0.05). Give a bone that starts 24
+degrees high the rotation a bone that starts flat underwent and it STAYS 24
+degrees high, on every frame, for ever. On a man in a shirt nobody would see
+it; on a man in a kabuto with sode the size of dinner plates the shoulder
+armour rides up over the neck guard and swallows his head.
+
+Measured as the clavicle's outer end above the top of the chest, over its own
+length:
+
+| | source | shipped before | shipped after |
+|---|---|---|---|
+| idle | +0.01 | +0.18 | +0.01 |
+| side cut | +0.01 (max +0.02) | +0.20 (max +0.34) | +0.04 (max +0.21) |
+| overhead | +0.01 | +0.23 (max +0.38) | +0.12 (max +0.30) |
+| block | +0.01 | +0.23 (max +0.33) | +0.07 (max +0.18) |
+
+Every source clip holds its clavicle dead flat on every frame. The residual on
+the swings is a raised arm lifting its own shoulder, which a real body does.
+
+**AND THE ALIGNMENT IS ONLY FOR A TRUE COUNTERPART.** It is applied to the
+shoulder, upper arm, forearm, hand, thigh, shin, foot and toe, and NOT to the
+pelvis or the spine. `DEF-pelvis.L` is mapped to `Hips` as a STAND-IN — not
+because it is a hip — and its rest differs by 47 degrees for exactly that
+reason, so aligning it would swing both scabbards and the sash off his waist.
+The spine's differences are the curve of a back, which is the artist's and not
+an error. **An alignment is a claim that two bones are the same bone.**
 
 **THE TAVERN IS BEHIND THE KEEP'S DOOR, AND IT IS THE KEEP'S OWN MACHINERY ON
 A SECOND SITE.** Katydid's "Medieval Tavern" (CC-BY-4.0, `assets/tavern.glb`,

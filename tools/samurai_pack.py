@@ -163,7 +163,7 @@ def stage_textures():
 # =======================================================================
 def stage_rig():
     import bpy
-    from mathutils import Vector, Quaternion
+    from mathutils import Vector, Quaternion, Matrix
 
     bpy.ops.wm.open_mainfile(filepath=BLEND)
     sc = bpy.context.scene
@@ -186,6 +186,49 @@ def stage_rig():
     for nm in ('Katana', 'Wakizashi'):
         if nm in arm.data.bones:
             arm.data.bones[nm].use_deform = True
+
+    # ---- HIS FACE RIG IS 87 BONES PARENTED TO NOTHING THAT SHIPS.
+    # Rigify's face DEF bones hang off `MCH-` controls — checked, and not ONE
+    # of their parents is a deform bone — so `export_def_bones` drops every
+    # parent and reparents the lot to whatever distant ancestor is left. Their
+    # motion then has nothing to do with a face, and they drive 1,448 vertices
+    # of the body, 1,601 of the helmet, 2,294 of the helmet band and 448 of the
+    # horns: his whole head. That is the smeared face.
+    #
+    # HE IS WEARING A KABUTO AND A MENPO. There is no face to animate — so the
+    # whole face rig is merged into the head: every face group's weight is
+    # added to `DEF-spine.006` and the bones stop deforming, which makes the
+    # head RIGID with the neck (correct for a helmeted man) and means it cannot
+    # smear. It also takes the skin from 163 joints to about 76.
+    FACEWORDS = ('nose', 'lip', 'jaw', 'chin', 'cheek', 'brow', 'lid', 'ear',
+                 'temple', 'forehead', 'eye', 'tongue', 'teeth', 'nostril', 'face')
+
+    def is_face(nm):
+        t = nm.replace('DEF-', '').replace('ORG-', '').lower()
+        return any(t.startswith(w) for w in FACEWORDS)
+
+    HEADB = 'DEF-spine.006'
+    face_bones = [b.name for b in arm.data.bones if b.name.startswith('DEF-') and is_face(b.name)]
+    moved = 0
+    for ob in meshes:
+        names = {vg.name for vg in ob.vertex_groups}
+        mine = [n for n in face_bones if n in names]
+        if not mine:
+            continue
+        head = ob.vertex_groups.get(HEADB) or ob.vertex_groups.new(name=HEADB)
+        idx = {vg.name: vg.index for vg in ob.vertex_groups}
+        want = {idx[n] for n in mine}
+        for v in ob.data.vertices:
+            w = sum(g.weight for g in v.groups if g.group in want)
+            if w > 0.0:
+                head.add([v.index], w, 'ADD')
+                moved += 1
+        for n in mine:
+            ob.vertex_groups.remove(ob.vertex_groups[n])
+    for n in face_bones:
+        arm.data.bones[n].use_deform = False
+    log('face rig merged into the head: %d bones off, %d vertex weights moved'
+        % (len(face_bones), moved))
 
     # ---- AND THE FIGHT NEEDS A BONE AT THE POINT OF THE BLADE.
     # `aimTip` puts the weapon on the player's chest and `blowLands` sweeps the
@@ -219,6 +262,29 @@ def stage_rig():
                                    @ (kat.matrix_world @ kat.data.vertices[i].co)) - far).length)
         vg.add([best], 0.001, 'ADD')
         log('katana tip bone at %s, %.3f from the grip' % ([round(v, 3) for v in far], fd))
+
+    # ---- AND A BONE IN EULER MODE IGNORES EVERY QUATERNION YOU WRITE TO IT.
+    # Nothing in this file speaks Euler - `rest`, `setrot`, `put`, the retarget,
+    # the trims, the seating and the pin all write `rotation_quaternion`, and
+    # `key` keyframes that channel - but a Rigify rig does NOT bind every bone
+    # to quaternions: this one ships 82 in Euler, and TWO OF THEM ARE THE
+    # CLAVICLES (`ORG-shoulder.L/R`, mode YXZ). Both `DEF-upper_arm` and
+    # `DEF-shoulder` hang off a clavicle, so the retarget worked out each arm's
+    # local basis RELATIVE TO a collarbone it believed it had rotated, wrote
+    # the rotation into a property the evaluator does not read, and the
+    # collarbone stayed at rest. Every arm in every retargeted clip was then
+    # off by whatever its own clavicle was meant to be doing - and a greatsword
+    # swing rolls the clavicles hard, so the arms came apart.
+    #
+    # Measured, hands apart as a fraction of his own arm reach: the Mixamo
+    # sources hold 0.22-0.37 (a two-handed grip; `Sword And Shield Slash`
+    # holds 1.28, which is how it was caught), the same retarget maths with
+    # every bone put into quaternion mode first reproduces 0.32-0.51, and what
+    # shipped was 0.79-2.08 - wider, on two of them, than the shield clip that
+    # was thrown out for being too wide. That is the "arms out" the owner has
+    # reported for three rounds, and it was ONE LINE.
+    for _pb in arm.pose.bones:
+        _pb.rotation_mode = 'QUATERNION'
 
     pbs = list(arm.pose.bones)
     by = {pb.name: pb for pb in pbs}
@@ -321,9 +387,43 @@ def stage_rig():
             pb.location = (0, 0, 0)
             pb.scale = (1, 1, 1)
 
-    KEYED = list({pb.name: pb for pb in pbs
-                  if pb.bone.use_deform or pb.name == 'root'}.values())
-    log('keying %d bones' % len(KEYED))
+    # ---- AND A BONE A DEFORM BONE HANGS OFF MUST BE KEYED, OR THE POSE THAT
+    # WAS COMPUTED IS NOT THE POSE THAT SHIPS. `KEYED` was the deform set and
+    # the root, which is the right list for a clip posed by hand and the wrong
+    # one the day the retarget started driving the ORG chain - and it has to
+    # drive it, because in Rigify `DEF-upper_arm.L` hangs off `ORG-shoulder.L`,
+    # `DEF-thigh.L` off `ORG-spine` and `DEF-pelvis.L` (both scabbards and the
+    # sash) off `ORG-pelvis.L`, and NONE of the 159 ORG bones is a deform bone.
+    # So the retarget worked out each DEF bone`s local basis RELATIVE TO a
+    # driven ORG parent and then threw the parent away: played back, or baked
+    # by the exporter, those 25 bones fall to rest and every DEF bone under
+    # them is off by the inverse of what its parent was meant to be doing.
+    #
+    # Measured at one frame of `Great Sword Slash-2`, against the source clip
+    # bone for bone in world: with every bone posed the transfer is exact - the
+    # residual is the two rigs` rest difference and nothing else (7 deg at the
+    # upper arm, 24 at the clavicle) - and the hands sit 0.40 of his own arm
+    # reach apart against the source`s 0.28. Let the unkeyed bones fall to rest
+    # and the hand goes 58 degrees out, the forearm 55, the clavicle 52, and
+    # the hands open to 0.74. That is the "arms out" nobody could name from a
+    # still, and it was in every retargeted clip from the day they went in.
+    #
+    # The list is now every deform bone AND EVERY ANCESTOR OF ONE. An ancestor
+    # the retarget never drove keys at rest, which is exactly what the chain
+    # arithmetic in an authored clip already assumed, so nothing hand-posed
+    # moves. The exporter still ships deform bones only.
+    KEYED = {}
+    for _pb in pbs:
+        if not (_pb.bone.use_deform or _pb.name == 'root'):
+            continue
+        _b = _pb
+        while _b is not None and _b.name not in KEYED:
+            KEYED[_b.name] = _b
+            _b = _b.parent
+    KEYED = list(KEYED.values())
+    log('keying %d bones (%d deform, %d carried for the chain)'
+        % (len(KEYED), sum(1 for b in KEYED if b.bone.use_deform),
+           sum(1 for b in KEYED if not b.bone.use_deform)))
 
     # ---- HIS SWORD WAS CONSTRAINED TO HIS HAND, AND THE CONSTRAINTS ARE GONE.
     # `Katana` and `Wakizashi` are ROOT bones - the swords are weighted to them
@@ -337,7 +437,71 @@ def stage_rig():
     # So the offset from the hand is taken ONCE at rest and the sword is put
     # back on it every frame. Both are root bones, so the basis is simply
     # rest^-1 @ wanted.
+    # ---- AND THE HAND HAS TO CLOSE. The Dealer's own bug, on a second rig and
+    # for a second reason: his fingers were stripped and this one's are never
+    # DRIVEN. `MIX` maps a spine, two arms and two legs and no finger at all,
+    # so every finger bone walks through the retarget as identity - which is
+    # the BIND pose, and this rig binds with the hands flat and open. Rendered
+    # close on the right fist at four frames of the side cut, the tsuka floats
+    # past a splayed palm on every one of them. That is the owner's "it's not
+    # in his hand", and no distance test could have found it: measured on the
+    # mesh, the nearest sword vertex to the fist is 0.026 on every frame of
+    # every clip, because the sword is pinned to the hand and the hand is
+    # simply open.
+    #
+    # THE CURL SIGN IS NOT REASONED ABOUT. This file has now twice shipped a
+    # hand bending backwards over its own knuckles on the strength of an axis
+    # convention read off the rig. It is DERIVED, per bone, by the only test
+    # that has no convention in it: a closed fist brings the fingertip back
+    # toward the WRIST and an open one extends it away, so the sign is
+    # whichever one shortens that distance. A mirrored rig gets the right
+    # answer on both hands by construction.
+    FINGERS = ('f_index', 'f_middle', 'f_ring', 'f_pinky')
+    CURL = {'01': 0.78, '02': 1.05, '03': 0.80}
+    THUMB = {'01': 0.42, '02': 0.62, '03': 0.48}
+
+    def _curl_sign(pb, wrist):
+        best, sg = None, 1.0
+        for t in (1.0, -1.0):
+            q = Quaternion(Vector((1.0, 0.0, 0.0)), 0.9 * t)
+            pb.rotation_quaternion = q
+            bpy.context.view_layer.update()
+            d = (pb.tail - wrist.head).length
+            if best is None or d < best:
+                best, sg = d, t
+        pb.rotation_quaternion = Quaternion((1, 0, 0, 0))
+        return sg
+
+    GRIP = {}
+
+    def build_grip():
+        rest()
+        bpy.context.view_layer.update()
+        for side in ('L', 'R'):
+            wrist = by.get('DEF-hand.%s' % side)
+            if wrist is None:
+                continue
+            for fam, tab in ((FINGERS, CURL), (('thumb',), THUMB)):
+                for f in fam:
+                    for seg, ang in tab.items():
+                        nm = 'DEF-%s.%s.%s' % (f, seg, side)
+                        pb = by.get(nm)
+                        if pb is None:
+                            continue
+                        sg = _curl_sign(pb, wrist)
+                        GRIP[nm] = Quaternion(Vector((1.0, 0.0, 0.0)), ang * sg)
+        rest()
+        bpy.context.view_layer.update()
+        log('grip: %d finger bones curled' % len(GRIP))
+
+    def set_fingers():
+        for nm, q in GRIP.items():
+            pb = by.get(nm)
+            if pb is not None:
+                pb.rotation_quaternion = q
+
     def key(f, sword=True):
+        set_fingers()          # every clip, every frame: the fist is round the tsuka
         if sword:
             stick()
         for pb in KEYED:
@@ -396,7 +560,29 @@ def stage_rig():
         put(SWING[len(SWING) // 3])
         bpy.context.view_layer.update()
         i, j = IDX['Katana'], IDX['DEF-hand.R']
-        STICK.append((i, j, pbs[j].matrix.inverted() @ pbs[i].matrix))
+        off = pbs[j].matrix.inverted() @ pbs[i].matrix
+        # ---- AND THE GRIP GOES IN THE PALM, NOT AT THE WRIST. The offset is
+        # the artist's own - taken from a frame of the shipped `Swing`, where
+        # the COPY_TRANSFORMS that held the sword is baked in - and it puts the
+        # Katana bone's head on `DEF-hand.R`'s head, which is the WRIST JOINT.
+        # A fist closes five to eight centimetres further along, so with the
+        # fingers finally curling the hand shut the tsuka was landing just
+        # behind the palm and the fist closed BESIDE it. Rendered close on the
+        # right hand at four frames of the side cut, that is what "it's not in
+        # his hand" still looked like after the fingers were fixed.
+        #
+        # The palm is measured rather than nudged: the midpoint of the wrist
+        # and the middle finger's first knuckle is the middle of a closed
+        # hand, and the bone head goes there. The ROTATION is untouched -
+        # that is the angle the artist held it at and it reads.
+        _mid = by.get('DEF-f_middle.01.R')
+        if _mid is not None:
+            _palmW = (pbs[j].head + _mid.head) * 0.5
+            _palmL = pbs[j].matrix.inverted() @ _palmW
+            log('  grip moved %.3f from the wrist into the palm'
+                % (off.translation - _palmL).length)
+            off.translation = _palmL
+        STICK.append((i, j, off))
         rest()
         bpy.context.view_layer.update()
     for nm, host in (('Wakizashi', 'DEF-spine'),):
@@ -414,6 +600,43 @@ def stage_rig():
             pbs[i].matrix = pbs[j].matrix @ off
 
     CLIPS = {}
+
+    build_grip()
+
+    # ---- HOW FAR APART ARE HIS FISTS? He carries a katana in the right and
+    # nothing in the left, and every clip in the set was authored on a
+    # two-handed greatsword, so a clip whose hands come apart is a clip that
+    # has gone wrong somewhere. It is reported as a fraction of his OWN arm
+    # reach, which is the one normaliser that cannot be thrown off by the two
+    # figures having different proportions: measured on the Mixamo sources
+    # every greatsword clip sits at 0.22-0.37 and `Sword And Shield Slash` at
+    # 1.28, because the left arm is carrying a shield. That gap is not close,
+    # which is what makes this safe to assert on.
+    GRIP_MAX = 0.60
+
+    def grip(name):
+        act = bpy.data.actions.get(name)
+        if act is None:
+            return None
+        n = CLIPS[name]['frames'] if name in CLIPS else int(act.frame_range[1])
+        bind(act)
+        W = arm.matrix_world
+        reach = ((W @ arm.data.bones['DEF-upper_arm.R'].head_local)
+                 - (W @ arm.data.bones['DEF-hand.R'].head_local)).length
+        v = []
+        for f in range(n + 1):
+            sc.frame_set(f)
+            bpy.context.view_layer.update()
+            v.append(((W @ by['DEF-hand.L'].head) - (W @ by['DEF-hand.R'].head)).length / reach)
+        return sum(v) / len(v), max(v)
+
+    def grips(tag, names):
+        out = []
+        for nm in names:
+            g = grip(nm)
+            if g:
+                out.append('%s %.2f/%.2f' % (nm, g[0], g[1]))
+        log('  hands/reach after %-10s %s' % (tag, '  '.join(out)))
 
     def meta(name, n, hit=None):
         CLIPS[name] = {'frames': n, 'hit': (hit / float(n)) if hit is not None else None}
@@ -953,6 +1176,51 @@ def stage_rig():
         DST_W = rot3(arm.matrix_world.to_3x3())
         DST_WI = DST_W.inverted()
 
+        # ---- A IS NOT T, AND ON THIS PAIR OF RIGS IT IS THE COLLARBONE.
+        # The delta transfer says "turn this bone by the rotation the source's
+        # bone underwent", which is only the same POSE if the two bones start
+        # in the same place. Measured between these two rests, in world: the
+        # arms agree to 7 degrees, the shins to 3, the toes to 0 - and the
+        # CLAVICLES are 24 apart, because this artist drew a collarbone
+        # pointing up and out (0.84, 0.49, 0.22) and Mixamo's points nearly
+        # straight out (0.98, 0.21, -0.05). Give a bone that starts 24 degrees
+        # high the rotation a bone that starts flat underwent and it stays 24
+        # degrees high, on every frame, for ever.
+        #
+        # On a man in a shirt nobody would see it. On a man in a kabuto with
+        # sode the size of dinner plates, the shoulder armour rides up over the
+        # neck guard and swallows his head, which is the owner's "his head is
+        # in his body". Measured as the clavicle's outer end above the top of
+        # the chest, over its own length: every SOURCE clip holds +0.01 dead
+        # flat, and the shipped ones ran +0.18 in the idle and +0.38 at the top
+        # of a swing.
+        #
+        # So each bone is first turned by the SMALLEST rotation that takes
+        # where IT points its own child to where the source's rest points, and
+        # the delta goes on top of that. It is applied ONLY where the mapping
+        # is a TRUE COUNTERPART: `DEF-pelvis.L` is mapped to `Hips` as a
+        # stand-in, not because it is a hip, and its rest differs by 47 degrees
+        # for exactly that reason - aligning it would swing both scabbards and
+        # the sash off his waist. The spine is left alone too: its differences
+        # are the curve of a back, which is the artist's and not an error.
+        ALIGN_OK = ('shoulder', 'upper_arm', 'forearm', 'hand',
+                    'thigh', 'shin', 'foot', 'toe')
+        ALIGN = {}
+        for _d, _s in MIX.items():
+            _t = _d.replace('DEF-', '').replace('ORG-', '').split('.')[0]
+            if _t not in ALIGN_OK:
+                continue
+            if _d not in arm.data.bones or _s not in src.data.bones:
+                continue
+            _db, _sb = arm.data.bones[_d], src.data.bones[_s]
+            _dd = (DST_W @ (_db.tail_local - _db.head_local)).normalized()
+            _sd = (SRC_W @ (_sb.tail_local - _sb.head_local)).normalized()
+            ALIGN[_d] = DST_WI @ _dd.rotation_difference(_sd).to_matrix() @ DST_W
+        if ALIGN:
+            _worst = max(ALIGN.items(), key=lambda kv: kv[1].to_quaternion().angle)
+            log('  %-22s aligned %d bones, worst %s %.1f deg'
+                % (name, len(ALIGN), _worst[0], math.degrees(_worst[1].to_quaternion().angle)))
+
         # kill any clip of this name we authored earlier: the retarget wins
         old = bpy.data.actions.get(name)
         if old:
@@ -987,7 +1255,8 @@ def stage_rig():
                     # brought back into armature space on the destination.
                     d_src = spose[smap] @ SRC_INV[smap]
                     d_world = SRC_W @ d_src @ SRC_WI
-                    w = (DST_WI @ d_world @ DST_W) @ DST_REST[nm]
+                    _al = ALIGN.get(nm)
+                    w = (DST_WI @ d_world @ DST_W) @ ((_al @ DST_REST[nm]) if _al else DST_REST[nm])
                     want[nm] = w
                     basis = rr.inverted() @ ((pw.inverted() @ w) if pw else w)
                     pb = by.get(nm)
@@ -1000,8 +1269,18 @@ def stage_rig():
             f += step
         finish(act)
         CLIPS[name] = {'frames': out_f - 1, 'hit': None, 'loop': loop}
+        # AND THE SOURCE ACTION GOES WITH THE SOURCE ARMATURE. Removing the
+        # imported objects leaves their ACTIONS behind, and the exporter ships
+        # every action it can find: eight `Armature|mixamo.com|Layer0` clips
+        # rode along in the GLB, driving nothing and measuring a T-pose,
+        # because they belong to a skeleton that is no longer there.
         for o in new:
             bpy.data.objects.remove(o, do_unlink=True)
+        if sact.users == 0 or sact.name.startswith('Armature|'):
+            try:
+                bpy.data.actions.remove(sact)
+            except Exception:
+                pass
         return True
 
     MOVES = os.path.join(ROOT, 'incoming', 'mixamo', 'samurai one moves')
@@ -1012,13 +1291,22 @@ def stage_rig():
     # WHICH CLIP BECOMES WHAT. Five swings out of the set, and two of them are
     # KICKS - which is the best thing in it, because a kick is a mixup no
     # amount of sword-reading prepares you for.
+    # WHICH CLIP BECOMES WHAT, AND IT IS MEASURED RATHER THAN GUESSED. The
+    # first pass took the names at face value and shipped a man with his arms
+    # out: measured on the exported rig, `Sword And Shield Slash` holds its
+    # hands 1.07 m apart on average and 1.49 at worst, because THE LEFT ARM IS
+    # CARRYING A SHIELD — and he has no shield, so it reads as a samurai
+    # standing there with his hands out. It is dropped outright. `Great Sword
+    # Crouching` is nearly as wide (0.91) and was the IDLE, which is the pose
+    # you look at longest, so the guard from `Blocking` (0.68) takes that and
+    # the crouch becomes the brace. What is left is two greatsword cuts and
+    # two kicks, all of which hold a plausible two-handed grip.
     RETARGET = [
-        ('Great Sword Crouching', 'idle', True),
+        ('Great Sword Blocking', 'idle', True),
         ('Great Sword Run', 'run', True),
-        ('Great Sword Blocking', 'block', False),
+        ('Great Sword Crouching', 'block', False),
         ('Great Sword Slash', 'sDown', False),
         ('Great Sword Slash-2', 'sSide', False),
-        ('Sword And Shield Slash', 'sRise', False),
         ('Great Sword Kick', 'sSpin', False),
         ('Great Sword Kick-2', 'sStab', False),
     ]
@@ -1031,6 +1319,7 @@ def stage_rig():
             got += 1
             log('  %-22s <- %s  (%d frames)' % (nm, f, CLIPS[nm]['frames']))
     log('retargeted %d of %d clips' % (got, len(RETARGET)))
+    grips('retarget', ('idle', 'run', 'block', 'sDown', 'sSide', 'sSpin', 'sStab'))
 
     # AND THE WALK IS THE RUN, SHORTER IN THE STRIDE. The set has no walk in it
     # and a creature that only ever runs at you cannot hold its distance. It is
@@ -1049,6 +1338,19 @@ def stage_rig():
             sc.frame_set(f)
             bpy.context.view_layer.update()
             rows.append({pb.name: pb.rotation_quaternion.copy() for pb in pbs})
+        # ---- AND IT IS THE LEGS THAT SHORTEN, NOT THE MAN. Easing EVERY
+        # rotation back toward rest shortens the stride and also walks the
+        # whole upper body back toward the bind pose - which on this rig is a
+        # T, so his guard opened as he slowed down and by the time he was
+        # walking his hands were 1.10 of his own reach apart against the run's
+        # 0.40. He holds his sword the same way at every speed; only his feet
+        # know the difference. The ease is the leg chain and nothing else.
+        LEGW = ('thigh', 'shin', 'foot', 'toe')
+
+        def is_leg(nm2):
+            t = nm2.replace('DEF-', '').replace('ORG-', '').split('.')[0].lower()
+            return any(t.startswith(w) for w in LEGW)
+
         act = new_action('walk')
         for f in range(n + 1):
             rest()
@@ -1056,11 +1358,12 @@ def stage_rig():
                 pb = by.get(nm)
                 if pb is None:
                     continue
-                pb.rotation_quaternion = Quaternion((1, 0, 0, 0)).slerp(q, 0.62)
+                pb.rotation_quaternion = (Quaternion((1, 0, 0, 0)).slerp(q, 0.62)
+                                          if is_leg(nm) else q)
             key(f)
         finish(act)
         CLIPS['walk'] = {'frames': n, 'hit': None, 'loop': True}
-        log('  walk built off the run at 0.62 of the stride')
+        log('  walk built off the run, legs at 0.62 of the stride, guard kept')
 
     # A CLIP AUTHORED TO BE WATCHED IS NOT AN ATTACK. These arrive as complete
     # performances - the greatsword slash is fifty-four frames and the sword and
@@ -1080,7 +1383,6 @@ def stage_rig():
     # actual blade on three clips out of five. A kick is also aimed lower
     # than a cut, so it gets its own target.
     STRIKER = {'sDown': ('DEF-katana_tip',), 'sSide': ('DEF-katana_tip',),
-               'sRise': ('DEF-katana_tip',),
                'sSpin': ('DEF-toe.R', 'DEF-toe.L'), 'sStab': ('DEF-toe.R', 'DEF-toe.L')}
     KICK = ('sSpin', 'sStab')
 
@@ -1123,8 +1425,216 @@ def stage_rig():
         CLIPS[name] = {'frames': len(rows) - 1, 'hit': None}
         log('  %-6s trimmed %d -> %d frames (peak was %d)' % (name, n, len(rows) - 1, bf))
 
-    for _a in ('sDown', 'sSide', 'sRise', 'sStab', 'sSpin'):
+    for _a in ('sDown', 'sSide', 'sStab', 'sSpin'):
         trim(_a)
+    grips('trim', ('idle', 'run', 'block', 'sDown', 'sSide', 'sSpin', 'sStab'))
+
+    # ---- AND A RETARGET THAT CARRIES NO HIPS HEIGHT TURNS A CROUCH INTO A
+    # LEVITATION. The retarget writes ROTATIONS and nothing else, so whatever
+    # the source did vertically is simply lost - and half of this set does
+    # something vertical. `Great Sword Blocking` and `Great Sword Crouching`
+    # both SINK: the body drops into a stance. With the hips pinned the legs
+    # have nowhere to put that, so they fold up underneath and the FEET COME
+    # OFF THE FLOOR. Measured on the shipped file, over the idle's twelve
+    # frames the toes ramp 0.03 -> 0.33 and 0.00 -> 0.25 and never come back,
+    # and over the block's sixteen they ramp to 0.70 and 0.59 - monotonically,
+    # a ramp and not a cycle. Looped at half a second that is a man hoisting
+    # both knees and snapping back, for ever, which is the owner's "if you
+    # stand still he just sits and tweaks out".
+    #
+    # The body is SEATED instead: the lowest point of the sandals is measured
+    # per frame through the depsgraph - on the MESH, never the foot bones,
+    # because the sole hangs below the joint (the Dealer paid for that one) -
+    # and the root bone is moved so it rests on the floor it rested on at rest.
+    # A crouch then reads as the body going down, which is what a crouch is.
+    #
+    # A GAIT IS THE EXCEPTION: a run has a flight phase where BOTH feet are
+    # legitimately off the ground, so seating it per frame would pin a running
+    # man to the floor. Those take ONE offset, the clip's own minimum.
+    SOLE = [o for o in meshes if o.name in ('Sandals', 'Shinprotection')]
+    _up_arm = arm.matrix_world.to_3x3().inverted() @ Vector((0.0, 0.0, 1.0))
+    ROOT_UP = (L[IDX['root']].to_3x3().inverted() @ _up_arm) if 'root' in IDX else Vector((0, 0, 1))
+
+    def sole_low():
+        """the lowest point of his feet, in world z"""
+        bpy.context.view_layer.update()
+        dg = bpy.context.evaluated_depsgraph_get()
+        lo = 1e9
+        for o in SOLE:
+            ev = o.evaluated_get(dg)
+            me = ev.to_mesh()
+            for v in me.vertices:
+                z = (o.matrix_world @ v.co).z
+                if z < lo:
+                    lo = z
+            ev.to_mesh_clear()
+        return lo
+
+    rest()
+    FLOOR = sole_low()
+
+    def seat(name, how='frame'):
+        act = bpy.data.actions.get(name)
+        if act is None:
+            return
+        # `sSwing` is the artist's own clip and carries no CLIPS entry, because
+        # the fight never draws it - it still has feet.
+        n = CLIPS[name]['frames'] if name in CLIPS else int(act.frame_range[1])
+        bind(act)
+        rows, drop = [], []
+        for f in range(n + 1):
+            sc.frame_set(f)
+            bpy.context.view_layer.update()
+            rows.append([(pb.rotation_quaternion.copy(), pb.location.copy()) for pb in pbs])
+            drop.append(FLOOR - sole_low())
+        if how == 'low':
+            # THE ONE OFFSET IS THE ONE THE DEEPEST FRAME NEEDS, not the one
+            # the shallowest needs. `drop` is how far a frame has to be LIFTED
+            # to put its sole on the floor, so `min` picks the frame whose foot
+            # is already highest - the flight phase - lands that on the boards
+            # and leaves every planted foot under them. Measured on the shipped
+            # file: the run`s sole ran -0.242..0.000 and the walk`s -0.111,
+            # which is a man striding through the deck up to his ankles.
+            drop = [max(drop)] * len(drop)
+        elif how == 'first':
+            # a clip that leaves the vertical - he goes over, his sandals come
+            # off the floor and stay off - can only be seated where it begins.
+            drop = [drop[0]] * len(drop)
+        keep = dict(CLIPS[name]) if name in CLIPS else None
+        bpy.data.actions.remove(act)
+        act = new_action(name)
+        for fi, row in enumerate(rows):
+            rest()
+            for pb, (q, loc) in zip(pbs, row):
+                pb.rotation_quaternion = q
+                pb.location = loc
+            by['root'].location = by['root'].location + ROOT_UP * drop[fi]
+            key(fi, sword=False)
+        finish(act)
+        if keep is not None:
+            CLIPS[name] = keep
+        log('  %-10s seated %+.3f .. %+.3f' % (name, min(drop), max(drop)))
+
+    # AND THE AUTHORED CLIPS WANTED IT TOO. The list was the retargeted set,
+    # on the reasoning that only a retarget loses height - and an authored
+    # stance that bends the knees loses it just as surely, from its own pose
+    # table. Measured on the shipped file, `sRise`, `stagger` and `taunt` all
+    # stood 0.13-0.14 through the boards for every frame they had.
+    for _a in ('idle', 'block', 'sDown', 'sSide', 'sStab', 'sSpin',
+               'sRise', 'sSwing', 'stagger', 'taunt'):
+        seat(_a, 'frame')
+    for _a in ('walk', 'run'):
+        seat(_a, 'low')
+    seat('die', 'first')
+    grips('seat', ('idle', 'run', 'block', 'sDown', 'sSide', 'sSpin', 'sStab'))
+
+    # ---- AND AN IDLE IS A POSE HELD, NOT A CLIP PLAYED. Seating fixes the
+    # feet; it cannot fix the fact that `Great Sword Blocking` is a ONE-WAY
+    # RAMP - he drops into a guard over half a second and the clip ends, so
+    # looped he sinks and pops back up twice a second for ever. The pose you
+    # look at longest has to be still. The idle is the FIRST part of that
+    # clip - up to where the body has only just begun to settle, found by
+    # asking the hips rather than by picking a number - played out and back
+    # over three seconds on a smoothstep: a man standing in a guard, breathing.
+    # The witness's own arrangement, one step simpler, because here there is a
+    # real stance in the file to hold.
+    def breathe(name, secs=3.0, drop=0.06):
+        act = bpy.data.actions.get(name)
+        if act is None:
+            return
+        n = CLIPS[name]['frames']
+        bind(act)
+        hip, rows = [], []
+        for f in range(n + 1):
+            sc.frame_set(f)
+            bpy.context.view_layer.update()
+            hip.append((arm.matrix_world @ by['DEF-spine'].matrix).translation.z)
+            rows.append([(pb.rotation_quaternion.copy(), pb.location.copy()) for pb in pbs])
+        top = hip[0]
+        K = 0
+        while K + 1 <= n and (top - hip[K + 1]) < drop:
+            K += 1
+        if K < 1:
+            log('  %-10s no still stretch to breathe on' % name)
+            return
+        M = int(round(secs * 30))
+        bpy.data.actions.remove(act)
+        act = new_action(name)
+        for i in range(M + 1):
+            u = i / float(M)
+            tri = 1.0 - abs(2.0 * u - 1.0)                 # out and back
+            e = tri * tri * (3.0 - 2.0 * tri)              # and eased, so it never jerks
+            x = e * K
+            a, t = int(x), x - int(x)
+            bcap = min(a + 1, K)
+            rest()
+            for j, pb in enumerate(pbs):
+                qa, la = rows[a][j]
+                qb, lb = rows[bcap][j]
+                pb.rotation_quaternion = qa.slerp(qb, t)
+                pb.location = la.lerp(lb, t)
+            key(i, sword=False)
+        finish(act)
+        CLIPS[name] = {'frames': M, 'hit': None, 'loop': True}
+        log('  %-10s breathes on frames 0..%d of %d, over %.1f s' % (name, K, n, secs))
+
+    breathe('idle')
+    grips('breathe', ('idle', 'run', 'block', 'sDown', 'sSide', 'sSpin', 'sStab'))
+
+    # ---- AND THE PIN IS A PASS OF ITS OWN, BECAUSE `stick()` CANNOT SEE THE
+    # POSE IT IS PINNING TO. It reads `pbs[hand].matrix` live, and a live read
+    # is only the pose we just wrote if nothing has re-evaluated the armature
+    # since - which is true while a clip is being AUTHORED and false inside
+    # `retarget()`, whose every frame begins `sc.frame_set(f)` to advance the
+    # SOURCE clip and so re-runs the animation system on the destination rig
+    # too, against the half-written action being keyed. Measured on the shipped
+    # file: the authored clips hold the katana 0.05 from his fist on every
+    # frame and the seven retargeted ones hold it 0.14 to 1.22 away - which on
+    # screen is a samurai standing in his guard with both hands empty and his
+    # sword hanging in the air beside him, and it is the owner's "he's not even
+    # holding the sword".
+    #
+    # So the host's matrix is RECORDED first, over a finished clip, and written
+    # second - two passes, nothing live. `trim` already rebuilds an action this
+    # way; this is the same shape, for every clip, and it runs after the trims
+    # so nothing downstream can undo it. It also has to run BEFORE the contact
+    # measurement, which tracks `DEF-katana_tip` - a bone parented to `Katana` -
+    # and was therefore measuring the flight of a sword nobody was holding.
+    def pin_all():
+        if not STICK:
+            return
+        for name in list(CLIPS.keys()):
+            act = bpy.data.actions.get(name)
+            if act is None:
+                continue
+            n = CLIPS[name]['frames']
+            bind(act)
+            rows = []
+            for f in range(n + 1):
+                sc.frame_set(f)
+                bpy.context.view_layer.update()
+                rows.append(([(pb.rotation_quaternion.copy(), pb.location.copy()) for pb in pbs],
+                             [pbs[j].matrix.copy() for (_i, j, _o) in STICK]))
+            keep = dict(CLIPS[name])
+            bpy.data.actions.remove(act)
+            act = new_action(name)
+            for fi, (row, hosts) in enumerate(rows):
+                rest()
+                for pb, (q, loc) in zip(pbs, row):
+                    pb.rotation_quaternion = q
+                    pb.location = loc
+                for k, (i, j, off) in enumerate(STICK):
+                    # NOTHING BUT A RIGID MOVE MAY CROSS. Anything with scale in
+                    # it would be handed straight to the sword.
+                    t, q, _s = (hosts[k] @ off).decompose()
+                    M = Matrix.Translation(t) @ q.to_matrix().to_4x4()
+                    pbs[i].matrix_basis = L[i].inverted() @ M
+                key(fi, sword=False)
+            finish(act)
+            CLIPS[name] = keep
+            log('  %-10s swords pinned over %d frames' % (name, n))
+    pin_all()
+    grips('pin', ('idle', 'run', 'block', 'sDown', 'sSide', 'sSpin', 'sStab'))
 
     # THE CONTACT FRAME IS WHERE THE BLADE MEETS A BODY, AND FOR A RETARGETED
     # CLIP IT IS MEASURED RATHER THAN DECLARED. The warden needed three
@@ -1142,7 +1652,7 @@ def stage_rig():
     _lo, _hi = ev_bounds()
     U = (_hi.z - _lo.z) / TARGET_H
     CHEST = Vector((0.0, FWD * 1.5 * U, 1.25 * U))
-    for nm in ('sDown', 'sSide', 'sRise', 'sStab', 'sSpin'):
+    for nm in ('sDown', 'sSide', 'sStab', 'sSpin'):
         if nm not in CLIPS:
             continue
         n = CLIPS[nm]['frames']
@@ -1248,6 +1758,74 @@ def stage_rig():
             nm = nt.nodes.new('ShaderNodeNormalMap')
             nt.links.new(tn.outputs['Color'], nm.inputs['Color'])
             nt.links.new(nm.outputs['Normal'], bsdf.inputs['Normal'])
+
+    # ---- HOW FAST DOES THE CLIP THINK THE GROUND IS MOVING? The retarget
+    # writes rotations and nothing else, so his gaits carry NO root motion at
+    # all: the feet cycle at whatever rate the game picks and the body is
+    # moved by the fight AI, and the two agree only by luck. That is the
+    # slide, and the knight already carries the answer - THE RATE IS THE
+    # STRIDE OVER THE SPEED. A clip with no travel still states its stride,
+    # in the one place it cannot hide it: the PLANTED FOOT. Whichever toe is
+    # lowest is the one on the ground, and how far that toe travels backwards
+    # through the frames it stays down IS the distance the ground covered.
+    # Summed over the cycle and divided by its length, that is the speed the
+    # clip is walking at - in metres, after the scale that fits him to
+    # TARGET_H, which is the number the game plays it against.
+    def gait_speed(name):
+        act = bpy.data.actions.get(name)
+        if act is None or name not in CLIPS:
+            return None
+        n = CLIPS[name]['frames']
+        if n < 2:
+            return None
+        bind(act)
+        toes = [t for t in ('DEF-toe.L', 'DEF-toe.R') if t in by]
+        if not toes:
+            return None
+        W = arm.matrix_world
+        pos, low = [], []
+        for f in range(n + 1):
+            sc.frame_set(f)
+            bpy.context.view_layer.update()
+            p = {t: (W @ by[t].head).copy() for t in toes}
+            pos.append(p)
+            low.append(min(toes, key=lambda t: p[t].z))
+        # the ground passes under whichever foot is planted, over the frames
+        # it stays planted; a frame where the plant CHANGES is a step and is
+        # not counted, or the swap reads as a metre of travel.
+        d = 0.0
+        for f in range(1, n + 1):
+            if low[f] != low[f - 1]:
+                continue
+            a, b = pos[f - 1][low[f]], pos[f][low[f]]
+            d += math.hypot(a.x - b.x, a.y - b.y)
+        return d / (n / 30.0)
+
+    GAIT_M = {}
+    for _g in ('walk', 'run'):
+        _v = gait_speed(_g)
+        if _v:
+            # this runs AFTER the scale fit, so the world is already metres
+            GAIT_M[_g] = _v
+            log('  %-5s strides %.2f m/s at his shipped size' % (_g, _v))
+    json.dump(GAIT_M, open(os.path.join(STAGE, 'gaits.json'), 'w'), indent=1)
+
+    # ---- AND THE ARTIST`S OWN ACTION DOES NOT SHIP. `Swing` is adrigon`s
+    # clip, on adrigon`s control rig; it is SAMPLED at the top of this file and
+    # re-keyed onto the deform bones as `sSwing`, and the source action itself
+    # was never removed. The exporter ships every action it can find, so 31
+    # frames of it went into the GLB - and rendered as a strip it is a T-POSE
+    # with the katana waving about in front of him, because it drives control
+    # bones that the export drops. Anything that played it would T-pose the
+    # boss. This is the `Armature|mixamo.com|Layer0` trap wearing the source
+    # file`s own name: REMOVE THE ACTION WITH THE RIG IT BELONGS TO.
+    for _dead in ('Swing',):
+        _a = bpy.data.actions.get(_dead)
+        if _a is not None:
+            _a.use_fake_user = False
+            bpy.data.actions.remove(_a)
+            CLIPS.pop(_dead, None)
+            log('dropped the source action %s' % _dead)
 
     # ---- EXPORT. Deform bones only (704 -> the DEF set plus his two swords),
     # every channel sampled on every clip, and the images left as the JPEGs
