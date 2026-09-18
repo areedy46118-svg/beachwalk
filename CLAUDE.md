@@ -10140,3 +10140,142 @@ them. The drunk's sweep is still wide and is the one left to fix. Measured
 after: 46 damage a minute against the Dealer's 40, and 11 % of frames still.
 Health came down with it — Wong 28 to 15, the drunk 34 to 18 — so the bar
 fight is over in twenty seconds and whoever wins can be finished.
+
+**THE HOIST'S ROPES CONNECT, AND ITS PLATFORM IS EMPTY.** Two faults, both
+in how the falls were told apart from everything else round them.
+
+- **A ROPE IS KNOWN BY ITS FOOT.** The old test asked for a tall thin island
+  whose bottom sat within 0.35 m of the deck and whose x lay in a band — and
+  never asked about z at all. Measured, that took the two falls that hang at
+  z 9.9, a metre and a half in FRONT of the car over open rock, and dragged
+  them up and down after a car they are not attached to; and it MISSED all
+  four real falls, whose feet are at 14.56–14.69 against a 14.10 deck. Those
+  four hung from the head beam and ended in mid-air the moment the car left
+  home. Every island's foot is averaged now (the vertices within a hand of
+  its own lowest) and a fall is one whose foot is over the car's own plan.
+- **AND A ROPE IS TAKEN WHOLE.** It used to be cut a hand under its top so a
+  run along the head beam would not sag — and this model draws a rope as ONE
+  LONG SECTION, vertices at the deck and at the beam and nothing between, so
+  a triangle spanning the cut failed the all-three-below test, stayed in the
+  static mesh, and left a collar riding the car with seven metres of rope
+  standing still above it. Pivoted at its own top the whole island scales:
+  the head never moves and the foot is on the deck at every height. The
+  price is a little dip in a run lying along the beam at the bottom of the
+  travel, and a rope that ALWAYS reaches is worth more than one that never
+  dips. Measured at three heights: every fall's bottom is 0.07 m under the
+  car's deck at 16.15, 8.81 and 2.34.
+- **AND A ROPE THAT IS NOT THE CAR'S STILL HAS TO REACH SOMETHING.** The two
+  at z 9.9 stop dead at 14.37 with three metres of air and then rock under
+  them, because the model drew them for a car parked at home. They are paid
+  out ONCE at build, down to whatever `keepDrawnFloor` says is beneath their
+  own foot.
+- **AND CARGO IS WHAT STANDS ON THE PLANKS.** The old test kept anything
+  thin in some axis, and a coil is a flat disc and a crate is a box — so the
+  car went up and down with crates, coils, two posts and a small ladder on
+  it. What separates cargo from structure is that the DECK BEGINS BELOW THE
+  PLANK TOP (that is what holding a deck up means) and cargo's own bottom is
+  AT it, with a footprint one man could have put there. Plus the carve's own
+  lesson upward: whatever stands on a piece of cargo is cargo, or taking the
+  post away leaves the rings on it hanging in the air.
+
+**AND A THING THAT BREAKS WHEN YOU TOUCH IT MUST NOT ALSO BE A WALL.** The
+coat stand has said so since it went in; the tavern's tables and chairs were
+in the wall index anyway. `bwGhost` on a mesh means drawn and never walked
+into, and `buildKeepWalls` skips it. The tables' tops come out of the packed
+grid at build as well — because the storey repair reads a table top as a
+ROOF over the flags and deletes THOSE, so when the table broke the cell it
+stood in had no floor at all and the walk called it a wall. Measured across
+the table at (-17, 3.15) after breaking it: nine cells of open flagstones
+reading `null`. That is the whole of "I still run into their colliders after
+breaking". Now the flags read 7.55 straight across, before and after, with
+no wall either way, and the hall's own arena grew from 1,272 walkable cells
+to 1,465.
+
+**AND ONE JUMP BROKE EVERY TABLE IN THE ROOM.** `Box3.setFromObject` reads
+the geometry's bounds, and a piece lifted out of a scan by index SHARES the
+whole model's position attribute — so every table measured as a box the size
+of the hall. In `stompBreakables`'s loose branch (which runs every airborne
+frame in the tavern and the undercroft) that put the player "beside" all five
+of them at once, and one jump anywhere in the room took the lot, one a frame.
+A breakable may carry its own `box`; measured after, ninety airborne frames
+at the far end of the hall break nothing.
+
+**AND A ROUTE OVER A GRID OF POINTS IS NOT A ROUTE A BODY CAN WALK.** The
+tavern's routing grid asked `keepWallNear` at 0.34 m while a fighter's own
+clamp uses 0.675, so the route threaded gaps the body is too wide for.
+Measured hands-off from the spawn: the drunk won the bar fight, set off after
+the player, and ground to a halt **7.1 m short of him** on a cell the route
+called clear and his own body was inside — and a path that exists and cannot
+be walked is worse than none, because the progress test only re-issues it.
+Asked at the body's width (`TAV_G.body`) the arena is 1,279 cells of 1,486
+and every one of them can be stood in. Measured after: the survivor crosses
+the whole hall and closes to **0.60 m** at the spawn, and lands.
+
+**AND NOBODY FIGHTS FROM A POCKET.** Flooded from Wong's own spot behind the
+counter, 17 of the hall's walkable cells were reachable: the barman's pocket
+is 0.65 m by 3 and shut on every side, so whoever stands in it can route
+nowhere and the fight simply stops. The Dealer's `mainRegion` on a bigger
+room — the largest connected piece of floor is the arena, and anything off it
+is walked back on at a stride a frame. It costs nothing anywhere else,
+because on the arena it never runs.
+
+**THE PLANK IS A FLOOR WHEREVER IT LIES, AND A RAMP WHERE YOU LEAN IT.** It
+used to be a floor only once it had been laid across the break — so the board
+you carried about was a thing you could not stand on, which is the one thing
+a plank is for. Its top surface is sampled along its length into a chain of
+little boxes the walk reads like any other floor: flat where it lies flat,
+and a STAIR where it is propped, which is what makes a ramp walkable without
+the walk having to learn about slopes. Measured on the hex-crate stack: it
+props from the flags at 7.42 to a lip at 8.70 and climbs in 11 cm steps, 7.65
+→ 8.80, walkable end to end. The prompt cannot live at a fixed spot — the
+ledge is wherever you are looking — so its proxy is MOVED to whatever lip is
+in front of you each frame, between a big step and a body's height and near
+enough for the plank to span.
+
+Three things it took, and the first is general:
+
+- **A BODY MAY NOT STAND ON ITSELF.** The plank publishes its own top as a
+  floor, and the floor lookup a body does for ITSELF then finds it, rests on
+  it, and climbs a tenth of a metre a frame for ever: measured, it went up
+  eight metres before the first frame was drawn. `_selfProp` is set round the
+  floor queries in `PhysProp.step` and the plank's own boxes are withheld
+  from it.
+- **PINNED, NOT DEAD.** A body laid down as a floor is masonry while it lies
+  there and a body again the moment you pick it up — `dead` cannot be picked
+  up, and the one thing a thing you put down has to let you do is take it
+  back.
+- **AND A ROOM OF DRAWN STONE IS NOT A BOX.** `confine` is four planes and a
+  lid, which is the bunker; a tavern is arches, a counter, a rack and a
+  stair. A body may carry its own `wall` — the same drawn-face push the walk
+  is held by. Measured: hurled at 26 m/s down the hall the plank stops at
+  x = -19.77 against a wall at -20.4 and rests 0.09 m over the flags, where
+  it used to go through both.
+- **AND THE ROUTING GRID IS NOT THE PLANK'S FLOOR.** The floor cache is
+  cheap and is redone whenever the plank moves; `TAV_G` is 2,242 cells of
+  `keepStandAt` and `keepWallNear` and may only be rebuilt when the plank
+  comes to REST somewhere that matters.
+
+**LIQUOR ON THE BAR AND ON THE TABLES.** Glass has broken in this game since
+the beach floats went in, so a bottle is almost nothing: a lathe, a label,
+and the same `makeProp` that gives every prop its pick-up and its throw. What
+is its own is the SHELF — a body knows one ground and a bar top is not it —
+so each carries a `floorAt` that answers for its own perch and stops
+answering the moment it is knocked off it, which is exactly when it should
+fall. Break the table under one and it lands on the flags and goes there.
+Twenty of them, every spot asked of the DRAWN floor rather than typed.
+
+**AND THE WALL YOU ARRIVE THROUGH IS THE DOOR YOU CAME IN BY.** The spawn
+faces down the hall with a flat stone wall at your back and the keep's
+terrace on the other side of it, so what is drawn there is the keep's OWN
+studded door, lifted out of that model triangle for triangle with its
+voussoir arch and stood in the tavern's wall (measured: the wall's face is at
+x = -20.4). Two things it takes. **A UV IS ONLY GOOD ON ITS OWN MAP** — the
+first lift took every triangle in the box whatever mesh it came off and gave
+the lot the masonry's texture, so the cliff's faces sampled the masonry atlas
+with the cliff's uvs and came out as ragged black spikes round the arch; the
+doorway is the keep's `Fortress` material and nothing else. And the material
+has to be REMADE: the keep is lit and this room is a baked picture with no
+lights in it at all, so the keep's own standard material renders as a black
+hole in the wall. The map goes on unlit, graded — swept in the pane, at
+0xc9ced6 the oak of the leaves came out pale enough to read as more stone,
+and 0x9aa0a9 is the level where timber is still timber.
