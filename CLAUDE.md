@@ -10458,3 +10458,59 @@ the stall roof to the vaulted passage — two ways up in the same place and none
 at the end the owner was standing at, which is why he was propping the plank
 there. At x = -9.4 it splits that face too: 3.56 → 4.47 → 5.30, each one inside
 a 1.34 m jump, measured by jumping it.
+
+**WHERE A BOARD COMES TO REST IS A LINE OVER ITS SUPPORTS, AND THAT IS AN LP.**
+The first physics plank asked its two ENDS what they were standing on and turned
+about whichever was bearing. That is right for a board lying across a gap and
+wrong for every other way one can land — a lump under its middle with both ends
+free, a step under a third of it, half of it on a crate — and what it drew was a
+board hanging level in mid-air with one end in the stone, which is what the
+owner photographed.
+
+Write each sample's support as a point (u, h) in the plank's own frame. The
+board is the line y = c + m·u, it may not pass through any support, so
+c + m·u_i >= h_i for every one of them, and gravity picks the lowest middle:
+minimise c. Two variables, c(m) convex and piecewise-linear, so the minimum is
+at a breakpoint — a line touching two supports — or at the steepest slope a
+plank may lie at (0.97; past that it slides rather than standing on end).
+Fifty-five pairs over eleven samples is nothing, and it is exact: the board
+rests on the UPPER CONVEX HULL of what is under it. `floorAt` is the same line
+EVALUATED at the slope it is lying at now rather than solved, so the centre
+follows the turn instead of snapping. Nothing is told what a ramp is: measured
+over 104 drops round the hall, 15 come to rest as a slope, and the one over the
+bar's edge runs 0.09 → 1.45 and walks end to end.
+
+**AND `_selfProp` IS SET AROUND THE PHYSICS' OWN FLOOR QUERY AND NOTHING
+ELSE.** The solve asked the same question from the settle, where it is null —
+so the board found its OWN published top surface under every sample, read them
+all as level, and solved a flat line. A plank dropped over the edge of the bar
+lay across it in the air. The guard belongs in the one place both callers pass
+through, not at the call sites.
+
+**AND A CARRIED BOARD IS PULLED IN BY WHAT IS IN FRONT OF IT.** This is the
+whole of how it ended up lying inside the masonry, and no amount of push-out
+could have fixed it: three metres of plank pointing where you look, carried up
+to a wall, reaches a metre and a half INTO it — and `keepWallNear` only looks a
+quarter of a metre round a sample, so once the board is half a metre deep in the
+stone there is no face near enough to push it back out, and letting go there
+leaves it in the wall for good. Half-Life's own answer is that the thing you are
+holding comes back toward you: a segment from the camera along the board's axis,
+bisected for the first face, and the hold pulled in so the far end stops short
+of it. Measured facing five walls: released, 0 of 5 leave any part of the board
+inside drawn stone. **And it may not pass through a wall between frames either**
+— a hard throw moves it a third of a metre a step, so the move is tested as a
+segment and reverted if it crossed a face, the player's own rule.
+
+**AND THE CHAIRS HAD THEIR BACKS TO THE TABLES.** A chair is built with its
+posts and slats at local -z, so its front is +z, and `-a + PI/2` points that
+front straight out at the room. A group's local +Z lands on (sin, cos) of its
+yaw and the table is at -(cos a, sin a) from the chair, so the yaw is
+atan2(-cos a, -sin a) = **-a - PI/2**. Measured: the chair at (-2.26, 3.83)
+faces (-0.921, -0.390), which is its table at (-3.46, 3.32) to three decimal
+places.
+
+**AND THE SHELF IS GONE.** It was built to split the 1.74 m step from the stall
+roof to the vaulted passage into two jumps, then moved along that wall, and the
+owner's word the second time was to take it out. The file's own crate on the
+roof climbs the same step, and the plank climbs it from anywhere, which is the
+point of carrying a plank.

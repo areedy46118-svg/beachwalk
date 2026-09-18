@@ -35574,7 +35574,6 @@ function buildTavern() {
   repairKeepStoreys(TAV_SITE);
   pruneTavStoreys();
   openTavCurtains();
-  buildTavShelf();
   clearTavGhostRoofs();
   buildTavBottles();
   buildTavCast();
@@ -35786,57 +35785,11 @@ function smashTavTable(t, speed) {
   tavWallsDirty = true; TAV_G.dirty = true;
   if (!sfxTableBreak()) sfxWoodSnap();
 }
-/* AND A SHELF ON THE STOREROOM WALL. Measured, the roof of the stall reads
- * 3.56 over the flags and the vaulted passage's floor 5.30 — a 1.74 m step,
- * where a jump lifts the feet 0.62 and the walk catches a floor 0.72 over
- * them, so 1.34 is the most anybody can get up. Without the plank there is
- * simply no way in. A bracketed board halfway up that face is 0.87 either
- * side of it, which is a jump twice; and a shelf by the mouth of a store is
- * what would be there anyway, which is the whole of making it look like the
- * room rather than like a step. */
-/* AND IT MOVED TO WHERE HE WAS PROPPING THE PLANK. It stood at the west end
- * of that wall, a stride from the crate that already climbs the same step —
- * two ways up in the same place and none at the end you actually walk to.
- * It is at the EAST end now, under the mouth of the vaulted passage, which
- * is the spot the owner's crosshair was on. */
-const TAV_SHELF = { x: -9.4, z: -5.82, w: 1.70, d: 0.52, t: 0.07 };
-let tavShelfMesh = null;
-function buildTavShelf() {
-  if (tavShelfMesh || !tavWorld || !tavWalls) return;
-  const fy = TAV_Y + TAV_FLOOR;
-  // the two floors it stands between, asked of what is drawn rather than typed
-  const low = keepDrawnFloor(TAV_X + TAV_SHELF.x, TAV_Z + TAV_SHELF.z, fy + 2.0, fy + 4.6, TAV_SITE);
-  const high = keepDrawnFloor(TAV_X + TAV_SHELF.x, TAV_Z + TAV_SHELF.z - 0.6, fy + 4.2, fy + 6.6, TAV_SITE);
-  if (low === null || high === null || high - low < 1.3) return;   // no step, no shelf
-  const y = (low + high) / 2;
-  const mat = new THREE.MeshBasicMaterial({ map: tavPlankTex(), color: 0xa79a88 }); mat.toneMapped = false;   // a shelf that has been in a cellar, not one just planed
-  const iron = new THREE.MeshBasicMaterial({ color: 0x33343a }); iron.toneMapped = false;
-  const g = new THREE.Group();
-  const board = new THREE.Mesh(new THREE.BoxGeometry(TAV_SHELF.w, TAV_SHELF.t, TAV_SHELF.d), mat);
-  board.position.set(0, 0, 0);
-  g.add(board);
-  // a lip along the front, so it reads as a shelf and not a floating plank
-  const lip = new THREE.Mesh(new THREE.BoxGeometry(TAV_SHELF.w, 0.075, 0.045), mat);
-  lip.position.set(0, 0.05, TAV_SHELF.d / 2 - 0.02);
-  g.add(lip);
-  for (const s of [-1, 1]) {                        // the brackets, back to the wall
-    const br = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.30, 0.34), iron);
-    br.position.set(s * (TAV_SHELF.w / 2 - 0.13), -0.17, -0.06);
-    br.rotation.x = -0.32;
-    g.add(br);
-    const pin = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.16), iron);
-    pin.position.set(s * (TAV_SHELF.w / 2 - 0.13), -0.03, -TAV_SHELF.d / 2 + 0.04);
-    g.add(pin);
-  }
-  g.position.set(TAV_SHELF.x, y - TAV_Y, TAV_SHELF.z);
-  g.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.userData.bwGhost = true; } });
-  g.name = 'tavShelf';
-  tavWorld.add(g);
-  tavWorld.updateMatrixWorld(true);
-  tavShelfMesh = g;
-  // and a thing put in the room after the pack has to say so in the grid
-  tavCellTop(TAV_SHELF.x, TAV_SHELF.z, Math.max(TAV_SHELF.w, TAV_SHELF.d) * 0.48, y - TAV_Y + TAV_SHELF.t / 2);
-}
+/* THE SHELF IS GONE. A bracketed board was put on the wall between the stall
+ * roof and the vaulted passage to split that 1.74 m step into two jumps, and
+ * then moved along it; the owner's word the second time was to take it out.
+ * The file's own crate on the roof climbs the same step, and the plank
+ * climbs it from anywhere — which is the point of carrying a plank. */
 /* AND A GHOST HAS NO ROOF EITHER. Clearing a table's own storey out of the
  * grid is only half of it: the packer also wrote the table's UNDERSIDE as
  * the ceiling over the flags it stands on, and the walk ducks the camera
@@ -36153,23 +36106,67 @@ function tavPlankGround(x, z, y) {
   if (d !== null && (g === null || d > g)) g = d;
   return g;
 }
-/* WHAT HOLDS IT UP IS WHATEVER ITS SAMPLES NEED. `floorAt` is asked at the
- * body's middle and answers for the whole board: the support under each
- * sample, less that sample's own height above the middle, and the highest
- * of those. Laid across a gap that is the two ledges; propped on a step it
- * is the step. */
-function tavPlankFloorAt(x, z, y) {
-  if (!inTavern || !tavWalk) return null;
+/* WHERE A BOARD COMES TO REST IS A LINE OVER ITS SUPPORTS, AND THAT IS AN
+ * LP. The first version asked its two ENDS what they were standing on and
+ * turned about whichever was bearing — which is right for a board lying
+ * across a gap and wrong for every other way a plank can land: one lump
+ * under its middle and both ends free, a step under a third of it, a board
+ * half on a crate. It has to be asked about its whole length at once.
+ *
+ * Write each sample's support as a point (u, h) in the plank's own frame.
+ * The board is the line y = c + m·u; it may not pass through any support,
+ * so c + m·u_i >= h_i for every one of them, and gravity picks the lowest
+ * middle: minimise c. That is a two-variable linear program, c(m) is convex
+ * and piecewise-linear, so its minimum is at a breakpoint — a line touching
+ * two supports — or at the steepest slope a plank may lie at. Fifty-five
+ * pairs and eleven samples is nothing, and it is exact: the board rests on
+ * the UPPER CONVEX HULL of what is under it, which is what a real one does. */
+const _tpU = new Float64Array(24), _tpH = new Float64Array(24);
+let _tpNs = 0;
+const TAV_PLANK_M = 0.97;                          // it slides rather than standing on end
+function tavPlankSupports(x, z, y) {
   const hl = TAV_PLANK.len / 2, a = tavPlankAxis();
-  let best = null;
+  /* AND IT MAY NOT BEAR ON ITS OWN BOXES. `_selfProp` is set around the
+   * floor query the physics makes and around nothing else, so asked from
+   * the settle the board found its own published top under every sample,
+   * read them all as level, and solved a flat line: a plank dropped over
+   * the edge of the bar lay across it in mid-air instead of falling into a
+   * ramp. This is the one place both callers pass through. */
+  const was = _selfProp; _selfProp = tavPlankProp;
+  _tpNs = 0;
   for (let i = 0; i < TAV_PLANK_N; i++) {
     const u = (i / (TAV_PLANK_N - 1) - 0.5) * 2 * hl, dy = a.y * u;
     const g = tavPlankGround(x + a.x * u, z + a.z * u, y + dy + 0.30);
     if (g === null) continue;
-    const need = g - dy;
-    if (best === null || need > best) best = need;
+    _tpU[_tpNs] = u; _tpH[_tpNs] = g; _tpNs++;
   }
-  return best;
+  _selfProp = was;
+  return _tpNs;
+}
+// the centre height a board at this slope needs, over the supports it has
+function tavPlankLift(m) {
+  let c = null;
+  for (let i = 0; i < _tpNs; i++) { const v = _tpH[i] - m * _tpU[i]; if (c === null || v > c) c = v; }
+  return c;
+}
+// and the slope it would fall to, which is the one that sits lowest
+function tavPlankRestSlope() {
+  if (!_tpNs) return null;
+  let bm = 0, bc = tavPlankLift(0);
+  const try_ = (m) => { const c = tavPlankLift(m); if (c < bc) { bc = c; bm = m; } };
+  for (let i = 0; i < _tpNs; i++) for (let j = i + 1; j < _tpNs; j++) {
+    const du = _tpU[i] - _tpU[j]; if (Math.abs(du) < 1e-6) continue;
+    try_(THREE.MathUtils.clamp((_tpH[i] - _tpH[j]) / du, -TAV_PLANK_M, TAV_PLANK_M));
+  }
+  try_(-TAV_PLANK_M); try_(TAV_PLANK_M);
+  return { m: bm, c: bc };
+}
+/* WHAT HOLDS IT UP IS WHATEVER ITS SAMPLES NEED, at the slope it is lying
+ * at right now — which is the same line, evaluated rather than solved. */
+function tavPlankFloorAt(x, z, y) {
+  if (!inTavern || !tavWalk) return null;
+  if (!tavPlankSupports(x, z, y)) return null;
+  return tavPlankLift(Math.sin(tavPlankPitch));
 }
 /* AND THE DRAWN STONE STOPS IT ALONG ITS WHOLE LENGTH. One push at the
  * middle is what let it lie half inside a wall; every sample is pushed out
@@ -36180,6 +36177,16 @@ function tavPlankWall(p, r, half, vel) {
   if (!tavWalls) return;
   const hl = TAV_PLANK.len / 2;
   let moved = false;
+  /* AND IT MAY NOT PASS THROUGH A WALL BETWEEN FRAMES. A hard throw moves it
+   * a third of a metre a step and the push-out only ever looks a quarter of
+   * a metre round a sample, so a board thrown at masonry could finish the
+   * frame on the far side of it with nothing near enough to push it back.
+   * The player's own rule: if the move crossed a face, it did not happen. */
+  if (!tavPlankProp.held && tavPlankPrev.x !== 0
+      && keepHitsWall(tavPlankPrev.x, tavPlankPrev.z, p.x, p.z, p.y + 0.06, TAV_SITE)) {
+    p.x = tavPlankPrev.x; p.z = tavPlankPrev.z;
+    if (vel) { vel.x *= -0.15; vel.z *= -0.15; }
+  }
   /* AND IT IS THE DEEPEST SAMPLE, ASKED AGAIN — never the sum. A plank
    * lying across two posts is pushed one way at one end and the other way
    * at the other, and the resultant of those is nothing at all, which is
@@ -36212,12 +36219,13 @@ function tavPlankWall(p, r, half, vel) {
   p.x = THREE.MathUtils.clamp(p.x, TAV_X - 20.1, TAV_X + 1.2);
   p.z = THREE.MathUtils.clamp(p.z, TAV_Z - 10.6, TAV_Z + 7.4);
 }
-/* AND WHICH WAY IT LIES IS WHAT ITS TWO ENDS ARE STANDING ON. Held, it
- * points where you look and rides level, so you aim at the gap and the
- * board is already across it. Loose, the end with nothing under it FALLS —
- * an accelerating turn about the end that is bearing, which is what makes a
- * board dropped against a step become a ramp without anything being told
- * that it is one. */
+/* AND WHICH WAY IT LIES IS THE LINE IT WOULD FALL TO. Held, it points where
+ * you look and rides level, so you aim at the step and the board is already
+ * across it. Loose and in contact, it turns toward the resting slope — an
+ * ACCELERATING turn, because a board whose end is in the air falls, it does
+ * not ease. Nothing here is told what a ramp is: put one end on a step and
+ * the line the supports allow is a slope, so that is where it goes. */
+const tavPlankPrev = { x: 0, z: 0 };
 function tavPlankSettle(prop, dt) {
   const m = tavPlankMesh; if (!m || !inTavern) return;
   const p = m.position;
@@ -36234,20 +36242,34 @@ function tavPlankSettle(prop, dt) {
     }
     tavPlankPitch += (0 - tavPlankPitch) * Math.min(1, 9 * dt);
     tavPlankPitchV = 0; tavPlankRest = false;
+    /* AND A CARRIED BOARD IS PULLED IN BY WHAT IS IN FRONT OF IT. This is
+     * the whole of how it ended up lying inside the masonry: three metres of
+     * plank pointing where you look, carried up to a wall, reaches a metre
+     * and a half INTO it — and the push-out cannot see a face a quarter of a
+     * metre away when the board is half a metre deep in the stone, so
+     * letting go there left it in the wall. Half-Life's own answer: the
+     * thing you are holding comes back toward you. */
+    if (tavWalls) {
+      const a = tavPlankAxis();
+      const cx = camera.position.x, cz = camera.position.z;
+      const reach = (p.x - cx) * a.x + (p.z - cz) * a.z + hl;
+      if (reach > 0.4 && keepHitsWall(cx, cz, cx + a.x * reach, cz + a.z * reach, p.y, TAV_SITE)) {
+        let lo = 0.25, hi = reach;
+        for (let k = 0; k < 11; k++) {
+          const q = (lo + hi) / 2;
+          if (keepHitsWall(cx, cz, cx + a.x * q, cz + a.z * q, p.y, TAV_SITE)) hi = q; else lo = q;
+        }
+        const back = reach - Math.max(0.35, lo - 0.10);
+        p.x -= a.x * back; p.z -= a.z * back;
+      }
+    }
   } else {
-    const a = tavPlankAxis();
-    const ayA = p.y - a.y * hl, ayB = p.y + a.y * hl;
-    _selfProp = tavPlankProp;                          // it may not bear on its own boxes
-    const fA = tavPlankGround(p.x - a.x * hl, p.z - a.z * hl, ayA + 0.22);
-    const fB = tavPlankGround(p.x + a.x * hl, p.z + a.z * hl, ayB + 0.22);
-    _selfProp = null;
-    const half = TAV_PLANK.t / 2;
-    const down = (fA === null ? 9 : ayA - half - fA), up = (fB === null ? 9 : ayB - half - fB);
-    if (down < 0.06 || up < 0.06) {                    // one end is bearing: the other comes down
-      let want = tavPlankPitch;
-      if (fA !== null && fB !== null) want = Math.asin(THREE.MathUtils.clamp((fB - fA) / (2 * hl), -0.97, 0.97));
-      else if (fA !== null) want = 1.25;
-      else if (fB !== null) want = -1.25;
+    const n = tavPlankSupports(p.x, p.z, p.y);
+    const cur = n ? tavPlankLift(Math.sin(tavPlankPitch)) : null;
+    const rest = n ? tavPlankRestSlope() : null;
+    // in contact with what is under it, or still in the air?
+    if (rest && cur !== null && p.y - prop.restH <= cur + 0.06) {
+      const want = Math.asin(rest.m);
       const d = want - tavPlankPitch;
       if (Math.abs(d) < 0.004) { tavPlankPitch = want; tavPlankPitchV = 0; }
       else {
@@ -36256,11 +36278,12 @@ function tavPlankSettle(prop, dt) {
         if (Math.abs(s) >= Math.abs(d)) { tavPlankPitch = want; tavPlankPitchV *= -0.10; }
         else tavPlankPitch += s;
       }
-    } else tavPlankPitchV = 0;                         // in the air it keeps the angle it left with
+    } else tavPlankPitchV = 0;                     // in the air it keeps the angle it left with
     const still = prop.vel.lengthSq() < 0.03 && Math.abs(tavPlankPitchV) < 0.06;
     if (still !== tavPlankRest) { tavPlankRest = still; if (still) TAV_G.dirty = true; }
   }
   m.rotation.set(0, tavPlankYaw, tavPlankPitch, 'YZX');
+  tavPlankPrev.x = p.x; tavPlankPrev.z = p.z;
   tavPlankFloorsDirty = true;
 }
 /* THE PLANK IS A FLOOR WHEREVER IT LIES. Its own top surface is sampled
@@ -36453,7 +36476,13 @@ function buildTavChairs() {
       if (tavChairs.some((c) => Math.hypot(c.x - x, c.z - z) < 0.75)) continue;
       const g = new THREE.Group();
       g.position.set(x - TAV_X, floorY - TAV_Y, z - TAV_Z);
-      g.rotation.y = -a + Math.PI / 2;     // its back to the room, its front at the table (+z faces the table)
+      /* AND THEY FACE THE TABLE. The chair is built with its back posts and
+       * slats at local -z, so its FRONT is +z — and `-a + PI/2` points that
+       * front straight out at the room, which is every chair in the hall
+       * sitting with its back to the table it belongs to. A group's local +Z
+       * lands on (sin, cos) of its yaw, and the table is at -(cos a, sin a)
+       * from the chair, so the yaw is atan2(-cos a, -sin a) = -a - PI/2. */
+      g.rotation.y = -a - Math.PI / 2;
       const put = (w, h, d, px, py, pz, tag) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), tavChairMat); m.position.set(px, py, pz); m.userData.part = tag; g.add(m); return m; };
       const S = CHAIR.seat, L = CHAIR.leg, in_ = S / 2 - L / 2 - 0.01;
       put(S, 0.035, S, 0, CHAIR.seatY, 0, 'seat');
