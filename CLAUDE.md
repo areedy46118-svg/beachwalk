@@ -10514,3 +10514,51 @@ roof to the vaulted passage into two jumps, then moved along that wall, and the
 owner's word the second time was to take it out. The file's own crate on the
 roof climbs the same step, and the plank climbs it from anywhere, which is the
 point of carrying a plank.
+
+**A LIP IS NOT A WALL, AND THAT IS A QUESTION ABOUT THE FACE'S OWN CROWN.**
+The plank would not lay as a ramp up to the vaulted passage, and the reason is
+the one every push-out in this file eventually meets: the thing a board leans
+ON is, in plan, a face right beside it. Traced station by station, the riser of
+the 1.74 m step into the passage tops out FOUR CENTIMETRES above the station
+resting against it — so a band starting a finger over the timber read it as a
+wall, pushed the board sideways a quarter of a metre a frame, and walked the
+ramp off the stall roof and into the hall.
+
+Raising the band until it cleared that riser works and is the wrong fix: it
+lets the board through everything else as well (0 of 104 drops came to rest in
+stone at the tight band, **12** at the raised one). The band is opened DOWNWARD
+instead and the face is judged by its TOP — `keepWallNear` returns `yhi` of the
+triangle it picked, which it has had all along — so anything whose crown is
+under a hand's breadth over the timber is a lip the timber lies across, and
+anything taller is a wall. Measured after: the ramp stands (3.61 → 6.10 over
+the passage lip, walked from the stall roof into the tunnel and on to its far
+end), the bar's edge still gives a ramp (0.09 → 1.45), the gap is still
+bridged, and **0 of 104 drops** leave any part of the board inside drawn stone.
+
+Two smaller things came out of the same pass. **A station is a cross-section,
+not a disc**: the timber is half a metre wide ACROSS its axis and nothing at
+all along it, so an interior station is pushed across by however much the face
+really is inside the width, and only the two ENDS keep the whole push — an end
+driven into masonry is the one case where along IS the overlap. And **a
+teleport is not a frame's motion**: the between-frames segment test reverts a
+move that crossed a face, which on a body picked up and put down somewhere else
+entirely (a restore, the harness) reverted it to wherever it had last been
+lying. It is skipped past a metre.
+
+**AND THE BARREL PILE AND THE FLAT CRATES ARE OUT, FOR GOOD.** The owner's
+word, on a pile of barrels lying in rows and a low chamfered crate: remove both
+and any replicas of them in the tavern. There is one barrel pile in the file —
+it had been lifted out and moved to the flags to clear the climb, and cloned
+once more as the first rung of it — and three of the crate. All of them go,
+TRIANGLES AND STOREYS BOTH, because a thing that is not drawn and is still in
+the walk grid is an invisible wall: measured at all five spots afterwards, the
+walk answers the flags. They are found by SHAPE, since this file has no names,
+and the triangles are dropped out of the source index the way a table's are.
+The climb to the gallery starts on the file's own stool again.
+
+**AND TWO JARS OF BLUE BLOOD AT THE END OF THE PASSAGE.** It runs six metres
+back over the stall and stops at a blind wall, so there has never been anything
+down there to have gone for. The far end is FOUND — the last station the walk
+still has a floor at — and the jars are the beach's own `dropJar`, which now
+takes a height, so the count in the corner and the stack in the pack cannot get
+out of step with what the first cache hands out.

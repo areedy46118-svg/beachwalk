@@ -9669,9 +9669,9 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
  * The model is its OWN instance: `bloodJar` is the one the examine screen
  * re-parents at the end of the extraction, and handing the same Group to two
  * places is how a thing ends up in neither. */
-function dropJar(sx, sz) {
+function dropJar(sx, sz, sy = 0.02) {
   const jar = makeBloodJar();
-  jar.position.set(sx, 0.02, sz);
+  jar.position.set(sx, sy, sz);
   jar.rotation.y = Math.random() * Math.PI * 2;
   jar.rotation.z = 0.05;                       // it has been lying in sand, not on a shelf
   const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 6),
@@ -32980,7 +32980,7 @@ function yseg2(px, pz, ax, az, bx, bz) {
 function dojoWallNear(x, z, r, lo, hi) {
   const W = dojoWalls; if (!W) return null;
   const v = W.v, ic = Math.floor((x - DOJO_X) / W.cell), jc = Math.floor((z - DOJO_Z) / W.cell);
-  let bd = -1, bx = 0, bz = 0;
+  let bd = -1, bx = 0, bz = 0, bt = 0;
   for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
     const list = W.map.get(W.key(ic + di, jc + dj)); if (!list) continue;
     for (let m = 0; m < list.length; m++) {
@@ -32997,10 +32997,12 @@ function dojoWallNear(x, z, r, lo, hi) {
       if (d < d2) { d2 = d; nx = _ys2.x; nz = _ys2.z; }
       if (d2 >= r * r) continue;
       const depth = r - Math.sqrt(d2);
-      if (depth > bd) { bd = depth; bx = nx; bz = nz; }
+      if (depth > bd) { bd = depth; bx = nx; bz = nz; bt = W.yhi[id]; }
     }
   }
-  return bd < 0 ? null : { x: bx, z: bz, depth: bd };
+  // `top` is the face's own crown: what tells a LIP something can lie over
+  // from a wall it cannot. Nothing but the plank reads it.
+  return bd < 0 ? null : { x: bx, z: bz, depth: bd, top: bt };
 }
 /* AND IT IS THE DEEPEST ONE, ASKED AGAIN — never the sum. A grid of cells
  * fans out round a small object and wants summing; a wall is thirty coplanar
@@ -35563,17 +35565,18 @@ function buildTavern() {
   tavBuilt = true;
   const t0 = performance.now();
   extractTavTables();
-  moveTavBarrel();
+  stripTavProps();
   buildTavCrates();
   buildKeepWalls(TAV_SITE);
-  buildTavBarrelStep();
   buildTavPlank();
   buildTavChairs();
   buildTavDoor();                                   // before the walls: the arch stands proud of the wall and is one
   tavWalls = null; buildKeepWalls(TAV_SITE);
   repairKeepStoreys(TAV_SITE);
   pruneTavStoreys();
+  clearTavStripped();
   openTavCurtains();
+  buildTavJars();
   clearTavGhostRoofs();
   buildTavBottles();
   buildTavCast();
@@ -35911,50 +35914,35 @@ function buildTavCrates() {
   tavWorld.updateMatrixWorld(true);
 }
 
-/* ---- THE WAY UP, AND THE WAY ACROSS.
- *
- * THE FIRST RUNG IS A BARREL. The climb to the gallery started on a stool at
- * 0.58 and a box at 1.15, and the owner asked for a barrel to begin it. WHERE
- * it goes is measured rather than typed, the way everything else in this room
- * is: the nearest spot to the stack's foot that is the FLAGS (not a crate
- * top), has a body's room round it, and nothing drawn overhead. */
-function buildTavBarrelStep() {
-  if (!tavWorld || tavWorld.userData.barrelStep || !tavCells) return;
-  const src = tavWorld.getObjectByName('tavBarrel');
-  if (!src) return;
-  tavWorld.userData.barrelStep = true;
-  const fy = TAV_Y + TAV_FLOOR, [sx, sz] = TAV_STACKS[0];
-  let best = null, bd = 1e9;
-  for (let a = 0; a < 64; a++) for (let r = 1.15; r <= 2.8; r += 0.15) {
-    const th = a / 64 * Math.PI * 2, x = sx + Math.cos(th) * r, z = sz + Math.sin(th) * r;
-    const st = keepStandAt(TAV_X + x, TAV_Z + z, fy + 0.30, 0.5, TAV_SITE);
-    if (!st || Math.abs(st.f - fy) > 0.10) continue;
-    if (keepWallNear(TAV_X + x, TAV_Z + z, 0.70, fy + 0.12, fy + 2.0, TAV_SITE)) continue;
-    if (keepDrawnFloor(TAV_X + x, TAV_Z + z, fy + 0.12, fy + 2.2, TAV_SITE) !== null) continue;
-    /* AND A RUNG IS ONLY A RUNG IF SOMETHING IS ABOVE IT. A barrel standing
-     * in the open is a barrel; one you can step OFF is the first step of the
-     * climb, so the spot has to have a surface a barrel's height above the
-     * flags within a stride of it. */
-    let up = false;
-    for (let b = 0; b < 12 && !up; b++) for (let rr = 0.55; rr <= 1.25; rr += 0.2) {
-      const th2 = b / 12 * Math.PI * 2;
-      const st2 = keepStandAt(TAV_X + x + Math.cos(th2) * rr, TAV_Z + z + Math.sin(th2) * rr, fy + 2.0, 2.0, TAV_SITE);
-      if (st2 && st2.f - fy > 0.95 && st2.f - fy < 1.60) { up = true; break; }
-    }
-    const score = r - (up ? 3 : 0);                   // a rung first, and failing that the nearest spot
-    if (score < bd) { bd = score; best = [x, z]; }
+/* ---- THE WAY UP, AND THE WAY ACROSS. The climb to the gallery is the
+ * file's own stool and boxes with two copies of its crate on top of them,
+ * and the plank is what crosses what the climb cannot. A barrel was added as
+ * a first rung and has been taken out again with the pile it was cloned
+ * from — the stool is the first rung. */
+/* TWO JARS AT THE END OF THE PASSAGE. The vaulted passage over the stall
+ * runs from x = -8.0 to x = -14.2 at 5.30 over the flags and stops at a
+ * blind wall, so there has never been anything down there to have gone for.
+ * Two jars of blue blood stand at the far end of it, on the floor the walk
+ * itself answers with, and they are taken by the same `dropJar` the first
+ * cache uses — so the count in the corner and the stack in the pack cannot
+ * get out of step with what the beach hands out. */
+function buildTavJars() {
+  if (!tavWorld || tavWorld.userData.jars || !tavWalk) return;
+  tavWorld.userData.jars = true;
+  // the far end is FOUND: the last station of the passage the walk still has
+  // a floor at, not a number typed in
+  let endX = null;
+  for (let x = -8.0; x >= -16.0; x -= 0.1) {
+    const st = keepStandAt(TAV_X + x, TAV_Z - 7.0, TAV_Y + TAV_FLOOR + 5.45, 0.6, TAV_SITE);
+    if (!st || st.f - TAV_Y - TAV_FLOOR < 4.9) break;
+    endX = x;
   }
-  if (!best) return;
-  src.geometry.computeBoundingBox();
-  const bb = src.geometry.boundingBox, h = bb.max.y - bb.min.y;
-  const m = new THREE.Mesh(src.geometry, src.material);
-  m.position.set(best[0], TAV_FLOOR - bb.min.y, best[1]);
-  m.rotation.y = 0.7;
-  m.frustumCulled = false; m.name = 'tavBarrel';
-  tavWorld.add(m);
-  tavCellTop(best[0], best[1], Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) * 0.62, TAV_FLOOR + h);
-  tavWorld.updateMatrixWorld(true);
+  if (endX === null) return;
+  const st = keepStandAt(TAV_X + endX, TAV_Z - 7.0, TAV_Y + TAV_FLOOR + 5.45, 0.6, TAV_SITE);
+  const y = st.f + 0.02;
+  for (const dz of [-0.42, 0.42]) dropJar(TAV_X + endX + 0.45, TAV_Z - 7.0 + dz, y);
 }
+
 /* A thing put in the room after the pack has to say so in the grid, or the
  * walk goes on answering with the flags underneath it. */
 function tavCellTop(x, z, r, top) {
@@ -36183,6 +36171,7 @@ function tavPlankWall(p, r, half, vel) {
    * frame on the far side of it with nothing near enough to push it back.
    * The player's own rule: if the move crossed a face, it did not happen. */
   if (!tavPlankProp.held && tavPlankPrev.x !== 0
+      && Math.hypot(p.x - tavPlankPrev.x, p.z - tavPlankPrev.z) < 1.0    // a frame's motion, not a teleport
       && keepHitsWall(tavPlankPrev.x, tavPlankPrev.z, p.x, p.z, p.y + 0.06, TAV_SITE)) {
     p.x = tavPlankPrev.x; p.z = tavPlankPrev.z;
     if (vel) { vel.x *= -0.15; vel.z *= -0.15; }
@@ -36191,28 +36180,54 @@ function tavPlankWall(p, r, half, vel) {
    * lying across two posts is pushed one way at one end and the other way
    * at the other, and the resultant of those is nothing at all, which is
    * the Dealer's own chair wearing three metres of timber. */
+  /* AND A STATION IS A CROSS-SECTION, NOT A DISC. `keepWallNear` answers
+   * "the nearest steep face within r of this point", which round the middle
+   * of a board is the wrong question: the timber is half a metre wide ACROSS
+   * its axis and nothing at all ALONG it, so a face a hand in front of a
+   * station is a face the board passes over, not one it is inside. That is
+   * what stopped it becoming a ramp: laid against the lip of the vaulted
+   * passage, the stations either side of the riser each read it as a wall a
+   * hand away and it was walked sideways off the stall roof and into the
+   * hall. Interior stations are pushed ACROSS only, by however much the face
+   * really is inside the width; the two ENDS keep the whole push, because an
+   * end driven into masonry is the one case where along IS the overlap. */
   for (let k = 0; k < 5; k++) {
     const a = tavPlankAxis();
+    const px = -a.z, pz = a.x;                       // across the board, in plan
+    const half = TAV_PLANK.w / 2 + 0.03;
     let best = null, bu = 0;
     for (let i = 0; i < TAV_PLANK_N; i++) {
       const u = (i / (TAV_PLANK_N - 1) - 0.5) * 2 * hl;
       const sx = p.x + a.x * u, sz = p.z + a.z * u, sy = p.y + a.y * u;
-      /* AND THE BAND IS OVER THE BOARD, NOT ROUND IT. Read at the plank's
-       * own middle it takes in the last few centimetres of whatever the
-       * plank is RESTING on — and the two carpets it is meant to bridge are
-       * hanging cloth, whose faces are as vertical as a wall's, so the board
-       * was shoved off the very thing it had just landed on and fell into
-       * the gap. A step is under the board; a wall stands over it. */
-      const h = keepWallNear(sx, sz, TAV_PLANK.w / 2 + 0.05, sy + 0.02, sy + 0.34, TAV_SITE);
-      if (!h) continue;
-      if (!best || h.depth > best.depth) { best = { x: h.x, z: h.z, depth: h.depth, sx, sz }; bu = u; }
+      const end = (i === 0 || i === TAV_PLANK_N - 1);
+      /* AND A LIP IS NOT A WALL, WHICH IS A QUESTION ABOUT THE FACE'S OWN
+       * CROWN. Read with a band that starts over the board, the riser of the
+       * step into the vaulted passage — which tops out four centimetres
+       * above the station leaning on it — came back as a wall, and the ramp
+       * was walked sideways off the stall roof and into the hall. Raising
+       * the band until it cleared the riser let the board through and let it
+       * through everything else as well. So the band is opened DOWNWARD and
+       * the face is judged by its top instead: anything whose crown is under
+       * a hand over the timber is a lip the timber lies across. */
+      const h = keepWallNear(sx, sz, TAV_PLANK.w / 2 + 0.05, sy - 0.03, sy + 0.55, TAV_SITE);
+      if (!h || h.top < sy + 0.13) continue;
+      const ox = sx - h.x, oz = sz - h.z;
+      let nx, nz, d;
+      if (end) { const L = Math.hypot(ox, oz); if (L < 1e-5) continue; nx = ox / L; nz = oz / L; d = h.depth; }
+      else {
+        const along = ox * a.x + oz * a.z, across = ox * px + oz * pz;
+        if (Math.abs(along) > 0.16) continue;        // ahead of this station: the board passes OVER it
+        d = half - Math.abs(across);
+        if (d <= 0) continue;                        // beside the station, not inside the board
+        const s = across < 0 ? -1 : 1;
+        nx = px * s; nz = pz * s;
+      }
+      if (!best || d > best.d) { best = { nx, nz, d }; bu = u; }
     }
     if (!best) break;
-    const ox = best.sx - best.x, oz = best.sz - best.z, L = Math.hypot(ox, oz);
-    if (L < 1e-5) break;                              // dead on the face: nowhere to go
-    const d = best.depth + 0.002, px = ox / L * d, pz = oz / L * d;
-    p.x += px; p.z += pz;
-    tavPlankYaw += THREE.MathUtils.clamp(bu * (a.z * px - a.x * pz) / (hl * hl) * 0.9, -0.16, 0.16);
+    const dd = best.d + 0.002, pxv = best.nx * dd, pzv = best.nz * dd;
+    p.x += pxv; p.z += pzv;
+    tavPlankYaw += THREE.MathUtils.clamp(bu * (a.z * pxv - a.x * pzv) / (hl * hl) * 0.9, -0.16, 0.16);
     moved = true;
   }
   if (moved && vel) { vel.x *= 0.55; vel.z *= 0.55; }
@@ -36420,32 +36435,50 @@ function pruneTavStoreys() {
 /* AND THE BARREL COMES OFF THE CRATES. One barrel lies across the crate
  * pile's second row where the way up has to go; it is lifted out of the mesh
  * like a table piece and set down on the flags against the wall. */
-function moveTavBarrel() {
-  if (!tavWorld || tavWorld.userData.barrel) return;
-  tavWorld.userData.barrel = true;
+/* THE BARREL PILE AND THE FLAT CRATES ARE OUT, FOR GOOD. A pile of barrels
+ * lying in rows and a low chamfered crate, the owner's word: remove both of
+ * these and any replicas of them in the tavern. There is one barrel pile in
+ * the file (it was lifted out and moved to the flags to clear the climb, and
+ * copied once more as the first rung of it) and three of the crate; all of
+ * them go, triangles and storeys both, because a thing that is not drawn and
+ * is still in the walk grid is an invisible wall.
+ *
+ * They are found by SHAPE, not by name — this file has no names — and the
+ * triangles are dropped out of the source index the way a table's are. */
+let tavStripped = [];
+function stripTavProps() {
+  if (!tavWorld || tavWorld.userData.stripped) return;
+  tavWorld.userData.stripped = true;
   tavWorld.updateMatrixWorld(true);
-  let src = null;
-  tavWorld.traverse((o) => { if (!src && o.isMesh && o.material && o.material.name === 'TextureMaterial_4' && o.geometry.index) src = o; });
-  if (!src) return;
-  const { roots, box } = meshIslands(src, tavWorld.position);
-  const want = new THREE.Box3(new THREE.Vector3(TAV_X - 12.0, TAV_Y + TAV_FLOOR + 1.8, TAV_Z - 6.0), new THREE.Vector3(TAV_X - 9.9, TAV_Y + TAV_FLOOR + 2.9, TAV_Z - 4.6));
-  let root = -1;
-  for (const [r, e] of box) if (want.containsBox(e)) { root = r; break; }
-  if (root < 0) return;
-  const tris = [], idx = src.geometry.index, keep = [];
-  for (let q = 0; q < roots.length; q++) {
-    const a = idx.getX(q * 3), b = idx.getX(q * 3 + 1), c = idx.getX(q * 3 + 2);
-    if (roots[q] === root) tris.push(a, b, c); else keep.push(a, b, c);
+  const fy = TAV_Y + TAV_FLOOR, sz = new THREE.Vector3(), meshes = [];
+  tavWorld.traverse((o) => { if (o.isMesh && o.geometry && o.geometry.index && o.name !== 'hitProxy') meshes.push(o); });
+  for (const m of meshes) {
+    const mat = m.material && m.material.name;
+    if (mat !== 'TextureMaterial_4' && mat !== 'TextureMaterial_12') continue;
+    const { roots, box } = meshIslands(m, tavWorld.position);
+    const drop = new Set();
+    for (const [r, e] of box) {
+      e.getSize(sz);
+      const lo = Math.min(sz.x, sz.z), hi = Math.max(sz.x, sz.z);
+      if (e.min.y - fy > 0.30) continue;              // it stands on the flags
+      // the barrel pile: a metre and a half of lying barrels, three quarters tall
+      const barrels = mat === 'TextureMaterial_4' && hi > 1.2 && hi < 2.0 && lo > 1.1 && sz.y > 0.6 && sz.y < 0.95;
+      // the flat crate: two thirds of a metre in plan and half that tall
+      const crate = mat === 'TextureMaterial_12' && hi > 0.6 && hi < 1.0 && lo > 0.5 && lo < 0.9 && sz.y > 0.25 && sz.y < 0.6;
+      if (barrels || crate) { drop.add(r); tavStripped.push(e.clone()); }
+    }
+    if (!drop.size) continue;
+    const idx = m.geometry.index, keep = [];
+    for (let q = 0; q < roots.length; q++) {
+      if (drop.has(roots[q])) continue;
+      keep.push(idx.getX(q * 3), idx.getX(q * 3 + 1), idx.getX(q * 3 + 2));
+    }
+    m.geometry.setIndex(keep);
   }
-  const e = box.get(root), c = e.getCenter(new THREE.Vector3());
-  const geo = tavGibGeo(src, tris, c.x, e.min.y, c.z);
-  geo.setIndex(Array.from({ length: geo.attributes.position.count }, (_, i) => i));
-  const m = new THREE.Mesh(geo, src.material);
-  m.name = 'tavBarrel'; m.frustumCulled = false;
-  m.position.set(-7.6, TAV_FLOOR, -2.6);               // the flags by the rack's right end, clear of the stool and the stair
-  m.rotation.y = 0.35;
-  tavWorld.add(m);
-  src.geometry.setIndex(keep);
+}
+// and what the grid remembers of them, once the repair has had its say
+function clearTavStripped() {
+  for (const e of tavStripped) clearTavStoreys(e, TAV_Y + TAV_FLOOR + 0.12, e.max.y + 0.20);
 }
 
 /* THE CHAIRS. The file sets tables and no chairs; three to a table go in
