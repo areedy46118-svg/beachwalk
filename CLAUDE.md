@@ -10358,3 +10358,103 @@ whole of making it look like the room rather than like a step. Both floors
 it stands between are asked of the DRAWN geometry, so it cannot be built
 where there is no step. Measured: roof 11.08 → shelf 11.99 → passage 12.82,
 each one inside a jump.
+
+**THE DOOR IS CUT TO THE ARCH, AND THE ARCH IS MEASURED.** "Make this line up
+perfectly with the stone arch, don't add any stone yourself" is one job, and
+the reason the first door needed a surround of its own is that it was built to
+numbers somebody typed: 2.62 m wide, springing at 2.20, radius 1.31, against an
+opening that is actually **3.84 m wide, 4.05 m to the crown**. Three quarters of
+the width, off-centre by half a metre, and a ring of invented voussoirs round
+it to hide the difference.
+
+Nothing about it is written down now. Rays go at the wall from a hand in front
+of its moulding: the recess behind the arch is at x = -20.40, the wall's face at
+-20.11 and the moulding at -19.82, so a hit past -20.31 is INSIDE the opening
+and anything nearer is outside it, and bisection between the two gives the
+jambs and then the head over every plank's own middle. The leaves are built to
+that profile and to nothing else, set a finger back into the reveal so the
+model's arch frames them. **And a semicircle fitted through the crown and the
+springing is not good enough**: this is a SketchUp polygon, and the circle
+through its own crown (11.599) and half-width (1.919) stands up to five
+centimetres proud of the real head all the way round — which is exactly the
+sliver of daylight a shut door is judged by. Measure the profile, do not fit it.
+The two meshes it cuts through are found once with a handful of rays and asked
+directly after that, or the bisection is a hundred thousand bounding spheres.
+
+**AND THE LEDGE ALONG THE SOUTH WALL IS NOT A LEDGE, IT IS A CARPET.** Four and
+a half metres up, hung over a beam: two of them, `TextureMaterial_4`, x -7.64 to
+-4.57 and -2.08 to 0.99, and the only thing up there to stand on is the rolled
+top of the cloth. The packer samples what is DRAWN, so the walkable strip came
+out **0.40 m wide against a body 0.52 across** — measured, a floor at 4.5 from
+z -6.62 to -6.22 and nothing either side, so the push-out took you off it every
+time. That is "I keep clipping through". `openTavCurtains` widens it to the
+carpet's own plan and a hand's breadth beyond, at the height the cloth is
+actually drawn at, cell by cell, REPLACING the packer's narrow storeys rather
+than adding to them (a duplicate storey a centimetre away is a coin toss over
+which one `keepFloorAt` returns, and the packer's carries a roof). Measured
+after: 0.8 m of catwalk, walked hands-off from the passage to the break with no
+stall. The gap between the two is 2.49 m and the jump clears it — 0.78 s of
+flight against a 3.4 m/s walk — with the jump pressed anywhere in a 0.13 s
+window, and comfortably at a run.
+
+**AND THE PLANK IS A HALF-LIFE PUZZLE, NOT A PROMPT.** "Lay the plank across"
+at the break and "prop the plank as a ramp" at whatever lip you were looking at
+were both built and both deleted: what the owner asked for is to put it there
+himself. So there are no verbs and no snapping, and what took their place is
+the one thing the body had never had — **a LENGTH**.
+
+Every other prop in this game is a point and a radius, which is right for a
+bottle and is exactly why a three-metre board lay half inside the masonry in
+every screenshot. It is sampled along its axis instead, and all three questions
+are the same question asked eleven times:
+
+- **what holds it up** — `floorAt` is asked at the middle and answers for the
+  whole board: the support under each sample less that sample's own height
+  above the middle, and the highest of those. Across the gap that is the two
+  carpets; against a step it is the step.
+- **which way it lies** — the end with nothing under it FALLS, an accelerating
+  turn about the end that is bearing. Nothing is told what a ramp is: drop it
+  against a step and it becomes one, drop it across the gap and it lies flat.
+- **what stops it** — the drawn stone at every sample. **THE BAND IS OVER THE
+  BOARD, NOT ROUND IT**: read at the plank's own middle it takes in the last few
+  centimetres of whatever the plank is RESTING on, and the two carpets it is
+  meant to bridge are cloth hanging as vertical as a wall, so the board was
+  shoved off the very thing it had just landed on and fell into the gap. And it
+  is the **deepest sample, asked again — never the sum**: a plank lying across
+  two posts is pushed one way at one end and the other way at the other, and
+  the resultant of those is nothing at all (the Dealer's chair, in timber).
+- **ELEVEN SAMPLES, NOT FIVE.** At five they are 0.8 m apart and a pier between
+  two of them is a pier the board lies straight through. Measured over 104 drops
+  round the hall, with five samples and a summed push 26 came to rest with drawn
+  stone inside the timber; with eleven and the deepest-first push, **6**, and
+  every one of those is a board wedged between two posts.
+
+Held, it points where you look and rides level, so you aim at the gap and the
+board is already across it. Measured end to end on the real path — stand at the
+west lip, look across, carry, let go — it lands at 4.38 spanning the break and
+the walk east over it runs from x -5.4 to +0.7 without a fall. It costs 0.01 ms
+a frame.
+
+**AND A BODY IN A ROOM YOU HAVE LEFT DOES NOTHING.** Nothing gates `physProps`
+by distance, so the moment you sail home every bottle on the tavern's bar and
+the plank on its ledge lost the floor that was answering for them and fell six
+kilometres to the beach's own zero. `opts.room` is a body's own "am I in the
+room", checked first in `step`.
+
+**AND A TABLE IS SOLID UNTIL IT BREAKS.** It was made walk-through in the round
+that stopped it being a wall AFTER it had broken; the owner's word now is the
+other half of that. It is not put back into the face index — a round table read
+off the drawn faces is its legs and its pedestal and nothing else, because the
+top is a disc five centimetres thick and `KEEP_WALL_MIN` is 0.12, so you would
+walk into the overhang and stop at the pillar. `pushOutOfTavTables` is the
+table's own DISC, its top's radius, which is the silhouette you are actually
+looking at, and it is skipped the moment `t.dead`. Measured: walking into one
+stops at 1.25 m from its middle (0.99 + a 0.26 body) from every side it can be
+reached from, and after the break the same walks go straight through.
+
+**AND THE SHELF MOVED TO THE END OF THE WALL YOU ACTUALLY WALK TO.** It stood at
+x = -11.0, a stride from the crate that already climbs the same 1.74 m step from
+the stall roof to the vaulted passage — two ways up in the same place and none
+at the end the owner was standing at, which is why he was propping the plank
+there. At x = -9.4 it splits that face too: 3.56 → 4.47 → 5.30, each one inside
+a 1.34 m jump, measured by jumping it.

@@ -5173,6 +5173,18 @@ class PhysProp {
      * has to undo when you pick it back up. */
     this.wall = opts.wall || null;
     this.onUnpin = opts.onUnpin || null;
+    /* AND A PLANK IS NOT A PEBBLE. Everything else in this game is a body
+     * small enough that a point and a radius describe it; a board three
+     * metres long has two ENDS, and which of them is resting on what is the
+     * whole of how it lies. `settle` is a body's own last word on its pose,
+     * run after the step has moved it. */
+    this.settle = opts.settle || null;
+    /* AND A BODY IN A ROOM YOU HAVE LEFT DOES NOTHING. Nothing gates this
+     * list by distance, so the moment you sail home every bottle on the
+     * tavern's bar and the plank on its ledge lost the floor that was
+     * answering for them and fell six kilometres to the beach's own zero.
+     * A room's props are asleep while you are not in it. */
+    this.room = opts.room || null;
     this.bounce = opts.bounce ?? 0.32;
     this.friction = opts.friction ?? 0.78;
     this.holdDist = opts.holdDist ?? Math.max(1.15, this.radius + 0.9);
@@ -5182,6 +5194,7 @@ class PhysProp {
   }
   step(dt) {
     if (this.dead) return;
+    if (this.room && !this.room()) return;
     const p = this.mesh.position;
     /* PINNED. A body that has been laid down as a FLOOR — the plank across
      * the break, the plank propped as a ramp — is masonry while it lies
@@ -5211,6 +5224,7 @@ class PhysProp {
       p.addScaledVector(this.vel, dt);
       if (this.wall) this.wall(p, this.radius, this.restH, this.vel);
       this.angVel.multiplyScalar(1 - Math.min(1, 8 * dt));
+      if (this.settle) this.settle(this, dt);
       return;
     }
     this.vel.y -= GRAV * dt;
@@ -5387,6 +5401,7 @@ class PhysProp {
     this.mesh.rotation.y += this.angVel.y * dt;
     this.mesh.rotation.z += this.angVel.z * dt;
     this.angVel.multiplyScalar(1 - Math.min(1, 0.35 * dt));
+    if (this.settle) this.settle(this, dt);
   }
 }
 function grab(prop) {
@@ -35558,6 +35573,7 @@ function buildTavern() {
   tavWalls = null; buildKeepWalls(TAV_SITE);
   repairKeepStoreys(TAV_SITE);
   pruneTavStoreys();
+  openTavCurtains();
   buildTavShelf();
   clearTavGhostRoofs();
   buildTavBottles();
@@ -35664,7 +35680,13 @@ function extractTavTables() {
         : (sz.y > 0.55 && Math.min(sz.x, sz.z) < 0.2 && sz.y > Math.max(sz.x, sz.z)) ? 'leg' : 'base';   // an iron leg is an angle: thin one way, tall
       const pm = tavPiece(m, tris, t.grp);
       pm.userData.part = kind; pm.userData.box = e.clone();
-      pm.userData.bwGhost = true;                 // drawn, never a wall
+      /* IT IS STILL NOT A WALL IN THE FACE INDEX. A round table read off the
+       * drawn faces is its LEGS and its pedestal and nothing else — the top
+       * is a disc five centimetres thick, which is under the minimum a face
+       * has to be to count, so you would walk into the overhang and stop at
+       * the pillar. What stops you is `pushOutOfTavTables`, the table's own
+       * disc, which is the silhouette you are actually looking at. */
+      pm.userData.bwGhost = true;
       t.grp.add(pm); t.pieces.push(pm);
     }
     m.geometry.setIndex(keep);
@@ -35772,7 +35794,12 @@ function smashTavTable(t, speed) {
  * side of it, which is a jump twice; and a shelf by the mouth of a store is
  * what would be there anyway, which is the whole of making it look like the
  * room rather than like a step. */
-const TAV_SHELF = { x: -11.0, z: -5.82, w: 1.70, d: 0.52, t: 0.07 };
+/* AND IT MOVED TO WHERE HE WAS PROPPING THE PLANK. It stood at the west end
+ * of that wall, a stride from the crate that already climbs the same step —
+ * two ways up in the same place and none at the end you actually walk to.
+ * It is at the EAST end now, under the mouth of the vaulted passage, which
+ * is the spot the owner's crosshair was on. */
+const TAV_SHELF = { x: -9.4, z: -5.82, w: 1.70, d: 0.52, t: 0.07 };
 let tavShelfMesh = null;
 function buildTavShelf() {
   if (tavShelfMesh || !tavWorld || !tavWalls) return;
@@ -35993,21 +36020,34 @@ function tavCellTop(x, z, r, top) {
     fl.length = 0; for (const e of tri) fl.push(e[0], e[1], e[2]);
   }
 }
-/* AND THE WAY ON IS A PLANK YOU CARRY. Out of the gallery a stone ledge runs
- * east along the south wall at head height over the hall — and it is BROKEN.
- * Measured by standing on it cell by cell: floor at 4.53 where you drop onto
- * it, easing down to 4.14 at x = -4.5, then NOTHING from -4.25 to -2.25, and
- * 4.36 again at -2.0 running on to the east wall. Two and a quarter metres of
- * air with the hall's flags four metres below.
+/* AND THE WAY ACROSS IS A PLANK YOU PUT THERE YOURSELF. Along the south
+ * wall of the hall hang two carpets whose rolled tops are a catwalk four
+ * and a half metres up — and between them is two and a half metres of air.
+ * The plank is what you lay across it.
  *
- * The plank is a real physics body — it falls, you pick it up with E, you
- * carry it up the crates and you can throw it off the ledge and go back down
- * for it. Laying it is its own verb, at the break, because a 2.7 m board
- * dropped by hand onto a 0.4 m ledge is a board in the hall: the prompt is
- * under the crosshair and the board goes down square. */
-const TAV_PLANK = { x0: -4.62, x1: -1.88, z: -6.45, top: 4.44, w: 0.46, t: 0.10 };
+ * IT IS A PHYSICS PUZZLE, NOT A PROMPT. Two verbs were built first — "lay
+ * the plank across" at the break and "prop the plank as a ramp" at whatever
+ * lip you were looking at — and the owner's word was that it should be like
+ * Half-Life: you carry it, you put it down, and where it ends up is where
+ * you put it. Both prompts are gone, and so is the snapping that went with
+ * them; what is left is a board that falls, rests on whatever is under its
+ * ENDS, and is a floor wherever it happens to lie.
+ *
+ * A BOARD HAS TWO ENDS, WHICH IS THE WHOLE OF IT. Every other body in this
+ * game is a point and a radius — right for a bottle and useless for a plank,
+ * which is exactly why it went through the stone in every screenshot: one
+ * sphere at its middle knows nothing about the two and a half metres of
+ * timber either side of it. So it is sampled along its LENGTH: what holds it
+ * up is the highest support any sample needs (`floorAt`), what turns it is
+ * the difference between the two ends' supports (`settle`), and what stops
+ * it is the drawn stone at every sample along it (`wall`). Drop it with one
+ * end on a ledge and it swings down onto the floor and is a ramp; drop it
+ * across the gap and it lies flat and is a bridge. Nothing here special-cases
+ * either. */
+const TAV_PLANK = { len: 3.20, w: 0.46, t: 0.10 };
 const TAV_PLANK_HOME = { x: -10.4, z: -8.9 };
-let tavPlankMesh = null, tavPlankProp = null, tavPlankBox = null, tavPlankTexC = null;
+let tavPlankMesh = null, tavPlankProp = null, tavPlankTexC = null;
+let tavPlankYaw = 0.35, tavPlankPitch = 0, tavPlankPitchV = 0, tavPlankRest = false;
 function tavPlankTex() {
   if (tavPlankTexC) return tavPlankTexC;
   const c = document.createElement('canvas'); c.width = 128; c.height = 32;
@@ -36025,52 +36065,19 @@ function tavPlankTex() {
 }
 function buildTavPlank() {
   if (tavPlankMesh || !tavWorld) return;
-  const L = TAV_PLANK.x1 - TAV_PLANK.x0;
-  const geo = new THREE.BoxGeometry(L, TAV_PLANK.t, TAV_PLANK.w);
+  const geo = new THREE.BoxGeometry(TAV_PLANK.len, TAV_PLANK.t, TAV_PLANK.w);
   const mat = new THREE.MeshBasicMaterial({ map: tavPlankTex() });
   mat.toneMapped = false;                              // the room is baked and unlit; so is what stands in it
   const m = new THREE.Mesh(geo, mat);
   m.name = 'tavPlank';
   const st = keepStandAt(TAV_X + TAV_PLANK_HOME.x, TAV_Z + TAV_PLANK_HOME.z, TAV_Y + TAV_FLOOR + 5.8, 1.4, TAV_SITE);
   m.position.set(TAV_X + TAV_PLANK_HOME.x, (st ? st.f : TAV_Y + TAV_FLOOR + 5.3) + TAV_PLANK.t / 2 + 0.02, TAV_Z + TAV_PLANK_HOME.z);
-  m.rotation.y = 0.35;
+  tavPlankYaw = 0.35; tavPlankPitch = 0; tavPlankPitchV = 0;
+  m.rotation.set(0, tavPlankYaw, 0, 'YZX');
   tavPlankMesh = m;
-  tavPlankProp = makeProp(m, 'the plank', { radius: 0.34, restH: TAV_PLANK.t / 2 + 0.01, bounce: 0.12, friction: 0.9,
-    /* THE ROOM STOPS IT, AND WHAT IS DRAWN UNDER IT HOLDS IT UP. Thrown, it
-     * used to go through the arches and out of the hall; dropped on the
-     * ledge it fell through, because the walk grid has no storey up there
-     * (the storey repair takes out a floor with a low roof over it, and the
-     * gallery's vault is low). A body's ground is what is DRAWN under it. */
-    wall: tavPropWall, floorAt: tavPropFloor, onUnpin: () => { tavPlankRamp = null; tavPlankBox = null; tavPlankFloorsDirty = true; TAV_G.dirty = true; } });
-  /* THE VERB, at the break, and only with the plank in your hands. It is a
-   * `mid` prompt — a thing that takes you somewhere belongs under the
-   * crosshair, not down beside the stamina bar. */
-  const proxy = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.9, 1.5),
-    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  proxy.name = 'hitProxy'; proxy.visible = false;
-  proxy.position.set(TAV_X + (TAV_PLANK.x0 + TAV_PLANK.x1) / 2, TAV_Y + TAV_FLOOR + TAV_PLANK.top + 0.7, TAV_Z + TAV_PLANK.z);
-  scene.add(proxy);
-  addInteractable(proxy, 'Lay the plank across', 'prop', {
-    mid: true, far: 4.2,
-    when: () => inTavern && !tavPlankBox && held === tavPlankProp,
-    onActivate: () => layTavPlank(),
-  });
-  /* AND A PLANK LEANT ON A LEDGE IS A RAMP. The way up to the vaulted
-   * passage is a stair of crates and the last step of it is a jump; the
-   * owner wants to be able to walk it, so the plank props against anything
-   * between a big step and a body's height and becomes a slope. The prompt
-   * cannot live at a fixed spot — the ledge is wherever you are looking —
-   * so its proxy is MOVED to whatever lip is in front of you each frame. */
-  tavRampProxy = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.1, 1.4),
-    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  tavRampProxy.name = 'hitProxy'; tavRampProxy.visible = false;
-  tavRampProxy.position.set(TAV_X, TAV_Y - 60, TAV_Z);
-  scene.add(tavRampProxy);
-  addInteractable(tavRampProxy, 'Prop the plank as a ramp', 'prop', {
-    mid: true, far: 4.6,
-    when: () => inTavern && held === tavPlankProp && !!tavRampAt,
-    onActivate: () => propTavPlank(),
-  });
+  tavPlankProp = makeProp(m, 'the plank', { radius: 0.30, restH: TAV_PLANK.t / 2 + 0.004,
+    bounce: 0.06, friction: 0.70, holdDist: 1.45, room: () => inTavern,
+    wall: tavPlankWall, floorAt: tavPlankFloorAt, settle: tavPlankSettle });
   tavPlankFloorsDirty = true;
 }
 /* AND A BOTTLE THROWN AT A MAN HITS THE MAN. Every prop in here already
@@ -36119,16 +36126,151 @@ function tavPropFloor(x, z, y) {
   if (st) return st.f;
   return keepDrawnFloor(x, z, y - 9, y + 0.4, TAV_SITE);
 }
-/* THE PLANK IS A FLOOR WHEREVER IT LIES. It used to be one only once it had
- * been laid across the break — so the board you were carrying about was a
- * thing you could not stand on, which is the one thing a plank is for. Its
- * own top surface is sampled along its length into a chain of little boxes
- * the walk reads like any other floor: flat where it lies flat, and a
- * STAIR where it is propped, which is what makes a ramp walkable without
- * the walk having to learn about slopes. */
-const TAV_SPAN = 11;
-let tavPlankFloorCache = [], tavPlankFloorsDirty = true, tavPlankRamp = null, tavRampProxy = null, tavRampAt = null;
-const _tpV = new THREE.Vector3();
+/* ---- the plank, along its own length.
+ *
+ * Its axis: with the Euler written YZX the yaw turns it about the room and
+ * the pitch tips it, so local +X comes out at
+ * (cos pitch cos yaw, sin pitch, -cos pitch sin yaw) — which is the one
+ * vector everything below is written in. */
+/* ELEVEN SAMPLES, NOT FIVE. At five they are eighty centimetres apart and a
+ * pier between two of them is a pier the board lies straight through:
+ * measured over a hundred and four drops round the hall, twenty-six came to
+ * rest with drawn stone inside the timber and every one of them was at a
+ * point the sweep did not ask about. At 0.32 m the discs overlap. */
+const TAV_PLANK_N = 11;
+function tavPlankAxis() {
+  const cp = Math.cos(tavPlankPitch);
+  _tpA.set(cp * Math.cos(tavPlankYaw), Math.sin(tavPlankPitch), -cp * Math.sin(tavPlankYaw));
+  return _tpA;
+}
+// the highest thing DRAWN at or just under a point — never its own boxes,
+// which is what `_selfProp` is for
+function tavPlankGround(x, z, y) {
+  if (!inTavern || !tavWalk) return null;
+  const st = keepFloorAt(x, z, y, 0.06, TAV_SITE);
+  let g = st ? st.f : null;
+  const d = keepDrawnFloor(x, z, y - 9, y + 0.06, TAV_SITE);
+  if (d !== null && (g === null || d > g)) g = d;
+  return g;
+}
+/* WHAT HOLDS IT UP IS WHATEVER ITS SAMPLES NEED. `floorAt` is asked at the
+ * body's middle and answers for the whole board: the support under each
+ * sample, less that sample's own height above the middle, and the highest
+ * of those. Laid across a gap that is the two ledges; propped on a step it
+ * is the step. */
+function tavPlankFloorAt(x, z, y) {
+  if (!inTavern || !tavWalk) return null;
+  const hl = TAV_PLANK.len / 2, a = tavPlankAxis();
+  let best = null;
+  for (let i = 0; i < TAV_PLANK_N; i++) {
+    const u = (i / (TAV_PLANK_N - 1) - 0.5) * 2 * hl, dy = a.y * u;
+    const g = tavPlankGround(x + a.x * u, z + a.z * u, y + dy + 0.30);
+    if (g === null) continue;
+    const need = g - dy;
+    if (best === null || need > best) best = need;
+  }
+  return best;
+}
+/* AND THE DRAWN STONE STOPS IT ALONG ITS WHOLE LENGTH. One push at the
+ * middle is what let it lie half inside a wall; every sample is pushed out
+ * of the nearest face, the board is carried out by the mean of those and
+ * TURNED by their moment, so a plank shoved at one end swings round rather
+ * than sliding sideways through the masonry. */
+function tavPlankWall(p, r, half, vel) {
+  if (!tavWalls) return;
+  const hl = TAV_PLANK.len / 2;
+  let moved = false;
+  /* AND IT IS THE DEEPEST SAMPLE, ASKED AGAIN — never the sum. A plank
+   * lying across two posts is pushed one way at one end and the other way
+   * at the other, and the resultant of those is nothing at all, which is
+   * the Dealer's own chair wearing three metres of timber. */
+  for (let k = 0; k < 5; k++) {
+    const a = tavPlankAxis();
+    let best = null, bu = 0;
+    for (let i = 0; i < TAV_PLANK_N; i++) {
+      const u = (i / (TAV_PLANK_N - 1) - 0.5) * 2 * hl;
+      const sx = p.x + a.x * u, sz = p.z + a.z * u, sy = p.y + a.y * u;
+      /* AND THE BAND IS OVER THE BOARD, NOT ROUND IT. Read at the plank's
+       * own middle it takes in the last few centimetres of whatever the
+       * plank is RESTING on — and the two carpets it is meant to bridge are
+       * hanging cloth, whose faces are as vertical as a wall's, so the board
+       * was shoved off the very thing it had just landed on and fell into
+       * the gap. A step is under the board; a wall stands over it. */
+      const h = keepWallNear(sx, sz, TAV_PLANK.w / 2 + 0.05, sy + 0.02, sy + 0.34, TAV_SITE);
+      if (!h) continue;
+      if (!best || h.depth > best.depth) { best = { x: h.x, z: h.z, depth: h.depth, sx, sz }; bu = u; }
+    }
+    if (!best) break;
+    const ox = best.sx - best.x, oz = best.sz - best.z, L = Math.hypot(ox, oz);
+    if (L < 1e-5) break;                              // dead on the face: nowhere to go
+    const d = best.depth + 0.002, px = ox / L * d, pz = oz / L * d;
+    p.x += px; p.z += pz;
+    tavPlankYaw += THREE.MathUtils.clamp(bu * (a.z * px - a.x * pz) / (hl * hl) * 0.9, -0.16, 0.16);
+    moved = true;
+  }
+  if (moved && vel) { vel.x *= 0.55; vel.z *= 0.55; }
+  p.x = THREE.MathUtils.clamp(p.x, TAV_X - 20.1, TAV_X + 1.2);
+  p.z = THREE.MathUtils.clamp(p.z, TAV_Z - 10.6, TAV_Z + 7.4);
+}
+/* AND WHICH WAY IT LIES IS WHAT ITS TWO ENDS ARE STANDING ON. Held, it
+ * points where you look and rides level, so you aim at the gap and the
+ * board is already across it. Loose, the end with nothing under it FALLS —
+ * an accelerating turn about the end that is bearing, which is what makes a
+ * board dropped against a step become a ramp without anything being told
+ * that it is one. */
+function tavPlankSettle(prop, dt) {
+  const m = tavPlankMesh; if (!m || !inTavern) return;
+  const p = m.position;
+  prop.angVel.set(0, 0, 0);
+  const hl = TAV_PLANK.len / 2;
+  if (prop.held) {
+    camera.getWorldDirection(_tpD); _tpD.y = 0;
+    if (_tpD.lengthSq() > 1e-6) {
+      _tpD.normalize();
+      let d = Math.atan2(-_tpD.z, _tpD.x) - tavPlankYaw;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      tavPlankYaw += d * Math.min(1, 9 * dt);
+    }
+    tavPlankPitch += (0 - tavPlankPitch) * Math.min(1, 9 * dt);
+    tavPlankPitchV = 0; tavPlankRest = false;
+  } else {
+    const a = tavPlankAxis();
+    const ayA = p.y - a.y * hl, ayB = p.y + a.y * hl;
+    _selfProp = tavPlankProp;                          // it may not bear on its own boxes
+    const fA = tavPlankGround(p.x - a.x * hl, p.z - a.z * hl, ayA + 0.22);
+    const fB = tavPlankGround(p.x + a.x * hl, p.z + a.z * hl, ayB + 0.22);
+    _selfProp = null;
+    const half = TAV_PLANK.t / 2;
+    const down = (fA === null ? 9 : ayA - half - fA), up = (fB === null ? 9 : ayB - half - fB);
+    if (down < 0.06 || up < 0.06) {                    // one end is bearing: the other comes down
+      let want = tavPlankPitch;
+      if (fA !== null && fB !== null) want = Math.asin(THREE.MathUtils.clamp((fB - fA) / (2 * hl), -0.97, 0.97));
+      else if (fA !== null) want = 1.25;
+      else if (fB !== null) want = -1.25;
+      const d = want - tavPlankPitch;
+      if (Math.abs(d) < 0.004) { tavPlankPitch = want; tavPlankPitchV = 0; }
+      else {
+        tavPlankPitchV = THREE.MathUtils.clamp(tavPlankPitchV + Math.sign(d) * 11 * dt, -5, 5);
+        const s = tavPlankPitchV * dt;
+        if (Math.abs(s) >= Math.abs(d)) { tavPlankPitch = want; tavPlankPitchV *= -0.10; }
+        else tavPlankPitch += s;
+      }
+    } else tavPlankPitchV = 0;                         // in the air it keeps the angle it left with
+    const still = prop.vel.lengthSq() < 0.03 && Math.abs(tavPlankPitchV) < 0.06;
+    if (still !== tavPlankRest) { tavPlankRest = still; if (still) TAV_G.dirty = true; }
+  }
+  m.rotation.set(0, tavPlankYaw, tavPlankPitch, 'YZX');
+  tavPlankFloorsDirty = true;
+}
+/* THE PLANK IS A FLOOR WHEREVER IT LIES. Its own top surface is sampled
+ * along its length into a chain of little boxes the walk reads like any
+ * other floor: flat where it lies flat, and a STAIR where it leans, which
+ * is what makes a ramp walkable without the walk having to learn about
+ * slopes. */
+const TAV_SPAN = 13;
+let tavPlankFloorCache = [], tavPlankFloorsDirty = true;
+const _tpV = new THREE.Vector3(), _tpA = new THREE.Vector3(), _tpD = new THREE.Vector3();
 const _tpNone = [];
 function tavPlankFloors() {
   if (_selfProp === tavPlankProp) return _tpNone;      // it cannot stand on itself
@@ -36138,70 +36280,13 @@ function tavPlankFloors() {
   const m = tavPlankMesh;
   if (!m || !tavPlankProp || tavPlankProp.held) return out;
   m.updateMatrixWorld(true);
-  const L = TAV_PLANK.x1 - TAV_PLANK.x0, hw = TAV_PLANK.w / 2 + 0.10;
+  const hw = TAV_PLANK.w / 2 + 0.10;
   for (let i = 0; i < TAV_SPAN; i++) {
-    const u = (i / (TAV_SPAN - 1) - 0.5) * L;
+    const u = (i / (TAV_SPAN - 1) - 0.5) * TAV_PLANK.len;
     _tpV.set(u, TAV_PLANK.t / 2, 0).applyMatrix4(m.matrixWorld);
     out.push({ x0: _tpV.x - hw, x1: _tpV.x + hw, z0: _tpV.z - hw, z1: _tpV.z + hw, top: _tpV.y });
   }
   return out;
-}
-/* The plank's own floor is cheap and is redone whenever it moves; the
- * ROUTING grid is 2,242 cells of `keepStandAt` and `keepWallNear` and may
- * only be rebuilt when the plank comes to rest somewhere that matters. */
-function tavPlankMoved(settled) {
-  tavPlankFloorsDirty = true;
-  if (settled) TAV_G.dirty = true;
-}
-/* Where a ramp could go, in front of you: the first lip on the aim line
- * between a big step and a body's height that the plank is long enough to
- * reach. It is measured on the DRAWN floor, not the grid, because the lip
- * you are looking at is a thing you can see. */
-const _tpD = new THREE.Vector3();
-function tavRampSpot() {
-  if (!inTavern || !tavWalls || tavPlankRamp) return null;
-  const feet = camBaseY - playerEye();
-  _tpD.set(0, 0, -1).applyQuaternion(camera.quaternion); _tpD.y = 0;
-  if (_tpD.lengthSq() < 1e-6) return null;
-  _tpD.normalize();
-  const L = TAV_PLANK.x1 - TAV_PLANK.x0;
-  for (let d = 0.45; d <= 3.3; d += 0.15) {
-    const x = camera.position.x + _tpD.x * d, z = camera.position.z + _tpD.z * d;
-    const top = keepDrawnFloor(x, z, feet + 0.52, feet + 2.35, TAV_SITE);
-    if (top === null) continue;
-    const rise = top - feet;
-    const run = Math.sqrt(Math.max(0.36, L * L - rise * rise));
-    if (run < 0.9) continue;
-    return { x, z, top,
-      x1: x + _tpD.x * 0.30, z1: z + _tpD.z * 0.30, y1: top,
-      x0: x + _tpD.x * 0.30 - _tpD.x * run, z0: z + _tpD.z * 0.30 - _tpD.z * run, y0: feet };
-  }
-  return null;
-}
-function propTavPlank(at) {
-  const spot = at || tavRampAt; if (!spot || !tavPlankMesh) return;
-  if (held === tavPlankProp) dropHeld();
-  const dx = spot.x1 - spot.x0, dz = spot.z1 - spot.z0, dy = spot.y1 - spot.y0;
-  tavPlankMesh.position.set((spot.x0 + spot.x1) / 2, (spot.y0 + spot.y1) / 2 + TAV_PLANK.t / 2, (spot.z0 + spot.z1) / 2);
-  tavPlankMesh.rotation.set(0, Math.atan2(-dz, dx), Math.atan2(dy, Math.hypot(dx, dz)), 'YZX');
-  tavPlankProp.vel.set(0, 0, 0); tavPlankProp.held = false; tavPlankProp.pinned = true;
-  tavPlankRamp = spot; tavPlankBox = null;
-  tavPlankMoved(true);
-  sfxPropHit('wood', 3.0);
-}
-function layTavPlank() {
-  if (!tavPlankMesh || tavPlankBox) return;
-  if (held === tavPlankProp) dropHeld();
-  tavPlankProp.vel.set(0, 0, 0); tavPlankProp.held = false;
-  tavPlankProp.pinned = true;                          // masonry while it lies there, a body again when you lift it
-  tavPlankMesh.position.set(TAV_X + (TAV_PLANK.x0 + TAV_PLANK.x1) / 2, TAV_Y + TAV_FLOOR + TAV_PLANK.top - TAV_PLANK.t / 2, TAV_Z + TAV_PLANK.z);
-  tavPlankMesh.rotation.set(0, 0, 0);
-  tavPlankRamp = null;
-  tavPlankBox = { x0: TAV_X + TAV_PLANK.x0, x1: TAV_X + TAV_PLANK.x1,
-                  z0: TAV_Z + TAV_PLANK.z - TAV_PLANK.w / 2, z1: TAV_Z + TAV_PLANK.z + TAV_PLANK.w / 2,
-                  top: TAV_Y + TAV_FLOOR + TAV_PLANK.top };
-  sfxPropHit('wood', 3.4);
-  tavPlankMoved(true);
 }
 /* LIQUOR ON THE BAR AND ON THE TABLES. Glass is the one thing in this game
  * that has always broken — `shatterGlass` has been the door since the beach
@@ -36239,7 +36324,7 @@ function makeTavBottle(x, z, top, shelf) {
   const b = { mesh: m, shelf, x, z, top };
   const prop = makeProp(m, 'a bottle', {
     radius: 0.075, restH: 0.002, bounce: 0.06, friction: 0.92, holdDist: 1.0,
-    wall: tavPropWall,
+    wall: tavPropWall, room: () => inTavern,
     /* ITS OWN SHELF, and only while it is still over it. */
     floorAt: (px, pz) => (b.shelf && Math.abs(px - b.x) < 0.30 && Math.abs(pz - b.z) < 0.30 ? b.top : null),
   });
@@ -36410,27 +36495,91 @@ function smashTavChair(c, speed) {
   sfxWoodSnap();                                  // the coat stand's own snap, bank or synth
 }
 
+/* A TABLE IS SOLID UNTIL IT BREAKS. It was made walk-through in the round
+ * that stopped it being a wall after it had broken, and the owner's word
+ * now is the other half of that: colliders until broken, and no clipping
+ * through one that is still standing. A table is a DISC — its top's own
+ * radius, which is the thing you can see — so there is nothing ragged about
+ * it and nothing left behind when it goes. */
+function pushOutOfTavTables(p, r, feet) {
+  for (const t of tavTables) {
+    if (t.dead) continue;
+    if (feet > t.top - 0.12) continue;                 // standing over it: nothing in the way
+    const dx = p.x - t.cx, dz = p.z - t.cz, lim = t.r + r;
+    const d = Math.hypot(dx, dz);
+    if (d >= lim) continue;
+    if (d < 1e-4) { p.x += lim; continue; }
+    p.x = t.cx + dx / d * lim; p.z = t.cz + dz / d * lim;
+  }
+}
+/* AND THE WAY EAST IS ALONG THE TOPS OF THE HANGING CARPETS. What runs down
+ * the south wall of this hall four and a half metres up is not a ledge at
+ * all — it is two big carpets hung over a beam, and their rolled tops are
+ * the only thing up there to stand on. The packer samples what is drawn, so
+ * the walkable strip came out FORTY CENTIMETRES wide against a body that is
+ * fifty-two across: measured, the walk answers a floor at 4.5 for z -6.62 to
+ * -6.22 and nothing either side, so the push-out took you off it every time.
+ * That is "I keep clipping through".
+ *
+ * The strip is widened to the carpet's own plan and a hand's breadth beyond
+ * it, at the height the cloth is actually drawn at, cell by cell — and the
+ * storeys it replaces are the packer's own narrow ones, roof and all, so
+ * there is nothing left up there to duck under. The gap between the two
+ * carpets is 2.49 m, which a walk clears with a metre to spare (a jump is
+ * 0.78 s in the air and the slowest gait is 3.4 m/s). */
+const TAV_CURTAIN_MAT = 'TextureMaterial_4';       // the file gives its two hanging carpets their own
+const TAV_CURTAIN_PAD = 0.18;
+let tavCurtains = [];
+function openTavCurtains() {
+  const w = tavWalk; if (!tavWorld || !w || !tavCells || tavCurtains.length) return;
+  tavWorld.updateMatrixWorld(true);
+  const fy = TAV_Y + TAV_FLOOR, sz = new THREE.Vector3();
+  tavWorld.traverse((o) => {
+    if (!o.isMesh || !o.geometry || !o.geometry.index || o.name === 'hitProxy') return;
+    if (!o.material || o.material.name !== TAV_CURTAIN_MAT) return;
+    for (const [, e] of meshIslands(o, tavWorld.position).box) {
+      e.getSize(sz);
+      if (Math.min(sz.x, sz.z) > 0.8 || Math.max(sz.x, sz.z) < 1.2 || sz.y < 1.5) continue;
+      if (e.max.y - fy < 2.5 || e.min.y - fy > 1.6) continue;   // it HANGS, and its top is over head height
+      tavCurtains.push(e.clone());
+    }
+  });
+  const C = w.cell;
+  for (const e of tavCurtains) {
+    const alongX = (e.max.x - e.min.x) > (e.max.z - e.min.z);
+    const mx = (e.min.x + e.max.x) / 2, mz = (e.min.z + e.max.z) / 2;
+    const p = TAV_CURTAIN_PAD;
+    const x0 = e.min.x - (alongX ? 0 : p), x1 = e.max.x + (alongX ? 0 : p);
+    const z0 = e.min.z - (alongX ? p : 0), z1 = e.max.z + (alongX ? p : 0);
+    const i0 = Math.floor((x0 - TAV_X - w.x0) / C), i1 = Math.floor((x1 - TAV_X - w.x0) / C);
+    const j0 = Math.floor((z0 - TAV_Z - w.z0) / C), j1 = Math.floor((z1 - TAV_Z - w.z0) / C);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const cx = TAV_X + w.x0 + (i + 0.5) * C, cz = TAV_Z + w.z0 + (j + 0.5) * C;
+      if (cx < x0 || cx > x1 || cz < z0 || cz > z1) continue;   // the CELL's own middle, or the strip grows a cell at each end
+      // the height is read at the cloth's own middle, so the padded cells
+      // carry the same top as the drawn strip beside them
+      const sx = alongX ? THREE.MathUtils.clamp(cx, e.min.x + 0.05, e.max.x - 0.05) : mx;
+      const sz2 = alongX ? mz : THREE.MathUtils.clamp(cz, e.min.z + 0.05, e.max.z - 0.05);
+      const top = keepDrawnFloor(sx, sz2, e.max.y - 0.9, e.max.y + 0.06, TAV_SITE);
+      if (top === null) continue;
+      let fl = tavCells.get(j * w.gw + i);
+      if (!fl) { fl = []; tavCells.set(j * w.gw + i, fl); }
+      const tri = [];
+      for (let q = 0; q < fl.length; q += 3) if (Math.abs(TAV_Y + fl[q] - top) > 0.55) tri.push([fl[q], fl[q + 1], fl[q + 2]]);
+      tri.push([Math.round((top - TAV_Y) * 100) / 100, 0, 99]);
+      tri.sort((a, b) => a[0] - b[0]);
+      fl.length = 0; for (const q of tri) fl.push(q[0], q[1], q[2]);
+    }
+  }
+}
+
 // -------------------------------------------------------------- the walk
 function updateTavern(dt) {
   if (!inTavern || !tavWalk) return;
   updateTavScene(dt);
   if (tavWallsDirty) { tavWallsDirty = false; tavWalls = null; buildKeepWalls(TAV_SITE); }
-  /* A LOOSE PLANK MOVES, SO ITS FLOOR MOVES WITH IT, and the ramp's prompt
-   * is put wherever the lip you are looking at happens to be. */
-  if (tavPlankProp && !tavPlankProp.pinned) tavPlankMoved();
   tavRoam(dt);
   tavThrownHits();
-  const wasRamp = tavRampAt;
-  tavRampAt = (held === tavPlankProp) ? tavRampSpot() : null;
-  /* AND PUTTING IT DOWN IN FRONT OF A LEDGE IS PROPPING IT. The verb is
-   * still under the crosshair, but nobody should have to find a prompt to
-   * do the obvious thing with a plank and a step — drop it where a ramp
-   * would go and it goes there. */
-  if (wasRamp && held !== tavPlankProp && tavPlankProp && !tavPlankProp.pinned && !tavPlankProp.held) propTavPlank(wasRamp);
-  if (tavRampProxy) {
-    if (tavRampAt) tavRampProxy.position.set(tavRampAt.x, tavRampAt.top + 0.35, tavRampAt.z);
-    else tavRampProxy.position.set(TAV_X, TAV_Y - 60, TAV_Z);
-  }
   const p = camera.position, S = TAV_SITE;
   const feet = camBaseY - playerEye();
   const up = !onGround ? TAV_AIR : TAV_STEP;
@@ -36462,6 +36611,7 @@ function updateTavern(dt) {
   }
   pushOutOfKeep(p, TAV_BODY, feet, up, S);
   keepWallPush(p, TAV_BODY, feet, S);
+  pushOutOfTavTables(p, TAV_BODY, feet);
   st = keepFloorAt(p.x, p.z, feet, up, S) || st;
   if (!st) { p.x = _preMove.x; p.z = _preMove.z; st = keepFloorAt(p.x, p.z, feet, up, S); }
   if (st) tavLastFloor = st.f;
@@ -36597,8 +36747,8 @@ function buildKeepDoor() {
  *
  * Everything here is a box and a canvas, unlit like the rest of the room,
  * because a baked picture has no lights in it to answer a lit material. */
-const TAV_DOOR = { x: -20.28, z: 1.62, yaw: Math.PI / 2, w: 2.62, spring: 2.20, r: 1.31, thick: 0.13 };
-let tavDoorMesh = null, tavOakTexC = null, tavStoneTexC = null;
+const TAV_DOOR = { yaw: Math.PI / 2, thick: 0.12, back: -20.40, face: -20.11 };
+let tavDoorMesh = null, tavOakTexC = null, tavArch = null;
 function tavOakTex() {
   if (tavOakTexC) return tavOakTexC;
   const c = document.createElement('canvas'); c.width = 48; c.height = 160;
@@ -36614,80 +36764,115 @@ function tavOakTex() {
   tavOakTexC = retroTex(new THREE.CanvasTexture(c));
   return tavOakTexC;
 }
-function tavStoneTex() {
-  if (tavStoneTexC) return tavStoneTexC;
-  const c = document.createElement('canvas'); c.width = 64; c.height = 64;
-  const g = c.getContext('2d');
-  g.fillStyle = '#8e8d84'; g.fillRect(0, 0, 64, 64);
-  for (let i = 0; i < 260; i++) {                     // a worked face, pitted
-    const v = 0.5 + Math.random() * 0.5, d = Math.random() < 0.5;
-    g.fillStyle = d ? `rgba(70,68,62,${0.25 * v})` : `rgba(180,178,168,${0.22 * v})`;
-    g.fillRect(Math.random() * 64, Math.random() * 64, 1 + Math.random() * 4, 1 + Math.random() * 3);
+/* THE OPENING IS MEASURED, AND THE DOOR IS CUT TO IT. "Make this line up
+ * perfectly with the stone arch, don't add any stone yourself" is one job
+ * and the arch is not a shape you can guess at: it is a SketchUp polygon,
+ * not a circle, and a semicircle fitted through its crown and its springing
+ * sits five centimetres proud of it all the way round — which is exactly
+ * the sliver of daylight a door is judged by.
+ *
+ * So nothing about it is written down. Rays go at the wall from a hand in
+ * front of its face: a hit at the back of the recess is INSIDE the opening,
+ * a hit at the wall or at its moulding is outside it, and bisection between
+ * the two gives the jambs, and then the head of every plank at its own
+ * middle. The door is built to that profile and nothing else — no jambs, no
+ * voussoirs, no stone of any kind. The model's arch is the surround. */
+const TAV_ARCH_EPS = 0.002;
+function tavArchOpening() {
+  if (tavArch) return tavArch;
+  if (!tavWorld || !tavWalls) return null;
+  tavWorld.updateMatrixWorld(true);
+  const rc = new THREE.Raycaster(), dir = new THREE.Vector3(-1, 0, 0), from = new THREE.Vector3();
+  rc.far = 1.4;
+  const ox = TAV_X + TAV_DOOR.face + 0.40;            // in front of the moulding, clear of the furniture
+  const cut = TAV_X + TAV_DOOR.back + 0.09;           // a hit past this is the back of the recess
+  /* WHICH MESHES: the packer merges by material, so the wall and its arch
+   * are two of two hundred — found once with a handful of rays and asked
+   * directly after that, or the bisection is a hundred thousand bounding
+   * spheres. */
+  const all = [];
+  tavWorld.traverse((o) => { if (o.isMesh && o.visible && o.name !== 'hitProxy' && o.geometry.index) all.push(o); });
+  const face = [];
+  for (let y = 0.4; y < 4.6; y += 0.3) for (let dz = -2.6; dz <= 2.6; dz += 0.4) {
+    from.set(ox, TAV_Y + TAV_FLOOR + y, TAV_Z + 2.17 + dz);
+    rc.set(from, dir);
+    const h = rc.intersectObjects(all, false);
+    if (h.length && face.indexOf(h[0].object) < 0) face.push(h[0].object);
   }
-  g.strokeStyle = 'rgba(52,50,45,0.6)'; g.lineWidth = 2;
-  g.strokeRect(1, 1, 62, 62);
-  tavStoneTexC = retroTex(new THREE.CanvasTexture(c));
-  return tavStoneTexC;
+  if (!face.length) return null;
+  const open = (y, z) => {
+    from.set(ox, y, z); rc.set(from, dir);
+    const h = rc.intersectObjects(face, false);
+    return h.length > 0 && h[0].point.x < cut;
+  };
+  const fy = TAV_Y + TAV_FLOOR, mid = fy + 1.5;
+  // the jambs, out from a point that is certainly inside the opening
+  let zc = TAV_Z + 2.17;
+  if (!open(mid, zc)) { let got = false; for (let d = 0.2; d <= 2.4 && !got; d += 0.2) for (const s of [-1, 1]) if (!got && open(mid, zc + s * d)) { zc += s * d; got = true; } if (!got) return null; }
+  const edge = (s) => {
+    let a = zc, b = zc + s * 4.0;
+    for (let i = 0; i < 22; i++) { const m = (a + b) / 2; if (open(mid, m)) a = m; else b = m; }
+    return (a + b) / 2;
+  };
+  const z0 = edge(-1), z1 = edge(1);
+  const halfW = (z1 - z0) / 2; if (halfW < 0.5) return null;
+  zc = (z0 + z1) / 2;
+  // and the head of the opening over every plank's own middle
+  const N = Math.max(10, Math.round(halfW * 2 / 0.155));
+  const pw = (halfW * 2) / N, tops = new Array(N);
+  for (let i = 0; i < N; i++) {
+    const z = z0 + (i + 0.5) * pw;
+    if (!open(mid, z)) { tops[i] = mid - fy; continue; }
+    let a = mid, b = fy + halfW * 2 + 2.0;
+    for (let k = 0; k < 20; k++) { const m = (a + b) / 2; if (open(m, z)) a = m; else b = m; }
+    tops[i] = (a + b) / 2 - fy;
+  }
+  tavArch = { zc, z0, z1, halfW, N, pw, tops, floor: fy };
+  return tavArch;
 }
 function makeTavDoor() {
+  const A = tavArchOpening(); if (!A) return null;
   const D = TAV_DOOR, G = new THREE.Group();
   const oak = new THREE.MeshBasicMaterial({ map: tavOakTex(), color: 0xd8cec1 }); oak.toneMapped = false;
   const iron = new THREE.MeshBasicMaterial({ color: 0x2a2b2e }); iron.toneMapped = false;
-  const stone = new THREE.MeshBasicMaterial({ map: tavStoneTex(), color: 0x9e9c93 }); stone.toneMapped = false;   // swept: the surround must sit in the wall, not stand out of it
   const put = (w, h, d, x, y, z, m, rz) => {
     const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
     b.position.set(x, y, z); if (rz) b.rotation.z = rz;
     b.frustumCulled = false; G.add(b); return b;
   };
-  /* THE LEAVES. Each is a run of vertical planks, and the ARCH comes free:
-   * a plank's own height is the springing plus the height of the circle
-   * over its middle, so the tops describe the arc by construction rather
-   * than being cut out of a sheet. */
-  const N = 14, pw = D.w / N, gap = 0.018;
+  /* THE LEAVES, plank by plank, each one as tall as the opening is over its
+   * own middle — so the heads describe the arch by construction rather than
+   * being cut out of a sheet, and the arch they describe is the model's. */
+  const W = A.halfW * 2, N = A.N, pw = A.pw, gap = 0.016;
+  const hMax = Math.max(...A.tops);
   for (let i = 0; i < N; i++) {
-    const cx = -D.w / 2 + (i + 0.5) * pw;
-    const rise = Math.sqrt(Math.max(0, D.r * D.r - cx * cx));
-    const h = D.spring + rise;
+    const cx = -W / 2 + (i + 0.5) * pw;               // local +X runs -Z in the hall; symmetric, so either way round
+    const h = A.tops[i] - 0.012;                      // a hair of shadow at the head
     const leaf = cx < 0 ? -1 : 1;
     put(pw - gap, h, D.thick, cx + leaf * gap * 0.5, h / 2, 0, oak);
   }
-  // the iron: three bands a leaf, hinge straps at the jambs, and the studs
-  for (const y of [0.42, 1.28, 2.02]) for (const s of [-1, 1]) {
-    const x0 = s < 0 ? -D.w / 2 : 0.035, wBand = D.w / 2 - 0.035;
+  // the iron: three bands a leaf, a strap end at each jamb, and the studs
+  const bandY = [hMax * 0.16, hMax * 0.45, hMax * 0.72];
+  for (const y of bandY) for (const s of [-1, 1]) {
+    const x0 = s < 0 ? -W / 2 : 0.035, wBand = W / 2 - 0.035;
     put(wBand, 0.105, 0.035, x0 + wBand / 2, y, D.thick / 2 + 0.016, iron);
-    // a strap end that curls back at the hinge side
-    put(0.16, 0.16, 0.04, s * (D.w / 2 - 0.09), y, D.thick / 2 + 0.020, iron);
+    put(0.16, 0.16, 0.04, s * (W / 2 - 0.09), y, D.thick / 2 + 0.020, iron);
   }
   for (let i = 0; i < N; i += 2) {
-    const cx = -D.w / 2 + (i + 0.5) * pw;
-    const rise = Math.sqrt(Math.max(0, D.r * D.r - cx * cx));
-    for (let y = 0.24; y < D.spring + rise - 0.22; y += 0.30) {
-      if (Math.abs(y - 0.42) < 0.10 || Math.abs(y - 1.28) < 0.10 || Math.abs(y - 2.02) < 0.10) continue;
-      const b = put(0.062, 0.062, 0.045, cx + (i % 4 ? pw * 0.0 : pw * 0.0), y, D.thick / 2 + 0.018, iron);
+    const cx = -W / 2 + (i + 0.5) * pw;
+    for (let y = 0.26; y < A.tops[i] - 0.22; y += 0.34) {
+      let skip = false;
+      for (const b of bandY) if (Math.abs(y - b) < 0.11) skip = true;
+      if (skip) continue;
+      const b = put(0.062, 0.062, 0.045, cx, y, D.thick / 2 + 0.018, iron);
       b.rotation.z = Math.PI / 4;                    // a stud reads as a diamond, which is how they are set
     }
   }
   // the ring handles, on the meeting stiles
   for (const s of [-1, 1]) {
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.017, 6, 12), iron);
-    ring.position.set(s * 0.16, 1.05, D.thick / 2 + 0.02);
+    ring.position.set(s * 0.16, hMax * 0.36, D.thick / 2 + 0.02);
     ring.rotation.x = Math.PI / 2; ring.frustumCulled = false; G.add(ring);
-  }
-  /* THE SURROUND. Jamb blocks up each side and a ring of voussoirs over
-   * them, each turned to its own radius — a round arch is the one shape
-   * that says a door was built into a wall rather than cut out of it. */
-  const jw = 0.34, jd = 0.40;
-  for (const s of [-1, 1]) {
-    for (let y = 0.0; y < D.spring - 0.05; y += 0.44) {
-      const hgt = Math.min(0.44, D.spring - y) - 0.02;
-      put(jw + (y % 0.88 < 0.44 ? 0.05 : 0), hgt, jd, s * (D.w / 2 + jw / 2 - 0.02), y + hgt / 2, 0.02, stone);
-    }
-  }
-  const VN = 13;
-  for (let i = 0; i < VN; i++) {
-    const a = Math.PI * (i + 0.5) / VN;              // 0 at the right springing, PI at the left
-    const rr = D.r + jw / 2 - 0.02;
-    put(0.30, jw + 0.04, jd, Math.cos(a) * rr, D.spring + Math.sin(a) * rr, 0.02, stone, a + Math.PI / 2);
   }
   G.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
   G.name = 'tavKeepDoor';
@@ -36703,9 +36888,14 @@ function buildTavDoor() {
   proxy.name = 'hitProxy'; proxy.visible = false;
   tavWorld.add(proxy);
   tavDoorMesh = makeTavDoor();
-  tavDoorMesh.position.set(TAV_DOOR.x, TAV_FLOOR, TAV_DOOR.z);
-  tavDoorMesh.rotation.y = TAV_DOOR.yaw;             // its own +Z is out of the doorway, and here that is into the hall
-  tavWorld.add(tavDoorMesh);
+  if (tavDoorMesh) {
+    const A = tavArch;
+    // set into the reveal: the leaves stop a finger short of the wall's own
+    // face, so the model's arch is what frames them from every angle
+    tavDoorMesh.position.set(TAV_DOOR.face - TAV_DOOR.thick / 2 - 0.03, A.floor - TAV_Y, A.zc - TAV_Z);
+    tavDoorMesh.rotation.y = TAV_DOOR.yaw;           // its own +Z is out of the doorway, and here that is into the hall
+    tavWorld.add(tavDoorMesh);
+  }
   addInteractable(proxy, 'Back to the terrace', 'default', {
     mid: true, far: 3.2,
     when: () => inTavern && !tavBusy,
@@ -37413,10 +37603,11 @@ window.__bw = {
   get keepRepair() { return keepWalk && { ground: keepWalk.repaired, storeys: keepWalk.storeys }; },
   get keepWorld() { return keepWorld; }, get keepSky() { return keepSky; }, get keepSea() { return keepSea; }, get keepBoat() { return keepBoat; }, get beachBoat() { return beachBoat; },
   TAV_X, TAV_Y, TAV_Z, TAV_SPAWN, TAV_SITE, KEEP_DOOR, loadTavern, startTavern, placeInTavern, placeBackAtKeepDoor, buildTavern, smashTavTable, smashTavChair,
-  layTavPlank, propTavPlank, tavRampSpot, tavPlankFloors, tavMainNear, tavGrid, buildTavBottles,
+  tavPlankFloors, tavMainNear, tavGrid, buildTavBottles, tavArchOpening, openTavCurtains,
+  tavPlankPose: (yaw, pitch) => { if (yaw !== undefined) tavPlankYaw = yaw; if (pitch !== undefined) tavPlankPitch = pitch; tavPlankPitchV = 0; if (tavPlankMesh) tavPlankMesh.rotation.set(0, tavPlankYaw, tavPlankPitch, 'YZX'); },
   get tavBottles() { return TAV_BOTTLES.map((b) => ({ x: +(b.mesh.position.x - TAV_X).toFixed(2), y: +(b.mesh.position.y - TAV_Y).toFixed(2), z: +(b.mesh.position.z - TAV_Z).toFixed(2), dead: !!b.prop.dead, shelf: !!b.shelf })); },
   get tavDoorMesh() { return tavDoorMesh; },
-  get tavPlank() { return tavPlankMesh && { laid: !!tavPlankBox, ramp: !!tavPlankRamp, pinned: !!tavPlankProp.pinned, held: held === tavPlankProp, floors: tavPlankFloors().length,
+  get tavPlank() { return tavPlankMesh && { yaw: +tavPlankYaw.toFixed(2), pitch: +tavPlankPitch.toFixed(2), rest: tavPlankRest, held: held === tavPlankProp, floors: tavPlankFloors().length,
     p: [+(tavPlankMesh.position.x - TAV_X).toFixed(2), +(tavPlankMesh.position.y - TAV_Y).toFixed(2), +(tavPlankMesh.position.z - TAV_Z).toFixed(2)] }; },
   get interactables() { return interactables; }, set fallbackLook(v) { fallbackLook = v; },   // a prompt can only be read with a look in charge, and the pane cannot lock
   get tavWorld() { return tavWorld; }, get tavTables() { return tavTables; }, get tavChairs() { return tavChairs; },
