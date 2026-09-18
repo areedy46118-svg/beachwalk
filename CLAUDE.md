@@ -10279,3 +10279,82 @@ lights in it at all, so the keep's own standard material renders as a black
 hole in the wall. The map goes on unlit, graded — swept in the pane, at
 0xc9ced6 the oak of the leaves came out pale enough to read as more stone,
 and 0x9aa0a9 is the level where timber is still timber.
+
+**AND NOTHING YOU CAN WALK THROUGH MAY HAVE A CEILING.** Taking the tables
+out of the wall index and out of the grid's floors was only two thirds of
+it: the packer also wrote a table's UNDERSIDE as the ROOF over the flags it
+stands on, and the walk ducks the camera under whatever roof a cell carries.
+Measured across the table at (-0.37, 6.01) — floor 7.55 the whole way,
+correctly, and roof **8.51**, which is 0.99 m over the flags. So walking at
+a table put the eye at knee height and wedged you there, which is the whole
+of "the tables made me crouch and get stuck". `clearTavGhostRoofs` runs
+AFTER the storey repair, because the repair hands a rebuilt cell whatever
+roof its neighbours have and half of those are under the table.
+
+**THE DOOR IS BUILT, NOT LIFTED.** The first version cut the keep's own
+doorway out of that model triangle by triangle — and a box through a scan
+cuts its stones in half, so what came over was the door and a ring of ragged
+black shards where the jambs had been sawn through. The lighthouse's rule on
+a door: building it is the only way to make it exact. Two leaves of studded
+oak under a round-arched voussoir surround, all boxes and two canvases,
+unlit like the rest of the room. **The arch comes free from the planks**: a
+plank's own height is the springing plus the height of the circle over its
+middle, so the tops describe the arc by construction rather than being cut
+out of a sheet. Both greys are swept rather than chosen — at 0xc9ced6 the
+oak read as more stone.
+
+**A BAR FIGHT DOES NOT STAY AT THE BAR.** A pair of fighters hold their own
+distance and nothing ever moves the PAIR, so the two of them circled each
+other on the spot they started on for the whole fight. The pair has a
+wandering anchor now — a cell of the arena picked every five to ten seconds,
+at least five metres from the last — and while they are each other's problem
+they both lean toward it. Measured: the fight ranges over 9 m of x and 6.6 m
+of z instead of 2. **AND NEVER THROUGH A SWING**: the first roam moved both
+of them on every frame including the strike, and a blow measured against a
+body that is being slid sideways lands on nothing — forty seconds of
+fighting and not one point of damage between them.
+
+**AND A JITTER ON BOTH IS NOT THE SAME AS A DIFFERENT WINNER.** Rolling each
+one's health and aggression independently left Wong winning anyway, because
+his move set out-damages the drunk's whatever the health. The roll that
+matters is WHICH OF THEM has the night: one is favoured heavily (+25 %
+health, +40 % aggression, +30 % guard and a 45 % chance of a two-point
+blow) and the other is not, with a jitter over the top so no two fights run
+the same length.
+
+**AND A BOTTLE THROWN AT A MAN HITS THE MAN.** Every prop in the hall stops
+at the drawn stone already; nothing knew about the two fighting in the
+middle of it, so a bottle hurled at the drunk went through him and broke on
+the wall behind. A body in flight that reaches a live one is a blow — the
+bottle goes, a point of whoever it landed on goes, and he drops his quarrel
+and turns on you for it, which is what a bottle thrown into a bar fight is
+for.
+
+**AND A MAN HOLDING HIS DISTANCE MUST NOT STRIDE STRAIGHT AHEAD — the oldest
+animation bug in this file, found in the drunk.** His `strafeL`/`strafeR`
+were both the WALK, so the half of a fight he spends circling was a man
+walking forwards while travelling sideways. The Male Drunk Pack ships no
+sideways stride at all, so what he circles on is the nearest true thing it
+does have: a walk on a CURVE one way and a backward one on a curve the
+other, which on a man this far gone reads better than a side-step would
+anyway. Both rates come off the clips' own measured travel, as everything
+else here does.
+
+**AND PUTTING THE PLANK DOWN IN FRONT OF A LEDGE IS PROPPING IT.** The verb
+under the crosshair stays, but nobody should have to find a prompt to do the
+obvious thing with a plank and a step. The reach grew to 3.3 m and the rise
+to 2.35, which is the most the stepped floor boxes can carry at the plank's
+own length. Measured on the stall roof: it props from 11.00 to the vaulted
+passage's lip at 12.82 — a 1.82 m rise over a 2.04 m run — and you walk up
+it and in.
+
+**AND A SHELF ON THE STOREROOM WALL.** Measured, the roof of the stall reads
+3.56 over the flags and the passage's floor 5.30 — a 1.74 m step, where a
+jump lifts the feet 0.62 and the walk catches a floor 0.72 over them, so
+1.34 is the most anybody can get up without the plank. A bracketed board
+halfway up that face is 0.87 either side of it, which is a jump twice; and a
+shelf by the mouth of a store is what would be there anyway, which is the
+whole of making it look like the room rather than like a step. Both floors
+it stands between are asked of the DRAWN geometry, so it cannot be built
+where there is no step. Measured: roof 11.08 → shelf 11.99 → passage 12.82,
+each one inside a jump.

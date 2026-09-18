@@ -35558,6 +35558,8 @@ function buildTavern() {
   tavWalls = null; buildKeepWalls(TAV_SITE);
   repairKeepStoreys(TAV_SITE);
   pruneTavStoreys();
+  buildTavShelf();
+  clearTavGhostRoofs();
   buildTavBottles();
   buildTavCast();
   tavWalk.built = Math.round(performance.now() - t0);
@@ -35681,7 +35683,7 @@ function extractTavTables() {
      * table at (-17, 3.15) after breaking it: nine cells of open flagstones
      * with `f: null`, which is exactly the collider the owner kept running
      * into. Out of the grid before the repair ever sees it. */
-    clearTavStoreys(table.plan, table.top - 0.9, table.top + 0.5);
+    clearTavStoreys(table.plan, table.top - 0.42, table.top + 0.5);
     tavTables.push(table);
   }
 }
@@ -35761,6 +35763,77 @@ function smashTavTable(t, speed) {
   clearTavStoreys(t.plan, t.top - 0.5, t.top + 0.4);
   tavWallsDirty = true; TAV_G.dirty = true;
   if (!sfxTableBreak()) sfxWoodSnap();
+}
+/* AND A SHELF ON THE STOREROOM WALL. Measured, the roof of the stall reads
+ * 3.56 over the flags and the vaulted passage's floor 5.30 — a 1.74 m step,
+ * where a jump lifts the feet 0.62 and the walk catches a floor 0.72 over
+ * them, so 1.34 is the most anybody can get up. Without the plank there is
+ * simply no way in. A bracketed board halfway up that face is 0.87 either
+ * side of it, which is a jump twice; and a shelf by the mouth of a store is
+ * what would be there anyway, which is the whole of making it look like the
+ * room rather than like a step. */
+const TAV_SHELF = { x: -11.0, z: -5.82, w: 1.70, d: 0.52, t: 0.07 };
+let tavShelfMesh = null;
+function buildTavShelf() {
+  if (tavShelfMesh || !tavWorld || !tavWalls) return;
+  const fy = TAV_Y + TAV_FLOOR;
+  // the two floors it stands between, asked of what is drawn rather than typed
+  const low = keepDrawnFloor(TAV_X + TAV_SHELF.x, TAV_Z + TAV_SHELF.z, fy + 2.0, fy + 4.6, TAV_SITE);
+  const high = keepDrawnFloor(TAV_X + TAV_SHELF.x, TAV_Z + TAV_SHELF.z - 0.6, fy + 4.2, fy + 6.6, TAV_SITE);
+  if (low === null || high === null || high - low < 1.3) return;   // no step, no shelf
+  const y = (low + high) / 2;
+  const mat = new THREE.MeshBasicMaterial({ map: tavPlankTex(), color: 0xa79a88 }); mat.toneMapped = false;   // a shelf that has been in a cellar, not one just planed
+  const iron = new THREE.MeshBasicMaterial({ color: 0x33343a }); iron.toneMapped = false;
+  const g = new THREE.Group();
+  const board = new THREE.Mesh(new THREE.BoxGeometry(TAV_SHELF.w, TAV_SHELF.t, TAV_SHELF.d), mat);
+  board.position.set(0, 0, 0);
+  g.add(board);
+  // a lip along the front, so it reads as a shelf and not a floating plank
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(TAV_SHELF.w, 0.075, 0.045), mat);
+  lip.position.set(0, 0.05, TAV_SHELF.d / 2 - 0.02);
+  g.add(lip);
+  for (const s of [-1, 1]) {                        // the brackets, back to the wall
+    const br = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.30, 0.34), iron);
+    br.position.set(s * (TAV_SHELF.w / 2 - 0.13), -0.17, -0.06);
+    br.rotation.x = -0.32;
+    g.add(br);
+    const pin = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.16), iron);
+    pin.position.set(s * (TAV_SHELF.w / 2 - 0.13), -0.03, -TAV_SHELF.d / 2 + 0.04);
+    g.add(pin);
+  }
+  g.position.set(TAV_SHELF.x, y - TAV_Y, TAV_SHELF.z);
+  g.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.userData.bwGhost = true; } });
+  g.name = 'tavShelf';
+  tavWorld.add(g);
+  tavWorld.updateMatrixWorld(true);
+  tavShelfMesh = g;
+  // and a thing put in the room after the pack has to say so in the grid
+  tavCellTop(TAV_SHELF.x, TAV_SHELF.z, Math.max(TAV_SHELF.w, TAV_SHELF.d) * 0.48, y - TAV_Y + TAV_SHELF.t / 2);
+}
+/* AND A GHOST HAS NO ROOF EITHER. Clearing a table's own storey out of the
+ * grid is only half of it: the packer also wrote the table's UNDERSIDE as
+ * the ceiling over the flags it stands on, and the walk ducks the camera
+ * under whatever roof the cell carries. Measured across the table at
+ * (-0.37, 6.01): the floor reads 7.55 the whole way, correctly, and the
+ * roof reads 8.51 — 0.99 m over the flags — so walking at a table put the
+ * eye at knee height and wedged you there. That is "the tables made me
+ * crouch and get stuck". Nothing you can walk through may have a ceiling.
+ *
+ * It runs AFTER the storey repair, because the repair hands a rebuilt cell
+ * whatever roof its neighbours have and half of them are under the table. */
+function clearTavGhostRoofs() {
+  const w = tavWalk; if (!w || !tavCells) return;
+  const C = w.cell;
+  const raise = (plan, below) => {
+    const i0 = Math.floor((plan.min.x - TAV_X - w.x0) / C), i1 = Math.floor((plan.max.x - TAV_X - w.x0) / C);
+    const j0 = Math.floor((plan.min.z - TAV_Z - w.z0) / C), j1 = Math.floor((plan.max.z - TAV_Z - w.z0) / C);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const fl = tavCells.get(j * w.gw + i); if (!fl) continue;
+      for (let k = 0; k < fl.length; k += 3) if (TAV_Y + fl[k + 2] < below) fl[k + 2] = 99;
+    }
+  };
+  for (const t of tavTables) raise(t.plan, t.top + 0.55);
+  for (const c of tavChairs) if (c.prop && c.prop.box) raise(c.prop.box, c.prop.box.max.y + 0.25);
 }
 /* Taking a surface away does not take away what the grid remembers of it. */
 function clearTavStoreys(plan, y0, y1) {
@@ -36000,6 +36073,29 @@ function buildTavPlank() {
   });
   tavPlankFloorsDirty = true;
 }
+/* AND A BOTTLE THROWN AT A MAN HITS THE MAN. Every prop in here already
+ * stops at the drawn stone; nothing knew about the two fighting in the
+ * middle of it, so a bottle hurled at the drunk went straight through him
+ * and broke on the wall behind. A body in flight that reaches a live one is
+ * a blow: the bottle goes, and so does a point of whoever it landed on —
+ * and he drops his quarrel and turns on you for it, which is what a bottle
+ * thrown into a bar fight is for. It is the drone throw's own shape, at bar
+ * scale. */
+function tavThrownHits() {
+  for (const u of [wongUnit, drunkUnit]) {
+    if (!u || !u.st.alive || !u.st.awake) continue;
+    const c = u.g.position, h = (u.kind.h || 1.8);
+    for (const p of physProps) {
+      if (!p.onImpact || p.dead || p.held || p.pinned || !p.mesh.parent) continue;
+      const v = p.vel.length(); if (v < 3.2) continue;
+      const q = p.mesh.position;
+      if (Math.abs(q.x - c.x) > 0.75 || Math.abs(q.z - c.z) > 0.75) continue;
+      if (q.y < c.y + 0.25 || q.y > c.y + h) continue;
+      hurtMutant(u, 1, 0.4);                          // it is YOUR blow: the confirm, and he turns on you for it
+      p.onImpact(Math.max(6, v));
+    }
+  }
+}
 /* THE HALL IS THE ROOM, AND THE DRAWN STONE IS THE WALL. A prop's own
  * push-out: the band is round the BODY rather than over its feet, because a
  * plank lying on the flags has no head height to measure. */
@@ -36069,9 +36165,9 @@ function tavRampSpot() {
   if (_tpD.lengthSq() < 1e-6) return null;
   _tpD.normalize();
   const L = TAV_PLANK.x1 - TAV_PLANK.x0;
-  for (let d = 0.45; d <= 2.8; d += 0.15) {
+  for (let d = 0.45; d <= 3.3; d += 0.15) {
     const x = camera.position.x + _tpD.x * d, z = camera.position.z + _tpD.z * d;
-    const top = keepDrawnFloor(x, z, feet + 0.52, feet + 2.05, TAV_SITE);
+    const top = keepDrawnFloor(x, z, feet + 0.52, feet + 2.35, TAV_SITE);
     if (top === null) continue;
     const rise = top - feet;
     const run = Math.sqrt(Math.max(0.36, L * L - rise * rise));
@@ -36322,7 +36418,15 @@ function updateTavern(dt) {
   /* A LOOSE PLANK MOVES, SO ITS FLOOR MOVES WITH IT, and the ramp's prompt
    * is put wherever the lip you are looking at happens to be. */
   if (tavPlankProp && !tavPlankProp.pinned) tavPlankMoved();
+  tavRoam(dt);
+  tavThrownHits();
+  const wasRamp = tavRampAt;
   tavRampAt = (held === tavPlankProp) ? tavRampSpot() : null;
+  /* AND PUTTING IT DOWN IN FRONT OF A LEDGE IS PROPPING IT. The verb is
+   * still under the crosshair, but nobody should have to find a prompt to
+   * do the obvious thing with a plank and a step — drop it where a ramp
+   * would go and it goes there. */
+  if (wasRamp && held !== tavPlankProp && tavPlankProp && !tavPlankProp.pinned && !tavPlankProp.held) propTavPlank(wasRamp);
   if (tavRampProxy) {
     if (tavRampAt) tavRampProxy.position.set(tavRampAt.x, tavRampAt.top + 0.35, tavRampAt.z);
     else tavRampProxy.position.set(TAV_X, TAV_Y - 60, TAV_Z);
@@ -36480,68 +36584,114 @@ function buildKeepDoor() {
 }
 /* AND THE WALL YOU ARRIVE THROUGH IS THE DOOR YOU CAME IN BY. The spawn
  * faces down the hall with a flat stone wall at your back, and the thing
- * behind you is the keep's own terrace — so what is drawn there is the
- * keep's own studded door, lifted out of that model triangle for triangle
- * with its voussoir arch, and stood in the tavern's wall.
+ * behind you is the keep's own terrace — so what is drawn there is a door
+ * like the keep's: two leaves of studded oak under a round-arched stone
+ * surround, filling an opening in the tavern's wall.
  *
- * Two things it takes. The box is measured off `KEEP_DOOR` and trimmed at
- * the SILL, because a hand lower it takes the terrace's balustrade with it;
- * and the material has to be REMADE — the keep is lit and the tavern is a
- * baked picture with no lights in it at all, so the keep's own standard
- * material renders as a black hole in the wall. The map, unlit, graded to
- * the room. (When a scan won't light, stop lighting it: show the map.) */
-const TAV_DOOR = { x: -20.10, z: 1.62, yaw: Math.PI / 2 };   // the wall's face is at x -20.4, measured; the leaf sits in it and the arch stands proud
-let tavDoorMesh = null;
-function liftKeepDoor() {
-  if (tavDoorMesh || !keepWorld) return null;
-  keepWorld.updateMatrixWorld(true);
-  const D = KEEP_DOOR;
-  const lo = new THREE.Vector3(KEEP_X + D.x - 1.44, KEEP_Y + D.y + 0.03, KEEP_Z + D.z - 0.35);
-  const hi = new THREE.Vector3(KEEP_X + D.x + 1.44, KEEP_Y + D.y + 4.10, KEEP_Z + D.z + 0.80);
-  const P = [], U = [], v = new THREE.Vector3();
-  let map = null;
-  /* AND A UV IS ONLY GOOD ON ITS OWN MAP. The first lift took every triangle
-   * in the box, whatever mesh it came off, and gave the lot the masonry's
-   * texture — so the cliff's own faces sampled the masonry atlas with the
-   * cliff's uvs and came out as ragged black spikes round the arch. The
-   * doorway is the keep's MASONRY and nothing else. */
-  keepWorld.traverse((o) => {
-    if (!o.isMesh || !o.geometry || !o.geometry.index || o.name === 'hitProxy') return;
-    if (!o.material || o.material.name !== 'Fortress') return;
-    const g = o.geometry, pos = g.attributes.position, uv = g.attributes.uv, idx = g.index;
-    if (!uv) return;
-    for (let t = 0; t < idx.count; t += 3) {
-      const vs = [], us = []; let inside = true;
-      for (let k = 0; k < 3; k++) {
-        const j = idx.getX(t + k);
-        v.fromBufferAttribute(pos, j).applyMatrix4(o.matrixWorld);
-        if (v.x < lo.x || v.x > hi.x || v.y < lo.y || v.y > hi.y || v.z < lo.z || v.z > hi.z) { inside = false; break; }
-        // the door's own frame: its foot centre, with +Z out of the doorway
-        vs.push(v.x - (KEEP_X + D.x), v.y - (KEEP_Y + D.y), v.z - (KEEP_Z + D.z));
-        us.push(uv.getX(j), uv.getY(j));
-      }
-      if (!inside) continue;
-      P.push(...vs); U.push(...us);
-      if (!map && o.material) map = o.material.map;
+ * IT IS BUILT, NOT LIFTED. The first version cut the keep's own doorway out
+ * of that model triangle by triangle, and a box through a scan cuts its
+ * stones in half: what came over was the door and a ring of ragged black
+ * shards where the jambs had been sawn through, and the owner's word for it
+ * was horrible. The lighthouse's rule, on a door — building it is the only
+ * way to make it exact.
+ *
+ * Everything here is a box and a canvas, unlit like the rest of the room,
+ * because a baked picture has no lights in it to answer a lit material. */
+const TAV_DOOR = { x: -20.28, z: 1.62, yaw: Math.PI / 2, w: 2.62, spring: 2.20, r: 1.31, thick: 0.13 };
+let tavDoorMesh = null, tavOakTexC = null, tavStoneTexC = null;
+function tavOakTex() {
+  if (tavOakTexC) return tavOakTexC;
+  const c = document.createElement('canvas'); c.width = 48; c.height = 160;
+  const g = c.getContext('2d');
+  g.fillStyle = '#4a3521'; g.fillRect(0, 0, 48, 160);
+  for (let i = 0; i < 70; i++) {                      // grain DOWN the plank
+    const x = Math.random() * 48, l = 30 + Math.random() * 110;
+    g.strokeStyle = Math.random() < 0.5 ? 'rgba(26,17,9,0.5)' : 'rgba(110,84,52,0.30)';
+    g.lineWidth = 1;
+    g.beginPath(); g.moveTo(x, Math.random() * 160); g.lineTo(x + (Math.random() - 0.5) * 3, Math.random() * 160 + l); g.stroke();
+  }
+  g.fillStyle = 'rgba(20,13,7,0.55)'; g.fillRect(0, 0, 2, 160); g.fillRect(46, 0, 2, 160);
+  tavOakTexC = retroTex(new THREE.CanvasTexture(c));
+  return tavOakTexC;
+}
+function tavStoneTex() {
+  if (tavStoneTexC) return tavStoneTexC;
+  const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = '#8e8d84'; g.fillRect(0, 0, 64, 64);
+  for (let i = 0; i < 260; i++) {                     // a worked face, pitted
+    const v = 0.5 + Math.random() * 0.5, d = Math.random() < 0.5;
+    g.fillStyle = d ? `rgba(70,68,62,${0.25 * v})` : `rgba(180,178,168,${0.22 * v})`;
+    g.fillRect(Math.random() * 64, Math.random() * 64, 1 + Math.random() * 4, 1 + Math.random() * 3);
+  }
+  g.strokeStyle = 'rgba(52,50,45,0.6)'; g.lineWidth = 2;
+  g.strokeRect(1, 1, 62, 62);
+  tavStoneTexC = retroTex(new THREE.CanvasTexture(c));
+  return tavStoneTexC;
+}
+function makeTavDoor() {
+  const D = TAV_DOOR, G = new THREE.Group();
+  const oak = new THREE.MeshBasicMaterial({ map: tavOakTex(), color: 0xd8cec1 }); oak.toneMapped = false;
+  const iron = new THREE.MeshBasicMaterial({ color: 0x2a2b2e }); iron.toneMapped = false;
+  const stone = new THREE.MeshBasicMaterial({ map: tavStoneTex(), color: 0x9e9c93 }); stone.toneMapped = false;   // swept: the surround must sit in the wall, not stand out of it
+  const put = (w, h, d, x, y, z, m, rz) => {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+    b.position.set(x, y, z); if (rz) b.rotation.z = rz;
+    b.frustumCulled = false; G.add(b); return b;
+  };
+  /* THE LEAVES. Each is a run of vertical planks, and the ARCH comes free:
+   * a plank's own height is the springing plus the height of the circle
+   * over its middle, so the tops describe the arc by construction rather
+   * than being cut out of a sheet. */
+  const N = 14, pw = D.w / N, gap = 0.018;
+  for (let i = 0; i < N; i++) {
+    const cx = -D.w / 2 + (i + 0.5) * pw;
+    const rise = Math.sqrt(Math.max(0, D.r * D.r - cx * cx));
+    const h = D.spring + rise;
+    const leaf = cx < 0 ? -1 : 1;
+    put(pw - gap, h, D.thick, cx + leaf * gap * 0.5, h / 2, 0, oak);
+  }
+  // the iron: three bands a leaf, hinge straps at the jambs, and the studs
+  for (const y of [0.42, 1.28, 2.02]) for (const s of [-1, 1]) {
+    const x0 = s < 0 ? -D.w / 2 : 0.035, wBand = D.w / 2 - 0.035;
+    put(wBand, 0.105, 0.035, x0 + wBand / 2, y, D.thick / 2 + 0.016, iron);
+    // a strap end that curls back at the hinge side
+    put(0.16, 0.16, 0.04, s * (D.w / 2 - 0.09), y, D.thick / 2 + 0.020, iron);
+  }
+  for (let i = 0; i < N; i += 2) {
+    const cx = -D.w / 2 + (i + 0.5) * pw;
+    const rise = Math.sqrt(Math.max(0, D.r * D.r - cx * cx));
+    for (let y = 0.24; y < D.spring + rise - 0.22; y += 0.30) {
+      if (Math.abs(y - 0.42) < 0.10 || Math.abs(y - 1.28) < 0.10 || Math.abs(y - 2.02) < 0.10) continue;
+      const b = put(0.062, 0.062, 0.045, cx + (i % 4 ? pw * 0.0 : pw * 0.0), y, D.thick / 2 + 0.018, iron);
+      b.rotation.z = Math.PI / 4;                    // a stud reads as a diamond, which is how they are set
     }
-  });
-  if (P.length < 90) return null;                    // no door, no doorway
-  const g2 = new THREE.BufferGeometry();
-  g2.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
-  g2.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2));
-  g2.computeVertexNormals();
-  const mat = new THREE.MeshBasicMaterial({ map });
-  /* The keep is LIT and this room is a baked picture with no lights in it,
-   * so the keep's own standard material renders as a black hole in the
-   * wall: the map goes on unlit, graded. Swept in the pane — at 0xc9ced6
-   * the oak of the leaves came out pale enough to read as more stone, and
-   * the level here is the one where the timber is still timber. */
-  mat.color.setHex(0x9aa0a9);
-  mat.toneMapped = false;
-  tavDoorMesh = new THREE.Mesh(g2, mat);
-  tavDoorMesh.name = 'tavKeepDoor';
-  tavDoorMesh.frustumCulled = false;
-  return tavDoorMesh;
+  }
+  // the ring handles, on the meeting stiles
+  for (const s of [-1, 1]) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.017, 6, 12), iron);
+    ring.position.set(s * 0.16, 1.05, D.thick / 2 + 0.02);
+    ring.rotation.x = Math.PI / 2; ring.frustumCulled = false; G.add(ring);
+  }
+  /* THE SURROUND. Jamb blocks up each side and a ring of voussoirs over
+   * them, each turned to its own radius — a round arch is the one shape
+   * that says a door was built into a wall rather than cut out of it. */
+  const jw = 0.34, jd = 0.40;
+  for (const s of [-1, 1]) {
+    for (let y = 0.0; y < D.spring - 0.05; y += 0.44) {
+      const hgt = Math.min(0.44, D.spring - y) - 0.02;
+      put(jw + (y % 0.88 < 0.44 ? 0.05 : 0), hgt, jd, s * (D.w / 2 + jw / 2 - 0.02), y + hgt / 2, 0.02, stone);
+    }
+  }
+  const VN = 13;
+  for (let i = 0; i < VN; i++) {
+    const a = Math.PI * (i + 0.5) / VN;              // 0 at the right springing, PI at the left
+    const rr = D.r + jw / 2 - 0.02;
+    put(0.30, jw + 0.04, jd, Math.cos(a) * rr, D.spring + Math.sin(a) * rr, 0.02, stone, a + Math.PI / 2);
+  }
+  G.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+  G.name = 'tavKeepDoor';
+  return G;
 }
 function buildTavDoor() {
   if (!tavWorld || tavWorld.userData.door) return;
@@ -36552,12 +36702,10 @@ function buildTavDoor() {
   proxy.rotation.y = TAV_SPAWN.yaw;
   proxy.name = 'hitProxy'; proxy.visible = false;
   tavWorld.add(proxy);
-  const door = liftKeepDoor();
-  if (door) {
-    door.position.set(TAV_DOOR.x, TAV_FLOOR, TAV_DOOR.z);
-    door.rotation.y = TAV_DOOR.yaw;                  // its own +Z is out of the doorway, and here that is into the hall
-    tavWorld.add(door);
-  }
+  tavDoorMesh = makeTavDoor();
+  tavDoorMesh.position.set(TAV_DOOR.x, TAV_FLOOR, TAV_DOOR.z);
+  tavDoorMesh.rotation.y = TAV_DOOR.yaw;             // its own +Z is out of the doorway, and here that is into the hall
+  tavWorld.add(tavDoorMesh);
   addInteractable(proxy, 'Back to the terrace', 'default', {
     mid: true, far: 3.2,
     when: () => inTavern && !tavBusy,
@@ -36816,9 +36964,15 @@ MUT_KINDS.drunk = Object.assign({}, TAV_CAST_COMMON, {
   emis: 0.20, rim: [0.06, 0.07, 0.10], gamma: 0.90,
   author: authorDrunkClips,
   anim: { idle: 'idle', walk: 'walk', run: 'run', roar: 'talk', die: 'die', back: 'back', rate: 1.0, lean: 0.06, strafeK: 1.0 },
-  gaits: { walk: ['walk', 'walkTurn'], run: ['run', 'runTurnL'], idle: ['idle', 'idleB', 'idleC'], strafeL: ['walk'], strafeR: ['walk'] },
+  /* AND A THING HOLDING ITS DISTANCE MUST NOT STRIDE STRAIGHT AHEAD — the
+   * oldest animation bug in this file, and his `strafeL`/`strafeR` were the
+   * walk. The Male Drunk Pack ships no sideways stride at all, so what he
+   * circles on is the nearest true thing it does have: a walk on a CURVE
+   * one way and a backward one on a curve the other, which on a man this
+   * far gone reads better than a side-step would anyway. */
+  gaits: { walk: ['walk', 'walkTurn'], run: ['run', 'runTurnL'], idle: ['idle', 'idleB', 'idleC'], strafeL: ['walkTurn'], strafeR: ['backTurn'] },
   alias: { idle2: 'idleB', walk2: 'walk', run2: 'run', roar2: 'talk', die2: 'die', back: 'back', calm: 'idle',
-           strafeL: 'walk', strafeR: 'walk', dSwipe: 'kSwipe', dSpin: 'k360', dJump: 'kJump' },
+           strafeL: 'walkTurn', strafeR: 'backTurn', dSwipe: 'kSwipe', dSpin: 'k360', dJump: 'kJump' },
   provoke: tavProvoke,
   voice: { f: 0.78, growl: 1.35, rasp: 1.25, throat: 'bellow' },
 });
@@ -36861,7 +37015,69 @@ function buildTavCast() {
   drunkUnit = makeMutant(TAV_X + TAV_DRUNK.x, TAV_Z + TAV_DRUNK.z, 'drunk', fy);
   wongUnit.g.rotation.y = Math.atan2(TAV_DRUNK.x - TAV_WONG.x, TAV_DRUNK.z - TAV_WONG.z);
   drunkUnit.g.rotation.y = Math.atan2(TAV_WONG.x - TAV_DRUNK.x, TAV_WONG.z - TAV_DRUNK.z);
-  for (const u of [wongUnit, drunkUnit]) { u.g.visible = inTavern; u.pathO = { x: TAV_X, z: TAV_Z }; }
+  /* AND THE SAME MAN MUST NOT WIN EVERY TIME. Both of them fought to their
+   * table's numbers, so the drunk went down at about twenty seconds in
+   * every single run and you never met him. Each takes a COPY of his kind
+   * with a roll on the three things that decide a fight — how much he can
+   * take, how often he throws, and how hard — so the bar fight is a fight
+   * and not a cutscene. `u.kind` is read for every number in the fight, so
+   * the copy is the whole mechanism (the beast's own rage). */
+  /* AND A JITTER ON BOTH IS NOT THE SAME AS A DIFFERENT WINNER. Rolling
+   * each one's numbers independently left Wong winning anyway, because his
+   * move set out-damages the drunk's whatever the health — so the roll that
+   * matters is WHICH OF THEM has the night. One of the two is favoured,
+   * heavily, and the other is not; on top of that both are jittered so no
+   * two fights are the same length. */
+  const fav = Math.random() < 0.5 ? wongUnit : drunkUnit;
+  for (const u of [wongUnit, drunkUnit]) {
+    const k = Object.assign({}, u.kind), up = u === fav;
+    k.hp = Math.max(6, Math.round(k.hp * (up ? 1.25 : 0.70) * (0.85 + Math.random() * 0.30)));
+    k.aggr = k.aggr * (up ? 1.40 : 0.80) * (0.90 + Math.random() * 0.25);
+    k.block = (k.block || 0) * (up ? 1.3 : 0.7);
+    k.dmg = (k.dmg || 1) * (up && Math.random() < 0.45 ? 2 : 1);
+    u.kind = k;
+    u.st.hp = k.hp;
+    u.g.visible = inTavern; u.pathO = { x: TAV_X, z: TAV_Z };
+  }
+}
+/* AND A BAR FIGHT DOES NOT STAY AT THE BAR. Left alone the two of them
+ * circled each other on the spot they started on, which is the whole of
+ * "they stay over here too much": a pair of fighters hold their own
+ * distance and nothing ever moves the PAIR. So the pair has an anchor that
+ * wanders — a cell of the arena picked every few seconds, at least a few
+ * metres from the last one — and while they are each other's problem they
+ * both lean toward it. It is a lean, not a march: they still fight, and
+ * what it buys is that the fight travels. */
+let tavAnchor = null, tavAnchorT = 0;
+function tavRoam(dt) {
+  const a = wongUnit, b = drunkUnit;
+  if (!a || !b || !a.st.alive || !b.st.alive || !a.st.foe || !b.st.foe) { tavAnchor = null; return; }
+  tavAnchorT -= dt;
+  if (!tavAnchor || tavAnchorT <= 0) {
+    const G = tavGrid();
+    for (let tries = 0; tries < 40; tries++) {
+      const i = Math.floor(Math.random() * G.w), j = Math.floor(Math.random() * G.h);
+      if (!G.main[j * G.w + i]) continue;
+      const x = TAV_X + G.x0 + i * G.cell, z = TAV_Z + G.z0 + j * G.cell;
+      if (tavAnchor && Math.hypot(x - tavAnchor.x, z - tavAnchor.z) < 5.0) continue;
+      tavAnchor = { x, z }; tavAnchorT = 5 + Math.random() * 5;
+      break;
+    }
+    if (!tavAnchor) return;
+  }
+  for (const u of [a, b]) {
+    /* NEVER THROUGH A SWING. The first roam moved both of them on every
+     * frame including the strike, and a blow measured against a body that
+     * is being slid sideways lands on nothing: measured, forty seconds of
+     * fighting and not one point of damage between them. A fight travels
+     * between blows, not during them. */
+    if (u.st.atk > 0 || u.st.vault || u.st.down > 0) continue;
+    const p = u.g.position;
+    const dx = tavAnchor.x - p.x, dz = tavAnchor.z - p.z, L = Math.hypot(dx, dz);
+    if (L < 1.6) continue;
+    const s = Math.min(L, MUT_SPEED * u.kind.speedK * 0.60 * dt);
+    p.x += dx / L * s; p.z += dz / L * s;
+  }
 }
 /* A PEWTER TANKARD, in the hand and then on the floor in pieces. */
 function makeTavMug() {
