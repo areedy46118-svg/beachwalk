@@ -112,6 +112,7 @@ const ASSET_REACH = {
   'assets/tavern.glb': 216,            // and the hall behind its door
   'assets/wong.glb': 216,              // the barman
   'assets/drunk.glb': 216,             // and the drunk he serves
+  'assets/orc.glb': 216,               // and the third man at the bar
   'assets/bunker.glb': 333,           // behind a hatch, behind a black screen
   'assets/dealer.glb': 334,
   'assets/smile.glb': 390,
@@ -19569,7 +19570,9 @@ function hurtMutant(u, dmg, P = 0, from = null) {
    * everything below that is feedback for YOUR hands — the hitstop, the
    * sparks, the lens — is skipped for a blow that was not yours. */
   const mine = !from;
-  if (mine && u.st.foe) u.st.foe = null;
+  // and he STAYS yours: a room that re-reads its sides every frame (the
+  // tavern's) would otherwise hand him straight back to his own quarrel
+  if (mine) { u.st.mine = true; u.st.foe = null; }
   if (from) _hitFrom.subVectors(u.g.position, from.g.position).setY(0).normalize();
   /* SOME THINGS ARE ASLEEP UNTIL YOU HIT THEM. The witness is a bystander
    * until the blade touches him; `provoke` is the kind's own way of waking
@@ -23224,6 +23227,24 @@ function clampPlayerToRoom() {
     pushOutOfDojo(p, PLAYER_R, feet);
     if (!dojoStoreyAt(p.x, p.z, feet, YARD_STEP) && dojoLastStand) {
       p.x = dojoLastStand.x; p.z = dojoLastStand.z;
+    }
+    return;
+  }
+  /* AND THE TAVERN IS THE THIRD ROOM TO NEED IT. `updateTavern` reverts a
+   * step that leaves the walk, and a creature's knockback is applied from
+   * `updateMutant`, which runs after it — so measured over three minutes of
+   * being hit by the orc the player was walked THIRTEEN METRES out of the
+   * hall, the fight stopped because the orc is clamped to the arena and
+   * cannot follow, and the two of them stood six metres apart doing nothing
+   * for the rest of the sample. */
+  if (inTavern && tavWalk) {
+    const p = camera.position;
+    let feet = camBaseY - playerEye();
+    if (tavLastFloor !== null && feet < tavLastFloor) feet = tavLastFloor;
+    pushOutOfKeep(p, TAV_BODY, feet, TAV_STEP, TAV_SITE);
+    keepWallPush(p, TAV_BODY, feet, TAV_SITE, TAV_STEP);
+    if (!keepFloorAt(p.x, p.z, feet, TAV_STEP, TAV_SITE) && tavLastSpot) {
+      p.x = tavLastSpot.x; p.z = tavLastSpot.z;
     }
     return;
   }
@@ -36070,7 +36091,7 @@ function buildTavPlank() {
  * thrown into a bar fight is for. It is the drone throw's own shape, at bar
  * scale. */
 function tavThrownHits() {
-  for (const u of [wongUnit, drunkUnit]) {
+  for (const u of tavCast()) {
     if (!u || !u.st.alive || !u.st.awake) continue;
     const c = u.g.position, h = (u.kind.h || 1.8);
     for (const p of physProps) {
@@ -36537,26 +36558,53 @@ function dropTavShelf(t) {
  * (which reads the drawn roof) put your eye at knee height, and that is the
  * whole of "I got stuck in the ground". Every storey is asked what is drawn
  * over it; under a crouch's worth it goes, and the cell is a wall. */
+const TAV_HEAD = 2.10;                    // over this a ceiling is not something anyone ducks under
+let _tavPts = null;
 function pruneTavStoreys() {
   const w = tavWalk; if (!w || !tavCells || !tavWalls) return;
-  let cut = 0;
+  let cut = 0, lifted = 0;
   const h = w.cell * 0.3;
+  _tavPts = [[0, 0], [-h, -h], [h, -h], [-h, h], [h, h]];
   for (const [k, fl] of tavCells) {
     const i = k % w.gw, j = (k - i) / w.gw;
     const cx = TAV_X + w.x0 + (i + 0.5) * w.cell, cz = TAV_Z + w.z0 + (j + 0.5) * w.cell;
     for (let q = fl.length - 3; q >= 0; q -= 3) {
       const f = TAV_Y + fl[q];
       let over = null;
-      for (const [ox, oz] of [[0, 0], [-h, -h], [h, -h], [-h, h], [h, h]]) {
+      for (const [ox, oz] of _tavPts) {
         over = keepDrawnFloor(cx + ox, cz + oz, f + 0.12, f + 1.30, TAV_SITE);
         if (over !== null) break;
       }
-      if (over === null) continue;
-      fl.splice(q, 3); cut++;
+      if (over !== null) { fl.splice(q, 3); cut++; continue; }
+      /* AND A ROOF NOTHING IS DRAWN UNDER IS NOT A ROOF, WHICH IS THE SAME
+       * BUG WEARING THE OTHER HAT. A storey carries the ceiling the packer
+       * sampled, and in an open hall that is now and then a table top, a
+       * beam or a hanging lamp landing in ONE cell — so the walk offers the
+       * flags, the camera duck (which reads this stored roof, not the drawn
+       * one) drops your eye to knee height, `camBaseY - eye` is most of a
+       * metre UNDER the floor you are standing on, and every move is then
+       * refused because there is nothing within a step of your feet. That is
+       * the whole of "it is like I hit a collider walking straight from
+       * there", and it is invisible because there is nothing there: measured,
+       * 206 storeys in this hall carried a roof under head height with
+       * NOTHING drawn beneath it, including a metre-wide patch at waist
+       * height in the middle of the open floor. The probe above has already
+       * proved the first 1.30 m clear, so it costs one more question. */
+      const rf = TAV_Y + fl[q + 2];
+      if (rf < f + TAV_HEAD) {
+        let under = null;
+        if (rf > f + 1.30) {
+          for (const [ox, oz] of _tavPts) {
+            under = keepDrawnFloor(cx + ox, cz + oz, f + 1.28, Math.min(rf + 0.30, f + TAV_HEAD), TAV_SITE);
+            if (under !== null) break;
+          }
+        }
+        if (under === null) { fl[q + 2] = 99; lifted++; }
+      }
     }
     if (!fl.length) tavCells.delete(k);
   }
-  w.pruned = cut;
+  w.pruned = cut; w.lifted = lifted;
 }
 /* AND THE BARREL COMES OFF THE CRATES. One barrel lies across the crate
  * pile's second row where the way up has to go; it is lifted out of the mesh
@@ -36762,14 +36810,24 @@ function openTavCurtains() {
 }
 
 // -------------------------------------------------------------- the walk
+const tavLastSpot = { x: 0, z: 0 };       // the last place in the hall he could stand
 function updateTavern(dt) {
   if (!inTavern || !tavWalk) return;
   updateTavScene(dt);
+  tavSides();
   if (tavWallsDirty) { tavWallsDirty = false; tavWalls = null; buildKeepWalls(TAV_SITE); }
   tavRoam(dt);
   tavThrownHits();
   const p = camera.position, S = TAV_SITE;
-  const feet = camBaseY - playerEye();
+  /* THE FEET ARE ON THE FLOOR, NOT UNDER THE HEAD — the undercroft's own
+   * rule, which this room never got. Duck the head to a low roof and
+   * `camBaseY - eye` is below the floor you are standing on, so the storey
+   * you are on is more than a step ABOVE your feet, nothing answers, and the
+   * walk refuses every move: a man crouched into the flagstones, stuck on
+   * nothing. While you are on the ground the floor you were last standing on
+   * is where your feet are; in the air they are where the head says. */
+  let feet = camBaseY - playerEye();
+  if (onGround && tavLastFloor !== null && feet < tavLastFloor) feet = tavLastFloor;
   const up = !onGround ? TAV_AIR : TAV_STEP;
   const hits = (x0, z0, x1, z1) => keepHitsWall(x0, z0, x1, z1, feet + 0.80, S)
     || keepHitsWall(x0, z0, x1, z1, feet + 1.25, S)
@@ -36802,7 +36860,7 @@ function updateTavern(dt) {
   pushOutOfTavTables(p, TAV_BODY, feet);
   st = keepFloorAt(p.x, p.z, feet, up, S) || st;
   if (!st) { p.x = _preMove.x; p.z = _preMove.z; st = keepFloorAt(p.x, p.z, feet, up, S); }
-  if (st) tavLastFloor = st.f;
+  if (st) { tavLastFloor = st.f; tavLastSpot.x = p.x; tavLastSpot.z = p.z; }
   groundY = st ? st.f : (tavLastFloor === null ? TAV_Y + TAV_FLOOR : tavLastFloor);
 }
 function tavGroundAt(x, z, y) {
@@ -37140,7 +37198,13 @@ function sfxTavernDoor() {
  * shared — and one blow each is written on top, on the stance the pack's own
  * idle stands in. */
 const WONG_MOVES_URL = 'assets/wong-moves.json', DRUNK_MOVES_URL = 'assets/drunk-moves.json';
+const ORC_MOVES_URL = 'assets/orc-moves.json';
 let wongMoves = null, drunkMoves = null, wongMovesLate = null, drunkMovesLate = null;
+let orcMoves = null, orcMovesLate = null;
+bwFetch(ORC_MOVES_URL, 216).then((buf) => {
+  try { orcMoves = JSON.parse(new TextDecoder().decode(buf)); } catch (e) { return; }
+  if (orcMovesLate) { orcMovesLate(); orcMovesLate = null; }
+}, () => {});
 bwFetch(WONG_MOVES_URL, 216).then((buf) => {
   try { wongMoves = JSON.parse(new TextDecoder().decode(buf)); } catch (e) { return; }
   if (wongMovesLate) { wongMovesLate(); wongMovesLate = null; }
@@ -37159,6 +37223,19 @@ const WONG_JOINTS = {
   thighL: 'CC_Base_L_Thigh_04', thighR: 'CC_Base_R_Thigh_018',
   calfL: 'CC_Base_L_Calf_05', calfR: 'CC_Base_R_Calf_019',
   footL: 'CC_Base_L_Foot_06', footR: 'CC_Base_R_Foot_021',
+};
+/* AND THE ORC'S: a Character Creator rig again, with this export's own
+ * suffixes — which are NOT Wong's, one number out in places (his left calf
+ * comes through as `_00`). Read off the loaded file, never copied. */
+const ORC_JOINTS = {
+  hip: 'CC_Base_Hip_02', waist: 'CC_Base_Waist_033', chest: 'CC_Base_Spine02_035',
+  neck: 'CC_Base_NeckTwist01_036', head: 'CC_Base_Head_038',
+  clavL: 'CC_Base_L_Clavicle_052', clavR: 'CC_Base_R_Clavicle_080',
+  armL: 'CC_Base_L_Upperarm_053', armR: 'CC_Base_R_Upperarm_081',
+  foreL: 'CC_Base_L_Forearm_054', foreR: 'CC_Base_R_Forearm_082',
+  thighL: 'CC_Base_L_Thigh_04', thighR: 'CC_Base_R_Thigh_018',
+  calfL: 'CC_Base_L_Calf_00', calfR: 'CC_Base_R_Calf_019',
+  footL: 'CC_Base_L_Foot_05', footR: 'CC_Base_R_Foot_021',
 };
 // the drunk's: the knight's mannequin with three spine bones instead of five
 const DRUNK_JOINTS = {
@@ -37232,6 +37309,19 @@ function authorDrunkClips(u, m, gltf) {
     [1.15, {}]], false));
   return clips;
 }
+/* AND THE ORC AUTHORS NOTHING AT ALL. His file carries no clip — the demo
+ * animation it shipped with drove morph targets the packer had dropped, so it
+ * is gone — and the Great Sword Pack is a whole move set: thirteen ways of
+ * standing, walking, running and circling, nine swings, a guard, three flinch
+ * reels, a death and the draw. The owner's word is that they should look
+ * EXACTLY as they do on Mixamo, so not one of them is composed on, cut about
+ * or mixed with somebody else's: what he gets is the pack, retargeted, plus
+ * the knight's and the alien's knockdown reels so he can be put on his back
+ * like everything else here. */
+function authorOrcClips(u, m, gltf) {
+  const R = poseRig(u, m, null, ORC_JOINTS, {});
+  return tavRetargetAll(u, R, () => orcMoves, (f) => { orcMovesLate = f; });
+}
 /* THE TABLES. Each swing keeps the contact fraction that was measured on the
  * clip it is cut from — the same clip, the same fraction — and the reaches
  * are a man's, not the knight's. `plain` on the headbutt: it is thrown with
@@ -37260,6 +37350,33 @@ MUT_ATTACKS.dSwipe = { wind: 0.60, strike: 0.16, recover: 0.38, hit: 0.600, reac
 MUT_ATTACKS.dButt  = { wind: 0.50, strike: 0.12, recover: 0.42, hit: 0.547, reach: 1.90, lunge: 1.7, chain: 'dSwipe', chainP: 0.50, w: 0.24, guardK: 1.20, plain: true, stop: 1.05, real: true, cock: 0.44, clipRate: 1.15 };
 MUT_ATTACKS.dSpin  = { wind: 0.86, strike: 0.24, recover: 0.56, hit: 0.620, reach: 2.90, lunge: 0.5, chain: 'dSwipe', chainP: 0.45, w: 0.22, hold: true, guardK: 1.40, limbs: [0, 1], real: true, cock: 0.44, clipRate: 1.25 };
 MUT_ATTACKS.dJump  = { wind: 1.05, strike: 0.20, recover: 0.62, hit: 0.640, reach: 5.00, lunge: 4.8, chain: 'dSwipe', chainP: 0.60, w: 0.20, dmg: 2, hold: true, guardK: 1.70, minDist: 3.0, twoHanded: true, stop: 1.50 };
+/* AND THE ORC SWINGS A GREAT SWORD, WHICH IS A DIFFERENT SHAPE OF FIGHT.
+ * Every one of these is a Mixamo clip played at its own speed with the
+ * contact frame MEASURED off it (the frame the striking end is moving
+ * fastest — a two-handed cut has no extreme of position, since the blade is
+ * already out in front in the stance, which is the reptilian rake's own
+ * rule). The startups are the longest in the tavern because the blade is:
+ * what makes a great sword fair is that you can see it coming. */
+MUT_ATTACKS.oCut  = { wind: 0.62, strike: 0.18, recover: 0.42, hit: 0.405, reach: 3.20, lunge: 1.9, chain: 'oCutC', chainP: 0.60, w: 0.30, guardK: 1.30, limbs: [0], real: true, cock: 0.44, clipRate: 1.20, stop: 1.55 };
+MUT_ATTACKS.oCutC = { wind: 0.74, strike: 0.20, recover: 0.48, hit: 0.407, reach: 3.35, lunge: 2.0, chain: 'oKick', chainP: 0.45, w: 0.24, guardK: 1.40, limbs: [0], real: true, cock: 0.44, clipRate: 1.20, stop: 1.60 };
+MUT_ATTACKS.oCutD = { wind: 0.70, strike: 0.20, recover: 0.46, hit: 0.407, reach: 3.30, lunge: 2.2, chain: 'oCut', chainP: 0.50, w: 0.22, guardK: 1.35, limbs: [0], real: true, cock: 0.44, clipRate: 1.20, stop: 1.60 };
+/* THE OVERHEAD TAKES TWO, and it is the slowest thing he has: a second of
+ * blade over his head is the longest tell in the room and the whole of why
+ * two damage is fair. */
+MUT_ATTACKS.oChop = { wind: 0.95, strike: 0.20, recover: 0.55, hit: 0.350, reach: 3.10, lunge: 1.8, chain: 'oCut', chainP: 0.42, w: 0.18, dmg: 2, guardK: 1.85, limbs: [0], real: true, cock: 0.48, clipRate: 1.15, stop: 1.50 };
+/* AND THE TURN IS THE ONE THAT BREAKS A GUARD. It carries its own spin (the
+ * turn IS the move, so the clip keeps its root yaw) and it travels, so it is
+ * held: a full turn walked in reads as a man wandering through his own
+ * swing. */
+MUT_ATTACKS.oSpin = { wind: 0.90, strike: 0.26, recover: 0.58, hit: 0.533, reach: 3.45, lunge: 0.6, chain: 'oCut', chainP: 0.50, w: 0.16, dmg: 2, hold: true, guardK: 1.95, limbs: [0], real: true, cock: 0.46, clipRate: 1.25, stop: 1.65 };
+/* THE LEAP IS THE GAP-CLOSER: `minDist` so it is only ever thrown with room
+ * to cross, and `reach` is where it may be thrown FROM, inside what the
+ * lunge can actually cover (the SCP's pounce paid for both). */
+MUT_ATTACKS.oLeap = { wind: 1.00, strike: 0.22, recover: 0.60, hit: 0.449, reach: 5.60, lunge: 4.6, chain: 'oCut', chainP: 0.58, w: 0.14, dmg: 2, hold: true, guardK: 2.00, minDist: 3.0, limbs: [0], stop: 1.60 };
+/* AND THE KICK IS THE MIXUP: the one blow of his that comes from a leg, so
+ * the answer to it is not the answer to the blade — and it lands at thigh
+ * height, so he has to be further out or it arrives under the picture. */
+MUT_ATTACKS.oKick = { wind: 0.52, strike: 0.16, recover: 0.40, hit: 0.367, reach: 2.60, lunge: 1.6, chain: 'oCutD', chainP: 0.55, w: 0.22, guardK: 1.10, limbs: [1], real: true, cock: 0.42, clipRate: 1.20, stop: 1.35 };
 const TAV_CAST_COMMON = {
   solo: true, noSand: true, skin: null, bones: null, tav: true,
   /* AND THEY DO NOT FIDGET. Measured over twenty seconds of the two of
@@ -37354,6 +37471,45 @@ MUT_KINDS.drunk = Object.assign({}, TAV_CAST_COMMON, {
   provoke: tavProvoke,
   voice: { f: 0.78, growl: 1.35, rasp: 1.25, throat: 'bellow' },
 });
+MUT_KINDS.orc = Object.assign({}, TAV_CAST_COMMON, {
+  glb: 'assets/orc.glb', faceFix: 0,
+  h: 2.15, hp: 24, speedK: 0.80, aggr: 2.20, chainMax: 3, poise: 10, block: 0.30,
+  use: { oCut: 0.30, oCutC: 0.20, oCutD: 0.18, oChop: 0.14, oSpin: 0.12, oKick: 0.16, oLeap: 0.10 },
+  /* A GREAT SWORD IS THE REACH. There is no `tip` bone on him — the blade is
+   * weighted to a bone UNDER his right hand, so it follows the hand for free
+   * and nothing has to be pinned (the samurai's katana is a root bone and is
+   * the opposite case) — so the hitbox runs out along the arm's own line by
+   * the length of the steel, which is what `barLen` is for. */
+  /* AND A BIG MAN WITH A LONG BLADE FIGHTS FURTHER OUT. At the tavern's own
+   * `body` (0.45, a man) and `lungeStop` 1.45 he held 1.16 m and 107 of 122
+   * contacts landed OFF SCREEN — a two-metre orc standing on your toes puts
+   * every blow under the picture, which is the knight's own lesson. He is as
+   * wide as he looks and he stops where the steel reaches. */
+  body: 0.72, barLen: 1.40, aimK: 2.60, lungeStop: 2.10, landSlop: 0.65,   // measured: the blade's far end is 1.69 m from his fist
+  rig: { arm: 'CC_Base_R_Upperarm_081', fore: 'CC_Base_R_Forearm_082', hand: 'CC_Base_R_Hand_086',
+         armL: 'CC_Base_L_Upperarm_053', foreL: 'CC_Base_L_Forearm_054', handL: 'CC_Base_L_Hand_058', head: 'CC_Base_Head_038',
+         limbs: [['CC_Base_R_Thigh_018', 'CC_Base_R_Calf_019', 'CC_Base_R_Foot_021', 'CC_Base_R_ToeBase_022']] },
+  rag: { Character1_Hips: 'CC_Base_Hip_02', Character1_Spine: 'CC_Base_Waist_033',
+         Character1_Spine1: 'CC_Base_Spine01_034', Character1_Spine2: 'CC_Base_Spine02_035',
+         Character1_Neck: 'CC_Base_NeckTwist01_036', Character1_Head: 'CC_Base_Head_038',
+         Character1_RightShoulder: 'CC_Base_R_Clavicle_080', Character1_RightArm: 'CC_Base_R_Upperarm_081',
+         Character1_RightForeArm: 'CC_Base_R_Forearm_082', Character1_RightHand: 'CC_Base_R_Hand_086',
+         Character1_LeftShoulder: 'CC_Base_L_Clavicle_052', Character1_LeftArm: 'CC_Base_L_Upperarm_053',
+         Character1_LeftForeArm: 'CC_Base_L_Forearm_054', Character1_LeftHand: 'CC_Base_L_Hand_058',
+         Character1_RightUpLeg: 'CC_Base_R_Thigh_018', Character1_RightLeg: 'CC_Base_R_Calf_019',
+         Character1_RightFoot: 'CC_Base_R_Foot_021', Character1_RightToeBase: 'CC_Base_R_ToeBase_022',
+         Character1_LeftUpLeg: 'CC_Base_L_Thigh_04', Character1_LeftLeg: 'CC_Base_L_Calf_00',
+         Character1_LeftFoot: 'CC_Base_L_Foot_05', Character1_LeftToeBase: 'CC_Base_L_ToeBase_07' },
+  emis: 0.22, rim: [0.05, 0.06, 0.09], gamma: 0.92,
+  author: authorOrcClips,
+  anim: { idle: 'idle', walk: 'walk', run: 'run', roar: 'roar', die: 'die', back: 'walk', rate: 1.0, lean: 0.05, strafeK: 1.0 },
+  gaits: { walk: ['walk', 'walkB'], run: ['run', 'runB'], idle: ['idle', 'idleB'], strafeL: ['strafeL'], strafeR: ['strafeR'] },
+  stepClip: ['sideL', 'sideR'],
+  alias: { idle2: 'idleB', walk2: 'walkB', run2: 'runB', roar2: 'draw', die2: 'die', back: 'walk', calm: 'idle',
+           hit: 'hit', hitBig: 'hitBig', hitSide: 'hitB', hitBack: 'hitB', hitHead: 'hitB', block: 'block', blockC: 'brace' },
+  provoke: tavProvoke,
+  voice: { f: 0.70, growl: 1.45, rasp: 1.15, throat: 'bellow' },
+});
 
 /* ---- the scene
  * Wong stands in the mouth of the barrel rack, which is the nearest thing
@@ -37371,6 +37527,12 @@ MUT_KINDS.drunk = Object.assign({}, TAV_CAST_COMMON, {
  * at z = -2). Wong stands in the barman's pocket behind it, the drunk at the
  * rail in front, and the shelf of meat is the backdrop to the whole beat. */
 const TAV_WONG = { x: 0.05, z: -1.90 }, TAV_DRUNK = { x: -2.55, z: -1.90 };
+/* AND A THIRD MAN STANDS BEHIND THE DRUNK. Oscar Creativo's orc, with the
+ * Great Sword Pack on him — he is at the drunk's shoulder through the whole
+ * of the drink, says nothing, and the moment the glass goes through the floor
+ * he is in it. Two against one, and the owner's script is what happens next:
+ * they put the barman down and then they both turn round. */
+const TAV_ORC = { x: -4.15, z: -2.35 };
 /* AND THE POCKET BEHIND A BAR IS A DEAD END. Measured: 0.65 m by 3, shut by
  * the counter on one side, the kegs at one end and the counter's return at
  * the other — a creature put there could never reach the fight, which is the
@@ -37384,15 +37546,19 @@ const TAV_VAULT_TO = { x: -3.40, z: -2.60 };
  * under way before the player had taken ten steps. Nothing starts until you
  * have come to the bar. */
 const TAV_SCENE_NEAR = 13.0;
-let wongUnit = null, drunkUnit = null, tavMug = null;
+let wongUnit = null, drunkUnit = null, orcUnit = null, tavMug = null;
+// everyone at the bar, in one place, so nothing can be updated for two of three
+const tavCast = () => (wongUnit ? [wongUnit, drunkUnit, orcUnit].filter(Boolean) : []);
 const tavScene = { t: 0, phase: 0, started: false };
 function buildTavCast() {
   if (wongUnit || !tavWorld) return;
   const fy = TAV_Y + TAV_FLOOR;
   wongUnit = makeMutant(TAV_X + TAV_WONG.x, TAV_Z + TAV_WONG.z, 'wong', fy);
   drunkUnit = makeMutant(TAV_X + TAV_DRUNK.x, TAV_Z + TAV_DRUNK.z, 'drunk', fy);
+  orcUnit = makeMutant(TAV_X + TAV_ORC.x, TAV_Z + TAV_ORC.z, 'orc', fy);
   wongUnit.g.rotation.y = Math.atan2(TAV_DRUNK.x - TAV_WONG.x, TAV_DRUNK.z - TAV_WONG.z);
   drunkUnit.g.rotation.y = Math.atan2(TAV_WONG.x - TAV_DRUNK.x, TAV_WONG.z - TAV_DRUNK.z);
+  orcUnit.g.rotation.y = Math.atan2(TAV_WONG.x - TAV_ORC.x, TAV_WONG.z - TAV_ORC.z);
   /* AND THE SAME MAN MUST NOT WIN EVERY TIME. Both of them fought to their
    * table's numbers, so the drunk went down at about twenty seconds in
    * every single run and you never met him. Each takes a COPY of his kind
@@ -37406,12 +37572,26 @@ function buildTavCast() {
    * matters is WHICH OF THEM has the night. One of the two is favoured,
    * heavily, and the other is not; on top of that both are jittered so no
    * two fights are the same length. */
-  const fav = Math.random() < 0.5 ? wongUnit : drunkUnit;
-  for (const u of [wongUnit, drunkUnit]) {
-    const k = Object.assign({}, u.kind), up = u === fav;
-    k.hp = Math.max(6, Math.round(k.hp * (up ? 1.25 : 0.70) * (0.85 + Math.random() * 0.30)));
-    k.aggr = k.aggr * (up ? 1.40 : 0.80) * (0.90 + Math.random() * 0.25);
-    k.block = (k.block || 0) * (up ? 1.3 : 0.7);
+  /* AND THE ROLL IS BETWEEN THE TWO WHO ARE ON THE SAME SIDE. It used to be
+   * over Wong and the drunk, because they were the fight; with a third man
+   * at the drunk's shoulder the fight is two against one and the barman
+   * going down is the owner's own script, so what the die decides now is
+   * which of the PAIR carries it — and both are still jittered, so no two
+   * nights are the same length. */
+  const fav = Math.random() < 0.5 ? orcUnit : drunkUnit;
+  for (const u of tavCast()) {
+    /* AND THE MAN THEY ARE BOTH ON KEEPS HIS OWN NUMBERS. The multiplier is
+     * between the PAIR — which of them carries the fight — and Wong was
+     * getting the loser's 0.70 every night simply because he could never be
+     * the favourite: measured, he went down in a second and a half and the
+     * beat the owner asked for went past before you could read it. He is
+     * jittered like everyone and scaled by nobody, and two against one is
+     * what decides it. */
+    const k = Object.assign({}, u.kind), up = u === fav, pair = u !== wongUnit;
+    const m = !pair ? 1 : up ? 1.25 : 0.70;
+    k.hp = Math.max(6, Math.round(k.hp * m * (0.85 + Math.random() * 0.30)));
+    k.aggr = k.aggr * (!pair ? 1 : up ? 1.40 : 0.80) * (0.90 + Math.random() * 0.25);
+    k.block = (k.block || 0) * (!pair ? 1 : up ? 1.3 : 0.7);
     k.dmg = (k.dmg || 1) * (up && Math.random() < 0.45 ? 2 : 1);
     u.kind = k;
     u.st.hp = k.hp;
@@ -37428,8 +37608,8 @@ function buildTavCast() {
  * what it buys is that the fight travels. */
 let tavAnchor = null, tavAnchorT = 0;
 function tavRoam(dt) {
-  const a = wongUnit, b = drunkUnit;
-  if (!a || !b || !a.st.alive || !b.st.alive || !a.st.foe || !b.st.foe) { tavAnchor = null; return; }
+  const live = tavCast().filter((u) => u.st.alive && u.st.foe);
+  if (live.length < 2) { tavAnchor = null; return; }
   tavAnchorT -= dt;
   if (!tavAnchor || tavAnchorT <= 0) {
     const G = tavGrid();
@@ -37443,7 +37623,7 @@ function tavRoam(dt) {
     }
     if (!tavAnchor) return;
   }
-  for (const u of [a, b]) {
+  for (const u of live) {
     /* NEVER THROUGH A SWING. The first roam moved both of them on every
      * frame including the strike, and a blow measured against a body that
      * is being slid sideways lands on nothing: measured, forty seconds of
@@ -37499,17 +37679,42 @@ function tavMugSmash() {
   sfxMutHit(MUT_KINDS.drunk.voice);
   spawnPuffs(_mgP.x, _mgP.z, 3, 0, 0, gy + 0.05, [0.5, 0.5, 0.52]);
 }
-/* Both of them wake, on the blow or on the slam: whoever was hit turns on
- * you; the other keeps his quarrel. */
+/* AND IT IS TWO AGAINST ONE. The drunk and the orc are on the same side and
+ * the barman is the odd man out, so the quarrel is not a pairing any more —
+ * it is a SIDE, and the side is re-read every frame: the pair both want Wong
+ * while he is alive, Wong wants whichever of them is nearer, and the moment
+ * he goes down neither of them has a foe left, which is `mutFoePos`'s own
+ * rule for turning on the player. That is the owner's script exactly, and
+ * nothing had to be written to make the last beat happen — a creature whose
+ * foe has died turns to you by construction. A blow of YOURS still takes its
+ * man out of the quarrel and gives him to you (`u.st.foe = null` below), and
+ * `tavSides` leaves anyone you have taken alone. */
+function tavSides() {
+  const W = wongUnit; if (!W) return;
+  for (const q of tavCast()) {
+    if (!q.st.alive || !q.st.awake || q.st.mine) continue;
+    if (q === W) {
+      let best = null, bd = 1e9;
+      for (const o of tavCast()) {
+        if (o === W || !o.st.alive || o.st.mine) continue;
+        const d = Math.hypot(o.g.position.x - W.g.position.x, o.g.position.z - W.g.position.z);
+        if (d < bd) { bd = d; best = o; }
+      }
+      q.st.foe = best;
+    } else q.st.foe = W.st.alive && !W.st.mine ? W : null;
+  }
+}
+/* They all wake, on the blow or on the slam: whoever was hit turns on you;
+ * the others keep their quarrel. */
 function tavProvoke(u, quiet) {
   if (!wongUnit || !drunkUnit) return;
-  for (const q of [wongUnit, drunkUnit]) {
+  for (const q of tavCast()) {
     if (q.st.awake || !q.st.alive) continue;
     q.st.awake = true; q.st.roar = 1.2; q.st.roarClip = q.kind.anim.roar; q.st.cool = 0.4; q.st.step = 0;
     q.holdAnim = false;
-    q.st.foe = q === wongUnit ? drunkUnit : wongUnit;
   }
-  if (u) u.st.foe = null;                         // the one you hit is yours now
+  if (u) { u.st.mine = true; u.st.foe = null; }    // the one you hit is yours now
+  tavSides();
   /* AND THE BARMAN COMES OVER HIS OWN BAR. Only from behind it, so a later
    * provoke cannot throw him across the room. */
   if (wongUnit.st.alive && wongUnit.g.position.x - TAV_X > -0.7) {
@@ -37811,7 +38016,7 @@ window.__bw = {
       rest: tavPlankRestSlope() };
   },
   get tavWorld() { return tavWorld; }, get tavTables() { return tavTables; }, get tavChairs() { return tavChairs; },
-  get wongUnit() { return wongUnit; }, get drunkUnit() { return drunkUnit; }, tavScene, tavProvoke, buildTavCast, get tavMug() { return tavMug; },
+  get wongUnit() { return wongUnit; }, get drunkUnit() { return drunkUnit; }, get orcUnit() { return orcUnit; }, tavScene, tavProvoke, buildTavCast, get tavMug() { return tavMug; },
   tavState: () => ({ inTavern, ready: tavReady, built: tavBuilt, walk: !!tavWalk, cells: tavCells ? tavCells.size : 0, busy: tavBusy, t: +tavT.toFixed(2),
     walls: tavWalls && { faces: tavWalls.v.length / 9, cells: tavWalls.map.size }, repair: tavWalk && { storeys: tavWalk.storeys, ms: tavWalk.built },
     tables: tavTables.map((t) => ({ x: +(t.cx - TAV_X).toFixed(2), z: +(t.cz - TAV_Z).toFixed(2), r: +t.r.toFixed(2), top: +(t.top - TAV_Y).toFixed(2), pieces: t.pieces.length, kinds: t.pieces.map((p) => p.userData.part).join(','), dead: t.dead })),

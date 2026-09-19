@@ -115,6 +115,9 @@ def main():
     ap.add_argument('--nodes', default=None,
                     help='regex: keep only nodes (or nodes whose mesh) matching this, plus ancestors/descendants')
     ap.add_argument('--min-tris', type=int, default=0, help='drop primitives smaller than this')
+    ap.add_argument('--no-clips', action='store_true',
+                    help='drop every animation: for a creature whose clips are all retargeted, '
+                         'and for a demo clip on morph targets this packer has just dropped')
     ap.add_argument('--clips', default=None,
                     help='comma list: keep only these animations and RENAME them to these names. '
                          'A Sketchfab rip names every clip "rig|rig|rig|walk", so the match is on '
@@ -139,6 +142,25 @@ def main():
     # clips over 4.2 MB of buffer, and a boss fight uses twelve of them. The
     # match is on the last |-separated segment because every clip in a
     # Sketchfab rip is called 'rig|rig|rig|<name>'.
+    # AND A DEMO CLIP CAN BE WORSE THAN USELESS. The orc's one animation drives
+    # MORPH TARGET WEIGHTS, and this packer drops the targets — so Blender's
+    # own importer walks into `obj.data.shape_keys.id_type` on a mesh that has
+    # no shape keys and dies before a single triangle arrives. A creature whose
+    # every clip is retargeted has no use for the file's own anyway.
+    if a.no_clips:
+        g['animations'] = []
+    # AND A CHANNEL THAT DRIVES SOMETHING THIS PACKER HAS DROPPED IS A BROKEN
+    # CHANNEL. The morph targets go with the attribute rebuild; the tracks that
+    # drove their weights stayed, and Blender's own importer then walked into
+    # `obj.data.shape_keys.id_type` on a mesh with no shape keys and died
+    # before a triangle arrived. The clip is worth keeping — on a rip whose
+    # bind pose is degenerate it is the only real stance there is — so it is
+    # the dead channels that go, not the animation.
+    for an in g.get('animations', []):
+        ch = [c for c in an.get('channels', []) if c.get('target', {}).get('path') != 'weights']
+        if len(ch) != len(an.get('channels', [])):
+            an['channels'] = ch
+    g['animations'] = [an for an in g.get('animations', []) if an.get('channels')]
     if a.clips:
         want = {}
         for tok in a.clips.split(','):

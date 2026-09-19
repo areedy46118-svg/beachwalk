@@ -2040,11 +2040,24 @@ export function makeUndercroft(opts = {}) {
        * threshold where the clip cuts it. What has to survive is that it
        * takes a HIGHLIGHT, which is the only thing that says water; the
        * level underneath it can go wherever the stone goes. */
-      m.color.setHex(0x151c25);
-      m.emissive.setHex(0x060b12);
+      /* AND WHAT IT REFLECTS IS THE ALTAR. The channel was a cold near-black
+       * that took whatever highlight was going — which down the bore is the
+       * light in your own hand, so the two smears lying on the water were a
+       * reflection of the glowstick and of nothing that is in the room. A
+       * reflection takes the colour of the thing it reflects, and the only
+       * thing at the end of that tunnel worth reflecting is the altar: the
+       * water's SPECULAR is tinted to the candles' own colour (the beacon is
+       * 0xffb266 and the two lamps on the altar 0xffa951 / 0xff9a45), which
+       * on a metallic surface is what the base colour does. High metalness is
+       * the whole trick — METALNESS IS A TRAP for a lit surface and is
+       * exactly right for one that is only ever a mirror — so the diffuse
+       * term is a sixth of that colour and stays as dark as the rock, and
+       * every highlight that lands on it comes back warm. */
+      m.color.setHex(0x8a5c2e);
+      m.emissive.setHex(0x0b0704);
       m.emissiveIntensity = 1;
-      m.roughness = 0.16;
-      m.metalness = 0.34;
+      m.roughness = 0.14;
+      m.metalness = 0.86;
       m.needsUpdate = true;
     });
     smoothRock(root);

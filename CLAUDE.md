@@ -10651,3 +10651,132 @@ are found rather than typed: the floor is walked back from the landing until
 it runs out, and the bore is then measured ACROSS at that last station so the
 pair stands on its centreline whatever the model does. Measured: (-12.7, 7.21,
 -24.05), a stride off the back wall, reading "E Take the jar".
+
+**THE REFLECTION ON THE TUNNEL'S WATER IS THE ALTAR'S.** The channel was a
+cold near-black that took whatever highlight was going — and the only light in
+that bore is the one in your own hand, so the smears lying on the water were a
+reflection of the GLOWSTICK and of nothing that is in the room. A reflection
+takes the colour of the thing it reflects, and the only thing at the end of
+that tunnel worth reflecting is the altar. The water's SPECULAR is tinted to
+the candles' own colour (the beacon is 0xffb266 and the two lamps on the altar
+0xffa951 / 0xff9a45), which on a metallic surface is what the base colour does
+— high metalness is the whole trick, and it is the one case where METALNESS IS
+NOT A TRAP, because a mirror has no diffuse term to lose. The level under it is
+unchanged: the diffuse is a sixth of that colour and stays as dark as the rock.
+Measured on the water under the held light, before and after: **(9.0, 11.5,
+15.2) — blue — becomes (12.3, 8.9, 5.9)**, which is the candles' own ratio.
+(And a specular change cannot be seen from just anywhere: it only exists where
+the camera sits on the MIRROR direction of a light, so the before/after has to
+be sampled there. Measured by rendering into a `WebGLRenderTarget` and reading
+the pixels back — `drawImage` off the WebGL canvas returns zeros, there being
+no `preserveDrawingBuffer`, and a render target has no such problem.)
+
+**"IT IS LIKE I HIT A COLLIDER WALKING STRAIGHT FROM THERE" WAS AN INVISIBLE
+CEILING, AND THE DUCK UNDER IT PUT HIS FEET THROUGH THE FLOOR.** Two faults,
+and the second is what turned the first into a wall:
+
+- **A ROOF NOTHING IS DRAWN UNDER IS NOT A ROOF.** A storey carries the ceiling
+  the packer sampled, and in an open hall that is now and then a table top, a
+  beam or a hanging lamp landing in ONE cell. Measured over the whole floor by
+  raycasting UP out of every low-roofed storey: **206 of them carried a roof
+  under head height with nothing drawn beneath it**, including a metre-wide
+  patch at waist height in the middle of the open floor. `pruneTavStoreys` has
+  asked what is drawn over a storey since the tables went ghost — it now keeps
+  the answer and clears the roof with it, which costs one more probe.
+- **AND THE FEET ARE ON THE FLOOR, NOT UNDER THE HEAD** — the undercroft's own
+  rule, which this room never got. The camera ducks to `st.c - 0.22`, so with a
+  phantom roof at 1.02 the eye went to 0.80 and `camBaseY - playerEye()` to
+  **-0.82**: eighty centimetres UNDER the flags he was standing on. The storey
+  is then more than a step ABOVE his feet, nothing answers, and the walk
+  refuses every move — a man crouched into the flagstones, stuck on nothing.
+  While he is on the ground his feet are the floor he was last standing on.
+
+Measured by walking eight directions out of every open cell with the game's own
+movement and asking, wherever he did not move, whether anything is DRAWN in the
+way: **16 spots stuck on nothing became 8, and all eight of those have real
+geometry within reach** (a stall valance, a 0.98 m bench, the bar, a wall he is
+six centimetres from). Low-roofed storeys 432 → 130, phantom roofs 206 → 15.
+
+**AND THE TAVERN IS THE THIRD ROOM TO NEED `clampPlayerToRoom`.** The bunker's
+lesson, then the dojo's, now this: `updateTavern` reverts a step that leaves the
+walk, and a creature's knockback is applied from `updateMutant`, which runs
+AFTER it. Measured over three minutes of being hit by the orc, the player was
+walked **thirteen metres out of the hall** — and then the fight simply stopped,
+because a tavern creature is clamped to the arena and cannot follow, so the two
+of them stood six metres apart doing nothing for the rest of the sample. A
+measurement that ends with the fighters becalmed is measuring the room, not the
+fight.
+
+**THE ORC AT THE DRUNK'S SHOULDER, AND THE GREAT SWORD PACK ON HIM.** Oscar
+Creativo's orc (CC-BY, `assets/orc.glb`) stands behind the drunk through the
+whole of the drink, and the moment the glass goes through the floor he is in
+it: two against one, they put the barman down, and then they both turn round.
+
+- **HE IS SHIPPED EXACT, AND THAT IS NOT LAZINESS — IT IS THE ONLY WAY HE
+  SURVIVES.** 305,522 triangles over 29 meshes at 17.2 MB. The decimation this
+  repo uses for a rigged character is a Blender round trip, and this rip will
+  not take one: **its inverse-bind matrices are IDENTITY and its rest pose is
+  carried entirely by the NODE TRANSFORMS**, so Blender's importer rebuilds a
+  different skeleton and writes that back. Measured on the round-tripped file,
+  the right upper arm came out with a 175 cm offset from its own clavicle, the
+  bind collapsed onto the origin (every bone at (0, 0.01, 0) — Wong's, for
+  comparison, has its head at 1.59 and its hand at (0.36, 1.2, -0.56)), and
+  every clip retargeted onto that exploded: arms out sideways, the sword two
+  metres in front of his chest. `bone_heuristic='BLENDER'` does not save it.
+  **If a rig's bind measures as nothing, stop packing and look at the file.**
+- **AND HALF THE FILE WAS A TURNTABLE.** 32.3 MB, of which the shipped `Motion`
+  clip was **14.9** against 11.7 of geometry and 5.4 of texture. He needs none
+  of it — his bind is sane, and every clip he fights with is retargeted — so it
+  goes, and with the metallic maps (METALNESS IS A TRAP, the sixth time) 450 MB
+  of source becomes 17.2.
+- **AND A CHANNEL THAT DRIVES SOMETHING THE PACKER HAS DROPPED IS A BROKEN
+  CHANNEL.** The morph targets go with the attribute rebuild and the tracks
+  that drove their weights stayed, so Blender's importer walked into
+  `obj.data.shape_keys.id_type` on a mesh with no shape keys and died before a
+  triangle arrived. `gltfpack.py` drops those channels now, and `--no-clips`
+  drops the lot.
+
+**AND A FACING IS A PROPERTY OF THE RIG, NOT OF THE CLIP.** `ntar_moves.py`
+measures which way a clip faces off the TOES at frame 0, which is right when
+frame 0 is a plain stand and nonsense otherwise: across one pack it ranged from
+**-1.3 to -103.2 degrees** — a side step starts with the feet turned out, a
+running start with them square to the travel. Applied as that clip's own
+convention, each of those turns the whole move by that much, which is exactly
+the "we've had problems replicating them before" the owner was pointing at.
+Every clip in a pack shares one skeleton and one BIND pose, so the bind is
+where the convention is read: all thirty of the orc's clips now come out on
+**(0, -1, 0) -> +0.0 deg**, the same heading.
+
+And every swing he has is measured rather than declared — the frame the
+striking end is moving FASTEST, which is the reptilian rake's rule and the only
+one that suits a two-handed cut (the blade is already out in front in the
+stance, so there is no extreme of position): oCut 0.405, oCutC 0.407, oCutD
+0.407, oChop 0.350, oSpin 0.533, oLeap 0.449, and the kick on the TOE at 0.367.
+Which end it is, is per clip; two of these are legs.
+
+**AND THE QUARREL IS A SIDE NOW, NOT A PAIRING.** `u.st.foe` made another
+creature the thing every distance and aim is measured to, and with three in the
+room it is re-read every frame: the pair both want Wong while he is alive, Wong
+wants whichever of them is nearer, and the moment he goes down **neither of
+them has a foe left** — which is `mutFoePos`'s own rule for turning on the
+player. Nothing had to be written to make the last beat happen. A blow of YOURS
+still takes its man out of the quarrel and gives him to you, and that is a flag
+now (`st.mine`), because a room that re-reads its sides every frame would
+otherwise hand him straight back.
+
+**AND THE MAN THEY ARE BOTH ON KEEPS HIS OWN NUMBERS.** The nightly roll is
+between the PAIR — which of them carries the fight — and Wong was getting the
+loser's 0.70 every time simply because he could never be the favourite:
+measured, he went down **a second and a half** after the glass broke and the
+beat went past before you could read it. Two against one is what decides it
+now. Measured: the fight opens at 5.3 s, Wong is down **14.9 s** later, and
+both survivors lose their foe on that same frame.
+
+**AND A BIG MAN WITH A LONG BLADE FIGHTS FURTHER OUT.** At the tavern's own
+`body` (0.45, a man) and `lungeStop` 1.45 he held 1.16 m and **107 of 122
+contacts landed off screen** — a two-metre orc standing on your toes puts every
+blow under the picture, which is the knight's own lesson wearing armour. At
+0.72 and 2.10 it is 69 of 129 on screen. Measured over three minutes against a
+player who stands still: **43 swings and 43.3 damage a minute**, all six of his
+swings used, the sword hand finishing a median 0.76 m from the chest. The
+Dealer is 48 and 40.
