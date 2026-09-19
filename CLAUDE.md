@@ -10562,3 +10562,92 @@ down there to have gone for. The far end is FOUND — the last station the walk
 still has a floor at — and the jars are the beach's own `dropJar`, which now
 takes a height, so the count in the corner and the stack in the pack cannot get
 out of step with what the first cache hands out.
+
+**THE CLIMB STOPPED ON ONE CRATE, AND THE PLANK WOULD NOT LIE AS A RAMP.**
+Three reports, and the first two are one arithmetic each.
+
+- **A RUNG AT THE LIMIT OF A JUMP IS A RUNG THAT DOES NOT WORK.** A jump lifts
+  the feet 0.62 and the walk catches a floor `TAV_AIR` (0.72) under them, so
+  1.34 m is the tallest step there is — and the barrel rack's top is 3.53
+  against a crate whose top was 2.21. **That is 1.35.** One centimetre, and
+  the route to the gallery ended on that crate, which is where the owner was
+  stuck. Nor is 1.34 any better: the window in which a ledge is both catchable
+  and not a wall is then the last centimetre of the arc and there is no time
+  inside it to travel. The crate is the rung, so the crate is what changes —
+  a taller box, top 2.49, which splits 1.44 → 3.53 into two jumps of 1.05 and
+  1.04 with a third of a metre of arc to spare on each. Measured after: every
+  rung of the climb reached, the rack from the crate on 8 of 9 approaches.
+- **AND THE PUSH-OUT AND THE STEP-UP MUST USE THE SAME TOLERANCE — the beach's
+  own rule (`ROCK_STEP`), which the keep's walk never got.** `up` is a stride
+  on the ground and a JUMP in the air, and `keepWallPush` always read the
+  standing step: airborne, anything more than a stride over your feet was
+  still a wall pushing you off it. Measured, that capped what anyone could
+  climb onto at 1.08 m against the 1.34 the jump reaches. It takes `up` now,
+  and the island gets it too — where it also means a bank you are wading out
+  of stops shoving you back into the sea.
+- **AND THE CROWN WAS WRITTEN INTO THE WRONG FUNCTION.** "A lip is not a wall,
+  which is a question about the face's own crown" was added to `dojoWallNear`
+  and never to `keepWallNear`, so every reader here got `undefined` — and
+  `undefined < anything` is false, which made every kerb, step and stall lip
+  in the tavern a full wall to the plank. **The one rule that lets a board lie
+  ACROSS a step had never once run**, and with it off the ramp cannot form at
+  all (measured: pitch 0, the board flat on the floor, from every stand-off).
+  And a hand's breadth of slack — the number this file used to claim — is
+  0.08 m of stone through the top edge of the timber: a lip is something the
+  board lies ON, so the crown may stand no higher than the board's own middle.
+- **A STATION IS A BOX, AND A BODY COMES OUT OF A BOX THE SHORT WAY.** The
+  cross-section rule answered a face DEAD AHEAD of a station — which is what
+  the riser of a step is to the station leaning on it — with the FULL
+  half-width sideways, and five iterations of that walked the ramp a metre and
+  a quarter off the ledge in a single frame. That is the board "flying away"
+  the moment it is put down. Each station is 0.32 m of board by 0.46 across,
+  and it is ejected along whichever overlap is smaller. **And the plan axis has
+  to be a UNIT vector**: `a` is the axis in SPACE, so its horizontal part is
+  only cos(pitch) long, and every distance measured against it came out a
+  fifth short on a ramp — the along-tolerance GREW exactly as the board
+  steepened, which is precisely when it must not.
+- **AND WHICH WAY OUT IS A MEASUREMENT, NOT A DERIVATION.** Three readings of
+  the same code, over eighty drops round the hall and sixteen carry-and-drops
+  at the step: skipping the shallow-along case ships ramps and 8 of 80 boards
+  with their centreline in stone; the old across-only push ships 3 of 80 and
+  only 3 ramps in 16, sliding half a metre sideways in 6 of them; pushing
+  ALONG when along is shallower ships **4 of 80 (the same as before this
+  round), 6 ramps in 16 and not one board that slides**. The obvious variant
+  was the wrong one and only the sweep said so.
+
+**AND A BOARD AT REST MUST NOT CHANGE ITS MIND.** With the ramp forming, it
+then breathed: 0.14 m every ten frames, for ever. A station sitting on the
+EDGE of a step reads the floor one frame and the crown the next — two metres
+apart — and the two answers want slopes a tenth of a radian apart, so the
+board turned hard one way, which moved the station off the step, which turned
+it hard back. Four things, and the order matters because each exposed the
+next:
+
+- a station is 0.32 m of board, not a point, so it is asked about its own
+  whole length and takes the HIGHEST answer (under-sampling a step is the one
+  error that lets timber into stone, so the bias is the safe way);
+- the slope it turns toward is EASED, so what it follows is the average of an
+  argument the sampling cannot settle;
+- **a board that has stopped SLIDING is at rest, whatever its height is
+  doing** — the settling bob is the solver, not motion, and testing the whole
+  velocity woke the turn on every bob;
+- and while the pose in PLAN has not moved and it has not fallen a third of a
+  metre, the supports it solved stand. Measured: 15 of 16 placements dead
+  still to four decimals, and the ramp itself 0.
+
+Measured at the end: the board laid at the step rests spanning 5.34 → 7.44,
+and the walk from the gallery up it, into the bore and down to its far end is
+**210 ticks with zero stalls and no jumping**; the carpets' 2.49 m gap is
+still bridged and still walked (81 ticks, zero stalls); 4 of 80 drops round
+the hall end with the board's centreline touching drawn stone, which is what
+it was before this round.
+
+**AND THE JARS WERE ON THE GALLERY, NOT IN THE TUNNEL.** Off the gallery's far
+end a two-metre bore runs eleven metres into the rock at 7.19 over the flags
+and ends blind — and the "far end of the passage" the first pass walked to was
+the open landing at 5.30, in FRONT of the arch rather than through it, which
+is where the owner photographed them lying on the rug. Both ends of the bore
+are found rather than typed: the floor is walked back from the landing until
+it runs out, and the bore is then measured ACROSS at that last station so the
+pair stands on its centreline whatever the model does. Measured: (-12.7, 7.21,
+-24.05), a stride off the back wall, reading "E Take the jar".

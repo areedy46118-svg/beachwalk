@@ -34588,7 +34588,7 @@ function buildKeepWalls(S = KEEP_SITE) {
 function keepWallNear(x, z, r, lo, hi, S = KEEP_SITE) {
   const W = S.walls; if (!W) return null;
   const v = W.v, ic = Math.floor((x - S.X) / W.cell), jc = Math.floor((z - S.Z) / W.cell);
-  let bd = -1, bx = 0, bz = 0;
+  let bd = -1, bx = 0, bz = 0, bt = 0;
   for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
     const list = W.map.get(W.key(ic + di, jc + dj)); if (!list) continue;
     for (let m = 0; m < list.length; m++) {
@@ -34605,10 +34605,15 @@ function keepWallNear(x, z, r, lo, hi, S = KEEP_SITE) {
       if (d < d2) { d2 = d; nx = _s2.x; nz = _s2.z; }
       if (d2 >= r * r) continue;
       const depth = r - Math.sqrt(d2);
-      if (depth > bd) { bd = depth; bx = nx; bz = nz; }
+      if (depth > bd) { bd = depth; bx = nx; bz = nz; bt = W.yhi[id]; }
     }
   }
-  return bd < 0 ? null : { x: bx, z: bz, depth: bd };
+  /* `top` is the face's own CROWN, and it is what tells a lip the timber can
+   * lie over from a wall it cannot. It was written into `dojoWallNear` by
+   * mistake and never into this one, so every reader here got `undefined` —
+   * and `undefined < anything` is false, which made every low kerb in the
+   * tavern a full wall to the plank. Nothing but the plank reads it. */
+  return bd < 0 ? null : { x: bx, z: bz, depth: bd, top: bt };
 }
 const _s2 = { x: 0, z: 0 };
 function seg2(px, pz, ax, az, bx, bz) {          // nearest point on a plan segment
@@ -34623,8 +34628,18 @@ function seg2(px, pz, ax, az, bx, bz) {          // nearest point on a plan segm
  * and summing those throws a body across the island. The beach's own rule
  * for overlapping colliders: take the one you are deepest in, push out of
  * that, and ask again. */
-function keepWallPush(p, r, feet, S = KEEP_SITE) {
-  const lo = feet + S.step + 0.04, hi = feet + 1.75;
+/* AND THE PUSH-OUT AND THE STEP-UP MUST USE THE SAME TOLERANCE — the beach's
+ * own rule (`ROCK_STEP`), which this one never got. The walk lifts you onto
+ * anything within `up` of your feet, and `up` is a STRIDE on the ground and a
+ * JUMP in the air; the push-out always read the standing step, so while you
+ * were airborne every crate and rack whose top stood more than a stride over
+ * your feet was still a wall pushing you off it. Measured, that capped the
+ * tallest thing anyone could climb onto at 1.08 m rather than the 1.34 the
+ * jump actually reaches — which is why the rack's top (1.32 over the crate
+ * that is meant to reach it) could not be got onto at all, and why the climb
+ * to the gallery stopped dead on that crate. */
+function keepWallPush(p, r, feet, S = KEEP_SITE, up = S.step) {
+  const lo = feet + up + 0.04, hi = feet + 1.75;
   let moved = false;
   for (let k = 0; k < 4; k++) {
     const h = keepWallNear(p.x, p.z, r, lo, hi, S); if (!h) break;
@@ -34952,7 +34967,7 @@ function updateKeep(dt) {
     st = keepStandable(p.x, p.z, feet, up);
   }
   pushOutOfKeep(p, KEEP_BODY, feet, up);
-  keepWallPush(p, KEEP_BODY, feet);
+  keepWallPush(p, KEEP_BODY, feet, KEEP_SITE, up);
   // and whatever the push left you standing on still has to hold you up, so
   // the height falls back to the plain floor when you are being ejected
   st = keepStandable(p.x, p.z, feet, up) || keepFloorAt(p.x, p.z, feet, up) || st;
@@ -35503,7 +35518,7 @@ function sfxSetSail() {
 const TAV_X = -6000, TAV_Y = 800, TAV_Z = 12000;
 const TAV_FLOOR = 7.52;                   // the flags, in the pack's metres (the file's own 0.57 at 0.8, plus its own offset)
 const TAV_STEP = 0.42;                    // a lip you walk up (three crates onto the stall's roof is 0.39); a chair's seat (0.50) is a thing you sit on, not a step
-const TAV_AIR = 0.72;                     // in the air a floor this near your feet is caught: a jump lifts you 0.62 and the tallest step on the way to the tunnel is 1.32
+const TAV_AIR = 0.72;                     // in the air a floor this near your feet is caught: a jump lifts you 0.62, so 1.34 is the tallest step there is and no rung on the climb may come near it
 const TAV_BODY = 0.26;
 const TAV_SPAWN = { x: -18.7, z: 1.7, yaw: -Math.PI / 2 - 0.06, pitch: -0.04 };   // Katydid's own thumbnail: bottle rack and barrel front-left, hex crate front-centre, pedestal table front-right, the arch right of centre — matched in the pane
 const TAV_FOG = { color: new THREE.Color(0x07080b), density: 0.0045 };
@@ -35852,9 +35867,19 @@ function clearTavStoreys(plan, y0, y1) {
  * (tops at 1.15, 1.44 and 1.72 over the flags, measured), whose top is a
  * crate's height short of the rack's top, which is a crate's height short of
  * the tunnel. One crate on the hex stack's end, one on the rack. */
-const TAV_STACKS = [[-13.5, -2.25, 1, 1.15], [-12.3, -5.3, 1, 3.53]];   // x, z, crates high, base over the flags
+const TAV_STACKS = [[-13.5, -2.25, 1, 1.15, 1.26], [-12.3, -5.3, 1, 3.53]];   // x, z, crates high, base over the flags, and how tall a crate it is
+/* AND A RUNG AT THE LIMIT OF A JUMP IS A RUNG THAT DOES NOT WORK. A jump
+ * lifts the feet 0.62 and the walk catches a floor TAV_AIR (0.72) under them,
+ * so 1.34 is the tallest step there is — and the rack's top is 3.53 against a
+ * crate whose top was 2.21. That is 1.35. One centimetre, and the climb to
+ * the gallery stopped dead on this crate, which is where the owner was stuck.
+ * Nor is a rung at 1.34 any better: the window in which the ledge is both
+ * catchable AND not a wall is then the last centimetre of the arc, and there
+ * is no time inside it to travel. The crate is the rung, so the crate is what
+ * changes — a taller box, top 2.49, which splits 1.44 -> 3.53 into two jumps
+ * of 1.05 and 1.04 with a third of a metre of arc to spare on each. */
 // the first sits on the LEFT end of the big hex crate (its two little boxes end up inside it), so the
-// right end and the 1.44 box beside it stay clear to be climbed; measured: flags -> the stool 0.58 -> the 1.44 box -> 2.21 -> the rack's top at 3.53 -> 4.59 -> the tunnel at 5.27
+// right end and the 1.44 box beside it stay clear to be climbed; measured: flags -> the stool 0.58 -> the 1.44 box -> 2.21 -> the rack's top at 3.53 -> 4.59 -> the gallery at 5.30
 // (a 1.15 box cannot be jumped onto from the flags: the sweep's band starts 1.08 over the feet at the apex, under its top)
 // the second three-high stack runs the stair up to the stall's roof edge, which
 // the grid puts at z -4.4: from its top the roof is a short jump, half a metre
@@ -35887,15 +35912,16 @@ function buildTavCrates() {
   // without ten crates)
   tavCrateGeo.setIndex(Array.from({ length: tavCrateGeo.attributes.position.count }, (_, i) => i));
   const h = sz.y, w = tavWalk, C = w.cell;
-  for (const [x, z, count, base] of TAV_STACKS) {
+  for (const [x, z, count, base, sy = 1] of TAV_STACKS) {
     for (let k = 0; k < count; k++) {
       const m = new THREE.Mesh(tavCrateGeo, src.material);
-      m.position.set(x, TAV_FLOOR + base + k * h, z);
+      m.position.set(x, TAV_FLOOR + base + k * h * sy, z);
+      m.scale.y = sy;                                     // the geometry stands on the middle of its own bottom, so it grows upward
       m.rotation.y = (k % 2) * Math.PI / 2;               // a stack is never squared up
       m.frustumCulled = false; m.name = 'tavCrate';
       tavWorld.add(m);
     }
-    const top = TAV_FLOOR + base + count * h;
+    const top = TAV_FLOOR + base + count * h * sy;
     if (!tavCells) continue;
     const i0 = Math.floor((x - sz.x / 2 - w.x0) / C), i1 = Math.floor((x + sz.x / 2 - w.x0) / C);
     const j0 = Math.floor((z - sz.z / 2 - w.z0) / C), j1 = Math.floor((z + sz.z / 2 - w.z0) / C);
@@ -35919,28 +35945,41 @@ function buildTavCrates() {
  * and the plank is what crosses what the climb cannot. A barrel was added as
  * a first rung and has been taken out again with the pile it was cloned
  * from — the stool is the first rung. */
-/* TWO JARS AT THE END OF THE PASSAGE. The vaulted passage over the stall
- * runs from x = -8.0 to x = -14.2 at 5.30 over the flags and stops at a
- * blind wall, so there has never been anything down there to have gone for.
- * Two jars of blue blood stand at the far end of it, on the floor the walk
- * itself answers with, and they are taken by the same `dropJar` the first
- * cache uses — so the count in the corner and the stack in the pack cannot
- * get out of step with what the beach hands out. */
+/* TWO JARS AT THE BACK OF THE TUNNEL. Off the gallery's far end a two-metre
+ * bore runs eleven metres into the rock at 7.19 over the flags and ends in a
+ * blind wall, and it is the one place in this building there has never been
+ * anything to go down there for. The first pass put the jars on the OPEN
+ * GALLERY instead — 5.30, in front of the arch rather than through it — and
+ * the owner photographed them lying out on the rug. They are in the bore now.
+ *
+ * AND BOTH ENDS OF IT ARE FOUND, NOT TYPED. The floor is walked back from the
+ * landing until it runs out, and the bore is then measured ACROSS at that
+ * last station so the pair stands on its centreline whatever the model does.
+ * They are the beach's own `dropJar`, so the count in the corner and the
+ * stack in the pack cannot get out of step with what the first cache hands
+ * out. */
+const TAV_BORE = { x: -12.75, z0: -13.0, floor: 6.8 };   // a station on the bore's line, and the height that is still "the bore"
 function buildTavJars() {
   if (!tavWorld || tavWorld.userData.jars || !tavWalk) return;
   tavWorld.userData.jars = true;
-  // the far end is FOUND: the last station of the passage the walk still has
-  // a floor at, not a number typed in
-  let endX = null;
-  for (let x = -8.0; x >= -16.0; x -= 0.1) {
-    const st = keepStandAt(TAV_X + x, TAV_Z - 7.0, TAV_Y + TAV_FLOOR + 5.45, 0.6, TAV_SITE);
-    if (!st || st.f - TAV_Y - TAV_FLOOR < 4.9) break;
-    endX = x;
+  const on = (x, z) => {
+    const st = keepStandAt(TAV_X + x, TAV_Z + z, TAV_Y + TAV_FLOOR + 7.3, 0.7, TAV_SITE);
+    return st && st.f - TAV_Y - TAV_FLOOR > TAV_BORE.floor ? st.f : null;
+  };
+  let endZ = null;
+  for (let z = TAV_BORE.z0; z >= -32.0; z -= 0.1) { if (!on(TAV_BORE.x, z)) break; endZ = z; }
+  if (endZ === null) return;
+  const az = endZ + 0.55;                          // a stride off the back wall
+  let x0 = null, x1 = null;
+  for (let x = TAV_BORE.x - 3.0; x <= TAV_BORE.x + 3.0; x += 0.1) {
+    if (!on(x, az)) continue;
+    if (x0 === null) x0 = x;
+    x1 = x;
   }
-  if (endX === null) return;
-  const st = keepStandAt(TAV_X + endX, TAV_Z - 7.0, TAV_Y + TAV_FLOOR + 5.45, 0.6, TAV_SITE);
-  const y = st.f + 0.02;
-  for (const dz of [-0.42, 0.42]) dropJar(TAV_X + endX + 0.45, TAV_Z - 7.0 + dz, y);
+  if (x0 === null) return;
+  const cx = (x0 + x1) / 2, f = on(cx, az);
+  if (f === null) return;
+  for (const dx of [-0.42, 0.42]) dropJar(TAV_X + cx + dx, TAV_Z + az, f + 0.02);
 }
 
 /* A thing put in the room after the pack has to say so in the grid, or the
@@ -35988,6 +36027,7 @@ function tavCellTop(x, z, r, top) {
 const TAV_PLANK = { len: 3.20, w: 0.46, t: 0.10 };
 const TAV_PLANK_HOME = { x: -10.4, z: -8.9 };
 let tavPlankMesh = null, tavPlankProp = null, tavPlankTexC = null;
+let tavPlankWant = null;                           // the slope it is turning toward, eased
 let tavPlankYaw = 0.35, tavPlankPitch = 0, tavPlankPitchV = 0, tavPlankRest = false;
 function tavPlankTex() {
   if (tavPlankTexC) return tavPlankTexC;
@@ -36050,7 +36090,7 @@ function tavThrownHits() {
 function tavPropWall(p, r, half) {
   if (!tavWalls) return;
   p.x = THREE.MathUtils.clamp(p.x, TAV_X - 20.1, TAV_X + 1.2);
-  p.z = THREE.MathUtils.clamp(p.z, TAV_Z - 10.6, TAV_Z + 7.4);
+  p.z = THREE.MathUtils.clamp(p.z, TAV_Z - 25.0, TAV_Z + 7.4);   // the bore runs back to -24.6: a body may be carried into it
   for (let k = 0; k < 4; k++) {
     const h = keepWallNear(p.x, p.z, r, p.y - Math.max(0.12, half), p.y + 0.45, TAV_SITE);
     if (!h) break;
@@ -36111,6 +36151,7 @@ function tavPlankGround(x, z, y) {
  * the UPPER CONVEX HULL of what is under it, which is what a real one does. */
 const _tpU = new Float64Array(24), _tpH = new Float64Array(24);
 let _tpNs = 0;
+const _tpKey = { x: 0, z: 0, y: 0, yaw: 0, pitch: 0, n: -1 };   // the pose the supports were solved for
 const TAV_PLANK_M = 0.97;                          // it slides rather than standing on end
 function tavPlankSupports(x, z, y) {
   const hl = TAV_PLANK.len / 2, a = tavPlankAxis();
@@ -36120,15 +36161,51 @@ function tavPlankSupports(x, z, y) {
    * read them all as level, and solved a flat line: a plank dropped over
    * the edge of the bar lay across it in mid-air instead of falling into a
    * ramp. This is the one place both callers pass through. */
+  /* AND A STATION IS 0.32 m OF BOARD, NOT A POINT. Sampled at its middle
+   * alone, the station that lands on the EDGE of a step reads the floor one
+   * side of it or the crown the other, and the two are two metres apart: a
+   * board balanced there chattered between them, jumping 0.14 m every ten
+   * frames for ever, which is the ramp "moving" after it has been put down.
+   * A rigid board may not pass through anything under ANY part of it, so
+   * each station is asked about its own whole length and takes the highest
+   * answer — under-sampling a step is the one error that lets timber sink
+   * into stone, so the bias is deliberately the safe way. */
+  /* AND A BOARD THAT IS NOT GOING ANYWHERE KEEPS THE ANSWER IT HAS. What is
+   * under a station is asked at the station's own height, which is right —
+   * a board falling past a ledge must not be caught by it — and it is also
+   * the last knife-edge: a support a hair over the probe appears as the
+   * board settles up and vanishes as it settles down, and 2.1 m of step
+   * flicking in and out is a board that breathes for ever. While the pose
+   * in PLAN has not moved and it is not falling, the answer stands. */
+  if (_tpKey.n >= 0 && !tavPlankProp.held && Math.abs(y - _tpKey.y) < 0.35
+      && Math.abs(x - _tpKey.x) < 1e-4 && Math.abs(z - _tpKey.z) < 1e-4
+      && Math.abs(tavPlankYaw - _tpKey.yaw) < 1e-5 && Math.abs(tavPlankPitch - _tpKey.pitch) < 1e-5) {
+    _tpNs = _tpKey.n;
+    return _tpNs;
+  }
   const was = _selfProp; _selfProp = tavPlankProp;
+  const du = hl / (TAV_PLANK_N - 1);           // its own half-share of the board, either side
   _tpNs = 0;
   for (let i = 0; i < TAV_PLANK_N; i++) {
-    const u = (i / (TAV_PLANK_N - 1) - 0.5) * 2 * hl, dy = a.y * u;
-    const g = tavPlankGround(x + a.x * u, z + a.z * u, y + dy + 0.30);
+    const u = (i / (TAV_PLANK_N - 1) - 0.5) * 2 * hl;
+    let g = null;
+    for (const uu of [u - du, u, u + du]) {
+      /* AND IT IS ASKED ON A TWO-CENTIMETRE GRID. A board at rest on the
+       * edge of a step moves a tenth of a millimetre as its pitch settles,
+       * and that was enough to carry a station across the boundary between
+       * two cells whose floors are two metres apart — so it flipped, the
+       * board jumped, the pitch moved, and it flipped back for ever. A body
+       * that has come to rest must not change its mind about what is under
+       * it because it twitched. */
+      const q = tavPlankGround(Math.round((x + a.x * uu) * 50) / 50,
+        Math.round((z + a.z * uu) * 50) / 50, y + a.y * uu + 0.30);
+      if (q !== null && (g === null || q > g)) g = q;
+    }
     if (g === null) continue;
     _tpU[_tpNs] = u; _tpH[_tpNs] = g; _tpNs++;
   }
   _selfProp = was;
+  _tpKey.x = x; _tpKey.z = z; _tpKey.y = y; _tpKey.yaw = tavPlankYaw; _tpKey.pitch = tavPlankPitch; _tpKey.n = _tpNs;
   return _tpNs;
 }
 // the centre height a board at this slope needs, over the supports it has
@@ -36193,7 +36270,14 @@ function tavPlankWall(p, r, half, vel) {
    * end driven into masonry is the one case where along IS the overlap. */
   for (let k = 0; k < 5; k++) {
     const a = tavPlankAxis();
-    const px = -a.z, pz = a.x;                       // across the board, in plan
+    /* AND THE PLAN AXIS HAS TO BE A UNIT VECTOR. `a` is the board's axis in
+     * SPACE, so its horizontal part is only cos(pitch) long — which on a
+     * ramp at forty degrees is 0.77, and every distance measured against it
+     * came out a fifth short. The along-tolerance therefore GREW exactly as
+     * the board steepened, which is precisely when it must not. */
+    const hp = Math.max(1e-6, Math.hypot(a.x, a.z));
+    const ax = a.x / hp, az = a.z / hp;
+    const px = -az, pz = ax;                         // across the board, in plan
     const half = TAV_PLANK.w / 2 + 0.03;
     let best = null, bu = 0;
     for (let i = 0; i < TAV_PLANK_N; i++) {
@@ -36201,38 +36285,48 @@ function tavPlankWall(p, r, half, vel) {
       const sx = p.x + a.x * u, sz = p.z + a.z * u, sy = p.y + a.y * u;
       const end = (i === 0 || i === TAV_PLANK_N - 1);
       /* AND A LIP IS NOT A WALL, WHICH IS A QUESTION ABOUT THE FACE'S OWN
-       * CROWN. Read with a band that starts over the board, the riser of the
-       * step into the vaulted passage — which tops out four centimetres
-       * above the station leaning on it — came back as a wall, and the ramp
-       * was walked sideways off the stall roof and into the hall. Raising
-       * the band until it cleared the riser let the board through and let it
-       * through everything else as well. So the band is opened DOWNWARD and
-       * the face is judged by its top instead: anything whose crown is under
-       * a hand over the timber is a lip the timber lies across. */
+       * CROWN — and until now it was a question nothing could answer, because
+       * the crown was written into the DOJO's copy of `keepWallNear` and never
+       * into this one. `h.top` came back undefined, `undefined < anything` is
+       * false, and so every kerb, every step and every stall lip in the hall
+       * was a full wall to the board: the one rule that lets a plank lie
+       * ACROSS a step had never once run. It is the crown now, and a lip is
+       * something the timber lies ON, so the crown may stand no higher than
+       * the board's own middle — at a hand's breadth (the number this file
+       * used to claim) it is eight centimetres of stone through the top edge
+       * of the plank, measured. */
       const h = keepWallNear(sx, sz, TAV_PLANK.w / 2 + 0.05, sy - 0.03, sy + 0.55, TAV_SITE);
-      if (!h || h.top < sy + 0.13) continue;
+      if (!h || h.top < sy + 0.04) continue;
       const ox = sx - h.x, oz = sz - h.z;
       let nx, nz, d;
       if (end) { const L = Math.hypot(ox, oz); if (L < 1e-5) continue; nx = ox / L; nz = oz / L; d = h.depth; }
       else {
-        const along = ox * a.x + oz * a.z, across = ox * px + oz * pz;
-        if (Math.abs(along) > 0.16) continue;        // ahead of this station: the board passes OVER it
-        d = half - Math.abs(across);
-        if (d <= 0) continue;                        // beside the station, not inside the board
-        const s = across < 0 ? -1 : 1;
-        nx = px * s; nz = pz * s;
+        /* AND OUT OF THE SHALLOWER FACE OF ITS OWN FOOTPRINT. A station is a
+         * box: 0.32 m of board along by 0.46 across. A face DEAD AHEAD of
+         * one — which is what the riser of a step is to the station leaning
+         * against it — was answered with the FULL half-width sideways, and
+         * five iterations of that walked a ramp a metre and a quarter off
+         * the ledge in a single frame. That is the board "flying away" the
+         * moment it is put down. It is pushed out of its own box the short
+         * way, like every other body here, so a face merely in front of a
+         * station moves it centimetres along its own length instead. */
+        const along = ox * ax + oz * az, across = ox * px + oz * pz;
+        const oa = 0.16 - Math.abs(along), oc = half - Math.abs(across);
+        if (oa <= 0 || oc <= 0) continue;            // not inside this station at all
+        if (oa < oc) { d = oa; const t = along < 0 ? -1 : 1; nx = ax * t; nz = az * t; }
+        else { d = oc; const t = across < 0 ? -1 : 1; nx = px * t; nz = pz * t; }
       }
       if (!best || d > best.d) { best = { nx, nz, d }; bu = u; }
     }
     if (!best) break;
     const dd = best.d + 0.002, pxv = best.nx * dd, pzv = best.nz * dd;
     p.x += pxv; p.z += pzv;
-    tavPlankYaw += THREE.MathUtils.clamp(bu * (a.z * pxv - a.x * pzv) / (hl * hl) * 0.9, -0.16, 0.16);
+    tavPlankYaw += THREE.MathUtils.clamp(bu * (az * pxv - ax * pzv) / (hl * hl) * 0.9, -0.16, 0.16);
     moved = true;
   }
   if (moved && vel) { vel.x *= 0.55; vel.z *= 0.55; }
   p.x = THREE.MathUtils.clamp(p.x, TAV_X - 20.1, TAV_X + 1.2);
-  p.z = THREE.MathUtils.clamp(p.z, TAV_Z - 10.6, TAV_Z + 7.4);
+  p.z = THREE.MathUtils.clamp(p.z, TAV_Z - 25.0, TAV_Z + 7.4);   // the bore runs back to -24.6: a body may be carried into it
 }
 /* AND WHICH WAY IT LIES IS THE LINE IT WOULD FALL TO. Held, it points where
  * you look and rides level, so you aim at the step and the board is already
@@ -36256,7 +36350,7 @@ function tavPlankSettle(prop, dt) {
       tavPlankYaw += d * Math.min(1, 9 * dt);
     }
     tavPlankPitch += (0 - tavPlankPitch) * Math.min(1, 9 * dt);
-    tavPlankPitchV = 0; tavPlankRest = false;
+    tavPlankPitchV = 0; tavPlankRest = false; tavPlankWant = null;
     /* AND A CARRIED BOARD IS PULLED IN BY WHAT IS IN FRONT OF IT. This is
      * the whole of how it ended up lying inside the masonry: three metres of
      * plank pointing where you look, carried up to a wall, reaches a metre
@@ -36284,16 +36378,48 @@ function tavPlankSettle(prop, dt) {
     const rest = n ? tavPlankRestSlope() : null;
     // in contact with what is under it, or still in the air?
     if (rest && cur !== null && p.y - prop.restH <= cur + 0.06) {
-      const want = Math.asin(rest.m);
+      /* AND A BOARD DOES NOT CHASE A TARGET THAT CHANGES EVERY FRAME. Laid
+       * against the edge of a step, the station nearest the crown is either
+       * on it or not — and the two answers want slopes a tenth of a radian
+       * apart, so the board turned hard one way, which moved the station off
+       * the step, which turned it hard back: a real bistable hunt, and what
+       * the owner watched the ramp do after he put it down. The slope it is
+       * turning toward is EASED, so what the board follows is the average of
+       * an argument the sampling cannot settle, and it sleeps on it. The
+       * height it rests at is still solved fresh every frame, so no amount
+       * of easing can let it sink into anything. */
+      const want0 = Math.asin(rest.m);
+      tavPlankWant = tavPlankWant === null ? want0
+        : tavPlankWant + (want0 - tavPlankWant) * Math.min(1, 3.5 * dt);
+      const want = tavPlankWant;
       const d = want - tavPlankPitch;
-      if (Math.abs(d) < 0.004) { tavPlankPitch = want; tavPlankPitchV = 0; }
+      /* AND THE SNAP HAS TO BE FINER THAN THE CHATTER, or it IS the chatter:
+       * at 0.004 it landed the pitch exactly on whichever rest slope the
+       * frame had just solved, which moved the stations, which flipped the
+       * support back. The ease below converges on the middle of the two and
+       * the board sleeps. */
+      /* AND A BOARD AT REST SLEEPS. The last three degrees of the turn are
+       * the ones that cannot be solved: a station sitting on the EDGE of a
+       * step reads the floor one frame and the crown the next, two metres
+       * apart, and any amount of easing or rounding only moves where the
+       * knife-edge is. So a board that has stopped moving and is within a
+       * few degrees of the slope its supports allow is simply left alone —
+       * and since the HEIGHT is still solved fresh every frame, sleeping a
+       * little off the ideal slope can never let the timber into the stone.
+       * Anything that disturbs it gives it speed again and wakes it. */
+      /* AND WHAT COUNTS AS STILL IS WHETHER IT IS SLIDING. A board settling
+       * onto its supports bobs vertically — that is the solver, not motion —
+       * and testing the whole velocity woke the turn on every bob, which
+       * moved the stations and flipped the support that caused the bob. */
+      const slow = prop.vel.x * prop.vel.x + prop.vel.z * prop.vel.z < 0.05;
+      if (Math.abs(d) < 0.0006 || (slow && Math.abs(d) < 0.06)) { tavPlankPitchV = 0; }
       else {
         tavPlankPitchV = THREE.MathUtils.clamp(tavPlankPitchV + Math.sign(d) * 11 * dt, -5, 5);
         const s = tavPlankPitchV * dt;
         if (Math.abs(s) >= Math.abs(d)) { tavPlankPitch = want; tavPlankPitchV *= -0.10; }
         else tavPlankPitch += s;
       }
-    } else tavPlankPitchV = 0;                     // in the air it keeps the angle it left with
+    } else { tavPlankPitchV = 0; tavPlankWant = null; }   // in the air it keeps the angle it left with
     const still = prop.vel.lengthSq() < 0.03 && Math.abs(tavPlankPitchV) < 0.06;
     if (still !== tavPlankRest) { tavPlankRest = still; if (still) TAV_G.dirty = true; }
   }
@@ -36672,7 +36798,7 @@ function updateTavern(dt) {
     st = keepFloorAt(p.x, p.z, feet, up, S);
   }
   pushOutOfKeep(p, TAV_BODY, feet, up, S);
-  keepWallPush(p, TAV_BODY, feet, S);
+  keepWallPush(p, TAV_BODY, feet, S, up);
   pushOutOfTavTables(p, TAV_BODY, feet);
   st = keepFloorAt(p.x, p.z, feet, up, S) || st;
   if (!st) { p.x = _preMove.x; p.z = _preMove.z; st = keepFloorAt(p.x, p.z, feet, up, S); }
@@ -37672,6 +37798,18 @@ window.__bw = {
   get tavPlank() { return tavPlankMesh && { yaw: +tavPlankYaw.toFixed(2), pitch: +tavPlankPitch.toFixed(2), rest: tavPlankRest, held: held === tavPlankProp, floors: tavPlankFloors().length,
     p: [+(tavPlankMesh.position.x - TAV_X).toFixed(2), +(tavPlankMesh.position.y - TAV_Y).toFixed(2), +(tavPlankMesh.position.z - TAV_Z).toFixed(2)] }; },
   get interactables() { return interactables; }, set fallbackLook(v) { fallbackLook = v; },   // a prompt can only be read with a look in charge, and the pane cannot lock
+  // what the board believes is under it, station by station — the one thing
+  // that cannot be measured from outside, because the board publishes its own
+  // top as a floor and every probe made from the harness finds that instead
+  tavPlankProbe() {
+    const m = tavPlankMesh; if (!m) return null;
+    const n = tavPlankSupports(m.position.x, m.position.z, m.position.y);
+    const out = [];
+    for (let i = 0; i < n; i++) out.push([+_tpU[i].toFixed(3), +(_tpH[i] - TAV_Y - TAV_FLOOR).toFixed(3)]);
+    return { n, sup: out, m: +Math.sin(tavPlankPitch).toFixed(4),
+      lift: +(tavPlankLift(Math.sin(tavPlankPitch)) - TAV_Y - TAV_FLOOR).toFixed(4),
+      rest: tavPlankRestSlope() };
+  },
   get tavWorld() { return tavWorld; }, get tavTables() { return tavTables; }, get tavChairs() { return tavChairs; },
   get wongUnit() { return wongUnit; }, get drunkUnit() { return drunkUnit; }, tavScene, tavProvoke, buildTavCast, get tavMug() { return tavMug; },
   tavState: () => ({ inTavern, ready: tavReady, built: tavBuilt, walk: !!tavWalk, cells: tavCells ? tavCells.size : 0, busy: tavBusy, t: +tavT.toFixed(2),
