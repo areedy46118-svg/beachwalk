@@ -2053,11 +2053,18 @@ export function makeUndercroft(opts = {}) {
        * exactly right for one that is only ever a mirror — so the diffuse
        * term is a sixth of that colour and stays as dark as the rock, and
        * every highlight that lands on it comes back warm. */
-      m.color.setHex(0x8a5c2e);
-      m.emissive.setHex(0x0b0704);
+      /* AND THE COLOUR IS THE LAMP'S, EXACTLY. It shipped at 0x8a5c2e — the
+       * altar lamp's hue at half its level — and the owner asked for the
+       * reflection to be the altar's own light. On a mirror the base colour
+       * IS the reflected colour, so it is the candles' point light
+       * (0xffa951, main.js) at full, with the metalness up so almost none
+       * of it is left over as diffuse: what lies on the water is the
+       * candlelight and the stone under it stays as dark as the rock. */
+      m.color.setHex(0xffa951);
+      m.emissive.setHex(0x0d0803);
       m.emissiveIntensity = 1;
-      m.roughness = 0.14;
-      m.metalness = 0.86;
+      m.roughness = 0.12;
+      m.metalness = 0.93;
       m.needsUpdate = true;
     });
     smoothRock(root);

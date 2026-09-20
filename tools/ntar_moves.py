@@ -60,7 +60,7 @@ from mathutils import Vector, Quaternion, Matrix
 # skeletons, and neither of them cares which — the quantity this writes is
 # the rotation a bone has UNDERGONE, which knows nothing about either rig.
 #   blender -b -P tools/ntar_moves.py -- knight
-SET = next((a for a in ('knight', 'wong', 'drunk', 'orc') if a in sys.argv), 'ntar')
+SET = next((a for a in ('knight', 'wong', 'drunk', 'orc', 'crawler') if a in sys.argv), 'ntar')
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', SET + '-moves.json')
 SRC = os.path.expanduser('~/Downloads')
 FPS = 30
@@ -204,6 +204,19 @@ CLIPS = [
 if SET == 'wong': CLIPS = WONG_CLIPS
 if SET == 'drunk': CLIPS = DRUNK_CLIPS
 if SET == 'orc': CLIPS = ORC_CLIPS
+# ---- AND THE CATACOMBS MONSTER'S CRAWL. The owner's own "Running Crawl",
+# dropped loose in ~/Downloads: a Mixamo clip of a body going flat out on
+# all fours. Everything else the creature does is authored in the game on
+# THIS clip's first frame, which is the crouched stance a crawler has and
+# the bind pose (a standing zombie in an A) does not.
+CRAWLER_CLIPS = [
+    ('Running Crawl', 'crawl', 'flat out on all fours', ''),
+    # AND THE OWNER'S "Mutant Run": eighteen frames of a hunched two-legged
+    # lope, 1.95 m a cycle, hips 0.1-0.2 m under the rest hips and the head
+    # a third of a metre under. He comes up off his hands for it sometimes.
+    ('Mutant Run', 'run', 'a hunched lope on two legs', ''),
+]
+if SET == 'crawler': CLIPS = CRAWLER_CLIPS
 # THE BEATS, measured off the hips (see the log's own curve). A Mixamo clip
 # is a performance with an approach and a recovery either side of the thing
 # you want, and the game needs the thing:
@@ -274,7 +287,22 @@ CONTACT = {'nSweep': 'RightToeBase'} if SET != 'orc' else {
     'oSpin': 'RightHand', 'oLeap': 'RightHand', 'oSlide': 'RightHand',
     'oKick': 'RightToeBase',
 }
-REST_FWD = SET == 'orc'
+REST_FWD = SET in ('orc', 'crawler')
+# ---- AND A CLIP THAT NEVER STANDS UP IS MEASURED FROM THE REST POSE.
+# `hipY` is the hips' offset from the clip's FIRST frame, which is right for
+# every clip that begins with a body standing — and the crawl begins on all
+# fours, so measured from itself its hips read as never having dropped, and
+# the game would play the crawl with the pelvis at standing height and the
+# knees in the air. These are measured from the REST hips instead, the way
+# `getUp` is measured from its last frame: the number the game wants is how
+# far below where this rig binds its hips the clip actually carries them.
+HIP_FROM_REST = {'crawl', 'run'} if SET == 'crawler' else set()   # the run is hunched: its hips sit under the rest hips too
+if SET == 'crawler':
+    KEEP_YAW = set()
+    FORCE_FLAT_YAW = {c[1] for c in CLIPS}
+    # the run is an eighteen-frame cycle; the importer pads it with a held
+    # tail (frames 18..21 still), and a held tail in a loop is a hitch
+    WINDOW = {'run': (0, 17)}
 if SET == 'orc':
     # the game turns him at the player every frame, so nothing may turn his
     # hips as well — except the spin, where the turn IS the move, and the
@@ -487,6 +515,7 @@ def main():
         tracks = {b: [] for b in bones}
         hipY, travel = [], []
         h0 = CONV @ hips[0]
+        hy0 = restPos['Hips'].y if name in HIP_FROM_REST else h0.y   # see HIP_FROM_REST
         for i in range(end + 1):
             # de-yaw about the hips' start, if this clip turns and should not
             undo = Quaternion((0, 1, 0), -(hipyaw(i) - y0)) if flat else Quaternion()
@@ -499,7 +528,7 @@ def main():
                     d = Quaternion((-d.w, -d.x, -d.y, -d.z))
                 tracks[b].extend([r4(d.x), r4(d.y), r4(d.z), r4(d.w)])
             hp = undo @ (CONV @ hips[i] - h0)
-            hipY.append(r4(hp.y))
+            hipY.append(r4((CONV @ hips[i]).y - hy0))
             travel.append([r4(hp.x), r4(hp.z)])
 
         # ---- AND A CLIP THAT STARTS ON THE FLOOR IS MEASURED FROM ITS END.
