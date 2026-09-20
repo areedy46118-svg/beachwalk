@@ -3222,8 +3222,15 @@ function cullBeyondFog() {
     else if (o.userData.bwCulled) { o.visible = true; o.userData.bwCulled = false; }
   }
 }
+/* AND EVERY ROOM THAT IS NOT ON THIS BEACH NEEDS IT, NOT JUST THE HALL. The
+ * camera's far plane is five kilometres; the dojo is six thousand metres out,
+ * the keep six, the tavern twelve — so from any of them the whole beach sits
+ * inside the frustum and is rasterised behind the walls, exactly as it was in
+ * the hall. Measured standing in the dojo courtyard: 219,648 triangles a
+ * frame, of which the courtyard itself is 38,263. Three rooms have been added
+ * since this was written and not one of them was on the list. */
 function cullWorldInHall() {
-  if (inShrine || inUndercroft) {
+  if (inShrine || inUndercroft || inDojo || inKeep || inTavern) {
     if (!hallHid) {
       hallHid = [];
       for (const o of scene.children) {
@@ -21351,6 +21358,7 @@ function updateMutantUnit(u, dt) {
    * — how fast the thing can physically come round — and it is what stops a
    * creature that has just been handed a new direction (a route, a
    * waypoint, a player who walked behind it) arriving at it in one frame. */
+  if (u.st.baitCool > 0) u.st.baitCool -= dt;
   const turn = (rate) => {
     let d = _smileTurn(u.g.rotation.y, face) * Math.min(1, dt * rate);
     const cap = (u.kind.turnMax || 0) * dt;
@@ -21373,6 +21381,21 @@ function updateMutantUnit(u, dt) {
     const gf = UC.floorAt(u.g.position.x - UC_X, u.g.position.z - UC_Z, u.kind.crushes);
     if (gf !== null) {
       const dy = (UC_Y + gf) - u.g.position.y, ad = Math.abs(dy);
+      u.g.position.y += ad < 0.02 ? dy
+        : Math.sign(dy) * Math.min(ad, Math.max(ad * dt * 10, 3.5 * dt));
+    }
+  }
+  /* AND THE COURTYARD'S FLOOR, WHICH NOBODY HAD EVER GIVEN HIM. The
+   * undercroft sets a creature's height and the tavern sets a creature's
+   * height and the dojo set NOTHING AT ALL — so he walked the ring at
+   * whatever y he was spawned at, which is level with the courtyard and
+   * therefore inside the ground wherever it rises, and inside the stairs the
+   * moment he set foot on one. Same easing as the other two: a riser is
+   * crossed in a fifth of a second, never snapped. */
+  if (u.kind.dojo && dojoReady) {
+    const dst = dojoStoreyAt(u.g.position.x, u.g.position.z, u.g.position.y + 0.25, 1.2);
+    if (dst) {
+      const dy = dst.f - u.g.position.y, ad = Math.abs(dy);
       u.g.position.y += ad < 0.02 ? dy
         : Math.sign(dy) * Math.min(ad, Math.max(ad * dt * 10, 3.5 * dt));
     }
@@ -21655,6 +21678,23 @@ function updateMutantUnit(u, dt) {
     if (u.st.feint > 0 && t >= A.wind * u.st.feint) {
       u.st.feint = 0; u.st.atk = -1; u.st.chainAt = -1;
       u.st.cool = 0.12 + Math.random() * 0.14;
+      /* AND A KIND THAT BAITS GIVES GROUND ON IT. A feint alone is an arm
+       * that starts and stops, which is legible only if you were already
+       * watching the arm; a feint that ALSO steps back is unmistakable from
+       * anywhere — he showed you the swing, you moved, and he is not there
+       * any more. That is the fake-out, and it costs nothing, because the
+       * feint had already decided not to swing.
+       *
+       * IT IS HUNG HERE RATHER THAN ON THE "DECLINED TO SWING" BRANCH for a
+       * measured reason: at `press` 0.82 he almost never declines, so that
+       * branch fired ONCE in forty-five seconds at any probability worth
+       * having — while feints run at `kind.feint` of every swing, which is
+       * several a minute. Put the behaviour where the fight actually goes. */
+      if (u.kind.baits && (u.st.baitCool || 0) <= 0 && Math.random() < u.kind.baits) {
+        u.st.back = Math.max(u.st.back || 0, u.kind.baitBack || 0.42);
+        u.st.cool += 0.10;                  // the pause after it is what sells it
+        u.st.baitCool = u.kind.baitGap || 5.0;
+      }
       mutAnim(u, dt, 0);
       return;
     }
@@ -22048,8 +22088,20 @@ function updateMutantUnit(u, dt) {
         u.st.swing = pick; u.st.atk = 0; u.st.chained = false; u.st.chainN = 0; u.st.wait = 0;
         u.st.feint = (u.st.swings > 1 && Math.random() < u.kind.feint) ? 0.55 + Math.random() * 0.2 : 0;
         sfxMutTell(dist, u.atk[pick].wind, u.kind.voice);
-      } else if (!wantSwing && maySwing && u.kind.use.attack4 && Math.random() > u.kind.circle) {
-        u.st.back = 0.42;                     // it keeps the turn through the step
+      } else if (!wantSwing && maySwing && (u.kind.baits !== undefined
+                   ? Math.random() < u.kind.baits
+                   : (u.kind.use.attack4 && Math.random() > u.kind.circle))) {
+        /* THE BAIT. This branch — hold the turn, give ground, come back in —
+         * existed already and was gated on owning `attack4`, which is a
+         * MUTANT'S clip name: every kind that does not happen to have that
+         * one swing could never step back at all, so the samurai stood in
+         * your face for the whole fight and the only thing he ever did with
+         * a turn was throw it. `baits` lets a kind ask for it by name.
+         *
+         * It is the most calculated thing he does: he keeps the token through
+         * the step, so the swing is still coming — he has simply chosen to
+         * make you move first. */
+        u.st.back = u.kind.baitBack || 0.42;   // it keeps the turn through the step
       } else {
         u.st.side = flankSide(u, mutants, mutToken, MUT_SLOT_ANG);   // and the circling spreads them
         u.st.sideT = 0.5 + Math.random() * 0.8;
@@ -32431,6 +32483,25 @@ const PORTAL_STEP = 1.05;          // "the middle" is this close to the axis
 const PORTAL_HEAR = 34;            // the hum reaches this far
 
 const DOJO_X = 6000, DOJO_Y = 800, DOJO_Z = 6000;
+/* AND IT IS PACKED AT HALF THE SIZE OF THE MAN WALKING IT. The note below
+ * says it is packed at true scale and it is not: measured in the game, the
+ * approach steps rise 6.6 cm against a real stone step's 15-18, the seated
+ * Buddha is 1.81 m against the 3 m-plus a temple gives one, and the whole
+ * walled ring is 18 m across. A step you step OVER rather than UP is the
+ * tell, and it is the same tell the dock's hatch boards gave: anything whose
+ * crown lands under a stride is not the thing it is drawn as.
+ *
+ * SO THE WHOLE ROOM IS SCALED, NOT REBUILT. `dojoWorld` carries it and every
+ * lookup below converts — the grid rides in the file in the model's own units
+ * and is read through `DOJO_S`, the drawn faces are read off `matrixWorld` and
+ * so scale for free, and anything the player's own body owns (his radius, the
+ * lip he climbs, the drop he takes) is NOT scaled, because the player did not
+ * change size. The one number to turn is here. */
+const DOJO_S = 2.0;                    // the courtyard is twice the size it ships at
+const dsX = (mx) => DOJO_X + mx * DOJO_S;   // model -> world, and back
+const dsZ = (mz) => DOJO_Z + mz * DOJO_S;
+const dmX = (wx) => (wx - DOJO_X) / DOJO_S;
+const dmZ = (wz) => (wz - DOJO_Z) / DOJO_S;
 /* THE PORTAL OPENS ON A COURTYARD NOW, NOT A BURNT HALL. dasy444's "An
  * overgrown Japanese-style location" (Sketchfab Standard) replaces
  * matiasmgru's scorched dojo, and it is a better thing in three separate
@@ -32447,7 +32518,18 @@ const DOJO_X = 6000, DOJO_Y = 800, DOJO_Z = 6000;
  * longest reach is 2.55 with a 1.3 m lunge. It is packed at true scale
  * because of that — scaling it up would have cost the ground texture the
  * density the artist set on the surface you stand closest to. */
-const DOJO_IN = { x: -0.5, z: -5.0 };  // the south of the dais, with the fountain and the statue ahead
+/* WHERE YOU ARRIVE: ON THE FLAT IN FRONT OF THE EAST STAIR, LOOKING DOWN THE
+ * COURTYARD AT THE FOUNTAIN. It used to set you down at (-0.5, -5) facing the
+ * statue, which at this scale is a metre from an ivy wall with the Buddha out
+ * of frame — the first thing you saw was masonry. From the foot of the stair
+ * the whole ring opens in front of you: the fountain running in the middle of
+ * it, the statue with the sword in its head beyond, and the arena you are
+ * about to fight in laid out end to end.
+ *
+ * It is written in the MODEL's units because `placeInDojo` runs it through
+ * `dsX`/`dsZ`, so it survives a change to `DOJO_S`. World-local it is (10, 0),
+ * a metre short of the first step — the stair's own foot is at x = 11. */
+const DOJO_IN = { x: 5.0000, z: 0.0000 };
 /* AND IT IS AIMED AT THE STATUE, NOT DOWN THE AXIS — which is also how it
  * avoids a decomposition that has no answer. `lookEuler` is YXZ, and a
  * pitch of EXACTLY zero with a yaw of EXACTLY pi is a 180-degree rotation
@@ -32456,8 +32538,8 @@ const DOJO_IN = { x: -0.5, z: -5.0 };  // the south of the dais, with the founta
  * player arrived UPSIDE DOWN. Every other placement in this file passes a
  * small non-zero pitch and not one of them is a coincidence. This one is
  * the real bearing to the head of the Buddha, which is off the axis anyway. */
-const DOJO_IN_YAW = -3.0843;              // atan2(-dx, -dz) from DOJO_IN to the statue
-const DOJO_IN_PITCH = 0.03;            // and a shade up: his head is 2.17 and your eye is 1.84
+const DOJO_IN_YAW = 1.5708;               // atan2(-dx, -dz) from the spawn to the fountain
+const DOJO_IN_PITCH = 0.02;            // never exactly zero: a YXZ decomposition of a flat half-turn is ambiguous
 /* THE STATUE, AND WHERE THE SWORD GOES INTO IT. A seated Buddha against the
  * north wall, 1.81 m of it. Sliced by height on its own vertices, the
  * shoulders narrow at 1.44, the neck is 1.53-1.62 and the HEAD is 1.62 to
@@ -32465,9 +32547,36 @@ const DOJO_IN_PITCH = 0.03;            // and a shade up: his head is 2.17 and y
  * inside the skull. Measured, not guessed: the packer bakes to world space
  * and leaves every node at the identity, so a `Box3` is the only thing that
  * knows where anything in here is. */
+/* THE FOUNTAIN, MEASURED THE SAME WAY THE STATUE WAS. Binning every vertex
+ * standing between 0.6 and 3.0 m over the courtyard onto a one-metre grid,
+ * one cell comes back with 3,959 of them and the next with a quarter of that:
+ * the tiered basin, at (-1, 0) in world metres off the ring's middle. It is
+ * also the flood's seed, because whatever else moves, the fountain is the
+ * middle of this room. */
+const DOJO_FOUNT = { x: -0.947, z: -0.015 };   // measured off the fountain island's own bounds
 const YARD_STATUE = 'node_0005_jo2_0';
 const YARD_HEAD = { x: 0.00, y: 2.167, z: 3.72 };
 const YARD_SINK = 0.30;                // how far the point is buried in the head
+/* AND THE TEMPLES ARE BELOW THE CROWN. `YARD_HEAD` is the top of the topknot
+ * (measured off the statue's own vertices: the head runs 1.62 to 2.167), so
+ * a blade through the SIDE of the head enters this far down from it, and
+ * `YARD_SKULL_R` is half the skull's width in WORLD metres at `DOJO_S` —
+ * the head measures 0.44 across in the model's own units. */
+/* AND IT IS IN HIS STOMACH NOW, NOT HIS HEAD — because a blade level with a
+ * 3.6 m statue's temples is four metres up and you have to look for it, and
+ * the owner wants it spotted. Sliced by height on the statue's own vertices:
+ * the head is 0.92 across, the chest 1.68 and the BELLY 1.84 (x -0.92..0.92)
+ * with its front face at z = 6.94. So the hilt stands out of the belly at
+ * chest height on the player, dead ahead as you come down the courtyard.
+ *
+ * IT CANNOT LIE FLAT ACROSS HIM THERE. The blade's grip-to-point is 0.755 and
+ * the belly is 1.84 wide, so a sword driven in sideways would vanish whole.
+ * It goes in from the FRONT and ANGLED — out and up toward whoever is walking
+ * at it — which is also the one arrangement that keeps its whole length in
+ * silhouette instead of pointing down the view axis, where a sword is a stick
+ * (the wheelhouse key's own lesson). */
+const YARD_BELLY = { x: 0.06, y: 2.34, z: 6.92 };   // the entry wound, world metres off the ring
+const YARD_BITE = 0.30;                // how deep the point sits inside him
 /* AND THE WALK IS THE KEEP'S, NOT THE OLD DOJO'S. The courtyard is packed
  * storeyed — every cell carries each floor it has — because a wall with a
  * coping you can be on top of is two floors at one (x, z), and a plain
@@ -32479,7 +32588,489 @@ const YARD_DROP = 1.30;                // and a drop you take without asking
 const YARD_WALL_MIN = 0.12;            // under this is a sliver, not a surface
 const YARD_WALL_NY = 0.55;             // a face is a FLOOR or a WALL, nothing between
 const YARD_NO_COLLIDE = ['Material', 'material_5'];   // the sky sphere and eight hundred cards of grass and ivy
+/* HOW DARK THE ROOM IS, AND WHAT LIGHTS IT. `DOJO_DIM` multiplies every
+ * surface's albedo and `DOJO_LIFT` is the floor under it — enough that the far
+ * colonnade is a shape rather than a hole, and no more. Everything above that
+ * is a lantern. */
+const DOJO_DIM = 0.52, DOJO_LIFT = 0.11;
+const DOJO_LAMP_COL = 0xffb96a;        // paper and a flame behind it
+/* WHERE THE LANTERNS ARE — AND THE MODEL ONLY HAS ONE.
+ *
+ * The first pass hung six lights at positions chosen by eye and the owner's
+ * word for the result was that they are connected to nothing and floating in
+ * the air, which is exactly what they were. So the model was ASKED instead:
+ * every mesh welded by position and flooded into connected islands, then read
+ * by shape. What is actually in this courtyard is
+ *
+ *   the gate        6.94 x 6.53 x 7.36 at (-10.68, 7.22)
+ *   the fountain    1.75 x 2.78 x 1.77 at (-0.95, -0.01)
+ *   the NW stair    9.27 x 4.81 x 8.00 at (-9.86, -6.17)
+ *   the east stair  7.71 x 3.09 x 6.15 at (14.25, -0.05)
+ *   the statue      2.74 x 2.96 x 1.81 at (-0.05, 7.02)
+ *
+ * and ONE free-standing 1.37 x 1.37 x 3.0 m post at (-4.52, -7.03), which is
+ * a stone lantern and is the only thing in the model a light could honestly
+ * hang in. Everything else here stands on lanterns this file BUILDS and puts
+ * on the floor, because a light needs a lamp under it and the scan does not
+ * supply one. `prop: false` is the model's own; the rest are made.
+ *
+ * Their heights are not written down either: each asks `dojoFloorAt` where the
+ * ground is beneath it and stands on that, so none of them can float. */
+const DOJO_LAMP_I = 11.0, DOJO_LAMP_R = 15.0;   // one setting for all of them
+/* THE LANTERN IS THE MODEL'S OWN, LIFTED OUT OF IT.
+ *
+ * I built one instead, first, and it was crude beside the scan's — the owner's
+ * word was that there are little lanterns in the map already, use those. There
+ * are: flooding the geometry into connected islands finds a free-standing
+ * 1.37 x 1.37 x 3.0 m post at (-4.52, -7.03) made of 605 triangles of
+ * `material`, and it is a proper toro with a lit paper panel.
+ *
+ * So it is EXTRACTED — every triangle of that mesh whose centroid falls in the
+ * island's box, rebuilt as its own geometry in world metres with its base at
+ * y = 0 and its axis at the origin — and then cloned round the courtyard. The
+ * copies share one geometry and one material, so eight of them cost one draw
+ * call each and no memory to speak of. */
+const LANT_BOX = { x0: -5.4, x1: -3.7, z0: -7.9, z1: -6.2, y0: -1.2, y1: 2.6 };
+let lanternGeo = null, lanternMat = null, lanternH = 0, lanternLightY = 0;
+function extractDojoLantern(root) {
+  if (lanternGeo) return true;
+  let src = null;
+  root.traverse((o) => {
+    if (src || !o.isMesh || !o.geometry || !o.geometry.attributes.position) return;
+    if ((o.material && o.material.name) !== 'material') return;
+    src = o;
+  });
+  if (!src) return false;
+  dojoWorld.updateMatrixWorld(true);
+  const g = src.geometry, p = g.attributes.position, e = src.matrixWorld;
+  const nA = g.attributes.normal, uA = g.attributes.uv;
+  const n = p.count, nT = (n / 3) | 0;
+  /* THE ISLAND, NOT A BOX I DREW. A hand-drawn box round the lantern also
+   * catches the ground it stands on and the bank behind it — and then the
+   * geometry's foot is the TERRAIN's lowest corner and its centre is not the
+   * lantern's axis, so every copy sits at the wrong height with its light off
+   * to one side. Both of the owner's complaints are that one mistake.
+   *
+   * Flooding the mesh by welded position gives the lantern exactly: the
+   * connected piece nearest the known spot whose footprint is under two
+   * metres and whose height is two to four. Its own bounds are then honest. */
+  const wx = new Float32Array(n), wy = new Float32Array(n), wz = new Float32Array(n);
+  const map = new Map(), vid = new Int32Array(n);
+  const v = new THREE.Vector3();
+  for (let i = 0; i < n; i++) {
+    v.fromBufferAttribute(p, i).applyMatrix4(e);
+    wx[i] = v.x - DOJO_X; wy[i] = v.y - DOJO_Y; wz[i] = v.z - DOJO_Z;
+    const k = Math.round(wx[i] * 50) + ',' + Math.round(wy[i] * 50) + ',' + Math.round(wz[i] * 50);
+    let q = map.get(k); if (q === undefined) { q = map.size; map.set(k, q); }
+    vid[i] = q;
+  }
+  const par = new Int32Array(nT); for (let t = 0; t < nT; t++) par[t] = t;
+  const find = (a) => { while (par[a] !== a) { par[a] = par[par[a]]; a = par[a]; } return a; };
+  const seenV = new Map();
+  for (let t = 0; t < nT; t++) for (let k = 0; k < 3; k++) {
+    const q = vid[t * 3 + k], o = seenV.get(q);
+    if (o === undefined) seenV.set(q, t);
+    else { const a = find(t), b = find(o); if (a !== b) par[a] = b; }
+  }
+  const grp = new Map();
+  for (let t = 0; t < nT; t++) {
+    const r = find(t); let q = grp.get(r);
+    if (!q) { q = { tris: [], x0: 1e9, x1: -1e9, y0: 1e9, y1: -1e9, z0: 1e9, z1: -1e9 }; grp.set(r, q); }
+    q.tris.push(t);
+    for (let k = 0; k < 3; k++) {
+      const i = t * 3 + k;
+      if (wx[i] < q.x0) q.x0 = wx[i]; if (wx[i] > q.x1) q.x1 = wx[i];
+      if (wy[i] < q.y0) q.y0 = wy[i]; if (wy[i] > q.y1) q.y1 = wy[i];
+      if (wz[i] < q.z0) q.z0 = wz[i]; if (wz[i] > q.z1) q.z1 = wz[i];
+    }
+  }
+  let best = null, bd = Infinity;
+  for (const q of grp.values()) {
+    const w = q.x1 - q.x0, h = q.y1 - q.y0, d = q.z1 - q.z0;
+    if (w > 2.0 || d > 2.0 || h < 2.0 || h > 4.2 || q.tris.length < 80) continue;
+    const cx = (q.x0 + q.x1) / 2, cz = (q.z0 + q.z1) / 2;
+    const dd = Math.hypot(cx - LANT_AT.x, cz - LANT_AT.z);
+    if (dd < bd) { bd = dd; best = q; }
+  }
+  if (!best || bd > 6) return false;
+  const cx = (best.x0 + best.x1) / 2, cz = (best.z0 + best.z1) / 2;
+  /* AND ITS FOOT IS NOT ITS LOWEST VERTEX. The flood takes whatever the
+   * lantern is TOUCHING, and what it is touching is the ground: binned by
+   * height the island has vertices at y = 0 (r 0.71 — a plate of terrain) and
+   * then NOTHING until y = 0.9, where the lantern actually begins. Standing
+   * that plate on a new floor therefore hangs the lantern 0.9 m in the air,
+   * which is exactly the gap under it the owner keeps seeing.
+   *
+   * So the lowest EMPTY band in the bottom half is found, and everything
+   * below it is thrown away: the foot is the bottom of the piece that is
+   * continuously connected upward, which is the stone. */
+  const BAND = 0.1;
+  const occ = new Set();
+  for (const t of best.tris) for (let k = 0; k < 3; k++) occ.add(Math.floor(wy[t * 3 + k] / BAND));
+  const b0 = Math.floor(best.y0 / BAND), b1 = Math.floor(best.y1 / BAND);
+  let foot = best.y0;
+  for (let bnd = b0; bnd <= b0 + (b1 - b0) / 2; bnd++) {
+    if (occ.has(bnd)) continue;                 // still solid: keep looking
+    let top = bnd; while (top <= b1 && !occ.has(top)) top++;
+    if ((top - bnd) * BAND >= 0.25) { foot = top * BAND; break; }   // a real void
+  }
+  const pos = [], nor = [], uv = [];
+  for (const t of best.tris) {
+    let lo = Infinity;
+    for (let k = 0; k < 3; k++) lo = Math.min(lo, wy[t * 3 + k]);
+    if (lo < foot - 0.02) continue;             // ground, not lantern
+    for (let k = 0; k < 3; k++) {
+    const i = t * 3 + k;
+    pos.push(wx[i] - cx, wy[i] - foot, wz[i] - cz);   // axis at 0, foot at 0
+    if (nA) { v.fromBufferAttribute(nA, i); nor.push(v.x, v.y, v.z); }
+    if (uA) uv.push(uA.getX(i), uA.getY(i));
+    }
+  }
+  if (pos.length < 120) return false;
+  /* AND IT IS RE-BASED ON WHAT SURVIVED. `foot` is a band edge, so the lowest
+   * kept vertex can sit a few centimetres above it — measured, 0.08, which on
+   * a two-metre lantern is a visible float. Zero it against the geometry that
+   * is actually there. */
+  let gy = Infinity;
+  for (let i = 1; i < pos.length; i += 3) gy = Math.min(gy, pos[i]);
+  if (gy !== Infinity && Math.abs(gy) > 1e-4) for (let i = 1; i < pos.length; i += 3) pos[i] -= gy;
+  lanternGeo = new THREE.BufferGeometry();
+  lanternGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  if (nor.length) lanternGeo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  else lanternGeo.computeVertexNormals();
+  if (uv.length) lanternGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  lanternGeo.computeBoundingSphere();
+  lanternMat = src.material;
+  lanternH = best.y1 - foot;
+  lanternLightY = lanternH * LANT_LIGHT_F;
+  lanternFoot = foot;                          // where the model's own one stands
+  return true;
+}
+const LANT_AT = { x: -4.52, z: -7.03 };        // the model's own, found by flooding
+let lanternFoot = 0;
+/* WHERE IN IT THE FLAME SITS. The lit panel is the box under the cap, a shade
+ * under two thirds of the way up — read off the model rather than guessed at,
+ * by taking the height at which its section narrows to the fire box. */
+const LANT_LIGHT_F = 0.63;
+/* AND THEY GO ROUND THE EDGE, NOT THROUGH THE MIDDLE. Every lantern is solid —
+ * its faces join the courtyard's own wall set — so five of them standing in
+ * the ring is five posts in the middle of a sword fight, which is exactly what
+ * broke his approach. On a ring at `LANT_R` they are against the wall, where
+ * the arena has nothing to lose, and the fight has the whole floor back. */
+let dojoLights = null, dojoLanterns = null;
+const LANT_R = 8.4;
+const LANT_N = 4;
+const LANT_CX = 0.0, LANT_CZ = 1.0;     // the courtyard's middle, not the fountain's
 
+function buildDojoLamps() {
+  if (dojoLights) return;
+  if (!extractDojoLantern(dojoWorld)) return;        // nothing to clone yet
+  dojoLights = new THREE.Group();
+  dojoLights.position.set(DOJO_X, DOJO_Y, DOJO_Z);
+  scene.add(dojoLights);
+  const glowTex = makeGlowTex();
+  dojoLanterns = new THREE.Group();
+  dojoLanterns.scale.setScalar(1 / DOJO_S);          // its children are world metres
+  dojoWorld.add(dojoLanterns);
+  /* FOUR, NOT EIGHT. A ring of eight round a courtyard this size is a row of
+   * street lamps; four at the quarters light the whole floor and still read as
+   * placed rather than scattered. Each one is REFUSED unless the room says
+   * there is flat courtyard under it — no floor, not the arena, or more than a
+   * step off the courtyard's own level and it simply is not built, which is
+   * what stops them standing in banks and hanging in the air. */
+  const spots = [];
+  for (let k = 0; k < LANT_N; k++) {
+    const a = (k / LANT_N) * Math.PI * 2 + Math.PI / 4;
+    const x = LANT_CX + Math.cos(a) * LANT_R, z = LANT_CZ + Math.sin(a) * LANT_R;
+    if (!dojoInArena(DOJO_X + x, DOJO_Z + z)) continue;
+    const gf = dojoFloorAt(DOJO_X + x, DOJO_Z + z, DOJO_Y + 1.2);
+    if (gf === null) continue;
+    const base = gf - DOJO_Y;
+    if (Math.abs(base - dojoArenaY) > 0.35) continue;        // flat courtyard only
+    spots.push({ x, z, base, a });
+  }
+  // and the one the model already has, lit where it stands
+  spots.push({ x: LANT_AT.x, z: LANT_AT.z, base: lanternFoot, a: 0, own: true });
+  dojoLights.userData.flicker = [];
+  for (const S of spots) {
+    if (!S.own) {
+      const lan = new THREE.Mesh(lanternGeo, lanternMat);
+      lan.position.set(S.x, S.base, S.z);
+      lan.rotation.y = -S.a + Math.PI / 2;            // the lit face turned inward
+      dojoLanterns.add(lan);
+    }
+    /* THE LIGHT IS ON THE LANTERN'S OWN AXIS. The geometry is centred on it
+     * and its foot is at zero, so this is the middle of the fire box and
+     * nowhere else — the light "floating to the side" was the old extraction's
+     * centre being the middle of a box that also held the ground. */
+    const ly = S.base + lanternLightY;
+    const pl = new THREE.PointLight(DOJO_LAMP_COL, DOJO_LAMP_I, DOJO_LAMP_R, 2.0);
+    pl.position.set(S.x, ly, S.z);
+    dojoLights.add(pl);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: DOJO_LAMP_COL,
+      transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
+    sp.scale.setScalar(0.55);
+    sp.position.set(S.x, ly, S.z);
+    sp.renderOrder = 6;
+    dojoLights.add(sp);
+    dojoLights.userData.flicker.push({ pl, sp, base: DOJO_LAMP_I, ph: Math.random() * 9 });
+  }
+}
+/* a soft round falloff, drawn once: the same shape every glint in this game
+ * uses, without the rays — a lamp is not a star */
+function makeGlowTex() {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const rg = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  rg.addColorStop(0, 'rgba(255,255,255,1)');
+  rg.addColorStop(0.32, 'rgba(255,225,170,0.55)');
+  rg.addColorStop(1, 'rgba(255,190,120,0)');
+  g.fillStyle = rg; g.fillRect(0, 0, 64, 64);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+/* AND A FLAME IS NEVER STEADY. Two counts that do not divide into each other,
+ * so it wanders rather than pulsing — the star at the helm's own rule. */
+function updateDojoLamps(dt, t) {
+  const F = dojoLights && dojoLights.userData.flicker; if (!F) return;
+  for (const f of F) {
+    const k = 0.88 + 0.12 * Math.sin(t * 2.3 + f.ph) * Math.sin(t * 0.77 + f.ph * 1.7);
+    f.pl.intensity = f.base * k;
+    f.sp.material.opacity = 0.55 * k;
+  }
+}
+
+/* THE FOUNTAIN'S TIERS, MEASURED OFF ITS OWN VERTICES. Binning the fountain
+ * island by height within 1.4 m of its axis gives the radius at every step,
+ * and it is a FOUR-tier piece, not the three I first wrote:
+ *
+ *    -0.2 .. 0.2   r 0.86-0.90   the bottom basin, rim at 0.2
+ *     0.3 .. 0.8   r 0.17-0.22   the pedestal
+ *     0.9 .. 1.3   r 0.34-0.50   the lower basin, rim at 1.3
+ *     1.5 .. 1.8   r 0.24-0.32   the upper basin, rim at 1.8
+ *     2.0 .. 2.2   r 0.16-0.22   the top basin, rim at 2.2
+ *     2.3 .. 2.6                 the finial
+ *
+ * The first pass had the pool at r = 1.80 — TWICE the fountain's own widest
+ * point — so the water disc and its rings hung a metre out over the paving on
+ * every side, which is the "off its axis" and the rings that went nowhere near
+ * the stone. Everything here is the model's own number now. */
+const FOUNT_TIERS = [
+  { y: 2.20, r: 0.219, to: 1.84, n: 9 },      // the top basin spilling into the upper
+  { y: 1.80, r: 0.318, to: 1.34, n: 13 },     // upper into lower
+  { y: 1.30, r: 0.495, to: 0.30, n: 20 },     // lower into the pool
+];
+/* and the water it collects in: a surface in each basin and the pool at the
+ * foot, because a fountain that pours and never fills is a pipe */
+const FOUNT_POOL_Y = 0.26, FOUNT_POOL_R = 0.84;
+const FOUNT_BASINS = [
+  { y: 1.32, r: 0.455 },
+  { y: 1.82, r: 0.285 },
+  { y: 2.22, r: 0.190 },
+];
+let fountain = null, fountDrops = null, fountRip = [], fountT = 0, fountFalls = [];
+const _fqD = new THREE.Object3D();
+function buildFountain() {
+  if (fountain || !dojoWorld) return;
+  fountain = new THREE.Group();
+  fountain.scale.setScalar(1 / DOJO_S);       // everything inside is world metres
+  fountain.position.set(DOJO_FOUNT.x / DOJO_S, 0, DOJO_FOUNT.z / DOJO_S);
+  dojoWorld.add(fountain);
+  /* THE POOL. Dark, barely transparent and lifted a little off its own map —
+   * water at night is not blue, it is the sky with the ground showing through
+   * it, and on this beach that is nearly black with a cold sheen. `depthWrite`
+   * stays off so the basin floor under it is not cut out. */
+  const pool = new THREE.Mesh(new THREE.CircleGeometry(FOUNT_POOL_R, 40),
+    new THREE.MeshStandardMaterial({ color: 0x35505f, roughness: 0.10, metalness: 0.18,
+      transparent: true, opacity: 0.88, depthWrite: false,
+      emissive: new THREE.Color(0x44647a), emissiveIntensity: 1.15 }));
+  pool.rotation.x = -Math.PI / 2;
+  pool.position.y = FOUNT_POOL_Y;
+  pool.renderOrder = 2;
+  fountain.add(pool);
+  /* NO RINGS. Expanding rings on the pool were meant to read as ripples and
+   * read instead as hoops climbing the fountain — they are drawn flat but the
+   * eye takes a growing circle round a tall object as something RISING, which
+   * is the exact opposite of what water in a fountain does. Gone; the falls
+   * and the standing water carry it. */
+  /* THE WATER IS A SHEET NOW, AND THE DROPS ARE ONLY THE SPARKLE ON IT. A
+   * tier of a stone fountain does not SPRAY — it brims and the water slides
+   * over the lip in a continuous skin, and drawing it as a hundred separate
+   * points was exactly the "spraying" the owner saw. Each tier gets an
+   * open-ended cylinder hanging from its rim wearing a drawn fall — vertical
+   * streaks of varying weight on transparent, scrolled downward — and the
+   * drops are kept, far fewer, as the glints coming off it. */
+  const fallTex = makeFallTex();
+  for (const T of FOUNT_TIERS) {
+    const h = T.y - T.to;
+    const tex = fallTex.clone(); tex.needsUpdate = true;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(Math.max(2, Math.round(T.r * 7)), 1);
+    const sh = new THREE.Mesh(new THREE.CylinderGeometry(T.r + 0.015, T.r + 0.055, h, 26, 1, true),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.50,
+        depthWrite: false, side: THREE.DoubleSide, blending: THREE.NormalBlending }));
+    sh.position.y = T.to + h * 0.5;
+    sh.renderOrder = 3;
+    fountain.add(sh);
+    fountFalls.push({ m: sh, tex, sp: 1.15 + T.r });
+  }
+  /* AND IT POOLS. Each basin gets a water surface of its own just under its
+   * rim, and the bottom one is the pool you can see the stone through — a
+   * fountain that pours and collects nothing is a pipe. Dark, barely
+   * transparent, `depthWrite` off so the basin floor under it is not cut out. */
+  /* AND IT IS LIT ENOUGH TO SEE. At 0x18222b in a courtyard this dark the
+   * standing water was indistinguishable from the stone holding it. */
+  const waterMat = () => new THREE.MeshStandardMaterial({ color: 0x3b5668, roughness: 0.10,
+    metalness: 0.20, transparent: true, opacity: 0.86, depthWrite: false,
+    emissive: new THREE.Color(0x4a6d84), emissiveIntensity: 1.25 });
+  /* AND THERE IS NO WATER DRAWN IN THE UPPER BASINS. Measured, those three
+   * discs sat at 1.32, 1.82 and 2.22 against rims at 1.30, 1.80 and 2.20 —
+   * each one a bright flat circle AT the widest point of its tier, which from
+   * the floor is three glowing rings stacked up the fountain. That is the
+   * "rings going upwards", and no amount of tuning their colour fixes a disc
+   * seen edge-on. The falls and the pool carry the water; the saucers keep
+   * their own stone. */
+  // the falling water
+  let N = 0; for (const t of FOUNT_TIERS) N += t.n;
+  /* SHORT, FAINT AND NOT IN A RING. The first pass drew them 0.12 long,
+   * stretched to nearly two, at 0.55 opacity and all at exactly the rim's
+   * radius — which from the spawn read as a crown of white CANDLES standing
+   * on the fountain rather than water coming off it. Water at this render
+   * scale wants to be small, thin and barely there, with its radius jittered
+   * so the tier spills unevenly the way a worn stone lip actually does. */
+  const dm = new THREE.MeshBasicMaterial({ color: 0xc8dae6, transparent: true, opacity: 0.34, depthWrite: false });
+  fountDrops = new THREE.InstancedMesh(new THREE.BoxGeometry(0.016, 0.07, 0.016), dm, N);
+  fountDrops.frustumCulled = false;
+  fountDrops.renderOrder = 3;
+  fountDrops.userData.list = [];
+  const rnd = mulberry32(0xfa11);
+  for (const t of FOUNT_TIERS) for (let k = 0; k < t.n; k++) {
+    fountDrops.userData.list.push({ t, a: rnd() * Math.PI * 2, p: rnd(),
+      sp: 0.80 + rnd() * 0.45, wob: (rnd() - 0.5) * 0.06,
+      jit: (rnd() - 0.5) * 0.16, len: 0.7 + rnd() * 0.7 });
+  }
+  fountain.add(fountDrops);
+}
+/* GRAVITY, NOT A LERP. A drop that falls linearly reads as a lift; the whole
+ * tell of water is that it ACCELERATES, so the phase is the time and the
+ * height is the time squared. */
+/* THE FALL, DRAWN ONCE. Vertical streaks at random weights and opacities on a
+ * transparent ground, seamless top to bottom so it can scroll for ever — the
+ * cheapest thing that reads as moving water, and the only one that survives
+ * this game's retro downscale, where anything finer than a couple of pixels
+ * is averaged into a grey wash. */
+function makeFallTex() {
+  const c = document.createElement('canvas'); c.width = 64; c.height = 128;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, 64, 128);
+  const rnd = mulberry32(0xfa77);
+  for (let k = 0; k < 26; k++) {
+    const x = rnd() * 64, w = 0.6 + rnd() * 2.4, a = 0.12 + rnd() * 0.5;
+    g.strokeStyle = 'rgba(214,232,244,' + a.toFixed(3) + ')';
+    g.lineWidth = w;
+    g.beginPath(); g.moveTo(x, -4); g.lineTo(x + (rnd() - 0.5) * 3, 132); g.stroke();
+  }
+  // a brighter skin at the very top, where it leaves the lip
+  const lip = g.createLinearGradient(0, 0, 0, 26);
+  lip.addColorStop(0, 'rgba(226,240,250,0.55)');
+  lip.addColorStop(1, 'rgba(226,240,250,0)');
+  g.fillStyle = lip; g.fillRect(0, 0, 64, 26);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+function updateFountain(dt) {
+  if (!fountain || !inDojo) return;
+  fountT += dt;
+  const list = fountDrops.userData.list;
+  for (let i = 0; i < list.length; i++) {
+    const d = list[i], T = d.t;
+    const fall = T.y - T.to;
+    const dur = Math.sqrt(2 * fall / 9.8) / d.sp;
+    d.p += dt / dur;
+    if (d.p >= 1) d.p -= Math.floor(d.p);
+    const u = d.p, y = T.y - fall * u * u;
+    const r = T.r + u * 0.05 + d.wob + d.jit;
+    _fqD.position.set(Math.cos(d.a) * r, y, Math.sin(d.a) * r);
+    const v = Math.max(0.3, u);               // it stretches a little as it speeds up
+    _fqD.scale.set(1, (0.45 + v * 0.85) * d.len, 1);
+    _fqD.rotation.set(0, d.a, 0);
+    _fqD.updateMatrix();
+    fountDrops.setMatrixAt(i, _fqD.matrix);
+  }
+  fountDrops.instanceMatrix.needsUpdate = true;
+  /* DOWNWARD. `offset.y` is ADDED to the sampled v, so increasing it walks the
+   * pattern down the cylinder; subtracting ran the streaks up it, which is the
+   * other half of what read as rising. */
+  for (const F of fountFalls) { F.tex.offset.y = (F.tex.offset.y + dt * F.sp) % 1; }
+  updateFountainAudio(dt);
+}
+
+/* AND YOU HEAR IT BEFORE YOU ARE AT IT. Everything else in this room is rain
+ * on stone and a man breathing through a mask; the fountain is the one kind
+ * sound in the place, and it is what the middle of the ring sounds like.
+ *
+ * WATER IS ALLOWED TO BE BROADBAND, which nothing else in this game is: the
+ * shell paid for that rule at the EAR, where any hiss is a radio, and the
+ * dojo's own rain already carries the exception. What keeps it from being
+ * static is that it is THREE things, not one — a low body of falling water, a
+ * band of splash on the surface, and single PLINKS at irregular intervals,
+ * which is the part the ear reads as droplets rather than noise. */
+let fountAudio = null, fountPlink = 0;
+function startFountainAudio() {
+  const ctx = audioCtx; if (!ctx || fountAudio) return;
+  const g = ctx.createGain(); g.gain.value = 0; g.connect(sfxOut());
+  const len = Math.floor(ctx.sampleRate * 3);
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  let b0 = 0;
+  for (let i = 0; i < len; i++) { const w = Math.random() * 2 - 1; b0 = 0.86 * b0 + w * 0.34; d[i] = b0; }
+  const n = ctx.createBufferSource(); n.buffer = buf; n.loop = true;
+  // the splash: a wide band where water hitting water lives
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1250; bp.Q.value = 0.55;
+  const bg = ctx.createGain(); bg.gain.value = 0.85;
+  // and the body of it falling, under everything
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 320;
+  const lg = ctx.createGain(); lg.gain.value = 0.75;
+  n.connect(bp); bp.connect(bg); bg.connect(g);
+  n.connect(lp); lp.connect(lg); lg.connect(g);
+  // a slow swell, so it is never quite the same second twice
+  const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 0.13;
+  const lv = ctx.createGain(); lv.gain.value = 0.10;
+  lfo.connect(lv); lv.connect(g.gain); lfo.start();
+  n.start();
+  fountAudio = { g, n, lfo };
+}
+function updateFountainAudio(dt) {
+  const ctx = audioCtx; if (!ctx) return;
+  const d = Math.hypot(camera.position.x - (DOJO_X + DOJO_FOUNT.x),
+                       camera.position.z - (DOJO_Z + DOJO_FOUNT.z));
+  const want = Math.max(0, 1 - d / 15);
+  if (want > 0.01) startFountainAudio();
+  if (!fountAudio) return;
+  fountAudio.g.gain.setTargetAtTime(want * want * 0.30, ctx.currentTime, 0.18);
+  // the plinks: single drops, on an irregular count, only when you are near
+  fountPlink -= dt;
+  if (fountPlink <= 0 && want > 0.20) {
+    fountPlink = 0.16 + Math.random() * 0.40;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator(); o.type = 'sine';
+    const f0 = 780 + Math.random() * 1150;
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(f0 * 0.55, t + 0.09);
+    const pg = ctx.createGain();
+    pg.gain.setValueAtTime(0.0001, t);
+    pg.gain.exponentialRampToValueAtTime(0.055 * want, t + 0.006);
+    pg.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+    o.connect(pg); pg.connect(sfxOut()); o.start(t); o.stop(t + 0.15);
+  }
+}
+function stopFountainAudio() {
+  if (fountAudio && audioCtx) fountAudio.g.gain.setTargetAtTime(0, audioCtx.currentTime, 0.3);
+}
 let portalWorld = null, portalGlow = null, portalReady = false;
 let portalT = 0, portalMix = 0;
 let dojoWorld = null, dojoReady = false, dojoWalk = null;
@@ -32489,32 +33080,6 @@ let portalCut = false, portalPhase = 0, portalCutT = 0, portalOut = false;
 let dojoWon = false, heroSwordTaken = false;
 let samurai = null, samuraiSpoke = false;
 let heroSword = null, heroSwordShine = null, dojoSwords = [], dojoPic = null;
-
-/* THE GROUND OUT THERE IS PART OF THE SKY MESH, AND THE SKY FIX FLATTENED IT.
- * `SkyAndGround` is ONE object: a dome and, in the same eighteen triangles at
- * its foot, the disc you walk on. Making the whole thing an unlit
- * `MeshBasicMaterial` graded to (0.30, 0.34, 0.44) is exactly right for a dome
- * and exactly wrong for the yard — measured, the field read 181 as mean screen
- * luminance, a near-white slab, which is the owner's "untextured and grey ...
- * it really dampens it down".
- *
- * AND THE ATLAS IS NO USE UNDER YOUR FEET EITHER. The disc's own uv wanders
- * over most of the sheet (measured, u 0.18-0.97 by v 0.15-0.94) while the
- * painted green field is one corner of it (u < 0.55, v < 0.52) — so what the
- * ground was actually sampling is the BLUE OF THE SKY. Not a missing texture:
- * the wrong one. The low triangles are SPLIT OFF at load, lit like every other
- * surface in the place, and wear a drawn grass PROJECTED in world space, which
- * is the only way to tell a pattern how big it is on a mesh whose uv means
- * something else. The same drawing drives the bump, so the moon catches the
- * tufts: a surface that is only DARK is a picture of a surface. */
-/* THE OLD MODEL'S GROUND WAS ITS SKY, AND THAT IS WHY THIS USED TO BE
- * HERE. `SkyAndGround` was one mesh — a dome, and in the same eighteen
- * triangles at its foot the disc you walked on — whose uv wandered over
- * most of the sheet while the painted field was one corner of it, so the
- * yard sampled the BLUE OF THE SKY and had to be split off and given a
- * drawn grass projected in world space (`makeDojoGrass`,
- * `splitDojoGround`, `DOJO_GRASS_TILE`). The courtyard has a ground of
- * its own, with its own map and its own normals, and needs none of it. */
 
 function loadPortal() {
   if (portalWorld) return;
@@ -32746,6 +33311,7 @@ function loadDojo() {
   if (dojoWorld) return;
   dojoWorld = new THREE.Group();
   dojoWorld.position.set(DOJO_X, DOJO_Y, DOJO_Z);
+  dojoWorld.scale.setScalar(DOJO_S);
   dojoWorld.visible = false;
   scene.add(dojoWorld);
   // the man in it is built here, not in the callback: nothing about a hidden
@@ -32764,6 +33330,8 @@ function loadDojo() {
     if (dojoWalk && dojoWalk.cells) {
       dojoCells = new Map();
       for (const c of dojoWalk.cells) dojoCells.set(c[1] * dojoWalk.gw + c[0], c[2]);
+      repairDojoBeams();
+      despeckleDojoSolid();
     }
     root.traverse((o) => {
       if (!o.isMesh) return;
@@ -32776,11 +33344,18 @@ function loadDojo() {
          * it. The moon is directional and reaches everywhere, and the rest is
          * each map carrying its own lift. */
         m.metalness = 0.0;
+        /* AND THE ROOM IS DARK NOW, BECAUSE THE LANTERNS ARE THE LIGHT. It
+         * used to lift every surface off its own map at 0.30 and take no
+         * lights at all — the pavilion's scar — which made a courtyard that
+         * was evenly, flatly visible everywhere and atmospheric nowhere. The
+         * lift is a floor that keeps the far side of the ring off pure black
+         * and no more; what you see by is `dojoLights`. */
         if (!m.emissiveMap && m.map) {
           m.emissive = new THREE.Color(0xffffff);
           m.emissiveMap = m.map;
-          m.emissiveIntensity = 0.30;
+          m.emissiveIntensity = DOJO_LIFT;
         }
+        m.color.multiplyScalar(DOJO_DIM);
         if (m.map) m.map.anisotropy = 8;
         /* AND EIGHT HUNDRED ALPHA CARDS MUST NOT SORT AGAINST EACH OTHER.
          * They ship as MASK, which three honours with an alpha test and a
@@ -32851,11 +33426,34 @@ function loadDojo() {
      * arithmetic. The two meshes the game really does hold — the statue the
      * sword goes into and the sky it is seen against — are found above and
      * keep their names; everything else gives its up and merges by material. */
+    dojoScanNames(root);      // names still exist here: the bake clears them
+    cullDojoStrays(root);
     for (const o of [dojoStatue, dojoSky]) if (o) o.userData.noBake = true;
     root.traverse((o) => { if (o.isMesh && !o.userData.noBake) o.name = ''; });
     dojoBaked = bakeStatic(root);
+    /* READY FIRST: the heaps, the lanterns and the fountain each ask
+     * `dojoFloorAt` for the ground under them and it answers null until the
+     * room says it is up — build them before that and every one of them lands
+     * on a single plane, which this already got wrong once. And all of it
+     * BEFORE anything asks for the walls, since `buildDojoWalls` reads
+     * whatever is under `dojoWorld` the first time it runs and caches it. */
     dojoReady = true;
+    buildDojoLamps();
+    buildDojoBlocks();
+    buildFountain();
+    /* AND THE STONE IS MERGED. Every heap of rubble, every panel of the gate
+     * wall and every lantern went in as its OWN mesh — measured, upward of a
+     * hundred and fifty of them — and this file already knows what that costs:
+     * the courtyard's own 836 meshes were merged to eight for exactly this
+     * reason. Merged by material they are a handful of draws. The invisible
+     * collider boxes carry `noBake` so they stay their own objects, which is
+     * what `buildDojoWalls` and the push-out read. */
+    if (dojoBlocks) bakeStatic(dojoBlocks);
+    if (dojoLanterns) bakeStatic(dojoLanterns);
     armDojo();
+    // and the man, standing hidden on his mark from the moment the room is up
+    spawnSamurai(false);
+    if (samurai) samurai.g.visible = false;
   }, undefined, () => {});
 }
 
@@ -32870,17 +33468,107 @@ function loadDojo() {
  * perimeter wall IS. Chained into `bunkerFloorAt` like every other room, so
  * blood, gibs, thrown props and every particle of a ragdoll ask it for free. */
 let dojoCells = null, dojoStatue = null, dojoBaked = null;
+/* AND A BEAM IS NOT A FLOOR. This is the whole of "I keep getting caught in
+ * the torii's collision", and it is not a collider at all — it is a hole in
+ * the walk. The packer samples a cell's floors by what it finds above the
+ * ground, and under a torii what it finds is the LINTEL: measured across the
+ * gateway, `dojoGridAt` comes back as a checkerboard of 0.0 and 5.3, and on
+ * the 5.3 cells that beam is the cell's ONLY storey — there is no ground
+ * recorded under it. So `dojoStoreyAt` at a walking body's feet finds nothing
+ * at or below them, the move is refused, and what you feel is an invisible
+ * post every other step through the one doorway into the room. Get above it
+ * somehow and you stand ON the beam, seven metres up, where seven of eight
+ * ways out move you less than half a metre.
+ *
+ * The repair is the keep's and the undercroft's: a cell whose lowest storey
+ * stands more than a body's height over the middle of its neighbours has had
+ * its ground missed, so the ground is put back at the neighbours' own level —
+ * and the beam becomes that storey's ROOF, which is exactly what a torii is.
+ * A real platform is not touched, because its neighbours are at its own
+ * height and the median test never fires. */
+/* AND IT TAKES MORE THAN ONE PASS. A torii's beams are a RUN of cells, not a
+ * speckle, so the first pass only reaches the ones whose neighbours are
+ * mostly ground; once those have their floor back the median under the next
+ * ring drops and they can be repaired in turn. Measured: one pass left ten of
+ * the gateway's cells still reading the lintel, four passes leave none. */
+/* AND YOU MAY NOT CATCH ON A BLADE OF GRASS. The packer marks a cell solid
+ * if anything at all stands in its body band, and this courtyard is eight
+ * hundred cards of grass and ivy — a single one of them refuses a cell you
+ * are looking straight through. The wall index already skips that material;
+ * the GRID could not, because it was written at pack time. So a solid run
+ * smaller than a thing is not a thing: flood the connected run and clear it
+ * if it is under a few cells, which is the undercroft's own rule. A post, a
+ * lantern base or a wall is dozens of cells and is never touched. */
+function despeckleDojoSolid() {
+  const w = dojoWalk; if (!w || !dojoCells) return 0;
+  const solidAt = (k) => { const st = dojoCells.get(k); if (!st) return false;
+    for (let i = 1; i < st.length; i += 3) if (st[i] === 1) return true; return false; };
+  const seen = new Set(); let cleared = 0;
+  for (const [k] of dojoCells) {
+    if (seen.has(k) || !solidAt(k)) continue;
+    const run = [], q = [k]; seen.add(k);
+    while (q.length && run.length < 40) {
+      const c = q.pop(); run.push(c);
+      const j = Math.floor(c / w.gw), i = c - j * w.gw;
+      for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+        if (!di && !dj) continue;
+        const n = (j + dj) * w.gw + (i + di);
+        if (seen.has(n) || !solidAt(n)) continue;
+        seen.add(n); q.push(n);
+      }
+    }
+    if (run.length > 4) continue;                    // big enough to be something
+    for (const c of run) {
+      const st = dojoCells.get(c).slice();
+      for (let i = 1; i < st.length; i += 3) st[i] = 0;
+      dojoCells.set(c, st); cleared++;
+    }
+  }
+  return cleared;
+}
+function repairDojoBeams() {
+  let n = 0;
+  for (let pass = 0; pass < 5; pass++) {
+    const k = repairDojoBeamPass();
+    n += k;
+    if (!k) break;
+  }
+  return n;
+}
+function repairDojoBeamPass() {
+  const w = dojoWalk; if (!w || !dojoCells) return 0;
+  const GAP = 1.2 / DOJO_S;                 // a body's height, in the grid's own units
+  const lowOf = (i, j) => { const st = dojoCells.get(j * w.gw + i); return st && st.length ? st[0] : null; };
+  const fix = [];
+  for (const [k, st] of dojoCells) {
+    if (!st || !st.length) continue;
+    const j = Math.floor(k / w.gw), i = k - j * w.gw;
+    const ns = [];
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+      if (!di && !dj) continue;
+      const v = lowOf(i + di, j + dj);
+      if (v !== null) ns.push(v);
+    }
+    if (ns.length < 4) continue;
+    ns.sort((a, b) => a - b);
+    const med = ns[Math.floor(ns.length / 2)];
+    if (st[0] - med < GAP) continue;
+    fix.push([k, med, st[0]]);
+  }
+  for (const [k, med, lo] of fix) dojoCells.set(k, [med, 0, lo].concat(dojoCells.get(k)));
+  return fix.length;
+}
 function dojoCellAt(x, z) {
   const w = dojoWalk; if (!w || !dojoCells) return null;
-  const i = Math.floor((x - DOJO_X - w.x0) / w.cell), j = Math.floor((z - DOJO_Z - w.z0) / w.cell);
+  const i = Math.floor((dmX(x) - w.x0) / w.cell), j = Math.floor((dmZ(z) - w.z0) / w.cell);
   if (i < 0 || j < 0 || i >= w.gw || j >= w.gh) return null;
   return dojoCells.get(j * w.gw + i) || null;
 }
 function dojoStoreyAt(x, z, feet, up = YARD_STEP) {
   const st = dojoCellAt(x, z); if (!st) return null;
   for (let k = st.length - 3; k >= 0; k -= 3) {
-    const f = DOJO_Y + st[k];
-    if (f <= feet + up) return { f, s: st[k + 1] === 1, c: DOJO_Y + st[k + 2] };
+    const f = DOJO_Y + st[k] * DOJO_S;
+    if (f <= feet + up) return { f, s: st[k + 1] === 1, c: DOJO_Y + st[k + 2] * DOJO_S };
   }
   return null;
 }
@@ -32891,15 +33579,17 @@ function dojoStoreyAt(x, z, feet, up = YARD_STEP) {
  * one that function has always read. */
 function dojoGridAt(x, z) {
   const w = dojoWalk; if (!w || !dojoCells) return null;
-  const i = Math.floor((x - DOJO_X - w.x0) / w.cell), j = Math.floor((z - DOJO_Z - w.z0) / w.cell);
+  const i = Math.floor((dmX(x) - w.x0) / w.cell), j = Math.floor((dmZ(z) - w.z0) / w.cell);
   if (i < 0 || j < 0 || i >= w.gw || j >= w.gh) return null;
   const st = dojoCells.get(j * w.gw + i);
   if (!st) return { i, j, f: -99, s: false };
-  return { i, j, f: st[0], s: st[1] === 1 };
+  // `f` comes back in WORLD metres off the courtyard floor, like every other
+  // height the fight reads; -99 stays the "no ground here" sentinel it was.
+  return { i, j, f: st[0] * DOJO_S, s: st[1] === 1 };
 }
 function dojoFloorAt(x, z, y) {
   if (!dojoReady || !dojoWalk || y === undefined) return null;
-  if (Math.abs(y - DOJO_Y) > 60) return null;
+  if (Math.abs(y - DOJO_Y) > 60 * DOJO_S) return null;
   const st = dojoStoreyAt(x, z, y, 0.5);
   return st ? st.f : null;
 }
@@ -32925,6 +33615,8 @@ bunkerFloorAt = (x, z, y) => {
 let dojoWalls = null;
 let dojoLastFloor = null;   // the room never hands him the beach
 let dojoLastStand = null;   // and the last place in it he could actually stand
+const _dsQ = new THREE.Vector3();   // the slide's candidate, reused
+let dojoSafe = null;        // and the last one the PLAYER stood in that it agrees with
 function buildDojoWalls() {
   if (dojoWalls || !dojoWorld) return;
   dojoWorld.updateMatrixWorld(true);
@@ -33079,15 +33771,19 @@ const YARD_NAV_R = 0.42;                 // his own disc, three quarters of his 
 function buildDojoNav() {
   const w = dojoWalk;
   if (dojoNav || !w || !dojoCells || !dojoWalls) return;
+  buildDojoArena();
   const n = new Uint8Array(w.gw * w.gh);
   let ok = 0;
   for (let j = 0; j < w.gh; j++) {
     for (let i = 0; i < w.gw; i++) {
       const st = dojoCells.get(j * w.gw + i);
       if (!st) continue;
-      const x = DOJO_X + w.x0 + (i + 0.5) * w.cell, z = DOJO_Z + w.z0 + (j + 0.5) * w.cell;
-      const f = DOJO_Y + st[0];
+      const x = dsX(w.x0 + (i + 0.5) * w.cell), z = dsZ(w.z0 + (j + 0.5) * w.cell);
+      const f = DOJO_Y + st[0] * DOJO_S;
       if (dojoWallNear(x, z, YARD_NAV_R, f + YARD_STEP + 0.04, f + 1.75)) continue;
+      // he fights in the same room you do: a route that leaves the arena is a
+      // boss who has left the fight, which is the headland's own lesson
+      if (dojoArena && !dojoInArena(x, z)) continue;
       n[j * w.gw + i] = 1; ok++;
     }
   }
@@ -33095,6 +33791,943 @@ function buildDojoNav() {
   dojoNavOK = ok;
 }
 let dojoNavOK = 0;
+
+
+/* THE BAKE CLEARS EVERY NAME, so anything the game wants to FIND in this
+ * model has to be found before it. Kept for the harness too, because the only
+ * way to know what a packed scan calls its parts is to read them off it. */
+let dojoParts = null;
+function dojoScanNames(root) {
+  dojoWorld.updateMatrixWorld(true);
+  dojoParts = [];
+  root.traverse((o) => {
+    if (!o.isMesh || !o.name || !o.geometry) return;
+    if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+    const c = o.geometry.boundingSphere && o.geometry.boundingSphere.center;
+    if (!c) return;
+    _strayV.copy(c).applyMatrix4(o.matrixWorld);
+    dojoParts.push({ n: o.name, m: (o.material && o.material.name) || '',
+      x: +(_strayV.x - DOJO_X).toFixed(2), y: +(_strayV.y - DOJO_Y).toFixed(2),
+      z: +(_strayV.z - DOJO_Z).toFixed(2), t: (o.geometry.attributes.position || {}).count || 0 });
+  });
+}
+
+/* AND THE SKY ROUND IT IS FULL OF FLOATING BUSHES. The scan ships its
+ * overgrowth as alpha cards and most of them are nowhere near the building:
+ * measured per material, EVERY piece of architecture — ground, walls, pagoda,
+ * statue, paving — lies inside r = 21, while the overgrowth alone runs out to
+ * r = 53 and 18.9 m UP, which from the courtyard is a scatter of shrubs
+ * hanging in the air over the wall.
+ *
+ * THE THRESHOLD IS MEASURED. Binned by radius the overgrowth is cleanly
+ * bimodal — 3,230 triangles inside r = 20, which is the ivy on the courtyard's
+ * own walls and has to stay, then a near-empty band, then 13,158 from r = 30
+ * out. A cut at 26 sits in the gap with six metres of margin either side.
+ *
+ * Two more tests catch what the radius does not, and BOTH had to be chosen
+ * carefully, because the obvious one is wrong: asking "is this card standing
+ * clear of the ground under it" culls the IVY, which is the whole point of
+ * ivy — measured, that rule took every one of the 3,230 cards on the walls and
+ * left the courtyard bare. What separates them is HEIGHT (every roof in this
+ * model tops out at 6.5, so a leaf above 7 m grows on nothing) and GROUND but
+ * only FAR OUT (past 15 m the walls are behind you, and anything with no cell
+ * of walkable model under it is backdrop).
+ *
+ * It runs BEFORE `bakeStatic`, while every card is still its own mesh, so it
+ * is a list removal rather than index surgery. */
+const DOJO_KEEP_R = 26;                // world metres from the middle of the ring
+const DOJO_WEED = 'material_5';        // the scan's overgrowth: 810 alpha cards
+const DOJO_SKY = 7.0;                  // above every roof in the model
+const DOJO_WALLED = 15.0;              // inside this the walls and stairs keep their ivy
+function cullDojoStrays(root) {
+  /* AND IT MEASURES IN WORLD SPACE, SO THE MATRICES HAVE TO BE THERE. `add()`
+   * does not update them: run without this, every mesh still carries an
+   * identity `matrixWorld`, every centre reads as six thousand metres from
+   * DOJO_X, and the cull takes the ENTIRE COURTYARD. */
+  dojoWorld.updateMatrixWorld(true);
+  const gone = [];
+  root.traverse((o) => {
+    if (!o.isMesh || o === dojoSky || o === dojoStatue || !o.geometry) return;
+    if ((o.material && o.material.name) === 'Plane.007__0') { gone.push(o); return; }
+    const g = o.geometry;
+    if (!g.boundingSphere) g.computeBoundingSphere();
+    const c = g.boundingSphere && g.boundingSphere.center; if (!c) return;
+    _strayV.copy(c).applyMatrix4(o.matrixWorld);
+    if (Math.hypot(_strayV.x - DOJO_X, _strayV.z - DOJO_Z) > DOJO_KEEP_R) { gone.push(o); return; }
+    if ((o.material && o.material.name) !== DOJO_WEED) return;
+    o.geometry.computeBoundingBox();
+    _strayB.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld);
+    if (_strayB.min.y - DOJO_Y > DOJO_SKY) { gone.push(o); return; }
+    const r2 = Math.hypot(_strayV.x - DOJO_X, _strayV.z - DOJO_Z);
+    if (r2 < DOJO_WALLED) return;
+    const g2 = dojoGridAt(_strayV.x, _strayV.z);
+    if (!g2 || g2.f <= -90) gone.push(o);
+  });
+  let kept = 0;
+  root.traverse((o) => { if (o.isMesh) kept++; });
+  if (gone.length > kept - 6) {                 // it should take cards, never the building
+    console.warn('[dojo] stray cull refused:', gone.length, 'of', kept, '— matrices not ready?');
+    return 0;
+  }
+  for (const o of gone) { if (o.parent) o.parent.remove(o); if (o.geometry) o.geometry.dispose(); }
+  return gone.length;
+}
+const _strayV = new THREE.Vector3();
+const _strayB = new THREE.Box3();
+
+/* ------------------------------------------------- THE ARENA, AND ITS MOUTHS
+ *
+ * THE FIGHT IS THE COURTYARD AND NOTHING ELSE, and which cells that IS gets
+ * flooded rather than drawn. The ring has two stone stairs climbing out of it
+ * and a gate on the far side, and all three lead to backdrop. Walking out
+ * mid-fight is how you lose the boss behind a wall, and it is most of "you can
+ * walk out of bounds".
+ *
+ * So: flood the walk grid from the courtyard over every cell within `ARENA_UP`
+ * of it. Nothing here is a hand-placed coordinate — move the model, rescale
+ * it, repack it, and the flood still finds the same room. */
+const ARENA_UP = 2.6;                   // world metres above the courtyard floor
+const ARENA_DOWN = 1.8;
+let dojoArena = null, dojoMouths = null, dojoArenaY = 0;
+function buildDojoArena() {
+  const w = dojoWalk;
+  if (dojoArena || !w || !dojoCells) return;
+  const gw = w.gw, gh = w.gh;
+  const lowest = (i, j) => { const st = dojoCells.get(j * gw + i); return st ? st[0] * DOJO_S : null; };
+  /* THE SEED IS THE COURTYARD, AND THE COURTYARD IS THE MODAL FLOOR. Seeding
+   * at the fountain looks obvious and is wrong: the fountain is a SOLID the
+   * packer sampled a floor onto, so the cell on its axis carries its basin at
+   * 2.58 m and the flood came back with nine cells of stonework. */
+  const hist = new Map();
+  for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+    const f = lowest(i, j); if (f === null) continue;
+    const k = Math.round(f * 4);
+    hist.set(k, (hist.get(k) || 0) + 1);
+  }
+  let mode = 0, best = -1;
+  for (const [k, n] of hist) if (n > best) { best = n; mode = k / 4; }
+  const fi = Math.floor((DOJO_FOUNT.x / DOJO_S - w.x0) / w.cell);
+  const fj = Math.floor((DOJO_FOUNT.z / DOJO_S - w.z0) / w.cell);
+  let seed = -1;
+  for (let rad = 0; rad <= 40 && seed < 0; rad++) {
+    for (let a = -rad; a <= rad && seed < 0; a++) for (let b = -rad; b <= rad; b++) {
+      if (Math.max(Math.abs(a), Math.abs(b)) !== rad) continue;
+      const i = fi + a, j = fj + b;
+      if (i < 0 || j < 0 || i >= gw || j >= gh) continue;
+      const f = lowest(i, j);
+      if (f === null || Math.abs(f - mode) > 0.30) continue;
+      seed = j * gw + i; dojoArenaY = f; break;
+    }
+  }
+  if (seed < 0) return;
+  const A = new Uint8Array(gw * gh);
+  const q = [seed]; A[seed] = 1;
+  const lo = dojoArenaY - ARENA_DOWN, hi = dojoArenaY + ARENA_UP;
+  for (let k = 0; k < q.length && k < gw * gh; k++) {
+    const c = q[k], ci = c % gw, cj = (c / gw) | 0;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+      if ((!a && !b) || (a && b)) continue;              // four-connected: a diagonal is not a doorway
+      const ni = ci + a, nj = cj + b;
+      if (ni < 0 || nj < 0 || ni >= gw || nj >= gh) continue;
+      const n2 = nj * gw + ni; if (A[n2]) continue;
+      const f = lowest(ni, nj); if (f === null || f < lo || f > hi) continue;
+      A[n2] = 1; q.push(n2);
+    }
+  }
+  dojoArena = A;
+  /* THE MOUTHS. Three things have to be told apart and only one wants
+   * blocking: the FLAT RING against the perimeter wall (which needs nothing,
+   * the wall is already there), the STATUE'S DAIS (raised, enclosed, part of
+   * the room) and the two STAIRS and the GATE, which lead out.
+   *
+   * A mouth is FAR from the middle (so not the dais, which sits at r = 7.5
+   * against the stairs' 12.7 and 19) and has a neighbour the arena does not
+   * own. A RAISED mouth may lead to nothing at all — the east stair simply
+   * stops at the edge of the walk — while a FLAT one has to lead to real
+   * ground a body could step onto, which a wall never does and a gateway
+   * always does. Without that second case the GATE is missed entirely and you
+   * walk straight out through the torii, which is what the owner found. */
+  const MOUTH_R = 10.5, MOUTH_UP = 0.80;
+  const M = [];
+  for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+    if (!A[j * gw + i]) continue;
+    const f = lowest(i, j); if (f === null) continue;
+    const wx = (w.x0 + (i + 0.5) * w.cell) * DOJO_S, wz = (w.z0 + (j + 0.5) * w.cell) * DOJO_S;
+    if (Math.hypot(wx - DOJO_FOUNT.x, wz - DOJO_FOUNT.z) < MOUTH_R) continue;
+    const raised = f >= dojoArenaY + MOUTH_UP;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+      if ((!a && !b) || (a && b)) continue;
+      const ni = i + a, nj = j + b;
+      const off = (ni < 0 || nj < 0 || ni >= gw || nj >= gh);
+      if (!off && A[nj * gw + ni]) continue;
+      const nf = off ? null : lowest(ni, nj);
+      if (nf === null && !raised) continue;             // a wall, not a gateway
+      if (nf !== null && (nf > f + YARD_STEP || nf < f - YARD_DROP)) continue;
+      M.push({ x: DOJO_X + wx, z: DOJO_Z + wz, y: DOJO_Y + f, nx: a, nz: b, raised });
+      break;
+    }
+  }
+  dojoMouths = M;
+}
+function dojoInArena(x, z) {
+  const w = dojoWalk; if (!dojoArena || !w) return true;
+  const i = Math.floor((dmX(x) - w.x0) / w.cell), j = Math.floor((dmZ(z) - w.z0) / w.cell);
+  if (i < 0 || j < 0 || i >= w.gw || j >= w.gh) return false;
+  return dojoArena[j * w.gw + i] === 1;
+}
+
+/* AND THE WAY OUT IS FILLED. A clamp alone would be an invisible wall, which
+ * this game has never shipped: you would walk into nothing halfway up a flight
+ * of steps. The heaps are what you see and the clamp is what is certain, and
+ * they are built on the same measured cells so they cannot disagree. A STAIR
+ * gets fallen masonry; a GATE gets a wall, because rubble piled in a torii
+ * reads as a rockfall indoors. */
+/* The flights this room describes wrongly, and what they actually are. `at`
+ * is the last standable tread, `o` the flight's own up-slope axis, `y` its
+ * floor there, `w` half the width of the steps between their walls, and
+ * `bw`/`bd` the clamp across and along them. All of it walked with the walk
+ * grid and the push-out, not read off the model. */
+const YARD_HEAPS = [
+  // the long south-west flight: treads 1.75 m wide, last one at y 3.24
+  { at: [-12.16, -7.61], near: 5.0, o: [-0.759, -0.651], y: 3.24, w: 1.70, bw: 4.6, bd: 2.1 },
+  /* AND THE EAST STEPS ARE MEASURED TOO, because the flood's own mouth moved
+   * out from under them. Putting the ground back under the torii's beams and
+   * clearing the grass speckle both changed where the arena flood stops — so
+   * the cluster this heap had always been built on drifted from x 15.5 to
+   * x 8.3 and the mass came out standing in the middle of the courtyard, eight
+   * metres short of the stair it is meant to block. A heap belongs to the
+   * FLIGHT, not to wherever a flood happened to stop that build, and a flight
+   * can be measured: on the drawn surface the treads run z -2.0 to +2.0 with
+   * the parapets at +-2.5 and void beyond, the flight climbs +x, and the last
+   * cell the walk still stands on is (17.0, 0.0) at y 2.30. */
+  { at: [17.0, 0.0], near: 10.0, o: [1, 0], y: 2.30, w: 2.30, bw: 5.4, bd: 2.1, toe: 3.0 },
+];
+/* the courtyard's own rampart stone, off the biggest mesh that wears it, set
+ * to repeat so a triplanar projection can tile it. It is the model's texture
+ * and not a second copy: the material is left alone, only the wrap is. */
+/* GRAVITY, AND IT IS A RAYCAST. Every stone used to be seated on the walk
+ * grid's own cell height — a 0.25 m plan of the floor, which on a flight of
+ * steps is the tread it happens to land in and on a slope is a staircase of
+ * its own. That is what "floating rocks" is: a boulder resting on a number
+ * rather than on the surface under it. This drops a ray on the DRAWN
+ * geometry and answers where it lands, in `dojoBlocks`' own world metres —
+ * and it skips whatever is already in the heap, so a stone is never seated
+ * on one that was laid a moment ago. */
+const _yardDrop = new THREE.Raycaster();
+const _yardDown = new THREE.Vector3(0, -1, 0);
+const _yardFrom = new THREE.Vector3();
+function dojoDropY(px, pz, fromY) {
+  if (!dojoWorld) return null;
+  _yardDrop.far = 60;
+  _yardFrom.set(DOJO_X + px, DOJO_Y + fromY, DOJO_Z + pz);
+  _yardDrop.set(_yardFrom, _yardDown);
+  const hs = _yardDrop.intersectObject(dojoWorld, true);
+  for (const h of hs) {
+    const o = h.object;
+    if (o.parent === dojoBlocks || o.parent === dojoLanterns) continue;
+    if (!o.visible || /Sphere|hitProxy/i.test(o.name || '')) continue;
+    return h.point.y - DOJO_Y;
+  }
+  return null;
+}
+let _dojoStone = null;
+function dojoStoneMap() {
+  if (_dojoStone !== null || !dojoWorld) return _dojoStone;
+  let bigN = 0, map = null;
+  dojoWorld.traverse((o) => {
+    if (!o.isMesh || !o.geometry || !o.material || !o.material.map) return;
+    if ((o.material.name || '') !== 'material_3') return;
+    const n = o.geometry.attributes.position ? o.geometry.attributes.position.count : 0;
+    if (n > bigN) { bigN = n; map = o.material.map; }
+  });
+  if (map) { map.wrapS = THREE.RepeatWrapping; map.wrapT = THREE.RepeatWrapping; map.needsUpdate = true; }
+  _dojoStone = map;
+  return map;
+}
+function buildDojoBlocks() {
+  if (!dojoWorld || dojoBlocks) return;
+  buildDojoArena();
+  if (!dojoMouths || !dojoMouths.length) return;
+  const cl = [];
+  for (const m of dojoMouths) {
+    let f = null;
+    for (const c of cl) if (Math.hypot(c.x - m.x, c.z - m.z) < 6.0) { f = c; break; }
+    if (f) { f.pts.push(m); if (!m.raised) f.flat = true; }
+    else cl.push({ x: m.x, z: m.z, pts: [m], flat: !m.raised });
+    if (f) { f.x = f.pts.reduce((a, q) => a + q.x, 0) / f.pts.length;
+             f.z = f.pts.reduce((a, q) => a + q.z, 0) / f.pts.length; }
+  }
+  dojoBlocks = new THREE.Group();
+  dojoBlocks.scale.setScalar(1 / DOJO_S);     // so everything inside is world metres
+  dojoWorld.add(dojoBlocks);
+  /* the courtyard's own stone, flat-shaded so every facet takes the moon
+   * differently, with enough emissive to keep it off black in a room that
+   * carries no lights of its own */
+  /* AND A HEAP OF ONE COLOUR IS A SLAB. Every stone shares this material —
+   * it has to, or the merge is a draw call a boulder — so the only place a
+   * difference between two of them can live is the GEOMETRY: each carries
+   * its own tone as a vertex colour, which multiplies the map, so a mass
+   * five hundred stones deep reads as stones rather than as one surface. */
+  /* AND A FLAT EMISSIVE IS WHAT MADE IT READ AS ONE SURFACE. The lift has
+   * to be there — this room carries no lights of its own and the moon is
+   * behind you — but it is a CONSTANT added to every fragment, so at 0.46
+   * it swamped the only thing that separates one boulder from the next,
+   * which is the moon falling differently on each flat face. Measured on
+   * screen, the heap came out a single tan expanse with the facets barely
+   * a shade apart, reading 26 against the masonry beside it at 26 — the same
+   * surface. At 0.28 it reads 19 and the moon does the separating. */
+  const mat = new THREE.MeshStandardMaterial({ color: 0xb4ab9e, roughness: 1, metalness: 0,
+    flatShading: true, vertexColors: true,
+    emissive: new THREE.Color(0x3e3b36), emissiveIntensity: 0.28 });
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x9a938a, roughness: 1, metalness: 0,
+    flatShading: true, emissive: new THREE.Color(0x4e4a44), emissiveIntensity: 0.55 });
+  /* AND A BOULDER IS NOT A FLAT GREY BLOB. These went in as a bare colour on
+   * a flat-shaded icosahedron, so every facet was one tone and the heap read
+   * as grey paper. It wants the courtyard's OWN stone — but an icosahedron's
+   * stock uv on a packed atlas is the desk's collage again, and a rock has no
+   * sensible unwrap anyway, so the map goes on TRIPLANAR: sampled along each
+   * object-space axis and blended by the face normal, the octopus ring's own
+   * arrangement. It works here because `bakeStatic` merges every stone into
+   * `dojoBlocks`, whose own space IS world metres — so the grain is the same
+   * size on every boulder and does not swim when one is turned. */
+  const stone = dojoStoneMap();
+  if (stone) {
+    mat.map = stone;
+    mat.onBeforeCompile = (sh) => {
+      /* and the map is the RAMPART'S — coursed masonry — so the projection has
+       * to stay coarse enough that its courses read as mottling on a boulder
+       * rather than as brickwork. At 0.72 a stone wore about one tile and came
+       * out a little brick wall; what breaks the mass up is the per-stone tone,
+       * not the grain. */
+      sh.uniforms.uRubK = { value: 0.55 };          // tiles per metre
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vRubP;\nvarying vec3 vRubN;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRubP = position;\nvRubN = normal;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform float uRubK;\nvarying vec3 vRubP;\nvarying vec3 vRubN;')
+        .replace('#include <map_fragment>', [
+          '{ vec3 bn = abs(normalize(vRubN)); bn = pow(bn, vec3(3.0)); bn /= (bn.x + bn.y + bn.z + 1e-5);',
+          '  vec4 tx = texture2D(map, vRubP.zy * uRubK) * bn.x',
+          '          + texture2D(map, vRubP.xz * uRubK) * bn.y',
+          '          + texture2D(map, vRubP.xy * uRubK) * bn.z;',
+          '  diffuseColor *= tx; }'].join('\n'));
+    };
+    mat.customProgramCacheKey = () => 'bwRubbleTri';
+  }
+  const rnd = mulberry32(0x5eed);
+  buildGateWall(wallMat);
+  for (const c of cl) {
+    const pts = c.pts;
+    let ox = 0, oz = 0;
+    for (const q of pts) { ox += q.nx; oz += q.nz; }
+    const L = Math.hypot(ox, oz) || 1; ox /= L; oz /= L;
+    /* AND A CLIMBING FLIGHT IS NOT DESCRIBED BY ITS OWN MOUTH. A mouth is
+     * where the arena's FLOOD stopped, and on a stair the flood stops because
+     * `ARENA_UP` runs out, not because the steps do — so on the long
+     * south-west flight the cluster came out at (-11.66, -9.86), a metre and a
+     * half PAST the last walkable tread, with its normal pointing down -z
+     * where the flight itself climbs diagonally toward -x and -z. The heap
+     * therefore went in beside the steps, up in the bushes over the
+     * balustrade, while its collider sat across the top: the owner walked up
+     * a flight of stairs that looked completely clear and hit an invisible
+     * wall, which is worse than not blocking it at all.
+     *
+     * So that one flight is measured instead. Walking the walk grid across the
+     * steps (the push-out consulted at every sample, so a balustrade is not
+     * mistaken for floor) the treads run 1.75 m wide between their walls, the
+     * last standable one is at (-12.16, -7.61) at y 3.24, and the flight's own
+     * axis is (-0.759, -0.651). `near` is how close a cluster has to be to
+     * claim the fix; everything else in the courtyard keeps the mouth. */
+    const fix = YARD_HEAPS.find((q) => Math.hypot(q.at[0] - (c.x - DOJO_X), q.at[1] - (c.z - DOJO_Z)) < q.near);
+    if (fix) { ox = fix.o[0]; oz = fix.o[1]; }
+    const tx = -oz, tz = ox;                  // across the opening
+    /* AND IT HAS TO REACH BOTH WALLS. The heap was sized to the mouth's own
+     * cells plus a metre and then THINNED TO NOTHING at its ends by the pile
+     * profile, so a stair came out blocked down the middle with a clear gap
+     * either side — which is not blocked at all. */
+    /* AND IT IS CENTRED ON THE OPENING, NOT ON THE AVERAGE OF THE CELLS. The
+     * mouth cells are not evenly spread across a stair — the flood finds more
+     * of them on one side — so the mean sat about a metre off the middle and
+     * the heap, thinning toward its ends, left the far side of the steps
+     * open. Measured: stones spanning z -3.1..3.9 on a stair running -3..+2.
+     * The span's MIDPOINT is the middle of the way out, whatever the cells
+     * happen to be doing. */
+    let lo = Infinity, hi = -Infinity, y = pts[0].y;
+    for (const q of pts) {
+      const t = (q.x - c.x) * tx + (q.z - c.z) * tz;
+      if (t < lo) lo = t; if (t > hi) hi = t;
+      y = Math.max(y, q.y);
+    }
+    const mid = (lo + hi) / 2;
+    let half = Math.min(8.0, Math.max(3.0, (hi - lo) / 2 + 2.2));
+    let cx = c.x - DOJO_X + tx * mid + ox * 0.55, cz = c.z - DOJO_Z + tz * mid + oz * 0.55;
+    if (fix) { cx = fix.at[0]; cz = fix.at[1]; y = DOJO_Y + fix.y; half = fix.w; }
+    const H = 3.10;
+    /* AND THE COLLIDER IS SIZED FROM THE OPENING, NOT FROM THE MOUTH CELLS.
+     * This is what left the long north-west flight open: measured, that stair
+     * is 9.3 m wide (z -13.25 .. -4 at every height) and the box across it was
+     * 2.9 m, so six and a half metres of it were simply not blocked. The mouth
+     * cells are where the FLOOD stopped, which is not the same thing as how
+     * wide the way out is — so the opening is probed across itself, a step at
+     * a time, until the room runs out of floor, and the box and the stones are
+     * both built to THAT. */
+    /* AND THE PROBE IS HEIGHT-AGNOSTIC, BECAUSE A STAIR CLIMBS. Asking
+     * `dojoFloorAt` at the mouth's own height walks a level line across a
+     * sloping flight, so it loses the floor the moment the treads rise past
+     * it and reports the opening as narrower than it is — measured, that left
+     * a lane at z = -12 on the long flight through which you walked clean out
+     * to x = -20.8. `dojoGridAt` answers whether the cell has ground at ALL,
+     * which is the actual question. */
+    const ground = (t) => {
+      const g2 = dojoGridAt(DOJO_X + cx + tx * t, DOJO_Z + cz + tz * t);
+      return !!g2 && g2.f > -90;
+    };
+    let pLo = 0, pHi = 0;
+    for (let t = -0.4; t > -16; t -= 0.4) { if (!ground(t)) break; pLo = t; }
+    for (let t = 0.4; t < 16; t += 0.4) { if (!ground(t)) break; pHi = t; }
+    /* AND THE PROBE MUST NOT RUN ALONG A BALUSTRADE. `ground` asks whether a
+     * cell has ground at ALL, which under a parapet it does — measured on the
+     * long flight it walked out past t = +3 and would have built a heap three
+     * times the width of the steps. A measured flight carries its own. */
+    if (fix) { pLo = -fix.w; pHi = fix.w; }
+    const openW = (pHi - pLo) + 2.4;                  // over both edges
+    const openC = (pLo + pHi) / 2;
+    /* AND THE WAY OUT IS AS WIDE AS THE GROUND, NOT AS WIDE AS THE TREADS.
+     * This is the one that survived four rebuilds of the heap, because every
+     * one of them measured the STAIR. Beside this flight, outside its right
+     * balustrade, the model carries a ledge that climbs from the courtyard at
+     * 0.5 up to 2.2 and runs on PAST the head of the steps — a second way up,
+     * a body's width from the first. Measured on the drawn surface across the
+     * heap's own station: tread 3.02, parapet 3.43, and then 2.20, 2.25, 2.24
+     * out to nearly four metres. A band test keyed to the tread throws all of
+     * that away at the first step down, so the rubble stopped at the
+     * balustrade and the lane beside it was never touched — walked, it carries
+     * you level with the middle of the heap; LOOKED along, you see the sky
+     * through the notch between the stone and the bank. That is the owner's
+     * gap, and it was never a hole in the pile.
+     *
+     * So the probe follows the SURFACE out instead of holding a level: it
+     * steps across while there is ground at all, while each step is inside the
+     * drop a body takes without asking, and while the ground has not fallen so
+     * far below the tread that it is simply the courtyard again. It crosses a
+     * coping and steps down onto a ledge; it does not cross a parapet into
+     * open air, and it does not walk off down the hill.
+     *
+     * And HOW DEEP the fall lies along the flight is the number the clamp and
+     * the stones must agree on — a heap three metres deep behind a collider
+     * two metres deep is a metre of rock you walk into before anything stops
+     * you, which is the old invisible wall with the sign reversed. */
+    const y0 = y - DOJO_Y;
+    const treadMid = c.flat ? null : dojoDropY(cx, cz, y0 + 1.4);
+    const bandT = treadMid === null ? y0 : treadMid;
+    const YARD_FALL = 1.5;              // below this it is the room, not the way out
+    let wLo = -0.3, wHi = 0.3;
+    if (!c.flat) {
+      let last = bandT;
+      for (let t = -0.3; t > -(half + (fix ? 5.0 : 1.2)); t -= 0.3) {
+        const g2 = dojoDropY(cx + tx * t, cz + tz * t, last + 1.1);
+        if (g2 === null || Math.abs(g2 - last) > YARD_DROP || g2 < bandT - YARD_FALL) break;
+        last = g2; wLo = t;
+      }
+      last = bandT;
+      for (let t = 0.3; t < half + (fix ? 5.0 : 1.2); t += 0.3) {
+        const g2 = dojoDropY(cx + tx * t, cz + tz * t, last + 1.1);
+        if (g2 === null || Math.abs(g2 - last) > YARD_DROP || g2 < bandT - YARD_FALL) break;
+        last = g2; wHi = t;
+      }
+    }
+    /* AND A HEAP MAY NOT BE WIDER THAN THE WAY OUT IT IS BLOCKING. The
+     * surface probe above is what found the ledge beside the long flight —
+     * it follows the ground out while each step is inside the drop a body
+     * takes — and on FLAT GROUND nothing ever stops it. Measured on the east
+     * steps, whose sides are open courtyard, it walked out to its own cap in
+     * both directions and the clamp came out 22.1 m across: a stone wall
+     * standing in the middle of the yard, which is exactly what the owner
+     * photographed. A measured flight carries the probe; everything else is
+     * held to the opening the FLOOD found, which is the thing that actually
+     * knows how wide the way out is. */
+    let sLo = wLo < -0.45 ? wLo - 0.45 : Math.min(wLo - 0.55, pLo - (fix ? 0.4 : 1.0));
+    let sHi = wHi >  0.45 ? wHi + 0.45 : Math.max(wHi + 0.55, pHi + (fix ? 0.4 : 1.0));
+    /* AND IT IS CENTRED ON THE WAY OUT, NOT ON WHAT THE PROBE MEASURED. The
+     * span's own midpoint drifts wherever the ground happened to let the probe
+     * run, and the heap goes with it: measured on the east steps the clamp
+     * came out centred at x 13.41 against a mouth at 16.03 — two and a half
+     * metres down the slope and standing in the courtyard instead of on the
+     * stair. The opening's own centre is the middle of the heap, and the span
+     * is symmetric about it. */
+    if (!fix) {
+      const hw = Math.min((sHi - sLo) / 2, (pHi - pLo) / 2 + 1.0);
+      sLo = openC - hw; sHi = openC + hw;
+    }
+    /* AND THE SMALL STAIR WANTS A HEAP, NOT A FILL. The long flight is a
+     * stairwell three and a half metres deep and the mass has to choke it;
+     * the east steps are a short wide opening, and the same treatment on them
+     * came out as a slab across the middle of the room — the owner's word,
+     * and he is right. It keeps a shallow depth and a DOMED crown: proudest
+     * on the line you would walk and falling away to either side, which is
+     * what a pile of stone does and what a wall never does. */
+    const uBack = fix ? 0.9 : 0.55, uFront = fix ? -2.7 : -0.8;
+    /* and the clamp is the heap's own footprint, less a little at the toe so
+     * you may stand against the first boulders rather than at arm's length
+     * from them */
+    const bW = c.flat ? (fix ? fix.bw : Math.max(half * 2, openW, 6.0)) : (sHi - sLo) + 0.5;
+    const bD = c.flat ? (fix ? fix.bd : 1.9) : Math.max(1.6, (uBack - uFront) - 0.55);
+    const bA = (c.flat || !fix) ? openC : (sLo + sHi) / 2;
+    const bU = (c.flat || !fix) ? 0 : (uBack + uFront) / 2 - 0.05;
+    const box = new THREE.Mesh(new THREE.BoxGeometry(bW, H * 2, bD),
+      new THREE.MeshBasicMaterial({ visible: false }));
+    box.position.set(cx + tx * bA + ox * bU, y - DOJO_Y + H * 0.5, cz + tz * bA + oz * bU);
+    box.rotation.y = Math.atan2(ox, oz);
+    box.visible = false;
+    box.userData.noBake = true;
+    dojoBlocks.add(box);
+    if (c.flat) {
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(half * 2, 3.0, 0.55), wallMat);
+      wall.position.set(cx, y - DOJO_Y + 1.5, cz);
+      wall.rotation.y = Math.atan2(ox, oz);
+      dojoBlocks.add(wall);
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(half * 2 + 0.3, 0.26, 0.78), wallMat);
+      cap.position.set(cx, y - DOJO_Y + 3.05, cz);
+      cap.rotation.y = wall.rotation.y;
+      dojoBlocks.add(cap);
+      continue;                                  // no boulders in a doorway
+    }
+    /* AND THE STONES COVER THE WHOLE OPENING, LAID OUT — NOT SCATTERED.
+     *
+     * Measured, the collider was already stopping you across the entire width
+     * of the stair (every lane from z -2.5 to +2.5 halts at x 13-14.5) while
+     * the stones sat over on one side, so the left half of the steps LOOKED
+     * clear and walking into it was an invisible wall. That is worse than not
+     * blocking at all.
+     *
+     * Two changes. The width is the opening's OWN walkable width, probed
+     * across it a step at a time until the room runs out of floor, rather than
+     * inferred from the mouth cells. And the stones are laid in COURSES at
+     * regular intervals with jitter rather than drawn at random positions —
+     * random placement leaves holes, and a hole is the whole complaint. */
+    /* AND A HEAP IS A VOLUME, NOT A CURTAIN. Every version of this before was
+     * a sheet: courses laid ACROSS the opening and lifted, with nothing behind
+     * them and nothing in front. On a flight of steps that reads as a bridge —
+     * measured by dropping rays through it, the lowest stone in most columns
+     * stood between half a metre and a metre and a half over the tread under
+     * it, and the columns down-slope of the middle had no stone at all. What
+     * you saw was an arch of boulders with the staircase running away under
+     * them, which is the gap the owner kept photographing, and no amount of
+     * extra courses closes it because the hole is BEHIND the sheet and not in
+     * it. So it is filled as a solid: a lattice across the opening, ALONG the
+     * slope, and up, every cell of it seated on the surface under that column
+     * and stacked to a crown well over head height. A rockfall chokes a
+     * stairwell; it does not lie across it. */
+    /* the stair's own width at the heap's station, measured on the DRAWN
+     * surface: step out from the middle until the ground leaves the tread's
+     * own band (a parapet rises out of it, the void beyond one falls out of
+     * it), then go a little past each wall so the mass beds into them. */
+    /* how deep the fall lies along the flight, and how thick it is over the
+     * treads. Depth is what stops you seeing under it; FILL is what stops you
+     * seeing over it, and it is measured from the tread of each station rather
+     * than from one number, so the mass climbs with the steps. */
+    const FILL = fix ? 2.85 : 2.45;
+    /* AND IT STOPS AT THE TOP OF THE WALL. A fall that stands proud of the
+     * masonry it came down beside reads as a mountain somebody put in the
+     * yard — it has to sit INSIDE the courtyard's own skyline. So the wall is
+     * measured rather than guessed: the highest thing the model draws just
+     * outside the span, on both sides, over the whole depth of the fall. */
+    /* AND IT IS THE WALL'S MEDIAN, NOT ITS MAXIMUM. Taking the highest thing
+     * the probe ever meets hands the heap whatever the hillside does behind
+     * the flight, which on this one is most of a metre over the coping — so
+     * the fall stood proud of the masonry again at the back. Every sample that
+     * is real structure goes in a list and the middle one is the line. */
+    const wallSamp = [];
+    if (!c.flat) for (let u = uBack + 0.6; u >= uFront - 0.6; u -= 0.6) {
+      for (const t of [sLo - 1.6, sLo - 0.9, sHi + 0.9, sHi + 1.6]) {
+        const g2 = dojoDropY(cx + tx * t + ox * u, cz + tz * t + oz * u, y0 + 22);
+        if (g2 !== null && g2 < y0 + 14 && g2 > bandT + 0.6) wallSamp.push(g2);
+      }
+    }
+    wallSamp.sort((p, q) => p - q);
+    let wallTop = wallSamp.length ? wallSamp[Math.floor(wallSamp.length * 0.5)] : -1e9;
+    if (wallTop < bandT + 1.2) wallTop = bandT + FILL + 0.4;   // nothing to sit under
+    const AC = 0.55, ALONG = 0.62, UP = 0.50;
+    /* the centre line's own surface at each station, which is where a ray may
+     * be started from without ever meeting a coping — the same rule as before,
+     * per station instead of per heap */
+    const base = [];
+    for (let u = uBack; u >= uFront - 1e-6; u -= ALONG) {
+      const g2 = dojoDropY(cx + ox * u, cz + oz * u, y0 + 1.5 + Math.max(0, u));
+      base.push({ u, b: g2 === null ? y0 + u * 0.55 : g2 });
+    }
+    /* AND A ROCKFALL IS NOT MASONRY. Five hundred stones of one size, all
+     * round, all seated on one smooth crown, is a wall with lumps on it —
+     * which is exactly what the owner saw. Four things separate the two, and
+     * none of them is more stones:
+     *
+     *  - a stone is BROKEN, so it is knocked out of round. An icosahedron is
+     *    non-indexed, so a per-vertex displacement tears it open — every copy
+     *    of a shared corner has to move by the SAME amount, so the offsets are
+     *    cached on the position itself and the seam cannot open.
+     *  - a stone is not a ball: each axis is scaled on its own, so the heap
+     *    carries slabs and wedges as well as boulders.
+     *  - and it stays at TWENTY FACES however big it is. Subdividing the big
+     *    ones was tried and is exactly wrong: a displaced detail-1 icosahedron
+     *    is a bumpy sphere, and a dozen of those a metre and a half across
+     *    read as boulders rounded by a river. What says "this broke off a
+     *    hill" is flat faces meeting at hard edges, which is what flat
+     *    shading on twenty of them gives for free.
+     *  - and the sizes are GRADED: big blocks at the bottom where the weight
+     *    is, small stuff filling the top. A talus does that by itself. */
+    const stone = (px, py, pz, r, sy, sz, detail = 0, amp = 0.42) => {
+      const geo = new THREE.IcosahedronGeometry(r, detail);
+      const pa = geo.attributes.position, n = pa.count;
+      const seen = new Map();
+      for (let i = 0; i < n; i++) {
+        const vx = pa.getX(i), vy = pa.getY(i), vz = pa.getZ(i);
+        const key = `${Math.round(vx * 2048)},${Math.round(vy * 2048)},${Math.round(vz * 2048)}`;
+        let f = seen.get(key);
+        if (f === undefined) { f = 1 + (rnd() - 0.5) * 2 * amp; seen.set(key, f); }
+        pa.setXYZ(i, vx * f, vy * f, vz * f);
+      }
+      pa.needsUpdate = true;
+      geo.computeVertexNormals();
+      let k = 0.58 + rnd() * 0.58; if (rnd() < 0.14) k *= 0.66;   // and the odd dark one
+      const wm = 0.91 + rnd() * 0.18;                             // a little warm or cold
+      const col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { col[i * 3] = k * wm; col[i * 3 + 1] = k; col[i * 3 + 2] = k * (2 - wm); }
+      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      const g = new THREE.Mesh(geo, mat);
+      g.scale.set(0.86 + rnd() * 0.3, sy, sz);
+      g.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3);
+      g.position.set(px, py, pz);
+      dojoBlocks.add(g);
+      return g;
+    };
+    for (const st of base) {
+      const u = st.u, b = st.b;
+      // the front of a talus is lower than its back, and its middle is proudest
+      const fr = (uBack - u) / Math.max(0.001, uBack - uFront);
+      let bc = b;                        // the surface the last column found
+      for (let a = sLo; a <= sHi + 1e-6; a += AC) {
+        const ja = a + (rnd() - 0.5) * 0.24, ju = u + (rnd() - 0.5) * 0.24;
+        const px = cx + tx * ja + ox * ju, pz = cz + tz * ja + oz * ju;
+        /* AND THE RAY STARTS OVER THE COLUMN, NOT OVER THE MIDDLE OF THE
+         * FLIGHT. With the span now crossing a parapet and dropping onto the
+         * ledge beyond it, a band measured from the centre line's own tread
+         * calls that whole ledge "too far below" and beds it back up at tread
+         * height — a course of boulders hanging a metre over the lane. The
+         * band travels with the surface instead: `bc` is what the column
+         * before this one found, so the pile steps down onto the ledge the
+         * way the ground does, and a stone still leans on a parapet rather
+         * than standing on its coping. */
+        /* AND A COLUMN OVER A DROP GETS NO STONE AT ALL. Holding it up at the
+         * last column's height is what put boulders in the air: past the
+         * balustrade the ground falls three metres into the courtyard, the ray
+         * comes back down there, and a stone bedded at tread level has all of
+         * that under it. The span is measured to the real ground now, so the
+         * parapet closes the end by itself and the column can simply be
+         * dropped — skipped, not clamped. */
+        let gy = dojoDropY(px, pz, bc + 1.1);
+        if (gy === null || gy < bc - (YARD_DROP + 0.4)) continue;
+        if (gy > bc + (YARD_DROP + 0.4)) gy = bc + 0.4;
+        bc = gy;
+        const mid = (sLo + sHi) / 2, wd = Math.max(0.001, (sHi - sLo) / 2);
+        /* and the crown is ragged per column, or five hundred stones stacked to
+         * one smooth curve read as a wall with lumps on it */
+        /* AND A FALL BANKS UP AGAINST A WALL, it does not thin against one. The
+         * crown used to be proudest in the middle and 0.30 lower at each end,
+         * which puts the thinnest part of the heap exactly where it meets the
+         * balustrade — the one place the owner kept finding daylight. */
+        /* AND A CEILING MAKES A PLATEAU. Clamped flat to the wall line, most of
+         * the columns reach the same height and the fall comes out with a
+         * table top — which is the wall it was supposed to stop looking like,
+         * upside down. The CAP undulates too: a smooth two-frequency swell
+         * that only ever takes the crown DOWN from the coping, so the heap
+         * keeps a ragged skyline and still never stands over the masonry. */
+        const sag = 0.68 * (0.5 - 0.5 * Math.sin(ja * 1.05 + 0.4) * Math.cos(u * 1.3 + 1.7))
+          + 0.22 * (0.5 + 0.5 * Math.sin(ja * 2.4 + 2.2));
+        /* AND THE COPING MAY NOT CUT IT BELOW HEAD HEIGHT. The cap is right
+         * where the wall beside the flight is tall; on the east stair the
+         * banks are low, so the median came in under the fall's own job and
+         * the heap was trimmed to a row of pinnacles with the sky between
+         * them — measured, 43 sight lines of 3960 went straight over it. The
+         * two rules are in that order: block the way out first, sit under the
+         * masonry second. */
+        const tt = Math.min(1, Math.abs((ja - mid) / wd));
+        const shape = fix ? FILL * (1 - 0.30 * fr) + 0.28 * tt * tt      // banked against the walls
+                          : FILL * (1 - 0.34 * fr) * (1 - 0.34 * tt * tt);  // domed, falling to its ends
+        /* AND THE DOME MAY ONLY SHAPE WHAT IS ABOVE THE FLOOR. Domed all the
+         * way down, the small stair's ends fell to a metre and a sixth and
+         * 303 sight lines of 3040 went straight over it — a heap that reads
+         * well and does not block is the bug it was built to fix. The floor
+         * stays near level and the dome lives on top of it: the middle is
+         * proud, the ends are still over head height. */
+        const floor = bandT + (fix ? 2.25 : 2.20);
+        const crown = Math.max(floor, Math.min(wallTop - 0.12 - sag, b + shape + (rnd() - 0.5) * 0.85));
+        for (let v = 0; ; v++) {
+          const cy = gy + 0.26 + v * UP + (rnd() - 0.5) * 0.16;
+          if (v > 1 && cy > crown) break;
+          if (v > 9) break;
+          /* graded: the weight is at the bottom and the fines are on top, and
+           * a stone near the face stands proud of it — a flat course of equal
+           * boulders is the thing that reads as coursed stone */
+          const hf = Math.min(1, (cy - gy) / Math.max(0.8, crown - gy));
+          const big = rnd() < 0.22 - 0.14 * hf;
+          const r = (big ? 0.95 + rnd() * 0.55 : 0.34 + rnd() * 0.62) * (1 - 0.22 * hf);
+          const sy = 0.62 + rnd() * 0.42;
+          const out = (rnd() - 0.5) * 0.52;
+          /* and the coping is a line the STONE may not cross, not its centre:
+           * a crown height with a metre-wide boulder sitting on it puts most of
+           * that boulder over the wall */
+          if (cy + r * sy * 1.2 > Math.max(wallTop, bandT + 2.9) && v > 1) break;
+          stone(px + (rnd() - 0.5) * 0.34 + ox * out, cy, pz + (rnd() - 0.5) * 0.34 + oz * out,
+            r, sy, 0.78 + rnd() * 0.42, 0, big ? 0.46 : 0.40);
+          if (cy > crown) break;
+        }
+      }
+    }
+    /* AND THE SILHOUETTE IS LOBED, NOT LEVEL. The crown is a guaranteed fill
+     * line and it may not come down — that is what shuts the sight lines — so
+     * the raggedness is ADDED on top of it: a smooth two-frequency swell
+     * across the span and along the slope decides how much goes above the
+     * line, so the heap reads as humps and saddles instead of a straight
+     * edge. Nothing here can open a hole, because nothing here removes a
+     * stone. */
+    for (const st of base) {
+      const u = st.u, b = st.b;
+      const fr = (uBack - u) / Math.max(0.001, uBack - uFront);
+      for (let a = sLo; a <= sHi + 1e-6; a += AC * 0.85) {
+        const sw = 0.5 + 0.5 * Math.sin(a * 1.17 + 0.8) * Math.cos(u * 1.45 + 2.1)
+          + 0.22 * Math.sin(a * 2.6 - 1.3);
+        const hump = Math.max(0, sw - 0.42) * 1.9 * (1 - 0.55 * fr);
+        if (hump < 0.12) continue;
+        const ja = a + (rnd() - 0.5) * 0.4, ju = u + (rnd() - 0.5) * 0.4;
+        const px = cx + tx * ja + ox * ju, pz = cz + tz * ja + oz * ju;
+        // nothing goes on a hump the pile below never reached
+        const gg = dojoDropY(px, pz, b + 1.3);
+        if (gg === null || gg < b - (YARD_DROP + 0.4)) continue;
+        const sag2 = 0.6 * (0.5 - 0.5 * Math.sin(ja * 1.05 + 0.4) * Math.cos(ju * 1.3 + 1.7));
+        const tt2 = Math.min(1, Math.abs((ja - (sLo + sHi) / 2) / Math.max(0.001, (sHi - sLo) / 2)));
+        const top = Math.max(bandT + (fix ? 2.25 : 2.20),
+          Math.min(wallTop - 0.2 - sag2, b + FILL * (1 - 0.30 * fr) + 0.28));
+        for (let h = 0; h < hump; h += 0.42) {
+          const r = 0.30 + rnd() * 0.5;
+          const cy = top + h + r * 0.3;
+          if (cy + r * 0.9 > Math.max(wallTop, bandT + 2.9)) break;
+          stone(px + (rnd() - 0.5) * 0.4, cy, pz + (rnd() - 0.5) * 0.4,
+            r, 0.55 + rnd() * 0.5, 0.7 + rnd() * 0.6);
+        }
+      }
+    }
+    /* AND A FALL HAS KEY BLOCKS IN IT. What tells you a heap is stone that
+     * came off a hill, rather than stone somebody laid, is the handful of
+     * pieces far bigger than the rest, sitting where they stopped — over the
+     * crown and down the face, turned every way. A dozen of them do more for
+     * the read than another two hundred of the ordinary size. */
+    if (fix) for (let k = 0; k < 15; k++) {
+      const ja = sLo + 0.3 + rnd() * Math.max(0.1, (sHi - sLo) - 0.6);
+      const ju = uFront + 0.5 + rnd() * Math.max(0.1, (uBack - uFront) - 0.7);
+      const fr = (uBack - ju) / Math.max(0.001, uBack - uFront);
+      const bb = base[Math.min(base.length - 1, Math.round((uBack - ju) / ALONG))].b;
+      const px = cx + tx * ja + ox * ju, pz = cz + tz * ja + oz * ju;
+      const gg = dojoDropY(px, pz, bb + 1.3);
+      if (gg === null || gg < bb - (YARD_DROP + 0.4)) continue;
+      const r = 0.95 + rnd() * 0.5;
+      const face = rnd() < 0.45;                     // on the face, or on the crown
+      let cy = face ? bb + 0.5 + rnd() * (FILL - 0.8)
+                    : Math.min(wallTop - 0.2, bb + FILL * (1 - 0.30 * fr)) + r * 0.45;
+      const capB = Math.max(wallTop, bandT + 2.9);
+      if (cy + r * 0.95 > capB) cy = capB - r * 0.95;
+      stone(px, cy, pz, r, 0.62 + rnd() * 0.38, 0.72 + rnd() * 0.42, 0, 0.5);
+    }
+    /* AND IT SPILLS DOWN THE SIDES. A heap that stops dead at the balustrade
+     * reads as a wall of rock somebody built; a rockfall runs out along the
+     * edges and loses stones down the flight. These go OUTSIDE the span, a
+     * little way down the slope, each one seated by the same ray. */
+    if (fix) for (let k = 0; k < 18; k++) {
+      const side = k % 2 ? 1 : -1;
+      const a = side * (half + 0.15 + rnd() * 0.85);
+      const down = -(0.3 + rnd() * 2.3);                  // back down the steps
+      const px = cx + tx * a + ox * down, pz = cz + tz * a + oz * down;
+      const gy = dojoDropY(px, pz, (y - DOJO_Y) + 1.1);
+      if (gy === null || gy < (y - DOJO_Y) - 4.0 || gy > (y - DOJO_Y) + 0.8) continue;
+      const r = 0.26 + rnd() * 0.46;
+      const sy = 0.5 + rnd() * 0.45;
+      stone(px, gy + r * sy * 0.58, pz, r, sy, 0.8 + rnd() * 0.5);
+    }
+    /* AND THE TOE RUNS OUT OVER THE TREADS. A mass that ends on a line at its
+     * own foot is a wall however rough its top is; what says "this fell" is
+     * the stones that went FURTHER — thinning and shrinking down the steps in
+     * front of it, a few of them right out at the bottom of the flight. Each
+     * is seated by the same ray, so they sit on the tread they reached. */
+    const TOE = fix ? 34 : 14;
+    for (let k = 0; k < TOE; k++) {
+      const t = rnd();                                   // 0 at the heap, 1 far out
+      /* and how far the toe runs is the FLIGHT'S own number: seven metres of
+       * scatter is right at the foot of a long stairwell and is stones lying
+       * out in the yard at the foot of a short one. */
+      const out = 0.6 + t * t * ((fix && fix.toe) || (fix ? 7.0 : 4.0));
+      const spread = 0.55 + t * 0.75;
+      const a = (sLo + sHi) / 2 + (rnd() * 2 - 1) * ((sHi - sLo) / 2) * spread;
+      const px = cx + tx * a - ox * out, pz = cz + tz * a - oz * out;
+      const gy2 = dojoDropY(px, pz, (y - DOJO_Y) + 1.4);
+      if (gy2 === null || gy2 < (y - DOJO_Y) - 5.0 || gy2 > (y - DOJO_Y) + 0.8) continue;
+      const r = (0.30 + rnd() * 0.38) * (1 - 0.5 * t);
+      const sy = 0.55 + rnd() * 0.4;
+      stone(px, gy2 + r * sy * 0.5, pz, r, sy, 0.8 + rnd() * 0.4);
+    }
+  }
+}
+/* AND THE BACK OF THE GATEWAY IS CLOSED. The flood reaches into the gate
+ * house — its threshold is at courtyard level and connected, so it is arena —
+ * and once you are standing under it the back is open on the hillside, which
+ * is a view of out-of-bounds at best and a way into it at worst. The mouth
+ * rule cannot help: there is no walkable cell BEYOND it for a flat mouth to
+ * point at, so nothing ever looked like a way out.
+ *
+ * Its bounds are the gate island's own, off the same flood that found the
+ * lantern: centre (-10.68, 7.22), 6.94 across by 7.36 deep. The wall goes
+ * across the far side of that, in the courtyard's own masonry. */
+/* the gate's own slice of the ring: z across it, x the band the lip lies in,
+ * and how finely the wall follows the edge */
+/* the gateway's own band: z across the passage, the x range its lip lies in,
+ * how finely the wall follows it, and how far west a slice's floor must reach
+ * before it counts as a way OUT rather than the courtyard's own edge */
+/* THE HOLE IS THE THING TO MEASURE, NOT THE SLAB. Three versions of this wall
+ * were placed off the torii's floor slab and every one of them was a twelve
+ * metre panel standing out on the hillside past the corner of the rampart —
+ * which is what "what is this shit in front of the gate" was, and it was not
+ * a texture problem or an angle problem: a wall four times the width of the
+ * hole it is closing cannot help but hang out of the building.
+ *
+ * So it is measured by SIGHT, from where the player stands. Rays cast west out
+ * of the gate house (from x = -6, over z 5.25..8.25 and y 1.2..3) say exactly
+ * which of them reach the hillside, and the answer is two slots between the
+ * gate's own posts: z 5.9-6.4 and z 6.9-7.4, open from the ground to y 4.25.
+ *
+ * AND A BOX INSIDE THE GATE IS A BOX INSIDE THE GATE. The version before this
+ * was tucked EAST of the rear masonry on the theory that a fill seen through
+ * the slots reads better than a panel on the back — and the courtyard's wall
+ * CURVES here (its face runs x -11.45 at z 4.75 out to -13.00 at z 5.75), so
+ * an axis-aligned box set into a curving wall stands proud on one side and is
+ * buried on the other. That is the whole of "why is it sideways, it is
+ * clipping through the gate and walls": sixty of the model's own triangles
+ * were inside it.
+ *
+ * Where it may go is not a guess either. Sweeping the box west a tenth of a
+ * metre at a time and counting the drawn triangles inside it: 113 at x -12.7,
+ * 61 at -13.0, 26 at -13.1, 5 at -13.3 and ZERO at -13.5. The gate's own
+ * westernmost geometry stands at about -13.2, so the wall goes straight
+ * across behind it, flush to its back, in the clear. Its height is the same
+ * measurement: nothing of the model lies in that slot below y 4.5, which is
+ * where the roof begins, and the ground under the gate is flat at y 0. */
+/* AND THE HOLE IS THE SLAB'S OWN LIP, WHICH IS A DIAGONAL.
+ *
+ * Standing on the gate's threshold and looking out, the wall was off to one
+ * side with the hillside, the mountains and the sky wide open beside it — and
+ * that is not a hole the ray sweep could ever have found, because the sweep
+ * casts WEST from inside and this gap opens to the NORTH-WEST, past the end
+ * of a wall that runs straight down z.
+ *
+ * What the player is actually looking at is the edge of the threshold slab,
+ * and the slab is `material_7` at y 0.51 over a ground at 0. Raycast down
+ * every 0.05 m and take the first x at which that surface appears, z by z:
+ *
+ *   5.4 -11.35   6.0 -12.30   6.6 -13.10   7.2 -12.70   8.0 -12.15
+ *   5.6 -11.65   6.2 -12.60   6.8 -12.95   7.4 -12.55   8.6 -11.75
+ *   5.8 -12.00   6.4 -12.90   7.0 -12.80   7.6 -12.45   9.6 -11.10
+ *
+ * That is not a line, it is a POINT at (-13.10, 6.60) with two straight runs
+ * off it — the slab comes to a prow. A single axis-aligned box cannot be
+ * flush with both, which is the whole of "it is still not in the right spot":
+ * measured at z 9, the lip is at -11.35 and the box was at -13.3, two metres
+ * out on the hill with the view wide open between them.
+ *
+ * So the wall is the lip. `GATE_LIP` is the polyline and a segment is built
+ * between each pair of points, each turned to its own run and set out by half
+ * its thickness less `bite`, so its outer face lands on the edge. Its height
+ * is measured the same way: nothing of the model lies along either run
+ * between y -0.3 and 4.55, and 4.55 is where the gate house's roof begins. */
+/* AND THE LEFT END NEEDED A RETURN. The lip stopped at (-13.35, 5.00) and
+ * the courtyard's own masonry does not pick up again until x -10.2 — so the
+ * corner between them was three metres of open air, which is the gap on the
+ * left the owner kept seeing. Measured by casting -x from x = -8 at chest
+ * height: z 6.0 meets the gate wall at -13.11, z 5.5 and 5.0 meet the room's
+ * own wall at -10.23 and -10.22. A short return across that step closes it,
+ * and it beds into the model at both ends rather than standing proud. */
+/* AND THE FAR END NEEDED ONE TOO — the same corner at the other end of the
+ * lip. Casting -x from x = -7 at three heights, the room's own masonry sits
+ * at -8.07, -7.47 and -7.18 for z 9.0, 9.5 and 10.0, and the lip stopped at
+ * (-10.95, 9.75): three and a half metres of open corner behind the torii.
+ * Measured from the gate's own floor, 31 spots round it had a clear line out
+ * of the world and every one of them was at z 9.5 to 10.6. */
+const GATE_LIP = [[-10.45, 4.85], [-13.35, 5.00], [-13.10, 6.60], [-10.95, 9.75], [-7.55, 9.95]];
+const GATE_STAND = 5.5;        // how far in front of the gate he arrives
+const GATE_WALL = { t: 0.35, base: -0.30, h: 4.80, ext: 0.50, bite: 0.08, bt: 1.0 };
+/* AND IT WEARS THE RAMPART'S OWN STONE AT THE RAMPART'S OWN SCALE. The first
+ * one took `material_7` and a fixed sub-rect of the packed atlas, which came
+ * out as a collage of roof tiles, red lacquer and grass — a box's stock 0..1
+ * samples the whole sheet and a hand-picked patch of a packed atlas is not a
+ * texture, it is a crop. The courtyard's outer face is `material_3` and it is
+ * TILED: raycast along it, u reads -0.870 at z -4 and -5.539 at z 5, and v
+ * 0.277 at y 1.5 and 1.069 at y 4.5 — so -0.367 per metre along the wall and
+ * 0.264 per metre up it, which is what the box's uv is written to. */
+const GATE_TILE = { u: -0.367, v: 0.264, u0: -3.40, v0: 0.18 };
+function buildGateWall(fallback) {
+  let mat = fallback;
+  if (dojoWorld) {
+    let bigN = 0;
+    dojoWorld.traverse((o) => {
+      if (!o.isMesh || !o.geometry || !o.material) return;
+      if ((o.material.name || '') !== 'material_3') return;   // the rampart's stone
+      const n = o.geometry.attributes.position ? o.geometry.attributes.position.count : 0;
+      if (n > bigN) { bigN = n; mat = o.material; }
+    });
+  }
+  const W = GATE_WALL, T = GATE_TILE;
+  for (let s = 0; s + 1 < GATE_LIP.length; s++) {
+    const p0 = GATE_LIP[s], p1 = GATE_LIP[s + 1];
+    const dx = p1[0] - p0[0], dz = p1[1] - p0[1], L = Math.hypot(dx, dz);
+    if (L < 0.05) continue;
+    const ux = dx / L, uz = dz / L;
+    /* a box's local +X lands on (cos, 0, -sin), so this is the turn that puts
+     * its length along the run; and the outward side is the one pointing away
+     * from the courtyard, which out here is -x */
+    const yaw = Math.atan2(-uz, ux);
+    let nx = -uz, nz = ux; if (nx > 0) { nx = -nx; nz = -nz; }
+    const off = W.t / 2 - W.bite;
+    const cx = (p0[0] + p1[0]) / 2 + nx * off, cz = (p0[1] + p1[1]) / 2 + nz * off;
+    const len = L + W.ext;
+    const wg = new THREE.BoxGeometry(len, W.h, W.t);
+    /* A BOX'S SIX FACES EACH CARRY THEIR OWN 0..1, over their own two
+     * dimensions — so one scale over all of them stretches the ends by the
+     * ratio of the length to the thickness. They go in face order (+x, -x,
+     * +y, -y, +z, -z), four vertices each, and each pair gets the tiling its
+     * own face actually spans. */
+    const span = [[W.t, W.h], [W.t, W.h], [len, W.t], [len, W.t], [len, W.h], [len, W.h]];
+    const uvA = wg.attributes.uv;
+    for (let f = 0; f < 6; f++) {
+      const su = span[f][0] * T.u, sv = span[f][1] * (f === 2 || f === 3 ? T.u : T.v);
+      for (let k = 0; k < 4; k++) {
+        const i = f * 4 + k;
+        uvA.setXY(i, T.u0 + uvA.getX(i) * su, T.v0 + uvA.getY(i) * sv);
+      }
+    }
+    uvA.needsUpdate = true;
+    const wall = new THREE.Mesh(wg, mat);
+    wall.position.set(cx, W.base + W.h / 2, cz);
+    wall.rotation.y = yaw;
+    dojoBlocks.add(wall);
+    /* the collider is the same run and twice the height: a body must not step
+     * over it from the gate house's own raised threshold */
+    const box = new THREE.Mesh(new THREE.BoxGeometry(len + 0.4, W.h * 2, W.bt),
+      new THREE.MeshBasicMaterial({ visible: false }));
+    box.position.set(cx, W.base + W.h * 0.5, cz);
+    box.rotation.y = yaw;
+    box.visible = false;
+    box.userData.noBake = true;
+    dojoBlocks.add(box);
+  }
+}
+let dojoBlocks = null;
+
 /* Can a body walk `dist` along this heading? Marched in strides, because a
  * crossing test alone has no thickness - the keep's own lesson - so the
  * body's WIDTH is asked at every step as well as the line between them, and
@@ -33126,8 +34759,8 @@ function dojoRoute(x0, z0, x1, z1) {
   const w = dojoWalk;
   if (!w || !dojoNav) return null;
   const gw = w.gw, gh = w.gh;
-  const toI = (x) => Math.floor((x - DOJO_X - w.x0) / w.cell);
-  const toJ = (z) => Math.floor((z - DOJO_Z - w.z0) / w.cell);
+  const toI = (x) => Math.floor((dmX(x) - w.x0) / w.cell);
+  const toJ = (z) => Math.floor((dmZ(z) - w.z0) / w.cell);
   const free = (i, j) => (i >= 0 && j >= 0 && i < gw && j < gh && dojoNav[j * gw + i] === 1);
   const near = (i, j) => {
     if (free(i, j)) return j * gw + i;
@@ -33173,7 +34806,9 @@ function dojoRoute(x0, z0, x1, z1) {
   for (let guard = 0; guard < 4000 && c !== s0; guard++) { cells.push(c); c = prev[c]; }
   cells.push(s0); cells.reverse();
   if (cells.length < 2) return null;
-  const pt = (k) => ({ x: w.x0 + ((k % gw) + 0.5) * w.cell, z: w.z0 + (((k / gw) | 0) + 0.5) * w.cell });
+  // in WORLD metres off the room's origin: `u.pathO` adds DOJO_X/Z back on
+  const pt = (k) => ({ x: (w.x0 + ((k % gw) + 0.5) * w.cell) * DOJO_S,
+                       z: (w.z0 + (((k / gw) | 0) + 0.5) * w.cell) * DOJO_S });
   const out = [pt(cells[0])];
   for (let k = 1; k < cells.length - 1; k++) {
     const a = cells[k - 1], b = cells[k], c3 = cells[k + 1];
@@ -33190,7 +34825,7 @@ function dojoNearestStand(x, z) {
   const w = dojoWalk;
   if (!w || !dojoNav) return null;
   const gw = w.gw, gh = w.gh;
-  let ci = Math.floor((x - DOJO_X - w.x0) / w.cell), cj = Math.floor((z - DOJO_Z - w.z0) / w.cell);
+  let ci = Math.floor((dmX(x) - w.x0) / w.cell), cj = Math.floor((dmZ(z) - w.z0) / w.cell);
   ci = Math.max(0, Math.min(gw - 1, ci)); cj = Math.max(0, Math.min(gh - 1, cj));
   let best = null, bd = Infinity;
   for (let j = 0; j < gh; j++) {
@@ -33201,9 +34836,29 @@ function dojoNearestStand(x, z) {
     }
   }
   if (!best) return null;
-  return { x: DOJO_X + w.x0 + (best[0] + 0.5) * w.cell, z: DOJO_Z + w.z0 + (best[1] + 0.5) * w.cell };
+  return { x: dsX(w.x0 + (best[0] + 0.5) * w.cell), z: dsZ(w.z0 + (best[1] + 0.5) * w.cell) };
 }
 const YARD_PATH_EVERY = 0.45;
+/* AND FINDING A HEADING IS NOT THE SAME AS GETTING ANYWHERE — the Dealer's
+ * oldest lesson, which this room never got. Measured with the fight running
+ * and the player standing still five metres off: the samurai walked to
+ * (-6.55, 3.52), his speed decayed 1.40, 0.44, 0.16, 0.06, 0.02, 0.01, 0.00,
+ * and he stood there for SEVEN SECONDS with no route and no swing — and then
+ * came on as if nothing had happened. Six of eight spots round the courtyard
+ * reproduced it; at four of them he never came inside three metres at all.
+ * That is the whole of "he just stops attacking even if they get close", and
+ * it is not a tuning number, it is a body wedged on something its own
+ * steering test says is not there: the probe asks a 0.42 m disc and the
+ * room's push-out answers a 0.34 m one, and measured at that spot the wider
+ * disc is 0.08 m inside a wall the narrower one cannot feel.
+ *
+ * So PROGRESS is the test, not the probe. If he is trying to close and has
+ * not moved for two thirds of a second, whatever he is doing is worthless:
+ * the route is thrown away and re-asked, and where the room cannot give him
+ * one he is stepped round the obstruction himself on the nearest heading that
+ * is actually clear, held long enough not to dither. A boss that stands still
+ * is a boss that is broken. */
+const YARD_STUCK = 0.62;                  // how long a body may make no ground before its opinion is worthless
 function dojoSteer(u, dt, dist) {
   if (!u.kind.dojo || !dojoWalls) return;
   buildDojoNav();
@@ -33212,13 +34867,42 @@ function dojoSteer(u, dt, dist) {
   const feet = st ? st.f : p.y;
   const ddx = camera.position.x - p.x, ddz = camera.position.z - p.z;
   const L = Math.hypot(ddx, ddz) || 1;
+  if (!u.yardP) u.yardP = { x: p.x, z: p.z, t: 0, bias: 0, biasT: 0 };
+  const gained = Math.hypot(p.x - u.yardP.x, p.z - u.yardP.z);
+  if (gained > 0.10 || dist < 1.8) { u.yardP.x = p.x; u.yardP.z = p.z; u.yardP.t = 0; }
+  else u.yardP.t += dt;
+  const stuck = u.yardP.t > YARD_STUCK;
   /* A ROUTE IS DROPPED THE MOMENT THE LINE OPENS. It is a way round a thing,
-   * not a way of getting about. */
-  if (dojoClearAhead(p.x, p.z, ddx / L, ddz / L, Math.min(L, 5.0), YARD_NAV_R, feet)) {
+   * not a way of getting about — unless the line says it is open and he is
+   * demonstrably not moving down it, in which case the line is lying. */
+  if (!stuck && dojoClearAhead(p.x, p.z, ddx / L, ddz / L, Math.min(L, 5.0), YARD_NAV_R, feet)) {
     u.path = null; return;
   }
+  if (stuck) {
+    /* THE FAN, AND HE HOLDS THE ANGLE HE PICKS. Nearest heading first, out to
+     * a half turn either way; the choice is kept for most of a second so he
+     * does not dither at a corner, which is the Dealer's own `turnBias`. */
+    u.yardP.biasT -= dt;
+    const base = Math.atan2(ddz, ddx);
+    let bx = 0, bz = 0;
+    const tryA = (ang) => {
+      const cx = Math.cos(ang), cz = Math.sin(ang);
+      if (!dojoClearAhead(p.x, p.z, cx, cz, 1.3, YARD_NAV_R, feet)) return false;
+      bx = cx; bz = cz; return true;
+    };
+    let got = false;
+    if (u.yardP.biasT > 0) got = tryA(base + u.yardP.bias);
+    if (!got) for (const s2 of [0, 0.42, -0.42, 0.85, -0.85, 1.3, -1.3, 1.9, -1.9, 2.5, -2.5]) {
+      if (tryA(base + s2)) { u.yardP.bias = s2; u.yardP.biasT = 0.8; got = true; break; }
+    }
+    if (got) {
+      const sp = (u.kind.speed || 4.6) * (u.kind.speedK || 1) * 0.72;
+      p.x += bx * sp * dt; p.z += bz * sp * dt;
+      u.yardP.x = p.x; u.yardP.z = p.z; u.yardP.t = 0;
+    }
+  }
   u.pathAge = (u.pathAge || 0) + dt;
-  if (u.path || u.pathAge < YARD_PATH_EVERY || dist < 1.6) return;
+  if ((u.path && !stuck) || u.pathAge < YARD_PATH_EVERY || dist < 1.6) return;
   u.pathAge = 0;
   const P = dojoRoute(p.x, p.z, camera.position.x, camera.position.z);
   u.path = (P && P.length > 1) ? P : null;
@@ -33301,8 +34985,25 @@ function warmDojo() {
   warmThrough([dojoWorld]);
 }
 
+/* AND HE IS WARMED WHILE YOU ARE LOOKING AT THE COURTYARD. His model lands
+ * over the network, so the warm cannot be done at load — it is done on the
+ * first frame in the room that has one, which is minutes before anybody
+ * touches the sword. */
+let samuraiWarmed = false;
+function warmSamurai() {
+  if (samuraiWarmed || !samurai || !samurai.g || !samurai.g.children.length) return;
+  samuraiWarmed = true;
+  const was = samurai.g.visible;
+  samurai.g.visible = true;
+  warmThrough([samurai.g]);
+  samurai.g.visible = was;
+}
+
 function updateDojo(dt) {
+  cullWorldInHall();
+
   if (!dojoReady) return;
+  if (inDojo) warmSamurai();
   /* ITS OWN CLOCK. The rain used to run off `portalT`, and `updatePortal`
    * RETURNS EARLY while you are in the dojo — so the moment you arrived the
    * phase froze and the ground splashes stopped cycling for the whole fight.
@@ -33310,6 +35011,8 @@ function updateDojo(dt) {
   dojoT += dt;
   const t = dojoT;
   if (inDojo || dojoWorld.visible) updateDojoRain(dt, t);
+  updateDojoLamps(dt, t);
+  updateFountain(dt);
   if (!inDojo) return;
   /* THE ROOM'S OWN FRAME. The floor is the grid's, the walls are the grid's,
    * and the clamp runs AFTER the move — and then the push-out runs again
@@ -33320,10 +35023,69 @@ function updateDojo(dt) {
    * of anything it is inside; the grid then says what it is standing on.
    * A cell with no floor at this level at all is off the edge of the
    * drawn world, and the frame is reverted rather than dropping you. */
+  /* REVERTING TO WHERE YOU WERE AT THE TOP OF THIS FUNCTION IS NOT REVERTING
+   * THE MOVE — and that is the whole of "you can walk out of bounds". By the
+   * time the room is asked, `update()` has ALREADY moved the player this
+   * frame, so `bx, bz` is the position AFTER the step. Put a foot outside and
+   * the revert hands you back the outside position, the next frame reverts to
+   * one further out again, and you walk clean off the model: measured,
+   * holding W to the west ended 67.7 m from the middle of the ring, and to
+   * the north-west 71.6 m, both of them out on nothing with the boss left
+   * behind in the courtyard.
+   *
+   * So the room remembers the last place you stood that it actually agrees
+   * with — on a floor, inside the arena — and THAT is what a refused move
+   * goes back to. It cannot walk you out by one frame at a time, because the
+   * anchor never leaves the room. */
   const bx = p.x, bz = p.z;
   pushOutOfDojo(p, PLAYER_R, feet);
+  const back = () => {
+    if (dojoSafe) { p.x = dojoSafe.x; p.z = dojoSafe.z; } else { p.x = bx; p.z = bz; }
+  };
+  /* AND A WALL IS SLID ALONG, NOT STOPPED AT. This room only ever REVERTED a
+   * refused step, which against the torii's own posts and the gate house's
+   * jambs is a body that stops dead — and worse, walks into a pocket it then
+   * cannot get out of. Measured by walking in from the courtyard: you end at
+   * (-9.87, 8.43) and of eight ways out, seven move you under 0.4 m. That is
+   * the owner's "I keep getting caught in the torii's collision", and it is
+   * not a hole in the collider, it is the absence of the rule the church and
+   * the tavern both have — the move is TURNED, a little at a time, and the
+   * first angle the room accepts is taken at the speed that survives the
+   * turn. Straight into a wall still stops you, which is correct. */
+  const okAt = (x, z) => {
+    const s2 = dojoStoreyAt(x, z, feet, YARD_STEP);
+    if (!s2 || s2.f < feet - YARD_DROP) return false;
+    return dojoInArena(x, z);
+  };
   const st = dojoStoreyAt(p.x, p.z, feet, YARD_STEP);
-  if (!st || st.f < feet - YARD_DROP) { p.x = bx; p.z = bz; }
+  let good = !!st && st.f >= feet - YARD_DROP && dojoInArena(p.x, p.z);
+  if (!good && dojoSafe) {
+    const ax = bx - dojoSafe.x, az = bz - dojoSafe.z, L = Math.hypot(ax, az);
+    if (L > 1e-4 && L < 2.5) {
+      for (const ang of [0.36, -0.36, 0.72, -0.72, 1.08, -1.08, 1.44, -1.44]) {
+        const ca = Math.cos(ang), sa = Math.sin(ang);
+        _dsQ.set(dojoSafe.x + (ax * ca - az * sa), p.y, dojoSafe.z + (ax * sa + az * ca));
+        pushOutOfDojo(_dsQ, PLAYER_R, feet);
+        if (okAt(_dsQ.x, _dsQ.z)) { p.x = _dsQ.x; p.z = _dsQ.z; good = true; break; }
+      }
+    }
+  }
+  if (!good) back();
+  else dojoSafe = { x: p.x, z: p.z };
+  /* AND A BODY THAT IS ALREADY INSIDE SOMETHING HAS TO BE LET OUT. Reverting
+   * is standing still, which is exactly the state it is meant to prevent: a
+   * knockback can put you a metre inside a post in one frame, deeper than the
+   * push-out looks, and from in there every step is refused for ever. The
+   * bunker's own `escape` — walk to the nearest cell the room agrees is
+   * floor — is the last word, and on the open courtyard it never runs. */
+  if (!dojoStoreyAt(p.x, p.z, feet, YARD_STEP)) {
+    const home = dojoNearestStand(p.x, p.z);
+    if (home) {
+      const hx = home.x - p.x, hz = home.z - p.z, hl = Math.hypot(hx, hz) || 1;
+      const s3 = Math.min(hl, 0.22);
+      p.x += hx / hl * s3; p.z += hz / hl * s3;
+    }
+  }
   /* AND THE ROOM MUST NEVER HAND HIM THE BEACH. `groundY` was the LARGER of
    * whatever it already held and the courtyard's floor, and where the grid had
    * nothing to say it was left alone - which eight hundred metres over the sand
@@ -33337,7 +35099,18 @@ function updateDojo(dt) {
    * body that has somehow ended up below it is put back on it. The keep and
    * the undercroft both learned that a floor lookup must REPLACE rather than
    * compete; this is the same rule with a memory under it. */
-  const f = dojoFloorAt(p.x, p.z, p.y);
+  /* AND THE FLOOR IS ASKED AT THE FEET, NOT AT THE EYE. `dojoFloorAt` allows
+   * a storey half a metre over what it is handed, so handing it the CAMERA
+   * hands it a step allowance of 0.5 plus a whole body — two and a quarter
+   * metres — while the walk beside it allows 0.52. So the two disagreed by a
+   * storey: the walk refused the step and the floor took it anyway, `camBaseY`
+   * rose, and next frame the feet were high enough for the walk to agree. Run
+   * that a few frames and you have ratcheted up the torii onto its lintel.
+   * Measured walking at the gate from six places in the courtyard, the eye
+   * ended between 6.80 and 7.24 every time — five metres up, on the beams,
+   * where there is nowhere to go. That is the whole of "I keep getting caught
+   * in the torii's collision". */
+  const f = dojoFloorAt(p.x, p.z, feet);
   if (st && f !== null) dojoLastStand = { x: p.x, z: p.z };
   if (f !== null) { groundY = f; dojoLastFloor = f; }
   else if (dojoLastFloor !== null) groundY = dojoLastFloor;
@@ -33414,9 +35187,10 @@ function updatePortalCut(dt) {
 
 function placeInDojo() {
   inDojo = true;
+  dojoSafe = null;
   if (dojoWorld) dojoWorld.visible = true;
   warmDojo();
-  const gx = DOJO_X + DOJO_IN.x, gz = DOJO_Z + DOJO_IN.z;
+  const gx = dsX(DOJO_IN.x), gz = dsZ(DOJO_IN.z);
   const f = dojoFloorAt(gx, gz, DOJO_Y);
   groundY = f === null ? DOJO_Y : f;
   camera.position.set(gx, groundY + playerEye(), gz);
@@ -33436,6 +35210,7 @@ function placeBackAtPortal() {
   inDojo = false;
   if (dojoWorld) dojoWorld.visible = false;
   stopDojoAudio();
+  stopFountainAudio();
   /* SET DOWN JUST OUTSIDE THE RING, not in the middle of it: the middle is
    * the trigger, and handing you back standing on it would take you straight
    * back through. It steps back along Z rather than out along X, because
@@ -33537,12 +35312,36 @@ function armDojo() {
    * the statue's own vertices, the head runs 1.62 to 2.167 — the point stops
    * at 1.87, well inside the skull, and the tsuka stands clear above the
    * topknot where it reads as a silhouette from the far side of the ring. */
+  /* AND IT IS DRIVEN THROUGH THE SIDE OF THE HEAD, LEVEL. It used to stand
+   * in the crown pointing down, which from the floor of a ring you circle
+   * reads as a sword balanced on top of a statue; through the temples it is
+   * unmistakably driven INTO him and it keeps its whole length in silhouette
+   * from every bearing, which a vertical blade loses the moment you are
+   * in front of it.
+   *
+   * THE PIVOT CARRIES THE COUNTER-SCALE, so everything inside it is in WORLD
+   * metres while its own position stays in the model's units. The room is
+   * scaled by `DOJO_S` and the katana is the player's own weapon — it must
+   * come off this statue the size it goes into his hand, not twice it. */
   const piv = new THREE.Group();
-  piv.position.set(YARD_HEAD.x, YARD_HEAD.y, YARD_HEAD.z);
-  piv.rotation.set(-0.30, 0.38, 0.06);          // leaned toward whoever walks up to it
+  // the pivot is the wound, in the model's own units (it is a child of the room)
+  piv.position.set(YARD_BELLY.x / DOJO_S, YARD_BELLY.y / DOJO_S, YARD_BELLY.z / DOJO_S);
+  piv.scale.setScalar(1 / DOJO_S);
+  /* Local +Y is the grip and -Y is the point, so a quarter turn about Z lays
+   * the blade along the model's X — the statue's own left-right — and the
+   * small x/y terms are the few degrees off level that anything driven into
+   * a skull has. The hilt finishes on +X, the point out through -X. */
+  /* Local +Y is the grip and -Y the point, so tilting +Y toward -Z takes the
+   * hilt OUT of the belly toward the courtyard and drives the steel back and
+   * down into him. A rotation about X by a negative angle does exactly that;
+   * the roll leans the whole thing off vertical, because nothing left in a
+   * body is square to it. */
+  piv.rotation.set(-0.98, 0.0, 0.30);
   heroSword = new THREE.Group();
   heroSword.add(makeKatana());
-  heroSword.position.y = -YARD_SINK - KAT_TIP;
+  // buried `YARD_BITE` deep, which leaves most of the blade and the whole
+  // tsuka standing out of him where it catches what light there is
+  heroSword.position.y = -YARD_BITE - KAT_TIP;
   piv.add(heroSword);
   dojoWorld.add(piv);
   /* AND THE CROSSHAIR CANNOT FIND A BLADE FIVE MILLIMETRES THICK. The drain's
@@ -33555,7 +35354,17 @@ function armDojo() {
   proxy.position.y = KAT_POMMEL * 0.5;
   proxy.visible = false;
   heroSword.add(proxy);
-  heroSwordShine = addItemShine(heroSword, { size: 0.9, height: 0.42, strength: 1.5, lift: 0.6, through: true });
+  /* AND IT DOES NOT BLAZE. At 0.9 across and strength 1.5 with a 0.6 lift the
+   * glint was the brightest thing in the courtyard and read as a lamp on the
+   * statue's head rather than moonlight on steel. It still has to say "this is
+   * the thing to take" from across the ring, so it keeps the through-sprite
+   * that shows past the overgrowth — just far dimmer and smaller. */
+  /* AND IT GOES BACK UP, BECAUSE THE ROOM CAME DOWN. It was cut hard when the
+   * courtyard was lit flat at 0.30 off every map and the glint was the
+   * brightest thing in it; with the lift at DOJO_LIFT and the lanterns doing
+   * the work, that same setting left the hilt invisible against a dark
+   * statue. Brighter than the cut, nothing like the blaze it started as. */
+  heroSwordShine = addItemShine(heroSword, { size: 0.60, height: 0.34, strength: 0.95, lift: 0.34, through: true });
   addInteractable(heroSword, 'Take the katana', undefined, {
     far: 4.2,
     mid: true,                                  // a prompt that starts a boss fight belongs under the crosshair
@@ -33654,7 +35463,7 @@ MUT_KINDS.samurai = {
    * the wrong half of the fix: the ragdoll takes a NAME MAP, which is what
    * `rag` is, and the thing on the headland has used it on joints called
    * `Bone_011_037` ever since. */
-  aimed: true, reacts: true, bossDeath: true, skin: null, bones: null,
+  aimed: true, reacts: false, bossDeath: true, skin: null, bones: null,
   /* AND HE DIES ON THE RAGDOLL, NOT ON A CLIP I WROTE. `deathClip` sent him
    * down his own authored `die`, and the owner's word for the result was that
    * his body and textures deform — rendered, it is right: from a third of the
@@ -33679,13 +35488,28 @@ MUT_KINDS.samurai = {
          Character1_LeftUpLeg: 'DEF-thighL', Character1_LeftLeg: 'DEF-shinL',
          Character1_LeftFoot: 'DEF-footL', Character1_LeftToeBase: 'DEF-toeL' },
   barLen: 1.02,                       // his katana, measured from the fist
-  h: 1.86, hp: 22, dmg: 1,
+  /* MORE OF HIM. 22 was three charged cuts and a click; at 34 the fight is
+   * long enough that his half-health turn and his four-deep chains both get
+   * to happen more than once, which is the whole point of having them. */
+  h: 1.86, hp: 34, dmg: 1,
+  /* AND HE DOES NOT SNAP ROUND. `turnMax` is radians a second — how fast the
+   * thing can physically come round — and he declared none, so `turn(6)` took
+   * him most of the way to a new heading in a single frame every time the
+   * fight handed him one (a route, a waypoint, a player who stepped behind
+   * him). That instant swivel is most of what reads as jerky on a man,
+   * because a man turning is a whole body doing it. A swordsman comes round
+   * at about half a turn a second.
+   *
+   * AND HIS CLIPS CROSSFADE LONGER. The default 0.14 is a crab's; two men in
+   * a bar already ask for more, and so does a heavy figure in armour whose
+   * every clip change was a visible pop. */
+  turnMax: 3.2, fade: 0.26,
   /* HARDER. `aggr` is the gap between swings and `press` is how often he takes
    * a turn he could have taken — the pack's 0.62 is right for three creatures
    * sharing one token and wrong for a man fighting you alone, who has nobody
    * to take turns with and spent two fifths of every opening walking sideways.
    * He circles less, chains further, and is quicker on his feet than you are. */
-  speedK: 1.24, windK: 1.02, reachK: 1.05, aggr: 2.40, press: 0.82,
+  speedK: 1.30, windK: 1.02, reachK: 1.05, aggr: 3.20, press: 0.96,
   recoilK: 0.80,
   /* AND HE DOES NOT SKATE. THE RATE IS THE STRIDE OVER THE SPEED - the
    * knight's own number, and the samurai had none, because a retargeted clip
@@ -33723,7 +35547,33 @@ MUT_KINDS.samurai = {
    * fight built on reading a tell that shuffle is also what makes the tell
    * start from somewhere. */
   restless: true,
-  circle: 0.38, step: 0.30, chainMax: 4, feint: 0.30,
+  /* AND HE IS CALCULATED, NOT BUSY. `feint` is the swing he starts and does
+   * not throw and `step` is his willingness to give ground — both up hard, so
+   * a third of what he shows you is a lie and he is forever drifting in and
+   * out of his own reach rather than standing in it. `circle` up with them:
+   * a swordsman who has decided not to commit walks the ring instead. `aggr`
+   * comes DOWN, because pressure and patience are opposites and the thing
+   * that makes a feint work is the pause either side of it. */
+  /* HE COMES AT YOU. I read "more calculated" as more hesitation and built
+   * him a whole vocabulary of not-attacking — feints, bait steps, a long
+   * circle — and with `reacts` ALSO aborting his startup every time you
+   * closed, the result was a swordsman who backed away from a fight. That was
+   * my misreading and all of it is out: he barely feints, he never baits, he
+   * circles a fraction of the time and he does not break his own swing to
+   * answer your approach. What he does is walk at you and cut. */
+  circle: 0.18, step: 0.30, chainMax: 4, feint: 0.10,
+  /* THE FAKE-OUT IS A STEP BACK. `baits` is the pack's wind-up read run in
+   * reverse: instead of answering YOUR charge he opens the distance on his
+   * own account — drops out of reach, holds a beat, and comes back in — which
+   * from in front reads as a man who nearly swung and thought better of it.
+   * It is the one behaviour that makes a player commit early and get caught. */
+  /* AND THE BAIT IS RARE, OR IT IS NOT A BAIT. At 0.38 against `circle` 0.52
+   * backing off WAS his default: measured, he settled at 3.53 m — just
+   * outside his own longest reach — and threw NOT ONE SWING in fifteen
+   * seconds, which is this file's own orbit-outside-your-reach stall wearing
+   * a new hat. A fake-out is a thing he does now and then from inside the
+   * fight, and the pause after it is what sells it. */
+  baits: 0,
   poise: 8, poiseBack: 1.7, poiseWait: 1.1, parryK: 0.75,
   block: 0.46, blockCost: 0.30, fidgetK: 0.20, fidgetGap: 2.6,
   /* A PALE MAN IN DARK LACQUER IS NOT A DARK CREATURE. The pack's gamma lift
@@ -33782,6 +35632,21 @@ MUT_KINDS.samurai = {
    * overhead went by 1.41 m and the rising cut 1.15. It is still clamped, so a
    * swing thrown from too far out still misses and backing away still works. */
   aimK: 2.60,
+  /* AND A BLOW HAS TO ACTUALLY LAND. `blowLands` sweeps the whole limb against
+   * a body-sized sphere first, which is honest; what was not is the FALLBACK
+   * under it — facing you, in reach, hand out in front — which scores a hit if
+   * the striking end finishes within `landSlop` of your torso, and he was
+   * taking the default 1.0. A metre is the length of his forearm: it is the
+   * setting for a man with a crowbar whose bar finishes inside a quarter of a
+   * metre, and on a swordsman it means a cut that visibly went past you still
+   * took a point.
+   *
+   * MEASURED, not chosen: sampling the katana's own tip bone (`DEF-katana_tip`)
+   * against the player's torso over a live fight, the blows that landed
+   * finished 0.40 and 0.44 m from the chest — which is the same 0.30-0.45 the
+   * comment on `LAND_SLOP` already records for an aimed creature. At 0.55
+   * every genuine contact still counts and half a metre of charity is gone. */
+  landSlop: 0.55,
   anim: { run: 'run', idle: 'idle', roar: 'taunt', die: 'die', walk: 'walk', back: 'walk',
           rate: 1.0, lean: 0.06, strafeK: 1.15 },
   voice: { f: 1.0, growl: 0.5, rasp: 0.7, throat: 'mask', human: true },
@@ -33798,7 +35663,6 @@ MUT_KINDS.samurai = {
  * side: far enough that he is not on top of you, near enough that turning
  * round puts him in frame. */
 function spawnSamurai(behind) {
-  if (samurai) return;
   /* AT THE BACK OF THE HALL, standing over his own rack. He is there when you
    * walk in and he does nothing at all until you touch the sword, which is a
    * better opening than a creature that charges the door: you are GIVEN the
@@ -33813,13 +35677,20 @@ function spawnSamurai(behind) {
    * wherever in the dojo you were standing when you took it — and the search
    * below walks outward from that spot until it finds floor, so he can never
    * arrive inside the wall the way the hand-placed version did. */
+  /* AND HE COMES IN THROUGH THE GATE. Six metres behind wherever you happen
+   * to be standing is a man who appeared, and half the time it is a corner of
+   * a burnt room; the torii is the one way into this courtyard and a swordsman
+   * who wants his sword back walks in by it. The mark is DERIVED — the middle
+   * of the gate's own lip, stepped back toward the middle of the yard — so it
+   * follows the gate if the gate ever moves, and the search below still walks
+   * out from it to a cell with room around it. */
   let wx = 2.6, wz = 0.2;
   if (behind) {
-    const f = new THREE.Vector3();
-    camera.getWorldDirection(f);
-    const L = Math.hypot(f.x, f.z) || 1;
-    wx = (camera.position.x - DOJO_X) - (f.x / L) * 6.0 + 0.9;
-    wz = (camera.position.z - DOJO_Z) - (f.z / L) * 6.0;
+    const mid = GATE_LIP[Math.floor(GATE_LIP.length / 2)];
+    const gx = mid[0], gz = mid[1];
+    const L = Math.hypot(gx, gz) || 1;
+    wx = gx - (gx / L) * GATE_STAND;
+    wz = gz - (gz / L) * GATE_STAND;
   }
   /* AND HE MAY ARRIVE OUTSIDE. The building is a burnt shell with posts in it
    * and the spot behind you is often a corner you could not swing a sword in;
@@ -33852,15 +35723,38 @@ function spawnSamurai(behind) {
       const x = wx + Math.cos(th) * r * 0.4, z = wz + Math.sin(th) * r * 0.4;
       if (Math.hypot(x - px, z - pz) < MIN_BACK) continue;
       const g = dojoGridAt(DOJO_X + x, DOJO_Z + z);
-      if (!g || g.s || g.f <= -90 || g.f < -0.05) continue;
+      if (!g || g.s || g.f <= -90 || g.f < -0.05 * DOJO_S) continue;
+      /* AND HE ARRIVES IN THE FIGHT, NOT BEHIND THE RUBBLE. The spot is taken
+       * from where you are LOOKING, and at the spawn you face down the
+       * courtyard — so "six metres behind you" is UP THE EAST STAIR, and
+       * measured he came out at (17.2, 0.9), which is 2.3 m up it and inside
+       * the heap that blocks the top. A boss you cannot reach is worse than
+       * no boss. He stands in the arena, on the flat: level ground is also
+       * simply the right place to open a sword fight. */
+      if (!dojoInArena(DOJO_X + x, DOJO_Z + z)) continue;
+      if (g.f > dojoArenaY + 0.9) continue;
       const score = clearance(x, z) * 10 - Math.hypot(x - wx, z - wz);
       if (score > sBest) { sBest = score; sx = x; sz = z; }
     }
     if (sBest >= 70) break;               // eight clear sides: good enough
   }
   if (sBest < 0) { sx = wx; sz = wz; }    // nothing clear anywhere: stand where he was asked to
-  samurai = makeMutant(DOJO_X + sx, DOJO_Z + sz, 'samurai', DOJO_Y);
-  samurai.st.awake = false;            // until his own line is out
+  /* HE IS BUILT WHEN THE ROOM IS, NOT WHEN HE IS NEEDED. Creating a 9 MB
+   * skinned creature on the frame you lift the sword means his parse, his
+   * dressing and — the expensive one — the first compile of every material on
+   * him all land on that frame: measured, a 275 ms block with nothing else in
+   * it. This file has paid for that lesson on the hall, the saucer and the
+   * witness, and the answer is always the same: build it early, hide it, warm
+   * it, and REVEAL it when the moment comes. So a second call does not make
+   * another one, it moves the one that is already standing there. */
+  if (samurai) {
+    samurai.g.position.x = DOJO_X + sx;
+    samurai.g.position.z = DOJO_Z + sz;
+    samurai.g.visible = true;
+  } else {
+    samurai = makeMutant(DOJO_X + sx, DOJO_Z + sz, 'samurai', DOJO_Y);
+    samurai.st.awake = false;          // until his own line is out
+  }
   // facing YOU, by the game's own convention
   samurai.g.rotation.y = Math.atan2(camera.position.x - (DOJO_X + sx),
                                     camera.position.z - (DOJO_Z + sz));
@@ -34911,6 +36805,8 @@ function warmKeep() {
  * ledge is walked off and the ground comes up to meet you. The only refusal
  * left is a wall, which is the one thing a body cannot do. */
 function updateKeep(dt) {
+  cullWorldInHall();
+
   if (beachBoat === null && dock.children.length) findBeachBoat();
   updateBoatStand();
   if (!inKeep) {
@@ -36637,6 +38533,8 @@ function openTavCurtains() {
 
 // -------------------------------------------------------------- the walk
 function updateTavern(dt) {
+  cullWorldInHall();
+
   if (!inTavern || !tavWalk) return;
   updateTavScene(dt);
   if (tavWallsDirty) { tavWallsDirty = false; tavWalls = null; buildKeepWalls(TAV_SITE); }
@@ -37659,6 +39557,15 @@ window.__bw = {
   }),
   startPortalTake, startPortalReturn, placeInDojo, placeBackAtPortal, wakeSamurai, warmDojo,
   dojoFloorAt, dojoGridAt, pushOutOfDojo,
+  dojoInArena, buildDojoArena, buildDojoBlocks, buildFountain, updateFountain, DOJO_S, DOJO_FOUNT,
+  get dojoParts() { return dojoParts; },
+  get samurai() { return samurai; },
+  dojoArenaInfo: () => ({ scale: DOJO_S,
+    arena: dojoArena ? dojoArena.reduce((a, v) => a + v, 0) : 0,
+    mouths: dojoMouths ? dojoMouths.length : 0,
+    blocks: dojoBlocks ? dojoBlocks.children.length : 0,
+    fountain: fountain ? fountain.children.length : 0,
+    floorY: +dojoArenaY.toFixed(2) }),
   KEEP_X, KEEP_Y, KEEP_Z, KEEP_SPAWN, KEEP_MOOR, LIFT, loadKeep, startSail, placeInKeep, placeBackOnBoat, keepFloorAt, keepStandAt, keepStandable, keepHitsWall, keepWallNear, keepWallPush, keepDrawnFloor, keepCellAt, warmKeep, findBeachBoat, pullKeepLever, updateHover,
   get keepWalls() { return keepWalls && { faces: keepWalls.v.length / 9, cells: keepWalls.map.size }; },
   get keepLift() { return keepLift && { state: keepLift.state, t: +keepLift.t.toFixed(2), y: +(keepLift.y - KEEP_Y).toFixed(2), drop: +keepLift.drop.toFixed(2), landY: +keepLift.landY.toFixed(2), box: keepLiftBox && { top: +(keepLiftBox.top - KEEP_Y).toFixed(2), x: [+(keepLiftBox.x0 - KEEP_X).toFixed(1), +(keepLiftBox.x1 - KEEP_X).toFixed(1)], z: [+(keepLiftBox.z0 - KEEP_Z).toFixed(1), +(keepLiftBox.z1 - KEEP_Z).toFixed(1)] } }; },
