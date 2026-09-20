@@ -155,6 +155,11 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   texture projected onto the scan. Take it, examine it, and press `E` to put it on — it leaves
   the pack for a new **Rings** section, two slots under the hotbar that appear
   the first time a ring is in your hands. Click a worn ring to take it off.
+- **The Forgotten Wedding Ring** — at the back of the little bore over the
+  tavern's gallery, lying between the two jars of blue blood. Worn, it makes
+  you quicker by 6 % for every jar of blood you are carrying — nothing at all
+  if you are carrying none, a quarter again with four. The Rings row shows
+  what it is worth right now.
 - **The crab telegraphs** — it no longer nips the instant it reaches you. It
   rears with its claws thrown wide and its pincers gaping for 18 frames while
   a rasp climbs under it, strikes for 6, and is then wide open for 20. The
@@ -540,8 +545,11 @@ by [Katydid](https://sketchfab.com/Katydid.) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the hall behind the sea
 keep's door (`assets/tavern.glb`, through `tools/undercroft_pack.py tavern`: the
 file untouched and unlit, every triangle and every map, with a storeyed walk grid
-inside it). The chairs and the crate stair up to the tunnel are the game's, in the
-file's own timber.
+inside it). The chairs, the crate stair up to the tunnel and the shelf on the
+gallery's back wall are the game's, in the file's own timber — the shelf splits
+the one step in that building nothing can climb (5.30 to 7.42 over the flags,
+against a jump that reaches 1.34) into two jumps of 1.06, so the bore is
+reachable without carrying the plank up there.
 
 This work is based on ["Wong- 3D Character Model (Rigged)"](https://sketchfab.com/3d-models/wong-3d-character-model-rigged-ab3eca7de3eb4ec38aaade89e73b4860)
 by [davisthegamelord](https://sketchfab.com/davisthegamelord) licensed under
@@ -587,6 +595,13 @@ the church, and it is not redistributable. (A bank of ten reverbed footfalls
 from the same session shipped for a while and came back off on his word: the
 undercroft already has a convolver on the sfx bus, and a recorded tail under
 it was a room inside a room.)
+
+The catacombs monster's voice is the owner's own three recordings, cut into
+48 cues (`assets/cat-roar*`, `cat-tell*`, `cat-hurt*`, `cat-growl*`,
+`cat-breath*`, `cat-feed1`, `cat-far*`, `cat-step*.m4a`): the far growls
+heard from elsewhere in the place, his footfalls inside fifteen metres, and
+the close set for the roar, the tell, the hurt, the breathing at a corner
+and the feeding. None of it is redistributable.
 
 This work is based on ["Tunnel"](https://sketchfab.com/3d-models/tunnel-5a1ce8da91684583a917b613a521161f)
 by [local.yany](https://sketchfab.com/local.yany) licensed under
@@ -673,6 +688,19 @@ by [blenderboom](https://sketchfab.com/blenderboom),
 ["Dock House - Stylized Wooden Pier"](https://sketchfab.com/3d-models/dock-house-stylized-wooden-pier-4f0df975625a432c91f2685963d12500)
 by [voyoo](https://sketchfab.com/voyoo),
 [Sketchfab Standard](https://sketchfab.com/licenses) licence.
+
+
+**Jewelery - Ring- Diamonds** — the Forgotten Wedding Ring, at the back of the
+bore over the tavern's gallery.
+
+["Jewelery - Ring- Diamonds"](https://sketchfab.com/3d-models/jewelery-ring-diamonds-24b406272bc74fdb8b38c4a16547f0b1)
+by [Cécile Amstad](https://sketchfab.com/c.m.a),
+[Sketchfab Standard](https://sketchfab.com/licenses) licence — shipped exact
+(`assets/wedding-ring.glb`, through `tools/gltfpack.py --tex 2048 --normal-tex
+1024`): all 3,702 triangles, all five materials and all sixteen of its maps, of
+which five are a pure white base colour and four a flat normal. Its metal is
+given the game's own night sky as an environment map, because a metal with
+nothing to reflect renders black.
 
 
 **Medieval key (copper version)** — the key in the dock's crate.

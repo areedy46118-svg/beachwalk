@@ -6303,7 +6303,8 @@ shovels' behaviour, so a tool without the field is exactly the tool it was:
 sword's), and `alternate` (a light thrown inside 0.9 s of the last comes
 back along the other diagonal — the return stroke that was rightly cut for
 the shovel is the katana's whole vocabulary). It spawns under the cliff
-past the drain, where the Military Shovel used to lie.
+past the drain, where the Military Shovel used to lie. (That spawn is GONE now — see
+"THE KATANA BY THE DRAIN IS GONE" below; the dojo's stand is the only one.)
 
 **A SCAN MAY CARRY ITS OWN 0.01, AND YOUR AXIS FIT MAY BE IN THE WRONG
 FRAME.** Two mistakes in one build. The shovel's scan arrives in raw
@@ -11774,3 +11775,351 @@ inside a room. Sweep to -750 and no further, or set `caveDone` first. And a
 frame's `renderer.info` belongs to the LAST render call: `autoReset` is on,
 so a hide test has to call `renderer.render` itself rather than read what
 the loop left behind.
+
+**THE BAKE THAT SAVED 230 DRAW CALLS TOOK EVERY WALL OUT OF TWO ROOMS, AND
+THE PIXEL DIFF COULD NOT SEE IT.** `bakeStatic` takes every geometry to
+non-indexed before it merges, and `buildKeepWalls` skipped any mesh with no
+`index` — so the round that baked the catacombs and the tavern hall for
+their draw calls left both with `S.walls.steep.length === 0`: `keepHitsWall`
+never hit, `keepWallNear` answered null, the hunter's segment revert never
+fired and his wall pushes pushed nothing, and the graph's 0.40 m clearance
+threw nothing away. That is most of "make the creature clip through walls
+less" — the walls were not there to clip. A triangle is three positions
+whether or not an index names them; the index reads both now (92,777 faces
+in the catacombs). **A pixel diff approves a picture; a walk approves a
+room. Bake nothing without flooding the walk after it.**
+
+**THE HUNTER WENT ROUND IN CIRCLES, AND IT WAS THE CORNER CUT.** Two rounds
+of "he glitches" were measured as one thing: 78 % of roaming frames spent
+in a half-metre circle — 113 m of travel in a minute, none of it anywhere —
+with a live route in his hands and nothing crossing a wall. `ucFollowPath`
+blends its aim toward the waypoint AFTER the current one as it closes on
+it; on a route that turns back on itself (the waypoint 1.3 m west, the next
+seven metres east, round the end of a wall) that aimed him AWAY from the
+waypoint, the distance grew, the blend fell to nothing, he aimed back, the
+distance shrank, the blend returned — a limit cycle. The next leg is blended
+only when it continues AHEAD of this one. After: 0 % orbiting over four
+minutes of roam, and the same follower serves the knight.
+
+- **AND THE WALL PUSHES MUST NOT OUT-STEP THE WALK, which they did twice a
+  frame.** `mutClampX` ran once from the follower and once from `catWander`
+  after it, each capped at 4 cm, against a 3.2 cm stride. They run once a
+  tick (`catTick`, stamped where `catPrev` is) and are capped at a third of
+  the stride he actually took.
+- **AND THE STRAIGHT CHASE STAYS ON YOUR STOREY.** `clear()` compared each
+  sample's floor to HIS feet, which follow the floor, so a stair down beside
+  you passed a riser at a time: he finished the fight 1.4 m from you in plan
+  and 4.5 m under your floor, 92 % still, two swings in thirty seconds.
+  Every sample must be within a step of YOUR level too; a route that keeps
+  failing snaps him to the nearest node and then loses you (`catLose`); and
+  four seconds still with ground to cover is a loss whatever he thinks.
+  Measured after: from 35 m with a line of sight he closes to 3.9 m in
+  eight seconds, four trials of four, 13–15 swings a half minute.
+- **THE ROUTE PREFERS THE MIDDLE.** Every node carries `w`, its distance to
+  the nearest drawn face within a metre, and A* charges nearly double for a
+  node against the stone. `catLineOpen`, the string-pull and the chase's
+  `clear()` test a hand either side at the hip as well as the centre line.
+- **AND WHAT IS LEFT IS THE BODY.** Measured off his skinned vertices in the
+  crawl: 1.65 m across the trunk, 3.3 m long, in corridors 1.3 m wide. An
+  arm tuck was probed (turn the upper arms about the body's up) and bought
+  8 cm — the width is the shoulders. He will touch corridor walls by
+  construction; what the routing buys is that he touches both equally.
+
+**THE WAY OUT IS LIT THROUGH THE BARS.** The door has a barred window and
+the glow, the lamp and the shaft all hung above the LINTEL. Where the
+window is was measured by raycasting the leaf from inside on a 10 cm grid:
+the gaps between the bars run 1.7–2.2 m over the sill and from a hand left
+of the door's centre to half a metre right of it. A bright unlit plate a
+hand BEHIND the leaf draws the bars black against the light (drawn only
+where the leaf is not, which the depth buffer does for free), a glow sits
+in the opening, the lamp just inside it, and the shaft is a trapezoid from
+the opening down to a pool on the flags. **A gradient down a shaft alone
+is a paper cut-out** — it needs to die across as well as down, and an
+edge-on quad for the side view drew as a hard line down the middle.
+
+**HIS VOICE IS THE OWNER'S RECORDING, AND IT KNOWS WHERE HE IS.** Three
+files cut into 48 cues along their own silences (ffmpeg's silencedetect at
+-40 dB / 0.35 s; the steps at -38 / 0.14), sorted by length and RMS and
+centroid since nobody can listen from here: the five LOUD close cues are
+the roar, the six short bright ones the tell, three the hurt, seven mid
+growls, four long quiet ones his breathing at a corner, the one seven-second
+gutteral his feeding; twelve far growls; ten footfalls. `playSampleAt` is
+the positional player — pan by bearing, level by distance, and a LOWPASS
+closing with distance, which says "far" more than the level does — and
+`catCue` is the one door for his voice: one cue at a time, a roar cuts
+whatever is playing. The far growls come every nine to twenty-five seconds
+while he is off doing his own thing beyond fourteen metres; his feet are
+heard inside fifteen and nowhere else; the breath is the peek; a noise that
+reaches him is always answered (growl near, far growl far). Encoded mono at
+-3 dB peak, a megabyte in all. Not redistributable.
+
+**CROUCHING IS SNEAKY.** A crouch carries three metres (was five), a walk
+twelve, a sprint twenty-six — and a crouched body is harder to SEE: half
+his range, a narrower cone off his line past eight metres, and he has to be
+within 3.2 m to hear it whatever he faces. **AND SOMETIMES YOU SEE HIM ABOUT
+HIS OWN BUSINESS**: about a quarter of his errands go to a spot you can see
+from where you stand — a bone pile in view first — where he eats, sits or
+looks about ABSORBED, noticing you only inside four and a half metres or by
+a noise. Measured: 3 of 10 errands, 66 s of it in four minutes.
+
+**AND THE HARNESS TRAPS OF THIS ROUND.** `bw.catG` is an OBJECT in the
+original literal, so a `catG: () => catG` added to the later block is
+shadowed (a later duplicate key wins — the fourth time). `bw.keepFloorAt`
+is a three-argument wrapper for the keep, not the site function. A placer
+that calls `startCaveIn()` every half second in dev mode re-places you every
+half second, and the real loop runs between tool calls: freeze rAF the frame
+the room takes. A metric that reads 0 on every frame is a metric to test
+against a wall before believing it — the body probe read 0 because there
+were no walls, and would have gone on reading 0 for ever.
+
+**"HE GOT STUCK ON THE TOMBS" WAS THREE THINGS, AND ONLY THE FIRST WAS A
+TOMB.** The owner played the catacombs again: the monster stuck, on the
+sarcophagi, and his sounds heard from too far off. Measured by chasing the
+player into the crypt room six times from 14–34 m and reading his height
+against the player's floor at the end of each:
+
+- **THE LID WAS A STEP.** `catStand` takes any storey up to 1.05 m over him
+  and a sarcophagus is a metre tall, so pressed against one in a fight he
+  was lifted onto its lid — 0.49 and 0.86 m over your floor at the end of
+  two chases in six — and stood there 2.5 m from you, "in reach", swinging
+  at the stone between. Two rules: a rise over half a metre is climbed only
+  where his ROUTE goes up (a stair's riser is on the route; a lid never is),
+  and a too-high storey is a HOLD, not a hole — nulling it sent him down the
+  "nothing under me" branch, which sinks, snaps to a node and DROPS THE
+  ROUTE, and that was a fresh stall wherever a lookup happened to return a
+  lid. And a route in hand means the straight line is shut, so "in reach"
+  with a route is not in reach: he walks it round the tomb rather than
+  standing at it. After: never more than 0.31 m over your floor in twelve
+  chases.
+- **THE ROUTE BEGAN ACROSS THE WALL BESIDE HIM.** Nodes are 0.6 m apart and a
+  wall is 0.2 m of stone with 0.4 m of clearance either side, so the nearest
+  node to a body a hand from a wall is as likely as not on the far side of
+  it — and the route's first leg then runs through the stone: traced, a
+  stalk with a ten-waypoint route whose first waypoint was 6.6 m away through
+  the wall he faced, the step ahead crossing at hip, shoulder and both
+  sides, held there until the progress check drew the same route again.
+  `catStartNode` takes the nearest node within a metre and a half that HIS
+  OWN LINE reaches; the "drop the first waypoint underfoot" shift asks the
+  same question; and a route he has been held against stone on for half a
+  second (`catBlockT`) is dropped for one drawn from where he actually is.
+- **AND A THIRD OF THE GRAPH WAS POCKETS.** 5,910 nodes in EIGHTY-EIGHT
+  components, the largest 4,021: every floored ledge the packer sampled that
+  nothing joins to is a component of a few dozen nodes, and a body in one
+  can route nowhere. Traced: a pocket of NINETEEN nodes thirteen metres from
+  the player, him seeing them the whole time, every route refused, stalk,
+  chase and search taking turns at failing for twenty-five seconds. The
+  largest component is the graph now — `catNodeAt` answers nothing else, so
+  a snap, a target and a corner to watch from are all on it — the straight
+  chase may DROP a ledge toward you (a floor up to 1.2 m below his feet is
+  a fall, not a wall), and a body found in a pocket is put back on the main
+  floor the moment you are not looking at it (`catUnpocket`). Started on
+  that very ledge three times, he closes to 1.4–2.5 m in all three.
+
+Measured at the end, hands-off: **six chases of six close to 1.9–2.5 m with
+7–13 swings a half minute and zero stalls; three from the stranding ledge
+close too; five roams of five with zero route-in-hand stalls at 1.1–2.9 m/s;
+and he never rises above 0.31 m over your floor.**
+
+**AND HIS SOUNDS ARE CLOSE-RANGE ONLY.** The owner's word: only when he is
+near. Every cue caps at `CAT_HEAR_FAR` (26 m; the roar six more): the
+"far" growls are the ones for the next room over, twelve to twenty-six
+metres, dull through the stone, and past that he is silent — so hearing
+anything of him at all means he is near.
+
+**THE HARNESS: THE ROOM BUILDS ON FRAMES, AND A HIDDEN PANE HAS NONE.** The
+cave-in's dev-mode shortcut places you only once `catReady`, and the parse
+chain that makes it ready wants a frame per step: a hidden pane runs no
+frames, so a placer that calls `startCaveIn()` every half second waits for
+ever at x = 8. Drive frames by hand (`bw.animate()`) until `CAT_SITE.walls`
+exists, then `placeInCatacombs()` directly — and `bw.catFloorAt` is the
+site's floor lookup, because `bw.keepFloorAt` is the keep's three-argument
+wrapper and answers null for everything here.
+
+**THE FOG CULL'S STAMP SURVIVED THE WARM, AND THAT PUT THE HALL'S CAST IN
+THE MIDDLE OF THE ROOM.** "The ufo enemies are seen in the middle upon being
+abducted" — the three guards and the beast, standing at their build spot at
+the centre of the hall before any wave had been summoned. Traced with a
+setter on `visible`: every one of them was switched on by `cullBeyondFog`,
+whose restore branch reads `bwCulled` — "I hid this, so I may show it". The
+stamp was put there by the WARM: `warmView` and `warmCompile` switch the
+groups they are warming on, `warmAtZ` then runs `updateFarProps` for the
+pass, and from the beach a creature parked three thousand metres away is
+beyond the fog — so the cull hid it and stamped it, the warm restored
+`visible = false`, and the stamp stayed. Arrive in the hall, the unit is in
+range, the cull "restores" it. `snapCullStamp` / `restoreCullStamp` carry
+`bwCulled` through both warms beside the visibility. **Anything a warm
+toggles, it has to put back in FULL — the cull's own bookkeeping included.**
+Measured after: the abduction lands with all nine hidden and no stamps; the
+summon still reveals the three across the room.
+
+**A WORN RING WAS IN NEITHER LIST THE RESTORE READS.** `pack` is the
+inventory and `wearRing` takes a ring OUT of the inventory, so the one item
+the save recorded as `worn` was granted by nobody: it came back only if its
+own pickup replayed, and the ring's pickup is registered by `dropRing` when
+the knight dies — on a fresh page nothing has died, the interactable does not
+exist, and the ring the owner had on his finger was gone. `finishRestore`
+grants a worn name through `packByName` and puts it straight on (or into the
+pack if the fingers are full). Measured: worn, saved, reloaded into the
+checkpoint — on the finger on the first frame.
+
+**THE KATANA BY THE DRAIN IS GONE.** It lay past the drainage tunnel home
+from the day the sword went in; once the dojo's stand handed out the same
+item there were two katanas and the first was free. Nothing is added to the
+scene or registered there now; `katanaWorld` stays a group, dev mode still
+hands the sword over, and an old save that recorded "Take the katana#1" finds
+no handler and is granted the item by name.
+
+**THE SLOPES SHOOK BECAUSE THE GRID IS TREADS.** "A slight lag and camera
+shake walking up slanted corridors in the catacombs": the walk grid is a
+plan of 0.2 m cells each carrying ONE floor height, so a slanted corridor is
+a staircase of twenty-centimetre treads however smooth the stone drawn over
+it, and the camera followed the treads — snapped up a riser every fifth of a
+metre going up, dropped one under gravity coming down. Measured on a
+hands-off walk from the landing to the door: 87 ticks with the camera moving
+more than 4.5 cm in a tick and 19 over 9 cm, worst 24 cm. `catFloorSmooth`
+blends the cell under the player toward its neighbours by where inside the
+cell the player stands — a linear ramp through the cell centres — and only
+toward a neighbour whose floor is within a step, so a real ledge stays a
+ledge; the roof rides the same blend, or the duck under it stair-steps up a
+ramp. It is the floor the CAMERA follows; every legality test still reads
+the raw cell. After: 0 ticks over 9 cm, worst 8 cm, and the rate itself
+changes by more than 3 cm on 8 ticks in 3000.
+
+**THE HUNTER HAS A PLAN NOW: FOUR THINGS, ALL ON MACHINERY HE ALREADY HAD.**
+- **HE LEARNS YOUR ROUTE.** `catMemory` is the last three places he laid
+  eyes on you (both sight paths write it, six metres apart or it is the same
+  place); when he has gone twelve seconds without you, two errands in five
+  go to one of them — most recent likeliest — and he WAITS there (`ambush`,
+  or a look or a sit). A player who runs the same corridor every time finds
+  him in it. Measured: 10 of 40 errands to a remembered spot 13 m away.
+- **THE FAKE-OUT.** Once a stalk, two peeks in five are a FEINT: he shows
+  for a second or two, and if you have not looked, withdraws — and the next
+  corner he takes is at least seventy degrees round you (`avoidA`, held
+  until a corner is FOUND there: cleared after the first search it was gone
+  on the retry, and he came back on the same bearing). A feint does not count
+  as one of his three corners. Measured: a 2.3 s show at 12 s of a stalk,
+  gone, and the next corner across the room.
+- **AMBUSH AT THE DOOR.** Inside twenty metres of the way out on its storey,
+  three times in five and not twice in fifty seconds, his errand is a spot
+  in the door room your line cannot see, within seven metres of the frame,
+  where he crouches and waits at his full senses — so the exit is not free.
+  Measured with the player 9 m from the door: 15 of 20 draws, all hidden.
+- **HE KICKS THE BONES AT YOU.** Charging through a pile (the litter check's
+  own spots) at over 2.2 m/s with you 3.5–16 m off, he throws five to eight
+  real gibs in the skulls' own material at where you stand, arcing to arrive
+  in about a second, every six to nine seconds at most; one that reaches
+  you takes 0.09 of the bar and knocks the lens (`catBonesHit`, in the
+  room's own update). Measured at 7 m: eight of twenty-four land on a
+  standing player, a volley about a quarter of the bar. It is the one ranged
+  thing he has, and it is readable: stay off the piles.
+Every one of them is a branch of `catPickTarget` or the stalk and touches
+nothing about how he moves, so the six-of-six chases and the zero-stall roams
+of the round before still hold.
+
+**`node --check` DOES NOT CHECK THIS FILE, AND HAS NOT FOR A LONG TIME.** The
+ritual at the end of every round here is `node --check main.js`, and it passed
+a file with `color: 0xb0a characters` sitting in the middle of a function —
+reproduced on a copy, exit 0, twice. In the CommonJS goal the whole source is
+wrapped in one function and V8 PRE-parses a body that large rather than
+parsing it, so an error inside a function is not found until that function is
+first called; on a 200 KB fragment of the same file it is caught immediately,
+and `--no-lazy` does not help. The file is a MODULE — that is how `index.html`
+loads it — and as a module the check is eager:
+
+```bash
+node --input-type=module --check < main.js
+```
+
+Broken, that exits 1; clean, 0. Use it, and remember that a shell pipeline's
+`$?` is the LAST command's, so `node --check x | tail` always reports 0.
+
+**AND THE SHELF IS BACK, ON THE ONE STEP NOTHING CAN CLIMB.** A bracketed
+board hung between the stall's roof and the vaulted passage once and was taken
+out on the owner's word, because the file's own crate climbs that step. This
+is a different wall: the back of the gallery, where the floor reads 5.30 over
+the flags and the landing in front of the bore 7.42. A jump lifts the feet
+0.62 and the walk catches a floor `TAV_AIR` (0.72) over them, so 1.34 is the
+tallest step in that building and this one is **2.12** — the plank was the
+only way in. Halfway up it splits into two jumps of 1.06, which is the rung
+the crates already prove.
+
+- **NOTHING ABOUT IT IS TYPED.** The line is walked until the floor stops
+  answering, the landing is asked how far it runs each way, and the face it
+  hangs on is a ray. And it is walked OUT OF THE BORE, not down the hall:
+  started from the gallery the first step the line meets is the one the last
+  crate already climbs, and the first build hung the shelf on that one
+  (measured, at (-11.50, 4.44)) — which is the wall the owner had already had
+  it taken off.
+- **AND SOLID IS A THICKNESS.** `KEEP_WALL_MIN` is 0.12, under which a face is
+  a sliver the wall index drops, so a 55 mm board is a floor on top and open
+  air from the side and you stand inside your own shelf. The apron under its
+  front edge is what a shelf has anyway and is 0.13 deep, so the front stops a
+  body the way a crate does — and the two rules then agree, which is what
+  makes a rung work: standing, the wall band starts a step over your feet and
+  the apron is in it; at the apex of a jump it starts `TAV_AIR` over them and
+  the board's crown is under it, so the walk catches the floor instead of
+  pushing you off the wall.
+- **AND `tavCellTop` IS A RECTANGLE NOW.** A disc round a board 1.15 by 0.52
+  either loses its ends or hands out floor a third of a metre in front of it,
+  which is a step onto nothing.
+
+Measured with the game's own movement, cast asleep: walk into the wall, jump,
+and the feet go 5.30 → 6.36; jump again and they go 6.36 → 7.42 and walk on
+into the bore. **And `inCombat()` TAKES THE JUMP AWAY** — Space is the dodge
+step while anything woken is within ten metres, so the first three runs of
+that test measured a player who could not jump at all, with the drunk and the
+orc 6.4 m away at the bar.
+
+**THE FORGOTTEN WEDDING RING, AND THE FIRST ENVIRONMENT MAP IN THIS GAME.**
+Cécile Amstad's "Jewelery - Ring- Diamonds", at the back of the bore between
+the two jars, worn for six per cent of your pace per jar of blood you carry.
+
+- **READ THE LICENCE, NOT THE FOLDER NEXT TO IT.** Every other model here is
+  CC-BY; this one is Sketchfab Standard, and the credit was written wrong
+  before the `license.txt` was opened.
+- **AND READ EVERY MAP BEFORE DECIDING WHAT THE MODEL NEEDS.** Measured: all
+  five of its baseColour maps are PURE WHITE and all four normal maps are
+  FLAT — sixteen 4096s, a quarter of a gigabyte, of which the only content is
+  five metallic-roughness maps and two emissives on the stones. They are all
+  kept anyway (2.00 MB at 2048/1024, an rms of 0.9 of 255 against the
+  originals): the white and the flat cost 130 KB, which is less than the
+  argument about whether they are the artist's textures.
+- **METALNESS IS A TRAP — the seventh time, and the first time the answer is
+  not to change the metal.** Every material here is metalness 1, which is what
+  a ring IS, and a metal has no diffuse term: shipped as authored the band
+  rendered as a black hoop with two pale bands where the view model's own
+  directionals strike. What a jewellery viewer shows it against is an
+  ENVIRONMENT. `ringEnv()` is 128 by 64 pixels of this beach's night — sky,
+  ground and the moon where `MOON_DIR` says it is — through three's PMREM, set
+  on this ring's materials and nothing else, so the model and its maps are
+  still exactly the ones in the file. `envMapIntensity` was swept: 1.6 is
+  still a dark hoop, 4.2 reads as metal face-on.
+- **AND `ITEM_MAX_BOOST` IS 3.2, SO THE FITTED SIZE IS THE SIZE.**
+  `ITEM_MIN_SIZE` (0.42) is a floor every takeable gets, and it cannot reach a
+  true-size ring from 21 mm — measured in the bore, that is two pixels at two
+  metres and the glint is the only thing you could ever find. Fitted at the
+  octopus ring's own 0.055 it comes out at 0.195 on the floor, which is what a
+  takeable looks like here.
+- **AND `makeNoticeable` GIVES UP AFTER SIX TRIES.** It measures the group and
+  retries for 5.4 s, so a 2 MB model that lands after the cut into the room is
+  a ring left at true size for the rest of that game — a race between a
+  download and a doorway. `dropWedRing` waits for the model instead.
+- **AND THE PACE YOU WALK AT HAS A DOOR NOW.** `speedK`, beside `stamMax`: the
+  one place the player's speed is worked out multiplies by it, so an item can
+  change it. Measured on open sand, 100 ticks to terminal speed then 60 more:
+  4.76 m/s with no ring and 4.76 with four jars and no ring, 5.90 wearing it —
+  +24.0 %, which is four times six.
+
+**A SCREENSHOT OF A PANE WITH rAF STUBBED IS ALWAYS THE OLD FRAME.** This file
+already says to freeze the loop for a still and to screenshot in a separate
+call; what it did not say is that the two together do not work. With
+`requestAnimationFrame` stubbed the page never presents, so `renderer.render`
+updates the drawing buffer and the compositor never shows it — a magenta
+override on the object under test came back as the same black frame as before
+it, which is how half an hour went on a ring that was drawing correctly all
+along. Capture the canvas in the SAME call instead (`drawImage` onto a 2D
+canvas, `toDataURL`), and make the result big enough that the harness writes
+it to a file — a JPEG that fits inline costs 25k tokens of context to say
+nothing. And **the point-light virtualiser owns every `PointLight` in the
+scene**: a probe lamp added from the harness is moved to layer 2 on the next
+frame and lights nothing, which reads exactly like a broken material.
