@@ -11270,6 +11270,281 @@ its yaw, and -x is seaward here, so the door in the sand wall stood across
 the frame with the beach behind it; +0.72 puts it into the recess, where the
 comment always said it was. Read a swing's sign off where the leaf ENDS UP.
 
+**AND THEN THE CATACOMBS WERE TWICE THE SIZE, PITCH DARK, AND THE THING IN
+THEM LIVED THERE.** The owner played it: everything too small to walk
+through, he could not fit in the doors, the monster glitched through the
+ground and was lit up like a lamp, and the room lagged all over. Seven
+things, and the two that mattered most are both about a graph.
+
+- **A ROOM IS SCALED AT THE PACKER, NOT IN THE GAME.** `tools/undercroft_pack.py
+  tavern … --scale 2.2`. Measured on the first pack: rooms 1.5 m from floor
+  to slab against a 1.88 m body, and corridors 0.6 m wide — that is a
+  catacomb you crawl through sideways and it is exactly what "I couldn't fit
+  in the doors" is. At 2.2 the rooms are 3.3 m and the doorways 1.3 to 2.
+  Every number the game holds about the place is written `× CAT_SCALE`, so a
+  spot measured in the old file is the same spot in the new one.
+- **VERY DARK, WHICH IS A LEVEL AND A REACH.** The stone carries 0.03 of its
+  own map (it was 0.085), the fog is 0.040 and near-black, and a torch is
+  1.7 over 8.5 m rather than 2.6 over 11 — so a torch is a pool with dark
+  either side of it and not a room light. What carries the place is the
+  flames, the door's cold glow and what you are holding.
+- **AND HE WAS LIT FOR A BEACH.** `emis` 0.10 with a cold Fresnel rim is the
+  pack's night lift — a creature on open sand under a quarter moon is a hole
+  in the dark without it — and in a room whose stone reads 3 it made him a
+  pale animal visible across the whole hall. Measured by rendering him and
+  then hiding him and diffing the frame: at 3 m he covers 6.3 % of it at a
+  mean of 9.8 against the room's 3.2, which is a dark shape you can just
+  make out. `emis` 0.022, the rim a third of what it was.
+- **A FLOOR LOOKUP SEARCHES DOWNWARD, WHICH IS HOW HE WENT THROUGH THE
+  GROUND.** Standing over a stair well or a hole in a vault, `keepFloorAt`
+  answers with the storey BELOW — and the follow eased him into it at three
+  metres a second. `catStand` is the one door now: a floor more than a
+  stride under him is not his floor, he holds the last one he stood on, and
+  if he holds it for most of a second he is put back on the nearest node at
+  that height and his route dropped. Measured over ninety seconds of
+  roaming: never more than 0.27 m under a floor, and 1 % of frames with
+  nothing under him at all.
+- **"I LAGGED ALL OVER THIS ROOM" WAS THE ROUTE, AND IT WAS THREE FAULTS IN
+  ONE SEARCH.** Measured: 9.6 ms a route with the chase asking for one every
+  0.4 s. (1) It was a BREADTH-FIRST search over 53,145 nodes, which visits
+  every one of them before it gives up — A* with the straight-line distance
+  finds a path in a tenth of a millisecond. (2) The reachable set was an
+  ARRAY and `Array.includes` over 35,324 ids was asked every time he chose
+  somewhere to go; it is a mask. (3) A node every 0.2 m is nine times the
+  graph a crawling animal needs — at 0.6 m it is 5,887 nodes and the build
+  is 112 ms rather than 275.
+- **AND A WEIGHTED HEURISTIC IS INCONSISTENT, SO A* MUST CLOSE WHAT IT HAS
+  EXPANDED.** This is the one that took the longest to see, because the
+  symptom lies: routes to nodes his OWN FLOOD had just proved reachable came
+  back refused, eleven in twenty, at seven milliseconds each. Every one of
+  them had popped 14,001 entries — the cap — on a graph of 5,887 nodes,
+  because a node whose cost improves after it has been popped gets expanded
+  again, and with a 1.3 weight that cascades. A closed stamp ends it: 30 of
+  30 routes, median 0.9 ms, worst 2.1. **If a search fails on something you
+  can prove is reachable, count its expansions before you touch anything
+  else.**
+- **AND A SPOT RESOLVES TO A NODE ON THE STOREY YOU MEANT.** Two rooms stack
+  at the same (x, z) all over this place, so `catNodeAt` can answer with the
+  floor above or below the one a target was taken from — and the route was
+  then refused as unreachable by the very flood that produced it. It takes
+  the reach mask and prefers a node inside it.
+
+**AND HIS MIND IS AMNESIA'S NOW: HE LIVES HERE, AND YOU ARE IN THE WAY.**
+Six modes. ROAM — he picks a bone pile to eat at (found by bucketing the
+skull mesh's own vertices, not typed), a room to stand in, or somewhere
+near where you happen to be, and goes there crawling, one leg in three up
+on his hind legs. ACT — he eats, sits back on his haunches, stands and
+looks about where the roof allows, or crouches and listens, five to fifteen
+seconds, facing one way, which is how you get past him. INVESTIGATE — your
+sprint carries 24 m, your walk 11, a crouch 5, and a landing, a swing and a
+blade on stone say so where they happen (`catNoiseAt`); he comes and
+searches. STALK — the owner's own brief: from across a room he does NOT
+charge, he goes to a corner that can see you and puts his face round it
+(`catPeekSpot`: a node 9 to 22 m off that can see your eye AND where a step
+to one side of it cannot, which is what a corner IS, measured rather than
+authored), and holds there. What turns that into a fight is YOU looking at
+him — the middle of your screen, not the edge of it. FLEE — under a third
+of his health, once a fight, he breaks off, runs for somewhere at least 22 m
+from you, mends about a point a second, and comes back; `blooded` is set, so
+the second time he does not peek, he simply comes. CHASE — the fight.
+
+- **AND A MODE IS NOT RE-ENTERED BY THE THING THAT STARTED IT.** The sight
+  check runs six times a second and set the mode to `stalk` again on every
+  one of them, which reset the clock that ends a stalk and threw away the
+  spot he was walking to: traced, he stood fourteen metres off doing nothing
+  for ten seconds. A sight that arrives while he is already stalking only
+  refreshes where he thinks you are.
+- **AND "IS THE LINE OPEN" IS THE WHOLE LINE, NOT THE NEXT TWO METRES.** The
+  chase dropped its route whenever the nearest 2.2 m looked clear, then walked
+  into a wall three metres on, where the new segment clamp held him — a route
+  made and thrown away four times a second at twelve metres. It asks as far
+  as he can see now, and he closed 16 m to 5.2.
+- **AND HE MAY NOT PASS THROUGH A WALL BETWEEN FRAMES** — the player's own
+  rule, and the whole of "he clipped through the map running": the chase
+  drove him at drawn stone at seven metres a second against a push that
+  corrected 1.5 cm a frame. The frame's movement is a segment at his hip and
+  his shoulder, and a frame that crossed a face is reverted.
+- **AND A CORNER HE WATCHES FROM IS FURTHER OFF THAN THE RANGE AT WHICH HE
+  COMES.** At five metres the peek spot was already inside the distance that
+  turns a stalk into a charge, so he arrived and charged on the same frame
+  and there was no peek at all.
+- **AND A THING THAT REARS UP NEEDS A ROOF TO REAR UNDER.** His two standing
+  blows put his hands 3.8 m up; a catacomb's rooms are 3.3. They are out of
+  the draw wherever the storey he is on has less than 4.3 m over it.
+
+Measured at the end. **The player's own walk floods 12,404 cells from the
+landing with a standing body and reaches the barred door to within 0.1 m.**
+Routes: 30 of 30, median 0.9 ms. **Fourteen seconds of live fighting with
+NO frame over 16 ms** (before: 9.6 ms of routing several times a second).
+The fight is 30 swings and 39 damage a minute at 2.5 m, against the Dealer's
+48 and 40. He roams 140 m in ninety seconds. Hurt to 18 of 80 he breaks off,
+mends to 40 and comes back. And the dev-mode trap caught a whole round of
+measurement again: **`devMode` turns a creature's swinging off outright**, so
+a fight sampled with it on reads zero swings and a creature standing still.
+
+**AND THEN HE GOT A HOME, A GRAB, AND NO DEATH.** Seven things on the
+owner's list, and the useful ones are the three that change what the
+encounter IS rather than how it looks.
+
+- **DEV MODE SURVIVES A RELOAD THE GAME ITSELF ASKED FOR.** "No deaths, no
+  cutscenes" is what you are testing WITH, and every death and every
+  restart-from-checkpoint reloads the page — so it came back off and the
+  takes you had just skipped played again. It rides in `sessionStorage`,
+  written by `reloadInto` and consumed at boot, which a new tab does not
+  have: a game still always starts as a game. And the cave-in is a take, so
+  in dev mode it does not play one — it still puts you in the room.
+  Measured: `caveBusy` never goes true and you are in the catacombs.
+- **HE DOES NOT DIE, HE GOES DOWN.** A catacomb with a corpse in it is a
+  catacomb you have finished, and the whole of the fear down there is that
+  it is his and you are in it. `kind.undying` intercepts `killMutant`: the
+  blow still lands, still throws him, still reads as a kill — and he lies
+  where he fell with the death clip held on its last frame for forty to
+  sixty seconds, then the same clip runs BACKWARDS, which is a body rocking
+  back onto its hands, and he is up with two thirds of his health and a
+  roar. Measured: down 43 s, up at 53 of 80, straight into a stalk.
+- **AND HE TAKES YOU IF YOU ARE NOT LOOKING.** `catCanGrab` wants him inside
+  2.9 m, on your storey, and your eyes off him for a second and a half
+  (`catSeenAt`, stamped six times a second the same way his own sight is) —
+  and then it is not a swing, it is a TAKE: up off your feet with his face
+  in yours, screaming, a point gone, and thrown back down on the spot you
+  were standing. It costs your footing and the thing you were about to do
+  and it leaves you playing, which is worth more than a death screen. It
+  runs on the wall clock beside the cave-in and the door, the camera is
+  turned and never moved, and `catGrabT >= 0` is in `frozen()`.
+- **AND A TAKE SETS THE POSE; IT DOES NOT ASK FOR IT.** `mutPlay` crossfades,
+  which is right for a fight and wrong for a scripted beat: measured
+  mid-grab, the grab clip sat at weight 0 with the crawl still at 1 and what
+  played was the crawl. Setting the weight explicitly was not enough either
+  — BOTH then read 1, because an action the mixer has already bound goes on
+  contributing until something zeroes it. Every other action is stopped,
+  zeroed AND disabled. (`stopAllAction` is the one thing that must not be
+  used here: it restores every bound property, which is the bind pose — the
+  severed limb's own bug.) And the take OWNS him: the fight's own `mutAnim`
+  was picking a gait over the top of it.
+- **HE MOVES LIKE HE KNOWS THE PLACE, WHICH IS A STRING-PULL.** A route over
+  a grid is a staircase of little turns — cell, cell, cell — and what that
+  reads as is a thing feeling its way along a wall. `catSmooth` drops any
+  waypoint whose neighbours can see each other (`catLineOpen`: the drawn
+  faces at his hip and his shoulder, the floor under every stride, and the
+  headroom), so what is left is the long runs a thing that lives here would
+  take and the turns are only where the walls actually turn. Measured: legs
+  went from 0.6 m to 3.0–4.3, a 74 m route from about 120 waypoints to 26.
+- **AND HE STALKS A GREAT DEAL MORE.** He goes to a corner from eight metres
+  out rather than eleven; a stalk is THREE corners, each nearer than the
+  last, rather than a clock; a peek is held five to eleven seconds; losing
+  you in a fight sends him back to watching half the time rather than always
+  searching; and `blooded` — which is what makes him charge instead of peek
+  — lapses after forty seconds, so the second half of a long visit is not
+  all fighting.
+- **AND THE BONES ARE THE THING THAT TELLS YOU ABOUT NOISE.** His hearing has
+  been in the game since he went in — a sprint carries 24 m, a walk 11, a
+  crouch 5 — and nothing ever told the player so. The floor of a catacomb is
+  bones: run through a pile of them (the piles the game already finds by
+  bucketing the skull mesh's own vertices) and it is a dry clatter with no
+  body under it, a puff of dust, and a noise that carries twenty-six metres.
+  It is the one thing down there that makes where you walk a decision.
+- **AND SOMETHING IN THE AIR.** Two `Points` batches and one draw each: motes
+  that are POSITIONS rather than particles — a slow wander round a fixed
+  offset from wherever you are standing, so the air is always full and
+  nothing is ever born or dies — and dust, a pool that recycles, thrown
+  where something happened: his feet on the stone within sixteen metres, a
+  pile of bones kicked through.
+
+**"I NEVER SAW HIM THE PAST 2 TIMES I PLAYED" WAS THREE THINGS, AND THE
+FIRST IS THE OLDEST MISTAKE IN THIS FILE.** The owner walked the catacombs
+twice and the thing that lives in them never once crossed his path. Measured
+with the player standing still in the door room for three minutes: he came
+within **1.5 m** and never saw them, and never counted as being in that room
+at all. Both readings are the same fact — **a distance with the y left out is
+not a distance.** Two rooms stack at the same (x, z) all over this place and
+he was ten metres BELOW, which his own senses already refuse (`catSees` will
+not see through a storey). His convergence targets are drawn from nodes on
+YOUR OWN FLOOR now (within 1.8 m of your feet), and the prowl mostly is too.
+
+- **AND A BEAM OF LIGHT IS NOT A WALL.** "Let me run up to the door, I got
+  stuck here": the door's decorative light shaft is a `PlaneGeometry` hung
+  3.3 m out from the leaf, and `buildKeepWalls` reads every drawn face — so
+  the walk stopped the player exactly one body radius in front of a sheet of
+  light. It, the glow and the hit proxy carry `bwGhost` (drawn, never walked
+  into), which the tavern's tables already needed. Measured: a 3.56 m gap
+  became -0.03.
+- **AND A WALL IS SLID ALONG, NOT STOPPED AT** — the player's own rule and
+  the church's, which his own clamp never got. A frame whose movement crossed
+  drawn stone was reverted WHOLE, and a revert is standing still; with a
+  route nothing above ever asks to redraw, that is a creature parked for
+  good. Traced with the player in one room: **seventy-five seconds held at
+  25.9 m with a live eight-waypoint path in his hands and the revert firing
+  on half the frames.** Whichever ONE AXIS of the step is clear is kept.
+- **AND A STALK THAT IS NOT GETTING ANYWHERE IS NOT A STALK.** Net progress
+  over five seconds; under a metre of it drops the route and asks for another
+  corner, and three goes is all he gets before he simply comes. The backstop
+  that ended a stalk was 95 s, which is a minute and a half of a boss
+  standing still — 45.
+
+Measured after, real time, player standing at the landing and the creature
+parked 44.6 m away on another storey: he closes to **5.2 m and charges at
+48 s**, against never. And the room the way out is in is one of his — the
+nodes within twelve metres of the door, found off the door rather than typed,
+and he goes there about a quarter of the times he picks an errand.
+
+Three measurement traps paid for on the way. **Dev mode turns a creature's
+swinging off outright**, so a creature standing at its ring doing nothing is
+what dev mode looks like and not a bug (`atk: -1`, `cool: 0`, the idle
+playing). **A page that has not been reloaded is the old module** — the door
+spots read zero for a whole round because the graph in the tab had been built
+before the code that fills them existed. And `u.path` on this follower is
+**LOCAL x/z with a world f**, against `u.pathO`; printing a waypoint against
+the room's origin subtracts it twice and every distance comes out in the
+thousands.
+
+**THE GRAB IS OUT, AND WHAT IT TAUGHT IS THAT NOTHING MAY LEAVE A RIG
+UNBOUND.** "Take out the grab, it's bad, he T-posed right after it." He did,
+and the reason is general enough to be worth the note even though the beat
+is deleted: a TAKE owns the mixer while it runs — every other action
+stopped, zeroed AND disabled, because `stop()` alone leaves an action
+contributing and the crawl and the grab then averaged into one pose — and
+what handed the body back was `u.cur = null` plus a fresh draw. **A frame on
+which no action carries weight is a frame drawn in the BIND pose**, and this
+rig binds standing in an A. `catBound` is the net and it hangs off
+`catStand`, which every branch the creature has already calls: if nothing at
+all is stamping him, the idle is, on the same frame. Measured by doing to
+him exactly what the grab did — every clip stopped, zeroed and disabled —
+and stepping one frame: he comes back on the idle and carries on into a
+stalk with the crawl playing. The same line went out of the undying rise,
+which cleared `u.cur` for no gain: a scripted beat has to blend OUT of its
+last pose, which is what the knockdown does and is the shape to copy if a
+grab ever comes back.
+
+**AND THE HORDE'S TAKE PLAYED ON EVERY RESTORE FROM THE TUNNEL.** The pack
+at the dock has had "a trigger you have already crossed does not fire again"
+since the day the checkpoint went in; the three past the pavilion never got
+it, and the cave's own save is written THIRTY METRES past them — so loading
+it opened with the cutscene, at a stretch of sand whose creatures are
+behind you. (Dev mode skips that take on the walk and cannot skip one that
+fires on the frame the save is read.) `beginRestore` marks it crossed and
+leaves them asleep on their marks. Measured from the cave's spot, dev mode
+on and off: `mutPhase` 2, `mutCut` false, the field of view untouched.
+
+**AND A CHECKPOINT AT THE TOP OF THE HOIST, WHICH IS A SAVE IN A ROOM.**
+Everything past it — the terrace, the keep's door, the tavern, the two men
+in it — is behind a sail, a walk round an island and a ride, and none of it
+is worth doing twice. It is written the moment the car arrives with you ON
+it (inside `keepLiftBox` and standing at its deck), once a game.
+
+**A SAVE MADE IN A ROOM IS NOT A POSITION ON THE BEACH.** Every checkpoint
+before this one was written on the sand, so `pos` was a place; this one is
+eight kilometres out on an island that is not fetched, not built and not
+entered when the save is read. Handed straight to the camera it is a body
+on the beach's own clamps, dragged back to the sand on the first frame. The
+save carries `room` now, and a restore that reads `keep` HOLDS THE POSITION
+— the black card up, `loadKeep`, and `updateKeepRestore` on the wall clock
+until `keepReady` — then `placeInKeep`, the hoist parked at the top where
+you left it, and you set down on the spot it was written at. It is the
+sail's own honest failure: if the island never comes, the black stays.
+Measured: the save reads `room: "keep"` at (-6002.5, 817.85, 6014.9), and a
+reload into it comes up standing on the car at the terrace facing the
+studded door with "E Lower the hoist" under the crosshair.
+
 **THE SAMURAI STOOD THERE BECAUSE A CREATURE'S FEET ARE NOT AN EYE MINUS A
 BODY.** "He keeps getting stuck in place" and "he stops attacking even when
 you get close" are one line. `pushOutOfDojo(p, r, feet)` is the PLAYER's call
