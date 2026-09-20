@@ -11269,3 +11269,149 @@ opens OUT over the beach**: a leaf built along +z swings to (sin, 0, cos) of
 its yaw, and -x is seaward here, so the door in the sand wall stood across
 the frame with the beach behind it; +0.72 puts it into the recess, where the
 comment always said it was. Read a swing's sign off where the leaf ENDS UP.
+
+**THE SAMURAI STOOD THERE BECAUSE A CREATURE'S FEET ARE NOT AN EYE MINUS A
+BODY.** "He keeps getting stuck in place" and "he stops attacking even when
+you get close" are one line. `pushOutOfDojo(p, r, feet)` is the PLAYER's call
+and its `feet` is optional, falling back to `p.y - playerEye()`; `mutClampX`
+called it with two arguments, and a mutant's group already sits on the floor
+— so the wall band it tested ran from 1.14 m UNDER the boards to 0.05 m over
+them and caught the risers of the step he was standing on. Measured: the
+chase moved him 0.10 m toward the player and this put him back 0.10 m, on
+every frame. He stood 3.04 m away for 38 of 40 seconds and threw NOT ONE
+SWING — and every diagnosis that starts "the AI has stopped deciding to
+attack" is wrong, because he was never allowed to close. After: 40.5 swings
+and 54 damage a minute, median range 1.23 m, worst stall 1.13 s (the Dealer
+is 48 and 40). **An optional argument with a player-shaped default is a trap
+the day a creature calls it.**
+
+**AND A CORPSE'S GROUND IS A LOOKUP PER PARTICLE — the gibs' rule, on a
+ragdoll.** `updateMutRagdoll` took ONE floor, at the spot the creature died,
+and gave it to all 22 particles. On a beach, a hall and a bunker floor that
+is the same number everywhere and the error cannot show; the courtyard has a
+step in it. Measured: killed on the veranda at 800.58 the body slid four
+metres onto the yard at 800.20 and came to rest with its lowest joint 0.45 m
+in the air. Each joint asks what is under ITSELF now, and off the grid it
+keeps the body's own floor so a part thrown past the edge of a room still has
+something to land on. Two things came with it: a floor made of cells is not
+LEVEL across a two-metre body, so the constraints turn the disagreement into
+a permanent millimetre of jitter and at the sand's 1e-7 the corpse was solved
+for ever — a room gets the surf's own looser threshold; and at rest the body
+now lies ACROSS the step with a 0.56 m spread of floors under it, which is
+what a body draped over a step should do. Measured after: 22 parts, worst
+constraint 1.012, asleep at 2.15 s, hips 0.28 m over the floor they are
+actually over.
+
+**AND THE ROOM'S MEMORY IS SEEDED BY THE THING THAT PUTS YOU IN IT.** The
+catch that stops the player falling out of the courtyard reads
+`dojoLastFloor`, and nothing set that until a frame had already come back
+with a floor. The very first frame in the room is always a bad one —
+`placeInDojo` calls `warmDojo()` three lines up, which renders the whole
+courtyard several times, so the frame after it is most of a second long and
+one step of gravity at that dt puts the feet ten metres under the boards.
+Measured: the camera went 801.9 → 301 → 171 and kept going at 130 m/s.
+`placeInDojo` knows where it is standing you; it says so.
+
+**AND A DROP THAT ALWAYS POINTS DOWN DOES NOT NEED A RAYCASTER.**
+`buildDojoBlocks` cast `Raycaster.intersectObject(dojoWorld, true)` straight
+down once per column and once per stone, and three has no spatial index:
+measured with a counter, **470 rays at 1.93 ms each — 909 ms of a 978 ms
+`dojo blocks` span, inside a 1292 ms `courtyard.glb` freeze** on the frame
+the room lands, which is the hitch on the walk up to the portal. The room's
+43,571 triangles go into a one-metre (x, z) grid ONCE and a drop is then a
+point-in-triangle over the handful in one cell: **978 → 73 ms, and
+`courtyard.glb` 1292 → 154.** Two things it has to keep or the rubble
+reseats itself — the material's SIDE (three culls back faces, so a downward
+ray never meets the underside of a roof) and the old filter's rejects — and
+the way to prove it is to run both against each other: **3200 of 3200 sample
+points agree, 1280 of them real hits, zero disagreements.** The first guess
+was that the build was quadratic because the ray also tested the stones it
+was adding; that was real, and worth 23 ms of 1204. **Count the rays before
+blaming their targets.**
+
+**AND THE PREVIEW PANE HIDES ITSELF ON EVERY TOOL CALL, WHICH STOPS rAF
+DEAD.** Three separate measurements this session read "the creature never
+moves" and "the take never finishes" when what was actually true was
+`document.hidden` and zero frames. Worse, a screenshot does NOT flush the
+real rAF queue, and once the loop's callback is sitting in it the loop is
+unrecoverable — a pump that stubs `requestAnimationFrame` cannot get it back.
+`__bw.step(dt)` runs the real `update()` and needs no frame loop at all, and
+the wall-clock work `animateFrame` does is already mirrored into it. **Drive
+the game with `step`; check `document.hidden` before believing any measured
+zero.** (And a screenshot taken after setting an overlay's `src` shows the
+PREVIOUS frame, so a contact sheet needs a call of its own — this file has
+said so before and it cost an hour again.)
+
+**THE FOUNTAIN'S POOL WAS A HOLE IN THE FLAGSTONES, AND ITS WATER WAS A LADDER
+OF PILLS.** Rendered at last — four angles, in game, at the retro scale — and
+both halves of it were wrong in ways that are already written down here:
+
+- **METALNESS IS A TRAP, THE FIFTH TIME, AND THIS TIME ON WATER.** The pool
+  shipped at `roughness 0.08, metalness 0.30`, which is a polished near-metal:
+  no diffuse term, no environment map in this game, so it can only show what a
+  light reflects straight back at the eye. It rendered as a flat BLACK DISC
+  with a hard rim and not one of the caustics drawn for it was visible
+  anywhere on it. Dark is not black — water at night is a DIELECTRIC that
+  keeps its diffuse, takes a broad soft sheen off the moon rather than a
+  pinpoint, and lets the caustics and the basin floor under it do the rest.
+  `metalness 0, roughness 0.42`, and the opacity comes down with it, because
+  the one thing that separates water from a lid is seeing the stone through
+  it. (The tunnel's channel is the deliberate exception and says so: a MIRROR
+  of a specific light has no diffuse to lose.)
+- **AND A VEIL THAT STOPS AT A HAND'S WIDTH LEAVES THE DROPS TO DO THE
+  FALLING.** Each tier's sheet was capped at 0.30 m against a bottom tier
+  that falls a full metre, so sixty-eight little boxes carried the rest —
+  which at 16 mm across is eight pixels on screen, a white BAR, and
+  sixty-eight of them is a ladder standing round the fountain. The sheet
+  falls the whole way now and the drops are a third as many at half the
+  width: they are the sparkle coming off it, not the thing itself.
+- **AND WHAT MADE A FULL-HEIGHT TUBE A DRUM WAS NEVER ITS LENGTH, IT IS ITS
+  TWO HARD CIRCULAR EDGES** — so the answer is the alpha, not the geometry.
+  The first pass faded in at the top and out at the bottom, which puts the
+  strongest part of the sheet halfway down and holds it at FULL alpha across
+  the whole middle: a milky drum with the carving invisible behind it, the
+  same drum wearing the opposite coat. Water leaves a brim as a skin and then
+  ACCELERATES, and a sheet that accelerates gets thinner — it peaks just
+  under the lip and tapers all the way down, so the pedestal reads through
+  the bottom half.
+- **AND A DISC OF WATER HAS NO SCALE.** Nine lily pads float in the ring
+  outside the bottom tier's overhang, which is the only part of the pool
+  anyone sees from standing height. A pad is a circle with a WEDGE out of it
+  (`CircleGeometry`'s `thetaLength`) — the notch is the whole silhouette, and
+  without it they are coins — one InstancedMesh with a tone per pad
+  (`setColorAt`), because a dozen identical greens read as one printed
+  pattern. They drift, because a pool fed from the middle turns.
+
+**AND AN OVERSIZED TOOL RESULT IS SAVED TO A FILE, WHICH IS HOW A PICTURE GETS
+OUT OF THE PANE.** Screenshots of the preview only capture when the pane is
+displayed, it re-hides on every tool call, and an overlay `<img>` at the top
+of the z-order does not composite while it is hidden — three rounds of this
+session were judged on a frame from two calls earlier. The way that works:
+render the sheet into a 2D canvas in ONE call (`drawImage` off the WebGL
+canvas must be in the same task — no `preserveDrawingBuffer`), `toDataURL` it,
+and return the bare base64. It blows the result limit, the harness writes it
+to disk, and `base64.b64decode` in a shell turns it into a real .jpg that can
+be read and sent to the owner — for no token cost at all, and he gets a file
+rather than a screenshot of a pane.
+
+**AND THE LILY PADS WERE NOT THE THING THAT WAS FLOATING.** "The lily pads are
+floating above the water" — measured, a pad sits **3.4 mm** over the pool disc,
+which is exactly where a pad should be. What was floating was THE WATER.
+`FOUNT_POOL_Y` was typed as 0.26; the courtyard scan's own basin has its floor
+at **0.127 and its rim topping out at 0.205**, so the disc hung five
+centimetres ABOVE THE RIM of the thing it is supposed to be inside — a plate of
+water over the whole basin. It is dark and two thirds transparent, so what the
+eye took for the bottom was the stone thirteen centimetres below it, and the
+pads read as hovering that thirteen centimetres.
+
+The fountain's stone is the SCAN'S, so the only honest source for a water line
+is the model. `buildFountain` reads it now: `dojoDropY` (already a one-metre
+triangle grid, so this is a few dozen lookups and not one raycast) takes the
+floor out in the ring past the bottom tier's overhang, walks outward until the
+stone lifts to find the inner face of the rim, and the water goes a few
+centimetres over the floor and safely under the rim — 0.143, a 1.65 cm depth,
+with the disc's radius cut to 0.73 so its edge dies behind the rim instead of
+crossing it. The bottom tier's `to` is resolved against it as well, or the
+fall ends in the air above the water. Repack the courtyard and all of it still
+lands in the basin. **A height typed for a hand-built prop is a guess the day
+that prop is standing in somebody else's mesh.**

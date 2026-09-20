@@ -13986,8 +13986,8 @@ function updateDrainAudio(dt) {
   // this beach and still belong to it, so they duck the surf and leave a
   // little; the hall is not on this planet and the sea has no business
   // being audible in it at all.
-  if (waveBusGain) waveBusGain.gain.setTargetAtTime(settings.waveVolume * (1 - 0.8 * drainMix) * (1 - 0.92 * bunkerMix) * (1 - shrineMix), ctx.currentTime, 0.6);
-  if (windDuck) windDuck.gain.setTargetAtTime((1 - 0.9 * bunkerMix) * (1 - shrineMix), ctx.currentTime, 0.5);
+  if (waveBusGain) waveBusGain.gain.setTargetAtTime(settings.waveVolume * (1 - 0.8 * drainMix) * (1 - 0.92 * bunkerMix) * (1 - shrineMix) * (1 - dojoMix), ctx.currentTime, 0.6);
+  if (windDuck) windDuck.gain.setTargetAtTime((1 - 0.9 * bunkerMix) * (1 - shrineMix) * (1 - dojoMix), ctx.currentTime, 0.5);
   // the trickle of the outfall, loudest where the water leaves the pipe
   if (drainAudio.trickle)
     drainAudio.trickle.gain.setTargetAtTime(mouthNear * settings.sfxVolume * 0.5, ctx.currentTime, 0.4);
@@ -21141,7 +21141,21 @@ function updateMutRagdoll(u, dt) {
       const sub = bf === null ? submersionAt(q.p.x, q.p.z) : 0;
       const k = THREE.MathUtils.clamp((sub - 0.15) / 0.6, 0, 1);
       q.wet = k;
-      q.floor = k > 0 ? gy + (waterSurfaceAt(q.p.x, q.p.z) - 0.10 - gy) * k : gy;
+      /* A CORPSE'S GROUND IS A LOOKUP PER PARTICLE, NOT A NUMBER THE BODY WAS
+       * KILLED WITH — the gibs' own rule, and the crate boards paid for it
+       * first. `gy` is the floor under the spot the creature DIED on, and a
+       * body slides: on a beach, a hall and a bunker floor that is the same
+       * number everywhere and the error could not show, and the courtyard has
+       * a step in it. Measured there: killed on the veranda at 800.58 the body
+       * slid four metres out onto the yard at 800.20 and came to rest with its
+       * lowest joint 0.45 m in the air, which is the whole of "his death
+       * animation is completely broken". In a room each joint asks what is
+       * under ITSELF; off the grid it keeps the body's own floor, so a part
+       * thrown past the edge of a room still has something to land on. */
+      if (bf !== null) {
+        const f = bunkerFloorAt(q.p.x, q.p.z, q.p.y);
+        q.floor = (f === null ? gy : f + 0.07);
+      } else q.floor = k > 0 ? gy + (waterSurfaceAt(q.p.x, q.p.z) - 0.10 - gy) * k : gy;
       if (k > 0) wet = true;
     }
     for (let s = 0; s < RAG_SUB; s++) {
@@ -21320,7 +21334,17 @@ function updateMutRagdoll(u, dt) {
      * be as still as sand does — and it is woken again when the water over it
      * CHANGES by more than a hand, which is the ride the note wanted without
      * the drive. */
-    if (r.t > 1.5 && motion < (wet ? 1.2e-5 : 1e-7)) {
+    /* AND A FLOOR MADE OF CELLS IS NOT LEVEL EITHER, which is the same
+     * argument one room along. Each joint now asks what is under ITSELF, so a
+     * corpse lying across a cell boundary is held up by two heights a few
+     * centimetres apart, the constraints turn that disagreement into a
+     * permanent millimetre of jitter, and at the sand's threshold it never
+     * slept: measured in the courtyard, a body settled to 6 mm of travel a
+     * second and went on being solved — 22 particles, three substeps and
+     * twelve iterations, for the rest of the game. A room gets the surf's
+     * looser number, which is 4 cm a second and is at rest by any standard
+     * a corpse is judged by. */
+    if (r.t > 1.5 && motion < ((wet || bf !== null) ? 1.2e-5 : 1e-7)) {
       r.asleep = true;
       r.wetY = (wet && hip0) ? waterSurfaceAt(hip0.p.x, hip0.p.z) : null;
     }
@@ -25673,8 +25697,8 @@ function updateHatch(dt) {
     const ctx = audioCtx;
     if (bunkerMix > 0 && !bunkerAudio) startBunkerAudio();
     if (bunkerAudio) bunkerAudio.gain.gain.setTargetAtTime(bunkerMix * settings.sfxVolume * 0.75, ctx.currentTime, 0.25);
-    if (waveBusGain && drainMix <= 0.0001) waveBusGain.gain.setTargetAtTime(settings.waveVolume * (1 - 0.92 * bunkerMix), ctx.currentTime, 0.3);
-    if (windDuck) windDuck.gain.setTargetAtTime(1 - 0.9 * bunkerMix, ctx.currentTime, 0.3);
+    if (waveBusGain && drainMix <= 0.0001) waveBusGain.gain.setTargetAtTime(settings.waveVolume * (1 - 0.92 * bunkerMix) * (1 - dojoMix), ctx.currentTime, 0.3);
+    if (windDuck) windDuck.gain.setTargetAtTime((1 - 0.9 * bunkerMix) * (1 - dojoMix), ctx.currentTime, 0.3);
   }
 }
 /* A steel lid a hand thick. Opening: the dogs let go (a clack), the hinge
@@ -26757,7 +26781,7 @@ function animateFrame() {
   oceanUniforms.uTime.value += dt;
   if (!introStarted) titleCam(rawDt);
   update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
-  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateTavernCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt);
+  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateTavernCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateDojoAudio(rawDt);
   updateHover();
   /* After everything that may have moved a lamp or the player, and before
    * anything is drawn: point the twelve real lights at the twelve that
@@ -27164,7 +27188,21 @@ function mutClampX(u, p, dt) {
      * reads as the thing glitching about the room - the knight's own lesson,
      * which this room never got. At most a walking pace of it a frame. */
     const wx0 = p.x, wz0 = p.z;
-    pushOutOfDojo(p, 0.34);
+    /* AND A CREATURE'S FEET ARE ITS OWN ORIGIN, NOT AN EYE MINUS A BODY.
+     * `pushOutOfDojo` is the PLAYER's call and its `feet` argument is
+     * optional, falling back to `p.y - playerEye()` — which is right for a
+     * camera and is a metre and three quarters wrong for a mutant, whose
+     * group already sits on the floor. So the wall band it tested ran from
+     * 1.14 m UNDER the boards to 0.05 m over them: it caught the risers of
+     * the step he was standing on and the foot of everything near him, and
+     * it pushed him back out of them. Measured on the samurai at the
+     * veranda's edge: the chase moved him 0.10 m toward the player and this
+     * put him back 0.10 m, on every frame, so he stood 3.04 m away for
+     * thirty-eight seconds of a forty-second fight and threw not one swing.
+     * That is the whole of "he keeps getting stuck in place" and of "he
+     * stops attacking even when you get close" — he was never deciding not
+     * to attack, he was never allowed to close. */
+    pushOutOfDojo(p, 0.34, p.y);
     /* AND HE MAY NOT LEAVE THE ROOM. Outside the model there are no faces to
      * push off and no grid to stand on, so nothing held him: chasing a player
      * who had himself been knocked out of the courtyard he walked twenty-seven
@@ -33165,38 +33203,165 @@ function updateDojoLamps(dt, t) {
  * every side, which is the "off its axis" and the rings that went nowhere near
  * the stone. Everything here is the model's own number now. */
 const FOUNT_TIERS = [
-  { y: 2.20, r: 0.219, to: 1.84, n: 9 },      // the top basin spilling into the upper
-  { y: 1.80, r: 0.318, to: 1.34, n: 13 },     // upper into lower
-  { y: 1.30, r: 0.495, to: 0.30, n: 20 },     // lower into the pool
+  { y: 2.20, r: 0.219, to: 1.84, n: 4 },      // the top basin spilling into the upper
+  { y: 1.80, r: 0.318, to: 1.34, n: 6 },      // upper into lower
+  { y: 1.30, r: 0.495, to: 0.30, n: 9 },      // lower into the pool
 ];
 /* and the water it collects in: a surface in each basin and the pool at the
  * foot, because a fountain that pours and never fills is a pipe */
 const FOUNT_POOL_Y = 0.26, FOUNT_POOL_R = 0.84;
+let fountPoolR = FOUNT_POOL_R;
 const FOUNT_BASINS = [
   { y: 1.32, r: 0.455 },
   { y: 1.82, r: 0.285 },
   { y: 2.22, r: 0.190 },
 ];
-let fountain = null, fountDrops = null, fountRip = [], fountT = 0, fountFalls = [];
+let fountain = null, fountDrops = null, fountT = 0, fountFalls = [], fountCaust = null, fountPads = null, fountTiers = null, fountPoolY = FOUNT_POOL_Y;
 const _fqD = new THREE.Object3D();
 function buildFountain() {
   if (fountain || !dojoWorld) return;
   fountain = new THREE.Group();
   fountain.scale.setScalar(1 / DOJO_S);       // everything inside is world metres
   fountain.position.set(DOJO_FOUNT.x / DOJO_S, 0, DOJO_FOUNT.z / DOJO_S);
+  /* THE WATER LINE IS MEASURED OFF THE BASIN, NOT TYPED.
+   *
+   * `FOUNT_POOL_Y` was 0.26 and the scan's basin floor is at 0.127 with its
+   * rim topping out at 0.205 — so the pool disc hung FIVE CENTIMETRES ABOVE
+   * THE RIM of the thing it is supposed to be inside, a plate of water
+   * floating over the whole basin. The disc is dark and two thirds
+   * transparent, so what the eye took for the bottom was the stone 13 cm
+   * below it, and the lily pads sitting 3 mm over the disc read as hovering
+   * that 13 cm in the air. The owner's "the lily pads are floating above the
+   * water" is exactly right and the pads were never the thing that was wrong.
+   *
+   * The fountain's stone is the courtyard's own scan, so the only honest
+   * source for any of these numbers is the model: `dojoDropY` (already a
+   * one-metre triangle grid, so this is a few dozen lookups and no raycasts)
+   * reads the floor out in the ring past the bottom tier's overhang, walks
+   * outward to find where the rim starts rising, and the water goes a few
+   * centimetres over the floor and safely under the rim. Repack the
+   * courtyard and it still lands in the basin. */
+  {
+    const fx = DOJO_FOUNT.x, fz = DOJO_FOUNT.z;
+    const at = (r, a) => dojoDropY(fx + Math.cos(a) * r, fz + Math.sin(a) * r, 3.0);
+    const ring = (r) => { const v = [];
+      for (let k = 0; k < 8; k++) { const y = at(r, k * Math.PI / 4); if (y !== null) v.push(y); }
+      return v.sort((p2, q) => p2 - q); };
+    const med = (v) => v.length ? v[v.length >> 1] : null;
+    // the floor, out where the bottom tier no longer overhangs
+    const flo = []; for (const r of [0.52, 0.60, 0.68]) flo.push(...ring(r));
+    const floorY = med(flo.sort((a2, b2) => a2 - b2));
+    if (floorY !== null) {
+      // and outward until the stone lifts: that is the inner face of the rim
+      let rimR = 0.84, rimY = null;
+      for (let r = 0.70; r <= 0.94; r += 0.02) {
+        const m = med(ring(r));
+        if (m !== null && m > floorY + 0.02) { rimR = r; rimY = m; break; }
+      }
+      fountPoolY = rimY === null ? floorY + 0.05
+        : Math.min(floorY + 0.05, rimY - 0.03);
+      fountPoolR = Math.max(0.40, rimR - 0.03);
+    }
+  }
+  /* AND THE BOTTOM FALL ENDS AT THE WATER, wherever the water turned out to
+   * be. `to` is how far a tier's sheet and its drops travel, and the last one
+   * was written to a pool that was 8 cm higher than the basin can hold. */
+  fountTiers = FOUNT_TIERS.map((t, i) => (i === FOUNT_TIERS.length - 1)
+    ? Object.assign({}, t, { to: fountPoolY + 0.02 }) : Object.assign({}, t));
   dojoWorld.add(fountain);
   /* THE POOL. Dark, barely transparent and lifted a little off its own map —
    * water at night is not blue, it is the sky with the ground showing through
    * it, and on this beach that is nearly black with a cold sheen. `depthWrite`
    * stays off so the basin floor under it is not cut out. */
-  const pool = new THREE.Mesh(new THREE.CircleGeometry(FOUNT_POOL_R, 40),
-    new THREE.MeshStandardMaterial({ color: 0x35505f, roughness: 0.10, metalness: 0.18,
-      transparent: true, opacity: 0.88, depthWrite: false,
-      emissive: new THREE.Color(0x44647a), emissiveIntensity: 1.15 }));
+  /* AND A FLAT DISC IS NOT WATER, HOWEVER IT IS COLOURED. This pool went in
+   * as one circle of 0x35505f lifted at emissive 1.15, and measured against a
+   * courtyard this dark that is the brightest thing in the room — a solid
+   * pale-cyan plate lying on the stone, which is what the owner is looking at
+   * when he says it does not read as water. Two things are wrong with it and
+   * only one is the colour: still water at night is nearly BLACK, because it
+   * is the sky with the ground showing through it, and what says "water" is
+   * not its tone at all, it is that the LIGHT ON IT MOVES.
+   *
+   * So the disc goes dark and gets caustics: one drawn sheet of soft bright
+   * veins, used twice on the same material — once as the map and once as the
+   * emissive — and the two are scrolled against each other at different
+   * speeds and angles. Where the veins cross, the surface brightens for a
+   * moment and then the crossing moves on, which is exactly what a disturbed
+   * pool does under a low light and costs one texture and two offsets. */
+  const caustA = makeCausticTex();
+  const caustB = caustA.clone(); caustB.needsUpdate = true;
+  caustB.repeat.set(1.7, 1.7); caustB.rotation = 0.9; caustB.center.set(0.5, 0.5);
+  /* AND METALNESS IS A TRAP, FOR THE FIFTH TIME — this time on water. The
+   * pool went in at `metalness 0.30, roughness 0.08`, which is a polished
+   * near-metal, and a metal has NO DIFFUSE TERM: in a game with no
+   * environment map it can only ever show what a light source reflects
+   * straight back at the eye. Rendered, the basin was a flat BLACK DISC with
+   * a hard rim — a hole in the flagstones — and none of the caustics drawn
+   * for it were visible anywhere on it. Water at night is dark, which is what
+   * the note above this one is about, and dark is not the same as black: it
+   * is a DIELECTRIC, so it keeps a diffuse term, takes a broad soft sheen off
+   * the moon rather than a pinpoint, and lets the caustics and the basin
+   * floor under it do the rest. And the opacity comes down with it, because
+   * the one thing that separates water from a lid is that you can see the
+   * stone through it. */
+  const pool = new THREE.Mesh(new THREE.CircleGeometry(fountPoolR, 40),
+    new THREE.MeshStandardMaterial({ color: 0x22323c, roughness: 0.42, metalness: 0.0,
+      map: caustA, emissiveMap: caustB,
+      transparent: true, opacity: 0.62, depthWrite: false,
+      emissive: new THREE.Color(0x4e7186), emissiveIntensity: 1.05 }));
+  fountCaust = [caustA, caustB];
   pool.rotation.x = -Math.PI / 2;
-  pool.position.y = FOUNT_POOL_Y;
+  pool.position.y = fountPoolY;
   pool.renderOrder = 2;
   fountain.add(pool);
+  /* AND THERE ARE LILY PADS IN IT. A disc of still water is a disc however
+   * well it is lit, and what tells you a pool has DEPTH is something lying on
+   * it at a size you can judge — so a handful of pads float in the ring of
+   * water outside the bottom tier's overhang, which is the only part of the
+   * pool anyone can actually see from standing height.
+   *
+   * A pad is a circle with a WEDGE out of it, which `CircleGeometry` gives
+   * for nothing through `thetaLength` — the notch is the whole silhouette,
+   * and without it they are coins. They are an InstancedMesh with a tone per
+   * pad (`setColorAt`), because a dozen identical greens read as one printed
+   * pattern, and they DRIFT: the pool is fed from above, so the water turns
+   * slowly and the pads go round with it, bobbing on their own counts and
+   * turning at their own rates. Nothing here has a collider; a pad is not a
+   * thing you stand on.
+   *
+   * They are drawn AFTER the pool (`renderOrder`), so they sit on the water
+   * rather than under it — the pool is transparent and writes no depth, so
+   * order is the only thing that decides which is on top. */
+  const PAD_N = 9;
+  const padGeo = new THREE.CircleGeometry(1, 20, 0, Math.PI * 2 - 0.62);
+  padGeo.rotateX(-Math.PI / 2);
+  fountPads = new THREE.InstancedMesh(padGeo,
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.74, metalness: 0.0,
+      transparent: true, opacity: 0.97, depthWrite: false, side: THREE.DoubleSide,
+      emissive: new THREE.Color(0x24381f), emissiveIntensity: 0.9 }), PAD_N);
+  fountPads.renderOrder = 4;
+  fountPads.frustumCulled = false;
+  fountPads.userData.list = [];
+  {
+    const rp = mulberry32(0x11ac);
+    const tone = new THREE.Color();
+    for (let k = 0; k < PAD_N; k++) {
+      fountPads.userData.list.push({
+        a: rp() * Math.PI * 2,
+        r: 0.52 + rp() * Math.max(0.05, fountPoolR - 0.61),   // clear of the bottom tier, inside the rim
+        s: 0.055 + rp() * 0.055,
+        spin: (rp() - 0.5) * 0.10,             // its own slow turn
+        drift: 0.020 + rp() * 0.030,           // and its own place in the current
+        bob: rp() * Math.PI * 2, bobR: 0.7 + rp() * 0.8,
+        yaw: rp() * Math.PI * 2 });
+      // a green that is never the same twice, and the odd yellowed one
+      const g = 0.30 + rp() * 0.26, warm = rp() < 0.22;
+      tone.setRGB(g * (warm ? 0.95 : 0.52), g, g * (warm ? 0.34 : 0.42));
+      fountPads.setColorAt(k, tone);
+    }
+    if (fountPads.instanceColor) fountPads.instanceColor.needsUpdate = true;
+  }
+  fountain.add(fountPads);
   /* NO RINGS. Expanding rings on the pool were meant to read as ripples and
    * read instead as hoops climbing the fountain — they are drawn flat but the
    * eye takes a growing circle round a tall object as something RISING, which
@@ -33210,15 +33375,71 @@ function buildFountain() {
    * streaks of varying weight on transparent, scrolled downward — and the
    * drops are kept, far fewer, as the glints coming off it. */
   const fallTex = makeFallTex();
-  for (const T of FOUNT_TIERS) {
+  for (const T of fountTiers) {
+    /* AND A VEIL IS SHORT. Hung the whole way from the lip to what it falls
+     * into, the bottom tier's sheet is a metre-tall tube of radius half a
+     * metre — which is not a fall, it is a DRUM standing round the pedestal,
+     * and it was the last thing on this fountain still reading as a ring.
+     * Water leaves a stone lip as a coherent skin for about a hand's width
+     * and then breaks into drops, so the sheet stops there and the drops
+     * carry the rest of the way down. */
+    /* AND A VEIL THAT STOPS AT A HAND'S WIDTH LEAVES THE DROPS TO DO THE
+     * FALLING, WHICH THEY CANNOT. Capped at 0.30 m the bottom tier's sheet
+     * covered the top third of a one-metre fall and sixty-eight little boxes
+     * carried the rest — rendered, that is a scatter of separate white pills
+     * hanging in the air round the fountain, countable, which is what the
+     * owner photographed. The sheet falls the WHOLE way now.
+     *
+     * What made a full-height tube read as a drum is not its length, it is
+     * its two hard circular EDGES, and the answer to that is the alpha and
+     * not the geometry: it fades in over the top tenth AND out over the
+     * bottom two fifths, so there is no circle anywhere on it — it emerges at
+     * the lip, is at its strongest in the middle of the fall, and has
+     * dissolved before it reaches the water. The pattern repeats about every
+     * third of a metre whatever the drop, or a long fall draws the same
+     * streaks stretched over three times the distance. */
     const h = T.y - T.to;
     const tex = fallTex.clone(); tex.needsUpdate = true;
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(Math.max(2, Math.round(T.r * 7)), 1);
-    const sh = new THREE.Mesh(new THREE.CylinderGeometry(T.r + 0.015, T.r + 0.055, h, 26, 1, true),
-      new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.50,
-        depthWrite: false, side: THREE.DoubleSide, blending: THREE.NormalBlending }));
-    sh.position.y = T.to + h * 0.5;
+    tex.repeat.set(Math.max(2, Math.round(T.r * 7)), Math.max(1, Math.round(h / 0.34)));
+    /* AND A CYLINDER HAS TWO HARD EDGES, WHICH IS THE OTHER HALF OF THE RING.
+     * An open tube of water ends in a circle at the top and a circle at the
+     * bottom, and at this scale a circle seen nearly edge-on is a line drawn
+     * round the fountain. The fall carries its own alpha in the GEOMETRY —
+     * nothing at the lip, full a tenth of the way down, thinning as it breaks
+     * up into the basin — so it emerges and dissolves instead of starting and
+     * stopping. That has to live on the vertices and not in the map, because
+     * the map is what scrolls.
+     *
+     * And FrontSide, not DoubleSide: a translucent tube drawn both sides is
+     * its own opacity twice over, which is what made a thin veil read as a
+     * solid band. */
+    const fg = new THREE.CylinderGeometry(T.r + 0.015, T.r + 0.055, h, 26, 8, true);
+    {
+      const pa = fg.attributes.position, n = pa.count, col = new Float32Array(n * 4);
+      for (let i = 0; i < n; i++) {
+        const v = (pa.getY(i) + h * 0.5) / h;          // 0 at the basin, 1 at the lip
+        /* AND A FALL IS THICKEST WHERE IT LEAVES THE LIP. Fading in at the
+         * top and out at the bottom puts the STRONGEST part of the sheet
+         * halfway down and holds it at full alpha across the whole middle —
+         * rendered, that is a milky drum standing round the pedestal with
+         * the stone invisible behind it, which is the drum this file warned
+         * about wearing the opposite coat. Water leaves a brim as a skin and
+         * then accelerates, and a sheet that accelerates gets THINNER: it
+         * peaks just under the lip and tapers the whole way down, so the
+         * carving behind it reads through the bottom half. */
+        const inn = Math.min(1, (1 - v) / 0.09);       // out of the lip
+        const a = inn * Math.pow(v, 0.9);              // and thinning as it falls
+        col[i * 4] = col[i * 4 + 1] = col[i * 4 + 2] = 1;
+        col[i * 4 + 3] = a;
+      }
+      fg.setAttribute('color', new THREE.BufferAttribute(col, 4));
+    }
+    const sh = new THREE.Mesh(fg,
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.44,
+        vertexColors: true, depthWrite: false, side: THREE.FrontSide,
+        blending: THREE.NormalBlending }));
+    sh.position.y = T.y - h * 0.5;          // it hangs FROM the lip, not up from the basin
     sh.renderOrder = 3;
     fountain.add(sh);
     fountFalls.push({ m: sh, tex, sp: 1.15 + T.r });
@@ -33229,8 +33450,8 @@ function buildFountain() {
    * transparent, `depthWrite` off so the basin floor under it is not cut out. */
   /* AND IT IS LIT ENOUGH TO SEE. At 0x18222b in a courtyard this dark the
    * standing water was indistinguishable from the stone holding it. */
-  const waterMat = () => new THREE.MeshStandardMaterial({ color: 0x3b5668, roughness: 0.10,
-    metalness: 0.20, transparent: true, opacity: 0.86, depthWrite: false,
+  const waterMat = () => new THREE.MeshStandardMaterial({ color: 0x3b5668, roughness: 0.40,
+    metalness: 0.0, transparent: true, opacity: 0.78, depthWrite: false,
     emissive: new THREE.Color(0x4a6d84), emissiveIntensity: 1.25 });
   /* AND THERE IS NO WATER DRAWN IN THE UPPER BASINS. Measured, those three
    * discs sat at 1.32, 1.82 and 2.22 against rims at 1.30, 1.80 and 2.20 —
@@ -33240,20 +33461,25 @@ function buildFountain() {
    * seen edge-on. The falls and the pool carry the water; the saucers keep
    * their own stone. */
   // the falling water
-  let N = 0; for (const t of FOUNT_TIERS) N += t.n;
+  let N = 0; for (const t of fountTiers) N += t.n;
   /* SHORT, FAINT AND NOT IN A RING. The first pass drew them 0.12 long,
    * stretched to nearly two, at 0.55 opacity and all at exactly the rim's
    * radius — which from the spawn read as a crown of white CANDLES standing
    * on the fountain rather than water coming off it. Water at this render
    * scale wants to be small, thin and barely there, with its radius jittered
    * so the tier spills unevenly the way a worn stone lip actually does. */
-  const dm = new THREE.MeshBasicMaterial({ color: 0xc8dae6, transparent: true, opacity: 0.34, depthWrite: false });
-  fountDrops = new THREE.InstancedMesh(new THREE.BoxGeometry(0.016, 0.07, 0.016), dm, N);
+  /* AND A DROP IS A GLINT, NOT A RUNG. At 16 mm across and 7 cm long, scaled
+   * up to a third again as it falls, a drop is eight pixels wide on screen —
+   * a white BAR, and sixty-eight of them is a ladder standing round the
+   * fountain. They are the sparkle coming off a sheet that is now doing the
+   * falling, so there are a third as many and each is half the width. */
+  const dm = new THREE.MeshBasicMaterial({ color: 0xc8dae6, transparent: true, opacity: 0.26, depthWrite: false });
+  fountDrops = new THREE.InstancedMesh(new THREE.BoxGeometry(0.009, 0.05, 0.009), dm, N);
   fountDrops.frustumCulled = false;
   fountDrops.renderOrder = 3;
   fountDrops.userData.list = [];
   const rnd = mulberry32(0xfa11);
-  for (const t of FOUNT_TIERS) for (let k = 0; k < t.n; k++) {
+  for (const t of fountTiers) for (let k = 0; k < t.n; k++) {
     fountDrops.userData.list.push({ t, a: rnd() * Math.PI * 2, p: rnd(),
       sp: 0.80 + rnd() * 0.45, wob: (rnd() - 0.5) * 0.06,
       jit: (rnd() - 0.5) * 0.16, len: 0.7 + rnd() * 0.7 });
@@ -33268,28 +33494,165 @@ function buildFountain() {
  * cheapest thing that reads as moving water, and the only one that survives
  * this game's retro downscale, where anything finer than a couple of pixels
  * is averaged into a grey wash. */
+/* CAUSTICS ARE VEINS, NOT SPOTS. What light through moving water actually
+ * draws on a floor is a net of thin bright lines that wander and cross; drawn
+ * as blobs it reads as mould. Soft strokes at low alpha on a black ground,
+ * wrapped both ways so it can be scrolled for ever. */
+function makeCausticTex() {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#000'; g.fillRect(0, 0, 128, 128);
+  const rnd = mulberry32(0xca05);
+  g.lineCap = 'round';
+  for (let k = 0; k < 40; k++) {
+    const x = rnd() * 128, y = rnd() * 128;
+    const a = rnd() * Math.PI * 2, len = 22 + rnd() * 46;
+    g.strokeStyle = 'rgba(' + (170 + Math.floor(rnd() * 60)) + ',' +
+      (205 + Math.floor(rnd() * 45)) + ',255,' + (0.10 + rnd() * 0.22).toFixed(3) + ')';
+    g.lineWidth = 1.2 + rnd() * 3.4;
+    g.beginPath();
+    g.moveTo(x, y);
+    g.quadraticCurveTo(x + Math.cos(a) * len * 0.5 + (rnd() - 0.5) * 22,
+                       y + Math.sin(a) * len * 0.5 + (rnd() - 0.5) * 22,
+                       x + Math.cos(a) * len, y + Math.sin(a) * len);
+    g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
 function makeFallTex() {
   const c = document.createElement('canvas'); c.width = 64; c.height = 128;
   const g = c.getContext('2d');
   g.clearRect(0, 0, 64, 128);
   const rnd = mulberry32(0xfa77);
-  for (let k = 0; k < 26; k++) {
-    const x = rnd() * 64, w = 0.6 + rnd() * 2.4, a = 0.12 + rnd() * 0.5;
+  for (let k = 0; k < 17; k++) {
+    const x = rnd() * 64, w = 0.6 + rnd() * 1.9, a = 0.10 + rnd() * 0.34;
     g.strokeStyle = 'rgba(214,232,244,' + a.toFixed(3) + ')';
     g.lineWidth = w;
     g.beginPath(); g.moveTo(x, -4); g.lineTo(x + (rnd() - 0.5) * 3, 132); g.stroke();
   }
-  // a brighter skin at the very top, where it leaves the lip
-  const lip = g.createLinearGradient(0, 0, 0, 26);
-  lip.addColorStop(0, 'rgba(226,240,250,0.55)');
-  lip.addColorStop(1, 'rgba(226,240,250,0)');
-  g.fillStyle = lip; g.fillRect(0, 0, 64, 26);
+  /* AND NOTHING THAT IS NOT A STREAK MAY GO IN HERE. There was a bright band
+   * painted across the top 26 px of this texture — a "skin at the lip" — and
+   * the texture is SCROLLED vertically every frame, so that band did not stay
+   * at the lip: it travelled down the curtain, reached the bottom, and came
+   * round again. Three tiers of it, each on its own speed, is the "weird ring
+   * animations" the owner photographed, and it is not a ripple or a hoop, it
+   * is one gradient in the wrong space. A scrolling texture may only carry
+   * what is true at EVERY height of the fall; anything that belongs to the
+   * lip belongs to the geometry. */
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
 }
 
+/* THE SEA HAS NO BUSINESS IN THIS COURTYARD. The hall learned this and the
+ * three rooms added after it did not: `waveBusGain` was ducked by the drain,
+ * the bunker, the hall and the undercroft, and the dojo appeared in none of
+ * those terms — so six thousand metres inland, behind a wall, in the rain,
+ * you could hear the surf. It goes ALL THE WAY DOWN like the hall's, because
+ * this is not a hole in that beach, it is somewhere else.
+ *
+ * AND SILENCE IS AN ABSENCE, NOT AN AMBIENCE — the hall's own rule. What
+ * replaces the sea is the place itself: wind moving in the foliage that grows
+ * all over these walls, birds a long way off, and insects. It is quiet on
+ * purpose. Three things, none of them on a fixed count, because anything with
+ * a period stops being a garden and becomes a loop. */
+let dojoMix = 0, dojoNature = null, dojoBird = 0, dojoBug = 0;
+function startDojoNature() {
+  const ctx = audioCtx; if (!ctx || dojoNature) return;
+  const g = ctx.createGain(); g.gain.value = 0; g.connect(sfxOut());
+  /* THE LEAVES. Brown noise through a wide band where dry foliage lives, with
+   * a slow swell on it so the air is never still and never regular. Brown
+   * rather than white for the shell's reason: broadband hiss at any level is
+   * a radio, and the low slope is what makes it a sound the world is making. */
+  const len = Math.floor(ctx.sampleRate * 4);
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  let b0 = 0;
+  for (let i = 0; i < len; i++) { const w = Math.random() * 2 - 1; b0 = 0.90 * b0 + w * 0.28; d[i] = b0; }
+  const n = ctx.createBufferSource(); n.buffer = buf; n.loop = true;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 780; bp.Q.value = 0.5;
+  const lg = ctx.createGain(); lg.gain.value = 0.55;
+  n.connect(bp).connect(lg).connect(g);
+  const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 0.07;
+  const lv = ctx.createGain(); lv.gain.value = 0.22;
+  lfo.connect(lv); lv.connect(lg.gain); lfo.start();
+  n.start();
+  dojoNature = { g, n, lfo };
+}
+/* A CHIRP IS A SWEEP, NOT A NOTE. What separates a bird from a beep is that
+ * the pitch MOVES inside each syllable — up, or down — and that the syllables
+ * come in a short phrase with uneven gaps. Two to four of them, panned
+ * somewhere out in the trees, never twice the same. */
+function sfxDojoBird() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t0 = ctx.currentTime + 0.02;
+  const out = ctx.createGain(); out.gain.value = settings.sfxVolume * 0.085;
+  if (ctx.createStereoPanner) {
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = (Math.random() * 2 - 1) * 0.85;
+    out.connect(pan).connect(sfxOut());
+  } else out.connect(sfxOut());
+  const notes = 2 + Math.floor(Math.random() * 3);
+  const base = 2300 + Math.random() * 1500;
+  let t = t0;
+  for (let k = 0; k < notes; k++) {
+    const o = ctx.createOscillator(); o.type = Math.random() < 0.5 ? 'sine' : 'triangle';
+    const gg = ctx.createGain(); gg.gain.value = 0;
+    const dur = 0.045 + Math.random() * 0.07;
+    const f0 = base * (0.9 + Math.random() * 0.3);
+    const up = Math.random() < 0.6;
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(f0 * (up ? 1.45 : 0.68), t + dur);
+    gg.gain.setValueAtTime(0.0001, t);
+    gg.gain.exponentialRampToValueAtTime(1, t + 0.008);
+    gg.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(gg).connect(out); o.start(t); o.stop(t + dur + 0.02);
+    t += dur + 0.03 + Math.random() * 0.09;
+  }
+}
+/* AND THE INSECTS ARE A TRILL, which is one tone chopped fast — the ear reads
+ * the RATE, not the pitch, so it is a tremolo and not a melody. */
+function sfxDojoBug() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t0 = ctx.currentTime + 0.02, dur = 0.5 + Math.random() * 0.9;
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.value = 3700 + Math.random() * 1400;
+  const g = ctx.createGain(); g.gain.value = 0;
+  const trem = ctx.createOscillator(); trem.type = 'square';
+  trem.frequency.value = 26 + Math.random() * 18;
+  const tv = ctx.createGain(); tv.gain.value = settings.sfxVolume * 0.020;
+  trem.connect(tv).connect(g.gain);
+  if (ctx.createStereoPanner) {
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = (Math.random() * 2 - 1) * 0.9;
+    o.connect(g).connect(pan).connect(sfxOut());
+  } else o.connect(g).connect(sfxOut());
+  o.start(t0); trem.start(t0);
+  o.stop(t0 + dur); trem.stop(t0 + dur);
+}
+/* It rides on `animateFrame`, not on the room's own update, because the DUCK
+ * has to come back OFF when you leave and a room's update does not run once
+ * you are out of it — the bunker's own lesson about a clamp that only speaks
+ * while you are inside. */
+function updateDojoAudio(dt) {
+  const want = inDojo ? 1 : 0;
+  const prev = dojoMix;
+  dojoMix += (want - dojoMix) * Math.min(1, dt * 1.6);
+  if (Math.abs(dojoMix - want) < 0.002) dojoMix = want;
+  const ctx = audioCtx; if (!ctx || (dojoMix <= 0 && prev <= 0)) return;
+  if (dojoMix > 0 && !dojoNature) startDojoNature();
+  if (dojoNature) dojoNature.g.gain.setTargetAtTime(dojoMix * settings.sfxVolume * 0.16, ctx.currentTime, 0.6);
+  if (waveBusGain) waveBusGain.gain.setTargetAtTime(settings.waveVolume * (1 - dojoMix), ctx.currentTime, 0.5);
+  if (windDuck) windDuck.gain.setTargetAtTime(1 - dojoMix, ctx.currentTime, 0.5);
+  if (dojoMix < 0.5) return;
+  dojoBird -= dt; dojoBug -= dt;
+  if (dojoBird <= 0) { sfxDojoBird(); dojoBird = 3.5 + Math.random() * 7.0; }
+  if (dojoBug <= 0) { sfxDojoBug(); dojoBug = 6.0 + Math.random() * 11.0; }
+}
 function updateFountain(dt) {
   if (!fountain || !inDojo) return;
   fountT += dt;
@@ -33310,10 +33673,38 @@ function updateFountain(dt) {
     fountDrops.setMatrixAt(i, _fqD.matrix);
   }
   fountDrops.instanceMatrix.needsUpdate = true;
+  /* THE PADS GO ROUND WITH THE WATER. A fountain fed from the middle turns
+   * its pool slowly, so they drift rather than sit; each has its own rate, so
+   * they spread and bunch instead of holding a formation. */
+  if (fountPads) {
+    const pl = fountPads.userData.list;
+    for (let i = 0; i < pl.length; i++) {
+      const q = pl[i];
+      q.a += q.drift * dt;
+      _fqD.position.set(Math.cos(q.a) * q.r,
+        fountPoolY + 0.006 + Math.sin(fountT * q.bobR + q.bob) * 0.005,
+        Math.sin(q.a) * q.r);
+      _fqD.rotation.set(0, q.yaw + fountT * q.spin, 0);
+      _fqD.scale.setScalar(q.s);
+      _fqD.updateMatrix();
+      fountPads.setMatrixAt(i, _fqD.matrix);
+    }
+    fountPads.instanceMatrix.needsUpdate = true;
+  }
   /* DOWNWARD. `offset.y` is ADDED to the sampled v, so increasing it walks the
    * pattern down the cylinder; subtracting ran the streaks up it, which is the
    * other half of what read as rising. */
   for (const F of fountFalls) { F.tex.offset.y = (F.tex.offset.y + dt * F.sp) % 1; }
+  /* AND THE POOL IS NEVER THE SAME TWO FRAMES RUNNING. Different speeds and
+   * different directions, or the two sheets travel together and the whole
+   * thing slides sideways like a conveyor instead of shimmering. */
+  if (fountCaust) {
+    const a = fountCaust[0], b2 = fountCaust[1];
+    a.offset.x = (a.offset.x + dt * 0.023) % 1;
+    a.offset.y = (a.offset.y + dt * 0.017) % 1;
+    b2.offset.x = (b2.offset.x - dt * 0.014) % 1;
+    b2.offset.y = (b2.offset.y + dt * 0.029) % 1;
+  }
   updateFountainAudio(dt);
 }
 
@@ -33638,8 +34029,8 @@ function loadDojo() {
     if (dojoWalk && dojoWalk.cells) {
       dojoCells = new Map();
       for (const c of dojoWalk.cells) dojoCells.set(c[1] * dojoWalk.gw + c[0], c[2]);
-      repairDojoBeams();
-      despeckleDojoSolid();
+      bwSpan('dojo repairBeams', repairDojoBeams);
+      bwSpan('dojo despeckle', despeckleDojoSolid);
     }
     root.traverse((o) => {
       if (!o.isMesh) return;
@@ -33735,10 +34126,10 @@ function loadDojo() {
      * sword goes into and the sky it is seen against — are found above and
      * keep their names; everything else gives its up and merges by material. */
     dojoScanNames(root);      // names still exist here: the bake clears them
-    cullDojoStrays(root);
+    bwSpan('dojo cullStrays', () => cullDojoStrays(root));
     for (const o of [dojoStatue, dojoSky]) if (o) o.userData.noBake = true;
     root.traverse((o) => { if (o.isMesh && !o.userData.noBake) o.name = ''; });
-    dojoBaked = bakeStatic(root);
+    dojoBaked = bwSpan('dojo bakeStatic', () => bakeStatic(root));
     /* READY FIRST: the heaps, the lanterns and the fountain each ask
      * `dojoFloorAt` for the ground under them and it answers null until the
      * room says it is up — build them before that and every one of them lands
@@ -33746,9 +34137,9 @@ function loadDojo() {
      * BEFORE anything asks for the walls, since `buildDojoWalls` reads
      * whatever is under `dojoWorld` the first time it runs and caches it. */
     dojoReady = true;
-    buildDojoLamps();
-    buildDojoBlocks();
-    buildFountain();
+    bwSpan('dojo lamps', buildDojoLamps);
+    bwSpan('dojo blocks', buildDojoBlocks);
+    bwSpan('dojo fountain', buildFountain);
     /* AND THE STONE IS MERGED. Every heap of rubble, every panel of the gate
      * wall and every lantern went in as its OWN mesh — measured, upward of a
      * hundred and fifty of them — and this file already knows what that costs:
@@ -33756,11 +34147,10 @@ function loadDojo() {
      * reason. Merged by material they are a handful of draws. The invisible
      * collider boxes carry `noBake` so they stay their own objects, which is
      * what `buildDojoWalls` and the push-out read. */
-    if (dojoBlocks) bakeStatic(dojoBlocks);
-    if (dojoLanterns) bakeStatic(dojoLanterns);
-    armDojo();
+    bwSpan('dojo bakeBlocks', () => { if (dojoBlocks) bakeStatic(dojoBlocks); if (dojoLanterns) bakeStatic(dojoLanterns); });
+    bwSpan('dojo arm', armDojo);
     // and the man, standing hidden on his mark from the moment the room is up
-    spawnSamurai(false);
+    bwSpan('dojo spawnSam', () => spawnSamurai(false));
     if (samurai) samurai.g.visible = false;
   }, undefined, () => {});
 }
@@ -34324,19 +34714,101 @@ const YARD_HEAPS = [
 const _yardDrop = new THREE.Raycaster();
 const _yardDown = new THREE.Vector3(0, -1, 0);
 const _yardFrom = new THREE.Vector3();
+/* AND A DROP IS A LOOKUP, NOT FOUR HUNDRED AND SEVENTY RAYCASTS.
+ *
+ * This cast `Raycaster.intersectObject(dojoWorld, true)` straight down, once
+ * per column and once per stone, and three has no spatial index: every ray
+ * scanned all 43,571 triangles of the room. Measured with a counter inside
+ * it — 470 rays at 1.93 ms each, 909 ms of the 978 ms `dojo blocks` span,
+ * which is 93 % of the one-second freeze on the frame the courtyard lands.
+ * That freeze happens on the walk up to the portal, which is exactly where
+ * the owner feels it.
+ *
+ * A ray that always points the same way does not need a raycaster. The room's
+ * triangles go into a one-metre (x, z) grid ONCE, in world space, and a drop
+ * is then a point-in-triangle over the handful in one cell. Two things it has
+ * to keep faithfully, or the rubble reseats itself:
+ *
+ *  - the MATERIAL'S SIDE. three culls back faces for a FrontSide material, so
+ *    a downward ray never meets the underside of a roof; a triangle is binned
+ *    only if a ray from above could actually have hit it.
+ *  - the same rejects the old filter made: the blocks, the lanterns, anything
+ *    invisible, and the hit proxies.
+ *
+ * The huge triangles of the sky dome and the rain shells are dropped rather
+ * than smeared across a thousand cells; nothing drops onto weather. */
+const DROP_CELL = 1.0;
+let _yardDropTargets = null, _yardDropN = -1;
+let _dropBins = null, _dropBinsN = -1;
+function dojoDropTargets() {
+  if (_yardDropTargets && _yardDropN === dojoWorld.children.length) return _yardDropTargets;
+  _yardDropTargets = dojoWorld.children.filter((c) => c !== dojoBlocks && c !== dojoLanterns);
+  _yardDropN = dojoWorld.children.length;
+  return _yardDropTargets;
+}
+function dojoDropBins() {
+  if (_dropBins && _dropBinsN === dojoWorld.children.length) return _dropBins;
+  const bins = new Map();
+  const a = new THREE.Vector3(), b2 = new THREE.Vector3(), c = new THREE.Vector3();
+  const e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), nm = new THREE.Vector3();
+  for (const root of dojoDropTargets()) {
+    root.updateWorldMatrix(true, true);
+    root.traverse((o) => {
+      if (!o.isMesh || !o.geometry || !o.visible) return;
+      if (/Sphere|hitProxy/i.test(o.name || '')) return;
+      const g = o.geometry, pos = g.attributes.position; if (!pos) return;
+      const mm = Array.isArray(o.material) ? o.material[0] : o.material;
+      const side = mm ? mm.side : 0;
+      const idx = g.index, m = o.matrixWorld, n = idx ? idx.count : pos.count;
+      for (let i = 0; i + 2 < n; i += 3) {
+        const i0 = idx ? idx.getX(i) : i, i1 = idx ? idx.getX(i + 1) : i + 1, i2 = idx ? idx.getX(i + 2) : i + 2;
+        a.fromBufferAttribute(pos, i0).applyMatrix4(m);
+        b2.fromBufferAttribute(pos, i1).applyMatrix4(m);
+        c.fromBufferAttribute(pos, i2).applyMatrix4(m);
+        e1.subVectors(b2, a); e2.subVectors(c, a); nm.crossVectors(e1, e2);
+        // a ray pointing down meets a front face only where the normal points up
+        if (side === THREE.FrontSide && nm.y <= 0) continue;
+        if (side === THREE.BackSide && nm.y >= 0) continue;
+        const xlo = Math.min(a.x, b2.x, c.x), xhi = Math.max(a.x, b2.x, c.x);
+        const zlo = Math.min(a.z, b2.z, c.z), zhi = Math.max(a.z, b2.z, c.z);
+        if (xhi - xlo > 30 || zhi - zlo > 30) continue;          // sky dome, rain shells
+        const x0 = Math.floor(xlo / DROP_CELL), x1 = Math.floor(xhi / DROP_CELL);
+        const z0 = Math.floor(zlo / DROP_CELL), z1 = Math.floor(zhi / DROP_CELL);
+        for (let xi = x0; xi <= x1; xi++) for (let zi = z0; zi <= z1; zi++) {
+          const k = xi * 8192 + zi;
+          let arr = bins.get(k); if (!arr) { arr = []; bins.set(k, arr); }
+          arr.push(a.x, a.y, a.z, b2.x, b2.y, b2.z, c.x, c.y, c.z);
+        }
+      }
+    });
+  }
+  _dropBins = bins; _dropBinsN = dojoWorld.children.length;
+  return bins;
+}
 function dojoDropY(px, pz, fromY) {
   if (!dojoWorld) return null;
-  _yardDrop.far = 60;
-  _yardFrom.set(DOJO_X + px, DOJO_Y + fromY, DOJO_Z + pz);
-  _yardDrop.set(_yardFrom, _yardDown);
-  const hs = _yardDrop.intersectObject(dojoWorld, true);
-  for (const h of hs) {
-    const o = h.object;
-    if (o.parent === dojoBlocks || o.parent === dojoLanterns) continue;
-    if (!o.visible || /Sphere|hitProxy/i.test(o.name || '')) continue;
-    return h.point.y - DOJO_Y;
+  const wx = DOJO_X + px, wz = DOJO_Z + pz, fy = DOJO_Y + fromY;
+  const arr = dojoDropBins().get(Math.floor(wx / DROP_CELL) * 8192 + Math.floor(wz / DROP_CELL));
+  if (!arr) return null;
+  let best = -Infinity;
+  for (let i = 0; i < arr.length; i += 9) {
+    const ax = arr[i], ay = arr[i + 1], az = arr[i + 2];
+    const bx = arr[i + 3], by = arr[i + 4], bz = arr[i + 5];
+    const cx2 = arr[i + 6], cy = arr[i + 7], cz = arr[i + 8];
+    // barycentric in the x/z plane: a downward ray is a point-in-triangle test
+    const d = (bz - cz) * (ax - cx2) + (cx2 - bx) * (az - cz);
+    if (d === 0) continue;
+    const w0 = ((bz - cz) * (wx - cx2) + (cx2 - bx) * (wz - cz)) / d;
+    if (w0 < -1e-6 || w0 > 1 + 1e-6) continue;
+    const w1 = ((cz - az) * (wx - cx2) + (ax - cx2) * (wz - cz)) / d;
+    if (w1 < -1e-6 || w1 > 1 + 1e-6) continue;
+    const w2 = 1 - w0 - w1;
+    if (w2 < -1e-6) continue;
+    const y = w0 * ay + w1 * by + w2 * cy;
+    if (y > fy || y < fy - 60) continue;                 // the old ray's own `far`
+    if (y > best) best = y;
   }
-  return null;
+  return best === -Infinity ? null : best - DOJO_Y;
 }
 let _dojoStone = null;
 function dojoStoneMap() {
@@ -35501,6 +35973,20 @@ function placeInDojo() {
   const gx = dsX(DOJO_IN.x), gz = dsZ(DOJO_IN.z);
   const f = dojoFloorAt(gx, gz, DOJO_Y);
   groundY = f === null ? DOJO_Y : f;
+  /* AND THE ROOM'S MEMORY IS SEEDED BY THE THING THAT PUTS YOU IN IT. The
+   * catch that stops you falling out of this world reads `dojoLastFloor`, and
+   * NOTHING set that until a frame had already been through the walk and come
+   * back with a floor — so if the very first frame in the room was a bad one
+   * there was no floor to be caught on and you fell for ever. It always is a
+   * bad one: `warmDojo()` is right here, three lines up, and it renders the
+   * whole courtyard several times, so the frame that follows it is most of a
+   * second long. Measured on arrival: one step of gravity at that dt puts the
+   * feet ten metres under the boards, `dojoStoreyAt` then has nothing at or
+   * below them, and the camera went 801.9 -> 301 -> 171 and kept going at
+   * 130 m/s. The room knows where it is standing you; it says so. */
+  dojoLastFloor = groundY;
+  dojoLastStand = { x: gx, z: gz };
+  dojoSafe = { x: gx, z: gz };
   camera.position.set(gx, groundY + playerEye(), gz);
   camBaseY = camera.position.y; vy = 0; onGround = true;
   /* FACING THE WAY IN. The building's open side is +z — the burnt panels are
@@ -41669,7 +42155,7 @@ window.__bw = {
     if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
     oceanUniforms.uTime.value += dt;
     update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
-    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateTavernCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt);
+    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateTavernCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateDojoAudio(rawDt);
     updateLightPool();
   },
   /* The lamp pool, for a still: a frozen loop never points the twelve at
@@ -41692,6 +42178,10 @@ window.__bw = {
                      at: [+samurai.g.position.x.toFixed(1), +samurai.g.position.z.toFixed(1)] } : null,
   }),
   startPortalTake, startPortalReturn, placeInDojo, placeBackAtPortal, wakeSamurai, warmDojo,
+  dojoDropY, dojoDropTargets,
+  get dojoDebug() { return { inDojo, dojoReady, groundY: +groundY.toFixed(2), camBaseY: +camBaseY.toFixed(2), vy: +vy.toFixed(2),
+    onGround, lastFloor: dojoLastFloor, safe: dojoSafe ? [+dojoSafe.x.toFixed(2), +dojoSafe.z.toFixed(2)] : null,
+    cells: dojoCells ? dojoCells.size : 0, frozen: frozen() }; },
   animate,   // a frozen rAF kills the loop; this is how the harness starts it again
   dojoFloorAt, dojoGridAt, pushOutOfDojo,
   dojoInArena, buildDojoArena, buildDojoBlocks, buildFountain, updateFountain, DOJO_S, DOJO_FOUNT,
@@ -41838,6 +42328,10 @@ window.__bw = {
   get abductDone() { return abductDone; }, set abductDone(v) { abductDone = v; },
   get scpPhase() { return scpPhase; },
   cullWorldInHall, get hallHid() { return hallHid; }, get abductPhase() { return abductPhase; },
+  get dojoMix() { return dojoMix; },
+  get audioMix() { return { dojoMix, shrineMix, bunkerMix, drainMix,
+    wave: waveBusGain ? waveBusGain.gain.value : null, wind: windDuck ? windDuck.gain.value : null,
+    nature: dojoNature ? dojoNature.g.gain.value : null }; },
   get fenceOpen() { return fenceOpen; }, get fenceSwing() { return fenceSwing; }, fenceGroup, FENCE_Z, FENCE_GATE_X, FENCE_GATE_W, openFenceGate,
   drinkWater, get waterSips() { return waterSips; }, set waterSips(v) { waterSips = v; }, get drinking() { return drinking; }, get drinkT() { return drinkT; },
   get hp() { return hp; }, set hp(v) { hp = v; },
