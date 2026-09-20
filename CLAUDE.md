@@ -11690,3 +11690,87 @@ crossing it. The bottom tier's `to` is resolved against it as well, or the
 fall ends in the air above the water. Repack the courtyard and all of it still
 lands in the basin. **A height typed for a hand-built prop is a guess the day
 that prop is standing in somebody else's mesh.**
+
+**AND THEN THE WHOLE GAME WAS PROFILED AGAIN, ROOM BY ROOM.** The owner's
+word: a lot has been added, make it run smooth, only improve. The method is
+the one this file already carries — put the camera at a station, let the
+far-cull run, then hide each top-level scene child in turn and read
+`renderer.info.render.calls` back — and the instrument that keeps it honest
+is the PIXEL DIFF: render the frame twice, once with the cull and once with
+everything it hid put back, and count the pixels that differ. Every cut
+below measures **0.00 % of the frame**.
+
+- **FIVE HUNDRED AND NINETY-ONE MESHES WERE DRAWN INSIDE A SEALED ROOM FORTY
+  METRES UNDER THE SAND.** The hatch's home is hidden while you are not in
+  it and has been since it went in — but everything it was FURNISHED with
+  was added to the scene beside it rather than under it: the props, the
+  bottles, the desk, the camera, the case, the Dealer. Measured standing on
+  the beach at z = -180: twenty-six top-level groups, every one of them
+  visible, a third of the frame's draw calls. `bunkerTenantry` is the hall's
+  own hide inverted, and who lives in the room is a question about WHERE A
+  THING IS — the room's own box, asked when you leave — so nothing has to be
+  registered at the twenty places these are made. Measured: **-149 draw
+  calls at z = -240, and a pixel diff of zero standing on the hatch looking
+  straight down at it.**
+- **AND THE BEACH WAS DRAWN FROM INSIDE IT.** The same rule the other way,
+  which every room three thousand metres out has had since the saucer went
+  in and the one forty metres down never got, because the hall's test is a
+  DISTANCE and this room is close. Measured on the control room's floor:
+  **272 draw calls and 287k triangles became 128 and 67k.**
+- **A PACKED SCAN IS ALL NAMES, SO `bakeStatic` HAD NEVER LOOKED AT ONE.**
+  `Object_413` is not somebody holding a mesh, it is the exporter counting.
+  The catacombs are 747 meshes in a handful of materials: measured standing
+  in the crypt, **257 draw calls of which the room was 243** — the most
+  expensive thing in the game. Merged by material in world space (so the
+  grime shader, the wall index and every floor probe see the same
+  triangles): **27**. The walk is unchanged — flooded from the landing it
+  reaches 16,881 cells and comes within 0.78 m of the barred door.
+- **AND THE TAVERN HALL WAS TWO HUNDRED AND TWENTY OF THEM.** 221 meshes,
+  nineteen materials, twenty thousand triangles — ninety triangles a draw.
+  It is the DEFAULT bake, so the eighteen meshes the module holds by name
+  and the sixty-three `bwGhost` tables and chairs are left exactly where
+  they are, and it runs LAST, after the tables have been lifted out of the
+  mesh, the chairs built, the crates copied and the door cut. **354 → 216**,
+  and the hall still floods to its own walls.
+- **AND A UNIT BIGGER THAN THE SKYLINE WAS EXEMPTED WHEN IT SHOULD HAVE BEEN
+  SPLIT.** `cullBeyondFog` measures a unit's reach from its own ORIGIN, and
+  for a catch-all group parked at (0, 0, 0) that is the distance to the far
+  side of the beach: measured, a group of fifty-one meshes whose children run
+  from z = -35 to z = -640 reported a reach of 652 and was therefore never
+  culled, anywhere, for the whole walk. A group is not a landform because its
+  contents are spread out — it is asked about its CHILDREN instead, and only
+  a single drawn mesh genuinely bigger than `SKYLINE_R` keeps the exemption.
+  Measured as an A/B in one page, the same frame with the cull and with
+  everything it hid restored:
+
+| z | with | without | saved |
+|---|---|---|---|
+| 0 | 83 | 102 | 19 |
+| -180 | 264 | 321 | 57 |
+| -240 | 269 | 404 | 135 |
+| -420 | 148 | 359 | 211 |
+| -700 | 98 | 393 | 295 |
+
+  and 100–290k triangles with it. Thirteen stations, forward and backward,
+  pixel diff **0.000–0.003 %**.
+
+**AND WHAT WAS MEASURED AND LEFT ALONE IS WORTH WRITING DOWN TOO.** The
+undercroft draws eleven calls from anywhere inside it and the sea keep
+twenty-four: both were merged by their packer and there is nothing there to
+win. The wreck is ninety meshes and twenty-four materials, and the biggest
+mergeable run of twenty-two sits under a `noBake` group somebody set on
+purpose — 93 draw calls is what the game's biggest set piece costs inside
+the fog's own 170 m, and that is the design. And the walk is not CPU-bound
+at all: `update()` is **0.41 ms** a frame and the render call 0.64–1.10 ms,
+measured at four stations. What these cuts buy is the Windows frame, where
+a draw call is a validated D3D11 call — which is the whole reason this file
+counts draws and not triangles.
+
+**AND A STATION SWEEP MUST NOT CROSS A TRIGGER.** Teleporting down the beach
+past `CAVE_Z` puts you in the catacombs (in dev mode, without even a take),
+and every station after it reads sixteen draw calls with the world culled
+behind you — half an hour of this round was spent on numbers measured from
+inside a room. Sweep to -750 and no further, or set `caveDone` first. And a
+frame's `renderer.info` belongs to the LAST render call: `autoReset` is on,
+so a hide test has to call `renderer.render` itself rather than read what
+the loop left behind.

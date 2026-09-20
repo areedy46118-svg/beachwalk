@@ -3185,15 +3185,21 @@ function cullReach(o) {
  * or are a hundred and seventy metres away from, and the wrong one for
  * things scattered over a kilometre — so this is called on BUILDINGS. */
 const _bkM = new THREE.Matrix4(), _bkI = new THREE.Matrix4();
-function bakeStatic(root, keep = () => false) {
+/* AND A PACKED SCAN IS ALL NAMES. `Object_413` is not somebody holding a
+ * mesh, it is the exporter counting — so a room that arrives as one GLB was
+ * skipped by this entirely, whatever it cost. `opts.named` says the names
+ * in this subtree mean nothing; everything else about the rule stands, and
+ * `bwGhost`, `noBake` and whatever the caller keeps are still refused. */
+function bakeStatic(root, keep = () => false, opts = {}) {
   root.updateMatrixWorld(true);
   _bkI.copy(root.matrixWorld).invert();
   const byMat = new Map(), doomed = [];
   root.traverse((o) => {
     if (o === root || !o.isMesh || o.isInstancedMesh || o.isSkinnedMesh) return;
     if (!o.material || Array.isArray(o.material) || o.children.length) return;
-    if (o.userData.noBake || o.name) return;         // a name means somebody holds it
-    for (let a = o; a && a !== root; a = a.parent) if (keep(a) || a.userData.noBake) return;
+    if (o.userData.noBake || o.userData.bwGhost) return;
+    if (o.name && !opts.named) return;               // a name means somebody holds it
+    for (let a = o; a && a !== root; a = a.parent) if (keep(a) || a.userData.noBake || a.userData.bwGhost) return;
     let g = o.geometry.clone();
     g.applyMatrix4(_bkM.copy(_bkI).multiply(o.matrixWorld));
     if (g.index) g = g.toNonIndexed();
@@ -3218,13 +3224,44 @@ function bakeStatic(root, keep = () => false) {
   }
   return { from: doomed.length, to: made };
 }
+/* AND A UNIT BIGGER THAN THE SKYLINE IS SPLIT, NOT EXEMPTED. The exemption
+ * is for a LANDFORM — fog hides a thing but it does not hide a hole in the
+ * sky, so a ridge or a tower is drawn however far off it is — and `reach`
+ * is measured from a unit's own ORIGIN, which for a catch-all group parked
+ * at (0, 0, 0) is the distance to the far side of the beach. Measured: a
+ * group of fifty-one meshes whose children run from z = -35 to z = -640
+ * came back with a reach of 652 and was therefore never culled, anywhere,
+ * for the whole walk. A group is not a landform because its contents are
+ * spread out: it is asked about its CHILDREN instead, and only a single
+ * drawn mesh that is genuinely bigger than `SKYLINE_R` keeps the exemption. */
+function splitCullUnit(o, out) {
+  if (o.isMesh || o.isPoints || o.isSprite || !o.children.length) return false;
+  let any = false;
+  for (const c of o.children) {
+    if (c.isLight || c.isInstancedMesh || farManaged.has(c)) continue;
+    const mine = [];
+    const r = scanCullUnits(c, mine);
+    if (r.exempt) { for (const u of mine) { out.push(u); any = true; } }
+    else if (r.draws) { out.push(c); any = true; }
+  }
+  return any;
+}
 function cullBeyondFog() {
   if (cullScan-- <= 0) { cullScan = 90; rebuildCullUnits(); }
   let budget = 6;
-  for (const o of cullUnits) {
+  for (let ui = 0; ui < cullUnits.length; ui++) {
+    const o = cullUnits[ui];
     let r = o.userData.bwCullR;
     if (r === undefined) { if (budget-- <= 0) continue; r = cullReach(o); }
-    if (r < 0 || r > SKYLINE_R) continue;
+    if (r < 0) continue;
+    if (r > SKYLINE_R) {
+      const kids = [];
+      if (splitCullUnit(o, kids)) {
+        if (o.userData.bwCulled) { o.visible = true; o.userData.bwCulled = false; }
+        cullUnits.splice(ui, 1, ...kids); ui--;
+      }
+      continue;
+    }
     o.getWorldPosition(_cuP);
     const beyond = _cuP.distanceTo(camera.position) - r > DRAW_FAR;
     if (beyond) { if (o.visible) { o.visible = false; o.userData.bwCulled = true; } }
@@ -23600,6 +23637,81 @@ function updateBunkers(dt) {
     camera.position.x = _bkL.x; camera.position.z = _bkL.z;
   }
 }
+/* AND WHAT IS IN THE ROOM IS DRAWN WITH THE ROOM. The hatch's home is
+ * hidden while you are not in it — four hundred meshes behind an opaque
+ * beach is a price for nothing, and that has been true since it went in —
+ * but everything the room was FURNISHED with was added to the scene beside
+ * it rather than under it: the props, the bottles, the desk, the camera,
+ * the case, the Dealer. Measured standing on the sand at z = -180, a
+ * hundred and forty-five metres away: **twenty-six top-level groups and
+ * five hundred and ninety-one meshes, every one of them forty metres
+ * underground inside a sealed room, all visible**, and a third of the whole
+ * frame's draw calls.
+ *
+ * It is the hall's own hide, inverted — and it may only ever HIDE and then
+ * restore exactly what it hid, never write `visible` every frame: a broken
+ * bottle, a prop you have taken and a gib that has expired are all things
+ * something else has already switched off, and a blanket writer resurrects
+ * them (the far-prop list's own scar). Who lives in the room is a question
+ * about WHERE A THING IS, so nothing has to be registered at the twenty
+ * places these are made: it is the room's own box, asked once each time you
+ * leave. */
+let bunkerHid = null, bunkerScan = 0, beachHid = null;
+const _btW = new THREE.Vector3();
+function bunkerTenantry() {
+  if (inBunker || hatchBusy) {
+    if (bunkerHid) { for (const o of bunkerHid) o.visible = true; bunkerHid = null; }
+    /* AND THE BEACH IS NOT DRAWN FROM INSIDE A SEALED ROOM — the hall's own
+     * rule, which every room three thousand metres out has had since the
+     * saucer went in and the one FORTY METRES DOWN never got, because the
+     * hall's test is a distance and this room is close. Measured standing
+     * on the control room's floor: 272 draw calls and 287k triangles, of
+     * which the room itself is 37 and 28k. The rest is the beach overhead —
+     * the lighthouse a kilometre off at 19 calls and 44k, a seventy-seven
+     * mesh group at 78 — rasterised behind forty metres of sand. */
+    /* AND IT HAS TO BE RE-ASSERTED, not set once: `updateFarProps` writes a
+     * far prop's `visible` from your Z every frame, so a hide taken on the
+     * frame you arrive is undone on the next one. Only what this hid is ever
+     * touched, and it is put back exactly on the way out. */
+    if (beachHid) { for (const o of beachHid) o.visible = false; return; }
+    if (inBunker && !hatchBusy) {
+      const top = inBunker.group.position.y + (inBunker.group.userData.bunker.nav.room.h || 3) + 4;
+      beachHid = [];
+      for (const o of scene.children) {
+        if (!o.visible || o.isLight || o.isInstancedMesh || o === inBunker.group) continue;
+        o.getWorldPosition(_btW);
+        if (_btW.y <= top) continue;
+        o.visible = false; beachHid.push(o);
+      }
+    }
+    return;
+  }
+  if (beachHid) { for (const o of beachHid) o.visible = true; beachHid = null; }
+  if (bunkerHid) for (const o of bunkerHid) o.visible = false;      // the same rule, the other way round
+  /* AND THE LIST IS ASKED FOR AGAIN. Built once, on the first frame you are
+   * outside, it is built before the room has been furnished — the props,
+   * the bodies and the case all land over the next few seconds — and every
+   * one of them then stays visible for the rest of the game. It is a scan,
+   * every ninety frames, and it only ever ADDS: what is already hidden is
+   * left alone, so nothing is switched on by this. */
+  if (bunkerHid && bunkerScan-- > 0) return;
+  bunkerScan = 90;
+  if (!bunkerHid) bunkerHid = [];
+  for (const b of bunkers) {
+    if (!b.hidden) continue;
+    const B = b.group.userData.bunker, nav = B && B.nav;
+    if (!nav || !nav.room) continue;
+    const R = nav.room;
+    for (const o of scene.children) {
+      if (o === b.group || !o.visible || o.isLight || o.isInstancedMesh) continue;
+      o.getWorldPosition(_btW).applyMatrix4(b.inv);
+      if (_btW.x < R.x0 - 2 || _btW.x > R.x1 + 2) continue;
+      if (_btW.z < R.z0 - 2 || _btW.z > R.z1 + 2) continue;
+      if (_btW.y < -4 || _btW.y > R.h + 4) continue;
+      o.visible = false; bunkerHid.push(o);
+    }
+  }
+}
 // ------------------------------------------------------------------
 // The hatch. A steel lid in a concrete collar set flush in the dry sand
 // between the snorkeler and the tall one, and the ONLY way into the bunker:
@@ -26448,6 +26560,7 @@ function update(dt, rawDt = dt) {
   updateMutant(dt);
   pinSamuraiSword();        // whatever moved his arm last is what the sword hangs off
   cullWorldInHall();        // and the beach is not drawn from a room twelve kilometres off it
+  bunkerTenantry();         // nor from one forty metres under it — AFTER `updateFarProps`, which writes a far prop's `visible` every frame
   /* AFTER the fight AI, never before: whatever moves him last has to be the
    * thing that puts him back on the ground and inside the arena, or a swing's
    * own lunge carries him off the ridge for a frame every time. */
@@ -36947,6 +37060,18 @@ function buildCatacombs() {
   if (catBuilt || !catReady || !catWalk) return;
   catBuilt = true;
   const t0 = performance.now();
+  /* SEVEN HUNDRED AND FORTY-SEVEN MESHES IS TWO HUNDRED AND FORTY-THREE
+   * DRAW CALLS. Measured standing in the crypt: 257 for the frame, of which
+   * the room is 243 — the most expensive thing in the game and, being a
+   * packed scan, the one place `bakeStatic` had never been allowed to look,
+   * because every mesh in it carries an exporter's name. It is merged by
+   * material, in world space, so the grime shader (which reads the world
+   * position), the wall index and every floor probe see exactly the
+   * triangles they saw before. What it gives up is per-mesh frustum culling
+   * — the whole complex is drawn from any room in it — and that is the
+   * trade this file has already made twice: triangles were never the
+   * problem here, draw calls were. */
+  bakeStatic(catWorld, undefined, { named: true });
   buildKeepWalls(CAT_SITE);
   repairKeepStoreys(CAT_SITE);
   catBuildGraph();
@@ -40189,6 +40314,19 @@ function buildTavern() {
   clearTavGhostRoofs();
   buildTavBottles();
   buildTavCast();
+  /* AND THE HALL ITSELF IS TWO HUNDRED AND TWENTY DRAW CALLS OF NINETEEN
+   * MATERIALS. Measured standing at the spawn: 354 for the frame, 220 of
+   * them the room — two hundred and twenty-one meshes carrying twenty
+   * thousand triangles, which is ninety triangles a draw. It is merged by
+   * material LAST, after the tables have been lifted out of it, the chairs
+   * built, the crates copied and the door cut, because every one of those
+   * reads or rewrites the meshes it is merging; and it is the DEFAULT bake,
+   * so anything named (the eighteen the module holds) and anything `bwGhost`
+   * (the sixty-three tables and chairs, which are drawn and never walked
+   * into) is left exactly where it is. The wall index is rebuilt off the
+   * merged triangles, which are the same triangles. */
+  bakeStatic(tavWorld);
+  tavWalls = null; buildKeepWalls(TAV_SITE);
   tavWalk.built = Math.round(performance.now() - t0);
 }
 
