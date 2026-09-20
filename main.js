@@ -21458,10 +21458,7 @@ function updateMutantUnit(u, dt) {
      * blows are out of the draw wherever the storey's roof is under 4.3 m. */
     u.noStand = !st || (st.c - st.f) < 4.3;
     if (!u.st.awake) { catWander(u, dt); return; }
-    if (st) {
-      const dy = st.f - u.g.position.y, ad = Math.abs(dy);
-      u.g.position.y += ad < 0.02 ? dy : Math.sign(dy) * Math.min(ad, Math.max(ad * dt * 10, 3.5 * dt));
-    }
+    catStand(u, dt);
   }
   if (!u.st.awake) {
     /* AND SOME OF THEM NOTICE YOU. Nothing on the beach ever woke on its own
@@ -34773,10 +34770,20 @@ const catWallDoor = new THREE.Group();
  * within his body's width. Neighbours are the four cells round it at any
  * storey within half a metre of height, which is how a stair is crossed.
  * Nineteen thousand storeys; the build is under a tenth of a second. */
+const CAT_COARSE = 3;                                                          // a node every 0.6 m
+const CD = CAT_COARSE;
 function catBuildGraph() {
   if (catG || !catWalk || !catCells) return;
   const w = catWalk, nodes = [], byCell = new Map();
+  /* AND A NODE EVERY TWENTY CENTIMETRES IS NINE TIMES THE GRAPH A CRAWLER
+   * NEEDS. 53,145 nodes, and A* across the whole place expanded past its own
+   * cap before it found anything: measured, eleven of twelve routes into his
+   * own component FAILED at three to twelve milliseconds each, which is a
+   * thing that stands still in a corridor. At 0.6 m — three cells, a third
+   * of his own width — the graph is a ninth of the size, the search is a
+   * ninth of the work, and nothing he walks is narrower than the step. */
   for (const c of w.cells) {
+    if (c[0] % CAT_COARSE || c[1] % CAT_COARSE) continue;
     const st = c[2], x = CAT_X + w.x0 + c[0] * 0.2, z = CAT_Z + w.z0 + c[1] * 0.2;
     for (let k = 0; k < st.length; k += 3) {
       const f = CAT_Y + st[k], roof = st[k + 2];
@@ -34814,7 +34821,8 @@ function catBuildGraph() {
       arr.push(id);
     }
   }
-  catG = { nodes, byCell, gw: w.gw, prev: new Int32Array(nodes.length), q: [] };
+  catG = { nodes, byCell, gw: w.gw, prev: new Int32Array(nodes.length), q: [],
+           stamp: new Int32Array(nodes.length), closed: new Int32Array(nodes.length), g: new Float32Array(nodes.length), gen: 0, heap: [], heapF: [] };
   // and the bone piles become nodes: where he goes to eat
   catSpots.eat = [];
   for (const r of catSpots.eatRaw) {
@@ -34822,42 +34830,109 @@ function catBuildGraph() {
     if (id >= 0 && !catSpots.eat.includes(id)) catSpots.eat.push(id);
   }
 }
-function catNodeAt(x, z, y, slack = 1.0) {
+/* AND A SPOT RESOLVES TO A NODE ON THE STOREY YOU MEANT. Two rooms stack
+ * at the same (x, z) all over this place, so the nearest node to a point
+ * can be the floor above or below the one it was taken from — and a route
+ * to it was then refused as unreachable by the very flood that produced
+ * it: measured, eleven of twenty targets drawn from his OWN component came
+ * back refused. A mask may be handed in, and a node inside it wins. */
+function catNodeAt(x, z, y, slack = 1.0, mask = null) {
   if (!catG) return -1;
   const w = catWalk, i0 = Math.round((x - CAT_X - w.x0) / 0.2), j0 = Math.round((z - CAT_Z - w.z0) / 0.2);
-  let best = -1, bd = 1e9;
-  for (let r = 0; r <= 4 && best < 0; r++) for (let di = -r; di <= r; di++) for (let dj = -r; dj <= r; dj++) {
+  let best = -1, bd = 1e9, bestIn = -1, bdIn = 1e9;
+  for (let r = 0; r <= 7 && bestIn < 0 && (best < 0 || mask); r++) for (let di = -r; di <= r; di++) for (let dj = -r; dj <= r; dj++) {
     if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
     const arr = catG.byCell.get((j0 + dj) * w.gw + (i0 + di)); if (!arr) continue;
-    for (const id of arr) { const d = Math.abs(catG.nodes[id].f - y); if (d < slack && d < bd) { bd = d; best = id; } }
-  }
-  return best;
-}
-const CAT_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [2, 0], [-2, 0], [0, 2], [0, -2]];   // and a hop over one missing cell
-function catRoute(u, tx, tz, ty) {
-  if (!catG) return false;
-  const s = catNodeAt(u.g.position.x, u.g.position.z, u.g.position.y), e = catNodeAt(tx, tz, ty);
-  if (s < 0 || e < 0 || s === e) return false;
-  const N = catG.nodes, prev = catG.prev, q = catG.q; prev.fill(-1); prev[s] = s; q.length = 0; q.push(s);
-  let head = 0, found = false;
-  while (head < q.length) {
-    const k = q[head++]; if (k === e) { found = true; break; }
-    const n = N[k];
-    for (const [di, dj] of CAT_DIRS) {
-      const arr = catG.byCell.get((n.j + dj) * catG.gw + (n.i + di)); if (!arr) continue;
-      const hop = Math.abs(di) + Math.abs(dj) > 1 ? 0.8 : 0.5;
-      for (const m of arr) { if (prev[m] !== -1 || Math.abs(N[m].f - n.f) > hop) continue; prev[m] = k; q.push(m); }
+    for (const id of arr) {
+      const d = Math.abs(catG.nodes[id].f - y); if (d >= slack) continue;
+      if (d < bd) { bd = d; best = id; }
+      if (mask && mask[id] && d < bdIn) { bdIn = d; bestIn = id; }
     }
   }
+  return mask && bestIn >= 0 ? bestIn : best;
+}
+const CAT_DIRS = [[CD, 0], [-CD, 0], [0, CD], [0, -CD], [2 * CD, 0], [-2 * CD, 0], [0, 2 * CD], [0, -2 * CD]];   // and a hop over one missing node
+/* A*, NOT A FLOOD — this is the whole of "I lagged all over this room".
+ * The graph is 53,145 nodes and the route was a breadth-first search that
+ * visited every one of them before it gave up on a corner: measured in the
+ * pane, 9.6 ms a call, and the chase asks for a route every 0.4 s. A* with
+ * the straight-line distance as its heuristic visits a few hundred, and the
+ * generation STAMP means no 53k array is cleared per call either. */
+function catHeapPush(G, id, f) {
+  const h = G.heap, hf = G.heapF; let i = h.length; h.push(id); hf.push(f);
+  while (i > 0) { const par = (i - 1) >> 1; if (hf[par] <= hf[i]) break; const t = h[par]; h[par] = h[i]; h[i] = t; const tf = hf[par]; hf[par] = hf[i]; hf[i] = tf; i = par; }
+}
+function catHeapPop(G) {
+  const h = G.heap, hf = G.heapF, top = h[0], n = h.length - 1;
+  h[0] = h[n]; hf[0] = hf[n]; h.pop(); hf.pop();
+  let i = 0;
+  for (;;) { const l = i * 2 + 1, r = l + 1; let m = i;
+    if (l < n && hf[l] < hf[m]) m = l;
+    if (r < n && hf[r] < hf[m]) m = r;
+    if (m === i) break;
+    const t = h[m]; h[m] = h[i]; h[i] = t; const tf = hf[m]; hf[m] = hf[i]; hf[i] = tf; i = m; }
+  return top;
+}
+function catRoute(u, tx, tz, ty) {
+  if (!catG) return false;
+  const RM = u.catReach ? u.catReach.mask : null;
+  const s = catNodeAt(u.g.position.x, u.g.position.z, u.g.position.y, 1.0, RM);
+  const e = catNodeAt(tx, tz, ty, 1.0, RM);
+  if (s < 0 || e < 0 || s === e) return false;
+  /* AND A ROUTE THAT CANNOT EXIST IS REFUSED BEFORE IT IS SEARCHED FOR.
+   * A* finds a path in a tenth of a millisecond and FAILS in twenty — it
+   * has to open every node it can reach before it knows — and a target
+   * across a wall is most of what he asks for. The reach mask answers it
+   * outright, and the cap is what is left: a search that has opened nine
+   * thousand nodes is not going to find anything worth walking. */
+  const RR = u.catReach;
+  if (RR && RR.mask[s] && !RR.mask[e]) return false;
+  const G = catG, N = G.nodes, prev = G.prev, gs = G.g, stamp = G.stamp, gen = ++G.gen;
+  const ex = N[e].x, ez = N[e].z;
+  G.heap.length = 0; G.heapF.length = 0;
+  stamp[s] = gen; prev[s] = s; gs[s] = 0;
+  catHeapPush(G, s, Math.hypot(N[s].x - ex, N[s].z - ez));
+  let found = false, guard = 0;
+  /* AND A NODE THAT HAS BEEN EXPANDED IS DONE WITH. The heuristic is
+   * WEIGHTED — a shade off the shortest route for a fraction of the search
+   * — and a weighted heuristic is inconsistent, so a node's cost can
+   * improve after it has already been popped and the search re-expands its
+   * whole neighbourhood. Measured on a graph of 5,887 nodes: every failed
+   * route popped 14,001 entries, which is the cap, which is why a route his
+   * own flood had just proved existed came back refused eleven times in
+   * twenty and cost seven milliseconds doing it. A closed stamp ends it;
+   * the path may be a shade longer than the shortest and he is a crawling
+   * animal in a catacomb. */
+  while (G.heap.length && guard++ < 20000) {
+    const k = catHeapPop(G);
+    if (k === e) { found = true; break; }
+    if (G.closed[k] === gen) continue;
+    G.closed[k] = gen;
+    const n = N[k], gk = gs[k];
+    for (const [di, dj] of CAT_DIRS) {
+      const arr = G.byCell.get((n.j + dj) * G.gw + (n.i + di)); if (!arr) continue;
+      const hop = Math.abs(di) + Math.abs(dj) > CD ? 1.1 : 0.75;   // a step at 0.6 m spacing
+      for (const m of arr) {
+        if (Math.abs(N[m].f - n.f) > hop) continue;
+        const nd = N[m], step = Math.hypot(nd.x - n.x, nd.z - n.z) + Math.abs(nd.f - n.f) * 1.5;
+        const ng = gk + step;
+        if (stamp[m] === gen && gs[m] <= ng) continue;
+        stamp[m] = gen; gs[m] = ng; prev[m] = k;
+        catHeapPush(G, m, ng + Math.hypot(nd.x - ex, nd.z - ez) * 1.3);   // weighted: a shade off the shortest route for a fraction of the search
+      }
+    }
+  }
+  G.lastPops = guard; G.lastFound = found;
   if (!found) return false;
   const pts = []; for (let k = e; k !== s; k = prev[k]) pts.push(N[k]); pts.push(N[s]); pts.reverse();
   const out = [];
   for (let n = 1; n < pts.length; n++) {
     const p0 = pts[n - 1], p1 = pts[n], p2 = pts[n + 1];
-    if (!p2 || (p1.i - p0.i) !== (p2.i - p1.i) || (p1.j - p0.j) !== (p2.j - p1.j) || Math.abs(p2.f - p1.f) > 0.25)
+    if (!p2 || (p1.i - p0.i) !== (p2.i - p1.i) || (p1.j - p0.j) !== (p2.j - p1.j) || Math.abs(p2.f - p1.f) > 0.3)
       out.push({ x: p1.x - CAT_X, z: p1.z - CAT_Z, f: p1.f });
   }
   while (out.length > 1 && Math.hypot(CAT_X + out[0].x - u.g.position.x, CAT_Z + out[0].z - u.g.position.z) < 0.7) out.shift();
+  G.lastOut = out.length;
   if (!out.length) return false;
   u.path = out; u.pathI = 0; u.pathO = { x: CAT_X, z: CAT_Z };
   return true;
@@ -34866,30 +34941,34 @@ function catRoute(u, tx, tz, ty) {
  * ones — the flooded level, ledges, closets — and a random node anywhere
  * was outside his piece often enough that once he had wandered down into
  * the water every route failed and he stood there for good. The piece he
- * is in is flooded from his own node (cached until a route fails from a
- * new spot) and targets are drawn from THAT. */
+ * is in is flooded from his own node and targets are drawn from THAT —
+ * and the answer is a MASK as well as a list, because `Array.includes` over
+ * thirty-five thousand ids, asked every time he picks somewhere to go, is
+ * the other half of the hitch. */
 function catFlood(from) {
-  const N = catG.nodes, prev = catG.prev, q = catG.q; prev.fill(-1); prev[from] = from; q.length = 0; q.push(from);
-  let head = 0; const out = [];
+  const G = catG, N = G.nodes, prev = G.prev, q = G.q, stamp = G.stamp, gen = ++G.gen;
+  stamp[from] = gen; prev[from] = from; q.length = 0; q.push(from);
+  let head = 0; const out = [], mask = new Uint8Array(N.length);
   while (head < q.length) {
-    const k = q[head++]; out.push(k); const n = N[k];
+    const k = q[head++]; out.push(k); mask[k] = 1; const n = N[k];
     for (const [di, dj] of CAT_DIRS) {
-      const arr = catG.byCell.get((n.j + dj) * catG.gw + (n.i + di)); if (!arr) continue;
-      const hop = Math.abs(di) + Math.abs(dj) > 1 ? 0.8 : 0.5;
-      for (const m of arr) { if (prev[m] !== -1 || Math.abs(N[m].f - n.f) > hop) continue; prev[m] = k; q.push(m); }
+      const arr = G.byCell.get((n.j + dj) * G.gw + (n.i + di)); if (!arr) continue;
+      const hop = Math.abs(di) + Math.abs(dj) > CD ? 1.1 : 0.75;   // a step at 0.6 m spacing
+      for (const m of arr) { if (stamp[m] === gen || Math.abs(N[m].f - n.f) > hop) continue; stamp[m] = gen; prev[m] = k; q.push(m); }
     }
   }
-  return out;
+  return { ids: out, mask };
+}
+function catReachOf(u, x, z, y) {
+  const s = catNodeAt(x, z, y, 1.6);
+  if (s < 0) return null;
+  if (!u.catReach || !u.catReach.mask[s]) { u.catReach = catFlood(s); }
+  return u.catReach;
 }
 function catRandomNode(fromX, fromZ, minD, u) {
   if (!catG) return -1;
-  let pool = null;
-  if (u) {
-    const s = catNodeAt(fromX, fromZ, u.g.position.y, 1.0);
-    if (s >= 0 && (!u.catReach || u.catReachFrom !== s) && (!u.catReach || !u.catReach.includes(s))) { u.catReach = catFlood(s); u.catReachFrom = s; }
-    pool = u.catReach;
-  }
-  const P = pool && pool.length > 8 ? pool : null, n0 = P ? P.length : catG.nodes.length;
+  const R = u ? catReachOf(u, fromX, fromZ, u.g.position.y) : null;
+  const P = R && R.ids.length > 8 ? R.ids : null, n0 = P ? P.length : catG.nodes.length;
   for (let k = 0; k < 40; k++) {
     const id = P ? P[(Math.random() * n0) | 0] : (Math.random() * n0) | 0, n = catG.nodes[id];
     if (Math.hypot(n.x - fromX, n.z - fromZ) >= minD) return id;
@@ -34913,7 +34992,7 @@ function catHunterReset() {
   if (!far.length) {
     // no bone pile that far off: anywhere on the landing's own piece of the graph thirty metres out
     const s0 = catNodeAt(lx, lz, CAT_Y + 0.36 * CAT_SCALE, 2.5);
-    if (s0 >= 0) { const pool = catFlood(s0); far = pool.filter((k) => Math.hypot(catG.nodes[k].x - lx, catG.nodes[k].z - lz) > 30); }
+    if (s0 >= 0) { const R0 = catFlood(s0); far = R0.ids.filter((k) => Math.hypot(catG.nodes[k].x - lx, catG.nodes[k].z - lz) > 30); }
   }
   if (far.length) id = far[(Math.random() * far.length) | 0];
   if (id >= 0) { const n = catG.nodes[id]; u.g.position.set(n.x, n.f, n.z); }
@@ -34921,7 +35000,7 @@ function catHunterReset() {
   u.st.awake = false; u.st.roar = 0; u.st.atk = -1; u.st.side = 0; u.st.cool = 0; u.path = null; u.catLost = 0;
   u.st.sprint = 0;
   u.pathO = { x: CAT_X, z: CAT_Z };
-  u.cat = { mode: 'roam', t: 0, gait: 'crawl', pause: 0.2, heard: 0, act: null };
+  u.cat = { mode: 'roam', t: 0, gait: 'crawl', pause: 0.2, heard: 0, act: null, blooded: false, fled: false };
   if (far.length) { u.cat.mode = 'act'; u.cat.clip = 'eat'; u.cat.t = 10 + Math.random() * 8; u.cat.rate = 1.0; u.cat.actName = 'eat'; }
   u.catWoke = null;
   catNoise = null; _catWasGround = true; catNoiseT = 1.0;
@@ -34962,6 +35041,78 @@ function catNoiseAt(x, z, r) {
   if (catNoise && now - catNoise.t < 250 && catNoise.r >= r) return;   // the louder of two sounds in the same beat
   catNoise = { x, z, r, t: now, f: camBaseY - playerEye() };
 }
+/* AND HE DOES NOT GO THROUGH THE GROUND. `keepFloorAt` searches DOWNWARD,
+ * so standing over the lip of a stair well or a hole in a vault it answers
+ * with the storey below — and the follow eased him into it at three metres
+ * a second, which is the owner's "the monster glitched through the ground".
+ * A floor more than a stride under him is not his floor: he holds the last
+ * one he stood on, and if he holds it for most of a second he is put back
+ * on the nearest node at that height and his route is dropped. */
+function catStand(u, dt) {
+  const p = u.g.position;
+  const st = keepFloorAt(p.x, p.z, p.y + 0.35, 0.7, CAT_SITE);
+  if (st && st.f > p.y - 1.2) {
+    const dy = st.f - p.y, ad = Math.abs(dy);
+    p.y += ad < 0.02 ? dy : Math.sign(dy) * Math.min(ad, Math.max(ad * dt * 10, 3.0 * dt));
+    u.catFloor = st.f; u.catSink = 0;
+  } else if (u.catFloor !== undefined) {
+    p.y += (u.catFloor - p.y) * Math.min(1, dt * 8);
+    u.catSink = (u.catSink || 0) + dt;
+    if (u.catSink > 0.8) {
+      const id = catNodeAt(p.x, p.z, u.catFloor, 6);
+      if (id >= 0) { const n = catG.nodes[id]; p.set(n.x, n.f, n.z); u.catFloor = n.f; }
+      u.catSink = 0; u.path = null;
+    }
+  } else if (st) u.catFloor = st.f;
+}
+/* WHETHER YOU HAVE SEEN HIM. The middle of your view, not the whole of it:
+ * a thing at the edge of the frame in a black corridor has not been seen,
+ * and that is the difference between a face at a corner and a fight. */
+function playerSeesHunter(u) {
+  const p = u.g.position, c = camera.position;
+  const dx = p.x - c.x, dz = p.z - c.z, d = Math.hypot(dx, dz);
+  if (d > 26) return false;
+  const hy = p.y + 1.2;
+  if (Math.abs(hy - c.y) > 2.2) return false;
+  _catV.set(0, 0, -1).applyQuaternion(camera.quaternion);
+  const fl = Math.hypot(_catV.x, _catV.z) || 1;
+  if ((dx * (_catV.x / fl) + dz * (_catV.z / fl)) / d < 0.80) return false;   // about thirty-six degrees either side of the crosshair
+  return !keepHitsWall(c.x, c.z, p.x, p.z, hy, CAT_SITE);
+}
+const _catV = new THREE.Vector3();
+/* A PLACE TO WATCH YOU FROM. A node he can reach, seven to twenty metres
+ * off, which can see your eye — AND WHICH IS A CORNER, which is measured:
+ * a step to one side of it CANNOT see you, so there is stone right beside
+ * him and what is out in the open is his head. */
+function catPeekSpot(u) {
+  const R = catReachOf(u, u.g.position.x, u.g.position.z, u.g.position.y);
+  if (!R || R.ids.length < 40) return null;
+  const c = camera.position, ids = R.ids, N = catG.nodes;
+  let best = null, bs = 1e9;
+  for (let k = 0; k < 260; k++) {
+    const n = N[ids[(Math.random() * ids.length) | 0]];
+    const d = Math.hypot(n.x - c.x, n.z - c.z);
+    /* AND A CORNER HE WATCHES FROM IS FURTHER OFF THAN THE RANGE AT WHICH
+     * HE COMES. At five metres the spot he picked was already inside the
+     * distance that turns a stalk into a charge, so he arrived and charged
+     * on the same frame and there was no peek at all. */
+    if (d < 9 || d > 22) continue;
+    if (Math.abs(n.f + 1.35 - c.y) > 1.9) continue;
+    if (keepHitsWall(n.x, n.z, c.x, c.z, n.f + 1.30, CAT_SITE)) continue;
+    const ux = (c.x - n.x) / d, uz = (c.z - n.z) / d, px = -uz, pz = ux;
+    const hidL = keepHitsWall(n.x + px * 1.2, n.z + pz * 1.2, c.x, c.z, n.f + 1.30, CAT_SITE);
+    const hidR = keepHitsWall(n.x - px * 1.2, n.z - pz * 1.2, c.x, c.z, n.f + 1.30, CAT_SITE);
+    /* COVER IS A WALL AT HIS SHOULDER, not only a corner he can hide the
+     * whole of himself behind: measured in the crypt rooms, the strict test
+     * found nothing at all in an open vault and he stood there. A pier, a
+     * tomb, a jamb — anything within a stride — is something to be beside. */
+    const near = !!keepWallNear(n.x, n.z, 1.3, n.f + 0.4, n.f + 1.9, CAT_SITE);
+    if (!hidL && !hidR && !near) continue;
+    const sc = d - (hidL && hidR ? 5 : hidL || hidR ? 3 : 0);   // a doorway beats a corner beats a pillar
+    if (sc < bs) { bs = sc; best = { x: n.x, z: n.z, f: n.f }; }
+  }
+  return best;
+}
 // the fraction of his own top speed that is a given pace (the follower reads `st.sprint`)
 function catPace(u, mps) { return mps / (MUT_SPEED * u.kind.speedK) - 1; }
 function catPlay(u, name, loop, rate, dt) {
@@ -34972,13 +35123,12 @@ function catPlay(u, name, loop, rate, dt) {
 // a place to go: a bone pile he can reach, a spot near you, or anywhere at all
 function catPickTarget(u, C) {
   const p = u.g.position;
-  const s = catNodeAt(p.x, p.z, p.y, 1.0);
-  if (s >= 0 && (!u.catReach || !u.catReach.includes(s))) { u.catReach = catFlood(s); u.catReachFrom = s; }
-  const pool = u.catReach && u.catReach.length > 8 ? u.catReach : null;
+  const R = catReachOf(u, p.x, p.z, p.y);
+  const pool = R && R.ids.length > 8 ? R.ids : null;
   const N = catG.nodes, r = Math.random();
   C.act = null;
   if (r < 0.30 && catSpots.eat.length) {
-    const eats = catSpots.eat.filter((id) => !pool || pool.includes(id));
+    const eats = catSpots.eat.filter((id) => !R || R.mask[id]);
     const far = eats.filter((id) => Math.hypot(N[id].x - p.x, N[id].z - p.z) > 6);
     const pick = (far.length ? far : eats)[(Math.random() * (far.length ? far.length : eats.length)) | 0];
     if (pick !== undefined) { C.act = 'eat'; return pick; }
@@ -35033,10 +35183,26 @@ function catWander(u, dt) {
   if (u.catSeeT <= 0) {
     u.catSeeT = 0.15;
     if (u.st.alive && !dying && !ended && !caveBusy && catSees(u)) {
-      u.st.sprint = 0; u.path = null; C.mode = 'chase';
-      crawlerProvoke(u);
-      mutAnim(u, dt, 0);
-      return;
+      /* AND HE DOES NOT ALWAYS COME STRAIGHT AT YOU. Close, or already
+       * blooded, he does; from across a room he STALKS — he goes to a
+       * corner that can see you, puts his face round it and holds there.
+       * What turns that into a fight is YOU looking at him. */
+      const dS = Math.hypot(camera.position.x - p.x, camera.position.z - p.z);
+      /* AND A MODE IS NOT RE-ENTERED BY THE THING THAT STARTED IT. The sight
+       * check runs six times a second; while he was stalking it set the mode
+       * to `stalk` again on every one of them, which reset the clock that
+       * ends a stalk and threw away the spot he was walking to — traced, he
+       * stood fourteen metres off for ten seconds doing nothing at all. */
+      if (C.mode === 'stalk' || C.mode === 'flee') { C.target = { x: camera.position.x, z: camera.position.z, f: camBaseY - playerEye() }; }
+      else if (dS > 11 && !C.blooded) {
+        C.mode = 'stalk'; C.peek = null; C.peekHold = 0; C.seenT = 0; C.stalkT = 0; u.path = null;
+        C.target = { x: camera.position.x, z: camera.position.z, f: camBaseY - playerEye() };
+      } else {
+        u.st.sprint = 0; u.path = null; C.mode = 'chase'; C.blooded = true;
+        crawlerProvoke(u);
+        mutAnim(u, dt, 0);
+        return;
+      }
     }
   }
   // does he hear you? a sound that carried to where he is takes him there
@@ -35051,6 +35217,109 @@ function catWander(u, dt) {
   }
   C.retarget = (C.retarget || 0) - dt;
   let moving = 0, speed = 0;
+  /* ---- STALKING. He holds a corner and watches; the moment the middle of
+   * your screen is on him he comes. If you never look, he closes anyway —
+   * one peek spot to a nearer one — so standing still is not an answer. */
+  if (C.mode === 'stalk') {
+    const dP = Math.hypot(camera.position.x - p.x, camera.position.z - p.z);
+    const shown = playerSeesHunter(u);
+    C.seenT = shown ? (C.seenT || 0) + dt : 0;
+    C.stalkT = (C.stalkT || 0) + dt;
+    if (C.seenT > 0.18 || dP < 6.5 || C.stalkT > 38) {
+      u.st.sprint = 0; u.path = null; C.mode = 'chase'; C.blooded = true;
+      crawlerProvoke(u);
+      mutAnim(u, dt, 0);
+      return;
+    }
+    if (!u.path && !(C.peekHold > 0)) {
+      if (C.pause > 0) C.pause -= dt;
+      else {
+        const sp = catPeekSpot(u);
+        if (sp && catRoute(u, sp.x, sp.z, sp.f)) { C.peek = sp; C.gait = 'crawl'; C.tries = 0; }
+        else {
+          /* NOWHERE TO WATCH FROM IS A REASON TO COME. Three goes at finding
+           * a corner and then he is simply in the room with you. */
+          C.tries = (C.tries || 0) + 1;
+          C.pause = 0.45;
+          if (C.tries > 3) {
+            u.st.sprint = 0; u.path = null; C.mode = 'chase'; C.blooded = true;
+            crawlerProvoke(u); mutAnim(u, dt, 0); return;
+          }
+        }
+      }
+    }
+    if (u.path) {
+      u.st.sprint = catPace(u, CAT_HUNT_SPEED * 0.82);     // low and quick, but not a charge
+      moving = ucFollowPath(u, dt);
+      u.st.sprint = 0;
+      if (!u.path) C.peekHold = 3.5 + Math.random() * 4.5;
+      if (u.dir.lengthSq() > 1e-6) {
+        const want = Math.atan2(u.dir.x, u.dir.z);
+        let d2 = want - u.g.rotation.y; while (d2 > Math.PI) d2 -= Math.PI * 2; while (d2 < -Math.PI) d2 += Math.PI * 2;
+        const cap = (u.kind.turnMax || 4) * dt;
+        u.g.rotation.y += THREE.MathUtils.clamp(d2, -cap, cap);
+      }
+      if (moving > 0.04) catPlay(u, 'crawl', true, 1.15, dt); else mutAnim(u, dt, 0);
+    } else {
+      // at the corner: turned on you, low, watching
+      C.peekHold -= dt;
+      const want = Math.atan2(camera.position.x - p.x, camera.position.z - p.z);
+      let d2 = want - u.g.rotation.y; while (d2 > Math.PI) d2 -= Math.PI * 2; while (d2 < -Math.PI) d2 += Math.PI * 2;
+      u.g.rotation.y += THREE.MathUtils.clamp(d2, -2.2 * dt, 2.2 * dt);
+      catPlay(u, 'peek', true, 1.0, dt);
+      if (C.peekHold <= 0) { C.peek = null; }
+    }
+    mutClampX(u, p, dt);
+    catStand(u, dt);
+    if (moving > 0.04) {
+      u.st.step -= dt;
+      if (u.st.step <= 0) { u.st.step = 0.50; sfxMutStep(Math.hypot(camera.position.x - p.x, camera.position.z - p.z) * 0.8, u.kind.voice); }
+    }
+    return;
+  }
+  /* ---- AND HE BREAKS OFF WHEN HE IS HURT. Away at a run, out of sight, a
+   * breather in the dark somewhere — and then he comes back, stalking, with
+   * what he has left. `blooded` is set, so the second time he does not peek
+   * at you, he simply comes. */
+  if (C.mode === 'flee') {
+    C.t -= dt;
+    if (!u.path && C.t > 0 && C.pause <= 0) {
+      /* AND AWAY IS AWAY FROM YOU, not from where he happens to be standing.
+       * Measured on the first build, a node twenty-six metres from HIM put
+       * him back within three of the player twice on the way out. */
+      const R = catReachOf(u, p.x, p.z, p.y);
+      let picked = -1;
+      if (R && R.ids.length > 20) {
+        for (let k = 0; k < 60; k++) {
+          const id = R.ids[(Math.random() * R.ids.length) | 0], n = catG.nodes[id];
+          if (Math.hypot(n.x - camera.position.x, n.z - camera.position.z) < 22) continue;
+          picked = id; break;
+        }
+      }
+      if (picked >= 0) { const n = catG.nodes[picked]; if (!catRoute(u, n.x, n.z, n.f)) C.pause = 0.4; }
+      else C.pause = 0.4;
+    }
+    if (C.pause > 0) C.pause -= dt;
+    if (u.path) {
+      u.st.sprint = catPace(u, CAT_HUNT_SPEED * 1.05);
+      moving = ucFollowPath(u, dt);
+      u.st.sprint = 0;
+      if (u.dir.lengthSq() > 1e-6) {
+        const want = Math.atan2(u.dir.x, u.dir.z);
+        let d2 = want - u.g.rotation.y; while (d2 > Math.PI) d2 -= Math.PI * 2; while (d2 < -Math.PI) d2 += Math.PI * 2;
+        u.g.rotation.y += THREE.MathUtils.clamp(d2, -(u.kind.turnMax || 4) * dt, (u.kind.turnMax || 4) * dt);
+      }
+      catPlay(u, 'run', true, 1.0, dt);
+      u.st.step -= dt;
+      if (u.st.step <= 0) { u.st.step = 0.42; sfxMutStep(Math.hypot(camera.position.x - p.x, camera.position.z - p.z) * 0.8, u.kind.voice); }
+    } else { catPlay(u, 'search', true, 1.0, dt); }
+    // and he mends a little while he is away: not to full, but enough to come back for
+    u.st.hp = Math.min(u.kind.hp, u.st.hp + dt * 1.1);
+    if (C.t <= 0) { C.mode = 'stalk'; C.peek = null; C.peekHold = 0; C.seenT = 0; C.stalkT = 0; u.path = null; }
+    mutClampX(u, p, dt);
+    catStand(u, dt);
+    return;
+  }
   if (C.mode === 'act') {
     C.t -= dt;
     catPlay(u, C.clip, true, C.rate, dt);
@@ -35115,9 +35384,7 @@ function catWander(u, dt) {
   // a search that has a next spot goes on to it when the look is done
   if (C.mode === 'roam' && C.next) { C.mode = C.next.mode; C.target = C.next; C.next = null; C.pause = 0.2; }
   mutClampX(u, p, dt);
-  // the storey under him
-  const st = keepFloorAt(p.x, p.z, p.y + 0.3, 0.6, CAT_SITE);
-  if (st) { const dy = st.f - p.y, ad = Math.abs(dy); p.y += ad < 0.02 ? dy : Math.sign(dy) * Math.min(ad, Math.max(ad * dt * 10, 3.5 * dt)); }
+  catStand(u, dt);
   // his feet, heard: the claws on the stone
   if (moving > 0.04) {
     u.st.step -= dt;
@@ -35145,6 +35412,17 @@ function catWander(u, dt) {
 function catSteer(u, dt, dist, foe) {
   if (!catG) return;
   const p = u.g.position, feet = p.y;
+  /* HURT, HE LEAVES. Under a third of his health, once a fight and only
+   * when he is not mid-swing, he breaks and runs for the dark — and comes
+   * back stalking when he has some of it back. */
+  const C = u.cat || (u.cat = {});
+  if (u.st.hp < u.kind.hp * 0.30 && !C.fled && u.st.atk < 0 && u.st.alive) {
+    C.fled = true; C.mode = 'flee'; C.t = 16 + Math.random() * 10; C.pause = 0; u.path = null;
+    u.st.awake = false; u.st.roar = 0; u.st.atk = -1; u.st.side = 0; u.st.cool = 0; u.st.chainAt = -1;
+    sfxScpScream(dist, u.kind.voice);
+    mutDrop(u);
+    return;
+  }
   const seen = catSees(u);
   u.catLost = seen ? 0 : (u.catLost || 0) + dt;
   if (seen) { u.catLastSeen = { x: camera.position.x, z: camera.position.z, f: camBaseY - playerEye() }; }
@@ -35156,9 +35434,24 @@ function catSteer(u, dt, dist, foe) {
     mutDrop(u);
     return;
   }
+  /* AND "IS THE LINE OPEN" IS THE WHOLE LINE, NOT THE NEXT TWO METRES.
+   * At 2.2 m the test said the way to you was clear while a wall stood
+   * three metres on: the route was thrown away on the frame it was made,
+   * the chase drove him into the stone, the segment clamp held him there,
+   * and he ground at twelve metres for ever — traced, exactly that loop at
+   * four routes a second. It asks as far as he can see now. */
   const ddx = foe.x - p.x, ddz = foe.z - p.z, L = Math.hypot(ddx, ddz) || 1;
-  const nx = ddx / L, nz = ddz / L, look = Math.min(L - 0.4, 2.2);
-  const clear = (len) => { const x1 = p.x + nx * len, z1 = p.z + nz * len; const st = keepFloorAt(x1, z1, feet, 0.55, CAT_SITE); if (!st || Math.abs(st.f - feet) > 0.6) return false; for (const h of [0.7, 1.4]) if (keepHitsWall(p.x, p.z, x1, z1, feet + h, CAT_SITE)) return false; return true; };
+  const nx = ddx / L, nz = ddz / L, look = Math.min(L - 0.4, 11);
+  const clear = (len) => {
+    for (let t = 1.2; t <= len + 0.01; t += 1.2) {
+      const x1 = p.x + nx * t, z1 = p.z + nz * t;
+      const st = keepFloorAt(x1, z1, feet, 0.55, CAT_SITE);
+      if (!st || Math.abs(st.f - feet) > 0.9) return false;
+    }
+    const x2 = p.x + nx * len, z2 = p.z + nz * len;
+    for (const h of [0.7, 1.4]) if (keepHitsWall(p.x, p.z, x2, z2, feet + h, CAT_SITE)) return false;
+    return true;
+  };
   if (look <= 0.2 || (clear(look) && Math.abs((camBaseY - playerEye()) - feet) < 1.4)) { u.path = null; u.catGrind = 0; return; }
   const moved = Math.hypot(p.x - (u.catWasX === undefined ? p.x : u.catWasX), p.z - (u.catWasZ === undefined ? p.z : u.catWasZ));
   u.catWasX = p.x; u.catWasZ = p.z;
@@ -35459,6 +35752,18 @@ function authorCrawlerRest(u, m, into) {
     [3.80, { armR: { right: 0.88 }, armL: { right: 0.92 }, foreR: { right: -0.30 }, foreL: { right: -0.30 }, chest: { up: -0.06 }, head: { up: -0.38, right: 0.02 }, neck: { up: -0.14 }, jaw: { right: -0.15 }, hipY: 0.01 }],
     [4.70, { armR: { right: 0.90 }, armL: { right: 0.90 }, foreR: { right: -0.30 }, foreL: { right: -0.30 }, chest: { right: 0.06 }, head: { right: 0.18 }, jaw: { right: -0.05 }, hipY: -0.02 }],
     [6.00, { armR: { right: 0.90 }, armL: { right: 0.90 }, foreR: { right: -0.30 }, foreL: { right: -0.30 }, jaw: { right: -0.20 } }]]), true);
+  /* THE FACE AT THE CORNER. Down as low as the stance goes with the trunk
+   * drawn back over the haunches — the body BEHIND him, at the stone — and
+   * the neck run out so the head is the only thing past it. He barely
+   * moves: a slow sway, the head cocking one way and the other, the jaw
+   * opening once in a while. What ends it is you looking at him. */
+  B('peek', 5.0, K([
+    [0, { chest: { right: 0.30 }, waist: { right: 0.16 }, neck: { right: -0.55 }, head: { right: -0.30 }, armR: { right: 0.35 }, foreR: { right: -0.25 }, jaw: { right: -0.10 }, hipY: -0.16 }],
+    [1.20, { chest: { right: 0.32 }, waist: { right: 0.17 }, neck: { right: -0.58 }, head: { right: -0.32, up: 0.20 }, armR: { right: 0.35 }, foreR: { right: -0.25 }, jaw: { right: -0.18 }, hipY: -0.17 }],
+    [2.10, { chest: { right: 0.30 }, waist: { right: 0.16 }, neck: { right: -0.56 }, head: { right: -0.28, up: -0.22 }, armR: { right: 0.35 }, foreR: { right: -0.25 }, jaw: { right: 0.10 }, hipY: -0.16 }],
+    [3.10, { chest: { right: 0.33 }, waist: { right: 0.18 }, neck: { right: -0.60 }, head: { right: -0.34, up: 0.10 }, armR: { right: 0.35 }, foreR: { right: -0.25 }, jaw: { right: -0.25 }, hipY: -0.18 }],
+    [4.10, { chest: { right: 0.31 }, waist: { right: 0.16 }, neck: { right: -0.56 }, head: { right: -0.30, up: -0.08 }, armR: { right: 0.35 }, foreR: { right: -0.25 }, jaw: { right: 0.05 }, hipY: -0.16 }],
+    [5.00, { chest: { right: 0.30 }, waist: { right: 0.16 }, neck: { right: -0.55 }, head: { right: -0.30 }, armR: { right: 0.35 }, foreR: { right: -0.25 }, jaw: { right: -0.10 }, hipY: -0.16 }]]), true);
   B('search', 4.4, K([
     [0, { jaw: { right: 0.15 } }],
     [0.60, { head: { up: -0.70, right: -0.10 }, neck: { up: -0.30 }, chest: { up: -0.22 }, jaw: { right: 0.25 }, hipY: 0.02 }],
@@ -35540,7 +35845,7 @@ MUT_KINDS.crawler = {
    * sphere, the reaches, the stops. */
   h: 3.10, hp: 80, dmg: 1, hitR: 2.0, body: 1.4,   // HARD TO KILL, the owner's word: eighty points, and a guard   // the blade's sphere has to reach a face 1.7 m ahead of the origin; the push keeps you off his back
   speedK: 1.30, windK: 1.00, reachK: 1.00, aggr: 3.4, press: 0.92,   // 6.0 m/s at the charge against your 5.7 sprint: he catches you, and he no longer outruns his own clamp
-  still: ['eat', 'sit', 'standIdle', 'search'],   // the behaviours are authored on their own stances and take no posture lift
+  still: ['eat', 'sit', 'standIdle', 'search', 'peek'],   // the behaviours are authored on their own stances and take no posture lift
   /* AND YOU SEE HIS FACE. On all fours the crawl's head looks at the sand a
    * stride ahead, and every blow is built on that frame, so in a fight the
    * owner was looking at the top of a skull. `face.up` is a constant lift
@@ -35574,7 +35879,14 @@ MUT_KINDS.crawler = {
          Character1_LeftFoot: 'DEF-footL', Character1_LeftToeBase: 'DEF-toeL' },
   /* the maps are a studio's (albedo mean 120 against the mutants' 37), so the
    * map is multiplied DOWN rather than re-baked, and it keeps its colour */
-  tint: 0x8c8c8c, emis: 0.10, rim: [0.05, 0.062, 0.095], gamma: 0.95,
+  /* AND HE IS NOT LIT UP. `emis` and `rim` are the beach's numbers — a
+   * creature on open sand under a quarter moon has to be lifted off its own
+   * map or it is a hole in the dark — and this one lives in a room whose
+   * stone carries 0.03. At 0.10 with a cold rim he was a pale animal in a
+   * black corridor, visible across the whole room, which is the opposite of
+   * everything else down here. He takes the ROOM's level: almost nothing of
+   * his own, a rim that only catches where a torch is already on him. */
+  tint: 0x6f6f6f, emis: 0.022, rim: [0.016, 0.020, 0.030], gamma: 0.95,
   author: authorCrawlerClips, first: 'idle', sleepIdle: null, wakeAt: 0,   // he wakes on SIGHT now (`catSees`), not on distance
   cat: true,   // he lives in the catacombs: clamped to its walk, drawn only in it, wandering it until he sees you
   anim: { idle: 'idle', walk: 'crawl', run: 'crawl', roar: 'roar', die: 'die', back: 'crawl', rate: 1.0, lean: 0.0, strafeK: 1.0 },
@@ -39822,7 +40134,7 @@ window.__bw = {
   get wongUnit() { return wongUnit; }, get drunkUnit() { return drunkUnit; }, get orcUnit() { return orcUnit; },
   crawlerUnit, CRAWL_X, CRAWL_Z, crawlerProvoke, startCaveIn, placeInCatacombs, placeOutsideCatDoor, startCatExit, catRoute, catSees, catNodeAt, CAT_X, CAT_Y, CAT_Z, CAT_SITE, CAT_LAND, CAT_DOOR, CAVE_Z,
   catState: () => ({ inCat, caveBusy, catBusy, catReady, catBuilt, walk: !!catWalk, nodes: catG ? catG.nodes.length : -1, lights: catLights.length, built: catWalk && catWalk.built, eat: catSpots.eat.length, mind: crawlerUnit && crawlerUnit.cat ? { ...crawlerUnit.cat, next: undefined, target: undefined } : null, awake: crawlerUnit && crawlerUnit.st.awake, noStand: crawlerUnit && crawlerUnit.noStand, noise: catNoise }),
-  catNoiseAt, catEat: () => catSpots.eat.map((k) => [catG.nodes[k].x - CAT_X, catG.nodes[k].f - CAT_Y, catG.nodes[k].z - CAT_Z].map((v) => +v.toFixed(1))), catWoke: () => crawlerUnit && crawlerUnit.catWoke,
+  catNoiseAt, catPeekSpot, playerSeesHunter, catStand, catEat: () => catSpots.eat.map((k) => [catG.nodes[k].x - CAT_X, catG.nodes[k].f - CAT_Y, catG.nodes[k].z - CAT_Z].map((v) => +v.toFixed(1))), catWoke: () => crawlerUnit && crawlerUnit.catWoke,
   get catG() { return catG; }, catRandomNode,
   tavScene, tavProvoke, buildTavCast, get tavMug() { return tavMug; },
   tavState: () => ({ inTavern, ready: tavReady, built: tavBuilt, walk: !!tavWalk, cells: tavCells ? tavCells.size : 0, busy: tavBusy, t: +tavT.toFixed(2),

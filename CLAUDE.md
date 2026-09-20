@@ -11269,3 +11269,115 @@ opens OUT over the beach**: a leaf built along +z swings to (sin, 0, cos) of
 its yaw, and -x is seaward here, so the door in the sand wall stood across
 the frame with the beach behind it; +0.72 puts it into the recess, where the
 comment always said it was. Read a swing's sign off where the leaf ENDS UP.
+
+**AND THEN THE CATACOMBS WERE TWICE THE SIZE, PITCH DARK, AND THE THING IN
+THEM LIVED THERE.** The owner played it: everything too small to walk
+through, he could not fit in the doors, the monster glitched through the
+ground and was lit up like a lamp, and the room lagged all over. Seven
+things, and the two that mattered most are both about a graph.
+
+- **A ROOM IS SCALED AT THE PACKER, NOT IN THE GAME.** `tools/undercroft_pack.py
+  tavern … --scale 2.2`. Measured on the first pack: rooms 1.5 m from floor
+  to slab against a 1.88 m body, and corridors 0.6 m wide — that is a
+  catacomb you crawl through sideways and it is exactly what "I couldn't fit
+  in the doors" is. At 2.2 the rooms are 3.3 m and the doorways 1.3 to 2.
+  Every number the game holds about the place is written `× CAT_SCALE`, so a
+  spot measured in the old file is the same spot in the new one.
+- **VERY DARK, WHICH IS A LEVEL AND A REACH.** The stone carries 0.03 of its
+  own map (it was 0.085), the fog is 0.040 and near-black, and a torch is
+  1.7 over 8.5 m rather than 2.6 over 11 — so a torch is a pool with dark
+  either side of it and not a room light. What carries the place is the
+  flames, the door's cold glow and what you are holding.
+- **AND HE WAS LIT FOR A BEACH.** `emis` 0.10 with a cold Fresnel rim is the
+  pack's night lift — a creature on open sand under a quarter moon is a hole
+  in the dark without it — and in a room whose stone reads 3 it made him a
+  pale animal visible across the whole hall. Measured by rendering him and
+  then hiding him and diffing the frame: at 3 m he covers 6.3 % of it at a
+  mean of 9.8 against the room's 3.2, which is a dark shape you can just
+  make out. `emis` 0.022, the rim a third of what it was.
+- **A FLOOR LOOKUP SEARCHES DOWNWARD, WHICH IS HOW HE WENT THROUGH THE
+  GROUND.** Standing over a stair well or a hole in a vault, `keepFloorAt`
+  answers with the storey BELOW — and the follow eased him into it at three
+  metres a second. `catStand` is the one door now: a floor more than a
+  stride under him is not his floor, he holds the last one he stood on, and
+  if he holds it for most of a second he is put back on the nearest node at
+  that height and his route dropped. Measured over ninety seconds of
+  roaming: never more than 0.27 m under a floor, and 1 % of frames with
+  nothing under him at all.
+- **"I LAGGED ALL OVER THIS ROOM" WAS THE ROUTE, AND IT WAS THREE FAULTS IN
+  ONE SEARCH.** Measured: 9.6 ms a route with the chase asking for one every
+  0.4 s. (1) It was a BREADTH-FIRST search over 53,145 nodes, which visits
+  every one of them before it gives up — A* with the straight-line distance
+  finds a path in a tenth of a millisecond. (2) The reachable set was an
+  ARRAY and `Array.includes` over 35,324 ids was asked every time he chose
+  somewhere to go; it is a mask. (3) A node every 0.2 m is nine times the
+  graph a crawling animal needs — at 0.6 m it is 5,887 nodes and the build
+  is 112 ms rather than 275.
+- **AND A WEIGHTED HEURISTIC IS INCONSISTENT, SO A* MUST CLOSE WHAT IT HAS
+  EXPANDED.** This is the one that took the longest to see, because the
+  symptom lies: routes to nodes his OWN FLOOD had just proved reachable came
+  back refused, eleven in twenty, at seven milliseconds each. Every one of
+  them had popped 14,001 entries — the cap — on a graph of 5,887 nodes,
+  because a node whose cost improves after it has been popped gets expanded
+  again, and with a 1.3 weight that cascades. A closed stamp ends it: 30 of
+  30 routes, median 0.9 ms, worst 2.1. **If a search fails on something you
+  can prove is reachable, count its expansions before you touch anything
+  else.**
+- **AND A SPOT RESOLVES TO A NODE ON THE STOREY YOU MEANT.** Two rooms stack
+  at the same (x, z) all over this place, so `catNodeAt` can answer with the
+  floor above or below the one a target was taken from — and the route was
+  then refused as unreachable by the very flood that produced it. It takes
+  the reach mask and prefers a node inside it.
+
+**AND HIS MIND IS AMNESIA'S NOW: HE LIVES HERE, AND YOU ARE IN THE WAY.**
+Six modes. ROAM — he picks a bone pile to eat at (found by bucketing the
+skull mesh's own vertices, not typed), a room to stand in, or somewhere
+near where you happen to be, and goes there crawling, one leg in three up
+on his hind legs. ACT — he eats, sits back on his haunches, stands and
+looks about where the roof allows, or crouches and listens, five to fifteen
+seconds, facing one way, which is how you get past him. INVESTIGATE — your
+sprint carries 24 m, your walk 11, a crouch 5, and a landing, a swing and a
+blade on stone say so where they happen (`catNoiseAt`); he comes and
+searches. STALK — the owner's own brief: from across a room he does NOT
+charge, he goes to a corner that can see you and puts his face round it
+(`catPeekSpot`: a node 9 to 22 m off that can see your eye AND where a step
+to one side of it cannot, which is what a corner IS, measured rather than
+authored), and holds there. What turns that into a fight is YOU looking at
+him — the middle of your screen, not the edge of it. FLEE — under a third
+of his health, once a fight, he breaks off, runs for somewhere at least 22 m
+from you, mends about a point a second, and comes back; `blooded` is set, so
+the second time he does not peek, he simply comes. CHASE — the fight.
+
+- **AND A MODE IS NOT RE-ENTERED BY THE THING THAT STARTED IT.** The sight
+  check runs six times a second and set the mode to `stalk` again on every
+  one of them, which reset the clock that ends a stalk and threw away the
+  spot he was walking to: traced, he stood fourteen metres off doing nothing
+  for ten seconds. A sight that arrives while he is already stalking only
+  refreshes where he thinks you are.
+- **AND "IS THE LINE OPEN" IS THE WHOLE LINE, NOT THE NEXT TWO METRES.** The
+  chase dropped its route whenever the nearest 2.2 m looked clear, then walked
+  into a wall three metres on, where the new segment clamp held him — a route
+  made and thrown away four times a second at twelve metres. It asks as far
+  as he can see now, and he closed 16 m to 5.2.
+- **AND HE MAY NOT PASS THROUGH A WALL BETWEEN FRAMES** — the player's own
+  rule, and the whole of "he clipped through the map running": the chase
+  drove him at drawn stone at seven metres a second against a push that
+  corrected 1.5 cm a frame. The frame's movement is a segment at his hip and
+  his shoulder, and a frame that crossed a face is reverted.
+- **AND A CORNER HE WATCHES FROM IS FURTHER OFF THAN THE RANGE AT WHICH HE
+  COMES.** At five metres the peek spot was already inside the distance that
+  turns a stalk into a charge, so he arrived and charged on the same frame
+  and there was no peek at all.
+- **AND A THING THAT REARS UP NEEDS A ROOF TO REAR UNDER.** His two standing
+  blows put his hands 3.8 m up; a catacomb's rooms are 3.3. They are out of
+  the draw wherever the storey he is on has less than 4.3 m over it.
+
+Measured at the end. **The player's own walk floods 12,404 cells from the
+landing with a standing body and reaches the barred door to within 0.1 m.**
+Routes: 30 of 30, median 0.9 ms. **Fourteen seconds of live fighting with
+NO frame over 16 ms** (before: 9.6 ms of routing several times a second).
+The fight is 30 swings and 39 damage a minute at 2.5 m, against the Dealer's
+48 and 40. He roams 140 m in ninety seconds. Hurt to 18 of 80 he breaks off,
+mends to 40 and comes back. And the dev-mode trap caught a whole round of
+measurement again: **`devMode` turns a creature's swinging off outright**, so
+a fight sampled with it on reads zero swings and a creature standing still.
