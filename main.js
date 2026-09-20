@@ -27205,7 +27205,7 @@ function mutClampX(u, p, dt) {
     // a hand from the pillars, and the push off a pillar stopped him a stride
     // into every corridor (traced: 1.2 m, then still, the route redrawn for ever).
     // The segment test above is what keeps him out of the stone instead.
-    if (!u.path) keepWallPush(p, r, feet, CAT_SITE, 0.6);
+    keepWallPush(p, r, feet, CAT_SITE, 0.6);   // on a route too, now that the routes keep 0.4 m off the stone
     const mx = p.x - wx, mz = p.z - wz, ml = Math.hypot(mx, mz), cap = 0.04;
     if (ml > cap) { p.x = wx + mx / ml * cap; p.z = wz + mz / ml * cap; }
     const st = keepFloorAt(p.x, p.z, p.y + 0.3, 0.7, CAT_SITE);
@@ -34606,7 +34606,8 @@ function updateCatacombs(dt) {
   const sp = Math.hypot(p.x - _preMove.x, p.z - _preMove.z) / Math.max(1e-3, dt);
   if (onGround && !_catWasGround) catNoiseAt(p.x, p.z, 18);
   _catWasGround = onGround;
-  if (catNoiseT <= 0 && sp > 0.4) { catNoiseT = 0.33; catNoiseAt(p.x, p.z, sp > 4.4 ? 24 : crouching ? 5 : 11); }
+  // (a teleport is not a footstep: the frame the cut sets you down moves the camera nine kilometres)
+  if (catNoiseT <= 0 && sp > 0.4 && sp < 12) { catNoiseT = 0.33; catNoiseAt(p.x, p.z, sp > 4.4 ? 24 : crouching ? 5 : 11); }
   // and the cave's own bed plays down here (see the undercroft's mix), so it has to exist
   if (audioCtx && !caveAmbEl) startCaveAmbience();
 }
@@ -34798,6 +34799,14 @@ function catBuildGraph() {
        * one piece of 9,962 nodes that reaches six of the seven rooms (the
        * flooded level is the seventh). His BODY keeps him off the walls; the
        * graph only has to know where the floor goes. */
+      /* A CLEARANCE, NOW THAT THERE IS ROOM FOR ONE. At the old scale a
+       * 0.28 m clearance cut the graph into 229 pieces, because the doorways
+       * were narrower than that; at 2.2x a corridor is 1.3 m and measured
+       * (this pane, 0.40): 53,145 of 76,958 storeys keep it, the flood from
+       * the landing reaches every level and the door, and every route runs
+       * down the MIDDLE of a passage rather than a hand off its stone — which
+       * is what stopped him grinding against a wall on every corridor. */
+      if (catWalls && keepWallNear(x, z, 0.40, f + 0.5, f + 1.5, CAT_SITE)) continue;
       const id = nodes.length;
       nodes.push({ i: c[0], j: c[1], f, x, z, h: open ? 99 : roof - st[k] });
       const key = c[1] * w.gw + c[0];
@@ -34894,14 +34903,28 @@ function catHunterReset() {
    * UNDER the one he was meant for (the floor lookup drops), and from a
    * spot with no node within a metre of his height no route ever starts:
    * measured, he stood by the door for ever with `catPause` cycling. */
-  const id = catNodeAt(u.g.position.x, u.g.position.z, u.g.position.y, 6);
+  let id = catNodeAt(u.g.position.x, u.g.position.z, u.g.position.y, 6);
+  /* AND FAR FROM YOU. He starts at a bone pile at least thirty metres from
+   * where you land — eating, with his back to the whole business — so the
+   * first minutes down here are his sounds somewhere else and not a fight
+   * at the foot of the tomb. The spot is drawn, not typed. */
+  const lx = CAT_X + CAT_LAND.x, lz = CAT_Z + CAT_LAND.z;
+  let far = catSpots.eat.filter((k) => Math.hypot(catG.nodes[k].x - lx, catG.nodes[k].z - lz) > 30);
+  if (!far.length) {
+    // no bone pile that far off: anywhere on the landing's own piece of the graph thirty metres out
+    const s0 = catNodeAt(lx, lz, CAT_Y + 0.36 * CAT_SCALE, 2.5);
+    if (s0 >= 0) { const pool = catFlood(s0); far = pool.filter((k) => Math.hypot(catG.nodes[k].x - lx, catG.nodes[k].z - lz) > 30); }
+  }
+  if (far.length) id = far[(Math.random() * far.length) | 0];
   if (id >= 0) { const n = catG.nodes[id]; u.g.position.set(n.x, n.f, n.z); }
-  u.g.rotation.y = -Math.PI / 2;
+  u.g.rotation.y = Math.random() * Math.PI * 2;
   u.st.awake = false; u.st.roar = 0; u.st.atk = -1; u.st.side = 0; u.st.cool = 0; u.path = null; u.catLost = 0;
   u.st.sprint = 0;
   u.pathO = { x: CAT_X, z: CAT_Z };
-  u.cat = { mode: 'roam', t: 0, gait: 'crawl', pause: 1.5 + Math.random() * 2, heard: 0, act: null };
-  catNoise = null;
+  u.cat = { mode: 'roam', t: 0, gait: 'crawl', pause: 0.2, heard: 0, act: null };
+  if (far.length) { u.cat.mode = 'act'; u.cat.clip = 'eat'; u.cat.t = 10 + Math.random() * 8; u.cat.rate = 1.0; u.cat.actName = 'eat'; }
+  u.catWoke = null;
+  catNoise = null; _catWasGround = true; catNoiseT = 1.0;
 }
 /* ---- HIS MIND, which is Amnesia: The Bunker's. He is not a fight waiting
  * for you; he is a thing living down here that you are in the way of. Five
@@ -35469,6 +35492,7 @@ MUT_ATTACKS.zRear       = { wind: 0.92, strike: 0.15, recover: 0.53, hit: 0.575,
 MUT_ATTACKS.zStandSwipe = { wind: 0.77, strike: 0.13, recover: 0.50, hit: 0.55, reach: 4.4, lunge: 1.9, chain: 'zSwipeL', chainP: 0.45, w: 0.09, dmg: 1, guardK: 1.4, limbs: [0], stop: 3.3, ease: true, stand: true };   // one: at two the rate ran to 47 a minute against the Dealer's 40
 function crawlerProvoke(u) {
   if (u.st.awake) return;
+  u.catWoke = { h: [u.g.position.x - CAT_X, u.g.position.y - CAT_Y, u.g.position.z - CAT_Z].map((v) => +v.toFixed(1)), p: [camera.position.x - CAT_X, camera.position.y - CAT_Y, camera.position.z - CAT_Z].map((v) => +v.toFixed(1)), d: +Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z).toFixed(1), t: performance.now() };
   u.st.awake = true; u.st.roar = 1.4; u.st.roarClip = 'roar'; u.st.cool = 0.3; u.st.step = 0;
   const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
   sfxScpScream(d, u.kind.voice);
@@ -39798,7 +39822,7 @@ window.__bw = {
   get wongUnit() { return wongUnit; }, get drunkUnit() { return drunkUnit; }, get orcUnit() { return orcUnit; },
   crawlerUnit, CRAWL_X, CRAWL_Z, crawlerProvoke, startCaveIn, placeInCatacombs, placeOutsideCatDoor, startCatExit, catRoute, catSees, catNodeAt, CAT_X, CAT_Y, CAT_Z, CAT_SITE, CAT_LAND, CAT_DOOR, CAVE_Z,
   catState: () => ({ inCat, caveBusy, catBusy, catReady, catBuilt, walk: !!catWalk, nodes: catG ? catG.nodes.length : -1, lights: catLights.length, built: catWalk && catWalk.built, eat: catSpots.eat.length, mind: crawlerUnit && crawlerUnit.cat ? { ...crawlerUnit.cat, next: undefined, target: undefined } : null, awake: crawlerUnit && crawlerUnit.st.awake, noStand: crawlerUnit && crawlerUnit.noStand, noise: catNoise }),
-  catNoiseAt,
+  catNoiseAt, catEat: () => catSpots.eat.map((k) => [catG.nodes[k].x - CAT_X, catG.nodes[k].f - CAT_Y, catG.nodes[k].z - CAT_Z].map((v) => +v.toFixed(1))), catWoke: () => crawlerUnit && crawlerUnit.catWoke,
   get catG() { return catG; }, catRandomNode,
   tavScene, tavProvoke, buildTavCast, get tavMug() { return tavMug; },
   tavState: () => ({ inTavern, ready: tavReady, built: tavBuilt, walk: !!tavWalk, cells: tavCells ? tavCells.size : 0, busy: tavBusy, t: +tavT.toFixed(2),
