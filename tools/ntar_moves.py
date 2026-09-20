@@ -60,7 +60,7 @@ from mathutils import Vector, Quaternion, Matrix
 # skeletons, and neither of them cares which — the quantity this writes is
 # the rotation a bone has UNDERGONE, which knows nothing about either rig.
 #   blender -b -P tools/ntar_moves.py -- knight
-SET = next((a for a in ('knight', 'wong', 'drunk') if a in sys.argv), 'ntar')
+SET = next((a for a in ('knight', 'wong', 'drunk', 'orc', 'crawler') if a in sys.argv), 'ntar')
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', SET + '-moves.json')
 SRC = os.path.expanduser('~/Downloads')
 FPS = 30
@@ -112,6 +112,48 @@ DRUNK_CLIPS = [
     ('drunk running left turn',   'runTurnL', 'a turn in the run', 'Male Drunk Pack'),
     ('run backward arc right',    'runArcR',  'the run, backwards and round', 'Male Drunk Pack'),
 ]
+# ---- AND THE ORC AT THE BAR CARRIES THE GREAT SWORD PACK WHOLE. Oscar
+# Creativo's orc arrives with a two-handed sword weighted to a bone under his
+# own right hand and not one clip to swing it with, so every move he has is
+# this pack — and the owner's word is that they should look EXACTLY as they do
+# on Mixamo, which is what this file's delta already guarantees and what the
+# windows below have to be careful not to spoil. A great-sword clip is not one
+# of the 250-frame performances the other packs ship: they are tight already,
+# so almost nothing is cut.
+ORC_CLIPS = [
+    ('great sword idle',              'idle',    'standing, the sword down',        'Great Sword Pack'),
+    ('great sword idle (2)',          'idleB',   'a second way of standing',        'Great Sword Pack'),
+    ('great sword walk',              'walk',    'the walk',                        'Great Sword Pack'),
+    ('great sword walk (2)',          'walkB',   'a second walk',                   'Great Sword Pack'),
+    ('great sword run',               'run',     'the run',                         'Great Sword Pack'),
+    ('great sword run (2)',           'runB',    'a second run',                    'Great Sword Pack'),
+    ('great sword strafe',            'strafeL', 'sideways, left',                  'Great Sword Pack'),
+    ('great sword strafe (2)',        'strafeR', 'sideways, right',                 'Great Sword Pack'),
+    ('great sword strafe (3)',        'sideL',   'a short side step, left',         'Great Sword Pack'),
+    ('great sword strafe (4)',        'sideR',   'a short side step, right',        'Great Sword Pack'),
+    ('great sword turn',              'turnL',   'a turn on the spot, left',        'Great Sword Pack'),
+    ('great sword turn (2)',          'turnR',   'a turn on the spot, right',       'Great Sword Pack'),
+    ('great sword crouching',         'brace',   'down behind the blade',           'Great Sword Pack'),
+    # the swings
+    ('great sword slash',             'oCut',    'a two-handed cut',                'Great Sword Pack'),
+    ('great sword slash (2)',         'oCutB',   'the cut back the other way',      'Great Sword Pack'),
+    ('great sword slash (3)',         'oCutC',   'a third cut',                     'Great Sword Pack'),
+    ('great sword slash (4)',         'oCutD',   'a fourth',                        'Great Sword Pack'),
+    ('great sword slash (5)',         'oCutE',   'and a fifth',                     'Great Sword Pack'),
+    ('great sword attack',            'oChop',   'the overhead',                    'Great Sword Pack'),
+    ('great sword high spin attack',  'oSpin',   'a full turn with the blade out',  'Great Sword Pack'),
+    ('great sword jump attack',       'oLeap',   'off the ground and down on you',  'Great Sword Pack'),
+    ('great sword slide attack',      'oSlide',  'in low, along the floor',         'Great Sword Pack'),
+    ('great sword kick',              'oKick',   'the one blow that is a leg',      'Great Sword Pack'),
+    # and what he does when he is not swinging
+    ('great sword blocking',          'block',   'the guard',                       'Great Sword Pack'),
+    ('great sword impact',            'hit',     'the ordinary flinch',             'Great Sword Pack'),
+    ('great sword impact (2)',        'hitB',    'a second flinch',                 'Great Sword Pack'),
+    ('great sword impact (3)',        'hitBig',  'the one that rocks him',          'Great Sword Pack'),
+    ('two handed sword death',        'die',     'and down',                        'Great Sword Pack'),
+    ('draw a great sword 1',          'draw',    'the sword comes off his back',    'Great Sword Pack'),
+    ('great sword power up',          'roar',    'both hands up, and a shout',      'Great Sword Pack'),
+]
 CLIPS = [
     # file,                     name,      what it is
     ('Surprise Uppercut',       'knock',   'knocked onto his back'),
@@ -161,6 +203,20 @@ CLIPS = [
 ]
 if SET == 'wong': CLIPS = WONG_CLIPS
 if SET == 'drunk': CLIPS = DRUNK_CLIPS
+if SET == 'orc': CLIPS = ORC_CLIPS
+# ---- AND THE CATACOMBS MONSTER'S CRAWL. The owner's own "Running Crawl",
+# dropped loose in ~/Downloads: a Mixamo clip of a body going flat out on
+# all fours. Everything else the creature does is authored in the game on
+# THIS clip's first frame, which is the crouched stance a crawler has and
+# the bind pose (a standing zombie in an A) does not.
+CRAWLER_CLIPS = [
+    ('Running Crawl', 'crawl', 'flat out on all fours', ''),
+    # AND THE OWNER'S "Mutant Run": eighteen frames of a hunched two-legged
+    # lope, 1.95 m a cycle, hips 0.1-0.2 m under the rest hips and the head
+    # a third of a metre under. He comes up off his hands for it sometimes.
+    ('Mutant Run', 'run', 'a hunched lope on two legs', ''),
+]
+if SET == 'crawler': CLIPS = CRAWLER_CLIPS
 # THE BEATS, measured off the hips (see the log's own curve). A Mixamo clip
 # is a performance with an approach and a recovery either side of the thing
 # you want, and the game needs the thing:
@@ -218,6 +274,45 @@ FORCE_FLAT_YAW = {'knock'} if SET == 'ntar' else {'kPunch', 'kSwipe', 'kJump', '
 KEEP_YAW = {'knockOut', 'getUp'}
 # the two tavern sets are all gaits and stands: the game turns them, so every
 # clip is de-yawed, and nothing in either leaves the vertical
+# ---- AND EVERY SWING HE HAS IS MEASURED. The other sets take their contact
+# fractions from the table they were cut for; this one is a whole move set on
+# a creature that has never had one, and the owner's word is that the blows
+# should CONNECT. A great-sword cut has no extreme of position — the blade is
+# already out in front in the stance — so the frame that matters is the one
+# where the striking end is moving FASTEST, which is the reptilian rake's own
+# rule. Which end that is, is per clip: two of these are kicks.
+CONTACT = {'nSweep': 'RightToeBase'} if SET != 'orc' else {
+    'oCut': 'RightHand', 'oCutB': 'RightHand', 'oCutC': 'RightHand',
+    'oCutD': 'RightHand', 'oCutE': 'RightHand', 'oChop': 'RightHand',
+    'oSpin': 'RightHand', 'oLeap': 'RightHand', 'oSlide': 'RightHand',
+    'oKick': 'RightToeBase',
+}
+REST_FWD = SET in ('orc', 'crawler')
+# ---- AND A CLIP THAT NEVER STANDS UP IS MEASURED FROM THE REST POSE.
+# `hipY` is the hips' offset from the clip's FIRST frame, which is right for
+# every clip that begins with a body standing — and the crawl begins on all
+# fours, so measured from itself its hips read as never having dropped, and
+# the game would play the crawl with the pelvis at standing height and the
+# knees in the air. These are measured from the REST hips instead, the way
+# `getUp` is measured from its last frame: the number the game wants is how
+# far below where this rig binds its hips the clip actually carries them.
+HIP_FROM_REST = {'crawl', 'run'} if SET == 'crawler' else set()   # the run is hunched: its hips sit under the rest hips too
+if SET == 'crawler':
+    KEEP_YAW = set()
+    FORCE_FLAT_YAW = {c[1] for c in CLIPS}
+    # the run is an eighteen-frame cycle; the importer pads it with a held
+    # tail (frames 18..21 still), and a held tail in a loop is a hitch
+    WINDOW = {'run': (0, 17)}
+if SET == 'orc':
+    # the game turns him at the player every frame, so nothing may turn his
+    # hips as well — except the spin, where the turn IS the move, and the
+    # death, where there is no such thing as the heading of a falling body
+    KEEP_YAW = {'die', 'oSpin'}
+    FORCE_FLAT_YAW = {c[1] for c in CLIPS} - KEEP_YAW
+    # AND ONE OF THEM IS A PERFORMANCE. `great sword slash (2)` is 111 frames
+    # and 3.16 m of travel: he walks in, cuts at frame 22, and walks out of
+    # shot. The beast's `Die_1` again — a fight wants the cut.
+    WINDOW = {'oCutB': (0, 52)}
 if SET in ('wong', 'drunk'):
     # THE TWO LOOSE CLIPS ARE PERFORMANCES, the beast's `Die_1` again, and the
     # hips say where the move is (the log prints the curve). `Flying Kick`
@@ -332,8 +427,24 @@ def main():
         sc.frame_set(f0)
         fwd = Vector((0, 0, 0))
         for side in ('Left', 'Right'):
-            foot = (MW @ arm.pose.bones[pref + side + 'Foot'].matrix).to_translation()
-            toe = (MW @ arm.pose.bones[pref + side + 'ToeBase'].matrix).to_translation()
+            if REST_FWD:
+                # AND A FACING IS A PROPERTY OF THE RIG, NOT OF THE CLIP.
+                # Measured on frame 0 the toes are wherever that clip's first
+                # pose puts them, and across one pack that ranged from -1 to
+                # -103 degrees: a side step starts with the feet turned out, a
+                # running start with them square to the direction of travel.
+                # Applied as the clip's convention, each of those turns the
+                # whole move by that much — a strafe that walks sideways while
+                # facing fifty degrees off, which is exactly the thing the
+                # owner said had gone wrong before. Every clip in a pack shares
+                # one skeleton and one BIND pose, so the bind is where the
+                # convention is read, once, and every clip comes out on the
+                # same heading.
+                foot = (MW @ arm.data.bones[pref + side + 'Foot'].matrix_local).to_translation()
+                toe = (MW @ arm.data.bones[pref + side + 'ToeBase'].matrix_local).to_translation()
+            else:
+                foot = (MW @ arm.pose.bones[pref + side + 'Foot'].matrix).to_translation()
+                toe = (MW @ arm.pose.bones[pref + side + 'ToeBase'].matrix).to_translation()
             d = toe - foot; d.z = 0
             if d.length > 1e-4:
                 fwd += d.normalized()
@@ -404,6 +515,7 @@ def main():
         tracks = {b: [] for b in bones}
         hipY, travel = [], []
         h0 = CONV @ hips[0]
+        hy0 = restPos['Hips'].y if name in HIP_FROM_REST else h0.y   # see HIP_FROM_REST
         for i in range(end + 1):
             # de-yaw about the hips' start, if this clip turns and should not
             undo = Quaternion((0, 1, 0), -(hipyaw(i) - y0)) if flat else Quaternion()
@@ -416,7 +528,7 @@ def main():
                     d = Quaternion((-d.w, -d.x, -d.y, -d.z))
                 tracks[b].extend([r4(d.x), r4(d.y), r4(d.z), r4(d.w)])
             hp = undo @ (CONV @ hips[i] - h0)
-            hipY.append(r4(hp.y))
+            hipY.append(r4((CONV @ hips[i]).y - hy0))
             travel.append([r4(hp.x), r4(hp.z)])
 
         # ---- AND A CLIP THAT STARTS ON THE FLOOR IS MEASURED FROM ITS END.
@@ -437,17 +549,19 @@ def main():
         land = r4(hipY.index(min(hipY)) / max(1, end))
         # ---- where the striking foot is fastest (a sweep has no extreme of position)
         contact = None
-        if name == 'nSweep':
+        cb = CONTACT.get(name)
+        if cb and (pref + cb) in arm.pose.bones:
             best, bi = 0, 0
-            toes = []
+            tip = []
             for i in range(end + 1):
                 sc.frame_set(f0 + w0 + i)
-                toes.append(CONV @ (MW @ arm.pose.bones[pref + 'RightToeBase'].matrix).to_translation())
+                tip.append(CONV @ (MW @ arm.pose.bones[pref + cb].matrix).to_translation())
             for i in range(1, end + 1):
-                s = (toes[i] - toes[i - 1]).length
-                if s > best: best, bi = s, i
+                sp = (tip[i] - tip[i - 1]).length
+                if sp > best: best, bi = sp, i
             contact = r4(bi / max(1, end))
-            log('   contact: right toe fastest at frame %d of %d -> hit %.3f' % (bi, end, contact))
+            log('   contact: %s fastest at frame %d of %d (%.3f m/frame) -> hit %.3f'
+                % (cb, bi, end, best, contact))
 
         # ---- AND WHERE HE IS LYING, SO THE RISE CAN BE JOINED TO THE FALL.
         # With neither clip de-yawed they are each in their own frame — the

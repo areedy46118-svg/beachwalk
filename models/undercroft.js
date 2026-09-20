@@ -2040,11 +2040,31 @@ export function makeUndercroft(opts = {}) {
        * threshold where the clip cuts it. What has to survive is that it
        * takes a HIGHLIGHT, which is the only thing that says water; the
        * level underneath it can go wherever the stone goes. */
-      m.color.setHex(0x151c25);
-      m.emissive.setHex(0x060b12);
+      /* AND WHAT IT REFLECTS IS THE ALTAR. The channel was a cold near-black
+       * that took whatever highlight was going — which down the bore is the
+       * light in your own hand, so the two smears lying on the water were a
+       * reflection of the glowstick and of nothing that is in the room. A
+       * reflection takes the colour of the thing it reflects, and the only
+       * thing at the end of that tunnel worth reflecting is the altar: the
+       * water's SPECULAR is tinted to the candles' own colour (the beacon is
+       * 0xffb266 and the two lamps on the altar 0xffa951 / 0xff9a45), which
+       * on a metallic surface is what the base colour does. High metalness is
+       * the whole trick — METALNESS IS A TRAP for a lit surface and is
+       * exactly right for one that is only ever a mirror — so the diffuse
+       * term is a sixth of that colour and stays as dark as the rock, and
+       * every highlight that lands on it comes back warm. */
+      /* AND THE COLOUR IS THE LAMP'S, EXACTLY. It shipped at 0x8a5c2e — the
+       * altar lamp's hue at half its level — and the owner asked for the
+       * reflection to be the altar's own light. On a mirror the base colour
+       * IS the reflected colour, so it is the candles' point light
+       * (0xffa951, main.js) at full, with the metalness up so almost none
+       * of it is left over as diffuse: what lies on the water is the
+       * candlelight and the stone under it stays as dark as the rock. */
+      m.color.setHex(0xffa951);
+      m.emissive.setHex(0x0d0803);
       m.emissiveIntensity = 1;
-      m.roughness = 0.16;
-      m.metalness = 0.34;
+      m.roughness = 0.12;
+      m.metalness = 0.93;
       m.needsUpdate = true;
     });
     smoothRock(root);

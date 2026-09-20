@@ -10562,3 +10562,710 @@ down there to have gone for. The far end is FOUND — the last station the walk
 still has a floor at — and the jars are the beach's own `dropJar`, which now
 takes a height, so the count in the corner and the stack in the pack cannot get
 out of step with what the first cache hands out.
+
+**THE CLIMB STOPPED ON ONE CRATE, AND THE PLANK WOULD NOT LIE AS A RAMP.**
+Three reports, and the first two are one arithmetic each.
+
+- **A RUNG AT THE LIMIT OF A JUMP IS A RUNG THAT DOES NOT WORK.** A jump lifts
+  the feet 0.62 and the walk catches a floor `TAV_AIR` (0.72) under them, so
+  1.34 m is the tallest step there is — and the barrel rack's top is 3.53
+  against a crate whose top was 2.21. **That is 1.35.** One centimetre, and
+  the route to the gallery ended on that crate, which is where the owner was
+  stuck. Nor is 1.34 any better: the window in which a ledge is both catchable
+  and not a wall is then the last centimetre of the arc and there is no time
+  inside it to travel. The crate is the rung, so the crate is what changes —
+  a taller box, top 2.49, which splits 1.44 → 3.53 into two jumps of 1.05 and
+  1.04 with a third of a metre of arc to spare on each. Measured after: every
+  rung of the climb reached, the rack from the crate on 8 of 9 approaches.
+- **AND THE PUSH-OUT AND THE STEP-UP MUST USE THE SAME TOLERANCE — the beach's
+  own rule (`ROCK_STEP`), which the keep's walk never got.** `up` is a stride
+  on the ground and a JUMP in the air, and `keepWallPush` always read the
+  standing step: airborne, anything more than a stride over your feet was
+  still a wall pushing you off it. Measured, that capped what anyone could
+  climb onto at 1.08 m against the 1.34 the jump reaches. It takes `up` now,
+  and the island gets it too — where it also means a bank you are wading out
+  of stops shoving you back into the sea.
+- **AND THE CROWN WAS WRITTEN INTO THE WRONG FUNCTION.** "A lip is not a wall,
+  which is a question about the face's own crown" was added to `dojoWallNear`
+  and never to `keepWallNear`, so every reader here got `undefined` — and
+  `undefined < anything` is false, which made every kerb, step and stall lip
+  in the tavern a full wall to the plank. **The one rule that lets a board lie
+  ACROSS a step had never once run**, and with it off the ramp cannot form at
+  all (measured: pitch 0, the board flat on the floor, from every stand-off).
+  And a hand's breadth of slack — the number this file used to claim — is
+  0.08 m of stone through the top edge of the timber: a lip is something the
+  board lies ON, so the crown may stand no higher than the board's own middle.
+- **A STATION IS A BOX, AND A BODY COMES OUT OF A BOX THE SHORT WAY.** The
+  cross-section rule answered a face DEAD AHEAD of a station — which is what
+  the riser of a step is to the station leaning on it — with the FULL
+  half-width sideways, and five iterations of that walked the ramp a metre and
+  a quarter off the ledge in a single frame. That is the board "flying away"
+  the moment it is put down. Each station is 0.32 m of board by 0.46 across,
+  and it is ejected along whichever overlap is smaller. **And the plan axis has
+  to be a UNIT vector**: `a` is the axis in SPACE, so its horizontal part is
+  only cos(pitch) long, and every distance measured against it came out a
+  fifth short on a ramp — the along-tolerance GREW exactly as the board
+  steepened, which is precisely when it must not.
+- **AND WHICH WAY OUT IS A MEASUREMENT, NOT A DERIVATION.** Three readings of
+  the same code, over eighty drops round the hall and sixteen carry-and-drops
+  at the step: skipping the shallow-along case ships ramps and 8 of 80 boards
+  with their centreline in stone; the old across-only push ships 3 of 80 and
+  only 3 ramps in 16, sliding half a metre sideways in 6 of them; pushing
+  ALONG when along is shallower ships **4 of 80 (the same as before this
+  round), 6 ramps in 16 and not one board that slides**. The obvious variant
+  was the wrong one and only the sweep said so.
+
+**AND A BOARD AT REST MUST NOT CHANGE ITS MIND.** With the ramp forming, it
+then breathed: 0.14 m every ten frames, for ever. A station sitting on the
+EDGE of a step reads the floor one frame and the crown the next — two metres
+apart — and the two answers want slopes a tenth of a radian apart, so the
+board turned hard one way, which moved the station off the step, which turned
+it hard back. Four things, and the order matters because each exposed the
+next:
+
+- a station is 0.32 m of board, not a point, so it is asked about its own
+  whole length and takes the HIGHEST answer (under-sampling a step is the one
+  error that lets timber into stone, so the bias is the safe way);
+- the slope it turns toward is EASED, so what it follows is the average of an
+  argument the sampling cannot settle;
+- **a board that has stopped SLIDING is at rest, whatever its height is
+  doing** — the settling bob is the solver, not motion, and testing the whole
+  velocity woke the turn on every bob;
+- and while the pose in PLAN has not moved and it has not fallen a third of a
+  metre, the supports it solved stand. Measured: 15 of 16 placements dead
+  still to four decimals, and the ramp itself 0.
+
+Measured at the end: the board laid at the step rests spanning 5.34 → 7.44,
+and the walk from the gallery up it, into the bore and down to its far end is
+**210 ticks with zero stalls and no jumping**; the carpets' 2.49 m gap is
+still bridged and still walked (81 ticks, zero stalls); 4 of 80 drops round
+the hall end with the board's centreline touching drawn stone, which is what
+it was before this round.
+
+**AND THE JARS WERE ON THE GALLERY, NOT IN THE TUNNEL.** Off the gallery's far
+end a two-metre bore runs eleven metres into the rock at 7.19 over the flags
+and ends blind — and the "far end of the passage" the first pass walked to was
+the open landing at 5.30, in FRONT of the arch rather than through it, which
+is where the owner photographed them lying on the rug. Both ends of the bore
+are found rather than typed: the floor is walked back from the landing until
+it runs out, and the bore is then measured ACROSS at that last station so the
+pair stands on its centreline whatever the model does. Measured: (-12.7, 7.21,
+-24.05), a stride off the back wall, reading "E Take the jar".
+
+**THE REFLECTION ON THE TUNNEL'S WATER IS THE ALTAR'S.** The channel was a
+cold near-black that took whatever highlight was going — and the only light in
+that bore is the one in your own hand, so the smears lying on the water were a
+reflection of the GLOWSTICK and of nothing that is in the room. A reflection
+takes the colour of the thing it reflects, and the only thing at the end of
+that tunnel worth reflecting is the altar. The water's SPECULAR is tinted to
+the candles' own colour (the beacon is 0xffb266 and the two lamps on the altar
+0xffa951 / 0xff9a45), which on a metallic surface is what the base colour does
+— high metalness is the whole trick, and it is the one case where METALNESS IS
+NOT A TRAP, because a mirror has no diffuse term to lose. The level under it is
+unchanged: the diffuse is a sixth of that colour and stays as dark as the rock.
+Measured on the water under the held light, before and after: **(9.0, 11.5,
+15.2) — blue — becomes (12.3, 8.9, 5.9)**, which is the candles' own ratio.
+(And a specular change cannot be seen from just anywhere: it only exists where
+the camera sits on the MIRROR direction of a light, so the before/after has to
+be sampled there. Measured by rendering into a `WebGLRenderTarget` and reading
+the pixels back — `drawImage` off the WebGL canvas returns zeros, there being
+no `preserveDrawingBuffer`, and a render target has no such problem.)
+
+**"IT IS LIKE I HIT A COLLIDER WALKING STRAIGHT FROM THERE" WAS AN INVISIBLE
+CEILING, AND THE DUCK UNDER IT PUT HIS FEET THROUGH THE FLOOR.** Two faults,
+and the second is what turned the first into a wall:
+
+- **A ROOF NOTHING IS DRAWN UNDER IS NOT A ROOF.** A storey carries the ceiling
+  the packer sampled, and in an open hall that is now and then a table top, a
+  beam or a hanging lamp landing in ONE cell. Measured over the whole floor by
+  raycasting UP out of every low-roofed storey: **206 of them carried a roof
+  under head height with nothing drawn beneath it**, including a metre-wide
+  patch at waist height in the middle of the open floor. `pruneTavStoreys` has
+  asked what is drawn over a storey since the tables went ghost — it now keeps
+  the answer and clears the roof with it, which costs one more probe.
+- **AND THE FEET ARE ON THE FLOOR, NOT UNDER THE HEAD** — the undercroft's own
+  rule, which this room never got. The camera ducks to `st.c - 0.22`, so with a
+  phantom roof at 1.02 the eye went to 0.80 and `camBaseY - playerEye()` to
+  **-0.82**: eighty centimetres UNDER the flags he was standing on. The storey
+  is then more than a step ABOVE his feet, nothing answers, and the walk
+  refuses every move — a man crouched into the flagstones, stuck on nothing.
+  While he is on the ground his feet are the floor he was last standing on.
+
+Measured by walking eight directions out of every open cell with the game's own
+movement and asking, wherever he did not move, whether anything is DRAWN in the
+way: **16 spots stuck on nothing became 8, and all eight of those have real
+geometry within reach** (a stall valance, a 0.98 m bench, the bar, a wall he is
+six centimetres from). Low-roofed storeys 432 → 130, phantom roofs 206 → 15.
+
+**AND THE TAVERN IS THE THIRD ROOM TO NEED `clampPlayerToRoom`.** The bunker's
+lesson, then the dojo's, now this: `updateTavern` reverts a step that leaves the
+walk, and a creature's knockback is applied from `updateMutant`, which runs
+AFTER it. Measured over three minutes of being hit by the orc, the player was
+walked **thirteen metres out of the hall** — and then the fight simply stopped,
+because a tavern creature is clamped to the arena and cannot follow, so the two
+of them stood six metres apart doing nothing for the rest of the sample. A
+measurement that ends with the fighters becalmed is measuring the room, not the
+fight.
+
+**THE ORC AT THE DRUNK'S SHOULDER, AND THE GREAT SWORD PACK ON HIM.** Oscar
+Creativo's orc (CC-BY, `assets/orc.glb`) stands behind the drunk through the
+whole of the drink, and the moment the glass goes through the floor he is in
+it: two against one, they put the barman down, and then they both turn round.
+
+- **HE IS SHIPPED EXACT, AND THAT IS NOT LAZINESS — IT IS THE ONLY WAY HE
+  SURVIVES.** 305,522 triangles over 29 meshes at 17.2 MB. The decimation this
+  repo uses for a rigged character is a Blender round trip, and this rip will
+  not take one: **its inverse-bind matrices are IDENTITY and its rest pose is
+  carried entirely by the NODE TRANSFORMS**, so Blender's importer rebuilds a
+  different skeleton and writes that back. Measured on the round-tripped file,
+  the right upper arm came out with a 175 cm offset from its own clavicle, the
+  bind collapsed onto the origin (every bone at (0, 0.01, 0) — Wong's, for
+  comparison, has its head at 1.59 and its hand at (0.36, 1.2, -0.56)), and
+  every clip retargeted onto that exploded: arms out sideways, the sword two
+  metres in front of his chest. `bone_heuristic='BLENDER'` does not save it.
+  **If a rig's bind measures as nothing, stop packing and look at the file.**
+- **AND HALF THE FILE WAS A TURNTABLE.** 32.3 MB, of which the shipped `Motion`
+  clip was **14.9** against 11.7 of geometry and 5.4 of texture. He needs none
+  of it — his bind is sane, and every clip he fights with is retargeted — so it
+  goes, and with the metallic maps (METALNESS IS A TRAP, the sixth time) 450 MB
+  of source becomes 17.2.
+- **AND A CHANNEL THAT DRIVES SOMETHING THE PACKER HAS DROPPED IS A BROKEN
+  CHANNEL.** The morph targets go with the attribute rebuild and the tracks
+  that drove their weights stayed, so Blender's importer walked into
+  `obj.data.shape_keys.id_type` on a mesh with no shape keys and died before a
+  triangle arrived. `gltfpack.py` drops those channels now, and `--no-clips`
+  drops the lot.
+
+**AND A FACING IS A PROPERTY OF THE RIG, NOT OF THE CLIP.** `ntar_moves.py`
+measures which way a clip faces off the TOES at frame 0, which is right when
+frame 0 is a plain stand and nonsense otherwise: across one pack it ranged from
+**-1.3 to -103.2 degrees** — a side step starts with the feet turned out, a
+running start with them square to the travel. Applied as that clip's own
+convention, each of those turns the whole move by that much, which is exactly
+the "we've had problems replicating them before" the owner was pointing at.
+Every clip in a pack shares one skeleton and one BIND pose, so the bind is
+where the convention is read: all thirty of the orc's clips now come out on
+**(0, -1, 0) -> +0.0 deg**, the same heading.
+
+And every swing he has is measured rather than declared — the frame the
+striking end is moving FASTEST, which is the reptilian rake's rule and the only
+one that suits a two-handed cut (the blade is already out in front in the
+stance, so there is no extreme of position): oCut 0.405, oCutC 0.407, oCutD
+0.407, oChop 0.350, oSpin 0.533, oLeap 0.449, and the kick on the TOE at 0.367.
+Which end it is, is per clip; two of these are legs.
+
+**AND THE QUARREL IS A SIDE NOW, NOT A PAIRING.** `u.st.foe` made another
+creature the thing every distance and aim is measured to, and with three in the
+room it is re-read every frame: the pair both want Wong while he is alive, Wong
+wants whichever of them is nearer, and the moment he goes down **neither of
+them has a foe left** — which is `mutFoePos`'s own rule for turning on the
+player. Nothing had to be written to make the last beat happen. A blow of YOURS
+still takes its man out of the quarrel and gives him to you, and that is a flag
+now (`st.mine`), because a room that re-reads its sides every frame would
+otherwise hand him straight back.
+
+**AND THE MAN THEY ARE BOTH ON KEEPS HIS OWN NUMBERS.** The nightly roll is
+between the PAIR — which of them carries the fight — and Wong was getting the
+loser's 0.70 every time simply because he could never be the favourite:
+measured, he went down **a second and a half** after the glass broke and the
+beat went past before you could read it. Two against one is what decides it
+now. Measured: the fight opens at 5.3 s, Wong is down **14.9 s** later, and
+both survivors lose their foe on that same frame.
+
+**AND A BIG MAN WITH A LONG BLADE FIGHTS FURTHER OUT.** At the tavern's own
+`body` (0.45, a man) and `lungeStop` 1.45 he held 1.16 m and **107 of 122
+contacts landed off screen** — a two-metre orc standing on your toes puts every
+blow under the picture, which is the knight's own lesson wearing armour. At
+0.72 and 2.10 it is 69 of 129 on screen. Measured over three minutes against a
+player who stands still: **43 swings and 43.3 damage a minute**, all six of his
+swings used, the sword hand finishing a median 0.76 m from the chest. The
+Dealer is 48 and 40.
+
+**THE ORC'S SWORD WAS IN HIS FISTS THE WRONG WAY ROUND, AND EVERYTHING ELSE
+ABOUT HIM FOLLOWED FROM THAT.** "The sword is facing the wrong way, all his
+moves look bad, he stands like a statue" — four faults, all measured in the
+pane before anything was touched:
+
+- **AN UNMAPPED BONE INHERITS ITS BIND ANGLE, AND THE BIND HELD THE SWORD
+  BACKWARDS.** The blade is weighted to `SWORD_0102` under his right hand,
+  `kind.rag` does not name it, so every retargeted frame wrote `pW · bind.q`
+  — the sword exactly as the artist parked it in the rest pose. Skinned and
+  measured on the retargeted idle: a 2.04 m sword with the hands at 0.09 and
+  0.21 along it and the point at -1.43, running DOWN AND BACK through his own
+  legs, half a metre of pommel standing up where the blade should be, and
+  the left hand nearer the point than the right. He cut with the handle.
+  Which end is the blade is a fact about the sword (the far end from the
+  hand); which way it leaves a fist is a fact about a FIST — the index side,
+  never the pinky side — so `orcFixSword` measures the blade's own points,
+  and if the point is on the pinky side (dot -0.94 against the index-to-pinky
+  line) turns the sword end for end about the GRIP: a half turn about the
+  line from the blade's spine to the hand, so the hand stays exactly where it
+  is on the handle. It runs BEFORE `poseRig` captures the bind, so every clip
+  inherits it, and it hangs a tip Object3D on the point (`u.bones.tip`) so
+  `blowLands` and `aimBar` read the steel rather than a bar run out along the
+  forearm — a great sword lies ACROSS the forearm, not along it. After: dot
+  +0.94, the point 1.7 m ahead and 2.4 up, the left hand further from the
+  blade than the right. And the seat is redone afterwards, because the
+  point had been the lowest thing on him.
+- **A TWO-HANDED WEAPON IS ONE GRIP, NOT TWO ARMS.** `twoHanded` turned both
+  shoulders by their own correction, which is right for two claws and lets
+  go of a handle. `kind.grip` corrects the sword arm and puts the other hand
+  back where it was on the handle — its offset from the sword hand, turned
+  by the correction that hand actually took. Measured: the hands hold 0.29 m
+  apart idle and 0.29 through the aimed part of a cut.
+- **THE STATUE WAS THE SOURCE CLIP.** Measured on `orc-moves.json`, the
+  great-sword idle's biggest swing at any bone over its whole loop is 2.8
+  degrees; in the game the head moved a centimetre in two seconds. And the
+  idle pool never alternated: `drawGait` only runs when a creature sets off
+  or stops, so a thing standing at reach played the one stand it drew for as
+  long as it stood. Two things: `mutAnim`'s idle branch may swap idles when
+  the loop comes round (a coin, for every kind with a pool), and
+  `installLife` puts a layer on top of whatever clip is playing — a breath,
+  his weight moving over his feet on two counts that never line up, and his
+  head going to whoever he is watching (you, walking in, before the fight;
+  his foe in it), off during a swing or a stun so the clip's read is never
+  disturbed. It WRAPS THE MIXER: `PropertyMixer` only writes a bone when its
+  value changed, so a held cock is stamped once and an offset composed every
+  frame would accumulate (the witness's spine, 8 to 75 degrees) — what the
+  mixer last wrote is put back before it runs, and the life goes on after.
+  Measured asleep at the bar with the player 35 degrees off his front: head
+  look 35 degrees, idle and idleB trading places.
+- **AND HE FOUGHT FROM INSIDE HIS OWN SWORD.** Hands-off after the flip he
+  closed to 1.2-1.4 m and chained from there for a minute, and nothing in
+  the fight ever moved him back out — `near` is true inside `maxReach`, the
+  chase never runs, and the tavern cast has no footwork between swings. The
+  knight's `restless` shuffle (whose radial term walks him to `ring`) and
+  every per-swing `stop` at two metres or more; `ease` on his swings so the
+  wind-up loads and the strike accelerates into the contact instead of two
+  velocity steps. Measured after, hands-off at fighting range with the
+  camera tracking him: 43 contacts in 64 s, the sword hand on screen 43 of
+  43 and the blade's middle 36 of 43, the steel's nearest point 0.06-0.54 m
+  from the chest on every cut, 27 damage a minute, 3 % of frames still,
+  fighting at 1.9-2.2 m.
+
+Three harness lessons from the same round. **Freezing rAF kills the loop for
+good** — `animate()` re-arms itself from inside the frame, so once a stubbed
+rAF returns 0 nothing ever runs again, and `mutants` sat with `cool` frozen
+at 0.4 looking exactly like a creature that would not fight; `__bw.animate`
+is exposed so `__startLoop` can kick it. **A creature "measured" with the
+token held by somebody parked out of the room never swings** — `mutToken`
+went to Wong, moved 300 m away and awake, and the orc circled for ever with
+`maySwing` false; kill the others (`alive = false`) and take them out of the
+scene, do not just move them. **And "on screen" cannot be measured on the
+point that reaches the chest**, because the chest IS the camera: project the
+HAND and the blade's middle, the knight's way.
+
+**AND THE TUNNEL'S WATER IS THE LAMP'S OWN HEX.** It shipped at 0x8a5c2e — the
+altar lamp's hue at half its level — and on a mirror the base colour IS the
+reflected colour, so it is 0xffa951 (the candles' point light) at full with
+the metalness up to 0.93 so almost nothing is left over as diffuse.
+
+**THE ORC SPUN AFTER HIS SWINGS, AND IT WAS THE AIM'S BODY YAW.** `aimBar`
+turns the MODEL into a blow by the bearing of the striking end — right for a
+crowbar, and measured on a two-metre sword: the moment the blade sweeps
+THROUGH you the angle from his origin to the tip flips sign, so the model went
+from -103 to +104 degrees between one frame and the next (153 and 168 degrees
+of yaw in single frames, on every cut), and then unwound at the fade rate. At
+`aimK` 2.60 the yaw had 104 degrees of authority to do it with. Three things:
+
+- **A BODY TURNED INTO A BLOW STAYS TURNED.** The yaw tracks you only until
+  the commit (four fifths of the wind, where `turn()` also stops), is HELD
+  through the strike and the recovery, and when the swing is over — or the
+  next one begins — it is ADDED to the heading and the model zeroed in the
+  same frame, which nobody can see; `turn()` then brings him round at
+  `turnMax`, which is a turn and not a snap.
+- **AND THE TRACKING IS A TURN TOO.** The cock draws the blade across his
+  body, so the tip's bearing crosses yours partway through the wind-up and the
+  correction flips sign: -14 to +24 degrees between two frames. It may change
+  no faster than `turnMax` a second now.
+- **`yawK` IS ITS OWN NUMBER.** The shoulder may need 2.60 to close a metre
+  on a real Mixamo arc; the body does not need to turn 104 degrees to help
+  it. 0.75 on the orc (28 degrees), and his `turnMax` is 3.4 — the tavern's
+  5.2 rad/s on two hundred kilos read as a man on a swivel.
+
+Measured hands-off over fifty seconds: mean yaw per frame 8.8 degrees became
+1.55, frames turning more than 20 degrees 108 became 21 (all of them the
+spin's own root turn or the wind-up's crossing), swings and damage unchanged.
+
+**THE TAVERN DREW THE OCEAN, AND ITS CHAIRS WERE A HUNDRED AND FIFTY DRAW
+CALLS.** Profiled by hiding each scene child in turn, standing in the hall:
+466 draw calls and 530k triangles, of which 115,200 were the OCEAN twelve
+kilometres away (bigger than `SKYLINE_R`, in no far-prop list, so nothing
+ever culled it), 325k the orc (shipped exact, and staying so), and 150 the
+chairs — ten boxes each over fifteen chairs, for furniture, in a hall whose
+own stone is a hundred and forty. `cullWorldInHall` runs for the tavern and
+the keep as well and every frame from `animate`, so the restore on the way
+out cannot be missed; a chair is ONE merged mesh until it breaks, with its
+parts kept as data so the break builds each piece where it stood. 466 → 322
+calls, 530k → 356k triangles.
+
+**AND A TAVERN CREATURE NEVER LEAVES THE ARENA; A STEP OFF IT IS REFUSED.**
+"They teleport back after running past the curtains and get stuck" was the
+walk-back: a body off the main region was slid toward it at five centimetres
+a frame, which is three metres a second of a creature moving without its
+feet, and where the chase kept pushing it off — a 0.58 m bench it can step
+onto that the grid excludes, the player standing somewhere it may not go —
+the two argued for ever. The last place it stood ON the arena is remembered
+and a frame that leaves it is put back there, a frame's step; the slide
+stays only for a body with no such place yet. And `tavRoute` searches the
+ARENA, not every free cell, so a pocket off it is never a destination.
+
+**AND THE ARENA WAS SMALLER THAN THE ROOM.** Its box was the hall's own walls,
+hand-set at z -5.9..6.9 — and the floor you can actually reach from the door,
+flooded with a body's clearance, runs z -12.4..8.3: six and a half metres of
+room SOUTH of the hall, behind the hanging carpets, that the player could
+walk into and no creature could follow into. THAT is the spot in the owner's
+screenshot. The box is the flood's box now (nothing reachable leaks west of
+the door, measured), so the largest connected region is the whole floor.
+
+**AND A CHECKPOINT AFTER THE THREE CRABS.** `updatePackSave`: the moment the
+last of `packCrabs` is down, once a game, the same `saveCheckpoint`. A restore
+from it puts the three back asleep out at sea, which is what that stretch
+looks like once you have walked it. Measured in the pane: the trigger crossed
+in dev mode, the three marked dead, `hasCheckpoint()` true at z = -217.
+
+**THE FENCE IS OUT AND THE SAUCER IS BACK BY THE DRAIN.** Both by the owner's
+word. `FENCE_ON` is false: the fence is still BUILT — the crash site,
+`smashFence` and `fenceContact` all name its parts — but nothing of it enters
+the scene, holds a collider or answers the crosshair. The abduction went back
+to where it first was, the one thing in the game behind you: `UFO_Z` is 58,
+twenty-four metres behind the drainage tunnel home, the trigger is your Z
+alone and GREATER than again (`ABDUCT_Z` = `UFO_Z` - 4, the restore's
+inference flipped with it), the crash lands at `UFO_Z` - 9 and you are set
+down eighteen metres short of it facing back up the walk, the witness four
+metres behind you off `UFO_X` (there is no lane behind the spawn to stand him
+on). Every downstream number was already written off `UFO_Z`, so the move was
+the constants and the two comparisons; and the hall's assets went to the
+front of `ASSET_REACH` again, because this is once more the second place a
+player can get to.
+
+**THE CATACOMBS MONSTER, ON THE SAND PAST THE PORTAL.** The owner's "Weird
+Creature" — a Rigify-rigged zombie, `Weird-Creature.blend` with the textures
+PACKED and `Zombie.fbx` beside it — through `tools/crawler_pack.py` into
+`assets/crawler.glb` (4.2 MB), and his crawl is the owner's Mixamo "Running
+Crawl" through `tools/ntar_moves.py -- crawler`. He sits on all fours forty-
+five metres past the stones (`CRAWL_X/Z`), notices you at seventeen
+(`kind.wakeAt`, new: nothing on the beach had ever woken by distance), and is
+half again your sprint. What it took:
+
+- **THE FBX IS THE RIG TO SHIP, THE BLEND IS WHERE THE TEXTURES ARE.** The
+  FBX carries `rig_deform`, a deform-only export of the blend's 943-bone
+  Rigify rig — 175 DEF bones with their parents already resolved, which is
+  the work `samurai_pack.py` had to do by hand (Rigify's face DEF bones hang
+  off MCH controls the exporter drops) — and six meshes; but its textures
+  point at a G: drive. The blend has them packed: unpacked with
+  `image.save()` after `filepath_raw`, AO multiplied into the albedo with the
+  opacity as its alpha (PIL alone — this machine's python has no numpy),
+  1024 / 1024 / 512. The metallic map is 0.0 everywhere and is dropped. The
+  albedo's mean is 120 against the mutants' 37, so it is multiplied DOWN
+  (`tint` 0x8c8c8c) rather than re-baked, and it keeps its colour; the
+  opacity is a cut-out (p5 of 246), so `cutout: true`, or a double-sided
+  body blends against itself.
+- **A CLIP THAT NEVER STANDS UP IS MEASURED FROM THE REST POSE.** `hipY` is
+  the hips' offset from the clip's FIRST frame, right for every clip that
+  begins standing and wrong for a crawl that begins on all fours: measured
+  from itself its hips read as never having dropped, and the game would have
+  played the crawl with the pelvis at standing height and the knees in the
+  air. `HIP_FROM_REST` measures it from the rest hips instead (-0.54 to
+  -0.48 m below them; the crawl is 20 frames, 0.63 s, 1.51 m of travel), and
+  the facing is read off the BIND, since a crawl's toes at frame 0 point
+  wherever a crawl's toes point.
+- **EVERYTHING ELSE IS AUTHORED ON THE CRAWL'S FIRST FRAME**, which is the
+  crouched stance a crawler has and the bind (a standing zombie in an A)
+  does not — `poseRig` on the retargeted crawl, the Wong's-jab arrangement:
+  two idles that twitch and sniff, a rear-up roar (both hands up, face to
+  the sky, back onto the hands), two flinches, a collapse, and five blows —
+  a swipe either side cocked high and held, a bite off the whole trunk, a
+  lunge with both arms that flies at the lens, and a pounce from range. The
+  body-axis sign conventions `poseRig` measures held on a Rigify rig without
+  a change, because they are about the BODY's axes and not the rig's.
+- **He is a `MUT_KINDS` entry** — restless footwork, the yaw hold, the
+  ragdoll through the samurai's own Rigify name map — and the life layer
+  the orc got (`installLife`) sits on him too, so he watches you come.
+
+Measured hands-off at three metres: **31 swings a minute begun and 53 contacts
+counting chains, 30 damage a minute, still 6 % of frames, 8.5 m/s at the top
+of a lunge, zero yaw spikes**; at the contact frame the lunge's claws finish
+0.17 m from the chest, the bite's head 0.33 m at a metre off the sand (the
+first bite was re-authored — on a horizontal trunk "forward" cannot be
+pitched into, it has to be LIFTED and carried, and the first version pitched
+the trunk into the sand and finished 1.49 m short), the right swipe 0.48 and
+the left 0.86. He dies into the ragdoll, 22 parts, face up with the jaw open.
+
+**THE CRAWLER IS THE ARTIST'S PROMO POSE NOW, HE IS BIGGER, HE RUNS, AND HIS
+FACE POINTED AT THE SKY.** The owner's picture — cgtrader's render of the same
+zombie on one knee, one hand planted, jaw open — with "make his idle stance
+more like this, bigger and more terrifying, give him this run sometimes, fix
+his model to move smoother, check his face". Six things, and the first two
+were bugs:
+
+- **AN ALIAS OVERWRITES A CLIP OF THE SAME NAME — the knight's lesson, on the
+  first day.** `run: 'crawl'` sat in his alias map from the build that had no
+  run, so the owner's "Mutant Run" retargeted, landed in `u.clips.run`, and
+  was replaced by the crawl on the next line. `runDur` read 0.63 — the
+  crawl's — and every head measurement I took "off the run" was the crawl
+  again. Read the alias map before measuring a clip.
+- **A LEAF INHERITS ITS PARENT'S ALIGNMENT, AND ON A HUNCHED BIND THAT CRANES
+  THE HEAD BACK.** The face "looked weird" because it was pointing at the sky
+  on every frame of every clip: measured, face (0.12, 0.94, 0.33) with the
+  trunk facing forward and down. The retarget's "A is not T" turn is found per
+  bone from the direction to its mapped child, and the head has none — it took
+  the NECK's. This rig binds like a zombie: the neck bone runs 130 degrees
+  down and forward to a head craned back up it to face front (neck axis
+  (0, -0.67, 0.74), head (0, 0.99, 0.11)), so turning the neck vertical took
+  the head with it. `kind.alignLeaves` aligns a mapped leaf on its OWN axis —
+  Blender's bone Y IS the bone, on both rigs — against the Mixamo bone's rest
+  quaternion, which `ntar_moves.py` already writes. Opt-in, so nothing tuned
+  moved. After: face (-0.2, -0.59, 0.78) in the crawl, forward in the run.
+- **THE STANCE WAS FOUND IN THE PANE, NOT REASONED.** `tools/sheet.js` is the
+  harness for it: `__pose(angles, hipY)` composes body-axis angles onto the
+  crawl's first frame exactly as `poseRig` does and renders the result into a
+  strip beside the owner's picture, with no reload per guess; `__sheet` strips
+  a clip. The kneel (`CRAWL_STANCE`) is the trunk reared and twisted so the
+  planted shoulder leads, the left hand on the sand, the right arm hanging
+  bent, the right knee up under the chest with its foot down, the left shin
+  back along the ground. **The arm and the leg were GRID-SEARCHED**: 1,512
+  renders at four pixels each in 2.4 s, minimising the hand's height off the
+  sand with its forward reach bounded — because a body-axis rotation on a
+  forearm that happens to lie along X moves the hand in Z and not in Y, and
+  no amount of reasoning about "bend the elbow" finds that. Measured: hand
+  0.04 m over the sand, foot 0.01. The idles are the stance alive (breath,
+  head jerks with holds, the jaw working, the weight rocking); the roar rears
+  off the knee and DROPS ONTO ALL FOURS, which is what every blow is built on.
+- **THE JAW IS A JOINT LIKE ANY OTHER.** `jaw: 'DEF-jaw_master'` in
+  `CRAWL_JOINTS`; the bind is wide open, `right` negative closes it (rendered
+  to know, not reasoned). The idles work it.
+- **BIGGER IS A NUMBER THAT LEAKS INTO EVERY OTHER NUMBER.** `h` 1.92 -> 2.6
+  scaled the model 1.374, and on all fours HIS FACE IS 1.43 m AHEAD OF HIS
+  ORIGIN. Every stop and reach in the table is measured from the origin, so
+  at stops of 1.9 his teeth were half a metre from the lens, 95 % of his
+  contacts landed off the bottom of the frame, and the owner's picture would
+  have been his back. The table is written round the FACE now: stops hold the
+  origin at 2.7-3.0 (the face at about 1.1-1.5), reaches grew by the same 1.4,
+  `hitR` 1.7 so the blade's sphere reaches a face that far forward, `body` 1.2.
+  Measured pinned at 4.5 m: contacts 100 % on screen (was 5), median 0.73 m
+  from the chest, 34 swings and 37 damage a minute, zero yaw spikes.
+- **AND A TOKEN HOLDER SIX HUNDRED METRES AWAY NEVER GAVE IT BACK.** The
+  harness's teleport crossed `MUT_Z` and woke the pack, the pack's swing never
+  ended because nothing advances a unit that far away, and the release waited
+  for the swing to end — so a beach mutant held the turn through a whole
+  crawler fight and the crawler circled at two metres for ten seconds at a
+  stretch (8.6 swings a minute, measured, and `bw.mutToken` — NOT
+  `state().mutToken` — is how you see who has it). Past thirty metres a holder
+  gives it back whatever it is doing.
+
+And two harness lessons. **A knockback walks a pinned-nowhere player up the
+beach**: forty metres of them put the harness player in the portal ring and
+the dojo took him mid-sample (the camera read (2980, 801, 2979) and the
+crawler ran to z 410 after him) — the crawler stands sixty metres past the
+stones now, and a sampler that must not move pins the camera every tick. And
+**`__sheetFor(unit)` before `__sheet`** — the tool is re-evaluated after every
+reload and forgets whom it is for.
+
+He runs one set-off in three (`gaits.run: ['crawl', 'crawl', 'run']`), a
+hunched two-legged lope at 3.6 m/s clip speed played at the rate he moves,
+the run cycle windowed to its eighteen frames because the importer pads it
+with a held tail that hitched the loop; `fade` 0.22 on every crossfade; every
+swing `ease`d; `chainMax` 2.
+
+**THE SEA KEEP PUT YOU IN THE WATER, AND IT WAS THE ABDUCTION.** "I'm not
+spawning on the dock when going to the sea keep, it's putting me here" — forty
+metres off the pier at sea level, looking at the island. Traced with a setter
+on `camera.position.x` that records a stack on any jump over five metres: on
+the first frame after the cut `updateShrine` wrote x = 2973 (the hall's rim
+clamp) and `updateKeep`'s own rim clamp then dragged the body back to the
+island's edge. The hall was clamping because THE ABDUCTION HAD FIRED: moving
+the saucer back behind the spawn put its trigger back to `z >= ABDUCT_Z`, and
+every room this game has stands at POSITIVE z on purpose — the keep at 6000,
+the tavern at 12000, the undercroft at 2400, the dojo at 6000 — because every
+trigger on the walk was "z less than a line". The first turn on the pier the
+beam took you. The trigger asks `!inRoom()` now and wants the beach's own x,
+and the notes about "your Z alone" mean your Z on the beach. **When a fix to
+one thing moves a comparison, walk the list of places that only ever agreed
+with the old direction.**
+
+**THE CRAWLER IS 3.1 m, HE RUNS AS OFTEN AS HE CRAWLS, AND YOU SEE HIS FACE.**
+The owner's three: taller, bigger, scarier and more dangerous; the Mutant Run
+sometimes and the crawl sometimes; and "I want you to see the creature's
+face". The last one is the one worth writing down: every clip he fights with
+is built on the crawl's first frame, and a crawl looks at the sand a stride
+ahead, so what the player fought was the top of a skull. `kind.face` is a
+constant lift of the neck and the head composed by the life layer through
+every clip that is not an idle (the kneel already lifts it), and `face.hold`
+keeps the eyes on you through a swing where the look used to drop to nothing
+on the frame he committed — the aim yaws the model and the blow is swept on
+the limbs, so the head is free to look. The table moved out again with his
+height (the face is now 1.7 m ahead of the origin), the lunge takes two of
+your four, `speedK` 1.6, `aggr` 3.4, chains three deep, and the run is drawn
+one set-off in two.
+Measured after, pinned at five metres over seventy seconds: **35.5 swings and
+39 damage a minute, 100 % of contacts on screen, median claw 0.89 m from the
+chest, his face toward the lens on 71 % of frames, zero yaw spikes** — and
+the keep's pier holds the player for 300 frames after the cut where before
+it lost him on the first.
+
+**LONGER ARMS, A TRUNK CARRIED HIGH, AND HE GETS UP ON HIS HIND LEGS.** The
+owner's three, in one message: front arms longer with the upper back and
+neck up, "more human-like but still crawling"; a few standing attacks where
+he rears and swings; and taller while crawling. What each cost:
+
+- **A BONE SCALED CARRIES ITS SUBTREE, and a clip that carries no scale track
+  lets it stand.** `bones: { 'DEF-upper_armL/R': 1.28 }` on the kind — the
+  mutants' own trick — and every clip he plays is a retarget or an authored
+  quaternion set, so nothing stamps a 1.0 back over it.
+- **THE POSTURE IS COMPOSED, NOT RE-AUTHORED.** Every clip he fights with is
+  built on the crawl's first frame, so raising the trunk is one offset in
+  one place: `kind.posture` (waist, chest reared; the arms turned back down
+  by nearly the same so the hands stay planted on their longer reach) goes
+  through the life layer on the same gate as the face lift — every clip but
+  the kneel, and not a swing marked `stand`. The numbers were GRID-SEARCHED
+  in the pane: six crawl frames, the lowest hand held to 0.05 m in the sand,
+  the highest shoulder preferred — 108 combinations, and the answer was the
+  most reared trunk with the arms brought most under it (waist -0.40, chest
+  -0.50, arms 0.70; shoulders 1.47 m over hips at 1.0). At the first guess
+  (-0.20 / -0.30 / 0.50) the hands were 0.25 m under the sand.
+- **AND THE FACE LIFT CAME DOWN WITH IT.** 0.62 rad on a level trunk was a
+  face on you; on a reared one it was a face on the sky. 0.25.
+- **THE STAND IS THE CRAWL'S FRAME STOOD UP** (`CRAWL_STAND`): hips lifted
+  0.55, trunk 1.25 rad back, the legs grid-searched so the feet land under
+  the hips — the right to 0.01 m, the left no nearer than 0.19, because the
+  crawl folds it about an axis these keys do not turn — the head brought back
+  down. Crown at 3.03 m, hands at 3.8 thrown up. `zRear` rises INTO the tell
+  (the rise is the wind-up, the hang at the top is what you read) and slams
+  both arms down; `zStandSwipe` rises with one arm cocked high and takes it
+  across at chest height — MEASURED, because the first version crossed at
+  2.7 m, over your head, and the fix was the arm's absolute angle at the
+  contact key (-0.35 -> +0.55: on a trunk reared 1.25 rad an arm at zero
+  already points up). Both take two of your four and both are slow enough to
+  step. `stand` on the table entry is what keeps the posture off them.
+- **AND `right` HAS TO EXIST BEFORE IT IS USED.** The posture block was first
+  pasted above the line that derives the body's right axis and took the page
+  down with a TDZ error on the first frame the life layer ran. Read the
+  function's own order before inserting into it.
+Measured after, pinned at five and a half metres over a minute: **26 swings
+and 45 damage a minute** (slower and heavier than the crawl-only fight — the
+standing blows are long and two of them take two of your four), every swing in
+the draw used, contact medians 0.35–0.98 m with the bite back to 0.89 from
+1.82 once `flat` dropped the posture for it, zero yaw spikes. A frozen frame of
+the rear: fully upright over the lens, both claws coming down, jaws open.
+
+**"HE'S PALMING YOU", AND THE CHEST STUCK UP: THE HUNCH IS THE RIG'S OWN
+NECK.** The owner sent the artist's renders back
+(cgtrader "Stylized Zmobie") with "less awkward, his hits don't look like
+clawing, chest less weirdly stuck up, a natural hunch, taller looking down on
+you, strong". Two things, and the second corrected the round before it:
+
+- **A HAND NOBODY DRIVES IS FLAT, AND A FLAT HAND SLAPS.** Thirty finger
+  bones, never keyed, so every swipe arrived palm first. `kind.claws` curls
+  every phalanx about its own X all the time and harder through a blow, and
+  THE SIGN IS DERIVED per bone (a curl shortens tip-to-wrist; each bone is
+  turned both ways once at install and keeps the one that did) — the
+  samurai's fist on a monster, and it needs no rendering to be right.
+- **THE REFERENCE IS A HUMP, NOT AN ARCHED BACK.** Read off the renders: the
+  shoulders are the highest point, the neck comes forward and DOWN out of the
+  hump, and the face looks up from under the shoulder line. The round before
+  reared the chest straight up (waist -0.40, chest -0.50), which is a man
+  arching — the "weirdly stuck up" chest. `kind.posture` is a joint map now
+  (any joint, body-axis angles, plus `lift` for the hips) and the fitted one
+  lifts the lower back, curls the chest a shade forward, drops the neck 0.9
+  ahead and cranes the head 0.9 back up — very nearly the rig's OWN bind
+  pose, which is a zombie's neck and was the thing the retarget straightened
+  out. The legs and arms were grid-searched over the crawl cycle for feet and
+  the lowest hand on the sand, and the lift was swept: at 0.28 no arm reached
+  the ground and hands 0.2 m up read as floating; 0.10 puts the lowest hand
+  0.04 m into it with the chest at 1.46 m and the head at 1.20 (was 1.16 and
+  0.75). The face lift went to zero with it: the crane does the looking.
+Measured after, pinned at five and a half metres over sixty-six seconds: **29
+swings and 41 damage a minute, 89 % of contacts on screen, his face toward
+you 61 % of frames, head carried at 1.29 m in the crawl (the hump at your eye
+line, the face looking up from under it, as the renders have it), zero yaw
+spikes.** Frozen at a swipe's contact the forearm rakes across the lens with
+the far hand's claws hooked in frame. Standing, he is three metres over you.
+
+**THE CATACOMBS: THE SAND GIVES PAST THE STONES, AND THE MONSTER HUNTS YOU
+UNDER IT.** The owner's brief in one message: a little after the portal the
+ground caves in dramatically and you fall into wiz's "Catacombs Map"
+(CC-BY-4.0, `assets/catacombs.glb`, `tools/undercroft_pack.py tavern` — exact,
+142k triangles, 9.1 MB, NO `--scale`: the file already carries its own
+centimetre root and a 0.01 on top made a 27 cm walk grid), landing in the crypt
+room of the first screenshot; dark; the monster wandering the whole place
+looking for you, his feet and claws heard scraping when he is near; attacking
+only when he has you in sight; hard to kill; the way out the barred door of
+the second screenshot with light through its window, onto the beach from a
+door in the sand wall. `CAT_*`, the tavern's machinery on a third site.
+What it cost, in the order it bit:
+
+- **A ROOM IS FOUND, NOT NAMED.** The file has 744 nodes called `Object_N`.
+  The rooms came out of the WALK GRID: flood the storeys by height into
+  connected pieces, render each from inside (`tools/sheet.js` has
+  `__loadGlb` / `__view` for it), and match the pictures. The crypt room is
+  floor 0.34 at (5.6, -11.6); the barred door is the +x wall of the upper room
+  at (8.84, 4.33, -14.4), flanked by torches at z -15.3 and -13.5 with skulls
+  at its foot — the second screenshot exactly.
+- **AND "YOUR Z ALONE" FIRES IN A ROOM AT POSITIVE Z — the keep's own lesson,
+  the day after.** Not this time: the trigger is a BAND (`CAVE_Z` .. -7) on
+  the beach with `!inRoom()`, and `caveDone` is on the save and inferred past
+  it. The take is four beats on the wall clock (`updateCaveIn`): the shake and
+  sand off the ground, the give (a crack and the camera falling under its
+  own gravity with the black closing over it), the cut, the landing.
+- **THE CLIFF CLAMP WAS STILL ON IN THE ROOM.** Every frame `update()` pulled
+  `camera.position.x` to `CLIFF_BLOCK_X` — nine kilometres — and the hall cull
+  then measured the room from the beach and HID it, and the room's walk put x
+  back before anything drew, so the camera read as inside a room that had
+  been switched off. Traced with a setter on `visible`: `cullWorldInHall`,
+  under `update()`. `!inCat` joins the one list of places that are not this
+  beach. (And a `bwSpan` frame that says "cannot access 'right' before
+  initialization" is the life layer's TDZ from the round before, on the frame
+  a page hidden to rAF finally drew him.)
+- **THE HUNTER'S GRAPH IS THE STOREYED WALK AS NODES**, (cell, storey) with a
+  hop over one missing cell (`catBuildGraph` / `catRoute`, breadth-first).
+  Three filters were wrong before one was right: headroom 1.6 threw away the
+  crypt room (this model's rooms are 1.5 m under the next slab — a catacomb;
+  0.9, he crawls); a wall clearance of 0.28 m cut the graph into 229 pieces
+  because its stairs and doorways are narrower than that (none — his body,
+  not the graph, keeps him off walls); and "no roof" is the OUTSIDE of the
+  model only when nothing stands over it in the same cell. Measured: 14,512
+  nodes, one piece of 9,962 that reaches six of the seven rooms (the flooded
+  level is the seventh).
+- **A TARGET HE CAN REACH.** A random node anywhere was outside his piece often
+  enough that, once down a stair into the water, every route failed and he
+  stood there for good. `catFlood` from his own node, cached, and targets come
+  from that.
+- **AND THREE THINGS UNDID EVERY STRIDE.** The wall push at a cap of 0.06 a
+  frame cancelled the follower's 4 cm step (a millimetre moved, a live route in
+  hand); on a route he ignores the drawn faces and trusts the floor cells. The
+  snap back to the last standable spot refused the one-cell gap the route
+  hops; on a route he crosses it. And a stuck test on per-frame deltas never
+  read as still while a clamp argued with the follower; it is NET progress
+  over a second and a half now.
+- **HE SEES YOU ON TWO EYE-LINES, ON YOUR STOREY.** `catSees`: inside thirty
+  metres, a 72-degree cone (hearing inside six, and inside three whatever he
+  faces), no drawn wall between his eye and yours at EITHER eye height (a
+  tomb at chest height between you hides neither), and never a storey apart —
+  at 2.6 m of slack he heard you through a floor and roared at the ceiling,
+  and the fight AI, which is planar, then had him "in reach" of a player a
+  storey up (`near` is false across a floor now). Lose him for six seconds
+  from ten metres and he goes back to searching from where he last had you.
+- **HIS FEET ARE CLAWS ON STONE.** `voice.scrape` routes his step through
+  `sfxClawScrape`: a rasp swept down through a band, a click, a knock under
+  it, panned by his bearing (`panTo`) and gone by twenty-six metres.
+- **THE PANE HIDDEN TO rAF RUNS NO FRAMES**, and a hidden pane looked
+  displayed to `tabs_context`: a reference tab opened beside it was enough.
+  `bw.animate()` by hand drives a frame each; `document.hidden` is the truth.
+  And a dev checkpoint left 14 m from him reloaded the page every nineteen
+  seconds — `playerDied` — for a whole round of "nothing works".
+
+Measured: he wanders 50 m in 22 s across three storeys, walks into the crypt
+room, sees you and roars; in the room 9 swings and 12 damage in 14 s at 2.6 m
+with his face on you 98 % of frames; the door puts you on the sand at
+(12.6, -800) with the wall door 1.9 m to your right and the checkpoint written.
+Health 80, poise 12, a guard of 0.28.
+
+Two smaller ones from the last look. **You land where the picture was taken
+from**, not in the middle of the room: `CAT_LAND` is (7.0, -12.5) facing the
+green tomb, because the first spot put the sarcophagus at your back and the
+first thing you saw of the crypt was a wall. And **a door swung -0.72 about Y
+opens OUT over the beach**: a leaf built along +z swings to (sin, 0, cos) of
+its yaw, and -x is seaward here, so the door in the sand wall stood across
+the frame with the beach behind it; +0.72 puts it into the recess, where the
+comment always said it was. Read a swing's sign off where the leaf ENDS UP.
