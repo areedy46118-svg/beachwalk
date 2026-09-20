@@ -547,6 +547,12 @@ const DEFAULT_SETTINGS = { fov: 107, sensitivity: 1, brightness: 1.16, volume: 0
 let settings = { ...DEFAULT_SETTINGS };
 try { settings = { ...settings, ...JSON.parse(localStorage.getItem('beachwalk.settings') || '{}') }; } catch (e) {}
 settings.devMode = false;   // NEVER carried over: a game always starts as a game, whatever the last session was
+/* EXCEPT ACROSS A RELOAD THE GAME ITSELF ASKED FOR. "Dev mode — no deaths,
+ * no cutscenes" is what you are testing WITH, and every death and every
+ * restart-from-checkpoint reloads the page, so it came back off and the
+ * takes you had just skipped played again. It rides in sessionStorage,
+ * which a new tab does not have: a game still always starts as a game. */
+try { if (sessionStorage.getItem('beachwalk.dev') === '1') settings.devMode = true; sessionStorage.removeItem('beachwalk.dev'); } catch (e) {}
 // walk speed is never remembered: every game starts at the default 1.4×, and
 // the slider is for the session you are in
 settings.walkSpeed = DEFAULT_SETTINGS.walkSpeed;
@@ -4206,7 +4212,7 @@ function updateHurt(dt) {
   hurtEl.style.opacity = String(Math.max(hurtFlash * hurtFlash, rim));
 }
 
-function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || inspecting || peeking || packCut || mutCut || hatchBusy || ucBusy || abductCut || portalCut || sailBusy || tavBusy || caveBusy || catBusy || dying || ended || !introDone; }
+function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || inspecting || peeking || packCut || mutCut || hatchBusy || ucBusy || abductCut || portalCut || sailBusy || tavBusy || caveBusy || catBusy || catGrabT >= 0 || dying || ended || !introDone; }
 function refreshUI() {
   const playing = started && !menuOpen && !noteOpen && !dialogOpen && !invOpen && !inspecting && !dying && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
@@ -4732,6 +4738,7 @@ function reloadInto(mode) {
   try {
     sessionStorage.setItem('beachwalk.skipIntro', '1');
     sessionStorage.setItem('beachwalk.load', mode);
+    if (settings.devMode) sessionStorage.setItem('beachwalk.dev', '1');
     if (mode === 'fresh') localStorage.removeItem(SAVE_KEY);
   } catch (e) {}
   location.reload();
@@ -19375,6 +19382,12 @@ function blockMutant(u) {
 }
 function killMutant(u) {
   if (!u.st.alive || u.st.struck) return;
+  /* AND SOME THINGS DO NOT DIE. A catacomb with a corpse in it is a
+   * catacomb you have finished, and the whole of the fear down there is
+   * that it is his and you are in it — so at zero he GOES DOWN, lies where
+   * he fell, and gets up again. `undying` is the kind's own word for it;
+   * the blow still lands, still throws him, still reads as a kill. */
+  if (u.kind.undying && u.catDown === undefined) { catPutDown(u); return; }
   u.st.struck = true;
   if (u.st.killP === undefined) { u.st.killP = 0; u.st.killOh = false; u.st.hpBefore = u.st.hp; }   // a throw, or the harness
   u.st.atk = -1; u.st.stun = 0; u.st.recoil = 0; u.st.chainAt = -1;
@@ -21449,6 +21462,10 @@ function updateMutantUnit(u, dt) {
   if (u.kind.cat) {
     u.g.visible = inCat;
     if (!inCat) { mutDrop(u); mutAnim(u, dt, 0); return; }
+    // the grab is a TAKE and it owns him while it runs: the fight's own
+    // animation was picking a gait over the top of it (traced: `crawl` on
+    // every frame of a grab, with the clip set and the mixer stamping it)
+    if (catGrabT >= 0 && catGrabU === u) return;
     // where the frame began: `mutClampX` puts him back here if the frame crossed a drawn wall
     if (!u.catPrev) u.catPrev = new THREE.Vector3();
     u.catPrev.copy(u.g.position);
@@ -26699,7 +26716,7 @@ function animateFrame() {
   oceanUniforms.uTime.value += dt;
   if (!introStarted) titleCam(rawDt);
   update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
-  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateTavernCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt);
+  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateTavernCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateCatGrab(rawDt);
   updateHover();
   /* After everything that may have moved a lamp or the player, and before
    * anything is drawn: point the twelve real lights at the twelve that
@@ -34501,6 +34518,7 @@ function loadCatacombs() {
     proxy.position.set(CAT_DOOR.x - 0.1, CAT_DOOR.f + 1.2 * CAT_SCALE, CAT_DOOR.z);
     catWorld.add(proxy);
     addInteractable(proxy, 'Open the door', 'default', { far: 4.6, mid: true, onActivate: () => startCatExit(), when: () => inCat && !catBusy && !caveBusy });
+    buildCatAir();
     catReady = true;
   }, undefined, () => {});
 }
@@ -34548,6 +34566,72 @@ function warmCatacombs() {
     warmStep('catacombs', () => warmView([catWorld], ...v));
 }
 
+/* ---- SOMETHING IN THE AIR. Two batches and nothing else: motes that
+ * drift in the dark round you for ever, and DUST, which is thrown where
+ * something happened — his feet on a stair, a pile of bones kicked
+ * through, the moment he comes down on you. The motes follow the camera,
+ * because a catacomb has the same air in every room and a batch that
+ * covers all of it would be a hundred thousand points; the dust is a pool
+ * that recycles. Both are `Points`, unlit, fogged, and cost one draw each. */
+const CAT_MOTES = 220, CAT_DUST = 140;
+let catMotes = null, catMoteP = null, catDustPts = null, catDustP = null, catDustN = 0;
+const catDustLive = [];
+function buildCatAir() {
+  if (catMotes) return;
+  const g = new THREE.BufferGeometry();
+  catMoteP = new Float32Array(CAT_MOTES * 3);
+  const seed = new Float32Array(CAT_MOTES);
+  for (let i = 0; i < CAT_MOTES; i++) seed[i] = Math.random() * 100;
+  g.setAttribute('position', new THREE.BufferAttribute(catMoteP, 3));
+  catMotes = new THREE.Points(g, new THREE.PointsMaterial({ color: 0x9aa6b8, size: 0.035, sizeAttenuation: true, transparent: true, opacity: 0.30, depthWrite: false, blending: THREE.AdditiveBlending, fog: true }));
+  catMotes.frustumCulled = false; catMotes.raycast = () => {};
+  catMotes.userData.seed = seed;
+  catWorld.add(catMotes);
+  const dg = new THREE.BufferGeometry();
+  catDustP = new Float32Array(CAT_DUST * 3);
+  for (let i = 0; i < CAT_DUST; i++) catDustP[i * 3 + 1] = -9999;
+  dg.setAttribute('position', new THREE.BufferAttribute(catDustP, 3));
+  catDustPts = new THREE.Points(dg, new THREE.PointsMaterial({ color: 0x8c8578, size: 0.075, sizeAttenuation: true, transparent: true, opacity: 0.34, depthWrite: false, fog: true }));
+  catDustPts.frustumCulled = false; catDustPts.raycast = () => {};
+  catWorld.add(catDustPts);
+}
+function catDust(x, y, z, n = 6, spread = 0.5) {
+  if (!catDustPts || !inCat) return;
+  for (let k = 0; k < n; k++) {
+    const i = catDustN++ % CAT_DUST;
+    catDustLive[i] = { x: x - CAT_X + (Math.random() - 0.5) * spread, y: y - CAT_Y + Math.random() * spread * 0.6, z: z - CAT_Z + (Math.random() - 0.5) * spread,
+                       vx: (Math.random() - 0.5) * 0.35, vy: 0.10 + Math.random() * 0.30, vz: (Math.random() - 0.5) * 0.35, t: 1.4 + Math.random() * 1.6 };
+  }
+}
+function updateCatAir(dt) {
+  if (!catMotes) return;
+  const t = performance.now() * 0.001;
+  const cx = camera.position.x - CAT_X, cy = camera.position.y - CAT_Y, cz = camera.position.z - CAT_Z;
+  const S = catMotes.userData.seed;
+  for (let i = 0; i < CAT_MOTES; i++) {
+    const sd = S[i];
+    /* A MOTE IS A POSITION, NOT A PARTICLE. Each one is a slow wander round
+     * a fixed offset from wherever you are standing — so the air is always
+     * full and nothing ever has to be born or die. */
+    const a = sd * 6.283, r = 1.2 + (sd % 1) * 7.0;
+    catMoteP[i * 3] = cx + Math.sin(a + t * 0.07 * (0.4 + (sd % 0.7))) * r + Math.sin(t * 0.31 + sd) * 0.22;
+    catMoteP[i * 3 + 1] = cy - 1.2 + ((sd * 3.7) % 2.6) + Math.sin(t * 0.23 + sd * 2.1) * 0.30;
+    catMoteP[i * 3 + 2] = cz + Math.cos(a + t * 0.07 * (0.4 + (sd % 0.7))) * r + Math.cos(t * 0.27 + sd) * 0.22;
+  }
+  catMotes.geometry.attributes.position.needsUpdate = true;
+  let any = false;
+  for (let i = 0; i < CAT_DUST; i++) {
+    const d = catDustLive[i];
+    if (!d || d.t <= 0) { catDustP[i * 3 + 1] = -9999; continue; }
+    any = true;
+    d.t -= dt;
+    d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
+    d.vy -= 0.22 * dt; d.vx *= 0.97; d.vz *= 0.97;
+    catDustP[i * 3] = d.x; catDustP[i * 3 + 1] = d.y; catDustP[i * 3 + 2] = d.z;
+  }
+  catDustPts.visible = any;
+  catDustPts.geometry.attributes.position.needsUpdate = true;
+}
 // ---------------------------------------------------------------- the walk
 function updateCatacombs(dt) {
   if (!inCat) {
@@ -34560,6 +34644,7 @@ function updateCatacombs(dt) {
     return;
   }
   if (!catWalk) return;
+  updateCatAir(dt);
   // the torches gutter, each on its own count, and the door's light breathes
   const tt = performance.now() * 0.001;
   for (const l of catLights) l.intensity = l.userData.base * (0.72 + 0.28 * Math.sin(tt * 7.3 + l.userData.seed) * Math.sin(tt * 2.9 + l.userData.seed * 1.7) + 0.10 * Math.sin(tt * 13.1 + l.userData.seed));
@@ -34607,6 +34692,7 @@ function updateCatacombs(dt) {
   if (catNoiseT <= 0 && sp > 0.4 && sp < 12) { catNoiseT = 0.33; catNoiseAt(p.x, p.z, sp > 4.4 ? 24 : crouching ? 5 : 11); }
   // and the cave's own bed plays down here (see the undercroft's mix), so it has to exist
   if (audioCtx && !caveAmbEl) startCaveAmbience();
+  catLitterCheck(dt, sp);
 }
 let catNoiseT = 0, _catWasGround = true;
 
@@ -34619,6 +34705,10 @@ let catNoiseT = 0, _catWasGround = true;
  * and `update()` returns, which is what lets this drive the camera's own y. */
 function startCaveIn() {
   if (caveBusy) return;
+  /* NO CUTSCENES IN DEV MODE — the menu's own promise, and this is the one
+   * you cross most: three and a half seconds of shake, fall and black every
+   * time you walk back to the hole. It still puts you in the room. */
+  if (settings.devMode) { caveDone = true; loadCatacombs(); bwSoon('assets/catacombs.glb'); if (catReady) { placeInCatacombs(); return; } }
   caveBusy = true; caveT = 0; caveDone = true; caveCue = { give: false, cut: false, land: false };
   caveY0 = camera.position.y;
   loadCatacombs(); bwSoon('assets/catacombs.glb');
@@ -34644,6 +34734,7 @@ function updateCaveIn(dt) {
     blackoutEl.style.opacity = smooth01(T1 + 0.30, T2, t).toFixed(3);
   } else if (t < T3) {
     blackoutEl.style.opacity = '1';
+    if (settings.devMode && catReady && !caveCue.cut) { caveCue.cut = true; placeInCatacombs(); caveT = T3 + CAVE.up; }
     if (!caveCue.cut) {
       if (!catReady) { caveT = T2; return; }           // the black holds until the room is down
       caveCue.cut = true;
@@ -34931,6 +35022,13 @@ function catRoute(u, tx, tz, ty) {
     if (!p2 || (p1.i - p0.i) !== (p2.i - p1.i) || (p1.j - p0.j) !== (p2.j - p1.j) || Math.abs(p2.f - p1.f) > 0.3)
       out.push({ x: p1.x - CAT_X, z: p1.z - CAT_Z, f: p1.f });
   }
+  /* AND HE MOVES LIKE HE KNOWS THE PLACE. A route over a grid is a
+   * staircase of little turns — cell, cell, cell — and what that reads as
+   * is a thing feeling its way. A string-pull takes the corners out: a
+   * waypoint whose neighbours can see each other is dropped, so what is
+   * left is the long straight runs a thing that lives here would take, and
+   * the turns are only where the walls actually turn. */
+  catSmooth(out, u.g.position.y);
   while (out.length > 1 && Math.hypot(CAT_X + out[0].x - u.g.position.x, CAT_Z + out[0].z - u.g.position.z) < 0.7) out.shift();
   G.lastOut = out.length;
   if (!out.length) return false;
@@ -34945,6 +35043,34 @@ function catRoute(u, tx, tz, ty) {
  * and the answer is a MASK as well as a list, because `Array.includes` over
  * thirty-five thousand ids, asked every time he picks somewhere to go, is
  * the other half of the hitch. */
+/* CAN HE WALK STRAIGHT FROM HERE TO THERE? The drawn faces at his hip and
+ * his shoulder, and the floor under every stride of it — which is the same
+ * pair of questions the walk asks of the player, on his body. */
+function catLineOpen(ax, az, af, bx, bz, bf) {
+  if (Math.abs(bf - af) > 0.9) return false;
+  const dx = bx - ax, dz = bz - az, L = Math.hypot(dx, dz);
+  if (L < 0.01) return true;
+  for (const h of [0.6, 1.45]) if (keepHitsWall(ax, az, bx, bz, af + h, CAT_SITE)) return false;
+  const n = Math.max(1, Math.ceil(L / 0.5));
+  let last = af;
+  for (let k = 1; k <= n; k++) {
+    const t = k / n, x = ax + dx * t, z = az + dz * t;
+    const st = keepFloorAt(x, z, last + 0.45, 0.9, CAT_SITE);
+    if (!st || Math.abs(st.f - last) > 0.75) return false;
+    if (st.c - st.f < 1.15) return false;                     // and he has to fit under it
+    last = st.f;
+  }
+  return true;
+}
+function catSmooth(out, y0) {
+  if (out.length < 3) return;
+  let i = 0, guard = 0;
+  while (i < out.length - 2 && guard++ < 400) {
+    const a = out[i], c = out[i + 2];
+    if (catLineOpen(CAT_X + a.x, CAT_Z + a.z, a.f, CAT_X + c.x, CAT_Z + c.z, c.f)) out.splice(i + 1, 1);
+    else i++;
+  }
+}
 function catFlood(from) {
   const G = catG, N = G.nodes, prev = G.prev, q = G.q, stamp = G.stamp, gen = ++G.gen;
   stamp[from] = gen; prev[from] = from; q.length = 0; q.push(from);
@@ -35000,7 +35126,8 @@ function catHunterReset() {
   u.st.awake = false; u.st.roar = 0; u.st.atk = -1; u.st.side = 0; u.st.cool = 0; u.path = null; u.catLost = 0;
   u.st.sprint = 0;
   u.pathO = { x: CAT_X, z: CAT_Z };
-  u.cat = { mode: 'roam', t: 0, gait: 'crawl', pause: 0.2, heard: 0, act: null, blooded: false, fled: false };
+  u.cat = { mode: 'roam', t: 0, gait: 'crawl', pause: 0.2, heard: 0, act: null, blooded: false, fled: false, peeks: 0 };
+  u.catDown = undefined; u.st.alive = true; u.st.hp = u.kind.hp;
   if (far.length) { u.cat.mode = 'act'; u.cat.clip = 'eat'; u.cat.t = 10 + Math.random() * 8; u.cat.rate = 1.0; u.cat.actName = 'eat'; }
   u.catWoke = null;
   catNoise = null; _catWasGround = true; catNoiseT = 1.0;
@@ -35084,7 +35211,7 @@ const _catV = new THREE.Vector3();
  * off, which can see your eye — AND WHICH IS A CORNER, which is measured:
  * a step to one side of it CANNOT see you, so there is stone right beside
  * him and what is out in the open is his head. */
-function catPeekSpot(u) {
+function catPeekSpot(u, far = 22) {
   const R = catReachOf(u, u.g.position.x, u.g.position.z, u.g.position.y);
   if (!R || R.ids.length < 40) return null;
   const c = camera.position, ids = R.ids, N = catG.nodes;
@@ -35096,7 +35223,7 @@ function catPeekSpot(u) {
      * HE COMES. At five metres the spot he picked was already inside the
      * distance that turns a stalk into a charge, so he arrived and charged
      * on the same frame and there was no peek at all. */
-    if (d < 9 || d > 22) continue;
+    if (d < 9 || d > far) continue;
     if (Math.abs(n.f + 1.35 - c.y) > 1.9) continue;
     if (keepHitsWall(n.x, n.z, c.x, c.z, n.f + 1.30, CAT_SITE)) continue;
     const ux = (c.x - n.x) / d, uz = (c.z - n.z) / d, px = -uz, pz = ux;
@@ -35173,11 +35300,53 @@ function catSees(u) {
   if (keepHitsWall(p.x, p.z, c.x, c.z, ey, CAT_SITE)) return false;   // his eye and yours; a tomb between at chest height hides neither
   return true;
 }
+/* DOWN, AND UP AGAIN. He falls where he was hit and lies there — the death
+ * clip, held on its last frame — and after the best part of a minute it
+ * runs BACKWARDS, which is a body rocking back onto its hands, and he is up
+ * with two thirds of his health and a roar. Nothing down here is finished. */
+const CAT_DOWN = [40, 62];        // seconds on the floor
+function catPutDown(u) {
+  u.st.atk = -1; u.st.stun = 0; u.st.recoil = 0; u.st.chainAt = -1; u.st.awake = false;
+  u.st.hp = 0; u.path = null;
+  mutDrop(u);
+  camera.getWorldDirection(u.hitDir); u.hitDir.y = 0; u.hitDir.normalize();
+  u.hitFrom.copy(u.g.position);
+  flashMats(u.g);
+  sfxMutHit(u.kind.voice);
+  sfxKillThud();
+  addTrauma(0.6);
+  hitstop = Math.max(hitstop, MUT_HIT_STOP);
+  const C = u.cat || (u.cat = {});
+  C.mode = 'down'; C.t = CAT_DOWN[0] + Math.random() * (CAT_DOWN[1] - CAT_DOWN[0]);
+  u.catDown = 1;
+  u.g.position.addScaledVector(u.hitDir, 0.9);       // the blow still throws him, and he falls there
+}
+function catDownStep(u, dt) {
+  const C = u.cat;
+  C.t -= dt;
+  const a = mutPlay(u, u.kind.anim.die, false);
+  if (a) {
+    const dur = a.getClip().duration;
+    a.paused = true;
+    a.time = clampTime(a, C.t > 2.2 ? dur : dur * Math.max(0, Math.min(1, C.t / 2.2)));
+  }
+  u.mixer.update(dt);
+  catStand(u, dt);
+  if (C.t <= 0) {
+    u.catDown = undefined;
+    u.st.hp = Math.round(u.kind.hp * 0.66);
+    u.st.alive = true; u.st.struck = false;
+    C.mode = 'roam'; C.pause = 0.4; C.blooded = false; C.fled = false; C.tries = 0; C.peeks = 0;
+    u.cur = null;
+    sfxScpScream(Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z) + 8, u.kind.voice);
+  }
+}
 function catWander(u, dt) {
   u.g.visible = inCat;
   if (!inCat || !catBuilt || !catG) { mutDrop(u); mutAnim(u, dt, 0); return; }
   const p = u.g.position;
   const C = u.cat || (u.cat = { mode: 'roam', t: 0, gait: 'crawl', pause: 1.0, heard: 0, act: null });
+  if (C.mode === 'down') { catDownStep(u, dt); return; }
   // does he see you?
   u.catSeeT = (u.catSeeT || 0) - dt;
   if (u.catSeeT <= 0) {
@@ -35194,11 +35363,11 @@ function catWander(u, dt) {
        * ends a stalk and threw away the spot he was walking to — traced, he
        * stood fourteen metres off for ten seconds doing nothing at all. */
       if (C.mode === 'stalk' || C.mode === 'flee') { C.target = { x: camera.position.x, z: camera.position.z, f: camBaseY - playerEye() }; }
-      else if (dS > 11 && !C.blooded) {
+      else if (dS > 8 && (!C.blooded || (performance.now() - (C.bloodAt || 0)) > 40000)) {
         C.mode = 'stalk'; C.peek = null; C.peekHold = 0; C.seenT = 0; C.stalkT = 0; u.path = null;
         C.target = { x: camera.position.x, z: camera.position.z, f: camBaseY - playerEye() };
       } else {
-        u.st.sprint = 0; u.path = null; C.mode = 'chase'; C.blooded = true;
+        u.st.sprint = 0; u.path = null; C.mode = 'chase'; C.blooded = true; C.bloodAt = performance.now(); C.peeks = 0;
         crawlerProvoke(u);
         mutAnim(u, dt, 0);
         return;
@@ -35225,8 +35394,12 @@ function catWander(u, dt) {
     const shown = playerSeesHunter(u);
     C.seenT = shown ? (C.seenT || 0) + dt : 0;
     C.stalkT = (C.stalkT || 0) + dt;
-    if (C.seenT > 0.18 || dP < 6.5 || C.stalkT > 38) {
-      u.st.sprint = 0; u.path = null; C.mode = 'chase'; C.blooded = true;
+    /* AND A STALK IS A FEW CORNERS, NOT A CLOCK. He takes a spot, holds it,
+     * and if you never look he takes a NEARER one — three of them, each
+     * closer than the last — before he simply comes. What ends it early is
+     * you looking at him, or letting him inside six metres. */
+    if (C.seenT > 0.18 || dP < 6.0 || (C.peeks || 0) >= 3 || C.stalkT > 95) {
+      u.st.sprint = 0; u.path = null; C.mode = 'chase'; C.blooded = true; C.bloodAt = performance.now(); C.peeks = 0;
       crawlerProvoke(u);
       mutAnim(u, dt, 0);
       return;
@@ -35234,7 +35407,7 @@ function catWander(u, dt) {
     if (!u.path && !(C.peekHold > 0)) {
       if (C.pause > 0) C.pause -= dt;
       else {
-        const sp = catPeekSpot(u);
+        const sp = catPeekSpot(u, 22 - (C.peeks || 0) * 4);
         if (sp && catRoute(u, sp.x, sp.z, sp.f)) { C.peek = sp; C.gait = 'crawl'; C.tries = 0; }
         else {
           /* NOWHERE TO WATCH FROM IS A REASON TO COME. Three goes at finding
@@ -35242,7 +35415,7 @@ function catWander(u, dt) {
           C.tries = (C.tries || 0) + 1;
           C.pause = 0.45;
           if (C.tries > 3) {
-            u.st.sprint = 0; u.path = null; C.mode = 'chase'; C.blooded = true;
+            u.st.sprint = 0; u.path = null; C.mode = 'chase'; C.blooded = true; C.bloodAt = performance.now(); C.peeks = 0;
             crawlerProvoke(u); mutAnim(u, dt, 0); return;
           }
         }
@@ -35252,7 +35425,7 @@ function catWander(u, dt) {
       u.st.sprint = catPace(u, CAT_HUNT_SPEED * 0.82);     // low and quick, but not a charge
       moving = ucFollowPath(u, dt);
       u.st.sprint = 0;
-      if (!u.path) C.peekHold = 3.5 + Math.random() * 4.5;
+      if (!u.path) { C.peekHold = 5.0 + Math.random() * 6.0; C.peeks = (C.peeks || 0) + 1; }
       if (u.dir.lengthSq() > 1e-6) {
         const want = Math.atan2(u.dir.x, u.dir.z);
         let d2 = want - u.g.rotation.y; while (d2 > Math.PI) d2 -= Math.PI * 2; while (d2 < -Math.PI) d2 += Math.PI * 2;
@@ -35392,6 +35565,7 @@ function catWander(u, dt) {
       u.st.step = (C.gait === 'walk' ? 0.62 : 0.55) / Math.max(0.5, speed / 2.4);
       const d = Math.hypot(camera.position.x - p.x, camera.position.z - p.z);
       sfxMutStep(d * 0.8, u.kind.voice);
+      if (d < 16) catDust(p.x, p.y + 0.08, p.z, 2, 0.45);    // his feet lift it, and you see it before you see him
     }
   }
   if (C.mode !== 'act') {
@@ -35412,6 +35586,11 @@ function catWander(u, dt) {
 function catSteer(u, dt, dist, foe) {
   if (!catG) return;
   const p = u.g.position, feet = p.y;
+  /* WHEN YOU LAST HAD EYES ON HIM, which is what the grab is gated on. Six
+   * times a second, the same rate as his own sight. */
+  u.catLookT = (u.catLookT || 0) - dt;
+  if (u.catLookT <= 0) { u.catLookT = 0.15; if (playerSeesHunter(u)) u.catSeenAt = performance.now(); }
+  if (catCanGrab(u)) { startCatGrab(u); return; }
   /* HURT, HE LEAVES. Under a third of his health, once a fight and only
    * when he is not mid-swing, he breaks and runs for the dark — and comes
    * back stalking when he has some of it back. */
@@ -35429,8 +35608,12 @@ function catSteer(u, dt, dist, foe) {
   if (u.catLost > 5 && dist > 12 && u.st.atk < 0) {
     u.st.awake = false; u.st.roar = 0; u.st.atk = -1; u.st.side = 0; u.st.cool = 0; u.st.chainAt = -1; u.path = null;
     const C = u.cat || (u.cat = {});
-    C.mode = 'search'; C.target = u.catLastSeen || { x: camera.position.x, z: camera.position.z, f: camBaseY - playerEye() };
-    C.searchLeft = 2; C.pause = 0.5; C.gait = 'crawl'; C.next = null; C.retarget = 0; u.catLost = 0;
+    /* AND LOSING YOU IS A REASON TO WATCH, NOT ONLY TO SEARCH. Half the
+     * time he goes back to a corner and waits for you to walk into him. */
+    C.target = u.catLastSeen || { x: camera.position.x, z: camera.position.z, f: camBaseY - playerEye() };
+    if (Math.random() < 0.5) { C.mode = 'stalk'; C.peek = null; C.peekHold = 0; C.seenT = 0; C.stalkT = 0; C.peeks = 0; C.blooded = false; }
+    else { C.mode = 'search'; C.searchLeft = 2; }
+    C.pause = 0.5; C.gait = 'crawl'; C.next = null; C.retarget = 0; u.catLost = 0;
     mutDrop(u);
     return;
   }
@@ -35462,6 +35645,133 @@ function catSteer(u, dt, dist, foe) {
   u.pathAge = 0;
   const tgt = u.catLastSeen || { x: foe.x, z: foe.z, f: camBaseY - playerEye() };
   catRoute(u, tgt.x, tgt.z, tgt.f);
+}
+/* ---- HE GETS HOLD OF YOU. If he reaches you when you have not been
+ * looking at him — from behind, out of a side passage, off a peek you never
+ * turned round for — he does not swing, he TAKES you: up off your feet with
+ * his face in yours, screaming, and then he throws you down and backs off.
+ * It is not a killing blow. It costs you a point and your footing and it
+ * leaves you playing, which is worth more than a death screen: what it
+ * takes is the thing you were about to do.
+ *
+ * It is a TAKE, so it runs on the wall clock beside the cave-in and the
+ * door (`updateCatGrab` from `animate`), the camera is turned and never
+ * moved — every clamp still agrees with where you are standing — and
+ * `catGrabT` is in `frozen()`. */
+const GRAB = { seize: 0.30, hold: 1.45, throw: 0.55 };   // the beats
+const _grabV = new THREE.Vector3();
+let catGrabT = -1, catGrabU = null, catGrabAt = 0, _grabHome = null, _grabQ = null;
+function catCanGrab(u) {
+  if (catGrabT >= 0 || !inCat || frozen() || dying || ended) return false;
+  if (!u.st.alive || u.st.atk >= 0 || u.catDown !== undefined) return false;
+  if (performance.now() - catGrabAt < 26000) return false;                 // once in a while, or it is his only move
+  const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
+  if (d > 2.9) return false;
+  if (Math.abs((camBaseY - playerEye()) - u.g.position.y) > 1.2) return false;
+  return performance.now() - (u.catSeenAt || 0) > 1500;                    // he only takes you unseen
+}
+function startCatGrab(u) {
+  catGrabT = 0; catGrabU = u; catGrabAt = performance.now();
+  u.st.atk = -1; u.st.cool = 1.2; u.path = null; u.st.side = 0;
+  blocking = false; winding = false;
+  _grabHome = camera.position.clone(); _grabQ = camera.quaternion.clone();
+  u.g.rotation.y = Math.atan2(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
+  /* AND A TAKE SETS THE POSE, IT DOES NOT ASK FOR IT. `mutPlay` crossfades
+   * — which is right for a fight and wrong for a scripted beat: measured
+   * mid-grab, the grab clip sat at weight 0 with the crawl still at 1,
+   * because the fade is driven by a mixer clock a paused action is not on.
+   * Every other clip is stopped and this one is put at full weight. */
+  /* `stop()` is not enough: an action the mixer has already bound goes on
+   * contributing its pose until something zeroes it, so the crawl and the
+   * grab both sat at weight 1 and what you saw was the average of the two.
+   * (And `stopAllAction` is the one thing that must NOT be used — it
+   * restores every bound property, which is the bind pose: the severed
+   * limb's own bug.) */
+  for (const k in u.clips) { const c = u.clips[k]; if (c !== u.clips.grab) { c.stop(); c.setEffectiveWeight(0); c.enabled = false; } }
+  const ga = u.clips.grab;
+  if (ga) { ga.reset(); ga.setLoop(THREE.LoopOnce, 1); ga.clampWhenFinished = true; ga.play(); ga.setEffectiveWeight(1); ga.paused = true; ga.time = 0; }
+  u.cur = ga || u.cur;
+  sfxScpScream(1.0, u.kind.voice);
+  addTrauma(0.7);
+}
+function updateCatGrab(dt) {
+  if (catGrabT < 0) return;
+  const u = catGrabU, T1 = GRAB.seize, T2 = T1 + GRAB.hold, T3 = T2 + GRAB.throw;
+  catGrabT += dt;
+  const t = catGrabT, p = u.g.position;
+  const a = u.clips && u.clips.grab;
+  if (a) { a.paused = true; a.time = clampTime(a, Math.min(1, t / T3) * a.getClip().duration); }
+  if (u.mixer) u.mixer.update(dt);
+  if (t < T3) {
+    /* HIS FACE, AND NOTHING ELSE IN THE FRAME. The head is where the aim
+     * goes — his own head bone, so it moves with the clip — and you are
+     * lifted off your feet toward it. */
+    const hb = u.bones && u.bones.head;
+    if (hb) hb.getWorldPosition(_catV); else _catV.set(p.x, p.y + 1.6, p.z);
+    const k = Math.min(1, t / T1);
+    const want = _grabV.copy(_catV);
+    const dx = want.x - _grabHome.x, dz = want.z - _grabHome.z, L = Math.hypot(dx, dz) || 1;
+    camera.position.set(_grabHome.x + dx / L * Math.min(L - 0.75, 0.55) * k, _grabHome.y + 0.42 * k, _grabHome.z + dz / L * Math.min(L - 0.75, 0.55) * k);
+    lookEuler.y = Math.atan2(-(want.x - camera.position.x), -(want.z - camera.position.z));
+    lookEuler.x = Math.atan2(want.y - camera.position.y, Math.max(0.4, Math.hypot(want.x - camera.position.x, want.z - camera.position.z)));
+    lookEuler.z = 0;
+    camera.quaternion.setFromEuler(lookEuler);
+    // the shake while he has you, worst while he screams
+    if (t > T1 && t < T2) addTrauma(dt * 2.6);
+    if (t > T1 && !u.catGrabDmg) { u.catGrabDmg = true; damagePlayer(1); }
+  } else {
+    /* AND HE PUTS YOU DOWN. You land on your feet where you started, your
+     * knees take it, and he is already backing off — the beat after is
+     * yours, which is the whole point of a blow that does not kill. */
+    camera.position.copy(_grabHome);
+    camBaseY = _grabHome.y; vy = 0; onGround = true;
+    landDip = Math.max(landDip, 0.30); addTrauma(0.8);
+    sfxSlam(0.4);
+    catGrabT = -1; u.catGrabDmg = false;
+    u.cur = null;                       // and the fight picks its own clip again from scratch
+    u.st.cool = Math.max(u.st.cool, 0.9);
+    const C = u.cat || (u.cat = {});
+    C.mode = 'chase'; C.blooded = true; C.bloodAt = performance.now();
+    catGrabU = null;
+  }
+}
+/* ---- THE BONES YOU KICK THROUGH. His noise model has been in the game
+ * since the day he went in — a sprint carries 24 m, a walk 11, a crouch 5 —
+ * and nothing ever told the player so. The floor of a catacomb is bones,
+ * and running through a pile of them is a sound the whole place hears: it
+ * is the one thing down here that makes where you walk a decision. */
+const CAT_LITTER = [];
+let catLitterT = 0;
+function catLitterCheck(dt, sp) {
+  if (!inCat || !catSpots.eatRaw.length) return;
+  catLitterT -= dt;
+  if (catLitterT > 0 || sp < 1.6) return;
+  const p = camera.position;
+  for (const r of catSpots.eatRaw) {
+    const wx = CAT_X + r.x, wz = CAT_Z + r.z;
+    if (Math.abs(p.x - wx) > 2.2 || Math.abs(p.z - wz) > 2.2) continue;
+    if (Math.abs((camBaseY - playerEye()) - (CAT_Y + r.y)) > 1.6) continue;
+    catLitterT = 0.55;
+    sfxBoneClatter(sp);
+    catNoiseAt(p.x, p.z, sp > 4.4 ? 26 : 16);
+    catDust(p.x, camBaseY - playerEye() + 0.25, p.z, 5, 0.5);
+    return;
+  }
+}
+function sfxBoneClatter(sp) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut(), g0 = 0.5 + Math.min(0.5, sp / 12);
+  /* Bone on stone is a DRY knock with no body under it and a scatter of
+   * smaller ones after — the opposite of everything else in this room,
+   * which is why it carries. */
+  for (let i = 0; i < 5 + ((Math.random() * 4) | 0); i++) {
+    const at = t + (i === 0 ? 0 : 0.02 + Math.random() * 0.26);
+    const n = noiseBurst(0.045, (x) => Math.pow(1 - x, 5));
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 3.2;
+    bp.frequency.value = 900 + Math.random() * 2200;
+    const g = ctx.createGain(); g.gain.value = g0 * (i === 0 ? 0.55 : 0.10 + Math.random() * 0.2);
+    n.connect(bp).connect(g).connect(out); n.start(at); n.stop(at + 0.05);
+  }
 }
 /* THE CLAWS ON THE STONE. A step in here is not a footfall: a short rasp of
  * a claw drawn over flagstone, sweeping down through a band, a click at the
@@ -35764,6 +36074,21 @@ function authorCrawlerRest(u, m, into) {
     [3.10, { chest: { right: 0.33 }, waist: { right: 0.18 }, neck: { right: -0.60 }, head: { right: -0.34, up: 0.10 }, armR: { right: 0.35 }, foreR: { right: -0.25 }, jaw: { right: -0.25 }, hipY: -0.18 }],
     [4.10, { chest: { right: 0.31 }, waist: { right: 0.16 }, neck: { right: -0.56 }, head: { right: -0.30, up: -0.08 }, armR: { right: 0.35 }, foreR: { right: -0.25 }, jaw: { right: 0.05 }, hipY: -0.16 }],
     [5.00, { chest: { right: 0.30 }, waist: { right: 0.16 }, neck: { right: -0.55 }, head: { right: -0.30 }, armR: { right: 0.35 }, foreR: { right: -0.25 }, jaw: { right: -0.10 }, hipY: -0.16 }]]), true);
+  /* THE GRAB. Up off the hands with both arms thrown forward and CLOSED —
+   * that is the seize — then the whole trunk driven at you with the jaws
+   * wide and shaking twice, which is the scream, and then he opens his
+   * hands and throws you down. It is authored on the STAND, because a
+   * thing that takes you off your feet is standing on its own. */
+  B('grab', 2.3, [
+    ...KS([
+      [0.10, { armR: { right: -1.10, fwd: -0.55 }, armL: { right: -1.10, fwd: 0.55 }, foreR: { right: -0.55 }, foreL: { right: -0.55 }, chest: { right: -0.10 }, jaw: { right: 0.30 } }],
+      [0.30, { armR: { right: -1.45, fwd: -0.20 }, armL: { right: -1.45, fwd: 0.20 }, foreR: { right: -0.30 }, foreL: { right: -0.30 }, chest: { right: -0.22 }, neck: { right: -0.20 }, head: { right: -0.25 }, jaw: { right: 0.55 }, hipY: 0.06 }],
+      [0.62, { armR: { right: -1.50, fwd: -0.15 }, armL: { right: -1.50, fwd: 0.15 }, foreR: { right: -0.25 }, foreL: { right: -0.25 }, chest: { right: -0.30 }, neck: { right: -0.30 }, head: { right: -0.40 }, jaw: { right: 0.70 }, hipY: 0.08 }],
+      [0.86, { armR: { right: -1.44, fwd: -0.18 }, armL: { right: -1.44, fwd: 0.18 }, chest: { right: -0.16 }, neck: { right: -0.14 }, head: { right: -0.16, up: 0.14 }, jaw: { right: 0.30 }, hipY: 0.05 }],
+      [1.10, { armR: { right: -1.52, fwd: -0.12 }, armL: { right: -1.52, fwd: 0.12 }, chest: { right: -0.34 }, neck: { right: -0.34 }, head: { right: -0.46, up: -0.12 }, jaw: { right: 0.72 }, hipY: 0.09 }],
+      [1.40, { armR: { right: -1.44, fwd: -0.18 }, armL: { right: -1.44, fwd: 0.18 }, chest: { right: -0.18 }, neck: { right: -0.16 }, head: { right: -0.18, up: 0.10 }, jaw: { right: 0.34 }, hipY: 0.05 }],
+      [1.70, { armR: { right: -1.90, fwd: -0.70 }, armL: { right: -1.90, fwd: 0.70 }, foreR: { right: 0.25 }, foreL: { right: 0.25 }, chest: { right: 0.30 }, waist: { right: 0.15 }, head: { right: 0.20 }, jaw: { right: 0.10 }, hipY: -0.12 }]]),   // and he opens his hands
+    [0, {}], [2.30, {}]].sort((a, b) => a[0] - b[0]), false);
   B('search', 4.4, K([
     [0, { jaw: { right: 0.15 } }],
     [0.60, { head: { up: -0.70, right: -0.10 }, neck: { up: -0.30 }, chest: { up: -0.22 }, jaw: { right: 0.25 }, hipY: 0.02 }],
@@ -35843,9 +36168,10 @@ MUT_KINDS.crawler = {
    * at yours and on all fours his back is at your waist. Everything
    * measured in metres round him grew with it — the body, the blade's
    * sphere, the reaches, the stops. */
+  undying: true,   // he goes down and gets back up: a catacomb with a corpse in it is a catacomb you have finished
   h: 3.10, hp: 80, dmg: 1, hitR: 2.0, body: 1.4,   // HARD TO KILL, the owner's word: eighty points, and a guard   // the blade's sphere has to reach a face 1.7 m ahead of the origin; the push keeps you off his back
   speedK: 1.30, windK: 1.00, reachK: 1.00, aggr: 3.4, press: 0.92,   // 6.0 m/s at the charge against your 5.7 sprint: he catches you, and he no longer outruns his own clamp
-  still: ['eat', 'sit', 'standIdle', 'search', 'peek'],   // the behaviours are authored on their own stances and take no posture lift
+  still: ['eat', 'sit', 'standIdle', 'search', 'peek', 'grab'],   // the behaviours are authored on their own stances and take no posture lift
   /* AND YOU SEE HIS FACE. On all fours the crawl's head looks at the sand a
    * stride ahead, and every blow is built on that frame, so in a fight the
    * owner was looking at the top of a skull. `face.up` is a constant lift
@@ -40080,7 +40406,7 @@ window.__bw = {
     if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
     oceanUniforms.uTime.value += dt;
     update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
-    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateTavernCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt);
+    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateTavernCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateCatGrab(rawDt);
     updateLightPool();
   },
   /* The lamp pool, for a still: a frozen loop never points the twelve at
@@ -40134,7 +40460,9 @@ window.__bw = {
   get wongUnit() { return wongUnit; }, get drunkUnit() { return drunkUnit; }, get orcUnit() { return orcUnit; },
   crawlerUnit, CRAWL_X, CRAWL_Z, crawlerProvoke, startCaveIn, placeInCatacombs, placeOutsideCatDoor, startCatExit, catRoute, catSees, catNodeAt, CAT_X, CAT_Y, CAT_Z, CAT_SITE, CAT_LAND, CAT_DOOR, CAVE_Z,
   catState: () => ({ inCat, caveBusy, catBusy, catReady, catBuilt, walk: !!catWalk, nodes: catG ? catG.nodes.length : -1, lights: catLights.length, built: catWalk && catWalk.built, eat: catSpots.eat.length, mind: crawlerUnit && crawlerUnit.cat ? { ...crawlerUnit.cat, next: undefined, target: undefined } : null, awake: crawlerUnit && crawlerUnit.st.awake, noStand: crawlerUnit && crawlerUnit.noStand, noise: catNoise }),
-  catNoiseAt, catPeekSpot, playerSeesHunter, catStand, catEat: () => catSpots.eat.map((k) => [catG.nodes[k].x - CAT_X, catG.nodes[k].f - CAT_Y, catG.nodes[k].z - CAT_Z].map((v) => +v.toFixed(1))), catWoke: () => crawlerUnit && crawlerUnit.catWoke,
+  catNoiseAt, catPeekSpot, playerSeesHunter, catStand, catCanGrab, startCatGrab, catPutDown, catDust, catSmooth, catLitterCheck,
+  get catGrabT() { return catGrabT; },
+  catEat: () => catSpots.eat.map((k) => [catG.nodes[k].x - CAT_X, catG.nodes[k].f - CAT_Y, catG.nodes[k].z - CAT_Z].map((v) => +v.toFixed(1))), catWoke: () => crawlerUnit && crawlerUnit.catWoke,
   get catG() { return catG; }, catRandomNode,
   tavScene, tavProvoke, buildTavCast, get tavMug() { return tavMug; },
   tavState: () => ({ inTavern, ready: tavReady, built: tavBuilt, walk: !!tavWalk, cells: tavCells ? tavCells.size : 0, busy: tavBusy, t: +tavT.toFixed(2),

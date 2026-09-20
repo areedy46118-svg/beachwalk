@@ -11381,3 +11381,71 @@ The fight is 30 swings and 39 damage a minute at 2.5 m, against the Dealer's
 mends to 40 and comes back. And the dev-mode trap caught a whole round of
 measurement again: **`devMode` turns a creature's swinging off outright**, so
 a fight sampled with it on reads zero swings and a creature standing still.
+
+**AND THEN HE GOT A HOME, A GRAB, AND NO DEATH.** Seven things on the
+owner's list, and the useful ones are the three that change what the
+encounter IS rather than how it looks.
+
+- **DEV MODE SURVIVES A RELOAD THE GAME ITSELF ASKED FOR.** "No deaths, no
+  cutscenes" is what you are testing WITH, and every death and every
+  restart-from-checkpoint reloads the page — so it came back off and the
+  takes you had just skipped played again. It rides in `sessionStorage`,
+  written by `reloadInto` and consumed at boot, which a new tab does not
+  have: a game still always starts as a game. And the cave-in is a take, so
+  in dev mode it does not play one — it still puts you in the room.
+  Measured: `caveBusy` never goes true and you are in the catacombs.
+- **HE DOES NOT DIE, HE GOES DOWN.** A catacomb with a corpse in it is a
+  catacomb you have finished, and the whole of the fear down there is that
+  it is his and you are in it. `kind.undying` intercepts `killMutant`: the
+  blow still lands, still throws him, still reads as a kill — and he lies
+  where he fell with the death clip held on its last frame for forty to
+  sixty seconds, then the same clip runs BACKWARDS, which is a body rocking
+  back onto its hands, and he is up with two thirds of his health and a
+  roar. Measured: down 43 s, up at 53 of 80, straight into a stalk.
+- **AND HE TAKES YOU IF YOU ARE NOT LOOKING.** `catCanGrab` wants him inside
+  2.9 m, on your storey, and your eyes off him for a second and a half
+  (`catSeenAt`, stamped six times a second the same way his own sight is) —
+  and then it is not a swing, it is a TAKE: up off your feet with his face
+  in yours, screaming, a point gone, and thrown back down on the spot you
+  were standing. It costs your footing and the thing you were about to do
+  and it leaves you playing, which is worth more than a death screen. It
+  runs on the wall clock beside the cave-in and the door, the camera is
+  turned and never moved, and `catGrabT >= 0` is in `frozen()`.
+- **AND A TAKE SETS THE POSE; IT DOES NOT ASK FOR IT.** `mutPlay` crossfades,
+  which is right for a fight and wrong for a scripted beat: measured
+  mid-grab, the grab clip sat at weight 0 with the crawl still at 1 and what
+  played was the crawl. Setting the weight explicitly was not enough either
+  — BOTH then read 1, because an action the mixer has already bound goes on
+  contributing until something zeroes it. Every other action is stopped,
+  zeroed AND disabled. (`stopAllAction` is the one thing that must not be
+  used here: it restores every bound property, which is the bind pose — the
+  severed limb's own bug.) And the take OWNS him: the fight's own `mutAnim`
+  was picking a gait over the top of it.
+- **HE MOVES LIKE HE KNOWS THE PLACE, WHICH IS A STRING-PULL.** A route over
+  a grid is a staircase of little turns — cell, cell, cell — and what that
+  reads as is a thing feeling its way along a wall. `catSmooth` drops any
+  waypoint whose neighbours can see each other (`catLineOpen`: the drawn
+  faces at his hip and his shoulder, the floor under every stride, and the
+  headroom), so what is left is the long runs a thing that lives here would
+  take and the turns are only where the walls actually turn. Measured: legs
+  went from 0.6 m to 3.0–4.3, a 74 m route from about 120 waypoints to 26.
+- **AND HE STALKS A GREAT DEAL MORE.** He goes to a corner from eight metres
+  out rather than eleven; a stalk is THREE corners, each nearer than the
+  last, rather than a clock; a peek is held five to eleven seconds; losing
+  you in a fight sends him back to watching half the time rather than always
+  searching; and `blooded` — which is what makes him charge instead of peek
+  — lapses after forty seconds, so the second half of a long visit is not
+  all fighting.
+- **AND THE BONES ARE THE THING THAT TELLS YOU ABOUT NOISE.** His hearing has
+  been in the game since he went in — a sprint carries 24 m, a walk 11, a
+  crouch 5 — and nothing ever told the player so. The floor of a catacomb is
+  bones: run through a pile of them (the piles the game already finds by
+  bucketing the skull mesh's own vertices) and it is a dry clatter with no
+  body under it, a puff of dust, and a noise that carries twenty-six metres.
+  It is the one thing down there that makes where you walk a decision.
+- **AND SOMETHING IN THE AIR.** Two `Points` batches and one draw each: motes
+  that are POSITIONS rather than particles — a slow wander round a fixed
+  offset from wherever you are standing, so the air is always full and
+  nothing is ever born or dies — and dust, a pool that recycles, thrown
+  where something happened: his feet on the stone within sixteen metres, a
+  pile of bones kicked through.
