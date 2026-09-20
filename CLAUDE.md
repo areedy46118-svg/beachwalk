@@ -11449,3 +11449,50 @@ encounter IS rather than how it looks.
   nothing is ever born or dies — and dust, a pool that recycles, thrown
   where something happened: his feet on the stone within sixteen metres, a
   pile of bones kicked through.
+
+**"I NEVER SAW HIM THE PAST 2 TIMES I PLAYED" WAS THREE THINGS, AND THE
+FIRST IS THE OLDEST MISTAKE IN THIS FILE.** The owner walked the catacombs
+twice and the thing that lives in them never once crossed his path. Measured
+with the player standing still in the door room for three minutes: he came
+within **1.5 m** and never saw them, and never counted as being in that room
+at all. Both readings are the same fact — **a distance with the y left out is
+not a distance.** Two rooms stack at the same (x, z) all over this place and
+he was ten metres BELOW, which his own senses already refuse (`catSees` will
+not see through a storey). His convergence targets are drawn from nodes on
+YOUR OWN FLOOR now (within 1.8 m of your feet), and the prowl mostly is too.
+
+- **AND A BEAM OF LIGHT IS NOT A WALL.** "Let me run up to the door, I got
+  stuck here": the door's decorative light shaft is a `PlaneGeometry` hung
+  3.3 m out from the leaf, and `buildKeepWalls` reads every drawn face — so
+  the walk stopped the player exactly one body radius in front of a sheet of
+  light. It, the glow and the hit proxy carry `bwGhost` (drawn, never walked
+  into), which the tavern's tables already needed. Measured: a 3.56 m gap
+  became -0.03.
+- **AND A WALL IS SLID ALONG, NOT STOPPED AT** — the player's own rule and
+  the church's, which his own clamp never got. A frame whose movement crossed
+  drawn stone was reverted WHOLE, and a revert is standing still; with a
+  route nothing above ever asks to redraw, that is a creature parked for
+  good. Traced with the player in one room: **seventy-five seconds held at
+  25.9 m with a live eight-waypoint path in his hands and the revert firing
+  on half the frames.** Whichever ONE AXIS of the step is clear is kept.
+- **AND A STALK THAT IS NOT GETTING ANYWHERE IS NOT A STALK.** Net progress
+  over five seconds; under a metre of it drops the route and asks for another
+  corner, and three goes is all he gets before he simply comes. The backstop
+  that ended a stalk was 95 s, which is a minute and a half of a boss
+  standing still — 45.
+
+Measured after, real time, player standing at the landing and the creature
+parked 44.6 m away on another storey: he closes to **5.2 m and charges at
+48 s**, against never. And the room the way out is in is one of his — the
+nodes within twelve metres of the door, found off the door rather than typed,
+and he goes there about a quarter of the times he picks an errand.
+
+Three measurement traps paid for on the way. **Dev mode turns a creature's
+swinging off outright**, so a creature standing at its ring doing nothing is
+what dev mode looks like and not a bug (`atk: -1`, `cool: 0`, the idle
+playing). **A page that has not been reloaded is the old module** — the door
+spots read zero for a whole round because the graph in the tab had been built
+before the code that fills them existed. And `u.path` on this follower is
+**LOCAL x/z with a world f**, against `u.pathO`; printing a waypoint against
+the room's origin subtracts it twice and every distance comes out in the
+thousands.

@@ -27209,8 +27209,17 @@ function mutClampX(u, p, dt) {
      * movement is tested as a segment at his hip and his shoulder, and a
      * frame that crossed a face is reverted to where it began. */
     const pv = u.catPrev;
-    if (pv && (keepHitsWall(pv.x, pv.z, p.x, p.z, p.y + 0.9, CAT_SITE) || keepHitsWall(pv.x, pv.z, p.x, p.z, p.y + 1.5, CAT_SITE))) {
-      p.x = pv.x; p.z = pv.z; u.catBlocked = (u.catBlocked || 0) + 1;
+    /* AND A WALL IS SLID ALONG, NOT STOPPED AT — the player's own rule, and
+     * the church's. Reverting the whole frame is standing still, and
+     * standing still against a route he will not redraw is the thing that
+     * parked him: measured with the player in one room, he held one spot
+     * 25.9 m away for seventy-five seconds with a live path in his hands
+     * and the revert firing on half the frames. Whichever ONE AXIS of the
+     * frame's movement is clear is kept. */
+    if (pv && catCrossed(pv.x, pv.z, p.x, p.z, p.y)) {
+      if (!catCrossed(pv.x, pv.z, p.x, pv.z, p.y)) p.z = pv.z;
+      else if (!catCrossed(pv.x, pv.z, pv.x, p.z, p.y)) p.x = pv.x;
+      else { p.x = pv.x; p.z = pv.z; u.catBlocked = (u.catBlocked || 0) + 1; }
     }
     const r = 0.35;   // the corridors are 1.3 m wide now, so a body may be asked to stand off the stone
     const wx = p.x, wz = p.z, feet = p.y;
@@ -30609,6 +30618,10 @@ function ucSteer(u, dt, dist) {
   }
 }
 const _ufD = new THREE.Vector3();
+// did a step cross drawn stone at his hip or his shoulder?
+function catCrossed(ax, az, bx, bz, y) {
+  return keepHitsWall(ax, az, bx, bz, y + 0.9, CAT_SITE) || keepHitsWall(ax, az, bx, bz, y + 1.5, CAT_SITE);
+}
 function ucFollowPath(u, dt) {
   const P = u.path;
   if (!P) return 0;
@@ -34505,21 +34518,28 @@ function loadCatacombs() {
     catGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.95, fog: false }));
     catGlow.position.set(CAT_DOOR.x - 0.25, CAT_DOOR.f + 1.55 * CAT_SCALE, CAT_DOOR.z);
     catGlow.scale.set(0.9 * CAT_SCALE, 0.9 * CAT_SCALE, 1);
-    catGlow.raycast = () => {};
+    catGlow.raycast = () => {}; catGlow.userData.bwGhost = true;
     catWorld.add(catGlow);
     const shaft = new THREE.Mesh(new THREE.PlaneGeometry(0.6 * CAT_SCALE, 3.2 * CAT_SCALE), new THREE.MeshBasicMaterial({ color: 0x9fb8ff, transparent: true, opacity: 0.09, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
     shaft.position.set(CAT_DOOR.x - 1.5 * CAT_SCALE, CAT_DOOR.f + 1.1 * CAT_SCALE, CAT_DOOR.z);
     shaft.rotation.z = -0.55; shaft.rotation.y = Math.PI / 2;
     shaft.raycast = () => {};
+    /* AND A BEAM OF LIGHT IS NOT A WALL. `buildKeepWalls` walks every mesh
+     * in the room's group and this one is a PLANE standing across the floor
+     * three and a third metres in front of the door — so the walk stopped
+     * you exactly a body's width short of it and you could read the prompt
+     * and never reach it. That is the owner's "I got stuck here", and the
+     * same is true of the door's own hit proxy and its glow. `bwGhost` is
+     * the flag: drawn, and never walked into. */
+    shaft.userData.bwGhost = true;
     catWorld.add(shaft);
     // the door: an invisible slab across it that the crosshair can find
     const proxy = new THREE.Mesh(new THREE.BoxGeometry(0.3, 2.4 * CAT_SCALE, 1.3 * CAT_SCALE), new THREE.MeshBasicMaterial({ visible: false }));
-    proxy.name = 'hitProxy'; proxy.visible = false;
+    proxy.name = 'hitProxy'; proxy.visible = false; proxy.userData.bwGhost = true;
     proxy.position.set(CAT_DOOR.x - 0.1, CAT_DOOR.f + 1.2 * CAT_SCALE, CAT_DOOR.z);
     catWorld.add(proxy);
     addInteractable(proxy, 'Open the door', 'default', { far: 4.6, mid: true, onActivate: () => startCatExit(), when: () => inCat && !catBusy && !caveBusy });
-    buildCatAir();
-    catReady = true;
+      catReady = true;
   }, undefined, () => {});
 }
 /* BUILT AT THE CUT, BEHIND THE BLACK — the keep's arrangement. */
@@ -34566,72 +34586,10 @@ function warmCatacombs() {
     warmStep('catacombs', () => warmView([catWorld], ...v));
 }
 
-/* ---- SOMETHING IN THE AIR. Two batches and nothing else: motes that
- * drift in the dark round you for ever, and DUST, which is thrown where
- * something happened — his feet on a stair, a pile of bones kicked
- * through, the moment he comes down on you. The motes follow the camera,
- * because a catacomb has the same air in every room and a batch that
- * covers all of it would be a hundred thousand points; the dust is a pool
- * that recycles. Both are `Points`, unlit, fogged, and cost one draw each. */
-const CAT_MOTES = 220, CAT_DUST = 140;
-let catMotes = null, catMoteP = null, catDustPts = null, catDustP = null, catDustN = 0;
-const catDustLive = [];
-function buildCatAir() {
-  if (catMotes) return;
-  const g = new THREE.BufferGeometry();
-  catMoteP = new Float32Array(CAT_MOTES * 3);
-  const seed = new Float32Array(CAT_MOTES);
-  for (let i = 0; i < CAT_MOTES; i++) seed[i] = Math.random() * 100;
-  g.setAttribute('position', new THREE.BufferAttribute(catMoteP, 3));
-  catMotes = new THREE.Points(g, new THREE.PointsMaterial({ color: 0x9aa6b8, size: 0.035, sizeAttenuation: true, transparent: true, opacity: 0.30, depthWrite: false, blending: THREE.AdditiveBlending, fog: true }));
-  catMotes.frustumCulled = false; catMotes.raycast = () => {};
-  catMotes.userData.seed = seed;
-  catWorld.add(catMotes);
-  const dg = new THREE.BufferGeometry();
-  catDustP = new Float32Array(CAT_DUST * 3);
-  for (let i = 0; i < CAT_DUST; i++) catDustP[i * 3 + 1] = -9999;
-  dg.setAttribute('position', new THREE.BufferAttribute(catDustP, 3));
-  catDustPts = new THREE.Points(dg, new THREE.PointsMaterial({ color: 0x8c8578, size: 0.075, sizeAttenuation: true, transparent: true, opacity: 0.34, depthWrite: false, fog: true }));
-  catDustPts.frustumCulled = false; catDustPts.raycast = () => {};
-  catWorld.add(catDustPts);
-}
-function catDust(x, y, z, n = 6, spread = 0.5) {
-  if (!catDustPts || !inCat) return;
-  for (let k = 0; k < n; k++) {
-    const i = catDustN++ % CAT_DUST;
-    catDustLive[i] = { x: x - CAT_X + (Math.random() - 0.5) * spread, y: y - CAT_Y + Math.random() * spread * 0.6, z: z - CAT_Z + (Math.random() - 0.5) * spread,
-                       vx: (Math.random() - 0.5) * 0.35, vy: 0.10 + Math.random() * 0.30, vz: (Math.random() - 0.5) * 0.35, t: 1.4 + Math.random() * 1.6 };
-  }
-}
-function updateCatAir(dt) {
-  if (!catMotes) return;
-  const t = performance.now() * 0.001;
-  const cx = camera.position.x - CAT_X, cy = camera.position.y - CAT_Y, cz = camera.position.z - CAT_Z;
-  const S = catMotes.userData.seed;
-  for (let i = 0; i < CAT_MOTES; i++) {
-    const sd = S[i];
-    /* A MOTE IS A POSITION, NOT A PARTICLE. Each one is a slow wander round
-     * a fixed offset from wherever you are standing — so the air is always
-     * full and nothing ever has to be born or die. */
-    const a = sd * 6.283, r = 1.2 + (sd % 1) * 7.0;
-    catMoteP[i * 3] = cx + Math.sin(a + t * 0.07 * (0.4 + (sd % 0.7))) * r + Math.sin(t * 0.31 + sd) * 0.22;
-    catMoteP[i * 3 + 1] = cy - 1.2 + ((sd * 3.7) % 2.6) + Math.sin(t * 0.23 + sd * 2.1) * 0.30;
-    catMoteP[i * 3 + 2] = cz + Math.cos(a + t * 0.07 * (0.4 + (sd % 0.7))) * r + Math.cos(t * 0.27 + sd) * 0.22;
-  }
-  catMotes.geometry.attributes.position.needsUpdate = true;
-  let any = false;
-  for (let i = 0; i < CAT_DUST; i++) {
-    const d = catDustLive[i];
-    if (!d || d.t <= 0) { catDustP[i * 3 + 1] = -9999; continue; }
-    any = true;
-    d.t -= dt;
-    d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
-    d.vy -= 0.22 * dt; d.vx *= 0.97; d.vz *= 0.97;
-    catDustP[i * 3] = d.x; catDustP[i * 3 + 1] = d.y; catDustP[i * 3 + 2] = d.z;
-  }
-  catDustPts.visible = any;
-  catDustPts.geometry.attributes.position.needsUpdate = true;
-}
+/* THE AIR IS EMPTY, by the owner's word. Motes and dust were built here and
+ * taken out again: at the retro scale a drifting speck is a hard little
+ * square that reads as an artefact on the lens rather than as dust, and in
+ * a room this dark that is the only thing in the frame that moves. */
 // ---------------------------------------------------------------- the walk
 function updateCatacombs(dt) {
   if (!inCat) {
@@ -34644,7 +34602,6 @@ function updateCatacombs(dt) {
     return;
   }
   if (!catWalk) return;
-  updateCatAir(dt);
   // the torches gutter, each on its own count, and the door's light breathes
   const tt = performance.now() * 0.001;
   for (const l of catLights) l.intensity = l.userData.base * (0.72 + 0.28 * Math.sin(tt * 7.3 + l.userData.seed) * Math.sin(tt * 2.9 + l.userData.seed * 1.7) + 0.10 * Math.sin(tt * 13.1 + l.userData.seed));
@@ -34914,6 +34871,13 @@ function catBuildGraph() {
   }
   catG = { nodes, byCell, gw: w.gw, prev: new Int32Array(nodes.length), q: [],
            stamp: new Int32Array(nodes.length), closed: new Int32Array(nodes.length), g: new Float32Array(nodes.length), gen: 0, heap: [], heapF: [] };
+  // the room the way out is in: everything within twelve metres of the door
+  catSpots.door = [];
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    if (Math.abs(n.f - (CAT_Y + CAT_DOOR.f)) > 1.6) continue;
+    if (Math.hypot(n.x - (CAT_X + CAT_DOOR.x), n.z - (CAT_Z + CAT_DOOR.z)) < 12) catSpots.door.push(i);
+  }
   // and the bone piles become nodes: where he goes to eat
   catSpots.eat = [];
   for (const r of catSpots.eatRaw) {
@@ -35153,15 +35117,20 @@ function catHunterReset() {
  *   CHASE       the fight AI, from the moment he SEES you (`catSees`): the
  *               roar, and then he comes at you as fast as he goes.
  * Nothing here moves him faster than a prowl until he has a reason. */
-const CAT_ROAM_CRAWL = 1.35, CAT_ROAM_WALK = 2.0, CAT_HUNT_SPEED = 3.3;   // metres a second
+const CAT_ROAM_CRAWL = 1.9, CAT_ROAM_WALK = 2.7, CAT_HUNT_SPEED = 3.3;   // metres a second
 const CAT_ACTS = {
-  eat:   { clip: 'eat',       dur: [8, 15], w: 0.34, spot: 'eat' },
-  sit:   { clip: 'sit',       dur: [6, 12], w: 0.20 },
-  stand: { clip: 'standIdle', dur: [5, 10], w: 0.22, tall: 4.3 },
-  look:  { clip: 'idle',      dur: [3, 6],  w: 0.24 },
+  eat:   { clip: 'eat',       dur: [5, 9],  w: 0.34, spot: 'eat' },
+  sit:   { clip: 'sit',       dur: [4, 7],  w: 0.20 },
+  stand: { clip: 'standIdle', dur: [3, 6],  w: 0.22, tall: 4.3 },
+  look:  { clip: 'idle',      dur: [2, 4],  w: 0.24 },
+  /* AND WHEN HE STOPS NEAR YOU HE LOOKS AT YOU. An errand that ends with
+   * him facing a random way is an errand that never turns into anything:
+   * this one turns him toward where he thinks you are and crouches there
+   * listening, which is the beat before he sees you. */
+  watch: { clip: 'search',    dur: [3, 6],  w: 0.0, face: true },
 };
 let catNoise = null;                       // the last thing worth hearing: where, how far it carried, when
-const catSpots = { eatRaw: [], eat: [] };  // the bone piles, as buckets of the skull mesh's own vertices, then as nodes
+const catSpots = { eatRaw: [], eat: [], door: [] };  // the bone piles, and the room the way out is in
 function catNoiseAt(x, z, r) {
   if (!inCat) return;
   const now = performance.now();
@@ -35254,6 +35223,50 @@ function catPickTarget(u, C) {
   const pool = R && R.ids.length > 8 ? R.ids : null;
   const N = catG.nodes, r = Math.random();
   C.act = null;
+  /* AND HE FINDS YOU. "I never saw him the past two times I played" is the
+   * only report that matters about a creature like this: he was picking
+   * somewhere to be, taking ten to fifteen seconds to do something there,
+   * and crawling at one and a third metres a second across a place a
+   * hundred metres across, while you walked the one line from the landing
+   * to the door and out. So he CONVERGES: the longer he has gone without
+   * laying eyes on you, the more surely his next errand is somewhere near
+   * you — and past three quarters of a minute it always is. Nothing about
+   * it is a cheat, because he still has to get there and you can still hear
+   * him coming the whole way. */
+  const unseen = (performance.now() - (u.catSeenAt || 0)) / 1000;
+  const wantYou = unseen > 45 ? 1 : 0.34 + Math.min(0.40, unseen / 90);
+  if (pool && Math.random() < wantYou) {
+    const c = camera.position, feet = c.y - playerEye();
+    let best = -1, bd = 1e9;
+    for (let k = 0; k < 120; k++) {
+      const id = pool[(Math.random() * pool.length) | 0], n = N[id];
+      const d = Math.hypot(n.x - c.x, n.z - c.z);
+      /* AND ON YOUR OWN FLOOR. Measured over three minutes with the player
+       * standing in the door room: he came within 1.5 m in PLAN and never
+       * once saw them, because he was ten metres below — two rooms stack at
+       * the same (x, z) all over this place, and a distance that leaves the
+       * y out of it is not a distance. His senses agree: `catSees` refuses
+       * anything more than a body's height above or below him. */
+      if (Math.abs(n.f - feet) > 1.8) continue;
+      /* AND HE COMES CLOSE. At five to twenty-two metres he orbited: three
+       * minutes with the player standing still in one room and the nearest
+       * he ever came was 8.1 m, with a pier between them the whole time, so
+       * the sight cone never had a clear line and the owner never saw him.
+       * Four to fourteen is inside the range at which he hears you anyway. */
+      if (d < 4 || d > 14) continue;
+      if (Math.hypot(n.x - p.x, n.z - p.z) < 4) continue;
+      if (d < bd) { bd = d; best = id; }
+    }
+    if (best >= 0) { C.act = 'watch'; return best; }
+  }
+  /* AND THE ROOM WITH THE DOOR IN IT IS ONE OF HIS. The owner's word: he
+   * should be there often and everywhere else as well. It is the one room
+   * in the place you HAVE to come back to, which is what makes it worth
+   * his while — and it is found off the door, not typed. */
+  if (r < 0.26 && pool && catSpots.door.length) {
+    const id = catSpots.door[(Math.random() * catSpots.door.length) | 0];
+    if (R.mask[id] && Math.hypot(N[id].x - p.x, N[id].z - p.z) > 4) { C.act = Math.random() < 0.5 ? 'look' : null; return id; }
+  }
   if (r < 0.30 && catSpots.eat.length) {
     const eats = catSpots.eat.filter((id) => !R || R.mask[id]);
     const far = eats.filter((id) => Math.hypot(N[id].x - p.x, N[id].z - p.z) > 6);
@@ -35266,6 +35279,7 @@ function catPickTarget(u, C) {
     const c = camera.position;
     for (let k = 0; k < 30; k++) {
       const id = pool[(Math.random() * pool.length) | 0], n = N[id], d = Math.hypot(n.x - c.x, n.z - c.z);
+      if (k < 20 && Math.abs(n.f - (c.y - playerEye())) > 2.4) continue;   // mostly your own level
       if (d > 8 && d < 20 && Math.hypot(n.x - p.x, n.z - p.z) > 6) { C.act = Math.random() < 0.5 ? 'look' : null; return id; }
     }
   }
@@ -35282,7 +35296,7 @@ function catBeginAct(u, C, name) {
   const h = n >= 0 ? catG.nodes[n].h : 0;
   if (A.tall && h < A.tall) return catBeginAct(u, C, 'look');   // no roof to stand under: he crouches and listens instead
   C.mode = 'act'; C.clip = A.clip; C.t = A.dur[0] + Math.random() * (A.dur[1] - A.dur[0]); C.rate = 0.9 + Math.random() * 0.2;
-  C.actName = name;
+  C.actName = name; C.face = !!A.face;
 }
 /* SEEING YOU. A cone in front of him inside forty metres, no drawn wall
  * between his head and your eye at either height and not a floor apart —
@@ -35293,9 +35307,9 @@ function catSees(u) {
   if (d > 40 || !inCat) return false;
   const hy = p.y + 1.35, ey = c.y;
   if (Math.abs(hy - ey) > 1.6) return false;                           // a storey apart is a floor between you, whatever the plan says — and he does not hear through it either
-  if (d < 4.0) return true;
+  if (d < 6.0) return true;                                            // this close he hears you whatever he is facing
   const yaw = u.g.rotation.y, fx = Math.sin(yaw), fz = Math.cos(yaw);
-  if ((dx * fx + dz * fz) / d < 0.30 && d > 8) return false;          // ~72 degrees either side of his nose; inside eight metres he hears you
+  if ((dx * fx + dz * fz) / d < 0.20 && d > 10) return false;        // ~78 degrees either side of his nose; inside ten metres he hears you
   if (keepHitsWall(p.x, p.z, c.x, c.z, hy, CAT_SITE)) return false;
   if (keepHitsWall(p.x, p.z, c.x, c.z, ey, CAT_SITE)) return false;   // his eye and yours; a tomb between at chest height hides neither
   return true;
@@ -35364,7 +35378,7 @@ function catWander(u, dt) {
        * stood fourteen metres off for ten seconds doing nothing at all. */
       if (C.mode === 'stalk' || C.mode === 'flee') { C.target = { x: camera.position.x, z: camera.position.z, f: camBaseY - playerEye() }; }
       else if (dS > 8 && (!C.blooded || (performance.now() - (C.bloodAt || 0)) > 40000)) {
-        C.mode = 'stalk'; C.peek = null; C.peekHold = 0; C.seenT = 0; C.stalkT = 0; u.path = null;
+        C.mode = 'stalk'; C.peek = null; C.peekHold = 0; C.seenT = 0; C.stalkT = 0; C.tries = 0; C.mvT = 0; C.mvAt = null; u.path = null;
         C.target = { x: camera.position.x, z: camera.position.z, f: camBaseY - playerEye() };
       } else {
         u.st.sprint = 0; u.path = null; C.mode = 'chase'; C.blooded = true; C.bloodAt = performance.now(); C.peeks = 0;
@@ -35394,11 +35408,23 @@ function catWander(u, dt) {
     const shown = playerSeesHunter(u);
     C.seenT = shown ? (C.seenT || 0) + dt : 0;
     C.stalkT = (C.stalkT || 0) + dt;
+    /* AND A STALK THAT IS NOT GETTING ANYWHERE IS NOT A STALK. A route he
+     * cannot walk is worse than none, because nothing above it ever asks
+     * for another one: measured, seventy-five seconds parked at 25.9 m with
+     * a live path. Progress is NET, over five seconds, and three goes at
+     * getting anywhere is all he gives it before he simply comes. */
+    C.mvT = (C.mvT || 0) + dt;
+    if (!C.mvAt) C.mvAt = { x: p.x, z: p.z };
+    if (C.mvT > 5) {
+      const got = Math.hypot(p.x - C.mvAt.x, p.z - C.mvAt.z);
+      C.mvT = 0; C.mvAt.x = p.x; C.mvAt.z = p.z;
+      if (got < 1.0 && !(C.peekHold > 0)) { u.path = null; C.pause = 0; C.tries = (C.tries || 0) + 1; }
+    }
     /* AND A STALK IS A FEW CORNERS, NOT A CLOCK. He takes a spot, holds it,
      * and if you never look he takes a NEARER one — three of them, each
      * closer than the last — before he simply comes. What ends it early is
      * you looking at him, or letting him inside six metres. */
-    if (C.seenT > 0.18 || dP < 6.0 || (C.peeks || 0) >= 3 || C.stalkT > 95) {
+    if (C.seenT > 0.18 || dP < 6.0 || (C.peeks || 0) >= 3 || (C.tries || 0) > 3 || C.stalkT > 45) {
       u.st.sprint = 0; u.path = null; C.mode = 'chase'; C.blooded = true; C.bloodAt = performance.now(); C.peeks = 0;
       crawlerProvoke(u);
       mutAnim(u, dt, 0);
@@ -35488,13 +35514,18 @@ function catWander(u, dt) {
     } else { catPlay(u, 'search', true, 1.0, dt); }
     // and he mends a little while he is away: not to full, but enough to come back for
     u.st.hp = Math.min(u.kind.hp, u.st.hp + dt * 1.1);
-    if (C.t <= 0) { C.mode = 'stalk'; C.peek = null; C.peekHold = 0; C.seenT = 0; C.stalkT = 0; u.path = null; }
+    if (C.t <= 0) { C.mode = 'stalk'; C.peek = null; C.peekHold = 0; C.seenT = 0; C.stalkT = 0; C.tries = 0; C.mvT = 0; C.mvAt = null; u.path = null; }
     mutClampX(u, p, dt);
     catStand(u, dt);
     return;
   }
   if (C.mode === 'act') {
     C.t -= dt;
+    if (C.face) {
+      const want = Math.atan2(camera.position.x - p.x, camera.position.z - p.z);
+      let dd = want - u.g.rotation.y; while (dd > Math.PI) dd -= Math.PI * 2; while (dd < -Math.PI) dd += Math.PI * 2;
+      u.g.rotation.y += THREE.MathUtils.clamp(dd, -1.6 * dt, 1.6 * dt);
+    }
     catPlay(u, C.clip, true, C.rate, dt);
     if (C.t <= 0) { C.mode = 'roam'; C.pause = 0.4 + Math.random() * 0.8; C.act = null; }
   } else {
@@ -35543,7 +35574,7 @@ function catWander(u, dt) {
             C.next = id >= 0 ? { x: catG.nodes[id].x, z: catG.nodes[id].z, f: catG.nodes[id].f, mode: 'search' } : null;
           } else C.next = null;
         } else if (C.act) catBeginAct(u, C, C.act);
-        else C.pause = 1.0 + Math.random() * 2.0;
+        else C.pause = 0.5 + Math.random() * 1.0;
       }
       // the heading follows the direction he is actually walking, at a body's pace
       if (u.dir.lengthSq() > 1e-6) {
@@ -35565,7 +35596,6 @@ function catWander(u, dt) {
       u.st.step = (C.gait === 'walk' ? 0.62 : 0.55) / Math.max(0.5, speed / 2.4);
       const d = Math.hypot(camera.position.x - p.x, camera.position.z - p.z);
       sfxMutStep(d * 0.8, u.kind.voice);
-      if (d < 16) catDust(p.x, p.y + 0.08, p.z, 2, 0.45);    // his feet lift it, and you see it before you see him
     }
   }
   if (C.mode !== 'act') {
@@ -35611,7 +35641,7 @@ function catSteer(u, dt, dist, foe) {
     /* AND LOSING YOU IS A REASON TO WATCH, NOT ONLY TO SEARCH. Half the
      * time he goes back to a corner and waits for you to walk into him. */
     C.target = u.catLastSeen || { x: camera.position.x, z: camera.position.z, f: camBaseY - playerEye() };
-    if (Math.random() < 0.5) { C.mode = 'stalk'; C.peek = null; C.peekHold = 0; C.seenT = 0; C.stalkT = 0; C.peeks = 0; C.blooded = false; }
+    if (Math.random() < 0.5) { C.mode = 'stalk'; C.peek = null; C.peekHold = 0; C.seenT = 0; C.stalkT = 0; C.tries = 0; C.mvT = 0; C.mvAt = null; C.peeks = 0; C.blooded = false; }
     else { C.mode = 'search'; C.searchLeft = 2; }
     C.pause = 0.5; C.gait = 'crawl'; C.next = null; C.retarget = 0; u.catLost = 0;
     mutDrop(u);
@@ -35754,7 +35784,6 @@ function catLitterCheck(dt, sp) {
     catLitterT = 0.55;
     sfxBoneClatter(sp);
     catNoiseAt(p.x, p.z, sp > 4.4 ? 26 : 16);
-    catDust(p.x, camBaseY - playerEye() + 0.25, p.z, 5, 0.5);
     return;
   }
 }
@@ -40460,7 +40489,7 @@ window.__bw = {
   get wongUnit() { return wongUnit; }, get drunkUnit() { return drunkUnit; }, get orcUnit() { return orcUnit; },
   crawlerUnit, CRAWL_X, CRAWL_Z, crawlerProvoke, startCaveIn, placeInCatacombs, placeOutsideCatDoor, startCatExit, catRoute, catSees, catNodeAt, CAT_X, CAT_Y, CAT_Z, CAT_SITE, CAT_LAND, CAT_DOOR, CAVE_Z,
   catState: () => ({ inCat, caveBusy, catBusy, catReady, catBuilt, walk: !!catWalk, nodes: catG ? catG.nodes.length : -1, lights: catLights.length, built: catWalk && catWalk.built, eat: catSpots.eat.length, mind: crawlerUnit && crawlerUnit.cat ? { ...crawlerUnit.cat, next: undefined, target: undefined } : null, awake: crawlerUnit && crawlerUnit.st.awake, noStand: crawlerUnit && crawlerUnit.noStand, noise: catNoise }),
-  catNoiseAt, catPeekSpot, playerSeesHunter, catStand, catCanGrab, startCatGrab, catPutDown, catDust, catSmooth, catLitterCheck,
+  catNoiseAt, catPeekSpot, playerSeesHunter, catStand, catCanGrab, startCatGrab, catPutDown, catSmooth, catLitterCheck,
   get catGrabT() { return catGrabT; },
   catEat: () => catSpots.eat.map((k) => [catG.nodes[k].x - CAT_X, catG.nodes[k].f - CAT_Y, catG.nodes[k].z - CAT_Z].map((v) => +v.toFixed(1))), catWoke: () => crawlerUnit && crawlerUnit.catWoke,
   get catG() { return catG; }, catRandomNode,
