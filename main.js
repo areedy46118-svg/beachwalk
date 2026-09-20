@@ -4212,7 +4212,7 @@ function updateHurt(dt) {
   hurtEl.style.opacity = String(Math.max(hurtFlash * hurtFlash, rim));
 }
 
-function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || inspecting || peeking || packCut || mutCut || hatchBusy || ucBusy || abductCut || portalCut || sailBusy || tavBusy || caveBusy || catBusy || catGrabT >= 0 || dying || ended || !introDone; }
+function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || inspecting || peeking || packCut || mutCut || hatchBusy || ucBusy || abductCut || portalCut || sailBusy || tavBusy || caveBusy || catBusy || keepRestore || dying || ended || !introDone; }
 function refreshUI() {
   const playing = started && !menuOpen && !noteOpen && !dialogOpen && !invOpen && !inspecting && !dying && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
@@ -21462,10 +21462,6 @@ function updateMutantUnit(u, dt) {
   if (u.kind.cat) {
     u.g.visible = inCat;
     if (!inCat) { mutDrop(u); mutAnim(u, dt, 0); return; }
-    // the grab is a TAKE and it owns him while it runs: the fight's own
-    // animation was picking a gait over the top of it (traced: `crawl` on
-    // every frame of a grab, with the clip set and the mixer stamping it)
-    if (catGrabT >= 0 && catGrabU === u) return;
     // where the frame began: `mutClampX` puts him back here if the frame crossed a drawn wall
     if (!u.catPrev) u.catPrev = new THREE.Vector3();
     u.catPrev.copy(u.g.position);
@@ -26428,6 +26424,12 @@ function saveCheckpoint() {
     at: Date.now(),
     pos: [+camera.position.x.toFixed(3), +camera.position.y.toFixed(3), +camera.position.z.toFixed(3)],
     look: [+e.y.toFixed(4), +e.x.toFixed(4)],
+    /* AND WHICH ROOM YOU STOOD IN. Every save before this one was written
+     * on the beach, so a position was a place; the hoist's is written eight
+     * kilometres out on an island that does not exist until it is fetched
+     * and built. The restore reads this first and holds the black until it
+     * has somewhere to put you. */
+    room: inKeep ? 'keep' : null,
     hp,
     took: [...takenPickups],
     // the pack, in the order you carried it, and what was in your hand
@@ -26525,10 +26527,17 @@ function beginRestore() {
   try { d = JSON.parse(localStorage.getItem(SAVE_KEY)); } catch (e) { return; }
   if (!d || d.v !== 3) return;
   checkpointDone = true;                       // you are past the line already
-  camera.position.set(d.pos[0], d.pos[1], d.pos[2]);
+  /* A SAVE MADE IN A ROOM IS NOT A POSITION ON THE BEACH. Written at the
+   * top of the hoist, `pos` is a spot on an island that is not loaded, not
+   * built and not entered — so it may not be handed to the camera, where
+   * the beach's own clamps would drag it back to the sand on the first
+   * frame. It is held instead, and `updateKeepRestore` puts you there
+   * behind a black card once the keep is up. */
+  if (d.room === 'keep') { keepRestore = { pos: d.pos.slice(), look: d.look ? d.look.slice() : null }; loadKeep(); }
+  else camera.position.set(d.pos[0], d.pos[1], d.pos[2]);
   // the heading is the camera's own quaternion — the look handler reads it
   // back off the camera every frame, so writing it here is all it takes
-  if (d.look) { lookEuler.set(d.look[1], d.look[0], 0, lookEuler.order); camera.quaternion.setFromEuler(lookEuler); camera.updateMatrixWorld(true); }
+  if (d.look && !keepRestore) { lookEuler.set(d.look[1], d.look[0], 0, lookEuler.order); camera.quaternion.setFromEuler(lookEuler); camera.updateMatrixWorld(true); }
   hp = Math.max(1, Math.min(MAX_HP, d.hp || MAX_HP));
   const f = d.flags || {};
   if (f.castleBroken && !castleBroken) breakCastle(CASTLE_X, CASTLE_Z);
@@ -26550,6 +26559,14 @@ function beginRestore() {
    * left asleep where they wait: what the beach behind you actually looks
    * like once you have walked it. */
   if (camera.position.z < PACK_Z + PACK_TRIGGER) { packPhase = 2; packCut = false; }
+  /* AND THE THREE PAST THE PAVILION ARE BEHIND YOU TOO. The same trigger
+   * on the same rule, and the cave's checkpoint is written THIRTY METRES
+   * past it — so every restore from the tunnel opened with the horde's
+   * take playing at a stretch of beach whose creatures are behind you.
+   * (Dev mode already skips the take on the walk; it cannot skip one that
+   * fires on the frame the save is read.) They are left asleep on their
+   * marks, which is what that sand looks like once you have walked it. */
+  if (camera.position.z < MUT_Z + MUT_TRIGGER) { mutPhase = 2; mutCut = false; mutCutOut = 0; }
   /* AND THE TALL ONE STAYS IN THE SEA. He bolts once, goes under and is
    * taken out of the scene for good — and then a checkpoint load rebuilt the
    * world from seed and stood him back up on his mark, so the one thing in
@@ -26716,7 +26733,7 @@ function animateFrame() {
   oceanUniforms.uTime.value += dt;
   if (!introStarted) titleCam(rawDt);
   update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
-  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateTavernCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateCatGrab(rawDt);
+  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateKeepRestore(); updateTavernCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt);
   updateHover();
   /* After everything that may have moved a lamp or the player, and before
    * anything is drawn: point the twelve real lights at the twelve that
@@ -35144,7 +35161,30 @@ function catNoiseAt(x, z, r) {
  * A floor more than a stride under him is not his floor: he holds the last
  * one he stood on, and if he holds it for most of a second he is put back
  * on the nearest node at that height and his route is dropped. */
+/* AND NOTHING MAY LEAVE HIM UNBOUND. A skinned rig with no action carrying
+ * weight is drawn in its BIND pose, and this one binds standing in an A —
+ * so any frame on which a clip is stopped without another faded in over it
+ * is a creature snapping upright with its arms out. That is what the owner
+ * saw coming out of the grab (a scripted beat that switched every action
+ * off and handed the body back through `u.cur = null`), and the grab is
+ * only the way it was found: a fade that has not started, a clip name that
+ * does not resolve, a mixer that was never ticked all do it too. This is
+ * the net, and it runs on every branch the creature has — if nothing at all
+ * is stamping him this frame, the idle is, on the same frame. */
+function catBound(u) {
+  if (!u.clips || !u.mixer) return;
+  let w = 0;
+  for (const k in u.clips) { const c = u.clips[k]; if (c.enabled) w += c.getEffectiveWeight(); }
+  if (w > 0.05) return;
+  const a = u.clips[(u.kind.anim && u.kind.anim.idle) || 'idle'] || u.clips.crawl;
+  if (!a) return;
+  a.reset(); a.setLoop(THREE.LoopRepeat, Infinity);
+  a.enabled = true; a.paused = false; a.setEffectiveWeight(1); a.play();
+  u.cur = a;
+  u.mixer.update(0);
+}
 function catStand(u, dt) {
+  catBound(u);
   const p = u.g.position;
   const st = keepFloorAt(p.x, p.z, p.y + 0.35, 0.7, CAT_SITE);
   if (st && st.f > p.y - 1.2) {
@@ -35351,7 +35391,8 @@ function catDownStep(u, dt) {
     u.st.hp = Math.round(u.kind.hp * 0.66);
     u.st.alive = true; u.st.struck = false;
     C.mode = 'roam'; C.pause = 0.4; C.blooded = false; C.fled = false; C.tries = 0; C.peeks = 0;
-    u.cur = null;
+    // and he blends OUT of the pose he was lying in: `u.cur = null` only
+    // forces the next clip to fade in from nothing, which is the bind pose
     sfxScpScream(Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z) + 8, u.kind.voice);
   }
 }
@@ -35616,11 +35657,10 @@ function catWander(u, dt) {
 function catSteer(u, dt, dist, foe) {
   if (!catG) return;
   const p = u.g.position, feet = p.y;
-  /* WHEN YOU LAST HAD EYES ON HIM, which is what the grab is gated on. Six
-   * times a second, the same rate as his own sight. */
+  /* WHEN YOU LAST HAD EYES ON HIM. Six times a second, the same rate as
+   * his own sight; the stalk reads it to know how long it has been. */
   u.catLookT = (u.catLookT || 0) - dt;
   if (u.catLookT <= 0) { u.catLookT = 0.15; if (playerSeesHunter(u)) u.catSeenAt = performance.now(); }
-  if (catCanGrab(u)) { startCatGrab(u); return; }
   /* HURT, HE LEAVES. Under a third of his health, once a fight and only
    * when he is not mid-swing, he breaks and runs for the dark — and comes
    * back stalking when he has some of it back. */
@@ -35676,95 +35716,16 @@ function catSteer(u, dt, dist, foe) {
   const tgt = u.catLastSeen || { x: foe.x, z: foe.z, f: camBaseY - playerEye() };
   catRoute(u, tgt.x, tgt.z, tgt.f);
 }
-/* ---- HE GETS HOLD OF YOU. If he reaches you when you have not been
- * looking at him — from behind, out of a side passage, off a peek you never
- * turned round for — he does not swing, he TAKES you: up off your feet with
- * his face in yours, screaming, and then he throws you down and backs off.
- * It is not a killing blow. It costs you a point and your footing and it
- * leaves you playing, which is worth more than a death screen: what it
- * takes is the thing you were about to do.
- *
- * It is a TAKE, so it runs on the wall clock beside the cave-in and the
- * door (`updateCatGrab` from `animate`), the camera is turned and never
- * moved — every clamp still agrees with where you are standing — and
- * `catGrabT` is in `frozen()`. */
-const GRAB = { seize: 0.30, hold: 1.45, throw: 0.55 };   // the beats
-const _grabV = new THREE.Vector3();
-let catGrabT = -1, catGrabU = null, catGrabAt = 0, _grabHome = null, _grabQ = null;
-function catCanGrab(u) {
-  if (catGrabT >= 0 || !inCat || frozen() || dying || ended) return false;
-  if (!u.st.alive || u.st.atk >= 0 || u.catDown !== undefined) return false;
-  if (performance.now() - catGrabAt < 26000) return false;                 // once in a while, or it is his only move
-  const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
-  if (d > 2.9) return false;
-  if (Math.abs((camBaseY - playerEye()) - u.g.position.y) > 1.2) return false;
-  return performance.now() - (u.catSeenAt || 0) > 1500;                    // he only takes you unseen
-}
-function startCatGrab(u) {
-  catGrabT = 0; catGrabU = u; catGrabAt = performance.now();
-  u.st.atk = -1; u.st.cool = 1.2; u.path = null; u.st.side = 0;
-  blocking = false; winding = false;
-  _grabHome = camera.position.clone(); _grabQ = camera.quaternion.clone();
-  u.g.rotation.y = Math.atan2(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
-  /* AND A TAKE SETS THE POSE, IT DOES NOT ASK FOR IT. `mutPlay` crossfades
-   * — which is right for a fight and wrong for a scripted beat: measured
-   * mid-grab, the grab clip sat at weight 0 with the crawl still at 1,
-   * because the fade is driven by a mixer clock a paused action is not on.
-   * Every other clip is stopped and this one is put at full weight. */
-  /* `stop()` is not enough: an action the mixer has already bound goes on
-   * contributing its pose until something zeroes it, so the crawl and the
-   * grab both sat at weight 1 and what you saw was the average of the two.
-   * (And `stopAllAction` is the one thing that must NOT be used — it
-   * restores every bound property, which is the bind pose: the severed
-   * limb's own bug.) */
-  for (const k in u.clips) { const c = u.clips[k]; if (c !== u.clips.grab) { c.stop(); c.setEffectiveWeight(0); c.enabled = false; } }
-  const ga = u.clips.grab;
-  if (ga) { ga.reset(); ga.setLoop(THREE.LoopOnce, 1); ga.clampWhenFinished = true; ga.play(); ga.setEffectiveWeight(1); ga.paused = true; ga.time = 0; }
-  u.cur = ga || u.cur;
-  sfxScpScream(1.0, u.kind.voice);
-  addTrauma(0.7);
-}
-function updateCatGrab(dt) {
-  if (catGrabT < 0) return;
-  const u = catGrabU, T1 = GRAB.seize, T2 = T1 + GRAB.hold, T3 = T2 + GRAB.throw;
-  catGrabT += dt;
-  const t = catGrabT, p = u.g.position;
-  const a = u.clips && u.clips.grab;
-  if (a) { a.paused = true; a.time = clampTime(a, Math.min(1, t / T3) * a.getClip().duration); }
-  if (u.mixer) u.mixer.update(dt);
-  if (t < T3) {
-    /* HIS FACE, AND NOTHING ELSE IN THE FRAME. The head is where the aim
-     * goes — his own head bone, so it moves with the clip — and you are
-     * lifted off your feet toward it. */
-    const hb = u.bones && u.bones.head;
-    if (hb) hb.getWorldPosition(_catV); else _catV.set(p.x, p.y + 1.6, p.z);
-    const k = Math.min(1, t / T1);
-    const want = _grabV.copy(_catV);
-    const dx = want.x - _grabHome.x, dz = want.z - _grabHome.z, L = Math.hypot(dx, dz) || 1;
-    camera.position.set(_grabHome.x + dx / L * Math.min(L - 0.75, 0.55) * k, _grabHome.y + 0.42 * k, _grabHome.z + dz / L * Math.min(L - 0.75, 0.55) * k);
-    lookEuler.y = Math.atan2(-(want.x - camera.position.x), -(want.z - camera.position.z));
-    lookEuler.x = Math.atan2(want.y - camera.position.y, Math.max(0.4, Math.hypot(want.x - camera.position.x, want.z - camera.position.z)));
-    lookEuler.z = 0;
-    camera.quaternion.setFromEuler(lookEuler);
-    // the shake while he has you, worst while he screams
-    if (t > T1 && t < T2) addTrauma(dt * 2.6);
-    if (t > T1 && !u.catGrabDmg) { u.catGrabDmg = true; damagePlayer(1); }
-  } else {
-    /* AND HE PUTS YOU DOWN. You land on your feet where you started, your
-     * knees take it, and he is already backing off — the beat after is
-     * yours, which is the whole point of a blow that does not kill. */
-    camera.position.copy(_grabHome);
-    camBaseY = _grabHome.y; vy = 0; onGround = true;
-    landDip = Math.max(landDip, 0.30); addTrauma(0.8);
-    sfxSlam(0.4);
-    catGrabT = -1; u.catGrabDmg = false;
-    u.cur = null;                       // and the fight picks its own clip again from scratch
-    u.st.cool = Math.max(u.st.cool, 0.9);
-    const C = u.cat || (u.cat = {});
-    C.mode = 'chase'; C.blooded = true; C.bloodAt = performance.now();
-    catGrabU = null;
-  }
-}
+/* ---- THERE IS NO GRAB. He used to TAKE you when you had not been
+ * looking — up off your feet, his face in yours, thrown back down — and
+ * the owner's word is that it is out: he came out of it in a T. A take
+ * OWNS the mixer while it runs (every other action stopped, zeroed and
+ * disabled so the crawl cannot average with it), and what hands the body
+ * back is `u.cur = null` and the fight drawing a fresh clip — one frame
+ * in which nothing is bound at all, which on this rig is the bind pose.
+ * A scripted beat on a creature that goes straight back to fighting has
+ * to blend OUT of its last pose, not be switched off; that is what the
+ * knockdown does and it is the shape to copy if this ever comes back. */
 /* ---- THE BONES YOU KICK THROUGH. His noise model has been in the game
  * since the day he went in — a sprint carries 24 m, a walk 11, a crouch 5 —
  * and nothing ever told the player so. The floor of a catacomb is bones,
@@ -36277,6 +36238,8 @@ let sailBusy = false, sailT = 0, sailDir = 1, sailCut = false;
 let beachBoat = null, beachBoatBox = null, beachBoatProxy = null, onBoat = false;
 let keepBoat = null, keepBoatBox = null;
 let keepLift = null, keepLiftBox = null, keepLiftParts = null;
+let keepSaveDone = false;          // the save at the top of the hoist, once a game
+let keepRestore = null;            // a checkpoint written on the island, waiting for the island
 let keepWading = false;
 let _keepFogSaved = null, _keepLightSaved = null, keepClouds = null;
 
@@ -37559,6 +37522,18 @@ function updateKeepLift(dt) {
   if ((L.dir > 0 && L.t >= 1) || (L.dir < 0 && L.t <= 0)) {
     L.state = L.dir > 0 ? 'up' : 'down';
     sfxKeepThud();
+    /* AND THE TOP OF THE HOIST IS A CHECKPOINT. Everything past it — the
+     * terrace, the keep's door, the tavern and the two men in it — is on
+     * the far side of a sail, a walk round an island and a ride, and none
+     * of that is worth doing twice. It is written the moment the car
+     * arrives with you ON it, once a game, the pavilion's own rule; and
+     * because it is written in a ROOM, the save says which one (`room`)
+     * and the restore puts you back in it. */
+    if (L.dir > 0 && !keepSaveDone && inKeep && introDone && !dying && !ended && keepLiftBox) {
+      const c = camera.position, B = keepLiftBox;
+      if (c.x > B.x0 - 0.4 && c.x < B.x1 + 0.4 && c.z > B.z0 - 0.4 && c.z < B.z1 + 0.4
+          && Math.abs((camBaseY - playerEye()) - B.top) < 1.2) { keepSaveDone = true; saveCheckpoint(); }
+    }
   }
 }
 
@@ -37667,6 +37642,30 @@ function placeBackOnBoat() {
   velocity.set(0, 0, 0); knockback.set(0, 0, 0);
 }
 
+/* AND A CHECKPOINT WRITTEN ON THE ISLAND PUTS YOU BACK ON IT. Fifteen
+ * megabytes have to come down and half a second of walk has to be built
+ * before there is anywhere to stand, so the black is held until there is —
+ * the sail's own honest failure — and then it is the sail's own hand-over:
+ * the island entered, the hoist parked at the top where you left it, and
+ * you on the spot the save was written at. Nothing about the beach's own
+ * restore changes; only the two lines that would have set the camera. */
+function updateKeepRestore() {
+  if (!keepRestore) return;
+  blackoutEl.style.opacity = '1';
+  if (!keepReady) { loadKeep(); return; }
+  placeInKeep();                                   // builds the island, enters the room, warms it
+  const L = keepLift;
+  if (L) { L.state = 'up'; L.dir = 1; L.t = 1; L.first = false; setKeepLift(1); }
+  const p = keepRestore.pos, lk = keepRestore.look;
+  camera.position.set(p[0], p[1], p[2]);
+  camBaseY = p[1]; groundY = p[1] - playerEye(); vy = 0; onGround = true;
+  if (lk) { lookEuler.set(lk[1], lk[0], 0, lookEuler.order); camera.quaternion.setFromEuler(lookEuler); camera.updateMatrixWorld(true); }
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0);
+  keepSaveDone = true;                             // you have already had it
+  keepRestore = null;
+  blackoutEl.style.opacity = '0';
+  catchBreath();
+}
 /* Casting off: the mooring line taking the weight twice, a knock of the
  * hull on the piles, and the water closing under her — brown noise under a
  * low pass, swelling and falling away, because at the ear any broadband
@@ -40435,7 +40434,7 @@ window.__bw = {
     if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
     oceanUniforms.uTime.value += dt;
     update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
-    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateTavernCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateCatGrab(rawDt);
+    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateKeepRestore(); updateTavernCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt);
     updateLightPool();
   },
   /* The lamp pool, for a still: a frozen loop never points the twelve at
@@ -40489,8 +40488,7 @@ window.__bw = {
   get wongUnit() { return wongUnit; }, get drunkUnit() { return drunkUnit; }, get orcUnit() { return orcUnit; },
   crawlerUnit, CRAWL_X, CRAWL_Z, crawlerProvoke, startCaveIn, placeInCatacombs, placeOutsideCatDoor, startCatExit, catRoute, catSees, catNodeAt, CAT_X, CAT_Y, CAT_Z, CAT_SITE, CAT_LAND, CAT_DOOR, CAVE_Z,
   catState: () => ({ inCat, caveBusy, catBusy, catReady, catBuilt, walk: !!catWalk, nodes: catG ? catG.nodes.length : -1, lights: catLights.length, built: catWalk && catWalk.built, eat: catSpots.eat.length, mind: crawlerUnit && crawlerUnit.cat ? { ...crawlerUnit.cat, next: undefined, target: undefined } : null, awake: crawlerUnit && crawlerUnit.st.awake, noStand: crawlerUnit && crawlerUnit.noStand, noise: catNoise }),
-  catNoiseAt, catPeekSpot, playerSeesHunter, catStand, catCanGrab, startCatGrab, catPutDown, catSmooth, catLitterCheck,
-  get catGrabT() { return catGrabT; },
+  catNoiseAt, catPeekSpot, playerSeesHunter, catStand, catPutDown, catSmooth, catLitterCheck,
   catEat: () => catSpots.eat.map((k) => [catG.nodes[k].x - CAT_X, catG.nodes[k].f - CAT_Y, catG.nodes[k].z - CAT_Z].map((v) => +v.toFixed(1))), catWoke: () => crawlerUnit && crawlerUnit.catWoke,
   get catG() { return catG; }, catRandomNode,
   tavScene, tavProvoke, buildTavCast, get tavMug() { return tavMug; },

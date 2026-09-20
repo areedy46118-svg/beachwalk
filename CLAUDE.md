@@ -11496,3 +11496,51 @@ before the code that fills them existed. And `u.path` on this follower is
 **LOCAL x/z with a world f**, against `u.pathO`; printing a waypoint against
 the room's origin subtracts it twice and every distance comes out in the
 thousands.
+
+**THE GRAB IS OUT, AND WHAT IT TAUGHT IS THAT NOTHING MAY LEAVE A RIG
+UNBOUND.** "Take out the grab, it's bad, he T-posed right after it." He did,
+and the reason is general enough to be worth the note even though the beat
+is deleted: a TAKE owns the mixer while it runs — every other action
+stopped, zeroed AND disabled, because `stop()` alone leaves an action
+contributing and the crawl and the grab then averaged into one pose — and
+what handed the body back was `u.cur = null` plus a fresh draw. **A frame on
+which no action carries weight is a frame drawn in the BIND pose**, and this
+rig binds standing in an A. `catBound` is the net and it hangs off
+`catStand`, which every branch the creature has already calls: if nothing at
+all is stamping him, the idle is, on the same frame. Measured by doing to
+him exactly what the grab did — every clip stopped, zeroed and disabled —
+and stepping one frame: he comes back on the idle and carries on into a
+stalk with the crawl playing. The same line went out of the undying rise,
+which cleared `u.cur` for no gain: a scripted beat has to blend OUT of its
+last pose, which is what the knockdown does and is the shape to copy if a
+grab ever comes back.
+
+**AND THE HORDE'S TAKE PLAYED ON EVERY RESTORE FROM THE TUNNEL.** The pack
+at the dock has had "a trigger you have already crossed does not fire again"
+since the day the checkpoint went in; the three past the pavilion never got
+it, and the cave's own save is written THIRTY METRES past them — so loading
+it opened with the cutscene, at a stretch of sand whose creatures are
+behind you. (Dev mode skips that take on the walk and cannot skip one that
+fires on the frame the save is read.) `beginRestore` marks it crossed and
+leaves them asleep on their marks. Measured from the cave's spot, dev mode
+on and off: `mutPhase` 2, `mutCut` false, the field of view untouched.
+
+**AND A CHECKPOINT AT THE TOP OF THE HOIST, WHICH IS A SAVE IN A ROOM.**
+Everything past it — the terrace, the keep's door, the tavern, the two men
+in it — is behind a sail, a walk round an island and a ride, and none of it
+is worth doing twice. It is written the moment the car arrives with you ON
+it (inside `keepLiftBox` and standing at its deck), once a game.
+
+**A SAVE MADE IN A ROOM IS NOT A POSITION ON THE BEACH.** Every checkpoint
+before this one was written on the sand, so `pos` was a place; this one is
+eight kilometres out on an island that is not fetched, not built and not
+entered when the save is read. Handed straight to the camera it is a body
+on the beach's own clamps, dragged back to the sand on the first frame. The
+save carries `room` now, and a restore that reads `keep` HOLDS THE POSITION
+— the black card up, `loadKeep`, and `updateKeepRestore` on the wall clock
+until `keepReady` — then `placeInKeep`, the hoist parked at the top where
+you left it, and you set down on the spot it was written at. It is the
+sail's own honest failure: if the island never comes, the black stays.
+Measured: the save reads `room: "keep"` at (-6002.5, 817.85, 6014.9), and a
+reload into it comes up standing on the car at the terrace facing the
+studded door with "E Lower the hoist" under the crosshair.
