@@ -12364,3 +12364,48 @@ reads each bone's `matrixWorld`, which only a RENDER refreshes**: the ragdoll
 driver updates the bones it drives and leaves the fingers and twists holding
 last frame's matrices, so skinned bounds sampled without `updateMatrixWorld`
 mix fresh and stale joints and report a body 6.1 m across that is really 2.15.
+
+**THE DOOR IN THE DUNE IS THE ONE YOU CAME OUT OF, LIFTED.** It was six grey
+boxes and a plank leaf — flat colours, no map on any of them — and the
+owner's word was that it looks horrible and should look like the door you go
+in to leave. It IS that door now: the catacombs' own doorway, copied
+triangle for triangle and stood in the sand.
+
+- **AND IT COMES OUT CLEAN BECAUSE OF WHAT IT IS MADE OF.** This file's rule
+  is that a box through a scan shears the stones it cuts and leaves ragged
+  shards, which is why the tavern's door was BUILT. Measured here, the
+  doorway is not in the wall's mesh at all: the jambs either side are
+  `CatacombWall`, and the leaf, its frame and its barred head are **983
+  triangles of `Stuffidk` standing wholly inside a box round `CAT_DOOR`**.
+  The box takes the door and nothing else — the two torches and the skull
+  pile that also stand in it are excluded by material.
+- **AND IT NEEDS NO TURNING.** The leaf faces -x in the catacombs and you
+  come out facing -x on the beach, so the copy is a translation and a scale
+  (the room is at 2.2x; the door stands at a door's height out here).
+- **AND IT IS SET INTO THE DUNE, NOT STOOD IN FRONT OF IT.** Where the
+  sand's face is at that z is a RAYCAST, because a talus leans: 15.23 at the
+  sill and 16.10 at head height. The leaf stands a hand proud of that and
+  everything behind it is buried.
+- The material is CLONED (it is shared with the whole scan, and a lift on it
+  would light every stone in the catacombs — the Military Shovel's scar) and
+  lifted from 0.03 to 0.12, because down there it has no moon on it.
+
+**AND A HOLD THAT NEVER RESOLVES IS THE STUCK.** "A tomb is not a step" gave
+the hunter a HOLD when the lookup answered with a lid: he keeps his height
+and the push is meant to slide him off its footprint. In the corner of a
+sarcophagus and a wall there is nowhere to slide him to, so he keeps it for
+ever — which is the owner's photograph, the thing hanging in the air over a
+tomb with its arms out. After a second and a half he is handed the storey
+UNDER him instead (`keepFloorAt` with no step allowance, which is the one
+question the hold never asks) and climbs down off it.
+
+**AND UNDER ALL OF IT, A WATCHDOG.** Every stall this place has produced has
+had its own cause and its own fix — a route begun across a wall, a pocket of
+the graph nothing joins to, a lid taken for a step — and the next one will
+have a cause nobody has thought of yet. `catWatch` is the floor under them:
+a metre of ground in six seconds or whatever he is doing is not working. He
+gets a fresh route first; a body that really cannot leave is put back on the
+graph, and ONLY where you are not looking at it, because a creature that
+teleports in front of you is worse than one that is stuck. An act is
+standing still on purpose and a fight is fought at arm's length, so neither
+counts.

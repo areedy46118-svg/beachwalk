@@ -37818,6 +37818,7 @@ function loadCatacombs() {
       },
     });
       catReady = true;
+    buildCatSandDoor();          // the door in the dune is this one, lifted
   }, undefined, () => {});
 }
 /* BUILT AT THE CUT, BEHIND THE BLACK — the keep's arrangement. */
@@ -38154,29 +38155,97 @@ function placeOutsideCatDoor() {
   caveDone = true;
   if (!catSaveDone && !settings.devMode) { catSaveDone = true; saveCheckpoint(); }
 }
-/* THE DOOR IN THE SAND WALL, built: a stone surround standing a hand proud
- * of the dune's toe with a black box behind it, and a plank door hanging
- * open into the dark — what you came out of, and nothing you can go back
- * into. It stands proud rather than cut into the cliff because a cut is a
- * fifth discard on a shader that has four. */
+/* THE DOOR IN THE SAND WALL IS THE ONE YOU CAME OUT OF — LIFTED, NOT
+ * REBUILT. It was six grey boxes and a plank leaf, and the owner's word for
+ * it was that it looks horrible and should look like the door you go in to
+ * leave. It is that door now: the scan's own doorway, copied triangle for
+ * triangle out of the catacombs and stood in the dune.
+ *
+ * AND IT COMES OUT CLEAN BECAUSE OF WHAT IT IS MADE OF. This file's own
+ * lesson is that a box through a scan shears the stones it cuts and leaves
+ * ragged shards — which is why the tavern's door was BUILT. Measured here,
+ * the doorway is not in the wall's mesh at all: the jambs either side are
+ * `CatacombWall`, and the leaf, its frame and its barred head are 983
+ * triangles of `Stuffidk` standing wholly inside a box round `CAT_DOOR`
+ * (x 19.13–20.01, y 9.58–13.15, z -32.70–-30.22). So the box takes the door
+ * and nothing else — no cut, no shards, and the torches and the skull pile
+ * that also stand in that box are excluded by material.
+ *
+ * It needs no turning either: the leaf faces -x in the catacombs and you
+ * come out facing -x on the beach, so the copy is a translation. The
+ * material is CLONED — it is shared with the whole scan, and a lift on it
+ * would light every stone in the catacombs (the Military Shovel's scar) —
+ * and lifted a little, because down there it carries 0.03 of its own map
+ * and out here it has the moon on it. */
 const catWallDoor = new THREE.Group();
-{
-  const stone = new THREE.MeshStandardMaterial({ color: 0x3a3e48, roughness: 1, metalness: 0, emissive: 0x0d0f14, flatShading: true });
-  const wood = new THREE.MeshStandardMaterial({ color: 0x3b2d22, roughness: 0.95, metalness: 0, emissive: 0x100b07, flatShading: true });
-  const dark = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide, fog: false });
-  const jamb = new THREE.BoxGeometry(0.42, 2.9, 0.9);
-  const L = new THREE.Mesh(jamb, stone); L.position.set(0, 1.45, -0.95); catWallDoor.add(L);
-  const R = new THREE.Mesh(jamb, stone); R.position.set(0, 1.45, 0.95); catWallDoor.add(R);
-  const lintel = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.42, 2.4), stone); lintel.position.set(0, 3.05, 0); catWallDoor.add(lintel);
-  const sill = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.12, 2.2), stone); sill.position.set(-0.05, 0.05, 0); catWallDoor.add(sill);
-  const recess = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.8, 1.5), dark); recess.position.set(0.7, 1.45, 0); catWallDoor.add(recess);
-  const leaf = new THREE.Group(); leaf.position.set(-0.18, 0, -0.72);          // hinged on the seaward jamb
-  const planks = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.75, 1.44), wood); planks.position.set(0, 1.4, 0.72); leaf.add(planks);
-  for (const yy of [0.5, 1.4, 2.3]) { const band = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.09, 1.44), stone); band.position.set(0.01, yy, 0.72); leaf.add(band); }
-  leaf.rotation.y = 0.72;                                                       // open, INTO the recess (+x is the dune); -0.72 swung it out over the beach, filling the frame
-  catWallDoor.add(leaf);
-  catWallDoor.position.set(CLIFF_BLOCK_X + 1.15, 0, CAT_OUT_Z);
-  scene.add(catWallDoor);
+catWallDoor.position.set(CLIFF_BLOCK_X + 1.75, 0, CAT_OUT_Z);
+scene.add(catWallDoor);
+const CAT_SAND_DOOR = { mat: 'Stuffidk', h: 3.25, lift: 0.12, proud: 0.34 };   // how tall it stands on the sand, what it reads at under a quarter moon, and how far its leaf stands out of the dune
+let catSandDoorDone = false;
+function buildCatSandDoor() {
+  if (catSandDoorDone || !catWorld) return;
+  const B = { x0: CAT_DOOR.x - 0.15, x1: CAT_DOOR.x + 0.85, y0: CAT_DOOR.f + 0.05, y1: CAT_DOOR.f + 3.7,
+              z0: CAT_DOOR.z - 1.9, z1: CAT_DOOR.z + 1.9 };
+  const pos = [], nor = [], uv = [];
+  let src = null;
+  const lo = new THREE.Vector3(9e9, 9e9, 9e9), hi = new THREE.Vector3(-9e9, -9e9, -9e9);
+  catWorld.traverse((o) => {
+    if (!o.isMesh || !o.geometry) return;
+    const m = Array.isArray(o.material) ? o.material[0] : o.material;
+    if (!m || m.name !== CAT_SAND_DOOR.mat) return;
+    const g = o.geometry, P = g.attributes.position, N = g.attributes.normal, U = g.attributes.uv, I = g.index;
+    const n = I ? I.count : P.count;
+    for (let t = 0; t + 2 < n; t += 3) {
+      const a = I ? I.getX(t) : t, b = I ? I.getX(t + 1) : t + 1, c = I ? I.getX(t + 2) : t + 2;
+      let ok = true;
+      for (const i of [a, b, c]) {
+        const x = P.getX(i), y = P.getY(i), z = P.getZ(i);
+        if (x < B.x0 || x > B.x1 || y < B.y0 || y > B.y1 || z < B.z0 || z > B.z1) { ok = false; break; }
+      }
+      if (!ok) continue;
+      src = m;
+      for (const i of [a, b, c]) {
+        const x = P.getX(i), y = P.getY(i), z = P.getZ(i);
+        pos.push(x, y, z);
+        if (N) nor.push(N.getX(i), N.getY(i), N.getZ(i));
+        if (U) uv.push(U.getX(i), U.getY(i));
+        lo.min(_scarN.set(x, y, z)); hi.max(_scarN);
+      }
+    }
+  });
+  if (!src || pos.length < 90) return;                       // the scan is not up yet, or the box found nothing
+  catSandDoorDone = true;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  if (nor.length === pos.length) g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  if (uv.length === pos.length / 3 * 2) g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  // the doorway's own middle at the origin, its sill on the sand
+  g.translate(-(lo.x + hi.x) / 2, -lo.y, -(lo.z + hi.z) / 2);
+  const mat = src.clone();
+  mat.emissiveIntensity = CAT_SAND_DOOR.lift;                // 0.03 is a room with no moon in it
+  const door = new THREE.Mesh(g, mat);
+  const k = CAT_SAND_DOOR.h / Math.max(0.01, hi.y - lo.y);   // it stands at a door's height, not at the room's 2.2x
+  door.scale.setScalar(k);
+  /* AND IT IS SET INTO THE DUNE, NOT STOOD IN FRONT OF IT. The old one was
+   * a hand proud of the toe and read as six slabs standing on open sand
+   * with the hill behind them. Where the sand's own face is at this z is a
+   * RAYCAST — it is a talus, so it leans: measured at z = CAT_OUT_Z it is
+   * 15.23 at the sill and 16.1 at head height — and the door is set so its
+   * leaf stands a hand proud of that and everything behind it is buried. */
+  _catRay.set(new THREE.Vector3(4, CAT_SAND_DOOR.h * 0.5, CAT_OUT_Z), new THREE.Vector3(1, 0, 0));
+  _catRay.far = 40;
+  const face = _catRay.intersectObject(cliff, true)[0];
+  if (face) catWallDoor.position.x = face.point.x + (hi.x - lo.x) * k * 0.5 - CAT_SAND_DOOR.proud;
+  door.name = 'catSandDoor';
+  catWallDoor.add(door);
+  /* AND BEHIND IT IS NOTHING. A black box wholly behind the leaf, so the
+   * bars and the gap round the door read as a hole into the dune rather
+   * than as sand seen through a doorway — the drain's own plug. */
+  const w = (hi.z - lo.z) * k, h = (hi.y - lo.y) * k;
+  const void_ = new THREE.Mesh(new THREE.BoxGeometry(1.6, h * 0.98, w * 0.96),
+    new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide, fog: false }));
+  void_.position.set(0.95, h * 0.49, 0);
+  catWallDoor.add(void_);
 }
 
 // -------------------------------------------------------------- the hunter
@@ -38770,9 +38839,21 @@ function catStand(u, dt) {
      * return a lid. He simply keeps his height; the cell has no floor at his
      * level, so the push slides him off its footprint. */
     u.catSink = 0; u.catHeld = (u.catHeld || 0) + dt;
-    return;
-  }
-  u.catHeld = 0;
+    /* AND A HOLD THAT IS NOT RESOLVING IS THE STUCK. The hold assumes the
+     * push slides him off the lid's footprint, and in the corner of a
+     * sarcophagus and a wall there is nowhere to slide him TO: he keeps his
+     * height for ever, which is the owner's photograph — the thing hanging
+     * in the air over a tomb with its arms out. After a second and a half
+     * it is not a step he is about to take, it is a place he cannot leave,
+     * so he is handed the storey UNDER him instead and climbs down off it.
+     * (`keepFloorAt` with no step allowance is "what is beneath me", which
+     * is the one question the hold never asks.) */
+    if (u.catHeld < 1.5) return;
+    u.catHeld = 0; u.path = null;
+    const down = keepFloorAt(p.x, p.z, p.y - 0.05, 0, CAT_SITE);
+    if (!down || down.f >= p.y - 0.05) return;
+    st = down;
+  } else u.catHeld = 0;
   if (st && st.f > p.y - 1.2) {
     const dy = st.f - p.y, ad = Math.abs(dy);
     p.y += ad < 0.02 ? dy : Math.sign(dy) * Math.min(ad, Math.max(ad * dt * 10, 3.0 * dt));
@@ -39051,6 +39132,36 @@ function catDownStep(u, dt) {
     sfxScpScream(Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z) + 8, u.kind.voice);
   }
 }
+/* AND A THING THAT HAS NOT MOVED IN SIX SECONDS IS STUCK, WHATEVER IT
+ * THINKS IT IS DOING. Every stall this place has produced has had its own
+ * cause and its own fix — a route begun across a wall, a pocket of the
+ * graph nothing joins to, a tomb lid taken for a step — and the next one
+ * will have a cause nobody has thought of yet. This is the floor under all
+ * of them: a metre of ground covered in six seconds, or whatever he is
+ * doing is not working. What he gets first is a fresh route; a body that
+ * really is somewhere it cannot leave is put back on the graph, and ONLY
+ * where you are not looking at it, because a creature that teleports in
+ * front of you is worse than a creature that is stuck. Standing still is
+ * the point of an act, and a fight is fought at arm's length without much
+ * ground being covered, so neither counts. */
+const CAT_STUCK = 6.0;
+function catWatch(u, dt) {
+  const C = u.cat, p = u.g.position;
+  if (C.mode === 'act' || C.mode === 'down' || (u.st.atk >= 0) || u.st.recoil > 0) { C.wMark = null; C.wT = 0; return; }
+  if (!C.wMark) { C.wMark = { x: p.x, y: p.y, z: p.z }; C.wT = 0; return; }
+  if (Math.hypot(p.x - C.wMark.x, p.z - C.wMark.z) > 1.0 || Math.abs(p.y - C.wMark.y) > 0.5) {
+    C.wMark.x = p.x; C.wMark.y = p.y; C.wMark.z = p.z; C.wT = 0; return;
+  }
+  C.wT = (C.wT || 0) + dt;
+  if (C.wT < CAT_STUCK) return;
+  C.wT = 0; u.path = null; u.catBlockT = 0;
+  if (playerSeesHunter(u) || C.mode === 'chase') { C.pause = Math.min(C.pause || 0, 0.1); return; }
+  const id = catNearestMain(p.x, p.z, p.y);
+  if (id < 0) return;
+  const n = catG.nodes[id];
+  p.set(n.x, n.f, n.z); u.catFloor = n.f; u.catHeld = 0; u.catSink = 0;
+  C.mode = 'roam'; C.pause = 0.4; C.target = null; C.wMark = null;
+}
 function catWander(u, dt) {
   u.g.visible = inCat;
   if (!inCat || !catBuilt || !catG) { mutDrop(u); mutAnim(u, dt, 0); return; }
@@ -39058,6 +39169,7 @@ function catWander(u, dt) {
   const C = u.cat || (u.cat = { mode: 'roam', t: 0, gait: 'crawl', pause: 1.0, heard: 0, act: null });
   if (C.mode === 'down') { catDownStep(u, dt); return; }
   catUnpocket(u);
+  catWatch(u, dt);
   /* HIS VOICE OFF IN THE DARK. Every nine to twenty-five seconds while he is
    * about his own business: far off, one of the owner's distant growls, dull
    * through the stone and panned to wherever he is — so the place is never
