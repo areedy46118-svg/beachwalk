@@ -12620,3 +12620,39 @@ screen-blended card at 0.30 that is gone in 110 ms — measured frame by frame
 — under a flash that decays slower (10.5/s), a lamp at 150 rather than 88
 and a sprite half again the size, with the trauma, the FOV punch and the
 hitstop all up with them.
+
+**AND THE .44 IS BIGGER IN THE HAND THAN IT IS ON THE GROUND.** "Make the
+magnum look bigger" is not a change to the gun: `MAG_LEN` is what the thing
+MEASURES — what it is lying on the sand, on the examine screen and in the
+pack's icon — and a .44 is 42 cm whatever anybody wants. `holdable` scales
+only the CLONE, so `MAG_VM` (1.42) is one number and the world's copy never
+moves. A gun is the one item here meant to dominate the lower right of the
+frame; at 1.0 it read as a prop somebody was carrying. Two things came free
+with it: the sights still land on the crosshair, because `magSights`
+MEASURES the rear sight rather than assuming where it is — projected down
+the sights at full aim it reads (0.0001, -0.005) in NDC, and the 0.40 cap on
+the correction is nowhere near binding — and the muzzle flash is scaled by
+the same number, because a flash is the MUZZLE'S and a bigger gun with the
+old flash is a gun with a spark on the end of it.
+
+**AND MORE RECOIL IS FOUR NUMBERS, AND ONLY ONE OF THEM COSTS YOU
+ANYTHING.** The lens spring (19.4 from 13.6) is what you WATCH; the yaw
+(12.4) is what stops two shots looking alike; the FOV punch, the trauma, the
+view-model impulse and the held time (0.095 s) are the weight. The one that
+is a WEAPON is `gunNudge` — 0.064 + up to 0.022 of real look, per round,
+which is a thing you have to pull back down — and `magClimb` still gives
+seven tenths of it back at 0.68 rad/s, or a cylinder walks you into the sky
+and the fight is taken off you. Measured: each shot throws the muzzle
+**3.7-4.9 degrees from the hip and 2.2-3.4 down the sights** (was 2.2-3.2
+and less), and a full cylinder held down nets **6.6 aimed from the hip and
+4.6 down the sights** — barely more than before, because what grew is the
+throw and not the debt. Accuracy is untouched: 0.0000 degrees off the
+crosshair down the sights.
+
+**AND DOWN THE SIGHTS THE GUN CANNOT KICK OUT OF THE FRAME, BY
+CONSTRUCTION.** `magSights` pins the rear sight to the crosshair every
+frame, so at full aim the recoil is the MUZZLE pivoting about that pin —
+measured, the sight holds (0, 0) for the whole shot while the muzzle flips
+to +0.19 NDC and settles. The lens spring, the FOV punch and the real aim
+nudge are what carry an aimed shot; the gun itself is held where you are
+looking, which is what a sight picture is.

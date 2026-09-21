@@ -33939,6 +33939,16 @@ const MAG_DMG = 14;                 // what a .44 does: the katana's heavy is 3
 const MAG_HEAD = 2.2;               // and what it does to a head
 const MAG_RANGE = 80;               // how far the bullet is traced
 const MAG_LEN = 0.42;               // an 8-inch Model 29 is 0.35; a view model is always drawn over
+/* AND WHAT YOU HOLD IS BIGGER AGAIN. `MAG_LEN` is what the thing MEASURES —
+ * what it is on the ground, on the examine screen and in the pack's icon,
+ * and a .44 is 42 cm whatever anyone wants — so the hand's copy is scaled
+ * on its own and the world's is left alone. A gun is the one item in this
+ * game that is meant to dominate the lower right of the frame: at 1.0 it
+ * read as a prop somebody was carrying rather than the thing the next ten
+ * seconds are about. `holdable` scales only the CLONE, so this is the one
+ * number, and the sights still land on the crosshair because `magSights`
+ * measures the rear sight rather than assuming where it is. */
+const MAG_VM = 1.42;                // the hand's copy, against the world's
 const MAG_ZOOM = 0.22;              // of the field of view, at the sights
 const MAG_SPREAD = 0.034;           // radians, from the hip
 const MAG_SPREAD_ADS = 0;           // and down the sights: what you aim at is what you hit, exactly
@@ -34212,7 +34222,7 @@ const magnumItem = {
  * carry yaw for the sights, the cant at the hip, the recoil) lives in
  * `_pose`, where it is a number that means something rather than a second
  * rotation nobody can read back. */
-holdable(magnumItem, magModel, { scale: 1, pos: [0, 0, 0], rot: [0, Math.PI / 2, 0] });
+holdable(magnumItem, magModel, { scale: MAG_VM, pos: [0, 0, 0], rot: [0, Math.PI / 2, 0] });
 
 /* ------------------------------------------------------------------
  * THE POSE. Six numbers, the same six every tool in this game uses:
@@ -34231,9 +34241,9 @@ function magPose(out) {
    * sights and the muzzle climb the gun makes are the same event — and its
    * shape is the reference clip's: hard up and back, through neutral, a
    * small overshoot, home. */
-  out[0] += magKick * 0.62;
-  out[4] += magKick * 0.10;                       // and it comes back at you
-  out[3] += magYaw * 0.9;
+  out[0] += magKick * 0.74;
+  out[4] += magKick * 0.16;                       // and it comes back at you
+  out[3] += magYaw * 1.05;
   /* AND THE RELOAD. The gun rolls out of the hold and down out of the sight
    * line, takes the loader, is snapped shut and brought back up. The beats
    * are the reference clip's, scaled. */
@@ -34347,7 +34357,7 @@ function updateGun(dt) {
     magFlashSpr.position.copy(_magF);
     // biggest on the frame it is born and shrinking as it goes out, which is
     // what a flash does; it used to GROW as it faded, which is a smoke ring
-    const s = 0.26 + magFlash * 0.86;
+    const s = (0.26 + magFlash * 0.86) * MAG_VM;   // and the flash is the muzzle's, so it grows with it
     magFlashSpr.scale.set(s, s, s);
     magFlashSpr.material.opacity = Math.min(1, magFlash * 1.5);
     magFlashSpr.material.rotation = magFlashSeed;
@@ -34355,7 +34365,7 @@ function updateGun(dt) {
   if (magT >= 0) { magT += dt; if (magT >= MAG_SHOT) magT = -1; }
   // the muzzle settling back down out of its own kick
   if (magClimb > 0 && (magT < 0 || magT > 0.18)) {
-    const d = Math.min(magClimb, dt * 0.55);
+    const d = Math.min(magClimb, dt * 0.68);
     gunNudge(-d, 0); magClimb -= d;
   }
   const live = magHeld() && !held && !dialogOpen && !inspecting && !frozen();
@@ -34508,10 +34518,10 @@ function magFire() {
    * goes into the look itself, so a string of them walks up off whatever
    * you were shooting at and you have to pull it back down. That is the
    * difference between a gun with recoil and a gun with a shake. */
-  magKickV += 13.6 - magAim * 2.8;
-  magYawV += (Math.random() - 0.5) * 8.6;
-  const up = 0.043 + Math.random() * 0.016 - magAim * 0.018;
-  gunNudge(up, (Math.random() - 0.5) * 0.019);
+  magKickV += 19.4 - magAim * 3.9;
+  magYawV += (Math.random() - 0.5) * 12.4;
+  const up = 0.064 + Math.random() * 0.022 - magAim * 0.026;
+  gunNudge(up, (Math.random() - 0.5) * 0.026);
   /* AND MOST OF THE CLIMB COMES BACK, WHICH IS WHAT MAKES IT A RECOIL AND
    * NOT A CATAPULT. A permanent nudge is the right idea and at two and a
    * half degrees a shot the whole cylinder walks you twenty degrees into
@@ -34520,16 +34530,16 @@ function magFire() {
    * over the next third of a second, so a shot throws the muzzle hard, a
    * pause settles it, and holding the trigger down still walks you off the
    * target — about a degree a round, which you can hold if you mean to. */
-  magClimb += up * 0.66;
-  addTrauma(0.98);
-  fovKick = Math.max(fovKick, 11.5);
-  vmImpulse(-2.0);
+  magClimb += up * 0.72;
+  addTrauma(1.30);
+  fovKick = Math.max(fovKick, 15.0);
+  vmImpulse(-2.7);
   magGlare();                                // and the frame takes the light
   /* AND THE WORLD STOPS FOR A FRAME AND A HALF. Every other confirm in this
    * game buys its weight with held time — the parry, the poise break, the
    * two-tonne knight — and a gun that goes off with no beat under it reads
    * as a pop whatever the sound does. */
-  hitstop = Math.max(hitstop, 0.075);
+  hitstop = Math.max(hitstop, 0.095);
 
   /* AND DOWN THE SIGHTS THERE IS NO SPREAD AT ALL. A cone that is merely
    * small is still a cone: at twenty metres a fortieth of a degree is a
