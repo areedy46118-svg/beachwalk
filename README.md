@@ -710,6 +710,19 @@ given the game's own night sky as an environment map, because a metal with
 nothing to reflect renders black.
 
 
+**BOUNTY HUNTER** — the Rude Trader, standing at the sand wall a little
+short of the stone circle with his arms crossed, looking out at the water.
+He has one glowstick and two bottles of water, and he wants blood jars for
+them.
+
+["BOUNTY HUNTER"](https://sketchfab.com/3d-models/bounty-hunter-1b78c05dd09245a9a2b2906e12b1dc08)
+by [EZ-GAZI](https://sketchfab.com/EZ-GAZI),
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) —
+`assets/trader.glb`, through `tools/gltfpack.py --tex 1024`: 4,818 triangles
+and its six base-colour maps. Its file ships no clips, so the crossed arms
+are composed onto the bind pose once at load.
+
+
 **Skull Key** — what lies between the candles in the catacombs' lower vault,
 and the only thing that opens the barred door out of them.
 

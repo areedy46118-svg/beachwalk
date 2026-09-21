@@ -12409,3 +12409,35 @@ graph, and ONLY where you are not looking at it, because a creature that
 teleports in front of you is worse than one that is stuck. An act is
 standing still on purpose and a fight is fought at arm's length, so neither
 counts.
+
+**THE RUDE TRADER, AND THE FIRST THING THE JARS EVER BOUGHT.** EZ-GAZI's
+"BOUNTY HUNTER" (CC-BY-4.0) stands at the foot of the sand wall a little
+short of the stones, arms crossed, looking out at the water. E, and he says
+"Just buy something..."; what he has is one glowstick and two bottles of
+water, and what he wants is the thing you have been filling jars with all
+night. He is not a `MUT_KINDS` entry and has no fight in him — a model, a
+hit proxy and a script, the snorkeler's own arrangement.
+
+- **A SHOP IS A DIALOGUE NODE WITH A GETTER ON ITS TEXT.** Every answer he
+  has — sold, sold out, you cannot afford it, you already have one — is the
+  same node; what he says is decided by the SALE and not by which line you
+  pressed (`traderSaid`). Choices are re-read every time a node is shown, so
+  looping back to it is the whole of "buy something else".
+- **AND THE SAME THING CANNOT BE HAD TWICE.** `addToInventory` refuses an
+  item already in the pack by identity, so a sale that did not ask would
+  take the jars and hand over nothing. The water is the interesting case: a
+  bottle you have DRUNK is gone from the pack and can be sold again, and a
+  bottle you still carry is refilled instead (`refillBottle`), which is the
+  same jar for the same water and needs no second item.
+- **AND SPENDING GOES OUT BY ITS OWN DOOR.** `gainJar` pulses the corner and
+  plays the sound of a jar ARRIVING; `spendJars` is the other direction.
+- **HIS ARMS ARE THE ONLY THING HERE THAT WAS LOOKED AT RATHER THAN
+  MEASURED**, and even they were solved rather than typed: the rig's own
+  axes were found by ROTATING each one and reading where the hand went
+  (`upper_arm` local -Z brings the arm down and in; local X swings it
+  forward), and then a coordinate descent put each hand on a target across
+  the chest with the elbow held out. **The forearm is 0.22 m**, so a hand
+  can never reach the opposite elbow: the best this rig can do is the
+  gauntlets meeting at the centre line, which is what crossed arms look
+  like anyway. Weighting the elbow too little collapses it onto the chest
+  and reads as a man hugging himself — that is the one number that matters.

@@ -130,6 +130,7 @@ const ASSET_REACH = {
   'assets/reptilian.glb': 64,         // and the three waves of what is in there
   'assets/drone.glb': 65,
   'assets/alienbeast.glb': 66,
+  'assets/trader.glb': 738,           // the man at the sand wall, a little short of the stones
   'assets/portal.glb': 740,            // the stone circle, a hundred metres past the cave
   'assets/courtyard.glb': 742,         // and what is on the other side of it
   'assets/samurai.glb': 744,           // and who is waiting in there
@@ -27280,6 +27281,8 @@ function saveCheckpoint() {
       holdDoor: holdDoorOpen,
       // and the catacombs' own, which the skull key turns
       catDoor: catDoorOpen,
+      // and what the man at the sand wall has left to sell
+      trader: { ...TRADER_STOCK },
       dockDoor: dockDoorOpen,
       /* AND THE DOJO. The same rule as the shell door and the smiling one: a
        * fight you have already won does not un-happen when you load, and a
@@ -27448,6 +27451,7 @@ function updateRestore(dt) {
   for (const i of f.crates || []) if (crates[i] && !crates[i].broken) breakCrate(crates[i], 1, true);
   if (f.dojoWon) dojoWon = true;
   if (f.catDoor) catDoorOpen = true;
+  if (f.trader) Object.assign(TRADER_STOCK, f.trader);
   if (f.heroSword || f.dojoWon) heroSwordTaken = true;
   if (f.holdDoor && !holdDoorOpen) {
     holdDoorOpen = true; holdDoorSwing = 1;
@@ -33661,6 +33665,144 @@ const PORTAL_RING = 2.65;          // the stone circle's own radius, once fitted
 const PORTAL_HOLD = 0.85;          // stand in the middle this long and it takes you
 const PORTAL_STEP = 1.05;          // "the middle" is this close to the axis
 const PORTAL_HEAR = 34;            // the hum reaches this far
+
+/* THE RUDE TRADER, a little short of the stones. EZ-GAZI's "BOUNTY HUNTER"
+ * (CC-BY-4.0) stands at the foot of the sand wall with his arms crossed,
+ * looking out at the water, and he would rather you did not talk to him.
+ * What he has is one glowstick and two bottles of water, and what he wants
+ * for them is the thing you have been filling jars with all night — which
+ * is the first time in this game the jars buy anything at all.
+ *
+ * He is not a `MUT_KINDS` entry and has no fight in him: he is a model, a
+ * hit proxy and a script, the snorkeler's own arrangement. His file ships
+ * no clips, so the pose is composed onto the bind once at load and nothing
+ * ever stamps over it — there is no mixer on him to argue with. */
+const TRADER_X = CLIFF_BLOCK_X - 1.35, TRADER_Z = PORTAL_Z + 8.5, TRADER_H = 1.84;
+const TRADER_STOCK = { glow: 1, water: 2 };
+const TRADER_PRICE = { glow: 2, water: 1 };
+let traderSaid = '';
+/* A JAR IS A NUMBER YOU CARRY, and `gainJar` is the one door it comes in
+ * by — the sound and the pulse it plays are a jar ARRIVING, so spending
+ * goes out through its own. */
+function spendJars(n) {
+  bloodJars = Math.max(0, bloodJars - n);
+  jarItem.count = bloodJars;
+  bloodPulse = 1;
+  updateBloodReadout();
+}
+function traderBuy(what) {
+  const price = TRADER_PRICE[what];
+  if (TRADER_STOCK[what] <= 0) { traderSaid = 'Sold out. Shocking, I know.'; return; }
+  if (bloodJars < price) {
+    traderSaid = price === 1 ? 'One jar. You have none. Off you go.' : 'Two jars. Come back when you can count.';
+    return;
+  }
+  if (what === 'glow') {
+    /* AND THE SAME THING CANNOT BE HAD TWICE — `addToInventory` refuses an
+     * item already in the pack by identity, so a sale that did not ask
+     * would take the jars and hand over nothing. */
+    if (inventory.includes(glowstickItem)) { traderSaid = 'You have one. What do you want, a pair?'; return; }
+    spendJars(price); TRADER_STOCK.glow--;
+    addToInventory(glowstickItem);
+    traderSaid = "Take it. Don't wave it at me.";
+  } else {
+    if (inventory.includes(waterBottleItem)) {
+      if (waterSips > 0) { traderSaid = 'Yours is full. Drink it first.'; return; }
+      spendJars(price); TRADER_STOCK.water--; refillBottle();
+      traderSaid = 'Filled. Now go away.';
+    } else {
+      spendJars(price); TRADER_STOCK.water--;
+      addToInventory(waterBottleItem); refillBottle();
+      traderSaid = "It's water. Try not to choke.";
+    }
+  }
+  sfxThud(0.03);
+}
+/* The node's own text is a GETTER, so one node carries every answer he has:
+ * what he says is decided by the sale, not by which line you pressed. */
+const TRADER_SCRIPT = {
+  start: {
+    text: 'Just buy something...',
+    choices: [
+      { label: 'Glowstick — 2 blood jars', to: 'said', act: () => traderBuy('glow') },
+      { label: 'Bottle of water — 1 blood jar', to: 'said', act: () => traderBuy('water') },
+      { label: 'Nothing.', to: 'go' },
+    ],
+  },
+  said: {
+    get text() { return traderSaid; },
+    choices: [
+      { label: 'Glowstick — 2 blood jars', to: 'said', act: () => traderBuy('glow') },
+      { label: 'Bottle of water — 1 blood jar', to: 'said', act: () => traderBuy('water') },
+      { label: "That's all.", to: 'go' },
+    ],
+  },
+  go: { text: 'Finally.', choices: [] },
+};
+const TRADER_NPC = { name: 'Rude Trader', script: TRADER_SCRIPT, sprite: null, headY: TRADER_H * 0.86, fov: 26 };
+const traderWorld = new THREE.Group();
+traderWorld.position.set(TRADER_X, 0, TRADER_Z);
+traderWorld.rotation.y = -Math.PI / 2;      // the model's front is +Z; -x is the water
+scene.add(traderWorld);
+TRADER_NPC.sprite = traderWorld;
+/* ARMS CROSSED, AND THE ANGLES ARE THE ONLY THING HERE THAT WAS LOOKED AT
+ * RATHER THAN MEASURED. Nothing about a pose can be reasoned out of a bone
+ * matrix — this file has got a sign wrong three times doing exactly that —
+ * so every one of these came off a render. They are Euler angles in each
+ * bone's OWN frame, composed onto the bind. */
+const TRADER_POSE = {
+  'upper_armL': [0.320, -0.200, -0.280], 'forearmL': [2.500, 0, -1.080],
+  'upper_armR': [0.400, 0.120, 0.324], 'forearmR': [1.943, 0, 1.177],
+};
+let traderRig = null, traderBones = null;
+function traderPose() {
+  if (!traderBones) return;
+  for (const k of Object.keys(TRADER_POSE)) {
+    const b = traderBones[k]; if (!b) continue;
+    const a = TRADER_POSE[k];
+    b.quaternion.copy(b.userData.bind).multiply(_tqTmp.setFromEuler(_teTmp.set(a[0], a[1], a[2], 'XYZ')));
+  }
+  traderWorld.updateMatrixWorld(true);
+}
+const _tqTmp = new THREE.Quaternion(), _teTmp = new THREE.Euler();
+bwGlb('assets/trader.glb', (gltf) => {
+  const root = gltf.scene;
+  root.updateMatrixWorld(true);
+  const b0 = skinnedBounds(root);
+  const k = TRADER_H / Math.max(0.01, b0.max.y - b0.min.y);
+  root.scale.setScalar(k);
+  root.position.set(-(b0.min.x + b0.max.x) * 0.5 * k, -b0.min.y * k, -(b0.min.z + b0.max.z) * 0.5 * k);
+  root.traverse((o) => {
+    if (o.isBone) {
+      o.userData.bind = o.quaternion.clone();
+      const n = o.name.replace(/_\d+$/, '');
+      if (/^(upper_arm|forearm|hand|shoulder)[LR]$/.test(n)) (traderBones = traderBones || {})[n] = o;
+    }
+    if (!o.isMesh) return;
+    o.frustumCulled = false;                       // a skinned box is the bind pose
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of mats) {
+      m.metalness = 0; m.roughness = 1;            // METALNESS IS A TRAP, and there is no map for it here
+      m.emissive = new THREE.Color(0xffffff); m.emissiveMap = m.map || null; m.emissiveIntensity = 0.16;
+      m.needsUpdate = true;
+    }
+  });
+  traderRig = root;
+  traderWorld.add(root);
+  traderPose();
+});
+const traderHit = new THREE.Group();
+{
+  const hit = new THREE.Mesh(new THREE.BoxGeometry(0.9, TRADER_H, 0.9),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy'; hit.visible = false; hit.position.y = TRADER_H / 2;
+  traderHit.add(hit);
+  traderWorld.add(traderHit);
+}
+addInteractable(traderHit, 'Talk to him', 'npc', {
+  far: 5.0, when: () => !dialogOpen,
+  onActivate: () => startDialog('start', TRADER_NPC),
+});
 
 const DOJO_X = 6000, DOJO_Y = 800, DOJO_Z = 6000;
 /* AND IT IS PACKED AT HALF THE SIZE OF THE MAN WALKING IT. The note below
@@ -44614,6 +44756,7 @@ window.__bw = {
   get tavWorld() { return tavWorld; }, get tavTables() { return tavTables; }, get tavChairs() { return tavChairs; },
   get wongUnit() { return wongUnit; }, get drunkUnit() { return drunkUnit; }, get orcUnit() { return orcUnit; },
   crawlerUnit, CRAWL_X, CRAWL_Z, crawlerProvoke, startCaveIn, placeInCatacombs, placeOutsideCatDoor, startCatExit, catRoute, catSees, catNodeAt, CAT_X, CAT_Y, CAT_Z, CAT_SITE, CAT_LAND, CAT_DOOR, CAVE_Z,
+  TRADER_X, TRADER_Z, TRADER_H, TRADER_POSE, traderPose, TRADER_STOCK, traderBuy, TRADER_NPC, traderWorld, get traderRig() { return traderRig; },
   skullKeyItem, skullKey, skullWorld, dropSkullKey, buildCatKey, CAT_KEY, get catDoorOpen() { return catDoorOpen; }, set catDoorOpen(v) { catDoorOpen = v; },
   catCue, playSampleAt, keepWallNear, keepHitsWall, catNoiseAt, catSpots, catG: () => catG,
   catFloorAt: (x, z, y, up = 0.7) => keepFloorAt(x, z, y, up, CAT_SITE),
