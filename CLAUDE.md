@@ -12655,3 +12655,52 @@ the normal it arrived with belongs to a surface that is no longer there.
 `node` on the PATH at all. The browser is the eager parser for an ES module
 anyway: load the page and read `read_console_messages` — a syntax error is a
 blank screen and a message, not a silent pass.
+
+**AND THEN EVERY PIECE WAS AUDITED, AND SIX OF THEM WERE INSIDE SOMETHING.**
+"Make sure all models have collision and do not collide with other objects"
+is a measurement, and `tools/furniture_audit.py` is it: the plan is read out
+of `models/shipwreck.js` and asked four questions — does every piece have a
+solid box at all, does any piece's turned footprint meet another's, does any
+meet the wreck's OWN gear (`shipwreck.userData.nav.props`), and does any
+stand through her planking (`halfAtY` at its own station and its own height).
+Run on the first layout it found SEVEN faults, and not one of them was
+visible from the side I had been photographing:
+
+- the tipped stool had **no box at all** and was lying through the bench;
+- a cask in the bow was **15 cm inside the next cask**, and the staved one
+  28 cm inside the one beside it;
+- a chair was standing **26 cm inside the end of the gutting bench**;
+- and two more were within a centimetre of touching.
+
+Three things the audit needed before it could be trusted:
+
+- **A CYLINDER IS A CIRCLE.** Testing a cask by its axis-aligned box
+  overestimates it by 0.41r and moves casks that are already clear.
+- **A SEPARATING-AXIS TEST MUST RETURN THE BEST AXIS, NOT THE FIRST.**
+  Written to return the first axis that separates, it reported two boxes
+  ELEVEN METRES APART as two centimetres clear — true, and useless, because
+  a threshold on that number flags everything.
+- **AND `halfAtY` HAS A FLARE IN IT.** Reimplementing her section without
+  `flareAt` is conservative by up to a third of a metre in the bow, which is
+  enough to move three casks that were never through anything.
+
+**AND A DECK PIECE SITS ON `DECK_Y`, WHICH IS FLAT.** They were put at
+`DECK_Y + 0.055` — the height of the breasthook's planking up forward — and
+measured by raycast at the two stations they actually stand on, her deck is
+3.200 there. Both casks floated five and a half centimetres over her boards.
+Her deck is flat by construction (sheer lifts the RAIL, not the deck), so
+there is one number and it is `DECK_Y`.
+
+**AND A FOOTSTOOL TIPPED OVER IS A SLAB ON THE FLOOR.** `chair_4` is 0.45 m
+across and 0.50 tall; at this texel count, lying on her boards in the dark,
+it read as a pale rectangle and not as a stool. It is out. The crew space's
+own lesson — a thing too small to be what it is reads as a small pale lump —
+applies to furniture as well as to litter.
+
+Measured at the end: the audit is clean, the quarters are **9.5 m² free and
+9.5 m² reachable**, the deck 190.8 of 190.8, and the hold 55.1 of 55.2 —
+the 0.14 m² is a 0.6 by 0.1 m slot behind the forward cask against her
+planking, which is what stowing a cask against a ship's side leaves. And
+flooded from the breach, the quarters are NOT reachable: the barricade is
+still in the doorway, which is the one thing about that room that has to
+stay true.

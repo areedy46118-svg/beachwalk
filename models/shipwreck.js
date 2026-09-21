@@ -2193,24 +2193,27 @@ export function makeShipwreck(opts = {}) {
       // the mess table, off the centreline so the way in from the door
       // stays clear, with a bench drawn up to it and two chairs at it
       ['table_3', 4.85, -1.42, 0, 1.44, 0.96],
-      ['bench_4', 4.85, -2.10, 0, 1.62, 0.48],
+      ['bench_4', 4.85, -2.10, 0, 1.62, 0.44],
       ['chair_2', 4.34, -0.66, Math.PI, 0.50, 0.56],
       ['chair_3', 5.36, -0.62, Math.PI * 0.86, 0.50, 0.56],
-      // one of them went over and nobody set it up again
-      ['chair_4', 3.95, -1.95, 0.7, 0, 0, { tilt: 0.22 }],
+      /* `chair_4` is not here. It is a footstool 0.45 m across and 0.50
+       * tall, and tipped over on her boards at this texel count it reads as
+       * a flat slab lying on the floor — the crew space's own lesson about
+       * litter, which is that a thing too small to be what it is reads as a
+       * small pale lump. */
       // stores, up against the after end by the stove
       ['barrel_2', 6.52, 2.92, 0.9, 0.62, 0.62],
       ['barrel_4', 6.46, -2.92, 2.1, 0.80, 0.80],
       // ---- the bow of her hold, forward of the breach ------------------
-      ['barrel_5', -7.20, -2.05, 0.4, 0.88, 0.88],
-      ['barrel_4', -6.72, -2.48, 2.6, 0.80, 0.80],
-      ['barrel_2', -7.58, -1.46, 1.7, 0.62, 0.62],
+      ['barrel_5', -7.30, -2.45, 0.4, 0.88, 0.88],
+      ['barrel_4', -6.45, -2.84, 2.6, 0.80, 0.80],
+      ['barrel_2', -5.70, -3.12, 1.7, 0.62, 0.62],
       // one of them staved in, lying where it came adrift
-      ['barrel_3', -7.28, 1.62, 1.2, 1.16, 1.22],
-      ['barrel_1', -6.90, 2.34, 2.8, 0.84, 0.64],
+      ['barrel_3', -7.10, -1.15, 0.3, 1.40, 1.44],
+      ['barrel_1', -7.50, 2.55, 2.8, 0.96, 0.84],
       // ---- her hold: the bench she was worked over --------------------
       ['table_1', -4.20, -2.58, 0, 2.14, 1.20],
-      ['chair_5', -3.10, -2.10, 1.9, 0.60, 0.60],
+      ['chair_5', -2.75, -2.60, 1.9, 0.70, 0.70],
       // and a long bench down the side you come in from, aft of the hole
       ['bench_3', -1.10, 2.94, 0, 3.38, 0.50],
       // ---- her afterdeck, where a working boat stows ------------------
@@ -2277,7 +2280,11 @@ export function makeShipwreck(opts = {}) {
         const c = Math.abs(Math.cos(ry)), s = Math.abs(Math.sin(ry));
         const sx = bb.max.x - bb.min.x, sz = bb.max.z - bb.min.z;
         const fw = sx * c + sz * s, fd = sx * s + sz * c;
-        const y = (o && o.deck) ? DECK_Y + 0.055 : soleUnder(x, z, fw, fd);
+        /* HER DECK IS AT `DECK_Y`, FLAT — measured by raycast at the two
+         * stations these stand on: 3.200, not the 3.255 of the breasthook
+         * up forward, which is what this was written to and which left both
+         * casks floating five and a half centimetres over the planking. */
+        const y = (o && o.deck) ? DECK_Y : soleUnder(x, z, fw, fd);
         m.position.set(x, y, z);
         m.rotation.set(o && o.tilt ? o.tilt : 0, ry, o && o.roll ? o.roll : 0);
         G.add(m);
