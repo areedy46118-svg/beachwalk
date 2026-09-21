@@ -18204,6 +18204,49 @@ function dressMutant(u, gltf) {
   for (const name of (u.kind.flatten || [])) {
     m.traverse((o) => { if (o.isBone && o.name === name) restPos[name] = o.position.clone(); });
   }
+  /* AND AN AUTHORED CLIP ON A RIG THAT BINDS IN A T HAS ITS ARMS IN THE T.
+   *
+   * The samurai's set is eight retargeted Mixamo greatsword clips and three
+   * written by hand, and the two families do not agree about where his LEFT
+   * ARM is. Every retargeted clip holds the katana two-handed; the authored
+   * stagger, taunt and rising cut are built up from the rig's own bind pose,
+   * which is a T, so the left hand comes off the handle and hangs dead at
+   * his side while the right one waves the sword about on its own. Measured
+   * as the gap between his hands over his own arm reach — the one figure
+   * that cannot be thrown off by two rigs having different proportions —
+   * every good clip in the set reads 0.25 to 0.48 and these three read 0.84,
+   * 0.93 and 1.03. He plays the stagger on every poise break and the taunt
+   * the moment he wakes, so they are two of the three clips you see most.
+   *
+   * The proper fix is in the packer: base an authored clip on a frame of the
+   * retargeted idle rather than on the bind pose, which is what the Dealer's
+   * own set does. That source is a .blend on the owner's other machine, so
+   * what is done here instead is the same idea on the shipped tracks — every
+   * arm joint eased toward the idle's own guard by `w`, which puts both
+   * hands back on the sword and leaves the clip's body, legs and whatever
+   * swing it has intact. Measured after, at 0.70: 0.53, 0.47 and 0.51,
+   * which is the band the rest of the set lives in. It is opt-in and no
+   * other creature in this game declares it. */
+  if (u.kind.armRest) {
+    const AR = u.kind.armRest;
+    const ref = gltf.animations.find((c) => c.name === AR.from);
+    if (ref) {
+      const _qc = new THREE.Quaternion(), _qr = new THREE.Quaternion();
+      for (const nm of AR.clips) {
+        const c = gltf.animations.find((x) => x.name === nm); if (!c) continue;
+        for (const bn of AR.bones) {
+          const t = c.tracks.find((x) => x.name === bn + '.quaternion');
+          const r = ref.tracks.find((x) => x.name === bn + '.quaternion');
+          if (!t || !r) continue;
+          _qr.set(r.values[0], r.values[1], r.values[2], r.values[3]);
+          for (let i = 0; i < t.values.length; i += 4) {
+            _qc.set(t.values[i], t.values[i + 1], t.values[i + 2], t.values[i + 3]).slerp(_qr, AR.w);
+            t.values[i] = _qc.x; t.values[i + 1] = _qc.y; t.values[i + 2] = _qc.z; t.values[i + 3] = _qc.w;
+          }
+        }
+      }
+    }
+  }
   for (const c of gltf.animations) {
     c.tracks = c.tracks.filter((t) => !t.name.endsWith('.scale'));
     for (const name in restPos) {
@@ -20970,6 +21013,7 @@ const RAG_SELF = 0.92;                   // how much of the summed radii it enfo
  * keeps going instead of being eaten by the air. */
 const RAG_G = 17.5;
 const _rg1 = new THREE.Vector3(), _rg2 = new THREE.Vector3(), _rg3 = new THREE.Vector3(), _rgQ = new THREE.Quaternion(), _rgQ2 = new THREE.Quaternion();
+const _rgM1 = new THREE.Matrix4(), _rgM2 = new THREE.Matrix4();
 const _rgM = new THREE.Matrix4();
 
 /* WHAT A FALLING BODY BREAKS. The room is full of glass set out to be
@@ -21050,6 +21094,143 @@ function mutRagdoll(u, dirX, dirZ, power) {
     if (A.p.distanceTo(B.p) < d) continue;          // already inside itself at rest: not our business
     hits.push({ a: A, b: B, d });
   }
+  /* A SKELETON MAY BE A FOREST, AND THE SAMURAI'S IS THIRTEEN TREES.
+   *
+   * The whole driver below assumes one thing about a rig and never said so:
+   * that every joint hangs off the hips, so writing the hips' POSITION and
+   * everybody else's ROTATION moves the whole body. Rigify's `export_def_bones`
+   * drops every ORG and MCH parent and reparents what is left onto the
+   * armature, so this man arrives as thirteen separate chains — the spine, a
+   * shoulder and an upper arm a side, a thigh a side, both pelvis bones, both
+   * breast bones and his two swords, all siblings. Measured on a corpse at
+   * rest: the spine tracked its particles to the millimetre and EVERY LIMB
+   * BONE WAS 1.7 TO 4.3 METRES FROM THE PARTICLE DRIVING IT — the torso flew
+   * off with the blow and all four limbs stayed standing where he died, with
+   * the skin stretched between them. That is the owner's "his model gets
+   * stretched out".
+   *
+   * AND THE CLAVICLES SPUN. `Character1_*Shoulder` points at `*Arm`, and on
+   * this rig the arm is not the shoulder's child — so rotating the shoulder
+   * never moves the thing it is measured against, the same correction is
+   * computed from the same unchanged direction every frame and premultiplied
+   * on top of the last one, and the bone winds up without limit: measured,
+   * 66, 132, 161 degrees off its start over half a second and still going.
+   *
+   * So three questions are asked of every part ONCE, here, and the driver
+   * does what the answers say:
+   *   `rooted`  nothing above this bone is driven, so its POSITION is nobody
+   *             else's job — it is written from the particle, the way the
+   *             hips always were.
+   *   `turns`   the joint it is meant to point at really is below it, so
+   *             rotating it moves that joint. If not, rotating is a spin.
+   *   `pin`     what to hang it off instead: its own chain parent, on the
+   *             offset it had at death. A clavicle rides the chest.
+   * A leaf (a head, a hand, a toe) has nothing to point at and wants none of
+   * this; it rides its bone parent, which is what it already did. */
+  const isPart = new Set(parts.map((q) => q.bone));
+  const under = (bn, anc) => { for (let b = bn.parent; b && b.isBone; b = b.parent) if (b === anc) return true; return false; };
+  for (const q of parts) {
+    let drivenAbove = false;
+    for (let b = q.bone.parent; b && b.isBone; b = b.parent) if (isPart.has(b)) { drivenAbove = true; break; }
+    q.rooted = !drivenAbove;
+    const kid = q.child && byName[q.child];
+    q.turns = !!(kid && under(kid.bone, q.bone));
+    q.pin = null;
+    /* Only where the joint it should point at is really THERE and really
+     * below something else: a part whose child was never built (a rig that
+     * is missing a toe, a limb already severed) has nothing to be driven
+     * toward and rides its own bone parent, which is what it always did. */
+    if (!q.turns && kid && byName[q.parent]) q.pin = byName[q.parent];   // cannot point at it: ride the parent instead
+  }
+  /* AND WHAT THE RAGDOLL HAS NO PARTICLE FOR STILL HAS TO COME WITH THE BODY.
+   * Four more of his bones are their own roots and are named by nothing here:
+   * `DEF-pelvis.L/R`, which carry both scabbards and the sash, `DEF-breast.L/R`,
+   * and the two swords. While the clips are driving them nobody notices,
+   * because a clip writes every bone every frame — the mixer stops on the
+   * frame he dies, so they hold their last transform in the ARMATURE's frame
+   * and stand in mid air where the man was while the body falls away
+   * underneath. Anything that is neither a driven joint, nor below one, nor
+   * ABOVE one (the hips' own parent must be left alone — the hips' position is
+   * expressed in it) is hung off a joint. On every other rig in this game the
+   * set is empty and not a line of this runs.
+   *
+   * WHICH JOINT IS A QUESTION THE ANIMATION ANSWERS, AND PROXIMITY DOES NOT.
+   * The obvious rule is "the nearest joint", and measured it gets the swords
+   * wrong both ways round: in the standing death pose his left hand hangs by
+   * his left hip, so the WAKIZASHI's nearest joint is the left upper arm at
+   * 0.138 m — a sheathed sword that would then swing about with a dead arm —
+   * while in the BIND pose both swords sit at the waist and the katana's
+   * nearest joint is the spine, when the thing it is actually in is his fist.
+   * Neither pose can tell you, because the question is not where a bone IS,
+   * it is what it MOVES WITH. So the clips are asked: play each one, sample
+   * the orphan's position in every candidate joint's own frame, and take the
+   * joint it varies least in. What comes back is not a judgement call —
+   *
+   *     Wakizashi    Hips      0.0016   (next: Spine      0.1815, 113x)
+   *     Katana       RightHand 0.0076   (next: RightForeArm 0.0533,  7x)
+   *     DEF-pelvis.L Hips      0.0000   (next: Spine      0.0810)
+   *     DEF-breast.L Spine2    0.0757   (next: Spine1     0.0814)
+   *
+   * — a sheath on the hip, a sword in the hand, a sash on the pelvis and a
+   * chest bone on the chest, every one of them right. A bone BELOW an orphan
+   * (the katana's tip) is left out and rides it, the way anything below a
+   * driven joint does. */
+  const orphans = [];
+  {
+    const all = [];
+    u.model.traverse((o) => { if (o.isBone) all.push(o); });
+    const aboveAPart = new Set();
+    for (const q of parts) for (let b = q.bone.parent; b && b.isBone; b = b.parent) aboveAPart.add(b);
+    const loose = new Set();
+    for (const bn of all) {
+      if (isPart.has(bn) || aboveAPart.has(bn)) continue;
+      let below = false;
+      for (let b = bn.parent; b && b.isBone; b = b.parent) if (isPart.has(b)) { below = true; break; }
+      if (!below) loose.add(bn);
+    }
+    // anything under another loose bone rides it, so only the tops of these trees are hung
+    const tops = [...loose].filter((bn) => { for (let b = bn.parent; b && b.isBone; b = b.parent) if (loose.has(b)) return false; return true; });
+    if (tops.length && u.model) {
+      /* The pose he died in is what every offset below is measured from, so
+       * it is put back the moment the sampling is done. */
+      const snap = all.map((bn) => [bn, bn.position.clone(), bn.quaternion.clone(), bn.scale.clone()]);
+      const acc = tops.map(() => parts.map(() => []));
+      const mx = new THREE.AnimationMixer(u.model);
+      const clips = [];
+      for (const nm of ['idle', 'walk', 'run', 'die', 'sSide', 'light', 'attack']) {
+        const a = u.clips && u.clips[nm]; if (a && a._clip && !clips.includes(a._clip)) clips.push(a._clip);
+      }
+      if (!clips.length && u.clips) for (const k in u.clips) { const a = u.clips[k]; if (a && a._clip) { clips.push(a._clip); if (clips.length >= 4) break; } }
+      for (const c of clips) {
+        const act = mx.clipAction(c); mx.stopAllAction(); act.reset(); act.play(); act.weight = 1; act.enabled = true;
+        for (let k = 0; k <= 4; k++) {
+          act.time = c.duration * k / 4; mx.update(0); u.model.updateMatrixWorld(true);
+          tops.forEach((bn, oi) => {
+            bn.getWorldPosition(_rg1);
+            parts.forEach((q, qi) => { _rgM1.copy(q.bone.matrixWorld).invert(); acc[oi][qi].push(_rg1.clone().applyMatrix4(_rgM1)); });
+          });
+        }
+      }
+      mx.stopAllAction(); mx.uncacheRoot(u.model);
+      for (const [bn, po, qo, sc] of snap) { bn.position.copy(po); bn.quaternion.copy(qo); bn.scale.copy(sc); }
+      u.model.updateMatrixWorld(true);
+      const spread = (list) => {
+        if (list.length < 2) return Infinity;
+        _rg2.set(0, 0, 0); for (const v of list) _rg2.add(v); _rg2.divideScalar(list.length);
+        let s2 = 0; for (const v of list) s2 += v.distanceToSquared(_rg2);
+        return Math.sqrt(s2 / list.length);
+      };
+      tops.forEach((bn, oi) => {
+        let host = null, best = Infinity;
+        parts.forEach((q, qi) => { const sd = spread(acc[oi][qi]); if (sd < best) { best = sd; host = q; } });
+        // no clips to ask (a rig that ships none): the nearest joint is all there is
+        if (!host) { bn.getWorldPosition(_rg1); let d0 = Infinity;
+          for (const q of parts) { const d = _rg1.distanceToSquared(q.p); if (d < d0) { d0 = d; host = q; } } }
+        if (host) orphans.push({ bone: bn, host, off: new THREE.Matrix4().copy(host.bone.matrixWorld).invert().multiply(bn.matrixWorld) });
+      });
+    }
+  }
+  for (const q of parts) if (q.pin) q.off = new THREE.Matrix4().copy(q.pin.bone.matrixWorld).invert().multiply(q.bone.matrixWorld);
   /* The room it is in, if it is in one — looked up once, because a body
    * does not change buildings while it falls. */
   const rec = inBunker || bunkers.find((bk) => {
@@ -21059,7 +21240,7 @@ function mutRagdoll(u, dirX, dirZ, power) {
       && Math.abs(u.g.position.y - bk.group.position.y) < nv.room.h;
   });
   const rb = rec && rec.group.userData.bunker;
-  u.rag = { parts, byName, cons, bends, hits, t: 0, asleep: false,
+  u.rag = { parts, byName, cons, bends, hits, orphans, t: 0, asleep: false,
             room: rb && rb.nav ? rb.nav.room : null, bunker: rb || null,
             ring: !!(u.kind.ring && SH && shrineReady),     // it dies inside the drum
             roomG: rec ? rec.group : null, wallHit: 0, wallAt: new THREE.Vector3() };
@@ -21363,13 +21544,17 @@ function updateMutRagdoll(u, dt) {
     }
   }
   // drive the skeleton from the particles, parent first
-  const hips = r.byName['Character1_Hips'];
-  if (hips) {
-    hips.bone.parent.updateWorldMatrix(true, false);
-    hips.bone.position.copy(hips.bone.parent.worldToLocal(_rg1.copy(hips.p)));
+  /* EVERY ROOT IS PLACED, NOT JUST THE HIPS. On a rig that is one tree the
+   * hips are the only joint with nothing driven above them and this is the
+   * line it always was; on a forest it is every limb's first bone, and
+   * skipping them is what left four limbs standing where the man died. */
+  for (const q of r.parts) {
+    if (!q.rooted || q.pin || !q.bone.parent) continue;
+    q.bone.parent.updateWorldMatrix(true, false);
+    q.bone.position.copy(q.bone.parent.worldToLocal(_rg1.copy(q.p)));
   }
   for (const q of r.parts) {
-    if (!q.child || !r.byName[q.child]) continue;
+    if (!q.turns || !q.child || !r.byName[q.child]) continue;
     const kid = r.byName[q.child];
     q.bone.updateWorldMatrix(true, false);
     kid.bone.updateWorldMatrix(true, false);
@@ -21388,6 +21573,27 @@ function updateMutRagdoll(u, dt) {
     if (q.bone.parent) { q.bone.parent.getWorldQuaternion(_rgQ); _rgQ2.premultiply(_rgQ.invert()); }
     q.bone.quaternion.copy(_rgQ2);
   }
+  /* AND WHAT COULD NOT BE POINTED IS HUNG. The clavicles first — their host
+   * is the chest, which the loop above has just turned — and then anything
+   * the ragdoll has no particle for at all. A host that has been cut off the
+   * body since (a severed arm) is no host, and its passengers are left where
+   * the cut left them. */
+  for (const q of r.parts) if (q.pin && r.byName[q.pin.name] === q.pin) ragHang(q.bone, q.pin.bone, q.off);
+  if (r.orphans) for (const o of r.orphans) if (r.byName[o.host.name] === o.host) ragHang(o.bone, o.host.bone, o.off);
+}
+/* A BONE PUT BACK ON ANOTHER BONE, at the offset it had when the body died —
+ * the katana's own pin, which is the only way to move a bone whose parent is
+ * not part of the body. Writing the LOCAL transform and updating the subtree
+ * is what the skeleton reads, so whatever hangs off it comes too. */
+function ragHang(bone, hostBone, off) {
+  hostBone.updateWorldMatrix(true, false);
+  _rgM1.multiplyMatrices(hostBone.matrixWorld, off);
+  if (bone.parent) {
+    bone.parent.updateWorldMatrix(true, false);
+    _rgM2.copy(bone.parent.matrixWorld).invert().multiply(_rgM1);
+  } else _rgM2.copy(_rgM1);
+  _rgM2.decompose(bone.position, bone.quaternion, bone.scale);
+  bone.updateMatrixWorld(true);
 }
 
 function updateMutantUnit(u, dt) {
@@ -36436,6 +36642,14 @@ MUT_KINDS.samurai = {
    * has been in `mutPlay` since it was written and says exactly this. */
   alias: { strafeL: 'walk', strafeR: 'walk', back: 'walk', roar: 'taunt',
            walk2: 'walk', run2: 'run', idle2: 'idle', idleSrc: 'idle' },
+  /* The three hand-authored clips, put back on the guard the other eight
+   * hold the sword in. `sRise` is out of the draw and is done for the sake
+   * of the set being one set; `die` is not touched because nothing plays it
+   * any more — he goes down on the ragdoll. */
+  armRest: { from: 'idle', w: 0.70, clips: ['stagger', 'taunt', 'sRise'],
+             bones: ['DEF-shoulderL', 'DEF-shoulderR', 'DEF-upper_armL', 'DEF-upper_armR',
+                     'DEF-upper_armL001', 'DEF-upper_armR001', 'DEF-forearmL', 'DEF-forearmR',
+                     'DEF-forearmL001', 'DEF-forearmR001', 'DEF-handL', 'DEF-handR'] },
   /* AND THIS IS WHAT MAKES THE BLOWS LAND. `kind.rig` is the four joints the
    * fight asks for, and WITHOUT IT `u.bones` is never built, `mutLimbs`
    * returns an empty list, and `aimBar` and `blowLands` both quietly do

@@ -11690,3 +11690,118 @@ crossing it. The bottom tier's `to` is resolved against it as well, or the
 fall ends in the air above the water. Repack the courtyard and all of it still
 lands in the basin. **A height typed for a hand-built prop is a guess the day
 that prop is standing in somebody else's mesh.**
+
+**A SKELETON MAY BE A FOREST, AND THE RAGDOLL ASSUMED ONE TREE.** "His model
+gets stretched out and looks horrible" was one unstated assumption in a
+function written years ago: that every joint hangs off the hips, so writing
+the HIPS' POSITION and everybody else's ROTATION moves a whole body. Rigify's
+`export_def_bones` drops every ORG and MCH parent and reparents what survives
+onto the armature, so the samurai arrives as **thirteen separate chains** —
+the spine, a shoulder and an upper arm a side, a thigh a side, both pelvis
+bones, both breast bones and his two swords, all siblings under `rig`. He is
+the only asset in this game like that: scanning every skinned GLB for a skin
+with more than one root joint finds four, and on the knight, the beast and the
+monster the extra roots are IK helpers with no vertex weighted to them.
+
+Measured on a corpse at rest, bone against the particle driving it: the spine
+tracked to the millimetre and **every limb bone was 1.7 to 4.3 metres adrift**.
+The torso flew off with the blow and all four limbs stayed standing where he
+died, with the skin stretched between them. Put the old rules back on the same
+body and it reproduces exactly: worst gap 0.145 m becomes 2.43 and the skinned
+diagonal 2.15 m becomes 3.01, and on a real death — a killing blow that throws
+him — it went to 5.45 and filled the screen with a sheet of him.
+
+**AND THE CLAVICLES SPUN, WITHOUT LIMIT.** `Character1_*Shoulder` points at
+`*Arm`, and on this rig the arm is not the shoulder's child — so rotating the
+shoulder never moves the thing the correction is measured against, the same
+turn is computed from the same unchanged direction every frame and
+premultiplied onto the last one. Measured: 66, 132, 161 degrees off its start
+over half a second and still going.
+
+Three questions are asked of every part ONCE, at the build, and the driver does
+what the answers say. `rooted` — nothing above this bone is driven, so its
+position is nobody else's job and is written from the particle, which is what
+the hips always got and what every limb root needed. `turns` — the joint it
+points at really is below it, so rotating it moves that joint; if not, rotating
+is a spin. `pin` — hang it off its own chain parent on the offset it had at
+death instead, because a clavicle rides the chest. A leaf (a head, a hand, a
+toe) has nothing to point at and wants none of this. On a single-tree rig every
+answer is what the old code did, so nothing else in the game moved.
+
+**AND WHAT THE RAGDOLL HAS NO PARTICLE FOR STILL HAS TO COME WITH THE BODY.**
+`DEF-pelvis.L/R` carry both scabbards and the sash, `DEF-breast.L/R` the chest,
+and the two swords are root bones too. While the clips are driving them nobody
+notices, because a clip writes every bone every frame — the mixer stops on the
+frame he dies, so they hold their last transform in the armature's frame and
+stand in mid air where the man was while the body falls away underneath.
+Anything that is neither a driven joint, nor below one, nor ABOVE one (the
+hips' own parent must be left alone, since the hips' position is expressed in
+it) is hung off a joint.
+
+**AND WHICH JOINT IS A QUESTION THE ANIMATION ANSWERS. PROXIMITY DOES NOT, AND
+IT IS WRONG BOTH WAYS ROUND.** In the standing death pose his left hand hangs
+by his left hip, so the WAKIZASHI's nearest joint is the left upper arm at
+0.138 m — a sheathed sword that would then swing about with a dead arm. In the
+BIND pose both swords sit at the waist and the KATANA's nearest joint is the
+spine, when the thing it is actually in is his fist. The question is not where
+a bone IS, it is what it MOVES WITH, so the clips are asked: play each one,
+sample the orphan's position in every candidate joint's own frame, and take the
+joint it varies least in. It is not a judgement call —
+
+    Wakizashi     Hips       0.0016   (next: Spine        0.1815, 113x)
+    Katana        RightHand  0.0076   (next: RightForeArm 0.0533,   7x)
+    DEF-pelvis.L  Hips       0.0000   (next: Spine        0.0810)
+    DEF-breast.L  Spine2     0.0757   (next: Spine1       0.0814)
+
+— a sheath on the hip, a sword in the hand, a sash on the pelvis and a chest
+bone on the chest, every one right. A bone BELOW an orphan (the katana's tip)
+is left out and rides it. It costs 16 ms on the frame a creature with orphans
+dies, under a 260 ms hitstop, and on every other rig in this game the set is
+empty and not a line of it runs.
+
+Measured after, frame by frame down a real death: worst bone-to-particle gap
+**4.275 m → 0.145 m** (and the 0.145 is the pinned clavicle sitting where a
+clavicle sits on a chest, not drift), the skinned diagonal **2.23 to 2.62 m for
+the whole fall and at rest** against a man's 2.35 standing, 22 of 22 parts,
+asleep at 1.62 s, hips 0.17 m over the floor and the lowest joint 0.05, and the
+katana still in his fist.
+
+**AND HIS SET WAS TWO SETS THAT DISAGREED ABOUT HIS LEFT ARM.** Eight
+retargeted Mixamo greatsword clips and three written by hand, and only the
+first family holds the katana two-handed: the authored stagger, taunt and
+rising cut are built up from the rig's own bind pose, which is a T, so the left
+hand comes off the handle and hangs dead at his side while the right one waves
+the sword about on its own. Measured as the gap between his hands over his OWN
+arm reach — the one figure two rigs with different proportions can be compared
+on — every good clip in the set reads 0.25 to 0.48 and those three read 0.84,
+0.93 and 1.03. He plays the stagger on every poise break and the taunt the
+moment he wakes, so they are two of the three clips you see most of him in.
+
+The proper fix is the Dealer's, in the packer: base an authored clip on a frame
+of the retargeted idle rather than on the bind pose. **THAT SOURCE IS A .BLEND
+ON THE OWNER'S OTHER MACHINE** — `tools/samurai_pack.py` points at
+`C:\Users\...\Samurai.blend` and a Windows Blender — so what is done instead is
+the same idea on the shipped tracks at load (`kind.armRest`): every arm joint
+eased toward the idle's own guard by `w`, which puts both hands back on the
+sword and leaves the clip's body, legs and whatever swing it has untouched. At
+0.70 the three read 0.51, 0.46 and 0.49 and the whole set is one band. **A
+rebase of the clip's BASE alone does not do it** — that was tried first and
+moved the stagger only 1.03 to 0.80, because the splay is in the clip's own arm
+motion and not only in where it starts from.
+
+**AND `strafeL`/`strafeR` ARE STILL THE WALK.** The oldest animation bug in
+this file, and it cannot be fixed from here: the eight Mixamo clips he was
+given contain no sideways stride, so a man holding his distance strides forward
+while travelling sideways. It wants one clip dropped in `~/Downloads` and a
+re-run, the way the knight's was.
+
+**TWO MEASUREMENT TRAPS, BOTH OF WHICH COST A ROUND.** The pane's own rAF loop
+RUNS BETWEEN TOOL CALLS, so a fight left standing keeps being fought and a boss
+killed in one call has finished dying, won the room and put the player back on
+the beach by the next one — three contact sheets came back as pictures of grass
+a kilometre away. Freeze `requestAnimationFrame` at the top of the measurement
+and give it back with `__bw.animate()` afterwards. And **`applyBoneTransform`
+reads each bone's `matrixWorld`, which only a RENDER refreshes**: the ragdoll
+driver updates the bones it drives and leaves the fingers and twists holding
+last frame's matrices, so skinned bounds sampled without `updateMatrixWorld`
+mix fresh and stale joints and report a body 6.1 m across that is really 2.15.
