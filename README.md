@@ -155,11 +155,18 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   texture projected onto the scan. Take it, examine it, and press `E` to put it on — it leaves
   the pack for a new **Rings** section, two slots under the hotbar that appear
   the first time a ring is in your hands. Click a worn ring to take it off.
+- **Blood jars are a number, not an item.** The corner counts them; they do
+  not take a slot in the pack.
+- **The wheel walks the hotbar** one slot at a time, however hard you flick
+  it, and the selection glides rather than flashing.
 - **The Forgotten Wedding Ring** — at the back of the little bore over the
   tavern's gallery, lying between the two jars of blue blood. Worn, it makes
   you quicker by 6 % for every jar of blood you are carrying — nothing at all
   if you are carrying none, a quarter again with four. The Rings row shows
   what it is worth right now.
+- **A pile of bones in the catacombs breaks** under the blade as well as
+  under your boots — and the clatter is the loudest thing down there: it
+  carries twenty-six metres, and he comes to it.
 - **The crab telegraphs** — it no longer nips the instant it reaches you. It
   rears with its claws thrown wide and its pincers gaping for 18 frames while
   a rasp climbs under it, strikes for 6, and is then wide open for 20. The

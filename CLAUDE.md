@@ -12123,3 +12123,75 @@ it to a file — a JPEG that fits inline costs 25k tokens of context to say
 nothing. And **the point-light virtualiser owns every `PointLight` in the
 scene**: a probe lamp added from the harness is moved to layer 2 on the next
 frame and lights nothing, which reads exactly like a broken material.
+
+**SCROLLING THROUGH YOUR THINGS WAS A FLICKER, AND IT WAS `innerHTML`.**
+`renderHotbar` threw the whole strip away and built six fresh slots on every
+call — and it is called on every equip, so every notch of the wheel destroyed
+six nodes and six `<img>` and made six more. Three things follow from that
+and all three are the "not smooth": the browser re-decodes every icon, the
+0.12 s CSS transition on the selection never runs (a brand new element starts
+at its final state), and the strip visibly flashes. The slots are built ONCE
+and only a slot whose ITEM changed is rebuilt; everything else is a class
+toggle, which is what the transition was always for. Measured: the six DOM
+nodes are the same objects before and after a scroll.
+
+**AND A WHEEL GESTURE IS NOT A COUNTER.** The old handler added `deltaY` up
+to 40 and zeroed it, which threw the REMAINDER away (a slow trackpad drag
+stepped unevenly), let a flick step as fast as the events arrived (a trackpad
+sends a hundred small deltas in a burst — measured, that is five slots in one
+gesture), and kept a stalled gesture's half-step for ever. It keeps the
+remainder, starts clean after 400 ms, and will not step more than once every
+85 ms. Measured: four notches step four slots; a forty-event flick steps ONE.
+
+**THE JARS ARE A NUMBER, NOT A THING YOU CARRY.** They had a stacking slot in
+the pack with a badge on it, and the owner's word is the corner and nowhere
+else — which is right: a jar is not held, equipped or used, and two places
+showing the same tally is one of them lying the first time they disagree.
+`gainJar` no longer adds it, and a save from before this is cleaned up on the
+way through.
+
+**AND A PILE OF BONES BREAKS.** Running through one has clattered and carried
+twenty-six metres since the bones went in; a BLADE through one did nothing at
+all, which is the wrong way round — it is the one noise down there you make on
+purpose. The pile is triangles inside the room's own merged mesh and cannot be
+taken away, so what breaks is what was lying loose on it: `catBoneStrike` is
+another door in `digImpact`'s own chain (after the castle, the crate and the
+glass), it throws real gibs in the skulls' material down the swing, and the
+noise is registered AT THE PILE rather than at you. Measured: a swing at a
+pile two metres off throws twelve bones and sets his noise at r = 26.
+
+**THE TAVERN CAN ALWAYS LET GO OF YOU.** "I got stuck in these spots" was the
+stall, and every line of the walk above it is a REFUSAL — the move is turned,
+or reverted, or pushed out of — which is the Dealer's own lesson that
+reverting the frame IS the stuck. Measured over the whole hall: 4,351
+standable spots, 16 of them with drawn stone across all eight directions and
+797 with stone a full body-radius inside the body. `tavEscape` runs LAST in
+`updateTavern` and only when the body really is inside something (a wall
+within 0.20 of the centre) or has nothing under it: it walks out to the
+nearest spot with a floor within reach and room for a body, at 0.14 m a frame
+so it reads as being shouldered aside. Measured: dropped into three different
+barrels, the room puts you out and you walk away; standing normally at 280
+spots round the hall the mean drift is 0.067 m.
+
+**AND THE GRID HAS TO AGREE WITH WHAT IS DRAWN, BOTH WAYS.** `fillTavHoles`
+puts a storey back where the neighbours agree on a level, something is DRAWN
+at it, nothing is drawn in the body band over it (that would be a barrel, and
+standing inside one is the bug this would otherwise create) and a body fits.
+And the prune now drops a RAISED storey with nothing drawn under it at all:
+measured, 218 of 2,636 raised storeys were a step onto air.
+
+- **AND "IS ANYTHING DRAWN HERE" IS A QUESTION ABOUT THE CELL, NOT ITS
+  MIDDLE.** The first build of that rule probed the prune's own five points,
+  which all sit within six centimetres of the cell centre — and deleted the
+  BARREL RACK'S TOP, the rung the whole climb stands on. A 3 by 3 over the
+  cell's own width answers it properly: 218 → 103, with every rung of the
+  climb intact (0.22 → 1.99 → 2.48 → 3.56 → 4.59 → 5.31 → 6.36 → 7.42).
+
+**AND DEV MODE CAN TELL YOU WHERE YOU ARE.** Two rounds of this project have
+gone on working out which wall a screenshot was taken at — matching the
+owner's pictures against renders of the room, which cost hours and still
+ended in a question. A place in this game is three numbers and nobody could
+read them. `P` in dev mode puts them on the screen: the room, the spot in the
+ROOM'S own frame (which is what every constant in the file is written in),
+the floor under your feet, your heading, and where the crosshair lands.
+"Stand there and press P" is one line instead of an afternoon.

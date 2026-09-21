@@ -409,6 +409,43 @@ const RUN_SECONDS = 5;                    // how long you can sprint
 let fastWalk = false;
 const fastWalkEl = document.getElementById('fastwalk');
 const FAST_WALK_X = 14, NORMAL_WALK_X = 1.4;   // the slider's top, and the owner's own
+/* WHERE AM I, AND WHAT AM I LOOKING AT. Two rounds of this project have
+ * been spent working out which wall the owner photographed — matching his
+ * screenshots against renders of the room, which cost hours and still
+ * ended in a question. A place in this game is three numbers and nobody
+ * could read them. In dev mode, P puts them on the screen: the room, the
+ * spot in the ROOM'S own frame (which is what every constant in the file
+ * is written in), the height of the floor under you, and where the
+ * crosshair lands. Stand where you want a thing, press P, send the line. */
+let whereEl = null;
+function toggleWhereAmI() {
+  if (whereEl) { whereEl.remove(); whereEl = null; return; }
+  whereEl = document.createElement('div');
+  whereEl.style.cssText = 'position:fixed;top:46px;right:14px;z-index:60;font:12px ui-monospace,monospace;'
+    + 'color:#dfe6f2;background:rgba(0,0,0,0.62);padding:6px 9px;letter-spacing:0.04em;white-space:pre;pointer-events:none;';
+  document.body.appendChild(whereEl);
+}
+const _wRay = new THREE.Raycaster();
+function updateWhereAmI() {
+  if (!whereEl) return;
+  const p = camera.position;
+  let room = 'beach', ox = 0, oy = 0, oz = 0, group = null;
+  if (inTavern) { room = 'tavern'; ox = TAV_X; oy = TAV_Y + TAV_FLOOR; oz = TAV_Z; group = tavWorld; }
+  else if (inCat) { room = 'catacombs'; ox = CAT_X; oy = CAT_Y; oz = CAT_Z; group = catWorld; }
+  else if (inKeep) { room = 'keep'; ox = KEEP_X; oy = KEEP_Y; oz = KEEP_Z; group = keepWorld; }
+  else if (inUndercroft) { room = 'undercroft'; ox = UC_X; oy = UC_Y; oz = UC_Z; group = undercroft; }
+  else if (inDojo) { room = 'dojo'; ox = DOJO_X; oy = DOJO_Y; oz = DOJO_Z; group = dojoWorld; }
+  const feet = camBaseY - playerEye();
+  let aim = '';
+  if (group) {
+    _wRay.set(p, camera.getWorldDirection(_scarN).clone());
+    _wRay.far = 40;
+    const h = _wRay.intersectObject(group, true).filter((q) => q.object.visible && q.object.name !== 'hitProxy')[0];
+    if (h) aim = `\naim  ${(h.point.x - ox).toFixed(2)}, ${(h.point.y - oy).toFixed(2)}, ${(h.point.z - oz).toFixed(2)}  (${h.distance.toFixed(1)} m)`;
+  }
+  whereEl.textContent = `${room}\nfeet  ${(p.x - ox).toFixed(2)}, ${(feet - oy).toFixed(2)}, ${(p.z - oz).toFixed(2)}`
+    + `\nlook  ${(lookEuler.y).toFixed(2)} rad${aim}`;
+}
 function toggleFastWalk() {
   if (!introDone || ended || dying) return;
   fastWalk = !fastWalk;
@@ -4635,6 +4672,7 @@ window.addEventListener('keydown', (e) => {
   else if (e.code === 'KeyQ') { if (inspecting) closeInspect(); else if (equipped) toggleEquip(equipped); }
   else if (/^Digit[1-6]$/.test(e.code)) { useSlot(+e.code.slice(5) - 1); }
   else if (e.code === 'Digit8') toggleFastWalk();
+  else if (e.code === 'KeyP' && settings.devMode) toggleWhereAmI();
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
@@ -5883,23 +5921,37 @@ const inventory = [];
 const INV_MAX = 10;                 // the pack (Tab)
 const HOTBAR_SLOTS = 6;             // the quick strip on the left, keys 1–6
 let equipped = null;
+/* AND THE STRIP IS UPDATED, NOT REBUILT. `innerHTML = ''` and six fresh
+ * slots every time is what made scrolling through your things feel like a
+ * flicker rather than a slide: every wheel step threw six nodes and six
+ * `<img>` away and made six more, so the browser re-decoded every icon, the
+ * 0.12 s CSS transition on the selection never ran (a brand new element
+ * starts at its final state), and the strip flashed. The slots are built
+ * once and only the one whose ITEM has changed is rebuilt; everything else
+ * is a class toggle, which is what the transition is for. */
+const hotbarCache = [];
 function renderHotbar() {
-  hotbarEl.innerHTML = '';
   for (let i = 0; i < HOTBAR_SLOTS; i++) {
-    const item = inventory[i];
-    const slot = document.createElement('div');
-    slot.className = 'slot' + (item ? '' : ' empty') + (item && item === equipped ? ' equipped' : '');
-    let icon = '';
-    if (item) icon = iconHTML(item);
-    slot.innerHTML = `<span class="num">${i + 1}</span>` + icon;
-    if (item) {
-      const lab = document.createElement('span');
-      lab.className = 'label';
-      lab.textContent = item.name + (item.viewmodel ? (item === equipped ? ' — holster' : ' — equip') : ' — use');
-      slot.appendChild(lab);
-      slot.addEventListener('click', (e) => { e.stopPropagation(); useSlot(i); });
+    const item = inventory[i] || null;
+    let c = hotbarCache[i];
+    if (!c) {
+      const el = document.createElement('div');
+      el.addEventListener('click', (e) => { e.stopPropagation(); useSlot(i); });
+      hotbarEl.appendChild(el);
+      c = hotbarCache[i] = { el, item: undefined, count: -1, lab: null };
     }
-    hotbarEl.appendChild(slot);
+    const count = item ? (item.count || 0) : 0;
+    if (c.item !== item || c.count !== count) {
+      c.item = item; c.count = count;
+      c.el.innerHTML = `<span class="num">${i + 1}</span>` + (item ? iconHTML(item) : '');
+      if (item) {
+        const lab = document.createElement('span');
+        lab.className = 'label';
+        c.el.appendChild(lab); c.lab = lab;
+      } else c.lab = null;
+    }
+    if (c.lab) c.lab.textContent = item.name + (item.viewmodel ? (item === equipped ? ' — holster' : ' — equip') : ' — use');
+    c.el.className = 'slot' + (item ? '' : ' empty') + (item && item === equipped ? ' equipped' : '');
   }
 }
 /* Rings. A second, separate place things live: two slots under the hotbar,
@@ -6151,13 +6203,26 @@ function scrollHotbar(dir) {
   const item = inventory[slots[next]];
   if (item !== equipped) toggleEquip(item);
 }
-let wheelAcc = 0;
+/* THE WHEEL WALKS THE STRIP, AND IT HAS TO FEEL LIKE WALKING. Three things
+ * were wrong with counting to 40 and zeroing: the REMAINDER was thrown away,
+ * so a slow trackpad drag stepped unevenly; a hard flick (a trackpad sends
+ * a burst of a hundred small deltas) stepped as fast as the events arrived,
+ * which is a blur and not a choice; and a gesture that had stalled kept its
+ * half-step for ever. It keeps the remainder, starts a new gesture clean,
+ * and will not step more than once every `WHEEL_GAP`. */
+const WHEEL_STEP = 24, WHEEL_GAP = 85;
+let wheelAcc = 0, wheelAt = 0;
 window.addEventListener('wheel', (e) => {
   if (!started || !introDone || inspecting || invOpen || menuOpen || dialogOpen || noteOpen || ended || dying) return;
+  const now = performance.now();
+  if (now - wheelAt > 400) wheelAcc = 0;          // a new gesture, not the tail of the last
   wheelAcc += e.deltaY;
-  if (Math.abs(wheelAcc) < 40) return;      // a trackpad flick, not a notch
-  scrollHotbar(wheelAcc > 0 ? 1 : -1);
-  wheelAcc = 0;
+  if (Math.abs(wheelAcc) < WHEEL_STEP || now - wheelAt < WHEEL_GAP) return;
+  const dir = wheelAcc > 0 ? 1 : -1;
+  wheelAcc -= dir * WHEEL_STEP;
+  if (Math.abs(wheelAcc) > WHEEL_STEP * 1.5) wheelAcc = dir * WHEEL_STEP * 1.5;   // a flick may not bank six slots
+  wheelAt = now;
+  scrollHotbar(dir);
 }, { passive: true });
 function useSlot(i) {
   const item = inventory[i];
@@ -8266,6 +8331,7 @@ function digImpact() {
   if (castleStrike(P)) return;            // the blade went through the castle
   if (crateStrike(P)) return;             // the blade is on the crate, not the sand
   if (glassStrike()) return;              // or on something that shatters
+  if (catBoneStrike(P)) return;           // or through a pile of bones, which is the loudest thing you can do down there
   // the crab: the AIM LINE has to pass close to the body. It used to be any
   // impact point within 1.5 m of it (3.2 on a heavy) — you could kill it
   // looking at the sand beside it, which is not a hit anyone feels they made.
@@ -10983,15 +11049,15 @@ function gainJar(n = 1) {
   bloodSeen = true;
   bloodPulse = 1;
   hudJar.userData.setFill(0.86);       // a jar is a jar: the icon is always full
-  /* AND IT GOES IN THE PACK. The tally and the slot are the same number, so
-   * they are written in the same place: `count` first, THEN the add, because
-   * `renderHotbar`/`renderPack` draw the badge off it. A jar already in the
-   * pack simply has a bigger number on it — `addToInventory` refuses the
-   * duplicate by identity and returns true, which is exactly the behaviour a
-   * stack wants out of it. */
+  /* AND IT DOES NOT GO IN THE PACK. It did for a while, as one stacking
+   * slot with a badge on it — and a jar is not a thing you hold, equip or
+   * use: it is a number you carry, and the corner has counted it since the
+   * day the crab was bled. Two places showing the same tally is one of them
+   * lying the first time they disagree. The owner's word: the top left and
+   * nowhere else. `jarItem` stays, because the extraction's payoff still
+   * shows you the jar, and a save from before this is cleaned up here. */
   jarItem.count = bloodJars;
-  addToInventory(jarItem);
-  renderHotbar(); renderPack();
+  if (inventory.includes(jarItem)) { removeFromInventory(jarItem); renderHotbar(); renderPack(); }
   updateBloodReadout();
   sfxBloodGained();
 }
@@ -26995,8 +27061,7 @@ function beginRestore() {
   bloodSeen = !!f.bloodSeen;
   if (bloodSeen) { hudJar.userData.setFill(0.86); updateBloodReadout(); }
   // and the jars come back as a stack, not as a number with no slot under it
-  jarItem.count = bloodJars;
-  if (bloodJars > 0) { addToInventory(jarItem); renderHotbar(); renderPack(); }
+  jarItem.count = bloodJars;            // the corner's tally; the pack never holds it
   for (const i of d.mounds || []) if (mounds[i] && !mounds[i].taken) revealMoundNear(mounds[i].x, mounds[i].z);
   /* THE THREE AT THE DOCK ARE BEHIND YOU. Their cutscene fires on your Z
    * alone, and the pavilion is three hundred metres past it — so a restore
@@ -27164,6 +27229,7 @@ function animate() {
   bwSpan('frame', animateFrame);
 }
 function animateFrame() {
+  updateWhereAmI();                       // dev mode's own readout: where you are, in the room's own numbers
   /* ONE WARM PER FRAME, AND EACH ONE NAMED. They are the most expensive
    * things this game ever does on a single frame — a room's whole shader set
    * and every texture in it, uploaded at once — so they are the first place
@@ -38164,6 +38230,48 @@ function catThrowBones(x, y, z, n) {
     scene.add(m);
   }
 }
+/* AND A PILE YOU HIT GOES EVERYWHERE, WHICH IS THE LOUDEST THING YOU CAN
+ * DO DOWN HERE. Running through one has clattered and carried since the
+ * bones went in; a BLADE through one did nothing at all, which is the wrong
+ * way round — it is the one noise in this room you make on purpose. The
+ * pile itself is triangles inside the room's own merged mesh and cannot be
+ * taken away, so what breaks is what was lying loose on it: a scatter of
+ * real gibs in the skulls' own material, thrown down the swing, the dry
+ * clatter, and a noise AT THE PILE (not at you) that carries the full
+ * twenty-six metres. */
+function catScatterBones(x, y, z, n, dx, dz, P) {
+  const mat = catSkullMat || new THREE.MeshStandardMaterial({ color: 0xb8ad98, roughness: 0.9 });
+  for (let i = 0; i < n; i++) {
+    const r = 0.06 + Math.random() * 0.08;
+    const m = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), mat);
+    m.scale.set(1, 0.7 + Math.random() * 0.5, 1 + Math.random() * 0.5);
+    m.position.set(x + (Math.random() - 0.5) * 0.5, y + 0.2 + Math.random() * 0.2, z + (Math.random() - 0.5) * 0.5);
+    const a = Math.atan2(dx, dz) + (Math.random() - 0.5) * 1.5, sp = (2.2 + P * 2.6) * (0.5 + Math.random());
+    gibs.push({
+      m, vel: new THREE.Vector3(Math.sin(a) * sp, 1.6 + Math.random() * 2.2 + P, Math.cos(a) * sp),
+      spin: new THREE.Vector3((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20),
+      rest: y, life: 40 + Math.random() * 20, bleed: false, half: r * 0.8,
+    });
+    scene.add(m);
+  }
+}
+function catBoneStrike(P) {
+  if (!inCat || !catSpots.eatRaw.length) return false;
+  aimRay(P);
+  for (const r of catSpots.eatRaw) {
+    const wx = CAT_X + r.x, wy = CAT_Y + r.y, wz = CAT_Z + r.z;
+    _hitC.set(wx, wy + 0.3, wz);
+    const t = THREE.MathUtils.clamp(_hitC.clone().sub(_aimO).dot(_aimD), 0, digRay.far);
+    if (_hitC.distanceTo(_aimO.clone().addScaledVector(_aimD, t)) > 0.9) continue;
+    catScatterBones(wx, wy, wz, 7 + ((Math.random() * 6) | 0), _aimD.x, _aimD.z, P);
+    sfxBoneClatter(6 + P * 5);
+    catNoiseAt(wx, wz, 26);
+    hitConnect(P * 0.5, 0.45);            // it gives: a pile of bones is not a wall
+    if (isBlade()) playSample('katHit', 0.7, 0.06, 1.12);
+    return true;
+  }
+  return false;
+}
 function catKickBones(u, dt, spd, dist) {
   u.catKickT = (u.catKickT || 0) - dt;
   if (u.catKickT > 0 || spd < 2.2 || dist < 3.5 || dist > 16 || u.st.atk >= 0 || !catSpots.eatRaw.length) return;
@@ -41045,6 +41153,7 @@ function buildTavern() {
   openTavCurtains();
   buildTavJars();
   clearTavGhostRoofs();
+  fillTavHoles();                                   // and the holes the packer left between the barrels
   buildTavBottles();
   buildTavCast();
   /* AND THE HALL ITSELF IS TWO HUNDRED AND TWENTY DRAW CALLS OF NINETEEN
@@ -41298,6 +41407,64 @@ function clearTavGhostRoofs() {
   };
   for (const t of tavTables) raise(t.plan, t.top + 0.55);
   for (const c of tavChairs) if (c.prop && c.prop.box) raise(c.prop.box, c.prop.box.max.y + 0.25);
+}
+/* AND A HOLE IN THE GRID IS AN INVISIBLE WALL — the undercroft's own
+ * lesson, which this hall never got. The packer writes a cell's storeys
+ * from the triangles that land in it, and under the covered stall, among
+ * barrels and clutter and a plinth, it lands none often enough that the
+ * floor you are looking at is a cell the walk calls a wall. Measured in the
+ * stall: at (-12.0, -4.2) and (-10.0, -5.4) the DRAWN floors are 0.22, 1.99
+ * and 3.56 and the walk has nothing at all, while the cell beside them
+ * carries 0.22 — so the plinth is a patchwork of islands with invisible
+ * walls between them, which is what being wedged in there is.
+ *
+ * A hole is filled only where the geometry says so, and the test is the
+ * prune's own, inverted: something must be DRAWN at the level the
+ * neighbours stand at, nothing may be drawn in the body band over it
+ * (that is a barrel, and standing inside one is the bug this would
+ * otherwise create), and a body must fit — `keepWallNear` at the walk's own
+ * radius. Three passes, so a hole two or three cells wide fills from its
+ * rim inward. */
+function fillTavHoles() {
+  const w = tavWalk; if (!w || !tavCells || !tavWalls) return;
+  const C = w.cell;
+  let put = 0;
+  for (let pass = 0; pass < 3; pass++) {
+    const cand = new Map();
+    for (const k of tavCells.keys()) {
+      const i = k % w.gw, j = (k - i) / w.gw;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        if (!di && !dj) continue;
+        const nk = (j + dj) * w.gw + (i + di);
+        if (!tavCells.has(nk)) cand.set(nk, [i + di, j + dj]);
+      }
+    }
+    const add = [];
+    for (const [nk, [i, j]] of cand) {
+      const cx = TAV_X + w.x0 + (i + 0.5) * C, cz = TAV_Z + w.z0 + (j + 0.5) * C;
+      // what the neighbours stand on: the level most of them share
+      const lv = [];
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        if (!di && !dj) continue;
+        const fl = tavCells.get((j + dj) * w.gw + (i + di));
+        if (fl) for (let q = 0; q < fl.length; q += 3) lv.push(fl[q]);
+      }
+      if (lv.length < 3) continue;
+      lv.sort((a, b) => a - b);
+      const want = lv[(lv.length / 2) | 0];
+      let agree = 0; for (const v of lv) if (Math.abs(v - want) < 0.30) agree++;
+      if (agree < 3) continue;
+      const f = keepDrawnFloor(cx, cz, TAV_Y + want - 0.25, TAV_Y + want + 0.25, TAV_SITE);
+      if (f === null) continue;                                  // nothing drawn to stand on
+      if (keepDrawnFloor(cx, cz, f + 0.12, f + 1.30, TAV_SITE) !== null) continue;   // a barrel stands on it
+      const hit = keepWallNear(cx, cz, TAV_BODY * 0.8, f + TAV_STEP + 0.04, f + 1.70, TAV_SITE);
+      if (hit && hit.depth > 0.06) continue;                     // and a body has to fit
+      add.push([nk, Math.round((f - TAV_Y) * 100) / 100]);
+    }
+    if (!add.length) break;
+    for (const [nk, f] of add) { tavCells.set(nk, [f, 0, 99]); put++; }
+  }
+  if (tavWalk) tavWalk.filled = put;
 }
 /* Taking a surface away does not take away what the grid remembers of it. */
 function clearTavStoreys(plan, y0, y1) {
@@ -42137,6 +42304,25 @@ function pruneTavStoreys() {
         if (over !== null) break;
       }
       if (over !== null) { fl.splice(q, 3); cut++; continue; }
+      /* AND A FLOOR WITH NOTHING UNDER IT IS NOT A FLOOR. The other half of
+       * the same bug: the packer hands a raised cell a level from whatever
+       * triangle landed in it, and in a hall of barrels, beams and hanging
+       * cloth that is now and then a surface nobody can stand on — measured,
+       * 218 of 2,636 raised storeys had NOTHING drawn within a hand of them,
+       * which is a step onto air and then a fall. The flags are left alone
+       * (they are the floor by definition); anything the walk lifts you onto
+       * has to be a thing that is drawn. */
+      if (fl[q] > TAV_FLOOR + 0.45) {
+        /* AND THE QUESTION IS ASKED OF THE WHOLE CELL. Five points within
+         * six centimetres of the middle is not "is anything drawn here": the
+         * barrel rack's own top came back empty on all five and the rung the
+         * climb stands on was deleted, which is worse than the bug. A 3 by 3
+         * over the cell's own width answers it. */
+        let under = null;
+        for (let a2 = -1; a2 <= 1 && under === null; a2++) for (let b2 = -1; b2 <= 1 && under === null; b2++)
+          under = keepDrawnFloor(cx + a2 * w.cell * 0.45, cz + b2 * w.cell * 0.45, f - 0.30, f + 0.30, TAV_SITE);
+        if (under === null) { fl.splice(q, 3); cut++; continue; }
+      }
       /* AND A ROOF NOTHING IS DRAWN UNDER IS NOT A ROOF, WHICH IS THE SAME
        * BUG WEARING THE OTHER HAT. A storey carries the ceiling the packer
        * sampled, and in an open hall that is now and then a table top, a
@@ -42434,8 +42620,37 @@ function updateTavern(dt) {
   pushOutOfTavTables(p, TAV_BODY, feet);
   st = keepFloorAt(p.x, p.z, feet, up, S) || st;
   if (!st) { p.x = _preMove.x; p.z = _preMove.z; st = keepFloorAt(p.x, p.z, feet, up, S); }
+  st = tavEscape(p, feet, up, S) || st;
   if (st) { tavLastFloor = st.f; tavLastSpot.x = p.x; tavLastSpot.z = p.z; }
   groundY = st ? st.f : (tavLastFloor === null ? TAV_Y + TAV_FLOOR : tavLastFloor);
+}
+/* AND THE ROOM CAN ALWAYS LET GO OF YOU. Everything above is a refusal —
+ * the move is turned, or reverted, or pushed out of — and a refusal is how
+ * you end up standing still in a barrel: the Dealer's own lesson, that
+ * reverting the frame IS the stuck. A body that ends a frame with drawn
+ * stone through its middle, or with nothing under it at all, is walked out
+ * to the nearest spot that has a floor within reach and room for it, at a
+ * stride a frame so it reads as being shouldered aside rather than
+ * teleported. It runs last, because whatever moves you last has to be the
+ * thing that answers for where you are. */
+function tavEscape(p, feet, up, S) {
+  const w = keepWallNear(p.x, p.z, TAV_BODY, feet + TAV_STEP + 0.04, feet + 1.75, S);
+  const here = keepFloorAt(p.x, p.z, feet, up, S);
+  if (here && (!w || w.depth < 0.20)) return null;             // not stuck; leave him alone
+  for (const r of [0.35, 0.7, 1.05, 1.45, 1.9, 2.4, 3.0]) {
+    for (let k = 0; k < 12; k++) {
+      const a = (k / 12) * Math.PI * 2 + r * 2.7;
+      const nx = p.x + Math.sin(a) * r, nz = p.z + Math.cos(a) * r;
+      const s2 = keepFloorAt(nx, nz, feet, Math.max(up, TAV_STEP), S);
+      if (!s2 || Math.abs(s2.f - feet) > 1.2) continue;
+      const w2 = keepWallNear(nx, nz, TAV_BODY, s2.f + TAV_STEP + 0.04, s2.f + 1.70, S);
+      if (w2 && w2.depth > 0.05) continue;
+      const d = Math.hypot(nx - p.x, nz - p.z) || 1, step = Math.min(d, 0.14);
+      p.x += (nx - p.x) / d * step; p.z += (nz - p.z) / d * step;
+      return keepFloorAt(p.x, p.z, feet, up, S) || s2;
+    }
+  }
+  return null;
 }
 function tavGroundAt(x, z, y) {
   if (!tavReady || !inTavern || y === undefined) return null;
