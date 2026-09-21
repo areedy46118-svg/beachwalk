@@ -12441,3 +12441,72 @@ hit proxy and a script, the snorkeler's own arrangement.
   gauntlets meeting at the centre line, which is what crossed arms look
   like anyway. Weighting the elbow too little collapses it onto the chest
   and reads as a man hugging himself — that is the one number that matters.
+
+**THE .44 MAGNUM, AND THE FIRST GUN IN THIS GAME.** Mozberg_log's
+"Pistol-Magnum" (CC-BY-4.0, `assets/magnum.glb`, shipped exact — 6,372
+triangles, one material, one 2048 map) on the trader's table for five blood
+jars with three in the cylinder; six more rounds are two jars. Right click
+aims, left click fires, `R` reloads, six to a cylinder. Its aim, reload and
+recoil are posed against JUST's "Animated Magnum" (CC-BY-4.0) as REFERENCE —
+nothing of that file ships. The shot is the owner's own recording and is not
+redistributable.
+
+- **DOWN THE SIGHTS IS THE POSE THAT CANCELS THE CARRY.** The view model's
+  six numbers are offsets from `ARM_ROT_X`, `-0.45`, `0.10` and
+  `ARM_SIDE * vmHalfW`, so aiming is not a number somebody chose: it is
+  `[-ARM_ROT_X, …, -ARM_SIDE]`, the arm brought to the centre of the frame
+  and levelled, and then `magSights()` does the last of it with
+  `landBlade`'s own machinery — the REAR SIGHT projected by the main camera
+  and unprojected by `vmCamera` at its own depth, so the sight line lands on
+  the crosshair at any aspect and any field of view. Everything else about
+  aiming falls out of that one pose: `MAG_ZOOM` off `wantFov`, the look
+  sensitivity scaled by `(1 - magAim * 0.42)` and the spread closing from
+  `MAG_SPREAD` to `MAG_SPREAD_ADS`.
+- **A SPLIT-BY-INDEX MESH SHARES ITS SOURCE'S POSITION ATTRIBUTE, SO
+  `Box3.setFromObject` MEASURES THE WHOLE MODEL.** The hoist's rule, on a
+  prop: the gun and its six loose rounds are one mesh, so the body measured
+  12,000 units instead of 4,360 and was fitted at a third of its size with
+  the grip in front of the trigger guard. `part()` writes each split
+  geometry's OWN `boundingBox` and `boundingSphere` from its own index list
+  — and it has to, because the pack's icon and the examine screen are both
+  framed against exactly that.
+- **AND A PIVOT PARKED IN EMPTY AIR IS IN THE BOUNDING BOX TOO.** The
+  speedloader was first left where the file drew the rounds (half a metre
+  behind the grip, which in the hand is behind your head), then aimed at the
+  cylinder's centre line, where it sat inside 4 cm of gun. It is parked AT
+  the cylinder, offset onto the flank the hold turns toward the camera
+  (model `+Z * span * 0.085`), and it travels in from `userData.drop`.
+  `bwKeepHidden` is what stops `holdable`'s builder and `renderItemIcon`
+  switching it back on — both force every child visible, which is right for
+  everything else and would otherwise frame the icon against a loader
+  standing in mid-air.
+- **A HITBOX MUST BE ABLE TO CONTAIN A HEAD.** The first one was a sphere at
+  half the creature's height with r = 0.72, which on a 2.4 m body tops out at
+  2.09 m against a head that starts at 2.14 — headshots were not merely rare,
+  they were unreachable, and a shot aimed at one flew 45 m past to the cliff.
+  `magBody` is a proper capsule, solved as the closest approach between the
+  shot and the body's own vertical axis (0.12h to 0.94h), with the head above
+  0.74h. Measured after: 14 to the body, 31 to the head.
+- **RECOIL IS A LENS SPRING AND A REAL AIM NUDGE, AND ONLY THE SECOND ONE
+  COSTS YOU ANYTHING.** A spring alone is a picture of recoil that returns
+  exactly where it started, so the second shot is free; `gunNudge(up, side)`
+  turns the actual look, in radians, bypassing the sensitivity slider — so
+  climb is a thing you fight. The spring is what makes it READ; the nudge is
+  what makes it a weapon you have to hold down.
+- **A MUZZLE FLASH IS A BLOB, NOT A STAR.** Four straight strokes is a decal
+  stuck on the lens — the glint's own lesson. It is a nine-point irregular
+  polygon over a hot radial core, and it PEAKS BIG AND SHRINKS
+  (`0.16 + magFlash * 0.30`) rather than growing as it fades, because what
+  the eye reads is the first frame. `spawnSparks` is no use to a gun: it
+  throws from `trailTip`, which is parented to whichever DIG tool was last
+  equipped. And its lamp is added to the scene AT BOOT at zero intensity, the
+  pavilion's rule — a light entering the scene recompiles every material in
+  the game, and since the Windows pass `lampReach` returns 0 at intensity 0
+  so a dark lamp never takes one of the twelve slots.
+- **AND THE PRESS FIRES, SO THE CLICK MUST NOT.** `attackAction` runs on the
+  click that follows a pointerdown and would have put a second round out of a
+  six-round cylinder every time; it returns early on `magHeld()`. The same
+  goes the other way for the guard: RMB aims with the gun and still guards
+  with the katana, and every path that drops the guard (pointerup, blur,
+  `pointercancel`, visibilitychange, a pointermove with no button under it)
+  drops `magAiming` with it.

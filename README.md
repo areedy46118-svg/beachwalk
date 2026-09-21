@@ -27,6 +27,9 @@ Then open <http://localhost:4173> and click to begin. Any static server works
 | Click (while carrying) | Throw the held object — it's a toggle, no hold |
 | Hold right-click | Guard with the shovel, held across you. Raise it INTO a blow to parry and stun — then hit it, because a blow on a parried enemy counts double. No swing comes out of a guard |
 | `Ctrl` | Crouch (toggle) — crawl under the pier |
+| Left-click (with the .44) | Fire — one round per press, six to a cylinder |
+| Hold right-click (with the .44) | Aim down the sights: the lens narrows, the sway falls away and the spread closes to almost nothing |
+| `R` | Reload the .44 off a speedloader (a dry trigger does it for you if you have one) |
 | `G` | Drop the held object gently |
 | `1`–`6` / click a slot | Hold an inventory item — everything can be carried |
 | Scroll wheel | Step through the hotbar, equipping as you go |
@@ -721,6 +724,31 @@ by [EZ-GAZI](https://sketchfab.com/EZ-GAZI),
 `assets/trader.glb`, through `tools/gltfpack.py --tex 1024`: 4,818 triangles
 and its six base-colour maps. Its file ships no clips, so the crossed arms
 are composed onto the bind pose once at load.
+
+
+**Pistol-Magnum** — the .44 he also has, for five blood jars, with three in
+the cylinder; six more rounds are two jars. Right click aims down the sights,
+left click fires, `R` reloads off a speedloader.
+
+["Pistol-Magnum"](https://sketchfab.com/3d-models/pistol-magnum-9d5df42759444adaa4dfb3ae40155b1f)
+by [Mozberg_log](https://sketchfab.com/mozberglog),
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — shipped exact
+(`assets/magnum.glb`, through `tools/gltfpack.py --tex 2048 --quality 94`): all
+6,372 triangles, its one material and its one map. The six loose rounds the file
+draws beside the gun are lifted out of its mesh by index and become the
+speedloader; nothing is modelled here.
+
+The reload, the aim and the recoil are posed against
+["Animated Magnum"](https://sketchfab.com/3d-models/animated-magnum-643b9d61ff49407b84ead78eaf815252)
+by [JUST](https://sketchfab.com/teenjust500),
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — used as REFERENCE
+only. None of that file ships in this game.
+
+The **shot** is the owner's own recording ("44 Magnum Sound Effect Single
+Shot"), trimmed of half a second of leading silence, faded and brought down
+3.5 dB because it clipped (`assets/magnum-shot.m4a`). It is NOT
+redistributable. The cylinder swinging out, the loader seating and the crane
+shutting are synthesised.
 
 
 **Skull Key** — what lies between the candles in the catacombs' lower vault,

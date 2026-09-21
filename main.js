@@ -131,6 +131,7 @@ const ASSET_REACH = {
   'assets/drone.glb': 65,
   'assets/alienbeast.glb': 66,
   'assets/trader.glb': 738,           // the man at the sand wall, a little short of the stones
+  'assets/magnum.glb': 739,            // and the thing he has that the jars are for
   'assets/portal.glb': 740,            // the stone circle, a hundred metres past the cave
   'assets/courtyard.glb': 742,         // and what is on the other side of it
   'assets/samurai.glb': 744,           // and who is waiting in there
@@ -4411,7 +4412,10 @@ window.addEventListener('unhandledrejection', (e) => {
   if (e.reason && String(e.reason.name || '').includes('Document')) { enterFallback(); e.preventDefault(); }
 });
 function applyLook(dx, dy) {
-  const s = 0.0022 * settings.sensitivity;
+  /* AND IT IS SLOWER DOWN THE SIGHTS. The zoom magnifies the turn as well
+   * as the target, so at the same sensitivity an aimed shot is harder to
+   * hold than an unaimed one, which is exactly backwards. */
+  const s = 0.0022 * settings.sensitivity * (1 - magAim * 0.42);
   lookEuler.setFromQuaternion(camera.quaternion);
   lookEuler.y -= dx * s;
   lookEuler.x -= dy * s * (settings.invertY ? -1 : 1);
@@ -4435,6 +4439,8 @@ window.addEventListener('pointermove', (e) => {
    * ground truth and it comes with every move: bit 1 is the right button,
    * and if it is not set then nothing is holding the guard up. */
   if (blocking && !(e.buttons & 2)) blocking = false;
+  // and the sights are a button held too, by exactly the same argument
+  if (magAiming && !(e.buttons & 2)) magAiming = false;
   /* AND THE CHARGE IS A BUTTON HELD TOO. A release that never arrives —
    * the lock going to a banner, a press that ends off the canvas — left
    * the shovel hauled back over your head with nothing able to bring it
@@ -4444,8 +4450,8 @@ window.addEventListener('pointermove', (e) => {
   if (wheelGrab && fallbackLook && dragging) { dragWheel(e.movementX); return; }
   if (fallbackLook && dragging && !frozen()) applyLook(e.movementX, e.movementY);
 });
-document.addEventListener('visibilitychange', () => { if (document.hidden) { blocking = false; windHeld = false; if (winding) releaseWind(); } });
-window.addEventListener('pointercancel', () => { blocking = false; windHeld = false; if (winding) releaseWind(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { blocking = false; magAiming = false; windHeld = false; if (winding) releaseWind(); } });
+window.addEventListener('pointercancel', () => { blocking = false; magAiming = false; windHeld = false; if (winding) releaseWind(); });
 
 // ------------------------------------------------------------------
 // Opening sequence — black card, the line fades in and out, then the
@@ -4672,6 +4678,7 @@ window.addEventListener('keydown', (e) => {
   }
   else if (e.code === 'KeyG') { if (held) dropHeld(); else if (equipped) dropEquipped(); }
   else if (e.code === 'KeyQ') { if (inspecting) closeInspect(); else if (equipped) toggleEquip(equipped); }
+  else if (e.code === 'KeyR') magReload();          // and six of them go back in
   else if (/^Digit[1-6]$/.test(e.code)) { useSlot(+e.code.slice(5) - 1); }
   else if (e.code === 'Digit8') toggleFastWalk();
   else if (e.code === 'KeyP' && settings.devMode) toggleWhereAmI();
@@ -4708,6 +4715,14 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
    * hauls the shovel back for a heavy. Right is deliberately left free.
    * The wind-up only starts once you have held past WIND_TAP, so a quick
    * click never flickers into the haul pose on its way out. */
+  /* A GUN FIRES ON THE PRESS. Every swing in this game goes out through the
+   * `click` handler, which waits for the button to come back UP and refuses
+   * if the pointer moved six pixels on the way — right for a shovel, and
+   * for a trigger it is a gun that goes off when you let go of it. */
+  if (e.button === 0 && started && !frozen() && magHeld()) { magFire(); return; }
+  /* AND RIGHT CLICK IS THE SIGHTS. It is the guard on everything else, and
+   * nothing about a revolver parries a claw. */
+  if (e.button === 2 && started && !frozen() && magHeld()) { magAiming = true; return; }
   if (e.button === 0 && started && !frozen() && !blocking && equipped && equipped.onDig) {
     /* latched whether or not a swing is running: startWind decides when it
      * fires — and if it REFUSES (a swing still in the air, which is most of
@@ -4738,14 +4753,14 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
 });
 window.addEventListener('pointerup', (e) => {
   dragging = false;
-  if (e.button === 2) { blocking = false; return; }
+  if (e.button === 2) { blocking = false; magAiming = false; return; }
   if (e.button !== 0) return;
   windHeld = false;
   if (windLatch) { clearTimeout(windLatch); windLatch = null; return; }  // a tap: the click handler swings
   if (winding) { releaseWind(); swungAt = performance.now(); }
 });
 // losing the window mid-wind shouldn't leave the shovel stuck over your head
-window.addEventListener('blur', () => { windHeld = false; if (windLatch) { clearTimeout(windLatch); windLatch = null; } if (winding) releaseWind(); blocking = false; });
+window.addEventListener('blur', () => { windHeld = false; if (windLatch) { clearTimeout(windLatch); windLatch = null; } if (winding) releaseWind(); blocking = false; magAiming = false; });
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 renderer.domElement.addEventListener('click', (e) => {
   const d = downPos ? Math.hypot(e.clientX - downPos[0], e.clientY - downPos[1]) : 0;
@@ -5227,6 +5242,9 @@ function attackAction() {                        // left mouse
   if (peeking) { endPeek(); return; }
   if (frozen()) return;
   if (held) { throwHeld(); return; }
+  // the press already pulled the trigger; the click that follows it is the
+  // same press and must not fire a second round
+  if (magHeld()) return;
   if (equipped && equipped.onDig) {
     /* A CLICK IS NEVER BANKED. Three clicks used to be three swings — the
      * third fired on its own after the recovery, from a press made half a
@@ -6087,7 +6105,9 @@ function renderItemIcon(model, { rotX = -0.5, rotY = 0.7 } = {}) {
   if (!model) return null;
   initIconRig();
   const m = model.clone(true);
-  m.traverse((o) => { o.visible = true; });
+  // ...except a subtree that is hidden on purpose, which must also stay
+  // out of the fit: it is what the tile is framed against
+  m.traverse((o) => { if (!o.userData.bwKeepHidden) o.visible = true; });
   m.position.set(0, 0, 0); m.rotation.set(0, 0, 0); m.scale.setScalar(1);
   iconFit.clear();
   iconFit.position.set(0, 0, 0); iconFit.scale.setScalar(1); iconFit.rotation.set(rotX, rotY, 0);
@@ -6725,6 +6745,9 @@ const VM_MIL_REST_ROT = [-3.142, -0.483, 0.483];
  * that frame, not guessed — see `__solveKat`. */
 const VM_KAT_REST_ROT = [-2.916, -0.870, 0.403];
 const restRot = () => (equipped === katanaItem ? VM_KAT_REST_ROT : VM_MIL_REST_ROT);
+/* The gun never goes through this at all: nothing it does raises a guard,
+ * winds a charge or slashes, so `toolVM.quaternion` is never written while
+ * it is in your hand and the axis remap it carries in `holdable` stands. */
 /* AND THE CUT KEEPS THE SHARED GRIP, WHICH IS WHY IT TRANSFERS AT ALL. The
  * stroke was laid out NUMERICALLY against `VM_SLASH_ROT` — the lip's screen
  * position probed at every quarter of both lerps until it ran corner to
@@ -7413,7 +7436,11 @@ function holdable(item, model, { scale = 1, pos = [0, -0.02, 0], rot = [0, 0, 0]
      * pale red blob in the corner of the screen. A shine belongs on the
      * floor, never in the hand. */
     const glints = [];
-    m.traverse((o) => { if (o.isSprite) glints.push(o); else o.visible = true; });
+    /* `bwKeepHidden` is a subtree that is hidden ON PURPOSE — the magnum's
+     * speedloader, which only exists during a reload. This loop is here to
+     * undo whatever the WORLD hid (a taken pickup, a far-culled part), and
+     * without the flag it switches those on too. */
+    m.traverse((o) => { if (o.isSprite) glints.push(o); else if (!o.userData.bwKeepHidden) o.visible = true; });
     for (const g of glints) g.removeFromParent();
     m.scale.setScalar(scale);
     m.position.set(pos[0], pos[1], pos[2]);
@@ -8787,6 +8814,10 @@ function landBlade() {
 }
 
 function updateViewmodel(dt) {
+  /* THE GUN'S OWN CLOCKS FIRST, and above the early return: the shot's
+   * cooldown, the reload, the aim blend and the lens spring all have to go
+   * on running through a frame where the hands are not drawn at all. */
+  updateGun(dt);
   // your hands are out of it while someone is talking to you, or while you
   // are turning something over — both are close-up shots of something else
   const show = !!equipped && !held && !dialogOpen && !inspecting;
@@ -8977,6 +9008,12 @@ function updateViewmodel(dt) {
      * through, so a return chained "a beat later" left from a half-recovered
      * pose and only ever swept the right of the screen. */
     else if (queuedSwing === 'return' && p >= SLASH_THROUGH && slashing() && !katBack()) chainSwing();
+  } else if (magHeld()) {
+    /* A GUN IS NOT A SWING, so it takes none of the machinery above it — no
+     * wind-up, no strike, no recovery. What it has is a hold, a set of
+     * sights to come to and a kick, and all three are the same six numbers
+     * every tool in here is posed with. */
+    magPose(_pose);
   } else {
     for (let i = 0; i < 6; i++) _pose[i] = 0;
   }
@@ -9127,6 +9164,8 @@ function updateViewmodel(dt) {
   /* AFTER the grip, so a blade pitched into the screen is measured as it
    * is: the lip goes on the aim with the tilt already in it. */
   landBlade();
+  // and the same, for the one thing that has to line up exactly
+  magSights();
 
   // Only the strike and a beat past it leave a trail; a trail on the wind-up
   // would say the tool was moving fast when it is deliberately barely moving.
@@ -12145,10 +12184,17 @@ function updateDialogCam(dt) {
    * hard so the zoom is a move and not a drift. Dropping it to -1 hands the
    * field of view back and it eases home on its own, which is the frame you
    * get your head back on. */
+  /* AND THE SIGHTS ARE A ZOOM. A revolver's rear notch is a hand from your
+   * eye and the thing you are shooting at is thirty metres away; the lens
+   * has to help, and a fifth of the field of view is about what a pistol's
+   * own sight picture buys. It comes off the setting rather than off a
+   * constant, so it is the same zoom at any field of view the owner picks. */
   const wantFov = (mutCutFov > 0 ? mutCutFov
     : peeking && !peekLeaving ? PEEK_FOV
-    : (dialogOpen || cineHold) ? Math.min(settings.fov, dialogFov) : settings.fov) + fovKick;
-  const rate = mutCutFov > 0 ? 14 : peeking ? 2.6 : 3.5;
+    : (dialogOpen || cineHold) ? Math.min(settings.fov, dialogFov) : settings.fov) + fovKick
+    - settings.fov * MAG_ZOOM * magAim;
+  // and it arrives at a gun's pace, not a conversation's
+  const rate = mutCutFov > 0 ? 14 : peeking ? 2.6 : magAim > 0.002 ? 13 : 3.5;
   if (Math.abs(camera.fov - wantFov) > 0.01) {
     camera.fov += (wantFov - camera.fov) * Math.min(1, dt * rate);
     camera.updateProjectionMatrix();
@@ -12358,6 +12404,13 @@ const SAMPLES = {
   catFeed: ['assets/cat-feed1.m4a'],
   catFar: Array.from({ length: 12 }, (_, i) => `assets/cat-far${i + 1}.m4a`),
   catStep: Array.from({ length: 10 }, (_, i) => `assets/cat-step${i + 1}.m4a`),
+  /* THE .44, the owner's own. Trimmed: the file he sent has HALF A SECOND
+   * of silence in front of the shot, and a gun that goes off half a second
+   * after the click is a broken gun. It also peaked at 1.126 in the decoded
+   * buffer and clipped — the camera break's lesson, that AAC overshoots on
+   * decode — so it goes out with three decibels of headroom. Not
+   * redistributable. */
+  magShot: ['assets/magnum-shot.m4a'],
 };
 const sampleBanks = {};
 function loadSamples() {
@@ -27283,6 +27336,10 @@ function saveCheckpoint() {
       catDoor: catDoorOpen,
       // and what the man at the sand wall has left to sell
       trader: { ...TRADER_STOCK },
+      /* AND WHAT IS IN THE CYLINDER. The gun itself comes back through the
+       * pack; the rounds in it are not an item and would otherwise reload
+       * themselves to nothing on every death. */
+      ammo: magAmmo, spare: magSpare,
       dockDoor: dockDoorOpen,
       /* AND THE DOJO. The same rule as the shell door and the smiling one: a
        * fight you have already won does not un-happen when you load, and a
@@ -27452,6 +27509,7 @@ function updateRestore(dt) {
   if (f.dojoWon) dojoWon = true;
   if (f.catDoor) catDoorOpen = true;
   if (f.trader) Object.assign(TRADER_STOCK, f.trader);
+  if (typeof f.ammo === 'number') { magAmmo = f.ammo; magSpare = f.spare || 0; }
   if (f.heroSword || f.dojoWon) heroSwordTaken = true;
   if (f.holdDoor && !holdDoorOpen) {
     holdDoorOpen = true; holdDoorSwing = 1;
@@ -27495,7 +27553,7 @@ function packByName(name) {
    * a fight depends on. The three dig tools are, and they are all here. */
   for (const it of [shovelItem, militaryItem, katanaItem, glowstickItem, ringItem,
                     weddingItem, keyItem, boatKeyItem, skullKeyItem, cdItem, crabItem,
-                    syringeItem, waterBottleItem, headItem]) {
+                    syringeItem, waterBottleItem, headItem, magnumItem]) {
     if (it && it.name === name) return it;
   }
   return null;
@@ -33678,8 +33736,12 @@ const PORTAL_HEAR = 34;            // the hum reaches this far
  * no clips, so the pose is composed onto the bind once at load and nothing
  * ever stamps over it — there is no mixer on him to argue with. */
 const TRADER_X = CLIFF_BLOCK_X - 1.35, TRADER_Z = PORTAL_Z + 8.5, TRADER_H = 1.84;
-const TRADER_STOCK = { glow: 1, water: 2 };
-const TRADER_PRICE = { glow: 2, water: 1 };
+/* AND THE ROUNDS ARE HIS TOO. A gun that comes with three and can hold
+ * six has to be able to get the other three from somewhere, and he is
+ * the only somewhere there is: six for two jars, three loaders of them,
+ * which is eighteen rounds if you spend everything you have on lead. */
+const TRADER_STOCK = { glow: 1, water: 2, gun: 1, ammo: 3 };
+const TRADER_PRICE = { glow: 2, water: 1, gun: 5, ammo: 2 };
 let traderSaid = '';
 /* A JAR IS A NUMBER YOU CARRY, and `gainJar` is the one door it comes in
  * by — the sound and the pulse it plays are a jar ARRIVING, so spending
@@ -33694,10 +33756,24 @@ function traderBuy(what) {
   const price = TRADER_PRICE[what];
   if (TRADER_STOCK[what] <= 0) { traderSaid = 'Sold out. Shocking, I know.'; return; }
   if (bloodJars < price) {
-    traderSaid = price === 1 ? 'One jar. You have none. Off you go.' : 'Two jars. Come back when you can count.';
+    traderSaid = price === 1 ? 'One jar. You have none. Off you go.'
+      : `${price} jars. Come back when you can count.`;
     return;
   }
-  if (what === 'glow') {
+  if (what === 'gun') {
+    if (inventory.includes(magnumItem)) { traderSaid = 'You have one. One is plenty.'; return; }
+    spendJars(price); TRADER_STOCK.gun--;
+    addToInventory(magnumItem);
+    /* THREE IN IT, which is the owner's own brief and is also the whole
+     * design: six chambers, three rounds, and the other three cost you. */
+    magAmmo = 3; magSpare = 0;
+    traderSaid = "Three in it. Don't point it at me.";
+  } else if (what === 'ammo') {
+    if (!inventory.includes(magnumItem)) { traderSaid = 'Nothing to put them in. Buy the gun.'; return; }
+    spendJars(price); TRADER_STOCK.ammo--;
+    magSpare += MAG_CAP;
+    traderSaid = 'Six. Try to hit something.';
+  } else if (what === 'glow') {
     /* AND THE SAME THING CANNOT BE HAD TWICE — `addToInventory` refuses an
      * item already in the pack by identity, so a sale that did not ask
      * would take the jars and hand over nothing. */
@@ -33724,6 +33800,8 @@ const TRADER_SCRIPT = {
   start: {
     text: 'Just buy something...',
     choices: [
+      { label: '.44 Magnum — 5 blood jars', to: 'said', act: () => traderBuy('gun') },
+      { label: 'Six .44 rounds — 2 blood jars', to: 'said', act: () => traderBuy('ammo') },
       { label: 'Glowstick — 2 blood jars', to: 'said', act: () => traderBuy('glow') },
       { label: 'Bottle of water — 1 blood jar', to: 'said', act: () => traderBuy('water') },
       { label: 'Nothing.', to: 'go' },
@@ -33732,6 +33810,8 @@ const TRADER_SCRIPT = {
   said: {
     get text() { return traderSaid; },
     choices: [
+      { label: '.44 Magnum — 5 blood jars', to: 'said', act: () => traderBuy('gun') },
+      { label: 'Six .44 rounds — 2 blood jars', to: 'said', act: () => traderBuy('ammo') },
       { label: 'Glowstick — 2 blood jars', to: 'said', act: () => traderBuy('glow') },
       { label: 'Bottle of water — 1 blood jar', to: 'said', act: () => traderBuy('water') },
       { label: "That's all.", to: 'go' },
@@ -33803,6 +33883,661 @@ addInteractable(traderHit, 'Talk to him', 'npc', {
   far: 5.0, when: () => !dialogOpen,
   onActivate: () => startDialog('start', TRADER_NPC),
 });
+
+
+// ------------------------------------------------------------------
+// THE .44 MAGNUM — Mozberg_log's "Pistol-Magnum", CC-BY-4.0
+// ------------------------------------------------------------------
+/* The first thing in this game you POINT rather than swing, and the Rude
+ * Trader is where it comes from: five jars for the gun with three in the
+ * cylinder, two more for a loader of six. Six chambers, and nothing else on
+ * this beach reloads — which is the whole shape of it. A katana's cost is
+ * the recovery you stand through; a revolver's is that there are six and
+ * then there are none.
+ *
+ * WHAT IS SHIPPED AND WHAT IS REFERENCE. The model is Mozberg_log's, exact
+ * — 6,372 triangles and its own 4K base colour at 2048, nothing decimated,
+ * nothing re-skinned. JUST's "Animated Magnum" (CC-BY-4.0) is NOT shipped:
+ * it carries its own hand, sleeve and glove, and this game's view model is
+ * a bare pose-driven rig with no hand in it at all. What it is here for is
+ * its five clips, sampled frame by frame out of the file and read as
+ * TIMINGS — Shoot 0.567 s with the kick peaking at 0.09, through neutral at
+ * 0.14, overshooting forward and home by 0.33; Reload 3.0 s with the
+ * cylinder out by 0.9, the loader in at 2.2 and the flick shut at 2.5;
+ * Take 0.67. Every number below with a clip's name beside it came off that
+ * measurement rather than out of taste. */
+const MAG_CAP = 6;                  // six chambers
+const MAG_SHOT = 0.50;              // seconds a shot owns the gun (the clip is 0.567)
+const MAG_RELOAD = 2.5;             // and a reload (the clip is 3.0)
+const MAG_DMG = 14;                 // what a .44 does: the katana's heavy is 3
+const MAG_HEAD = 2.2;               // and what it does to a head
+const MAG_RANGE = 80;               // how far the bullet is traced
+const MAG_LEN = 0.42;               // an 8-inch Model 29 is 0.35; a view model is always drawn over
+const MAG_ZOOM = 0.22;              // of the field of view, at the sights
+const MAG_SPREAD = 0.034;           // radians, from the hip
+const MAG_SPREAD_ADS = 0.0025;      // and down the sights: what you aim at is what you hit
+const MAG_KICK_K = 330, MAG_KICK_D = 17;   // the lens spring: peaks near 0.09 s, home by 0.35
+/* THE RELOAD'S BEATS, as fractions of it — the reference clip's, scaled.
+ * The cylinder is out by 0.30, the loader is up and in at 0.72 (which is
+ * where the rounds are credited), and the wrist flicks it shut at 0.86. */
+const MAG_OUT = 0.30, MAG_FEED = 0.72, MAG_SHUT = 0.86;
+
+let magAmmo = 0;                    // rounds in the cylinder
+let magSpare = 0;                   // loose rounds in the pack
+let magT = -1;                      // the shot's own clock, -1 idle
+let magRel = -1;                    // and the reload's
+let magRelFed = false, magRelShut = false, magRelOut = false;
+let magAiming = false, magAim = 0;  // down the sights: 0..1
+let magKick = 0, magKickV = 0;      // the lens, thrown and springing back
+let magYaw = 0, magYawV = 0;
+let magFlash = 0;                   // the muzzle, for the two frames it is lit
+const magHeld = () => !!(equipped && equipped.gun);
+const magBusy = () => magRel >= 0;
+
+/* THE MUZZLE LIGHTS THE BEACH, AND IT COSTS NOTHING TO. A light ENTERING or
+ * LEAVING a scene recompiles every material in the game; INTENSITY is free,
+ * and since the Windows pass every point light in here is virtual anyway —
+ * the twelve real ones are pointed at the twelve that reach you each frame.
+ * So this one is added once at boot at zero and simply turned up. */
+const magLamp = new THREE.PointLight(0xffd7a0, 0, 26, 2);
+magLamp.name = 'magFlash';
+scene.add(magLamp);
+/* And the flash itself is a sprite in the OVERLAY scene, on the muzzle. It
+ * cannot be `spawnSparks`, which throws from `trailTip` — a marker parented
+ * to whichever DIG tool was last equipped, which while the gun is in your
+ * hand is a hidden shovel somewhere else in the frame. */
+const magFlashSpr = (() => {
+  /* A STAR IS A DECAL; A FLASH IS A BLOB. The first one was four straight
+   * strokes out of a soft grey ball and it rendered as a hard white X
+   * pasted on the muzzle — the glint's own lesson, that a SYMMETRICAL thing
+   * says nothing about what is making it. What burning gas actually does is
+   * a hot ragged core with short uneven petals off it, so it is drawn as a
+   * filled polygon of alternating long and short spokes at uneven angles,
+   * with the heat underneath it rather than a rim around it. */
+  const S = 96, c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d'), R = S / 2;
+  const gr = g.createRadialGradient(R, R, 0, R, R, R);
+  gr.addColorStop(0, 'rgba(255,252,238,0.98)');
+  gr.addColorStop(0.16, 'rgba(255,226,158,0.80)');
+  gr.addColorStop(0.42, 'rgba(255,158,64,0.34)');
+  gr.addColorStop(0.75, 'rgba(226,104,30,0.10)');
+  gr.addColorStop(1, 'rgba(200,80,20,0)');
+  g.fillStyle = gr; g.beginPath(); g.arc(R, R, R, 0, 7); g.fill();
+  const N = 9;
+  g.beginPath();
+  for (let i = 0; i < N * 2; i++) {
+    const a = (i / (N * 2)) * Math.PI * 2 + (i % 2 ? 0.14 : 0);
+    const r = (i % 2 ? 0.17 + Math.random() * 0.10 : 0.30 + Math.random() * 0.17) * S;
+    const x = R + Math.cos(a) * r, y = R + Math.sin(a) * r;
+    i ? g.lineTo(x, y) : g.moveTo(x, y);
+  }
+  g.closePath();
+  const pg = g.createRadialGradient(R, R, 0, R, R, R * 0.48);
+  pg.addColorStop(0, 'rgba(255,255,246,0.95)');
+  pg.addColorStop(0.5, 'rgba(255,214,132,0.70)');
+  pg.addColorStop(1, 'rgba(255,146,48,0)');
+  g.fillStyle = pg; g.fill();
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: new THREE.CanvasTexture(c), transparent: true, depthTest: false,
+    depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0, fog: false,
+  }));
+  s.raycast = () => {};
+  s.visible = false;
+  s.renderOrder = 5;
+  vmScene.add(s);
+  return s;
+})();
+
+const magModel = new THREE.Group();     // exists synchronously: `holdable` names it at module time
+let magRig = null, magReady = false;
+let magVMSight = null, magVMMuzzle = null, magVMRounds = null;
+/* A drawn fallback, and it is the RIGHT object — the Military Shovel shipped
+ * the sand shovel's icon for a while and a checkpoint load, which rebuilds
+ * the whole pack before a single scan has landed, froze it there for the
+ * rest of the game because nothing ever asked again. */
+function makeMagnumIcon() {
+  const c = document.createElement('canvas'); c.width = c.height = 48;
+  const g = c.getContext('2d');
+  g.strokeStyle = '#9aa3b2'; g.lineCap = 'round'; g.lineJoin = 'round';
+  g.lineWidth = 5; g.beginPath(); g.moveTo(13, 19); g.lineTo(42, 19); g.stroke();   // barrel
+  g.lineWidth = 9; g.beginPath(); g.moveTo(16, 21); g.lineTo(21, 21); g.stroke();   // cylinder
+  g.lineWidth = 5; g.beginPath(); g.moveTo(15, 24); g.lineTo(10, 37); g.stroke();   // grip
+  g.strokeStyle = '#3c424d'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(17, 27); g.lineTo(22, 31); g.stroke();                    // trigger guard
+  return c.toDataURL();
+}
+
+bwGlb('assets/magnum.glb', (gltf) => {
+  const root = gltf.scene;
+  root.updateMatrixWorld(true);
+  let mesh = null;
+  root.traverse((o) => { if (o.isMesh && !mesh) mesh = o; });
+  if (!mesh) return;
+  /* AND THE FILE SHIPS SIX LOOSE ROUNDS BESIDE THE GUN. They are triangles
+   * in the SAME mesh, a clear fifty units along the model's own x from
+   * anything else in it — measured, the body runs x -10..34 and the rounds
+   * sit at -86..-75 with nothing at all between — so they split on a plain
+   * threshold rather than on a flood. Left in, they hang in the corner of
+   * the frame for the whole game; lifted out, they are the speedloader the
+   * reload has something to show. The hoist's own rule: a piece SHARES its
+   * source's attributes and carries only its own index, so no vertex is
+   * copied and nothing can come out a different colour from the gun. */
+  const geo = mesh.geometry, pos = geo.attributes.position;
+  const idx = geo.index ? Array.from(geo.index.array) : [...Array(pos.count).keys()];
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < pos.count; i++) { const x = pos.getX(i); if (x < lo) lo = x; if (x > hi) hi = x; }
+  const CUT = lo + (hi - lo) * 0.45;          // the gap, in the middle of the empty stretch
+  const body = [], loose = [];
+  for (let i = 0; i < idx.length; i += 3) {
+    const a = idx[i], b = idx[i + 1], c = idx[i + 2];
+    (Math.max(pos.getX(a), pos.getX(b), pos.getX(c)) < CUT ? loose : body).push(a, b, c);
+  }
+  const part = (list) => {
+    const g2 = new THREE.BufferGeometry();
+    for (const k of Object.keys(geo.attributes)) g2.setAttribute(k, geo.attributes[k]);
+    g2.setIndex(list);
+    /* AND IT HAS TO BE TOLD HOW BIG IT IS. `computeBoundingBox` reads the
+     * position ATTRIBUTE, which both halves share, so left to itself each
+     * part measures the whole model — the gun came out fitted at a third of
+     * its size, and the pack's icon framed it against half a metre of empty
+     * air where the loose rounds are. Written from its own index once. */
+    const bx = new THREE.Box3(), v3 = new THREE.Vector3();
+    for (const i of list) bx.expandByPoint(v3.fromBufferAttribute(geo.attributes.position, i));
+    g2.boundingBox = bx;
+    g2.boundingSphere = bx.getBoundingSphere(new THREE.Sphere());
+    const m = new THREE.Mesh(g2, mesh.material);
+    m.frustumCulled = false;
+    return m;
+  };
+  const gun = part(body), rounds = loose.length >= 12 ? part(loose) : null;
+  /* AND BLUED STEEL AT NIGHT IS A BLACK BAR. The scan's own map is what it
+   * is — a dark gun photographed indoors — and the overlay scene's ambient
+   * and two directionals do not get it off the floor, which is the exact
+   * complaint the katana's blade drew twice. So the albedo is gamma-lifted
+   * before the lighting sees it (the rocks' own `reexpose`, in the shader,
+   * so the file on disk stays the file the artist shipped) and the map is
+   * hung on the emissive besides. METALNESS IS A TRAP for the ninth time:
+   * the file asks for 0.22 and there is no environment map in this game, so
+   * a fifth of the diffuse would be thrown away for nothing back. */
+  for (const m of (Array.isArray(mesh.material) ? mesh.material : [mesh.material])) {
+    m.metalness = 0.04; m.roughness = 0.46;
+    m.emissive = new THREE.Color(0xffffff); m.emissiveMap = m.map || null; m.emissiveIntensity = 0.30;
+    reexpose(m, 0.70);
+  }
+  mesh.parent.add(gun);
+  if (rounds) mesh.parent.add(rounds);
+  mesh.removeFromParent();
+  root.updateMatrixWorld(true);
+
+  /* FITTED TO ITS OWN SPAN AND HUNG FROM THE GRIP. Where the hand is, is
+   * measured rather than typed: the grip is whatever stands below the
+   * bottom half of the frame, and the web of the hand sits high on the
+   * backstrap. A tool hangs from where it PIVOTS — the katana paid for that
+   * one — so the origin goes there and every pose below turns about it. */
+  /* AND A SPLIT PART CANNOT BE MEASURED WITH `Box3.setFromObject`. The two
+   * halves SHARE one position attribute — that is the whole point of a
+   * split by index — and `expandByObject` measures the geometry's own
+   * bounding box, which is computed off that attribute and is therefore the
+   * WHOLE model for both of them. Measured: the gun came back 12,000 units
+   * long (the rounds are fifty units of empty space behind it) against a
+   * real 4,360, so it was fitted at a third of the size it should have been
+   * and the grip ended up out in front of the trigger guard. Both boxes are
+   * walked off their own INDEX. */
+  const _v = new THREE.Vector3(), pts = [], seen = new Set();
+  for (const i of body) {
+    if (seen.has(i)) continue; seen.add(i);
+    pts.push(_v.fromBufferAttribute(pos, i).applyMatrix4(gun.matrixWorld).clone());
+  }
+  const bb = new THREE.Box3().setFromPoints(pts);
+  const span = bb.max.x - bb.min.x, hgt = bb.max.y - bb.min.y;
+  const k = MAG_LEN / Math.max(1e-6, span);
+  const grip = pts.filter((p) => p.y < bb.min.y + hgt * 0.40);
+  const gripX = grip.length ? grip.reduce((s, p) => s + p.x, 0) / grip.length : bb.min.x;
+  const gripY = bb.min.y + hgt * 0.62;
+  /* THE REAR SIGHT, which is what the aim puts on the crosshair. The top rib
+   * runs the length of the gun, so the rear sight is the REARMOST point of
+   * it: the lowest x among the vertices in the top eighth of the frame, on
+   * the centre line. Nothing here is a number anybody chose. */
+  const ribs = pts.filter((p) => p.y > bb.max.y - hgt * 0.12 && Math.abs(p.z) < span * 0.04);
+  const sightP = ribs.length ? ribs.reduce((a, p) => (p.x < a.x ? p : a)) : new THREE.Vector3(bb.min.x, bb.max.y, 0);
+  // and the muzzle: the front of the bore, at the height the bore runs at
+  const nose = pts.filter((p) => p.x > bb.max.x - span * 0.03);
+  const muzY = nose.length ? nose.reduce((s, p) => s + p.y, 0) / nose.length : bb.max.y * 0.6;
+
+  const mk = (name, x, y, z) => { const o = new THREE.Object3D(); o.name = name; o.position.set(x, y, z); root.add(o); return o; };
+  mk('magSight', sightP.x, sightP.y + hgt * 0.03, 0);
+  mk('magMuzzle', bb.max.x + span * 0.03, muzY, 0);
+  if (rounds) {
+    /* The loader, on a pivot of its own so the reload can carry it up into
+     * the cylinder, parked where the file drew it. `magRounds` is the handle
+     * the CLONE in your hand is found by. */
+    const rpts = [], rseen = new Set();
+    for (const i of loose) {
+      if (rseen.has(i)) continue; rseen.add(i);
+      rpts.push(_v.fromBufferAttribute(pos, i).applyMatrix4(rounds.matrixWorld).clone());
+    }
+    const rb = new THREE.Box3().setFromPoints(rpts);
+    const pivot = new THREE.Group(); pivot.name = 'magRounds';
+    root.add(pivot);
+    pivot.position.set((rb.min.x + rb.max.x) / 2, (rb.min.y + rb.max.y) / 2, (rb.min.z + rb.max.z) / 2);
+    pivot.attach(rounds);
+    /* WHERE IT GOES, AND IT IS NOT WHERE THE FILE PARKED IT. The artist
+     * laid the six rounds half a metre BEHIND the grip — which in a first
+     * person view is somewhere behind your own head — so the reload has to
+     * carry them to the CYLINDER, and both ends of that are measured off
+     * the gun rather than typed. Everything here is in the MODEL's own
+     * units (it is 4,360 of them long and comes out 42 cm), so a distance
+     * written in metres would be a distance of nothing. */
+    /* AND IT IS PARKED WHERE IT ENDS UP, NOT WHERE THE FILE DREW IT. The
+     * artist laid the six rounds half a metre BEHIND the grip, which in a
+     * first-person view is somewhere behind your own head — and a pivot
+     * parked out there is also half a metre of empty air in the model's own
+     * bounding box, which is what the pack's icon and the examine screen
+     * are framed against. It is moved to the cylinder once, and the reload
+     * then only has to bring it UP from under the frame.
+     *
+     * AND BESIDE THE CYLINDER, NOT INSIDE IT: laid on the centre line the
+     * rounds finish within the gun's own four centimetres of thickness and
+     * are drawn by nothing — measured, they were exactly where they should
+     * be and completely invisible. Model +Z is the flank the reload's hold
+     * turns toward the camera. */
+    pivot.position.set(gripX + span * 0.13, gripY + hgt * 0.12, span * 0.085);
+    pivot.userData.drop = hgt * 5.0;       // and it comes up from below the frame
+    /* And they are not there until they are needed — through the clone as
+     * well, which is what `bwKeepHidden` is for. */
+    pivot.userData.bwKeepHidden = true;
+    pivot.visible = false;
+  }
+  magRig = new THREE.Group();
+  magRig.scale.setScalar(k);
+  magRig.position.set(-gripX * k, -gripY * k, 0);
+  magRig.add(root);
+  magModel.add(magRig);
+  magReady = true;
+  /* AND THE HAND MAY ALREADY BE HOLDING AN EMPTY GROUP. `holdable` clones
+   * LAZILY and once; a scan that lands after the first equip leaves a fist
+   * with nothing in it, so the builder is asked again. */
+  if (magnumItem.viewmodel && magnumItem.viewmodel.userData.make) {
+    magnumItem.viewmodel.userData.make();
+    magVMSight = magVMMuzzle = magVMRounds = null; _magRZero = null;
+  }
+});
+
+const magnumItem = {
+  id: 'magnum', name: '.44 Magnum', icon: makeMagnumIcon(),
+  desc: 'Six chambers. Right click aims, R reloads',
+  gun: true, gore: 1.6,
+  inspectModel: magModel, iconRot: { rotX: -0.35, rotY: 2.4 },
+  use: () => toggleEquip(magnumItem),
+};
+/* THE AXIS REMAP AND NOTHING ELSE. The model runs its barrel along +X and
+ * stands up +Y, so one quarter turn puts the barrel down the view's own -Z
+ * — and everything else the gun does to point itself (cancelling the arm's
+ * carry yaw for the sights, the cant at the hip, the recoil) lives in
+ * `_pose`, where it is a number that means something rather than a second
+ * rotation nobody can read back. */
+holdable(magnumItem, magModel, { scale: 1, pos: [0, 0, 0], rot: [0, Math.PI / 2, 0] });
+
+/* ------------------------------------------------------------------
+ * THE POSE. Six numbers, the same six every tool in this game uses:
+ * [pitch, lift, yaw, roll, push, side]. The arm is carried at
+ * (ARM_ROT_X, -0.45, 0.10) and out at ARM_SIDE of the frame's half-width,
+ * so DOWN THE SIGHTS is exactly the pose that cancels all four of those —
+ * which is why the aim numbers are the arm's own constants negated rather
+ * than a set somebody searched for. */
+const MAG_HIP = [-0.02, 0.00, 0.30, -0.05, 0.02, 0.00];
+const MAG_ADS = [-ARM_ROT_X, 0.055, 0.45, -0.10, 0.10, -ARM_SIDE];
+function magPose(out) {
+  const a = easeInOutCubic(magAim);
+  for (let i = 0; i < 6; i++) out[i] = MAG_HIP[i] + (MAG_ADS[i] - MAG_HIP[i]) * a;
+  /* THE KICK IS THE LENS'S OWN SPRING, READ BACK INTO THE HANDS. One number
+   * drives the camera and the gun, so the muzzle climb you see through the
+   * sights and the muzzle climb the gun makes are the same event — and its
+   * shape is the reference clip's: hard up and back, through neutral, a
+   * small overshoot, home. */
+  out[0] += magKick * 0.62;
+  out[4] += magKick * 0.10;                       // and it comes back at you
+  out[3] += magYaw * 0.9;
+  /* AND THE RELOAD. The gun rolls out of the hold and down out of the sight
+   * line, takes the loader, is snapped shut and brought back up. The beats
+   * are the reference clip's, scaled. */
+  if (magRel >= 0) {
+    const p = magRel / MAG_RELOAD;
+    const down = p < MAG_OUT ? easeOutCubic(p / MAG_OUT)
+      : p < MAG_SHUT ? 1
+      : 1 - easeInOutCubic((p - MAG_SHUT) / (1 - MAG_SHUT));
+    /* AND IT COMES IN TO BE RELOADED, NOT OUT OF THE FRAME. The first pass
+     * dropped it and pushed it further right and what you watched for two
+     * and a half seconds was a sliver at the edge of the screen. A reload is
+     * the one beat the gun is the ONLY thing worth looking at: it comes up,
+     * in toward the middle, and rolls over so the cylinder faces you. */
+    out[0] += down * 0.30;                        // muzzle up
+    out[1] += down * 0.045;
+    out[2] += down * -0.34;                       // turned across you
+    out[3] += down * 0.80;                        // rolled: the cylinder is out on the left
+    out[4] += down * 0.07;                        // and held closer
+    out[5] += down * (-ARM_SIDE * 0.52);
+    /* AND IT IS FOUR BEATS, NOT ONE HOLD. A pose that goes over and sits
+     * there for two and a half seconds is a gun being TILTED; the reference
+     * clip dumps at 1.25 s of three, takes the loader at 1.75 and flicks
+     * shut at 2.5, and every one of those is something the wrist does. */
+    if (p > MAG_OUT && p < MAG_FEED) {            // the ejector rod knocked through
+      const q = (p - MAG_OUT) / (MAG_FEED - MAG_OUT);
+      out[0] += Math.sin(q * Math.PI * 3) * 0.065 * (1 - q);
+      out[1] += -0.04 * Math.sin(q * Math.PI);    // and it dips to take the loader
+    }
+    if (p > MAG_FEED - 0.06 && p < MAG_FEED + 0.10) {   // six rounds going home
+      const q = (p - (MAG_FEED - 0.06)) / 0.16;
+      out[4] += Math.sin(q * Math.PI) * 0.04;
+      out[0] += Math.sin(q * Math.PI) * -0.05;
+    }
+    if (p > MAG_SHUT) {                           // the flick shut, on the wrist
+      const s = (p - MAG_SHUT) / (1 - MAG_SHUT);
+      out[3] += Math.sin(s * Math.PI) * -0.30;
+    }
+  }
+  return out;
+}
+/* PUT THE SIGHTS ON THE CROSSHAIR — `landBlade`'s own machinery, aimed at
+ * the one thing a gun has to get exactly right. The rig is posed first, the
+ * rear sight's world position read back, and the arm translated by the gap
+ * between it and the middle of the screen at the sight's own depth. So the
+ * hand-set ADS pose above only has to be approximately right: whatever it
+ * leaves over this takes out, at any window shape and any field of view.
+ * Measured off the UNCORRECTED pose every frame, so it never feeds back. */
+const _msA = new THREE.Vector3(), _msV = new THREE.Vector3();
+let _magRZero = null;
+function magSights() {
+  if (!magHeld()) return;
+  if (!magVMSight && magnumItem.viewmodel) {
+    magVMSight = magnumItem.viewmodel.getObjectByName('magSight');
+    magVMMuzzle = magnumItem.viewmodel.getObjectByName('magMuzzle');
+    magVMRounds = magnumItem.viewmodel.getObjectByName('magRounds');
+  }
+  /* THE LOADER IS ONLY THERE WHILE IT IS BEING USED. `holdable`'s builder
+   * switches every child of the clone visible — it exists to undo whatever
+   * was hidden on the original — so this is written every frame rather than
+   * once at build. */
+  if (magVMRounds) {
+    if (!_magRZero) _magRZero = magVMRounds.position.clone();
+    const p = magRel >= 0 ? magRel / MAG_RELOAD : -1;
+    const show = p > MAG_OUT * 0.8 && p < MAG_SHUT;
+    magVMRounds.visible = show;
+    if (show) {
+      /* Up out of the bottom of the frame, into the cylinder, and away
+       * again — the reference clip's own beat, which pushes the loader
+       * forward at 1.75 s of three and has it gone by 2.3. */
+      const q = (p - MAG_OUT * 0.8) / (MAG_SHUT - MAG_OUT * 0.8);
+      const rise = q < 0.55 ? easeOutCubic(q / 0.55) : 1 - easeInCubic((q - 0.55) / 0.45);
+      magVMRounds.position.set(
+        _magRZero.x,
+        _magRZero.y - (1 - rise) * (magVMRounds.userData.drop || 0),
+        _magRZero.z,
+      );
+    }
+  }
+  if (!magVMSight || magAim <= 0.002) return;
+  armRig.updateMatrixWorld(true);
+  magVMSight.getWorldPosition(_msA);
+  const depth = Math.min(_msA.z, -0.20);
+  _msV.set(0, 0, 0.5).unproject(vmCamera);
+  _msV.multiplyScalar(depth / _msV.z);
+  _msV.sub(_msA);
+  if (_msV.length() > 0.40) _msV.setLength(0.40);
+  armRig.position.addScaledVector(_msV, easeInOutCubic(magAim));
+}
+
+/* THE CLOCKS. They run on REAL seconds beside the view model's, because a
+ * shot must not stall inside the hitstop its own hit has just caused. */
+const _magF = new THREE.Vector3();
+function updateGun(dt) {
+  // the lens spring, whether or not the gun is still in your hand
+  magKickV += (-MAG_KICK_K * magKick - MAG_KICK_D * magKickV) * dt;
+  magKick += magKickV * dt;
+  magYawV += (-MAG_KICK_K * magYaw - MAG_KICK_D * magYawV) * dt;
+  magYaw += magYawV * dt;
+  if (Math.abs(magKick) < 1e-4 && Math.abs(magKickV) < 1e-3) { magKick = 0; magKickV = 0; }
+  if (Math.abs(magYaw) < 1e-4 && Math.abs(magYawV) < 1e-3) { magYaw = 0; magYawV = 0; }
+  magFlash = Math.max(0, magFlash - dt * 16);      // about sixty milliseconds, which is a flash
+  magLamp.intensity = magFlash * magFlash * 52;
+  if (magFlash > 0) {
+    camera.getWorldDirection(_magF);
+    magLamp.position.copy(camera.position).addScaledVector(_magF, 0.7);
+    magLamp.position.y -= 0.10;
+  }
+  magFlashSpr.visible = magFlash > 0.02 && !!magVMMuzzle && viewmodel.visible;
+  if (magFlashSpr.visible) {
+    magVMMuzzle.getWorldPosition(_magF);
+    magFlashSpr.position.copy(_magF);
+    // biggest on the frame it is born and shrinking as it goes out, which is
+    // what a flash does; it used to GROW as it faded, which is a smoke ring
+    const s = 0.16 + magFlash * 0.30;
+    magFlashSpr.scale.set(s, s, s);
+    magFlashSpr.material.opacity = Math.min(1, magFlash * 1.5);
+    magFlashSpr.material.rotation = magFlashSeed;
+  }
+  if (magT >= 0) { magT += dt; if (magT >= MAG_SHOT) magT = -1; }
+  const live = magHeld() && !held && !dialogOpen && !inspecting && !frozen();
+  if (!live) { magAiming = false; if (magRel >= 0) magRel = -1; }
+  if (magRel >= 0) {
+    magRel += dt;
+    const p = magRel / MAG_RELOAD;
+    if (!magRelOut && p >= MAG_OUT * 0.35) { magRelOut = true; sfxMagOpen(); }
+    if (!magRelFed && p >= MAG_FEED) {
+      magRelFed = true;
+      const want = Math.min(MAG_CAP - magAmmo, magSpare);
+      magAmmo += want; magSpare -= want;
+      sfxMagFeed();
+    }
+    if (!magRelShut && p >= MAG_SHUT) { magRelShut = true; sfxMagShut(); }
+    if (magRel >= MAG_RELOAD) magRel = -1;
+  }
+  // down the sights — and never while the cylinder is open
+  const want = magAiming && !magBusy() && live ? 1 : 0;
+  magAim += (want - magAim) * Math.min(1, dt * (want ? 17 : 13));
+  if (magAim < 0.001) magAim = 0;
+  updateAmmoReadout();
+}
+let magFlashSeed = 0;
+
+/* WHAT THE BULLET MEETS. `aimLand`'s own list in the same order, except that
+ * this one has to say WHICH thing it hit rather than how far off it was: a
+ * creature takes the blow, stone takes a scar, sand takes a puff. The
+ * creature test is the blade's — the ray's closest approach to the body's
+ * own axis — with the top fifth of it counted as the HEAD, which is the one
+ * thing a gun has that a sword does not. */
+const _mgO = new THREE.Vector3(), _mgD = new THREE.Vector3(), _mgC = new THREE.Vector3(), _mgQ = new THREE.Vector3();
+/* A BODY IS A CAPSULE, NOT A BALL AT ITS MIDDLE. The blade's own creature
+ * test is a sphere on the chest, which is right for a swing — a swing that
+ * arrives anywhere near a creature has hit it — and it cannot answer the one
+ * question a gun asks, which is WHERE. Measured on the first build: a 2.74 m
+ * mutant's sphere reached 2.09 m and the head band began at 2.14, so a
+ * headshot was not merely rare, it was unreachable, and a shot at the head
+ * went past and hit the cliff forty-five metres behind. The ray is closed
+ * against the body's own vertical AXIS instead, and the top quarter of that
+ * axis is the head. */
+let magBest = null;
+function magBody(u, y0, y1, r, hd) {
+  const p = u.g.position;
+  /* Closest approach between the shot and the body's axis — the ray
+   * O + tD against the segment (p.y+y0 .. p.y+y1), both clamped to their
+   * own ends. `v` is solved first and `t` follows from it, which is what
+   * keeps a shot at the head from being answered by the chest. */
+  const dyv = y1 - y0;
+  const wx = _mgO.x - p.x, wy = _mgO.y - (p.y + y0), wz = _mgO.z - p.z;
+  const b = _mgD.y * dyv, c = dyv * dyv;
+  const dd = _mgD.x * wx + _mgD.y * wy + _mgD.z * wz;
+  const ee = dyv * wy;
+  const den = c - b * b;
+  let v = Math.abs(den) < 1e-8 ? 0 : (ee - b * dd) / den;
+  v = THREE.MathUtils.clamp(v, 0, 1);
+  const t = THREE.MathUtils.clamp(-dd + b * v, 0, MAG_RANGE);
+  _mgC.set(p.x, p.y + y0 + dyv * v, p.z);
+  _mgQ.copy(_mgO).addScaledVector(_mgD, t);
+  if (_mgC.distanceTo(_mgQ) > r) return;
+  if (magBest && magBest.t <= t) return;
+  magBest = { t, u, kind: 'foe', head: hd > 0 && _mgC.y > p.y + hd, point: _mgQ.clone() };
+}
+function magTrace(dir) {
+  camera.getWorldPosition(_mgO);
+  _mgD.copy(dir).normalize();
+  magBest = null;
+  for (const u of crabs) if (u.st.alive) magBody(u, 0.05, 0.50, 0.58, 0);
+  for (const u of mutants) {
+    if (!u.st.alive || !u.g.visible) continue;
+    const h = u.kind.h || 1.8;
+    magBody(u, h * 0.12, h * 0.94, Math.max(0.42, (u.kind.hitR || 0.85) * 0.72), h * 0.74);
+  }
+  // and what is behind them: the same ray the solids and the sand are asked with
+  digRay.set(_mgO, _mgD); digRay.far = MAG_RANGE;
+  const solid = nearestSolidHit();
+  if (solid && (!magBest || solid.distance < magBest.t)) magBest = { t: solid.distance, kind: 'solid', hit: solid, point: solid.point.clone(), surface: solid.surface };
+  if (!inRoom()) {
+    const sh = digRay.intersectObject(sand, false)[0];
+    if (sh && (!magBest || sh.distance < magBest.t)) magBest = { t: sh.distance, kind: 'sand', hit: sh, point: sh.point.clone() };
+  }
+  return magBest;
+}
+
+const _mgSp = new THREE.Vector3(), _mgUp = new THREE.Vector3(), _mgRt = new THREE.Vector3();
+function magFire() {
+  if (!magHeld() || frozen() || held) return;
+  if (magT >= 0 || magBusy()) return;
+  if (magAmmo <= 0) {
+    sfxMagDry();
+    magT = 0.30;                               // a dry click still costs you the beat
+    if (magSpare > 0) magReload();
+    return;
+  }
+  magAmmo--; magT = 0;
+  playSample('magShot', 0.85, 0.02);
+  /* IT IS THE LOUDEST THING THAT HAS EVER HAPPENED DOWN THERE. A blade on
+   * stone carries twenty-six metres; a .44 in a catacomb carries the place. */
+  if (inCat) catNoiseAt(camera.position.x, camera.position.z, 70);
+  magFlash = 1; magFlashSeed = Math.random() * Math.PI * 2;
+  /* THE SHOT KICKS THE LENS AND YOUR AIM, AND THEY ARE DIFFERENT THINGS.
+   * The spring is what you WATCH — it rings back to where it started, so a
+   * single shot never costs you the target — and a smaller, PERMANENT nudge
+   * goes into the look itself, so a string of them walks up off whatever
+   * you were shooting at and you have to pull it back down. That is the
+   * difference between a gun with recoil and a gun with a shake. */
+  magKickV += 5.6 - magAim * 1.4;
+  magYawV += (Math.random() - 0.5) * 4.2;
+  gunNudge(0.021 + Math.random() * 0.008 - magAim * 0.008, (Math.random() - 0.5) * 0.010);
+  addTrauma(0.34);
+  fovKick = Math.max(fovKick, 4.2);
+  vmImpulse(-1.25);
+  hitstop = Math.max(hitstop, 0.018);
+
+  camera.getWorldDirection(_mgSp);
+  const spread = (magAim > 0.6 ? MAG_SPREAD_ADS : MAG_SPREAD) * (1 + Math.min(1, velocity.length() / WALK_SPEED) * 0.9);
+  _mgRt.crossVectors(_mgSp, camera.up).normalize();
+  _mgUp.crossVectors(_mgRt, _mgSp).normalize();
+  const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * spread;
+  _mgSp.addScaledVector(_mgRt, Math.cos(a) * r).addScaledVector(_mgUp, Math.sin(a) * r).normalize();
+
+  const h = magTrace(_mgSp);
+  if (!h) return;
+  if (h.kind === 'foe') {
+    const dmg = Math.round(MAG_DMG * (h.head ? MAG_HEAD : 1));
+    if (h.u.kind) hurtMutant(h.u, dmg, 1.0); else hurtCrab(h.u, 4, 1.0);
+    if (h.head) { hitstop = Math.max(hitstop, 0.09); addTrauma(0.22); }
+    return;
+  }
+  if (h.kind === 'solid') {
+    stampScar(h.hit, h.surface);
+    sfxPropHit(h.surface || 'rock', 7);
+    spawnPuffs(h.point.x, h.point.z, 3, -_mgSp.x, -_mgSp.z, h.point.y, 0x9aa3ae);
+  } else if (h.kind === 'sand') {
+    spawnPuffs(h.point.x, h.point.z, 4, -_mgSp.x, -_mgSp.z, Math.max(0.05, h.point.y), null);
+  }
+}
+/* AND THE AIM ITSELF MOVES — not through `applyLook`, which scales by the
+ * sensitivity slider: a recoil that is bigger for one player than for
+ * another is not a recoil. Radians, straight onto the look. */
+const _gnE = new THREE.Euler(0, 0, 0, 'YXZ');
+function gunNudge(up, side) {
+  _gnE.setFromQuaternion(camera.quaternion);
+  _gnE.x = Math.min(HALF_PI, Math.max(-HALF_PI, _gnE.x + up));
+  _gnE.y -= side;
+  _gnE.z = 0;
+  camera.quaternion.setFromEuler(_gnE);
+}
+function magReload() {
+  if (!magHeld() || frozen() || held) return;
+  if (magBusy() || magAmmo >= MAG_CAP || magSpare <= 0) return;
+  magRel = 0; magRelFed = false; magRelShut = false; magRelOut = false;
+  magAiming = false;
+}
+
+/* THE CYLINDER, THE BRASS AND THE SNAP. No recording was supplied for any of
+ * these — the owner's file is the SHOT — so they are synthesised, and what
+ * they have to be is small and dry: a latch, a crane swinging out, six
+ * rounds going home, a frame closing. Nothing here carries a broad hiss; at
+ * the ear that is a radio, which this file has paid for once already. */
+function sfxMagOpen() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const o = ctx.createOscillator(); o.type = 'square';
+  o.frequency.setValueAtTime(1500, t); o.frequency.exponentialRampToValueAtTime(420, t + 0.045);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.10, t); g.gain.exponentialRampToValueAtTime(0.0002, t + 0.06);
+  o.connect(g).connect(sfxOut()); o.start(t); o.stop(t + 0.07);
+  const len = Math.floor(ctx.sampleRate * 0.16), b = ctx.createBuffer(1, len, ctx.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.4) * (Math.random() < 0.18 ? 1 : 0.16);
+  const s = ctx.createBufferSource(); s.buffer = b;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2600; bp.Q.value = 1.4;
+  const g2 = ctx.createGain(); g2.gain.value = 0.16;
+  s.connect(bp).connect(g2).connect(sfxOut()); s.start(t + 0.05); s.stop(t + 0.22);
+}
+function sfxMagFeed() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  for (let i = 0; i < 6; i++) {           // six rounds seating, close together and not quite even
+    const at = t + i * 0.028 + Math.random() * 0.012;
+    const o = ctx.createOscillator(); o.type = 'triangle';
+    o.frequency.setValueAtTime(760 + Math.random() * 380, at);
+    o.frequency.exponentialRampToValueAtTime(250, at + 0.035);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.055, at); g.gain.exponentialRampToValueAtTime(0.0002, at + 0.05);
+    o.connect(g).connect(sfxOut()); o.start(at); o.stop(at + 0.06);
+  }
+}
+function sfxMagShut() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const o = ctx.createOscillator(); o.type = 'square';
+  o.frequency.setValueAtTime(300, t); o.frequency.exponentialRampToValueAtTime(96, t + 0.075);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.16, t); g.gain.exponentialRampToValueAtTime(0.0002, t + 0.11);
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400;
+  o.connect(lp).connect(g).connect(sfxOut()); o.start(t); o.stop(t + 0.12);
+}
+function sfxMagDry() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const o = ctx.createOscillator(); o.type = 'square';
+  o.frequency.setValueAtTime(900, t); o.frequency.exponentialRampToValueAtTime(240, t + 0.03);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.09, t); g.gain.exponentialRampToValueAtTime(0.0002, t + 0.05);
+  o.connect(g).connect(sfxOut()); o.start(t); o.stop(t + 0.06);
+}
+
+/* HOW MANY ARE LEFT, IN THE HUD'S OWN HAND. It is positioned ABSOLUTELY off
+ * the strip rather than given a place in it: `#hud` is a flex row centred as
+ * a whole, so anything added to it re-centres the stamina bar — the one
+ * element that has to be in the same place every time, and the reason the
+ * prompt was moved out of that strip in the first place. */
+const ammoEl = document.getElementById('ammo');
+let ammoShown = '', ammoOn = false;
+function updateAmmoReadout() {
+  if (!ammoEl) return;
+  const on = magHeld() && !held && !inspecting;
+  const s = on ? `${magAmmo}<i>/${magSpare}</i>` : '';
+  if (s !== ammoShown) { ammoShown = s; ammoEl.innerHTML = s; }
+  if (on !== ammoOn) { ammoOn = on; ammoEl.classList.toggle('show', on); }
+  ammoEl.classList.toggle('empty', on && magAmmo === 0);
+}
 
 const DOJO_X = 6000, DOJO_Y = 800, DOJO_Z = 6000;
 /* AND IT IS PACKED AT HALF THE SIZE OF THE MAN WALKING IT. The note below
@@ -44757,6 +45492,11 @@ window.__bw = {
   get wongUnit() { return wongUnit; }, get drunkUnit() { return drunkUnit; }, get orcUnit() { return orcUnit; },
   crawlerUnit, CRAWL_X, CRAWL_Z, crawlerProvoke, startCaveIn, placeInCatacombs, placeOutsideCatDoor, startCatExit, catRoute, catSees, catNodeAt, CAT_X, CAT_Y, CAT_Z, CAT_SITE, CAT_LAND, CAT_DOOR, CAVE_Z,
   TRADER_X, TRADER_Z, TRADER_H, TRADER_POSE, traderPose, TRADER_STOCK, traderBuy, TRADER_NPC, traderWorld, get traderRig() { return traderRig; },
+  magnumItem, magModel, magFire, magReload, magTrace, MAG_CAP,
+  get magAmmo() { return magAmmo; }, set magAmmo(v) { magAmmo = v; },
+  get magSpare() { return magSpare; }, set magSpare(v) { magSpare = v; },
+  get magAiming() { return magAiming; }, set magAiming(v) { magAiming = v; },
+  get magAim() { return magAim; }, get magRel() { return magRel; },
   skullKeyItem, skullKey, skullWorld, dropSkullKey, buildCatKey, CAT_KEY, get catDoorOpen() { return catDoorOpen; }, set catDoorOpen(v) { catDoorOpen = v; },
   catCue, playSampleAt, keepWallNear, keepHitsWall, catNoiseAt, catSpots, catG: () => catG,
   catFloorAt: (x, z, y, up = 0.7) => keepFloorAt(x, z, y, up, CAT_SITE),

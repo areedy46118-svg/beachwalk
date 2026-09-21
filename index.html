@@ -287,6 +287,27 @@
     flex: none;
   }
   #fastwalk.show { opacity: 1; }
+  /* The cylinder, and the loose rounds behind it. The bar's own language —
+     mono, letter-spaced, no colour — because this is a readout you take in
+     mid-fight and not a thing you are carrying; the jar counter is Georgia
+     for the opposite reason. Empty, it goes warm: the one time the number
+     has to reach you before you have read it. */
+  #ammo {
+    position: absolute;
+    left: 100%;
+    margin-left: 0.9rem;
+    white-space: nowrap;
+    font: 600 17px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: 0.10em;
+    color: rgba(236, 242, 250, 0.95);
+    text-shadow: 0 1px 6px #000, 0 0 12px rgba(0, 0, 0, 0.9);
+    opacity: 0;
+    transition: opacity 0.22s ease, color 0.2s ease;
+    pointer-events: none;
+  }
+  #ammo.show { opacity: 1; }
+  #ammo.empty { color: rgba(228, 132, 96, 0.95); }
+  #ammo i { font-style: normal; font-size: 12px; opacity: 0.55; letter-spacing: 0.06em; }
 
   /* THE HEALTH BAR: three hairline segments in the bottom left, dim red
      while whole and brighter the more of you is gone; a flash on the hit. */
@@ -1254,6 +1275,12 @@
   <div id="hud">
     <div id="stamina"><div id="stamina-fill"></div></div>
     <div id="fastwalk">FAST</div>
+    <!-- HOW MANY ARE LEFT. Positioned ABSOLUTELY off the strip rather than
+         given a place in it: #hud is a flex row centred as a whole, so
+         anything added to it re-centres the stamina bar — the one element
+         that has to be in the same place every time, and the reason the
+         prompt was moved out of this strip in the first place. -->
+    <div id="ammo"></div>
   </div>
   <div id="health"><i></i><i></i><i></i><i></i></div>
   <div id="autosave">
