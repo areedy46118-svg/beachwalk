@@ -665,6 +665,14 @@ royalty-free sword-slash pack, a draw and a parry — rotated at random where
 there is more than one, and like `poise-broken.m4a` they are NOT
 redistributable.
 
+The **dojo fountain**, `fountain.m4a`, is a recording the owner supplied
+("Small Fountain Nature Sound", a royalty-free effect). It ships as a 22 s
+seamless loop cut from the steadiest stretch of it: the slow level drift
+taken out so the loop does not pump, equal-power crossfaded end to head,
+normalised to -3 dBFS because AAC overshoots on decode, and mono at 32 kHz
+because there is no energy in it above 14 kHz. Check its own licence before
+redistributing. The synthesised bed stays behind it as the fallback.
+
 The **three break sounds** — `table-break.m4a`, `camera-break.m4a` and
 `coat-break.m4a`, for the desk, the tripod camera and the coat stand — are
 the owner's own bounces as well, and are NOT redistributable either. Each

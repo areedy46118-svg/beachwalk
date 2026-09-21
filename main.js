@@ -12357,6 +12357,15 @@ const SAMPLES = {
   catFeed: ['assets/cat-feed1.m4a'],
   catFar: Array.from({ length: 12 }, (_, i) => `assets/cat-far${i + 1}.m4a`),
   catStep: Array.from({ length: 10 }, (_, i) => `assets/cat-step${i + 1}.m4a`),
+  /* THE DOJO'S FOUNTAIN, SUPPLIED BY THE OWNER — a small fountain in the
+   * open, cut to a 22 s seamless loop: the steadiest stretch of the
+   * recording, its slow level drift taken out so the loop does not pump,
+   * equal-power crossfaded end to head (seam RMS within 5 %), and
+   * normalised to -3 dBFS because AAC overshoots on decode. Mono at
+   * 32 kHz, which costs nothing: measured, there is no energy in it above
+   * 14 kHz. The synthesised bed stays behind it as the fallback for the
+   * frames before it is off the network. */
+  fountain: ['assets/fountain.m4a'],
 };
 const sampleBanks = {};
 function loadSamples() {
@@ -34036,6 +34045,38 @@ function updateDojoLamps(dt, t) {
  * point — so the water disc and its rings hung a metre out over the paving on
  * every side, which is the "off its axis" and the rings that went nowhere near
  * the stone. Everything here is the model's own number now. */
+/* WHERE THE WATER ACTUALLY COMES OVER, WHICH IS NOT ALL THE WAY ROUND.
+ *
+ * "Weird rings on the water" is a complaint this fountain has now drawn
+ * twice, and both times the answer was somewhere else: first the drops were a
+ * ladder of white bars, then the sheet's alpha peaked mid-fall and made a
+ * milky drum. Rendered with everything but the falls hidden, what is left is
+ * still a ring, and it is the one thing neither pass touched — THE SHEET IS A
+ * CLOSED TUBE. A cylinder has two circular edges however its alpha is
+ * tapered, and at eye height a horizontal circle is a LINE drawn across the
+ * fountain; worse, a continuous curtain of water a metre high and a metre
+ * across is not what a tiered fountain does at all. A worn stone lip spills
+ * in a HANDFUL OF PLACES and is dry between them.
+ *
+ * So the sheet keeps its geometry and loses its closed-ness: this is the
+ * spill weight at an angle, zero over most of the lip and one down the middle
+ * of each ribbon. There is no circular edge left anywhere on it, which is the
+ * ring gone by construction rather than by tuning — and the drops and the
+ * spray ask the same function, so the sparkle and the splash are where the
+ * water is instead of being rings of their own. The second harmonic is what
+ * stops the ribbons being identical and evenly spaced, because a stone lip
+ * worn by water is not a machined one. */
+function fountSpill(ang, n, ph) {
+  const a = Math.max(0, Math.sin(ang * n + ph));
+  return Math.pow(a, 1.0) * (0.70 + 0.30 * Math.sin(ang * (n + 2) + ph * 1.7));
+}
+// how many places each lip comes over, and where: a bigger lip spills in more
+function fountLobes(i, r) { return { n: Math.max(3, Math.round(r * 11)), ph: 0.7 + i * 1.9 }; }
+// an angle drawn from the spill rather than from the whole circle
+function fountSpillAngle(rndf, L) {
+  for (let k = 0; k < 24; k++) { const a = rndf() * Math.PI * 2; if (fountSpill(a, L.n, L.ph) > rndf() * 0.85) return a; }
+  return rndf() * Math.PI * 2;
+}
 const FOUNT_TIERS = [
   { y: 2.20, r: 0.219, to: 1.84, n: 4 },      // the top basin spilling into the upper
   { y: 1.80, r: 0.318, to: 1.34, n: 6 },      // upper into lower
@@ -34050,7 +34091,7 @@ const FOUNT_BASINS = [
   { y: 1.82, r: 0.285 },
   { y: 2.22, r: 0.190 },
 ];
-let fountain = null, fountDrops = null, fountT = 0, fountFalls = [], fountCaust = null, fountPads = null, fountTiers = null, fountPoolY = FOUNT_POOL_Y;
+let fountain = null, fountDrops = null, fountSpray = null, fountT = 0, fountFalls = [], fountCaust = null, fountPads = null, fountTiers = null, fountPoolY = FOUNT_POOL_Y;
 const _fqD = new THREE.Object3D();
 function buildFountain() {
   if (fountain || !dojoWorld) return;
@@ -34143,6 +34184,10 @@ function buildFountain() {
       map: caustA, emissiveMap: caustB,
       transparent: true, opacity: 0.62, depthWrite: false,
       emissive: new THREE.Color(0x4e7186), emissiveIntensity: 1.05 }));
+  /* A texture rotates about its ORIGIN unless it is told otherwise, and the
+   * origin of a uv is a corner — turning the pool about a corner swings the
+   * whole pattern across it. */
+  caustA.center.set(0.5, 0.5); caustB.center.set(0.5, 0.5);
   fountCaust = [caustA, caustB];
   pool.rotation.x = -Math.PI / 2;
   pool.position.y = fountPoolY;
@@ -34248,7 +34293,36 @@ function buildFountain() {
      * And FrontSide, not DoubleSide: a translucent tube drawn both sides is
      * its own opacity twice over, which is what made a thin veil read as a
      * solid band. */
-    const fg = new THREE.CylinderGeometry(T.r + 0.015, T.r + 0.055, h, 26, 8, true);
+    const LOB = fountLobes(fountTiers.indexOf(T), T.r);
+    /* 26 segments round a lip that now has gaps in it leaves a ribbon four
+     * facets wide, which is a flat plank of water; 64 gives the spill an edge
+     * that curves. It is three open tubes in the whole game. */
+    const fg = new THREE.CylinderGeometry(T.r + 0.015, T.r + 0.055, h, 64, 8, true);
+    /* AND THE SHEET FALLS AT A CONSTANT SPEED, WHICH IS THE ONE THING WATER
+     * NEVER DOES. `tex.offset.y` walks the pattern down at a fixed rate and
+     * `CylinderGeometry`'s v is linear in height, so every streak travelled
+     * the same distance per second from the lip to the basin — the drops
+     * beside it have obeyed gravity since the day they went in (`the phase is
+     * the time and the height is the time squared`) and the sheet they came
+     * off did not.
+     *
+     * It is fixed in the uv and not in the update, because the update has one
+     * offset for the whole mesh and this is a different rate at every height.
+     * A body falling from the lip reaches depth s at t proportional to sqrt(s),
+     * so a v that is proportional to the TIME rather than the distance turns
+     * one uniform scroll into real acceleration: the streaks are short and
+     * crowded where the water leaves the lip and stretch as they go, which is
+     * exactly what a fall looks like. Measured on the bottom tier, a 1.0 m
+     * drop: the pattern covers the first 10 cm in 27 % of the fall's own
+     * clock and the last 10 cm in 5 %. */
+    {
+      const ua = fg.attributes.uv, pv = fg.attributes.position;
+      for (let i = 0; i < ua.count; i++) {
+        const v = (pv.getY(i) + h * 0.5) / h;          // 0 at the basin, 1 at the lip
+        ua.setY(i, 1 - Math.sqrt(Math.max(0, 1 - v)));
+      }
+      ua.needsUpdate = true;
+    }
     {
       const pa = fg.attributes.position, n = pa.count, col = new Float32Array(n * 4);
       for (let i = 0; i < n; i++) {
@@ -34263,7 +34337,13 @@ function buildFountain() {
          * peaks just under the lip and tapers the whole way down, so the
          * carving behind it reads through the bottom half. */
         const inn = Math.min(1, (1 - v) / 0.09);       // out of the lip
-        const a = inn * Math.pow(v, 0.9);              // and thinning as it falls
+        let a = inn * Math.pow(v, 0.9);                // and thinning as it falls
+        /* AND ONLY WHERE IT COMES OVER. The ribbons spread as they fall — a
+         * stream leaving a lip is narrow and is a metre wide by the time it
+         * arrives — so the gaps close a little on the way down and the sheet
+         * never reads as a row of pillars either. */
+        const sp = fountSpill(Math.atan2(pa.getZ(i), pa.getX(i)), LOB.n, LOB.ph);
+        a *= THREE.MathUtils.clamp(sp + (1 - v) * 0.35, 0, 1);
         col[i * 4] = col[i * 4 + 1] = col[i * 4 + 2] = 1;
         col[i * 4 + 3] = a;
       }
@@ -34314,11 +34394,41 @@ function buildFountain() {
   fountDrops.userData.list = [];
   const rnd = mulberry32(0xfa11);
   for (const t of fountTiers) for (let k = 0; k < t.n; k++) {
-    fountDrops.userData.list.push({ t, a: rnd() * Math.PI * 2, p: rnd(),
+    fountDrops.userData.list.push({ t, a: fountSpillAngle(rnd, fountLobes(fountTiers.indexOf(t), t.r)), p: rnd(),
       sp: 0.80 + rnd() * 0.45, wob: (rnd() - 0.5) * 0.06,
       jit: (rnd() - 0.5) * 0.16, len: 0.7 + rnd() * 0.7 });
   }
   fountain.add(fountDrops);
+  /* AND WATER THAT ARRIVES SOMEWHERE THROWS SOMETHING UP. Three sheets fell a
+   * metre into stone basins and simply stopped — the fall dissolved into its
+   * own alpha taper and nothing happened at the bottom of it, which is the
+   * one place a fountain is doing something. A ring of specks at each landing
+   * line, each thrown up on its own little parabola and drifting outward as
+   * it goes, is what says the water is HITTING something. They are tiny and
+   * faint for the drops' own reason: at this render scale anything bigger
+   * than a couple of pixels is a white bar, not spray.
+   *
+   * The landing RADIUS is the sheet's bottom rim (`T.r + 0.055`, the
+   * cylinder's own lower radius) and not its lip, or the spray comes up
+   * inside the fall instead of where it lands. */
+  const SPRAY_PER = 16;
+  const spm = new THREE.MeshBasicMaterial({ color: 0xd6e6f0, transparent: true, opacity: 0.30, depthWrite: false });
+  fountSpray = new THREE.InstancedMesh(new THREE.BoxGeometry(0.008, 0.008, 0.008), spm, fountTiers.length * SPRAY_PER);
+  fountSpray.frustumCulled = false;
+  fountSpray.renderOrder = 3;
+  fountSpray.userData.list = [];
+  for (const t of fountTiers) for (let k = 0; k < SPRAY_PER; k++) {
+    fountSpray.userData.list.push({
+      y0: t.to, r0: t.r + 0.055,
+      /* AT THE RIBBONS, NOT ROUND THE CIRCLE. Sixteen specks on a perfect
+       * circle is the very ring this pass exists to remove, drawn in spray. */
+      a: fountSpillAngle(rnd, fountLobes(fountTiers.indexOf(t), t.r)), p: rnd(),
+      rate: 1.5 + rnd() * 1.5,              // how often this one is thrown up
+      up: 0.035 + rnd() * 0.075,            // how high it gets
+      out: 0.015 + rnd() * 0.055,           // and how far out it drifts doing it
+    });
+  }
+  fountain.add(fountSpray);
 }
 /* GRAVITY, NOT A LERP. A drop that falls linearly reads as a lift; the whole
  * tell of water is that it ACCELERATES, so the phase is the time and the
@@ -34477,7 +34587,18 @@ function updateDojoAudio(dt) {
   const prev = dojoMix;
   dojoMix += (want - dojoMix) * Math.min(1, dt * 1.6);
   if (Math.abs(dojoMix - want) < 0.002) dojoMix = want;
-  const ctx = audioCtx; if (!ctx || (dojoMix <= 0 && prev <= 0)) return;
+  const ctx = audioCtx; if (!ctx) return;
+  /* THE FOUNTAIN IS DRIVEN FROM HERE, NOT FROM `updateFountain`.
+   * `updateFountain` returns on its first line while you are not in the dojo,
+   * so hanging the water's gain off it meant the last thing ever written to
+   * that gain was whatever it held on the frame you left — it only ever went
+   * quiet because `placeBackAtPortal` remembered to ask it to, and any other
+   * way out of the room (a win, a restore, the harness) left a fountain
+   * running on the beach. This function is on `animateFrame` and runs whether
+   * you are in the room or not, which is the whole reason the wave bus and
+   * the wind are ducked from here too. */
+  updateFountainAudio(dt);
+  if (dojoMix <= 0 && prev <= 0) return;
   if (dojoMix > 0 && !dojoNature) startDojoNature();
   if (dojoNature) dojoNature.g.gain.setTargetAtTime(dojoMix * settings.sfxVolume * 0.16, ctx.currentTime, 0.6);
   if (waveBusGain) waveBusGain.gain.setTargetAtTime(settings.waveVolume * (1 - dojoMix), ctx.currentTime, 0.5);
@@ -34529,17 +34650,40 @@ function updateFountain(dt) {
    * pattern down the cylinder; subtracting ran the streaks up it, which is the
    * other half of what read as rising. */
   for (const F of fountFalls) { F.tex.offset.y = (F.tex.offset.y + dt * F.sp) % 1; }
-  /* AND THE POOL IS NEVER THE SAME TWO FRAMES RUNNING. Different speeds and
-   * different directions, or the two sheets travel together and the whole
-   * thing slides sideways like a conveyor instead of shimmering. */
+  /* THE SPRAY. Each speck is thrown up off the landing line on its own count
+   * and falls back; the parabola is the drops' own arithmetic (the height is
+   * the time squared) and it drifts outward the whole way, because water
+   * coming off a hard surface goes OUT as well as up. It shrinks to nothing
+   * at the top of its arc rather than blinking out, so nothing pops. */
+  if (fountSpray) {
+    const sl = fountSpray.userData.list;
+    for (let i = 0; i < sl.length; i++) {
+      const q = sl[i];
+      const u = (fountT * q.rate + q.p) % 1;          // 0 leaving the water, 1 back in it
+      const hop = 4 * u * (1 - u);                     // up and back down
+      const r = q.r0 + q.out * u;
+      _fqD.position.set(Math.cos(q.a) * r, q.y0 + q.up * hop, Math.sin(q.a) * r);
+      _fqD.rotation.set(0, q.a, 0);
+      _fqD.scale.setScalar(0.5 + hop * 0.9);
+      _fqD.updateMatrix();
+      fountSpray.setMatrixAt(i, _fqD.matrix);
+    }
+    fountSpray.instanceMatrix.needsUpdate = true;
+  }
+  /* AND A ROUND POOL DOES NOT SLIDE, IT TURNS. Two maps scrolled in x and y
+   * is a straight-line drift, and on a disc fed from a column in the middle
+   * that reads as a conveyor belt running under the fountain — the same thing
+   * the lily pads were given a drift to avoid. They are ROTATED about the
+   * middle now, at different rates and opposite ways so the two nets cross
+   * and re-cross, with a little scroll left on top so it is never a
+   * turntable either. */
   if (fountCaust) {
     const a = fountCaust[0], b2 = fountCaust[1];
-    a.offset.x = (a.offset.x + dt * 0.023) % 1;
-    a.offset.y = (a.offset.y + dt * 0.017) % 1;
-    b2.offset.x = (b2.offset.x - dt * 0.014) % 1;
-    b2.offset.y = (b2.offset.y + dt * 0.029) % 1;
+    a.rotation += dt * 0.085;
+    b2.rotation -= dt * 0.056;
+    a.offset.y = (a.offset.y + dt * 0.011) % 1;
+    b2.offset.x = (b2.offset.x - dt * 0.009) % 1;
   }
-  updateFountainAudio(dt);
 }
 
 /* AND YOU HEAR IT BEFORE YOU ARE AT IT. Everything else in this room is rain
@@ -34553,8 +34697,38 @@ function updateFountain(dt) {
  * band of splash on the surface, and single PLINKS at irregular intervals,
  * which is the part the ear reads as droplets rather than noise. */
 let fountAudio = null, fountPlink = 0;
+/* AND THE RECORDING GOES IN FRONT OF IT. The owner supplied a real small
+ * fountain, so the synthesis stops being the sound and becomes the fallback —
+ * the katana's own arrangement, and with it the same rule the three breaks
+ * paid for: the synth must NOT still play underneath. A recording is already
+ * one mixed event, body and splash and droplets together, and putting a
+ * bandpassed noise bed under it only muddies it. `fountRec` is which one is
+ * running, so `updateFountainAudio` knows whether to add the plinks (the
+ * recording has real ones) and how bright to let it get. */
+function startFountainRec() {
+  const ctx = audioCtx; if (!ctx || fountAudio) return false;
+  const buf = (sampleBanks.fountain || []).filter(Boolean)[0];
+  if (!buf) return false;
+  const g = ctx.createGain(); g.gain.value = 0;
+  /* A FOUNTAIN GETS DULLER WITH DISTANCE, WHICH IS WHAT SAYS "OVER THERE"
+   * more than the level does — the room's own rule for a cue with a where.
+   * Across the yard you get the body of it; at the rim you get the splashes. */
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; lp.Q.value = 0.2;
+  let dst = sfxOut(), pan = null;
+  if (ctx.createStereoPanner) { pan = ctx.createStereoPanner(); pan.pan.value = 0; pan.connect(dst); dst = pan; }
+  const n = ctx.createBufferSource(); n.buffer = buf; n.loop = true;
+  /* STARTED AT A RANDOM POINT so two visits to the room do not open on the
+   * same second of water, and at a hair off unity so the loop's own period is
+   * never quite the same length twice. */
+  n.playbackRate.value = 0.97 + Math.random() * 0.06;
+  n.connect(lp).connect(g).connect(dst);
+  n.start(0, Math.random() * buf.duration);
+  fountAudio = { g, n, lp, pan, rec: true };
+  return true;
+}
 function startFountainAudio() {
   const ctx = audioCtx; if (!ctx || fountAudio) return;
+  if (startFountainRec()) return;
   const g = ctx.createGain(); g.gain.value = 0; g.connect(sfxOut());
   const len = Math.floor(ctx.sampleRate * 3);
   const buf = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -34575,21 +34749,52 @@ function startFountainAudio() {
   const lv = ctx.createGain(); lv.gain.value = 0.10;
   lfo.connect(lv); lv.connect(g.gain); lfo.start();
   n.start();
-  fountAudio = { g, n, lfo };
+  fountAudio = { g, n, lfo, rec: false };
 }
+/* HOW NEAR YOU ARE TO IT, AND THAT IS THREE THINGS, NOT A VOLUME KNOB.
+ *
+ * `1 - d / 15` is a straight line, and a straight line is the one falloff
+ * real sound never has: it fades in from nothing at fifteen metres at a
+ * constant rate and is still only two thirds up when you are standing at the
+ * rim. Water off a stone basin obeys an inverse law — most of the change
+ * happens in the first few metres, which is where you actually walk — so
+ * `FOUNT_REF` is the distance at which it has fallen to half (2.2 m) and
+ * `FOUNT_FAR` where the room has swallowed it.
+ *
+ * The other two are what make it a PLACE rather than a level:
+ *   TONE. Across the yard you get the body of it and nothing else; at the rim
+ *   the individual splashes arrive. That is the room's own rule for any cue
+ *   with a where — duller is further, and it says so more than the level does.
+ *   PAN. It is off to one side from across the ring and it is ALL ROUND YOU
+ *   when you are standing over it, so the pan is weighted away with
+ *   closeness. Hard-panning a thing you are standing in is the tell that it
+ *   is a point source, and a fountain is not one.
+ *
+ * And it is multiplied by `dojoMix`, which is the room, so it cannot outlive
+ * it: see the note on `updateDojoAudio` below. */
+const FOUNT_REF = 2.2, FOUNT_FAR = 16, FOUNT_LEVEL = 0.40;
 function updateFountainAudio(dt) {
   const ctx = audioCtx; if (!ctx) return;
   const d = Math.hypot(camera.position.x - (DOJO_X + DOJO_FOUNT.x),
                        camera.position.z - (DOJO_Z + DOJO_FOUNT.z));
-  const want = Math.max(0, 1 - d / 15);
-  if (want > 0.01) startFountainAudio();
+  const lvl = inDojo ? (1 / (1 + d / FOUNT_REF)) * THREE.MathUtils.clamp((FOUNT_FAR - d) / (FOUNT_FAR * 0.45), 0, 1) : 0;
+  const want = lvl * dojoMix;
+  if (want > 0.004) startFountainAudio();
   if (!fountAudio) return;
-  fountAudio.g.gain.setTargetAtTime(want * want * 0.30, ctx.currentTime, 0.18);
-  // the plinks: single drops, on an irregular count, only when you are near
+  const t = ctx.currentTime;
+  fountAudio.g.gain.setTargetAtTime(want * FOUNT_LEVEL * settings.sfxVolume, t, 0.18);
+  if (fountAudio.lp) fountAudio.lp.frequency.setTargetAtTime(700 * Math.pow(9.3, lvl), t, 0.20);
+  if (fountAudio.pan) {
+    const w = d / (d + 2.0);                       // nothing at the rim, most of it across the ring
+    fountAudio.pan.pan.setTargetAtTime(THREE.MathUtils.clamp(panTo(DOJO_X + DOJO_FOUNT.x, DOJO_Z + DOJO_FOUNT.z) * 0.8 * w, -1, 1), t, 0.12);
+  }
+  /* The plinks are the SYNTH's droplets, and the recording has real ones —
+   * the three breaks' rule, that a recording is already one mixed event and
+   * a synthesised layer under it only muddies it. */
+  if (fountAudio.rec) return;
   fountPlink -= dt;
   if (fountPlink <= 0 && want > 0.20) {
     fountPlink = 0.16 + Math.random() * 0.40;
-    const t = ctx.currentTime;
     const o = ctx.createOscillator(); o.type = 'sine';
     const f0 = 780 + Math.random() * 1150;
     o.frequency.setValueAtTime(f0, t);
@@ -37082,6 +37287,129 @@ MUT_ATTACKS.sStab = { wind: 0.44, strike: 0.10, recover: 0.28, hit: 0.52, reach:
  * longest tell in the fight and the quickest blade in it. */
 MUT_ATTACKS.sDown = { wind: 0.66, strike: 0.10, recover: 0.36, hit: 0.64, reach: 2.55, lunge: 1.1, chain: 'sSide', chainP: 0.34, w: 0.22, dmg: 2, guardK: 1.60, limbs: [0], real: true, cock: 0.34, clipRate: 1.40 };
 
+/* AND HE HAD NO SIDEWAYS STRIDE AT ALL, WHICH IS THE OLDEST ANIMATION BUG IN
+ * THIS FILE. `strafeL` and `strafeR` were ALIASED ONTO THE WALK, so the half
+ * of a fight he spends holding his distance was a man striding forward while
+ * travelling sideways — the feet going one way and the body another, which
+ * this file has now paid for on the reptilians, the knight, the drunk and
+ * him. The eight Mixamo clips he was given contain no side-step and the
+ * packer's source is a .blend on the owner's other machine, so it is written
+ * here, on the rig, the way the witness's and the knight's whole move sets
+ * were.
+ *
+ * WHAT MAKES IT A SHUFFLE AND NOT A SKATE is the PHASE, and it is the
+ * reptilian's own arithmetic: each foot's offset along the line of travel is
+ * `-cos(ph)/2` of the stride and it is off the ground exactly while
+ * `sin(ph) > 0` — which is precisely the half in which that offset is
+ * INCREASING. So a foot moves outward while it is in the air and is still
+ * while it is planted, and what slides past it is the body. The two are half
+ * a cycle apart, so the lead reaches out, plants, and the trail is drawn in
+ * after it; nothing crosses and nothing scrubs.
+ *
+ * AND IT DRIVES THE LEGS AND NOTHING ELSE. Every hand-authored clip on this
+ * rig has read badly and all of them failed the same way — they are built up
+ * from a bind pose that is a T, so the arms come off the sword (see
+ * `armRest`). `build` writes every undriven bone from the STANCE, which here
+ * is the retargeted idle's own two-handed guard, so his upper body is
+ * untouched Mixamo and only his feet are mine. */
+const SAM_STRAFE_JOINTS = {
+  hip: 'DEF-spine',
+  thighL: 'DEF-thighL', thighR: 'DEF-thighR',
+  calfL: 'DEF-shinL', calfR: 'DEF-shinR',
+  footL: 'DEF-footL', footR: 'DEF-footR',
+};
+function authorSamuraiStrafe(u, m, gltf) {
+  const src = (gltf.animations || []).find((c) => c.name === 'idle');
+  if (!src) return [];
+  const R = poseRig(u, m, src, SAM_STRAFE_JOINTS, {});
+  const { J, base, build, compose } = R;
+  for (const k of ['hip', 'thighL', 'thighR', 'calfL', 'calfR', 'footL', 'footR']) if (!J[k]) return [];
+  /* WHICH WAY IS OUT, AND WHICH WAY IS UP, ARE MEASURED. Nothing about a pose
+   * on somebody else's rig can be checked by reasoning — this file has said so
+   * for the curl of a fist, the swing of a thigh and the roll of a tail, and
+   * got each of them wrong at least once first. A test rotation goes on the
+   * joint, the FOOT is asked where it went, and the sign that moves it the way
+   * the parameter is named is the one kept. */
+  const gq = new THREE.Quaternion(); m.getWorldQuaternion(gq);
+  const wRight = new THREE.Vector3(1, 0, 0).applyQuaternion(gq).normalize();
+  const rest = () => { for (const k in J) if (J[k]) J[k].quaternion.copy(base.get(J[k])); m.updateMatrixWorld(true); };
+  const probe = (joint, ax, amt, foot, dir) => {
+    rest();
+    const p0 = J[foot].getWorldPosition(new THREE.Vector3());
+    J[joint].quaternion.copy(compose(joint, { [ax]: amt }));
+    m.updateMatrixWorld(true);
+    const d = J[foot].getWorldPosition(new THREE.Vector3()).sub(p0).dot(dir);
+    rest();
+    return Math.abs(d) < 1e-5 ? 1 : Math.sign(d);
+  };
+  const up = new THREE.Vector3(0, 1, 0);
+  const abd = { L: probe('thighL', 'fwd', 0.35, 'footL', wRight), R: probe('thighR', 'fwd', 0.35, 'footR', wRight) };
+  const lift = { L: probe('calfL', 'right', 0.5, 'footL', up), R: probe('calfR', 'right', 0.5, 'footR', up) };
+  /* A SIDE-STEP IS SHORT AND LOW. A metre of travel a cycle at a metre and a
+   * quarter a second, which is what a man in armour holding a guard does when
+   * he is circling you rather than walking somewhere. */
+  const DUR = 0.80, STRIDE = 0.50, LEG = 0.90;
+  /* AND `-cos(ph)/2` IS NOT ACTUALLY A FOOT THAT STAYS PUT. It is the phase
+   * this file wrote down for the reptilians and it gets the important half
+   * right — the foot moves outward exactly while it is in the air — but its
+   * speed under the body is a SINE, and a planted foot has to travel at
+   * exactly the speed the body does or it scrubs the floor for part of every
+   * step. Measured on the first build: the planted foot drifted at 1.38 m/s
+   * through the middle of the stance against a clip declaring 1.25.
+   * It is linear while the foot is down and eased while it is up, which is
+   * the only shape that has a foot stand still. */
+  const sm = (x) => x * x * (3 - 2 * x);
+  const off = (p) => (p < 0.5
+    ? (-0.5 + sm(p / 0.5)) * STRIDE          // in the air, swinging out
+    : (0.5 - (p - 0.5) / 0.5) * STRIDE);     // on the ground, at a constant rate
+  const mk = (name, dir) => {
+    const keys = [];
+    const N = 16;
+    for (let i = 0; i <= N; i++) {
+      const t = i / N, kf = {};
+      for (const side of ['L', 'R']) {
+        // the leg on the side he is going leads; the other is half a cycle behind
+        const lead = (dir > 0) === (side === 'R');
+        const p = (t + (lead ? 0 : 0.5)) % 1;
+        const offRight = off(p) * dir;                         // metres, toward his right
+        const air = p < 0.5 ? Math.sin(p / 0.5 * Math.PI) : 0;
+        kf['thigh' + side] = { fwd: abd[side] * (offRight / LEG) };
+        kf['calf' + side] = { right: lift[side] * air * 0.62 };
+        // the foot levels off as it comes down rather than arriving toe first
+        kf['foot' + side] = { right: -lift[side] * air * 0.24 };
+      }
+      // he drops a little on each plant: two dips a cycle, because both feet land
+      kf.hipY = -0.016 - 0.020 * Math.abs(Math.sin(2 * Math.PI * t));
+      keys.push([t * DUR, kf]);
+    }
+    return build(name, DUR, keys, true);
+  };
+  const out = [mk('strafeL', -1), mk('strafeR', 1)];
+  /* AND THE RATE IS THE STRIDE OVER THE SPEED — MEASURED OFF THE PLANTED
+   * FOOT, not taken from `STRIDE`. The parameter is an ANGLE and the travel
+   * is a chord, so what the hip actually gets is not what was asked for:
+   * measured, 0.845 m of travel for a metre requested. The clip states its
+   * own stride the way the packer measures the retargeted ones. */
+  {
+    const mx = new THREE.AnimationMixer(m);
+    const a = mx.clipAction(out[1]); a.play(); a.weight = 1; a.enabled = true;
+    const hp = new THREE.Vector3(), fp = new THREE.Vector3();
+    const at = (tt) => {
+      a.time = tt * DUR; mx.update(0); m.updateMatrixWorld(true);
+      J.hip.getWorldPosition(hp);
+      // the right foot leads `strafeR`, so it is DOWN over the back half
+      J.footR.getWorldPosition(fp);
+      return fp.sub(hp).dot(wRight);
+    };
+    const d = (at(0.95) - at(0.60)) / (0.35 * DUR);
+    mx.stopAllAction(); mx.uncacheRoot(m);
+    const v = Math.abs(d);
+    u.clipSpeed.strafeL = u.clipSpeed.strafeR = (v > 0.2 && v < 6) ? v : STRIDE * 2 / DUR;
+  }
+  for (const k in J) if (J[k]) J[k].quaternion.copy(base.get(J[k]));
+  m.updateMatrixWorld(true);
+  return out;
+}
 MUT_KINDS.samurai = {
   glb: 'assets/samurai.glb', human: true, solo: true, noSand: true, lit: false,
   /* `bossDeath` WAS LEFT OFF FOR A REASON THAT TURNED OUT TO BE A MISSING
@@ -37224,7 +37552,14 @@ MUT_KINDS.samurai = {
    * keeps playing whatever it had. Measured in the fight: he crossed thirteen
    * metres and threw a swing with his TAUNT still on the mixer. The warning
    * has been in `mutPlay` since it was written and says exactly this. */
-  alias: { strafeL: 'walk', strafeR: 'walk', back: 'walk', roar: 'taunt',
+  /* AND THE ALIAS NO LONGER SHADOWS THEM. `strafeL`/`strafeR` were mapped
+   * onto the walk here, and the alias map runs AFTER `kind.author` — so a
+   * side-step written in code would have been quietly replaced by the walk on
+   * the next line. An alias overwrites a clip of the same name, which is the
+   * trap that hid the knight's own Head Hit. `back` stays: a man giving
+   * ground plays his walk at a NEGATIVE rate, which `mutAnim` does. */
+  author: authorSamuraiStrafe,
+  alias: { back: 'walk', roar: 'taunt',
            walk2: 'walk', run2: 'run', idle2: 'idle', idleSrc: 'idle' },
   /* The three hand-authored clips, put back on the guard the other eight
    * hold the sword in. `sRise` is out of the draw and is done for the sake
@@ -44618,7 +44953,14 @@ window.__bw = {
   get dojoMix() { return dojoMix; },
   get audioMix() { return { dojoMix, shrineMix, bunkerMix, drainMix,
     wave: waveBusGain ? waveBusGain.gain.value : null, wind: windDuck ? windDuck.gain.value : null,
-    nature: dojoNature ? dojoNature.g.gain.value : null }; },
+    nature: dojoNature ? dojoNature.g.gain.value : null,
+    /* The fountain's own gain, so how loud it is where you are standing is a
+     * thing that can be MEASURED rather than described. `rec` says whether it
+     * is the owner's recording or the synthesised fallback behind it. */
+    fount: fountAudio ? fountAudio.g.gain.value : null,
+    fountLp: fountAudio && fountAudio.lp ? Math.round(fountAudio.lp.frequency.value) : null,
+    fountPan: fountAudio && fountAudio.pan ? +fountAudio.pan.pan.value.toFixed(2) : null,
+    fountRec: fountAudio ? !!fountAudio.rec : null }; },
   get fenceOpen() { return fenceOpen; }, get fenceSwing() { return fenceSwing; }, fenceGroup, FENCE_Z, FENCE_GATE_X, FENCE_GATE_W, openFenceGate,
   drinkWater, get waterSips() { return waterSips; }, set waterSips(v) { waterSips = v; }, get drinking() { return drinking; }, get drinkT() { return drinkT; },
   get hp() { return hp; }, set hp(v) { hp = v; },

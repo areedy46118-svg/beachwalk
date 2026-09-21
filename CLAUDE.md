@@ -12364,3 +12364,141 @@ reads each bone's `matrixWorld`, which only a RENDER refreshes**: the ragdoll
 driver updates the bones it drives and leaves the fingers and twists holding
 last frame's matrices, so skinned bounds sampled without `updateMatrixWorld`
 mix fresh and stale joints and report a body 6.1 m across that is really 2.15.
+
+**THE FOUNTAIN IS A RECORDING NOW, AND THE RINGS WERE THE SHEET BEING A TUBE.**
+Four things in one pass, and the ring is the one worth reading twice.
+
+**"WEIRD RINGS ON THE WATER" IS A COMPLAINT THIS FOUNTAIN HAS DRAWN THREE
+TIMES, AND THE FIRST TWO ANSWERS WERE BOTH SOMEWHERE ELSE.** First the drops
+were a ladder of white bars and were made small and few; then the sheet's
+alpha peaked mid-fall and made a milky drum, and it was re-tapered to peak
+under the lip. Rendered with the falls hidden and then with everything BUT the
+falls hidden — which is the test neither earlier pass ran — what is left is
+still a ring, and it is the one thing both passes took for granted: **THE
+SHEET IS A CLOSED TUBE.** A cylinder has two circular edges however its alpha
+is tapered, and at eye height a horizontal circle is a LINE drawn across the
+fountain. Worse, a continuous curtain of water a metre high and a metre across
+is not what a tiered fountain does at all: a worn stone lip spills in a
+HANDFUL OF PLACES and is dry between them.
+
+So the sheet keeps its geometry and loses its closed-ness. `fountSpill(ang)` is
+the spill weight round the lip — zero over most of it, one down the middle of
+each ribbon, with a second harmonic so the ribbons are neither identical nor
+evenly spaced — and the vertex alpha is multiplied by it. There is no circular
+edge left anywhere, which is the ring gone BY CONSTRUCTION rather than by
+tuning. The gaps close a little toward the basin, because a stream leaving a
+lip is narrow and is a metre wide by the time it arrives, so it does not read
+as a row of pillars either. 26 segments round a lip with gaps in it leaves a
+ribbon four facets wide, which is a plank of water; 64.
+
+**AND THE DROPS AND THE SPRAY ASK THE SAME FUNCTION.** Sixteen spray specks
+dealt evenly round a landing circle is the very ring this pass exists to
+remove, drawn in spray — so both are drawn from the spill instead, and the
+sparkle and the splash are where the water is.
+
+**AND THE SHEET FELL AT A CONSTANT SPEED, WHICH IS THE ONE THING WATER NEVER
+DOES.** `tex.offset.y` walks the pattern down at a fixed rate and a cylinder's
+v is linear in height, so every streak covered the same distance per second
+from the lip to the basin — while the drops beside it have obeyed gravity
+since the day they went in. It cannot be fixed in the update, which has one
+offset for the whole mesh: a body falling from the lip reaches depth s at t
+proportional to sqrt(s), so the V IS REMAPPED TO THE TIME rather than the
+distance and one uniform scroll becomes real acceleration. Streaks are short
+and crowded at the lip and stretch as they go.
+
+**AND WATER THAT ARRIVES SOMEWHERE THROWS SOMETHING UP.** Three sheets fell a
+metre into stone and simply stopped. A ring of specks at each landing line,
+thrown up on its own little parabola and drifting outward, is what says the
+water is HITTING something — at the landing radius, which is the sheet's
+bottom rim and not its lip, or the spray comes up inside the fall.
+
+**AND A ROUND POOL DOES NOT SLIDE, IT TURNS.** Two caustic maps scrolled in x
+and y is a straight-line drift, and on a disc fed from a column in the middle
+that reads as a conveyor running under the fountain. They are rotated about
+the middle at different rates and opposite ways, with a little scroll left on
+top so it is not a turntable either — and `center` has to be set to (0.5, 0.5)
+first, because a texture rotates about its ORIGIN and the origin of a uv is a
+corner.
+
+**AND THE POOL IS INVISIBLE, WHICH IS HALF OF WHY A RING IS ALL YOU SEE.**
+Measured: the water covers 1.4 % of a close view and renders at a mean
+luminance of **7.1** — the open beach's own 7.3 — inside a basin whose lit
+stone rim reads **38.5**. A black hole with a bright ring round it is exactly
+what the eye reports as "a weird ring". Raising the emissive was tried at
+1.05 / 5.5 / 9 / 13 and is NOT the answer: it does not brighten water, it
+brightens the CAUSTIC MAP, and by 9 the pool is a cyan neon web on black. What
+was fixed is the thing that was actually wrong — the falls — and the pool's
+own level is left where it is.
+
+**THE SOUND IS THE OWNER'S OWN RECORDING, AND ITS DISTANCE MODEL IS THREE
+THINGS.** `assets/fountain.m4a` is his mp3 cut to a 22 s seamless loop: the
+steadiest stretch, its slow level drift taken out so the loop does not pump,
+equal-power crossfaded end to head (seam RMS within 5 %), normalised to
+-3 dBFS because AAC overshoots on decode, mono at 32 kHz — which costs nothing,
+because measured there is no energy in it above 14 kHz. 157 KB. The
+synthesised bed stays behind it as the fallback, and the synth's PLINKS are
+switched off when the recording is playing: a recording is already one mixed
+event and a synthesised layer under it only muddies it, which is the three
+breaks' own rule.
+
+`1 - d / 15` was a straight line, and a straight line is the one falloff real
+sound never has. It is an inverse law now (`FOUNT_REF` 2.2 m is where it has
+halved), plus the two things that make it a PLACE rather than a level: the
+TONE opens from 700 Hz across the yard to 6.5 kHz at the rim, because duller
+is further and says so more than the level does; and the PAN is weighted away
+with closeness, because hard-panning a thing you are standing in is the tell
+that it is a point source and a fountain is not one. Measured: 0.144 at 1.2 m,
+0.082 at 4, 0.044 at 9, 0.020 at 12, with the lowpass 2886 → 848 Hz.
+
+**AND IT IS DRIVEN FROM `updateDojoAudio`, NOT FROM `updateFountain`.**
+`updateFountain` returns on its first line while you are not in the dojo, so
+hanging the water's gain off it meant the last thing ever written to that gain
+was whatever it held on the frame you left — it only ever went quiet because
+`placeBackAtPortal` remembered to ask it to, and any other way out of the room
+(a win, a restore, the harness) left a fountain running on the beach.
+`updateDojoAudio` is on `animateFrame` and runs whether you are in the room or
+not, which is the whole reason the wave bus and the wind are ducked from
+there. Measured over the round trip: 0.139 at the rim, and after leaving
+0.0086 / 0 / 0 / 0 at 0.5, 1.5, 3 and 6 s, with the nature bed at 0.00006 and
+the sea and the wind fully back.
+
+**AND HE HAD NO SIDEWAYS STRIDE AT ALL — the oldest animation bug in this
+file, and the last creature carrying it.** `strafeL` and `strafeR` were
+ALIASED ONTO THE WALK, so the half of a fight the samurai spends holding his
+distance was a man striding forward while travelling sideways. The eight
+Mixamo clips he was given contain no side-step and the packer's source is a
+.blend on the owner's other machine, so it is written on the rig, the way the
+witness's and the knight's whole move sets are — and the alias had to come out
+of his map, because the alias pass runs AFTER `kind.author` and would have
+replaced it on the next line.
+
+**IT DRIVES THE LEGS AND NOTHING ELSE.** Every hand-authored clip on this rig
+has read badly and all of them failed the same way — built up from a bind pose
+that is a T, so the arms come off the sword. `build` writes every UNDRIVEN
+bone from the stance, which here is the retargeted idle's own two-handed
+guard, so his upper body is untouched Mixamo and only his feet are authored.
+
+**AND `-cos(ph)/2` IS NOT ACTUALLY A FOOT THAT STAYS PUT.** That is the phase
+this file wrote down for the reptilians and it gets the important half right —
+the foot moves outward exactly while it is in the air — but its speed under
+the body is a SINE, and a planted foot has to travel at exactly the speed the
+body does or it scrubs. Measured on the first build: 1.38 m/s of planted drift
+against a clip declaring 1.25. The offset is LINEAR while the foot is down and
+eased while it is up, which is the only shape that has a foot stand still.
+
+**AND EVERY SIGN IS MEASURED, NOT REASONED.** Which way a thigh's `fwd` takes
+the foot, and which way a shin's `right` lifts it, are properties of somebody
+else's rig; this file has got the curl of a fist, the swing of a thigh and the
+roll of a tail wrong at least once each by reasoning about them. A test
+rotation goes on the joint, the FOOT is asked where it went, and the sign that
+moves it the way the parameter is named is the one kept. The STRIDE is
+measured the same way, off the planted foot of the finished clip, because the
+parameter is an angle and the travel is a chord: 0.845 m of travel for a metre
+asked for.
+
+Measured after: foot lift 0.20 m, step width 0.44 m, planted drift -0.97 to
+-1.23 m/s against a declared 1.11, and in a live fight both clips play at
+timeScale 1.77 — 1.96 m/s of foot travel against a circling speed of the same.
+**He is still only circling 0.2 % of the time**, which is his own tuning
+(`circle` 0.18, `press` 0.96) from the round that established he comes at you
+rather than hesitating; the strafe is now correct whenever he does use it.
