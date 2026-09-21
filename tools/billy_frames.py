@@ -25,7 +25,7 @@ both frames are put on one canvas with those panels on top of each other.
 After that the plane never changes shape, nothing moves but the fish, and
 the only difference between the two pictures is the thing the toy does.
 """
-import argparse, os, subprocess, sys
+import argparse, math, os, subprocess, sys
 
 from PIL import Image
 
@@ -64,6 +64,32 @@ def panel_rect(im, frac=0.5):
     return xs[0], ys[0], xs[-1] + 1, ys[-1] + 1
 
 
+def panel_median(im, margin, panel):
+    """The wood's own colour, taken as a MEDIAN over the panel so the fish —
+    which covers a different part of it in each photograph — cannot move it."""
+    p = im.load()
+    px = [p[x, y] for y in range(margin, margin + panel[1], 3)
+          for x in range(margin, margin + panel[0], 3) if p[x, y][3] > 200]
+    return [sorted(c[i] for c in px)[len(px) // 2] for i in range(3)]
+
+
+def regrade(im, src, dst):
+    """Bring `src` to `dst` per channel by a GAMMA and not a gain: it is
+    monotonic, it pins black and white, and it cannot clip. A gain of 2.79 on
+    the talk frame's blue — which is what matching the medians straight would
+    have wanted — flattens the nameplate and the fish's belly to paper."""
+    out = im.copy()
+    for ch in range(3):
+        a, b = max(1, min(254, src[ch])) / 255.0, max(1, min(254, dst[ch])) / 255.0
+        g = math.log(b) / math.log(a)
+        lut = [min(255, max(0, round(255 * pow(v / 255.0, g)))) for v in range(256)]
+        band = out.getchannel('RGB'[ch]).point(lut)
+        bands = list(out.split())
+        bands[ch] = band
+        out = Image.merge('RGBA', bands)
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--panel', type=int, nargs=2, default=[520, 372],
@@ -76,6 +102,7 @@ def main():
     os.makedirs(a.work, exist_ok=True)
     PW, PH = a.panel
     CW, CH = PW + a.margin * 2, PH + a.margin * 2
+    made = {}
 
     for name, (src, args) in CUTS.items():
         cut = os.path.join(a.work, name + '-cut.png')
@@ -95,13 +122,26 @@ def main():
         big = im.resize((max(1, round(im.width * kx)), max(1, round(im.height * ky))), Image.LANCZOS)
         out = Image.new('RGBA', (CW, CH), (0, 0, 0, 0))
         out.alpha_composite(big, (a.margin - round(x0 * kx), a.margin - round(y0 * ky)))
-        dst = os.path.join(ROOT, 'assets', 'billy-%s.png' % name)
-        out.save(dst)
+        made[name] = out
         al = out.split()[3].load()
         edge = (sum(1 for x in range(CW) if al[x, 0] > 20) + sum(1 for x in range(CW) if al[x, CH - 1] > 20)
                 + sum(1 for y in range(CH) if al[0, y] > 20) + sum(1 for y in range(CH) if al[CW - 1, y] > 20))
         print('%-5s  cut %dx%d  panel %d,%d..%d,%d  ->  %dx%d  edge-opaque %d'
               % (name, im.width, im.height, x0, y0, x1, y1, CW, CH, edge))
+
+    # AND THE TWO PHOTOGRAPHS ARE NOT THE SAME LIGHT. Measured on the wood
+    # inside each panel: the idle frame's oak sits at (135, 112, 81) and the
+    # talk frame's at (116, 74, 29) — a third of a stop darker and far
+    # warmer, so the PLAQUE changed colour every time he opened his mouth,
+    # which is a flicker whatever the registration does. Both go to the
+    # geometric mean of the two, which moves each about half way and asks
+    # neither picture to carry the whole correction.
+    meds = {k: panel_median(v, a.margin, a.panel) for k, v in made.items()}
+    tgt = [round((meds['idle'][i] * meds['talk'][i]) ** 0.5) for i in range(3)]
+    for name, im in made.items():
+        g = regrade(im, meds[name], tgt)
+        g.save(os.path.join(ROOT, 'assets', 'billy-%s.png' % name))
+        print('%-5s  wood %s -> %s' % (name, meds[name], panel_median(g, a.margin, a.panel)))
 
 
 if __name__ == '__main__':
