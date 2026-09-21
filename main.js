@@ -4430,6 +4430,24 @@ document.addEventListener('mousemove', (e) => {
   if (wheelGrab) { dragWheel(e.movementX); return; }
   if (locked && !frozen()) applyLook(e.movementX, e.movementY);
 });
+/* WHICH BUTTONS ARE DOWN, ASKED OF THE WINDOW AND OF NOTHING ELSE.
+ * Three separate rounds have gone on "the gun will not fire while aimed"
+ * and every fix so far has been a better LATCH — set here, cleared there —
+ * which is still a chain of events that something can break. Every listener
+ * this game has for a press is on `renderer.domElement`, so a press that
+ * lands on anything else (an overlay, a prompt, a frame the canvas was not
+ * the target of, a gesture the browser routed past it) is simply not seen;
+ * and a press made while ANOTHER button is already down is exactly the case
+ * a canvas-only listener is least likely to get. So the mouse is POLLED:
+ * one capture-phase listener on the window, which cannot be bypassed by any
+ * target or any ordering, and `mouseBtns` is then the ground truth the gun
+ * reads every frame. `e.buttons` bit 1 is the left button and bit 2 the
+ * right; a mouse that has come back up with no event at all is caught by
+ * the same poll on the next move. */
+let mouseBtns = 0;
+for (const ev of ['pointerdown', 'pointerup', 'pointermove']) {
+  window.addEventListener(ev, (e) => { mouseBtns = e.buttons | 0; }, true);
+}
 window.addEventListener('pointermove', (e) => {
   /* THE GUARD IS WHATEVER THE BUTTON IS DOING, NOT WHAT THE LAST EVENT SAID.
    * `blocking` was raised on pointerdown and only ever lowered on pointerup,
@@ -4439,9 +4457,7 @@ window.addEventListener('pointermove', (e) => {
    * ground truth and it comes with every move: bit 1 is the right button,
    * and if it is not set then nothing is holding the guard up. */
   if (blocking && !(e.buttons & 2)) blocking = false;
-  // and the sights are a button held too, by exactly the same argument
-  if (magAiming && !(e.buttons & 2)) magAiming = false;
-  if (magTrigger && !(e.buttons & 1)) magTrigger = false;   // and so is the trigger
+  // the sights and the trigger are polled off `mouseBtns` in updateGun
   /* AND THE CHARGE IS A BUTTON HELD TOO. A release that never arrives —
    * the lock going to a banner, a press that ends off the canvas — left
    * the shovel hauled back over your head with nothing able to bring it
@@ -4451,8 +4467,8 @@ window.addEventListener('pointermove', (e) => {
   if (wheelGrab && fallbackLook && dragging) { dragWheel(e.movementX); return; }
   if (fallbackLook && dragging && !frozen()) applyLook(e.movementX, e.movementY);
 });
-document.addEventListener('visibilitychange', () => { if (document.hidden) { blocking = false; magAiming = false; magTrigger = false; windHeld = false; if (winding) releaseWind(); } });
-window.addEventListener('pointercancel', () => { blocking = false; magAiming = false; magTrigger = false; windHeld = false; if (winding) releaseWind(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { mouseBtns = 0; blocking = false; magAiming = false; magTrigger = false; windHeld = false; if (winding) releaseWind(); } });
+window.addEventListener('pointercancel', () => { mouseBtns = 0; blocking = false; magAiming = false; magTrigger = false; windHeld = false; if (winding) releaseWind(); });
 
 // ------------------------------------------------------------------
 // Opening sequence — black card, the line fades in and out, then the
@@ -4762,7 +4778,7 @@ window.addEventListener('pointerup', (e) => {
   if (winding) { releaseWind(); swungAt = performance.now(); }
 });
 // losing the window mid-wind shouldn't leave the shovel stuck over your head
-window.addEventListener('blur', () => { windHeld = false; if (windLatch) { clearTimeout(windLatch); windLatch = null; } if (winding) releaseWind(); blocking = false; magAiming = false; magTrigger = false; });
+window.addEventListener('blur', () => { mouseBtns = 0; windHeld = false; if (windLatch) { clearTimeout(windLatch); windLatch = null; } if (winding) releaseWind(); blocking = false; magAiming = false; magTrigger = false; });
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 renderer.domElement.addEventListener('click', (e) => {
   const d = downPos ? Math.hypot(e.clientX - downPos[0], e.clientY - downPos[1]) : 0;
@@ -12429,7 +12445,7 @@ function loadSamples() {
   }
 }
 // plays a random one from the bank; returns false if nothing has loaded yet
-function playSample(name, gain = 1, rateJitter = 0, rate = 1, delay = 0) {
+function playSample(name, gain = 1, rateJitter = 0, rate = 1, delay = 0, dest = null) {
   const ctx = audioCtx; if (!ctx) return false;
   const bank = (sampleBanks[name] || []).filter(Boolean);
   if (!bank.length) return false;
@@ -12438,7 +12454,7 @@ function playSample(name, gain = 1, rateJitter = 0, rate = 1, delay = 0) {
   src.playbackRate.value = rate;
   if (rateJitter) src.playbackRate.value = rate + (Math.random() - 0.5) * 2 * rateJitter;
   const g = ctx.createGain(); g.gain.value = gain;
-  src.connect(g).connect(sfxOut());
+  src.connect(g).connect(dest || sfxOut());
   // a blade's whoosh is delayed to the strike, so the bank needs the offset
   // the synthesised one has always had
   src.start(ctx.currentTime + Math.max(0, delay));
@@ -33925,7 +33941,7 @@ const MAG_RANGE = 80;               // how far the bullet is traced
 const MAG_LEN = 0.42;               // an 8-inch Model 29 is 0.35; a view model is always drawn over
 const MAG_ZOOM = 0.22;              // of the field of view, at the sights
 const MAG_SPREAD = 0.034;           // radians, from the hip
-const MAG_SPREAD_ADS = 0.0025;      // and down the sights: what you aim at is what you hit
+const MAG_SPREAD_ADS = 0;           // and down the sights: what you aim at is what you hit, exactly
 const MAG_KICK_K = 330, MAG_KICK_D = 17;   // the lens spring: peaks near 0.09 s, home by 0.35
 /* THE RELOAD'S BEATS, as fractions of it — the reference clip's, scaled.
  * The cylinder is out by 0.30, the loader is up and in at 0.72 (which is
@@ -33941,6 +33957,7 @@ let magAiming = false, magAim = 0;  // down the sights: 0..1
 let magKick = 0, magKickV = 0;      // the lens, thrown and springing back
 let magYaw = 0, magYawV = 0;
 let magFlash = 0;                   // the muzzle, for the two frames it is lit
+let magClimb = 0;                   // how much of the kick is still owed back
 /* THE TRIGGER IS A BUTTON HELD, NOT AN EVENT. A press fires on the frame it
  * arrives — that is what a trigger is — and the STATE is kept as well, so a
  * press that lands inside the cylinder's own cooldown, or one the browser
@@ -34317,8 +34334,8 @@ function updateGun(dt) {
   magYaw += magYawV * dt;
   if (Math.abs(magKick) < 1e-4 && Math.abs(magKickV) < 1e-3) { magKick = 0; magKickV = 0; }
   if (Math.abs(magYaw) < 1e-4 && Math.abs(magYawV) < 1e-3) { magYaw = 0; magYawV = 0; }
-  magFlash = Math.max(0, magFlash - dt * 13);      // about eighty milliseconds, which is a flash
-  magLamp.intensity = magFlash * magFlash * 88;
+  magFlash = Math.max(0, magFlash - dt * 10.5);    // a tenth of a second, which is a flash you SEE
+  magLamp.intensity = magFlash * magFlash * 150;
   if (magFlash > 0) {
     camera.getWorldDirection(_magF);
     magLamp.position.copy(camera.position).addScaledVector(_magF, 0.7);
@@ -34330,14 +34347,19 @@ function updateGun(dt) {
     magFlashSpr.position.copy(_magF);
     // biggest on the frame it is born and shrinking as it goes out, which is
     // what a flash does; it used to GROW as it faded, which is a smoke ring
-    const s = 0.20 + magFlash * 0.46;
+    const s = 0.26 + magFlash * 0.86;
     magFlashSpr.scale.set(s, s, s);
     magFlashSpr.material.opacity = Math.min(1, magFlash * 1.5);
     magFlashSpr.material.rotation = magFlashSeed;
   }
   if (magT >= 0) { magT += dt; if (magT >= MAG_SHOT) magT = -1; }
+  // the muzzle settling back down out of its own kick
+  if (magClimb > 0 && (magT < 0 || magT > 0.18)) {
+    const d = Math.min(magClimb, dt * 0.55);
+    gunNudge(-d, 0); magClimb -= d;
+  }
   const live = magHeld() && !held && !dialogOpen && !inspecting && !frozen();
-  if (!live) { magAiming = false; if (magRel >= 0) magRel = -1; }
+  if (!live) { magAiming = false; magClimb = 0; if (magRel >= 0) magRel = -1; }
   if (magRel >= 0) {
     magRel += dt;
     const p = magRel / MAG_RELOAD;
@@ -34351,8 +34373,17 @@ function updateGun(dt) {
     if (!magRelShut && p >= MAG_SHUT) { magRelShut = true; sfxMagShut(); }
     if (magRel >= MAG_RELOAD) magRel = -1;
   }
+  /* THE BUTTONS ARE READ, NOT REMEMBERED. Both of the gun's controls are
+   * derived from what the mouse is doing THIS FRAME — right is the sights,
+   * left is the trigger — so there is no state for a missed press or a
+   * missed release to leave behind, and the two cannot interfere with each
+   * other however they are pressed or in whatever order. It also means the
+   * sights come back the instant a reload lets go of them, with the button
+   * never having moved; latching them off there was its own small bug. */
+  if (live) { magAiming = !!(mouseBtns & 2); magTrigger = !!(mouseBtns & 1); }
+  else { magAiming = false; magTrigger = false; }
   // a held trigger keeps firing, at the cylinder's own pace
-  if (magTrigger) { if (live) magFire(); else magTrigger = false; }
+  if (magTrigger && live) magFire();
   // down the sights — and never while the cylinder is open
   const want = magAiming && !magBusy() && live ? 1 : 0;
   magAim += (want - magAim) * Math.min(1, dt * (want ? 17 : 13));
@@ -34420,6 +34451,33 @@ function magTrace(dir) {
   return magBest;
 }
 
+/* AND THE WHOLE PICTURE LIGHTS UP FOR A FRAME AND A HALF. The saucer's own
+ * lesson: the eye reads the FRAME, not the object, so a muzzle flash drawn
+ * as a blob in the corner of the screen is a blob in the corner of the
+ * screen however bright it is — what says "that just went off in your hands"
+ * is the room going white for a moment. It is warm rather than the
+ * abduction's cold card, it is brief, and it is faint enough that firing at
+ * something does not stop you seeing it. */
+const magGlareEl = (() => {
+  const d = document.createElement('div');
+  d.id = 'magglare';
+  d.style.cssText = 'position:fixed;inset:0;pointer-events:none;opacity:0;z-index:59;' +
+    'mix-blend-mode:screen;' +
+    'background:radial-gradient(circle at 62% 70%,#fff3d2 0%,#ffcd76 26%,#c9721f 55%,rgba(40,16,0,0) 86%);';
+  document.body.appendChild(d);
+  return d;
+})();
+let magGlareT = null;
+function magGlare() {
+  magGlareEl.style.transition = 'none';
+  magGlareEl.style.opacity = '0.30';
+  void magGlareEl.offsetWidth;                 // or the fade never restarts
+  magGlareEl.style.transition = 'opacity 110ms ease-out';
+  magGlareEl.style.opacity = '0';
+  if (magGlareT) clearTimeout(magGlareT);
+  magGlareT = setTimeout(() => { magGlareT = null; magGlareEl.style.opacity = '0'; }, 160);
+}
+
 const _mgSp = new THREE.Vector3(), _mgUp = new THREE.Vector3(), _mgRt = new THREE.Vector3();
 function magFire() {
   if (!magHeld() || frozen() || held) return;
@@ -34431,8 +34489,15 @@ function magFire() {
     return;
   }
   magAmmo--; magT = 0;
-  playSample('magShot', 1.0, 0.02);
-  sfxMagBlast();                             // and the size of it, under the recording
+  /* WHERE THE SHOT GOES IS READ BEFORE THE GUN MOVES. `gunNudge` turns the
+   * look by up to two and a half degrees on the frame the trigger breaks,
+   * and the direction used to be taken AFTER it — so every round left along
+   * the barrel the recoil had already thrown up, which at twenty metres is
+   * the better part of a metre high, every time, aimed or not. A bullet
+   * leaves before the gun kicks; the kick is what happens to the NEXT one. */
+  camera.getWorldDirection(_mgSp);
+  sfxMagBlast();                             // the size of it, under the recording
+  playSample('magShot', 1.22, 0.02, 1, 0, magBus());   // and the crack, through the same ceiling
   /* IT IS THE LOUDEST THING THAT HAS EVER HAPPENED DOWN THERE. A blade on
    * stone carries twenty-six metres; a .44 in a catacomb carries the place. */
   if (inCat) catNoiseAt(camera.position.x, camera.position.z, 70);
@@ -34443,24 +34508,43 @@ function magFire() {
    * goes into the look itself, so a string of them walks up off whatever
    * you were shooting at and you have to pull it back down. That is the
    * difference between a gun with recoil and a gun with a shake. */
-  magKickV += 9.4 - magAim * 2.0;
-  magYawV += (Math.random() - 0.5) * 6.6;
-  gunNudge(0.034 + Math.random() * 0.012 - magAim * 0.011, (Math.random() - 0.5) * 0.015);
-  addTrauma(0.62);
-  fovKick = Math.max(fovKick, 7.5);
-  vmImpulse(-1.45);
+  magKickV += 13.6 - magAim * 2.8;
+  magYawV += (Math.random() - 0.5) * 8.6;
+  const up = 0.043 + Math.random() * 0.016 - magAim * 0.018;
+  gunNudge(up, (Math.random() - 0.5) * 0.019);
+  /* AND MOST OF THE CLIMB COMES BACK, WHICH IS WHAT MAKES IT A RECOIL AND
+   * NOT A CATAPULT. A permanent nudge is the right idea and at two and a
+   * half degrees a shot the whole cylinder walks you twenty degrees into
+   * the sky, which is not a weapon you fight, it is one that takes the
+   * fight off you. Two thirds of every kick is remembered and given back
+   * over the next third of a second, so a shot throws the muzzle hard, a
+   * pause settles it, and holding the trigger down still walks you off the
+   * target — about a degree a round, which you can hold if you mean to. */
+  magClimb += up * 0.66;
+  addTrauma(0.98);
+  fovKick = Math.max(fovKick, 11.5);
+  vmImpulse(-2.0);
+  magGlare();                                // and the frame takes the light
   /* AND THE WORLD STOPS FOR A FRAME AND A HALF. Every other confirm in this
    * game buys its weight with held time — the parry, the poise break, the
    * two-tonne knight — and a gun that goes off with no beat under it reads
    * as a pop whatever the sound does. */
-  hitstop = Math.max(hitstop, 0.045);
+  hitstop = Math.max(hitstop, 0.075);
 
-  camera.getWorldDirection(_mgSp);
-  const spread = (magAim > 0.6 ? MAG_SPREAD_ADS : MAG_SPREAD) * (1 + Math.min(1, velocity.length() / WALK_SPEED) * 0.9);
-  _mgRt.crossVectors(_mgSp, camera.up).normalize();
-  _mgUp.crossVectors(_mgRt, _mgSp).normalize();
-  const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * spread;
-  _mgSp.addScaledVector(_mgRt, Math.cos(a) * r).addScaledVector(_mgUp, Math.sin(a) * r).normalize();
+  /* AND DOWN THE SIGHTS THERE IS NO SPREAD AT ALL. A cone that is merely
+   * small is still a cone: at twenty metres a fortieth of a degree is a
+   * hand's width, and a revolver you have lined up should put the round on
+   * the crosshair and nowhere else. It eases with the sights rather than
+   * flipping at a threshold, so half-aimed is half as tight, and the pace
+   * you are moving at costs you far less once the gun is up. */
+  const sp = MAG_SPREAD * (1 - magAim) + MAG_SPREAD_ADS * magAim;
+  const spread = sp * (1 + Math.min(1, velocity.length() / WALK_SPEED) * 0.9 * (1 - magAim * 0.85));
+  if (spread > 1e-5) {
+    _mgRt.crossVectors(_mgSp, camera.up).normalize();
+    _mgUp.crossVectors(_mgRt, _mgSp).normalize();
+    const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * spread;
+    _mgSp.addScaledVector(_mgRt, Math.cos(a) * r).addScaledVector(_mgUp, Math.sin(a) * r).normalize();
+  }
 
   const h = magTrace(_mgSp);
   if (!h) return;
@@ -34493,7 +34577,6 @@ function magReload() {
   if (!magHeld() || frozen() || held) return;
   if (magBusy() || magAmmo >= MAG_CAP || magSpare <= 0) return;
   magRel = 0; magRelFed = false; magRelShut = false; magRelOut = false;
-  magAiming = false;
 }
 
 /* THE CYLINDER, THE BRASS AND THE SNAP. No recording was supplied for any of
@@ -34514,20 +34597,77 @@ function magReload() {
  * whole difference between firing a .44 outdoors and firing it in a
  * catacomb. Nothing here is a reverb tail on the whole mix — it is two
  * slaps and a rumble, which is what you actually hear. */
+/* AND IT GOES THROUGH A LIMITER, WHICH IS WHAT MAKES IT LOUD RATHER THAN
+ * CLIPPED. Seven layers arriving inside twenty milliseconds sum past full
+ * scale — measured, a single shot peaked at 0.94 and a burst, whose sub
+ * tails overlap at the cylinder's own half-second, at 1.45 — and what a
+ * digital overflow sounds like is a tick, not a gun. A tanh curve is a soft
+ * knee: everything under it is untouched, everything over it leans on the
+ * ceiling, which is also exactly what a loud gunshot does to the microphone
+ * that recorded it. THE RECORDING GOES THROUGH IT TOO — a limiter with the
+ * loudest layer routed around it is not a ceiling — so however many shots
+ * overlap, the bus can never be handed more than it can carry. */
+let magShaper = null;
+function magBus() {
+  const ctx = audioCtx; if (!ctx) return null;
+  if (!magShaper) {
+    /* A WAVESHAPER CLAMPS ITS INPUT TO [-1, 1], so a curve alone is a hard
+     * clip on exactly the sums it is there to catch: the layers have to be
+     * brought DOWN into the curve's own range and the makeup taken back
+     * after it. At 0.35 in, one shot sits at a third of the way along the
+     * knee and is barely touched (1.68 becomes 1.37); three overlapping
+     * cannot pass 1.66 however many arrive. */
+    const pre = ctx.createGain(); pre.gain.value = 0.35;
+    const sh = ctx.createWaveShaper();
+    const n = 2048, c = new Float32Array(n), k = Math.tanh(2);
+    for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; c[i] = Math.tanh(x * 2) / k; }
+    sh.curve = c; sh.oversample = '4x';
+    const post = ctx.createGain(); post.gain.value = 1.6;
+    pre.connect(sh).connect(post).connect(sfxOut());
+    magShaper = pre;
+  }
+  return magShaper;
+}
 function sfxMagBlast() {
   const ctx = audioCtx; if (!ctx) return;
-  const t = ctx.currentTime, out = sfxOut();
+  const t = ctx.currentTime;
   const room = typeof inRoom === 'function' ? inRoom() : false;
+  const out = magBus(); if (!out) return;
 
   // the sub: the round leaving, felt rather than heard
   const sub = ctx.createOscillator(); sub.type = 'sine';
-  sub.frequency.setValueAtTime(78, t);
-  sub.frequency.exponentialRampToValueAtTime(31, t + 0.26);
+  sub.frequency.setValueAtTime(92, t);
+  sub.frequency.exponentialRampToValueAtTime(26, t + 0.30);
   const sg = ctx.createGain();
   sg.gain.setValueAtTime(0.0001, t);
-  sg.gain.exponentialRampToValueAtTime(0.62, t + 0.008);
-  sg.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
-  sub.connect(sg).connect(out); sub.start(t); sub.stop(t + 0.36);
+  sg.gain.exponentialRampToValueAtTime(0.86, t + 0.007);
+  sg.gain.exponentialRampToValueAtTime(0.0001, t + 0.44);
+  sub.connect(sg).connect(out); sub.start(t); sub.stop(t + 0.46);
+
+  /* AND A SECOND SUB AN OCTAVE UNDER IT. What a big round does to a room is
+   * not louder, it is LOWER — this one starts under the first and barely
+   * moves, so what is left after the crack has gone is a pressure you can
+   * still feel a third of a second later. */
+  const sub2 = ctx.createOscillator(); sub2.type = 'sine';
+  sub2.frequency.setValueAtTime(46, t);
+  sub2.frequency.exponentialRampToValueAtTime(19, t + 0.55);
+  const sg2 = ctx.createGain();
+  sg2.gain.setValueAtTime(0.0001, t);
+  sg2.gain.exponentialRampToValueAtTime(0.52, t + 0.016);
+  sg2.gain.exponentialRampToValueAtTime(0.0001, t + 0.70);
+  sub2.connect(sg2).connect(out); sub2.start(t); sub2.stop(t + 0.72);
+
+  /* THE CRACK ON TOP OF IT. Thirty-five milliseconds of hard band-limited
+   * noise — the whip of the round going out, which is what makes the whole
+   * thing read as SHARP rather than merely big. It is short enough that
+   * nothing in it can hiss. */
+  const cl = Math.floor(ctx.sampleRate * 0.035), cb = ctx.createBuffer(1, cl, ctx.sampleRate), cd = cb.getChannelData(0);
+  for (let i = 0; i < cl; i++) cd[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / cl, 7);
+  const cs = ctx.createBufferSource(); cs.buffer = cb;
+  const chp = ctx.createBiquadFilter(); chp.type = 'highpass'; chp.frequency.value = 900;
+  const clp = ctx.createBiquadFilter(); clp.type = 'lowpass'; clp.frequency.value = 5200;
+  const cg = ctx.createGain(); cg.gain.value = 0.30;
+  cs.connect(chp).connect(clp).connect(cg).connect(out); cs.start(t); cs.stop(t + 0.05);
 
   // the body of the blast: a short burst of low noise with the air in it
   const bl = Math.floor(ctx.sampleRate * 0.30), bb = ctx.createBuffer(1, bl, ctx.sampleRate), bd = bb.getChannelData(0);
@@ -34535,14 +34675,14 @@ function sfxMagBlast() {
   const bs = ctx.createBufferSource(); bs.buffer = bb;
   const blp = ctx.createBiquadFilter(); blp.type = 'lowpass'; blp.frequency.setValueAtTime(900, t);
   blp.frequency.exponentialRampToValueAtTime(180, t + 0.22);
-  const bg = ctx.createGain(); bg.gain.value = 0.34;
+  const bg = ctx.createGain(); bg.gain.value = 0.48;
   bs.connect(blp).connect(bg).connect(out); bs.start(t); bs.stop(t + 0.32);
 
   /* THE REPORT COMING BACK. Two slaps and then the roll: each one is the
    * same burst, later, quieter and darker, because distance takes the top
    * off a sound long before it takes the level. */
-  const slaps = room ? [[0.055, 0.30, 2200], [0.115, 0.17, 1500], [0.205, 0.09, 900]]
-                     : [[0.16, 0.16, 1200], [0.34, 0.085, 700]];
+  const slaps = room ? [[0.055, 0.42, 2200], [0.115, 0.25, 1500], [0.205, 0.14, 900], [0.33, 0.07, 560]]
+                     : [[0.16, 0.24, 1200], [0.34, 0.13, 700], [0.58, 0.06, 460]];
   for (const [at, gain, cut] of slaps) {
     const l = Math.floor(ctx.sampleRate * 0.26), b = ctx.createBuffer(1, l, ctx.sampleRate), d = b.getChannelData(0);
     for (let i = 0; i < l; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / l, 2.2);
@@ -34561,7 +34701,7 @@ function sfxMagBlast() {
   for (let i = 0; i < rl; i++) { br = (br + (Math.random() * 2 - 1) * 0.05) * 0.985; rd[i] = br * 6 * Math.pow(1 - i / rl, 1.8); }
   const rs = ctx.createBufferSource(); rs.buffer = rb;
   const rlp = ctx.createBiquadFilter(); rlp.type = 'lowpass'; rlp.frequency.value = 220;
-  const rg = ctx.createGain(); rg.gain.value = room ? 0.26 : 0.20;
+  const rg = ctx.createGain(); rg.gain.value = room ? 0.36 : 0.29;
   rs.connect(rlp).connect(rg).connect(out); rs.start(t + 0.05); rs.stop(t + 0.05 + rl / ctx.sampleRate);
 }
 function sfxMagOpen() {
@@ -45585,6 +45725,7 @@ window.__bw = {
   get magAmmo() { return magAmmo; }, set magAmmo(v) { magAmmo = v; },
   get magSpare() { return magSpare; }, set magSpare(v) { magSpare = v; },
   get magAiming() { return magAiming; }, set magAiming(v) { magAiming = v; },
+  get mouseBtns() { return mouseBtns; }, set mouseBtns(v) { mouseBtns = v | 0; },
   get magAim() { return magAim; }, get magRel() { return magRel; },
   skullKeyItem, skullKey, skullWorld, dropSkullKey, buildCatKey, CAT_KEY, get catDoorOpen() { return catDoorOpen; }, set catDoorOpen(v) { catDoorOpen = v; },
   catCue, playSampleAt, keepWallNear, keepHitsWall, catNoiseAt, catSpots, catG: () => catG,

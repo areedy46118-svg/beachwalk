@@ -12552,3 +12552,71 @@ so `magAim` sat at 0, the title card never finished, and the whole thing read
 as a gun that would not aim. Check `document.hidden` and count frames before
 believing any measured zero; front the pane with a screenshot first and the
 same test runs 295 frames and answers honestly.
+
+**"IT STILL WILL NOT SHOOT WHEN AIMED" WAS A LATCH, THREE TIMES OVER, AND
+THE ANSWER IS THAT THERE IS NO LATCH.** The first build fired on a
+`pointerdown`; the second kept a `magTrigger` flag set by that press and
+cleared by a release; both are a CHAIN OF EVENTS, and a chain is only as
+good as the weakest event in it. Every press listener in this game is on
+`renderer.domElement`, so a press that lands on ANYTHING ELSE — an overlay,
+a prompt, a frame the canvas was not the target of, a gesture the browser
+routed past it — is simply never seen; and the press least likely to be
+seen is the one made while another button is ALREADY DOWN, which is exactly
+the case the owner was reporting. `mouseBtns` is one capture-phase listener
+on the WINDOW for pointerdown, pointerup and pointermove, which no target
+and no ordering can bypass, and `updateGun` then DERIVES both of the gun's
+controls from it every frame: right is the sights, left is the trigger.
+There is no state left for a missed press or a missed release to leave
+behind, the two cannot interfere with each other in any order, and the
+sights come back the instant a reload lets go of them with the button never
+having moved (latching them off in `magReload` was its own small bug).
+Measured with real dispatched events: right down then a left press
+**dispatched on `document.body`, which the canvas never sees at all**, fires
+at full aim and stops on release; left first and then right does the same.
+
+**AND THE ROUND WAS LEAVING ALONG THE BARREL THE KICK HAD ALREADY THROWN
+UP.** `magFire` applied `gunNudge` — up to two and a half degrees of real
+look — and THEN read `camera.getWorldDirection` for the shot. So every
+bullet went out along where the gun had just been kicked to, which at twenty
+metres is the better part of a metre high, aimed or not, on every shot. A
+bullet leaves before the gun kicks; the kick is what happens to the NEXT
+one. Measured after, sixteen shots down the sights: **0.0000 degrees off the
+crosshair**, with the lens kicking 1.64 degrees after each one.
+
+**AND A CONE THAT IS MERELY SMALL IS STILL A CONE.** `MAG_SPREAD_ADS` was
+0.0025 rad with a `magAim > 0.6` threshold; it is ZERO now and the spread
+eases with the sights rather than flipping, so half-aimed is half as tight
+and the movement penalty costs you almost nothing once the gun is up.
+Measured: down the sights 0.0000 degrees over sixteen shots, from the hip a
+1.95-degree cone with a 1.22-degree median.
+
+**AND MOST OF THE CLIMB COMES BACK, OR IT IS A CATAPULT AND NOT A RECOIL.**
+A PERMANENT nudge is the right idea — it is the difference between a gun
+with recoil and a gun with a shake — and at two and a half degrees a shot
+the whole cylinder walks you twenty degrees into the sky, which takes the
+fight off you rather than giving you one. `magClimb` remembers two thirds
+of every kick and `updateGun` gives it back at 0.55 rad/s once the shot's
+own beat has passed. Measured, a held trigger through a full cylinder:
+**4.1 degrees of net climb down the sights and 6.2 from the hip**, with each
+individual shot still throwing the muzzle 2.2 degrees and settling.
+
+**AND THE BLAST IS LOUDER, LOWER AND LIMITED.** Two subs rather than one
+(92 → 26 Hz over the first, 46 → 19 under it), a 35 ms band-limited CRACK on
+top so it reads sharp as well as big, a fuller body, a fourth slap in a room
+and a third outdoors, and the recording itself up a fifth. **A waveshaper
+clamps its input to [-1, 1]**, so a tanh curve on its own is a hard clip on
+exactly the sums it is there to catch: the layers are brought down 0.35 into
+the knee and the makeup taken back after it, and THE RECORDING GOES THROUGH
+IT TOO — a limiter with the loudest layer routed around it is not a ceiling.
+Measured on the SFX bus: a single shot peaks at **0.751** (the old build was
+0.689) with **57 % of the energy below 120 Hz and 73 % below 400** (was 44
+and 63), and a six-round burst whose sub tails overlap peaks at **0.875**
+rather than the 1.45 it clipped at before the limiter.
+
+**AND THE WHOLE PICTURE TAKES THE LIGHT.** The saucer's own lesson: the eye
+reads the FRAME, not the object, so a muzzle flash drawn as a blob in the
+corner is a blob in the corner however bright it is. `magGlare` is a warm
+screen-blended card at 0.30 that is gone in 110 ms — measured frame by frame
+— under a flash that decays slower (10.5/s), a lamp at 150 rather than 88
+and a sprite half again the size, with the trauma, the FOV punch and the
+hitstop all up with them.
