@@ -12510,3 +12510,45 @@ redistributable.
   with the katana, and every path that drops the guard (pointerup, blur,
   `pointercancel`, visibilitychange, a pointermove with no button under it)
   drops `magAiming` with it.
+
+**AND THE TRIGGER IS A BUTTON HELD, WHICH IS WHY IT WOULD NOT FIRE WHILE
+AIMED.** The gun fired on the `pointerdown` and on nothing else, so any press
+that did not arrive as its own event — one that lands inside the cylinder's
+own half-second, one the browser swallows on its way past a button that is
+already down — simply did not exist. `magTrigger` is the state: set on the
+press, cleared by a `pointermove` with no bit 1 under it, by pointerup, blur,
+`pointercancel` and visibilitychange, and read every frame in `updateGun`, so
+a held trigger keeps putting rounds out at the cylinder's own pace and
+nothing can leave it latched. The guard, the charge and the walk have each had
+to learn this separately: **`e.buttons` is the ground truth and an event is
+only ever a hint.** Measured with the trigger held down the sights: aim 1.00,
+four rounds out in 1.7 s, the trigger clear on release.
+
+**AND WHAT MAKES A GUNSHOT HUGE IS NOT THE CRACK, IT IS WHAT THE CRACK IS
+STANDING ON.** The owner's recording is a foot from a revolver and carries
+the report and nothing else. `sfxMagBlast` puts the two things under it that
+a close mic cannot have: a SUB (78 → 31 Hz in a quarter of a second) and the
+REPORT COMING BACK — two slaps and a low roll, each later, quieter and
+DARKER, because distance takes the top off a sound long before it takes the
+level. It is the only thing in the sound that says how big the place you
+fired it in is, so it is read off `inRoom()`: hard, near and bright in a
+catacomb, soft and late over a kilometre of water. Measured on the SFX bus:
+**44 % of the energy below 120 Hz and 63 % below 400**, peak 0.689 — loud,
+low and not clipping. And the recoil went with it: the lens spring 5.6 → 9.4,
+the aim's own nudge half again, trauma 0.34 → 0.62, the FOV punch 4.2 → 7.5,
+and 45 ms of hitstop, because every other confirm in this game buys its
+weight with held time and a gun with no beat under it reads as a pop whatever
+the sound does.
+
+**AND A REPRO BUILT ON DISPATCHED EVENTS MUST DISPATCH ON THE LISTENER'S OWN
+TARGET.** Half of this round went on "you cannot fire while aiming",
+reproduced by `window.dispatchEvent(new PointerEvent('pointerdown'))` — and
+the handler is on `renderer.domElement`, which a window event never reaches,
+so every one of those measurements was of nothing at all. The tell was that
+the SECOND reading looked right: `magAiming` was still true from a line in
+the previous call that had set it by hand. **And the pane runs NO FRAMES
+while `document.hidden`** — measured, 0 rAF callbacks in a one-second wait —
+so `magAim` sat at 0, the title card never finished, and the whole thing read
+as a gun that would not aim. Check `document.hidden` and count frames before
+believing any measured zero; front the pane with a screenshot first and the
+same test runs 295 frames and answers honestly.
