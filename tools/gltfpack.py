@@ -75,6 +75,69 @@ def _cluster(P, I, cell):
     return pos, tris
 
 
+def _cluster_uv(P, UV, I, cell, uv_cell=0.004):
+    """The same weld, carrying the ATLAS. A scan's whole point is its
+    albedo, and `_cluster` keeps positions and indices only — so anything
+    put through it comes out untextured and has to have a projection
+    invented for it (the octopus ring's own scar). A vertex may only merge
+    with one that is near it in the uv as well as in space; the POSITION
+    cell still decides a collapse, so the budget means exactly what it
+    meant before and a seam can never open a crack. The undercroft's
+    `cluster_uv`, which the church paid for."""
+    pcell, pacc, vcell, vacc = {}, [], {}, []
+    remap = [0] * len(P); pmap = [0] * len(P)
+    for vi, p in enumerate(P):
+        u = UV[vi]
+        key = (int(p[0] // cell), int(p[1] // cell), int(p[2] // cell))
+        pi = pcell.get(key)
+        if pi is None:
+            pi = pcell[key] = len(pacc); pacc.append([0.0, 0.0, 0.0, 0])
+        acc = pacc[pi]; acc[0] += p[0]; acc[1] += p[1]; acc[2] += p[2]; acc[3] += 1
+        pmap[vi] = pi
+        vkey = (pi, int(u[0] // uv_cell), int(u[1] // uv_cell))
+        j = vcell.get(vkey)
+        if j is None:
+            j = vcell[vkey] = len(vacc); vacc.append([0.0, 0.0, 0, pi])
+        b = vacc[j]; b[0] += u[0]; b[1] += u[1]; b[2] += 1
+        remap[vi] = j
+    pos = [(pacc[b[3]][0] / pacc[b[3]][3], pacc[b[3]][1] / pacc[b[3]][3],
+            pacc[b[3]][2] / pacc[b[3]][3]) for b in vacc]
+    uvs = [(b[0] / b[2], b[1] / b[2]) for b in vacc]
+    tris, seen = [], set()
+    for t in range(0, len(I) - 2, 3):
+        pa, pb, pc = pmap[I[t]], pmap[I[t + 1]], pmap[I[t + 2]]
+        if pa == pb or pb == pc or pa == pc:
+            continue
+        # a duplicate is a duplicate in SPACE, not in the atlas — two faces
+        # welded from different corners of the map sit at exactly the same
+        # depth and fight, which is the flicker the church measured
+        k = tuple(sorted((pa, pb, pc)))
+        if k in seen:
+            continue
+        seen.add(k); tris.append((remap[I[t]], remap[I[t + 1]], remap[I[t + 2]]))
+    return pos, uvs, tris
+
+
+def _smooth_normals(P, tris):
+    """Recomputed, never carried. A decimated vertex is an AVERAGE of the
+    vertices that fell in its cell, so the normal it arrived with belongs
+    to a surface that is no longer there; the faces it actually has now
+    are the only honest source."""
+    N = [[0.0, 0.0, 0.0] for _ in P]
+    for a, b, c in tris:
+        ax, ay, az = P[a]; bx, by, bz = P[b]; cx, cy, cz = P[c]
+        ux, uy, uz = bx - ax, by - ay, bz - az
+        vx, vy, vz = cx - ax, cy - ay, cz - az
+        nx, ny, nz = uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx
+        for i in (a, b, c):
+            N[i][0] += nx; N[i][1] += ny; N[i][2] += nz
+    out = []
+    for n in N:
+        L = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]) ** 0.5
+        out.append((n[0] / L, n[1] / L, n[2] / L) if L > 1e-12 else (0.0, 1.0, 0.0))
+    return out
+
+
 def _descendants(nodes, i):
     out = []
     for c in nodes[i].get('children', []):
@@ -123,6 +186,8 @@ def main():
                          'A Sketchfab rip names every clip "rig|rig|rig|walk", so the match is on '
                          'the last |-separated segment. Use old=new to rename as well as keep. '
                          'Thirty-seven clips of keyframes is most of a download; a fight wants twelve.')
+    ap.add_argument('--keep-uv', action='store_true',
+                    help='carry TEXCOORD_0 through --decimate and rebuild smooth normals')
     ap.add_argument('--decimate', type=int, default=0,
                     help='merge every primitive and vertex-cluster down to about this many triangles')
     a = ap.parse_args()
@@ -276,7 +341,7 @@ def main():
         correct thing to do is take them ALL, and then decimate for real —
         vertex clustering, which welds, rather than dropping triangles."""
         import math as _m
-        P, I = [], []
+        P, I, UV = [], [], []
         def _walk(ni, parent):
             n = g['nodes'][ni]
             m = mat_mul(parent, node_matrix(n))
@@ -288,6 +353,10 @@ def main():
                     off = len(P)
                     P.extend(apply_m(m, p) for p in pos)
                     I.extend(v + off for v in idx)
+                    if a.keep_uv:
+                        ti = pr['attributes'].get('TEXCOORD_0')
+                        UV.extend(read_accessor(g, bufs, ti) if ti is not None
+                                  else [(0.0, 0.0)] * len(pos))
             for c in n.get('children', []):
                 _walk(c, m)
         ident = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]
@@ -299,27 +368,44 @@ def main():
         best = None
         for _ in range(26):                       # bisect the grid onto the budget
             cell = (lo + hi) / 2
-            vp, tris = _cluster(P, I, cell)
-            if len(tris) > a.decimate: lo = cell
-            else: hi = cell; best = (vp, tris)
-        vp, tris = best if best else _cluster(P, I, hi)
+            out = _cluster_uv(P, UV, I, cell) if a.keep_uv else _cluster(P, I, cell)
+            if len(out[-1]) > a.decimate: lo = cell
+            else: hi = cell; best = out
+        if best is None:
+            best = _cluster_uv(P, UV, I, hi) if a.keep_uv else _cluster(P, I, hi)
+        if a.keep_uv:
+            vp, vt, tris = best
+            vn = _smooth_normals(vp, tris)
+        else:
+            vp, tris = best; vt = vn = None
         print('decimated: %d tris at cell %.5f' % (len(tris), hi))
         # rebuild the file around one mesh
         vbuf = bytearray()
         for v in vp: vbuf.extend(struct.pack('<fff', *v))
+        views = [{'buffer': 0, 'byteOffset': 0, 'byteLength': len(vbuf), 'target': 34962}]
+        mn = [min(v[k] for v in vp) for k in range(3)]
+        mx = [max(v[k] for v in vp) for k in range(3)]
+        accs = [{'bufferView': 0, 'componentType': 5126, 'count': len(vp), 'type': 'VEC3', 'min': mn, 'max': mx}]
+        attrs = {'POSITION': 0}
+        if a.keep_uv:
+            attrs['NORMAL'] = len(accs)
+            views.append({'buffer': 0, 'byteOffset': len(vbuf), 'byteLength': 12 * len(vn), 'target': 34962})
+            accs.append({'bufferView': len(views) - 1, 'componentType': 5126, 'count': len(vn), 'type': 'VEC3'})
+            for v in vn: vbuf.extend(struct.pack('<fff', *v))
+            attrs['TEXCOORD_0'] = len(accs)
+            views.append({'buffer': 0, 'byteOffset': len(vbuf), 'byteLength': 8 * len(vt), 'target': 34962})
+            accs.append({'bufferView': len(views) - 1, 'componentType': 5126, 'count': len(vt), 'type': 'VEC2'})
+            for v in vt: vbuf.extend(struct.pack('<ff', *v))
         wide = len(vp) > 65535
         ibuf = bytearray()
         for t in tris: ibuf.extend(struct.pack('<III' if wide else '<HHH', *t))
+        views.append({'buffer': 0, 'byteOffset': len(vbuf), 'byteLength': len(ibuf), 'target': 34963})
+        accs.append({'bufferView': len(views) - 1, 'componentType': 5125 if wide else 5123,
+                     'count': len(tris) * 3, 'type': 'SCALAR'})
         g['buffers'] = [{'byteLength': 0}]
-        g['bufferViews'] = [
-            {'buffer': 0, 'byteOffset': 0, 'byteLength': len(vbuf), 'target': 34962},
-            {'buffer': 0, 'byteOffset': len(vbuf), 'byteLength': len(ibuf), 'target': 34963}]
-        mn = [min(v[k] for v in vp) for k in range(3)]
-        mx = [max(v[k] for v in vp) for k in range(3)]
-        g['accessors'] = [
-            {'bufferView': 0, 'componentType': 5126, 'count': len(vp), 'type': 'VEC3', 'min': mn, 'max': mx},
-            {'bufferView': 1, 'componentType': 5125 if wide else 5123, 'count': len(tris) * 3, 'type': 'SCALAR'}]
-        g['meshes'] = [{'primitives': [{'attributes': {'POSITION': 0}, 'indices': 1, 'material': 0}]}]
+        g['bufferViews'] = views
+        g['accessors'] = accs
+        g['meshes'] = [{'primitives': [{'attributes': attrs, 'indices': len(accs) - 1, 'material': 0}]}]
         g['materials'] = g.get('materials', [{}])[:1] or [{}]
         g['nodes'] = [{'mesh': 0}]
         g['scenes'] = [{'nodes': [0]}]

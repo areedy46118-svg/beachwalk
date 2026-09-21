@@ -12502,3 +12502,156 @@ timeScale 1.77 — 1.96 m/s of foot travel against a circling speed of the same.
 **He is still only circling 0.2 % of the time**, which is his own tuning
 (`circle` 0.18, `press` 0.96) from the round that established he comes at you
 rather than hesitating; the strafe is now correct whenever he does use it.
+
+**SHE HAS NO NAME ON HER, THE SET IN HER IS A REAL SET, AND `bakeStatic` HAD
+EATEN THE DOOR.** Four things the owner asked for on the wreck, and the one
+that matters most is the one he did not ask for.
+
+**THE BARRICADE WAS NOT THERE ANY MORE.** The barricade across the quarters
+door carries its own note saying it is "its OWN GROUP, never baked" — and the
+function that note names is `bakeGroup`, which skips Groups. `bakeStatic` does
+not: it TRAVERSES, takes every unnamed mesh whose ancestors do not say
+otherwise, and re-parents the merge. `warmStep('wreck merge', …)` was added to
+the wreck later, and measured in the game the barricade came out with **thirteen
+orphaned slabs and an empty group**. What that ships as: you break the door,
+`SN.props` loses the box so the collision goes, `smashBarricade` iterates
+`g.children` and throws nothing, `g.removeFromParent()` removes an empty group
+— and the barricade is still standing there, and you walk through it. One
+`userData.noBake` on the group. **A comment that says "never baked" names ONE
+merge; check every merge that has been added since.**
+
+**AND ITS CROSSHAIR MESHES ARE SNAPSHOTTED, so it may not be rebuilt.**
+`addInteractable` walks the root ONCE and keeps the list, so a piece of the
+barricade that arrives over the network later is invisible to the blade. That
+is why the furniture set is used everywhere in her EXCEPT the barricade: it is
+measured against a 1.10 by 1.95 hole, it is the door the owner asked to keep,
+and there is nothing to gain by putting a thing that lands seconds late into
+the one object whose whole job is to be hit.
+
+**THE FURNITURE IS A PLAN AND A GROUP, AND THE TWO ARE SEPARATED BY THE
+NETWORK.** `makeShipwreck` runs at module time; `assets/furniture.glb` is
+2.4 MB. So the PLAN (piece, x, z, yaw, footprint) is walked twice: once at
+build, to push the solid boxes into PROPS, and once in `S.userData.furnish(scene)`
+when the download lands, to stand the meshes in them. Collision is right on the
+first frame whether the model is there or not — the captain's head's own
+arrangement. It is merged on arrival (`bakeStatic(g, undefined, { named: true })`),
+because the wreck's own merge ran long before and nineteen pieces is nineteen
+draws.
+
+**AND NOTHING FLOATS, BECAUSE HER BOARDS ARE DISHED.** `soleY` runs 0.14 to
+0.24 across one room; a rigid table put down at the sole of its own CENTRE
+stands a corner five centimetres off it. Every piece takes the LOWEST board
+under its own footprint, so a leg is buried rather than hanging — which is
+what a hundredweight of oak sitting on a buckled sole for sixty years does.
+
+**AND A GAME-READY OAK ALBEDO IS TWO AND A HALF TIMES HER OWN TIMBER.**
+Measured on screen in her crew space, each set on its own against her boards
+(20.2) and her lining (16.8): table 49.7, bench 53.1, chair 40.3, barrel 40.5,
+bunk 23.3. That is the furniture glowing, and it is not a taste question. ONE
+SCALAR PER SET, ON LUMINANCE — a per-channel pull is a colour remover, which
+this file has paid for twice — swept to land them all at about 24, a shade over
+the floor they stand on. And the response is ACES, not linear: the first
+scaling from a single measured point overshot by 16 %, so each number came out
+of two measured points and a fitted exponent rather than out of arithmetic.
+
+**AND THE ROOM HAS TO STILL WALK, WHICH IS A FLOOD AND NOT A WALK TEST.**
+Three rounds of "steer at a target and see how far you get" measured nothing
+useful, because every start and every target I picked by eye turned out to be
+INSIDE something — the barricade's own box, a chair, a barrel. A flood over the
+free cells with the player's own radius answers it in one number, and the one
+that matters is REACH against FREE: the first layout gave 9.4 m² free and only
+8.6 reachable, with the aft corners stranded behind two barrels, and the mess
+straddling the centreline so the walk from the door to the stove was 1.65 m of
+slot. Everything the mess is made of went against her starboard side and the
+barrels into the corners: **9.8 m² free and 9.8 m² reachable**, a 2.25 m
+walkway down the port side, and the hold 56.4 of 56.4 against 70.2 empty.
+
+**AND A PIECE MUST NOT STAND THROUGH HER SIDE, WHICH IS `halfAtY` AND NOT AN
+EYEBALL.** Every piece's turned footprint is checked at three heights against
+the lining at its own station. Two barrels in the bow came out 5 and 23 cm
+through the planking; the whole set now clears by 0.07 m at worst, and that
+worst is a CYLINDER measured by its axis-aligned box, which overestimates a
+round barrel by 0.41r.
+
+**HER NAME COMES OFF BY BEING REMOVED, NOT BY BEING WORN AWAY.** Paint eaten to
+nothing is still a rectangle of different weathering on the planking. The
+topsides decal and the wheelhouse board are gone, and their two textures with
+them; her REGISTRATION stays on the bow, because that is a number and not a
+name.
+
+**AND A CUT-OUT'S `--inset` HAD EATEN BOTH FRAMES OF THE FISH.**
+`plaque_cutout.py` trims a proportion off every side before it floods, which
+exists because these photographs are vignetted — and measured, both shipped
+Billy frames were CLIPPED BY IT, in different directions: the idle lost its
+left and right edges (33 and 74 rows of opaque pixel sitting on the frame
+border) and the talk frame lost its top and bottom (467 and 598 columns). A
+plaque with a sawn-off edge is the whole of "the cut-outs look strange". The
+vignette is one pixel deep, not thirty-six: profiling inward from each edge,
+the talk frame reads L 77–102 on the outermost row and L 152–182 by the fourth.
+
+Three things had to be added to cut them at an inset that keeps the plaque:
+
+- **THE SHADOW UNDER A PLAQUE IS NOT PART OF IT.** The talk frame is a thing
+  standing on a table and the band below it reads L 1–8, against the plaque's
+  own dark moulding at L 42–51. Both fail a brightness floor, both are grey,
+  and the two TOUCH — so neither colour nor connectivity can separate them.
+  `--dark` (a ceiling under the moulding) and `--trim-shadow` (scan up from the
+  bottom edge and stop at the first row that is not that dark) do.
+- **AND A WASHED-OUT THUMBNAIL HAS NO SATURATION TO KEY ON.** The idle frame's
+  oak reads S 7–29 against a wall of S 8–17 — they OVERLAP, which is why the
+  shipped cut had a smear of wall left down its right-hand side. `--sat 22`
+  with `--luma 90` is the only window that takes the wall's own shadow and
+  leaves the wood.
+
+**AND THEN THE TWO WERE REGISTERED ON THE PLAQUE, NOT ON THE IMAGE.** They came
+out at aspects 1.371 and 1.536, and the game sets the plane's WIDTH from the
+picture's aspect — so the plaque grew by a ninth and shifted on the wall the
+moment he opened his mouth. That is what the frame change actually looked like:
+not a fish moving, a picture being swapped for a bigger picture, which is most
+of "it flashes". `tools/billy_frames.py` finds each plaque's PANEL — the columns
+and rows opaque over most of their length, which is the wood and not the jaw
+hanging off the side of it — and puts both on one canvas with the panels on top
+of each other. Both frames are 648 × 500 now and the plane never changes shape.
+
+**AND THE SWING IS THE ANIMATION.** What shipped held the head-out photograph
+for the whole conversation with a 2.5 % scale wobble on it: a still and a
+shiver. A Billy Bass's head comes off the board on a hinge and goes back, over
+and over, roughly in time with the words — so with the frames registered the
+swap IS the move and nothing else has to be drawn. It goes in BURSTS of two to
+five at about three a second with a beat of nothing between them (measured off
+the running game: 0.18 s out, 0.16 s in, four swings, 0.53 s of pause), and the
+cut is hidden in a JOLT — a damped spring in a squash, a bob and a roll about
+the plaque's own normal, released at full when the head comes out and at half
+when it goes back. `rotation.z` is the roll, because three composes XYZ and a
+plane's local +Z is its normal, so the picture turns in its own plane: a plaque
+shaking on its screw. And there is no third frame: `billy-shut.png` never
+existed, 404'd on every load for months, and the talk frame's jaws are only
+parted anyway.
+
+**A SCAN REPLACING A BUILT MODEL IS FITTED TO THE BOX THE BUILT ONE
+OCCUPIED.** The horseshoe crab is the owner's `limule.glb` now, and every
+number downstream of the built one — the view model's 0.5, the 0.30 m hit
+proxy, the shine's 0.8, the extraction's `_hinge` — was tuned against a
+0.428 × 0.215 × 0.756 box. So the scan is scaled to that WIDTH and centred on
+that CENTRE, both measured off the model it replaces rather than typed, and it
+happens to agree on its proportions (0.744 m long against 0.756) and on its
+frame (+Z the head, -Z the telson, +Y the carapace). Measured after: the needle
+still bites the shell 2 cm inside the surface at the hinge. `hcrab` is an empty
+Group the scan lands in — the captain's head's arrangement, so the hand, the
+pack icon and the examine screen all hold the same object.
+
+**AND `gltfpack --decimate` THREW THE ALBEDO AWAY, WHICH IS A SCAN'S WHOLE
+POINT.** The plain weld keeps positions and indices only; the octopus ring
+paid for that once by having a projection invented for it. `--keep-uv` is the
+undercroft's `cluster_uv` moved into it — a vertex may only merge with one near
+it in the ATLAS as well as in space, the POSITION cell still decides a collapse
+so the budget means what it meant, and a duplicate is a duplicate in SPACE or
+two welded faces fight at the same depth. Normals are RECOMPUTED, never
+carried: a decimated vertex is an average of the ones that fell in its cell, so
+the normal it arrived with belongs to a surface that is no longer there.
+84,815 triangles and 9.6 MB became 30,000 and 2.4.
+
+**AND `node --check` IS NOT AVAILABLE ON THIS MACHINE ANY MORE.** There is no
+`node` on the PATH at all. The browser is the eager parser for an ES module
+anyway: load the page and read `read_console_messages` — a syntax error is a
+blank screen and a message, not a silent pass.

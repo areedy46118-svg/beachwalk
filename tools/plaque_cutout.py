@@ -34,6 +34,10 @@ ap.add_argument('src'); ap.add_argument('dst')
 ap.add_argument('--luma', type=float, default=118, help='background is at least this bright')
 ap.add_argument('--sat', type=int, default=46, help='...and no more saturated than this')
 ap.add_argument('--lumamax', type=float, default=255, help='and no brighter than this')
+ap.add_argument('--dark', type=float, default=0,
+                help='ALSO count anything darker than this (and as grey) as background')
+ap.add_argument('--trim-shadow', type=float, default=0, dest='trim_shadow',
+                help='clear rows at the bottom edge whose kept pixels average darker than this')
 ap.add_argument('--feather', type=int, default=1)
 ap.add_argument('--pad', type=int, default=4)
 ap.add_argument('--inset', type=float, default=0.05, help='fraction trimmed off each side first')
@@ -91,7 +95,21 @@ def bglike(c):
     # and no amount of connectivity saves it, because it touches the pale
     # nameplate and walks out to the edge. Bracketing the wall's own range
     # separates them cleanly.
-    return a.luma <= luma <= a.lumamax and (mx - mn) <= a.sat
+    if (mx - mn) > a.sat:
+        return False
+    # AND THE SHADOW UNDER IT IS NOT THE PLAQUE. A wall is light and grey
+    # and that test is most of the job — but these are photographs of a
+    # thing standing on a table, and what is under it is BLACK: measured on
+    # the talk frame, the band below the plaque reads L 1 to 8 against the
+    # plaque's own dark moulding at L 42 to 51. Both fail a brightness
+    # floor, both are grey, and the two TOUCH, so connectivity cannot
+    # separate them either — which is why the first cut came back welded to
+    # the bottom of the frame and the only fix anybody found was to crop the
+    # plaque's own edge off with `--inset`. A ceiling under the moulding
+    # takes the shadow and leaves the plaque.
+    if a.dark and luma <= a.dark:
+        return True
+    return a.luma <= luma <= a.lumamax
 
 bg = bytearray(W * H)
 q = deque()
@@ -189,6 +207,25 @@ for _ in range(max(0, a.feather)):
             if max(n) == 255:
                 r, g, b, _ = pp[x, y]
                 op[x, y] = (r, g, b, 110)
+
+# AND WHAT IS UNDER IT IS NOT PART OF IT. A plaque stands on a table and
+# throws a shadow, and the shadow is connected to its own dark moulding, so
+# neither colour nor connectivity can take it: measured up from the bottom
+# of the talk frame, the last 37 rows average L 18 to 48 and the moulding
+# above them averages 60 upward. Scanning up from the edge and stopping at
+# the first row that is not that dark is the whole rule — it cannot eat into
+# the plaque, because it stops the moment it meets it.
+if a.trim_shadow > 0:
+    for y in range(H - 1, -1, -1):
+        row = [op[x, y] for x in range(W) if op[x, y][3] > 20]
+        if not row:
+            continue
+        mean = sum(0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2] for c in row) / len(row)
+        if mean >= a.trim_shadow:
+            break
+        for x in range(W):
+            r, g, b, _ = op[x, y]
+            op[x, y] = (r, g, b, 0)
 
 bb = out.getbbox()
 if bb:

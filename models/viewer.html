@@ -60,7 +60,14 @@
   <script type="module">
     import * as THREE from 'three';
 
-    const which = new URLSearchParams(location.search).get('model') || 'horseshoe-crab';
+    const Q = new URLSearchParams(location.search);
+    /* ?glb=../assets/x.glb looks at a PACKED asset straight off disk — the
+     * one thing the factory list could not do, and the only way to judge a
+     * pack before it has been wired into anything. */
+    const rawGlb = Q.get('glb');
+    const which = rawGlb || Q.get('model') || 'horseshoe-crab';
+    const loadGlb = (url) => import('three/addons/loaders/GLTFLoader.js').then(({ GLTFLoader }) =>
+      new Promise((ok, no) => new GLTFLoader().load(url, g => ok(g.scene), undefined, no)));
     const factories = {
       'horseshoe-crab': () => import('./horseshoe-crab.js').then(m => m.makeHorseshoeCrab()),
       'syringe': () => import('./syringe.js').then(m => m.makeSyringe()),
@@ -71,8 +78,7 @@
       'shipwreck': () => import('./shipwreck.js').then(m => m.makeShipwreck()),
       'underground-bunker': () => import('./underground-bunker.js').then(m => m.makeUndergroundBunker({ url: '../assets/bunker.glb' })),
       // raw scan, straight off disk: no factory yet, we are still looking at her
-      'boat': () => import('three/addons/loaders/GLTFLoader.js').then(({ GLTFLoader }) =>
-        new Promise((ok, no) => new GLTFLoader().load('../assets/boat.glb', g => ok(g.scene), undefined, no))),
+      'boat': () => loadGlb('../assets/boat.glb'),
     };
     document.getElementById('caption').textContent = which.replace('-', ' ') + '  ·  drag to rotate  ·  scroll to zoom';
     document.title = 'Model viewer — ' + which;
@@ -105,7 +111,7 @@
     pivot.add(fit);
     scene.add(pivot);
 
-    const crab = await (factories[which] || factories['horseshoe-crab'])();
+    const crab = await (rawGlb ? loadGlb(rawGlb) : (factories[which] || factories['horseshoe-crab'])());
     fit.add(crab);
     fit.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(crab);

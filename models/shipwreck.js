@@ -35,7 +35,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
  *      no door" while every movement test passes.
  *   9. Nothing on the centreline forward of the helm above deck height.
  *      The star puzzle is read out of that window.
- *  10. Nothing crosses the windscreen. Her name goes on her side.
+ *  10. Nothing crosses the windscreen. She carries no name at all.
  *  11. Two holes in the deck must never share an x AND a z.
  *  12. Every brace lands on something at BOTH ends. Use strut().
  *
@@ -966,21 +966,6 @@ function wetTex() {
   return t;
 }
 
-function nameTex() {
-  const c = document.createElement('canvas'); c.width = 256; c.height = 64;
-  const g = c.getContext('2d');
-  g.fillStyle = '#3a322a'; g.fillRect(0, 0, 256, 64);
-  g.fillStyle = '#d6cbb2'; g.font = 'bold 34px Georgia, serif'; g.textAlign = 'center';
-  g.fillText('LIMULUS', 128, 34);
-  g.font = '17px Georgia, serif'; g.fillText('DELAWARE BAY', 128, 55);
-  for (let i = 0; i < 700; i++) {
-    g.fillStyle = `rgba(${140 + Math.random() * 70 | 0},${58 + Math.random() * 44 | 0},22,${Math.random() * 0.58})`;
-    g.fillRect(Math.random() * 256 | 0, Math.random() * 64 | 0, 3, 2);
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapNearestFilter;
-  return t;
-}
 /* Her registration, on the bow — the numbers every one of the reference
  * boats carries up forward. */
 function regTex() {
@@ -989,72 +974,6 @@ function regTex() {
   g.fillStyle = '#1c2226'; g.font = 'bold 40px Georgia, serif'; g.textAlign = 'center';
   g.fillText('DE 2916', 128, 46);
   for (let i = 0; i < 1100; i++) g.clearRect(Math.random() * 256 | 0, Math.random() * 64 | 0, 3, 2);
-  const t = new THREE.CanvasTexture(c);
-  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapNearestFilter;
-  return t;
-}
-
-/* Her name, big, for the side you walk up from. Transparent ground: this
- * is paint eaten off timber, so what is left is only the letters. */
-function nameBigTex() {
-  const w = 1024, h = 160;
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
-  const g = c.getContext('2d');
-  /* IT HAS TO BE READ FROM THE SAND. The reference boats carry their name
-   * a metre high in hard paint and you can read it across a car park; this
-   * was drawn thin, pale-on-pale and then eaten to gravel, so it was
-   * legible with your nose on the planking and invisible everywhere else.
-   * Bigger letters, a heavy dark keyline so they hold an edge against
-   * whatever plank they fall on, and a drop shadow under them — which is
-   * what stops lettering on a busy weathered surface dissolving into it. */
-  g.textAlign = 'center'; g.textBaseline = 'middle';
-  const NAME = 'LIMULUS', my = h / 2 - 10;
-  g.font = 'bold 142px Georgia, serif';
-  g.fillStyle = 'rgba(18,12,8,0.75)'; g.fillText(NAME, w / 2 + 5, my + 6);   // its own shadow
-  g.lineWidth = 13; g.strokeStyle = '#1d150e'; g.strokeText(NAME, w / 2, my);
-  g.fillStyle = '#f2ede0'; g.fillText(NAME, w / 2, my);
-  g.font = 'bold 46px Georgia, serif';
-  g.fillStyle = 'rgba(18,12,8,0.7)'; g.fillText('DELAWARE BAY', w / 2 + 3, h / 2 + 62);
-  g.lineWidth = 6; g.strokeStyle = '#1d150e'; g.strokeText('DELAWARE BAY', w / 2, h / 2 + 58);
-  g.fillStyle = '#e6dfcd'; g.fillText('DELAWARE BAY', w / 2, h / 2 + 58);
-  // sixty years of it coming off
-  /* EATEN, NOT ERASED. At 5200 clears the letters came apart into gravel:
-   * legible with your nose on the planking and gone by the time you were
-   * far enough back to see the whole of her, which is where a ship's name
-   * is supposed to be read from. Half that, and the stroke round them is
-   * heavier so what survives still has an edge. */
-  // worn, not destroyed — it still has to spell something
-  for (let i = 0; i < 1700; i++)
-    g.clearRect(Math.random() * w | 0, Math.random() * h | 0, 2 + Math.random() * 5, 2 + Math.random() * 4);
-  /* AND THE RUST RUNS THROUGH IT. Paint on a steel-fastened hull does not
-   * just go thin, it gets stained by what is bleeding through it — so the
-   * iron comes down over the letters rather than being kept politely off
-   * them. Drawn with `source-atop` so it only lands on paint that is still
-   * there: rust on the letters, and nothing floating in the gaps between
-   * them where the picture is meant to be transparent. */
-  g.globalCompositeOperation = 'source-atop';
-  for (let i = 0; i < 48; i++) {                     // runs down out of the letters
-    const x = Math.random() * w, top = Math.random() * h * 0.5;
-    const gr = g.createLinearGradient(0, top, 0, top + 60 + Math.random() * 90);
-    gr.addColorStop(0, `rgba(${120 + Math.random() * 50 | 0},${52 + Math.random() * 30 | 0},20,${0.42 + Math.random() * 0.34})`);
-    gr.addColorStop(1, 'rgba(120,52,20,0)');
-    g.fillStyle = gr; g.fillRect(x, top, 3 + Math.random() * 9, 150);
-  }
-  for (let i = 0; i < 22; i++) {                     // and blooms of it
-    const x = Math.random() * w, y = Math.random() * h, r = 14 + Math.random() * 46;
-    const gr = g.createRadialGradient(x, y, 0, x, y, r);
-    gr.addColorStop(0, `rgba(132,60,22,${0.30 + Math.random() * 0.34})`);
-    gr.addColorStop(1, 'rgba(132,60,22,0)');
-    g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
-  }
-  g.globalCompositeOperation = 'source-over';
-  for (let i = 0; i < 26; i++) {
-    const x = Math.random() * w, y = Math.random() * h, r = 12 + Math.random() * 48;
-    g.save(); g.globalCompositeOperation = 'destination-out';
-    const gr = g.createRadialGradient(x, y, 0, x, y, r);
-    gr.addColorStop(0, 'rgba(0,0,0,0.95)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
-    g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill(); g.restore();
-  }
   const t = new THREE.CanvasTexture(c);
   t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapNearestFilter;
   return t;
@@ -1120,9 +1039,7 @@ export function makeShipwreck(opts = {}) {
     eye: new THREE.MeshStandardMaterial({ color: 0x4c4a42, roughness: 0.42, metalness: 0, emissive: 0x14140f }),
     bruise: new THREE.MeshStandardMaterial({ color: 0x3e2c34, roughness: 1, metalness: 0, emissive: 0x120c10, flatShading: true }),
     sole: new THREE.MeshStandardMaterial({ map: soleTex(), color: 0xa2968a, roughness: 1, metalness: 0, emissive: 0x6e6050, emissiveIntensity: 0.54, emissiveMap: soleTex(), side: THREE.DoubleSide }),
-    name: new THREE.MeshStandardMaterial({ map: nameTex(), roughness: 1, emissive: 0x241c16, side: THREE.DoubleSide }),
     reg: new THREE.MeshStandardMaterial({ map: regTex(), roughness: 1, emissive: 0x121416, transparent: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 }),
-    nameBig: new THREE.MeshStandardMaterial({ map: nameBigTex(), roughness: 1, color: 0xf0ebdf, emissive: 0xffffff, emissiveIntensity: 0.72, emissiveMap: nameBigTex(), transparent: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 }),
     sand: opts.sandMat || new THREE.MeshStandardMaterial({ color: 0x6d7d99, roughness: 0.95, emissive: 0x27324a, flatShading: true }),
     /* What shows through the stove-in sole. NOT the beach material: that
      * one is lit for open moonlight and inside a dark hold it reads as a
@@ -1438,24 +1355,12 @@ export function makeShipwreck(opts = {}) {
         solidLow(bx, (z0 + z1) / 2, 0.22, z1 - z0);
     }
 
-    for (const sg of [-1, 1]) {                      // bunks, two high
-      const wz = wall(4.9);
-      for (let t = 0; t < 2; t++) {
-        const y = HOLD_Y + 0.42 + t * 0.86;
-        HULL.add(slab(2.0, 0.07, 0.78, M.wood, 4.7, y, sg * (wz - 0.42)));      // bottom board
-        HULL.add(slab(2.0, 0.16, 0.10, M.wood, 4.7, y + 0.10, sg * (wz - 0.80))); // lee board
-        HULL.add(slab(1.85, 0.13, 0.66, M.plank, 4.7, y + 0.10, sg * (wz - 0.44))); // mattress
-        for (const dx of [-0.98, 0.98])              // stanchions
-          HULL.add(slab(0.09, 0.86, 0.09, M.wood, 4.7 + dx, y + 0.43, sg * (wz - 0.42)));
-      }
-      HULL.add(slab(2.0, 0.05, 0.80, M.wood, 4.7, HOLD_Y + 2.16, sg * (wz - 0.42)));
-      // a blanket shoved down the end of the lower one
-      const bl = new THREE.Mesh(new THREE.IcosahedronGeometry(0.28, 0), M.rope);
-      bl.scale.set(1.5, 0.5, 1.1);
-      bl.position.set(4.7 + (sg > 0 ? 0.7 : -0.7), HOLD_Y + 0.58, sg * (wz - 0.44));
-      HULL.add(bl);
-      solidLow(4.7, sg * (wz - 0.42), 2.1, 0.9);
-    }
+    /* HER BERTHS ARE A REAL BUNK BED NOW, twice, one against each side —
+     * see HER FURNITURE below. What stood here was four slab berths: a
+     * board, a lee board, a box for a mattress and two stanchions each.
+     * A blanket shoved down the end of the lower one goes with them,
+     * because a blob of `M.rope` on a bunk that is no longer there is a
+     * lump lying in mid-air. */
 
     // the stove, right aft on the centreline, and its pipe
     HULL.add(slab(0.62, 0.72, 0.56, M.steel, CX1 - 0.45, HOLD_Y + 0.36, 0));
@@ -1516,6 +1421,17 @@ export function makeShipwreck(opts = {}) {
         bpart(cyl(0.05, 0.05, 0.48, 6, M.wood, bx2 - 0.10, HOLD_Y + 0.44, sz * 0.34, 0, 0, sz * 0.55), 'stool');
       }
       BARRICADE.traverse((o) => { if (o.isMesh) o.castShadow = false; });
+      /* AND `bakeStatic` MUST NOT LOOK AT IT EITHER. The note above says
+       * "never baked" and names `bakeGroup`, which skips Groups — but
+       * main.js merges the whole wreck by material as well, and THAT one
+       * traverses, takes every unnamed mesh and re-parents the result.
+       * Measured in the game: the barricade's thirteen slabs came out
+       * orphaned and its group empty, so `smashBarricade` iterated nothing
+       * — the collision was spliced out of PROPS, the boards never left,
+       * and what you got for breaking the door was a barricade you could
+       * walk through and could still see. `noBake` on the group is the one
+       * flag both merges read. */
+      BARRICADE.userData.noBake = true;
       S.add(BARRICADE);
       /* Solid while it stands. main.js splices this exact array out of
        * PROPS when it comes down, so the doorway opens the moment the
@@ -1544,33 +1460,20 @@ export function makeShipwreck(opts = {}) {
      * Everything stands on `soleY` — her boards are dished and run 0.12 to
      * 0.20, never at HOLD_Y, which is what had the first pass hovering. */
     {
-      // ---- a mess table, off the centreline so the way in stays clear
-      const TX = 4.75, TZ = -1.70, TOP = 0.72, TW = 1.20, TD = 0.64;
-      const ty = soleY(TX, TZ);
-      HULL.add(slab(TW, 0.055, TD, M.wood, TX, ty + TOP, TZ));            // the top
-      for (const sx of [-1, 1])                                            // aprons
-        HULL.add(slab(TW - 0.16, 0.09, 0.04, M.wood, TX, ty + TOP - 0.08, TZ + sx * (TD / 2 - 0.05)));
-      HULL.add(slab(0.04, 0.09, TD - 0.12, M.wood, TX - TW / 2 + 0.05, ty + TOP - 0.08, TZ));
-      HULL.add(slab(0.04, 0.09, TD - 0.12, M.wood, TX + TW / 2 - 0.05, ty + TOP - 0.08, TZ));
-      for (const sx of [-1, 1]) for (const sz of [-1, 1])                  // legs
-        HULL.add(slab(0.07, TOP - 0.055, 0.07, M.wood,
-          TX + sx * (TW / 2 - 0.09), ty + (TOP - 0.055) / 2, TZ + sz * (TD / 2 - 0.09)));
-      solidLow(TX, TZ, TW + 0.1, TD + 0.1);
-      // an enamel mug and a lamp on it, which is what a table is FOR
-      HULL.add(cyl(0.055, 0.05, 0.10, 8, M.plank, TX - 0.34, ty + TOP + 0.05, TZ + 0.12));
-      HULL.add(slab(0.13, 0.21, 0.13, M.glass, TX + 0.30, ty + TOP + 0.14, TZ - 0.10));
-      HULL.add(cyl(0.085, 0.095, 0.06, 7, M.steel, TX + 0.30, ty + TOP + 0.055, TZ - 0.10));
-      HULL.add(cyl(0.02, 0.02, 0.13, 6, M.steel, TX + 0.30, ty + TOP + 0.30, TZ - 0.10));
-
-      // ---- a bench along the other side of it
-      const BZ = -2.55, BY = soleY(5.1, BZ);
-      HULL.add(slab(1.55, 0.06, 0.30, M.wood, 5.10, BY + 0.42, BZ));
-      for (const sx of [-1, 1])
-        HULL.add(slab(0.08, 0.42, 0.26, M.wood, 5.10 + sx * 0.62, BY + 0.21, BZ));
-      solidLow(5.10, BZ, 1.6, 0.34);
+      /* The mess table and the bench are `table_3` and `bench_4` out of
+       * the furniture set now — see HER FURNITURE. What stands on the
+       * table is still built, because a mug and a lamp are not in that
+       * set and a table with nothing on it is not a table anybody used.
+       * Their height is the MODEL'S top (0.825) and not the slab's own
+       * 0.72, or they float a hand's width over it. */
+      const TX = 4.85, TZ = -1.42, TOP = 0.825, ty = soleY(TX, TZ) - 0.02;
+      HULL.add(cyl(0.055, 0.05, 0.10, 8, M.plank, TX - 0.36, ty + TOP + 0.05, TZ + 0.14));
+      HULL.add(slab(0.13, 0.21, 0.13, M.glass, TX + 0.32, ty + TOP + 0.14, TZ - 0.12));
+      HULL.add(cyl(0.085, 0.095, 0.06, 7, M.steel, TX + 0.32, ty + TOP + 0.055, TZ - 0.12));
+      HULL.add(cyl(0.02, 0.02, 0.13, 6, M.steel, TX + 0.32, ty + TOP + 0.30, TZ - 0.12));
 
       // ---- a sea chest, SHUT, with its bands and a hasp
-      const KX = 3.95, KZ = 2.25, ky = soleY(KX, KZ);
+      const KX = 3.95, KZ = 2.02, ky = soleY(KX, KZ);
       HULL.add(slab(0.86, 0.42, 0.50, M.wood, KX, ky + 0.21, KZ));
       HULL.add(slab(0.90, 0.09, 0.54, M.wood, KX, ky + 0.46, KZ));        // the lid, closed
       for (const sx of [-1, 1])                                            // iron bands
@@ -1789,14 +1692,14 @@ export function makeShipwreck(opts = {}) {
       S.add(new THREE.Mesh(hullDecalGeo(-11.3, -9.1, DECK_Y - 0.30, DECK_Y + 0.24, sg), M.reg));
   }
 
-  /* ---- her name, big, on the side you come up from ------------------
-   * The +Z topsides, right where you meet her — the first thing you read
-   * off the wreck. Lofted onto the planking, not a plane stuck to it. */
-  /* Aft of amidships and smaller. She carried it across the whole of her
-   * waist, which put it where the breach and the ladder are and made it
-   * the first thing on her rather than a thing on her. 5.4 m under the
-   * wheelhouse, letters about 0.7 m. */
-  S.add(new THREE.Mesh(hullDecalGeo(1.0, 6.4, DECK_Y - 0.92, DECK_Y + 0.20, 1), M.nameBig));
+  /* ---- SHE HAS NO NAME ON HER ----------------------------------------
+   * She carried LIMULUS in foot-high paint across her topsides and on a
+   * board on the wheelhouse, and the owner's word is that both come off.
+   * They are removed rather than worn away: paint eaten to nothing is
+   * still a rectangle of different weathering on the planking, and what
+   * is wanted is a hull that never told you what she was called. Her
+   * REGISTRATION stays on the bow — that is a number, not a name, and
+   * every working boat the references show carries one. */
 
   /* ---- the wheelhouse -------------------------------------------------
    * A glasshouse on a raised casing: glass right round the front and both
@@ -1904,13 +1807,6 @@ export function makeShipwreck(opts = {}) {
     BR.add(cyl(0.09, 0.10, 0.85, 7, M.steel, BR_X1 - 0.7, T + 0.50, 0.9));
     BR.add(cyl(0.13, 0.13, 0.10, 7, M.steel, BR_X1 - 0.7, T + 0.95, 0.9));
     BR.add(slab(0.14, 0.16, 0.14, M.steel, BR_DOOR_C, F + 2.20, zc + 0.10));   // dead lamp
-
-    /* Her name on the FLAT side of the wheelhouse. It is not going back on
-     * the windscreen: that is what was blocking the view out (10). */
-    const board = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.52), M.name);
-    board.position.set(cx, F + 0.52, -zc - 0.09);
-    board.rotation.y = Math.PI;
-    BR.add(board);
   }
 
   /* ---- the wheel ------------------------------------------------------
@@ -2247,6 +2143,148 @@ export function makeShipwreck(opts = {}) {
     lantern.userData.noBake = true;
     S.add(lantern);
     S.userData.lantern = lantern;
+  }
+
+  /* ---- HER FURNITURE, WHICH IS A REAL SET AND NOT BOXES ---------------
+   * The owner's wooden-asset set through `tools/furniture_pack.py`:
+   * tables, chairs, benches, barrels and a bunk bed, one named node each
+   * in `assets/furniture.glb`. What was here before was slabs — a table
+   * was five boxes, a bunk was four — and at this texel count a box with
+   * a wood map on it reads as a box with a wood map on it.
+   *
+   * THE PLAN IS SYNCHRONOUS AND THE MESHES ARE NOT. `makeShipwreck` runs
+   * at module time and the glb lands over the network seconds later, so
+   * the two are separated: the SOLID BOXES go into PROPS here, from the
+   * plan, and `S.userData.furnish(scene)` stands the pieces when they
+   * arrive. Collision is therefore right on the first frame whether the
+   * download has finished or not — which is the same arrangement the
+   * captain's head and the boat key already use.
+   *
+   * AND NOTHING FLOATS. Her boards are dished and run 0.14 to 0.24 across
+   * one room; a rigid table put down at `soleY` of its own centre stands a
+   * corner up to five centimetres off them. Every piece takes the LOWEST
+   * board under its own footprint instead, so a leg is buried rather than
+   * hanging — which is what a hundredweight of oak sitting on a buckled
+   * sole for sixty years actually does.
+   *
+   * THE BARRICADE IS NOT TOUCHED. It is the door you have to break to get
+   * into her quarters, it is measured against a 1.10 by 1.95 hole, and its
+   * crosshair meshes are snapshotted by `addInteractable` at registration
+   * — a piece that lands later would be invisible to the blade. */
+  {
+    /* the lowest board anywhere under a footprint, so a corner cannot hang */
+    const soleUnder = (x, z, w, d) => {
+      let lo = Infinity;
+      for (let i = 0; i <= 3; i++) for (let j = 0; j <= 3; j++)
+        lo = Math.min(lo, soleY(x + (i / 3 - 0.5) * w, z + (j / 3 - 0.5) * d));
+      return lo;
+    };
+    /* [piece, x, z, yaw, {w,d} its footprint for PROPS, opts]
+     *   deck: stand it on the weather deck instead of the sole
+     *   loose: no collision box — small enough to walk over, or lying down
+     *   tilt: it has been lying in a wreck for sixty years */
+    const PLAN = [
+      // ---- her quarters, aft of the barricaded door -------------------
+      // Two bunks against her sides where the four slab berths were. The
+      // model's long axis is its own Z, so a quarter turn lays it
+      // fore-and-aft against the planking.
+      ['bunk_bed', 4.70, 2.94, Math.PI / 2, 2.06, 1.14],
+      ['bunk_bed', 4.70, -2.94, -Math.PI / 2, 2.06, 1.14],
+      // the mess table, off the centreline so the way in from the door
+      // stays clear, with a bench drawn up to it and two chairs at it
+      ['table_3', 4.85, -1.42, 0, 1.44, 0.96],
+      ['bench_4', 4.85, -2.10, 0, 1.62, 0.48],
+      ['chair_2', 4.34, -0.66, Math.PI, 0.50, 0.56],
+      ['chair_3', 5.36, -0.62, Math.PI * 0.86, 0.50, 0.56],
+      // one of them went over and nobody set it up again
+      ['chair_4', 3.95, -1.95, 0.7, 0, 0, { tilt: 0.22 }],
+      // stores, up against the after end by the stove
+      ['barrel_2', 6.52, 2.92, 0.9, 0.62, 0.62],
+      ['barrel_4', 6.46, -2.92, 2.1, 0.80, 0.80],
+      // ---- the bow of her hold, forward of the breach ------------------
+      ['barrel_5', -7.20, -2.05, 0.4, 0.88, 0.88],
+      ['barrel_4', -6.72, -2.48, 2.6, 0.80, 0.80],
+      ['barrel_2', -7.58, -1.46, 1.7, 0.62, 0.62],
+      // one of them staved in, lying where it came adrift
+      ['barrel_3', -7.28, 1.62, 1.2, 1.16, 1.22],
+      ['barrel_1', -6.90, 2.34, 2.8, 0.84, 0.64],
+      // ---- her hold: the bench she was worked over --------------------
+      ['table_1', -4.20, -2.58, 0, 2.14, 1.20],
+      ['chair_5', -3.10, -2.10, 1.9, 0.60, 0.60],
+      // and a long bench down the side you come in from, aft of the hole
+      ['bench_3', -1.10, 2.94, 0, 3.38, 0.50],
+      // ---- her afterdeck, where a working boat stows ------------------
+      ['barrel_5', 9.42, 2.46, 0.6, 0.88, 0.88, { deck: true }],
+      ['barrel_2', 10.06, 2.08, 2.2, 0.62, 0.62, { deck: true }],
+    ];
+    for (const [, x, z, , w, d, o] of PLAN) {
+      if (!w || (o && o.loose)) continue;
+      if (o && o.deck) solid(x, z, w, d);
+      else solidLow(x, z, w, d);
+    }
+    /* Stand them the moment the download lands. Every piece is CLONED —
+     * `barrel_2` and `barrel_4` are each used twice and a mesh has one
+     * parent — and the material is cloned once per SET, because nothing
+     * down here is reached by the moon and every interior surface in this
+     * file carries its own emissive lift off its own map. */
+    S.userData.furnish = (root) => {
+      const G = new THREE.Group(); G.name = 'shipFurniture';
+      const byName = new Map();
+      root.traverse((o) => { if (o.isMesh) byName.set(o.name, o); });
+      /* AND IT IS LIT LIKE EVERYTHING ELSE DOWN HERE, WHICH IS A NUMBER
+       * AND NOT A TASTE. No moon reaches the inside of her, so every
+       * interior material in this file carries its own emissive lift off
+       * its own map — and these maps are a game-ready oak albedo shot for
+       * a studio, far brighter than anything she is built of. Measured on
+       * screen in her crew space, each set on its own against her boards
+       * (which read 20.2) and her lining (16.8): table 49.7, bench 53.1,
+       * chair 40.3, barrel 40.5, bunk 23.3 — the first four two and a
+       * half times the floor they stand on, which is what "the furniture
+       * glows" looks like.
+       *
+       * ONE SCALAR PER SET, ON LUMINANCE, so each keeps its own colour: a
+       * per-channel pull is a colour remover, which this file has paid
+       * for twice. Swept to land them all at about 24 — a shade over her
+       * boards, because oak catches what light there is and a sixty-year
+       * sole does not. The response is not linear (ACES), so these came
+       * out of two measured points each and not out of arithmetic. */
+      const K = { table: 0.402, bench: 0.380, chair: 0.550, barrel: 0.557, bunk: 1.00 };
+      const mats = new Map();
+      const dress = (m) => {
+        let out = mats.get(m);
+        if (!out) {
+          const k = K[m.name] === undefined ? 0.5 : K[m.name];
+          out = m.clone();
+          out.color.setScalar(k);
+          out.emissive = new THREE.Color(0xffffff);
+          out.emissiveMap = out.map;
+          out.emissiveIntensity = 0.30 * k;
+          out.roughness = 1;
+          out.metalness = 0;
+          out.side = THREE.FrontSide;
+          mats.set(m, out);
+        }
+        return out;
+      };
+      for (const [name, x, z, ry, w, d, o] of PLAN) {
+        const src = byName.get(name);
+        if (!src) { console.warn('shipwreck: no furniture piece named ' + name); continue; }
+        const m = new THREE.Mesh(src.geometry, dress(src.material));
+        m.name = '';                     // merged by bakeStatic, not held by anybody
+        // its own box, turned, is what decides how much floor it covers
+        src.geometry.computeBoundingBox();
+        const bb = src.geometry.boundingBox;
+        const c = Math.abs(Math.cos(ry)), s = Math.abs(Math.sin(ry));
+        const sx = bb.max.x - bb.min.x, sz = bb.max.z - bb.min.z;
+        const fw = sx * c + sz * s, fd = sx * s + sz * c;
+        const y = (o && o.deck) ? DECK_Y + 0.055 : soleUnder(x, z, fw, fd);
+        m.position.set(x, y, z);
+        m.rotation.set(o && o.tilt ? o.tilt : 0, ry, o && o.roll ? o.roll : 0);
+        G.add(m);
+      }
+      S.add(G);
+      return G;
+    };
   }
 
   /* ---- sand banked up her sides --------------------------------------

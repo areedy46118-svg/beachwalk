@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { makeHorseshoeCrab, makeHorseshoeCrabIcon } from './models/horseshoe-crab.js';
+import { makeHorseshoeCrabIcon } from './models/horseshoe-crab.js';
 import { makeSyringe, makeSyringeIcon } from './models/syringe.js';
 import { makeBloodJar, makeBloodJarIcon } from './models/blood-jar.js';
 import { makeDrainageTunnelHome } from './models/drainage-tunnel-home.js';
@@ -104,8 +104,10 @@ const ASSET_REACH = {
   'assets/octopus-ring.glb': 647,   // the knight drops it, so it is wanted where he is
   'assets/rocks.glb': 80,             // the formation below Bradly
   'assets/crab.glb': 90,
+  'assets/limule.glb': 58,            // the horseshoe crab in the wrack line
   'assets/corpse.glb': 126,           // the body bag
   'assets/key.glb': 150,
+  'assets/furniture.glb': 152,        // what is standing in her hold and her quarters
   'assets/head.glb': 155,             // both of them are aboard the wreck
   'assets/dock.glb': 215,
   'assets/keep.glb': 216,              // and where its boat goes: fetched on the walk up to the pier
@@ -9348,15 +9350,69 @@ function updateDoor(dt) {
 // models/horseshoe-crab.js.
 // ------------------------------------------------------------------
 // (renamed hcrab* to avoid the enemy `crab` added on main)
-const hcrab = makeHorseshoeCrab();
+/* ---- AND HE IS A SCAN NOW, NOT A BUILT ONE -------------------------
+ * Tavernier Amaury's "Limule" (CC-BY-4.0, `assets/limule.glb`), the
+ * owner's model, replacing `makeHorseshoeCrab()`. That factory is still in
+ * `models/` — it is what `models/viewer.html` looks at and it is 340 lines
+ * of measured carapace — but nothing in the game builds one any more.
+ *
+ * `hcrab` is an EMPTY GROUP the scan lands in, the captain's head's own
+ * arrangement: `holdable` clones lazily and the examine screen re-parents
+ * whatever it is handed, so the hand, the pack icon and the inspect view
+ * all end up holding the same object without any of them being rebuilt.
+ *
+ * AND IT IS FITTED TO THE BOX THE BUILT ONE OCCUPIED, measured off it
+ * rather than guessed: 0.428 m across, centred on (0, -0.0395, -0.212) in
+ * its own frame. Every number downstream — the view model's 0.5, the
+ * 0.30 m hit proxy, the shine's 0.8, the extraction rig's hinge — was
+ * tuned against that box, and a scan dropped in at its own scale would
+ * break all of them at once. The two happen to agree on their
+ * proportions (0.744 m long against 0.756) and on their frame: +Z is the
+ * head, -Z the telson, +Y the carapace. */
+const HCRAB_W = 0.428, HCRAB_C = [0, -0.0395, -0.212];
+/* swept on screen against the sand he lies on — see the loader below */
+const HCRAB_GAMMA = 0.54, HCRAB_EMIS = 0.20;
+const hcrab = new THREE.Group();
 const hcrabWorld = new THREE.Group();
-/* 86 meshes and 49,000 triangles for a prop the size of a dinner plate —
- * which is right for the examine screen, where it fills the frame, and is
- * eighty-six draw calls for a thing lying in the wrack line. The one in the
- * world is a merged COPY; `hcrab` itself stays whole, because that is what
- * the hand and the examine screen clone. */
-const hcrabShown = hcrab.clone(true);
-bakeStatic(hcrabShown);
+const hcrabCopies = [];                 // groups waiting for the scan
+function hcrabFit(src) {
+  const g = new THREE.Group();
+  const m = src.clone(true);
+  const b = new THREE.Box3().setFromObject(m);
+  const sz = b.getSize(new THREE.Vector3()), c = b.getCenter(new THREE.Vector3());
+  const k = HCRAB_W / (sz.x || 1);
+  g.scale.setScalar(k);
+  g.position.set(HCRAB_C[0] - c.x * k, HCRAB_C[1] - c.y * k, HCRAB_C[2] - c.z * k);
+  g.add(m);
+  return g;
+}
+bwGlb('assets/limule.glb', (gltf) => {
+  const src = gltf.scene;
+  /* A SCAN LIT FOR DAYLIGHT IS A HOLE IN THIS BEACH — the rocks' own
+   * lesson, and the one number here that is not a fit. */
+  src.traverse((o) => {
+    if (!o.isMesh || !o.material) return;
+    o.material = o.material.clone();
+    o.material.side = THREE.FrontSide;
+    o.material.roughness = 0.92;
+    o.material.metalness = 0;
+    o.material.emissive = new THREE.Color(0xffffff);
+    o.material.emissiveMap = o.material.map;
+    o.material.emissiveIntensity = HCRAB_EMIS;
+    reexpose(o.material, HCRAB_GAMMA);
+  });
+  hcrab.add(hcrabFit(src));
+  for (const g of hcrabCopies) { const f = hcrabFit(src); bakeStatic(f, undefined, { named: true }); g.add(f); }
+  hcrabCopies.length = 0;
+});
+/* 84,815 triangles for a prop the size of a dinner plate — decimated to
+ * 30,000 with its uv carried through, which is what `--keep-uv` is for: a
+ * scan's whole point is its albedo, and the plain weld keeps positions and
+ * indices only. The one in the world is a merged COPY; `hcrab` itself
+ * stays whole, because that is what the hand and the examine screen
+ * clone. */
+const hcrabShown = new THREE.Group();
+hcrabCopies.push(hcrabShown);
 hcrabWorld.add(hcrabShown);
 {
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.30, 8, 6),
@@ -14493,6 +14549,19 @@ farProps.push({ obj: shipwreck, z: SHIP_Z, d: 240 });
 warmStep('wreck merge', () => bakeStatic(shipwreck));
 const SN = shipwreck.userData.nav;
 
+/* ---- and her furniture, which arrives over the network ---------------
+ * `makeShipwreck` runs at module time and this is 2.4 MB, so the wreck
+ * builds with her solid boxes in place and the pieces land in them. It is
+ * merged the moment it arrives (`named: true`, because every piece keeps
+ * the name the packer gave it and nobody holds one) — nineteen meshes in
+ * five materials become five draws, which is the wreck merge's own rule
+ * applied to a group that could not be there when the wreck merge ran. */
+bwGlb('assets/furniture.glb', (gltf) => {
+  if (!shipwreck.userData.furnish) return;
+  const g = shipwreck.userData.furnish(gltf.scene);
+  bakeStatic(g, undefined, { named: true });
+});
+
 /* ---- punch her out of the sea ---------------------------------------
  * Sampled off the SAME hull functions the geometry uses, at the height
  * the water actually meets her, so the hole in the ocean is her waterline
@@ -14633,8 +14702,8 @@ function sfxLockerOpen() {
 // The same model and the same item as the one on the beach, so it picks up
 // and uses exactly the same way.
 {
-  const holdCrab = makeHorseshoeCrab();
-  bakeStatic(holdCrab);                 // decorative here; the hand's copy is hcrab's
+  const holdCrab = new THREE.Group();    // decorative here; the hand's copy is hcrab's
+  hcrabCopies.push(holdCrab);
   const holdCrabWorld = new THREE.Group();
   holdCrabWorld.add(holdCrab);
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.30, 8, 6),
@@ -15330,7 +15399,13 @@ let _preHelmBaseY = 0;
  * bulkhead is 1.00 m by 0.53 — measured by raycasting its four edges — and
  * a plaque screwed over a dead window is exactly where a man would put
  * one. He sits inside it with a margin all round. */
-const BILLY_W = 0.72, BILLY_H = 0.52;
+/* AND THE FRAME IS BIGGER THAN THE PLAQUE NOW. The registered pictures
+ * carry a transparent margin round the wood (`--margin`, so the jaw and the
+ * tail have somewhere to hang), so the plane has to be scaled to the PANEL
+ * and not to the image: the panel is 74 % of the picture's height, and at
+ * the old 0.52 the plaque itself came out 0.385 m and read as a postcard.
+ * 0.66 puts the wood back at 0.49 m on a 0.53 m pane. */
+const BILLY_W = 0.72, BILLY_H = 0.66;
 function billyTex(mouth, head, tail) {
   const W = 512, H = 384;
   const c = document.createElement('canvas'); c.width = W; c.height = H;
@@ -15523,30 +15598,35 @@ function billyTex(mouth, head, tail) {
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
-const billy = { mesh: null, frames: null, photo: [null, null, null], t: 0, mouth: 0 };
+const billy = { mesh: null, frames: null, photo: [null, null, null], t: 0, mouth: 0,
+  out: false, left: 0, wait: 0, kick: 0, spanX: 1 };
 /* ---- THE REAL FISH -------------------------------------------------
  * He is a PHOTO CUT-OUT, like Bradly and the fisherman, not a drawing —
  * the drawing below is only what stands on the bulkhead until the
  * photographs are on disk, so the wall is never empty and nothing throws
  * if they are missing.
  *
- * Three frames, and which one is showing is the whole joke:
- *   billy-idle.png   he is flat on the plaque, side on, mouth shut
- *   billy-shut.png   the head has come round at YOU, mouth closed   (optional)
- *   billy-talk.png   the head is round at you and the mouth is OPEN
+ * TWO frames, and which one is showing is the whole joke:
+ *   billy-idle.png   he is flat on the plaque, side on, head down
+ *   billy-talk.png   the head has swung out AT you, jaws parted
  *
- * Talking alternates the two head-out frames so the mouth works; with only
- * two files it alternates idle and open, which is how the toy reads at a
- * glance anyway. Put the pictures through the knockout the drain's eyes
- * already use, which takes the wall behind them out to alpha:
+ * That swap IS the toy's move — a Billy Bass's head comes off the board on
+ * a hinge and goes back, over and over, roughly in time with the words —
+ * so nothing else has to be drawn for the animation to be the right
+ * animation. What it needed was for the two pictures to be the same
+ * plaque in the same place, which they were not: see
+ * `tools/billy_frames.py`, which cuts them and REGISTERS them on the
+ * plaque's own panel. Both frames come out the same size now, so the plane
+ * never changes shape and the only thing that moves is the fish.
  *
- *   python3 tools/knockout.py raw-idle.jpg assets/billy-idle.png --thresh 200 --soft 60
+ * (There was a third, `billy-shut.png`, for a head-out-mouth-closed pose.
+ * There is no photograph of one, it 404'd on every load for months, and
+ * the talk frame's jaws are only parted anyway — the swing is the read,
+ * not the mouth.)
  *
- * AND THE PLANE TAKES THE PHOTOGRAPH'S OWN ASPECT. A plaque is wider than
- * it is tall and every one of these frames is a different crop, so the
- * width is set from the image once it lands and the height is what is
- * fixed — otherwise the first frame to load decides the shape and the
- * others are stretched into it. */
+ * AND THE PLANE STILL TAKES THE PHOTOGRAPH'S OWN ASPECT, because the
+ * height is what is fixed and the registration could change the shared
+ * shape tomorrow. */
 {
   // rest, head-out-shut, head-out-open, tail up
   billy.frames = [billyTex(0, 0, 0), billyTex(0.08, 1, 0), billyTex(1, 1, 0), billyTex(0.05, 0.2, 1)];
@@ -15561,17 +15641,22 @@ const billy = { mesh: null, frames: null, photo: [null, null, null], t: 0, mouth
   m.rotation.y = -Math.PI / 2;
   scene.add(m);
   billy.mesh = m;
+  /* THE KICK AND THE ASPECT BOTH WANT `scale.x`, so the aspect is kept as
+   * `billy.spanX` and the kick multiplies it. Written straight into
+   * `scale.x` by both, the first frame change of every swing undid whatever
+   * the spring had just put there. */
+  billy.spanX = 1;
   billy.setFrame = (i) => {
     // a photograph wherever there is one, the drawing where there is not
     const f = billy.photo[i] || billy.frames[i === 3 ? 3 : i] || billy.frames[0];
     if (mat.map === f) return;
     mat.map = f; mat.emissiveMap = f; mat.needsUpdate = true;
     const ar = f.userData && f.userData.aspect;
-    if (ar) m.scale.x = (BILLY_H * ar) / BILLY_W;
+    if (ar) billy.spanX = (BILLY_H * ar) / BILLY_W;
   };
-  /* idle, mouth open, mouth shut — index 0/1/2, matching setFrame's own
-   * numbering so a missing file simply falls through to the drawing. */
-  [['assets/billy-idle.png', 0], ['assets/billy-shut.png', 1], ['assets/billy-talk.png', 2]]
+  /* index 0 and 2, matching setFrame's own numbering so a missing file
+   * simply falls through to the drawing. Nothing asks for 1. */
+  [['assets/billy-idle.png', 0], ['assets/billy-talk.png', 2]]
     .forEach(([url, i]) => texLoader.load(url, (t) => {
       t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapNearestFilter;
       t.colorSpace = THREE.SRGBColorSpace;
@@ -15580,33 +15665,76 @@ const billy = { mesh: null, frames: null, photo: [null, null, null], t: 0, mouth
       billy.photo[i] = t;
       billy.real = !!(billy.photo[0] && billy.photo[2]);   // idle + open is enough
       if (i === 0) { mat.map = t; mat.emissiveMap = t; mat.needsUpdate = true;
-        if (t.userData.aspect) m.scale.x = (BILLY_H * t.userData.aspect) / BILLY_W; }
+        if (t.userData.aspect) billy.spanX = m.scale.x = (BILLY_H * t.userData.aspect) / BILLY_W; }
     }, undefined, () => {}));
   addInteractable(m, 'Fish?', 'default', { onActivate: () => startDialog('start', BILLY_NPC), far: 3.4 });
 }
 /* HE CYCLES WHILE HE IS TALKING, and hangs dead still when he is not —
  * which is the whole of the joke: a plastic fish on a plank that comes to
- * life only while it has something to say. The phases are the toy's own,
- * on an irregular count so it is not a metronome: head out, mouth open,
- * mouth shut, and every so often the tail instead. */
+ * life only while it has something to say.
+ *
+ * THE SWING IS THE ANIMATION, AND IT COMES IN BURSTS. What this did before
+ * was hold the head-out picture for the whole conversation with a 2.5 %
+ * scale wobble on it: a still photograph and a shiver, which is the owner's
+ * "make it animate better". The round before THAT strobed the two frames
+ * at five and a half a second, which he called flashing — and he was right,
+ * because the two pictures were different crops of different sizes, so
+ * every swap moved the plaque as well as the fish. With the frames
+ * registered (`tools/billy_frames.py`) the plaque is nailed down and the
+ * swap is only the head coming off the board, which is the one thing the
+ * toy does.
+ *
+ * So: the head goes out and back in BURSTS of two to five, at about three a
+ * second, with a beat of nothing between them — a mouth going at words, not
+ * a metronome. Nothing here is on a fixed count.
+ *
+ * AND THE CUT IS HIDDEN IN A JOLT. A picture that changes between two
+ * frames with nothing else moving reads as a picture changing; the same cut
+ * under a kick reads as the thing being moved. The motor's kick is a damped
+ * spring in three channels — a squash, a rock about the plaque's own normal
+ * and a bob — released at full on the frame the head comes out and half on
+ * the frame it goes back. `rotation.z` is the roll, because three composes
+ * XYZ and the plane's own +Z is its normal: the picture turns in its own
+ * plane, which is a plaque shaking on its screw. */
 function updateBilly(dt) {
   if (!billy.mesh) return;
+  const m = billy.mesh;
+  if (billy.baseY === undefined) billy.baseY = m.position.y;
   const on = dialogOpen && dialogScript === BILLY_SCRIPT;
-  /* ONE SWITCH IN, ONE SWITCH OUT. The mouth used to strobe between the
-   * two photographs at five and a half a second — head down, head round
-   * at you, head down — and with the shut-mouth picture missing that is a
-   * flash between two completely different pictures. The owner's word was
-   * "too much, flashing". While he talks the head comes round ONCE and
-   * stays; what moves is the toy itself — a small bob and a scale wobble on
-   * the plaque at a mouth's rate, which reads as the motor going without
-   * the picture changing under you. */
-  if (!on) { billy.t = 0; billy.setFrame(0); billy.mesh.scale.y = 1; billy.mesh.position.y = billy.baseY === undefined ? billy.mesh.position.y : billy.baseY; return; }
-  if (billy.baseY === undefined) billy.baseY = billy.mesh.position.y;
-  billy.t += dt;
-  billy.setFrame(2);
-  const w = Math.sin(billy.t * 9.5) * 0.5 + Math.sin(billy.t * 4.1) * 0.5;
-  billy.mesh.scale.y = 1 + w * 0.025;
-  billy.mesh.position.y = billy.baseY + w * 0.008;
+  if (!on) {
+    if (billy.out || billy.kick) {
+      /* he settles rather than snapping back — the motor runs down */
+      billy.out = false; billy.left = 0; billy.wait = 0;
+    }
+    billy.t = 0;
+    billy.setFrame(0);
+  } else {
+    billy.t += dt;
+    billy.wait -= dt;
+    if (billy.wait <= 0) {
+      if (billy.left > 0) {                       // mid burst: swing
+        billy.left--;
+        billy.out = !billy.out;
+        billy.kick = billy.out ? 1 : 0.55;
+        billy.wait = (billy.out ? 0.17 : 0.13) * (0.82 + Math.random() * 0.46);
+      } else {                                    // between bursts: a beat
+        billy.out = false;
+        billy.left = 4 + Math.floor(Math.random() * 7);   // pairs of swings
+        billy.wait = 0.22 + Math.random() * 0.5;
+      }
+    }
+    billy.setFrame(billy.out ? 2 : 0);
+  }
+  // the kick, and what it drives
+  billy.kick = Math.max(0, (billy.kick || 0) - dt * 4.6);
+  const k = billy.kick * billy.kick;              // it dies fast, like a tap
+  const ring = Math.sin(billy.kick * 34);
+  // and a slow breath under it while the motor is on at all
+  const hum = on ? Math.sin(billy.t * 7.3) * 0.35 + Math.sin(billy.t * 3.1) * 0.25 : 0;
+  m.scale.y = 1 + k * ring * 0.055 + hum * 0.012;
+  m.scale.x = billy.spanX * (1 - k * ring * 0.03);
+  m.rotation.z = k * ring * 0.055 + hum * 0.006;
+  m.position.y = billy.baseY + k * ring * 0.012 + hum * 0.004;
 }
 const BILLY_SCRIPT = {
   start: {

@@ -10,3 +10,9 @@ incoming/
 .mcp.json
 __pycache__/
 stage/
+
+# the packers unpack the owner's delivered archives beside themselves once
+# (tools/furniture_pack.py, tools/billy_frames.py) — hundreds of megabytes of
+# 4K source that the built .glb and .png in assets/ are the product of
+tools/.furniture/
+tools/.billy/

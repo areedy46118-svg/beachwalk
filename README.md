@@ -77,11 +77,14 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   once you pick something up. Items either **use** (the bottle → reads the
   note, `NOTE_TEXT`; the crab → examine view; the syringe → examine, or draw
   blood if you also carry the crab) or **equip** (the shovel).
-- **The horseshoe crab** — a detailed smooth-shaded *Limulus* stranded in the
-  wrack line (`models/horseshoe-crab.js`): a broad rounded head shield with the
+- **The horseshoe crab** — a scanned *Limulus* stranded in the wrack line
+  (Tavernier Amaury's, `assets/limule.glb`), fitted to the box the built one
+  occupied so everything downstream of it still holds. (The built model is
+  still in `models/horseshoe-crab.js` — a broad rounded head shield with the
   cardiac + ophthalmic ridges and raised margin sculpted in, a wavy hinge,
-  movable spines, a triangular telson, and a complete underside — six leg
-  pairs, chelicerae, operculum, book gills. Take it, then **use** it to open
+  movable spines, a triangular telson and a complete underside — and
+  `models/viewer.html` still shows it; nothing in the game builds one.)
+  Take it, then **use** it to open
   the **examine view**: the object floats in the dark, **drag to turn it over**
   and look underneath, scroll to zoom, `Esc`/`Q` to put it away. The view is
   its own scene rendered over everything (`openInspect()` / `inspectScene`).
@@ -657,6 +660,22 @@ under the hatch between the snorkeler and the tall one.
 This work is based on ["Survival Shovel"](https://sketchfab.com/3d-models/survival-shovel-143de1be88704810bd14f64cfed64bb7)
 by [howittworks](https://sketchfab.com/howittworks) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Military Shovel.
+
+This work is based on ["Limule"](https://sketchfab.com/3d-models/limule-5014571bf8644b11b8c4f0d275a5d4aa)
+by [Tavernier Amaury](https://sketchfab.com/svtavernier) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the horseshoe crab
+you find in the wrack line and the one in the wreck's hold
+(`assets/limule.glb`, through `tools/gltfpack.py --decimate 30000 --keep-uv`).
+
+This work is based on ["bunk bed"](https://sketchfab.com/3d-models/bunk-bed-8b2a538ab53a4dc3816c8ca78e43ce5e)
+by [Tomas Anglim](https://sketchfab.com/tomas.anglim.811) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the berths in the
+wreck's crew space, packed into `assets/furniture.glb` with the wooden set
+below by `tools/furniture_pack.py`.
+
+The wooden furniture in the wreck — the tables, chairs, benches and barrels in
+her hold and her quarters — is a set the owner supplied
+(`assets/furniture.glb`, `tools/furniture_pack.py`).
 
 
 The **katana's swing, block, hit, draw and parry sounds** are the owner's own
