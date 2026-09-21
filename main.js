@@ -33740,13 +33740,21 @@ const TRADER_X = CLIFF_BLOCK_X - 1.35, TRADER_Z = PORTAL_Z + 8.5, TRADER_H = 1.8
  * six has to be able to get the other three from somewhere, and he is
  * the only somewhere there is: six for two jars, three loaders of them,
  * which is eighteen rounds if you spend everything you have on lead. */
-const TRADER_STOCK = { glow: 1, water: 2, gun: 1, ammo: 3 };
-const TRADER_PRICE = { glow: 2, water: 1, gun: 5, ammo: 2 };
+const TRADER_STOCK = { glow: 1, water: 2, gun: 1, ammo: 99 };
+/* FREE WHILE THE GUN IS BEING TESTED — the owner's word, and he sets the real
+ * cost later. The menu's labels read this table rather than spelling a number
+ * out, so putting the price back is one line here and nothing else. */
+const TRADER_PRICE = { glow: 2, water: 1, gun: 0, ammo: 0 };
+const priceTag = (what) => {
+  const n = TRADER_PRICE[what];
+  return n <= 0 ? 'free' : n === 1 ? '1 blood jar' : `${n} blood jars`;
+};
 let traderSaid = '';
 /* A JAR IS A NUMBER YOU CARRY, and `gainJar` is the one door it comes in
  * by — the sound and the pulse it plays are a jar ARRIVING, so spending
  * goes out through its own. */
 function spendJars(n) {
+  if (n <= 0) return;                      // a free sale does not pulse the tally
   bloodJars = Math.max(0, bloodJars - n);
   jarItem.count = bloodJars;
   bloodPulse = 1;
@@ -33800,20 +33808,20 @@ const TRADER_SCRIPT = {
   start: {
     text: 'Just buy something...',
     choices: [
-      { label: '.44 Magnum — 5 blood jars', to: 'said', act: () => traderBuy('gun') },
-      { label: 'Six .44 rounds — 2 blood jars', to: 'said', act: () => traderBuy('ammo') },
-      { label: 'Glowstick — 2 blood jars', to: 'said', act: () => traderBuy('glow') },
-      { label: 'Bottle of water — 1 blood jar', to: 'said', act: () => traderBuy('water') },
+      { get label() { return `.44 Magnum — ${priceTag('gun')}`; }, to: 'said', act: () => traderBuy('gun') },
+      { get label() { return `Six .44 rounds — ${priceTag('ammo')}`; }, to: 'said', act: () => traderBuy('ammo') },
+      { get label() { return `Glowstick — ${priceTag('glow')}`; }, to: 'said', act: () => traderBuy('glow') },
+      { get label() { return `Bottle of water — ${priceTag('water')}`; }, to: 'said', act: () => traderBuy('water') },
       { label: 'Nothing.', to: 'go' },
     ],
   },
   said: {
     get text() { return traderSaid; },
     choices: [
-      { label: '.44 Magnum — 5 blood jars', to: 'said', act: () => traderBuy('gun') },
-      { label: 'Six .44 rounds — 2 blood jars', to: 'said', act: () => traderBuy('ammo') },
-      { label: 'Glowstick — 2 blood jars', to: 'said', act: () => traderBuy('glow') },
-      { label: 'Bottle of water — 1 blood jar', to: 'said', act: () => traderBuy('water') },
+      { get label() { return `.44 Magnum — ${priceTag('gun')}`; }, to: 'said', act: () => traderBuy('gun') },
+      { get label() { return `Six .44 rounds — ${priceTag('ammo')}`; }, to: 'said', act: () => traderBuy('ammo') },
+      { get label() { return `Glowstick — ${priceTag('glow')}`; }, to: 'said', act: () => traderBuy('glow') },
+      { get label() { return `Bottle of water — ${priceTag('water')}`; }, to: 'said', act: () => traderBuy('water') },
       { label: "That's all.", to: 'go' },
     ],
   },
