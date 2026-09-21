@@ -12195,3 +12195,57 @@ read them. `P` in dev mode puts them on the screen: the room, the spot in the
 ROOM'S own frame (which is what every constant in the file is written in),
 the floor under your feet, your heading, and where the crosshair lands.
 "Stand there and press P" is one line instead of an afternoon.
+
+**A ROOF UNDER YOUR OWN FEET IS NOT A ROOF, AND IT WAS THROWING YOU OFF THE
+CARPETS.** "When I walk on top of the curtains to jump across them, when I get
+near the edge I lag off" is one line at the bottom of `update()`. Every
+storeyed room ducks the camera under a low ceiling, and every one of them asks
+for that ceiling at `groundY` — the floor you are STANDING on, or the one you
+are FALLING TO. The frame the body leaves the catwalk, `groundY` stops being
+the carpet and becomes the hall floor four and a half metres down, whose roof
+is the carpet you were just standing on; the duck then reads that as a low
+ceiling and slams the camera **2.08 m down through it in a single frame**
+(measured: feet 4.446 → 2.37 between two ticks, with `vy` nowhere near it).
+That is the "lag off" — and it also ate every jump ACROSS the 2.4 m gap,
+because the duck fires in the air as well: traced, the arc was cut dead the
+instant the body passed the carpet's end. A roof has to be over your head to
+be one, so all four rooms now ask it of the FEET with a body's slack
+(`duckOver`), never of the floor. Measured after: the gait clears the carpet's
+end and the arc runs on over the gap.
+
+**THE SKULL KEY, AND THE FIRST DOOR IN THIS GAME THAT IS REALLY SHUT.**
+VISHNUGAMER's "Skull Key" (Sketchfab Standard — read the licence, not the
+folder beside it) lies between the candles on a plinth in the catacombs' lower
+vault, and the barred door out of them is locked until you have it. Shipped
+EXACT by the owner's word: all three meshes, 256,688 triangles, its own
+colour, metal-rough and normal maps at 2048/1024 — 8.7 MB, at the back of
+`ASSET_REACH` with the room it lies in. Its three `Object_N` are the
+65,532-vertex chunks a 16-bit index split and not an LOD chain, so they ship
+together (the octopus ring's lesson); and **METALNESS IS A TRAP for the
+eighth time** — it ships metallic, a metal has no diffuse term, and the answer
+is `ringEnv()` again rather than touching the metal.
+
+- **A KEY OPENS A DOOR FROM THE PACK.** The owner's word, and the wreck's
+  shell door has done it since it went in (`inventory.includes(boatKeyItem)`);
+  the catacombs' door is written the same way. It is never in your hand, and
+  it is not eaten — the wreck's door swallows its key, and a skull is worth
+  keeping. `catDoorOpen` is on the save, like `holdDoor` and `dojoWon`.
+- **AND A LOCKED DOOR SAYS SO WITH NO VERB.** `bare` while it is locked, so
+  the prompt reads "The door is locked." and carries no E — the prompt is the
+  thing that sends you back down for the key. With the key in the pack it
+  reads "Unlock the door" and turns once.
+- **AND A STATION HAS A HEIGHT.** The candles are measured, not typed: the
+  scan's own `Candle` mesh is one mesh per material, so a candle is a cluster
+  of vertices (the skull piles' trick), and `CAT_KEY` is only a spot to look
+  round. The first pass windowed that in PLAN alone and caught two candles
+  from a room two storeys up — the middle came out a quarter of a metre off
+  the ring and the key lay on the plinth's edge. The window is a box now.
+  Two buckets a finger apart are also ONE candle, or the fragment weights the
+  middle toward whichever it belongs to.
+- **AND IT LIES ALONG THE GAP THEY LEAVE.** A 0.42 m key laid on the room's
+  square crosses two of a ring of four; the bearing is swept for the line
+  whose BOTH ENDS are furthest from any candle, which here is the diagonal —
+  107 and 108 degrees of clear air against 68 and 77 the other way.
+- Measured after: the key lies at the centre of the ring; the door reads
+  locked and bare without it, "Unlock the door" with it in the PACK and
+  nothing in hand, and opens onto the sand at (12.6, -800).

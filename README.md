@@ -710,6 +710,18 @@ given the game's own night sky as an environment map, because a metal with
 nothing to reflect renders black.
 
 
+**Skull Key** — what lies between the candles in the catacombs' lower vault,
+and the only thing that opens the barred door out of them.
+
+["Skull Key"](https://sketchfab.com/3d-models/skull-key-4d37abaa44384adbabe7e579887033b7)
+by [VISHNUGAMER](https://sketchfab.com/vishnujegan14),
+[Sketchfab Standard](https://sketchfab.com/licenses) licence — shipped exact
+(`assets/skull-key.glb`, through `tools/gltfpack.py --tex 2048 --normal-tex
+1024 --quality 92`): all three of its meshes and all 256,688 triangles, with
+its own colour, metal-rough and normal maps. Its metal wears the same night
+sky the wedding ring does.
+
+
 **Medieval key (copper version)** — the key in the dock's crate.
 
 ["Medieval key (copper version)"](https://sketchfab.com/3d-models/medieval-key-copper-version-21595543c33a4150bc65d04e025aa84c)

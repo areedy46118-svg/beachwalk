@@ -135,6 +135,7 @@ const ASSET_REACH = {
   'assets/samurai.glb': 744,           // and who is waiting in there
   'assets/catacombs.glb': 745,         // what is under the sand past the stones
   'assets/crawler.glb': 760,           // and the thing that wanders it
+  'assets/skull-key.glb': 762,         // and what is lying between the candles in its lower vault
   'assets/stones.glb': 1180,          // the headland, at the end of the walk
   'assets/grass-clumps.glb': 1185,
   'assets/grass-patch.glb': 1190,
@@ -11761,6 +11762,97 @@ function dropWedRing(sx, sy, sz, tries = 0) {
       ringsFound = true;
       addToInventory(weddingItem);
       renderRings();
+      sfxThud(0.03);
+    },
+  });
+}
+/* THE SKULL KEY, AND THE ONE DOOR IN THIS GAME THAT IS REALLY LOCKED.
+ * VISHNUGAMER's "Skull Key" (Sketchfab Standard, not CC-BY — read the
+ * licence and not the folder beside it), shipped EXACT by the owner's word:
+ * all three of its meshes, 256,688 triangles, its own colour, its own
+ * metal-rough and its own normal map, at 2048 with the normal at 1024. Its
+ * three "Object_N" are the 65,532-vertex chunks a 16-bit index split, not an
+ * LOD chain, so they go out together — the octopus ring's lesson, and the
+ * reason this one renders as a key rather than as a cloud of specks.
+ *
+ * AND A METAL WITH NOTHING TO REFLECT IS BLACK. `ringEnv()` was built for
+ * the wedding ring and is the answer here too: the key ships metallic, and
+ * a metal has no diffuse term. It gets the same night sky, a little softer
+ * (it lies in a room with no moon in it at all), and while it lies there it
+ * is lifted off its own map, because forty metres under a beach the only
+ * light on it is the one in your hand. */
+const SKULL_ENV = 3.4;
+const skullKey = new THREE.Group();
+const skullWorld = new THREE.Group();
+skullWorld.add(skullKey);
+bwGlb('assets/skull-key.glb', (gltf) => {
+  gltf.scene.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(gltf.scene);
+  const size = box.getSize(new THREE.Vector3()), mid = box.getCenter(new THREE.Vector3());
+  const env = ringEnv();
+  gltf.scene.traverse((o) => {
+    if (!o.isMesh) return;
+    o.material.envMap = env;
+    o.material.envMapIntensity = SKULL_ENV;
+    o.material.needsUpdate = true;
+  });
+  const inner = new THREE.Group();
+  inner.add(gltf.scene);
+  gltf.scene.position.sub(mid);            // the three chunks are ONE object: centred as a group
+  inner.scale.setScalar(0.20 / Math.max(size.x, size.y, size.z));   // a key, which `makeNoticeable` then lifts to the floor every takeable gets
+  skullKey.add(inner);
+});
+/* Its own icon, drawn: the fallback a scan shows until it lands is whatever
+ * is here, and on a checkpoint load that is the whole game (`militaryItem`
+ * paid for this one). A bow with a skull in it and a bit on the end. */
+function makeSkullKeyIcon() {
+  const c = document.createElement('canvas'); c.width = c.height = 48;
+  const g = c.getContext('2d');
+  g.lineCap = 'round';
+  g.strokeStyle = '#b9bfc8'; g.lineWidth = 4.5;
+  g.beginPath(); g.moveTo(21, 20); g.lineTo(21, 40); g.stroke();       // the shank
+  g.beginPath(); g.moveTo(21, 40); g.lineTo(29, 40); g.stroke();       // the bit
+  g.beginPath(); g.moveTo(21, 34); g.lineTo(27, 34); g.stroke();
+  g.fillStyle = '#d8dee8';                                             // the skull bow
+  g.beginPath(); g.arc(21, 14, 8, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#20242b';
+  g.beginPath(); g.arc(18, 13, 2.2, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(24, 13, 2.2, 0, Math.PI * 2); g.fill();
+  g.fillRect(19.5, 18, 3, 3);
+  return c.toDataURL();
+}
+const skullKeyItem = {
+  id: 'skullkey', name: 'Skull Key', icon: makeSkullKeyIcon(),
+  desc: 'Unlocks the door out of the catacombs',
+  use: () => toggleEquip(skullKeyItem),
+  inspectOpts: () => ({ rotX: 0.6, rotY: 0.4 }),
+};
+holdable(skullKeyItem, skullKey, { scale: 1.0, pos: [0, -0.03, 0.02], rot: [0.35, 0.55, 0.25] });
+/* It is SET DOWN between the candles, not thrown: somebody left it there. */
+function dropSkullKey(sx, sy, sz, yaw, tries = 0) {
+  // and only once there is something to put down — `makeNoticeable` gives up
+  // after six tries, and this is nine megabytes over the wire
+  if (!skullKey.children.length) {
+    if (tries < 60) setTimeout(() => dropSkullKey(sx, sy, sz, yaw, tries + 1), 500);
+    return;
+  }
+  skullKey.position.set(0, 0.012, 0);
+  skullKey.rotation.set(0, yaw, 0);                    // flat on the stone, turned off the room's square
+  skullWorld.position.set(sx, sy, sz);
+  scene.add(skullWorld);
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy'; hit.visible = false; hit.position.y = 0.08;
+  skullWorld.add(hit);
+  const lift = (v) => skullKey.traverse((o) => { if (o.isMesh && o.material.emissive) { o.material.emissive.setHex(v); o.material.emissiveMap = v ? (o.material.map || null) : o.material.emissiveMap; } });
+  lift(0x6d737c);                                      // off black while it lies in the dark
+  addInteractable(skullWorld, 'Take the key', 'inventory', {
+    onActivate: () => {
+      lift(0x000000);                                  // the copy in your hand is cloned at this moment
+      scene.remove(skullWorld);
+      removeInteractable(skullWorld);
+      hovered = null;
+      addToInventory(skullKeyItem);
       sfxThud(0.03);
     },
   });
@@ -26749,21 +26841,35 @@ function update(dt, rawDt = dt) {
    * seeing through the rock while you back out of it. The standing snap
    * above puts the eye back at head height after every clamp, so it still
    * has to be the last word on the base before the camera is written. */
+  /* AND A ROOF UNDER YOUR OWN FEET IS NOT A ROOF. Every storeyed room asks
+   * this at `groundY` — the floor you are standing on, or the one you are
+   * FALLING TO — so the frame you step or jump off a ledge it stops
+   * describing the storey you are in and starts describing the one below,
+   * whose roof is the thing you were just standing on. Measured on the
+   * tavern's hanging carpets: the frame the body left the catwalk the
+   * lookup answered with the hall floor four and a half metres down, read
+   * its roof as the carpet overhead, and slammed the camera 2.08 m DOWN
+   * THROUGH IT in a single frame. That is the whole of "when I get near the
+   * edge I lag off" — and it also ate every jump across the gap between the
+   * two carpets, because the duck fires in the air as well. A roof has to
+   * be over your head to be one: over the FEET, with a body's slack under
+   * it, or it is something you are standing on top of. */
+  const duckOver = camBaseY - playerEye() + 0.30;
   if (inUndercroft && UC.ready) {
     const c = UC.ceilAt(camera.position.x - UC_X, camera.position.z - UC_Z);
-    if (c !== null) { const top = UC_Y + c - 0.22; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }   // measured: at 0.16 the worst spot in the tunnel left 3 cm of rock over the eye
+    if (c !== null && UC_Y + c > duckOver) { const top = UC_Y + c - 0.22; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }   // measured: at 0.16 the worst spot in the tunnel left 3 cm of rock over the eye
   }
   if (inKeep && keepWalk) {
     const st = keepFloorAt(camera.position.x, camera.position.z, groundY, 0.5);
-    if (st && st.c < KEEP_Y + 90) { const top = st.c - 0.22; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }
+    if (st && st.c < KEEP_Y + 90 && st.c > duckOver) { const top = st.c - 0.22; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }
   }
   if (inTavern && tavWalk) {   // the crates under the vault: the flight above is the roof
     const st = keepFloorAt(camera.position.x, camera.position.z, groundY, 0.5, TAV_SITE);
-    if (st && st.c < TAV_Y + 90) { const top = st.c - 0.22; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }
+    if (st && st.c < TAV_Y + 90 && st.c > duckOver) { const top = st.c - 0.22; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }
   }
   if (inCat && catWalk) {      // the catacombs' vaults (the roof blended like the floor, or the duck stair-steps up a ramp)
     const st = catFloorSmooth(camera.position.x, camera.position.z, groundY, 0.5);
-    if (st && st.c < CAT_Y + 90) { const top = st.c - 0.22; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }
+    if (st && st.c < CAT_Y + 90 && st.c > duckOver) { const top = st.c - 0.22; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }
   }
   camera.position.y = camBaseY + bob - landDip;
 
@@ -26966,6 +27072,8 @@ function saveCheckpoint() {
       boatKey: boatKeyTaken,
       // the wreck's shell door: a door you opened stays open
       holdDoor: holdDoorOpen,
+      // and the catacombs' own, which the skull key turns
+      catDoor: catDoorOpen,
       dockDoor: dockDoorOpen,
       /* AND THE DOJO. The same rule as the shell door and the smiling one: a
        * fight you have already won does not un-happen when you load, and a
@@ -27133,6 +27241,7 @@ function updateRestore(dt) {
    * what registers whatever was inside it */
   for (const i of f.crates || []) if (crates[i] && !crates[i].broken) breakCrate(crates[i], 1, true);
   if (f.dojoWon) dojoWon = true;
+  if (f.catDoor) catDoorOpen = true;
   if (f.heroSword || f.dojoWon) heroSwordTaken = true;
   if (f.holdDoor && !holdDoorOpen) {
     holdDoorOpen = true; holdDoorSwing = 1;
@@ -27175,8 +27284,8 @@ function packByName(name) {
    * taken and have no standing object to hand back; they are also not things
    * a fight depends on. The three dig tools are, and they are all here. */
   for (const it of [shovelItem, militaryItem, katanaItem, glowstickItem, ringItem,
-                    weddingItem, keyItem, boatKeyItem, cdItem, crabItem, syringeItem,
-                    waterBottleItem, headItem]) {
+                    weddingItem, keyItem, boatKeyItem, skullKeyItem, cdItem, crabItem,
+                    syringeItem, waterBottleItem, headItem]) {
     if (it && it.name === name) return it;
   }
   return null;
@@ -37297,6 +37406,7 @@ const CAVE = { rumble: 1.15, drop: 0.95, hold: 0.85, up: 0.70 };  // the take's 
 const CAT_OUT = 0.5, CAT_HOLD = 0.9, CAT_IN = 0.65;
 let catWorld = null, catReady = false, catWalk = null, catCells = null, catWalls = null, catBuilt = false, catWarmed = false;
 let inCat = false, catBusy = false, catT = 0, catCutDone = false, catLastFloor = null, catSaveDone = false;
+let catDoorOpen = false;          // the skull key turns once, and the way out stays open
 let caveBusy = false, caveT = 0, caveDone = false, caveY0 = 0, caveCue = null;
 const catLastSpot = { x: 0, z: 0 };
 let _catFogSaved = null, catG = null, catGlow = null, catDoorLight = null;
@@ -37475,7 +37585,24 @@ function loadCatacombs() {
     proxy.name = 'hitProxy'; proxy.visible = false; proxy.userData.bwGhost = true;
     proxy.position.set(CAT_DOOR.x - 0.1, CAT_DOOR.f + 1.2 * CAT_SCALE, CAT_DOOR.z);
     catWorld.add(proxy);
-    addInteractable(proxy, 'Open the door', 'default', { far: 4.6, mid: true, onActivate: () => startCatExit(), when: () => inCat && !catBusy && !caveBusy });
+    /* AND IT IS LOCKED, WHICH IS WHAT THE KEY IS FOR. A key opens a door
+     * from the PACK — it never has to be in your hand, which is the wreck's
+     * own rule (`inventory.includes(boatKeyItem)`) and the owner's word for
+     * every key in this game. Locked, the door says so and carries no verb
+     * at all (`bare`), so the prompt is the thing that sends you back down
+     * for it; with the key in the pack it turns, once, and stays open. */
+    const catKeyIn = () => catDoorOpen || inventory.includes(skullKeyItem);
+    addInteractable(proxy, 'The door is locked.', 'default', {
+      far: 4.6, mid: true,
+      label: () => (catDoorOpen ? 'Open the door' : inventory.includes(skullKeyItem) ? 'Unlock the door' : 'The door is locked.'),
+      bare: () => !catKeyIn(),
+      when: () => inCat && !catBusy && !caveBusy,
+      onActivate: () => {
+        if (!catKeyIn()) { sfxThud(0.02); return; }
+        if (!catDoorOpen) { catDoorOpen = true; sfxLockerOpen(); }
+        startCatExit();
+      },
+    });
       catReady = true;
   }, undefined, () => {});
 }
@@ -37499,8 +37626,79 @@ function buildCatacombs() {
   buildKeepWalls(CAT_SITE);
   repairKeepStoreys(CAT_SITE);
   catBuildGraph();
+  buildCatKey();
   catWalk.built = Math.round(performance.now() - t0);
 }
+/* AND THE KEY LIES BETWEEN THE CANDLES, WHICH ARE MEASURED. Down in the
+ * lower vault a low plinth carries a ring of four candles with a clear
+ * middle, and that middle is where the way out of this place is lying.
+ * Nothing here is typed but the STATION — a spot in that vault to look
+ * round, the way the bore's own line is a station and the rest of the shelf
+ * is measured. The candles are found in the scan's own `Candle` mesh (one
+ * mesh per material, so a candle is not an object — it is a cluster of
+ * vertices, the skull piles' own trick), their bases give the stone they
+ * stand on, and a raycast gives its top.
+ *
+ * AND IT LIES ALONG THE GAP THEY LEAVE. Laid on the room's square a 0.42 m
+ * key crosses two of them; the bearing is swept instead for the line whose
+ * BOTH ENDS are furthest from any candle, which on this ring of four is the
+ * diagonal — measured, 107 and 108 degrees of clear air against 68 and 77
+ * the other way. */
+const CAT_KEY = { x: 12.08, y: -5.56, z: -33.76, r: 1.6, up: 1.5 };   // a STATION has a height: the same plan holds a room two storeys up, and its candles pulled the middle a quarter of a metre off the ring
+let catKeyDone = false;
+function buildCatKey() {
+  if (catKeyDone || !catWorld) return;
+  catKeyDone = true;
+  // a thing you have already taken is not lying there again: the restore
+  // hands the key back by name long before the room is ever rebuilt
+  if (inventory.includes(skullKeyItem) || catDoorOpen) return;
+  let mesh = null;
+  catWorld.traverse((o) => {
+    if (!o.isMesh) return;
+    const m = Array.isArray(o.material) ? o.material[0] : o.material;
+    const n = (m && m.name) || '';
+    if (/Candle/.test(n) && !/Flame/.test(n)) mesh = o;
+  });
+  if (!mesh || !mesh.geometry.attributes.position) return;
+  const P = mesh.geometry.attributes.position, b = new Map();
+  for (let i = 0; i < P.count; i++) {
+    const x = P.getX(i), y = P.getY(i), z = P.getZ(i);
+    if (Math.hypot(x - CAT_KEY.x, z - CAT_KEY.z) > CAT_KEY.r || Math.abs(y - CAT_KEY.y) > CAT_KEY.up) continue;
+    const k = Math.round(x / 0.15) + ',' + Math.round(z / 0.15);
+    let e = b.get(k); if (!e) { e = { n: 0, x: 0, z: 0, y: 9e9 }; b.set(k, e); }
+    e.n++; e.x += x; e.z += z; e.y = Math.min(e.y, y);
+  }
+  // and a candle is not a bucket: two buckets a finger apart are one candle,
+  // and the fragment would weight the middle toward whichever it belongs to
+  const cs = [];
+  for (const e of [...b.values()].filter((q) => q.n > 40).sort((q, r2) => r2.n - q.n)) {
+    const x = e.x / e.n, z = e.z / e.n;
+    if (cs.some((q) => Math.hypot(q.x - x, q.z - z) < 0.12)) continue;
+    cs.push({ x, z, y: e.y });
+  }
+  if (cs.length < 2) return;
+  const cx = cs.reduce((a2, c) => a2 + c.x, 0) / cs.length;
+  const cz = cs.reduce((a2, c) => a2 + c.z, 0) / cs.length;
+  const base = Math.min(...cs.map((c) => c.y));
+  // the stone they stand on, asked of the geometry rather than assumed
+  _catRay.set(new THREE.Vector3(CAT_X + cx, CAT_Y + base + 0.6, CAT_Z + cz), _downV);
+  _catRay.far = 1.6;
+  const hit = _catRay.intersectObject(catWorld, true).filter((h) => h.object.name !== 'hitProxy')[0];
+  const top = hit ? hit.point.y - CAT_Y : base;
+  // the bearing whose two ends are furthest from any candle
+  const bear = cs.map((c) => Math.atan2(c.x - cx, c.z - cz));
+  let best = 0, bestD = -1;
+  for (let a2 = 0; a2 < Math.PI; a2 += Math.PI / 180) {
+    let worst = 9;
+    for (const th of [a2, a2 + Math.PI]) for (const q of bear) {
+      let d = Math.abs(((th - q + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+      worst = Math.min(worst, d);
+    }
+    if (worst > bestD) { bestD = worst; best = a2; }
+  }
+  dropSkullKey(CAT_X + cx, CAT_Y + top + 0.012, CAT_Z + cz, best);
+}
+const _catRay = new THREE.Raycaster(), _downV = new THREE.Vector3(0, -1, 0);
 function catGroundAt(x, z, y) {
   if (!catReady || !inCat || y === undefined) return null;
   if (Math.abs(x - CAT_X) > 110 || Math.abs(z - CAT_Z) > 110 || Math.abs(y - CAT_Y) > 60) return null;
@@ -44090,6 +44288,7 @@ window.__bw = {
   get tavWorld() { return tavWorld; }, get tavTables() { return tavTables; }, get tavChairs() { return tavChairs; },
   get wongUnit() { return wongUnit; }, get drunkUnit() { return drunkUnit; }, get orcUnit() { return orcUnit; },
   crawlerUnit, CRAWL_X, CRAWL_Z, crawlerProvoke, startCaveIn, placeInCatacombs, placeOutsideCatDoor, startCatExit, catRoute, catSees, catNodeAt, CAT_X, CAT_Y, CAT_Z, CAT_SITE, CAT_LAND, CAT_DOOR, CAVE_Z,
+  skullKeyItem, skullKey, skullWorld, dropSkullKey, buildCatKey, CAT_KEY, get catDoorOpen() { return catDoorOpen; }, set catDoorOpen(v) { catDoorOpen = v; },
   catCue, playSampleAt, keepWallNear, keepHitsWall, catNoiseAt, catSpots, catG: () => catG,
   catFloorAt: (x, z, y, up = 0.7) => keepFloorAt(x, z, y, up, CAT_SITE),
   catWallDepth: (x, z, y, r = 0.6) => { const w = keepWallNear(x, z, r, y + 0.45, y + 1.7, CAT_SITE); return w ? w.depth : 0; },
