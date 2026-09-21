@@ -648,10 +648,12 @@
     justify-content: center;
     position: relative;
     cursor: pointer;
-    transition: border-color 0.12s ease, background 0.12s ease;
+    /* the strip is updated in place, so the selection can GLIDE: a rebuilt
+       element starts at its final state and no transition ever runs */
+    transition: border-color 0.13s ease, background 0.13s ease, box-shadow 0.13s ease, transform 0.13s ease;
   }
   #hotbar .slot:hover { border-color: rgba(255, 255, 255, 0.6); }
-  #hotbar .slot.equipped { border-color: #ffffff; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35); }
+  #hotbar .slot.equipped { border-color: #ffffff; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35); transform: translateY(-2px); }
   #hotbar .slot img { width: 100%; height: 100%; object-fit: cover; image-rendering: auto; display: block; }
   #hotbar .slot .num {
     position: absolute;

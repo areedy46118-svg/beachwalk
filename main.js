@@ -113,6 +113,7 @@ const ASSET_REACH = {
   'assets/wong.glb': 216,              // the barman
   'assets/drunk.glb': 216,             // and the drunk he serves
   'assets/orc.glb': 216,               // and the third man at the bar
+  'assets/wedding-ring.glb': 216,      // and what is at the back of the bore over their heads
   'assets/bunker.glb': 333,           // behind a hatch, behind a black screen
   'assets/dealer.glb': 334,
   'assets/smile.glb': 390,
@@ -134,6 +135,7 @@ const ASSET_REACH = {
   'assets/samurai.glb': 744,           // and who is waiting in there
   'assets/catacombs.glb': 745,         // what is under the sand past the stones
   'assets/crawler.glb': 760,           // and the thing that wanders it
+  'assets/skull-key.glb': 762,         // and what is lying between the candles in its lower vault
   'assets/stones.glb': 1180,          // the headland, at the end of the walk
   'assets/grass-clumps.glb': 1185,
   'assets/grass-patch.glb': 1190,
@@ -279,8 +281,27 @@ function warmRunStep() {
  * materials are collected synchronously, so the room may go back to being
  * hidden immediately, and if the extension is missing this is exactly the
  * `compile` that was always here. */
+/* A WARM MUST NOT LEAVE THE FOG CULL'S STAMP ON WHAT IT SHOWED. `warmAtZ`
+ * runs `updateFarProps` — and so `cullBeyondFog` — with the groups the warm
+ * has just switched ON, and from the beach a creature parked in the hall is
+ * three thousand metres beyond the fog: the cull hid it and wrote
+ * `bwCulled = true`, the warm then put `visible` back to false, and the stamp
+ * stayed. Arrive in the hall and the cull, seeing a unit inside its range
+ * that it believes IT hid, switched every guard and the boss on in the
+ * middle of the room before a wave had been summoned. Traced with a setter
+ * on `visible`: every one of the four came from `cullBeyondFog`. The stamp is
+ * snapshotted with the visibility and put back with it. */
+function snapCullStamp(groups) {
+  const out = [];
+  for (const g of groups) if (g) g.traverse((o) => { out.push([o, o.userData.bwCulled]); });
+  return out;
+}
+function restoreCullStamp(snap) {
+  for (const [o, c] of snap) { if (c === undefined) delete o.userData.bwCulled; else o.userData.bwCulled = c; }
+}
 function warmCompile(groups, px, py, pz, lx, ly, lz, atZ) {
   const shown = groups.map((g) => g && g.visible);
+  const stamp = snapCullStamp(groups);
   const culled = [];
   for (const g of groups) if (g) {
     g.visible = true;
@@ -298,6 +319,7 @@ function warmCompile(groups, px, py, pz, lx, ly, lz, atZ) {
   } catch (e) { /* a warm is never fatal */ }
   for (const [o, f] of culled) o.frustumCulled = f;
   groups.forEach((g, k) => { if (g) g.visible = shown[k]; });
+  restoreCullStamp(stamp);
 }
 
 /* AND A ROOM HAS TO BE WARMED IN THE STATE IT WILL BE ENTERED IN. Measured
@@ -327,6 +349,7 @@ function warmAtZ(z, fn) {
 
 function warmView(groups, px, py, pz, lx, ly, lz, part, atZ) {
   const shown = groups.map((g) => g && g.visible);
+  const stamp = snapCullStamp(groups);
   const culled = [];
   let i = 0;
   for (const g of groups) if (g) {
@@ -355,6 +378,7 @@ function warmView(groups, px, py, pz, lx, ly, lz, part, atZ) {
   renderer.autoClear = prevAuto;
   for (const [o, f, v] of culled) { o.frustumCulled = f; o.visible = v; }
   groups.forEach((g, k) => { if (g) g.visible = shown[k]; });
+  restoreCullStamp(stamp);
 }
 
 const EYE_HEIGHT = 1.7;
@@ -386,6 +410,43 @@ const RUN_SECONDS = 5;                    // how long you can sprint
 let fastWalk = false;
 const fastWalkEl = document.getElementById('fastwalk');
 const FAST_WALK_X = 14, NORMAL_WALK_X = 1.4;   // the slider's top, and the owner's own
+/* WHERE AM I, AND WHAT AM I LOOKING AT. Two rounds of this project have
+ * been spent working out which wall the owner photographed — matching his
+ * screenshots against renders of the room, which cost hours and still
+ * ended in a question. A place in this game is three numbers and nobody
+ * could read them. In dev mode, P puts them on the screen: the room, the
+ * spot in the ROOM'S own frame (which is what every constant in the file
+ * is written in), the height of the floor under you, and where the
+ * crosshair lands. Stand where you want a thing, press P, send the line. */
+let whereEl = null;
+function toggleWhereAmI() {
+  if (whereEl) { whereEl.remove(); whereEl = null; return; }
+  whereEl = document.createElement('div');
+  whereEl.style.cssText = 'position:fixed;top:46px;right:14px;z-index:60;font:12px ui-monospace,monospace;'
+    + 'color:#dfe6f2;background:rgba(0,0,0,0.62);padding:6px 9px;letter-spacing:0.04em;white-space:pre;pointer-events:none;';
+  document.body.appendChild(whereEl);
+}
+const _wRay = new THREE.Raycaster();
+function updateWhereAmI() {
+  if (!whereEl) return;
+  const p = camera.position;
+  let room = 'beach', ox = 0, oy = 0, oz = 0, group = null;
+  if (inTavern) { room = 'tavern'; ox = TAV_X; oy = TAV_Y + TAV_FLOOR; oz = TAV_Z; group = tavWorld; }
+  else if (inCat) { room = 'catacombs'; ox = CAT_X; oy = CAT_Y; oz = CAT_Z; group = catWorld; }
+  else if (inKeep) { room = 'keep'; ox = KEEP_X; oy = KEEP_Y; oz = KEEP_Z; group = keepWorld; }
+  else if (inUndercroft) { room = 'undercroft'; ox = UC_X; oy = UC_Y; oz = UC_Z; group = undercroft; }
+  else if (inDojo) { room = 'dojo'; ox = DOJO_X; oy = DOJO_Y; oz = DOJO_Z; group = dojoWorld; }
+  const feet = camBaseY - playerEye();
+  let aim = '';
+  if (group) {
+    _wRay.set(p, camera.getWorldDirection(_scarN).clone());
+    _wRay.far = 40;
+    const h = _wRay.intersectObject(group, true).filter((q) => q.object.visible && q.object.name !== 'hitProxy')[0];
+    if (h) aim = `\naim  ${(h.point.x - ox).toFixed(2)}, ${(h.point.y - oy).toFixed(2)}, ${(h.point.z - oz).toFixed(2)}  (${h.distance.toFixed(1)} m)`;
+  }
+  whereEl.textContent = `${room}\nfeet  ${(p.x - ox).toFixed(2)}, ${(feet - oy).toFixed(2)}, ${(p.z - oz).toFixed(2)}`
+    + `\nlook  ${(lookEuler.y).toFixed(2)} rad${aim}`;
+}
 function toggleFastWalk() {
   if (!introDone || ended || dying) return;
   fastWalk = !fastWalk;
@@ -414,6 +475,12 @@ const STAM_REGEN = 6;                     // seconds to recover a full bar
  * this rather than assuming; a bar with a hard-coded top is a bar no item
  * can ever make bigger. */
 let stamMax = () => 1;
+/* AND THE SAME DOOR FOR THE PACE YOU WALK AT. A ring may make you quicker;
+ * everything that moves you asks this rather than reading the constants,
+ * because a speed with nothing in front of it is a speed no item can ever
+ * change. It multiplies the run as well as the walk: a ring that hurries
+ * your walk and not your run is a ring you can feel arguing with you. */
+let speedK = () => 1;
 const JUMP_V = 4.3;
 const P_GRAV = 15;
 const MOON_DIR = new THREE.Vector3(-0.28, 0.12, -1).normalize();
@@ -3185,15 +3252,21 @@ function cullReach(o) {
  * or are a hundred and seventy metres away from, and the wrong one for
  * things scattered over a kilometre — so this is called on BUILDINGS. */
 const _bkM = new THREE.Matrix4(), _bkI = new THREE.Matrix4();
-function bakeStatic(root, keep = () => false) {
+/* AND A PACKED SCAN IS ALL NAMES. `Object_413` is not somebody holding a
+ * mesh, it is the exporter counting — so a room that arrives as one GLB was
+ * skipped by this entirely, whatever it cost. `opts.named` says the names
+ * in this subtree mean nothing; everything else about the rule stands, and
+ * `bwGhost`, `noBake` and whatever the caller keeps are still refused. */
+function bakeStatic(root, keep = () => false, opts = {}) {
   root.updateMatrixWorld(true);
   _bkI.copy(root.matrixWorld).invert();
   const byMat = new Map(), doomed = [];
   root.traverse((o) => {
     if (o === root || !o.isMesh || o.isInstancedMesh || o.isSkinnedMesh) return;
     if (!o.material || Array.isArray(o.material) || o.children.length) return;
-    if (o.userData.noBake || o.name) return;         // a name means somebody holds it
-    for (let a = o; a && a !== root; a = a.parent) if (keep(a) || a.userData.noBake) return;
+    if (o.userData.noBake || o.userData.bwGhost) return;
+    if (o.name && !opts.named) return;               // a name means somebody holds it
+    for (let a = o; a && a !== root; a = a.parent) if (keep(a) || a.userData.noBake || a.userData.bwGhost) return;
     let g = o.geometry.clone();
     g.applyMatrix4(_bkM.copy(_bkI).multiply(o.matrixWorld));
     if (g.index) g = g.toNonIndexed();
@@ -3218,13 +3291,44 @@ function bakeStatic(root, keep = () => false) {
   }
   return { from: doomed.length, to: made };
 }
+/* AND A UNIT BIGGER THAN THE SKYLINE IS SPLIT, NOT EXEMPTED. The exemption
+ * is for a LANDFORM — fog hides a thing but it does not hide a hole in the
+ * sky, so a ridge or a tower is drawn however far off it is — and `reach`
+ * is measured from a unit's own ORIGIN, which for a catch-all group parked
+ * at (0, 0, 0) is the distance to the far side of the beach. Measured: a
+ * group of fifty-one meshes whose children run from z = -35 to z = -640
+ * came back with a reach of 652 and was therefore never culled, anywhere,
+ * for the whole walk. A group is not a landform because its contents are
+ * spread out: it is asked about its CHILDREN instead, and only a single
+ * drawn mesh that is genuinely bigger than `SKYLINE_R` keeps the exemption. */
+function splitCullUnit(o, out) {
+  if (o.isMesh || o.isPoints || o.isSprite || !o.children.length) return false;
+  let any = false;
+  for (const c of o.children) {
+    if (c.isLight || c.isInstancedMesh || farManaged.has(c)) continue;
+    const mine = [];
+    const r = scanCullUnits(c, mine);
+    if (r.exempt) { for (const u of mine) { out.push(u); any = true; } }
+    else if (r.draws) { out.push(c); any = true; }
+  }
+  return any;
+}
 function cullBeyondFog() {
   if (cullScan-- <= 0) { cullScan = 90; rebuildCullUnits(); }
   let budget = 6;
-  for (const o of cullUnits) {
+  for (let ui = 0; ui < cullUnits.length; ui++) {
+    const o = cullUnits[ui];
     let r = o.userData.bwCullR;
     if (r === undefined) { if (budget-- <= 0) continue; r = cullReach(o); }
-    if (r < 0 || r > SKYLINE_R) continue;
+    if (r < 0) continue;
+    if (r > SKYLINE_R) {
+      const kids = [];
+      if (splitCullUnit(o, kids)) {
+        if (o.userData.bwCulled) { o.visible = true; o.userData.bwCulled = false; }
+        cullUnits.splice(ui, 1, ...kids); ui--;
+      }
+      continue;
+    }
     o.getWorldPosition(_cuP);
     const beyond = _cuP.distanceTo(camera.position) - r > DRAW_FAR;
     if (beyond) { if (o.visible) { o.visible = false; o.userData.bwCulled = true; } }
@@ -4569,6 +4673,7 @@ window.addEventListener('keydown', (e) => {
   else if (e.code === 'KeyQ') { if (inspecting) closeInspect(); else if (equipped) toggleEquip(equipped); }
   else if (/^Digit[1-6]$/.test(e.code)) { useSlot(+e.code.slice(5) - 1); }
   else if (e.code === 'Digit8') toggleFastWalk();
+  else if (e.code === 'KeyP' && settings.devMode) toggleWhereAmI();
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
@@ -5817,23 +5922,37 @@ const inventory = [];
 const INV_MAX = 10;                 // the pack (Tab)
 const HOTBAR_SLOTS = 6;             // the quick strip on the left, keys 1–6
 let equipped = null;
+/* AND THE STRIP IS UPDATED, NOT REBUILT. `innerHTML = ''` and six fresh
+ * slots every time is what made scrolling through your things feel like a
+ * flicker rather than a slide: every wheel step threw six nodes and six
+ * `<img>` away and made six more, so the browser re-decoded every icon, the
+ * 0.12 s CSS transition on the selection never ran (a brand new element
+ * starts at its final state), and the strip flashed. The slots are built
+ * once and only the one whose ITEM has changed is rebuilt; everything else
+ * is a class toggle, which is what the transition is for. */
+const hotbarCache = [];
 function renderHotbar() {
-  hotbarEl.innerHTML = '';
   for (let i = 0; i < HOTBAR_SLOTS; i++) {
-    const item = inventory[i];
-    const slot = document.createElement('div');
-    slot.className = 'slot' + (item ? '' : ' empty') + (item && item === equipped ? ' equipped' : '');
-    let icon = '';
-    if (item) icon = iconHTML(item);
-    slot.innerHTML = `<span class="num">${i + 1}</span>` + icon;
-    if (item) {
-      const lab = document.createElement('span');
-      lab.className = 'label';
-      lab.textContent = item.name + (item.viewmodel ? (item === equipped ? ' — holster' : ' — equip') : ' — use');
-      slot.appendChild(lab);
-      slot.addEventListener('click', (e) => { e.stopPropagation(); useSlot(i); });
+    const item = inventory[i] || null;
+    let c = hotbarCache[i];
+    if (!c) {
+      const el = document.createElement('div');
+      el.addEventListener('click', (e) => { e.stopPropagation(); useSlot(i); });
+      hotbarEl.appendChild(el);
+      c = hotbarCache[i] = { el, item: undefined, count: -1, lab: null };
     }
-    hotbarEl.appendChild(slot);
+    const count = item ? (item.count || 0) : 0;
+    if (c.item !== item || c.count !== count) {
+      c.item = item; c.count = count;
+      c.el.innerHTML = `<span class="num">${i + 1}</span>` + (item ? iconHTML(item) : '');
+      if (item) {
+        const lab = document.createElement('span');
+        lab.className = 'label';
+        c.el.appendChild(lab); c.lab = lab;
+      } else c.lab = null;
+    }
+    if (c.lab) c.lab.textContent = item.name + (item.viewmodel ? (item === equipped ? ' — holster' : ' — equip') : ' — use');
+    c.el.className = 'slot' + (item ? '' : ' empty') + (item && item === equipped ? ' equipped' : '');
   }
 }
 /* Rings. A second, separate place things live: two slots under the hotbar,
@@ -6085,13 +6204,26 @@ function scrollHotbar(dir) {
   const item = inventory[slots[next]];
   if (item !== equipped) toggleEquip(item);
 }
-let wheelAcc = 0;
+/* THE WHEEL WALKS THE STRIP, AND IT HAS TO FEEL LIKE WALKING. Three things
+ * were wrong with counting to 40 and zeroing: the REMAINDER was thrown away,
+ * so a slow trackpad drag stepped unevenly; a hard flick (a trackpad sends
+ * a burst of a hundred small deltas) stepped as fast as the events arrived,
+ * which is a blur and not a choice; and a gesture that had stalled kept its
+ * half-step for ever. It keeps the remainder, starts a new gesture clean,
+ * and will not step more than once every `WHEEL_GAP`. */
+const WHEEL_STEP = 24, WHEEL_GAP = 85;
+let wheelAcc = 0, wheelAt = 0;
 window.addEventListener('wheel', (e) => {
   if (!started || !introDone || inspecting || invOpen || menuOpen || dialogOpen || noteOpen || ended || dying) return;
+  const now = performance.now();
+  if (now - wheelAt > 400) wheelAcc = 0;          // a new gesture, not the tail of the last
   wheelAcc += e.deltaY;
-  if (Math.abs(wheelAcc) < 40) return;      // a trackpad flick, not a notch
-  scrollHotbar(wheelAcc > 0 ? 1 : -1);
-  wheelAcc = 0;
+  if (Math.abs(wheelAcc) < WHEEL_STEP || now - wheelAt < WHEEL_GAP) return;
+  const dir = wheelAcc > 0 ? 1 : -1;
+  wheelAcc -= dir * WHEEL_STEP;
+  if (Math.abs(wheelAcc) > WHEEL_STEP * 1.5) wheelAcc = dir * WHEEL_STEP * 1.5;   // a flick may not bank six slots
+  wheelAt = now;
+  scrollHotbar(dir);
 }, { passive: true });
 function useSlot(i) {
   const item = inventory[i];
@@ -7503,30 +7635,15 @@ const katanaItem = {
   blade: true, dmgLight: 2, dmgHeavy: 3, windRate: 1.3, gore: 1.4, swingK: 0.9, recoverK: 4.0, glintSpan: 0.60, alternate: true,
   use: () => toggleEquip(katanaItem),
 };
-// a few steps from the Military Shovel, on the same stretch of sand under the cliff
-katanaWorld.position.set(CLIFF_BLOCK_X - 3.6, 0.06, 34 + 2.6);
-katanaWorld.rotation.set(-Math.PI / 2, 0, -0.6);
-katanaWorld.scale.setScalar(1);
-{
-  const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  proxy.position.y = 0.25; proxy.name = 'hitProxy'; proxy.visible = false;
-  katanaWorld.add(proxy);
-}
-scene.add(katanaWorld);
-/* AND THE ONE ON THE SAND NEEDS MORE LIFT THAN THE ONE IN YOUR HAND. The
- * blade is deliberately dark — it is steel at night — and a dark thing lying
- * on a dark beach is a thing nobody picks up. The world copy is built by its
- * own `makeKatana()` call, so it carries its own materials and the shine
- * cannot leak back into the hand the way it did off the shovel's clone. */
-addItemShine(katanaWorld, { size: 1.05, height: 0.3, strength: 0.9, lift: 0.55 });
-addInteractable(katanaWorld, 'Take the katana', 'inventory', {
-  onActivate: () => {
-    scene.remove(katanaWorld);
-    hovered = null;
-    addToInventory(katanaItem);
-    toggleEquip(katanaItem);               // and `toggleEquip` plays the draw
-  },
-});
+/* THE ONE BY THE DRAIN IS GONE. It lay on the sand past the drainage tunnel
+ * home from the day the sword went in, and once the dojo's stand handed out
+ * the same item (the sword you take off the rack, and the man who comes for
+ * it) there were two katanas in the game and the first was free. The owner's
+ * word: delete it. `katanaWorld` is kept as a group — the drop and the
+ * examine screen never used it, but nothing is added to the scene here and
+ * nothing is registered; the stand in the dojo is the only way to the sword,
+ * and dev mode still hands it over. An old save that recorded "Take the
+ * katana#1" simply finds no handler and is granted the item by name. */
 /* IT IS IN THE CRATE NOW, not on the beach: `buildMilCrate` (in the bunker
  * section, thousands of lines down) lifts `militaryWorld` off the sand and
  * lays it inside an equipment case on the Dealer's desk, and the case only
@@ -8215,6 +8332,7 @@ function digImpact() {
   if (castleStrike(P)) return;            // the blade went through the castle
   if (crateStrike(P)) return;             // the blade is on the crate, not the sand
   if (glassStrike()) return;              // or on something that shatters
+  if (catBoneStrike(P)) return;           // or through a pile of bones, which is the loudest thing you can do down there
   // the crab: the AIM LINE has to pass close to the body. It used to be any
   // impact point within 1.5 m of it (3.2 on a heavy) — you could kill it
   // looking at the sand beside it, which is not a hit anyone feels they made.
@@ -10932,15 +11050,15 @@ function gainJar(n = 1) {
   bloodSeen = true;
   bloodPulse = 1;
   hudJar.userData.setFill(0.86);       // a jar is a jar: the icon is always full
-  /* AND IT GOES IN THE PACK. The tally and the slot are the same number, so
-   * they are written in the same place: `count` first, THEN the add, because
-   * `renderHotbar`/`renderPack` draw the badge off it. A jar already in the
-   * pack simply has a bigger number on it — `addToInventory` refuses the
-   * duplicate by identity and returns true, which is exactly the behaviour a
-   * stack wants out of it. */
+  /* AND IT DOES NOT GO IN THE PACK. It did for a while, as one stacking
+   * slot with a badge on it — and a jar is not a thing you hold, equip or
+   * use: it is a number you carry, and the corner has counted it since the
+   * day the crab was bled. Two places showing the same tally is one of them
+   * lying the first time they disagree. The owner's word: the top left and
+   * nowhere else. `jarItem` stays, because the extraction's payoff still
+   * shows you the jar, and a save from before this is cleaned up here. */
   jarItem.count = bloodJars;
-  addToInventory(jarItem);
-  renderHotbar(); renderPack();
+  if (inventory.includes(jarItem)) { removeFromInventory(jarItem); renderHotbar(); renderPack(); }
   updateBloodReadout();
   sfxBloodGained();
 }
@@ -11472,6 +11590,273 @@ holdable(ringItem, ring, { scale: 2.2, pos: [0, -0.02, 0], rot: [1.1, 0.3, 0.2] 
  * on your hand, which is the whole reason it is a separate list. */
 const RING_STAM = 0.10;
 stamMax = () => 1 + (rings.includes(ringItem) ? RING_STAM : 0);
+
+/* ---- THE FORGOTTEN WEDDING RING ------------------------------------- */
+/* A SECOND RING, AT THE BACK OF THE TAVERN'S BORE. Cécile Amstad's
+ * "Jewelery - Ring- Diamonds" (Sketchfab Standard — read the licence, not
+ * the folder next to it: every other model here is CC-BY), shipped EXACT
+ * on the owner's
+ * word: all 3,702 triangles across its own five meshes, its own five
+ * materials with every factor the artist set, and all sixteen of its maps.
+ * The one liberty is the size those go out at — sixteen 4096s is a quarter
+ * of a gigabyte for a thing 20 mm across — and it is measured rather than
+ * chosen: resampled to 2048 and back, the worst map in the set differs from
+ * the original by an rms of 0.9 of 255 and the normals by 0.04.
+ *
+ * READ EVERY MAP BEFORE DECIDING WHICH ONES THE MODEL NEEDS — and here the
+ * answer was to keep the lot anyway. Measured: all five baseColour maps are
+ * PURE WHITE (255, 255, 255 everywhere) and all four normal maps are FLAT
+ * (128, 128, 255); what actually carries the ring is the five
+ * metallic-roughness maps and the two emissives on the stones. The white
+ * and the flat ones are the glTF defaults and could go without changing a
+ * pixel — they cost 130 KB of the two megabytes, which is less than the
+ * argument about whether they are the artist's textures.
+ *
+ * AND A METAL WITH NOTHING TO REFLECT IS BLACK — the seventh time in this
+ * file, except that this time the answer is not to change the metal. Every
+ * one of these materials is metalness 1, which is what a ring IS, and a
+ * metal has no diffuse term: rendered as it ships, the band came out a
+ * black hoop with two pale bands across it where the view model's own
+ * directionals happen to strike. What a jewellery viewer shows it against
+ * is an ENVIRONMENT, and this game has never had one — so the ring is given
+ * one of its own. `ringEnv()` is 128 by 64 pixels of this beach's night:
+ * the sky over the horizon, the ground under it, and the moon where
+ * `MOON_DIR` says the moon is, through three's PMREM. It is set on this
+ * ring's materials and on nothing else in the game, so the model and its
+ * maps are still exactly the ones in the file. */
+let ringEnvTex = null;
+function ringEnv() {
+  if (ringEnvTex) return ringEnvTex;
+  const W = 128, H = 64, data = new Uint8Array(W * H * 4), d = new THREE.Vector3();
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const phi = (y / (H - 1)) * Math.PI, theta = (x / (W - 1)) * Math.PI * 2;
+    d.set(Math.sin(phi) * Math.cos(theta), Math.cos(phi), Math.sin(phi) * Math.sin(theta));
+    const up = Math.max(0, d.y);
+    let r = 10 + up * 26, g = 13 + up * 32, b = 20 + up * 48;
+    const md = d.dot(MOON_DIR);
+    if (md > 0.985) { r = 240; g = 242; b = 250; }                       // the moon itself
+    else if (md > 0.86) { const k = (md - 0.86) / 0.125; r += 90 * k * k; g += 95 * k * k; b += 110 * k * k; }
+    if (d.y < -0.02) { r *= 0.35; g *= 0.35; b *= 0.4; }                 // and the ground under it
+    const i = (y * W + x) * 4;
+    data[i] = r; data[i + 1] = g; data[i + 2] = b; data[i + 3] = 255;
+  }
+  const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat);
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  const pm = new THREE.PMREMGenerator(renderer);
+  ringEnvTex = pm.fromEquirectangular(tex).texture;
+  pm.dispose(); tex.dispose();
+  return ringEnvTex;
+}
+const WED_ENV = 4.2;              // swept in the pane: at 1.6 the band is still a dark hoop and at 3.2 it is dark face-on
+const wedRing = new THREE.Group();
+const wedWorld = new THREE.Group();
+wedWorld.add(wedRing);
+bwGlb('assets/wedding-ring.glb', (gltf) => {
+  gltf.scene.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(gltf.scene);
+  const size = box.getSize(new THREE.Vector3()), mid = box.getCenter(new THREE.Vector3());
+  const env = ringEnv();
+  gltf.scene.traverse((o) => {
+    if (!o.isMesh) return;
+    o.material.envMap = env;
+    o.material.envMapIntensity = WED_ENV;
+    o.material.needsUpdate = true;
+  });
+  // the five meshes are one object and are re-centred as a GROUP, which is
+  // the only way to keep them in register with each other
+  const inner = new THREE.Group();
+  inner.add(gltf.scene);
+  gltf.scene.position.sub(mid);
+  /* AND THE SIZE IT GOES OUT AT IS THE OCTOPUS RING'S, NOT LIFE'S. A ring
+   * is 20 mm and `ITEM_MAX_BOOST` is 3.2, so the floor every takeable gets
+   * (`ITEM_MIN_SIZE`, 0.42) cannot reach it from there — measured in the
+   * bore, a true-size ring is two pixels at two metres and the glint is the
+   * only thing you could ever find. Fitted at the other ring's own 0.055 it
+   * comes out at 0.18 on the floor, which is what a takeable looks like
+   * here, and `holdable`'s 2.2 is the scale that was tuned against it. */
+  inner.scale.setScalar(0.055 / Math.max(size.x, size.y, size.z));
+  wedRing.add(inner);
+});
+/* Its own icon, and not the octopus's: a fallback that is a different
+ * object is the trap `militaryItem` paid for — on a checkpoint load the
+ * whole pack is rebuilt before any scan has landed, so whatever the drawing
+ * is becomes the icon for the rest of that game. */
+function makeWedIcon() {
+  const c = document.createElement('canvas'); c.width = c.height = 48;
+  const g = c.getContext('2d');
+  g.lineCap = 'round'; g.lineWidth = 4.5;
+  g.strokeStyle = '#69707d';
+  g.beginPath(); g.arc(24, 30, 11.5, Math.PI * 1.04, Math.PI * 1.96); g.stroke();
+  g.strokeStyle = '#ccd5e1';                       // the moon catches the lower limb
+  g.beginPath(); g.arc(24, 30, 11.5, Math.PI * 1.96, Math.PI * 3.04); g.stroke();
+  g.fillStyle = '#e6eefa';                         // and the stone over it
+  g.beginPath(); g.moveTo(24, 7); g.lineTo(31, 14); g.lineTo(24, 22); g.lineTo(17, 14); g.closePath(); g.fill();
+  g.fillStyle = '#8fa4c0';
+  g.beginPath(); g.moveTo(24, 22); g.lineTo(31, 14); g.lineTo(24, 14); g.closePath(); g.fill();
+  return c.toDataURL();
+}
+/* AND WHAT IT IS WORTH IS WHAT YOU ARE CARRYING. The jars have never done
+ * anything: you fill them, the corner counts them, and that is the end of
+ * it. Worn, this pays a little of your pace for each one — six per cent a
+ * jar, which at the four the walk holds today is a quarter again, and
+ * capped at six jars so it cannot run away if more are ever found. It is
+ * the WORN ring that pays, `rings[]` being what is on your hand; and the
+ * description says what it is worth RIGHT NOW, because a bonus that moves
+ * with what you carry is one the player has to be able to read. */
+const WED_PER_JAR = 0.06, WED_MAX_JARS = 6;
+const wedJars = () => Math.min(bloodJars, WED_MAX_JARS);
+const weddingItem = {
+  id: 'wedring', name: 'Forgotten Wedding Ring', icon: makeWedIcon(), ring: true,
+  get desc() {
+    const j = wedJars();
+    return j ? `Walk Speed +${Math.round(j * WED_PER_JAR * 100)}% — ${j} blood jar${j === 1 ? '' : 's'}`
+      : `Walk Speed +${Math.round(WED_PER_JAR * 100)}% for every blood jar you carry`;
+  },
+  use: () => toggleEquip(weddingItem),
+  inspectOpts: () => ({
+    rotX: 0.85, rotY: 0.30,
+    equipLabel: (inventory.includes(weddingItem) && rings.length < RING_SLOTS) ? 'Put it on' : null,
+    onEquip: () => { if (wearRing(weddingItem)) closeInspect(); },
+  }),
+};
+holdable(weddingItem, wedRing, { scale: 2.2, pos: [0, -0.02, 0], rot: [0.9, 0.3, 0.15] });
+speedK = () => (rings.includes(weddingItem) ? 1 + wedJars() * WED_PER_JAR : 1);
+/* It is SET DOWN, not thrown. The octopus ring comes off a body and is
+ * flung out of the boards because your eye follows a thing that moves; this
+ * one has been lying at the end of a blind bore for a long time. */
+function dropWedRing(sx, sy, sz, tries = 0) {
+  /* AND IT IS PUT DOWN ONLY ONCE THERE IS SOMETHING TO PUT DOWN. `makeNoticeable`
+   * measures the group and gives up after six tries, so a model that lands
+   * late is a ring left at true size for the rest of the game — a race
+   * between a 2 MB download and the cut into the room. Wait for it here
+   * instead, where waiting costs nothing. */
+  if (!wedRing.children.length) {
+    if (tries < 40) setTimeout(() => dropWedRing(sx, sy, sz, tries + 1), 500);
+    return;
+  }
+  wedRing.position.set(0, 0.012, 0);
+  wedRing.rotation.set(Math.PI / 2 - 0.22, 0.6, 0);        // flat, tipped a little
+  wedWorld.position.set(sx, sy, sz);
+  scene.add(wedWorld);
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy'; hit.visible = false; hit.position.y = 0.06;
+  wedWorld.add(hit);
+  /* AND THE METAL ITSELF HAS TO SHOW. The other ring is lifted off black
+   * while it lies on the sand because a 20 mm scan under a quarter moon is
+   * nothing; this one lies at the end of a blind bore where the only light
+   * is the one in your hand, which is worse. It goes on the two materials
+   * the artist left WITHOUT an emissive map — the band and the prongs — so
+   * the stones keep their own, and it comes off again when it is taken,
+   * because the copy in your hand is cloned at that moment and would
+   * otherwise carry it (the Military Shovel's own scar). */
+  wedRing.traverse((o) => { if (o.isMesh && !o.material.emissiveMap && o.material.emissive) o.material.emissive.setHex(0x6a7280); });
+  addInteractable(wedWorld, 'Take the ring', 'inventory', {
+    onActivate: () => {
+      wedRing.traverse((o) => { if (o.isMesh && !o.material.emissiveMap && o.material.emissive) o.material.emissive.setHex(0x000000); });
+      scene.remove(wedWorld);
+      removeInteractable(wedWorld);
+      hovered = null;
+      ringsFound = true;
+      addToInventory(weddingItem);
+      renderRings();
+      sfxThud(0.03);
+    },
+  });
+}
+/* THE SKULL KEY, AND THE ONE DOOR IN THIS GAME THAT IS REALLY LOCKED.
+ * VISHNUGAMER's "Skull Key" (Sketchfab Standard, not CC-BY — read the
+ * licence and not the folder beside it), shipped EXACT by the owner's word:
+ * all three of its meshes, 256,688 triangles, its own colour, its own
+ * metal-rough and its own normal map, at 2048 with the normal at 1024. Its
+ * three "Object_N" are the 65,532-vertex chunks a 16-bit index split, not an
+ * LOD chain, so they go out together — the octopus ring's lesson, and the
+ * reason this one renders as a key rather than as a cloud of specks.
+ *
+ * AND A METAL WITH NOTHING TO REFLECT IS BLACK. `ringEnv()` was built for
+ * the wedding ring and is the answer here too: the key ships metallic, and
+ * a metal has no diffuse term. It gets the same night sky, a little softer
+ * (it lies in a room with no moon in it at all), and while it lies there it
+ * is lifted off its own map, because forty metres under a beach the only
+ * light on it is the one in your hand. */
+const SKULL_ENV = 3.4;
+const skullKey = new THREE.Group();
+const skullWorld = new THREE.Group();
+skullWorld.add(skullKey);
+bwGlb('assets/skull-key.glb', (gltf) => {
+  gltf.scene.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(gltf.scene);
+  const size = box.getSize(new THREE.Vector3()), mid = box.getCenter(new THREE.Vector3());
+  const env = ringEnv();
+  gltf.scene.traverse((o) => {
+    if (!o.isMesh) return;
+    o.material.envMap = env;
+    o.material.envMapIntensity = SKULL_ENV;
+    o.material.needsUpdate = true;
+  });
+  const inner = new THREE.Group();
+  inner.add(gltf.scene);
+  gltf.scene.position.sub(mid);            // the three chunks are ONE object: centred as a group
+  inner.scale.setScalar(0.20 / Math.max(size.x, size.y, size.z));   // a key, which `makeNoticeable` then lifts to the floor every takeable gets
+  skullKey.add(inner);
+});
+/* Its own icon, drawn: the fallback a scan shows until it lands is whatever
+ * is here, and on a checkpoint load that is the whole game (`militaryItem`
+ * paid for this one). A bow with a skull in it and a bit on the end. */
+function makeSkullKeyIcon() {
+  const c = document.createElement('canvas'); c.width = c.height = 48;
+  const g = c.getContext('2d');
+  g.lineCap = 'round';
+  g.strokeStyle = '#b9bfc8'; g.lineWidth = 4.5;
+  g.beginPath(); g.moveTo(21, 20); g.lineTo(21, 40); g.stroke();       // the shank
+  g.beginPath(); g.moveTo(21, 40); g.lineTo(29, 40); g.stroke();       // the bit
+  g.beginPath(); g.moveTo(21, 34); g.lineTo(27, 34); g.stroke();
+  g.fillStyle = '#d8dee8';                                             // the skull bow
+  g.beginPath(); g.arc(21, 14, 8, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#20242b';
+  g.beginPath(); g.arc(18, 13, 2.2, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(24, 13, 2.2, 0, Math.PI * 2); g.fill();
+  g.fillRect(19.5, 18, 3, 3);
+  return c.toDataURL();
+}
+const skullKeyItem = {
+  id: 'skullkey', name: 'Skull Key', icon: makeSkullKeyIcon(),
+  desc: 'Unlocks the door out of the catacombs',
+  use: () => toggleEquip(skullKeyItem),
+  inspectOpts: () => ({ rotX: 0.6, rotY: 0.4 }),
+};
+holdable(skullKeyItem, skullKey, { scale: 1.0, pos: [0, -0.03, 0.02], rot: [0.35, 0.55, 0.25] });
+/* It is SET DOWN between the candles, not thrown: somebody left it there. */
+function dropSkullKey(sx, sy, sz, yaw, tries = 0) {
+  // and only once there is something to put down — `makeNoticeable` gives up
+  // after six tries, and this is nine megabytes over the wire
+  if (!skullKey.children.length) {
+    if (tries < 60) setTimeout(() => dropSkullKey(sx, sy, sz, yaw, tries + 1), 500);
+    return;
+  }
+  skullKey.position.set(0, 0.012, 0);
+  skullKey.rotation.set(0, yaw, 0);                    // flat on the stone, turned off the room's square
+  skullWorld.position.set(sx, sy, sz);
+  scene.add(skullWorld);
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy'; hit.visible = false; hit.position.y = 0.08;
+  skullWorld.add(hit);
+  const lift = (v) => skullKey.traverse((o) => { if (o.isMesh && o.material.emissive) { o.material.emissive.setHex(v); o.material.emissiveMap = v ? (o.material.map || null) : o.material.emissiveMap; } });
+  lift(0x6d737c);                                      // off black while it lies in the dark
+  addInteractable(skullWorld, 'Take the key', 'inventory', {
+    onActivate: () => {
+      lift(0x000000);                                  // the copy in your hand is cloned at this moment
+      scene.remove(skullWorld);
+      removeInteractable(skullWorld);
+      hovered = null;
+      addToInventory(skullKeyItem);
+      sfxThud(0.03);
+    },
+  });
+}
 /* It comes OUT. Set down quietly on the sand where the crate stood, a 20 mm
  * ring is the easiest thing in the game to walk away from; so it is thrown
  * up out of the boards on a real body, toward you, rings off the sand when
@@ -11953,6 +12338,25 @@ const SAMPLES = {
    * measured, 99 % of the energy is below a kilohertz — one per footfall
    * at random, with the nave's reverb over them. */
   churchStep: Array.from({ length: 11 }, (_, i) => `assets/church-step${i + 1}.m4a`),
+  /* THE CATACOMBS MONSTER'S OWN VOICE, SUPPLIED BY THE OWNER. Three
+   * recordings, cut into cues along their own silences (ffmpeg's
+   * silencedetect; 48 cues, a megabyte): the FAR growls, heard from
+   * somewhere else in the place while he is off doing his own thing; his
+   * FEET, heard only when he is near; and the CLOSE set, which is one file
+   * of twenty-six and was sorted by length and brightness — the five LOUD
+   * ones are the roar, the six short bright ones the tell on a blow, three
+   * are a hurt, seven mid-length growls are him letting you know he heard,
+   * four long quiet ones are his breathing at a corner, and the one
+   * seven-second gutteral is him feeding. Everything voiced goes through
+   * `catCue`, which knows where he is. Not redistributable. */
+  catRoar: Array.from({ length: 5 }, (_, i) => `assets/cat-roar${i + 1}.m4a`),
+  catTell: Array.from({ length: 6 }, (_, i) => `assets/cat-tell${i + 1}.m4a`),
+  catHurt: Array.from({ length: 3 }, (_, i) => `assets/cat-hurt${i + 1}.m4a`),
+  catGrowl: Array.from({ length: 7 }, (_, i) => `assets/cat-growl${i + 1}.m4a`),
+  catBreath: Array.from({ length: 4 }, (_, i) => `assets/cat-breath${i + 1}.m4a`),
+  catFeed: ['assets/cat-feed1.m4a'],
+  catFar: Array.from({ length: 12 }, (_, i) => `assets/cat-far${i + 1}.m4a`),
+  catStep: Array.from({ length: 10 }, (_, i) => `assets/cat-step${i + 1}.m4a`),
 };
 const sampleBanks = {};
 function loadSamples() {
@@ -11983,6 +12387,32 @@ function playSample(name, gain = 1, rateJitter = 0, rate = 1, delay = 0) {
   // the synthesised one has always had
   src.start(ctx.currentTime + Math.max(0, delay));
   return true;
+}
+/* A CUE FROM SOMEWHERE IN THE ROOM. `playSample` is for what happens in
+ * your own hands; a creature's voice has a WHERE. Panned by its bearing,
+ * quieter by its distance, and — the thing that says "far" more than the
+ * level does — DULLER, a lowpass closing down with the distance because
+ * the stone eats the top end first. `ref` is the distance at which it has
+ * fallen to half and `far` where it is not heard at all. Returns the
+ * source so a louder thing can cut it off. */
+function playSampleAt(name, x, z, { gain = 1, ref = 8, far = 40, rate = 1, jitter = 0.04, lpNear = 9000, lpFar = 700, delay = 0 } = {}) {
+  const ctx = audioCtx; if (!ctx) return null;
+  const bank = (sampleBanks[name] || []).filter(Boolean);
+  if (!bank.length) return null;
+  const d = Math.hypot(x - camera.position.x, z - camera.position.z);
+  if (d > far) return null;
+  const k = Math.min(1, d / far);
+  const src = ctx.createBufferSource();
+  src.buffer = bank[(Math.random() * bank.length) | 0];
+  src.playbackRate.value = rate + (Math.random() - 0.5) * 2 * jitter;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
+  lp.frequency.value = lpNear * Math.pow(lpFar / lpNear, k);
+  const g = ctx.createGain(); g.gain.value = gain / (1 + d / ref);
+  let dst = sfxOut();
+  if (ctx.createStereoPanner) { const sp = ctx.createStereoPanner(); sp.pan.value = THREE.MathUtils.clamp(panTo(x, z) * 0.85, -1, 1); sp.connect(dst); dst = sp; }
+  src.connect(lp).connect(g).connect(dst);
+  src.start(ctx.currentTime + Math.max(0, delay));
+  return src;
 }
 
 // bottle shattering — the recording, with a synthesised burst behind it
@@ -20100,6 +20530,7 @@ function bleedMutant(u, n, force) {
  * the frame you have to answer. */
 function sfxMutTell(dist = 0, W = MUT_WIND, V = MUT_VOICE) {
   const ctx = audioCtx; if (!ctx) return;
+  if (V.cat) { catCue('catTell', { gain: 0.9, ref: 7, far: 30, cut: true }); return; }   // the thing in the catacombs has its own voice
   const t = ctx.currentTime, out = sfxOut(), g0 = 1 / (1 + dist / 12);
   const rise = Math.min(W, 0.62);
   const rasp = noiseBurst(W, (x) => (0.4 + 0.6 * Math.random()) * Math.min(1, x * (W / rise) * 2.5) * (1 - x * 0.2));
@@ -20129,6 +20560,7 @@ function sfxMutSwing(V = MUT_VOICE) {
 }
 function sfxMutRoar(dist = 0, V = MUT_VOICE) {
   const ctx = audioCtx; if (!ctx) return;
+  if (V.cat) { catCue('catRoar', { gain: 1.2, ref: 10, far: CAT_HEAR_FAR + 6, lpFar: 1200, cut: true }); return; }
   const t = ctx.currentTime, out = sfxOut(), g0 = 1.1 / (1 + dist / 16), D = 1.5;
   for (const [f0, f1, gn] of [[58, 96, 0.16], [87, 143, 0.09], [29, 47, 0.13]])
     mutTone(t, D, V, f0, f1, gn * g0, out);
@@ -20148,6 +20580,7 @@ function sfxMutRoar(dist = 0, V = MUT_VOICE) {
  * beach is quiet on purpose, and the one time that is spent is here. */
 function sfxScpScream(dist = 0, V = MUT_KINDS.scp.voice) {
   const ctx = audioCtx; if (!ctx) return;
+  if (V.cat) { catCue('catRoar', { gain: 1.25, ref: 10, far: CAT_HEAR_FAR + 6, lpFar: 1200, cut: true }); return; }
   const t = ctx.currentTime, out = sfxOut(), g0 = 1.35 / (1 + dist / 22), D = 2.9;
   const layers = [[196, 330, 0.260, 0.00], [262, 452, 0.180, 0.16], [146, 249, 0.170, 0.34]];
   for (const [f0, f1, gn, at] of layers) mutTone(t + at, D - at, V, f0, f1, gn * g0, out);
@@ -20166,6 +20599,12 @@ function sfxScpScream(dist = 0, V = MUT_KINDS.scp.voice) {
 }
 function sfxMutStep(dist = 0, V = MUT_VOICE) {
   const ctx = audioCtx; if (!ctx) return;
+  /* HIS FEET ARE THE OWNER'S RECORDING, AND ONLY WHEN HE IS NEAR. A footfall
+   * that carries across the whole place is a radar; one you hear inside
+   * fifteen metres, panned to where he is, is the thing that makes you stop
+   * walking. Beyond that his feet are silent and his VOICE is what you hear
+   * of him (`catFar`). The claw scrape stays behind it as the fallback. */
+  if (V.cat) { const u = crawlerUnit; if (u && playSampleAt('catStep', u.g.position.x, u.g.position.z, { gain: 0.95, ref: 4, far: 15, jitter: 0.08, lpNear: 6500, lpFar: 1400 })) return; }
   if (V.scrape) { const u = crawlerUnit; sfxClawScrape(dist, u ? panTo(u.g.position.x, u.g.position.z) : undefined); return; }
   const t = ctx.currentTime, out = sfxOut(), g0 = 0.85 / (1 + dist / 8);
   // a boot on a steel floor, not a wet foot on sand: the room is the reason
@@ -20196,6 +20635,7 @@ function sfxMutStep(dist = 0, V = MUT_VOICE) {
 function sfxMutHit(V = MUT_VOICE) {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime, out = sfxOut();
+  if (V.cat && Math.random() < 0.65) catCue('catHurt', { gain: 0.85, ref: 6, far: 25, cut: true });   // and he says so, most times
   playSample('fleshHit', 0.75, 0.06, 0.72 * V.f);   // the owner's own, pitched to the voice
   const body = noiseBurst(0.17, (x) => Math.pow(1 - x, 1.8));
   const bf = ctx.createBiquadFilter(); bf.type = 'lowpass'; bf.frequency.value = 260 * V.f;
@@ -20408,6 +20848,9 @@ function sfxMutLaugh(dist = 0, V = MUT_VOICE) {
  * know one of them is behind you. */
 function sfxMutHunger(dist = 0, V = MUT_VOICE) {
   const ctx = audioCtx; if (!ctx) return;
+  /* HE HEARD YOU, AND HE SAYS SO — near, a growl from where he is; far, one
+   * of the distant ones, dull through the stone. */
+  if (V.cat) { if (dist < 12) catCue('catGrowl', { gain: 0.8, ref: 7, far: 20 }); else catCue('catFar', { gain: 0.8, ref: 10, far: CAT_HEAR_FAR, lpFar: 700 }); return; }
   const t = ctx.currentTime, out = sfxOut(), g0 = 0.9 / (1 + dist / 9);
   const D = 0.5 + Math.random() * 0.5;
   const br = noiseBurst(D, (x) => Math.sin(x * Math.PI) * (0.4 + 0.6 * Math.random()));
@@ -21721,6 +22164,7 @@ function updateMutantUnit(u, dt) {
     // where the frame began: `mutClampX` puts him back here if the frame crossed a drawn wall
     if (!u.catPrev) u.catPrev = new THREE.Vector3();
     u.catPrev.copy(u.g.position);
+    catTick++;   // one per frame, whatever calls the clamp after this: the wall pushes run once
     const st = catWalk ? keepFloorAt(u.g.position.x, u.g.position.z, u.g.position.y + 0.3, 0.6, CAT_SITE) : null;
     /* AND HE ONLY STANDS UP WHERE THERE IS ROOM TO. A standing swing puts
      * his hands 3.8 m up, and a catacomb's rooms are 3.3; the two standing
@@ -22168,7 +22612,12 @@ function updateMutantUnit(u, dt) {
     /* AND ACROSS A FLOOR NOTHING IS IN REACH. The fight is planar; in a place
      * that stacks rooms a player a storey up is "in range" and he stands
      * swinging at the ceiling. A storey apart he has ground to cover. */
-    const near = dist <= (u.maxReach || A.reach) && !(u.kind.cat && Math.abs((camBaseY - playerEye()) - u.g.position.y) > 1.2);
+    /* AND A ROUTE IN HAND MEANS THE LINE IS SHUT: `catSteer` only draws one
+     * when the straight way to you crosses stone, so "in reach" with a tomb
+     * between is not in reach — he walks the route round it rather than
+     * standing at 2.5 m swinging into the lid (measured: 0.85 s still with a
+     * two-waypoint route in his hands and a wall at hip height between). */
+    const near = dist <= (u.maxReach || A.reach) && !(u.kind.cat && (Math.abs((camBaseY - playerEye()) - u.g.position.y) > 1.2 || u.path));
     /* WHOSE TURN IT IS. One of them swings and the others circle: three
      * tells at once is not three times the fight, it is no fight at all,
      * because there is nothing to read. Whoever is nearest and ready takes
@@ -23804,6 +24253,81 @@ function updateBunkers(dt) {
     if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; }
     _bkL.applyMatrix4(g.matrixWorld);
     camera.position.x = _bkL.x; camera.position.z = _bkL.z;
+  }
+}
+/* AND WHAT IS IN THE ROOM IS DRAWN WITH THE ROOM. The hatch's home is
+ * hidden while you are not in it — four hundred meshes behind an opaque
+ * beach is a price for nothing, and that has been true since it went in —
+ * but everything the room was FURNISHED with was added to the scene beside
+ * it rather than under it: the props, the bottles, the desk, the camera,
+ * the case, the Dealer. Measured standing on the sand at z = -180, a
+ * hundred and forty-five metres away: **twenty-six top-level groups and
+ * five hundred and ninety-one meshes, every one of them forty metres
+ * underground inside a sealed room, all visible**, and a third of the whole
+ * frame's draw calls.
+ *
+ * It is the hall's own hide, inverted — and it may only ever HIDE and then
+ * restore exactly what it hid, never write `visible` every frame: a broken
+ * bottle, a prop you have taken and a gib that has expired are all things
+ * something else has already switched off, and a blanket writer resurrects
+ * them (the far-prop list's own scar). Who lives in the room is a question
+ * about WHERE A THING IS, so nothing has to be registered at the twenty
+ * places these are made: it is the room's own box, asked once each time you
+ * leave. */
+let bunkerHid = null, bunkerScan = 0, beachHid = null;
+const _btW = new THREE.Vector3();
+function bunkerTenantry() {
+  if (inBunker || hatchBusy) {
+    if (bunkerHid) { for (const o of bunkerHid) o.visible = true; bunkerHid = null; }
+    /* AND THE BEACH IS NOT DRAWN FROM INSIDE A SEALED ROOM — the hall's own
+     * rule, which every room three thousand metres out has had since the
+     * saucer went in and the one FORTY METRES DOWN never got, because the
+     * hall's test is a distance and this room is close. Measured standing
+     * on the control room's floor: 272 draw calls and 287k triangles, of
+     * which the room itself is 37 and 28k. The rest is the beach overhead —
+     * the lighthouse a kilometre off at 19 calls and 44k, a seventy-seven
+     * mesh group at 78 — rasterised behind forty metres of sand. */
+    /* AND IT HAS TO BE RE-ASSERTED, not set once: `updateFarProps` writes a
+     * far prop's `visible` from your Z every frame, so a hide taken on the
+     * frame you arrive is undone on the next one. Only what this hid is ever
+     * touched, and it is put back exactly on the way out. */
+    if (beachHid) { for (const o of beachHid) o.visible = false; return; }
+    if (inBunker && !hatchBusy) {
+      const top = inBunker.group.position.y + (inBunker.group.userData.bunker.nav.room.h || 3) + 4;
+      beachHid = [];
+      for (const o of scene.children) {
+        if (!o.visible || o.isLight || o.isInstancedMesh || o === inBunker.group) continue;
+        o.getWorldPosition(_btW);
+        if (_btW.y <= top) continue;
+        o.visible = false; beachHid.push(o);
+      }
+    }
+    return;
+  }
+  if (beachHid) { for (const o of beachHid) o.visible = true; beachHid = null; }
+  if (bunkerHid) for (const o of bunkerHid) o.visible = false;      // the same rule, the other way round
+  /* AND THE LIST IS ASKED FOR AGAIN. Built once, on the first frame you are
+   * outside, it is built before the room has been furnished — the props,
+   * the bodies and the case all land over the next few seconds — and every
+   * one of them then stays visible for the rest of the game. It is a scan,
+   * every ninety frames, and it only ever ADDS: what is already hidden is
+   * left alone, so nothing is switched on by this. */
+  if (bunkerHid && bunkerScan-- > 0) return;
+  bunkerScan = 90;
+  if (!bunkerHid) bunkerHid = [];
+  for (const b of bunkers) {
+    if (!b.hidden) continue;
+    const B = b.group.userData.bunker, nav = B && B.nav;
+    if (!nav || !nav.room) continue;
+    const R = nav.room;
+    for (const o of scene.children) {
+      if (o === b.group || !o.visible || o.isLight || o.isInstancedMesh) continue;
+      o.getWorldPosition(_btW).applyMatrix4(b.inv);
+      if (_btW.x < R.x0 - 2 || _btW.x > R.x1 + 2) continue;
+      if (_btW.z < R.z0 - 2 || _btW.z > R.z1 + 2) continue;
+      if (_btW.y < -4 || _btW.y > R.h + 4) continue;
+      o.visible = false; bunkerHid.push(o);
+    }
   }
 }
 // ------------------------------------------------------------------
@@ -26203,7 +26727,7 @@ function headroomClear() {
     if (st && st.c < stand + 0.06) return false;
   }
   if (inCat && catWalk) {
-    const st = keepFloorAt(camera.position.x, camera.position.z, groundY, 0.5, CAT_SITE);
+    const st = catFloorSmooth(camera.position.x, camera.position.z, groundY, 0.5);
     if (st && st.c < stand + 0.06) return false;
   }
   /* Look UP and see. This used to ask whether you were inside the pier's
@@ -26364,7 +26888,7 @@ function update(dt, rawDt = dt) {
   crouchT += ((crouching ? 1 : 0) - crouchT) * Math.min(1, dt * 11);
   if (crouchT < 0.001) crouchT = 0;
   if (crouchT > 0.999) crouchT = 1;
-  const spd = (running ? RUN_SPEED : WALK_SPEED) * settings.walkSpeed * (1 - crouchT * 0.55);
+  const spd = (running ? RUN_SPEED : WALK_SPEED) * settings.walkSpeed * speedK() * (1 - crouchT * 0.55);
 
   camera.getWorldDirection(forward);
   forward.y = 0; forward.normalize();
@@ -26523,21 +27047,35 @@ function update(dt, rawDt = dt) {
    * seeing through the rock while you back out of it. The standing snap
    * above puts the eye back at head height after every clamp, so it still
    * has to be the last word on the base before the camera is written. */
+  /* AND A ROOF UNDER YOUR OWN FEET IS NOT A ROOF. Every storeyed room asks
+   * this at `groundY` — the floor you are standing on, or the one you are
+   * FALLING TO — so the frame you step or jump off a ledge it stops
+   * describing the storey you are in and starts describing the one below,
+   * whose roof is the thing you were just standing on. Measured on the
+   * tavern's hanging carpets: the frame the body left the catwalk the
+   * lookup answered with the hall floor four and a half metres down, read
+   * its roof as the carpet overhead, and slammed the camera 2.08 m DOWN
+   * THROUGH IT in a single frame. That is the whole of "when I get near the
+   * edge I lag off" — and it also ate every jump across the gap between the
+   * two carpets, because the duck fires in the air as well. A roof has to
+   * be over your head to be one: over the FEET, with a body's slack under
+   * it, or it is something you are standing on top of. */
+  const duckOver = camBaseY - playerEye() + 0.30;
   if (inUndercroft && UC.ready) {
     const c = UC.ceilAt(camera.position.x - UC_X, camera.position.z - UC_Z);
-    if (c !== null) { const top = UC_Y + c - 0.22; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }   // measured: at 0.16 the worst spot in the tunnel left 3 cm of rock over the eye
+    if (c !== null && UC_Y + c > duckOver) { const top = UC_Y + c - 0.22; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }   // measured: at 0.16 the worst spot in the tunnel left 3 cm of rock over the eye
   }
   if (inKeep && keepWalk) {
     const st = keepFloorAt(camera.position.x, camera.position.z, groundY, 0.5);
-    if (st && st.c < KEEP_Y + 90) { const top = st.c - 0.22; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }
+    if (st && st.c < KEEP_Y + 90 && st.c > duckOver) { const top = st.c - 0.22; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }
   }
   if (inTavern && tavWalk) {   // the crates under the vault: the flight above is the roof
     const st = keepFloorAt(camera.position.x, camera.position.z, groundY, 0.5, TAV_SITE);
-    if (st && st.c < TAV_Y + 90) { const top = st.c - 0.22; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }
+    if (st && st.c < TAV_Y + 90 && st.c > duckOver) { const top = st.c - 0.22; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }
   }
-  if (inCat && catWalk) {      // the catacombs' vaults
-    const st = keepFloorAt(camera.position.x, camera.position.z, groundY, 0.5, CAT_SITE);
-    if (st && st.c < CAT_Y + 90) { const top = st.c - 0.22; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }
+  if (inCat && catWalk) {      // the catacombs' vaults (the roof blended like the floor, or the duck stair-steps up a ramp)
+    const st = catFloorSmooth(camera.position.x, camera.position.z, groundY, 0.5);
+    if (st && st.c < CAT_Y + 90 && st.c > duckOver) { const top = st.c - 0.22; if (camBaseY > top) { camBaseY = top; if (vy > 0) vy = 0; } }
   }
   camera.position.y = camBaseY + bob - landDip;
 
@@ -26654,6 +27192,7 @@ function update(dt, rawDt = dt) {
   updateMutant(dt);
   pinSamuraiSword();        // whatever moved his arm last is what the sword hangs off
   cullWorldInHall();        // and the beach is not drawn from a room twelve kilometres off it
+  bunkerTenantry();         // nor from one forty metres under it — AFTER `updateFarProps`, which writes a far prop's `visible` every frame
   /* AFTER the fight AI, never before: whatever moves him last has to be the
    * thing that puts him back on the ground and inside the arena, or a swing's
    * own lunge carries him off the ridge for a frame every time. */
@@ -26739,6 +27278,8 @@ function saveCheckpoint() {
       boatKey: boatKeyTaken,
       // the wreck's shell door: a door you opened stays open
       holdDoor: holdDoorOpen,
+      // and the catacombs' own, which the skull key turns
+      catDoor: catDoorOpen,
       dockDoor: dockDoorOpen,
       /* AND THE DOJO. The same rule as the shell door and the smiling one: a
        * fight you have already won does not un-happen when you load, and a
@@ -26834,8 +27375,7 @@ function beginRestore() {
   bloodSeen = !!f.bloodSeen;
   if (bloodSeen) { hudJar.userData.setFill(0.86); updateBloodReadout(); }
   // and the jars come back as a stack, not as a number with no slot under it
-  jarItem.count = bloodJars;
-  if (bloodJars > 0) { addToInventory(jarItem); renderHotbar(); renderPack(); }
+  jarItem.count = bloodJars;            // the corner's tally; the pack never holds it
   for (const i of d.mounds || []) if (mounds[i] && !mounds[i].taken) revealMoundNear(mounds[i].x, mounds[i].z);
   /* THE THREE AT THE DOCK ARE BEHIND YOU. Their cutscene fires on your Z
    * alone, and the pavilion is three hundred metres past it — so a restore
@@ -26907,6 +27447,7 @@ function updateRestore(dt) {
    * what registers whatever was inside it */
   for (const i of f.crates || []) if (crates[i] && !crates[i].broken) breakCrate(crates[i], 1, true);
   if (f.dojoWon) dojoWon = true;
+  if (f.catDoor) catDoorOpen = true;
   if (f.heroSword || f.dojoWon) heroSwordTaken = true;
   if (f.holdDoor && !holdDoorOpen) {
     holdDoorOpen = true; holdDoorSwing = 1;
@@ -26949,8 +27490,8 @@ function packByName(name) {
    * taken and have no standing object to hand back; they are also not things
    * a fight depends on. The three dig tools are, and they are all here. */
   for (const it of [shovelItem, militaryItem, katanaItem, glowstickItem, ringItem,
-                    keyItem, boatKeyItem, cdItem, crabItem, syringeItem,
-                    waterBottleItem, headItem]) {
+                    weddingItem, keyItem, boatKeyItem, skullKeyItem, cdItem, crabItem,
+                    syringeItem, waterBottleItem, headItem]) {
     if (it && it.name === name) return it;
   }
   return null;
@@ -26973,9 +27514,23 @@ function finishRestore() {
     const ia = want.indexOf(a.name), ib = want.indexOf(b.name);
     return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
   });
+  /* A WORN RING IS NOT IN THE PACK, SO THE PACK'S GRANT NEVER REACHED IT.
+   * `pack` is `inventory`, and `wearRing` takes a ring OUT of the inventory
+   * — so the one item the save recorded as worn was in neither list the
+   * grant above reads. It came back only if its pickup replayed, and the
+   * ring's pickup is registered by `dropRing` when the knight dies: on a
+   * fresh page nothing has died, the interactable does not exist, and the
+   * ring the owner had on his finger was gone for the rest of the game.
+   * Granted by name and put straight on, the way the pack's floor does. */
   for (const name of d.worn || []) {
-    const it = inventory.find((i) => i.name === name);
-    if (it) wearRing(it);
+    if (rings.some((i) => i.name === name)) continue;
+    let it = inventory.find((i) => i.name === name);
+    if (it) { wearRing(it); continue; }
+    it = packByName(name);
+    if (!it) { console.warn('[restore] no ring known by the name', name); continue; }
+    if (rings.length >= RING_SLOTS) { addToInventory(it); continue; }
+    console.warn('[restore] the pickup for the worn', name, 'never appeared — putting it back on');
+    rings.push(it);
   }
   if (d.flags && d.flags.ringsFound) ringsFound = true;
   if (d.held) {
@@ -26989,6 +27544,7 @@ function animate() {
   bwSpan('frame', animateFrame);
 }
 function animateFrame() {
+  updateWhereAmI();                       // dev mode's own readout: where you are, in the room's own numbers
   /* ONE WARM PER FRAME, AND EACH ONE NAMED. They are the most expensive
    * things this game ever does on a single frame — a room's whole shader set
    * and every texture in it, uploaded at once — so they are the first place
@@ -27535,18 +28091,31 @@ function mutClampX(u, p, dt) {
     if (pv && catCrossed(pv.x, pv.z, p.x, p.z, p.y)) {
       if (!catCrossed(pv.x, pv.z, p.x, pv.z, p.y)) p.z = pv.z;
       else if (!catCrossed(pv.x, pv.z, pv.x, p.z, p.y)) p.x = pv.x;
-      else { p.x = pv.x; p.z = pv.z; u.catBlocked = (u.catBlocked || 0) + 1; }
+      else { p.x = pv.x; p.z = pv.z; u.catBlocked = (u.catBlocked || 0) + 1; u.catBlockT = (u.catBlockT || 0) + dt; }
+    } else u.catBlockT = 0;
+    /* AND THE PUSH MAY NOT OUT-STEP THE WALK — measured, at last, as the
+     * thing it was doing. He was circling: a two-waypoint route in his hands,
+     * the waypoint a metre off, and his position going round a 0.35 m circle
+     * once every 0.8 s for a whole minute (113 m of travel, none of it
+     * anywhere). The follower took a 3.2 cm stride toward the waypoint and
+     * the two pushes here — run TWICE a frame, once from `ucFollowPath` and
+     * once from `catWander` after it, each capped at 4 cm — took up to 8 cm
+     * back off a cell with no floor at his level, and a pursuit whose
+     * correction is bigger than its stride orbits. The pushes run ONCE a
+     * tick and their total is capped at a third of the stride he actually
+     * took (a floor of half a centimetre, so a body parked against stone is
+     * still eased off it). The segment test above keeps him out of the
+     * stone; the push is only ever cosmetic. */
+    const r = 0.42;   // the corridors are 1.3 m wide and the routes keep 0.4 m off the stone, weighted toward the middle
+    if (u.catClampTick !== catTick) {
+      u.catClampTick = catTick;
+      const stride = pv ? Math.hypot(p.x - pv.x, p.z - pv.z) : 0.03;
+      const wx = p.x, wz = p.z, feet = p.y;
+      pushOutOfKeep(p, r, feet, 0.6, CAT_SITE);
+      keepWallPush(p, r, feet, CAT_SITE, 0.6);
+      const mx = p.x - wx, mz = p.z - wz, ml = Math.hypot(mx, mz), cap = Math.max(0.005, Math.min(0.02, stride * 0.33));
+      if (ml > cap) { p.x = wx + mx / ml * cap; p.z = wz + mz / ml * cap; }
     }
-    const r = 0.35;   // the corridors are 1.3 m wide now, so a body may be asked to stand off the stone
-    const wx = p.x, wz = p.z, feet = p.y;
-    pushOutOfKeep(p, r, feet, 0.6, CAT_SITE);
-    // ON A ROUTE the drawn faces are not asked: the route runs on floor cells
-    // a hand from the pillars, and the push off a pillar stopped him a stride
-    // into every corridor (traced: 1.2 m, then still, the route redrawn for ever).
-    // The segment test above is what keeps him out of the stone instead.
-    keepWallPush(p, r, feet, CAT_SITE, 0.6);   // on a route too, now that the routes keep 0.4 m off the stone
-    const mx = p.x - wx, mz = p.z - wz, ml = Math.hypot(mx, mz), cap = 0.04;
-    if (ml > cap) { p.x = wx + mx / ml * cap; p.z = wz + mz / ml * cap; }
     const st = keepFloorAt(p.x, p.z, p.y + 0.3, 0.7, CAT_SITE);
     if (st) { if (!u.st.catHome) u.st.catHome = { x: 0, z: 0 }; u.st.catHome.x = p.x; u.st.catHome.z = p.z; }
     /* AND ON A ROUTE A MISSING CELL IS CROSSED, NOT REFUSED. The route may
@@ -30934,9 +31503,14 @@ function ucSteer(u, dt, dist) {
   }
 }
 const _ufD = new THREE.Vector3();
-// did a step cross drawn stone at his hip or his shoulder?
+// did a step cross drawn stone at his hip or his shoulder — or at either SHOULDER's own line, a hand out?
+let catTick = 0;   // one per creature frame (`catWander` / `catSteer`), so the wall pushes run once whatever calls the clamp
 function catCrossed(ax, az, bx, bz, y) {
-  return keepHitsWall(ax, az, bx, bz, y + 0.9, CAT_SITE) || keepHitsWall(ax, az, bx, bz, y + 1.5, CAT_SITE);
+  if (keepHitsWall(ax, az, bx, bz, y + 0.9, CAT_SITE) || keepHitsWall(ax, az, bx, bz, y + 1.5, CAT_SITE)) return true;
+  const dx = bx - ax, dz = bz - az, L = Math.hypot(dx, dz);
+  if (L < 1e-4) return false;
+  const px = -dz / L * 0.3, pz = dx / L * 0.3;
+  return keepHitsWall(ax + px, az + pz, bx + px, bz + pz, y + 0.9, CAT_SITE) || keepHitsWall(ax - px, az - pz, bx - px, bz - pz, y + 0.9, CAT_SITE);
 }
 function ucFollowPath(u, dt) {
   const P = u.path;
@@ -30954,7 +31528,17 @@ function ucFollowPath(u, dt) {
    * that doubles back is a turn you watch him make. */
   const w = P[u.pathI], nx = P[u.pathI + 1] || w;
   const dWp = Math.hypot(w.x - lx, w.z - lz);
-  const blend = THREE.MathUtils.clamp(1 - (dWp - 0.6) / 1.4, 0, 0.65);
+  /* AND A CORNER IS ONLY CUT IF THE ROUTE GOES ON ROUND IT. Traced on the
+   * catacombs hunter: waypoint 1.3 m WEST of him, the waypoint after it
+   * seven metres EAST (a route round the end of a wall turns back on
+   * itself), so the blend aimed him east, away from the waypoint; the
+   * distance grew past two metres, the blend fell to nothing, he aimed west
+   * again, the distance shrank, the blend came back — a limit cycle, and
+   * on screen a creature going round in a half-metre circle for a minute
+   * with a live route in its hands (113 m of travel, none of it anywhere).
+   * The next leg is blended in only when it continues AHEAD of this one. */
+  const ahead = (w.x - lx) * (nx.x - w.x) + (w.z - lz) * (nx.z - w.z) > 0;
+  const blend = ahead ? THREE.MathUtils.clamp(1 - (dWp - 0.6) / 1.4, 0, u.kind.cat ? 0.30 : 0.65) : 0;   // a body three metres long cuts a corner less, or its shoulder is in the jamb
   const tx = w.x + (nx.x - w.x) * blend, tz = w.z + (nx.z - w.z) * blend;
   const wx = tx - lx, wz = tz - lz, L = Math.hypot(wx, wz) || 1;
   _ufD.set(wx / L, 0, wz / L);
@@ -37036,6 +37620,7 @@ const CAVE = { rumble: 1.15, drop: 0.95, hold: 0.85, up: 0.70 };  // the take's 
 const CAT_OUT = 0.5, CAT_HOLD = 0.9, CAT_IN = 0.65;
 let catWorld = null, catReady = false, catWalk = null, catCells = null, catWalls = null, catBuilt = false, catWarmed = false;
 let inCat = false, catBusy = false, catT = 0, catCutDone = false, catLastFloor = null, catSaveDone = false;
+let catDoorOpen = false;          // the skull key turns once, and the way out stays open
 let caveBusy = false, caveT = 0, caveDone = false, caveY0 = 0, caveCue = null;
 const catLastSpot = { x: 0, z: 0 };
 let _catFogSaved = null, catG = null, catGlow = null, catDoorLight = null;
@@ -37048,6 +37633,31 @@ const CAT_SITE = {
   extra: () => [],
   sea: null,                                        // a cell that was never written is a wall in here
 };
+/* THE RAMPS ARE SMOOTH, AND THE GRID IS NOT. The walk grid is a plan of
+ * cells 0.2 m across, each carrying ONE floor height, so a slanted corridor
+ * is a staircase of twenty-centimetre treads however smooth the stone that
+ * was drawn — and the camera followed it: snapped up a riser every fifth of
+ * a metre going uphill, and dropped one under gravity coming down.
+ * Measured on the walk from the landing to the door: 87 ticks with the
+ * camera jumping more than 4.5 cm and 19 over 9 cm, which is the owner's
+ * "slight lag and camera shake" on the slopes. The cell under the player is
+ * blended toward its neighbours by where inside the cell the player stands
+ * — a linear ramp through the cell centres — and only toward a neighbour
+ * whose floor is within a step, so a real ledge stays a ledge. The roof
+ * rides the same blend, or the duck under it would stair-step instead. */
+function catFloorSmooth(x, z, feet, up = CAT_STEP) {
+  const S = CAT_SITE, st = keepFloorAt(x, z, feet, up, S);
+  if (!st || !S.walk) return st;
+  const w = S.walk, cs = w.cell;
+  const gx = (x - S.X - w.x0) / cs, gz = (z - S.Z - w.z0) / cs;
+  const fx = gx - Math.floor(gx) - 0.5, fz = gz - Math.floor(gz) - 0.5;   // -0.5..0.5 off the cell's centre
+  let f = st.f, c = st.c;
+  const nb = (dx, dz) => keepFloorAt(x + dx, z + dz, feet, up + 0.3, S);   // the uphill neighbour is a riser over `up`
+  const sx = fx !== 0 ? nb(Math.sign(fx) * cs, 0) : null, sz = fz !== 0 ? nb(0, Math.sign(fz) * cs) : null;
+  if (sx && Math.abs(sx.f - st.f) < CAT_STEP) { f += Math.abs(fx) * (sx.f - st.f); if (Math.abs(sx.c - st.c) < 1.2) c += Math.abs(fx) * (sx.c - st.c); }
+  if (sz && Math.abs(sz.f - st.f) < CAT_STEP) { f += Math.abs(fz) * (sz.f - st.f); if (Math.abs(sz.c - st.c) < 1.2) c += Math.abs(fz) * (sz.c - st.c); }
+  return { f, s: st.s, c };
+}
 function loadCatacombs() {
   if (catWorld) return;
   catWorld = new THREE.Group();
@@ -37089,6 +37699,7 @@ function loadCatacombs() {
          * skull mesh. Bucketed on a metre and a half, the busiest buckets
          * are where he goes to EAT (`catSpots.eat`). */
         if (/Skull/.test(n) && o.geometry && o.geometry.attributes.position) {
+          if (!catSkullMat) catSkullMat = m;          // and the bones he kicks at you wear the piles' own material
           const P = o.geometry.attributes.position, buckets = new Map();
           for (let i = 0; i < P.count; i++) {
             const x = P.getX(i), y = P.getY(i), z = P.getZ(i);
@@ -37125,34 +37736,87 @@ function loadCatacombs() {
      * a glow sits in its window and a shaft of it lies into the room — the
      * one cold thing in a place of guttering torches, which is what says
      * "outside" from across the room. */
+    /* AND THE WAY OUT IS LIT — THROUGH THE BARS. The door has a barred
+     * window in it, and the light is OUTSIDE. Where the window is was
+     * measured by raycasting the leaf from inside the room: the gaps between
+     * the bars run 1.7–2.2 m over the sill and from a hand left of the door's
+     * centre to half a metre right of it (the door itself hangs between the
+     * two torches, at `CAT_DOOR.z`). The first build hung the glow, the lamp
+     * and the shaft ABOVE THE LINTEL — a lamp over a door, and the owner
+     * said so. Four things now, all built off the opening: a bright unlit
+     * plate a hand BEHIND the leaf, so the bars are drawn black against it
+     * and the light is seen to come through them; a glow in the opening; the
+     * cold lamp just inside it; and the shaft, which falls from the window
+     * DOWN into the room and lands on the flags, with a pool where it lands.
+     * Everything is `bwGhost` and un-raycastable: a beam of light is not a
+     * wall, and the crosshair has a door to find. */
+    const WIN = { x: CAT_DOOR.x, y: CAT_DOOR.f + 1.95, z: CAT_DOOR.z + 0.2, w: 0.7, h: 0.6 };
     catDoorLight = new THREE.PointLight(0xb8d0ff, 2.8, 16, 1.4);
-    catDoorLight.position.set(CAT_DOOR.x - 2.0, CAT_DOOR.f + 1.7 * CAT_SCALE, CAT_DOOR.z);
+    catDoorLight.position.set(WIN.x - 1.1, WIN.y, WIN.z);
     catWorld.add(catDoorLight);
+    const ghost = (o) => { o.raycast = () => {}; o.userData.bwGhost = true; catWorld.add(o); return o; };
+    const sky = new THREE.Mesh(new THREE.PlaneGeometry(WIN.w + 0.6, WIN.h + 0.6), new THREE.MeshBasicMaterial({ color: 0xd2e2ff, fog: false, toneMapped: false, side: THREE.DoubleSide }));
+    sky.position.set(WIN.x + 0.42, WIN.y, WIN.z); sky.rotation.y = -Math.PI / 2;   // behind the leaf, facing into the room: drawn only where the leaf is not
+    ghost(sky);
     const glowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); const r = g.createRadialGradient(32, 32, 2, 32, 32, 32); r.addColorStop(0, 'rgba(230,240,255,1)'); r.addColorStop(0.35, 'rgba(180,205,255,0.55)'); r.addColorStop(1, 'rgba(120,150,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
-    catGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.95, fog: false }));
-    catGlow.position.set(CAT_DOOR.x - 0.25, CAT_DOOR.f + 1.55 * CAT_SCALE, CAT_DOOR.z);
-    catGlow.scale.set(0.9 * CAT_SCALE, 0.9 * CAT_SCALE, 1);
-    catGlow.raycast = () => {}; catGlow.userData.bwGhost = true;
-    catWorld.add(catGlow);
-    const shaft = new THREE.Mesh(new THREE.PlaneGeometry(0.6 * CAT_SCALE, 3.2 * CAT_SCALE), new THREE.MeshBasicMaterial({ color: 0x9fb8ff, transparent: true, opacity: 0.09, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
-    shaft.position.set(CAT_DOOR.x - 1.5 * CAT_SCALE, CAT_DOOR.f + 1.1 * CAT_SCALE, CAT_DOOR.z);
-    shaft.rotation.z = -0.55; shaft.rotation.y = Math.PI / 2;
-    shaft.raycast = () => {};
-    /* AND A BEAM OF LIGHT IS NOT A WALL. `buildKeepWalls` walks every mesh
-     * in the room's group and this one is a PLANE standing across the floor
-     * three and a third metres in front of the door — so the walk stopped
-     * you exactly a body's width short of it and you could read the prompt
-     * and never reach it. That is the owner's "I got stuck here", and the
-     * same is true of the door's own hit proxy and its glow. `bwGhost` is
-     * the flag: drawn, and never walked into. */
-    shaft.userData.bwGhost = true;
-    catWorld.add(shaft);
+    catGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.85, fog: false }));
+    catGlow.position.set(WIN.x - 0.22, WIN.y, WIN.z);
+    catGlow.scale.set(1.7, 1.35, 1);
+    ghost(catGlow);
+    // the shaft: bright at the opening, gone by the floor
+    /* SOFT ON EVERY EDGE. A gradient down its length alone drew a paper
+     * cut-out — a hard-edged grey triangle lying on the floor. Light through
+     * a window is brightest on its own axis and dies toward the sides too,
+     * so the alpha falls off across as well as down, and the level is low:
+     * what says "a shaft of light" is the bars and the pool, not a shape. */
+    const shaftTex = (() => {
+      const c = document.createElement('canvas'); c.width = 64; c.height = 64; const g = c.getContext('2d');
+      const im = g.createImageData(64, 64);
+      for (let j = 0; j < 64; j++) for (let i = 0; i < 64; i++) {
+        const v = 1 - j / 63, u = Math.abs(i / 63 - 0.5) * 2;            // v: 1 at the window (top row), 0 at the floor
+        const a = Math.pow(Math.max(0, 1 - u * u), 1.6) * Math.pow(v, 1.1) * Math.min(1, (1 - v) * 9 + 0.15);
+        const o = (j * 64 + i) * 4; im.data[o] = im.data[o + 1] = im.data[o + 2] = 255; im.data[o + 3] = Math.round(a * 255);
+      }
+      g.putImageData(im, 0, 0); const t = new THREE.CanvasTexture(c); return t;
+    })();
+    const shaftMat = new THREE.MeshBasicMaterial({ color: 0x9fb8ff, alphaMap: shaftTex, transparent: true, opacity: 0.17, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    const land = { x: WIN.x - 3.6, y: CAT_DOOR.f + 0.05 };
+    const quad = (pts) => {   // four corners, top pair first (uv v = 1 at the window, 0 on the floor)
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pts.flat(), 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 1, 1, 1, 1, 0, 0, 0], 2));
+      g.setIndex([0, 1, 2, 0, 2, 3]);
+      return ghost(new THREE.Mesh(g, shaftMat));
+    };
+    // face-on from the room: a carpet of light widening from the opening to the flags
+    quad([[WIN.x - 0.05, WIN.y + 0.05, WIN.z - WIN.w / 2], [WIN.x - 0.05, WIN.y + 0.05, WIN.z + WIN.w / 2], [land.x, land.y, WIN.z + 0.95], [land.x, land.y, WIN.z - 0.95]]);
+    // (an edge-on quad for the side view was tried and drew as a hard line down the middle; the pool carries the side view)
+    const pool = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 1.8), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x9fb8ff, transparent: true, opacity: 0.26, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+    pool.position.set(land.x + 0.1, land.y + 0.02, WIN.z); pool.rotation.x = -Math.PI / 2;
+    ghost(pool);
     // the door: an invisible slab across it that the crosshair can find
     const proxy = new THREE.Mesh(new THREE.BoxGeometry(0.3, 2.4 * CAT_SCALE, 1.3 * CAT_SCALE), new THREE.MeshBasicMaterial({ visible: false }));
     proxy.name = 'hitProxy'; proxy.visible = false; proxy.userData.bwGhost = true;
     proxy.position.set(CAT_DOOR.x - 0.1, CAT_DOOR.f + 1.2 * CAT_SCALE, CAT_DOOR.z);
     catWorld.add(proxy);
-    addInteractable(proxy, 'Open the door', 'default', { far: 4.6, mid: true, onActivate: () => startCatExit(), when: () => inCat && !catBusy && !caveBusy });
+    /* AND IT IS LOCKED, WHICH IS WHAT THE KEY IS FOR. A key opens a door
+     * from the PACK — it never has to be in your hand, which is the wreck's
+     * own rule (`inventory.includes(boatKeyItem)`) and the owner's word for
+     * every key in this game. Locked, the door says so and carries no verb
+     * at all (`bare`), so the prompt is the thing that sends you back down
+     * for it; with the key in the pack it turns, once, and stays open. */
+    const catKeyIn = () => catDoorOpen || inventory.includes(skullKeyItem);
+    addInteractable(proxy, 'The door is locked.', 'default', {
+      far: 4.6, mid: true,
+      label: () => (catDoorOpen ? 'Open the door' : inventory.includes(skullKeyItem) ? 'Unlock the door' : 'The door is locked.'),
+      bare: () => !catKeyIn(),
+      when: () => inCat && !catBusy && !caveBusy,
+      onActivate: () => {
+        if (!catKeyIn()) { sfxThud(0.02); return; }
+        if (!catDoorOpen) { catDoorOpen = true; sfxLockerOpen(); }
+        startCatExit();
+      },
+    });
       catReady = true;
   }, undefined, () => {});
 }
@@ -37161,11 +37825,94 @@ function buildCatacombs() {
   if (catBuilt || !catReady || !catWalk) return;
   catBuilt = true;
   const t0 = performance.now();
+  /* SEVEN HUNDRED AND FORTY-SEVEN MESHES IS TWO HUNDRED AND FORTY-THREE
+   * DRAW CALLS. Measured standing in the crypt: 257 for the frame, of which
+   * the room is 243 — the most expensive thing in the game and, being a
+   * packed scan, the one place `bakeStatic` had never been allowed to look,
+   * because every mesh in it carries an exporter's name. It is merged by
+   * material, in world space, so the grime shader (which reads the world
+   * position), the wall index and every floor probe see exactly the
+   * triangles they saw before. What it gives up is per-mesh frustum culling
+   * — the whole complex is drawn from any room in it — and that is the
+   * trade this file has already made twice: triangles were never the
+   * problem here, draw calls were. */
+  bakeStatic(catWorld, undefined, { named: true });
   buildKeepWalls(CAT_SITE);
   repairKeepStoreys(CAT_SITE);
   catBuildGraph();
+  buildCatKey();
   catWalk.built = Math.round(performance.now() - t0);
 }
+/* AND THE KEY LIES BETWEEN THE CANDLES, WHICH ARE MEASURED. Down in the
+ * lower vault a low plinth carries a ring of four candles with a clear
+ * middle, and that middle is where the way out of this place is lying.
+ * Nothing here is typed but the STATION — a spot in that vault to look
+ * round, the way the bore's own line is a station and the rest of the shelf
+ * is measured. The candles are found in the scan's own `Candle` mesh (one
+ * mesh per material, so a candle is not an object — it is a cluster of
+ * vertices, the skull piles' own trick), their bases give the stone they
+ * stand on, and a raycast gives its top.
+ *
+ * AND IT LIES ALONG THE GAP THEY LEAVE. Laid on the room's square a 0.42 m
+ * key crosses two of them; the bearing is swept instead for the line whose
+ * BOTH ENDS are furthest from any candle, which on this ring of four is the
+ * diagonal — measured, 107 and 108 degrees of clear air against 68 and 77
+ * the other way. */
+const CAT_KEY = { x: 12.08, y: -5.56, z: -33.76, r: 1.6, up: 1.5 };   // a STATION has a height: the same plan holds a room two storeys up, and its candles pulled the middle a quarter of a metre off the ring
+let catKeyDone = false;
+function buildCatKey() {
+  if (catKeyDone || !catWorld) return;
+  catKeyDone = true;
+  // a thing you have already taken is not lying there again: the restore
+  // hands the key back by name long before the room is ever rebuilt
+  if (inventory.includes(skullKeyItem) || catDoorOpen) return;
+  let mesh = null;
+  catWorld.traverse((o) => {
+    if (!o.isMesh) return;
+    const m = Array.isArray(o.material) ? o.material[0] : o.material;
+    const n = (m && m.name) || '';
+    if (/Candle/.test(n) && !/Flame/.test(n)) mesh = o;
+  });
+  if (!mesh || !mesh.geometry.attributes.position) return;
+  const P = mesh.geometry.attributes.position, b = new Map();
+  for (let i = 0; i < P.count; i++) {
+    const x = P.getX(i), y = P.getY(i), z = P.getZ(i);
+    if (Math.hypot(x - CAT_KEY.x, z - CAT_KEY.z) > CAT_KEY.r || Math.abs(y - CAT_KEY.y) > CAT_KEY.up) continue;
+    const k = Math.round(x / 0.15) + ',' + Math.round(z / 0.15);
+    let e = b.get(k); if (!e) { e = { n: 0, x: 0, z: 0, y: 9e9 }; b.set(k, e); }
+    e.n++; e.x += x; e.z += z; e.y = Math.min(e.y, y);
+  }
+  // and a candle is not a bucket: two buckets a finger apart are one candle,
+  // and the fragment would weight the middle toward whichever it belongs to
+  const cs = [];
+  for (const e of [...b.values()].filter((q) => q.n > 40).sort((q, r2) => r2.n - q.n)) {
+    const x = e.x / e.n, z = e.z / e.n;
+    if (cs.some((q) => Math.hypot(q.x - x, q.z - z) < 0.12)) continue;
+    cs.push({ x, z, y: e.y });
+  }
+  if (cs.length < 2) return;
+  const cx = cs.reduce((a2, c) => a2 + c.x, 0) / cs.length;
+  const cz = cs.reduce((a2, c) => a2 + c.z, 0) / cs.length;
+  const base = Math.min(...cs.map((c) => c.y));
+  // the stone they stand on, asked of the geometry rather than assumed
+  _catRay.set(new THREE.Vector3(CAT_X + cx, CAT_Y + base + 0.6, CAT_Z + cz), _downV);
+  _catRay.far = 1.6;
+  const hit = _catRay.intersectObject(catWorld, true).filter((h) => h.object.name !== 'hitProxy')[0];
+  const top = hit ? hit.point.y - CAT_Y : base;
+  // the bearing whose two ends are furthest from any candle
+  const bear = cs.map((c) => Math.atan2(c.x - cx, c.z - cz));
+  let best = 0, bestD = -1;
+  for (let a2 = 0; a2 < Math.PI; a2 += Math.PI / 180) {
+    let worst = 9;
+    for (const th of [a2, a2 + Math.PI]) for (const q of bear) {
+      let d = Math.abs(((th - q + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+      worst = Math.min(worst, d);
+    }
+    if (worst > bestD) { bestD = worst; best = a2; }
+  }
+  dropSkullKey(CAT_X + cx, CAT_Y + top + 0.012, CAT_Z + cz, best);
+}
+const _catRay = new THREE.Raycaster(), _downV = new THREE.Vector3(0, -1, 0);
 function catGroundAt(x, z, y) {
   if (!catReady || !inCat || y === undefined) return null;
   if (Math.abs(x - CAT_X) > 110 || Math.abs(z - CAT_Z) > 110 || Math.abs(y - CAT_Y) > 60) return null;
@@ -37249,7 +37996,9 @@ function updateCatacombs(dt) {
   st = keepFloorAt(p.x, p.z, feet, up, S) || st;
   if (!st) { p.x = _preMove.x; p.z = _preMove.z; st = keepFloorAt(p.x, p.z, feet, up, S); }
   if (st) { catLastFloor = st.f; catLastSpot.x = p.x; catLastSpot.z = p.z; }
-  groundY = st ? st.f : (catLastFloor === null ? CAT_Y + 0.36 * CAT_SCALE : catLastFloor);
+  // the floor the CAMERA follows is the blended one: a ramp, not the grid's treads
+  const sm = st ? catFloorSmooth(p.x, p.z, feet, up) : null;
+  groundY = sm ? sm.f : st ? st.f : (catLastFloor === null ? CAT_Y + 0.36 * CAT_SCALE : catLastFloor);
   /* THE NOISE YOU MAKE. Amnesia's own rule: he hunts by ear as much as by
    * eye. Every third of a second the walk says how loud you are — a sprint
    * carries twenty-four metres, a walk eleven, a crouch five — and a
@@ -37260,10 +38009,16 @@ function updateCatacombs(dt) {
   if (onGround && !_catWasGround) catNoiseAt(p.x, p.z, 18);
   _catWasGround = onGround;
   // (a teleport is not a footstep: the frame the cut sets you down moves the camera nine kilometres)
-  if (catNoiseT <= 0 && sp > 0.4 && sp < 12) { catNoiseT = 0.33; catNoiseAt(p.x, p.z, sp > 4.4 ? 24 : crouching ? 5 : 11); }
+  /* CROUCHING IS SNEAKY, RUNNING IS NOT — the owner's word. A crouch carries
+   * three metres, which is inside his own hearing anyway; a walk twelve; a
+   * sprint twenty-six, most of the place. And a crouched body is harder to
+   * SEE as well (`catSees`): half the range, and he has to be nearly on you
+   * to hear you whatever he is facing. */
+  if (catNoiseT <= 0 && sp > 0.4 && sp < 12) { catNoiseT = 0.33; catNoiseAt(p.x, p.z, crouching ? 3.0 : sp > 4.4 ? 26 : 12); }
   // and the cave's own bed plays down here (see the undercroft's mix), so it has to exist
   if (audioCtx && !caveAmbEl) startCaveAmbience();
   catLitterCheck(dt, sp);
+  catBonesHit();
 }
 let catNoiseT = 0, _catWasGround = true;
 
@@ -37476,8 +38231,14 @@ function catBuildGraph() {
        * down the MIDDLE of a passage rather than a hand off its stone — which
        * is what stopped him grinding against a wall on every corridor. */
       if (catWalls && keepWallNear(x, z, 0.40, f + 0.5, f + 1.5, CAT_SITE)) continue;
+      /* AND HOW FAR THE STONE IS. `w` is the distance to the nearest drawn
+       * face within a metre (1.0 = none that near), and the route search
+       * charges for hugging a wall — so a three-metre animal with its face
+       * 1.7 m ahead of its origin takes the middle of a room and the middle
+       * of a passage, which is most of "he clips through the walls". */
+      const nearW = catWalls ? keepWallNear(x, z, 1.0, f + 0.5, f + 1.5, CAT_SITE) : null;
       const id = nodes.length;
-      nodes.push({ i: c[0], j: c[1], f, x, z, h: open ? 99 : roof - st[k] });
+      nodes.push({ i: c[0], j: c[1], f, x, z, h: open ? 99 : roof - st[k], w: nearW ? 1.0 - nearW.depth : 1.0 });
       const key = c[1] * w.gw + c[0];
       let arr = byCell.get(key); if (!arr) { arr = []; byCell.set(key, arr); }
       arr.push(id);
@@ -37485,6 +38246,34 @@ function catBuildGraph() {
   }
   catG = { nodes, byCell, gw: w.gw, prev: new Int32Array(nodes.length), q: [],
            stamp: new Int32Array(nodes.length), closed: new Int32Array(nodes.length), g: new Float32Array(nodes.length), gen: 0, heap: [], heapF: [] };
+  /* AND THE GRAPH IS ONE PIECE, WITH POCKETS. A ledge the packer floored
+   * that nothing joins to is a component of a few dozen nodes, and a body
+   * standing in one can route nowhere: traced, a pocket of NINETEEN nodes
+   * thirteen metres from you, him seeing you the whole time, every route
+   * refused, stalk and chase and search taking turns at failing for
+   * twenty-five seconds. The largest component is THE graph: a snap, a
+   * target and a spot to watch from all come from it, and a body found
+   * off it is put back on it the moment you are not looking. */
+  {
+    const comp = new Int32Array(nodes.length).fill(-1), q = []; let best = -1, bestN = 0, nc = 0;
+    for (let i = 0; i < nodes.length; i++) {
+      if (comp[i] >= 0) continue;
+      q.length = 0; q.push(i); comp[i] = nc; let head = 0;
+      while (head < q.length) {
+        const k = q[head++], n = nodes[k];
+        for (const [di, dj] of CAT_DIRS) {
+          const arr = byCell.get((n.j + dj) * w.gw + (n.i + di)); if (!arr) continue;
+          const hop = Math.abs(di) + Math.abs(dj) > CD ? 1.1 : 0.75;
+          for (const m of arr) { if (comp[m] >= 0 || Math.abs(nodes[m].f - n.f) > hop) continue; comp[m] = nc; q.push(m); }
+        }
+      }
+      if (q.length > bestN) { bestN = q.length; best = nc; }
+      nc++;
+    }
+    catG.main = new Uint8Array(nodes.length);
+    for (let i = 0; i < nodes.length; i++) if (comp[i] === best) catG.main[i] = 1;
+    catG.mainN = bestN; catG.comps = nc;
+  }
   // the room the way out is in: everything within twelve metres of the door
   catSpots.door = [];
   for (let i = 0; i < nodes.length; i++) {
@@ -37513,12 +38302,25 @@ function catNodeAt(x, z, y, slack = 1.0, mask = null) {
     if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
     const arr = catG.byCell.get((j0 + dj) * w.gw + (i0 + di)); if (!arr) continue;
     for (const id of arr) {
+      if (catG.main && !catG.main[id]) continue;   // a pocket is not a place
       const d = Math.abs(catG.nodes[id].f - y); if (d >= slack) continue;
       if (d < bd) { bd = d; best = id; }
       if (mask && mask[id] && d < bdIn) { bdIn = d; bestIn = id; }
     }
   }
   return mask && bestIn >= 0 ? bestIn : best;
+}
+// the nearest node of the main component to a point, anywhere in the place (rare: a body found off the graph)
+function catNearestMain(x, z, y) {
+  if (!catG) return -1;
+  let best = -1, bd = 1e9;
+  const N = catG.nodes, M = catG.main;
+  for (let i = 0; i < N.length; i++) {
+    if (M && !M[i]) continue;
+    const n = N[i], d = Math.hypot(n.x - x, n.z - z) + Math.abs(n.f - y) * 2;
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best;
 }
 const CAT_DIRS = [[CD, 0], [-CD, 0], [0, CD], [0, -CD], [2 * CD, 0], [-2 * CD, 0], [0, 2 * CD], [0, -2 * CD]];   // and a hop over one missing node
 /* A*, NOT A FLOOD — this is the whole of "I lagged all over this room".
@@ -37542,10 +38344,36 @@ function catHeapPop(G) {
     const t = h[m]; h[m] = h[i]; h[i] = t; const tf = hf[m]; hf[m] = hf[i]; hf[i] = tf; i = m; }
   return top;
 }
+/* THE ROUTE STARTS WHERE HE CAN WALK TO. The nearest node to a body a hand
+ * from a wall is as likely as not on the OTHER SIDE of that wall — nodes are
+ * 0.6 m apart and a wall here is 0.2 m of stone with 0.4 m of clearance
+ * either side — and a route that begins across a wall begins with a leg the
+ * follower drives him into: traced, a stalk with a ten-waypoint route whose
+ * first waypoint was 6.6 m away through the stone beside him, the step ahead
+ * crossing at hip, shoulder and both sides, held there until the progress
+ * check gave up and drew the same route again. The start is the nearest
+ * node within a metre and a half that his own line reaches. */
+function catStartNode(u, RM) {
+  const p = u.g.position, w = catWalk, G = catG;
+  const i0 = Math.round((p.x - CAT_X - w.x0) / 0.2), j0 = Math.round((p.z - CAT_Z - w.z0) / 0.2);
+  let best = -1, bd = 1e9;
+  for (let di = -8; di <= 8; di++) for (let dj = -8; dj <= 8; dj++) {
+    const arr = G.byCell.get((j0 + dj) * G.gw + (i0 + di)); if (!arr) continue;
+    for (const id of arr) {
+      const n = G.nodes[id];
+      if (Math.abs(n.f - p.y) > 1.0 || (RM && !RM[id])) continue;
+      const d = Math.hypot(n.x - p.x, n.z - p.z); if (d >= bd) continue;
+      if (d > 0.05 && !catLineOpen(p.x, p.z, p.y, n.x, n.z, n.f)) continue;
+      bd = d; best = id;
+    }
+  }
+  return best;
+}
 function catRoute(u, tx, tz, ty) {
   if (!catG) return false;
   const RM = u.catReach ? u.catReach.mask : null;
-  const s = catNodeAt(u.g.position.x, u.g.position.z, u.g.position.y, 1.0, RM);
+  let s = catStartNode(u, RM);
+  if (s < 0) s = catNodeAt(u.g.position.x, u.g.position.z, u.g.position.y, 1.0, RM);
   const e = catNodeAt(tx, tz, ty, 1.0, RM);
   if (s < 0 || e < 0 || s === e) return false;
   /* AND A ROUTE THAT CANNOT EXIST IS REFUSED BEFORE IT IS SEARCHED FOR.
@@ -37583,7 +38411,7 @@ function catRoute(u, tx, tz, ty) {
       const hop = Math.abs(di) + Math.abs(dj) > CD ? 1.1 : 0.75;   // a step at 0.6 m spacing
       for (const m of arr) {
         if (Math.abs(N[m].f - n.f) > hop) continue;
-        const nd = N[m], step = Math.hypot(nd.x - n.x, nd.z - n.z) + Math.abs(nd.f - n.f) * 1.5;
+        const nd = N[m], step = (Math.hypot(nd.x - n.x, nd.z - n.z) + Math.abs(nd.f - n.f) * 1.5) * (1 + (1 - nd.w) * 1.4);   // a node against the stone costs nearly twice one in the open
         const ng = gk + step;
         if (stamp[m] === gen && gs[m] <= ng) continue;
         stamp[m] = gen; gs[m] = ng; prev[m] = k;
@@ -37607,7 +38435,9 @@ function catRoute(u, tx, tz, ty) {
    * left is the long straight runs a thing that lives here would take, and
    * the turns are only where the walls actually turn. */
   catSmooth(out, u.g.position.y);
-  while (out.length > 1 && Math.hypot(CAT_X + out[0].x - u.g.position.x, CAT_Z + out[0].z - u.g.position.z) < 0.7) out.shift();
+  // a first waypoint underfoot is dropped — only if the line to the one after it is open from where he stands
+  while (out.length > 1 && Math.hypot(CAT_X + out[0].x - u.g.position.x, CAT_Z + out[0].z - u.g.position.z) < 0.7
+         && catLineOpen(u.g.position.x, u.g.position.z, u.g.position.y, CAT_X + out[1].x, CAT_Z + out[1].z, out[1].f)) out.shift();
   G.lastOut = out.length;
   if (!out.length) return false;
   u.path = out; u.pathI = 0; u.pathO = { x: CAT_X, z: CAT_Z };
@@ -37629,6 +38459,9 @@ function catLineOpen(ax, az, af, bx, bz, bf) {
   const dx = bx - ax, dz = bz - az, L = Math.hypot(dx, dz);
   if (L < 0.01) return true;
   for (const h of [0.6, 1.45]) if (keepHitsWall(ax, az, bx, bz, af + h, CAT_SITE)) return false;
+  // and a hand either side at the hip, or a string-pull cuts a doorway's jamb with his shoulder
+  const sx = -dz / L * 0.3, sz = dx / L * 0.3;
+  if (keepHitsWall(ax + sx, az + sz, bx + sx, bz + sz, af + 0.9, CAT_SITE) || keepHitsWall(ax - sx, az - sz, bx - sx, bz - sz, af + 0.9, CAT_SITE)) return false;
   const n = Math.max(1, Math.ceil(L / 0.5));
   let last = af;
   for (let k = 1; k <= n; k++) {
@@ -37742,9 +38575,143 @@ const CAT_ACTS = {
    * this one turns him toward where he thinks you are and crouches there
    * listening, which is the beat before he sees you. */
   watch: { clip: 'search',    dur: [3, 6],  w: 0.0, face: true },
+  /* LYING IN WAIT. Crouched and still behind the door's light, or in a
+   * corridor he has seen you use — not absorbed, so a body coming round the
+   * corner is noticed at his full range, which is the point. */
+  ambush: { clip: 'search',   dur: [11, 19], w: 0.0 },
 };
 let catNoise = null;                       // the last thing worth hearing: where, how far it carried, when
+/* HIS VOICE IS THE RECORDING, AND ONE THING AT A TIME. Every voiced sound
+ * he makes goes through here: it knows where he is, it will not start a
+ * growl over a roar (`catVoiceUntil` is when the last cue ends; a roar
+ * CUTS whatever is playing), and `playSampleAt` says nothing at all past
+ * the distance a cue is meant to carry. */
+let catVoiceSrc = null, catVoiceUntil = 0, catFarT = 6;
+/* AND NOTHING OF HIM IS HEARD FROM ACROSS THE MAP — the owner's word: his
+ * sounds only when he is close too. The "far" growls are the ones for the
+ * next room over, twelve to twenty-six metres, dull through the stone;
+ * past that he is silent, so hearing anything of him means he is near. */
+const CAT_HEAR_FAR = 26;
+function catCue(bank, o = {}) {
+  const u = crawlerUnit; if (!u || !inCat || !audioCtx) return false;
+  const now = audioCtx.currentTime;
+  if (now < catVoiceUntil && !o.cut) return false;
+  if (o.cut && catVoiceSrc) { try { catVoiceSrc.stop(); } catch (e) { /* already done */ } }
+  const src = playSampleAt(bank, u.g.position.x, u.g.position.z, o);
+  if (!src) return false;
+  catVoiceSrc = src; catVoiceUntil = now + src.buffer.duration / src.playbackRate.value + (o.gap || 0);
+  return true;
+}
 const catSpots = { eatRaw: [], eat: [], door: [] };  // the bone piles, and the room the way out is in
+let catSkullMat = null;
+/* HE LEARNS YOUR ROUTE. The last three places he laid eyes on you, most
+ * recent last: a player who keeps using the same corridor finds him waiting
+ * in it (`catPickTarget`). Six metres apart or it is the same place. */
+const catMemory = [];
+let catAmbushAt = -1e9;                    // when he last lay in wait by the door
+function catRemember(x, z, f) {
+  for (let i = catMemory.length - 1; i >= 0; i--) {
+    const m = catMemory[i];
+    if (Math.hypot(m.x - x, m.z - z) < 6 && Math.abs(m.f - f) < 1.8) { catMemory.splice(i, 1); break; }
+  }
+  catMemory.push({ x, z, f, t: performance.now() });
+  while (catMemory.length > 3) catMemory.shift();
+}
+/* THE BONES HE KICKS AT YOU. Charging through a pile (the ones the litter
+ * check already knows), he sends a spray of it ahead of him: real gibs, in
+ * the skulls' own material, thrown at where you are standing — and one
+ * that reaches you costs a little of the bar, the way being clipped by
+ * anything does. It is the one ranged thing he has, and it is a thing the
+ * PLAYER can read: stay off the piles and he has nothing to throw. */
+function catThrowBones(x, y, z, n) {
+  const c = camera.position, mat = catSkullMat || new THREE.MeshStandardMaterial({ color: 0xb8ad98, roughness: 0.9 });
+  const dx = c.x - x, dz = c.z - z, d = Math.hypot(dx, dz) || 1, T = THREE.MathUtils.clamp(d / 9, 0.45, 1.1);
+  for (let i = 0; i < n; i++) {
+    const r = 0.07 + Math.random() * 0.07;
+    const m = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), mat);
+    m.scale.set(1, 0.75 + Math.random() * 0.4, 1 + Math.random() * 0.5);
+    m.position.set(x + (Math.random() - 0.5) * 0.6, y + 0.25, z + (Math.random() - 0.5) * 0.6);
+    const a = Math.atan2(dx, dz) + (Math.random() - 0.5) * 0.45, sp = (d / T) * (0.8 + Math.random() * 0.35);
+    const vy = 0.5 * 15 * T + ((c.y - 0.5) - y) / T;
+    gibs.push({
+      m, bone: true,
+      vel: new THREE.Vector3(Math.sin(a) * sp, vy * (0.85 + Math.random() * 0.3), Math.cos(a) * sp),
+      spin: new THREE.Vector3((Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18),
+      rest: y, life: 40 + Math.random() * 20, bleed: false, half: r * 0.8,
+    });
+    scene.add(m);
+  }
+}
+/* AND A PILE YOU HIT GOES EVERYWHERE, WHICH IS THE LOUDEST THING YOU CAN
+ * DO DOWN HERE. Running through one has clattered and carried since the
+ * bones went in; a BLADE through one did nothing at all, which is the wrong
+ * way round — it is the one noise in this room you make on purpose. The
+ * pile itself is triangles inside the room's own merged mesh and cannot be
+ * taken away, so what breaks is what was lying loose on it: a scatter of
+ * real gibs in the skulls' own material, thrown down the swing, the dry
+ * clatter, and a noise AT THE PILE (not at you) that carries the full
+ * twenty-six metres. */
+function catScatterBones(x, y, z, n, dx, dz, P) {
+  const mat = catSkullMat || new THREE.MeshStandardMaterial({ color: 0xb8ad98, roughness: 0.9 });
+  for (let i = 0; i < n; i++) {
+    const r = 0.06 + Math.random() * 0.08;
+    const m = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), mat);
+    m.scale.set(1, 0.7 + Math.random() * 0.5, 1 + Math.random() * 0.5);
+    m.position.set(x + (Math.random() - 0.5) * 0.5, y + 0.2 + Math.random() * 0.2, z + (Math.random() - 0.5) * 0.5);
+    const a = Math.atan2(dx, dz) + (Math.random() - 0.5) * 1.5, sp = (2.2 + P * 2.6) * (0.5 + Math.random());
+    gibs.push({
+      m, vel: new THREE.Vector3(Math.sin(a) * sp, 1.6 + Math.random() * 2.2 + P, Math.cos(a) * sp),
+      spin: new THREE.Vector3((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20),
+      rest: y, life: 40 + Math.random() * 20, bleed: false, half: r * 0.8,
+    });
+    scene.add(m);
+  }
+}
+function catBoneStrike(P) {
+  if (!inCat || !catSpots.eatRaw.length) return false;
+  aimRay(P);
+  for (const r of catSpots.eatRaw) {
+    const wx = CAT_X + r.x, wy = CAT_Y + r.y, wz = CAT_Z + r.z;
+    _hitC.set(wx, wy + 0.3, wz);
+    const t = THREE.MathUtils.clamp(_hitC.clone().sub(_aimO).dot(_aimD), 0, digRay.far);
+    if (_hitC.distanceTo(_aimO.clone().addScaledVector(_aimD, t)) > 0.9) continue;
+    catScatterBones(wx, wy, wz, 7 + ((Math.random() * 6) | 0), _aimD.x, _aimD.z, P);
+    sfxBoneClatter(6 + P * 5);
+    catNoiseAt(wx, wz, 26);
+    hitConnect(P * 0.5, 0.45);            // it gives: a pile of bones is not a wall
+    if (isBlade()) playSample('katHit', 0.7, 0.06, 1.12);
+    return true;
+  }
+  return false;
+}
+function catKickBones(u, dt, spd, dist) {
+  u.catKickT = (u.catKickT || 0) - dt;
+  if (u.catKickT > 0 || spd < 2.2 || dist < 3.5 || dist > 16 || u.st.atk >= 0 || !catSpots.eatRaw.length) return;
+  const p = u.g.position;
+  for (const r of catSpots.eatRaw) {
+    const wx = CAT_X + r.x, wz = CAT_Z + r.z, wy = CAT_Y + r.y;
+    if (Math.abs(p.x - wx) > 1.7 || Math.abs(p.z - wz) > 1.7 || Math.abs(p.y - wy) > 1.4) continue;
+    u.catKickT = 5.5 + Math.random() * 3.0;
+    catThrowBones(wx, wy, wz, 5 + ((Math.random() * 4) | 0));
+    sfxBoneClatter(6.5);
+    catCue('catGrowl', { gain: 0.7, ref: 6, far: 18 });
+    return;
+  }
+}
+// and one that reaches you: a fraction of the bar and a knock, then it is a bone on the floor like the rest
+function catBonesHit() {
+  const c = camera.position;
+  for (const g of gibs) {
+    if (!g.bone || g.settled || g.wait > 0) continue;
+    if (Math.hypot(g.m.position.x - c.x, g.m.position.z - c.z) > 0.55 || Math.abs(g.m.position.y - (c.y - 0.6)) > 1.0) continue;
+    g.bone = false;
+    g.vel.x *= -0.25; g.vel.z *= -0.25; g.vel.y = Math.min(g.vel.y, 1.0);
+    stamina = Math.max(0, stamina - 0.09);   // measured: a volley lands two or three, so a volley is a quarter of the bar
+    addTrauma(0.16);
+    vmImpulse(0.6);
+    sfxBoneClatter(5);
+  }
+}
 function catNoiseAt(x, z, r) {
   if (!inCat) return;
   const now = performance.now();
@@ -37783,7 +38750,29 @@ function catBound(u) {
 function catStand(u, dt) {
   catBound(u);
   const p = u.g.position;
-  const st = keepFloorAt(p.x, p.z, p.y + 0.35, 0.7, CAT_SITE);
+  /* AND A ROUTE HE HAS BEEN HELD AGAINST STONE ON FOR HALF A SECOND IS NOT
+   * A ROUTE. Whatever drew it draws another from where he actually is. */
+  if ((u.catBlockT || 0) > 0.5 && u.path) { u.path = null; u.catBlockT = 0; if (u.cat) u.cat.pause = Math.min(u.cat.pause || 0, 0.1); }
+  let st = keepFloorAt(p.x, p.z, p.y + 0.35, 0.7, CAT_SITE);
+  /* AND A TOMB IS NOT A STEP. The lookup takes any storey up to 1.05 m over
+   * him, and a sarcophagus is a metre tall: pressed against one in a fight
+   * he was lifted onto its lid, stood there 2.5 m from you "in reach" and
+   * swung at the stone between (measured: 0.49 and 0.86 m over your floor
+   * at the end of two chases in five) — the owner's "he got stuck on the
+   * tombs". A rise over half a metre is a thing he climbs only where his
+   * ROUTE goes up — a stair's riser is on the route, a lid never is. */
+  let up = 0.5;
+  if (u.path && u.path[u.pathI]) up = Math.max(up, u.path[u.pathI].f - p.y + 0.3);
+  if (st && st.f > p.y + up) {
+    /* A LID IS A HOLD, NOT A HOLE. Nulling the storey sent him down the
+     * "nothing under me" branch — hold, sink, and after 0.8 s snap to a node
+     * and DROP THE ROUTE — which is a stall wherever a lookup happens to
+     * return a lid. He simply keeps his height; the cell has no floor at his
+     * level, so the push slides him off its footprint. */
+    u.catSink = 0; u.catHeld = (u.catHeld || 0) + dt;
+    return;
+  }
+  u.catHeld = 0;
   if (st && st.f > p.y - 1.2) {
     const dy = st.f - p.y, ad = Math.abs(dy);
     p.y += ad < 0.02 ? dy : Math.sign(dy) * Math.min(ad, Math.max(ad * dt * 10, 3.0 * dt));
@@ -37817,12 +38806,12 @@ const _catV = new THREE.Vector3();
  * off, which can see your eye — AND WHICH IS A CORNER, which is measured:
  * a step to one side of it CANNOT see you, so there is stone right beside
  * him and what is out in the open is his head. */
-function catPeekSpot(u, far = 22) {
+function catPeekSpot(u, far = 22, avoid = null) {
   const R = catReachOf(u, u.g.position.x, u.g.position.z, u.g.position.y);
   if (!R || R.ids.length < 40) return null;
   const c = camera.position, ids = R.ids, N = catG.nodes;
   let best = null, bs = 1e9;
-  for (let k = 0; k < 260; k++) {
+  for (let k = 0; k < (avoid !== null ? 900 : 260); k++) {   // a corner round a given side of you is a rarer thing: look harder
     const n = N[ids[(Math.random() * ids.length) | 0]];
     const d = Math.hypot(n.x - c.x, n.z - c.z);
     /* AND A CORNER HE WATCHES FROM IS FURTHER OFF THAN THE RANGE AT WHICH
@@ -37831,6 +38820,8 @@ function catPeekSpot(u, far = 22) {
      * on the same frame and there was no peek at all. */
     if (d < 9 || d > far) continue;
     if (Math.abs(n.f + 1.35 - c.y) > 1.9) continue;
+    // a FEINT wants the next corner round a different side of you: seventy degrees off the last bearing at least
+    if (avoid !== null) { let da = Math.atan2(n.x - c.x, n.z - c.z) - avoid; while (da > Math.PI) da -= Math.PI * 2; while (da < -Math.PI) da += Math.PI * 2; if (Math.abs(da) < 1.22) continue; }
     if (keepHitsWall(n.x, n.z, c.x, c.z, n.f + 1.30, CAT_SITE)) continue;
     const ux = (c.x - n.x) / d, uz = (c.z - n.z) / d, px = -uz, pz = ux;
     const hidL = keepHitsWall(n.x + px * 1.2, n.z + pz * 1.2, c.x, c.z, n.f + 1.30, CAT_SITE);
@@ -37872,6 +38863,69 @@ function catPickTarget(u, C) {
    * him coming the whole way. */
   const unseen = (performance.now() - (u.catSeenAt || 0)) / 1000;
   const wantYou = unseen > 45 ? 1 : 0.34 + Math.min(0.40, unseen / 90);
+  /* AND SOMETIMES YOU SEE HIM ABOUT HIS OWN BUSINESS — the owner's word.
+   * About a quarter of his errands go to a spot you can SEE from where you
+   * are standing: nine to twenty metres off, on your storey, the line open
+   * from your eye to his, a bone pile if one is in view — and there he
+   * eats, or sits, or stands and looks about, and he is ABSORBED while he
+   * does it: he hears you inside four metres and a noise reaches him, but
+   * he does not look up for a body keeping still in a doorway. Crouch and
+   * watch, or run and he hears you. It is not drawn when he has already
+   * gone a long while without you — then he is looking. */
+  if (pool && unseen < 45 && Math.random() < 0.28) {
+    const c = camera.position, feet = c.y - playerEye();
+    const seen = (n) => Math.abs(n.f - feet) < 1.8 && !keepHitsWall(n.x, n.z, c.x, c.z, n.f + 1.2, CAT_SITE) && !keepHitsWall(n.x, n.z, c.x, c.z, c.y, CAT_SITE);
+    let best = -1, bd = 1e9, act = null;
+    for (const id of catSpots.eat) {
+      if (!R.mask[id]) continue;
+      const n = N[id], d = Math.hypot(n.x - c.x, n.z - c.z);
+      if (d < 8 || d > 20 || Math.hypot(n.x - p.x, n.z - p.z) < 4 || !seen(n)) continue;
+      if (d < bd) { bd = d; best = id; act = 'eat'; }
+    }
+    if (best < 0) for (let k = 0; k < 90; k++) {
+      const id = pool[(Math.random() * pool.length) | 0], n = N[id];
+      const d = Math.hypot(n.x - c.x, n.z - c.z);
+      if (d < 9 || d > 20 || Math.hypot(n.x - p.x, n.z - p.z) < 4 || !seen(n)) continue;
+      const sc = Math.abs(d - 13);
+      if (sc < bd) { bd = sc; best = id; }
+    }
+    if (best >= 0) { const rr = Math.random(); C.act = act || (rr < 0.4 ? 'sit' : rr < 0.7 ? 'stand' : 'look'); C.absorbed = true; return best; }
+  }
+  C.absorbed = false;
+  /* AMBUSH AT THE DOOR. Within twenty metres of the way out, on its storey,
+   * about half the time and not twice in a minute: he goes to a spot in the
+   * door room that your line cannot see — behind the shaft of light, in the
+   * dark beside the frame — and waits there, so the exit is not free. */
+  if (pool && catSpots.door.length && performance.now() - catAmbushAt > 50000 && Math.random() < 0.6) {
+    const c = camera.position, pf = c.y - playerEye(), dX = CAT_X + CAT_DOOR.x, dZ = CAT_Z + CAT_DOOR.z;
+    if (Math.hypot(c.x - dX, c.z - dZ) < 20 && Math.abs(pf - (CAT_Y + CAT_DOOR.f)) < 2.2) {
+      let best = -1, bd = 1e9;
+      for (const id of catSpots.door) {
+        if (!R.mask[id]) continue;
+        const n = N[id], dd = Math.hypot(n.x - dX, n.z - dZ);
+        if (dd > 7.5 || dd < 1.4 || Math.hypot(n.x - p.x, n.z - p.z) < 3 || Math.hypot(n.x - c.x, n.z - c.z) < 6) continue;
+        const hidden = keepHitsWall(n.x, n.z, c.x, c.z, n.f + 1.2, CAT_SITE);
+        const sc = dd + (hidden ? 0 : 6);
+        if (sc < bd) { bd = sc; best = id; }
+      }
+      if (best >= 0) { catAmbushAt = performance.now(); C.act = 'ambush'; return best; }
+    }
+  }
+  /* HE LEARNS YOUR ROUTE. When he has not had you for a while, about two
+   * errands in five go to one of the last three places he saw you — most
+   * recent likeliest — and he waits there. A player who runs the same
+   * corridor every time finds him in it. */
+  if (pool && catMemory.length && unseen > 12 && Math.random() < 0.42) {
+    const c = camera.position, rr = Math.random();
+    const k = catMemory.length - 1 - (rr < 0.55 ? 0 : rr < 0.85 ? Math.min(1, catMemory.length - 1) : Math.min(2, catMemory.length - 1));
+    const m = catMemory[k];
+    const id = catNodeAt(m.x + (Math.random() - 0.5) * 3, m.z + (Math.random() - 0.5) * 3, m.f, 1.8, R.mask);
+    if (id >= 0 && Math.hypot(N[id].x - p.x, N[id].z - p.z) > 4 && Math.hypot(N[id].x - c.x, N[id].z - c.z) > 5) {
+      const r2 = Math.random();
+      C.act = r2 < 0.45 ? 'ambush' : r2 < 0.75 ? 'look' : 'sit';
+      return id;
+    }
+  }
   if (pool && Math.random() < wantYou) {
     const c = camera.position, feet = c.y - playerEye();
     let best = -1, bd = 1e9;
@@ -37933,7 +38987,8 @@ function catBeginAct(u, C, name) {
   const h = n >= 0 ? catG.nodes[n].h : 0;
   if (A.tall && h < A.tall) return catBeginAct(u, C, 'look');   // no roof to stand under: he crouches and listens instead
   C.mode = 'act'; C.clip = A.clip; C.t = A.dur[0] + Math.random() * (A.dur[1] - A.dur[0]); C.rate = 0.9 + Math.random() * 0.2;
-  C.actName = name; C.face = !!A.face;
+  C.actName = name; C.face = !!A.face && !C.absorbed;   // absorbed, he is not turned on you: that is the point
+  if (C.absorbed) C.t += 4;                              // and the show is worth a few seconds more
 }
 /* SEEING YOU. A cone in front of him inside forty metres, no drawn wall
  * between his head and your eye at either height and not a floor apart —
@@ -37941,12 +38996,15 @@ function catBeginAct(u, C, name) {
 function catSees(u) {
   const p = u.g.position, c = camera.position;
   const dx = c.x - p.x, dz = c.z - p.z, d = Math.hypot(dx, dz);
-  if (d > 40 || !inCat) return false;
+  const low = crouching;                                               // a crouched body: half the range, and he has to be nearly on you to hear it
+  if (d > (low ? 20 : 40) || !inCat) return false;
   const hy = p.y + 1.35, ey = c.y;
   if (Math.abs(hy - ey) > 1.6) return false;                           // a storey apart is a floor between you, whatever the plan says — and he does not hear through it either
-  if (d < 6.0) return true;                                            // this close he hears you whatever he is facing
+  if (d < (low ? 3.2 : 6.0)) return true;                              // this close he hears you whatever he is facing
   const yaw = u.g.rotation.y, fx = Math.sin(yaw), fz = Math.cos(yaw);
-  if ((dx * fx + dz * fz) / d < 0.20 && d > 10) return false;        // ~78 degrees either side of his nose; inside ten metres he hears you
+  const cone = (dx * fx + dz * fz) / d;
+  if (cone < 0.20 && d > (low ? 5 : 10)) return false;                 // ~78 degrees either side of his nose; inside ten metres he hears you
+  if (low && cone < 0.55 && d > 8) return false;                       // crouched and off his line, you are a shape in the dark
   if (keepHitsWall(p.x, p.z, c.x, c.z, hy, CAT_SITE)) return false;
   if (keepHitsWall(p.x, p.z, c.x, c.z, ey, CAT_SITE)) return false;   // his eye and yours; a tomb between at chest height hides neither
   return true;
@@ -37999,11 +39057,34 @@ function catWander(u, dt) {
   const p = u.g.position;
   const C = u.cat || (u.cat = { mode: 'roam', t: 0, gait: 'crawl', pause: 1.0, heard: 0, act: null });
   if (C.mode === 'down') { catDownStep(u, dt); return; }
+  catUnpocket(u);
+  /* HIS VOICE OFF IN THE DARK. Every nine to twenty-five seconds while he is
+   * about his own business: far off, one of the owner's distant growls, dull
+   * through the stone and panned to wherever he is — so the place is never
+   * quiet and you always half know where he is; near and unaware, a low
+   * growl, or the feeding if that is what he is doing. Nothing here while he
+   * stalks (that is the breathing, below) or runs. */
+  catFarT -= dt;
+  if (catFarT <= 0) {
+    catFarT = 9 + Math.random() * 16;
+    const dV = Math.hypot(camera.position.x - p.x, camera.position.z - p.z);
+    if (C.mode === 'stalk' || C.mode === 'flee' || dV > CAT_HEAR_FAR) { /* his breathing says where he is; further off he is silent */ }
+    else if (dV > 12) catCue('catFar', { gain: 0.85, ref: 10, far: CAT_HEAR_FAR, lpFar: 700 });
+    else if (C.mode === 'act' && C.actName === 'eat') catCue('catFeed', { gain: 0.85, ref: 5, far: 20, lpFar: 1500 });
+    else if (Math.random() < 0.6) catCue('catGrowl', { gain: 0.6, ref: 6, far: 18 });
+  }
   // does he see you?
   u.catSeeT = (u.catSeeT || 0) - dt;
   if (u.catSeeT <= 0) {
     u.catSeeT = 0.15;
-    if (u.st.alive && !dying && !ended && !caveBusy && catSees(u)) {
+    /* ABSORBED — on a show errand or at what he went there to do — he only
+     * notices a body inside four metres (or one that makes a noise, which
+     * is the hearing below and clears this). */
+    const dA = Math.hypot(camera.position.x - p.x, camera.position.z - p.z);
+    const deaf = C.absorbed && (C.mode === 'act' || C.mode === 'roam') && dA > (crouching ? 3.0 : 4.5);
+    if (u.st.alive && !dying && !ended && !caveBusy && !deaf && catSees(u)) {
+      C.absorbed = false;
+      catRemember(camera.position.x, camera.position.z, camBaseY - playerEye());
       /* AND HE DOES NOT ALWAYS COME STRAIGHT AT YOU. Close, or already
        * blooded, he does; from across a room he STALKS — he goes to a
        * corner that can see you, puts his face round it and holds there.
@@ -38016,7 +39097,7 @@ function catWander(u, dt) {
        * stood fourteen metres off for ten seconds doing nothing at all. */
       if (C.mode === 'stalk' || C.mode === 'flee') { C.target = { x: camera.position.x, z: camera.position.z, f: camBaseY - playerEye() }; }
       else if (dS > 8 && (!C.blooded || (performance.now() - (C.bloodAt || 0)) > 40000)) {
-        C.mode = 'stalk'; C.peek = null; C.peekHold = 0; C.seenT = 0; C.stalkT = 0; C.tries = 0; C.mvT = 0; C.mvAt = null; u.path = null;
+        C.mode = 'stalk'; C.peek = null; C.peekHold = 0; C.seenT = 0; C.stalkT = 0; C.feinted = false; C.tries = 0; C.mvT = 0; C.mvAt = null; u.path = null;
         C.target = { x: camera.position.x, z: camera.position.z, f: camBaseY - playerEye() };
       } else {
         u.st.sprint = 0; u.path = null; C.mode = 'chase'; C.blooded = true; C.bloodAt = performance.now(); C.peeks = 0;
@@ -38030,10 +39111,10 @@ function catWander(u, dt) {
   if (catNoise && catNoise.t !== C.heard) {
     const d = Math.hypot(catNoise.x - p.x, catNoise.z - p.z);
     if (d < catNoise.r && (C.mode !== 'investigate' || C.retarget <= 0)) {
-      C.heard = catNoise.t;
+      C.heard = catNoise.t; C.absorbed = false;
       C.mode = 'investigate'; C.target = { x: catNoise.x, z: catNoise.z, f: catNoise.f }; C.retarget = 1.2;
       u.path = null; C.pause = 0.25 + Math.random() * 0.3; C.gait = 'crawl'; C.act = null;
-      if (Math.random() < 0.5) sfxMutHunger(d, u.kind.voice);          // and he lets you know he heard
+      sfxMutHunger(d, u.kind.voice);          // and he lets you know he heard: run, and the answer comes out of the dark
     }
   }
   C.retarget = (C.retarget || 0) - dt;
@@ -38053,7 +39134,7 @@ function catWander(u, dt) {
      * getting anywhere is all he gives it before he simply comes. */
     C.mvT = (C.mvT || 0) + dt;
     if (!C.mvAt) C.mvAt = { x: p.x, z: p.z };
-    if (C.mvT > 5) {
+    if (C.mvT > 3) {
       const got = Math.hypot(p.x - C.mvAt.x, p.z - C.mvAt.z);
       C.mvT = 0; C.mvAt.x = p.x; C.mvAt.z = p.z;
       if (got < 1.0 && !(C.peekHold > 0)) { u.path = null; C.pause = 0; C.tries = (C.tries || 0) + 1; }
@@ -38071,9 +39152,16 @@ function catWander(u, dt) {
     if (!u.path && !(C.peekHold > 0)) {
       if (C.pause > 0) C.pause -= dt;
       else {
-        const sp = catPeekSpot(u, 22 - (C.peeks || 0) * 4);
-        if (sp && catRoute(u, sp.x, sp.z, sp.f)) { C.peek = sp; C.gait = 'crawl'; C.tries = 0; }
-        else {
+        const sp = catPeekSpot(u, 22 - (C.peeks || 0) * 4, C.avoidA === undefined ? null : C.avoidA);
+        // the feint's "round the other side" holds for one deep search; found, it is done with
+        if (sp && catRoute(u, sp.x, sp.z, sp.f)) { C.peek = sp; C.gait = 'crawl'; C.tries = 0; C.avoidA = undefined; }
+        else if (C.avoidA !== undefined) {
+          /* the other side of you may simply have no corner: one deep look
+           * for one, then anywhere will do — and it is not a failed try,
+           * or a feint was four failures away from a charge (measured:
+           * feint at 4.8 s, chase at 8.0) */
+          C.avoidA = undefined; C.pause = 0.3;
+        } else {
           /* NOWHERE TO WATCH FROM IS A REASON TO COME. Three goes at finding
            * a corner and then he is simply in the room with you. */
           C.tries = (C.tries || 0) + 1;
@@ -38089,7 +39177,18 @@ function catWander(u, dt) {
       u.st.sprint = catPace(u, CAT_HUNT_SPEED * 0.82);     // low and quick, but not a charge
       moving = ucFollowPath(u, dt);
       u.st.sprint = 0;
-      if (!u.path) { C.peekHold = 5.0 + Math.random() * 6.0; C.peeks = (C.peeks || 0) + 1; }
+      if (!u.path) {
+        /* THE FAKE-OUT. Once a stalk, about two in five, the peek is a FEINT:
+         * he shows himself for a second or two and, if you have not looked
+         * at him, withdraws — and the next corner he takes is round a
+         * different side of you. It plays on his own rule that looking at
+         * him is what starts the fight: a glimpse that is gone before you
+         * have turned your head is a thing you go looking for. A feint
+         * does not count as one of his three corners. */
+        C.feint = !C.feinted && Math.random() < 0.4;
+        if (C.feint) { C.feinted = true; C.peekHold = 1.4 + Math.random() * 1.6; }
+        else { C.peekHold = 5.0 + Math.random() * 6.0; C.peeks = (C.peeks || 0) + 1; }
+      }
       if (u.dir.lengthSq() > 1e-6) {
         const want = Math.atan2(u.dir.x, u.dir.z);
         let d2 = want - u.g.rotation.y; while (d2 > Math.PI) d2 -= Math.PI * 2; while (d2 < -Math.PI) d2 += Math.PI * 2;
@@ -38098,13 +39197,23 @@ function catWander(u, dt) {
       }
       if (moving > 0.04) catPlay(u, 'crawl', true, 1.15, dt); else mutAnim(u, dt, 0);
     } else {
-      // at the corner: turned on you, low, watching
+      // at the corner: turned on you, low, watching — and breathing, which is how you find him
       C.peekHold -= dt;
+      C.breathT = (C.breathT || 0) - dt;
+      if (C.breathT <= 0) { C.breathT = 3.0 + Math.random() * 3.5; catCue('catBreath', { gain: 0.75, ref: 5, far: 22, lpFar: 1600 }); }
       const want = Math.atan2(camera.position.x - p.x, camera.position.z - p.z);
       let d2 = want - u.g.rotation.y; while (d2 > Math.PI) d2 -= Math.PI * 2; while (d2 < -Math.PI) d2 += Math.PI * 2;
       u.g.rotation.y += THREE.MathUtils.clamp(d2, -2.2 * dt, 2.2 * dt);
       catPlay(u, 'peek', true, 1.0, dt);
-      if (C.peekHold <= 0) { C.peek = null; }
+      if (C.peekHold <= 0) {
+        if (C.feint) {
+          // gone between one look and the next: the next corner is round the other side of you
+          C.feint = false;
+          C.avoidA = Math.atan2(p.x - camera.position.x, p.z - camera.position.z);
+          catCue('catBreath', { gain: 0.55, ref: 5, far: 20, lpFar: 1400 });
+        }
+        C.peek = null;
+      }
     }
     mutClampX(u, p, dt);
     catStand(u, dt);
@@ -38152,7 +39261,7 @@ function catWander(u, dt) {
     } else { catPlay(u, 'search', true, 1.0, dt); }
     // and he mends a little while he is away: not to full, but enough to come back for
     u.st.hp = Math.min(u.kind.hp, u.st.hp + dt * 1.1);
-    if (C.t <= 0) { C.mode = 'stalk'; C.peek = null; C.peekHold = 0; C.seenT = 0; C.stalkT = 0; C.tries = 0; C.mvT = 0; C.mvAt = null; u.path = null; }
+    if (C.t <= 0) { C.mode = 'stalk'; C.peek = null; C.peekHold = 0; C.seenT = 0; C.stalkT = 0; C.feinted = false; C.tries = 0; C.mvT = 0; C.mvAt = null; u.path = null; }
     mutClampX(u, p, dt);
     catStand(u, dt);
     return;
@@ -38165,7 +39274,7 @@ function catWander(u, dt) {
       u.g.rotation.y += THREE.MathUtils.clamp(dd, -1.6 * dt, 1.6 * dt);
     }
     catPlay(u, C.clip, true, C.rate, dt);
-    if (C.t <= 0) { C.mode = 'roam'; C.pause = 0.4 + Math.random() * 0.8; C.act = null; }
+    if (C.t <= 0) { C.mode = 'roam'; C.pause = 0.4 + Math.random() * 0.8; C.act = null; C.absorbed = false; }
   } else {
     if (!u.path) {
       if (C.pause > 0) C.pause -= dt;
@@ -38247,6 +39356,33 @@ function catWander(u, dt) {
     } else mutAnim(u, dt, 0);
   }
 }
+/* A BODY IN A POCKET OF THE GRAPH — a floored ledge nothing joins to, or off
+ * the graph altogether — can route nowhere. When you are not looking at him
+ * he is put back on the main floor at the nearest node; while you are, he
+ * waits, which reads as a thing watching you from a ledge. */
+function catUnpocket(u) {
+  if (!catG || !catG.main) return false;
+  const p = u.g.position;
+  const R = catReachOf(u, p.x, p.z, p.y);
+  const pocket = !R || R.ids.length < 200;
+  if (!pocket) return false;
+  if (playerSeesHunter(u)) return true;
+  const id = catNearestMain(p.x, p.z, p.y);
+  if (id >= 0) { const n = catG.nodes[id]; p.set(n.x, n.f, n.z); u.catFloor = n.f; u.path = null; u.catReach = null; u.catRouteFail = 0; }
+  return true;
+}
+/* HE LOSES YOU: back to watching, or to a search from where he last had you. */
+function catLose(u) {
+  u.st.awake = false; u.st.roar = 0; u.st.atk = -1; u.st.side = 0; u.st.cool = 0; u.st.chainAt = -1; u.path = null;
+  const C = u.cat || (u.cat = {});
+  /* AND LOSING YOU IS A REASON TO WATCH, NOT ONLY TO SEARCH. Half the
+   * time he goes back to a corner and waits for you to walk into him. */
+  C.target = u.catLastSeen || { x: camera.position.x, z: camera.position.z, f: camBaseY - playerEye() };
+  if (Math.random() < 0.5) { C.mode = 'stalk'; C.peek = null; C.peekHold = 0; C.seenT = 0; C.stalkT = 0; C.feinted = false; C.tries = 0; C.mvT = 0; C.mvAt = null; C.peeks = 0; C.blooded = false; }
+  else { C.mode = 'search'; C.searchLeft = 2; }
+  C.pause = 0.5; C.gait = 'crawl'; C.next = null; C.retarget = 0; u.catLost = 0; u.catRouteFail = 0;
+  mutDrop(u);
+}
 /* AWAKE, AND HUNTING. The chase is straight at you and this place is walls;
  * when the line is shut he routes over the graph (the tavern's own rule),
  * and if he has not seen you for five seconds from more than twelve metres
@@ -38271,19 +39407,8 @@ function catSteer(u, dt, dist, foe) {
   }
   const seen = catSees(u);
   u.catLost = seen ? 0 : (u.catLost || 0) + dt;
-  if (seen) { u.catLastSeen = { x: camera.position.x, z: camera.position.z, f: camBaseY - playerEye() }; }
-  if (u.catLost > 5 && dist > 12 && u.st.atk < 0) {
-    u.st.awake = false; u.st.roar = 0; u.st.atk = -1; u.st.side = 0; u.st.cool = 0; u.st.chainAt = -1; u.path = null;
-    const C = u.cat || (u.cat = {});
-    /* AND LOSING YOU IS A REASON TO WATCH, NOT ONLY TO SEARCH. Half the
-     * time he goes back to a corner and waits for you to walk into him. */
-    C.target = u.catLastSeen || { x: camera.position.x, z: camera.position.z, f: camBaseY - playerEye() };
-    if (Math.random() < 0.5) { C.mode = 'stalk'; C.peek = null; C.peekHold = 0; C.seenT = 0; C.stalkT = 0; C.tries = 0; C.mvT = 0; C.mvAt = null; C.peeks = 0; C.blooded = false; }
-    else { C.mode = 'search'; C.searchLeft = 2; }
-    C.pause = 0.5; C.gait = 'crawl'; C.next = null; C.retarget = 0; u.catLost = 0;
-    mutDrop(u);
-    return;
-  }
+  if (seen) { u.catLastSeen = { x: camera.position.x, z: camera.position.z, f: camBaseY - playerEye() }; catRemember(u.catLastSeen.x, u.catLastSeen.z, u.catLastSeen.f); }
+  if (u.catLost > 5 && dist > 12 && u.st.atk < 0) { catLose(u); return; }
   /* AND "IS THE LINE OPEN" IS THE WHOLE LINE, NOT THE NEXT TWO METRES.
    * At 2.2 m the test said the way to you was clear while a wall stood
    * three metres on: the route was thrown away on the frame it was made,
@@ -38291,27 +39416,55 @@ function catSteer(u, dt, dist, foe) {
    * and he ground at twelve metres for ever — traced, exactly that loop at
    * four routes a second. It asks as far as he can see now. */
   const ddx = foe.x - p.x, ddz = foe.z - p.z, L = Math.hypot(ddx, ddz) || 1;
-  const nx = ddx / L, nz = ddz / L, look = Math.min(L - 0.4, 11);
+  const nx = ddx / L, nz = ddz / L, look = Math.min(L - 0.4, 11), pf = camBaseY - playerEye();
   const clear = (len) => {
     for (let t = 1.2; t <= len + 0.01; t += 1.2) {
       const x1 = p.x + nx * t, z1 = p.z + nz * t;
       const st = keepFloorAt(x1, z1, feet, 0.55, CAT_SITE);
-      if (!st || Math.abs(st.f - feet) > 0.9) return false;
+      /* AND THE LINE STAYS ON YOUR STOREY. Each sample was compared to HIS
+       * feet, and his feet follow the floor — so a stair down beside you
+       * passed a riser at a time, he walked down it toward your plan
+       * position, and finished the fight standing 1.4 m from you in plan and
+       * 4.5 m under your floor, doing nothing (measured: 92 % of frames
+       * still, two swings in thirty seconds). A floor more than a step from
+       * YOUR level is not the straight way to you; it is a route. */
+      // a floor a step up or a DROP down (he lands like anything else) — and never off your storey
+      if (!st || st.f - feet > 0.9 || feet - st.f > 1.2 || Math.abs(st.f - pf) > 1.0) return false;
     }
     const x2 = p.x + nx * len, z2 = p.z + nz * len;
     for (const h of [0.7, 1.4]) if (keepHitsWall(p.x, p.z, x2, z2, feet + h, CAT_SITE)) return false;
+    // and his shoulders: a pier between you and him is a thing to go ROUND, not through
+    const sx = -nz * 0.45, sz = nx * 0.45;
+    if (keepHitsWall(p.x + sx, p.z + sz, x2 + sx, z2 + sz, feet + 0.9, CAT_SITE) || keepHitsWall(p.x - sx, p.z - sz, x2 - sx, z2 - sz, feet + 0.9, CAT_SITE)) return false;
     return true;
   };
-  if (look <= 0.2 || (clear(look) && Math.abs((camBaseY - playerEye()) - feet) < 1.4)) { u.path = null; u.catGrind = 0; return; }
+  if (look <= 0.2 || (clear(look) && Math.abs(pf - feet) < 1.4)) { u.path = null; u.catGrind = 0; u.catRouteFail = 0; return; }
   const moved = Math.hypot(p.x - (u.catWasX === undefined ? p.x : u.catWasX), p.z - (u.catWasZ === undefined ? p.z : u.catWasZ));
   u.catWasX = p.x; u.catWasZ = p.z;
+  catKickBones(u, dt, moved / Math.max(1e-3, dt), dist);
   u.catGrind = moved < 0.008 ? (u.catGrind || 0) + dt : 0;
+  /* AND A HUNTER THAT HAS STOOD STILL FOR FOUR SECONDS WITH GROUND TO COVER
+   * HAS LOST YOU, whatever it thinks. Measured once and not reproduced in
+   * four tries: forty seconds in the chase at 29 m, never a step. The net
+   * is cheap and what it hands him to is the search, which knows how to
+   * get about. Not inside his own reach, where standing still is a fight. */
+  u.catStill = moved < 0.008 && u.st.atk < 0 ? (u.catStill || 0) + dt : 0;
+  if (u.catStill > 4 && dist > 5) { u.catStill = 0; catLose(u); return; }
   u.pathAge = (u.pathAge || 0) + dt;
   if (u.catGrind > 0.7) { u.path = null; u.pathAge = 1; u.catGrind = 0; }
   if (u.path || u.pathAge < 0.4) return;
   u.pathAge = 0;
   const tgt = u.catLastSeen || { x: foe.x, z: foe.z, f: camBaseY - playerEye() };
-  catRoute(u, tgt.x, tgt.z, tgt.f);
+  if (catRoute(u, tgt.x, tgt.z, tgt.f)) { u.catRouteFail = 0; return; }
+  /* AND A ROUTE THAT KEEPS FAILING IS A CREATURE STANDING UNDER YOUR FLOOR.
+   * Third refusal: back onto the nearest node, whatever its height, and the
+   * reach flood thrown away (it was taken from the storey he was on when the
+   * fight began). Sixth: he has lost you — the search from where he last had
+   * you, whose own machinery knows how to get about — rather than a boss
+   * parked at 1.4 m in plan for the rest of the visit. */
+  u.catRouteFail = (u.catRouteFail || 0) + 1;
+  if (u.catRouteFail === 3) { const id = catNodeAt(p.x, p.z, p.y, 6); if (id >= 0) { const n = catG.nodes[id]; p.set(n.x, n.f, n.z); u.catFloor = n.f; } u.catReach = null; }
+  if (u.catRouteFail > 5) { if (!catUnpocket(u)) catLose(u); }
 }
 /* ---- THERE IS NO GRAB. He used to TAKE you when you had not been
  * looking — up off your feet, his face in yours, thrown back down — and
@@ -38809,7 +39962,7 @@ MUT_KINDS.crawler = {
   alias: { idle2: 'idleB', walk: 'crawl', walk2: 'crawl', run2: 'run', roar2: 'roar', die2: 'die',
            back: 'crawl', calm: 'idle', strafeL: 'crawl', strafeR: 'crawl', block: 'hit', parry: 'hitBig' },
   provoke: crawlerProvoke,
-  voice: { f: 1.40, growl: 0.80, rasp: 1.70, throat: 'chitter', scrape: true },   // his steps are claws on stone
+  voice: { f: 1.40, growl: 0.80, rasp: 1.70, throat: 'chitter', scrape: true, cat: true },   // `cat`: every voiced sound and every step is the owner's recording, through `catCue`
 };
 const crawlerUnit = makeMutant(CAT_X + CAT_HUNT.x, CAT_Z + CAT_HUNT.z, 'crawler', CAT_Y + CAT_HUNT.f);   // in the catacombs, by the door, until you fall in
 crawlerUnit.g.rotation.y = -Math.PI / 2;
@@ -39304,7 +40457,7 @@ function buildKeepWalls(S = KEEP_SITE) {
   const tris = [], steep = [], ylo = [], yhi = [], cell = 1.0, map = new Map();
   const key = (i, j) => (i + 4096) * 16384 + (j + 4096);
   S.group.traverse((o) => {
-    if (!o.isMesh || o.name === 'hitProxy' || !o.geometry || !o.geometry.index) return;
+    if (!o.isMesh || o.name === 'hitProxy' || !o.geometry || !o.geometry.attributes.position) return;
     const mn = o.material && o.material.name;
     if (S.skip(mn)) return;                                   // the sea and the sky are not walls
     /* AND A THING THAT BREAKS WHEN YOU TOUCH IT MUST NOT ALSO BE A WALL —
@@ -39313,11 +40466,21 @@ function buildKeepWalls(S = KEEP_SITE) {
      * gone is the worst of both: the owner ran into the tables he had just
      * broken. `bwGhost` is drawn and never walked into. */
     if (o.userData.bwGhost) return;
+    /* A MERGED MESH HAS NO INDEX, AND IT IS STILL A WALL. `bakeStatic` takes
+     * every geometry to non-indexed before it merges, and this loop used to
+     * skip any mesh without an index — so the day the catacombs and the
+     * tavern were baked for their draw calls, BOTH ROOMS LOST EVERY DRAWN
+     * WALL: `S.walls.steep.length` read 0, `keepHitsWall` never hit, the
+     * hunter's segment test never fired and his wall pushes pushed nothing,
+     * which is most of "he clips through walls". The pixel diff that
+     * approved the bake cannot see a collision index. A triangle is three
+     * positions whether or not an index names them. */
     const g = o.geometry, pos = g.attributes.position, idx = g.index;
-    for (let t = 0; t < idx.count; t += 3) {
-      a.fromBufferAttribute(pos, idx.getX(t)).applyMatrix4(o.matrixWorld);
-      b.fromBufferAttribute(pos, idx.getX(t + 1)).applyMatrix4(o.matrixWorld);
-      c.fromBufferAttribute(pos, idx.getX(t + 2)).applyMatrix4(o.matrixWorld);
+    const cnt = idx ? idx.count : pos.count, at = idx ? (t) => idx.getX(t) : (t) => t;
+    for (let t = 0; t < cnt; t += 3) {
+      a.fromBufferAttribute(pos, at(t)).applyMatrix4(o.matrixWorld);
+      b.fromBufferAttribute(pos, at(t + 1)).applyMatrix4(o.matrixWorld);
+      c.fromBufferAttribute(pos, at(t + 2)).applyMatrix4(o.matrixWorld);
       const lo = Math.min(a.y, b.y, c.y), hi = Math.max(a.y, b.y, c.y);
       ab.subVectors(b, a); ac.subVectors(c, a); n.crossVectors(ab, ac);
       const L = n.length(); if (L < 1e-9) continue;
@@ -40390,6 +41553,7 @@ function buildTavern() {
   extractTavTables();
   stripTavProps();
   buildTavCrates();
+  buildTavShelf();                                   // the rung the crates cannot reach, on the gallery's back wall
   buildKeepWalls(TAV_SITE);
   buildTavPlank();
   buildTavChairs();
@@ -40401,8 +41565,22 @@ function buildTavern() {
   openTavCurtains();
   buildTavJars();
   clearTavGhostRoofs();
+  fillTavHoles();                                   // and the holes the packer left between the barrels
   buildTavBottles();
   buildTavCast();
+  /* AND THE HALL ITSELF IS TWO HUNDRED AND TWENTY DRAW CALLS OF NINETEEN
+   * MATERIALS. Measured standing at the spawn: 354 for the frame, 220 of
+   * them the room — two hundred and twenty-one meshes carrying twenty
+   * thousand triangles, which is ninety triangles a draw. It is merged by
+   * material LAST, after the tables have been lifted out of it, the chairs
+   * built, the crates copied and the door cut, because every one of those
+   * reads or rewrites the meshes it is merging; and it is the DEFAULT bake,
+   * so anything named (the eighteen the module holds) and anything `bwGhost`
+   * (the sixty-three tables and chairs, which are drawn and never walked
+   * into) is left exactly where it is. The wall index is rebuilt off the
+   * merged triangles, which are the same triangles. */
+  bakeStatic(tavWorld);
+  tavWalls = null; buildKeepWalls(TAV_SITE);
   tavWalk.built = Math.round(performance.now() - t0);
 }
 
@@ -40611,11 +41789,12 @@ function smashTavTable(t, speed) {
   tavWallsDirty = true; TAV_G.dirty = true;
   if (!sfxTableBreak()) sfxWoodSnap();
 }
-/* THE SHELF IS GONE. A bracketed board was put on the wall between the stall
- * roof and the vaulted passage to split that 1.74 m step into two jumps, and
- * then moved along it; the owner's word the second time was to take it out.
- * The file's own crate on the roof climbs the same step, and the plank
- * climbs it from anywhere — which is the point of carrying a plank. */
+/* THE SHELF ON THE STALL'S WALL IS GONE — a bracketed board was put on the
+ * wall between the stall roof and the vaulted passage to split that 1.74 m
+ * step into two jumps, and then moved along it; the owner's word the second
+ * time was to take it out, and the file's own crate on that roof climbs the
+ * same step. `buildTavShelf` below is a different wall and a different job:
+ * the one step in this building that nothing can climb. */
 /* AND A GHOST HAS NO ROOF EITHER. Clearing a table's own storey out of the
  * grid is only half of it: the packer also wrote the table's UNDERSIDE as
  * the ceiling over the flags it stands on, and the walk ducks the camera
@@ -40640,6 +41819,64 @@ function clearTavGhostRoofs() {
   };
   for (const t of tavTables) raise(t.plan, t.top + 0.55);
   for (const c of tavChairs) if (c.prop && c.prop.box) raise(c.prop.box, c.prop.box.max.y + 0.25);
+}
+/* AND A HOLE IN THE GRID IS AN INVISIBLE WALL — the undercroft's own
+ * lesson, which this hall never got. The packer writes a cell's storeys
+ * from the triangles that land in it, and under the covered stall, among
+ * barrels and clutter and a plinth, it lands none often enough that the
+ * floor you are looking at is a cell the walk calls a wall. Measured in the
+ * stall: at (-12.0, -4.2) and (-10.0, -5.4) the DRAWN floors are 0.22, 1.99
+ * and 3.56 and the walk has nothing at all, while the cell beside them
+ * carries 0.22 — so the plinth is a patchwork of islands with invisible
+ * walls between them, which is what being wedged in there is.
+ *
+ * A hole is filled only where the geometry says so, and the test is the
+ * prune's own, inverted: something must be DRAWN at the level the
+ * neighbours stand at, nothing may be drawn in the body band over it
+ * (that is a barrel, and standing inside one is the bug this would
+ * otherwise create), and a body must fit — `keepWallNear` at the walk's own
+ * radius. Three passes, so a hole two or three cells wide fills from its
+ * rim inward. */
+function fillTavHoles() {
+  const w = tavWalk; if (!w || !tavCells || !tavWalls) return;
+  const C = w.cell;
+  let put = 0;
+  for (let pass = 0; pass < 3; pass++) {
+    const cand = new Map();
+    for (const k of tavCells.keys()) {
+      const i = k % w.gw, j = (k - i) / w.gw;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        if (!di && !dj) continue;
+        const nk = (j + dj) * w.gw + (i + di);
+        if (!tavCells.has(nk)) cand.set(nk, [i + di, j + dj]);
+      }
+    }
+    const add = [];
+    for (const [nk, [i, j]] of cand) {
+      const cx = TAV_X + w.x0 + (i + 0.5) * C, cz = TAV_Z + w.z0 + (j + 0.5) * C;
+      // what the neighbours stand on: the level most of them share
+      const lv = [];
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        if (!di && !dj) continue;
+        const fl = tavCells.get((j + dj) * w.gw + (i + di));
+        if (fl) for (let q = 0; q < fl.length; q += 3) lv.push(fl[q]);
+      }
+      if (lv.length < 3) continue;
+      lv.sort((a, b) => a - b);
+      const want = lv[(lv.length / 2) | 0];
+      let agree = 0; for (const v of lv) if (Math.abs(v - want) < 0.30) agree++;
+      if (agree < 3) continue;
+      const f = keepDrawnFloor(cx, cz, TAV_Y + want - 0.25, TAV_Y + want + 0.25, TAV_SITE);
+      if (f === null) continue;                                  // nothing drawn to stand on
+      if (keepDrawnFloor(cx, cz, f + 0.12, f + 1.30, TAV_SITE) !== null) continue;   // a barrel stands on it
+      const hit = keepWallNear(cx, cz, TAV_BODY * 0.8, f + TAV_STEP + 0.04, f + 1.70, TAV_SITE);
+      if (hit && hit.depth > 0.06) continue;                     // and a body has to fit
+      add.push([nk, Math.round((f - TAV_Y) * 100) / 100]);
+    }
+    if (!add.length) break;
+    for (const [nk, f] of add) { tavCells.set(nk, [f, 0, 99]); put++; }
+  }
+  if (tavWalk) tavWalk.filled = put;
 }
 /* Taking a surface away does not take away what the grid remembers of it. */
 function clearTavStoreys(plan, y0, y1) {
@@ -40788,17 +42025,24 @@ function buildTavJars() {
   const cx = (x0 + x1) / 2, f = on(cx, az);
   if (f === null) return;
   for (const dx of [-0.42, 0.42]) dropJar(TAV_X + cx + dx, TAV_Z + az, f + 0.02);
+  /* AND WHAT ELSE IS DOWN HERE. A blind bore with two jars in it is worth
+   * one climb; the ring is what makes the jars worth having, so it lies
+   * between them, on the same measured centreline. */
+  dropWedRing(TAV_X + cx, f + 0.012, TAV_Z + az + 0.46);
 }
 
 /* A thing put in the room after the pack has to say so in the grid, or the
- * walk goes on answering with the flags underneath it. */
-function tavCellTop(x, z, r, top) {
+ * walk goes on answering with the flags underneath it. Its plan is a
+ * RECTANGLE, because the things that need it are a crate and a board: a
+ * disc round a shelf 1.15 by 0.52 either loses its ends or hands out floor
+ * a third of a metre in front of it, which is a step onto nothing. */
+function tavCellTop(x, z, hw, hd, top) {
   const w = tavWalk, C = w.cell;
-  const i0 = Math.floor((x - r - w.x0) / C), i1 = Math.floor((x + r - w.x0) / C);
-  const j0 = Math.floor((z - r - w.z0) / C), j1 = Math.floor((z + r - w.z0) / C);
+  const i0 = Math.floor((x - hw - w.x0) / C), i1 = Math.floor((x + hw - w.x0) / C);
+  const j0 = Math.floor((z - hd - w.z0) / C), j1 = Math.floor((z + hd - w.z0) / C);
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
     const cx = w.x0 + (i + 0.5) * C, cz = w.z0 + (j + 0.5) * C;
-    if (Math.hypot(cx - x, cz - z) > r) continue;
+    if (Math.abs(cx - x) > hw || Math.abs(cz - z) > hd) continue;
     let fl = tavCells.get(j * w.gw + i);
     if (!fl) { fl = []; tavCells.set(j * w.gw + i, fl); }
     const tri = [];
@@ -40808,6 +42052,115 @@ function tavCellTop(x, z, r, top) {
     fl.length = 0; for (const e of tri) fl.push(e[0], e[1], e[2]);
   }
 }
+/* AND A SHELF ON THE GALLERY'S BACK WALL, WHICH IS THE ONE STEP NOTHING CAN
+ * CLIMB. Measured down the bore's own line: the gallery reads 5.30 over the
+ * flags and the landing in front of the bore 7.42. A jump lifts the feet
+ * 0.62 and the walk catches a floor TAV_AIR (0.72) over them, so 1.34 is the
+ * tallest step in this building and this one is 2.12 — the plank was the
+ * only way in. A board halfway up splits it into two jumps of 1.06, which is
+ * the rung the crates already prove (1.05 and 1.04), and a shelf on a
+ * storeroom wall is what would be there anyway: the whole of making it read
+ * as the room rather than as a step. It is SMALL — a third of the plank's
+ * length, where the one on the stall's wall was half of it.
+ *
+ * NOTHING HERE IS TYPED. The line is walked until the floor stops
+ * answering, the landing is asked how far it runs each way, and the face
+ * itself is a ray: repack the model and the shelf is still on the wall.
+ *
+ * AND IT IS SOLID, WHICH IS A THICKNESS. `KEEP_WALL_MIN` is 0.12 — under
+ * that a face is a sliver the wall index drops — so a 55 mm board is a
+ * floor on top and open air from the side, and you walk into the space
+ * under it and stand inside your own shelf. The apron under the front edge
+ * is what a shelf has anyway, and at 0.16 it is a face: the front of the
+ * board stops a body the way a crate does. The two rules then agree, which
+ * is what makes a rung work — standing, the wall band starts a step over
+ * your feet and the apron is in it; at the apex of a jump the band starts
+ * TAV_AIR over them and the board's crown is under it, so the walk catches
+ * the floor instead of pushing you off the wall. */
+const TAV_SHELF = { w: 1.15, d: 0.52, t: 0.05, apron: 0.13, drop: 0.30 };
+let tavShelfMesh = null;
+function buildTavShelf() {
+  if (tavShelfMesh || !tavWorld || !tavWalk || !tavCells) return;
+  const fy = TAV_Y + TAV_FLOOR;
+  const under = (x, z, y) => {
+    const st = keepStandAt(TAV_X + x, TAV_Z + z, fy + y, 1.1, TAV_SITE);
+    return st ? st.f - fy : null;
+  };
+  /* OUT OF THE BORE, NOT DOWN THE HALL. Walked the other way — from the
+   * gallery toward the back — the first thing the line meets is the step the
+   * last crate already climbs (3.53 to 5.30), and the shelf was built on
+   * that one: measured, at (-11.50, 4.44). The step that matters is the one
+   * at the BORE'S end of the line, so the walk starts inside the bore, where
+   * `TAV_BORE.floor` says a floor still belongs to it, and comes back out
+   * until the floor falls away. */
+  let high = null, zEnd = null;
+  for (let z = TAV_BORE.z0; z <= -4.0; z += 0.1) {
+    const f = under(TAV_BORE.x, z, (high === null ? TAV_BORE.floor + 1.1 : high + 0.35));
+    if (f === null) break;
+    if (high === null) { if (f < TAV_BORE.floor) return; high = f; }
+    else if (Math.abs(f - high) > 0.30) break;
+    zEnd = z;
+  }
+  if (high === null || zEnd === null) return;
+  const low = under(TAV_BORE.x, zEnd + 0.9, high - 1.6);
+  if (low === null || high - low < 1.5 || high - low > 3.0) return;   // no step, no shelf
+  // and the middle of the landing it climbs to — the jars' own trick
+  const edge = (s) => {
+    let e = TAV_BORE.x;
+    for (let d = 0.1; d <= 4.0; d += 0.1) {
+      const f = under(TAV_BORE.x + s * d, zEnd - 0.4, high + 0.35);
+      if (f === null || Math.abs(f - high) > 0.30) break;
+      e = TAV_BORE.x + s * d;
+    }
+    return e;
+  };
+  const cx = (edge(-1) + edge(1)) / 2, mid = (low + high) / 2;
+  // the face it hangs on, measured rather than assumed to be at the cell edge
+  tavWorld.updateMatrixWorld(true);
+  const all = [];
+  tavWorld.traverse((o) => { if (o.isMesh && o.visible && o.name !== 'hitProxy' && o.geometry && o.geometry.attributes.position) all.push(o); });
+  const rc = new THREE.Raycaster(); rc.far = 3.0;
+  rc.set(new THREE.Vector3(TAV_X + cx, fy + mid, TAV_Z + zEnd + 1.5), new THREE.Vector3(0, 0, -1));
+  const h = rc.intersectObjects(all, false);
+  if (!h.length) return;
+  const zBack = h[0].point.z - TAV_Z;
+
+  /* AND IT IS NOT THE PLANK'S TIMBER. Rendered against this wall the plank's
+   * own tint (0xa89a86) came out a slab of orange pine on cold grey-green
+   * stone — measured on the frame, the board read (190, 140, 95) against a
+   * wall at (120, 125, 115). It is fixed joinery in a cellar, not a board
+   * somebody has just planed: the same map, taken down and cooled. */
+  const wood = new THREE.MeshBasicMaterial({ map: tavPlankTex(), color: 0x7b7266 });
+  wood.toneMapped = false;                             // the room is baked and unlit; so is what hangs in it
+  const iron = new THREE.MeshBasicMaterial({ color: 0x3a3a40 }); iron.toneMapped = false;
+  const S = TAV_SHELF, g = new THREE.Group();
+  const board = new THREE.Mesh(new THREE.BoxGeometry(S.w, S.t, S.d), wood);
+  board.position.set(0, -S.t / 2, S.d / 2);            // the group's origin IS the board's top, at the wall
+  g.add(board);
+  const apron = new THREE.Mesh(new THREE.BoxGeometry(S.w, S.apron, 0.05), wood);
+  apron.position.set(0, -S.t - S.apron / 2 + 0.01, S.d - 0.025);
+  g.add(apron);
+  for (const s of [-1, 1]) {                           // two brackets, back to the wall
+    const bx = s * (S.w / 2 - 0.17);
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, S.drop, 0.05), iron);
+    leg.position.set(bx, -S.t - S.drop / 2 + 0.01, 0.03);
+    g.add(leg);
+    const dy = S.drop - 0.06, dz = S.d - 0.10;
+    const brace = new THREE.Mesh(new THREE.BoxGeometry(0.04, Math.hypot(dy, dz), 0.04), iron);
+    brace.position.set(bx, -S.t - dy / 2, 0.05 + dz / 2);
+    brace.rotation.x = Math.atan2(dz, dy);
+    g.add(brace);
+  }
+  g.position.set(cx, TAV_FLOOR + mid, zBack);
+  g.name = 'tavShelf';                                 // named, so `bakeStatic` leaves it alone
+  g.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.name = 'tavShelf'; } });
+  tavWorld.add(g);
+  tavWorld.updateMatrixWorld(true);
+  tavShelfMesh = g;
+  // and a thing put in the room after the pack has to say so in the grid
+  tavCellTop(cx, zBack + S.d / 2, S.w / 2, S.d / 2, TAV_FLOOR + mid);
+}
+
 /* AND THE WAY ACROSS IS A PLANK YOU PUT THERE YOURSELF. Along the south
  * wall of the hall hang two carpets whose rolled tops are a catwalk four
  * and a half metres up — and between them is two and a half metres of air.
@@ -41363,6 +42716,25 @@ function pruneTavStoreys() {
         if (over !== null) break;
       }
       if (over !== null) { fl.splice(q, 3); cut++; continue; }
+      /* AND A FLOOR WITH NOTHING UNDER IT IS NOT A FLOOR. The other half of
+       * the same bug: the packer hands a raised cell a level from whatever
+       * triangle landed in it, and in a hall of barrels, beams and hanging
+       * cloth that is now and then a surface nobody can stand on — measured,
+       * 218 of 2,636 raised storeys had NOTHING drawn within a hand of them,
+       * which is a step onto air and then a fall. The flags are left alone
+       * (they are the floor by definition); anything the walk lifts you onto
+       * has to be a thing that is drawn. */
+      if (fl[q] > TAV_FLOOR + 0.45) {
+        /* AND THE QUESTION IS ASKED OF THE WHOLE CELL. Five points within
+         * six centimetres of the middle is not "is anything drawn here": the
+         * barrel rack's own top came back empty on all five and the rung the
+         * climb stands on was deleted, which is worse than the bug. A 3 by 3
+         * over the cell's own width answers it. */
+        let under = null;
+        for (let a2 = -1; a2 <= 1 && under === null; a2++) for (let b2 = -1; b2 <= 1 && under === null; b2++)
+          under = keepDrawnFloor(cx + a2 * w.cell * 0.45, cz + b2 * w.cell * 0.45, f - 0.30, f + 0.30, TAV_SITE);
+        if (under === null) { fl.splice(q, 3); cut++; continue; }
+      }
       /* AND A ROOF NOTHING IS DRAWN UNDER IS NOT A ROOF, WHICH IS THE SAME
        * BUG WEARING THE OTHER HAT. A storey carries the ceiling the packer
        * sampled, and in an open hall that is now and then a table top, a
@@ -41660,8 +43032,37 @@ function updateTavern(dt) {
   pushOutOfTavTables(p, TAV_BODY, feet);
   st = keepFloorAt(p.x, p.z, feet, up, S) || st;
   if (!st) { p.x = _preMove.x; p.z = _preMove.z; st = keepFloorAt(p.x, p.z, feet, up, S); }
+  st = tavEscape(p, feet, up, S) || st;
   if (st) { tavLastFloor = st.f; tavLastSpot.x = p.x; tavLastSpot.z = p.z; }
   groundY = st ? st.f : (tavLastFloor === null ? TAV_Y + TAV_FLOOR : tavLastFloor);
+}
+/* AND THE ROOM CAN ALWAYS LET GO OF YOU. Everything above is a refusal —
+ * the move is turned, or reverted, or pushed out of — and a refusal is how
+ * you end up standing still in a barrel: the Dealer's own lesson, that
+ * reverting the frame IS the stuck. A body that ends a frame with drawn
+ * stone through its middle, or with nothing under it at all, is walked out
+ * to the nearest spot that has a floor within reach and room for it, at a
+ * stride a frame so it reads as being shouldered aside rather than
+ * teleported. It runs last, because whatever moves you last has to be the
+ * thing that answers for where you are. */
+function tavEscape(p, feet, up, S) {
+  const w = keepWallNear(p.x, p.z, TAV_BODY, feet + TAV_STEP + 0.04, feet + 1.75, S);
+  const here = keepFloorAt(p.x, p.z, feet, up, S);
+  if (here && (!w || w.depth < 0.20)) return null;             // not stuck; leave him alone
+  for (const r of [0.35, 0.7, 1.05, 1.45, 1.9, 2.4, 3.0]) {
+    for (let k = 0; k < 12; k++) {
+      const a = (k / 12) * Math.PI * 2 + r * 2.7;
+      const nx = p.x + Math.sin(a) * r, nz = p.z + Math.cos(a) * r;
+      const s2 = keepFloorAt(nx, nz, feet, Math.max(up, TAV_STEP), S);
+      if (!s2 || Math.abs(s2.f - feet) > 1.2) continue;
+      const w2 = keepWallNear(nx, nz, TAV_BODY, s2.f + TAV_STEP + 0.04, s2.f + 1.70, S);
+      if (w2 && w2.depth > 0.05) continue;
+      const d = Math.hypot(nx - p.x, nz - p.z) || 1, step = Math.min(d, 0.14);
+      p.x += (nx - p.x) / d * step; p.z += (nz - p.z) / d * step;
+      return keepFloorAt(p.x, p.z, feet, up, S) || s2;
+    }
+  }
+  return null;
 }
 function tavGroundAt(x, z, y) {
   if (!tavReady || !inTavern || y === undefined) return null;
@@ -43101,8 +44502,13 @@ window.__bw = {
   get tavWorld() { return tavWorld; }, get tavTables() { return tavTables; }, get tavChairs() { return tavChairs; },
   get wongUnit() { return wongUnit; }, get drunkUnit() { return drunkUnit; }, get orcUnit() { return orcUnit; },
   crawlerUnit, CRAWL_X, CRAWL_Z, crawlerProvoke, startCaveIn, placeInCatacombs, placeOutsideCatDoor, startCatExit, catRoute, catSees, catNodeAt, CAT_X, CAT_Y, CAT_Z, CAT_SITE, CAT_LAND, CAT_DOOR, CAVE_Z,
+  skullKeyItem, skullKey, skullWorld, dropSkullKey, buildCatKey, CAT_KEY, get catDoorOpen() { return catDoorOpen; }, set catDoorOpen(v) { catDoorOpen = v; },
+  catCue, playSampleAt, keepWallNear, keepHitsWall, catNoiseAt, catSpots, catG: () => catG,
+  catFloorAt: (x, z, y, up = 0.7) => keepFloorAt(x, z, y, up, CAT_SITE),
+  catWallDepth: (x, z, y, r = 0.6) => { const w = keepWallNear(x, z, r, y + 0.45, y + 1.7, CAT_SITE); return w ? w.depth : 0; },
   catState: () => ({ inCat, caveBusy, catBusy, catReady, catBuilt, walk: !!catWalk, nodes: catG ? catG.nodes.length : -1, lights: catLights.length, built: catWalk && catWalk.built, eat: catSpots.eat.length, mind: crawlerUnit && crawlerUnit.cat ? { ...crawlerUnit.cat, next: undefined, target: undefined } : null, awake: crawlerUnit && crawlerUnit.st.awake, noStand: crawlerUnit && crawlerUnit.noStand, noise: catNoise }),
   catNoiseAt, catPeekSpot, playerSeesHunter, catStand, catPutDown, catSmooth, catLitterCheck,
+  catMemory, catThrowBones, catKickBones, catFloorSmooth, catPickTarget, catBeginAct, get catAmbushAt() { return catAmbushAt; }, set catAmbushAt(v) { catAmbushAt = v; },
   catEat: () => catSpots.eat.map((k) => [catG.nodes[k].x - CAT_X, catG.nodes[k].f - CAT_Y, catG.nodes[k].z - CAT_Z].map((v) => +v.toFixed(1))), catWoke: () => crawlerUnit && crawlerUnit.catWoke,
   get catG() { return catG; }, catRandomNode,
   tavScene, tavProvoke, buildTavCast, get tavMug() { return tavMug; },
@@ -43253,7 +44659,7 @@ window.__bw = {
   get glowstickItem() { return glowstickItem; },
   openMenu, closeMenu, showEnd, stampFoot, startDig, toggleEquip, spawnPuffs, spawnSplash, stampDigHole, beginGame,
   openInspect, closeInspect, startExtraction,
-  get shovelItem() { return shovelItem; }, get crabItem() { return crabItem; }, get syringeItem() { return syringeItem; }, get jarItem() { return jarItem; },
+  get shovelItem() { return shovelItem; }, get crabItem() { return crabItem; }, get syringeItem() { return syringeItem; }, get jarItem() { return jarItem; }, get weddingItem() { return weddingItem; }, wearRing, get speedK() { return speedK(); },
   state: () => ({ started, locked, fallbackLook, introDone, noteOpen, menuOpen, dialogOpen, inspecting, extracting, crabBled, dying, ended, onGround, stamina: +stamina.toFixed(2), exhausted, digT: +digT.toFixed(2), hp, equipped: equipped && equipped.name, held: held && held.mesh.name, hovered: hovered && hovered.label, inv: inventory.map(i => i.name) }),
   music: () => (musicEl ? { paused: musicEl.paused, t: +musicEl.currentTime.toFixed(1), env: musicEnvGain ? +musicEnvGain.gain.value.toFixed(3) : null, vol: musicVolGain ? +musicVolGain.gain.value.toFixed(2) : null } : { musicEl: null }),
 };
