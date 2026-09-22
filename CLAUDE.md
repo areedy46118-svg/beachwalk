@@ -13224,3 +13224,66 @@ two blue jars, the ring between them — rendered from the measured spot it
 matches his shot frame for frame), so the place is not in doubt; only the
 numbers are. When a spot read off a screenshot disagrees with the room,
 trust the thing that measures itself and say so.
+
+**THERE IS NO SHELF IN THE TAVERN, AND THERE IS NOT GOING TO BE ONE.** Four
+times a bracketed board was put on a tavern wall to split a step into two
+jumps — on the stall's wall, then along it, then on the back of the gallery —
+and four times the owner's word was to take it out, the last with "never put
+it there again, you keep getting it wrong". `buildTavShelf`, `TAV_SHELF` and
+`tavShelfMesh` are DELETED rather than commented out, because a function left
+in the file with a commented call is an invitation. The steps it was for are
+climbed by things the room already has: the file's own crate on the stall
+roof, and the PLANK for the 2.12 m step at the back of the gallery, which is
+a physics puzzle and the better answer anyway. If a step in there ever needs
+splitting, move something that is already in the room.
+
+**AND THE CATACOMBS' JARS WERE SCORED ON THE WRONG THING.** "I never ran into
+the two blood jars that should be in the halls of the catacombs." They were
+there, on the main component, takeable — and the score was `dL`, the distance
+from the LANDING, sorted DESCENDING, so what got chosen was the two furthest
+corners of the complex. Measured: **44.4 m and 39.7 m from where you come
+down, and 47.5 m and 39.7 m from the route you actually walk.** "A passage
+you did not have to go down" had become a passage nobody would ever go down.
+
+- **THE WALK IS THE THING TO SCORE AGAINST, AND THE ROOM CAN ANSWER IT.**
+  The graph is asked for the way from the landing to the key and from the key
+  to the door — every step the game requires of you, 53 legs — and a
+  candidate has to be off that line but only a few strides off it (4 to 13 m,
+  best near eight and a half). Nothing is typed.
+- **AND EACH END OF A LEG IS A NODE, CHOSEN ON HEIGHT AS WELL AS PLAN.**
+  Nearest-in-plan alone put the door's end of the walk on the node directly
+  UNDER it — the door is nine and a half metres up and the ground floor runs
+  beneath it — so the route came back along the bottom and never climbed at
+  all (measured: it ended at f 0.7 against the door's 9.53).
+- **AND A JAR YOU CANNOT GLIMPSE IS A JAR YOU DO NOT FIND.** Distance alone
+  is not enough: the first build of this put one eight and a half metres off
+  the walk with no waypoint anywhere on its own storey that could see it — it
+  was eight metres away through a wall. A candidate is only one if some point
+  of the walk, on its storey, can actually look at it.
+- **AND `keepHitsWall` IS A WALKING TEST, NOT A SEEING TEST.** It indexes
+  only STEEP faces over `KEEP_WALL_MIN` tall — what a body is stopped by — so
+  an arch, a vault's curve, a low sill and the shoulder of a pier are all
+  invisible to it. Measured: it called a spot clear from 7.7 m and a real ray
+  at the drawn room met stone at 2.76. It stays as the cheap pre-filter,
+  because it is generous in the safe direction and the alternative is fifteen
+  thousand rays at ninety thousand triangles; the two that are actually
+  CHOSEN are then confirmed with a handful of real ones, trying the nearest
+  six sight lines before giving the candidate up.
+- **AND THE ROOM'S GEOMETRY IS NOT ALL UNDER `catWorld`.** The two walls that
+  hid the second jar were `CatacombWall.005` meshes hanging off a group of
+  the SCENE, so the confirming ray went straight through them and the
+  placement called a blind corner "in sight" a second time. Ask the scene;
+  the ray is short and every bounding sphere elsewhere rejects it at once.
+  And do not filter on `visible` — the room is still hidden when this runs.
+- **AND THE TWO ARE ON DIFFERENT STRETCHES OF THE WALK**, at least a quarter
+  of the route apart, so one is passed on the way to the key and the other on
+  the way up to the door. Well apart in the ROOM is not enough: two jars
+  either side of the same corridor are one find.
+- And it SAYS SO when it fails. Three silent returns, one of which quietly
+  shipped a single jar, are exactly the class of bug `mutPlay`'s warning
+  exists for.
+
+Measured after: **7.0 m and 5.9 m off the walk (was 47.5 and 39.7), in clear
+sight from 5.4 m and 6.8 m, 31.7 m apart, at legs 5 and 39 of 53** — and
+rendered from those sight lines both read as a blue glow at the end of a dark
+passage (peak blue 179 and 165 against 23 for the one that was hidden).

@@ -39751,10 +39751,20 @@ function buildCatacombs() {
  * they are somewhere you only reach by going down a passage you did not
  * have to go down. So a HALLWAY is measured rather than typed — a node
  * whose free floor runs a long way one way and stops within a body and a
- * half the other, which is the difference between a corridor and a vault —
- * and the two chosen are the pair furthest from the landing that are also
- * well apart from each other, from the key and from the way out, so neither
- * is a thing you trip over on the errand you were already running.
+ * half the other, which is the difference between a corridor and a vault.
+ *
+ * AND A FIND YOU NEVER FIND IS NOT A FIND. They used to be scored on the
+ * distance from the LANDING, sorted descending, so what got picked was the
+ * two furthest corners of the complex — measured, 44.4 m and 39.7 m from
+ * where you come down, and 47.5 m and 39.7 m from the route you actually
+ * walk. The owner played the whole place twice and never met either of
+ * them, which is the only measurement that counts. A jar is a DETOUR, not
+ * a pilgrimage. They are scored against THE WALK ITSELF now — the room's
+ * own graph answering "the landing, then the key, then the door", which is
+ * every step a player has to take — and a candidate has to be off that line
+ * but only a few strides off it. The two are attached to different STRETCHES
+ * of it, so one is a passage you pass on the way to the key and the other on
+ * the way up to the door, and neither is on the way to anything.
  *
  * AND NOTICEABLE STILL. The stock takeable shine is tuned for a beach under
  * a quarter moon; this stone reads at 0.03 and a jar's own blue is the one
@@ -39764,6 +39774,7 @@ function buildCatacombs() {
  * nothing, because since the Windows pass every point light in this game is
  * virtual and only the twelve nearest are ever in a shader. */
 let catJarsDone = false;
+let catJarLine = [], catJarPicks = [];   // what the placement measured, for the harness to read back
 function buildCatJars() {
   if (catJarsDone || !catG || !catG.nodes.length) return;
   catJarsDone = true;
@@ -39778,6 +39789,64 @@ function buildCatJars() {
     const run = (dx, dz) => { let d = 0; for (let t = 0.3; t <= 4.2; t += 0.3) { if (!at(n.x + dx * t, n.z + dz * t)) break; d = t; } return d; };
     const wx = run(1, 0) + run(-1, 0), wz = run(0, 1) + run(0, -1);
     return { narrow: Math.min(wx, wz), along: Math.max(wx, wz) };
+  };
+  /* THE WALK, AS THE ROOM ITSELF ANSWERS IT. Nothing here is typed: the
+   * graph is asked for the way from the landing to the key and from the key
+   * to the door, and the two together are every step the game requires of
+   * you. If either leg refuses, the jars fall back to the old measure. */
+  const line = [];
+  {
+    /* ...and each end of a leg is the nearest NODE in plan, whatever its
+     * height. Asking the grid for "the floor at the door" gets the topmost
+     * storey of a cell, which in a place with three of them over each other
+     * is a coin toss; the graph has one node per place you can stand. */
+    /* AND THE HEIGHT IS PART OF THE ANCHOR. Nearest in plan alone put the
+     * door's end of the walk on the node directly UNDER it — the door is
+     * nine and a half metres up and the ground floor runs beneath it — so
+     * the route came back along the bottom and never climbed at all
+     * (measured: it ended at f 0.7 against the door's 9.53). */
+    const near = (p, y) => {
+      let best = null, bd = 1e9;
+      for (let i = 0; i < N.length; i++) {
+        if (M && !M[i]) continue;
+        const d = Math.hypot(N[i].x - p.x, N[i].z - p.z)
+          + (y === undefined ? 0 : Math.abs(N[i].f - (CAT_Y + y)) * 3);
+        if (d < bd) { bd = d; best = N[i]; }
+      }
+      return best;
+    };
+    const u = { g: { position: new THREE.Vector3() }, pathI: 0, catReach: null, path: null };
+    const A = near(land), B = near(key, CAT_KEY.y), C = near(door, CAT_DOOR.f);
+    for (const [from, to] of [[A, B], [B, C]]) {
+      if (!from || !to) continue;
+      u.g.position.set(from.x, from.f, from.z);
+      u.catReach = null; u.path = null;
+      if (!catRoute(u, to.x, to.z, to.f) || !u.path) continue;
+      for (const w of u.path) line.push({ x: CAT_X + w.x, z: CAT_Z + w.z, f: w.f });
+    }
+  }
+  // how far off the walk a spot is, and WHERE along it — a height difference
+  // counts double, because a floor over your head is not a place you glance into
+  /* AND A JAR YOU CANNOT GLIMPSE IS A JAR YOU DO NOT FIND. Distance alone
+   * is not enough: measured on the first build of this, one of the two was
+   * eight and a half metres off the walk and there was no waypoint anywhere
+   * on its own storey with a clear line to it — it was eight metres away
+   * through a wall. What makes a thing findable is that you SEE it as you
+   * pass, so a candidate is only one if some point of the walk, on its own
+   * storey, can actually look at it. That is the whole of "a passage you did
+   * not have to go down": you did not have to, and you could see why. */
+  const offWalk = (n) => {
+    let best = 1e9, at = -1, seen = 0;
+    for (let k = 0; k < line.length; k++) {
+      const w = line[k];
+      const d = Math.hypot(n.x - w.x, n.z - w.z) + Math.abs(n.f - w.f) * 2;
+      if (d < best) { best = d; at = k; }
+      if (seen || Math.abs(w.f - n.f) > 1.6) continue;
+      const plan = Math.hypot(n.x - w.x, n.z - w.z);
+      if (plan > 16) continue;
+      if (!keepHitsWall(w.x, w.z, n.x, n.z, n.f + 0.9, CAT_SITE)) { seen = plan; at = k; }
+    }
+    return { d: best, at, seen };
   };
   const cands = [];
   for (let i = 0; i < N.length; i++) {
@@ -39798,15 +39867,84 @@ function buildCatJars() {
     if (under && n.f - under.f < 9) continue;
     const h = hall(n);
     if (h.narrow > 2.4 || h.along < 3.6) continue;            // a vault, not a passage
-    cands.push({ n, dL, score: dL + (2.4 - h.narrow) * 6 });
+    const o = line.length ? offWalk(n) : { d: dL, at: 0, seen: dL };
+    /* OFF THE WALK, BUT ONLY A FEW STRIDES OFF IT, AND IN SIGHT OF IT.
+     * Under four metres and it is the walk itself; past thirteen and it is
+     * the far end of the building; with no line to it, it may as well be. */
+    if (line.length && (o.d < 4 || o.d > 13 || !o.seen)) continue;
+    // and the best of that band is the middle of it, down the narrowest passage
+    cands.push({ n, dL, at: o.at, seen: o.seen, score: (2.4 - h.narrow) * 6 - Math.abs(o.seen - 8.5) * 2 });
   }
-  if (!cands.length) return;
+  if (!cands.length) { console.warn('[catacombs] no hallway spot for the jars'); return; }
   cands.sort((a, b) => b.score - a.score);
-  const pick = [cands[0]];
+  /* AND `keepHitsWall` IS A WALKING TEST, NOT A SEEING TEST. It indexes only
+   * STEEP faces over `KEEP_WALL_MIN` tall — which is what a body is stopped
+   * by — so an arch, a vault's curve, a low sill and the shoulder of a pier
+   * are all invisible to it. Measured on the first build of this: it called
+   * a spot clear from 7.7 m and a real ray at the drawn room met stone at
+   * 2.76. It is kept as the cheap pre-filter, because it is generous in the
+   * safe direction and the alternative is fifteen thousand rays at ninety
+   * thousand triangles; the two that are actually CHOSEN are then confirmed
+   * with a handful of real ones. */
+  const _jarRay = new THREE.Raycaster();
+  const _jarA = new THREE.Vector3(), _jarB = new THREE.Vector3();
+  /* AND THE ROOM'S GEOMETRY IS NOT ALL UNDER `catWorld`. Measured: the two
+   * walls that hid the second jar were `CatacombWall.005` meshes hanging off
+   * a group of the SCENE, so a ray cast at `catWorld` alone went straight
+   * through them and the placement called a blind corner "in sight". The
+   * ray is short, so every bounding sphere on the beach rejects it at once;
+   * ask the scene. And do not filter on `visible` — the room is still hidden
+   * at the moment this runs. */
+  const drawn = [];
+  scene.traverse((o) => { if (o.isMesh && o.name !== 'hitProxy') drawn.push(o); });
+  const reallySeen = (n) => {
+    const looks = [];
+    for (const w of line) {
+      if (Math.abs(w.f - n.f) > 1.6) continue;
+      const d = Math.hypot(n.x - w.x, n.z - w.z);
+      if (d > 16 || keepHitsWall(w.x, w.z, n.x, n.z, n.f + 0.9, CAT_SITE)) continue;
+      looks.push({ w, d });
+    }
+    looks.sort((p, q) => p.d - q.d);
+    for (const l of looks.slice(0, 6)) {
+      _jarA.set(l.w.x, l.w.f + 1.7, l.w.z);
+      _jarB.set(n.x, n.f + 0.15, n.z);
+      const len = _jarA.distanceTo(_jarB);
+      _jarRay.set(_jarA, _jarB.clone().sub(_jarA).normalize());
+      _jarRay.near = 0.05; _jarRay.far = len - 0.25;
+      if (!_jarRay.intersectObjects(drawn, false).length) return l.d;
+    }
+    return 0;
+  };
+  const pick = [];
   for (const c of cands) {
     if (pick.length >= 2) break;
-    if (pick.every((q) => Math.hypot(q.n.x - c.n.x, q.n.z - c.n.z) > 22 || Math.abs(q.n.f - c.n.f) > 2)) pick.push(c);
+    /* AND THE SECOND IS ON ANOTHER STRETCH OF THE WALK. Well apart in the
+     * room is not enough — two jars either side of the same corridor are one
+     * find. They attach to points at least a quarter of the route apart, so
+     * one is passed on the way to the key and the other on the way up. */
+    const far = pick.every((q) => Math.hypot(q.n.x - c.n.x, q.n.z - c.n.z) > 14 || Math.abs(q.n.f - c.n.f) > 2);
+    const apart = !line.length || pick.every((q) => Math.abs(q.at - c.at) > line.length * 0.25);
+    if (!far || !apart) continue;
+    const saw = line.length ? reallySeen(c.n) : c.seen;
+    if (!saw) continue;
+    c.seen = saw;
+    pick.push(c);
   }
+  if (pick.length < 2) {
+    // the separation could not be met: the best that is simply well away from it
+    for (const c of cands) {
+      if (pick.length >= 2) break;
+      if (!pick.every((q) => Math.hypot(q.n.x - c.n.x, q.n.z - c.n.z) > 10)) continue;
+      const saw = line.length ? reallySeen(c.n) : c.seen;
+      if (!saw) continue;
+      c.seen = saw;
+      pick.push(c);
+    }
+  }
+  if (pick.length < 2) console.warn('[catacombs] only one jar placed');
+  catJarLine = line;
+  catJarPicks = pick.map((c) => ({ x: c.n.x - CAT_X, f: c.n.f - CAT_Y, z: c.n.z - CAT_Z, at: c.at, seen: +(c.seen || 0).toFixed(1), score: +c.score.toFixed(1) }));
   for (const c of pick) {
     /* AND NO GHOST SPRITE DOWN HERE. `through` draws a second, bigger glow
      * that ignores depth, which is what finds a thing behind a pier — and
@@ -43987,12 +44125,6 @@ function buildTavern() {
   extractTavTables();
   stripTavProps();
   buildTavCrates();
-  /* AND THE SHELF IS OUT, FOR NOW — the owner's word, the third time one of
-   * these has been asked for and then taken away again. The function stays
-   * (it measures its own wall and its own two floors, so it can come back as
-   * one call) and nothing calls it; the 2.12 m step at the back of the
-   * gallery is the plank's job again. */
-  buildTavShelf();
   buildKeepWalls(TAV_SITE);
   buildTavPlank();
   buildTavChairs();
@@ -44228,12 +44360,16 @@ function smashTavTable(t, speed) {
   tavWallsDirty = true; TAV_G.dirty = true;
   if (!sfxTableBreak()) sfxWoodSnap();
 }
-/* THE SHELF ON THE STALL'S WALL IS GONE — a bracketed board was put on the
- * wall between the stall roof and the vaulted passage to split that 1.74 m
- * step into two jumps, and then moved along it; the owner's word the second
- * time was to take it out, and the file's own crate on that roof climbs the
- * same step. `buildTavShelf` below is a different wall and a different job:
- * the one step in this building that nothing can climb. */
+/* THERE IS NO SHELF IN THIS BUILDING, AND THERE IS NOT GOING TO BE ONE.
+ * Four times a bracketed board was put on a tavern wall to split a step
+ * into two jumps — on the stall's wall, then along it, then on the back of
+ * the gallery — and four times the owner's word was to take it out, the
+ * last time with "never put it there again, you keep getting it wrong".
+ * The steps it was for are climbed by things the room already has: the
+ * file's own crate on the stall roof, and the PLANK for the 2.12 m step at
+ * the back of the gallery, which is a physics puzzle and is the better
+ * answer anyway. If a step in here ever needs splitting, move something
+ * that is already in the room; do not build furniture on a wall. */
 /* AND A GHOST HAS NO ROOF EITHER. Clearing a table's own storey out of the
  * grid is only half of it: the packer also wrote the table's UNDERSIDE as
  * the ceiling over the flags it stands on, and the walk ducks the camera
@@ -44490,114 +44626,6 @@ function tavCellTop(x, z, hw, hd, top) {
     tri.sort((a, b) => a[0] - b[0]);
     fl.length = 0; for (const e of tri) fl.push(e[0], e[1], e[2]);
   }
-}
-/* AND A SHELF ON THE GALLERY'S BACK WALL, WHICH IS THE ONE STEP NOTHING CAN
- * CLIMB. Measured down the bore's own line: the gallery reads 5.30 over the
- * flags and the landing in front of the bore 7.42. A jump lifts the feet
- * 0.62 and the walk catches a floor TAV_AIR (0.72) over them, so 1.34 is the
- * tallest step in this building and this one is 2.12 — the plank was the
- * only way in. A board halfway up splits it into two jumps of 1.06, which is
- * the rung the crates already prove (1.05 and 1.04), and a shelf on a
- * storeroom wall is what would be there anyway: the whole of making it read
- * as the room rather than as a step. It is SMALL — a third of the plank's
- * length, where the one on the stall's wall was half of it.
- *
- * NOTHING HERE IS TYPED. The line is walked until the floor stops
- * answering, the landing is asked how far it runs each way, and the face
- * itself is a ray: repack the model and the shelf is still on the wall.
- *
- * AND IT IS SOLID, WHICH IS A THICKNESS. `KEEP_WALL_MIN` is 0.12 — under
- * that a face is a sliver the wall index drops — so a 55 mm board is a
- * floor on top and open air from the side, and you walk into the space
- * under it and stand inside your own shelf. The apron under the front edge
- * is what a shelf has anyway, and at 0.16 it is a face: the front of the
- * board stops a body the way a crate does. The two rules then agree, which
- * is what makes a rung work — standing, the wall band starts a step over
- * your feet and the apron is in it; at the apex of a jump the band starts
- * TAV_AIR over them and the board's crown is under it, so the walk catches
- * the floor instead of pushing you off the wall. */
-const TAV_SHELF = { w: 1.15, d: 0.52, t: 0.05, apron: 0.13, drop: 0.30 };
-let tavShelfMesh = null;
-function buildTavShelf() {
-  if (tavShelfMesh || !tavWorld || !tavWalk || !tavCells) return;
-  const fy = TAV_Y + TAV_FLOOR;
-  const under = (x, z, y) => {
-    const st = keepStandAt(TAV_X + x, TAV_Z + z, fy + y, 1.1, TAV_SITE);
-    return st ? st.f - fy : null;
-  };
-  /* OUT OF THE BORE, NOT DOWN THE HALL. Walked the other way — from the
-   * gallery toward the back — the first thing the line meets is the step the
-   * last crate already climbs (3.53 to 5.30), and the shelf was built on
-   * that one: measured, at (-11.50, 4.44). The step that matters is the one
-   * at the BORE'S end of the line, so the walk starts inside the bore, where
-   * `TAV_BORE.floor` says a floor still belongs to it, and comes back out
-   * until the floor falls away. */
-  let high = null, zEnd = null;
-  for (let z = TAV_BORE.z0; z <= -4.0; z += 0.1) {
-    const f = under(TAV_BORE.x, z, (high === null ? TAV_BORE.floor + 1.1 : high + 0.35));
-    if (f === null) break;
-    if (high === null) { if (f < TAV_BORE.floor) return; high = f; }
-    else if (Math.abs(f - high) > 0.30) break;
-    zEnd = z;
-  }
-  if (high === null || zEnd === null) return;
-  const low = under(TAV_BORE.x, zEnd + 0.9, high - 1.6);
-  if (low === null || high - low < 1.5 || high - low > 3.0) return;   // no step, no shelf
-  // and the middle of the landing it climbs to — the jars' own trick
-  const edge = (s) => {
-    let e = TAV_BORE.x;
-    for (let d = 0.1; d <= 4.0; d += 0.1) {
-      const f = under(TAV_BORE.x + s * d, zEnd - 0.4, high + 0.35);
-      if (f === null || Math.abs(f - high) > 0.30) break;
-      e = TAV_BORE.x + s * d;
-    }
-    return e;
-  };
-  const cx = (edge(-1) + edge(1)) / 2, mid = (low + high) / 2;
-  // the face it hangs on, measured rather than assumed to be at the cell edge
-  tavWorld.updateMatrixWorld(true);
-  const all = [];
-  tavWorld.traverse((o) => { if (o.isMesh && o.visible && o.name !== 'hitProxy' && o.geometry && o.geometry.attributes.position) all.push(o); });
-  const rc = new THREE.Raycaster(); rc.far = 3.0;
-  rc.set(new THREE.Vector3(TAV_X + cx, fy + mid, TAV_Z + zEnd + 1.5), new THREE.Vector3(0, 0, -1));
-  const h = rc.intersectObjects(all, false);
-  if (!h.length) return;
-  const zBack = h[0].point.z - TAV_Z;
-
-  /* AND IT IS NOT THE PLANK'S TIMBER. Rendered against this wall the plank's
-   * own tint (0xa89a86) came out a slab of orange pine on cold grey-green
-   * stone — measured on the frame, the board read (190, 140, 95) against a
-   * wall at (120, 125, 115). It is fixed joinery in a cellar, not a board
-   * somebody has just planed: the same map, taken down and cooled. */
-  const wood = new THREE.MeshBasicMaterial({ map: tavPlankTex(), color: 0x7b7266 });
-  wood.toneMapped = false;                             // the room is baked and unlit; so is what hangs in it
-  const iron = new THREE.MeshBasicMaterial({ color: 0x3a3a40 }); iron.toneMapped = false;
-  const S = TAV_SHELF, g = new THREE.Group();
-  const board = new THREE.Mesh(new THREE.BoxGeometry(S.w, S.t, S.d), wood);
-  board.position.set(0, -S.t / 2, S.d / 2);            // the group's origin IS the board's top, at the wall
-  g.add(board);
-  const apron = new THREE.Mesh(new THREE.BoxGeometry(S.w, S.apron, 0.05), wood);
-  apron.position.set(0, -S.t - S.apron / 2 + 0.01, S.d - 0.025);
-  g.add(apron);
-  for (const s of [-1, 1]) {                           // two brackets, back to the wall
-    const bx = s * (S.w / 2 - 0.17);
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, S.drop, 0.05), iron);
-    leg.position.set(bx, -S.t - S.drop / 2 + 0.01, 0.03);
-    g.add(leg);
-    const dy = S.drop - 0.06, dz = S.d - 0.10;
-    const brace = new THREE.Mesh(new THREE.BoxGeometry(0.04, Math.hypot(dy, dz), 0.04), iron);
-    brace.position.set(bx, -S.t - dy / 2, 0.05 + dz / 2);
-    brace.rotation.x = Math.atan2(dz, dy);
-    g.add(brace);
-  }
-  g.position.set(cx, TAV_FLOOR + mid, zBack);
-  g.name = 'tavShelf';                                 // named, so `bakeStatic` leaves it alone
-  g.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.name = 'tavShelf'; } });
-  tavWorld.add(g);
-  tavWorld.updateMatrixWorld(true);
-  tavShelfMesh = g;
-  // and a thing put in the room after the pack has to say so in the grid
-  tavCellTop(cx, zBack + S.d / 2, S.w / 2, S.d / 2, TAV_FLOOR + mid);
 }
 
 /* AND THE WAY ACROSS IS A PLANK YOU PUT THERE YOURSELF. Along the south
@@ -47044,7 +47072,8 @@ window.__bw = {
   get tavWorld() { return tavWorld; }, get tavTables() { return tavTables; }, get tavChairs() { return tavChairs; },
   get wongUnit() { return wongUnit; }, get drunkUnit() { return drunkUnit; }, get orcUnit() { return orcUnit; },
   packByName, renderItemIcon, itemIcon, wearRingAt, rings, renderRings,
-  get tavShelfMesh() { return tavShelfMesh; }, TAV_BORE, TAV_SHELF,
+  get catJarLine() { return catJarLine; }, get catJarPicks() { return catJarPicks; },
+  TAV_BORE,
   catShutDoor, get catWalk() { return catWalk; }, get catCells() { return catCells; },
   renderHotbar, renderPack,
   crawlerUnit, CRAWL_X, CRAWL_Z, crawlerProvoke, startCaveIn, placeInCatacombs, placeOutsideCatDoor, startCatExit, startCatReturn, placeInsideCatDoor, fitCatSandDoor, catWallDoor, catRoute, catSees, catNodeAt, CAT_X, CAT_Y, CAT_Z, CAT_SITE, CAT_LAND, CAT_DOOR, CAVE_Z,
