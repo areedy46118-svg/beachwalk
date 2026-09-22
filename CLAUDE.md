@@ -13316,3 +13316,81 @@ where they met it, and left the next object to find it again. **One object
 remembering to do a thing that every object needs is a bug waiting for the
 second object.** Anything a takeable can carry — a light, a sound, an entry in
 a per-frame list — has to be answered at the door all of them go through.
+
+**THE SECOND HORSESHOE CRAB WAS WORTH NOTHING, AND THE WHEEL WAS VERY NEARLY
+DEAD.** Three of the owner's four, and two of them are one-line causes worth
+writing down.
+
+**A STACK IS A COUNT, AND THE SECOND CRAB HAD NONE.** `addToInventory`
+refuses an item already in the pack by identity — which is what stops a shell
+appearing twice — so the crab in the wreck's hold was written
+`if (!inventory.includes(crabItem)) addToInventory(...)`: pick it up carrying
+the first and the sound played, the thing left the sand, and you got nothing
+at all. `gainCrab` is the one door both pickups go through; `iconHTML` has
+drawn a `count` badge in the hotbar, the pack and the ring row since the jars
+needed one, and `renderHotbar`'s cache keys on it, so all three show it by
+construction. The extraction SPENDS from that number rather than removing the
+item, and `crabBled` stops gating it — what says you may bleed another is
+that you are carrying another, and two crabs are two jars, which is what the
+trader takes. **And a count is not in the save's `pack`**, which is a list of
+names: it rides in the flags, and it may not simply be written at load
+because the pickups' own replay is about to run and would add to it — a save
+with two crabs restored as four. The number is the floor and the replay is
+the mechanism, which is `finishRestore`'s own arrangement for everything else.
+
+**AND ONE CLOCK CANNOT BE BOTH THE GESTURE AND THE RATE LIMIT.** `wheelAt`
+was the time of the last STEP and was then also asked whether an event began
+a new gesture — so until a step had actually fired, every event was more than
+400 ms from the last one and reset the accumulator ON ARRIVAL. It could
+therefore never accumulate at all, and the only thing that ever moved the
+strip was a single event big enough to clear the threshold by itself.
+Measured against a fake clock, so the timings are exact:
+
+| | before | after |
+|---|---|---|
+| a mouse's four notches of 10 | **0 steps** | 4, one per notch, first at 0 ms |
+| a slow trackpad drag, 30 x 2 | **0 steps** | 6, evenly at 150 ms |
+| a trackpad flick, 40 x 8 | **0 steps** | 6, paced at 56 ms |
+| a three-event graze | 0 | 0 |
+
+On a trackpad, which sends small deltas at 60 Hz, the wheel was dead. Two
+clocks now — `wheelSeen` closes a gesture, `wheelAt` paces one — the FIRST
+step of a gesture does not wait out the gap (the gap exists so a flick cannot
+blur through six slots, not so the first notch arrives late), and the
+threshold is one mouse notch rather than two and a half of one.
+**`performance.now` is stubbable, and a fake clock is the only honest way to
+measure anything gated on it**: the pane clamps `setTimeout` to a second
+while it is hidden, so a wall-clock trial of thirty events at 30 ms takes
+thirty seconds and times the tool call out.
+
+**AND "I CLIP THROUGH THE CAVE ROCKS" WAS THE PUSH-OUT, NOT THE COLLIDERS.**
+Measured first, over 405 spots round the entrance: 98 standable, and TEN with
+drawn rock inside the body, all of them off the mouth corridor's flanks.
+Three things were tried and the order is the lesson:
+
+- **Filling the interior made it WORSE** (10 bad spots became 13). Only the
+  EDGE cells were solid, on the argument that the inside of a mass nobody can
+  reach needs none — and the corridor that makes the mouth walkable is a slot
+  cut through that outline, so you walked in at the arch and stepped sideways
+  into a hollow. Filling it is right and costs nothing (a solid row merges
+  into ONE box where a hollow outline is two: 211 colliders became 212).
+- **Rasterising the triangles rather than bucketing the VERTICES** is also
+  right — a face a couple of metres across crosses cells that hold none of
+  its corners — and it changed the count by one and the bad spots by nothing.
+- **AND THE THING IT ACTUALLY WAS: the shallowest face of one box is not the
+  way out of a field of them.** Out of the nearest face of the box you are
+  deepest in, and straight into its NEIGHBOUR, which pushes you back through
+  the face you just came out of. Measured with the real `pushOutOfRocks`:
+  0.52 m deep in a box spanning x 13..25, the four passes put the body at
+  12.78, back to 13.34, and there it stayed. "Deepest first and ask again"
+  converges on a single convex solid and cannot on two that share a face. A
+  face is only a way out if it LEAVES you out: the four are tried in order of
+  how far they move you and the first that lands clear of every collider
+  wins, falling back to the shallowest when none does.
+
+Measured after: the eight spots that used to stand inside the mass are all
+ejected (0.34 m to 12 m), standable spots round the entrance 99 -> 68, and
+what is left is four places with rock on six or more of twelve bearings —
+every one of them in the throat of the arch, which is a doorway and not a
+bug. **And a proximity metric cannot tell a doorway from a burial**: count
+the bearings.

@@ -3452,11 +3452,37 @@ function pushOutOfSolids(pos, feetY, grow, headY = Infinity) {
       pos.x = c.x + (dx / d) * rr;
       pos.z = c.z + (dz / d) * rr;
     } else {
-      const push = [(c.x0 - grow) - pos.x, (c.x1 + grow) - pos.x,
-                    (c.z0 - grow) - pos.z, (c.z1 + grow) - pos.z];
-      let k = 0;
-      for (let i = 1; i < 4; i++) if (Math.abs(push[i]) < Math.abs(push[k])) k = i;
-      if (k < 2) pos.x += push[k]; else pos.z += push[k];
+      /* AND THE SHALLOWEST FACE OF ONE BOX IS NOT THE WAY OUT OF A FIELD OF
+       * THEM. Out of the nearest face of the box you are deepest in, and
+       * straight into its NEIGHBOUR — which then pushes you back, because
+       * its own nearest face is the one you just came through. Measured
+       * against the rock at the cave mouth, whose footprint is a row of
+       * merged runs: 0.52 m deep in a box spanning x 13..25, the four passes
+       * put the body at 12.78, back to 13.34, and there it stayed, inside
+       * drawn stone. "Deepest first and ask again" converges on a single
+       * convex solid and cannot on two that share a face.
+       *
+       * So a face is only a way out if it LEAVES you out: the four are tried
+       * in order of how far they move you and the first that lands clear of
+       * every collider wins. Where none does — wedged in a corner, or deep
+       * in a mass — it falls back to the shallowest, which is the old
+       * behaviour and still walks a body out of a solid over a few frames. */
+      const cand = [[(c.x0 - grow) - pos.x, 0], [(c.x1 + grow) - pos.x, 0],
+                    [0, (c.z0 - grow) - pos.z], [0, (c.z1 + grow) - pos.z]];
+      cand.sort((a, b) => (Math.abs(a[0]) + Math.abs(a[1])) - (Math.abs(b[0]) + Math.abs(b[1])));
+      let took = null;
+      for (const [dx, dz] of cand) {
+        const nx = pos.x + dx, nz = pos.z + dz;
+        let free = true;
+        for (const o of rockColliders) {
+          if (feetY >= o.top - ROCK_STEP) continue;
+          if (o.floorY !== undefined && headY < o.floorY) continue;
+          if (solidDepth(o, nx, nz, grow) > 1e-4) { free = false; break; }
+        }
+        if (free) { took = [dx, dz]; break; }
+      }
+      if (!took) took = cand[0];
+      pos.x += took[0]; pos.z += took[1];
     }
     hit = c;
   }
@@ -6446,14 +6472,35 @@ function scrollHotbar(dir) {
  * which is a blur and not a choice; and a gesture that had stalled kept its
  * half-step for ever. It keeps the remainder, starts a new gesture clean,
  * and will not step more than once every `WHEEL_GAP`. */
-const WHEEL_STEP = 24, WHEEL_GAP = 85;
-let wheelAcc = 0, wheelAt = 0;
+/* AND ONE CLOCK CANNOT BE BOTH THE GESTURE AND THE RATE LIMIT. `wheelAt`
+ * was the time of the last STEP and was then also asked whether this event
+ * begins a new gesture — so until a step had actually fired, every event
+ * was more than 400 ms from the last one and reset the accumulator ON
+ * ARRIVAL. It could therefore never accumulate at all: the only thing that
+ * ever moved the strip was a SINGLE event big enough to clear the threshold
+ * by itself. Measured on the shipped build, against a fake clock so the
+ * timings are exact — four mouse notches of 10: 0 steps. A slow trackpad
+ * drag, thirty events of 2: 0 steps. A trackpad FLICK, forty events of 8
+ * (320 of travel): 0 steps. One event of 100: 1 step. That is the whole of
+ * "the scroll is not as responsive as I want" — on a trackpad, which sends
+ * small deltas at 60 Hz, the wheel was very nearly dead.
+ *
+ * Two clocks: `wheelSeen` is the last EVENT and closes a gesture, `wheelAt`
+ * is the last STEP and paces one. And the FIRST step of a gesture does not
+ * wait out the gap — the gap exists so a flick cannot blur through six
+ * slots, not so the first notch of a deliberate scroll arrives late. The
+ * threshold is a mouse notch rather than two and a half of one. */
+const WHEEL_STEP = 10, WHEEL_GAP = 55, WHEEL_GESTURE = 400;
+let wheelAcc = 0, wheelAt = 0, wheelSeen = 0;
 window.addEventListener('wheel', (e) => {
   if (!started || !introDone || inspecting || invOpen || menuOpen || dialogOpen || noteOpen || ended || dying) return;
   const now = performance.now();
-  if (now - wheelAt > 400) wheelAcc = 0;          // a new gesture, not the tail of the last
+  const fresh = now - wheelSeen > WHEEL_GESTURE;   // a new gesture, not the tail of the last
+  wheelSeen = now;
+  if (fresh) wheelAcc = 0;
   wheelAcc += e.deltaY;
-  if (Math.abs(wheelAcc) < WHEEL_STEP || now - wheelAt < WHEEL_GAP) return;
+  if (Math.abs(wheelAcc) < WHEEL_STEP) return;
+  if (!fresh && now - wheelAt < WHEEL_GAP) return;
   const dir = wheelAcc > 0 ? 1 : -1;
   wheelAcc -= dir * WHEEL_STEP;
   if (Math.abs(wheelAcc) > WHEEL_STEP * 1.5) wheelAcc = dir * WHEEL_STEP * 1.5;   // a flick may not bank six slots
@@ -9644,14 +9691,32 @@ hcrabWorld.position.set(2.7, 0.03, -58);
 hcrabWorld.rotation.set(0.05, -0.7, -0.03);
 scene.add(hcrabWorld);
 addItemShine(hcrabWorld, { size: 0.8, height: 0.14 });
-let hcrabTaken = false, crabBled = false;
+let hcrabTaken = false, crabBled = false, crabWant = 0;
 const crabItem = {
-  id: 'horseshoe', name: 'Horseshoe crab', icon: makeHorseshoeCrabIcon(),
+  id: 'horseshoe', name: 'Horseshoe crab', icon: makeHorseshoeCrabIcon(), count: 0,
   use: () => {
-    if (!crabBled && inventory.includes(syringeItem)) startExtraction();
+    if (inventory.includes(syringeItem)) startExtraction();
     else toggleEquip(crabItem);
   },
 };
+/* THERE ARE TWO CRABS IN THIS GAME AND THE SECOND ONE USED TO BE WORTH
+ * NOTHING. `addToInventory` refuses an item already in the pack by identity
+ * — which is what stops a shell appearing twice — so the one in the wreck's
+ * hold was written `if (!inventory.includes(crabItem)) addToInventory(...)`:
+ * pick it up carrying the first and the animation played, the thing left the
+ * sand, and you got nothing at all. A crab is worth a JAR, and a jar is what
+ * the trader takes, so the count is the whole point of finding the second.
+ * `iconHTML` has drawn a `count` badge in the hotbar, the pack and the ring
+ * row since the jars needed one, and `renderHotbar`'s cache keys on it, so
+ * all three show it by construction. This is the one door both pickups go
+ * through, and the extraction spends from the same number rather than
+ * removing the item outright — `crabBled` stops gating it, because what says
+ * you may bleed another is that you are carrying another. */
+function gainCrab(n = 1) {
+  crabItem.count = (crabItem.count || 0) + n;
+  if (!inventory.includes(crabItem)) addToInventory(crabItem);
+  else { renderHotbar(); renderPack(); }
+}
 holdable(crabItem, hcrab, { scale: 0.5, pos: [0, -0.06, 0.02], rot: [0.5, 0.6, 0.1] });
 addInteractable(hcrabWorld, 'Take the horseshoe crab', 'inventory', {
   onActivate: () => {
@@ -9660,7 +9725,7 @@ addInteractable(hcrabWorld, 'Take the horseshoe crab', 'inventory', {
     sfxThud(0.04);
     scene.remove(hcrabWorld);
     hovered = null;
-    addToInventory(crabItem);
+    gainCrab();
   },
 });
 
@@ -9702,7 +9767,7 @@ holdable(jarItem, bloodJar, { scale: 2.1, pos: [0, -0.04, 0], rot: [0.12, 0.45, 
 const syringeItem = {
   id: 'syringe', name: 'Bleeding syringe', icon: makeSyringeIcon(),
   use: () => {
-    if (!crabBled && inventory.includes(crabItem)) startExtraction();
+    if (inventory.includes(crabItem)) startExtraction();
     else toggleEquip(syringeItem);
   },
 };
@@ -9772,8 +9837,10 @@ function finishExtraction() {
   // The crab is spent — it goes back to the sea, not into your pack. And
   // the blood itself never becomes an item: it just runs into the tally in
   // the corner, which is the only place it's ever shown.
-  removeFromInventory(crabItem);
+  crabItem.count = (crabItem.count || 1) - 1;
+  if (crabItem.count <= 0) { crabItem.count = 0; removeFromInventory(crabItem); }
   renderHotbar();
+  renderPack();
   gainJar();
   // show the jar as the payoff, then it's gone
   inspectSetModel(bloodJar);
@@ -14980,7 +15047,7 @@ function sfxLockerOpen() {
       sfxThud(0.04);
       scene.remove(holdCrabWorld);
       hovered = null;
-      if (!inventory.includes(crabItem)) addToInventory(crabItem);
+      gainCrab();
     },
   });
 }
@@ -27976,7 +28043,7 @@ function saveCheckpoint() {
     // and the handful of things the walk latches on
     flags: {
       castleBroken, crabBled, hcrabTaken, ringsFound, eyesSeen, snorkMet,
-      jars: bloodJars, bloodSeen,
+      jars: bloodJars, bloodSeen, crabs: crabItem.count || 0,
       // he went into the sea and he does not come back out of it
       smileGone: smilePhase === 2,
       caveDone,
@@ -28085,6 +28152,14 @@ function beginRestore() {
   const f = d.flags || {};
   if (f.castleBroken && !castleBroken) breakCastle(CASTLE_X, CASTLE_Z);
   crabBled = !!f.crabBled; hcrabTaken = !!f.hcrabTaken;
+  /* AND A STACK IS A NUMBER THE PACK CANNOT CARRY BY ITSELF. The save
+   * records `pack` as a list of NAMES, so two crabs come back as one unless
+   * the count comes back too — and it may NOT simply be written here, because
+   * the pickups' own replay is about to run and would add to it: a save with
+   * two crabs would restore as four. The replay is the mechanism and the
+   * number is the floor, which is `finishRestore`'s own arrangement for
+   * everything else. */
+  crabItem.count = 0; crabWant = f.crabs || 0;
   eyesSeen = !!f.eyesSeen; snorkMet = !!f.snorkMet;
   dockDoorOpen = !!f.dockDoor;
   // a save written before the tally counted jars carries millilitres
@@ -28218,6 +28293,11 @@ function packByName(name) {
 function finishRestore() {
   const d = restore; restore = null;
   if (!d) return;
+  if (crabWant > (crabItem.count || 0)) {
+    crabItem.count = crabWant;
+    if (!inventory.includes(crabItem)) addToInventory(crabItem);
+  }
+  crabWant = 0;
   for (const name of d.pack || []) {
     if (inventory.some((i) => i.name === name)) continue;
     const it = packByName(name);
@@ -33846,8 +33926,14 @@ bwGlb('assets/rockmouth.glb', (gltf) => {
    * still solid rock — measured, not guessed: the shell's own skirt stands
    * five metres in FRONT of the arch, and leaving that in stopped a body
    * seven metres short of the thing it is meant to crawl into */
-  rockShellColliders(mountain, (x, z) => x < MOUNT_X + 2.0 && Math.abs(z - MOUNT_MOUTH_Z) < 2.3);
-  rockShellColliders(mountainExit, (x, z) => z < EXIT_Z + 2.0 && Math.abs(x - EXIT_X) < 2.3);
+  /* AND THE CORRIDOR ONLY HAS TO REACH THE PROMPT. It was exempted to
+   * `MOUNT_X + 2.0`, which is six metres INTO the mass — so the way in was a
+   * slot you could walk down until drawn stone closed over you, and the
+   * spots measured with rock inside the body were nearly all in it. The
+   * interactable stands at the arch and reads from 4.6 m, so a metre and a
+   * half past the face is all the opening anybody needs. */
+  rockShellColliders(mountain, (x, z) => x < MOUNT_FRONT_X + 1.5 && Math.abs(z - MOUNT_MOUTH_Z) < 2.3);
+  rockShellColliders(mountainExit, (x, z) => z < EXIT_FRONT_Z + 1.5 && Math.abs(x - EXIT_X) < 2.3);
   const darkPlug = (holder, axis, box, name) => {
     /* AND WHAT IS BEHIND THE ARCH IS NOT THE HOLLOW — IT IS THE SAND WALL.
      * A cube was inscribed deep in the rock's own cave here and it did
@@ -33893,27 +33979,60 @@ bwGlb('assets/rockmouth.glb', (gltf) => {
  * can reach needs no collider, so it is the outline that is built and the
  * list stays short; the one thing left out is the corridor of the mouth, or
  * the way in would be walled up. */
+/* AND A TRIANGLE'S VERTICES ARE NOT THE TRIANGLE — the carve's own lesson,
+ * on a footprint. The occupancy grid was bucketed from VERTICES, which is
+ * how the pier's `columnsOf` finds a pile of close-set piles and is not how
+ * you find the plan of a scan blown up eighteen times: a face a couple of
+ * metres across crosses cells that hold none of its corners, and a face
+ * whose corners both stand above the body band contributes nothing at all
+ * even where it passes through head height. Measured round the entrance
+ * after the interior was filled in, which by itself made it WORSE (10 bad
+ * spots became 13): every one of them stood in front of drawn rock at
+ * x 11 to 14.7, where the grid had no cell because the stone there is one
+ * big face. The triangles are rasterised now — any face whose y range
+ * reaches the band marks every cell its own footprint covers — and
+ * over-covering is the safe direction, because the one thing that must stay
+ * open is the mouth and `inMouth` still carves that out by hand. */
 function rockShellColliders(root, inMouth) {
   const CELL = 2.0, occ = new Map(), key = (i, j) => i + ',' + j;
   root.updateMatrixWorld(true);
-  const v = new THREE.Vector3();
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
   root.traverse((o) => {
     if (!o.isMesh || !o.geometry || !o.geometry.attributes.position) return;
-    const pa = o.geometry.attributes.position;
-    for (let k = 0; k < pa.count; k += 3) {                       // every third vertex is plenty at this size
-      v.fromBufferAttribute(pa, k).applyMatrix4(o.matrixWorld);
-      if (v.y < -0.5 || v.y > 5.0) continue;                      // what a body could meet, not the summit
-      occ.set(key(Math.round(v.x / CELL), Math.round(v.z / CELL)), 1);
+    const pa = o.geometry.attributes.position, idx = o.geometry.index;
+    const n = idx ? idx.count : pa.count;
+    for (let k = 0; k + 2 < n; k += 3) {
+      const i0 = idx ? idx.getX(k) : k, i1 = idx ? idx.getX(k + 1) : k + 1, i2 = idx ? idx.getX(k + 2) : k + 2;
+      a.fromBufferAttribute(pa, i0).applyMatrix4(o.matrixWorld);
+      b.fromBufferAttribute(pa, i1).applyMatrix4(o.matrixWorld);
+      c.fromBufferAttribute(pa, i2).applyMatrix4(o.matrixWorld);
+      // what a body could meet, not the summit: the face has to reach the band
+      if (Math.min(a.y, b.y, c.y) > 5.0 || Math.max(a.y, b.y, c.y) < -0.5) continue;
+      const i00 = Math.round(Math.min(a.x, b.x, c.x) / CELL), i11 = Math.round(Math.max(a.x, b.x, c.x) / CELL);
+      const j00 = Math.round(Math.min(a.z, b.z, c.z) / CELL), j11 = Math.round(Math.max(a.z, b.z, c.z) / CELL);
+      for (let i = i00; i <= i11; i++) for (let j = j00; j <= j11; j++) occ.set(key(i, j), 1);
     }
   });
-  /* AND THE CELLS ARE MERGED INTO RUNS. Thirty separate two-metre boxes down
-   * one flank is thirty faces to catch on; one twenty-metre box is a wall. */
+  /* AND THE OUTLINE WAS NOT ENOUGH, BECAUSE THE MOUTH IS A HOLE IN IT.
+   * Only the EDGE cells were given colliders, on the argument that the
+   * inside of a mass nobody can reach needs none — and the corridor that
+   * makes the mouth walkable is a four-and-a-half metre slot cut through
+   * that outline from the beach to the middle of the mass. So you walk in
+   * at the arch, step SIDEWAYS out of the corridor, and you are in the
+   * interior, where by construction there was nothing solid at all: rock
+   * drawn on every side of you and not one collider in it. Measured over
+   * 405 spots round the entrance, 98 of them standable: TEN had drawn rock
+   * inside the body, every one of them off the corridor's flanks at three
+   * to seven metres either side of the mouth's own line.
+   *
+   * Every occupied cell is solid now, and it costs nothing — a run of cells
+   * merges along x, and a SOLID row merges into one box where a hollow
+   * outline is two. The vertex sampling went with it: one in three was
+   * enough to find an outline and is not enough to find a footprint. */
   const wanted = new Set();
   for (const k of occ.keys()) {
     const [i, j] = k.split(',').map(Number);
-    let edge = false;
-    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (!occ.has(key(i + di, j + dj))) { edge = true; break; }
-    if (edge && !inMouth(i * CELL, j * CELL)) wanted.add(k);
+    if (!inMouth(i * CELL, j * CELL)) wanted.add(k);
   }
   let n = 0;
   const used = new Set();
