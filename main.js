@@ -6008,8 +6008,20 @@ function renderHotbar() {
       c = hotbarCache[i] = { el, item: undefined, count: -1, lab: null };
     }
     const count = item ? (item.count || 0) : 0;
-    if (c.item !== item || c.count !== count) {
-      c.item = item; c.count = count;
+    /* AND THE CACHE HAS TO NOTICE AN ICON, WHICH IS THE WHOLE OF "THE ICONS
+     * LOOK AWFUL AFTER A CHECKPOINT". The strip is built once and only a slot
+     * whose ITEM or COUNT changed is rebuilt — which is right, and which made
+     * the icon retry a no-op: on a restore the pack is rebuilt seconds after
+     * the page starts, every scanned item falls back to its drawing, and the
+     * timer's `renderHotbar()` then found the same item in the same slot and
+     * touched nothing. So `itemIcon` was never asked again, `_icon` was never
+     * set, and the drawing stayed for the rest of the game. The icon is part
+     * of the key — and it is ASKED FOR here rather than read off `_icon`,
+     * because reading the cached field would never trigger the one call that
+     * fills it. */
+    const src = item ? itemIcon(item) : null;
+    if (c.item !== item || c.count !== count || c.src !== src) {
+      c.item = item; c.count = count; c.src = src;
       c.el.innerHTML = `<span class="num">${i + 1}</span>` + (item ? iconHTML(item) : '');
       if (item) {
         const lab = document.createElement('span');
@@ -6059,13 +6071,22 @@ function renderRings() {
   }
   refreshUI();
 }
-function wearRing(item) {
+function wearRing(item) { return wearRingAt(item, rings.length); }
+/* AND PUTTING ONE ON NAMES THE FINGER. `wearRing` pushed, which is right for
+ * the examine screen's button and says nothing about a ring dropped on the
+ * SECOND slot while the first is occupied — so a drop there has to be able
+ * to swap: the ring that was on comes off into the pack and the one in your
+ * hand goes on in its place. Dropping past the end of the row simply fills
+ * the next finger, which is the order `wearRing` has always used. */
+function wearRingAt(item, i) {
   // already on a finger: putting it on again would push a second copy into
   // `rings` and leave you wearing one ring twice
-  if (rings.includes(item) || rings.length >= RING_SLOTS) return false;
+  if (!item || !item.ring || rings.includes(item)) return false;
+  const off = (i >= 0 && i < RING_SLOTS) ? (rings[i] || null) : null;
+  if (!off && rings.length >= RING_SLOTS) return false;
   removeFromInventory(item);
-  rings.push(item);
-  renderRings();
+  if (off) { rings[i] = item; addToInventory(off); } else rings.push(item);
+  renderRings(); renderHotbar(); renderPack();
   sfxRingOn();
   return true;
 }
@@ -6148,36 +6169,157 @@ function initIconRig() {
   const under = new THREE.DirectionalLight(0x6f86b8, 0.6); under.position.set(0, -1, 0.3);
   iconScene.add(key, fill, rim, under, new THREE.HemisphereLight(0x54688c, 0x141820, 0.6));
 }
+/* AND THE FIT IS MEASURED ON THE PICTURE, NOT ON THE BOX. Two things were
+ * wrong with fitting a bounding box, and the first is a frame mismatch that
+ * put every icon off centre. `m` is a child of `iconFit`, which carries the
+ * rotation, so `m.position` is in iconFit's LOCAL frame — and
+ * `Box3.setFromObject(m)` answers in WORLD space, with that rotation already
+ * in it. Writing the world centre straight into a local position is only
+ * correct when the rotation is the identity, which it never is here. Working
+ * it through: a model point p maps to R*(t + k*p), so the world AABB centre
+ * is R*t + k*c_w, and the t that puts it at the origin is -k * R⁻¹ * c_w —
+ * not -k * c_w. The water bottle, whose model origin is at its base, was the
+ * one the owner could see it on.
+ *
+ * And the second is that a BOX cannot say how big a thing looks. It is the
+ * union of every child including the ones with nothing drawn in them, it
+ * knows nothing about perspective, and its largest dimension is rarely the
+ * one facing the camera — so every icon sat in a different amount of empty
+ * tile. The render itself knows exactly: the target clears to alpha zero, so
+ * the object's own silhouette is what is not transparent. It is shot once at
+ * the box's rough fit, MEASURED, corrected, and shot again — which also
+ * grounds the shadow under where the object actually is rather than under a
+ * fixed point. Two renders per item, once, at pickup. */
+const ICON_FILL = 0.80;                 // how much of the tile the silhouette's longest side takes
+const ICON_MIDY = 0.455;                // and where its middle sits: a little high, so the shadow has room
+const ICON_ROLL_AR = 2.6;               // and how long a thing has to be before it is laid across the diagonal
+const _iconV = new THREE.Vector3();
 function renderItemIcon(model, { rotX = -0.5, rotY = 0.7 } = {}) {
   if (!model) return null;
   initIconRig();
   const m = model.clone(true);
   // ...except a subtree that is hidden on purpose, which must also stay
   // out of the fit: it is what the tile is framed against
-  m.traverse((o) => { if (!o.userData.bwKeepHidden) o.visible = true; });
+  m.traverse((o) => { if (o.userData.bwKeepHidden) o.visible = false; else o.visible = true; });
   m.position.set(0, 0, 0); m.rotation.set(0, 0, 0); m.scale.setScalar(1);
   iconFit.clear();
-  iconFit.position.set(0, 0, 0); iconFit.scale.setScalar(1); iconFit.rotation.set(rotX, rotY, 0);
+  iconFit.position.set(0, 0, 0); iconFit.scale.setScalar(1);
+  /* ZXY, so the roll below is the OUTERMOST turn and is therefore a roll in
+   * the SCREEN's plane. At three's default XYZ the z is applied to the object
+   * first, under the pitch and the yaw, which is a turn about an axis that
+   * points wherever the model happens to point — measured, it left every
+   * rolled icon 10 to 25 degrees off the diagonal it was aimed at. With z = 0
+   * the two orders are the same rotation, so nothing else moves. */
+  iconFit.rotation.set(rotX, rotY, 0, 'ZXY');
   iconFit.add(m);
   iconFit.updateMatrixWorld(true);
+  const qInv = iconFit.quaternion.clone().invert();
   const box = new THREE.Box3().setFromObject(m);
   const size = box.getSize(new THREE.Vector3());
   const big = Math.max(size.x, size.y, size.z) || 1;
   const k = 1.9 / big;
   m.scale.setScalar(k);
-  m.position.copy(box.getCenter(new THREE.Vector3())).multiplyScalar(-k);
+  m.position.copy(box.getCenter(new THREE.Vector3())).multiplyScalar(-k).applyQuaternion(qInv);
 
-  // put the renderer back exactly as it was: it is the game's own, mid-frame
+  // the renderer is the game's own and this runs mid-frame: put it back
   const prevTarget = renderer.getRenderTarget();
   const prevClear = renderer.getClearColor(new THREE.Color());
   const prevAlpha = renderer.getClearAlpha();
   const prevAutoClear = renderer.autoClear;
-  renderer.setRenderTarget(iconRT);
-  renderer.setClearColor(0x000000, 0);
-  renderer.autoClear = true;
-  renderer.render(iconScene, iconCam);
   const buf = new Uint8Array(ICON_PX * ICON_PX * 4);
-  renderer.readRenderTargetPixels(iconRT, 0, 0, ICON_PX, ICON_PX, buf);
+  const shoot = () => {
+    iconFit.updateMatrixWorld(true);
+    renderer.setRenderTarget(iconRT);
+    renderer.setClearColor(0x000000, 0);
+    renderer.autoClear = true;
+    renderer.render(iconScene, iconCam);
+    renderer.readRenderTargetPixels(iconRT, 0, 0, ICON_PX, ICON_PX, buf);
+  };
+  /* The silhouette, in TOP-DOWN pixels — GL reads bottom-up, and every
+   * number below is quoted the way the tile is drawn. */
+  const measure = () => {
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9, n = 0;
+    for (let y = 0; y < ICON_PX; y++) {
+      const row = (ICON_PX - 1 - y) * ICON_PX * 4;
+      for (let x = 0; x < ICON_PX; x++) {
+        if (buf[row + x * 4 + 3] < 16) continue;
+        n++;
+        if (x < x0) x0 = x; if (x > x1) x1 = x;
+        if (y < y0) y0 = y; if (y > y1) y1 = y;
+      }
+    }
+    if (n < 8) return null;
+    /* ...and the silhouette's own long axis, from its second moments, in the
+     * same top-down pixels. A bounding box cannot answer this: a blade lying
+     * on the diagonal has a square one. */
+    const mx = (x0 + x1) * 0.5, my = (y0 + y1) * 0.5;
+    let sxx = 0, syy = 0, sxy = 0;
+    for (let y = 0; y < ICON_PX; y++) {
+      const row = (ICON_PX - 1 - y) * ICON_PX * 4;
+      for (let x = 0; x < ICON_PX; x++) {
+        if (buf[row + x * 4 + 3] < 16) continue;
+        const dx = x - mx, dy = y - my;
+        sxx += dx * dx; syy += dy * dy; sxy += dx * dy;
+      }
+    }
+    sxx /= n; syy /= n; sxy /= n;
+    const ang = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+    const tr = sxx + syy, det = Math.sqrt(Math.max(0, (sxx - syy) * (sxx - syy) * 0.25 + sxy * sxy));
+    const l1 = tr * 0.5 + det, l2 = Math.max(1e-6, tr * 0.5 - det);
+    return { x0, y0, x1, y1, n, w: x1 - x0 + 1, h: y1 - y0 + 1,
+             ang, elong: Math.sqrt(l1 / l2) };
+  };
+  shoot();
+  let seen = measure();
+  /* A LONG THING LIES ON THE DIAGONAL. The fit puts the silhouette's longest
+   * side at ICON_FILL of the tile, so a katana — twelve times as long as it
+   * is wide — came out as a seventeen-pixel sliver down the middle with the
+   * whole tile empty either side. A tile's diagonal is 1.41 times its side,
+   * which is the only free size there is, and a blade laid across it is how
+   * every inventory in the world draws one. It is measured, not declared:
+   * the silhouette's own long axis out of its second moments, and only where
+   * the thing really is long (the CD, the crab, the keys and the revolver
+   * all read as they are and are left alone). Rolling `iconFit` and starting
+   * the fit again is all it takes — every number below already comes off the
+   * group's own quaternion. */
+  if (seen && seen.elong > ICON_ROLL_AR) {
+    // + about +Z turns the object anticlockwise on screen, which in top-down
+    // pixels is the angle going DOWN; the target is a long axis running from
+    // the lower left to the upper right
+    iconFit.rotation.z = seen.ang + Math.PI * 0.25;
+    iconFit.updateMatrixWorld(true);
+    qInv.copy(iconFit.quaternion).invert();
+    m.scale.setScalar(k);
+    m.position.copy(box.getCenter(_iconV)).multiplyScalar(-k).applyQuaternion(qInv);
+    shoot();
+    seen = measure() || seen;
+  }
+  /* TWICE, because the lens is a PERSPECTIVE one: scaling about the object's
+   * own origin and then translating changes its foreshortening a little, so
+   * the correction is a linear guess at a mildly non-linear thing and one
+   * pass leaves a few per cent of the tile behind. Measured over the fifteen
+   * named items, a second pass takes the worst miss from 0.043 of the tile to
+   * 0.006 and the fill spread from 0.78-0.87 to 0.79-0.81. */
+  for (let pass = 0; seen && pass < 2; pass++) {
+    /* One correction, applied to both the scale and the offset together:
+     * `m.scale` scales the geometry about m's OWN origin and `m.position`
+     * then translates, so scaling by s without scaling the offset by s as
+     * well slides the object off the middle again. */
+    const wantPx = ICON_PX * ICON_FILL;
+    const s = THREE.MathUtils.clamp(wantPx / Math.max(seen.w, seen.h), 0.30, 3.2);
+    m.scale.multiplyScalar(s);
+    m.position.multiplyScalar(s);
+    // and the screen-space error, in world units: the tile's own width at the
+    // object's depth, which is what a pixel is worth there
+    const W = 2 * Math.tan(iconCam.fov * Math.PI / 360) * iconCam.position.z;
+    const cx = (seen.x0 + seen.x1) * 0.5 * s + ICON_PX * 0.5 * (1 - s);
+    const cy = (seen.y0 + seen.y1) * 0.5 * s + ICON_PX * 0.5 * (1 - s);
+    const shift = new THREE.Vector3(-(cx - ICON_PX * 0.5) / ICON_PX * W,
+                                     (cy - ICON_PX * ICON_MIDY) / ICON_PX * W, 0).applyQuaternion(qInv);
+    m.position.add(shift);
+    shoot();
+    seen = measure() || seen;
+  }
   renderer.setRenderTarget(prevTarget);
   renderer.setClearColor(prevClear, prevAlpha);
   renderer.autoClear = prevAutoClear;
@@ -6187,19 +6329,24 @@ function renderItemIcon(model, { rotX = -0.5, rotY = 0.7 } = {}) {
   c.width = c.height = ICON_PX;
   const g = c.getContext('2d');
   // a plain near-black tile — the UI is black and white, and the object is
-  // the only thing on it — with a faint lift behind the object and a pool
-  // of shadow under it so it sits rather than floats
+  // the only thing on it — with a faint lift behind the object and a pool of
+  // shadow under it so it sits rather than floats. Both follow the SILHOUETTE
+  // now: a lift centred on a thing that is not there is a smudge, and a
+  // shadow at a fixed point is a shadow the object is standing beside.
+  const midX = seen ? (seen.x0 + seen.x1) * 0.5 : ICON_PX * 0.5;
+  const footY = seen ? seen.y1 : ICON_PX * 0.72;
+  const halfW = seen ? Math.max(seen.w, ICON_PX * 0.22) * 0.5 : ICON_PX * 0.3;
   g.fillStyle = '#07080b'; g.fillRect(0, 0, ICON_PX, ICON_PX);
-  const bg = g.createRadialGradient(ICON_PX * 0.5, ICON_PX * 0.46, 0, ICON_PX * 0.5, ICON_PX * 0.46, ICON_PX * 0.5);
-  bg.addColorStop(0, 'rgba(255,255,255,0.075)');
+  const bg = g.createRadialGradient(midX, ICON_PX * ICON_MIDY, 0, midX, ICON_PX * ICON_MIDY, ICON_PX * 0.52);
+  bg.addColorStop(0, 'rgba(255,255,255,0.085)');
   bg.addColorStop(1, 'rgba(255,255,255,0)');
   g.fillStyle = bg; g.fillRect(0, 0, ICON_PX, ICON_PX);
-  const sh = g.createRadialGradient(ICON_PX * 0.5, ICON_PX * 0.78, 0, ICON_PX * 0.5, ICON_PX * 0.78, ICON_PX * 0.36);
-  sh.addColorStop(0, 'rgba(0,0,0,0.75)');
+  const shY = Math.min(ICON_PX * 0.92, footY + ICON_PX * 0.035);
+  const sh = g.createRadialGradient(midX, shY, 0, midX, shY, halfW * 1.15);
+  sh.addColorStop(0, 'rgba(0,0,0,0.80)');
   sh.addColorStop(1, 'rgba(0,0,0,0)');
-  g.fillStyle = sh;
-  g.save(); g.translate(0, ICON_PX * 0.05); g.scale(1, 0.30);
-  g.fillRect(0, 0, ICON_PX, ICON_PX * 2.4); g.restore();
+  g.save(); g.translate(midX, shY); g.scale(1, 0.26); g.translate(-midX, -shY);
+  g.fillStyle = sh; g.fillRect(0, 0, ICON_PX, ICON_PX * 4); g.restore();
   // the render, flipped: GL reads bottom-up
   const id = g.createImageData(ICON_PX, ICON_PX);
   for (let y = 0; y < ICON_PX; y++) {
@@ -6210,6 +6357,8 @@ function renderItemIcon(model, { rotX = -0.5, rotY = 0.7 } = {}) {
   tmp.width = tmp.height = ICON_PX;
   tmp.getContext('2d').putImageData(id, 0, 0);
   g.drawImage(tmp, 0, 0);
+  // what the fit actually achieved, for the harness to read back
+  renderItemIcon.lastFit = seen;
   return c.toDataURL();
 }
 /* The icon an item shows. Rendered on first ask and kept — items whose model
@@ -6239,7 +6388,10 @@ let iconsPending = false;
 setInterval(() => {
   if (!iconsPending) return;
   let ready = false, stillWaiting = false;
-  for (const it of inventory) {
+  /* EVERYTHING THAT DRAWS AN ICON, not just the pack. A worn ring is in
+   * `rings` and not in `inventory`, so the one item on the HUD that is never
+   * in the list the retry walked could never be repaired at all. */
+  for (const it of [...inventory, ...rings]) {
     if (!it || it._icon) continue;
     const m = it.iconModel || it.inspectModel;
     if (!m) continue;
@@ -6248,7 +6400,7 @@ setInterval(() => {
     if (empty) stillWaiting = true; else ready = true;
   }
   iconsPending = stillWaiting;
-  if (ready) { renderHotbar(); if (invOpen) renderPack(); }
+  if (ready) { renderHotbar(); renderRings(); if (invOpen) renderPack(); }
 }, 600);
 /* AND A STACK SAYS HOW MANY. `iconHTML` is the ONE door every slot goes
  * through — the hotbar, the pack grid and the ring row all call it — so an
@@ -6434,8 +6586,23 @@ function slotFromPoint(x, y) {
   const el = document.elementFromPoint(x, y);
   return el ? el.closest('.islot') : null;
 }
+/* AND A RING SLOT IS A DROP TARGET. `slotFromPoint` only ever looked for an
+ * `.islot`, and the ring slots are `.rslot`s in a section of their own
+ * OUTSIDE the grid — so a ring dragged onto the one place in the pack that
+ * means "wear this" landed on nothing at all and the drop was a silent
+ * no-op. It is the same drag: the same press-arms-it, the same six pixels,
+ * the same ghost. Only the question asked at the end is new. */
+function ringSlotFromPoint(x, y) {
+  const el = document.elementFromPoint(x, y);
+  const slot = el ? el.closest('.rslot') : null;
+  if (!slot || !slot.parentElement) return -1;
+  const host = slot.parentElement;
+  if (!host.closest('#pack-rings') && !host.closest('#rings')) return -1;
+  return [...host.children].indexOf(slot);
+}
 function clearDropHints() {
   for (const s of invGridEl.querySelectorAll('.islot')) s.classList.remove('combines', 'dragging');
+  for (const host of ringSlotEls) for (const s of host.querySelectorAll('.rslot')) s.classList.remove('wearable');
 }
 function endDrag() {
   dragArm = null; dragItem = null; dragFrom = -1;
@@ -6468,6 +6635,11 @@ function beginDrag(e) {
     const other = inventory[+s.dataset.index];
     if (other && findRecipe(item, other)) s.classList.add('combines');
   }
+  // and the ring slots, if this is a ring: a drop target nobody can see is a
+  // drop target nobody tries
+  if (item.ring && !rings.includes(item)) {
+    for (const host of ringSlotEls) for (const s of host.querySelectorAll('.rslot')) s.classList.add('wearable');
+  }
 }
 window.addEventListener('pointermove', (e) => {
   if (dragArm && Math.hypot(e.clientX - dragArm.x, e.clientY - dragArm.y) > 6) beginDrag(e);
@@ -6478,9 +6650,11 @@ window.addEventListener('pointermove', (e) => {
 window.addEventListener('pointerup', (e) => {
   dragArm = null;
   if (!dragItem) return;
+  const ri = ringSlotFromPoint(e.clientX, e.clientY);
   const slot = slotFromPoint(e.clientX, e.clientY);
   const item = dragItem, from = dragFrom;
   endDrag();
+  if (ri >= 0) { wearRingAt(item, ri); return; }
   if (!slot) return;
   const to = +slot.dataset.index;
   if (to === from) return;
@@ -28622,7 +28796,13 @@ function mutClampX(u, p, dt) {
       if (!catCrossed(pv.x, pv.z, p.x, pv.z, p.y)) p.z = pv.z;
       else if (!catCrossed(pv.x, pv.z, pv.x, p.z, p.y)) p.x = pv.x;
       else { p.x = pv.x; p.z = pv.z; u.catBlocked = (u.catBlocked || 0) + 1; u.catBlockT = (u.catBlockT || 0) + dt; }
-    } else u.catBlockT = 0;
+    /* AND IT DECAYS RATHER THAN RESETTING. A body grinding on a wall is not
+     * blocked on every frame — it is blocked, shoved a millimetre, free for
+     * a frame, blocked again — so a clock zeroed by one free frame never
+     * reached the half second that drops the route. Measured at the door:
+     * it oscillated around 0.37 for forty seconds. `tavEscape` learned the
+     * same thing about a body against the furniture. */
+    } else u.catBlockT = Math.max(0, (u.catBlockT || 0) - dt * 2);
     /* AND THE PUSH MAY NOT OUT-STEP THE WALK — measured, at last, as the
      * thing it was doing. He was circling: a two-waypoint route in his hands,
      * the waypoint a metre off, and his position going round a 0.35 m circle
@@ -39500,6 +39680,46 @@ function loadCatacombs() {
   }, undefined, () => {});
 }
 /* BUILT AT THE CUT, BEHIND THE BLACK — the keep's arrangement. */
+/* AND THE SHUT DOOR HAS TO BE SHUT TO THE GRID AS WELL AS TO THE EYE. The
+ * packed grid is the authority every body in here stands on and it knew
+ * nothing about the leaf: measured, it carries floor at the door's own level
+ * running straight THROUGH the leaf's footprint (x 19.2 to 20.0 against a
+ * leaf at 18.97-20.01), so `keepFloorAt` said "you may stand here" exactly
+ * where `keepHitsWall` said "shut". A body driven into the doorway — a
+ * lunge, a knockback, a follower overshooting — then has floor under it, is
+ * inside drawn stone, has every step refused by `catCrossed`, and is eased
+ * out at two centimetres a frame. The severance used to be an ACCIDENT of
+ * the graph's own 0.40 m clearance from a drawn face; it is stated here
+ * instead, so the graph is built on a room that agrees with itself.
+ *
+ * AND IT GOES AFTER THE REPAIR, WHICH IS THE WHOLE TRICK. Written into the
+ * loader — which is where it obviously belongs — it was undone within the
+ * second: `repairKeepStoreys` puts a storey back wherever the NEIGHBOURS
+ * agree on a level and something is drawn at it, and a doorway is a hole
+ * with floor on both sides of it, which is the most agreeable cell there is.
+ * Measured after the first attempt: floor still answered 409.6 straight
+ * across the leaf. A prune is only a prune if nothing downstream can fill
+ * it in again.
+ *
+ * It is not gated on `catDoorOpen`: the leaf is drawn shut for ever and the
+ * way out is a teleport cut, not a swing. */
+function catShutDoor() {
+  if (!catWalk || !catCells) return;
+  const cell = catWalk.cell || 0.2;
+  let n = 0;
+  for (const c of catWalk.cells) {
+    const lx = catWalk.x0 + (c[0] + 0.5) * cell, lz = catWalk.z0 + (c[1] + 0.5) * cell;
+    if (lx < 18.90 || lx > 20.10 || lz < -32.75 || lz > -30.15) continue;
+    const keep = [];
+    for (let k = 0; k + 2 < c[2].length; k += 3) {
+      if (Math.abs(c[2][k] - CAT_DOOR.f) > 2.0) keep.push(c[2][k], c[2][k + 1], c[2][k + 2]);
+      else n++;
+    }
+    c[2] = keep;
+    catCells.set(c[1] * catWalk.gw + c[0], keep);
+  }
+  return n;
+}
 function buildCatacombs() {
   if (catBuilt || !catReady || !catWalk) return;
   catBuilt = true;
@@ -39518,6 +39738,7 @@ function buildCatacombs() {
   bakeStatic(catWorld, undefined, { named: true });
   buildKeepWalls(CAT_SITE);
   repairKeepStoreys(CAT_SITE);
+  catShutDoor();
   catBuildGraph();
   buildCatKey();
   buildCatJars();
@@ -40262,6 +40483,10 @@ function catBuildGraph() {
   for (let i = 0; i < nodes.length; i++) {
     const n = nodes[i];
     if (Math.abs(n.f - (CAT_Y + CAT_DOOR.f)) > 1.6) continue;
+    // and on the floor he can actually get to: 123 of the 483 within twelve
+    // metres of that door are off the main component, and every draw that
+    // uses them has to throw them away again
+    if (catG.main && !catG.main[i]) continue;
     if (Math.hypot(n.x - (CAT_X + CAT_DOOR.x), n.z - (CAT_Z + CAT_DOOR.z)) < 12) catSpots.door.push(i);
   }
   // and the bone piles become nodes: where he goes to eat
@@ -40518,6 +40743,32 @@ function catRandomNode(fromX, fromZ, minD, u) {
   }
   return P ? P[(Math.random() * n0) | 0] : (Math.random() * n0) | 0;
 }
+/* GO THE OTHER WAY. The owner's own words, and the one behaviour the chase
+ * had no version of: everything it knew how to do was aim at you, and when
+ * the way to you could not be walked it aimed at you again. This picks a
+ * place he demonstrably CAN reach — his own flood, six to fourteen metres
+ * off — that is not back toward the leg he has just been grinding on, and
+ * routes there. From somewhere else the line to you is a different line.
+ * It is not a retreat and it is not a search: he is still hunting, he is
+ * simply taking a different way round. */
+function catDetour(u, held) {
+  if (!catG) return false;
+  const p = u.g.position;
+  const R = catReachOf(u, p.x, p.z, p.y);
+  if (!R || R.ids.length < 8) return false;
+  let best = -1, bs = -1;
+  for (let k = 0; k < 60; k++) {
+    const id = R.ids[(Math.random() * R.ids.length) | 0], n = catG.nodes[id];
+    const d = Math.hypot(n.x - p.x, n.z - p.z);
+    if (d < 6 || d > 14) continue;
+    // ...and not the way he was already failing to go
+    if (held && Math.hypot(n.x - (CAT_X + held.x), n.z - (CAT_Z + held.z)) < 2.0) continue;
+    if (d > bs) { bs = d; best = id; }
+  }
+  if (best < 0) return false;
+  const n = catG.nodes[best];
+  return catRoute(u, n.x, n.z, n.f);
+}
 function catHunterReset() {
   const u = crawlerUnit; if (!u) return;
   u.g.position.set(CAT_X + CAT_HUNT.x, CAT_Y + CAT_HUNT.f, CAT_Z + CAT_HUNT.z);
@@ -40758,7 +41009,7 @@ function catStand(u, dt) {
   const p = u.g.position;
   /* AND A ROUTE HE HAS BEEN HELD AGAINST STONE ON FOR HALF A SECOND IS NOT
    * A ROUTE. Whatever drew it draws another from where he actually is. */
-  if ((u.catBlockT || 0) > 0.5 && u.path) { u.path = null; u.catBlockT = 0; if (u.cat) u.cat.pause = Math.min(u.cat.pause || 0, 0.1); }
+  if ((u.catBlockT || 0) > 0.5 && u.path) { u.path = null; u.catBlockT = 0; u.catRouteFail = (u.catRouteFail || 0) + 1; if (u.cat) u.cat.pause = Math.min(u.cat.pause || 0, 0.1); }
   let st = keepFloorAt(p.x, p.z, p.y + 0.35, 0.7, CAT_SITE);
   /* AND A TOMB IS NOT A STEP. The lookup takes any storey up to 1.05 m over
    * him, and a sarcophagus is a metre tall: pressed against one in a fight
@@ -41100,24 +41351,97 @@ function catWatch(u, dt) {
    * best thing he does and which a two-and-a-half-second leash would
    * otherwise break every time; and a fight is fought at arm's length with
    * no ground covered at all. Everything else that is not moving is stuck. */
-  if (C.mode === 'act' || C.mode === 'down' || (C.peekHold || 0) > 0 || (u.st.atk >= 0) || u.st.recoil > 0
-      || (u.st.awake && Math.hypot(camera.position.x - p.x, camera.position.z - p.z) < u.maxReach + 1.2)) {
+  if (C.mode === 'act' || C.mode === 'down' || (C.peekHold || 0) > 0 || (u.st.atk >= 0) || u.st.recoil > 0) {
     C.wMark = null; C.wT = 0; C.wHard = 0; return;
   }
-  if (!C.wMark) { C.wMark = { x: p.x, y: p.y, z: p.z }; C.wT = 0; C.wHard = 0; return; }
+  /* AND BEING NEAR YOU IS NOT FIGHTING YOU. The exemption was a PLAN
+   * distance inside `maxReach + 1.2` — six and a half metres, which at the
+   * exit door is the whole end of the room — so the one net under everything
+   * was switched off by the player merely standing about. Measured with the
+   * player AT THE BARRED DOOR and the hunter one storey under it: 4.4 m
+   * apart in plan, TEN AND A HALF METRES apart in y, and forty seconds of a
+   * fifty-second sample with his position unchanged to two decimals, `wT` at
+   * zero on every frame of it. That is this file's oldest arithmetic wearing
+   * a fifth coat — A DISTANCE WITH THE Y LEFT OUT IS NOT A DISTANCE — and
+   * it is also the wrong QUESTION: what says a creature is fighting is that
+   * it has thrown a swing, not that somebody is standing near it. He is
+   * excused only while he is in reach in three dimensions AND has swung
+   * since the mark was laid. */
+  if (u.st.awake && Math.hypot(camera.position.x - p.x, camera.position.z - p.z,
+                               (camBaseY - playerEye()) - p.y) < u.maxReach + 1.2
+      && C.wMark && u.st.swings !== C.wSwings) {
+    C.wMark = null; C.wT = 0; C.wHard = 0; return;
+  }
+  if (!C.wMark) { C.wMark = { x: p.x, y: p.y, z: p.z }; C.wSwings = u.st.swings; C.wT = 0; C.wHard = 0; return; }
   if (Math.hypot(p.x - C.wMark.x, p.z - C.wMark.z) > 1.0 || Math.abs(p.y - C.wMark.y) > 0.5) {
-    C.wMark.x = p.x; C.wMark.y = p.y; C.wMark.z = p.z; C.wT = 0; C.wHard = 0; return;
+    C.wMark.x = p.x; C.wMark.y = p.y; C.wMark.z = p.z; C.wSwings = u.st.swings; C.wT = 0; C.wHard = 0; return;
   }
   C.wT = (C.wT || 0) + dt; C.wHard = (C.wHard || 0) + dt;
   if (C.wT < CAT_STUCK) return;
   C.wT = 0; u.path = null; u.catBlockT = 0; u.catHeld = 0; u.catSink = 0; u.catGrind = 0; u.catReach = null;
-  if (C.wHard < CAT_STUCK * 3 && (playerSeesHunter(u) || C.mode === 'chase')) { C.pause = Math.min(C.pause || 0, 0.1); return; }
-  C.wHard = 0;
-  const id = catNearestOpen(p.x, p.z, p.y);
+  /* A SHORT GRACE, BECAUSE GIVING UP THE CHASE IS FREE. The grace is there
+   * so a creature you are watching is not snatched away in front of you, and
+   * it was seven and a half seconds — measured hands-off with the player at
+   * the door, a six-and-three-quarter-second grind in plain view, which is
+   * the whole of what the owner was looking at. Four is plenty now that what
+   * happens at the end of it MOVES NOTHING. */
+  if (C.wHard < CAT_STUCK * 1.6 && (playerSeesHunter(u) || C.mode === 'chase')) { C.pause = Math.min(C.pause || 0, 0.1); return; }
+  C.wHard = 0; C.wMark = null; C.wSwings = u.st.swings;
+  /* AND A TELEPORT IS NEVER THE FIRST ANSWER. An awake creature that cannot
+   * get to you simply stops trying: `catLose` puts him down into a search or
+   * a corner to watch from, with the spot he last had you, and NOT ONE PIXEL
+   * of him moves on the frame it happens. Only a creature that is already
+   * down and still cannot get anywhere is picked up and put back on the
+   * graph — and only where you are not looking, because a thing that
+   * teleports in front of you is worse than a thing that is stuck. */
+  if (u.st.awake) { catLose(u); return; }
+  /* AND A SLEEPING ONE GETS A FRESH ERRAND FIRST, for the same reason: it
+   * moves nothing, so it can happen in plain sight. An errand he cannot walk
+   * is thrown away and another drawn; only if THAT is still not working two
+   * and a half seconds later is he picked up. Without this an investigate or
+   * a roam that you happened to be watching had no escape at all — the guard
+   * below returned and nothing else ever ran (measured: five seconds of a
+   * visible creature not moving, twice in three samples). */
+  if (!C.wRetried) {
+    C.wRetried = true; u.path = null; C.target = null; C.next = null;
+    C.mode = 'roam'; C.pause = 0.1; u.catReach = null;
+    return;
+  }
+  C.wRetried = false;
+  if (playerSeesHunter(u)) { C.pause = Math.min(C.pause || 0, 0.1); return; }
+  /* AND A SNAP THAT LANDS WHERE HE ALREADY IS IS NOT A SNAP. `catNearestOpen`
+   * answers with the nearest node his own line reaches, and a body standing
+   * ON a node is answered with that node — measured, a 0.21 m move, which is
+   * under the watchdog's own one-metre mark, so it fired again two and a half
+   * seconds later, and again, for ever. If the nearest is within a stride he
+   * is put somewhere he can demonstrably WALK to instead, a few metres off
+   * his own flood. */
+  let id = catNearestOpen(p.x, p.z, p.y);
+  if (id >= 0 && Math.hypot(catG.nodes[id].x - p.x, catG.nodes[id].z - p.z) < 1.0) {
+    const R = catReachOf(u, p.x, p.z, p.y);
+    if (R && R.ids.length > 8) {
+      for (let k = 0; k < 60; k++) {
+        const c2 = R.ids[(Math.random() * R.ids.length) | 0], m = catG.nodes[c2];
+        const d2 = Math.hypot(m.x - p.x, m.z - p.z);
+        if (d2 > 4 && d2 < 12) { id = c2; break; }
+      }
+    }
+  }
   if (id < 0) return;
   const n = catG.nodes[id];
-  p.set(n.x, n.f, n.z); u.catFloor = n.f; u.catHeld = 0; u.catSink = 0;
-  C.mode = 'roam'; C.pause = 0.4; C.target = null; C.wMark = null;
+  p.set(n.x, n.f, n.z); u.catFloor = n.f; u.catHeld = 0; u.catSink = 0; u.path = null; u.catReach = null;
+  /* AND THE ESCAPE HAS TO LEAVE HIM IN A STATE THE REST OF THE FILE AGREES
+   * WITH. Writing `C.mode = 'roam'` on an AWAKE creature is a contradiction:
+   * `st.awake` is what sends him down the fight's own branch, and the fight
+   * reads `C.mode` for nothing but the stalk and the flight — so he came out
+   * of the watchdog awake, in roam, and steered by nobody at all. Measured
+   * the first time the net could fire in a chase: `pause` pinned at 0.40 for
+   * two hundred and forty frames because the branch that counts it down was
+   * never reached, and he stood under the door for twelve seconds being
+   * rescued every two and a half. `catLose` is the one door that puts him
+   * down properly — asleep, into a search or a corner to watch from, with
+   * the target he last had — and it has been there all along. */
+  C.mode = 'roam'; C.pause = 0.4; C.target = null;
 }
 function catWander(u, dt) {
   u.g.visible = inCat;
@@ -41477,7 +41801,13 @@ function catSteer(u, dt, dist, foe) {
   const seen = catSees(u);
   u.catLost = seen ? 0 : (u.catLost || 0) + dt;
   if (seen) { u.catLastSeen = { x: camera.position.x, z: camera.position.z, f: camBaseY - playerEye() }; catRemember(u.catLastSeen.x, u.catLastSeen.z, u.catLastSeen.f); }
-  if (u.catLost > 5 && dist > 12 && u.st.atk < 0) { catLose(u); return; }
+  /* AND THESE TWO ARE DISTANCES WITH THE Y LEFT OUT AS WELL. `dist` is the
+   * plan separation, so a player standing on a floor ten metres over his head
+   * reads as a player he is all but touching, and both of the nets below —
+   * "he has lost you" and "he has stood still for four seconds" — were
+   * switched off by it at exactly the moment they were needed. */
+  const sep = Math.hypot(camera.position.x - p.x, camera.position.z - p.z, (camBaseY - playerEye()) - p.y);
+  if (u.catLost > 5 && sep > 12 && u.st.atk < 0) { catLose(u); return; }
   /* AND "IS THE LINE OPEN" IS THE WHOLE LINE, NOT THE NEXT TWO METRES.
    * At 2.2 m the test said the way to you was clear while a wall stood
    * three metres on: the route was thrown away on the frame it was made,
@@ -41518,9 +41848,30 @@ function catSteer(u, dt, dist, foe) {
    * is cheap and what it hands him to is the search, which knows how to
    * get about. Not inside his own reach, where standing still is a fight. */
   u.catStill = moved < 0.008 && u.st.atk < 0 ? (u.catStill || 0) + dt : 0;
-  if (u.catStill > 4 && dist > 5) { u.catStill = 0; catLose(u); return; }
+  if (u.catStill > 4 && sep > 5) { u.catStill = 0; catLose(u); return; }
   u.pathAge = (u.pathAge || 0) + dt;
-  if (u.catGrind > 0.7) { u.path = null; u.pathAge = 1; u.catGrind = 0; }
+  /* AND A ROUTE THAT CANNOT BE WALKED IS A REFUSAL. `catRouteFail` counted
+   * only the times the search said NO — and the search almost never says no,
+   * because a route to you nearly always exists over the graph. What fails
+   * is the WALKING of it: he draws a perfectly good path, grinds on its first
+   * leg against a wall the graph does not know about, drops it, and draws the
+   * same path again from the same place, for ever, with the counter at zero
+   * and the whole escalation below it out of reach. A grind counts. */
+  if (u.catGrind > 0.7) {
+    const held = u.path && u.path[u.pathI];   // captured BEFORE the path goes
+    u.path = null; u.pathAge = 1; u.catGrind = 0;
+    u.catRouteFail = (u.catRouteFail || 0) + 1;
+    /* ...AND THE SECOND ONE GOES SOMEWHERE ELSE FIRST. This is the owner's
+     * own word for it — go the other way. A creature that cannot walk the
+     * way to you twice running is told to walk somewhere it CAN get to, six
+     * to fourteen metres off and not back toward the leg it was grinding on;
+     * from there the line to you is a different line. Only if that fails
+     * too does the counter run on to the snap and the search. */
+    if (u.catRouteFail === 2) {
+      const away = catDetour(u, held);
+      if (away) { u.catRouteFail = 1; return; }
+    }
+  }
   if (u.path || u.pathAge < 0.4) return;
   u.pathAge = 0;
   const tgt = u.catLastSeen || { x: foe.x, z: foe.z, f: camBaseY - playerEye() };
@@ -46692,6 +47043,9 @@ window.__bw = {
   },
   get tavWorld() { return tavWorld; }, get tavTables() { return tavTables; }, get tavChairs() { return tavChairs; },
   get wongUnit() { return wongUnit; }, get drunkUnit() { return drunkUnit; }, get orcUnit() { return orcUnit; },
+  packByName, renderItemIcon, itemIcon, wearRingAt, rings, renderRings,
+  catShutDoor, get catWalk() { return catWalk; }, get catCells() { return catCells; },
+  renderHotbar, renderPack,
   crawlerUnit, CRAWL_X, CRAWL_Z, crawlerProvoke, startCaveIn, placeInCatacombs, placeOutsideCatDoor, startCatExit, startCatReturn, placeInsideCatDoor, fitCatSandDoor, catWallDoor, catRoute, catSees, catNodeAt, CAT_X, CAT_Y, CAT_Z, CAT_SITE, CAT_LAND, CAT_DOOR, CAVE_Z,
   TRADER_X, TRADER_Z, TRADER_H, TRADER_POSE, traderPose, TRADER_STOCK, traderBuy, TRADER_NPC, traderWorld, get traderRig() { return traderRig; },
   magnumItem, magModel, magFire, magReload, magTrace, MAG_CAP,

@@ -13047,3 +13047,155 @@ in. Read the emissive before touching anything else, for the third time. And
 weighted to it, so a traverse of the bone walks a subtree with no geometry in
 it and dresses nothing, which is how the first build of this ran, found
 nothing, and left the sword white.
+
+**THE ICONS WERE FRAMED BY A BOUNDING BOX, WHICH IS NOT THE PICTURE.**
+"Center each, some are off center like the water bottle" — measured against
+the control build, and he had picked the worst one: the bottle's silhouette
+sat **0.611 of the tile across against a middle at 0.5**, eleven per cent of
+the tile off, and the revolver 0.586 across and 0.332 down. Nothing was the
+same size either: the fill ran 0.324 (the glowstick) to 0.656 (the CD), a
+factor of two. `renderItemIcon` fitted `Box3.setFromObject` — a WORLD-space
+box on an object turned by its parent — and then wrote the correction into
+`m.position`, which is in the PARENT's frame, so the two disagreed by exactly
+the icon rig's own rotation. Worse, a box is not what you see: a katana's box
+is mostly air.
+
+**THE RENDER TARGET'S ALPHA IS THE SILHOUETTE, AND IT IS EXACT.** The target
+is cleared to alpha 0, so the pixels that came back with any alpha in them
+ARE the object. `measure()` walks the buffer for the bbox, the second moments
+and the elongation; the fit then corrects the scale and the offset from that.
+It runs TWICE, because the lens is a perspective one — scaling about the
+object's own origin and translating changes its foreshortening, so the
+correction is a linear guess at a mildly non-linear thing and one pass leaves
+a few per cent behind (worst 0.043 of the tile, and 0.006 after the second).
+Measured over the fifteen named items: **worst miss 0.111 of the tile → 0.006
+on both axes, and the fill 0.324-0.656 → 0.777-0.801.** The tile's own lift
+and shadow follow the silhouette too — a pool of shadow at a fixed point is a
+shadow the object is standing beside.
+
+**AND A LONG THING LIES ON THE DIAGONAL.** Fitting the longest side to 0.80
+of the tile is right for a crab and absurd for a katana: seventeen pixels of
+blade down the middle with the whole tile empty either side, using a tenth of
+it. A tile's diagonal is 1.41 times its side and it is the only free size
+there is. The silhouette's own long axis comes out of the same second moments,
+and anything over `ICON_ROLL_AR` (2.6) is rolled onto the diagonal and fitted
+again — the two shovels, the katana, the bottle, the glowstick, both keys, the
+skull key and the syringe; the CD, the crab, the rings, the head and the
+revolver read as they are and are left alone. **AND THE ROLL HAS TO BE THE
+OUTERMOST TURN**: at three's default XYZ Euler order the z is applied to the
+object FIRST, under the pitch and the yaw, which is a turn about an axis
+pointing wherever the model happens to point — measured, every rolled icon
+came out 10 to 25 degrees off the diagonal it was aimed at. `'ZXY'`, and with
+z = 0 the two orders are the same rotation, so nothing unrolled moved. After:
+every rolled item lands at -43 to -48 degrees.
+
+**AND THE CACHE MADE THE REPAIR A NO-OP.** "The item icons keep changing to
+look awful after a checkpoint" is the drawn fallback becoming permanent, and
+the retry that exists to fix it had been dead since it was written:
+`renderHotbar` keeps a per-slot cache and rebuilt a slot only when the ITEM or
+the COUNT changed — and when a scan lands, neither does. Only the `src` does.
+The cache key reads it now, and the retry walks `rings` as well as the pack,
+because a worn ring is the one item on the HUD that is in neither list the old
+loop looked at. Measured end to end: a model taken away and put back goes
+drawn → RENDER inside the 600 ms timer, with no reload and the pack shut.
+
+**AND A RING DROPPED ON A RING SLOT GOES ON.** The pack's drag only ever
+looked for an `.islot`, so a drop on the ring row found nothing and was a
+silent no-op — the one gesture everybody tries. `ringSlotFromPoint` reads
+`.rslot` in either host (`#pack-rings` and the HUD's `#rings`), the slots light
+up as `.wearable` while a ring is in hand, and `wearRingAt(item, i)` is
+`wearRing` with a slot: an occupied one SWAPS, putting the worn ring back in
+the pack. Measured: 3 px of movement still selects rather than dragging (the
+6 px threshold holds), both rings go on, a swap returns the old one, and a
+syringe dropped on a ring slot does nothing and loses nothing.
+
+**THE HUNTER STOOD UNDER THE DOOR FOR FORTY SECONDS, AND FOUR THINGS WERE
+HOLDING HIM THERE.** Reproduced in the pane before anything was touched —
+the player at the barred door, the hunter one storey below it: **39.75 s of a
+50 s sample with his position unchanged to two decimals**, 4.4 m away in plan,
+`wT` at zero on every frame of it. Every one of the four is a rule that was
+correct when it was written and is wrong the day the room has two floors.
+
+- **THE GRID SAID YOU MAY STAND WHERE THE WALL SAID SHUT.** The packed walk
+  grid carries floor at the door's own level running straight THROUGH the
+  leaf's footprint (x 19.2 to 20.0 against a leaf at 18.97-20.01), so a body
+  driven into the doorway has floor under it, is inside drawn stone, has every
+  step refused by `catCrossed`, and is eased out at two centimetres a frame.
+  The severance used to be an ACCIDENT of the graph's own 0.40 m clearance
+  from a drawn face. `catShutDoor` states it: 78 cells of 42,168, their
+  storeys at the door's level dropped, their lower ones kept. **AND IT GOES
+  AFTER `repairKeepStoreys`, WHICH IS THE WHOLE TRICK** — the repair puts a
+  storey back wherever the NEIGHBOURS agree and something is drawn there, and
+  a doorway is a hole with floor on both sides of it, which is the most
+  agreeable cell in the building. Written into the loader, where it obviously
+  belongs, it was undone within the second and the floor still answered 409.6
+  straight across the leaf. A prune is only a prune if nothing downstream can
+  fill it in again.
+- **AND THE WATCHDOG WAS OFF BECAUSE SOMEBODY WAS STANDING NEAR HIM.**
+  `catWatch` excused him whenever the player was inside `maxReach + 1.2` — six
+  and a half metres, in PLAN, which at the exit door is the whole end of the
+  room. The player was TEN AND A HALF METRES ABOVE HIM. That is this file's
+  oldest arithmetic wearing a fifth coat, and it is also the wrong QUESTION:
+  what says a creature is fighting is that it has thrown a swing, not that
+  somebody is standing near it. He is excused only while he is in reach in
+  three dimensions AND `st.swings` has moved since the mark was laid. The two
+  other nets in `catSteer` — "he has lost you" and "he has stood still for
+  four seconds" — were gated on the same plan distance and now use the real
+  separation.
+- **AND A ROUTE THAT CANNOT BE WALKED IS A REFUSAL.** `catRouteFail` counted
+  only the times the SEARCH said no, and the search almost never says no: a
+  route to you nearly always exists over the graph. What fails is the WALKING
+  of it — he draws a good path, grinds on its first leg against a wall the
+  graph does not know about, drops it, and draws the same path again from the
+  same place, for ever, with the counter at zero and the whole escalation
+  below it out of reach. A grind counts, and so does a route `catStand` drops
+  for being held against stone. `catBlockT` DECAYS rather than resetting for
+  the same reason: a body grinding on a wall is blocked, shoved a millimetre,
+  free for a frame, blocked again, and a clock zeroed by one free frame never
+  reached the half second that drops the route (measured: it oscillated around
+  0.37 for forty seconds).
+- **AND GOING THE OTHER WAY IS A BEHAVIOUR HE DID NOT HAVE.** The owner's own
+  words. Everything the chase knew how to do was aim at you, and when the way
+  to you could not be walked it aimed at you again. `catDetour` picks a place
+  he demonstrably CAN reach — his own flood, six to fourteen metres off, and
+  not back toward the leg he was grinding on — and routes there; from
+  somewhere else the line to you is a different line.
+
+**AND THE ESCAPE HAS TO LEAVE HIM IN A STATE THE REST OF THE FILE AGREES
+WITH.** The first build of the fix wrote `C.mode = 'roam'` on an AWAKE
+creature, which is a contradiction: `st.awake` is what sends him down the
+fight's branch and the fight reads `C.mode` for nothing but the stalk and the
+flight. He came out of the watchdog awake, in roam, steered by nobody at all —
+measured, `pause` pinned at 0.40 for two hundred and forty frames because the
+branch that counts it down was never reached, and twelve seconds under the
+door being rescued every two and a half. `catLose` is the one door that puts
+him down properly, and it has been there all along.
+
+**AND A TELEPORT IS NEVER THE FIRST ANSWER.** Giving up the chase is FREE —
+`catLose` moves not one pixel — so an awake creature that cannot get to you
+simply stops trying, and the grace that exists so he is not snatched away in
+front of you came down from 7.5 s to 4. A SLEEPING one gets a fresh errand
+first, which also moves nothing and can therefore happen in plain sight;
+without it an investigate or a roam you happened to be watching had no escape
+at all (measured: five seconds of a visible creature not moving, twice in
+three samples). Only a creature that is already down, has had its errand
+redrawn, and still cannot get anywhere is picked up — and only where you are
+not looking. **And a snap that lands where he already is is not a snap**:
+`catNearestOpen` answers a body standing ON a node with that node, a 0.21 m
+move, under the watchdog's own one-metre mark, so it fired again two and a
+half seconds later for ever.
+
+Measured after, three 60 s samples with the player at the door: **worst stall
+in a moving mode 1.75 / 4.25 / 4.25 s against 39.75, 110-123 m travelled,
+closest approach 0.01 m (he gets there), and the 4.25 s is the grace itself.**
+The player's own approach is untouched — floor runs unbroken to x = 18.7, the
+prompt reads "E Unlock the door" from there, and the return spot inside the
+door is where it always was.
+
+**AND `bw.lag()` IS A TOP-N LIST, NOT A LOG.** Half an hour went on "only
+three of forty-three GLBs have parsed" — it keeps the WORST spans and nothing
+else, so an absence from it means fast, not missing. And **`startCaveIn` in
+dev mode sets `caveDone` on its first call whether or not the room is ready**,
+so a harness that teleports into the band before `catReady` burns the trigger
+and nothing ever puts you in the catacombs; call `placeInCatacombs()` yourself
+once `catWalk` is up.
