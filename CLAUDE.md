@@ -12879,3 +12879,65 @@ behind the fist, so pitching swings the muzzle up and the grip DOWN, and at
 these numbers the gun left the bottom of the frame for a tenth of a second
 (the rear sight to -1.05 in NDC, where -1 is the edge). The hands come up
 with it: worst grip -0.90, on screen throughout.
+
+**TWO JARS IN THE HALLWAYS, AND A HALLWAY IS MEASURED.** Not in a room and
+not on the way to anything — the point of them is that they are down a
+passage you did not have to go down. So the spot is a NODE whose free floor
+runs a long way one way and stops within a body and a half the other, at
+least fourteen metres from the landing and clear of the key and the door,
+and the two chosen are well apart from each other. **AND A WALL TOP PASSES
+THAT TEST PERFECTLY**: the packer keeps any near-horizontal surface with
+something over it, so the crown of a partition is a storey, and it is a
+metre wide and twenty long. The first pair came out perched on one — measured,
+the floor two metres away was 0.8 m HIGHER than the jar. A corridor's floor
+has nothing under it; a ledge has a storey below, and that is the test.
+
+**AND NOTICEABLE IS A DIFFERENT NUMBER UNDERGROUND.** The stock takeable
+shine is tuned for a beach under a quarter moon and this stone reads at
+0.03: twice the sprite, a stronger lift, and its own small cold lamp on the
+flags, which costs nothing because since the Windows pass every point light
+in this game is virtual and only the twelve nearest are ever in a shader.
+**And no `through` ghost down there** — it is what finds a thing behind a
+pier, and in a corridor there is nothing in front of it, so what it draws
+against a wall a metre away is a soft grey RECTANGLE.
+
+**AND THE GATE IS OUT AGAIN, WHICH IS ONE LINE.** `FENCE_ON` is the one
+switch precisely so this can be a line rather than a deletion: the posts,
+the gate, the ripped panel, the seventeen ledges, the collider and the walk
+over the top all read it.
+
+**AND THE THING THAT MAKES A PROP EXPENSIVE IS HOW MANY MESHES IT IS, NOT
+HOW BIG IT IS.** Profiled the way this file always does it — put the camera
+at a station, let the far-cull run, then hide each scene child in turn and
+read the draw count back — and the three worst offenders on the walk were
+all hand props built out of little boxes, every one of which is taken apart
+by NOBODY:
+
+- **A CRATE IS TWENTY-FIVE SLATS AND TWENTY-FIVE DRAW CALLS.** Sixteen
+  boards, four lid planks, four battens and a strap, on a thing the size of
+  a footstool — and `breakCrate` removes the GROUP and throws eighteen fresh
+  splinters, so not one of those meshes is ever moved, hidden or thrown on
+  its own. Merged by material it is two.
+- **A MOUND IS SIXTEEN LUMPS.** Two domes and fourteen clods, and
+  `revealMoundNear` removes the whole group. Three. Measured mid-walk, three
+  mounds in view at once for forty-eight draws.
+- **A BOTTLE OF WATER IS TWENTY-SIX MESHES.** Five. `bakeStatic` keeps
+  anything NAMED, which is exactly the `water` mesh `setFill` drives and the
+  hit proxy the crosshair reads, and the copy in your hand is its own
+  `makeWaterBottle()` and is untouched.
+
+The bake has to come BEFORE `addItemShine`, which lifts every material it
+finds. Measured over ten stations from the spawn to the fence line: **draw
+calls 192 on average and 303 at the worst became 143 and 250**, programs
+116, `update()` 0.53 ms and the render call 1.19 ms at the wreck. Nothing
+about any of the three changed on screen — the crate is still slatted, the
+mound is still clods.
+
+**AND WHAT WAS LOOKED AT AND LEFT ALONE.** The wreck is 86-93 draws inside
+the fog and 36 of its 90 meshes are held by name or by `noBake`; the
+remaining fifty-odd sit under a `noBake` group somebody set on purpose in
+`models/shipwreck.js`, and thirty draw calls on the one set piece the owner
+has asked about most is not worth guessing at that flag. The lighthouse
+draws nineteen from 1.2 km and is the one thing on the horizon. And the two
+decorative horseshoe crabs are 49k triangles each in ten draws — triangles
+have never been this game's problem.

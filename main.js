@@ -9823,6 +9823,13 @@ const mounds = [];
     const m = makeMound();
     m.position.set(x, 0, z);
     scene.add(m);
+    /* SIXTEEN LUMPS IS SIXTEEN DRAW CALLS, AND THE PILE IS NEVER TAKEN
+     * APART. Two domes and fourteen clods, and `revealMoundNear` removes the
+     * whole GROUP — no clod is ever moved, hidden or thrown on its own — so
+     * it is three meshes (its two materials and the dark clod's) while it
+     * sits there. Measured mid-walk, three of them in view at once for
+     * forty-eight draws. The crate's own argument on a smaller prop. */
+    bakeStatic(m);
     mounds.push({ root: m, x, z, taken: false });
     z -= 60 + Math.random() * 90;           // "fairly rare" — ~60–150 m apart
   }
@@ -9902,7 +9909,7 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
  * The model is its OWN instance: `bloodJar` is the one the examine screen
  * re-parents at the end of the extraction, and handing the same Group to two
  * places is how a thing ends up in neither. */
-function dropJar(sx, sz, sy = 0.02) {
+function dropJar(sx, sz, sy = 0.02, shine = null) {
   const jar = makeBloodJar();
   jar.position.set(sx, sy, sz);
   jar.rotation.y = Math.random() * Math.PI * 2;
@@ -9918,7 +9925,11 @@ function dropJar(sx, sz, sy = 0.02) {
    * BLUE: at the full lift the glass, the blood and the label all came up
    * together and what stood in the sand was a pale bottle. The sprite is
    * what finds it in the dark; the lift only has to keep it off black. */
-  addItemShine(jar, { size: 0.85, height: 0.18, strength: 1.5, lift: 0.3 });
+  addItemShine(jar, { size: 0.85, height: 0.18, strength: 1.5, lift: 0.3, ...(shine || {}) });
+  if (shine && shine.lamp) {
+    const l = new THREE.PointLight(0x9fc4ff, 1.5, 2.8, 2);
+    l.position.y = 0.22; jar.add(l);
+  }
   addInteractable(jar, 'Take the jar', 'inventory', {
     onActivate: () => {
       scene.remove(jar);
@@ -11456,6 +11467,16 @@ function buildCrate(x, y, z, yaw, onBreak) {
   strap.position.y = CRATE_H * 0.52;
   crate.add(strap);
   scene.add(crate);
+  /* TWENTY-FIVE SLATS IS TWENTY-FIVE DRAW CALLS, AND NOTHING EVER READS ONE
+   * OF THEM. A crate is sixteen boards, four lid planks, four battens and a
+   * strap — twenty-five meshes the size of a footstool, measured at 26 draws
+   * from the spawn — and when it BREAKS it is removed whole and replaced by
+   * eighteen fresh splinters, so not one of those meshes is ever moved,
+   * hidden or thrown on its own. It is the tavern's chairs one prop smaller:
+   * one merged mesh while it stands, and the break does not know or care.
+   * The bake has to come BEFORE the shine, which lifts each material it
+   * finds. */
+  bakeStatic(crate);
   const collider = { x, z, r: CRATE_R, top: y + CRATE_H };
   rockColliders.push(collider);
   addItemShine(crate, { size: 0.9, height: 0.5, strength: 0.5 });
@@ -14157,6 +14178,12 @@ waterBottleWorld.add(waterBottle);
 waterBottleWorld.position.set(DRAIN_X + DN.ROOM_X1 - 2.6, DN.FLOOR_Y, DRAIN_Z - DN.ROOM_HZ + 1.55);
 waterBottleWorld.rotation.set(0, 0.7, 0);
 scene.add(waterBottleWorld);
+/* A BOTTLE IS TWENTY-SIX MESHES AND NOBODY EVER MOVES ONE. The crate's own
+ * argument on a hand prop: merged by material it is five draws instead of
+ * twenty-six, and `bakeStatic` keeps anything NAMED — which is exactly the
+ * `water` mesh `setFill` drives and the hit proxy the crosshair reads. The
+ * copy in your hand is its own `makeWaterBottle()` and is untouched. */
+bakeStatic(waterBottleWorld);
 addItemShine(waterBottleWorld, { size: 0.5, height: 0.10 });
 let waterBottleTaken = false;
 /* IT HEALS, AND YOU DRINK IT. A click with the bottle in your hand is a
@@ -19154,11 +19181,13 @@ const FENCE_GATE_W = 7.4;                   // the opening
 const FENCE_GATE_X = 5.2;                   // the middle of the beach
 const FENCE_COIL_R = 1.15;
 let fenceOpen = false, fenceSwing = 0, fenceZap = 0, fenceGateCol = null, fenceLeaves = null, fenceChain = null, fenceLamps = [], fenceCages = [];
-/* IT IS IN AGAIN — and the saucer is not. The crash's own `smashFence` and
- * `fenceContact` still name every part of it, and they simply never fire
- * now, because the abduction lives behind the spawn (see `UFO_Z`) and this
- * stands nine hundred metres the other way. */
-const FENCE_ON = true;
+/* AND IT IS OUT AGAIN, by the owner's word — the second time. Everything is
+ * still BUILT and nothing of it enters the scene: not the posts, not the
+ * gate, not the climb, not the rips, and no collider. `FENCE_ON` is the one
+ * switch, and it is the one switch precisely so that this can be a line
+ * rather than a deletion — the crash's `smashFence` and `fenceContact`, the
+ * ripped panel, the ledges and the walk over the top all read it. */
+const FENCE_ON = false;
 let fenceParts = null, fenceSmashed = false;
 const fenceFalling = [];                    // posts going over, live — see smashFence / updateFence
 const fenceGate = [];                       // the two leaves as breakable props — see hurtGateLeaf
@@ -25786,6 +25815,7 @@ function buildTableBottle(g, meshes, ray) {
   world.position.set(best.x, top + 0.002, best.z);
   world.rotation.y = Math.random() * Math.PI * 2;
   scene.add(world);
+  bakeStatic(world);                      // twenty-six meshes for a bottle; `water` is named and survives
   addItemShine(world, { size: 0.42, height: 0.10 });
   tableBottle = world;
   addInteractable(world, 'Take the bottle of water', 'inventory', {
@@ -39379,7 +39409,80 @@ function buildCatacombs() {
   repairKeepStoreys(CAT_SITE);
   catBuildGraph();
   buildCatKey();
+  buildCatJars();
   catWalk.built = Math.round(performance.now() - t0);
+}
+/* ---------------------------------------------------------------------
+ * TWO JARS DOWN THERE, AND THEY ARE IN THE HALLWAYS.
+ *
+ * Not in a room and not on the way to anything: the point of them is that
+ * they are somewhere you only reach by going down a passage you did not
+ * have to go down. So a HALLWAY is measured rather than typed — a node
+ * whose free floor runs a long way one way and stops within a body and a
+ * half the other, which is the difference between a corridor and a vault —
+ * and the two chosen are the pair furthest from the landing that are also
+ * well apart from each other, from the key and from the way out, so neither
+ * is a thing you trip over on the errand you were already running.
+ *
+ * AND NOTICEABLE STILL. The stock takeable shine is tuned for a beach under
+ * a quarter moon; this stone reads at 0.03 and a jar's own blue is the one
+ * thing about it worth seeing. Twice the sprite, a ghost that shows THROUGH
+ * the pier you are about to walk round (the Military Shovel's argument in a
+ * darker room), and its own small cold lamp on the flags — which costs
+ * nothing, because since the Windows pass every point light in this game is
+ * virtual and only the twelve nearest are ever in a shader. */
+let catJarsDone = false;
+function buildCatJars() {
+  if (catJarsDone || !catG || !catG.nodes.length) return;
+  catJarsDone = true;
+  const N = catG.nodes, M = catG.main;
+  const land = { x: CAT_X + CAT_LAND.x, z: CAT_Z + CAT_LAND.z };
+  const door = { x: CAT_X + CAT_DOOR.x, z: CAT_Z + CAT_DOOR.z };
+  const key = { x: CAT_X + CAT_KEY.x, z: CAT_Z + CAT_KEY.z };
+  /* HOW WIDE THE FLOOR IS HERE, the four ways. A vault runs four metres
+   * every way; a passage runs out one way and stops at a wall the other. */
+  const hall = (n) => {
+    const at = (x, z) => { const st = keepFloorAt(x, z, n.f + 0.4, 0.8, CAT_SITE); return !!st && Math.abs(st.f - n.f) < 0.9; };
+    const run = (dx, dz) => { let d = 0; for (let t = 0.3; t <= 4.2; t += 0.3) { if (!at(n.x + dx * t, n.z + dz * t)) break; d = t; } return d; };
+    const wx = run(1, 0) + run(-1, 0), wz = run(0, 1) + run(0, -1);
+    return { narrow: Math.min(wx, wz), along: Math.max(wx, wz) };
+  };
+  const cands = [];
+  for (let i = 0; i < N.length; i++) {
+    if (M && !M[i]) continue;
+    const n = N[i];
+    const dL = Math.hypot(n.x - land.x, n.z - land.z);
+    if (dL < 14) continue;                                    // not where you land
+    if (Math.hypot(n.x - door.x, n.z - door.z) < 10) continue;  // nor by the way out
+    if (Math.hypot(n.x - key.x, n.z - key.z) < 9) continue;     // nor beside the key
+    /* AND A WALL TOP IS NARROW AND LONG TOO. The packer's grid keeps any
+     * near-horizontal surface with something over it, so the crown of a
+     * partition is a storey — and it passes the corridor test perfectly,
+     * being a metre wide and twenty long. The first pair came out perched
+     * on one: measured, the floor two metres away was 0.8 m HIGHER than the
+     * jar, which is the tell. A corridor's floor has nothing under it; a
+     * ledge has a storey below. */
+    const under = keepFloorAt(n.x, n.z, n.f - 0.7, 0, CAT_SITE);
+    if (under && n.f - under.f < 9) continue;
+    const h = hall(n);
+    if (h.narrow > 2.4 || h.along < 3.6) continue;            // a vault, not a passage
+    cands.push({ n, dL, score: dL + (2.4 - h.narrow) * 6 });
+  }
+  if (!cands.length) return;
+  cands.sort((a, b) => b.score - a.score);
+  const pick = [cands[0]];
+  for (const c of cands) {
+    if (pick.length >= 2) break;
+    if (pick.every((q) => Math.hypot(q.n.x - c.n.x, q.n.z - c.n.z) > 22 || Math.abs(q.n.f - c.n.f) > 2)) pick.push(c);
+  }
+  for (const c of pick) {
+    /* AND NO GHOST SPRITE DOWN HERE. `through` draws a second, bigger glow
+     * that ignores depth, which is what finds a thing behind a pier — and
+     * in a corridor there is nothing in front of it and what it draws
+     * against a wall a metre away is a soft grey RECTANGLE. The glint and
+     * the lamp are the whole of it. */
+    dropJar(c.n.x, c.n.z, c.n.f + 0.02, { size: 0.95, strength: 2.2, lift: 0.5, lamp: true });
+  }
 }
 /* AND THE KEY LIES BETWEEN THE CANDLES, WHICH ARE MEASURED. Down in the
  * lower vault a low plinth carries a ring of four candles with a clear
