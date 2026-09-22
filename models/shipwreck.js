@@ -1331,12 +1331,17 @@ export function makeShipwreck(opts = {}) {
    * so it sits against her side rather than through it, and everything
    * you can walk into is in PROPS. */
   {
-    const CX0 = 3.4, CX1 = 6.9;
+    const CX0 = 3.4;   // CX1 (6.9) went with the stove — it's STOVE_X now
     const wall = (x) => Math.min(HOLD_HZ, halfAtY(x, HOLD_Y + 0.9)) - 0.10;
     // a bulkhead with a doorway through it, four pieces round the hole
     {
       const bx = CX0 - 0.35, hz = Math.min(HOLD_HZ, halfAtY(bx, DECK_Y) - 0.10);
-      const dz0 = -0.55, dz1 = 0.55, dh = 1.95;
+      /* WIDENED TO 1.45 m. At 1.10 the doorway plus a body's radius left
+       * 0.35 m to pass through, the tightest point in the whole room — the
+       * owner asked for the quarters to stop feeling like a trap, and a
+       * hole this narrow is most of what a trap IS. The barricade that
+       * fills it while it stands is refit to match, below. */
+      const dz0 = -0.725, dz1 = 0.725, dh = 1.95;
       for (const [z0, z1] of [[-hz, dz0], [dz1, hz]])
         HULL.add(slab(0.10, DECK_Y - HOLD_Y, z1 - z0, M.plank, bx, (HOLD_Y + DECK_Y) / 2, (z0 + z1) / 2));
       HULL.add(slab(0.10, DECK_Y - HOLD_Y - dh, dz1 - dz0, M.plank, bx,
@@ -1362,13 +1367,18 @@ export function makeShipwreck(opts = {}) {
      * because a blob of `M.rope` on a bunk that is no longer there is a
      * lump lying in mid-air. */
 
-    // the stove, right aft on the centreline, and its pipe
-    HULL.add(slab(0.62, 0.72, 0.56, M.steel, CX1 - 0.45, HOLD_Y + 0.36, 0));
-    HULL.add(slab(0.70, 0.07, 0.64, M.steel, CX1 - 0.45, HOLD_Y + 0.74, 0));
-    HULL.add(cyl(0.09, 0.09, 1.9, 7, M.steel, CX1 - 0.45, HOLD_Y + 1.72, 0));
-    HULL.add(slab(0.26, 0.22, 0.03, M.dark, CX1 - 0.76, HOLD_Y + 0.36, 0));   // its door
-    HULL.add(cyl(0.13, 0.11, 0.16, 8, M.steel, CX1 - 0.45, HOLD_Y + 0.86, 0.16));  // kettle
-    solidLow(CX1 - 0.45, 0, 0.75, 0.7);
+    /* the stove, aft to STARBOARD now, off the centreline — the owner's
+     * layout, mess to port and stove to starboard, so the two halves of
+     * the room read as two different jobs rather than one pile astride
+     * the middle of it. STOVE_X/STOVE_Z are the only numbers that move;
+     * everything about the stove itself is relative to them. */
+    const STOVE_X = 5.85, STOVE_Z = 1.75;
+    HULL.add(slab(0.62, 0.72, 0.56, M.steel, STOVE_X, HOLD_Y + 0.36, STOVE_Z));
+    HULL.add(slab(0.70, 0.07, 0.64, M.steel, STOVE_X, HOLD_Y + 0.74, STOVE_Z));
+    HULL.add(cyl(0.09, 0.09, 1.9, 7, M.steel, STOVE_X, HOLD_Y + 1.72, STOVE_Z));
+    HULL.add(slab(0.26, 0.22, 0.03, M.dark, STOVE_X - 0.31, HOLD_Y + 0.36, STOVE_Z));   // its door
+    HULL.add(cyl(0.13, 0.11, 0.16, 8, M.steel, STOVE_X, HOLD_Y + 0.86, STOVE_Z + 0.16));  // kettle
+    solidLow(STOVE_X, STOVE_Z, 0.75, 0.7);
 
     /* ---- THE BARRICADE ACROSS THE QUARTERS DOOR --------------------
      * The mess table and its two stools are not standing in the middle of
@@ -1386,39 +1396,41 @@ export function makeShipwreck(opts = {}) {
      * Dimensions are stated in their FINAL extents rather than built at
      * the table's old orientation and rotated into place: a slab turned
      * through a right angle and then tilted is three numbers nobody can
-     * read, and the doorway is only 1.10 m wide, so what matters is that
+     * read, and the doorway is 1.45 m wide, so what matters is that
      * the table top is WIDER than the hole it is wedged across. */
     const BARRICADE = new THREE.Group();
     const bpart = (m, tag) => { m.userData.part = tag; BARRICADE.add(m); return m; };
     {
-      /* IT HAS TO FILL THE HOLE. The doorway is 1.10 m wide and 1.95 m
-       * tall, and the first build put the table top across the middle of
-       * it and nothing else — 0.66 m of a 1.95 m opening, so from the hold
-       * you looked straight through a door frame with one bar in it. A
+      /* IT HAS TO FILL THE HOLE, AND THE HOLE IS BIGGER NOW. The doorway
+       * is 1.45 m wide and 1.95 m tall — widened from the 1.10 m it shipped
+       * at, because a body's radius either side of that left 0.35 m to pass
+       * through, and every dimension across the opening here is scaled by
+       * the same 1.45/1.10 the doorway grew by, so the pile still fills
+       * exactly what it always filled: the whole hole, with margin. A
        * barricade is a PILE: the table jammed across the middle, boards
        * nailed over the gaps above and below it, and the stools wedged in
        * at the foot holding the whole thing up. Every board is wider than
        * the hole, because that is why it cannot be pushed through. */
       const bx2 = CX0 - 0.35 + 0.17;                 // in the opening, just inside
       // the mess table, on edge, jammed across the middle of the door
-      bpart(slab(0.08, 0.66, 1.34, M.wood, bx2, HOLD_Y + 1.02, 0.02, 0.09, 0, 0.14), 'top');
+      bpart(slab(0.08, 0.66, 1.77, M.wood, bx2, HOLD_Y + 1.02, 0.02, 0.09, 0, 0.14), 'top');
       // its legs, still on it, jutting back into the hold
       for (const sy of [-1, 1]) for (const sz of [-1, 1])
         bpart(slab(0.08, 0.70, 0.08, M.wood, bx2 - 0.30, HOLD_Y + 1.02 + sy * 0.24,
-          sz * 0.46, 0.2 * sz, 0, 1.30 + sy * 0.16), 'leg');
+          sz * 0.61, 0.2 * sz, 0, 1.30 + sy * 0.16), 'leg');
       // boards nailed over what the table does not cover
       const BOARDS = [
-        [1.66, 1.30, -0.16, -0.06],
-        [1.90, 1.22, 0.13, 0.05],
-        [0.52, 1.32, 0.10, -0.03],
-        [0.26, 1.26, -0.07, 0.04],
+        [1.66, 1.71, -0.16, -0.06],
+        [1.90, 1.61, 0.13, 0.05],
+        [0.52, 1.74, 0.10, -0.03],
+        [0.26, 1.66, -0.07, 0.04],
       ];
       for (const [y, wz, rz, dz] of BOARDS)
         bpart(slab(0.05, 0.16, wz, M.plank, bx2 - 0.13, HOLD_Y + y, dz, 0, 0, rz), 'plank');
       // the two stools, wedged in at the foot holding it up
       for (const sz of [-1, 1]) {
-        bpart(cyl(0.17, 0.15, 0.06, 8, M.wood, bx2 - 0.10, HOLD_Y + 0.70, sz * 0.34, 0, 0, sz * 0.55), 'stool');
-        bpart(cyl(0.05, 0.05, 0.48, 6, M.wood, bx2 - 0.10, HOLD_Y + 0.44, sz * 0.34, 0, 0, sz * 0.55), 'stool');
+        bpart(cyl(0.17, 0.15, 0.06, 8, M.wood, bx2 - 0.10, HOLD_Y + 0.70, sz * 0.45, 0, 0, sz * 0.55), 'stool');
+        bpart(cyl(0.05, 0.05, 0.48, 6, M.wood, bx2 - 0.10, HOLD_Y + 0.44, sz * 0.45, 0, 0, sz * 0.55), 'stool');
       }
       BARRICADE.traverse((o) => { if (o.isMesh) o.castShadow = false; });
       /* AND `bakeStatic` MUST NOT LOOK AT IT EITHER. The note above says
@@ -1436,7 +1448,7 @@ export function makeShipwreck(opts = {}) {
       /* Solid while it stands. main.js splices this exact array out of
        * PROPS when it comes down, so the doorway opens the moment the
        * last board does. */
-      const bbox = [bx2 - 0.34, -0.66, bx2 + 0.20, 0.66, HOLD_Y - 0.4, HOLD_Y + 2.4];
+      const bbox = [bx2 - 0.34, -0.87, bx2 + 0.20, 0.87, HOLD_Y - 0.4, HOLD_Y + 2.4];
       PROPS.push(bbox);
       S.userData.barricade = { group: BARRICADE, box: bbox, x: bx2 };
     }
@@ -1486,14 +1498,14 @@ export function makeShipwreck(opts = {}) {
       HULL.add(new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.05, 4, 11), M.rope)
         .translateX(5.70).translateY(soleY(5.70, 1.35) + 0.05).translateZ(1.35).rotateX(Math.PI / 2));
 
-      // ---- a shelf on the after bulkhead with tins and a bottle on it
-      HULL.add(slab(1.30, 0.05, 0.20, M.wood, 6.30, HOLD_Y + 1.16, -1.35));
-      for (const sx of [-1, 1])
-        HULL.add(slab(0.05, 0.16, 0.20, M.wood, 6.30 + sx * 0.60, HOLD_Y + 1.08, -1.35));
-      for (let i = 0; i < 5; i++)
-        HULL.add(cyl(0.05, 0.05, 0.12, 7, i % 2 ? M.steel : M.brass,
-          5.86 + i * 0.22, HOLD_Y + 1.25, -1.35));
-      HULL.add(cyl(0.045, 0.03, 0.24, 7, M.glass, 6.74, HOLD_Y + 1.31, -1.35));
+      /* NO SHELF. There was one here, and its comment called it "a shelf on
+       * the after bulkhead" — it was at z = -1.35 against a side at -3.60
+       * and an after bulkhead at lx 7.2, which is to say it was bolted to
+       * nothing and hung in the middle of the room with five tins and a
+       * bottle standing in mid-air on it. A FIXTURE'S COMMENT IS NOT ITS
+       * POSITION: anything described as being ON a wall has to take that
+       * wall's own coordinate (`wall(x)` here, as the oilskin hooks below
+       * do), never a number typed beside it. */
 
       // ---- oilskins on hooks, and a dead lamp off a beam
       for (const [hx, sg2] of [[5.4, -1], [6.0, -1], [4.2, 1]]) {
@@ -2168,7 +2180,7 @@ export function makeShipwreck(opts = {}) {
    * sole for sixty years actually does.
    *
    * THE BARRICADE IS NOT TOUCHED. It is the door you have to break to get
-   * into her quarters, it is measured against a 1.10 by 1.95 hole, and its
+   * into her quarters, it is measured against a 1.45 by 1.95 hole, and its
    * crosshair meshes are snapshotted by `addInteractable` at registration
    * — a piece that lands later would be invisible to the blade. */
   {
@@ -2185,25 +2197,36 @@ export function makeShipwreck(opts = {}) {
      *   tilt: it has been lying in a wreck for sixty years */
     const PLAN = [
       // ---- her quarters, aft of the barricaded door -------------------
-      // Two bunks against her sides where the four slab berths were. The
-      // model's long axis is its own Z, so a quarter turn lays it
-      // fore-and-aft against the planking.
-      ['bunk_bed', 4.70, 2.94, Math.PI / 2, 2.06, 1.14],
-      ['bunk_bed', 4.70, -2.94, -Math.PI / 2, 2.06, 1.14],
-      // the mess table, off the centreline so the way in from the door
-      // stays clear, with a bench drawn up to it and two chairs at it
-      ['table_3', 4.85, -1.42, 0, 1.44, 0.96],
-      ['bench_4', 4.85, -2.10, 0, 1.62, 0.44],
-      ['chair_2', 4.34, -0.66, Math.PI, 0.50, 0.56],
-      ['chair_3', 5.36, -0.62, Math.PI * 0.86, 0.50, 0.56],
+      /* MESS TO PORT, STOVE TO STARBOARD — two different jobs either side
+       * of the room instead of a pile astride the middle of it. A straight
+       * bunk stands forward to starboard, where the four slab berths used
+       * to be; the second is turned ATHWARTSHIPS across the aft end, on
+       * the centreline, which is what a berth built into a transom always
+       * is and what keeps the two halves of the room apart without a wall
+       * — it is clear of the mess by 1.6 m and of the stove by a good
+       * margin either way, both measured with a flood-fill of the actual
+       * floor, not eyeballed. The model's long axis is its own Z: the
+       * quarter turn on the straight bunk lays that fore-and-aft, and no
+       * turn at all on the aft one leaves it athwartships. Still four
+       * berths, still two bunk_bed pieces. */
+      ['bunk_bed', 4.30, 2.95, Math.PI / 2, 2.06, 1.14],
+      ['bunk_bed', 6.55, 0.00, 0, 1.14, 2.06],
+      /* The mess table, hard against the port planking with a bench drawn
+       * up to it on the aisle side and a chair at each end — the door is
+       * 1.45 m wide now, so this can sit close to it without narrowing the
+       * doorway's own clearance the way it did when the door was 1.10. */
+      ['table_3', 4.75, -3.05, 0, 1.44, 0.96],
+      ['bench_4', 4.75, -2.33, 0, 1.62, 0.44],
+      ['chair_2', 3.55, -2.70, Math.PI, 0.50, 0.56],
+      ['chair_3', 5.95, -2.70, Math.PI * 0.86, 0.50, 0.56],
       /* `chair_4` is not here. It is a footstool 0.45 m across and 0.50
        * tall, and tipped over on her boards at this texel count it reads as
        * a flat slab lying on the floor — the crew space's own lesson about
        * litter, which is that a thing too small to be what it is reads as a
        * small pale lump. */
-      // stores, up against the after end by the stove
-      ['barrel_2', 6.52, 2.92, 0.9, 0.62, 0.62],
-      ['barrel_4', 6.46, -2.92, 2.1, 0.80, 0.80],
+      // stores, stacked round the stove to starboard
+      ['barrel_2', 6.70, 1.75, 0.9, 0.62, 0.62],
+      ['barrel_4', 6.10, 2.85, 2.1, 0.80, 0.80],
       // ---- the bow of her hold, forward of the breach ------------------
       ['barrel_5', -7.30, -2.45, 0.4, 0.88, 0.88],
       ['barrel_4', -6.45, -2.84, 2.6, 0.80, 0.80],

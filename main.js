@@ -1107,17 +1107,24 @@ const sandMat = new THREE.MeshStandardMaterial({
   map: sandTex, bumpMap: sandBump, bumpScale: 1.4,
   color: 0x6d7d99, roughness: 0.95, metalness: 0.0, emissive: 0x27324a, emissiveMap: sandTex,
 });
-sandMat.onBeforeCompile = (shader) => {
+/* THE BEACH'S OWN SHADER, AS A FUNCTION, because the bed under the wreck
+ * has to wear it and must not discard where she stands on it. `keep` is a
+ * GLSL expression that is true wherever the fragment must be drawn whatever
+ * the shoreline says, and `decl` is whatever that expression needs — both go
+ * in here rather than being chained on afterwards, because this hook
+ * REPLACES `#include <common>` and a second pass would find nothing to
+ * replace. */
+function sandShader(shader, keep = 'false', decl = '') {
   shader.uniforms.uTime = oceanUniforms.uTime;
   shader.vertexShader = shader.vertexShader
     .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;')
     .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
   shader.fragmentShader = shader.fragmentShader
-    .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;\nuniform float uTime;\nfloat wetMask;\n' + noiseGLSL + shoreGLSL)
+    .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;\nuniform float uTime;\nfloat wetMask;\n' + noiseGLSL + shoreGLSL + decl)
     .replace('#include <clipping_planes_fragment>',
       `#include <clipping_planes_fragment>
        float bwShore = shoreLine(vWorldPos.z, uTime);
-       if (vWorldPos.x < bwShore - 1.0) discard;`)
+       if (vWorldPos.x < bwShore - 1.0 && !(${keep})) discard;`)
     .replace('#include <map_fragment>',
       `#include <map_fragment>
        float fromShore = vWorldPos.x - bwShore;
@@ -1130,7 +1137,8 @@ sandMat.onBeforeCompile = (shader) => {
        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.60, 0.68, 0.85), sheen * 0.45);`)
     .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.30, max(wetMask, 0.0));')
     .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = mix(metalnessFactor, 0.22, max(wetMask, 0.0));');
-};
+}
+sandMat.onBeforeCompile = (shader) => sandShader(shader);
 const sand = new THREE.Mesh(sandGeo, sandMat);
 scene.add(sand);
 
@@ -14662,9 +14670,25 @@ onMossyRocks(() => {
   reexpose(mat, 0.62);
 
   const _q = new THREE.Quaternion(), _e = new THREE.Euler();
+  /* HOW WIDE SHE IS OVER THE WHOLE OF A STONE, not at the height of its
+   * middle. Asked at one height this was wrong twice over: she FLARES at
+   * the bow, so her plating at the top of a two-metre boulder stands well
+   * outside her section at its centre, and she TUMBLES HOME down low, so
+   * the widest part of her against a stone is almost never the part the
+   * stone's origin is level with. Measured on the shipped formation, 3.6 %
+   * of its vertices were inside her planking at every station down the
+   * flanks and up to a metre in. */
+  const hullOver = (lx, y0, y1) => {
+    let h = 0;
+    for (let y = Math.max(SN.KEEL_Y, y0); y <= Math.min(SN.DECK_Y, y1) + 1e-6; y += 0.22)
+      h = Math.max(h, SN.halfAtY(lx, y));
+    return Math.max(h, SN.halfAtY(lx, THREE.MathUtils.clamp(y1, SN.KEEL_Y, SN.DECK_Y)));
+  };
   /* `lx` her station, `sg` which flank, `width` how much stone shows across
    * the sand, `bury` how much of its own height is under it, and `jam` how
-   * far it leans into her plating. */
+   * far it leans into her plating — which is a PENETRATION, so it is small:
+   * it was up to 0.80 m, which is not a stone resting against a boat, it is
+   * a stone inside one. */
   const place = (lx, sg, width, bury, jam) => {
     const rk = mossyRocks[Math.floor(rnd() * mossyRocks.length)];
     _e.set((rnd() - 0.5) * 0.5, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.5);
@@ -14672,9 +14696,9 @@ onMossyRocks(() => {
     const e0 = rockExtent(rk, _q);
     const sc = width / (2 * Math.max(e0.x, e0.z));
     const ex = e0.x * sc, ey = e0.y * sc, ez = e0.z * sc;
-    // her plating at the height this stone's middle sits, with the rake in it
+    // her plating over the whole of this stone, with the rake in it
     const y = ey * (1 - 2 * bury);
-    const hull = SN.halfAtY(lx, Math.max(0.12, y));
+    const hull = hullOver(lx, y - ey, y + ey);
     const lz = sg * (hull + ez - jam);
     const m = new THREE.Mesh(rk.geo, mat);
     m.quaternion.copy(_q);
@@ -14698,19 +14722,33 @@ onMossyRocks(() => {
    * twenty-eight metres of boat, interpenetrating the way the beach's own
    * formation does — spaced politely apart they are boulders standing about
    * on a beach, overlapping they are one rock with faces. */
-  for (const [lx, lz, w, b] of [[-12.4, 1.0, 5.2, 0.26], [-10.9, -2.4, 4.2, 0.28],
-                                [-13.4, -3.2, 3.6, 0.30], [-12.0, 3.6, 3.8, 0.28],
-                                [-9.4, 4.2, 3.0, 0.32], [-9.8, -4.6, 2.8, 0.32]]) {
+  /* AND A MASS AT THE BOW HAS TO OBEY HER SECTION, WHICH THESE DID NOT.
+   * The flank line below asks `halfAtY` where her plating is and leans each
+   * stone on it; these six were the only rocks in the formation placed at a
+   * TYPED lz, and she fines to a stem — she is under two metres across at
+   * lx -12 — so a five-metre boulder written at lz 1.0 is a boulder standing
+   * in the middle of her forefoot. Measured on the shipped mesh, 4.3 % of
+   * the formation's vertices were inside her planking, up to 1.02 m in, all
+   * of them these; from underneath that is a slab of stone coming out of
+   * the boat, which is exactly what it was. The typed lz is a MINIMUM now
+   * and her own section has the last word. */
+  const BOW_JAM = 0.35;                 // how far a mass may lean into her
+  for (const [lx, lz, w, b] of [[-12.4, 1.0, 4.2, 0.30], [-10.9, -2.4, 3.6, 0.32],
+                                [-13.4, -3.2, 3.2, 0.34], [-12.0, 3.6, 3.2, 0.32],
+                                [-9.4, 4.2, 2.8, 0.34], [-9.8, -4.6, 2.6, 0.34]]) {
     const rk = mossyRocks[Math.floor(rnd() * mossyRocks.length)];
     _e.set((rnd() - 0.5) * 0.4, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.4);
     _q.setFromEuler(_e);
     const e0 = rockExtent(rk, _q);
     const sc = w / (2 * Math.max(e0.x, e0.z));
-    const ey = e0.y * sc, y = ey * (1 - 2 * b);
+    const ey = e0.y * sc, ez = e0.z * sc, y = ey * (1 - 2 * b);
+    const sg = lz >= 0 ? 1 : -1;
+    const clear = hullOver(lx, y - ey, y + ey) + ez - BOW_JAM;
+    const lzp = sg * Math.max(Math.abs(lz), clear);
     const m = new THREE.Mesh(rk.geo, mat);
-    m.quaternion.copy(_q); m.scale.setScalar(sc); m.position.set(lx, y, lz);
+    m.quaternion.copy(_q); m.scale.setScalar(sc); m.position.set(lx, y, lzp);
     grp.add(m);
-    if (y + ey > ROCK_STEP) rockColliders.push({ x: SHIP_X + lx, z: SHIP_Z + lz,
+    if (y + ey > ROCK_STEP) rockColliders.push({ x: SHIP_X + lx, z: SHIP_Z + lzp,
       r: Math.max(e0.x, e0.z) * sc * 0.8, top: y + ey, mat: 'rock' });
   }
 
@@ -14725,7 +14763,7 @@ onMossyRocks(() => {
       if (rnd() < 0.10 + aft * 0.34) continue;                // a line with gaps in it is a line
       place(lx + (rnd() - 0.5) * 0.9, sg,
         (3.0 - aft * 1.5) * (0.78 + rnd() * 0.44),
-        0.24 + rnd() * 0.14 + aft * 0.16, 0.25 + rnd() * 0.55);
+        0.24 + rnd() * 0.14 + aft * 0.16, 0.08 + rnd() * 0.20);
     }
   }
   /* and a skirt of smaller stuff shed round the big ones, which is what
@@ -14852,10 +14890,110 @@ bwGlb('assets/furniture.glb', (gltf) => {
    * coplanar pairs, and that shimmer where her stern meets the ground is
    * the "textures colliding" at the back of her. Seven centimetres is far
    * enough to sort cleanly and still under everything that draws over it. */
-  const bed = new THREE.Mesh(bedGeo, sandMat);
+  /* ---- AND THE BOTTOM OF THE HOLE WAS BEING DELETED BY THE TIDE --------
+   * This bed was built to fill the hole the ocean punch leaves under her,
+   * and it was handed `sandMat` — which discards every fragment seaward of
+   * `shoreLine`. She spans x = -7 to 19 and that line sweeps to x = 8.6, so
+   * for most of the cycle the bed under her forward half was thrown away by
+   * the same rule it exists to answer, and what you could see through the
+   * ground under the boat changed with the swash. The rocks paid for it
+   * twice: bedded into sand that is not drawn, a boulder's buried half is
+   * exposed and it reads as a slab hanging over open water.
+   *
+   * So the bed keeps the beach's shader and gets its own rule for WHERE IT
+   * MAY NOT VANISH, and both halves of it are measurements rather than a
+   * margin. Inside the ocean's own punch-out there is no sea to make way
+   * for, so the bed is the ground, always — and it is read off `uShipHW`,
+   * the SAME array the punch is cut with, so the hole and its bottom can
+   * never disagree. And anything the bed has HEAPED against her stands
+   * above the skirt, so it is sand out of the water rather than beach under
+   * it, and the surf runs round it the way it runs round the rocks below
+   * Bradly. What is left to the tide is the flat outer skirt, which is the
+   * beach and behaves like it. */
+  const bedMat = sandMat.clone();
+  bedMat.onBeforeCompile = (shader) => {
+    shader.uniforms.uShipHalf = oceanUniforms.uShipHalf;
+    shader.uniforms.uShipC = oceanUniforms.uShipC;
+    shader.uniforms.uShipHW = oceanUniforms.uShipHW;
+    sandShader(shader, 'bwBedKeep(vWorldPos)', `
+      uniform float uShipHalf; uniform vec2 uShipC; uniform float uShipHW[17];
+      bool bwBedKeep(vec3 p) {
+        if (p.y > -0.045) return true;              // heaped against her, not beach
+        if (uShipHalf <= 0.0) return false;
+        float lx = p.x - uShipC.x;
+        if (abs(lx) >= uShipHalf) return false;
+        float t = (lx + uShipHalf) / (2.0 * uShipHalf) * float(17 - 1);
+        int i0 = int(floor(t));
+        float f = t - float(i0), a = 0.0, b = 0.0;
+        for (int k = 0; k < 17; k++) {
+          if (k == i0) a = uShipHW[k];
+          if (k == i0 + 1) b = uShipHW[k];
+        }
+        return abs(p.z - uShipC.y) < mix(a, b, f);  // exactly the punch
+      }`);
+  };
+  /* its own key, or three hands it the beach's already-compiled program */
+  bedMat.customProgramCacheKey = () => 'shipBed';
+  const bed = new THREE.Mesh(bedGeo, bedMat);
   bed.position.set(SHIP_X, -0.05, SHIP_Z);
   scene.add(bed);
   farProps.push({ obj: bed, z: SHIP_Z, d: 220 });
+
+  /* ---- AND THE DUNE WAS BEING DRAWN INSIDE HER -----------------------
+   * Her stern stands 4.8 m past `CLIFF_BLOCK_X` and the sand wall is one
+   * surface that knows nothing about her, so it simply passes through: cast
+   * down her centreline and from lx 9.5 aft the cliff is 3.26 rising to
+   * 3.51, against a deck at 3.20 — the dune's own plane, a flat sheet with
+   * no heaping on it at all, slicing her afterdeck along a knife-edge with
+   * her planking on one side of the line and sand on the other, and her
+   * rail standing up through it like a bar in a table. That is what reads
+   * as the land clipping through the back of the boat, and no amount of
+   * banking sand against her outside can answer it, because the thing in
+   * the wrong place is INSIDE.
+   *
+   * She is a closed shell, so the honest fix is to take the dune out of
+   * her: a world-space discard, the drain's own trick and the fourth on
+   * this material, cut to HER OWN SECTION at each station rather than to a
+   * box. Two things make it safe to cut a hole in a one-sided surface.
+   * It is strictly INSIDE the planking (0.96 of her half-width), so every
+   * ray that could reach the cut has to pass through her hull, her deck or
+   * her transom first — and it stops under the rail, so the bulwark covers
+   * the last hand's breadth where the two would otherwise disagree. What
+   * it leaves is what actually happened to her: a boat driven into a dune
+   * with the sand heaped up her quarters and her afterdeck still hers. */
+  const cutHW = new Array(17);
+  for (let i = 0; i < 17; i++)
+    cutHW[i] = SN.halfAtY(-SN.HALF + (i / 16) * SN.LEN, SN.DECK_Y) * 0.96;
+  const prevShipCliff = cliff.material.onBeforeCompile;
+  cliff.material.onBeforeCompile = function (sh, rndr) {
+    if (prevShipCliff) prevShipCliff.call(this, sh, rndr);
+    sh.uniforms.uShipCutC = { value: new THREE.Vector2(SHIP_X, SHIP_Z) };
+    sh.uniforms.uShipCutHalf = { value: SN.HALF };
+    sh.uniforms.uShipCutTop = { value: SN.DECK_Y + SN.BULWARK - 0.06 };
+    sh.uniforms.uShipCutHW = { value: cutHW };
+    sh.vertexShader = 'varying vec3 vShipW;\n' + sh.vertexShader.replace(
+      '#include <fog_vertex>',
+      '#include <fog_vertex>\n  vShipW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader =
+      'varying vec3 vShipW;\nuniform vec2 uShipCutC;\nuniform float uShipCutHalf;\n'
+      + 'uniform float uShipCutTop;\nuniform float uShipCutHW[17];\n'
+      + sh.fragmentShader.replace('#include <clipping_planes_fragment>', `
+      #include <clipping_planes_fragment>
+      {
+        float slx = vShipW.x - uShipCutC.x;
+        if (vShipW.y < uShipCutTop && slx > 5.0 && slx < uShipCutHalf) {
+          float st = (slx + uShipCutHalf) / (2.0 * uShipCutHalf) * float(17 - 1);
+          int si = int(floor(st));
+          float sf = st - float(si), sa = 0.0, sb = 0.0;
+          for (int k = 0; k < 17; k++) {
+            if (k == si) sa = uShipCutHW[k];
+            if (k == si + 1) sb = uShipCutHW[k];
+          }
+          if (abs(vShipW.z - uShipCutC.y) < mix(sa, sb, sf)) discard;
+        }
+      }`);
+  };
+  cliff.material.needsUpdate = true;
 }
 
 // onShip / inBridge are declared with the collision block below.
@@ -16165,6 +16303,39 @@ function updateShip(dt) {
     if (lz < -hz && !atDoor) camera.position.z = SHIP_Z - hz;
     camera.position.x = THREE.MathUtils.clamp(camera.position.x,
       SHIP_X + SN.HOLD_X0 + PLAYER_R, SHIP_X + SN.HOLD_X1 - PLAYER_R);
+
+    /* AND YOU WALKED STRAIGHT THROUGH THE COMPANION LADDER. Its floor is a
+     * RAMP out of `shipFloorAt` and the hold's own sole runs on underneath
+     * it, so coming at it from aft the ramp was three metres over your head
+     * (`take` refuses anything above `feet + 0.5`), the hold answered, and
+     * you walked on into the treads and out the other side. Every other
+     * floor in this game that sits over another one has something under it;
+     * this one had nothing at all.
+     *
+     * A stair is only solid from BELOW, and only where it is low enough to
+     * meet you: the station at which the ramp clears your head is worked out
+     * from `playerHeight()`, so a stride takes you in under the top of it —
+     * which is a real place in her hold — and stops you where the treads
+     * come down to head height, and CROUCHING takes you further, the
+     * undercroft's own rule. Standing on it is not being under it, so the
+     * test asks whether your feet are well below the ramp before it fires;
+     * climbing from the forward end can never trip it, because there the
+     * ramp IS the floor you are standing on. */
+    const run = SN.STAIR_X1 - SN.STAIR_X0;
+    const sx0 = SN.STAIR_X0 - PLAYER_R, sz0 = SN.STAIR_Z0 - PLAYER_R, sz1 = SN.STAIR_Z1 + PLAYER_R;
+    const sx1 = SN.STAIR_X0 + run * THREE.MathUtils.clamp(
+      (feet + playerHeight() + 0.05 - SN.HOLD_Y) / (SN.DECK_Y - SN.HOLD_Y), 0, 1);
+    const ramp = SN.HOLD_Y + THREE.MathUtils.clamp((lx - SN.STAIR_X0) / run, 0, 1)
+      * (SN.DECK_Y - SN.HOLD_Y);
+    if (feet < ramp - 0.25 && lx > sx0 && lx < sx1 && lz > sz0 && lz < sz1) {
+      const dL = lx - sx0, dR = sx1 - lx, dB = lz - sz0, dF = sz1 - lz;
+      const m = Math.min(dL, dR, dB, dF);
+      if (m === dL) camera.position.x = SHIP_X + sx0;
+      else if (m === dR) camera.position.x = SHIP_X + sx1;
+      else if (m === dB) camera.position.z = SHIP_Z + sz0;
+      else camera.position.z = SHIP_Z + sz1;
+    }
+
     inBridge = false;
     return;
   }
