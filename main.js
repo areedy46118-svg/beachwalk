@@ -43636,7 +43636,12 @@ function buildTavern() {
   extractTavTables();
   stripTavProps();
   buildTavCrates();
-  buildTavShelf();                                   // the rung the crates cannot reach, on the gallery's back wall
+  /* AND THE SHELF IS OUT, FOR NOW — the owner's word, the third time one of
+   * these has been asked for and then taken away again. The function stays
+   * (it measures its own wall and its own two floors, so it can come back as
+   * one call) and nothing calls it; the 2.12 m step at the back of the
+   * gallery is the plank's job again. */
+  // buildTavShelf();
   buildKeepWalls(TAV_SITE);
   buildTavPlank();
   buildTavChairs();
