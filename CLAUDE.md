@@ -12941,3 +12941,109 @@ has asked about most is not worth guessing at that flag. The lighthouse
 draws nineteen from 1.2 km and is the one thing on the horizon. And the two
 decorative horseshoe crabs are 49k triangles each in ten draws — triangles
 have never been this game's problem.
+
+**"I KEEP LAGGING ACROSS THE ROOM IN THE TAVERN" WAS THREE PUSHES AND NONE OF
+THEM WAS THE FRAME RATE.** Measured first, before anything was touched: 219
+draw calls, 431k triangles, `update()` 0.49 ms and the render call 1.43 ms —
+the room is not slow. What it was is the oldest failure in this file wearing a
+third coat: a correction that argues with the input. Measured over 240 walks,
+four directions from every part of the floor, **19.7 % stalled frames, 2603
+reversals of direction and a worst single step of 0.667 m**. Four things:
+
+- **A PUSH MAY STOP YOU; IT MAY NOT SEND YOU BACKWARDS.** Traced frame by
+  frame at the south wall: the input moved the body 0.02 m, a push moved it
+  0.02 back, and the next frame did it again — sixty times a second, growing
+  to 0.09 as the two disagreed harder. The church's rule one step further: if
+  what the frame's corrections leave is motion OPPOSITE to the motion the
+  frame asked for, the frame is worth nothing and the body stays where it
+  was. Walking square into a wall and not moving is simply correct.
+- **AND A CORRECTION IS A LEAN, NEVER A JUMP** — the knight's own cap, which
+  the player never had in here. From a standing start beside the furniture
+  the three pushes between them moved the body **1.074 m on one frame**,
+  which is sixty-five metres a second. `TAV_FIX` clamps the frame's whole
+  correction to 0.09 m and the rest is paid next frame, so being ejected from
+  a barrel is eight frames of being shouldered aside. It is skipped after a
+  frame that was itself a teleport, where a big correction is the honest
+  answer.
+- **AND `pushOutOfKeep` TOOK THE SUM.** `keepWallPush` has known since the
+  island went in that a wall is thirty coplanar triangles all pushing the same
+  way and that summing those throws a body across the island; this one is the
+  same wall drawn as CELLS and kept taking the resultant. At a 0.2 m cell a
+  0.26 m body overlaps nine of them, so a straight edge of floorless ground
+  pushed six times harder than it had to. Deepest first, ask again, four
+  passes.
+- **AND `tavEscape` IS A LAST RESORT, WHICH MEANS IT WAITS.** At a depth of
+  0.20 on a 0.26 m body it fired whenever a shoulder was NEAR a wall — which,
+  walking along one, is every frame — and walked you 0.14 m sideways each
+  time. A body genuinely inside something is inside it by most of its own
+  width and stays that way for a third of a second; a shoulder brushing a
+  chair does not.
+
+Measured after, the same 308 walks: **worst step 1.082 → 0.146 m (the cap plus
+a stride), and of 72 reversals in 13,860 frames 68 are under 2 cm** — a
+walking stride is 5.7 — against 2603 before. Standing still on 248 clear
+spots the mean drift is 0.0066 m and the worst 0.10; the two spots that drift
+further are the harness dropping the body inside a table, and it is walked
+out. Both bodies dropped inside geometry still get out. The catacombs walk is
+unchanged (zero stalls, worst step 0.079).
+
+**AND "THEY JUST SLIDE AROUND THE GROUND" WAS THE CLIP DISAGREEING WITH THE
+MOTION, IN BOTH DIRECTIONS AT ONCE.** `mutAnim` chooses between the idle, the
+walk and the run on `moving`, which is what the fight ASKED for — and the body
+is then moved by four other things: the separation that holds two fighters
+apart, the room's clamp, the wall push and the lunge. Measured in the tavern:
+**Wong travelling 2.38 m/s with the IDLE on his mixer** (a man gliding across
+the floor in a standing pose) and **the drunk playing `run` at a timeScale of
+1.18 with his feet making 0.00 m/s** (a man running on the spot). Counted over
+twenty seconds of a real fight, the clip and the ground disagreed on **18 % of
+frames for Wong, 23 % for the drunk and 74 % for the orc**. A kind that says
+`gaitBySpeed` has the CHOICE as well as the rate taken from `realSp`, which
+`mutAnim` already measures: **0 %, 0 % and 0 %** after. It is opt-in only
+because every other creature here was measured on the old rule, and it should
+spread.
+
+**AND THE STRIDE IS MEASURED ON THE RIG THAT PLAYS IT, NOT READ OFF THE
+SOURCE.** `clipSpeed` comes out of the moves file, where it is the travel of
+the SOURCE skeleton's root — and a retarget puts rotations on a body with
+different legs, so what the feet actually cover is a different number.
+Measured in the game against the shipped values: **Wong's run 2.73 against a
+stated 3.74 and the drunk's 1.81 against 2.42**, both about a quarter out,
+which at "the rate is the stride over the speed" is a quarter of the body's
+speed scrubbed along the floor on every run in the room. `measureGaits`
+scrubs each gait clip once through a whole cycle and measures the PLANTED
+foot's travel in the BODY'S frame — the lower toe, and only over frames where
+it is still the lower one, because the frame the plant changes is a stride and
+not a slip. Three traps: **an action that is not RUNNING is not evaluated**
+(`enabled` and a weight are not enough — the mixer only walks its active list,
+so the first build stamped nothing, measured zero for every clip and set its
+own "measured" flag on the way out); every action's time, weight, enabled and
+paused state is put back and the mixer stamped again, so the pose on screen is
+the pose it was; and **a creature in a scripted beat never reaches `mutAnim`**,
+so it hangs off the loop where every unit is ticked instead — the two men in
+the tavern's opening are driven by the scene, which is to say the two the
+owner was looking at were the two it never ran for.
+
+**AND THE DRUNK DID NOT BLEND IN BECAUSE HE HAD BEEN DARKENED FOR A SHIRT HE
+IS NOT WEARING.** He carried the biggest multiply-down of the three
+(`tint: 0x8e8478`, 0.56, at `emis` 0.09) on the strength of a note about a
+pale shirt and a light waistcoat, and there is no shirt on the model at all:
+measured off his own maps the torso is (133, 102, 81), the head (126, 96, 79)
+and the legs (116, 89, 72) — the same warm mid-tone the orc ships. What he
+rendered as was a black cut-out in a room of pale flagstones. Neither he nor
+Wong has a tint now (a flat multiply is a desaturator whatever it was meant to
+be, and the orc, who has never had one, is the one of the three that has always
+read), and the one number left — the emissive lift, which is all a lit figure
+in a BAKED, UNLIT room has to carry it — is swept against the room rather than
+chosen: 0.24 puts the drunk's skin at the flags' own level and 0.22 puts
+Wong's shirt and waistcoat at white linen and grey wool.
+
+**AND A MAPLESS MATERIAL UNDER A LIFT IS A WHITE CUT-OUT.** `dressMutant`
+lifts every material on a creature off its OWN MAP, which is right for skin
+and armour and meaningless for a surface that has no map: the orc's blade and
+gem ship bare, so `white * 0.22 of white` drew two metres of steel as a
+blown-out white bar — the brightest thing in the room, in every frame he is
+in. Read the emissive before touching anything else, for the third time. And
+**the blade is not a child of the sword BONE**: the steel is a SkinnedMesh
+weighted to it, so a traverse of the bone walks a subtree with no geometry in
+it and dresses nothing, which is how the first build of this ran, found
+nothing, and left the sword white.

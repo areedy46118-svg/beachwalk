@@ -18508,11 +18508,113 @@ function gaitRate(u, name, want, fallback) {
    * the kind writes it down. */
   const s = (u.clipSpeed && u.clipSpeed[name]) || (u.kind.clipSpeed && u.kind.clipSpeed[name]);
   if (!s || s < 0.05 || !want) return fallback;
-  return THREE.MathUtils.clamp(want / s, 0.45, 2.6);
+  return THREE.MathUtils.clamp(want / s, 0.55, GAIT_MAX);
+}
+/* AND A STRIDE STRETCHED PAST HALF AGAIN IS A CARTOON, NOT A RUN. The clamp
+ * was 2.6, which is a walk played at two and a half times speed, and what
+ * the owner was looking at is the other half of that number: measured in the
+ * tavern, the drunk was moving at 4.19 m/s on a clip whose own ground speed
+ * is 2.00, so the feet were run at 2.02x just to keep up and STILL scrubbed.
+ * A gait may not be driven past 1.55, and — the part that actually removes
+ * the slide — a creature MAY NOT OUTRUN THE GAIT IT IS DRAWN WITH. The cap is
+ * the clip that is playing, not the fastest one it owns, so it changes when
+ * the gait is redrawn; anything with no measurement (the beach's own pack,
+ * the crabs) is unchanged, because there is nothing to measure it against. */
+const GAIT_MAX = 1.55;
+function mutGaitCap(u) {
+  const nm = u.gait && u.gait.run;
+  if (!nm) return Infinity;
+  const s = (u.clipSpeed && u.clipSpeed[nm]) || (u.kind.clipSpeed && u.kind.clipSpeed[nm]);
+  return s > 0.2 ? s * GAIT_MAX : Infinity;
+}
+/* AND THE STRIDE IS MEASURED ON THE RIG THAT PLAYS IT, NOT READ OFF THE
+ * SOURCE. `clipSpeed` comes out of the moves file, where it is the travel
+ * of the SOURCE skeleton's root — and a retarget moves rotations onto a
+ * body with different legs, so what the feet actually cover is a different
+ * number. Measured in the game against the shipped values: Wong's run 2.81
+ * against a stated 3.74 and the drunk's 1.90 against 2.42, both about a
+ * third out, which at "the rate is the stride over the speed" is a third of
+ * the body's speed scrubbed along the floor on every run in the room.
+ *
+ * The clip is scrubbed once, through a whole cycle, and what is measured is
+ * the PLANTED foot's travel in the BODY'S OWN FRAME — the lower toe, and
+ * only over frames where it is still the lower one, because the frame the
+ * plant changes is a stride and not a slip (the strafe paid for that one).
+ * Every action's state is put back and the mixer stamped again, so the pose
+ * on screen is the pose it was; it runs while the creature is still asleep,
+ * and if the rig has not landed yet it simply tries again next frame. */
+const _mgA = new THREE.Vector3(), _mgB = new THREE.Vector3(), _mgI = new THREE.Matrix4();
+function measureGaits(u) {
+  if (u._gaitMeasured || !u.mixer || !u.model || !u.clips) return;
+  const rt = ragBone(u, 'Character1_RightToeBase'), lt = ragBone(u, 'Character1_LeftToeBase');
+  let R = null, L = null;
+  u.g.traverse((o) => { if (o.isBone) { if (o.name === rt) R = R || o; else if (o.name === lt) L = L || o; } });
+  if (!R || !L) return;                                  // the scan has not landed; ask again next frame
+  const names = new Set(), G = u.kind.gaits || {}, N = u.kind.anim || {};
+  for (const k of ['walk', 'run', 'strafeL', 'strafeR']) for (const n of (G[k] || [])) names.add(n);
+  for (const k of ['walk', 'run', 'back']) if (N[k]) names.add(N[k]);
+  const saved = [];
+  for (const k in u.clips) { const a = u.clips[k]; saved.push([a, a.time, a.enabled, a.paused, a.getEffectiveWeight(), a.isRunning()]); }
+  for (const k in u.clips) { const a = u.clips[k]; a.stop(); a.enabled = false; a.setEffectiveWeight(0); }
+  for (const nm of names) {
+    const a = u.clips[nm]; if (!a) continue;
+    const dur = a.getClip().duration; if (!(dur > 0.05)) continue;
+    /* AND AN ACTION THAT IS NOT RUNNING IS NOT EVALUATED. `enabled` and a
+     * weight are not enough — the mixer only walks its ACTIVE list, so a
+     * scrub without `play()` stamps nothing at all and every clip measures
+     * a stride of zero. The first build of this did exactly that, wrote
+     * nothing, and set its own "measured" flag on the way out. */
+    a.reset(); a.play(); a.enabled = true; a.setEffectiveWeight(1); a.paused = true;
+    let pr = null, pl = null, last = null, back = 0;
+    for (let i = 0; i <= 40; i++) {
+      a.time = dur * i / 40; u.mixer.update(0); u.g.updateMatrixWorld(true);
+      _mgI.copy(u.g.matrixWorld).invert();
+      R.getWorldPosition(_mgA).applyMatrix4(_mgI); L.getWorldPosition(_mgB).applyMatrix4(_mgI);
+      const lowR = _mgA.y <= _mgB.y, side = lowR ? 'R' : 'L';
+      if (last === side && pr) { const c = lowR ? _mgA : _mgB, q = lowR ? pr : pl; back += Math.hypot(c.x - q.x, c.z - q.z); }
+      last = side; pr = _mgA.clone(); pl = _mgB.clone();
+    }
+    const sp = back / dur;
+    if (sp > 0.15) u.clipSpeed[nm] = sp;                  // a clip that does not travel keeps whatever it had
+    a.stop(); a.enabled = false; a.setEffectiveWeight(0);
+  }
+  for (const [a, t, en, pa, w, run] of saved) { if (run) a.play(); a.time = t; a.enabled = en; a.paused = pa; a.setEffectiveWeight(w); }
+  u.mixer.update(0);
+  u._gaitMeasured = true;
 }
 function mutAnim(u, dt, moving) {
   if (!u.mixer) return;
   const N = u.kind.anim;
+  /* HOW FAST IT IS ACTUALLY TRAVELLING, which is not what the chase asked
+   * for. `moving` is the speed the AI wanted; what the body does is that
+   * less whatever the room's clamp, the separation and the wall push took
+   * back — measured on Wong, 4.65 m/s of ground against a 5.33 m/s stride,
+   * which is a man running on ice. The rate is the stride over the speed,
+   * and the speed is the one he really made. Smoothed, and capped, because
+   * a knockdown and a teleport are both a very large displacement in one
+   * frame and neither is a run. */
+  {
+    const p = u.g.position;
+    const d = u._px === undefined ? 0 : Math.hypot(p.x - u._px, p.z - u._pz);
+    u._px = p.x; u._pz = p.z;
+    const real = Math.min(12, dt > 1e-4 ? d / dt : 0);
+    u.realSp = u.realSp === undefined ? real : u.realSp + (real - u.realSp) * Math.min(1, dt * 12);
+    if (u.realSp < 1e-4) u.realSp = 0;
+  }
+  /* AND THE CLIP IS CHOSEN BY THE GROUND, NOT BY THE INTENTION — which is
+   * the whole of "they just slide around". `moving` is what the fight ASKED
+   * for and the body is then moved by four other things: the separation
+   * that holds two fighters apart, the room's clamp, the wall push and the
+   * lunge. Measured in the tavern, both failures at once: Wong travelling
+   * 2.38 m/s with the IDLE on his mixer (a man gliding across the floor in
+   * a standing pose) and the drunk running on the spot at a `run` timeScale
+   * of 1.18 with his feet making 0.00 m/s. A kind that says `gaitBySpeed`
+   * has the choice AND the rate taken from `realSp`, so what is on the
+   * mixer is always what the feet are doing; it is opt-in only because
+   * every other creature in this game has been measured on the old rule. */
+  if (u.kind.gaitBySpeed) measureGaits(u);
+  const mvFrac = u.realSp / Math.max(0.5, MUT_SPEED * u.kind.speedK);
+  if (u.kind.gaitBySpeed) moving = Math.min(1.2, mvFrac);
   if (!u.gait) drawGait(u);
   // set off, or stop: draw again
   const movingNow = moving > 0.04;
@@ -18598,12 +18700,14 @@ function mutAnim(u, dt, moving) {
      * back through a forward stride, which is the same "the feet go one way
      * and the animal goes the other" the strafe had. */
     const a = mutPlay(u, N.back, true);
-    if (a) { a.paused = false; a.timeScale = -1.2; }
+    // and BACKWARDS AT THE RIGHT RATE: a fixed -1.2 is the same scrub the
+    // strafe had, one clip along
+    if (a) { a.paused = false; a.timeScale = -gaitRate(u, N.back, MUT_STRAFE * N.strafeK, 1.2); }
   } else if (u.st.flourish > 0) {
     // a roar thrown in mid-fight — quick, and not the one it opened with
     const a = mutPlay(u, u.st.flourishClip, false);
     if (a) { a.paused = false; a.timeScale = 1.7; }
-  } else if (moving > 0.04) {
+  } else if (moving > (u.kind.gaitBySpeed ? 0.10 : 0.04)) {
     /* GAITS THAT CHANGE. The walk clips were never played — everything that
      * moved ran — and each kind ran one clip for ever. A slow advance walks
      * now, a fast one runs, and which walk and which run is drawn afresh
@@ -18615,7 +18719,8 @@ function mutAnim(u, dt, moving) {
     if (a) {
       a.paused = false;
       const fb = slow ? (1.1 + moving * 1.2) * N.rate : (1.5 + moving * 0.55) * N.rate;
-      a.timeScale = gaitRate(u, nm, MUT_SPEED * u.kind.speedK * Math.max(0.28, moving), fb);
+      const want = u.realSp > 0.15 ? u.realSp : MUT_SPEED * u.kind.speedK * Math.max(0.28, moving);
+      a.timeScale = gaitRate(u, nm, want, fb);
     }
   } else {
     // and it does not stand the same way twice: the idle is drawn too, and its pace
@@ -23157,8 +23262,8 @@ function updateMutantUnit(u, dt) {
        * metres out of the fight and stayed there. Past eight metres it is no
        * longer fighting, it is rejoining, and it rejoins at a sprint. */
       const rejoin = dist > 8 ? 1.4 : 1;
-      const sp = MUT_SPEED * u.kind.speedK * (1 + u.st.sprint) * rejoin
-        * THREE.MathUtils.clamp((dist - A.reach) / 1.8, 0.3, 1);
+      const sp = Math.min(mutGaitCap(u), MUT_SPEED * u.kind.speedK * (1 + u.st.sprint) * rejoin
+        * THREE.MathUtils.clamp((dist - A.reach) / 1.8, 0.3, 1));
       u.dir.set(dx / dist, 0, dz / dist);
       flankDir(u, mutants, mutToken, MUT_SLOT_ANG, dist, A.reach - 0.3, u.dir);   // round you, not in a file
       p.addScaledVector(u.dir, sp * dt);
@@ -23656,6 +23761,12 @@ function updateMutant(dt) {
     if (!u.st.alive || !u.st.awake) continue;
     mutNearest = Math.min(mutNearest, Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z));
   }
+  /* AND A CREATURE IN A SCRIPTED BEAT NEVER REACHES `mutAnim`. The stride
+   * measurement hung off it and the two men in the tavern's opening — who
+   * are driven by the scene and not by the fight — were the two it never
+   * ran for, which is to say the two the owner was looking at. It goes
+   * where every unit is ticked instead. */
+  for (const u of mutants) if (u.kind.gaitBySpeed) measureGaits(u);
   for (const u of mutants) updateMutantUnit(u, dt);
   updateMutSand(dt);
 }
@@ -42602,35 +42713,49 @@ function keepDrawnFloor(x, z, lo, hi, S = KEEP_SITE) {
   }
   return best;
 }
-/* Pushed out along the resultant, the dojo's own push, with one change: a
- * cell is solid if the body band over the floor AT YOUR LEVEL has anything
+/* A cell is solid if the body band over the floor AT YOUR LEVEL has anything
  * in it, or if it has no floor at your level at all — a wall, a parapet, a
- * rail, or open water off the side of the pier. */
+ * rail, or open water off the side of the pier.
+ *
+ * AND IT IS THE DEEPEST CELL, ASKED AGAIN — NEVER THE SUM. `keepWallPush`
+ * has known this since the island went in ("a wall is thirty coplanar
+ * triangles all pushing the same way and summing those throws a body across
+ * the island") and this one, which is the same wall drawn as CELLS, kept
+ * taking the resultant. At a 0.2 m cell a 0.26 m body overlaps nine of
+ * them, so a straight edge of floorless ground pushed six times harder than
+ * it had to: measured standing still on the tavern's south floor, a body
+ * with no wall inside it and floor under it was walked 0.861 m sideways
+ * before it settled. Push out of the one you are deepest in and ask again —
+ * after the first push you are usually outside all of them. */
 function pushOutOfKeep(p, r, feet, up, S = KEEP_SITE) {
   const w = S.walk; if (!w) return false;
   const cell = w.cell;
-  const i0 = Math.floor((p.x - S.X - w.x0 - r) / cell), i1 = Math.floor((p.x - S.X - w.x0 + r) / cell);
-  const j0 = Math.floor((p.z - S.Z - w.z0 - r) / cell), j1 = Math.floor((p.z - S.Z - w.z0 + r) / cell);
-  let dx = 0, dz = 0, hit = false;
-  for (let j = j0; j <= j1; j++) {
-    if (j < 0 || j >= w.gh) continue;
-    for (let i = i0; i <= i1; i++) {
-      if (i < 0 || i >= w.gw) continue;
-      const cx = S.X + w.x0 + (i + 0.5) * cell, cz = S.Z + w.z0 + (j + 0.5) * cell;
-      if (keepFloorAt(cx, cz, feet, up, S)) continue;   // there is ground at my level here
-      const nx = THREE.MathUtils.clamp(p.x, cx - cell / 2, cx + cell / 2);
-      const nz = THREE.MathUtils.clamp(p.z, cz - cell / 2, cz + cell / 2);
-      let ox = p.x - nx, oz = p.z - nz;
-      const d = Math.hypot(ox, oz);
-      if (d >= r) continue;
-      if (d < 1e-5) { ox = p.x - cx; oz = p.z - cz; }
-      const L = Math.hypot(ox, oz) || 1;
-      const push = r - d;
-      dx += (ox / L) * push; dz += (oz / L) * push;
-      hit = true;
+  let hit = false;
+  for (let pass = 0; pass < 4; pass++) {
+    const i0 = Math.floor((p.x - S.X - w.x0 - r) / cell), i1 = Math.floor((p.x - S.X - w.x0 + r) / cell);
+    const j0 = Math.floor((p.z - S.Z - w.z0 - r) / cell), j1 = Math.floor((p.z - S.Z - w.z0 + r) / cell);
+    let bx = 0, bz = 0, bd = -1;
+    for (let j = j0; j <= j1; j++) {
+      if (j < 0 || j >= w.gh) continue;
+      for (let i = i0; i <= i1; i++) {
+        if (i < 0 || i >= w.gw) continue;
+        const cx = S.X + w.x0 + (i + 0.5) * cell, cz = S.Z + w.z0 + (j + 0.5) * cell;
+        if (keepFloorAt(cx, cz, feet, up, S)) continue;   // there is ground at my level here
+        const nx = THREE.MathUtils.clamp(p.x, cx - cell / 2, cx + cell / 2);
+        const nz = THREE.MathUtils.clamp(p.z, cz - cell / 2, cz + cell / 2);
+        let ox = p.x - nx, oz = p.z - nz;
+        const d = Math.hypot(ox, oz);
+        if (d >= r) continue;
+        if (d < 1e-5) { ox = p.x - cx; oz = p.z - cz; }
+        const push = r - d;
+        if (push <= bd) continue;
+        const L = Math.hypot(ox, oz) || 1;
+        bd = push; bx = (ox / L) * push; bz = (oz / L) * push;
+      }
     }
+    if (bd < 0) break;
+    p.x += bx; p.z += bz; hit = true;
   }
-  if (hit) { p.x += dx; p.z += dz; }
   return hit;
 }
 
@@ -44949,6 +45074,7 @@ function updateTavern(dt) {
   tavRoam(dt);
   tavThrownHits();
   const p = camera.position, S = TAV_SITE;
+  _tavWant.set(p.x - _preMove.x, 0, p.z - _preMove.z);     // what the frame asked for, before anything corrects it
   /* THE FEET ARE ON THE FLOOR, NOT UNDER THE HEAD — the undercroft's own
    * rule, which this room never got. Duck the head to a low roof and
    * `camBaseY - eye` is below the floor you are standing on, so the storey
@@ -44985,11 +45111,49 @@ function updateTavern(dt) {
     if (!took) { p.x = _preMove.x; p.z = _preMove.z; }
     st = keepFloorAt(p.x, p.z, feet, up, S);
   }
+  const tx = p.x, tz = p.z;                    // where the walk left the body, before anything corrects it
   pushOutOfKeep(p, TAV_BODY, feet, up, S);
   keepWallPush(p, TAV_BODY, feet, S, up);
   pushOutOfTavTables(p, TAV_BODY, feet);
+  /* AND A CORRECTION IS A LEAN, NEVER A JUMP — the knight's own cap, which
+   * the player never got in here. Traced from a standing start against the
+   * hall's furniture: the three pushes between them moved the body 1.074 m
+   * ON ONE FRAME, which is sixty-five metres a second, and that is exactly
+   * what "I keep lagging across the room" is. A body really inside something
+   * still has to come out, so nothing is refused — the frame's whole
+   * correction is clamped to a shove and the rest of it is paid next frame,
+   * so being ejected from a barrel is eight frames of being shouldered aside
+   * rather than a teleport. It is skipped after a frame that was itself a
+   * teleport (a restore, a cut, the harness), where a big correction is the
+   * honest answer. */
+  {
+    const cx = p.x - tx, cz = p.z - tz, cl = Math.hypot(cx, cz);
+    if (cl > TAV_FIX && Math.hypot(tx - _preMove.x, tz - _preMove.z) < 0.5) {
+      p.x = tx + cx / cl * TAV_FIX; p.z = tz + cz / cl * TAV_FIX;
+    }
+  }
   st = keepFloorAt(p.x, p.z, feet, up, S) || st;
   if (!st) { p.x = _preMove.x; p.z = _preMove.z; st = keepFloorAt(p.x, p.z, feet, up, S); }
+  /* AND A PUSH MAY STOP YOU; IT MAY NOT SEND YOU BACKWARDS. This is the
+   * whole of "I keep lagging across the room". Traced frame by frame walking
+   * at the south wall: the input moved the body 0.02 m, a push moved it 0.02
+   * back, and the next frame did it again — sixty reversals a second, growing
+   * to 0.09 m a frame as the two disagreed harder. Measured over 240 walks in
+   * four directions from every part of the floor: 2603 reversals and a worst
+   * single step of 0.667 m, which at sixty frames is forty metres a second.
+   *
+   * The rule is the church's, one step further: a wall is slid along, and
+   * where there is nowhere to slide TO, walking into it is simply not moving.
+   * If what the frame's corrections left is motion OPPOSITE to the motion the
+   * frame asked for, the frame is worth nothing and the body stays where it
+   * was. It cannot mask a real ejection, because an ejection that has to
+   * move you against your own input is one `tavEscape` owns. */
+  {
+    const dx = p.x - _preMove.x, dz = p.z - _preMove.z;
+    const mx = _tavWant.x, mz = _tavWant.z;
+    if ((mx * mx + mz * mz) > 1e-8 && (dx * mx + dz * mz) < 0) { p.x = _preMove.x; p.z = _preMove.z; }
+  }
+  st = keepFloorAt(p.x, p.z, feet, up, S) || st;
   st = tavEscape(p, feet, up, S) || st;
   if (st) { tavLastFloor = st.f; tavLastSpot.x = p.x; tavLastSpot.z = p.z; }
   groundY = st ? st.f : (tavLastFloor === null ? TAV_Y + TAV_FLOOR : tavLastFloor);
@@ -45003,10 +45167,21 @@ function updateTavern(dt) {
  * stride a frame so it reads as being shouldered aside rather than
  * teleported. It runs last, because whatever moves you last has to be the
  * thing that answers for where you are. */
+let tavStuckT = 0;
+const TAV_FIX = 0.09;                          // the most a frame's corrections may move you: a shove, at 5.4 m/s
+const _tavWant = new THREE.Vector3();
 function tavEscape(p, feet, up, S) {
   const w = keepWallNear(p.x, p.z, TAV_BODY, feet + TAV_STEP + 0.04, feet + 1.75, S);
   const here = keepFloorAt(p.x, p.z, feet, up, S);
-  if (here && (!w || w.depth < 0.20)) return null;             // not stuck; leave him alone
+  /* AND IT IS A LAST RESORT, WHICH MEANS IT WAITS. At a depth of 0.20 on a
+   * 0.26 m body this fired whenever a shoulder was NEAR a wall — which,
+   * walking along one, is every frame — and walked you 0.14 m sideways each
+   * time: a slow slide across the room with the input fighting it. A body
+   * genuinely inside something is inside it by most of its own width and
+   * stays that way; a shoulder brushing a chair does not. */
+  const bad = !here || (w && w.depth > TAV_BODY * 0.75);
+  tavStuckT = bad ? tavStuckT + 1 / 60 : 0;
+  if (!bad || tavStuckT < 0.30) return null;                  // not stuck; leave him alone
   for (const r of [0.35, 0.7, 1.05, 1.45, 1.9, 2.4, 3.0]) {
     for (let k = 0; k < 12; k++) {
       const a = (k / 12) * Math.PI * 2 + r * 2.7;
@@ -45566,6 +45741,31 @@ function orcFixSword(u, m) {
   tip.position.copy(sword.worldToLocal(tipW.clone()));
   tip.updateMatrixWorld(true);
   u.bones.tip = tip; u.limbs = null;
+  /* AND A MAPLESS MATERIAL UNDER A LIFT IS A WHITE CUT-OUT. `dressMutant`
+   * lifts every material on a creature off its OWN MAP, which is right for
+   * skin and armour and meaningless for a surface that has no map: the
+   * blade and the gem ship bare, so `white * 0.22 of white` drew two metres
+   * of steel as a blown-out white bar — the brightest thing in the room, in
+   * every frame he is in. Read the emissive before touching anything else,
+   * for the third time. Dark steel is a bright ROUGH DIELECTRIC here (there
+   * is no environment map in this game and metalness is a trap), and what
+   * says "sword" is the shinogi catching the one light, not the level. */
+  /* AND THE BLADE IS NOT A CHILD OF THE SWORD BONE. `sword` is a BONE and
+   * the steel is a SkinnedMesh weighted to it, so a traverse of the bone
+   * walks a subtree with no geometry in it at all and dresses nothing — the
+   * first build of this ran, found nothing, and the sword stayed white. The
+   * model is walked instead, for the sword's own material family (the body
+   * is Character Creator's `Std_*`, which is left alone). */
+  m.traverse((o) => {
+    if (!o.isMesh) return;
+    for (const mt of (Array.isArray(o.material) ? o.material : [o.material])) {
+      if (!mt || mt.map || !mt.name || /^Std_|^CC_/.test(mt.name) || mt.bwSteel) continue;
+      const gem = /gem/i.test(mt.name);
+      mt.color.setHex(gem ? 0x6f2b33 : 0x565c66);
+      if (mt.emissive) { mt.emissive.setHex(gem ? 0x6f2b33 : 0x565c66); mt.emissiveIntensity = gem ? 0.55 : 0.30; }
+      mt.metalness = 0.18; mt.roughness = 0.52; mt.bwSteel = true;
+    }
+  });
   // and back on his feet: the point stood nearest the floor before, so the seat may have been the sword's
   u.g.updateMatrixWorld(true);
   const b = skinnedBounds(m);
@@ -45773,7 +45973,7 @@ MUT_ATTACKS.oLeap = { wind: 1.00, strike: 0.22, recover: 0.60, hit: 0.449, reach
  * height, so he has to be further out or it arrives under the picture. */
 MUT_ATTACKS.oKick = { wind: 0.52, strike: 0.16, recover: 0.40, hit: 0.367, reach: 2.60, lunge: 1.6, chain: 'oCutD', chainP: 0.55, w: 0.22, guardK: 1.10, limbs: [1], real: true, cock: 0.42, clipRate: 1.20, stop: 1.75, ease: true };
 const TAV_CAST_COMMON = {
-  solo: true, noSand: true, skin: null, bones: null, tav: true,
+  solo: true, noSand: true, skin: null, bones: null, tav: true, gaitBySpeed: true,
   /* AND THEY DO NOT FIDGET. Measured over twenty seconds of the two of
    * them: 72 and 88 reversals of direction and two clip changes a second —
    * the lunge driving in to 0.95 m while the separation pushed back out to
@@ -45823,8 +46023,14 @@ MUT_KINDS.wong = Object.assign({}, TAV_CAST_COMMON, {
          Character1_RightFoot: 'CC_Base_R_Foot_021', Character1_RightToeBase: 'CC_Base_R_ToeBase_022',
          Character1_LeftUpLeg: 'CC_Base_L_Thigh_04', Character1_LeftLeg: 'CC_Base_L_Calf_05',
          Character1_LeftFoot: 'CC_Base_L_Foot_06', Character1_LeftToeBase: 'CC_Base_L_ToeBase_08' },
-  // lit by a moon twelve kilometres away in a room that is baked: the lift does the work
-  emis: 0.24, rim: [0.05, 0.06, 0.09], gamma: 0.90,
+  /* AND A MULTIPLY IS A DESATURATOR, SO THERE IS NONE — the orc ships with
+   * no tint at all and is the one of the three that has always read. The
+   * room is a BAKED, UNLIT scan, so nothing in it is lit by anything and a
+   * lit figure standing in it has only its own emissive lift to carry it:
+   * that is the one number, and it is swept against the room rather than
+   * chosen. At 0.13 his shirt and waistcoat came out muddy grey against
+   * pale flags; at 0.22 they read as white linen and grey wool. */
+  emis: 0.22, rim: [0.050, 0.042, 0.031], gamma: 0.92,
   author: authorWongClips,
   anim: { idle: 'idle', walk: 'walk', run: 'run', roar: 'block', die: 'hitBig', back: 'walk', rate: 1.0, lean: 0.05, strafeK: 1.0 },
   gaits: { walk: ['walk'], run: ['run'], idle: ['idle'], strafeL: ['strafeL'], strafeR: ['strafeR'] },
@@ -45836,7 +46042,11 @@ MUT_KINDS.wong = Object.assign({}, TAV_CAST_COMMON, {
 });
 MUT_KINDS.drunk = Object.assign({}, TAV_CAST_COMMON, {
   glb: 'assets/drunk.glb', faceFix: 0,
-  h: 1.92, hp: 18, speedK: 0.74, aggr: 3.00, chainMax: 4, poise: 8, block: 0.14,
+  /* AND A DRUNK LUMBERS. 0.74 of the pack's 4.6 is 3.4 m/s and the chase
+   * pushed him past four — on a run clip whose own ground speed is 2.42, so
+   * his feet were driven at twice speed and scrubbed anyway. He is slower
+   * than you now and presses harder for it. */
+  h: 1.92, hp: 18, speedK: 0.62, aggr: 3.20, chainMax: 4, poise: 8, block: 0.14,
   use: { dSwipe: 0.34, dButt: 0.26, dSpin: 0.20, dJump: 0.20 },
   rig: { arm: 'upperarm_r', fore: 'lowerarm_r', hand: 'hand_r',
          armL: 'upperarm_l', foreL: 'lowerarm_l', handL: 'hand_l', head: 'head',
@@ -45851,7 +46061,19 @@ MUT_KINDS.drunk = Object.assign({}, TAV_CAST_COMMON, {
          Character1_RightFoot: 'foot_r', Character1_RightToeBase: 'ball_r',
          Character1_LeftUpLeg: 'thigh_l', Character1_LeftLeg: 'calf_l',
          Character1_LeftFoot: 'foot_l', Character1_LeftToeBase: 'ball_l' },
-  emis: 0.20, rim: [0.06, 0.07, 0.10], gamma: 0.90,
+  /* AND "HE DOESN'T BLEND IN" WAS THE OTHER WAY ROUND. He had been given the
+   * biggest multiply-down of the three on the strength of a note about a
+   * pale shirt and a light waistcoat — and there is no shirt on this model
+   * at all: measured off his own maps, the torso is (133, 102, 81), the head
+   * (126, 96, 79) and the legs (116, 89, 72), which is the same warm
+   * mid-tone the orc ships. Multiplied by 0.56 and lifted 0.09 he rendered
+   * as a black cut-out in a room of pale flagstones. There is no tint now —
+   * a flat multiply is a desaturator whatever it was meant to be, and the
+   * orc, who has never had one, is the one of the three that always read —
+   * and the lift alone is swept against the room: 0.24 puts his skin at the
+   * flags' own level. The rim stays WARM; a cold Fresnel is the quarter
+   * moon's, and there is no moon in here. */
+  emis: 0.24, rim: [0.055, 0.046, 0.034], gamma: 0.92,
   author: authorDrunkClips,
   anim: { idle: 'idle', walk: 'walk', run: 'run', roar: 'talk', die: 'die', back: 'back', rate: 1.0, lean: 0.06, strafeK: 1.0 },
   /* AND A THING HOLDING ITS DISTANCE MUST NOT STRIDE STRAIGHT AHEAD — the
@@ -45860,7 +46082,13 @@ MUT_KINDS.drunk = Object.assign({}, TAV_CAST_COMMON, {
    * circles on is the nearest true thing it does have: a walk on a CURVE
    * one way and a backward one on a curve the other, which on a man this
    * far gone reads better than a side-step would anyway. */
-  gaits: { walk: ['walk', 'walkTurn'], run: ['run', 'runTurnL'], idle: ['idle', 'idleB', 'idleC'], strafeL: ['walkTurn'], strafeR: ['backTurn'] },
+  /* AND A CURVE IS NOT A STRAIGHT LINE. `walkTurn` and `runTurnL` are walks
+   * and runs on an ARC — right for circling, which is what they are the
+   * strafes for, and what they draw when he is coming straight at you is a
+   * man leaning into a bend he is not taking. The straight pools are the
+   * straight clips, and his own walk is 0.83 m/s and his run 2.42, which is
+   * what he may now travel at. */
+  gaits: { walk: ['walk'], run: ['run'], idle: ['idle', 'idleB', 'idleC'], strafeL: ['walkTurn'], strafeR: ['backTurn'] },
   alias: { idle2: 'idleB', walk2: 'walk', run2: 'run', roar2: 'talk', die2: 'die', back: 'back', calm: 'idle',
            strafeL: 'walkTurn', strafeR: 'backTurn', dSwipe: 'kSwipe', dSpin: 'k360', dJump: 'kJump' },
   provoke: tavProvoke,
