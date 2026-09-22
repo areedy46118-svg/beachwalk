@@ -17744,15 +17744,21 @@ function warmMush() {
    * the whole reason this hitch exists, so they have to be in range. A frame
    * each, and the camera is the warm's own rather than the player's, so
    * nothing has to be put back. */
+  /* AND A WARM IS ONLY MOVED IF IT IS SPREAD — the bunker's own lesson, and
+   * this is the last room in the game that never learned it. `warmView` has
+   * taken a `[k, n]` SLICE since the bunker's 2329 ms frame; the drain, the
+   * hall, the saucer and the lighthouse's stair all take one and the
+   * pavilion took none, so six hundred objects compiled, decoded and
+   * uploaded on ONE frame. Measured at boot: **1313 ms in a single
+   * `warm pavilion`**, the worst block left anywhere in the load and three
+   * times the next thing. Twelve slices a view. */
   warmStep('pavilion compile', () => warmCompile([mushHouse.group],
     MUSH_X, 2.0, MUSH_Z + 26, MUSH_X, 5.6, MUSH_Z));
-  warmStep('pavilion', () => warmView([mushHouse.group],
-    MUSH_X, 2.0, MUSH_Z + 26, MUSH_X, 5.6, MUSH_Z));
-  warmStep('pavilion', () => {
-    warmView([mushHouse.group],
-      MUSH_X + 2.6, MUSH.H_ROOM + 1.7, MUSH_Z, MUSH_X - 4, MUSH.H_ROOM + 1.2, MUSH_Z);
-    mushWarmProgs = renderer.info.programs.length;
-  });
+  for (let k = 0; k < 12; k++) warmStep('pavilion', () => warmView([mushHouse.group],
+    MUSH_X, 2.0, MUSH_Z + 26, MUSH_X, 5.6, MUSH_Z, [k, 12]));
+  for (let k = 0; k < 12; k++) warmStep('pavilion', () => warmView([mushHouse.group],
+    MUSH_X + 2.6, MUSH.H_ROOM + 1.7, MUSH_Z, MUSH_X - 4, MUSH.H_ROOM + 1.2, MUSH_Z, [k, 12]));
+  warmStep('pavilion', () => { mushWarmProgs = renderer.info.programs.length; });
 }
 
 
@@ -33783,8 +33789,13 @@ function armUndercroft(S) {
      * forty metres of bore, decoded and uploaded together, which is the
      * bunker's own 2329 ms wearing a smaller coat and is not a warm at all,
      * it is the hitch put somewhere else. `warmView`'s `part` has taken a
-     * slice since the bunker paid for it: every sixth mesh, six frames. */
-    const SL = 6;
+     * slice since the bunker paid for it: every sixth mesh, six frames.
+     *
+     * AND SIX WAS STILL 165 ms A SLICE. With the pavilion sliced this became
+     * the worst named block left in the boot, which is the whole argument
+     * for slicing at all: a slice is only as good as the frame it leaves
+     * behind. Sixteen. */
+    const SL = 16;
     const view = (ax, ay, az, bx, by, bz) => {
       for (let k = 0; k < SL; k++) warmStep('undercroft', () => warmView([undercroft], ax, ay, az, bx, by, bz, [k, SL]));
     };

@@ -13429,3 +13429,66 @@ cut's own beats have run, so a camera teleported into the church photographs
 pure black and reads as a broken room. Set the group visible by hand, and
 raise `UC.setLook('cave', …)` to see any of it — the shipped level is 0.19,
 which is a tunnel you are meant to need the glowstick in.
+
+**AND THE EXIT INHERITED THE ENTRY'S SEAM, WHICH IS WHY IT GLOWED.** The
+owner photographed the apse: a tan tube in a grey wall with a hard edge round
+it. The join was not the fault — the DRESSING was. `S.doorBlend` eases both
+sides of a doorway to the same values over a world-x band, and it picked its
+materials by NAME: `/^Rock01/` got `(doorX - 3.6, doorX)`. The moment the way
+out behind the altar became a second cut of local.yany's tunnel, its `Rock01`
+was handed the band belonging to the doorway at the OTHER END OF THE CHURCH,
+thirty-five metres away — and the shader clamps, so every metre past `doorX`
+resolved to the seam's own values: level 0.45 against the cave's 0.19, with
+its emissive multiplied by 2.3. The whole bore was lit as though all of it
+were standing in a doorway. **A band belongs to a PLACE**, so it is keyed on
+the root the material came off, and the exit's runs the other way — from
+three and a half metres inside the bore down to the apse. Confirmed on the
+live uniforms: the exit's four materials read `(3111.0, 3107.4)` over a base
+level of 0.19.
+
+**AND A WALL THAT WAS BROKEN THROUGH LEAVES ITS WALL ON THE FLOOR — at both
+ends now.** The front door has had its spill since the day it was cut; the
+apse had a ring plugging the hole and nothing else, so the break was a clean
+ellipse in clean stone, the one edge in the building with nothing lying under
+it. Stone out of the break into the chancel in the WALL's material, a bank
+inside the mouth in the TUNNEL's, and — the part the owner asked for when he
+said to cover it with rocks — fourteen lumps sat ON the cut's own rim, half
+in the wall and half in the hole, flattened into it rather than stuck out of
+it. **An ellipse stops reading as an ellipse the moment something breaks its
+outline.** Same fixed hash as the front door's, for the same reason.
+
+**AND A HEAP OF RUBBLE IS ONE DRAW CALL PER MATERIAL, NOT ONE PER LUMP.** The
+front door's spill went in as thirty-five separate meshes and the apse's would
+have been forty-eight more — eighty-three draws, in a room whose whole church
+is a hundred and forty, for stones the size of a fist. They are all the same
+icosahedron under the same material with a matrix each, which is what an
+`InstancedMesh` is for. **83 meshes -> 3 draws.**
+
+**AND THE PAVILION'S WARM WAS 1313 ms IN ONE FRAME.** `warmView` has taken a
+`[k, n]` SLICE since the bunker's 2329 ms; the drain takes sixteen, the hall
+six, the saucer four, the lighthouse's stair six — and the pavilion, which is
+five hundred and eighty-three objects, took NONE. Six hundred meshes compiled,
+decoded and uploaded on the single frame it was first drawn. Measured at boot
+it was the worst block left in the whole load and three times the next thing.
+Twelve slices a view. **1315 ms -> the pavilion is off the list entirely, and
+the worst frame in the boot is 176 ms.** The undercroft's own six slices then
+became the worst named block at 169 ms — *a slice is only as good as the frame
+it leaves behind* — so it takes sixteen.
+
+Measured over the walk after all of it, at five stations from the spawn to the
+cave mouth: **draw calls 107-235, the render call 0.69-0.94 ms, `update()`
+0.40-0.42 ms**, and the worst named block anywhere in the boot is `cave.glb`
+at 209 ms, which is the undercroft module's own build — down from 465 ms,
+because the exit is now a tenth of the model it was. The heaviest VIEW in the
+game is the nave looking at the apse: 196 draws, 640k triangles, 1.69 ms.
+
+**WHAT WAS MEASURED AND NOT CHANGED, and where the next win is.** The
+passage contributes ZERO from the nave — frustum culling already drops all
+152 m of it, which is worth knowing before anybody tries to gate it by
+distance. The ocean is one draw and 115k triangles and has already been
+argued about once. The rock mountain at the cave mouth is 205k triangles in
+32 calls, and it is an exact scan by the owner's word. What is left in that
+nave view is the CHURCH at 140 draws, and forty of those are the benches,
+which are separate meshes because every one of them breaks — merging them
+until the first one breaks is the obvious next lever and it is not a small
+change, because the break cuts the bench's own geometry by triangles.
