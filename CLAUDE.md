@@ -12704,3 +12704,95 @@ planking, which is what stowing a cask against a ship's side leaves. And
 flooded from the breach, the quarters are NOT reachable: the barricade is
 still in the doorway, which is the one thing about that room that has to
 stay true.
+
+**THE HEAPS IN THE DOJO AND THE STONE UNDER THE WRECK ARE THE OWNER'S OWN
+ROCK NOW.** Bl4ckGh0st's "Stylised Rocks Asset Pack" (CC-BY-4.0), the MOSSY
+set of its four, through `tools/gltfpack.py` into `assets/rocks-mossy.glb`:
+thirty-two separate rocks, 6,378 triangles, 0.58 MB. It replaces two
+inventions — the courtyard's heaps of knocked-out-of-round icosahedra with
+the rampart's coursed masonry projected triplanar onto them, and the nothing
+at all that was holding a twenty-eight metre boat down on flat sand.
+
+- **`--decimate` MERGES THE WHOLE FILE INTO ONE MESH, WHICH DESTROYS A PACK
+  OF PROPS.** That is right for a scan split into 65k-vertex chunks and
+  exactly wrong here. `--decimate-each` is the same weld against a
+  per-primitive budget: 13,636 triangles become 6,378 and the thirty-two are
+  still thirty-two, with the node names still naming them.
+- **AND READ EVERY MAP BEFORE DECIDING WHICH THE MODEL NEEDS** — the alien
+  animal's rule, and here it SUBTRACTS. The metallic-roughness map is 2048
+  of pure white and says nothing at all, so it goes (`--drop-mr`); so does
+  `KHR_materials_specular` (`--drop-ext`, new), because three honours that
+  by promoting the material to MeshPhysicalMaterial and hanging another
+  megabyte off it; and so does the NORMAL attribute, because these are
+  faceted rocks and three flat-shades a primitive that carries none, which
+  IS the look and is half a megabyte.
+- **A DAYLIGHT ROCK ALBEDO GLOWS UNDER A QUARTER MOON, AND THE NUMBER TO
+  MATCH IS ALREADY WRITTEN DOWN.** Its mean luminance is 87 of 255;
+  measured on screen at the foot of the east steps it read 36.5 against the
+  masonry beside it at 24 and the yard at 20, which is a heap that glows.
+  The old rubble's own note says what it should be — it read 19 and let the
+  moon do the separating — so the multiply is SWEPT against that rather
+  than picked (0.72 reads 26, 0.55 reads 20.7, 0.42 reads 15.2). At 0.55 it
+  measures 19.8 at the east steps and 17.1 on the long flight. **And the
+  scene has to have SETTLED before any of that means anything**: read on
+  the frame after `placeInDojo` the same heap measures 19 against a yard of
+  37, because the room's own grading is still ramping in.
+- **EIGHT HUNDRED ROCKS ARE SIXTEEN DRAWS.** Merging them the way the rest
+  of that room is merged is 158k triangles copied into one buffer for
+  sixteen shapes used fifty times each; an InstancedMesh per shape is the
+  same picture out of the half megabyte the pack already ships, and
+  `bakeStatic` leaves an instanced mesh alone by its own rule, so the bake
+  that runs a line later cannot touch it. The per-stone tone that stops a
+  mass five hundred deep reading as one surface rides as an INSTANCE
+  COLOUR, which three multiplies into the diffuse for free. And it draws
+  from EVERY OTHER rock rather than from all thirty-two: measured, the whole
+  pack takes the courtyard from 19 draws to 51, which is the count nearly
+  trebled in a small room for rubble. Sixteen is +16, and is sixteen more
+  shapes than the heap it replaces, which had exactly one.
+- **THE HEAP'S OWN ARITHMETIC IS UNTOUCHED, AND IT HAS TO BE.** Everything
+  that decides where a boulder goes, how big it is and how the crown sits
+  under the coping is what SHUTS A STAIR, and the clamp that actually stops
+  you is built out of the same numbers — so `buildDojoBlocks` still runs the
+  instant the room is up and QUEUES the stones, with every roll a stone
+  needs taken there off the heap's own seed, and the meshes are made when
+  the pack has landed. A checkpoint therefore rebuilds the same pile
+  whenever the download arrives.
+- **AND A ROCK IS FITTED BY ITS HEIGHT, NOT BY ITS WIDTH.** Every test in
+  that function is written on `r * sy`, the half-height the old blob had, so
+  that is the number a real rock has to match — under its own free rotation,
+  which is the ROTATED half-extent and not the authored one (`rockExtent`).
+  What it measures across then falls out of its own proportions, which is a
+  rock rather than a ball, and is capped so a slab lying flat cannot be
+  blown up into a table.
+
+Measured after: **1,300 eye-level sight lines from four standing spots, 0 of
+them through either heap**; six hands-off walks up the two flights all stop
+with the stone 0.06–0.60 m in front of the eye (five of six on a rock, the
+sixth on the model's own parapet, which is that lane's real end); the
+courtyard 20 draws → 36, 24k triangles → 182k, and the render call 2.5 ms →
+2.6.
+
+**AND SHE IS HELD DOWN BY ROCK.** The wreck read as a hull somebody parked on
+flat sand, because nothing was touching her. Everything about where the stone
+goes is asked of HER rather than typed: `halfAtY` is her own section at the
+height each boulder leans on, so it beds against the plating at every station
+— she flares at the bow and tumbles home aft, and a line laid on one beam
+stands a metre off her at both ends. The masses are at the bow, where she
+struck; the line thins aft into the sand she is buried in.
+
+- **TWO STATIONS ARE LEFT ALONE, AND THEY ARE THE TWO WAYS THROUGH HER.**
+  The BREACH on the side you walk up to and the SHELL DOOR on the side you
+  leave by, kept clear by her own constants (`BREACH_X0/X1`, `DOOR_X/W`)
+  with a body's width of margin, so moving either moves the gap. Measured:
+  0 of some fourteen hundred sampled points in either doorway lane is inside
+  a rock, and all three breach lanes still walk straight into the hold.
+- **AND A ROCK BESIDE A HULL IS A LADDER IF YOU LET IT BE.** `rockGroundAt`
+  lifts you onto anything within a step, so a line of two-metre boulders
+  against her side is a way onto her deck that skips the whole route through
+  her. Measured by dropping the player onto all twenty reachable crowns and
+  pushing at her side: the highest he ever gets is **1.61 m** against a deck
+  at 3.20 and a rail at 4.05. The tallest crown anywhere in the walkable
+  band is 2.34; the big ones are at the bow, which is past `WADE_X`.
+- One draw call and 9,168 triangles: the group merges ITSELF, because the
+  wreck's own `bakeStatic` ran on a warm step long before this could be
+  there.

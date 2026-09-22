@@ -710,6 +710,15 @@ by [Domenico Bianco - Pizza&Games](https://sketchfab.com/pizzaandgames),
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
 
 
+**Stylised Rocks Asset Pack** — the stone wedged under the shipwreck, and the
+rockfalls choking both flights of steps out of the dojo's courtyard. The MOSSY
+set of the four, thirty-two rocks of it.
+
+["Stylised Rocks Asset Pack"](https://sketchfab.com/3d-models/stylised-rocks-asset-pack-d17f102674e84593831f80bc4a451d4d)
+by [Bl4ckGh0st](https://sketchfab.com/Bl4ckGh0st),
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+
+
 **Sea shell** — the shells on the wrack line, and the one you hold to your ear.
 
 ["Sea shell"](https://sketchfab.com/3d-models/sea-shell-742a5f4a7bc84abe8d0c645cdb411cc8)

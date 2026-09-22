@@ -16,3 +16,4 @@ stage/
 # 4K source that the built .glb and .png in assets/ are the product of
 tools/.furniture/
 tools/.billy/
+tools/.rocks/

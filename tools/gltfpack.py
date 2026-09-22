@@ -175,6 +175,11 @@ def main():
                     help='vertex attributes to throw away')
     ap.add_argument('--drop-mr', action='store_true',
                     help='drop metallicRoughness maps and use flat factors')
+    ap.add_argument('--drop-ext', default=None,
+                    help='comma list of MATERIAL extensions to strip. KHR_materials_specular is the '
+                         'one that matters here: three honours it by promoting the material to '
+                         'MeshPhysicalMaterial and hanging a second map off it, which for a rock is '
+                         'a megabyte and a costlier shader for nothing.')
     ap.add_argument('--nodes', default=None,
                     help='regex: keep only nodes (or nodes whose mesh) matching this, plus ancestors/descendants')
     ap.add_argument('--min-tris', type=int, default=0, help='drop primitives smaller than this')
@@ -190,6 +195,12 @@ def main():
                     help='carry TEXCOORD_0 through --decimate and rebuild smooth normals')
     ap.add_argument('--decimate', type=int, default=0,
                     help='merge every primitive and vertex-cluster down to about this many triangles')
+    ap.add_argument('--decimate-each', type=int, default=0,
+                    help='vertex-cluster EVERY PRIMITIVE ON ITS OWN down to about this many '
+                         'triangles, carrying its uv. --decimate merges the whole file into one '
+                         'mesh, which is right for a scan split into chunks and destroys a pack of '
+                         'thirty-two separate props: this is the same weld, per prop, so they stay '
+                         'thirty-two props.')
     a = ap.parse_args()
     nrm_max = a.normal_tex or a.tex
     drop = {s for s in a.drop.split(',') if s}
@@ -324,11 +335,79 @@ def main():
             pbr.pop('metallicRoughnessTexture', None)
             pbr.setdefault('metallicFactor', 0.0)
             pbr.setdefault('roughnessFactor', 1.0)
+        for e in (a.drop_ext or '').split(','):
+            if e and (m.get('extensions') or {}).pop(e, None) is not None and not m['extensions']:
+                del m['extensions']
+    gone = {'KHR_materials_pbrSpecularGlossiness'} | {e for e in (a.drop_ext or '').split(',') if e}
     for k in ('extensionsUsed', 'extensionsRequired'):
         if k in g:
-            g[k] = [e for e in g[k] if e != 'KHR_materials_pbrSpecularGlossiness']
+            g[k] = [e for e in g[k] if e not in gone]
             if not g[k]:
                 del g[k]
+
+    # ---- decimate each primitive on its own ----------------------------
+    if a.decimate_each:
+        """A pack of separate props is not a scan in chunks. `--decimate`
+        merges the file into one mesh, which is exactly what a rock pack must
+        not become; this welds each primitive against its own budget and hands
+        it back where it was, so the thirty-two rocks are still thirty-two
+        rocks and the node names still name them."""
+        newbuf, views, accs, before, after = bytearray(), [], [], 0, 0
+        for mesh in g.get('meshes', []):
+            for pr in mesh.get('primitives', []):
+                pos = read_accessor(g, bufs, pr['attributes']['POSITION'])
+                idx = ([v[0] for v in read_accessor(g, bufs, pr['indices'])]
+                       if 'indices' in pr else list(range(len(pos))))
+                ti = pr['attributes'].get('TEXCOORD_0')
+                uv = read_accessor(g, bufs, ti) if ti is not None else [(0.0, 0.0)] * len(pos)
+                before += len(idx) // 3
+                if len(idx) // 3 <= a.decimate_each:
+                    ext = 0.0
+                else:
+                    ext = max(max(p[k] for p in pos) - min(p[k] for p in pos) for k in range(3))
+                if ext:
+                    lo, hi, best = ext / 600.0, ext / 2.0, None
+                    for _ in range(24):
+                        cell = (lo + hi) / 2
+                        out = _cluster_uv(pos, uv, idx, cell)
+                        if len(out[-1]) > a.decimate_each: lo = cell
+                        else: hi = cell; best = out
+                    if best is None:
+                        best = _cluster_uv(pos, uv, idx, hi)
+                    vp, vt, tris = best
+                else:
+                    vp, vt = list(pos), list(uv)
+                    tris = [(idx[t], idx[t + 1], idx[t + 2]) for t in range(0, len(idx) - 2, 3)]
+                vn = _smooth_normals(vp, tris)
+                after += len(tris)
+                attrs = {}
+                for name, comp, fmt, cnt in (('POSITION', vp, '<fff', 3),
+                                             ('NORMAL', vn, '<fff', 3),
+                                             ('TEXCOORD_0', vt, '<ff', 2)):
+                    off = len(newbuf)
+                    for v in comp: newbuf.extend(struct.pack(fmt, *v[:cnt]))
+                    views.append({'buffer': 0, 'byteOffset': off,
+                                  'byteLength': len(newbuf) - off, 'target': 34962})
+                    acc = {'bufferView': len(views) - 1, 'componentType': 5126,
+                           'count': len(comp), 'type': 'VEC3' if cnt == 3 else 'VEC2'}
+                    if name == 'POSITION':
+                        acc['min'] = [min(v[k] for v in comp) for k in range(3)]
+                        acc['max'] = [max(v[k] for v in comp) for k in range(3)]
+                    attrs[name] = len(accs); accs.append(acc)
+                wide = len(vp) > 65535
+                off = len(newbuf)
+                for t in tris: newbuf.extend(struct.pack('<III' if wide else '<HHH', *t))
+                views.append({'buffer': 0, 'byteOffset': off,
+                              'byteLength': len(newbuf) - off, 'target': 34963})
+                accs.append({'bufferView': len(views) - 1, 'componentType': 5125 if wide else 5123,
+                             'count': len(tris) * 3, 'type': 'SCALAR'})
+                pr['attributes'] = attrs
+                pr['indices'] = len(accs) - 1
+        g['buffers'] = [{'byteLength': len(newbuf)}]
+        g['bufferViews'] = views
+        g['accessors'] = accs
+        bufs = [bytes(newbuf)]
+        print('decimated each: %d -> %d tris' % (before, after))
 
     # ---- merge everything and decimate ---------------------------------
     if a.decimate:

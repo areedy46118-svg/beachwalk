@@ -103,6 +103,7 @@ const ASSET_REACH = {
   'assets/military-shovel.glb': 70,   // under the cliff past the drain
   'assets/octopus-ring.glb': 647,   // the knight drops it, so it is wanted where he is
   'assets/rocks.glb': 80,             // the formation below Bradly
+  'assets/rocks-mossy.glb': 154,      // the stone against the wreck, and the heaps in the dojo
   'assets/crab.glb': 90,
   'assets/limule.glb': 58,            // the horseshoe crab in the wrack line
   'assets/corpse.glb': 126,           // the body bag
@@ -3087,6 +3088,80 @@ bwGlb('assets/rocks.glb', (gltf) => {
     }
   }
 });
+
+/* ---- THE STONE EVERY HEAP IN THIS GAME IS MADE OF --------------------
+ *
+ * Bl4ckGh0st's "Stylised Rocks Asset Pack" (CC-BY-4.0), the MOSSY set: the
+ * owner's own, and it replaces two things that were invented because there
+ * was nothing to use — the dojo's heaps of knocked-out-of-round
+ * icosahedra, and the nothing at all that was holding the wreck down.
+ *
+ * It ships as THIRTY-TWO SEPARATE ROCKS rather than as one merged mass, and
+ * that is the whole reason `--decimate` could not be used on it: that flag
+ * merges the file into one mesh, which is right for a scan split into
+ * chunks and destroys a pack of props. `--decimate-each` is the same weld
+ * against a per-primitive budget, so the thirty-two are still thirty-two.
+ * Its metallic-roughness map is 2048 of PURE WHITE (measured) and says
+ * nothing at all, so it is dropped; its NORMAL attribute goes with it,
+ * because the rocks are faceted and three flat-shades a primitive that
+ * carries none — which is the look — and its KHR_materials_specular goes
+ * too, since three honours that by promoting the material to
+ * MeshPhysicalMaterial and hanging a second megabyte off it.
+ *
+ *   python3 tools/gltfpack.py tools/.rocks/scene.gltf assets/rocks-mossy.glb \
+ *     --nodes '^Mossy_Rock[0-9]+(_M_Mossy_Rock_0)?$' --tex 1024 \
+ *     --normal-tex 512 --drop-ext KHR_materials_specular --drop-mr \
+ *     --drop 'TANGENT,TEXCOORD_1,TEXCOORD_2,TEXCOORD_3,COLOR_0,NORMAL' \
+ *     --decimate-each 200
+ *
+ * Each rock is baked into world metres and CENTRED ON ITS OWN MIDDLE — the
+ * tripod camera's lesson, that a piece spun or scaled about somebody else's
+ * origin goes somewhere else — and its half-extents are kept, because every
+ * placement here is "make this one measure so much across" and a rock is
+ * not a ball. The order is the file's own, so it is the same heap on every
+ * load and a checkpoint rebuilds the beach it left. */
+let mossyRocks = null;                 // [{ geo, hx, hy, hz }] — metres, centred on itself
+let mossyRockMat = null;
+const mossyWaiting = [];
+function onMossyRocks(fn) { if (mossyRocks) fn(); else mossyWaiting.push(fn); }
+function mossyRocksIn(list, mat) {
+  mossyRocks = list; mossyRockMat = mat;
+  for (const fn of mossyWaiting.splice(0)) fn();
+}
+bwGlb('assets/rocks-mossy.glb', (gltf) => {
+  gltf.scene.updateMatrixWorld(true);
+  const list = [];
+  let mat = null;
+  gltf.scene.traverse((o) => {
+    if (!o.isMesh || !o.geometry) return;
+    mat = o.material;
+    const geo = o.geometry.clone().applyMatrix4(o.matrixWorld);
+    geo.computeBoundingBox();
+    const b = geo.boundingBox;
+    geo.translate(-(b.min.x + b.max.x) / 2, -(b.min.y + b.max.y) / 2, -(b.min.z + b.max.z) / 2);
+    geo.computeBoundingBox(); geo.computeBoundingSphere();
+    const sz = geo.boundingBox.getSize(new THREE.Vector3());
+    list.push({ geo, hx: sz.x / 2, hy: sz.y / 2, hz: sz.z / 2 });
+  });
+  if (mat) { mat.side = THREE.FrontSide; mat.roughness = 1; mat.metalness = 0; }
+  mossyRocksIn(list, mat);
+}, () => mossyRocksIn([], null));     // the honest failure: no stone rather than a wrong one
+
+/* A ROCK IS PLACED BY THE BOX IT ENDS UP OCCUPYING, and under a free
+ * rotation that is not the box it was authored with. This is the rotated
+ * half-extent — the same arithmetic three does for an oriented box — so a
+ * caller may say "this one is to stand so high" or "this one is to measure
+ * so much across" and be right whichever way the stone was turned. */
+const _rockRM = new THREE.Matrix4();
+const _rockEx = { x: 0, y: 0, z: 0 };
+function rockExtent(rk, q) {
+  _rockRM.makeRotationFromQuaternion(q);
+  const e = _rockRM.elements, A = Math.abs;
+  _rockEx.x = A(e[0]) * rk.hx + A(e[4]) * rk.hy + A(e[8]) * rk.hz;
+  _rockEx.y = A(e[1]) * rk.hx + A(e[5]) * rk.hy + A(e[9]) * rk.hz;
+  _rockEx.z = A(e[2]) * rk.hx + A(e[6]) * rk.hy + A(e[10]) * rk.hz;
+  return _rockEx;
+}
 
 /* Drawing them. Fog swallows the beach past about 180 m, but the camera's far
  * plane is 5000 and the walk is a kilometre long, so frustum culling alone
@@ -14548,6 +14623,127 @@ farProps.push({ obj: shipwreck, z: SHIP_Z, d: 240 });
  * gear, the head, the catch, the door — has been built */
 warmStep('wreck merge', () => bakeStatic(shipwreck));
 const SN = shipwreck.userData.nav;
+
+/* ---- AND SHE IS HELD DOWN BY ROCK ------------------------------------
+ *
+ * She reads as a hull somebody parked on flat sand, because nothing is
+ * touching her: a boat that came ashore under her own way is WEDGED, and
+ * what wedges her is stone. So a line of it runs down both her flanks at
+ * the turn of the bilge, with the big masses at her bow where she struck
+ * and the rest tailing off aft into the sand she is buried in.
+ *
+ * Everything about where they go is asked of HER, not typed: `halfAtY` is
+ * her own section at the height the stone leans on, so a boulder beds
+ * against the plating at every station whatever the hull is doing there —
+ * she flares at the bow and tumbles home aft, and a line laid on one beam
+ * would stand a metre off her at both ends.
+ *
+ * TWO STATIONS ARE LEFT ALONE, and they are the two ways through her: the
+ * BREACH on the side you walk up to, and the SHELL DOOR on the side you
+ * leave by. A rock in either is a rock in the only route past the wreck.
+ * They are kept clear by her own constants (`BREACH_X0/X1`, `DOOR_X/W`)
+ * with a body's width of margin, so moving either moves the gap. */
+const SHIP_ROCK_GAP = 1.5;              // clear of a doorway, over a body's radius
+onMossyRocks(() => {
+  if (!mossyRocks.length) return;
+  const grp = new THREE.Group();
+  const rnd = mulberry32(0x5717ec);
+  const mat = mossyRockMat.clone();
+  /* the beach's own treatment for a daylight scan, which the granite
+   * formation below Bradly has carried since it went in: granite in
+   * moonlight rather than in sun, a gamma lift before the lighting sees
+   * it, and an emissive off its OWN map — you walk INTO the moon, so every
+   * stone ahead of you is backlit and nothing else carries the face you
+   * are looking at. */
+  mat.color.setHex(0x8f9cb4);
+  mat.emissive.setHex(0x5d6b88);
+  mat.emissiveMap = mat.map;
+  if (mat.normalScale) mat.normalScale.set(1.3, 1.3);
+  reexpose(mat, 0.62);
+
+  const _q = new THREE.Quaternion(), _e = new THREE.Euler();
+  /* `lx` her station, `sg` which flank, `width` how much stone shows across
+   * the sand, `bury` how much of its own height is under it, and `jam` how
+   * far it leans into her plating. */
+  const place = (lx, sg, width, bury, jam) => {
+    const rk = mossyRocks[Math.floor(rnd() * mossyRocks.length)];
+    _e.set((rnd() - 0.5) * 0.5, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.5);
+    _q.setFromEuler(_e);
+    const e0 = rockExtent(rk, _q);
+    const sc = width / (2 * Math.max(e0.x, e0.z));
+    const ex = e0.x * sc, ey = e0.y * sc, ez = e0.z * sc;
+    // her plating at the height this stone's middle sits, with the rake in it
+    const y = ey * (1 - 2 * bury);
+    const hull = SN.halfAtY(lx, Math.max(0.12, y));
+    const lz = sg * (hull + ez - jam);
+    const m = new THREE.Mesh(rk.geo, mat);
+    m.quaternion.copy(_q);
+    m.scale.setScalar(sc);
+    m.position.set(lx, y, lz);
+    grp.add(m);
+    /* the beach's own rule, since the rocks below Bradly went in: anything
+     * whose crown lands under a step is a thing you walk over, and giving
+     * it a collider only shoves you off a nub. */
+    const top = y + ey;
+    if (top > ROCK_STEP) {
+      rockColliders.push({ x: SHIP_X + lx, z: SHIP_Z + lz,
+        r: Math.max(ex, ez) * 0.82, top, mat: 'rock' });
+    }
+    return top;
+  };
+  const clearBreach = (lx) => lx < SN.BREACH_X0 - SHIP_ROCK_GAP || lx > SN.BREACH_X1 + SHIP_ROCK_GAP;
+  const clearDoor = (lx) => Math.abs(lx - SN.DOOR_X) > SN.DOOR_W / 2 + SHIP_ROCK_GAP;
+
+  /* WHAT SHE STRUCK. Three masses at the bow, big enough to have stopped
+   * twenty-eight metres of boat, interpenetrating the way the beach's own
+   * formation does — spaced politely apart they are boulders standing about
+   * on a beach, overlapping they are one rock with faces. */
+  for (const [lx, lz, w, b] of [[-12.4, 1.0, 5.2, 0.26], [-10.9, -2.4, 4.2, 0.28],
+                                [-13.4, -3.2, 3.6, 0.30], [-12.0, 3.6, 3.8, 0.28],
+                                [-9.4, 4.2, 3.0, 0.32], [-9.8, -4.6, 2.8, 0.32]]) {
+    const rk = mossyRocks[Math.floor(rnd() * mossyRocks.length)];
+    _e.set((rnd() - 0.5) * 0.4, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.4);
+    _q.setFromEuler(_e);
+    const e0 = rockExtent(rk, _q);
+    const sc = w / (2 * Math.max(e0.x, e0.z));
+    const ey = e0.y * sc, y = ey * (1 - 2 * b);
+    const m = new THREE.Mesh(rk.geo, mat);
+    m.quaternion.copy(_q); m.scale.setScalar(sc); m.position.set(lx, y, lz);
+    grp.add(m);
+    if (y + ey > ROCK_STEP) rockColliders.push({ x: SHIP_X + lx, z: SHIP_Z + lz,
+      r: Math.max(e0.x, e0.z) * sc * 0.8, top: y + ey, mat: 'rock' });
+  }
+
+  /* AND THE LINE DOWN HER FLANKS. It thins aft, because aft she is in the
+   * sand rather than on the stone, and every station is skipped where a
+   * doorway is. */
+  for (let lx = -12.4; lx <= 12.4; lx += 2.15) {
+    for (const sg of [1, -1]) {
+      if (sg > 0 && !clearBreach(lx)) continue;
+      if (sg < 0 && !clearDoor(lx)) continue;
+      const aft = Math.max(0, (lx + 6) / 18);                 // 0 at the bow, 1 at the transom
+      if (rnd() < 0.10 + aft * 0.34) continue;                // a line with gaps in it is a line
+      place(lx + (rnd() - 0.5) * 0.9, sg,
+        (3.0 - aft * 1.5) * (0.78 + rnd() * 0.44),
+        0.24 + rnd() * 0.14 + aft * 0.16, 0.25 + rnd() * 0.55);
+    }
+  }
+  /* and a skirt of smaller stuff shed round the big ones, which is what
+   * stops the line reading as a row of eggs somebody laid. It stays tight
+   * against her: stone thrown out across the open sand is litter, and this
+   * beach has had one formation and no scatter since the day the rocks
+   * went in. */
+  for (let k = 0; k < 30; k++) {
+    const lx = -13.6 + rnd() * 25.4;
+    const sg = rnd() < 0.5 ? 1 : -1;
+    if ((sg > 0 && !clearBreach(lx)) || (sg < 0 && !clearDoor(lx))) continue;
+    place(lx, sg, 0.55 + rnd() * 1.15, 0.40 + rnd() * 0.2, -(0.2 + rnd() * 1.1));
+  }
+  /* one draw, not sixty: the wreck's own merge had run long before this
+   * could be here, so the stone merges itself */
+  bakeStatic(grp);
+  shipwreck.add(grp);
+});
 
 /* ---- and her furniture, which arrives over the network ---------------
  * `makeShipwreck` runs at module time and this is 2.4 MB, so the wreck
@@ -35977,20 +36173,6 @@ function dojoDropY(px, pz, fromY) {
   }
   return best === -Infinity ? null : best - DOJO_Y;
 }
-let _dojoStone = null;
-function dojoStoneMap() {
-  if (_dojoStone !== null || !dojoWorld) return _dojoStone;
-  let bigN = 0, map = null;
-  dojoWorld.traverse((o) => {
-    if (!o.isMesh || !o.geometry || !o.material || !o.material.map) return;
-    if ((o.material.name || '') !== 'material_3') return;
-    const n = o.geometry.attributes.position ? o.geometry.attributes.position.count : 0;
-    if (n > bigN) { bigN = n; map = o.material.map; }
-  });
-  if (map) { map.wrapS = THREE.RepeatWrapping; map.wrapT = THREE.RepeatWrapping; map.needsUpdate = true; }
-  _dojoStone = map;
-  return map;
-}
 function buildDojoBlocks() {
   if (!dojoWorld || dojoBlocks) return;
   buildDojoArena();
@@ -36007,60 +36189,16 @@ function buildDojoBlocks() {
   dojoBlocks = new THREE.Group();
   dojoBlocks.scale.setScalar(1 / DOJO_S);     // so everything inside is world metres
   dojoWorld.add(dojoBlocks);
-  /* the courtyard's own stone, flat-shaded so every facet takes the moon
-   * differently, with enough emissive to keep it off black in a room that
-   * carries no lights of its own */
-  /* AND A HEAP OF ONE COLOUR IS A SLAB. Every stone shares this material —
-   * it has to, or the merge is a draw call a boulder — so the only place a
-   * difference between two of them can live is the GEOMETRY: each carries
-   * its own tone as a vertex colour, which multiplies the map, so a mass
-   * five hundred stones deep reads as stones rather than as one surface. */
-  /* AND A FLAT EMISSIVE IS WHAT MADE IT READ AS ONE SURFACE. The lift has
-   * to be there — this room carries no lights of its own and the moon is
-   * behind you — but it is a CONSTANT added to every fragment, so at 0.46
-   * it swamped the only thing that separates one boulder from the next,
-   * which is the moon falling differently on each flat face. Measured on
-   * screen, the heap came out a single tan expanse with the facets barely
-   * a shade apart, reading 26 against the masonry beside it at 26 — the same
-   * surface. At 0.28 it reads 19 and the moon does the separating. */
-  const mat = new THREE.MeshStandardMaterial({ color: 0xb4ab9e, roughness: 1, metalness: 0,
-    flatShading: true, vertexColors: true,
-    emissive: new THREE.Color(0x3e3b36), emissiveIntensity: 0.28 });
+  dojoRockQ = [];
+  /* THE HEAP IS THE OWNER'S OWN STONE NOW, AND NOT A GENERATED ONE.
+   * Everything below still decides where a boulder goes, how big it is and
+   * how the crown sits under the coping — that is what shuts a stair and
+   * none of it moves; what changed is what arrives at each of those places.
+   * It used to be an icosahedron knocked out of round with the rampart's
+   * coursed masonry projected onto it triplanar, which is four separate
+   * inventions standing in for a rock, and the whole of that goes. */
   const wallMat = new THREE.MeshStandardMaterial({ color: 0x9a938a, roughness: 1, metalness: 0,
     flatShading: true, emissive: new THREE.Color(0x4e4a44), emissiveIntensity: 0.55 });
-  /* AND A BOULDER IS NOT A FLAT GREY BLOB. These went in as a bare colour on
-   * a flat-shaded icosahedron, so every facet was one tone and the heap read
-   * as grey paper. It wants the courtyard's OWN stone — but an icosahedron's
-   * stock uv on a packed atlas is the desk's collage again, and a rock has no
-   * sensible unwrap anyway, so the map goes on TRIPLANAR: sampled along each
-   * object-space axis and blended by the face normal, the octopus ring's own
-   * arrangement. It works here because `bakeStatic` merges every stone into
-   * `dojoBlocks`, whose own space IS world metres — so the grain is the same
-   * size on every boulder and does not swim when one is turned. */
-  const stone = dojoStoneMap();
-  if (stone) {
-    mat.map = stone;
-    mat.onBeforeCompile = (sh) => {
-      /* and the map is the RAMPART'S — coursed masonry — so the projection has
-       * to stay coarse enough that its courses read as mottling on a boulder
-       * rather than as brickwork. At 0.72 a stone wore about one tile and came
-       * out a little brick wall; what breaks the mass up is the per-stone tone,
-       * not the grain. */
-      sh.uniforms.uRubK = { value: 0.55 };          // tiles per metre
-      sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vRubP;\nvarying vec3 vRubN;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRubP = position;\nvRubN = normal;');
-      sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', '#include <common>\nuniform float uRubK;\nvarying vec3 vRubP;\nvarying vec3 vRubN;')
-        .replace('#include <map_fragment>', [
-          '{ vec3 bn = abs(normalize(vRubN)); bn = pow(bn, vec3(3.0)); bn /= (bn.x + bn.y + bn.z + 1e-5);',
-          '  vec4 tx = texture2D(map, vRubP.zy * uRubK) * bn.x',
-          '          + texture2D(map, vRubP.xz * uRubK) * bn.y',
-          '          + texture2D(map, vRubP.xy * uRubK) * bn.z;',
-          '  diffuseColor *= tx; }'].join('\n'));
-    };
-    mat.customProgramCacheKey = () => 'bwRubbleTri';
-  }
   const rnd = mulberry32(0x5eed);
   buildGateWall(wallMat);
   for (const c of cl) {
@@ -36303,49 +36441,18 @@ function buildDojoBlocks() {
       const g2 = dojoDropY(cx + ox * u, cz + oz * u, y0 + 1.5 + Math.max(0, u));
       base.push({ u, b: g2 === null ? y0 + u * 0.55 : g2 });
     }
-    /* AND A ROCKFALL IS NOT MASONRY. Five hundred stones of one size, all
-     * round, all seated on one smooth crown, is a wall with lumps on it —
-     * which is exactly what the owner saw. Four things separate the two, and
-     * none of them is more stones:
-     *
-     *  - a stone is BROKEN, so it is knocked out of round. An icosahedron is
-     *    non-indexed, so a per-vertex displacement tears it open — every copy
-     *    of a shared corner has to move by the SAME amount, so the offsets are
-     *    cached on the position itself and the seam cannot open.
-     *  - a stone is not a ball: each axis is scaled on its own, so the heap
-     *    carries slabs and wedges as well as boulders.
-     *  - and it stays at TWENTY FACES however big it is. Subdividing the big
-     *    ones was tried and is exactly wrong: a displaced detail-1 icosahedron
-     *    is a bumpy sphere, and a dozen of those a metre and a half across
-     *    read as boulders rounded by a river. What says "this broke off a
-     *    hill" is flat faces meeting at hard edges, which is what flat
-     *    shading on twenty of them gives for free.
-     *  - and the sizes are GRADED: big blocks at the bottom where the weight
-     *    is, small stuff filling the top. A talus does that by itself. */
-    const stone = (px, py, pz, r, sy, sz, detail = 0, amp = 0.42) => {
-      const geo = new THREE.IcosahedronGeometry(r, detail);
-      const pa = geo.attributes.position, n = pa.count;
-      const seen = new Map();
-      for (let i = 0; i < n; i++) {
-        const vx = pa.getX(i), vy = pa.getY(i), vz = pa.getZ(i);
-        const key = `${Math.round(vx * 2048)},${Math.round(vy * 2048)},${Math.round(vz * 2048)}`;
-        let f = seen.get(key);
-        if (f === undefined) { f = 1 + (rnd() - 0.5) * 2 * amp; seen.set(key, f); }
-        pa.setXYZ(i, vx * f, vy * f, vz * f);
-      }
-      pa.needsUpdate = true;
-      geo.computeVertexNormals();
-      let k = 0.58 + rnd() * 0.58; if (rnd() < 0.14) k *= 0.66;   // and the odd dark one
-      const wm = 0.91 + rnd() * 0.18;                             // a little warm or cold
-      const col = new Float32Array(n * 3);
-      for (let i = 0; i < n; i++) { col[i * 3] = k * wm; col[i * 3 + 1] = k; col[i * 3 + 2] = k * (2 - wm); }
-      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-      const g = new THREE.Mesh(geo, mat);
-      g.scale.set(0.86 + rnd() * 0.3, sy, sz);
-      g.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3);
-      g.position.set(px, py, pz);
-      dojoBlocks.add(g);
-      return g;
+    /* A STONE IS A ROLL, NOT A MESH. Which of the thirty-two it is, which
+     * way it is turned and what tone it carries are drawn HERE, off the
+     * heap's own seed, so the pile is the same pile on every load; the
+     * mesh is made when the pack has landed. `r` and `sy` still mean what
+     * they meant — how big across and how tall — and the sizes are still
+     * GRADED, big blocks at the bottom where the weight is and fines on
+     * top, because a talus does that by itself. */
+    const stone = (px, py, pz, r, sy) => {
+      let k = 0.68 + rnd() * 0.44; if (rnd() < 0.14) k *= 0.74;   // and the odd dark one
+      dojoRockQ.push({ x: px, y: py, z: pz, r, sy,
+        pick: rnd(), rx: rnd() * 6.2832, ry: rnd() * 6.2832, rz: rnd() * 6.2832,
+        k, wm: 0.93 + rnd() * 0.14 });                            // a little warm or cold
     };
     for (const st of base) {
       const u = st.u, b = st.b;
@@ -36521,6 +36628,86 @@ function buildDojoBlocks() {
       stone(px, gy2 + r * sy * 0.5, pz, r, sy, 0.8 + rnd() * 0.4);
     }
   }
+  onMossyRocks(flushDojoRocks);
+}
+
+/* AND A HEAP OF EIGHT HUNDRED ROCKS IS THIRTY-TWO DRAWS, NOT EIGHT HUNDRED
+ * AND NOT ONE. Merging them the way the rest of this room is merged would
+ * be a hundred and sixty thousand triangles copied into one buffer, five
+ * megabytes of it, for thirty-two shapes used over and over — an
+ * InstancedMesh per shape is the same picture out of the half megabyte the
+ * pack already ships, and `bakeStatic` leaves an instanced mesh alone by
+ * its own rule, so the bake that runs a line later cannot touch it.
+ *
+ * The per-stone tone rides as an INSTANCE COLOUR, which three multiplies
+ * into the diffuse for free: it is the same thing the old heap carried as
+ * a vertex colour, and it is what stops a mass five hundred deep reading
+ * as one surface. */
+function flushDojoRocks() {
+  if (!dojoBlocks || !dojoRockQ || !mossyRocks || !mossyRocks.length) return;
+  const q = dojoRockQ; dojoRockQ = null;
+  /* THE COURTYARD CARRIES NO LIGHTS OF ITS OWN and the moon is behind you,
+   * so the lift off the rock's own map is the only thing between the heap
+   * and a black shape — the same argument the old rubble's emissive was
+   * written under, and the same one the pavilion settled by putting the
+   * light in the map rather than in a lamp. */
+  /* AND THE LEVEL IS MEASURED, NOT CHOSEN. A game-ready rock albedo is
+   * authored for daylight — this one's mean luminance is 87 of 255 — and
+   * dropped into a courtyard lit by a quarter moon it renders as pale
+   * blobs: measured on screen at the foot of the east steps it read 36.5
+   * against the masonry beside it at 24 and the yard at 20, which is a
+   * heap that GLOWS. The old rubble's own note says what the number
+   * should be (it read 19 and let the moon do the separating), so the
+   * multiply is swept against that rather than picked: 0.72 reads 26,
+   * 0.55 reads 20.7, 0.42 reads 15.2. */
+  const mat = mossyRockMat.clone();
+  mat.color.setHex(0x8c8c8c);
+  mat.emissive = new THREE.Color(0xffffff);
+  mat.emissiveMap = mat.map;
+  mat.emissiveIntensity = 0.16;
+  if (mat.normalScale) mat.normalScale.set(1.25, 1.25);
+  /* AND IT DRAWS FROM HALF THE PACK, WHICH IS A DRAW-CALL DECISION AND NOT
+   * A TASTE ONE. One instanced mesh per SHAPE, so the whole pack is
+   * thirty-two draws — measured, that takes the courtyard from 19 to 51,
+   * which is the count nearly trebled in a small room for rubble. Every
+   * OTHER rock is sixteen, which still samples both halves of the pack (it
+   * ships the tall ones first and the flat ones second) and is sixteen more
+   * shapes than the heap it replaces, which had exactly one. */
+  const kinds = [];
+  for (let i = 0; i < mossyRocks.length; i += 2) kinds.push(i);
+  const n = kinds.length;
+  const by = new Map();
+  for (const st of q) {
+    const i = kinds[Math.min(n - 1, Math.floor(st.pick * n))];
+    let a = by.get(i); if (!a) by.set(i, a = []); a.push(st);
+  }
+  const _q = new THREE.Quaternion(), _e = new THREE.Euler(), _m = new THREE.Matrix4();
+  const _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
+  for (const [i, arr] of by) {
+    const rk = mossyRocks[i];
+    const im = new THREE.InstancedMesh(rk.geo, mat, arr.length);
+    for (let k = 0; k < arr.length; k++) {
+      const st = arr[k];
+      _q.setFromEuler(_e.set(st.rx, st.ry, st.rz));
+      const ex = rockExtent(rk, _q);
+      /* AND IT IS FITTED BY ITS HEIGHT, NOT BY ITS WIDTH. Every test above
+       * that keeps this heap under the courtyard's own skyline is written
+       * on `r * sy` — the half-height the old blob had — so that is the
+       * number a real rock has to match, whichever way it happens to be
+       * turned. What it measures ACROSS then falls out of its own
+       * proportions, which is a rock rather than a ball, and is capped so
+       * a slab lying flat cannot be blown up into a table. */
+      let sc = (st.r * st.sy) / Math.max(1e-4, ex.y);
+      sc = Math.min(sc, (st.r * 1.5) / Math.max(1e-4, ex.x, ex.z));
+      im.setMatrixAt(k, _m.compose(_p.set(st.x, st.y, st.z), _q, _s.setScalar(sc)));
+      im.setColorAt(k, _c.setRGB(st.k * st.wm, st.k, st.k * (2 - st.wm)));
+    }
+    im.instanceMatrix.needsUpdate = true;
+    if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    if (im.computeBoundingSphere) im.computeBoundingSphere(); else im.frustumCulled = false;
+    im.userData.noBake = true;
+    dojoBlocks.add(im);
+  }
 }
 /* AND THE BACK OF THE GATEWAY IS CLOSED. The flood reaches into the gate
  * house — its threshold is at courtyard level and connected, so it is arena —
@@ -36674,6 +36861,14 @@ function buildGateWall(fallback) {
   }
 }
 let dojoBlocks = null;
+/* AND THE STONES ARE QUEUED, NOT BUILT, BECAUSE THE ROCK LANDS OVER THE
+ * NETWORK. The heap's own arithmetic — where each stone goes, how big it
+ * is, how the crown sits under the coping — is done the moment the room is
+ * up, because the CLAMP that actually stops you is built out of the same
+ * numbers and may not wait for a download; the meshes are made when the
+ * pack is there. Every roll a stone needs is taken at queue time, so a
+ * checkpoint load rebuilds the same heap whenever the rock arrives. */
+let dojoRockQ = null;
 
 /* Can a body walk `dist` along this heading? Marched in strides, because a
  * crossing test alone has no thickness - the keep's own lesson - so the
