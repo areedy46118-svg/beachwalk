@@ -796,7 +796,22 @@ const _lpPick = [];
  * It only has to RANK, so the constant terms do not matter. */
 function lampReach(l) {
   if (l.intensity <= 0) return 0;
-  for (let a = l; a; a = a.parent) if (!a.visible) return 0;
+  /* AND A LAMP ON A THING THAT HAS LEFT THE SCENE LIGHTS NOTHING. The walk
+   * up the parents asked whether every ancestor was VISIBLE and never
+   * whether the chain still ends at the scene at all — and `scene.remove`
+   * neither hides what it detaches nor touches its `matrixWorld`. So a
+   * light parented to a TAKEABLE went on scoring after the thing was
+   * picked up, reading a world matrix frozen at the spot it was lifted
+   * from, and the pool lit that empty patch of floor for the rest of the
+   * game: the owner took the catacombs' blood jars and left two pools of
+   * blue on the flags behind him. (The skull key carries a lamp too and
+   * had already been given a hand-written `removeFromParent` on its own
+   * pickup — one object remembering to do a thing every object needs is
+   * the shape of a bug waiting for the next object.) The same loop answers
+   * it: the top of the chain has to BE the scene. */
+  let a = l;
+  for (; a.parent; a = a.parent) if (!a.visible) return 0;
+  if (!a.visible || a !== scene) return 0;
   l.getWorldPosition(_lpP);
   const d = _lpP.distanceTo(camera.position), R = l.distance;
   if (R > 0 && d >= R) return 0;

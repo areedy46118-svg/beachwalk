@@ -13287,3 +13287,32 @@ Measured after: **7.0 m and 5.9 m off the walk (was 47.5 and 39.7), in clear
 sight from 5.4 m and 6.8 m, 31.7 m apart, at legs 5 and 39 of 53** — and
 rendered from those sight lines both read as a blue glow at the end of a dark
 passage (peak blue 179 and 165 against 23 for the one that was hidden).
+
+**A LAMP ON A THING YOU PICKED UP WENT ON LIGHTING THE FLOOR IT CAME OFF.**
+"When picking up the jars the item aura should disappear — it was still bright
+where they last were." The GLINT was innocent: it is a child of the jar, so
+`scene.remove` takes it, and `updateShines` zeroes it besides (measured at
+pickup: opacity 0). What was left was the catacombs jars' own POINT LAMP —
+the one the round before gave them because a takeable's stock shine is tuned
+for a beach under a quarter moon and that stone reads at 0.03.
+
+`lampReach` walked the parents asking whether every ancestor was VISIBLE and
+never whether the chain still ends at the scene at all — and `scene.remove`
+neither hides what it detaches nor touches its `matrixWorld`. So the lamp kept
+its 1.5, kept a world matrix frozen at the spot it was lifted from, and the
+pool went on pointing a real light at that patch of flags for the rest of the
+game. Measured at the moment of the pickup: the jar out of the scene, the
+glint at opacity 0, the lamp still at intensity 1.5 at its old (9001.83,
+400.66, 8985.96), and the old test — intensity and a visible chain — still
+answering TRUE. **The same loop answers it: the top of the chain has to BE the
+scene.** Measured after, both jars: one pool slot lit at 1.5 on the jar before,
+nothing lit at all after; and the corridor photographed before and after is a
+jar under a blue pool, then bare stone.
+
+And the thing worth keeping is the shape of it, not the line. The SKULL KEY
+carries a lamp too and had been given a hand-written `skullLamp.removeFromParent()`
+inside its own `onActivate` — so somebody had already met this bug, fixed it
+where they met it, and left the next object to find it again. **One object
+remembering to do a thing that every object needs is a bug waiting for the
+second object.** Anything a takeable can carry — a light, a sound, an entry in
+a per-frame list — has to be answered at the door all of them go through.
