@@ -13394,3 +13394,38 @@ what is left is four places with rock on six or more of twelve bearings —
 every one of them in the throat of the arch, which is a doorway and not a
 bug. **And a proximity metric cannot tell a doorway from a burial**: count
 the bearings.
+
+**AND THE WAY OUT OF THE CHURCH IS THE WAY IN, A SECOND TIME.** The owner's
+word on Valsev's cave behind the altar: take the model out, it looks bad.
+This file has twice been told the caves are HIS models and that "make this
+better" is not "replace this" — and the line there was always his to draw,
+which is what he has now done. Asked what should stand in its place he had no
+preference, so it is the one answer that takes nothing else away: the exit is
+local.yany's tunnel, the SAME bore you walk in through and the one model down
+there he has kept, so both ends of the church now read as one place.
+
+Nothing in the composition changed. The exit is a stub — measured, the walk
+it was given is **18.4 m** — so it is that tunnel packed a second time and
+cut to length with the packer's own `--trim`, which keeps the far end and
+leaves a clean cross-section at the cut for the apse ring to plug:
+
+    tools/undercroft_pack.py passage "…/tunnel/scene.gltf" assets/cave.glb \
+        --scale 3.8 --yaw 90 --sparse --trim 50
+
+26.4 m of bore, 44,920 triangles, and the file went from **6.2 MB to 1.15**.
+It is written to the same path on purpose: `compose` reads the cave by its
+walk grid and by `findMat(root, 'MaterialKEInGLANZ') || findMat(root)`, and
+that fallback is the whole reason a different model drops in — the ring, the
+skin, the carve, the clip and the ramp all followed it without a line.
+
+Measured after, with the game's own movement: the chancel through the break
+and 21 m down the bore is **273 ticks with ZERO stalls**, dead straight at
+z 0.2; the far exit still reads "To climb out" from 4.5 m, 39 ticks off the
+mark; and walking BACK IN from the bore to the church is 292 ticks with 5
+stalls, so the ramp still holds and it is not the one-way door it was once.
+
+**And the harness hides the room**: `UC.group.visible` is false until the
+cut's own beats have run, so a camera teleported into the church photographs
+pure black and reads as a broken room. Set the group visible by hand, and
+raise `UC.setLook('cave', …)` to see any of it — the shipped level is 0.19,
+which is a tunnel you are meant to need the glowstick in.
