@@ -12656,3 +12656,120 @@ measured, the sight holds (0, 0) for the whole shot while the muzzle flips
 to +0.19 NDC and settles. The lens spring, the FOV punch and the real aim
 nudge are what carry an aimed shot; the gun itself is held where you are
 looking, which is what a sight picture is.
+
+**THE DOOR IN THE SAND WALL WAS FITTED TO A HILLSIDE EIGHT HUNDRED METRES
+AWAY.** The owner photographed it: a stone doorway standing in open sand with
+the beach behind it, its arch level with the skyline and stars showing over
+the top. One line did all of it. **THE CLIFF IS ONE MESH SNAPPED BACK ONTO
+THE PLAYER IN Z EVERY FRAME**, so the raycast that set the door's x ran in
+the catacombs' own loader callback — which fires wherever you happened to be
+standing when the room came down — and asked about a piece of hill that was
+nowhere near `CAT_OUT_Z`. Measured: the cast found NOTHING, the `if (face)`
+guard skipped in silence, and the door kept the default it was declared with.
+A GUARD THAT SKIPS A MEASUREMENT IS A GUARD THAT SHIPS A GUESS; the fit is
+LAZY now, run on the first frame the cliff has actually been recentred within
+a period and a half of the door's own z, and it refuses to run on fewer than
+eight hits.
+
+Three things then fell out of measuring the dune that is drawn there:
+
+- **A DOORWAY AS TALL AS THE DUNE IS NOT A DOORWAY IN A DUNE.** The crown at
+  that z measures 3.37 m and the door shipped at 3.25, so there was nothing
+  over the arch and the eye read a frame standing on a beach. `crest` is how
+  much sand must stand over the head (0.85); the height is `crown - crest`,
+  which comes out at 2.52.
+- **THE FACE LEANS AND IT WANDERS.** Measured across the door's own width:
+  16.0 at knee height, 15.87 at three metres, and ±0.2 with the runnels
+  either side. The leaf clears the NEAREST of them by 7 cm, so there is
+  nowhere the dune draws over the stone and nowhere the stone stands out.
+- **AND WHAT MAKES IT A HOLE IN A HILL IS THE SAND HEAPED AGAINST IT.** The
+  rocks' own inner bank, and their own mistake first: two aprons centred out
+  on the beach at nearly a metre tall read as a pair of grey domes with a
+  door between them. Set BEHIND the face, only their seaward skirt is drawn,
+  which is a bank; and the drift across the threshold is low, because its
+  whole job is to bury the sill.
+
+**AND A DOOR YOU HAVE UNLOCKED IS A DOOR.** The way out was a one-way valve:
+the leaf on the beach was scenery. It carries the same prompt from this side
+now and `startCatReturn` is `startCatExit` the other way round — one cut, one
+`catReturn` flag that `updateCatCut` reads to know which end it is going to,
+and the black HOLDS until the room is back down, which is the cave-in's own
+rule. And it puts you at the THRESHOLD, not at the landing: the landing is
+the hole you fell through and there is no way back up it. The spot is the
+walk's own — the nearest standable cell a stride inside the leaf — so a
+repack of the room cannot leave you inside its wall.
+
+**THE HUNTER'S WATCHDOG WAS NOT UNDER THE ONE MODE THE OWNER WAS WATCHING.**
+`catWatch` is called from `catWander`, and `catWander` is the NOT-AWAKE
+branch — so roaming, stalking, searching and fleeing had a net under them and
+CHASING, the mode in which he is pressing at you through the furniture, had
+none at all. It also refused to act while you could see him or while he was
+chasing, on the argument that a creature which teleports in front of you is
+worse than one that is stuck: true for a second or two, and false after ten.
+What the owner was looking at was a boss ground against a tomb in plain sight
+with the net deliberately declining to catch him. The leash is 2.5 s instead
+of 6, it runs in the chase as well, and a hard backstop at three times that
+moves him whatever mode he is in.
+
+**AND WHAT IS NOT STUCK HAS TO BE NAMED, OR THE NET BREAKS THE BEST THING HE
+DOES.** An act is standing still on purpose; so is the hold at the end of a
+peek, which at a 2.5 s leash would have been interrupted every single time;
+and a fight is fought at arm's length with no ground covered at all. Measured
+hands-off over three minutes in the catacombs, excluding exactly those: the
+worst stall he has is **0.57 s and there is not one over four seconds**,
+against 17 s before, and he still crosses 42 m to close on you.
+
+**AND HE CLIPPED THROUGH THE DOOR BECAUSE HE WAS PUT THERE.** Nothing ever
+walked him through it: every unstick in that file ends `p.set(node)` and
+`catNearestMain` answers with the nearest node ON THE MAIN COMPONENT, which,
+pressed against a wall or against the barred door, is as often as not the node
+on the far side of it. `catNearestOpen` takes the nearest one whose own line
+is open from where he stands (`catLineOpen`, the game's own test), so a snap
+can only ever land somewhere he could have walked to; the bare nearest stays
+as the last resort for a body inside stone with no open line anywhere. The
+leaf itself is drawn geometry in the wall index and is solid whatever the
+lock says — measured, the player walked hard at it for three seconds and
+stopped dead at the door's own x.
+
+**FIVE MORE OF THEM, PAST THE DOOR, AND NOT ONE NEW ASSET.** One mesh, one
+skeleton, one download, and five silhouettes you can tell apart across a dark
+beach: `bones` scales named bones on each parsed copy BEFORE it is measured,
+so the game still stands each one on its feet at the right height. The hulk
+(three metres, arms and chest a third again, a head three quarters the size),
+the spindle (shins and forearms half again as long on a body that is barely
+there), the runt (half your height, wider than it is tall, a head a third too
+big), the crooked one (the left arm half again as long as the right, so the
+side you circle to decides how far its swing reaches) and the bloated one
+(a skull twice the size with every flap of it thrown wide). `solo` keeps them
+out of the horde's take — that is a cutscene about three creatures nine
+hundred metres up the beach — and `wakeAt` is what they get instead, because
+nothing on this beach ever woke on its own. Measured: they wake a few at a
+time as you come down the walk, and they swing at exactly the rate the
+shipped pack does under the same harness.
+
+**AND THEY ARE PLACED IN THE CATACOMBS' OWN SECTION, NOT WITH THE PACK.**
+Every number in the line is written off `CAT_OUT_Z`, and A CONSTANT THAT
+READS A LATER ONE IS A DEAD-ZONE CRASH that takes the page before a line of
+it runs. `makeMutant` is a function declaration, so it is hoisted and this is
+simply a later call.
+
+**A ROUND THROUGH THE HEAD IS NOT A BLOW YOU SHRUG OFF.** Everything else in
+this game goes through `hurtMutant`, which is right — the poise pool, the
+guard, the riposte, the committed-swing shrug and the wound all live there,
+and every one of them is an argument about a thing ARRIVING at a body that
+can take it. A .44 through a skull is not that. `magHeadshot` kills outside
+that door — health to nothing and `killMutant` called directly — and
+`gunHead` makes the burst CERTAIN in `finishMutant` rather than a roll: this
+is the one blow in the game whose whole point is what it does to the head,
+and an overkill die that comes up short half the time is a headshot that did
+not look like one. `headPop` is opt-in, so the three on the beach and the
+five past the door have it and the bosses do not — a revolver that ends a
+boss on one lucky shot is a revolver that ends the fight rather than joining
+it. Measured: a head hit bursts the skull and ragdolls the body on the frame
+it lands; a body shot at the same creature kills it with the head still on.
+
+**AND A NaN WRITTEN INTO THE CAMERA POISONS THE SESSION.** A harness line
+that set the camera from an undefined constant put NaN into x and z, and
+after that every reset — `position.set`, a fresh `groundY`, twenty steps —
+came back NaN, because the velocity and the knockback carry it round. There
+is no recovering it: reload.

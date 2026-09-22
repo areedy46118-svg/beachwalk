@@ -17971,7 +17971,7 @@ const petalScale = (k) => { const o = {}; for (const n of PETALS) o[n] = k; retu
 const MUT_KINDS = {
   /* the pale one: the fight you learn the language on. Long in the forearm,
    * otherwise the shape the sculpt came in. Run01, nearly upright. */
-  pale: { skin: null, h: 2.30, hp: 5, dmg: 1, speedK: 1.00, windK: 1.00, reachK: 1.05, aggr: 1.10,
+  pale: { skin: null, headPop: true, h: 2.30, hp: 5, dmg: 1, speedK: 1.00, windK: 1.00, reachK: 1.05, aggr: 1.10,
           use: { attack: 0.20, attackM: 0.14, attack2: 0.16, attack2M: 0.14, attack3: 0.18, attack4: 0.18, attack4M: 0.10 },
           circle: 0.20, step: 0.30, chainMax: 1, feint: 0.10,
           bones: Object.assign({ Character1_LeftForeArm: 1.32, Character1_RightForeArm: 1.32,
@@ -17984,7 +17984,7 @@ const MUT_KINDS = {
    * thrown wide, thick in the arm and the thigh, and it HITS FOR TWO — you
    * have three. Fair only because its startups are the longest thing in the
    * fight and its recovery the most punishable. Run02 at four fifths: a plod. */
-  red:  { skin: 'assets/mutant-red.jpg', h: 2.74, hp: 7, dmg: 2, speedK: 0.95, windK: 1.24, reachK: 1.20, aggr: 1.00,
+  red:  { skin: 'assets/mutant-red.jpg', headPop: true, h: 2.74, hp: 7, dmg: 2, speedK: 0.95, windK: 1.24, reachK: 1.20, aggr: 1.00,
           use: { attack: 0.24, attackM: 0.16, attack3: 0.20, attack3M: 0.16, attack4: 0.28, attack2M: 0.10 },
           circle: 0.10, step: 0.38, chainMax: 1, feint: 0.04,
           bones: Object.assign({ Character1_Head: 1.48, Character1_Spine2: 1.14,
@@ -17997,7 +17997,7 @@ const MUT_KINDS = {
    * should be and shins to match — it is all reach and no weight. Four
    * health, chains three swings together, and runs Run02 at nearly twice
    * speed bent right over, which is faster than you can sprint. */
-  dark: { skin: 'assets/mutant-dark.jpg', h: 2.02, hp: 4, dmg: 1, speedK: 1.32, windK: 0.72, reachK: 1.00, aggr: 1.60,
+  dark: { skin: 'assets/mutant-dark.jpg', headPop: true, h: 2.02, hp: 4, dmg: 1, speedK: 1.32, windK: 0.72, reachK: 1.00, aggr: 1.60,
           use: { attack2: 0.26, attack2M: 0.24, attack4: 0.18, attack4M: 0.16, attack: 0.12, attackM: 0.10 },
           circle: 0.34, step: 0.22, chainMax: 2, feint: 0.20,
           bones: Object.assign({ Character1_Head: 0.62, Character1_Neck: 1.25,
@@ -18007,6 +18007,102 @@ const MUT_KINDS = {
           anim: { run: 'run2', idle: 'idle2', roar: 'roar', die: 'die', walk: 'walk', back: 'back',
                   rate: 1.95, lean: 0.30, strafeK: 1.45 },
           voice: { f: 1.46, growl: 0.62, rasp: 1.45, throat: 'chitter' } },
+  /* ------------------------------------------------------------------
+   * AND FIVE MORE OF THEM, PAST THE DOOR IN THE SAND WALL.
+   *
+   * One mesh, one skeleton, one download — and five silhouettes you can tell
+   * apart across a dark beach, which is the pack's own trick (`bones` scales
+   * named bones on each parsed copy BEFORE it is measured, so a longer
+   * forearm or a bigger skull changes the shape and the game still stands
+   * the thing on its feet at the right height). What makes them read as five
+   * creatures rather than five sizes is that each one is a different ANSWER:
+   * the hulk you cannot trade with, the spindle you cannot back away from,
+   * the runt you cannot out-pace, the crooked one whose reach is not the
+   * same on both sides, and the bloated one that is nearly all head.
+   *
+   * `solo` keeps them out of the horde's take — that is a cutscene about
+   * three creatures nine hundred metres up the beach — and `wakeAt` is what
+   * they get instead: nothing on this beach ever woke on its own, so a
+   * creature simply set down on the sand would sleep through you walking
+   * into it. */
+  hulk: { skin: 'assets/mutant-red.jpg', headPop: true, solo: true, wakeAt: 24,
+          h: 3.05, hp: 12, dmg: 2, speedK: 0.86, windK: 1.30, reachK: 1.26, aggr: 0.90,
+          use: { attack: 0.26, attack3: 0.26, attack3M: 0.18, attack4: 0.30 },
+          circle: 0.06, step: 0.44, chainMax: 1, feint: 0.04,
+          tint: 0xc4b0a4,
+          bones: Object.assign({ Character1_Spine2: 1.36,
+                                 Character1_LeftArm: 1.38, Character1_RightArm: 1.38,
+                                 Character1_LeftForeArm: 1.22, Character1_RightForeArm: 1.22,
+                                 Character1_LeftHand: 1.30, Character1_RightHand: 1.30,
+                                 Character1_LeftUpLeg: 1.22, Character1_RightUpLeg: 1.22,
+                                 Character1_Neck: 0.80, Character1_Head: 0.76 }, petalScale(0.45)),
+          anim: { run: 'run2', idle: 'idle2', roar: 'roar2', die: 'die2', walk: 'walk2', back: 'back2',
+                  rate: 0.72, lean: 0.02, strafeK: 0.6 },
+          voice: { f: 0.58, growl: 1.60, rasp: 0.55, throat: 'bellow' } },
+  /* all reach and no weight: the legs and the forearms half again as long as
+   * they should be on a body that is barely there. It is faster than a walk
+   * and its swing arrives from further out than anything else on the sand. */
+  spindle: { skin: null, headPop: true, solo: true, wakeAt: 24,
+          h: 3.20, hp: 6, dmg: 1, speedK: 1.24, windK: 0.86, reachK: 1.34, aggr: 1.45,
+          use: { attack2: 0.28, attack2M: 0.22, attack4: 0.22, attack4M: 0.16, attack: 0.12 },
+          circle: 0.32, step: 0.26, chainMax: 2, feint: 0.18,
+          tint: 0xa9b6c2,
+          bones: Object.assign({ Character1_Spine2: 0.84,
+                                 Character1_LeftLeg: 1.58, Character1_RightLeg: 1.58,
+                                 Character1_LeftUpLeg: 1.28, Character1_RightUpLeg: 1.28,
+                                 Character1_LeftForeArm: 1.62, Character1_RightForeArm: 1.62,
+                                 Character1_LeftArm: 1.18, Character1_RightArm: 1.18,
+                                 Character1_Neck: 1.72, Character1_Head: 0.80 }, petalScale(0.6)),
+          anim: { run: 'run', idle: 'idle', roar: 'roar', die: 'die', walk: 'walk', back: 'back',
+                  rate: 1.35, lean: 0.22, strafeK: 1.35 },
+          voice: { f: 1.34, growl: 0.55, rasp: 1.30, throat: 'chitter' } },
+  /* the runt: half your height, wider than it is tall, and quicker than
+   * anything else here. Short in every limb, and the head is a third too big
+   * for it, which is what you see coming at knee height. */
+  runt: { skin: 'assets/mutant-dark.jpg', headPop: true, solo: true, wakeAt: 24,
+          h: 1.58, hp: 5, dmg: 1, speedK: 1.46, windK: 0.66, reachK: 0.86, aggr: 1.85,
+          use: { attack2: 0.30, attack2M: 0.26, attackM: 0.18, attack4M: 0.16, attack: 0.10 },
+          circle: 0.40, step: 0.18, chainMax: 3, feint: 0.24,
+          tint: 0xa6b3a2,
+          bones: Object.assign({ Character1_Spine2: 1.22,
+                                 Character1_Neck: 0.62, Character1_Head: 1.34,
+                                 Character1_LeftForeArm: 0.78, Character1_RightForeArm: 0.78,
+                                 Character1_LeftLeg: 0.76, Character1_RightLeg: 0.76,
+                                 Character1_LeftUpLeg: 0.84, Character1_RightUpLeg: 0.84 }, petalScale(1.25)),
+          anim: { run: 'run2', idle: 'idle2', roar: 'roar', die: 'die', walk: 'walk', back: 'back',
+                  rate: 2.15, lean: 0.34, strafeK: 1.55 },
+          voice: { f: 1.62, growl: 0.48, rasp: 1.55, throat: 'chitter' } },
+  /* AND ONE OF THEM IS NOT THE SAME ON BOTH SIDES, which is the cheapest
+   * thing on this list and the one you notice first: the left arm is half
+   * again as long as the right, so its guard is lopsided and the side you
+   * circle to decides how far its swing reaches. */
+  crooked: { skin: null, headPop: true, solo: true, wakeAt: 24,
+          h: 2.52, hp: 7, dmg: 1, speedK: 1.04, windK: 0.96, reachK: 1.12, aggr: 1.25,
+          use: { attack: 0.22, attack3: 0.22, attack2: 0.20, attack4M: 0.20, attackM: 0.16 },
+          circle: 0.26, step: 0.30, chainMax: 2, feint: 0.14,
+          tint: 0xbeb2a6,
+          bones: Object.assign({ Character1_LeftArm: 1.42, Character1_LeftForeArm: 1.56, Character1_LeftHand: 1.34,
+                                 Character1_RightArm: 0.82, Character1_RightForeArm: 0.74, Character1_RightHand: 0.86,
+                                 Character1_LeftUpLeg: 1.14, Character1_RightLeg: 0.88,
+                                 Character1_Spine2: 1.08, Character1_Head: 1.06 }, petalScale(1.0)),
+          anim: { run: 'run', idle: 'idle2', roar: 'roar2', die: 'die', walk: 'walk2', back: 'back',
+                  rate: 1.10, lean: 0.26, strafeK: 0.95 },
+          voice: { f: 0.86, growl: 1.15, rasp: 1.10, throat: 'wet' } },
+  /* and the last is nearly all head: a skull twice the size with every flap
+   * of it thrown wide, carried on a short thick body that cannot hurry. */
+  bloat: { skin: 'assets/mutant-red.jpg', headPop: true, solo: true, wakeAt: 24,
+          h: 2.36, hp: 10, dmg: 2, speedK: 0.92, windK: 1.16, reachK: 1.02, aggr: 1.00,
+          use: { attack3: 0.28, attack3M: 0.20, attack: 0.24, attack4: 0.28 },
+          circle: 0.10, step: 0.36, chainMax: 1, feint: 0.06,
+          tint: 0xc9a79e,
+          bones: Object.assign({ Character1_Head: 1.92, Character1_Neck: 0.72,
+                                 Character1_Spine2: 1.34,
+                                 Character1_LeftUpLeg: 0.80, Character1_RightUpLeg: 0.80,
+                                 Character1_LeftLeg: 0.76, Character1_RightLeg: 0.76,
+                                 Character1_LeftArm: 1.12, Character1_RightArm: 1.12 }, petalScale(2.05)),
+          anim: { run: 'run2', idle: 'idle2', roar: 'roar2', die: 'die2', walk: 'walk2', back: 'back2',
+                  rate: 0.88, lean: 0.06, strafeK: 0.7 },
+          voice: { f: 0.74, growl: 1.35, rasp: 0.8, throat: 'bellow' } },
   /* THE BLUE BLOOD DEALER. The first boss, and the argument for every rule
    * the beach spent a kilometre teaching. He is a man, so nothing about him
    * is a monster: he does not roar, he does not come apart, he does not
@@ -20494,7 +20590,9 @@ function finishMutant(u) {
    * bruises and a katana cuts, so the same blow from the katana takes a
    * limb or a head nearly twice as often. */
   const G = (u.st.killGore || 1) * (1 + Math.min(0.9, (u.st.cuts || 0) * 0.11));
-  if (overkill && Math.random() < 0.55 * G) burst = burstHead(u, dx, dz);
+  // a round through the skull: certain, not a die
+  if (u.st.gunHead) burst = burstHead(u, dx, dz);
+  else if (overkill && Math.random() < 0.55 * G) burst = burstHead(u, dx, dz);
   if (!burst) {
     if (P >= MUT_HEAVY && !oh && Math.random() < 0.42 * G) mutSever(u, MUT_BISECT, dx, dz, 1.4);
     else if (Math.random() < 0.55 * G) {
@@ -22243,6 +22341,12 @@ function updateMutantUnit(u, dt) {
      * blows are out of the draw wherever the storey's roof is under 4.3 m. */
     u.noStand = !st || (st.c - st.f) < 4.3;
     if (!u.st.awake) { catWander(u, dt); return; }
+    /* AND THE NET IS UNDER THE CHASE TOO. `catWatch` only ever ran from
+     * `catWander`, which is the NOT-awake branch — so the one mode in which
+     * he is pressing at you through the furniture, and the one the owner was
+     * watching when he said the thing gets stuck, was the one mode with no
+     * watchdog over it at all. It exempts a fight at arm's length itself. */
+    catWatch(u, dt);
     catStand(u, dt);
   }
   if (!u.st.awake) {
@@ -34559,6 +34663,16 @@ function magFire() {
   const h = magTrace(_mgSp);
   if (!h) return;
   if (h.kind === 'foe') {
+    /* AND A ROUND THROUGH THE HEAD IS NOT A BLOW YOU SHRUG OFF. Everything
+     * else in this game goes through `hurtMutant`, which is right — it is
+     * where the poise pool, the guard, the riposte and the wound all live —
+     * and every one of those is an argument about a thing arriving at a body
+     * that can take it. A .44 through a skull is not that. `headPop` is the
+     * kind's own word for "this one has a head that can come off": the three
+     * on the beach and the five past the door have it, and the bosses do
+     * not, because a revolver that ends a boss on one lucky shot is a
+     * revolver that ends the fight rather than joining it. */
+    if (h.head && h.u.kind && h.u.kind.headPop) { magHeadshot(h.u); return; }
     const dmg = Math.round(MAG_DMG * (h.head ? MAG_HEAD : 1));
     if (h.u.kind) hurtMutant(h.u, dmg, 1.0); else hurtCrab(h.u, 4, 1.0);
     if (h.head) { hitstop = Math.max(hitstop, 0.09); addTrauma(0.22); }
@@ -34571,6 +34685,25 @@ function magFire() {
   } else if (h.kind === 'sand') {
     spawnPuffs(h.point.x, h.point.z, 4, -_mgSp.x, -_mgSp.z, Math.max(0.05, h.point.y), null);
   }
+}
+/* THE HEAD GOES, AND THE REST OF IT DROPS. It is killed OUTSIDE the normal
+ * door: the health is set to nothing and `killMutant` called directly, so no
+ * poise pool, no guard and no committed-swing shrug can stand between a
+ * bullet and a skull. `gunHead` is what `finishMutant` reads to make the
+ * burst certain rather than a roll — this is the one blow in the game whose
+ * whole point is what it does to the head, and an overkill die that comes up
+ * short half the time would be a headshot that did not look like one. */
+function magHeadshot(u) {
+  if (!u.st.alive || u.st.struck) return;
+  if (u.kind.provoke && !u.st.awake) u.kind.provoke(u);
+  u.st.mine = true; u.st.foe = null;
+  u.st.killP = 1.0; u.st.killOh = false; u.st.killGore = 2.0; u.st.hpBefore = u.st.hp;
+  u.st.gunHead = true;
+  u.st.hp = 0;
+  killMutant(u);
+  hitstop = Math.max(hitstop, 0.14);
+  addTrauma(0.55);
+  fovKick = Math.max(fovKick, 6);
 }
 /* AND THE AIM ITSELF MOVES — not through `applyLook`, which scales by the
  * sensitivity slider: a recoil that is bigger for one player than for
@@ -39077,6 +39210,9 @@ function updateCatacombs(dt) {
     if (!caveDone && !caveBusy && introDone && !dying && !ended && !inRoom() && !portalCut && !abductCut
         && camera.position.z < CAVE_Z && camera.position.z > CAVE_Z - 7 && Math.abs(camera.position.x) < 40) startCaveIn();
     if (!catWorld && camera.position.z < PORTAL_Z + 60 && camera.position.z > PORTAL_Z - 200) loadCatacombs();
+    // and the door in the dune is fitted to the dune that is drawn, which is
+    // only ever there while you are standing near it
+    if (catSandDoorDone && !catSandDoorFitted && Math.abs(camera.position.z - CAT_OUT_Z) < 90) fitCatSandDoor();
     return;
   }
   if (!catWalk) return;
@@ -39242,7 +39378,7 @@ function sfxCaveGive() {
 // ---------------------------------------------------------------- the door
 function startCatExit() {
   if (catBusy || frozen()) return;
-  catBusy = true; catT = 0; catCutDone = false;
+  catBusy = true; catT = 0; catCutDone = false; catReturn = false;
   blocking = false;
   sfxTavernDoor();
 }
@@ -39252,8 +39388,50 @@ function updateCatCut(dt) {
   const t = catT, D = CAT_OUT + CAT_HOLD + CAT_IN;
   const black = t < CAT_OUT ? smooth01(0.04, CAT_OUT, t) : t < CAT_OUT + CAT_HOLD ? 1 : 1 - smooth01(CAT_OUT + CAT_HOLD, D, t);
   blackoutEl.style.opacity = black.toFixed(3);
-  if (!catCutDone && t >= CAT_OUT + 0.05) { catCutDone = true; placeOutsideCatDoor(); }
-  if (t >= D) { catBusy = false; blackoutEl.style.opacity = '0'; catchBreath(); }
+  if (!catCutDone && t >= CAT_OUT + 0.05) {
+    // the black holds until the room is down, the cave-in's own rule
+    if (catReturn && !catReady) { catT = CAT_OUT + 0.05; return; }
+    catCutDone = true;
+    if (catReturn) placeInsideCatDoor(); else placeOutsideCatDoor();
+  }
+  if (t >= D) { catBusy = false; catReturn = false; blackoutEl.style.opacity = '0'; catchBreath(); }
+}
+/* AND BACK IN THROUGH IT. The same cut, the other way round, so the beat
+ * reads the same whichever side of the door you are on; `catReturn` is what
+ * `updateCatCut` reads to know which end it is going to. A door you have
+ * unlocked is a door. */
+let catReturn = false;
+function startCatReturn() {
+  if (catBusy || frozen() || !catDoorOpen) return;
+  loadCatacombs(); bwSoon('assets/catacombs.glb');
+  catBusy = true; catT = 0; catCutDone = false; catReturn = true;
+  blocking = false;
+  sfxTavernDoor();
+}
+/* AND YOU COME BACK IN AT THE DOOR, NOT AT THE LANDING. The landing is the
+ * hole you fell through and there is no way back up it; the threshold is
+ * where this door is, so that is where it puts you — facing the room, with
+ * the door at your back. The spot is the walk's own: the nearest standable
+ * cell a stride inside the leaf, so a repack of the room cannot leave you
+ * inside its wall. */
+function placeInsideCatDoor() {
+  loadCatacombs();
+  buildCatacombs();
+  inCat = true;
+  if (catWorld) { catWorld.visible = true; catWorld.userData.bwCulled = false; }
+  catEnter();
+  warmCatacombs();
+  const dz = CAT_Z + CAT_DOOR.z;
+  let gx = CAT_X + CAT_DOOR.x - 1.3, st = null;
+  for (let i = 0; i < 10 && !st; i++) { gx = CAT_X + CAT_DOOR.x - 1.0 - i * 0.3; st = keepStandAt(gx, dz, CAT_Y + CAT_DOOR.f + 0.4, 1.2, CAT_SITE); }
+  groundY = st ? st.f : CAT_Y + CAT_DOOR.f;
+  catLastFloor = groundY; catLastSpot.x = gx; catLastSpot.z = dz;
+  camera.position.set(gx, groundY + playerEye(), dz);
+  camBaseY = camera.position.y; vy = 0; onGround = true;
+  lookEuler.set(-0.05, HALF_PI, 0, lookEuler.order);           // in, down the room, the door behind you (yaw is atan2(-dx, -dz): -x is +pi/2)
+  camera.quaternion.setFromEuler(lookEuler);
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0);
+  crouching = false;
 }
 /* OUT THROUGH THE DOOR IN THE SAND WALL: on the beach in front of it, facing
  * down the walk, and — the cave's own rule — a checkpoint, once. */
@@ -39296,7 +39474,22 @@ function placeOutsideCatDoor() {
 const catWallDoor = new THREE.Group();
 catWallDoor.position.set(CLIFF_BLOCK_X + 1.75, 0, CAT_OUT_Z);
 scene.add(catWallDoor);
-const CAT_SAND_DOOR = { mat: 'Stuffidk', h: 3.25, lift: 0.12, proud: 0.34 };   // how tall it stands on the sand, what it reads at under a quarter moon, and how far its leaf stands out of the dune
+/* AND IT IS FITTED TO THE DUNE THAT IS DRAWN, WHICH IS NOT THERE AT BUILD
+ * TIME. The cliff is one mesh SNAPPED BACK ONTO THE PLAYER in z every frame,
+ * so a raycast taken in the loader — which fires wherever you happened to be
+ * standing when the room came down — asks about a piece of hillside that is
+ * eight hundred metres from the door. Measured: the cast found NOTHING, the
+ * `if (face)` guard skipped, and the door kept its default x and stood half
+ * a metre out in the open air with the beach behind it. Everything below is
+ * measured once, LAZILY, on the first frame the cliff has actually been
+ * recentred near the door's own z.
+ *
+ * AND A DOORWAY AS TALL AS THE DUNE IS NOT A DOORWAY IN A DUNE. At 3.25 m
+ * against a crown measured at 3.37 the arch stood level with the skyline
+ * with stars behind it — nothing over it, so the eye read a frame standing
+ * on a beach rather than a hole in a hill. `crest` is how much sand has to
+ * stand over the head; the height falls out of the crown. */
+const CAT_SAND_DOOR = { mat: 'Stuffidk', lift: 0.30, proud: 0.07, crest: 0.85, hMax: 2.80 };
 let catSandDoorDone = false;
 function buildCatSandDoor() {
   if (catSandDoorDone || !catWorld) return;
@@ -39340,28 +39533,118 @@ function buildCatSandDoor() {
   const mat = src.clone();
   mat.emissiveIntensity = CAT_SAND_DOOR.lift;                // 0.03 is a room with no moon in it
   const door = new THREE.Mesh(g, mat);
-  const k = CAT_SAND_DOOR.h / Math.max(0.01, hi.y - lo.y);   // it stands at a door's height, not at the room's 2.2x
-  door.scale.setScalar(k);
-  /* AND IT IS SET INTO THE DUNE, NOT STOOD IN FRONT OF IT. The old one was
-   * a hand proud of the toe and read as six slabs standing on open sand
-   * with the hill behind them. Where the sand's own face is at this z is a
-   * RAYCAST — it is a talus, so it leans: measured at z = CAT_OUT_Z it is
-   * 15.23 at the sill and 16.1 at head height — and the door is set so its
-   * leaf stands a hand proud of that and everything behind it is buried. */
-  _catRay.set(new THREE.Vector3(4, CAT_SAND_DOOR.h * 0.5, CAT_OUT_Z), new THREE.Vector3(1, 0, 0));
-  _catRay.far = 40;
-  const face = _catRay.intersectObject(cliff, true)[0];
-  if (face) catWallDoor.position.x = face.point.x + (hi.x - lo.x) * k * 0.5 - CAT_SAND_DOOR.proud;
   door.name = 'catSandDoor';
+  door.userData.span = { x: hi.x - lo.x, y: hi.y - lo.y, z: hi.z - lo.z };
   catWallDoor.add(door);
   /* AND BEHIND IT IS NOTHING. A black box wholly behind the leaf, so the
    * bars and the gap round the door read as a hole into the dune rather
    * than as sand seen through a doorway — the drain's own plug. */
-  const w = (hi.z - lo.z) * k, h = (hi.y - lo.y) * k;
-  const void_ = new THREE.Mesh(new THREE.BoxGeometry(1.6, h * 0.98, w * 0.96),
+  const void_ = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1, 1),
     new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide, fog: false }));
-  void_.position.set(0.95, h * 0.49, 0);
+  void_.name = 'catSandVoid';
   catWallDoor.add(void_);
+  /* AND THE WAY OUT IS A WAY BACK IN. A door you have unlocked is a door,
+   * not a one-way valve — the wreck's shell door and the tavern's have both
+   * said so — so the leaf on this side carries the same prompt it carries
+   * from the inside and takes you back to the room's own threshold. It is
+   * `bare` while the lock has never been turned, which is the one state in
+   * which you cannot have reached this side of it anyway. */
+  const proxy = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2.3, 1.7), new THREE.MeshBasicMaterial({ visible: false }));
+  proxy.name = 'hitProxy'; proxy.visible = false; proxy.userData.bwGhost = true;
+  proxy.position.set(-0.2, 1.15, 0);
+  catWallDoor.add(proxy);
+  addInteractable(proxy, 'Enter the catacombs', 'default', {
+    far: 4.4, mid: true,
+    label: () => (catDoorOpen ? 'Enter the catacombs' : 'The door is locked.'),
+    bare: () => !catDoorOpen,
+    when: () => !inCat && !catBusy && !caveBusy && catSandDoorFitted,
+    onActivate: () => { if (catDoorOpen) startCatReturn(); else sfxThud(0.02); },
+  });
+  fitCatSandDoor();
+}
+/* THE FIT, MEASURED OFF THE DUNE THAT IS ACTUALLY THERE. */
+const _cdA = new THREE.Vector3(), _cdB = new THREE.Vector3();
+let catSandDoorFitted = false;
+function fitCatSandDoor() {
+  if (catSandDoorFitted || !catSandDoorDone) return;
+  // the cliff is snapped onto the player in z; until it is near the door there
+  // is nothing at this z to measure and every cast comes back empty
+  if (Math.abs(cliff.position.z - CAT_OUT_Z) > CLIFF_PERIOD * 1.5) return;
+  const door = catWallDoor.getObjectByName('catSandDoor');
+  if (!door || !door.userData.span) return;
+  /* THE FACE AND THE CROWN, ACROSS THE DOOR'S OWN WIDTH. The face leans
+   * (measured at this z: 16.0 at knee height, 15.87 at three metres) and it
+   * wanders with the runnels either side, so what the leaf must clear is the
+   * NEAREST of them — anywhere it does not, the dune draws over the stone. */
+  let faceX = Infinity, crown = 0, hits = 0;
+  for (let dz = -1.5; dz <= 1.51; dz += 0.3) {
+    for (const y of [0.5, 1.1, 1.7, 2.3, 2.9]) {
+      _catRay.set(_cdA.set(6, y, CAT_OUT_Z + dz), _cdB.set(1, 0, 0)); _catRay.far = 40;
+      const h = _catRay.intersectObject(cliff, true)[0];
+      if (h) { hits++; if (h.point.x < faceX) faceX = h.point.x; }
+    }
+    _catRay.set(_cdA.set(CLIFF_X + 2.5, 16, CAT_OUT_Z + dz), _cdB.set(0, -1, 0)); _catRay.far = 30;
+    const c = _catRay.intersectObject(cliff, true)[0];
+    if (c && c.point.y > crown) crown = c.point.y;
+  }
+  if (hits < 8 || !isFinite(faceX) || crown < 1.5) return;
+  catSandDoorFitted = true;
+  const S = door.userData.span;
+  const h = Math.min(CAT_SAND_DOOR.hMax, Math.max(2.15, crown - CAT_SAND_DOOR.crest));
+  const k = h / Math.max(0.01, S.y);
+  door.scale.setScalar(k);
+  // the leaf is the door's -x face and the beach is -x of the dune, so a
+  // hand proud of the nearest face puts everything else inside the hill
+  catWallDoor.position.x = faceX - CAT_SAND_DOOR.proud + S.x * k * 0.5;
+  const void_ = catWallDoor.getObjectByName('catSandVoid');
+  if (void_) { void_.scale.set(1, h * 0.98, S.z * k * 0.96); void_.position.set(0.85, h * 0.49, 0); }
+  const px = catWallDoor.getObjectByName('hitProxy');
+  if (px) { px.scale.set(1, h / 2.3, (S.z * k) / 1.7); px.position.set(-S.x * k * 0.5 - 0.2, h * 0.5, 0); }
+  /* AND SAND IS HEAPED AGAINST IT, WHICH IS THE WHOLE DIFFERENCE BETWEEN A
+   * DOORWAY IN A DUNE AND A FRAME LEANT ON ONE. The rocks' own inner bank:
+   * the beach's OWN material, so there is no join to see, banked against
+   * both jambs and drifted across the threshold so the sill is buried and
+   * the stone comes out of the sand rather than standing on it. */
+  /* AND A BANK IS MOSTLY INSIDE THE HILL. Centred out on the sand at nearly
+   * a metre tall the two of them read as exactly what they are — a pair of
+   * grey domes lying on the beach with a door between them. Set BEHIND the
+   * face, only their seaward skirt is drawn, which is sand heaped against a
+   * wall; and the drift across the threshold is low, because its whole job
+   * is to bury the sill rather than to be a mound. */
+  for (const [dx, dz, R, H] of [[0.65, -1.7, 2.6, 0.75], [0.65, 1.7, 2.6, 0.75], [0.15, 0, 3.0, 0.22]]) {
+    const b = new THREE.Mesh(makeApron(R), sandMat);
+    b.scale.set(R, H, R);
+    b.position.set(faceX + dx, 0, CAT_OUT_Z + dz);
+    driftGroup.add(b);
+  }
+}
+
+/* ---------------------------------------------------------------------
+ * FIVE OF THEM ON THE SAND PAST THE DOOR
+ *
+ * The first thing on the beach when you come back up out of the catacombs.
+ * They are placed HERE rather than up with the pack because every number in
+ * the line below is written off `CAT_OUT_Z`, which is declared in this
+ * section — and a constant that reads a later one is a dead-zone crash that
+ * takes the whole page before a line of it runs. `makeMutant` is a function
+ * declaration, so it is hoisted and this is simply a later call.
+ *
+ * They are spread ACROSS the beach and staggered down it rather than set in
+ * a rank, so walking into them is walking into a place rather than meeting a
+ * line — and each is far enough from the next that its own `wakeAt` brings
+ * them on a few at a time. `live` on the far-prop entry, because a thing
+ * that follows you is culled by where it IS and not by where it stood. */
+const CAT_FOES = [
+  [11.2, CAT_OUT_Z - 26, 'crooked'],
+  [4.6, CAT_OUT_Z - 31, 'runt'],
+  [8.4, CAT_OUT_Z - 38, 'hulk'],
+  [12.6, CAT_OUT_Z - 44, 'bloat'],
+  [1.8, CAT_OUT_Z - 47, 'spindle'],
+];
+for (const [fx, fz, kn] of CAT_FOES) {
+  const fu = makeMutant(fx, fz, kn);
+  fu.g.rotation.y = Math.PI;                     // facing back up the walk, at you
+  farProps.push({ obj: fu.g, z: fz, d: 280, live: true });
 }
 
 // -------------------------------------------------------------- the hunter
@@ -39496,6 +39779,29 @@ function catNodeAt(x, z, y, slack = 1.0, mask = null) {
   return mask && bestIn >= 0 ? bestIn : best;
 }
 // the nearest node of the main component to a point, anywhere in the place (rare: a body found off the graph)
+/* AND A SNAP MUST LAND SOMEWHERE HE COULD HAVE WALKED TO. Every unstick in
+ * here ends `p.set(node)`, and `catNearestMain` answers with the nearest node
+ * ON THE MAIN COMPONENT — which, pressed against a wall or against the barred
+ * door, is as often as not the node on the OTHER SIDE of it. That is the
+ * whole of "he clips through a closed door": nothing ever walked him through
+ * it, he was PUT there. The nearest node whose own line is open from where he
+ * stands cannot be past anything solid, and that leaf is in the wall index
+ * like every other drawn face, so while it is shut it is a wall to him. The
+ * bare nearest stays as the last resort, for a body inside stone with no open
+ * line anywhere. */
+function catNearestOpen(x, z, y) {
+  if (!catG) return -1;
+  const N = catG.nodes, M = catG.main;
+  let best = -1, bd = 1e9;
+  for (let i = 0; i < N.length; i++) {
+    if (M && !M[i]) continue;
+    const n = N[i], d = Math.hypot(n.x - x, n.z - z) + Math.abs(n.f - y) * 2;
+    if (d >= bd || d > 14) continue;
+    if (!catLineOpen(x, z, y, n.x, n.z, n.f)) continue;
+    bd = d; best = i;
+  }
+  return best >= 0 ? best : catNearestMain(x, z, y);
+}
 function catNearestMain(x, z, y) {
   if (!catG) return -1;
   let best = -1, bd = 1e9;
@@ -39978,7 +40284,7 @@ function catStand(u, dt) {
     p.y += (u.catFloor - p.y) * Math.min(1, dt * 8);
     u.catSink = (u.catSink || 0) + dt;
     if (u.catSink > 0.8) {
-      const id = catNodeAt(p.x, p.z, u.catFloor, 6);
+      const id = catNearestOpen(p.x, p.z, u.catFloor);
       if (id >= 0) { const n = catG.nodes[id]; p.set(n.x, n.f, n.z); u.catFloor = n.f; }
       u.catSink = 0; u.path = null;
     }
@@ -40260,19 +40566,39 @@ function catDownStep(u, dt) {
  * front of you is worse than a creature that is stuck. Standing still is
  * the point of an act, and a fight is fought at arm's length without much
  * ground being covered, so neither counts. */
-const CAT_STUCK = 6.0;
+/* AND SIX SECONDS IS A LONG TIME TO WATCH A THING NOT MOVE. The owner's
+ * word is that he should never get stuck on anything, and the honest reading
+ * of that is not another cause fixed — it is a SHORTER LEASH: a metre of
+ * ground in two and a half seconds, and, the part that was missing, a
+ * backstop that fires whatever mode he is in. The old one refused to act
+ * while you could see him or while he was chasing, on the argument that a
+ * creature which teleports in front of you is worse than one that is stuck.
+ * That is true for a second or two and false after ten: what the owner was
+ * looking at was a boss ground against a tomb in plain sight with the net
+ * deliberately declining to catch him. He gets three tries at a fresh route
+ * first, and only then is he moved. */
+const CAT_STUCK = 2.5;
 function catWatch(u, dt) {
   const C = u.cat, p = u.g.position;
-  if (C.mode === 'act' || C.mode === 'down' || (u.st.atk >= 0) || u.st.recoil > 0) { C.wMark = null; C.wT = 0; return; }
-  if (!C.wMark) { C.wMark = { x: p.x, y: p.y, z: p.z }; C.wT = 0; return; }
-  if (Math.hypot(p.x - C.wMark.x, p.z - C.wMark.z) > 1.0 || Math.abs(p.y - C.wMark.y) > 0.5) {
-    C.wMark.x = p.x; C.wMark.y = p.y; C.wMark.z = p.z; C.wT = 0; return;
+  /* WHAT IS NOT STUCK. An act is standing still ON PURPOSE — eating, sitting
+   * back, listening — and so is the hold at the end of a peek, which is the
+   * best thing he does and which a two-and-a-half-second leash would
+   * otherwise break every time; and a fight is fought at arm's length with
+   * no ground covered at all. Everything else that is not moving is stuck. */
+  if (C.mode === 'act' || C.mode === 'down' || (C.peekHold || 0) > 0 || (u.st.atk >= 0) || u.st.recoil > 0
+      || (u.st.awake && Math.hypot(camera.position.x - p.x, camera.position.z - p.z) < u.maxReach + 1.2)) {
+    C.wMark = null; C.wT = 0; C.wHard = 0; return;
   }
-  C.wT = (C.wT || 0) + dt;
+  if (!C.wMark) { C.wMark = { x: p.x, y: p.y, z: p.z }; C.wT = 0; C.wHard = 0; return; }
+  if (Math.hypot(p.x - C.wMark.x, p.z - C.wMark.z) > 1.0 || Math.abs(p.y - C.wMark.y) > 0.5) {
+    C.wMark.x = p.x; C.wMark.y = p.y; C.wMark.z = p.z; C.wT = 0; C.wHard = 0; return;
+  }
+  C.wT = (C.wT || 0) + dt; C.wHard = (C.wHard || 0) + dt;
   if (C.wT < CAT_STUCK) return;
-  C.wT = 0; u.path = null; u.catBlockT = 0;
-  if (playerSeesHunter(u) || C.mode === 'chase') { C.pause = Math.min(C.pause || 0, 0.1); return; }
-  const id = catNearestMain(p.x, p.z, p.y);
+  C.wT = 0; u.path = null; u.catBlockT = 0; u.catHeld = 0; u.catSink = 0; u.catGrind = 0; u.catReach = null;
+  if (C.wHard < CAT_STUCK * 3 && (playerSeesHunter(u) || C.mode === 'chase')) { C.pause = Math.min(C.pause || 0, 0.1); return; }
+  C.wHard = 0;
+  const id = catNearestOpen(p.x, p.z, p.y);
   if (id < 0) return;
   const n = catG.nodes[id];
   p.set(n.x, n.f, n.z); u.catFloor = n.f; u.catHeld = 0; u.catSink = 0;
@@ -40595,7 +40921,7 @@ function catUnpocket(u) {
   const pocket = !R || R.ids.length < 200;
   if (!pocket) return false;
   if (playerSeesHunter(u)) return true;
-  const id = catNearestMain(p.x, p.z, p.y);
+  const id = catNearestOpen(p.x, p.z, p.y);
   if (id >= 0) { const n = catG.nodes[id]; p.set(n.x, n.f, n.z); u.catFloor = n.f; u.path = null; u.catReach = null; u.catRouteFail = 0; }
   return true;
 }
@@ -40691,7 +41017,7 @@ function catSteer(u, dt, dist, foe) {
    * you, whose own machinery knows how to get about — rather than a boss
    * parked at 1.4 m in plan for the rest of the visit. */
   u.catRouteFail = (u.catRouteFail || 0) + 1;
-  if (u.catRouteFail === 3) { const id = catNodeAt(p.x, p.z, p.y, 6); if (id >= 0) { const n = catG.nodes[id]; p.set(n.x, n.f, n.z); u.catFloor = n.f; } u.catReach = null; }
+  if (u.catRouteFail === 3) { const id = catNearestOpen(p.x, p.z, p.y); if (id >= 0) { const n = catG.nodes[id]; p.set(n.x, n.f, n.z); u.catFloor = n.f; } u.catReach = null; }
   if (u.catRouteFail > 5) { if (!catUnpocket(u)) catLose(u); }
 }
 /* ---- THERE IS NO GRAB. He used to TAKE you when you had not been
@@ -45729,7 +46055,7 @@ window.__bw = {
   },
   get tavWorld() { return tavWorld; }, get tavTables() { return tavTables; }, get tavChairs() { return tavChairs; },
   get wongUnit() { return wongUnit; }, get drunkUnit() { return drunkUnit; }, get orcUnit() { return orcUnit; },
-  crawlerUnit, CRAWL_X, CRAWL_Z, crawlerProvoke, startCaveIn, placeInCatacombs, placeOutsideCatDoor, startCatExit, catRoute, catSees, catNodeAt, CAT_X, CAT_Y, CAT_Z, CAT_SITE, CAT_LAND, CAT_DOOR, CAVE_Z,
+  crawlerUnit, CRAWL_X, CRAWL_Z, crawlerProvoke, startCaveIn, placeInCatacombs, placeOutsideCatDoor, startCatExit, startCatReturn, placeInsideCatDoor, fitCatSandDoor, catWallDoor, catRoute, catSees, catNodeAt, CAT_X, CAT_Y, CAT_Z, CAT_SITE, CAT_LAND, CAT_DOOR, CAVE_Z,
   TRADER_X, TRADER_Z, TRADER_H, TRADER_POSE, traderPose, TRADER_STOCK, traderBuy, TRADER_NPC, traderWorld, get traderRig() { return traderRig; },
   magnumItem, magModel, magFire, magReload, magTrace, MAG_CAP,
   get magAmmo() { return magAmmo; }, set magAmmo(v) { magAmmo = v; },
