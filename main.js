@@ -4125,6 +4125,12 @@ let started = false, locked = false, fallbackLook = false, dragging = false;
 let packCut = false;            // the three coming in: the player watches
 let noteOpen = false, menuOpen = false, ended = false, introDone = false;
 let dialogOpen = false, invOpen = false, inspecting = false;
+/* AND THE SHOP'S FLAG LIVES UP HERE WITH THE OTHER OVERLAYS. `frozen()` is
+ * three lines below and `animate()` is kicked synchronously at module time,
+ * so a `let` declared beside the shop's own code — thirty thousand lines
+ * down — is read out of its dead zone on the first frame and takes the page
+ * with it. This file has paid for that one twice. */
+let shopOpen = false, shopSel = 0, shopReturnLock = false;
 let menuReturnLock = false, noteReturnLock = false, packReturnLock = false, inspectReturnLock = false;
 const lookEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
@@ -4328,9 +4334,9 @@ function updateHurt(dt) {
   hurtEl.style.opacity = String(Math.max(hurtFlash * hurtFlash, rim));
 }
 
-function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || inspecting || peeking || packCut || mutCut || hatchBusy || ucBusy || abductCut || portalCut || sailBusy || tavBusy || caveBusy || catBusy || keepRestore || dying || ended || !introDone; }
+function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || shopOpen || inspecting || peeking || packCut || mutCut || hatchBusy || ucBusy || abductCut || portalCut || sailBusy || tavBusy || caveBusy || catBusy || keepRestore || dying || ended || !introDone; }
 function refreshUI() {
-  const playing = started && !menuOpen && !noteOpen && !dialogOpen && !invOpen && !inspecting && !dying && !ended;
+  const playing = started && !menuOpen && !noteOpen && !dialogOpen && !invOpen && !shopOpen && !inspecting && !dying && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
   ringsEl.classList.toggle('hidden', !playing || !ringsFound);
   bloodEl.classList.toggle('show', bloodSeen && playing);
@@ -4405,7 +4411,7 @@ document.addEventListener('pointerlockchange', () => {
     if (!started) { overlay.classList.remove('hidden'); return; }
     // an intentional exit (note / menu / dialogue / death) is handled by
     // those; a stray exit while still playing means the user hit Esc → menu
-    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !inspecting && !peeking && !packCut && !mutCut && !abductCut && !portalCut && !hatchBusy && !ucBusy && !dying) openMenu();
+    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !shopOpen && !inspecting && !peeking && !packCut && !mutCut && !abductCut && !portalCut && !hatchBusy && !ucBusy && !dying) openMenu();
   }
 });
 window.addEventListener('unhandledrejection', (e) => {
@@ -4569,6 +4575,11 @@ function beginGame() {
    * and the piece that plays you in from the title would start the game over
    * in the one sense that matters. The sea keeps going; nothing else does. */
   if (!instantStart) startMusic();
+  /* AND A DEV-MODE RELOAD HANDS THEM OVER TOO. The flag rides in
+   * `sessionStorage` so the mode survives a death or a restart the game
+   * itself asked for — and only the menu's own checkbox ever granted the
+   * gear, so coming back you were in dev mode with empty hands. */
+  if (settings.devMode) devGrantWeapons();
   requestLock();                                   // fires on the click gesture, when there was one
   overlay.classList.add('hidden');
   leaveTitle();
@@ -4671,13 +4682,24 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Tab') {
     if (ended || dying) return;
     if (inspecting) { closeInspect(); return; }   // Tab is a way out of it too
+    if (shopOpen) { closeShop(); return; }
     if (invOpen) closePack();
-    else if (!menuOpen && !noteOpen && !dialogOpen) openPack();
+    else if (!menuOpen && !noteOpen && !dialogOpen && !shopOpen) openPack();
     return;
+  }
+  /* THE SHOP TAKES THE KEYS WHILE IT IS UP. Up and down walk the list, E or
+   * Enter takes the line you are on — a menu you can only use with a mouse
+   * is a menu in a game that is played with a hand on the keys. */
+  if (shopOpen && !ended) {
+    if (e.code === 'ArrowUp' || e.code === 'KeyW') { shopSel = (shopSel + SHOP_ROWS.length - 1) % SHOP_ROWS.length; renderShop(); return; }
+    if (e.code === 'ArrowDown' || e.code === 'KeyS') { shopSel = (shopSel + 1) % SHOP_ROWS.length; renderShop(); return; }
+    if (e.code === 'KeyE' || e.code === 'Enter' || e.code === 'NumpadEnter') { shopConfirm(); return; }
+    if (e.code === 'Escape') { closeShop(); return; }
   }
   if (e.code === 'Escape') {
     if (ended) return;
     if (inspecting) closeInspect();
+    else if (shopOpen) closeShop();
     else if (invOpen) closePack();
     else if (peeking) endPeek();
     else if (dialogOpen) endDialog();
@@ -4862,8 +4884,15 @@ S_DEV.addEventListener('change', () => {
  * behave exactly as if you had picked each one up. The world copies stay
  * where they are; `addToInventory` is only reached for a tool the pack does
  * not already hold, so taking one afterwards cannot double it. */
+/* AND THE KEY IS A TOOL TOO. Testing anything past the catacombs means
+ * crawling the whole place for the one thing that opens the way out, and
+ * dev mode is for walking the beach rather than for playing it. It is the
+ * SAME item object the vault hands out, so the pack, the icon and the
+ * door's own `inventory.includes` all behave as if you had picked it up —
+ * and `addToInventory` refuses a duplicate by identity, so finding it
+ * afterwards cannot give you two. */
 function devGrantWeapons() {
-  for (const it of [shovelItem, militaryItem, katanaItem]) {
+  for (const it of [shovelItem, militaryItem, katanaItem, skullKeyItem]) {
     if (!it || inventory.includes(it)) continue;
     addToInventory(it);
   }
@@ -11903,7 +11932,20 @@ function dropSkullKey(sx, sy, sz, yaw, tries = 0) {
   hit.name = 'hitProxy'; hit.visible = false; hit.position.y = 0.08;
   skullWorld.add(hit);
   const lift = (v) => skullKey.traverse((o) => { if (o.isMesh && o.material.emissive) { o.material.emissive.setHex(v); o.material.emissiveMap = v ? (o.material.map || null) : o.material.emissiveMap; } });
-  lift(0x6d737c);                                      // off black while it lies in the dark
+  /* AND IT LIGHTS UP. It is the one object in the game a whole room is
+   * about, lying on a plinth in a vault whose own stone reads at 0.03 —
+   * at an off-black lift it was a pale smudge between four candles and
+   * nothing about it said "this is the thing". Twice the lift, a bigger
+   * and stronger glint that shows THROUGH the candles standing in front of
+   * it (the Military Shovel's own argument, in a darker room), and its own
+   * warm little lamp on the stone so the plinth reads as lit rather than as
+   * a thing with a sprite over it. */
+  lift(0xc6cedb);
+  /* AND IT GOES ON BEFORE THE INTERACTABLE. `addInteractable` with kind
+   * `inventory` hands every takeable the stock glint through
+   * `makeNoticeable`, and `addItemShine` REFUSES a second one on the same
+   * root — so a bigger one asked for afterwards is silently a no-op. */
+  addItemShine(skullWorld, { size: 1.05, height: 0.16, strength: 2.4, lift: 0.9, through: 1 });
   addInteractable(skullWorld, 'Take the key', 'inventory', {
     onActivate: () => {
       lift(0x000000);                                  // the copy in your hand is cloned at this moment
@@ -11911,10 +11953,15 @@ function dropSkullKey(sx, sy, sz, yaw, tries = 0) {
       removeInteractable(skullWorld);
       hovered = null;
       addToInventory(skullKeyItem);
+      if (skullLamp) { skullLamp.removeFromParent(); skullLamp = null; }
       sfxThud(0.03);
     },
   });
+  skullLamp = new THREE.PointLight(0xdfe8ff, 2.2, 3.4, 2);
+  skullLamp.position.set(0, 0.28, 0);
+  skullWorld.add(skullLamp);
 }
+let skullLamp = null;
 /* It comes OUT. Set down quietly on the sand where the crate stood, a 20 mm
  * ring is the easiest thing in the game to walk away from; so it is thrown
  * up out of the boards on a real body, toward you, rings off the sand when
@@ -19092,23 +19139,92 @@ let scpPhase = 0, scpWasInYard = false;
  * just short of it — is how the walk's last hundred metres are reached.
  * The lane's bend is a fact about the first thirty metres only, so
  * the gate is centred on the beach and not on `pathBend`. */
-const FENCE_ZL = 92.0;                      // metres from the door: the sand past the foot of the ridge
-const FENCE_Z = LH_Z + FENCE_ZL;
+/* AND IT IS BACK, PAST THE FIVE. The owner wants the gate on the walk again
+ * and wants it AFTER the mutants on the sand past the catacombs' door — so
+ * its z is written off the same chain they are (`CAT_OUT_Z` is
+ * `PORTAL_Z - 60` and `PORTAL_Z` is `HOLE_Z - 100`), eighteen metres beyond
+ * the last of them. It cannot READ `CAT_OUT_Z`, which is declared twenty
+ * thousand lines below this one — a constant that reads a later one is a
+ * dead-zone crash that takes the page before a line of it runs — so the
+ * arithmetic is spelled out and the comment is the proof. */
+const FENCE_Z = HOLE_Z - 225;               // = CAT_OUT_Z - 65: the last of the five stands at CAT_OUT_Z - 47
 const FENCE_H = 14.0;                       // post height above the ground
 const FENCE_X0 = LH_X - 32, FENCE_X1 = LH_X + 22;   // from well out in the sea to inside the cliff
 const FENCE_GATE_W = 7.4;                   // the opening
 const FENCE_GATE_X = 5.2;                   // the middle of the beach
 const FENCE_COIL_R = 1.15;
 let fenceOpen = false, fenceSwing = 0, fenceZap = 0, fenceGateCol = null, fenceLeaves = null, fenceChain = null, fenceLamps = [], fenceCages = [];
-/* THE FENCE IS OUT, by the owner's word. Its parts are still BUILT — the
- * crash site, `smashFence` and `fenceContact` all name them — but nothing of
- * it enters the scene, holds a collider, or answers the crosshair. The
- * saucer went back behind the spawn with it (see `UFO_Z`). */
-const FENCE_ON = false;
+/* IT IS IN AGAIN — and the saucer is not. The crash's own `smashFence` and
+ * `fenceContact` still name every part of it, and they simply never fire
+ * now, because the abduction lives behind the spawn (see `UFO_Z`) and this
+ * stands nine hundred metres the other way. */
+const FENCE_ON = true;
 let fenceParts = null, fenceSmashed = false;
 const fenceFalling = [];                    // posts going over, live — see smashFence / updateFence
 const fenceGate = [];                       // the two leaves as breakable props — see hurtGateLeaf
 const FENCE_SMASH_R = 11.0;                 // the hull's own footprint, a little over its collider
+/* ---------------------------------------------------------------------
+ * AND THE WAY OVER IT IS A CLIMB.
+ *
+ * The gate never opens — that is the owner's word twice over — so what gets
+ * you past it is the fence's own failure: one bay has RIPPED, and the torn
+ * steel has curled out into a zig-zag of ledges you jump up.
+ *
+ * WHAT MAKES IT A PUZZLE RATHER THAN A STAIRCASE is that it is measured
+ * against the body. A jump lifts the feet 0.616 m (`JUMP_V` 4.3 against
+ * `P_GRAV` 15) and the walk catches a floor `ROCK_STEP` (0.42) over them, so
+ * 1.03 m is the tallest step there is anywhere in this game: at 0.88 every
+ * ledge is a real jump with a hand's width to spare and nothing about it can
+ * be strolled. The lanes are what make it a climb and not a ladder — three
+ * of them, 1.15 m apart, cycling, so every step is also sideways and you
+ * have to look for the next one.
+ *
+ * AND THE LANES CYCLE IN THREES FOR A REASON. `pushOutOfSolids` skips a
+ * collider you are UNDER (`floorY`, the pavilion's own furniture rule), and
+ * "under" means your head is below its underside — so a lane that came round
+ * every two steps would put its own next ledge 1.76 m over a 1.88 m body and
+ * shove you off the one you are standing on. Every third step is 2.64 m up,
+ * which clears a standing head by three quarters of a metre. */
+const FENCE_CLIMB = (() => {
+  const lanes = [10.60, 11.70], y0 = 0.95, step = 0.88, n = 16;
+  const bands = [0.46, 1.30, 2.14];                 // how far out from the fence line
+  /* TWO LANES AND THREE DEPTHS, ON A FOUR-STEP CYCLE — and every number in
+   * that sentence was arrived at by CLIMBING IT and watching where it stops.
+   *
+   * A jump lifts the feet 0.616 m (`JUMP_V` 4.3 against `P_GRAV` 15) and the
+   * walk catches a floor `ROCK_STEP` (0.42) over them, so 1.03 m is the
+   * tallest step anywhere in this game and 0.88 is a real jump with a hand's
+   * width to spare. Across, a jump carries about 1.9 m.
+   *
+   * WHAT THE FIRST TWO LAYOUTS GOT WRONG. Three lanes cycling put a 2.30 m
+   * LEAP on every third step and the climb stalled dead at the third ledge.
+   * Four lanes cycling put a 3.30 m one on every fourth. And a four-step
+   * pattern that went out and back walled itself in: `pushOutOfSolids` grows
+   * every box by most of a body radius and skips only one you are UNDER, so
+   * a shelf 0.88 m over your head is a WALL, and a second shelf beside it at
+   * the same depth grows into the very gap you have to pass through to reach
+   * the first. Traced on the thirteenth ledge: boxed in at x 11.76, unable
+   * to move a millimetre in any useful direction for a minute of trying.
+   *
+   * So: nothing is ever more than 1.39 m from the next thing, and no two
+   * shelves share a lane AND a depth within 3.52 m — which clears a standing
+   * body by a metre and a half. */
+  const LANE = [0, 1, 1, 0], BAND = [0, 1, 2, 1];
+  const ledges = [];
+  for (let i = 0; i < n; i++) {
+    const k = i % 4;
+    ledges.push({ x: lanes[LANE[k]], z: bands[BAND[k]], y: y0 + i * step, w: 1.0, i });
+  }
+  /* AND THE LAST ONE IS THE STEP ONTO THE FENCE, not a jump: it is the one
+   * lane-and-depth pair nothing else is near, and from it the top of the
+   * wall is a stride rather than a leap. */
+  ledges.push({ x: lanes[0], z: bands[0], y: y0 + n * step - 0.83, w: 1.0, i: n });
+  /* The holes, at the heights the route crosses the panel — so the rips ARE
+   * the ledges' own tear and the way up reads from the sand. */
+  const rips = [];
+  for (let i = 1; i < n; i += 4) rips.push([lanes[LANE[i % 4]], y0 + i * step + 0.4, 1.0, 1.5]);
+  return { x0: 9.6, x1: 13.2, lanes, y0, step, n, ledges, rips };
+})();
 const fenceGroup = new THREE.Group();
 {
   const G = fenceGroup;
@@ -19244,7 +19360,30 @@ const fenceGroup = new THREE.Group();
     }
     // the mesh panel, hung from the top rail and buried at the bottom
     const top = Math.max(ga, gb) + FENCE_H, bot = Math.min(ga, gb) - 0.5;
-    const panel = new THREE.Mesh(new THREE.PlaneGeometry(len, top - bot), linkMat);
+    /* AND ONE BAY OF IT HAS FAILED. A rip is CUT ON VERTEX LINES — the
+     * lighthouse's own rule: subdivide the panel and drop the quads whose
+     * middle falls inside a hole, so the edge is square by construction and
+     * nothing has to be sliced. It is the only bay with holes in it, and it
+     * is the bay the ledges are bolted to, so the route reads before you
+     * have taken a step: the fence is broken HERE. */
+    const ripped = FENCE_ON && a > FENCE_CLIMB.x0 - 0.01 && b < FENCE_CLIMB.x1 + 0.01;
+    const pg = new THREE.PlaneGeometry(len, top - bot, Math.max(6, Math.round(len * 4)), Math.max(10, Math.round((top - bot) * 2)));
+    if (ripped) {
+      const P = pg.attributes.position, I = pg.index, keep = [];
+      for (let t = 0; t + 2 < I.count; t += 3) {
+        const i0 = I.getX(t), i1 = I.getX(t + 1), i2 = I.getX(t + 2);
+        const cx = (P.getX(i0) + P.getX(i1) + P.getX(i2)) / 3;
+        const cy = (P.getY(i0) + P.getY(i1) + P.getY(i2)) / 3 + (top + bot) / 2;
+        let out = false;
+        for (const [hx, hy, rx, ry] of FENCE_CLIMB.rips) {
+          const dx = (cx + (a + b) / 2 - hx) / rx, dy = (cy - hy) / ry;
+          if (dx * dx + dy * dy < 1) { out = true; break; }
+        }
+        if (!out) keep.push(i0, i1, i2);
+      }
+      pg.setIndex(keep);
+    }
+    const panel = new THREE.Mesh(pg, linkMat);
     panel.position.set((a + b) / 2, (top + bot) / 2, FENCE_Z);
     panel.userData.fx = (a + b) / 2; fencePanels.push(panel);
     linkTex.repeat.set(1, 1);
@@ -19254,6 +19393,46 @@ const fenceGroup = new THREE.Group();
   }
   railMesh.frustumCulled = false;
   G.add(railMesh);
+  /* ---- THE LEDGES. Torn steel, on the WALK'S side of the line — and they
+   * have to be wholly clear of the fence's own wall collider in z, or the
+   * push-out that keeps you off the fence shoves you off its ledges too:
+   * the wall is FENCE_Z +- 0.45 and these hang from +0.46 out to +1.08.
+   * Each is a shelf with the tear curled up at its outer edge and two
+   * brackets back to the wire, and each carries a `floorY` so the one above
+   * it is something you stand UNDER rather than something that pushes. */
+  if (FENCE_ON) {
+    const C = FENCE_CLIMB, LD = 0.62;
+    const lipGeo = new THREE.BoxGeometry(1, 0.26, 0.07);
+    const armGeo2 = new THREE.BoxGeometry(0.09, 0.09, LD * 0.9);
+    /* AND IT TEARS ALL THE WAY THROUGH. The same ladder on both faces of the
+     * bay, mirrored in z — because a fence you can only get over in one
+     * direction is a fence that takes the trader, the catacombs and your own
+     * checkpoint away from you the moment you use it. It is the same failure
+     * seen from the other side, and it costs seventeen shelves. */
+    const both = [];
+    for (const L of C.ledges) { both.push(L); both.push({ ...L, z: -L.z - LD, far: true }); }
+    for (const L of both) {
+      const LW = L.w, LZ = FENCE_Z + L.z;
+      const g = new THREE.Group();
+      g.position.set(L.x, L.y, LZ + LD / 2);
+      const sh = new THREE.Mesh(new THREE.BoxGeometry(LW, 0.10, LD), steelMat); sh.position.y = -0.05; g.add(sh);
+      const lip = new THREE.Mesh(lipGeo, darkMat); lip.scale.x = LW;
+      lip.position.set(0, 0.06, LD / 2 - 0.03); lip.rotation.x = -0.34; g.add(lip);
+      for (const sx of [-1, 1]) {
+        const br = new THREE.Mesh(armGeo2, darkMat);
+        br.position.set(sx * (LW / 2 - 0.10), -0.14, -0.02); br.rotation.x = 0.30; g.add(br);
+      }
+      // and the deeper lane hangs off a stay back to the wire, or it floats
+      const out = L.far ? -L.z - LD : L.z;
+      if (out > 0.8) {
+        const stay = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, out), darkMat);
+        stay.position.set(0, -0.22, (L.far ? 1 : -1) * (LD / 2 + out / 2 - 0.46)); g.add(stay);
+      }
+      G.add(g);
+      rockColliders.push({ x0: L.x - LW / 2, z0: LZ, x1: L.x + LW / 2, z1: LZ + LD,
+                           top: L.y, floorY: L.y - 0.20, mat: 'metal' });
+    }
+  }
   // ---- the arms leaning out at the walk, and three strands of barbed wire on them
   const armGeo = new THREE.CylinderGeometry(0.07, 0.09, 1.9, 6);
   const armMesh = new THREE.InstancedMesh(armGeo, steelMat, posts.length);
@@ -19313,6 +19492,9 @@ const fenceGroup = new THREE.Group();
    * the gate the spans under it have to GO, and a coil that runs the whole
    * width in one geometry cannot lose its middle. */
   for (const [x0, x1] of spans) {
+    // and the bay that has failed carries neither coil: the razor went with
+    // the wire, which is why this is the bay you can get up
+    if (FENCE_ON && x0 > FENCE_CLIMB.x0 - 0.01 && x1 < FENCE_CLIMB.x1 + 0.01) continue;
     const turns = Math.max(2, Math.round((x1 - x0) / 0.62));
     const curve = new FenceCoil(x0, x1, coilTop, FENCE_COIL_R, turns, FENCE_Z + 0.15);
     const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, turns * 10, 0.032, 4, false), rustMat);
@@ -19410,7 +19592,13 @@ const fenceGroup = new THREE.Group();
     if (FENCE_ON) physProps.push(prop);
   }
   // ---- solid: two walls either side of the opening, and the gate itself while it is shut
-  const topY = gy + FENCE_H + 30;
+  /* AND THE TOP OF IT IS THE TOP OF IT. The wall boxes were given a top
+   * thirty metres over the crest so that nothing could ever step onto them,
+   * which was right while the fence was a thing you looked THROUGH at the
+   * tower. The owner wants a way over, so the collider ends where the steel
+   * ends: get above 14.5 m and the fence line is a walkway half a metre
+   * wide, and the far side is a drop. */
+  const topY = gy + FENCE_H + 0.5;
   if (FENCE_ON) {
     rockColliders.push({ x0: FENCE_X0 - 2, z0: FENCE_Z - 0.45, x1: gateL - 0.05, z1: FENCE_Z + 0.45, top: topY, mat: 'metal' });
     rockColliders.push({ x0: gateR + 0.05, z0: FENCE_Z - 0.45, x1: FENCE_X1 + 2, z1: FENCE_Z + 0.45, top: topY, mat: 'metal' });
@@ -21649,6 +21837,7 @@ function ragSmash(r, speed) {
     }
   }
 }
+const _rgP = new THREE.Vector3();
 function mutRagdoll(u, dirX, dirZ, power) {
   if (u.rag || !u.model) return;
   /* IT DIES FROM THE POSE IT WAS IN — so the mixer is simply never updated
@@ -21669,12 +21858,28 @@ function mutRagdoll(u, dirX, dirZ, power) {
    * flat, which is the picture the owner sent. The first cut joint in a
    * chain is a particle like any other; only what hangs off it is left out. */
   const belowCut = (bn) => { for (let b = bn.parent; b; b = b.parent) { if (u.gone[b.name]) return true; if (!b.isBone) break; } return false; };
+  /* AND THE KICK IS SHARED OUT OVER THE BODY THAT IS LEFT, NOT OVER THE ONE
+   * IT WAS BORN WITH. `h` is a part's height as a fraction of the creature's
+   * nominal `kind.h`, which weights the throw toward the chest and leaves the
+   * feet planted so a whole body goes over them — exactly right, and exactly
+   * wrong for a body that has just been CUT IN HALF. A stump of legs and a
+   * pelvis has nothing above 0.3 of `kind.h`, so every particle in it took
+   * the smallest kick there is, the two legs and the hips made a stable
+   * A-frame, and what came to rest was a pair of legs STANDING BOLT UPRIGHT
+   * on the sand with the torso lying beside them. That is the owner's "the
+   * bodies freeze". Measured over what is actually simulated, the top of a
+   * stump is at h = 1 and takes the whole throw, so it goes over. */
+  let ragTall = 0.5;
+  for (const [name] of RAG_CHAIN) {
+    const bn = bones[name]; if (!bn || belowCut(bn)) continue;
+    ragTall = Math.max(ragTall, bn.getWorldPosition(_rgP).y - u.g.position.y);
+  }
   const parts = [], byName = {};
   for (const [name, parentName, childName, r] of RAG_CHAIN) {
     const bn = bones[name]; if (!bn || belowCut(bn)) continue;
     const p = bn.getWorldPosition(new THREE.Vector3());
     // the blow's momentum, most of it up top: the chest goes, the feet stay planted and the body goes over them
-    const h = THREE.MathUtils.clamp((p.y - u.g.position.y) / Math.max(0.5, u.kind.h), 0, 1);
+    const h = THREE.MathUtils.clamp((p.y - u.g.position.y) / Math.max(0.5, ragTall), 0, 1);
     /* HARDER AGAIN. The owner asked twice: a killing blow has to throw the
      * body. Most of the kick goes into the top of it and it is lifted as it
      * goes, so it leaves its feet and tumbles rather than sliding off. */
@@ -33858,18 +34063,21 @@ const PORTAL_HEAR = 34;            // the hum reaches this far
  * no clips, so the pose is composed onto the bind once at load and nothing
  * ever stamps over it — there is no mixer on him to argue with. */
 const TRADER_X = CLIFF_BLOCK_X - 1.35, TRADER_Z = PORTAL_Z + 8.5, TRADER_H = 1.84;
-/* AND THE ROUNDS ARE HIS TOO. A gun that comes with three and can hold
- * six has to be able to get the other three from somewhere, and he is
- * the only somewhere there is: six for two jars, three loaders of them,
- * which is eighteen rounds if you spend everything you have on lead. */
-const TRADER_STOCK = { glow: 1, water: 2, gun: 1, ammo: 99 };
+/* AND THE ROUNDS ARE NOT HIS. He sold six for two jars, which made the one
+ * thing a revolver is ABOUT — there are six and then there are none — a
+ * thing you could simply buy your way out of. The owner's word: take them
+ * out. `ammo` is kept in the table at zero stock so an old save that
+ * recorded a count does not read as undefined. */
+const TRADER_STOCK = { glow: 1, water: 2, gun: 1, ammo: 0 };
 /* FREE WHILE THE GUN IS BEING TESTED — the owner's word, and he sets the real
  * cost later. The menu's labels read this table rather than spelling a number
  * out, so putting the price back is one line here and nothing else. */
 const TRADER_PRICE = { glow: 2, water: 1, gun: 0, ammo: 0 };
+/* SHORT, BECAUSE IT SITS IN A COLUMN. "2 blood jars" beside a name in a
+ * list is half the row; the header already says what the currency is. */
 const priceTag = (what) => {
   const n = TRADER_PRICE[what];
-  return n <= 0 ? 'free' : n === 1 ? '1 blood jar' : `${n} blood jars`;
+  return n <= 0 ? 'free' : n === 1 ? '1 jar' : `${n} jars`;
 };
 let traderSaid = '';
 /* A JAR IS A NUMBER YOU CARRY, and `gainJar` is the one door it comes in
@@ -33924,32 +34132,95 @@ function traderBuy(what) {
   }
   sfxThud(0.03);
 }
-/* The node's own text is a GETTER, so one node carries every answer he has:
- * what he says is decided by the sale, not by which line you pressed. */
-const TRADER_SCRIPT = {
-  start: {
-    text: 'Just buy something...',
-    choices: [
-      { get label() { return `.44 Magnum — ${priceTag('gun')}`; }, to: 'said', act: () => traderBuy('gun') },
-      { get label() { return `Six .44 rounds — ${priceTag('ammo')}`; }, to: 'said', act: () => traderBuy('ammo') },
-      { get label() { return `Glowstick — ${priceTag('glow')}`; }, to: 'said', act: () => traderBuy('glow') },
-      { get label() { return `Bottle of water — ${priceTag('water')}`; }, to: 'said', act: () => traderBuy('water') },
-      { label: 'Nothing.', to: 'go' },
-    ],
-  },
-  said: {
-    get text() { return traderSaid; },
-    choices: [
-      { get label() { return `.44 Magnum — ${priceTag('gun')}`; }, to: 'said', act: () => traderBuy('gun') },
-      { get label() { return `Six .44 rounds — ${priceTag('ammo')}`; }, to: 'said', act: () => traderBuy('ammo') },
-      { get label() { return `Glowstick — ${priceTag('glow')}`; }, to: 'said', act: () => traderBuy('glow') },
-      { get label() { return `Bottle of water — ${priceTag('water')}`; }, to: 'said', act: () => traderBuy('water') },
-      { label: "That's all.", to: 'go' },
-    ],
-  },
-  go: { text: 'Finally.', choices: [] },
+/* ------------------------------------------------------------------
+ * AND A SHOP IS A THING YOU LOOK AT, NOT A CONVERSATION YOU HAVE.
+ *
+ * He was a dialogue with a price on every line — four choices and a reply,
+ * the snorkeler's own machinery — and what that reads as is a chat about
+ * buying something rather than a shop. The owner sent Resident Evil 3's,
+ * and it is the right shape: a title, what you have to spend, a list of
+ * rows with a price on the right, and beside it a pane showing the one you
+ * are on — its picture, its name and what it does.
+ *
+ * He says ONE thing now. "Just buy something..." is the line, and after
+ * that the same line is where every answer a sale has goes — sold out, you
+ * cannot afford it, you already have one — so there is one place on the
+ * screen he ever speaks from and it is under his own title.
+ *
+ * It wears the pack's language, because it is the same idea one step out:
+ * your things, big, on a black screen, in white on black with one hairline.
+ * `itemIcon` is the same render the pack and the hotbar draw, so what you
+ * are looking at in the shop is the object you will be carrying. */
+const SHOP_ROWS = [
+  { key: 'gun', item: () => magnumItem, name: '.44 Magnum',
+    desc: 'Six chambers, three in it. Right click aims, R reloads. Nothing else on this beach reloads at all.' },
+  { key: 'glow', item: () => glowstickItem, name: 'Glowstick',
+    desc: 'Cracked and cold. It is the only light you will carry underground.' },
+  { key: 'water', item: () => waterBottleItem, name: 'Bottle of water',
+    desc: 'One drink in it, and it puts you back on your feet. He will fill an empty one.' },
+];
+const shopPanelEl = document.getElementById('shoppanel');
+const shopListEl = document.getElementById('shop-list');
+const shopDetailEl = document.getElementById('shop-detail');
+const shopSayEl = document.getElementById('shop-say');
+const shopJarsEl = document.getElementById('shop-jars');
+const shopHad = (r) => {
+  if (r.key === 'gun') return inventory.includes(magnumItem);
+  if (r.key === 'glow') return inventory.includes(glowstickItem);
+  return inventory.includes(waterBottleItem) && waterSips > 0;
 };
-const TRADER_NPC = { name: 'Rude Trader', script: TRADER_SCRIPT, sprite: null, headY: TRADER_H * 0.86, fov: 26 };
+const shopOut = (r) => TRADER_STOCK[r.key] <= 0;
+function renderShop() {
+  shopJarsEl.textContent = bloodJars;
+  shopSayEl.textContent = traderSaid;
+  shopListEl.innerHTML = '';
+  SHOP_ROWS.forEach((r, i) => {
+    const el = document.createElement('div');
+    el.className = 'row' + (i === shopSel ? ' sel' : '') + (shopHad(r) ? ' had' : '') + (shopOut(r) ? ' out' : '');
+    el.innerHTML = `<span class="box"></span><span class="nm">${r.name}</span><span class="pr">${priceTag(r.key)}</span>`;
+    el.addEventListener('mousedown', (e) => { e.preventDefault(); shopSel = i; renderShop(); });
+    el.addEventListener('dblclick', () => { shopSel = i; shopConfirm(); });
+    shopListEl.appendChild(el);
+  });
+  const r = SHOP_ROWS[shopSel];
+  const it = r && r.item();
+  const afford = r && bloodJars >= TRADER_PRICE[r.key];
+  shopDetailEl.innerHTML =
+    `<div class="pic">${it ? iconHTML(it) : ''}</div>` +
+    `<div class="nm">${r ? r.name : ''}</div>` +
+    `<div class="ds">${r ? r.desc : ''}</div>` +
+    `<button class="buy"${!r || shopOut(r) || !afford ? ' disabled' : ''}>Buy</button>`;
+  const btn = shopDetailEl.querySelector('.buy');
+  if (btn) btn.addEventListener('click', shopConfirm);
+}
+function shopConfirm() {
+  const r = SHOP_ROWS[shopSel]; if (!r) return;
+  traderBuy(r.key);
+  renderShop();
+}
+function openShop() {
+  if (shopOpen || ended || dying || !introDone) return;
+  shopOpen = true;
+  shopReturnLock = locked;
+  if (locked) document.exitPointerLock();
+  if (held) dropHeld();
+  if (invOpen) closePack();
+  traderSaid = 'Just buy something...';
+  shopSel = 0;
+  renderShop();
+  shopPanelEl.classList.add('show');
+  setPrompt('');
+  crosshair.className = '';
+  refreshUI();
+}
+function closeShop() {
+  if (!shopOpen) return;
+  shopOpen = false;
+  shopPanelEl.classList.remove('show');
+  refreshUI();
+  if (shopReturnLock && !fallbackLook) requestLock();
+}
+const TRADER_NPC = { name: 'Rude Trader', sprite: null, headY: TRADER_H * 0.86, fov: 26 };
 const traderWorld = new THREE.Group();
 traderWorld.position.set(TRADER_X, 0, TRADER_Z);
 traderWorld.rotation.y = -Math.PI / 2;      // the model's front is +Z; -x is the water
@@ -34009,9 +34280,9 @@ const traderHit = new THREE.Group();
   traderHit.add(hit);
   traderWorld.add(traderHit);
 }
-addInteractable(traderHit, 'Talk to him', 'npc', {
-  far: 5.0, when: () => !dialogOpen,
-  onActivate: () => startDialog('start', TRADER_NPC),
+addInteractable(traderHit, 'Buy something', 'npc', {
+  far: 5.0, when: () => !dialogOpen && !shopOpen,
+  onActivate: () => openShop(),
 });
 
 
@@ -34056,7 +34327,11 @@ const MAG_VM = 1.42;                // the hand's copy, against the world's
 const MAG_ZOOM = 0.22;              // of the field of view, at the sights
 const MAG_SPREAD = 0.034;           // radians, from the hip
 const MAG_SPREAD_ADS = 0;           // and down the sights: what you aim at is what you hit, exactly
-const MAG_KICK_K = 330, MAG_KICK_D = 17;   // the lens spring: peaks near 0.09 s, home by 0.35
+/* AND IT KICKS LIKE A RESIDENT EVIL MAGNUM. A slower, bigger arc: the
+ * spring's frequency is sqrt(K), so dropping it lengthens the throw and the
+ * settle together — the muzzle goes up hard, hangs, and comes down over a
+ * beat you can watch, instead of ringing back inside a fifth of a second. */
+const MAG_KICK_K = 235, MAG_KICK_D = 13.5;   // peaks near 0.13 s, home by 0.6
 /* THE RELOAD'S BEATS, as fractions of it — the reference clip's, scaled.
  * The cylinder is out by 0.30, the loader is up and in at 0.72 (which is
  * where the rounds are credited), and the wrist flicks it shut at 0.86. */
@@ -34345,8 +34620,14 @@ function magPose(out) {
    * sights and the muzzle climb the gun makes are the same event — and its
    * shape is the reference clip's: hard up and back, through neutral, a
    * small overshoot, home. */
-  out[0] += magKick * 0.74;
-  out[4] += magKick * 0.16;                       // and it comes back at you
+  out[0] += magKick * 0.62;
+  /* AND A KICK THIS BIG HAS TO LIFT AS WELL AS PITCH. The arm's pivot is
+   * behind the fist, so pitching it swings the MUZZLE up and the grip DOWN —
+   * fine at the old kick and, at a magnum's, the gun leaving the bottom of
+   * the frame for a tenth of a second (measured: the rear sight to -1.05 in
+   * NDC, where -1 is the edge). The hands come up with it. */
+  out[1] += magKick * 0.13;
+  out[4] += magKick * 0.19;                       // and it comes back at you
   out[3] += magYaw * 1.05;
   /* AND THE RELOAD. The gun rolls out of the hold and down out of the sight
    * line, takes the loader, is snapped shut and brought back up. The beats
@@ -34469,7 +34750,7 @@ function updateGun(dt) {
   if (magT >= 0) { magT += dt; if (magT >= MAG_SHOT) magT = -1; }
   // the muzzle settling back down out of its own kick
   if (magClimb > 0 && (magT < 0 || magT > 0.18)) {
-    const d = Math.min(magClimb, dt * 0.68);
+    const d = Math.min(magClimb, dt * 0.95);
     gunNudge(-d, 0); magClimb -= d;
   }
   const live = magHeld() && !held && !dialogOpen && !inspecting && !frozen();
@@ -34622,10 +34903,10 @@ function magFire() {
    * goes into the look itself, so a string of them walks up off whatever
    * you were shooting at and you have to pull it back down. That is the
    * difference between a gun with recoil and a gun with a shake. */
-  magKickV += 19.4 - magAim * 3.9;
-  magYawV += (Math.random() - 0.5) * 12.4;
-  const up = 0.064 + Math.random() * 0.022 - magAim * 0.026;
-  gunNudge(up, (Math.random() - 0.5) * 0.026);
+  magKickV += 27.0 - magAim * 5.4;
+  magYawV += (Math.random() - 0.5) * 15.0;
+  const up = 0.108 + Math.random() * 0.030 - magAim * 0.040;
+  gunNudge(up, (Math.random() - 0.5) * 0.034);
   /* AND MOST OF THE CLIMB COMES BACK, WHICH IS WHAT MAKES IT A RECOIL AND
    * NOT A CATAPULT. A permanent nudge is the right idea and at two and a
    * half degrees a shot the whole cylinder walks you twenty degrees into
@@ -34634,16 +34915,16 @@ function magFire() {
    * over the next third of a second, so a shot throws the muzzle hard, a
    * pause settles it, and holding the trigger down still walks you off the
    * target — about a degree a round, which you can hold if you mean to. */
-  magClimb += up * 0.72;
-  addTrauma(1.30);
-  fovKick = Math.max(fovKick, 15.0);
-  vmImpulse(-2.7);
+  magClimb += up * 0.80;
+  addTrauma(1.70);
+  fovKick = Math.max(fovKick, 19.0);
+  vmImpulse(-3.4);
   magGlare();                                // and the frame takes the light
   /* AND THE WORLD STOPS FOR A FRAME AND A HALF. Every other confirm in this
    * game buys its weight with held time — the parry, the poise break, the
    * two-tonne knight — and a gun that goes off with no beat under it reads
    * as a pop whatever the sound does. */
-  hitstop = Math.max(hitstop, 0.095);
+  hitstop = Math.max(hitstop, 0.115);
 
   /* AND DOWN THE SIGHTS THERE IS NO SPREAD AT ALL. A cone that is merely
    * small is still a cone: at twenty metres a fortieth of a degree is a
@@ -34673,8 +34954,15 @@ function magFire() {
      * not, because a revolver that ends a boss on one lucky shot is a
      * revolver that ends the fight rather than joining it. */
     if (h.head && h.u.kind && h.u.kind.headPop) { magHeadshot(h.u); return; }
+    /* AND A ROUND IS NOT A CHARGED CUT. `P` is the swing's own power and it
+     * is what `finishMutant` reads to decide whether the blow was enough to
+     * take a creature APART at the waist — so a pistol at 1.0 counted as the
+     * heaviest thing in the game and cut mutants in half, which left a pair
+     * of legs standing on the sand with the torso lying beside them. Under
+     * `MUT_HEAVY` it still takes a limb and still throws the body; what it
+     * cannot do is bisect one. */
     const dmg = Math.round(MAG_DMG * (h.head ? MAG_HEAD : 1));
-    if (h.u.kind) hurtMutant(h.u, dmg, 1.0); else hurtCrab(h.u, 4, 1.0);
+    if (h.u.kind) hurtMutant(h.u, dmg, 0.5); else hurtCrab(h.u, 4, 0.5);
     if (h.head) { hitstop = Math.max(hitstop, 0.09); addTrauma(0.22); }
     return;
   }
@@ -34697,7 +34985,7 @@ function magHeadshot(u) {
   if (!u.st.alive || u.st.struck) return;
   if (u.kind.provoke && !u.st.awake) u.kind.provoke(u);
   u.st.mine = true; u.st.foe = null;
-  u.st.killP = 1.0; u.st.killOh = false; u.st.killGore = 2.0; u.st.hpBefore = u.st.hp;
+  u.st.killP = 0.5; u.st.killOh = false; u.st.killGore = 2.0; u.st.hpBefore = u.st.hp;
   u.st.gunHead = true;
   u.st.hp = 0;
   killMutant(u);
@@ -39489,7 +39777,11 @@ scene.add(catWallDoor);
  * with stars behind it — nothing over it, so the eye read a frame standing
  * on a beach rather than a hole in a hill. `crest` is how much sand has to
  * stand over the head; the height falls out of the crown. */
-const CAT_SAND_DOOR = { mat: 'Stuffidk', lift: 0.30, proud: 0.07, crest: 0.85, hMax: 2.80 };
+/* AND `proud` IS HALF THE DOORWAY'S OWN DEPTH, NOT A HAIR. The frame is
+ * 0.6 m deep and the LEAF is its -x-most face, so a leaf set flush with the
+ * wall puts the jambs and the arch inside the hill and what is drawn is a
+ * sliver of plank. Half of it out is a doorway you can see. */
+const CAT_SAND_DOOR = { mat: 'Stuffidk', lift: 0.30, proud: 0.30, crest: 0.45, hMax: 2.80 };
 let catSandDoorDone = false;
 function buildCatSandDoor() {
   if (catSandDoorDone || !catWorld) return;
@@ -39572,53 +39864,62 @@ function fitCatSandDoor() {
   if (Math.abs(cliff.position.z - CAT_OUT_Z) > CLIFF_PERIOD * 1.5) return;
   const door = catWallDoor.getObjectByName('catSandDoor');
   if (!door || !door.userData.span) return;
-  /* THE FACE AND THE CROWN, ACROSS THE DOOR'S OWN WIDTH. The face leans
-   * (measured at this z: 16.0 at knee height, 15.87 at three metres) and it
-   * wanders with the runnels either side, so what the leaf must clear is the
-   * NEAREST of them — anywhere it does not, the dune draws over the stone. */
-  let faceX = Infinity, crown = 0, hits = 0;
+  /* WHAT THE DUNE IS, AT THIS Z, MEASURED THREE WAYS. It is not a slope with
+   * a face on it — it is a TALUS and then a WALL, and the two meet almost
+   * vertically: casting down across the door's own width the ground runs
+   * 0.16 at x = 14.6 to 0.53 at 15.8 and then JUMPS to 3.28 at 16.0. So a
+   * door set to the face and stood on the beach plane has its bottom HALF A
+   * METRE UNDER the talus that ramps up to that wall, which is the owner's
+   * "it is half in the ground". Three numbers, all cast rather than typed:
+   * WALL is where the vertical face stands (the nearest horizontal hit over
+   * the door's own height band — above the talus, below the crest), SILL is
+   * the ground at the foot of it, and CROWN is how much hill there is to put
+   * over the head. */
+  let wall = Infinity, sill = 0, crown = 0, hits = 0;
   for (let dz = -1.5; dz <= 1.51; dz += 0.3) {
-    for (const y of [0.5, 1.1, 1.7, 2.3, 2.9]) {
+    for (const y of [0.8, 1.3, 1.8, 2.3, 2.8]) {
       _catRay.set(_cdA.set(6, y, CAT_OUT_Z + dz), _cdB.set(1, 0, 0)); _catRay.far = 40;
       const h = _catRay.intersectObject(cliff, true)[0];
-      if (h) { hits++; if (h.point.x < faceX) faceX = h.point.x; }
+      if (h) { hits++; if (h.point.x < wall) wall = h.point.x; }
     }
-    _catRay.set(_cdA.set(CLIFF_X + 2.5, 16, CAT_OUT_Z + dz), _cdB.set(0, -1, 0)); _catRay.far = 30;
+  }
+  if (hits < 8 || !isFinite(wall)) return;
+  for (let dz = -1.5; dz <= 1.51; dz += 0.3) {
+    _catRay.set(_cdA.set(wall - 0.25, 16, CAT_OUT_Z + dz), _cdB.set(0, -1, 0)); _catRay.far = 30;
+    const f = _catRay.intersectObject(cliff, true)[0];
+    if (f && f.point.y > sill && f.point.y < 2.0) sill = f.point.y;   // the talus at its foot, never the wall itself
+    _catRay.set(_cdA.set(wall + 1.6, 16, CAT_OUT_Z + dz), _cdB.set(0, -1, 0)); _catRay.far = 30;
     const c = _catRay.intersectObject(cliff, true)[0];
     if (c && c.point.y > crown) crown = c.point.y;
   }
-  if (hits < 8 || !isFinite(faceX) || crown < 1.5) return;
+  if (crown < 1.5) return;
   catSandDoorFitted = true;
   const S = door.userData.span;
-  const h = Math.min(CAT_SAND_DOOR.hMax, Math.max(2.15, crown - CAT_SAND_DOOR.crest));
+  const h = Math.min(CAT_SAND_DOOR.hMax, Math.max(2.05, crown - sill - CAT_SAND_DOOR.crest));
   const k = h / Math.max(0.01, S.y);
   door.scale.setScalar(k);
   // the leaf is the door's -x face and the beach is -x of the dune, so a
-  // hand proud of the nearest face puts everything else inside the hill
-  catWallDoor.position.x = faceX - CAT_SAND_DOOR.proud + S.x * k * 0.5;
+  // hand proud of the wall puts everything else inside the hill — and the
+  // SILL stands on the talus at the foot of it rather than on the beach
+  catWallDoor.position.set(wall - CAT_SAND_DOOR.proud + S.x * k * 0.5, sill, CAT_OUT_Z);
   const void_ = catWallDoor.getObjectByName('catSandVoid');
   if (void_) { void_.scale.set(1, h * 0.98, S.z * k * 0.96); void_.position.set(0.85, h * 0.49, 0); }
   const px = catWallDoor.getObjectByName('hitProxy');
   if (px) { px.scale.set(1, h / 2.3, (S.z * k) / 1.7); px.position.set(-S.x * k * 0.5 - 0.2, h * 0.5, 0); }
   /* AND SAND IS HEAPED AGAINST IT, WHICH IS THE WHOLE DIFFERENCE BETWEEN A
-   * DOORWAY IN A DUNE AND A FRAME LEANT ON ONE. The rocks' own inner bank:
-   * the beach's OWN material, so there is no join to see, banked against
-   * both jambs and drifted across the threshold so the sill is buried and
-   * the stone comes out of the sand rather than standing on it. */
-  /* AND A BANK IS MOSTLY INSIDE THE HILL. Centred out on the sand at nearly
-   * a metre tall the two of them read as exactly what they are — a pair of
-   * grey domes lying on the beach with a door between them. Set BEHIND the
-   * face, only their seaward skirt is drawn, which is sand heaped against a
-   * wall; and the drift across the threshold is low, because its whole job
-   * is to bury the sill rather than to be a mound. */
-  for (const [dx, dz, R, H] of [[0.65, -1.7, 2.6, 0.75], [0.65, 1.7, 2.6, 0.75], [0.15, 0, 3.0, 0.22]]) {
+   * DOORWAY IN A DUNE AND A FRAME LEANT ON ONE. The rocks' own inner bank,
+   * and their own mistake first: two aprons centred out on the beach at
+   * nearly a metre tall read as a pair of grey domes with a door between
+   * them. Set BEHIND the wall, only their seaward skirt is drawn, which is a
+   * bank; and the third is a RAMP across the threshold, which is what beds
+   * a sill standing half a metre up a talus. */
+  for (const [dx, dz, R, H, y0] of [[0.50, -1.70, 2.5, 0.72, sill - 0.29], [0.50, 1.70, 2.5, 0.72, sill - 0.29], [-0.75, 0, 3.4, sill + 0.13, 0]]) {
     const b = new THREE.Mesh(makeApron(R), sandMat);
-    b.scale.set(R, H, R);
-    b.position.set(faceX + dx, 0, CAT_OUT_Z + dz);
+    b.scale.set(R, Math.max(0.1, H), R);
+    b.position.set(wall + dx, y0, CAT_OUT_Z + dz);
     driftGroup.add(b);
   }
 }
-
 /* ---------------------------------------------------------------------
  * FIVE OF THEM ON THE SAND PAST THE DOOR
  *
@@ -46090,7 +46391,7 @@ window.__bw = {
   lipNdc: () => { armRig.updateMatrixWorld(true); trailTip.getWorldPosition(_lipA); trailRoot.getWorldPosition(_lipB); return _lipA.lerp(_lipB, 0.5).project(vmCamera); },
   landK: () => landK, landDist: () => landDist,
   aimO: () => _aimO.clone(), aimD: () => _aimD.clone(),
-  addToInventory, openPack, closePack, selectPackSlot, sfxCastleBreak, digImpacted: () => digImpacted,
+  addToInventory, openPack, closePack, selectPackSlot, openShop, closeShop, shopConfirm, TRADER_STOCK, TRADER_PRICE, sfxCastleBreak, digImpacted: () => digImpacted,
   finishTyping, dialogTextEl, get hitstop() { return hitstop; },
   hurtCrab, get digOverhead() { return digOverhead; }, get windOverhead() { return windOverhead; },
   get pose() { return _pose; }, get slashDir() { return slashDir; }, get blockT() { return blockT; }, get hp() { return hp; }, get hurtFlash() { return hurtFlash; },

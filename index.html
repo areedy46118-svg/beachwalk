@@ -1047,6 +1047,140 @@
   }
   #invpanel .tip b { font-weight: 400; color: rgba(255, 255, 255, 0.7); }
   /* the item that follows the cursor while dragging */
+  /* ---- THE SHOP, in the pack's own hand ------------------------------ */
+  #shoppanel {
+    position: fixed;
+    inset: 0;
+    z-index: 14;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.86);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease;
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Courier New", monospace;
+    color: #ffffff;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+  }
+  #shoppanel.show { opacity: 1; pointer-events: auto; }
+  #shoppanel .panel {
+    width: min(94vw, 1180px);
+    border-top: 1px solid rgba(255, 255, 255, 0.3);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+    padding: 1.5rem 0 1.3rem;
+  }
+  #shoppanel .head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 0 0.2rem;
+  }
+  #shoppanel h2 {
+    font-weight: 400;
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+    font-size: 0.9rem;
+  }
+  #shoppanel .head .jars {
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    color: rgba(255, 255, 255, 0.45);
+  }
+  #shoppanel .head .jars b { color: #cfe4ff; font-weight: 400; }
+  /* what he says, and it is the same line the sale answers with */
+  #shoppanel .say {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 0.95rem;
+    letter-spacing: 0.04em;
+    color: rgba(255, 255, 255, 0.62);
+    padding: 0.55rem 0.2rem 0.9rem;
+    min-height: 1.5em;
+  }
+  #shoppanel .body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 36%);
+    gap: 1.8rem;
+    align-items: stretch;
+  }
+  #shoppanel .list { align-content: start; border-right: 1px solid rgba(255, 255, 255, 0.14); padding-right: 1.6rem; min-width: 0; }
+  #shoppanel .row {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 0.62rem 0.35rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+    font-size: 0.86rem;
+    letter-spacing: 0.04em;
+    color: rgba(255, 255, 255, 0.78);
+  }
+  #shoppanel .row .box {
+    width: 11px; height: 11px;
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    flex: 0 0 auto;
+    position: relative;
+  }
+  #shoppanel .row.had .box::after {
+    content: "";
+    position: absolute; left: 1px; top: 1px; right: 1px; bottom: 1px;
+    background: rgba(255, 255, 255, 0.8);
+  }
+  #shoppanel .row .nm { flex: 1 1 auto; }
+  #shoppanel .row .pr { color: rgba(255, 255, 255, 0.55); letter-spacing: 0.1em; white-space: nowrap; }
+  #shoppanel .row:hover { color: #ffffff; }
+  #shoppanel .row.sel { color: #ffffff; background: rgba(255, 255, 255, 0.07); box-shadow: inset 2px 0 0 #ffffff; }
+  #shoppanel .row.out { opacity: 0.32; cursor: default; }
+  #shoppanel .detail { display: flex; flex-direction: column; align-items: center; text-align: center; min-width: 0; }
+  #shoppanel .detail .pic {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    max-height: 300px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: rgba(0, 0, 0, 0.55);
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  #shoppanel .detail .pic img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  #shoppanel .detail .nm {
+    margin-top: 1rem;
+    font-size: 0.9rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    overflow-wrap: anywhere;
+  }
+  #shoppanel .detail .ds {
+    margin-top: 0.7rem;
+    font-size: 0.78rem;
+    line-height: 1.55;
+    letter-spacing: 0.02em;
+    color: rgba(255, 255, 255, 0.6);
+  }
+  #shoppanel .detail .buy {
+    margin-top: 1.2rem;
+    padding: 0.62rem 2.4rem;
+    border: 1px solid rgba(255, 255, 255, 0.75);
+    background: none;
+    color: #ffffff;
+    font: inherit;
+    font-size: 0.78rem;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  #shoppanel .detail .buy:hover { background: rgba(255, 255, 255, 0.12); }
+  #shoppanel .detail .buy:disabled { opacity: 0.3; cursor: default; }
+  #shoppanel .tip {
+    display: flex;
+    gap: 2.2rem;
+    justify-content: center;
+    margin-top: 1.3rem;
+    font-size: 0.64rem;
+    letter-spacing: 0.14em;
+    color: rgba(255, 255, 255, 0.32);
+  }
+  #shoppanel .tip b { color: rgba(255, 255, 255, 0.72); font-weight: 400; }
   #invghost {
     position: fixed;
     z-index: 20;
@@ -1326,6 +1460,32 @@
     </div>
   </div>
   <div id="invghost"></div>
+
+  <!-- THE SHOP. A dialogue with a price on every line is a conversation you
+       are having about buying something; a SHOP is a thing you look at. The
+       owner sent Resident Evil 3's, which is the shape: a title, what you
+       have to spend, a list of rows with a price on the right, and beside it
+       a pane showing the one you are on — its picture, its name, what it
+       does. It wears the pack's own language, because it is the same idea
+       (your things, big, on a black screen) one step further out. -->
+  <div id="shoppanel">
+    <div class="panel">
+      <div class="head">
+        <h2>Shop</h2>
+        <span class="jars"><b id="shop-jars">0</b> blood jars</span>
+      </div>
+      <div class="say" id="shop-say"></div>
+      <div class="body">
+        <div class="list" id="shop-list"></div>
+        <div class="detail" id="shop-detail"></div>
+      </div>
+      <div class="tip">
+        <span><b>Click</b> a line</span>
+        <span><b>Buy</b> or <b>E</b> to take it</span>
+        <span><b>Esc</b> leave</span>
+      </div>
+    </div>
+  </div>
 
   <div id="note">
     <div class="paper">

@@ -12773,3 +12773,109 @@ that set the camera from an undefined constant put NaN into x and z, and
 after that every reset — `position.set`, a fresh `groundY`, twenty steps —
 came back NaN, because the velocity and the knockback carry it round. There
 is no recovering it: reload.
+
+**THE BODIES DID NOT FREEZE — THEY WERE CUT IN HALF, AND THE HALF THAT WAS
+LEFT STOOD UP.** The owner photographed a mutant locked upright on the sand
+and the ragdoll was working perfectly: hips 1.39 to 0.24 in half a second,
+asleep at 1.75. What was wrong is that it had ELEVEN parts against a whole
+body's twenty — `Character1_Spine1` was in `gone`, so the torso had been
+baked off as a gib and thrown, and a stump of a pelvis and two legs is a
+STABLE A-FRAME. Two causes, and both are lessons:
+
+- **A REVOLVER ROUND IS NOT A CHARGED CUT.** `magFire` passed `P = 1.0`, and
+  `P` is what `finishMutant` reads to decide whether the blow was enough to
+  take a creature apart at the waist — so the pistol counted as the heaviest
+  thing in the game and bisected on a 42 % roll. At 0.5 it is under
+  `MUT_HEAVY`: it still takes a limb, still throws the body, and cannot cut
+  one in half. (A headshot keeps its own certain burst.)
+- **AND THE KICK IS SHARED OUT OVER THE BODY THAT IS LEFT, NOT THE ONE IT WAS
+  BORN WITH.** `h` is a part's height as a fraction of `kind.h`, which puts
+  the throw in the chest and leaves the feet planted so a whole body goes
+  over them — and on a stump, whose highest particle is at 0.3 of `kind.h`,
+  it gave every joint the SMALLEST kick there is. Normalised by the tallest
+  part actually simulated, the top of a stump is at h = 1 and takes the whole
+  throw. Measured after: a gun kill is twenty parts, lands flat (hips 0.24,
+  head 0.20) and sleeps.
+
+**THE DOOR IN THE DUNE WAS HALF IN THE GROUND, AND THE DUNE IS NOT A SLOPE.**
+Casting down across the door's own width: the ground runs 0.16 at x = 14.6 to
+0.53 at 15.8 and then JUMPS to 3.28 at 16.0. It is a TALUS and then a WALL,
+and the two meet almost vertically — so a door fitted to the face and stood
+on the beach plane has its bottom half-metre under the ramp that leads up to
+it. Three numbers now, all cast: WALL is the nearest horizontal hit over the
+door's own height band, SILL is the ground at the foot of it (the door stands
+THERE, not at y = 0), and CROWN is how much hill there is to put over the
+head. And **`proud` is half the doorway's own depth, not a hair**: the frame
+is 0.6 m deep and the LEAF is its outermost face, so a leaf set flush puts
+the jambs and the arch inside the hill and draws a sliver of plank.
+
+**A SHOP IS A THING YOU LOOK AT, NOT A CONVERSATION YOU HAVE.** He was four
+dialogue choices with a price on each — which reads as a chat about buying
+something. It is Resident Evil 3's shape now, which is the right one: a
+title, what you have to spend, a list of rows with the price on the right,
+and beside it a pane showing the one you are on — its picture, its name and
+what it does. He says ONE line, and that same line is where every answer a
+sale has goes, so there is one place on the screen he ever speaks from.
+`itemIcon` is the same render the pack and the hotbar draw, so what you look
+at in the shop is the object you will be carrying. And the SIX ROUNDS are
+gone: a revolver's whole shape is that there are six and then there are none,
+and being able to buy more took it away.
+
+**AND ITS FLAG LIVES WITH THE OTHER OVERLAYS, NOT WITH ITS OWN CODE.**
+`frozen()` is at line 4331 and `animate()` is kicked synchronously at module
+time, so a `let shopOpen` declared beside the shop — thirty thousand lines
+down — is read out of its dead zone on the first frame and takes the page.
+This file has now paid for that twice.
+
+**THE GATE IS BACK, PAST THE FIVE, AND THE WAY OVER IT IS A CLIMB.** It is
+still shut and nothing opens it (`openFenceGate` is still called by nobody);
+what gets you past is the fence's own failure — one bay has RIPPED, and the
+torn steel has curled out into ledges. Two things had to change in the fence
+itself: its z is written off the same chain the mutants are (spelled out,
+because `CAT_OUT_Z` is declared twenty thousand lines below it and a constant
+that reads a later one is a dead-zone crash), and **the wall collider's top
+is the top of the steel now** rather than thirty metres over it, so once you
+are above 14.5 m the fence line is a walkway and the far side is a drop.
+
+**AND THE LAYOUT OF A CLIMB IS MEASURED BY CLIMBING IT.** A jump lifts the
+feet 0.616 m (`JUMP_V` 4.3 against `P_GRAV` 15) and the walk catches a floor
+`ROCK_STEP` (0.42) over them, so 1.03 m is the tallest step anywhere in this
+game and 0.88 is a real jump with a hand's width to spare. Across, a jump
+carries about 1.9 m. Three layouts, each killed by a measurement:
+
+- **three lanes cycling** puts a 2.30 m LEAP on every third step — the climb
+  stalled dead at the third ledge for a minute of trying;
+- **four lanes cycling** puts a 3.30 m one on every fourth;
+- **and a four-step pattern that goes out and back WALLS ITSELF IN.**
+  `pushOutOfSolids` grows every box by most of a body radius and skips only
+  one you are UNDER (`floorY`), so a shelf 0.88 m over your head is a WALL —
+  and a second shelf beside it AT THE SAME DEPTH grows into the very gap you
+  have to pass through to reach the first. Traced on the thirteenth ledge:
+  boxed in at x 11.76 by the two above it, unable to move a millimetre in any
+  useful direction.
+
+What works is TWO LANES and THREE DEPTHS on a four-step cycle: nothing is
+ever more than 1.39 m from the next thing, and no two shelves share a lane
+AND a depth within 3.52 m, which clears a standing body by a metre and a
+half. Measured, hands-off with the game's own movement: **seventeen ledges in
+491 frames, both faces of the bay**, then a stride onto the top of the wall
+and a fall down the other side. It is mirrored because **a fence you can only
+cross in one direction takes the trader, the catacombs and your own
+checkpoint away from you the moment you use it.**
+
+**AND THE RIPS ARE CUT ON VERTEX LINES** — the lighthouse's own rule.
+Subdivide the panel and drop the quads whose middle falls inside a hole, so
+the edge is square by construction and nothing has to be sliced. Only the
+climb's bay has them, and the coils are left off it, so the route reads from
+the sand before you have taken a step: the fence is broken HERE.
+
+**AND A MAGNUM KICKS LIKE A MAGNUM.** The spring's frequency is sqrt(K), so
+dropping K lengthens the throw and the settle together — 235 against 330 is a
+kick that goes up hard, hangs, and comes down over a beat you can watch.
+Measured: the muzzle is thrown **6.2-7.3 degrees from the hip and 4.2-5.4
+down the sights** (was 3.7-4.9 and 2.2-3.4), and a full cylinder nets 8.4 and
+5.7. **And a kick that big has to LIFT as well as pitch**: the arm's pivot is
+behind the fist, so pitching swings the muzzle up and the grip DOWN, and at
+these numbers the gun left the bottom of the frame for a tenth of a second
+(the rear sight to -1.05 in NDC, where -1 is the edge). The hands come up
+with it: worst grip -0.90, on screen throughout.
