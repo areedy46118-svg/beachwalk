@@ -13199,3 +13199,28 @@ dev mode sets `caveDone` on its first call whether or not the room is ready**,
 so a harness that teleports into the band before `catReady` burns the trigger
 and nothing ever puts you in the catacombs; call `placeInCatacombs()` yourself
 once `catWalk` is up.
+
+**THE SHELF IS BACK, AND IT IS THE WAY UP TO THE RING.** The owner's word, the
+fourth time this one has been asked for or taken away — and this time with a
+reason in it: the wedding ring lies at the back of the tavern's bore, and the
+only way onto that landing is the 2.12 m step at the back of the gallery,
+which nothing can jump. Uncommenting `buildTavShelf()` is the whole change;
+the function measures its own wall and its own two floors, so it needed
+nothing else. Measured with the game's own movement, holding W and jumping:
+**5.30 (the gallery) → 6.36 (the shelf) → 7.42 (the landing)**, two jumps of
+1.06 against a 1.34 ceiling, and the walk carries on down the bore to the
+ring at z = -23.59.
+
+**AND A COORDINATE OFF A SCREENSHOT IS NOT A MEASUREMENT.** He gave the spot
+as the P overlay's own cursor — (0.99, 4.71, 5.75) in the room's frame — and
+in this build that point is a bare wall face (normal -1, 0, 0) with the flags
+**4.68 m below it** and the gallery's rim 1.55 m above: no floor within a
+jump either way, so a shelf there would be a board on a blank wall. His other
+readings do not line up either — he was standing at (-3.38, 6.27, 20.88) with
+the take prompt up, and the ring measures (-12.70, 7.23, -23.59), forty-four
+metres away down the other end of the room, on a floor the probe puts at 7.23
+against his 6.27. The PICTURE is unmistakable (the same ribbed bore, the same
+two blue jars, the ring between them — rendered from the measured spot it
+matches his shot frame for frame), so the place is not in doubt; only the
+numbers are. When a spot read off a screenshot disagrees with the room,
+trust the thing that measures itself and say so.

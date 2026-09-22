@@ -43992,7 +43992,7 @@ function buildTavern() {
    * (it measures its own wall and its own two floors, so it can come back as
    * one call) and nothing calls it; the 2.12 m step at the back of the
    * gallery is the plank's job again. */
-  // buildTavShelf();
+  buildTavShelf();
   buildKeepWalls(TAV_SITE);
   buildTavPlank();
   buildTavChairs();
@@ -47044,6 +47044,7 @@ window.__bw = {
   get tavWorld() { return tavWorld; }, get tavTables() { return tavTables; }, get tavChairs() { return tavChairs; },
   get wongUnit() { return wongUnit; }, get drunkUnit() { return drunkUnit; }, get orcUnit() { return orcUnit; },
   packByName, renderItemIcon, itemIcon, wearRingAt, rings, renderRings,
+  get tavShelfMesh() { return tavShelfMesh; }, TAV_BORE, TAV_SHELF,
   catShutDoor, get catWalk() { return catWalk; }, get catCells() { return catCells; },
   renderHotbar, renderPack,
   crawlerUnit, CRAWL_X, CRAWL_Z, crawlerProvoke, startCaveIn, placeInCatacombs, placeOutsideCatDoor, startCatExit, startCatReturn, placeInsideCatDoor, fitCatSandDoor, catWallDoor, catRoute, catSees, catNodeAt, CAT_X, CAT_Y, CAT_Z, CAT_SITE, CAT_LAND, CAT_DOOR, CAVE_Z,
