@@ -4,7 +4,21 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Beach Walk</title>
+<script>
+  /* A CHECKPOINT LOAD NEVER SHOWS THE TITLE. The card is in the page and the
+     game only takes it down once main.js has run, which is the whole of the
+     download and the world's build — so a reload into a checkpoint painted
+     the title card for a second or two first. Read (not consumed: main.js
+     consumes it) before the first paint. */
+  try {
+    if (sessionStorage.getItem('beachwalk.load') === 'checkpoint' && localStorage.getItem('beachwalk.save'))
+      document.documentElement.classList.add('resuming');
+  } catch (e) {}
+</script>
 <style>
+  html.resuming, html.resuming body { background: #000; }
+  html.resuming #overlay { display: none !important; }
+  html.resuming #blackout { opacity: 1; }
   /* The live beach under the title, graded the way a painted menu is: drained
      of colour, crushed, pushed toward a sick olive. Lifted the moment you begin. */
   canvas.title-grade { filter: saturate(0.12) contrast(1.4) brightness(0.28); }

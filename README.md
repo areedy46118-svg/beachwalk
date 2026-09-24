@@ -445,11 +445,17 @@ timber, and the console bank and cupboards are steel. Wood, stone, metal and
 sand on the beach do the same. What you hit and what you hear are the same
 thing.
 
-One autosave, and no save button. Reaching the mushroom house — the last
-stretch before the three come out of the dark — writes a checkpoint, and a
-small ring in the top right says so. It keeps where you stood, what you were
-carrying and in what order, what was in your hand, how hurt you were, the
-holes you dug and everything the walk has latched.
+Autosaves, and no save button. The walk saves itself as you reach the
+mushroom house, when the three crabs at the dock are down, and every time a
+door or a loading screen takes you somewhere — into and out of the bunker,
+the cave, the dojo, the catacombs, the sail to the keep, and the tavern's
+door (going in and coming out; there is no save at the top of the hoist). A
+small ring in the top right says so. It keeps where you stood, exactly what
+you were carrying and in what order, what was on your fingers, what was in
+your hand, how hurt you were, how many jars you had, the holes you dug, what
+you have killed and everything the walk has latched. A save made at a door
+is loaded by walking through that door again, so it puts you exactly where
+the door does.
 
 Dying puts you back there with all of it. The settings menu has **Restart
 from last checkpoint** (greyed out until you have one) and **Restart game**,
@@ -526,6 +532,15 @@ by [Valsev](https://sketchfab.com/Valsev) licensed under
 the altar (`assets/cave.glb`, decimated and packed with its walk by
 `tools/undercroft_pack.py`). One of its three materials carries no texture at
 all — it is the lamps on the posts, not rock.
+
+This work is based on ["Gold Ancient Ring Green Gem Stone (game-ready)"](https://sketchfab.com/3d-models/gold-ancient-ring-green-gem-stone-game-ready-913eef8fe39646be94faa9fdd3626ea8)
+by [Delandi](https://sketchfab.com/delandi) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Gem Stone Ring,
+in the jewellery box on the credenza in the pavilion (`assets/gem-ring.glb`,
+through `tools/gltfpack.py` at 2048: it is a 1,371-vertex game-ready mesh
+under forty-three megabytes of 4K maps, which is twice the bunker for a thing
+you hold in your hand, and it comes out at 7 MB). Its stone's map carries a
+real alpha and stays blended; its gold has none and is forced opaque.
 
 This work is based on ["Portal"](https://sketchfab.com/3d-models/portal-3279b8d99fe244059c40a66e8aa39590)
 by [DJMaesen](https://sketchfab.com/bumstrum) licensed under

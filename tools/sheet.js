@@ -145,3 +145,44 @@
     ctx.putImageData(img, o.col * o.w, o.row * o.hh); ctx.fillStyle = '#fff'; ctx.font = '11px monospace'; ctx.fillText(o.label, o.col * o.w + 3, o.row * o.hh + 12); r.setRenderTarget(null); rt.dispose(); return 'ok';
   };
 })();
+
+/* AND A PROP IS A SHEET TOO. `__sheetObj(obj, angles, px, fill)` renders any
+ * Object3D from a list of [yaw, pitch, dist, offsetAlongX] against the VIEW
+ * MODEL SCENE'S OWN LIGHTS — an ambient at 0.9 and two directionals at 1.15
+ * and 0.55 — because that is what lands on a thing in your fist and it is
+ * three times what the beach gives it. Returns the strip as bare base64, big
+ * enough that the harness writes it to a file. */
+(function () {
+  const bw = window.__bw;
+  window.__sheetObj = async function (obj, angles, px, fill) {
+    const T = await import('three');
+    const r = bw.renderer, c = r.domElement;
+    const sc = new T.Scene(); sc.background = new T.Color(0x14171b);
+    sc.add(new T.AmbientLight(0x9fb0cc, 0.9));
+    const k = new T.DirectionalLight(0xffe6c8, 1.15); k.position.set(-0.5, 1, 0.9); sc.add(k);
+    const f = new T.DirectionalLight(0x6f8ec8, 0.55); f.position.set(1, 0.3, -0.6); sc.add(f);
+    const m = obj.clone(true);
+    m.position.set(0, 0, 0); m.rotation.set(0, 0, 0); m.scale.setScalar(1);
+    m.traverse((o) => { if (o.isSprite) o.removeFromParent(); else o.visible = true; });
+    if (fill !== undefined && m.userData.setFill) m.userData.setFill(fill);
+    sc.add(m);
+    const box = new T.Box3().setFromObject(m);
+    const ctr = box.getCenter(new T.Vector3()), sz = box.getSize(new T.Vector3()).length();
+    const cam = new T.PerspectiveCamera(30, 1, 0.001, 10);
+    const out = document.createElement('canvas');
+    out.width = px * angles.length; out.height = px;
+    const g = out.getContext('2d');
+    for (let i = 0; i < angles.length; i++) {
+      const a = angles[i], d = sz * a[2], ox = a[3] || 0;
+      cam.position.set(ctr.x + Math.sin(a[0]) * Math.cos(a[1]) * d + ox, ctr.y + Math.sin(a[1]) * d, ctr.z + Math.cos(a[0]) * Math.cos(a[1]) * d);
+      cam.lookAt(ctr.x + ox, ctr.y, ctr.z);
+      cam.aspect = 1; cam.updateProjectionMatrix();
+      r.setRenderTarget(null); r.setScissorTest(false); r.setViewport(0, 0, px, px);
+      r.clear(); r.render(sc, cam);
+      // the viewport's origin is the canvas's BOTTOM-left
+      g.drawImage(c, 0, c.height - px, px, px, i * px, 0, px, px);
+    }
+    r.setViewport(0, 0, c.width, c.height);
+    return out.toDataURL('image/jpeg', 0.94).split(',')[1];
+  };
+})();
