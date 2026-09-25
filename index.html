@@ -1143,11 +1143,14 @@
     flex: 0 0 auto;
     position: relative;
   }
-  #shoppanel .row.had .box::after {
+  #shoppanel .row.chk .box { border-color: #ffffff; }
+  #shoppanel .row.chk .box::after {
     content: "";
-    position: absolute; left: 1px; top: 1px; right: 1px; bottom: 1px;
-    background: rgba(255, 255, 255, 0.8);
+    position: absolute; left: 2px; top: 2px; right: 2px; bottom: 2px;
+    background: #ffffff;
   }
+  #shoppanel .row.had, #shoppanel .row.out { opacity: 0.38; }
+  #shoppanel .row.had .box, #shoppanel .row.out .box { border-style: dashed; }
   #shoppanel .row .nm { flex: 1 1 auto; }
   #shoppanel .row .pr { color: rgba(255, 255, 255, 0.55); letter-spacing: 0.1em; white-space: nowrap; }
   #shoppanel .row:hover { color: #ffffff; }
@@ -1502,8 +1505,8 @@
         <div class="detail" id="shop-detail"></div>
       </div>
       <div class="tip">
-        <span><b>Click</b> a line</span>
-        <span><b>Buy</b> or <b>E</b> to take it</span>
+        <span><b>Click</b> or <b>Space</b> to tick</span>
+        <span><b>Confirm</b> or <b>E</b> to buy</span>
         <span><b>Esc</b> leave</span>
       </div>
     </div>

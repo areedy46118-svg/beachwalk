@@ -14313,3 +14313,137 @@ Anything you gain while a restore is still running settles it first
 (`settleRestore`), or the next pass trimmed your new jar back out. The first
 jar also calls `refreshUI`, or the corner stayed hidden until something else
 redrew the HUD.
+
+**THE KNIGHT'S RING WAS CANCELLED BY THE JEWELLERY BOX.** His drop was gated
+on `ringsFound`, which is the HUD's "you have found A ring" — and the
+pavilion's gem ring, which you pass on the way to the church, sets it. So
+anyone who opened the box never got the octopus ring. It asks for the octopus
+ring itself now (`inventory` or `rings` holding `ringItem`). And a knight a
+save remembers as dead is RETIRED on the frame the room lands with
+`knightFight` still false, so a ring left on the flags before the save went
+with him; a retired knight drops it too.
+
+**THE SHARPEN GRADES NOTHING, WHICH IS WHY IT SURVIVED WHERE THE POST CHAIN
+DID NOT.** `sharpenFrame()` runs last in `animateFrame` (and after the examine
+screen): the finished canvas is COPIED into a `FramebufferTexture`
+(`copyFramebufferToTexture`) and one quad draws it back through AMD's
+contrast-adaptive sharpen — a `ShaderMaterial` with no tone-mapping or
+colour-space chunks, so bytes in are bytes out and the grade, the five
+hand-tuned ShaderMaterials and the view model are untouched. It runs at the
+RETRO resolution, before CSS upscales, so it sharpens the chunky pixels and not
+the block edges of the upscale; CAS scales itself by local contrast, so flat sky
+gets nothing and there are no halos round dark silhouettes. `SHARPEN` is fixed
+at 0.5 with no slider, by the owner's word. Measured on the beach:
+frame mean 20.60 → 20.57 (the level does not move), neighbour contrast 2.6 →
+5.0, no GL error.
+
+**THE KEEP'S SEA IS THE BEACH'S SEA, AND IT KNOWS WHERE THE ISLAND IS.** The
+file's flat transmission disc is hidden and `makeKeepWater` puts the beach's
+own ocean in its place: the same eight swell terms and chop, flat-shaded
+facets, crest tint, moon glitter road, on one shared `uTime`. What the beach
+does with x (easing the swell to nothing at the waterline) an island has to do
+all the way round, so `buildKeepField` reads the walk grid ONCE into a 1 m
+distance field — metres to LAND and metres to a SHORE (ground at the water's
+own level with sea beside it; the pier's deck is land but not shore, so the
+water under it is calm and not foam) — blurred, because a chamfer's gradient
+is quantised to eight directions and the swell scaled by it drew white spokes
+out of the rock. The swell is 0.13 of the beach's in the lee (where the boat
+lies) and 0.7 in open water, fading to flat at the sky's rim. `keepWaveJS` is
+the JS mirror reading the SAME bytes, and the moored boat rides it
+(`updateKeepWater`): height at her middle, pitch and roll off the slope, a
+little lag; her floor box rides with her, so you do too. Measured: about
+±0.2 m and 3°. Three things it needed: the seabed's `Sand` caustic sheet sits a
+hand under the old flat sea and showed in every trough, so it is hidden (the
+new sea is opaque, like the beach's); the void disc went from 1.5 to 4 m under
+the sea so no trough can dip below it; and FOAM IS A LINE, NOT AN AREA — marked
+over the whole shallow margin, the beach's 2 m fizz pattern aliased into
+streaks across metres of water, so shore texels are land-at-sea-level with sea
+beside them, and foam fades out past 60 m. The mesh's material is NAMED
+`'material'`, the file's own sea name, because every walk and wall index skips
+that name and a flat plane at sea level would otherwise be read as a floor.
+
+**AND THE SEA AT THE KEEP IS NOT A PLACE.** `updateKeep`'s `legal` refuses any
+step onto a floor under the water (the shelf, or `S.sea()` where the grid was
+never written), so the waterline is where the walk ends, the pier's edge is a
+wall, and a jump off it lands back on the boards. Only a body already in the
+water may move through it, so it can always climb out. Measured: west, east and
+seaward off the pier all stop at the edge; boarding the boat still works; the
+jetty under the hoist is still reached dry.
+
+**AND THE HOIST WAITS AT THE BOTTOM.** It is built down, and arriving by sail
+(and a restore at the pier, `keepIn`) parks it down; only the tavern's spots
+and the keep's door park it at the top, because you came up it.
+
+**THE PACK'S SWIM-IN HITCHED BECAUSE EVERY CRAB UPLOADED ITS OWN COPY OF THE
+SAME FOUR TEXTURES.** A skinned mesh cannot be cloned, so each crab is its own
+`GLTFLoader.parse` of `crab.glb`, and each parse makes its own Texture objects
+from the same images — which the GPU took as four fresh uploads on the first
+frame that crab was drawn. Measured on the take: 171, 139 and 139 ms render
+frames, each exactly one crab surfacing (`renderer.info.memory.textures` +4,
+no new programs). `dressCrab` keeps the first crab's maps per material name,
+uploads them at once with `renderer.initTexture` (on the boot parse chain,
+behind the title), and gives every later crab the same objects — the tint is
+the material's colour, not its map. Worst render frame through the whole take
+after: 2.2 ms. The way to find this class of hitch: hook `onBeforeRender` on
+every mesh, render the take, and name whatever draws for the first time on
+the slow frame.
+
+**THE KEEP'S FENCES ARE WHERE THE OWNER POINTED, AND THE P OVERLAY IS HOW.**
+Two screenshots with no crosshair in them cost an hour of matching renders
+and never found the second spot; one screenshot each with dev mode's P
+readout (`feet`, `look`, `aim`) found both exactly — rebuild the camera from
+`feet + playerEye()`, the look yaw and a pitch at `aim`, and the centre ray
+lands on the aim to the centimetre. `KEEP_FENCES` is data in the island's own
+frame: rock to hay bales, the bales to the waterline, rock to the hoist.
+Their ends were found by walking out from the aim with the walk's own rules;
+the hoist end stops a hand OUTSIDE the car's plan (a post inside it stands in
+the shaft). They wear the island's own `Fortress` material with every uv laid
+into the strip a pier plank samples (read off a raycast into the deck), posts
+sunk 0.34 m with a lean and a heap of the beach's sand at each foot, and they
+are built in `buildKeepIsland` BEFORE the wall index, so the rails are walls.
+Two things that were not enough on their own: **a fence that ends at hay bales
+0.74 m tall is a fence you walk round** — the walk steps onto the bales, and
+standing on them your wall band is over the top rail — so the fence carries on
+to the water and `KEEP_BLOCKS` refuses every fence line, and the line across
+the bales, as a LINE in `updateKeep`'s `legal`, whatever height you are at;
+and **an end post must take its height from the walk's floor**, not a ray from
+above, or it stands on the top of the rock it meets and drags its rails up at
+forty-five degrees. Measured: 56 walks from both sides of every line, jumping
+every half second, 0 crossings; the hoist landing is still reached.
+
+**AND THE FENCES WERE PUT RIGHT ON THE OWNER'S WORD: they end AT the rock,
+the stretch to the water is gone, and the rails run straight.** Three things:
+- **An end is measured once, not found at load.** Casting along each fence
+  from its middle to find the faces was fooled four ways in a row — grass
+  cards, a stick lying across the path, a ledge over the sand that made the
+  whole fence's "ground" 0.84 m, and a boulder with a low apron at its foot.
+  `KEEP_FENCES[i].a/b` are the posts, placed a hand short of what a scan along
+  the line met at every rail height; `.walk` is the walked line, and THAT is
+  what `KEEP_BLOCKS` refuses, so the refusal reaches into the stone and there
+  is no slot at an end.
+- **The rails ride one straight line** fitted through the posts' ground (slope
+  capped at ~6°), and a post whose sand is lower reaches down into it; each
+  post taking its own ground reared the last span up the rock like a ramp.
+  The end spans stop at the end posts; only the middle ones overhang.
+- **Ground is read from the fence's own level** (`y`, off the aim readout).
+Measured: 48 walks from both sides with jumps, 0 crossings.
+
+**THE SHOP'S BOXES ARE CHECKBOXES.** The box beside each line used to be
+filled when you already OWNED the thing — a picture of a checkbox nothing
+could tick — and buying was one button per line. Now a click or Space ticks
+the line (`shopCart`, `shopToggle`), the button reads `Confirm · N jars` for
+everything ticked, and Confirm or E buys the lot through `traderBuy` one line
+at a time. A line that is sold out or already in the pack cannot be ticked
+(dashed box, "owned"/"sold out" where the price was), and the button refuses
+a total you cannot pay rather than filling half the order. The glowstick
+costs one jar.
+
+**THE WAY OUT OF THE CHURCH IS A WAY BACK IN.** The far rock (`mountainExit`)
+carries its own "To crawl in" now, the front mouth's twin, and
+`enterUndercroft('exit')` sets you down in the exit bore a few strides short of
+its end, facing the altar through the broken apse (`ucArrival`). Two things:
+**the arrival is on the CHURCH'S AXIS, not off `spots.exit`**, because that spot
+is the last floored column, out in the flare at the end five metres to one side,
+and four metres in from it there is no floor at all; and the save written on the
+way in names which end (`ucIn` / `ucInFar`), so a restore puts you back at the
+door you used.

@@ -728,6 +728,62 @@ renderer.setClearColor(0x05070f);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 document.body.appendChild(renderer.domElement);
 
+/* THE SHARPEN IS A PASS OVER THE FINISHED FRAME, AND IT GRADES NOTHING.
+ * The post chain this file already buried died of one thing: three tone maps
+ * only when the target is the canvas, so moving the scene into a texture
+ * graded the ShaderMaterials twice. So nothing moves. The frame is drawn to
+ * the canvas exactly as before, the canvas is COPIED into a texture, and one
+ * quad draws it back through a contrast-adaptive sharpen (AMD's CAS) — raw
+ * in, raw out, no tone mapping and no colour conversion, so the grade is the
+ * grade. It runs at the RETRO resolution, before CSS blows the canvas up, so
+ * what it sharpens is the chunky pixels themselves and not the block edges of
+ * the upscale; and CAS scales its own strength by local contrast, so a flat
+ * night sky gets nothing and an edge gets the most, without the white halos a
+ * plain unsharp mask draws round every dark silhouette. */
+const SHARPEN = 0.5;   // fixed, by the owner's word: no slider
+let sharpTex = null;
+const _sharpSize = new THREE.Vector2(), _sharpAt = new THREE.Vector2();
+const sharpMat = new THREE.ShaderMaterial({
+  uniforms: { tMap: { value: null }, uSharp: { value: 0.5 }, uMax: { value: new THREE.Vector2(1, 1) } },
+  depthTest: false, depthWrite: false, toneMapped: false,
+  vertexShader: `void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tMap; uniform float uSharp; uniform vec2 uMax;
+    vec3 px(ivec2 p) { return texelFetch(tMap, clamp(p, ivec2(0), ivec2(uMax)), 0).rgb; }
+    void main() {
+      ivec2 p = ivec2(gl_FragCoord.xy);
+      vec3 a = px(p + ivec2(0, -1)), b = px(p + ivec2(-1, 0)), c = px(p);
+      vec3 d = px(p + ivec2(1, 0)),  e = px(p + ivec2(0, 1));
+      vec3 mn = min(min(min(a, b), min(d, e)), c);
+      vec3 mx = max(max(max(a, b), max(d, e)), c);
+      vec3 amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, vec3(1e-4)), 0.0, 1.0));
+      vec3 w = amp * (-1.0 / mix(8.0, 4.2, uSharp));
+      vec3 o = (c + (a + b + d + e) * w) / (1.0 + 4.0 * w);
+      gl_FragColor = vec4(clamp(o, 0.0, 1.0), 1.0);
+    }`,
+});
+const sharpScene = new THREE.Scene();
+const sharpCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+{ const q = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), sharpMat); q.frustumCulled = false; sharpScene.add(q); }
+function sharpenFrame() {
+  const k = SHARPEN;
+  renderer.getDrawingBufferSize(_sharpSize);
+  const W = _sharpSize.x | 0, H = _sharpSize.y | 0;
+  if (W < 2 || H < 2) return;
+  if (!sharpTex || sharpTex.image.width !== W || sharpTex.image.height !== H) {
+    if (sharpTex) sharpTex.dispose();
+    sharpTex = new THREE.FramebufferTexture(W, H);   // nearest, no mips, no colour space: bytes in, bytes out
+    sharpMat.uniforms.tMap.value = sharpTex;
+    sharpMat.uniforms.uMax.value.set(W - 1, H - 1);
+  }
+  renderer.copyFramebufferToTexture(_sharpAt, sharpTex);
+  sharpMat.uniforms.uSharp.value = Math.min(1, k);
+  const ac = renderer.autoClear;
+  renderer.autoClear = false;
+  renderer.render(sharpScene, sharpCam);
+  renderer.autoClear = ac;
+}
+
 // Give every canvas texture the era-correct filtering: no smoothing, no
 // anisotropy, mip-jump instead of a smooth blend.
 function retroTex(t, { repeatWrap = true } = {}) {
@@ -4254,7 +4310,7 @@ let dialogOpen = false, invOpen = false, inspecting = false;
  * so a `let` declared beside the shop's own code — thirty thousand lines
  * down — is read out of its dead zone on the first frame and takes the page
  * with it. This file has paid for that one twice. */
-let shopOpen = false, shopSel = 0, shopReturnLock = false;
+let shopOpen = false, shopSel = 0, shopReturnLock = false, shopCart = new Set();
 let menuReturnLock = false, noteReturnLock = false, packReturnLock = false, inspectReturnLock = false;
 const lookEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
@@ -4869,6 +4925,7 @@ window.addEventListener('keydown', (e) => {
   if (shopOpen && !ended) {
     if (e.code === 'ArrowUp' || e.code === 'KeyW') { shopSel = (shopSel + SHOP_ROWS.length - 1) % SHOP_ROWS.length; renderShop(); return; }
     if (e.code === 'ArrowDown' || e.code === 'KeyS') { shopSel = (shopSel + 1) % SHOP_ROWS.length; renderShop(); return; }
+    if (e.code === 'Space') { shopToggle(shopSel); return; }
     if (e.code === 'KeyE' || e.code === 'Enter' || e.code === 'NumpadEnter') { shopConfirm(); return; }
     if (e.code === 'Escape') { closeShop(); return; }
   }
@@ -10877,8 +10934,31 @@ function crabPlay(u, name, loop) {
   u.cur = a;
   return a;
 }
+/* EVERY CRAB WEARS THE FIRST CRAB'S TEXTURES. A skinned mesh cannot be
+ * cloned, so each crab is its own `parse` of the same file — and each parse
+ * makes its own Texture objects out of the same four images, which the GPU
+ * then takes as four fresh uploads the first frame that crab is drawn.
+ * Measured on the pack's swim-in: 139 to 171 ms of upload, three times, as
+ * each one surfaced in the middle of the cutscene. The maps are the same
+ * pictures (the tint is the material's colour, not its map), so the first
+ * set is kept, uploaded once while nobody is looking, and handed to the
+ * rest. */
+const CRAB_TEX_SLOTS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap'];
+let crabTexShared = null;
 function dressCrab(u, gltf) {
   const crabModel = u.model = gltf.scene;
+  crabModel.traverse((o) => {
+    if (!(o.isMesh || o.isSkinnedMesh) || !o.material) return;
+    const m = o.material, key = m.name || 'crab';
+    if (!crabTexShared) crabTexShared = {};
+    const set = crabTexShared[key];
+    if (!set) {
+      crabTexShared[key] = {};
+      for (const k of CRAB_TEX_SLOTS) if (m[k]) { crabTexShared[key][k] = m[k]; try { renderer.initTexture(m[k]); } catch (e) {} }
+    } else {
+      for (const k of CRAB_TEX_SLOTS) if (m[k] && set[k] && m[k] !== set[k]) { m[k].dispose(); m[k] = set[k]; }
+    }
+  });
   crabModel.traverse((o) => {
     if (!(o.isMesh || o.isSkinnedMesh)) return;
     o.frustumCulled = false;             // a skinned bound box is the bind pose
@@ -29258,6 +29338,7 @@ function animateFrame() {
   if (inspecting) {
     updateInspect(dt);
     renderer.render(inspectScene, inspectCamera);
+    sharpenFrame();
     return;
   }
   const hRoll = hitRoll + hurtShock * hurtRollK + stepRoll * stepRollK;
@@ -29275,6 +29356,7 @@ function animateFrame() {
     renderer.render(vmScene, vmCamera);
   }
   renderBloodJar(dt);          // corner viewport, drawn over the world
+  sharpenFrame();              // last: the finished picture, not any one layer of it
   renderer.autoClear = true;
 }
 // ==================================================================
@@ -33312,11 +33394,17 @@ function ringSpot(lx, lz) {
 }
 function knightSpoilsDrop() {
   const u = knightUnit;
-  if (knightSpoils || !u || !knightFight) return;
+  /* A KNIGHT A SAVE REMEMBERS AS DEAD NEVER FOUGHT, so `knightFight` is false
+   * and he is retired on the frame the room lands — and the ring he was
+   * carrying went with him if you left it on the flags. Retired is dead. */
+  if (knightSpoils || !u || !(knightFight || u.retired)) return;
   if (u.st.alive) { knightSpoilAt = 0; return; }
   knightSpoilAt += 1 / 60;
-  if ((u.st.deadT || 0) < 0.55 && knightSpoilAt < 1.5) return;
-  if (ringsFound || inventory.includes(ringItem) || rings.includes(ringItem)) { knightSpoils = true; return; }
+  if (!u.retired && (u.st.deadT || 0) < 0.55 && knightSpoilAt < 1.5) return;
+  /* THE OCTOPUS RING, NOT ANY RING. `ringsFound` is the HUD's "you have found
+   * a ring" and the pavilion's gem ring sets it on the way here — so the one
+   * thing the knight pays out was cancelled by the jewellery box upstairs. */
+  if (inventory.includes(ringItem) || rings.includes(ringItem)) { knightSpoils = true; return; }
   knightSpoils = true;
   const p = u.g.position;
   const sp = ringSpot(p.x - UC_X, p.z - UC_Z);
@@ -34865,6 +34953,16 @@ bwGlb('assets/rockmouth.glb', (gltf) => {
    * half past the face is all the opening anybody needs. */
   rockShellColliders(mountain, (x, z) => x < MOUNT_FRONT_X + 1.5 && Math.abs(z - MOUNT_MOUTH_Z) < 2.3);
   rockShellColliders(mountainExit, (x, z) => z < EXIT_FRONT_Z + 1.5 && Math.abs(x - EXIT_X) < 2.3);
+  /* AND THE WAY OUT IS A WAY BACK IN. The far rock was a one-way door: you
+   * came out of it onto the beach past the wall and it was scenery from then
+   * on, so anything you left in the church, or the church itself, was behind
+   * you for good. Its mouth takes you back to the altar end of the nave, the
+   * same cut the front door runs the other way round. */
+  const exitProxy = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.2, 1.6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  exitProxy.name = 'hitProxy'; exitProxy.visible = false;
+  exitProxy.position.set(EXIT_X, HOLE_Y, EXIT_FRONT_Z + 0.5);
+  rockGroup.add(exitProxy);
+  addInteractable(exitProxy, 'To crawl in', 'default', { far: 4.6, mid: true, onActivate: () => enterUndercroft('exit'), when: () => !inUndercroft && !ucBusy });
   const darkPlug = (holder, axis, box, name) => {
     /* AND WHAT IS BEHIND THE ARCH IS NOT THE HOLLOW — IT IS THE SAND WALL.
      * A cube was inscribed deep in the rock's own cave here and it did
@@ -34990,8 +35088,10 @@ function rockShellColliders(root, inMouth) {
   rockGroup.add(proxy);
   addInteractable(proxy, 'To crawl in', 'default', { far: 4.6, mid: true, onActivate: () => enterUndercroft(), when: () => !inUndercroft && !ucBusy });
 }
-function enterUndercroft() {
+let ucEnterAt = 'entry';                             // which end of the undercroft the next crawl in comes out at
+function enterUndercroft(where = 'entry') {
   if (ucBusy || inUndercroft || !UC.ready) return;
+  ucEnterAt = where;
   startCaveAmbience();
   ucBusy = true; ucDir = 1; ucT = 0; ucCut = false;
   blocking = false;
@@ -35004,8 +35104,24 @@ function leaveUndercroft(where = 'far') {
   ucBusy = true; ucDir = -1; ucT = 0; ucCut = false;
   sfxCrawl();
 }
-function placeInUndercroft() {
-  const e = UC.spots.entry;
+function ucArrival(where) {
+  if (where !== 'exit' || !UC.spots.exit) return UC.spots.entry;
+  /* Back in by the far rock: a few strides up the exit bore from its end,
+   * toward the church, facing it — not standing inside the "climb out" at
+   * the end of it. And ON THE BORE'S LINE, which is the church's axis: the
+   * exit spot is the last floored column, which is out in the flare at the
+   * end, five metres off to one side with no floor a few strides in from
+   * it. The floor is the walk's own. */
+  const x = UC.spots.exit, z = UC.spots.altar ? UC.spots.altar.z : UC.spots.entry.z;
+  for (let d = 4; d <= 12; d += 0.5) {
+    const f = UC.floorAt(x.x - d, z);
+    if (f != null) return { x: x.x - d, y: f, z, yaw: Math.PI / 2 };
+  }
+  return x;
+}
+function placeInUndercroft(where = ucEnterAt) {
+  const e = ucArrival(where);
+  ucEnterAt = 'entry';
   camera.position.set(UC_X + e.x, UC_Y + e.y + playerEye(), UC_Z + e.z);
   camBaseY = camera.position.y; vy = 0; onGround = true; groundY = UC_Y + e.y;
   inUndercroft = true; heldGlowTight = true;
@@ -35029,7 +35145,7 @@ function placeInUndercroft() {
    * the screen is still black, and the lamps come up with them. */
   setSkyDuck(1);
   for (const l of ucLamps) { l.userData.ucBase = l.userData.ucWant; l.intensity = l.userData.ucWant; }
-  lookEuler.set(-0.10, e.yaw, 0, lookEuler.order);   // facing down the tunnel
+  lookEuler.set(-0.10, e.yaw, 0, lookEuler.order);   // facing down the tunnel (or, from the far end, back at the church)
   camera.quaternion.setFromEuler(lookEuler);
   velocity.set(0, 0, 0); knockback.set(0, 0, 0);
   catchBreath();
@@ -35056,7 +35172,7 @@ function updateUndercroftCut(dt) {
     const black = t < HATCH_BLACK ? smooth01(0.06, HATCH_BLACK, t)
       : t < HATCH_BLACK + HATCH_HOLD + 0.45 ? 1 : 1 - smooth01(HATCH_BLACK + HATCH_HOLD + 0.45, D, t);
     blackoutEl.style.opacity = black.toFixed(3);
-    if (!ucCut && t >= HATCH_BLACK + 0.04) { ucCut = true; if (ucDir > 0) placeInUndercroft(); else placeOutOfUndercroft(); autosaveNow(ucDir > 0 ? 'ucIn' : null); }
+    if (!ucCut && t >= HATCH_BLACK + 0.04) { ucCut = true; const far = ucEnterAt === 'exit'; if (ucDir > 0) placeInUndercroft(); else placeOutOfUndercroft(); autosaveNow(ucDir > 0 ? (far ? 'ucInFar' : 'ucIn') : null); }
     if (t >= D) {
       ucBusy = false; blackoutEl.style.opacity = '0';
       /* AND COMING OUT OF THE CAVE IS THE SECOND CHECKPOINT. The pavilion's
@@ -35471,7 +35587,7 @@ const TRADER_STOCK = { glow: 1, water: 2, gun: 1, ammo: 0 };
 /* FREE WHILE THE GUN IS BEING TESTED — the owner's word, and he sets the real
  * cost later. The menu's labels read this table rather than spelling a number
  * out, so putting the price back is one line here and nothing else. */
-const TRADER_PRICE = { glow: 2, water: 1, gun: 0, ammo: 0 };
+const TRADER_PRICE = { glow: 1, water: 1, gun: 0, ammo: 0 };
 /* SHORT, BECAUSE IT SITS IN A COLUMN. "2 blood jars" beside a name in a
  * list is half the row; the header already says what the currency is. */
 const priceTag = (what) => {
@@ -35567,32 +35683,59 @@ const shopHad = (r) => {
   return false;                    // water stacks: you may always buy another
 };
 const shopOut = (r) => TRADER_STOCK[r.key] <= 0;
+/* THE BOX IS A CHECKBOX, AND IT DOES WHAT A CHECKBOX DOES. It used to be
+ * filled in when you already OWNED the thing — a picture of a checkbox that
+ * nothing could tick — and buying was a button per line. Now a click (or
+ * Space) ticks the line you are on, the total of everything ticked is kept
+ * beside the button, and CONFIRM buys the lot. A line you cannot buy (sold
+ * out, or already in your pack) cannot be ticked, and the button refuses a
+ * total you cannot pay rather than half-filling the order. */
+const shopCanTick = (r) => !shopOut(r) && !shopHad(r);
+const shopTotal = () => SHOP_ROWS.reduce((t, r) => t + (shopCart.has(r.key) ? TRADER_PRICE[r.key] : 0), 0);
+function shopToggle(i) {
+  const r = SHOP_ROWS[i]; if (!r) return;
+  shopSel = i;
+  if (shopCart.has(r.key)) shopCart.delete(r.key);
+  else if (shopCanTick(r)) shopCart.add(r.key);
+  else traderSaid = shopHad(r) ? 'You have one. What do you want, a pair?' : 'Sold out. Shocking, I know.';
+  renderShop();
+}
 function renderShop() {
+  for (const k of [...shopCart]) { const r = SHOP_ROWS.find((q) => q.key === k); if (!r || !shopCanTick(r)) shopCart.delete(k); }
   shopJarsEl.textContent = bloodJars;
   shopSayEl.textContent = traderSaid;
   shopListEl.innerHTML = '';
   SHOP_ROWS.forEach((r, i) => {
     const el = document.createElement('div');
-    el.className = 'row' + (i === shopSel ? ' sel' : '') + (shopHad(r) ? ' had' : '') + (shopOut(r) ? ' out' : '');
-    el.innerHTML = `<span class="box"></span><span class="nm">${r.name}</span><span class="pr">${priceTag(r.key)}</span>`;
-    el.addEventListener('mousedown', (e) => { e.preventDefault(); shopSel = i; renderShop(); });
-    el.addEventListener('dblclick', () => { shopSel = i; shopConfirm(); });
+    el.className = 'row' + (i === shopSel ? ' sel' : '') + (shopCart.has(r.key) ? ' chk' : '')
+      + (shopHad(r) ? ' had' : '') + (shopOut(r) ? ' out' : '');
+    el.innerHTML = `<span class="box"></span><span class="nm">${r.name}</span><span class="pr">${shopHad(r) ? 'owned' : shopOut(r) ? 'sold out' : priceTag(r.key)}</span>`;
+    el.addEventListener('mousedown', (e) => { e.preventDefault(); shopToggle(i); });
     shopListEl.appendChild(el);
   });
   const r = SHOP_ROWS[shopSel];
   const it = r && r.item();
-  const afford = r && bloodJars >= TRADER_PRICE[r.key];
+  const n = shopCart.size, total = shopTotal();
+  const label = n === 0 ? 'Confirm' : `Confirm · ${total <= 0 ? 'free' : total === 1 ? '1 jar' : total + ' jars'}`;
   shopDetailEl.innerHTML =
     `<div class="pic">${it ? iconHTML(it) : ''}</div>` +
     `<div class="nm">${r ? r.name : ''}</div>` +
     `<div class="ds">${r ? r.desc : ''}</div>` +
-    `<button class="buy"${!r || shopOut(r) || !afford ? ' disabled' : ''}>Buy</button>`;
+    `<button class="buy"${n === 0 || total > bloodJars ? ' disabled' : ''}>${label}</button>`;
   const btn = shopDetailEl.querySelector('.buy');
   if (btn) btn.addEventListener('click', shopConfirm);
 }
 function shopConfirm() {
-  const r = SHOP_ROWS[shopSel]; if (!r) return;
-  traderBuy(r.key);
+  if (!shopCart.size) { traderSaid = 'Tick something first.'; renderShop(); return; }
+  const total = shopTotal();
+  if (total > bloodJars) {
+    traderSaid = `That's ${total} jars. You have ${bloodJars}. Come back when you can count.`;
+    renderShop(); return;
+  }
+  const keys = SHOP_ROWS.map((r) => r.key).filter((k) => shopCart.has(k));
+  for (const k of keys) traderBuy(k);
+  if (keys.length > 1) traderSaid = "That's the lot. Now go away.";
+  shopCart.clear();
   renderShop();
 }
 function openShop() {
@@ -35604,6 +35747,7 @@ function openShop() {
   if (invOpen) closePack();
   traderSaid = 'Just buy something...';
   shopSel = 0;
+  shopCart.clear();
   renderShop();
   shopPanelEl.classList.add('show');
   setPrompt('');
@@ -43991,6 +44135,245 @@ function makeKeepSky(clouds) {
   });
 }
 
+/* THE KEEP'S SEA IS THE BEACH'S SEA. The file ships a flat transmission
+ * disc — still, blue, and a sea only in colour. What replaces it is the
+ * beach's own ocean: the same eight swell terms and the same chop, the
+ * same faceted flat-shaded water catching the moon, the same crest tint and
+ * glitter road, and a lace of foam where it meets the shore.
+ *
+ * WHAT IS NOT THE BEACH'S IS HOW BIG THE WAVES MAY BE, AND THE ISLAND
+ * ANSWERS IT. The beach eases its swell down to nothing at the waterline
+ * because the waterline is a line in x; an island has a waterline all the
+ * way round and a pier standing a metre over the water. So the walk grid is
+ * read ONCE into a distance field — how far every metre of sea is from land,
+ * and from a SHORE (ground at the water's own level: the pier's deck is
+ * land but is not a shore, so the water under it is calm and not foam) —
+ * and the swell grows with it: a tenth of the beach's in the lee of the
+ * pier, where the boat lies, and half of it out in open water, fading back
+ * to flat at the rim so it meets the sky's own edge. The JS mirror reads the
+ * SAME field, so what floats on it floats on the water that is drawn. */
+const KEEP_FIELD_N = 172, KEEP_FIELD_H = 86;      // one metre a texel, over the whole disc
+const KEEP_WATER_R = 84;                          // the sky sphere's rim
+let keepField = null, keepFieldTex = null, keepWater = null;
+function buildKeepField() {
+  if (keepField || !keepWalk || !keepCells) return;
+  const N = KEEP_FIELD_N, H = KEEP_FIELD_H, w = keepWalk;
+  const land = new Uint8Array(N * N), low = new Uint8Array(N * N), shore = new Uint8Array(N * N);
+  for (const [key, fl] of keepCells) {
+    if (!fl || !fl.length) continue;
+    const i = key % w.gw, j = (key - i) / w.gw;
+    const lx = w.x0 + (i + 0.5) * w.cell, lz = w.z0 + (j + 0.5) * w.cell;
+    const fx = Math.floor(lx + H), fz = Math.floor(lz + H);
+    if (fx < 0 || fz < 0 || fx >= N || fz >= N) continue;
+    let top = -Infinity; for (let k = 0; k < fl.length; k += 3) top = Math.max(top, fl[k]);
+    if (top > KEEP_SEA + 0.02) land[fz * N + fx] = 1;
+    if (fl[0] > KEEP_SEA - 0.05 && fl[0] < KEEP_SEA + 0.6) low[fz * N + fx] = 1;
+  }
+  /* A SHORE IS A LINE, NOT AN AREA: ground at the water's own level with the
+   * sea beside it. Marked as the whole shallow margin, the foam lay over
+   * metres of water round every rock and aliased into streaks. */
+  for (let z = 1; z < N - 1; z++) for (let x = 1; x < N - 1; x++) {
+    const k = z * N + x;
+    if (land[k] && low[k] && (!land[k - 1] || !land[k + 1] || !land[k - N] || !land[k + N])) shore[k] = 1;
+  }
+  // two-pass chamfer: metres to the nearest marked texel
+  const dist = (m) => {
+    const d = new Float32Array(N * N);
+    for (let k = 0; k < N * N; k++) d[k] = m[k] ? 0 : 1e4;
+    const D = Math.SQRT2;
+    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
+      const k = z * N + x; let v = d[k];
+      if (x > 0) v = Math.min(v, d[k - 1] + 1);
+      if (z > 0) { v = Math.min(v, d[k - N] + 1); if (x > 0) v = Math.min(v, d[k - N - 1] + D); if (x < N - 1) v = Math.min(v, d[k - N + 1] + D); }
+      d[k] = v;
+    }
+    for (let z = N - 1; z >= 0; z--) for (let x = N - 1; x >= 0; x--) {
+      const k = z * N + x; let v = d[k];
+      if (x < N - 1) v = Math.min(v, d[k + 1] + 1);
+      if (z < N - 1) { v = Math.min(v, d[k + N] + 1); if (x < N - 1) v = Math.min(v, d[k + N + 1] + D); if (x > 0) v = Math.min(v, d[k + N - 1] + D); }
+      d[k] = v;
+    }
+    return d;
+  };
+  /* AND IT IS BLURRED. A chamfer distance is exact on its own grid and its
+   * GRADIENT is quantised to eight directions, and the swell's height is
+   * scaled by it — so on the water the amplitude's slope drew as white
+   * spokes radiating out of the rock. Three box passes each way take the
+   * facets out of it. */
+  const blur = (d, R) => {
+    const t = new Float32Array(N * N);
+    for (let pass = 0; pass < 3; pass++) {
+      for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
+        let a = 0, n = 0;
+        for (let k = -R; k <= R; k++) { const xx = x + k; if (xx >= 0 && xx < N) { a += d[z * N + xx]; n++; } }
+        t[z * N + x] = a / n;
+      }
+      for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
+        let a = 0, n = 0;
+        for (let k = -R; k <= R; k++) { const zz = z + k; if (zz >= 0 && zz < N) { a += t[zz * N + x]; n++; } }
+        d[z * N + x] = a / n;
+      }
+    }
+    return d;
+  };
+  const dl = blur(dist(land), 3), ds = blur(dist(shore), 1);
+  const px = new Uint8Array(N * N * 4);
+  for (let k = 0; k < N * N; k++) {
+    px[k * 4] = Math.round(Math.min(dl[k], 40) / 40 * 255);
+    px[k * 4 + 1] = Math.round(Math.min(ds[k], 8) / 8 * 255);
+    px[k * 4 + 3] = 255;
+  }
+  keepField = { dl, px };
+  keepFieldTex = new THREE.DataTexture(px, N, N, THREE.RGBAFormat);
+  keepFieldTex.magFilter = keepFieldTex.minFilter = THREE.LinearFilter;
+  keepFieldTex.needsUpdate = true;
+}
+// the field's own land distance at a keep-local point, read the way the GPU reads it
+function keepFieldAt(lx, lz) {
+  if (!keepField) return 40;
+  const N = KEEP_FIELD_N, px = keepField.px;
+  const u = THREE.MathUtils.clamp(lx + KEEP_FIELD_H - 0.5, 0, N - 1.001), v = THREE.MathUtils.clamp(lz + KEEP_FIELD_H - 0.5, 0, N - 1.001);
+  const x0 = Math.floor(u), z0 = Math.floor(v), fx = u - x0, fz = v - z0;
+  const g = (x, z) => px[(z * N + x) * 4] / 255 * 40;
+  return (g(x0, z0) * (1 - fx) + g(x0 + 1, z0) * fx) * (1 - fz) + (g(x0, z0 + 1) * (1 - fx) + g(x0 + 1, z0 + 1) * fx) * fz;
+}
+const keepWaveGLSL = `
+  float keepWave(vec2 p, float t, float dl){
+    float a = smoothstep(0.0, 18.0, dl);
+    float edge = smoothstep(${KEEP_WATER_R}.0, ${KEEP_WATER_R - 18}.0, length(p));
+    float w = 0.0;
+    w += sin(p.x * 0.045 + p.y * 0.028 - t * 0.55) * 0.70;
+    w += sin(p.x * 0.032 - p.y * 0.041 + t * 0.42) * 0.50;
+    w += sin(p.x * 0.20 + p.y * 0.13 + t * 1.10) * 0.48;
+    w += sin(p.x * 0.16 - p.y * 0.19 + t * 0.90) * 0.40;
+    w += sin(p.y * 0.24 - p.x * 0.11 + t * 1.30) * 0.34;
+    w += sin(p.x * 0.33 + p.y * 0.28 + t * 1.70) * 0.26;
+    w += sin(p.y * 0.44 + p.x * 0.20 - t * 2.10) * 0.19;
+    w += sin(p.x * 0.61 - p.y * 0.35 + t * 2.60) * 0.13;
+    float c = sin(p.x * 0.62 + p.y * 0.44 - t * 3.0) * 0.12 + sin(p.y * 0.78 - p.x * 0.36 + t * 2.5) * 0.09;
+    return (w * mix(0.13, 0.70, a) + c * mix(0.40, 1.0, a)) * edge;
+  }
+`;
+function keepWaveJS(lx, lz, t) {
+  const dl = keepFieldAt(lx, lz);
+  const a = gsmooth(0, 18, dl), edge = gsmooth(KEEP_WATER_R, KEEP_WATER_R - 18, Math.hypot(lx, lz));
+  let w = 0;
+  w += Math.sin(lx * 0.045 + lz * 0.028 - t * 0.55) * 0.70;
+  w += Math.sin(lx * 0.032 - lz * 0.041 + t * 0.42) * 0.50;
+  w += Math.sin(lx * 0.20 + lz * 0.13 + t * 1.10) * 0.48;
+  w += Math.sin(lx * 0.16 - lz * 0.19 + t * 0.90) * 0.40;
+  w += Math.sin(lz * 0.24 - lx * 0.11 + t * 1.30) * 0.34;
+  w += Math.sin(lx * 0.33 + lz * 0.28 + t * 1.70) * 0.26;
+  w += Math.sin(lz * 0.44 + lx * 0.20 - t * 2.10) * 0.19;
+  w += Math.sin(lx * 0.61 - lz * 0.35 + t * 2.60) * 0.13;
+  const c = Math.sin(lx * 0.62 + lz * 0.44 - t * 3.0) * 0.12 + Math.sin(lz * 0.78 - lx * 0.36 + t * 2.5) * 0.09;
+  return (w * (0.13 + 0.57 * a) + c * (0.40 + 0.60 * a)) * edge;
+}
+// the surface, in world y, at a world point on the island's sea
+const keepWaterAt = (x, z) => KEEP_Y + KEEP_SEA + keepWaveJS(x - KEEP_X, z - KEEP_Z, oceanUniforms.uTime.value);
+function makeKeepWater() {
+  const S = KEEP_WATER_R * 2 + 2;
+  const geo = new THREE.PlaneGeometry(S, S, 84, 84);   // 2 m facets: the beach's facet look at the scale of an island
+  geo.rotateX(-Math.PI / 2);
+  const mat = new THREE.ShaderMaterial({
+    name: 'material',               // the sea's own name: every walk and wall index skips it
+    fog: true,
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
+      uField: { value: null }, uCamPos: { value: new THREE.Vector3() },
+      uMoonDir: { value: new THREE.Vector3(-124, 72, 140).normalize() },   // the keep's own moon
+      uDeep: { value: new THREE.Color(0x123f66) }, uShallow: { value: new THREE.Color(0x2f8ec2) },
+      uCrest: { value: new THREE.Color(0xaad9ec) }, uSky: { value: new THREE.Color(0x131c2b) },
+    }]),
+    vertexShader: `
+      #include <fog_pars_vertex>
+      uniform float uTime; uniform sampler2D uField;
+      varying vec3 vWorld; varying vec2 vLocal; varying vec2 vF; varying float vH;
+      ${keepWaveGLSL}
+      void main() {
+        vec3 p = position;
+        vec2 f = texture2D(uField, (p.xz + ${KEEP_FIELD_H}.0) / ${KEEP_FIELD_N}.0).rg;
+        vF = f; vLocal = p.xz;
+        vH = keepWave(p.xz, uTime, f.r * 40.0);
+        p.y += vH;
+        vec4 world = modelMatrix * vec4(p, 1.0);
+        vWorld = world.xyz;
+        vec4 mvPosition = viewMatrix * world;
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }
+    `,
+    fragmentShader: `
+      #include <fog_pars_fragment>
+      uniform float uTime; uniform vec3 uCamPos; uniform vec3 uMoonDir;
+      uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uCrest; uniform vec3 uSky;
+      varying vec3 vWorld; varying vec2 vLocal; varying vec2 vF; varying float vH;
+      ${noiseGLSL}
+      void main() {
+        float r = length(vLocal);
+        if (r > ${KEEP_WATER_R}.5) discard;
+        vec3 n = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
+        if (n.y < 0.0) n = -n;
+        vec3 viewDir = normalize(uCamPos - vWorld);
+        float dl = vF.r * 40.0, ds = vF.g * 8.0;
+        vec3 col = mix(uShallow, uDeep, smoothstep(0.0, 34.0, dl));
+        col = mix(col, uSky, smoothstep(52.0, ${KEEP_WATER_R}.0, r));
+        // the beach's own rule: facet shading fades where the facets go small on screen
+        float camD = distance(uCamPos, vWorld);
+        float ndl = max(dot(n, normalize(uMoonDir)), 0.0);
+        col *= mix(1.0, 0.5 + 1.05 * ndl, smoothstep(120.0, 10.0, camD));
+        float fres = pow(1.0 - max(dot(n, viewDir), 0.0), 3.0);
+        col += uSky * fres * 0.5;
+        float steep = clamp((1.0 - n.y) * 3.0, 0.0, 1.0) * smoothstep(110.0, 8.0, camD);
+        col = mix(col, uCrest, steep * 0.22);
+        float crest = smoothstep(0.30, 0.80, vH) * smoothstep(0.55, 0.95, n.y);
+        col = mix(col, uCrest, crest * 0.5);
+        vec3 hv = normalize(uMoonDir + viewDir);
+        float spec = pow(max(dot(n, hv), 0.0), 60.0);
+        vec3 moonFlat = normalize(vec3(uMoonDir.x, 0.0, uMoonDir.z));
+        vec3 viewFlat = normalize(vec3(-viewDir.x, 0.0, -viewDir.z));
+        float road = pow(max(dot(viewFlat, moonFlat), 0.0), 8.0);
+        col += vec3(0.90, 0.94, 1.0) * spec * (0.15 + road * 1.4);
+        col += vec3(0.26, 0.34, 0.50) * road * 0.14;
+        // foam where the sea meets a shore, fizzing like the beach's swash
+        float near = smoothstep(60.0, 12.0, camD);     // fine foam aliases into streaks from afar
+        float band = smoothstep(1.6, 0.0, ds) * near;
+        float fizz = 0.5 + 0.5 * sin(vLocal.x * 1.7 + vLocal.y * 1.5 + uTime * 6.0) * sin(vLocal.y * 1.1 - vLocal.x * 0.8 - uTime * 3.5);
+        col = mix(col, vec3(0.78, 0.85, 0.92), clamp(band * fizz, 0.0, 0.75));
+        float lace = smoothstep(0.4, 1.4, ds) * smoothstep(3.6, 1.4, ds) * near;
+        col += vec3(0.14) * lace * (0.35 + 0.65 * bwNoise(vLocal.x * 0.9 + vLocal.y * 0.9 + uTime * 1.2));
+        gl_FragColor = vec4(col, 1.0);
+        #include <fog_fragment>
+      }
+    `,
+  });
+  mat.uniforms.uTime = oceanUniforms.uTime;       // one clock for both seas
+  mat.uniforms.uField.value = keepFieldTex;
+  const m = new THREE.Mesh(geo, mat);
+  m.position.y = KEEP_SEA;
+  m.frustumCulled = false;
+  return m;
+}
+/* AND THE BOAT RIDES IT. She floats on the water under her middle, pitches
+ * to the slope from stern to bow and rolls to the slope across her beam,
+ * with a little lag, because a hull has mass. Her floor is the box the walk
+ * reads, so it rides with her and so do you. */
+const _bobQ = new THREE.Quaternion(), _bobE = new THREE.Euler();
+function updateKeepWater(dt) {
+  if (keepWater) keepWater.material.uniforms.uCamPos.value.copy(camera.position);
+  const B = keepBoat && keepBoat.userData.bob;
+  if (!B) return;
+  const t = oceanUniforms.uTime.value, lx = B.cx - KEEP_X, lz = B.cz - KEEP_Z;
+  const hC = keepWaveJS(lx, lz, t);
+  const pitch = Math.atan2(keepWaveJS(lx, lz + B.L / 2, t) - keepWaveJS(lx, lz - B.L / 2, t), B.L) * 0.8;
+  const roll = Math.atan2(keepWaveJS(lx + B.W / 2, lz, t) - keepWaveJS(lx - B.W / 2, lz, t), B.W) * 0.8;
+  const k = 1 - Math.exp(-dt * 3.2);
+  B.h += (hC - B.h) * k; B.p += (pitch - B.p) * k; B.r += (roll - B.r) * k;
+  keepBoat.position.y = B.y + B.h;
+  _bobE.set(-B.p, 0, B.r, 'XYZ');
+  keepBoat.quaternion.copy(B.q).premultiply(_bobQ.setFromEuler(_bobE));
+  if (keepBoatBox) keepBoatBox.top = B.top + B.h;
+}
+
 // ------------------------------------------------------------- the model
 function loadKeep() {
   if (keepWorld) return;
@@ -44038,21 +44421,14 @@ function loadKeep() {
          * sky lying on it: a translucent turquoise over the file's own
          * caustic plane, taking the sun as a broad sheen rather than a
          * pinpoint. */
-        keepSea = o;
-        const seaM = new THREE.MeshStandardMaterial({ color: 0x0d3f4a, roughness: 0.16, metalness: 0, transparent: true, opacity: 0.80, depthWrite: false });
-        seaM.emissive.setHex(0x04232c); seaM.emissiveIntensity = 0.5;
-        o.material = seaM;
-        o.renderOrder = 1;
+        o.visible = false;             // the flat disc stays in the file; the moving sea takes its place
         return;
       }
       if (name === 'Sand') {
-        /* the seabed: the file's caustic map, lit from within so it reads up
-         * through the water; the violet emissive it ships with at strength
-         * ten was the one thing in the file that could not have been meant */
-        for (const m of mats) {
-          m.transparent = false; m.depthWrite = true; m.opacity = 1;
-          m.emissive.setHex(0xffffff); m.emissiveMap = m.map; m.emissiveIntensity = 0.12;
-        }
+        /* the seabed's caustic sheet sits a hand under the file's flat sea,
+         * so every trough of a moving one showed it; the beach's sea is
+         * opaque and so is this one, and there is nothing under it to see */
+        o.visible = false;
         return;
       }
       /* EVERY MATERIAL SHIPS AS BLEND, and GLTFLoader turns depth write off
@@ -44069,6 +44445,9 @@ function loadKeep() {
       }
     });
     keepWorld.add(root);
+    buildKeepField();
+    keepWater = keepSea = makeKeepWater();
+    keepWorld.add(keepWater);
     /* AND A FLOOR UNDER THE VOID. The sky sphere's rim sits two metres under
      * the sea and the sea plane ends where the rim does, so from the roof
      * walk the far edge of the water could show the clear colour through a
@@ -44076,7 +44455,7 @@ function loadKeep() {
      * a metre and a half under everything, so there is nothing to see. */
     const voidM = new THREE.MeshBasicMaterial({ color: 0x07222a, fog: false });
     const voidDisc = new THREE.Mesh(new THREE.CircleGeometry(600, 48), voidM);
-    voidDisc.rotation.x = -Math.PI / 2; voidDisc.position.y = KEEP_SEA - 1.5; voidDisc.renderOrder = -1;
+    voidDisc.rotation.x = -Math.PI / 2; voidDisc.position.y = KEEP_SEA - 4.0;   // under the deepest trough the swell can throw voidDisc.renderOrder = -1;
     keepWorld.add(voidDisc);
     keepReady = true;
   }, undefined, () => {});
@@ -44096,11 +44475,207 @@ function loadKeep() {
  * THE FACES FIRST — the storey repair asks them what is drawn — then the
  * repairs, and the lift LAST, because the lift takes its car's storeys out
  * of the grid and a repair run after that would put them straight back. */
+/* TWO FENCES, WHERE THE OWNER STOOD AND POINTED. Each was read off the dev
+ * overlay (P) — feet, heading and the spot the crosshair landed on — and its
+ * ends were found by walking out from that spot along the line square to the
+ * look, with the island's own step and wall rules, until something stopped
+ * the walk: the rock to the east of the hay bales, and the rock and the
+ * hoist's shaft by the white mound. They are data, in the island's own
+ * frame, like the mooring and the spawn.
+ *
+ * THE HOIST END STOPS SHORT OF THE SHAFT. Measured, the walk stops against
+ * the car's rails at z 17.09, which is inside the car's plan (to 17.40) — a
+ * post there stands in the way of a car that goes up and down through it.
+ * It ends at 17.55, a hand outside the plan and too narrow a gap for a body.
+ *
+ * AND THE WOOD IS THE PIER'S OWN. The boards wear the island's `Fortress`
+ * material itself — the one the pier's planks are drawn in, shared, so it is
+ * lit and graded exactly as they are — with every face's uv laid into the
+ * strip of the atlas a pier plank samples (read off a raycast into the deck:
+ * u 0.689-0.896, v 0.143-0.163). Posts are sunk a third of a metre into the
+ * sand with a lean and a heap of the beach's own sand banked round each foot,
+ * because a post that meets the ground on a hard line reads as set down. */
+const KEEP_FENCES = [
+  // a/b: the posts, a hand short of what each end meets; walk: where a body stops, which is the line refused
+  { a: [-11.34, 9.99], b: [-13.51, 8.86], y: 0.01, walk: [[-10.76, 10.29], [-14.0, 8.6]] },   // from the rock to the hay
+  { a: [1.06, 21.20], b: [-0.51, 17.79], y: -0.05, walk: [[1.64, 22.45], [-0.62, 17.55]] },  // from the rock to the hoist
+];
+/* AND THE HAY IS PART OF THE FENCE. The bales are 0.74 m of hay that the
+ * walk steps up onto, so measured, a walk at the fence from the owner's own
+ * spot climbed the bales and went round the end of it in under two seconds.
+ * The line across the bales is solid. (A stretch on from the bales to the
+ * water was built and taken off on the owner's word; past the bales is open
+ * sand again.) Every fence line is ALSO refused as a line, whatever height
+ * you are at: the rails are in the wall index, but a body standing on the
+ * hay has its wall band over the top rail. */
+const KEEP_BLOCKS = [...KEEP_FENCES.map((f) => f.walk), [[-14.0, 8.6], [-16.9, 7.15]]];
+function keepBlockCrossed(x0, z0, x1, z1) {
+  const px0 = x0 - KEEP_X, pz0 = z0 - KEEP_Z, px1 = x1 - KEEP_X, pz1 = z1 - KEEP_Z;
+  for (const [[ax, az], [bx, bz]] of KEEP_BLOCKS) {
+    const ex = bx - ax, ez = bz - az, L2 = ex * ex + ez * ez;
+    const dist = (x, z) => {
+      const t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / L2));
+      return Math.hypot(x - (ax + ex * t), z - (az + ez * t));
+    };
+    const d1 = dist(px1, pz1);
+    if (d1 < KEEP_BODY + 0.08 && d1 < dist(px0, pz0)) return true;     // may always move away from one
+    const s0 = ex * (pz0 - az) - ez * (px0 - ax), s1 = ex * (pz1 - az) - ez * (px1 - ax);
+    if (s0 * s1 < 0) {
+      const mx = px1 - px0, mz = pz1 - pz0, q0 = mx * (az - pz0) - mz * (ax - px0), q1 = mx * (bz - pz0) - mz * (bx - px0);
+      if (q0 * q1 <= 0) return true;
+    }
+  }
+  return false;
+}
+const FENCE_UV = { u0: 0.689, u1: 0.896, v0: 0.1433, v1: 0.1632 };
+function buildKeepFences() {
+  if (!keepWorld) return;
+  let wood = null;
+  const solids = [];
+  keepWorld.traverse((o) => {
+    if (!o.isMesh || !o.visible || o.name === 'hitProxy') return;
+    const n = o.material && o.material.name;
+    if (n === 'Fortress' || n === 'Environment') solids.push(o);
+    if (n === 'Fortress' && !wood) wood = o.material;
+  });
+  if (!wood) return;
+  keepWorld.updateMatrixWorld(true);
+  const rnd = mulberry32(0x5eaf3e);
+  const ray = new THREE.Raycaster();
+  const down = new THREE.Vector3(0, -1, 0), o3 = new THREE.Vector3();
+  /* The drawn sand under a point, found from just over the WALK's own floor
+   * there. Cast from a fixed height, an end post buried in the rock or the
+   * hoist's timber read the TOP of that as its ground, stood a metre up and
+   * dragged its rails up at forty-five degrees; the walk knows where a foot
+   * goes, and an end with no floor under it takes its neighbour's. */
+  let lastY = 0, refY = 0;
+  /* ...and from the FENCE's own level: a cell with a ledge or a bale over the
+   * sand answers the ledge to a lookup from above, which put one fence's
+   * whole ground at 0.84 m and every probe along it over the sand. */
+  const groundAt = (x, z) => {
+    const st = keepStandAt(KEEP_X + x, KEEP_Z + z, KEEP_Y + refY + 0.35, 0.35);
+    const fy = st && !st.sea ? st.f - KEEP_Y : lastY;
+    o3.set(KEEP_X + x, KEEP_Y + fy + 0.6, KEEP_Z + z);
+    ray.set(o3, down); ray.far = 1.4;
+    const h = ray.intersectObjects(solids, false)[0];
+    const y = h ? h.point.y - KEEP_Y : fy;
+    lastY = y;
+    return { y, uv: h && h.uv ? h.uv.clone() : null, sand: !!h && h.object.material.name === 'Environment' };
+  };
+  const { u0, u1, v0, v1 } = FENCE_UV;
+  const board = (len, h, t) => {
+    const g = new THREE.BoxGeometry(len, h, t);
+    const uv = g.attributes.uv, span = Math.min(1, len / 4) * (u1 - u0), off = rnd() * (u1 - u0 - span);
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, u0 + off + uv.getX(i) * span, v0 + uv.getY(i) * (v1 - v0));
+    return g;
+  };
+  const woodGeos = [], sandGeos = [];
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(1, 1, 1), pos = new THREE.Vector3();
+  let sandMat = null;
+  /* A FENCE STOPS AT THE THING IT MEETS, AND WHERE IS MEASURED, NOT FOUND.
+   * The ends were walked, which says where a BODY stops — a hand short of the
+   * rock or past the lip of it — and a fence built to those ran its rails into
+   * the stone. Finding the faces again by casting along the fence at load was
+   * tried and fooled four ways in a row: grass cards, a stick lying across the
+   * path, a ledge over the sand and a boulder with an apron at its foot. The
+   * posts are placed off a scan along each line at every rail's height (the
+   * rock's foot bulges toward the hay to 0.52 m, the lowest bale starts at
+   * 3.22; the boulder's apron runs to 1.26 and the hoist's sill is at 5.28),
+   * a hand short of each. The line the walk refuses stays the WALKED one,
+   * which reaches into the stone, so there is no slot at an end. */
+  for (const F of KEEP_FENCES) {
+    const [ax, az] = F.a, [bx, bz] = F.b;
+    refY = lastY = F.y || 0;
+    const L = Math.hypot(bx - ax, bz - az), n = Math.max(2, Math.ceil(L / 1.7));
+    const yaw = Math.atan2(-(bz - az), bx - ax);          // rotation that lays local +X along the fence
+    const nx = -(bz - az) / L, nz = (bx - ax) / L;          // the fence's normal in plan
+    const posts = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n + (i > 0 && i < n ? (rnd() - 0.5) * 0.08 : 0);
+      const x = ax + (bx - ax) * t, z = az + (bz - az) * t;
+      const g = groundAt(x, z);
+      posts.push({ t, x, z, y: g.y, uv: g.uv, sand: g.sand });
+    }
+    /* AND IT RUNS STRAIGHT. Each post taking its own ground put the rails up
+     * whatever the sand did, and against the rock the sand climbs — so the
+     * last span reared up off the beach like a ramp. The rails ride one
+     * straight line fitted through the posts' ground (no steeper than a few
+     * degrees), and a post whose ground is lower than the line simply reaches
+     * further down into the sand. */
+    {
+      let st = 0, sy = 0, stt = 0, sty = 0;
+      for (const P of posts) { st += P.t; sy += P.y; stt += P.t * P.t; sty += P.t * P.y; }
+      const N = posts.length, den = N * stt - st * st;
+      let k = den > 1e-9 ? (N * sty - st * sy) / den : 0;           // metres per whole fence
+      const kMax = Math.tan(0.10) * L; k = Math.max(-kMax, Math.min(kMax, k));
+      const c = (sy - k * st) / N;
+      for (const P of posts) {
+        P.base = c + k * P.t;
+        P.low = Math.min(P.y, P.base);
+        if (P.y > P.base + 0.05) P.sand = false;                      // buried, not heaped
+      }
+    }
+    for (const P of posts) {
+      const tall = 1.36 + rnd() * 0.1, sink = 0.34;
+      const bottom = P.low - sink, len = P.base + tall - bottom;
+      const geo = board(len, 0.15, 0.15);
+      e.set((rnd() - 0.5) * 0.05, yaw + (rnd() - 0.5) * 0.12, Math.PI / 2 + (rnd() - 0.5) * 0.05, 'YXZ');
+      q.setFromEuler(e);
+      pos.set(P.x, bottom + len / 2, P.z);
+      geo.applyMatrix4(m4.compose(pos, q, sc));
+      woodGeos.push(geo);
+      // the beach heaped round its foot
+      if (P.sand && P.uv) {
+        const mg = new THREE.IcosahedronGeometry(0.3, 1);
+        const mp = mg.attributes.position, muv = new Float32Array(mp.count * 2);
+        for (let k = 0; k < mp.count; k++) {
+          const w = 0.85 + rnd() * 0.3;
+          mp.setXYZ(k, mp.getX(k) * w, Math.max(-0.05, mp.getY(k)) * 0.32, mp.getZ(k) * w);
+          muv[k * 2] = P.uv.x + (rnd() - 0.5) * 0.004; muv[k * 2 + 1] = P.uv.y + (rnd() - 0.5) * 0.004;
+        }
+        mg.setAttribute('uv', new THREE.BufferAttribute(muv, 2));
+        mg.computeVertexNormals();
+        mg.applyMatrix4(m4.compose(pos.set(P.x, P.y - 0.03, P.z), q.identity(), sc));
+        sandGeos.push(mg);
+      }
+    }
+    // three rails a span, nailed to the path face of the posts, on the straight line
+    const ux = (bx - ax) / L, uz = (bz - az) / L;
+    for (let i = 0; i < n; i++) {
+      const A = posts[i], B = posts[i + 1];
+      const pa = i === 0 ? 0 : -0.11, pb = i === n - 1 ? 0 : 0.11;    // the end posts are the ends
+      const x0 = A.x + ux * pa, z0 = A.z + uz * pa, x1 = B.x + ux * pb, z1 = B.z + uz * pb;
+      const span = Math.hypot(x1 - x0, z1 - z0);
+      for (const h of [0.40, 0.78, 1.18]) {
+        const j = (rnd() - 0.5) * 0.03;
+        const ya = A.base + h + j, yb = B.base + h + j;
+        const geo = board(span, 0.18, 0.05);
+        const tilt = Math.atan2(yb - ya, Math.hypot(B.x - A.x, B.z - A.z));
+        e.set(0, yaw, tilt, 'YXZ'); q.setFromEuler(e);
+        pos.set((x0 + x1) / 2 + nx * 0.1, (ya + yb) / 2, (z0 + z1) / 2 + nz * 0.1);
+        geo.applyMatrix4(m4.compose(pos, q, sc));
+        woodGeos.push(geo);
+      }
+    }
+  }
+  const fence = new THREE.Mesh(mergeGeometries(woodGeos.map((g) => (g.index ? g.toNonIndexed() : g)), false), wood);
+  fence.name = 'keepFence';
+  keepWorld.add(fence);
+  if (sandGeos.length) {
+    solids.forEach((o) => { if (!sandMat && o.material.name === 'Environment') sandMat = o.material; });
+    const heap = new THREE.Mesh(mergeGeometries(sandGeos.map((g) => (g.index ? g.toNonIndexed() : g)), false), sandMat);
+    heap.name = 'keepFenceSand';
+    keepWorld.add(heap);
+  }
+  keepWorld.updateMatrixWorld(true);
+}
+
 let keepBuilt = false;
 function buildKeepIsland() {
   if (keepBuilt || !keepReady || !keepWalk) return;
   keepBuilt = true;
   repairKeepGround();
+  buildKeepFences();                 // before the walls: a fence is a wall like anything drawn
   buildKeepWalls();
   repairKeepStoreys();
   buildKeepLift();
@@ -44756,12 +45331,15 @@ function ensureKeepBoat() {
     return low;
   })();
   if (isFinite(sole)) {
-    wrap.position.y += (KEEP_Y + KEEP_SEA + 0.08) - sole;
+    wrap.position.y += (KEEP_Y + KEEP_SEA + 0.14) - sole;
     keepWorld.updateMatrixWorld(true);
   }
   keepBoat = wrap;
   const kb = new THREE.Box3().setFromObject(wrap);
   keepBoatBox = { x0: kb.min.x + 0.15, x1: kb.max.x - 0.15, z0: kb.min.z + 0.15, z1: kb.max.z - 0.15, top: kb.max.y };
+  wrap.userData.bob = { y: wrap.position.y, q: wrap.quaternion.clone(), top: kb.max.y,
+    cx: (kb.min.x + kb.max.x) / 2, cz: (kb.min.z + kb.max.z) / 2,
+    L: Math.max(1, kb.max.z - kb.min.z), W: Math.max(1, kb.max.x - kb.min.x), h: 0, p: 0, r: 0 };
   const h = size.y + 2.4;
   const proxy = new THREE.Mesh(
     new THREE.BoxGeometry(kb.max.x - kb.min.x + 0.3, h, kb.max.z - kb.min.z + 0.3),
@@ -44846,6 +45424,7 @@ function updateKeep(dt) {
   }
   if (!keepBoat) ensureKeepBoat();
   updateKeepLift(dt);
+  updateKeepWater(dt);
   if (!keepWalk) { groundY = Math.max(groundY, KEEP_Y + KEEP_WADE); return; }
   const p = camera.position;
   const feet = camBaseY - playerEye();
@@ -44868,7 +45447,17 @@ function updateKeep(dt) {
   const hits = (x0, z0, x1, z1) => keepHitsWall(x0, z0, x1, z1, feet + 0.80)
     || keepHitsWall(x0, z0, x1, z1, feet + 1.25)
     || keepHitsWall(x0, z0, x1, z1, feet + 1.68);
-  const legal = (x, z) => keepStandable(x, z, feet, up) && !hits(_preMove.x, _preMove.z, x, z);
+  /* AND THE SEA IS NOT A PLACE. A floor under the water — the shelf, or the
+   * sea itself where the grid was never written — refuses the step, so the
+   * waterline is where the walk ends, the pier's edge is a wall and a jump
+   * off it lands you back on the boards. Only a body that is somehow in the
+   * water already may move through it, so it can always climb out. */
+  const wet = (s) => !s || s.sea || s.f < KEEP_Y + KEEP_SEA + 0.05;
+  const wasWet = wet(keepStandable(_preMove.x, _preMove.z, feet, up));
+  const legal = (x, z) => {
+    const s = keepStandable(x, z, feet, up);
+    return s && (wasWet || !wet(s)) && !hits(_preMove.x, _preMove.z, x, z) && !keepBlockCrossed(_preMove.x, _preMove.z, x, z) ? s : null;
+  };
   let st = legal(p.x, p.z);
   if (!st) {
     /* A WALL IS SLID ALONG, NOT BOUNCED OFF: keep whichever one axis of the
@@ -45173,8 +45762,11 @@ function buildKeepLift() {
   const landY = floors.length ? floors[floors.length >> 1] : 2.35;
   const drop = LIFT.deck - (landY + LIFT.clear);      // how far the car falls
 
-  keepLift = { state: 'up', t: 1, dir: -1, drop, landY, upOff: LIFT.up - LIFT.deck, downOff: -drop,
-    y: KEEP_Y + LIFT.up, creak: 0, first: true };
+  /* AND IT IS WAITING AT THE BOTTOM, by the owner's word: you arrive at the
+   * pier and the car is already at the jetty, so the first thing it does is
+   * take you up. */
+  keepLift = { state: 'down', t: 0, dir: 1, drop, landY, upOff: LIFT.up - LIFT.deck, downOff: -drop,
+    y: KEEP_Y + LIFT.deck - drop, creak: 0, first: false };
   /* AND THE CAR'S FLOOR REACHES A HAND PAST ITS OWN TIMBER. The model draws
    * the car inside a well with a finger's clearance all round, and the
    * packer wrote no floor in that clearance — so stepping off at the top you
@@ -45213,7 +45805,7 @@ function buildKeepLift() {
   addInteractable(ride, label, 'action', { far: 4.6, mid: true, when, onActivate: pullKeepLever });
   keepLiftParts.proxies = [foot, ride];
 
-  setKeepLift(1);
+  setKeepLift(0);
 }
 
 /* Everything the hoist does is written from ONE number — how far through
@@ -45335,7 +45927,7 @@ function updateSailCut(dt) {
     if (sailDir > 0 && !keepReady) { sailT = SAIL_OUT + 0.05; return; }
     if (sailDir > 0) buildKeepIsland();          // half a second, behind full black
     sailCut = true;
-    if (sailDir > 0) placeInKeep(); else placeBackOnBoat();
+    if (sailDir > 0) { placeInKeep(); parkKeepLiftDown(); } else placeBackOnBoat();
     autosaveNow(sailDir > 0 ? 'keepIn' : null);
   }
   if (t >= D) { sailBusy = false; blackoutEl.style.opacity = '0'; catchBreath(); }
@@ -45415,8 +46007,8 @@ const ROOM_BACK = {
    * `place` runs first, so a spot only has to say where it differs from the
    * room's own entry. */
   keep: { at: () => [KEEP_X, KEEP_Z], ready: () => keepReady, load: () => loadKeep(), place: () => placeInKeep(),
-          seat: (p) => { parkKeepLiftUp(); },
-          spots: { keepIn: () => {}, keepDoor: () => { parkKeepLiftUp(); placeBackAtKeepDoor(); } } },
+          seat: (p) => { if (p[1] > KEEP_Y + 8) parkKeepLiftUp(); else parkKeepLiftDown(); },
+          spots: { keepIn: () => parkKeepLiftDown(), keepDoor: () => { parkKeepLiftUp(); placeBackAtKeepDoor(); } } },
   /* AND THE TAVERN IS REACHED BY THE HOIST, so the hoist is where you left
    * it — at the top, by the door — or coming back out you are sixteen metres
    * up a rock with the only way down parked at the bottom. That needs the
@@ -45433,7 +46025,7 @@ const ROOM_BACK = {
           spots: { dojoIn: () => {} } },
   uc:   { at: () => [UC_X, UC_Z], ready: () => UC.ready,
           load: () => { bwSoon('assets/tunnel.glb'); bwSoon('assets/church.glb'); bwSoon('assets/cave.glb'); },
-          place: () => placeInUndercroft(), seat: () => {}, spots: { ucIn: () => {} } },
+          place: () => placeInUndercroft('entry'), seat: () => {}, spots: { ucIn: () => {}, ucInFar: () => placeInUndercroft('exit') } },
   /* AND A ROOM IS NOT READY BECAUSE ITS GROUP EXISTS. `spawnBunker` makes the
    * group at module time and the download fills it minutes later, so a test
    * on the group alone is true from the first frame — the restore placed the
@@ -45478,6 +46070,10 @@ function updateRestoreGuard(dt) {
 function parkKeepLiftUp() {
   const L = keepLift;
   if (L) { L.state = 'up'; L.dir = 1; L.t = 1; L.first = false; setKeepLift(1); }
+}
+function parkKeepLiftDown() {
+  const L = keepLift;
+  if (L) { L.state = 'down'; L.dir = -1; L.t = 0; L.first = false; setKeepLift(0); }
 }
 function updateRoomRestore() {
   if (!roomRestore) return;
@@ -48826,7 +49422,7 @@ window.__bw = {
   get ringProp() { return ringProp; },
   armRig, shovelItem, startWind, releaseWind,
   crate, ringItem, ringWorld, rings, breakCrate, wearRing,
-  get crateBroken() { return crates[0].broken; }, crates, get ringsFound() { return ringsFound; },
+  get crateBroken() { return crates[0].broken; }, crates, get ringsFound() { return ringsFound; }, set ringsFound(v) { ringsFound = v; }, get knightSpoils() { return knightSpoils; }, get knightUnit() { return knightUnit; },
   get digT() { return digT; }, get digPower() { return digPower; }, get winding() { return winding; },
   corpse, CORPSE_X, CORPSE_Z,
   get lhParts() { return lhParts; },
@@ -48896,6 +49492,7 @@ if (loadMode === 'checkpoint' && hasCheckpoint()) {
 })();
 
 Object.assign(window.__bw, {
+  keepFences: () => KEEP_FENCES,
   stompBreakables, ucInChurch,
   abduct: () => { abductDone = false; abductPhase = 0; camera.position.z = Math.min(camera.position.z, ABDUCT_Z); startAbduct(); },
   shrineIn: () => { loadShrine(); loadUfo(); const w = () => { if (shrineReady) { abductPhase = 2; abductDone = true; placeInShrine(); } else setTimeout(w, 100); }; w(); },
