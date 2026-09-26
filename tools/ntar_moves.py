@@ -60,7 +60,7 @@ from mathutils import Vector, Quaternion, Matrix
 # skeletons, and neither of them cares which — the quantity this writes is
 # the rotation a bone has UNDERGONE, which knows nothing about either rig.
 #   blender -b -P tools/ntar_moves.py -- knight
-SET = next((a for a in ('knight', 'wong', 'drunk', 'orc', 'crawler') if a in sys.argv), 'ntar')
+SET = next((a for a in ('knight', 'wong', 'drunk', 'orc', 'crawler', 'umbra', 'mutant') if a in sys.argv), 'ntar')
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', SET + '-moves.json')
 SRC = os.path.expanduser('~/Downloads')
 FPS = 30
@@ -217,6 +217,33 @@ CRAWLER_CLIPS = [
     ('Mutant Run', 'run', 'a hunched lope on two legs', ''),
 ]
 if SET == 'crawler': CLIPS = CRAWLER_CLIPS
+# ---- AND THE UMBRA MARAUDER'S COMBO. The owner's "Dual Weapon Combo" is one
+# Mixamo take of five strikes — measured off the hands' own speed: the LEFT
+# blade at frame 15, the right at 22, both crossing at 35, the right at 44,
+# and both sweeping at 52 — stepping 2.4 m forward, and then the last pose
+# held for 180 frames. A fight has one hit per swing, so the take is cut into
+# five windows at the valleys between the strikes and the game CHAINS them,
+# which plays the whole of it back unbroken with every blade its own blow.
+UMBRA_CLIPS = [
+    ('Dual Weapon Combo', 'uC1', 'the left blade, opening', ''),
+    ('Dual Weapon Combo', 'uC2', 'the right blade, back across', ''),
+    ('Dual Weapon Combo', 'uC3', 'both blades, crossing', ''),
+    ('Dual Weapon Combo', 'uC4', 'the right again, short', ''),
+    ('Dual Weapon Combo', 'uC5', 'both blades, the sweep that ends it', ''),
+]
+if SET == 'umbra': CLIPS = UMBRA_CLIPS
+# ---- AND THE PACK'S FLIGHT. The owner's three "Injured Run" clips: a body
+# holding its side and limping away flat out, straight and turning each way.
+# A mutant near death sometimes breaks off and runs with these, and they go
+# onto the beach pack's own HumanIK rig (`Character1_*`, which is Mixamo's
+# naming with a prefix). All three are de-yawed: the GAME steers him, and
+# the turn clips' own measured drift is what it turns him at while they play.
+MUTANT_CLIPS = [
+    ('Injured Run',            'injRun', 'limping away, holding his side', ''),
+    ('Injured Run Left Turn',  'injL',   'and bending away to the left', ''),
+    ('Injured Run Right Turn', 'injR',   'and to the right', ''),
+]
+if SET == 'mutant': CLIPS = MUTANT_CLIPS
 # THE BEATS, measured off the hips (see the log's own curve). A Mixamo clip
 # is a performance with an approach and a recovery either side of the thing
 # you want, and the game needs the thing:
@@ -281,13 +308,13 @@ KEEP_YAW = {'knockOut', 'getUp'}
 # already out in front in the stance — so the frame that matters is the one
 # where the striking end is moving FASTEST, which is the reptilian rake's own
 # rule. Which end that is, is per clip: two of these are kicks.
-CONTACT = {'nSweep': 'RightToeBase'} if SET != 'orc' else {
+CONTACT = {'uC1': 'LeftHand', 'uC2': 'RightHand', 'uC3': 'RightHand', 'uC4': 'RightHand', 'uC5': 'RightHand'} if SET == 'umbra' else {'nSweep': 'RightToeBase'} if SET != 'orc' else {
     'oCut': 'RightHand', 'oCutB': 'RightHand', 'oCutC': 'RightHand',
     'oCutD': 'RightHand', 'oCutE': 'RightHand', 'oChop': 'RightHand',
     'oSpin': 'RightHand', 'oLeap': 'RightHand', 'oSlide': 'RightHand',
     'oKick': 'RightToeBase',
 }
-REST_FWD = SET in ('orc', 'crawler')
+REST_FWD = SET in ('orc', 'crawler', 'umbra', 'mutant')
 # ---- AND A CLIP THAT NEVER STANDS UP IS MEASURED FROM THE REST POSE.
 # `hipY` is the hips' offset from the clip's FIRST frame, which is right for
 # every clip that begins with a body standing — and the crawl begins on all
@@ -313,6 +340,20 @@ if SET == 'orc':
     # and 3.16 m of travel: he walks in, cuts at frame 22, and walks out of
     # shot. The beast's `Die_1` again — a fight wants the cut.
     WINDOW = {'oCutB': (0, 52)}
+if SET == 'umbra':
+    # THE COMBO TURNS A FULL CIRCLE — measured: +50, +125, +213, +10 and -33
+    # degrees across the five windows, 365 in all, ending square to you. That
+    # spin IS the move, so it is KEPT; and because the five windows are one
+    # take, keeping their turn is also what keeps them continuous where they
+    # are chained. A per-window de-yaw would have reset the body to facing
+    # you at the start of every cut and snapped it through half a turn.
+    KEEP_YAW = {c[1] for c in CLIPS}
+    FORCE_FLAT_YAW = set()
+    # the valleys between the strikes, as indices from the take's first frame
+    WINDOW = {'uC1': (0, 17), 'uC2': (17, 27), 'uC3': (27, 39), 'uC4': (39, 46), 'uC5': (46, 65)}
+if SET == 'mutant':
+    KEEP_YAW = set()
+    FORCE_FLAT_YAW = {c[1] for c in CLIPS}
 if SET in ('wong', 'drunk'):
     # THE TWO LOOSE CLIPS ARE PERFORMANCES, the beast's `Die_1` again, and the
     # hips say where the move is (the log prints the curve). `Flying Kick`

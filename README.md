@@ -473,6 +473,8 @@ reading the button you pressed; the first click takes the mouse back.
 | `main.js` | The whole game |
 | `models/` | Standalone object models + a dev viewer (`horseshoe-crab.js`, `viewer.html`) |
 | `assets/backrooms.m4a` | Opening music (mono AAC, converted from the source WAV) |
+| `assets/keep-intro.m4a` | The sea keep's intro, played on arriving at its pier (AAC, converted from the owner's WAV) |
+| `assets/catacombs-fall.m4a` | The landing in the catacombs, played the moment you hit the stone (AAC, converted from the owner's WAV) |
 | `vendor/three/` | three.js r160 (vendored, offline-safe) |
 | `serve.py` | Tiny static server |
 
@@ -848,6 +850,20 @@ redistribute and are credited as such.
 **Rusty Metal 02** — the rust on the ring.
 
 [Rusty Metal 02](https://polyhaven.com/a/rusty_metal_02) by Poly Haven, CC0.
+
+**Sand 03** — the beach and the sand wall (`assets/sand-diff.jpg`, `assets/sand-bump.jpg`, built by `tools/sand_pack.py`).
+
+[Sand 03](https://polyhaven.com/a/sand_03) by Poly Haven, CC0.
+
+**Low Poly Night City Building Skyline** — the city over the sand wall (`assets/skyline.glb`).
+
+This work is based on "[Low Poly Night City Building Skyline](https://sketchfab.com/3d-models/low-poly-night-city-building-skyline-b0035b8713b048bb8ddf311ee67c28c8)" by [99.Miles](https://sketchfab.com/99.Miles), licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+
+**Umbra Marauder Rig** — the four-armed boss past the five on the sand (`assets/umbra.glb`, packed with `tools/gltfpack.py` at its own 2048 textures). His combo is the owner's Mixamo "Dual Weapon Combo", retargeted by `tools/ntar_moves.py -- umbra` into `assets/umbra-moves.json`.
+
+This work is based on "[Umbra Marauder Rig](https://sketchfab.com/3d-models/umbra-marauder-rig-2d8b32f0864644b5980b81b571b1838f)" by [DM-913](https://sketchfab.com/SuperKapoo913), licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+
+**Injured Run** — the rare flight of a nearly dead mutant. The owner's Mixamo "Injured Run", "Injured Run Left Turn" and "Injured Run Right Turn" (Adobe), retargeted onto the pack's own rig by `tools/ntar_moves.py -- mutant` into `assets/mutant-moves.json`.
 
 
 **Octopus Ring** — the ring in the crate.

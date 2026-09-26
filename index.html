@@ -1285,7 +1285,9 @@
     pointer-events: none;
   }
 
-  /* pause / settings menu */
+  /* pause / settings menu — THE PACK'S LANGUAGE: black, white, one
+     hairline, square, monospace, no glow and no colour. Same controls as
+     ever; only the dress changed. */
   #menu {
     position: fixed;
     inset: 0;
@@ -1293,80 +1295,133 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(4, 7, 14, 0.82);
-    backdrop-filter: blur(3px);
+    background: rgba(0, 0, 0, 0.84);
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.25s ease;
-    font-family: "Georgia", "Times New Roman", serif;
-    color: #c3cfe4;
+    transition: opacity 0.18s ease;
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Courier New", monospace;
+    color: #ffffff;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
   }
   #menu.show { opacity: 1; pointer-events: auto; }
   #menu .panel {
-    width: min(90vw, 420px);
-    background: rgba(12, 18, 30, 0.9);
-    border: 1px solid rgba(120, 140, 180, 0.2);
-    border-radius: 10px;
-    padding: 2rem 2.2rem;
-    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+    width: min(92vw, 540px);
+    max-height: 92vh;
+    overflow-y: auto;
+    border-top: 1px solid rgba(255, 255, 255, 0.3);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+    padding: 1.5rem 0.2rem 1.3rem;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
   }
+  #menu .panel::-webkit-scrollbar { width: 3px; }
+  #menu .panel::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.3); }
+  #menu .panel::-webkit-scrollbar-track { background: transparent; }
   #menu h2 {
     font-weight: 400;
-    letter-spacing: 0.3em;
+    letter-spacing: 0.4em;
     text-transform: uppercase;
-    font-size: 1.1rem;
-    color: #dde6f6;
-    margin-bottom: 1.6rem;
-    text-align: center;
+    font-size: 0.9rem;
+    color: #ffffff;
+    margin-bottom: 1.5rem;
   }
-  #menu .row { margin-bottom: 1.3rem; }
+  #menu .row { margin-bottom: 1.15rem; }
   #menu .row label {
     display: flex;
     justify-content: space-between;
-    font-size: 0.82rem;
-    letter-spacing: 0.12em;
+    align-items: center;
+    font-size: 0.72rem;
+    letter-spacing: 0.2em;
     text-transform: uppercase;
-    margin-bottom: 0.5rem;
-    opacity: 0.85;
+    margin-bottom: 0.55rem;
+    color: rgba(255, 255, 255, 0.62);
   }
-  #menu .row label .val { color: #eaf1ff; opacity: 1; }
+  #menu .row label .val { color: #ffffff; letter-spacing: 0.1em; }
+  /* a slider is a hairline with a square on it */
   #menu input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
     width: 100%;
-    accent-color: #7ea6d8;
-    height: 4px;
+    height: 14px;
+    background: transparent;
+    cursor: pointer;
+    margin: 0;
   }
-  #menu .row.toggle label { cursor: pointer; }
-  /* four of them now, so two even rows rather than a ragged wrap */
-  #menu .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; margin-top: 1.8rem; }
-  #menu .buttons button { padding: 0.72rem 0.6rem; line-height: 1.35; }
-  #menu .buttons button[disabled] { opacity: 0.3; cursor: default; }
-  #menu .buttons button.secondary {
-    opacity: 0.72;
-    border-color: rgba(150, 168, 200, 0.28);
+  #menu input[type="range"]::-webkit-slider-runnable-track { height: 1px; background: rgba(255, 255, 255, 0.35); }
+  #menu input[type="range"]::-moz-range-track { height: 1px; background: rgba(255, 255, 255, 0.35); }
+  #menu input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 11px; height: 11px; margin-top: -5px;
+    background: #ffffff; border: none; border-radius: 0;
   }
-  #menu .buttons button.secondary:hover { opacity: 1; }
+  #menu input[type="range"]::-moz-range-thumb { width: 11px; height: 11px; background: #ffffff; border: none; border-radius: 0; }
+  #menu input[type="range"]:focus { outline: none; }
+  #menu input[type="range"]:focus-visible::-webkit-slider-thumb { outline: 1px solid #ffffff; outline-offset: 2px; }
+  /* a toggle is a square box: hollow off, solid on */
+  #menu .row.toggle label { cursor: pointer; margin-bottom: 0; }
+  #menu input[type="checkbox"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 13px; height: 13px;
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    border-radius: 0;
+    background: transparent;
+    cursor: pointer;
+    flex: none;
+    margin: 0 0 0 1rem;
+  }
+  #menu input[type="checkbox"]:checked { background: #ffffff; border-color: #ffffff; }
+  #menu .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 1.6rem; }
+  #menu .buttons button { padding: 0.8rem 0.6rem; line-height: 1.35; }
+  #menu .buttons button[disabled] { opacity: 0.25; cursor: default; }
+  #menu .buttons button.secondary { color: rgba(255, 255, 255, 0.7); border-color: rgba(255, 255, 255, 0.22); }
   #menu button {
     flex: 1;
     padding: 0.7rem 1rem;
-    background: rgba(30, 44, 66, 0.8);
-    border: 1px solid rgba(140, 162, 200, 0.3);
-    border-radius: 6px;
-    color: #dde6f6;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    border-radius: 0;
+    color: #ffffff;
     font-family: inherit;
-    font-size: 0.8rem;
-    letter-spacing: 0.16em;
+    font-size: 0.72rem;
+    letter-spacing: 0.22em;
     text-transform: uppercase;
     cursor: pointer;
-    transition: background 0.15s ease;
+    transition: background 0.12s ease, color 0.12s ease;
   }
-  #menu button:hover { background: rgba(46, 66, 96, 0.95); }
+  #menu button:not([disabled]):hover { background: #ffffff; color: #000000; border-color: #ffffff; }
+  #menu .panel.controls { display: none; }
+  #menu.ctl .panel.settings { display: none; }
+  #menu.ctl .panel.controls { display: block; }
+  #menu .buttons button.wide { grid-column: 1 / -1; }
+  #menu .buttons.one { grid-template-columns: 1fr; }
+  #menu .ctl-group {
+    font-size: 0.62rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.38);
+    margin: 1.2rem 0 0.5rem;
+  }
+  #menu .ctl-group:first-of-type { margin-top: 0; }
+  #menu .ctl {
+    display: grid;
+    grid-template-columns: 11.5rem 1fr;
+    gap: 1rem;
+    align-items: baseline;
+    padding: 0.42rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    color: rgba(255, 255, 255, 0.72);
+  }
+  #menu .ctl .key { color: #ffffff; letter-spacing: 0.2em; text-transform: uppercase; }
   #menu .tip {
-    margin-top: 1.4rem;
-    font-size: 0.7rem;
-    letter-spacing: 0.1em;
-    opacity: 0.45;
-    text-align: center;
-    line-height: 1.7;
+    margin-top: 1.3rem;
+    font-size: 0.64rem;
+    letter-spacing: 0.14em;
+    color: rgba(255, 255, 255, 0.38);
+    line-height: 1.8;
   }
 
   /* end screen */
@@ -1526,7 +1581,7 @@
   </div>
 
   <div id="menu">
-    <div class="panel">
+    <div class="panel settings">
       <h2>Settings</h2>
       <div class="row">
         <label>Field of view <span class="val" id="v-fov">75</span></label>
@@ -1568,14 +1623,35 @@
       </div>
       <div class="buttons">
         <button id="m-resume">Resume</button>
+        <button id="m-controls">Controls</button>
         <button id="m-checkpoint" class="secondary">Restart from last checkpoint</button>
         <button id="m-restart" class="secondary">Restart game</button>
-        <button id="m-reset" class="secondary">Reset to defaults</button>
+        <button id="m-reset" class="secondary wide">Reset to defaults</button>
       </div>
-      <div class="tip">
-        WASD move &nbsp;·&nbsp; Shift run &nbsp;·&nbsp; Space jump / step &nbsp;·&nbsp; Ctrl crouch &nbsp;·&nbsp; E interact / pick up<br />
-        click swing &nbsp;·&nbsp; hold click for a heavy &nbsp;·&nbsp; 1–6 hold item &nbsp;·&nbsp; Tab pack, to examine anything &nbsp;·&nbsp; G drop &nbsp;·&nbsp; Esc resume
-      </div>
+    </div>
+    <!-- THE CONTROLS HAVE THEIR OWN PAGE. They were a line of small print
+         under the buttons; this is the whole list, in the menu's own dress. -->
+    <div class="panel controls">
+      <h2>Controls</h2>
+      <div class="ctl-group">Moving</div>
+      <div class="ctl"><span class="key">W A S D</span><span>move</span></div>
+      <div class="ctl"><span class="key">Shift</span><span>run</span></div>
+      <div class="ctl"><span class="key">Space</span><span>jump &mdash; a directional step in a fight</span></div>
+      <div class="ctl"><span class="key">Ctrl</span><span>crouch</span></div>
+      <div class="ctl"><span class="key">8</span><span>fast walk &middot; toggle</span></div>
+      <div class="ctl-group">Fighting</div>
+      <div class="ctl"><span class="key">Click</span><span>swing</span></div>
+      <div class="ctl"><span class="key">Hold click</span><span>charge a heavy</span></div>
+      <div class="ctl"><span class="key">Shift + hold</span><span>overhead &middot; thrust with a blade</span></div>
+      <div class="ctl"><span class="key">Right click</span><span>guard &middot; parry on the tell &middot; aim a gun</span></div>
+      <div class="ctl"><span class="key">R</span><span>reload</span></div>
+      <div class="ctl-group">Things</div>
+      <div class="ctl"><span class="key">E</span><span>interact &middot; pick up</span></div>
+      <div class="ctl"><span class="key">1 &ndash; 6 &middot; wheel</span><span>hold an item</span></div>
+      <div class="ctl"><span class="key">Tab</span><span>pack &middot; examine &middot; combine</span></div>
+      <div class="ctl"><span class="key">G</span><span>drop</span></div>
+      <div class="ctl"><span class="key">Esc</span><span>menu</span></div>
+      <div class="buttons one"><button id="m-back">Back</button></div>
     </div>
   </div>
 
