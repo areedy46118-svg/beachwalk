@@ -65,7 +65,7 @@
     clavL: 'DEF-shoulderL', clavR: 'DEF-shoulderR', armL: 'DEF-upper_armL', armR: 'DEF-upper_armR', foreL: 'DEF-forearmL', foreR: 'DEF-forearmR',
     handL: 'DEF-handL', handR: 'DEF-handR', thighL: 'DEF-thighL', thighR: 'DEF-thighR', calfL: 'DEF-shinL', calfR: 'DEF-shinR', footL: 'DEF-footL', footR: 'DEF-footR', jaw: 'DEF-jaw_master' };
   window.__pose = function (angles, hipY, o) {
-    const u = bw.crawlerUnit; o = Object.assign({ dist: 4, yaw: 30, h: 1.2, lookY: 0.7, fov: 40, w: 220, hh: 260, lookX: 0, lookZ: 0, col: 0, row: 0, base: 'crawl', t: 0, label: '' }, o || {});
+    const u = window.__poseUnit || bw.crawlerUnit; o = Object.assign({ dist: 4, yaw: 30, h: 1.2, lookY: 0.7, fov: 40, w: 220, hh: 260, lookX: 0, lookZ: 0, col: 0, row: 0, base: 'crawl', t: 0, label: '' }, o || {});
     const m = u.model, r = bw.renderer, sc = bw.scene, cam = bw.camera;
     const bones = []; m.traverse((b) => { if (b.isBone) bones.push(b); });
     const J = {}; for (const k in JOINTS) J[k] = bones.find((b) => b.name === JOINTS[k]) || null;
@@ -184,5 +184,56 @@
     }
     r.setViewport(0, 0, c.width, c.height);
     return out.toDataURL('image/jpeg', 0.94).split(',')[1];
+  };
+})();
+
+/* A GRID OF FRAMES OF ANY UNIT: `__grid(u, [{clip | action, t, yaw, dist, h,
+ * lookY, label}], {cols, w, hh})` renders each into a cell and returns bare
+ * base64. EVERY action on the mixer is switched off between cells, not just
+ * `u.clips` — a test clip left at weight 1 averages into every later cell.
+ * `__isoU(u, fn)` stands the unit alone on a lit floor at y 300 for the
+ * length of `fn`. `__out(b64)` pads a result so the harness saves it. */
+(function () {
+  const bw = window.__bw, T = bw.THREE;
+  window.__out = (b64) => b64 + '#' + 'x'.repeat(130000);
+  window.__isoU = (u, fn) => {
+    const home = u.g.position.clone(), ry = u.g.rotation.y, vis = u.g.visible;
+    u.g.position.set(0, 300, 0); u.g.rotation.y = 0; u.g.visible = true; u.g.updateMatrixWorld(true);
+    const fog = bw.scene.fog.density; bw.scene.fog.density = 0;
+    const L = [new T.AmbientLight(0xffffff, 1.3), new T.DirectionalLight(0xffffff, 2.4)];
+    L[1].position.set(3, 305, 4); L[1].target.position.set(0, 300, 0); bw.scene.add(L[0], L[1], L[1].target);
+    const floor = new T.Mesh(new T.PlaneGeometry(14, 14).rotateX(-Math.PI / 2), new T.MeshStandardMaterial({ color: 0x404040 }));
+    floor.position.set(0, 300, 0); bw.scene.add(floor);
+    let r; try { r = fn(); } finally { bw.scene.remove(L[0], L[1], L[1].target, floor); bw.scene.fog.density = fog; u.g.position.copy(home); u.g.rotation.y = ry; u.g.visible = vis; }
+    return r;
+  };
+  window.__grid = (u, frames, o = {}) => {
+    o = Object.assign({ w: 200, hh: 230, cols: 6 }, o);
+    const r = bw.renderer, sc = bw.scene, cam = bw.camera;
+    const rows = Math.ceil(frames.length / o.cols);
+    const cv = document.createElement('canvas'); cv.width = o.w * Math.min(o.cols, frames.length); cv.height = o.hh * rows;
+    const ctx = cv.getContext('2d');
+    const rt = new T.WebGLRenderTarget(o.w, o.hh, { samples: 4 }); rt.texture.colorSpace = T.SRGBColorSpace;
+    const px = new Uint8Array(o.w * o.hh * 4), img = ctx.createImageData(o.w, o.hh);
+    const saved = { pos: cam.position.clone(), q: cam.quaternion.clone(), fov: cam.fov, asp: cam.aspect };
+    frames.forEach((f, i) => {
+      const a = f.action || u.clips[f.clip];
+      for (const b of u.mixer._actions) b.enabled = false;
+      a.enabled = true; a.setEffectiveWeight(1); a.play(); a.paused = true;
+      const dur = a.getClip().duration; a.time = Math.min(dur - 1e-4, dur * (f.t || 0));
+      u.mixer.update(0);
+      const p = u.g.position, yaw = u.g.rotation.y + (f.yaw || 0) * Math.PI / 180, d = f.dist || 5.5;
+      cam.position.set(p.x + Math.sin(yaw) * d, p.y + (f.h || 1.5), p.z + Math.cos(yaw) * d);
+      cam.fov = f.fov || 40; cam.aspect = o.w / o.hh; cam.updateProjectionMatrix();
+      cam.lookAt(p.x, p.y + (f.lookY || 1.1), p.z);
+      r.setRenderTarget(rt); r.setClearColor(0x101418, 1); r.render(sc, cam); r.readRenderTargetPixels(rt, 0, 0, o.w, o.hh, px);
+      for (let y = 0; y < o.hh; y++) img.data.set(px.subarray((o.hh - 1 - y) * o.w * 4, (o.hh - y) * o.w * 4), y * o.w * 4);
+      const cx = (i % o.cols) * o.w, cy = Math.floor(i / o.cols) * o.hh;
+      ctx.putImageData(img, cx, cy); ctx.fillStyle = '#fff'; ctx.font = '11px monospace';
+      ctx.fillText(f.label || (f.clip + ' ' + (f.t || 0).toFixed(2)), cx + 3, cy + 12);
+    });
+    r.setRenderTarget(null); rt.dispose();
+    cam.position.copy(saved.pos); cam.quaternion.copy(saved.q); cam.fov = saved.fov; cam.aspect = saved.asp; cam.updateProjectionMatrix();
+    return cv.toDataURL('image/jpeg', 0.88).split(',')[1];
   };
 })();

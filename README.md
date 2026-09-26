@@ -859,11 +859,17 @@ redistribute and are credited as such.
 
 This work is based on "[Low Poly Night City Building Skyline](https://sketchfab.com/3d-models/low-poly-night-city-building-skyline-b0035b8713b048bb8ddf311ee67c28c8)" by [99.Miles](https://sketchfab.com/99.Miles), licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
 
-**Umbra Marauder Rig** — the four-armed boss past the five on the sand (`assets/umbra.glb`, packed with `tools/gltfpack.py` at its own 2048 textures). His combo is the owner's Mixamo "Dual Weapon Combo", retargeted by `tools/ntar_moves.py -- umbra` into `assets/umbra-moves.json`.
+**Umbra Marauder Rig** — the four-armed boss past the five on the sand (`assets/umbra.glb`, packed with `tools/gltfpack.py` at its own 2048 textures). His combo is the owner's Mixamo "Dual Weapon Combo", retargeted by `tools/ntar_moves.py -- umbra` into `assets/umbra-moves.json`. Everything else he does — both walks, both runs, the strafes and side-steps, the dodge, the flinches, the parry reel and his four other blows — is authored in `main.js` (`authorUmbraOwn`) on his own stance; no other creature's clips are used on him.
 
 This work is based on "[Umbra Marauder Rig](https://sketchfab.com/3d-models/umbra-marauder-rig-2d8b32f0864644b5980b81b571b1838f)" by [DM-913](https://sketchfab.com/SuperKapoo913), licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
 
 **Injured Run** — the rare flight of a nearly dead mutant. The owner's Mixamo "Injured Run", "Injured Run Left Turn" and "Injured Run Right Turn" (Adobe), retargeted onto the pack's own rig by `tools/ntar_moves.py -- mutant` into `assets/mutant-moves.json`.
+
+**Human Rotten Limbs** — the leg the catacombs monster's young is eating, and the remains laid about the catacombs' floors (`assets/limbs.glb`, through `tools/gltfpack.py --tex 1024 --normal-tex 1024 --quality 86`).
+
+This work is based on "[Human Rotten Limbs](https://sketchfab.com/3d-models/human-rotten-limbs-78bbce4856e744bd93a18028dd663077)" by [Dennis](https://sketchfab.com/dennis.hafemann), licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+
+**The young one's eating and scream** — two recordings supplied by the owner ("Carnivorous Creature Eating Flesh Sound Effect", cut to a 34-second loop and brought up 22 dB, `assets/baby-eat.m4a`; "Scary Demon Scream Sound!", trimmed, `assets/baby-scream.m4a`). They are NOT redistributable.
 
 
 **Octopus Ring** — the ring in the crate.

@@ -14517,3 +14517,62 @@ The first build of it looked "exactly the same" to the owner: the map is read LI
 
 **THE MARAUDER HAS NO KICK AND IS NEVER KNOCKED DOWN, AND HE SHAKES OFF A STUN FASTEST.** `uKick` is out of his `use` (its weight to the stab and sweep) and his `knockClip`/`knockAfter` are gone, which is what gates every knockdown path. `kind.stunK` scales the parry's `MUT_STUN` (and the reel's clock with it): his is 0.50, 1.05 s against everyone else's 2.1, and `recoilK` 0.42 is the shortest stagger in the game.
 
+
+**THE CATACOMBS MONSTER HAS YOUNG, AND THE FLOORS HAVE REMAINS.** `crawlerBaby` is `MUT_KINDS.crawler` at 1.15 m with a 1.38 head (the same `crawler.glb`, parsed again), placed in a HALL UNDER A BURNING TORCH — the owner's word: a lit `catLights` torch with a main-floor node a step out from its wall and 1–4.2 m under it (not a storey above), in a passage a body and a half wide, clear of the landing, key, door and jars, its back to the landing-to-key walk (`placeCatBaby`). It sits eating Dennis's rotten left leg (`assets/limbs.glb`, CC-BY-4.0): `babyEat` is `BABY_EAT_POSE` plus four keyposes (`BABY_EAT_KEYS`: bite, tear, chew, glance), all SOLVED on the rig by coordinate descent over every driven joint against measured targets — hips 0.13 m over the stone, knees up at 0.34, ankles flat 0.3 m in front, both wrists at the mouth — and each keypose re-solved from the base with the legs held still, and the leg's grip is MEASURED on that pose (`babyAttachLeg`: the knee end at the mouth, the shin down through the right fist; the leg's +Z runs knee to foot, the foot end being the wide one). The owner's eating recording loops on its own source (`babyEatSound`): silent past `BABY_EAT_FAR` (6.5 m), full at 1.6 — measured 0 at 6.5, 0.08 at 5, 0.46 at 3.5, 0.94 at 1.6. Hit it (`babyProvoke`, off `kind.provoke`) and it drops the leg, whips round, screams (the owner's scream, heard to 80 m), and flees at 7.0 m/s along a route away from you (the crawl played at the rate its OWN rig's measured stride needs — 1.25 m/s at 1x, so 5.6x; capped at 3.6 it skated) (`babyFleeRoute`), and is RETIRED the moment you cannot see it (`catBabyGone`, on the save). `BABY_ANSWER` (2.6 s) after the blow, HE roars — through `catCue` with `far` 160, the one cue of his heard across the whole place — and `catEnrage` puts him in the chase for 75 s during which `catSteer` does not lose you (`catRaging`); `catLose` in that time sets `rageHold` so the watchdog can still move him. Measured from 32 m: he closes and throws 15 swings in 25 s.
+- **IT IS A COUNT, NOT A HEALTH BAR** (`babyHurt`, the first thing `hurtMutant` asks for a `baby` kind): the first blow of anything makes it scream and run; the third kills it on the spot and STOPS the scream where it is (`babyScreamSrc`); any of the scream having played brings him (`B.screamed`), killed or not.
+- **A POSE SOLVER MUST MEASURE THE BASE THE GAME BUILDS ON, AND THAT IS NOT THE MODEL AS IT STANDS.** Two wrong solves before a right one. `installLife` wraps `u.mixer.update` and puts posture, breath and claws on top of whatever a clip writes, so a `poseRig` taken after it captures the LIFE as part of the stance — the game authors its clips before `installLife`, clean. `u.mixer.rawUpdate` is the clips alone. And `poseRig` plays its source with `a.play()`, which does nothing to an action whose `enabled` is false: disable every action "to be safe" and the base is whatever pose was last left on the model. Check a solver by applying the shipped pose both ways and comparing joint positions to the centimetre before trusting a single number out of it.
+- **`__bw.frame(n)` in one synchronous call carries no clock time** — every frame reads `performance.now()`, so a hundred of them run in a few milliseconds and anything on a timer (the scream beat, a flee) never advances. Stub `performance.now` to add 1000/60 per frame for the length of the test.
+- **Authored heights are WORLD metres.** `poseRig`'s `hipY` is divided by the parent's world scale, so a smaller copy of a kind inherits the big one's metres and sank half a metre into the floor; `kind.hipYK` scales them (and `posture.lift`, also metres, is scaled by hand on the baby).
+- **`crawlerMovesLate` is a LIST** — a single slot was overwritten by whichever copy asked second; `kind.authorMore` runs after `authorCrawlerRest` in both the immediate and the late path.
+- **`tools/sheet.js`'s `__pose` reads `window.__poseUnit`** and falls back to the crawler — reset on every reload, and two solves this round ran on the big one's body before that was noticed.
+- The remains: sixteen pieces of the other five parts at 1.4x (the room is packed at 2.2x, and its own skulls make a true-size arm a twig), one `InstancedMesh` per part plus one of stains, placed by a seeded draw on graph nodes — a third at the bone piles, the rest against walls (`n.w < 0.8`) — only where the floor under the whole footprint is level and no wall crosses it (`scatterCatLimbs`). `bwGhost`, so nothing is a wall.
+
+**THE MARAUDER'S MOVES ARE HIS OWN.** The owner's word: completely different from every other creature, even the walk and the run — and the borrowed run (the knight's pack, retargeted) made him look sideways. `authorUmbraClips` retargets ONLY his combo now (`umbraMoves`, no `tavRetargetAll`), and `authorUmbraOwn` writes the rest on his own `uStance` (Pose3) through `poseRig` with `UMBRA_ALL` (both pairs of arms): `uWalk`/`uWalkB` (a swaying stalk, blades drifting), `uRun`/`uRunB` (pitched nearly flat, head leading, blades folded back), `uStrafeL/R`, `uSideL/R`, `uHit`, `uHitBig`, `uParry` (the stun reel), `uDodge` (a tucked vault), and four blows — `uImpale` (uStab), `uReaper` (uSweep), `uWhirl` (uSpin, ends on a whole turn), `uDescent` (uLeap, the clip is the swing's length so take-off is `wind - LEAP_AIR`). His rig's conventions, measured: thigh +right = leg back, calf +right = fold, chest/waist +right = pitch forward, arm -right = forward/up, `hipY` metres. Measured live: 186 frames running at you, 0 degrees between his heading and his travel. A pane trap from authoring it: `__grid`-style tests must disable EVERY action on the mixer (`u.mixer._actions`), not just `u.clips`, or each test clip stays at weight 1 and they all average into one pose.
+
+**THE TAVERN'S MOONLIGHT** is three skylights in the crown of the vault (`buildTavMoon`, after the bake and the walls): each placed where a ray from its pool up the moon's line (`TAV_MOON_DIR`) meets the vault, a RAYMARCHED shaft (a BackSide box in the beam's frame, 22 steps, the skylight's leading traced back up the beam so the bars are streaks in it), a pool on the flags with the leading in it, a halo on the vault, dust motes that glint only in the light, and a cloud that crosses the moon now and then (`uCloud`). All additive, `bwGhost`, un-raycastable. `uStrength` 0.32 was chosen by eye in the pane (0.052 was invisible).
+
+**A THING YOU TAKE GIVES BACK ITS SHINE.** `updateShines` lifts the emissive of a takeable's materials, and those are SHARED with the copy in your hand, the pack's icon and the examine screen — so a pickup kept the lift of its last pulse for good ("the gem ring is covered by a bright shade": `#494e59` on both its materials). It is put back the frame the root leaves the scene; `addInteractable`'s `shineLift` lets a displayed thing (the gem ring, `0`) take none at all.
+
+**THE OPENING MUSIC IS A DECODED BUFFER**, fetched at module load and decoded when the audio starts (`musicBuffer`): the `<audio>` element underran while forty downloads and the warm chain fought it. **A checkpoint calms whatever is chasing you** (`calmChasers`, and `chaseGraceUntil`: 25 s after a save or a load nothing wakes on distance beyond 5 m). **A ragdoll's travel is capped** at `RAG_TRAVEL` (11 m) from where it died, and the tip-over nudge stops at 3.4 s (it used to push a propped body across the beach for fourteen). **The held glowstick is 4.6** and its casing dimmer; **the catacombs torches** breathe a few per cent and gutter once a minute or so, not every few seconds. **The view models' programs are compiled at boot** (`warmStep('view models')`): taking the glowstick compiled four on the frame it came into your hand. **A worn ring in the pack is a selection** (`packRingSel`): its details on the right, and Take off is a button there.
+
+**THE TAVERN IS RELIT IN ITS OWN SHADER, BECAUSE NO LAMP CAN TOUCH IT.** The
+hall is a baked, `KHR_materials_unlit` scan that was baked under a bright
+day, so dimming it and lighting it warm is one onBeforeCompile on every
+material in it (`tavRelight`, patched in the loader and again after the
+build for the chairs, the door and the crates): the map is MULTIPLIED by a
+light worked out per pixel in the hall's own frame (`tavLightU`) — a dim
+cold fill (the moon bouncing in off the flags), the moon round each shaft
+(strong close to its line, and a wide spill across the floor where it lands,
+dimmed by the same cloud that dims the shafts), and warm torches with a steep
+falloff so the dark comes back between them. The normal is the facet's own
+(`dFdx`/`dFdy`), turned toward the camera. Two things it needed:
+- **A LINEAR MULTIPLIER LOOKS GENTLER THAN ITS NUMBER.** The output is sRGB,
+  so a fill of 0.3 read as barely dimmed; "dim" is 0.04-0.09 (`uAmb`).
+- **WORK IN THE HALL'S FRAME, NOT THE WORLD'S.** At twelve kilometres a
+  derivative of world position is a tenth noise; `vTavW` is relative to
+  `uTavO`.
+The TORCHES are found, not typed (`buildTavTorches`): standable floor from
+the walk grid, rays at head height through the WALL INDEX (`tavWallRay` —
+a three raycast against the merged hall is 52 ms a ray, the index is
+microseconds), flat at three heights, on a STONE material only (the wall
+index now records each face's material: `TextureMaterial_2` is the dressers'
+timber and a torch hung on one), not on the door, not within 3.2 m of a moon
+pool, dealt out 5.5 m apart. Each is a sconce and brand (merged), a flame and
+a glow (two Points batches), a pooled PointLight for the lit cast, and a
+flicker that drives the relight's `uTorch` too. The sky lights are ducked
+indoors (`setSkyDuck(0.72)` in `tavEnter`, back in `tavLeave`) so the cast is
+lit by the torches, not by a moon the room has a roof over.
+
+**THE KEEP BY NIGHT (`buildKeepLights`, at the end of `buildKeepIsland`).**
+The moon key is silver and stronger, the rose rim sits BEHIND the tower as
+seen from the pier (it lit faces you never see from where you land). The lit
+WINDOWS are found by sampling the Fortress emissive map at every face and
+clustering the bright ones: a halo and a warm pooled lamp each. LANTERNS on
+posts step down the pier from the spawn toward the rock at alternating edges
+(the walk grid's own boards), two more flank the keep's door (placed by a
+wall ray, or they end up inside the recess). Soft MOONBEAM cones slant down
+onto the tower, the terrace and the water; a moonlit MIST ring lies on the
+swell round the island; and every lamp and window is REFLECTED in the sea —
+the light mirrored across the sea plane and a shimmering streak drawn where
+the eye's line to that reflection meets the surface, depth-tested so land
+hides it. All additive, all `bwGhost`, nothing enters or leaves the scene.
