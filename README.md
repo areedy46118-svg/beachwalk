@@ -80,11 +80,14 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   once you pick something up. Items either **use** (the bottle → reads the
   note, `NOTE_TEXT`; the crab → examine view; the syringe → examine, or draw
   blood if you also carry the crab) or **equip** (the shovel).
-- **The horseshoe crab** — a detailed smooth-shaded *Limulus* stranded in the
-  wrack line (`models/horseshoe-crab.js`): a broad rounded head shield with the
+- **The horseshoe crab** — a scanned *Limulus* stranded in the wrack line
+  (Tavernier Amaury's, `assets/limule.glb`), fitted to the box the built one
+  occupied so everything downstream of it still holds. (The built model is
+  still in `models/horseshoe-crab.js` — a broad rounded head shield with the
   cardiac + ophthalmic ridges and raised margin sculpted in, a wavy hinge,
-  movable spines, a triangular telson, and a complete underside — six leg
-  pairs, chelicerae, operculum, book gills. Take it, then **use** it to open
+  movable spines, a triangular telson and a complete underside — and
+  `models/viewer.html` still shows it; nothing in the game builds one.)
+  Take it, then **use** it to open
   the **examine view**: the object floats in the dark, **drag to turn it over**
   and look underneath, scroll to zoom, `Esc`/`Q` to put it away. The view is
   its own scene rendered over everything (`openInspect()` / `inspectScene`).
@@ -678,12 +681,56 @@ This work is based on ["Survival Shovel"](https://sketchfab.com/3d-models/surviv
 by [howittworks](https://sketchfab.com/howittworks) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Military Shovel.
 
+This work is based on ["Limule"](https://sketchfab.com/3d-models/limule-5014571bf8644b11b8c4f0d275a5d4aa)
+by [Tavernier Amaury](https://sketchfab.com/svtavernier) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the horseshoe crab
+you find in the wrack line and the one in the wreck's hold
+(`assets/limule.glb`, through `tools/gltfpack.py --decimate 30000 --keep-uv`).
+
+This work is based on ["bunk bed"](https://sketchfab.com/3d-models/bunk-bed-8b2a538ab53a4dc3816c8ca78e43ce5e)
+by [Tomas Anglim](https://sketchfab.com/tomas.anglim.811) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the berths in the
+wreck's crew space, packed into `assets/furniture.glb` with the wooden set
+below by `tools/furniture_pack.py`.
+
+The wooden furniture in the wreck — the tables, chairs, benches and barrels in
+her hold and her quarters — is a set the owner supplied
+(`assets/furniture.glb`, `tools/furniture_pack.py`).
+
+The **sea chest** in her quarters is a Medieval Chest the owner supplied as a
+.blend with its own 4K maps (`assets/chest.glb`, `tools/chest_pack.py`). The
+artist modelled it in three pieces — a body, a lid and a padlock — which is
+why its lid is hung on a real hinge rather than carved out of a solid, and the
+hinge line is measured by the packer and written into the file.
+
+The **Spare Peg** — the fisherman's other leg, and the one thrusting weapon in
+the game — is a scan the owner supplied: The Egypt Centre's "Furniture Leg
+(W2054a)", CC-BY-4.0, through `tools/gltfpack.py` (`assets/peg-leg.glb`,
+`models/spare-peg.js`). A built peg stood there first and was deleted; this is
+a real object with four thousand years of wear on it, which is a history a
+lathe profile cannot carry. Which end is the foot and which is the broken top
+is measured off the model rather than guessed, and the hand closes on the top
+so that what arrives at the crosshair is the carved foot.
+
+The **fishing rod** the Old Fisherman gives you for bringing it back is built,
+in `models/fishing-rod.js`: a two-section tapered blank with whipped guides,
+cork grips, a brass reel seat and a centrepin reel, with the line running
+through the guides.
+
 
 The **katana's swing, block, hit, draw and parry sounds** are the owner's own
 bounces — four swings and four blocks from Sekiro effects, four hits from a
 royalty-free sword-slash pack, a draw and a parry — rotated at random where
 there is more than one, and like `poise-broken.m4a` they are NOT
 redistributable.
+
+The **dojo fountain**, `fountain.m4a`, is a recording the owner supplied
+("Small Fountain Nature Sound", a royalty-free effect). It ships as a 22 s
+seamless loop cut from the steadiest stretch of it: the slow level drift
+taken out so the loop does not pump, equal-power crossfaded end to head,
+normalised to -3 dBFS because AAC overshoots on decode, and mono at 32 kHz
+because there is no energy in it above 14 kHz. Check its own licence before
+redistributing. The synthesised bed stays behind it as the fallback.
 
 The **three break sounds** — `table-break.m4a`, `camera-break.m4a` and
 `coat-break.m4a`, for the desk, the tripod camera and the coat stand — are
@@ -700,6 +747,15 @@ by [LOLIPOP](https://sketchfab.com/lolipop_1707), [CC-BY-4.0](http://creativecom
 
 ["(FREE) Realistic Rocks - Asset LowPoly"](https://sketchfab.com/3d-models/free-realistic-rocks-asset-lowpoly-6e02ec577b4a473fb173c54fd6eef62d)
 by [Domenico Bianco - Pizza&Games](https://sketchfab.com/pizzaandgames),
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+
+
+**Stylised Rocks Asset Pack** — the stone wedged under the shipwreck, and the
+rockfalls choking both flights of steps out of the dojo's courtyard. The MOSSY
+set of the four, thirty-two rocks of it.
+
+["Stylised Rocks Asset Pack"](https://sketchfab.com/3d-models/stylised-rocks-asset-pack-d17f102674e84593831f80bc4a451d4d)
+by [Bl4ckGh0st](https://sketchfab.com/Bl4ckGh0st),
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
 
 

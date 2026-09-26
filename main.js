@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { makeHorseshoeCrab, makeHorseshoeCrabIcon } from './models/horseshoe-crab.js';
+import { makeHorseshoeCrabIcon } from './models/horseshoe-crab.js';
 import { makeSyringe, makeSyringeIcon } from './models/syringe.js';
 import { makeBloodJar, makeBloodJarIcon } from './models/blood-jar.js';
 import { makeDrainageTunnelHome } from './models/drainage-tunnel-home.js';
@@ -12,7 +12,9 @@ import { makeRing, makeRingIcon } from './models/ring.js';
 import { makeCdCase, makeCdCaseIcon } from './models/cd-case.js';
 import { makeUndergroundBunker } from './models/underground-bunker.js';
 import { makeKatana, KAT_TIP, KAT_POMMEL } from './models/katana.js';
+import { fitSparePeg, sparePegCopy, PEG_TIP } from './models/spare-peg.js';
 import { makeUndercroft } from './models/undercroft.js';
+import { makeFishingRod, makeFishingRodIcon } from './models/fishing-rod.js';
 
 /* ------------------------------------------------------------------ *
  *  Beach Walk — an endless, eerie shoreline at night.
@@ -129,9 +131,14 @@ const ASSET_REACH = {
   'assets/military-shovel.glb': 70,   // under the cliff past the drain
   'assets/octopus-ring.glb': 647,   // the knight drops it, so it is wanted where he is
   'assets/rocks.glb': 80,             // the formation below Bradly
+  'assets/rocks-mossy.glb': 154,      // the stone against the wreck, and the heaps in the dojo
   'assets/crab.glb': 90,
+  'assets/limule.glb': 58,            // the horseshoe crab in the wrack line
   'assets/corpse.glb': 126,           // the body bag
   'assets/key.glb': 150,
+  'assets/furniture.glb': 152,        // what is standing in her hold and her quarters
+  'assets/chest.glb': 152,            // and the sea chest in her quarters, with the peg in it
+  'assets/peg-leg.glb': 152,          // and what is inside it
   'assets/head.glb': 155,             // both of them are aboard the wreck
   'assets/dock.glb': 215,
   'assets/keep.glb': 216,              // and where its boat goes: fetched on the walk up to the pier
@@ -2131,18 +2138,25 @@ const sandMat = new THREE.MeshStandardMaterial({
   map: sandTex, bumpMap: sandBump, bumpScale: 1.4,
   color: 0x6d7d99, roughness: 0.95, metalness: 0.0, emissive: 0x27324a, emissiveMap: sandTex,
 });
-sandMat.onBeforeCompile = (shader) => {
+/* THE BEACH'S OWN SHADER, AS A FUNCTION, because the bed under the wreck
+ * has to wear it and must not discard where she stands on it. `keep` is a
+ * GLSL expression that is true wherever the fragment must be drawn whatever
+ * the shoreline says, and `decl` is whatever that expression needs — both go
+ * in here rather than being chained on afterwards, because this hook
+ * REPLACES `#include <common>` and a second pass would find nothing to
+ * replace. */
+function sandShader(shader, keep = 'false', decl = '') {
   shader.uniforms.uTime = oceanUniforms.uTime;
   shader.uniforms.uSkyT = skyUniforms.uTime;
   shader.vertexShader = shader.vertexShader
     .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;')
     .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
   shader.fragmentShader = shader.fragmentShader
-    .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;\nuniform float uTime;\nuniform float uSkyT;\nfloat wetMask;\n' + noiseGLSL + shoreGLSL + CLOUD_SHADE_GLSL)
+    .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;\nuniform float uTime;\nuniform float uSkyT;\nfloat wetMask;\n' + noiseGLSL + shoreGLSL + CLOUD_SHADE_GLSL + decl)
     .replace('#include <clipping_planes_fragment>',
       `#include <clipping_planes_fragment>
        float bwShore = shoreLine(vWorldPos.z, uTime);
-       if (vWorldPos.x < bwShore - 1.0) discard;`)
+       if (vWorldPos.x < bwShore - 1.0 && !(${keep})) discard;`)
     .replace('#include <map_fragment>',
       `#include <map_fragment>
        float fromShore = vWorldPos.x - bwShore;
@@ -2177,7 +2191,8 @@ sandMat.onBeforeCompile = (shader) => {
          gl_FragColor.rgb += vec3(0.62, 0.70, 0.86) * film * (road * 0.20 + glint * 0.55 * exp(-mEl * mEl / 0.05));
        }
        #include <tonemapping_fragment>`);
-};
+}
+sandMat.onBeforeCompile = (shader) => sandShader(shader);
 const sand = new THREE.Mesh(sandGeo, sandMat);
 scene.add(sand);
 
@@ -4291,6 +4306,80 @@ bwGlb('assets/rocks.glb', (gltf) => {
   }
 });
 
+/* ---- THE STONE EVERY HEAP IN THIS GAME IS MADE OF --------------------
+ *
+ * Bl4ckGh0st's "Stylised Rocks Asset Pack" (CC-BY-4.0), the MOSSY set: the
+ * owner's own, and it replaces two things that were invented because there
+ * was nothing to use — the dojo's heaps of knocked-out-of-round
+ * icosahedra, and the nothing at all that was holding the wreck down.
+ *
+ * It ships as THIRTY-TWO SEPARATE ROCKS rather than as one merged mass, and
+ * that is the whole reason `--decimate` could not be used on it: that flag
+ * merges the file into one mesh, which is right for a scan split into
+ * chunks and destroys a pack of props. `--decimate-each` is the same weld
+ * against a per-primitive budget, so the thirty-two are still thirty-two.
+ * Its metallic-roughness map is 2048 of PURE WHITE (measured) and says
+ * nothing at all, so it is dropped; its NORMAL attribute goes with it,
+ * because the rocks are faceted and three flat-shades a primitive that
+ * carries none — which is the look — and its KHR_materials_specular goes
+ * too, since three honours that by promoting the material to
+ * MeshPhysicalMaterial and hanging a second megabyte off it.
+ *
+ *   python3 tools/gltfpack.py tools/.rocks/scene.gltf assets/rocks-mossy.glb \
+ *     --nodes '^Mossy_Rock[0-9]+(_M_Mossy_Rock_0)?$' --tex 1024 \
+ *     --normal-tex 512 --drop-ext KHR_materials_specular --drop-mr \
+ *     --drop 'TANGENT,TEXCOORD_1,TEXCOORD_2,TEXCOORD_3,COLOR_0,NORMAL' \
+ *     --decimate-each 200
+ *
+ * Each rock is baked into world metres and CENTRED ON ITS OWN MIDDLE — the
+ * tripod camera's lesson, that a piece spun or scaled about somebody else's
+ * origin goes somewhere else — and its half-extents are kept, because every
+ * placement here is "make this one measure so much across" and a rock is
+ * not a ball. The order is the file's own, so it is the same heap on every
+ * load and a checkpoint rebuilds the beach it left. */
+let mossyRocks = null;                 // [{ geo, hx, hy, hz }] — metres, centred on itself
+let mossyRockMat = null;
+const mossyWaiting = [];
+function onMossyRocks(fn) { if (mossyRocks) fn(); else mossyWaiting.push(fn); }
+function mossyRocksIn(list, mat) {
+  mossyRocks = list; mossyRockMat = mat;
+  for (const fn of mossyWaiting.splice(0)) fn();
+}
+bwGlb('assets/rocks-mossy.glb', (gltf) => {
+  gltf.scene.updateMatrixWorld(true);
+  const list = [];
+  let mat = null;
+  gltf.scene.traverse((o) => {
+    if (!o.isMesh || !o.geometry) return;
+    mat = o.material;
+    const geo = o.geometry.clone().applyMatrix4(o.matrixWorld);
+    geo.computeBoundingBox();
+    const b = geo.boundingBox;
+    geo.translate(-(b.min.x + b.max.x) / 2, -(b.min.y + b.max.y) / 2, -(b.min.z + b.max.z) / 2);
+    geo.computeBoundingBox(); geo.computeBoundingSphere();
+    const sz = geo.boundingBox.getSize(new THREE.Vector3());
+    list.push({ geo, hx: sz.x / 2, hy: sz.y / 2, hz: sz.z / 2 });
+  });
+  if (mat) { mat.side = THREE.FrontSide; mat.roughness = 1; mat.metalness = 0; }
+  mossyRocksIn(list, mat);
+}, () => mossyRocksIn([], null));     // the honest failure: no stone rather than a wrong one
+
+/* A ROCK IS PLACED BY THE BOX IT ENDS UP OCCUPYING, and under a free
+ * rotation that is not the box it was authored with. This is the rotated
+ * half-extent — the same arithmetic three does for an oriented box — so a
+ * caller may say "this one is to stand so high" or "this one is to measure
+ * so much across" and be right whichever way the stone was turned. */
+const _rockRM = new THREE.Matrix4();
+const _rockEx = { x: 0, y: 0, z: 0 };
+function rockExtent(rk, q) {
+  _rockRM.makeRotationFromQuaternion(q);
+  const e = _rockRM.elements, A = Math.abs;
+  _rockEx.x = A(e[0]) * rk.hx + A(e[4]) * rk.hy + A(e[8]) * rk.hz;
+  _rockEx.y = A(e[1]) * rk.hx + A(e[5]) * rk.hy + A(e[9]) * rk.hz;
+  _rockEx.z = A(e[2]) * rk.hx + A(e[6]) * rk.hy + A(e[10]) * rk.hz;
+  return _rockEx;
+}
+
 /* Drawing them. Fog swallows the beach past about 180 m, but the camera's far
  * plane is 5000 and the walk is a kilometre long, so frustum culling alone
  * leaves every rock on the beach submitted every frame — 175 draw calls of
@@ -6183,8 +6272,14 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
      * through a light cut charged nothing, and the owner's word for that was
      * that the weapon got stuck charging a heavy. */
     windHeld = true;
-    const arm = () => { windLatch = null; if (!windHeld) return; if (!startWind() && windHeld && !winding) windLatch = setTimeout(arm, 45); };
-    windLatch = setTimeout(arm, WIND_TAP * 1000);
+    /* AND ON A THRUSTING WEAPON THE LATCH IS NEVER ARMED AT ALL. `startWind`
+     * refuses it anyway, but a latch that re-arms every 45 ms for as long as
+     * the button is held is a timer running through the whole of a string
+     * for nothing. The peg reads `windHeld` directly. */
+    if (!(equipped && equipped.thrust)) {
+      const arm = () => { windLatch = null; if (!windHeld) return; if (!startWind() && windHeld && !winding) windLatch = setTimeout(arm, 45); };
+      windLatch = setTimeout(arm, WIND_TAP * 1000);
+    }
   }
   if (e.button === 2 && started && !frozen() && equipped && equipped.onDig) {
     /* Kill the wind-up EVERY time, latched or live. Only a live wind was
@@ -6304,7 +6399,7 @@ S_DEV.addEventListener('change', () => {
  * and `addToInventory` refuses a duplicate by identity, so finding it
  * afterwards cannot give you two. */
 function devGrantWeapons() {
-  for (const it of [shovelItem, militaryItem, katanaItem, skullKeyItem]) {
+  for (const it of [shovelItem, militaryItem, katanaItem, pegItem, skullKeyItem]) {
     if (!it || inventory.includes(it)) continue;
     addToInventory(it);
   }
@@ -6774,10 +6869,17 @@ function attackAction() {                        // left mouse
      * from where the blade is. Anything else is dropped — you were not
      * recovered, so you do not swing. */
     if (digT <= 0) {
+      if (equipped.thrust) pegStage = 1;
       startDig();
     } else if (slashing() && equipped.alternate && !digOverhead && !katBack() && !digCharged && digT < RETURN_LATEST) {
       queuedSwing = 'return';                  // fires at the follow-through, from the left
-    } else if (isBlade() && !digOverhead && digT >= FORE_EARLY && !winding) {
+    } else if ((isBlade() || (equipped.thrust && !digOverhead)) && !digOverhead && digT >= FORE_EARLY && !winding) {
+      /* AND THE LAST STRETCH OF A RECOVERY IS THE NEXT THRUST'S WIND-UP. A
+       * blade has been able to leave early from the end of its own recovery
+       * since the day the owner felt the wait; the peg could not, so a player
+       * tapping rather than holding waited out the whole way home before the
+       * button did anything — on the quickest weapon in the game. The string
+       * is what the HELD button does; this is what tapping does. */
       cancelSwing(); startDig();               // recovered enough: leaves from the live pose
     }
     return;
@@ -8544,7 +8646,32 @@ const VM_MIL_REST_ROT = [-3.142, -0.483, 0.483];
  * reference reel comes back to between every cut. Solved in the pane against
  * that frame, not guessed — see `__solveKat`. */
 const VM_KAT_REST_ROT = [-2.916, -0.870, 0.403];
-const restRot = () => (equipped === katanaItem ? VM_KAT_REST_ROT : VM_MIL_REST_ROT);
+/* AND THE PEG IS CARRIED POINT-FORWARD, WHICH IS SOLVED AND NOT GUESSED.
+ *
+ * Two wrong carries came first and each one is a lesson. Invented from
+ * scratch, the shaft came end-on at the lens — a pipe filling the right half
+ * of the screen. Handed the KATANA's carry, which is legitimate (both are
+ * authored to the same convention, the fist on (0, 0, 0) and the length
+ * running down -Y), it was correct and still wrong: the sword's rest runs a
+ * metre of blade from the fist out through the top of the frame, and that
+ * reads as elegant on something 3 cm wide and as scaffolding on something
+ * seven. A pose is only transferable if the SILHOUETTES are.
+ *
+ * So it is solved against what a thrusting weapon's rest has to say, which is
+ * where the point is: the iron out in FRONT and down to the right (NDC 0.52,
+ * -0.34), the fist at the bottom of the frame where the arm puts it, and the
+ * socket below the edge entirely. Hit exactly; `__solveKat`'s own coordinate
+ * descent, run on the three Euler angles.
+ *
+ * AND THE MIDDLE OF THE SCREEN IS THE ONE THING IT MAY NOT TOUCH. Solved to
+ * put the point just under the crosshair it came out correct and unusable —
+ * the shaft ran up through the centre of the picture and sat on the thing you
+ * aim with. The solve is scored on its CLEARANCE too: sampled along the whole
+ * shaft, nothing comes within 0.62 of the crosshair, against 0.32 for the
+ * pose that reads best on paper. */
+const VM_PEG_REST_ROT = [-3.798, -1.726, 0.918];
+const restRot = () => (equipped === katanaItem ? VM_KAT_REST_ROT
+  : equipped && equipped.thrust ? VM_PEG_REST_ROT : VM_MIL_REST_ROT);
 /* The gun never goes through this at all: nothing it does raises a guard,
  * winds a charge or slashes, so `toolVM.quaternion` is never written while
  * it is in your hand and the axis remap it carries in `holdable` stands. */
@@ -8573,6 +8700,26 @@ const restRot = () => (equipped === katanaItem ? VM_KAT_REST_ROT : VM_MIL_REST_R
  * the cut: still sweeping across, still side-on enough to read as an edge,
  * with the point out where the enemy is instead of level with your own nose.
  * Solved with the stroke, not bolted on after it. */
+/* AND THE PEG'S FINISHER COMES DOWN; IT DOES NOT GO ACROSS.
+ *
+ * The obvious build of "two thrusts then a slash" was the shared horizontal
+ * cut, and it was wrong in a way that is worth writing down, because the
+ * stroke itself is fine and has been for a year. Every arm pose in it was
+ * laid out against a BLADE — a thin thing that reads as a LINE whichever way
+ * it is turned — and this is 0.8 m of club 14 cm through. Swept broadside
+ * through that arc it filled the frame corner to corner: measured on the
+ * contact sheet, a third of a second of a plank lying across the whole
+ * picture with the beach behind it gone. Tightening the arc and turning the
+ * shaft out of the screen plane both helped and neither was enough, because
+ * the problem is not the size of the sweep, it is that a horizontal sweep
+ * shows you the whole length of the thing side-on and there is a lot of it.
+ *
+ * What a person does with a club is bring it DOWN. The overhead is already
+ * in the pose system — up past vertical, a hang at the top, and a quartic
+ * drop — and it reads unmistakably at any thickness, because what travels
+ * across the frame is the END of the peg and not its flank. It is still the
+ * odd one out of the three, which is the whole job of a finisher: two
+ * thrusts and a third thrust is the same picture three times. */
 const slashRot = () => {
   if (equipped !== katanaItem) return VM_SLASH_ROT;
   if (katBack()) return KAT_CUT_ROT_B;
@@ -9190,7 +9337,7 @@ const KAT_BLOCK_ROT = [-3.050, -4.633, 0.162];
 const blockAt = () => (equipped === katanaItem ? KAT_BLOCK_AT : BLOCK_AT);
 const blockPose = () => (equipped === katanaItem ? KAT_BLOCK_POSE : BLOCK_POSE);
 const _blkQ = new THREE.Quaternion(), _blkE = new THREE.Euler(), _blkV = new THREE.Vector3(), _blkP = new THREE.Vector3();
-const _gQ = new THREE.Quaternion(), _gQ2 = new THREE.Quaternion();
+const _gQ = new THREE.Quaternion(), _gQ2 = new THREE.Quaternion(), _gQ3 = new THREE.Quaternion();
 const KAT_FACE = 0.42, KAT_FACE_K = 0.5;  // how far the blade is pitched into the screen through a cut, and how much of the point's drift is taken back
 const _kfQ = new THREE.Quaternion(), _kfP = new THREE.Quaternion(), _kfT0 = new THREE.Vector3(), _kfT1 = new THREE.Vector3();
 const _kfAx = new THREE.Vector3(), _kfN = new THREE.Vector3(), _kfW = new THREE.Vector3(), _kfD = new THREE.Vector3();
@@ -9510,6 +9657,78 @@ const katanaItem = {
   blade: true, dmgLight: 2, dmgHeavy: 3, windRate: 1.3, gore: 1.4, swingK: 0.9, recoverK: 4.0, glintSpan: 0.60, alternate: true,
   use: () => toggleEquip(katanaItem),
 };
+
+/* ---- THE SPARE PEG ----------------------------------------------------
+ * The third weapon, and the one that is not a swing. Both shovels chop and
+ * the katana cuts; every attack this one has is a THRUST, which is the only
+ * shape of attack this game did not have — the katana's charged stab was one
+ * move inside a sword, and a whole weapon built on it plays differently from
+ * the first press: you stop sweeping the frame and start measuring a
+ * distance, and being a foot too far away stops being survivable.
+ *
+ * What it is: the fisherman's SPARE LEG, out of the sea chest in the wreck.
+ * He has a peg below the knee and somewhere in that shed there was a second
+ * one, and a turned ash shaft with an iron shoe on the end of it is a short
+ * spear that nobody thinks of as one. Built, in models/spare-peg.js.
+ *
+ * Its numbers say "quick, and it reaches":
+ *   swingK 0.55 — the fastest attack in the game, a third under a katana's
+ *   light cut, because the whole of a rapier is that it is back on guard
+ *   before a heavier thing has finished arriving.
+ *   PEG_REACH 2.65 m against the katana's thrust at 1.75 — it lands from
+ *   outside everything else's range, which is the other half of the trade.
+ *   dmgLight 1 / dmgHeavy 3 — a poke is a poke, and the committed lunge is
+ *   the biggest single blow any tool here throws. It is the only weapon
+ *   whose charge is worth three times its click, which is what makes the
+ *   wind-up worth holding at this speed.
+ *   No `blade` — it is ash and iron, so it takes the wood knocks and the
+ *   ordinary connect rather than the sword bank — and no `alternate`, since
+ *   a thrust has no other side to come back on. */
+function makePegIcon() {
+  const c = document.createElement('canvas'); c.width = c.height = 48;
+  const g = c.getContext('2d');
+  g.strokeStyle = '#9c8158'; g.lineCap = 'round';
+  g.lineWidth = 5; g.beginPath(); g.moveTo(17, 10); g.lineTo(30, 33); g.stroke();   // the shaft
+  g.lineWidth = 3; g.strokeStyle = '#4a3524';
+  g.beginPath(); g.moveTo(12, 6); g.lineTo(21, 4); g.lineTo(23, 13); g.lineTo(14, 15); g.closePath(); g.stroke();
+  g.strokeStyle = '#8e949c'; g.lineWidth = 4;                                        // the iron shoe
+  g.beginPath(); g.moveTo(30, 33); g.lineTo(37, 42); g.stroke();
+  return c.toDataURL();
+}
+/* The last stretch of the iron, which is what the trail is drawn from and
+ * what `landBlade` puts on the crosshair: a thrust's business end is a
+ * POINT, so the two markers sit close together on the shoe itself. */
+const PEG_LIP = [[0, PEG_TIP, 0], [0, PEG_TIP + 0.11, 0]];
+/* THE SCAN LANDS OVER THE NETWORK, so all three copies are Groups that fill
+ * when it does — the captain's head's own arrangement, and the reason the
+ * hand, the examine screen and the one in the chest are all the same object
+ * however late it arrives. */
+const pegModel = new THREE.Group(), pegInspect = new THREE.Group(), pegWorld = new THREE.Group();
+bwGlb('assets/peg-leg.glb', (gltf) => {
+  const parts = fitSparePeg(gltf.scene);
+  pegModel.add(sparePegCopy(parts));
+  pegInspect.add(sparePegCopy(parts));
+  pegWorld.add(sparePegCopy(parts));
+});
+const pegVM = new THREE.Group();
+pegVM.add(pegModel);
+pegVM.position.set(-0.052, -0.026, 0.132);
+pegVM.rotation.set(VM_PEG_REST_ROT[0], VM_PEG_REST_ROT[1], VM_PEG_REST_ROT[2]);
+pegVM.visible = false;
+toolMount.add(pegVM);
+const pegItem = {
+  name: 'Spare Peg', desc: 'A Thrusting Weapon', icon: makePegIcon(), onDig: true, viewmodel: pegVM,
+  inspectModel: pegInspect, lip: PEG_LIP,
+  thrust: true, reach: 2.65, reachK: 1.22,
+  /* AND THE RECOVERY IS A BLADE'S NO LONGER. `recoverK` stretches the way
+   * home, which on a katana buys the held beat a cut is read off and the
+   * window the return chains in; on a point it bought 48 FRAMES — eight
+   * tenths of a second — of a stick creeping back with the button dead the
+   * whole time, on the weapon whose entire claim is that it is back on guard
+   * first. 2.4, and `easeOutCubic` spends most of that on the recoil. */
+  dmgLight: 1, dmgHeavy: 3, windRate: 1.55, gore: 0.55, swingK: 0.75, recoverK: 2.4,
+  use: () => toggleEquip(pegItem),
+};
 /* THE ONE BY THE DRAIN IS GONE. It lay on the sand past the drainage tunnel
  * home from the day the sword went in, and once the dojo's stand handed out
  * the same item (the sword you take off the rack, and the man who comes for
@@ -9723,11 +9942,46 @@ let slashDir = -1, lastSlashAt = -1e9;   // -1 sweeps right to left
  * "the cut is all arm" made literal — so the poses, the timing, the trail
  * and the whoosh transfer whole, and each tool keeps its own grip through
  * `restRot()`. The overhead was always shared. */
-const slashing = () => !!(equipped && equipped.onDig) && !digOverhead;
+/* A THRUST IS NOT A CUT, AND IT IS NOT AN OVERHEAD EITHER. `slashing()` is
+ * "this tool sweeps the frame", which every dig tool did until one of them
+ * went straight forward instead — so the peg has to be taken out of it or it
+ * would blend into the cut's own grip on the frame it winds up. It routes
+ * through the stab's slot in the pose system instead, which is the one place
+ * this file already knows how to drive a point at the crosshair. */
+/* ---- THE PEG'S COMBINATION: TWO THRUSTS AND A CUT ----------------------
+ * Hold the button and it runs a three-hit string — thrust, thrust, and a
+ * SLASH to finish. A tap is still one thrust, so the weapon has a jab you
+ * can throw and a committed string you have to mean, and nothing was added
+ * to the controls to get it: the button was already being watched, it was
+ * simply being watched for a CHARGE, which is the one thing a rapier has no
+ * business doing.
+ *
+ * `pegStage` is which of the three is in the air. It is the whole mechanism,
+ * because the pose system is already routed on a question — `thrusting()` —
+ * and the finisher is nothing more than that question answering NO for one
+ * swing: `slashing()` becomes true by itself, the shared cut poses run, the
+ * grip turns into the cut's own, and the sweep the shovels and the katana
+ * all use comes out of the peg without a line of new animation.
+ *
+ * WHY A CUT AT THE END. Two thrusts and a third thrust is the same picture
+ * three times and reads as a stutter; what a string wants is for the last
+ * one to be a DIFFERENT SHAPE, so it lands as an answer rather than as one
+ * more of the same. It is also the only time this weapon sweeps the frame,
+ * which is what makes it worth holding the button for. */
+let pegStage = 0;                        // 0 idle, 1 and 2 the thrusts, 3 the cut
+const thrusting = () => !!(equipped && equipped.thrust) && pegStage !== 3;
+const pegFinish = () => !!(equipped && equipped.thrust) && pegStage === 3;
+const slashing = () => !!(equipped && equipped.onDig) && !digOverhead && !thrusting();
 /* What the tool in hand does that the others do not. Every one of these
  * defaults to the shovels' own behaviour, so a tool without the field is
  * exactly the tool it was. */
-const toolDmg = (heavy) => (equipped && equipped.dmgLight) ? (heavy ? equipped.dmgHeavy : equipped.dmgLight) : (heavy ? 2 : 1);
+/* AND THE LAST BLOW OF A STRING IS THE ONE THAT PAYS FOR IT. Two thrusts at
+ * a point each and a cut worth three: holding the button through all of it
+ * is five, against one for the jab, which is the trade — the string is slow
+ * enough to be read and punished, so it has to be worth being read. */
+const toolDmg = (heavy) => (equipped && equipped.dmgLight)
+  ? ((heavy || pegFinish()) ? equipped.dmgHeavy : equipped.dmgLight)
+  : (heavy ? 2 : 1);
 const toolGore = () => (equipped && equipped.gore) || 1;
 const isBlade = () => !!(equipped && equipped.blade);
 /* ALWAYS RIGHT TO LEFT. A backhand on the second click was built — the
@@ -9945,9 +10199,82 @@ const KAT_STAB = [[-0.435, 0.060, 0.45, -0.284, 0.061, 0.067],      // hauled ba
  * it lands, the point finishing on the crosshair. And the tsuka is kept half
  * a metre out: a handle that comes at your face is not a wind-up, it is a
  * camera clip. */
-const katStabbing = () => !!(equipped === katanaItem && (digOverhead || (winding && windOverhead)));
+const katStabbing = () => thrusting()
+  || !!(equipped === katanaItem && (digOverhead || (winding && windOverhead)));
+/* AND THE PEG'S OWN DRAW IS LOWER, LONGER AND STRAIGHTER. The sword's thrust
+ * is a two-handed drive off the hip with the tsuka hauled past the body; this
+ * is one hand carrying a stick, so the wind-up gathers it back close and
+ * LEVEL with the point already on the line — the whole tell is the shaft
+ * shortening in the frame as it is drawn — and the strike is nearly a metre
+ * of travel in a straight line with almost no roll in it. A thrust that rolls
+ * on the way in is a swing that happens to arrive point-first. */
+/* AND THE COCK WAS OFF THE BOTTOM-RIGHT CORNER, WHICH IS THE KATANA'S OWN
+ * LESSON UNAPPLIED. `push` is how far the hand is hauled back TOWARD the
+ * lens, and a fist a hand's breadth from the near plane projects enormously:
+ * at 0.235 the grip sat at NDC (1.64, -1.99) — a whole frame-width past the
+ * corner — with nothing left in the picture but a sliver of the far end
+ * poking in. Measured over the wind-up and the strike, BOTH ENDS OF THE PEG
+ * WERE INSIDE THE FRAME ON 18 % OF FRAMES: you pressed, the weapon vanished,
+ * and it reappeared somewhere else, which is what "the animation is not
+ * smooth" looks like when the animation is fine and the framing is not.
+ *
+ * Solved instead against the picture: the fist is held just inside the
+ * bottom-right corner (0.82, -0.88) with the whole length of the leg running
+ * up and across to (0.32, 0.09) — the point already on the line, which is
+ * the tell — and the drive then straightens it along the view axis and takes
+ * the tip from 0.99 m out to 1.68. The DRIVE pose is untouched: it was
+ * solved once and it is right, and a solve that rolled it to put the fist
+ * further right put the point down and left of the hand instead, which
+ * reads as a downward poke rather than a thrust. 18 % -> 100 %. */
+let PEG_STAB = [[-0.340, 0.020, 0.560, -0.075, 0.050, 0.040],        // drawn back, low and right, all of it on screen
+                [-0.215, -0.010, 0.470, 0.045, -0.690, 0.330]];      // and run through
+/* and the grip the thrust turns into is the sword's own, for the same reason
+ * the carry is: it was solved to lay a -Y shaft down the view axis at an
+ * angle you can still read as a shaft, and this is a -Y shaft. */
+const PEG_STAB_ROT = KAT_STAB_ROT;
+/* AND THE FINISHER'S GRIP IS THE PEG'S OWN, SOLVED. The overhead's arm poses
+ * are the shovel's, and the shovel's own overhead grip rolls a SCOOP over —
+ * on a stick it left the shaft pointing up the view axis at the moment it
+ * landed, so the contact frame, which is the one frame of the whole string
+ * that has to read, was a foreshortened lump of wood lying across the
+ * bottom of the picture. `landBlade` pins the TIP to what you are aiming
+ * at, so the grip is all that decides which way the rest of it lies: this
+ * is the rotation that puts the hand high and the shaft coming down onto
+ * that point, swept for it. */
+let PEG_OH_LAND = [-2.110, -0.370, 0.210];   // solved at the contact
+let PEG_OH_HAUL = [2.618, 0.297, 0.080];     // and at the hang
+const PEG_OH_TURN = [0.34, 0.47];            // rolled from one to the other on the drop
+const PEG_OH_IN = 0.20;                     // and carried in from the thrust's grip before that
+let PEG_GRIP_HOME = 0.62;
+/* AND THE PEG IS NOT UNUSUALLY CLOSE TO THE LENS, WHICH IS A NUMBER RATHER
+ * THAN AN OPINION. Two frames of the finisher read on a contact sheet as a
+ * pale featureless mass filling half the picture, and the obvious diagnosis
+ * was the katana's own grip convention: the fist is on the very END of 0.81 m
+ * of timber, where a shovel's model is pushed down its mount so what sits at
+ * the hand is the middle of a shaft. A slide was written for it and swept —
+ * and the honest measure, the nearest point of the tool's own DRAWN geometry
+ * to the camera over the whole swing, says the peg reaches 0.21 m where the
+ * MILITARY SHOVEL'S ordinary cut reaches 0.177 on a swing that ships and is
+ * approved. Both signs of slide made it worse (0.12 at rest against 0.03 and
+ * 0.01), because the peg points away from the camera at the hang and back at
+ * it on the way home and no single offset can be right for both. Deleted.
+ * MEASURE A NEW TOOL AGAINST THE ONE THAT ALREADY SHIPS BEFORE CHANGING IT.
+ * (And the two frames that prompted all this were a real defect after all —
+ * see PEG_OH_HAUL. They were not too close, they were foreshortened into a
+ * stub, and the contact sheet's own 2.4x brightening was what disguised it
+ * as a pale mass. The measurement here is sound; the conclusion drawn from
+ * it — that there was nothing to fix — was not.) */
+/* Solved, and the way it is solved is worth the two lines: `landBlade` has
+ * already pinned the tip, so the only thing a grip can change at the contact
+ * is the DIRECTION the rest of the peg lies in — which means the answer is
+ * the rotation that takes the shaft's own -Y onto a chosen camera-space
+ * direction, read out of the parent's world frame on the contact frame
+ * itself and converted back. Asked for (0.10, -0.80, -0.59) — down, and a
+ * little away — it comes back with the hand at NDC (-0.07, 0.39) and the
+ * point at (0.04, -0.22): a fist above the middle of the picture with 0.8 m
+ * of wood coming down through the crosshair onto what you were aiming at. */
 function katStab(out, i, P) {
-  const q = KAT_STAB[i];
+  const q = (thrusting() ? PEG_STAB : KAT_STAB)[i];
   for (let k = 0; k < 6; k++) out[k] = q[k];
   out[4] += (i ? -0.10 : 0.06) * P;     // a charge draws further back and drives further out
   return out;
@@ -10029,7 +10356,20 @@ function impactPose(out, P) {
   return out;
 }
 // where a cut's follow-through ends, before the recovery brings it back
-function throughPose(out, P) { return slashThrough(out, P, slashDir); }
+/* WHERE A THRUST GOES AFTER IT HAS LANDED. Small on purpose: a point has
+ * nowhere to travel once it is in something, so this is eight centimetres
+ * more reach, the hand dropping a little as the weight goes onto it, and a
+ * touch of pitch — enough that the arm is still moving on the frame after
+ * the blow and the recoil has something to come back FROM. */
+function stabThrough(out, P) {
+  const q = PEG_STAB[1];
+  for (let k = 0; k < 6; k++) out[k] = q[k];
+  out[4] -= 0.078 + P * 0.030;          // driven on through
+  out[1] -= 0.034;                      // the hand settling under it
+  out[0] += 0.050;
+  return out;
+}
+function throughPose(out, P) { return thrusting() ? stabThrough(out, P) : slashThrough(out, P, slashDir); }
 
 /* Where the swing is going is decided when you COMMIT it — the click, or the
  * release — not on the frame the blade lands 150–200 ms later. Reading the
@@ -10044,7 +10384,15 @@ const _aimO = new THREE.Vector3(), _aimD = new THREE.Vector3();
 function aimRay(P) {
   camera.getWorldPosition(_aimO);
   digRay.set(_aimO, _aimD);
-  digRay.far = DIG_REACH + P * DIG_HEAVY_REACH;
+  /* AND A WEAPON MAY REACH FURTHER THAN THE REST. Every tool in this game
+   * has shared one number for how far a swing can find something, which was
+   * right while all of them were a chop or a cut thrown from the same place;
+   * a thrusting weapon's whole trade is that it lands from outside the
+   * distance everything else fights at, and a "long" weapon whose blows
+   * connect at exactly the same range as a spade is a description rather
+   * than a mechanic. `reachK` is the tool's own multiplier and defaults to
+   * what it always was. */
+  digRay.far = (DIG_REACH + P * DIG_HEAVY_REACH) * ((equipped && equipped.reachK) || 1);
   return digRay;
 }
 /* WHERE THE BLADE LANDS ON SCREEN. The poses put the blade at a fixed spot
@@ -10084,7 +10432,7 @@ function aimLand(P) {
    * the sand three metres out and the point was being put THERE — the stab
    * into the beach the owner saw. Past the thrust's own reach there is
    * nothing to meet, and the point goes to the end of the arm instead. */
-  if (katStabbing() && d > STAB_REACH + P * 0.5) d = Infinity;
+  if (katStabbing() && d > stabReach() + P * 0.5) d = Infinity;
   landDist = isFinite(d) ? d : -1;
 }
 /* The landing point this frame: the locked direction from where you stand
@@ -10096,15 +10444,37 @@ function aimLand(P) {
  * and the blade passes through the crosshair whatever the pitch. */
 const SWING_AIR = 2.2;                    // how far out the blade passes when there is nothing to meet
 const STAB_REACH = 1.75;                  // and how far a thrust reaches, plus half a metre on a charge
+/* AND A WEAPON MAY CARRY ITS OWN. The peg is the long one — it lands from
+ * outside everything else's range, which is half of what makes a thrusting
+ * weapon a different thing to hold rather than a differently-shaped sword. */
+const stabReach = () => (equipped && equipped.reach) || STAB_REACH;
 function landPoint() {
   camera.getWorldPosition(_landP);
-  return _landP.addScaledVector(_aimD, landDist >= 0 ? landDist : (katStabbing() ? STAB_REACH + digPower * 0.5 : SWING_AIR + digPower * 0.6));
+  return _landP.addScaledVector(_aimD, landDist >= 0 ? landDist : (katStabbing() ? stabReach() + digPower * 0.5 : SWING_AIR + digPower * 0.6));
 }
 /* The return stroke, thrown off the back of the one before it. It leaves
  * from the pose the blade is actually in (`_pose`, like a charged release
  * does), straight into its own strike, so the point comes back across the
  * screen from wherever the forehand left it — and it counts as the next beat
  * of the chain, not a fresh forehand. */
+/* The next one in the string, thrown from wherever the peg actually is — the
+ * return's own rule, and the reason a combination reads as one motion rather
+ * than as three swings with the arm dropping to rest between them. */
+function pegChain() {
+  if (!equipped || !equipped.onDig || frozen()) return;
+  pegStage += 1;
+  queuedSwing = false;
+  digT = 0;
+  if (pegStage === 3) { slashDir = -1; comboStep = 0; }   // the cut comes right to left, always
+  /* AND IT IS A FRESH SWING, NOT A WOUND ONE. `startDig` with a pose starts
+   * at `windupEnd()` — already drawn — which is right for a charge being
+   * released and wrong here: the second thrust began 0.34 into its own
+   * timeline and the link fires at 0.58, so it had 0.24 of a swing to live
+   * in. Measured, the middle hit of the string lasted THREE FRAMES. Each one
+   * runs from the top, blending out of the live pose (`_poseF`), so it draws
+   * back and goes again like a thing being thrown twice. */
+  startDig(0, null, true);
+}
 function chainSwing() {
   if (!equipped || !equipped.onDig || frozen()) return;
   queuedSwing = false;
@@ -10118,7 +10488,12 @@ function startDig(power = 0, fromPose = null, chained = false) {
   camera.getWorldDirection(_aimD);            // the angle; aimRay() takes the position
   digPower = THREE.MathUtils.clamp(power, 0, 1);
   // a charged release keeps whatever it was wound as; a plain click never is
-  digOverhead = !!fromPose && !chained && windOverhead;
+  /* AND THE STRING'S LAST BLOW IS AN OVERHEAD, which is decided here rather
+   * than by the button: `pegFinish()` is already true by the time the swing
+   * is started, and the pose system reads `digOverhead` for everything from
+   * the haul to the grip to the whoosh to whether a creature treats it as a
+   * heavy blow. One flag buys all of it. */
+  digOverhead = pegFinish() || (!!fromPose && !chained && windOverhead);
   /* RIGHT TO LEFT, always — unless you are already swinging, in which case
    * the second one comes back the other way. A lone cut should look the same
    * every time you make it; a combination should look like a combination. */
@@ -10139,9 +10514,9 @@ function startDig(power = 0, fromPose = null, chained = false) {
     digT = 0.0001;
   }
   impactPose(_poseB, digPower);
-  if (slashing()) throughPose(_poseC, digPower);
+  if (slashing() || thrusting()) throughPose(_poseC, digPower);
   // a cut's whoosh goes with the blade, not with the click: a light cut cocks first
-  sfxDig(digPower, slashing(), fromPose ? 0 : windupEnd() * swingSecs(digPower));
+  sfxDig(digPower, thrusting() ? 2 : slashing(), fromPose ? 0 : windupEnd() * swingSecs(digPower));
 }
 /* A SWING CAN BE LEFT. The guard and the charge both take over from a cut
  * that has landed — you can block, or go to the heavy, whenever you want in
@@ -10152,11 +10527,17 @@ function startDig(power = 0, fromPose = null, chained = false) {
 const swingLanded = () => digT >= (slashing() ? SLASH_THROUGH : DIG_STRIKE + 0.08);
 function cancelSwing() {
   digT = 0; digPower = 0; digCharged = false; digOverhead = false; queuedSwing = false;
+  pegStage = 0;                          // a string you guard out of is over
 }
 const WIND_IN = 0.10;                    // seconds the haul-back blends in from wherever the hand was
 const _windFrom = [0, 0, 0, 0, 0, 0];
 function startWind() {
   if (blocking) return false;           // no swing comes out of a guard
+  /* AND A THRUSTING WEAPON HAS NO WIND-UP TO HOLD. The button means the
+   * combination on this one, so the charge must never arm — otherwise the
+   * string's first thrust would be cancelled by a haul-back the moment the
+   * latch came round. */
+  if (equipped && equipped.thrust) return false;
   if (winding || !equipped || !equipped.onDig || frozen()) return false;
   if (digT > 0) { if (!swingLanded()) return false; cancelSwing(); }
   for (let i = 0; i < 6; i++) _windFrom[i] = _pose[i];   // the haul leaves from here, not from a snap
@@ -10201,7 +10582,12 @@ function digImpact() {
    * and a drive that arrives with no jolt through the camera reads as the
    * sword being placed rather than put through something: the lens punches,
    * the knees give a hand's width, the world jars and the arm rebounds. */
-  if (katStabbing()) { fovKick = Math.max(fovKick, 7.5 + digPower * 3); slamDip = Math.max(slamDip, 0.055 + digPower * 0.03); addTrauma(0.28 + digPower * 0.2); vmImpulse(-1.35); }
+  if (katStabbing()) {
+    const k = thrusting() ? 0.62 : 1;      // ash and iron, not two hands on a sword
+    fovKick = Math.max(fovKick, (7.5 + digPower * 3) * k);
+    slamDip = Math.max(slamDip, (0.055 + digPower * 0.03) * k);
+    addTrauma((0.28 + digPower * 0.2) * k); vmImpulse(-1.35 * k);
+  }
   _pf.copy(_aimD); _pf.y = 0; _pf.normalize();
   const P = digPower;
   if (castleStrike(P)) return;            // the blade went through the castle
@@ -10567,6 +10953,17 @@ const DIG_WINDUP = 0.34, DIG_STRIKE = 0.46;
  * the mark, decelerating, before the recovery brings it back. The impact
  * still fires at DIG_STRIKE, so everything keyed to that beat is untouched. */
 const SLASH_WINDUP = 0.22, SLASH_THROUGH = 0.62;
+/* AND A THRUST CARRIES PAST ITS CONTACT TOO. A cut has had a follow-through
+ * since the day the Military Shovel learned to cut — "a blade does not stop
+ * where it lands" — and the thrust, which was routed through the same driver,
+ * had none: the arm arrived at full extension on the damage frame and then
+ * simply began drifting home, which is the one shape of motion that reads as
+ * the animation ENDING rather than as a blow landing. Every thrust in every
+ * game this was measured against drives a little past the contact and is
+ * pulled back from there. The window is shorter than a cut's, because a point
+ * has much less distance to travel than an edge. */
+const STAB_THROUGH = 0.545;
+const throughEnd = () => (thrusting() ? STAB_THROUGH : SLASH_THROUGH);
 const windupEnd = () => slashing() ? SLASH_WINDUP : DIG_WINDUP;
 /* How long this swing takes. A LIGHT CUT IS A CLICK: the same 0.44 s as the
  * sand shovel's — it ran a third quicker and the owner called it too fast;
@@ -10583,7 +10980,14 @@ const windupEnd = () => slashing() ? SLASH_WINDUP : DIG_WINDUP;
  * combination you can hold a rhythm in, not one that accelerates away from
  * you. */
 const comboRate = () => 1;
-const swingSecs = (P) => (slashing() ? DIG_DUR * (0.55 + P * 0.60) / (1 + 0.34 * P) : DIG_DUR * (0.55 + P)) * ((equipped && equipped.swingK) || 1) * comboRate();
+/* AND A STRING IS PACED, NOT RATTLED OFF. A lone jab is the fastest attack
+ * in this game and should be; three of them at that speed is 0.36 s of
+ * something you cannot read, and a combination nobody can see is a
+ * combination nobody knows they threw. Each hit of the string runs a little
+ * longer than the jab and the FINISHER longer again, which is also what
+ * makes it land as the answer to the two before it. */
+const pegRate = () => (pegStage === 3 ? 1.50 : pegStage > 0 ? 1.15 : 1);
+const swingSecs = (P) => (slashing() ? DIG_DUR * (0.55 + P * 0.60) / (1 + 0.34 * P) : DIG_DUR * (0.55 + P)) * ((equipped && equipped.swingK) || 1) * comboRate() * pegRate();
 /* A HEAVY IS QUICK WHERE IT IS SEEN AND LONG WHERE IT IS FELT. Stretching
  * the WHOLE charged swing (`heavyK`, 1.75x) made it heavy by making it
  * slow, which is not the same thing: the owner watched the blade wallow
@@ -10596,9 +11000,9 @@ const swingSecs = (P) => (slashing() ? DIG_DUR * (0.55 + P * 0.60) / (1 + 0.34 *
  * because it has already paid up front. 34 frames became 22, with the cut
  * itself landing in five. */
 const bladeRate = (p, P) => {
-  if (!isBlade() || digOverhead || !equipped.recoverK) return 1;
+  if ((!isBlade() && !thrusting()) || digOverhead || !equipped.recoverK) return 1;
   if (p < DIG_STRIKE) return 1 + 0.25 * P;
-  if (p < SLASH_THROUGH) return 1 + 0.35 * P;
+  if (p < throughEnd()) return 1 + 0.35 * P;
   return equipped.recoverK * (katBack() ? 1.8 : 1) * (1 - 0.55 * P);
 };
 let vmLagX = 0, vmLagY = 0, vmPrevYaw = 0, vmPrevPitch = 0;
@@ -10716,8 +11120,17 @@ function updateViewmodel(dt) {
      * while you wind it — that is when you can see it — and reading the key
      * again on the way out meant letting go of sprint a frame early turned
      * an overhead back into a side swing. */
-    if (overheadHeld()) windOverhead = true;
-    if (windOverhead && equipped === katanaItem) {
+    if (overheadHeld() && !thrusting()) windOverhead = true;
+    if (thrusting()) {
+      /* AND A PEG IS WOUND BY BEING DRAWN, NOT BY BEING LIFTED. Its charge is
+       * the same thrust gathered further back along its own line — the arm
+       * pulls in to the ribs and the shaft SHORTENS in the frame, which is
+       * the whole tell and is readable across a room precisely because
+       * nothing else it does changes. */
+      katStab(_pose, 0, e);
+      _pose[4] += 0.085 * e; _pose[5] += 0.045 * e;      // further back the longer it is held
+      _pose[0] += strain * 0.9; _pose[4] += strain * 0.9;
+    } else if (windOverhead && equipped === katanaItem) {
       /* THE STAB IS DRAWN, NOT HAULED. You have to be able to SEE what you
        * are charging: the sword comes back level with the point already on
        * what you are looking at, so the whole hold says "this is going
@@ -10769,7 +11182,7 @@ function updateViewmodel(dt) {
      * the whole of what keeps a light hit from being spammable now that the
      * cut itself is quick again — see `bladeRate`. */
     digT += dt / (swingSecs(P) * bladeRate(digT, P));
-    const p = digT, W = windupEnd(), isCut = slashing();
+    const p = digT, W = windupEnd(), isCut = slashing(), thr = thrusting();
     if (p < W) {
       // anticipation: quick out of rest, hanging at the top of the haul
       poseMix(_pose, _poseF, _poseA, easeOutCubic(p / W));
@@ -10783,12 +11196,12 @@ function updateViewmodel(dt) {
        * a fifth of the time. That hang-then-drop is the whole read of a slam. */
       const st = (p - W) / (DIG_STRIKE - W);
       poseMix(_pose, _poseA, _poseB, digOverhead ? st * st * st * st : easeInCubic(st));
-    } else if (isCut && p < SLASH_THROUGH) {
+    } else if ((isCut || thr) && p < throughEnd()) {
       /* THE FOLLOW-THROUGH. A blade does not stop where it lands; it goes on
        * through and out the far side, slowing, and is brought back from
        * there. Without this beat the recovery began at the mark and pulled
        * the tool straight back the way it had come, which is a tap. */
-      poseMix(_pose, _poseB, _poseC, easeOutQuad((p - DIG_STRIKE) / (SLASH_THROUGH - DIG_STRIKE)));
+      poseMix(_pose, _poseB, _poseC, easeOutQuad((p - DIG_STRIKE) / (throughEnd() - DIG_STRIKE)));
     } else {
       /* recovery: eases back to rest, overshooting once on the way — except a
        * blade, which SETTLES. `easeOutBack` threw the katana's point two
@@ -10796,14 +11209,24 @@ function updateViewmodel(dt) {
        * the owner called a flinch, and a sword coming to guard does not
        * bounce off it. Ease-in-out also holds the blade out on the left
        * over the first stretch, which is the window the return chains in. */
-      const from = isCut ? _poseC : _poseB, t0 = isCut ? SLASH_THROUGH : DIG_STRIKE;
+      const from = (isCut || thr) ? _poseC : _poseB, t0 = (isCut || thr) ? throughEnd() : DIG_STRIKE;
       const rt = Math.min(1, (p - t0) / (1 - t0));
       /* A blade FINISHES its cut before it comes home: the first third of
        * the recovery drifts a few per cent, then the rest eases back. That
        * held beat is the window the return chains in, and it is what makes
        * a cut read as a cut rather than as a wave. */
       const rm = rt < REC_HOLD ? 0.08 * rt / REC_HOLD : 0.08 + 0.92 * easeInOutCubic((rt - REC_HOLD) / (1 - REC_HOLD));
-      poseMix(_pose, from, REST_POSE, isBlade() && !digOverhead ? rm : easeOutBack(rt));
+      /* AND A THRUST RECOILS; IT DOES NOT DRIFT. A blade HOLDS its cut for
+       * the first third of the recovery (`REC_HOLD`) because the sweep is
+       * the thing you are meant to watch and the return chains out of it —
+       * and on a point that same curve is a stick hanging in the air at full
+       * stretch and then creeping home, which is 39 frames of almost no
+       * movement. What a thrust does is come back off the target fast and
+       * settle, so the recoil is the last beat of the blow rather than an
+       * absence of one. */
+      poseMix(_pose, from, REST_POSE,
+        thr && !digOverhead ? easeOutCubic(rt)
+        : (isBlade() || thrusting()) && !digOverhead ? rm : easeOutBack(rt));
     }
     if (!digImpacted && p >= DIG_STRIKE) {
       digImpacted = true;
@@ -10814,7 +11237,7 @@ function updateViewmodel(dt) {
        * as an impact. The spring's peak is roughly v0/sqrt(stiffness), so
        * anything under ~1.5 stays inside the clamp and stays a curve. */
       const cut = slashing();
-      vmImpulse(-0.95 - P * 0.5 - (digOverhead ? 0.35 : 0) - (cut ? 0.30 : 0));
+      vmImpulse(-0.95 - P * 0.5 - (digOverhead ? 0.35 : 0) - (cut ? 0.30 : 0) - (thr ? 0.22 : 0));
       /* AND IT JARS. A hit that stops dead has to shake the hands that made
        * it. The cut lands hardest of the three: it is the fastest thing in
        * the game and it arrives with the whole arm behind it, so it gets the
@@ -10829,6 +11252,17 @@ function updateViewmodel(dt) {
           addTrauma(0.20 + P * 0.26);
           fovKick = Math.max(fovKick, 3.4 + P * 3.6);
           hitRoll = -slashDir * (0.030 + P * 0.034);
+        } else if (thr) {
+          /* AND A POINT THAT GOES IN STOPS DEAD. A thrust that connected got
+           * the guard spring and three sparks and nothing else — no frozen
+           * frame, no trauma, no lens — so the one attack in this game whose
+           * whole subject is arriving at a distance was the one that never
+           * told you it had arrived. It is a SHORTER freeze than a cut's and
+           * no roll at all: a cut turns the world because the blade swept
+           * across it, and a thrust simply stops. */
+          hitstop = Math.max(hitstop, 0.038 + P * 0.045);
+          addTrauma(0.13 + P * 0.20);
+          fovKick = Math.max(fovKick, 2.6 + P * 3.0);
         }
       }
       /* THE SLAM. The whole body goes into an overhead and the whole body
@@ -10849,12 +11283,19 @@ function updateViewmodel(dt) {
         spawnPuffs(lp.x, lp.z, 14 + Math.round(P * 12), -_pf.x, -_pf.z, Math.max(0.05, lp.y), null);
       }
     }
-    if (p >= 1) { digT = 0; digPower = 0; digCharged = false; digOverhead = false; }
+    if (p >= 1) { digT = 0; digPower = 0; digCharged = false; digOverhead = false; pegStage = 0; }
     /* ON the follow-through, not after it: the recovery eases with
      * `easeOutBack`, which is more than half-way home a few frames past the
      * through, so a return chained "a beat later" left from a half-recovered
      * pose and only ever swept the right of the screen. */
     else if (queuedSwing === 'return' && p >= SLASH_THROUGH && slashing() && !katBack()) chainSwing();
+    /* AND THE STRING GOES ON WHILE THE BUTTON IS DOWN. It links just past
+     * the contact — late enough that the blow you have just thrown is over
+     * and its damage dealt, early enough that the arm is still travelling,
+     * so the next one leaves from a moving pose and the three read as one
+     * thing. Let go at any point and it simply stops where it is. */
+    else if (pegStage > 0 && pegStage < 3 && windHeld && !winding
+             && p >= DIG_STRIKE + 0.12) pegChain();
   } else if (magHeld()) {
     /* A GUN IS NOT A SWING, so it takes none of the machinery above it — no
      * wind-up, no strike, no recovery. What it has is a hold, a set of
@@ -10951,7 +11392,17 @@ function updateViewmodel(dt) {
   /* Turn the tool over for an overhead, and back afterwards. Blended rather
    * than snapped, so the change of grip happens while the shovel is going up
    * and is finished by the time it comes down. */
-  const wantOh = (winding && windOverhead) || (digT > 0 && digOverhead) ? 1 : 0;
+  /* AND THE PEG'S FINISHER LETS ITS GRIP GO EARLY, which is not a nicety.
+   * A grip is fixed in the ARM'S frame, so a shaft held down-and-away at the
+   * contact is swung round by whatever the arm does afterwards — and the
+   * overhead's recovery hauls the hand back past the body, which took 0.65 m
+   * of peg through the lens: measured, the tip's own camera depth crossed
+   * zero and the last third of the swing rendered as a slab of wood filling
+   * the picture. Every roll about the shaft gives the same answer, because a
+   * roll cannot move a tip; the fix is to stop holding the overhead's grip
+   * while the arm is coming home. */
+  const wantOh = thrusting() ? ((winding || digT > 0) ? 1 : 0)
+  : (winding && windOverhead) || (digT > 0 && digOverhead && !(pegFinish() && digT >= PEG_GRIP_HOME)) ? 1 : 0;
   /* AND THE GRIP COMES HOME WITH THE ARM. It used to turn back to the carry
    * only once the swing had ended — a second motion after the arm had
    * already stopped, which is a twitch. On a blade it starts back over the
@@ -10979,10 +11430,45 @@ function updateViewmodel(dt) {
      * frame-widths off the right edge — which was most of the "flinch" at
      * the end of a combination. A slerp takes the short way round. */
     const R = restRot(), SR = slashRot();
-    const OH = katStabbing() ? KAT_STAB_ROT : VM_OVERHEAD_ROT;
+    const OH = thrusting() ? PEG_STAB_ROT : pegFinish() ? PEG_OH_LAND : katStabbing() ? KAT_STAB_ROT : VM_OVERHEAD_ROT;
     _gQ.setFromEuler(_blkE.set(R[0], R[1], R[2]));
     if (slBlend > 0.001) { _gQ2.setFromEuler(_blkE.set(SR[0], SR[1], SR[2])); _gQ.slerp(_gQ2, slBlend * (1 - ohBlend)); }
-    if (ohBlend > 0.001) { _gQ2.setFromEuler(_blkE.set(OH[0], OH[1], OH[2])); _gQ.slerp(_gQ2, ohBlend); }
+    if (ohBlend > 0.001) {
+      _gQ2.setFromEuler(_blkE.set(OH[0], OH[1], OH[2]));
+      /* AND THE HAUL IS A POSE YOU HOLD, SO IT HAS TO BE ON SCREEN — the
+       * katana's own solve, on a club. ONE grip cannot serve the whole
+       * overhead, because the arm turns most of a half circle between the
+       * hang and the contact: solved at the contact alone, the same grip
+       * put the shaft pointing straight AWAY from the lens at the top of
+       * the swing (camera-space z -0.97), so a 0.81 m peg foreshortened
+       * into a stub in the top corner and the whole wind-up — eight frames,
+       * the part you read a smash off — had nothing in it. Blazing the
+       * emissive proved it was foreshortening and not darkness. So the
+       * finisher has TWO grips, each solved in its own frame: the haul
+       * HANGS the shaft down out of the off-screen fist and into the
+       * picture, the way a shovel's blade does, and it rolls into the
+       * solved contact grip over the drop. */
+      /* AND IT IS THREE KEYS, NOT TWO, BECAUSE THE FINISHER IS ARRIVED AT.
+       * `ohBlend` is already 1 when the third hit begins — the two thrusts
+       * hold the same flag — so nothing was blending: the target grip simply
+       * CHANGED, from the stab's to the haul's, between one frame and the
+       * next. Measured through the link, the peg's on-screen span collapsed
+       * 0.63 -> 0.26 and opened again over the next four frames, which is a
+       * stick snapping end-on and back. The string carries the grip in from
+       * where the second thrust left it (`PEG_OH_IN`), holds the haul, and
+       * rolls into the solved contact over the drop. */
+      if (pegFinish()) {
+        _blkQ.setFromEuler(_blkE.set(PEG_OH_HAUL[0], PEG_OH_HAUL[1], PEG_OH_HAUL[2]));
+        if (digT < PEG_OH_IN) {
+          _gQ3.setFromEuler(_blkE.set(PEG_STAB_ROT[0], PEG_STAB_ROT[1], PEG_STAB_ROT[2]));
+          const j = Math.max(0, Math.min(1, digT / PEG_OH_IN));
+          _blkQ.copy(_gQ3).slerp(_blkQ, j * j * (3 - 2 * j));
+        }
+        const k = Math.max(0, Math.min(1, (digT - PEG_OH_TURN[0]) / (PEG_OH_TURN[1] - PEG_OH_TURN[0])));
+        _gQ2.copy(_blkQ).slerp(_gQ2, k * k * (3 - 2 * k));
+      }
+      _gQ.slerp(_gQ2, ohBlend);
+    }
     toolVM.quaternion.copy(_gQ);
     /* THE GUARD IS THE SAND SHOVEL'S. Held scoop-up, the Military Shovel's
      * block put the bar across the frame upside down and the blade on the
@@ -11033,7 +11519,7 @@ function updateViewmodel(dt) {
    * wedge over a third of the picture — the additive-blending trap the trail
    * has fallen into once before, in a new place. */
   trailGain = slashing() ? (isBlade() ? 0.95 : 1.55) : 1;
-  updateTrail(dt, toolVM.visible && digT >= windupEnd() - 0.02 && digT < (slashing() ? SLASH_THROUGH + 0.02 : DIG_STRIKE + 0.13));
+  updateTrail(dt, toolVM.visible && digT >= windupEnd() - 0.02 && digT < (slashing() ? SLASH_THROUGH + 0.02 : thrusting() ? STAB_THROUGH + 0.03 : DIG_STRIKE + 0.13));
   updateSparks(dt);
   updateGlint(dt);
 }
@@ -11244,15 +11730,69 @@ function updateDoor(dt) {
 // models/horseshoe-crab.js.
 // ------------------------------------------------------------------
 // (renamed hcrab* to avoid the enemy `crab` added on main)
-const hcrab = makeHorseshoeCrab();
+/* ---- AND HE IS A SCAN NOW, NOT A BUILT ONE -------------------------
+ * Tavernier Amaury's "Limule" (CC-BY-4.0, `assets/limule.glb`), the
+ * owner's model, replacing `makeHorseshoeCrab()`. That factory is still in
+ * `models/` — it is what `models/viewer.html` looks at and it is 340 lines
+ * of measured carapace — but nothing in the game builds one any more.
+ *
+ * `hcrab` is an EMPTY GROUP the scan lands in, the captain's head's own
+ * arrangement: `holdable` clones lazily and the examine screen re-parents
+ * whatever it is handed, so the hand, the pack icon and the inspect view
+ * all end up holding the same object without any of them being rebuilt.
+ *
+ * AND IT IS FITTED TO THE BOX THE BUILT ONE OCCUPIED, measured off it
+ * rather than guessed: 0.428 m across, centred on (0, -0.0395, -0.212) in
+ * its own frame. Every number downstream — the view model's 0.5, the
+ * 0.30 m hit proxy, the shine's 0.8, the extraction rig's hinge — was
+ * tuned against that box, and a scan dropped in at its own scale would
+ * break all of them at once. The two happen to agree on their
+ * proportions (0.744 m long against 0.756) and on their frame: +Z is the
+ * head, -Z the telson, +Y the carapace. */
+const HCRAB_W = 0.428, HCRAB_C = [0, -0.0395, -0.212];
+/* swept on screen against the sand he lies on — see the loader below */
+const HCRAB_GAMMA = 0.54, HCRAB_EMIS = 0.20;
+const hcrab = new THREE.Group();
 const hcrabWorld = new THREE.Group();
-/* 86 meshes and 49,000 triangles for a prop the size of a dinner plate —
- * which is right for the examine screen, where it fills the frame, and is
- * eighty-six draw calls for a thing lying in the wrack line. The one in the
- * world is a merged COPY; `hcrab` itself stays whole, because that is what
- * the hand and the examine screen clone. */
-const hcrabShown = hcrab.clone(true);
-bakeStatic(hcrabShown);
+const hcrabCopies = [];                 // groups waiting for the scan
+function hcrabFit(src) {
+  const g = new THREE.Group();
+  const m = src.clone(true);
+  const b = new THREE.Box3().setFromObject(m);
+  const sz = b.getSize(new THREE.Vector3()), c = b.getCenter(new THREE.Vector3());
+  const k = HCRAB_W / (sz.x || 1);
+  g.scale.setScalar(k);
+  g.position.set(HCRAB_C[0] - c.x * k, HCRAB_C[1] - c.y * k, HCRAB_C[2] - c.z * k);
+  g.add(m);
+  return g;
+}
+bwGlb('assets/limule.glb', (gltf) => {
+  const src = gltf.scene;
+  /* A SCAN LIT FOR DAYLIGHT IS A HOLE IN THIS BEACH — the rocks' own
+   * lesson, and the one number here that is not a fit. */
+  src.traverse((o) => {
+    if (!o.isMesh || !o.material) return;
+    o.material = o.material.clone();
+    o.material.side = THREE.FrontSide;
+    o.material.roughness = 0.92;
+    o.material.metalness = 0;
+    o.material.emissive = new THREE.Color(0xffffff);
+    o.material.emissiveMap = o.material.map;
+    o.material.emissiveIntensity = HCRAB_EMIS;
+    reexpose(o.material, HCRAB_GAMMA);
+  });
+  hcrab.add(hcrabFit(src));
+  for (const g of hcrabCopies) { const f = hcrabFit(src); bakeStatic(f, undefined, { named: true }); g.add(f); }
+  hcrabCopies.length = 0;
+});
+/* 84,815 triangles for a prop the size of a dinner plate — decimated to
+ * 30,000 with its uv carried through, which is what `--keep-uv` is for: a
+ * scan's whole point is its albedo, and the plain weld keeps positions and
+ * indices only. The one in the world is a merged COPY; `hcrab` itself
+ * stays whole, because that is what the hand and the examine screen
+ * clone. */
+const hcrabShown = new THREE.Group();
+hcrabCopies.push(hcrabShown);
 hcrabWorld.add(hcrabShown);
 {
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.30, 8, 6),
@@ -14060,8 +14600,13 @@ bwGlb('assets/key.glb', (gltf) => {
   m.scale.setScalar(0.20 / Math.max(size.x, size.y, size.z));    // a key you can see from standing
   keyModel.add(m);
 });
+/* AND IT IS THE CHEST KEY. It was "A Rusted Key" and it opened nothing: the
+ * comment above says so outright — a placeholder for whatever the pier
+ * turned out to be about. What the pier turns out to be about is the sea
+ * chest in the wreck, a kilometre and a half down the walk, and the key that
+ * turns it is the one thing in that crate. */
 const keyItem = {
-  id: 'key', name: 'A Rusted Key', icon: makeKeyIcon(),
+  id: 'key', name: 'Chest Key', desc: 'It opens something else', icon: makeKeyIcon(),
   use: () => toggleEquip(keyItem),
 };
 holdable(keyItem, keyModel, { scale: 1.1, pos: [0, -0.02, 0], rot: [0.5, 0.3, 0.7] });
@@ -14073,7 +14618,7 @@ function dropKey(c) {
   hit.name = 'hitProxy'; hit.visible = false; hit.position.y = 0.05; keyWorld.add(hit);
   scene.add(keyWorld);
   addItemShine(keyWorld, { size: 1.1, height: 0.45, strength: 2.6 });
-  addInteractable(keyWorld, 'Take the key', 'inventory', {
+  addInteractable(keyWorld, 'Take the chest key', 'inventory', {
     onActivate: () => {
       scene.remove(keyWorld);
       removeInteractable(keyWorld);
@@ -14557,6 +15102,15 @@ const SAMPLES = {
   catFeed: ['assets/cat-feed1.m4a'],
   catFar: Array.from({ length: 12 }, (_, i) => `assets/cat-far${i + 1}.m4a`),
   catStep: Array.from({ length: 10 }, (_, i) => `assets/cat-step${i + 1}.m4a`),
+  /* THE DOJO'S FOUNTAIN, SUPPLIED BY THE OWNER — a small fountain in the
+   * open, cut to a 22 s seamless loop: the steadiest stretch of the
+   * recording, its slow level drift taken out so the loop does not pump,
+   * equal-power crossfaded end to head (seam RMS within 5 %), and
+   * normalised to -3 dBFS because AAC overshoots on decode. Mono at
+   * 32 kHz, which costs nothing: measured, there is no energy in it above
+   * 14 kHz. The synthesised bed stays behind it as the fallback for the
+   * frames before it is off the network. */
+  fountain: ['assets/fountain.m4a'],
   /* THE .44, the owner's own. Trimmed: the file he sent has HALF A SECOND
    * of silence in front of the shot, and a gun that goes off half a second
    * after the click is a broken gun. It also peaked at 1.126 in the decoded
@@ -15488,6 +16042,24 @@ function sfxConnect(P = 0, k = 1) {
 function sfxDig(power = 0, cut = false, delay = 0) {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime + delay;
+  /* A THRUST IS NOT A SWING, AND IT DOES NOT SOUND LIKE ONE. A cut is a long
+   * surface dragged sideways through air and it has a sweep in it; a point
+   * driven straight forward moves almost no air at all, so what you hear is
+   * the SHAFT — one short low rush and the arm behind it, over before a cut
+   * has finished rising. Shorter than anything else this file plays, and
+   * low, because a stick is a column of air the same way a blade is. */
+  if (cut === 2) {
+    const len = 0.13 + power * 0.07;
+    const s2 = noiseBurst(len, (x) => (x < 0.22 ? Math.pow(x / 0.22, 0.6) : Math.pow(1 - (x - 0.22) / 0.78, 2.4)));
+    const f2 = ctx.createBiquadFilter(); f2.type = 'bandpass'; f2.Q.value = 1.25 + power * 0.4;
+    f2.frequency.setValueAtTime(240, t);
+    f2.frequency.exponentialRampToValueAtTime(640 + power * 130, t + len * 0.55);
+    f2.frequency.exponentialRampToValueAtTime(190, t + len);
+    const g2 = ctx.createGain(); g2.gain.value = 0.030 + power * 0.032;
+    s2.connect(f2).connect(g2).connect(sfxOut());
+    s2.start(t); s2.stop(t + len);
+    return;
+  }
   // a heavier swing is a longer, lower whoosh — more air moved, more slowly.
   // A CUT is a blade through air, not a spade: shorter and higher, and
   // delayed to the strike — on the click it played over the cock-back and
@@ -16870,6 +17442,177 @@ farProps.push({ obj: shipwreck, z: SHIP_Z, d: 240 });
 warmStep('wreck merge', () => bakeStatic(shipwreck));
 const SN = shipwreck.userData.nav;
 
+/* ---- AND SHE IS HELD DOWN BY ROCK ------------------------------------
+ *
+ * She reads as a hull somebody parked on flat sand, because nothing is
+ * touching her: a boat that came ashore under her own way is WEDGED, and
+ * what wedges her is stone. So a line of it runs down both her flanks at
+ * the turn of the bilge, with the big masses at her bow where she struck
+ * and the rest tailing off aft into the sand she is buried in.
+ *
+ * Everything about where they go is asked of HER, not typed: `halfAtY` is
+ * her own section at the height the stone leans on, so a boulder beds
+ * against the plating at every station whatever the hull is doing there —
+ * she flares at the bow and tumbles home aft, and a line laid on one beam
+ * would stand a metre off her at both ends.
+ *
+ * TWO STATIONS ARE LEFT ALONE, and they are the two ways through her: the
+ * BREACH on the side you walk up to, and the SHELL DOOR on the side you
+ * leave by. A rock in either is a rock in the only route past the wreck.
+ * They are kept clear by her own constants (`BREACH_X0/X1`, `DOOR_X/W`)
+ * with a body's width of margin, so moving either moves the gap. */
+const SHIP_ROCK_GAP = 1.5;              // clear of a doorway, over a body's radius
+onMossyRocks(() => {
+  if (!mossyRocks.length) return;
+  const grp = new THREE.Group();
+  const rnd = mulberry32(0x5717ec);
+  const mat = mossyRockMat.clone();
+  /* the beach's own treatment for a daylight scan, which the granite
+   * formation below Bradly has carried since it went in: granite in
+   * moonlight rather than in sun, a gamma lift before the lighting sees
+   * it, and an emissive off its OWN map — you walk INTO the moon, so every
+   * stone ahead of you is backlit and nothing else carries the face you
+   * are looking at. */
+  mat.color.setHex(0x8f9cb4);
+  mat.emissive.setHex(0x5d6b88);
+  mat.emissiveMap = mat.map;
+  if (mat.normalScale) mat.normalScale.set(1.3, 1.3);
+  reexpose(mat, 0.62);
+
+  const _q = new THREE.Quaternion(), _e = new THREE.Euler();
+  /* HOW WIDE SHE IS OVER THE WHOLE OF A STONE, not at the height of its
+   * middle. Asked at one height this was wrong twice over: she FLARES at
+   * the bow, so her plating at the top of a two-metre boulder stands well
+   * outside her section at its centre, and she TUMBLES HOME down low, so
+   * the widest part of her against a stone is almost never the part the
+   * stone's origin is level with. Measured on the shipped formation, 3.6 %
+   * of its vertices were inside her planking at every station down the
+   * flanks and up to a metre in. */
+  const hullOver = (lx, y0, y1) => {
+    let h = 0;
+    for (let y = Math.max(SN.KEEL_Y, y0); y <= Math.min(SN.DECK_Y, y1) + 1e-6; y += 0.22)
+      h = Math.max(h, SN.halfAtY(lx, y));
+    return Math.max(h, SN.halfAtY(lx, THREE.MathUtils.clamp(y1, SN.KEEL_Y, SN.DECK_Y)));
+  };
+  /* `lx` her station, `sg` which flank, `width` how much stone shows across
+   * the sand, `bury` how much of its own height is under it, and `jam` how
+   * far it leans into her plating — which is a PENETRATION, so it is small:
+   * it was up to 0.80 m, which is not a stone resting against a boat, it is
+   * a stone inside one. */
+  const place = (lx, sg, width, bury, jam) => {
+    const rk = mossyRocks[Math.floor(rnd() * mossyRocks.length)];
+    _e.set((rnd() - 0.5) * 0.5, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.5);
+    _q.setFromEuler(_e);
+    const e0 = rockExtent(rk, _q);
+    const sc = width / (2 * Math.max(e0.x, e0.z));
+    const ex = e0.x * sc, ey = e0.y * sc, ez = e0.z * sc;
+    // her plating over the whole of this stone, with the rake in it
+    const y = ey * (1 - 2 * bury);
+    const hull = hullOver(lx, y - ey, y + ey);
+    const lz = sg * (hull + ez - jam);
+    const m = new THREE.Mesh(rk.geo, mat);
+    m.quaternion.copy(_q);
+    m.scale.setScalar(sc);
+    m.position.set(lx, y, lz);
+    grp.add(m);
+    /* the beach's own rule, since the rocks below Bradly went in: anything
+     * whose crown lands under a step is a thing you walk over, and giving
+     * it a collider only shoves you off a nub. */
+    const top = y + ey;
+    if (top > ROCK_STEP) {
+      rockColliders.push({ x: SHIP_X + lx, z: SHIP_Z + lz,
+        r: Math.max(ex, ez) * 0.82, top, mat: 'rock' });
+    }
+    return top;
+  };
+  const clearBreach = (lx) => lx < SN.BREACH_X0 - SHIP_ROCK_GAP || lx > SN.BREACH_X1 + SHIP_ROCK_GAP;
+  const clearDoor = (lx) => Math.abs(lx - SN.DOOR_X) > SN.DOOR_W / 2 + SHIP_ROCK_GAP;
+
+  /* WHAT SHE STRUCK. Three masses at the bow, big enough to have stopped
+   * twenty-eight metres of boat, interpenetrating the way the beach's own
+   * formation does — spaced politely apart they are boulders standing about
+   * on a beach, overlapping they are one rock with faces. */
+  /* AND A MASS AT THE BOW HAS TO OBEY HER SECTION, WHICH THESE DID NOT.
+   * The flank line below asks `halfAtY` where her plating is and leans each
+   * stone on it; these six were the only rocks in the formation placed at a
+   * TYPED lz, and she fines to a stem — she is under two metres across at
+   * lx -12 — so a five-metre boulder written at lz 1.0 is a boulder standing
+   * in the middle of her forefoot. Measured on the shipped mesh, 4.3 % of
+   * the formation's vertices were inside her planking, up to 1.02 m in, all
+   * of them these; from underneath that is a slab of stone coming out of
+   * the boat, which is exactly what it was. The typed lz is a MINIMUM now
+   * and her own section has the last word. */
+  const BOW_JAM = 0.35;                 // how far a mass may lean into her
+  for (const [lx, lz, w, b] of [[-12.4, 1.0, 4.2, 0.30], [-10.9, -2.4, 3.6, 0.32],
+                                [-13.4, -3.2, 3.2, 0.34], [-12.0, 3.6, 3.2, 0.32],
+                                [-9.4, 4.2, 2.8, 0.34], [-9.8, -4.6, 2.6, 0.34]]) {
+    const rk = mossyRocks[Math.floor(rnd() * mossyRocks.length)];
+    _e.set((rnd() - 0.5) * 0.4, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.4);
+    _q.setFromEuler(_e);
+    const e0 = rockExtent(rk, _q);
+    const sc = w / (2 * Math.max(e0.x, e0.z));
+    const ey = e0.y * sc, ez = e0.z * sc, y = ey * (1 - 2 * b);
+    const sg = lz >= 0 ? 1 : -1;
+    const clear = hullOver(lx, y - ey, y + ey) + ez - BOW_JAM;
+    const lzp = sg * Math.max(Math.abs(lz), clear);
+    const m = new THREE.Mesh(rk.geo, mat);
+    m.quaternion.copy(_q); m.scale.setScalar(sc); m.position.set(lx, y, lzp);
+    grp.add(m);
+    if (y + ey > ROCK_STEP) rockColliders.push({ x: SHIP_X + lx, z: SHIP_Z + lzp,
+      r: Math.max(e0.x, e0.z) * sc * 0.8, top: y + ey, mat: 'rock' });
+  }
+
+  /* AND THE LINE DOWN HER FLANKS. It thins aft, because aft she is in the
+   * sand rather than on the stone, and every station is skipped where a
+   * doorway is. */
+  for (let lx = -12.4; lx <= 12.4; lx += 2.15) {
+    for (const sg of [1, -1]) {
+      if (sg > 0 && !clearBreach(lx)) continue;
+      if (sg < 0 && !clearDoor(lx)) continue;
+      const aft = Math.max(0, (lx + 6) / 18);                 // 0 at the bow, 1 at the transom
+      if (rnd() < 0.10 + aft * 0.34) continue;                // a line with gaps in it is a line
+      place(lx + (rnd() - 0.5) * 0.9, sg,
+        (3.0 - aft * 1.5) * (0.78 + rnd() * 0.44),
+        0.24 + rnd() * 0.14 + aft * 0.16, 0.08 + rnd() * 0.20);
+    }
+  }
+  /* and a skirt of smaller stuff shed round the big ones, which is what
+   * stops the line reading as a row of eggs somebody laid. It stays tight
+   * against her: stone thrown out across the open sand is litter, and this
+   * beach has had one formation and no scatter since the day the rocks
+   * went in. */
+  for (let k = 0; k < 30; k++) {
+    const lx = -13.6 + rnd() * 25.4;
+    const sg = rnd() < 0.5 ? 1 : -1;
+    if ((sg > 0 && !clearBreach(lx)) || (sg < 0 && !clearDoor(lx))) continue;
+    place(lx, sg, 0.55 + rnd() * 1.15, 0.40 + rnd() * 0.2, -(0.2 + rnd() * 1.1));
+  }
+  /* one draw, not sixty: the wreck's own merge had run long before this
+   * could be here, so the stone merges itself */
+  bakeStatic(grp);
+  shipwreck.add(grp);
+});
+
+/* ---- and her furniture, which arrives over the network ---------------
+ * `makeShipwreck` runs at module time and this is 2.4 MB, so the wreck
+ * builds with her solid boxes in place and the pieces land in them. It is
+ * merged the moment it arrives (`named: true`, because every piece keeps
+ * the name the packer gave it and nobody holds one) — nineteen meshes in
+ * five materials become five draws, which is the wreck merge's own rule
+ * applied to a group that could not be there when the wreck merge ran. */
+bwGlb('assets/furniture.glb', (gltf) => {
+  if (!shipwreck.userData.furnish) return;
+  const g = shipwreck.userData.furnish(gltf.scene);
+  bakeStatic(g, undefined, { named: true });
+});
+/* AND THE SEA CHEST IS THE OWNER'S OWN MODEL, in three pieces so its lid can
+ * be hung on a real hinge. It is NOT baked: the lid has to survive as
+ * something that turns, which is the barricade's own rule, and `dressChest`
+ * marks the group accordingly. */
+bwGlb('assets/chest.glb', (gltf) => {
+  if (shipwreck.userData.dressChest) shipwreck.userData.dressChest(gltf.scene);
+});
+
 /* ---- punch her out of the sea ---------------------------------------
  * Sampled off the SAME hull functions the geometry uses, at the height
  * the water actually meets her, so the hole in the ocean is her waterline
@@ -16964,10 +17707,110 @@ const SN = shipwreck.userData.nav;
    * coplanar pairs, and that shimmer where her stern meets the ground is
    * the "textures colliding" at the back of her. Seven centimetres is far
    * enough to sort cleanly and still under everything that draws over it. */
-  const bed = new THREE.Mesh(bedGeo, sandMat);
+  /* ---- AND THE BOTTOM OF THE HOLE WAS BEING DELETED BY THE TIDE --------
+   * This bed was built to fill the hole the ocean punch leaves under her,
+   * and it was handed `sandMat` — which discards every fragment seaward of
+   * `shoreLine`. She spans x = -7 to 19 and that line sweeps to x = 8.6, so
+   * for most of the cycle the bed under her forward half was thrown away by
+   * the same rule it exists to answer, and what you could see through the
+   * ground under the boat changed with the swash. The rocks paid for it
+   * twice: bedded into sand that is not drawn, a boulder's buried half is
+   * exposed and it reads as a slab hanging over open water.
+   *
+   * So the bed keeps the beach's shader and gets its own rule for WHERE IT
+   * MAY NOT VANISH, and both halves of it are measurements rather than a
+   * margin. Inside the ocean's own punch-out there is no sea to make way
+   * for, so the bed is the ground, always — and it is read off `uShipHW`,
+   * the SAME array the punch is cut with, so the hole and its bottom can
+   * never disagree. And anything the bed has HEAPED against her stands
+   * above the skirt, so it is sand out of the water rather than beach under
+   * it, and the surf runs round it the way it runs round the rocks below
+   * Bradly. What is left to the tide is the flat outer skirt, which is the
+   * beach and behaves like it. */
+  const bedMat = sandMat.clone();
+  bedMat.onBeforeCompile = (shader) => {
+    shader.uniforms.uShipHalf = oceanUniforms.uShipHalf;
+    shader.uniforms.uShipC = oceanUniforms.uShipC;
+    shader.uniforms.uShipHW = oceanUniforms.uShipHW;
+    sandShader(shader, 'bwBedKeep(vWorldPos)', `
+      uniform float uShipHalf; uniform vec2 uShipC; uniform float uShipHW[17];
+      bool bwBedKeep(vec3 p) {
+        if (p.y > -0.045) return true;              // heaped against her, not beach
+        if (uShipHalf <= 0.0) return false;
+        float lx = p.x - uShipC.x;
+        if (abs(lx) >= uShipHalf) return false;
+        float t = (lx + uShipHalf) / (2.0 * uShipHalf) * float(17 - 1);
+        int i0 = int(floor(t));
+        float f = t - float(i0), a = 0.0, b = 0.0;
+        for (int k = 0; k < 17; k++) {
+          if (k == i0) a = uShipHW[k];
+          if (k == i0 + 1) b = uShipHW[k];
+        }
+        return abs(p.z - uShipC.y) < mix(a, b, f);  // exactly the punch
+      }`);
+  };
+  /* its own key, or three hands it the beach's already-compiled program */
+  bedMat.customProgramCacheKey = () => 'shipBed';
+  const bed = new THREE.Mesh(bedGeo, bedMat);
   bed.position.set(SHIP_X, -0.05, SHIP_Z);
   scene.add(bed);
   farProps.push({ obj: bed, z: SHIP_Z, d: 220 });
+
+  /* ---- AND THE DUNE WAS BEING DRAWN INSIDE HER -----------------------
+   * Her stern stands 4.8 m past `CLIFF_BLOCK_X` and the sand wall is one
+   * surface that knows nothing about her, so it simply passes through: cast
+   * down her centreline and from lx 9.5 aft the cliff is 3.26 rising to
+   * 3.51, against a deck at 3.20 — the dune's own plane, a flat sheet with
+   * no heaping on it at all, slicing her afterdeck along a knife-edge with
+   * her planking on one side of the line and sand on the other, and her
+   * rail standing up through it like a bar in a table. That is what reads
+   * as the land clipping through the back of the boat, and no amount of
+   * banking sand against her outside can answer it, because the thing in
+   * the wrong place is INSIDE.
+   *
+   * She is a closed shell, so the honest fix is to take the dune out of
+   * her: a world-space discard, the drain's own trick and the fourth on
+   * this material, cut to HER OWN SECTION at each station rather than to a
+   * box. Two things make it safe to cut a hole in a one-sided surface.
+   * It is strictly INSIDE the planking (0.96 of her half-width), so every
+   * ray that could reach the cut has to pass through her hull, her deck or
+   * her transom first — and it stops under the rail, so the bulwark covers
+   * the last hand's breadth where the two would otherwise disagree. What
+   * it leaves is what actually happened to her: a boat driven into a dune
+   * with the sand heaped up her quarters and her afterdeck still hers. */
+  const cutHW = new Array(17);
+  for (let i = 0; i < 17; i++)
+    cutHW[i] = SN.halfAtY(-SN.HALF + (i / 16) * SN.LEN, SN.DECK_Y) * 0.96;
+  const prevShipCliff = cliff.material.onBeforeCompile;
+  cliff.material.onBeforeCompile = function (sh, rndr) {
+    if (prevShipCliff) prevShipCliff.call(this, sh, rndr);
+    sh.uniforms.uShipCutC = { value: new THREE.Vector2(SHIP_X, SHIP_Z) };
+    sh.uniforms.uShipCutHalf = { value: SN.HALF };
+    sh.uniforms.uShipCutTop = { value: SN.DECK_Y + SN.BULWARK - 0.06 };
+    sh.uniforms.uShipCutHW = { value: cutHW };
+    sh.vertexShader = 'varying vec3 vShipW;\n' + sh.vertexShader.replace(
+      '#include <fog_vertex>',
+      '#include <fog_vertex>\n  vShipW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader =
+      'varying vec3 vShipW;\nuniform vec2 uShipCutC;\nuniform float uShipCutHalf;\n'
+      + 'uniform float uShipCutTop;\nuniform float uShipCutHW[17];\n'
+      + sh.fragmentShader.replace('#include <clipping_planes_fragment>', `
+      #include <clipping_planes_fragment>
+      {
+        float slx = vShipW.x - uShipCutC.x;
+        if (vShipW.y < uShipCutTop && slx > 5.0 && slx < uShipCutHalf) {
+          float st = (slx + uShipCutHalf) / (2.0 * uShipCutHalf) * float(17 - 1);
+          int si = int(floor(st));
+          float sf = st - float(si), sa = 0.0, sb = 0.0;
+          for (int k = 0; k < 17; k++) {
+            if (k == si) sa = uShipCutHW[k];
+            if (k == si + 1) sb = uShipCutHW[k];
+          }
+          if (abs(vShipW.z - uShipCutC.y) < mix(sa, sb, sf)) discard;
+        }
+      }`);
+  };
+  cliff.material.needsUpdate = true;
 }
 
 // onShip / inBridge are declared with the collision block below.
@@ -17010,8 +17853,8 @@ function sfxLockerOpen() {
 // The same model and the same item as the one on the beach, so it picks up
 // and uses exactly the same way.
 {
-  const holdCrab = makeHorseshoeCrab();
-  bakeStatic(holdCrab);                 // decorative here; the hand's copy is hcrab's
+  const holdCrab = new THREE.Group();    // decorative here; the hand's copy is hcrab's
+  hcrabCopies.push(holdCrab);
   const holdCrabWorld = new THREE.Group();
   holdCrabWorld.add(holdCrab);
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.30, 8, 6),
@@ -17499,6 +18342,99 @@ function updateHoldDoor(dt) {
   holdDoor.rotation.y = holdDoorSwing * 1.85;
 }
 
+/* ---- THE SEA CHEST IN HER QUARTERS, AND WHAT IS IN IT ------------------
+ * `S.userData.chest` hands the group and the hinge over the same way
+ * `.holdDoor` does. It is LOCKED, and what turns it is the key out of the
+ * crate at the dock — which for two years was "A Rusted Key", a thing you
+ * took off the boards with nothing anywhere in the game to put it in. A key
+ * with no lock is a prop; a lock with no key is a wall. This is both of them
+ * pointed at each other, and the pier is now the first half of a sentence
+ * that finishes in the wreck.
+ *
+ * THE KEY IS NOT EATEN. The shell door swallows its own — it goes into the
+ * lock and stays there, which is right for a door that is a way off the ship
+ * — but a chest is a thing you come back to, so this one turns and the key
+ * stays in your pack.
+ *
+ * And it swings both ways: a chest is a thing you rummage in, not a
+ * one-way passage, so there is no reason it should only ever open once. */
+const shipChest = shipwreck.userData.chest;
+let shipChestOpen = false, shipChestSwing = 0, shipChestLocked = true, pegTaken = false;
+const chestKeyIn = () => inventory.includes(keyItem);
+if (shipChest) {
+  /* THE PEG IS IN IT, LYING ON THE DIAGONAL. It is 0.97 m of turned ash in a
+   * chest 0.92 by 0.64, so the only way it goes in is corner to corner — and
+   * that is the picture the open lid should give you: a leg that barely fits
+   * the box somebody shut it in. It is a child of the chest, so it rides the
+   * chest's own place in the world and nothing here has to know where that
+   * is; it is hidden while the lid is down, because the lid is not a cover
+   * over a hole, it is a lid on a box with something in it. */
+  pegWorld.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0.86, -0.06, 0.51).normalize());
+  pegWorld.position.set(-0.262, 0.128, -0.152);   // measured: it clears every wall by a centimetre
+  pegWorld.visible = false;
+  /* AND IT CARRIES ITS OWN TARGET. An interactable's meshes are snapshotted
+   * ONCE, at registration, and the scan is not here yet — so without this the
+   * crosshair could never find the peg however plainly it is lying there. */
+  {
+    const hp = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.84, 0.12),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    hp.name = 'hitProxy'; hp.visible = false; hp.position.y = -0.25;
+    pegWorld.add(hp);
+  }
+  shipChest.group.add(pegWorld);
+  /* AND THE GLINT IS SMALL, because it is INSIDE something. Every other
+   * shine in this game has to find a dark object on an open beach; this one
+   * sits in a box a metre from your face, and at the beach's own size it
+   * came out as a white blob with a peg somewhere behind it. */
+  addItemShine(pegWorld, { size: 0.42, height: 0.20, strength: 1.25, lift: 0.28 });
+  addInteractable(pegWorld, 'Take the Spare Peg', 'inventory', {
+    when: () => shipChestOpen && !pegTaken && !pegReturned,
+    onActivate: () => {
+      if (pegReturned) return;        // you gave it back; the chest is empty for good
+      pegTaken = true;
+      pegWorld.visible = false;
+      if (pegWorld.userData.halo) { pegWorld.parent.remove(pegWorld.userData.halo); pegWorld.userData.halo = null; }
+      removeInteractable(pegWorld);
+      hovered = null;
+      sfxThud(0.04);
+      addToInventory(pegItem);
+      toggleEquip(pegItem);
+    },
+  });
+  addInteractable(shipChest.group, 'The chest is locked.', 'default', {
+    label: () => (shipChestLocked ? (chestKeyIn() ? 'Unlock the chest' : 'The chest is locked.')
+      : shipChestOpen ? 'Close the chest' : 'Open the chest'),
+    bare: () => shipChestLocked && !chestKeyIn(),
+    onActivate: () => {
+      if (shipChestLocked) {
+        if (!chestKeyIn()) { sfxThud(0.02); return; }    // the lock does not give
+        shipChestLocked = false;
+      }
+      shipChestOpen = !shipChestOpen;
+      if (shipChestOpen && !pegTaken) pegWorld.visible = true;
+      sfxLockerOpen();
+      hovered = null;
+    },
+  });
+}
+function updateShipChest(dt) {
+  if (!shipChest) return;
+  const want = shipChestOpen ? 1 : 0;
+  if (Math.abs(shipChestSwing - want) < 0.001) return;
+  const was = shipChestSwing;
+  shipChestSwing += (want - shipChestSwing) * Math.min(1, dt * 4.5);
+  /* THE KEG IS RIGHT BEHIND IT. The hinge is at the back edge and the keg
+   * the chest fronts stands a hand's breadth past it, so a lid laid back
+   * flat the way the equipment case's does swings into the barrel. This lid
+   * is also a deep DOME — half the height of the whole chest — so past the
+   * vertical it is not the lip that reaches furthest back, it is the crown,
+   * and every centimetre past 90 degrees costs more than the one before it.
+   * A shade under vertical is where a lid actually rests on its own hinge
+   * anyway; beyond that it is a lid falling off the back of a box. */
+  shipChest.lid.rotation.x = -easeOutCubic(shipChestSwing) * 1.42;
+  if (was < 0.9 && shipChestSwing >= 0.9 && shipChestOpen) sfxThud(0.03);   // the lid settling open
+}
+
 function dropShipHead() {
   if (headFall >= 0 || !shipHead) return;
   headFall = 0;
@@ -17711,7 +18647,13 @@ let _preHelmBaseY = 0;
  * bulkhead is 1.00 m by 0.53 — measured by raycasting its four edges — and
  * a plaque screwed over a dead window is exactly where a man would put
  * one. He sits inside it with a margin all round. */
-const BILLY_W = 0.72, BILLY_H = 0.52;
+/* AND THE FRAME IS BIGGER THAN THE PLAQUE NOW. The registered pictures
+ * carry a transparent margin round the wood (`--margin`, so the jaw and the
+ * tail have somewhere to hang), so the plane has to be scaled to the PANEL
+ * and not to the image: the panel is 74 % of the picture's height, and at
+ * the old 0.52 the plaque itself came out 0.385 m and read as a postcard.
+ * 0.66 puts the wood back at 0.49 m on a 0.53 m pane. */
+const BILLY_W = 0.72, BILLY_H = 0.66;
 function billyTex(mouth, head, tail) {
   const W = 512, H = 384;
   const c = document.createElement('canvas'); c.width = W; c.height = H;
@@ -17904,30 +18846,35 @@ function billyTex(mouth, head, tail) {
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
-const billy = { mesh: null, frames: null, photo: [null, null, null], t: 0, mouth: 0 };
+const billy = { mesh: null, frames: null, photo: [null, null, null], t: 0, mouth: 0,
+  out: false, left: 0, wait: 0, kick: 0, spanX: 1 };
 /* ---- THE REAL FISH -------------------------------------------------
  * He is a PHOTO CUT-OUT, like Bradly and the fisherman, not a drawing —
  * the drawing below is only what stands on the bulkhead until the
  * photographs are on disk, so the wall is never empty and nothing throws
  * if they are missing.
  *
- * Three frames, and which one is showing is the whole joke:
- *   billy-idle.png   he is flat on the plaque, side on, mouth shut
- *   billy-shut.png   the head has come round at YOU, mouth closed   (optional)
- *   billy-talk.png   the head is round at you and the mouth is OPEN
+ * TWO frames, and which one is showing is the whole joke:
+ *   billy-idle.png   he is flat on the plaque, side on, head down
+ *   billy-talk.png   the head has swung out AT you, jaws parted
  *
- * Talking alternates the two head-out frames so the mouth works; with only
- * two files it alternates idle and open, which is how the toy reads at a
- * glance anyway. Put the pictures through the knockout the drain's eyes
- * already use, which takes the wall behind them out to alpha:
+ * That swap IS the toy's move — a Billy Bass's head comes off the board on
+ * a hinge and goes back, over and over, roughly in time with the words —
+ * so nothing else has to be drawn for the animation to be the right
+ * animation. What it needed was for the two pictures to be the same
+ * plaque in the same place, which they were not: see
+ * `tools/billy_frames.py`, which cuts them and REGISTERS them on the
+ * plaque's own panel. Both frames come out the same size now, so the plane
+ * never changes shape and the only thing that moves is the fish.
  *
- *   python3 tools/knockout.py raw-idle.jpg assets/billy-idle.png --thresh 200 --soft 60
+ * (There was a third, `billy-shut.png`, for a head-out-mouth-closed pose.
+ * There is no photograph of one, it 404'd on every load for months, and
+ * the talk frame's jaws are only parted anyway — the swing is the read,
+ * not the mouth.)
  *
- * AND THE PLANE TAKES THE PHOTOGRAPH'S OWN ASPECT. A plaque is wider than
- * it is tall and every one of these frames is a different crop, so the
- * width is set from the image once it lands and the height is what is
- * fixed — otherwise the first frame to load decides the shape and the
- * others are stretched into it. */
+ * AND THE PLANE STILL TAKES THE PHOTOGRAPH'S OWN ASPECT, because the
+ * height is what is fixed and the registration could change the shared
+ * shape tomorrow. */
 {
   // rest, head-out-shut, head-out-open, tail up
   billy.frames = [billyTex(0, 0, 0), billyTex(0.08, 1, 0), billyTex(1, 1, 0), billyTex(0.05, 0.2, 1)];
@@ -17942,17 +18889,22 @@ const billy = { mesh: null, frames: null, photo: [null, null, null], t: 0, mouth
   m.rotation.y = -Math.PI / 2;
   scene.add(m);
   billy.mesh = m;
+  /* THE KICK AND THE ASPECT BOTH WANT `scale.x`, so the aspect is kept as
+   * `billy.spanX` and the kick multiplies it. Written straight into
+   * `scale.x` by both, the first frame change of every swing undid whatever
+   * the spring had just put there. */
+  billy.spanX = 1;
   billy.setFrame = (i) => {
     // a photograph wherever there is one, the drawing where there is not
     const f = billy.photo[i] || billy.frames[i === 3 ? 3 : i] || billy.frames[0];
     if (mat.map === f) return;
     mat.map = f; mat.emissiveMap = f; mat.needsUpdate = true;
     const ar = f.userData && f.userData.aspect;
-    if (ar) m.scale.x = (BILLY_H * ar) / BILLY_W;
+    if (ar) billy.spanX = (BILLY_H * ar) / BILLY_W;
   };
-  /* idle, mouth open, mouth shut — index 0/1/2, matching setFrame's own
-   * numbering so a missing file simply falls through to the drawing. */
-  [['assets/billy-idle.png', 0], ['assets/billy-shut.png', 1], ['assets/billy-talk.png', 2]]
+  /* index 0 and 2, matching setFrame's own numbering so a missing file
+   * simply falls through to the drawing. Nothing asks for 1. */
+  [['assets/billy-idle.png', 0], ['assets/billy-talk.png', 2]]
     .forEach(([url, i]) => texLoader.load(url, (t) => {
       t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapNearestFilter;
       t.colorSpace = THREE.SRGBColorSpace;
@@ -17961,33 +18913,76 @@ const billy = { mesh: null, frames: null, photo: [null, null, null], t: 0, mouth
       billy.photo[i] = t;
       billy.real = !!(billy.photo[0] && billy.photo[2]);   // idle + open is enough
       if (i === 0) { mat.map = t; mat.emissiveMap = t; mat.needsUpdate = true;
-        if (t.userData.aspect) m.scale.x = (BILLY_H * t.userData.aspect) / BILLY_W; }
+        if (t.userData.aspect) billy.spanX = m.scale.x = (BILLY_H * t.userData.aspect) / BILLY_W; }
     }, undefined, () => {}));
   addInteractable(m, 'Fish?', 'default', { onActivate: () => startDialog('start', BILLY_NPC), far: 3.4 });
 }
 /* HE CYCLES WHILE HE IS TALKING, and hangs dead still when he is not —
  * which is the whole of the joke: a plastic fish on a plank that comes to
- * life only while it has something to say. The phases are the toy's own,
- * on an irregular count so it is not a metronome: head out, mouth open,
- * mouth shut, and every so often the tail instead. */
+ * life only while it has something to say.
+ *
+ * THE SWING IS THE ANIMATION, AND IT COMES IN BURSTS. What this did before
+ * was hold the head-out picture for the whole conversation with a 2.5 %
+ * scale wobble on it: a still photograph and a shiver, which is the owner's
+ * "make it animate better". The round before THAT strobed the two frames
+ * at five and a half a second, which he called flashing — and he was right,
+ * because the two pictures were different crops of different sizes, so
+ * every swap moved the plaque as well as the fish. With the frames
+ * registered (`tools/billy_frames.py`) the plaque is nailed down and the
+ * swap is only the head coming off the board, which is the one thing the
+ * toy does.
+ *
+ * So: the head goes out and back in BURSTS of two to five, at about three a
+ * second, with a beat of nothing between them — a mouth going at words, not
+ * a metronome. Nothing here is on a fixed count.
+ *
+ * AND THE CUT IS HIDDEN IN A JOLT. A picture that changes between two
+ * frames with nothing else moving reads as a picture changing; the same cut
+ * under a kick reads as the thing being moved. The motor's kick is a damped
+ * spring in three channels — a squash, a rock about the plaque's own normal
+ * and a bob — released at full on the frame the head comes out and half on
+ * the frame it goes back. `rotation.z` is the roll, because three composes
+ * XYZ and the plane's own +Z is its normal: the picture turns in its own
+ * plane, which is a plaque shaking on its screw. */
 function updateBilly(dt) {
   if (!billy.mesh) return;
+  const m = billy.mesh;
+  if (billy.baseY === undefined) billy.baseY = m.position.y;
   const on = dialogOpen && dialogScript === BILLY_SCRIPT;
-  /* ONE SWITCH IN, ONE SWITCH OUT. The mouth used to strobe between the
-   * two photographs at five and a half a second — head down, head round
-   * at you, head down — and with the shut-mouth picture missing that is a
-   * flash between two completely different pictures. The owner's word was
-   * "too much, flashing". While he talks the head comes round ONCE and
-   * stays; what moves is the toy itself — a small bob and a scale wobble on
-   * the plaque at a mouth's rate, which reads as the motor going without
-   * the picture changing under you. */
-  if (!on) { billy.t = 0; billy.setFrame(0); billy.mesh.scale.y = 1; billy.mesh.position.y = billy.baseY === undefined ? billy.mesh.position.y : billy.baseY; return; }
-  if (billy.baseY === undefined) billy.baseY = billy.mesh.position.y;
-  billy.t += dt;
-  billy.setFrame(2);
-  const w = Math.sin(billy.t * 9.5) * 0.5 + Math.sin(billy.t * 4.1) * 0.5;
-  billy.mesh.scale.y = 1 + w * 0.025;
-  billy.mesh.position.y = billy.baseY + w * 0.008;
+  if (!on) {
+    if (billy.out || billy.kick) {
+      /* he settles rather than snapping back — the motor runs down */
+      billy.out = false; billy.left = 0; billy.wait = 0;
+    }
+    billy.t = 0;
+    billy.setFrame(0);
+  } else {
+    billy.t += dt;
+    billy.wait -= dt;
+    if (billy.wait <= 0) {
+      if (billy.left > 0) {                       // mid burst: swing
+        billy.left--;
+        billy.out = !billy.out;
+        billy.kick = billy.out ? 1 : 0.55;
+        billy.wait = (billy.out ? 0.17 : 0.13) * (0.82 + Math.random() * 0.46);
+      } else {                                    // between bursts: a beat
+        billy.out = false;
+        billy.left = 4 + Math.floor(Math.random() * 7);   // pairs of swings
+        billy.wait = 0.22 + Math.random() * 0.5;
+      }
+    }
+    billy.setFrame(billy.out ? 2 : 0);
+  }
+  // the kick, and what it drives
+  billy.kick = Math.max(0, (billy.kick || 0) - dt * 4.6);
+  const k = billy.kick * billy.kick;              // it dies fast, like a tap
+  const ring = Math.sin(billy.kick * 34);
+  // and a slow breath under it while the motor is on at all
+  const hum = on ? Math.sin(billy.t * 7.3) * 0.35 + Math.sin(billy.t * 3.1) * 0.25 : 0;
+  m.scale.y = 1 + k * ring * 0.055 + hum * 0.012;
+  m.scale.x = billy.spanX * (1 - k * ring * 0.03);
+  m.rotation.z = k * ring * 0.055 + hum * 0.006;
+  m.position.y = billy.baseY + k * ring * 0.012 + hum * 0.004;
 }
 const BILLY_SCRIPT = {
   start: {
@@ -18222,6 +19217,39 @@ function updateShip(dt) {
     if (lz < -hz && !atDoor) camera.position.z = SHIP_Z - hz;
     camera.position.x = THREE.MathUtils.clamp(camera.position.x,
       SHIP_X + SN.HOLD_X0 + PLAYER_R, SHIP_X + SN.HOLD_X1 - PLAYER_R);
+
+    /* AND YOU WALKED STRAIGHT THROUGH THE COMPANION LADDER. Its floor is a
+     * RAMP out of `shipFloorAt` and the hold's own sole runs on underneath
+     * it, so coming at it from aft the ramp was three metres over your head
+     * (`take` refuses anything above `feet + 0.5`), the hold answered, and
+     * you walked on into the treads and out the other side. Every other
+     * floor in this game that sits over another one has something under it;
+     * this one had nothing at all.
+     *
+     * A stair is only solid from BELOW, and only where it is low enough to
+     * meet you: the station at which the ramp clears your head is worked out
+     * from `playerHeight()`, so a stride takes you in under the top of it —
+     * which is a real place in her hold — and stops you where the treads
+     * come down to head height, and CROUCHING takes you further, the
+     * undercroft's own rule. Standing on it is not being under it, so the
+     * test asks whether your feet are well below the ramp before it fires;
+     * climbing from the forward end can never trip it, because there the
+     * ramp IS the floor you are standing on. */
+    const run = SN.STAIR_X1 - SN.STAIR_X0;
+    const sx0 = SN.STAIR_X0 - PLAYER_R, sz0 = SN.STAIR_Z0 - PLAYER_R, sz1 = SN.STAIR_Z1 + PLAYER_R;
+    const sx1 = SN.STAIR_X0 + run * THREE.MathUtils.clamp(
+      (feet + playerHeight() + 0.05 - SN.HOLD_Y) / (SN.DECK_Y - SN.HOLD_Y), 0, 1);
+    const ramp = SN.HOLD_Y + THREE.MathUtils.clamp((lx - SN.STAIR_X0) / run, 0, 1)
+      * (SN.DECK_Y - SN.HOLD_Y);
+    if (feet < ramp - 0.25 && lx > sx0 && lx < sx1 && lz > sz0 && lz < sz1) {
+      const dL = lx - sx0, dR = sx1 - lx, dB = lz - sz0, dF = sz1 - lz;
+      const m = Math.min(dL, dR, dB, dF);
+      if (m === dL) camera.position.x = SHIP_X + sx0;
+      else if (m === dR) camera.position.x = SHIP_X + sx1;
+      else if (m === dB) camera.position.z = SHIP_Z + sz0;
+      else camera.position.z = SHIP_Z + sz1;
+    }
+
     inBridge = false;
     return;
   }
@@ -26838,6 +27866,76 @@ const FISH_TUB_H = 0.58;
 /* He opens with a threat and then lets you pick how to take it. Backing out
  * ends it; the other two answer and leave the remaining ones open, so you
  * can hear him out without the conversation looping forever. */
+/* ---- THE ROD HE GIVES YOU FOR HIS OWN LEG ------------------------------
+ * The spare peg comes out of a sea chest in a wreck sixty metres off his own
+ * pier, and he is the man with a peg below the knee: the one thing in this
+ * game that was a weapon and an answer to a question nobody had asked is
+ * also, if you carry it back to him, the only thing you can GIVE anybody.
+ *
+ * He takes it and the rod comes off the wall. It is a real item — held,
+ * examined, dropped, carried through a checkpoint — and it is not a second
+ * weapon: `onDig` is what makes a thing swing and this does not have it, so
+ * it is the one object you can walk the beach holding that cannot hurt
+ * anything, which is its own kind of thing to be carrying out here. */
+/* AND A LEG YOU HAVE HANDED OVER STAYS HANDED OVER. The peg's pickup is an
+ * `'inventory'` interactable with a save id, and a restore REPLAYS those
+ * handlers by calling `onActivate` directly — so without this the chest
+ * would hand the leg straight back on the next checkpoint load, with the rod
+ * already in your pack. The shell door's own rule: a thing you have already
+ * done does not un-happen when you load. */
+let pegReturned = false;
+const fishingRod = makeFishingRod();
+const fishingRodItem = {
+  id: 'fishingrod', name: 'Fishing rod', desc: "The Old Fisherman's",
+  icon: makeFishingRodIcon(),
+  use: () => toggleEquip(fishingRodItem),
+};
+/* A 1.72 m rod at true scale is a plank across the whole picture, so the copy
+ * in your hand is seven tenths of it, turned so the reel seat and the cork sit
+ * in the near corner and the blank runs up and away out of the top of the
+ * frame — which is how you carry a made-up rod down a beach, and which is also
+ * the only honest thing to draw: you cannot see the tip of a rod you are
+ * holding. Nothing here is a guess. `pos` is (0, 0, 0) because the MODEL'S
+ * PIVOT IS ITS GRIP (the katana's rule), so the rod turns about the hand and
+ * the fist lands where every other tool's does — measured at NDC (0.58,
+ * -0.66), which is the lower right of the frame. The one number that is not
+ * zero is a 5 cm LIFT, and it is measured too: a reel hangs BELOW the hand,
+ * and at a dead zero its box runs to NDC y -0.984 against a bottom edge at
+ * -1.0, so the signature part of the object sits on the frame's own edge with
+ * a sixtieth of the picture to spare. The lift buys it a tenth.
+ *
+ * AND THE ROLL ABOUT THE ROD'S OWN AXIS IS THE WHOLE OF WHETHER THE REEL
+ * READS. It hangs on local -Z with the guides, so the roll decides whether
+ * you are looking at the spool's FACE or at its rim: swept at -0.9, -0.5,
+ * -0.1 and +0.5, the last three draw it as a pale wedge lying along the blank
+ * and only -0.9 turns the flange, the dark line pack and the handle toward
+ * the lens. Measured there, the reel covers 62 x 48 px and reads 28.6 mean
+ * luminance against a frame of 16.3 with nothing over 200 — the brightest
+ * thing on the rod, which a polished reel under a moon should be, and not
+ * blown. */
+holdable(fishingRodItem, fishingRod, { scale: 0.70, pos: [0, 0.05, 0], rot: [-0.20, -0.90, 0.45] });
+
+/* He takes it out of your hands — so if it is IN your hands it has to leave
+ * them, which `removeFromInventory` already does (it unequips first). */
+function givePegBack() {
+  if (pegReturned) return;
+  pegReturned = true;
+  removeFromInventory(pegItem);
+  sfxThud(0.05);
+}
+function giveFishingRod() {
+  if (inventory.includes(fishingRodItem)) return;
+  addToInventory(fishingRodItem);
+  sfxThud(0.03);
+}
+/* The line is offered wherever the conversation actually goes — `start` and
+ * the two hubs it opens onto — because an offer you can only make by
+ * choosing the right first reply is an offer most people never see. */
+const OFFER_PEG = {
+  label: 'I found your leg', to: 'peg',
+  when: () => inventory.includes(pegItem) && !pegReturned,
+  act: () => givePegBack(),
+};
 const FISHERMAN_SCRIPT = {
   start: {
     text: 'I should kill you for snooping around my property like that.',
@@ -26847,9 +27945,26 @@ const FISHERMAN_SCRIPT = {
       { label: 'Who are you?', to: 'who' },
       // only if it is on you — he is not going to answer a question about a
       // key you have not found
-      { label: 'Do you know about this rusted key?', to: 'key',
+      { label: 'Do you know about this key?', to: 'key',
         when: () => inventory.includes(keyItem) },
+      OFFER_PEG,
     ],
+  },
+  peg: {
+    text: "I've been looking everywhere for this!",
+    choices: [
+      { label: 'It was in the wreck, in a chest', to: 'rod', act: () => giveFishingRod() },
+      /* NOT "Keep it" — read aloud beside a man you have just handed
+       * something to, that is the PLAYER keeping it, which is the opposite of
+       * what the button does. */
+      { label: "It's yours", to: 'rod', act: () => giveFishingRod() },
+    ],
+  },
+  rod: {
+    /* And he gives something back, which is the whole of why the leg is
+     * worth carrying two hundred metres up a beach. */
+    text: "Then you'll take this. She's older than you and she still catches. Mind the tip.",
+    choices: [],
   },
   key: {
     text: '\u2026',                 // his answer to the key, for you to write
@@ -26863,7 +27978,8 @@ const FISHERMAN_SCRIPT = {
     text: "Call it what you like. The water's taken quieter men than you.",
     choices: [
       { label: 'Who are you?', to: 'who2' },
-      { label: 'Do you know about this rusted key?', to: 'key', when: () => inventory.includes(keyItem) },
+      { label: 'Do you know about this key?', to: 'key', when: () => inventory.includes(keyItem) },
+      OFFER_PEG,
       { label: 'Sorry, I was just leaving', to: 'leaving' },
     ],
   },
@@ -26871,7 +27987,8 @@ const FISHERMAN_SCRIPT = {
     text: "I've fished this water sixty years. Long enough to know what walks it after dark.",
     choices: [
       { label: 'Is that a threat?', to: 'threat2' },
-      { label: 'Do you know about this rusted key?', to: 'key', when: () => inventory.includes(keyItem) },
+      { label: 'Do you know about this key?', to: 'key', when: () => inventory.includes(keyItem) },
+      OFFER_PEG,
       { label: 'Sorry, I was just leaving', to: 'leaving' },
     ],
   },
@@ -30179,6 +31296,7 @@ function update(dt, rawDt = dt) {
   updateShrine(dt);         // and the saucer's floor wins over all of it
   updateShip(dt);
   updateHoldDoor(dt);           // and the wreck overrides the sand where you're on it
+  updateShipChest(dt);          // the sea chest in her quarters, opening and shutting
   updateDock(dt);           // the pier's drift, boards and shed walls
   updateBunkers(dt);        // the room's own frame: walls, furniture, ceiling
   updatePortal(dt);         // the stone circle on the sand, and its hum
@@ -30573,6 +31691,7 @@ function saveCheckpoint(spot) {
       holdDoor: holdDoorOpen,
       // and the catacombs' own, which the skull key turns
       catDoor: catDoorOpen,
+      chest: !shipChestLocked,        // a lock you have turned does not lock itself again
       // and the young one, once it has run, is gone for good
       catBaby: catBabyGone,
       // and what the man at the sand wall has left to sell
@@ -30594,6 +31713,8 @@ function saveCheckpoint(spot) {
        * replayed. (The pack backstop catches the item; this is so the beach
        * is the beach you left.) */
       crates: crates.map((c, i) => (c.broken ? i : -1)).filter((i) => i >= 0),
+      // the leg you carried back to the man it belongs to, and what he gave for it
+      pegReturned,
     },
   };
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (err) { return; }
@@ -30782,6 +31903,10 @@ function updateRestore(dt) {
   if (!restore) return;
   restoreT += dt;
   const f = restore.flags || {};
+  /* BEFORE THE PICKUPS. The replay fires the chest's own handler again, and
+   * that handler puts the peg in your pack — so a save written after you had
+   * given the leg away has to say so before a single pickup is replayed. */
+  if (f.pegReturned) pegReturned = true;
   // the wheel, if it was turned: he has to fall before he can be taken
   if (f.star && helmStar && helmStar.g && !helmStar.solved) { helmStar.solved = true; dropShipHead(); }
   // the pickups, as they arrive
@@ -30838,6 +31963,7 @@ function updateRestore(dt) {
   for (const i of f.crates || []) if (crates[i] && !crates[i].broken) breakCrate(crates[i], 1, true);
   if (f.dojoWon) dojoWon = true;
   if (f.catDoor) catDoorOpen = true;
+  if (f.chest) shipChestLocked = false;
   if (f.catBaby) catBabyGone = true;
   if (f.trader) Object.assign(TRADER_STOCK, f.trader);
   if (typeof f.ammo === 'number') { magAmmo = f.ammo; magSpare = f.spare || 0; }
@@ -30884,9 +32010,9 @@ function packByName(name) {
    * The shells, the note and the blood jar are BUILT at the moment they are
    * taken and have no standing object to hand back; they are also not things
    * a fight depends on. The three dig tools are, and they are all here. */
-  for (const it of [shovelItem, militaryItem, katanaItem, glowstickItem, ringItem,
+  for (const it of [shovelItem, militaryItem, katanaItem, pegItem, glowstickItem, ringItem,
                     weddingItem, keyItem, boatKeyItem, skullKeyItem, cdItem, crabItem,
-                    syringeItem, waterBottleItem, headItem, magnumItem]) {
+                    syringeItem, waterBottleItem, headItem, fishingRodItem, magnumItem]) {
     if (it && it.name === name) return it;
   }
   return null;
@@ -38968,6 +40094,38 @@ function updateDojoLamps(dt, t) {
  * point — so the water disc and its rings hung a metre out over the paving on
  * every side, which is the "off its axis" and the rings that went nowhere near
  * the stone. Everything here is the model's own number now. */
+/* WHERE THE WATER ACTUALLY COMES OVER, WHICH IS NOT ALL THE WAY ROUND.
+ *
+ * "Weird rings on the water" is a complaint this fountain has now drawn
+ * twice, and both times the answer was somewhere else: first the drops were a
+ * ladder of white bars, then the sheet's alpha peaked mid-fall and made a
+ * milky drum. Rendered with everything but the falls hidden, what is left is
+ * still a ring, and it is the one thing neither pass touched — THE SHEET IS A
+ * CLOSED TUBE. A cylinder has two circular edges however its alpha is
+ * tapered, and at eye height a horizontal circle is a LINE drawn across the
+ * fountain; worse, a continuous curtain of water a metre high and a metre
+ * across is not what a tiered fountain does at all. A worn stone lip spills
+ * in a HANDFUL OF PLACES and is dry between them.
+ *
+ * So the sheet keeps its geometry and loses its closed-ness: this is the
+ * spill weight at an angle, zero over most of the lip and one down the middle
+ * of each ribbon. There is no circular edge left anywhere on it, which is the
+ * ring gone by construction rather than by tuning — and the drops and the
+ * spray ask the same function, so the sparkle and the splash are where the
+ * water is instead of being rings of their own. The second harmonic is what
+ * stops the ribbons being identical and evenly spaced, because a stone lip
+ * worn by water is not a machined one. */
+function fountSpill(ang, n, ph) {
+  const a = Math.max(0, Math.sin(ang * n + ph));
+  return Math.pow(a, 1.0) * (0.70 + 0.30 * Math.sin(ang * (n + 2) + ph * 1.7));
+}
+// how many places each lip comes over, and where: a bigger lip spills in more
+function fountLobes(i, r) { return { n: Math.max(3, Math.round(r * 11)), ph: 0.7 + i * 1.9 }; }
+// an angle drawn from the spill rather than from the whole circle
+function fountSpillAngle(rndf, L) {
+  for (let k = 0; k < 24; k++) { const a = rndf() * Math.PI * 2; if (fountSpill(a, L.n, L.ph) > rndf() * 0.85) return a; }
+  return rndf() * Math.PI * 2;
+}
 const FOUNT_TIERS = [
   { y: 2.20, r: 0.219, to: 1.84, n: 4 },      // the top basin spilling into the upper
   { y: 1.80, r: 0.318, to: 1.34, n: 6 },      // upper into lower
@@ -38982,7 +40140,7 @@ const FOUNT_BASINS = [
   { y: 1.82, r: 0.285 },
   { y: 2.22, r: 0.190 },
 ];
-let fountain = null, fountDrops = null, fountT = 0, fountFalls = [], fountCaust = null, fountPads = null, fountTiers = null, fountPoolY = FOUNT_POOL_Y;
+let fountain = null, fountDrops = null, fountSpray = null, fountT = 0, fountFalls = [], fountCaust = null, fountPads = null, fountTiers = null, fountPoolY = FOUNT_POOL_Y;
 const _fqD = new THREE.Object3D();
 function buildFountain() {
   if (fountain || !dojoWorld) return;
@@ -39075,6 +40233,10 @@ function buildFountain() {
       map: caustA, emissiveMap: caustB,
       transparent: true, opacity: 0.62, depthWrite: false,
       emissive: new THREE.Color(0x4e7186), emissiveIntensity: 1.05 }));
+  /* A texture rotates about its ORIGIN unless it is told otherwise, and the
+   * origin of a uv is a corner — turning the pool about a corner swings the
+   * whole pattern across it. */
+  caustA.center.set(0.5, 0.5); caustB.center.set(0.5, 0.5);
   fountCaust = [caustA, caustB];
   pool.rotation.x = -Math.PI / 2;
   pool.position.y = fountPoolY;
@@ -39180,7 +40342,36 @@ function buildFountain() {
      * And FrontSide, not DoubleSide: a translucent tube drawn both sides is
      * its own opacity twice over, which is what made a thin veil read as a
      * solid band. */
-    const fg = new THREE.CylinderGeometry(T.r + 0.015, T.r + 0.055, h, 26, 8, true);
+    const LOB = fountLobes(fountTiers.indexOf(T), T.r);
+    /* 26 segments round a lip that now has gaps in it leaves a ribbon four
+     * facets wide, which is a flat plank of water; 64 gives the spill an edge
+     * that curves. It is three open tubes in the whole game. */
+    const fg = new THREE.CylinderGeometry(T.r + 0.015, T.r + 0.055, h, 64, 8, true);
+    /* AND THE SHEET FALLS AT A CONSTANT SPEED, WHICH IS THE ONE THING WATER
+     * NEVER DOES. `tex.offset.y` walks the pattern down at a fixed rate and
+     * `CylinderGeometry`'s v is linear in height, so every streak travelled
+     * the same distance per second from the lip to the basin — the drops
+     * beside it have obeyed gravity since the day they went in (`the phase is
+     * the time and the height is the time squared`) and the sheet they came
+     * off did not.
+     *
+     * It is fixed in the uv and not in the update, because the update has one
+     * offset for the whole mesh and this is a different rate at every height.
+     * A body falling from the lip reaches depth s at t proportional to sqrt(s),
+     * so a v that is proportional to the TIME rather than the distance turns
+     * one uniform scroll into real acceleration: the streaks are short and
+     * crowded where the water leaves the lip and stretch as they go, which is
+     * exactly what a fall looks like. Measured on the bottom tier, a 1.0 m
+     * drop: the pattern covers the first 10 cm in 27 % of the fall's own
+     * clock and the last 10 cm in 5 %. */
+    {
+      const ua = fg.attributes.uv, pv = fg.attributes.position;
+      for (let i = 0; i < ua.count; i++) {
+        const v = (pv.getY(i) + h * 0.5) / h;          // 0 at the basin, 1 at the lip
+        ua.setY(i, 1 - Math.sqrt(Math.max(0, 1 - v)));
+      }
+      ua.needsUpdate = true;
+    }
     {
       const pa = fg.attributes.position, n = pa.count, col = new Float32Array(n * 4);
       for (let i = 0; i < n; i++) {
@@ -39195,7 +40386,13 @@ function buildFountain() {
          * peaks just under the lip and tapers the whole way down, so the
          * carving behind it reads through the bottom half. */
         const inn = Math.min(1, (1 - v) / 0.09);       // out of the lip
-        const a = inn * Math.pow(v, 0.9);              // and thinning as it falls
+        let a = inn * Math.pow(v, 0.9);                // and thinning as it falls
+        /* AND ONLY WHERE IT COMES OVER. The ribbons spread as they fall — a
+         * stream leaving a lip is narrow and is a metre wide by the time it
+         * arrives — so the gaps close a little on the way down and the sheet
+         * never reads as a row of pillars either. */
+        const sp = fountSpill(Math.atan2(pa.getZ(i), pa.getX(i)), LOB.n, LOB.ph);
+        a *= THREE.MathUtils.clamp(sp + (1 - v) * 0.35, 0, 1);
         col[i * 4] = col[i * 4 + 1] = col[i * 4 + 2] = 1;
         col[i * 4 + 3] = a;
       }
@@ -39246,11 +40443,41 @@ function buildFountain() {
   fountDrops.userData.list = [];
   const rnd = mulberry32(0xfa11);
   for (const t of fountTiers) for (let k = 0; k < t.n; k++) {
-    fountDrops.userData.list.push({ t, a: rnd() * Math.PI * 2, p: rnd(),
+    fountDrops.userData.list.push({ t, a: fountSpillAngle(rnd, fountLobes(fountTiers.indexOf(t), t.r)), p: rnd(),
       sp: 0.80 + rnd() * 0.45, wob: (rnd() - 0.5) * 0.06,
       jit: (rnd() - 0.5) * 0.16, len: 0.7 + rnd() * 0.7 });
   }
   fountain.add(fountDrops);
+  /* AND WATER THAT ARRIVES SOMEWHERE THROWS SOMETHING UP. Three sheets fell a
+   * metre into stone basins and simply stopped — the fall dissolved into its
+   * own alpha taper and nothing happened at the bottom of it, which is the
+   * one place a fountain is doing something. A ring of specks at each landing
+   * line, each thrown up on its own little parabola and drifting outward as
+   * it goes, is what says the water is HITTING something. They are tiny and
+   * faint for the drops' own reason: at this render scale anything bigger
+   * than a couple of pixels is a white bar, not spray.
+   *
+   * The landing RADIUS is the sheet's bottom rim (`T.r + 0.055`, the
+   * cylinder's own lower radius) and not its lip, or the spray comes up
+   * inside the fall instead of where it lands. */
+  const SPRAY_PER = 16;
+  const spm = new THREE.MeshBasicMaterial({ color: 0xd6e6f0, transparent: true, opacity: 0.30, depthWrite: false });
+  fountSpray = new THREE.InstancedMesh(new THREE.BoxGeometry(0.008, 0.008, 0.008), spm, fountTiers.length * SPRAY_PER);
+  fountSpray.frustumCulled = false;
+  fountSpray.renderOrder = 3;
+  fountSpray.userData.list = [];
+  for (const t of fountTiers) for (let k = 0; k < SPRAY_PER; k++) {
+    fountSpray.userData.list.push({
+      y0: t.to, r0: t.r + 0.055,
+      /* AT THE RIBBONS, NOT ROUND THE CIRCLE. Sixteen specks on a perfect
+       * circle is the very ring this pass exists to remove, drawn in spray. */
+      a: fountSpillAngle(rnd, fountLobes(fountTiers.indexOf(t), t.r)), p: rnd(),
+      rate: 1.5 + rnd() * 1.5,              // how often this one is thrown up
+      up: 0.035 + rnd() * 0.075,            // how high it gets
+      out: 0.015 + rnd() * 0.055,           // and how far out it drifts doing it
+    });
+  }
+  fountain.add(fountSpray);
 }
 /* GRAVITY, NOT A LERP. A drop that falls linearly reads as a lift; the whole
  * tell of water is that it ACCELERATES, so the phase is the time and the
@@ -39326,7 +40553,7 @@ function makeFallTex() {
  * all over these walls, birds a long way off, and insects. It is quiet on
  * purpose. Three things, none of them on a fixed count, because anything with
  * a period stops being a garden and becomes a loop. */
-let dojoMix = 0, dojoNature = null, dojoBird = 0, dojoBug = 0;
+let dojoMix = 0, dojoNature = null;
 function startDojoNature() {
   const ctx = audioCtx; if (!ctx || dojoNature) return;
   const g = ctx.createGain(); g.gain.value = 0; g.connect(sfxOut());
@@ -39349,57 +40576,12 @@ function startDojoNature() {
   n.start();
   dojoNature = { g, n, lfo };
 }
-/* A CHIRP IS A SWEEP, NOT A NOTE. What separates a bird from a beep is that
- * the pitch MOVES inside each syllable — up, or down — and that the syllables
- * come in a short phrase with uneven gaps. Two to four of them, panned
- * somewhere out in the trees, never twice the same. */
-function sfxDojoBird() {
-  const ctx = audioCtx; if (!ctx) return;
-  const t0 = ctx.currentTime + 0.02;
-  const out = ctx.createGain(); out.gain.value = settings.sfxVolume * 0.085;
-  if (ctx.createStereoPanner) {
-    const pan = ctx.createStereoPanner();
-    pan.pan.value = (Math.random() * 2 - 1) * 0.85;
-    out.connect(pan).connect(sfxOut());
-  } else out.connect(sfxOut());
-  const notes = 2 + Math.floor(Math.random() * 3);
-  const base = 2300 + Math.random() * 1500;
-  let t = t0;
-  for (let k = 0; k < notes; k++) {
-    const o = ctx.createOscillator(); o.type = Math.random() < 0.5 ? 'sine' : 'triangle';
-    const gg = ctx.createGain(); gg.gain.value = 0;
-    const dur = 0.045 + Math.random() * 0.07;
-    const f0 = base * (0.9 + Math.random() * 0.3);
-    const up = Math.random() < 0.6;
-    o.frequency.setValueAtTime(f0, t);
-    o.frequency.exponentialRampToValueAtTime(f0 * (up ? 1.45 : 0.68), t + dur);
-    gg.gain.setValueAtTime(0.0001, t);
-    gg.gain.exponentialRampToValueAtTime(1, t + 0.008);
-    gg.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(gg).connect(out); o.start(t); o.stop(t + dur + 0.02);
-    t += dur + 0.03 + Math.random() * 0.09;
-  }
-}
-/* AND THE INSECTS ARE A TRILL, which is one tone chopped fast — the ear reads
- * the RATE, not the pitch, so it is a tremolo and not a melody. */
-function sfxDojoBug() {
-  const ctx = audioCtx; if (!ctx) return;
-  const t0 = ctx.currentTime + 0.02, dur = 0.5 + Math.random() * 0.9;
-  const o = ctx.createOscillator(); o.type = 'sine';
-  o.frequency.value = 3700 + Math.random() * 1400;
-  const g = ctx.createGain(); g.gain.value = 0;
-  const trem = ctx.createOscillator(); trem.type = 'square';
-  trem.frequency.value = 26 + Math.random() * 18;
-  const tv = ctx.createGain(); tv.gain.value = settings.sfxVolume * 0.020;
-  trem.connect(tv).connect(g.gain);
-  if (ctx.createStereoPanner) {
-    const pan = ctx.createStereoPanner();
-    pan.pan.value = (Math.random() * 2 - 1) * 0.9;
-    o.connect(g).connect(pan).connect(sfxOut());
-  } else o.connect(g).connect(sfxOut());
-  o.start(t0); trem.start(t0);
-  o.stop(t0 + dur); trem.stop(t0 + dur);
-}
+/* THE BIRDS AND THE CRICKETS ARE GONE. There was a chirp here — a sweep
+ * rather than a note, two to four syllables on uneven gaps — and a trill for
+ * the insects, and both were good; what they were not is the sound of this
+ * courtyard, which the owner's word is should be the fountain and nothing
+ * else. A room with three ambiences in it has none.
+ */
 /* It rides on `animateFrame`, not on the room's own update, because the DUCK
  * has to come back OFF when you leave and a room's update does not run once
  * you are out of it — the bunker's own lesson about a clamp that only speaks
@@ -39409,13 +40591,31 @@ function updateDojoAudio(dt) {
   const prev = dojoMix;
   dojoMix += (want - dojoMix) * Math.min(1, dt * 1.6);
   if (Math.abs(dojoMix - want) < 0.002) dojoMix = want;
-  const ctx = audioCtx; if (!ctx || (dojoMix <= 0 && prev <= 0)) return;
+  const ctx = audioCtx; if (!ctx) return;
+  /* THE FOUNTAIN IS DRIVEN FROM HERE, NOT FROM `updateFountain`.
+   * `updateFountain` returns on its first line while you are not in the dojo,
+   * so hanging the water's gain off it meant the last thing ever written to
+   * that gain was whatever it held on the frame you left — it only ever went
+   * quiet because `placeBackAtPortal` remembered to ask it to, and any other
+   * way out of the room (a win, a restore, the harness) left a fountain
+   * running on the beach. This function is on `animateFrame` and runs whether
+   * you are in the room or not, which is the whole reason the wave bus and
+   * the wind are ducked from here too. */
+  updateFountainAudio(dt);
+  if (dojoMix <= 0 && prev <= 0) return;
+  /* AND THE FOUNTAIN IS THE ONLY THING YOU HEAR IN THERE, which is the
+   * owner's word and is also what the place is: a burnt courtyard in the
+   * rain with one thing still running in the middle of it. The beach's surf
+   * and wind are already taken to nothing by `beachBedK`/`windBedK`, which
+   * is the ONE place a room declares itself now; what was still
+   * playing over the top was this room's OWN bed — a nature layer at 0.16,
+   * a bird every few seconds and an insect trill every ten — and three
+   * ambiences under one recording is three things competing to be the sound
+   * of a room that only has one. The bed is kept at a whisper, because
+   * silence is an absence and not an ambience (the hall paid for that), and
+   * the birds and the crickets are gone. */
   if (dojoMix > 0 && !dojoNature) startDojoNature();
-  if (dojoNature) dojoNature.g.gain.setTargetAtTime(dojoMix * settings.sfxVolume * 0.16, ctx.currentTime, 0.6);
-  if (dojoMix < 0.5) return;
-  dojoBird -= dt; dojoBug -= dt;
-  if (dojoBird <= 0) { sfxDojoBird(); dojoBird = 3.5 + Math.random() * 7.0; }
-  if (dojoBug <= 0) { sfxDojoBug(); dojoBug = 6.0 + Math.random() * 11.0; }
+  if (dojoNature) dojoNature.g.gain.setTargetAtTime(dojoMix * settings.sfxVolume * 0.035, ctx.currentTime, 0.6);
 }
 function updateFountain(dt) {
   if (!fountain || !inDojo) return;
@@ -39459,17 +40659,40 @@ function updateFountain(dt) {
    * pattern down the cylinder; subtracting ran the streaks up it, which is the
    * other half of what read as rising. */
   for (const F of fountFalls) { F.tex.offset.y = (F.tex.offset.y + dt * F.sp) % 1; }
-  /* AND THE POOL IS NEVER THE SAME TWO FRAMES RUNNING. Different speeds and
-   * different directions, or the two sheets travel together and the whole
-   * thing slides sideways like a conveyor instead of shimmering. */
+  /* THE SPRAY. Each speck is thrown up off the landing line on its own count
+   * and falls back; the parabola is the drops' own arithmetic (the height is
+   * the time squared) and it drifts outward the whole way, because water
+   * coming off a hard surface goes OUT as well as up. It shrinks to nothing
+   * at the top of its arc rather than blinking out, so nothing pops. */
+  if (fountSpray) {
+    const sl = fountSpray.userData.list;
+    for (let i = 0; i < sl.length; i++) {
+      const q = sl[i];
+      const u = (fountT * q.rate + q.p) % 1;          // 0 leaving the water, 1 back in it
+      const hop = 4 * u * (1 - u);                     // up and back down
+      const r = q.r0 + q.out * u;
+      _fqD.position.set(Math.cos(q.a) * r, q.y0 + q.up * hop, Math.sin(q.a) * r);
+      _fqD.rotation.set(0, q.a, 0);
+      _fqD.scale.setScalar(0.5 + hop * 0.9);
+      _fqD.updateMatrix();
+      fountSpray.setMatrixAt(i, _fqD.matrix);
+    }
+    fountSpray.instanceMatrix.needsUpdate = true;
+  }
+  /* AND A ROUND POOL DOES NOT SLIDE, IT TURNS. Two maps scrolled in x and y
+   * is a straight-line drift, and on a disc fed from a column in the middle
+   * that reads as a conveyor belt running under the fountain — the same thing
+   * the lily pads were given a drift to avoid. They are ROTATED about the
+   * middle now, at different rates and opposite ways so the two nets cross
+   * and re-cross, with a little scroll left on top so it is never a
+   * turntable either. */
   if (fountCaust) {
     const a = fountCaust[0], b2 = fountCaust[1];
-    a.offset.x = (a.offset.x + dt * 0.023) % 1;
-    a.offset.y = (a.offset.y + dt * 0.017) % 1;
-    b2.offset.x = (b2.offset.x - dt * 0.014) % 1;
-    b2.offset.y = (b2.offset.y + dt * 0.029) % 1;
+    a.rotation += dt * 0.085;
+    b2.rotation -= dt * 0.056;
+    a.offset.y = (a.offset.y + dt * 0.011) % 1;
+    b2.offset.x = (b2.offset.x - dt * 0.009) % 1;
   }
-  updateFountainAudio(dt);
 }
 
 /* AND YOU HEAR IT BEFORE YOU ARE AT IT. Everything else in this room is rain
@@ -39483,8 +40706,58 @@ function updateFountain(dt) {
  * band of splash on the surface, and single PLINKS at irregular intervals,
  * which is the part the ear reads as droplets rather than noise. */
 let fountAudio = null, fountPlink = 0;
+/* AND THE RECORDING GOES IN FRONT OF IT. The owner supplied a real small
+ * fountain, so the synthesis stops being the sound and becomes the fallback —
+ * the katana's own arrangement, and with it the same rule the three breaks
+ * paid for: the synth must NOT still play underneath. A recording is already
+ * one mixed event, body and splash and droplets together, and putting a
+ * bandpassed noise bed under it only muddies it. `fountRec` is which one is
+ * running, so `updateFountainAudio` knows whether to add the plinks (the
+ * recording has real ones) and how bright to let it get. */
+function startFountainRec() {
+  const ctx = audioCtx; if (!ctx || fountAudio) return false;
+  const buf = (sampleBanks.fountain || []).filter(Boolean)[0];
+  if (!buf) return false;
+  const g = ctx.createGain(); g.gain.value = 0;
+  /* A FOUNTAIN GETS DULLER WITH DISTANCE, WHICH IS WHAT SAYS "OVER THERE"
+   * more than the level does — the room's own rule for a cue with a where.
+   * Across the yard you get the body of it; at the rim you get the splashes. */
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; lp.Q.value = 0.2;
+  let dst = sfxOut(), pan = null;
+  if (ctx.createStereoPanner) { pan = ctx.createStereoPanner(); pan.pan.value = 0; pan.connect(dst); dst = pan; }
+  const n = ctx.createBufferSource(); n.buffer = buf; n.loop = true;
+  /* STARTED AT A RANDOM POINT so two visits to the room do not open on the
+   * same second of water, and at a hair off unity so the loop's own period is
+   * never quite the same length twice. */
+  n.playbackRate.value = 0.97 + Math.random() * 0.06;
+  n.connect(lp).connect(g).connect(dst);
+  n.start(0, Math.random() * buf.duration);
+  fountAudio = { g, n, lp, pan, rec: true };
+  return true;
+}
+/* AND THE RECORDING MUST BE ABLE TO ARRIVE LATE, WHICH IS WHY IT CAN
+ * REPLACE THE SYNTH. `startFountainAudio` is called the first frame the
+ * water is loud enough to be worth building, and if the m4a has not come
+ * off the network by then it falls through to the synthesised bed and sets
+ * `fountAudio` — which nothing ever looked at again. So whether you heard
+ * the owner's own fountain or a bandpassed noise bed for the rest of that
+ * session was decided by whether one small download had landed at the
+ * moment you first walked within sixteen metres of it, and a cut into the
+ * room from the portal is exactly the case where it has not. The synth is
+ * the fallback for a few frames, not for a playthrough. */
+function upgradeFountainRec() {
+  if (!fountAudio || fountAudio.rec || !audioCtx) return;
+  const buf = (sampleBanks.fountain || []).filter(Boolean)[0];
+  if (!buf) return;
+  const old = fountAudio, t = audioCtx.currentTime;
+  old.g.gain.setTargetAtTime(0, t, 0.12);
+  try { old.n.stop(t + 0.6); if (old.lfo) old.lfo.stop(t + 0.6); } catch (e) {}
+  fountAudio = null;
+  startFountainRec();
+}
 function startFountainAudio() {
   const ctx = audioCtx; if (!ctx || fountAudio) return;
+  if (startFountainRec()) return;
   const g = ctx.createGain(); g.gain.value = 0; g.connect(sfxOut());
   const len = Math.floor(ctx.sampleRate * 3);
   const buf = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -39505,21 +40778,53 @@ function startFountainAudio() {
   const lv = ctx.createGain(); lv.gain.value = 0.10;
   lfo.connect(lv); lv.connect(g.gain); lfo.start();
   n.start();
-  fountAudio = { g, n, lfo };
+  fountAudio = { g, n, lfo, rec: false };
 }
+/* HOW NEAR YOU ARE TO IT, AND THAT IS THREE THINGS, NOT A VOLUME KNOB.
+ *
+ * `1 - d / 15` is a straight line, and a straight line is the one falloff
+ * real sound never has: it fades in from nothing at fifteen metres at a
+ * constant rate and is still only two thirds up when you are standing at the
+ * rim. Water off a stone basin obeys an inverse law — most of the change
+ * happens in the first few metres, which is where you actually walk — so
+ * `FOUNT_REF` is the distance at which it has fallen to half (2.2 m) and
+ * `FOUNT_FAR` where the room has swallowed it.
+ *
+ * The other two are what make it a PLACE rather than a level:
+ *   TONE. Across the yard you get the body of it and nothing else; at the rim
+ *   the individual splashes arrive. That is the room's own rule for any cue
+ *   with a where — duller is further, and it says so more than the level does.
+ *   PAN. It is off to one side from across the ring and it is ALL ROUND YOU
+ *   when you are standing over it, so the pan is weighted away with
+ *   closeness. Hard-panning a thing you are standing in is the tell that it
+ *   is a point source, and a fountain is not one.
+ *
+ * And it is multiplied by `dojoMix`, which is the room, so it cannot outlive
+ * it: see the note on `updateDojoAudio` below. */
+const FOUNT_REF = 2.2, FOUNT_FAR = 16, FOUNT_LEVEL = 0.40;
 function updateFountainAudio(dt) {
   const ctx = audioCtx; if (!ctx) return;
   const d = Math.hypot(camera.position.x - (DOJO_X + DOJO_FOUNT.x),
                        camera.position.z - (DOJO_Z + DOJO_FOUNT.z));
-  const want = Math.max(0, 1 - d / 15);
-  if (want > 0.01) startFountainAudio();
+  const lvl = inDojo ? (1 / (1 + d / FOUNT_REF)) * THREE.MathUtils.clamp((FOUNT_FAR - d) / (FOUNT_FAR * 0.45), 0, 1) : 0;
+  const want = lvl * dojoMix;
+  if (want > 0.004) startFountainAudio();
   if (!fountAudio) return;
-  fountAudio.g.gain.setTargetAtTime(want * want * 0.30, ctx.currentTime, 0.18);
-  // the plinks: single drops, on an irregular count, only when you are near
+  upgradeFountainRec();          // the owner's own water, the moment it is there
+  const t = ctx.currentTime;
+  fountAudio.g.gain.setTargetAtTime(want * FOUNT_LEVEL * settings.sfxVolume, t, 0.18);
+  if (fountAudio.lp) fountAudio.lp.frequency.setTargetAtTime(700 * Math.pow(9.3, lvl), t, 0.20);
+  if (fountAudio.pan) {
+    const w = d / (d + 2.0);                       // nothing at the rim, most of it across the ring
+    fountAudio.pan.pan.setTargetAtTime(THREE.MathUtils.clamp(panTo(DOJO_X + DOJO_FOUNT.x, DOJO_Z + DOJO_FOUNT.z) * 0.8 * w, -1, 1), t, 0.12);
+  }
+  /* The plinks are the SYNTH's droplets, and the recording has real ones —
+   * the three breaks' rule, that a recording is already one mixed event and
+   * a synthesised layer under it only muddies it. */
+  if (fountAudio.rec) return;
   fountPlink -= dt;
   if (fountPlink <= 0 && want > 0.20) {
     fountPlink = 0.16 + Math.random() * 0.40;
-    const t = ctx.currentTime;
     const o = ctx.createOscillator(); o.type = 'sine';
     const f0 = 780 + Math.random() * 1150;
     o.frequency.setValueAtTime(f0, t);
@@ -39904,6 +41209,7 @@ function loadDojo() {
     bwSpan('dojo lamps', buildDojoLamps);
     bwSpan('dojo blocks', buildDojoBlocks);
     bwSpan('dojo fountain', buildFountain);
+    bwSpan('dojo shrine jar', placeDojoJar);
     /* AND THE STONE IS MERGED. Every heap of rubble, every panel of the gate
      * wall and every lantern went in as its OWN mesh — measured, upward of a
      * hundred and fifty of them — and this file already knows what that costs:
@@ -40574,20 +41880,45 @@ function dojoDropY(px, pz, fromY) {
   }
   return best === -Infinity ? null : best - DOJO_Y;
 }
-let _dojoStone = null;
-function dojoStoneMap() {
-  if (_dojoStone !== null || !dojoWorld) return _dojoStone;
-  let bigN = 0, map = null;
-  dojoWorld.traverse((o) => {
-    if (!o.isMesh || !o.geometry || !o.material || !o.material.map) return;
-    if ((o.material.name || '') !== 'material_3') return;
-    const n = o.geometry.attributes.position ? o.geometry.attributes.position.count : 0;
-    if (n > bigN) { bigN = n; map = o.material.map; }
-  });
-  if (map) { map.wrapS = THREE.RepeatWrapping; map.wrapT = THREE.RepeatWrapping; map.needsUpdate = true; }
-  _dojoStone = map;
-  return map;
+/* ---- AND THERE IS SOMETHING UNDER THE TORII ---------------------------
+ * A jar of blue blood, in the gate house, where you have to go and look. The
+ * gate is the one part of this courtyard you walk THROUGH rather than into —
+ * the flood reaches its threshold, the wall behind it closes the hillside off
+ * and there has never been any reason to stand in it — so it is exactly the
+ * corner of the place a thing worth finding belongs in.
+ *
+ * WHERE IT LIES IS FOUND, NOT TYPED. The gate island's own centre is the one
+ * number this takes (it is the same measurement the gate wall is built off),
+ * and from there it walks the room's own walk grid: every cell within a few
+ * metres that has floor at the gate's own level and a body's room around it,
+ * and of those the one FURTHEST from the middle of the courtyard — which is
+ * the back of the gate house by construction, behind the posts, out of the
+ * line you cross when you walk in. Repack the room and it still lands
+ * somewhere a person has to step off the path to find. */
+const DOJO_GATE = { x: -10.68, z: 7.22 };
+function placeDojoJar() {
+  if (!dojoReady || !dojoWalk) return;
+  const g0 = dojoGridAt(DOJO_X + DOJO_GATE.x, DOJO_Z + DOJO_GATE.z);
+  if (!g0 || g0.f < -90) return;
+  const fx = DOJO_X + DOJO_FOUNT.x, fz = DOJO_Z + DOJO_FOUNT.z;
+  let best = null;
+  for (let ax = -3.6; ax <= 3.6; ax += 0.35) for (let az = -3.6; az <= 3.6; az += 0.35) {
+    const wx = DOJO_X + DOJO_GATE.x + ax, wz = DOJO_Z + DOJO_GATE.z + az;
+    const g = dojoGridAt(wx, wz);
+    if (!g || g.f < -90 || g.s || Math.abs(g.f - g0.f) > 0.9) continue;
+    let room = true;                       // and a body's room round it, or it is in a wall
+    for (const [dx, dz] of [[0.45, 0], [-0.45, 0], [0, 0.45], [0, -0.45]]) {
+      const n = dojoGridAt(wx + dx, wz + dz);
+      if (!n || n.f < -90 || n.s || Math.abs(n.f - g.f) > 0.9) { room = false; break; }
+    }
+    if (!room) continue;
+    const d = Math.hypot(wx - fx, wz - fz);
+    if (!best || d > best.d) best = { wx, wz, f: g.f, d };
+  }
+  if (!best) return;
+  dropJar(best.wx, best.wz, DOJO_Y + best.f + 0.02);
 }
+
 function buildDojoBlocks() {
   if (!dojoWorld || dojoBlocks) return;
   buildDojoArena();
@@ -40604,60 +41935,16 @@ function buildDojoBlocks() {
   dojoBlocks = new THREE.Group();
   dojoBlocks.scale.setScalar(1 / DOJO_S);     // so everything inside is world metres
   dojoWorld.add(dojoBlocks);
-  /* the courtyard's own stone, flat-shaded so every facet takes the moon
-   * differently, with enough emissive to keep it off black in a room that
-   * carries no lights of its own */
-  /* AND A HEAP OF ONE COLOUR IS A SLAB. Every stone shares this material —
-   * it has to, or the merge is a draw call a boulder — so the only place a
-   * difference between two of them can live is the GEOMETRY: each carries
-   * its own tone as a vertex colour, which multiplies the map, so a mass
-   * five hundred stones deep reads as stones rather than as one surface. */
-  /* AND A FLAT EMISSIVE IS WHAT MADE IT READ AS ONE SURFACE. The lift has
-   * to be there — this room carries no lights of its own and the moon is
-   * behind you — but it is a CONSTANT added to every fragment, so at 0.46
-   * it swamped the only thing that separates one boulder from the next,
-   * which is the moon falling differently on each flat face. Measured on
-   * screen, the heap came out a single tan expanse with the facets barely
-   * a shade apart, reading 26 against the masonry beside it at 26 — the same
-   * surface. At 0.28 it reads 19 and the moon does the separating. */
-  const mat = new THREE.MeshStandardMaterial({ color: 0xb4ab9e, roughness: 1, metalness: 0,
-    flatShading: true, vertexColors: true,
-    emissive: new THREE.Color(0x3e3b36), emissiveIntensity: 0.28 });
+  dojoRockQ = [];
+  /* THE HEAP IS THE OWNER'S OWN STONE NOW, AND NOT A GENERATED ONE.
+   * Everything below still decides where a boulder goes, how big it is and
+   * how the crown sits under the coping — that is what shuts a stair and
+   * none of it moves; what changed is what arrives at each of those places.
+   * It used to be an icosahedron knocked out of round with the rampart's
+   * coursed masonry projected onto it triplanar, which is four separate
+   * inventions standing in for a rock, and the whole of that goes. */
   const wallMat = new THREE.MeshStandardMaterial({ color: 0x9a938a, roughness: 1, metalness: 0,
     flatShading: true, emissive: new THREE.Color(0x4e4a44), emissiveIntensity: 0.55 });
-  /* AND A BOULDER IS NOT A FLAT GREY BLOB. These went in as a bare colour on
-   * a flat-shaded icosahedron, so every facet was one tone and the heap read
-   * as grey paper. It wants the courtyard's OWN stone — but an icosahedron's
-   * stock uv on a packed atlas is the desk's collage again, and a rock has no
-   * sensible unwrap anyway, so the map goes on TRIPLANAR: sampled along each
-   * object-space axis and blended by the face normal, the octopus ring's own
-   * arrangement. It works here because `bakeStatic` merges every stone into
-   * `dojoBlocks`, whose own space IS world metres — so the grain is the same
-   * size on every boulder and does not swim when one is turned. */
-  const stone = dojoStoneMap();
-  if (stone) {
-    mat.map = stone;
-    mat.onBeforeCompile = (sh) => {
-      /* and the map is the RAMPART'S — coursed masonry — so the projection has
-       * to stay coarse enough that its courses read as mottling on a boulder
-       * rather than as brickwork. At 0.72 a stone wore about one tile and came
-       * out a little brick wall; what breaks the mass up is the per-stone tone,
-       * not the grain. */
-      sh.uniforms.uRubK = { value: 0.55 };          // tiles per metre
-      sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vRubP;\nvarying vec3 vRubN;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRubP = position;\nvRubN = normal;');
-      sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', '#include <common>\nuniform float uRubK;\nvarying vec3 vRubP;\nvarying vec3 vRubN;')
-        .replace('#include <map_fragment>', [
-          '{ vec3 bn = abs(normalize(vRubN)); bn = pow(bn, vec3(3.0)); bn /= (bn.x + bn.y + bn.z + 1e-5);',
-          '  vec4 tx = texture2D(map, vRubP.zy * uRubK) * bn.x',
-          '          + texture2D(map, vRubP.xz * uRubK) * bn.y',
-          '          + texture2D(map, vRubP.xy * uRubK) * bn.z;',
-          '  diffuseColor *= tx; }'].join('\n'));
-    };
-    mat.customProgramCacheKey = () => 'bwRubbleTri';
-  }
   const rnd = mulberry32(0x5eed);
   buildGateWall(wallMat);
   for (const c of cl) {
@@ -40900,49 +42187,18 @@ function buildDojoBlocks() {
       const g2 = dojoDropY(cx + ox * u, cz + oz * u, y0 + 1.5 + Math.max(0, u));
       base.push({ u, b: g2 === null ? y0 + u * 0.55 : g2 });
     }
-    /* AND A ROCKFALL IS NOT MASONRY. Five hundred stones of one size, all
-     * round, all seated on one smooth crown, is a wall with lumps on it —
-     * which is exactly what the owner saw. Four things separate the two, and
-     * none of them is more stones:
-     *
-     *  - a stone is BROKEN, so it is knocked out of round. An icosahedron is
-     *    non-indexed, so a per-vertex displacement tears it open — every copy
-     *    of a shared corner has to move by the SAME amount, so the offsets are
-     *    cached on the position itself and the seam cannot open.
-     *  - a stone is not a ball: each axis is scaled on its own, so the heap
-     *    carries slabs and wedges as well as boulders.
-     *  - and it stays at TWENTY FACES however big it is. Subdividing the big
-     *    ones was tried and is exactly wrong: a displaced detail-1 icosahedron
-     *    is a bumpy sphere, and a dozen of those a metre and a half across
-     *    read as boulders rounded by a river. What says "this broke off a
-     *    hill" is flat faces meeting at hard edges, which is what flat
-     *    shading on twenty of them gives for free.
-     *  - and the sizes are GRADED: big blocks at the bottom where the weight
-     *    is, small stuff filling the top. A talus does that by itself. */
-    const stone = (px, py, pz, r, sy, sz, detail = 0, amp = 0.42) => {
-      const geo = new THREE.IcosahedronGeometry(r, detail);
-      const pa = geo.attributes.position, n = pa.count;
-      const seen = new Map();
-      for (let i = 0; i < n; i++) {
-        const vx = pa.getX(i), vy = pa.getY(i), vz = pa.getZ(i);
-        const key = `${Math.round(vx * 2048)},${Math.round(vy * 2048)},${Math.round(vz * 2048)}`;
-        let f = seen.get(key);
-        if (f === undefined) { f = 1 + (rnd() - 0.5) * 2 * amp; seen.set(key, f); }
-        pa.setXYZ(i, vx * f, vy * f, vz * f);
-      }
-      pa.needsUpdate = true;
-      geo.computeVertexNormals();
-      let k = 0.58 + rnd() * 0.58; if (rnd() < 0.14) k *= 0.66;   // and the odd dark one
-      const wm = 0.91 + rnd() * 0.18;                             // a little warm or cold
-      const col = new Float32Array(n * 3);
-      for (let i = 0; i < n; i++) { col[i * 3] = k * wm; col[i * 3 + 1] = k; col[i * 3 + 2] = k * (2 - wm); }
-      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-      const g = new THREE.Mesh(geo, mat);
-      g.scale.set(0.86 + rnd() * 0.3, sy, sz);
-      g.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3);
-      g.position.set(px, py, pz);
-      dojoBlocks.add(g);
-      return g;
+    /* A STONE IS A ROLL, NOT A MESH. Which of the thirty-two it is, which
+     * way it is turned and what tone it carries are drawn HERE, off the
+     * heap's own seed, so the pile is the same pile on every load; the
+     * mesh is made when the pack has landed. `r` and `sy` still mean what
+     * they meant — how big across and how tall — and the sizes are still
+     * GRADED, big blocks at the bottom where the weight is and fines on
+     * top, because a talus does that by itself. */
+    const stone = (px, py, pz, r, sy) => {
+      let k = 0.68 + rnd() * 0.44; if (rnd() < 0.14) k *= 0.74;   // and the odd dark one
+      dojoRockQ.push({ x: px, y: py, z: pz, r, sy,
+        pick: rnd(), rx: rnd() * 6.2832, ry: rnd() * 6.2832, rz: rnd() * 6.2832,
+        k, wm: 0.93 + rnd() * 0.14 });                            // a little warm or cold
     };
     for (const st of base) {
       const u = st.u, b = st.b;
@@ -41017,11 +42273,17 @@ function buildDojoBlocks() {
           const r = (big ? 0.95 + rnd() * 0.55 : 0.34 + rnd() * 0.62) * (1 - 0.22 * hf);
           const sy = 0.62 + rnd() * 0.42;
           const out = (rnd() - 0.5) * 0.52;
+          /* AND THE BOTTOM COURSE IS BEDDED INTO THE GROUND, not stood on
+           * it. `cy` is a course height and its first step is a flat 0.26
+           * over the surface the ray found — right for a half-metre stone,
+           * which that buries to its waist, and a hand of clear air under a
+           * small one. The lowest course asks its OWN size instead. */
+          const seat = v === 0 ? gy + r * sy * 0.55 : cy;
           /* and the coping is a line the STONE may not cross, not its centre:
            * a crown height with a metre-wide boulder sitting on it puts most of
            * that boulder over the wall */
           if (cy + r * sy * 1.2 > Math.max(wallTop, bandT + 2.9) && v > 1) break;
-          stone(px + (rnd() - 0.5) * 0.34 + ox * out, cy, pz + (rnd() - 0.5) * 0.34 + oz * out,
+          stone(px + (rnd() - 0.5) * 0.34 + ox * out, seat, pz + (rnd() - 0.5) * 0.34 + oz * out,
             r, sy, 0.78 + rnd() * 0.42, 0, big ? 0.46 : 0.40);
           if (cy > crown) break;
         }
@@ -41117,6 +42379,102 @@ function buildDojoBlocks() {
       const sy = 0.55 + rnd() * 0.4;
       stone(px, gy2 + r * sy * 0.5, pz, r, sy, 0.8 + rnd() * 0.4);
     }
+  }
+  onMossyRocks(flushDojoRocks);
+}
+
+/* AND A HEAP OF EIGHT HUNDRED ROCKS IS THIRTY-TWO DRAWS, NOT EIGHT HUNDRED
+ * AND NOT ONE. Merging them the way the rest of this room is merged would
+ * be a hundred and sixty thousand triangles copied into one buffer, five
+ * megabytes of it, for thirty-two shapes used over and over — an
+ * InstancedMesh per shape is the same picture out of the half megabyte the
+ * pack already ships, and `bakeStatic` leaves an instanced mesh alone by
+ * its own rule, so the bake that runs a line later cannot touch it.
+ *
+ * The per-stone tone rides as an INSTANCE COLOUR, which three multiplies
+ * into the diffuse for free: it is the same thing the old heap carried as
+ * a vertex colour, and it is what stops a mass five hundred deep reading
+ * as one surface. */
+function flushDojoRocks() {
+  if (!dojoBlocks || !dojoRockQ || !mossyRocks || !mossyRocks.length) return;
+  const q = dojoRockQ; dojoRockQ = null;
+  /* THE COURTYARD CARRIES NO LIGHTS OF ITS OWN and the moon is behind you,
+   * so the lift off the rock's own map is the only thing between the heap
+   * and a black shape — the same argument the old rubble's emissive was
+   * written under, and the same one the pavilion settled by putting the
+   * light in the map rather than in a lamp. */
+  /* AND THE LEVEL IS MEASURED, NOT CHOSEN. A game-ready rock albedo is
+   * authored for daylight — this one's mean luminance is 87 of 255 — and
+   * dropped into a courtyard lit by a quarter moon it renders as pale
+   * blobs: measured on screen at the foot of the east steps it read 36.5
+   * against the masonry beside it at 24 and the yard at 20, which is a
+   * heap that GLOWS. The old rubble's own note says what the number
+   * should be (it read 19 and let the moon do the separating), so the
+   * multiply is swept against that rather than picked: 0.72 reads 26,
+   * 0.55 reads 20.7, 0.42 reads 15.2. */
+  const mat = mossyRockMat.clone();
+  mat.color.setHex(0x8c8c8c);
+  mat.emissive = new THREE.Color(0xffffff);
+  mat.emissiveMap = mat.map;
+  mat.emissiveIntensity = 0.16;
+  if (mat.normalScale) mat.normalScale.set(1.25, 1.25);
+  /* AND IT DRAWS FROM HALF THE PACK, WHICH IS A DRAW-CALL DECISION AND NOT
+   * A TASTE ONE. One instanced mesh per SHAPE, so the whole pack is
+   * thirty-two draws — measured, that takes the courtyard from 19 to 51,
+   * which is the count nearly trebled in a small room for rubble. Every
+   * OTHER rock is sixteen, which still samples both halves of the pack (it
+   * ships the tall ones first and the flat ones second) and is sixteen more
+   * shapes than the heap it replaces, which had exactly one. */
+  const kinds = [];
+  for (let i = 0; i < mossyRocks.length; i += 2) kinds.push(i);
+  const n = kinds.length;
+  const by = new Map();
+  for (const st of q) {
+    const i = kinds[Math.min(n - 1, Math.floor(st.pick * n))];
+    let a = by.get(i); if (!a) by.set(i, a = []); a.push(st);
+  }
+  const _q = new THREE.Quaternion(), _e = new THREE.Euler(), _m = new THREE.Matrix4();
+  const _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
+  for (const [i, arr] of by) {
+    const rk = mossyRocks[i];
+    const im = new THREE.InstancedMesh(rk.geo, mat, arr.length);
+    for (let k = 0; k < arr.length; k++) {
+      const st = arr[k];
+      _q.setFromEuler(_e.set(st.rx, st.ry, st.rz));
+      const ex = rockExtent(rk, _q);
+      /* AND IT IS FITTED BY ITS HEIGHT, NOT BY ITS WIDTH. Every test above
+       * that keeps this heap under the courtyard's own skyline is written
+       * on `r * sy` — the half-height the old blob had — so that is the
+       * number a real rock has to match, whichever way it happens to be
+       * turned. What it measures ACROSS then falls out of its own
+       * proportions, which is a rock rather than a ball, and is capped so
+       * a slab lying flat cannot be blown up into a table. */
+      let sc = (st.r * st.sy) / Math.max(1e-4, ex.y);
+      sc = Math.min(sc, (st.r * 1.5) / Math.max(1e-4, ex.x, ex.z));
+      /* AND THEN IT IS RE-SEATED, WHICH IS WHERE THE FLOATING ROCKS CAME
+       * FROM. Every height in the heap above — the bed the ray found, the
+       * course spacing, the crown, the line the coping cuts at — is written
+       * against `r * sy`, the half-height the old blob had, and the fit
+       * asks for exactly that. But the line under it CAPS the scale so a
+       * slab lying flat cannot be blown up into a table, and a capped stone
+       * is SHORTER than the height its seat was worked out for: its centre
+       * stays where the plan put it and its bottom rises by the difference.
+       * On a wide flat one that is most of half a metre of daylight under a
+       * boulder, which is exactly "a rock with no gravity".
+       *
+       * The seat is the BOTTOM, not the middle. Whatever the fit ends up
+       * being, the stone is lowered so the underside of it is where the
+       * plan said the underside would be, and a shape the cap has shrunk
+       * beds into the pile instead of hanging over it. */
+      const sit = st.y - (st.r * st.sy - ex.y * sc);
+      im.setMatrixAt(k, _m.compose(_p.set(st.x, sit, st.z), _q, _s.setScalar(sc)));
+      im.setColorAt(k, _c.setRGB(st.k * st.wm, st.k, st.k * (2 - st.wm)));
+    }
+    im.instanceMatrix.needsUpdate = true;
+    if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    if (im.computeBoundingSphere) im.computeBoundingSphere(); else im.frustumCulled = false;
+    im.userData.noBake = true;
+    dojoBlocks.add(im);
   }
 }
 /* AND THE BACK OF THE GATEWAY IS CLOSED. The flood reaches into the gate
@@ -41271,6 +42629,14 @@ function buildGateWall(fallback) {
   }
 }
 let dojoBlocks = null;
+/* AND THE STONES ARE QUEUED, NOT BUILT, BECAUSE THE ROCK LANDS OVER THE
+ * NETWORK. The heap's own arithmetic — where each stone goes, how big it
+ * is, how the crown sits under the coping — is done the moment the room is
+ * up, because the CLAMP that actually stops you is built out of the same
+ * numbers and may not wait for a download; the meshes are made when the
+ * pack is there. Every roll a stone needs is taken at queue time, so a
+ * checkpoint load rebuilds the same heap whenever the rock arrives. */
+let dojoRockQ = null;
 
 /* Can a body walk `dist` along this heading? Marched in strides, because a
  * crossing test alone has no thickness - the keep's own lesson - so the
@@ -42013,6 +43379,129 @@ MUT_ATTACKS.sStab = { wind: 0.44, strike: 0.10, recover: 0.28, hit: 0.52, reach:
  * longest tell in the fight and the quickest blade in it. */
 MUT_ATTACKS.sDown = { wind: 0.66, strike: 0.10, recover: 0.36, hit: 0.64, reach: 2.55, lunge: 1.1, chain: 'sSide', chainP: 0.34, w: 0.22, dmg: 2, guardK: 1.60, limbs: [0], real: true, cock: 0.34, clipRate: 1.40 };
 
+/* AND HE HAD NO SIDEWAYS STRIDE AT ALL, WHICH IS THE OLDEST ANIMATION BUG IN
+ * THIS FILE. `strafeL` and `strafeR` were ALIASED ONTO THE WALK, so the half
+ * of a fight he spends holding his distance was a man striding forward while
+ * travelling sideways — the feet going one way and the body another, which
+ * this file has now paid for on the reptilians, the knight, the drunk and
+ * him. The eight Mixamo clips he was given contain no side-step and the
+ * packer's source is a .blend on the owner's other machine, so it is written
+ * here, on the rig, the way the witness's and the knight's whole move sets
+ * were.
+ *
+ * WHAT MAKES IT A SHUFFLE AND NOT A SKATE is the PHASE, and it is the
+ * reptilian's own arithmetic: each foot's offset along the line of travel is
+ * `-cos(ph)/2` of the stride and it is off the ground exactly while
+ * `sin(ph) > 0` — which is precisely the half in which that offset is
+ * INCREASING. So a foot moves outward while it is in the air and is still
+ * while it is planted, and what slides past it is the body. The two are half
+ * a cycle apart, so the lead reaches out, plants, and the trail is drawn in
+ * after it; nothing crosses and nothing scrubs.
+ *
+ * AND IT DRIVES THE LEGS AND NOTHING ELSE. Every hand-authored clip on this
+ * rig has read badly and all of them failed the same way — they are built up
+ * from a bind pose that is a T, so the arms come off the sword (see
+ * `armRest`). `build` writes every undriven bone from the STANCE, which here
+ * is the retargeted idle's own two-handed guard, so his upper body is
+ * untouched Mixamo and only his feet are mine. */
+const SAM_STRAFE_JOINTS = {
+  hip: 'DEF-spine',
+  thighL: 'DEF-thighL', thighR: 'DEF-thighR',
+  calfL: 'DEF-shinL', calfR: 'DEF-shinR',
+  footL: 'DEF-footL', footR: 'DEF-footR',
+};
+function authorSamuraiStrafe(u, m, gltf) {
+  const src = (gltf.animations || []).find((c) => c.name === 'idle');
+  if (!src) return [];
+  const R = poseRig(u, m, src, SAM_STRAFE_JOINTS, {});
+  const { J, base, build, compose } = R;
+  for (const k of ['hip', 'thighL', 'thighR', 'calfL', 'calfR', 'footL', 'footR']) if (!J[k]) return [];
+  /* WHICH WAY IS OUT, AND WHICH WAY IS UP, ARE MEASURED. Nothing about a pose
+   * on somebody else's rig can be checked by reasoning — this file has said so
+   * for the curl of a fist, the swing of a thigh and the roll of a tail, and
+   * got each of them wrong at least once first. A test rotation goes on the
+   * joint, the FOOT is asked where it went, and the sign that moves it the way
+   * the parameter is named is the one kept. */
+  const gq = new THREE.Quaternion(); m.getWorldQuaternion(gq);
+  const wRight = new THREE.Vector3(1, 0, 0).applyQuaternion(gq).normalize();
+  const rest = () => { for (const k in J) if (J[k]) J[k].quaternion.copy(base.get(J[k])); m.updateMatrixWorld(true); };
+  const probe = (joint, ax, amt, foot, dir) => {
+    rest();
+    const p0 = J[foot].getWorldPosition(new THREE.Vector3());
+    J[joint].quaternion.copy(compose(joint, { [ax]: amt }));
+    m.updateMatrixWorld(true);
+    const d = J[foot].getWorldPosition(new THREE.Vector3()).sub(p0).dot(dir);
+    rest();
+    return Math.abs(d) < 1e-5 ? 1 : Math.sign(d);
+  };
+  const up = new THREE.Vector3(0, 1, 0);
+  const abd = { L: probe('thighL', 'fwd', 0.35, 'footL', wRight), R: probe('thighR', 'fwd', 0.35, 'footR', wRight) };
+  const lift = { L: probe('calfL', 'right', 0.5, 'footL', up), R: probe('calfR', 'right', 0.5, 'footR', up) };
+  /* A SIDE-STEP IS SHORT AND LOW. A metre of travel a cycle at a metre and a
+   * quarter a second, which is what a man in armour holding a guard does when
+   * he is circling you rather than walking somewhere. */
+  const DUR = 0.80, STRIDE = 0.50, LEG = 0.90;
+  /* AND `-cos(ph)/2` IS NOT ACTUALLY A FOOT THAT STAYS PUT. It is the phase
+   * this file wrote down for the reptilians and it gets the important half
+   * right — the foot moves outward exactly while it is in the air — but its
+   * speed under the body is a SINE, and a planted foot has to travel at
+   * exactly the speed the body does or it scrubs the floor for part of every
+   * step. Measured on the first build: the planted foot drifted at 1.38 m/s
+   * through the middle of the stance against a clip declaring 1.25.
+   * It is linear while the foot is down and eased while it is up, which is
+   * the only shape that has a foot stand still. */
+  const sm = (x) => x * x * (3 - 2 * x);
+  const off = (p) => (p < 0.5
+    ? (-0.5 + sm(p / 0.5)) * STRIDE          // in the air, swinging out
+    : (0.5 - (p - 0.5) / 0.5) * STRIDE);     // on the ground, at a constant rate
+  const mk = (name, dir) => {
+    const keys = [];
+    const N = 16;
+    for (let i = 0; i <= N; i++) {
+      const t = i / N, kf = {};
+      for (const side of ['L', 'R']) {
+        // the leg on the side he is going leads; the other is half a cycle behind
+        const lead = (dir > 0) === (side === 'R');
+        const p = (t + (lead ? 0 : 0.5)) % 1;
+        const offRight = off(p) * dir;                         // metres, toward his right
+        const air = p < 0.5 ? Math.sin(p / 0.5 * Math.PI) : 0;
+        kf['thigh' + side] = { fwd: abd[side] * (offRight / LEG) };
+        kf['calf' + side] = { right: lift[side] * air * 0.62 };
+        // the foot levels off as it comes down rather than arriving toe first
+        kf['foot' + side] = { right: -lift[side] * air * 0.24 };
+      }
+      // he drops a little on each plant: two dips a cycle, because both feet land
+      kf.hipY = -0.016 - 0.020 * Math.abs(Math.sin(2 * Math.PI * t));
+      keys.push([t * DUR, kf]);
+    }
+    return build(name, DUR, keys, true);
+  };
+  const out = [mk('strafeL', -1), mk('strafeR', 1)];
+  /* AND THE RATE IS THE STRIDE OVER THE SPEED — MEASURED OFF THE PLANTED
+   * FOOT, not taken from `STRIDE`. The parameter is an ANGLE and the travel
+   * is a chord, so what the hip actually gets is not what was asked for:
+   * measured, 0.845 m of travel for a metre requested. The clip states its
+   * own stride the way the packer measures the retargeted ones. */
+  {
+    const mx = new THREE.AnimationMixer(m);
+    const a = mx.clipAction(out[1]); a.play(); a.weight = 1; a.enabled = true;
+    const hp = new THREE.Vector3(), fp = new THREE.Vector3();
+    const at = (tt) => {
+      a.time = tt * DUR; mx.update(0); m.updateMatrixWorld(true);
+      J.hip.getWorldPosition(hp);
+      // the right foot leads `strafeR`, so it is DOWN over the back half
+      J.footR.getWorldPosition(fp);
+      return fp.sub(hp).dot(wRight);
+    };
+    const d = (at(0.95) - at(0.60)) / (0.35 * DUR);
+    mx.stopAllAction(); mx.uncacheRoot(m);
+    const v = Math.abs(d);
+    u.clipSpeed.strafeL = u.clipSpeed.strafeR = (v > 0.2 && v < 6) ? v : STRIDE * 2 / DUR;
+  }
+  for (const k in J) if (J[k]) J[k].quaternion.copy(base.get(J[k]));
+  m.updateMatrixWorld(true);
+  return out;
+}
 MUT_KINDS.samurai = {
   glb: 'assets/samurai.glb', human: true, solo: true, noSand: true, lit: false,
   /* `bossDeath` WAS LEFT OFF FOR A REASON THAT TURNED OUT TO BE A MISSING
@@ -42155,7 +43644,14 @@ MUT_KINDS.samurai = {
    * keeps playing whatever it had. Measured in the fight: he crossed thirteen
    * metres and threw a swing with his TAUNT still on the mixer. The warning
    * has been in `mutPlay` since it was written and says exactly this. */
-  alias: { strafeL: 'walk', strafeR: 'walk', back: 'walk', roar: 'taunt',
+  /* AND THE ALIAS NO LONGER SHADOWS THEM. `strafeL`/`strafeR` were mapped
+   * onto the walk here, and the alias map runs AFTER `kind.author` — so a
+   * side-step written in code would have been quietly replaced by the walk on
+   * the next line. An alias overwrites a clip of the same name, which is the
+   * trap that hid the knight's own Head Hit. `back` stays: a man giving
+   * ground plays his walk at a NEGATIVE rate, which `mutAnim` does. */
+  author: authorSamuraiStrafe,
+  alias: { back: 'walk', roar: 'taunt',
            walk2: 'walk', run2: 'run', idle2: 'idle', idleSrc: 'idle' },
   /* The three hand-authored clips, put back on the guard the other eight
    * hold the sword in. `sRise` is out of the draw and is done for the sake
@@ -49678,27 +51174,6 @@ const TAV_MOON_GLSL = `
     float came = smoothstep(0.028, 0.06, min(0.5 - f.x, 0.5 - f.y));
     return edge * mull * came;
   }
-  /* THE SAME LEADING, DRAWN FOR THE EYE. Thirteen metres up at the retro
-   * scale a came is under a pixel, and a line under a pixel is sampled in
-   * and out of existence as the camera moves: the glass shimmered and read
-   * as another texture flickering through. Each line is held to at least a
-   * pixel across by its own screen derivative, and where the whole pattern
-   * is finer than the pixels can carry it fades to the average instead of
-   * sparkling. */
-  float mlatticeAA(vec2 q) {
-    vec2 a = abs(q);
-    float fa = max(fwidth(a.x), 1e-5);
-    float mull = smoothstep(0.045 - fa * 0.5, 0.045 + fa * 1.2, a.x);
-    vec2 d = vec2(q.x * 2.4 + q.y * 1.6, q.x * 2.4 - q.y * 1.6);
-    vec2 w = max(fwidth(d), vec2(1e-5));
-    vec2 e = 0.5 - abs(fract(d) - 0.5);                              // distance to the nearest came, in quarries
-    vec2 hw = max(vec2(0.03), w * 0.6);
-    vec2 c = smoothstep(hw, hw + w * 1.2, e);
-    float came = min(c.x, c.y);
-    float busy = smoothstep(0.12, 0.30, max(w.x, w.y));              // too fine to draw: show its average
-    came = mix(came, 0.78, busy);
-    return mull * came;
-  }
   // which quarry a point is in: a little hash for each pane's own tint
   vec2 mquarry(vec2 q) { return floor(vec2(q.x * 2.4 + q.y * 1.6, q.x * 2.4 - q.y * 1.6)); }`;
 function buildTavMoon() {
@@ -49817,6 +51292,27 @@ function buildTavMoon() {
       vertexShader: `varying vec3 vW; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
       fragmentShader: TAV_MOON_GLSL + `
         uniform mat4 uInv; uniform float uHW; uniform float uGlass; varying vec3 vW;
+        /* THE SAME LEADING, DRAWN FOR THE EYE. Thirteen metres up at the retro
+         * scale a came is under a pixel, and a line under a pixel is sampled in
+         * and out of existence as the camera moves: the glass shimmered and read
+         * as another texture flickering through. Each line is held to at least a
+         * pixel across by its own screen derivative, and where the whole pattern
+         * is finer than the pixels can carry it fades to the average instead of
+         * sparkling. */
+        float mlatticeAA(vec2 q) {
+          vec2 a = abs(q);
+          float fa = max(fwidth(a.x), 1e-5);
+          float mull = smoothstep(0.045 - fa * 0.5, 0.045 + fa * 1.2, a.x);
+          vec2 d = vec2(q.x * 2.4 + q.y * 1.6, q.x * 2.4 - q.y * 1.6);
+          vec2 w = max(fwidth(d), vec2(1e-5));
+          vec2 e = 0.5 - abs(fract(d) - 0.5);                              // distance to the nearest came, in quarries
+          vec2 hw = max(vec2(0.03), w * 0.6);
+          vec2 c = smoothstep(hw, hw + w * 1.2, e);
+          float came = min(c.x, c.y);
+          float busy = smoothstep(0.12, 0.30, max(w.x, w.y));              // too fine to draw: show its average
+          came = mix(came, 0.78, busy);
+          return mull * came;
+        }
         float h2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         vec3 stone(vec2 w, float lit) {
           // courses of dressed stone up the reveal: a block a hand high, the joints dark
@@ -53747,7 +55243,7 @@ window.__bw = {
   mounds, moundMat, moundAt, revealMoundNear, makeMound, makeCdCase,
   get cdItem() { return cdItem; },
   THREE, scene, camera, player: camera,
-  interactables, physProps, inventory, bottle, cliff, foot, lighthouse, city,
+  interactables, physProps, inventory, packByName, bottle, cliff, foot, lighthouse, city,
   castle, shovelWorld, viewmodel,
   hcrab, hcrabWorld, syringe, syringeWorld, bloodJar,
   renderer, inspectScene, inspectCamera,
@@ -53800,6 +55296,16 @@ window.__bw = {
   waterSurfaceAt, submersionAt, restYInWater, groundGlow, addRipple,
   shells, listenToShell, makeRockGeo, dock, ring, driftAt, updateDock,
   listen: (v) => { listening = v; }, stopListening, keyItem, keyWorld,   // the ear pose without the audio, for the preview harness
+  pegItem, pegWorld, devGrantWeapons,          // the thrusting weapon, and the way to have one without walking to it
+  /* The peg's string, for the harness: which of the three is in the air, and
+   * the held button that keeps it going. Accessors have to live in THIS
+   * literal — `Object.assign` copies a getter's VALUE, so one added in the
+   * block below would be a snapshot, which `abductDone` paid for once. */
+  get pegStage() { return pegStage; },
+  get pegStab() { return PEG_STAB; }, set pegStab(v) { PEG_STAB = v; },
+  get pegOhLand() { return PEG_OH_LAND; }, set pegOhLand(v) { PEG_OH_LAND = v; },
+  get pegOhHaul() { return PEG_OH_HAUL; }, set pegOhHaul(v) { PEG_OH_HAUL = v; },
+  get pegGripHome() { return PEG_GRIP_HOME; }, set pegGripHome(v) { PEG_GRIP_HOME = v; }, set windHeld(v) { windHeld = v; }, attackAction,
   get dockDoorOpen() { return dockDoorOpen; }, set dockDoorOpen(v) { dockDoorOpen = v; }, get onDock() { return onDock; },
   crabs, makeCrabUnit, nearestCrab, crabPlay, updateCrabUnit, get crabToken() { return crabToken; },
   mutants, mutant, updateMutant, hurtMutant, killMutant, parryMutant, blockMutant, nearestMutant,
@@ -53823,7 +55329,14 @@ window.__bw = {
     room: inTavern ? 'tavern' : inKeep ? 'keep' : inCat ? 'cat' : inUndercroft ? 'uc' : inDojo ? 'dojo' : inShrine ? 'shrine' : inBunker ? 'bunker' : 'beach',
     bedK: +beachBedK().toFixed(4), windK: +windBedK().toFixed(4),
     wave: waveBusGain ? waveBusGain.gain.value : null, wind: windDuck ? windDuck.gain.value : null,
-    nature: dojoNature ? dojoNature.g.gain.value : null }; },
+    nature: dojoNature ? dojoNature.g.gain.value : null,
+    /* The fountain's own gain, so how loud it is where you are standing is a
+     * thing that can be MEASURED rather than described. `rec` says whether it
+     * is the owner's recording or the synthesised fallback behind it. */
+    fount: fountAudio ? fountAudio.g.gain.value : null,
+    fountLp: fountAudio && fountAudio.lp ? Math.round(fountAudio.lp.frequency.value) : null,
+    fountPan: fountAudio && fountAudio.pan ? +fountAudio.pan.pan.value.toFixed(2) : null,
+    fountRec: fountAudio ? !!fountAudio.rec : null }; },
   get fenceOpen() { return fenceOpen; }, get fenceSwing() { return fenceSwing; }, fenceGroup, FENCE_Z, FENCE_GATE_X, FENCE_GATE_W, openFenceGate,
   drinkWater, gainWater, get waterSips() { return waterSips; }, set waterSips(v) { waterSips = v; }, get drinking() { return drinking; }, get drinkT() { return drinkT; },
   get hp() { return hp; }, set hp(v) { hp = v; },
