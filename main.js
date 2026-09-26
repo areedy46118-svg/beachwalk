@@ -689,6 +689,7 @@ try { if (sessionStorage.getItem('beachwalk.dev') === '1') settings.devMode = tr
 // walk speed is never remembered: every game starts at the default 1.4×, and
 // the slider is for the session you are in
 settings.walkSpeed = DEFAULT_SETTINGS.walkSpeed;
+settings.invertY = false;                    // the option is gone from the menu, so no saved session may keep it
 function saveSettings() { try { localStorage.setItem('beachwalk.settings', JSON.stringify({ ...settings, devMode: false })); } catch (e) {} }
 /* The checkpoint lives beside the settings. It is written ONCE a game, when
  * you reach the pavilion, and read only by a death or by the menu — there is
@@ -1095,10 +1096,19 @@ const SKY_CLOUDS = /* glsl */`
     return mix(mix(skH(i), skH(i + vec2(1,0)), u.x), mix(skH(i + vec2(0,1)), skH(i + vec2(1,1)), u.x), u.y); }
   float skF(vec2 p){ float a = 0.5, s = 0.0; for (int i = 0; i < 5; i++) { s += a * skN(p); p = p * 2.03 + vec2(17.1, 9.3); a *= 0.5; } return s; }
   vec2 skPlane(vec3 d){ return d.xz / (d.y + 0.10) * 0.55; }
+  /* THE CLOUDS MOVE. At 0.0045 a second a cloud took four minutes to cross
+   * the sky, which is the same as standing still; the deck drifts in from
+   * the sea now, a cloud crossing the sky overhead in about forty seconds
+   * and crawling near the horizon the way distance makes anything crawl. And
+   * the shapes are WARPED by a slower field of their own, so they curl and
+   * change as they go instead of sliding by as one printed sheet. */
   float skCloud(vec2 q, float t){
-    vec2 w = vec2(t * 0.0045, t * 0.0016);
-    float c = skF(q + w) * 0.72 + skF(q * 2.7 - w * 1.6) * 0.28;
-    return smoothstep(0.40, 0.66, c);
+    vec2 wind = vec2(0.030, 0.011) * t;
+    vec2 p = q * 0.9 + wind;
+    vec2 wp = vec2(skF(p * 0.55 + vec2(0.0, t * 0.006)), skF(p * 0.55 + vec2(5.2, 1.3) - vec2(t * 0.005, 0.0))) - 0.5;
+    p += wp * 1.15;
+    float c = skF(p) * 0.70 + skF(p * 2.6 - wind * 0.8) * 0.30;
+    return smoothstep(0.39, 0.60, c);
   }
   float skCover(vec3 d, float t){
     if (d.y < -0.02) return 0.0;
@@ -1109,6 +1119,16 @@ const skyUniforms = { uTop: { value: new THREE.Color(0x04060d) }, uHorizon: { va
   uMoonDir: { value: MOON_DIR }, uTime: { value: 0 },
   uRes: { value: new THREE.Vector2(1, 1) }, uMoonNdc: { value: new THREE.Vector2() }, uMoonR: { value: 0.1 },
   uBolt: { value: new THREE.Vector4(-1, 0.2, 0, 0) }, uBoltLine: { value: 0 }, uBoltSeed: { value: 0 } };
+/* CLOUD SHADOWS. Everything on this beach is lit by the moon — the key light
+ * is four per cent of it and the rest is the sky it lights — so a cloud over
+ * the beach dims the WHOLE light, not a direct term: this multiplies the
+ * finished colour of the sand, the dune and the sea. It samples the same
+ * moving field the sky draws (`skCloud`, same wind, same clock) laid flat
+ * over the beach at a hundred-odd metres a patch, so a shadow slides across
+ * the sand at a few metres a second the way the clouds overhead drift. */
+const CLOUD_SHADE_GLSL = SKY_CLOUDS + `
+  float bwCloudShade(vec3 w, float t, float k) { return 1.0 - k * skCloud(w.xz * 0.020 + vec2(3.7, -1.3) + vec2(0.050, 0.018) * t, t); }`;
+const BIO_COL = 'vec3(0.06, 0.80, 0.70)';    // the glow in the surf: cold blue-green
 /* The moon's radius on screen is what 4 degrees would be at the MIDDLE of the
  * view, whatever the field of view — so it still zooms with a scope — and it
  * stays that size wherever it sits in the frame. */
@@ -1175,16 +1195,29 @@ const sky = new THREE.Mesh(
         // THE CLOUDS, over the moon as well as the sky
         if (dir.y > -0.02) {
           vec2 q = skPlane(dir);
+          // a high thin veil of streaks first, slower and on its own heading: two decks at two speeds is what reads as depth
+          float ci = skF(vec2(q.x * 0.45 - q.y * 0.20, q.y * 2.6 + q.x * 0.3) + vec2(uTime * 0.009, uTime * 0.002));
+          float veil = smoothstep(0.52, 0.80, ci) * smoothstep(0.02, 0.25, dir.y);
+          col = mix(col, vec3(0.20, 0.23, 0.32) + vec3(0.45, 0.46, 0.50) * pow(d, 10.0), veil * 0.22);
           float c = skCloud(q, uTime) * smoothstep(-0.02, 0.10, dir.y);
           if (c > 0.001) {
             vec2 toM = normalize(md.xz / (md.y + 0.10) * 0.55 - q + 1e-4);
             float c2 = skCloud(q + toM * 0.045, uTime);
             float rim = clamp((c - c2) * 3.2 + 0.25, 0.0, 1.0);        // thinner toward the moon: an edge facing it
             float near = pow(d, 14.0);
-            vec3 shade = vec3(0.070, 0.082, 0.120) + uHorizon * 0.45 * (1.0 - h);
-            vec3 lite = mix(vec3(0.26, 0.28, 0.37), vec3(0.86, 0.80, 0.70), near);
+            vec3 shade = vec3(0.058, 0.066, 0.108) + uHorizon * 0.45 * (1.0 - h);
+            vec3 lite = mix(vec3(0.33, 0.35, 0.46), vec3(0.95, 0.88, 0.74), near);
             float k = clamp(rim * (0.45 + 0.55 * near) + near * 0.35 * (1.0 - c), 0.0, 1.0);
-            vec3 cc = mix(shade, lite, k);
+            /* PAINTED, not rendered: the light on a cloud is laid on in three
+             * soft bands, the way a matte painter does a night sky, with a
+             * brush grain drawn along the wind through them and a hard silver
+             * line where a thin edge faces the moon. */
+            float band = floor(k * 3.0 + 0.5) / 3.0;
+            k = mix(k, band, 0.55 * smoothstep(0.0, 0.08, abs(fract(k * 3.0 + 0.5) - 0.5)));
+            float brush = skF(vec2(q.x * 2.0 + q.y * 0.9, q.y * 9.0 - q.x * 2.4) + uTime * vec2(0.03, 0.011));
+            vec3 cc = mix(shade, lite, k) * (0.86 + 0.28 * brush);
+            cc += vec3(0.75, 0.78, 0.86) * smoothstep(0.25, 0.0, c) * smoothstep(0.30, 0.70, rim) * (0.18 + 0.7 * near);
+            cc = mix(cc, cc * vec3(0.78, 0.84, 1.08), (1.0 - k) * 0.5);             // the underbelly goes cold
             // lit from INSIDE by a strike: thick cloud glows, the edges less
             float bin = pow(bk, 3.0) * (0.45 + 0.9 * skF(q * 2.3 + uBoltSeed));
             cc += vec3(0.62, 0.68, 0.92) * uBolt.w * (0.08 + bin) * (0.4 + 0.6 * c);
@@ -1362,6 +1395,8 @@ function updateCritters() {
     }
     if (!b.born || Math.hypot(b.cx - px, b.cz - pz) > 140) spawnBird(b, px, pz, b.born);
     b.a += b.w * dt; b.cx += b.dx * dt; b.cz += b.dz * dt;
+    // the wheel slides downwind, faster in a gust
+    if (!inKeep) { b.cx += air.wx * (0.8 + 3.0 * airGust) * dt; b.cz += air.wz * (0.8 + 3.0 * airGust) * dt; }
     const x = b.cx + Math.cos(b.a) * b.r, z = b.cz + Math.sin(b.a) * b.r;
     const y = b.h + Math.sin(now * 0.0004 + i) * 2.5;
     // heading along the circle, banked into the turn
@@ -1382,12 +1417,171 @@ function updateCritters() {
     }
     // a moth's flight is a jitter with somewhere vaguely in mind
     m.v.x += (Math.random() - 0.5) * 9 * dt; m.v.y += (Math.random() - 0.5) * 7 * dt; m.v.z += (Math.random() - 0.5) * 9 * dt;
+    // and the wind carries them: a breath always, a push in a gust
+    m.v.x += air.wx * (0.4 + 4.5 * airGust) * dt; m.v.z += air.wz * (0.4 + 4.5 * airGust) * dt;
     m.v.multiplyScalar(Math.pow(0.35, dt));
     m.p.addScaledVector(m.v, dt);
     m.p.y = THREE.MathUtils.clamp(m.p.y, feet + 0.15, feet + 2.8);
     pos.setXYZ(i, m.p.x, m.p.y, m.p.z);
   });
   pos.needsUpdate = true;
+}
+
+/* ------------------------------------------------ the far sounds
+ * WHAT YOU HEAR FROM A LONG WAY OFF. A beach at night is not silent past the
+ * surf; the sounds that carry are the ones that tell you where things are.
+ *  - A BELL BUOY seventy metres out, rocking on the swell: it rings in uneven
+ *    clusters of one to three strokes, never on a clock, and a small red lamp
+ *    on it blinks so you can find where the bell is. One is always somewhere
+ *    off the beach near you (they are moored every 360 m).
+ *  - THE LIGHTHOUSE'S FOGHORN, once a minute or so: a low two-note diaphone
+ *    from the tower at the far end, almost nothing from the spawn and louder
+ *    the nearer you walk — the walk's own compass.
+ *  - GULLS, calling now and then from where they actually are, and QUIET
+ *    whenever something is awake and near you: the gulls going silent is the
+ *    first thing that tells you.
+ * All of it is low, filtered by distance, and off in every room. */
+const BUOY_X = -70, BUOY_EVERY = 360;
+const farSnd = { bell: 25 + Math.random() * 30, horn: 18 + Math.random() * 20, gull: 30 + Math.random() * 30, t: 0 };
+const buoyLamp = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 32;
+  const g = c.getContext('2d'); const gr = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+  gr.addColorStop(0, 'rgba(255,90,70,1)'); gr.addColorStop(0.35, 'rgba(255,50,40,0.5)'); gr.addColorStop(1, 'rgba(255,40,30,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 32, 32);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+  sp.scale.setScalar(1.6); sp.visible = false; sp.renderOrder = 5;
+  scene.add(sp);
+  return sp;
+})();
+function buoyAt() {
+  const z = Math.round(camera.position.z / BUOY_EVERY) * BUOY_EVERY - 40;
+  return { x: BUOY_X, z };
+}
+function farOut(pan, lp) {
+  const ctx = audioCtx; let out = sfxOut();
+  if (ctx.createStereoPanner) { const pn = ctx.createStereoPanner(); pn.pan.value = pan; pn.connect(out); out = pn; }
+  const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = lp; f.connect(out);
+  return f;
+}
+function sfxBuoyBell(dist, pan) {
+  const ctx = audioCtx; if (!ctx) return;
+  const out = farOut(pan * 0.85, 2600 - Math.min(1, dist / 200) * 1700);
+  const lvl = 0.07 * Math.min(1, 45 / Math.max(45, dist));
+  const n = 1 + (Math.random() * 3 | 0);
+  let t = ctx.currentTime + 0.02;
+  for (let k = 0; k < n; k++) {
+    const hit = lvl * (0.6 + Math.random() * 0.4);
+    // a cast bell is inharmonic: hum, prime, tierce, quint, nominal
+    for (const [r, a, d] of [[0.5, 0.35, 3.5], [1, 1, 2.6], [1.19, 0.55, 2.0], [1.5, 0.35, 1.6], [2.0, 0.45, 1.3], [2.74, 0.18, 0.8]]) {
+      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 610 * r * (1 + (Math.random() - 0.5) * 0.004);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(hit * a, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      o.connect(g).connect(out); o.start(t); o.stop(t + d + 0.05);
+    }
+    t += 0.9 + Math.random() * 1.6;
+  }
+}
+function sfxFoghorn(dist, pan) {
+  const ctx = audioCtx; if (!ctx) return;
+  const out = farOut(pan * 0.7, 700 - Math.min(1, dist / 1400) * 380);
+  const lvl = 0.10 * Math.min(1, 160 / Math.max(160, dist)) + 0.012;
+  const t = ctx.currentTime + 0.05, L = 2.6;
+  // a diaphone: a reedy low note, then the grunt as the air runs out
+  for (const [f0, f1, dly, len, a] of [[148, 146, 0, L, 1], [296, 292, 0, L, 0.3], [148, 118, L, 0.7, 0.8]]) {
+    const o = ctx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(f0, t + dly); o.frequency.linearRampToValueAtTime(f1, t + dly + len);
+    const bp = ctx.createBiquadFilter(); bp.type = 'lowpass'; bp.frequency.value = 420;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t + dly);
+    g.gain.exponentialRampToValueAtTime(lvl * a, t + dly + 0.35); g.gain.setValueAtTime(lvl * a, t + dly + len - 0.25); g.gain.exponentialRampToValueAtTime(0.0001, t + dly + len);
+    o.connect(bp).connect(g).connect(out); o.start(t + dly); o.stop(t + dly + len + 0.05);
+  }
+}
+function somethingAwakeNear(r) {
+  const px = camera.position.x, pz = camera.position.z;
+  for (const u of mutants) if (u.st.alive && u.st.awake && Math.hypot(u.g.position.x - px, u.g.position.z - pz) < r) return true;
+  for (const u of crabs) if (u.st.alive && u.st.awake && Math.hypot(u.g.position.x - px, u.g.position.z - pz) < r) return true;
+  return false;
+}
+function updateFarSounds() {
+  const now = performance.now() * 0.001, dt = farSnd.t ? Math.min(0.1, now - farSnd.t) : 0;
+  farSnd.t = now;
+  const on = introDone && !inRoom() && !dying;
+  buoyLamp.visible = on;
+  if (!on) return;
+  // the buoy's lamp rides the swell and blinks on its own count
+  const B = buoyAt();
+  buoyLamp.position.set(B.x, waterSurfaceAt(B.x, B.z) + 1.8, B.z);
+  buoyLamp.material.opacity = (now % 4.0) < 0.35 ? 0.95 : 0.0;
+  if (!audioCtx) return;
+  const px = camera.position.x, pz = camera.position.z;
+  if ((farSnd.bell -= dt) <= 0) {
+    farSnd.bell = 45 + Math.random() * 60;
+    const d = Math.hypot(B.x - px, B.z - pz);
+    if (d < 260) sfxBuoyBell(d, panTo(B.x, B.z));
+  }
+  if ((farSnd.horn -= dt) <= 0) {
+    farSnd.horn = 55 + Math.random() * 35;
+    const d = Math.hypot(LH_X - px, LH_Z - pz);
+    sfxFoghorn(d, panTo(LH_X, LH_Z));
+  }
+  if ((farSnd.gull -= dt) <= 0) {
+    farSnd.gull = 50 + Math.random() * 70;
+    if (!somethingAwakeNear(45) && critters.b.length) {
+      const b = critters.b[(Math.random() * critters.b.length) | 0];
+      const bx = b.cx + Math.cos(b.a) * b.r, bz = b.cz + Math.sin(b.a) * b.r;
+      const d = Math.hypot(bx - px, bz - pz);
+      if (b.born && d < 150) sfxGull(panTo(bx, bz), Math.min(0.95, d / 150));
+    }
+  }
+}
+
+/* ------------------------------------------------ under the surface
+ * Now and then something passes under the water a little way out: a school
+ * of fish working along the beach, a raft of kelp drifting with the wind, and
+ * rarely something long that turns and goes deep. The shader draws them
+ * (`underMask`); this only says where they are. One at a time mostly, never
+ * more than three, each fading in and out over a few seconds. */
+const underSea = { t: 0, next: 12 + Math.random() * 16, q: [] };
+function updateUnderSea() {
+  const now = performance.now() * 0.001, dt = underSea.t ? Math.min(0.1, now - underSea.t) : 0;
+  underSea.t = now;
+  const U = oceanUniforms.uSh.value, U2 = oceanUniforms.uSh2.value;
+  const on = introDone && !inRoom() && !dying;
+  const px = camera.position.x, pz = camera.position.z, st = oceanUniforms.uTime.value;
+  if (on && (underSea.next -= dt) <= 0 && underSea.q.length < 3) {
+    underSea.next = 22 + Math.random() * 40;
+    const r = Math.random();
+    const kind = r < 0.55 ? 0 : r < 0.85 ? 1 : 2;
+    // somewhere ahead or beside you, out past the break
+    const z = pz - 18 - Math.random() * 45 + (Math.random() < 0.3 ? 40 : 0);
+    const out = kind === 2 ? 20 + Math.random() * 14 : 11 + Math.random() * 14;
+    const x = shoreLineJS(z, st) - out;
+    const along = Math.random() < 0.5 ? 1 : -1;
+    const q = { x, z, kind, age: 0, life: kind === 1 ? 45 + Math.random() * 25 : 22 + Math.random() * 14,
+      size: kind === 0 ? 6 + Math.random() * 3 : kind === 1 ? 5.5 + Math.random() * 3 : 14 + Math.random() * 5,
+      seed: Math.random() * 50, head: 0, turn: (Math.random() - 0.5) * 0.08, speed: 0 };
+    if (kind === 0) { q.head = Math.atan2(along, 0.15 * (Math.random() - 0.5)); q.speed = 1.4 + Math.random() * 0.8; }
+    else if (kind === 1) { q.head = Math.atan2(WIND.z, WIND.x); q.speed = 0.25; }
+    else { q.head = Math.atan2(along, -0.4); q.speed = 2.6; q.turn = 0; }
+    underSea.q.push(q);
+  }
+  for (let i = underSea.q.length - 1; i >= 0; i--) {
+    const q = underSea.q[i];
+    q.age += dt; q.head += q.turn * dt;
+    q.x += Math.cos(q.head) * q.speed * dt; q.z += Math.sin(q.head) * q.speed * dt;
+    // it keeps to the water: the break is a wall to a fish
+    const lim = shoreLineJS(q.z, st) - 9 - q.size * 0.5;
+    if (q.x > lim) { q.x = lim; q.head += (Math.sin(q.head) >= 0 ? 1 : -1) * 0.6 * dt; }
+    if (q.age > q.life || Math.hypot(q.x - px, q.z - pz) > 160) underSea.q.splice(i, 1);
+  }
+  for (let i = 0; i < 4; i++) {
+    const q = underSea.q[i];
+    if (!q || !on) { U2[i].x = 0; continue; }
+    const fade = Math.min(1, q.age / 4, (q.life - q.age) / 4);
+    // the long one goes deep as it leaves: it fades from the tail of its life
+    const a = q.kind === 2 ? 0.8 : q.kind === 1 ? 0.85 : 0.9;
+    U[i].set(q.x, q.z, q.head, q.kind);
+    U2[i].set(Math.max(0, fade) * a, q.size, q.seed, 0);
+  }
 }
 
 /* ---------------------------------------------------------- the storm
@@ -1598,8 +1792,15 @@ const air = {
   m: Array.from({ length: AIR_MIST }, () => ({ x: 0, y: 0, z: 0, vx: 0, vy: 0, life: 0, max: 0, s: 1, born: false })),
   g: Array.from({ length: AIR_GRAIN }, () => ({ x: 0, y: 0, z: 0, vx: 0, vz: 0, h: 0, ph: 0, life: 0, max: 0, born: false })),
   t: performance.now(), gustT: 8 + Math.random() * 8, gustLen: 0, gustAge: 0,
-  wx: 0.6, wz: -0.8, lanes: [],
+  wx: -0.24, wz: -0.97, lanes: [],
 };
+/* ONE WIND. The clouds drift down the beach and a little out to sea, and
+ * everything the wind touches down here goes the same way: the sand in the
+ * gusts, the moths, the gulls' wheel, and the dry weed that tumbles along the
+ * sand when a gust comes through. A gust varies its heading by a few degrees,
+ * never by half the compass — a wind that changes sides every ten seconds is
+ * not a wind. */
+const WIND = { x: -0.24, z: -0.97 };
 function airGustTick(dt) {
   if (air.gustLen > 0) {
     air.gustAge += dt;
@@ -1608,9 +1809,9 @@ function airGustTick(dt) {
     if (u >= 1) { air.gustLen = 0; air.gustT = 7 + Math.random() * 11; }
   } else if ((air.gustT -= dt) <= 0) {
     air.gustLen = 2.2 + Math.random() * 2.6; air.gustAge = 0;
-    const a = (Math.random() < 0.5 ? 1 : -1) * (0.9 + Math.random() * 0.5);
-    air.wx = Math.cos(a) * 0.35; air.wz = Math.sin(a);
-    const L = Math.hypot(air.wx, air.wz); air.wx /= L; air.wz /= L;
+    // the prevailing wind, a few degrees either way
+    const j = (Math.random() - 0.5) * 0.35, c = Math.cos(j), sn = Math.sin(j);
+    air.wx = WIND.x * c - WIND.z * sn; air.wz = WIND.x * sn + WIND.z * c;
     // streamers run down the DRY sand, between the wet and the foot of the wall
     const x0 = shoreLineJS(camera.position.z, oceanUniforms.uTime.value) + 2.5, x1 = CLIFF_BLOCK_X - 0.3;
     air.lanes = Array.from({ length: 6 + (Math.random() * 4 | 0) }, () => x0 + Math.random() * Math.max(1, x1 - x0));
@@ -1810,8 +2011,12 @@ const oceanUniforms = THREE.UniformsUtils.merge([
     uShipHalf: { value: 0 },
     uShipC: { value: new THREE.Vector2() },
     uShipHW: { value: Array.from({ length: 17 }, () => 0) },
-    uSky: { value: new THREE.Color(0x1d3856) } },
+    uSky: { value: new THREE.Color(0x1d3856) },
+    // THINGS UNDER THE SURFACE: (x, z, heading, kind) and (alpha, size, seed, -)
+    uSh: { value: Array.from({ length: 4 }, () => new THREE.Vector4()) },
+    uSh2: { value: Array.from({ length: 4 }, () => new THREE.Vector4()) } },
 ]);
+oceanUniforms.uSkyT = skyUniforms.uTime;          // the clouds' clock, for their shadows (shared, not merged: merge clones)
 
 // ------------------------------------------------------------------
 // Sand texture
@@ -1928,11 +2133,12 @@ const sandMat = new THREE.MeshStandardMaterial({
 });
 sandMat.onBeforeCompile = (shader) => {
   shader.uniforms.uTime = oceanUniforms.uTime;
+  shader.uniforms.uSkyT = skyUniforms.uTime;
   shader.vertexShader = shader.vertexShader
     .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;')
     .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
   shader.fragmentShader = shader.fragmentShader
-    .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;\nuniform float uTime;\nfloat wetMask;\n' + noiseGLSL + shoreGLSL)
+    .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;\nuniform float uTime;\nuniform float uSkyT;\nfloat wetMask;\n' + noiseGLSL + shoreGLSL + CLOUD_SHADE_GLSL)
     .replace('#include <clipping_planes_fragment>',
       `#include <clipping_planes_fragment>
        float bwShore = shoreLine(vWorldPos.z, uTime);
@@ -1956,6 +2162,7 @@ sandMat.onBeforeCompile = (shader) => {
      * sideways — broken into glints, and gone where the sand is dry. It moves
      * with you because a reflection is where the view says it is. */
     .replace('#include <tonemapping_fragment>', `
+       gl_FragColor.rgb *= bwCloudShade(vWorldPos, uSkyT, 0.52);
        {
          vec3 mV = normalize(vWorldPos - cameraPosition);
          vec3 mR = vec3(mV.x, -mV.y, mV.z);
@@ -2041,6 +2248,7 @@ function makeCliff() {
   });
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = oceanUniforms.uTime;
+    sh.uniforms.uSkyT = skyUniforms.uTime;
     sh.uniforms.uToeCol = { value: new THREE.Vector3(sandMat.color.r / mat.color.r, sandMat.color.g / mat.color.g, sandMat.color.b / mat.color.b) };
     sh.uniforms.uToeEmi = { value: new THREE.Vector3(sandMat.emissive.r / mat.emissive.r, sandMat.emissive.g / mat.emissive.g, sandMat.emissive.b / mat.emissive.b) };
     sh.uniforms.uToeBump = { value: sandMat.bumpScale / mat.bumpScale };
@@ -2075,11 +2283,11 @@ function makeCliff() {
       .replace('#include <common>', `#include <common>
         varying float vU;
         varying vec3 vToeW, vToeN;
-        uniform float uTime, uToeBump, uSandTile;
+        uniform float uTime, uToeBump, uSandTile, uSkyT;
         uniform vec3 uToeCol, uToeEmi;
         float bwT, bwWet;
         vec4 bwToeTex;
-        ` + noiseGLSL + shoreGLSL)
+        ` + noiseGLSL + shoreGLSL + CLOUD_SHADE_GLSL)
       .replace('#include <map_fragment>', `
         bwT = smoothstep(0.40, 0.95, vU);   // the beach's own material most of the way up: a colour change low on the face read as the seam                 // the beach for the talus and the lower face, the cliff's own above
         // the beach's own grain at the beach's density and phase: laid flat
@@ -2106,7 +2314,8 @@ function makeCliff() {
           vec3 bwUpV = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
           float bwFlat = 1.0 - smoothstep(0.10, 0.24, vU);
           normal = normalize(normal + (bwUpV - nonPerturbedNormal) * bwFlat);
-        }`);
+        }`)
+      .replace('#include <tonemapping_fragment>', 'gl_FragColor.rgb *= bwCloudShade(vToeW, uSkyT, 0.52);\n#include <tonemapping_fragment>');
   };
   const mesh = new THREE.Mesh(g, mat);
   mesh.frustumCulled = false;
@@ -3816,6 +4025,29 @@ function makeRockGeo(seed = 1, detail = 1, lumpiness = 0.34) {
  * `normal` and `vViewPosition` are both in scope by <emissivemap_fragment>:
  * it sits after <normal_fragment_maps>, so the rim follows the normal map's
  * creases instead of the smooth geometry underneath. */
+/* PAINTED, TO MATCH THE SKY. The clouds lay their light in three soft bands
+ * with a brush grain through them; a surface that takes the same treatment
+ * reads as the same picture. This steps the finished light of a material into
+ * soft bands (in sqrt space, where a night scene actually has its levels) and
+ * meets the smooth value halfway, so the forms go flat-and-shaded like a
+ * painted plate without the texture under them turning to posterised mush.
+ * Chained after whatever the material already does. */
+function paintBands(mat, steps = 6, amt = 0.5) {
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (sh, r) => {
+    if (prev) prev(sh, r);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <tonemapping_fragment>', `{
+        vec3 pbC = gl_FragColor.rgb;
+        float pbL = max(dot(pbC, vec3(0.299, 0.587, 0.114)), 1e-4);
+        float pbS = sqrt(pbL) * ${steps.toFixed(1)};
+        float pbB = floor(pbS) + smoothstep(0.35, 0.65, fract(pbS));
+        pbB /= ${steps.toFixed(1)};
+        gl_FragColor.rgb = pbC * mix(1.0, (pbB * pbB) / pbL, ${amt.toFixed(2)});
+      }
+      #include <tonemapping_fragment>`);
+  };
+  mat.needsUpdate = true;
+}
 function reexpose(mat, gamma, rim) {
   mat.onBeforeCompile = (sh) => {
     sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>',
@@ -3931,6 +4163,7 @@ bwGlb('assets/rocks.glb', (gltf) => {
     mat.metalness = 0;
     if (mat.normalScale) mat.normalScale.set(1.4, 1.4);
     reexpose(mat, 0.54);
+    paintBands(mat);
 
     kinds.push({ geo, mat, name: o.name, foot: Math.max(s.x, s.z), h: s.y });
   });
@@ -4691,6 +4924,7 @@ const foot = new THREE.InstancedMesh(footGeo, new THREE.MeshBasicMaterial({ map:
 foot.frustumCulled = false; foot.renderOrder = 2; foot.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 scene.add(foot);
 
+
 const DIG_POOL = 20;
 // spoil thrown out of a hole is dry sand from under the surface, not the
 // wet blue flat it came out of — the same family as a buried cache
@@ -4992,7 +5226,60 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
     uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uCrest; uniform vec3 uSky;
     uniform vec4 uRipples[8];
     uniform float uShipHalf; uniform vec2 uShipC; uniform float uShipHW[17];          // xz = origin, z = start time, w = strength
+    uniform float uSkyT;
+    uniform vec4 uSh[4]; uniform vec4 uSh2[4];
     varying vec3 vWorld;
+    ${CLOUD_SHADE_GLSL}
+
+    /* WHAT PASSES UNDER IT. Up to four dark shapes a little way offshore,
+     * driven from the game (updateUnderSea): a school of fish — a loose blob
+     * of small bodies each wagging on its own count — a raft of kelp, and now
+     * and then something long that should not be that long. They only
+     * darken: what is seen is the water over them going deeper. */
+    float underMask(vec2 p) {
+      float m = 0.0;
+      for (int i = 0; i < 4; i++) {
+        vec4 sh = uSh[i]; vec4 s2 = uSh2[i];
+        if (s2.x <= 0.002) continue;
+        vec2 d = p - sh.xy;
+        float sz = s2.y;
+        if (dot(d, d) > sz * sz * 1.6) continue;
+        float ca = cos(sh.z), sa = sin(sh.z);
+        vec2 l = vec2(d.x * ca + d.y * sa, -d.x * sa + d.y * ca) / sz;     // l.x runs along its heading
+        float k = 0.0;
+        if (sh.w < 0.5) {
+          // the school: an envelope that breathes, full of small darting bodies
+          float env = smoothstep(1.0, 0.3, length(l * vec2(0.85, 1.3)) + 0.35 * (skN(l * 1.8 + vec2(s2.z, uTime * 0.2)) - 0.5));
+          vec2 q = l * 7.0;
+          vec2 ci = floor(q), cf = fract(q) - 0.5;
+          float h = fract(sin(dot(ci + s2.z, vec2(12.99, 78.23))) * 43758.5);
+          vec2 o = vec2(sin(uTime * 1.9 + h * 40.0), cos(uTime * 1.3 + h * 27.0)) * 0.2;
+          vec2 f = (cf - o) * vec2(1.0, 2.4);
+          k = smoothstep(0.30, 0.12, length(f)) * step(0.25, h) * env;
+          k = max(k, env * 0.6);
+        } else if (sh.w < 1.5) {
+          // kelp: a ragged raft with strands trailing off it
+          float env = smoothstep(1.0, 0.25, length(l));
+          float n = skN(l * 1.4 + s2.z);
+          float strands = 1.0 - smoothstep(0.0, 0.08, abs(skN(vec2(l.x * 0.8, l.y * 5.0) + s2.z * 2.0) - 0.5));
+          k = max(smoothstep(0.42, 0.6, n * 0.8 + env * 0.45), strands * env * 0.7) * env * 0.85;
+        } else {
+          // something long: a body tapering to a tail, flexing as it swims
+          float a = l.x;
+          if (a > -1.0 && a < 1.0) {
+            float w = 0.13 * sqrt(max(0.0, 1.0 - a * a)) * mix(0.35, 1.0, smoothstep(-1.0, 0.2, a));
+            float wig = sin(a * 3.2 - uTime * 2.1) * 0.07 * (1.0 - a) * 0.5;
+            float dy = abs(l.y - wig);
+            k = smoothstep(w + 0.05, max(0.0, w - 0.02), dy);
+            // two broad fins a third of the way back
+            vec2 fp = vec2(a - 0.25, abs(l.y) - w * 1.6);
+            k = max(k, smoothstep(0.16, 0.06, length(fp * vec2(2.2, 1.0))) * step(0.0, fp.y + 0.1) * 0.8);
+          }
+        }
+        m = max(m, k * s2.x);
+      }
+      return m;
+    }
 
     /* Rings spreading from anything that disturbed the surface. Done per
      * fragment rather than by displacing vertices: the ocean mesh has ~6 m
@@ -5052,6 +5339,9 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
       // facets catch the moon at different angles; fade the shading out at
       // distance, where the triangles go sub-pixel and would just sparkle
       float ndl = max(dot(n, normalize(uMoonDir)), 0.0);
+      // the facets' light laid in bands, the way the clouds' is painted
+      float ndlB = floor(ndl * 5.0) / 5.0 + smoothstep(0.35, 0.65, fract(ndl * 5.0)) / 5.0;
+      ndl = mix(ndl, ndlB, 0.6);
       float facet = mix(1.0, 0.5 + 1.05 * ndl, smoothstep(340.0, 12.0, dist));
       col *= facet;
 
@@ -5067,16 +5357,26 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
       // crest highlight on the up-facing tops of the swell
       float wh = oceanWave(vec2(vWorld.x, vWorld.z), uTime);
       float crest = smoothstep(0.30, 0.80, wh) * smoothstep(0.55, 0.95, n.y);
+      crest = mix(crest, smoothstep(0.35, 0.55, crest), 0.6);
       col = mix(col, uCrest, crest * 0.5);
 
       // moon glitter road
       vec3 hv = normalize(uMoonDir + viewDir);
       float spec = pow(max(dot(n, hv), 0.0), 60.0);
+      spec = mix(spec, smoothstep(0.18, 0.30, spec) * 0.6 + smoothstep(0.55, 0.70, spec) * 0.4, 0.7);   // highlights as flat strokes of light
       vec3 moonFlat = normalize(vec3(uMoonDir.x, 0.0, uMoonDir.z));
       vec3 viewFlat = normalize(vec3(-viewDir.x, 0.0, -viewDir.z));
       float road = pow(max(dot(viewFlat, moonFlat), 0.0), 8.0);
       col += vec3(0.90, 0.94, 1.0) * spec * (0.15 + road * 1.4);
       col += vec3(0.26, 0.34, 0.50) * road * 0.14;
+
+      // the water over whatever is passing underneath goes deeper; only the
+      // sky caught at a grazing angle is left lying over it
+      float camD0 = distance(uCamPos.xz, vWorld.xz);
+      if (camD0 < 150.0) {
+        float under = underMask(vWorld.xz) * smoothstep(3.0, 9.0, dist) * smoothstep(150.0, 90.0, camD0);
+        col = mix(col, col * 0.10 + vec3(0.0, 0.004, 0.010), under * (1.0 - 0.3 * fres));
+      }
 
       // rings from anything moving through the water. Skipped beyond ~55 m:
       // they can't be read at that range and the loop is per-pixel over a
@@ -5094,6 +5394,47 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
       col = mix(col, vec3(0.78, 0.85, 0.92), clamp(band * fizz, 0.0, 0.85));
       float lace = smoothstep(0.0, 1.5, dist) * smoothstep(5.0, 1.5, dist);
       col += vec3(0.16) * lace * (0.35 + 0.65 * bwNoise(vWorld.z * 2.0 + uTime * 1.5));
+
+      /* FOAM THAT REMEMBERS. Every wave leaves a line of lace where it
+       * reached, and that lace does not vanish with the wave: it lies on the
+       * water, drifts out on the backwash and thins away over a few seconds,
+       * so there are always two or three older lines lying seaward of the
+       * one breaking now. Each is where the waterline WAS, a little further
+       * out for every second since. */
+      if (dist > 0.2 && dist < 14.0 && camDist < 70.0) {
+        float mem = 0.0;
+        // the lace itself: froth that is mostly holes, and thin threads across them
+        vec2 lp = vWorld.xz * vec2(1.6, 1.0) + vec2(uTime * 0.12, uTime * 0.05);
+        float froth = smoothstep(0.40, 0.60, skN(lp));
+        float thread = 1.0 - smoothstep(0.0, 0.05 + fwidth(skN(lp * 2.3 + 4.0)) * 1.5, abs(skN(lp * 2.3 + 4.0) - 0.5));
+        for (int k = 1; k <= 5; k++) {
+          float fk = float(k);
+          // where the waterline was k beats ago, carried out on the backwash since
+          float lineX = shoreLine(vWorld.z, uTime - fk * 1.1) - fk * 0.55 - 0.5;
+          float age = fk / 5.5;
+          float w = 0.45 + age * 0.9;                             // a ribbon that spreads and thins
+          float d = abs(vWorld.x - lineX + (skN(vec2(vWorld.z * 0.7, fk * 3.1)) - 0.5) * 0.8);
+          mem = max(mem, smoothstep(w, 0.0, d) * (1.0 - age) * (1.0 - age * 0.4));
+        }
+        float far = smoothstep(70.0, 16.0, camDist);
+        float foam = mem * max(froth, thread * 0.6) * far;
+        col = mix(col, vec3(0.74, 0.82, 0.90), clamp(foam, 0.0, 1.0) * 0.72);
+      }
+      col *= bwCloudShade(vWorld, uSkyT, 0.42);
+
+      /* THE SURF GLOWS. Plankton light up where the water is disturbed, so the
+       * glow lives where the waves BREAK: brightest on the uprush (the
+       * waterline is climbing), in drifting patches rather than one even
+       * band, with hard sparks thrown off the churn. It is added after the
+       * cloud shade — it is its own light. */
+      float rush = clamp((shoreLine(vWorld.z, uTime + 0.35) - shore) * 1.6, 0.0, 1.0);
+      float plank = smoothstep(0.28, 0.72, skN(vWorld.xz * vec2(0.7, 0.45) + vec2(uTime * 0.35, -uTime * 0.12)));
+      float breakB = smoothstep(4.0, 0.2, dist) * smoothstep(-1.0, 0.4, dist);
+      vec2 sc = floor(vWorld.xz * vec2(6.0, 4.0));
+      float sh = fract(sin(dot(sc, vec2(12.9898, 78.233)) + floor(uTime * 6.0) * 0.37) * 43758.5453);
+      float spark = step(0.95, sh);
+      col += ${BIO_COL} * breakB * (0.25 + 0.75 * rush) * (plank * 0.42 * (0.45 + 0.55 * fizz) + spark * 0.28 * plank);   // a hint, by the owner's word, not a neon line
+      col += ${BIO_COL} * lace * plank * 0.06;
 
       gl_FragColor = vec4(col, 1.0);
       #include <fog_fragment>
@@ -5899,7 +6240,6 @@ const S_WAVE = document.getElementById('s-wave');
 const S_SFX = document.getElementById('s-sfx');
 const S_MUSIC = document.getElementById('s-music');
 const S_SPEED = document.getElementById('s-speed');
-const S_INVERT = document.getElementById('s-invert');
 const S_DEV = document.getElementById('s-dev');
 function applySettings() {
   camera.fov = settings.fov;
@@ -5925,7 +6265,7 @@ function syncMenuInputs() {
   S_BRIGHT.value = settings.brightness; S_VOL.value = settings.volume;
   S_MUSIC.value = settings.musicVolume;
   S_WAVE.value = settings.waveVolume; S_SFX.value = settings.sfxVolume; S_SPEED.value = settings.walkSpeed;
-  S_INVERT.checked = settings.invertY;
+  settings.invertY = false;                       // invert look is gone from the menu (owner's word); a saved one may not linger
   S_DEV.checked = settings.devMode;
 }
 S_FOV.addEventListener('input', () => { settings.fov = +S_FOV.value; applySettings(); saveSettings(); });
@@ -5936,7 +6276,6 @@ S_WAVE.addEventListener('input', () => { settings.waveVolume = +S_WAVE.value; ap
 S_SFX.addEventListener('input', () => { settings.sfxVolume = +S_SFX.value; applySettings(); saveSettings(); });
 S_MUSIC.addEventListener('input', () => { settings.musicVolume = +S_MUSIC.value; applySettings(); saveSettings(); });
 S_SPEED.addEventListener('input', () => { settings.walkSpeed = +S_SPEED.value; applySettings(); saveSettings(); });
-S_INVERT.addEventListener('change', () => { settings.invertY = S_INVERT.checked; saveSettings(); });
 S_DEV.addEventListener('change', () => {
   settings.devMode = S_DEV.checked;
   saveSettings();
@@ -15757,7 +16096,14 @@ const FACE_H = 0.30;                      // his head, as tall as it is
  * round him at max 11 / mean 4.6, and the owner still wanted him deeper in
  * it. 0.52 / 0.54 puts him at max 41 / mean 14: a shape you resolve rather
  * than a face you are shown. */
-const FACE_PEAK = 0.52;
+/* AND NOW HE IS SOLID, SO THE PEAK IS A LEVEL OF LIGHT, NOT AN OPACITY.
+ * The whole lit result — the drain's own lamps on him and his map through the
+ * emissive — is multiplied by `here * FACE_PEAK` in LINEAR light (after
+ * `opaque_fragment`, before the tone map), so at nothing he is a black head
+ * in a black pipe and at the peak he is a dim face whose eyes catch what
+ * light there is. Swept through the full frame, grain and palette and all:
+ * 0.45 and up reads as a face you are shown, 0.2 as one you resolve. */
+const FACE_PEAK = 0.2;
 const FACE_LIFT = 0.54;                   // his own map, handed back: there is nothing else down there to see him by
 const FACE_EDGE = 2.2;                    // how hard the silhouette dissolves — 0 is a cut-out
 /* AND HIS TEETH ARE WHITE IN THE MAP, WHICH IS THE WHOLE PROBLEM WITH A FLAT
@@ -15775,7 +16121,7 @@ const FACE_WAIT = 1.4, FACE_RISE = 2.4, FACE_FALL = 1.7;
 function makeGateFace(F) {
   const G = new THREE.Group();
   G.position.set(0, -0.02, EYES_Z);
-  G.userData = { mats: [], baseY: -0.02, ready: false, gone: false,
+  G.userData = { mats: [], gain: { value: 0 }, baseY: -0.02, ready: false, gone: false,
                  t: 0, holdFor: 0.75 + Math.random() * 0.8 };
   bwGlb('assets/crawler-head.glb', (gltf) => {
     const h = gltf.scene;
@@ -15802,28 +16148,36 @@ function makeGateFace(F) {
       m.color = new THREE.Color(0x05070a);
       m.roughness = 1.0;
       m.metalness = 0.0;
-      m.transparent = true;
-      m.opacity = 0;
-      m.depthWrite = false;
+      /* SOLID. He was a translucent head at half opacity, and a translucent
+       * thing reads as a ghost however well it is lit — you could see the pipe
+       * through him, which is the one thing a real creature never lets you
+       * do. He is opaque and depth-written like anything else in the game,
+       * and he comes out of the dark by LIGHT alone: at no lift he is a black
+       * shape in a black pipe, which is nothing, and the beat raises his own
+       * map through the emissive. */
+      m.transparent = false;
+      m.opacity = 1;
+      m.depthWrite = true;
       m.fog = false;
       m.toneMapped = false;
-      /* AND HE HAS NO EDGE. A plane could have the falloff baked into its
-       * alpha; a head cannot, and a head at forty per cent over a black pipe
-       * with a hard outline reads as a thing PASTED on the dark rather than
-       * a thing in it. The outline is exactly where the surface turns away
-       * from you, so that is what fades: the alpha carries the cosine of the
-       * angle between the normal and the eye, raised, so the face itself is
-       * whatever the beat says and the silhouette is nothing. It is the
-       * octopus ring's Fresnel wearing the opposite sign — that one lights a
-       * grazing edge, this one dissolves it. */
+      /* AND HE HAS NO EDGE. A head with a hard lit outline over a black pipe
+       * reads as a thing PASTED on the dark rather than a thing in it. The
+       * outline is exactly where the surface turns away from you, so that is
+       * where the light goes: the emissive is scaled by the cosine of the
+       * angle between the normal and the eye, raised, so the middle of the
+       * face carries whatever the beat says and the silhouette falls away
+       * into the same black as the pipe behind it. It used to do this with
+       * ALPHA, which made the whole head see-through; darkness does it
+       * without. */
       m.onBeforeCompile = (sh) => {
         sh.uniforms.uFaceEdge = { value: FACE_EDGE };
         sh.uniforms.uFaceKnee = { value: FACE_KNEE };
-        sh.fragmentShader = 'uniform float uFaceEdge;\nuniform float uFaceKnee;\n' + sh.fragmentShader
+        sh.uniforms.uFaceGain = G.userData.gain;
+        sh.fragmentShader = 'uniform float uFaceEdge;\nuniform float uFaceKnee;\nuniform float uFaceGain;\n' + sh.fragmentShader
           .replace('#include <emissivemap_fragment>',
-            '#include <emissivemap_fragment>\n  totalEmissiveRadiance /= (1.0 + uFaceKnee * totalEmissiveRadiance);')
-          .replace('#include <dithering_fragment>',
-            '#include <dithering_fragment>\n  gl_FragColor.a *= pow(clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), uFaceEdge);');
+            '#include <emissivemap_fragment>\n  totalEmissiveRadiance /= (1.0 + uFaceKnee * totalEmissiveRadiance);\n  totalEmissiveRadiance *= pow(clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), uFaceEdge);')
+          .replace('#include <opaque_fragment>',
+            '#include <opaque_fragment>\n  gl_FragColor.rgb *= uFaceGain;');
       };
       o.material = m;
       G.userData.mats.push(m);
@@ -15911,7 +16265,7 @@ function startPeek() {
   // visible at zero opacity from the first frame of the lean: the draw is
   // free and it gets the material compiled while you are still moving
   gateFace.visible = true;
-  for (const m of gateFace.userData.mats) m.opacity = 0;
+  gateFace.userData.gain.value = 0;
   const u = gateFace.userData;
   /* Once. The first time you look in, they are there; every time after,
    * nothing is — and you know it was there. A second showing would make it a
@@ -15990,10 +16344,8 @@ function updateGateFace(dt) {
   const here = rise * (1 - fall);
   if (rise > 0.35) eyesSeen = true;                  // that counts as seen
   if (fall >= 1) { u.gone = true; G.visible = false; return; }
-  for (const m of u.mats) {
-    m.opacity = here * FACE_PEAK;
-    m.emissiveIntensity = here * FACE_LIFT;
-  }
+  for (const m of u.mats) m.emissiveIntensity = FACE_LIFT;
+  u.gain.value = here * FACE_PEAK;
 
   const t = peekHeld;
   // he is not still: a slow sway and a slower shift of weight, and the head
@@ -20469,7 +20821,14 @@ function measureGaits(u, only) {
   for (const k of ['walk', 'run', 'back']) if (N[k]) names.add(N[k]);
   if (only) { names.clear(); for (const n of only) names.add(n); }
   const saved = [];
-  for (const k in u.clips) { const a = u.clips[k]; saved.push([a, a.time, a.enabled, a.paused, a.getEffectiveWeight(), a.isRunning()]); }
+  /* WHAT WAS ACTIVE, NOT WHAT WAS "RUNNING". `isRunning()` is false for a
+   * PAUSED action, and a creature's swing is exactly that — the combat clock
+   * holds it and writes its time — so a measure taken mid-fight stopped the
+   * swing, restarted only what was running, and left the mixer with nothing
+   * on it: the bind pose, which on this rig is a T, sliding across the sand
+   * under the injured run's fade-in. Anything the mixer was applying goes
+   * back on. */
+  for (const k in u.clips) { const a = u.clips[k]; saved.push([a, a.time, a.enabled, a.paused, a.getEffectiveWeight(), a.isRunning() || u.mixer._isActiveAction(a)]); }
   for (const k in u.clips) { const a = u.clips[k]; a.stop(); a.enabled = false; a.setEffectiveWeight(0); }
   for (const nm of names) {
     const a = u.clips[nm]; if (!a) continue;
@@ -20493,7 +20852,7 @@ function measureGaits(u, only) {
     if (sp > 0.15) u.clipSpeed[nm] = sp;                  // a clip that does not travel keeps whatever it had
     a.stop(); a.enabled = false; a.setEffectiveWeight(0);
   }
-  for (const [a, t, en, pa, w, run] of saved) { if (run) a.play(); a.time = t; a.enabled = en; a.paused = pa; a.setEffectiveWeight(w); }
+  for (const [a, t, en, pa, w, run] of saved) { if (run) { a.play(); } a.time = t; a.enabled = en; a.paused = pa; a.setEffectiveWeight(w); }
   u.mixer.update(0);
   if (!only) u._gaitMeasured = true;
 }
@@ -20681,6 +21040,20 @@ function mutAnim(u, dt, moving) {
     const wantLean = (u.st.atk >= 0 || u.st.stun > 0 || u.st.recoil > 0) ? 0 : N.lean * Math.min(1, moving * 2.2);
     u.leanT += (wantLean - u.leanT) * Math.min(1, dt * 5);
     u.model.rotation.x = u.leanT;
+  }
+  /* AND NOTHING MAY LEAVE THE RIG UNBOUND — the catacombs' own net, on every
+   * creature. A frame with no action carrying weight is drawn in the BIND
+   * pose, which on these rigs is a T, and a crossfade into a clip whose
+   * partner was stopped rather than faded is exactly that for as long as the
+   * fade runs: "they slide in a T pose". If the clip that is meant to be on
+   * is not active it is put back, and if what is active does not add up to
+   * a body the current clip takes the whole weight at once. */
+  if (u.cur && u.st.alive) {
+    const m = u.mixer;
+    if (!m._isActiveAction(u.cur)) { u.cur.enabled = true; u.cur.play(); }
+    let tw = 0;
+    for (const a of m._actions) if (m._isActiveAction(a)) tw += a.getEffectiveWeight();
+    if (tw < 0.6) { u.cur.stopFading(); u.cur.enabled = true; u.cur.setEffectiveWeight(1); }
   }
   u.mixer.update(dt);
 }
@@ -21166,7 +21539,10 @@ function mutInjClips(u, m) {
       const C = mutantMoves.clips[nm];
       if (C && C.yaw && C.dur > 0) u.injTurn = Object.assign(u.injTurn || {}, { [nm]: (C.yaw.swing * Math.PI / 180) / C.dur });
     }
+    /* measured NOW, while nothing is playing, not on the frame it breaks off —
+     * a scrub in the middle of a fight is a scrub over a swing in progress */
     u._injMeasured = false;
+    try { measureGaits(u, ['injRun', 'injL', 'injR']); u._injMeasured = !!(u.clipSpeed && u.clipSpeed.injRun); } catch (e) { /* the scan has not landed: measured at the flee */ }
   };
   if (mutantMoves) add(); else mutantMovesLate.push(add);
 }
@@ -23622,6 +23998,10 @@ function updateMutantCut(dt) {
 function mutSeparate(u, dt) {
   for (const o of mutants) {
     if (o === u || !o.st.alive) continue;
+    /* THE YOUNG ONE IS UNDERFOOT, NOT IN THE WAY. A four-metre animal is
+     * not held off something the size of a dog: he walks straight over it,
+     * and it is not shoved about by him either. */
+    if (u.kind.baby || o.kind.baby) continue;
     const dx = u.g.position.x - o.g.position.x, dz = u.g.position.z - o.g.position.z;
     const d = Math.hypot(dx, dz);
     /* TWO CREATURES FIGHTING EACH OTHER STAND AT ARM'S LENGTH, not at the
@@ -30665,11 +31045,57 @@ function animate() {
   requestAnimationFrame(animate);
   bwSpan('frame', animateFrame);
 }
+/* EVERY TEXTURE GOES UP BEFORE IT IS NEEDED, A FEW A FRAME. The hitch past
+ * Bradly was the dock house coming into range: seventy-two textures uploaded
+ * to the GPU on the one frame it was first drawn (40 ms), and the one before
+ * the tall man the same thing smaller. A far-culled landmark is invisible
+ * until you are near it, so nothing ever drew it early, and the warm chain
+ * only covers rooms. This walks the scene every couple of seconds for any
+ * texture that has not been uploaded — the dock, the wreck, a scan that
+ * landed late, anything — and puts it on the card with `initTexture`,
+ * three a frame, long before the thing it belongs to comes into view. */
+const texUp = { q: [], seen: new WeakSet(), scanAt: 0 };
+let bootRoomsAsked = false;
+const TEX_SLOTS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap', 'alphaMap', 'bumpMap', 'specularMap', 'lightMap', 'displacementMap', 'clearcoatMap', 'clearcoatNormalMap', 'clearcoatRoughnessMap', 'transmissionMap', 'thicknessMap', 'sheenColorMap', 'sheenRoughnessMap', 'iridescenceMap'];
+function texReady(t) {
+  if (!t || t.isRenderTargetTexture || t.isCubeTexture || t.isVideoTexture) return false;
+  const im = t.image;
+  if (!im) return false;
+  if (im.complete === false) return false;
+  if (im.width === 0 || im.height === 0) return false;
+  return true;
+}
+function updateTexUpload() {
+  const now = performance.now();
+  if (now >= texUp.scanAt) {
+    texUp.scanAt = now + 1800;
+    scene.traverse((o) => {
+      const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null;
+      if (!ms) return;
+      for (const m of ms) {
+        for (const k of TEX_SLOTS) { const t = m[k]; if (t && t.isTexture && !texUp.seen.has(t)) texUp.q.push(t); if (t && t.isTexture) texUp.seen.add(t); }
+        if (m.uniforms) for (const k in m.uniforms) { const v = m.uniforms[k] && m.uniforms[k].value; if (v && v.isTexture && !texUp.seen.has(v)) { texUp.seen.add(v); texUp.q.push(v); } }
+      }
+    });
+  }
+  let n = 0;
+  while (texUp.q.length && n < 3) {
+    const t = texUp.q.shift();
+    if (!texReady(t)) { texUp.seen.delete(t); continue; }       // not loaded yet: the next scan finds it again
+    const pr = renderer.properties.get(t);
+    if (pr.__version === t.version) continue;                   // already on the card: costs nothing, takes no slot
+    renderer.initTexture(t);
+    n++;
+  }
+}
 function animateFrame() {
   updateWhereAmI();                       // dev mode's own readout: where you are, in the room's own numbers
+  updateTexUpload();
   FOG_MOON.w = inRoom() ? 0 : 1;
   updateCritters();
   updateLightning();
+  updateFarSounds();
+  updateUnderSea();
   updateWorldSparks();
   updateAir();
   updateMood();
@@ -30693,6 +31119,16 @@ function animateFrame() {
   else if (!ucWarmed && ucWarm) { ucWarmed = true; ucWarm(); }
   else if (!ntarWarmed && ntarWarm) { ntarWarmed = true; ntarWarm(); }
   else if (!bossWarmed && shrineBoss) bwSpan('warmShrineBoss', warmShrineBoss);
+  /* AND THE ROOMS PAST THE STONES ARE PARSED AT BOOT, NOT ON THE APPROACH.
+   * The dojo was asked for when you came within 45 m of the portal and the
+   * catacombs within 60, so their parse and build landed on whatever frame
+   * the download finished — mid-walk, 79 ms for the courtyard alone. Asked
+   * for once the start-up has settled, they land behind the title card (or
+   * in the first seconds at the spawn) with everything else. */
+  if (!bootRoomsAsked && performance.now() > 3000) {
+    bootRoomsAsked = true;
+    try { loadDojo(); loadCatacombs(); } catch (e) { console.warn('[bw] boot rooms', e); }
+  }
   let dt = Math.min(clock.getDelta(), 0.05);
   // a beat of near-frozen time on a solid hit, drained in real seconds
   /* Hitstop stalls the WORLD, not your hands. Killing the crab sets 0.075 s
@@ -37111,8 +37547,9 @@ const shopTotal = () => SHOP_ROWS.reduce((t, r) => t + (shopCart.has(r.key) ? TR
 function shopToggle(i) {
   const r = SHOP_ROWS[i]; if (!r) return;
   shopSel = i;
+  // ONE THING AT A TIME: ticking a line clears whatever else was ticked
   if (shopCart.has(r.key)) shopCart.delete(r.key);
-  else if (shopCanTick(r)) shopCart.add(r.key);
+  else if (shopCanTick(r)) { shopCart.clear(); shopCart.add(r.key); }
   else traderSaid = shopHad(r) ? 'You have one. What do you want, a pair?' : 'Sold out. Shocking, I know.';
   renderShop();
 }
@@ -42475,9 +42912,38 @@ function buildCatacombs() {
 function catCapEnds() {
   const S = CAT_SITE, w = S.walk;
   if (!w || !S.walls || !catWorld) return;
-  let mat = null;
-  catWorld.traverse((o) => { if (!mat && o.isMesh && o.material && /CatacombWall/.test(o.material.name || '')) mat = o.material; });
+  let mat = null; const srcs = [];
+  catWorld.traverse((o) => { if (o.isMesh && o.material && /CatacombWall/.test(o.material.name || '') && o.name !== 'catDeadEnd') { if (!mat) mat = o.material; srcs.push(o); } });
   if (!mat) return;
+  /* THE CAP WEARS THE WALL'S OWN STONE AT THE WALL'S OWN SCALE. Each slab is
+   * one walk cell wide — a fifth of a metre — and a PlaneGeometry's uv runs
+   * 0..1 across whatever it is, so every strip squeezed the whole brick map
+   * into twenty centimetres and the cap drew as a speckled grid that no
+   * wall down here looks like. The density is MEASURED off the drawn walls
+   * (texture units per metre, median over their faces), and every cap vertex
+   * takes a uv from where it stands in the world — along the wall and up it —
+   * so neighbouring strips run into each other with no seam and the bricks
+   * are the size of the bricks beside them. */
+  const uvK = (() => {
+    catWorld.updateMatrixWorld(true);
+    const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), ds = [];
+    for (const src of srcs) {
+    const g = src.geometry, p = g.attributes.position, uv = g.attributes.uv, idx = g.index;
+    if (!uv) continue;
+    const cnt = idx ? idx.count : p.count, step = 3 * Math.max(1, Math.floor(cnt / 3 / 600));
+    for (let t = 0; t + 2 < cnt; t += step) {
+      const i0 = idx ? idx.getX(t) : t, i1 = idx ? idx.getX(t + 1) : t + 1, i2 = idx ? idx.getX(t + 2) : t + 2;
+      A.fromBufferAttribute(p, i0).applyMatrix4(src.matrixWorld); B.fromBufferAttribute(p, i1).applyMatrix4(src.matrixWorld); C.fromBufferAttribute(p, i2).applyMatrix4(src.matrixWorld);
+      const wa = B.sub(A).cross(C.sub(A)).length() / 2;
+      const ua = Math.abs((uv.getX(i1) - uv.getX(i0)) * (uv.getY(i2) - uv.getY(i0)) - (uv.getX(i2) - uv.getX(i0)) * (uv.getY(i1) - uv.getY(i0))) / 2;
+      if (wa > 1e-3 && ua > 0) ds.push(Math.sqrt(ua / wa));
+    }
+    }
+    ds.sort((a, b) => a - b);
+    const med = ds.length ? ds[ds.length >> 1] : 0.117;
+    return med > 0.02 && med < 2 ? med : 0.117;                  // a measurement off a broken mesh is not a density
+  })();
+  catWalk.capK = uvK;
   const W = S.walls, cell = W.cell;
   /* AND "IS ANYTHING DRAWN THERE" IS A QUESTION ABOUT THE CELL, NOT ITS
    * BUCKET. The index buckets a triangle by its own bounding box on a ONE
@@ -42524,6 +42990,11 @@ function catCapEnds() {
         const g = new THREE.PlaneGeometry(w.cell * 1.06, h);
         if (di) g.rotateY(di > 0 ? Math.PI / 2 : -Math.PI / 2); else if (dj > 0) g.rotateY(Math.PI);
         g.translate(x + di * (half + 0.02), f - 0.25 + h / 2, z + dj * (half + 0.02));
+        const P = g.attributes.position, UV = g.attributes.uv;
+        for (let q = 0; q < P.count; q++) {
+          const along = di ? P.getZ(q) * -di : P.getX(q) * dj;      // read the same way from the side you stand on
+          UV.setXY(q, (along - S.X) * uvK, (P.getY(q) - S.Y) * uvK);   // (not `k`: that is the cell's key in this loop)
+        }
         geos.push(g);
       }
     }
@@ -42889,51 +43360,35 @@ function updateCatacombs(dt) {
   if (!catWalk) return;
   // the torches gutter, each on its own count, and the door's light breathes
   const tt = performance.now() * 0.001;
-  /* AND NOW AND THEN ONE REALLY FLICKERS. Under the steady gutter each torch
-   * waits its own six to twenty-four seconds and then stutters — a few hard dips
-   * in a fraction of a second, sometimes nearly out — and comes back; and
-   * once in a while a draught goes through the room and every torch near you
-   * dips together, which is the one that makes you look round. */
+  /* A REAL TORCH, NOT A STROBE. The owner's word on the stepped stutters, the
+   * torches blown out for twenty seconds and the draughts that dipped the
+   * whole room: too intense, on and off. A pitch torch burning in still air
+   * moves by a few per cent — a slow breath under a quicker lick, never the
+   * same twice — and now and then it leans and sinks a little as a draught
+   * finds it, smoothly, and comes back. Nothing here ever goes out. */
   catDraught -= dt;
   if (catDraught <= 0) {
-    catDraught = 50 + Math.random() * 70;   // rare: a draught every minute or two, not every half minute (the owner found it corny)
-    let blew = false;
-    for (const l of catLights) {
-      const w = l.getWorldPosition(_catLp);
-      const d = w.distanceTo(camera.position);
-      if (d < 14) catGutter(l, 0.55 + Math.random() * 0.15, 0.6 + Math.random() * 0.5);
-      // and now and then the draught takes one: out for a while, then it catches again
-      if (d < 16 && !l.userData.dead && l.userData.outT <= 0 && Math.random() < 0.10) { l.userData.outT = 8 + Math.random() * 12; blew = true; }
-    }
+    catDraught = 50 + Math.random() * 70;                 // a draught every minute or two
+    for (const l of catLights) if (l.getWorldPosition(_catLp).distanceTo(camera.position) < 14) catGutter(l, 0.82 + Math.random() * 0.06, 1.4 + Math.random() * 1.0);
     sfxCatDraught();
-    if (blew) setTimeout(() => sfxTorchOut(), 350);
   }
   for (const l of catLights) {
     const u = l.userData;
-    // a flame, not a strobe: a few per cent of breath on two slow counts
-    let k = 0.91 + 0.06 * Math.sin(tt * 3.1 + u.seed) * Math.sin(tt * 1.3 + u.seed * 1.7) + 0.03 * Math.sin(tt * 5.7 + u.seed);
+    const sd = u.seed;
+    let k = 0.94
+      + 0.030 * Math.sin(tt * 1.7 + sd) * Math.sin(tt * 0.63 + sd * 1.7)     // the slow breath
+      + 0.018 * Math.sin(tt * 4.3 + sd * 2.3) * Math.sin(tt * 2.9 + sd)      // the lick of the flame
+      + 0.008 * Math.sin(tt * 9.1 + sd * 5.1);                              // and the wick
     if (u.gutNext === undefined) u.gutNext = 20 + Math.random() * 70;
     if (u.gutT >= 0) {
       u.gutT += dt;
       const f = u.gutT / u.gutLen;
       if (f >= 1) u.gutT = -1;
-      else {
-        // stepped, not smooth: a flame that catches and loses its wick
-        const step = Math.floor(u.gutT * 12 + u.seed);
-        const r = (Math.sin(step * 12.9898 + u.seed) * 43758.5453) % 1;
-        const dip = Math.abs(r) < 0.55 ? u.gutDepth : 1 - (1 - u.gutDepth) * 0.35;
-        k *= 1 - (1 - dip) * Math.sin(Math.PI * Math.min(1, f * 1.2));
-      }
+      else k *= 1 - (1 - u.gutDepth) * Math.sin(Math.PI * f) ** 2;         // a smooth lean and sink, and back
     } else if ((u.gutNext -= dt) <= 0) {
-      catGutter(l, Math.random() < 0.12 ? 0.25 : 0.55 + Math.random() * 0.2, 0.3 + Math.random() * 0.4);
+      catGutter(l, 0.86 + Math.random() * 0.06, 0.9 + Math.random() * 0.9);
     }
-    // blown out: gone in a breath, and catching again over a second with a few false starts
-    if (u.outT > 0) {
-      u.outT -= dt;
-      const off = u.outT > 1.2 ? Math.max(0, 1 - (u.outOld = (u.outOld || 0) + dt * 5)) : Math.min(1, (1.2 - u.outT) / 1.2) * (0.5 + 0.5 * Math.sin(tt * 31 + u.seed));
-      if (u.outT <= 0) u.outOld = 0;
-      k *= off;
-    } else u.outOld = 0;
+    u.outT = 0;
     if (u.dead) k = 0;
     l.intensity = u.base * k;
     const ti = catLights.indexOf(l);
@@ -45871,58 +46326,111 @@ function placeCatBaby() {
   u.g.rotation.y = Math.atan2(n.x - best.w.x, n.z - best.w.z);   // facing AWAY from the walk: you come up behind it
   B.placed = true; B.home = { x: n.x - CAT_X, f: n.f - CAT_Y, z: n.z - CAT_Z };
 }
-/* THE LEG. The left leg of Dennis's rotten limbs, in the right hand — and
- * where it sits is MEASURED on the pose, not typed: the torn knee end at the
- * mouth, the shin running down through the fist, the foot hanging past it.
- * The leg's own +Z runs knee to foot (the foot end is the wide one). Dropped
- * where it sits when it runs. */
+/* THE LEG, AND IT IS HELD. The left leg of Dennis's rotten limbs, in BOTH
+ * hands — the thigh in the right fist up by its mouth, the shin in the left
+ * a hand's breadth below, the foot hanging out past it. It was parented to
+ * the right wrist once, off the clip's first frame, and from then on it rode
+ * one hand while the other went through it and neither closed on it: a leg
+ * floating in front of a pair of open hands. It is FITTED EVERY FRAME now,
+ * after the clip and the life layer have posed the hands: the line through
+ * the two GRIP CENTRES (the palm, the curled middle finger and the thumb —
+ * the space a closed hand makes) is the leg's own centreline between the two
+ * points it is held at, so as the tear pulls the fists apart and the chew
+ * brings them back, the leg goes with them and stays inside both. The
+ * fingers close round it (`life.grip`) instead of hooking at the air. The
+ * leg's +Z runs knee to foot and its centreline was measured off its own
+ * vertices; the knee end is the torn end and is the end at the mouth. */
+const BABY_GRIP = 1.05;                   // radians of curl a phalanx takes round the leg
+const BABY_LEG_UP = -0.22;                // the leg's own z at the upper (right) fist: the thigh, a hand under the torn end
+let BABY_LEG_K = 0.72;                    // the leg's size in its hands (see below)
 const _blA = new THREE.Vector3(), _blB = new THREE.Vector3(), _blF = new THREE.Vector3(), _blX = new THREE.Vector3(), _blY = new THREE.Vector3();
-const _blM = new THREE.Matrix4(), _blR = new THREE.Matrix4();
+const _blM = new THREE.Matrix4(), _blR = new THREE.Matrix4(), _blL = new THREE.Vector3(), _blQ = new THREE.Quaternion();
+const _blM2 = new THREE.Matrix4();
+const _blD = new THREE.Vector3(), _blC = new THREE.Vector3(), _blS = new THREE.Vector3(), _blT = new THREE.Vector3();
+function babyGripAt(u, side, out) {
+  const bs = u.baby.gripBones[side];
+  bs.palm.getWorldPosition(out).multiplyScalar(2);
+  out.add(bs.knuckle.getWorldPosition(_blT));
+  out.add(bs.tip.getWorldPosition(_blT));
+  out.add(bs.thumb.getWorldPosition(_blT));
+  return out.multiplyScalar(0.2);
+}
+// the leg's own centreline at z, off its vertices once
+function babyLegAxis(geo) {
+  const pos = geo.attributes.position, pts = [];
+  geo.computeBoundingBox();
+  const bb = geo.boundingBox, nb = 12, acc = [...Array(nb)].map(() => [0, 0, 0]);
+  for (let i = 0; i < pos.count; i++) {
+    const k = Math.min(nb - 1, Math.floor((pos.getZ(i) - bb.min.z) / (bb.max.z - bb.min.z) * nb));
+    acc[k][0] += pos.getX(i); acc[k][1] += pos.getY(i); acc[k][2]++;
+  }
+  for (let k = 0; k < nb; k++) if (acc[k][2]) pts.push([bb.min.z + (k + 0.5) * (bb.max.z - bb.min.z) / nb, acc[k][0] / acc[k][2], acc[k][1] / acc[k][2]]);
+  return (z, out) => {
+    let i = 0; while (i < pts.length - 2 && pts[i + 1][0] < z) i++;
+    const a = pts[i], b = pts[i + 1], t = THREE.MathUtils.clamp((z - a[0]) / (b[0] - a[0]), 0, 1);
+    return out.set(a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, z);
+  };
+}
 function babyAttachLeg(u) {
   const B = u.baby;
   if (B.leg || B.dropped || !limbsTpl || !u.model || !u.clips.babyEat) return;
-  const hand = u.model.getObjectByName('DEF-handR'), jaw = u.model.getObjectByName('DEF-jaw_master'), head = u.model.getObjectByName('DEF-spine006');
-  if (!hand || !head) return;
-  // the eating pose's first frame, at full weight
-  const a = u.clips.babyEat;
-  for (const k in u.clips) if (u.clips[k] !== a) u.clips[k].stop();
-  a.reset().play(); a.setEffectiveWeight(1); a.time = 0; u.cur = a;
-  u.mixer.update(0); u.g.updateMatrixWorld(true);
+  const M = u.model, bone = (n) => M.getObjectByName(n);
+  const side = (s) => ({ palm: bone('DEF-palm02' + s), knuckle: bone('DEF-f_middle01' + s), tip: bone('DEF-f_middle03' + s), thumb: bone('DEF-thumb03' + s) });
+  B.gripBones = { L: side('L'), R: side('R') };
+  if (!B.gripBones.L.palm || !B.gripBones.R.palm || !B.gripBones.L.tip || !B.gripBones.R.thumb) return;
+  const t = limbsTpl.legL;
+  if (!t.axis) t.axis = babyLegAxis(t.geo);
+  const leg = new THREE.Mesh(t.geo, t.mat);
+  leg.frustumCulled = false; leg.userData.bwGhost = true; leg.matrixAutoUpdate = false;
+  u.g.add(leg);
+  B.leg = leg; B.legMesh = leg;
+  if (u.life) u.life.grip = BABY_GRIP;
+  babyHoldLeg(u);
+}
+function babyHoldLeg(u) {
+  const B = u.baby, leg = B.leg;
+  if (!leg || B.dropped) return;
+  const t = limbsTpl.legL;
+  u.g.updateMatrixWorld(true);
+  const gR = babyGripAt(u, 'R', _blA), gL = babyGripAt(u, 'L', _blB);
+  // the upper fist holds the thigh; the leg's own points at the two grips, as far apart as the fists are
+  const up = gR.y >= gL.y, hi = up ? gR : gL, lo = up ? gL : gR;
+  const K = BABY_LEG_K;
+  const span = Math.max(0.06, hi.distanceTo(lo)) / K;
+  const zHi = BABY_LEG_UP, zLo = Math.min(t.len * 0.5 - 0.05, zHi + span);
+  const pHi = t.axis(zHi, _blC), pLo = t.axis(zLo, _blS);
+  _blL.copy(pLo).sub(pHi).normalize();                         // the leg's own axis between the grips
+  _blD.copy(lo).sub(hi).normalize();                           // and where the fists have it
+  // turn the leg's axis onto the fists', with its toes out in front of the creature
   const yaw = u.g.rotation.y;
   _blF.set(Math.sin(yaw), 0, Math.cos(yaw));
-  (jaw || head).getWorldPosition(_blA);
-  head.getWorldPosition(_blB);
-  const mouth = _blA.lerp(_blB, 0.35).addScaledVector(_blF, 0.05);
-  const fist = hand.getWorldPosition(new THREE.Vector3());
-  const d = fist.clone().sub(mouth);
-  const L = d.length();
-  if (L < 0.08) d.set(0, -1, 0); else d.divideScalar(L);
-  _blY.copy(_blF).addScaledVector(d, -_blF.dot(d)).normalize();       // the foot sticks out forward
-  _blX.crossVectors(_blY, d).normalize();
-  _blR.makeBasis(_blX, _blY, d);
-  const t = limbsTpl.legL, top = new THREE.Vector3(0, 0.08, -t.len * 0.5);
-  const pos = mouth.clone().sub(top.applyMatrix4(_blR));
-  _blM.copy(_blR).setPosition(pos);
-  const leg = new THREE.Mesh(t.geo, t.mat);
-  leg.frustumCulled = false; leg.userData.bwGhost = true;
-  leg.matrix.copy(hand.matrixWorld).invert().multiply(_blM);
-  leg.matrix.decompose(leg.position, leg.quaternion, leg.scale);
-  hand.add(leg);
-  B.leg = leg; B.legMesh = leg;
+  _blY.copy(_blF).addScaledVector(_blD, -_blF.dot(_blD)).normalize();
+  _blX.crossVectors(_blY, _blD).normalize();
+  _blR.makeBasis(_blX, _blY, _blD);                            // world frame: +Z along the fists' line
+  _blQ.setFromUnitVectors(_blL, new THREE.Vector3(0, 0, 1));   // the leg's axis onto its own +Z first
+  _blM.makeRotationFromQuaternion(_blQ).premultiply(_blR).multiply(_blM2.makeScale(K, K, K));
+  // then the midpoint of the two grips on the midpoint of the fists
+  _blT.copy(pHi).add(pLo).multiplyScalar(0.5).applyMatrix4(_blM);
+  _blM.setPosition(hi.clone().add(lo).multiplyScalar(0.5).sub(_blT));
+  leg.matrix.copy(u.g.matrixWorld).invert().multiply(_blM);
+  leg.matrixWorldNeedsUpdate = true;
 }
 function babyDropLeg(u) {
   const B = u.baby;
   B.dropped = true;
   if (!B.leg || !catWorld) return;
   const leg = B.leg;
+  if (u.life) u.life.grip = null;                  // the hands let go
   leg.updateMatrixWorld(true);
+  leg.matrixAutoUpdate = true;
+  leg.matrix.decompose(leg.position, leg.quaternion, leg.scale);
   const wp = new THREE.Box3().setFromObject(leg).getCenter(new THREE.Vector3());
   const st = keepFloorAt(wp.x, wp.z, u.g.position.y + 0.6, 1.0, CAT_SITE);
   const fy = st ? st.f : u.g.position.y;
   catWorld.updateMatrixWorld(true);
   catWorld.attach(leg);
-  // it lands flat, the way it was pointing
-  leg.scale.setScalar(1);
+  // it lands flat, the way it was pointing, at the size it was held
+  leg.scale.setScalar(BABY_LEG_K);
   leg.rotation.set(0.03, u.g.rotation.y + 0.7, -0.03);
   const lp = catWorld.worldToLocal(new THREE.Vector3(wp.x, fy - 0.01, wp.z));
   leg.position.copy(lp);
@@ -46057,6 +46565,7 @@ function updateBaby(u, dt) {
   if (B.mode === 'eat') {
     mutPlay(u, 'babyEat', true);
     u.mixer.update(dt);
+    babyHoldLeg(u);
     babyEatSound(u, true, dt);
     return true;
   }
@@ -46599,6 +47108,7 @@ function makeKeepWater() {
         col = mix(col, uCrest, crest * 0.5);
         vec3 hv = normalize(uMoonDir + viewDir);
         float spec = pow(max(dot(n, hv), 0.0), 60.0);
+      spec = mix(spec, smoothstep(0.18, 0.30, spec) * 0.6 + smoothstep(0.55, 0.70, spec) * 0.4, 0.7);   // highlights as flat strokes of light
         vec3 moonFlat = normalize(vec3(uMoonDir.x, 0.0, uMoonDir.z));
         vec3 viewFlat = normalize(vec3(-viewDir.x, 0.0, -viewDir.z));
         float road = pow(max(dot(viewFlat, moonFlat), 0.0), 8.0);
@@ -46978,6 +47488,18 @@ function buildKeepIsland() {
   buildKeepWalls();
   repairKeepStoreys();
   buildKeepLift();
+  /* THE CAR WAS IN THE WALL INDEX AT ITS DRAWN HEIGHT. The walls are taken
+   * before the hoist is lifted out of the mesh, so its planks, bearers and
+   * rails — and the cargo taken off it — stayed behind as invisible walls
+   * where the model draws the car. Riding up, your body met its own car's
+   * ghost at y 12 and was shoved a quarter of a metre sideways in a frame:
+   * the lag on the way up. The moving pieces are `bwGhost` and the index is
+   * taken again now the mesh no longer holds them. */
+  if (keepLiftParts) {
+    keepLiftParts.car.traverse((o) => { if (o.isMesh) o.userData.bwGhost = true; });
+    for (const f of keepLiftParts.falls || []) f.grp.traverse((o) => { if (o.isMesh) o.userData.bwGhost = true; });
+    keepWalls = null; buildKeepWalls();
+  }
   ensureKeepBoat();
   buildKeepDoor();
   buildKeepLights();
@@ -48161,7 +48683,7 @@ function updateKeepLife() {
   pos.needsUpdate = al.needsUpdate = true;
   // a gull calls from wherever one of them is
   if ((L.callT -= dt) <= 0) {
-    L.callT = 6 + Math.random() * 12;
+    L.callT = 35 + Math.random() * 45;
     const b = critters.b[(Math.random() * critters.b.length) | 0];
     if (b && b.born) {
       const bx = b.cx + Math.cos(b.a) * b.r, bz = b.cz + Math.sin(b.a) * b.r;
@@ -48273,8 +48795,15 @@ function updateKeep(dt) {
     else { p.x = _preMove.x; p.z = _preMove.z; }
     st = keepStandable(p.x, p.z, feet, up);
   }
+  const rx = p.x, rz = p.z;
   pushOutOfKeep(p, KEEP_BODY, feet, up);
   keepWallPush(p, KEEP_BODY, feet, KEEP_SITE, up);
+  /* On a moving car the guide frames slide past the body, so a push there
+   * is a lean and never a shove: a centimetre and a half a frame at most. */
+  if (keepLift && keepLift.riding) {
+    const dx = p.x - rx, dz = p.z - rz, m = Math.hypot(dx, dz);
+    if (m > 0.015) { p.x = rx + dx * 0.015 / m; p.z = rz + dz * 0.015 / m; }
+  }
   // and whatever the push left you standing on still has to hold you up, so
   // the height falls back to the plain floor when you are being ejected
   st = keepStandable(p.x, p.z, feet, up) || keepFloorAt(p.x, p.z, feet, up) || st;
@@ -48653,7 +49182,17 @@ function updateKeepLift(dt) {
   const L = keepLift; if (!L) return;
   if (L.state !== 'rising' && L.state !== 'falling') return;
   L.t = THREE.MathUtils.clamp(L.t + (L.dir * dt) / LIFT.dur, 0, 1);
+  /* A RIDER GOES WITH THE CAR. Left to the walk, the way down was a string
+   * of little falls — the deck drops out from under your feet, gravity
+   * takes a few frames to catch you, you land, and again — and the way up a
+   * shove up a riser every frame. Whoever is standing on the deck is moved
+   * by exactly what the deck moves by. */
+  const y0 = L.y, B = keepLiftBox, cp = camera.position;
+  const riding = B && onGround && Math.abs(camBaseY - playerEye() - y0) < 0.12
+    && cp.x > B.x0 && cp.x < B.x1 && cp.z > B.z0 && cp.z < B.z1;
   setKeepLift(L.t * L.t * (3 - 2 * L.t));
+  L.riding = riding;
+  if (riding) { const d = L.y - y0; camBaseY += d; cp.y += d; }
   L.creak += dt;
   if (L.creak > 1.15) { L.creak = 0; sfxKeepCreak(); }
   if ((L.dir > 0 && L.t >= 1) || (L.dir < 0 && L.t <= 0)) {
@@ -49125,14 +49664,43 @@ const TAV_MOON_GLSL = `
   float mnoise(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
     return mix(mix(mix(mhash(i), mhash(i + vec3(1,0,0)), f.x), mix(mhash(i + vec3(0,1,0)), mhash(i + vec3(1,1,0)), f.x), f.y),
                mix(mix(mhash(i + vec3(0,0,1)), mhash(i + vec3(1,0,1)), f.x), mix(mhash(i + vec3(0,1,1)), mhash(i + vec3(1,1,1)), f.x), f.y), f.z); }
-  // the leading: a 2 x 3 frame with a soft edge all round, in the skylight's own units (-1..1)
+  /* The glazing: two lights either side of a timber mullion, each leaded in
+   * DIAMOND QUARRIES — the way an old roof light was actually glazed, small
+   * lozenges of glass in lead cames, not a grid of square panes. It is the one
+   * pattern the glass, the shaft and the pool on the flags all trace, so all
+   * three show the same leading. Skylight units, -1..1. */
   float mlattice(vec2 q) {
     vec2 a = abs(q);
-    float edge = smoothstep(1.0, 0.86, max(a.x, a.y));
-    float barX = smoothstep(0.035, 0.075, a.x);
-    float barY = smoothstep(0.03, 0.065, abs(abs(q.y) - 0.34));
-    return edge * barX * barY;
-  }`;
+    float edge = smoothstep(1.0, 0.93, max(a.x, a.y));
+    float mull = smoothstep(0.045, 0.075, a.x);                     // the mullion down the middle
+    vec2 d = vec2(q.x * 2.4 + q.y * 1.6, q.x * 2.4 - q.y * 1.6);     // two sets of cames, crossing on the diagonal
+    vec2 f = abs(fract(d) - 0.5);
+    float came = smoothstep(0.028, 0.06, min(0.5 - f.x, 0.5 - f.y));
+    return edge * mull * came;
+  }
+  /* THE SAME LEADING, DRAWN FOR THE EYE. Thirteen metres up at the retro
+   * scale a came is under a pixel, and a line under a pixel is sampled in
+   * and out of existence as the camera moves: the glass shimmered and read
+   * as another texture flickering through. Each line is held to at least a
+   * pixel across by its own screen derivative, and where the whole pattern
+   * is finer than the pixels can carry it fades to the average instead of
+   * sparkling. */
+  float mlatticeAA(vec2 q) {
+    vec2 a = abs(q);
+    float fa = max(fwidth(a.x), 1e-5);
+    float mull = smoothstep(0.045 - fa * 0.5, 0.045 + fa * 1.2, a.x);
+    vec2 d = vec2(q.x * 2.4 + q.y * 1.6, q.x * 2.4 - q.y * 1.6);
+    vec2 w = max(fwidth(d), vec2(1e-5));
+    vec2 e = 0.5 - abs(fract(d) - 0.5);                              // distance to the nearest came, in quarries
+    vec2 hw = max(vec2(0.03), w * 0.6);
+    vec2 c = smoothstep(hw, hw + w * 1.2, e);
+    float came = min(c.x, c.y);
+    float busy = smoothstep(0.12, 0.30, max(w.x, w.y));              // too fine to draw: show its average
+    came = mix(came, 0.78, busy);
+    return mull * came;
+  }
+  // which quarry a point is in: a little hash for each pane's own tint
+  vec2 mquarry(vec2 q) { return floor(vec2(q.x * 2.4 + q.y * 1.6, q.x * 2.4 - q.y * 1.6)); }`;
 function buildTavMoon() {
   if (tavMoon || !tavWorld) return;
   tavWorld.updateMatrixWorld(true);
@@ -49199,34 +49767,117 @@ function buildTavMoon() {
     const shaft = new THREE.Mesh(shaftGeo, shaftMat);
     shaft.matrixAutoUpdate = false;
     shaft.frustumCulled = false; shaft.renderOrder = 5; shaft.raycast = noRay; shaft.userData.bwGhost = true;
-    /* THE SKYLIGHT: cold sky through leaded glass, a hair under the vault. */
+    /* THE SKYLIGHT, CUT INTO THE VAULT. It used to be a flat square hung
+     * square-on to the moon — and the moon comes nearly straight down while
+     * the vault slopes, so half of it was buried in the ceiling and flickered
+     * as the depth fought, and what showed was an additive white square with
+     * a grid on it. Now it is a mesh laid ON the vault: every vertex is cast
+     * up the beam onto the drawn ceiling (the wall index, not a raycaster —
+     * that is fifty milliseconds a ray here) and set a finger in front of it,
+     * so it follows the curve exactly and can never sink into it. What is
+     * drawn on it is a HOLE: the view ray is carried on past the surface up a
+     * shaft of stone whose sides run along the beam, to a leaded window at
+     * the top — so the opening has depth and parallax, its reveal is lit from
+     * above, and the glass is a dark night sky with the moon's glow in it,
+     * each quarry its own slightly different piece of old glass. */
+    const R0 = hw * 1.09, NG = 20;
+    const conform = (R, off) => {
+      const pos = [], idx = [];
+      const o = new THREE.Vector3(), q = new THREE.Vector3();
+      for (let j = 0; j <= NG; j++) for (let i = 0; i <= NG; i++) {
+        const x = (i / NG * 2 - 1) * R, y = (j / NG * 2 - 1) * R;
+        o.copy(S).addScaledVector(xA, x).addScaledVector(yA, y).addScaledVector(zA, 1.6);
+        const h = tavRayAny(o, up, 4.0);
+        if (h) q.copy(o).addScaledVector(up, h.t - off);
+        else q.copy(S).addScaledVector(xA, x).addScaledVector(yA, y).addScaledVector(zA, off);
+        tavWorld.worldToLocal(q);
+        pos.push(q.x, q.y, q.z);
+      }
+      for (let j = 0; j < NG; j++) for (let i = 0; i < NG; i++) {
+        const a = j * (NG + 1) + i, b = a + 1, c = a + NG + 1, d = c + 1;
+        idx.push(a, c, b, b, c, d);
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setIndex(idx);
+      return g;
+    };
+    const skyGeo = conform(R0, 0.03);
+    // the glass sits a hand above the highest point of the opening
+    const _sp = new THREE.Vector3(), bInv = new THREE.Matrix4().copy(basis).invert();
+    let zTop = 0;
+    for (let i = 0; i < skyGeo.attributes.position.count; i++) {
+      _sp.fromBufferAttribute(skyGeo.attributes.position, i); tavWorld.localToWorld(_sp).applyMatrix4(bInv);
+      if (Math.abs(_sp.x) < hw && Math.abs(_sp.y) < hw) zTop = Math.min(zTop, _sp.z);
+    }
+    common.uGlass = { value: zTop - 0.42 };
     const skyMat = new THREE.ShaderMaterial({
-      uniforms: common, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-      vertexShader: `varying vec2 vQ; void main() { vQ = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      uniforms: common, side: THREE.DoubleSide,
+      polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8,     // it is ON the vault: the vault never wins
+      vertexShader: `varying vec3 vW; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
       fragmentShader: TAV_MOON_GLSL + `
-        uniform float uHW; varying vec2 vQ;
+        uniform mat4 uInv; uniform float uHW; uniform float uGlass; varying vec3 vW;
+        float h2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        vec3 stone(vec2 w, float lit) {
+          // courses of dressed stone up the reveal: a block a hand high, the joints dark
+          vec2 b = vec2(w.x * 2.2 + floor(w.y * 4.5) * 0.5, w.y * 4.5);
+          vec2 f = fract(b);
+          float joint = smoothstep(0.0, 0.06, min(min(f.x, 1.0 - f.x) * 0.45, min(f.y, 1.0 - f.y)));
+          float tone = 0.75 + 0.35 * h2(floor(b)) + 0.2 * mnoise(vec3(w * 9.0, 1.0));
+          return vec3(0.085, 0.080, 0.078) * tone * (0.35 + 0.65 * joint) * lit;
+        }
         void main() {
-          vec2 q = vQ / uHW;
-          float m = mlattice(q);
-          float core = 1.0 - 0.35 * length(q);
-          float cloud = 0.85 + 0.15 * mnoise(vec3(q * 2.0, uTime * 0.07));
-          vec3 col = mix(vec3(0.20, 0.30, 0.58), vec3(0.78, 0.86, 1.0), core) * m * cloud * (0.35 + 0.65 * uCloud);
-          // the frame and the leading, dark against it
-          float lead = (1.0 - m) * step(max(abs(q.x), abs(q.y)), 1.08);
-          gl_FragColor = vec4(col * 1.35, 1.0);
-          if (lead > 0.5 && m < 0.05) gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+          /* ONLY THE WINDOW. A recess traced into the vault behind the glass
+           * slid about with parallax as you walked under it and read as the
+           * old ceiling texture showing through; what is up there now is the
+           * leaded light itself in its timber curb, flat on the vault. */
+          vec3 ro = (uInv * vec4(cameraPosition, 1.0)).xyz;
+          vec3 pe = (uInv * vec4(vW, 1.0)).xyz;
+          vec2 a = abs(pe.xy);
+          float m = max(a.x, a.y);
+          if (m > uHW * 1.09) discard;
+          float fm = max(fwidth(m), 1e-5);
+          vec3 rd = normalize(pe - ro);
+          vec2 g = pe.xy / uHW;
+          float lead = mlatticeAA(g);
+          vec2 qid = mquarry(g);
+          float pane = h2(qid);
+          vec2 wob = vec2(mnoise(vec3(g * 5.0, qid.x)), mnoise(vec3(g * 5.0, qid.y + 4.0))) - 0.5;
+          vec3 v = normalize(rd + vec3(wob * 0.06, 0.0));
+          float moon = pow(max(0.0, -v.z), 60.0);                         // up the beam is where the moon is
+          float glow = pow(max(0.0, -v.z), 6.0);
+          vec3 sky = mix(vec3(0.020, 0.028, 0.060), vec3(0.10, 0.14, 0.26), glow);
+          sky += vec3(0.85, 0.90, 1.0) * moon * 1.6 * uCloud;
+          sky += vec3(0.28, 0.34, 0.52) * glow * 0.6 * uCloud;
+          vec3 tint = mix(vec3(0.82, 0.92, 0.88), vec3(0.95, 0.97, 1.05), pane);      // each quarry its own glass
+          float frost = 0.08 + 0.05 * pane;
+          vec3 col = sky * tint + vec3(0.30, 0.36, 0.50) * frost * uCloud;
+          // the cames: dark lead, a thin line of moon along each
+          col = mix(vec3(0.014, 0.014, 0.016) + vec3(0.10, 0.12, 0.16) * glow * uCloud * 0.25, col, lead);
+          // the timber curb the light is set in, its inner edge catching the moon — blended, not cut
+          float e = clamp((m - uHW) / (uHW * 0.09), 0.0, 1.0);
+          vec3 curb = vec3(0.045, 0.033, 0.024) * (1.0 + 2.2 * smoothstep(0.45, 0.0, e) * uCloud);
+          col = mix(col, curb, smoothstep(uHW - fm, uHW + fm, m));
+          gl_FragColor = vec4(col, 1.0);              // display values, like the baked hall round it
         }`,
     });
-    const sky = new THREE.Mesh(new THREE.PlaneGeometry(TAV_MOON_W * 1.08, TAV_MOON_W * 1.08), skyMat);
-    sky.matrixAutoUpdate = false; sky.raycast = noRay; sky.userData.bwGhost = true; sky.renderOrder = 4;
-    // and a soft bloom of light round it on the vault
-    const halo = new THREE.Mesh(new THREE.PlaneGeometry(TAV_MOON_W * 3.2, TAV_MOON_W * 3.2), new THREE.ShaderMaterial({
-      uniforms: common, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-      vertexShader: `varying vec2 vQ; void main() { vQ = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-      fragmentShader: TAV_MOON_GLSL + `uniform float uHW; varying vec2 vQ;
-        void main() { float d = length(vQ) / (uHW * 3.2); float k = pow(max(0.0, 1.0 - d), 2.2) * 0.22 * uCloud; gl_FragColor = vec4(vec3(0.42, 0.55, 0.95) * k, 1.0); }`,
+    const sky = new THREE.Mesh(skyGeo, skyMat);
+    sky.raycast = noRay; sky.userData.bwGhost = true; sky.frustumCulled = false; sky.renderOrder = 1;
+    // a soft spill of moonlight on the vault round the opening, laid on the vault the same way
+    const halo = new THREE.Mesh(conform(hw * 2.4, 0.02), new THREE.ShaderMaterial({
+      uniforms: common, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+      vertexShader: `varying vec3 vW; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+      fragmentShader: TAV_MOON_GLSL + `uniform mat4 uInv; uniform float uHW; varying vec3 vW;
+        void main() {
+          vec3 p = (uInv * vec4(vW, 1.0)).xyz;
+          float d = max(abs(p.x), abs(p.y)) / uHW;
+          if (d < 1.09) discard;
+          float k = pow(smoothstep(2.4, 1.09, d), 2.0) * 0.055 * uCloud;
+          gl_FragColor = vec4(vec3(0.42, 0.55, 0.95) * k, 1.0);
+        }`,
     }));
-    halo.matrixAutoUpdate = false; halo.raycast = noRay; halo.userData.bwGhost = true; halo.renderOrder = 3;
+    halo.raycast = noRay; halo.userData.bwGhost = true; halo.frustumCulled = false; halo.renderOrder = 3;
     /* THE POOL on the flags, with the leading in it: every point of it is
      * traced back up the beam to the skylight's frame. */
     const poolMat = new THREE.ShaderMaterial({
@@ -49272,10 +49923,8 @@ function buildTavMoon() {
     dust.matrixAutoUpdate = false; dust.frustumCulled = false; dust.raycast = noRay; dust.userData.bwGhost = true; dust.renderOrder = 6;
     // all of it in the tavern's own frame
     const local = inv.clone().multiply(basis);
-    for (const o of [shaft, sky, halo, dust]) { o.matrix.copy(local); group.add(o); }
-    // the skylight and its halo sit a finger and a hand under the vault, facing down the beam
-    sky.matrix.copy(local).multiply(new THREE.Matrix4().makeTranslation(0, 0, 0.02));
-    halo.matrix.copy(local).multiply(new THREE.Matrix4().makeTranslation(0, 0, 0.05));
+    for (const o of [shaft, dust]) { o.matrix.copy(local); group.add(o); }
+    group.add(sky, halo);                              // already in the tavern's frame, laid on the vault
     pool.position.copy(tavWorld.worldToLocal(P.clone().add(new THREE.Vector3(0, 0.012, 0))));
     group.add(pool);
     common.uInv.value.copy(basis).invert();
@@ -49326,6 +49975,39 @@ const TAV_TORCH_MAX = 12;
 const TAV_TORCH_H = 2.35;                        // over the flags
 const TAV_TORCH_N = 9, TAV_TORCH_GAP = 5.5;
 const TAV_TORCH_STONE = ['TextureMaterial_8', 'TextureMaterial_4'];   // the stone walls (measured: _2 is the dressers' timber)      // how many, and how far apart at the least
+/* A RAY IN ANY DIRECTION through the wall index — floors and vaults as well
+ * as walls. For a ray that is mostly vertical the cells it crosses are few,
+ * so it gathers the cells under the segment's plan box and tests those. */
+function tavRayAny(o, d, far, S = TAV_SITE) {
+  const W = S.walls; if (!W) return null;
+  const v = W.v, cell = W.cell;
+  const x0 = Math.min(o.x, o.x + d.x * far), x1 = Math.max(o.x, o.x + d.x * far);
+  const z0 = Math.min(o.z, o.z + d.z * far), z1 = Math.max(o.z, o.z + d.z * far);
+  const i0 = Math.floor((x0 - S.X) / cell) - 1, i1 = Math.floor((x1 - S.X) / cell) + 1;
+  const j0 = Math.floor((z0 - S.Z) / cell) - 1, j1 = Math.floor((z1 - S.Z) / cell) + 1;
+  if ((i1 - i0) * (j1 - j0) > 900) return null;
+  const seen = new Set(); let bt = far, bo = -1;
+  _twD.copy(d);
+  for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+    const list = W.map.get(W.key(i, j)); if (!list) continue;
+    for (let m = 0; m < list.length; m++) {
+      const id = list[m]; if (seen.has(id)) continue; seen.add(id);
+      const b = id * 9;
+      _twE1.set(v[b + 3] - v[b], v[b + 4] - v[b + 1], v[b + 5] - v[b + 2]);
+      _twE2.set(v[b + 6] - v[b], v[b + 7] - v[b + 1], v[b + 8] - v[b + 2]);
+      _twP.crossVectors(_twD, _twE2);
+      const det = _twE1.dot(_twP); if (det > -1e-9 && det < 1e-9) continue;
+      const inv = 1 / det;
+      _twT.set(o.x - v[b], o.y - v[b + 1], o.z - v[b + 2]);
+      const u = _twT.dot(_twP) * inv; if (u < 0 || u > 1) continue;
+      _twQ.crossVectors(_twT, _twE1);
+      const w = _twD.dot(_twQ) * inv; if (w < 0 || u + w > 1) continue;
+      const t = _twE2.dot(_twQ) * inv;
+      if (t > 1e-4 && t < bt) { bt = t; bo = b; }
+    }
+  }
+  return bo < 0 ? null : { t: bt };
+}
 const _twE1 = new THREE.Vector3(), _twE2 = new THREE.Vector3(), _twP = new THREE.Vector3(), _twT = new THREE.Vector3(), _twQ = new THREE.Vector3(), _twD = new THREE.Vector3();
 /* a horizontal ray through the hall's wall index: the nearest steep face,
  * its distance and its normal */
@@ -49527,6 +50209,10 @@ function buildTavTorches() {
         float x = (q.x - 0.5 - sway) * 2.0;
         float lick = 0.82 + 0.25 * n1(t * 3.1 + q.y * 3.0);
         float w = sqrt(max(0.0, q.y * 1.4)) * (1.0 - q.y / lick) * 0.95;   // a teardrop: round at the root, a point at the tip
+        /* PAST THE TIP THE WIDTH GOES NEGATIVE, and smoothstep with both
+         * edges below zero returns 1 for every x — which lit the whole top
+         * band of the sprite: a bright bar hanging over every flame. */
+        if (w <= 0.002) discard;
         float k = smoothstep(w, w * 0.45, abs(x)) * smoothstep(0.0, 0.08, q.y);
         if (k < 0.01) discard;
         float core = smoothstep(0.55, 0.0, abs(x) / max(w, 1e-3)) * smoothstep(0.75, 0.15, q.y);
@@ -51775,7 +52461,8 @@ function lifeApply(u, B, dt, saved) {
   }
   // and the claws, curled always and harder through a blow
   if (S.fingers.length) {
-    const curl = (u.kind.claws || 0) * (busy ? 1.35 : 1.0);
+    // a hand that is HOLDING something closes round it instead (`life.grip`, set by whoever owns the beat)
+    const curl = S.grip != null ? S.grip : (u.kind.claws || 0) * (busy ? 1.35 : 1.0);
     for (const f of S.fingers) { saved.push({ b: f.b, q: f.b.quaternion.clone(), p: null }); f.b.quaternion.multiply(_lfQ.setFromAxisAngle(_lfX, f.sign * curl * f.k)); }
   }
   // the weight moving over his feet, on two counts that never line up
@@ -53008,7 +53695,7 @@ window.__bw = {
   TAV_BORE,
   catShutDoor, get catWalk() { return catWalk; }, get catCells() { return catCells; },
   renderHotbar, renderPack,
-  poseRig, UMBRA_JOINTS,   buildTavMoon, tavMoonState: () => tavMoon, tavMoonU, tavTorchState: () => tavTorches, tavLightU, keepLightState: () => keepLights, tavWallRay, babyUnit, placeCatBaby, catEnrage, catLimbs: () => ({ tpl: limbsTpl, spots: catLimbSpots, gone: catBabyGone, eatGain: babyEatGain ? +babyEatGain.gain.value.toFixed(3) : null, eatSrc: !!babyEatSrc }),
+  poseRig, UMBRA_JOINTS,   buildTavMoon, tavMoonState: () => tavMoon, tavMoonU, tavTorchState: () => tavTorches, tavLightU, keepLightState: () => keepLights, tavWallRay, babyUnit, placeCatBaby, babyHoldLeg, setBabyLegK: (k) => { BABY_LEG_K = k; }, catEnrage, catLimbs: () => ({ tpl: limbsTpl, spots: catLimbSpots, gone: catBabyGone, eatGain: babyEatGain ? +babyEatGain.gain.value.toFixed(3) : null, eatSrc: !!babyEatSrc }),
   crawlerUnit, CRAWL_X, CRAWL_Z, crawlerProvoke, startCaveIn, placeInCatacombs, placeOutsideCatDoor, startCatExit, startCatReturn, placeInsideCatDoor, fitCatSandDoor, catWallDoor, catRoute, catSees, catNodeAt, CAT_X, CAT_Y, CAT_Z, CAT_SITE, CAT_LAND, CAT_DOOR, CAVE_Z,
   TRADER_X, TRADER_Z, TRADER_H, TRADER_POSE, traderPose, TRADER_STOCK, traderBuy, TRADER_NPC, traderWorld, get traderRig() { return traderRig; },
   magnumItem, magModel, magFire, magReload, magTrace, MAG_CAP,
@@ -53219,7 +53906,7 @@ if (loadMode === 'checkpoint' && hasCheckpoint()) {
 })();
 
 Object.assign(window.__bw, {
-  umbraU: () => umbraUnit, mutMaybeFlee, mutBleedOut, mutantMovesState: () => !!mutantMoves, umbraDeflect, worldSparks, bolt, sfxThunder, boltLight, beamPivot, air, sandMat, moodKeys, catLights, catGutter, keepArrive, keepLifeState: () => keepLife, keepSkyU, playKeepIntro, keepIntroState: () => ({ buf: !!keepIntroBuf, playing: !!keepIntroSrc, gain: keepIntroGain && keepIntroGain.gain.value, ctx: audioCtx && audioCtx.state }), startSail,
+  umbraU: () => umbraUnit, mutMaybeFlee, mutBleedOut, mutantMovesState: () => !!mutantMoves, umbraDeflect, worldSparks, bolt, sfxThunder, boltLight, beamPivot, air, farSnd, buoyLamp, underSea, updateUnderSea, sandMat, moodKeys, catLights, catGutter, keepArrive, keepLifeState: () => keepLife, keepSkyU, playKeepIntro, keepIntroState: () => ({ buf: !!keepIntroBuf, playing: !!keepIntroSrc, gain: keepIntroGain && keepIntroGain.gain.value, ctx: audioCtx && audioCtx.state }), startSail,
   sharpMat, skyUniforms, SKYLINE, city, blowHeightOK, blowFacing, critters,
   FOG_MOON,
   keepFences: () => KEEP_FENCES,

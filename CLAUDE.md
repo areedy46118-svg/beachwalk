@@ -13723,6 +13723,19 @@ level you could argue yourself out of.
   and mean 17 over 2,016 pixels against the pipe round it at max 11 and mean
   4.6.** The first build of the still measured 24 against 5-12, which is not
   barely visible, it is invisible.
+- **AND HE IS SOLID NOW, NOT A GHOST.** The alpha edge above is history: a
+  translucent head reads as a ghost however well it is lit, because you can
+  see the pipe through it. The material is opaque and depth-written, the
+  silhouette falls into shadow (the Fresnel term scales his EMISSIVE, not his
+  alpha), and the whole lit result — the drain's own lamps on him and his map
+  through the emissive — is multiplied by `here * FACE_PEAK` in LINEAR light,
+  after `opaque_fragment`, so at nothing he is a black head in a black pipe.
+  The fade has to go there: done after `dithering_fragment` it was in display
+  space on the canvas and linear in a render target, and the two disagreed by
+  a factor of two. Swept through full frames (grain, palette and all),
+  `FACE_PEAK` 0.2 is a face you resolve and 0.45 one you are shown. **Judge it
+  off the canvas, not a render target** — the target read him twice as bright
+  as the frame the player sees.
 - **AND IT DOES NOT ARRIVE AND VANISH.** The eyes were gone between one frame
   and the next, which is a jump scare's timing. Measured on the shipped
   curve: nothing for 2.3 s, up over 3 s while he comes from 5.4 m to 3.9 m
@@ -14432,8 +14445,8 @@ Measured: 48 walks from both sides with jumps, 0 crossings.
 filled when you already OWNED the thing — a picture of a checkbox nothing
 could tick — and buying was one button per line. Now a click or Space ticks
 the line (`shopCart`, `shopToggle`), the button reads `Confirm · N jars` for
-everything ticked, and Confirm or E buys the lot through `traderBuy` one line
-at a time. A line that is sold out or already in the pack cannot be ticked
+everything ticked, and Confirm or E buys it through `traderBuy`. ONE LINE AT
+A TIME, by the owner's word: ticking a line clears any other. A line that is sold out or already in the pack cannot be ticked
 (dashed box, "owned"/"sold out" where the price was), and the button refuses
 a total you cannot pay rather than filling half the order. The glowstick
 costs one jar.
@@ -14525,6 +14538,21 @@ The first build of it looked "exactly the same" to the owner: the map is read LI
 - **Authored heights are WORLD metres.** `poseRig`'s `hipY` is divided by the parent's world scale, so a smaller copy of a kind inherits the big one's metres and sank half a metre into the floor; `kind.hipYK` scales them (and `posture.lift`, also metres, is scaled by hand on the baby).
 - **`crawlerMovesLate` is a LIST** — a single slot was overwritten by whichever copy asked second; `kind.authorMore` runs after `authorCrawlerRest` in both the immediate and the late path.
 - **`tools/sheet.js`'s `__pose` reads `window.__poseUnit`** and falls back to the crawler — reset on every reload, and two solves this round ran on the big one's body before that was noticed.
+- **AND IT HOLDS THE LEG IN BOTH HANDS.** The leg was parented to the right
+  wrist once, off the clip's first frame, so it rode one hand while the other
+  went through it and neither closed on it. `babyHoldLeg` fits it EVERY FRAME
+  after the clip and the life layer have posed the hands: the line through
+  the two grip centres (palm, curled middle finger, thumb) is the leg's own
+  measured centreline between the thigh and the shin, knee end up at the
+  mouth. The fingers close round it through `life.grip` (a per-unit override
+  of the claws' curl, cleared when it drops the leg), and the leg is carried
+  at `BABY_LEG_K` 0.72 — at full size a 13 cm thigh swallowed a 5 cm fist and
+  only the claw tips showed.
+- **HE WALKS OVER IT.** `mutSeparate` holds every creature a pace off every
+  other, and in a hall 1.2 m wide that pace is the whole corridor: the big one
+  stopped dead at the young one's back. A pair with a `baby` in it is skipped
+  both ways. Measured, chasing down that hall: he passes within 0.06 m of it
+  and on to his fighting range, and it does not move.
 - The remains: sixteen pieces of the other five parts at 1.4x (the room is packed at 2.2x, and its own skulls make a true-size arm a twig), one `InstancedMesh` per part plus one of stains, placed by a seeded draw on graph nodes — a third at the bone piles, the rest against walls (`n.w < 0.8`) — only where the floor under the whole footprint is level and no wall crosses it (`scatterCatLimbs`). `bwGhost`, so nothing is a wall.
 
 **THE MARAUDER'S MOVES ARE HIS OWN.** The owner's word: completely different from every other creature, even the walk and the run — and the borrowed run (the knight's pack, retargeted) made him look sideways. `authorUmbraClips` retargets ONLY his combo now (`umbraMoves`, no `tavRetargetAll`), and `authorUmbraOwn` writes the rest on his own `uStance` (Pose3) through `poseRig` with `UMBRA_ALL` (both pairs of arms): `uWalk`/`uWalkB` (a swaying stalk, blades drifting), `uRun`/`uRunB` (pitched nearly flat, head leading, blades folded back), `uStrafeL/R`, `uSideL/R`, `uHit`, `uHitBig`, `uParry` (the stun reel), `uDodge` (a tucked vault), and four blows — `uImpale` (uStab), `uReaper` (uSweep), `uWhirl` (uSpin, ends on a whole turn), `uDescent` (uLeap, the clip is the swing's length so take-off is `wind - LEAP_AIR`). His rig's conventions, measured: thigh +right = leg back, calf +right = fold, chest/waist +right = pitch forward, arm -right = forward/up, `hipY` metres. Measured live: 186 frames running at you, 0 degrees between his heading and his travel. A pane trap from authoring it: `__grid`-style tests must disable EVERY action on the mixer (`u.mixer._actions`), not just `u.clips`, or each test clip stays at weight 1 and they all average into one pose.
@@ -14576,3 +14604,178 @@ swell round the island; and every lamp and window is REFLECTED in the sea —
 the light mirrored across the sea plane and a shimmering streak drawn where
 the eye's line to that reflection meets the surface, depth-tested so land
 hides it. All additive, all `bwGhost`, nothing enters or leaves the scene.
+
+**A TEARDROP SHADER MUST DISCARD PAST ITS TIP.** The tavern torch flame's
+width goes negative above the tip, and `smoothstep` with both edges below
+zero returns 1 for every x — which lit the whole top band of the point
+sprite, a bright bar hanging over every flame. `if (w <= 0.002) discard;`.
+
+**THE TAVERN'S SKYLIGHTS ARE CUT INTO THE VAULT, NOT HUNG UNDER IT.** They
+were flat squares turned to face the moon, and the moon comes nearly straight
+down while the vault slopes, so half of each was buried in the ceiling and
+flickered, and what showed was an additive white square with a grid on it.
+Each is now a 12×12 mesh CAST UP THE BEAM onto the drawn vault through the
+wall index (`tavRayAny`, any direction — a raycaster against the merged hall
+is fifty milliseconds a ray) and set a finger in front of it, so it follows
+the curve exactly. It is opaque and what it draws is a HOLE: the view ray is
+carried on past the surface up a shaft whose sides run along the beam
+(interior mapping, in the beam's own frame via `uInv`), so the opening has a
+lit stone reveal and parallax, and at the top is leaded glass — dark night
+sky, the moon's glow, each quarry its own tint and ripple. The glazing is
+`mlattice`, now DIAMOND QUARRIES either side of a mullion, and because the
+shaft and the pool on the flags trace the same function they show the same
+leading. The halo round the opening is laid on the vault the same way.
+
+**THE BEACH'S CLOUDS MOVE, AND THEY ARE PAINTED.** At 0.0045 units a second a
+cloud took four minutes to cross the sky — indistinguishable from still.
+`skCloud` drifts in off the sea at 0.030 (a cloud crosses overhead in about
+forty seconds and crawls near the horizon), and the shapes are domain-warped
+by a slower field so they curl and change as they go. On top: a thin high
+veil of streaks on its own slower heading (two decks at two speeds is what
+reads as depth), the light on the clouds laid in three soft bands with a
+brush grain along the wind, a hard silver line where a thin edge faces the
+moon, and a cold underbelly. The stars use the same `skCloud`, so they are
+still hidden behind whatever cloud is over them.
+
+**THE CATACOMBS' DEAD-END CAPS WEAR THE WALL'S OWN STONE AT ITS OWN SCALE.**
+Each cap slab is one walk cell wide (a fifth of a metre) and a
+PlaneGeometry's uv runs 0..1 across whatever it is, so every strip squeezed
+the whole brick map into twenty centimetres and the cap drew as a speckled
+grid nothing down there looks like. `catCapEnds` measures the drawn walls'
+texel density (median over every `CatacombWall` face, about 0.119 texture
+units a metre) and gives every cap vertex a uv from where it stands in the
+world — along the wall and up it — so neighbouring strips run into each
+other and the bricks are the size of the bricks beside them. **And a name
+used in a helper must not be the name of a loop variable below it**: the
+density was first called `k`, and `for (const [k, fl] of S.cells)` shadowed
+it with the cell's integer key — the caps' uvs came out in the millions.
+
+**CLOUD SHADOWS, AND THE SURF GLOWS.** `CLOUD_SHADE_GLSL` (`bwCloudShade`)
+multiplies the FINISHED colour of the sand, the dune and the sea — the moon's
+key light is four per cent of what lights this beach, so shading only the
+direct term is invisible — by the same moving `skCloud` field the sky draws,
+laid flat at about 50 m a patch and sliding in with the wind at a few metres
+a second (0.52 on the sand and the dune, 0.42 on the sea). It rides the sky's
+clock (`skyUniforms.uTime`, the wall clock), shared into `oceanUniforms` after
+the merge because `UniformsUtils.merge` clones. The BIOLUMINESCENCE
+(`BIO_COL`, a cold blue-green) is three things, all added after the shade
+because it is its own light: in the sea, drifting patches and hard sparks in
+the four metres where the waves break, brightest on the UPRUSH (the
+waterline climbing — `shoreLine` a third of a second ahead); on the sand,
+round specks flickering in the last couple of metres the water drew back
+from; and a FOOTPRINT on wet sand (`footGlow`, a second instanced batch on
+the prints' own slots, masked by the print's pits, washed away by the swash
+like them) glows for a breath and fades over a few seconds, brighter the
+wetter the sand. **And a harness that winds `performance.now` backward
+breaks the lightning**: the flash's envelope goes negative and the beach
+renders white — compare frames a real ten seconds apart instead.
+
+**THE GLOW IS ON THE WATER ONLY, AND ONLY A HINT.** The owner's word after
+seeing it: no specks on the sand, no glowing footprints, and the surf's glow
+more subtle — it is a third of what it was, a tint in the breaking water.
+
+**INVERT LOOK IS GONE FROM THE MENU**, and `settings.invertY` is forced false
+at load so a saved session cannot keep it.
+
+**A CATACOMBS TORCH BREATHES; IT DOES NOT STROBE.** Stepped stutters, torches
+blown out for twenty seconds and draughts that dipped every torch in the room
+were "too intense, on and off". Three sines of a few per cent (a slow breath,
+a quicker lick, the wick), a rare smooth lean-and-sink of ten per cent when a
+draught finds one, and nothing ever goes out.
+
+**THE INJURED RUN SLID IN A T-POSE BECAUSE A MEASURE STOPPED THE SWING.**
+`updateMutFlee` scrubbed the three limp clips (`measureGaits`) on the frame the
+creature broke off, and `measureGaits` stops every action and restarts only
+what `isRunning()` — which is false for a PAUSED action, and a creature's
+swing is exactly that: the combat clock holds it. So the swing vanished, the
+run faded in over an empty mixer, and the body slid across the sand in its
+bind pose. Three fixes: the limp clips are measured when they are BUILT
+(`mutInjClips`), the measure restores anything that was active, and
+`mutAnim` ends with the catacombs' own net — if the current clip is not
+active it is put back, and if what is active adds up to less than a body the
+current clip takes the whole weight. Measured on three mutants breaking off
+mid-swing: every frame of the flee carries a full weight of 1.00 (it reached
+0 before).
+
+**NO TEXTURE WAITS FOR ITS FIRST DRAW.** The lag past Bradly was the dock
+house coming into range — 72 textures uploaded on the one frame it was first
+drawn (40 ms) — and the one before the tall man the same thing (59 ms). A
+far-culled landmark is never drawn early, so `updateTexUpload` walks the scene
+every 1.8 s for any texture not yet on the card and puts it there with
+`renderer.initTexture`, three a frame, skipping anything already uploaded.
+**And the rooms past the stones parse at BOOT** (`bootRoomsAsked`): the dojo
+used to be asked for within 45 m of the portal and its build (79 ms) landed
+mid-walk. Measured over the whole walk from the spawn to the portal, 1667
+frames: 2 over 16.7 ms, both at cutscene triggers (was repeated 40–60 ms
+spikes). Profile a walk with an ASYNC loop — a MessageChannel tick between
+frames, so the parse chain can land — and time each `b.frame(1)`; a
+synchronous loop never lets a download finish and finds nothing.
+
+**ONE WIND, AND THINGS IT CARRIES.** `WIND` (down the beach and a little out
+to sea, the way the clouds drift) is the prevailing direction; a gust varies
+it by a few degrees, never by half the compass. The sand grains, the moths
+(a breath always, a push in a gust) and the gulls' wheel all go with it.
+(Tumbling clumps of dry wrack went in with this and came out on the owner's
+word — they read as grey blobs. Do not put them back.)
+
+**THE FAR SOUNDS** (`updateFarSounds`): a BELL BUOY 70 m out, one moored every
+360 m (`buoyAt`), ringing uneven clusters of one to three strokes on cast-bell
+partials with a red lamp blinking on it; the LIGHTHOUSE FOGHORN once a minute
+or so, a two-note diaphone from `LH_X/LH_Z`, near nothing at the spawn and
+louder as you close on the tower; and GULLS calling from where the birds are,
+QUIET whenever a mutant or a crab is awake within 45 m. All filtered by
+distance, all off in rooms. And RARE, by the owner's word: the bell rings
+every 45-105 s, a beach gull every 50-120 s and a keep gull every 35-80 s.
+A far sound that comes every few seconds is a loop you can hear.
+
+**PAINTED, TO MATCH THE SKY.** `paintBands(mat)` steps a material's finished
+light into soft bands in sqrt space and meets the smooth value halfway; it is
+on the beach's rock formation. The sea bands its facet light (five steps),
+its moon highlights (flat strokes) and its crests the same way.
+
+**THE HOIST SHOVED YOU BECAUSE ITS CAR WAS STILL A WALL WHERE THE MODEL DRAWS
+IT.** `buildKeepWalls` runs before `buildKeepLift` has lifted the car out of
+the merged mesh, so the planks, bearers and rails (and the cargo taken off
+it) stayed in the wall index at their drawn height, 13.5-15.2 m. Riding up,
+the body band met that ghost as the car passed y 12 and the push threw you a
+quarter of a metre sideways in one frame — "laggy while riding up". The car
+and the falls are `bwGhost` now and the index is taken again after the lift
+is built. Two more things came with it: a RIDER GOES WITH THE CAR
+(`updateKeepLift` moves the camera by exactly what the deck moved, so the way
+down is no longer a string of little falls — it trailed the deck by 14 cm),
+and while riding any wall push is capped at 1.5 cm a frame, because the
+static guide posts slide past a body standing at the car's corner. Measured
+at nine spots on the car, up and down: worst sideways step 0.015 m (was
+0.24), eye to deck 1.700 ± 0.005 the whole way. **And never put
+`performance.now` back to the real clock after running a fake one ahead of
+it**: time runs backwards on the next frame, and a NaN reaches the camera and
+the audio params — that was every "NaN camera" in this round's harness.
+
+**THE TAVERN'S SKYLIGHT IS ONLY THE WINDOW.** The interior-mapped stone
+recess behind the glass shifted with parallax as you walked under it and
+read as the old vault texture showing through, and the leading — cames a
+centimetre wide, thirteen metres up at the retro scale — was under a pixel
+and shimmered. The glass is drawn flat on the vault now (`mlatticeAA`: each
+came held to a pixel by its own `fwidth`, and faded to its average where the
+whole pattern is finer than the pixels), the quarries are bigger (2.4/1.6,
+the shaft and the pool trace the same pattern), the curb is blended rather
+than cut, the conform grid is 20 x 20 at 3 cm off the vault, and the
+material carries a polygon offset so the vault can never win the depth test.
+Measured by diffing six renders a fraction of a millimetre apart: 4,391
+pixels changing became 1,351, and what is left is ordinary edge pixels.
+
+**THE SEA REMEMBERS ITS FOAM, AND THINGS PASS UNDER IT.** Two of the water
+ideas, both in the beach ocean's fragment shader:
+- FOAM THAT REMEMBERS: five past waterlines (`shoreLine` at t - 1.1 k),
+  each carried seaward 0.55 m a beat on the backwash, drawn as ribbons that
+  spread and thin with age and are broken into froth and threads by `skN`.
+  Only within 70 m of you and 14 m of the shore. Measured by drawing the mask
+  alone: two or three parallel lines lie seaward of the break at any moment.
+- UNDER THE SURFACE (`underMask`, driven by `updateUnderSea` through
+  `oceanUniforms.uSh`/`uSh2`): every 22-62 s one of a school of fish (a
+  breathing blob of small bodies each wagging on its own count), a raft of
+  kelp drifting with `WIND`, or rarely something 14-19 m long that swims
+  along and away, 11-34 m out, fading in and out over four seconds. It only
+  darkens, and it goes in AFTER the glints so the reflection does not bury
+  it — at 1.7 m eye height a dark shape on a dark sea is subtle by nature, and
+  it reads best from the pier, the wreck's deck and the headland.
