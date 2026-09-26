@@ -547,6 +547,20 @@ under forty-three megabytes of 4K maps, which is twice the bunker for a thing
 you hold in your hand, and it comes out at 7 MB). Its stone's map carries a
 real alpha and stays blended; its gold has none and is forced opaque.
 
+This work is based on ["An Old Ring"](https://sketchfab.com/3d-models/an-old-ring-ea5e0c11f2e046c993239ea1a3efcad7)
+by [Qifan Zhang](https://sketchfab.com/qifanzhang) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Old Ring the trader
+sells for four jars, Max Health +10% while worn (`assets/old-ring.glb`, exact:
+all 19,092 triangles and its colour, metallic-roughness and normal maps, through
+`tools/gltfpack.py` at 2048, 0.99 MB).
+
+This work is based on ["Spinosaurus Tooth"](https://sketchfab.com/3d-models/spinosaurus-tooth-dcd10af830824313ac1836eef8518ccd)
+by [ex_natura](https://sketchfab.com/ex_natura) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Mutant Fang that
+one in three of the beach's mutants leaves when it dies (`assets/fang.glb`,
+through `tools/gltfpack.py --decimate 6000 --keep-uv --tex 512`: 370k triangles
+in four chunks down to 6,000, 436 KB).
+
 This work is based on ["Portal"](https://sketchfab.com/3d-models/portal-3279b8d99fe244059c40a66e8aa39590)
 by [DJMaesen](https://sketchfab.com/bumstrum) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the stone circle on the

@@ -172,6 +172,7 @@
   }
   #overlay .mi:hover, #overlay .mi:focus-visible { color: #ffffff; text-shadow: 0 0 10px rgba(255,255,255,0.35); outline: none; }
   #overlay .mi.begin { color: rgba(241, 241, 241, 0.9); }
+  #overlay .mi.begin.loading { color: rgba(241, 241, 241, 0.34); cursor: default; }
   /* the controls sheet */
   #overlay .controls {
     position: absolute;
@@ -339,10 +340,12 @@
   #health i::after {
     content: ''; position: absolute; inset: 0;
     background: rgba(198, 34, 30, 0.78);
-    transform-origin: left center; transform: scaleX(1);
+    transform-origin: left center; transform: scaleX(var(--f, 1));
     transition: transform 0.28s ease, background 0.25s ease;
   }
   #health i.off::after { transform: scaleX(0); }
+  /* the old ring's tenth: a sliver a tenth as long as a point */
+  #health i.xtra { width: 4px; }
   #health.hurt i::after { background: rgba(255, 78, 66, 1); }
 
   /* THE AUTOSAVE BADGE. Top right, in the HUD's language: a hairline ring
@@ -1087,6 +1090,15 @@
     -webkit-font-smoothing: antialiased;
   }
   #shoppanel.show { opacity: 1; pointer-events: auto; }
+  /* THE WAY OUT IS ON THE SCREEN. Esc still works; this is the same thing
+     for a hand already on the mouse, top left where a way back always is. */
+  #shop-leave {
+    position: absolute; top: 1.6rem; left: 1.8rem;
+    background: none; border: 1px solid rgba(255, 255, 255, 0.34); color: #ffffff;
+    font: inherit; font-size: 0.78rem; letter-spacing: 0.34em; text-transform: uppercase;
+    padding: 0.55rem 1.1rem 0.55rem 1.44rem; cursor: pointer; border-radius: 0;
+  }
+  #shop-leave:hover { background: rgba(255, 255, 255, 0.12); border-color: #ffffff; }
   #shoppanel .panel {
     width: min(94vw, 1180px);
     border-top: 1px solid rgba(255, 255, 255, 0.3);
@@ -1105,6 +1117,16 @@
     text-transform: uppercase;
     font-size: 0.9rem;
   }
+  /* BUY and SELL are two tabs of the same title: the one you are on is
+     white with a hairline under it, the other dim and clickable */
+  #shoppanel .tabs { display: flex; gap: 2.2rem; }
+  #shoppanel .tab {
+    cursor: pointer; color: rgba(255, 255, 255, 0.38);
+    padding-bottom: 0.35rem; border-bottom: 1px solid transparent;
+  }
+  #shoppanel .tab:hover { color: rgba(255, 255, 255, 0.7); }
+  #shoppanel .tab.on { color: #ffffff; border-bottom-color: rgba(255, 255, 255, 0.8); }
+  #shoppanel .detail .buy.all { margin-top: 0.6rem; }
   #shoppanel .head .jars {
     font-size: 0.72rem;
     letter-spacing: 0.18em;
@@ -1496,7 +1518,7 @@
          prompt was moved out of this strip in the first place. -->
     <div id="ammo"></div>
   </div>
-  <div id="health"><i></i><i></i><i></i><i></i></div>
+  <div id="health"><i></i><i></i><i></i><i></i><i class="xtra" style="display:none"></i></div>
   <div id="autosave">
     <svg width="18" height="18" viewBox="0 0 18 18"><circle class="track" cx="9" cy="9" r="7" /><circle class="arc" cx="9" cy="9" r="7" /></svg>
     <span>Checkpoint</span>
@@ -1550,9 +1572,10 @@
        does. It wears the pack's own language, because it is the same idea
        (your things, big, on a black screen) one step further out. -->
   <div id="shoppanel">
+    <button id="shop-leave" type="button">Leave</button>
     <div class="panel">
       <div class="head">
-        <h2>Shop</h2>
+        <div class="tabs"><h2 class="tab on" data-m="buy">Buy</h2><h2 class="tab" data-m="sell">Sell</h2></div>
         <span class="jars"><b id="shop-jars">0</b> blood jars</span>
       </div>
       <div class="say" id="shop-say"></div>
@@ -1562,7 +1585,8 @@
       </div>
       <div class="tip">
         <span><b>Click</b> or <b>Space</b> to tick</span>
-        <span><b>Confirm</b> or <b>E</b> to buy</span>
+        <span><b>Confirm</b> or <b>E</b> to buy or sell</span>
+        <span><b>Tab</b> or <b>&larr; &rarr;</b> buy / sell</span>
         <span><b>Esc</b> leave</span>
       </div>
     </div>

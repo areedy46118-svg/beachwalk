@@ -1029,7 +1029,12 @@ export function makeShipwreck(opts = {}) {
     brass: new THREE.MeshStandardMaterial({ color: 0x8c7238, roughness: 0.55, metalness: 0.62, emissive: 0x2a2010, flatShading: true }),
     // kept polished where a hand has been on it for forty years
     gold: new THREE.MeshStandardMaterial({ color: 0xd9ab46, roughness: 0.34, metalness: 0.78, emissive: 0x6a4f16, emissiveIntensity: 0.65, flatShading: true }),
-    glass: new THREE.MeshStandardMaterial({ color: 0x2c363e, roughness: 0.26, metalness: 0.22, emissive: 0x0a1014, transparent: true, opacity: 0.38, side: THREE.DoubleSide }),
+    /* GLASS WRITES NO DEPTH. The panes are merged into one mesh whose sort
+     * position is the ship's origin, not the window, so it can draw BEFORE the
+     * stars 190 m out — and with depth written it then hid them: from the helm
+     * the three stars the wheel puzzle is about read 81-103 in brightness
+     * through the windscreen against 164-554 without it. */
+    glass: new THREE.MeshStandardMaterial({ color: 0x2c363e, roughness: 0.26, metalness: 0.22, emissive: 0x0a1014, transparent: true, opacity: 0.38, depthWrite: false, side: THREE.DoubleSide }),
     flesh: new THREE.MeshStandardMaterial({ color: 0x6e6152, roughness: 1, metalness: 0, emissive: 0x1a150f, flatShading: true }),
     gore: new THREE.MeshStandardMaterial({ color: 0x4a1c18, roughness: 0.75, metalness: 0, emissive: 0x1a0808, flatShading: true }),
     hair: new THREE.MeshStandardMaterial({ color: 0x2a221a, roughness: 1, metalness: 0, emissive: 0x0a0806, flatShading: true }),

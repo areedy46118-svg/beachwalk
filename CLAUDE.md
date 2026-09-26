@@ -15474,3 +15474,263 @@ And **`beachwalk.load` IS THE RESTORE KEY, NOT `beachwalk.loadMode`** — a
 wrong key does not merely fail, it loads as `fresh`, and a fresh load DELETES
 the save (`loadMode !== 'checkpoint'` at line 652), so the checkpoint you were
 about to test is gone before you can read it.
+
+**A KEY THAT HAS DONE ITS JOB IS GONE.** The owner's word, for every key: the
+wreck's hold door already swallowed its own, and now the chest key goes into
+the sea chest's lock and the skull key into the catacombs' door
+(`removeFromInventory` on the unlock). Both unlocked states were already on
+the save (`chest`, `catDoor`), so a restore cannot hand a spent key back with
+the lock shut. The chest still opens and shuts as often as you like.
+
+**THE HELM'S STARS WERE HIDDEN BY THE WINDSCREEN'S DEPTH.** The wheelhouse
+glass (0.38 opacity) is merged by `bakeStatic` into one mesh whose sort
+position is the ship's origin, not the window — so it could draw BEFORE the
+three stars 190 m out, and it wrote depth, so it then hid them. Measured from
+the helm: the stars read 81-103 of brightness through it and 164-554 without.
+Glass writes no depth now (`models/shipwreck.js`). A merged transparent mesh
+sorts as one object at its origin; anything behind it that must show through
+it cannot rely on the sort.
+
+**A THING INSIDE ANOTHER THING'S TARGET WINS WHEN YOU LOOK AT IT.** The sea
+chest's crosshair target is an invisible box round the whole chest, and the
+spare peg lies INSIDE that box — so the ray met the box first every time and
+"Take the Spare Peg" never came up. An interactable may say `inside: true`:
+if the ray reaches it at all, it beats whatever it is inside.
+
+**THE KEEP'S LAMPS ARE TORCHES.** The pier's glowing box on a stick is an
+open iron cresset on a banded post with coals, charred billets, two ragged
+teardrop flames on their own counts, embers lifting off with the wind and a
+flickering pooled light (`keepFirePoints`, the tavern's flame at a basket's
+size); the door's wall lanterns are bracket torches leaning out of the
+stone. And the PLACEMENT asks two questions it never asked: is there WATER
+beside it (an edge of the pier, not the terrace at deck height the old walk
+wandered onto), and is anything drawn within reach of the post
+(`keepWallNear` from the ankle to over the flame) — no rail, keg, bale or
+fence through it.
+
+**WONG'S AND THE DRUNK'S RUN WAS EVERY JOINT TURNED, NOT THE BODY.** Their
+packs predate "a facing is a property of the rig": the packer read each
+clip's facing off that clip's own first-frame toes, and every delta it wrote
+is CONJUGATED by that facing — so a clip measured ψ off does not turn the
+body, it turns every joint's swing axis by ψ. A run ~90° off swings the legs
+sideways under a torso that still faces forward. Each clip stores its rest
+under its own facing, so the error is exactly the yaw between its rest hips
+and a reference clip's: Wong run -67, strafes -76/+69, flying kick -67; the
+drunk's run +116, running turn -48 (the orc, packed after the fix, agrees
+everywhere). `kind.facingRef: 'walk'` conjugates every clip back onto the
+walk's facing in `ntarRetarget` (and the alignment's rest is read from that
+clip too). Measured by the feet's stride axis against the shoulders: the run
+went from 96/97 degrees (sideways) to 171/161 (forward, mod 180), and Wong's
+strafes now stride sideways as they should. **The knight and the red alien
+carry the same fault on some clips** (knight: hit reactions +56..+85, runB
++85, strafeL -84; alien: nSweep +99, dodge +95) and are deliberately NOT
+changed yet — their fights were tuned on the clips as they are. Setting
+`facingRef` on them is the fix, and wants a look at the fight after.
+
+**MUTANT FANGS.** ex_natura's "Spinosaurus Tooth" (CC-BY-4.0,
+`assets/fang.glb`, 6,000 triangles, then compacted — `--keep-uv` left 39k
+vertices for 18k indices, most of them unreferenced). `maybeDropFang` on
+every beach mutant (`mutant.glb` kinds only, never a boss or the young one),
+from `finishMutant` and `mutBleedOut`: `FANG_CHANCE` 0.34. It is the ring's
+drop — a small `PhysProp` knocked out of the jaw, landing with
+`sfxFangSand` (the recorded sand hit pitched up and down, a thud, a sift of
+grains) — and it stacks like the crabs: `fangItem.count`, `gainFang`, on the
+save as `fangs`, never replayed because it was never on the beach. A drop
+before the scan has landed waits in `fangWorlds` and is filled when it does.
+
+**THE OLD RING, AND HEALTH THAT IS NOT ALWAYS FOUR.** Qifan Zhang's "An Old
+Ring" (CC-BY-4.0, `assets/old-ring.glb`, exact: 19k triangles and all three
+maps at 2048) is on the trader's table for four jars (`TRADER_STOCK.ring`)
+and worn is Max Health +10%. `maxHp()` is the hook every part of the health
+asks — the bar, the mend, the drink, the red rim, the harness's heal — the
+`speedK`/`stamMax` arrangement, filled in by the ring's section. Health is
+WHOLE BLOWS, so a tenth more is a sliver: the bar grows a fifth segment a
+tenth as long (`#health i.xtra`, 4 px), every segment shows its own fill
+through `--f`, and from full the ring is the difference between four blows
+and five. Take it off and `updateHurt` takes back what it lent.
+
+**THE SHOP BUYS.** A Sell tab beside Buy (click, Tab or left/right):
+`SELL_ROWS`, `traderSell`, the same list and the same pane. A Mutant Fang is
+a jar; "Sell one" and "Sell all" when you have more than one.
+
+**FANGS ARE RARER, CAPPED AND FOUND.** `FANG_CHANCE` 0.26 and `FANG_MAX` 4
+across the eight mutants (`fangDrops`, on the save so loading cannot reset
+it). Each drop carries a strong glint that shows through what it lands
+behind (added BEFORE `addInteractable`, since `addItemShine` refuses a
+second one), the tooth is lifted pale, and a small cold lamp lights the sand
+round it. **A pooled lamp only lights anything while the CAMERA is inside
+its range** (`lampReach` returns 0 past `distance`) — at 4.2 m you had to be
+standing on the fang to see its pool; at 14 the pool is there from across
+the beach and the decay keeps the lit patch small.
+
+**THE CRATES ARE WOOD, AND BREAK INTO WHAT THEY ARE MADE OF.** A board
+texture that reads as timber (grain swelling round knots, a split, weathered
+edges, a warm brown the moon still greys) and a crate built as a LIST of
+parts — planks with gaps, a rail top and bottom on every face, a diagonal
+brace, nail heads, lid planks on cleats, corner posts — every part a box
+long along its own X (`crateParts`), merged while it stands (three draws).
+The break is the blow's: the face you hit SNAPS into two torn halves driven
+away from you, the sides fall outward a beat later top-first (`wait`), the
+lid jumps, the posts topple across the blow, and thirty splinters and a few
+nails come off the break; `sfxWoodSnap` + `sfxCrateCrunch` on the hit and
+every board KNOCKS where it lands (`gib.onLand` → `sfxPlankKnock`,
+positional). No sand clods: the dig's puffs over a box of wood read as pale
+shards of something else.
+
+**THE FIRST HORSESHOE CRAB IS OUT** (never added to the scene; the item and
+the wreck's crab are untouched), and **THE DRAW HAS ITS SOUND**: `sfxDraw`
+is timed to the 3.4 s extraction — the cap, the needle finding the hinge and
+punching through, the rubber plunger's stick-slip and the blood gurgling up
+the barrel higher as it fills, three twitches of the crab's legs, and the
+wet pull out. The old one was a quiet swell routed round the effects bus.
+
+**THE KEEP'S GULLS GO ROUND IT.** Every wheel there is centred ON the island
+at 52-85 m (`KEEP_BIRD_R`), the flush off the pier goes out over the water,
+and a flushed gull joins a wheel round the island through where it is.
+Measured over ninety seconds: none nearer the island's centre than 52 m once
+the flush is done. And the fisherman answers the chest key: "Looks like an
+old chest key." The wedding ring is 4% a jar (was 6).
+
+**THE HOIST'S CAR RESTS ON ITS LANDING, NOT IN IT.** The model draws a timber
+landing under the shaft, sloped 2.5 → 1.9 m and the car's own size, and the
+car was parked with its plank top a hand over the median of that slope — so
+its framing, which hangs 0.53 m under the planks, stood down through the
+landing on a diagonal. The car's underside is measured off its own triangles,
+the landing's highest plank under its plan by raycast, and it stops level a
+finger over the high end. Three things came with it: the car box carries
+`stepUp` 0.82 (the step from the landing's high end is 0.74, over the walk's
+0.62) and `keepFloorAt` honours it; the car is SOLID to a body under its deck
+(`underCar` in `updateKeep`'s `legal`); and a step over a fifth of a metre at
+the keep is eased over a few frames instead of snapping the eye up. A car
+coming down on somebody standing on the landing lifts them onto the deck.
+Measured: boarded from the high end, ridden to 16.15, eye glued to the deck.
+
+**A RAGDOLL MAY NOT BE FINISHED UNTIL IT IS LYING, AND "LYING" MEANS
+LYING.** The spindle — three metres on long shins — knelt with its chest a
+metre up and the 5.5 s deadline put it to sleep there: "frozen mid-air". Two
+things let it: `lying` was 0.42 of the height it died at, which for a
+three-metre body is a chest at 1.3 m, and the deadline only asked that a foot
+be on the floor. `lying` is now a shoulder's width (0.24 of the height,
+clamped 0.5–0.8); a body not lying by 1.2 s goes LIMP (`r.limp`: the trunk's
+stiffeners and the bend limits are eased off, and a limp chain of fixed
+lengths cannot stand), one still up at 3.4 s SLUMPS onto the floor under it,
+and nothing sleeps it before then (a hard stop at 9 s). And `RAG_TRAVEL` no
+longer teleports a body back and zeroes its speed — on a body in the air that
+was a corpse stopping dead mid-flight; it brakes it across the ground and
+leaves gravity alone. Measured over sixteen kills in three sessions, every
+body ends with its highest joint 0.17–0.40 m over the floor.
+
+**A BLOCK THAT STOPPED SOMEBODY ELSE'S BLOW IS NOT YOURS.** `dealerBlock`
+jarred the tool in your hand, rang the guard spring, threw view-model sparks
+and froze the frame — and the tavern's three block EACH OTHER, so every blow
+turned aside in their brawl jarred your weapon from across the room. It takes
+`mine`; a creature's block of a creature's blow is sparks and a clank where
+it happened. The same pass found `hurtMutant` reading `digOverhead` and the
+held tool for blows one creature landed on another (`OH = mine &&
+digOverhead`), and the riposte prompt, the flinch direction and the
+knockdown's lens kick all firing for blows that were not yours.
+
+**THE MARAUDER HAS TWO KICKS, A KNOCKDOWN, AND A MIND.**
+- The owner's `Kicking`, `Inside Crescent Kick` and `Death From The Back`
+  (`tools/ntar_moves.py -- umbra`). `Kicking` is two kicks in one take, so it
+  is cut at the valley (frame 17) into `uKickA` / `uKickA2` and ALWAYS
+  chained; `HIP_FROM_TAKE` measures the second half's hips from the take's
+  first frame, or the body drops at the hand-over. Every kick runs at its
+  clip's own speed with its root turn kept and `noAim` (the aim turns a
+  thigh toward you, which on a kick is a different kick). Checked as stick
+  figures against the source joints in Blender, frame for frame — the way
+  to verify "exactly like the animation" when a Mixamo FBX has no mesh.
+- `uFall` is his knockdown: `knockHeavy` 0.17 on any heavy of yours that
+  lands, never twice in 16 s, never on the blow that woke him. The blow
+  TURNS him over the stagger (`knock.turn`, walked a step at a time on the
+  heading of the moment) so he goes down across your line and not onto you;
+  his file has no get-up, so the rise is the fall reversed from where he
+  LANDED (`riseFrom`, after a `twitch` that rewinds the settle), and he turns
+  back to you in the last of it. 4.2 s end to end.
+- `umbraMind`: he punishes a drink, a whiffed swing, a held guard (with the
+  crescent kick or the whirl) and a heavy wound up out of reach (with the
+  leap), each by taking his turn at once; and he stops opening with what you
+  have parried (`st.parried`, in the smart draw). Harder numbers throughout.
+  Measured against a player standing still: 82 swings and 50 damage a minute.
+- **HARNESS TRAP: never stub `Math.random` while a model may still be
+  loading.** three's `generateUUID` is `Math.random`, and every
+  `AnimationClip` built under the stub got the SAME uuid — the mixer's cache
+  is keyed by it, so all thirty of the marauder's clips became one action
+  ("Pose2") and he stood still through every swing.
+
+**THE HELM'S STARS GO WHEN THE PUZZLE IS SOLVED.** `helmStar.solvedT` counts
+up once the bearing is held; after 1.6 s the stars fade to nothing and the
+group is hidden, so the sky over the wreck is the night's own again.
+
+**A POOLED LAMP FADES; IT DOES NOT SNAP.** The twelve real point lights are
+handed to whichever lamps reach you, and a lamp that lost its slot went dark
+on one frame and the next one lit on the same frame — a hard flicker every
+time the ranking changed. Each lamp carries `userData.lpW`, eased toward 1 or
+0 over a quarter second; a lamp already lit scores a third higher so two
+equal lamps do not trade places every frame; and a hidden or detached lamp
+(`lampReach` returns -1) leaves the pool at once.
+
+**THE CATACOMBS' TORCHES ARE A BREATH.** The lick and the wick are a
+centimetre of light, a gutter sinks to 91-95 % over 1.6-2.8 s and a draught
+to 88-93 % over 2-3.2 s. Anything faster read as the frame rate.
+
+**MOOD IS WHERE YOU ARE, AND THE SKY CLEARS AT THE TOWER.** `MOOD_PLACES`
+(the wreck, the body bag, the dock, the tall one, the pavilion, the mutants,
+the portal, the catacombs' door, the marauder) pull the fog's tint and
+density toward their own within about 80 m of each; near the lighthouse
+`clear` thins the fog and takes the clouds and the veil out of the sky
+(`uSqB.w`), so reaching it is the one clear night on the walk.
+
+**RAIN SQUALLS COME IN OFF THE SEA.** `squall` spawns one every four to eight
+minutes 260-320 m out and drives it in with the wind. It is drawn four ways,
+all off one state: a cloud mass in the sky shader (`skSquall`, fbm-edged so
+it billows rather than being a dark disc, and it hides the stars behind it),
+a curtain of rain (`sqCurtain`, an open cylinder fading at its top, its foot
+and its edges), dimpled dull water under it (`uSqO`), and — when it is over
+you — 900 streaks wrapped round the camera (`sqRain`), a gust, thicker fog
+and a noise bed (`squallAudio`). Off in every room. The streaks' wind is a
+literal: `WIND` is declared below them and is a dead-zone crash.
+
+**THE KILL WAS A SLOW SKIN BAKE AND A THOUSAND BLOOD MESHES.** Measured in
+the tavern, a kill cost 158-187 ms. `bakeLimb` walked every vertex of the
+skin through `applyBoneTransform` for every limb it took; it now skins each
+kept vertex ONCE from `skeleton.boneMatrices`, off a per-vertex dominant bone
+cached at dress time (`skinDom`). Blood was one mesh per drop; it is one
+`InstancedMesh` of 768 (`bloodInst`, `bloodDropObj`). And `dressMutant`
+compiles the non-skinned variant of every creature's materials at load, which
+is what a baked limb is drawn with. After: 9 ms for the worst finish.
+
+**THE TEXTURE UPLOADER HAS A MILLISECOND BUDGET, NOT A COUNT.** Three a frame
+was three 2048 maps now and then: 5-14 ms a frame for half a second after
+arriving in the tavern. One always goes; more only under 1.5 ms.
+
+**AND THE BEACH NEVER SHOWED ITS SAND.** three allocates storage ONCE PER
+SOURCE (`texStorage2D` is immutable), and the Poly Haven JPGs (512 px) were
+written into the Source the 256 px canvas had already gone up in — the upload
+failed with "offset overflows texture dimensions" and the beach went on
+drawing the canvas, depending on which landed first. The fallback canvas is
+drawn at `SAND_PX` from the start. **A GL warning in the console is a bug**;
+the way to find its owner is a `WebGL2RenderingContext.prototype` hook in a
+temporary `<script>` in the head, which is in place before the renderer.
+
+**BEGIN WAITS FOR THE BOOT.** It reads "Loading n%" until the download queue,
+the parses and the warm steps are all empty for a second (or 30 s): a player
+who presses it early used to walk into the last of the compiles. The total is
+everything ever queued, not the biggest queue — a room's warm is only queued
+once its parse lands, and against its own peak the bar went 99 % then 12 %.
+
+**A CHECKPOINT LOAD LOOKS WITHOUT A CLICK.** A page reload cannot take the
+pointer lock, so until the first click the plain `pointermove` turns the head
+(cursor hidden over the world); the click takes the real lock as before.
+
+**THE SHOP HAS A LEAVE BUTTON** in its top-left corner (`#shop-leave`), and
+Esc still closes it. Tab switches Buy and Sell.
+
+**THE MARAUDER GETS UP FAST.** His knockdown lies 0.35 s and rises in 0.85
+(`knock.lie`, `knock.rise`), `stunK` 0.38 and `recoilK` 0.38.
+
+Measured at the end: a live walk 896 frames at a median 13.3 ms and none
+over 25; a live sweep of 700 m in 25 m hops 1798 frames, median 13.3, 99th
+15.5, three over 22 (background parses, which BEGIN now waits for); rooms
+steady at 1.5-2.5 ms with the first frame behind their black cut; tavern
+kills under 12 ms; no GL errors.

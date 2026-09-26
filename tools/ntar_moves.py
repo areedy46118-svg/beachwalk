@@ -230,6 +230,16 @@ UMBRA_CLIPS = [
     ('Dual Weapon Combo', 'uC3', 'both blades, crossing', ''),
     ('Dual Weapon Combo', 'uC4', 'the right again, short', ''),
     ('Dual Weapon Combo', 'uC5', 'both blades, the sweep that ends it', ''),
+    # AND THREE OF THE OWNER'S OWN, loose in ~/Downloads: two kicks he throws
+    # exactly as Mixamo drew them, and a fall that is his knockdown.
+    # `Kicking` is TWO kicks in one take — the left foot to the body at frame
+    # 15, the right to the head at 22 — so it is cut at the valley between
+    # them (frame 17) and chained, the combo's own arrangement: two blows,
+    # each on its own measured frame, played back as the one take.
+    ('Kicking',              'uKickA', 'the left foot, driven into the body', ''),
+    ('Kicking',              'uKickA2', 'and the right, up at the head', ''),
+    ('Inside Crescent Kick', 'uKickB', 'the leg swung up and across, inside out', ''),
+    ('Death From The Back',  'uFall',  'thrown forward onto his face', ''),
 ]
 if SET == 'umbra': CLIPS = UMBRA_CLIPS
 # ---- AND THE PACK'S FLIGHT. The owner's three "Injured Run" clips: a body
@@ -350,7 +360,15 @@ if SET == 'umbra':
     KEEP_YAW = {c[1] for c in CLIPS}
     FORCE_FLAT_YAW = set()
     # the valleys between the strikes, as indices from the take's first frame
-    WINDOW = {'uC1': (0, 17), 'uC2': (17, 27), 'uC3': (27, 39), 'uC4': (39, 46), 'uC5': (46, 65)}
+    WINDOW = {'uC1': (0, 17), 'uC2': (17, 27), 'uC3': (27, 39), 'uC4': (39, 46), 'uC5': (46, 65),
+              'uKickA': (0, 17), 'uKickA2': (17, 43), 'uKickB': (0, 67), 'uFall': (0, 58)}
+    CONTACT.update({'uKickA': 'LeftToeBase', 'uKickA2': 'RightToeBase', 'uKickB': 'RightToeBase'})
+    # A WINDOW CUT OUT OF ONE TAKE IS MEASURED FROM THE TAKE. `hipY` is an
+    # offset from the clip's own first frame, so the second half of a take
+    # cut in two started its hips at zero wherever the first half had left
+    # them — the body dropped by the difference on the frame the chain
+    # handed over. These are measured from the take's first frame instead.
+    HIP_FROM_TAKE = {'uKickA2'}
 if SET == 'mutant':
     KEEP_YAW = set()
     FORCE_FLAT_YAW = {c[1] for c in CLIPS}
@@ -372,6 +390,7 @@ if SET in ('wong', 'drunk'):
     FORCE_FLAT_YAW = {c[1] for c in CLIPS} - KEEP_YAW
 
 
+if 'HIP_FROM_TAKE' not in globals(): HIP_FROM_TAKE = set()
 # A clip whose hips are measured from its LAST frame, not its first: it
 # begins on the floor and ends standing, so the stance is at the END.
 HIP_ZERO_END = {'getUp'}
@@ -458,6 +477,7 @@ def main():
         end = min(auto if w1 is None else w1, len(raw) - 1)
         log('%-22s %-7s frames %d..%d (moving to %d of %d, peak %.3f)'
             % (fname, name, w0, end, auto, len(raw) - 1, peak))
+        takeHip = hips[0].copy()
         if w0:
             raw = raw[w0:]; hips = hips[w0:]; end -= w0
 
@@ -557,6 +577,7 @@ def main():
         hipY, travel = [], []
         h0 = CONV @ hips[0]
         hy0 = restPos['Hips'].y if name in HIP_FROM_REST else h0.y   # see HIP_FROM_REST
+        if name in HIP_FROM_TAKE: hy0 = (CONV @ takeHip).y
         for i in range(end + 1):
             # de-yaw about the hips' start, if this clip turns and should not
             undo = Quaternion((0, 1, 0), -(hipyaw(i) - y0)) if flat else Quaternion()
