@@ -146,9 +146,15 @@ function concreteTexture(seed, tags) {
 function rugTexture(seed) {
   const S = 256, c = document.createElement('canvas'); c.width = c.height = S;
   const g = c.getContext('2d'); const rnd = lcg(seed);
-  g.fillStyle = '#6d2f18'; g.fillRect(0, 0, S, S);
+  /* AND A RUG THAT HAS BEEN IN THAT WINDOW FOR FORTY YEARS IS NOT THE
+   * COLOUR IT WAS SOLD IN. The bands ran to a pure saturated orange and a
+   * near-yellow, which at this room's own emissive is the brightest thing
+   * in it and reads as plastic sheeting rather than wool — the last of the
+   * "slop" after the floor. Same wave, same order, sun-bleached: every band
+   * pulled a third of the way to the dust it has been collecting. */
+  g.fillStyle = '#5e3020'; g.fillRect(0, 0, S, S);
   // the wave: concentric bands off a centre, in the reference's own order
-  const cols = ['#8c3a1a', '#c25a1e', '#e0902e', '#eec24a', '#d9d0b4', '#a8481d'];
+  const cols = ['#7a3c24', '#a05730', '#b8813f', '#c3a45a', '#bdb6a0', '#8e4c2a'];
   const cx = S / 2, cy = S / 2;
   for (let r = S * 0.72; r > 4; r -= S * 0.030) {
     g.strokeStyle = cols[(Math.round(r / (S * 0.030))) % cols.length];
@@ -194,8 +200,15 @@ function woodTexture(seed) {
 function terrazzoTexture(seed) {
   const S = 256, c = document.createElement('canvas'); c.width = c.height = S;
   const g = c.getContext('2d'); const rnd = lcg(seed);
-  g.fillStyle = '#9a978c'; g.fillRect(0, 0, S, S);
-  const chips = ['#e8e4d8', '#4a4640', '#c8703a', '#7e8a72', '#d8c8a0', '#2e2c28'];
+  /* REAL TERRAZZO IS CHIPS IN A MATRIX, NOT CONFETTI. The palette ran from
+   * near-white to near-black on a mid-grey ground and the contrast was then
+   * pushed a further fifth and quantised to fourteen levels — so at the
+   * retro downscale the floor of the one room you stand still in was
+   * salt-and-pepper noise, the loudest thing in the frame and the first
+   * reason it read as slop. A chip is a stone a shade off the cement it is
+   * set in; the range is what makes it read as a floor. */
+  g.fillStyle = '#8f8c82'; g.fillRect(0, 0, S, S);
+  const chips = ['#b4afa0', '#6e6a60', '#a87a54', '#7c8272', '#bdb49c', '#5a5750'];
   for (let i = 0; i < 900; i++) {
     const x = rnd() * S, y = rnd() * S, r = 2 + rnd() * 7;
     g.fillStyle = chips[(rnd() * chips.length) | 0]; g.globalAlpha = 0.55 + rnd() * 0.45;
@@ -211,7 +224,7 @@ function terrazzoTexture(seed) {
     g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
   }
   const img = g.getImageData(0, 0, S, S), d = img.data;
-  for (let i = 0; i < d.length; i += 4) for (let k = 0; k < 3; k++) d[i + k] = Math.round(Math.max(0, Math.min(255, 128 + (d[i + k] - 128) * 1.2)) / 14) * 14;
+  for (let i = 0; i < d.length; i += 4) for (let k = 0; k < 3; k++) d[i + k] = Math.round(Math.max(0, Math.min(255, 128 + (d[i + k] - 128) * 0.80)) / 10) * 10;
   g.putImageData(img, 0, 0);
   return retro(c);
 }
@@ -529,16 +542,27 @@ export function makeMushroomHouse() {
    * visible from anywhere you stand. Nothing in here now stands higher
    * than 0.75 m but the lamp, the palm and what hangs from the ceiling. */
   const rugTex = rugTexture(5);
-  const rugMat = new THREE.MeshStandardMaterial({ map: rugTex, roughness: 1, metalness: 0, emissive: 0xa86a2a, emissiveMap: rugTex, emissiveIntensity: 1.35, side: THREE.DoubleSide });
+  /* AND NOTHING IN HERE IS LIT BY A LAMP, SO THE EMISSIVE IS THE LIGHTING —
+   * which is why every one of these was driven hard enough to read under a
+   * quarter moon, and why the room came out as a set of coloured shapes at
+   * one brightness with no form in any of them. What was wrong is not the
+   * palette, it is the LEVEL: a surface whose emissive is nearly as bright
+   * as its own colour cannot be shaded by anything, so the moon's rake, the
+   * facets and the fall-off all vanish and the fabric reads as plastic.
+   * Everything below is lifted enough to be visible and no further, and the
+   * two loudest — the shag rug and the sofa's orange — are pulled off full
+   * saturation besides, because a room somebody left twenty years ago has
+   * been standing in that window the whole time. */
+  const rugMat = new THREE.MeshStandardMaterial({ map: rugTex, roughness: 1, metalness: 0, emissive: 0x6e4620, emissiveMap: rugTex, emissiveIntensity: 0.92, side: THREE.DoubleSide });
   const teakTex = woodTexture(9); teakTex.repeat.set(2.2, 2.2);
-  const teak = new THREE.MeshStandardMaterial({ map: teakTex, color: 0xb08256, roughness: 0.72, metalness: 0, flatShading: true, emissive: 0x8e5a2e, emissiveMap: teakTex, emissiveIntensity: 1.5 });
-  const rust = new THREE.MeshStandardMaterial({ color: 0xc85422, roughness: 0.95, metalness: 0, flatShading: true, emissive: 0xa4451a });
-  const rustDk = new THREE.MeshStandardMaterial({ color: 0x93381a, roughness: 0.98, metalness: 0, flatShading: true, emissive: 0x76300f });
-  const mustard = new THREE.MeshStandardMaterial({ color: 0xdda832, roughness: 0.95, metalness: 0, flatShading: true, emissive: 0xa87e26 });
-  const olive = new THREE.MeshStandardMaterial({ color: 0x767c3a, roughness: 0.95, metalness: 0, flatShading: true, emissive: 0x4e5426 });
-  const bone = new THREE.MeshStandardMaterial({ color: 0xdccfb0, roughness: 0.9, metalness: 0, flatShading: true, emissive: 0x86806a });
-  const chrome = new THREE.MeshStandardMaterial({ color: 0xb4bcc8, roughness: 0.34, metalness: 0.22, flatShading: true, emissive: 0x66707e });
-  const gloss = new THREE.MeshStandardMaterial({ color: 0xe05e2c, roughness: 0.42, metalness: 0.05, flatShading: true, emissive: 0x94401c });
+  const teak = new THREE.MeshStandardMaterial({ map: teakTex, color: 0xa87d54, roughness: 0.72, metalness: 0, flatShading: true, emissive: 0x5e3c1e, emissiveMap: teakTex, emissiveIntensity: 1.05 });
+  const rust = new THREE.MeshStandardMaterial({ color: 0xb45a30, roughness: 0.95, metalness: 0, flatShading: true, emissive: 0x6a2c11 });
+  const rustDk = new THREE.MeshStandardMaterial({ color: 0x86412a, roughness: 0.98, metalness: 0, flatShading: true, emissive: 0x4a1f0a });
+  const mustard = new THREE.MeshStandardMaterial({ color: 0xc19a48, roughness: 0.95, metalness: 0, flatShading: true, emissive: 0x6e5218 });
+  const olive = new THREE.MeshStandardMaterial({ color: 0x6e7444, roughness: 0.95, metalness: 0, flatShading: true, emissive: 0x33381a });
+  const bone = new THREE.MeshStandardMaterial({ color: 0xc9bfa6, roughness: 0.9, metalness: 0, flatShading: true, emissive: 0x585444 });
+  const chrome = new THREE.MeshStandardMaterial({ color: 0xa8b0bc, roughness: 0.34, metalness: 0.22, flatShading: true, emissive: 0x434c58 });
+  const gloss = new THREE.MeshStandardMaterial({ color: 0xc2643a, roughness: 0.42, metalness: 0.05, flatShading: true, emissive: 0x5e2a12 });
   const smoke = new THREE.MeshPhysicalMaterial({ color: 0x241d16, roughness: 0.42, transparent: true, opacity: 0.62, side: THREE.DoubleSide, depthWrite: false, emissive: 0x0e0b08 });
   const box = (w, h, d, mat, x, y, z, ry) => { const m = mesh(new THREE.BoxGeometry(w, h, d), mat, x, y, z); if (ry) m.rotation.y = ry; return m; };
   const cyl = (r0, r1, h, mat, x, y, z, n) => mesh(new THREE.CylinderGeometry(r0, r1, h, n || 12), mat, x, y, z);
@@ -550,8 +574,8 @@ export function makeMushroomHouse() {
   const at = (a, r) => [Math.sin(a) * r, Math.cos(a) * r];
 
   { // the terrazzo, laid right out to the glass
-    const terTex = terrazzoTexture(21); terTex.repeat.set(7, 7);
-    const ter = new THREE.MeshStandardMaterial({ map: terTex, roughness: 0.82, metalness: 0, emissive: 0x5a606c, emissiveMap: terTex, emissiveIntensity: 1.25, side: THREE.DoubleSide });
+    const terTex = terrazzoTexture(21); terTex.repeat.set(11, 11);
+    const ter = new THREE.MeshStandardMaterial({ map: terTex, roughness: 0.82, metalness: 0, emissive: 0x3e444e, emissiveMap: terTex, emissiveIntensity: 0.95, side: THREE.DoubleSide });
     mesh(new THREE.RingGeometry(M.BORE, M.R_ROOM - 0.02, 56).rotateX(-Math.PI / 2), ter, 0, F + 0.006, 0);
   }
 
@@ -709,7 +733,19 @@ export function makeMushroomHouse() {
    * the room that breaks the band, and it earns it, because this is the
    * corner that says a person was here. */
   {
-    const a = 2.30, r = M.R_ROOM - 0.80, [cx, cz] = at(a, r), ry = a - Math.PI / 2;
+    /* AND IT WAS TURNED A QUARTER, WHICH PUT IT THROUGH THE GLASS. For a
+     * wedge whose centreline is its local +X — a stair tread — `a - PI/2` is
+     * the rotation that sends that centreline radially outward, and this
+     * file has a note saying so. A CREDENZA IS THE OTHER SHAPE: it is 1.90
+     * along its X and 0.46 through its Z, and it has to stand ALONG the
+     * wall, so what must point radially is its DEPTH. `rotation.y = a` sends
+     * local +Z to (sin a, cos a), which is the game's own radial direction,
+     * and leaves +X on the tangent. At `a - PI/2` the metre-ninety ran
+     * radially instead: from 3.85 out to 5.75 against a glass line at 5.60,
+     * so fifteen centimetres of it stood outside the building. Everything
+     * hung on it — the legs, the deck, the sleeves, the jewellery box — is
+     * written in the same frame and turns with it. */
+    const a = 2.30, r = M.R_ROOM - 0.80, [cx, cz] = at(a, r), ry = a;
     box(1.90, 0.62, 0.46, teak, cx, F + 0.68, cz, ry);
     box(1.94, 0.05, 0.50, teak, cx, F + 1.01, cz, ry);
     for (const t of [-0.78, -0.26, 0.26, 0.78]) {
@@ -742,6 +778,58 @@ export function makeMushroomHouse() {
     { const [dx2, dz2] = at(a - 0.86, M.R_ROOM - 2.1);
       cyl(0.145, 0.145, 0.004, dark, dx2, F + 0.014, dz2, 20);
       cyl(0.05, 0.05, 0.005, gloss, dx2, F + 0.017, dz2, 12); }
+    /* THE JEWELLERY BOX, at the other end of the credenza from the deck.
+     * It stands where a thing like this actually stands — on the top of the
+     * one piece of furniture in the room that is somebody's, beside the
+     * record they left on — and it is OPEN, lid back on its hinge, because
+     * a shut box is a box nobody looks in. The ring goes in it from the
+     * game, which is why the box writes down where its own velvet is.
+     *
+     * AND IT HAS TO BE SEEN FROM ACROSS THE ROOM. The first one was a
+     * 26 cm case in dark rosewood with a dark lining, standing on dark
+     * teak in an unlit room at night — which is to say four dark browns
+     * at the same level, and the one thing in the pavilion worth walking
+     * over to was the least visible thing in it. It is bigger (36 cm),
+     * the lid stands nearly UPRIGHT so the open box is a shape rather
+     * than a slab, the lining is a red that is actually lit, and there is
+     * a satin cushion in it under the ring. What carries it across the
+     * room, though, is neither of those: it is the LID'S INSIDE, angled
+     * back at you and driven hard — the one surface in the room the moon
+     * cannot reach and the only one here that is allowed to be bright. */
+    {
+      const jx = cx + Math.cos(ry) * 0.62, jz = cz - Math.sin(ry) * 0.62, jy = F + 1.035;
+      const rosewood = new THREE.MeshStandardMaterial({ color: 0x7a4a2e, roughness: 0.42, metalness: 0,
+        flatShading: true, emissive: 0x53301a });
+      const velvet = new THREE.MeshStandardMaterial({ color: 0x9c1f34, roughness: 1, metalness: 0,
+        flatShading: true, emissive: 0x7a1526 });
+      const satin = new THREE.MeshStandardMaterial({ color: 0xb03a4c, roughness: 0.86, metalness: 0,
+        flatShading: true, emissive: 0x8c2434 });
+      const brass = new THREE.MeshStandardMaterial({ color: 0xd8b878, roughness: 0.34, metalness: 0.18,
+        flatShading: true, emissive: 0x8a6c34 });
+      box(0.36, 0.11, 0.26, rosewood, jx, jy + 0.055, jz, ry);       // the case
+      box(0.33, 0.02, 0.23, brass, jx, jy + 0.104, jz, ry);          // the brass rim round the lining
+      box(0.31, 0.02, 0.21, velvet, jx, jy + 0.110, jz, ry);         // the lining
+      const cush = box(0.17, 0.035, 0.09, satin, jx, jy + 0.128, jz, ry);   // the cushion the ring sits on
+      cush.rotation.x = 0.06;
+      /* THE LID IS NEARLY UP. At an eighth of a turn it lay back across the
+       * credenza and read as another plank; at four fifths of a right angle
+       * it stands, catches the window down one face and turns the whole
+       * thing into a silhouette you can pick out from the stair. */
+      const lidA = -1.34;
+      const hx = jx - Math.sin(ry) * 0.128, hz = jz - Math.cos(ry) * 0.128;
+      const lid = box(0.36, 0.02, 0.26, rosewood, hx - Math.sin(ry) * 0.11 * Math.cos(lidA), jy + 0.112 + 0.13 * Math.sin(-lidA), hz - Math.cos(ry) * 0.11 * Math.cos(lidA), ry);
+      lid.rotation.x = lidA; lid.rotation.y = ry;
+      const lin = box(0.33, 0.012, 0.23, velvet, hx - Math.sin(ry) * 0.102 * Math.cos(lidA), jy + 0.118 + 0.125 * Math.sin(-lidA), hz - Math.cos(ry) * 0.102 * Math.cos(lidA), ry);
+      lin.rotation.x = lidA; lin.rotation.y = ry;
+      lin.material = velvet.clone();
+      lin.material.emissive.setHex(0xb02a3e);          // the inside of the lid: the one bright thing
+      lin.material.emissiveIntensity = 1.6;
+      for (const t of [-0.11, 0.11]) {                               // the hinge knuckles
+        const h = cyl(0.010, 0.010, 0.04, brass, hx + Math.cos(ry) * t, jy + 0.112, hz - Math.sin(ry) * t, 8);
+        h.rotation.z = Math.PI / 2; h.rotation.y = ry;
+      }
+      M.JEWEL = { x: jx, y: jy + 0.145, z: jz, ry };                 // on the cushion: the ring sits here
+    }
     room(cx, cz, 1.0, 1.1);
   }
 

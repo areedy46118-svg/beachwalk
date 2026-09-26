@@ -1975,6 +1975,29 @@ export function makeUndercroft(opts = {}) {
    * spill came out at level 0.19 against the flags' 0.98 and an emissive of
    * 0.055 against 0.9, so the rubble at the threshold was a black heap on a
    * lit floor. The kind is a parameter now and the default is unchanged. */
+  /* A HEAP OF RUBBLE IS ONE DRAW CALL PER MATERIAL, NOT ONE PER LUMP. The
+   * front door's spill went in as thirty-five separate meshes and the apse's
+   * would have been forty-eight more — eighty-three draws, in a room whose
+   * whole church is eleven, for stones the size of a fist. They are all the
+   * same icosahedron under the same material with a matrix each, which is
+   * what an InstancedMesh is for; the beach's barbs, candles and footprints
+   * have been built this way since they went in. */
+  function rubbleHeap(mat, lumps) {
+    const geo = new THREE.IcosahedronGeometry(1, 0);
+    const im = new THREE.InstancedMesh(geo, mat, lumps.length);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+    for (let i = 0; i < lumps.length; i++) {
+      const L = lumps[i];
+      e.set(L.rot[0], L.rot[1], L.rot[2]);
+      q.setFromEuler(e);
+      m4.compose(new THREE.Vector3(L.pos[0], L.pos[1], L.pos[2]), q,
+                 new THREE.Vector3(L.sz * L.scl[0], L.sz * L.scl[1], L.sz * L.scl[2]));
+      im.setMatrixAt(i, m4);
+    }
+    im.instanceMatrix.needsUpdate = true;
+    im.frustumCulled = true;
+    return im;
+  }
   function patchMat(src, kind = 'cave') {
     if (!src) return new THREE.MeshStandardMaterial({ color: 0x2a2724, roughness: 1 });
     const m = src.clone();
@@ -2433,18 +2456,35 @@ export function makeUndercroft(opts = {}) {
          * of the break and anything else patched in later is not in `S.mats`
          * yet when this first runs — and a lump of unfaded stone lying in a
          * faded doorway is the same seam one object smaller. */
+        /* AND THE EXIT IS THE SAME MODEL AS THE ENTRY NOW, WHICH GAVE IT
+         * THE WRONG SEAM. The band is a world-x ramp and it was matched by
+         * material NAME — so when the way out behind the altar became a
+         * second cut of local.yany's tunnel, its `Rock01` was handed the
+         * ENTRY doorway's band: `(doorX - 3.6, doorX)`, thirty-five metres
+         * away at the other end of the church. Everything past `doorX`
+         * clamps to 1, so the whole exit bore was drawn at the seam's own
+         * values for its entire length — level 0.45 against the cave's 0.19
+         * and its emissive multiplied by 2.3. That is the tan tube in the
+         * owner's screenshot: not a join that failed to blend, a tunnel lit
+         * as though every metre of it were standing in a doorway.
+         *
+         * A band belongs to a PLACE, so it is keyed on which root the
+         * material came off rather than on what it is called, and the exit's
+         * runs the other way — from three and a half metres inside the bore
+         * down to the apse. */
         S.doorBlend = () => {
-          const band = (m, from, mul) => {
+          const band = (m, from, to, mul) => {
             if (!m) return;
-            m.userData.bwFade = new THREE.Vector2(from, doorX);
+            m.userData.bwFade = new THREE.Vector2(from, to);
             m.userData.bwFadeTo = new THREE.Vector3(0.45, 1.0, mul);   // level, knee, emissive multiplier
             const sh = m.userData.bwSh;
             if (sh && sh.uniforms.uUcFade) { sh.uniforms.uUcFade.value = m.userData.bwFade; sh.uniforms.uUcFadeTo.value = m.userData.bwFadeTo; }
           };
           for (const m of S.mats) {
             const n = m.name || '';
-            if (m.userData.bwKind === 'church') band(m, doorX + 3.6, 0.14);
-            else if (/^Rock01/.test(n)) band(m, doorX - 3.6, 2.3);
+            if (S.exitMats && S.exitMats.has(m)) { if (S.apseX != null) band(m, S.apseX + 3.6, S.apseX, 2.3); }
+            else if (m.userData.bwKind === 'church') band(m, doorX + 3.6, doorX, 0.14);
+            else if (/^Rock01/.test(n)) band(m, doorX - 3.6, doorX, 2.3);
           }
         };
         S.doorBlend();
@@ -2626,7 +2666,7 @@ export function makeUndercroft(opts = {}) {
         let rh = 1337;
         const rnd = () => { rh = (rh * 1103515245 + 12345) & 0x7fffffff; return rh / 0x7fffffff; };
         const rubMat = patchMat(S.wallMat || findMat(S.church.root), 'church');
-        const spill = new THREE.Group();
+        const doorLumps = [];
         for (let k = 0; k < 26; k++) {
           /* out of the break and into the room: dense at the arch, thinning
            * over three metres, and never further from the line than the
@@ -2638,24 +2678,19 @@ export function makeUndercroft(opts = {}) {
           const t = rnd();
           const out = 0.15 + t * t * 1.95;
           const sz = (0.10 + rnd() * 0.30) * (1 - t * 0.45);
-          const m = new THREE.Mesh(new THREE.IcosahedronGeometry(sz, 0), rubMat);
           const spread = (0.5 + t * 1.4) * mouthCol.w * 0.32;
-          m.position.set(wallX + out, cy - sz * 0.55, cz + (rnd() - 0.5) * 2 * spread);
-          m.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3);
-          m.scale.set(1, 0.62 + rnd() * 0.4, 1);         // a broken block is flatter than a ball
-          spill.add(m);
+          doorLumps.push({ sz, pos: [wallX + out, cy - sz * 0.55, cz + (rnd() - 0.5) * 2 * spread],
+                           rot: [rnd() * 3, rnd() * 3, rnd() * 3], scl: [1, 0.62 + rnd() * 0.4, 1] });
         }
         /* and a low bank of it right in the mouth, so the break has a
          * threshold to step over rather than an edge */
         for (let k = 0; k < 9; k++) {
           const sz = 0.16 + rnd() * 0.26;
-          const m = new THREE.Mesh(new THREE.IcosahedronGeometry(sz, 0), rubMat);
-          m.position.set(wallX - 0.12 - rnd() * 0.5, cy - sz * 0.55, cz + (rnd() - 0.5) * mouthCol.w * 0.7);
-          m.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3);
-          m.scale.set(1, 0.55 + rnd() * 0.3, 1);
-          spill.add(m);
+          doorLumps.push({ sz, pos: [wallX - 0.12 - rnd() * 0.5, cy - sz * 0.55, cz + (rnd() - 0.5) * mouthCol.w * 0.7],
+                           rot: [rnd() * 3, rnd() * 3, rnd() * 3], scl: [1, 0.55 + rnd() * 0.3, 1] });
         }
-        spill.traverse((o) => { if (o.isMesh) o.frustumCulled = true; });
+        const spill = new THREE.Group();
+        spill.add(rubbleHeap(rubMat, doorLumps));
         group.add(spill);
         S.spill = spill;
       }
@@ -2815,7 +2850,63 @@ export function makeUndercroft(opts = {}) {
           ring.renderOrder = -2;
           group.add(ring);
           S.apseRing = ring;
+          /* AND THE EXIT'S OWN MATERIALS ARE THE ONES THAT FADE AT THIS END.
+           * Collected by ROOT, because the two ends of the church are now
+           * cut from the same model and a name cannot tell them apart. */
+          S.apseX = group.localToWorld(new THREE.Vector3(exitEdge, 0, 0)).x;
+          S.exitMats = new Set();
+          S.cave.root.traverse((o) => {
+            if (!o.isMesh || !o.material) return;
+            for (const m of (Array.isArray(o.material) ? o.material : [o.material])) if (m) S.exitMats.add(m);
+          });
+          S.exitMats.add(ring.material);
+          if (S.mats.indexOf(ring.material) < 0) S.mats.push(ring.material);
         }
+        /* AND A WALL THAT WAS BROKEN THROUGH LEAVES ITS WALL ON THE FLOOR —
+         * the front door's own rule, at the other end of the church. The
+         * apse had a ring plugging the cut and nothing else, so the break
+         * was a clean ellipse of rock in a clean wall: the one edge in the
+         * building with nothing lying under it. Stone out of the break and
+         * into the chancel in the WALL'S material, a low bank inside the
+         * mouth in the TUNNEL'S, and a handful of bigger lumps hugging the
+         * rim itself, which is what the owner meant by covering it — an
+         * ellipse stops reading as an ellipse the moment something breaks
+         * its outline. On the same fixed hash, for the same reason. */
+        {
+          let rh = 90210;
+          const rnd = () => { rh = (rh * 1103515245 + 12345) & 0x7fffffff; return rh / 0x7fffffff; };
+          const wallMat = patchMat(S.wallMat || findMat(S.church.root), 'church');
+          const rockMat = patchMat(findMat(S.cave.root), 'cave');
+          S.exitMats.add(rockMat);
+          for (const m of [wallMat, rockMat]) if (S.mats.indexOf(m) < 0) S.mats.push(m);
+          const cy = exitFloor + CUT_Y, cz = off.z, wallX = exitEdge;
+          const wallLumps = [], rockLumps = [];
+          // out of the break, into the chancel, thinning over two metres
+          for (let k = 0; k < 24; k++) {
+            const t = rnd(), sz = (0.10 + rnd() * 0.30) * (1 - t * 0.45);
+            wallLumps.push({ sz, pos: [wallX - 0.15 - t * t * 2.0, exitFloor - sz * 0.55, cz + (rnd() - 0.5) * (1.0 + t * 2.4) * CUT_R * 0.7],
+                             rot: [rnd() * 3, rnd() * 3, rnd() * 3], scl: [1, 0.62 + rnd() * 0.4, 1] });
+          }
+          // a bank inside the mouth, so there is a threshold rather than an edge
+          for (let k = 0; k < 10; k++) {
+            const sz = 0.16 + rnd() * 0.26;
+            rockLumps.push({ sz, pos: [wallX + 0.25 + rnd() * 0.7, exitFloor - sz * 0.5, cz + (rnd() - 0.5) * CUT_R * 1.1],
+                             rot: [rnd() * 3, rnd() * 3, rnd() * 3], scl: [1, 0.55 + rnd() * 0.3, 1] });
+          }
+          /* and the RIM: lumps sat on the cut's own edge, half in the wall
+           * and half in the hole, so the outline is broken rather than drawn */
+          for (let k = 0; k < 14; k++) {
+            const a = (k / 14) * Math.PI * 2 + rnd() * 0.3;
+            const r = CUT_R * (0.86 + rnd() * 0.20), sz = 0.22 + rnd() * 0.34;
+            wallLumps.push({ sz, pos: [wallX + 0.02 + (rnd() - 0.5) * 0.30, cy + Math.sin(a) * r, cz + Math.cos(a) * r],
+                             rot: [rnd() * 3, rnd() * 3, rnd() * 3], scl: [0.55 + rnd() * 0.3, 1, 1] });
+          }
+          const spill = new THREE.Group();
+          spill.add(rubbleHeap(wallMat, wallLumps), rubbleHeap(rockMat, rockLumps));
+          group.add(spill);
+          S.apseSpill = spill;
+        }
+        if (S.doorBlend) S.doorBlend();      // the exit's own band, and its rubble
         const clipX = group.localToWorld(new THREE.Vector3(exitEdge + 0.12, 0, 0)).x;
         S.cave.root.traverse((o) => {
           if (!o.isMesh) return;

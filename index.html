@@ -4,7 +4,21 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Beach Walk</title>
+<script>
+  /* A CHECKPOINT LOAD NEVER SHOWS THE TITLE. The card is in the page and the
+     game only takes it down once main.js has run, which is the whole of the
+     download and the world's build — so a reload into a checkpoint painted
+     the title card for a second or two first. Read (not consumed: main.js
+     consumes it) before the first paint. */
+  try {
+    if (sessionStorage.getItem('beachwalk.load') === 'checkpoint' && localStorage.getItem('beachwalk.save'))
+      document.documentElement.classList.add('resuming');
+  } catch (e) {}
+</script>
 <style>
+  html.resuming, html.resuming body { background: #000; }
+  html.resuming #overlay { display: none !important; }
+  html.resuming #blackout { opacity: 1; }
   /* The live beach under the title, graded the way a painted menu is: drained
      of colour, crushed, pushed toward a sick olive. Lifted the moment you begin. */
   canvas.title-grade { filter: saturate(0.12) contrast(1.4) brightness(0.28); }
@@ -287,6 +301,27 @@
     flex: none;
   }
   #fastwalk.show { opacity: 1; }
+  /* The cylinder, and the loose rounds behind it. The bar's own language —
+     mono, letter-spaced, no colour — because this is a readout you take in
+     mid-fight and not a thing you are carrying; the jar counter is Georgia
+     for the opposite reason. Empty, it goes warm: the one time the number
+     has to reach you before you have read it. */
+  #ammo {
+    position: absolute;
+    left: 100%;
+    margin-left: 0.9rem;
+    white-space: nowrap;
+    font: 600 17px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: 0.10em;
+    color: rgba(236, 242, 250, 0.95);
+    text-shadow: 0 1px 6px #000, 0 0 12px rgba(0, 0, 0, 0.9);
+    opacity: 0;
+    transition: opacity 0.22s ease, color 0.2s ease;
+    pointer-events: none;
+  }
+  #ammo.show { opacity: 1; }
+  #ammo.empty { color: rgba(228, 132, 96, 0.95); }
+  #ammo i { font-style: normal; font-size: 12px; opacity: 0.55; letter-spacing: 0.06em; }
 
   /* THE HEALTH BAR: three hairline segments in the bottom left, dim red
      while whole and brighter the more of you is gone; a flash on the hit. */
@@ -814,7 +849,15 @@
     overflow: hidden;
   }
   #invpanel .rings .rslot.worn { border-color: rgba(255, 255, 255, 0.75); cursor: pointer; }
+  #invpanel .rings .rslot.sel { border-color: #ffffff; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5); }
   #invpanel .rings .rslot.empty { opacity: 0.3; }
+  /* a drop target nobody can see is a drop target nobody tries: while a ring
+     is being dragged, the slots it could go on say so in the HUD's own
+     language — a solid white hairline and nothing else */
+  #invpanel .rings .rslot.wearable, #rings .rslot.wearable {
+    opacity: 1; border-color: #ffffff; border-style: dashed;
+    background: rgba(255, 255, 255, 0.07);
+  }
   #invpanel .rings .rslot img { width: 100%; height: 100%; object-fit: cover; display: block; }
   #invpanel .rings .rslot .label { display: none; }
 
@@ -1026,6 +1069,143 @@
   }
   #invpanel .tip b { font-weight: 400; color: rgba(255, 255, 255, 0.7); }
   /* the item that follows the cursor while dragging */
+  /* ---- THE SHOP, in the pack's own hand ------------------------------ */
+  #shoppanel {
+    position: fixed;
+    inset: 0;
+    z-index: 14;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.86);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease;
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Courier New", monospace;
+    color: #ffffff;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+  }
+  #shoppanel.show { opacity: 1; pointer-events: auto; }
+  #shoppanel .panel {
+    width: min(94vw, 1180px);
+    border-top: 1px solid rgba(255, 255, 255, 0.3);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+    padding: 1.5rem 0 1.3rem;
+  }
+  #shoppanel .head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 0 0.2rem;
+  }
+  #shoppanel h2 {
+    font-weight: 400;
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+    font-size: 0.9rem;
+  }
+  #shoppanel .head .jars {
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    color: rgba(255, 255, 255, 0.45);
+  }
+  #shoppanel .head .jars b { color: #cfe4ff; font-weight: 400; }
+  /* what he says, and it is the same line the sale answers with */
+  #shoppanel .say {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 0.95rem;
+    letter-spacing: 0.04em;
+    color: rgba(255, 255, 255, 0.62);
+    padding: 0.55rem 0.2rem 0.9rem;
+    min-height: 1.5em;
+  }
+  #shoppanel .body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 36%);
+    gap: 1.8rem;
+    align-items: stretch;
+  }
+  #shoppanel .list { align-content: start; border-right: 1px solid rgba(255, 255, 255, 0.14); padding-right: 1.6rem; min-width: 0; }
+  #shoppanel .row {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 0.62rem 0.35rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+    font-size: 0.86rem;
+    letter-spacing: 0.04em;
+    color: rgba(255, 255, 255, 0.78);
+  }
+  #shoppanel .row .box {
+    width: 11px; height: 11px;
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    flex: 0 0 auto;
+    position: relative;
+  }
+  #shoppanel .row.chk .box { border-color: #ffffff; }
+  #shoppanel .row.chk .box::after {
+    content: "";
+    position: absolute; left: 2px; top: 2px; right: 2px; bottom: 2px;
+    background: #ffffff;
+  }
+  #shoppanel .row.had, #shoppanel .row.out { opacity: 0.38; }
+  #shoppanel .row.had .box, #shoppanel .row.out .box { border-style: dashed; }
+  #shoppanel .row .nm { flex: 1 1 auto; }
+  #shoppanel .row .pr { color: rgba(255, 255, 255, 0.55); letter-spacing: 0.1em; white-space: nowrap; }
+  #shoppanel .row:hover { color: #ffffff; }
+  #shoppanel .row.sel { color: #ffffff; background: rgba(255, 255, 255, 0.07); box-shadow: inset 2px 0 0 #ffffff; }
+  #shoppanel .row.out { opacity: 0.32; cursor: default; }
+  #shoppanel .detail { display: flex; flex-direction: column; align-items: center; text-align: center; min-width: 0; }
+  #shoppanel .detail .pic {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    max-height: 300px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: rgba(0, 0, 0, 0.55);
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  #shoppanel .detail .pic img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  #shoppanel .detail .nm {
+    margin-top: 1rem;
+    font-size: 0.9rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    overflow-wrap: anywhere;
+  }
+  #shoppanel .detail .ds {
+    margin-top: 0.7rem;
+    font-size: 0.78rem;
+    line-height: 1.55;
+    letter-spacing: 0.02em;
+    color: rgba(255, 255, 255, 0.6);
+  }
+  #shoppanel .detail .buy {
+    margin-top: 1.2rem;
+    padding: 0.62rem 2.4rem;
+    border: 1px solid rgba(255, 255, 255, 0.75);
+    background: none;
+    color: #ffffff;
+    font: inherit;
+    font-size: 0.78rem;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  #shoppanel .detail .buy:hover { background: rgba(255, 255, 255, 0.12); }
+  #shoppanel .detail .buy:disabled { opacity: 0.3; cursor: default; }
+  #shoppanel .tip {
+    display: flex;
+    gap: 2.2rem;
+    justify-content: center;
+    margin-top: 1.3rem;
+    font-size: 0.64rem;
+    letter-spacing: 0.14em;
+    color: rgba(255, 255, 255, 0.32);
+  }
+  #shoppanel .tip b { color: rgba(255, 255, 255, 0.72); font-weight: 400; }
   #invghost {
     position: fixed;
     z-index: 20;
@@ -1106,7 +1286,9 @@
     pointer-events: none;
   }
 
-  /* pause / settings menu */
+  /* pause / settings menu — THE PACK'S LANGUAGE: black, white, one
+     hairline, square, monospace, no glow and no colour. Same controls as
+     ever; only the dress changed. */
   #menu {
     position: fixed;
     inset: 0;
@@ -1114,80 +1296,133 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(4, 7, 14, 0.82);
-    backdrop-filter: blur(3px);
+    background: rgba(0, 0, 0, 0.84);
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.25s ease;
-    font-family: "Georgia", "Times New Roman", serif;
-    color: #c3cfe4;
+    transition: opacity 0.18s ease;
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Courier New", monospace;
+    color: #ffffff;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
   }
   #menu.show { opacity: 1; pointer-events: auto; }
   #menu .panel {
-    width: min(90vw, 420px);
-    background: rgba(12, 18, 30, 0.9);
-    border: 1px solid rgba(120, 140, 180, 0.2);
-    border-radius: 10px;
-    padding: 2rem 2.2rem;
-    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+    width: min(92vw, 540px);
+    max-height: 92vh;
+    overflow-y: auto;
+    border-top: 1px solid rgba(255, 255, 255, 0.3);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+    padding: 1.5rem 0.2rem 1.3rem;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
   }
+  #menu .panel::-webkit-scrollbar { width: 3px; }
+  #menu .panel::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.3); }
+  #menu .panel::-webkit-scrollbar-track { background: transparent; }
   #menu h2 {
     font-weight: 400;
-    letter-spacing: 0.3em;
+    letter-spacing: 0.4em;
     text-transform: uppercase;
-    font-size: 1.1rem;
-    color: #dde6f6;
-    margin-bottom: 1.6rem;
-    text-align: center;
+    font-size: 0.9rem;
+    color: #ffffff;
+    margin-bottom: 1.5rem;
   }
-  #menu .row { margin-bottom: 1.3rem; }
+  #menu .row { margin-bottom: 1.15rem; }
   #menu .row label {
     display: flex;
     justify-content: space-between;
-    font-size: 0.82rem;
-    letter-spacing: 0.12em;
+    align-items: center;
+    font-size: 0.72rem;
+    letter-spacing: 0.2em;
     text-transform: uppercase;
-    margin-bottom: 0.5rem;
-    opacity: 0.85;
+    margin-bottom: 0.55rem;
+    color: rgba(255, 255, 255, 0.62);
   }
-  #menu .row label .val { color: #eaf1ff; opacity: 1; }
+  #menu .row label .val { color: #ffffff; letter-spacing: 0.1em; }
+  /* a slider is a hairline with a square on it */
   #menu input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
     width: 100%;
-    accent-color: #7ea6d8;
-    height: 4px;
+    height: 14px;
+    background: transparent;
+    cursor: pointer;
+    margin: 0;
   }
-  #menu .row.toggle label { cursor: pointer; }
-  /* four of them now, so two even rows rather than a ragged wrap */
-  #menu .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; margin-top: 1.8rem; }
-  #menu .buttons button { padding: 0.72rem 0.6rem; line-height: 1.35; }
-  #menu .buttons button[disabled] { opacity: 0.3; cursor: default; }
-  #menu .buttons button.secondary {
-    opacity: 0.72;
-    border-color: rgba(150, 168, 200, 0.28);
+  #menu input[type="range"]::-webkit-slider-runnable-track { height: 1px; background: rgba(255, 255, 255, 0.35); }
+  #menu input[type="range"]::-moz-range-track { height: 1px; background: rgba(255, 255, 255, 0.35); }
+  #menu input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 11px; height: 11px; margin-top: -5px;
+    background: #ffffff; border: none; border-radius: 0;
   }
-  #menu .buttons button.secondary:hover { opacity: 1; }
+  #menu input[type="range"]::-moz-range-thumb { width: 11px; height: 11px; background: #ffffff; border: none; border-radius: 0; }
+  #menu input[type="range"]:focus { outline: none; }
+  #menu input[type="range"]:focus-visible::-webkit-slider-thumb { outline: 1px solid #ffffff; outline-offset: 2px; }
+  /* a toggle is a square box: hollow off, solid on */
+  #menu .row.toggle label { cursor: pointer; margin-bottom: 0; }
+  #menu input[type="checkbox"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 13px; height: 13px;
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    border-radius: 0;
+    background: transparent;
+    cursor: pointer;
+    flex: none;
+    margin: 0 0 0 1rem;
+  }
+  #menu input[type="checkbox"]:checked { background: #ffffff; border-color: #ffffff; }
+  #menu .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 1.6rem; }
+  #menu .buttons button { padding: 0.8rem 0.6rem; line-height: 1.35; }
+  #menu .buttons button[disabled] { opacity: 0.25; cursor: default; }
+  #menu .buttons button.secondary { color: rgba(255, 255, 255, 0.7); border-color: rgba(255, 255, 255, 0.22); }
   #menu button {
     flex: 1;
     padding: 0.7rem 1rem;
-    background: rgba(30, 44, 66, 0.8);
-    border: 1px solid rgba(140, 162, 200, 0.3);
-    border-radius: 6px;
-    color: #dde6f6;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    border-radius: 0;
+    color: #ffffff;
     font-family: inherit;
-    font-size: 0.8rem;
-    letter-spacing: 0.16em;
+    font-size: 0.72rem;
+    letter-spacing: 0.22em;
     text-transform: uppercase;
     cursor: pointer;
-    transition: background 0.15s ease;
+    transition: background 0.12s ease, color 0.12s ease;
   }
-  #menu button:hover { background: rgba(46, 66, 96, 0.95); }
+  #menu button:not([disabled]):hover { background: #ffffff; color: #000000; border-color: #ffffff; }
+  #menu .panel.controls { display: none; }
+  #menu.ctl .panel.settings { display: none; }
+  #menu.ctl .panel.controls { display: block; }
+  #menu .buttons button.wide { grid-column: 1 / -1; }
+  #menu .buttons.one { grid-template-columns: 1fr; }
+  #menu .ctl-group {
+    font-size: 0.62rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.38);
+    margin: 1.2rem 0 0.5rem;
+  }
+  #menu .ctl-group:first-of-type { margin-top: 0; }
+  #menu .ctl {
+    display: grid;
+    grid-template-columns: 11.5rem 1fr;
+    gap: 1rem;
+    align-items: baseline;
+    padding: 0.42rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    color: rgba(255, 255, 255, 0.72);
+  }
+  #menu .ctl .key { color: #ffffff; letter-spacing: 0.2em; text-transform: uppercase; }
   #menu .tip {
-    margin-top: 1.4rem;
-    font-size: 0.7rem;
-    letter-spacing: 0.1em;
-    opacity: 0.45;
-    text-align: center;
-    line-height: 1.7;
+    margin-top: 1.3rem;
+    font-size: 0.64rem;
+    letter-spacing: 0.14em;
+    color: rgba(255, 255, 255, 0.38);
+    line-height: 1.8;
   }
 
   /* end screen */
@@ -1254,6 +1489,12 @@
   <div id="hud">
     <div id="stamina"><div id="stamina-fill"></div></div>
     <div id="fastwalk">FAST</div>
+    <!-- HOW MANY ARE LEFT. Positioned ABSOLUTELY off the strip rather than
+         given a place in it: #hud is a flex row centred as a whole, so
+         anything added to it re-centres the stamina bar — the one element
+         that has to be in the same place every time, and the reason the
+         prompt was moved out of this strip in the first place. -->
+    <div id="ammo"></div>
   </div>
   <div id="health"><i></i><i></i><i></i><i></i></div>
   <div id="autosave">
@@ -1295,10 +1536,37 @@
         <span><b>Double-click</b> inspect</span>
         <span><b>Drag</b> reorder</span>
         <span><b>Drop</b> onto another item to combine</span>
+        <span><b>Drop</b> a ring on a ring slot to wear it</span>
       </div>
     </div>
   </div>
   <div id="invghost"></div>
+
+  <!-- THE SHOP. A dialogue with a price on every line is a conversation you
+       are having about buying something; a SHOP is a thing you look at. The
+       owner sent Resident Evil 3's, which is the shape: a title, what you
+       have to spend, a list of rows with a price on the right, and beside it
+       a pane showing the one you are on — its picture, its name, what it
+       does. It wears the pack's own language, because it is the same idea
+       (your things, big, on a black screen) one step further out. -->
+  <div id="shoppanel">
+    <div class="panel">
+      <div class="head">
+        <h2>Shop</h2>
+        <span class="jars"><b id="shop-jars">0</b> blood jars</span>
+      </div>
+      <div class="say" id="shop-say"></div>
+      <div class="body">
+        <div class="list" id="shop-list"></div>
+        <div class="detail" id="shop-detail"></div>
+      </div>
+      <div class="tip">
+        <span><b>Click</b> or <b>Space</b> to tick</span>
+        <span><b>Confirm</b> or <b>E</b> to buy</span>
+        <span><b>Esc</b> leave</span>
+      </div>
+    </div>
+  </div>
 
   <div id="note">
     <div class="paper">
@@ -1314,7 +1582,7 @@
   </div>
 
   <div id="menu">
-    <div class="panel">
+    <div class="panel settings">
       <h2>Settings</h2>
       <div class="row">
         <label>Field of view <span class="val" id="v-fov">75</span></label>
@@ -1356,14 +1624,35 @@
       </div>
       <div class="buttons">
         <button id="m-resume">Resume</button>
+        <button id="m-controls">Controls</button>
         <button id="m-checkpoint" class="secondary">Restart from last checkpoint</button>
         <button id="m-restart" class="secondary">Restart game</button>
-        <button id="m-reset" class="secondary">Reset to defaults</button>
+        <button id="m-reset" class="secondary wide">Reset to defaults</button>
       </div>
-      <div class="tip">
-        WASD move &nbsp;·&nbsp; Shift run &nbsp;·&nbsp; Space jump / step &nbsp;·&nbsp; Ctrl crouch &nbsp;·&nbsp; E interact / pick up<br />
-        click swing &nbsp;·&nbsp; hold click for a heavy &nbsp;·&nbsp; 1–6 hold item &nbsp;·&nbsp; Tab pack, to examine anything &nbsp;·&nbsp; G drop &nbsp;·&nbsp; Esc resume
-      </div>
+    </div>
+    <!-- THE CONTROLS HAVE THEIR OWN PAGE. They were a line of small print
+         under the buttons; this is the whole list, in the menu's own dress. -->
+    <div class="panel controls">
+      <h2>Controls</h2>
+      <div class="ctl-group">Moving</div>
+      <div class="ctl"><span class="key">W A S D</span><span>move</span></div>
+      <div class="ctl"><span class="key">Shift</span><span>run</span></div>
+      <div class="ctl"><span class="key">Space</span><span>jump &mdash; a directional step in a fight</span></div>
+      <div class="ctl"><span class="key">Ctrl</span><span>crouch</span></div>
+      <div class="ctl"><span class="key">8</span><span>fast walk &middot; toggle</span></div>
+      <div class="ctl-group">Fighting</div>
+      <div class="ctl"><span class="key">Click</span><span>swing</span></div>
+      <div class="ctl"><span class="key">Hold click</span><span>charge a heavy</span></div>
+      <div class="ctl"><span class="key">Shift + hold</span><span>overhead &middot; thrust with a blade</span></div>
+      <div class="ctl"><span class="key">Right click</span><span>guard &middot; parry on the tell &middot; aim a gun</span></div>
+      <div class="ctl"><span class="key">R</span><span>reload</span></div>
+      <div class="ctl-group">Things</div>
+      <div class="ctl"><span class="key">E</span><span>interact &middot; pick up</span></div>
+      <div class="ctl"><span class="key">1 &ndash; 6 &middot; wheel</span><span>hold an item</span></div>
+      <div class="ctl"><span class="key">Tab</span><span>pack &middot; examine &middot; combine</span></div>
+      <div class="ctl"><span class="key">G</span><span>drop</span></div>
+      <div class="ctl"><span class="key">Esc</span><span>menu</span></div>
+      <div class="buttons one"><button id="m-back">Back</button></div>
     </div>
   </div>
 

@@ -27,6 +27,9 @@ Then open <http://localhost:4173> and click to begin. Any static server works
 | Click (while carrying) | Throw the held object — it's a toggle, no hold |
 | Hold right-click | Guard with the shovel, held across you. Raise it INTO a blow to parry and stun — then hit it, because a blow on a parried enemy counts double. No swing comes out of a guard |
 | `Ctrl` | Crouch (toggle) — crawl under the pier |
+| Left-click (with the .44) | Fire — one round per press, six to a cylinder |
+| Hold right-click (with the .44) | Aim down the sights: the lens narrows, the sway falls away and the spread closes to almost nothing |
+| `R` | Reload the .44 off a speedloader (a dry trigger does it for you if you have one) |
 | `G` | Drop the held object gently |
 | `1`–`6` / click a slot | Hold an inventory item — everything can be carried |
 | Scroll wheel | Step through the hotbar, equipping as you go |
@@ -445,11 +448,17 @@ timber, and the console bank and cupboards are steel. Wood, stone, metal and
 sand on the beach do the same. What you hit and what you hear are the same
 thing.
 
-One autosave, and no save button. Reaching the mushroom house — the last
-stretch before the three come out of the dark — writes a checkpoint, and a
-small ring in the top right says so. It keeps where you stood, what you were
-carrying and in what order, what was in your hand, how hurt you were, the
-holes you dug and everything the walk has latched.
+Autosaves, and no save button. The walk saves itself as you reach the
+mushroom house, when the three crabs at the dock are down, and every time a
+door or a loading screen takes you somewhere — into and out of the bunker,
+the cave, the dojo, the catacombs, the sail to the keep, and the tavern's
+door (going in and coming out; there is no save at the top of the hoist). A
+small ring in the top right says so. It keeps where you stood, exactly what
+you were carrying and in what order, what was on your fingers, what was in
+your hand, how hurt you were, how many jars you had, the holes you dug, what
+you have killed and everything the walk has latched. A save made at a door
+is loaded by walking through that door again, so it puts you exactly where
+the door does.
 
 Dying puts you back there with all of it. The settings menu has **Restart
 from last checkpoint** (greyed out until you have one) and **Restart game**,
@@ -467,6 +476,8 @@ reading the button you pressed; the first click takes the mouse back.
 | `main.js` | The whole game |
 | `models/` | Standalone object models + a dev viewer (`horseshoe-crab.js`, `viewer.html`) |
 | `assets/backrooms.m4a` | Opening music (mono AAC, converted from the source WAV) |
+| `assets/keep-intro.m4a` | The sea keep's intro, played on arriving at its pier (AAC, converted from the owner's WAV) |
+| `assets/catacombs-fall.m4a` | The landing in the catacombs, played the moment you hit the stone (AAC, converted from the owner's WAV) |
 | `vendor/three/` | three.js r160 (vendored, offline-safe) |
 | `serve.py` | Tiny static server |
 
@@ -526,6 +537,15 @@ by [Valsev](https://sketchfab.com/Valsev) licensed under
 the altar (`assets/cave.glb`, decimated and packed with its walk by
 `tools/undercroft_pack.py`). One of its three materials carries no texture at
 all — it is the lamps on the posts, not rock.
+
+This work is based on ["Gold Ancient Ring Green Gem Stone (game-ready)"](https://sketchfab.com/3d-models/gold-ancient-ring-green-gem-stone-game-ready-913eef8fe39646be94faa9fdd3626ea8)
+by [Delandi](https://sketchfab.com/delandi) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Gem Stone Ring,
+in the jewellery box on the credenza in the pavilion (`assets/gem-ring.glb`,
+through `tools/gltfpack.py` at 2048: it is a 1,371-vertex game-ready mesh
+under forty-three megabytes of 4K maps, which is twice the bunker for a thing
+you hold in your hand, and it comes out at 7 MB). Its stone's map carries a
+real alpha and stays blended; its gold has none and is forced opaque.
 
 This work is based on ["Portal"](https://sketchfab.com/3d-models/portal-3279b8d99fe244059c40a66e8aa39590)
 by [DJMaesen](https://sketchfab.com/bumstrum) licensed under
@@ -766,6 +786,44 @@ given the game's own night sky as an environment map, because a metal with
 nothing to reflect renders black.
 
 
+**BOUNTY HUNTER** — the Rude Trader, standing at the sand wall a little
+short of the stone circle with his arms crossed, looking out at the water.
+He has one glowstick and two bottles of water, and he wants blood jars for
+them.
+
+["BOUNTY HUNTER"](https://sketchfab.com/3d-models/bounty-hunter-1b78c05dd09245a9a2b2906e12b1dc08)
+by [EZ-GAZI](https://sketchfab.com/EZ-GAZI),
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) —
+`assets/trader.glb`, through `tools/gltfpack.py --tex 1024`: 4,818 triangles
+and its six base-colour maps. Its file ships no clips, so the crossed arms
+are composed onto the bind pose once at load.
+
+
+**Pistol-Magnum** — the .44 he also has, for five blood jars, with three in
+the cylinder; six more rounds are two jars. Right click aims down the sights,
+left click fires, `R` reloads off a speedloader.
+
+["Pistol-Magnum"](https://sketchfab.com/3d-models/pistol-magnum-9d5df42759444adaa4dfb3ae40155b1f)
+by [Mozberg_log](https://sketchfab.com/mozberglog),
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — shipped exact
+(`assets/magnum.glb`, through `tools/gltfpack.py --tex 2048 --quality 94`): all
+6,372 triangles, its one material and its one map. The six loose rounds the file
+draws beside the gun are lifted out of its mesh by index and become the
+speedloader; nothing is modelled here.
+
+The reload, the aim and the recoil are posed against
+["Animated Magnum"](https://sketchfab.com/3d-models/animated-magnum-643b9d61ff49407b84ead78eaf815252)
+by [JUST](https://sketchfab.com/teenjust500),
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — used as REFERENCE
+only. None of that file ships in this game.
+
+The **shot** is the owner's own recording ("44 Magnum Sound Effect Single
+Shot"), trimmed of half a second of leading silence, faded and brought down
+3.5 dB because it clipped (`assets/magnum-shot.m4a`). It is NOT
+redistributable. The cylinder swinging out, the loader seating and the crane
+shutting are synthesised.
+
+
 **Skull Key** — what lies between the candles in the catacombs' lower vault,
 and the only thing that opens the barred door out of them.
 
@@ -848,6 +906,26 @@ redistribute and are credited as such.
 **Rusty Metal 02** — the rust on the ring.
 
 [Rusty Metal 02](https://polyhaven.com/a/rusty_metal_02) by Poly Haven, CC0.
+
+**Sand 03** — the beach and the sand wall (`assets/sand-diff.jpg`, `assets/sand-bump.jpg`, built by `tools/sand_pack.py`).
+
+[Sand 03](https://polyhaven.com/a/sand_03) by Poly Haven, CC0.
+
+**Low Poly Night City Building Skyline** — the city over the sand wall (`assets/skyline.glb`).
+
+This work is based on "[Low Poly Night City Building Skyline](https://sketchfab.com/3d-models/low-poly-night-city-building-skyline-b0035b8713b048bb8ddf311ee67c28c8)" by [99.Miles](https://sketchfab.com/99.Miles), licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+
+**Umbra Marauder Rig** — the four-armed boss past the five on the sand (`assets/umbra.glb`, packed with `tools/gltfpack.py` at its own 2048 textures). His combo is the owner's Mixamo "Dual Weapon Combo", retargeted by `tools/ntar_moves.py -- umbra` into `assets/umbra-moves.json`. Everything else he does — both walks, both runs, the strafes and side-steps, the dodge, the flinches, the parry reel and his four other blows — is authored in `main.js` (`authorUmbraOwn`) on his own stance; no other creature's clips are used on him.
+
+This work is based on "[Umbra Marauder Rig](https://sketchfab.com/3d-models/umbra-marauder-rig-2d8b32f0864644b5980b81b571b1838f)" by [DM-913](https://sketchfab.com/SuperKapoo913), licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+
+**Injured Run** — the rare flight of a nearly dead mutant. The owner's Mixamo "Injured Run", "Injured Run Left Turn" and "Injured Run Right Turn" (Adobe), retargeted onto the pack's own rig by `tools/ntar_moves.py -- mutant` into `assets/mutant-moves.json`.
+
+**Human Rotten Limbs** — the leg the catacombs monster's young is eating, and the remains laid about the catacombs' floors (`assets/limbs.glb`, through `tools/gltfpack.py --tex 1024 --normal-tex 1024 --quality 86`).
+
+This work is based on "[Human Rotten Limbs](https://sketchfab.com/3d-models/human-rotten-limbs-78bbce4856e744bd93a18028dd663077)" by [Dennis](https://sketchfab.com/dennis.hafemann), licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+
+**The young one's eating and scream** — two recordings supplied by the owner ("Carnivorous Creature Eating Flesh Sound Effect", cut to a 34-second loop and brought up 22 dB, `assets/baby-eat.m4a`; "Scary Demon Scream Sound!", trimmed, `assets/baby-scream.m4a`). They are NOT redistributable.
 
 
 **Octopus Ring** — the ring in the crate.

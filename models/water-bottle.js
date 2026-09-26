@@ -32,8 +32,13 @@ export function makeWaterBottle() {
     opacity: 0.62, emissive: 0x14343f,
   });
   const capMat = new THREE.MeshStandardMaterial({ color: 0x2f6fb8, roughness: 0.5, emissive: 0x081726 });
+  /* THE LABEL IS FrontSide, AND THE TEXT IS WHY. A label wrapped round a
+   * bottle only ever shows its outside, and at DoubleSide what the icon
+   * rendered was the far wall's INSIDE through the glass — "SPRING WATER"
+   * backwards. Measured both ways in the icon rig: DoubleSide mirrored,
+   * FrontSide reads. It is also one less face to draw. */
   const labelMat = new THREE.MeshStandardMaterial({
-    map: labelTex(), roughness: 0.85, emissive: 0x14161a, side: THREE.DoubleSide,
+    map: labelTex(), roughness: 0.85, emissive: 0x14161a, side: THREE.FrontSide,
   });
 
   // ---- body: base, ribbed waist, shoulder, neck ---------------------

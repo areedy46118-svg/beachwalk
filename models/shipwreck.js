@@ -1863,7 +1863,8 @@ export function makeShipwreck(opts = {}) {
       BR.add(slab(0.16, WIN1 - WIN0, 0.08, M.paint, BR_X0, (WIN0 + WIN1) / 2, -zc * 0.44 + i * zc * 0.88));
     // aft (+X): boarded, with one small window
     BR.add(slab(0.15, BR_H, zc * 2, M.paint, BR_X1, F + BR_H / 2, 0));
-    BR.add(slab(0.06, 0.62, 1.15, M.glass, BR_X1 - 0.05, WIN0 + 0.5, 0));
+    // (the small pane that stood here is gone: the fish plaque hangs on bare
+    // boards, and the pane read as a grey card behind him)
     for (const sx of [BR_X0, BR_X1]) for (const sz of [-zc, zc])
       BR.add(slab(POST, BR_H, POST, M.paint, sx, F + BR_H / 2, sz));
 
