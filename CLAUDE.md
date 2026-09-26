@@ -12796,3 +12796,266 @@ struck; the line thins aft into the sand she is buried in.
 - One draw call and 9,168 triangles: the group merges ITSELF, because the
   wreck's own `bakeStatic` ran on a warm step long before this could be
   there.
+
+**THE CHEST IS THE OWNER'S OWN MODEL, AND THE ARTIST HAD ALREADY DONE THE
+HARD PART.** `Medieval_Chest.blend` ships as THREE meshes — `Bottom`, `Top`
+and `Padlock` — so the lid was already its own object and could be hung on a
+real hinge rather than carved out of a solid, which is what the ten hand-built
+boxes it replaces never had. `tools/chest_pack.py` runs itself inside Blender
+(the .blend is the source; `head_pack.py`'s arrangement), multiplies the
+occlusion into the albedo (nothing here consumes an AO map and the chest
+stands below decks where the only light is each material's own emissive lift),
+drops the metalness for the tenth time, resizes on disk and repoints the
+datablocks (`sol_pack.py`'s trap: the exporter reads `filepath`, not whatever
+buffer was last scaled), and 91 MB of PNG becomes 827 KB.
+
+- **THE HINGE IS MEASURED AND WRITTEN INTO THE FILE.** The packer boxes the
+  body, takes its own rim height and its back edge, and puts them in the root
+  node's `extras` as `bw_chest` — which GLTFLoader hands straight to
+  `userData`, the way `bw_walk` and `bw_nav` already cross from a packer into
+  the game. Repack the chest at a different size and the lid still turns about
+  the wood.
+- **AND THE ARRANGEMENT IS BUILT EMPTY.** The scan lands long after
+  `makeShipwreck` has run, so what the wreck builds is the GROUP, the hinge
+  pivot, the collision box and an invisible `hitProxy` — and `dressChest`
+  fills it when the download arrives. The proxy is not optional: an
+  interactable's meshes are snapshotted ONCE, at registration, so a group that
+  is empty at that moment is a group the crosshair can never find again.
+- **AND A DEEP DOMED LID MAY NOT OPEN FLAT.** Half this chest's height is
+  lid, so past the vertical it is not the lip that reaches furthest back, it
+  is the crown, and the keg it stands in front of is a hand's breadth behind
+  the hinge. 1.42 rad — a shade under vertical, which is where a lid rests on
+  its own hinge anyway.
+
+**AND THE KEY FROM THE CRATE AT THE DOCK NOW OPENS IT.** It was "A Rusted
+Key" and its own comment called it a placeholder for whatever the pier turned
+out to be about; it is the "Chest Key", and the pier is the first half of a
+sentence that finishes in the wreck. It is NOT eaten — the shell door
+swallows its own key because that door is a way off the ship, and a chest is
+a thing you come back to.
+
+**THE SPARE PEG: A THRUST IS THE ONE SHAPE OF ATTACK THIS GAME DID NOT HAVE.**
+Both shovels chop and the katana cuts; the katana's charged stab was one move
+inside a sword, and a whole weapon built on it plays differently from the
+first press — you stop sweeping the frame and start measuring a distance. It
+is the fisherman's spare leg, out of the sea chest, and it is BUILT
+(`models/spare-peg.js`). Almost none of it is new machinery: `thrust: true`
+routes every swing through the stab's own slot in the pose system, and the
+rest is per-tool numbers.
+
+- **`slashing()` HAD TO LEARN THAT A THRUST IS NOT A CUT.** It means "this
+  tool sweeps the frame", which every dig tool did until one of them went
+  straight forward — left in, the peg blended into the cut's grip on the frame
+  it wound up.
+- **AND IT IS CARRIED AND GRIPPED THE WAY THE SWORD IS, WHICH IS THE
+  GEOMETRY AND NOT LAZINESS.** Both are authored to the katana's convention —
+  the fist on (0, 0, 0), the length running down -Y — so the carry that was
+  SOLVED against the reference reel is already correct for a stick of the same
+  length in the same hand. Guessed from scratch first, and what that rendered
+  was the shaft coming end-on at the lens: a cream pipe filling the right half
+  of the screen. **Measure what a pose already does before inventing one.**
+- **AND THE VIEW-MODEL SCENE'S OWN LIGHTS ARE THREE UNITS, for the second
+  time.** Ash at its honest colour renders as BONE in the fist, exactly as the
+  katana's gunmetal did. Read the lights of the scene a thing will be lit BY
+  before choosing its colour.
+- **AND IT IS THINNER THAN A PEG LEG WANTS TO BE.** At the shaft's real 9 cm
+  it filled the right third of the frame, because a thing in your fist is a
+  hand's breadth from the lens and a katana's blade is 3 cm of that.
+- **AND HOW LONG IT IS WAS DECIDED BY THE BOX IT COMES OUT OF.** Measured in
+  the game, the chest's interior is 0.88 by 0.61, so a peg laid flat across it
+  on the diagonal may be 0.82 including the socket's girth and no longer. Two
+  tries at 0.97 both poked through the back corner or the crown of the lid. It
+  costs the weapon nothing: how far a thrust REACHES is a number about the
+  fight (`reach`, `reachK`), not about the model.
+- **AND A "LONG" WEAPON HAS TO ACTUALLY REACH FURTHER.** Every tool shared one
+  `digRay.far`, which was right while all of them were thrown from the same
+  place. `reachK` is the tool's own multiplier and defaults to what it always
+  was.
+
+**AND THE DOJO'S ROCKS FLOATED BECAUSE THE FIT IS CAPPED AFTER THE SEAT IS
+CHOSEN.** Every height in the heap — the bed the ray found, the course
+spacing, the crown, the line the coping cuts at — is written against `r * sy`,
+the half-height the old generated blob had, and the mossy pack's rocks are
+fitted to exactly that. But the line under it CAPS the scale so a slab lying
+flat cannot be blown up into a table, and a capped stone is SHORTER than the
+height its seat was worked out for: its centre stays where the plan put it and
+its bottom rises by the difference — on a wide flat one, most of half a metre
+of daylight under a boulder. **A seat is the BOTTOM, not the middle**: the
+stone is lowered by whatever the fit lost, so a shape the cap has shrunk beds
+into the pile instead of hanging over it. The bottom course is bedded by its
+OWN size too, rather than by a flat 0.26 over the ground, which buries a
+half-metre stone to its waist and left a hand of air under a small one.
+Measured over the courtyard's 794 stones, each against the drawn ground AND
+against every other stone: **0 floating**.
+
+**AND THE FOUNTAIN'S RECORDING COULD BE LOCKED OUT BY ITS OWN FALLBACK.**
+`startFountainAudio` is called the first frame the water is loud enough to be
+worth building, and if the m4a has not come off the network by then it falls
+through to the synthesised bed and sets `fountAudio` — which nothing ever
+looked at again. So whether you heard the owner's own fountain or a bandpassed
+noise bed for the rest of that session was decided by whether one small
+download had landed at the moment you first walked within sixteen metres of
+it, and a cut into the room from the portal is exactly the case where it has
+not. `upgradeFountainRec` swaps it the moment the buffer is there. **A
+fallback is for a few frames, not for a playthrough.**
+
+**AND THE COURTYARD HAD THREE AMBIENCES COMPETING TO BE THE SOUND OF A ROOM
+THAT HAS ONE.** The beach's surf and wind were already ducked to nothing from
+`updateDojoAudio`; what was still playing over the recording was the room's
+OWN bed — a nature layer at 0.16, a bird every few seconds and an insect trill
+every ten. The bed is kept at a whisper (silence is an absence, not an
+ambience — the hall paid for that) and the birds and crickets are gone.
+Measured standing at the fountain: wave 0, wind 0, nature 0.020, fountain
+0.114 with `fountRec` true.
+
+**AND THERE IS A JAR OF BLUE BLOOD UNDER THE TORII.** The gate is the one
+part of that courtyard you walk THROUGH rather than into, so it is where a
+thing worth finding belongs. Where it lies is FOUND, not typed: from the gate
+island's own centre it walks the room's walk grid for cells with floor at the
+gate's level and a body's room around them, and takes the one furthest from
+the middle of the courtyard — the back of the gate house, behind the posts, by
+construction.
+
+**AND `node --check` IS GONE FROM THIS MACHINE.** There is no `node` on the
+PATH at all now. The browser is the eager parser for an ES module: load the
+page and read `read_console_messages` — a syntax error is a blank screen and a
+message.
+
+**AND A SCREENSHOT OF THE PANE IS NOT HOW TO SEE A FRAME.** `drawImage` off
+the WebGL canvas in the SAME call that rendered it, `toDataURL`, and return
+the bare base64 — big enough that the harness writes it to a file, which is
+then decoded in the shell and read as an image. A JPEG small enough to come
+back inline costs 25k tokens of context to say nothing. And `renderer.render`
+alone does not draw the VIEW MODEL, which lives in its own overlay scene:
+call the game's own frame (`__bw.animate()`) when what you are looking at is
+in your hands.
+
+**AND THE STILL WAS RIGHT; I WAS READING THE WRONG THING OFF IT.** Having
+measured that the peg is no nearer the lens than the Military Shovel, I told
+the owner the two bad frames of the finisher were a club seen end-on for a
+sixteenth of a second and left them. His answer was "fix it", and he was
+right: the distance was never the complaint, the complaint was that the
+weapon was not THERE. Two things about how it was found are general.
+
+- **THE CONTACT SHEET'S OWN BRIGHTENING WAS MINE, AND IT WAS THE DISGUISE.**
+  Every sheet in this round was drawn at `brightness(2.4)` so a night beach
+  reads on a page — which turns a dark object into a pale mass and a small
+  dark object into a pale blob. Judged unbrightened, AS THE PLAYER SEES IT,
+  the defect is somewhere else entirely: through the hang the peg is a stub
+  in the top corner and the wind-up has nothing in it at all.
+- **AND "IS IT ON SCREEN" IS NOT A COUNT OF POINTS INSIDE THE FRAME.**
+  Sampling twenty-one points down the shaft and counting the ones that
+  project inside NDC said 86 % — while the picture showed a lump. Perspective
+  is why: with the shaft pointing away from the lens most of its length
+  projects into a few pixels near the near end, so the count is high and the
+  SILHOUETTE is nothing. The honest measure is the screen-space SPAN between
+  the two ends, and the way to be certain which of foreshortening and
+  darkness you are looking at is to blaze the emissive for one run and look:
+  blazed, it was still a stub, so it was never the light.
+
+**AND ONE GRIP CANNOT SERVE A WHOLE OVERHEAD.** The arm turns most of a half
+circle between the hang and the contact, so a grip is a different camera-space
+direction at each end — solved at the contact alone (which is where it has to
+be right, because that is the frame the blow lands on), the same grip pointed
+the shaft straight AWAY from the lens at the top of the swing: camera-space z
+-0.97, and 0.81 m of peg foreshortened into a stub. So the finisher carries
+TWO grips, each solved in its own frame by the same method — read the parent's
+world frame ON that frame, ask for a chosen camera-space direction, invert —
+and slerped from one to the other over the drop (`PEG_OH_TURN`). The haul
+HANGS the shaft down out of the off-screen fist and into the picture, which is
+what a shovel's blade does for free and a club has to be told to do. Measured,
+the peg's on-screen span through the hang: **0.75 → 1.91-2.31** NDC against a
+frame two units tall, with the solved contact unmoved (hand (-0.11, 0.46),
+point (0.06, -0.30)). **THE POSE YOU HOLD AND THE POSE THAT LANDS ARE TWO
+SOLVES, NOT ONE** — the katana's own lesson, which said a cock is a pose you
+hold so it has to be on screen, on a tool with no blade to read.
+
+**AND THE PEG LEFT THE FRAME FOR MOST OF EVERY THRUST, WHICH `push` DID.**
+The owner asked for the peg's hits to move the way another game's do, and
+before any of that could be judged the weapon had to be IN the picture:
+measured over the wind-up and strike frames of the three-hit string, both ends
+of the peg were inside the frame on **18 %** of them, with the grip solved out
+to NDC (1.64, -1.99) at the cock — most of a frame past the corner. The cause
+is the one parameter of this pose set that is not an angle. `push` hauls the
+fist toward the NEAR PLANE, and a point near the lens is magnified: the same
+hand offset that reads as a comfortable low-right carry at arm's length is off
+the screen a hand's breadth from it. The cock was re-solved with that in mind
+and nothing else changed. **18 % → 100 %**, 37 of 37 live frames, no frame
+with either end outside, string 0.99 s.
+
+**A GRIP THAT IS ALREADY BLENDED IN CANNOT BLEND.** The finisher's own grip
+is slerped over its drop (`PEG_OH_TURN`), which is right — and `ohBlend` is
+already 1 by the time the third hit is thrown, so on the frame the finisher
+started the TARGET grip changed under a blend that had nothing left to run:
+measured, the peg's screen span collapsed 0.63 → 0.26 between two frames.
+`PEG_OH_IN` carries the thrust's grip IN over the first fifth of the swing, so
+the weapon turns out of the stroke it was in rather than appearing in a new
+one. The general shape is the guard's and the cut's: whatever a pose is
+blended FROM has to be the pose that was actually on screen.
+
+**AND A THRUST HAD NO FOLLOW-THROUGH, NO RECOIL AND NO CONFIRM.** Three
+separate omissions, all of them things the cut had and the stab did not,
+because `slashing()` was the only predicate any of them asked:
+
+- **the point stopped where it landed.** `STAB_THROUGH` and `stabThrough()`
+  drive it on through — further out, the hand settling under it — the way
+  `slashThrough` does for a blade. A spear that stops at the contact frame is
+  a spear being POSED at something.
+- **it came home on the cut's own easing.** `easeOutBack` overshoots, which
+  reads as a blade settling and on a club reads as a bounce; a thrust eases
+  out. And `bladeRate` IS A DIVISOR — it STRETCHES a swing, it does not speed
+  one up — so `recoverK` 5.0 was five times the recovery, 0.65 s of the peg
+  drifting home with the button dead. 2.4, and a tap may leave early through
+  the blade's own `FORE_EARLY` door. The jab went 900 ms → 617.
+- **and nothing said it had hit.** Every other weapon in this game confirms on
+  contact (`hitConnect`, the guard spring, the lens); a landed thrust did
+  nothing at all. It gets its own hitstop, trauma and FOV punch, scaled by the
+  charge, plus a deeper `vmImpulse` — and they are a SEPARATE branch from the
+  cut's, because a thrust's confirm is short and hard where a cut's is a roll.
+
+**YOU GIVE THE LEG BACK, AND HE GIVES YOU A ROD.** The Spare Peg comes out of
+the wreck's chest and it is the FISHERMAN'S, so the last thing to do with it
+is hand it over: a `★I found your leg` choice on three of his nodes, gated on
+carrying it, and he answers "I've been looking everywhere for this!" and takes
+it. `models/fishing-rod.js` is the reward. Four things it took, and three of
+them are rules this file already had:
+
+- **A THING YOU HAVE GIVEN AWAY MUST NOT COME BACK.** The checkpoint restore
+  REPLAYS pickup handlers and does not consult their `when`, so `pegReturned`
+  is a save flag applied BEFORE the replay and the pickup's own handler
+  returns early on it — the shell door's rule, and the smiling one's. Measured
+  across a real save and load: pack `[syringe, Fishing rod]` both sides, the
+  chest's peg no longer offerable.
+- **AND `packByName` IS THE FLOOR UNDER THE REPLAY**, so the rod is in its
+  list: an item granted inside a dialogue has no interactable to replay at all.
+- **A TOOL HANGS FROM WHERE IT PIVOTS**, the katana's rule. Built from the
+  butt, the rod's origin is 34 cm below the hand and it swung about a point in
+  mid-air; everything is shifted down by `ROD_GRIP` so y = 0 is the grip.
+  Measured with that done and `pos` at zero, the fist lands at NDC (0.58,
+  -0.66) — where every other tool's does — against a first framing whose BUTT,
+  REEL, GRIP AND SEAT were all under the bottom edge (y -1.46 to -0.97) and
+  whose only visible part was bare blank.
+- **AND THE ROLL ABOUT A ROD'S OWN AXIS IS THE WHOLE OF WHETHER THE REEL
+  READS.** It hangs on local -Z with the guides, so the roll decides whether
+  you see the spool's FACE or its rim: swept at -0.9, -0.5, -0.1 and +0.5,
+  three of the four draw it as a pale wedge lying along the blank and only
+  -0.9 turns the flange, the line pack and the handle toward the lens.
+
+**AND A REEL IS READ BY ITS BANDING, NOT BY ITS OUTLINE.** The first one was a
+single barrel lathe in one material and measured 62 px by 48 — big enough to
+see and completely unreadable, because a uniform pale capsule is a blob at any
+size. What says "reel" is the section a centrepin has: a bright FLANGE, a dark
+pack of LINE, a bright flange again, with a pillar and a handle breaking the
+circle. Measured after, it reads 28.6 mean luminance against a frame of 16.3
+with nothing over 200 — the brightest thing on the rod, which a polished reel
+under a moon should be, and not blown. **A part too small to have internal
+contrast is a part with no internal contrast: give it bands, not detail.**
+
+**AND A MEASUREMENT OF A VIEW MODEL HAS TO WAIT FOR THE ARM.** Two runs of the
+same three-hit table came back 0.74 NDC apart, which made every comparison
+noise. The look-lag and the landing spring are still ringing for a third of a
+second after a `look()`, so the harness settles 22 frames before it presses.
+And **`beachwalk.load` IS THE RESTORE KEY, NOT `beachwalk.loadMode`** — a
+wrong key does not merely fail, it loads as `fresh`, and a fresh load DELETES
+the save (`loadMode !== 'checkpoint'` at line 652), so the checkpoint you were
+about to test is gone before you can read it.

@@ -677,6 +677,26 @@ The wooden furniture in the wreck — the tables, chairs, benches and barrels in
 her hold and her quarters — is a set the owner supplied
 (`assets/furniture.glb`, `tools/furniture_pack.py`).
 
+The **sea chest** in her quarters is a Medieval Chest the owner supplied as a
+.blend with its own 4K maps (`assets/chest.glb`, `tools/chest_pack.py`). The
+artist modelled it in three pieces — a body, a lid and a padlock — which is
+why its lid is hung on a real hinge rather than carved out of a solid, and the
+hinge line is measured by the packer and written into the file.
+
+The **Spare Peg** — the fisherman's other leg, and the one thrusting weapon in
+the game — is a scan the owner supplied: The Egypt Centre's "Furniture Leg
+(W2054a)", CC-BY-4.0, through `tools/gltfpack.py` (`assets/peg-leg.glb`,
+`models/spare-peg.js`). A built peg stood there first and was deleted; this is
+a real object with four thousand years of wear on it, which is a history a
+lathe profile cannot carry. Which end is the foot and which is the broken top
+is measured off the model rather than guessed, and the hand closes on the top
+so that what arrives at the crosshair is the carved foot.
+
+The **fishing rod** the Old Fisherman gives you for bringing it back is built,
+in `models/fishing-rod.js`: a two-section tapered blank with whipped guides,
+cork grips, a brass reel seat and a centrepin reel, with the line running
+through the guides.
+
 
 The **katana's swing, block, hit, draw and parry sounds** are the owner's own
 bounces — four swings and four blocks from Sekiro effects, four hits from a

@@ -12,7 +12,9 @@ import { makeRing, makeRingIcon } from './models/ring.js';
 import { makeCdCase, makeCdCaseIcon } from './models/cd-case.js';
 import { makeUndergroundBunker } from './models/underground-bunker.js';
 import { makeKatana, KAT_TIP, KAT_POMMEL } from './models/katana.js';
+import { fitSparePeg, sparePegCopy, PEG_TIP } from './models/spare-peg.js';
 import { makeUndercroft } from './models/undercroft.js';
+import { makeFishingRod, makeFishingRodIcon } from './models/fishing-rod.js';
 
 /* ------------------------------------------------------------------ *
  *  Beach Walk — an endless, eerie shoreline at night.
@@ -109,6 +111,8 @@ const ASSET_REACH = {
   'assets/corpse.glb': 126,           // the body bag
   'assets/key.glb': 150,
   'assets/furniture.glb': 152,        // what is standing in her hold and her quarters
+  'assets/chest.glb': 152,            // and the sea chest in her quarters, with the peg in it
+  'assets/peg-leg.glb': 152,          // and what is inside it
   'assets/head.glb': 155,             // both of them are aboard the wreck
   'assets/dock.glb': 215,
   'assets/keep.glb': 216,              // and where its boat goes: fetched on the walk up to the pier
@@ -4800,8 +4804,14 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
      * through a light cut charged nothing, and the owner's word for that was
      * that the weapon got stuck charging a heavy. */
     windHeld = true;
-    const arm = () => { windLatch = null; if (!windHeld) return; if (!startWind() && windHeld && !winding) windLatch = setTimeout(arm, 45); };
-    windLatch = setTimeout(arm, WIND_TAP * 1000);
+    /* AND ON A THRUSTING WEAPON THE LATCH IS NEVER ARMED AT ALL. `startWind`
+     * refuses it anyway, but a latch that re-arms every 45 ms for as long as
+     * the button is held is a timer running through the whole of a string
+     * for nothing. The peg reads `windHeld` directly. */
+    if (!(equipped && equipped.thrust)) {
+      const arm = () => { windLatch = null; if (!windHeld) return; if (!startWind() && windHeld && !winding) windLatch = setTimeout(arm, 45); };
+      windLatch = setTimeout(arm, WIND_TAP * 1000);
+    }
   }
   if (e.button === 2 && started && !frozen() && equipped && equipped.onDig) {
     /* Kill the wind-up EVERY time, latched or live. Only a live wind was
@@ -4914,7 +4924,7 @@ S_DEV.addEventListener('change', () => {
  * where they are; `addToInventory` is only reached for a tool the pack does
  * not already hold, so taking one afterwards cannot double it. */
 function devGrantWeapons() {
-  for (const it of [shovelItem, militaryItem, katanaItem]) {
+  for (const it of [shovelItem, militaryItem, katanaItem, pegItem]) {
     if (!it || inventory.includes(it)) continue;
     addToInventory(it);
   }
@@ -5321,10 +5331,17 @@ function attackAction() {                        // left mouse
      * from where the blade is. Anything else is dropped — you were not
      * recovered, so you do not swing. */
     if (digT <= 0) {
+      if (equipped.thrust) pegStage = 1;
       startDig();
     } else if (slashing() && equipped.alternate && !digOverhead && !katBack() && !digCharged && digT < RETURN_LATEST) {
       queuedSwing = 'return';                  // fires at the follow-through, from the left
-    } else if (isBlade() && !digOverhead && digT >= FORE_EARLY && !winding) {
+    } else if ((isBlade() || (equipped.thrust && !digOverhead)) && !digOverhead && digT >= FORE_EARLY && !winding) {
+      /* AND THE LAST STRETCH OF A RECOVERY IS THE NEXT THRUST'S WIND-UP. A
+       * blade has been able to leave early from the end of its own recovery
+       * since the day the owner felt the wait; the peg could not, so a player
+       * tapping rather than holding waited out the whole way home before the
+       * button did anything — on the quickest weapon in the game. The string
+       * is what the HELD button does; this is what tapping does. */
       cancelSwing(); startDig();               // recovered enough: leaves from the live pose
     }
     return;
@@ -6808,7 +6825,32 @@ const VM_MIL_REST_ROT = [-3.142, -0.483, 0.483];
  * reference reel comes back to between every cut. Solved in the pane against
  * that frame, not guessed — see `__solveKat`. */
 const VM_KAT_REST_ROT = [-2.916, -0.870, 0.403];
-const restRot = () => (equipped === katanaItem ? VM_KAT_REST_ROT : VM_MIL_REST_ROT);
+/* AND THE PEG IS CARRIED POINT-FORWARD, WHICH IS SOLVED AND NOT GUESSED.
+ *
+ * Two wrong carries came first and each one is a lesson. Invented from
+ * scratch, the shaft came end-on at the lens — a pipe filling the right half
+ * of the screen. Handed the KATANA's carry, which is legitimate (both are
+ * authored to the same convention, the fist on (0, 0, 0) and the length
+ * running down -Y), it was correct and still wrong: the sword's rest runs a
+ * metre of blade from the fist out through the top of the frame, and that
+ * reads as elegant on something 3 cm wide and as scaffolding on something
+ * seven. A pose is only transferable if the SILHOUETTES are.
+ *
+ * So it is solved against what a thrusting weapon's rest has to say, which is
+ * where the point is: the iron out in FRONT and down to the right (NDC 0.52,
+ * -0.34), the fist at the bottom of the frame where the arm puts it, and the
+ * socket below the edge entirely. Hit exactly; `__solveKat`'s own coordinate
+ * descent, run on the three Euler angles.
+ *
+ * AND THE MIDDLE OF THE SCREEN IS THE ONE THING IT MAY NOT TOUCH. Solved to
+ * put the point just under the crosshair it came out correct and unusable —
+ * the shaft ran up through the centre of the picture and sat on the thing you
+ * aim with. The solve is scored on its CLEARANCE too: sampled along the whole
+ * shaft, nothing comes within 0.62 of the crosshair, against 0.32 for the
+ * pose that reads best on paper. */
+const VM_PEG_REST_ROT = [-3.798, -1.726, 0.918];
+const restRot = () => (equipped === katanaItem ? VM_KAT_REST_ROT
+  : equipped && equipped.thrust ? VM_PEG_REST_ROT : VM_MIL_REST_ROT);
 /* AND THE CUT KEEPS THE SHARED GRIP, WHICH IS WHY IT TRANSFERS AT ALL. The
  * stroke was laid out NUMERICALLY against `VM_SLASH_ROT` — the lip's screen
  * position probed at every quarter of both lerps until it ran corner to
@@ -6834,6 +6876,26 @@ const restRot = () => (equipped === katanaItem ? VM_KAT_REST_ROT : VM_MIL_REST_R
  * the cut: still sweeping across, still side-on enough to read as an edge,
  * with the point out where the enemy is instead of level with your own nose.
  * Solved with the stroke, not bolted on after it. */
+/* AND THE PEG'S FINISHER COMES DOWN; IT DOES NOT GO ACROSS.
+ *
+ * The obvious build of "two thrusts then a slash" was the shared horizontal
+ * cut, and it was wrong in a way that is worth writing down, because the
+ * stroke itself is fine and has been for a year. Every arm pose in it was
+ * laid out against a BLADE — a thin thing that reads as a LINE whichever way
+ * it is turned — and this is 0.8 m of club 14 cm through. Swept broadside
+ * through that arc it filled the frame corner to corner: measured on the
+ * contact sheet, a third of a second of a plank lying across the whole
+ * picture with the beach behind it gone. Tightening the arc and turning the
+ * shaft out of the screen plane both helped and neither was enough, because
+ * the problem is not the size of the sweep, it is that a horizontal sweep
+ * shows you the whole length of the thing side-on and there is a lot of it.
+ *
+ * What a person does with a club is bring it DOWN. The overhead is already
+ * in the pose system — up past vertical, a hang at the top, and a quartic
+ * drop — and it reads unmistakably at any thickness, because what travels
+ * across the frame is the END of the peg and not its flank. It is still the
+ * odd one out of the three, which is the whole job of a finisher: two
+ * thrusts and a third thrust is the same picture three times. */
 const slashRot = () => {
   if (equipped !== katanaItem) return VM_SLASH_ROT;
   if (katBack()) return KAT_CUT_ROT_B;
@@ -7404,7 +7466,7 @@ const KAT_BLOCK_ROT = [-3.050, -4.633, 0.162];
 const blockAt = () => (equipped === katanaItem ? KAT_BLOCK_AT : BLOCK_AT);
 const blockPose = () => (equipped === katanaItem ? KAT_BLOCK_POSE : BLOCK_POSE);
 const _blkQ = new THREE.Quaternion(), _blkE = new THREE.Euler(), _blkV = new THREE.Vector3(), _blkP = new THREE.Vector3();
-const _gQ = new THREE.Quaternion(), _gQ2 = new THREE.Quaternion();
+const _gQ = new THREE.Quaternion(), _gQ2 = new THREE.Quaternion(), _gQ3 = new THREE.Quaternion();
 const KAT_FACE = 0.42, KAT_FACE_K = 0.5;  // how far the blade is pitched into the screen through a cut, and how much of the point's drift is taken back
 const _kfQ = new THREE.Quaternion(), _kfP = new THREE.Quaternion(), _kfT0 = new THREE.Vector3(), _kfT1 = new THREE.Vector3();
 const _kfAx = new THREE.Vector3(), _kfN = new THREE.Vector3(), _kfW = new THREE.Vector3(), _kfD = new THREE.Vector3();
@@ -7720,6 +7782,78 @@ const katanaItem = {
   blade: true, dmgLight: 2, dmgHeavy: 3, windRate: 1.3, gore: 1.4, swingK: 0.9, recoverK: 4.0, glintSpan: 0.60, alternate: true,
   use: () => toggleEquip(katanaItem),
 };
+
+/* ---- THE SPARE PEG ----------------------------------------------------
+ * The third weapon, and the one that is not a swing. Both shovels chop and
+ * the katana cuts; every attack this one has is a THRUST, which is the only
+ * shape of attack this game did not have — the katana's charged stab was one
+ * move inside a sword, and a whole weapon built on it plays differently from
+ * the first press: you stop sweeping the frame and start measuring a
+ * distance, and being a foot too far away stops being survivable.
+ *
+ * What it is: the fisherman's SPARE LEG, out of the sea chest in the wreck.
+ * He has a peg below the knee and somewhere in that shed there was a second
+ * one, and a turned ash shaft with an iron shoe on the end of it is a short
+ * spear that nobody thinks of as one. Built, in models/spare-peg.js.
+ *
+ * Its numbers say "quick, and it reaches":
+ *   swingK 0.55 — the fastest attack in the game, a third under a katana's
+ *   light cut, because the whole of a rapier is that it is back on guard
+ *   before a heavier thing has finished arriving.
+ *   PEG_REACH 2.65 m against the katana's thrust at 1.75 — it lands from
+ *   outside everything else's range, which is the other half of the trade.
+ *   dmgLight 1 / dmgHeavy 3 — a poke is a poke, and the committed lunge is
+ *   the biggest single blow any tool here throws. It is the only weapon
+ *   whose charge is worth three times its click, which is what makes the
+ *   wind-up worth holding at this speed.
+ *   No `blade` — it is ash and iron, so it takes the wood knocks and the
+ *   ordinary connect rather than the sword bank — and no `alternate`, since
+ *   a thrust has no other side to come back on. */
+function makePegIcon() {
+  const c = document.createElement('canvas'); c.width = c.height = 48;
+  const g = c.getContext('2d');
+  g.strokeStyle = '#9c8158'; g.lineCap = 'round';
+  g.lineWidth = 5; g.beginPath(); g.moveTo(17, 10); g.lineTo(30, 33); g.stroke();   // the shaft
+  g.lineWidth = 3; g.strokeStyle = '#4a3524';
+  g.beginPath(); g.moveTo(12, 6); g.lineTo(21, 4); g.lineTo(23, 13); g.lineTo(14, 15); g.closePath(); g.stroke();
+  g.strokeStyle = '#8e949c'; g.lineWidth = 4;                                        // the iron shoe
+  g.beginPath(); g.moveTo(30, 33); g.lineTo(37, 42); g.stroke();
+  return c.toDataURL();
+}
+/* The last stretch of the iron, which is what the trail is drawn from and
+ * what `landBlade` puts on the crosshair: a thrust's business end is a
+ * POINT, so the two markers sit close together on the shoe itself. */
+const PEG_LIP = [[0, PEG_TIP, 0], [0, PEG_TIP + 0.11, 0]];
+/* THE SCAN LANDS OVER THE NETWORK, so all three copies are Groups that fill
+ * when it does — the captain's head's own arrangement, and the reason the
+ * hand, the examine screen and the one in the chest are all the same object
+ * however late it arrives. */
+const pegModel = new THREE.Group(), pegInspect = new THREE.Group(), pegWorld = new THREE.Group();
+bwGlb('assets/peg-leg.glb', (gltf) => {
+  const parts = fitSparePeg(gltf.scene);
+  pegModel.add(sparePegCopy(parts));
+  pegInspect.add(sparePegCopy(parts));
+  pegWorld.add(sparePegCopy(parts));
+});
+const pegVM = new THREE.Group();
+pegVM.add(pegModel);
+pegVM.position.set(-0.052, -0.026, 0.132);
+pegVM.rotation.set(VM_PEG_REST_ROT[0], VM_PEG_REST_ROT[1], VM_PEG_REST_ROT[2]);
+pegVM.visible = false;
+toolMount.add(pegVM);
+const pegItem = {
+  name: 'Spare Peg', desc: 'A Thrusting Weapon', icon: makePegIcon(), onDig: true, viewmodel: pegVM,
+  inspectModel: pegInspect, lip: PEG_LIP,
+  thrust: true, reach: 2.65, reachK: 1.22,
+  /* AND THE RECOVERY IS A BLADE'S NO LONGER. `recoverK` stretches the way
+   * home, which on a katana buys the held beat a cut is read off and the
+   * window the return chains in; on a point it bought 48 FRAMES — eight
+   * tenths of a second — of a stick creeping back with the button dead the
+   * whole time, on the weapon whose entire claim is that it is back on guard
+   * first. 2.4, and `easeOutCubic` spends most of that on the recoil. */
+  dmgLight: 1, dmgHeavy: 3, windRate: 1.55, gore: 0.55, swingK: 0.75, recoverK: 2.4,
+  use: () => toggleEquip(pegItem),
+};
 /* THE ONE BY THE DRAIN IS GONE. It lay on the sand past the drainage tunnel
  * home from the day the sword went in, and once the dojo's stand handed out
  * the same item (the sword you take off the rack, and the man who comes for
@@ -7933,11 +8067,46 @@ let slashDir = -1, lastSlashAt = -1e9;   // -1 sweeps right to left
  * "the cut is all arm" made literal — so the poses, the timing, the trail
  * and the whoosh transfer whole, and each tool keeps its own grip through
  * `restRot()`. The overhead was always shared. */
-const slashing = () => !!(equipped && equipped.onDig) && !digOverhead;
+/* A THRUST IS NOT A CUT, AND IT IS NOT AN OVERHEAD EITHER. `slashing()` is
+ * "this tool sweeps the frame", which every dig tool did until one of them
+ * went straight forward instead — so the peg has to be taken out of it or it
+ * would blend into the cut's own grip on the frame it winds up. It routes
+ * through the stab's slot in the pose system instead, which is the one place
+ * this file already knows how to drive a point at the crosshair. */
+/* ---- THE PEG'S COMBINATION: TWO THRUSTS AND A CUT ----------------------
+ * Hold the button and it runs a three-hit string — thrust, thrust, and a
+ * SLASH to finish. A tap is still one thrust, so the weapon has a jab you
+ * can throw and a committed string you have to mean, and nothing was added
+ * to the controls to get it: the button was already being watched, it was
+ * simply being watched for a CHARGE, which is the one thing a rapier has no
+ * business doing.
+ *
+ * `pegStage` is which of the three is in the air. It is the whole mechanism,
+ * because the pose system is already routed on a question — `thrusting()` —
+ * and the finisher is nothing more than that question answering NO for one
+ * swing: `slashing()` becomes true by itself, the shared cut poses run, the
+ * grip turns into the cut's own, and the sweep the shovels and the katana
+ * all use comes out of the peg without a line of new animation.
+ *
+ * WHY A CUT AT THE END. Two thrusts and a third thrust is the same picture
+ * three times and reads as a stutter; what a string wants is for the last
+ * one to be a DIFFERENT SHAPE, so it lands as an answer rather than as one
+ * more of the same. It is also the only time this weapon sweeps the frame,
+ * which is what makes it worth holding the button for. */
+let pegStage = 0;                        // 0 idle, 1 and 2 the thrusts, 3 the cut
+const thrusting = () => !!(equipped && equipped.thrust) && pegStage !== 3;
+const pegFinish = () => !!(equipped && equipped.thrust) && pegStage === 3;
+const slashing = () => !!(equipped && equipped.onDig) && !digOverhead && !thrusting();
 /* What the tool in hand does that the others do not. Every one of these
  * defaults to the shovels' own behaviour, so a tool without the field is
  * exactly the tool it was. */
-const toolDmg = (heavy) => (equipped && equipped.dmgLight) ? (heavy ? equipped.dmgHeavy : equipped.dmgLight) : (heavy ? 2 : 1);
+/* AND THE LAST BLOW OF A STRING IS THE ONE THAT PAYS FOR IT. Two thrusts at
+ * a point each and a cut worth three: holding the button through all of it
+ * is five, against one for the jab, which is the trade — the string is slow
+ * enough to be read and punished, so it has to be worth being read. */
+const toolDmg = (heavy) => (equipped && equipped.dmgLight)
+  ? ((heavy || pegFinish()) ? equipped.dmgHeavy : equipped.dmgLight)
+  : (heavy ? 2 : 1);
 const toolGore = () => (equipped && equipped.gore) || 1;
 const isBlade = () => !!(equipped && equipped.blade);
 /* ALWAYS RIGHT TO LEFT. A backhand on the second click was built — the
@@ -8155,9 +8324,82 @@ const KAT_STAB = [[-0.435, 0.060, 0.45, -0.284, 0.061, 0.067],      // hauled ba
  * it lands, the point finishing on the crosshair. And the tsuka is kept half
  * a metre out: a handle that comes at your face is not a wind-up, it is a
  * camera clip. */
-const katStabbing = () => !!(equipped === katanaItem && (digOverhead || (winding && windOverhead)));
+const katStabbing = () => thrusting()
+  || !!(equipped === katanaItem && (digOverhead || (winding && windOverhead)));
+/* AND THE PEG'S OWN DRAW IS LOWER, LONGER AND STRAIGHTER. The sword's thrust
+ * is a two-handed drive off the hip with the tsuka hauled past the body; this
+ * is one hand carrying a stick, so the wind-up gathers it back close and
+ * LEVEL with the point already on the line — the whole tell is the shaft
+ * shortening in the frame as it is drawn — and the strike is nearly a metre
+ * of travel in a straight line with almost no roll in it. A thrust that rolls
+ * on the way in is a swing that happens to arrive point-first. */
+/* AND THE COCK WAS OFF THE BOTTOM-RIGHT CORNER, WHICH IS THE KATANA'S OWN
+ * LESSON UNAPPLIED. `push` is how far the hand is hauled back TOWARD the
+ * lens, and a fist a hand's breadth from the near plane projects enormously:
+ * at 0.235 the grip sat at NDC (1.64, -1.99) — a whole frame-width past the
+ * corner — with nothing left in the picture but a sliver of the far end
+ * poking in. Measured over the wind-up and the strike, BOTH ENDS OF THE PEG
+ * WERE INSIDE THE FRAME ON 18 % OF FRAMES: you pressed, the weapon vanished,
+ * and it reappeared somewhere else, which is what "the animation is not
+ * smooth" looks like when the animation is fine and the framing is not.
+ *
+ * Solved instead against the picture: the fist is held just inside the
+ * bottom-right corner (0.82, -0.88) with the whole length of the leg running
+ * up and across to (0.32, 0.09) — the point already on the line, which is
+ * the tell — and the drive then straightens it along the view axis and takes
+ * the tip from 0.99 m out to 1.68. The DRIVE pose is untouched: it was
+ * solved once and it is right, and a solve that rolled it to put the fist
+ * further right put the point down and left of the hand instead, which
+ * reads as a downward poke rather than a thrust. 18 % -> 100 %. */
+let PEG_STAB = [[-0.340, 0.020, 0.560, -0.075, 0.050, 0.040],        // drawn back, low and right, all of it on screen
+                [-0.215, -0.010, 0.470, 0.045, -0.690, 0.330]];      // and run through
+/* and the grip the thrust turns into is the sword's own, for the same reason
+ * the carry is: it was solved to lay a -Y shaft down the view axis at an
+ * angle you can still read as a shaft, and this is a -Y shaft. */
+const PEG_STAB_ROT = KAT_STAB_ROT;
+/* AND THE FINISHER'S GRIP IS THE PEG'S OWN, SOLVED. The overhead's arm poses
+ * are the shovel's, and the shovel's own overhead grip rolls a SCOOP over —
+ * on a stick it left the shaft pointing up the view axis at the moment it
+ * landed, so the contact frame, which is the one frame of the whole string
+ * that has to read, was a foreshortened lump of wood lying across the
+ * bottom of the picture. `landBlade` pins the TIP to what you are aiming
+ * at, so the grip is all that decides which way the rest of it lies: this
+ * is the rotation that puts the hand high and the shaft coming down onto
+ * that point, swept for it. */
+let PEG_OH_LAND = [-2.110, -0.370, 0.210];   // solved at the contact
+let PEG_OH_HAUL = [2.618, 0.297, 0.080];     // and at the hang
+const PEG_OH_TURN = [0.34, 0.47];            // rolled from one to the other on the drop
+const PEG_OH_IN = 0.20;                     // and carried in from the thrust's grip before that
+let PEG_GRIP_HOME = 0.62;
+/* AND THE PEG IS NOT UNUSUALLY CLOSE TO THE LENS, WHICH IS A NUMBER RATHER
+ * THAN AN OPINION. Two frames of the finisher read on a contact sheet as a
+ * pale featureless mass filling half the picture, and the obvious diagnosis
+ * was the katana's own grip convention: the fist is on the very END of 0.81 m
+ * of timber, where a shovel's model is pushed down its mount so what sits at
+ * the hand is the middle of a shaft. A slide was written for it and swept —
+ * and the honest measure, the nearest point of the tool's own DRAWN geometry
+ * to the camera over the whole swing, says the peg reaches 0.21 m where the
+ * MILITARY SHOVEL'S ordinary cut reaches 0.177 on a swing that ships and is
+ * approved. Both signs of slide made it worse (0.12 at rest against 0.03 and
+ * 0.01), because the peg points away from the camera at the hang and back at
+ * it on the way home and no single offset can be right for both. Deleted.
+ * MEASURE A NEW TOOL AGAINST THE ONE THAT ALREADY SHIPS BEFORE CHANGING IT.
+ * (And the two frames that prompted all this were a real defect after all —
+ * see PEG_OH_HAUL. They were not too close, they were foreshortened into a
+ * stub, and the contact sheet's own 2.4x brightening was what disguised it
+ * as a pale mass. The measurement here is sound; the conclusion drawn from
+ * it — that there was nothing to fix — was not.) */
+/* Solved, and the way it is solved is worth the two lines: `landBlade` has
+ * already pinned the tip, so the only thing a grip can change at the contact
+ * is the DIRECTION the rest of the peg lies in — which means the answer is
+ * the rotation that takes the shaft's own -Y onto a chosen camera-space
+ * direction, read out of the parent's world frame on the contact frame
+ * itself and converted back. Asked for (0.10, -0.80, -0.59) — down, and a
+ * little away — it comes back with the hand at NDC (-0.07, 0.39) and the
+ * point at (0.04, -0.22): a fist above the middle of the picture with 0.8 m
+ * of wood coming down through the crosshair onto what you were aiming at. */
 function katStab(out, i, P) {
-  const q = KAT_STAB[i];
+  const q = (thrusting() ? PEG_STAB : KAT_STAB)[i];
   for (let k = 0; k < 6; k++) out[k] = q[k];
   out[4] += (i ? -0.10 : 0.06) * P;     // a charge draws further back and drives further out
   return out;
@@ -8239,7 +8481,20 @@ function impactPose(out, P) {
   return out;
 }
 // where a cut's follow-through ends, before the recovery brings it back
-function throughPose(out, P) { return slashThrough(out, P, slashDir); }
+/* WHERE A THRUST GOES AFTER IT HAS LANDED. Small on purpose: a point has
+ * nowhere to travel once it is in something, so this is eight centimetres
+ * more reach, the hand dropping a little as the weight goes onto it, and a
+ * touch of pitch — enough that the arm is still moving on the frame after
+ * the blow and the recoil has something to come back FROM. */
+function stabThrough(out, P) {
+  const q = PEG_STAB[1];
+  for (let k = 0; k < 6; k++) out[k] = q[k];
+  out[4] -= 0.078 + P * 0.030;          // driven on through
+  out[1] -= 0.034;                      // the hand settling under it
+  out[0] += 0.050;
+  return out;
+}
+function throughPose(out, P) { return thrusting() ? stabThrough(out, P) : slashThrough(out, P, slashDir); }
 
 /* Where the swing is going is decided when you COMMIT it — the click, or the
  * release — not on the frame the blade lands 150–200 ms later. Reading the
@@ -8254,7 +8509,15 @@ const _aimO = new THREE.Vector3(), _aimD = new THREE.Vector3();
 function aimRay(P) {
   camera.getWorldPosition(_aimO);
   digRay.set(_aimO, _aimD);
-  digRay.far = DIG_REACH + P * DIG_HEAVY_REACH;
+  /* AND A WEAPON MAY REACH FURTHER THAN THE REST. Every tool in this game
+   * has shared one number for how far a swing can find something, which was
+   * right while all of them were a chop or a cut thrown from the same place;
+   * a thrusting weapon's whole trade is that it lands from outside the
+   * distance everything else fights at, and a "long" weapon whose blows
+   * connect at exactly the same range as a spade is a description rather
+   * than a mechanic. `reachK` is the tool's own multiplier and defaults to
+   * what it always was. */
+  digRay.far = (DIG_REACH + P * DIG_HEAVY_REACH) * ((equipped && equipped.reachK) || 1);
   return digRay;
 }
 /* WHERE THE BLADE LANDS ON SCREEN. The poses put the blade at a fixed spot
@@ -8294,7 +8557,7 @@ function aimLand(P) {
    * the sand three metres out and the point was being put THERE — the stab
    * into the beach the owner saw. Past the thrust's own reach there is
    * nothing to meet, and the point goes to the end of the arm instead. */
-  if (katStabbing() && d > STAB_REACH + P * 0.5) d = Infinity;
+  if (katStabbing() && d > stabReach() + P * 0.5) d = Infinity;
   landDist = isFinite(d) ? d : -1;
 }
 /* The landing point this frame: the locked direction from where you stand
@@ -8306,15 +8569,37 @@ function aimLand(P) {
  * and the blade passes through the crosshair whatever the pitch. */
 const SWING_AIR = 2.2;                    // how far out the blade passes when there is nothing to meet
 const STAB_REACH = 1.75;                  // and how far a thrust reaches, plus half a metre on a charge
+/* AND A WEAPON MAY CARRY ITS OWN. The peg is the long one — it lands from
+ * outside everything else's range, which is half of what makes a thrusting
+ * weapon a different thing to hold rather than a differently-shaped sword. */
+const stabReach = () => (equipped && equipped.reach) || STAB_REACH;
 function landPoint() {
   camera.getWorldPosition(_landP);
-  return _landP.addScaledVector(_aimD, landDist >= 0 ? landDist : (katStabbing() ? STAB_REACH + digPower * 0.5 : SWING_AIR + digPower * 0.6));
+  return _landP.addScaledVector(_aimD, landDist >= 0 ? landDist : (katStabbing() ? stabReach() + digPower * 0.5 : SWING_AIR + digPower * 0.6));
 }
 /* The return stroke, thrown off the back of the one before it. It leaves
  * from the pose the blade is actually in (`_pose`, like a charged release
  * does), straight into its own strike, so the point comes back across the
  * screen from wherever the forehand left it — and it counts as the next beat
  * of the chain, not a fresh forehand. */
+/* The next one in the string, thrown from wherever the peg actually is — the
+ * return's own rule, and the reason a combination reads as one motion rather
+ * than as three swings with the arm dropping to rest between them. */
+function pegChain() {
+  if (!equipped || !equipped.onDig || frozen()) return;
+  pegStage += 1;
+  queuedSwing = false;
+  digT = 0;
+  if (pegStage === 3) { slashDir = -1; comboStep = 0; }   // the cut comes right to left, always
+  /* AND IT IS A FRESH SWING, NOT A WOUND ONE. `startDig` with a pose starts
+   * at `windupEnd()` — already drawn — which is right for a charge being
+   * released and wrong here: the second thrust began 0.34 into its own
+   * timeline and the link fires at 0.58, so it had 0.24 of a swing to live
+   * in. Measured, the middle hit of the string lasted THREE FRAMES. Each one
+   * runs from the top, blending out of the live pose (`_poseF`), so it draws
+   * back and goes again like a thing being thrown twice. */
+  startDig(0, null, true);
+}
 function chainSwing() {
   if (!equipped || !equipped.onDig || frozen()) return;
   queuedSwing = false;
@@ -8328,7 +8613,12 @@ function startDig(power = 0, fromPose = null, chained = false) {
   camera.getWorldDirection(_aimD);            // the angle; aimRay() takes the position
   digPower = THREE.MathUtils.clamp(power, 0, 1);
   // a charged release keeps whatever it was wound as; a plain click never is
-  digOverhead = !!fromPose && !chained && windOverhead;
+  /* AND THE STRING'S LAST BLOW IS AN OVERHEAD, which is decided here rather
+   * than by the button: `pegFinish()` is already true by the time the swing
+   * is started, and the pose system reads `digOverhead` for everything from
+   * the haul to the grip to the whoosh to whether a creature treats it as a
+   * heavy blow. One flag buys all of it. */
+  digOverhead = pegFinish() || (!!fromPose && !chained && windOverhead);
   /* RIGHT TO LEFT, always — unless you are already swinging, in which case
    * the second one comes back the other way. A lone cut should look the same
    * every time you make it; a combination should look like a combination. */
@@ -8349,9 +8639,9 @@ function startDig(power = 0, fromPose = null, chained = false) {
     digT = 0.0001;
   }
   impactPose(_poseB, digPower);
-  if (slashing()) throughPose(_poseC, digPower);
+  if (slashing() || thrusting()) throughPose(_poseC, digPower);
   // a cut's whoosh goes with the blade, not with the click: a light cut cocks first
-  sfxDig(digPower, slashing(), fromPose ? 0 : windupEnd() * swingSecs(digPower));
+  sfxDig(digPower, thrusting() ? 2 : slashing(), fromPose ? 0 : windupEnd() * swingSecs(digPower));
 }
 /* A SWING CAN BE LEFT. The guard and the charge both take over from a cut
  * that has landed — you can block, or go to the heavy, whenever you want in
@@ -8362,11 +8652,17 @@ function startDig(power = 0, fromPose = null, chained = false) {
 const swingLanded = () => digT >= (slashing() ? SLASH_THROUGH : DIG_STRIKE + 0.08);
 function cancelSwing() {
   digT = 0; digPower = 0; digCharged = false; digOverhead = false; queuedSwing = false;
+  pegStage = 0;                          // a string you guard out of is over
 }
 const WIND_IN = 0.10;                    // seconds the haul-back blends in from wherever the hand was
 const _windFrom = [0, 0, 0, 0, 0, 0];
 function startWind() {
   if (blocking) return false;           // no swing comes out of a guard
+  /* AND A THRUSTING WEAPON HAS NO WIND-UP TO HOLD. The button means the
+   * combination on this one, so the charge must never arm — otherwise the
+   * string's first thrust would be cancelled by a haul-back the moment the
+   * latch came round. */
+  if (equipped && equipped.thrust) return false;
   if (winding || !equipped || !equipped.onDig || frozen()) return false;
   if (digT > 0) { if (!swingLanded()) return false; cancelSwing(); }
   for (let i = 0; i < 6; i++) _windFrom[i] = _pose[i];   // the haul leaves from here, not from a snap
@@ -8411,7 +8707,12 @@ function digImpact() {
    * and a drive that arrives with no jolt through the camera reads as the
    * sword being placed rather than put through something: the lens punches,
    * the knees give a hand's width, the world jars and the arm rebounds. */
-  if (katStabbing()) { fovKick = Math.max(fovKick, 7.5 + digPower * 3); slamDip = Math.max(slamDip, 0.055 + digPower * 0.03); addTrauma(0.28 + digPower * 0.2); vmImpulse(-1.35); }
+  if (katStabbing()) {
+    const k = thrusting() ? 0.62 : 1;      // ash and iron, not two hands on a sword
+    fovKick = Math.max(fovKick, (7.5 + digPower * 3) * k);
+    slamDip = Math.max(slamDip, (0.055 + digPower * 0.03) * k);
+    addTrauma((0.28 + digPower * 0.2) * k); vmImpulse(-1.35 * k);
+  }
   _pf.copy(_aimD); _pf.y = 0; _pf.normalize();
   const P = digPower;
   if (castleStrike(P)) return;            // the blade went through the castle
@@ -8777,6 +9078,17 @@ const DIG_WINDUP = 0.34, DIG_STRIKE = 0.46;
  * the mark, decelerating, before the recovery brings it back. The impact
  * still fires at DIG_STRIKE, so everything keyed to that beat is untouched. */
 const SLASH_WINDUP = 0.22, SLASH_THROUGH = 0.62;
+/* AND A THRUST CARRIES PAST ITS CONTACT TOO. A cut has had a follow-through
+ * since the day the Military Shovel learned to cut — "a blade does not stop
+ * where it lands" — and the thrust, which was routed through the same driver,
+ * had none: the arm arrived at full extension on the damage frame and then
+ * simply began drifting home, which is the one shape of motion that reads as
+ * the animation ENDING rather than as a blow landing. Every thrust in every
+ * game this was measured against drives a little past the contact and is
+ * pulled back from there. The window is shorter than a cut's, because a point
+ * has much less distance to travel than an edge. */
+const STAB_THROUGH = 0.545;
+const throughEnd = () => (thrusting() ? STAB_THROUGH : SLASH_THROUGH);
 const windupEnd = () => slashing() ? SLASH_WINDUP : DIG_WINDUP;
 /* How long this swing takes. A LIGHT CUT IS A CLICK: the same 0.44 s as the
  * sand shovel's — it ran a third quicker and the owner called it too fast;
@@ -8793,7 +9105,14 @@ const windupEnd = () => slashing() ? SLASH_WINDUP : DIG_WINDUP;
  * combination you can hold a rhythm in, not one that accelerates away from
  * you. */
 const comboRate = () => 1;
-const swingSecs = (P) => (slashing() ? DIG_DUR * (0.55 + P * 0.60) / (1 + 0.34 * P) : DIG_DUR * (0.55 + P)) * ((equipped && equipped.swingK) || 1) * comboRate();
+/* AND A STRING IS PACED, NOT RATTLED OFF. A lone jab is the fastest attack
+ * in this game and should be; three of them at that speed is 0.36 s of
+ * something you cannot read, and a combination nobody can see is a
+ * combination nobody knows they threw. Each hit of the string runs a little
+ * longer than the jab and the FINISHER longer again, which is also what
+ * makes it land as the answer to the two before it. */
+const pegRate = () => (pegStage === 3 ? 1.50 : pegStage > 0 ? 1.15 : 1);
+const swingSecs = (P) => (slashing() ? DIG_DUR * (0.55 + P * 0.60) / (1 + 0.34 * P) : DIG_DUR * (0.55 + P)) * ((equipped && equipped.swingK) || 1) * comboRate() * pegRate();
 /* A HEAVY IS QUICK WHERE IT IS SEEN AND LONG WHERE IT IS FELT. Stretching
  * the WHOLE charged swing (`heavyK`, 1.75x) made it heavy by making it
  * slow, which is not the same thing: the owner watched the blade wallow
@@ -8806,9 +9125,9 @@ const swingSecs = (P) => (slashing() ? DIG_DUR * (0.55 + P * 0.60) / (1 + 0.34 *
  * because it has already paid up front. 34 frames became 22, with the cut
  * itself landing in five. */
 const bladeRate = (p, P) => {
-  if (!isBlade() || digOverhead || !equipped.recoverK) return 1;
+  if ((!isBlade() && !thrusting()) || digOverhead || !equipped.recoverK) return 1;
   if (p < DIG_STRIKE) return 1 + 0.25 * P;
-  if (p < SLASH_THROUGH) return 1 + 0.35 * P;
+  if (p < throughEnd()) return 1 + 0.35 * P;
   return equipped.recoverK * (katBack() ? 1.8 : 1) * (1 - 0.55 * P);
 };
 let vmLagX = 0, vmLagY = 0, vmPrevYaw = 0, vmPrevPitch = 0;
@@ -8922,8 +9241,17 @@ function updateViewmodel(dt) {
      * while you wind it — that is when you can see it — and reading the key
      * again on the way out meant letting go of sprint a frame early turned
      * an overhead back into a side swing. */
-    if (overheadHeld()) windOverhead = true;
-    if (windOverhead && equipped === katanaItem) {
+    if (overheadHeld() && !thrusting()) windOverhead = true;
+    if (thrusting()) {
+      /* AND A PEG IS WOUND BY BEING DRAWN, NOT BY BEING LIFTED. Its charge is
+       * the same thrust gathered further back along its own line — the arm
+       * pulls in to the ribs and the shaft SHORTENS in the frame, which is
+       * the whole tell and is readable across a room precisely because
+       * nothing else it does changes. */
+      katStab(_pose, 0, e);
+      _pose[4] += 0.085 * e; _pose[5] += 0.045 * e;      // further back the longer it is held
+      _pose[0] += strain * 0.9; _pose[4] += strain * 0.9;
+    } else if (windOverhead && equipped === katanaItem) {
       /* THE STAB IS DRAWN, NOT HAULED. You have to be able to SEE what you
        * are charging: the sword comes back level with the point already on
        * what you are looking at, so the whole hold says "this is going
@@ -8975,7 +9303,7 @@ function updateViewmodel(dt) {
      * the whole of what keeps a light hit from being spammable now that the
      * cut itself is quick again — see `bladeRate`. */
     digT += dt / (swingSecs(P) * bladeRate(digT, P));
-    const p = digT, W = windupEnd(), isCut = slashing();
+    const p = digT, W = windupEnd(), isCut = slashing(), thr = thrusting();
     if (p < W) {
       // anticipation: quick out of rest, hanging at the top of the haul
       poseMix(_pose, _poseF, _poseA, easeOutCubic(p / W));
@@ -8989,12 +9317,12 @@ function updateViewmodel(dt) {
        * a fifth of the time. That hang-then-drop is the whole read of a slam. */
       const st = (p - W) / (DIG_STRIKE - W);
       poseMix(_pose, _poseA, _poseB, digOverhead ? st * st * st * st : easeInCubic(st));
-    } else if (isCut && p < SLASH_THROUGH) {
+    } else if ((isCut || thr) && p < throughEnd()) {
       /* THE FOLLOW-THROUGH. A blade does not stop where it lands; it goes on
        * through and out the far side, slowing, and is brought back from
        * there. Without this beat the recovery began at the mark and pulled
        * the tool straight back the way it had come, which is a tap. */
-      poseMix(_pose, _poseB, _poseC, easeOutQuad((p - DIG_STRIKE) / (SLASH_THROUGH - DIG_STRIKE)));
+      poseMix(_pose, _poseB, _poseC, easeOutQuad((p - DIG_STRIKE) / (throughEnd() - DIG_STRIKE)));
     } else {
       /* recovery: eases back to rest, overshooting once on the way — except a
        * blade, which SETTLES. `easeOutBack` threw the katana's point two
@@ -9002,14 +9330,24 @@ function updateViewmodel(dt) {
        * the owner called a flinch, and a sword coming to guard does not
        * bounce off it. Ease-in-out also holds the blade out on the left
        * over the first stretch, which is the window the return chains in. */
-      const from = isCut ? _poseC : _poseB, t0 = isCut ? SLASH_THROUGH : DIG_STRIKE;
+      const from = (isCut || thr) ? _poseC : _poseB, t0 = (isCut || thr) ? throughEnd() : DIG_STRIKE;
       const rt = Math.min(1, (p - t0) / (1 - t0));
       /* A blade FINISHES its cut before it comes home: the first third of
        * the recovery drifts a few per cent, then the rest eases back. That
        * held beat is the window the return chains in, and it is what makes
        * a cut read as a cut rather than as a wave. */
       const rm = rt < REC_HOLD ? 0.08 * rt / REC_HOLD : 0.08 + 0.92 * easeInOutCubic((rt - REC_HOLD) / (1 - REC_HOLD));
-      poseMix(_pose, from, REST_POSE, isBlade() && !digOverhead ? rm : easeOutBack(rt));
+      /* AND A THRUST RECOILS; IT DOES NOT DRIFT. A blade HOLDS its cut for
+       * the first third of the recovery (`REC_HOLD`) because the sweep is
+       * the thing you are meant to watch and the return chains out of it —
+       * and on a point that same curve is a stick hanging in the air at full
+       * stretch and then creeping home, which is 39 frames of almost no
+       * movement. What a thrust does is come back off the target fast and
+       * settle, so the recoil is the last beat of the blow rather than an
+       * absence of one. */
+      poseMix(_pose, from, REST_POSE,
+        thr && !digOverhead ? easeOutCubic(rt)
+        : (isBlade() || thrusting()) && !digOverhead ? rm : easeOutBack(rt));
     }
     if (!digImpacted && p >= DIG_STRIKE) {
       digImpacted = true;
@@ -9020,7 +9358,7 @@ function updateViewmodel(dt) {
        * as an impact. The spring's peak is roughly v0/sqrt(stiffness), so
        * anything under ~1.5 stays inside the clamp and stays a curve. */
       const cut = slashing();
-      vmImpulse(-0.95 - P * 0.5 - (digOverhead ? 0.35 : 0) - (cut ? 0.30 : 0));
+      vmImpulse(-0.95 - P * 0.5 - (digOverhead ? 0.35 : 0) - (cut ? 0.30 : 0) - (thr ? 0.22 : 0));
       /* AND IT JARS. A hit that stops dead has to shake the hands that made
        * it. The cut lands hardest of the three: it is the fastest thing in
        * the game and it arrives with the whole arm behind it, so it gets the
@@ -9035,6 +9373,17 @@ function updateViewmodel(dt) {
           addTrauma(0.20 + P * 0.26);
           fovKick = Math.max(fovKick, 3.4 + P * 3.6);
           hitRoll = -slashDir * (0.030 + P * 0.034);
+        } else if (thr) {
+          /* AND A POINT THAT GOES IN STOPS DEAD. A thrust that connected got
+           * the guard spring and three sparks and nothing else — no frozen
+           * frame, no trauma, no lens — so the one attack in this game whose
+           * whole subject is arriving at a distance was the one that never
+           * told you it had arrived. It is a SHORTER freeze than a cut's and
+           * no roll at all: a cut turns the world because the blade swept
+           * across it, and a thrust simply stops. */
+          hitstop = Math.max(hitstop, 0.038 + P * 0.045);
+          addTrauma(0.13 + P * 0.20);
+          fovKick = Math.max(fovKick, 2.6 + P * 3.0);
         }
       }
       /* THE SLAM. The whole body goes into an overhead and the whole body
@@ -9055,12 +9404,19 @@ function updateViewmodel(dt) {
         spawnPuffs(lp.x, lp.z, 14 + Math.round(P * 12), -_pf.x, -_pf.z, Math.max(0.05, lp.y), null);
       }
     }
-    if (p >= 1) { digT = 0; digPower = 0; digCharged = false; digOverhead = false; }
+    if (p >= 1) { digT = 0; digPower = 0; digCharged = false; digOverhead = false; pegStage = 0; }
     /* ON the follow-through, not after it: the recovery eases with
      * `easeOutBack`, which is more than half-way home a few frames past the
      * through, so a return chained "a beat later" left from a half-recovered
      * pose and only ever swept the right of the screen. */
     else if (queuedSwing === 'return' && p >= SLASH_THROUGH && slashing() && !katBack()) chainSwing();
+    /* AND THE STRING GOES ON WHILE THE BUTTON IS DOWN. It links just past
+     * the contact — late enough that the blow you have just thrown is over
+     * and its damage dealt, early enough that the arm is still travelling,
+     * so the next one leaves from a moving pose and the three read as one
+     * thing. Let go at any point and it simply stops where it is. */
+    else if (pegStage > 0 && pegStage < 3 && windHeld && !winding
+             && p >= DIG_STRIKE + 0.12) pegChain();
   } else {
     for (let i = 0; i < 6; i++) _pose[i] = 0;
   }
@@ -9142,7 +9498,17 @@ function updateViewmodel(dt) {
   /* Turn the tool over for an overhead, and back afterwards. Blended rather
    * than snapped, so the change of grip happens while the shovel is going up
    * and is finished by the time it comes down. */
-  const wantOh = (winding && windOverhead) || (digT > 0 && digOverhead) ? 1 : 0;
+  /* AND THE PEG'S FINISHER LETS ITS GRIP GO EARLY, which is not a nicety.
+   * A grip is fixed in the ARM'S frame, so a shaft held down-and-away at the
+   * contact is swung round by whatever the arm does afterwards — and the
+   * overhead's recovery hauls the hand back past the body, which took 0.65 m
+   * of peg through the lens: measured, the tip's own camera depth crossed
+   * zero and the last third of the swing rendered as a slab of wood filling
+   * the picture. Every roll about the shaft gives the same answer, because a
+   * roll cannot move a tip; the fix is to stop holding the overhead's grip
+   * while the arm is coming home. */
+  const wantOh = thrusting() ? ((winding || digT > 0) ? 1 : 0)
+  : (winding && windOverhead) || (digT > 0 && digOverhead && !(pegFinish() && digT >= PEG_GRIP_HOME)) ? 1 : 0;
   /* AND THE GRIP COMES HOME WITH THE ARM. It used to turn back to the carry
    * only once the swing had ended — a second motion after the arm had
    * already stopped, which is a twitch. On a blade it starts back over the
@@ -9170,10 +9536,45 @@ function updateViewmodel(dt) {
      * frame-widths off the right edge — which was most of the "flinch" at
      * the end of a combination. A slerp takes the short way round. */
     const R = restRot(), SR = slashRot();
-    const OH = katStabbing() ? KAT_STAB_ROT : VM_OVERHEAD_ROT;
+    const OH = thrusting() ? PEG_STAB_ROT : pegFinish() ? PEG_OH_LAND : katStabbing() ? KAT_STAB_ROT : VM_OVERHEAD_ROT;
     _gQ.setFromEuler(_blkE.set(R[0], R[1], R[2]));
     if (slBlend > 0.001) { _gQ2.setFromEuler(_blkE.set(SR[0], SR[1], SR[2])); _gQ.slerp(_gQ2, slBlend * (1 - ohBlend)); }
-    if (ohBlend > 0.001) { _gQ2.setFromEuler(_blkE.set(OH[0], OH[1], OH[2])); _gQ.slerp(_gQ2, ohBlend); }
+    if (ohBlend > 0.001) {
+      _gQ2.setFromEuler(_blkE.set(OH[0], OH[1], OH[2]));
+      /* AND THE HAUL IS A POSE YOU HOLD, SO IT HAS TO BE ON SCREEN — the
+       * katana's own solve, on a club. ONE grip cannot serve the whole
+       * overhead, because the arm turns most of a half circle between the
+       * hang and the contact: solved at the contact alone, the same grip
+       * put the shaft pointing straight AWAY from the lens at the top of
+       * the swing (camera-space z -0.97), so a 0.81 m peg foreshortened
+       * into a stub in the top corner and the whole wind-up — eight frames,
+       * the part you read a smash off — had nothing in it. Blazing the
+       * emissive proved it was foreshortening and not darkness. So the
+       * finisher has TWO grips, each solved in its own frame: the haul
+       * HANGS the shaft down out of the off-screen fist and into the
+       * picture, the way a shovel's blade does, and it rolls into the
+       * solved contact grip over the drop. */
+      /* AND IT IS THREE KEYS, NOT TWO, BECAUSE THE FINISHER IS ARRIVED AT.
+       * `ohBlend` is already 1 when the third hit begins — the two thrusts
+       * hold the same flag — so nothing was blending: the target grip simply
+       * CHANGED, from the stab's to the haul's, between one frame and the
+       * next. Measured through the link, the peg's on-screen span collapsed
+       * 0.63 -> 0.26 and opened again over the next four frames, which is a
+       * stick snapping end-on and back. The string carries the grip in from
+       * where the second thrust left it (`PEG_OH_IN`), holds the haul, and
+       * rolls into the solved contact over the drop. */
+      if (pegFinish()) {
+        _blkQ.setFromEuler(_blkE.set(PEG_OH_HAUL[0], PEG_OH_HAUL[1], PEG_OH_HAUL[2]));
+        if (digT < PEG_OH_IN) {
+          _gQ3.setFromEuler(_blkE.set(PEG_STAB_ROT[0], PEG_STAB_ROT[1], PEG_STAB_ROT[2]));
+          const j = Math.max(0, Math.min(1, digT / PEG_OH_IN));
+          _blkQ.copy(_gQ3).slerp(_blkQ, j * j * (3 - 2 * j));
+        }
+        const k = Math.max(0, Math.min(1, (digT - PEG_OH_TURN[0]) / (PEG_OH_TURN[1] - PEG_OH_TURN[0])));
+        _gQ2.copy(_blkQ).slerp(_gQ2, k * k * (3 - 2 * k));
+      }
+      _gQ.slerp(_gQ2, ohBlend);
+    }
     toolVM.quaternion.copy(_gQ);
     /* THE GUARD IS THE SAND SHOVEL'S. Held scoop-up, the Military Shovel's
      * block put the bar across the frame upside down and the blade on the
@@ -9222,7 +9623,7 @@ function updateViewmodel(dt) {
    * wedge over a third of the picture — the additive-blending trap the trail
    * has fallen into once before, in a new place. */
   trailGain = slashing() ? (isBlade() ? 0.95 : 1.55) : 1;
-  updateTrail(dt, toolVM.visible && digT >= windupEnd() - 0.02 && digT < (slashing() ? SLASH_THROUGH + 0.02 : DIG_STRIKE + 0.13));
+  updateTrail(dt, toolVM.visible && digT >= windupEnd() - 0.02 && digT < (slashing() ? SLASH_THROUGH + 0.02 : thrusting() ? STAB_THROUGH + 0.03 : DIG_STRIKE + 0.13));
   updateSparks(dt);
   updateGlint(dt);
 }
@@ -12046,8 +12447,13 @@ bwGlb('assets/key.glb', (gltf) => {
   m.scale.setScalar(0.20 / Math.max(size.x, size.y, size.z));    // a key you can see from standing
   keyModel.add(m);
 });
+/* AND IT IS THE CHEST KEY. It was "A Rusted Key" and it opened nothing: the
+ * comment above says so outright — a placeholder for whatever the pier
+ * turned out to be about. What the pier turns out to be about is the sea
+ * chest in the wreck, a kilometre and a half down the walk, and the key that
+ * turns it is the one thing in that crate. */
 const keyItem = {
-  id: 'key', name: 'A Rusted Key', icon: makeKeyIcon(),
+  id: 'key', name: 'Chest Key', desc: 'It opens something else', icon: makeKeyIcon(),
   use: () => toggleEquip(keyItem),
 };
 holdable(keyItem, keyModel, { scale: 1.1, pos: [0, -0.02, 0], rot: [0.5, 0.3, 0.7] });
@@ -12059,7 +12465,7 @@ function dropKey(c) {
   hit.name = 'hitProxy'; hit.visible = false; hit.position.y = 0.05; keyWorld.add(hit);
   scene.add(keyWorld);
   addItemShine(keyWorld, { size: 1.1, height: 0.45, strength: 2.6 });
-  addInteractable(keyWorld, 'Take the key', 'inventory', {
+  addInteractable(keyWorld, 'Take the chest key', 'inventory', {
     onActivate: () => {
       scene.remove(keyWorld);
       removeInteractable(keyWorld);
@@ -13380,6 +13786,24 @@ function sfxConnect(P = 0, k = 1) {
 function sfxDig(power = 0, cut = false, delay = 0) {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime + delay;
+  /* A THRUST IS NOT A SWING, AND IT DOES NOT SOUND LIKE ONE. A cut is a long
+   * surface dragged sideways through air and it has a sweep in it; a point
+   * driven straight forward moves almost no air at all, so what you hear is
+   * the SHAFT — one short low rush and the arm behind it, over before a cut
+   * has finished rising. Shorter than anything else this file plays, and
+   * low, because a stick is a column of air the same way a blade is. */
+  if (cut === 2) {
+    const len = 0.13 + power * 0.07;
+    const s2 = noiseBurst(len, (x) => (x < 0.22 ? Math.pow(x / 0.22, 0.6) : Math.pow(1 - (x - 0.22) / 0.78, 2.4)));
+    const f2 = ctx.createBiquadFilter(); f2.type = 'bandpass'; f2.Q.value = 1.25 + power * 0.4;
+    f2.frequency.setValueAtTime(240, t);
+    f2.frequency.exponentialRampToValueAtTime(640 + power * 130, t + len * 0.55);
+    f2.frequency.exponentialRampToValueAtTime(190, t + len);
+    const g2 = ctx.createGain(); g2.gain.value = 0.030 + power * 0.032;
+    s2.connect(f2).connect(g2).connect(sfxOut());
+    s2.start(t); s2.stop(t + len);
+    return;
+  }
   // a heavier swing is a longer, lower whoosh — more air moved, more slowly.
   // A CUT is a blade through air, not a spade: shorter and higher, and
   // delayed to the strike — on the click it played over the cock-back and
@@ -14795,6 +15219,13 @@ bwGlb('assets/furniture.glb', (gltf) => {
   const g = shipwreck.userData.furnish(gltf.scene);
   bakeStatic(g, undefined, { named: true });
 });
+/* AND THE SEA CHEST IS THE OWNER'S OWN MODEL, in three pieces so its lid can
+ * be hung on a real hinge. It is NOT baked: the lid has to survive as
+ * something that turns, which is the barricade's own rule, and `dressChest`
+ * marks the group accordingly. */
+bwGlb('assets/chest.glb', (gltf) => {
+  if (shipwreck.userData.dressChest) shipwreck.userData.dressChest(gltf.scene);
+});
 
 /* ---- punch her out of the sea ---------------------------------------
  * Sampled off the SAME hull functions the geometry uses, at the height
@@ -15519,6 +15950,99 @@ function updateHoldDoor(dt) {
    * Swung the other way it opens into the hold, which is empty there, and
    * 1.85 rad lays it back along the lining without folding past it. */
   holdDoor.rotation.y = holdDoorSwing * 1.85;
+}
+
+/* ---- THE SEA CHEST IN HER QUARTERS, AND WHAT IS IN IT ------------------
+ * `S.userData.chest` hands the group and the hinge over the same way
+ * `.holdDoor` does. It is LOCKED, and what turns it is the key out of the
+ * crate at the dock — which for two years was "A Rusted Key", a thing you
+ * took off the boards with nothing anywhere in the game to put it in. A key
+ * with no lock is a prop; a lock with no key is a wall. This is both of them
+ * pointed at each other, and the pier is now the first half of a sentence
+ * that finishes in the wreck.
+ *
+ * THE KEY IS NOT EATEN. The shell door swallows its own — it goes into the
+ * lock and stays there, which is right for a door that is a way off the ship
+ * — but a chest is a thing you come back to, so this one turns and the key
+ * stays in your pack.
+ *
+ * And it swings both ways: a chest is a thing you rummage in, not a
+ * one-way passage, so there is no reason it should only ever open once. */
+const shipChest = shipwreck.userData.chest;
+let shipChestOpen = false, shipChestSwing = 0, shipChestLocked = true, pegTaken = false;
+const chestKeyIn = () => inventory.includes(keyItem);
+if (shipChest) {
+  /* THE PEG IS IN IT, LYING ON THE DIAGONAL. It is 0.97 m of turned ash in a
+   * chest 0.92 by 0.64, so the only way it goes in is corner to corner — and
+   * that is the picture the open lid should give you: a leg that barely fits
+   * the box somebody shut it in. It is a child of the chest, so it rides the
+   * chest's own place in the world and nothing here has to know where that
+   * is; it is hidden while the lid is down, because the lid is not a cover
+   * over a hole, it is a lid on a box with something in it. */
+  pegWorld.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0.86, -0.06, 0.51).normalize());
+  pegWorld.position.set(-0.262, 0.128, -0.152);   // measured: it clears every wall by a centimetre
+  pegWorld.visible = false;
+  /* AND IT CARRIES ITS OWN TARGET. An interactable's meshes are snapshotted
+   * ONCE, at registration, and the scan is not here yet — so without this the
+   * crosshair could never find the peg however plainly it is lying there. */
+  {
+    const hp = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.84, 0.12),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    hp.name = 'hitProxy'; hp.visible = false; hp.position.y = -0.25;
+    pegWorld.add(hp);
+  }
+  shipChest.group.add(pegWorld);
+  /* AND THE GLINT IS SMALL, because it is INSIDE something. Every other
+   * shine in this game has to find a dark object on an open beach; this one
+   * sits in a box a metre from your face, and at the beach's own size it
+   * came out as a white blob with a peg somewhere behind it. */
+  addItemShine(pegWorld, { size: 0.42, height: 0.20, strength: 1.25, lift: 0.28 });
+  addInteractable(pegWorld, 'Take the Spare Peg', 'inventory', {
+    when: () => shipChestOpen && !pegTaken && !pegReturned,
+    onActivate: () => {
+      if (pegReturned) return;        // you gave it back; the chest is empty for good
+      pegTaken = true;
+      pegWorld.visible = false;
+      if (pegWorld.userData.halo) { pegWorld.parent.remove(pegWorld.userData.halo); pegWorld.userData.halo = null; }
+      removeInteractable(pegWorld);
+      hovered = null;
+      sfxThud(0.04);
+      addToInventory(pegItem);
+      toggleEquip(pegItem);
+    },
+  });
+  addInteractable(shipChest.group, 'The chest is locked.', 'default', {
+    label: () => (shipChestLocked ? (chestKeyIn() ? 'Unlock the chest' : 'The chest is locked.')
+      : shipChestOpen ? 'Close the chest' : 'Open the chest'),
+    bare: () => shipChestLocked && !chestKeyIn(),
+    onActivate: () => {
+      if (shipChestLocked) {
+        if (!chestKeyIn()) { sfxThud(0.02); return; }    // the lock does not give
+        shipChestLocked = false;
+      }
+      shipChestOpen = !shipChestOpen;
+      if (shipChestOpen && !pegTaken) pegWorld.visible = true;
+      sfxLockerOpen();
+      hovered = null;
+    },
+  });
+}
+function updateShipChest(dt) {
+  if (!shipChest) return;
+  const want = shipChestOpen ? 1 : 0;
+  if (Math.abs(shipChestSwing - want) < 0.001) return;
+  const was = shipChestSwing;
+  shipChestSwing += (want - shipChestSwing) * Math.min(1, dt * 4.5);
+  /* THE KEG IS RIGHT BEHIND IT. The hinge is at the back edge and the keg
+   * the chest fronts stands a hand's breadth past it, so a lid laid back
+   * flat the way the equipment case's does swings into the barrel. This lid
+   * is also a deep DOME — half the height of the whole chest — so past the
+   * vertical it is not the lip that reaches furthest back, it is the crown,
+   * and every centimetre past 90 degrees costs more than the one before it.
+   * A shade under vertical is where a lid actually rests on its own hinge
+   * anyway; beyond that it is a lid falling off the back of a box. */
+  shipChest.lid.rotation.x = -easeOutCubic(shipChestSwing) * 1.42;
+  if (was < 0.9 && shipChestSwing >= 0.9 && shipChestOpen) sfxThud(0.03);   // the lid settling open
 }
 
 function dropShipHead() {
@@ -24123,6 +24647,76 @@ const FISH_TUB_H = 0.58;
 /* He opens with a threat and then lets you pick how to take it. Backing out
  * ends it; the other two answer and leave the remaining ones open, so you
  * can hear him out without the conversation looping forever. */
+/* ---- THE ROD HE GIVES YOU FOR HIS OWN LEG ------------------------------
+ * The spare peg comes out of a sea chest in a wreck sixty metres off his own
+ * pier, and he is the man with a peg below the knee: the one thing in this
+ * game that was a weapon and an answer to a question nobody had asked is
+ * also, if you carry it back to him, the only thing you can GIVE anybody.
+ *
+ * He takes it and the rod comes off the wall. It is a real item — held,
+ * examined, dropped, carried through a checkpoint — and it is not a second
+ * weapon: `onDig` is what makes a thing swing and this does not have it, so
+ * it is the one object you can walk the beach holding that cannot hurt
+ * anything, which is its own kind of thing to be carrying out here. */
+/* AND A LEG YOU HAVE HANDED OVER STAYS HANDED OVER. The peg's pickup is an
+ * `'inventory'` interactable with a save id, and a restore REPLAYS those
+ * handlers by calling `onActivate` directly — so without this the chest
+ * would hand the leg straight back on the next checkpoint load, with the rod
+ * already in your pack. The shell door's own rule: a thing you have already
+ * done does not un-happen when you load. */
+let pegReturned = false;
+const fishingRod = makeFishingRod();
+const fishingRodItem = {
+  id: 'fishingrod', name: 'Fishing rod', desc: "The Old Fisherman's",
+  icon: makeFishingRodIcon(),
+  use: () => toggleEquip(fishingRodItem),
+};
+/* A 1.72 m rod at true scale is a plank across the whole picture, so the copy
+ * in your hand is seven tenths of it, turned so the reel seat and the cork sit
+ * in the near corner and the blank runs up and away out of the top of the
+ * frame — which is how you carry a made-up rod down a beach, and which is also
+ * the only honest thing to draw: you cannot see the tip of a rod you are
+ * holding. Nothing here is a guess. `pos` is (0, 0, 0) because the MODEL'S
+ * PIVOT IS ITS GRIP (the katana's rule), so the rod turns about the hand and
+ * the fist lands where every other tool's does — measured at NDC (0.58,
+ * -0.66), which is the lower right of the frame. The one number that is not
+ * zero is a 5 cm LIFT, and it is measured too: a reel hangs BELOW the hand,
+ * and at a dead zero its box runs to NDC y -0.984 against a bottom edge at
+ * -1.0, so the signature part of the object sits on the frame's own edge with
+ * a sixtieth of the picture to spare. The lift buys it a tenth.
+ *
+ * AND THE ROLL ABOUT THE ROD'S OWN AXIS IS THE WHOLE OF WHETHER THE REEL
+ * READS. It hangs on local -Z with the guides, so the roll decides whether
+ * you are looking at the spool's FACE or at its rim: swept at -0.9, -0.5,
+ * -0.1 and +0.5, the last three draw it as a pale wedge lying along the blank
+ * and only -0.9 turns the flange, the dark line pack and the handle toward
+ * the lens. Measured there, the reel covers 62 x 48 px and reads 28.6 mean
+ * luminance against a frame of 16.3 with nothing over 200 — the brightest
+ * thing on the rod, which a polished reel under a moon should be, and not
+ * blown. */
+holdable(fishingRodItem, fishingRod, { scale: 0.70, pos: [0, 0.05, 0], rot: [-0.20, -0.90, 0.45] });
+
+/* He takes it out of your hands — so if it is IN your hands it has to leave
+ * them, which `removeFromInventory` already does (it unequips first). */
+function givePegBack() {
+  if (pegReturned) return;
+  pegReturned = true;
+  removeFromInventory(pegItem);
+  sfxThud(0.05);
+}
+function giveFishingRod() {
+  if (inventory.includes(fishingRodItem)) return;
+  addToInventory(fishingRodItem);
+  sfxThud(0.03);
+}
+/* The line is offered wherever the conversation actually goes — `start` and
+ * the two hubs it opens onto — because an offer you can only make by
+ * choosing the right first reply is an offer most people never see. */
+const OFFER_PEG = {
+  label: 'I found your leg', to: 'peg',
+  when: () => inventory.includes(pegItem) && !pegReturned,
+  act: () => givePegBack(),
+};
 const FISHERMAN_SCRIPT = {
   start: {
     text: 'I should kill you for snooping around my property like that.',
@@ -24132,9 +24726,26 @@ const FISHERMAN_SCRIPT = {
       { label: 'Who are you?', to: 'who' },
       // only if it is on you — he is not going to answer a question about a
       // key you have not found
-      { label: 'Do you know about this rusted key?', to: 'key',
+      { label: 'Do you know about this key?', to: 'key',
         when: () => inventory.includes(keyItem) },
+      OFFER_PEG,
     ],
+  },
+  peg: {
+    text: "I've been looking everywhere for this!",
+    choices: [
+      { label: 'It was in the wreck, in a chest', to: 'rod', act: () => giveFishingRod() },
+      /* NOT "Keep it" — read aloud beside a man you have just handed
+       * something to, that is the PLAYER keeping it, which is the opposite of
+       * what the button does. */
+      { label: "It's yours", to: 'rod', act: () => giveFishingRod() },
+    ],
+  },
+  rod: {
+    /* And he gives something back, which is the whole of why the leg is
+     * worth carrying two hundred metres up a beach. */
+    text: "Then you'll take this. She's older than you and she still catches. Mind the tip.",
+    choices: [],
   },
   key: {
     text: '\u2026',                 // his answer to the key, for you to write
@@ -24148,7 +24759,8 @@ const FISHERMAN_SCRIPT = {
     text: "Call it what you like. The water's taken quieter men than you.",
     choices: [
       { label: 'Who are you?', to: 'who2' },
-      { label: 'Do you know about this rusted key?', to: 'key', when: () => inventory.includes(keyItem) },
+      { label: 'Do you know about this key?', to: 'key', when: () => inventory.includes(keyItem) },
+      OFFER_PEG,
       { label: 'Sorry, I was just leaving', to: 'leaving' },
     ],
   },
@@ -24156,7 +24768,8 @@ const FISHERMAN_SCRIPT = {
     text: "I've fished this water sixty years. Long enough to know what walks it after dark.",
     choices: [
       { label: 'Is that a threat?', to: 'threat2' },
-      { label: 'Do you know about this rusted key?', to: 'key', when: () => inventory.includes(keyItem) },
+      { label: 'Do you know about this key?', to: 'key', when: () => inventory.includes(keyItem) },
+      OFFER_PEG,
       { label: 'Sorry, I was just leaving', to: 'leaving' },
     ],
   },
@@ -27458,6 +28071,7 @@ function update(dt, rawDt = dt) {
   updateShrine(dt);         // and the saucer's floor wins over all of it
   updateShip(dt);
   updateHoldDoor(dt);           // and the wreck overrides the sand where you're on it
+  updateShipChest(dt);          // the sea chest in her quarters, opening and shutting
   updateDock(dt);           // the pier's drift, boards and shed walls
   updateBunkers(dt);        // the room's own frame: walls, furniture, ceiling
   updatePortal(dt);         // the stone circle on the sand, and its hum
@@ -27784,6 +28398,7 @@ function saveCheckpoint() {
       holdDoor: holdDoorOpen,
       // and the catacombs' own, which the skull key turns
       catDoor: catDoorOpen,
+      chest: !shipChestLocked,        // a lock you have turned does not lock itself again
       dockDoor: dockDoorOpen,
       /* AND THE DOJO. The same rule as the shell door and the smiling one: a
        * fight you have already won does not un-happen when you load, and a
@@ -27797,6 +28412,8 @@ function saveCheckpoint() {
        * replayed. (The pack backstop catches the item; this is so the beach
        * is the beach you left.) */
       crates: crates.map((c, i) => (c.broken ? i : -1)).filter((i) => i >= 0),
+      // the leg you carried back to the man it belongs to, and what he gave for it
+      pegReturned,
     },
   };
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (err) { return; }
@@ -27930,6 +28547,10 @@ function updateRestore(dt) {
   if (!restore) return;
   restoreT += dt;
   const f = restore.flags || {};
+  /* BEFORE THE PICKUPS. The replay fires the chest's own handler again, and
+   * that handler puts the peg in your pack — so a save written after you had
+   * given the leg away has to say so before a single pickup is replayed. */
+  if (f.pegReturned) pegReturned = true;
   // the wheel, if it was turned: he has to fall before he can be taken
   if (f.star && helmStar && helmStar.g && !helmStar.solved) { helmStar.solved = true; dropShipHead(); }
   // the pickups, as they arrive
@@ -27952,6 +28573,7 @@ function updateRestore(dt) {
   for (const i of f.crates || []) if (crates[i] && !crates[i].broken) breakCrate(crates[i], 1, true);
   if (f.dojoWon) dojoWon = true;
   if (f.catDoor) catDoorOpen = true;
+  if (f.chest) shipChestLocked = false;
   if (f.heroSword || f.dojoWon) heroSwordTaken = true;
   if (f.holdDoor && !holdDoorOpen) {
     holdDoorOpen = true; holdDoorSwing = 1;
@@ -27993,9 +28615,9 @@ function packByName(name) {
    * The shells, the note and the blood jar are BUILT at the moment they are
    * taken and have no standing object to hand back; they are also not things
    * a fight depends on. The three dig tools are, and they are all here. */
-  for (const it of [shovelItem, militaryItem, katanaItem, glowstickItem, ringItem,
+  for (const it of [shovelItem, militaryItem, katanaItem, pegItem, glowstickItem, ringItem,
                     weddingItem, keyItem, boatKeyItem, skullKeyItem, cdItem, crabItem,
-                    syringeItem, waterBottleItem, headItem]) {
+                    syringeItem, waterBottleItem, headItem, fishingRodItem]) {
     if (it && it.name === name) return it;
   }
   return null;
@@ -34999,7 +35621,7 @@ function makeFallTex() {
  * all over these walls, birds a long way off, and insects. It is quiet on
  * purpose. Three things, none of them on a fixed count, because anything with
  * a period stops being a garden and becomes a loop. */
-let dojoMix = 0, dojoNature = null, dojoBird = 0, dojoBug = 0;
+let dojoMix = 0, dojoNature = null;
 function startDojoNature() {
   const ctx = audioCtx; if (!ctx || dojoNature) return;
   const g = ctx.createGain(); g.gain.value = 0; g.connect(sfxOut());
@@ -35022,57 +35644,12 @@ function startDojoNature() {
   n.start();
   dojoNature = { g, n, lfo };
 }
-/* A CHIRP IS A SWEEP, NOT A NOTE. What separates a bird from a beep is that
- * the pitch MOVES inside each syllable — up, or down — and that the syllables
- * come in a short phrase with uneven gaps. Two to four of them, panned
- * somewhere out in the trees, never twice the same. */
-function sfxDojoBird() {
-  const ctx = audioCtx; if (!ctx) return;
-  const t0 = ctx.currentTime + 0.02;
-  const out = ctx.createGain(); out.gain.value = settings.sfxVolume * 0.085;
-  if (ctx.createStereoPanner) {
-    const pan = ctx.createStereoPanner();
-    pan.pan.value = (Math.random() * 2 - 1) * 0.85;
-    out.connect(pan).connect(sfxOut());
-  } else out.connect(sfxOut());
-  const notes = 2 + Math.floor(Math.random() * 3);
-  const base = 2300 + Math.random() * 1500;
-  let t = t0;
-  for (let k = 0; k < notes; k++) {
-    const o = ctx.createOscillator(); o.type = Math.random() < 0.5 ? 'sine' : 'triangle';
-    const gg = ctx.createGain(); gg.gain.value = 0;
-    const dur = 0.045 + Math.random() * 0.07;
-    const f0 = base * (0.9 + Math.random() * 0.3);
-    const up = Math.random() < 0.6;
-    o.frequency.setValueAtTime(f0, t);
-    o.frequency.exponentialRampToValueAtTime(f0 * (up ? 1.45 : 0.68), t + dur);
-    gg.gain.setValueAtTime(0.0001, t);
-    gg.gain.exponentialRampToValueAtTime(1, t + 0.008);
-    gg.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(gg).connect(out); o.start(t); o.stop(t + dur + 0.02);
-    t += dur + 0.03 + Math.random() * 0.09;
-  }
-}
-/* AND THE INSECTS ARE A TRILL, which is one tone chopped fast — the ear reads
- * the RATE, not the pitch, so it is a tremolo and not a melody. */
-function sfxDojoBug() {
-  const ctx = audioCtx; if (!ctx) return;
-  const t0 = ctx.currentTime + 0.02, dur = 0.5 + Math.random() * 0.9;
-  const o = ctx.createOscillator(); o.type = 'sine';
-  o.frequency.value = 3700 + Math.random() * 1400;
-  const g = ctx.createGain(); g.gain.value = 0;
-  const trem = ctx.createOscillator(); trem.type = 'square';
-  trem.frequency.value = 26 + Math.random() * 18;
-  const tv = ctx.createGain(); tv.gain.value = settings.sfxVolume * 0.020;
-  trem.connect(tv).connect(g.gain);
-  if (ctx.createStereoPanner) {
-    const pan = ctx.createStereoPanner();
-    pan.pan.value = (Math.random() * 2 - 1) * 0.9;
-    o.connect(g).connect(pan).connect(sfxOut());
-  } else o.connect(g).connect(sfxOut());
-  o.start(t0); trem.start(t0);
-  o.stop(t0 + dur); trem.stop(t0 + dur);
-}
+/* THE BIRDS AND THE CRICKETS ARE GONE. There was a chirp here — a sweep
+ * rather than a note, two to four syllables on uneven gaps — and a trill for
+ * the insects, and both were good; what they were not is the sound of this
+ * courtyard, which the owner's word is should be the fountain and nothing
+ * else. A room with three ambiences in it has none.
+ */
 /* It rides on `animateFrame`, not on the room's own update, because the DUCK
  * has to come back OFF when you leave and a room's update does not run once
  * you are out of it — the bunker's own lesson about a clamp that only speaks
@@ -35094,14 +35671,20 @@ function updateDojoAudio(dt) {
    * the wind are ducked from here too. */
   updateFountainAudio(dt);
   if (dojoMix <= 0 && prev <= 0) return;
+  /* AND THE FOUNTAIN IS THE ONLY THING YOU HEAR IN THERE, which is the
+   * owner's word and is also what the place is: a burnt courtyard in the
+   * rain with one thing still running in the middle of it. The beach's surf
+   * and wind were already ducked to nothing from here; what was still
+   * playing over the top was this room's OWN bed — a nature layer at 0.16,
+   * a bird every few seconds and an insect trill every ten — and three
+   * ambiences under one recording is three things competing to be the sound
+   * of a room that only has one. The bed is kept at a whisper, because
+   * silence is an absence and not an ambience (the hall paid for that), and
+   * the birds and the crickets are gone. */
   if (dojoMix > 0 && !dojoNature) startDojoNature();
-  if (dojoNature) dojoNature.g.gain.setTargetAtTime(dojoMix * settings.sfxVolume * 0.16, ctx.currentTime, 0.6);
+  if (dojoNature) dojoNature.g.gain.setTargetAtTime(dojoMix * settings.sfxVolume * 0.035, ctx.currentTime, 0.6);
   if (waveBusGain) waveBusGain.gain.setTargetAtTime(settings.waveVolume * (1 - dojoMix), ctx.currentTime, 0.5);
   if (windDuck) windDuck.gain.setTargetAtTime(1 - dojoMix, ctx.currentTime, 0.5);
-  if (dojoMix < 0.5) return;
-  dojoBird -= dt; dojoBug -= dt;
-  if (dojoBird <= 0) { sfxDojoBird(); dojoBird = 3.5 + Math.random() * 7.0; }
-  if (dojoBug <= 0) { sfxDojoBug(); dojoBug = 6.0 + Math.random() * 11.0; }
 }
 function updateFountain(dt) {
   if (!fountain || !inDojo) return;
@@ -35221,6 +35804,26 @@ function startFountainRec() {
   fountAudio = { g, n, lp, pan, rec: true };
   return true;
 }
+/* AND THE RECORDING MUST BE ABLE TO ARRIVE LATE, WHICH IS WHY IT CAN
+ * REPLACE THE SYNTH. `startFountainAudio` is called the first frame the
+ * water is loud enough to be worth building, and if the m4a has not come
+ * off the network by then it falls through to the synthesised bed and sets
+ * `fountAudio` — which nothing ever looked at again. So whether you heard
+ * the owner's own fountain or a bandpassed noise bed for the rest of that
+ * session was decided by whether one small download had landed at the
+ * moment you first walked within sixteen metres of it, and a cut into the
+ * room from the portal is exactly the case where it has not. The synth is
+ * the fallback for a few frames, not for a playthrough. */
+function upgradeFountainRec() {
+  if (!fountAudio || fountAudio.rec || !audioCtx) return;
+  const buf = (sampleBanks.fountain || []).filter(Boolean)[0];
+  if (!buf) return;
+  const old = fountAudio, t = audioCtx.currentTime;
+  old.g.gain.setTargetAtTime(0, t, 0.12);
+  try { old.n.stop(t + 0.6); if (old.lfo) old.lfo.stop(t + 0.6); } catch (e) {}
+  fountAudio = null;
+  startFountainRec();
+}
 function startFountainAudio() {
   const ctx = audioCtx; if (!ctx || fountAudio) return;
   if (startFountainRec()) return;
@@ -35276,6 +35879,7 @@ function updateFountainAudio(dt) {
   const want = lvl * dojoMix;
   if (want > 0.004) startFountainAudio();
   if (!fountAudio) return;
+  upgradeFountainRec();          // the owner's own water, the moment it is there
   const t = ctx.currentTime;
   fountAudio.g.gain.setTargetAtTime(want * FOUNT_LEVEL * settings.sfxVolume, t, 0.18);
   if (fountAudio.lp) fountAudio.lp.frequency.setTargetAtTime(700 * Math.pow(9.3, lvl), t, 0.20);
@@ -35674,6 +36278,7 @@ function loadDojo() {
     bwSpan('dojo lamps', buildDojoLamps);
     bwSpan('dojo blocks', buildDojoBlocks);
     bwSpan('dojo fountain', buildFountain);
+    bwSpan('dojo shrine jar', placeDojoJar);
     /* AND THE STONE IS MERGED. Every heap of rubble, every panel of the gate
      * wall and every lantern went in as its OWN mesh — measured, upward of a
      * hundred and fifty of them — and this file already knows what that costs:
@@ -36344,6 +36949,45 @@ function dojoDropY(px, pz, fromY) {
   }
   return best === -Infinity ? null : best - DOJO_Y;
 }
+/* ---- AND THERE IS SOMETHING UNDER THE TORII ---------------------------
+ * A jar of blue blood, in the gate house, where you have to go and look. The
+ * gate is the one part of this courtyard you walk THROUGH rather than into —
+ * the flood reaches its threshold, the wall behind it closes the hillside off
+ * and there has never been any reason to stand in it — so it is exactly the
+ * corner of the place a thing worth finding belongs in.
+ *
+ * WHERE IT LIES IS FOUND, NOT TYPED. The gate island's own centre is the one
+ * number this takes (it is the same measurement the gate wall is built off),
+ * and from there it walks the room's own walk grid: every cell within a few
+ * metres that has floor at the gate's own level and a body's room around it,
+ * and of those the one FURTHEST from the middle of the courtyard — which is
+ * the back of the gate house by construction, behind the posts, out of the
+ * line you cross when you walk in. Repack the room and it still lands
+ * somewhere a person has to step off the path to find. */
+const DOJO_GATE = { x: -10.68, z: 7.22 };
+function placeDojoJar() {
+  if (!dojoReady || !dojoWalk) return;
+  const g0 = dojoGridAt(DOJO_X + DOJO_GATE.x, DOJO_Z + DOJO_GATE.z);
+  if (!g0 || g0.f < -90) return;
+  const fx = DOJO_X + DOJO_FOUNT.x, fz = DOJO_Z + DOJO_FOUNT.z;
+  let best = null;
+  for (let ax = -3.6; ax <= 3.6; ax += 0.35) for (let az = -3.6; az <= 3.6; az += 0.35) {
+    const wx = DOJO_X + DOJO_GATE.x + ax, wz = DOJO_Z + DOJO_GATE.z + az;
+    const g = dojoGridAt(wx, wz);
+    if (!g || g.f < -90 || g.s || Math.abs(g.f - g0.f) > 0.9) continue;
+    let room = true;                       // and a body's room round it, or it is in a wall
+    for (const [dx, dz] of [[0.45, 0], [-0.45, 0], [0, 0.45], [0, -0.45]]) {
+      const n = dojoGridAt(wx + dx, wz + dz);
+      if (!n || n.f < -90 || n.s || Math.abs(n.f - g.f) > 0.9) { room = false; break; }
+    }
+    if (!room) continue;
+    const d = Math.hypot(wx - fx, wz - fz);
+    if (!best || d > best.d) best = { wx, wz, f: g.f, d };
+  }
+  if (!best) return;
+  dropJar(best.wx, best.wz, DOJO_Y + best.f + 0.02);
+}
+
 function buildDojoBlocks() {
   if (!dojoWorld || dojoBlocks) return;
   buildDojoArena();
@@ -36698,11 +37342,17 @@ function buildDojoBlocks() {
           const r = (big ? 0.95 + rnd() * 0.55 : 0.34 + rnd() * 0.62) * (1 - 0.22 * hf);
           const sy = 0.62 + rnd() * 0.42;
           const out = (rnd() - 0.5) * 0.52;
+          /* AND THE BOTTOM COURSE IS BEDDED INTO THE GROUND, not stood on
+           * it. `cy` is a course height and its first step is a flat 0.26
+           * over the surface the ray found — right for a half-metre stone,
+           * which that buries to its waist, and a hand of clear air under a
+           * small one. The lowest course asks its OWN size instead. */
+          const seat = v === 0 ? gy + r * sy * 0.55 : cy;
           /* and the coping is a line the STONE may not cross, not its centre:
            * a crown height with a metre-wide boulder sitting on it puts most of
            * that boulder over the wall */
           if (cy + r * sy * 1.2 > Math.max(wallTop, bandT + 2.9) && v > 1) break;
-          stone(px + (rnd() - 0.5) * 0.34 + ox * out, cy, pz + (rnd() - 0.5) * 0.34 + oz * out,
+          stone(px + (rnd() - 0.5) * 0.34 + ox * out, seat, pz + (rnd() - 0.5) * 0.34 + oz * out,
             r, sy, 0.78 + rnd() * 0.42, 0, big ? 0.46 : 0.40);
           if (cy > crown) break;
         }
@@ -36870,7 +37520,23 @@ function flushDojoRocks() {
        * a slab lying flat cannot be blown up into a table. */
       let sc = (st.r * st.sy) / Math.max(1e-4, ex.y);
       sc = Math.min(sc, (st.r * 1.5) / Math.max(1e-4, ex.x, ex.z));
-      im.setMatrixAt(k, _m.compose(_p.set(st.x, st.y, st.z), _q, _s.setScalar(sc)));
+      /* AND THEN IT IS RE-SEATED, WHICH IS WHERE THE FLOATING ROCKS CAME
+       * FROM. Every height in the heap above — the bed the ray found, the
+       * course spacing, the crown, the line the coping cuts at — is written
+       * against `r * sy`, the half-height the old blob had, and the fit
+       * asks for exactly that. But the line under it CAPS the scale so a
+       * slab lying flat cannot be blown up into a table, and a capped stone
+       * is SHORTER than the height its seat was worked out for: its centre
+       * stays where the plan put it and its bottom rises by the difference.
+       * On a wide flat one that is most of half a metre of daylight under a
+       * boulder, which is exactly "a rock with no gravity".
+       *
+       * The seat is the BOTTOM, not the middle. Whatever the fit ends up
+       * being, the stone is lowered so the underside of it is where the
+       * plan said the underside would be, and a shape the cap has shrunk
+       * beds into the pile instead of hanging over it. */
+      const sit = st.y - (st.r * st.sy - ex.y * sc);
+      im.setMatrixAt(k, _m.compose(_p.set(st.x, sit, st.z), _q, _s.setScalar(sc)));
       im.setColorAt(k, _c.setRGB(st.k * st.wm, st.k, st.k * (2 - st.wm)));
     }
     im.instanceMatrix.needsUpdate = true;
@@ -45373,7 +46039,7 @@ window.__bw = {
   mounds, moundMat, moundAt, revealMoundNear, makeMound, makeCdCase,
   get cdItem() { return cdItem; },
   THREE, scene, camera, player: camera,
-  interactables, physProps, inventory, bottle, cliff, foot, lighthouse, city,
+  interactables, physProps, inventory, packByName, bottle, cliff, foot, lighthouse, city,
   castle, shovelWorld, viewmodel,
   hcrab, hcrabWorld, syringe, syringeWorld, bloodJar,
   renderer, inspectScene, inspectCamera,
@@ -45426,6 +46092,16 @@ window.__bw = {
   waterSurfaceAt, submersionAt, restYInWater, groundGlow, addRipple,
   shells, listenToShell, makeRockGeo, dock, ring, driftAt, updateDock,
   listen: (v) => { listening = v; }, stopListening, keyItem, keyWorld,   // the ear pose without the audio, for the preview harness
+  pegItem, pegWorld, devGrantWeapons,          // the thrusting weapon, and the way to have one without walking to it
+  /* The peg's string, for the harness: which of the three is in the air, and
+   * the held button that keeps it going. Accessors have to live in THIS
+   * literal — `Object.assign` copies a getter's VALUE, so one added in the
+   * block below would be a snapshot, which `abductDone` paid for once. */
+  get pegStage() { return pegStage; },
+  get pegStab() { return PEG_STAB; }, set pegStab(v) { PEG_STAB = v; },
+  get pegOhLand() { return PEG_OH_LAND; }, set pegOhLand(v) { PEG_OH_LAND = v; },
+  get pegOhHaul() { return PEG_OH_HAUL; }, set pegOhHaul(v) { PEG_OH_HAUL = v; },
+  get pegGripHome() { return PEG_GRIP_HOME; }, set pegGripHome(v) { PEG_GRIP_HOME = v; }, set windHeld(v) { windHeld = v; }, attackAction,
   get dockDoorOpen() { return dockDoorOpen; }, set dockDoorOpen(v) { dockDoorOpen = v; }, get onDock() { return onDock; },
   crabs, makeCrabUnit, nearestCrab, crabPlay, updateCrabUnit, get crabToken() { return crabToken; },
   mutants, mutant, updateMutant, hurtMutant, killMutant, parryMutant, blockMutant, nearestMutant,

@@ -1367,12 +1367,20 @@ export function makeShipwreck(opts = {}) {
      * because a blob of `M.rope` on a bunk that is no longer there is a
      * lump lying in mid-air. */
 
-    /* the stove, aft to STARBOARD now, off the centreline — the owner's
-     * layout, mess to port and stove to starboard, so the two halves of
-     * the room read as two different jobs rather than one pile astride
-     * the middle of it. STOVE_X/STOVE_Z are the only numbers that move;
-     * everything about the stove itself is relative to them. */
-    const STOVE_X = 5.85, STOVE_Z = 1.75;
+    /* the stove, aft to PORT now, in the corner by the table — moved off
+     * starboard (where it stood on its own, away from everything) to sit
+     * with the mess instead: same wall as the table, continuing past the
+     * chairs to the true aft corner, so cooking and eating are the one job
+     * they actually are on a boat this size. Checked against the table,
+     * the bench, both chairs and the athwartships bunk with a flood-fill
+     * of the real floor: clear of all four, nothing stranded.
+     * STOVE_X/STOVE_Z are the only numbers that move; everything about the
+     * stove itself is relative to them. Pulled off the port planking and
+     * in a little further (was -3.15): it sat jammed against the hull with
+     * its back to the wall; now it stands in the open floor between that
+     * wall and the athwartship bunk on the centreline, clear of both by a
+     * real gap rather than touching one of them. */
+    const STOVE_X = 6.75, STOVE_Z = -2.30;
     HULL.add(slab(0.62, 0.72, 0.56, M.steel, STOVE_X, HOLD_Y + 0.36, STOVE_Z));
     HULL.add(slab(0.70, 0.07, 0.64, M.steel, STOVE_X, HOLD_Y + 0.74, STOVE_Z));
     HULL.add(cyl(0.09, 0.09, 1.9, 7, M.steel, STOVE_X, HOLD_Y + 1.72, STOVE_Z));
@@ -1477,21 +1485,105 @@ export function makeShipwreck(opts = {}) {
        * table is still built, because a mug and a lamp are not in that
        * set and a table with nothing on it is not a table anybody used.
        * Their height is the MODEL'S top (0.825) and not the slab's own
-       * 0.72, or they float a hand's width over it. */
-      const TX = 4.85, TZ = -1.42, TOP = 0.825, ty = soleY(TX, TZ) - 0.02;
+       * 0.72, or they float a hand's width over it.
+       *
+       * TX/TZ MUST MATCH `table_3`'s OWN PLAN ENTRY. They are a second copy
+       * of the same number by necessity — the table is built in one place
+       * and dressed in another, seconds apart in the file — and the last
+       * time the table moved this pair did not move with it: the candle
+       * and the cup went on standing where the table USED to be, which is
+       * open floor now, while the table itself sat three metres away with
+       * nothing on it. */
+      const TX = 4.75, TZ = -3.05, TOP = 0.825, ty = soleY(TX, TZ) - 0.02;
       HULL.add(cyl(0.055, 0.05, 0.10, 8, M.plank, TX - 0.36, ty + TOP + 0.05, TZ + 0.14));
       HULL.add(slab(0.13, 0.21, 0.13, M.glass, TX + 0.32, ty + TOP + 0.14, TZ - 0.12));
       HULL.add(cyl(0.085, 0.095, 0.06, 7, M.steel, TX + 0.32, ty + TOP + 0.055, TZ - 0.12));
       HULL.add(cyl(0.02, 0.02, 0.13, 6, M.steel, TX + 0.32, ty + TOP + 0.30, TZ - 0.12));
 
-      // ---- a sea chest, SHUT, with its bands and a hasp
-      const KX = 3.95, KZ = 2.02, ky = soleY(KX, KZ);
-      HULL.add(slab(0.86, 0.42, 0.50, M.wood, KX, ky + 0.21, KZ));
-      HULL.add(slab(0.90, 0.09, 0.54, M.wood, KX, ky + 0.46, KZ));        // the lid, closed
-      for (const sx of [-1, 1])                                            // iron bands
-        HULL.add(slab(0.06, 0.52, 0.56, M.steel, KX + sx * 0.28, ky + 0.25, KZ));
-      HULL.add(slab(0.10, 0.14, 0.04, M.brass, KX, ky + 0.40, KZ - 0.26)); // hasp
-      solidLow(KX, KZ, 0.95, 0.6);
+      /* ---- a sea chest, IN FRONT OF THE KEG, and it opens --------------
+       * IT IS THE OWNER'S OWN MODEL NOW (`assets/chest.glb`, out of
+       * tools/chest_pack.py), and the useful thing about the delivered file
+       * is that the artist modelled it in THREE PIECES — a body, a lid and a
+       * padlock — so the lid was already its own mesh and could be hung on a
+       * real hinge rather than carved out of a solid. What stood here before
+       * was ten boxes with a slab for a lid.
+       *
+       * The hinge is MEASURED, not typed: the packer writes the body's own
+       * rim height and its back edge into the file's extras and `dressChest`
+       * hangs the lid on those, so repacking the chest cannot leave the lid
+       * swinging about a line that is no longer where the wood is.
+       *
+       * The scan lands over the network long after this file has run, so
+       * what is built here is the ARRANGEMENT — a group at the spot, a pivot
+       * at the hinge, a collision box and an invisible proxy for the
+       * crosshair — and `S.userData.dressChest(root)` fills it when the
+       * download arrives. The proxy is why it has to be built empty rather
+       * than added later: an interactable's meshes are snapshotted ONCE, at
+       * registration, so a group that is empty at that moment is a group the
+       * crosshair can never find again.
+       *
+       * IT STANDS IN FRONT OF THE KEG (barrel_2 in HER FURNITURE, just aft
+       * of it in the same starboard nook) with its lock facing into the
+       * room, so the lid opens away from you and toward the barrel — which
+       * is why the swing is capped where it is, in main.js. */
+      const KX = 6.50, KZ = 2.22, ky = soleY(KX, KZ);
+      const CHEST = new THREE.Group();
+      CHEST.position.set(KX, ky, KZ);
+      CHEST.rotation.y = Math.PI;              // the model's lock is on its +z; the room is on -z from here
+      const chestLid = new THREE.Group();      // the hinge, filled in by dressChest
+      CHEST.add(chestLid);
+      {   // the crosshair's own target, sized to the chest and never drawn
+        const g = new THREE.BoxGeometry(0.98, 0.68, 0.70);
+        const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+        m.name = 'hitProxy'; m.visible = false; m.position.y = 0.34;
+        CHEST.add(m);
+      }
+      CHEST.userData.noBake = true;            // the barricade's own reason: it must survive whole
+      S.add(CHEST);
+      const cbox = [KX - 0.52, KZ - 0.38, KX + 0.52, KZ + 0.38, HOLD_Y - 0.4, HOLD_Y + 1.0];
+      PROPS.push(cbox);
+      S.userData.chest = { group: CHEST, lid: chestLid, box: cbox, x: KX, z: KZ };
+      /* AND IT IS DRESSED WHEN THE MODEL LANDS. The lid is re-parented onto
+       * the hinge with the hinge's own offset taken back out of it, so it
+       * keeps the pose the artist drew and turns about the right line; the
+       * padlock rides the BODY, because a chest you have unlocked has its
+       * lock hanging on the staple and not swinging about in the air. */
+      S.userData.dressChest = (root) => {
+        const ex = (root.userData && root.userData.bw_chest) || {};
+        const hinge = ex.hinge || [0.3464, -0.321];
+        chestLid.position.set(0, hinge[0], hinge[1]);
+        root.updateMatrixWorld(true);
+        const parts = [];
+        root.traverse((o) => { if (o.isMesh) parts.push(o); });
+        /* AND IT IS LIT LIKE EVERYTHING ELSE DOWN HERE. No moon reaches the
+         * inside of her, so every interior material in this file carries its
+         * own emissive lift off its own map — an unlifted PBR chest below
+         * decks is a black box with a lock on it. Cloned once, because the
+         * same material is on all three pieces. */
+        const seen = new Map();
+        const lift = (m) => {
+          if (!m) return m;
+          if (seen.has(m)) return seen.get(m);
+          const c = m.clone();
+          c.emissive = new THREE.Color(0xffffff);
+          c.emissiveMap = c.map;
+          c.emissiveIntensity = 0.42;
+          c.metalness = 0;                       // METALNESS IS A TRAP: no environment map here
+          c.roughness = Math.max(0.5, c.roughness || 0.8);
+          seen.set(m, c);
+          return c;
+        };
+        for (const o of parts) {
+          const geo = o.geometry.clone().applyMatrix4(o.matrixWorld);
+          const mesh = new THREE.Mesh(geo, lift(o.material));
+          mesh.castShadow = mesh.receiveShadow = false;
+          if (/lid/i.test(o.name)) {
+            mesh.position.set(0, -hinge[0], -hinge[1]);
+            chestLid.add(mesh);
+          } else CHEST.add(mesh);
+        }
+        return CHEST;
+      };
 
       // ---- a bucket, and a coil of line by it
       HULL.add(cyl(0.16, 0.13, 0.28, 9, M.steel, 6.15, soleY(6.15, 1.05) + 0.14, 1.05));
@@ -2197,24 +2289,30 @@ export function makeShipwreck(opts = {}) {
      *   tilt: it has been lying in a wreck for sixty years */
     const PLAN = [
       // ---- her quarters, aft of the barricaded door -------------------
-      /* MESS TO PORT, STOVE TO STARBOARD — two different jobs either side
-       * of the room instead of a pile astride the middle of it. A straight
-       * bunk stands forward to starboard, where the four slab berths used
-       * to be; the second is turned ATHWARTSHIPS across the aft end, on
-       * the centreline, which is what a berth built into a transom always
-       * is and what keeps the two halves of the room apart without a wall
-       * — it is clear of the mess by 1.6 m and of the stove by a good
-       * margin either way, both measured with a flood-fill of the actual
-       * floor, not eyeballed. The model's long axis is its own Z: the
-       * quarter turn on the straight bunk lays that fore-and-aft, and no
-       * turn at all on the aft one leaves it athwartships. Still four
-       * berths, still two bunk_bed pieces. */
+      /* MESS AND STOVE TOGETHER TO PORT, THE STORES TO STARBOARD. The
+       * stove stood on its own down the starboard side for a while and it
+       * read as a second, disconnected room; moved to port it sits with
+       * the table instead, in the aft corner past the chairs — cooking and
+       * eating are the one job they are on a boat this size, and the true
+       * corner (against both the hull and the aft bulkhead) is where a
+       * stove actually goes, not stranded mid-wall. A straight bunk stands
+       * forward to starboard, where the four slab berths used to be; the
+       * second is turned ATHWARTSHIPS across the aft end, on the
+       * centreline, which is what a berth built into a transom always is
+       * and what keeps the two halves of the room apart without a wall —
+       * clear of the mess, the stove and both stores by a flood-fill of
+       * the actual floor, not eyeballed. The model's long axis is its own
+       * Z: the quarter turn on the straight bunk lays that fore-and-aft,
+       * and no turn at all on the aft one leaves it athwartships. Still
+       * four berths, still two bunk_bed pieces. */
       ['bunk_bed', 4.30, 2.95, Math.PI / 2, 2.06, 1.14],
       ['bunk_bed', 6.55, 0.00, 0, 1.14, 2.06],
       /* The mess table, hard against the port planking with a bench drawn
        * up to it on the aisle side and a chair at each end — the door is
        * 1.45 m wide now, so this can sit close to it without narrowing the
-       * doorway's own clearance the way it did when the door was 1.10. */
+       * doorway's own clearance the way it did when the door was 1.10.
+       * The stove itself is built with the hull, above (`STOVE_X/STOVE_Z`)
+       * — it is not a furniture piece, it is riveted to her. */
       ['table_3', 4.75, -3.05, 0, 1.44, 0.96],
       ['bench_4', 4.75, -2.33, 0, 1.62, 0.44],
       ['chair_2', 3.55, -2.70, Math.PI, 0.50, 0.56],
@@ -2224,9 +2322,14 @@ export function makeShipwreck(opts = {}) {
        * a flat slab lying on the floor — the crew space's own lesson about
        * litter, which is that a thing too small to be what it is reads as a
        * small pale lump. */
-      // stores, stacked round the stove to starboard
-      ['barrel_2', 6.70, 1.75, 0.9, 0.62, 0.62],
-      ['barrel_4', 6.10, 2.85, 2.1, 0.80, 0.80],
+      /* THE STORES, TO STARBOARD, IN THE POCKET BETWEEN THE TWO BUNKS. One
+       * of them (`barrel_2`) is the keg the sea chest stands in front of —
+       * see the chest, above, which fronts it by name in its own comment.
+       * The other is stacked in beside them, tight against the same
+       * stretch of hull. Checked clear of both bunks, the chest and each
+       * other with the same flood-fill the rest of the room is. */
+      ['barrel_2', 6.50, 3.05, 0.9, 0.62, 0.62],
+      ['barrel_4', 5.75, 3.15, 2.1, 0.80, 0.80],
       // ---- the bow of her hold, forward of the breach ------------------
       ['barrel_5', -7.30, -2.45, 0.4, 0.88, 0.88],
       ['barrel_4', -6.45, -2.84, 2.6, 0.80, 0.80],
