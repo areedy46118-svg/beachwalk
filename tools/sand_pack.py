@@ -18,8 +18,12 @@ Image.MAX_IMAGE_PIXELS = None
 SRC = os.path.expanduser(sys.argv[1] if len(sys.argv) > 1 else '~/Downloads/sand_03_4k/textures')
 OUT = os.path.join(os.path.dirname(__file__), '..', 'assets')
 N = 512
-MEAN = (66.9, 75.0, 91.5)
-SPREAD = 0.55          # how far detail swings the level, in log units (e^0.55 = 1.7x a sigma)
+# LIFTED A FIFTH AND SOFTENED: the owner's word was that the beach read very
+# dark and did not blend. At a 0.55 swing the dents went to a quarter of the
+# mean at the tails and the eye sees the darks, not the mean; the level was
+# the old canvas's, which under the cloud shade on top read as navy.
+MEAN = (66.9 * 1.22, 75.0 * 1.22, 91.5 * 1.20)
+SPREAD = 0.30          # how far detail swings the level, in log units (e^0.30 = 1.35x a sigma)
 STEP = 4
 
 diff = Image.open(os.path.join(SRC, 'sand_03_diff_4k.jpg')).convert('L').resize((N, N), Image.LANCZOS)

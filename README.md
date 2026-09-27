@@ -561,6 +561,33 @@ one in three of the beach's mutants leaves when it dies (`assets/fang.glb`,
 through `tools/gltfpack.py --decimate 6000 --keep-uv --tex 512`: 370k triangles
 in four chunks down to 6,000, 436 KB).
 
+This work is based on ["Rida sidi ben ali Injured Walk"](https://sketchfab.com/3d-models/rida-sidi-ben-ali-injured-walk-04cabed5217a46f4aa75580b5643e740)
+by [Rida.Sidi.Ben.Ali](https://sketchfab.com/Rida.Sidi.Ben.Ali) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — Ben Ali, sitting
+against a tomb in the catacombs' lower vault (`assets/benali.glb`, through
+`tools/gltfpack.py --tex 1024 --no-clips`, 0.83 MB). His wounds and his pose
+are the game's; the man is the artist's.
+
+This work is based on ["Espada Ensanguentada / Bloody Sword"](https://sketchfab.com/3d-models/espada-ensanguentada-bloody-sword-d34bc9af775f4e4983f7fb23382bd8e8)
+by [ArtDan](https://sketchfab.com/artdan) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Bloody Blade, Ben
+Ali's sword, in the catacombs monster's back (`assets/bloody-blade.glb`, through
+`tools/gltfpack.py --tex 1024 --normal-tex 1024`, all three of its maps kept,
+1.03 MB).
+
+This work is based on ["Cannabis Joint - Pre Rolled"](https://sketchfab.com/3d-models/cannabis-joint-pre-rolled-fc5daec8fc7f4fbf9424736fd4bcbdf0)
+by [woddson](https://sketchfab.com/owenem01) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Wax Spliff, in the
+third cache, on the trader's table and in the crate on the keep's pier
+(`assets/spliff.glb`, through `tools/gltfpack.py --tex 512 --normal-tex 512
+--drop-mr`, 0.26 MB).
+
+"Memory of grammy orc" (`assets/grammy-orc.jpg`) is the owner's own painting,
+aged into a crumpled pocket photograph in the game at load.
+
+The intro — `assets/intro-waves.mp4` (wave footage) and `assets/beachwalk-intro.m4a`
+(the song) — was supplied by the owner.
+
 This work is based on ["Portal"](https://sketchfab.com/3d-models/portal-3279b8d99fe244059c40a66e8aa39590)
 by [DJMaesen](https://sketchfab.com/bumstrum) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the stone circle on the

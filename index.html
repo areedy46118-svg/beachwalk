@@ -35,16 +35,17 @@
     image-rendering: crisp-edges;
   }
 
-  /* THE COVER. Minimal: a name in plain white capitals, letter-spaced, over
-     near-black — the live beach under it turned almost all the way down so
-     the moon's track on the water barely surfaces through drifting smoke and
-     dust. No face, no subtitle, no colour. Two phases: cold (the name and
-     PRESS ANY KEY) and .menu (BEGIN / CONTROLS under it). */
+  /* THE COVER. Pure black and two words: START GAME, in white. Pressed, the
+     words fade and the intro plays — the owner's waves and his song. */
   #overlay {
     position: fixed;
     inset: 0;
     z-index: 10;
-    color: #f1f1f1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+    color: #f4f4f4;
     font-family: "Helvetica Neue", Helvetica, "Inter", Arial, sans-serif;
     cursor: default;
     overflow: hidden;
@@ -53,155 +54,28 @@
     user-select: none;
   }
   #overlay.hidden { opacity: 0; pointer-events: none; }
-  #overlay .tint { position: absolute; inset: 0; background: #020305; opacity: 0.82; }
-  /* smoke: a soft low-frequency noise lifted faintly out of the black, drifting */
-  #overlay .dirt {
-    position: absolute; inset: -12%;
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='700' height='700'><filter id='d' x='0' y='0' width='100%25' height='100%25'><feTurbulence type='fractalNoise' baseFrequency='0.0065' numOctaves='4' seed='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.8  0 0 0 0 0.85  0 0 0 0 1  0 0 0 1.4 -0.55'/></filter><rect width='700' height='700' filter='url(%23d)'/></svg>");
-    background-size: 1400px 1400px;
-    mix-blend-mode: screen;
-    opacity: 0.16;
-    animation: smoke 70s ease-in-out infinite alternate;
-  }
-  @keyframes smoke { from { transform: translate(-3%, 1%) scale(1.02); } to { transform: translate(3%, -2%) scale(1.08); } }
-  /* dust: two sheets of faint specks rising at different speeds */
-  #overlay .dust {
-    position: absolute; inset: 0; pointer-events: none; opacity: 0.55;
-    background-image:
-      radial-gradient(circle, rgba(255,255,255,0.55) 0 0.6px, transparent 1.4px),
-      radial-gradient(circle, rgba(255,255,255,0.35) 0 0.5px, transparent 1.2px);
-    background-size: 260px 300px, 170px 210px;
-    background-position: 0 0, 90px 40px;
-    animation: dust 38s linear infinite;
-  }
-  @keyframes dust { to { background-position: 30px -300px, -40px -210px; } }
-  #overlay .grain {
-    position: absolute; inset: -10%;
-    pointer-events: none;
-    opacity: 0.09;
-    mix-blend-mode: screen;
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n' x='0' y='0' width='100%25' height='100%25'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.9 0'/></filter><rect width='220' height='220' filter='url(%23n)'/></svg>");
-    animation: grain 0.55s steps(1) infinite;
-  }
-  @keyframes grain {
-    0% { transform: translate(0,0); } 14% { transform: translate(-3%,2%); } 28% { transform: translate(2%,-4%); }
-    42% { transform: translate(-4%,-1%); } 56% { transform: translate(3%,3%); } 70% { transform: translate(-1%,4%); }
-    84% { transform: translate(4%,-2%); } 100% { transform: translate(0,0); }
-  }
-  #overlay .vignette {
-    position: absolute; inset: 0; pointer-events: none;
-    background: radial-gradient(ellipse 85% 80% at 50% 50%, rgba(0,0,0,0) 45%, rgba(0,0,0,0.85) 100%);
-  }
-  /* the name */
-  #overlay .logo {
-    position: absolute;
-    left: 0; right: 0;
-    top: 43%;
-    transform: translateY(-50%);
-    text-align: center;
-    animation: logoIn 3.6s ease-out both;
-  }
-  @keyframes logoIn { from { opacity: 0; filter: blur(8px); letter-spacing: 0.6em; } to { opacity: 1; filter: blur(0); } }
-  #overlay h1 {
-    display: inline-block;
+  #overlay .start {
+    font: inherit;
+    font-size: clamp(0.9rem, 1.6vw, 1.15rem);
     font-weight: 500;
-    font-size: clamp(2.2rem, 5.6vw, 4.6rem);
-    line-height: 1;
-    letter-spacing: 0.36em;
-    text-indent: 0.36em;
-    color: #f4f4f4;
-    margin: 0;
-    text-shadow: 0 0 14px rgba(255,255,255,0.18), 0 0 2px rgba(255,255,255,0.5);
-    /* the edges eaten a little, so it is printed, not typed */
-    -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='m' x='0' y='0' width='100%25' height='100%25'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' seed='11' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 2.6 -0.55'/></filter><rect width='160' height='160' filter='url(%23m)'/></svg>");
-    mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='m' x='0' y='0' width='100%25' height='100%25'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' seed='11' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 2.6 -0.55'/></filter><rect width='160' height='160' filter='url(%23m)'/></svg>");
-    -webkit-mask-size: 160px 160px; mask-size: 160px 160px;
-    animation: breathe 9s ease-in-out infinite;
-  }
-  @keyframes breathe { 0%, 100% { opacity: 0.92; } 50% { opacity: 1; } }
-  #overlay h1 span { display: inline-block; }
-  /* barely off: one letter sits a hair low, one a hair light, one a hair thin */
-  #overlay h1 span:nth-child(2) { transform: translateY(1px); }
-  #overlay h1 span:nth-child(4) { opacity: 0.74; transform: translateY(-1px) scaleX(0.96); }
-  #overlay h1 span:nth-child(6) { transform: translateY(2px); }
-  #overlay h1 span:nth-child(8) { opacity: 0.86; }
-  /* phase one */
-  #overlay .anykey {
-    position: absolute;
-    left: 0; right: 0;
-    top: 56%;
-    text-align: center;
-    font-size: 0.7rem;
     letter-spacing: 0.42em;
     text-indent: 0.42em;
     text-transform: uppercase;
-    color: rgba(241, 241, 241, 0.7);
-    animation: pulse 3.6s ease-in-out infinite;
-    transition: opacity 0.5s ease;
-  }
-  @keyframes pulse { 0%, 100% { opacity: 0.2; } 50% { opacity: 0.8; } }
-  #overlay.menu .anykey { animation: none; opacity: 0; pointer-events: none; }
-  /* phase two: the list, under the name */
-  #overlay .menu {
-    position: absolute;
-    left: 0; right: 0;
-    top: 56%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.9rem;
-    opacity: 0;
-    transform: translateY(8px);
-    transition: opacity 0.9s ease, transform 0.9s ease;
-    pointer-events: none;
-  }
-  #overlay.menu .menu { opacity: 1; transform: none; pointer-events: auto; }
-  #overlay .mi {
-    font: inherit;
-    font-size: 0.78rem;
-    font-weight: 400;
-    letter-spacing: 0.4em;
-    text-indent: 0.4em;
-    text-transform: uppercase;
-    color: rgba(241, 241, 241, 0.45);
+    color: #ffffff;
     background: none;
     border: none;
-    padding: 0.25rem 0.6rem;
+    padding: 0.8rem 1.4rem;
     cursor: pointer;
-    transition: color 0.15s ease, text-shadow 0.15s ease;
+    transition: opacity 1.3s ease-in-out, text-shadow 0.2s ease;
   }
-  #overlay .mi:hover, #overlay .mi:focus-visible { color: #ffffff; text-shadow: 0 0 10px rgba(255,255,255,0.35); outline: none; }
-  #overlay .mi.begin { color: rgba(241, 241, 241, 0.9); }
-  #overlay .mi.begin.loading { color: rgba(241, 241, 241, 0.34); cursor: default; }
-  /* the controls sheet */
-  #overlay .controls {
-    position: absolute;
-    left: 50%;
-    top: 67%;
-    transform: translate(-50%, 12px);
-    display: grid;
-    grid-template-columns: auto auto;
-    gap: 0.3rem 1rem;
-    align-items: center;
-    font-size: 0.56rem;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: rgba(241, 241, 241, 0.55);
-    opacity: 0;
-    transition: opacity 0.5s ease, transform 0.5s ease;
-    pointer-events: none;
-  }
-  #overlay.controls-open .controls { opacity: 1; transform: translate(-50%, 0); }
-  #overlay .key {
-    display: inline-block;
-    min-width: 1.4em;
-    padding: 0.14em 0.45em;
-    border: 1px solid rgba(241, 241, 241, 0.35);
-    color: #f1f1f1;
-    letter-spacing: 0.1em;
-    text-indent: 0;
-    text-align: center;
-  }
+  #overlay .start:hover, #overlay .start:focus-visible { text-shadow: 0 0 12px rgba(255,255,255,0.45); outline: none; }
+  #overlay.starting .start { opacity: 0; pointer-events: none; }
+  #overlay .start.loading { opacity: 0; cursor: default; pointer-events: none; text-shadow: none; }
+  #overlay .start { transition: opacity 1.2s ease; }
+  /* the load, hidden: one hairline along the foot of the black, gone when the game is ready */
+  #bootbar { position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: rgba(255,255,255,0.04); transition: opacity 1.2s ease; }
+  #bootbar i { position: absolute; inset: 0; background: rgba(214,222,240,0.30); transform-origin: 0 50%; transform: scaleX(0.02); transition: transform 0.25s linear; }
+  #bootbar.done { opacity: 0; }
 
   /* black intro card — the opening line fades in over it, then it lifts */
   /* the hatch's cut: driven per frame from main.js, no transition of its own */
@@ -220,6 +94,61 @@
     font-family: "Georgia", "Times New Roman", serif;
   }
   #intro.show { opacity: 1; pointer-events: auto; }
+  /* the waves under the owner's song: up out of black, and back into it */
+  /* the waves: up out of the black slowly, drifting in closer the whole song,
+     and back into the black with the song's own fade */
+  #intro video {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: cover; opacity: 0; pointer-events: none;
+    transform: scale(1.0);
+    transition: opacity 4.5s ease-in-out, transform 34s linear;
+  }
+  #intro video.on { opacity: 1; transform: scale(1.09); }
+  #intro video.out { opacity: 0; transform: scale(1.09); transition: opacity 7s ease-in-out, transform 34s linear; }
+  /* the name, landing on the drop: there on one frame, no effect */
+  #intro-title {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none; transition: opacity 0.01s;
+    font-family: "Helvetica Neue", Helvetica, "Inter", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  #intro-title.on { opacity: 1; }
+  #intro-title.out { opacity: 0; transition: opacity 3.6s ease-in-out; }
+  #intro-title h1 {
+    display: inline-block; margin: 0; font-weight: 500; line-height: 1;
+    font-size: clamp(1.1rem, 6.2vw, 6rem); white-space: nowrap;
+    letter-spacing: 0.36em; text-indent: 0.36em; color: #f4f4f4;
+    text-shadow: 0 0 2px rgba(255,255,255,0.55), 0 2px 26px rgba(0,0,0,0.5);
+    -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='m' x='0' y='0' width='100%25' height='100%25'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' seed='11' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 2.6 -0.55'/></filter><rect width='160' height='160' filter='url(%23m)'/></svg>");
+    mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='m' x='0' y='0' width='100%25' height='100%25'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' seed='11' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 2.6 -0.55'/></filter><rect width='160' height='160' filter='url(%23m)'/></svg>");
+    -webkit-mask-size: 160px 160px; mask-size: 160px 160px;
+  }
+  /* THE GLOW IS ITS OWN LAYER. The letters carry a noise mask so they read
+     printed, and a mask takes the text-shadow with it — so the glow was
+     speckle. A copy of the name sits behind them, unmasked and blurred: the
+     moon on the water, cold and a little blue, not a neon sign. Two widths,
+     a close bloom and a wide haze, and it breathes very slowly. */
+  #intro-title .t-stack { display: grid; place-items: center; }
+  #intro-title .t-stack > * { grid-area: 1 / 1; }
+  #intro-title .t-glow {
+    margin: 0; font-weight: 500; line-height: 1; pointer-events: none; user-select: none;
+    font-size: clamp(1.1rem, 6.2vw, 6rem); white-space: nowrap;
+    letter-spacing: 0.36em; text-indent: 0.36em;
+    color: rgba(214, 226, 255, 0.85);
+    text-shadow: 0 0 0.35em rgba(190, 208, 255, 0.55), 0 0 1.1em rgba(150, 175, 240, 0.35);
+    filter: blur(0.09em);
+    opacity: 0.5;
+    animation: t-breathe 7s ease-in-out infinite alternate;
+  }
+  @keyframes t-breathe { from { opacity: 0.52; } to { opacity: 0.70; } }
+  /* the letters are inline-blocks, and each one inherits the indent — that IS the spacing, so the glow is built the same way */
+  #intro-title .t-glow span { display: inline-block; }
+  #intro-title h1 span { display: inline-block; }
+  #intro-title h1 span:nth-child(2) { transform: translateY(1px); }
+  #intro-title h1 span:nth-child(4) { opacity: 0.74; transform: translateY(-1px) scaleX(0.96); }
+  #intro-title h1 span:nth-child(6) { transform: translateY(2px); }
+  #intro-title h1 span:nth-child(8) { opacity: 0.86; }
+  #intro p { position: relative; }
   #intro p {
     max-width: 38ch;
     text-align: center;
@@ -287,6 +216,7 @@
     transform-origin: left center;
     transition: transform 0.08s linear, background 0.25s ease;
   }
+  #stamina-fill.buff { background: rgba(120, 214, 128, 0.92); }
   #stamina-fill.low { background: rgba(224, 138, 96, 0.9); }
   /* 8 toggles the top walk speed, and a toggle you cannot see the state of is
      a toggle nobody trusts. The HUD's own language: mono, letter-spaced,
@@ -1132,7 +1062,14 @@
     letter-spacing: 0.18em;
     color: rgba(255, 255, 255, 0.45);
   }
-  #shoppanel .head .jars b { color: #cfe4ff; font-weight: 400; }
+  #shoppanel .head .jars { display: flex; align-items: center; gap: 0.55rem; font-size: 0.8rem; }
+  #shoppanel .head .jars b { color: #cfe4ff; font-weight: 600; font-size: 1.25rem; letter-spacing: 0.04em; }
+  #shoppanel .head .jars .jarico {
+    width: 12px; height: 17px; border: 1.5px solid rgba(160, 205, 255, 0.9); border-radius: 2px 2px 4px 4px;
+    background: linear-gradient(to top, rgba(70, 140, 255, 0.85) 60%, transparent 60%);
+  }
+  #shoppanel .head .jars.pulse b { animation: jarPulse 0.6s ease-out; }
+  @keyframes jarPulse { 0% { color: #ffffff; text-shadow: 0 0 12px rgba(160, 205, 255, 0.9); } 100% { color: #cfe4ff; text-shadow: none; } }
   /* what he says, and it is the same line the sale answers with */
   #shoppanel .say {
     font-family: Georgia, "Times New Roman", serif;
@@ -1152,33 +1089,39 @@
   #shoppanel .row {
     display: flex;
     align-items: center;
-    gap: 0.9rem;
-    padding: 0.62rem 0.35rem;
+    gap: 1rem;
+    padding: 0.5rem 0.5rem;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     cursor: pointer;
-    font-size: 0.86rem;
+    font-size: 0.9rem;
     letter-spacing: 0.04em;
-    color: rgba(255, 255, 255, 0.78);
+    color: rgba(255, 255, 255, 0.82);
+    transition: background 0.12s ease;
   }
-  #shoppanel .row .box {
-    width: 11px; height: 11px;
-    border: 1px solid rgba(255, 255, 255, 0.45);
-    flex: 0 0 auto;
-    position: relative;
+  /* each line carries its own picture: you choose by what a thing IS */
+  #shoppanel .row .thumb {
+    width: 52px; height: 52px; flex: 0 0 auto;
+    border: 1px solid rgba(255, 255, 255, 0.16); background: rgba(0, 0, 0, 0.5);
+    position: relative; overflow: hidden;
   }
-  #shoppanel .row.chk .box { border-color: #ffffff; }
-  #shoppanel .row.chk .box::after {
-    content: "";
-    position: absolute; left: 2px; top: 2px; right: 2px; bottom: 2px;
-    background: #ffffff;
+  #shoppanel .row .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  #shoppanel .row .thumb .cnt, #shoppanel .row .thumb .count { display: none; }
+  #shoppanel .row .txt { flex: 1 1 auto; display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+  #shoppanel .row .nm i { font-style: normal; color: rgba(255, 255, 255, 0.5); }
+  #shoppanel .row .sm { font-size: 0.7rem; letter-spacing: 0.05em; color: rgba(255, 255, 255, 0.5); }
+  /* the price is a chip on the right, plain white when you can pay it */
+  #shoppanel .row .pr {
+    white-space: nowrap; font-size: 0.78rem; letter-spacing: 0.12em;
+    padding: 0.3rem 0.7rem; border: 1px solid rgba(255, 255, 255, 0.5); color: #ffffff;
   }
-  #shoppanel .row.had, #shoppanel .row.out { opacity: 0.38; }
-  #shoppanel .row.had .box, #shoppanel .row.out .box { border-style: dashed; }
-  #shoppanel .row .nm { flex: 1 1 auto; }
-  #shoppanel .row .pr { color: rgba(255, 255, 255, 0.55); letter-spacing: 0.1em; white-space: nowrap; }
-  #shoppanel .row:hover { color: #ffffff; }
-  #shoppanel .row.sel { color: #ffffff; background: rgba(255, 255, 255, 0.07); box-shadow: inset 2px 0 0 #ffffff; }
-  #shoppanel .row.out { opacity: 0.32; cursor: default; }
+  #shoppanel .row.poor .pr { color: #ff8a80; border-color: rgba(255, 138, 128, 0.55); }
+  #shoppanel .row.out { opacity: 0.4; }
+  #shoppanel .row.out .pr { border-style: dashed; color: rgba(255, 255, 255, 0.7); }
+  #shoppanel .row:hover { color: #ffffff; background: rgba(255, 255, 255, 0.04); }
+  #shoppanel .row.sel { color: #ffffff; background: rgba(255, 255, 255, 0.09); box-shadow: inset 3px 0 0 #ffffff; }
+  #shoppanel .row.flash { animation: shopFlash 0.7s ease-out; }
+  @keyframes shopFlash { 0% { background: rgba(160, 205, 255, 0.45); } 100% { background: rgba(255, 255, 255, 0.09); } }
+  #shoppanel .list .empty { padding: 1.2rem 0.5rem; color: rgba(255, 255, 255, 0.4); font-size: 0.8rem; }
   #shoppanel .detail { display: flex; flex-direction: column; align-items: center; text-align: center; min-width: 0; }
   #shoppanel .detail .pic {
     width: 100%;
@@ -1217,7 +1160,11 @@
     cursor: pointer;
   }
   #shoppanel .detail .buy:hover { background: rgba(255, 255, 255, 0.12); }
-  #shoppanel .detail .buy:disabled { opacity: 0.3; cursor: default; }
+  #shoppanel .detail .buy:disabled { opacity: 0.4; cursor: default; }
+  #shoppanel .detail .buy.poor:disabled { opacity: 0.85; color: #ff8a80; border-color: rgba(255, 138, 128, 0.55); }
+  #shoppanel .detail .buy:not(.all) { width: 100%; padding: 0.85rem 1rem; font-size: 0.86rem; background: rgba(255, 255, 255, 0.08); }
+  #shoppanel .detail .buy:not(.all):not(:disabled):hover { background: rgba(255, 255, 255, 0.2); }
+  #shoppanel .detail .have { margin-top: 0.6rem; font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(200, 225, 255, 0.8); }
   #shoppanel .tip {
     display: flex;
     gap: 2.2rem;
@@ -1575,8 +1522,8 @@
     <button id="shop-leave" type="button">Leave</button>
     <div class="panel">
       <div class="head">
-        <div class="tabs"><h2 class="tab on" data-m="buy">Buy</h2><h2 class="tab" data-m="sell">Sell</h2></div>
-        <span class="jars"><b id="shop-jars">0</b> blood jars</span>
+        <div class="tabs"><h2 class="tab on" data-m="buy">Buy</h2><h2 class="tab" data-m="upgrades">Upgrades</h2><h2 class="tab" data-m="sell">Sell</h2></div>
+        <span class="jars"><span class="jarico"></span><b id="shop-jars">0</b> blood jars to spend</span>
       </div>
       <div class="say" id="shop-say"></div>
       <div class="body">
@@ -1584,9 +1531,9 @@
         <div class="detail" id="shop-detail"></div>
       </div>
       <div class="tip">
-        <span><b>Click</b> or <b>Space</b> to tick</span>
-        <span><b>Confirm</b> or <b>E</b> to buy or sell</span>
-        <span><b>Tab</b> or <b>&larr; &rarr;</b> buy / sell</span>
+        <span><b>Click</b> or <b>&uarr; &darr;</b> choose</span>
+        <span><b>Double-click</b>, <b>E</b> or <b>Enter</b> buy / sell</span>
+        <span><b>Tab</b> or <b>&larr; &rarr;</b> switch tab</span>
         <span><b>Esc</b> leave</span>
       </div>
     </div>
@@ -1695,34 +1642,11 @@
   </div>
 
   <div id="blackout"></div>
-  <div id="intro"><p id="intro-text"></p></div>
+  <div id="intro"><video id="intro-video" src="assets/intro-waves.mp4" muted loop playsinline preload="auto" disablepictureinpicture></video><div id="intro-title"><div class="t-stack"><div class="t-glow" aria-hidden="true"><span>B</span><span>E</span><span>A</span><span>C</span><span>H</span><span>W</span><span>A</span><span>L</span><span>K</span></div><h1><span>B</span><span>E</span><span>A</span><span>C</span><span>H</span><span>W</span><span>A</span><span>L</span><span>K</span></h1></div></div><p id="intro-text"></p></div>
 
   <div id="overlay">
-    <div class="tint"></div>
-    <div class="dirt"></div>
-    <div class="dust"></div>
-    <div class="grain"></div>
-    <div class="vignette"></div>
-    <div class="logo">
-      <h1><span>B</span><span>E</span><span>A</span><span>C</span><span>H</span><span>W</span><span>A</span><span>L</span><span>K</span></h1>
-    </div>
-    <div class="anykey">Press any key</div>
-    <nav class="menu">
-      <button type="button" class="mi begin">Begin</button>
-      <button type="button" class="mi ctl">Controls</button>
-    </nav>
-    <div class="controls">
-      <span class="key">WASD</span><span>move</span>
-      <span class="key">Shift</span><span>run</span>
-      <span class="key">8</span><span>walk speed 14&times; &middot; toggle</span>
-      <span class="key">Space</span><span>jump &mdash; a directional step in a fight</span>
-      <span class="key">Ctrl</span><span>crouch</span>
-      <span class="key">E</span><span>interact</span>
-      <span class="key">Click</span><span>swing &middot; hold for a heavy</span>
-      <span class="key">R-Click</span><span>guard &middot; parry on the tell</span>
-      <span class="key">Tab</span><span>pack</span>
-      <span class="key">Esc</span><span>menu</span>
-    </div>
+    <button type="button" class="start loading">Start Game</button>
+    <div id="bootbar"><i></i></div>
   </div>
   </div>
 
