@@ -70,11 +70,11 @@
   }
   #overlay .start:hover, #overlay .start:focus-visible { text-shadow: 0 0 12px rgba(255,255,255,0.45); outline: none; }
   #overlay.starting .start { opacity: 0; pointer-events: none; }
-  #overlay .start.loading { opacity: 0; cursor: default; pointer-events: none; text-shadow: none; }
+  #overlay .start.loading { opacity: 0.55; cursor: default; pointer-events: none; text-shadow: none; font-size: 0.78em; letter-spacing: 0.34em; }
   #overlay .start { transition: opacity 1.2s ease; }
   /* the load, hidden: one hairline along the foot of the black, gone when the game is ready */
-  #bootbar { position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: rgba(255,255,255,0.04); transition: opacity 1.2s ease; }
-  #bootbar i { position: absolute; inset: 0; background: rgba(214,222,240,0.30); transform-origin: 0 50%; transform: scaleX(0.02); transition: transform 0.25s linear; }
+  #bootbar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: rgba(255,255,255,0.04); transition: opacity 1.2s ease; }
+  #bootbar i { position: absolute; inset: 0; background: rgba(214,222,240,0.55); transform-origin: 0 50%; transform: scaleX(0.02); transition: transform 0.25s linear; }
   #bootbar.done { opacity: 0; }
 
   /* black intro card — the opening line fades in over it, then it lifts */
@@ -274,8 +274,6 @@
     transition: transform 0.28s ease, background 0.25s ease;
   }
   #health i.off::after { transform: scaleX(0); }
-  /* the old ring's tenth: a sliver a tenth as long as a point */
-  #health i.xtra { width: 4px; }
   #health.hurt i::after { background: rgba(255, 78, 66, 1); }
 
   /* THE AUTOSAVE BADGE. Top right, in the HUD's language: a hairline ring
@@ -394,6 +392,15 @@
     white-space: nowrap;
   }
   #prompt.show, #promptmid.show { opacity: 1; }
+  /* a full pack says so, over everything, the pack included */
+  #fullmsg {
+    position: fixed; left: 50%; top: 38%; transform: translate(-50%, 0);
+    color: #fff; font-family: "Georgia", serif; font-size: 1.02rem;
+    letter-spacing: 0.2em; text-transform: uppercase; white-space: nowrap;
+    text-shadow: 0 2px 12px #000, 0 0 26px rgba(0,0,0,0.9);
+    pointer-events: none; z-index: 60; opacity: 0; transition: opacity 0.35s ease;
+  }
+  #fullmsg.show { opacity: 1; transition: opacity 0.08s ease; }
 
   /* AND THE ONE THAT TAKES YOU SOMEWHERE SITS IN THE MIDDLE. A prompt down
    * beside the stamina bar is right for picking a shell up and wrong for the
@@ -414,6 +421,60 @@
     pointer-events: none;
     z-index: 6;
   }
+  /* enemies' health: one small solid red bar over each one you are fighting,
+     a paler strip behind it for what the last blow took */
+  #ehp { position: fixed; inset: 0; pointer-events: none; z-index: 7; overflow: hidden; }
+  #ehp .eb {
+    position: absolute; left: 0; top: 0; width: 44px; height: 4px;
+    background: rgba(8, 0, 0, 0.62);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 0 4px rgba(0, 0, 0, 0.5);
+    transform-origin: 50% 50%;
+    opacity: 0; transition: opacity 0.35s ease;
+    will-change: transform, opacity;
+  }
+  #ehp .eb.on { opacity: var(--o, 0.8); }
+  #ehp .eb i, #ehp .eb b { position: absolute; left: 0; top: 0; bottom: 0; }
+  #ehp .eb b { background: rgba(230, 170, 150, 0.45); }
+  #ehp .eb i { background: #b8141c; }
+  /* a key has done its job: "LOST KEY USED", white, in the middle of the
+     screen, over every cut (the catacombs door goes to black at once) */
+  #keyused {
+    position: fixed; left: 50%; top: 42%;
+    transform: translate(-50%, -50%) scale(1.04);
+    color: #ffffff;
+    font-family: "Georgia", serif;
+    font-size: 1.55rem;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    text-shadow: 0 2px 14px rgba(0, 0, 0, 1), 0 0 34px rgba(0, 0, 0, 0.95);
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 60;
+    opacity: 0;
+    transition: opacity 0.6s ease, transform 0.6s ease;
+  }
+  #keyused.show { opacity: 1; transform: translate(-50%, -50%) scale(1); transition: opacity 0.18s ease, transform 0.35s ease-out; }
+  /* his nearness: the edges close in, and throb with the heart */
+  #dread {
+    position: fixed; inset: 0; pointer-events: none; z-index: 5; opacity: 0;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 38%, rgba(4,0,0,0.55) 72%, rgba(0,0,0,0.95) 100%);
+  }
+  /* the first crab fight's controls: one row along the bottom, over the stamina strip */
+  #fighttip {
+    position: fixed; left: 50%; bottom: 118px; transform: translateX(-50%);
+    pointer-events: none; z-index: 6;
+    display: flex; gap: 2.4em; justify-content: center;
+    font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: rgba(226, 234, 246, 0.72);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+    opacity: 0; transition: opacity 0.6s ease;
+    white-space: nowrap;
+  }
+  #fighttip.show { opacity: 1; }
+  #fighttip b { font-weight: 600; color: #ffffff; margin-right: 0.7em; }
+  @media (max-width: 760px) { #fighttip { gap: 1.2em; font-size: 9px; } }
+  @media (max-width: 620px) { #fighttip { flex-wrap: wrap; width: 94vw; row-gap: 0.2em; } }
   #prompt .key, #promptmid .key {
     display: inline-block;
     min-width: 1.5em;
@@ -792,6 +853,8 @@
     background: rgba(255, 255, 255, 0.07);
   }
   #invpanel .rings .rslot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* and a worn ring being dragged back lights the grid it can land in */
+  #inv-grid.takes .islot:not(.filled) { border-color: #ffffff; border-style: dashed; background: rgba(255,255,255,0.05); }
   #invpanel .rings .rslot .label { display: none; }
 
   /* THE PACK — Tab. Black and white and one hairline, like the dialogue:
@@ -1022,13 +1085,13 @@
   #shoppanel.show { opacity: 1; pointer-events: auto; }
   /* THE WAY OUT IS ON THE SCREEN. Esc still works; this is the same thing
      for a hand already on the mouse, top left where a way back always is. */
-  #shop-leave {
+  #shop-leave, #pack-leave {
     position: absolute; top: 1.6rem; left: 1.8rem;
     background: none; border: 1px solid rgba(255, 255, 255, 0.34); color: #ffffff;
     font: inherit; font-size: 0.78rem; letter-spacing: 0.34em; text-transform: uppercase;
     padding: 0.55rem 1.1rem 0.55rem 1.44rem; cursor: pointer; border-radius: 0;
   }
-  #shop-leave:hover { background: rgba(255, 255, 255, 0.12); border-color: #ffffff; }
+  #pack-leave:hover, #shop-leave:hover { background: rgba(255, 255, 255, 0.12); border-color: #ffffff; }
   #shoppanel .panel {
     width: min(94vw, 1180px);
     border-top: 1px solid rgba(255, 255, 255, 0.3);
@@ -1446,6 +1509,15 @@
        with a `transform` contains `position: fixed`, so inside the bottom
        strip the middle prompt rendered at the bottom of the screen. -->
   <div id="promptmid"></div>
+  <div id="keyused"></div>
+  <div id="ehp"></div>
+  <div id="dread"></div>
+  <div id="fighttip">
+    <div><b>Click</b>light hit</div>
+    <div><b>Hold click</b>heavy</div>
+    <div><b>Shift + hold click</b>heavy overhead</div>
+    <div><b>Right-click</b>block</div>
+  </div>
 
   <!-- AND THE PROMPT IS NOT IN THE ROW ANY MORE. A flex row centred as a
        whole is re-centred by whatever is widest in it, so every label that
@@ -1455,6 +1527,7 @@
        there: an ancestor with a `transform` contains a fixed child, which is
        the same trap the middle prompt already carries a comment about. -->
   <div id="prompt"></div>
+  <div id="fullmsg">Inventory Full</div>
   <div id="hud">
     <div id="stamina"><div id="stamina-fill"></div></div>
     <div id="fastwalk">FAST</div>
@@ -1485,6 +1558,7 @@
   </div>
 
   <div id="invpanel">
+    <button id="pack-leave" type="button">Leave</button>
     <div class="panel">
       <div class="head"><h2>Pack</h2><span class="count">Tab / Esc &nbsp;close</span></div>
       <div class="body">
@@ -1645,7 +1719,7 @@
   <div id="intro"><video id="intro-video" src="assets/intro-waves.mp4" muted loop playsinline preload="auto" disablepictureinpicture></video><div id="intro-title"><div class="t-stack"><div class="t-glow" aria-hidden="true"><span>B</span><span>E</span><span>A</span><span>C</span><span>H</span><span>W</span><span>A</span><span>L</span><span>K</span></div><h1><span>B</span><span>E</span><span>A</span><span>C</span><span>H</span><span>W</span><span>A</span><span>L</span><span>K</span></h1></div></div><p id="intro-text"></p></div>
 
   <div id="overlay">
-    <button type="button" class="start loading">Start Game</button>
+    <button type="button" class="start loading">Loading 1%</button>
     <div id="bootbar"><i></i></div>
   </div>
   </div>

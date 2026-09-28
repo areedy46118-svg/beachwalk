@@ -354,7 +354,14 @@ export function makeUndercroft(opts = {}) {
   /* Is this point somewhere a body with its feet at `feet` can stand: a
    * floor under it, nothing in the band above that floor, and the floor
    * within a step up or a drop down of where the feet already are. */
+  /* A BROKEN WALL IS SOLID WHERE IT IS STILL STANDING. The grids know the
+   * tunnel is four metres wide at the church and nothing about the masonry
+   * across its end, so a body walked straight through the stone either side
+   * of the hole — "I keep clipping through". Each gate is a band of x in
+   * which you must be inside the hole's width. */
+  S.gates = [];
   S.walkable = (lx, lz, feet, bare) => {
+    for (const gt of S.gates) if (lx > gt.x0 && lx < gt.x1 && Math.abs(lz - gt.z) > gt.hw) return false;
     const bf = bridgeFloor(lx, lz);
     if (bf !== null) return Math.abs(bf - feet) < 0.6;
     /* INSIDE THE TUBE AND NOWHERE ELSE. The corridor is the whole of the
@@ -1454,7 +1461,7 @@ export function makeUndercroft(opts = {}) {
         t = t < 0 ? 0 : t > 1 ? 1 : t;
         const px = a.x + dx * t, pz = a.z + dz * t;
         const d = (lx - px) * (lx - px) + (lz - pz) * (lz - pz);
-        if (d < bd) { bd = d; found = true; by = a.y + (b.y - a.y) * t; br = (a.r + (b.r - a.r) * t) * shut; bh = a.h + (b.h - a.h) * t;
+        if (d < bd) { bd = d; found = true; by = a.y + (b.y - a.y) * t; br = Math.max(0.3, (a.r + (b.r - a.r) * t) - (C.pad || 0)) * shut; bh = a.h + (b.h - a.h) * t;
                       const tl = Math.sqrt(L2); btx = dx / tl; btz = dz / tl; }
       }
     }
@@ -1476,6 +1483,7 @@ export function makeUndercroft(opts = {}) {
        * seven metres short of the nave, wedged in the hole. `bodyRMaxX` ends
        * it where the tunnel ends. */
       if (w.bodyRMaxX !== undefined && lx > w.bodyRMaxX) continue;
+      if (w.bodyRMinX !== undefined && lx < w.bodyRMinX) continue;   // the exit's own, from its far side of the apse's hole
       const b = w.bounds;
       if (lx >= b[0][0] + w.off.x && lx <= b[1][0] + w.off.x && lz >= b[0][2] + w.off.z && lz <= b[1][2] + w.off.z) return w.bodyR;
     }
@@ -1762,6 +1770,11 @@ export function makeUndercroft(opts = {}) {
     const prev = mat.onBeforeCompile;
     mat.onBeforeCompile = function (sh, rndr) {
       if (prev) prev.call(this, sh, rndr);
+      /* `this` is the material being compiled, which is not always `mat`:
+       * `splitDiscards` hands the clean half of a clipped mesh a CLONE with
+       * `bwNoDisc` set, and it carries this same function. */
+      const self = (this && this.userData) ? this : mat;
+      const noDisc = !!self.userData.bwNoDisc;
       sh.uniforms.uUcDust = { value: L.dust };
       sh.uniforms.uUcDamp = { value: L.damp };
       sh.uniforms.uUcLevel = { value: L.level };
@@ -1774,15 +1787,15 @@ export function makeUndercroft(opts = {}) {
        * the exit tunnel, a metre past the threshold, that reads as the way
        * out being "all see through and messed up". The old cave got away
        * with it only because its rock was clipped short of the wall. */
-      sh.uniforms.uUcCutOn = { value: mat.userData.bwKind === 'church' ? 1 : 0 };
-      sh.uniforms.uUcClipX = { value: mat.userData.bwClipX ?? -1e9 };   // the old cave's rock stops at the apse wall
+      sh.uniforms.uUcCutOn = { value: self.userData.bwKind === 'church' && !self.userData.bwNoCut ? 1 : 0 };
+      sh.uniforms.uUcClipX = { value: self.userData.bwClipX ?? -1e9 };   // the old cave's rock stops at the apse wall
       /* AND THE CHURCH STOPS AT THE APSE WALL. Its floor slab is one plane
        * forty metres by twenty-three, and it runs nearly two metres PAST the
        * back wall — so through the break you looked at a pale grey shelf
        * lying in the mouth of the cave, which is most of what "the exit is
        * all see through and messed up" was. Nothing of the building is drawn
        * beyond its own wall; what floors the threshold is the cave's skin. */
-      sh.uniforms.uUcClipHi = { value: mat.userData.bwClipHi ?? 1e9 };
+      sh.uniforms.uUcClipHi = { value: self.userData.bwClipHi ?? 1e9 };
       /* AND TWO ROOMS THAT MEET IN A DOORWAY MUST NOT MEET ON A LINE. The
        * church is dressed at level 0.98 with its emissive at 0.9 and the
        * tunnel at 0.19 and 0.055 — five times the diffuse and sixteen times
@@ -1795,9 +1808,9 @@ export function makeUndercroft(opts = {}) {
        * over and `uUcFadeTo` what to ease to, and both sides of the door
        * are given the SAME values to arrive at, so the seam has nothing to
        * draw. Off by default — x0 equal to x1 is no fade at all. */
-      sh.uniforms.uUcFade = { value: mat.userData.bwFade || new THREE.Vector2(0, 0) };
-      sh.uniforms.uUcFadeTo = { value: mat.userData.bwFadeTo || new THREE.Vector3(1, 0, 1) };
-      mat.userData.bwSh = sh;
+      sh.uniforms.uUcFade = { value: self.userData.bwFade || new THREE.Vector2(0, 0) };
+      sh.uniforms.uUcFadeTo = { value: self.userData.bwFadeTo || new THREE.Vector3(1, 0, 1) };
+      self.userData.bwSh = sh;
       sh.vertexShader = 'varying vec3 vGrimeN; varying vec3 vGrimeP;\n' + sh.vertexShader
         .replace('#include <fog_vertex>', '#include <fog_vertex>\n  vGrimeN = normalize((modelMatrix * vec4(objectNormal, 0.0)).xyz);\n  vGrimeP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
       sh.fragmentShader = 'varying vec3 vGrimeN; varying vec3 vGrimeP;\nuniform float uUcDust, uUcDamp, uUcLevel, uUcEmisK; uniform vec4 uUcCut; uniform float uUcCutX; uniform float uUcClipX; uniform float uUcClipHi; uniform float uUcCutOn; uniform vec2 uUcFade; uniform vec3 uUcFadeTo; float ucLevel; float ucKnee; float ucEmisMul;\n' + sh.fragmentShader
@@ -1825,7 +1838,7 @@ export function makeUndercroft(opts = {}) {
   ucLevel = mix(uUcLevel, uUcFadeTo.x, ucF);
   ucKnee = mix(uUcEmisK, uUcFadeTo.y, ucF);
   ucEmisMul = mix(1.0, uUcFadeTo.z, ucF);
-  if (vGrimeP.x < uUcClipX) discard;
+${noDisc ? '' : `  if (vGrimeP.x < uUcClipX) discard;
   if (vGrimeP.x > uUcClipHi) discard;
   if (uUcCutOn > 0.5 && uUcCut.w > 0.0 && abs(ucN.y) < 0.6 && abs(vGrimeP.x - uUcCut.x) < uUcCutX) {
     float cdy = vGrimeP.y - uUcCut.y, cdz = vGrimeP.z - uUcCut.z;
@@ -1834,7 +1847,7 @@ export function makeUndercroft(opts = {}) {
     float cd = length(vec2(cdy, cdz));
     if (cd < cr) discard;
     ucCutEdge = cd - cr;
-  }`)
+  }`}`)
         .replace('#include <dithering_fragment>', '#include <dithering_fragment>\n  gl_FragColor.rgb *= mix(0.28, 1.0, smoothstep(0.0, 0.55, ucCutEdge));')
         /* THE KNEE ON THE LIFT. A scan's albedo is a photograph of a lit
          * building, so its brightest texels are SUNLIGHT — and handing those
@@ -2008,6 +2021,137 @@ export function makeUndercroft(opts = {}) {
     triplanar(m);
     return m;
   }
+  /* ---- A HOLE BROKEN THROUGH MASONRY IS MADE OF MASONRY.
+   *
+   * Both ends of the church met their tunnels on a CUT: a flat panel or a
+   * shader cylinder with a clean outline, the rock ending on it, and the nave
+   * straight behind — no wall anywhere, only the line where a wall would be.
+   * That is "the connections to the church look bad": a real wall that has
+   * been broken through has THICKNESS, it breaks along its JOINTS, and what
+   * you see in the hole is the ends of blocks. So the hole is built out of
+   * blocks: two leaves of ashlar in running bond (the face and the back of
+   * the wall, each with its own bond, as a wall is laid), every block mapped
+   * onto one of the plain-stone cells of the wall's own atlas, and at the
+   * hole each block either missing, snapped short, or knocked askew — the
+   * tunnel side broken back further than the church side, because that is
+   * the side the thing came through. Nothing about it is smooth: the
+   * outline steps with the courses, which is what says masonry. */
+  const BREAK_T = 0.78;                                   // how thick the church's wall is where it was broken through
+  const ASHLAR_U = [0.375, 0.4375], ASHLAR_V = [0.3125, 0.375, 0.4375, 0.5, 0.5625], ASHLAR_CS = 0.0625;
+  function ashlarMat() {
+    const src = S.wallMat;
+    if (!src) return new THREE.MeshStandardMaterial({ color: 0x3a3632, roughness: 1 });
+    const m = src.clone(); m.userData = { bwNoCut: true }; m.name = 'ashlar';
+    grime(m, 'church');
+    m.side = THREE.FrontSide;
+    if (S.mats.indexOf(m) < 0) S.mats.push(m);
+    return m;
+  }
+  // a box whose every face is one stone cell of the wall's atlas, turned a random quarter
+  function ashlarBox(sx, sy, sz, rnd) {
+    const g = new THREE.BoxGeometry(sx, sy, sz);
+    const uv = g.attributes.uv;
+    // the atlas cell is one of the panel's blocks, 0.72 by 0.45 m: a smaller face takes a smaller piece of it
+    const dims = [[sz, sy], [sz, sy], [sx, sz], [sx, sz], [sx, sy], [sx, sy]];
+    for (let f = 0; f < 6; f++) {
+      const u0 = ASHLAR_U[(rnd() * ASHLAR_U.length) | 0], v0 = ASHLAR_V[(rnd() * ASHLAR_V.length) | 0], q = (rnd() * 4) | 0;
+      const ka = Math.min(1, dims[f][0] / 0.72), kb = Math.min(1, dims[f][1] / 0.45);
+      const oa = rnd() * (1 - ka), ob = rnd() * (1 - kb);
+      for (let k = 0; k < 4; k++) {
+        const i = f * 4 + k;
+        let a = uv.getX(i), b = uv.getY(i);
+        for (let r = 0; r < q; r++) { const t = a; a = 1 - b; b = t; }
+        uv.setXY(i, u0 + (oa + a * ka) * ASHLAR_CS, v0 + (ob + b * kb) * ASHLAR_CS);
+      }
+    }
+    return g;
+  }
+  function mergeGeos(list) {
+    let nv = 0, ni = 0;
+    for (const g of list) { nv += g.attributes.position.count; ni += g.index.count; }
+    const P = new Float32Array(nv * 3), N = new Float32Array(nv * 3), U = new Float32Array(nv * 2), I = new Uint32Array(ni);
+    let ov = 0, oi = 0;
+    for (const g of list) {
+      P.set(g.attributes.position.array, ov * 3); N.set(g.attributes.normal.array, ov * 3); U.set(g.attributes.uv.array, ov * 2);
+      const ix = g.index.array; for (let k = 0; k < ix.length; k++) I[oi + k] = ix[k] + ov;
+      ov += g.attributes.position.count; oi += ix.length; g.dispose();
+    }
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.BufferAttribute(P, 3));
+    out.setAttribute('normal', new THREE.BufferAttribute(N, 3));
+    out.setAttribute('uv', new THREE.BufferAttribute(U, 2));
+    out.setIndex(new THREE.BufferAttribute(I, 1));
+    return out;
+  }
+  /* o: { x (the church-side face), dir (+1 or -1: which way the wall's
+   * thickness runs, away from the nave), cz, fy (the floor), hw, top (the
+   * hole: straight sides to 55 % of its height and then an arch), W, H (how
+   * much wall to lay round it), T (thickness), seed, mat } */
+  function brokenWall(o) {
+    let h = o.seed | 0 || 1;
+    const rnd = () => { h = (h * 1103515245 + 12345) & 0x7fffffff; return h / 0x7fffffff; };
+    const halfAt = (v, grow) => {
+      if (o.R) { const R = o.R + grow, dv = v - o.cyR; return Math.abs(dv) >= R ? -1 : Math.sqrt(R * R - dv * dv); }   // a round break
+      const hw = o.hw + grow, top = o.top + grow, s0 = top * 0.55;
+      if (v < s0) return hw;
+      const t = (v - s0) / Math.max(0.01, top - s0);
+      return t >= 1 ? -1 : hw * Math.sqrt(Math.max(0, 1 - t * t));
+    };
+    const e = new THREE.Euler(), q = new THREE.Quaternion(), m4 = new THREE.Matrix4(), one = new THREE.Vector3(1, 1, 1);
+    const geos = [];
+    const leaves = [[0.0, o.T * 0.52, 0.0], [o.T * 0.48, o.T, 0.20]];   // [from, to, how much further back it is broken]
+    for (const [d0, d1, grow] of leaves) {
+      let v = -0.30, row = 0;
+      while (v < o.H) {
+        const ch = row === 0 ? 0.42 : 0.34 + rnd() * 0.14;
+        let u = -o.W / 2 - rnd() * 0.5 - (row % 2) * 0.35;
+        while (u < o.W / 2) {
+          const L = 0.50 + rnd() * 0.42;
+          let u0 = u, u1 = u + L;
+          u = u1;
+          const vc = v + ch / 2;
+          // the hole at this course, a hand in or out block by block, so it breaks along joints
+          const hh = row === 0 ? -1 : halfAt(vc, grow + (rnd() - 0.5) * 0.30);
+          let rim = false;
+          if (hh > 0) {
+            if (u0 >= -hh && u1 <= hh) continue;                               // knocked out
+            if (u1 > -hh && u0 < -hh) { u1 = -hh + (rnd() - 0.35) * 0.14; rim = true; }   // snapped short on the hole's side
+            else if (u0 < hh && u1 > hh) { u0 = hh - (rnd() - 0.35) * 0.14; rim = true; }
+            else if (Math.min(Math.abs(u0 + hh), Math.abs(u1 - hh)) < 0.35) rim = true;
+          } else if (row > 0 && vc < o.top + grow + 0.45 && Math.abs((u0 + u1) / 2) < o.hw * 0.8) rim = true;   // over the crown
+          if (u1 - u0 < 0.12) continue;
+          const lenK = rim ? 0.86 + rnd() * 0.14 : 1;
+          const sx = (d1 - d0) * (rim ? 0.80 + rnd() * 0.2 : 0.97), sy = ch * (rim ? 0.86 + rnd() * 0.12 : 0.97), sz = (u1 - u0) * lenK - 0.012;
+          const g = ashlarBox(sx, sy, sz, rnd);
+          const dx = (d0 + d1) / 2 + (rim ? (rnd() - 0.5) * 0.10 : (rnd() - 0.5) * 0.012);
+          e.set(rim ? (rnd() - 0.5) * 0.14 : 0, rim ? (rnd() - 0.5) * 0.16 : 0, rim ? (rnd() - 0.5) * 0.10 : 0);
+          m4.compose(new THREE.Vector3(o.x + o.dir * dx, o.fy + vc, o.cz + (u0 + u1) / 2), q.setFromEuler(e), one);
+          g.applyMatrix4(m4);
+          geos.push(g);
+        }
+        v += ch; row++;
+      }
+    }
+    const mesh = new THREE.Mesh(mergeGeos(geos), o.mat);
+    mesh.name = 'brokenWall';
+    return mesh;
+  }
+  // the wall that came down: broken blocks, lying where they fell, each sunk a little into what is under it
+  function blockHeap(mat, lumps, rndSeed) {
+    let h = rndSeed || 17;
+    const rnd = () => { h = (h * 1103515245 + 12345) & 0x7fffffff; return h / 0x7fffffff; };
+    const e = new THREE.Euler(), q = new THREE.Quaternion(), m4 = new THREE.Matrix4(), one = new THREE.Vector3(1, 1, 1);
+    const geos = [];
+    for (const L of lumps) {
+      const g = ashlarBox(L.sz * (1.0 + rnd() * 0.6), L.sz * (0.55 + rnd() * 0.35), L.sz * (0.8 + rnd() * 0.5), rnd);
+      e.set(L.rot[0] * 0.25, L.rot[1], L.rot[2] * 0.25);
+      m4.compose(new THREE.Vector3(L.pos[0], L.pos[1], L.pos[2]), q.setFromEuler(e), one);
+      g.applyMatrix4(m4); geos.push(g);
+    }
+    const mesh = new THREE.Mesh(mergeGeos(geos), mat);
+    mesh.name = 'blockHeap';
+    return mesh;
+  }
   const findMat = (root, want) => {
     let hit = null;
     root.traverse((o) => { if (!hit && o.isMesh && o.material && o.material.map && (!want || (o.material.name || '') === want)) hit = o.material; });
@@ -2149,6 +2293,89 @@ export function makeUndercroft(opts = {}) {
    * breach below, and why the box that used to do this job was the wrong
    * shape for the one direction that mattered. */
   const GAP = 0.9;
+  /* A DISCARD ANYWHERE IN A SHADER IS PAID FOR EVERYWHERE IT DRAWS. Every
+   * material down here went through `grime`, and `grime` carries three
+   * discards — the low clip, the high clip and the apse's cut — so every
+   * fragment of every surface ran a shader the GPU cannot reject early:
+   * hidden-surface removal (Apple's tile deferral, everybody's early-Z) is
+   * off for a program that may discard, and the rock, the skin a centimetre
+   * behind it and the water over the floor were ALL lit, twelve lamps each,
+   * layer on layer. Measured in the exit bore at 1190 x 669: 5.4-9.8 ms of GPU
+   * a frame with the discards and 1.2-2.9 without — that is the church
+   * tunnel exit lagging. Yet a clip only ever touches the few triangles that
+   * cross its line. So each mesh is split once, at the end of the build:
+   * triangles wholly past a clip are dropped (they never drew), triangles
+   * that cross a clip or the cut keep the discarding material, and the rest
+   * — nearly all of it — goes to a clone with `bwNoDisc`, whose program has
+   * no discard in it at all. A material no clip can ever touch is simply
+   * flagged. */
+  function splitDiscards() {
+    const matSet = new Set(S.mats);
+    const clean = new Map();                 // original -> its no-discard twin
+    const twin = (m) => {
+      let c = clean.get(m);
+      if (c) return c;
+      const sh = m.userData.bwSh; m.userData.bwSh = undefined;
+      c = m.clone();
+      m.userData.bwSh = sh;
+      c.userData = Object.assign({}, m.userData, { bwNoDisc: true, bwSh: undefined });   // SHALLOW: the fade vectors stay shared
+      c.onBeforeCompile = m.onBeforeCompile;
+      const k0 = m.customProgramCacheKey;
+      c.customProgramCacheKey = function () { return k0.call(this) + '|nodisc'; };
+      c.name = m.name;
+      clean.set(m, c); S.mats.push(c);
+      if (S.exitMats && S.exitMats.has(m)) S.exitMats.add(c);
+      return c;
+    };
+    const cut = CUT.value, cutOn = cut.w > 0, cx0 = cut.x - CUT_X.value - 0.05, cx1 = cut.x + CUT_X.value + 0.05;
+    const seen = new Set(), meshes = [];
+    group.updateMatrixWorld(true);
+    group.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && !o.isSkinnedMesh && matSet.has(o.material)) meshes.push(o); });
+    const geoUse = new Map();
+    for (const o of meshes) geoUse.set(o.geometry, (geoUse.get(o.geometry) || 0) + 1);
+    let split = 0, flagged = 0, dropped = 0, moved = 0;
+    for (const o of meshes) {
+      const m = o.material, U = m.userData;
+      const lo = U.bwClipX ?? -1e9, hi = U.bwClipHi ?? 1e9;
+      const mCut = cutOn && U.bwKind === 'church' && !U.bwNoCut;
+      if (lo < -1e8 && hi > 1e8 && !mCut) {
+        if (!U.bwNoDisc) { U.bwNoDisc = true; m.customProgramCacheKey = function () { return this.onBeforeCompile.toString() + '|nodisc'; }; m.needsUpdate = true; flagged++; }
+        continue;
+      }
+      const g = o.geometry;
+      if (seen.has(g) || geoUse.get(g) > 1 || g.groups.length > 1 || !g.attributes.position) continue;
+      seen.add(g);
+      const P = g.attributes.position, e = o.matrixWorld.elements;
+      const idx = g.index ? g.index.array : null, nTri = (idx ? idx.length : P.count) / 3;
+      const wx = (i) => e[0] * P.getX(i) + e[4] * P.getY(i) + e[8] * P.getZ(i) + e[12];
+      const keepC = [], keepE = [];
+      for (let t = 0; t < nTri; t++) {
+        const a = idx ? idx[t * 3] : t * 3, b2 = idx ? idx[t * 3 + 1] : t * 3 + 1, c2 = idx ? idx[t * 3 + 2] : t * 3 + 2;
+        const x0 = wx(a), x1 = wx(b2), x2 = wx(c2);
+        const xmin = Math.min(x0, x1, x2), xmax = Math.max(x0, x1, x2);
+        if (xmax < lo || xmin > hi) { dropped++; continue; }          // wholly clipped: it never drew
+        const edge = xmin < lo || xmax > hi || (mCut && xmax >= cx0 && xmin <= cx1);
+        (edge ? keepE : keepC).push(a, b2, c2);
+      }
+      if (!keepC.length) { g.setIndex(keepE); continue; }             // all of it crosses a line: it keeps its discard
+      if (!keepE.length) { g.setIndex(keepC); o.material = twin(m); moved++; continue; }
+      g.setIndex(keepE);
+      const g2 = new THREE.BufferGeometry();
+      for (const k in g.attributes) g2.setAttribute(k, g.attributes[k]);
+      g2.setIndex(keepC);
+      g2.computeBoundingSphere(); g2.computeBoundingBox();
+      g.computeBoundingSphere(); g.computeBoundingBox();
+      const o2 = new THREE.Mesh(g2, twin(m));
+      o2.name = (o.name || 'mesh') + '-clean';
+      o2.position.copy(o.position); o2.quaternion.copy(o.quaternion); o2.scale.copy(o.scale);
+      o2.frustumCulled = o.frustumCulled; o2.renderOrder = o.renderOrder; o2.visible = o.visible;
+      o2.matrixAutoUpdate = o.matrixAutoUpdate; if (!o.matrixAutoUpdate) o2.matrix.copy(o.matrix);
+      o.parent.add(o2);
+      split++;
+    }
+    // no re-blend here: the twins carry the bands they were cloned with, and the skin was never given one
+    S.discardSplit = { split, flagged, moved, dropped, twins: clean.size };
+  }
   function compose() {
     try { composeInner(); } catch (e) { console.error('[undercroft] compose failed', e); throw e; }
   }
@@ -2311,7 +2538,7 @@ export function makeUndercroft(opts = {}) {
      * walk the way eroding the grid can — the bore is four metres across and
      * this keeps you inside the middle three. */
     pw.bodyR = 0.62;
-    pw.bodyRMaxX = low.x - 1.2;        // ...and not through the breach, which is the mouth's own width
+    pw.bodyRMaxX = Math.min(low.x - 1.2, D[0] + off.x + 0.14 - 0.015 - BREAK_T - 0.45 - 0.7);   // not through the breach, and a body's width short of the broken wall's gate: its ring reads the gate's stone and holds you off the hole
     S.despeckled = despeckle(ch) + despeckle(cw) + despeckle(pw);
     S.unspeckled = despeckleSolid(ch) + despeckleSolid(cw) + despeckleSolid(pw);
     S.filled = fillHoles(ch) + fillHoles(cw) + fillHoles(pw);
@@ -2404,7 +2631,7 @@ export function makeUndercroft(opts = {}) {
          * with a hole broken through it and the bore receding into the dark
          * — and from the tunnel the panel faces away and is not drawn, so
          * there is still nothing between you and the room. */
-        const hiX = group.localToWorld(new THREE.Vector3(D[0] + off.x + 0.26, 0, 0)).x;
+        const hiX = group.localToWorld(new THREE.Vector3(D[0] + off.x + 0.14 - 0.03, 0, 0)).x;   // a hand behind the face: the broken wall's front is what shows in the face's arch, never the bore's rim
         S.passage.root.traverse((o) => {
           if (!o.isMesh) return;
           for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
@@ -2433,7 +2660,7 @@ export function makeUndercroft(opts = {}) {
          * stone. Nothing else moves: the water is still there to wade
          * through for a hundred and forty metres. */
         {
-          const wEnd = group.localToWorld(new THREE.Vector3(D[0] + off.x - 1.45, 0, 0)).x;
+          const wEnd = group.localToWorld(new THREE.Vector3(D[0] + off.x + 0.14 - 0.015 - BREAK_T - 0.03, 0, 0)).x;   // up to the foot of the broken wall's back, and not into its hole
           S.passage.root.traverse((o) => {
             if (!o.isMesh) return;
             for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
@@ -2482,6 +2709,12 @@ export function makeUndercroft(opts = {}) {
           };
           for (const m of S.mats) {
             const n = m.name || '';
+            /* the broken walls: church stone in a tunnel's light. At the
+             * seam's own values the wall's darker atlas read as a black
+             * silhouette against the tan rock, so their emissive meets the
+             * rock's brightness rather than its number */
+            if (m.userData.bwBreak === 'front') { band(m, doorX + 3.6, doorX, 0.34); continue; }
+            if (m.userData.bwBreak === 'apse') { if (S.apseX != null) band(m, S.apseX - 3.6, S.apseX, 0.34); continue; }
             if (S.exitMats && S.exitMats.has(m)) { if (S.apseX != null) band(m, S.apseX + 3.6, S.apseX, 2.3); }
             else if (m.userData.bwKind === 'church') band(m, doorX + 3.6, doorX, 0.14);
             else if (/^Rock01/.test(n)) band(m, doorX - 3.6, doorX, 2.3);
@@ -2563,6 +2796,7 @@ export function makeUndercroft(opts = {}) {
      * The material is a CLONE of the wall's: the discard belongs to the
      * panel alone, and `Material.clone` drops `onBeforeCompile`, so the
      * grime is put back on it (its copied `userData` would refuse). */
+    const FRONT_HOLE = { hw: 1.12, top: 2.75 };
     {
       const wallX = D[0] + off.x + 0.14;                 // the outer face of the end wall, a hand inside it
       const cz = low.z, cy = low.y;
@@ -2621,7 +2855,12 @@ export function makeUndercroft(opts = {}) {
          * little lower than the tunnel's own mouth, so the wall's stone
          * always overlaps the rock's edge; cut it wider and the surplus is
          * a strip of the void. */
-        const hw = Math.max(0.9, mouthCol.w / 2 + 0.18), ht = Math.max(1.9, mouthCol.h - 0.10);
+        /* AND THE FACING IS BROKEN BACK FURTHER THAN THE CORE. The panel is
+         * the wall's face; behind it stands the broken masonry (`brokenWall`)
+         * with its own, smaller, jagged hole — so the face's arch is cut half
+         * a metre wider and higher, and what you see round the hole from the
+         * nave is the ends of blocks stepping in to it. */
+        const hw = FRONT_HOLE.hw + 0.50, ht = FRONT_HOLE.top + 0.45;
         sh.uniforms.uArch = { value: new THREE.Vector4(0, -3.2, hw, ht) };
         sh.uniforms.uArchS = { value: new THREE.Vector2(ht * 0.55, -1.20) };
         sh.vertexShader = 'varying vec3 vArchW;\n' + sh.vertexShader
@@ -2647,6 +2886,37 @@ export function makeUndercroft(opts = {}) {
       fm.needsUpdate = true;
       group.add(fill);
       S.doorFill = fill;
+      /* THE WALL BEHIND THE FACE, BROKEN THROUGH. Its hole is what you walk
+       * through, and it is solid everywhere else (`S.gates`): the tunnel is
+       * four metres wide at the church and the grids know nothing about the
+       * stone across its end. */
+      const ashF = ashlarMat(); ashF.userData.bwBreak = 'front';
+      const wallB = brokenWall({ x: wallX - 0.015, dir: -1, cz, fy: cy, hw: FRONT_HOLE.hw, top: FRONT_HOLE.top,
+        W: Math.max(FRONT_HOLE.hw * 2 + 3.4, mouthCol.w + 2.8), H: Math.max(FRONT_HOLE.top + 1.8, mouthCol.h + 1.4),
+        T: BREAK_T, seed: 4411, mat: ashF });
+      group.add(wallB); S.frontBreak = wallB;
+      /* AND A THRESHOLD UNDER IT. The church's own flags start a quarter of a
+       * metre inside the face and the tunnel's rock is clipped behind it, so
+       * along the foot of the wall there was a strip of nothing — the pale
+       * blue line of the void under the floor, the width of the doorway. */
+      {
+        let th = 97;
+        const trnd = () => { th = (th * 1103515245 + 12345) & 0x7fffffff; return th / 0x7fffffff; };
+        const x0 = wallX - 0.015 - BREAK_T - 0.05, x1 = wallX + 1.0, TW = Math.max(FRONT_HOLE.hw * 2 + 3.4, mouthCol.w + 2.8);
+        // laid as flags, not one slab: a stone the width of a doorway is a smear of one atlas cell
+        const tiles = [], m4 = new THREE.Matrix4();
+        const nx = Math.max(1, Math.round((x1 - x0) / 0.6)), nz = Math.max(1, Math.round(TW / 0.62));
+        for (let a = 0; a < nx; a++) for (let b = 0; b < nz; b++) {
+          const dx = (x1 - x0) / nx, dz = TW / nz;
+          const t = ashlarBox(dx - 0.012, 0.20, dz - 0.012, trnd);
+          t.applyMatrix4(m4.makeTranslation(x0 + (a + 0.5) * dx, cy + 0.014 - 0.10 - trnd() * 0.010, cz - TW / 2 + (b + 0.5) * dz));   // a worn threshold a finger proud of the flags: the scan's floor at the door carries the daylight it was photographed in, a pale blue band
+          tiles.push(t);
+        }
+        const sill = new THREE.Mesh(mergeGeos(tiles), ashF);
+        sill.name = 'breakSill';
+        group.add(sill);
+      }
+      S.gates.push({ x0: wallX - 0.015 - BREAK_T - 0.45, x1: wallX + 0.40, z: cz, hw: FRONT_HOLE.hw - 0.36 });
       /* ---- AND A WALL THAT WAS BROKEN THROUGH LEAVES ITS WALL ON THE FLOOR.
        *
        * With the tunnel cut back to the wall's own plane the arch reads as a
@@ -2665,7 +2935,6 @@ export function makeUndercroft(opts = {}) {
       {
         let rh = 1337;
         const rnd = () => { rh = (rh * 1103515245 + 12345) & 0x7fffffff; return rh / 0x7fffffff; };
-        const rubMat = patchMat(S.wallMat || findMat(S.church.root), 'church');
         const doorLumps = [];
         for (let k = 0; k < 26; k++) {
           /* out of the break and into the room: dense at the arch, thinning
@@ -2679,18 +2948,18 @@ export function makeUndercroft(opts = {}) {
           const out = 0.15 + t * t * 1.95;
           const sz = (0.10 + rnd() * 0.30) * (1 - t * 0.45);
           const spread = (0.5 + t * 1.4) * mouthCol.w * 0.32;
-          doorLumps.push({ sz, pos: [wallX + out, cy - sz * 0.55, cz + (rnd() - 0.5) * 2 * spread],
+          doorLumps.push({ sz, pos: [wallX + out, cy + sz * 0.10, cz + (rnd() - 0.5) * 2 * spread],
                            rot: [rnd() * 3, rnd() * 3, rnd() * 3], scl: [1, 0.62 + rnd() * 0.4, 1] });
         }
         /* and a low bank of it right in the mouth, so the break has a
          * threshold to step over rather than an edge */
         for (let k = 0; k < 9; k++) {
           const sz = 0.16 + rnd() * 0.26;
-          doorLumps.push({ sz, pos: [wallX - 0.12 - rnd() * 0.5, cy - sz * 0.55, cz + (rnd() - 0.5) * mouthCol.w * 0.7],
+          doorLumps.push({ sz, pos: [wallX - 0.12 - rnd() * (BREAK_T - 0.2), cy + sz * 0.08, cz + (rnd() - 0.5) * FRONT_HOLE.hw * 1.5],
                            rot: [rnd() * 3, rnd() * 3, rnd() * 3], scl: [1, 0.55 + rnd() * 0.3, 1] });
         }
         const spill = new THREE.Group();
-        spill.add(rubbleHeap(rubMat, doorLumps));
+        spill.add(blockHeap(ashF, doorLumps, 5150));     // what fell out of it is blocks, not lumps
         group.add(spill);
         S.spill = spill;
       }
@@ -2757,6 +3026,14 @@ export function makeUndercroft(opts = {}) {
         const coff = new THREE.Vector3(exitEdge + GAP - cm.x, exitFloor - cm.y, off.z - cm.z);
         cw.off.copy(coff);
         S.cave.root.position.copy(coff);
+        /* THE WAY OUT IS THE SAME BORE AS THE WAY IN, AND WANTS THE SAME
+         * BODY. At the sparse grid's 0.19 a centre could be walked to the
+         * rock at the floor while the arch curved over it, and the lens
+         * ended up inside the haunch — measured, 29 spots down this cut
+         * within ten centimetres of drawn rock at eye height. The passage's
+         * own 0.62, and not in the apse's hole, which is narrower. */
+        cw.bodyR = 0.62;
+        cw.bodyRMinX = exitEdge + 0.16 + BREAK_T + 0.45 + 0.75;   // a body's width clear of the gate (see `pw.bodyRMaxX`)
         /* ---- AND THE WAY BACK IN IS A RAMP, NOT A SHELF.
          *
          * This bridge was FLAT at the church's own floor and stopped a
@@ -2848,7 +3125,22 @@ export function makeUndercroft(opts = {}) {
           ring.material.side = THREE.DoubleSide;
           ring.position.set(exitEdge + 0.17, exitFloor + CUT_Y, off.z);   // BEHIND the wall's own plane, or it is a slab hung in the chancel
           ring.renderOrder = -2;
-          group.add(ring);
+          /* AND THE RING IS NOW THE BROKEN WALL. A flat annulus of cave rock
+           * in the wall's plane was the back of the wall with no wall in it;
+           * what stands there now is the masonry itself, broken through,
+           * the same build as the front door's (`brokenWall`), and it is
+           * solid either side of its hole (`S.gates`). */
+          const ashA = ashlarMat(); ashA.userData.bwBreak = 'apse';
+          /* ROUND, like the skin's own cut, and INSIDE it all the way round
+           * (1.15 about 1.30 against 1.42 about 1.46), so a ring of broken
+           * blocks shows within the cut at every angle — an arch with
+           * straight sides stood in the circle's bottom corners, where it
+           * closes in to half a metre at the floor */
+          const APSE_HOLE = { hw: 1.15, top: 2.45, R: 1.15, cyR: 1.30 };
+          const wallA = brokenWall({ x: exitEdge + 0.16, dir: 1, cz: off.z, fy: exitFloor, hw: APSE_HOLE.hw, top: APSE_HOLE.top, R: APSE_HOLE.R, cyR: APSE_HOLE.cyR,
+            W: 7.0, H: 5.4, T: BREAK_T, seed: 8123, mat: ashA });
+          group.add(wallA); S.apseBreak = wallA; S.apseAsh = ashA; S.apseHole = APSE_HOLE;
+          S.gates.push({ x0: exitEdge - 0.35, x1: exitEdge + 0.16 + BREAK_T + 0.45, z: off.z, hw: 0.62 });
           S.apseRing = ring;
           /* AND THE EXIT'S OWN MATERIALS ARE THE ONES THAT FADE AT THIS END.
            * Collected by ROOT, because the two ends of the church are now
@@ -2875,44 +3167,37 @@ export function makeUndercroft(opts = {}) {
         {
           let rh = 90210;
           const rnd = () => { rh = (rh * 1103515245 + 12345) & 0x7fffffff; return rh / 0x7fffffff; };
-          const wallMat = patchMat(S.wallMat || findMat(S.church.root), 'church');
-          const rockMat = patchMat(findMat(S.cave.root), 'cave');
-          S.exitMats.add(rockMat);
-          for (const m of [wallMat, rockMat]) if (S.mats.indexOf(m) < 0) S.mats.push(m);
-          const cy = exitFloor + CUT_Y, cz = off.z, wallX = exitEdge;
-          const wallLumps = [], rockLumps = [];
-          // out of the break, into the chancel, thinning over two metres
+          const cz = off.z, wallX = exitEdge;
+          const wallLumps = [];
+          /* out of the break, into the chancel, thinning over two metres —
+           * BLOCKS, the wall's own: the rim lumps and the icosahedra that used
+           * to lie here read as black pebbles with a shine on them, and the
+           * broken wall's own jagged outline is what breaks the circle now */
           for (let k = 0; k < 24; k++) {
-            const t = rnd(), sz = (0.10 + rnd() * 0.30) * (1 - t * 0.45);
-            wallLumps.push({ sz, pos: [wallX - 0.15 - t * t * 2.0, exitFloor - sz * 0.55, cz + (rnd() - 0.5) * (1.0 + t * 2.4) * CUT_R * 0.7],
-                             rot: [rnd() * 3, rnd() * 3, rnd() * 3], scl: [1, 0.62 + rnd() * 0.4, 1] });
+            const t = rnd(), sz = (0.12 + rnd() * 0.30) * (1 - t * 0.45);
+            wallLumps.push({ sz, pos: [wallX - 0.15 - t * t * 2.0, exitFloor + sz * 0.10, cz + (rnd() - 0.5) * (1.0 + t * 2.4) * CUT_R * 0.7],
+                             rot: [rnd() * 3, rnd() * 3, rnd() * 3], scl: [1, 1, 1] });
           }
-          // a bank inside the mouth, so there is a threshold rather than an edge
-          for (let k = 0; k < 10; k++) {
-            const sz = 0.16 + rnd() * 0.26;
-            rockLumps.push({ sz, pos: [wallX + 0.25 + rnd() * 0.7, exitFloor - sz * 0.5, cz + (rnd() - 0.5) * CUT_R * 1.1],
-                             rot: [rnd() * 3, rnd() * 3, rnd() * 3], scl: [1, 0.55 + rnd() * 0.3, 1] });
-          }
-          /* and the RIM: lumps sat on the cut's own edge, half in the wall
-           * and half in the hole, so the outline is broken rather than drawn */
-          for (let k = 0; k < 14; k++) {
-            const a = (k / 14) * Math.PI * 2 + rnd() * 0.3;
-            const r = CUT_R * (0.86 + rnd() * 0.20), sz = 0.22 + rnd() * 0.34;
-            wallLumps.push({ sz, pos: [wallX + 0.02 + (rnd() - 0.5) * 0.30, cy + Math.sin(a) * r, cz + Math.cos(a) * r],
-                             rot: [rnd() * 3, rnd() * 3, rnd() * 3], scl: [0.55 + rnd() * 0.3, 1, 1] });
+          // and a bank in the hole itself, so there is a threshold rather than an edge
+          for (let k = 0; k < 9; k++) {
+            const sz = 0.14 + rnd() * 0.22;
+            wallLumps.push({ sz, pos: [wallX + 0.25 + rnd() * (BREAK_T - 0.1), exitFloor + sz * 0.08, cz + (rnd() - 0.5) * S.apseHole.hw * 1.5],
+                             rot: [rnd() * 3, rnd() * 3, rnd() * 3], scl: [1, 1, 1] });
           }
           const spill = new THREE.Group();
-          spill.add(rubbleHeap(wallMat, wallLumps), rubbleHeap(rockMat, rockLumps));
+          spill.add(blockHeap(S.apseAsh, wallLumps, 9091));
           group.add(spill);
           S.apseSpill = spill;
         }
         if (S.doorBlend) S.doorBlend();      // the exit's own band, and its rubble
         const clipX = group.localToWorld(new THREE.Vector3(exitEdge + 0.12, 0, 0)).x;
+        // and the channel starts at the foot of the broken wall's back, not in its hole
+        const clipW = group.localToWorld(new THREE.Vector3(exitEdge + 0.16 + BREAK_T + 0.03, 0, 0)).x;
         S.cave.root.traverse((o) => {
           if (!o.isMesh) return;
           for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
-            m.userData.bwClipX = clipX;
-            if (m.userData.bwSh && m.userData.bwSh.uniforms.uUcClipX) m.userData.bwSh.uniforms.uUcClipX.value = clipX;
+            m.userData.bwClipX = (m.name || '') === 'Water' ? clipW : clipX;
+            if (m.userData.bwSh && m.userData.bwSh.uniforms.uUcClipX) m.userData.bwSh.uniforms.uUcClipX.value = m.userData.bwClipX;
           }
         });
         /* AND THE OLD CAVE IS WALKED AS A TUBE TOO. Its walkable channel,
@@ -2956,6 +3241,11 @@ export function makeUndercroft(opts = {}) {
           gapRuns(outbound);
           skins.push({ C: outbound, root: () => S.cave.root, want: 'MaterialKEInGLANZ', cap: [false, true] });
           corridorBox(outbound);
+          /* AND A HEAD IS WIDER THAN A CENTRE. The tube is fitted to the
+           * rock at the floor, and a body walked to its edge put the lens
+           * a dozen centimetres from the bore's own side at eye height —
+           * inside the near plane, which is "clipping through the tunnel". */
+          outbound.pad = 0.34;
           S.corridors.push(outbound);
           const E = Q[Q.length - 1];
           caveFar = { x: E.x, y: E.y, z: E.z };
@@ -3065,6 +3355,7 @@ export function makeUndercroft(opts = {}) {
     dressAltar();
     // dust in the air of both tunnels and the nave
     makeMotes(ch, cw, pw);
+    splitDiscards();
     S.ready = true;
     if (opts.onReady) opts.onReady(S);
   }
@@ -3475,7 +3766,12 @@ export function makeUndercroft(opts = {}) {
         if (!o.isMesh) return;
         o.castShadow = o.receiveShadow = false;
         const mats = Array.isArray(o.material) ? o.material : [o.material];
-        for (const mm of mats) { grime(mm, 'altar'); S.mats.push(mm); }
+        // his robe ships with transmission, which draws the whole church a second time whenever the altar is in view
+        /* DOUBLE-SIDED FROM THE START: when he breaks, every piece is a shell of
+         * his own surface, and single-sided a shell is a thing you see straight
+         * through from behind. Set here rather than on the break, so the frame
+         * he comes apart does not compile a program. */
+        for (const mm of mats) { if (mm.transmission) mm.transmission = 0; mm.side = THREE.DoubleSide; grime(mm, 'altar'); S.mats.push(mm); }
       });
       idol.add(m);
     });

@@ -3,15 +3,17 @@ import * as THREE from 'three';
 /* The Bell Pavilion — La Jolla's "mushroom house" — built to the
  * photographs. A round concrete room on a single column at the foot of the
  * cliff; the underside of the room a deep flaring dish of radial ribs; a
- * band of steel-framed windows all the way round, each bay a tall pane over
- * a short one, under a low roof with a deeply ribbed ceiling; below it a
- * bunker of curved concrete walls on a raised platform, an iron gate hanging
- * open in the seaward wall, steps down to the sand; inside the column a
- * spiral stair of pale wedge treads cantilevered from the wall, winding up
- * round an open well with a slim rail, into the room. Inside: a curved
- * bench under the seaward windows, a round table and its tulip chairs, one
- * on its side, a dead pendant lamp. Abandoned: panes gone and broken, glass
- * on the floor, the concrete streaked and tagged.
+ * band of steel-framed windows all the way round under a low roof with a
+ * ribbed ceiling; below it a bunker of curved concrete walls on a raised
+ * platform, an iron gate in the seaward wall, steps down to the sand. Inside
+ * the column a spiral stair of pale concrete treads springing from a NEWEL
+ * up the middle and running out to the wall, with the handrail on the wall.
+ * The room is somebody's, abandoned: a curved sofa, two leather tub chairs
+ * and a tulip table on a round rug with a hurricane lantern still burning on
+ * it, an arc lamp, a credenza with a record player, a shelf of books, a dead
+ * palm — and at the head of the stair, on a stand, a brass-and-glass casket
+ * with an open ring box in it. Panes gone and broken, glass and sand on the
+ * floor, damp stains, leaves.
  *
  * Local frame: the column's axis is the origin, +Y up, the SEA is -X and
  * the cliff is +X; nothing is rotated, so the colliders it hands back are
@@ -19,12 +21,14 @@ import * as THREE from 'three';
  * atan2(x, z), the one the game measures the player in. The stair goes UP
  * as the angle DECREASES — the lighthouse's convention.
  *
- * `MUSH` carries everything the walk needs; models/ builds, main.js walks. */
+ * `MUSH` carries everything the walk needs (and `JEWEL`, where the ring
+ * goes, and `LANTERN`, which the game flickers); models/ builds, main.js
+ * walks. */
 
 export const MUSH = {
   COL_R: 2.1, BORE: 1.8, H_ROOM: 5.2, ROOM_H: 2.6, R_ROOM: 5.6, SILL: 0.75,
   DOOR_ANG: -Math.PI / 2, DOOR_HALF: 0.32, DOOR_H: 2.1,
-  TURNS: 1.5, TREADS: 20, PLAT_TOP: 0.4, WALL_R: 5.1, PLAT_R: 5.6,
+  TURNS: 1.5, TREADS: 20, PLAT_TOP: 0.4, WALL_R: 5.1, PLAT_R: 5.6, NEWEL: 0.2,
 };
 MUSH.RISE = (MUSH.H_ROOM - MUSH.PLAT_TOP) / MUSH.TURNS;   // per full turn, from the platform to the floor
 MUSH.STEP = MUSH.RISE / MUSH.TREADS;
@@ -37,212 +41,625 @@ MUSH.TOP_ANG = MUSH.A0 - MUSH.TURNS * Math.PI * 2;
  * the gap in the rail actually were. The floor is flat over that stretch,
  * so a negative count costs nothing and the treads and the walk line up. */
 MUSH.TURN_MIN = (MUSH.A0 - MUSH.DOOR_ANG - 0.4) / (Math.PI * 2);
-MUSH.DISH_Y0 = MUSH.H_ROOM - 2.1;                 // where the column ends and the dish begins
+MUSH.DISH_Y0 = MUSH.H_ROOM - 2.1;
+MUSH.GAP = 0.85;                                   // half the opening in the well rail, where the stair arrives: wide enough to see from across the room                 // where the column ends and the dish begins
 
 // ------------------------------------------------------------ textures
-const retro = (c) => {
+/* THE PAVILION IS DRAWN LIKE A PHOTOGRAPH NOW, NOT LIKE A GAME FROM 1998.
+ * The owner's word on the first build was that it looked like AI slop, and
+ * the reasons were all in here: every map was 256-512 px, NEAREST-filtered and
+ * crushed to fourteen levels, and every material was flat-shaded and lit
+ * almost entirely off its own map — so a curved concrete drum rendered as a
+ * set of grey facets at one brightness and a sofa as an orange shape. What a
+ * real surface has, and none of these did, is RELIEF that the light moves
+ * across. Every map below is drawn with a HEIGHT beside it, and the height is
+ * differentiated into a normal map (`normalFrom`), so a board seam is a seam,
+ * a tie hole is a hole, weave is weave; the maps are 1024 where a surface is
+ * big, linear-filtered and anisotropic, and nothing is quantised. The game's
+ * own retro downscale still happens — at the end, on the finished frame,
+ * which is where it belongs. */
+const smooth = (c, rep) => {
   const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapNearestFilter;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = 8;
   t.colorSpace = THREE.SRGBColorSpace;
+  if (rep) t.repeat.set(rep[0], rep[1]);
   return t;
 };
 const lcg = (seed) => { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; };
-/* CONTRAST IS WHAT MAKES CONCRETE READ AS CONCRETE. The first map was a
- * narrow band of grey with a few lines on it, so under one directional
- * light at night the whole building came out as one flat tone and the
- * shapes — the ribs, the flare of the dish, the sill — did all the work on
- * their own. Board-formed concrete is not a colour, it is a RECORD of how
- * it was poured: every board leaves a dark seam with a pale lip under it
- * where the lift bled, the ties leave holes in a grid and the holes leave
- * rust running out of them, damp runs down from the sill and dries in
- * pale efflorescence, and the aggregate shows through where the face has
- * spalled. All of that is drawn, at 512 so the seams survive the retro
- * downscale, and the value range is nearly twice what it was. */
-function concreteTexture(seed, tags) {
-  const S = 512;
-  const c = document.createElement('canvas'); c.width = c.height = S;
-  const g = c.getContext('2d');
-  const rnd = lcg(seed);
-  g.fillStyle = '#7c828c'; g.fillRect(0, 0, S, S);
-  // broad blotching: the pour is never one tone
-  for (let i = 0; i < 90; i++) {
-    const x = rnd() * S, y = rnd() * S, r = 30 + rnd() * 120, v = rnd() < 0.5 ? 1 : -1;
-    const gr = g.createRadialGradient(x, y, 0, x, y, r);
-    gr.addColorStop(0, v > 0 ? 'rgba(176,182,192,0.30)' : 'rgba(52,57,66,0.28)');
-    gr.addColorStop(1, 'rgba(0,0,0,0)');
-    g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
+// a canvas of heights (0 = deep, 255 = proud) into a tangent-space normal map
+function normalFrom(hc, strength, rep) {
+  const S = hc.width, g = hc.getContext('2d'), src = g.getImageData(0, 0, S, S).data;
+  const out = document.createElement('canvas'); out.width = out.height = S;
+  const og = out.getContext('2d'), img = og.createImageData(S, S), d = img.data;
+  const h = (x, y) => src[(((y + S) % S) * S + ((x + S) % S)) * 4] / 255;
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const dx = (h(x + 1, y) - h(x - 1, y)) * strength, dy = (h(x, y + 1) - h(x, y - 1)) * strength;
+    const l = Math.hypot(dx, dy, 1), i = (y * S + x) * 4;
+    d[i] = (-dx / l * 0.5 + 0.5) * 255; d[i + 1] = (dy / l * 0.5 + 0.5) * 255; d[i + 2] = (1 / l * 0.5 + 0.5) * 255; d[i + 3] = 255;
   }
-  // aggregate: light and dark grit, the thing that stops it looking painted
-  for (let i = 0; i < 5200; i++) {
-    const v = rnd(); const sz = 1 + rnd() * 2.6;
-    g.fillStyle = v < 0.5 ? `rgba(${36 + rnd() * 26},${39 + rnd() * 26},${46 + rnd() * 26},${0.16 + rnd() * 0.3})`
-                          : `rgba(${188 + rnd() * 55},${192 + rnd() * 55},${200 + rnd() * 50},${0.13 + rnd() * 0.26})`;
-    g.fillRect(rnd() * S, rnd() * S, sz, sz);
+  og.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(out);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = 8;
+  if (rep) t.repeat.set(rep[0], rep[1]);
+  return t;
+}
+const pair = (S) => {
+  const c = document.createElement('canvas'), h = document.createElement('canvas');
+  c.width = c.height = h.width = h.height = S;
+  const hg = h.getContext('2d'); hg.fillStyle = '#808080'; hg.fillRect(0, 0, S, S);
+  return [c, c.getContext('2d'), h, hg];
+};
+const blob = (g, x, y, r, col) => { const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, col); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2); };
+/* BOARD-FORMED CONCRETE, SIXTY YEARS ON THE SEA. What makes it read is not
+ * the seams (the first build shouted them, and from the beach the house read
+ * as a cage) but the WEATHERING: the pour is never one tone, rain has run
+ * down it in long soft streaks, salt has dried pale where the water stopped,
+ * the lower courses are darker with the damp they wick up, rust has bled a
+ * little out of each tie hole, and the face is pitted all over. The board
+ * seams are there, faint, and they are in the HEIGHT much more than the
+ * colour — which is how a seam in real concrete looks: you see it where the
+ * light rakes across it. */
+function concreteSet(seed, tags) {
+  const S = 1024, [c, g, h, hg] = pair(S), rnd = lcg(seed);
+  g.fillStyle = '#80848a'; g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 140; i++) {                          // the pour: broad, soft, never one tone
+    const x = rnd() * S, y = rnd() * S, r = 60 + rnd() * 260, v = rnd();
+    blob(g, x, y, r, v < 0.5 ? `rgba(150,154,158,${0.10 + rnd() * 0.16})` : `rgba(78,80,84,${0.08 + rnd() * 0.16})`);
   }
-  // BOARD FORM: a dark seam, and the pale lip of the lift bleeding under it
-  for (let y = 0; y < S; y += 62) {
-    const j = rnd() * 3;
-    g.strokeStyle = 'rgba(26,29,35,0.62)'; g.lineWidth = 2.4;
-    g.beginPath(); g.moveTo(0, y + j); g.lineTo(S, y + j + (rnd() - 0.5) * 3); g.stroke();
-    g.strokeStyle = 'rgba(206,212,222,0.34)'; g.lineWidth = 3.2;
-    g.beginPath(); g.moveTo(0, y + j + 3.4); g.lineTo(S, y + j + 3.4 + (rnd() - 0.5) * 3); g.stroke();
-    // and the odd vertical butt joint between two boards
-    if (rnd() < 0.7) { const x = rnd() * S; g.strokeStyle = 'rgba(30,34,40,0.4)'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(x, y + j); g.lineTo(x + (rnd() - 0.5) * 4, y + j + 62); g.stroke(); }
+  for (let i = 0; i < 90; i++) {                           // a warmer cast here and there: iron in the sand it was mixed with
+    blob(g, rnd() * S, rnd() * S, 40 + rnd() * 160, `rgba(128,112,92,${0.05 + rnd() * 0.07})`);
   }
-  // damp running down, and pale salt drying where it stopped
-  for (let i = 0; i < 40; i++) {
-    const x = rnd() * S, len = 90 + rnd() * 320, w = 2 + rnd() * 9, y0 = rnd() * 90;
+  for (let i = 0; i < 26000; i++) {                        // fine aggregate and pits, colour and height together
+    const x = rnd() * S, y = rnd() * S, sz = 0.6 + rnd() * 1.8, v = rnd();
+    g.fillStyle = v < 0.55 ? `rgba(46,48,52,${0.12 + rnd() * 0.30})` : `rgba(196,198,200,${0.08 + rnd() * 0.20})`;
+    g.fillRect(x, y, sz, sz);
+    hg.fillStyle = v < 0.55 ? `rgba(40,40,40,${0.25 + rnd() * 0.4})` : `rgba(200,200,200,${0.15 + rnd() * 0.25})`;
+    hg.fillRect(x, y, sz, sz);
+  }
+  const BOARD = 128;
+  for (let y = 0; y < S; y += BOARD) {                     // board seams: faint in colour, clear in relief
+    const j = rnd() * 4;
+    g.strokeStyle = 'rgba(40,42,46,0.22)'; g.lineWidth = 2.2;
+    g.beginPath(); g.moveTo(0, y + j); for (let x = 0; x <= S; x += 32) g.lineTo(x, y + j + (rnd() - 0.5) * 2.2); g.stroke();
+    hg.strokeStyle = 'rgba(20,20,20,0.9)'; hg.lineWidth = 3;
+    hg.beginPath(); hg.moveTo(0, y + j); for (let x = 0; x <= S; x += 32) hg.lineTo(x, y + j + (rnd() - 0.5) * 2.2); hg.stroke();
+    // the grain of the board itself, printed into the face: long faint streaks along each board
+    for (let k = 0; k < 14; k++) {
+      const yy = y + 6 + rnd() * (BOARD - 12), x0 = rnd() * S, len = 120 + rnd() * 500;
+      hg.strokeStyle = `rgba(${rnd() < 0.5 ? 100 : 160},${rnd() < 0.5 ? 100 : 160},128,0.28)`; hg.lineWidth = 1 + rnd() * 2;
+      hg.beginPath(); hg.moveTo(x0, yy); hg.lineTo(x0 + len, yy + (rnd() - 0.5) * 3); hg.stroke();
+    }
+    if (rnd() < 0.65) { const x = rnd() * S; hg.strokeStyle = 'rgba(40,40,40,0.6)'; hg.lineWidth = 2; hg.beginPath(); hg.moveTo(x, y + j); hg.lineTo(x + (rnd() - 0.5) * 3, y + j + BOARD); hg.stroke(); }
+  }
+  for (let y = 88; y < S; y += 256) for (let x = 60; x < S; x += 172) {   // tie holes, and the rust bled out of each
+    const hx = x + rnd() * 10, hy = y + rnd() * 10;
+    const gr = g.createLinearGradient(0, hy, 0, hy + 60 + rnd() * 90);
+    gr.addColorStop(0, `rgba(118,70,38,${0.20 + rnd() * 0.14})`); gr.addColorStop(1, 'rgba(118,70,38,0)');
+    g.fillStyle = gr; g.fillRect(hx - 2.5, hy, 5, 150);
+    g.fillStyle = 'rgba(30,31,34,0.85)'; g.beginPath(); g.arc(hx, hy, 4.2, 0, 7); g.fill();
+    hg.fillStyle = 'rgba(0,0,0,0.95)'; hg.beginPath(); hg.arc(hx, hy, 5, 0, 7); hg.fill();
+  }
+  for (let i = 0; i < 70; i++) {                           // rain: long soft streaks down the face
+    const x = rnd() * S, y0 = rnd() * S * 0.6, len = 200 + rnd() * 600, w = 3 + rnd() * 16;
     const gr = g.createLinearGradient(0, y0, 0, y0 + len);
-    gr.addColorStop(0, 'rgba(24,27,33,0.46)'); gr.addColorStop(0.72, 'rgba(28,32,38,0.16)'); gr.addColorStop(1, 'rgba(28,32,38,0)');
+    const dk = rnd() < 0.7;
+    gr.addColorStop(0, dk ? `rgba(40,42,44,${0.16 + rnd() * 0.18})` : `rgba(210,212,210,${0.10 + rnd() * 0.12})`);
+    gr.addColorStop(1, 'rgba(40,42,44,0)');
     g.fillStyle = gr; g.fillRect(x, y0, w, len);
-    if (rnd() < 0.5) { const gr2 = g.createLinearGradient(0, y0 + len * 0.5, 0, y0 + len); gr2.addColorStop(0, 'rgba(216,222,230,0)'); gr2.addColorStop(1, 'rgba(216,222,230,0.34)'); g.fillStyle = gr2; g.fillRect(x - 2, y0 + len * 0.5, w + 4, len * 0.5); }
   }
-  // the tie holes, and the rust that has run out of each one
-  for (let y = 44; y < S; y += 124) for (let x = 30; x < S; x += 86) {
-    const hx = x + rnd() * 8, hy = y + rnd() * 8;
-    const gr = g.createLinearGradient(0, hy, 0, hy + 40 + rnd() * 40);
-    gr.addColorStop(0, 'rgba(120,72,38,0.42)'); gr.addColorStop(1, 'rgba(120,72,38,0)');
-    g.fillStyle = gr; g.fillRect(hx - 3, hy, 6, 80);
-    g.fillStyle = 'rgba(206,212,220,0.5)'; g.beginPath(); g.arc(hx, hy - 1.5, 4.6, 0, 7); g.fill();
-    g.fillStyle = 'rgba(18,20,24,0.9)'; g.beginPath(); g.arc(hx, hy, 3.6, 0, 7); g.fill();
+  const damp = g.createLinearGradient(0, S * 0.55, 0, S);   // the damp the lower courses wick up
+  damp.addColorStop(0, 'rgba(38,42,46,0)'); damp.addColorStop(1, 'rgba(38,42,46,0.28)');
+  g.fillStyle = damp; g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 18; i++) {                           // spalls: the face gone, the aggregate showing, in the height too
+    const x = rnd() * S, y = rnd() * S, r = 10 + rnd() * 34;
+    g.fillStyle = `rgba(100,96,90,${0.35 + rnd() * 0.25})`; hg.fillStyle = 'rgba(30,30,30,0.7)';
+    for (const G of [g, hg]) {
+      G.beginPath();
+      for (let k = 0; k <= 11; k++) { const a = k / 11 * Math.PI * 2, rr = r * (0.55 + rnd() * 0.6); if (k) G.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); else G.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+      G.fill();
+    }
   }
-  // spalled patches: the face off, the aggregate showing
-  for (let i = 0; i < 10; i++) {
-    const x = rnd() * S, y = rnd() * S, r = 8 + rnd() * 26;
-    g.fillStyle = 'rgba(96,90,84,0.5)'; g.beginPath();
-    for (let k = 0; k <= 9; k++) { const a = k / 9 * Math.PI * 2, rr = r * (0.6 + rnd() * 0.6); if (k) g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); else g.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
-    g.fill();
-    g.strokeStyle = 'rgba(210,214,222,0.3)'; g.lineWidth = 1.4; g.stroke();
-  }
-  if (tags) {
-    const cols = ['#c8452f', '#2f56c8', '#d8bb1e', '#141414', '#dcdcdc'];
-    for (let k = 0; k < 5; k++) {
-      g.strokeStyle = cols[k % cols.length]; g.globalAlpha = 0.42 + rnd() * 0.2; g.lineWidth = 7 + rnd() * 10; g.lineCap = 'round'; g.lineJoin = 'round';
-      g.beginPath(); let x = 40 + rnd() * 300, y = 90 + rnd() * 300; g.moveTo(x, y);
-      for (let i = 0; i < 6; i++) { x += (rnd() - 0.35) * 110; y += (rnd() - 0.5) * 90; g.lineTo(x, y); }
+  if (tags) {                                              // old paint, sun-killed: faded and chalky, not neon
+    const cols = ['rgba(150,72,58,', 'rgba(64,84,140,', 'rgba(40,40,42,', 'rgba(190,186,170,'];
+    for (let k = 0; k < 4; k++) {
+      g.strokeStyle = cols[k % cols.length] + (0.20 + rnd() * 0.12) + ')'; g.lineWidth = 9 + rnd() * 12; g.lineCap = 'round'; g.lineJoin = 'round';
+      g.beginPath(); let x = 80 + rnd() * 600, y = 260 + rnd() * 500; g.moveTo(x, y);
+      for (let i = 0; i < 7; i++) { x += (rnd() - 0.35) * 150; y += (rnd() - 0.5) * 110; g.quadraticCurveTo(x - 30, y + 40, x, y); }
       g.stroke();
     }
-    g.globalAlpha = 1;
   }
-  const img = g.getImageData(0, 0, S, S), d = img.data;
-  // and pushed apart around the mid grey before the retro quantise, because
-  // a map that carries no contrast cannot be given any by a material
-  for (let i = 0; i < d.length; i += 4) for (let k = 0; k < 3; k++) {
-    const v = 128 + (d[i + k] - 128) * 1.34;
-    d[i + k] = Math.round(Math.max(0, Math.min(255, v)) / 14) * 14;
-  }
-  g.putImageData(img, 0, 0);
-  return retro(c);
+  return { map: smooth(c), normal: normalFrom(h, 3.2) };
 }
-/* ---- THE SEVENTIES, IN A ROOM ON THE BEACH ------------------------------
- * The owner asked for the top floor furnished in seventies modern and sent
- * the references: burnt orange and mustard, teak, chrome, a globe chair, a
- * wave-pattern shag rug, bullseye paper. Everything below is drawn to
- * those. It has to survive two things this game does to a picture — the
- * retro downscale, which eats any pattern finer than a hand's breadth, and
- * a quarter moon, which eats any colour that is not carrying its own
- * light — so the patterns are BIG and the maps are lit off their own
- * emissive, the way every other night-lit thing here is. */
-function rugTexture(seed) {
-  const S = 256, c = document.createElement('canvas'); c.width = c.height = S;
-  const g = c.getContext('2d'); const rnd = lcg(seed);
-  /* AND A RUG THAT HAS BEEN IN THAT WINDOW FOR FORTY YEARS IS NOT THE
-   * COLOUR IT WAS SOLD IN. The bands ran to a pure saturated orange and a
-   * near-yellow, which at this room's own emissive is the brightest thing
-   * in it and reads as plastic sheeting rather than wool — the last of the
-   * "slop" after the floor. Same wave, same order, sun-bleached: every band
-   * pulled a third of the way to the dust it has been collecting. */
-  g.fillStyle = '#5e3020'; g.fillRect(0, 0, S, S);
-  // the wave: concentric bands off a centre, in the reference's own order
-  const cols = ['#7a3c24', '#a05730', '#b8813f', '#c3a45a', '#bdb6a0', '#8e4c2a'];
-  const cx = S / 2, cy = S / 2;
-  for (let r = S * 0.72; r > 4; r -= S * 0.030) {
-    g.strokeStyle = cols[(Math.round(r / (S * 0.030))) % cols.length];
-    g.lineWidth = S * 0.034; g.beginPath();
-    for (let k = 0; k <= 48; k++) {
-      const a = k / 48 * Math.PI * 2, rr = r * (1 + 0.10 * Math.sin(a * 3 + r * 0.05));
-      const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr;
-      if (k) g.lineTo(x, y); else g.moveTo(x, y);
-    }
-    g.stroke();
+/* FABRIC: a woven ground at the size a weave actually is, slubbed and worn,
+ * the colour of forty years in a sunny window. The weave is almost all in the
+ * normal map — which is the thing that stops a cushion looking like plastic. */
+function fabricSet(seed, base, dark, light) {
+  const S = 512, [c, g, h, hg] = pair(S), rnd = lcg(seed);
+  g.fillStyle = base; g.fillRect(0, 0, S, S);
+  const P = 6;
+  for (let y = 0; y < S; y += P) for (let x = 0; x < S; x += P) {
+    const o = ((x / P + y / P) & 1);
+    hg.fillStyle = o ? 'rgba(200,200,200,1)' : 'rgba(70,70,70,1)';
+    hg.fillRect(x + (o ? 0 : 1), y + (o ? 1 : 0), o ? P : P - 2, o ? P - 2 : P);
+    if (rnd() < 0.25) { g.fillStyle = rnd() < 0.5 ? dark : light; g.globalAlpha = 0.10 + rnd() * 0.10; g.fillRect(x, y, P, P); g.globalAlpha = 1; }
   }
-  // shag: the pile is not smooth, and forty years of dust is not either
-  for (let i = 0; i < 5000; i++) { const v = rnd(); g.fillStyle = v < 0.5 ? `rgba(20,10,6,${0.05 + rnd() * 0.16})` : `rgba(240,224,190,${0.03 + rnd() * 0.11})`; g.fillRect(rnd() * S, rnd() * S, 1 + rnd() * 3, 2 + rnd() * 5); }
-  const dust = g.createRadialGradient(cx, cy, S * 0.1, cx, cy, S * 0.75);
-  dust.addColorStop(0, 'rgba(60,54,44,0)'); dust.addColorStop(1, 'rgba(48,44,38,0.42)');
-  g.fillStyle = dust; g.fillRect(0, 0, S, S);
-  return retro(c);
+  for (let i = 0; i < 90; i++) { const y = rnd() * S; g.strokeStyle = rnd() < 0.5 ? dark : light; g.globalAlpha = 0.10 + rnd() * 0.12; g.lineWidth = 1 + rnd() * 2; g.beginPath(); g.moveTo(0, y); g.lineTo(S, y + (rnd() - 0.5) * 4); g.stroke(); }
+  g.globalAlpha = 1;
+  for (let i = 0; i < 40; i++) blob(g, rnd() * S, rnd() * S, 30 + rnd() * 110, `rgba(120,108,90,${0.06 + rnd() * 0.08})`);   // dust, and where it was sat on
+  return { map: smooth(c), normal: normalFrom(h, 1.6) };
 }
-function woodTexture(seed) {
-  const S = 256, c = document.createElement('canvas'); c.width = c.height = S;
-  const g = c.getContext('2d'); const rnd = lcg(seed);
-  g.fillStyle = '#7a4a24'; g.fillRect(0, 0, S, S);
-  for (let i = 0; i < 130; i++) {
-    const y = rnd() * S, w = 0.6 + rnd() * 3.4, dark = rnd() < 0.6;
-    g.strokeStyle = dark ? `rgba(48,26,10,${0.16 + rnd() * 0.4})` : `rgba(190,140,86,${0.10 + rnd() * 0.3})`;
-    g.lineWidth = w; g.beginPath(); g.moveTo(0, y);
-    for (let x = 0; x <= S; x += 16) g.lineTo(x, y + Math.sin(x * 0.045 + i) * 3.4 + (rnd() - 0.5) * 2);
-    g.stroke();
+function woodSet(seed, base) {
+  const S = 1024, [c, g, h, hg] = pair(S), rnd = lcg(seed);
+  g.fillStyle = base; g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 260; i++) {                          // grain: long, wavering, in colour and in height
+    const y = rnd() * S, w = 0.6 + rnd() * 3.2, dark = rnd() < 0.62, ph = rnd() * 10, amp = 2 + rnd() * 7;
+    g.strokeStyle = dark ? `rgba(40,20,8,${0.10 + rnd() * 0.26})` : `rgba(220,160,100,${0.06 + rnd() * 0.16})`;
+    hg.strokeStyle = dark ? 'rgba(60,60,60,0.35)' : 'rgba(180,180,180,0.25)';
+    for (const G of [g, hg]) { G.lineWidth = w; G.beginPath(); G.moveTo(0, y); for (let x = 0; x <= S; x += 24) G.lineTo(x, y + Math.sin(x * 0.006 + ph) * amp + Math.sin(x * 0.031 + ph * 2) * 1.2); G.stroke(); }
   }
-  for (let i = 0; i < 3; i++) { const x = rnd() * S, y = rnd() * S; for (let k = 0; k < 6; k++) { g.strokeStyle = `rgba(44,24,10,${0.34 - k * 0.05})`; g.lineWidth = 1.6; g.beginPath(); g.ellipse(x, y, 3 + k * 3.4, 2 + k * 2.1, 0.4, 0, 7); g.stroke(); } }
-  const img = g.getImageData(0, 0, S, S), d = img.data;
-  for (let i = 0; i < d.length; i += 4) for (let k = 0; k < 3; k++) d[i + k] = Math.round(d[i + k] / 16) * 16;
-  g.putImageData(img, 0, 0);
-  return retro(c);
+  for (let i = 0; i < 5; i++) { const x = rnd() * S, y = rnd() * S; for (let k = 0; k < 9; k++) { g.strokeStyle = `rgba(44,22,8,${0.26 - k * 0.025})`; g.lineWidth = 1.6; g.beginPath(); g.ellipse(x, y, 5 + k * 6, 3 + k * 3.6, 0.1, 0, 7); g.stroke(); } }
+  for (let i = 0; i < 60; i++) blob(g, rnd() * S, rnd() * S, 40 + rnd() * 160, `rgba(170,150,120,${0.04 + rnd() * 0.07})`);    // sun and dust on the finish
+  return { map: smooth(c), normal: normalFrom(h, 1.2) };
 }
-/* AND THE FLOOR OF A ROOM IS NOT THE SLAB IT WAS POURED ON. The room read
- * as a black ring round a lit rug, because the only thing under the
- * furniture was the same structural concrete as the outside of the
- * building. Terrazzo — the chips-in-cement floor of every civic room of
- * the period — is a pale ground with big aggregate in it, which is exactly
- * what a dim room needs: something that catches what light there is and
- * gives the eye a surface. */
-function terrazzoTexture(seed) {
-  const S = 256, c = document.createElement('canvas'); c.width = c.height = S;
-  const g = c.getContext('2d'); const rnd = lcg(seed);
-  /* REAL TERRAZZO IS CHIPS IN A MATRIX, NOT CONFETTI. The palette ran from
-   * near-white to near-black on a mid-grey ground and the contrast was then
-   * pushed a further fifth and quantised to fourteen levels — so at the
-   * retro downscale the floor of the one room you stand still in was
-   * salt-and-pepper noise, the loudest thing in the frame and the first
-   * reason it read as slop. A chip is a stone a shade off the cement it is
-   * set in; the range is what makes it read as a floor. */
-  g.fillStyle = '#8f8c82'; g.fillRect(0, 0, S, S);
-  const chips = ['#b4afa0', '#6e6a60', '#a87a54', '#7c8272', '#bdb49c', '#5a5750'];
-  for (let i = 0; i < 900; i++) {
-    const x = rnd() * S, y = rnd() * S, r = 2 + rnd() * 7;
-    g.fillStyle = chips[(rnd() * chips.length) | 0]; g.globalAlpha = 0.55 + rnd() * 0.45;
+function terrazzoSet(seed) {
+  const S = 1024, [c, g, h, hg] = pair(S), rnd = lcg(seed);
+  g.fillStyle = '#9a968c'; g.fillRect(0, 0, S, S);
+  const chips = ['#b8b2a2', '#77736a', '#a6805c', '#858b7c', '#c4bca6', '#63605a', '#d0cabb'];
+  for (let i = 0; i < 5200; i++) {
+    const x = rnd() * S, y = rnd() * S, r = 2 + rnd() * 9;
+    g.fillStyle = chips[(rnd() * chips.length) | 0]; g.globalAlpha = 0.6 + rnd() * 0.4;
     g.beginPath();
-    for (let k = 0; k <= 5; k++) { const a = k / 5 * Math.PI * 2, rr = r * (0.55 + rnd() * 0.7); if (k) g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); else g.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+    for (let k = 0; k <= 6; k++) { const a = k / 6 * Math.PI * 2, rr = r * (0.55 + rnd() * 0.65); if (k) g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); else g.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
     g.fill();
   }
   g.globalAlpha = 1;
-  for (let i = 0; i < 60; i++) {                    // dust, and the scuffs of a room that was used
-    const x = rnd() * S, y = rnd() * S, r = 14 + rnd() * 50;
-    const gr = g.createRadialGradient(x, y, 0, x, y, r);
-    gr.addColorStop(0, `rgba(40,38,34,${0.10 + rnd() * 0.16})`); gr.addColorStop(1, 'rgba(40,38,34,0)');
-    g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
+  // brass divider strips, in a grid a metre and a half across, and the dirt that collects along them
+  for (let k = 0; k <= 2; k++) for (const vert of [0, 1]) {
+    const p = k * S / 2 + 1;
+    g.fillStyle = 'rgba(150,120,70,0.8)'; hg.fillStyle = 'rgba(200,200,200,1)';
+    if (vert) { g.fillRect(p, 0, 3, S); hg.fillRect(p, 0, 3, S); } else { g.fillRect(0, p, S, 3); hg.fillRect(0, p, S, 3); }
   }
-  const img = g.getImageData(0, 0, S, S), d = img.data;
-  for (let i = 0; i < d.length; i += 4) for (let k = 0; k < 3; k++) d[i + k] = Math.round(Math.max(0, Math.min(255, 128 + (d[i + k] - 128) * 0.80)) / 10) * 10;
-  g.putImageData(img, 0, 0);
-  return retro(c);
+  for (let i = 0; i < 26000; i++) { hg.fillStyle = `rgba(${rnd() < 0.5 ? 60 : 190},${0},${0},0.3)`; hg.fillRect(rnd() * S, rnd() * S, 1, 1); }
+  for (let i = 0; i < 120; i++) blob(g, rnd() * S, rnd() * S, 30 + rnd() * 140, `rgba(56,52,46,${0.06 + rnd() * 0.14})`);   // dust and scuffing
+  for (let i = 0; i < 30; i++) {                           // hairline cracks, the building moving
+    let x = rnd() * S, y = rnd() * S; g.strokeStyle = 'rgba(40,38,34,0.35)'; hg.strokeStyle = 'rgba(10,10,10,0.9)'; g.lineWidth = hg.lineWidth = 1;
+    for (const G of [g, hg]) G.beginPath(), G.moveTo(x, y);
+    for (let s = 0; s < 8; s++) { x += (rnd() - 0.5) * 50; y += (rnd() - 0.5) * 50; g.lineTo(x, y); hg.lineTo(x, y); }
+    g.stroke(); hg.stroke();
+  }
+  return { map: smooth(c), normal: normalFrom(h, 1.4) };
+}
+function rugSet(seed) {
+  const S = 1024, [c, g, h, hg] = pair(S), rnd = lcg(seed);
+  g.fillStyle = '#6a4232'; g.fillRect(0, 0, S, S);
+  const cols = ['#6e4c3c', '#836046', '#8d7552', '#958a6e', '#8f8a7e', '#6c5140'];
+  const cx = S / 2, cy = S / 2;
+  for (let r = S * 0.72; r > 8; r -= S * 0.034) {
+    g.strokeStyle = cols[(Math.round(r / (S * 0.034))) % cols.length]; g.lineWidth = S * 0.036; g.beginPath();
+    for (let k = 0; k <= 96; k++) { const a = k / 96 * Math.PI * 2, rr = r * (1 + 0.09 * Math.sin(a * 3 + r * 0.02)); const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr; if (k) g.lineTo(x, y); else g.moveTo(x, y); }
+    g.stroke();
+  }
+  for (let i = 0; i < 60000; i++) {                        // the pile: tufts, in colour and height
+    const x = rnd() * S, y = rnd() * S, v = rnd();
+    g.fillStyle = v < 0.5 ? `rgba(20,12,8,${0.05 + rnd() * 0.14})` : `rgba(230,210,180,${0.03 + rnd() * 0.09})`;
+    g.fillRect(x, y, 1.5, 2.5);
+    hg.fillStyle = `rgba(${v < 0.5 ? 60 : 210},0,0,0.5)`; hg.fillRect(x, y, 2, 2);
+  }
+  const dust = g.createRadialGradient(cx, cy, S * 0.15, cx, cy, S * 0.72);
+  dust.addColorStop(0, 'rgba(60,54,44,0)'); dust.addColorStop(1, 'rgba(52,48,40,0.40)');
+  g.fillStyle = dust; g.fillRect(0, 0, S, S);
+  return { map: smooth(c), normal: normalFrom(h, 2.2) };
 }
 function sleeveTexture(seed) {
-  const S = 128, c = document.createElement('canvas'); c.width = c.height = S;
+  const S = 256, c = document.createElement('canvas'); c.width = c.height = S;
   const g = c.getContext('2d'); const rnd = lcg(seed);
-  const bg = ['#1d2540', '#4a1620', '#25401d', '#3a2a10', '#40203c'][seed % 5];
+  const bg = ['#26304a', '#5a2226', '#2e4a26', '#4a3616', '#4a2a46'][seed % 5];
   g.fillStyle = bg; g.fillRect(0, 0, S, S);
-  const fg = ['#e0a02c', '#d8d0bc', '#c2461e', '#5fa8c8'][seed % 4];
+  const fg = ['#d8a040', '#d8d0bc', '#c2562a', '#6aa8c0'][seed % 4];
   g.fillStyle = fg;
   const kind = seed % 3;
   if (kind === 0) { for (let k = 0; k < 5; k++) { g.globalAlpha = 0.85 - k * 0.12; g.beginPath(); g.arc(S / 2, S / 2, S * (0.42 - k * 0.075), 0, 7); g.fill(); } }
-  else if (kind === 1) { for (let k = 0; k < 6; k++) { g.globalAlpha = 0.8; g.fillRect(12, 14 + k * 17, S - 24, 8 + (k % 2) * 4); } }
-  else { g.globalAlpha = 0.85; g.beginPath(); g.moveTo(S / 2, 16); g.lineTo(S - 18, S - 20); g.lineTo(18, S - 20); g.closePath(); g.fill(); }
+  else if (kind === 1) { for (let k = 0; k < 6; k++) { g.globalAlpha = 0.8; g.fillRect(24, 28 + k * 34, S - 48, 16 + (k % 2) * 8); } }
+  else { g.globalAlpha = 0.85; g.beginPath(); g.moveTo(S / 2, 32); g.lineTo(S - 36, S - 40); g.lineTo(36, S - 40); g.closePath(); g.fill(); }
   g.globalAlpha = 1;
-  for (let i = 0; i < 400; i++) { g.fillStyle = `rgba(220,210,190,${0.03 + rnd() * 0.09})`; g.fillRect(rnd() * S, rnd() * S, 1 + rnd() * 3, 1 + rnd() * 3); }
-  g.strokeStyle = 'rgba(0,0,0,0.45)'; g.lineWidth = 5; g.strokeRect(2.5, 2.5, S - 5, S - 5);
-  return retro(c);
+  for (let i = 0; i < 1600; i++) { g.fillStyle = `rgba(220,210,190,${0.03 + rnd() * 0.09})`; g.fillRect(rnd() * S, rnd() * S, 1 + rnd() * 3, 1 + rnd() * 3); }
+  g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 6; g.strokeRect(3, 3, S - 6, S - 6);
+  return smooth(c);
+}
+/* A BOX WITH ROUNDED EDGES. Nothing made has a knife-edge corner, and the
+ * light running round a radius is most of what makes furniture read as a
+ * made thing rather than a block: a rounded rectangle in plan, extruded, with
+ * the extrusion's own bevel doing the top and bottom edges. Centred. */
+function roundBox(w, h, d, r, seg = 3) {
+  r = Math.max(0.002, Math.min(r, w / 2 - 0.004, h / 2 - 0.004, d / 2 - 0.004));
+  const x = w / 2 - r, z = d / 2 - r, q = Math.max(0.001, Math.min(r * 0.8, x, z)), s = new THREE.Shape();
+  s.moveTo(-x + q, -z); s.lineTo(x - q, -z); s.absarc(x - q, -z + q, q, -Math.PI / 2, 0, false);
+  s.lineTo(x, z - q); s.absarc(x - q, z - q, q, 0, Math.PI / 2, false);
+  s.lineTo(-x + q, z); s.absarc(-x + q, z - q, q, Math.PI / 2, Math.PI, false);
+  s.lineTo(-x, -z + q); s.absarc(-x + q, -z + q, q, Math.PI, Math.PI * 1.5, false);
+  const geo = new THREE.ExtrudeGeometry(s, { depth: Math.max(0.001, h - 2 * r), bevelEnabled: true, bevelThickness: r, bevelSize: r, bevelSegments: seg, curveSegments: 5 });
+  geo.rotateX(-Math.PI / 2); geo.translate(0, -(h - 2 * r) / 2, 0);
+  return smoothNormals(geo);
+}
+/* SMOOTH NORMALS WITHOUT LOSING THE UVs. An extrusion comes out unindexed, so
+ * three's own normals are per face and a rounded edge shows every bevel step;
+ * merging vertices to smooth it would weld across UV seams and lose the map.
+ * Average the face normals of every corner that shares a POSITION instead,
+ * and leave everything else alone. */
+function smoothNormals(geo) {
+  const p = geo.attributes.position, n = p.count, acc = new Map(), fn = new Float32Array(n * 3);
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), e1 = new THREE.Vector3(), e2 = new THREE.Vector3();
+  const key = (i) => `${Math.round(p.getX(i) * 2000)},${Math.round(p.getY(i) * 2000)},${Math.round(p.getZ(i) * 2000)}`;
+  const idx = geo.index ? geo.index.array : null, tri = idx ? idx.length : n;
+  for (let t = 0; t < tri; t += 3) {
+    const i0 = idx ? idx[t] : t, i1 = idx ? idx[t + 1] : t + 1, i2 = idx ? idx[t + 2] : t + 2;
+    a.fromBufferAttribute(p, i0); b.fromBufferAttribute(p, i1); c.fromBufferAttribute(p, i2);
+    e1.subVectors(b, a); e2.subVectors(c, a); e1.cross(e2);            // area-weighted
+    for (const i of [i0, i1, i2]) { const k = key(i); const v = acc.get(k) || [0, 0, 0]; v[0] += e1.x; v[1] += e1.y; v[2] += e1.z; acc.set(k, v); }
+  }
+  for (let i = 0; i < n; i++) { const v = acc.get(key(i)), l = Math.hypot(v[0], v[1], v[2]) || 1; fn[i * 3] = v[0] / l; fn[i * 3 + 1] = v[1] / l; fn[i * 3 + 2] = v[2] / l; }
+  geo.setAttribute('normal', new THREE.BufferAttribute(fn, 3));
+  return geo;
+}
+
+// ------------------------------------------------------------ the room
+/* LEATHER, CRACKED WHERE IT BENDS. Most of what reads as leather is the
+ * crazing in the height and a sheen, not the colour. */
+function leatherSet(seed, base) {
+  const S = 512, [c, g, h, hg] = pair(S), rnd = lcg(seed);
+  g.fillStyle = base; g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 900; i++) {
+    const x = rnd() * S, y = rnd() * S, l = 6 + rnd() * 22, a = rnd() * Math.PI;
+    hg.strokeStyle = 'rgba(40,40,40,0.55)'; hg.lineWidth = 1;
+    hg.beginPath(); hg.moveTo(x, y); hg.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); hg.stroke();
+    if (rnd() < 0.3) { g.strokeStyle = 'rgba(20,10,4,0.25)'; g.lineWidth = 1; g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke(); }
+  }
+  for (let i = 0; i < 50; i++) blob(g, rnd() * S, rnd() * S, 30 + rnd() * 120, `rgba(${rnd() < 0.5 ? '30,16,8' : '190,140,100'},${0.06 + rnd() * 0.10})`);
+  return { map: smooth(c), normal: normalFrom(h, 1.4) };
+}
+function sandSet(seed) {
+  const S = 256, [c, g, h, hg] = pair(S), rnd = lcg(seed);
+  g.fillStyle = '#8a8474'; g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 9000; i++) { const x = rnd() * S, y = rnd() * S, v = rnd(); g.fillStyle = `rgba(${v < 0.5 ? '60,56,48' : '190,184,166'},0.25)`; g.fillRect(x, y, 1, 1); hg.fillStyle = `rgba(${v < 0.5 ? 70 : 190},0,0,0.4)`; hg.fillRect(x, y, 1, 1); }
+  return { map: smooth(c), normal: normalFrom(h, 1.0) };
+}
+// a soft dark blotch with a torn edge, for damp and for dust
+function stainTex(seed) {
+  const S = 256, c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d'), rnd = lcg(seed);
+  for (let i = 0; i < 26; i++) blob(g, S / 2 + (rnd() - 0.5) * S * 0.45, S / 2 + (rnd() - 0.5) * S * 0.45, 20 + rnd() * 60, `rgba(0,0,0,${0.10 + rnd() * 0.14})`);
+  g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = 2; g.beginPath();                 // the tide mark round the edge
+  for (let k = 0; k <= 60; k++) { const a = k / 60 * Math.PI * 2, r = S * (0.32 + 0.08 * Math.sin(a * 5 + seed) + rnd() * 0.02); if (k) g.lineTo(S / 2 + Math.cos(a) * r, S / 2 + Math.sin(a) * r); else g.moveTo(S / 2 + Math.cos(a) * r, S / 2 + Math.sin(a) * r); }
+  g.stroke();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+/* A PROFILE IN (r, y), ROUNDED, WOUND ANTICLOCKWISE, for a lathe. The house
+ * is round and so is everything that follows its walls: a curved sofa is a
+ * lathe of the sofa's own section over the arc it covers — no boxes on a
+ * curve, nothing to interpenetrate. `skew` leans it (r grows with y). */
+function rrProf(r0, r1, y0, y1, rad, skew = 0) {
+  rad = Math.min(rad, (r1 - r0) / 2 - 0.001, (y1 - y0) / 2 - 0.001);
+  const pts = [], seg = 4;
+  for (const [cx, cy, a0, a1] of [[r1 - rad, y0 + rad, -Math.PI / 2, 0], [r1 - rad, y1 - rad, 0, Math.PI / 2],
+    [r0 + rad, y1 - rad, Math.PI / 2, Math.PI], [r0 + rad, y0 + rad, Math.PI, Math.PI * 1.5]]) {
+    for (let k = 0; k <= seg; k++) { const a = a0 + (a1 - a0) * k / seg, y = cy + Math.sin(a) * rad; pts.push(new THREE.Vector2(cx + Math.cos(a) * rad + skew * (y - y0), y)); }
+  }
+  pts.push(pts[0].clone());
+  return pts;
+}
+/* Box mapping in the mesh's OWN frame, at a size in metres: a board's grain
+ * runs along the board, the weave of a cushion is the size of a weave. */
+function boxUV(geo, tile) {
+  const p = geo.attributes.position, n = geo.attributes.normal, uv = new Float32Array(p.count * 2);
+  for (let i = 0; i < p.count; i++) {
+    const ax = Math.abs(n.getX(i)), ay = Math.abs(n.getY(i)), az = Math.abs(n.getZ(i)), x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    let u, v;
+    if (ay >= ax && ay >= az) { u = x; v = z; } else if (ax >= az) { u = z; v = y; } else { u = x; v = y; }
+    uv[i * 2] = u / tile; uv[i * 2 + 1] = v / tile;
+  }
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+}
+
+function buildInterior(K) {
+  const { g, M, mesh, at, rnd, colliders, shardAt, glass } = K;
+  const F = M.H_ROOM, TAU = Math.PI * 2;
+  const room = (x, z, r, h) => colliders.push({ x, z, r, top: F + h, floorY: F - 0.8, mat: 'wood' });
+  const std = (o) => new THREE.MeshStandardMaterial(Object.assign({ roughness: 0.9, metalness: 0, side: THREE.DoubleSide }, o));
+  const setMat = (S, color, rough, lift) => std({ map: S.map, normalMap: S.normal, color, roughness: rough, emissive: lift, emissiveMap: S.map });
+
+  /* THE LIGHT IN THE ROOM IS REAL LIGHT. The first interior carried every
+   * surface on its own emissive at nearly its own colour, so a sofa was an
+   * orange shape at one brightness wherever you stood. The lift here is a
+   * breath — enough that the far side of the room is not a hole — and what
+   * models the furniture is lamps: the moon through the glass, cold, from
+   * the sea side; a hurricane lantern somebody left burning on the table,
+   * warm, low, with a steep falloff so the dark comes back between them.
+   * Every point light is pooled by the game, so the room costs nothing
+   * while you are anywhere else. */
+  const terr = terrazzoSet(21), velv = fabricSet(3, '#7a4230', '#3a1c0f', '#a4684a'), must = fabricSet(5, '#9c7c3c', '#584014', '#c29e58');
+  const leath = leatherSet(8, '#5e3119'), teakS = woodSet(9, '#5e3a22'), teakD = woodSet(13, '#40271a'), rugS = rugSet(17), sandS = sandSet(4);
+  const velvRed = fabricSet(41, '#561019', '#260509', '#7a2331');
+  const floorM = setMat(terr, 0xb4b0a6, 0.46, 0x1e2024);
+  const sofaM = setMat(velv, 0xffffff, 0.96, 0x1e1210);
+  const mustM = setMat(must, 0xffffff, 0.95, 0x1e170c);
+  const leathM = setMat(leath, 0xffffff, 0.55, 0x1a100a);
+  const teakM = setMat(teakS, 0xffffff, 0.58, 0x1a110a);
+  const teakDM = setMat(teakD, 0xffffff, 0.62, 0x140d08);
+  const rugM = setMat(rugS, 0x9c8e84, 1.0, 0x120e0b);
+  const sandM = setMat(sandS, 0xbab4a2, 1.0, 0x222220);
+  const velvRedM = setMat(velvRed, 0xffffff, 1.0, 0x0c0204);
+  const brass = std({ color: 0xa8844a, roughness: 0.36, metalness: 0.25, emissive: 0x140e06 });
+  const steel = std({ color: 0x8e949a, roughness: 0.32, metalness: 0.30, emissive: 0x0a0c0e });
+  const shadeM = std({ color: 0xcfc6ae, roughness: 0.92, emissive: 0x100e0a });
+  const potM = std({ color: 0x7c4430, roughness: 0.94, emissive: 0x0a0504 });
+  const deadM = std({ color: 0x5a4a2c, roughness: 1.0, emissive: 0x070604 });
+  const blackM = std({ color: 0x141414, roughness: 0.55 });
+  const clear = glass.clone(); clear.opacity = 0.14; clear.roughness = 0.04; clear.map = null; clear.emissiveMap = null; clear.color.setHex(0xdfe8ee);
+  const bookCols = [0x6a2a22, 0x2c3a52, 0x4a5a34, 0x8a7a54, 0x3a2a3a, 0x9a8a70, 0x222222];
+  const bookMs = bookCols.map((c) => std({ color: c, roughness: 0.85, emissive: 0x050505 }));
+  const tiled = (m, t) => { m.userData.tile = t; return m; };
+
+  const lathe = (prof, a0, a1, mat, cap = true, n) => {
+    const seg = n || Math.max(6, Math.round((a1 - a0) * 22));
+    const m = tiled(mesh(smoothNormals(new THREE.LatheGeometry(prof, seg, a0, a1 - a0)), mat), 0.5);
+    if (cap) for (const a of [a0, a1]) {
+      const c = tiled(mesh(new THREE.ShapeGeometry(new THREE.Shape(prof)), mat), 0.5);
+      c.rotation.y = a - Math.PI / 2;
+    }
+    return m;
+  };
+  const part = (grp, geo, mat, x, y, z, tile) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); if (tile) m.userData.tile = tile; grp.add(m); return m; };
+
+  // ---- the floor, laid right out to the wall, and mapped in metres
+  {
+    const geo = new THREE.RingGeometry(M.BORE, M.R_ROOM - 0.17, 96, 4).rotateX(-Math.PI / 2);
+    const p = geo.attributes.position, uv = geo.attributes.uv;
+    for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i) / 1.6, p.getZ(i) / 1.6);
+    geo.computeVertexNormals();
+    mesh(geo, floorM, 0, F + 0.006, 0);
+    // a skirting where the floor meets the wall, the one line that says the wall is built on it
+    mesh(new THREE.CylinderGeometry(M.R_ROOM - 0.19, M.R_ROOM - 0.19, 0.09, 96, 1, true), K.inside, 0, F + 0.045, 0);
+  }
+
+  // ---- the lounge: one conversation, sofa, rug, table and two chairs round it
+  const LA = M.DOOR_ANG - 0.48;                          // the middle of it, toward the sea and a little round
+  const [tabX, tabZ] = at(LA, 3.2);
+  {
+    const [rx, rz] = at(LA, 3.5);
+    const rug = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.31, 0.012, 72, 1), rugM);
+    rug.position.set(rx, F + 0.012, rz); rug.rotation.y = 0.4; g.add(rug);
+  }
+  /* THE SOFA, curved to the wall. A lathe of its own section — base, back,
+   * arms, three seat cushions and three back cushions, each its own piece
+   * with a finger's gap — on short tapered teak legs. */
+  const S0 = LA - 0.46, S1 = LA + 0.46, rIn = 4.02, rOut = 5.06;
+  {
+    lathe(rrProf(rIn, rOut, F + 0.12, F + 0.37, 0.05), S0, S1, sofaM);
+    lathe(rrProf(rOut - 0.28, rOut, F + 0.37, F + 0.84, 0.09), S0, S1, sofaM);
+    for (const [a0, a1] of [[S0 - 0.075, S0], [S1, S1 + 0.075]]) lathe(rrProf(rIn + 0.02, rOut, F + 0.12, F + 0.63, 0.08), a0, a1, sofaM);
+    const U = 3, gp = 0.006;
+    for (let i = 0; i < U; i++) {
+      const a0 = S0 + (S1 - S0) * i / U + gp, a1 = S0 + (S1 - S0) * (i + 1) / U - gp;
+      lathe(rrProf(rIn + 0.03, rOut - 0.27, F + 0.36, F + 0.55, 0.07), a0, a1, i === 1 ? sofaM : sofaM);
+      lathe(rrProf(rOut - 0.47, rOut - 0.27, F + 0.52, F + 0.86, 0.08, 0.14), a0, a1, sofaM);
+    }
+    // the cushion in the middle has been sat in for forty years: squashed, and dusty where nobody sat
+    for (const [a, r, y, rx, ry, rz, mm] of [[S0 + 0.12, 4.52, F + 0.66, 0.35, 0, 0.25, mustM], [S1 - 0.18, 4.45, F + 0.62, 0.95, 0, -0.3, mustM]]) {
+      const [x, z] = at(a, r);
+      const pw = mesh(roundBox(0.42, 0.13, 0.40, 0.06), mm, x, y, z);
+      pw.rotation.set(rx, a + 0.4, rz); tiled(pw, 0.4);
+    }
+    for (let i = 0; i < 6; i++) {
+      const a = S0 - 0.02 + (S1 - S0 + 0.04) * (i % 3) / 2, r = i < 3 ? rIn + 0.1 : rOut - 0.1;
+      const [x, z] = at(a, r);
+      mesh(new THREE.CylinderGeometry(0.022, 0.014, 0.12, 8), teakDM, x, F + 0.06, z);
+    }
+    for (let i = 0; i <= 7; i++) room(...at(S0 - 0.05 + (S1 - S0 + 0.1) * i / 7, 4.58), 0.44, 0.9);
+  }
+  /* THE TABLE: a teak drum on a tulip foot, low, with the things on it that
+   * say somebody was here — the lantern still burning, an ashtray, two
+   * paperbacks, a glass with a ring dried in it. */
+  {
+    const top = new THREE.Group(); top.position.set(tabX, F, tabZ); g.add(top);
+    part(top, smoothNormals(new THREE.LatheGeometry(rrProf(0, 0.52, 0.38, 0.425, 0.018), 48)), teakM, 0, 0, 0, 0.6);
+    part(top, smoothNormals(new THREE.LatheGeometry([new THREE.Vector2(0, 0.005), new THREE.Vector2(0.28, 0.005), new THREE.Vector2(0.27, 0.03), new THREE.Vector2(0.1, 0.07), new THREE.Vector2(0.055, 0.2), new THREE.Vector2(0.06, 0.34), new THREE.Vector2(0.14, 0.38), new THREE.Vector2(0, 0.38)], 36)), K.frame, 0, 0, 0);
+    // the lantern: brass fount, glass chimney, a burning wick
+    const lan = new THREE.Group(); lan.position.set(0.12, 0.425, -0.08); top.add(lan);
+    part(lan, smoothNormals(new THREE.LatheGeometry([new THREE.Vector2(0, 0), new THREE.Vector2(0.075, 0), new THREE.Vector2(0.08, 0.02), new THREE.Vector2(0.07, 0.06), new THREE.Vector2(0.04, 0.08), new THREE.Vector2(0.04, 0.095), new THREE.Vector2(0, 0.095)], 24)), brass, 0, 0, 0);
+    part(lan, new THREE.LatheGeometry([new THREE.Vector2(0.035, 0.095), new THREE.Vector2(0.06, 0.13), new THREE.Vector2(0.066, 0.18), new THREE.Vector2(0.05, 0.25), new THREE.Vector2(0.032, 0.30), new THREE.Vector2(0.03, 0.33)], 24), clear, 0, 0, 0);
+    for (const s of [-1, 1]) { const w = part(lan, new THREE.TorusGeometry(0.085, 0.003, 4, 20, Math.PI), brass, 0, 0.2, 0); w.rotation.y = s > 0 ? 0 : Math.PI; }
+    const flame = new THREE.Mesh(new THREE.SphereGeometry(0.012, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffc27a }));
+    flame.scale.set(1, 2.3, 1); flame.position.set(0, 0.125, 0); flame.name = 'lanternFlame'; lan.add(flame);
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.03, 10, 8), new THREE.MeshBasicMaterial({ color: 0xff9a40, transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending }));
+    glow.scale.set(1, 1.7, 1); glow.position.copy(flame.position); glow.name = 'lanternGlow'; lan.add(glow);
+    /* THE LANTERN IS OUT (the owner's word): the room is the moon's. The lamp
+     * stays in the file at nothing, so turning it back on is a number. */
+    const lamp = new THREE.PointLight(0xffa150, 0, 8.5, 1.6);
+    lamp.position.set(0.12, 0.56, -0.08); top.add(lamp);
+    flame.visible = false; glow.visible = false;
+    M.LANTERN = { light: lamp, flame, glow, base: 0 };
+    // an ashtray, the books, a tumbler
+    part(top, new THREE.CylinderGeometry(0.06, 0.055, 0.02, 20), std({ color: 0x46505a, roughness: 0.3, emissive: 0x05060a }), -0.2, 0.435, 0.1);
+    for (const [x, z, ry, y, c] of [[-0.12, -0.2, 0.3, 0.44, 1], [-0.1, -0.2, 0.52, 0.462, 3]]) { const b = part(top, roundBox(0.13, 0.022, 0.19, 0.004), bookMs[c], x, y, z); b.rotation.y = ry; }
+    part(top, new THREE.CylinderGeometry(0.035, 0.03, 0.09, 16, 1, true), clear, 0.27, 0.47, 0.18);
+    room(tabX, tabZ, 0.56, 0.5);
+  }
+  /* TWO LOUNGE CHAIRS in cracked leather, on swivel feet, turned in at the
+   * table across the rug from the sofa. A tub is a lathe with the front
+   * left out of it; the gap faces +Z in the chair's own frame, and the chair
+   * is turned so +Z points at the table. */
+  const chair = (a, r) => {
+    const [x, z] = at(a, r);
+    const c = new THREE.Group(); c.position.set(x, F, z); c.rotation.y = Math.atan2(tabX - x, tabZ - z); g.add(c);
+    const open = 1.7;
+    const shell = [new THREE.Vector2(0.24, 0.26), new THREE.Vector2(0.38, 0.30), new THREE.Vector2(0.43, 0.48), new THREE.Vector2(0.44, 0.74), new THREE.Vector2(0.40, 0.78), new THREE.Vector2(0.36, 0.72), new THREE.Vector2(0.34, 0.46), new THREE.Vector2(0.22, 0.34), new THREE.Vector2(0.24, 0.26)];
+    part(c, smoothNormals(new THREE.LatheGeometry(shell, 30, open / 2, TAU - open)), leathM, 0, 0, 0, 0.35);
+    for (const s of [open / 2, TAU - open / 2]) { const e = part(c, new THREE.ShapeGeometry(new THREE.Shape(shell)), leathM, 0, 0, 0, 0.35); e.rotation.y = s - Math.PI / 2; }
+    part(c, smoothNormals(new THREE.LatheGeometry(rrProf(0, 0.37, 0.30, 0.44, 0.06), 30)), leathM, 0.0, 0, 0.03, 0.35);
+    part(c, new THREE.CylinderGeometry(0.035, 0.05, 0.24, 12), steel, 0, 0.13, 0);
+    for (let k = 0; k < 4; k++) { const f = part(c, roundBox(0.34, 0.03, 0.05, 0.012), steel, 0, 0.025, 0); f.rotation.y = k * Math.PI / 2 + 0.4; f.geometry.translate(0.17, 0, 0); }
+    room(x, z, 0.46, 0.8);
+  };
+  chair(LA - 0.5, 3.2); chair(LA + 0.5, 3.2);
+  /* THE ARC LAMP from behind the sofa's end, reaching over the table. It is
+   * dead — the owner of this room ran it off a mains that went with them. */
+  {
+    const [bx, bz] = at(S0 - 0.2, 4.7);
+    mesh(roundBox(0.34, 0.08, 0.34, 0.02), std({ color: 0xcfcac0, roughness: 0.35, emissive: 0x0b0b0b }), bx, F + 0.04, bz);
+    const up = new THREE.Vector3(bx, F + 0.08, bz), end = new THREE.Vector3(tabX, F + 1.72, tabZ);
+    const mid = new THREE.Vector3((bx + tabX) / 2, F + 2.25, (bz + tabZ) / 2);
+    const curve = new THREE.QuadraticBezierCurve3(up, new THREE.Vector3(bx, F + 2.3, bz).lerp(mid, 0.5), end);
+    mesh(new THREE.TubeGeometry(curve, 40, 0.014, 8), steel);
+    mesh(smoothNormals(new THREE.LatheGeometry([new THREE.Vector2(0.02, 0.2), new THREE.Vector2(0.12, 0.17), new THREE.Vector2(0.21, 0.07), new THREE.Vector2(0.23, 0.0), new THREE.Vector2(0.225, -0.005), new THREE.Vector2(0.2, 0.06), new THREE.Vector2(0.115, 0.155), new THREE.Vector2(0.018, 0.19)], 32)), steel, tabX, F + 1.52, tabZ);
+    room(bx, bz, 0.24, 1.8);
+  }
+
+  /* THE CREDENZA on the cliff side, against the wall under the sill: teak,
+   * sliding doors, a record player on it and the records out of their
+   * sleeves. Its DEPTH points at the wall — `rotation.y = a` sends local +Z
+   * radially — and its length runs round the room. */
+  {
+    const a = 2.2, r = 4.92, [x, z] = at(a, r);
+    const cr = new THREE.Group(); cr.position.set(x, F, z); cr.rotation.y = a; g.add(cr);
+    part(cr, roundBox(1.9, 0.5, 0.46, 0.02), teakM, 0, 0.42, 0, 0.8);
+    for (const sx of [-0.47, 0.47]) part(cr, roundBox(0.92, 0.42, 0.02, 0.006), teakDM, sx, 0.42, -0.235, 0.8);
+    for (const [sx, sz] of [[-0.85, -0.17], [0.85, -0.17], [-0.85, 0.17], [0.85, 0.17]]) { const l = part(cr, new THREE.CylinderGeometry(0.02, 0.013, 0.17, 8), teakDM, sx, 0.085, sz); l.rotation.z = sx > 0 ? -0.08 : 0.08; }
+    // the record player: plinth, platter, a record on it, the arm
+    part(cr, roundBox(0.46, 0.09, 0.36, 0.015), teakDM, -0.45, 0.715, 0.02, 0.5);
+    part(cr, new THREE.CylinderGeometry(0.15, 0.15, 0.018, 40), steel, -0.5, 0.769, 0.02);
+    part(cr, new THREE.CylinderGeometry(0.148, 0.148, 0.004, 40), blackM, -0.5, 0.78, 0.02);
+    part(cr, new THREE.CylinderGeometry(0.05, 0.05, 0.005, 20), std({ color: 0x9a3a28, roughness: 0.8, emissive: 0x080302 }), -0.5, 0.782, 0.02);
+    const arm = part(cr, new THREE.CylinderGeometry(0.006, 0.006, 0.24, 6), steel, -0.33, 0.8, 0.02); arm.rotation.set(Math.PI / 2, 0, 0.5);
+    // sleeves leaning against the front, their covers faded
+    for (let i = 0; i < 3; i++) {
+      const sl = std({ map: sleeveTexture(i + 2), roughness: 0.9, emissive: 0x060606 });
+      const s = part(cr, new THREE.BoxGeometry(0.31, 0.31, 0.004), sl, 0.2 + i * 0.03, 0.16, -0.27 - i * 0.012);
+      s.rotation.x = -0.22;
+    }
+    // a vase of stems that died in it, and a ceramic bowl
+    part(cr, smoothNormals(new THREE.LatheGeometry([new THREE.Vector2(0, 0), new THREE.Vector2(0.06, 0.0), new THREE.Vector2(0.08, 0.08), new THREE.Vector2(0.05, 0.22), new THREE.Vector2(0.035, 0.28), new THREE.Vector2(0.04, 0.3)], 24)), std({ color: 0x3e5a62, roughness: 0.35, emissive: 0x040607 }), 0.55, 0.67, 0.05);
+    for (let k = 0; k < 7; k++) { const st = part(cr, new THREE.CylinderGeometry(0.003, 0.004, 0.42 + rnd() * 0.2, 4), deadM, 0.55, 0.9, 0.05); st.rotation.set((rnd() - 0.5) * 0.7, 0, (rnd() - 0.5) * 0.7); }
+    part(cr, smoothNormals(new THREE.LatheGeometry([new THREE.Vector2(0, 0), new THREE.Vector2(0.09, 0.0), new THREE.Vector2(0.13, 0.06), new THREE.Vector2(0.125, 0.065), new THREE.Vector2(0.085, 0.01), new THREE.Vector2(0, 0.012)], 28)), std({ color: 0xc8c0b0, roughness: 0.4, emissive: 0x0a0a09 }), 0.18, 0.67, 0.02);
+    for (const t of [-0.7, -0.24, 0.24, 0.7]) room(x + Math.cos(a) * t - Math.sin(a) * 0.1, z - Math.sin(a) * t - Math.cos(a) * 0.1, 0.3, 0.8);
+  }
+  /* A LOW SHELF of books round the landward wall, under the sill. */
+  {
+    const a = -0.95, r = 5.0, [x, z] = at(a, r);
+    const sh = new THREE.Group(); sh.position.set(x, F, z); sh.rotation.y = a; g.add(sh);
+    for (const y of [0.02, 0.33, 0.64]) part(sh, roundBox(1.5, 0.025, 0.32, 0.006), teakM, 0, y, 0, 0.8);
+    for (const sx of [-0.74, 0, 0.74]) part(sh, roundBox(0.025, 0.64, 0.32, 0.006), teakM, sx, 0.33, 0, 0.8);
+    for (const y of [0.035, 0.345]) {
+      let bx = -0.72;
+      while (bx < 0.7) {
+        const w = 0.025 + rnd() * 0.035, hgt = 0.2 + rnd() * 0.07;
+        if (rnd() < 0.12) { bx += 0.08; continue; }                         // a gap where one was taken
+        const lean = bx > 0.5 && rnd() < 0.6 ? 0.35 : 0;
+        const b = part(sh, roundBox(w, hgt, 0.2 + rnd() * 0.05, 0.004), bookMs[(rnd() * bookMs.length) | 0], bx + w / 2, y + hgt / 2 + 0.001, 0.02);
+        b.rotation.z = -lean; bx += w + 0.002;
+      }
+    }
+    const shell = part(sh, new THREE.SphereGeometry(0.07, 14, 10), std({ color: 0xd8c8b0, roughness: 0.6, emissive: 0x0a0907 }), 0.35, 0.69, 0.0); shell.scale.set(1.3, 0.6, 0.9);
+    const fr = part(sh, roundBox(0.18, 0.012, 0.22, 0.004), teakDM, -0.4, 0.66, 0.0); fr.rotation.y = 0.2;   // a frame, face down
+    for (const t of [-0.52, 0, 0.52]) room(x + Math.cos(a) * t - Math.sin(a) * 0.05, z - Math.sin(a) * t - Math.cos(a) * 0.05, 0.28, 0.72);
+  }
+  /* A PALM THAT DIED IN ITS POT by the glass on the cliff side. */
+  {
+    const [x, z] = at(2.95, 4.75);
+    mesh(smoothNormals(new THREE.LatheGeometry([new THREE.Vector2(0, 0), new THREE.Vector2(0.18, 0), new THREE.Vector2(0.24, 0.36), new THREE.Vector2(0.26, 0.4), new THREE.Vector2(0.235, 0.4), new THREE.Vector2(0.22, 0.37), new THREE.Vector2(0, 0.35)], 28)), potM, x, F, z);
+    for (let k = 0; k < 9; k++) {
+      const a = k / 9 * TAU + rnd() * 0.4, len = 0.55 + rnd() * 0.45, droop = 0.6 + rnd() * 0.9;
+      const pts = []; for (let s = 0; s <= 6; s++) { const t = s / 6; pts.push(new THREE.Vector3(Math.sin(a) * t * len * 0.8, 0.35 + t * 0.7 - t * t * droop * 0.8, Math.cos(a) * t * len * 0.8)); }
+      mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 10, 0.006, 4), deadM, x, F, z);
+      for (let s = 1; s < 6; s++) { const p = pts[s]; const lf = mesh(new THREE.PlaneGeometry(0.28 * (1 - s / 8), 0.035), deadM, x + p.x, F + p.y - 0.02, z + p.z); lf.rotation.set(0.9 + rnd() * 0.5, a + (s % 2 ? 1 : -1) * 0.9, 0.5); }
+    }
+    room(x, z, 0.3, 0.5);
+  }
+
+  /* THE RING'S CASE. A small brass-and-glass casket, lid thrown back on its
+   * hinge, on a slender teak stand at the head of the stair — the first
+   * thing you see as you come up out of the well, and the thing you climbed
+   * for. Inside it on red velvet, a ring box, open, with a slot in its
+   * cushion. The ring goes in the slot from the game: the box writes down
+   * where it is. A little light inside the case catches the brass and the
+   * glass and leaves everything round it dark. */
+  {
+    const a = M.TOP_ANG - 0.62, r = 3.05, [x, z] = at(a, r);
+    const st = new THREE.Group(); st.position.set(x, F, z);
+    // it faces back toward where you come up
+    const [sx, sz] = at(M.TOP_ANG, 1.4); st.rotation.y = Math.atan2(sx - x, sz - z); g.add(st);
+    part(st, roundBox(0.44, 0.04, 0.34, 0.012), teakM, 0, 0.84, 0, 0.5);
+    part(st, roundBox(0.38, 0.018, 0.28, 0.006), teakM, 0, 0.26, 0, 0.5);
+    for (const [lx, lz] of [[-0.18, -0.13], [0.18, -0.13], [-0.18, 0.13], [0.18, 0.13]]) { const l = part(st, new THREE.CylinderGeometry(0.018, 0.012, 0.82, 10), teakDM, lx, 0.41, lz); l.rotation.set(lz * 0.25, 0, -lx * 0.25); }
+    const cs = new THREE.Group(); cs.position.set(0, 0.86, -0.01); st.add(cs);
+    const W = 0.30, D = 0.20, H = 0.13, e = 0.008;
+    part(cs, roundBox(W + 0.02, 0.018, D + 0.02, 0.005), brass, 0, 0.009, 0);                          // the plinth of the case
+    part(cs, roundBox(W - 0.01, 0.012, D - 0.01, 0.003), velvRedM, 0, 0.024, 0, 0.1);                   // the lining
+    for (const [px, pz] of [[-W / 2, -D / 2], [W / 2, -D / 2], [-W / 2, D / 2], [W / 2, D / 2]]) part(cs, roundBox(e, H, e, 0.002), brass, px, 0.018 + H / 2, pz);
+    for (const [px, pz, w, d] of [[0, -D / 2, W, e], [0, D / 2, W, e], [-W / 2, 0, e, D], [W / 2, 0, e, D]]) part(cs, roundBox(w, e, d, 0.002), brass, px, 0.018 + H, pz);
+    for (const [px, pz, w, d] of [[0, -D / 2, W, 0.002], [0, D / 2, W, 0.002], [-W / 2, 0, 0.002, D], [W / 2, 0, 0.002, D]]) part(cs, new THREE.BoxGeometry(w, H, d), clear, px, 0.018 + H / 2, pz);
+    // the lid, open past upright on its back hinge
+    // hinged at the BACK (the case's front, +Z, faces the stair), swung up past upright
+    const hinge = new THREE.Group(); hinge.position.set(0, 0.018 + H, -D / 2); hinge.rotation.x = -1.86; cs.add(hinge);
+    for (const [px, pz, w, d] of [[0, D, W, e], [0, 0, W, e], [-W / 2, D / 2, e, D], [W / 2, D / 2, e, D]]) part(hinge, roundBox(w, e, d, 0.002), brass, px, 0, pz);
+    part(hinge, new THREE.BoxGeometry(W, 0.002, D), clear, 0, 0, D / 2);
+    // the ring box, open, on the velvet
+    const rb = new THREE.Group(); rb.position.set(0, 0.03, -0.01); cs.add(rb);
+    part(rb, roundBox(0.075, 0.042, 0.065, 0.008), velvRedM, 0, 0.021, 0, 0.05);
+    // an ivory satin cushion with the slot in it: gold and a green stone read against pale, not against red
+    const cu = part(rb, roundBox(0.062, 0.016, 0.05, 0.007), std({ color: 0xd6ccbc, roughness: 0.55, emissive: 0x151210 }), 0, 0.045, 0.0);
+    part(rb, new THREE.BoxGeometry(0.004, 0.004, 0.05), std({ color: 0x3a3028, roughness: 0.8 }), 0, 0.0535, 0);
+    const lid = new THREE.Group(); lid.position.set(0, 0.042, -0.032); lid.rotation.x = -1.9; rb.add(lid);
+    part(lid, roundBox(0.075, 0.03, 0.065, 0.008), velvRedM, 0, 0.015, 0.032, 0.05);
+    part(lid, roundBox(0.062, 0.004, 0.052, 0.002), std({ color: 0xd6ccbc, roughness: 0.55, emissive: 0x151210 }), 0, 0.001, 0.032);
+    const inL = new THREE.PointLight(0xffe0b0, 0.38, 1.3, 2); inL.position.set(0, 0.12, -0.03); cs.add(inL); inL.userData.lpAlways = 7;
+    st.updateMatrixWorld(true);
+    const J = new THREE.Vector3(0, 0.012, 0); cu.localToWorld(J); g.worldToLocal(J);
+    M.JEWEL = { x: J.x, y: J.y, z: J.z, ry: st.rotation.y };
+    room(x, z, 0.3, 1.0);
+  }
+
+  /* THE MOON THROUGH THE GLASS: cold fills on the sea side, where the panes
+   * face the light, low enough that they model the furniture from the side. */
+  for (const [a, r, y, i] of [[M.DOOR_ANG - 0.4, 4.4, 2.1, 2.4], [M.DOOR_ANG + 0.55, 4.4, 2.2, 1.9], [M.TOP_ANG - 0.9, 4.2, 2.3, 1.6], [2.3, 4.0, 2.2, 1.8], [3.0 - TAU, 4.2, 2.2, 1.3]]) {
+    const L = new THREE.PointLight(0x8aa2cc, i, 7.5, 1.4);
+    const [x, z] = at(a, r); L.position.set(x, F + y, z); L.userData.lpAlways = 16; g.add(L);
+  }
+  /* AND THE STAIR IS NOT A BLACK HOLE. Moon comes in at the door at the foot
+   * of it and down the well from the room; two dim cold fills in the bore
+   * are what that looks like, enough to see the next tread by. */
+  for (const [a, y, i] of [[M.DOOR_ANG + 0.3, 1.5, 1.4], [M.DOOR_ANG + 2.6, 3.7, 1.2]]) {
+    const L = new THREE.PointLight(0x8aa2cc, i, 6.0, 1.3);
+    const [x, z] = at(a, 1.0); L.position.set(x, y, z); L.userData.lpAlways = 7; g.add(L);
+  }
+
+  /* WHAT THE WEATHER BROUGHT IN: sand drifted under the panes that are gone,
+   * damp dried into stains on the floor, leaves blown into the corners. */
+  const seenA = new Set();
+  for (const am of shardAt) {
+    const key = Math.round(am * 3); if (seenA.has(key)) continue; seenA.add(key);
+    const [x, z] = at(am, M.R_ROOM - 0.55);
+    const d = mesh(new THREE.SphereGeometry(1, 28, 10, 0, TAU, 0, Math.PI / 2), sandM, x, F - 0.005, z);
+    d.scale.set(0.95 + rnd() * 0.5, 0.05 + rnd() * 0.04, 0.35 + rnd() * 0.2); d.rotation.y = am; tiled(d, 0.8);
+    const sm = new THREE.Mesh(new THREE.CircleGeometry(0.9 + rnd() * 0.5, 24).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ map: stainTex(key + 20), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, color: 0x000000 }));
+    const [sx2, sz2] = at(am + (rnd() - 0.5) * 0.2, M.R_ROOM - 1.2 - rnd() * 0.6);
+    sm.position.set(sx2, F + 0.008, sz2); sm.rotation.y = rnd() * TAU; sm.renderOrder = 1; g.add(sm);
+  }
+  for (let k = 0; k < 40; k++) {
+    const a = rnd() * TAU, r = M.R_ROOM - 0.3 - Math.pow(rnd(), 2) * 2.4, [x, z] = at(a, r);
+    const lf = mesh(new THREE.PlaneGeometry(0.06, 0.035).rotateX(-Math.PI / 2), deadM, x, F + 0.012 + rnd() * 0.004, z);
+    lf.rotation.set((rnd() - 0.5) * 0.4, rnd() * TAU, (rnd() - 0.5) * 0.4);
+  }
+
+  // box-map every piece that asked for it, in its own frame
+  const done = new Set();
+  g.traverse((o) => {
+    if (!o.isMesh || o.userData.tile === undefined || done.has(o.geometry)) return;
+    done.add(o.geometry); if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+    boxUV(o.geometry, o.userData.tile);
+  });
 }
 
 export function makeMushroomHouse() {
@@ -250,89 +667,97 @@ export function makeMushroomHouse() {
   const g = new THREE.Group();
   const colliders = [];
   const TAU = Math.PI * 2;
+  const V = new THREE.Vector3();
 
-  // the game's palette is cold; the concrete is grey-blue and lifted off its
-  // own map, the way every scan on the beach is, so the moon is not the only
-  // thing carrying it. Flat shading, like everything built here.
-  const concTex = concreteTexture(7, false), tagTex = concreteTexture(19, true);
-  /* AND YOU WALK TOWARD THE MOON, so the pavilion is BACKLIT from every
-   * approach: the one directional light contributes nothing to the face
-   * you are looking at, and the whole building was a dark lump on a dark
-   * beach until you were under it. The emissive off its own map is what
-   * carries the concrete — the same thing the scanned rocks needed, for
-   * the same reason — and with the map's own contrast now doing the work
-   * the lift can be strong without flattening it. */
-  const conc = new THREE.MeshStandardMaterial({ map: concTex, color: 0xa6b0c0, roughness: 1, metalness: 0, flatShading: true, emissive: 0x4e586c, emissiveMap: concTex, side: THREE.DoubleSide });
-  const concTag = conc.clone(); concTag.map = tagTex; concTag.emissiveMap = tagTex;
-  const pale = conc.clone(); pale.color.setHex(0xc8ced8); pale.emissive.setHex(0x69748a);   // lit enough to read in the well   // the stair, the ribs: the pale poured work in the photographs
-  /* NOTHING IN HERE IS BROWN. The window frames were dark wood and the sill
-   * was capped with it, and at eye height in a round room that is one
-   * unbroken tan band all the way round you — the only warm thing on a cold
-   * beach, and the first thing you look at. They are weathered grey steel
-   * now, and the sill is capped in its own concrete. */
-  const frame = new THREE.MeshStandardMaterial({ color: 0x5a6270, roughness: 0.95, metalness: 0, flatShading: true, emissive: 0x1a1f28 });
-  const glass = new THREE.MeshPhysicalMaterial({ color: 0x8fb0c8, roughness: 0.12, metalness: 0, transparent: true, opacity: 0.36, side: THREE.DoubleSide, depthWrite: false, emissive: 0x16202e });
-  const iron = new THREE.MeshStandardMaterial({ color: 0x3f352d, roughness: 0.95, metalness: 0.1, flatShading: true, emissive: 0x100b07 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 1, metalness: 0, emissive: 0x040507 });
-  const cream = new THREE.MeshStandardMaterial({ color: 0xb0b6c0, roughness: 0.9, metalness: 0, flatShading: true, emissive: 0x282d36 });
+  /* ---------------------------------------------------------- materials
+   * SMOOTH, and lit by LIGHT. Every material here used to be flat-shaded and
+   * carried by its own emissive map at nearly its own brightness, so nothing
+   * had form. The concrete keeps a modest lift off its map (the building is
+   * backlit from every approach — you walk toward the moon — and the one
+   * directional light does nothing for the face you look at); indoors it is
+   * a breath, and the rest is the normal maps and real lamps. */
+  const CS = concreteSet(7, false), CT = concreteSet(19, true), CP = concreteSet(31, false);
+  const concOf = (S, color, emis, k) => new THREE.MeshStandardMaterial({
+    map: S.map, normalMap: S.normal, normalScale: new THREE.Vector2(k, k), color, roughness: 0.93, metalness: 0,
+    emissive: emis, emissiveMap: S.map, emissiveIntensity: 1.0, side: THREE.DoubleSide });
+  const conc = concOf(CS, 0xb6bac0, 0x7c8591, 1.0);
+  const concTag = concOf(CT, 0xb6bac0, 0x7c8591, 1.0);
+  const pale = concOf(CP, 0xc8ccd2, 0x656c77, 0.8);          // the stair, the ribs: the paler poured work
+  const inside = concOf(CS, 0xa8adb4, 0x23272e, 0.9);         // the room's own walls and ceiling: lit by its lamps, not its map
+  const CONC = new Set([conc, concTag, pale, inside]);
+  const TILE = 3.2;                                           // metres of concrete in one repeat of the map
+  for (const S of [CS, CT, CP]) { S.map.repeat.set(1 / TILE, 1 / TILE); S.normal.repeat.set(1 / TILE, 1 / TILE); }
+
+  /* STEEL THAT HAS BEEN PAINTED AND GIVEN UP. The window frames, the rails and
+   * the gate: a dark green-grey paint, flaking, with rust through it at every
+   * joint and edge — the thing sixty years of salt does to a steel frame. */
+  const steelSet = (() => {
+    const S = 512, [c, gx, h, hg] = pair(S), rnd = lcg(55);
+    gx.fillStyle = '#3c4644'; gx.fillRect(0, 0, S, S);
+    for (let i = 0; i < 60; i++) blob(gx, rnd() * S, rnd() * S, 20 + rnd() * 90, `rgba(${90 + rnd() * 30},${54 + rnd() * 20},${30},${0.10 + rnd() * 0.25})`);
+    for (let i = 0; i < 700; i++) {
+      const x = rnd() * S, y = rnd() * S, r = 1 + rnd() * 5;
+      gx.fillStyle = `rgba(${110 + rnd() * 40},${62 + rnd() * 20},${34},${0.3 + rnd() * 0.4})`; gx.beginPath(); gx.arc(x, y, r, 0, 7); gx.fill();
+      hg.fillStyle = 'rgba(40,40,40,0.8)'; hg.beginPath(); hg.arc(x, y, r, 0, 7); hg.fill();
+    }
+    return { map: smooth(c), normal: normalFrom(h, 2.0) };
+  })();
+  const frame = new THREE.MeshStandardMaterial({ map: steelSet.map, normalMap: steelSet.normal, color: 0x9aa2a0, roughness: 0.82, metalness: 0.25, emissive: 0x0c1012, emissiveMap: steelSet.map });
+  const iron = frame.clone(); iron.color.setHex(0x8a8680);
+  /* GLASS THAT HAS STOOD IN SALT AIR: dark and reflective where it is clean,
+   * hazed with dried salt toward its edges, with runs down it. */
+  const glassTex = (() => {
+    const S = 256, c = document.createElement('canvas'); c.width = c.height = S;
+    const gx = c.getContext('2d'), rnd = lcg(77);
+    gx.fillStyle = 'rgba(40,52,62,1)'; gx.fillRect(0, 0, S, S);
+    const edge = gx.createRadialGradient(S / 2, S / 2, S * 0.25, S / 2, S / 2, S * 0.75);
+    edge.addColorStop(0, 'rgba(160,170,176,0)'); edge.addColorStop(1, 'rgba(170,176,180,0.55)');
+    gx.fillStyle = edge; gx.fillRect(0, 0, S, S);
+    for (let i = 0; i < 40; i++) { const x = rnd() * S, y = rnd() * S * 0.4; gx.fillStyle = 'rgba(180,186,190,0.18)'; gx.fillRect(x, y, 1.5 + rnd() * 3, 40 + rnd() * 160); }
+    return smooth(c);
+  })();
+  const glass = new THREE.MeshStandardMaterial({ map: glassTex, color: 0xb8c4cc, roughness: 0.10, metalness: 0.0, transparent: true, opacity: 0.42, side: THREE.DoubleSide, depthWrite: false, emissive: 0x0a1016, emissiveMap: glassTex });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 1, metalness: 0 });
+
   const mesh = (geo, mat, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); g.add(m); return m; };
-  const arcBand = (r, y0, y1, a0, a1, mat, n) => mesh(new THREE.CylinderGeometry(r, r, y1 - y0, n || Math.max(6, Math.round((a1 - a0) * 12)), 1, true, a0, a1 - a0), mat, 0, (y0 + y1) / 2, 0);
-  /* RINGGEOMETRY LIES ABOUT ITS ANGLE. Its theta runs (cos, sin) in XY, while
-   * CylinderGeometry's runs (sin, cos) in XZ — the game's own convention — so
-   * a ring laid flat with the same thetaStart as the arc it is meant to cap
-   * comes out A QUARTER TURN ROUND, and laid face-down it comes out mirrored
-   * as well. Every capped arc in here was built that way: the bench's seat
-   * hovered 90 deg from its own front, a pale slab over nothing in the middle
-   * of the room, and the walls' copings floated out over the yard and over
-   * the gate with nothing under them. Lay one down with this and nothing
-   * else. `down` faces it at the floor. */
+  const arcBand = (r, y0, y1, a0, a1, mat, n) => mesh(new THREE.CylinderGeometry(r, r, y1 - y0, n || Math.max(8, Math.round((a1 - a0) * 16)), 1, true, a0, a1 - a0), mat, 0, (y0 + y1) / 2, 0);
+  /* RINGGEOMETRY LIES ABOUT ITS ANGLE (see the note in the first build): its
+   * theta runs (cos, sin) in XY while the cylinder's runs (sin, cos) in XZ, so
+   * a ring capping an arc has to be laid with this and nothing else. */
   const ringArc = (r0, r1, a0, a1, mat, y, down) => {
-    const n = Math.max(4, Math.round((a1 - a0) * 12));
+    const n = Math.max(6, Math.round((a1 - a0) * 16));
     const t0 = down ? Math.PI / 2 - a1 : a0 - Math.PI / 2;
     return mesh(new THREE.RingGeometry(r0, r1, n, 1, t0, a1 - a0).rotateX(down ? Math.PI / 2 : -Math.PI / 2), mat, 0, y, 0);
   };
   let seed = 11; const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const at = (a, r) => [Math.sin(a) * r, Math.cos(a) * r];
 
   // ---------------------------------------------------------- platform and steps
-  mesh(new THREE.CylinderGeometry(M.PLAT_R, M.PLAT_R + 0.35, M.PLAT_TOP, 48), conc, 0, M.PLAT_TOP / 2, 0);
+  mesh(new THREE.CylinderGeometry(M.PLAT_R, M.PLAT_R + 0.35, M.PLAT_TOP, 64), conc, 0, M.PLAT_TOP / 2, 0);
   colliders.push({ x: 0, z: 0, r: M.PLAT_R, top: M.PLAT_TOP, mat: 'rock' });
-  for (const [dx, top] of [[-M.PLAT_R - 0.5, 0.27], [-M.PLAT_R - 1.1, 0.13]]) {
-    mesh(new THREE.BoxGeometry(0.62, top, 2.6), conc, dx, top / 2, 0);
-    colliders.push({ x0: dx - 0.31, x1: dx + 0.31, z0: -1.3, z1: 1.3, top, mat: 'rock' });
+  /* THE STEPS UP TO THE PLATFORM are three shallow risers of a comfortable
+   * height, the full width of the gate and a little over, with a worn nosing
+   * — two tall boxes were a thing you hopped up rather than climbed. */
+  for (const [dx, top] of [[-M.PLAT_R - 0.35, 0.30], [-M.PLAT_R - 0.75, 0.20], [-M.PLAT_R - 1.15, 0.10]]) {
+    mesh(roundBox(0.46, top, 2.9, 0.03), conc, dx, top / 2, 0);
+    colliders.push({ x0: dx - 0.23, x1: dx + 0.23, z0: -1.45, z1: 1.45, top, mat: 'rock' });
   }
 
   // ---------------------------------------------------------- the walls
-  /* THE FRONT IS THE ONLY LOW WALL. The cliff is cut away inside the whole
-   * footprint, and a cut through a one-sided bluff is a window onto the void
-   * behind it — so every angle where the bluff stood has to be closed by
-   * something TALLER than the bluff. The old arcs gave the seaward 218 deg
-   * to a 2.3 m parapet, and the bluff on the +Z flank — the side you walk in
-   * from — stood 3.6 m: from the beach you saw straight through the gap
-   * between the sand wall and the house. The parapet keeps only the 128 deg
-   * across the front, where there is nothing but flat talus to hold back,
-   * and the retaining wall takes the whole of the rest. */
   const WALL_H = 2.3, WALL_T = 0.4, wallTop = M.PLAT_TOP + WALL_H;
   const arc0 = M.DOOR_ANG - 1.12, arc1 = M.DOOR_ANG + 1.12, gateHalf = 0.14;
   const RET_R = M.PLAT_R + 0.15, RET_T = 0.2, RET_TOP = 4.15;   // the cut in main.js lives inside RET_R - RET_T and below RET_TOP
   const wallArc = (a0, a1, mat) => {
-    const ro = M.WALL_R + WALL_T / 2, ri = M.WALL_R - WALL_T / 2, n = Math.max(6, Math.round((a1 - a0) * 12));
+    const ro = M.WALL_R + WALL_T / 2, ri = M.WALL_R - WALL_T / 2, n = Math.max(8, Math.round((a1 - a0) * 16));
     arcBand(ro, M.PLAT_TOP, wallTop, a0, a1, mat, n); arcBand(ri, M.PLAT_TOP, wallTop, a0, a1, mat, n);
-    ringArc(ri, ro, a0, a1, mat, wallTop);
-    // an end return closing the wall's thickness: with rotation.y = a - PI/2
-    // local +X is RADIAL and +Z tangential (a is the mirror; see the treads)
+    // a rounded coping, a little proud of both faces: the one detail that makes a wall a built thing
+    const cp = [new THREE.Vector2(ri - 0.03, wallTop), new THREE.Vector2(ri - 0.03, wallTop + 0.05), new THREE.Vector2(M.WALL_R, wallTop + 0.09), new THREE.Vector2(ro + 0.03, wallTop + 0.05), new THREE.Vector2(ro + 0.03, wallTop)];
+    mesh(new THREE.LatheGeometry(cp, n, a0, a1 - a0), mat);
     for (const a of [a0, a1]) { const e = mesh(new THREE.BoxGeometry(WALL_T, WALL_H, 0.04), mat, Math.sin(a) * M.WALL_R, M.PLAT_TOP + WALL_H / 2, Math.cos(a) * M.WALL_R); e.rotation.y = a - Math.PI / 2; }
   };
   wallArc(arc0, M.DOOR_ANG - gateHalf, concTag);
   wallArc(M.DOOR_ANG + gateHalf, arc1, conc);
-  /* THE HOLE IN THE FRONT WALL WAS THREE AND A HALF METRES WIDE. The discs
-   * were laid at 0.9 m of ARC apart — barely touching at r 0.45, so the ring
-   * was a string of beads with the seams open — and the gateway skipped every
-   * sample within 0.19 rad of the door, which at this radius threw away THREE
-   * of them and left a 3.5 m gap in a wall whose gate is 1.4 m. You walked
-   * through the front of the building. They are laid at half their own
-   * diameter now, so consecutive discs overlap properly, and the opening is
-   * measured in METRES off the gate's own width. */
-  const GATE_W = 1.7;                                  // the clear opening, the gate's own
+  const GATE_W = 1.7;
   {
     const step = 0.42 / M.WALL_R, n = Math.max(6, Math.ceil((arc1 - arc0) / step));
     for (let i = 0; i <= n; i++) {
@@ -342,12 +767,11 @@ export function makeMushroomHouse() {
     }
   }
   {
-    const r0 = arc1, r1 = arc0 + TAU, n = 40, y0 = -0.35;
+    const r0 = arc1, r1 = arc0 + TAU, n = 56, y0 = -0.35;
     arcBand(RET_R + RET_T, y0, RET_TOP, r0, r1, conc, n); arcBand(RET_R - RET_T, y0, RET_TOP, r0, r1, conc, n);
     ringArc(RET_R - RET_T, RET_R + RET_T, r0, r1, conc, RET_TOP);
     const nc = Math.round((r1 - r0) * RET_R / 0.9);
     for (let i = 0; i < nc; i++) { const a = r0 + (i + 0.5) * (r1 - r0) / nc; colliders.push({ x: Math.sin(a) * RET_R, z: Math.cos(a) * RET_R, r: 0.5, top: RET_TOP, mat: 'rock' }); }
-    // and at each end it steps down and in to meet the parapet
     for (const a of [arc0, arc1]) {
       const rm = (M.WALL_R + RET_R) / 2;
       const m = mesh(new THREE.BoxGeometry(RET_R - M.WALL_R + 0.6, RET_TOP - y0, WALL_T), conc, Math.sin(a) * rm, (y0 + RET_TOP) / 2, Math.cos(a) * rm);
@@ -355,33 +779,20 @@ export function makeMushroomHouse() {
       colliders.push({ x: Math.sin(a) * rm, z: Math.cos(a) * rm, r: 0.5, top: RET_TOP, mat: 'rock' });
     }
   }
-  /* THE GATE OPENS. It hung at a fixed angle and was scenery you walked
-   * past; it is the only way into the yard and it should be a thing you
-   * DO. It starts shut, and `MUSH.gate` hands the game everything it needs
-   * to swing it: the pivot to turn, the two angles, and the collider discs
-   * to carry round with the leaf so the iron is solid wherever it is
-   * standing. Nothing here animates it — models/ builds, main.js drives. */
+  // the gate: a real one — flat-bar frame, round bars, a rail top and bottom, rusted through the paint
   const gateInfo = { pivot: null, shut: 0.03, open: 1.42, cols: [], w: 1.35, h: 2.0 };
   {
     const w = gateInfo.w, h = gateInfo.h, gate = new THREE.Group();
-    for (let i = 0; i <= 8; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.035, h, 0.035), iron); b.position.set(0, h / 2, i * (w / 8)); gate.add(b); }
-    for (const y of [0.12, h / 2, h - 0.12]) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.05, w), iron); b.position.set(0, y, w / 2); gate.add(b); }
+    const bar = new THREE.CylinderGeometry(0.014, 0.014, h - 0.2, 8);
+    for (let i = 1; i < 11; i++) { const b = new THREE.Mesh(bar, iron); b.position.set(0, h / 2, i * (w / 11)); gate.add(b); }
+    for (const y of [0.08, h - 0.08]) { const b = new THREE.Mesh(roundBox(0.05, 0.07, w, 0.012), iron); b.position.set(0, y, w / 2); gate.add(b); }
+    for (const z of [0.03, w - 0.03]) { const b = new THREE.Mesh(roundBox(0.05, h, 0.06, 0.012), iron); b.position.set(0, h / 2, z); gate.add(b); }
+    for (let i = 1; i < 11; i++) { const f = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.09, 6), iron); f.position.set(0, h - 0.02 + 0.045, i * (w / 11)); gate.add(f); }
     const pivot = new THREE.Group();
     const px = Math.sin(M.DOOR_ANG) * M.WALL_R, pz = Math.cos(M.DOOR_ANG) * M.WALL_R - w / 2 - 0.1;
     pivot.position.set(px, M.PLAT_TOP, pz);
-    /* AND A GATE THAT IS SOLID HAS TO BE OPEN ENOUGH TO WALK PAST. At the
-     * third-open it hung at while it was scenery, its leaf lay across its
-     * own doorway — harmless as a picture, a shut gate the moment the iron
-     * was given colliders. It stands well back against the inside of the
-     * wall now, which is where a gate nobody has closed in thirty years
-     * would have ended up anyway. */
     pivot.rotation.y = gateInfo.shut; pivot.add(gate); g.add(pivot);
     gateInfo.pivot = pivot; gateInfo.x = px; gateInfo.z = pz;
-    /* AND THE GATE IS IRON, NOT A PICTURE OF IT. You walked straight through
-     * the bars. Its leaf carries discs down its length — kept on
-     * `MUSH.gate.cols` so the swing can move them — and the two posts are
-     * solid, which is what makes the opening a DOORWAY rather than a hole
-     * with decoration beside it. */
     for (let i = 0; i <= 4; i++) {
       const t = i / 4 * w;
       const c = { x: px + Math.sin(gateInfo.shut) * t, z: pz + Math.cos(gateInfo.shut) * t, r: 0.12, top: M.PLAT_TOP + h, mat: 'wood', t };
@@ -389,572 +800,182 @@ export function makeMushroomHouse() {
     }
     for (const sz of [-1, 1]) {
       const cz = Math.cos(M.DOOR_ANG) * M.WALL_R + sz * (w / 2 + 0.35);
-      mesh(new THREE.BoxGeometry(0.5, WALL_H + 0.25, 0.5), conc, Math.sin(M.DOOR_ANG) * M.WALL_R, M.PLAT_TOP + WALL_H / 2 + 0.12, cz);
+      mesh(roundBox(0.5, WALL_H + 0.25, 0.5, 0.03), conc, Math.sin(M.DOOR_ANG) * M.WALL_R, M.PLAT_TOP + (WALL_H + 0.25) / 2, cz);
+      mesh(roundBox(0.58, 0.08, 0.58, 0.02), conc, Math.sin(M.DOOR_ANG) * M.WALL_R, M.PLAT_TOP + WALL_H + 0.29, cz);
       colliders.push({ x: Math.sin(M.DOOR_ANG) * M.WALL_R, z: cz, r: 0.34, top: wallTop, mat: 'rock' });
     }
   }
 
   // ---------------------------------------------------------- the column
-  /* THE SHAFT IS WALLED THE WHOLE WAY UP. It used to stop at DISH_Y0 and
-   * leave the last two metres of the climb standing in the open inside the
-   * flare of the dish — from the room you looked down on the top third of
-   * the stair hanging in mid-air, and from the stair there was nothing
-   * beside you. It is one tube from the platform to the room floor now:
-   * the door is a gap in the bottom of it, and its top edge is the lip of
-   * the well, flush with the floor. */
-  /* AND THE WALL OVER THE DOOR IS WALL. It was a straight box laid across a
-   * curved opening: a chord through an arc stands 15 cm proud of the face at
-   * each end, and lit on its top it read as a grey bar hanging in the air
-   * over the gate rather than as a lintel. The door is a gap in the bottom
-   * DOOR_H of the tube now and the concrete above it is the tube's own, with
-   * a soffit closing the reveal. Nothing hangs. */
   const colTop = M.H_ROOM, doorTop = M.PLAT_TOP + M.DOOR_H;
   const gapStart = M.DOOR_ANG + M.DOOR_HALF, gapLen = TAU - M.DOOR_HALF * 2;
-  for (const r of [M.COL_R, M.BORE]) {
-    mesh(new THREE.CylinderGeometry(r, r, M.DOOR_H, 40, 1, true, gapStart, gapLen), conc, 0, M.PLAT_TOP + M.DOOR_H / 2, 0);
-    mesh(new THREE.CylinderGeometry(r, r, colTop - doorTop, 40, 1, true), conc, 0, (doorTop + colTop) / 2, 0);
+  for (const [r, mat] of [[M.COL_R, conc], [M.BORE, inside]]) {
+    mesh(new THREE.CylinderGeometry(r, r, M.DOOR_H, 56, 1, true, gapStart, gapLen), mat, 0, M.PLAT_TOP + M.DOOR_H / 2, 0);
+    mesh(new THREE.CylinderGeometry(r, r, colTop - doorTop, 56, 1, true), mat, 0, (doorTop + colTop) / 2, 0);
   }
   ringArc(M.BORE, M.COL_R, M.DOOR_ANG - M.DOOR_HALF, M.DOOR_ANG + M.DOOR_HALF, conc, doorTop, true);   // the soffit
-  // the reveal's jambs: with rotation.y = a - PI/2 the box's +X is RADIAL, so
-  // a jamb fills the wall's thickness instead of standing across the opening
   for (const sg of [-1, 1]) {
     const a = M.DOOR_ANG + sg * M.DOOR_HALF, rm = (M.COL_R + M.BORE) / 2;
     const j = mesh(new THREE.BoxGeometry(M.COL_R - M.BORE + 0.02, M.DOOR_H, 0.14), conc, Math.sin(a) * rm, M.PLAT_TOP + M.DOOR_H / 2, Math.cos(a) * rm);
     j.rotation.y = a - Math.PI / 2;
   }
-  // the shaft's own floor: concrete, worn darker. It was the `dark` material
-  // when the top of the shaft was open and this read as the bottom of a
-  // void; walled and walked on, a black disc through the doorway is a hole
-  const shaftFloor = conc.clone(); shaftFloor.color.setHex(0x6c7280); shaftFloor.emissive.setHex(0x232a36);
-  mesh(new THREE.CircleGeometry(M.BORE, 40).rotateX(-Math.PI / 2), shaftFloor, 0, M.PLAT_TOP + 0.01, 0);
+  mesh(new THREE.CircleGeometry(M.BORE, 48).rotateX(-Math.PI / 2), inside, 0, M.PLAT_TOP + 0.01, 0);
 
-  // ---------------------------------------------------------- the cap: one solid piece
-  // floor top from the well out to the rim, down the fascia, and back in
-  // under the dish to the column: one lathe, so there is no seam and no gap
+  // ---------------------------------------------------------- the cap
   const RIM = M.R_ROOM + 0.25, dishY1 = M.H_ROOM - 0.35;
   const dishPt = (t) => new THREE.Vector2(M.COL_R + (RIM - M.COL_R) * t, M.DISH_Y0 + (dishY1 - M.DISH_Y0) * Math.pow(t, 0.55));
   {
     const pts = [new THREE.Vector2(M.BORE, M.H_ROOM), new THREE.Vector2(RIM, M.H_ROOM), new THREE.Vector2(RIM, dishY1)];
-    for (let i = 10; i >= 0; i--) pts.push(dishPt(i / 10));
-    mesh(new THREE.LatheGeometry(pts, 56), conc);
+    for (let i = 14; i >= 0; i--) pts.push(dishPt(i / 14));
+    mesh(new THREE.LatheGeometry(pts, 72), conc);
   }
-  // the ribs under the dish: 24 of them, deep at the column and thinning to
-  // the rim, each following the curve in pieces. (The well's lip used to be
-  // a band of its own here; the shaft is the lip now.)
+  // the ribs under the dish: each ONE swept piece following the curve, deep at the column and thinning to the rim
   for (let i = 0; i < 24; i++) {
-    const a = i / 24 * TAU;
-    for (let k = 0; k < 7; k++) {
-      const t0 = k / 7, t1 = (k + 1) / 7, p0 = dishPt(t0), p1 = dishPt(t1);
-      const len = Math.hypot(p1.x - p0.x, p1.y - p0.y), depth = 0.55 * (1 - 0.78 * (t0 + t1) / 2);
-      const rib = new THREE.Mesh(new THREE.BoxGeometry(len + 0.03, depth, 0.13), pale);
-      const rm = (p0.x + p1.x) / 2, ym = (p0.y + p1.y) / 2 - depth / 2 + 0.02;
-      rib.position.set(Math.sin(a) * rm, ym, Math.cos(a) * rm);
-      rib.rotation.y = a - Math.PI / 2;          // local +X -> (sin a, 0, cos a); π/2 - a mirrors it
-      rib.rotateZ(-Math.atan2(p1.y - p0.y, p1.x - p0.x));
-      g.add(rib);
-    }
+    const a = i / 24 * TAU, shape = [];
+    const K = 12;
+    for (let k = 0; k <= K; k++) { const t = k / K, p = dishPt(t); shape.push([p.x, p.y + 0.01]); }
+    for (let k = K; k >= 0; k--) { const t = k / K, p = dishPt(t), d = 0.55 * (1 - 0.78 * t); shape.push([p.x, p.y - d]); }
+    const s = new THREE.Shape(shape.map(([x, y]) => new THREE.Vector2(x, y)));
+    const geo = new THREE.ExtrudeGeometry(s, { depth: 0.13, bevelEnabled: true, bevelThickness: 0.015, bevelSize: 0.015, bevelSegments: 2 });
+    geo.translate(0, 0, -0.065);
+    const rib = mesh(smoothNormals(geo), pale);
+    rib.rotation.y = a - Math.PI / 2;
   }
 
-  // ---------------------------------------------------------- the room
+  // ---------------------------------------------------------- the room shell
   const winY = M.H_ROOM + M.SILL, roofY = M.H_ROOM + M.ROOM_H, WIN_H = roofY - winY;
-  // sill wall, inside and out, and its cap
-  arcBand(M.R_ROOM, M.H_ROOM, winY, 0, TAU, conc, 56); arcBand(M.R_ROOM - 0.18, M.H_ROOM, winY, 0, TAU, conc, 56);
-  mesh(new THREE.RingGeometry(M.R_ROOM - 0.18, M.R_ROOM, 56).rotateX(-Math.PI / 2), conc, 0, winY, 0);
-  // the windows: bays round the circle, each a tall pane over a short one,
-  // the glass CURVED to the drum, the rails curved with it, the mullions
-  // posts at the joints. Abandoned: two in five gone, one in five broken.
+  arcBand(M.R_ROOM, M.H_ROOM, winY, 0, TAU, conc, 72); arcBand(M.R_ROOM - 0.18, M.H_ROOM, winY, 0, TAU, inside, 72);
+  mesh(new THREE.RingGeometry(M.R_ROOM - 0.22, M.R_ROOM + 0.04, 72).rotateX(-Math.PI / 2), conc, 0, winY, 0);   // the sill, a little proud
   const BAYS = 22, RG = M.R_ROOM - 0.06, split = winY + WIN_H * 0.3;
   const shardAt = [];
-  for (const y of [winY + 0.05, split, roofY - 0.05]) arcBand(RG + 0.03, y - 0.05, y + 0.05, 0, TAU, frame, 56);
+  for (const y of [winY + 0.04, split, roofY - 0.04]) arcBand(RG + 0.035, y - 0.04, y + 0.04, 0, TAU, frame, 88);
   for (let i = 0; i < BAYS; i++) {
     const a0 = i / BAYS * TAU, a1 = (i + 1) / BAYS * TAU;
-    const post = mesh(new THREE.BoxGeometry(0.16, WIN_H, 0.16), frame, Math.sin(a0) * RG, winY + WIN_H / 2, Math.cos(a0) * RG);
+    const post = mesh(roundBox(0.09, WIN_H, 0.12, 0.012), frame, Math.sin(a0) * RG, winY + WIN_H / 2, Math.cos(a0) * RG);
     post.rotation.y = a0;
-    const pad = 0.09 / RG;
-    for (const [y0, y1] of [[winY + 0.1, split - 0.05], [split + 0.05, roofY - 0.1]]) {
+    const pad = 0.05 / RG;
+    for (const [y0, y1] of [[winY + 0.08, split - 0.04], [split + 0.04, roofY - 0.08]]) {
       const state = rnd();
-      if (state < 0.38) { shardAt.push((a0 + a1) / 2); continue; }                    // gone
-      let ya = y0, yb = y1;
-      if (state < 0.55) { yb = y0 + (y1 - y0) * (0.35 + rnd() * 0.3); shardAt.push((a0 + a1) / 2); }   // broken off short
-      arcBand(RG, ya, yb, a0 + pad, a1 - pad, glass, 6);
+      if (state < 0.30) { shardAt.push((a0 + a1) / 2); continue; }                    // gone
+      let yb = y1;
+      if (state < 0.46) { yb = y0 + (y1 - y0) * (0.35 + rnd() * 0.3); shardAt.push((a0 + a1) / 2); }   // broken off short
+      arcBand(RG, y0, yb, a0 + pad, a1 - pad, glass, 6);
     }
   }
-  for (const am of shardAt) for (let k = 0; k < 4; k++) {
-    const r = M.R_ROOM - 0.5 - rnd() * 1.4, a = am + (rnd() - 0.5) * 0.22;
-    const sh = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0.1 + rnd() * 0.16, 0, 0.02, 0.03, 0, 0.1 + rnd() * 0.13], 3)), glass);
-    sh.geometry.computeVertexNormals(); sh.position.set(Math.sin(a) * r, M.H_ROOM + 0.03, Math.cos(a) * r); sh.rotation.y = rnd() * TAU; g.add(sh);
+  // what came down: shards, mostly small, all near the glass they came out of
+  const shardGeo = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0.12, 0, 0.02, 0.03, 0, 0.1], 3));
+  shardGeo.computeVertexNormals();
+  for (const am of shardAt) for (let k = 0; k < 5; k++) {
+    const r = M.R_ROOM - 0.35 - Math.pow(rnd(), 1.6) * 1.4, a = am + (rnd() - 0.5) * 0.22;
+    const sh = new THREE.Mesh(shardGeo, glass);
+    sh.position.set(Math.sin(a) * r, M.H_ROOM + 0.012, Math.cos(a) * r); sh.rotation.y = rnd() * TAU; sh.scale.setScalar(0.5 + rnd() * 1.2); g.add(sh);
   }
-  // the roof: fascia, a low dome, and the ceiling with its deep ribs
-  arcBand(M.R_ROOM + 0.3, roofY - 0.02, roofY + 0.32, 0, TAU, conc, 56);
-  mesh(new THREE.LatheGeometry([new THREE.Vector2(M.R_ROOM + 0.3, roofY + 0.32), new THREE.Vector2(4.2, roofY + 0.5), new THREE.Vector2(2.0, roofY + 0.62), new THREE.Vector2(0, roofY + 0.7)], 56), conc);
-  mesh(new THREE.CircleGeometry(M.R_ROOM, 56).rotateX(Math.PI / 2), conc, 0, roofY, 0);
-  /* THE CEILING MUST NOT BE THE BRIGHTEST THING IN THE ROOM. Twenty-four
-   * ribs in the pale of the stair made a lit fan overhead that took the eye
-   * off everything under it; the ceiling of a dark room is dark. */
-  const ceil = pale.clone(); ceil.color.setHex(0x9aa2b0); ceil.emissive.setHex(0x394252);
+  // the roof: fascia, a low dome, and the ceiling with its ribs
+  arcBand(M.R_ROOM + 0.3, roofY - 0.02, roofY + 0.32, 0, TAU, conc, 72);
+  mesh(new THREE.LatheGeometry([new THREE.Vector2(M.R_ROOM + 0.3, roofY + 0.32), new THREE.Vector2(4.2, roofY + 0.5), new THREE.Vector2(2.0, roofY + 0.62), new THREE.Vector2(0, roofY + 0.7)], 72), conc);
+  mesh(new THREE.CircleGeometry(M.R_ROOM, 72).rotateX(Math.PI / 2), inside, 0, roofY, 0);
   for (let i = 0; i < 24; i++) {
     const a = i / 24 * TAU, len = M.R_ROOM - 0.25;
-    const rib = new THREE.Mesh(new THREE.BoxGeometry(len, 0.34, 0.14), ceil);
-    const pos = rib.geometry.attributes.position;
-    for (let k = 0; k < pos.count; k++) { const x = pos.getX(k); const s = 1 - 0.55 * ((x + len / 2) / len); pos.setY(k, pos.getY(k) * s); }
-    rib.geometry.translate(len / 2, 0, 0);
-    rib.position.set(0, roofY - 0.17, 0); rib.rotation.y = a - Math.PI / 2;
-    g.add(rib);
-  }
-  /* ------------------------------------------------------- the seventies
-   * What was left in it. The brief is a room somebody LIVED in — brought
-   * the sofa up that spiral stair, papered over the windows they did not
-   * want, put a record on — and then walked out of and never came back to.
-   * So nothing in here is ruined: it is dusty, sun-bleached down one side,
-   * one chair is over and the records are off the shelf, and everything
-   * else is exactly where it was left. Abandoned is a STATE, not a style;
-   * the style is 1974. */
-  /* AND THERE ARE NO LIGHTS IN HERE. There were five, and they were the
-   * whole of "the game is lagging horribly". Measured: the room renders in
-   * 4.1 ms and the lamps cost 0.14 of that, so it was never the drawing —
-   * it is that EVERY LIGHT IN A SCENE IS A SHADER DEFINE. Five point lights
-   * entering the scene changes `NUM_POINT_LIGHTS` for every material in the
-   * game, and three then recompiles all of them: 193 ms in the room, 312 on
-   * the beach, and again on the way back out, at 320 m — which is in the
-   * middle of a walk, so it reads as the game randomly seizing up.
-   *
-   * Warming it only moves the bill; it does not cancel it. The answer is
-   * the one the rocks and the creatures and the tall one already use, and
-   * that this file already says twice about textures: DO IT IN THE MAP,
-   * NOT WITH A LAMP. Every material in the room carries its own emissive
-   * off its own map, hard enough to read under a quarter moon, and the
-   * scene's light count never changes for the pavilion at all. */
-
-  /* ------------------------------------------------------- the seventies
-   * The brief is a room somebody LIVED in — brought the sofa up that
-   * spiral stair, put a record on — and then walked out of and never came
-   * back to. So nothing in here is ruined: it is dusty, sun-bleached down
-   * one side, one chair is over and the records are off the shelf, and
-   * everything else is exactly where it was left.
-   *
-   * AND THE GLASS GOES ALL THE WAY ROUND. Six bays on the cliff side were
-   * papered over from the inside — bullseye paper, big and warm, with the
-   * furniture that wants a wall standing against it — and it was the
-   * wrong idea in a building whose whole argument is a drum of windows on
-   * a column. A round room with a horizon in every direction does not want
-   * a back; it wants everything in it kept BELOW THE SILL, so the band of
-   * glass runs unbroken over the top of the furniture and the sea is
-   * visible from anywhere you stand. Nothing in here now stands higher
-   * than 0.75 m but the lamp, the palm and what hangs from the ceiling. */
-  const rugTex = rugTexture(5);
-  /* AND NOTHING IN HERE IS LIT BY A LAMP, SO THE EMISSIVE IS THE LIGHTING —
-   * which is why every one of these was driven hard enough to read under a
-   * quarter moon, and why the room came out as a set of coloured shapes at
-   * one brightness with no form in any of them. What was wrong is not the
-   * palette, it is the LEVEL: a surface whose emissive is nearly as bright
-   * as its own colour cannot be shaded by anything, so the moon's rake, the
-   * facets and the fall-off all vanish and the fabric reads as plastic.
-   * Everything below is lifted enough to be visible and no further, and the
-   * two loudest — the shag rug and the sofa's orange — are pulled off full
-   * saturation besides, because a room somebody left twenty years ago has
-   * been standing in that window the whole time. */
-  const rugMat = new THREE.MeshStandardMaterial({ map: rugTex, roughness: 1, metalness: 0, emissive: 0x6e4620, emissiveMap: rugTex, emissiveIntensity: 0.92, side: THREE.DoubleSide });
-  const teakTex = woodTexture(9); teakTex.repeat.set(2.2, 2.2);
-  const teak = new THREE.MeshStandardMaterial({ map: teakTex, color: 0xa87d54, roughness: 0.72, metalness: 0, flatShading: true, emissive: 0x5e3c1e, emissiveMap: teakTex, emissiveIntensity: 1.05 });
-  const rust = new THREE.MeshStandardMaterial({ color: 0xb45a30, roughness: 0.95, metalness: 0, flatShading: true, emissive: 0x6a2c11 });
-  const rustDk = new THREE.MeshStandardMaterial({ color: 0x86412a, roughness: 0.98, metalness: 0, flatShading: true, emissive: 0x4a1f0a });
-  const mustard = new THREE.MeshStandardMaterial({ color: 0xc19a48, roughness: 0.95, metalness: 0, flatShading: true, emissive: 0x6e5218 });
-  const olive = new THREE.MeshStandardMaterial({ color: 0x6e7444, roughness: 0.95, metalness: 0, flatShading: true, emissive: 0x33381a });
-  const bone = new THREE.MeshStandardMaterial({ color: 0xc9bfa6, roughness: 0.9, metalness: 0, flatShading: true, emissive: 0x585444 });
-  const chrome = new THREE.MeshStandardMaterial({ color: 0xa8b0bc, roughness: 0.34, metalness: 0.22, flatShading: true, emissive: 0x434c58 });
-  const gloss = new THREE.MeshStandardMaterial({ color: 0xc2643a, roughness: 0.42, metalness: 0.05, flatShading: true, emissive: 0x5e2a12 });
-  const smoke = new THREE.MeshPhysicalMaterial({ color: 0x241d16, roughness: 0.42, transparent: true, opacity: 0.62, side: THREE.DoubleSide, depthWrite: false, emissive: 0x0e0b08 });
-  const box = (w, h, d, mat, x, y, z, ry) => { const m = mesh(new THREE.BoxGeometry(w, h, d), mat, x, y, z); if (ry) m.rotation.y = ry; return m; };
-  const cyl = (r0, r1, h, mat, x, y, z, n) => mesh(new THREE.CylinderGeometry(r0, r1, h, n || 12), mat, x, y, z);
-  const F = M.H_ROOM;                                   // the room's floor
-  // a collider that only exists UP HERE: `floorY` is the head-height gate the
-  // push-out already reads, so a sofa five metres up is not a wall on the
-  // sand under it. Nothing in the room is a floor — you walk round it.
-  const room = (x, z, r, h) => colliders.push({ x, z, r, top: F + h, floorY: F - 0.8, mat: 'wood' });
-  const at = (a, r) => [Math.sin(a) * r, Math.cos(a) * r];
-
-  { // the terrazzo, laid right out to the glass
-    const terTex = terrazzoTexture(21); terTex.repeat.set(11, 11);
-    const ter = new THREE.MeshStandardMaterial({ map: terTex, roughness: 0.82, metalness: 0, emissive: 0x3e444e, emissiveMap: terTex, emissiveIntensity: 0.95, side: THREE.DoubleSide });
-    mesh(new THREE.RingGeometry(M.BORE, M.R_ROOM - 0.02, 56).rotateX(-Math.PI / 2), ter, 0, F + 0.006, 0);
+    const s = new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(len, 0), new THREE.Vector2(len, -0.14), new THREE.Vector2(0, -0.34)]);
+    const geo = new THREE.ExtrudeGeometry(s, { depth: 0.12, bevelEnabled: true, bevelThickness: 0.012, bevelSize: 0.012, bevelSegments: 2 });
+    geo.translate(0, 0, -0.06);
+    const rib = mesh(smoothNormals(geo), inside, 0, roofY, 0);
+    rib.rotation.y = a - Math.PI / 2;
   }
 
-  /* The rug: a SECTOR of the ring, not a disc. A disc big enough to matter
-   * in an eleven-metre room lay straight over the open well in the middle
-   * of it; a sector clears the well by construction and puts the wave
-   * pattern's own rings concentric with the building, which is what a round
-   * room does to a round rug anyway. */
-  const RUG0 = M.DOOR_ANG - 2.10, RUG1 = M.DOOR_ANG + 1.15;
-  {
-    const r0 = M.BORE + 0.30, r1 = M.R_ROOM - 0.55;
-    ringArc(r0, r1, RUG0, RUG1, rugMat, F + 0.03);
-    arcBand(r1, F, F + 0.055, RUG0, RUG1, rugMat, 30);
-  }
-
-  /* THE SOFA IS CURVED, NOT CHOPPED. It was five boxes turned to the
-   * tangent and laid round the arc, and boxes on a curve INTERPENETRATE —
-   * every joint had one unit's corner buried in the next and the shading
-   * tore along the seam, which is what the owner saw. A round room takes a
-   * curved sofa: it is arcs of the drum, the same `arcBand` and `ringArc`
-   * the building is made of, with the modules read as narrow gaps between
-   * the cushions instead of as separate lumps of furniture. */
-  // an arc of 1.9 rad at this radius is eight and a half metres of sofa —
-  // a BANK of upholstery, not a piece of furniture. 1.2 seats four.
-  const SOF0 = M.DOOR_ANG - 0.95, SOF1 = M.DOOR_ANG + 0.25;
-  {
-    const rIn = M.R_ROOM - 1.60, rOut = M.R_ROOM - 0.62;
-    const seatY = F + 0.38, cushY = seatY + 0.20, backY = F + 0.92, armY = F + 0.62;
-    const n = Math.round((SOF1 - SOF0) * 14);
-    /* A SOFA IS A BOX WITH A BACK, NOT A LEDGE. The first curved one was a
-     * plinth with flat plates laid on it: seen from standing height it read
-     * as a red shelf with cushions painted on. The back stands 0.54 m over
-     * the seat, the cushions are 0.20 thick with a finger's gap between,
-     * and there are ARMS — which is most of what tells the eye how big a
-     * piece of furniture is. */
-    arcBand(rIn, F, seatY, SOF0, SOF1, rustDk, n);                        // the plinth
-    ringArc(rIn, rOut, SOF0, SOF1, rustDk, seatY);
-    arcBand(rOut, F, backY, SOF0, SOF1, rustDk, n);                       // the back, outside face
-    arcBand(rOut - 0.26, seatY, backY, SOF0, SOF1, rustDk, n);            // and inside
-    ringArc(rOut - 0.26, rOut, SOF0, SOF1, rustDk, backY);
-    for (const [a, sg] of [[SOF0, -1], [SOF1, 1]]) {                      // the arms
-      const [ax, az] = at(a + sg * 0.055, (rIn + rOut) / 2);
-      const arm = mesh(new THREE.BoxGeometry(rOut - rIn, armY - F, 0.24), rustDk, ax, (F + armY) / 2, az);
-      arm.rotation.y = a - Math.PI / 2;
-      const [bx2, bz2] = at(a + sg * 0.055, (rIn + rOut) / 2);
-      const top = mesh(new THREE.BoxGeometry(rOut - rIn, 0.10, 0.30), rust, bx2, armY + 0.03, bz2);
-      top.rotation.y = a - Math.PI / 2;
-    }
-    // the cushions, sitting in the seat and up the back
-    const UNITS = 3, gap = 0.045;
-    for (let i = 0; i < UNITS; i++) {
-      const a0 = SOF0 + 0.09 + (SOF1 - SOF0 - 0.18) * i / UNITS + gap;
-      const a1 = SOF0 + 0.09 + (SOF1 - SOF0 - 0.18) * (i + 1) / UNITS - gap;
-      const m2 = i === 1 ? mustard : rust;
-      ringArc(rIn + 0.06, rOut - 0.30, a0, a1, m2, cushY);
-      arcBand(rIn + 0.06, seatY, cushY, a0, a1, m2, 6);
-      arcBand(rOut - 0.30, seatY, cushY, a0, a1, m2, 6);
-      const bm = i === 1 ? rust : mustard;
-      arcBand(rOut - 0.28, cushY - 0.02, backY - 0.04, a0, a1, bm, 6);
-      ringArc(rOut - 0.28, rOut - 0.04, a0, a1, bm, backY - 0.04);
-    }
-    /* AND ITS COLLIDER REACHES THE GLASS. At the seat's own radius there was
-     * a half-metre pocket left between the back of the sofa and the room's
-     * outer clamp — no way in but through the furniture, and no way out of
-     * it once a knockback or a teleport put you there. Measured: four spots
-     * behind it could not be left in any of eight directions. The discs
-     * cover the whole depth of it and stop a hand's breadth SHORT of the
-     * room's own outer clamp — reach past that and the push-out and the
-     * clamp fight over you every frame, which is the same trap wearing the
-     * other hat. */
-    for (let i = 0; i < 6; i++) room(...at(SOF0 + (SOF1 - SOF0) * i / 5, 4.45), 0.52, 0.95);
-    for (const [aa, rr, mm] of [[SOF0 + 0.26, rOut - 0.44, mustard], [SOF1 - 0.28, rOut - 0.44, bone]]) {
-      const [cx, cz] = at(aa, rr);
-      const c2 = mesh(new THREE.BoxGeometry(0.32, 0.28, 0.13), mm, cx, cushY + 0.20, cz);
-      c2.rotation.set(0.30, aa, 0.2);
-    }
-    const [fx, fz] = at(M.DOOR_ANG - 0.62, 3.1);
-    const fc = mesh(new THREE.BoxGeometry(0.42, 0.14, 0.42), mustard, fx, F + 0.12, fz);
-    fc.rotation.set(0, 0.7, 0.06);
-  }
-
-  /* THE GLOBE CHAIRS FACE SOMETHING. They were dropped in at whatever angle
-   * their own position happened to give them, so two identical spheres sat
-   * in a round room pointing at nothing and at each other — which is the
-   * whole of "the furniture doesn't make sense". A chair faces the thing
-   * the room is FOR: the pair flank the table across the rug from the sofa,
-   * both turned in at it, so the four pieces make one conversation and the
-   * sofa's own arc is the far side of it. `face` is the angle its mouth
-   * looks along, and it is derived from where the chair stands and where
-   * the table is, not chosen. */
-  const TAB_A = M.DOOR_ANG - 0.42, TAB_R = 2.85;
-  const [tabX, tabZ] = at(TAB_A, TAB_R);
-  const ballChair = (a, r, tipped) => {
-    const [x, z] = at(a, r);
-    const grp = new THREE.Group();
-    const R = 0.66, open = 2.0;              // the mouth, a good third of the sphere
-    const shell = new THREE.Mesh(new THREE.SphereGeometry(R, 22, 16, open / 2, Math.PI * 2 - open), gloss);
-    shell.material = gloss.clone(); shell.material.side = THREE.DoubleSide;
-    const lining = new THREE.Mesh(new THREE.SphereGeometry(R - 0.055, 20, 14, open / 2, Math.PI * 2 - open), bone);
-    grp.add(shell, lining);
-    /* AND A SPHERE WITH A WEDGE OUT OF IT OPENS ON -X, NOT -Z. Three's
-     * `phiStart` runs from the -X axis, so the gap a `phiLength` short of a
-     * full turn leaves is centred there — and a chair turned as if its
-     * mouth were on -Z is a chair facing ninety degrees away from whatever
-     * you pointed it at. Both of them were, which is why two chairs in a
-     * round room stared past each other. Local -X goes to the world angle
-     * `face` at `face + PI/2`, and that is the whole of it. */
-    const face = Math.atan2(tabX - x, tabZ - z);
-    grp.position.set(x, F + R + 0.30, z);
-    grp.rotation.y = face + Math.PI / 2;
-    if (!tipped) {
-      const cush = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.15, 0.56), olive);
-      cush.position.set(-0.05, -R + 0.28, 0); grp.add(cush);
-      cyl(0.30, 0.36, 0.06, chrome, x, F + 0.05, z, 16);
-      cyl(0.09, 0.09, 0.34, chrome, x, F + 0.20, z, 12);
-    } else {
-      grp.rotation.z = 1.42;                                  // over on its side
-      grp.position.y = F + R * 0.92;
-      const [cx, cz] = at(a + 0.34, r - 0.5);
-      const cu = mesh(new THREE.BoxGeometry(0.56, 0.15, 0.46), olive, cx, F + 0.12, cz);
-      cu.rotation.set(0, face + 0.6, 0.1);
-      const [px2, pz2] = at(a - 0.22, r + 0.30);              // and the pedestal it came off
-      const pd = cyl(0.30, 0.36, 0.06, chrome, px2, F + 0.04, pz2, 16);
-      pd.rotation.z = 0.5;
-    }
-    g.add(grp);
-    room(x, z, 0.70, 1.4);
-  };
-  /* BOTH OF THEM ON THEIR FEET. One was over on its side on the rug, and a
-   * globe chair lying down is a smooth orange sphere with its mouth in the
-   * floor: from anywhere in the room it read as a beach ball somebody had
-   * left, which is not what a chair is for. Upright and turned in at the
-   * table they are unmistakably chairs, and the pair of them makes the
-   * shape of the room's one good idea. */
-  ballChair(TAB_A - 0.92, 3.55, false);
-  ballChair(TAB_A + 0.86, 3.50, false);
-
-  // the low table between them: smoked glass on a chrome drum, and what is
-  // still on it after thirty years of nobody
-  {
-    cyl(0.30, 0.38, 0.36, chrome, tabX, F + 0.20, tabZ, 18);
-    cyl(0.86, 0.86, 0.05, smoke, tabX, F + 0.40, tabZ, 26);
-    // the rim is a BAND round the glass, not a plate laid over it
-    mesh(new THREE.CylinderGeometry(0.88, 0.88, 0.07, 26, 1, true), chrome, tabX, F + 0.405, tabZ);
-    cyl(0.055, 0.075, 0.13, bone, tabX + 0.30, F + 0.49, tabZ - 0.12, 10);
-    box(0.26, 0.03, 0.20, mustard, tabX - 0.22, F + 0.44, tabZ + 0.16, 0.5);
-    box(0.24, 0.02, 0.19, olive, tabX - 0.18, F + 0.465, tabZ + 0.20, 0.9);
-    cyl(0.11, 0.11, 0.07, gloss, tabX + 0.05, F + 0.46, tabZ + 0.30, 10);
-    room(tabX, tabZ, 0.9, 0.45);
-  }
-
-  /* The credenza, low against the glass on the cliff side: teak on splayed
-   * legs with the deck on it and the records that came off the shelf. Its
-   * top is at 1.01 m, which is above the 0.75 m sill — the one thing in
-   * the room that breaks the band, and it earns it, because this is the
-   * corner that says a person was here. */
-  {
-    /* AND IT WAS TURNED A QUARTER, WHICH PUT IT THROUGH THE GLASS. For a
-     * wedge whose centreline is its local +X — a stair tread — `a - PI/2` is
-     * the rotation that sends that centreline radially outward, and this
-     * file has a note saying so. A CREDENZA IS THE OTHER SHAPE: it is 1.90
-     * along its X and 0.46 through its Z, and it has to stand ALONG the
-     * wall, so what must point radially is its DEPTH. `rotation.y = a` sends
-     * local +Z to (sin a, cos a), which is the game's own radial direction,
-     * and leaves +X on the tangent. At `a - PI/2` the metre-ninety ran
-     * radially instead: from 3.85 out to 5.75 against a glass line at 5.60,
-     * so fifteen centimetres of it stood outside the building. Everything
-     * hung on it — the legs, the deck, the sleeves, the jewellery box — is
-     * written in the same frame and turns with it. */
-    const a = 2.30, r = M.R_ROOM - 0.80, [cx, cz] = at(a, r), ry = a;
-    box(1.90, 0.62, 0.46, teak, cx, F + 0.68, cz, ry);
-    box(1.94, 0.05, 0.50, teak, cx, F + 1.01, cz, ry);
-    for (const t of [-0.78, -0.26, 0.26, 0.78]) {
-      box(0.03, 0.16, 0.03, chrome, cx + Math.cos(ry) * t - Math.sin(ry) * 0.24, F + 0.72, cz - Math.sin(ry) * t - Math.cos(ry) * 0.24, ry);
-    }
-    for (const [sx2, sz2] of [[-0.84, 0.17], [0.84, 0.17], [-0.84, -0.17], [0.84, -0.17]]) {
-      const lx = cx + Math.cos(ry) * sx2 + Math.sin(ry) * sz2, lz = cz - Math.sin(ry) * sx2 + Math.cos(ry) * sz2;
-      const lg = cyl(0.028, 0.04, 0.37, teak, lx, F + 0.185, lz, 8); lg.rotation.z = sx2 > 0 ? -0.12 : 0.12;
-    }
-    box(0.60, 0.11, 0.42, teak, cx, F + 1.09, cz, ry);
-    cyl(0.15, 0.15, 0.015, chrome, cx - Math.cos(ry) * 0.06, F + 1.155, cz + Math.sin(ry) * 0.06, 18);
-    cyl(0.148, 0.148, 0.006, dark, cx - Math.cos(ry) * 0.06, F + 1.165, cz + Math.sin(ry) * 0.06, 18);
-    const lid = mesh(new THREE.BoxGeometry(0.60, 0.015, 0.42), smoke, cx, F + 1.31, cz - 0.16);
-    lid.rotation.set(-0.9, ry, 0);
-    box(0.02, 0.02, 0.22, chrome, cx + Math.cos(ry) * 0.22, F + 1.18, cz - Math.sin(ry) * 0.22, ry + 0.5);
-    for (let i = 0; i < 3; i++) {
-      const tx2 = sleeveTexture(i + 1);
-      const sl = new THREE.MeshStandardMaterial({ map: tx2, roughness: 1, emissive: 0x6e6248, emissiveMap: tx2, emissiveIntensity: 1.25, side: THREE.DoubleSide });
-      const off = -0.55 + i * 0.14;
-      const s2 = mesh(new THREE.BoxGeometry(0.31, 0.31, 0.012), sl, cx + Math.cos(ry) * off - Math.sin(ry) * 0.32, F + 0.17, cz - Math.sin(ry) * off - Math.cos(ry) * 0.32);
-      s2.rotation.set(0.30, ry, 0);
-    }
-    for (let i = 0; i < 4; i++) {
-      const tx2 = sleeveTexture(i + 4);
-      const sl = new THREE.MeshStandardMaterial({ map: tx2, roughness: 1, emissive: 0x4a4030, emissiveMap: tx2, emissiveIntensity: 1.0, side: THREE.DoubleSide });
-      const aa = a - 0.42 - i * 0.15, rr = M.R_ROOM - 1.6 - (i % 2) * 0.4;
-      const s2 = mesh(new THREE.PlaneGeometry(0.31, 0.31).rotateX(-Math.PI / 2), sl, ...(([xx, zz]) => [xx, F + 0.012 + i * 0.004, zz])(at(aa, rr)));
-      s2.rotation.y = aa * 1.7;
-    }
-    { const [dx2, dz2] = at(a - 0.86, M.R_ROOM - 2.1);
-      cyl(0.145, 0.145, 0.004, dark, dx2, F + 0.014, dz2, 20);
-      cyl(0.05, 0.05, 0.005, gloss, dx2, F + 0.017, dz2, 12); }
-    /* THE JEWELLERY BOX, at the other end of the credenza from the deck.
-     * It stands where a thing like this actually stands — on the top of the
-     * one piece of furniture in the room that is somebody's, beside the
-     * record they left on — and it is OPEN, lid back on its hinge, because
-     * a shut box is a box nobody looks in. The ring goes in it from the
-     * game, which is why the box writes down where its own velvet is.
-     *
-     * AND IT HAS TO BE SEEN FROM ACROSS THE ROOM. The first one was a
-     * 26 cm case in dark rosewood with a dark lining, standing on dark
-     * teak in an unlit room at night — which is to say four dark browns
-     * at the same level, and the one thing in the pavilion worth walking
-     * over to was the least visible thing in it. It is bigger (36 cm),
-     * the lid stands nearly UPRIGHT so the open box is a shape rather
-     * than a slab, the lining is a red that is actually lit, and there is
-     * a satin cushion in it under the ring. What carries it across the
-     * room, though, is neither of those: it is the LID'S INSIDE, angled
-     * back at you and driven hard — the one surface in the room the moon
-     * cannot reach and the only one here that is allowed to be bright. */
-    {
-      const jx = cx + Math.cos(ry) * 0.62, jz = cz - Math.sin(ry) * 0.62, jy = F + 1.035;
-      const rosewood = new THREE.MeshStandardMaterial({ color: 0x7a4a2e, roughness: 0.42, metalness: 0,
-        flatShading: true, emissive: 0x53301a });
-      const velvet = new THREE.MeshStandardMaterial({ color: 0x9c1f34, roughness: 1, metalness: 0,
-        flatShading: true, emissive: 0x7a1526 });
-      const satin = new THREE.MeshStandardMaterial({ color: 0xb03a4c, roughness: 0.86, metalness: 0,
-        flatShading: true, emissive: 0x8c2434 });
-      const brass = new THREE.MeshStandardMaterial({ color: 0xd8b878, roughness: 0.34, metalness: 0.18,
-        flatShading: true, emissive: 0x8a6c34 });
-      box(0.36, 0.11, 0.26, rosewood, jx, jy + 0.055, jz, ry);       // the case
-      box(0.33, 0.02, 0.23, brass, jx, jy + 0.104, jz, ry);          // the brass rim round the lining
-      box(0.31, 0.02, 0.21, velvet, jx, jy + 0.110, jz, ry);         // the lining
-      const cush = box(0.17, 0.035, 0.09, satin, jx, jy + 0.128, jz, ry);   // the cushion the ring sits on
-      cush.rotation.x = 0.06;
-      /* THE LID IS NEARLY UP. At an eighth of a turn it lay back across the
-       * credenza and read as another plank; at four fifths of a right angle
-       * it stands, catches the window down one face and turns the whole
-       * thing into a silhouette you can pick out from the stair. */
-      const lidA = -1.34;
-      const hx = jx - Math.sin(ry) * 0.128, hz = jz - Math.cos(ry) * 0.128;
-      const lid = box(0.36, 0.02, 0.26, rosewood, hx - Math.sin(ry) * 0.11 * Math.cos(lidA), jy + 0.112 + 0.13 * Math.sin(-lidA), hz - Math.cos(ry) * 0.11 * Math.cos(lidA), ry);
-      lid.rotation.x = lidA; lid.rotation.y = ry;
-      const lin = box(0.33, 0.012, 0.23, velvet, hx - Math.sin(ry) * 0.102 * Math.cos(lidA), jy + 0.118 + 0.125 * Math.sin(-lidA), hz - Math.cos(ry) * 0.102 * Math.cos(lidA), ry);
-      lin.rotation.x = lidA; lin.rotation.y = ry;
-      lin.material = velvet.clone();
-      lin.material.emissive.setHex(0xb02a3e);          // the inside of the lid: the one bright thing
-      lin.material.emissiveIntensity = 1.6;
-      for (const t of [-0.11, 0.11]) {                               // the hinge knuckles
-        const h = cyl(0.010, 0.010, 0.04, brass, hx + Math.cos(ry) * t, jy + 0.112, hz - Math.sin(ry) * t, 8);
-        h.rotation.z = Math.PI / 2; h.rotation.y = ry;
-      }
-      M.JEWEL = { x: jx, y: jy + 0.145, z: jz, ry };                 // on the cushion: the ring sits here
-    }
-    room(cx, cz, 1.0, 1.1);
-  }
-
-  /* And a long low sideboard round the rest of the cliff side, where the
-   * paper used to be: waist-high shelving in the same teak, open, with the
-   * books gone soft and the plants that were somebody's kept on it. It
-   * fills a wall that is now all glass without standing in front of any of
-   * it — nothing on it reaches the sill. */
-  {
-    const a0 = 2.95, a1 = 4.15, rIn = M.R_ROOM - 0.62, rOut = M.R_ROOM - 0.18;
-    const n = Math.round((a1 - a0) * 12);
-    for (const y of [F + 0.02, F + 0.36, F + 0.70]) ringArc(rIn, rOut, a0, a1, teak, y);
-    arcBand(rIn, F, F + 0.70, a0, a1, teak, n);
-    for (let i = 0; i <= 4; i++) {                       // the uprights
-      const aa = a0 + (a1 - a0) * i / 4, [ux, uz] = at(aa, (rIn + rOut) / 2);
-      const u = mesh(new THREE.BoxGeometry(rOut - rIn, 0.70, 0.05), teak, ux, F + 0.35, uz);
-      u.rotation.y = aa - Math.PI / 2;
-    }
-    for (let i = 0; i < 14; i++) {                       // books, leaning
-      const aa = a0 + 0.10 + (a1 - a0 - 0.2) * (i / 14) + (i % 3) * 0.008;
-      const [bx, bz] = at(aa, (rIn + rOut) / 2 + ((i % 2) ? 0.02 : -0.02));
-      const bk = mesh(new THREE.BoxGeometry(0.16, 0.19 + (i % 4) * 0.03, 0.030 + (i % 3) * 0.008),
-        [rust, mustard, olive, bone, teak][i % 5], bx, F + (i % 2 ? 0.47 : 0.13), bz);
-      bk.rotation.set(0, aa - Math.PI / 2, i === 6 || i === 11 ? 0.42 : 0);
-    }
-    for (let i = 0; i < 5; i++) room(...at(a0 + (a1 - a0) * i / 4, (rIn + rOut) / 2), 0.42, 0.75);
-  }
-
-  // the set, on its own legs, low against the glass across from the sofa
-  {
-    const a = 0.30, r = M.R_ROOM - 1.15, [tx, tz] = at(a, r), ry = a - Math.PI / 2;
-    box(0.86, 0.62, 0.52, teak, tx, F + 0.74, tz, ry);
-    const scr = box(0.62, 0.44, 0.03, dark, tx - Math.sin(ry) * 0.27, F + 0.78, tz - Math.cos(ry) * 0.27, ry);
-    scr.material = new THREE.MeshStandardMaterial({ color: 0x22282e, roughness: 0.28, metalness: 0.1, emissive: 0x0d1218 });
-    box(0.10, 0.30, 0.03, bone, tx - Math.sin(ry) * 0.27 + Math.cos(ry) * 0.36, F + 0.78, tz - Math.cos(ry) * 0.27 - Math.sin(ry) * 0.36, ry);
-    for (const [sx2, sz2] of [[-0.34, 0.19], [0.34, 0.19], [-0.34, -0.19], [0.34, -0.19]]) {
-      const lx = tx + Math.cos(ry) * sx2 + Math.sin(ry) * sz2, lz = tz - Math.sin(ry) * sx2 + Math.cos(ry) * sz2;
-      const lg = cyl(0.022, 0.03, 0.42, teak, lx, F + 0.21, lz, 8); lg.rotation.z = sx2 > 0 ? -0.16 : 0.16; lg.rotation.x = sz2 > 0 ? -0.1 : 0.1;
-    }
-    room(tx, tz, 0.55, 1.1);
-  }
-
-  // a dome lamp on a chrome stem, standing at the sofa's end
-  {
-    const a = SOF0 - 0.22, r = M.R_ROOM - 1.05, [lx, lz] = at(a, r);
-    cyl(0.24, 0.30, 0.04, chrome, lx, F + 0.03, lz, 16);
-    cyl(0.022, 0.022, 1.42, chrome, lx, F + 0.73, lz, 8);
-    const shade = mesh(new THREE.SphereGeometry(0.30, 18, 10, 0, Math.PI * 2, Math.PI * 0.42, Math.PI * 0.58), gloss, lx, F + 1.44, lz);
-    shade.material = gloss.clone(); shade.material.side = THREE.DoubleSide;
-  }
-
-  // the pendant over the well, dead, and the ball nobody took down
-  {
-    cyl(0.012, 0.012, 0.62, iron, 0, roofY - 0.31, 0, 6);
-    const sh = mesh(new THREE.CylinderGeometry(0.02, 0.26, 0.30, 20, 1, true), bone, 0, roofY - 0.76, 0);
-    sh.material = bone.clone(); sh.material.side = THREE.DoubleSide;
-    const [bx, bz] = at(M.DOOR_ANG - 0.7, 1.5);
-    cyl(0.008, 0.008, 0.46, iron, bx, roofY - 0.23, bz, 6);
-    const ballMat = new THREE.MeshStandardMaterial({ color: 0x9aa6b4, roughness: 0.42, metalness: 0.16, flatShading: true, emissive: 0x3e4654 });
-    mesh(new THREE.IcosahedronGeometry(0.20, 2), ballMat, bx, roofY - 0.62, bz);
-  }
-
-  // a pouffe, and the palm somebody kept alive up here for a while
-  {
-    const [px, pz] = at(M.DOOR_ANG - 1.05, 2.15);
-    cyl(0.34, 0.36, 0.34, mustard, px, F + 0.17, pz, 14);
-    room(px, pz, 0.38, 0.35);
-    const [qx, qz] = at(0.95, M.R_ROOM - 0.85);
-    cyl(0.26, 0.20, 0.42, teak, qx, F + 0.21, qz, 12);
-    for (let i = 0; i < 7; i++) {
-      const la = i / 7 * TAU, len = 0.5 + (i % 3) * 0.18;
-      const lf = mesh(new THREE.BoxGeometry(len, 0.02, 0.10), olive, qx + Math.sin(la) * len * 0.42, F + 0.55 + (i % 2) * 0.12, qz + Math.cos(la) * len * 0.42);
-      lf.rotation.set(0, la - Math.PI / 2, -0.55 - (i % 3) * 0.2);
-      lf.material = new THREE.MeshStandardMaterial({ color: 0x6b5a2a, roughness: 1, flatShading: true, emissive: 0x201a0a });
-    }
-    room(qx, qz, 0.3, 0.6);
-  }
-
-  { /* the beach, coming in. A drift of sand under each bay whose panes are
-     * gone, thinning inward — the one thing in the room that was not put
-     * there by anybody. */
-    const drift = new THREE.MeshStandardMaterial({ color: 0x8f9099, roughness: 1, metalness: 0, flatShading: true, emissive: 0x33373f });
-    for (const am of shardAt.slice(0, 7)) {
-      const [dx2, dz2] = at(am, M.R_ROOM - 0.42);
-      const dr = mesh(new THREE.SphereGeometry(0.62, 12, 6, 0, TAU, 0, Math.PI / 2), drift, dx2, F + 0.005, dz2);
-      dr.scale.set(1.5, 0.10, 0.62); dr.rotation.y = am;
-    }
-  }
   // ---------------------------------------------------------- the stair
-  // pale wedge treads cantilevered from the column wall, winding up round an
-  // open well; a slim rail on the well side on thin balusters
+  /* A STAIR YOU CAN ACTUALLY WALK DOWN. It was pale wedges cantilevered from
+   * the wall round an open well, 1.16 m of tread from a rail at 0.67 m to the
+   * wall — and the walk's inner clamp sat INSIDE the rail, so you could walk
+   * through the balusters, and the walkable band was barely a body wide.
+   * The well is closed now: the treads spring from a NEWEL, a concrete post
+   * up the middle, and run out to the wall, so the whole bore is stair; the
+   * handrail is on the WALL, where your hand is when you are going down a
+   * spiral. Each tread is a slab with a rounded nosing, the pale poured
+   * concrete of the rest of the stair. */
   const N = Math.round(M.TURNS * M.TREADS), stepA = TAU / M.TREADS;
-  const tIn = 0.62, tOut = M.BORE - 0.02, half = stepA * 0.5 + 0.012;
+  const NEWEL = M.NEWEL, tIn = NEWEL - 0.02, tOut = M.BORE - 0.015, half = stepA * 0.5 + 0.012;
   const treadShape = new THREE.Shape();
   treadShape.moveTo(Math.cos(-half) * tIn, Math.sin(-half) * tIn);
   treadShape.lineTo(Math.cos(-half) * tOut, Math.sin(-half) * tOut);
-  for (let k = 1; k <= 6; k++) { const a = -half + (2 * half) * k / 6; treadShape.lineTo(Math.cos(a) * tOut, Math.sin(a) * tOut); }
+  for (let k = 1; k <= 8; k++) { const a = -half + (2 * half) * k / 8; treadShape.lineTo(Math.cos(a) * tOut, Math.sin(a) * tOut); }
   treadShape.lineTo(Math.cos(half) * tIn, Math.sin(half) * tIn);
   treadShape.closePath();
-  const treadGeo = new THREE.ExtrudeGeometry(treadShape, { depth: 0.09, bevelEnabled: false });
-  treadGeo.rotateX(Math.PI / 2);       // the shape was in XY; lay it flat, extruded downward
-  const railPts = [];
+  const treadGeo = smoothNormals(new THREE.ExtrudeGeometry(treadShape, { depth: 0.07, bevelEnabled: true, bevelThickness: 0.012, bevelSize: 0.012, bevelSegments: 2 }));
+  treadGeo.rotateX(Math.PI / 2);
+  mesh(new THREE.CylinderGeometry(NEWEL, NEWEL, M.H_ROOM + 1.0 - M.PLAT_TOP, 24), pale, 0, (M.PLAT_TOP + M.H_ROOM + 1.0) / 2, 0);
+  mesh(new THREE.SphereGeometry(NEWEL + 0.02, 20, 12), pale, 0, M.H_ROOM + 1.0, 0);
+  const railPts = [], RR = M.BORE - 0.09;
+  let railEnd = null;
   for (let i = 0; i <= N; i++) {
     const a = M.A0 - i * stepA, y = M.PLAT_TOP + i * M.STEP;
-    // the shape's +X is the tread's centreline; three's angle a maps +X to (sin a, 0, cos a)
-    /* THE SIGN THAT MIRRORED THE STAIR. rotation.y = π/2 - a put every tread
-     * at angle π - a, so the treads you could see wound the opposite way
-     * from the treads you could walk on and from the rail: you climbed
-     * invisible steps beside the visible ones and could not find the way
-     * down. a - π/2 is the rotation that sends the wedge's centreline to
-     * (sin a, 0, cos a), the game's angle. */
     const tr = new THREE.Mesh(treadGeo, pale);
     tr.position.set(0, y, 0); tr.rotation.y = a - Math.PI / 2;
     g.add(tr);
-    if (i % 2 === 0) { const b = mesh(new THREE.BoxGeometry(0.028, 0.92, 0.028), iron, Math.sin(a) * (tIn + 0.05), y + 0.46, Math.cos(a) * (tIn + 0.05)); b.rotation.y = a; }
-    railPts.push(new THREE.Vector3(Math.sin(a) * (tIn + 0.05), y + 0.92, Math.cos(a) * (tIn + 0.05)));
+    /* the wall-side handrail stops short of the head of the stair: carried on
+     * to the top tread it ran across the mouth of the well at waist height, and
+     * from the room the way down read as railed off.
+     * AND IT STOPS BELOW THE ROOM'S FLOOR, WHICH IS WHERE ITS WALL STOPS. The
+     * bore is a tube that ends at the floor; a rail 0.9 m over the treads rises
+     * out of it over the last few steps, and those points stood in the open
+     * mouth of the well with nothing behind them — the floating piece of
+     * railing, seen from the room. `RAIL_TOP` is the last height it may reach,
+     * and the end is turned back into the wall below. */
+    const RAIL_TOP = M.H_ROOM - 0.08;
+    if (a > M.TOP_ANG + M.GAP + 0.1 && y + 0.9 <= RAIL_TOP) {
+      railPts.push(new THREE.Vector3(Math.sin(a) * RR, y + 0.9, Math.cos(a) * RR));
+      railEnd = { a, y: y + 0.9 };
+    }
+    if (i % 3 === 0 && y + 0.86 <= RAIL_TOP && a > M.TOP_ANG + M.GAP + 0.1) {   // a bracket into the wall every third tread, only where there is rail and wall
+      const [bx, bz] = at(a, M.BORE - 0.04);
+      const br = mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.1, 6), iron, bx, y + 0.86, bz);
+      br.rotation.z = Math.PI / 2; br.rotation.y = a;
+    }
   }
-  mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(railPts), N * 4, 0.024, 6), iron);
+  // the end turns back into the wall — a return, so it never ends in the air
+  if (railEnd) {
+    const e = railEnd, a2 = e.a - stepA * 0.35;
+    railPts.push(new THREE.Vector3(Math.sin(a2) * (RR + 0.05), e.y - 0.02, Math.cos(a2) * (RR + 0.05)));
+    railPts.push(new THREE.Vector3(Math.sin(a2 - 0.05) * (M.BORE + 0.06), e.y - 0.04, Math.cos(a2 - 0.05) * (M.BORE + 0.06)));
+  }
+  mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(railPts), N * 4, 0.022, 8), iron);
   // the rail round the well in the room, open where the stair arrives
   {
-    const pts = [], a0 = M.TOP_ANG + 0.5, a1 = M.TOP_ANG + TAU - 0.5;
-    for (let i = 0; i <= 44; i++) { const a = a0 + (a1 - a0) * i / 44; pts.push(new THREE.Vector3(Math.sin(a) * (M.BORE + 0.12), M.H_ROOM + 0.95, Math.cos(a) * (M.BORE + 0.12))); }
-    mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 66, 0.024, 6), iron);
-    for (let i = 0; i <= 11; i++) { const a = a0 + (a1 - a0) * i / 11; const b = mesh(new THREE.BoxGeometry(0.028, 0.95, 0.028), iron, Math.sin(a) * (M.BORE + 0.12), M.H_ROOM + 0.475, Math.cos(a) * (M.BORE + 0.12)); b.rotation.y = a; }
+    const pts = [], a0 = M.TOP_ANG + M.GAP, a1 = M.TOP_ANG + TAU - M.GAP;
+    for (let i = 0; i <= 44; i++) { const a = a0 + (a1 - a0) * i / 44; pts.push(new THREE.Vector3(Math.sin(a) * (M.BORE + 0.08), M.H_ROOM + 0.95, Math.cos(a) * (M.BORE + 0.08))); }
+    mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 66, 0.022, 8), iron);
+    for (let i = 0; i <= 11; i++) { const a = a0 + (a1 - a0) * i / 11; mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.95, 6), iron, Math.sin(a) * (M.BORE + 0.08), M.H_ROOM + 0.475, Math.cos(a) * (M.BORE + 0.08)); }
+    for (let i = 0; i <= 22; i++) { const a = a0 + (a1 - a0) * i / 22; mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.8, 5), iron, Math.sin(a) * (M.BORE + 0.08), M.H_ROOM + 0.5, Math.cos(a) * (M.BORE + 0.08)); }
+    const p2 = pts.map((p) => new THREE.Vector3(p.x, M.H_ROOM + 0.12, p.z));
+    mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(p2), 66, 0.012, 6), iron);
   }
+
+  buildInterior({ g, M, mesh, arcBand, ringArc, at, rnd, colliders, shardAt, conc, inside, frame, iron, glass, dark, roofY });
+
+  /* EVERY CONCRETE SURFACE IS MAPPED IN METRES. A cylinder's own UVs stretch
+   * one map round a 32-metre drum and a 30-centimetre jamb alike, which is
+   * most of why the old building's texture looked smeared in one place and
+   * crowded in the next. In the house's own frame: anything facing up or down
+   * is mapped in plan, anything standing is mapped by its arc length round
+   * the axis and its height — so the board seams are level and the same size
+   * on every wall, and they run straight across the joins between pieces. */
+  g.updateMatrixWorld(true);
+  const seen = new Map();
+  g.traverse((o) => {
+    if (!o.isMesh || !CONC.has(o.material)) return;
+    let geo = o.geometry;
+    if (seen.has(geo)) { geo = geo.clone(); o.geometry = geo; }
+    seen.set(geo, true);
+    const p = geo.attributes.position, n = geo.attributes.normal; if (!n) return;
+    const uv = new Float32Array(p.count * 2), nm = new THREE.Matrix3().getNormalMatrix(o.matrix), N3 = new THREE.Vector3();
+    for (let i = 0; i < p.count; i++) {
+      V.fromBufferAttribute(p, i).applyMatrix4(o.matrix);
+      N3.fromBufferAttribute(n, i).applyMatrix3(nm).normalize();
+      if (Math.abs(N3.y) > 0.7) { uv[i * 2] = V.x; uv[i * 2 + 1] = V.z; }
+      else { const r = Math.max(0.6, Math.hypot(V.x, V.z)); uv[i * 2] = Math.atan2(V.x, V.z) * r; uv[i * 2 + 1] = V.y; }
+    }
+    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  });
 
   g.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
   return { group: g, colliders, gate: gateInfo };

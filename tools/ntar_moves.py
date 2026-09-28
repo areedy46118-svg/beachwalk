@@ -60,7 +60,7 @@ from mathutils import Vector, Quaternion, Matrix
 # skeletons, and neither of them cares which — the quantity this writes is
 # the rotation a bone has UNDERGONE, which knows nothing about either rig.
 #   blender -b -P tools/ntar_moves.py -- knight
-SET = next((a for a in ('knight', 'wong', 'drunk', 'orc', 'crawler', 'umbra', 'mutant') if a in sys.argv), 'ntar')
+SET = next((a for a in ('knight', 'wong', 'drunk', 'orc', 'crawler', 'umbra', 'mutant', 'demon') if a in sys.argv), 'ntar')
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', SET + '-moves.json')
 SRC = os.path.expanduser('~/Downloads')
 FPS = 30
@@ -254,6 +254,46 @@ MUTANT_CLIPS = [
     ('Injured Run Right Turn', 'injR',   'and to the right', ''),
 ]
 if SET == 'mutant': CLIPS = MUTANT_CLIPS
+# ---- AND THE DEMONS IN THE WHALE. The owner's "Scary Zombie Pack" (and the
+# "Not So Scary" folder inside it), every clip of it, onto PolyGoreStudio's
+# Cursed Rune Demon. The demon is itself a Mixamo rig, so this is the
+# cleanest retarget in the game: the same skeleton on both sides.
+_Z, _N = 'Scary Zombie Pack', 'Scary Zombie Pack/Not So Scary Zombie Pack'
+DEMON_CLIPS = [
+    ('zombie idle',          'idle',     'swaying where it stands', _Z),
+    ('zombie walk',          'walk',     'a lurching walk', _Z),
+    ('zombie run',           'run',      'flat out, arms flung', _Z),
+    ('running crawl',        'crawlRun', 'on all fours, fast', _Z),
+    ('zombie crawl',         'crawl',    'dragging itself', _Z),
+    ('zombie attack',        'zAtk',     'both arms raking down', _Z),
+    ('zombie biting',        'zBite',    'lunging in to bite', _Z),
+    ('zombie biting (2)',    'zBite2',   'a second bite', _Z),
+    ('zombie biting',        'feed',     'crouched over something, gnawing', _Z),
+    ('zombie neck bite',     'zNeck',    'grabbing for the neck', _Z),
+    ('zombie scream',        'roar',     'screaming', _Z),
+    ('zombie death',         'die',      'falling dead', _Z),
+    ('zombie dying',         'die2',     'dying slowly', _Z),
+    ('zombie attack',        'zAtkB',    'a second rake', _N),
+    ('zombie punching',      'zPunch',   'swinging a fist', _N),
+    ('zombie punching (2)',  'zPunch2',  'a flurry of fists', _N),
+    ('zombie kicking',       'zKick',    'a kick', _N),
+    ('zombie kicking (2)',   'zKick2',   'a second kick', _N),
+    ('zombie headbutt',      'zButt',    'the head driven in', _N),
+    ('zombie reaction hit',  'hit',      'rocked', _N),
+    ('zombie reaction hit (2)', 'hitBig', 'rocked hard', _N),
+    ('zombie running',       'runB',     'a second run', _N),
+    ('walking',              'walkB',    'a second walk', _N),
+    ('walking (2)',          'walkC',    'a third walk', _N),
+    ('zombie idle (2)',      'idleB',    'twitching', _N),
+    ('zombie idle (3)',      'idleC',    'hunched', _N),
+    ('zombie idle (4)',      'idleD',    'swaying', _N),
+    ('zombie scratch idle',  'idleS',    'scratching at itself', _N),
+    ('zombie stumbling',     'stumble',  'stumbling', _N),
+    ('zombie agonizing',     'agon',     'writhing', _N),
+    ('zombie stand up',      'getUp',    'getting up', _N),
+    ('zombie turn',          'turn',     'turning', _N),
+]
+if SET == 'demon': CLIPS = DEMON_CLIPS
 # THE BEATS, measured off the hips (see the log's own curve). A Mixamo clip
 # is a performance with an approach and a recovery either side of the thing
 # you want, and the game needs the thing:
@@ -324,7 +364,7 @@ CONTACT = {'uC1': 'LeftHand', 'uC2': 'RightHand', 'uC3': 'RightHand', 'uC4': 'Ri
     'oSpin': 'RightHand', 'oLeap': 'RightHand', 'oSlide': 'RightHand',
     'oKick': 'RightToeBase',
 }
-REST_FWD = SET in ('orc', 'crawler', 'umbra', 'mutant')
+REST_FWD = SET in ('orc', 'crawler', 'umbra', 'mutant', 'demon')
 # ---- AND A CLIP THAT NEVER STANDS UP IS MEASURED FROM THE REST POSE.
 # `hipY` is the hips' offset from the clip's FIRST frame, which is right for
 # every clip that begins with a body standing — and the crawl begins on all
@@ -372,6 +412,20 @@ if SET == 'umbra':
 if SET == 'mutant':
     KEEP_YAW = set()
     FORCE_FLAT_YAW = {c[1] for c in CLIPS}
+if SET == 'demon':
+    KEEP_YAW = {'die', 'die2', 'getUp', 'agon'}
+    FORCE_FLAT_YAW = {c[1] for c in CLIPS} - KEEP_YAW
+    HIP_FROM_REST = {'crawl', 'crawlRun', 'feed'}
+    HIP_ZERO_END = {'getUp'}
+    # every blow is measured: whichever of these moves FASTEST is the striking end
+    for _c in ('zAtk', 'zAtkB', 'zBite', 'zBite2', 'zNeck', 'zPunch', 'zPunch2', 'zKick', 'zKick2', 'zButt'):
+        CONTACT[_c] = ('LeftHand', 'RightHand', 'Head', 'LeftToeBase', 'RightToeBase')
+    CONTACT.update({'zBite2': 'Head', 'zButt': 'Head', 'zNeck': ('LeftHand', 'RightHand', 'Head'), 'zKick': ('LeftToeBase', 'RightToeBase'), 'zKick2': ('LeftToeBase', 'RightToeBase')})
+    # A ZOMBIE PACK IS A SET OF PERFORMANCES: the bite lunges at frame 24 and then
+    # gnaws on the floor for six seconds, the neck bite grabs and then shakes for
+    # three. A fight wants the blow, read off the hands' own speed curves.
+    WINDOW = {'feed': (52, 200), 'zAtk': (6, 50), 'zBite': (6, 44), 'zBite2': (0, 50), 'zNeck': (6, 58), 'zAtkB': (8, 56),
+              'zPunch': (0, 35), 'zPunch2': (6, 70), 'zKick': (4, 45), 'zKick2': (10, 60), 'zButt': (4, 50)}
 if SET in ('wong', 'drunk'):
     # THE TWO LOOSE CLIPS ARE PERFORMANCES, the beast's `Die_1` again, and the
     # hips say where the move is (the log prints the curve). `Flying Kick`
@@ -393,7 +447,7 @@ if SET in ('wong', 'drunk'):
 if 'HIP_FROM_TAKE' not in globals(): HIP_FROM_TAKE = set()
 # A clip whose hips are measured from its LAST frame, not its first: it
 # begins on the floor and ends standing, so the stance is at the END.
-HIP_ZERO_END = {'getUp'}
+if 'HIP_ZERO_END' not in globals(): HIP_ZERO_END = {'getUp'}
 
 
 def log(*a):
@@ -611,17 +665,22 @@ def main():
         land = r4(hipY.index(min(hipY)) / max(1, end))
         # ---- where the striking foot is fastest (a sweep has no extreme of position)
         contact = None
-        cb = CONTACT.get(name)
-        if cb and (pref + cb) in arm.pose.bones:
-            best, bi = 0, 0
-            tip = []
+        cbs = CONTACT.get(name)
+        if isinstance(cbs, str): cbs = (cbs,)
+        cbs = [c for c in (cbs or ()) if (pref + c) in arm.pose.bones]
+        if cbs:
+            best, bi, bcb = 0, 0, cbs[0]
+            tips = {c: [] for c in cbs}
             for i in range(end + 1):
                 sc.frame_set(f0 + w0 + i)
-                tip.append(CONV @ (MW @ arm.pose.bones[pref + cb].matrix).to_translation())
-            for i in range(1, end + 1):
-                sp = (tip[i] - tip[i - 1]).length
-                if sp > best: best, bi = sp, i
+                for c in cbs: tips[c].append(CONV @ (MW @ arm.pose.bones[pref + c].matrix).to_translation())
+            for c in cbs:
+                tip = tips[c]
+                for i in range(1, end + 1):
+                    sp = (tip[i] - tip[i - 1]).length
+                    if sp > best: best, bi, bcb = sp, i, c
             contact = r4(bi / max(1, end))
+            cb = bcb
             log('   contact: %s fastest at frame %d of %d (%.3f m/frame) -> hit %.3f'
                 % (cb, bi, end, best, contact))
 
@@ -657,6 +716,7 @@ def main():
         }
         if contact is not None:
             out['clips'][name]['hit'] = contact
+            out['clips'][name]['by'] = cb
 
     if missing:
         sys.exit('no source and nothing already built for: ' + ', '.join(missing))

@@ -37,6 +37,10 @@ class Handler(SimpleHTTPRequestHandler):
         return self.path.split("?")[0].endswith(self.CODE)
 
     def end_headers(self):
+        if self.path.split("?")[0] in ("/", "/index.html"):
+            # lets the JS Self-Profiling API run on the page (new Profiler(...)): how a
+            # hitch is traced to the function that made it. Dev server only; no effect otherwise.
+            self.send_header("Document-Policy", "js-profiling")
         if self._is_code():
             self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
             self.send_header("Pragma", "no-cache")

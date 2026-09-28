@@ -62,7 +62,7 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   world appears, holds, then fades back out (~30 s total). Routed through a
   Web Audio gain chain so the volume slider still works. `MUSIC_*` consts.
 - **PS1 / low-poly-horror presentation** — the scene renders at
-  `RETRO_SCALE` (~42 %) of the window and is blown back up with
+  `RETRO_SCALE` (62 %) of the window and is blown back up with
   `image-rendering: pixelated`, so you get chunky pixels and crawling
   edges. Textures are 256², nearest-filtered with no anisotropy and
   quantised to a coarse palette; everything is flat-shaded.
@@ -157,19 +157,86 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   in the game. A left click thuds off the boards. Only a wound-up heavy (about
   two-thirds of a full charge) puts the blade through the lid.
 - **The Octopus Ring** — in the crate: a scanned ring, an octopus with its
-  arms curled round to make the band, gone to rust — the metal is a real rust
-  texture projected onto the scan. Take it, examine it, and press `E` to put it on — it leaves
+  arms curled round to make the band, in old worn gold: tarnish settled in
+  every hollow of the scan, the ridges rubbed bright, scratched all over. Take it, examine it, and press `E` to put it on — it leaves
   the pack for a new **Rings** section, two slots under the hotbar that appear
   the first time a ring is in your hands. Click a worn ring to take it off.
+  Worn, it makes your stamina come back 15% faster.
+- **A key that opens something says so**: `<KEY> USED` in white in the
+  middle of the screen, and the lock is heard — the key going in over the
+  pins, the pins setting, the cam turning and the bolt going back.
+- **The snorkeler's key throw is a cutscene**: the camera turns onto him as
+  he comes up with it and follows the key through the air to where it lands.
 - **Blood jars are a number, not an item.** The corner counts them; they do
   not take a slot in the pack.
 - **The wheel walks the hotbar** one slot at a time, however hard you flick
   it, and the selection glides rather than flashing.
 - **The Forgotten Wedding Ring** — at the back of the little bore over the
   tavern's gallery, lying between the two jars of blue blood. Worn, it makes
-  you quicker by 6 % for every jar of blood you are carrying — nothing at all
-  if you are carrying none, a quarter again with four. The Rings row shows
-  what it is worth right now.
+  you quicker by 4 % for every jar of blood you are carrying, up to eight jars —
+  nothing at all if you are carrying none. The description says so, and says
+  when you are at the most it can give.
+- **The trader buys any ring for three jars.**
+- **The Bloody Blade bleeds.** Its description reads "Adds Bleed Damage And
+  Amplifies Gore 30%" — now "Adds Bleed Build Up And Amplifies Gore 30%".
+  Every blow of it that lands builds a hidden bleed; when it is full the body
+  explodes in a Bloodborne-style cloud — over a thousand fine crimson specks
+  blown up and out of him and a dark red mist that billows and hangs — and it
+  takes 12 % of
+  the enemy's health at once (never under two). It does not stun or flinch.
+  Leave him alone for about two seconds and the bleed drains away.
+  Bigger things take longer to fill, and it takes a third longer each time it
+  bursts on the same enemy; the marauder, the demons in the belly and the two
+  parasites resist it more. Tuning: `BLEED_PCT`, `BLEED_WAIT`, `BLEED_DRAIN`,
+  `bleedMax`, and `bleedRes` on a kind.
+- **The belly looks like the rest of the game**: darker, foggier, the flesh
+  graded down from neon red, the floor and the fluid matte instead of chrome,
+  the wounds a dim night instead of blue stickers, the demons dark with their
+  runes burning.
+- **The belly's creatures move properly.** The parasites' hand-posed claws are
+  gone: the big one swings the orc's great-sword cuts and chop two-fisted, the
+  quick one rakes with the zombie pack's claws, and the big one's idle
+  breathes. Nothing turns on the spot faster than its feet could step round,
+  nothing moves faster than the stride it is playing can carry it, lunges are
+  shorter, and every move blends into the next. A little harder: more
+  aggression, the parasites come back in sooner.
+- **The shift heavy always has its swing sound**, landed or not.
+- **The bleed burst is jets**: five to seven streams pumping out of the body
+  on a heartbeat, every drop drawn stretched along its flight so a stream
+  reads as a stream, with far fewer and darker fine specks behind them.
+- **A swing that meets nothing is a swing through the air.** A missed stab or
+  shift-heavy plays its swing sound and nothing else — no impact, no sand, no
+  jolt — and a stab no longer "hits" the beach beyond the length of your arm.
+- **In a fight the mouse wheel only walks your weapons**, and a click with a
+  fang, a CD or the photo in hand no longer opens the examine screen, so a
+  brushed wheel cannot take the guard out of your hands or drop the mouse.
+  Pressing right while the left button is still down raises the guard now.
+- **Every mutant is a little harder**: a point more health, a little more
+  aggression and pace. The marauder has 80 health, the parasites 43 and 39,
+  and each demon one more than before.
+- **The Dealer's pump.** Bolted to the reel-to-reel machine at the end of his
+  console bank: two horseshoe crabs strapped to a steel shelf, a syringe in
+  each one's hinge, and a line from each down into a jar of blue blood filling
+  on the tray under it. Both jars can be taken. Nothing on it is solid.
+- **The tall one is not gone.** Climb into the pavilion's round room and he is
+  standing at the water's edge below the glass, staring up at you. Come back
+  down the stair and he is gone for good.
+- **A glowstick in the cache before the cave.** The last mound short of the
+  rock mountain's mouth has one in it, already lit; a second glowstick stacks.
+- **A fang or a key landing on sand is heard** — the recorded sand footsteps,
+  played from where it lands.
+- **The first crab teaches the fight.** When it wakes the controls come up in
+  the middle of the screen, and the parry line lights the moment its claw is
+  coming down; they go once the fight is over.
+- **A click skips the blood draw.** The needle scene can be clicked through
+  straight to the jar.
+- **Things with no use are examined with a click** — the CD, a mutant fang,
+  the photo of Grammy Orc.
+- **The pack has a Drop button** under Hold / Use. A stack goes down one at a
+  time.
+- **Anything thrown at the fisherman's dock hits it** — the pier, the piles
+  and the shed — and knocks off the wood.
+- **Footsteps in the tavern follow the floor**: stone flags, timber, rugs.
 - **A pile of bones in the catacombs breaks** under the blade as well as
   under your boots — and the clatter is the loudest thing down there: it
   carries twenty-six metres, and he comes to it.
@@ -356,6 +423,27 @@ Everything loose in the room is a body you can pick up, throw and break:
 bottles, jars, valves, a set and a monitor. Glass goes at a knock, a set
 takes rather more, and the shovel breaks them too.
 
+## The whale's belly
+
+A checkpoint is written the moment the whale swallows you, and a load puts you
+back on the slope at the foot of its throat. The middle of the gut is a flat
+arena now, with a sheet of shallow fluid running across it that still slows you,
+lit by glands on the walls and by moonlight falling in through the wounds in
+its side — the same cuts you saw on its flank from the beach, with the night
+and a few stars showing through them. Seven demons kneel in a ring round what
+is left of the ones it swallowed before you. Come near and they scream, one
+after another, and come at you, but one at a time and slowly enough to read:
+it is meant to be an easy fight. At half health each one screams again and
+gets a little quicker. Tuning: `DEMON_BASE`, `DEMON_VARIANTS`,
+`MUT_ATTACKS.rd*`, `DEMON_WAKE`, `WH_ARENA_S`, `WH_CUTS_EXT`.
+
+## The dojo's sky
+
+The courtyard has a night of its own (`makeDojoSky`): an ink-black zenith
+going through plum to a low crimson along the horizon, a big ivory moon with a
+thin red corona, and clouds as flat stepped bands with a lit line where each
+tone meets the next.
+
 ## Saving
 
 ### The mushroom house
@@ -376,8 +464,11 @@ took down. Nothing in it is ruined: it is dusty and sun-bleached and open
 to the weather through the panes that are gone, with the beach drifting in
 under them. Somebody carried all of it up that stair and then left.
 
-The iron gate in the yard wall is shut, and it opens on `E` with the noise
-fifty years of salt air makes of a hinge. Grass has seeded in the cracks in
+The iron gate in the yard wall is locked. The key is the snorkeler's: give
+him back the CD he lost and he throws you a key he found up the beach, which
+lands on the sand by his towel ("Lost key"). It turns once in the padlock and
+stays there, and after that the gate opens on `E` with the noise fifty years of
+salt air makes of a hinge. Grass has seeded in the cracks in
 the concrete around the yard and the steps.
 
 The room carries its own light in its materials rather than in lamps: a
@@ -484,6 +575,7 @@ reading the button you pressed; the first click takes the mouse back.
 ## Tuning knobs (top of `main.js`)
 
 - `RETRO_SCALE` — internal render resolution (lower = chunkier pixels)
+- `DRS_MIN` / `DRS_GPU_HI` — the dynamic resolution: on a machine whose GPU really cannot hold ~51 fps (its own frame time, read with a GPU timer where the browser has one) the render scale steps down from `RETRO_SCALE` toward `DRS_MIN` (0.5), and back up when there is headroom (remembered per machine in `localStorage['beachwalk.drs2']`)
 - `WALK_SPEED` / `RUN_SPEED` / `RUN_SECONDS` / `STAM_REGEN` / `JUMP_V`
 - `MOON_DIR`, `EYE_HEIGHT`, `DIG_DUR`
 - `WADE_X` / `CLIFF_BLOCK_X` — the two invisible walls
@@ -538,6 +630,44 @@ the altar (`assets/cave.glb`, decimated and packed with its walk by
 `tools/undercroft_pack.py`). One of its three materials carries no texture at
 all — it is the lamps on the posts, not rock.
 
+The song that comes up faintly as you climb out of the church by the way
+behind the altar is the owner's own "passing theme"
+(`assets/passing-theme.m4a`), not redistributable.
+
+The snorkeler laughing to himself out past the campsite is a "Man Laughing
+To Himself" sound effect the owner supplied, cut into five laughs
+(`assets/snork-laugh1..5.m4a`); treat it as not redistributable.
+
+This work is based on ["Blue Whale - Textured"](https://sketchfab.com/3d-models/blue-whale-textured-d24d19021c724c3a9134eebcb76b0e0f)
+by [Bohdan Lvov](https://sketchfab.com/ostapblendercg) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the whale on the
+sand past the five (`assets/whale.glb`, through `tools/gltfpack.py` with its
+three maps at 2048). The mouth's inside, its wounds and the harpoon are built
+in the game. Its song is the owner's own recording (`assets/whale-song.m4a`),
+not redistributable, and so is the music that plays on the walk down to it
+(`assets/whale-sighting.m4a`).
+
+This work is based on ["Cursed Rune Demon"](https://sketchfab.com/3d-models/cursed-rune-demon-0d2348598de9425b95e3a9a1cb915b79)
+by [PolyGoreStudio](https://sketchfab.com/Phu.99) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the seven demons in
+the whale's belly (`assets/demon.glb`, through `tools/gltfpack.py` at 1024).
+They move to the owner's "Scary Zombie Pack" (Mixamo animations, Adobe),
+retargeted by `tools/ntar_moves.py -- demon` into `assets/demon-moves.json`.
+
+This work is based on ["Parasite L Starkie"](https://sketchfab.com/3d-models/parasite-l-starkie-d1b6b1bdd1574a01b1968ead7ae96134)
+by [informatica e manutenção](https://sketchfab.com/nunoreis79) licensed under
+[CC-BY-NC-4.0](http://creativecommons.org/licenses/by-nc/4.0/). **Non-commercial**:
+this build is a personal one, and the licence does not allow the model in
+anything sold. The two parasites that hold off while the seven demons fight
+you, then come in on their own (`assets/parasite.glb`, through
+`tools/gltfpack.py` at 1024, its alpha dropped). They carry no animation of
+their own: every move is another fighter's clip retargeted onto them (the
+knight's, the red alien's, Wong's, the orc's, the drunk's, the Marauder's and
+the crawler's).
+
+The sting as the octopus ring comes off the knight is the owner's own
+recording (`assets/octopus-ring-drop.m4a`), not redistributable.
+
 This work is based on ["Gold Ancient Ring Green Gem Stone (game-ready)"](https://sketchfab.com/3d-models/gold-ancient-ring-green-gem-stone-game-ready-913eef8fe39646be94faa9fdd3626ea8)
 by [Delandi](https://sketchfab.com/delandi) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Gem Stone Ring,
@@ -550,7 +680,7 @@ real alpha and stays blended; its gold has none and is forced opaque.
 This work is based on ["An Old Ring"](https://sketchfab.com/3d-models/an-old-ring-ea5e0c11f2e046c993239ea1a3efcad7)
 by [Qifan Zhang](https://sketchfab.com/qifanzhang) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Old Ring the trader
-sells for four jars, Max Health +10% while worn (`assets/old-ring.glb`, exact:
+sells for four jars, one extra bar of health while worn (`assets/old-ring.glb`, exact:
 all 19,092 triangles and its colour, metallic-roughness and normal maps, through
 `tools/gltfpack.py` at 2048, 0.99 MB).
 
@@ -840,8 +970,8 @@ and its six base-colour maps. Its file ships no clips, so the crossed arms
 are composed onto the bind pose once at load.
 
 
-**Pistol-Magnum** — the .44 he also has, for five blood jars, with three in
-the cylinder; six more rounds are two jars. Right click aims down the sights,
+**Pistol-Magnum** — the .44 he also has, for six blood jars, with three in
+the cylinder. (The bigger pack is four jars and the extra ring slot six.) Right click aims down the sights,
 left click fires, `R` reloads off a speedloader.
 
 ["Pistol-Magnum"](https://sketchfab.com/3d-models/pistol-magnum-9d5df42759444adaa4dfb3ae40155b1f)
@@ -956,7 +1086,7 @@ redistribute and are credited as such.
 
 This work is based on "[Low Poly Night City Building Skyline](https://sketchfab.com/3d-models/low-poly-night-city-building-skyline-b0035b8713b048bb8ddf311ee67c28c8)" by [99.Miles](https://sketchfab.com/99.Miles), licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
 
-**Umbra Marauder Rig** — the four-armed boss past the five on the sand (`assets/umbra.glb`, packed with `tools/gltfpack.py` at its own 2048 textures). His combo is the owner's Mixamo "Dual Weapon Combo", retargeted by `tools/ntar_moves.py -- umbra` into `assets/umbra-moves.json`. Everything else he does — both walks, both runs, the strafes and side-steps, the dodge, the flinches, the parry reel and his four other blows — is authored in `main.js` (`authorUmbraOwn`) on his own stance; no other creature's clips are used on him.
+**Umbra Marauder Rig** — the four-armed boss at the foot of the headland, where the whale's old door in the sand wall stood (`assets/umbra.glb`, packed with `tools/gltfpack.py` at its own 2048 textures). His combo is the owner's Mixamo "Dual Weapon Combo", retargeted by `tools/ntar_moves.py -- umbra` into `assets/umbra-moves.json`. Everything else he does — both walks, both runs, the strafes and side-steps, the dodge, the flinches, the parry reel and his four other blows — is authored in `main.js` (`authorUmbraOwn`) on his own stance; no other creature's clips are used on him.
 
 This work is based on "[Umbra Marauder Rig](https://sketchfab.com/3d-models/umbra-marauder-rig-2d8b32f0864644b5980b81b571b1838f)" by [DM-913](https://sketchfab.com/SuperKapoo913), licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
 

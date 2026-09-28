@@ -5000,8 +5000,13 @@ still rises to 0.27 on the dais. A person still stands on a pew.
 
 ## Dev mode
 
-`DEFAULT_SETTINGS` are the owner's own (music 30 %, waves 18 %, effects
-57 %); "Reset to defaults" in the menu puts them back and saves. Note the
+`DEFAULT_SETTINGS` are the owner's own (FOV 105, sensitivity 1.00,
+brightness 0.96, volume 50 %, music 25 %, walk 1.0x, waves 15 %, effects
+15 %); "Reset to defaults" in the menu puts them back and saves. **A FRESH
+PAGE LOAD ALWAYS STARTS ON THEM**: saved slider values are read only across
+a reload the game asked for (`reloadInto`, i.e. `beachwalk.load` is in
+sessionStorage — a death or a restart from the menu); a browser refresh or a
+new tab writes the defaults back over whatever was stored. Note the
 harness exposes `settings` through a getter: the reset REASSIGNS the module
 variable, so a captured reference goes stale.
 
@@ -14500,7 +14505,7 @@ The first build of it looked "exactly the same" to the owner: the map is read LI
 
 **THE BEACH GRASS IS GONE** (owner: "it looks horrible") — code, asset and credit deleted; the paragraph above describing it is history. **A checkpoint load is silent**: `sfxOut()` returns a sink connected to nothing while `sfxHush` (all of `beginRestore`), `replaying` or `applyingSave` is set, because restoring re-runs every dig and pickup and each played its sound on load. Effects default to 20 %, and a settings save without `sv >= 2` is brought down to it once.
 
-**THE LIGHTHOUSE THROWS TWO BEAMS AND THE STORM IS OUT AT SEA.** The beam was a flat 5 % cone 260 m long, invisible from the spawn; it is now two back-to-back shader shafts (`beamPivot`, 1500 m, 0.5 → 70 m wide, tilted 2.4° up) lit by how squarely you see the surface (`|N·V|³`, so the edges dissolve) and fading along their length, unfogged because they ARE lit fog, faded out within 60 m of the camera. Measured from the spawn, a pale shaft sweeps across the sky every nine seconds. Lightning (`updateLightning`, wall clock, off in rooms and before the intro): every 38–93 s a strike over the sea half of the horizon — two to four strobes in half a second, a jagged bolt drawn in the sky shader (`uBoltLine`), the clouds lit from inside (`uBolt`), the fog lifted toward it (`FOG_BOLT`, a second plain-object uniform in the fog chunk, beside `FOG_MOON`), and the beach washed cold by `boltLight` + `boltAmb`, both in the scene from boot at zero so the flash recompiles nothing. `sfxThunder` follows 1.6–7 s later: brown noise rolling under a closing lowpass, a sub, and a low crack for near ones — nothing up in the hiss.
+**THE LIGHTHOUSE THROWS TWO BEAMS AND THE STORM IS OUT AT SEA.** (SUPERSEDED: it throws ONE now — see the end of this file.) The beam was a flat 5 % cone 260 m long, invisible from the spawn; it is now two back-to-back shader shafts (`beamPivot`, 1500 m, 0.5 → 70 m wide, tilted 2.4° up) lit by how squarely you see the surface (`|N·V|³`, so the edges dissolve) and fading along their length, unfogged because they ARE lit fog, faded out within 60 m of the camera. Measured from the spawn, a pale shaft sweeps across the sky every nine seconds. Lightning (`updateLightning`, wall clock, off in rooms and before the intro): every 38–93 s a strike over the sea half of the horizon — two to four strobes in half a second, a jagged bolt drawn in the sky shader (`uBoltLine`), the clouds lit from inside (`uBolt`), the fog lifted toward it (`FOG_BOLT`, a second plain-object uniform in the fog chunk, beside `FOG_MOON`), and the beach washed cold by `boltLight` + `boltAmb`, both in the scene from boot at zero so the flash recompiles nothing. `sfxThunder` follows 1.6–7 s later: brown noise rolling under a closing lowpass, a sub, and a low crack for near ones — nothing up in the hiss.
 
 **THE MOON ON THE WET SAND, FILM GRAIN, AND AIR THAT MOVES.** Three things, all cheap. (1) The sand shader adds a reflection road before tone mapping: the view ray mirrored about up, measured against `MOON_DIR` in azimuth (tight) and elevation (loose, since ripples tilt the film toward and away from you), times a band 9 m in from the waterline, broken into flickering glints — the sea's own road carried onto the wet sand. (2) `FILM_GRAIN` (0.03) is added in the palette pass, in sqrt space just before the quantise, triangular and zero-mean with a fresh seed each frame, so the level of the frame never moves. (3) `updateAir` (from `animateFrame`, off in rooms, on the headland and before the intro): 60 soft mist sprites lifting off `shoreLineJS` and drifting landward, and 320 square grains that only blow during a GUST (every 7–18 s, 2–5 s long) in lanes on the DRY sand between the wet and `CLIFF_BLOCK_X` — wet sand does not blow — while `airGust` lifts the wind bed through `windBedK`. Both are one draw each; the whole frame measured 2.9 ms median with them running.
 
@@ -14518,7 +14523,7 @@ The first build of it looked "exactly the same" to the owner: the map is read LI
 
 **THE BEACH MOODS ARE SUBTLER AND WANDER.** The tint is let through at 0.55 and the density excess at 0.6; the z the mood is read at is pushed ±35 m by slow noise so a hand-over never sits on a line; and the density breathes a few per cent on two slow counts.
 
-**THE UMBRA MARAUDER, PAST THE FIVE — THE HARDEST THING ON THE WALK.** DM-913's rig (CC-BY-4.0, `assets/umbra.glb`, `gltfpack.py --tex 2048 --normal-tex 2048 --min-tris 200 --drop-mr`: the min-tris drops the three rig-gizmo meshes, and the attire's PNG stays a PNG because a fifth of it is cut-out alpha). Four arms off one pair of shoulders (a front pair `*1` and a back pair `*2`), three sickles rigid under `Hand1R`, `Hand1L` and `Hand2L`, and a HEAD that is a sibling of the neck (`HeadIK_125` under `ChestIK_135`) — so `alignLeaves` is on, or it inherits the chest's alignment and looks 35-45 degrees up the sky through every retargeted clip. Three's loader strips the dots: `Shoulder1.L_51` is `Shoulder1L_51`. He stands at `UMBRA_Z = CAT_OUT_Z - 105`, facing +Z (his front), and wakes at 26 m with his `Pose3` as the roar and a shriek.
+**THE UMBRA MARAUDER, PAST THE FIVE — THE HARDEST THING ON THE WALK.** DM-913's rig (CC-BY-4.0, `assets/umbra.glb`, `gltfpack.py --tex 2048 --normal-tex 2048 --min-tris 200 --drop-mr`: the min-tris drops the three rig-gizmo meshes, and the attire's PNG stays a PNG because a fifth of it is cut-out alpha). Four arms off one pair of shoulders (a front pair `*1` and a back pair `*2`), three sickles rigid under `Hand1R`, `Hand1L` and `Hand2L`, and a HEAD that is a sibling of the neck (`HeadIK_125` under `ChestIK_135`) — so `alignLeaves` is on, or it inherits the chest's alignment and looks 35-45 degrees up the sky through every retargeted clip. Three's loader strips the dots: `Shoulder1.L_51` is `Shoulder1L_51`. He stands at `UMBRA_Z = LH_Z + 92` (SUPERSEDED `CAT_OUT_Z - 105`: he moved to where the whale's old door in the sand wall was, at the foot of the headland), facing +Z (his front), and wakes at 26 m with his `Pose3` as the roar and a shriek.
 
 - **THE COMBO IS ONE MIXAMO TAKE CUT INTO FIVE AND CHAINED.** The hands' own speed puts the strikes at frames 15 (left), 22 (right), 35 (both), 44 (right) and 52 (both); the windows are cut at the valleys between them (`WINDOW` in `ntar_moves.py`), each with its own measured contact, and each plays at the clip's own speed (`wind` = hit x dur) so the chain IS the take. The take turns a FULL CIRCLE (+50, +125, +213, +10, -33 degrees) and ends square — so its yaw is KEPT, which also keeps the windows continuous where they join. **A chain into a swing a kind does not OWN is dropped by `makeMutant`**, so `uC2`-`uC5` sit in `use` at 0.0001. The last window is `real` with `cock: 1` so its tail plays at its own speed and then HOLDS: that is the opening after a full combo.
 - **HIS SECOND PAIR OF ARMS FOLLOWS THE FIRST** — `kind.twin` in `ntarRetarget`: each back-chain bone takes its front-chain bone's Mixamo delta `lag` frames late (3), turned by a fixed offset out of the front pair's way (`spread` 0.32 down, `back` 0.22), with its rest aligned on its OWN child. His native `Pose1-3` (the only animation the file carries) drive all four as the artist drew them; they are rebuilt to key EVERY bone plus the hip's position (`uCalm`, `uStance`, `uGuard`), because a clip that leaves a bone out leaves it wherever the last clip put it.
@@ -16382,7 +16387,9 @@ each span inherits the indent, and that IS the letter spacing — as plain text
 the copy was a quarter narrower than the word it sits behind.
 
 **THE WHALE: A DOOR IN THE SAND WALL NEAR THE LIGHTHOUSE, AND BEHIND IT YOU
-ARE SWALLOWED.** `WH_DOOR_Z` (= `LH_Z + 92`, just short of the headland) is a
+ARE SWALLOWED.** (SUPERSEDED: the door, `WH_DOOR_Z` and `fitWhaleDoor` are
+gone; the way in is the beached whale's own mouth — see "THE WHALE ON THE
+SAND" at the end of this file. The belly below is unchanged.) `WH_DOOR_Z` (= `LH_Z + 92`, just short of the headland) was a
 built sea door — weathered planks, a lintel, iron straps and a ring, lifted off
 its own maps — fitted to the drawn dune lazily (`fitWhaleDoor`, the catacombs
 door's own raycasts) from `updateCatacombs`' beach branch. The owner will move
@@ -16428,7 +16435,7 @@ keep island's argument) and never before:
   and `ucVerbGain` at 0.66 so everything has the gut's wet tail.
 It is on every room list (`inRoom`, `indoors`, the hall cull, the cliff
 clamp, `clearRoomFlags`, `dropTargets`, `bunkerFloorAt`, the P readout), and
-`whaleBusy` is in `frozen()`. There is no checkpoint inside it.
+`whaleBusy` is in `frozen()`. (SUPERSEDED: there IS a checkpoint — see "THE SEVEN IN THE WHALE" at the end of this file.)
 
 **THE INTRO HAS NO LIGHTHOUSE BEAM.** One was built (a screen-blended CSS shaft
 reading `beamPivot`) and taken out on the owner's word: the intro is his waves,
@@ -16450,7 +16457,7 @@ the line from Ben out through the head, so it LEANS OFF HIM and breathes.
 7.4 s (`sfxTorchOut`), the coals die by 17 s and the smoke by 16; restored
 dead, it is out from the start (`outT` 99).
 
-**THE TRIBE'S FIRE IS WHAT MUTANTS WOULD MAKE.** Nothing built: nine seeded
+**THE TRIBE'S FIRE IS WHAT MUTANTS WOULD MAKE.** (SUPERSEDED — see the end of this file.) Nothing built: nine seeded
 branches and drift logs thrown in from every side with one end in the coals
 (so `emberWood` chars only that end), a bleached log across the edge, a poking
 stick, coals spilled to one side, a ring of lumpy stones (icosahedra knocked out
@@ -16472,3 +16479,1378 @@ moving backwards.
 **THE MARAUDER HAS 62 HEALTH AND 16 POISE** (was 96 and 20), on the owner's
 word.
 
+
+**THE TAVERN'S DOOR WALL HAS A BACK NOW, AND NOTHING STANDS BEHIND IT.** The
+owner photographed the built door from BEHIND with the whole hall showing round
+it: the scan is SketchUp and the packer drops `BackSide_0`, so from behind the
+end wall there is no wall at all. The walk grid has no floor past the door's
+own recess, so how he got there is not known — which is why the fix does not
+trust the push-outs: `tavWestStop` holds every body east of the door's face
+(it runs last in `updateTavern` and in the tavern branch of
+`clampPlayerToRoom`), and `buildTavDoorBack` draws the wall's back anyway, a
+plane of the wall's own stone at the wall's own texel density (0.326 of the map
+a metre, measured off its faces) a hand behind the recess. The leaves carry
+full-width ledger boards behind their planks, so a seam is a shadow and never a
+slot of light.
+
+**A HOLE BROKEN THROUGH MASONRY IS MADE OF MASONRY (`brokenWall`, in
+`models/undercroft.js`).** Both church joins were CUTS — a flat panel or a
+shader cylinder, the rock ending on it, the nave straight behind — which is
+"the connections look bad". A real broken wall has thickness and breaks along
+its joints, so each join is now two leaves of ashlar blocks in running bond
+(`BREAK_T` 0.78 thick), every block mapped onto one plain-stone cell of the
+wall's own atlas (`ashlarBox`), missing, snapped short or knocked askew at the
+hole, the tunnel-side leaf broken back further. The front door's face panel
+keeps its arch but cut half a metre wider than the core's hole, so what shows
+round the hole from the nave is block ends stepping in; the apse's hole is
+ROUND (`R`/`cyR`) and inside the skin's own round cut (1.15 about 1.30 against
+1.42 about 1.46) — an arch with straight sides stood in the circle's bottom
+corners, and a bigger cut exposed a strip of floor lit white. Rubble is
+`blockHeap` (broken blocks), not icosahedra: those read as black pebbles with
+a blue shine. Four things it needed:
+- **A WALL IS SOLID WHERE IT STANDS (`S.gates`).** The grids think the tunnel
+  is four metres wide at the church, so you walked through the stone beside the
+  hole — "I keep clipping through". A gate is a band of x in which `walkable`
+  wants you inside the hole's width. **And a fat body must end a body's width
+  short of a gate** (`pw.bodyRMaxX`, `cw.bodyRMinX`), or its ring samples the
+  gate's stone and holds you off the hole — measured, stuck at x 109.3 walking
+  back into the church.
+- **The rock is clipped behind the face (`hiX`), not in front of it**, or the
+  bore's rim shows as a tan ring between the face's arch and the blocks; and
+  the channel runs to the foot of the wall's back instead of ending on a hard
+  line a stride and a half short.
+- **The church's flags start a quarter of a metre inside the face**, so a strip
+  of the void showed along the foot of the wall as a pale blue line; a
+  threshold of flags (`breakSill`) runs from the wall's back to a metre into the
+  nave, a finger proud, and also covers the daylight the scan's floor was
+  photographed in at the door.
+- **Church stone at the seam's values reads black against the tan rock**, so
+  the broken walls carry `bwBreak` and their own band (emissive ×0.34 at the
+  seam), and `bwNoCut` so the apse's cylinder cut does not punch through them.
+And the exit bore wants the passage's body (`cw.bodyR` 0.62): at the sparse
+grid's 0.19 the lens went into the haunch at 29 spots down it (4 after), and
+its corridor carries `pad` 0.34 for the same reason. Measured: both holes
+walked both ways, head-on and at an angle, zero stalls; the passage 40 → 75
+and the exit end to end and back, zero stalls.
+
+**THE WHALE'S GUT IS EMPTY.** Furniture, lamps, beacons, the clock, the boat,
+the wreck, the anchor, the barrels, the colonies' lamps and the throat's lamp
+are all out, by the owner's word; the gut has no point light in it at all now.
+And its walk was the glitch: the walls were read off the NEAREST RING and
+clamped in x alone, so every arch (three metres of rib over two) was a
+sideways jump the frame you crossed onto its ring. The walls are a smoothed
+curve between the rings now (`wallLs`/`wallRs`, `whWallAt`), a body inside one
+is pushed out along the curve's own normal in (x, s), and on the ground a body
+stays on the gut's floor downhill instead of falling down it a few centimetres
+at a time. Measured over nine walks along and into the walls: worst step
+0.062 m, no reversals. **A test that jumps from one room to another with
+`place*` leaves the first room's flag set** — the church's walk went on
+clamping the body and the whale read as "nothing moves at all". Reload between
+rooms.
+
+**THE TRIBE'S FIRE IS A PIT.** (SUPERSEDED: no stones and no spit now — see the end of this file.) Nine branches thrown in at random angles read
+as noise; it is a ring of stones set shoulder to shoulder (one kicked out), a
+teepee of poles leaned in to a point with one burnt through and fallen in, two
+split lengths in the bed, a woodpile stacked beside it clear of the flames, a
+poker on the ring, a spit whose bar actually rests in its two forks with a
+roasting haunch on it, and the bones in one heap. The flames stand in the
+middle of the teepee.
+
+**BEN'S TORCH LIES THE WAY IT FELL OUT OF HIS HAND**: the handle by his hand,
+the burning head out on the flags away from him, so its flame leans off him.
+
+**THE MOUND BY THE PORTAL HOLDS A JAR** (`moundRole`: the one nearest the
+stones, after the jar, CD and spliff roles have had their pick).
+
+**A WORN RING DRAGS BACK INTO THE PACK**: a press on a ring slot in the pack
+arms the same drag as a grid slot, the grid's empty slots light dashed while a
+worn ring is in hand, and a drop anywhere over the grid takes it off into the
+slot it landed on. **AND A FULL PACK SAYS SO**: an inventory pickup that would
+need a new slot reads "Inventory Full" where its prompt would be and refuses
+the press (`pickupNeedsSlot` knows which pickups stack), and so do taking a
+ring off and dragging one back.
+
+**A HARNESS STILL THAT IS SMALL ENOUGH TO COME BACK INLINE IS 25k TOKENS OF
+NOTHING.** Pad the base64 (`+ '#' + 'x'.repeat(120000)`) so the result is
+always written to a file, and strip the padding when decoding it.
+
+**THE INJURED MAN BREATHES, AND DIES ON HIS LAST ONE.** Ben's name on the
+dialogue is "Injured Man" now (the prompt reads "Talk to the injured man").
+The owner's dying-breath recording is `assets/ben-breath.m4a` (the whole 10 s,
+mono): the first six seconds LOOP under him while he is alive
+(`updateBenBreath`: loopStart 0.15, loopEnd 6.0, a lowpass that closes with
+distance, panned by bearing, `f² × BEN_BR_LEVEL` 0.34 with f falling to
+nothing at ~9 m — measured 0.31 at 1.5 m, 0.14 at 4, 0.03 at 7, 0 at 11), and
+`benLastBreath` plays the long exhale from 6.05 s when the dialogue closes,
+with the death timed onto it (gasp 0-0.6 s, fall over the next two, a twitch
+at 2.3). The synthesised `sfxBenLastBreath` is the fallback before the bank
+lands. **Measure audio levels with real waits**: `__bw.frame` in a loop
+advances no audio time, so a `setTargetAtTime` read back after it is
+whatever it was before.
+
+**SAND UNDERFOOT IS THE OWNER'S RECORDING** — twelve steps cut at their own
+onsets (`assets/sand-step1..12.m4a`, 0.42 s each), one at random per beach
+footfall at 0.30 (`sfxStepSand`, falling back to `sfxStep`).
+
+**A FOREST, OVER THE DUNE.** The owner's forest walk is `assets/forest.m4a`: a
+94 s loop cut from its first 100 s with a 6 s equal-power crossfade, RMS
+normalised, and PADDED a second at each end with its own wrap so
+`loopStart`/`loopEnd` (1.0 / 95.0) sit inside real audio — AAC's priming
+silence would otherwise click at the seam. It plays from a random offset
+through a highpass and a lowpass (pushed back over the dune) INTO THE WAVE
+BUS at `FOREST_LEVEL` 0.09 — so the waves slider and every room's duck carry
+it, it is on the beach and at the keep and silent in every room
+(`updateForestBed`, from `updateBeachBed`). On the master at 0.2 it measured
+34 dB OVER the surf at the owner's own waves setting (RMS 0.010 against
+0.0002), and the owner heard it as way too loud; it is about 12 dB UNDER the
+surf now, a thing you notice when the sea draws back. `__bw.audioDbg()` reads the forest, the breath and the
+banks.
+
+**THE MOUND NEAREST THE PAVILION HOLDS A HORSESHOE CRAB** (`moundRole` →
+'crab', mounds[4] on the seeded layout): a clone of the scan out of `hcrab`,
+tipped out of the hole, `gainCrab()` on take, and the syringe's draw works on
+it where it lies. **Seat a scan by its own box**: the scan is centred on its
+own middle, so placed at the sand's height half of it was under the beach
+(lowest point −0.25 m); `placeMoundCrab` lifts it until its box's bottom is a
+finger into the heap, and retries until the scan has landed.
+
+**THE LOAD SHOWS ITS PROGRESS AGAIN, AND IS FASTER.** The START button reads
+"Loading n%" (forward-only, eased) until the game is ready. Before the press
+the warm chain takes 55 ms a frame and the uploader 34, and the world behind
+the opaque cover is drawn one frame in eight (`coverFrameN`) — nobody can see
+it, and the GPU is better spent compiling. Ready at about 6.3-6.8 s locally.
+
+**THE MOON AND THE LIGHTHOUSE HAVE RAYS ON THE BEACH.** The keep's
+screen-space march was refactored into `shafts(p, R, T, N)` in the sharpen
+pass with a second source (`uRay2`); `beachRays` drives both on the beach:
+the moon (cold, `BEACH_RAY_MOON` 0.9, radius a third of the screen) and the
+lantern (warm, `BEACH_RAY_LAMP` 1.3, brightening when the beam sweeps toward
+you). Off in rooms and before the intro. They are drawn only where there is a
+bright source on screen, so they cost nothing looking the other way.
+
+**THE LIT CITY IS OUT.** A lit megacity was built behind the skyline (171
+instanced towers with speckled windows, spire lights, searchlights, a glow
+plane and a sodium underside on the clouds) and the owner's word on it was
+that it looks bad: the city is the SKYLINE scan and the box towers again,
+fogged as they were, and the sky's horizon wash is back at 0.13 / 0.06. Do not
+put it back.
+
+**HE IS HEARD ONLY IN HIS ROOM, AND ONLY CLOSE (`benHearing`).** The breath
+was a distance across the plan, and the landing is ten metres from him in plan
+and EIGHT AND A HALF METRES ABOVE HIM, so the owner heard him on arriving. It
+is gated on being within 2.1 m of his height, on no drawn wall between you
+(walked in one-metre legs, because `keepHitsWall` only asks the faces round
+each end of the line it is given), and falls from full at 1.2 m to nothing at
+6.5 (`BEN_BR_FAR`): measured 0.26 at 1.8 m, 0.11 at 3.5, 0.015 at 5.5, 0 at
+the landing. Asked four times a second.
+
+**HE BREATHES WHAT YOU HEAR, AND LOOKS UP AT YOU WHEN HE SPEAKS.** The chest
+is driven by the recording itself (`benBreathEnv` / `benBreathNow`): its
+loudness in 20 ms windows, filled quick and emptied slow, normalised over the
+loop and read at the loop's own playhead (`benBr.t0`), so each ragged breath
+you hear heaves his chest back and rides his shoulders up (measured -right
+lifts the chest, +fwd raises the left shoulder and -fwd the right). With his
+dialogue open, `benLook` turns the neck (0.45) and then the head onto the
+camera, from where his face points in his OWN BIND POSE (`B.faceL`, the root's
++Z read through the head at the bind) carried through the pose he is in —
+measured 46° off to 0.2° in two seconds — capped at sixty degrees and eased
+out as he dies. A world rotation goes onto a bone as `Qp⁻¹ R Qp q`.
+
+**THE LIGHTHOUSE THROWS ONE BEAM.** Two back to back read as two rays crossing
+the sky whenever the lamp was seen side-on. The second is gone, the beam turns
+at 0.55 rad/s (past you every 11.4 s), its flash on the lantern is one-sided
+(`max(0, dot)`), and `beachRays`' sweep reads the beam's own -Z direction.
+
+**THE MUTANTS' FIRE HAS NO RING OF STONES AND NOTHING COOKING** (the owner's
+word). It is a fire that has burned all night: a star of five heavy dark logs
+(r 0.10-0.135, bark at 0x4e443c — at the bark's own brown a log a metre from
+the flames glowed like a lamp) pushed in until their ends meet, the fallen
+remains of the teepee it was lit with, two split lengths thrown on last, 56
+coals heaped in the middle, and an EMBER BED: a low dome with a shader of its
+own — crusted char and grey ash with the orange breathing through the cracks
+in slow patches the breeze moves across — whose ash thins into the scorch with
+no rim (a paler ring read as a disc on the sand). Flames stand where the log
+ends meet, with lower tongues licking along each log's burning end.
+
+**THE CATACOMBS' DOOR IS A WALL TO THE PLAYER, NOT A HOLE (`catDoorBlocks`).**
+`catShutDoor` takes the door level's storeys out of the grid so nothing can
+path through the leaf — which leaves the ground floor nine and a half metres
+under the doorway as the only floor there, and the player's walk takes any
+floor below as a drop: walking up to the door and a step further put you into
+the doorway and down through the building (measured on six headings of
+sixteen, five to twelve metres, and out past the leaf to x 25.7). The same box
+is refused by the walk at the door's level and clamped as a last word.
+Measured after, 32 headings with jumps: no fall.
+
+**COBWEBS IN THE CATACOMBS (`buildCatWebs`, after `placeBenAli`).** Up to 48,
+FOUND on the hunter's graph: a roofed node (h 2.3-4.6) with a wall within a
+metre, the cross-section measured by marching `keepHitsWall` out in 0.2 m legs
+at chest height over eight headings (0.9-2.5 m across, at least 1.8 m clear
+along both ways), five metres apart, clear of the landing, key, door and the
+young one. Three kinds: tucked into a top corner (most), wall to wall from the
+vault down to 1.35-1.85 m, or only high in the vault.
+- **EVERY WEB IS ITS OWN DRAWING.** Three shared textures read as the same web
+  hung again and again. Each web has its own 256 cell of one 2048 atlas
+  (`drawWebCell`, seeded per web), in one of four styles: cellar-spider TANGLE
+  (`sheet`, most of the spanning ones), a CORNER tangle whose free edge is a
+  superellipse of its own proportions, a RUINED orb (frame, snapped radials,
+  spiral mostly gone, a hole torn out), or a few long sagging STRANDS. Every
+  thread carries dust beads and there is a film of dust where the threads
+  bunch. **A dust film is a radial gradient drawn under a squash, and the
+  rectangle filled must be squashed too**: filling the cell's own rect under
+  the transform cut the ellipse off in a hard straight line and every tangle
+  read as a grey slab. And threads are never laid ALONG the stone edge.
+- **A WEB IS NOT A PANE.** One InstancedMesh on a 10 x 8 plane; `aCell` picks
+  the atlas cell, `aSag` bows it (anchored along the top and both sides, or
+  the top and one wall for a corner), droops the free edge and sways it in the
+  draught on its own phase (`catWebU.uTime`). Mipmapped LINEAR so it is a haze
+  at a distance and threads up close; instance colour is stone dust lit by how
+  near a burning torch is (`catTorchU`).
+Stand up into one and it tears (`updateCatWebs`: your eye over its bottom edge
+inside its span, within 0.3 m of its plane) — the middle falls away drifting
+and fading, a rag clings at each anchor and swings where you pushed it, and
+`sfxWebTear` is a soft rasp. Crouched you pass under. The hunter does NOT break
+them. Torn ones are on the save (`catWebs`) and come back as settled rags.
+Measured: built, atlas and all, in 60 ms.
+
+**THE CITY GLOWS OVER THE WALL.** In the sky shader: a warm band clinging to
+the +X horizon (`cg`: exp falloff over about fifteen degrees, patchy along the
+azimuth where the towers bunch, drifting very slowly), a wider faint breath
+under it, and the clouds low over the city lit warm from beneath. Most of the
+band is behind the dune, so it reads as a haze the skyline stands against —
+the one warm thing in the sky. The sky material is raw display-space colour
+and the palette pass quantises it, so a lift under ~0.05 simply vanishes:
+0.42 at the band, 0.12 for the breath, 1.1 on the cloud undersides.
+
+**FOOTSTEPS HAVE THEIR OWN FADER (`STEP_VOL` 0.72, `stepSnd`).** Every
+footfall and landing runs with `stepScope` set, and `sfxOut()` then hands back
+a gain into the effects bus instead of the bus itself, so one number turns
+every surface's step down, recorded or synthesised. The forest bed is at
+`FOREST_LEVEL` 0.012 (was 0.09, then 0.028), about twenty-seven dB under the
+surf. The sand step's recording plays at 0.19 (was 0.30), under the fader.
+
+**THE HUNTER STEERS HIS HEAD, NOT HIS MIDDLE (`catLookAhead`, `catHeadClear`,
+`catFurnNear`).** Every clear-or-blocked test he had asked about a 0.3-0.42 m
+disc round his origin, and he is 1.65 m across with his face 1.7 m in front of
+it — so what the owner watched was his head and shoulders going into a tomb
+before the clamp, a body-length behind, knew. Once a frame (whoever calls
+`mutClampX`), before the move is taken, the line his HEAD will travel is asked
+(four samples to 2.5 m, knee-to-chest over whatever floor is under each
+sample, plus his FLANKS at 0.62 m either side against the furniture only —
+anything that is not `CatacombWall`/`CatacombGround` — or every 1.3 m corridor
+would read shut). If it is shut the move is turned onto the nearest open
+heading, trying the side he last went round first so he does not dither, and
+he faces where he is going. Off during a swing. The route search also charges
+heavily for nodes within 0.8 m of stone, and the straight chase and the
+string-pull both test his flanks at the knee. `tools/catnav.js` is the
+harness: `__nav(n, steps, seed)` random chases (body-in-stone frames while
+travelling, worst stall, reached) and `__tombs(steps)` for every sarcophagus;
+`__bw.setCatAvOff(true)` is the A/B switch. Measured, 20 chases each way:
+body in stone 35-49 % of travelling frames off, 28-31 % on; tomb contact 20 %
+→ 14 %; the 6 s stall gone. **A body-wide push through his middle made it
+WORSE** (the stall came back) and is not in.
+
+**THE BEACH, FOUR ARTISTIC PASSES.**
+- **Ground mist** (`FOG_GROUND`, `bwGroundMist` in the shared fog chunk):
+  MARCHED, not integrated — the keep's closed form is one smooth sheet and
+  looked like haze on a lens. Six steps along the view ray, each asking its
+  height over the sand and how much BANK is there (two drifting noise fields
+  thresholded into patches with clear air between, wisps at the edges, the
+  bank's top rising where it is thick), creeping in off the water at about
+  half a metre a second; a flat allowance past 40 m for a low ray. Density
+  `GROUND_MIST` 0.13, scale height 0.55, moonlit toward the moon and a cold
+  grey away from it. Off in rooms. **Two noise fields thresholded read as
+  BLOBS** (the owner's word): the banks are stretched along the shore (x
+  0.075, z 0.026), DOMAIN-WARPED by a third field so no edge is round, broken
+  by a ridged streak field into long drifting tongues, and each bank's top
+  rises where it is thick, so what you see is irregular sheets and ragged
+  strands with clear gaps, never a spot pattern.
+- **Mist pouring over the dune** (`air.pour`, `updatePour`, `cliffLipX`): 44
+  soft sprites in a few wandering streams that creep to the lip, fall down the
+  face a little off it like a curtain, lie down on the talus and spread over
+  the sand. `cliffLipX` repeats the loft's runnels (periodic in
+  `CLIFF_PERIOD`, so world z reads the recentred mesh). Kept clear of the
+  drain, the pavilion, the catacombs door, the whale door, the hole, the rock
+  and the headland.
+- **What the tide leaves** (sand shader). The first pass was a continuous
+  dark band the length of the beach and read as a TRAIL, and bold foam
+  threads read as paint. Now: WRACK only over about a fifth of the beach (a
+  slow mask along z), in loose soft clumps that darken the sand by a third at
+  most, a rare shell, all gone by 26 m; FOAM as a thin uneven film of bubbles
+  with finer threads where the wave turned, its age read SMOOTHLY between the
+  past waterlines, sinking in over about a second and a half, gone past 24 m;
+  and a glassy sheen on sand the water has just left (`bwFresh`). **This sand
+  is lit mostly by its own emissive map, which never sees `diffuseColor`**, so
+  all of it is applied to the FINISHED colour — and the foam LIGHTENS what is
+  under it (the grain shows through) rather than being mixed toward a colour.
+- **Ink-edged cloud shadows** (`bwCloudShade`, now off `skCloudRaw`): a soft
+  body, an edge feathered into tendrils by a smaller field dragged along with
+  it, and a darker rim where the ink pools, like a drying watercolour wash.
+- **Each stretch grades its own shadows, barely** (`uTone` in the palette pass,
+  set from `updateMood` at `MOOD_TONE` 0.30, zero in rooms): the mood's hue
+  laid into the darks only, normalised to their luminance, so the level of the
+  frame does not move.
+
+**THE WATER'S EDGE IS A SHEET, NOT A DARK LINE (`SAND_EDGE_K`).** The sand is
+drawn a metre past the sea's own edge and ABOVE the sea plane, so where the
+foam stopped there was a band of wet dark sand between the white and the
+water — the owner's "dark sand line". In the sand's own tonemapping chunk,
+past the waterline the sand is mixed toward what the sea shows beside its
+edge (measured on screen: about (45, 75, 110), `thin = vec3(0.030, 0.072,
+0.160) * uEdgeK` at 1.8), a bubbled lip rides the line itself, and a glassy
+margin runs a metre and a half up the wet — so the white meets the water with
+no dark between.
+
+**THE THING OUTSIDE THE PAVILION IS OUT (`SCP_ON`).** He is built and then
+retired on the next line, and `updateScp` returns at once; set `SCP_ON` to
+bring him back.
+
+**THE PAVILION WAS REBUILT (models/mushroom-house.js), INSIDE AND OUT.** The
+owner's verdict on the old one was AI slop, and the reasons were in the
+materials: every map 256-512 px, nearest-filtered and crushed to fourteen
+levels, every surface flat-shaded and lit by its own emissive at nearly its
+own brightness, so a drum was grey facets and a sofa an orange shape. Now:
+- **Every map has a HEIGHT drawn beside it** (`normalFrom`), 1024 where the
+  surface is big, linear and anisotropic, nothing quantised; the concrete is
+  weathered (streaks, damp at the foot, rust at the tie holes) with the board
+  seams in the relief more than the colour. **Every concrete surface is mapped
+  in METRES** by a traverse at the end (plan for anything facing up, arc
+  length and height for anything standing), so the seams are level and one
+  size on every wall.
+- **Smooth shading everywhere**, `roundBox` (a rounded rectangle extruded with
+  a bevel) for anything made, and `smoothNormals` (position-keyed, keeps the
+  UVs) on every extrusion and lathe.
+- **A curved thing is a LATHE of its own section** (`rrProf`, `lathe` with end
+  caps): the sofa is base, back, arms and six cushions each revolved over its
+  arc, so nothing on the curve interpenetrates. Lounge chairs are lathed tubs
+  with the front left out, turned so the gap faces the table.
+- **The room is lit by LIGHT**: five cold moon fills round the glass, two in
+  the stair's bore, a hurricane lantern on the table (`MUSH.LANTERN`,
+  flickered by `mushLantern` in `updateMushroom`) and a small lamp in the
+  ring's casket. Every point light is pooled, so this is free anywhere else;
+  furniture carries a breath of its own map as emissive and no more. The
+  EXTERIOR still carries a real lift (0x7c8591): it is backlit from every
+  approach and was a black silhouette at the old level.
+- **The ring's case** is a brass-and-glass casket on a teak stand at the head
+  of the stair (`TOP_ANG - 0.62`, r 3.05, turned to face the stair), lid up,
+  an open velvet ring box with an ivory satin cushion in it; `MUSH.JEWEL` is
+  measured off the cushion. **Lids hinge at the BACK**: hinged at the front
+  and turned "open" they hang down over the thing in the box. The beam and
+  the sparks round the ring in `placeGemRing` are gone; it is 1.25x, faces
+  the stair (`J.ry`), with a small emerald glow and a quieter glint.
+- **THE STAIR SPRINGS FROM A NEWEL** (`MUSH.NEWEL` 0.2): the well is closed,
+  the treads run from the newel to the wall and the handrail is on the wall.
+  The walk band is `NEWEL + PLAYER_R` to `BORE - PLAYER_R * 0.55`, and the
+  feet follow the treads' own LINE (`PLAT_TOP + turns * RISE`, eased), not a
+  stepped height — the stepped snaps were "getting down the steps is bad".
+  The gap into the room is ±0.55 rad. `tools/mushwalk.js` (`__mushWalk('up' |
+  'down' | 'room')`) drives the real walk: up 329 ticks and down 328 with no
+  stalls and at most 5 cm of eye movement a tick; a lap of the room round the
+  well clear. **Teleporting to the pavilion fires the dock's swim-in**, and
+  `packCut` is in `frozen()`: step until `__bw.packPhase` is 2 first.
+- The room's colliders are discs that stop a hand short of the outer clamp
+  and are floor-gated (`floorY`), and nothing but the rail stands within
+  2.5 m of the well, so the ring round it is always walkable.
+Measured: 649 meshes baked to 57 draws, the render call about 1.1 ms in the
+room, on the stair and from the beach.
+
+**THE WHALE ON THE SAND, AND ITS MOUTH IS THE WAY INTO THE BELLY.** Bohdan
+Lvov's "Blue Whale - Textured" (CC-BY-4.0, `assets/whale.glb`, `gltfpack.py
+--tex 2048 --normal-tex 2048`) lies at `WB_Z = CAT_OUT_Z - 175`, past the five:
+the snout at `WB_SNOUT_X` 10.2, a stride short of the dune with a four-metre
+corridor between them, and the body running straight out into the sea
+(`WB_DIR`, 7 degrees toward you) so you walk up on its whole flank. `startSwallow`
+is the "Enter" under the crosshair on its mouth; it hands over to the belly's
+own cut at its middle (`whaleT = WH_OUT`), and `placeOutOfWhale` puts you back
+on the sand in front of its face with the jaw open and closing slowly. The song
+is the owner's recording (`assets/whale-song.m4a`, the `whaleSong` bank),
+looped from where it lies: silent past ~200 m, faint at 170, full beside it,
+duller and panned with distance (`updateWhaleSong`). What it cost:
+
+- **THE SKIN IS BAKED OFF THE SKELETON ONCE, AND EVERY MOTION IS A SHADER.**
+  Its one clip is a swim. `wbBake` takes positions through `getVertexPosition`
+  and normals through the same blended bone matrices, in the pose the file
+  stands it in, into a plain mesh; `WB_GLSL`'s `wbDeform` does the breath, the
+  jaw, the sag, the tail and the blink, on the skin, the eyes, the lids and the
+  whole inside of the mouth alike (`wbInject`), so none of them can disagree.
+- **THE MOUTH WAS ALREADY SPLIT.** The lower jaw is its own island of the
+  mesh, cut from the head along the lip line (y = 96 from the snout back to the
+  corner at z = 345, model units) — measured by flooding the index and asking
+  which islands share positions. So `aG` (+1 head, -1 jaw) comes from which
+  island a vertex is in, and one rotation about the corner of the mouth opens
+  it with no hole but the mouth. The head's own vertices on the seam BELOW the
+  corner go with the jaw, or a second mouth opens under the eye.
+- **WHAT THE OPEN MOUTH SHOWS IS BUILT TO THE LIP LINE** (`wbMouthGeo`): a
+  ridged palate, gums along both lips, a tongue with a furrow, cheeks stretched
+  between the lips, a throat receding to black, and short baleen that
+  retracts into the gum while the mouth is shut (`aK`). **THE CHEEKS ARE BUILT
+  SHUT, A STRIP OF NO WIDTH, SO THEY HAVE NO NORMAL** — `computeVertexNormals`
+  gave them zero and they drew black; they are given one facing out.
+- **THE FILE'S POSE IS A SWIM, AND THREE THINGS UNDO IT.** The head is tipped
+  up twenty degrees, so `wbBend` brings everything forward of the flippers down
+  about a point under the corner of the mouth (every builder calls it, in the
+  whale's own metres). The body is round, so from the side you saw UNDER it —
+  its widest line a metre up — and it read as hovering; the settling pass
+  pushes each section below its widest line out to that width, a function of
+  position alone so a seam's two sides move together. And it arches, so its
+  back half stood clear of the sea; the shader sags it (`wS`). Then it is
+  sunk 0.75 m, sand is banked along both flanks, a contact shadow is laid under
+  it, and the skin darkens toward the sand (`wbAO`, by world height) — what
+  grounds a body here is the light that cannot get under it.
+- **THE LENS IS 105 DEGREES VERTICAL**, about 130 across at 16:9, so a true
+  blue whale and then a forty-metre one both read as a large fish. It is built
+  in a thirty-two-metre animal's metres and the group scaled by `WB_K` (1.9,
+  about sixty-one metres), so every number below scales with it.
+- **THE SWALLOW'S PATH IS THE DRAWN GAPE, FROM WHERE YOU STAND.** `wbMouthAt`
+  runs the same bend and the same hinge as the shader, and the path is you,
+  halfway, the lips, over the tongue, the throat. Written in fixed local
+  numbers it flew over the head (the bend had moved the mouth), and with its
+  first point in front of the snout it backed you up and swung you round to
+  the moon.
+- **Hurt**: three propeller cuts and a gash by the flipper, tapered and torn,
+  black-red where deep with a torn lip of blubber, blood run down its side and
+  soaked round them, old round scars, a harpoon measured onto the skin with
+  its line trailing into the sand, blood pools on the sand and a slow cloud of
+  it in the water (`oceanUniforms.uBlood`). The flippers are marked (`aE` 6)
+  and carry none. **Alive**: a ragged breath with a catch after it and mist
+  off the blowhole (`wbExhale`, `sfxWhaleBreath`), a slow blink with a lid of
+  its own skin coming down over each eye, the tail lifting out of the sea now
+  and then and splashing back. **Lit**: a cold key over the beach side that the
+  face and eye come into, the sea's glow low on the flank, a moon rim and the
+  moon's own glint broken by water running down it, drops that catch the light,
+  a little of the surf's glow clinging low; the fog on it is thinned
+  (`vFogDepth *= 0.66`) so its silhouette stands against the moon from a long
+  way up the beach, and the sky clears over it (`updateMood`, key 14).
+- The marauder moved to where the door was (`UMBRA_Z = LH_Z + 92`).
+- `tools/whalecap.js` captures a swallow on a fake clock; `__bw.wbGet()`,
+  `wbU` and `startSwallow` are on the harness.
+
+**THE WALK DOWN TO THE WHALE IS ITS OWN PLACE, AND IT RUNS ON THE TRACK'S
+CLOCK.** Past the five's fire (`WS_Z0 = CAT_OUT_Z - 48`) the beach goes into
+a silver mist. The first frame the whale's call is audible there (its song's
+distance gain over 0.2 on the same curve `updateWhaleSong` uses), with nothing
+awake near you, the owner's "whale sighting" starts (`assets/whale-sighting.m4a`,
+57 s, on the music slider at `WS_LEVEL`; `WS_LEVEL`, `wsGain` and `wsSrc` are
+declared up by the keep intro because `applySettings` reads them at load).
+The track swells at 15 s (measured, -26 dB to -13 in one second), and
+`WS_SWELL` is where the whale is seen:
+- **THE REVEAL IS READ OFF THE TRACK, NOT THE DISTANCE** (`wsTime`: the audio
+  clock while it plays, the wall clock if there is no audio). Walking is
+  3.4 m/s, so fifteen seconds is fifty metres, but a player who stops, runs or
+  fights would put the swell and the reveal in different places. `wsR` is a
+  smoothstep over 12.5-17.5 s, raised anyway inside 55 m of the snout; a player
+  who arrives near is started part way in so the swell is still ahead. Measured
+  in real time at walk pace: started 126 m from the snout, revealed at 15.5 s
+  about 73 m out.
+- **Before the swell** (`wsM`, the mist, = the stretch times 1 - 0.82 R): the
+  fog is thickened up to 2.9 times (`updateMood`), the ground mist 3.4 times,
+  and 56 moonlit mist banks (`wsBanks`) stand on the sand and the water. The
+  moon only now and then gets a shaft through (`wsBeams`, each peeking on its
+  own count). The whale is a dark mass in it.
+- **At the swell** the banks between you and the whale draw aside, the cloud
+  opens over it (the whale term in `updateMood`'s `clear` is gated on `wsR`),
+  the shafts stand on its back, the screen-space moon rays strengthen
+  (`beachRays`), its key light comes up from a fifth, and a moon-kiss light
+  rises over its back. Motes glitter in the moonlight the whole way (`wsMotes`).
+- `whaleSighted` is on the save, and a save past the whale has seen it. The
+  harness has `wsState()`, `startSighting(offset)` and `wsReset()`.
+
+**THE BEACHED WHALE, ALIVE (round 14).** Everything moves in `WB_GLSL`'s
+vertex shader off baked attributes (`aE` kind: 3/4 upper lids, 13/14 lower
+lids, 6 flippers, 9 tongue, 15 saliva); `updateWhaleBeach` drives it:
+- **EYES AND LIDS.** The blink was the eyeball squashing. Each eye now has two
+  real lids baked out of the head's own skin (uv taken from the nearest head
+  vertex beside the socket), an upper that comes down 70 % of the way and a
+  lower that meets it; the eye turns toward you inside 40 m (`uEyeRot*`, a
+  mat3 — write it with `U.value.setFromMatrix4`, a Uniform has no such
+  method) with darts and a slerp.
+- **THE JAW LIES ON THE SAND; THE HEAD OPENS.** `WB_OPEN_DN` 0.035 against
+  `WB_OPEN_UP` 0.33: a lower jaw swung down through a beach is a jaw in the
+  sand. The mouth is textured per surface with relief (`wbMouthMat`: palate
+  ridges and raphe, a spongy tongue with SCATTERED papillae — a jittered grid
+  read as a studded mat — gums, throat rings, cheek folds, veins), finest
+  detail faded past 14 m or it moirés at the retro scale; saliva strands
+  (`wbMucusGeo`) sag as it opens; the tongue rolls you in during the swallow.
+- Flippers lift and thud every 14–32 s, the skin shivers, water drips off it,
+  barnacles are sparse patches on the rostrum and behind the blowhole only.
+- **THE BERM IS GROUND AND IT IS A TONE.** Its contact rows initialised
+  `lo = 9, hi = -9` — values that were right in a local frame and are
+  nothing like a WORLD projection (~970), so one whole flank of the berm was
+  built a hundred metres off at x -104 and only one side ever existed. It is
+  rasterised onto a 0.25 m height grid at build (`wbBerm`, `wbBermAt`, read in
+  `update()` beside the dock's drift). Under a 4 % moon a slope barely shades,
+  so the ploughed look is a 2x-multiply overlay of the same triangles
+  (`whaleBermTone`): a wet dark trench against the skin, runnels, a pale dry
+  crest, clods (faded past 26 m), neutral past 4.8 m out, with distance, and
+  SEAWARD OF `shoreLine` — the overlay has no discard, and over the surf its
+  lift drew a pale sheet on the water.
+- **NOTHING ON IT IS A STEP.** The body's discs are `top ≥ 3.2` and the
+  flipper chains `≥ 2.4`: once the berm lifts your feet half a metre a
+  1.2 m disc is within `ROCK_STEP` and you walked up onto the whale.
+  Measured, 30 approaches with jumping: never nearer the skin than 0.53 m,
+  feet on the berm, worst eye step 3 cm.
+- The song lifts the whale's own calls round the 15 s swell (`sw` in
+  `updateWhaleSong`, the loop realigned so file 17 s lands on it).
+- **The belly**: `whFleshMaterial` carries sparse veins that pulse with the
+  heart (`WH_U.uHeart`), the fog is `0x1f080b` at 0.030, and a drift of
+  bioluminescent plankton (`air.plank`) wraps round you.
+
+**THE PASSING THEME, OUT OF THE CHURCH'S FAR END.** The owner's "passing
+theme" (`assets/passing-theme.m4a`, lifted 13 dB at encode, 52 s) is fetched
+the moment you press "To climb out" behind the altar and started the frame the
+black lifts on the sand (`startPassing`, from `updateUndercroftCut`): up out of
+nothing over 4 s, held to 13 s, and then gone slowly over the rest of its own
+length. FAINT is a number: on the music slider at `PASS_LEVEL` 0.62, which puts
+it about 10 dB under the whale sighting. Once a page, only by that door, and it
+is stopped if you go underground again.
+
+**THE BANKS ARE GROUND FOR EVERYTHING THAT WALKS (`sandMoundAt`,
+`beachGroundAt`).** Every heap built out of `makeApron` was a picture: the
+player, the mutants and the crabs all walked the flat y = 0 under it, so a
+creature crossing the rock wall's bank or the whale's berm waded through it.
+`regMound(mesh)` registers an apron that is a real heap, and `sandMoundAt`
+evaluates `makeApron`'s own dome profile through that mesh's world matrix (read
+once, lazily). `beachGroundAt` is that plus `wbBermAt`, `driftAt` and
+`headlandAt`. A beach creature's height is set from it every frame in
+`updateMutantUnit`, which nothing did before: a beach mutant stood at the y it
+was spawned at for its whole life. The rise keeps pace with a run and the fall
+settles. Crabs use `beachRestY` (the sea's rest height where wet, the heap where
+dry); `groundUnder` and the player's `groundY` include the mounds too.
+Measured: a mutant chased over the rock wall's bank is never more than 7 mm
+below the sand; over the whale's berm, never more than 9 cm, for a frame at
+the ridge.
+
+**"THE CHURCH TUNNEL EXIT LAGS" WAS A GLASS ROBE.** Sol's `robe` came out of
+its .blend with `transmission` 0.095, invisible at that level. But any material
+with transmission on screen makes three draw every opaque object a second time
+into a transmission target, and that target is linear and not tone-mapped, so
+every program in view is compiled a second time for it. The way out behind the
+altar looks straight back at him. Measured from the exit bore looking at the
+church: 3.0 ms a frame became 1.58, and the first look no longer compiles
+thirty programs in a 250 ms frame. `noTransmission` in the GLTFLoader wrapper
+zeroes it on everything that loads (`userData.keepTransmission` opts out), and
+logs it. **How it was found**: a cache-key diff of two programs with the same
+material name, which differed only in `outputColorSpace` (`srgb-linear`) and
+`toneMapping` (0). Only a render target does that, and the only render target
+drawn mid-frame is three's own transmission pass. **When the same material
+compiles twice, diff the cache keys.**
+
+**A DISCARD ANYWHERE IN A SHADER IS PAID FOR EVERYWHERE IT DRAWS
+(`splitDiscards`, models/undercroft.js).** Every material down there went
+through `grime`, and `grime` carries three discards: the low clip, the high clip
+and the apse's cut. A program that may discard loses the GPU's early rejection
+(Apple's tile deferral, everyone's early-Z), so the rock, the skin behind it and
+the water were all fully shaded. At the end of the build each mesh is split
+once:
+- triangles wholly past a clip are dropped (27,457 of them; they never drew);
+- triangles that cross a clip line or the apse cut keep the discarding
+  material;
+- the rest go to a clone flagged `bwNoDisc`, whose program has no discard at
+  all.
+
+A material no clip can touch is simply flagged. The clone's `userData` is a
+SHALLOW copy, so the fade vectors stay shared, and it is added to `S.mats` and
+`S.exitMats`. `grime`'s `onBeforeCompile` reads `this`, not the closure's
+`mat`, because a clone runs the same function. Measured, the exit view went
+1.31 → 1.16 ms on this Mac. Rendered against the unsplit build, the four views
+across both breaks match to under one level of brightness on average. **Do not
+re-run `doorBlend` after it**: the skin sleeves are built after the last blend
+and have never had a band, and a re-run lights the exit bore's skin at the
+doorway's level.
+
+**A CHECKPOINT IN A ROOM HOLDS THE BLACK UNTIL THE ROOM IS WARM.** The save at
+the church's tunnel exit came back with the black lifting at the boot hold's
+1.6 s cap. Three things then landed in front of the player, as frames of 80,
+80 and 267 ms:
+- the room's own first compile;
+- the boot's big room warms (the drain, the pavilion, the bunker, the hall,
+  the saucer, the church, the boss);
+- the knight's first draw.
+
+The fixes, in order:
+- `startRoomWarm` renders the room from where you stand in six directions,
+  one a frame, then puts its textures on the card. It renders rather than
+  compiles, because `renderer.compileAsync(group, …)` builds programs for a
+  state the real frame does not have.
+- `updateBootHold` waits for that, and for `warmOwed()` (the chain and the big
+  warms), to `BOOT_HOLD_WARM_MAX` (6.5 s). The chain runs flat out while the
+  black is up (`animateFrame`'s 55 ms loop takes `bootHold > 0` as well as
+  `!introStarted`).
+- `dressMutant` now `compileAsync`s the skinned body itself, not just the
+  severed-limb variant, so a creature dressed while you stand in its room does
+  not compile on its first draw.
+
+Measured: the black lifts at about 5.1 s instead of 3.9. Nothing after it goes
+over 80 ms, and those frames are single background loads (a parse, the saucer
+hall's warm step). On a warm page the climb-out itself never went over 24 ms.
+It measured the same before and after, and the owner's lag was the church
+behind him.
+
+**`renderer.info.programs` IS THE ORDER THINGS COMPILED IN**, and the program
+names are the material names. When a hitch compiles something, a hook on
+`renderer.render` that logs `programs.slice(p0)` names the culprit in one line.
+
+**THE WHALE'S BERM STANDS IN THE SURF; THE SEA RUNS ROUND IT.** It wore
+`sandMat`, which discards seaward of `shoreLine` — so as the swash came up the
+heap vanished and the whale sat over a gap onto the sea plane a third of a
+metre down, and what survived just past the line was tinted as the sea's thin
+sheet (the pale blue patch). `sandShader` takes a fourth argument, `lift` (a
+GLSL expression in metres, subtracted from the shoreline under that fragment;
+the beach passes nothing), and the berm's material (`bermMat`, key
+'whaleBerm') uses it with `keep`:
+- it is KEPT wherever it stands above `WB_BERM_WL` (-0.28, the water against
+  it; the sea plane is -0.34), with that line wandering by a few centimetres of
+  noise so it is not a contour line;
+- above the water its distance from the sea is its HEIGHT alone once the swash
+  has passed its foot (`WB_BERM_LIFT` 6 m per metre), so it reads wet sand and
+  never the sea's sheet — except its bottom `WB_BERM_SHEET` (0.14 m), which
+  wears the sheet and the lip so the edge meets the water with no shelf;
+- every rim sinks well under the sea (-0.55), and past the break (x -3 to -13,
+  the mean waterline here is about 0) the berm itself eases down under the
+  water (`bermSink`), because a heap standing in the open swell is a sand bar;
+- the mesh is denser (rows 0.16 local apart, `NJ` 40): at the old density the
+  water line was a regular sawtooth of the outer triangles.
+The overlay (`whaleBermTone`) discards under the water and fades by the same
+height-based distance. `wbBermAt` clamps at zero, so the sunk rim never pulls
+the ground down. Measured across the tide (shore x 8, 6, 4, 1): the heap holds
+against the flank as wet sand at every height.
+
+**AN ICON'S ROLL IS AN AXIS, NOT A DIRECTION.** `renderItemIcon` lays a long
+thing on the diagonal off its second moments, which cannot say which end goes
+up; `iconRot.flip` turns it half round. The Bloody Blade has it (point up,
+hilt at the bottom, by the owner's word). `ICON_CACHE_V` is 'v2'.
+
+**The shop:** the .44 is 5 jars, the pack upgrade 3; he buys the Military
+Shovel for 3. The tribe's fire makes no sound. The whale's song at the swell is
+about 7 dB over what it was (`updateWhaleSong`, cap 2.4).
+
+**THE HEAP IN FRONT OF THE WHALE'S CHIN WAS WOUND UPSIDE DOWN.** Every one of
+its 1,920 triangles faced the sand, so from anywhere a player can stand it was
+back-face culled and the head sat over bare beach; the flanks' rows were fine.
+Its normals were upside down too, so the overlay's "faces that look up" read
+it as a wall. Count the normals of a generated mesh (`cross(b-a, c-a).y`)
+before blaming its material.
+
+**THE DUNE'S MIST IS OUT OF STEP (`stepPour`).** It was born all at once on
+the first frame with one set of speeds and one round sprite, so the whole
+curtain came over the lip together — "each blob looks and moves the exact
+same". Every blob has its own creep, weight, fall speed, spread, bob, life and
+opacity; on its first birth it is aged to a random point in its life in
+0.1 s steps; the streams are loose rather than lanes; and `makeAirPoints`
+takes `shaped`, a per-point seed (`aR`) that turns, stretches and lobes each
+blob so no two share a silhouette. Measured on the first frame: 10 on the
+crest, 7 falling, 22 spreading, at ages spread over their whole lives.
+
+**THE SNORKELER LAUGHS TO HIMSELF (`updateSnorkLaugh`).** Five laughs cut at
+their own silences from the owner's recording (`snorkLaugh`, -3 dBFS each).
+Within `SNORK_LAUGH_NEAR` (16 m) of his towel: the first 3.5-7.5 s after you
+arrive, then every 22-48 s, two or three a visit, never the same one twice
+running; played from where he is through `playSampleAt` (new `pick` option)
+at `SNORK_LAUGH_GAIN` 0.95, which arrives at about a quarter from the towel
+twenty metres off, dulled toward 1.3 kHz. While he laughs his head lifts a
+hand out of the water (`snorkLaugh.lift`, fed into `snorkUp`) and small
+splashes go up round him with a quiet `wade`.
+
+**Also this round:** the first shell lies at (7.36, -16.66), the owner's spot;
+the crosshair fades out as the .44 comes up to the sights (`crossAimK`,
+opacity only — five other things own its display); and the belly's plankton,
+spores and mist drift at about a third of their old pace (the twinkle is
+unchanged).
+
+**THE DARK SQUARES ON THE WHALE'S HEAP WERE THE OVERLAY'S "CLODS".** Hard
+world-aligned 9 cm cells (`floor(vW.xz * 11)`) darkened by 30 %: invisible by
+moonlight, and under a glowstick at arm's length a field of dark squares that
+read as holes. They are soft two-scale noise now. Two things about finding
+it: a `farProps` entry has its `visible` rewritten by the far-cull every frame,
+so hiding one before `__bw.frame` hides nothing (the first A/B said "not the
+overlay" for that reason); and a `MeshNormalMaterial` swapped onto the berm is
+the quick way to tell geometry from shading.
+
+**AND THE HEAP RUNS IN UNDER THE CHIN.** The ring in front of the chin started
+0.35 m inside the chin's own radius, which left a disc of bare beach under the
+snout, and the jaw's tip stands 0.8-1.7 m over it. The ring now reaches nearly
+to its centre and its inner part rises to about 1.5 m (buried in the body
+wherever the body is lower), so the tip of the mound is shoved up under the
+jaw. The walk grid keeps the heap's own height (`walkY`), so you cannot climb
+up under the head. A version that followed the whale's own underside (a height
+map off its vertices, 3x3 neighbourhood) was built and reverted: the
+neighbourhood picked up the jaw's height in front of and beside the snout and
+stood a two-metre WALL of sand across the whole head.
+
+**ICONS POINT UP.** The sand shovel and the katana carry `iconRot.flip`
+beside the Bloody Blade, so all three lie hilt/handle lower-left, blade
+upper-right; the Military Shovel already did and does not flip.
+`ICON_CACHE_V` is 'v3'.
+
+**THE SHELL COMES DOWN ON A CLICK.** While it is at your ear the primary action
+takes it down (`stopListening(true)`: the sea goes out of it over a breath, not
+on a click), and the prompt says so.
+
+**THE OLD RING IS ONE WHOLE BAR** (`OLD_HP` 1, `maxHp()` = `MAX_HP + 1` worn),
+a full fifth segment, and putting it on fills your health to the new full
+(`item.onWear`, called from `wearRingAt`, never while a save is applied or
+replayed).
+
+**Also:** the last mound short of the whale (z -852) holds a spliff; the
+snorkeler laughs only before he has been roused (`snorkMet`), three or four a
+visit, the first 3-6.5 s in and then every 15-32 s; and the marauder is harder
+(74 health, poise 20, `speedK` 1.92, `aggr` 3.7, `comboGrace` 0.18, a guard
+that holds more and costs more, knocked down less; the tells untouched).
+Measured hands-off against a player standing still: 53 swings and 63 damage a
+minute (it was about 48).
+
+**THE OPTIMISATION PASS: WHAT THE GPU WAS DOING, AND A RESOLUTION THAT
+FOLLOWS THE MACHINE.** Measured with `tools/perf.js` (GPU timer queries, the
+JS self-profiler, frame-gap walks). On this Mac, warmed, the CPU is 1.2-1.4 ms
+a frame on the beach and the GPU the rest — and the GPU is what a Windows
+laptop's integrated graphics has five to ten times less of. Four things:
+
+- **THE GROUND MIST WAS HALF THE SCENE.** `bwGroundMist` marched six steps of
+  eight hashed noises each — about two hundred `sin` hashes on every fogged
+  fragment, overdraw included: 3.36 ms of scene at z -600, 1.47 without it.
+  It reads `fogNoise` now (`FOG_NOISE`, one 256² R8 field shared through
+  `UniformsLib.fog`, `bwGN` = one fetch, smoothed the same way), and a step
+  more than 2.4 m over the sand skips its noise. The keep's mist is untouched.
+- **THE SKY AND THE CLOUD SHADOWS RAN FIFTY AND TWENTY-FOUR NOISES A PIXEL.**
+  `SKY_CLOUDS` / `CLOUD_SHADE_GLSL` stay as they were (hashed); `_T` variants
+  (`SK_NOISE_TEX`) read the same texture and are used by the four shaders with
+  the most pixels — the sky, the sand (so the berm and the wreck's bed), the
+  dune and the sea. A shader using `_T` must be handed `bwSkyTex`
+  (`BW_NOISE_U`). **NOT `bwNoise`**: that is already a noise FUNCTION in the
+  sand and sea shaders, and the first build failed to compile four programs on
+  the redefinition — which ALSO made those surfaces cheap, so check
+  `renderer.info.programs[i].diagnostics.runnable` before believing a speed-up.
+  Result: scene GPU at z -600 3.36 → 1.2 ms, at z -200 1.71 → 0.77; the whole
+  frame (view model and post included) ~2.4-2.5 → 1.45-1.76 ms at 1080p
+  over four stations. The clouds keep their character.
+- **DYNAMIC RESOLUTION (`drs`, `drsTick`, from `animate`).** Every 1.5 s of
+  play the delivered frame intervals are read; if the 75th percentile is over
+  `DRS_BUDGET` (19.5 ms) while our own CPU work is under 55 % of it — GPU-bound
+  — the pixel ratio steps down ×0.9 toward `DRS_MIN` (0.38); three windows of
+  a solid 60 step it up ×1.06, never above `RETRO_SCALE`, and never back to a
+  level that just failed for 30 s. Not while loading, frozen, in a cut or in
+  hitstop. Remembered in `localStorage['beachwalk.drs']`. The stars' point size
+  reads `PIXEL_RATIO_U`, which follows it. **A slow display is not a slow GPU
+  and a slow frame is not a slow display**: the first build learnt the refresh
+  rate off the delivered intervals, so sustained slowness became "a 30 Hz
+  screen" and it stepped back UP — the budget is a fixed sixty now.
+- **HITCHES ON THE WALK, FOUND BY WALKING IT.**
+  - the headland grass compiled on the frame it came into range (23 ms near
+    the pavilion): `warmBeachAll` compiles every hidden beach group once, the
+    moment the last model has parsed, behind the loading screen (36 ms);
+  - `fitCatSandDoor` cast 77 rays at the whole cliff loft (66 ms at the
+    stones): `raySlice(root, z0, z1)` copies the triangles in a z band into
+    small proxies with the source's matrix, same answers;
+  - the sea keep's 2048 maps were uploaded mid-walk past the wreck (8-22 ms
+    each) because it downloads on the approach to the dock: once the game has
+    begun, `updateTexUpload` leaves any hidden group thousands of metres off
+    (or forty down) to its own warm, which runs under the sail's black.
+  After: spawn to lighthouse with no frame over 20 ms once loaded, apart from
+  the keep's 22 ms parse near the dock and the cut-covered cave-in.
+
+What was measured and left alone: the 12-lamp point-light pool (removing it
+entirely changed nothing, 1.05 vs 1.07 ms); the post passes (~0.4 ms); the
+rooms (0.4-1.4 ms GPU, 48-85 draws); draw calls on the beach (100-280).
+**`serve.py` sends `Document-Policy: js-profiling`** so `new Profiler()` works
+in the dev page; it is what named every hitch above. And **never leave
+`performance.now` stubbed** — a frozen clock makes every frame dt 0 and the
+GPU read several times too high, which cost an hour here.
+
+**THE KEEP'S SKY WAS DEAD SINCE THE OPTIMISATION PASS, AND IT WAS A SHARED
+STRING.** `bwGN` (the ground mist's one-fetch noise) went into
+`KEEP_MIST_GLSL`, and that string is also pasted, on its own, into the keep's
+sky (`makeKeepSky`) and its cloud banks (`buildKeepLife`) — which do not have
+the fog chunk's `uniform sampler2D fogNoise`. Both failed to compile, so the
+sky over the island drew nothing: the owner's "you changed the tavern's sky
+and fog" (to him the tavern is the island it stands on). The ground mist is
+`GROUND_MIST_GLSL` now and only the fog chunk gets it. The round-19 check of
+"0 bad programs" was taken before the keep had ever been drawn: **a program
+count is only as good as the scenes rendered before it; check it in every
+room**, and `read_console_messages` keeps errors from before a reload, so read
+`renderer.info.programs[i].diagnostics` instead.
+
+**AND THE DYNAMIC RESOLUTION NEEDS A WITNESS.** It stepped down on "long frame
+intervals while our CPU work is small", which is also a parse between frames,
+a GC, a compile or a browser pacing at 30 — and on this Mac the tavern is
+1.5 ms of GPU and the keep 1.4, so any drop there was a false one, and it was
+REMEMBERED. Now: where `EXT_disjoint_timer_query_webgl2` exists (desktop
+Chrome and Edge, i.e. Windows) a timer is wrapped round every fourth frame and
+it steps down only on the GPU's own time (`DRS_GPU_HI` 13.5 ms, and up under
+`DRS_GPU_OK` 9); without it the old reading must hold three windows running
+with no stall over 60 ms. Floor 0.5, and the old `beachwalk.drs` value is
+deleted (`beachwalk.drs2` now).
+
+**NOTHING COMPILES ON THE FRAME IT COMES INTO YOUR HAND (`updateHeldWarm`).**
+A held copy is built lazily (`userData.build`) with materials of its own, so
+the first scroll onto each weapon compiled and uploaded mid-frame — measured
+10 ms (Military Shovel), 15 (Bloody Blade), 13 (peg), 29 (syringe). Anything
+in the pack whose model has landed is built, `compileAsync`ed in the view-
+model scene with only it showing, then rendered once into four pixels for the
+uploads, one a pass, every 400 ms. After: 0 programs on every first equip. And
+`toggleEquip` no longer rebuilds the SHUT pack on every notch of the wheel.
+
+**THE HEAVY SURVIVES A LOCK LANDING MID-PRESS.** After a checkpoint load the
+press that takes the pointer lock back is often the press you meant as a
+heavy. The pointermove "no button under a charge" release (for a lost
+pointerup) runs only while the pointer is FREE and not in the first 120 ms of
+a press; a lock that goes away releases the charge instead; and an unlocked
+press is `setPointerCapture`d so a free-pointer drag that leaves the canvas
+still delivers its release. (Not reproduced in the pane, which cannot lock:
+the path was made robust.)
+
+**THE PACK HAS A LEAVE BUTTON** (`#pack-leave`, the shop's own style, top
+left), and it gives the look back like the shop's.
+
+**THE NOISE TEXTURE HOLDS THE OLD HASHES, NOT RANDOM BYTES.** The owner saw
+it at once: after the optimisation pass the moonlight on the beach looked
+worse. The first `FOG_NOISE` was 256² of random bytes, and the old `skH` is
+not plain random on a lattice — it has a streaky structure of its own, and
+that structure was the clouds, the lit rims round the moon and the cloud
+shadows on the sand. `FOG_NOISE` is now 512² RG half-float with the old
+hashes BAKED into it in JS float32 (`skH` in red, the mist's sin hash in
+green) over lattice cells -256..255, read with one filtered fetch at
+`(i + u + 256.5) / 512`. Measured side by side at a fixed clock: the same
+clouds in the same places as the hashed maths (mean pixel difference 1.5-2.2
+against 2.2-3.7 for the byte texture), at 1.7-1.9 ms of GPU at 1080p against
+the hash's 2.2-2.6 and the bytes' 1.5-1.8. Four `texelFetch`es per noise
+(exact bilinear in the shader) looked identical and cost as much as the hash:
+one hardware-filtered fetch is the whole saving. Bake: 12 ms at load.
+`tools/moonshot.js` renders the four moonlit stills used for the A/B.
+
+**A HIDDEN TOP-LEVEL GROUP IS NOT WALKED EVERY FRAME (`scene.updateMatrixWorld`,
+right after `new THREE.Scene()`).** three recomputes the world matrix of every
+object before each render, hidden or not, and 5,800 of the game's 7,000
+objects are in rooms you are not in: 0.67 ms a frame against 0.08 for what is
+visible. A hidden top-level child keeps only its OWN matrix (a `worldToLocal`
+on a room, a `Box3.setFromObject` down from it and the fog cull all read it);
+its subtree is brought up to date the frame it is shown, before it is drawn.
+`updateMatrixWorld(true)` still does everything. The fog cull reads a
+top-level unit's `position`, not its stale `matrixWorld`. **If anything ever
+reads a descendant's `matrixWorld` inside a HIDDEN room, call
+`updateMatrixWorld(true)` on that room first** — the file's old lesson that
+"only a render writes `matrixWorld`" is now "only a render of something
+visible does".
+
+**THE HALL CULL IS TAKEN AGAIN WHEN YOU GO STRAIGHT FROM ROOM TO ROOM, AND
+NEVER FROM WHERE A WARM STOOD.** `cullWorldInHall` switches off everything
+over 1.5 km away once per room and put it back on the first beach frame —
+so the keep's door into the tavern (no beach frame between) left whatever of
+the tavern the keep had switched off, off (`hallKey` now restores and retakes
+it on any change of room). And `warmAtZ` moves the camera's z for a warm and
+runs `updateFarProps`, which in a room built the hide list AT THE WARM'S Z:
+the dojo's own lanterns (`dojoLights`, a top-level group) were switched off
+for the whole fight, every fight. A list made during a warm is undone.
+
+**THE DOJO WEARS THE BEACH'S SKY.** `DOJO_MOON`, the beach sky dome moved to
+the camera in the courtyard (and excluded from the hall cull), clouds, the
+shafts (`dojoRays`: the moon cold, the nearest lantern warm through
+`uRay2Col`/`uRay2T`), ground mist at the courtyard's height, lightning,
+drifting petals (`buildDojoPetals`), and the lanterns at `DOJO_LAMP_I` 22 over
+17 m with a core, a sprite and a halo each and `lpAlways` 30 so they keep a
+pool slot from anywhere in the yard. The dome drawn with the model discards
+above its own ground band.
+
+**Round C, smaller:** the first crab to wake shows the fight controls
+(`#fighttip`, `startFightTip`, the parry line lit through the crab's own
+wind-up; `fightTipDone` on the save); a click skips the extraction
+(`skipExtraction`); `clickInspect` items (the CD, the fang, the photo) examine
+on a click (`inspectHeld`); the pack has Drop (`dropItem`, one from a stack at
+a time — the pickup adds it back to the stack); the trader buys any ring for
+3 jars (`SELL_ROWS` ring rows); the wedding ring's text says when 6 jars is
+the most it gives; thrown props raycast the dock's meshes each frame
+(`dockThrowHit`, inside `dockHitBox`); the tavern's steps ask the floor face
+under you (`tavFloorMat`: `TAV_WOOD`, `TAV_CLOTH`, else stone); the pavilion's
+well rail and handrail stop at `MUSH.GAP` (0.85) either side of the stair's
+head and the table lantern is off; the octopus ring is worn gold
+(`makeWornGold`, a per-vertex cavity from a Blob Web Worker — `ringCavity` —
+because on 400k triangles it froze the page for two seconds);
+Ben's wounds are a cloth soaked and dried in bands with a height bump from
+`dFdx/dFdy` of the wound height (no normal map needed); the knight's shuffle
+only starts with 0.62 s of cooldown left and a restless kind only strafes
+when it is actually moving sideways (the "wiggle"); the catacombs monster is
+115 health, faster, meaner, with a heartbeat and a dark vignette while he is
+hunting you within 25 m (`updateCatDread`, `#dread`).
+
+**THE SEVEN IN THE WHALE, AND A CHECKPOINT AT ITS THROAT.** PolyGoreStudio's
+"Cursed Rune Demon" (CC-BY-4.0, `assets/demon.glb`, `gltfpack.py --tex 1024
+--no-clips`, 0.36 MB) to the owner's "Scary Zombie Pack" — every clip, both
+folders — through `tools/ntar_moves.py -- demon` (`assets/demon-moves.json`,
+32 clips). The demon is itself a Mixamo rig (`mixamorig:Hips_56`, which three
+spells `mixamorigHips_56`; `DB(name)` builds them), so `DEMON_RAG` maps the
+ragdoll's names straight onto it.
+- **A ZOMBIE PACK IS PERFORMANCES.** The bite lunges at frame 24 and gnaws
+  for six seconds; the packer's `WINDOW` cuts each blow at the valleys of the
+  hands' own speed curve (surveyed first with a throwaway Blender script), and
+  its `CONTACT` may now be a TUPLE of ends — the fastest of them wins and is
+  written as `by`. The gnawing is kept as `feed` (frames 52-200), and because
+  it starts crouched it is in `HIP_FROM_REST`, or its hips read as standing.
+- **THEY LIVE IN THE BELLY** (`kind.whaleBody`): `demonUnitPre` (hooked in
+  `updateMutantUnit` after the cat branch) draws them only `inWhale`, stands
+  them on `whFloor`, and runs their sleep — each kneels at one of the seven
+  points of the rune star facing its middle, playing its own `sleep` clip —
+  and the wake: within `DEMON_WAKE` (17 m) of any, or past `WH_ARENA_S - 14`,
+  `demonAlarm` wakes the nearest at once and the rest a beat apart by
+  distance, each turning to you and screaming (`roar`, `sfxScpScream`). A
+  blow on a sleeping one is `provoke`. `demonClamp` (first line of
+  `mutClampX`) holds them inside `whWallAt`'s curve and the throat/narrowing.
+- **ONE AT A TIME, AND EASY** (the owner's word, round E): `frenzy` is off,
+  so only the token holder swings; 7-9 health, poise 3, slower tells
+  (`windK` 1.25), `aggr` 1.2, one-deep chains, few feints. `kind.frenzy` /
+  `demonFrenzyOK` (two in the air) is still there if it is ever wanted, and
+  **ONE HURT PER HALF SECOND** (`demonLastLand` in `mutLandBlow`) is shared
+  by all seven. Measured on a passive player at the arena's middle: first
+  build 120 damage a minute; frenzy 62; now about 12 swings and 10 damage a
+  minute across the seven.
+- **THE RUNES BURN** (`kind.matMore` → `demonRuneGlow`, a hook added after
+  `reexpose` in `dressMutant`): the map's hot red-orange (sRGB 200-230 in
+  red, where the flesh never passes 140) is added to the emissive, crawling.
+- Death is the ordinary mutant ragdoll (non-boss path, limbs and heads).
+  Seven variants (`DEMON_VARIANTS` → `MUT_KINDS.demon0..6`): heights 1.95-2.7,
+  scaled bones, voices, speeds. At half health each rages (`rageClip: 'roar'`).
+- **THE CHECKPOINT**: `autosaveNow('whaleIn')` on the swallow's cut,
+  `saveRoom()` answers `'whale'`, `ROOM_BACK.whale` places you by
+  `placeInWhale` (always ready: the belly is generated). Measured: the save
+  restores to the exact spot with all seven there, and a killed one stays dead.
+
+**THE BELLY'S ARENA AND ITS LIGHT** (`whBuildArena`, `whArenaTick`). The
+floor between s 22 and WH_L-50 is flattened by `whArenaK` (the bowl opened,
+the mounds rolled out, the channel let up to a sheet a hand deep), and:
+- **A TEAL LIGHT ON RED FLESH LIGHTS NOTHING.** The glands were first a cold
+  green-blue and the walls round them stayed black — red reflects none of it.
+  They are pale gold now (a quarter amber), 40-48 over 18 m: under three's
+  physical falloff an intensity of 13 on a 0.1 albedo read as nothing.
+- **A STILL OF A POOLED LAMP UNDERSTATES IT**: `lpW` eases over a quarter
+  second of the CLOCK, so frames run with rAF frozen and a real clock leave
+  every lamp at a tenth of itself. Advance `performance.now` 16.7 ms a frame
+  for the capture, and give it back afterwards (never backwards).
+- The blowhole and the rune circle were built in round D and are GONE (round
+  E, the owner's word): the moon comes in through the wounds instead (below).
+  `WH_RUNE_R` survives only as the radius the demons kneel on and the remains
+  are scattered over; Dennis's limbs lie there (`whPlaceRemains`).
+- **THE FLUID FADES AT ITS EDGE**: a flat plane cut by the floor drew a hard
+  straight line; the depth over the floor is baked once into a byte map (the
+  floor is a function) and the last 12 cm fade (`uDepth`). The eye-lit fill
+  on the flesh came down a third so the lamps model it.
+
+**THE WHALE'S BERM IS A WHISPER** (the owner's word): the flank heap at 0.38
+of its height, the chin ring at 0.38 and only 0.55 m up under the jaw, the
+ridge 0.05, and the tone overlay a third of its strength.
+
+**THE DOJO HAS ITS OWN NIGHT** (`makeDojoSky`, `updateDojoSky` from
+`animateFrame`, which hides the beach's sky there): ink zenith → plum →
+crimson horizon, a 3° ivory moon at `DOJO_MOON` with a thin red corona, and
+clouds as stepped bands (fbm projected `d.xz / (el + 0.30)` stretched 1.1 x
+3.0 — near the zenith a flatter projection samples one noise cell and the
+whole top of the sky came out empty) with a lit line where each tone meets
+the next, and the courtyard's fog takes 55 % of 0x2a0c14 while you are there.
+
+**THE OCTOPUS RING'S DROP HAS A STING**: the owner's recording
+(`assets/octopus-ring-drop.m4a`, the `ringDrop` bank), played in `dropRing`.
+
+**THE FIGHT CONTROLS ARE ONE ROW AT THE BOTTOM, FOR THE FIRST CRAB FIGHT
+ONLY.** `#fighttip` is four entries — click / hold click / shift + hold click
+/ right-click — in a single row 118 px off the bottom, over the stamina strip;
+no parry line, nothing lit through the crab's wind-up. It goes after a minute,
+when that crab is dead, or in any room. It wraps below 620 px of width.
+
+**THE SNORKELER'S LOST KEY, AND THE PAVILION'S GATE IS LOCKED WITHOUT IT.**
+Give him the CD ("Wait.. where did you... I lost this over a week ago! Thank
+you."), answer either "You're welcome" or "No reward?", and he says "Heres a
+key I found up the beach, gotta fit somewhere." When the dialogue closes
+(`snorkKey.pending` → `updateSnorkKey`) he comes up (`snorkWant`), winds up
+0.7 s and throws it on a 4 m arc onto the sand by his towel (`LOST_KEY_AT`),
+where it lies with a glint: "Take the Lost key" (`lostKeyItem`, `id
+'lostKey'`, a paler clone of `keyModel`). Then he goes under and back to
+laughing and splashing — `updateSnorkLaugh`'s `idle` is "not met yet, or the
+key has been thrown". The pavilion's gate reads "The gate is locked." (bare)
+without the key and "Unlock the gate" with it; unlocking eats the key
+(`removeInventoryKey`), turns the lock (`sfxKeyTurn`) and swings it open
+(`mushGateUnlocked`). A shut gate rattles (`sfxGateRattle`). On the save:
+`lostKey` (0 not given, 1 on the sand, 2 taken) and `mushGate`; a save from
+before this that is already past the pavilion is treated as unlocked.
+Measured end to end in the pane: CD taken, the key's arc 1.25 s landing at
+(10.1, -273.2), taken, the gate unlocked and open with the key gone.
+
+**THE MOON THROUGH THE WHALE'S WOUNDS, AND THEY ARE THE SAME CUTS OUTSIDE AND
+IN.** `WH_CUTS_EXT` holds the exterior cuts in `wbWounds`' own numbers;
+`whWoundS` / `whWoundTh` map them onto the gut's (s, th), so each slash in the
+belly wall is the other side of one you saw on the flank. The flesh shader
+(`whFleshMaterial`, heave only, `aTh` per vertex, `WH_CUT_GLSL`) cuts them
+with a torn lip, a pale band of cut blubber and the night through the middle —
+navy, with stars, darkest at the edge where you look past the wall's
+thickness, sinews still across it — and inside the hole the lit flesh is
+REPLACED by the sky at `opaque_fragment`, or the wet glisten paints it grey.
+**THE SKY IS LINEAR**: (0.13, 0.18, 0.34) came out a pale blue-grey slab;
+(0.020, 0.032, 0.080) is a night. Each cut throws a sheet of moonlight
+(additive shader, `renderOrder` 7) down onto the floor with a cold pooled
+lamp where it lands (`A.moonLamps`, 20 / 15, `lpAlways` 50). Outside, the
+wounds have a blubber band, striated muscle and clots, and a bump with a
+ledge. **Syntax without node**: strip the `import` lines and run the file
+through JavaScriptCore's `new Function` (`osascript -l JavaScript`); it gives
+the line of a syntax error, and a stray raw newline inside a JS string built
+for GLSL (`join('\n')` written with a real newline) is exactly what it
+catches.
+
+**THE GUARD IS POLLED EVERY FRAME, BECAUSE A CHORD HAS NO POINTERUP.** The
+Pointer Events spec fires pointerdown only for the FIRST button to go down and
+pointerup only for the LAST to come up; everything in between is a
+`pointermove` with a new `e.buttons`. So hold the guard (right), click to
+swing (left), let go of the right first — and the guard's `pointerup` never
+comes. The move-based check was gated on `!locked`, so under the real lock the
+sand shovel stayed up across the screen until you pressed right again. `update`
+now drops `blocking` whenever `mouseBtns` (the window's capture listener) has
+no bit 2, the gun's own arrangement. The harness's `blocking` setter sets and
+clears that bit with it, or the poll undoes it on the next step.
+
+**THE TAVERN'S PLANK SLEEPS (`sleeps` on a PhysProp).** Dropped at random
+spots round the hall, a third of the time it never settled: wedged between
+two faces it was pushed out of one into the other and back, 8 cm a frame for
+ever, and balanced on a ledge it fell off and was lifted back every frame
+with a knock each time (178 knocks in 200 frames at one spot). Every flicker
+also moved its floor under you, and every time it went "still" it rebuilt the
+fighters' routing grid (3,500 cells of floor and wall queries) — the noise,
+the lag and the dead controls through the whole fight. A body with `sleeps`
+now stops simulating once it is in contact and has moved under 15 cm and
+0.12 rad over two half-second windows, or four seconds after it was let go:
+no step, no walls, no settle, no sound. It wakes when it is picked up or when
+`wakeOK` says so (`tavPropEpoch`, bumped when a table or chair is smashed).
+Every prop's knock is also limited to one per 120 ms, and the grid is only
+dirtied when the board comes to rest on the HALL FLOOR more than 0.3 m from
+where the grid last saw it (`tavPlankGridTouch`). Measured over 108 drops:
+one knocked five times then slept, the rest were silent, and the grid
+rebuilt zero times. **Harness:** the pane's `frame()` runs at real dt (about
+3 ms), so the half-second windows need a fake clock that only moves FORWARD
+(`performance.now = () => real() + off`, `off += 16.7` a frame), and a
+sleeping prop you teleport must have `asleep = false` set.
+
+**A KEY THAT HAS DONE ITS JOB SAYS SO (`keyUsed(item)`).** All four locks —
+the pavilion gate (Lost key), the sea chest (Chest Key), the wreck's shell
+door (Wheelhouse key) and the catacombs' door (Skull Key) — call it: "<NAME>
+USED" in white Georgia capitals in the middle of the screen (`#keyused`,
+z-index 60 so it shows over a cut) and `sfxLockOpen`, a mechanism in order:
+the key sliding in over the pins, three pins setting, the cam grinding round,
+and the BOLT at 0.64 s — a weighted clunk with a sub, inharmonic iron partials
+and the owner's `blockMil` pitched down under it. Every lock then waits for
+the bolt before it moves (gate 0.9 s, chest and door 0.85, the catacombs'
+exit 0.9), with a busy flag so a second press cannot double it.
+
+**THE LOST KEY'S THROW IS A CUTSCENE (`keyCut`, `updateKeyCut`).** The pack's
+rule: the camera is TURNED, never moved, and `keyCut` is in `frozen()` and
+the pointer-lock guard. Onto the snorkeler as he comes up (the lens drawn in
+to 52: he is twenty metres out), along the arc with a twinkling glint on the
+key (`snorkKey.flyGlint`), then 1.8 s on the key lying on the sand at a lens
+of 34 before it hands you back looking at it. It plays in dev mode too: it is
+how you find out where the key went.
+
+**THE OCTOPUS RING IS 15 % STAMINA RECOVERY** (`stamRegenK`, beside
+`stamMax`), no longer a tenth more bar.
+
+**THE PAVILION'S HANDRAIL STOPS BELOW THE ROOM'S FLOOR.** The bore is a tube
+that ends at the floor; a rail 0.9 m over the treads rose out of it over the
+last few steps and those points stood in the open mouth of the well with
+nothing behind them — the floating piece of railing. `RAIL_TOP` caps it
+(and its brackets) at the floor, and the end is turned back into the wall.
+
+**THE IDOL TOPPLES AND BREAKS WHERE IT LANDS (`idolSetup`, `idolPose`,
+`idolContact`, `shatterIdol`).** It rocks on the altar with a stone grind,
+then goes over about the front edge of its own base toward you (θ'' = 1.5 g
+sin θ / h, so slow at the top and fast at the bottom), and breaks on the frame
+a sampled point of the figure goes under the floor beneath it — the altar top
+or the dais. The pieces are a Voronoi of its own triangles (7 seeds through
+the body for big pieces, 20 round the impact for small), each carrying the
+fall's ω × r at 0.16 plus a small kick along the ground; its materials are
+set DOUBLE-SIDED when it loads so a shell of a piece is never see-through and
+the break compiles nothing. Then tetrahedron chips (a quarter in its gilt),
+the candles within 1.9 m doused and thrown, a dark dust cloud that hangs
+(normal blending, 0x3b3229 — pale or additive dust in a dark room glows), and
+`sfxIdolShatter`. Tuned against frame strips: at 0.42 of ω × r the big pieces
+flew four metres out to the player's feet.
+
+**THE SAMURAI IS 2.45 m, AND EVERYTHING THAT IS A DISTANCE GREW WITH HIM.**
+A third bigger than the man he was: `reachK` 1.36, `body` 0.62, `hitR` 1.10,
+`landSlop` 0.68 and `clipSpeed` (measured at 1.86 m) scaled by the same
+1.317, or a bigger man swings at the air and his feet skate. `lungeStop` 1.62:
+at a man's stopping distance his blows came from over the top of the frame
+(he fought at 1.15 m). Harder by health, poise and guard rather than by his
+tells: hp 58, poise 13, block 0.56, `recoilK` 0.60, and a second wind at half
+health (`rage`, his taunt as `rageClip`) that quickens everything between the
+cuts. Darker (`tint` 0xbdb3b0, `emis` 0.10) with a dull red rim, and two
+red eyes in the mask (`samuraiEyes`, from `warmMore`: sprites on the head
+bone placed by `SAM_EYES` in his facing frame, faded up as he wakes, hot at
+his rage). Measured hands-off: 58 swings and 55 damage a minute at 1.87 m.
+
+**ENEMY HEALTH BARS (`updateEnemyBars`, `#ehp`).** One small SOLID red bar per
+enemy — never segmented, that is the player's — and ONLY once you have hit it
+(`u.hbT`, stamped by `hurtMutant` and `hurtCrab`), for `EHP_HOLD` (14 s) after
+the last blow, out to 16 m. It sits 0.24 m (scaled by height) over the head
+bone (`kind.rig.head`, the ragdoll alias, or any bone called *head*), 44 by 4
+px, translucent and shrinking with distance. It is NEVER seen through a wall
+(`ehpBlocked`, every 0.18 s): the line from your eye is walked in one-metre
+legs through `keepHitsWall` in the catacombs, the tavern and the keep, through
+`dojoHitsWall` in the dojo, and raycast against the room in the undercroft and
+the bunker. A pale strip behind the red holds for a beat after each blow and
+eases down. The young one (`baby`) counts blows and has none.
+
+**A SKULL PILE COMES DOWN (`breakBonePile`).** The skulls are ONE merged mesh
+(`catSkullMat`), so a pile is its triangles inside 1.9 m of the cluster
+centre: they are COLLAPSED in place (every vertex of the triangle set to its
+first) so the pile is gone, and rebuilt as the pieces — a Voronoi of 14-42
+seeds, the real skulls in their own material — thrown clear along the blow,
+with dust (`idolDust`) and `sfxPileCrash`. A blade does it (`catBoneStrike`)
+and so does running into one. It is LOUD: `catNoiseAt(x, z, 90, true)`, and
+a loud noise sends him at once, roaring, at 1.3x his hunt speed; a route to
+the exact spot that fails goes to the nearest node beside it (it used to drop
+him back to roaming — the target height is the pile's middle, not a floor).
+Measured: from 38 m he investigates, spots you, stalks and is chasing inside
+11 s. Broken piles are on the save (`catPiles`), re-broken quietly
+(`catApplyPiles`) when the room lands. The walk and wall indexes still know
+the pile's old triangles; it has not been found to matter.
+
+**THE MOUSE COMES BACK ON A KEY, NOT ONLY ON A CLICK.** A pointer lock the
+browser takes away (focus, a banner, a system popup, Safari's own) may only be
+asked for again inside a user action, and a click was the only one the game
+listened for — so the look went dead until you clicked the screen. Two things:
+every keydown while playing and unlocked (not Esc, not Tab, at most every
+250 ms) calls `requestPointerLock` inside the gesture, and you are always
+pressing W; and ANY lock loss turns on `softLook`, so the plain movement of
+the free mouse turns your head in between. Neither can be tested in the
+preview pane, which cannot lock at all.
+
+**THE OCTOPUS RING IS BOTH: +10 % max stamina and +15 % recovery** (`stamMax`
+and `stamRegenK`).
+
+**BROKEN BONE CRUMBLES (`gib.crumbleAt`).** A skull pile's pieces and every
+loose bone (`catScatterBones`, the bones he kicks) fall in on themselves 1.2-3
+s after they are thrown — shrinking, sinking, a small puff of dust
+(`boneDust`, three of `idolDust`'s sprites) — and are gone: a broken pile is
+bare stone by 3.5 s (49 pieces to none, measured). They carry `keep` so the
+rubble fold never takes them first.
+
+**THE WHALE'S MOUND ENDS AT THE HEAD.** The bow wave that wrapped round in
+front of the chin met the flank heap in a sharp dark crease exactly where you
+stand to go in at the mouth; the owner's word was to end the mound there and
+make it clean. The ring is off (`WB_CHIN_RING`, false), and the flank heap
+eases to nothing over its last 2.5 m of rows toward the snout
+(`smoothstep(lz, 0.55, -2.0)`) and sinks a hand under the sand, so there is no
+cut row across its end either.
+
+**THE SEVEN FIGHT AS A PACK (`updateDemonPack`, `demonHold`).** Harder
+(hp 10 base, 7-13 by temperament; `windK` 1.12, `aggr` 1.9, `chainMax` 2,
+poise 4, a harder rage) and METHODICAL: a director, run once a frame by the
+first live one, keeps TWO pressing (all of them once three are left) and the
+rest HOLDING — each on a ring at its own `holdR`, circling on the strafe
+clips, facing you, taking no turn (`maySwing` and `mutGiveToken` both skip a
+holder). A presser rotates out after its `bursts` swings or `pressT` seconds,
+between swings, and the holder that has waited longest (times `pressW`)
+comes in; the STALKER (`flank`) comes in by way of your back. Pressers may
+swing together, but a beat apart: the second only once the first is a third
+of a second into its swing, three times in ten (`demonFrenzyOK`). Seven
+temperaments in `DEMON_VARIANTS` — the caller (heavy, stays in, the neck grab
+takes two), the reacher (long forearms, fights from range), the runt (one
+swing and away, feints), the stalker, the hunch (guards and answers), the
+stilt (kicks take two), the claws (flurries, three-deep chains) — each with
+its own `use` table, bones and voice. Measured hands-off against a player
+standing still: 60 swings and 52 damage a minute, two in a swing 21 % of the
+time, the roles changing 23 times in 45 s. Bodies fly further (`kind.ragK`
+1.65: a heavy kill throws the hips 3.4 m) and the ragdoll is held by the
+gut's walls (`r.gut`), or they went out through the flesh.
+
+**TWO PARASITES IN THE BELLY, AND NEITHER HAS A CLIP OF ITS OWN.**
+informatica e manutenção's "Parasite L Starkie" (CC-BY-NC-4.0 — NON-
+COMMERCIAL, the severed head's situation; `assets/parasite.glb`, `gltfpack.py
+--tex 1024 --no-clips --drop-mr` after setting its material OPAQUE, because
+its BLEND alpha was 1 % of the atlas and kept the colour a 1.4 MB PNG — 0.88
+MB as a JPEG). A Mixamo rig (`Hips_01` … `RightLeg_00`: `PB(name)`), so every
+pack in the game retargets onto it through `kind.rag`.
+- **A MOVE SET IS A LIST OF `[pack, { name here: name there }]`**
+  (`PAR_SRC_A`/`_B`, `authorParasiteClips`): each pick is renamed on the way
+  in, because four packs each have an `idle` and a `run`, and built the frame
+  the LAST pack has landed (`u.parLate`, polled from `parasiteUnitPre`), since
+  the `*MovesLate` slots are single callbacks already taken. THE LEAPER: the
+  knight's jab/sweep/360/pounce, the alien's compass kick and handspring,
+  Wong's flying kick, the crawler's crawl, the orc's roar. THE DANCER: the
+  Marauder's five combo windows and two kicks, the orc's kick/whirl/leap and
+  hit reels, the drunk's idles and stagger, Wong's run, strafes and ginga. The
+  swings are new `MUT_ATTACKS` keys (`pa*`, `pb*`) copied off the source
+  entry — the same clip keeps its measured `hit` — with `limbs` re-indexed
+  onto this rig (0 R arm, 1 L arm, 2 R leg, 3 L leg, 4 head).
+- **THEY LET THE SEVEN GO FIRST.** `kind.ownTurn`: they never take the pack's
+  token (`mutGiveToken` skips them) and swing on `parasiteSwingOK` instead.
+  While any demon is awake each HOLDS on an 8-11.5 m ring on the side of you
+  the pack is not on (`parasiteHold`), and every 3-9 s one RAIDS (only one at
+  a time; at once if hit): it sprints in, throws one to three swings, and
+  turns its back and scuttles out before it turns round to watch. With the
+  seven dead both hunt, a beat apart. `kind.mindFn`/`mindMap` is the
+  Marauder's four reads (drink, whiff, turtle, a heavy wound out of reach)
+  onto their own swings. They wake with the pack (`parasiteAlarm`, called
+  from `demonAlarm`) or at 13 m, turning round from the flesh with a shriek.
+- `kind.clawRe` lets `claws` name a Mixamo rig's finger bones.
+Measured hands-off, player standing still in the arena: with the seven up,
+7 raids and 15 parasite swings in 45 s on top of the pack's 50; with the seven
+dead, 39 and 77 swings a minute and about 80 damage a minute between the two
+(the belly's shared half-second hurt gate still applies), fighting at 1.0-1.9 m
+with every blow in frame.
+
+**THE WEDDING RING GOES TO EIGHT JARS** (`WED_MAX_JARS`), 32 % at the most.
+
+**THE DEALER'S HEALTH BAR JUMPED BECAUSE THE WALL CHECK OVERWROTE ITS ANCHOR.**
+`ehpBlocked(p)` is handed `_ehV` — the bar's own anchor, by reference — and in
+the two rooms that answer by RAYCAST (the bunker and the undercroft) it did
+`_ehV.copy(p).sub(e).normalize()` to build the ray, so every 0.18 s the anchor
+became a unit direction and the bar was projected from near the origin. Its own
+scratch vector now (`_ehD`). Measured after: the bar holds within a pixel,
+12 px over the head bone. **A helper handed a shared scratch vector may not use
+that scratch vector.**
+
+**THE DEALER'S PUMP (`buildBleedRig`, from `buildBunkerProps`).** The machine is
+the reel-to-reel at the -z end of his console bank (its face measured by
+raycast at room-local z -0.44, x -2.93..-1.95, reels from 1.10 m; the reels
+already turn on the room's ambient clip). Bolted to it: a shelf and a jar tray
+with brackets, built as boxes in the MACHINE'S OWN MATERIAL with every uv
+squeezed into a patch of that machine's own face (`BLEED.uv`, u 0.80-0.86 v
+0.105-0.16 of the atlas region the raycast found), so the steel is the same
+paint and the same light. Two crab scans (`makeCrabRelic`) seated on it by
+their measured box, a syringe in each hinge in the extraction's own pose
+(`_hinge`, rot (0.95, 0.5, 0), scale 1.4), a translucent line from each barrel
+over the shelf's edge into a jar (`makeBloodJar`) on the tray that fills by the
+drop (`updateBleedRig`: syringes stroke, crabs jerk against their straps,
+drips tick). NO COLLIDERS and nothing out of the walk grid. Two things it
+needed: **a crab dressed for the beach is a lamp indoors** — the scan carries a
+gamma re-expose and a fifth of its map as emissive for moonlit sand, so these
+two wear clones (which drop the `onBeforeCompile` lift) at emissive 0.05; and
+**so is the jar** — its blood glows its own blue so it is found on dark sand,
+so these wear clones at 0.55 of the colour and a fifth of the glow. The two
+jars are pickups (`gives: null`: a number, not a slot) and on the save as
+`bleedJars`, a bit each.
+
+**THE TALL ONE AT THE PAVILION (`updateSmileWatch`, `smileWatch` on the save).**
+1.1 s after you reach the round room's floor he is put back in the scene —
+the same figure his run into the sea removed, so nothing else can switch him
+on — at the one of four spots furthest from where you are looking, at the
+WATER'S EDGE (`shoreLineJS` + 0.9) 15-23 m along the beach, turning slowly to
+keep his face on you. The spots are chosen by contrast: black on dark sand
+measured as a handful of pixels, against the surf he is a silhouette; and
+further than ~14 m so he shows over the sill from the middle of the floor. The
+frame `mushWhere` leaves 'floor' he is removed for good (the stair's walled
+shaft can't see out, so he is never seen to vanish). Once a game.
+
+**A THING LANDING ON SAND IS A FOOTSTEP (`sfxSandDrop`).** The fang's landing
+was a quiet synthesised puff and the snorkeler's key made no sound at all: both
+play the owner's recorded sand steps now, from where they land
+(`playSampleAt`, gain ~0.95 over 5 m, heard to 45 m), with a softer second step
+a beat later for the hop.
+
+**A GLOWSTICK IN THE CACHE BEFORE THE CAVE.** `moundRole` 'glow' is the last
+mound short of `HOLE_Z` that no other role took (mound 5, z -605, 35 m before
+the mouth); it comes out lit through `dropGlowstick`. There are two glowsticks
+now, so both pickups go through `gainGlowstick` and a second one STACKS
+(`count`, saved as `glows`) — `addToInventory` refuses a duplicate by identity
+and would have taken the find off the floor for nothing.
+
+**PRICES:** the .44 is six jars, the bigger pack four, the extra ring slot six
+(`TRADER_PRICE`).
+
+**THE BELLY, REWORKED (in progress).** The glands' light is summed in the
+flesh shader (`WH_GL`, `whGlUpdate` from the gut's and floor's
+`onBeforeRender`): as seventeen pooled point lights each only took a slot once
+the camera was inside its 18 m reach, so walls lit up as you walked to them.
+The creatures are lit by four warm fills and the moon lamps, all `lpAlways`.
+The arena floor carries radial veins pulsing with the heart, and a warm glow
+sits deep at the far end. Belly creatures use `velGait` (`velGaitAnim`: the
+clip comes off the body's own velocity in its own frame — walk, run,
+walk-backwards, side-step — at the rate the stride keeps), `gaitMax` 1.35,
+`noDash`, and `lungeK` (a lunge the clip does not carry is a skate). Demons
+take the knight's strafes (`dStrL/R`) through `authorPickClips`, the generic
+multi-pack retarget the parasites use. Parasites are bigger (3.15 / 2.95 m),
+tinted to the room, with authored heavy claws (`authorParasiteOwn`: pcRakeR,
+pcRakeL, pcMaul) plus the pounce, spin, combo and leap; no kicks or dodges.
+NOT YET MEASURED: the fight's damage rate and whether the strafe direction
+signs in `velGaitAnim` are right way round — check both in the preview.
+
+Also this round: the church's far-door checkpoint replays the passing theme
+(`saveTune`/`restoreTune`); Drop keeps the pack open and a stack has Drop all;
+`addToInventory` refuses a ring you are wearing (the octopus ring duplicated
+when its pickup replayed on a load); the knight's bar was the Dealer's bug.
+
+
+**THE BLOODY BLADE BLEEDS (`bleedBuild`, `bleedProc`, `updateBleed`).**
+`hurtMutant` is now a wrapper round `hurtMutantCore`: if the blow was yours,
+with the Bloody Blade, did not kill, and actually took health (a block or a
+guard takes none and builds none), `st.bleed` goes up 1 (1.7 for a heavy or
+an overhead). At `bleedMax(u)` — `(3.2 + min(2.8, hpMax / 28)) * kind.bleedRes
+* (1 + 0.33 * procs)` — it bursts: `BLEED_PCT` (12 %) of max health, never
+under 2, a burst of blood out of the whole body and `sfxBleedBurst`, and the
+meter starts again. Held `BLEED_WAIT` (2.2 s) untouched it drains over
+`BLEED_DRAIN` (3 s of a full meter). Measured: a pack mutant dies before it
+matters; the knight bursts every 5-7 blows for 5, the marauder (`bleedRes`
+1.35) after nine for 10 and then twelve; the parasites (1.4) and demons (1.25)
+resist too. There is NO meter on screen (a teardrop by the bar was built and
+taken out on the owner's word). The burst is `bloodCloud`, matched to the
+owner's Bloodborne clip (frames pulled with ffmpeg): 1,400 fine crimson specks
+(`bcSpeckPts`, round with a hot middle so they read as droplets catching the
+light) blown up and out with heavy air drag, and 48 torn puffs of dark red
+mist (`bcMistPts`, the spliff's `smokeTex`) that billow to 2-4 m and hang —
+two draw calls, pooled. A sweeping blood-crescent version was built first and
+the owner called it corny: what he wanted is an EXPLOSION of fine blood, not
+a shape. It neither freezes, flashes nor flinches him.
+
+**A WHIFF IS A SWING THROUGH THE AIR.** `digImpact` wraps `digImpactCore`,
+which returns whether the blade met anything; the thrust's lunge, the
+view-model jar, the sparks and the overhead's slam (sound, sand, freeze) all
+wait on it — the slam used to throw sand at `landPoint()` "whether or not
+there was anything there". And a stab tests the sand and the solids only out
+to `stabReach() + P * 0.5 + 0.35`: at the full swing reach a stab made looking
+a little down found the beach four metres out and played a hit. To see a sleeping horde mutant in the pane at all
+you have to pin its `visible` (`Object.defineProperty`), because the horde is
+hidden until its take.
+
+**A CHORD HAS NO POINTERDOWN, AND THAT WAS "IT WON'T LET ME BLOCK".** The
+spec fires pointerdown only for the FIRST button down, so right pressed while
+left is held (mid-click, a charge) was a pointermove and the guard never came
+up; a right press over a HUD element never reached the canvas either.
+`raiseGuard()` is the guard's one door, called from the canvas's pointerdown
+and from the window capture listener on the rising edge of `e.buttons & 2`.
+And a brushed wheel in a fight put a fang or the CD in your hand — the guard
+needs a weapon, and a click with a `clickInspect` item opened the examine
+screen and dropped the lock ("the game clicks off"): in `inCombat()` the wheel
+walks only `onDig`/`gun` slots and a click never examines. The eight `mutant.glb` kinds get +1 hp, x1.12
+`aggr`, x1.04 `speedK` and +0.05 `press` in one loop after `MUT_KINDS`; the
+marauder is 80 hp, the parasites 43/39, the demons +1 each.
+
+**THE BELLY, ROUND E2: IT LOOKED CHEAP, AND IT WAS THE GRADE, NOT THE MODELS.**
+Seen from the player's eye: a chrome floor (the fluid at roughness 0.16 and
+the floor at 0.30 under 34-38 fills and 20 moon lamps), neon walls (the map's
+red at full saturation), sticker wounds (a saturated blue night with a white
+rim) and glossy red demons. Now: fog `0x0f0406` at 0.040, the flesh taken a
+third to its own grey in `color_fragment` with emissive 0.80/0.40, floor
+roughness 0.66 and fluid 0.42, fills 16-22, moon lamps 8-11, shafts and far
+glow halved, the night in the cuts at a third, demons `tint 0x8c7672` with a
+faint rim so the runes carry them.
+
+**AND "SLIDING" WAS MEASURED, AND IT WAS NOT THE CLIPS.** Walking a unit at a
+fixed speed with `mutAnim` and reading the planted toe: the average drift
+ALONG the travel is ~0 at the measured `clipSpeed` (a 0.6 or 1.5 scale gives
+-1.5 or +0.7 m/s), so the rates were right. What slid was the body: demons
+turned at 8 rad/s on the spot (3.8 now; parasites 3.2), lunges (`lungeK` 0.30
+demons, 0.34 parasites), and speeds past what a clip can stretch to —
+`velGaitAnim` now caps the frame's step at 1.8x the playing clip's stride
+(`capStep`), rates run 0.3-1.8, and walk hands to run at 1.75x walk speed.
+`tools/bellyrun.js` (`__bellyRun(frames)`) samples a hands-off fight: blend
+weight leaks, clip use, swings, damage, and a planted-foot slip that includes
+rolling (so ~0.3-0.5 m/s is its floor, not a slide).
+
+**THE PARASITES' CLAWS ARE MOCAP.** `authorParasiteOwn` is deleted: posed arms
+on a 3 m body read as a pole raised and dropped. A: the orc's `oCut`/`oCutC`/
+`oChop` (`paCut`/`paCutB`/`paChop`), and the demon pack's `idle`/`idleS` for
+idles. B: the zombie `zAtk`/`zAtkB` (`pbClaw`/`pbClaw2`) and `oChop`
+(`pbChop`). Crossfades 0.22 demons, 0.26 parasites. Hands-off, standing still,
+40 s: 57 swings and 37 damage across the nine.
+
+**THE BLEED IS JETS** (`bloodJets`/`updateBloodJets`): 5-7 streams per burst
+emitting ordinary blood drops every frame along a whipping direction at 8-15
+m/s pulsing on a beat, and every blood drop is now drawn stretched along its
+velocity (the render loop in the blood update), so a stream is a stream. The
+fine specks are 320 and dark; `BLOOD_MAT` is a wetter 0x520908 with a 0x280404
+lift, `BLOOD_MAX` 2304. **And the shift heavy whooshes** (`sfxHeavySwing`,
+from `startDig` on `digOverhead || katStabbing()`): the blade's recorded swing
+pitched down, or a deep rush of air.
