@@ -874,10 +874,6 @@ let wsGain = null, wsSrc = null;
 // the passing theme out of the church's far end (see startPassing): up here for the same reason
 const PASS_LEVEL = 0.62;
 let passVol = null;
-// the samurai's fight music (see updateSamMusic): up here for the same reason
-const SAM_MUSIC_LEVEL = 1.25;
-let samMusicVol = null, samMusicFade = null, samMusicSrc = null, samMusicBuf = null, samMusicLoading = false;
-let samMusicOn = false, samMusicStopAt = 0;
 
 // ------------------------------------------------------------------
 // Renderer / scene / camera
@@ -7939,7 +7935,6 @@ function applySettings() {
   if (keepIntroGain && keepIntroSrc && audioCtx) keepIntroGain.gain.setTargetAtTime(settings.volume * settings.musicVolume * KEEP_INTRO_LEVEL, audioCtx.currentTime, 0.05);
   if (wsGain && wsSrc && audioCtx) wsGain.gain.setTargetAtTime(settings.volume * settings.musicVolume * WS_LEVEL, audioCtx.currentTime, 0.05);
   if (passVol && audioCtx) passVol.gain.setTargetAtTime(settings.volume * settings.musicVolume * PASS_LEVEL, audioCtx.currentTime, 0.05);
-  if (samMusicVol && audioCtx) samMusicVol.gain.setTargetAtTime(settings.volume * settings.musicVolume * SAM_MUSIC_LEVEL, audioCtx.currentTime, 0.05);
   updateBeachBed();          // NOT `waveVolume` flat: the slider must not un-duck a room
   if (sfxBusGain && audioCtx) sfxBusGain.gain.setTargetAtTime(settings.sfxVolume * SFX_TRIM, audioCtx.currentTime, 0.05);
   document.getElementById('v-fov').textContent = settings.fov;
@@ -39012,7 +39007,7 @@ function animateFrame() {
    * settling on the frame the player was handed the game. */
   if (!introDone) updateFarProps();
   update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
-  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateWhaleCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateDojoAudio(rawDt); updateSamMusic(); updateFightTip(rawDt); updateCatDread(rawDt); updateBleed(rawDt); updateEnemyBars(rawDt); updateSamuraiEyes(rawDt);
+  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateWhaleCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateDojoAudio(rawDt); updateFightTip(rawDt); updateCatDread(rawDt); updateBleed(rawDt); updateEnemyBars(rawDt); updateSamuraiEyes(rawDt);
   updateBeachBed();            // after every room has had its say, and only here
   updateHover();
   /* After everything that may have moved a lamp or the player, and before
@@ -47178,7 +47173,7 @@ function magFire() {
      * on the beach and the five past the door have it, and the bosses do
      * not, because a revolver that ends a boss on one lucky shot is a
      * revolver that ends the fight rather than joining it. */
-    if (h.u.kind && h.u.kind.gunBlock && h.u.st.alive) { umbraDeflect(h.u, _mgO.clone().addScaledVector(_mgSp, h.t)); return; }
+    if (h.u.kind && h.u.kind.gunBlock && h.u.st.alive && gunBlocks(h.u)) { umbraDeflect(h.u, _mgO.clone().addScaledVector(_mgSp, h.t)); return; }
     if (h.head && h.u.kind && h.u.kind.headPop) { magHeadshot(h.u); return; }
     /* AND A ROUND IS NOT A CHARGED CUT. `P` is the swing's own power and it
      * is what `finishMutant` reads to decide whether the blow was enough to
@@ -51609,58 +51604,6 @@ function samuraiEyes(u) {
   }
   u.eyes = { sprites, v: 0, rage: 0, t: Math.random() * 10 };
 }
-/* HIS FIGHT HAS MUSIC. The owner's "8 bit samurai fight", on a loop from
- * the moment he says his line until he is dead or you are out of the room.
- * The file is forty bars at 136 bpm and then the last notes ringing out, so
- * `assets/samurai-fight.m4a` is the forty bars with that tail folded back
- * over the first ones (a loop that cuts the tail off drops a beat's worth of
- * release every seventy seconds), padded a second either side with its own
- * wrap so the loop points sit inside real audio — AAC's priming would
- * otherwise put a gap at the seam. A decoded buffer, fetched the moment you
- * are in the dojo, so it is ready long before you lift the sword. */
-const SAM_LOOP = [1.0, 1.0 + 40 * 4 * 60 / 136];
-function loadSamMusic() {
-  if (samMusicBuf || samMusicLoading || !audioCtx) return;
-  samMusicLoading = true;
-  fetch('assets/samurai-fight.m4a').then((r) => r.arrayBuffer()).then((b) => audioCtx.decodeAudioData(b))
-    .then((buf) => { samMusicBuf = buf; }).catch(() => { samMusicLoading = false; });
-}
-function startSamMusic() {
-  if (!audioCtx || !samMusicBuf || samMusicSrc) return;
-  if (!samMusicVol) {
-    samMusicVol = audioCtx.createGain(); samMusicVol.connect(audioCtx.destination);
-    samMusicFade = audioCtx.createGain(); samMusicFade.connect(samMusicVol);
-  }
-  const t = audioCtx.currentTime;
-  samMusicVol.gain.setValueAtTime(settings.volume * settings.musicVolume * SAM_MUSIC_LEVEL, t);
-  holdParam(samMusicFade.gain, t);
-  samMusicFade.gain.setValueAtTime(0.0001, t);
-  samMusicFade.gain.linearRampToValueAtTime(1, t + 0.06);
-  const src = audioCtx.createBufferSource(); src.buffer = samMusicBuf;
-  src.loop = true; src.loopStart = SAM_LOOP[0]; src.loopEnd = SAM_LOOP[1];
-  src.connect(samMusicFade); src.start(t, SAM_LOOP[0]);
-  samMusicSrc = src; samMusicOn = true;
-}
-function updateSamMusic() {
-  if (!audioCtx) return;
-  if (inDojo) loadSamMusic();
-  const want = !!(samurai && samuraiSpoke && samurai.st.alive && inDojo && !dojoWon);
-  if (want && !samMusicSrc) { startSamMusic(); return; }
-  if (!samMusicSrc) return;
-  const t = audioCtx.currentTime;
-  if (want !== samMusicOn) {
-    samMusicOn = want;
-    holdParam(samMusicFade.gain, t);
-    // back in the room with him still up: it comes straight back; he is down, or you left: it goes out over a breath
-    samMusicFade.gain.setTargetAtTime(want ? 1 : 0.0001, t, want ? 0.08 : 0.7);
-    samMusicStopAt = want ? 0 : t + 4.5;
-  }
-  if (!samMusicOn && samMusicStopAt && t > samMusicStopAt) {
-    try { samMusicSrc.stop(); } catch (e) {}
-    samMusicSrc = null; samMusicStopAt = 0;
-  }
-}
-
 function updateSamuraiEyes(dt) {
   const u = samurai; if (!u || !u.eyes) return;
   const E = u.eyes; E.t += dt;
@@ -52040,7 +51983,6 @@ function wakeSamurai() {
   spawnSamurai(true);                  // he arrives now, at your back
   if (!samurai) return;
   bossLine('THAT’S MY SWORD.');
-  startSamMusic();                     // on the line itself; updateSamMusic catches it if the file is still decoding
   mutPlay(samurai, 'taunt');
   samurai.holdAnim = true;             // or mutAnim fades it straight back out for the idle
   sfxSamuraiShout();
@@ -70164,6 +70106,20 @@ function umbraProvoke(u) {
  * snapping up if he was not already swinging — and it WAKES him and brings
  * him on at once, so the revolver is not a way to fight him from range, it
  * is a way to be charged. */
+/* HE TURNS SOME OF THEM, NOT ALL. He used to take nothing off a gun, which made
+ * the one thing you had bought for him a noise. Now a round lands unless he
+ * turns it: about half the time when he is facing you with his blades free,
+ * rarely in the middle of a swing (they are busy), and never with his back to
+ * you or asleep. A kind may set its own odds (`gunBlock` as a number). */
+function gunBlocks(u) {
+  if (!u.st.awake) return false;
+  const fx = Math.sin(u.g.rotation.y), fz = Math.cos(u.g.rotation.y);
+  const dx = camera.position.x - u.g.position.x, dz = camera.position.z - u.g.position.z, dl = Math.hypot(dx, dz) || 1;
+  if ((fx * dx + fz * dz) / dl < 0.3) return false;                     // behind him, or wide: it gets through
+  if (u.st.stun > 0 || (u.st.down || 0) > 0) return false;
+  const base = typeof u.kind.gunBlock === 'number' ? u.kind.gunBlock : 0.45;
+  return Math.random() < (u.st.atk >= 0 ? base * 0.3 : base);
+}
 function umbraDeflect(u, at) {
   if (!u.st.awake && u.kind.provoke) u.kind.provoke(u);
   // the spark point: where the shot's line passes nearest the blade that faces you
@@ -72981,7 +72937,7 @@ window.__bw = {
     if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
     oceanUniforms.uTime.value += dt;
     update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
-    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateWhaleCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateDojoAudio(rawDt); updateSamMusic();
+    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateWhaleCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateDojoAudio(rawDt);
     updateLightPool();
   },
   /* AND THE WARM CHAIN, THE FAR-CULL AND EVERY WALL-CLOCK CUT LIVE IN
@@ -73012,7 +72968,7 @@ window.__bw = {
                      path: samurai.path ? samurai.path.length : 0,
                      at: [+samurai.g.position.x.toFixed(1), +samurai.g.position.z.toFixed(1)] } : null,
   }),
-  startPortalTake, startPortalReturn, placeInDojo, placeBackAtPortal, wakeSamurai, warmDojo, devTeleportShop, roomFlags: () => ({ inBunker: !!inBunker, inShrine, inDojo, inUndercroft, inKeep, inTavern, inCat, inWhale, inFort, inRoom: !!inRoom(), sky: sky.visible, fog: +scene.fog.density.toFixed(4), fogCol: scene.fog.color.getHexString(), duck: typeof skyDuck !== "undefined" ? skyDuck : null }), samMusicState: () => ({ buf: !!samMusicBuf, playing: !!samMusicSrc, on: samMusicOn, fade: samMusicFade && +samMusicFade.gain.value.toFixed(3), vol: samMusicVol && +samMusicVol.gain.value.toFixed(3), ctx: audioCtx && audioCtx.state }),
+  startPortalTake, startPortalReturn, placeInDojo, placeBackAtPortal, wakeSamurai, warmDojo, devTeleportShop, roomFlags: () => ({ inBunker: !!inBunker, inShrine, inDojo, inUndercroft, inKeep, inTavern, inCat, inWhale, inFort, inRoom: !!inRoom(), sky: sky.visible, fog: +scene.fog.density.toFixed(4), fogCol: scene.fog.color.getHexString(), duck: typeof skyDuck !== "undefined" ? skyDuck : null }),
   shurikens, throwShuriken, samuraiPick, dropRing, ringWorld,
   dojoDropY, dojoDropTargets,
   get dojoDebug() { return { inDojo, dojoReady, groundY: +groundY.toFixed(2), camBaseY: +camBaseY.toFixed(2), vy: +vy.toFixed(2),
@@ -73063,7 +73019,7 @@ window.__bw = {
   renderHotbar, renderPack,
   poseRig, UMBRA_JOINTS,   buildTavMoon, tavMoonState: () => tavMoon, tavMoonU, tavTorchState: () => tavTorches, tavLightU, keepLightState: () => keepLights, tavWallRay, babyUnit, placeCatBaby, babyHoldLeg, setBabyLegK: (k) => { BABY_LEG_K = k; }, catEnrage, setCatAvOff: (v) => { catAvOff = !!v; }, FOG_GROUND, CLOUD_SHADE_GLSL, SAND_EDGE_K, airState: () => air, cliffLipX, catWebs: () => catWebs, catWebShreds: () => catWebShreds, buildCatWebs, breakCatWeb, catLimbs: () => ({ tpl: limbsTpl, spots: catLimbSpots, gone: catBabyGone, eatGain: babyEatGain ? +babyEatGain.gain.value.toFixed(3) : null, eatSrc: !!babyEatSrc }),
   breakBonePile, catPiles: () => catSpots.eatRaw, catPilesGone, catSkullMeshes,
-  demonUnits, demonPack, updateDemonPack, parasiteUnits, startWhaleFarewell, wfState: () => wbFareCut, CAT_SITE, CAT_DOOR, catSolid, setCatSolidOff: (v) => { catSolidOff = v; }, catLegBlocked, catDoorBody, gunStun, blowWalled, blowLands, wbGoneG: () => wbGone, wbObj: () => wb, placeInWhale, placeInBunker, bunkerHomeG: () => bunkerHome, bleedRigG: () => bleedRig, sfxLockOpen, keyUsed,
+  demonUnits, demonPack, updateDemonPack, parasiteUnits, startWhaleFarewell, wfState: () => wbFareCut, CAT_SITE, CAT_DOOR, catSolid, setCatSolidOff: (v) => { catSolidOff = v; }, catLegBlocked, catDoorBody, gunStun, gunBlocks, blowWalled, blowLands, wbGoneG: () => wbGone, wbObj: () => wb, placeInWhale, placeInBunker, bunkerHomeG: () => bunkerHome, bleedRigG: () => bleedRig, sfxLockOpen, keyUsed,
   crawlerUnit, CRAWL_X, CRAWL_Z, crawlerProvoke, startCaveIn, placeInCatacombs, placeOutsideCatDoor, startCatExit, startCatReturn, placeInsideCatDoor, fitCatSandDoor, catWallDoor, catRoute, catSees, catNodeAt, CAT_X, CAT_Y, CAT_Z, CAT_SITE, CAT_LAND, CAT_DOOR, CAVE_Z,
   TRADER_X, TRADER_Z, TRADER_H, TRADER_POSE, traderPose, TRADER_STOCK, traderBuy, TRADER_NPC, traderWorld, get traderRig() { return traderRig; },
   magnumItem, magModel, magFire, magReload, magTrace, MAG_CAP,

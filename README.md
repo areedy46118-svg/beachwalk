@@ -634,11 +634,6 @@ The song that comes up faintly as you climb out of the church by the way
 behind the altar is the owner's own "passing theme"
 (`assets/passing-theme.m4a`), not redistributable.
 
-The music that plays through the samurai's fight in the dojo, from the moment
-he says his line, is the owner's own "8 bit samurai fight"
-(`assets/samurai-fight.m4a`, cut to a seamless forty-bar loop), not
-redistributable.
-
 The snorkeler laughing to himself out past the campsite is a "Man Laughing
 To Himself" sound effect the owner supplied, cut into five laughs
 (`assets/snork-laugh1..5.m4a`); treat it as not redistributable.

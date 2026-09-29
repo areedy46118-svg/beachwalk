@@ -18150,20 +18150,7 @@ frames from the beach with 0 inside the footprint; the fight at 65 swings and
 **Teleporting to the castle fires the horde's take** (`mutCut`): step until it
 is false first, or every look you set is turned onto them.
 
-**THE SAMURAI'S FIGHT HAS MUSIC** (`updateSamMusic`, `startSamMusic`). The
-owner's "8 bit samurai fight" loops from the frame he says "THAT'S MY SWORD"
-(`wakeSamurai`) until he is dead or you are out of the dojo. It fades out over
-a breath and comes straight back if you return with him still up. The source
-is FORTY BARS AT 136 BPM (70.588 s, found by autocorrelating the onsets) and
-then two seconds of the last notes ringing out. A loop that cuts that tail
-off drops a beat's worth of release every seventy seconds, so
-`assets/samurai-fight.m4a` is the forty bars with the tail folded back over
-the first ones, padded a second either side with its own wrap. The loop
-points are `SAM_LOOP` (1.0 to 71.588); the decoded buffer came back at
-exactly 72.588 s and the seam's step is under the track's own normal
-sample-to-sample steps. It is on the music slider at `SAM_MUSIC_LEVEL` 1.25,
-declared at the top beside `PASS_LEVEL` because `applySettings` reads it at
-load. It is fetched the moment you are in the dojo.
+**THE SAMURAI'S FIGHT HAS NO MUSIC.** A looped "8 bit samurai fight" track was built and removed on the owner's word, asset and all. Do not put it back.
 
 **DEV: TELEPORT TO THE SHOP** (`devTeleportShop`, `#m-shop` in the settings
 menu; it comes out before release). Four rules, and the last one is general:
@@ -18354,3 +18341,9 @@ short of the gate), and he sells **6 Rounds** again: two jars, five boxes
 (`ammoV` on the save gives an older save that recorded the empty box its
 stock back). The row needs the .44 (`needs`), shows the loose rounds you carry
 as its stack, and its picture is drawn (`ammoIconItem`).
+
+**THE MARAUDER CAN BE SHOT; HE TURNS SOME** (`gunBlocks`). A round lands
+unless he deflects it: 45 % when he is awake, facing you and not swinging, a
+third of that mid-swing, never with his back to you, asleep, stunned or down.
+`kind.gunBlock` may be a number to set a kind's own odds (`true` is 0.45).
+Measured over 2000 draws each: 0.46 facing, 0.15 swinging, 0 from behind.
