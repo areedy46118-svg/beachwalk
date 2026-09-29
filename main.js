@@ -6708,6 +6708,8 @@ let packCut = false;            // the three coming in: the player watches
  * follows the key to the sand, so where it lands is not a thing you can miss.
  * Declared up here because frozen() reads it on the first frame. */
 let keyCut = null;
+// the whale's farewell (`updateWhaleFarewell`): up here because `frozen()` and the lens read them from the first frame
+let wbFareCut = null, wbGone = false;
 let noteOpen = false, menuOpen = false, ended = false, introDone = false;
 let dialogOpen = false, invOpen = false, inspecting = false;
 /* AND THE SHOP'S FLAG LIVES UP HERE WITH THE OTHER OVERLAYS. `frozen()` is
@@ -6964,7 +6966,7 @@ function updateHurt(dt) {
   hurtEl.style.opacity = String(Math.max(hurtFlash * hurtFlash, rim));
 }
 
-function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || shopOpen || inspecting || peeking || packCut || !!keyCut || mutCut || hatchBusy || ucBusy || abductCut || portalCut || sailBusy || tavBusy || fortBusy || caveBusy || catBusy || whaleBusy || !!wbSw || roomRestore || dying || ended || !introDone; }
+function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || shopOpen || inspecting || peeking || packCut || !!keyCut || !!wbFareCut || mutCut || hatchBusy || ucBusy || abductCut || portalCut || sailBusy || tavBusy || fortBusy || caveBusy || catBusy || whaleBusy || !!wbSw || roomRestore || dying || ended || !introDone; }
 function refreshUI() {
   const playing = started && !menuOpen && !noteOpen && !dialogOpen && !invOpen && !shopOpen && !inspecting && !dying && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
@@ -7167,7 +7169,7 @@ document.addEventListener('pointerlockchange', () => {
     softLook = true;
     // an intentional exit (note / menu / dialogue / death) is handled by
     // those; a stray exit while still playing means the user hit Esc → menu
-    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !shopOpen && !inspecting && !peeking && !packCut && !keyCut && !mutCut && !abductCut && !portalCut && !hatchBusy && !ucBusy && !wbSw && !dying) openMenu();
+    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !shopOpen && !inspecting && !peeking && !packCut && !keyCut && !wbFareCut && !mutCut && !abductCut && !portalCut && !hatchBusy && !ucBusy && !wbSw && !dying) openMenu();
   }
 });
 window.addEventListener('unhandledrejection', (e) => {
@@ -8052,7 +8054,7 @@ mCheckpointBtn.addEventListener('click', () => { if (hasCheckpoint()) reloadInto
  * the trader, facing him. It refuses in the middle of a cut, and in the hall
  * in the saucer, whose fight is a sequence with no exit but winning it. */
 const devShopBusy = () => hatchBusy || ucBusy || abductCut || portalCut || sailBusy || tavBusy || fortBusy || caveBusy
-  || catBusy || whaleBusy || !!wbSw || roomRestore || packCut || mutCut || !!keyCut || dying || ended || !introDone;
+  || catBusy || whaleBusy || !!wbSw || roomRestore || packCut || mutCut || !!keyCut || !!wbFareCut || dying || ended || !introDone;
 function devTeleportShop() {
   if (inShrine || devShopBusy()) return false;
   if (held) dropHeld();
@@ -19006,11 +19008,12 @@ function updateDialogCam(dt) {
    * constant, so it is the same zoom at any field of view the owner picks. */
   const wantFov = (mutCutFov > 0 ? mutCutFov
     : keyCut ? keyCut.fov
+    : wbFareCut ? wbFareCut.fov
     : peeking && !peekLeaving ? PEEK_FOV
     : (dialogOpen || cineHold) ? Math.min(settings.fov, dialogFov) : settings.fov) + fovKick
     - settings.fov * MAG_ZOOM * magAim;
   // and it arrives at a gun's pace, not a conversation's
-  const rate = mutCutFov > 0 ? 14 : keyCut ? 3.2 : peeking ? 2.6 : magAim > 0.002 ? 13 : 3.5;
+  const rate = mutCutFov > 0 ? 14 : keyCut ? 3.2 : wbFareCut ? 1.6 : peeking ? 2.6 : magAim > 0.002 ? 13 : 3.5;
   if (Math.abs(camera.fov - wantFov) > 0.01) {
     camera.fov += (wantFov - camera.fov) * Math.min(1, dt * rate);
     camera.updateProjectionMatrix();
@@ -37756,6 +37759,7 @@ function saveCheckpoint(spot) {
       smileGone: smilePhase === 2, smileWatch: smileWatch === 2 ? 2 : 0,
       caveDone,
       whaleSighted: wsDone,
+      whaleGone: wbGone,
       // and the saucer took you once: `abductDone` is the latch, `shrineWon`
       // (the wreck on the sand is a later job and has no flag yet)
       // and the saucer came down: the wreck is on the sand for good
@@ -37957,6 +37961,7 @@ function beginRestoreQuiet() {
   // a photo on the floor is put back on the floor when the tavern is built; one in your pack comes back by name
   grammyState = f.grammy || 0; grammyAt = f.grammyAt || null;
   if (grammyState === 1 && !grammyAt) grammyState = 0;
+  if (f.whaleGone && !wbGone) { wbGone = true; wbRemoveForGood(); }
   eyesSeen = !!f.eyesSeen; snorkMet = !!f.snorkMet; fightTipDone = !!f.fightTipDone || camera.position.z < -60;
   dockDoorOpen = !!f.dockDoor;
   // a save written before the tally counted jars carries millilitres
@@ -55334,6 +55339,8 @@ const wbU = {
   uShiver: { value: 0 }, uTongue: { value: 0 }, uFlipR: { value: 0 }, uFlipL: { value: 0 },
   uFlipPR: { value: new THREE.Vector3() }, uFlipPL: { value: new THREE.Vector3() },
   uEyeRotR: { value: new THREE.Matrix3() }, uEyeRotL: { value: new THREE.Matrix3() },
+  // THE FAREWELL (`updateWhaleFarewell`): the wounds closing, the light running down it, and how far its fog reaches
+  uHeal: { value: 0 }, uHealGlow: { value: 0 }, uGlow: { value: 0 }, uGlowZ: { value: -40 }, uGlowK: { value: 0 }, uWbFog: { value: 1 },
 };
 // the lip line, measured off the file (model units, +x side; the snout's midline first, the corner last)
 const WB_LIP = [[630, 96.7, 0], [622, 96.2, 20], [603, 97.4, 37], [569, 97.1, 55], [532, 95.2, 69], [489, 96.1, 83], [452, 96.1, 96],
@@ -55866,11 +55873,11 @@ function wbInject(mat, frag) {
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, wbU);
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\n' + WB_GLSL)
+      .replace('#include <common>', '#include <common>\n' + WB_GLSL + '\nuniform float uWbFog;')
       .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\n  vec3 wbP = position; wbDeform(wbP, objectNormal);')
       .replace('#include <begin_vertex>', 'vec3 transformed = wbP; vWbP = wbP; vWbE = aE; vWbWY = (modelMatrix * vec4(wbP, 1.0)).y;')
       // the fog on it is thinned: a thing this size is a silhouette against the moon from a long way up the beach
-      .replace('#include <fog_vertex>', '#include <fog_vertex>\n#ifdef USE_FOG\n  vFogDepth *= 0.66;\n#endif');
+      .replace('#include <fog_vertex>', '#include <fog_vertex>\n#ifdef USE_FOG\n  vFogDepth *= 0.66 * uWbFog;\n#endif');
     frag(sh);
   };
   mat.customProgramCacheKey = () => 'whale-beach-' + (mat.userData.wbKind || '');
@@ -55885,9 +55892,12 @@ function wbSkinMat(src) {
   m.userData.wbKind = 'skin';
   wbInject(m, (sh) => {
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\n' + WB_FRAG_HEAD + `\n  const vec3 WB_BIO = ${BIO_COL};`)
+      .replace('#include <common>', '#include <common>\n' + WB_FRAG_HEAD + `\n  const vec3 WB_BIO = ${BIO_COL};\n  uniform float uHeal, uHealGlow, uGlow, uGlowZ, uGlowK;`)
       .replace('#include <map_fragment>', `#include <map_fragment>
         float wbRaw, wbRim, wbBl, wbDeep; wbWounds(vWbP, wbRaw, wbRim, wbBl, wbDeep);
+        // the wounds as they were, for the light that closes them; and then closed by it
+        float wbW0 = smoothstep(0.30, -0.02, wbWD) * smoothstep(-0.15, -0.6, vWbP.x);
+        { float hk = 1.0 - uHeal; wbRaw *= hk; wbDeep *= hk; wbBl *= hk; wbRim *= 1.0 - 0.85 * uHeal; }
         if (abs(vWbE - 6.0) < 0.5) { wbRaw = 0.0; wbRim = 0.0; wbBl = 0.0; wbDeep = 0.0; }
         /* WHAT A CUT THROUGH A WHALE IS: a layer of BLUBBER first — pale, cream to
          * pink, a hand thick — and then muscle, dark red, its fibres showing as
@@ -55948,6 +55958,17 @@ function wbSkinMat(src) {
           ex += WB_BIO * step(0.972, hb) * smoothstep(0.30, 0.05, length(fract(qb) - 0.5)) * (0.4 + 0.6 * sin(uT * 1.1 + hb * 60.0))
                 * smoothstep(1.3, 0.1, vWbP.y) * 0.55;
           outgoingLight += ex * mix(0.3, 1.0, wbAO);
+          /* THE HEALING: a band of light running the length of it, head to tail
+           * and back, a cold aura at its edges, and gold IN the wounds as they
+           * close. Unlit, and not held down by the sand's shadow: it is light. */
+          if (uGlow > 0.001 || uHealGlow > 0.001 || uGlowK > 0.001) {
+            float gb = exp(-pow((vWbP.z - uGlowZ) / 2.6, 2.0)) * uGlowK;
+            float shm = 0.5 + 0.5 * sin(vWbP.z * 2.6 - uT * 5.0 + wbN(vWbP.zy * 2.5) * 6.0);
+            float fr = pow(1.0 - ndv, 2.0);
+            vec3 gold = vec3(1.0, 0.80, 0.46), cyan = vec3(0.42, 0.86, 1.0);
+            outgoingLight += mix(cyan, gold, clamp(gb, 0.0, 1.0)) * (uGlow * (0.16 + 1.1 * fr) * (0.55 + 0.45 * shm) + gb * 1.3);
+            outgoingLight += gold * wbW0 * uHealGlow * (1.8 + 0.9 * sin(uT * 9.0 + vWbP.z * 6.0));
+          }
         }
         #include <opaque_fragment>`);
   });
@@ -56161,13 +56182,16 @@ function buildWhaleBeach(gltf) {
   const eyeK = new THREE.PointLight(0xdce8ff, 4.5, 9 * WB_K, 1.6); eyeK.position.copy(eL.cen).add(new THREE.Vector3(-2.6, 1.4, 1.2)); eyeK.userData.lpAlways = 60; G.add(eyeK);
   const sea = new THREE.PointLight(0x3ab4c6, 12, 26 * WB_K, 1.4); sea.position.set(-6.5, -0.2, -17); sea.userData.lpAlways = 90; G.add(sea);
   const mouthL = new THREE.PointLight(0xff4a30, 0, 8 * WB_K, 1.6); mouthL.userData.lpAlways = 40; G.add(mouthL);
+  // the farewell's light, dark until then: gold, over the middle of it, and it goes where the whale goes
+  const healL = new THREE.PointLight(0xffe2a8, 0, 60, 1.1); healL.position.set(-3, 9, -11); healL.userData.lpAlways = 240; G.add(healL);
   mouthL.position.copy(wbMouthAt(470, 1));
   // decals on the sand: where it lies the sand is soaked, and where it bleeds it is red
   const decal = (tex, w, h, x, z, ry, y = 0.018) => {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, fog: true }));
     m.rotation.set(-Math.PI / 2, 0, ry); m.position.set(x, y, z); m.renderOrder = 1; m.raycast = () => {}; m.userData.bwGhost = true;
-    scene.add(m); farProps.push({ obj: m, z: WB_Z, d: 220 }); return m;
+    scene.add(m); farProps.push({ obj: m, z: WB_Z, d: 220 }); decals.push(m); return m;
   };
+  const decals = [];
   const wl = (lx, lz) => new THREE.Vector3(lx, 0, lz).applyEuler(new THREE.Euler(0, WB_YAW, 0)).multiplyScalar(WB_K);
   const c0 = wl(0, -7); decal(wbDecalTex('wet'), 14 * WB_K, 20 * WB_K, WB_SNOUT_X + c0.x, WB_Z + c0.z, WB_YAW);
   const c1 = wl(0, -7.5); decal(wbDecalTex('shadow'), 9.5 * WB_K, 18 * WB_K, WB_SNOUT_X + c1.x, WB_Z + c1.z, WB_YAW, 0.02);   // where the light cannot get under it
@@ -56187,7 +56211,7 @@ function buildWhaleBeach(gltf) {
     if (c < 4) continue;
     cx /= c; cz /= c;
     let r = 0; for (let i = 0; i < wv.length; i++) if (!B.isFlip[i] && Math.abs(B.P[i].z - lz) < 0.35 && wv[i].y < top - 0.2) r = Math.max(r, Math.hypot(wv[i].x - cx, wv[i].z - cz));
-    rockColliders.push({ x: cx, z: cz, r: r + 0.08, top: Math.max(3.2, top), mat: 'flesh' });   // never a step: the berm lifts you, and 1.2 was then within one
+    rockColliders.push({ x: cx, z: cz, r: r + 0.08, top: Math.max(3.2, top), mat: 'flesh', whale: true });   // never a step: the berm lifts you, and 1.2 was then within one
   }
   for (const side of [1, -1]) {
     const ids = []; for (let i = 0; i < wv.length; i++) if (B.isFlip[i] === side) ids.push(i);
@@ -56202,7 +56226,7 @@ function buildWhaleBeach(gltf) {
       if (c < 2) continue; cx /= c; cz /= c;
       for (const i of ids) { const w = wv[i], t = (w.x - root.x) * ax.x + (w.z - root.z) * ax.z; if (Math.abs(t - d) < 0.45) r = Math.max(r, Math.hypot(w.x - cx, w.z - cz)); }
       if (top < 0.05) continue;                                   // under the sand: nothing to walk into
-      rockColliders.push({ x: cx, z: cz, r: Math.max(0.3, r * 0.9), top: Math.max(2.4, top), mat: 'flesh' });   // a wall, not a step: it lifts every so often
+      rockColliders.push({ x: cx, z: cz, r: Math.max(0.3, r * 0.9), top: Math.max(2.4, top), mat: 'flesh', whale: true });   // a wall, not a step: it lifts every so often
     }
   }
   /* THE SAND IT LIES IN. A whale that has come ashore has ploughed the beach
@@ -56418,13 +56442,13 @@ function buildWhaleBeach(gltf) {
   G.add(proxy);
   addInteractable(proxy, 'Enter', 'default', {
     far: 8, mid: true,
-    when: () => !inRoom() && !whaleBusy && !wbSw && wb && wb.jaw < 0.15,
+    when: () => !inRoom() && !whaleBusy && !wbSw && wb && wb.jaw < 0.15 && !wbGone && !wbFareCut,
     onActivate: () => startSwallow(),
   });
   const spout = wbMakeSpout(); scene.add(spout.pts);
   { const bl = G.localToWorld(new THREE.Vector3(-2.4, 0, -18.5)); oceanUniforms.uBlood.value.set(bl.x, bl.z, 11 * WB_K, 0.62); }
   farProps.push({ obj: G, z: WB_Z, d: 330 });
-  wb = { G, body, mouth, baleen, key, sea, mouthL, spout, B,
+  wb = { G, body, mouth, baleen, key, sea, mouthL, healL, decals, spout, B,
     jaw: 0, jawTarget: 0, jawK: 2.0,
     breath: -1, brPhase: 0, brT: 4 + Math.random() * 3, brState: 'rest',
     blink: 0, blT: 5 + Math.random() * 5, blState: 'open', blHalf: false,
@@ -56436,6 +56460,7 @@ function buildWhaleBeach(gltf) {
     if (best) (side > 0 ? wbU.uFlipPR : wbU.uFlipPL).value.copy(best);
   }
   wb.drips = wbMakeDrips(); scene.add(wb.drips.pts);
+  if (wbGone) wbRemoveForGood();                       // a save from after it swam away
   // the programs now, behind the start cover, not on the frame you first see it
   try { renderer.compile(G, camera, scene); } catch (e) { /* a warm is never fatal */ }
 }
@@ -56593,6 +56618,7 @@ function updateWhaleBeach(dt) {
     wbUpdateSpout(dt);
     wbUpdateDrips(dt);
   }
+  updateWhaleFarewell(dt);
   updateWhaleSong(dt);
 }
 function wbExhale() {
@@ -56638,6 +56664,537 @@ function wbTailSplash() {
   playSampleAt('wade', p.x, p.z, { gain: 1.6, ref: 14, far: 80, rate: 0.62, lpFar: 400 });
 }
 
+/* ---- THE WHALE'S FAREWELL. Kill everything in its belly and it says so: the
+ * owner's "thank you" through the gut, warm, and then it lets you out — not by
+ * the throat you came in by, but spat onto the sand beside it, a way up the
+ * beach where the whole of it is in front of you. And then it HEALS, which is
+ * the owner's own heal under a column of light out of the clouds: the light
+ * runs down it from tail to head, gold gathers into every cut and they close,
+ * the harpoon is thrown out of it, the blood goes out of the water, and it
+ * comes to a white flash and a ring of light across the sand with a breath out
+ * of it you can see from the tower. Then it backs down the beach into the sea
+ * on its flippers with the sand coming up round it, turns in the shallows,
+ * swims out singing, lifts its flukes and goes under; and a long way out, in
+ * front of the moon, it comes up out of the water most of its own length into
+ * the sky, rolls, and falls back in on its side. It does not come back.
+ *
+ * One clock (`wbFareCut.t`), the camera turned and never moved (the key's own
+ * arrangement), every cue fired once. The whale is moved as ONE GROUP about a
+ * point a third of the way down it — its centre of mass, which is what a leap
+ * turns about; turning it about the snout, as its group is built, would swing
+ * the whole tail up into the air as it levels out. `wbGone` is on the save. */
+const WF_T = { thanks: 0, gulp: 4.3, cut: 4.95, heal: 6.9, back: 14.4, swim: 23.0, under: 35.2, breach: 38.8 };
+const WF_COM = -11;                                     // the pivot, in its own metres down its length
+const WF_VX = 12.4, WF_VZ_OFF = 24;                     // where it puts you: on the dry sand, up the beach from its flank
+const _wfV = new THREE.Vector3(), _wfV2 = new THREE.Vector3(), _wfM = new THREE.Matrix4(), _wfQ = new THREE.Quaternion(), _wfE = new THREE.Euler(0, 0, 0, 'YXZ');
+function wbBellyClear() {
+  return demonUnits.length > 0 && parasiteUnits.length > 0
+    && demonUnits.every((u) => !u.st.alive) && parasiteUnits.every((u) => !u.st.alive);
+}
+// a story sound: the owner's voice for the whale, on the master and not the effects slider, so it is heard
+function playStory(name, level = 1, rate = 1) {
+  const ctx = audioCtx; if (!ctx) return null;
+  const buf = (sampleBanks[name] || []).filter(Boolean)[0]; if (!buf) return null;
+  const src = ctx.createBufferSource(); src.buffer = buf; src.playbackRate.value = rate;
+  const g = ctx.createGain(); g.gain.value = settings.volume * level;
+  src.connect(g).connect(ctx.destination); src.start(ctx.currentTime);
+  return src;
+}
+// the whale's pose from its pivot: where the centre of it is and which way it points
+function wfPose(C, yaw, pitch, roll) {
+  const G = wb.G;
+  _wfE.set(pitch, yaw, roll, 'YXZ');
+  G.rotation.copy(_wfE);
+  _wfV.set(0, 0, WF_COM * WB_K).applyEuler(_wfE);
+  G.position.copy(C).sub(_wfV);
+  G.updateMatrixWorld(true);
+}
+function wfCentre(out = _wfV2) { return out.set(0, 0, WF_COM).applyMatrix4(wb.G.matrixWorld); }
+function startWhaleFarewell() {
+  if (wbFareCut || wbGone || !wb) return;
+  if (held) dropHeld();
+  blocking = false; winding = false; cancelSwing();
+  hovered = null; setPrompt('');
+  wbFareCut = { t: 0, fov: camera.fov, cue: {}, songK: 0, look: new THREE.Vector3(), lookRate: 1.5, C: new THREE.Vector3(), yaw: 0, pitch: 0, roll: 0, vel: new THREE.Vector3() };
+  playStory('whaleThanks', 1.35);
+  addTrauma(0.12);
+}
+/* PUT YOU ON THE SAND beside it, facing it: the room's own way out, and then
+ * the spot moved up the beach to where the whole animal is in the frame. */
+function wfPlaceOut() {
+  placeOutOfWhale();
+  if (wb) { wb.jaw = 0; wbU.uJaw.value = 0; wb.jawTarget = 0; }
+  const x = WF_VX, z = WB_Z + WF_VZ_OFF;
+  groundY = beachGroundAt(x, z);
+  camera.position.set(x, groundY + playerEye(), z);
+  camBaseY = camera.position.y; vy = 0; onGround = true;
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0);
+  const C = wfCentre();
+  const dx = C.x - x, dz = C.z - z;
+  lookEuler.set(0.05, Math.atan2(-dx, -dz), 0, lookEuler.order);
+  camera.quaternion.setFromEuler(lookEuler);
+  wbFareCut.look.copy(C).setY(4);
+  wbFareCut.fov = Math.min(settings.fov, 80);
+  wfBuildFx();
+  try { renderer.compile(scene, camera); } catch (e) { /* a warm is never fatal */ }
+}
+
+/* ---- what the healing is made of: a column of light, the motes it gathers,
+ * the ring it goes out in, and the water that comes off a leaping whale. All
+ * built at the black cut, where a compile costs nothing. */
+let wfFx = null;
+function wfBuildFx() {
+  if (wfFx) return wfFx;
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(6, 17, 150, 40, 1, true), new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+    uniforms: { uA: { value: 0 }, uT: { value: 0 } },
+    vertexShader: `varying vec3 vN; varying vec3 vV; varying float vY; varying float vAng;
+      void main(){ vY = position.y; vAng = atan(position.x, position.z);
+        vec4 mv = modelViewMatrix * vec4(position, 1.0); vV = -mv.xyz; vN = normalMatrix * normal;
+        gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform float uA, uT; varying vec3 vN; varying vec3 vV; varying float vY; varying float vAng;
+      void main(){
+        float face = pow(abs(dot(normalize(vN), normalize(vV))), 1.6);
+        float h = (vY + 75.0) / 150.0;
+        float up = smoothstep(1.0, 0.25, h) * smoothstep(0.0, 0.04, h);
+        float streak = 0.55 + 0.45 * sin(vAng * 14.0 + vY * 0.06 + uT * 1.7) * sin(vAng * 5.0 - uT * 0.9);
+        float fall = 0.6 + 0.4 * sin(vY * 0.22 + uT * 7.0);
+        vec3 col = mix(vec3(0.45, 0.80, 1.0), vec3(1.0, 0.88, 0.62), face);
+        gl_FragColor = vec4(col * face * up * streak * fall * uA, 1.0); }`,
+  }));
+  beam.frustumCulled = false; beam.raycast = () => {}; beam.userData.bwGhost = true; beam.visible = false; beam.renderOrder = 6;
+  scene.add(beam);
+  // the pool of it on the sand and the water under the whale
+  const pool = new THREE.Mesh(new THREE.CircleGeometry(1, 48), new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    uniforms: { uA: { value: 0 }, uT: { value: 0 } },
+    vertexShader: 'varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `uniform float uA, uT; varying vec2 vP;
+      void main(){ float r = length(vP); float a = pow(max(0.0, 1.0 - r), 1.6) * (0.75 + 0.25 * sin(r * 18.0 - uT * 4.0));
+        gl_FragColor = vec4(vec3(1.0, 0.86, 0.58) * a * uA, 1.0); }`,
+  }));
+  pool.rotation.x = -Math.PI / 2; pool.frustumCulled = false; pool.raycast = () => {}; pool.userData.bwGhost = true; pool.visible = false; pool.renderOrder = 5;
+  scene.add(pool);
+  // the ring it goes out in
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.86, 1, 96), new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, side: THREE.DoubleSide,
+    uniforms: { uA: { value: 0 } },
+    vertexShader: 'varying float vR; void main(){ vR = length(position.xy); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `uniform float uA; varying float vR;
+      void main(){ float e = sin(3.14159 * clamp((vR - 0.86) / 0.14, 0.0, 1.0)); gl_FragColor = vec4(vec3(0.70, 0.92, 1.0) * uA * e, 1.0); }`,
+  }));
+  ring.rotation.x = -Math.PI / 2; ring.frustumCulled = false; ring.raycast = () => {}; ring.userData.bwGhost = true; ring.visible = false; ring.renderOrder = 5;
+  scene.add(ring);
+  // motes: 420 of them, gathering in on it and then thrown out and up
+  const NM = 420, mg = new THREE.BufferGeometry();
+  mg.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(NM * 3), 3));
+  mg.setAttribute('aA', new THREE.Float32BufferAttribute(new Float32Array(NM), 1));
+  mg.setAttribute('aC', new THREE.Float32BufferAttribute(new Float32Array(NM), 1));
+  const motes = new THREE.Points(mg, new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    uniforms: { uPx: { value: 600 } },
+    vertexShader: `attribute float aA; attribute float aC; varying float vA; varying float vC; uniform float uPx;
+      void main(){ vA = aA; vC = aC; vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = clamp(uPx * 0.34 / -mv.z, 1.5, 40.0); gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `varying float vA; varying float vC;
+      void main(){ float d = length(gl_PointCoord - 0.5) * 2.0; float a = pow(max(0.0, 1.0 - d), 2.2) * vA; if (a < 0.004) discard;
+        vec3 c = mix(vec3(0.50, 0.88, 1.0), vec3(1.0, 0.84, 0.50), vC);
+        gl_FragColor = vec4(c * a * (1.0 + 1.5 * smoothstep(0.35, 0.0, d)), 1.0); }`,
+  }));
+  motes.frustumCulled = false; motes.raycast = () => {}; motes.userData.bwGhost = true; motes.visible = false; motes.renderOrder = 7;
+  scene.add(motes);
+  const M = Array.from({ length: NM }, () => ({ a: new THREE.Vector3(), th: Math.random() * Math.PI * 2, r0: 7 + Math.random() * 12, h0: 2 + Math.random() * 16,
+    sp: 0.6 + Math.random() * 1.2, c: Math.random(), k: Math.random(), up: 6 + Math.random() * 18, out: 6 + Math.random() * 16 }));
+  // the water off a leaping whale: spray and the mist over it, one draw
+  const NS = 2200, sg = new THREE.BufferGeometry();
+  sg.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(NS * 3), 3));
+  sg.setAttribute('aA', new THREE.Float32BufferAttribute(new Float32Array(NS), 1));
+  sg.setAttribute('aS', new THREE.Float32BufferAttribute(new Float32Array(NS), 1));
+  const spray = new THREE.Points(sg, new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, fog: false,
+    uniforms: { uPx: { value: 600 } },
+    vertexShader: `attribute float aA; attribute float aS; varying float vA; uniform float uPx;
+      void main(){ vA = aA; vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = clamp(uPx * aS / -mv.z, 1.0, 300.0); gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `varying float vA;
+      void main(){ vec2 q = gl_PointCoord - 0.5; float d = length(q) * 2.0; float a = pow(max(0.0, 1.0 - d), 1.4) * vA; if (a < 0.004) discard;
+        gl_FragColor = vec4(vec3(0.74, 0.83, 0.93) * (0.85 + 0.3 * (0.5 - q.y)), a); }`,
+  }));
+  spray.frustumCulled = false; spray.raycast = () => {}; spray.userData.bwGhost = true; spray.visible = false; spray.renderOrder = 8;
+  scene.add(spray);
+  const SP = Array.from({ length: NS }, () => ({ p: new THREE.Vector3(), v: new THREE.Vector3(), age: 0, life: 0, s0: 1, grow: 0, drag: 0.4, mist: false }));
+  wfFx = { beam, pool, ring, motes, M, spray, SP, sNext: 0 };
+  return wfFx;
+}
+// water thrown up: n drops from a patch of radius r round (x, y, z), `up` its speed, `mist` how much hangs over it
+function wfSplash(x, y, z, n, up, r, size = 1.6, mist = 0.25) {
+  const F = wfFx; if (!F) return;
+  for (let i = 0; i < n; i++) {
+    const P = F.SP[F.sNext]; F.sNext = (F.sNext + 1) % F.SP.length;
+    const a = Math.random() * Math.PI * 2, rr = r * Math.sqrt(Math.random());
+    P.p.set(x + Math.cos(a) * rr, y + Math.random() * 0.5, z + Math.sin(a) * rr);
+    P.mist = Math.random() < mist;
+    const u = up * (P.mist ? 0.35 : 0.5 + Math.random() * 0.7), o = (P.mist ? 2 : 3) + Math.random() * up * 0.35;
+    P.v.set(Math.cos(a) * o, u, Math.sin(a) * o);
+    P.age = -Math.random() * 0.12; P.life = P.mist ? 3.5 + Math.random() * 3 : 1.6 + Math.random() * 1.8;
+    P.s0 = P.mist ? size * (2.4 + Math.random() * 2.0) : size * (0.4 + Math.random() * 0.8);
+    P.grow = P.mist ? 1.6 : 0.3; P.drag = P.mist ? 1.1 : 0.12;
+  }
+}
+function wfUpdateFx(dt) {
+  const F = wfFx; if (!F) return;
+  const px = renderer.domElement.height * 0.9;
+  F.beam.material.uniforms.uT.value += dt; F.pool.material.uniforms.uT.value += dt;
+  F.motes.material.uniforms.uPx.value = px; F.spray.material.uniforms.uPx.value = px;
+  const pa = F.spray.geometry.attributes.position, aa = F.spray.geometry.attributes.aA, as = F.spray.geometry.attributes.aS;
+  let any = false;
+  for (let i = 0; i < F.SP.length; i++) {
+    const P = F.SP[i];
+    if (P.life <= 0) { aa.array[i] = 0; continue; }
+    P.age += dt;
+    if (P.age < 0) { aa.array[i] = 0; any = true; continue; }
+    if (P.age > P.life) { P.life = 0; aa.array[i] = 0; continue; }
+    any = true;
+    P.v.multiplyScalar(Math.exp(-dt * P.drag)); P.v.y -= dt * (P.mist ? 1.2 : 9.8);
+    P.v.x += WIND.x * dt * 1.5; P.v.z += WIND.z * dt * 1.5;
+    P.p.addScaledVector(P.v, dt);
+    if (!P.mist && P.p.y < -0.3) { P.life = 0; aa.array[i] = 0; continue; }
+    const u = P.age / P.life;
+    pa.array[i * 3] = P.p.x; pa.array[i * 3 + 1] = P.p.y; pa.array[i * 3 + 2] = P.p.z;
+    aa.array[i] = (P.mist ? 0.22 : 0.75) * Math.min(1, P.age * 8) * (1 - u) * (P.mist ? Math.sin(Math.PI * Math.min(1, u * 1.6)) : 1);
+    as.array[i] = P.s0 * (1 + u * P.grow);
+  }
+  F.spray.visible = any;
+  pa.needsUpdate = true; aa.needsUpdate = true; as.needsUpdate = true;
+}
+// the whale hitting the water, from where it did: a boom you feel, the sea coming down after it, late by the distance
+function sfxWhaleSplash(x, z, big = 1) {
+  const ctx = audioCtx; if (!ctx) return;
+  const d = Math.hypot(x - camera.position.x, z - camera.position.z);
+  const t = ctx.currentTime + d / 343, k = big * 1.6 / (1 + d / 45);
+  const pan = ctx.createStereoPanner(); pan.pan.value = THREE.MathUtils.clamp(panTo(x, z) * 0.7, -1, 1); pan.connect(sfxOut());
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(58, t); o.frequency.exponentialRampToValueAtTime(24, t + 1.4);
+  const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(1.3 * k, t + 0.03); og.gain.exponentialRampToValueAtTime(0.0001, t + 1.8);
+  o.connect(og).connect(pan); o.start(t); o.stop(t + 1.9);
+  const n = noiseBurst(3.6, (u) => Math.min(1, u * 30) * Math.pow(1 - u, 1.6) * (0.6 + 0.4 * Math.random()));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(1800 * (0.4 + 0.6 / (1 + d / 60)), t); lp.frequency.exponentialRampToValueAtTime(260, t + 3.4);
+  const ng = ctx.createGain(); ng.gain.value = 1.1 * k;
+  n.connect(lp).connect(ng).connect(pan); n.start(t); n.stop(t + 3.6);
+  for (let i = 0; i < 3; i++) playSampleAt('splash', x, z, { gain: 2.4 * big, ref: 40, far: 400, rate: 0.36 + i * 0.1, lpFar: 500, delay: d / 343 + i * 0.35 });
+}
+// its weight dragging back down the sand into the sea: a long low scrape with the flippers slapping
+function sfxWhaleDrag(x, z, dur) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, d = Math.hypot(x - camera.position.x, z - camera.position.z), k = 1 / (1 + d / 18);
+  const n = noiseBurst(dur, (u) => Math.sin(Math.PI * u) * (0.55 + 0.45 * Math.sin(u * dur * 4.6)) * (0.7 + 0.3 * Math.random()));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520;
+  const g = ctx.createGain(); g.gain.value = 1.1 * k;
+  n.connect(lp).connect(g).connect(sfxOut()); n.start(t); n.stop(t + dur);
+}
+// the climax of the heal: a deep swell and a bloom of high light over it, low enough to be felt
+function sfxHealBloom() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(44, t); o.frequency.exponentialRampToValueAtTime(62, t + 0.5);
+  const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(1.4, t + 0.06); og.gain.exponentialRampToValueAtTime(0.0001, t + 3.2);
+  o.connect(og).connect(out); o.start(t); o.stop(t + 3.3);
+  for (const [f, g] of [[392, 0.10], [587, 0.07], [784, 0.05], [1175, 0.03]]) {
+    const s = ctx.createOscillator(); s.type = 'sine'; s.frequency.value = f;
+    const sg = ctx.createGain(); sg.gain.setValueAtTime(0.0001, t); sg.gain.exponentialRampToValueAtTime(g, t + 0.4); sg.gain.exponentialRampToValueAtTime(0.0001, t + 4.5);
+    s.connect(sg).connect(out); s.start(t); s.stop(t + 4.6);
+  }
+}
+/* GONE: out of the scene's sight for good, and everything that was there
+ * because it was lying there goes with it — its colliders, the dark it made
+ * on the sand, the harpoon's line, the blood in the water. The trench it
+ * ploughed stays; that is what a whale leaves on a beach. */
+function wbRemoveForGood() {
+  for (let i = rockColliders.length - 1; i >= 0; i--) if (rockColliders[i].whale) rockColliders.splice(i, 1);
+  oceanUniforms.uBlood.value.w = 0;
+  if (!wb) return;
+  const drop = (o) => { if (!o) return; const i = farProps.findIndex((f) => f.obj === o); if (i >= 0) farProps.splice(i, 1); o.visible = false; if (o.parent) o.parent.remove(o); };
+  drop(wb.G);
+  for (const m of wb.decals || []) drop(m);
+  drop(scene.getObjectByName('harpoonLine'));
+  drop(scene.getObjectByName('harpoon'));
+  if (wb.spout) wb.spout.pts.visible = false;
+  if (wb.drips) wb.drips.pts.visible = false;
+}
+
+function updateWhaleFarewell(dt) {
+  if (!wb) return;
+  // the belly is empty: it says so, a beat after the last of them stops moving
+  if (!wbFareCut && !wbGone && inWhale && !whaleBusy && wbBellyClear()) {
+    wbFareCut = null;
+    wbFareClearT = (wbFareClearT || 0) + dt;
+    if (wbFareClearT > 2.4) startWhaleFarewell();
+  } else if (!wbFareCut) wbFareClearT = 0;
+  const C = wbFareCut; if (!C) return;
+  C.t += dt;
+  const t = C.t, W = wb, G = W.G, T = WF_T, cue = C.cue;
+  wfUpdateFx(dt);
+
+  // ---------- IN THE BELLY: the thanks, the gut going warm round it, and the heave that puts you out
+  if (t < T.cut) {
+    const warm = smooth01(0.2, 1.6, t) * (1 - smooth01(T.gulp, T.cut, t));
+    if (inWhale && scene.fog) scene.fog.color.copy(WH_FOG.color).lerp(_wfCol.set(0x4a2a12), warm * 0.8);
+    if (t > T.gulp && !cue.gulp) { cue.gulp = true; sfxWhaleGulp(); addTrauma(0.9); }
+    if (t > T.gulp) { addTrauma(dt * 2.2); blackoutEl.style.opacity = smooth01(T.gulp + 0.1, T.cut - 0.05, t).toFixed(3); }
+    return;
+  }
+  if (!cue.cut) { cue.cut = true; blackoutEl.style.opacity = '1'; wfPlaceOut(); }
+  blackoutEl.style.opacity = (1 - smooth01(T.cut + 0.5, T.cut + 1.7, t)).toFixed(3);
+  const F = wfFx;
+
+  // ---------- THE HEAL
+  const h = t - T.heal;
+  if (h > 0 && !cue.heal) {
+    cue.heal = true;
+    playStory('whaleHeal', 1.3);
+    const Cw = wfCentre();
+    F.beam.position.set(Cw.x, 75, Cw.z); F.beam.visible = true;
+    F.pool.position.set(Cw.x, 0.08, Cw.z); F.pool.scale.setScalar(30); F.pool.visible = true;
+    // the motes are anchored down its length, where it lies
+    F.M.forEach((m) => { const lz = -Math.random() * 30; m.a.set(0, 1.2, lz).applyMatrix4(G.matrixWorld); });
+    F.motes.visible = true;
+    W.blState = 'open'; W.blink = 0;
+  }
+  if (h > 0) {
+    const beamA = smooth01(0, 1.4, h) * (1 - smooth01(5.2, 8.0, h)) * (1 + 0.8 * Math.exp(-Math.pow((h - 4.1) / 0.35, 2)));
+    F.beam.material.uniforms.uA.value = 0.55 * beamA;
+    F.pool.material.uniforms.uA.value = 0.5 * beamA;
+    F.beam.visible = F.pool.visible = beamA > 0.002;
+    wbU.uGlow.value = smooth01(0.2, 1.8, h) * (1 - smooth01(5.0, 8.5, h));
+    // the light runs down it from the tail to the head, and back again on the flash
+    wbU.uGlowZ.value = h < 4.1 ? -36 + 40 * smooth01(0.4, 3.6, h) : 4 - 42 * smooth01(4.1, 6.2, h);
+    wbU.uGlowK.value = smooth01(0.3, 0.9, h) * (1 - smooth01(6.0, 7.0, h));
+    wbU.uHealGlow.value = smooth01(1.0, 1.9, h) * (1 - smooth01(4.3, 5.6, h));
+    wbU.uHeal.value = smooth01(2.0, 4.1, h);
+    W.healL.intensity = 70 * beamA + 40 * wbU.uHealGlow.value;
+    // the blood goes out of the water and off the sand with the wounds
+    oceanUniforms.uBlood.value.w = 0.62 * (1 - smooth01(2.0, 4.6, h));
+    for (const m of W.decals) if (m.material) { m.material.opacity = 1 - smooth01(2.2, 5.0, h) * (m.userData.keep ? 0 : 1); }
+    // it draws a breath in and holds it, eyes open, and lets it go on the flash
+    if (h < 4.1) { W.brState = 'hold'; W.brT = 9; W.breath = wbEase(W.breath, 1, 1.2, dt); }
+    else if (!cue.flash) { W.brState = 'out'; W.brT = 1.9; }
+    W.blink = 0; wbU.uBlink.value = 0;
+    // the motes: gather in, and on the flash thrown out and up
+    const pa = F.motes.geometry.attributes.position, aa = F.motes.geometry.attributes.aA, ac = F.motes.geometry.attributes.aC;
+    F.M.forEach((m, i) => {
+      let x, y, z, a;
+      if (h < 4.1) {
+        const g = smooth01(0, 3.8, h * (0.8 + 0.4 * m.k));
+        const r = m.r0 * (1 - g) + 0.6, th = m.th + h * m.sp * (0.6 + g * 2.5);
+        x = m.a.x + Math.cos(th) * r; z = m.a.z + Math.sin(th) * r; y = m.a.y + m.h0 * (1 - g) + Math.sin(h * 3 + m.k * 9) * 0.3;
+        a = smooth01(0, 0.8, h) * (0.35 + 0.65 * g);
+      } else {
+        const e = h - 4.1, u = 1 - Math.exp(-e * 1.6);
+        x = m.a.x + Math.cos(m.th) * m.out * u; z = m.a.z + Math.sin(m.th) * m.out * u; y = m.a.y + 0.6 + m.up * u + e * 1.5;
+        a = Math.max(0, 1 - e / (2.5 + m.k * 2));
+      }
+      pa.array[i * 3] = x; pa.array[i * 3 + 1] = y; pa.array[i * 3 + 2] = z; aa.array[i] = a; ac.array[i] = m.c;
+    });
+    pa.needsUpdate = true; aa.needsUpdate = true; ac.needsUpdate = true;
+    F.motes.visible = h < 9;
+    // the harpoon is thrown out of it
+    if (h > 2.7 && !cue.harp) {
+      cue.harp = true;
+      const H = scene.getObjectByName('harpoon');
+      const rope = scene.getObjectByName('harpoonLine');
+      if (rope) { const i = farProps.findIndex((f) => f.obj === rope); if (i >= 0) farProps.splice(i, 1); scene.remove(rope); }
+      if (H) {
+        scene.attach(H);
+        const dir = _wfV.set(0, 1, 0).applyQuaternion(H.quaternion).normalize();
+        C.harp = { H, v: dir.multiplyScalar(-7).add(_wfV2.set(0, 6, 0)), spin: new THREE.Vector3(3.1, 0.6, 2.2), rest: false };
+        spawnPuffs(H.position.x, H.position.z, 6, 0, 0, H.position.y, [0.9, 0.8, 0.6]);
+        playSampleAt('fleshHit', H.position.x, H.position.z, { gain: 1.2, ref: 10, far: 60, rate: 0.7 });
+      }
+    }
+    // THE FLASH
+    if (h > 4.1 && !cue.flash) {
+      cue.flash = true;
+      sfxHealBloom(); addTrauma(0.45);
+      const Cw = wfCentre();
+      F.ring.position.set(Cw.x, 0.15, Cw.z); F.ring.visible = true; C.ringT = 0;
+      wbExhale(); setTimeout(() => { if (wb) wbExhale(); }, 380);
+      C.flashT = 0;
+    }
+    if (C.flashT != null) {
+      C.flashT += dt;
+      flashEl.style.opacity = (0.62 * Math.exp(-C.flashT * 3.2)).toFixed(3);
+      const rr = 2 + 90 * (1 - Math.exp(-C.flashT * 1.3));
+      F.ring.scale.setScalar(rr);
+      F.ring.material.uniforms.uA.value = 1.4 * Math.max(0, 1 - C.flashT / 2.6);
+      F.ring.visible = C.flashT < 2.7;
+      if (C.flashT > 3.5) { flashEl.style.opacity = '0'; C.flashT = null; }
+    }
+    C.songK = Math.max(C.songK - dt * 0.3, h > 4.1 && h < 8 ? 0.8 : 0);
+  }
+  if (C.harp && !C.harp.rest) {
+    const P = C.harp, H = P.H;
+    P.v.y -= 9.8 * dt; H.position.addScaledVector(P.v, dt);
+    H.rotation.x += P.spin.x * dt; H.rotation.y += P.spin.y * dt; H.rotation.z += P.spin.z * dt;
+    const gy = beachGroundAt(H.position.x, H.position.z) + 0.12;
+    if (H.position.y < gy && P.v.y < 0) {
+      H.position.y = gy;
+      if (P.v.length() > 3) { P.v.multiplyScalar(0.3); P.v.y = Math.abs(P.v.y) + 1.4; P.spin.multiplyScalar(0.4); spawnPuffs(H.position.x, H.position.z, 5, 0, 0, 0.06); playSampleAt('blockMil', H.position.x, H.position.z, { gain: 0.8, ref: 10, far: 60, rate: 0.6 }); }
+      else { P.rest = true; H.rotation.set(Math.PI / 2, H.rotation.y, 0); }
+    }
+  }
+
+  // ---------- BACK DOWN THE BEACH INTO THE SEA
+  const b = t - T.back;
+  if (b > 0 && !cue.back) {
+    cue.back = true;
+    C.C.copy(wfCentre()); C.C0 = C.C.clone();
+    C.yaw = WB_YAW; C.pitch = -WB_PITCH; C.roll = 0;
+    for (let i = rockColliders.length - 1; i >= 0; i--) if (rockColliders[i].whale) rockColliders.splice(i, 1);
+    sfxWhaleGroan(); sfxWhaleDrag(C.C.x, C.C.z, 8.5);
+  }
+  if (b > 0 && t < T.swim) {
+    const u = smooth01(0, 8.6, b);
+    C.C.copy(C.C0).addScaledVector(WB_DIR, -46 * u);
+    C.C.y = C.C0.y - 1.9 * smooth01(2.5, 8.6, b);
+    C.pitch = -WB_PITCH * (1 - u);
+    C.roll = Math.sin(b * 1.1) * 0.035;
+    wfPose(C.C, C.yaw, C.pitch, C.roll);
+    // flippers heave it, one then the other
+    wbU.uFlipR.value = 0.20 * Math.max(0, Math.sin(b * 2.3));
+    wbU.uFlipL.value = 0.20 * Math.max(0, Math.sin(b * 2.3 + Math.PI));
+    wbU.uTail.value = 0.18 + 0.14 * Math.sin(b * 1.3);
+    // the sand coming up round it, and the sea where it meets it
+    if ((C.sprayT = (C.sprayT || 0) - dt) <= 0 && b < 8.2) {
+      C.sprayT = 0.07;
+      for (const side of [2.3, -2.3]) {
+        const q = G.localToWorld(_wfV.set(side, -0.2, -Math.random() * 16));
+        const wl = shoreLineJS(q.z, oceanUniforms.uTime.value);
+        if (q.x > wl + 0.8) spawnPuffs(q.x, q.z, 3, WB_DIR.x * -1, WB_DIR.z * -1, 0.15, [0.46, 0.50, 0.58]);
+        else if (Math.random() < 0.5) spawnSplash(q.x, q.z, 6, 0, 0, 1.2, Math.max(-0.3, waterSurfaceAt(q.x, q.z)));
+      }
+    }
+    if ((C.slapT = (C.slapT || 1.2) - dt) <= 0) { C.slapT = 2.73; wbFlipThud(Math.sin(b * 2.3) > 0 ? 1 : -1); }
+    C.look.lerp(_wfV.copy(wfCentre()).setY(3.5), 1 - Math.exp(-dt * 1.5));
+  }
+
+  // ---------- TURN IN THE SHALLOWS AND SWIM OUT
+  const s = t - T.swim;
+  if (s > 0 && !cue.swim) {
+    cue.swim = true;
+    const V = _wfV.set(WF_VX, 0, WB_Z + WF_VZ_OFF);
+    C.view = new THREE.Vector3(-0.75, 0, -0.66).normalize();
+    C.B = V.clone().addScaledVector(C.view, 116);                      // where it comes up: out in front of the moon
+    const dx = C.B.x - C.C.x, dz = C.B.z - C.C.z;
+    C.yaw1 = Math.atan2(dx, dz);
+    let dy = C.yaw1 - C.yaw; while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
+    C.yaw1 = C.yaw + dy; C.yawS = C.yaw; C.spd = 0.3;
+  }
+  if (s > 0 && t < T.under) {
+    const turn = smooth01(0, 6.5, s);
+    const prevYaw = C.yaw;
+    C.yaw = C.yawS + (C.yaw1 - C.yawS) * turn;
+    C.spd = 0.4 + 6.8 * smooth01(3.0, 9.0, s);
+    C.vel.set(Math.sin(C.yaw), 0, Math.cos(C.yaw)).multiplyScalar(C.spd);
+    C.C.addScaledVector(C.vel, dt);
+    const dive = smooth01(8.6, 11.4, s);
+    C.C.y += (-3.0 - C.C.y) * (1 - Math.exp(-dt * 0.6)) - dive * dt * 5.5;
+    C.pitch = 0.55 * dive + Math.sin(s * 1.25) * 0.02;
+    C.roll = THREE.MathUtils.clamp((C.yaw - prevYaw) / Math.max(dt, 1e-3) * -0.35, -0.3, 0.3);
+    wfPose(C.C, C.yaw, C.pitch, C.roll);
+    // the flukes drive it; and as it goes down they come up out of the water, the way they do
+    const fluke = smooth01(9.4, 10.6, s) * (1 - smooth01(11.2, 12.0, s));
+    wbU.uTail.value = Math.max(0.28 + 0.30 * Math.sin(s * 2.4), fluke);
+    wbU.uFlipR.value = wbU.uFlipL.value = 0.06;
+    if (s > 5.0 && !cue.spout) { cue.spout = true; wbExhale(); }
+    if (s > 11.3 && !cue.fluke) { cue.fluke = true; const p = G.localToWorld(_wfV.set(0, 0, -30)); wfSplash(p.x, 0, p.z, 90, 9, 5, 1.4, 0.3); sfxWhaleSplash(p.x, p.z, 0.45); }
+    C.songK = Math.max(C.songK - dt * 0.2, 0.35 * smooth01(1, 4, s));
+    C.look.lerp(_wfV.copy(wfCentre()).setY(Math.max(1.5, wfCentre().y + 3)), 1 - Math.exp(-dt * 1.4));
+    C.fov = Math.min(settings.fov, 80 - 22 * smooth01(4, 12, s));
+    if (s > 12.2) G.visible = false;
+  }
+
+  // ---------- UNDER, and then out in front of the moon
+  const x = t - T.under;
+  if (x > 0 && t < T.breach) {
+    G.visible = false;
+    C.look.lerp(_wfV.copy(C.B).setY(9), 1 - Math.exp(-dt * 1.2));
+    C.fov = Math.min(settings.fov, 42);
+    C.songK = 0.25 + 0.3 * smooth01(0, 3.6, x);
+  }
+  const k = t - T.breach;
+  if (k > 0) {
+    if (!cue.breach) {
+      cue.breach = true;
+      // up out of the water, most of its length, side-on to you: the heading across your line
+      C.hd = new THREE.Vector3(C.view.z, 0, -C.view.x);
+      C.yaw = Math.atan2(C.hd.x, C.hd.z);
+      C.C.set(C.B.x, -22, C.B.z); C.vel.set(C.hd.x * 5, 24, C.hd.z * 5);
+      C.pitch = -1.22; C.roll = 0; C.apex = false; C.slam = false;
+      wbU.uWbFog.value = 0.22;
+      W.key.intensity = 60;
+      G.visible = true;
+    }
+    const g = 7.0;
+    if (!C.slam) {
+      C.vel.y -= g * dt;
+      C.C.addScaledVector(C.vel, dt);
+      if (C.vel.y < 0) C.apex = true;
+      // it rolls as it rises, and levels out and goes over onto its side as it falls
+      const up = THREE.MathUtils.clamp(C.vel.y / 24, -1, 1);
+      C.pitch = up > 0 ? -1.22 + 0.08 * (1 - up) : -1.14 + 1.24 * smooth01(0, 1, -up * 1.35);
+      C.roll = 0.5 * smooth01(0, 3.2, k) + 1.35 * (up < 0 ? smooth01(0, 1, -up * 1.3) : 0);
+      wbU.uFlipR.value = wbU.uFlipL.value = 0.30;
+      wbU.uTail.value = 0.35 + 0.2 * Math.sin(k * 3);
+      // the sea breaking where it comes out, and pouring off it as it rises
+      if (!cue.out && C.C.y > -9) { cue.out = true; wfSplash(C.B.x + C.hd.x * 8, 0, C.B.z + C.hd.z * 8, 420, 16, 7, 1.9, 0.35); sfxWhaleSplash(C.B.x, C.B.z, 0.9); addTrauma(0.1); }
+      if ((C.pourT = (C.pourT || 0) - dt) <= 0) {
+        C.pourT = 0.03;
+        for (let i = 0; i < 3; i++) {
+          const q = G.localToWorld(_wfV.set((Math.random() - 0.5) * 4.5, (Math.random() - 0.3) * 3, -Math.random() * 30));
+          if (q.y > 0.5) wfSplash(q.x, q.y, q.z, 3, 2, 0.8, 1.1, 0.15);
+        }
+      }
+      if (C.apex && C.C.y < 1.8) {
+        C.slam = true; C.slamT = 0;
+        const p = C.C;
+        wfSplash(p.x, 0, p.z, 700, 22, 15, 2.2, 0.35);
+        wfSplash(p.x + C.hd.x * 14, 0, p.z + C.hd.z * 14, 300, 14, 10, 2.0, 0.3);
+        wfSplash(p.x - C.hd.x * 14, 0, p.z - C.hd.z * 14, 300, 14, 10, 2.0, 0.3);
+        sfxWhaleSplash(p.x, p.z, 1.6); addTrauma(0.3);
+      }
+    } else {
+      C.slamT += dt;
+      C.C.addScaledVector(C.vel.multiplyScalar(Math.exp(-dt * 2.2)), dt);
+      C.C.y -= dt * (3 + C.slamT * 4);
+      C.pitch += (0.25 - C.pitch) * (1 - Math.exp(-dt * 1.5));
+      wbU.uTail.value = smooth01(0.6, 1.6, C.slamT) * (1 - smooth01(2.2, 3.0, C.slamT));
+      if (C.slamT > 2.9 && !cue.tail) { cue.tail = true; const p = G.localToWorld(_wfV.set(0, 0, -30)); wfSplash(p.x, 0, p.z, 120, 10, 5, 1.6, 0.3); sfxWhaleSplash(p.x, p.z, 0.4); }
+      if (C.slamT > 3.6) G.visible = false;
+    }
+    wfPose(C.C, C.yaw, C.pitch, C.roll);
+    C.songK = C.apex ? Math.max(0.2, 1.0 - (C.slamT || 0) * 0.2) : 0.6 + 0.4 * smooth01(0, 2.5, k);
+    C.look.lerp(_wfV.copy(C.C).setY(Math.max(6, C.C.y * 0.8 + 4)), 1 - Math.exp(-dt * 2.0));
+    C.fov = Math.min(settings.fov, 44);
+    // and it is over: gone for good, and you have your hands back
+    if (C.slam && C.slamT > 6.0) {
+      wbGone = true;
+      wbU.uWbFog.value = 1;
+      wbRemoveForGood();
+      wbFareCut = null;
+      lookEuler.setFromQuaternion(camera.quaternion, lookEuler.order); lookEuler.z = 0;
+      camera.quaternion.setFromEuler(lookEuler);
+      hovered = null;
+      autosaveNow();
+      return;
+    }
+  }
+  // the camera, turned onto what it is looking at
+  _wfM.lookAt(camera.position, C.look, camera.up);
+  _wfQ.setFromRotationMatrix(_wfM);
+  camera.quaternion.slerp(_wfQ, Math.min(1, dt * (C.cue.cut && t < T.cut + 0.3 ? 30 : 2.2)));
+}
+const _wfCol = new THREE.Color();
+let wbFareClearT = 0;
+
 /* ITS SONG, the owner's recording (40 s), from where it lies: heard from a
  * hundred and fifty metres as a low far thing coming through the surf,
  * clearer and louder the closer you come, and panned to where it is. It
@@ -56645,6 +57202,8 @@ function wbTailSplash() {
  * the rest. Inside it, it is still singing — through the body, dull. */
 function updateWhaleSong(dt) {
   const ctx = audioCtx; if (!ctx || !sfxBusGain || !wb) return;
+  // it has gone, and its song with it
+  if (wbGone && !wbFareCut) { if (wb.song) { wb.song.g.gain.setTargetAtTime(0, ctx.currentTime, 1.2); } return; }
   const bank = sampleBanks.whaleSong && sampleBanks.whaleSong[0];
   if (!wb.song) {
     if (!bank || !introDone) return;
@@ -56677,6 +57236,8 @@ function updateWhaleSong(dt) {
     }
     pn = THREE.MathUtils.clamp(panTo(m.x, m.z) * 0.55 * (0.4 + 0.6 * (1 - f)), -1, 1);
   }
+  // and as it goes it sings, loudest at the top of its leap
+  if (wbFareCut && !inWhale) { const sk = wbFareCut.songK || 0; k = Math.max(k, sk * 1.4); lpf = Math.max(lpf, 900 + 9000 * sk); }
   S.g.gain.setTargetAtTime(k * WB_SONG_LEVEL, t, 0.4);
   S.lp.frequency.setTargetAtTime(lpf, t, 0.4);
   S.pan.pan.setTargetAtTime(pn, t, 0.3);
@@ -72276,7 +72837,7 @@ window.__bw = {
   renderHotbar, renderPack,
   poseRig, UMBRA_JOINTS,   buildTavMoon, tavMoonState: () => tavMoon, tavMoonU, tavTorchState: () => tavTorches, tavLightU, keepLightState: () => keepLights, tavWallRay, babyUnit, placeCatBaby, babyHoldLeg, setBabyLegK: (k) => { BABY_LEG_K = k; }, catEnrage, setCatAvOff: (v) => { catAvOff = !!v; }, FOG_GROUND, CLOUD_SHADE_GLSL, SAND_EDGE_K, airState: () => air, cliffLipX, catWebs: () => catWebs, catWebShreds: () => catWebShreds, buildCatWebs, breakCatWeb, catLimbs: () => ({ tpl: limbsTpl, spots: catLimbSpots, gone: catBabyGone, eatGain: babyEatGain ? +babyEatGain.gain.value.toFixed(3) : null, eatSrc: !!babyEatSrc }),
   breakBonePile, catPiles: () => catSpots.eatRaw, catPilesGone, catSkullMeshes,
-  demonUnits, demonPack, updateDemonPack, parasiteUnits, placeInBunker, bunkerHomeG: () => bunkerHome, bleedRigG: () => bleedRig, sfxLockOpen, keyUsed,
+  demonUnits, demonPack, updateDemonPack, parasiteUnits, startWhaleFarewell, wfState: () => wbFareCut, wbGoneG: () => wbGone, wbObj: () => wb, placeInWhale, placeInBunker, bunkerHomeG: () => bunkerHome, bleedRigG: () => bleedRig, sfxLockOpen, keyUsed,
   crawlerUnit, CRAWL_X, CRAWL_Z, crawlerProvoke, startCaveIn, placeInCatacombs, placeOutsideCatDoor, startCatExit, startCatReturn, placeInsideCatDoor, fitCatSandDoor, catWallDoor, catRoute, catSees, catNodeAt, CAT_X, CAT_Y, CAT_Z, CAT_SITE, CAT_LAND, CAT_DOOR, CAVE_Z,
   TRADER_X, TRADER_Z, TRADER_H, TRADER_POSE, traderPose, TRADER_STOCK, traderBuy, TRADER_NPC, traderWorld, get traderRig() { return traderRig; },
   magnumItem, magModel, magFire, magReload, magTrace, MAG_CAP,
