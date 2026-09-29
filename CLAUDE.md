@@ -18336,8 +18336,13 @@ stone between; 2.5 ms a frame.
 swing, the chain and the charge and he reels for 1.7 s, then 1.8 s in which a
 round hurts but doesn't stun, so a cylinder isn't a lock. Not the young one.
 
-**THE TRADER STANDS OUTSIDE THE CASTLE** (`TRADER_Z` -1049.5, sixteen metres
-short of the gate), and he sells **6 Rounds** again: two jars, five boxes
+**THERE ARE TWO TRADERS.** The first stands where he always did (`TRADER_Z`,
+short of the stones); the second (`TRADER2_X/Z`, `trader2World`) at the foot of
+the dune sixteen metres short of the castle's gate. They share one stock. The
+second is the first man's posed skin BAKED into a plain mesh (`buildTrader2`) —
+a cloned skinned mesh keeps the original's skeleton and draws where he stands.
+`openShop(at)` sets `shopAt`, and only the castle's man (2) lists or sells
+**6 Rounds**: two jars, five boxes
 (`ammoV` on the save gives an older save that recorded the empty box its
 stock back). The row needs the .44 (`needs`), shows the loose rounds you carry
 as its stack, and its picture is drawn (`ammoIconItem`).

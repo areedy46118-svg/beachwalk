@@ -188,7 +188,7 @@ const ASSET_REACH = {
   'assets/reptilian.glb': 64,         // and the three waves of what is in there
   'assets/drone.glb': 65,
   'assets/alienbeast.glb': 66,
-  'assets/trader.glb': 1050,          // the man at the sand wall, outside the castle's gate
+  'assets/trader.glb': 738,           // the man at the sand wall, a little short of the stones (and his double at the castle)
   'assets/magnum.glb': 739,            // and the thing he has that the jars are for
   'assets/old-ring.glb': 739,          // and the old ring on his table, five jars
   'assets/portal.glb': 740,            // the stone circle, a hundred metres past the cave
@@ -14578,7 +14578,7 @@ function moundRole(m) {
 const _mdBox = new THREE.Box3();
 let moundBoxes = null, moundSettleAt = 0;
 function moundKeepOuts() {
-  const k = [[CAMP_X, CAMP_Z, 5], [TRIBE_X, TRIBE_Z, 9], [PORTAL_X, PORTAL_Z, 6.5], [TRADER_X, TRADER_Z, 3.2],
+  const k = [[CAMP_X, CAMP_Z, 5], [TRIBE_X, TRIBE_Z, 9], [PORTAL_X, PORTAL_Z, 6.5], [TRADER_X, TRADER_Z, 3.2], [TRADER2_X, TRADER2_Z, 3.2],
     [15, CAT_OUT_Z, 3.8], [CASTLE_X, CASTLE_Z, 3.4], [CORPSE_X, CORPSE_Z, 3.2]];
   for (const c of crates) if (!c.broken) k.push([c.x, c.z, 1.5]);
   return k;
@@ -46083,11 +46083,15 @@ const PORTAL_HEAR = 34;            // the hum reaches this far
  * hit proxy and a script, the snorkeler's own arrangement. His file ships
  * no clips, so the pose is composed onto the bind once at load and nothing
  * ever stamps over it — there is no mixer on him to argue with. */
-/* HE STANDS OUTSIDE THE CASTLE NOW, the owner's word: at the foot of the sand
- * wall sixteen metres short of the gate (the gate is at z -1065.85; `FORT_Z`
- * is declared twenty thousand lines below, so the number is written out),
- * which is the last thing you pass before the fight in the courtyard. */
-const TRADER_X = CLIFF_BLOCK_X - 1.35, TRADER_Z = -1049.5, TRADER_H = 1.84;
+/* TWO OF HIM, the owner's word: the first where he always stood, a little
+ * short of the stones, and a second at the foot of the sand wall sixteen
+ * metres short of the castle's gate (the gate is at z -1065.85; `FORT_Z` is
+ * declared twenty thousand lines below, so the number is written out). They
+ * share one stock — a thing sold at one is gone from both — and only the one
+ * at the castle has rounds for the .44 (`shopAt`). */
+const TRADER_X = CLIFF_BLOCK_X - 1.35, TRADER_Z = PORTAL_Z + 8.5, TRADER_H = 1.84;
+const TRADER2_X = CLIFF_BLOCK_X - 1.35, TRADER2_Z = -1049.5;
+let shopAt = 1;                       // which of them you are buying from
 /* AND THE ROUNDS ARE NOT HIS. He sold six for two jars, which made the one
  * thing a revolver is ABOUT — there are six and then there are none — a
  * thing you could simply buy your way out of. The owner's word: take them
@@ -46136,6 +46140,7 @@ function traderBuy(what) {
     magAmmo = 3; magSpare = 0;
     traderSaid = "Three in it. Don't point it at me.";
   } else if (what === 'ammo') {
+    if (shopAt !== 2) { traderSaid = 'Rounds? Not here.'; return; }
     if (!inventory.includes(magnumItem)) { traderSaid = 'Nothing to put them in. Buy the gun.'; return; }
     spendJars(price); TRADER_STOCK.ammo--;
     magSpare += MAG_CAP;
@@ -46312,7 +46317,8 @@ const SHOP_MODES = ['buy', 'upgrades', 'sell'];
 const SHOP_SAY = { buy: 'Just buy something...', upgrades: 'Want to carry more? It costs.', sell: 'Show me what you have.' };
 let shopMode = 'buy';
 // he only asks about what you are actually carrying
-const shopRows = () => (shopMode === 'sell' ? SELL_ROWS.filter((r) => r.count() > 0) : shopMode === 'upgrades' ? UPGRADE_ROWS : SHOP_ROWS);
+const shopRows = () => (shopMode === 'sell' ? SELL_ROWS.filter((r) => r.count() > 0) : shopMode === 'upgrades' ? UPGRADE_ROWS
+  : SHOP_ROWS.filter((r) => r.key !== 'ammo' || shopAt === 2));   // the rounds are the castle's man's alone
 // a stack that the pack shows as a count: sell one, and the slot goes with the last
 function sellFromStack(item) {
   item.count = Math.max(0, (item.count || 0) - 1);
@@ -46454,9 +46460,9 @@ function shopConfirm() {
   renderShop();
   setTimeout(() => { if (shopOpen) renderShop(); }, 720);     // the flash fades
 }
-function openShop() {
+function openShop(at = 1) {
   if (shopOpen || ended || dying || !introDone) return;
-  shopOpen = true;
+  shopOpen = true; shopAt = at;
   shopReturnLock = locked;
   // the lock is KEPT: a cursor of our own does the clicking (`vcActive`)
   if (held) dropHeld();
@@ -46529,7 +46535,41 @@ bwGlb('assets/trader.glb', (gltf) => {
   traderRig = root;
   traderWorld.add(root);
   traderPose();
+  buildTrader2();
 });
+/* THE SECOND MAN IS THE FIRST, BAKED. A skinned mesh cannot simply be
+ * cloned — the copy keeps the original's skeleton and draws wherever the
+ * first man stands — and he never moves: his pose is composed once, arms
+ * crossed. So his posed skin is read off vertex by vertex into a plain mesh
+ * in the same materials, and it stands at the castle. */
+const trader2World = new THREE.Group();
+trader2World.position.set(TRADER2_X, 0, TRADER2_Z);
+trader2World.rotation.y = -Math.PI / 2;
+scene.add(trader2World);
+function buildTrader2() {
+  if (!traderRig || trader2World.userData.built) return;
+  trader2World.userData.built = true;
+  traderWorld.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(traderWorld.matrixWorld).invert(), v = new THREE.Vector3();
+  traderRig.traverse((o) => {
+    if (!o.isMesh) return;
+    if (o.isSkinnedMesh && o.skeleton) o.skeleton.update();
+    const src = o.geometry, n = src.attributes.position.count, pos = new Float32Array(n * 3);
+    const m = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld);
+    for (let i = 0; i < n; i++) {
+      if (o.isSkinnedMesh) o.getVertexPosition(i, v); else v.fromBufferAttribute(src.attributes.position, i);
+      v.applyMatrix4(m); pos[i * 3] = v.x; pos[i * 3 + 1] = v.y; pos[i * 3 + 2] = v.z;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    if (src.attributes.uv) g.setAttribute('uv', src.attributes.uv);
+    if (src.index) g.setIndex(src.index);
+    for (const gr of src.groups) g.addGroup(gr.start, gr.count, gr.materialIndex);
+    g.computeVertexNormals();
+    const mesh = new THREE.Mesh(g, o.material);
+    trader2World.add(mesh);
+  });
+}
 const traderHit = new THREE.Group();
 {
   const hit = new THREE.Mesh(new THREE.BoxGeometry(0.9, TRADER_H, 0.9),
@@ -46540,7 +46580,19 @@ const traderHit = new THREE.Group();
 }
 addInteractable(traderHit, 'Buy something', 'npc', {
   far: 5.0, when: () => !dialogOpen && !shopOpen,
-  onActivate: () => openShop(),
+  onActivate: () => openShop(1),
+});
+const trader2Hit = new THREE.Group();
+{
+  const hit = new THREE.Mesh(new THREE.BoxGeometry(0.9, TRADER_H, 0.9),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy'; hit.visible = false; hit.position.y = TRADER_H / 2;
+  trader2Hit.add(hit);
+  trader2World.add(trader2Hit);
+}
+addInteractable(trader2Hit, 'Buy something', 'npc', {
+  far: 5.0, when: () => !dialogOpen && !shopOpen,
+  onActivate: () => openShop(2),
 });
 
 
@@ -73067,7 +73119,7 @@ window.__bw = {
   breakBonePile, catPiles: () => catSpots.eatRaw, catPilesGone, catSkullMeshes,
   demonUnits, demonPack, updateDemonPack, parasiteUnits, startWhaleFarewell, wfState: () => wbFareCut, CAT_SITE, CAT_DOOR, catSolid, setCatSolidOff: (v) => { catSolidOff = v; }, catLegBlocked, catDoorBody, gunStun, gunBlocks, blowWalled, blowLands, wbGoneG: () => wbGone, wbObj: () => wb, placeInWhale, placeInBunker, bunkerHomeG: () => bunkerHome, bleedRigG: () => bleedRig, sfxLockOpen, keyUsed,
   crawlerUnit, CRAWL_X, CRAWL_Z, crawlerProvoke, startCaveIn, placeInCatacombs, placeOutsideCatDoor, startCatExit, startCatReturn, placeInsideCatDoor, fitCatSandDoor, catWallDoor, catRoute, catSees, catNodeAt, CAT_X, CAT_Y, CAT_Z, CAT_SITE, CAT_LAND, CAT_DOOR, CAVE_Z,
-  TRADER_X, TRADER_Z, TRADER_H, TRADER_POSE, traderPose, TRADER_STOCK, traderBuy, TRADER_NPC, traderWorld, get traderRig() { return traderRig; },
+  TRADER_X, TRADER_Z, TRADER_H, TRADER_POSE, traderPose, TRADER_STOCK, traderBuy, TRADER_NPC, traderWorld, trader2World, TRADER2_X, TRADER2_Z, get shopAt() { return shopAt; }, get traderRig() { return traderRig; },
   magnumItem, magModel, magFire, magReload, magTrace, MAG_CAP,
   get magAmmo() { return magAmmo; }, set magAmmo(v) { magAmmo = v; },
   scrollHotbar, get wheelCursor() { return wheelCursor; }, get magSpare() { return magSpare; }, set magSpare(v) { magSpare = v; },
