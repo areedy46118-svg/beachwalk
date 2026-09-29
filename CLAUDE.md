@@ -18557,3 +18557,36 @@ doors found, 9,600 courtyard frames with nothing in stone or off the paving,
 22,614 frames walking at it from the beach with nothing inside the footprint,
 and the farmer fight unchanged at 34.7 damage a minute with three out.
 `tools/fortwalk.js` scales its own spots by `__bw.FORT_K`.
+
+**THE FARMERS FIGHT IN MOCAP, AND A BLOW THAT COUNTS IS A BLOW THAT
+TOUCHED YOU.** Measured before (`tools/farmhits.js`, `__hitsRun`: the fight
+hands-off, the player NOT pinned, looking at the nearest): 25 of 43 landed
+blows were scored with the weapon more than 0.35 m off the body (median
+0.49), because `limbR` was 0.7, the lunge started ON the contact frame so a
+swing thrown from 1.5 m landed with the head of the axe in the air, and the
+authored contact poses were beside him. Now:
+- **THEIR MOVES ARE RETARGETED** (`FARM_MOCAP`, `farmMocap`, applied late
+  through `u.parLate` if a pack has not landed): the knight's walks, runs,
+  strafes, side steps, hit reels, punch and swipe; the orc's idles, cuts,
+  chop, spin, leap, kick and hit reels; the zombie pack's punches, kicks and
+  head-butt. `poseRig` is taken BEFORE `farmStance`, or the stance is folded
+  into every retargeted frame.
+- **THE SWING TABLE IS MEASURED** (`FM(clip, contact, cock, Z)`: Z is how
+  far in front of him the striking end is at the contact); `stop` is a hand
+  short of Z, and `FARM_MOVES[tool]` maps each temperament's generic moves
+  (cut, chop, thrust, kick...) onto its tool's own rows.
+- **THE LUNGE ARRIVES WITH THE BLOW** (`lungeLead` 0.30): it starts that far
+  before the contact and, up to the contact, covers exactly what is left to
+  `stop`, so a player knocked back a step by the last blow is still reached.
+- `limbR` 0.32, `landSlop` 0.30, `bodyLow` 1.5 (the torso segment reaches
+  the thighs, where a kick lands), `aimDrop` 0.25.
+- **A FLINCH IS A SPRING ON THE SPINE** (`mutFlinch`, from the `hurtMutant`
+  wrapper; `lifeApply` turns waist, chest, neck, head and clavicles back
+  along the blow and twists, with a hip dip) and a slide off the blade
+  (`flinchPush`, clamped by the room).
+- **A BLOW INSIDE THE SHARED GATE STILL ARRIVES** (`grazePlayer`: flash,
+  sound, the head thrown by `hurtThrow`, no health), so you always see and
+  feel being hit. The gate is 1.05 s.
+Measured after, three 40 s samples: 55-62 swings a minute, **every blow
+landed within 0.32 m of the body, 0-1 scored further**, and 49.5-57 damage a
+minute against the 52 it was.

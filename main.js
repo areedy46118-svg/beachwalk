@@ -6865,7 +6865,7 @@ function spatterLens(k) {
  * you rather than a number nobody can see. A turned blow still arrives —
  * the flash, the shove, the sound — or it reads as the game missing you. */
 let dmgBank = 0;
-function damagePlayer(n = 1) {
+function damagePlayer(n = 1, from = null) {
   if (dying || ended || !introDone) return;
   if (dodgedBlow()) return;              // it went past you: that is what the step is for
   const neg = 1 - dmgTakeK();
@@ -6892,7 +6892,34 @@ function damagePlayer(n = 1) {
   // shoved back off whatever hit you — a crab or the thing past the pavilion,
   // whichever is actually nearer; asking only for a crab knocked you away from
   // one three hundred metres back up the beach
-  const hitter = nearestFoe(camera.position);
+  /* AND IT IS THE ONE THAT HIT YOU WHO THROWS YOU. Asking for the nearest
+   * foe was right with one of them on you and wrong with three: the shove
+   * and the head's snap came from whichever farmer happened to be closest,
+   * so a blow from your left threw your head at the man in front. */
+  const hitter = (from && from.g) || nearestFoe(camera.position);
+  hurtThrow(hitter, k, 1);
+  if (hp <= 0) playerDied();
+}
+/* A BLOW THAT LANDS INSIDE THE SHARED HURT GATE STILL LANDS. Several of
+ * them swinging at once is meant to be frightening and not a death you
+ * could not see, so two blows inside the gate are one hurt — and the second
+ * used to arrive as a faint shake and nothing else, which is the whole of
+ * "I can't tell when I'm being hit": the weapon visibly went into you and
+ * the game said nothing. It gets everything a hit gets but the health and
+ * the blood on the glass: the flash, the sound, the head thrown the way the
+ * blow came, the shove. */
+function grazePlayer(from, k = 0.62) {
+  if (dying || ended || !introDone) return;
+  if (dodgedBlow()) return;
+  hurtFlash = Math.max(hurtFlash, 0.55);
+  sfxHurt(k);
+  addTrauma(Math.min(1, 0.6 * k));
+  hitstop = Math.max(hitstop, 0.03);
+  fovKick = Math.max(fovKick, 4 * k);
+  slamDip = Math.max(slamDip, 0.03 * k);
+  hurtThrow((from && from.g) || nearestFoe(camera.position), k, 0.75);
+}
+function hurtThrow(hitter, k, shove) {
   if (hitter) {
     const kx = camera.position.x - hitter.position.x, kz = camera.position.z - hitter.position.z;
     const kd = Math.hypot(kx, kz) || 1;
@@ -6903,7 +6930,7 @@ function damagePlayer(n = 1) {
      * the room in slow motion: "lagging across the room". The same kick
      * dies four times as fast now, so a blow moves you a third of a metre in
      * a fifth of a second and the room stays where you left it. */
-    knockback.set((kx / kd) * 7.5 * k, 0, (kz / kd) * 7.5 * k);
+    knockback.set((kx / kd) * 7.5 * k * shove, 0, (kz / kd) * 7.5 * k * shove);
     /* AND WHICH WAY IT THREW YOU. The blow comes from where the thing that
      * threw it is standing, so the head goes the other way: struck from your
      * right and it snaps left, struck from in front and it snaps up. Both
@@ -6920,7 +6947,6 @@ function damagePlayer(n = 1) {
     hurtPitchK = 0.062 * k;
   }
   hurtShock = 1; hurtShockV = 0;         // released from the peak: a head is thrown, not eased
-  if (hp <= 0) playerDied();
 }
 function playerDied() {
   if (dying) return;
@@ -29476,7 +29502,7 @@ function mutLandBlow(u, dmg) {
    * sound, the knock — and takes no health. A full combo costs three. */
   if (u.kind.comboGrace) {
     const now = performance.now();
-    if (u.st.lastLand && now - u.st.lastLand < u.kind.comboGrace * 1000) { addTrauma(0.25); sfxHurt && sfxHurt(0.4); return; }
+    if (u.st.lastLand && now - u.st.lastLand < u.kind.comboGrace * 1000) { grazePlayer(u, 0.5); return; }
     u.st.lastLand = now;
   }
   /* AND SEVEN OF THEM SHARE ONE: two blows from two demons landing inside
@@ -29484,10 +29510,10 @@ function mutLandBlow(u, dmg) {
    * be frightening, not a death you could not have seen. */
   if (u.kind.whaleBody || u.kind.farmer) {
     const now = performance.now();
-    if (now - demonLastLand < (u.kind.farmer ? 950 : 420)) { addTrauma(0.25); sfxHurt && sfxHurt(0.4); return; }
+    if (now - demonLastLand < (u.kind.farmer ? 1050 : 420)) { grazePlayer(u); return; }
     demonLastLand = now;
   }
-  damagePlayer(dmg);
+  damagePlayer(dmg, u);
 }
 let demonLastLand = 0;
 /* A BLOW HAS TO BE ABLE TO REACH YOU UP OR DOWN AS WELL AS ACROSS. The
@@ -29536,7 +29562,7 @@ function blowLands(u) {
   if (_dbC.divideScalar(dist).dot(_dbF) < 0.35) return false;        // behind him or wide of him: no
   const B = u.bones;
   if (!B || !B.hand) return dist < 1.9;
-  const top = foe.y + 0.15, bot = foe.y - 1.15;
+  const top = foe.y + 0.15, bot = foe.y - (u.kind.bodyLow || 1.15);   // a kind that kicks and sweeps may reach your legs
   /* THE WHOLE LIMB, NOT THE LAST HAND'S BREADTH OF IT. The first version
    * sampled the weapon alone — the grip out to the tip — and it was wrong
    * for exactly the swing it most needed to be right for: the aim puts the
@@ -29688,7 +29714,31 @@ function hurtMutant(u, dmg, P = 0, from = null) {
   const hp0 = u.st ? u.st.hp : 0;
   const r = hurtMutantCore(u, dmg, P, from);
   if (!from && bloodHeld() && !r && u.st.alive && !u.st.struck && u.st.hp < hp0 && !u.kind.baby) bleedBuild(u, P);
+  if (!r && u.st && u.st.alive && u.st.hp < hp0 && u.kind.flinch) mutFlinch(u, P, from);
   return r;
+}
+/* A BLOW THAT LANDS MOVES HIM, WHETHER OR NOT IT BREAKS HIM. A light hit
+ * spends poise and returns without a reel — that is the design, and it is
+ * what makes the pool worth emptying — so on a man with a poise pool most
+ * cuts that went in showed NOTHING: the owner could not tell he was hitting
+ * them. `kind.flinch` is a reaction layered on top of whatever clip is
+ * playing (`lifeApply`): the trunk thrown away from the blow and the head
+ * snapped further, the hips giving, a twist, and a short shove off the
+ * blade — all on a spring released from its peak, gone in a third of a
+ * second, and none of it touching his swing, his tell or his timing, so the
+ * fight is exactly as hard as it was. */
+const _flD = new THREE.Vector3();
+function mutFlinch(u, P = 0, from = null) {
+  if (!u.life) return;
+  const g = u.g.position;
+  if (from && from.g) _flD.set(g.x - from.g.position.x, 0, g.z - from.g.position.z);
+  else _flD.set(g.x - camera.position.x, 0, g.z - camera.position.z);
+  if (_flD.lengthSq() < 1e-6) _flD.set(Math.sin(u.g.rotation.y), 0, Math.cos(u.g.rotation.y)).negate();
+  _flD.normalize();
+  const k = Math.min(1.35, (0.62 + P * 0.55) * (u.kind.flinch || 1));
+  u.life.flinch = { t: 0, k, x: _flD.x, z: _flD.z, tw: (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.5) };
+  // the shove: a hand's breadth off the blade on a click, most of a stride on a heavy — never through a swing's own lunge
+  u.st.flinchPush = { x: _flD.x, z: _flD.z, v: 1.1 + P * 1.8 };
 }
 function hurtMutantCore(u, dmg, P = 0, from = null) {
   if (!u.st.alive || u.st.struck) return false;
@@ -32340,6 +32390,12 @@ function updateMutantUnit(u, dt) {
     if (u.kind.talks && dialogOpen && !menuOpen && !inspecting && !u.holdAnim) mutAnim(u, dt, 0);
     return;
   }
+  // a flinch's shove off the blade (`mutFlinch`): a quick slide that dies in a fifth of a second, held by the room like any other move
+  if (u.st.flinchPush) {
+    const F = u.st.flinchPush;
+    if (F.v < 0.05 || (u.st.down || 0) > 0) u.st.flinchPush = null;
+    else { p.x += F.x * F.v * dt; p.z += F.z * F.v * dt; F.v *= Math.exp(-dt * 11); mutClampX(u, p, dt); }
+  }
 
   /* A DEAD FOE IS NOBODY'S FOE: the survivor of the tavern's fight turns on
    * the one thing left in the room, which is you. */
@@ -32863,9 +32919,23 @@ function updateMutantUnit(u, dt) {
      * out than a punch, which is also simply what a kick is. */
     const stop = A.stop != null ? A.stop
       : (u.kind.lungeStop != null ? u.kind.lungeStop : Math.max(1.3, (u.kind.body || 0.9) + 0.15));
-    if (A.lunge > 0 && t >= A.wind - air && t < A.wind + A.strike + 0.12 && dist > stop) {
+    /* AND A LUNGE THAT STARTS ON THE CONTACT FRAME ARRIVES AFTER THE BLOW.
+     * The pack's lunge covers ground THROUGH the strike, so on the frame the
+     * damage is scored the creature is still where it threw from — measured
+     * on the farmers, 1.4 to 1.6 m out with the axe's head 0.4 to 0.9 m from
+     * the shoulder, which is a blow that cannot reach and was scored anyway
+     * off a body test 0.7 m wide. `lungeLead` starts the closing that many
+     * seconds before the contact, so the body arrives WITH the weapon. */
+    const lead = Math.min(A.wind * 0.5, u.kind.lungeLead || 0);
+    if (A.lunge > 0 && t >= A.wind - air - lead && t < A.wind + A.strike + 0.12 && dist > stop) {
       u.dir.set(dx / dist, 0, dz / dist);
-      p.addScaledVector(u.dir, (A.lunge / (air + A.strike + 0.12)) * dt);
+      let sp = A.lunge / (air + lead + A.strike + 0.12);
+      /* and with a lead it CLOSES THE GAP THAT IS THERE: a fixed speed from
+       * wherever the swing was thrown left him half a metre short whenever
+       * your last blow's knockback had put you back a step. Up to the
+       * contact frame he covers exactly what is left to his stop. */
+      if (lead > 0 && t < A.wind) sp = Math.max(sp, (dist - stop) / Math.max(0.06, A.wind - t));
+      p.addScaledVector(u.dir, Math.min(sp, MUT_SPEED * 2.4) * dt);
     }
     // a chained swing STEPS IN through its startup: the first blow's own
     // knockback put you out of reach, and a follow-up that stands still is
@@ -70078,6 +70148,29 @@ function lifeApply(u, B, dt, saved) {
   const lift = F ? (F.up || 0) * S.faceW : 0;
   lifeTurn(B.neck, _lfU, S.look.x * 0.38 * lw); lifeTurn(B.neck, right, -S.look.y * 0.38 * lw - lift * 0.4);
   lifeTurn(B.head, _lfU, S.look.x * 0.62 * lw); lifeTurn(B.head, right, -S.look.y * 0.62 * lw + br * 0.6 - lift * 0.6);
+  /* THE FLINCH (`mutFlinch`): a spring released from its peak — the body is
+   * thrown on the frame the blow lands, overshoots a little on the way back
+   * and is done in a third of a second. The axis is up x the blow's line, so
+   * a positive turn carries the top of him ALONG the blow, away from it. */
+  const Fl = S.flinch;
+  if (Fl && st.alive) {
+    Fl.t += dt;
+    const a = Fl.k * Math.exp(-Fl.t * 7.0) * Math.cos(Fl.t * 10.5);
+    if (Fl.t > 0.8) S.flinch = null;
+    else {
+      _lfA.set(Fl.z, 0, -Fl.x);                    // up x (x, 0, z)
+      lifeTurn(B.waist, _lfA, 0.16 * a); lifeTurn(B.chest, _lfA, 0.26 * a);
+      lifeTurn(B.neck, _lfA, 0.16 * a); lifeTurn(B.head, _lfA, 0.34 * a);
+      lifeTurn(B.chest, _lfU, 0.14 * a * Fl.tw); lifeTurn(B.head, _lfU, 0.20 * a * Fl.tw);
+      lifeTurn(B.clavL, _lfA, 0.12 * a); lifeTurn(B.clavR, _lfA, 0.12 * a);
+      if (B.hip && B.hip.parent) {                 // the knees give
+        B.hip.parent.getWorldQuaternion(_lfP).invert();
+        const ps = B.hip.parent.getWorldScale(_lfV).x || 1;
+        _lfA.copy(_lfU).applyQuaternion(_lfP).normalize();
+        B.hip.position.addScaledVector(_lfA, -0.07 * Math.max(0, a) / ps);
+      }
+    }
+  }
 }
 function authorOrcClips(u, m, gltf) {
   orcFixSword(u, m);
@@ -73421,9 +73514,68 @@ MUT_ATTACKS.fHead   = { wind: 0.42, strike: 0.08, recover: 0.34, hit: 0.50,   re
 MUT_ATTACKS.fTackle = { wind: 0.60, strike: 0.15, recover: 0.55, hit: 0.46,   reach: 3.80, lunge: 3.2, chain: 'fJab', chainP: 0.5, w: 0.1, guardK: 1.6, limbs: [1, 4], minDist: 2.6 };
 MUT_ATTACKS.fKick   = { wind: 0.34, strike: 0.10, recover: 0.34, hit: 0.436,  reach: 1.85, lunge: 1.0, chain: 'fHack', chainP: 0.35, w: 0.1, guardK: 1.1, limbs: [2] };
 
+/* ---- AND THE BLOWS THEY THROW NOW, OUT OF THE MOTION CAPTURE. Every row is
+ * measured on the farmer holding the tool, not guessed and not copied off the
+ * orc (a great sword reaches where a hatchet does not):
+ *   c     the contact: the frame the striking end is most squarely in front of
+ *         him while it is still moving fast (the source packs' own "fastest"
+ *         frame put the axe's head beside his ear on half of these);
+ *   cock  the top of the backswing, as a fraction of the way to the contact —
+ *         the tell is HELD there (`real`), and the stroke from it is played
+ *         at `rate`, so a real swing arrives fast after a readable hold;
+ *   Z     how far in front of him the head (or fist, or boot) is at the
+ *         contact. He stops a hand short of that (`stop`), so the weapon
+ *         arrives in you, and the lunge brings him there WITH it (`lungeLead`).
+ * limbs: 0 his right arm (the tool), 1 the left, 2 the right leg. */
+{
+  const FM = (clip, c, cock, Z, o) => Object.assign({
+    hit: c, cock, real: true, ease: true, clipRate: 1.6, strike: 0.10, recover: 0.38,
+    reach: Z + 1.05, lunge: 1.25, stop: Math.max(0.74, Z - 0.06), chain: null, chainP: 0, w: 0.2, guardK: 1.1, limbs: [0], clip,
+  }, o);
+  const A = MUT_ATTACKS;
+  // the axe
+  A.axCut  = FM('mCut',  0.637, 0.42, 0.87, { wind: 0.50, clipRate: 1.9, chain: 'axCutD', chainP: 0.45 });
+  A.axCutC = FM('mCutC', 0.432, 0.56, 1.35, { wind: 0.46, clipRate: 1.6, chain: 'axChop', chainP: 0.30, guardK: 1.0 });
+  A.axCutD = FM('mCutD', 0.383, 0.44, 1.00, { wind: 0.44, clipRate: 1.6, chain: 'axCut', chainP: 0.45, guardK: 1.0 });
+  A.axChop = FM('mChop', 0.754, 0.40, 0.76, { wind: 0.62, clipRate: 1.9, recover: 0.44, guardK: 1.5 });
+  A.axSpin = FM('mSpin', 0.578, 0.46, 1.21, { wind: 0.60, clipRate: 2.0, strike: 0.14, chain: 'axCut', chainP: 0.35, guardK: 1.3 });
+  A.axLeap = FM('mLeap', 0.539, 0.65, 1.11, { wind: 0.90, clipRate: 1.2, recover: 0.50, reach: 5.2, lunge: 3.8, hold: true, minDist: 2.5, chain: 'axCut', chainP: 0.45, guardK: 1.5 });
+  A.axKick = FM('mZKick', 0.442, 0.50, 0.74, { wind: 0.36, clipRate: 1.4, limbs: [2], chain: 'axCut', chainP: 0.35 });
+  // the hammer: the same strokes, a shorter head
+  A.hmCut  = FM('mCut',  0.647, 0.41, 0.64, { wind: 0.52, clipRate: 1.9, chain: 'hmCutD', chainP: 0.45 });
+  A.hmCutC = FM('mCutC', 0.422, 0.57, 1.04, { wind: 0.48, clipRate: 1.6, chain: 'hmChop', chainP: 0.30 });
+  A.hmCutD = FM('mCutD', 0.373, 0.46, 0.77, { wind: 0.46, clipRate: 1.6, chain: 'hmCut', chainP: 0.45 });
+  A.hmChop = FM('mChop', 0.744, 0.40, 0.54, { wind: 0.66, clipRate: 1.9, recover: 0.46, guardK: 1.6 });
+  A.hmSpin = FM('mSpin', 0.569, 0.51, 0.94, { wind: 0.62, clipRate: 2.0, strike: 0.14, chain: 'hmCut', chainP: 0.35, guardK: 1.3 });
+  A.hmLeap = FM('mLeap', 0.549, 0.64, 0.80, { wind: 0.92, clipRate: 1.2, recover: 0.50, reach: 5.0, lunge: 3.8, hold: true, minDist: 2.5, chain: 'hmCut', chainP: 0.45, guardK: 1.5 });
+  // the rake, used as a spear
+  A.rkThrust = FM('mPunch',   0.247, 0.57, 1.50, { wind: 0.40, clipRate: 1.1, chain: 'rkThrust', chainP: 0.45, guardK: 0.9 });
+  A.rkCut    = FM('mCut',     0.481, 0.58, 1.59, { wind: 0.46, clipRate: 1.4, chain: 'rkCutD', chainP: 0.40 });
+  A.rkCutD   = FM('mCutD',    0.373, 0.46, 1.51, { wind: 0.44, clipRate: 1.6, chain: 'rkThrust', chainP: 0.40 });
+  A.rkChop   = FM('mChop',    0.744, 0.40, 1.26, { wind: 0.64, clipRate: 1.9, recover: 0.44, guardK: 1.5 });
+  A.rkSwipe  = FM('mSwipe',   0.490, 0.30, 1.00, { wind: 0.50, clipRate: 1.8, chain: 'rkThrust', chainP: 0.35 });
+  A.rkLunge  = FM('mZPunch2', 0.529, 0.74, 1.60, { wind: 0.56, clipRate: 1.2, reach: 3.9, lunge: 2.4, minDist: 2.3, chain: 'rkCutD', chainP: 0.35, guardK: 1.25 });
+  // his fists and his boots
+  A.fsPunch = FM('mPunch',   0.276, 0.51, 0.82, { wind: 0.30, clipRate: 1.2, chain: 'fsJab', chainP: 0.55, guardK: 0.9 });
+  A.fsJab   = FM('mZPunch',  0.305, 0.40, 0.83, { wind: 0.24, clipRate: 1.3, limbs: [1], chain: 'fsHook', chainP: 0.50, guardK: 0.7 });
+  A.fsHook  = FM('mZPunch2', 0.744, 0.53, 0.76, { wind: 0.46, clipRate: 2.6, chain: 'fsPunch', chainP: 0.35, guardK: 1.0 });
+  A.fsKick  = FM('mZKick',   0.442, 0.50, 0.78, { wind: 0.36, clipRate: 1.4, limbs: [2], chain: 'fsPunch', chainP: 0.35 });
+  A.fsKick2 = FM('mZKick2',  0.481, 0.42, 0.67, { wind: 0.42, clipRate: 1.8, limbs: [2], chain: 'fsJab', chainP: 0.35 });
+  A.fsSwipe = FM('mSwipe',   0.481, 0.44, 0.74, { wind: 0.44, clipRate: 2.0, limbs: [0, 1], chain: 'fsJab', chainP: 0.35 });
+}
+/* A temperament's moves are GENERIC (a cut, a thrust, a kick); what they are
+ * on a given man depends on what is in his fist — the roster lends tools
+ * across temperaments — so each is resolved per tool here. */
+const FARM_MOVES = {
+  axe:    { cut: 'axCut', cutC: 'axCutC', cutD: 'axCutD', chop: 'axChop', spin: 'axSpin', leap: 'axLeap', kick: 'axKick', thrust: 'axCutD', lunge: 'axLeap', swipe: 'axCutC', punch: 'axCut', jab: 'axCutD', hook: 'axCutC', kick2: 'axKick' },
+  hammer: { cut: 'hmCut', cutC: 'hmCutC', cutD: 'hmCutD', chop: 'hmChop', spin: 'hmSpin', leap: 'hmLeap', kick: 'axKick', thrust: 'hmCutD', lunge: 'hmLeap', swipe: 'hmCutC', punch: 'hmCut', jab: 'hmCutD', hook: 'hmCutC', kick2: 'axKick' },
+  rake:   { cut: 'rkCut', cutC: 'rkCut', cutD: 'rkCutD', chop: 'rkChop', spin: 'rkSwipe', leap: 'rkLunge', kick: 'axKick', thrust: 'rkThrust', lunge: 'rkLunge', swipe: 'rkSwipe', punch: 'rkThrust', jab: 'rkThrust', hook: 'rkSwipe', kick2: 'axKick' },
+  fist:   { cut: 'fsSwipe', cutC: 'fsHook', cutD: 'fsPunch', chop: 'fsHook', spin: 'fsSwipe', leap: 'fsKick2', kick: 'fsKick', thrust: 'fsPunch', lunge: 'fsKick2', swipe: 'fsSwipe', punch: 'fsPunch', jab: 'fsJab', hook: 'fsHook', kick2: 'fsKick2' },
+};
+
 /* ---- WHAT THEY HAVE IN COMMON, and the eight ways of being one. */
 const FARM_BASE = {
-  solo: true, fortBody: true, farmer: true, noSand: true, gaitBySpeed: true, velGait: true, gaitMax: 1.7, lungeK: 0.55, headPop: true, faceFix: 0,
+  solo: true, fortBody: true, farmer: true, noSand: true, gaitBySpeed: true, velGait: true, gaitMax: 1.7, lungeK: 0.55, headPop: true, faceFix: 0, facingRef: 'mixamo',
   h: 1.84, hp: 4, dmg: 1, hitR: 0.62, body: 0.42, lungeStop: 1.05, landSlop: 0.45,
   speedK: 1.25, windK: 0.96, reachK: 1.0, aggr: 2.2, press: 0.85, chainMax: 2, pressMax: 3,
   frenzy: true, bursts: 2, holdR: 4.2, pressW: 1, pressT: 5,
@@ -73431,7 +73583,14 @@ const FARM_BASE = {
   poise: 2, poiseBack: 1.4, poiseWait: 1.0, parryK: 1.2, recoilK: 0.95, stunK: 1.0, blockCost: 0.45, block: 0,
   fidgetK: 0.3, fidgetGap: 2.2,
   aimed: true, barLen: 0.18, aimK: 2.0,
-  stunClip: 'hitBig', first: 'idle', wakeAt: 0,
+  stunClip: 'mParry', first: 'idle', wakeAt: 0,
+  /* A BLOW COUNTS WHEN THE WEAPON IS IN YOU. The body a blow was tested
+   * against was 0.7 m round your spine, so a swing "hit" the moment it came
+   * near — measured, 25 of 43 counted blows scored with the weapon more than
+   * 35 cm off you. A body's width now, from the shins (they kick and sweep)
+   * to the head, and the lunge closes WITH the blow (`lungeLead`) so it
+   * arrives rather than being thrown from where he stood. */
+  limbR: 0.32, landSlop: 0.30, bodyLow: 1.5, lungeLead: 0.30, aimDrop: 0.25, flinch: 1.0,
   /* A KILLING BLOW THROWS THEM ACROSS THE STREET: a harder kick, the cap on a
    * first flight raised, and the leash on how far a body may travel let out
    * to match. The castle's walls hold them (`fortBody`'s ragdoll flag). */
@@ -73442,26 +73601,26 @@ const FARM_BASE = {
   tint: 0x8a93a8, emis: 0.10, rim: [0.05, 0.06, 0.085], gamma: 1.0,
   claws: 1.25, clawRe: /Hand(Thumb|Index|Middle|Ring|Pinky)\d_/,
   author: (u, m) => authorFarmerClips(u, m), pre: (u, g) => farmPre(u, g),
-  anim: { idle: 'idle', walk: 'walk', run: 'run', roar: 'rCry', die: 'hitBig', back: 'back', rate: 1.0, lean: 0.0, strafeK: 1.0 },
-  alias: { idle2: 'idleB', walk2: 'walkB', run2: 'runB', roar2: 'rShake', die2: 'hitBig', calm: 'idle', hit: 'hit', hitSide: 'hitB', hitBack: 'hitBig',
-           hitHead: 'hit', parry: 'hitBig', block: 'hit', blockC: 'hit' },
+  anim: { idle: 'mIdle', walk: 'mWalk', run: 'mRun', roar: 'rCry', die: 'mHitBig', back: 'mWalk', rate: 1.0, lean: 0.0, strafeK: 1.0 },
+  alias: { idle2: 'mIdleB', walk2: 'mWalkC', run2: 'mRunB', roar2: 'rShake', die2: 'mHitBig', calm: 'mIdle', hit: 'mHit', hitSide: 'mHitSide', hitBack: 'mHitBack',
+           hitHead: 'mHitHead', hitBig: 'mHitBig', parry: 'mParry', block: 'mHit', blockC: 'mHit' },
   voice: { f: 1.0, growl: 0.9, rasp: 1.0, throat: 'man', pitch: 130, form: 1 },
 };
 const FARM_KINDS = {
-  brawler: { tool: null, use: { fJab: 0.26, fCross: 0.2, fHook: 0.2, fHead: 0.12, fTackle: 0.1, fKick: 0.12 }, idles: ['idle', 'idleC'], roar: 'rBeat', out: ['bCharge', 'bKick'],
+  brawler: { tool: null, moves: { punch: 0.28, jab: 0.24, hook: 0.14, kick: 0.16, kick2: 0.10, swipe: 0.08 }, idles: ['idle', 'idleC'], roar: 'rBeat', out: ['bCharge', 'bKick'],
              hp: 5, speedK: 1.30, aggr: 2.1, windK: 0.94, poise: 3, bursts: 3, barLen: 0.12 },
-  hacker:  { tool: 'axe', use: { fChop: 0.3, fHack: 0.28, fBack: 0.24, fFlurry: 0.1, fKick: 0.08 }, idles: ['idle'], roar: 'rCry', out: ['bCharge', 'bSprint'], hp: 4 },
-  stabber: { tool: 'rake', at: 0.42, spear: 0.7, use: { fThrust: 0.42, fLunge: 0.18, fSweep: 0.22, fKick: 0.1, fJab: 0.08 }, idles: ['idle', 'idleD'], roar: 'rShake', out: ['bSprint', 'bStumble'],
+  hacker:  { tool: 'axe', moves: { cut: 0.30, cutD: 0.26, cutC: 0.20, chop: 0.14, kick: 0.10 }, idles: ['idle'], roar: 'rCry', out: ['bCharge', 'bSprint'], hp: 4 },
+  stabber: { tool: 'rake', at: 0.42, spear: 0.7, moves: { thrust: 0.34, cutD: 0.18, cut: 0.16, lunge: 0.12, swipe: 0.10, kick: 0.10 }, idles: ['idle', 'idleD'], roar: 'rShake', out: ['bSprint', 'bStumble'],
              hp: 4, reachK: 1.15, holdR: 4.8, lungeStop: 1.35 },
-  smith:   { tool: 'hammer', use: { fUpper: 0.26, fSlam: 0.16, fHack: 0.24, fBack: 0.22, fHead: 0.12 }, idles: ['idleC'], roar: 'rBeat', out: ['bKick', 'bCharge'],
+  smith:   { tool: 'hammer', moves: { chop: 0.24, cut: 0.26, cutD: 0.20, cutC: 0.16, kick: 0.14 }, idles: ['idleC'], roar: 'rBeat', out: ['bKick', 'bCharge'],
              hp: 6, speedK: 1.12, windK: 1.0, poise: 3 },
-  maniac:  { tool: 'axe', use: { fSpin: 0.26, fFlurry: 0.24, fHack: 0.2, fLeap: 0.14, fBack: 0.16 }, idles: ['idleB'], roar: 'rShake', out: ['bLeap', 'bSprint'],
+  maniac:  { tool: 'axe', moves: { spin: 0.24, cut: 0.20, cutC: 0.18, leap: 0.14, cutD: 0.24 }, idles: ['idleB'], roar: 'rShake', out: ['bLeap', 'bSprint'],
              hp: 3, speedK: 1.45, aggr: 2.4, windK: 0.9, feint: 0.18, chainMax: 3, pressW: 1.5 },
-  coward:  { tool: 'rake', at: 0.30, spear: 0.7, use: { fThrust: 0.3, fHack: 0.3, fJab: 0.2, fKick: 0.2 }, idles: ['idleD'], roar: 'rCry', out: ['bStumble'],
+  coward:  { tool: 'rake', at: 0.30, spear: 0.7, moves: { thrust: 0.34, cut: 0.22, kick: 0.20, swipe: 0.24 }, idles: ['idleD'], roar: 'rCry', out: ['bStumble'],
              hp: 3, flank: true, circle: 0.5, feint: 0.25, pressW: 0.6, holdR: 5.5, speedK: 1.32 },
-  brute:   { tool: 'axe', use: { fSlam: 0.3, fChop: 0.28, fHead: 0.14, fTackle: 0.14, fUpper: 0.14 }, idles: ['idleC'], roar: 'rBeat', out: ['bKick'],
-             hp: 8, h: 2.04, speedK: 1.06, windK: 1.08, poise: 5, recoilK: 0.7, swDmg: { fSlam: 2 }, bursts: 3, pressT: 8 },
-  jumper:  { tool: 'axe', use: { fLeap: 0.3, fChop: 0.25, fHack: 0.25, fSweep: 0.2 }, idles: ['idle', 'idleB'], roar: 'rCry', out: ['bLeap'], hp: 4, speedK: 1.36, aggr: 2.0 },
+  brute:   { tool: 'axe', moves: { chop: 0.30, cut: 0.28, cutD: 0.20, kick: 0.12, spin: 0.10 }, idles: ['idleC'], roar: 'rBeat', out: ['bKick'],
+             hp: 8, h: 2.04, speedK: 1.06, windK: 1.08, poise: 5, recoilK: 0.7, dmgMoves: { chop: 2 }, bursts: 3, pressT: 8 },
+  jumper:  { tool: 'axe', moves: { leap: 0.30, cut: 0.25, cutD: 0.25, cutC: 0.20 }, idles: ['idle', 'idleB'], roar: 'rCry', out: ['bLeap'], hp: 4, speedK: 1.36, aggr: 2.0 },
 };
 /* THE TWENTY. The first three are one of each file with his own tool, so
  * every tool has been measured before anyone who borrows it is dressed. */
@@ -73492,10 +73651,20 @@ FARM_ROSTER.forEach((R, i) => {
   const bones = {};
   for (const n in (R.bones || {})) bones[FJ(R.f, n)] = R.bones[n];
   const J = farmJoints(R.f);
+  /* his moves, as they are in HIS fist: the generic set resolved against the
+   * tool, every chain it can lead into owned at a whisper (a chain into a
+   * swing a kind does not own is dropped), and each named for its clip */
+  const tool = R.tool !== undefined ? R.tool : P.tool;
+  const MV = FARM_MOVES[tool || 'fist'];
+  const use = {}, alias = Object.assign({}, FARM_BASE.alias), swDmg = {};
+  for (const g in P.moves) { const k = MV[g]; use[k] = (use[k] || 0) + P.moves[g]; if (P.dmgMoves && P.dmgMoves[g]) swDmg[k] = P.dmgMoves[g]; }
+  for (let pass = 0; pass < 3; pass++) for (const k in use) { const c = MUT_ATTACKS[k] && MUT_ATTACKS[k].chain; if (c && !(c in use)) use[c] = 0.0001; }
+  for (const k in use) if (MUT_ATTACKS[k] && MUT_ATTACKS[k].clip) alias[k] = MUT_ATTACKS[k].clip;
   MUT_KINDS['farmer' + i] = Object.assign({}, FARM_BASE, P, {
-    glb: FARM_FILE[R.f], file: R.f, keep: R.keep, tool: R.tool !== undefined ? R.tool : P.tool, at: P.at, spear: (R.tool || P.tool) === 'rake' ? P.spear || 0.7 : 0, bones,
-    h: R.h, tint: R.tint,
-    gaits: { walk: ['walk', 'walkB'], run: R.p === 'coward' ? ['run'] : ['run', 'runB'], idle: P.idles, strafeL: ['strafeL'], strafeR: ['strafeR'] },
+    glb: FARM_FILE[R.f], file: R.f, keep: R.keep, tool, at: P.at, spear: tool === 'rake' ? P.spear || 0.7 : 0, bones,
+    h: R.h, tint: R.tint, use, alias, swDmg,
+    gaits: { walk: ['mWalk', 'mWalkC'], run: R.p === 'coward' ? ['mRun'] : ['mRun', 'mRunB'], idle: ['mIdle', 'mIdleB'], strafeL: ['mStrL', 'mStrL2'], strafeR: ['mStrR', 'mStrR2'] },
+    stepClip: ['mSideL', 'mSideR'],
     anim: Object.assign({}, FARM_BASE.anim, { roar: P.roar }),
     rag: farmRag(R.f),
     rig: { arm: J.armR, fore: J.foreR, hand: J.handR, armL: J.armL, foreL: J.foreL, handL: J.handL, head: J.head,
@@ -73553,8 +73722,49 @@ function farmStance(m, J) {
 /* THE CLIPS ARE SHARED BY FILE. They are quaternion tracks on the file's own
  * bone names from one stance, so every man built on that file plays the same
  * set — authored three times, not twenty. */
+/* ---- THE MOVES ARE MOTION CAPTURE NOW. Every blow, walk and flinch they
+ * had was posed here by hand on waypoints, and the owner's word on them was
+ * stiff, janky, and that he could not tell when they were hitting him: the
+ * arm travelled and the trunk hardly turned, and the backhand's "contact"
+ * key was the axe held straight up at his side. They are a Mixamo rig, so
+ * the packs already in the game go onto them the way they went onto the
+ * parasites — the orc's great-sword cuts, chop, spin, leap and kick, the
+ * knight's punch, swipe, walks, runs, strafes and his five hit reactions,
+ * the zombie pack's punches, kicks and headbutt — renamed on the way in
+ * (`m*`) so nothing authored below is overwritten. The retarget wants the
+ * BIND, so it is read before the stance is put on (`R0`). Built once per
+ * FILE: the tracks are the file's own bone names, so twenty men share three
+ * sets, and each man is handed a copy of the ground speeds they travel at. */
+const FARM_MOCAP = [
+  [() => knightMoves, { mWalk: 'walk', mWalkB: 'walkB', mWalkC: 'walkC', mRun: 'run', mRunB: 'runB', mStrL: 'strafeL', mStrR: 'strafeR2', mStrL2: 'strafeL2', mStrR2: 'strafeR3',
+    mSideL: 'sideL', mSideR: 'sideR2', mHit: 'hit', mHitBig: 'hitBig', mHitSide: 'hitSide', mHitBack: 'hitBack', mHitHead: 'hitHead', mParry: 'parry', mIdleK: 'idleB',
+    mPunch: 'kPunch', mSwipe: 'kSwipe', mKnock: 'knockOut', mGetUp: 'getUp' }],
+  [() => orcMoves, { mIdle: 'idle', mIdleB: 'idleB', mCut: 'oCut', mCutB: 'oCutB', mCutC: 'oCutC', mCutD: 'oCutD', mCutE: 'oCutE', mChop: 'oChop', mSpin: 'oSpin', mLeap: 'oLeap', mKick: 'oKick',
+    mOHit: 'hit', mOHitB: 'hitB', mOHitBig: 'hitBig' }],
+  [() => demonMoves, { mZPunch: 'zPunch', mZPunch2: 'zPunch2', mZKick: 'zKick', mZKick2: 'zKick2', mZButt: 'zButt' }],
+];
+const FARM_MOCAP_SET = {};                  // file -> { clips, speed, travel, az }
+function farmMocap(u, R0) {
+  const f = u.kind.file;
+  let S = FARM_MOCAP_SET[f];
+  if (!S) {
+    if (!FARM_MOCAP.every(([g]) => g() && g().clips)) return null;
+    const clips = [];
+    for (const [g, map] of FARM_MOCAP) {
+      const d = g(), pk = { fps: d.fps, clips: {} };
+      for (const nm in map) if (d.clips[map[nm]]) pk.clips[nm] = d.clips[map[nm]];
+      for (const c of ntarRetarget(u, u.model, R0.bones, R0.bind, R0.J, R0.hipUp, R0.hipPos, pk)) clips.push(c);
+    }
+    S = FARM_MOCAP_SET[f] = { clips, speed: { ...u.clipSpeed }, travel: { ...u.clipTravel }, az: { ...u.clipAz } };
+  }
+  for (const k in S.speed) if (/^m[A-Z]/.test(k)) u.clipSpeed[k] = S.speed[k];
+  for (const k in S.travel) if (/^m[A-Z]/.test(k)) u.clipTravel[k] = S.travel[k];
+  for (const k in S.az) if (/^m[A-Z]/.test(k)) u.clipAz[k] = S.az[k];
+  return S.clips;
+}
 function authorFarmerClips(u, m) {
   const J = farmJoints(u.kind.file);
+  const R0 = poseRig(u, m, null, J, {});            // the bind, for the retarget — before the stance is put on
   farmStance(m, J);
   const R = poseRig(u, m, null, J, {});
   if (!FARM_CLIPS[u.kind.file]) {
@@ -73565,8 +73775,18 @@ function authorFarmerClips(u, m) {
   farmArm(u, m);
   installLife(u, m, J);
   if (u.life) u.life.grip = u.farmTool ? 1.2 : null;          // a fist round the handle; a bare hand is the claws' fist
-  u.packList = farmUnits;
-  return FARM_CLIPS[u.kind.file];
+  u.packList = u.packList || farmUnits;
+  const mc = farmMocap(u, R0);
+  if (!mc) u.parLate = () => {
+    const c = farmMocap(u, R0); if (!c) return false;
+    for (const x of c) u.clips[x.name] = u.mixer.clipAction(x);
+    if (u.kind.alias) for (const k in u.kind.alias) if (u.clips[u.kind.alias[k]]) u.clips[k] = u.clips[u.kind.alias[k]];
+    u.cur = null;
+    mutPlay(u, u.kind.anim.idle || 'idle', true);
+    if (u.cur) u.cur.setEffectiveWeight(1);
+    return true;
+  };
+  return mc ? FARM_CLIPS[u.kind.file].concat(mc) : FARM_CLIPS[u.kind.file];
 }
 function farmMeasureTool(o, inv) {
   const g = o.geometry.clone().applyMatrix4(inv.clone().multiply(o.matrixWorld));
@@ -73888,6 +74108,7 @@ function farmBurstStep(u, dt) {
  * nothing at all (parked, hidden, not ticked); coming out they belong to the
  * burst; out, they are a pack — the demons' director, on their own list. */
 function farmUnitPre(u, dt) {
+  if (u.parLate && u.parLate()) u.parLate = null;         // the motion capture, once its packs have landed
   if (!u.farm) return false;
   if (!u.farm.out) {
     u.g.visible = false;
