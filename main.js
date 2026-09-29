@@ -55966,7 +55966,7 @@ function wbSkinMat(src) {
             float shm = 0.5 + 0.5 * sin(vWbP.z * 2.6 - uT * 5.0 + wbN(vWbP.zy * 2.5) * 6.0);
             float fr = pow(1.0 - ndv, 2.0);
             vec3 gold = vec3(1.0, 0.80, 0.46), cyan = vec3(0.42, 0.86, 1.0);
-            outgoingLight += mix(cyan, gold, clamp(gb, 0.0, 1.0)) * (uGlow * (0.16 + 1.1 * fr) * (0.55 + 0.45 * shm) + gb * 1.3);
+            outgoingLight += mix(cyan, gold, clamp(gb, 0.0, 1.0)) * (uGlow * (0.05 + 0.55 * fr) * (0.45 + 0.55 * shm) + gb * 0.9);
             outgoingLight += gold * wbW0 * uHealGlow * (1.8 + 0.9 * sin(uT * 9.0 + vWbP.z * 6.0));
           }
         }
@@ -56961,8 +56961,8 @@ function updateWhaleFarewell(dt) {
   }
   if (h > 0) {
     const beamA = smooth01(0, 1.4, h) * (1 - smooth01(5.2, 8.0, h)) * (1 + 0.8 * Math.exp(-Math.pow((h - 4.1) / 0.35, 2)));
-    F.beam.material.uniforms.uA.value = 0.55 * beamA;
-    F.pool.material.uniforms.uA.value = 0.5 * beamA;
+    F.beam.material.uniforms.uA.value = 0.20 * beamA;
+    F.pool.material.uniforms.uA.value = 0.11 * beamA;
     F.beam.visible = F.pool.visible = beamA > 0.002;
     wbU.uGlow.value = smooth01(0.2, 1.8, h) * (1 - smooth01(5.0, 8.5, h));
     // the light runs down it from the tail to the head, and back again on the flash
@@ -56970,7 +56970,7 @@ function updateWhaleFarewell(dt) {
     wbU.uGlowK.value = smooth01(0.3, 0.9, h) * (1 - smooth01(6.0, 7.0, h));
     wbU.uHealGlow.value = smooth01(1.0, 1.9, h) * (1 - smooth01(4.3, 5.6, h));
     wbU.uHeal.value = smooth01(2.0, 4.1, h);
-    W.healL.intensity = 70 * beamA + 40 * wbU.uHealGlow.value;
+    W.healL.intensity = 14 * beamA + 10 * wbU.uHealGlow.value;
     // the blood goes out of the water and off the sand with the wounds
     oceanUniforms.uBlood.value.w = 0.62 * (1 - smooth01(2.0, 4.6, h));
     for (const m of W.decals) if (m.material) { m.material.opacity = 1 - smooth01(2.2, 5.0, h) * (m.userData.keep ? 0 : 1); }
@@ -57021,7 +57021,7 @@ function updateWhaleFarewell(dt) {
     }
     if (C.flashT != null) {
       C.flashT += dt;
-      flashEl.style.opacity = (0.62 * Math.exp(-C.flashT * 3.2)).toFixed(3);
+      flashEl.style.opacity = (0.45 * Math.exp(-C.flashT * 3.6)).toFixed(3);
       const rr = 2 + 90 * (1 - Math.exp(-C.flashT * 1.3));
       F.ring.scale.setScalar(rr);
       F.ring.material.uniforms.uA.value = 1.4 * Math.max(0, 1 - C.flashT / 2.6);
@@ -57117,7 +57117,7 @@ function updateWhaleFarewell(dt) {
   if (x > 0 && t < T.breach) {
     G.visible = false;
     C.look.lerp(_wfV.copy(C.B).setY(9), 1 - Math.exp(-dt * 1.2));
-    C.fov = Math.min(settings.fov, 42);
+    C.fov = Math.min(settings.fov, 38);
     C.songK = 0.25 + 0.3 * smooth01(0, 3.6, x);
   }
   const k = t - T.breach;
@@ -57173,7 +57173,7 @@ function updateWhaleFarewell(dt) {
     wfPose(C.C, C.yaw, C.pitch, C.roll);
     C.songK = C.apex ? Math.max(0.2, 1.0 - (C.slamT || 0) * 0.2) : 0.6 + 0.4 * smooth01(0, 2.5, k);
     C.look.lerp(_wfV.copy(C.C).setY(Math.max(6, C.C.y * 0.8 + 4)), 1 - Math.exp(-dt * 2.0));
-    C.fov = Math.min(settings.fov, 44);
+    C.fov = Math.min(settings.fov, 38);
     // and it is over: gone for good, and you have your hands back
     if (C.slam && C.slamT > 6.0) {
       wbGone = true;

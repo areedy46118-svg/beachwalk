@@ -18271,3 +18271,42 @@ Harness traps, all paid for this round (`tools/farmfight.js`,
   false once.
 - A test's still from inside a narrow street is a wall: film the doors from
   the cobbles side at a slant, through a 38-degree lens.
+
+**THE OWNER'S SOUNDS, ROUND OF THE WHALE'S FAREWELL.** Cut at their own
+silences, each normalised to -3 dBFS (`/tmp` scratch `cut.py` shape: seek
+BEFORE `-i`, or `afade`'s timestamps are the source's and the fade-out
+silences the whole cue):
+- `unlock` — every key through `keyUsed` → `sfxLockOpen`, which plays it and
+  falls back to the synthesised lock only before the bank lands. Its turn is at
+  0.72 s, under the doors' 0.85-0.9 s wait.
+- `mutantVox` (6) — the eight `mutant.glb` kinds carry `voice.rec`, and
+  `mutVox(role, dist, V)` answers roar / tell / hurt / die / laugh / hunger out
+  of `MUT_VOX` (picks, gain, rate, a per-role cooldown), pitched by a gentle
+  root of `V.f`. Everything else voiced is still synthesised.
+- `dealerHit` (8) — the Dealer's voice has `grunt: 'dealerHit'`; `sfxMutHit`
+  plays one on every hit.
+- `catFall` is now his "catacombs fall music" (15.4 s, cut so the first note
+  is the impact), started by `playCatFallMusic` on the landing cue AND on the
+  dev-mode shortcut, on the music slider (`CAT_FALL_LEVEL`).
+- `drainBreath` — under the face in the drain, `drainBreathTick(here)` rides
+  the face's own fade through a lowpass and a pipe delay at
+  `DRAIN_BREATH_LEVEL` 0.30 into the peek's own gain. Low on purpose.
+
+**THE WHALE'S FAREWELL (`updateWhaleFarewell`, `WF_T`).** Kill all seven demons
+and both parasites and 2.4 s later the whale says `whaleThanks` through the gut
+(the fog goes warm), heaves, and puts you on the sand up the beach from its
+flank (`wfPlaceOut`, `WF_VX` / `WF_VZ_OFF`). Then `whaleHeal` under a column
+of light (`wfFx.beam`, a pool, 420 motes that gather and burst): the skin
+shader's `uGlowZ` band runs tail to head, `uHealGlow` lights the wounds gold and
+`uHeal` closes them (raw, deep, blood and rim all scaled), the harpoon is
+thrown out and tumbles to the sand, the blood leaves the water, and a flash, a
+ring and two breaths. It backs 46 m down the beach on its flippers (colliders
+out, sand and surf thrown), turns in the shallows, swims out singing, lifts its
+flukes and dives; and 116 m out in front of the moon it breaches — posed about
+its centre of mass (`WF_COM`, `wfPose`), because a leap turns about that and
+turning it about the snout swings the tail up as it levels — rolls, slams on
+its side (`wfSplash`, `sfxWhaleSplash` late by the distance), and is gone
+(`wbRemoveForGood`, `wbGone` on the save). Its fog is thinned for the breach
+(`uWbFog`) or at 116 m it is gone in the haze. `wbFareCut` is in `frozen()`,
+the lens and the pointer-lock guards; it plays in dev mode too. Harness:
+`startWhaleFarewell`, `wfState`, `wbObj`, `placeInWhale`.
