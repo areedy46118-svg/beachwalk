@@ -18590,3 +18590,47 @@ authored contact poses were beside him. Now:
 Measured after, three 40 s samples: 55-62 swings a minute, **every blow
 landed within 0.32 m of the body, 0-1 scored further**, and 49.5-57 damage a
 minute against the 52 it was.
+
+**IN THE TAVERN A MAN WALKS THROUGH THE FURNITURE BY BREAKING IT
+(`tavCrush`).** The tables and chairs are `bwGhost` (a thing that breaks when
+you touch it must not also be a wall), so the fighters' routes run straight
+through them, and they drew passing through a table top. Every frame, anything
+awake and moving (`tavPeople()`: the bar's three and the two drinkers) whose
+body is inside a table's disc or a chair's footprint smashes it, harder the
+faster he was, and `smashTavTable` / `smashTavChair` take a `by` so the pieces
+go AWAY FROM WHOEVER BROKE IT (it used to be always from the camera). Measured
+in a hands-off brawl: the orc takes a table and three chairs as the fight
+crosses the room.
+
+**AND A BOTTLE THE BRAWL KNOCKED FLYING IS NOT YOUR THROW.** `tavThrownHits`
+counted any breakable moving over 3.2 m/s near a man as a blow of yours, which
+made him "yours": he dropped his quarrel and came for you for something you
+never did. It asks `p.thrown` now.
+
+**TWO FARMERS DRINKING AT A TABLE (`buildTavDrinkers`, `updateTavDrinkers`,
+`tavDrinkerProvoke`).** Kinds `tavDrinker0/1` are copies of castle brawlers
+`farmer3` (wood) and `farmer10` (farm), bare-handed, with `tav: true` (the
+hall's floor, arena, steering and crush), no night grade, and a room-sized
+ragdoll. They keep `farmer: true` for the castle's shared hurt gate; the
+tavern branch of `updateMutantUnit` runs their late motion capture
+(`parLate`). They sit on the two chairs furthest apart at the table furthest
+from the bar, each with a bottle in his right fist (`tavBottleToHand`,
+`TAV_DRINK_GRIP`), and every 5-13 s one tips it back with a gulp.
+- **THE SIT IS A FARMER CLIP** (`fSit`, `fDrink`, `fRise` in `farmKeyDefs`,
+  so every file has them). Measured: hips 0.62 m over a 0.50 m seat, knees
+  0.3 forward, feet on the floor (toe 0.01). Their origin is pulled back
+  (`TAV_DRINK_SEAT` -0.07) so the hips sit at the back of the seat.
+- **WHAT WAKES THEM, and who they go for**: a blow or a thrown bottle on
+  either (you), the chair under one or the table in front of them breaking
+  (whoever did it: `c.by` / `t.by`, null for you). Both come up together:
+  `fRise` played as the roar clip, the bottle smashed on the floor. A man from
+  the bar is their foe (`st.foe`); you make them `mine`. When their foe is
+  down they stop and stand about (not `mine`: they have no quarrel with you).
+- **AND THE BAR'S THREE ANSWER THEM**: `hurtMutantCore` records `st.hitBy`,
+  and `tavSides` makes a drinker who has hit one of the three in the last
+  15 s that man's foe (unless he is yours).
+Measured: provoked by a chair broken on the orc's behalf, the two take him
+from 33 to 10 health in 14 s; provoked by you, 12 swings in 12 s. Harness:
+`tools/tavdrink.js` (`__tavSetup` holds the bar scene back with
+`tavScene.phase = 9`; dev mode switches swinging off, so turn it off to
+measure a fight).

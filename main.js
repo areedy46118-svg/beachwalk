@@ -29753,7 +29753,7 @@ function hurtMutantCore(u, dmg, P = 0, from = null) {
   // and he STAYS yours: a room that re-reads its sides every frame (the
   // tavern's) would otherwise hand him straight back to his own quarrel
   if (mine) { u.st.mine = true; u.st.foe = null; u.st.lastHurt = performance.now() / 1000; }
-  if (from) _hitFrom.subVectors(u.g.position, from.g.position).setY(0).normalize();
+  if (from) { _hitFrom.subVectors(u.g.position, from.g.position).setY(0).normalize(); u.st.hitBy = from; u.st.hitByT = performance.now(); }
   /* SOME THINGS ARE ASLEEP UNTIL YOU HIT THEM. The witness is a bystander
    * until the blade touches him; `provoke` is the kind's own way of waking
    * (the witness swaps his standing self for the creature), and the blow
@@ -32487,6 +32487,7 @@ function updateMutantUnit(u, dt) {
   /* AND THE TAVERN'S TWO STAND ON ITS FLAGS — or its crates, if the fight
    * takes them up there — and are drawn only while the room is. */
   if (u.kind.tav) {
+    if (u.parLate && u.parLate()) u.parLate = null;     // a farmer at the tavern's table: his motion capture, once its packs are in
     u.g.visible = inTavern;
     if (!inTavern) { mutDrop(u); mutAnim(u, dt, 0); return; }
     if (u.st.vault) { tavVaultStep(u, dt); return; }
@@ -68001,12 +68002,15 @@ function tavThrow(m, at, gy, kick, dx, dz, h, wait, upright) {
     spin: new THREE.Vector3((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 8),
     rest: gy + 0.03 + Math.random() * 0.02, life: 300, bleed: false, wait });
 }
-function smashTavTable(t, speed) {
+function smashTavTable(t, speed, by = null) {
   if (t.dead) return;
-  t.dead = true; t.prop.dead = true;
+  t.dead = true; t.prop.dead = true; t.by = by;
+  for (const d of tavDrinkers) if (d.drink && d.drink.table === t && d.st.alive && !d.st.awake) { tavDrinkerProvoke(d, by); break; }
   const gy = TAV_Y + TAV_FLOOR;
   const kick = Math.min(3.4, 0.9 + (speed || 6) * 0.16);
-  let dx = t.cx - camera.position.x, dz = t.cz - camera.position.z;
+  // the pieces go AWAY FROM WHOEVER BROKE IT — you, or a man walked through it
+  const src = by && by.g ? by.g.position : camera.position;
+  let dx = t.cx - src.x, dz = t.cz - src.z;
   const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
   const SEC = 4, sectors = [];
   for (let k = 0; k < SEC; k++) sectors.push([]);
@@ -68488,17 +68492,52 @@ function buildTavPlank() {
  * thrown into a bar fight is for. It is the drone throw's own shape, at bar
  * scale. */
 function tavThrownHits() {
-  for (const u of tavCast()) {
+  for (const u of tavPeople()) {
     if (!u || !u.st.alive || !u.st.awake) continue;
     const c = u.g.position, h = (u.kind.h || 1.8);
     for (const p of physProps) {
       if (!p.onImpact || p.dead || p.held || p.pinned || !p.mesh.parent) continue;
+      /* and only a thing YOU threw: a bottle the brawl knocked off a table is
+       * going just as fast, and it made the man it landed on "yours" — so he
+       * dropped his quarrel and came for you for something you never did. */
+      if (!p.thrown) continue;
       const v = p.vel.length(); if (v < 3.2) continue;
       const q = p.mesh.position;
       if (Math.abs(q.x - c.x) > 0.75 || Math.abs(q.z - c.z) > 0.75) continue;
       if (q.y < c.y + 0.25 || q.y > c.y + h) continue;
       hurtMutant(u, 1, 0.4);                          // it is YOUR blow: the confirm, and he turns on you for it
       p.onImpact(Math.max(6, v));
+    }
+  }
+}
+/* AND A MAN WHO WALKS INTO THE FURNITURE BREAKS IT. The tables and chairs
+ * are ghosts to the walk grid and the wall index (a thing that breaks when
+ * you touch it must not also be a wall), so the fighters' routes run
+ * straight through them — and they did, a body passing through a table top
+ * with the chairs round his shins. The knight's pews, in a tavern: anything
+ * awake and moving that has its body inside a table's disc or a chair's
+ * footprint takes it apart, thrown the way HE was going (`by`), harder the
+ * faster he was. A seated man is not moving and breaks nothing. */
+const _tcW = new Map();
+function tavCrush(dt) {
+  if (!tavTables.length && !tavChairs.length) return;
+  for (const u of tavPeople()) {
+    if (!u || !u.st.alive || !u.st.awake || u.dead) continue;
+    const p = u.g.position;
+    const prev = _tcW.get(u);
+    let sp = 0;
+    if (prev) sp = Math.hypot(p.x - prev.x, p.z - prev.z) / Math.max(1e-3, dt);
+    _tcW.set(u, { x: p.x, z: p.z });
+    if (sp < 0.35 || sp > 30) continue;                 // standing, or a teleport
+    const r = Math.min(0.75, u.kind.body || 0.45);
+    for (const t of tavTables) {
+      if (t.dead) continue;
+      const d = Math.hypot(p.x - t.cx, p.z - t.cz);
+      if (d < t.r + r * 0.55) smashTavTable(t, 3.5 + sp * 1.4, u);
+    }
+    for (const c of tavChairs) {
+      if (c.dead) continue;
+      if (Math.hypot(p.x - c.x, p.z - c.z) < 0.30 + r * 0.55) smashTavChair(c, 3.5 + sp * 1.4, u);
     }
   }
 }
@@ -69139,12 +69178,15 @@ function buildTavChairs() {
   }
   tavWorld.updateMatrixWorld(true);
 }
-function smashTavChair(c, speed) {
+function smashTavChair(c, speed, by = null) {
   if (c.dead) return;
-  c.dead = true; c.prop.dead = true;
+  c.dead = true; c.prop.dead = true; c.by = by;
+  if (c.seat && c.seat.st.alive && !c.seat.st.awake) tavDrinkerProvoke(c.seat, by);
+  c.seat = null;
   const gy = TAV_Y + TAV_FLOOR;
   const kick = Math.min(3.0, 0.8 + (speed || 6) * 0.14);
-  let dx = c.x - camera.position.x, dz = c.z - camera.position.z;
+  const src = by && by.g ? by.g.position : camera.position;
+  let dx = c.x - src.x, dz = c.z - src.z;
   const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
   c.grp.updateMatrixWorld(true);
   c.grp.getWorldQuaternion(_tvQ);
@@ -69253,7 +69295,9 @@ function updateTavern(dt) {
   tavSides();
   if (tavWallsDirty) { tavWallsDirty = false; tavWalls = null; buildKeepWalls(TAV_SITE); }
   tavRoam(dt);
+  updateTavDrinkers(dt);
   tavThrownHits();
+  tavCrush(dt);
   const p = camera.position, S = TAV_SITE;
   _tavWant.set(p.x - _preMove.x, 0, p.z - _preMove.z);     // what the frame asked for, before anything corrects it
   /* THE FEET ARE ON THE FLOOR, NOT UNDER THE HEAD — the undercroft's own
@@ -72826,6 +72870,9 @@ const TAV_SCENE_NEAR = 13.0;
 let wongUnit = null, drunkUnit = null, orcUnit = null, tavMug = null;
 // everyone at the bar, in one place, so nothing can be updated for two of three
 const tavCast = () => (wongUnit ? [wongUnit, drunkUnit, orcUnit].filter(Boolean) : []);
+// and everybody in the hall who can walk into the furniture: the bar's three and the two at the table
+let tavDrinkers = [];
+const tavPeople = () => tavCast().concat(tavDrinkers);
 const tavScene = { t: 0, phase: 0, started: false };
 function buildTavCast() {
   if (wongUnit || !tavWorld) return;
@@ -72874,6 +72921,7 @@ function buildTavCast() {
     u.st.hp = k.hp;
     u.g.visible = inTavern; u.pathO = { x: TAV_X, z: TAV_Z };
   }
+  buildTavDrinkers();
   if (grammyState === 1 && grammyAt) placeGrammyAt(grammyAt);
   // a save from before the photo existed, with him already dead: it is on the flags where he fell
   else if (grammyState === 0 && orcUnit && orcUnit.retired) {
@@ -72881,6 +72929,147 @@ function buildTavCast() {
     const fl = bunkerFloorAt(x, z, fy + 0.5);
     grammyState = 1; placeGrammyAt([x, (fl === null ? fy : fl) + 0.004, z, 0.6]);
     grammyAt = [x, (fl === null ? fy : fl) + 0.004, z, 0.6];
+  }
+}
+/* TWO FARMERS AT A TABLE, DRINKING. They are two of the castle's own men —
+ * the same rig, the same motion capture, the same fists — sat on two of the
+ * hall's chairs at the table furthest from the bar, each with a bottle, and
+ * every few seconds one of them tips it back. They have no quarrel with
+ * anybody until somebody gives them one: hit either of them, throw a bottle
+ * at them, or break the chair under one or the table in front of them, and
+ * BOTH come up off their seats and go for whoever did it — you, or the man
+ * from the bar fight who came through their table. When that man is down
+ * they are done with it and stand about; you they fight to the end. They are
+ * `tav` kinds, so the hall's floor, arena, steering and crush are theirs. */
+const TAV_DRINK_FROM = [3, 10];                      // two bare-handed brawlers, one of each file
+function tavDrinkerKind(i) {
+  const name = 'tavDrinker' + i;
+  if (MUT_KINDS[name]) return name;
+  const b = MUT_KINDS['farmer' + TAV_DRINK_FROM[i]];
+  MUT_KINDS[name] = Object.assign({}, b, {
+    tav: true, fortBody: false, frenzy: false, wakeAt: 0, solo: true,   // still a farmer: the castle's shared hurt gate, and his late motion capture
+    provoke: (u) => tavDrinkerProvoke(u, null), first: 'fSit', sleepIdle: null,
+    // lit for a baked room with no lamps in it, like the bar's three: no night grade, a warm lift, a warm edge
+    tint: 0, emis: 0.22, rim: [0.055, 0.046, 0.034],
+    // and a tavern is not a street: a killing blow throws them across the room, not across the town
+    ragK: 2.4, ragVmax: 16, ragTravel: 12,
+    hp: b.hp + 1,
+  });
+  return name;
+}
+function tavDrinkBottle(u) {
+  tavBottleParts();
+  const m = new THREE.Mesh(tavBottleGeo, tavBottleMat);
+  const lab = new THREE.Mesh(tavLabelGeo, tavLabelMat); lab.position.y = 0.088; m.add(lab);
+  m.name = 'drinkBottle'; m.frustumCulled = false;
+  return m;
+}
+const _tdS = new THREE.Vector3();
+function tavBottleToHand(u) {
+  const D = u.drink; if (!D || D.bottle || !u.model) return;
+  const hand = u.model.getObjectByName(FJ(u.kind.file, 'RightHand')); if (!hand) return;
+  const b = tavDrinkBottle(u);
+  hand.add(b);
+  hand.updateMatrixWorld(true); hand.getWorldScale(_tdS);
+  b.scale.set(1 / _tdS.x, 1 / _tdS.y, 1 / _tdS.z);
+  // through the fist across the palm, the neck out past the thumb
+  b.position.set(TAV_DRINK_GRIP.x / _tdS.x, TAV_DRINK_GRIP.y / _tdS.y, TAV_DRINK_GRIP.z / _tdS.z);
+  b.rotation.set(TAV_DRINK_GRIP.rx, TAV_DRINK_GRIP.ry, TAV_DRINK_GRIP.rz);
+  D.bottle = b;
+}
+const TAV_DRINK_GRIP = { x: 0.02, y: 0.075, z: 0.035, rx: 0, ry: 0, rz: Math.PI / 2 };
+function tavDropBottle(u) {
+  const D = u.drink; if (!D || !D.bottle || !D.bottle.parent) return;
+  D.bottle.getWorldPosition(_mgP);
+  D.bottle.parent.remove(D.bottle); D.bottle = null;
+  const gy = TAV_Y + TAV_FLOOR;
+  for (let i = 0; i < 8; i++) {
+    const m = new THREE.Mesh(new THREE.TetrahedronGeometry(0.02 + Math.random() * 0.025, 0), tavBottleMat);
+    m.position.set(_mgP.x + (Math.random() - 0.5) * 0.2, Math.max(gy + 0.05, _mgP.y), _mgP.z + (Math.random() - 0.5) * 0.2);
+    scene.add(m);
+    const a = Math.random() * Math.PI * 2, out = 0.5 + Math.random() * 1.4;
+    gibs.push({ m, half: 0.02, rest: gy + 0.02, vel: new THREE.Vector3(Math.cos(a) * out, 0.4 + Math.random(), Math.sin(a) * out),
+      spin: new THREE.Vector3((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14), life: 240, bleed: false, wait: 0.25 });
+  }
+  setTimeout(() => sfxGlassBreak(), 280);
+}
+function buildTavDrinkers() {
+  if (tavDrinkers.length || !tavTables.length) return;
+  const fy = TAV_Y + TAV_FLOOR, bx = TAV_X + TAV_DRUNK.x, bz = TAV_Z + TAV_DRUNK.z;
+  let best = null, bs = -1;
+  for (const t of tavTables) {
+    const cs = tavChairs.filter((c) => !c.dead && Math.hypot(c.x - t.cx, c.z - t.cz) < t.r + 0.7);
+    if (cs.length < 2) continue;
+    const d = Math.hypot(t.cx - bx, t.cz - bz);
+    if (d > bs) { bs = d; best = { t, cs }; }
+  }
+  if (!best) return;
+  // the two chairs furthest apart: across the table from each other, talking
+  let pair = [best.cs[0], best.cs[1]], pd = -1;
+  for (let i = 0; i < best.cs.length; i++) for (let j = i + 1; j < best.cs.length; j++) {
+    const d = Math.hypot(best.cs[i].x - best.cs[j].x, best.cs[i].z - best.cs[j].z);
+    if (d > pd) { pd = d; pair = [best.cs[i], best.cs[j]]; }
+  }
+  pair.forEach((c, i) => {
+    const t = best.t;
+    const yaw = Math.atan2(t.cx - c.x, t.cz - c.z);
+    // the seat is under his hips; his origin is between his feet, which a sitting man has out in front of him
+    const sx = c.x + Math.sin(yaw) * TAV_DRINK_SEAT, sz = c.z + Math.cos(yaw) * TAV_DRINK_SEAT;
+    const u = makeMutant(sx, sz, tavDrinkerKind(i), fy);
+    u.packList = tavDrinkers;
+    u.g.rotation.y = yaw; u.g.visible = inTavern; u.pathO = { x: TAV_X, z: TAV_Z };
+    if (u.retired || !u.st.alive) return;
+    u.drink = { chair: c, table: t, seated: true, sx, sz, yaw, next: 2 + i * 3.5 + Math.random() * 3, drinking: 0, bottle: null, gulp: 0 };
+    u.holdAnim = true;
+    c.seat = u;
+    tavDrinkers.push(u);
+  });
+}
+const TAV_DRINK_SEAT = -0.07;   // his hips at the back of the seat, the chair's middle under his thighs
+function tavDrinkerProvoke(src, by) {
+  const other = by && by.st && !tavDrinkers.includes(by) ? by : null;     // a man from the bar; else it was you
+  for (const d of tavDrinkers) {
+    if (!d.st.alive) continue;
+    if (d.st.awake) { if (!other && d === src) { d.st.mine = true; d.st.foe = null; } continue; }
+    d.st.awake = true; d.st.cool = 0.9; d.st.step = 0;
+    if (other) { d.st.foe = other; d.st.mine = false; } else { d.st.mine = true; d.st.foe = null; }
+    const D = d.drink;
+    if (D && D.seated) {
+      D.seated = false; D.drinking = 0;
+      if (D.chair) D.chair.seat = null;
+      tavDropBottle(d);
+      d.holdAnim = false;
+      d.st.roar = 0.95; d.st.roarClip = 'fRise';        // up off the chair: he stands where he sat, then comes
+    } else { d.st.roar = 0.6; d.st.roarClip = d.kind.anim.roar; }
+    const dist = Math.hypot(camera.position.x - d.g.position.x, camera.position.z - d.g.position.z);
+    if (d === src || !src) sfxMutRoar(dist, d.kind.voice);
+  }
+}
+function updateTavDrinkers(dt) {
+  for (const u of tavDrinkers) {
+    const D = u.drink; if (!D || !u.st.alive || !u.mixer || !u.clips || !u.clips.fSit) continue;
+    if (D.seated) {
+      u.g.position.x = D.sx; u.g.position.z = D.sz; u.g.rotation.y = D.yaw;
+      tavBottleToHand(u);
+      u.holdAnim = true;
+      if (D.drinking > 0) {
+        D.drinking -= dt;
+        if (D.gulp > 0 && (D.gulp -= dt) <= 0 && Math.hypot(camera.position.x - D.sx, camera.position.z - D.sz) < 9) sfxGulp();
+        if (D.drinking <= 0) { mutPlay(u, 'fSit', true); D.next = 5 + Math.random() * 8; }
+      } else if ((D.next -= dt) <= 0) {
+        const a = mutPlay(u, 'fDrink', false);
+        if (a) { a.paused = false; a.timeScale = 1; }
+        D.drinking = u.clips.fDrink.getClip().duration; D.gulp = D.drinking * 0.46;
+      } else if (!u.cur || u.cur !== u.clips.fSit) mutPlay(u, 'fSit', true);
+      u.mixer.update(dt);
+      continue;
+    }
+    /* THE MAN WHO BROKE THEIR TABLE IS DOWN, AND THAT WAS THE QUARREL. They
+     * stand about after; hit one and it starts again, with you. */
+    if (u.st.awake && !u.st.mine && u.st.roar <= 0) {
+      const f = u.st.foe;
+      if (!f || !f.st || !f.st.alive) { u.st.awake = false; u.st.atk = -1; u.st.foe = null; }
+    }
   }
 }
 /* AND A BAR FIGHT DOES NOT STAY AT THE BAR. Left alone the two of them
@@ -72978,6 +73167,9 @@ function tavSides() {
   const W = wongUnit; if (!W) return;
   for (const q of tavCast()) {
     if (!q.st.alive || !q.st.awake || q.st.mine) continue;
+    // a man at the drinkers' table who has just hit him is the one he wants
+    const hb = q.st.hitBy;
+    if (hb && hb.st && hb.st.alive && tavDrinkers.includes(hb) && performance.now() - q.st.hitByT < 15000) { q.st.foe = hb; continue; }
     if (q === W) {
       let best = null, bd = 1e9;
       for (const o of tavCast()) {
@@ -73341,6 +73533,18 @@ function farmKeyDefs() {
   const D0 = M(R0, { hip: { up: -0.25, fwd: 0.05 }, chest: { up: 0.2, right: 0.1 } });
   const beck = (f) => M(D0, { armL: { right: -1.1, fwd: 0.2 }, foreL: { right: f }, handL: { right: f < -1 ? 0.6 : -0.5 } });
   D.idleD = [2.2, [[0, D0], [0.25, beck(-0.3)], [0.38, beck(-1.3)], [0.5, beck(-0.4)], [0.62, beck(-1.3)], [0.8, M(D0, { head: { up: 0.2, fwd: 0.15 } })], [1, D0]], true];
+
+  // ---- SITTING, for the two at the tavern's table: the thighs level on the seat, the shins down, a bottle in the right fist
+  const SIT = { chest: { right: 0.14 }, neck: { right: 0.04 }, head: { right: 0.02 },
+    thighL: { right: -1.50, fwd: 0.08 }, calfL: { right: 1.45 }, footL: { right: -0.40 },
+    thighR: { right: -1.50, fwd: -0.08 }, calfR: { right: 1.45 }, footR: { right: -0.40 },
+    armL: { right: -0.60, fwd: 0.30 }, foreL: { right: -1.10 }, armR: { right: -0.70, fwd: -0.15 }, foreR: { right: -1.35 }, hipY: -0.33 };
+  D.fSit = [3.4, [[0, SIT], [0.5, M(SIT, { chest: { right: 0.20, up: 0.06 }, head: { right: 0.08, up: 0.18 } })], [1, SIT]], true];
+  const DR1 = M(SIT, { armR: { right: -1.75, fwd: -0.30 }, foreR: { right: -2.10 }, handR: { right: -0.30 }, chest: { right: 0.04 }, head: { right: -0.10 } });
+  const DR2 = M(DR1, { head: { right: -0.45 }, neck: { right: -0.15 }, armR: { right: -2.05, fwd: -0.30 }, chest: { right: -0.05 } });
+  D.fDrink = [2.8, [[0, SIT], [0.25, DR1], [0.42, DR2], [0.70, DR2], [0.86, DR1], [1, SIT]], false];
+  // up off the chair: the trunk thrown forward over the knees, then the legs push him up into his guard
+  D.fRise = [0.75, [[0, SIT], [0.45, M(SIT, { chest: { right: 0.45 }, thighL: { right: -0.8 }, thighR: { right: -0.8 }, calfL: { right: 0.9 }, calfR: { right: 0.9 }, hipY: -0.22 })], [1, R0]], false];
 
   // ---- GAITS. Every foot stays planted while it is down (the reptilians' lesson): the stride is linear under the body and eased only in the air.
   const upper = (armRr, armLr, lean, twist) => ({ armR: { right: -0.15 + armRr, fwd: -0.20 }, foreR: { right: -0.9 }, armL: { right: armLr, fwd: 0.18 }, foreL: { right: -0.7 },
@@ -74304,7 +74508,7 @@ window.__bw = {
   catMemory, catThrowBones, catKickBones, catFloorSmooth, catPickTarget, catBeginAct, get catAmbushAt() { return catAmbushAt; }, set catAmbushAt(v) { catAmbushAt = v; },
   catEat: () => catSpots.eat.map((k) => [catG.nodes[k].x - CAT_X, catG.nodes[k].f - CAT_Y, catG.nodes[k].z - CAT_Z].map((v) => +v.toFixed(1))), catWoke: () => crawlerUnit && crawlerUnit.catWoke,
   get catG() { return catG; }, catRandomNode,
-  tavScene, tavProvoke, buildTavCast, get tavMug() { return tavMug; },
+  tavScene, tavProvoke, buildTavCast, get tavMug() { return tavMug; }, get tavDrinkers() { return tavDrinkers; }, get tavChairs() { return tavChairs; }, get tavTables() { return tavTables; }, smashTavChair, smashTavTable, TAV_DRINK_GRIP, tavDrinkerProvoke, get tavCastUnits() { return tavCast(); },
   tavState: () => ({ inTavern, ready: tavReady, built: tavBuilt, walk: !!tavWalk, cells: tavCells ? tavCells.size : 0, busy: tavBusy, t: +tavT.toFixed(2),
     walls: tavWalls && { faces: tavWalls.v.length / 9, cells: tavWalls.map.size }, repair: tavWalk && { storeys: tavWalk.storeys, ms: tavWalk.built },
     tables: tavTables.map((t) => ({ x: +(t.cx - TAV_X).toFixed(2), z: +(t.cz - TAV_Z).toFixed(2), r: +t.r.toFixed(2), top: +(t.top - TAV_Y).toFixed(2), pieces: t.pieces.length, kinds: t.pieces.map((p) => p.userData.part).join(','), dead: t.dead })),
