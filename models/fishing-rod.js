@@ -131,6 +131,7 @@ export function makeFishingRod() {
    * drum is three pieces and the middle one is the line's own colour.
    * The pillar and the handle are what break the circle. */
   const reel = new THREE.Group();
+  reel.name = 'reel';                      // the game turns it while the line is paying out or coming in
   reel.position.set(0, 0.262, -0.052);
   const flange = (x) => {
     const f = new THREE.Mesh(lathe([

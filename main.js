@@ -14,7 +14,7 @@ import { makeUndergroundBunker } from './models/underground-bunker.js';
 import { makeKatana, KAT_TIP, KAT_POMMEL } from './models/katana.js';
 import { fitSparePeg, sparePegCopy, PEG_TIP } from './models/spare-peg.js';
 import { makeUndercroft } from './models/undercroft.js';
-import { makeFishingRod, makeFishingRodIcon } from './models/fishing-rod.js';
+import { makeFishingRod, makeFishingRodIcon, ROD_LEN, ROD_GRIP } from './models/fishing-rod.js';
 
 /* ------------------------------------------------------------------ *
  *  Beach Walk — an endless, eerie shoreline at night.
@@ -5810,7 +5810,7 @@ function rockGroundAt(x, z, feetY) {
   let best = null;
   for (const c of rockColliders) {
     if (solidDepth(c, x, z) <= 0) continue;
-    if (feetY >= c.top - ROCK_STEP && (!best || c.top > best.top)) best = c;
+    if (feetY >= c.top - (c.step ?? ROCK_STEP) && (!best || c.top > best.top)) best = c;
   }
   return best;
 }
@@ -5835,7 +5835,7 @@ function pushOutOfSolids(pos, feetY, grow, headY = Infinity) {
        * wall — `rockGroundAt()` lifts you onto it in the same frame. The two
        * used to disagree (0.06 here against ROCK_STEP there), so a stair tread
        * you were meant to walk up shoved you back off it instead. */
-      if (feetY >= c.top - ROCK_STEP) continue;
+      if (feetY >= c.top - (c.step ?? ROCK_STEP)) continue;
       if (c.floorY !== undefined && headY < c.floorY) continue;   // you are under it
       const d = solidDepth(c, pos.x, pos.z, grow);
       if (d > wd) { wd = d; worst = c; }
@@ -5863,19 +5863,43 @@ function pushOutOfSolids(pos, feetY, grow, headY = Infinity) {
        * every collider wins. Where none does — wedged in a corner, or deep
        * in a mass — it falls back to the shallowest, which is the old
        * behaviour and still walks a body out of a solid over a few frames. */
+      /* AND AN INSIDE CORNER IS TWO FACES, NOT ONE. A knockback into the
+       * corner where one box stands beside you and another in front left no
+       * single face that cleared both, so the first clear one was the far
+       * side of a two-metre cell — measured, the horde threw the player 2.03 m
+       * in one frame at the rock heap. When a face lands you in a neighbour,
+       * that face plus the neighbour's own nearest face in the OTHER axis is a
+       * candidate too, and it is the corner a few centimetres away. And a way
+       * out more than a metre off is not taken at all: the shallow push walks
+       * the body out over a few frames, which reads as being shouldered, not
+       * as a teleport. */
       const cand = [[(c.x0 - grow) - pos.x, 0], [(c.x1 + grow) - pos.x, 0],
                     [0, (c.z0 - grow) - pos.z], [0, (c.z1 + grow) - pos.z]];
-      cand.sort((a, b) => (Math.abs(a[0]) + Math.abs(a[1])) - (Math.abs(b[0]) + Math.abs(b[1])));
-      let took = null;
-      for (const [dx, dz] of cand) {
-        const nx = pos.x + dx, nz = pos.z + dz;
-        let free = true;
+      const blocker = (nx, nz) => {
         for (const o of rockColliders) {
-          if (feetY >= o.top - ROCK_STEP) continue;
+          if (feetY >= o.top - (o.step ?? ROCK_STEP)) continue;
           if (o.floorY !== undefined && headY < o.floorY) continue;
-          if (solidDepth(o, nx, nz, grow) > 1e-4) { free = false; break; }
+          if (solidDepth(o, nx, nz, grow) > 1e-4) return o;
         }
-        if (free) { took = [dx, dz]; break; }
+        return null;
+      };
+      for (const [dx, dz] of cand.slice()) {
+        const o = blocker(pos.x + dx, pos.z + dz);
+        if (!o || o === c || o.r !== undefined) continue;
+        if (dx !== 0) {
+          const nz = pos.z + dz;
+          cand.push([dx, (o.z0 - grow) - nz], [dx, (o.z1 + grow) - nz]);
+        } else {
+          const nx = pos.x + dx;
+          cand.push([(o.x0 - grow) - nx, dz], [(o.x1 + grow) - nx, dz]);
+        }
+      }
+      const dist = (a) => Math.abs(a[0]) + Math.abs(a[1]);
+      cand.sort((a, b) => dist(a) - dist(b));
+      let took = null;
+      for (const t of cand) {
+        if (dist(t) > 1.0) break;
+        if (!blocker(pos.x + t[0], pos.z + t[1])) { took = t; break; }
       }
       if (!took) took = cand[0];
       pos.x += took[0]; pos.z += took[1];
@@ -7863,7 +7887,9 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
      * refuses it anyway, but a latch that re-arms every 45 ms for as long as
      * the button is held is a timer running through the whole of a string
      * for nothing. The peg reads `windHeld` directly. */
-    if (!(equipped && equipped.thrust)) {
+    /* (The rapier charges like everything else now: hold for the charged
+     * lunge, Shift + hold for the imbroccata. Its string is tapped.) */
+    {
       const arm = () => { windLatch = null; if (!windHeld) return; if (!startWind() && windHeld && !winding) windLatch = setTimeout(arm, 45); };
       windLatch = setTimeout(arm, WIND_TAP * 1000);
     }
@@ -8496,6 +8522,10 @@ function updateHover() {
   } else if (equipped && equipped.onPull) {
     crosshair.className = 'active';
     setPrompt(kbd('LMB') + 'Pull the key out of his mouth');
+  } else if (equipped && equipped.onCast) {
+    const cl = equipped.castLabel();
+    crosshair.className = cl ? 'active' : '';
+    setPrompt(cl ? kbd('LMB') + cl : '');
   } else if (equipped && equipped.clickInspect && equipped.inspectModel) {
     /* A THING WITH NOTHING TO DO IS A THING TO LOOK AT. The fang, the photo
      * and the CD have no verb of their own, so a click in your hand turns it
@@ -8576,8 +8606,22 @@ function attackAction() {                        // left mouse
      * from where the blade is. Anything else is dropped — you were not
      * recovered, so you do not swing. */
     if (digT <= 0) {
-      if (equipped.thrust) pegStage = 1;
+      /* AND A STRING HAS A WINDOW, NOT A RHYTHM. The next beat was only
+       * taken from a click that landed during the extension — about a fifth
+       * of a second — so anyone clicking at a normal pace restarted the jab
+       * every time and never saw the disengage or the lunge. A click within
+       * PEG_COMBO_WINDOW of the last beat ending carries the string on. */
+      if (equipped.thrust) {
+        const cont = equipped.rapier && pegLastStage > 0 && pegLastStage < 3
+          && performance.now() - pegLastEnd < PEG_COMBO_WINDOW;
+        pegStage = cont ? pegLastStage + 1 : 1; pegQueued = false;
+      }
       startDig();
+    } else if (equipped.rapier && pegStage > 0 && pegStage < 3 && digT >= DIG_WINDUP) {
+      /* A RAPIER'S STRING IS TAPPED AS WELL AS HELD. A click from the extension
+       * on is the next beat of the combination, fired at the link; a click
+       * during the draw is dropped, the rule every other weapon keeps. */
+      pegQueued = true;
     } else if (slashing() && equipped.alternate && !digOverhead && !katBack() && !digCharged && digT < RETURN_LATEST) {
       queuedSwing = 'return';                  // fires at the follow-through, from the left
     } else if ((isBlade() || (equipped.thrust && !digOverhead)) && !digOverhead && digT >= FORE_EARLY && !winding) {
@@ -8587,10 +8631,15 @@ function attackAction() {                        // left mouse
        * tapping rather than holding waited out the whole way home before the
        * button did anything — on the quickest weapon in the game. The string
        * is what the HELD button does; this is what tapping does. */
-      cancelSwing(); startDig();               // recovered enough: leaves from the live pose
+      // (the rapier carries its string on through this door too, or the swing it
+      // starts has no stage and the next click begins the string again)
+      const next = equipped.rapier ? (pegStage > 0 && pegStage < 3 ? pegStage + 1 : 1) : 0;
+      cancelSwing(); if (equipped.rapier) pegStage = next;
+      startDig();                              // recovered enough: leaves from the live pose
     }
     return;
   }
+  if (equipped && equipped.onCast) { equipped.onCast(); return; }   // the rod: cast, or reel in
   if (canWearHeld(equipped)) { wearRing(equipped); return; }
   if (equipped && equipped.onListen) { if (listening) stopListening(true); else listenToShell(); return; }   // a click at the ear takes it down again
   if (equipped && equipped.onDrink) { drinkWater(); return; }
@@ -10931,7 +10980,8 @@ const _glintP = new THREE.Vector3(), _glintR = new THREE.Vector3(), _glintC = ne
  * the hand holding the blade trembles. The pops are on an irregular count,
  * because a regular one is a beacon. */
 function updateGlint(dt) {
-  const want = (winding && windFull) ? 1 : 0;
+  if (pegHaste > 0) pegHaste = Math.max(0, pegHaste - dt);
+  const want = (winding && windFull) || (pegHaste > 0 && equipped && equipped.rapier) ? 1 : 0;
   if (want && !glintWas) { glintT = 0; glintPop = 0; glintPopAt = 0.35; }
   glintWas = want;
   glintK += (want - glintK) * Math.min(1, dt * (want ? 18 : 10));
@@ -11313,8 +11363,8 @@ const BLOCK_POSE = [0.35, 0.0, 0.95, -1.62, 0.06];
 const KAT_BLOCK_AT = new THREE.Vector3(-0.453, 0.055, -0.505);
 const KAT_BLOCK_POSE = [0.570, 0.0, 0.747, -1.604, 0.045];
 const KAT_BLOCK_ROT = [-3.050, -4.633, 0.162];
-const blockAt = () => (katLike() ? KAT_BLOCK_AT : BLOCK_AT);
-const blockPose = () => (katLike() ? KAT_BLOCK_POSE : BLOCK_POSE);
+const blockAt = () => (katLike() || (equipped && equipped.rapier) ? KAT_BLOCK_AT : BLOCK_AT);
+const blockPose = () => (katLike() || (equipped && equipped.rapier) ? KAT_BLOCK_POSE : BLOCK_POSE);
 const _blkQ = new THREE.Quaternion(), _blkE = new THREE.Euler(), _blkV = new THREE.Vector3(), _blkP = new THREE.Vector3();
 const _gQ = new THREE.Quaternion(), _gQ2 = new THREE.Quaternion(), _gQ3 = new THREE.Quaternion();
 const KAT_FACE = 0.42, KAT_FACE_K = 0.5;  // how far the blade is pitched into the screen through a cut, and how much of the point's drift is taken back
@@ -11824,16 +11874,17 @@ bloodItem = {
  * one, and a turned ash shaft with an iron shoe on the end of it is a short
  * spear that nobody thinks of as one. Built, in models/spare-peg.js.
  *
- * Its numbers say "quick, and it reaches":
- *   swingK 0.55 — the fastest attack in the game, a third under a katana's
- *   light cut, because the whole of a rapier is that it is back on guard
+ * Its numbers say "quick, and it reaches, and it does not hit hard" — a
+ * rapier, not a spear:
+ *   A jab is 0.36 s end to end (PEG_DUR) and chains at 0.2 s, the fastest
+ *   attack in the game: the whole of a rapier is that it is back on guard
  *   before a heavier thing has finished arriving.
- *   PEG_REACH 2.65 m against the katana's thrust at 1.75 — it lands from
- *   outside everything else's range, which is the other half of the trade.
- *   dmgLight 1 / dmgHeavy 3 — a poke is a poke, and the committed lunge is
- *   the biggest single blow any tool here throws. It is the only weapon
- *   whose charge is worth three times its click, which is what makes the
- *   wind-up worth holding at this speed.
+ *   `reachK` 1.34 puts a jab's hit out to about six metres against the
+ *   katana's five, and the lunge adds a fifth again AND carries the body
+ *   1.35 m forward — it lands from outside everything else's range.
+ *   dmgLight 1 / dmgHeavy 2 — every thrust is a single point, the lunge two.
+ *   The least damage per blow of any weapon; the trade is the rate and the
+ *   distance.
  *   No `blade` — it is ash and iron, so it takes the wood knocks and the
  *   ordinary connect rather than the sword bank — and no `alternate`, since
  *   a thrust has no other side to come back on. */
@@ -11860,6 +11911,18 @@ const pegModel = new THREE.Group(), pegInspect = new THREE.Group(), pegWorld = n
 bwGlb('assets/peg-leg.glb', (gltf) => {
   const parts = fitSparePeg(gltf.scene);
   pegModel.add(sparePegCopy(parts));
+  /* AND THE ONE IN YOUR FIST CATCHES THE MOON. Its level was tuned to sit a
+   * shade over the sand, which is right for the copy lying in the chest and
+   * wrong for the one you fight with: held against a night beach it was a
+   * black silhouette, and a weapon you cannot see move cannot look quick. A
+   * cold rim on its edges (the rocks' own `reexpose` rim) and a little more of
+   * its own map give it an outline without turning a leg into a plank of pale
+   * wood. The copy's materials are its own (`sparePegCopy` clones them). */
+  pegModel.traverse((o) => {
+    if (!o.isMesh || !o.material) return;
+    o.material.emissiveIntensity = 0.21;
+    reexpose(o.material, 1.0, [0.11, 0.13, 0.19]);
+  });
   pegInspect.add(sparePegCopy(parts));
   pegWorld.add(sparePegCopy(parts));
 });
@@ -11870,16 +11933,16 @@ pegVM.rotation.set(VM_PEG_REST_ROT[0], VM_PEG_REST_ROT[1], VM_PEG_REST_ROT[2]);
 pegVM.visible = false;
 toolMount.add(pegVM);
 const pegItem = {
-  name: 'Spare Peg', desc: 'A Thrusting Weapon', icon: makePegIcon(), onDig: true, viewmodel: pegVM,
+  name: 'Spare Peg', desc: 'A Thrusting Weapon · Parry: +35% Attack Speed for 5s', icon: makePegIcon(), onDig: true, viewmodel: pegVM,
   inspectModel: pegInspect, lip: PEG_LIP,
-  thrust: true, reach: 2.65, reachK: 1.22,
+  thrust: true, rapier: true, reach: 3.0, reachK: 1.34,
   /* AND THE RECOVERY IS A BLADE'S NO LONGER. `recoverK` stretches the way
    * home, which on a katana buys the held beat a cut is read off and the
    * window the return chains in; on a point it bought 48 FRAMES — eight
    * tenths of a second — of a stick creeping back with the button dead the
    * whole time, on the weapon whose entire claim is that it is back on guard
    * first. 2.4, and `easeOutCubic` spends most of that on the recoil. */
-  dmgLight: 1, dmgHeavy: 3, windRate: 1.55, gore: 0.55, swingK: 0.75, recoverK: 2.4,
+  dmgLight: 1, dmgHeavy: 2, windRate: 1.55, gore: 0.45, swingK: 1, recoverK: 2.4,
   use: () => toggleEquip(pegItem),
 };
 /* THE ONE BY THE DRAIN IS GONE. It lay on the sand past the drainage tunnel
@@ -12101,9 +12164,11 @@ let slashDir = -1, lastSlashAt = -1e9;   // -1 sweeps right to left
  * would blend into the cut's own grip on the frame it winds up. It routes
  * through the stab's slot in the pose system instead, which is the one place
  * this file already knows how to drive a point at the crosshair. */
-/* ---- THE PEG'S COMBINATION: TWO THRUSTS AND A CUT ----------------------
- * Hold the button and it runs a three-hit string — thrust, thrust, and a
- * SLASH to finish. A tap is still one thrust, so the weapon has a jab you
+/* ---- THE PEG'S COMBINATION: JAB, DISENGAGE, LUNGE ----------------------
+ * (The finisher was a cut; it is a lunge now — see THE RAPIER. What follows
+ * is the history of the string's mechanism, which is unchanged.)
+ * Hold the button — or tap it — and it runs a three-hit string: thrust,
+ * thrust, and a finisher. A tap is still one thrust, so the weapon has a jab you
  * can throw and a committed string you have to mean, and nothing was added
  * to the controls to get it: the button was already being watched, it was
  * simply being watched for a CHARGE, which is the one thing a rapier has no
@@ -12121,9 +12186,20 @@ let slashDir = -1, lastSlashAt = -1e9;   // -1 sweeps right to left
  * one to be a DIFFERENT SHAPE, so it lands as an answer rather than as one
  * more of the same. It is also the only time this weapon sweeps the frame,
  * which is what makes it worth holding the button for. */
-let pegStage = 0;                        // 0 idle, 1 and 2 the thrusts, 3 the cut
-const thrusting = () => !!(equipped && equipped.thrust) && pegStage !== 3;
-const pegFinish = () => !!(equipped && equipped.thrust) && pegStage === 3;
+let pegStage = 0;                        // 0 idle, 1 and 2 the thrusts, 3 the lunge
+let pegQueued = false;                   // a click that asked for the next beat
+let pegLastStage = 0, pegLastEnd = -1e9;  // the beat that just finished, and when
+const PEG_COMBO_WINDOW = 550;            // ms after a beat in which a click is the next one
+/* THE RAPIER HAS NO CUT. The string ended in an overhead slash for a while and
+ * the owner's word was that it read as weak and like every other weapon: a
+ * rapier is a POINT, all the way through. So every beat of the string is a
+ * thrust now and `pegFinish` (the old slash) never answers; the third beat is
+ * a LUNGE (`pegLunging`), the body going with the point. */
+const thrusting = () => !!(equipped && equipped.thrust);
+const pegFinish = () => false;
+const pegLunging = () => !!(equipped && equipped.thrust) && (pegStage === 3 || pegStage === 4);
+// every blow of the rapier from the lunge up is its heavy: the string's finisher, the charged lunge, the imbroccata
+const pegHeavyBlow = () => !!(equipped && equipped.thrust) && pegStage >= 3;
 const slashing = () => !!(equipped && equipped.onDig) && !digOverhead && !thrusting();
 /* What the tool in hand does that the others do not. Every one of these
  * defaults to the shovels' own behaviour, so a tool without the field is
@@ -12133,7 +12209,7 @@ const slashing = () => !!(equipped && equipped.onDig) && !digOverhead && !thrust
  * is five, against one for the jab, which is the trade — the string is slow
  * enough to be read and punished, so it has to be worth being read. */
 const toolDmg = (heavy) => (equipped && equipped.dmgLight)
-  ? ((heavy || pegFinish()) ? equipped.dmgHeavy : equipped.dmgLight)
+  ? ((heavy || pegFinish() || pegHeavyBlow()) ? equipped.dmgHeavy : equipped.dmgLight)
   : (heavy ? 2 : 1);
 const toolGore = () => (equipped && equipped.gore) || 1;
 const isBlade = () => !!(equipped && equipped.blade);
@@ -12545,7 +12621,12 @@ function aimRay(P) {
    * connect at exactly the same range as a spade is a description rather
    * than a mechanic. `reachK` is the tool's own multiplier and defaults to
    * what it always was. */
-  digRay.far = (DIG_REACH + P * DIG_HEAVY_REACH) * ((equipped && equipped.reachK) || 1);
+  /* (The rapier's charge adds a little reach of its own and not the heavy's
+   * 2.4 m: stacked on its own multiplier, a full-charge lunge was landing at
+   * nine and a half metres. It tops out near 8.5 with the step, which is
+   * still the longest blow in the game.) */
+  const heavyReach = equipped && equipped.rapier ? 0.8 : DIG_HEAVY_REACH;
+  digRay.far = (DIG_REACH + P * heavyReach) * ((equipped && equipped.reachK) || 1) * (pegLunging() ? 1.15 : 1);
   return digRay;
 }
 /* WHERE THE BLADE LANDS ON SCREEN. The poses put the blade at a fixed spot
@@ -12643,7 +12724,7 @@ const STAB_REACH = 1.75;                  // and how far a thrust reaches, plus 
 /* AND A WEAPON MAY CARRY ITS OWN. The peg is the long one — it lands from
  * outside everything else's range, which is half of what makes a thrusting
  * weapon a different thing to hold rather than a differently-shaped sword. */
-const stabReach = () => (equipped && equipped.reach) || STAB_REACH;
+const stabReach = () => ((equipped && equipped.reach) || STAB_REACH) + (pegLunging() ? 0.9 : pegStage === 5 ? 0.4 : 0);
 function landPoint() {
   camera.getWorldPosition(_landP);
   return _landP.addScaledVector(_aimD, landDist >= 0 ? landDist : (katStabbing() ? stabReach() + digPower * 0.5 : SWING_AIR + digPower * 0.6));
@@ -12659,7 +12740,7 @@ function landPoint() {
 function pegChain() {
   if (!equipped || !equipped.onDig || frozen()) return;
   pegStage += 1;
-  queuedSwing = false;
+  queuedSwing = false; pegQueued = false;
   digT = 0;
   if (pegStage === 3) { slashDir = -1; comboStep = 0; }   // the cut comes right to left, always
   /* AND IT IS A FRESH SWING, NOT A WOUND ONE. `startDig` with a pose starts
@@ -12690,6 +12771,7 @@ function startDig(power = 0, fromPose = null, chained = false) {
    * the haul to the grip to the whoosh to whether a creature treats it as a
    * heavy blow. One flag buys all of it. */
   digOverhead = pegFinish() || (!!fromPose && !chained && windOverhead);
+  if (equipped.rapier) digOverhead = false;     // the imbroccata is a thrust, not a slam: its own track says so
   /* RIGHT TO LEFT, always — unless you are already swinging, in which case
    * the second one comes back the other way. A lone cut should look the same
    * every time you make it; a combination should look like a combination. */
@@ -12709,12 +12791,20 @@ function startDig(power = 0, fromPose = null, chained = false) {
     for (let i = 0; i < 6; i++) _poseF[i] = _pose[i];   // from wherever the hand is
     digT = 0.0001;
   }
+  if (equipped.rapier) {                // the rapier's track starts where the swing does, from where the hand is
+    if (fromPose) for (let i = 0; i < 6; i++) _poseF[i] = fromPose[i];
+    pegQF.copy(pegQ); pegT0 = digT; pegLungeT = -1;
+    const r = () => Math.random() * 2 - 1;
+    const lo = pegStage === 2 ? -1 : pegStage === 1 ? 0.4 : 0;     // the disengage comes in under, the jab a touch high
+    pegVar[0] = r() * 0.030; pegVar[1] = (lo * 0.6 + r() * 0.5) * 0.022; pegVar[2] = r() * 0.030;
+    pegVar[3] = (0.09 + Math.random() * 0.07) * (pegStage === 2 ? -1 : 1); pegVar[4] = r() * 0.025;
+  }
   impactPose(_poseB, digPower);
   if (slashing() || thrusting()) throughPose(_poseC, digPower);
   // a cut's whoosh goes with the blade, not with the click: a light cut cocks first
   sfxDig(digPower, thrusting() ? 2 : slashing(), fromPose ? 0 : windupEnd() * swingSecs(digPower));
   // the shift heavy moves the most air of anything you throw, and it is heard whether it lands or not
-  if (digOverhead || katStabbing()) sfxHeavySwing(digPower, fromPose ? 0 : windupEnd() * swingSecs(digPower));
+  if (digOverhead || (katStabbing() && !(equipped.rapier && !pegHeavyBlow()))) sfxHeavySwing(digPower, fromPose ? 0 : windupEnd() * swingSecs(digPower));
 }
 /* THE HEAVY'S WHOOSH. A stab or an overhead carried only the short shaft
  * rush of a thrust (or the spade's), which under everything else in a fight
@@ -12741,7 +12831,9 @@ function sfxHeavySwing(P = 0, delay = 0) {
 const swingLanded = () => digT >= (slashing() ? SLASH_THROUGH : DIG_STRIKE + 0.08);
 function cancelSwing() {
   digT = 0; digPower = 0; digCharged = false; digOverhead = false; queuedSwing = false;
-  pegStage = 0;                          // a string you guard out of is over
+  pegStage = 0; pegQueued = false;       // a string you guard out of is over
+  pegLastStage = 0;
+  pegLungeT = -1;
 }
 const WIND_IN = 0.10;                    // seconds the haul-back blends in from wherever the hand was
 const _windFrom = [0, 0, 0, 0, 0, 0];
@@ -12751,11 +12843,12 @@ function startWind() {
    * combination on this one, so the charge must never arm — otherwise the
    * string's first thrust would be cancelled by a haul-back the moment the
    * latch came round. */
-  if (equipped && equipped.thrust) return false;
+  if (equipped && equipped.thrust && !equipped.rapier) return false;
   if (winding || !equipped || !equipped.onDig || frozen()) return false;
   if (digT > 0) { if (!swingLanded()) return false; cancelSwing(); }
   for (let i = 0; i < 6; i++) _windFrom[i] = _pose[i];   // the haul leaves from here, not from a snap
   winding = true; windT = 0; windFull = false; windOverhead = false;
+  if (equipped.rapier) { pegStage = 0; pegQueued = false; pegLastStage = 0; pegHighK = 0; pegQW.copy(pegQ); }
   /* A HEAVY IS ALWAYS THE FOREHAND. The combo alternates the light cuts —
    * that is the point of it — but a charge is a pose you HOLD, and a held
    * pose that lands on whichever side the last click happened to leave you
@@ -12769,6 +12862,7 @@ function startWind() {
 function releaseWind() {
   if (!winding) return;
   winding = false;
+  if (equipped && equipped.rapier) pegStage = windOverhead ? 5 : 4;   // the imbroccata, or the charged lunge
   // even a tap off the right button carries a bit more than a plain dig
   startDig(0.3 + 0.7 * Math.min(1, windT / WIND_FULL), _pose);
   windT = 0;
@@ -13223,7 +13317,7 @@ const comboRate = () => 1;
  * longer than the jab and the FINISHER longer again, which is also what
  * makes it land as the answer to the two before it. */
 const pegRate = () => (pegStage === 3 ? 1.50 : pegStage > 0 ? 1.15 : 1);
-const swingSecs = (P) => (slashing() ? DIG_DUR * (0.55 + P * 0.60) / (1 + 0.34 * P) : DIG_DUR * (0.55 + P)) * ((equipped && equipped.swingK) || 1) * comboRate() * pegRate();
+const swingSecs = (P) => (equipped && equipped.rapier) ? pegMove().dur : (slashing() ? DIG_DUR * (0.55 + P * 0.60) / (1 + 0.34 * P) : DIG_DUR * (0.55 + P)) * ((equipped && equipped.swingK) || 1) * comboRate() * pegRate();
 /* A HEAVY IS QUICK WHERE IT IS SEEN AND LONG WHERE IT IS FELT. Stretching
  * the WHOLE charged swing (`heavyK`, 1.75x) made it heavy by making it
  * slow, which is not the same thing: the owner watched the blade wallow
@@ -13236,7 +13330,7 @@ const swingSecs = (P) => (slashing() ? DIG_DUR * (0.55 + P * 0.60) / (1 + 0.34 *
  * because it has already paid up front. 34 frames became 22, with the cut
  * itself landing in five. */
 const bladeRate = (p, P) => {
-  if ((!isBlade() && !thrusting()) || digOverhead || !equipped.recoverK) return 1;
+  if ((!isBlade() && !thrusting()) || digOverhead || !equipped.recoverK || equipped.rapier) return 1;
   if (p < DIG_STRIKE) return 1 + 0.25 * P;
   if (p < throughEnd()) return 1 + 0.35 * P;
   return equipped.recoverK * (katBack() ? 1.8 : 1) * (1 - 0.55 * P);
@@ -13300,7 +13394,245 @@ function landBlade() {
   armRig.position.addScaledVector(_landV, landK);
 }
 
+
+/* ---- THE RAPIER ------------------------------------------------------
+ * The spare peg fights like a smallsword, and the reference for how that
+ * looks in first person is Mordhau's rapier and estoc: the weapon is held
+ * EN GARDE with the point already forward on the line, and every attack is
+ * the arm straightening along that line — a short draw back toward the
+ * shoulder, an extension that is the fastest thing the hand does, a beat of
+ * the point held in, and a snap back to guard. Nothing sweeps and nothing is
+ * hauled over the head. What makes it read as powerful rather than as a
+ * poke is the ACCELERATION (the draw is slow and small, the extension
+ * arrives at full speed), the point staying ON the line the whole way, and
+ * the body: the third beat is a fencer's LUNGE — the camera drops and the
+ * whole player goes a metre and a half forward with the point, so the hit
+ * lands from further out than anything else in the game can reach.
+ *
+ * The string is jab, DISENGAGE, lunge. The disengage (a cavazione) is the
+ * rapier's own trick: the point dips under an imagined blade and comes up
+ * the other side of it, so the second thrust arrives on a different line
+ * from the first and the pair does not read as the same picture twice.
+ *
+ * Every key below is [t, pose, grip, ease], t in the swing's own 0..1 with
+ * the contact at DIG_STRIKE (the frame the damage lands), pose the six arm
+ * numbers everything else here is posed with, grip the tool's Euler in the
+ * arm's frame. They were SOLVED in the pane against screen targets for the
+ * fist and the point (tools/peg_harness.js, __solve), not typed by eye. */
+/* EN GARDE: the fist low on the right, 0.63 m out, the point just under and
+ * right of the crosshair 1.14 m out — on the line, and off the middle of the
+ * picture you aim with. Measured at 16:9: fist NDC (0.65, -0.72), point
+ * (0.12, -0.12), the shaft 38 degrees off the view axis so it reads as a
+ * length of timber and not as a dot. */
+let PEG_GUARD = [0.174, -0.040, 0.463, 0.130, -0.127, 0.129];
+let PEG_GUARD_ROT = [-3.638, -2.181, 0.918];
+/* The poses, solved (fist NDC, point NDC, point depth in metres):
+ *   JAB     draw (1.16,-0.74) (0.29,-0.34) 1.17  ->  hit (0.23,-0.50) (-0.02, 0.01) 1.40
+ *   DISENG  under (1.01,-0.76) (0.18,-0.69)  ->  up the LEFT (0.49,-0.86) (-0.30,-0.42)
+ *           ->  hit (0.18,-0.59) (-0.01,-0.01) 1.40
+ *   LUNGE   coiled (1.22,-0.65) (0.32,-0.27) 1.17  ->  hit (0.15,-0.41) (-0.02, 0.02) 1.59
+ * AND THE POINT HAS TO TRAVEL ON SCREEN. The first set drew the point back
+ * ALONG the line with it already on the crosshair — a fencer's tell, and on a
+ * screen it is the whole peg shrinking toward the middle while the point
+ * moves a fifth of the frame: measured 0.18 NDC, which is what "the hits look
+ * weak" was. Drawn OFF the line, low and right, with the shaft already
+ * pointing up the line it is about to travel, the strike slides the peg along
+ * its own axis and the point crosses 0.45 of the frame into what you are
+ * looking at. Two traps on the way to it: a draw with the point off the line
+ * and the fist near the lens is the peg end-on (21 degrees off the view axis,
+ * a lump in the corner), and a draw lying flat across the frame makes the
+ * strike rotate 50 degrees, which is a swing that arrives point-first. Both
+ * are held off by the solve: 38 degrees or more off the axis, the fist at
+ * least 0.66 m out.
+ * The fist travels 0.40-0.66 m forward on every extension and the grip barely
+ * turns, so the stroke is the ARM straightening down the line — a wrist that
+ * rolls on the way in is a swing that happens to arrive point-first. And the
+ * extension is `in` (cubic in): it leaves slowly and ARRIVES at full speed, so
+ * the fastest frame is the contact, which is what reads as a blow. */
+let PEG_KEYS = (() => {
+  const P = (a) => [a.slice(0, 6), a.slice(6)];
+  const [D, dr] = P([0.223, 0.028, 0.733, 0.729, -0.166, 0.646, -3.713, -2.078, 0.843]);
+  const [H, hr] = P([0.197, 0.036, 0.331, -0.135, -0.377, -0.136, -3.628, -2.158, 0.918]);
+  const [T, tr] = P([0.195, 0.050, 0.354, -0.168, -0.421, -0.200, -3.628, -2.158, 0.918]);
+  const [U1, u1r] = P([-0.156, -0.027, 0.801, 0.718, -0.196, 0.474, -3.540, -2.114, 1.078]);   // the point dips under
+  const [U2, u2r] = P([-0.175, 0.012, 0.653, 0.095, -0.021, -0.159, -3.495, -2.266, 1.081]);      // and comes up the other side
+  const [DH, dhr] = P([0.249, -0.013, 0.346, -0.152, -0.369, -0.207, -3.608, -2.033, 0.918]);
+  const [DT, dtr] = P([0.194, -0.080, 0.396, -0.068, -0.443, -0.202, -3.618, -2.123, 0.920]);
+  const [L1, l1r] = P([0.315, 0.089, 0.753, 0.931, -0.131, 0.652, -3.635, -2.021, 0.923]);     // coiled at the shoulder
+  const [LH, lhr] = P([0.257, 0.059, 0.293, -0.032, -0.538, -0.207, -3.628, -2.073, 0.918]);
+  const [LT, ltr] = P([0.144, 0.010, 0.373, -0.013, -0.577, -0.191, -3.628, -2.158, 0.918]);
+  const [CH, chr] = P([0.209, 0.122, 0.328, -0.015, -0.591, -0.212, -3.708, -2.138, 0.918]);   // charged lunge, hit
+  const [CT, ctr] = P([0.172, 0.122, 0.333, 0.000, -0.652, -0.236, -3.708, -2.138, 0.918]);
+  const [IH, ihr] = P([-0.779, 0.552, 0.493, -0.544, -0.365, -0.202, -3.730, -2.094, 0.938]); // imbroccata, hit
+  const [IT, itr] = P([-0.839, 0.483, 0.485, -0.567, -0.439, -0.249, -3.690, -2.094, 0.938]);
+  return {
+    1: [[0.30, D, dr, 'out'], [0.34, D, dr, 'lin'], [DIG_STRIKE, H, hr, 'in'], [0.56, T, tr, 'out'], [1, 'G', 'G', 'back']],
+    2: [[0.13, U1, u1r, 'out'], [0.30, U2, u2r, 'inout'], [0.34, U2, u2r, 'lin'], [DIG_STRIKE, DH, dhr, 'in'], [0.56, DT, dtr, 'out'], [1, 'G', 'G', 'back']],
+    3: [[0.22, L1, l1r, 'out'], [0.34, L1, l1r, 'lin'], [DIG_STRIKE, LH, lhr, 'in'], [0.64, LT, ltr, 'out'], [1, 'G', 'G', 'inout']],
+    /* the charged lunge: further out than the string's (fist 1.10 m, point
+     * 1.66), and it holds out there longer — you meant this one */
+    4: [[DIG_STRIKE, CH, chr, 'in'], [0.70, CT, ctr, 'out'], [1, 'G', 'G', 'inout']],
+    /* the imbroccata: from the raised guard the fist comes down and forward
+     * to (0.22, 0.34) with the point on the crosshair — the shaft still
+     * angled DOWN onto it from above, which is the whole read of it */
+    5: [[DIG_STRIKE, IH, ihr, 'in'], [0.62, IT, itr, 'out'], [1, 'G', 'G', 'inout']],
+  };
+})();
+/* THE CHARGE. Held, the rapier is COILED for the lunge — the fist hauled
+ * back past the shoulder, the point still on the line and trembling harder
+ * the longer it is held — or, with Shift, RAISED for the imbroccata: the
+ * hand up by the temple and the point angled down onto what you are looking
+ * at, the thrust that comes in over a guard. Both were solved like the rest. */
+// coiled: fist (0.93,-0.48) 0.32 m from the lens, point (0.14, 0.12)
+let PEG_COIL = [0.077, 0.237, 0.486, 0.086, 0.172, -0.046], PEG_COIL_ROT = [-3.635, -1.898, 0.923];
+// raised: fist (0.50, 0.62) up by the temple, point (0.06,-0.04) — the shaft
+// comes down out of the top of the picture onto the crosshair
+let PEG_HIGH = [-0.631, 0.538, 0.485, -0.456, 0.100, -0.190], PEG_HIGH_ROT = [-3.710, -1.926, 0.925];
+const _pegWQ = new THREE.Quaternion(), _pegWP = [0, 0, 0, 0, 0, 0];
+function pegWindPose(out, e, strain, dt) {
+  pegHighK += ((windOverhead ? 1 : 0) - pegHighK) * Math.min(1, dt * 12);
+  poseMix(_pegWP, PEG_COIL, PEG_HIGH, pegHighK);
+  poseMix(out, PEG_GUARD, _pegWP, e);
+  // the point shakes at full charge, most at the tip: pitch and yaw, a little
+  out[0] += strain * 0.55; out[2] += strain * 0.45; out[4] += Math.abs(strain) * 0.3;
+  _pegQA.setFromEuler(_pegE.set(PEG_COIL_ROT[0], PEG_COIL_ROT[1], PEG_COIL_ROT[2]));
+  _pegWQ.setFromEuler(_pegE.set(PEG_HIGH_ROT[0], PEG_HIGH_ROT[1], PEG_HIGH_ROT[2]));
+  _pegQA.slerp(_pegWQ, pegHighK);
+  pegQ.copy(pegQW).slerp(_pegQA, e);
+  return out;
+}
+/* 4 and 5 are the CHARGED blows, released out of a held pose (they start at
+ * DIG_WINDUP, already drawn): 4 the charged lunge, 5 the imbroccata. */
+const PEG_DUR = { 1: 0.36, 2: 0.34, 3: 0.60, 4: 0.95, 5: 0.72 };
+const PEG_LINK = { 1: DIG_STRIKE + 0.10, 2: DIG_STRIKE + 0.10, 3: 1, 4: 1, 5: 1 };
+let pegT0 = 0, pegHighK = 0;                 // where this swing's track starts; how far the charge is raised for the imbroccata
+/* THE RIPOSTE HASTE. A parry made with the rapier in hand buys PEG_HASTE_T
+ * seconds of every swing and every charge running PEG_HASTE_K faster — the
+ * fencer's answer to a parry is the counter, and a counter that is no quicker
+ * than the attack you just stopped is not one. It shows on the point: the
+ * full-charge glint runs the iron for as long as it lasts. */
+const PEG_HASTE_T = 5.0, PEG_HASTE_K = 1.35;
+let pegHaste = 0;
+const pegHasteK = () => (pegHaste > 0 && equipped && equipped.rapier ? PEG_HASTE_K : 1);
+function pegParryHaste() {
+  if (!(equipped && equipped.rapier)) return;
+  pegHaste = PEG_HASTE_T;
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime + 0.09;          // after the parry's own ring
+  for (const [f, d, g] of [[1760, 0, 0.05], [2637, 0.07, 0.04]]) {   // two bright pings, up a fifth
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+    const gg = ctx.createGain(); gg.gain.setValueAtTime(0.0001, t + d);
+    gg.gain.exponentialRampToValueAtTime(g, t + d + 0.008); gg.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.45);
+    o.connect(gg).connect(sfxOut()); o.start(t + d); o.stop(t + d + 0.5);
+  }
+}
+/* AND EVERY THRUST IS A LITTLE DIFFERENT. Keyframes alone put the point on
+ * exactly the same line every time, which is a machine; a person's line
+ * wanders, the wrist turns over on the way in (pronation — the fencer's hand
+ * rolls knuckles-up as the arm straightens) and the point makes a small
+ * circle as it comes off the target. `pegVar` is drawn per swing and laid
+ * over the track with a weight that peaks at the contact and is gone by the
+ * guard, so the guard and every solved contact stay where they were solved
+ * to within a few centimetres. */
+const pegVar = [0, 0, 0, 0, 0];               // side, lift, yaw, roll, pitch
+const pegQW = new THREE.Quaternion();        // the grip the charge was drawn from
+const pegMove = () => { const k = pegStage || 1; return { dur: PEG_DUR[k] * ((equipped && equipped.swingK) || 1) / pegHasteK(), link: PEG_LINK[k], keys: PEG_KEYS[k] }; };
+const pegQ = new THREE.Quaternion(), pegQF = new THREE.Quaternion(), _pegQA = new THREE.Quaternion(), _pegQB = new THREE.Quaternion();
+const _pegE = new THREE.Euler(), _pegPA = [0, 0, 0, 0, 0, 0];
+const PEG_EASE = {
+  lin: (t) => t, in: easeInCubic, out: easeOutCubic, inout: easeInOutCubic,
+  in2: (t) => t * t, out2: (t) => 1 - (1 - t) * (1 - t),
+  back: (t) => 1 - Math.pow(1 - t, 3) * (1 - 1.6 * t),   // settles with one small overshoot
+};
+pegQ.setFromEuler(_pegE.set(PEG_GUARD_ROT[0], PEG_GUARD_ROT[1], PEG_GUARD_ROT[2]));
+pegQF.copy(pegQ);
+function pegGuardPose(out) {
+  /* EN GARDE, and alive. The point circles a few centimetres on two counts
+   * that never line up, the way a held blade does when nobody is making it
+   * keep still — a guard that is a still picture reads as a prop. */
+  const t = window.__pegStill ? 0 : performance.now() * 0.001;   // the harness holds it still to measure
+  for (let i = 0; i < 6; i++) out[i] = PEG_GUARD[i];
+  out[0] += Math.sin(t * 1.3) * 0.012;
+  out[2] += Math.sin(t * 0.83 + 1.1) * 0.014;
+  out[3] += Math.sin(t * 1.07 + 2.3) * 0.010;
+  // and it rides the walk: the point dips on each step and the hand sways with the hips
+  const walk = Math.min(1, velocity.length() / WALK_SPEED);
+  out[1] += Math.abs(Math.sin(vmSway)) * -0.010 * walk; out[2] += Math.sin(vmSway) * 0.020 * walk;
+  const k = 1 - easeOutCubic(blockT);           // the guard pose gives way to a raised guard
+  for (let i = 0; i < 6; i++) out[i] *= k;
+  pegQ.setFromEuler(_pegE.set(PEG_GUARD_ROT[0], PEG_GUARD_ROT[1], PEG_GUARD_ROT[2]));
+  return out;
+}
+// 'G' in a key is the guard, read live so a re-solved guard reaches every move
+const kp = (k) => (k === 'G' ? PEG_GUARD : k), kr = (k) => (k === 'G' ? PEG_GUARD_ROT : k);
+function pegTrack(out, p) {
+  const keys = PEG_KEYS[pegStage || 1];
+  let a = null, b = keys[0];
+  for (let i = 0; i < keys.length; i++) { if (p <= keys[i][0]) { b = keys[i]; a = i ? keys[i - 1] : null; break; } a = keys[i]; b = null; }
+  if (!b) {                                   // past the last key: guard
+    for (let i = 0; i < 6; i++) out[i] = PEG_GUARD[i];
+    pegQ.setFromEuler(_pegE.set(PEG_GUARD_ROT[0], PEG_GUARD_ROT[1], PEG_GUARD_ROT[2]));
+    return out;
+  }
+  const t0 = a ? a[0] : pegT0, pa = a ? kp(a[1]) : _poseF;
+  const e = (PEG_EASE[b[3]] || PEG_EASE.inout)(THREE.MathUtils.clamp((p - t0) / Math.max(1e-4, b[0] - t0), 0, 1));
+  poseMix(out, pa, kp(b[1]), e);
+  if (a) { const r = kr(a[2]); _pegQA.setFromEuler(_pegE.set(r[0], r[1], r[2])); } else _pegQA.copy(pegQF);
+  { const r = kr(b[2]); _pegQB.setFromEuler(_pegE.set(r[0], r[1], r[2])); }
+  pegQ.copy(_pegQA).slerp(_pegQB, e);
+  pegOverlay(out, p);
+  return out;
+}
+function pegOverlay(out, p) {
+  // the line this thrust takes: in on the draw, strongest at the contact, gone by the guard
+  const w = Math.sin(THREE.MathUtils.clamp((p - 0.12) / 0.80, 0, 1) * Math.PI);
+  out[5] += pegVar[0] * w; out[1] += pegVar[1] * w; out[2] += pegVar[2] * w; out[0] += pegVar[4] * w;
+  // the wrist turns over as the arm straightens, and back as it comes home
+  const pron = Math.sin(THREE.MathUtils.clamp((p - DIG_WINDUP) / (0.62 - DIG_WINDUP), 0, 1) * Math.PI);
+  out[3] += pegVar[3] * pron;
+  // and the point comes off the target in a small circle that dies into the guard
+  if (p > DIG_STRIKE + 0.06) {
+    const q = (p - DIG_STRIKE - 0.06) / (1 - DIG_STRIKE - 0.06), amp = 0.030 * (1 - q) * (1 - q);
+    const a = q * Math.PI * 3.2 + pegVar[3] * 8;
+    out[2] += Math.cos(a) * amp; out[0] += Math.sin(a) * amp * 0.8;
+  }
+  // a beat of anticipation: the point twitches forward before it is drawn
+  if (pegStage <= 3 && p < 0.14) out[4] -= 0.018 * Math.sin((p / 0.14) * Math.PI);
+}
+function pegGrip(blk) {
+  toolVM.quaternion.copy(pegQ);
+  if (blk > 0.001) {
+    _blkQ.setFromEuler(_blkE.set(KAT_BLOCK_ROT[0], KAT_BLOCK_ROT[1], KAT_BLOCK_ROT[2]));
+    toolVM.quaternion.slerp(_blkQ, blk);
+  }
+}
+/* THE LUNGE MOVES YOU. From the end of the draw to just past the contact the
+ * body owns the velocity the way the dodge step does — a fast start easing
+ * out, through every clamp a walk goes through — and the camera drops into
+ * the front knee (`slamDip`). A lunge that only moves the arm is an arm. */
+const PEG_LUNGE_DIST = 1.35, PEG_LUNGE_DUR = 0.20;
+let pegLungeT = -1, pegLungeDist = PEG_LUNGE_DIST;
+const _pegLungeD = new THREE.Vector3();
+function pegLungeTick(dt, canMove) {
+  if (pegLunging() && digT >= (pegStage === 4 ? 0 : PEG_KEYS[3][1][0]) && digT < DIG_STRIKE && pegLungeT === -1) {
+    pegLungeT = 0;
+    pegLungeDist = pegStage === 4 ? 1.2 + 1.0 * digPower : PEG_LUNGE_DIST;   // a full charge carries you two metres
+    camera.getWorldDirection(_pegLungeD); _pegLungeD.y = 0; _pegLungeD.normalize();
+    stepSnd(inBunker ? sfxStepMetal : inUndercroft ? sfxStepUnder : sfxStep);
+  }
+  if (pegLungeT < 0) return;
+  if (!canMove || !pegLunging()) { pegLungeT = -1; return; }
+  pegLungeT += dt;
+  if (pegLungeT >= PEG_LUNGE_DUR) { pegLungeT = -2; return; }   // -2: this swing's lunge is spent
+  const e = 1 - pegLungeT / PEG_LUNGE_DUR;
+  velocity.copy(_pegLungeD).multiplyScalar((pegLungeDist / PEG_LUNGE_DUR) * (0.35 + 1.30 * e * e));
+  slamDip = Math.max(slamDip, (pegStage === 4 ? 0.10 : 0.075) * Math.sin(Math.min(1, pegLungeT / PEG_LUNGE_DUR) * Math.PI * 0.8 + 0.3));
+}
+
 function updateViewmodel(dt) {
+  /* the springs below are integrated explicitly and ring at up to 4 Hz, so a
+   * long step (a harness, a tab coming back) must not reach them whole */
+  dt = Math.min(dt, 0.05);
   /* THE GUN'S OWN CLOCKS FIRST, and above the early return: the shot's
    * cooldown, the reload, the aim blend and the lens spring all have to go
    * on running through a frame where the hands are not drawn at all. */
@@ -13313,7 +13645,7 @@ function updateViewmodel(dt) {
   if (winding) {
     if (frozen()) { winding = false; windT = 0; }
     else {
-      windT = Math.min(WIND_FULL * 1.35, windT + dt * ((equipped && equipped.windRate) || 1));   // a blade charges quicker than a spade
+      windT = Math.min(WIND_FULL * 1.35, windT + dt * ((equipped && equipped.windRate) || 1) * pegHasteK());   // a blade charges quicker than a spade
       /* A charge with no full mark is a charge you hold too long every time.
        * One cue at the top — a creak of strain, and the tremble that was
        * already there gets a good deal harder — and after that you know the
@@ -13356,8 +13688,10 @@ function updateViewmodel(dt) {
      * while you wind it — that is when you can see it — and reading the key
      * again on the way out meant letting go of sprint a frame early turned
      * an overhead back into a side swing. */
-    if (overheadHeld() && !thrusting()) windOverhead = true;
-    if (thrusting()) {
+    if (overheadHeld() && (!thrusting() || equipped.rapier)) windOverhead = true;
+    if (equipped.rapier) {
+      pegWindPose(_pose, e, strain, dt);       // coiled for the lunge, or raised for the imbroccata
+    } else if (thrusting()) {
       /* AND A PEG IS WOUND BY BEING DRAWN, NOT BY BEING LIFTED. Its charge is
        * the same thrust gathered further back along its own line — the arm
        * pulls in to the ribs and the shaft SHORTENS in the frame, which is
@@ -13419,7 +13753,9 @@ function updateViewmodel(dt) {
      * cut itself is quick again — see `bladeRate`. */
     digT += dt / (swingSecs(P) * bladeRate(digT, P));
     const p = digT, W = windupEnd(), isCut = slashing(), thr = thrusting();
-    if (p < W) {
+    if (equipped.rapier) {
+      pegTrack(_pose, p);                // the rapier is its own keyframed move set, below
+    } else if (p < W) {
       // anticipation: quick out of rest, hanging at the top of the haul
       poseMix(_pose, _poseF, _poseA, easeOutCubic(p / W));
     } else if (p < DIG_STRIKE) {
@@ -13473,6 +13809,14 @@ function updateViewmodel(dt) {
        * as an impact. The spring's peak is roughly v0/sqrt(stiffness), so
        * anything under ~1.5 stays inside the clamp and stays a curve. */
       const cut = slashing();
+      /* THE POINT ARRIVES WHETHER OR NOT IT MEETS ANYTHING. A thrust in the
+       * air is still the arm snapping straight, and a lens that does not
+       * move with it is a lens watching somebody else's arm. */
+      if (equipped.rapier) {
+        fovKick = Math.max(fovKick, pegHeavyBlow() ? 4.2 + P * 2.4 : 1.7);
+        if (!connected) vmImpulse(pegHeavyBlow() ? -0.55 - P * 0.3 : -0.28);
+        if (pegStage === 5) slamDip = Math.max(slamDip, 0.05 + P * 0.04);   // the imbroccata comes DOWN: the knees give with it
+      }
       if (connected) vmImpulse(-0.95 - P * 0.5 - (digOverhead ? 0.35 : 0) - (cut ? 0.30 : 0) - (thr ? 0.22 : 0));
       /* AND IT JARS. A hit that stops dead has to shake the hands that made
        * it. The cut lands hardest of the three: it is the fastest thing in
@@ -13524,7 +13868,10 @@ function updateViewmodel(dt) {
         sfxSlam(P);
       }
     }
-    if (p >= 1) { digT = 0; digPower = 0; digCharged = false; digOverhead = false; pegStage = 0; }
+    if (p >= 1) {
+      if (equipped.rapier) { pegLastStage = pegStage; pegLastEnd = performance.now(); }
+      digT = 0; digPower = 0; digCharged = false; digOverhead = false; pegStage = 0; pegQueued = false;
+    }
     /* ON the follow-through, not after it: the recovery eases with
      * `easeOutBack`, which is more than half-way home a few frames past the
      * through, so a return chained "a beat later" left from a half-recovered
@@ -13535,14 +13882,16 @@ function updateViewmodel(dt) {
      * and its damage dealt, early enough that the arm is still travelling,
      * so the next one leaves from a moving pose and the three read as one
      * thing. Let go at any point and it simply stops where it is. */
-    else if (pegStage > 0 && pegStage < 3 && windHeld && !winding
-             && p >= DIG_STRIKE + 0.12) pegChain();
+    else if (pegStage > 0 && pegStage < 3 && pegQueued && !winding
+             && p >= pegMove().link) pegChain();
   } else if (magHeld()) {
     /* A GUN IS NOT A SWING, so it takes none of the machinery above it — no
      * wind-up, no strike, no recovery. What it has is a hold, a set of
      * sights to come to and a kick, and all three are the same six numbers
      * every tool in here is posed with. */
     magPose(_pose);
+  } else if (equipped && equipped.rapier) {
+    pegGuardPose(_pose);                 // en garde, and breathing
   } else {
     for (let i = 0; i < 6; i++) _pose[i] = 0;
   }
@@ -13608,6 +13957,8 @@ function updateViewmodel(dt) {
     ARM_BASE.y + by + _pose[1] + vmSpringY + ear * (earY - ARM_BASE.y) + blk * (blkY - ARM_BASE.y),
     ARM_BASE.z + _pose[4] + ear * (AT.z - ARM_BASE.z) + blk * (BA.z - ARM_BASE.z)
   );
+  if (equipped && equipped.onCast) rodArmPose(dt);   // the rod's cast and reel, on top of its carry
+  if (equipped === headItem) headSway(dt);           // the captain swings from your fist
   if (equipped === spliffItem) {
     /* the flick: once it is down from the mouth the hand snaps forward and
      * down to send the butt away, and comes back */
@@ -13671,7 +14022,9 @@ function updateViewmodel(dt) {
    * OUT it is soft, because settling back to the carry is a recovery and
    * should be seen. */
   slBlend += (wantSl - slBlend) * Math.min(1, dt * (wantSl ? 34 : isBlade() ? 13 : 9));
-  if (ohBlend > 0.001 || slBlend > 0.001 || wantOh || wantSl || blk > 0.001) {
+  if (equipped && equipped.rapier) {
+    pegGrip(blk);                         // the rapier's grip is part of its own track
+  } else if (ohBlend > 0.001 || slBlend > 0.001 || wantOh || wantSl || blk > 0.001) {
     // the two grips are exclusive; the overhead wins where they overlap. The
     // base is the TOOL'S OWN rest — the Military Shovel's is scoop-up.
     /* SLERPED, NOT LERPED. The grips used to be blended as Euler angles,
@@ -13775,7 +14128,7 @@ function updateViewmodel(dt) {
    * much of the frame, so the same per-quad alpha stacked into a solid pale
    * wedge over a third of the picture — the additive-blending trap the trail
    * has fallen into once before, in a new place. */
-  trailGain = slashing() ? (isBlade() ? 0.95 : 1.55) : 1;
+  trailGain = slashing() ? (isBlade() ? 0.95 : 1.55) : (equipped && equipped.rapier ? 0.55 : 1);   // a point's streak is thin
   updateTrail(dt, toolVM.visible && digT >= windupEnd() - 0.02 && digT < (slashing() ? SLASH_THROUGH + 0.02 : thrusting() ? STAB_THROUGH + 0.03 : DIG_STRIKE + 0.13));
   updateSparks(dt);
   updateGlint(dt);
@@ -15684,6 +16037,7 @@ function updateGibs(dt) {
  * the opening. Everything here is about making the timing feel worth it. */
 const CRAB_STUN = 1.7;
 function parryCrab(u = crabs[0]) {
+  pegParryHaste();
   if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxKatBlock(true);   // steel meeting the claw, under the ring
   parryCool = 0;                         // landing one costs you nothing
   u.st.atk = -1;
@@ -18883,6 +19237,7 @@ let dialogReturnLock = false, bradlyMet = false;
 let dialogTarget = null, dialogCanDismiss = false, dialogNextId = null;
 let typeTimer = null, dialogEndTimer = null;
 let typeFull = null;                   // the line being typed, and what ends it
+let dialogLineN = 0;                   // counts every line put up, so a speaker can tell a new one from the last
 function typeLine(text, onDone, rate = 28) {
   clearInterval(typeTimer);
   dialogTextEl.textContent = '';
@@ -18916,6 +19271,7 @@ function showDialogNode(id) {
   clearTimeout(dialogEndTimer);
   dialogChoicesEl.innerHTML = '';
   dialogCanDismiss = false; dialogNextId = null;
+  dialogLineN++;
   typeLine(typeof node.text === 'function' ? node.text() : node.text, () => {
     if (!node.choices.length && node.next) {
       // a line that runs on into the next: a click carries it on, nothing ends it on its own
@@ -21993,10 +22349,19 @@ bwGlb('assets/chest.glb', (gltf) => {
   const n = hw.length;
   for (let i = 0; i < n; i++) {
     const lx = -SN.HALF + (i / (n - 1)) * SN.LEN;
-    // widest she is anywhere the swash can reach, not just at y = 0
-    let m = 0;
-    for (let y = -0.4; y <= 1.0; y += 0.2) m = Math.max(m, SN.halfAtY(lx, y));
-    hw[i] = m + 0.22;
+    /* THE HOLE IS CUT INSIDE HER, NOT ROUND HER. It was her WIDEST section
+     * plus 22 cm, so a strip of sea as wide as a hand vanished all the way
+     * round her waterline: the waves came up to her and stopped short, and
+     * what showed in the gap was the bed and the dark under her plating —
+     * the owner's "turns invisible rather than swallowed". The sea only has
+     * to be kept out of her INSIDE (it would stand in the hold otherwise);
+     * outside, her planking and the water meet by depth like any solid in
+     * the surf. So it is her NARROWEST section over the swash band, drawn
+     * in by a hand, and where her raked forefoot is not in the water at all
+     * the sea runs under the overhang as it would. */
+    let m = Infinity;
+    for (let y = -0.4; y <= 0.6; y += 0.2) m = Math.min(m, SN.halfAtY(lx, y));
+    hw[i] = Math.max(0, m * 0.9 - 0.08);
   }
   oceanUniforms.uShipC.value.set(SHIP_X, SHIP_Z);
   oceanUniforms.uShipHalf.value = SN.HALF;
@@ -22057,9 +22422,12 @@ bwGlb('assets/chest.glb', (gltf) => {
       const o = (i * ring + k) * 3;
       pos[o] = lx; pos[o + 1] = ys[k]; pos[o + 2] = zs[k];
       const u = (i * ring + k) * 2;
-      // the beach's own grain, in WORLD space at its own density and phase
-      uv[u] = (SHIP_X + lx + 800) / SAND_TILE;
-      uv[u + 1] = (SHIP_Z + zs[k] + 800) / SAND_TILE;
+      /* the beach's own grain, in WORLD space at its own density and phase —
+       * and the map carries the beach's REPEAT itself (400 over the plane),
+       * so a uv of metres / SAND_TILE sampled it four hundred times too
+       * dense and the bed drew as one mipped-out flat colour. */
+      uv[u] = (SHIP_X + lx + 800) / (SAND_TILE * sandTex.repeat.x);
+      uv[u + 1] = (800 - (SHIP_Z + zs[k])) / (SAND_TILE * sandTex.repeat.y);
     }
     if (i < bedN - 1) for (let k = 0; k < ring - 1; k++) {
       const a0 = i * ring + k, b0 = a0 + 1, a1 = a0 + ring, b1 = b0 + ring;
@@ -22117,12 +22485,37 @@ bwGlb('assets/chest.glb', (gltf) => {
           if (k == i0 + 1) b = uShipHW[k];
         }
         return abs(p.z - uShipC.y) < mix(a, b, f);  // exactly the punch
-      }`);
+      }`,
+      /* AND A HEAP OUT OF THE SWASH IS NOT THE SEA'S THIN SHEET. Kept, the
+       * sand under the waterline still wore the shader's edge-of-the-water
+       * tint, so everything heaped against her in the surf read as pale
+       * blue slabs of water standing in the air. The whale's berm has the
+       * answer already: above the skirt, how far this is from the sea is its
+       * HEIGHT, so only its foot wears the sheet and the rest is wet sand. */
+      'step(-0.045, vWorldPos.y) * (max(shoreLine(vWorldPos.z, uTime) - vWorldPos.x, 0.0) + (vWorldPos.y - 0.10) * 6.0)');
   };
   /* its own key, or three hands it the beach's already-compiled program */
   bedMat.customProgramCacheKey = () => 'shipBed';
   const bed = new THREE.Mesh(bedGeo, bedMat);
   bed.position.set(SHIP_X, -0.05, SHIP_Z);
+  /* THE DRIFTS HEAPED UP HER SIDES WEAR THE BED'S SAND, NOT THE BEACH'S.
+   * On `sandMat` every one of them standing in the surf was DISCARDED by
+   * the tide — the beach's own rule, that nothing seaward of the waterline
+   * is drawn — so where the waves met the bottom of her the sand heaped
+   * against her simply vanished instead of the water running round it. They
+   * are merged into one mesh in her own frame, so their grain is laid here
+   * in world space at the beach's density and phase. */
+  shipwreck.traverse((o) => {
+    if (!o.isMesh || o.material !== sandMat) return;
+    o.material = bedMat;
+    const p = o.geometry.attributes.position, n = p.count;
+    const uvA = new Float32Array(n * 2), kx = SAND_TILE * sandTex.repeat.x, ky = SAND_TILE * sandTex.repeat.y;
+    for (let i = 0; i < n; i++) {
+      uvA[i * 2] = (SHIP_X + p.getX(i) + 800) / kx;
+      uvA[i * 2 + 1] = (800 - (SHIP_Z + p.getZ(i))) / ky;
+    }
+    o.geometry.setAttribute('uv', new THREE.BufferAttribute(uvA, 2));
+  });
   scene.add(bed);
   farProps.push({ obj: bed, z: SHIP_Z, d: 220 });
 
@@ -22521,6 +22914,7 @@ if (shipHead) {
     mat.color.setHex(0xd8b070);
     mat.emissive.setHex(0x8a6a30); mat.emissiveMap = mat.map; mat.emissiveIntensity = 0.85;
     mat.metalness = 0.15; mat.roughness = 0.5;
+    mat.userData.bwKey = true;              // the held head's copy keeps the brass lit (see holdable(headItem))
     reexpose(mat, 0.55);
     const km = new THREE.Mesh(geo, mat);
     km.scale.setScalar(0.13 / Math.max(size.x, size.y, size.z));   // 13 cm long, along its X
@@ -22614,16 +23008,51 @@ const headItem = {
    * `boatKeyTaken` moves, and once it has moved the head is just a head. */
   get onPull() { return boatKeyTaken ? null : pullTheKey; },
 };
-/* FRAMED IN THE HAND, MEASURED RATHER THAN GUESSED. At 0.8 and -0.12 he
- * projected to ndc x [0.33, 1.04], y [-1.85, -0.47] in `vmCamera` — two
- * thirds of the frame tall with most of him off the bottom and the right,
- * so what you held was a pale curve in the corner and not a head. Fitted by
- * projecting his bounding box and iterating to half the frame height, low
- * and to the right where a carried thing sits: x [0.39, 0.68],
- * y [-0.77, -0.28], entirely on screen. */
-holdable(headItem, shipHead, { scale: 0.372, pos: [-0.043, 0.083, 0.04], rot: [0.2, 5.542, 0.1] });
-// 5.542 is 2.4 + PI: at 2.4 he was carried facing AWAY and what you held was
-// the back of his head. Checked by rendering, not reasoned about.
+/* CARRIED BY THE HAIR, AND SEEN. The first framing was measured and wrong
+ * in the way that matters: a head 12 cm tall down in the corner, turned
+ * mostly away, pale pink and flat — the world copy's night lift (a gamma
+ * re-expose and a fifth of its own map as emissive, for a head hanging in a
+ * dark wheelhouse) under the view-model scene's own three units of light
+ * burned every fold out of it. What you carry now is solved onto the screen
+ * the way the rapier's poses are: centred at NDC (0.46, -0.46), 0.70 of the
+ * frame tall, 0.55 m from the lens, the face turned three-quarters toward
+ * you and a little over, so the key clenched in the teeth is the thing you
+ * see. Its materials are its OWN (a clone drops the night lift), the flesh
+ * multiplied down, the brass left bright. And it HANGS: `headSway` swings it
+ * off the fist with a damped pendulum driven by your turning and your walk. */
+holdable(headItem, shipHead, { scale: 0.817, pos: [-0.082, 0.125, 0.111], rot: [-0.118, -0.127, -0.294] });
+{
+  const vm = headItem.viewmodel, make0 = vm.userData.make;
+  const make = () => {
+    make0();
+    const m = vm.children[0];
+    if (!m) return;
+    m.traverse((o) => {
+      if (!o.isMesh || !o.material) return;
+      const mt = o.material.clone();
+      if (mt.userData.bwKey) mt.emissiveIntensity = 0.5;
+      else { mt.emissiveIntensity = 0.05; mt.color.setScalar(0.78); }
+      o.material = mt;
+    });
+    m.userData.baseQ = m.quaternion.clone();
+  };
+  vm.userData.make = vm.userData.build = make;
+}
+const headSwing = { x: 0, z: 0, vx: 0, vz: 0 };
+const _hsQ = new THREE.Quaternion(), _hsE = new THREE.Euler();
+function headSway(dt) {
+  const m = headItem.viewmodel.children[0];
+  if (!m || !m.userData.baseQ) return;
+  // turning throws it the other way; walking bobs it; it swings back and settles
+  const walk = Math.min(1, velocity.length() / WALK_SPEED);
+  const tx = -vmLagX * 0.9 + Math.sin(vmSway * 2) * 0.05 * walk;
+  const tz = vmLagY * 1.3 + Math.sin(vmSway) * 0.07 * walk;
+  headSwing.vx += ((tx - headSwing.x) * 55 - headSwing.vx * 5.5) * dt;
+  headSwing.vz += ((tz - headSwing.z) * 55 - headSwing.vz * 5.5) * dt;
+  headSwing.x += headSwing.vx * dt; headSwing.z += headSwing.vz * dt;
+  _hsQ.setFromEuler(_hsE.set(headSwing.x, 0, headSwing.z));
+  m.quaternion.copy(_hsQ).multiply(m.userData.baseQ);
+}
 
 /* ---- her deck lantern, off the wheelhouse step ------------------------
  * One of her fittings you can actually take, so the gear on deck is not
@@ -23239,7 +23668,7 @@ function billyTex(mouth, head, tail) {
   return t;
 }
 const billy = { mesh: null, frames: null, photo: [null, null, null], t: 0, mouth: 0,
-  out: false, left: 0, wait: 0, kick: 0, spanX: 1 };
+  out: false, phase: 0, wait: 0, kick: 0, spanX: 1 };
 /* ---- THE REAL FISH -------------------------------------------------
  * He is a PHOTO CUT-OUT, like Bradly and the fisherman, not a drawing —
  * the drawing below is only what stands on the bulkhead until the
@@ -23336,32 +23765,39 @@ const billy = { mesh: null, frames: null, photo: [null, null, null], t: 0, mouth
  * the frame it goes back. `rotation.z` is the roll, because three composes
  * XYZ and the plane's own +Z is its normal: the picture turns in its own
  * plane, which is a plaque shaking on its screw. */
+/* HE TURNS TO YOU FOR EACH LINE — once per line, not in bursts: the head
+ * comes off the board AT you as a line starts, stays there while he says it,
+ * and goes back to the board when the line is finished. A head flapping in
+ * and out through a line was a toy running on batteries; one look per line is
+ * him talking to you.
+ *
+ * The cut is still hidden in a JOLT — a damped spring in a squash, a rock
+ * about the plaque's own normal and a bob, released at full as the head comes
+ * out and at half as it goes back — because a picture that changes with
+ * nothing else moving reads as a picture changing. `rotation.z` is the roll:
+ * three composes XYZ and the plane's own +Z is its normal. */
 function updateBilly(dt) {
   if (!billy.mesh) return;
   const m = billy.mesh;
   if (billy.baseY === undefined) billy.baseY = m.position.y;
   const on = dialogOpen && dialogScript === BILLY_SCRIPT;
   if (!on) {
-    if (billy.out || billy.kick) {
-      /* he settles rather than snapping back — the motor runs down */
-      billy.out = false; billy.left = 0; billy.wait = 0;
-    }
-    billy.t = 0;
+    billy.out = false; billy.phase = 0; billy.t = 0; billy.wait = 0;
     billy.setFrame(0);
   } else {
     billy.t += dt;
-    billy.wait -= dt;
-    if (billy.wait <= 0) {
-      if (billy.left > 0) {                       // mid burst: swing
-        billy.left--;
-        billy.out = !billy.out;
-        billy.kick = billy.out ? 1 : 0.55;
-        billy.wait = (billy.out ? 0.17 : 0.13) * (0.82 + Math.random() * 0.46);
-      } else {                                    // between bursts: a beat
-        billy.out = false;
-        billy.left = 4 + Math.floor(Math.random() * 7);   // pairs of swings
-        billy.wait = 0.22 + Math.random() * 0.5;
-      }
+    /* EVERY NEW LINE, HE LOOKS AT YOU. The owner's word, one round on from
+     * "only the first": the head comes off the board as each line starts,
+     * stays out while he says it, and goes back to the board a beat after
+     * the line is finished — so between lines, while you pick an answer, he
+     * is a fish on a plank again. */
+    if (billy.line !== dialogLineN) {             // a new line: he looks at you
+      billy.line = dialogLineN;
+      if (!billy.out) billy.kick = 1;
+      billy.phase = 1; billy.out = true; billy.wait = 0;
+    } else if (billy.phase === 1 && !typeFull) {  // the line is out: a beat, then back to the board
+      billy.wait += dt;
+      if (billy.wait > 0.45) { billy.phase = 2; billy.out = false; billy.kick = 0.55; }
     }
     billy.setFrame(billy.out ? 2 : 0);
   }
@@ -23369,16 +23805,35 @@ function updateBilly(dt) {
   billy.kick = Math.max(0, (billy.kick || 0) - dt * 4.6);
   const k = billy.kick * billy.kick;              // it dies fast, like a tap
   const ring = Math.sin(billy.kick * 34);
-  // and a slow breath under it while the motor is on at all
-  const hum = on ? Math.sin(billy.t * 7.3) * 0.35 + Math.sin(billy.t * 3.1) * 0.25 : 0;
-  m.scale.y = 1 + k * ring * 0.055 + hum * 0.012;
+  // and a slow breath under it while the head is out and he is speaking
+  const hum = on && billy.out ? Math.sin(billy.t * 7.3) * 0.35 + Math.sin(billy.t * 3.1) * 0.25 : 0;
+  m.scale.y = 1 + k * ring * 0.055 + hum * 0.010;
   m.scale.x = billy.spanX * (1 - k * ring * 0.03);
-  m.rotation.z = k * ring * 0.055 + hum * 0.006;
-  m.position.y = billy.baseY + k * ring * 0.012 + hum * 0.004;
+  m.rotation.z = k * ring * 0.055 + hum * 0.005;
+  m.position.y = billy.baseY + k * ring * 0.012 + hum * 0.003;
 }
 const BILLY_SCRIPT = {
   start: {
     text: 'What do you want?',
+    choices: [
+      { label: 'Ask about the head on the hook', to: 'head' },
+      { label: 'Where were you heading?', to: 'heading' },
+      { label: 'Just looking around', to: 'looking' },
+    ],
+  },
+  /* THE HINT FOR THE HELM, IN THE ONE MOUTH ON BOARD THAT STILL TALKS. The
+   * wheel's puzzle is a bearing on a star, and the man who set it is the head
+   * on the hook — so the fish says so, and "the captain, of course" points you
+   * at both. */
+  heading: {
+    text: 'We were told to follow the stars.',
+    choices: [
+      { label: 'Who said that?', to: 'who' },
+      { label: 'Just looking around', to: 'looking' },
+    ],
+  },
+  who: {
+    text: 'The captain, of course.',
     choices: [
       { label: 'Ask about the head on the hook', to: 'head' },
       { label: 'Just looking around', to: 'looking' },
@@ -23386,7 +23841,10 @@ const BILLY_SCRIPT = {
   },
   head: {
     text: "Who, the captain? There's a reason he's up there; fucking asshole.",
-    choices: [{ label: 'Just looking around', to: 'looking' }],
+    choices: [
+      { label: 'Where were you heading?', to: 'heading' },
+      { label: 'Just looking around', to: 'looking' },
+    ],
   },
   looking: { text: "Ok just don't do anything stupid.", choices: [] },
 };
@@ -28814,6 +29272,7 @@ function nearestFoe(pos) {
 const mutDrop = (u) => { if (mutToken === u) mutToken = null; };
 
 function parryMutant(u) {
+  pegParryHaste();
   if (u.kind.smart) { const pr = u.st.parried || (u.st.parried = {}); pr[u.st.swing] = (pr[u.st.swing] || 0) + 1; }
   if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxKatBlock(true);
   parryCool = 0;                             // landing one costs you nothing
@@ -33336,6 +33795,10 @@ function updatePack(dt) {
     packPhase = 2; packCut = false;
     catchBreath();
     for (const u of packCrabs) { u.st.awake = true; u.st.rear = 1; u.wake = 1e6; }
+    /* the take wakes them, not the crab's own wake branch, so a player who
+     * walked past the loner at the start met their first fight here with
+     * nothing on the screen to say how to fight it */
+    if (packCrabs[0]) startFightTip(packCrabs[0]);
     packCrabs.forEach((u, i) => sfxPackClack(u.g.position.x, u.g.position.z, i * 0.13 + Math.random() * 0.05));
     sfxCrabTell();
   }
@@ -33702,6 +34165,304 @@ const fishingRodItem = {
  * thing on the rod, which a polished reel under a moon should be, and not
  * blown. */
 holdable(fishingRodItem, fishingRod, { scale: 0.70, pos: [0, 0.05, 0], rot: [-0.20, -0.90, 0.45] });
+
+/* ---- AND IT CASTS -------------------------------------------------------
+ * A rod you can only carry is a stick. Click with it in your hand and it is
+ * CAST: the rod goes back over your shoulder, whips forward, and a float
+ * leaves the tip on a line and arcs out — into the surf if you are facing the
+ * sea, onto the sand if you are not. In the water it rides the swell (the
+ * same `waterSurfaceAt` everything wet here asks), now and then dips under a
+ * nibble, and a second click REELS it in, skimming back across the water to
+ * the tip with the reel's ratchet going.
+ *
+ * Three things make it read:
+ *   the rod's own motion is a whip, not a wave — back slow, forward fast,
+ *     the float let go on the fastest frame, the rod settled low and out
+ *     toward where it went, which is how anyone stands with a line in;
+ *   the LINE, from the rod's tip to the float, the whole time — it pays out
+ *     in the air, sags once it is down and lies on the water near the float,
+ *     and goes taut while it is being wound in;
+ *   and sound: a thin whistle for the whip, the reel's click paying out as
+ *     the float flies, a plop where it lands, the ratchet on the way back.
+ *
+ * THE TIP IS IN ANOTHER SCENE. The rod is drawn in the view-model scene
+ * with its own camera, and the line is in the world. The tip is carried over
+ * by its SCREEN position: projected by the view camera, unprojected by the
+ * main one at the same depth, so the line leaves the rod exactly where the
+ * rod is drawn at any field of view. */
+const ROD_TIP_Y = ROD_LEN - ROD_GRIP;        // the tip ring, in the rod's own frame
+const ROD_WIND = 0.30, ROD_WHIP = 0.14, ROD_SETTLE = 0.34;
+const ROD_RELEASE = ROD_WIND + ROD_WHIP * 0.55;
+const ROD_REEL_SPEED = 7.5;                 // metres a second, across the water
+const rod = {
+  arm: null, armT: 0, outK: 0, reelT: 0,      // the arm's own clock and how far it is laid out
+  st: 'home', pos: new THREE.Vector3(), vel: new THREE.Vector3(),
+  flyT: 0, wet: false, nib: 0, nibWait: 6, tick: 0, bobT: 0, surface: 0,
+};
+const rodFloat = new THREE.Group();
+{
+  // a small painted float: red over white, with a quill standing out of it
+  const red = new THREE.MeshStandardMaterial({ color: 0xd8321e, roughness: 0.45, emissive: 0x6a1206, emissiveIntensity: 1 });
+  const white = new THREE.MeshStandardMaterial({ color: 0xe9e4d6, roughness: 0.55, emissive: 0x3a3832, emissiveIntensity: 1 });
+  const top = new THREE.Mesh(new THREE.SphereGeometry(0.055, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), red);
+  const bot = new THREE.Mesh(new THREE.SphereGeometry(0.055, 12, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), white);
+  bot.scale.y = 1.35;
+  const quill = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.008, 0.11, 6), red);
+  quill.position.y = 0.09;
+  const tipDot = new THREE.Mesh(new THREE.SphereGeometry(0.016, 6, 4), white);
+  tipDot.position.y = 0.145;
+  tipDot.material = new THREE.MeshBasicMaterial({ color: 0xfff4d8, fog: true });   // the quill's white tip catches whatever light there is
+  rodFloat.add(top, bot, quill, tipDot);
+  /* True size is a thumbnail at twenty metres on a night sea — measured, two
+   * pixels. Twice it is still small and is a thing you can follow. */
+  rodFloat.scale.setScalar(2.1);
+}
+rodFloat.visible = false;
+scene.add(rodFloat);
+const ROD_LINE_N = 40;
+const rodLine = new THREE.Line(new THREE.BufferGeometry(),
+  new THREE.LineBasicMaterial({ color: 0xb8c2c8, transparent: true, opacity: 0.75, fog: true }));
+rodLine.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ROD_LINE_N * 3), 3));
+rodLine.frustumCulled = false;
+rodLine.visible = false;
+scene.add(rodLine);
+const _rodTip = new THREE.Vector3(), _rodA = new THREE.Vector3(), _rodB = new THREE.Vector3(), _rodF = new THREE.Vector3();
+/* where the rod's tip is, in the WORLD */
+function rodTipWorld(out) {
+  const vm = fishingRodItem.viewmodel, m = vm && vm.children[0];
+  camera.getWorldPosition(_rodA);
+  if (!m || !vm.visible) {                    // not drawn: an arm's length up and out
+    camera.getWorldDirection(_rodF);
+    return out.copy(_rodA).addScaledVector(_rodF, 1.3).add(_rodB.set(0, 0.45, 0));
+  }
+  m.updateWorldMatrix(true, false);
+  vmCamera.updateMatrixWorld(true);
+  _rodTip.set(0, ROD_TIP_Y, 0);
+  m.localToWorld(_rodTip);                    // in the view model's scene
+  const depth = -_rodTip.clone().applyMatrix4(vmCamera.matrixWorldInverse).z;
+  _rodTip.project(vmCamera);
+  _rodB.set(_rodTip.x, _rodTip.y, 0.5).unproject(camera).sub(_rodA).normalize();
+  camera.getWorldDirection(_rodF);
+  const k = depth / Math.max(0.05, _rodB.dot(_rodF));
+  return out.copy(_rodA).addScaledVector(_rodB, k);
+}
+/* what is under the float: the sea's surface if it is wet there, the ground
+ * if it is not. `wet` says which. */
+function rodGroundAt(x, z, y) {
+  if (inKeep) {
+    if (roomSubmersion(x, z) > 0) return { y: keepWaterAt(x, z), wet: true };
+    const st = keepFloorAt(x, z, y + 0.5, 30);
+    return { y: st ? st.f : KEEP_Y + KEEP_SEA, wet: false };
+  }
+  if (inRoom()) return { y: camera.position.y - playerEye(), wet: false };
+  if (inWater(x, z)) return { y: waterSurfaceAt(x, z), wet: true };
+  return { y: beachGroundAt(x, z), wet: false };
+}
+function castRod() {
+  if (rod.st !== 'home' || rod.arm) return;
+  rod.arm = 'cast'; rod.armT = 0;
+}
+function reelRod() {
+  if (rod.st === 'home' || rod.st === 'reel') return;
+  rod.st = 'reel'; rod.reelT = 0;
+  rod.arm = 'reel'; rod.armT = 0;
+}
+function rodHome() {
+  rod.st = 'home'; rod.arm = null;
+  rodFloat.visible = false; rodLine.visible = false;
+}
+fishingRodItem.onCast = () => { if (rod.st === 'home') castRod(); else reelRod(); };
+fishingRodItem.castLabel = () => (rod.st === 'home' ? (rod.arm ? '' : 'Cast') : rod.st === 'reel' ? '' : 'Reel in');
+function launchFloat() {
+  rodTipWorld(rod.pos);
+  camera.getWorldDirection(_rodF);
+  const h = Math.hypot(_rodF.x, _rodF.z) || 1;
+  /* lofted: a cast goes UP and out whatever the angle you are looking at,
+   * because a float thrown flat lands at your feet */
+  const a = THREE.MathUtils.clamp(Math.asin(THREE.MathUtils.clamp(_rodF.y, -1, 1)) + 0.42, 0.12, 1.15);
+  const sp = inRoom() && !inKeep ? 7 : 15.5;
+  rod.vel.set(_rodF.x / h * Math.cos(a) * sp, Math.sin(a) * sp, _rodF.z / h * Math.cos(a) * sp);
+  rod.st = 'fly'; rod.flyT = 0;
+  rodFloat.position.copy(rod.pos); rodFloat.visible = true; rodLine.visible = true;
+  sfxRodWhip();
+}
+function landFloat(g) {
+  rod.st = 'down'; rod.wet = g.wet; rod.surface = g.y; rod.bobT = 0; rod.nibWait = 5 + Math.random() * 9;
+  rod.pos.y = g.y;
+  if (g.wet) {
+    spawnSplash(rod.pos.x, rod.pos.z, 9, 0, 0, 0.45, g.y);
+    if (!playSampleAt('wade', rod.pos.x, rod.pos.z, { gain: 0.9, ref: 7, far: 60, rate: 1.35, lpFar: 1200 })) sfxSplash(0.35);
+  } else if (!inRoom()) sfxSandDrop(rod.pos.x, rod.pos.z, 0.35, false);
+  else sfxThud(0.02);
+}
+/* the float, the line and the reel — from `update()`, so it runs whether or
+ * not the hands are drawn */
+function updateRod(dt) {
+  // put the rod away, or take a cut into another room, and the line comes in with it
+  if (equipped !== fishingRodItem || rod.room !== inRoom()) {
+    if (rod.st !== 'home' || rod.arm) { rodHome(); rod.outK = 0; }
+    rod.room = inRoom();
+    if (equipped !== fishingRodItem) return;
+  }
+  if (rod.arm === 'cast' && rod.armT >= ROD_RELEASE && rod.st === 'home') launchFloat();
+  if (rod.st === 'home') return;
+  if (rod.st === 'fly') {
+    rod.flyT += dt;
+    rod.vel.y -= 9.8 * dt;
+    rod.vel.multiplyScalar(1 - 0.12 * dt);
+    rod.pos.addScaledVector(rod.vel, dt);
+    const g = rodGroundAt(rod.pos.x, rod.pos.z, rod.pos.y);
+    if (rod.pos.y <= g.y || rod.flyT > 4) landFloat(g);
+    // the reel pays out: clicks as fast as the line is going
+    rod.tick -= dt * Math.min(40, 10 + rod.vel.length() * 2);
+    if (rod.tick <= 0 && rod.st === 'fly') { rod.tick = 1; sfxReelClick(0.6); }
+  } else if (rod.st === 'down') {
+    rod.bobT += dt;
+    const g = rodGroundAt(rod.pos.x, rod.pos.z, rod.pos.y + 0.4);
+    rod.wet = g.wet;
+    let y = g.y;
+    if (g.wet) {
+      y += 0.015 + Math.sin(rod.bobT * 2.3) * 0.012;
+      // a nibble: two quick dips and a ring on the water
+      rod.nibWait -= dt;
+      if (rod.nibWait <= 0 && rod.nib <= 0) { rod.nib = 0.9; addRipple(rod.pos.x, rod.pos.z, 0.5); sfxNibble(); }
+      if (rod.nib > 0) {
+        rod.nib -= dt;
+        const k = rod.nib > 0.55 ? Math.sin((0.9 - rod.nib) / 0.35 * Math.PI) : rod.nib > 0.25 ? 0 : Math.sin((0.25 - rod.nib) / 0.25 * Math.PI) * 0.6;
+        y -= Math.max(0, k) * 0.07;
+        if (rod.nib <= 0) rod.nibWait = 6 + Math.random() * 12;
+      }
+      // it sits in its own rings: the thing that finds a float on a dark sea
+      rod.ring = (rod.ring || 0) - dt;
+      if (rod.ring <= 0) { rod.ring = 1.1 + Math.random() * 0.9; addRipple(rod.pos.x, rod.pos.z, 0.32); }
+    }
+    rod.surface = rod.pos.y = y;
+  } else if (rod.st === 'reel') {
+    rod.reelT += dt;
+    rodTipWorld(_rodTip);
+    _rodA.set(_rodTip.x - rod.pos.x, 0, _rodTip.z - rod.pos.z);
+    const d = _rodA.length();
+    if (d < 1.1 || rod.reelT > 8) { rodHome(); sfxReelClick(1); sfxThud(0.02); }
+    else {
+      _rodA.multiplyScalar(Math.min(d, ROD_REEL_SPEED * dt) / d);
+      rod.pos.add(_rodA);
+      const g = rodGroundAt(rod.pos.x, rod.pos.z, rod.pos.y + 0.4);
+      // near the end it is lifted out of the water toward the tip
+      const lift = THREE.MathUtils.clamp(1 - (d - 1.1) / 2.2, 0, 1);
+      rod.pos.y = g.y + (g.wet ? 0.02 : 0) + lift * lift * Math.max(0, _rodTip.y - g.y) * 0.8;
+      if (g.wet && Math.random() < dt * 9) addRipple(rod.pos.x, rod.pos.z, 0.35);
+      if (g.wet && Math.random() < dt * 5) spawnSplash(rod.pos.x, rod.pos.z, 1, 0, 0, 0.15, g.y);
+      rod.tick -= dt * 22;
+      if (rod.tick <= 0) { rod.tick = 1; sfxReelClick(1); }
+    }
+  }
+  if (rod.st === 'home') return;
+  rodFloat.position.copy(rod.pos);
+  rodFloat.rotation.z = rod.st === 'fly' ? Math.atan2(rod.vel.x, rod.vel.y) * 0.5 : Math.sin(rod.bobT * 1.7) * 0.08;
+  rodFloat.rotation.x = rod.st === 'down' ? Math.sin(rod.bobT * 1.3 + 1) * 0.08 : 0;
+  // THE LINE: tip to float, sagging by how slack it is
+  rodTipWorld(_rodTip);
+  const pa = rodLine.geometry.attributes.position, arr = pa.array;
+  const span = _rodTip.distanceTo(rod.pos);
+  /* A SLACK LINE IS A SHORT DROP AND THEN THE WATER. Sagged by a fraction of
+   * its whole span it hung metres below the surface near you and never came
+   * back up to the float; a line with a float on it comes down steeply off
+   * the tip and LIES on the water the rest of the way, so the sag is capped
+   * and every point is held on top of whatever is under it. */
+  const slack = rod.st === 'fly' ? 0 : rod.st === 'reel' ? Math.min(0.25, span * 0.015) : Math.min(1.1, span * 0.06);
+  for (let i = 0; i < ROD_LINE_N; i++) {
+    const u = i / (ROD_LINE_N - 1);
+    _rodA.lerpVectors(_rodTip, rod.pos, u);
+    _rodA.y -= 4 * u * (1 - u) * slack;
+    if (rod.st === 'fly') _rodA.y += 4 * u * (1 - u) * Math.min(1.2, span * 0.05);   // it billows out behind a float in the air
+    if (rod.st !== 'fly' && u > 0.08) {
+      const g = rodGroundAt(_rodA.x, _rodA.z, _rodA.y + 1);
+      if (_rodA.y < g.y + 0.012) _rodA.y = g.y + 0.012;
+    }
+    arr[i * 3] = _rodA.x; arr[i * 3 + 1] = _rodA.y; arr[i * 3 + 2] = _rodA.z;
+  }
+  pa.needsUpdate = true;
+}
+/* THE ARM. Added on top of the rod's carry after the pose is set, so it goes
+ * through the same rig as everything else. Pitch is `armRig.rotation.x`, and
+ * for a rod carried tip-up the sign is measured, not assumed: POSITIVE stands
+ * it up and takes it back over the shoulder, NEGATIVE lays it out toward the
+ * water (the first build had them the other way round and cast by standing
+ * the rod bolt upright). */
+const ROD_OUT_PITCH = -0.42;
+function rodArmPose(dt) {
+  let pitch = 0, lift = 0, push = 0, yaw = 0, roll = 0;
+  const want = rod.st === 'home' ? 0 : 1;
+  if (rod.arm === 'cast') {
+    rod.armT += dt;
+    const T = rod.armT;
+    if (T < ROD_WIND) {                          // back, slowly, loading it
+      const e = easeOutCubic(T / ROD_WIND);
+      pitch = 0.95 * e; lift = 0.05 * e; push = 0.07 * e; yaw = -0.10 * e;
+    } else if (T < ROD_WIND + ROD_WHIP) {        // and forward, fast
+      const e = easeInCubic((T - ROD_WIND) / ROD_WHIP);
+      pitch = 0.95 - 1.80 * e; lift = 0.05 - 0.07 * e; push = 0.07 - 0.15 * e; yaw = -0.10 + 0.12 * e;
+    } else if (T < ROD_WIND + ROD_WHIP + ROD_SETTLE) {   // settling out toward where it went
+      const e = easeOutCubic((T - ROD_WIND - ROD_WHIP) / ROD_SETTLE);
+      pitch = -0.85 + (ROD_OUT_PITCH + 0.85) * e; lift = -0.02; push = -0.08 + 0.03 * e; yaw = 0.02;
+    } else { rod.arm = null; rod.outK = 1; }
+    if (rod.arm === 'cast') { rod.outK = 1; }
+  } else {
+    rod.outK += (want - rod.outK) * Math.min(1, dt * 4);
+  }
+  if (rod.arm !== 'cast') {
+    pitch = ROD_OUT_PITCH * rod.outK; lift = -0.02 * rod.outK; push = -0.05 * rod.outK; yaw = 0.02 * rod.outK;
+    if (rod.st === 'reel') {                     // winding: the hand turns small circles and the rod comes up
+      const w = performance.now() * 0.012;
+      roll += Math.sin(w) * 0.035; yaw += Math.cos(w) * 0.02; lift += Math.sin(w) * 0.006;
+      pitch += 0.18;
+    }
+    if (rod.st === 'down' && rod.nib > 0 && rod.wet) pitch -= 0.05 * Math.max(0, Math.sin(rod.nib * 18));   // the tip twitches with the float
+    if (rod.arm === 'reel' && rod.st === 'home') rod.arm = null;
+  }
+  // the reel turns: backwards and fast while the float flies, forwards while you wind
+  const reel = fishingRodItem.viewmodel.getObjectByName('reel');
+  if (reel) {
+    const spin = rod.st === 'fly' ? -Math.min(40, rod.vel.length() * 2.2) : rod.st === 'reel' ? 16 : 0;
+    reel.rotation.x += spin * dt;
+  }
+  armRig.rotation.x += pitch;
+  armRig.rotation.y += yaw;
+  armRig.rotation.z += roll;
+  armRig.position.y += lift;
+  armRig.position.z += push;
+}
+/* SOUNDS. All small: a line is a quiet thing. */
+function sfxRodWhip() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, len = 0.24;
+  const n = noiseBurst(len, (x) => (x < 0.35 ? x / 0.35 : Math.pow(1 - (x - 0.35) / 0.65, 2)));
+  const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 3.2;
+  f.frequency.setValueAtTime(900, t); f.frequency.exponentialRampToValueAtTime(3600, t + len * 0.4); f.frequency.exponentialRampToValueAtTime(1400, t + len);
+  const g = ctx.createGain(); g.gain.value = 0.11;
+  n.connect(f).connect(g).connect(sfxOut()); n.start(t); n.stop(t + len);
+}
+function sfxReelClick(k = 1) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, len = 0.012;
+  const n = noiseBurst(len, (x) => Math.pow(1 - x, 3));
+  const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 3200;
+  const g = ctx.createGain(); g.gain.value = 0.045 * k * (0.8 + Math.random() * 0.4);
+  n.connect(f).connect(g).connect(sfxOut()); n.start(t); n.stop(t + len);
+  const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = 2400 + Math.random() * 300;
+  const og = ctx.createGain(); og.gain.setValueAtTime(0.018 * k, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.02);
+  o.connect(og).connect(sfxOut()); o.start(t); o.stop(t + 0.025);
+}
+function sfxNibble() {
+  if (playSampleAt('wade', rod.pos.x, rod.pos.z, { gain: 0.35, ref: 6, far: 40, rate: 1.7, lpFar: 1500 })) return;
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const n = noiseBurst(0.09, (x) => Math.pow(1 - x, 2));
+  const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 2;
+  const g = ctx.createGain(); g.gain.value = 0.05;
+  n.connect(f).connect(g).connect(sfxOut()); n.start(t); n.stop(t + 0.1);
+}
+
 
 /* He takes it out of your hands — so if it is IN your hands it has to leave
  * them, which `removeFromInventory` already does (it unequips first). */
@@ -34184,6 +34945,11 @@ bwGlb('assets/corpse.glb', (gltf) => {
     rockColliders.push({
       x: CORPSE_X + ax * t, z: CORPSE_Z + az * t, r: 0.30,
       top: 0.33 - CORPSE_SINK,
+      /* and a body is not a stair. At 0.28 it sat under `ROCK_STEP`, so the
+       * walk simply climbed onto it — measured, a 0.25 m lift of the eye
+       * walking the lane past it. A collider may carry its own `step`: this
+       * one is a wall on foot and still a thing you can jump onto. */
+      step: 0.10,
     });
   }
 }
@@ -34274,6 +35040,13 @@ function clampPlayerToRoom() {
     if (!keepFloorAt(p.x, p.z, feet, CAT_STEP, CAT_SITE)) { p.x = catLastSpot.x; p.z = catLastSpot.z; }
     return;
   }
+  /* AND THE BEACH HAS SOLIDS TOO. With no room this did nothing, so a
+   * creature's shove on the sand was never checked against anything and the
+   * horde could press you a metre into the rock heap past them — from where
+   * the push-out threw you two metres out in one frame (measured, walking
+   * into them at the rock: 2.001 m on a single step). Asked here, the shove
+   * that would need correcting is refused and the creature goes round. */
+  if (!inBunker && !inRoom()) { pushOutOfRocks(camBaseY - playerEye()); return; }
   const b = inBunker; if (!b) return;
   const B = b.group.userData.bunker, nav = B.nav; if (!nav) return;
   const g = b.group, R = nav.room, pr = PLAYER_R * 0.75, r = 0.22;
@@ -37335,6 +38108,9 @@ function update(dt, rawDt = dt) {
       velocity.copy(_stepD).multiplyScalar((STEP_DIST / STEP_DUR) * (0.45 + 1.05 * e * e));
     }
   }
+  pegLungeTick(dt, canMove);
+  updateRod(dt);
+  if (pegLungeT === -2 && !pegLunging()) pegLungeT = -1;
   stepRoll += (0 - stepRoll) * Math.min(1, dt * 7.5);
   camera.position.sub(_shakePrev);            // undo last frame's shake first
   _shakePrev.set(0, 0, 0);
@@ -40384,6 +41160,7 @@ function boltBurst(p) {
  * same shape as the riposte doubling a blow on a stunned man. */
 const DRONE_RETURN_DMG = 2;
 function parryBolt(b) {
+  pegParryHaste();
   if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxKatBlock(true);
   parryCool = 0;                             // landing one costs you nothing
   b.back = true; b.t = 0;
@@ -53677,10 +54454,31 @@ function updateCatacombs(dt) {
     if (!took) { p.x = _preMove.x; p.z = _preMove.z; }
     st = keepFloorAt(p.x, p.z, feet, up, S);
   }
+  const wx = p.x - _preMove.x, wz = p.z - _preMove.z;   // what the walk took, before anything corrects it
+  const tx = p.x, tz = p.z;
   pushOutOfKeep(p, CAT_BODY, feet, up, S);
   keepWallPush(p, CAT_BODY, feet, S, up);
+  /* A CORRECTION IS A LEAN, NEVER A JUMP — the tavern's cap, which the room
+   * it was copied from never got back. Walked into the end of the ramp in
+   * the long hall where its floor stops, the two pushes between them threw
+   * the body 0.70 m in a single frame (forty metres a second), and a
+   * sweep of 320 walks into everything down here found 1.4. The frame's
+   * whole correction is clamped to a shove and the rest is paid next frame;
+   * a frame that was itself a teleport (the cut, a restore) is left alone. */
+  {
+    const cx = p.x - tx, cz = p.z - tz, cl = Math.hypot(cx, cz);
+    if (cl > CAT_FIX && Math.hypot(wx, wz) < 0.5) { p.x = tx + cx / cl * CAT_FIX; p.z = tz + cz / cl * CAT_FIX; }
+  }
   st = keepFloorAt(p.x, p.z, feet, up, S) || st;
   if (!st) { p.x = _preMove.x; p.z = _preMove.z; st = keepFloorAt(p.x, p.z, feet, up, S); }
+  /* AND A PUSH MAY STOP YOU; IT MAY NOT SEND YOU BACKWARDS (the tavern's
+   * rule again): walking square into a wall is not moving, not bouncing. */
+  {
+    const dx = p.x - _preMove.x, dz = p.z - _preMove.z;
+    if (wx * wx + wz * wz > 1e-8 && dx * wx + dz * wz < 0 && keepFloorAt(_preMove.x, _preMove.z, feet, up, S)) {
+      p.x = _preMove.x; p.z = _preMove.z; st = keepFloorAt(p.x, p.z, feet, up, S) || st;
+    }
+  }
   if (catDoorBlocks(p.x, p.z, feet)) {                         // whatever put you there, the leaf is a wall
     p.x = Math.min(p.x, CAT_X + CAT_DOOR.x - 0.47);
     st = keepFloorAt(p.x, p.z, feet, up, S) || st;
@@ -53712,6 +54510,7 @@ function updateCatacombs(dt) {
   catBonesHit();
 }
 let catNoiseT = 0, _catWasGround = true;
+const CAT_FIX = 0.09;                          // the most a frame's corrections may move you (the tavern's TAV_FIX)
 let catDraught = 10 + Math.random() * 10;
 /* THE TORCHES' FLAMES KNOW WHICH TORCH THEY ARE. A uniform array of every
  * torch (where, and how brightly it is burning this frame) is read by the
@@ -65191,6 +65990,17 @@ function updateKeep(dt) {
   if (keepLift && keepLift.riding) {
     const dx = p.x - rx, dz = p.z - rz, m = Math.hypot(dx, dz);
     if (m > 0.015) { p.x = rx + dx * 0.015 / m; p.z = rz + dz * 0.015 / m; }
+  } else {
+    /* AND ANYWHERE ELSE IT IS A LEAN, NEVER A JUMP — the tavern's cap.
+     * Swept over 240 walks into the island's rocks, rails and walls, the
+     * two pushes threw the body more than a fifth of a metre in one frame
+     * thirteen times, the worst 0.93 m. A frame that was itself a teleport
+     * (the cut, a restore) is left alone. */
+    const dx = p.x - rx, dz = p.z - rz, m = Math.hypot(dx, dz);
+    if (m > CAT_FIX && Math.hypot(rx - _preMove.x, rz - _preMove.z) < 0.5) { p.x = rx + dx * CAT_FIX / m; p.z = rz + dz * CAT_FIX / m; }
+    /* and a push may stop you, but never send you backwards */
+    const wx = rx - _preMove.x, wz = rz - _preMove.z, ex = p.x - _preMove.x, ez = p.z - _preMove.z;
+    if (wx * wx + wz * wz > 1e-8 && ex * wx + ez * wz < 0 && keepStandable(_preMove.x, _preMove.z, feet, up)) { p.x = _preMove.x; p.z = _preMove.z; }
   }
   // and whatever the push left you standing on still has to hold you up, so
   // the height falls back to the plain floor when you are being ejected
@@ -73354,6 +74164,12 @@ window.__bw = {
    * block below would be a snapshot, which `abductDone` paid for once. */
   get pegStage() { return pegStage; },
   get pegStab() { return PEG_STAB; }, set pegStab(v) { PEG_STAB = v; },
+  fishingRodItem, rodState: () => rod, castRod, reelRod, rodTipWorld, rodFloat, rodLine, billy,
+  get pegCoil() { return [PEG_COIL, PEG_COIL_ROT]; }, set pegCoil(v) { PEG_COIL = v[0]; PEG_COIL_ROT = v[1]; },
+  get pegHigh() { return [PEG_HIGH, PEG_HIGH_ROT]; }, set pegHigh(v) { PEG_HIGH = v[0]; PEG_HIGH_ROT = v[1]; },
+  get windOverhead() { return windOverhead; }, set windOverhead(v) { windOverhead = v; },
+  get pegKeys() { return PEG_KEYS; }, set pegKeys(v) { PEG_KEYS = v; }, get pegGuard() { return PEG_GUARD; }, set pegGuard(v) { PEG_GUARD = v; },
+  get pegGuardRot() { return PEG_GUARD_ROT; }, set pegGuardRot(v) { PEG_GUARD_ROT = v; }, get pegLungeT() { return pegLungeT; }, get pegQueued() { return pegQueued; },
   get pegOhLand() { return PEG_OH_LAND; }, set pegOhLand(v) { PEG_OH_LAND = v; },
   get pegOhHaul() { return PEG_OH_HAUL; }, set pegOhHaul(v) { PEG_OH_HAUL = v; },
   get pegGripHome() { return PEG_GRIP_HOME; }, set pegGripHome(v) { PEG_GRIP_HOME = v; }, set windHeld(v) { windHeld = v; }, attackAction,

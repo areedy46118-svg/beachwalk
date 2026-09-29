@@ -2431,6 +2431,38 @@ export function makeShipwreck(opts = {}) {
    * half-width at the drift's CENTRE put its ends inside the planking
    * wherever she changes width quickly — which is both ends, and is how
    * the land came through her at the stern. */
+  /* A HEAP, NOT A GEM. These were twenty-faced icosahedra — at two to three
+   * metres across, lit by one low moon, every one of them read as a crude
+   * faceted slab with a white facet on it lying at her foot, which is the
+   * opposite of drifted sand. A drift is a dome that falls away PAST its own
+   * rim, so the edge is buried under the beach instead of drawn across it
+   * (`makeApron`'s own profile), knocked a little out of round so thirty-four
+   * of them are not one shape turned. Base radius 0.5 so the old scales hold. */
+  const heap = (() => {
+    const NR = 9, NA = 20, pos = [], idx = [];
+    pos.push(0, 0.56, 0);
+    for (let r = 1; r <= NR; r++) {
+      const d = (r / NR) * 1.3;
+      for (let a = 0; a < NA; a++) {
+        const th = (a / NA) * Math.PI * 2;
+        const wob = 1 + 0.10 * Math.sin(th * 2 + 0.7) + 0.06 * Math.sin(th * 3 + 2.1);
+        const dd = Math.min(1, d);
+        const y = 0.56 * Math.cos(dd * Math.PI * 0.5) ** 1.6 - (d > 0.9 ? (d - 0.9) * 0.55 : 0);
+        pos.push(Math.cos(th) * d * 0.5 * wob, y, Math.sin(th) * d * 0.5 * wob);
+      }
+    }
+    for (let a = 0; a < NA; a++) idx.push(0, 1 + (a + 1) % NA, 1 + a);
+    for (let r = 1; r < NR; r++) for (let a = 0; a < NA; a++) {
+      const i0 = 1 + (r - 1) * NA + a, i1 = 1 + (r - 1) * NA + (a + 1) % NA;
+      const j0 = i0 + NA, j1 = i1 + NA;
+      idx.push(i0, i1, j0, i1, j1, j0);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    return g;
+  })();
   for (let i = 0; i < 34; i++) {
     const x = -HALF - 1 + rnd(i * 2.9) * (LEN + 2);
     const sg = i % 2 ? 1 : -1;
@@ -2441,9 +2473,9 @@ export function makeShipwreck(opts = {}) {
       const xx = Math.max(-HALF, Math.min(HALF, x + k * sx * 0.5));
       for (let y = 0; y <= 1.2; y += 0.3) b = Math.max(b, halfAtY(xx, y));
     }
-    const m = new THREE.Mesh(new THREE.IcosahedronGeometry(0.5, 0), M.sand);
+    const m = new THREE.Mesh(heap, M.sand);
     m.scale.set(sx, hgt, sz);
-    m.position.set(x, hgt * 0.08, sg * (b + sz * 0.5 + 0.15 + rnd(i * 4.2) * 0.5));
+    m.position.set(x, 0, sg * (b + sz * 0.5 + 0.15 + rnd(i * 4.2) * 0.5));
     m.rotation.y = rnd(i) * 3.1;
     S.add(m);
   }

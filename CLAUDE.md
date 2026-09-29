@@ -8716,6 +8716,8 @@ with a screenshot before reading state.
 
 ## Conventions
 
+- **Never `git commit` or push unless the owner says so in that moment.** Leave
+  changes in the working tree and say they are uncommitted.
 - Match the existing terse style: one file, grouped by `// ---` banners,
   short helper functions, `_scratch` temp vectors reused across frames.
 - Keep it dependency-free and offline (vendored three, synthesised audio,
@@ -18390,3 +18392,150 @@ The speedloader's path is worked out from the crane's own angle every frame.
 2.7 s end to end. Only the castle's trader sells rounds, and only once
 (`TRADER_STOCK.ammo` 1, `AMMO_V` 3). The whale thanks you as it backs into the
 sea, not while you are inside it, and more quietly.
+
+**THE SPARE PEG IS A RAPIER, AND ITS MOVES ARE ITS OWN TRACK (`pegTrack`,
+`PEG_KEYS`, `PEG_GUARD`).** The owner's word was that the thrusts read weak
+and like every other weapon. It is held EN GARDE (fist low right, point just
+under the crosshair) and every attack is keyframes of the six arm numbers plus
+a grip, with the contact at `DIG_STRIKE`: JAB (a small draw, the arm
+straightening down the line, `in` easing so the contact is the fastest frame),
+DISENGAGE (the point dips under and comes up the other side, so the second
+hit is a different line), LUNGE (coiled at the shoulder, and `pegLungeTick`
+owns the velocity like the dodge step: 1.35 m forward with the camera
+dropping). No slash any more: `thrusting()` is every stage, `pegFinish()`
+never answers. The string is TAPPED (`pegQueued`) and chains at `PEG_LINK`.
+And it has the other weapons' three kinds of hit: a click is the string; a
+HOLD charges (the latch arms for it like every tool) into stage 4, the
+CHARGED LUNGE — coiled back past the shoulder (`PEG_COIL`), released into a
+lunge whose step is 1.2 + 1.0 x the charge; SHIFT + hold is stage 5, the
+IMBROCCATA — raised by the temple (`PEG_HIGH`) and driven down onto the
+target, no step. `pegWindPose` blends guard -> coil/high on `pegHighK`;
+`releaseWind` picks the stage; stages 4 and 5 start at `DIG_WINDUP` from the
+held pose (`pegT0`). `pegLunging()` is 3 and 4, `pegHeavyBlow()` is 3-5. Damage 1 a thrust, 2 every heavy; `reachK` 1.34 (a lunge
+x1.15 more, and the charge adds 0.8 m, NOT the heavy's 2.4 — stacked, a full
+lunge landed at 9.5 m): jab ~6.4 m, imbroccata ~7.5, charged lunge ~8.9
+including its 2.2 m step, against the katana's 5 and 7.5. **A thrust
+that pushes the fist far from the lens looks weak** — at 1.36 m out the peg is
+a stub in the middle of the picture; the hit keeps the fist 0.86 m out with
+the shaft 37 degrees off the view axis. The poses were SOLVED against screen
+targets with `tools/rapier.js` (`__rp.solve`, `__rp.sheet`), which measures
+through the game's own `updateViewmodel(0)` with the guard set to the trial
+pose — so a swing left half-run makes every measurement read the swing.
+
+**THE ROD CASTS (`rod`, `updateRod`, `rodArmPose`).** Click: back over the
+shoulder, whip forward, the float launched from the tip on the fastest frame,
+lofted so it always goes up and out (~20 m), into the surf (`waterSurfaceAt`,
+it rides the swell, sits in its own rings, nibbles now and then) or onto the
+sand; click again reels it in with the ratchet. **For a rod carried tip-up,
+POSITIVE arm pitch stands it up and back** — the first build had it the other
+way and cast by standing the rod bolt upright. The line is in the world and
+the rod in the view-model scene: `rodTipWorld` carries the tip over by its
+screen position (projected by `vmCamera`, unprojected by `camera` at the same
+depth). **A slack line is a short drop and then the water**: sagged by a
+fraction of its span it hung metres under the sea and never met the float;
+the sag is capped and every point is held on whatever is under it. Put the
+rod away or change rooms and the line comes in (`rodHome`).
+
+**BILLY'S CUT-OUTS ARE VISION'S SUBJECT LIFT (`tools/subject_cutout.swift`),
+AND HE TURNS ONCE.** Colour keying could not tell his white chin from the
+white wall (a wedge of wall rode on his jaw) and tore holes in the idle
+frame's jaw. `VNGenerateForegroundInstanceMaskRequest` (macOS 14+) asks what
+the object is. `tools/billy_frames.py` registers both on the plaque's panel,
+histogram-matches the washed-out idle thumbnail to the talk still, and leaves
+118 px either side (`--margin-x`) because his snout and jaw hang past the
+wood. In the game he turns out as EACH line starts (`dialogLineN`, bumped by
+`showDialogNode`), goes back to the board 0.45 s after that line has finished
+typing (`typeFull` null), and is a fish on a plank while you pick an answer. **A test that runs frames on a
+fake clock never finishes a line**: the typewriter is a real `setInterval`.
+
+**THE RAPIER'S LIFE, AND ITS RIPOSTE HASTE.** Keys alone put the point on
+the same line every time; `pegOverlay` lays `pegVar` (drawn per swing in
+`startDig`) over the track — a wandering line peaking at the contact, the
+wrist turning over (pronation) as the arm straightens, a small circle as the
+point comes off the target, a twitch of anticipation before the draw — and
+the guard rides the walk. The string has a real window (`PEG_COMBO_WINDOW`,
+550 ms after a beat ends), because a click only counted during the
+extension before and a normal clicking pace never got past the jab; the
+`FORE_EARLY` re-click door carries the stage on too. A PARRY with the peg in
+hand (`pegParryHaste`, called from `parryMutant`, `parryCrab`, `parryBolt`)
+gives `PEG_HASTE_T` 5 s of `PEG_HASTE_K` 1.35x swings and charge, shown by
+the full-charge glint on the point; it is in the item's `desc`.
+
+**THE CAPTAIN'S HEAD IS CARRIED BY THE HAIR.** Solved onto the screen at NDC
+(0.46, -0.46), 0.70 of the frame tall, face three-quarters to you so the key
+in the teeth reads; the held copy clones its materials (the world copy's
+night lift burned it to flat pink under the view-model lights) and keeps the
+key brass (`mat.userData.bwKey`); `headSway` swings it on a damped spring
+off your turning and your walk.
+
+**THE FISH KNOWS WHERE THEY WERE GOING.** Billy has two more nodes, `heading`
+("We were told to follow the stars.") and `who` ("The captain, of course."),
+off "Where were you heading?" on `start` and `head`. It is the wheel's star
+puzzle said out loud by the one thing aboard that was there.
+
+**THE SEA'S HOLE IS CUT INSIDE HER, NOT ROUND HER.** `uShipHW` was her widest
+section plus 0.22, so wherever she tumbles home the sea was punched out
+beside the plating and a wave reaching her foot vanished instead of lapping
+against her. It is now the narrowest section over the swash band
+(y -0.4..0.6), drawn in: `min(halfAtY) * 0.9 - 0.08`. The bed reads the same
+array, so the hole and its bottom still agree.
+
+**THE SAND HEAPED UP HER SIDES WAS THIRTY-FOUR ICOSAHEDRA ON `sandMat`.**
+Twenty-faced gems two to three metres across read as faceted slabs with a
+white facet on each, and because `sandMat` discards seaward of `shoreLine`,
+every one standing in the surf was deleted by the tide — the same "the wave
+meets her and it turns invisible". They are a heap now (a dome that falls
+away past its own rim, knocked out of round), they wear the bed's material,
+and `bedMat` takes the whale berm's `lift` so a heap out of the swash is wet
+sand with the sea's thin sheet only at its foot. **And the bed's uv was
+four hundred times too dense**: `sandTex` carries the beach's repeat itself,
+so a world uv is `(x + 800) / (SAND_TILE * repeat.x)`, `(800 - z) / ...`
+(the whale's `SAND_UV`), not metres over `SAND_TILE`.
+
+**A CORRECTION IS A LEAN IN EVERY STOREYED ROOM, NOT ONLY THE TAVERN.** The
+catacombs and the sea keep share the tavern's walk and never got its two
+rules. `CAT_FIX` (0.09 m) caps what a frame's pushes may move you, skipped
+after a frame that was itself a teleport; and a push that sends you AGAINST
+the move you made is refused if where you were still stands. Measured with
+`tools/roomsweep.js` (8 headings from 40 seeded spots, walking into
+everything): catacombs worst frame 1.42 m -> 0.12, backward bounces 24 -> 2;
+keep 0.93 m -> 0.15, 13 throws over 0.2 m -> 0, 48 bounces -> 24. No spot in
+either room is trapped (at most 5 of 8 headings blocked, which is a corner).
+The hoist keeps its own 1.5 cm cap while riding.
+
+**AND THE BEACH'S PUSH-OUT KNOWS AN INSIDE CORNER.** `pushOutOfSolids`
+tried the four faces of the box you were deepest in and took the shallowest,
+which in the rock heap's merged boxes put you straight into the neighbour
+and threw you 2.03 m in a frame when the horde pressed you into it. A face
+that lands in another box is paired with that box's nearest face in the
+other axis, and the first candidate that is clear within a metre wins
+(worst 0.22 m after). `clampPlayerToRoom` now runs the beach push-out too,
+so a knockback on the sand is answered by the thing it pushed you into.
+
+**THE RAPIER'S STRING WAS RE-SOLVED FOR TRAVEL AND ANGLE.** A thrust that
+lands where it started reads as a twitch: the point has to cross the screen
+(0.18 -> 0.45 NDC), the draw is OFF the line with the shaft pointing up its
+own line, never within 38 degrees of the view axis, fist at least 0.66 m
+out. The peg scan also carries the rocks' rim (`reexpose`, cold) so it is a
+shape against a black sky, the trail is fainter on it (0.55), and the first
+crab of the pack shows the fight controls. `updateViewmodel` clamps its dt
+to 0.05: the guard spring (K 640) explodes on the harness's big steps and
+every pose measured under it was nonsense.
+
+**HARNESS: `tools/route.js`** walks a waypoint list with the game's own
+movement and reports stalls, one-frame jumps (with the frames around the
+first) and eye steps; **`tools/walker.js`** walks the beach down a lane;
+**`tools/snap.js`** is `__at` / `__sheet` stills; **`tools/roomsweep.js`**
+is the push-out sweep above. A catacombs route comes from `bw.catRoute` on
+a fake unit (`{ g: { position }, catReach: null, st: {} }`, read `u.path`,
+local x/z + 9000). And **`placeInCatacombs` before `catReady` places you
+without building the room** — no graph, no route; wait for `catState().
+catReady` and call it again.
+
+**A COLLIDER MAY CARRY ITS OWN `step`.** The body bag's four cylinders top
+out at 0.28, under `ROCK_STEP`, so the walk climbed straight onto the corpse
+its own comment says you walk round (a 0.25 m lift of the eye, found by
+walking the lane past it). `rockGroundAt`, `pushOutOfSolids` and the inside-
+corner test read `c.step ?? ROCK_STEP`; the bag's is 0.10 — a wall on foot,
+still a thing you can jump onto. Measured: stopped 0.6 m from its middle from
+four sides, and a jump lands on it at 0.28.
