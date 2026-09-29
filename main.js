@@ -46867,7 +46867,7 @@ const PORTAL_HEAR = 34;            // the hum reaches this far
  * share one stock — a thing sold at one is gone from both — and only the one
  * at the castle has rounds for the .44 (`shopAt`). */
 const TRADER_X = CLIFF_BLOCK_X - 1.35, TRADER_Z = PORTAL_Z + 8.5, TRADER_H = 1.84;
-const TRADER2_X = CLIFF_BLOCK_X - 1.35, TRADER2_Z = -1049.5;
+const TRADER2_X = CLIFF_BLOCK_X - 1.35, TRADER2_Z = -1040.4;   // sixteen metres short of the gate, which moved nine metres up the beach when the castle grew (`FORT_K`)
 let shopAt = 1;                       // which of them you are buying from
 /* AND THE ROUNDS ARE NOT HIS. He sold six for two jars, which made the one
  * thing a revolver is ABOUT — there are six and then there are none — a
@@ -71218,12 +71218,21 @@ function sfxRicochet(at) {
  *     outside as well as in, so nothing drawn can be walked through;
  *   * and the marauder waits in the courtyard, and it is where he fights you.
  * ===================================================================== */
-const FORT_X = 18.85, FORT_Y = -0.80, FORT_Z = -1100;   // the packed origin: the gate at x = 10, the back wall at the headland's foot
-const FORT_GATE = { x: -8.85, z: 34.15, zi: 26.0, xi: -8.61, hw: 1.45 };   // the gate: its outer face, its inner face, and half its width (local)
-const FORT_DOOR = { x: 0.70, z: -16.75 };           // the back door (the first screenshot), local
-const FORT_MID = { x: -2.5, z: 15.0 };              // where the gate puts you: the street's open front half, local — measured as the stretch of it from which the most of the lighthouse clears the rooftops (93 % of its column, against 67 at the street's middle)
+/* A LITTLE BIGGER THAN IT WAS PACKED. The owner's word, and the pack's
+ * source is gone, so the scale is put on at load: the model, its walk grid
+ * (`x0`, `z0`, `cell`, every floor and roof) and every number below written
+ * in the castle's own frame are all multiplied by `FORT_K`. It grows TOWARD
+ * you: the back wall stays at the headland's foot (world z -1126.5), the
+ * gate stays square on the walk at x = 10, and the cobbles stay a hand
+ * under the sand. Anything typed in the pack's metres goes through `fk`. */
+const FORT_K = 1.15;
+const fk = (v) => v * FORT_K;
+const FORT_X = 10 + fk(8.85), FORT_Y = -0.02 - fk(0.78), FORT_Z = -1126.4972 + fk(26.4972);   // the packed origin: the gate at x = 10, the back wall at the headland's foot
+const FORT_GATE = { x: fk(-8.85), z: fk(34.15), zi: fk(26.0), xi: fk(-8.61), hw: fk(1.45) };   // the gate: its outer face, its inner face, and half its width (local)
+const FORT_DOOR = { x: fk(0.70), z: fk(-16.75) };           // the back door (the first screenshot), local
+const FORT_MID = { x: fk(-2.5), z: fk(15.0) };              // where the gate puts you: the street's open front half, local — measured as the stretch of it from which the most of the lighthouse clears the rooftops (93 % of its column, against 67 at the street's middle)
 const FORT_STEP = 0.42, FORT_AIR = 0.72, FORT_BODY = 0.26;
-const FORT_FLOOR = 0.78;                            // the cobbles, in the pack's metres
+const FORT_FLOOR = fk(0.78);                        // the cobbles, in the castle's own (scaled) metres
 const FORT_OUT = 0.45, FORT_HOLD = 0.75, FORT_IN = 0.7;
 let fortWorld = null, fortReady = false, fortWalk = null, fortCells = null, fortWalls = null;
 let inFort = false, fortBusy = false, fortT = 0, fortDir = 1, fortCutDone = false, fortTo = null;
@@ -71252,6 +71261,9 @@ function loadFort() {
     root.traverse((o) => { if (!ex && o.userData && o.userData.bw_walk) ex = o.userData.bw_walk; });
     if (ex) {
       fortWalk = typeof ex === 'string' ? JSON.parse(ex) : ex;
+      // the grid grows with the stone: its origin, its cell and every floor and roof in it
+      fortWalk.x0 *= FORT_K; fortWalk.z0 *= FORT_K; fortWalk.cell *= FORT_K;
+      for (const c of fortWalk.cells) for (let k = 0; k < c[2].length; k += 3) { c[2][k] *= FORT_K; c[2][k + 2] *= FORT_K; }
       fortCells = new Map();
       for (const c of fortWalk.cells) fortCells.set(c[1] * fortWalk.gw + c[0], c[2]);
     }
@@ -71263,6 +71275,7 @@ function loadFort() {
       fortDress(o.material);
     });
     for (const o of drop) { o.removeFromParent(); o.geometry.dispose(); }
+    root.applyMatrix4(new THREE.Matrix4().makeScale(FORT_K, FORT_K, FORT_K));
     fortWorld.add(root);
     buildFortMask();
     fortFindSpot();
@@ -71536,13 +71549,13 @@ function buildFortDoors() {
     fortWorld.add(p); return p;
   };
   // the gate's inner face, from the courtyard
-  addInteractable(mk(FORT_GATE.xi, FORT_FLOOR + 1.7, FORT_GATE.zi - 0.35, 3.0, 3.4, 0.6), 'Leave the castle', 'default', {
+  addInteractable(mk(FORT_GATE.xi, FORT_FLOOR + fk(1.7), FORT_GATE.zi - 0.35, fk(3.0), fk(3.4), 0.6), 'Leave the castle', 'default', {
     mid: true, far: 3.8,
     when: () => inFort && !fortBusy,
     onActivate: () => startFort(-1, 'gate'),
   });
   // the back door, from the courtyard: the way on to the lighthouse
-  addInteractable(mk(FORT_DOOR.x, FORT_FLOOR + 1.7, FORT_DOOR.z + 0.35, 1.6, 3.4, 0.6),
+  addInteractable(mk(FORT_DOOR.x, FORT_FLOOR + fk(1.7), FORT_DOOR.z + 0.35, fk(1.6), fk(3.4), 0.6),
     () => (fortBossAlive() ? 'The door is barred.' : 'Open the door'), 'default', {
     mid: true, far: 3.6,
     bare: () => fortBossAlive(),
@@ -71550,7 +71563,7 @@ function buildFortDoors() {
     onActivate: () => { if (!fortBossAlive()) startFort(-1, 'back'); },
   });
   // and the gate from the beach, for anyone who reaches for E rather than walking into it
-  addInteractable(mk(FORT_GATE.x, FORT_FLOOR + 1.7, FORT_GATE.z + 0.35, 3.0, 3.4, 0.6), 'Enter the castle', 'default', {
+  addInteractable(mk(FORT_GATE.x, FORT_FLOOR + fk(1.7), FORT_GATE.z + 0.35, fk(3.0), fk(3.4), 0.6), 'Enter the castle', 'default', {
     mid: true, far: 3.8,
     when: () => !inFort && !fortBusy && !inRoom(),
     onActivate: () => startFort(1),
@@ -71867,9 +71880,9 @@ function buildFortTorches() {
     fortLife.lamps.push({ L, base: 5.0, ph: Math.random() * 10 });
   };
   for (const side of [-1, 1]) {
-    put(FORT_DOOR.x + side * 1.45, FORT_DOOR.z + 2.2, 0, -1);          // either side of the back door, on the wall it is in
-    put(FORT_GATE.xi + side * 2.1, FORT_GATE.zi - 2.4, 0, 1);          // and inside the gate
-    put(FORT_GATE.x + side * 2.3, FORT_GATE.z + 2.6, 0, -1);           // and OUTSIDE it: the castle's face is backlit by the moon from the whole beach, and the gate is what you walk to
+    put(FORT_DOOR.x + side * fk(1.45), FORT_DOOR.z + fk(2.2), 0, -1);          // either side of the back door, on the wall it is in
+    put(FORT_GATE.xi + side * fk(2.1), FORT_GATE.zi - fk(2.4), 0, 1);          // and inside the gate
+    put(FORT_GATE.x + side * fk(2.3), FORT_GATE.z + fk(2.6), 0, -1);           // and OUTSIDE it: the castle's face is backlit by the moon from the whole beach, and the gate is what you walk to
     const q = fortPosternSpot();
     put(q.x - FORT_X + side * 1.3, q.z - FORT_Z - 1.0, 0, 1);         // and either side of the postern behind it
   }
@@ -71926,7 +71939,7 @@ function tickFort(dt) {
  * you, facing it — and the courtyard is where he fights. He is the castle's:
  * he wakes only once you are inside its walls (`fortBody`), he is held by its
  * stone, and he is drawn with it. */
-const UMBRA_X = FORT_X - 1.6, UMBRA_Z = FORT_Z - 6.5;
+const UMBRA_X = FORT_X - fk(1.6), UMBRA_Z = FORT_Z - fk(6.5);
 const UMBRA_YAW = Math.atan2((FORT_X + FORT_MID.x) - UMBRA_X, (FORT_Z + FORT_MID.z) - UMBRA_Z);   // his front is +Z: facing up the street, at where you come in
 let umbraUnit = null;
 {
@@ -73640,8 +73653,8 @@ function farmArm(u, m) {
  * and a man coming out of it comes out of the dark. The leaves stay in the
  * wall index where they were drawn shut, so a doorway is never a way in. */
 const FARM_DOOR_SPOTS = [[6.79, 1.7], [-9.25, -4.0], [-4.24, -12.8], [-14.56, 19.85], [-16.02, 13.56], [-15.84, 16.87], [-13.78, 1.0],
-  [-6.24, -10.14], [-8.2, -8.43], [0.15, 19.9], [6.12, 11.9], [6.13, -5.85], [5.09, -12.4]];
-const FARM_SPINE = [[-8.8, 30], [-3, 15], [-2.5, 0], [-1, -12]];      // the street's middle line, local
+  [-6.24, -10.14], [-8.2, -8.43], [0.15, 19.9], [6.12, 11.9], [6.13, -5.85], [5.09, -12.4]].map(([x, z]) => [fk(x), fk(z)]);
+const FARM_SPINE = [[-8.8, 30], [-3, 15], [-2.5, 0], [-1, -12]].map(([x, z]) => [fk(x), fk(z)]);      // the street's middle line, local
 const farmDoors = [];
 function buildFarmDoors() {
   let src = null;
@@ -73763,7 +73776,7 @@ function buildFarmDoors() {
 function farmCobble(x, z) {
   const fl = keepCellAt(x, z, FORT_SITE); if (!fl) return false;
   let lo = 1e9; for (let k = 0; k < fl.length; k += 3) lo = Math.min(lo, fl[k]);
-  return lo < 0.85 && lo > 0.6;
+  return lo < fk(0.85) && lo > fk(0.6);
 }
 /* A DOOR THROWN OPEN swings out on a spring and bangs back off whatever stops
  * it, and a man coming through it sends it harder. It is never shut again. */
@@ -74298,7 +74311,7 @@ Object.assign(window.__bw, { farmCobble, farmUnits, farmFight, farmDoors, farmSe
   audioNodes: () => ({ waveBusGain, forestBed, masterGain, benBr }),
   audioDbg: () => ({ forest: forestBed && +forestBed.g.gain.value.toFixed(4), ben: benBr && benBr.g && +benBr.g.gain.value.toFixed(4), sand: (sampleBanks.sandStep || []).filter(Boolean).length, benBuf: (sampleBanks.benBreath || []).filter(Boolean).length, bedK: beachBedK() }),
   fortState: () => ({ inFort, ready: fortReady, busy: fortBusy, walls: !!fortWalls, wb: FORT_SITE._wb ? FORT_SITE._wb.mi : null, cells: fortCells ? fortCells.size : 0, spot: fortSpot, inT: +fortInT.toFixed(2), save: fortSaveDone, vis: !!(fortWorld && fortWorld.visible) }),
-  loadFort, startFort, placeInFort, placeOutOfFort, fortWallsStep, fortMaskAt, fortCourtAt, fortW, FORT_X, FORT_Y, FORT_Z, FORT_GATE, FORT_DOOR, FORT_SITE, FORT_M, fortWorld: () => fortWorld, fortLife: () => fortLife, fortDress, FORT_LOOK,
+  loadFort, startFort, placeInFort, placeOutOfFort, fortWallsStep, fortMaskAt, fortCourtAt, fortW, FORT_K, FORT_X, FORT_Y, FORT_Z, FORT_GATE, FORT_DOOR, FORT_SITE, FORT_M, fortWorld: () => fortWorld, fortLife: () => fortLife, fortDress, FORT_LOOK,
   keepFloorAtS: keepFloorAt, keepWallNear, keepHitsWall,
   buildTribeFire, TRIBE_X, TRIBE_Z, startWhale, placeInWhale, placeOutOfWhale, buildWhale, whaleState: () => ({ inWhale, busy: whaleBusy, t: whaleT, built: !!whale, beach: !!wb, sw: wbSw && wbSw.t, jaw: wb && wb.jaw }), wbGet: () => wb, wbU, wbBermAt, startSwallow, wsState: () => ({ wsDone, wsR: +wsR.toFixed(3), wsM: +wsM.toFixed(3), wsSect: +wsSect.toFixed(3), on: WS_S.on, t: WS_S.on ? +wsTime().toFixed(2) : null, buf: !!WS_S.buf, src: !!wsSrc }), startSighting, wsReset: () => { wsDone = false; WS_S.on = false; WS_S.waitT = 0; }, WB_Z, WB_SNOUT_X, whFloor, whCx,
   umbraIgnite, umbraFireState: () => umbraFire, settleMounds, moundRole, moundSpotClear, closeShop, openShop, softLookState: () => softLook,

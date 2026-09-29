@@ -17,7 +17,7 @@ window.__fortSetup = async function () {
 };
 window.__fortClip = function (dirs = 16, ticks = 360, spots = null) {
   const S = b.FORT_SITE, st0 = b.fortState();
-  const starts = spots || [st0.spot, b.fortW(-6.5, 16), b.fortW(-2.0, -8), b.fortW(0.4, -13.5), b.fortW(-8.4, 22.5)];
+  const K = b.FORT_K || 1, starts = spots || [st0.spot, b.fortW(-6.5 * K, 16 * K), b.fortW(-2.0 * K, -8 * K), b.fortW(0.4 * K, -13.5 * K), b.fortW(-8.4 * K, 22.5 * K)];
   let frames = 0, inStone = 0, worstDepth = 0, offPave = 0, bigStep = 0, worstStep = 0, stalls = 0;
   const bad = [];
   for (const s0 of starts) {
@@ -47,11 +47,11 @@ window.__fortClip = function (dirs = 16, ticks = 360, spots = null) {
  * and check nothing ever gets inside its footprint. */
 window.__fortOutside = function (ticks = 420) {
   const starts = [];
-  for (let x = -1; x <= 13; x += 2) starts.push([x, -1050], [x, -1135]);
+  for (let x = -1; x <= 13; x += 2) starts.push([x, b.FORT_Z + b.FORT_GATE.z + 9], [x, -1135]);
   let frames = 0, inside = 0, trig = 0; const bad = [];
   for (const [x, z] of starts) {
     for (const yaw of [0, Math.PI, 0.5, -0.5, Math.PI - 0.5, Math.PI + 0.5]) {
-      b.placeOutOfFort(z > -1100 ? 'gate' : 'back');
+      b.placeOutOfFort(z > b.FORT_Z ? 'gate' : 'back');
       b.camera.position.set(x, 1.7, z); b.camBaseY = 1.7; b.groundY = 0;
       b.keys.KeyW = true;
       for (let t = 0; t < ticks; t++) {

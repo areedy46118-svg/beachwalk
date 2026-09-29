@@ -18539,3 +18539,21 @@ walking the lane past it). `rockGroundAt`, `pushOutOfSolids` and the inside-
 corner test read `c.step ?? ROCK_STEP`; the bag's is 0.10 — a wall on foot,
 still a thing you can jump onto. Measured: stopped 0.6 m from its middle from
 four sides, and a jump lands on it at 0.28.
+
+**THE CASTLE IS 15 % BIGGER THAN ITS PACK (`FORT_K`), AND IT GREW TOWARD YOU.**
+The pack's source is gone, so the scale is put on at LOAD: the root takes
+`makeScale(FORT_K)`, the walk grid's `x0`, `z0`, `cell` and every floor and
+roof in it are multiplied by it, and every number typed in the castle's own
+frame goes through `fk()` — `FORT_GATE`, `FORT_DOOR`, `FORT_MID`,
+`FORT_FLOOR`, `FARM_DOOR_SPOTS`, `FARM_SPINE`, `farmCobble`'s band, the
+marauder's spot, the torches and the door boxes. What is MEASURED off the
+geometry (the farmer doors' islands, the braziers, the postern) scales by
+itself. The back wall stays at the headland's foot (z -1126.5), the gate stays
+square on the walk at x = 10 and moved nine metres up the beach (z -1056.75),
+the cobbles stay at the sand's level (`FORT_Y` follows), and the castle's
+trader moved with the gate (`TRADER2_Z` -1040.4; a literal, because it is
+declared twenty thousand lines above the castle). Measured: 13 of 13 farmer
+doors found, 9,600 courtyard frames with nothing in stone or off the paving,
+22,614 frames walking at it from the beach with nothing inside the footprint,
+and the farmer fight unchanged at 34.7 damage a minute with three out.
+`tools/fortwalk.js` scales its own spots by `__bw.FORT_K`.
