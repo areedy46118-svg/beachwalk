@@ -275,6 +275,8 @@
   }
   #health i.off::after { transform: scaleX(0); }
   #health.hurt i::after { background: rgba(255, 78, 66, 1); }
+  /* a ring filling the bar: the fill glows and moves smoothly rather than in steps */
+  #health.charging i::after { background: rgba(255, 120, 96, 0.95); box-shadow: 0 0 6px rgba(255, 110, 90, 0.9); transition: transform 0.12s linear, background 0.25s ease; }
 
   /* THE AUTOSAVE BADGE. Top right, in the HUD's language: a hairline ring
      that fills once as it writes, the word beside it, and it is gone. It
@@ -712,8 +714,9 @@
     pointer-events: none;
   }
   #hotbar .slot:hover .label { opacity: 1; }
-  #hotbar .slot.empty { opacity: 0.28; cursor: default; }
-  #hotbar .slot.empty:hover { border-color: rgba(255, 255, 255, 0.22); }
+  /* only what you are carrying: fewer than six things is fewer than six slots */
+  #hotbar .slot.empty { display: none; }
+  #hotbar .slot:hover .label, #hotbar .slot.say .label { opacity: 1; }
   /* the ring slots — two, smaller than the hotbar's and side by side, so the
      section reads as a different kind of thing rather than more of the same */
   #rings {

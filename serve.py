@@ -7,8 +7,11 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 os.chdir(ROOT)
-# port: CLI arg wins, then $PORT (set by the Claude Code preview), then 4173
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("PORT") or 4173)
+# port: $PORT wins (the Claude Code preview sets it, and with autoPort it is
+# the port the preview is WAITING on — letting the "4173" in launch.json win
+# meant a second preview, or anything else already on 4173, left the server
+# unable to bind and the preview dead), then the CLI arg, then 4173
+PORT = int(os.environ.get("PORT") or (sys.argv[1] if len(sys.argv) > 1 else 4173))
 
 class Handler(SimpleHTTPRequestHandler):
     """The code is never cached. The assets are — but only on a 304.
@@ -57,7 +60,73 @@ class Handler(SimpleHTTPRequestHandler):
         return super().send_head()
 
 
+    # A SERVER THAT LOGS EVERY REQUEST CAN STOP SERVING. The game asks for
+    # hundreds of files a load, and each one was a line on stderr; when that
+    # goes to a pipe nobody is draining (the Claude Code preview), the pipe
+    # fills and the next write BLOCKS the handler thread — and then the next,
+    # until the page stops loading and the preview "ends". Errors only.
+    def log_message(self, fmt, *args):
+        pass
+
+    def log_error(self, fmt, *args):
+        try:
+            sys.stderr.write("%s\n" % (fmt % args))
+        except Exception:
+            pass
+
+    # a browser that drops a connection mid-file (a reload, a closed tab) is
+    # not an error worth a traceback
+    def handle(self):
+        try:
+            super().handle()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, TimeoutError):
+            pass
+
+    def copyfile(self, source, outputfile):
+        try:
+            super().copyfile(source, outputfile)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass
+
+
+class Server(ThreadingHTTPServer):
+    daemon_threads = True          # a hung connection never holds the process open
+    allow_reuse_address = True     # a restart does not wait out TIME_WAIT on the port
+    request_queue_size = 128       # a full load is a burst of requests
+
+    def handle_error(self, request, client_address):
+        pass                       # a dropped client is not our problem, and a traceback per one fills the pipe
+
+
 Handler = partial(Handler, directory=ROOT)
-httpd = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+
+
+def bind(port):
+    # the preview's port is the preview's: wait for it a little rather than wander off it
+    fixed = bool(os.environ.get("PORT"))
+    for attempt in range(40 if fixed else 20):
+        p = port if fixed else port + attempt
+        try:
+            return Server(("127.0.0.1", p), Handler), p
+        except OSError:
+            if fixed:
+                time.sleep(0.25)
+    raise SystemExit(f"port {port} is in use")
+
+
+import time
+httpd, PORT = bind(PORT)
 print(f"Beach Walk serving {ROOT} at http://localhost:{PORT}", flush=True)
-httpd.serve_forever()
+# and if anything ever does take the loop down, it comes straight back up on the same socket
+while True:
+    try:
+        httpd.serve_forever()
+        break
+    except KeyboardInterrupt:
+        break
+    except Exception as e:
+        try:
+            sys.stderr.write("server loop restarting: %r\n" % (e,))
+        except Exception:
+            pass
+        time.sleep(0.2)

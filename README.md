@@ -663,7 +663,8 @@ sand past the five (`assets/whale.glb`, through `tools/gltfpack.py` with its
 three maps at 2048). The mouth's inside, its wounds and the harpoon are built
 in the game. Its song is the owner's own recording (`assets/whale-song.m4a`),
 not redistributable, and so is the music that plays on the walk down to it
-(`assets/whale-sighting.m4a`).
+(`assets/whale-sighting.m4a`) and the song its farewell is cut to
+(`assets/whale-leaving.m4a`).
 
 This work is based on ["Cursed Rune Demon"](https://sketchfab.com/3d-models/cursed-rune-demon-0d2348598de9425b95e3a9a1cb915b79)
 by [PolyGoreStudio](https://sketchfab.com/Phu.99) licensed under

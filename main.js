@@ -874,6 +874,9 @@ let wsGain = null, wsSrc = null;
 // the passing theme out of the church's far end (see startPassing): up here for the same reason
 const PASS_LEVEL = 0.62;
 let passVol = null;
+// the whale's leaving song (see wlStart): up here for the same reason
+const WL_LEVEL = 1.35;
+let wlBuf = null, wlLoading = false, wlVol = null, wlEnv = null, wlSrc = null, wlT0 = 0;
 
 // ------------------------------------------------------------------
 // Renderer / scene / camera
@@ -889,6 +892,24 @@ const PIXEL_RATIO_U = { value: RETRO_SCALE };   // the stars size themselves by 
 renderer.setClearColor(0x05070f);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 document.body.appendChild(renderer.domElement);
+/* A LOST GPU CONTEXT IS A GAME THAT HAS STOPPED, and three cannot bring one
+ * back on its own: the page goes on running with nothing drawn, which reads as
+ * "the preview ended and I had to restart it". The browser takes a context
+ * away when the GPU process restarts, when memory runs short or when the tab
+ * is backgrounded hard. Ask for it back, and when it comes (or does not, in
+ * four seconds) come back up at the last checkpoint rather than on a black page. */
+{
+  let lostT = 0;
+  renderer.domElement.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    if (lostT) return;
+    lostT = setTimeout(() => { try { reloadInto(hasCheckpoint() ? 'checkpoint' : 'fresh'); } catch (er) { location.reload(); } }, 4000);
+  }, false);
+  renderer.domElement.addEventListener('webglcontextrestored', () => {
+    clearTimeout(lostT); lostT = 0;
+    try { reloadInto(hasCheckpoint() ? 'checkpoint' : 'fresh'); } catch (er) { location.reload(); }
+  }, false);
+}
 
 /* THE SHARPEN IS A PASS OVER THE FINISHED FRAME, AND IT GRADES NOTHING.
  * The post chain this file already buried died of one thing: three tone maps
@@ -1091,13 +1112,24 @@ function beachRays(W, H) {
     const off = Math.max(Math.abs(_rayV.x), Math.abs(_rayV.y));
     const k = THREE.MathUtils.smoothstep(face, 0.05, 0.5) * (1 - THREE.MathUtils.smoothstep(off, 1.05, 1.9));
     if (k > 0.001) {
-      u.set((_rayV.x * 0.5 + 0.5) * W, (_rayV.y * 0.5 + 0.5) * H, BEACH_RAY_MOON * k * (1 + wsSect * (0.5 + 1.4 * wsR)), H * (0.36 + 0.12 * wsSect));
+      u.set((_rayV.x * 0.5 + 0.5) * W, (_rayV.y * 0.5 + 0.5) * H, BEACH_RAY_MOON * k * (1 + wsSect * (0.5 + 1.4 * wsR) + wfMoonK), H * (0.36 + 0.12 * wsSect + 0.14 * Math.min(1, wfMoonK)));
       sharpMat.uniforms.uRayCol.value.setRGB(0.52, 0.60, 0.80);
       sharpMat.uniforms.uRayT.value = 0.16;
     }
   }
   const u2 = sharpMat.uniforms.uRay2.value;
   sharpMat.uniforms.uRay2Col.value.setRGB(1.0, 0.82, 0.55); sharpMat.uniforms.uRay2T.value = 0.30;   // the dojo borrows these
+  /* THE WHALE'S HEALING throws gold rays off its own body through the mist:
+   * while it is on, the lamp's slot is its. */
+  if (wbFareCut && wfRay.k > 0.001) {
+    _rayV.copy(wfRay.p).project(camera);
+    const offW = Math.max(Math.abs(_rayV.x), Math.abs(_rayV.y));
+    if (_rayV.z < 1 && offW < 1.8) {
+      sharpMat.uniforms.uRay2Col.value.setRGB(1.0, 0.80, 0.50); sharpMat.uniforms.uRay2T.value = 0.18;
+      u2.set((_rayV.x * 0.5 + 0.5) * W, (_rayV.y * 0.5 + 0.5) * H, 2.6 * wfRay.k, H * (0.30 + 0.30 * Math.min(1, wfRay.k)));
+      return;
+    }
+  }
   if (typeof lampCore === 'undefined' || !lampCore) return;
   lampCore.getWorldPosition(_rayL);
   const d = _rayL.distanceTo(camera.position);
@@ -2280,6 +2312,8 @@ function sfxThunder(dist = 0.5, pan = 0) {
  * every room (which swap the fog for their own and put it back after). */
 let MOOD_KEYS = null;          // built on first use: the landmarks it reads are declared far below
 let MOOD_PLACES = null, moodClear = 0;
+// the whale's farewell parts the cloud and lifts the moon's rays (`updateWhaleFarewell`); up here because the mood and the rays read them every frame
+let wfSkyK = 0, wfMoonK = 0;
 function moodKeys() {
   // a TINT (about unit brightness) the lit fog, the horizon and the night's ambient are multiplied by, and a density
   const base = [[1.00, 1.00, 1.00], 1.00], wreck = [[1.05, 1.30, 0.92], 1.60], dock = [[1.00, 1.02, 1.00], 1.05],
@@ -2349,8 +2383,9 @@ function updateMood() {
   const fcd = Math.hypot(camera.position.x - (FORT_X + FORT_MID.x), camera.position.z - (FORT_Z + FORT_MID.z));
   const clear = Math.max(THREE.MathUtils.smoothstep(430 - twr, 0, 260), 0.85 * wsR * THREE.MathUtils.smoothstep(260 - wbd, 0, 120), THREE.MathUtils.smoothstep(110 - fcd, 0, 50));      // clearing from 430 m out, clear inside 170; over the whale only once it has been seen
   if (nearK === 14) near *= 0.25;                                   // and the air round it stays clear rather than closing in
-  moodClear = clear;
-  skyUniforms.uSqB.value.w = clear;
+  const clearW = Math.max(clear, wfSkyK);
+  moodClear = clearW;
+  skyUniforms.uSqB.value.w = clearW;
   const S = 0.55 + 0.30 * near;                              // how much of each mood is let through, stronger at the set piece
   T.x = 1 + (T.x - 1) * S; T.y = 1 + (T.y - 1) * S; T.z = 1 + (T.z - 1) * S;
   FOG_TINT.x = T.x; FOG_TINT.y = T.y; FOG_TINT.z = T.z;
@@ -2940,7 +2975,10 @@ oceanUniforms.bwSkyTex = BW_NOISE_U;
 oceanUniforms.uFortMask = FORT_U.uFortMask; oceanUniforms.uFortM = FORT_U.uFortM;   // shared, never cloned: the castle's footprint          // the cloud shadows' noise is a texture fetch (CLOUD_SHADE_T): shared, never cloned
 oceanUniforms.uSkyT = skyUniforms.uTime;
 oceanUniforms.uSqO = { value: new THREE.Vector4(0, 0, 1, 0) };
-oceanUniforms.uBlood = { value: new THREE.Vector4(0, 0, 1, 0) };   // blood in the water: (x, z, radius, strength), the whale's   // a squall on the water: (x, z, radius, strength)          // the clouds' clock, for their shadows (shared, not merged: merge clones)
+oceanUniforms.uBlood = { value: new THREE.Vector4(0, 0, 1, 0) };
+// the whale's healing on the sea: a ring of light going out across it (x, z, radius, strength), and a glow round the healed whale (x, z, radius, strength)
+oceanUniforms.uHealSea = { value: new THREE.Vector4(0, 0, 1, 0) };
+oceanUniforms.uGlowSea = { value: new THREE.Vector4(0, 0, 1, 0) };   // blood in the water: (x, z, radius, strength), the whale's   // a squall on the water: (x, z, radius, strength)          // the clouds' clock, for their shadows (shared, not merged: merge clones)
 
 // ------------------------------------------------------------------
 // Sand texture
@@ -6439,6 +6477,7 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
     uniform vec4 uSqO;
     uniform vec4 uSh[4]; uniform vec4 uSh2[4];
     uniform vec4 uBlood;
+    uniform vec4 uHealSea, uGlowSea;
     varying vec3 vWorld;
     ${CLOUD_SHADE_T}
 
@@ -6676,6 +6715,21 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
       float spark = step(0.95, sh);
       col += ${BIO_COL} * breakB * (0.25 + 0.75 * rush) * (plank * 0.42 * (0.45 + 0.55 * fizz) + spark * 0.28 * plank);   // a hint, by the owner's word, not a neon line
       col += ${BIO_COL} * lace * plank * 0.06;
+      /* THE WHALE'S HEALING going out across the water: a front of the sea's
+       * own light, gold at its crest, and the glow it leaves round the whale. */
+      if (uHealSea.w > 0.0) {
+        float hd = distance(vWorld.xz, uHealSea.xy);
+        float hn = skN(vWorld.xz * 0.32 + vec2(uTime * 0.25, -uTime * 0.1));
+        float hw = 3.0 + uHealSea.z * 0.05;
+        float front = exp(-pow((hd - uHealSea.z) / hw, 2.0));
+        float inner = smoothstep(uHealSea.z, uHealSea.z * 0.25, hd) * 0.30;
+        col += mix(${BIO_COL}, vec3(1.0, 0.84, 0.55), 0.45 * front) * (front * (0.55 + 0.45 * hn) + inner * hn) * uHealSea.w;
+      }
+      if (uGlowSea.w > 0.0) {
+        float gd = distance(vWorld.xz, uGlowSea.xy);
+        float gn = skN(vWorld.xz * 0.45 + vec2(-uTime * 0.2, uTime * 0.3));
+        col += mix(${BIO_COL}, vec3(0.55, 0.85, 1.0), 0.5) * smoothstep(uGlowSea.z, uGlowSea.z * 0.15, gd) * (0.35 + 0.65 * gn) * uGlowSea.w;
+      }
 
       gl_FragColor = vec4(col, 1.0);
       #include <fog_fragment>
@@ -6730,8 +6784,15 @@ let packCut = false;            // the three coming in: the player watches
 let keyCut = null;
 // the whale's farewell (`updateWhaleFarewell`): up here because `frozen()` and the lens read them from the first frame
 let wbFareCut = null, wbGone = false;
+// and the gold rays it throws off its own body at the heal, read by `beachRays`
+const wfRay = { k: 0, p: new THREE.Vector3() };
 // the wheel's cursor on the hotbar (`scrollHotbar`): -1 when it is resting on what you hold
 let wheelCursor = -1, wheelStepAt = 0;
+// the slot the hand rests on when what is in it is not a thing you hold in your hand, and the name's timer
+let restSlot = -1, hotSayT = 0;
+/* the player has changed the pack or the hand since the page loaded: a checkpoint's
+ * replay may then no longer put its own order or its own held item back over yours */
+let invTouched = false;
 let noteOpen = false, menuOpen = false, ended = false, introDone = false;
 let dialogOpen = false, invOpen = false, inspecting = false;
 /* AND THE SHOP'S FLAG LIVES UP HERE WITH THE OTHER OVERLAYS. `frozen()` is
@@ -6972,6 +7033,21 @@ function playerDied() {
 }
 const healthEl = document.getElementById('health');
 let hpShown = -1;
+/* A RING THAT RAISES THE BAR FILLS IT (the owner's word): from where your
+ * health is up to the new full, a point a second and a bit, glowing as it
+ * goes. A blow while it fills stops it where it is. */
+let hpCharge = 0, hpChargeLast = 0;
+const HP_CHARGE_RATE = 0.85;          // points a second
+// a soft bright tick as each point of health fills back in
+function sfxHpTick() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  for (const [f, g] of [[660, 0.05], [990, 0.03]]) {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 1.25, t + 0.18);
+    const gg = ctx.createGain(); gg.gain.setValueAtTime(0.0001, t); gg.gain.exponentialRampToValueAtTime(g, t + 0.02); gg.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+    o.connect(gg).connect(out); o.start(t); o.stop(t + 0.36);
+  }
+}
 function updateHurt(dt) {
   if (hurtFlash > 0) hurtFlash = Math.max(0, hurtFlash - dt / HURT_FADE);
   // what is on the glass outlasts the flash: a quick arrival, a long go
@@ -6985,6 +7061,16 @@ function updateHurt(dt) {
    * brighter the more of you is gone, with a flash on the hit. It is the
    * only colour on the screen, which is what makes it read. */
   const mx = maxHp();
+  if (hpCharge > 0) {
+    if (hp < hpChargeLast - 0.01 || dying || hpCharge > mx + 0.01) { hpCharge = 0; hp = Math.floor(hp + 1e-6); }   // hurt, or the ring came off: it stops where it is
+    else {
+      hp = Math.min(hpCharge, hp + dt * HP_CHARGE_RATE);
+      if (Math.floor(hp + 1e-6) > Math.floor(hpChargeLast + 1e-6)) sfxHpTick();
+      if (hp >= hpCharge - 1e-4) { hp = hpCharge; hpCharge = 0; }
+      hpChargeLast = hp;
+    }
+  }
+  healthEl.classList.toggle('charging', hpCharge > 0);
   if (hp > mx) hp = mx;                        // the ring came off: what it lent goes with it
   const key = hp + '/' + mx;
   if (key !== hpShown) {
@@ -7752,6 +7838,8 @@ function updateBootGate() {
  * the gesture that starts the audio and asks for the pointer lock, and it
  * begins the intro at once: the words fade, the song and the waves come in. */
 window.addEventListener('keydown', (e) => {
+  // the whale's farewell is long: Enter lets you out of it once it is on the sand
+  if (wbFareCut && wbFareCut.cue && wbFareCut.cue.cut && !e.repeat && (e.code === 'Enter' || e.code === 'NumpadEnter')) { wbFareCut.skip = true; return; }
   if (introStarted) return;
   if (e.code === 'Enter' || e.code === 'Space' || e.code === 'NumpadEnter') beginGame();
 });
@@ -7989,6 +8077,7 @@ function applySettings() {
   if (keepIntroGain && keepIntroSrc && audioCtx) keepIntroGain.gain.setTargetAtTime(settings.volume * settings.musicVolume * KEEP_INTRO_LEVEL, audioCtx.currentTime, 0.05);
   if (wsGain && wsSrc && audioCtx) wsGain.gain.setTargetAtTime(settings.volume * settings.musicVolume * WS_LEVEL, audioCtx.currentTime, 0.05);
   if (passVol && audioCtx) passVol.gain.setTargetAtTime(settings.volume * settings.musicVolume * PASS_LEVEL, audioCtx.currentTime, 0.05);
+  if (wlVol && audioCtx) wlVol.gain.setTargetAtTime(settings.volume * settings.musicVolume * WL_LEVEL, audioCtx.currentTime, 0.05);
   updateBeachBed();          // NOT `waveVolume` flat: the slider must not un-duck a room
   if (sfxBusGain && audioCtx) sfxBusGain.gain.setTargetAtTime(settings.sfxVolume * SFX_TRIM, audioCtx.currentTime, 0.05);
   document.getElementById('v-fov').textContent = settings.fov;
@@ -9472,8 +9561,10 @@ function renderHotbar() {
       } else c.lab = null;
     }
     if (c.lab) c.lab.textContent = item.name + (item.viewmodel ? (item === equipped ? ' — holster' : ' — equip') : ' — use');
-    const sel = wheelCursor >= 0 ? i === wheelCursor : !!item && item === equipped;
-    c.el.className = 'slot' + (item ? '' : ' empty') + (sel ? ' equipped' : '');
+    const sel = wheelCursor >= 0 ? i === wheelCursor : (!!item && item === equipped) || (!equipped && !!item && i === restSlot);
+    c.el.classList.toggle('empty', !item);
+    c.el.classList.toggle('equipped', sel);
+    c.el.classList.add('slot');
   }
 }
 /* Rings. A second, separate place things live: two slots under the hotbar,
@@ -9933,41 +10024,49 @@ const iconHTML = (item) => {
  * held now; a slot you scroll onto is a thing in your hands. Only while
  * you are actually in the game: the examine screen's wheel is its zoom. */
 function scrollHotbar(dir) {
+  /* EVERY THING IN THE STRIP, AND ONLY WHAT IS IN IT. It used to walk only
+   * the slots that could be held, and in a fight only the weapons, so the
+   * wheel skipped half of what you were carrying (the owner's word: scroll
+   * through everything). An empty slot is not there to land on. (A click in a
+   * fight never turns a thing over on the examine screen, which is what the
+   * weapons-only filter was protecting.) */
   const slots = [];
-  for (let i = 0; i < HOTBAR_SLOTS; i++) if (inventory[i] && inventory[i].viewmodel) slots.push(i);
-  /* IN A FIGHT THE WHEEL ONLY WALKS THE WEAPONS. A thumb brushing the wheel
-   * mid-exchange put a fang or a CD in your hand: the guard (which needs a
-   * weapon) stopped answering, and the next click turned the thing over on
-   * the examine screen and dropped the pointer lock — "the game clicks off
-   * and won't let me block". The digits still reach every slot. */
-  if (inCombat()) {
-    const w = slots.filter((i) => inventory[i].onDig || inventory[i].gun);
-    if (w.length) { slots.length = 0; slots.push(...w); }
-  }
+  for (let i = 0; i < HOTBAR_SLOTS; i++) if (inventory[i]) slots.push(i);
   if (!slots.length) return;
   /* THE CURSOR MOVES NOW; THE HAND FOLLOWS WHEN YOU STOP. Equipping on every
    * step swapped the model, played the draw and rebuilt the view for every
    * slot a fast scroll passed through, which is the stutter in "make the
    * scroll smoother". The highlight goes at once, with a pop and a tick, and
    * what it rests on is put in your hand `WHEEL_COMMIT` after the last step. */
-  const at = wheelCursor >= 0 ? wheelCursor : (equipped ? inventory.indexOf(equipped) : -1);
+  const at = wheelCursor >= 0 ? wheelCursor : (equipped ? inventory.indexOf(equipped) : restSlot);
   const cur = slots.indexOf(at);
   const next = cur < 0 ? (dir > 0 ? 0 : slots.length - 1) : (cur + dir + slots.length) % slots.length;
   if (slots[next] === at && at >= 0) return;
   wheelCursor = slots[next];
   renderHotbar();
   const c = hotbarCache[wheelCursor];
-  if (c && c.el.animate) c.el.animate([{ transform: 'translateY(-2px) scale(1.12)' }, { transform: 'translateY(-2px) scale(1)' }], { duration: 170, easing: 'cubic-bezier(.2,.9,.3,1)' });
+  if (c && c.el.animate) c.el.animate([{ transform: 'translateX(5px) translateY(-2px) scale(1.14)' }, { transform: 'translateX(0) translateY(-2px) scale(1)' }], { duration: 210, easing: 'cubic-bezier(.2,.9,.3,1)' });
+  // its name comes up beside it while you scroll, so you know what you are about to hold without looking down
+  for (const h of hotbarCache) if (h) h.el.classList.remove('say');
+  if (c) { c.el.classList.add('say'); clearTimeout(hotSayT); hotSayT = setTimeout(() => { if (c) c.el.classList.remove('say'); }, 900); }
   sfxWheelTick(dir);
   wheelStepAt = performance.now();
 }
+
 // on the frame clock, not a timer: a browser throttles timers the moment it thinks nobody is looking
 function updateWheelCommit() { if (wheelCursor >= 0 && performance.now() - wheelStepAt >= WHEEL_COMMIT) commitWheel(); }
-const WHEEL_COMMIT = 95;        // ms of rest before the slot the wheel is on goes into your hand
+const WHEEL_COMMIT = 80;        // ms of rest before the slot the wheel is on goes into your hand
 function commitWheel() {
-  const i = wheelCursor; wheelCursor = -1;
+  const i = wheelCursor;
   const item = i >= 0 ? inventory[i] : null;
-  if (item && item !== equipped && !frozen()) toggleEquip(item);
+  /* frozen (a take, a word, the examine screen): the cursor WAITS rather than
+   * snapping back to what you held, which read as the strip reverting */
+  if (item && item !== equipped && frozen()) return;
+  wheelCursor = -1;
+  if (item && item !== equipped) {
+    if (item.viewmodel) toggleEquip(item);
+    else { if (equipped) toggleEquip(equipped); restSlot = i; }
+  }
   renderHotbar();
 }
 // a soft dry tick, a shade higher going up the strip than down it
@@ -10075,8 +10174,10 @@ function useSlot(i) {
   item.use();
 }
 function toggleEquip(item) {
+  if (!applyingSave && !replaying) invTouched = true;
   if (listening) stopListening();               // whatever leaves your hand goes quiet
   equipped = (equipped === item) ? null : item;
+  if (equipped) restSlot = -1;
   // the sword makes a sound coming into the hand — off the sand, off the
   // hotbar, off the pack: any time it arrives
   if (katLike()) playSample('katDraw', 0.9, 0.03);
@@ -10350,6 +10451,7 @@ window.addEventListener('pointerup', (e) => {
     // and it lands in the slot it was dropped on, if that one was empty
     if (slot) {
       const to = +slot.dataset.index, at = inventory.indexOf(item);
+      invTouched = true;
       if (!inventory[to] || to >= at) { inventory.splice(at, 1); inventory.splice(Math.min(to, inventory.length), 0, item); }
     }
     packSel = inventory.indexOf(item);
@@ -10365,6 +10467,7 @@ window.addEventListener('pointerup', (e) => {
   const recipe = findRecipe(item, target);
   if (recipe) { recipe(); return; }
   // no recipe — just reorder / swap the two slots
+  invTouched = true;
   if (target) { inventory[to] = item; inventory[from] = target; }
   else { inventory.splice(from, 1); inventory.splice(Math.min(to, inventory.length), 0, item); }
   packSel = inventory.indexOf(item);
@@ -12683,7 +12786,7 @@ function meleeReach(P) {
 function meleeT(u, P, far) {
   const p = u.g.position, h = u.kind.h || 1.8;
   const y0 = p.y + h * 0.06, y1 = p.y + h * 0.96;
-  const r = (u.kind.hitR ? u.kind.hitR * 0.85 : 0.6) + P * 0.15;
+  const r = (u.kind.hitR ? u.kind.hitR * 0.88 : 0.66) + P * 0.15;
   // where along the aim line it passes the axis nearest, then how near
   const wx = _aimO.x - p.x, wz = _aimO.z - p.z;
   const hl = _aimD.x * _aimD.x + _aimD.z * _aimD.z;
@@ -12701,6 +12804,31 @@ function meleeT(u, P, far) {
   }
   if (_mbQ.distanceTo(_mbC) > r) return -1;
   return t;
+}
+/* THE BLADE SWEEPS, SO THE TEST SWEEPS. A cut crosses the screen through the
+ * crosshair, and a thing a hand's breadth to one side of the middle is one the
+ * blade visibly passed through — tested on the one line it was aimed down, it
+ * was a miss ("it looks like it hit but it didn't register"). And the target
+ * keeps moving for the 150-200 ms between the click and the contact. So a
+ * blow is tried down the line it was committed on, then down where you are
+ * looking NOW, then across the arc the blade actually travels — side to side
+ * for a cut, up and down for an overhead, nothing extra for a thrust, which
+ * ends at its point — and the line nearest the middle that finds a body wins. */
+const _mswD = [], _mswSave = new THREE.Vector3(), _mswAx = new THREE.Vector3(), _mswLive = new THREE.Vector3();
+function sweepDirs(P) {
+  while (_mswD.length < 9) _mswD.push(new THREE.Vector3());
+  let n = 0;
+  _mswD[n++].copy(_aimD);
+  camera.getWorldDirection(_mswLive);
+  if (_mswLive.angleTo(_aimD) > 0.01) _mswD[n++].copy(_mswLive);
+  const thrust = katStabbing() || (equipped && equipped.rapier);
+  if (!thrust) {
+    const span = (digOverhead ? 0.16 : 0.24) + P * 0.08;          // radians either side of the middle
+    if (digOverhead) _mswAx.setFromMatrixColumn(camera.matrixWorld, 0).normalize();   // an overhead comes down: fan in pitch
+    else _mswAx.set(0, 1, 0);                                        // a cut goes across: fan in yaw
+    for (const k of [0.33, -0.33, 0.66, -0.66, 1, -1]) { if (n >= _mswD.length) break; _mswD[n++].copy(_aimD).applyAxisAngle(_mswAx, span * k); }
+  }
+  return n;
 }
 // is there a wall between you and a point a blow would land at?
 function meleeBlocked(t, solid) {
@@ -12945,13 +13073,19 @@ function digImpactCore() {
   {
     aimRay(P);
     let best = null, bestT = Infinity;
-    for (const u of crabs) {
-      if (!u.st.alive) continue;
-      _hitC.copy(u.g.position); _hitC.y += 0.28;
-      const t = THREE.MathUtils.clamp(_hitC.clone().sub(_aimO).dot(_aimD), 0, digRay.far);
-      const miss = _hitC.distanceTo(_aimO.clone().addScaledVector(_aimD, t));
-      if (miss < 0.62 + P * 0.25 && t < bestT) { bestT = t; best = u; }
+    _mswSave.copy(_aimD);
+    const nd = sweepDirs(P);
+    for (let di = 0; di < nd && !best; di++) {
+      _aimD.copy(_mswD[di]);
+      for (const u of crabs) {
+        if (!u.st.alive) continue;
+        _hitC.copy(u.g.position); _hitC.y += 0.28;
+        const t = THREE.MathUtils.clamp(_hitC.clone().sub(_aimO).dot(_aimD), 0, digRay.far);
+        const miss = _hitC.distanceTo(_aimO.clone().addScaledVector(_aimD, t));
+        if (miss < 0.66 + P * 0.25 && t < bestT) { bestT = t; best = u; }
+      }
     }
+    _aimD.copy(_mswSave);
     if (best) {
       const heavy = P >= CRAB_HEAVY;
       hitConnect(P, heavy ? 1.25 : 0.85);
@@ -12976,14 +13110,20 @@ function digImpactCore() {
     const far = meleeReach(P);
     const solid = inRoom() && !inBunker ? null : nearestSolidHit();
     aimRay(P);
-    for (const u of mutants) {
-      if (!u.st.alive || u.st.struck || !u.g.visible) continue;
-      // A BODY IS AS WIDE AS THE BODY, AND AS TALL: the capsule, not a ball
-      const t = meleeT(u, P, far);
-      if (t < 0 || t >= bestT) continue;
-      if (meleeBlocked(t, solid)) continue;
-      bestT = t; best = u;
+    _mswSave.copy(_aimD);
+    const nd = sweepDirs(P);
+    for (let di = 0; di < nd && !best; di++) {
+      _aimD.copy(_mswD[di]);
+      for (const u of mutants) {
+        if (!u.st.alive || u.st.struck || !u.g.visible) continue;
+        // A BODY IS AS WIDE AS THE BODY, AND AS TALL: the capsule, not a ball
+        const t = meleeT(u, P, far);
+        if (t < 0 || t >= bestT) continue;
+        if (meleeBlocked(t, solid)) continue;
+        bestT = t; best = u;
+      }
     }
+    _aimD.copy(_mswSave);
     if (best) {
       const heavy = P >= MUT_HEAVY;
       hitConnect(P, heavy ? 1.35 : 0.9);
@@ -13929,22 +14069,12 @@ function updateViewmodel(dt) {
   // the drink runs on its own clock: up, three gulps, down — and heals on the second
   if (drinking) {
     drinkT += dt;
-    if (equipped !== waterBottleItem) drinking = false;
-    if (!drinkHealed && drinkT > 0.62) { drinkHealed = true; hp = maxHp(); hurtFlash = 0; sinceHurt = 0; regenAcc = 0; }
-    if (drinkT >= DRINK_DUR) {
+    // put away mid-drink: the water is already down you, so the bottle is spent all the same
+    if (equipped !== waterBottleItem) { drinking = false; if (!drinkHealed) { drinkHealed = true; hp = maxHp(); } spendBottle(); }
+    if (drinking && !drinkHealed && drinkT > 0.62) { drinkHealed = true; hp = maxHp(); hurtFlash = 0; sinceHurt = 0; regenAcc = 0; }
+    if (drinking && drinkT >= DRINK_DUR) {
       drinking = false;
-      /* AND THE EMPTY GOES — or the NEXT ONE comes up. One drink is the
-       * whole of a bottle; carrying an empty round for the rest of the walk
-       * is a slot for nothing, and carrying three full ones is three drinks,
-       * so the stack comes down by one and what is left in your hand is the
-       * next bottle, full. */
-      if (waterSips <= 0) {
-        waterBottleItem.count = Math.max(0, (waterBottleItem.count || 1) - 1);
-        if (waterBottleItem.count > 0) refillBottle();
-        else removeFromInventory(waterBottleItem);
-        renderHotbar();
-        renderPack();
-      }
+      spendBottle();
     }
   }
   // and the smoke runs on the drink's machinery: up to the mouth, held, down
@@ -17780,7 +17910,8 @@ function makeOldRingIcon() {
 const oldRingItem = {
   id: 'oldring', name: 'Old Ring', icon: makeOldRingIcon(), ring: true,
   desc: `Max Health +${OLD_HP}`,
-  onWear: () => { hp = maxHp(); hurtFlash = 0; sinceHurt = 0; regenAcc = 0; },
+  // it does not hand the new bar over full: it FILLS you up to it, from wherever you were (`hpCharge`)
+  onWear: () => { hpCharge = maxHp(); hpChargeLast = hp; hurtFlash = 0; sinceHurt = 0; regenAcc = 0; },
   use: () => toggleEquip(oldRingItem),
   inspectOpts: () => ({
     rotX: 0.85, rotY: 0.30,
@@ -19424,7 +19555,7 @@ function updateDialogCam(dt) {
     : (dialogOpen || cineHold) ? Math.min(settings.fov, dialogFov) : settings.fov) + fovKick
     - settings.fov * MAG_ZOOM * magAim;
   // and it arrives at a gun's pace, not a conversation's
-  const rate = mutCutFov > 0 ? 14 : keyCut ? 3.2 : wbFareCut ? 1.6 : peeking ? 2.6 : magAim > 0.002 ? 13 : 3.5;
+  const rate = mutCutFov > 0 ? 14 : keyCut ? 3.2 : wbFareCut ? (wbFareCut.fovRate || 1.6) : peeking ? 2.6 : magAim > 0.002 ? 13 : 3.5;
   if (Math.abs(camera.fov - wantFov) > 0.01) {
     camera.fov += (wantFov - camera.fov) * Math.min(1, dt * rate);
     camera.updateProjectionMatrix();
@@ -19675,6 +19806,7 @@ const SAMPLES = {
    * it dying away, played on the frame you land. The synthesised landing
    * stays behind it only as the fallback before the bank is in. */
   catFall: ['assets/catacombs-fall-music.m4a'],   // his "catacombs fall music" (15.4 s), cut to start on the impact
+  catFallHit: ['assets/catacombs-fall.m4a'],       // and his first one, the impact and its eight seconds of dying away, laid under the music (the owner's word: both)
   /* THE THING'S YOUNG, the owner's own two: it EATING (a 34-second loop cut
    * from his recording, brought up 22 dB — it arrived at -47 dB RMS — and
    * limited) and its SCREAM when you hit it. Not redistributable. */
@@ -21731,15 +21863,24 @@ function gainWater(n = 1) {
 }
 let waterSips = 1, drinking = false, drinkT = 0, drinkHealed = false, drinkZap = 0;   // ONE drink: it heals you once and it is gone
 const DRINK_DUR = 1.45;
+/* AND THE EMPTY GOES — or the NEXT ONE comes up. One drink is the whole of
+ * a bottle; carrying an empty round for the rest of the walk is a slot for
+ * nothing, and carrying three full ones is three drinks, so the stack comes
+ * down by one and what is left in your hand is the next bottle, full. It is
+ * the one door every way a drink can end goes through — finished, put away
+ * half way, or an empty somehow left in the pack — so a used bottle is never
+ * still there. */
+function spendBottle() {
+  if (waterSips > 0) return;
+  waterBottleItem.count = Math.max(0, (waterBottleItem.count || 1) - 1);
+  if (waterBottleItem.count > 0) refillBottle();
+  else { removeFromInventory(waterBottleItem); refillBottle(); waterBottleItem.count = 0; }
+  renderHotbar();
+  renderPack();
+}
 function drinkWater() {
   if (drinking || frozen() || equipped !== waterBottleItem) return;
-  if (waterSips <= 0) {
-    sfxBottleEmpty();
-    setPrompt('<b>EMPTY</b>');
-    setTimeout(() => { if (promptHTML.includes('EMPTY')) setPrompt(''); }, 600);
-    vmImpulse(-0.5);
-    return;
-  }
+  if (waterSips <= 0) { spendBottle(); return; }
   drinking = true; drinkT = 0; drinkHealed = false;
   waterSips--;
   waterBottle.userData.setFill(0.94 * waterSips);
@@ -29510,7 +29651,7 @@ function mutLandBlow(u, dmg) {
    * be frightening, not a death you could not have seen. */
   if (u.kind.whaleBody || u.kind.farmer) {
     const now = performance.now();
-    if (now - demonLastLand < (u.kind.farmer ? 1050 : 420)) { grazePlayer(u); return; }
+    if (now - demonLastLand < (u.kind.farmer ? 1050 : 520)) { grazePlayer(u); return; }
     demonLastLand = now;
   }
   damagePlayer(dmg, u);
@@ -30096,6 +30237,25 @@ function finishMutant(u) {
     for (const L of pool) { if (took >= extra) break; if (mutSever(u, L, dx + (Math.random() - 0.5) * 0.6, dz + (Math.random() - 0.5) * 0.6, 0.9 + Math.random() * 0.5)) took++; }
     bladeLensSpatter(u, 1.0);
   }
+  /* AND A FARMER IS CUT TO PIECES (the owner's word: cut and sliced, flying
+   * apart). Whatever else the blow took, it takes one to three more — an arm,
+   * a forearm, a leg, now and then through the middle — each thrown off along
+   * the blow at its own angle, so a kill in the street is a man coming apart
+   * rather than a body falling over. A forearm is not taken off an arm that
+   * has already gone: that arm's piece already has it. */
+  if (u.kind.cutApart) {
+    const heavy = P >= MUT_HEAVY || oh;
+    let want = (heavy ? 2 : 1) + (Math.random() < 0.5 ? 1 : 0);
+    if (!burst && !u.gone[MUT_BISECT.bone] && Math.random() < (heavy ? 0.45 : 0.18) * G) { if (mutSever(u, MUT_BISECT, dx, dz, 1.5)) want--; }
+    const armGone = (L) => { const side = L.bone.includes('Left') ? 'Left' : 'Right'; return !!u.gone['Character1_' + side + 'Arm']; };
+    const pool = MUT_LIMBS.slice().sort(() => Math.random() - 0.5);
+    for (const L of pool) {
+      if (want <= 0) break;
+      if (u.gone[L.bone] || (L.name === 'forearm' && armGone(L))) continue;
+      if (u.gone[MUT_BISECT.bone] && L.name !== 'leg') continue;   // cut through the middle: the top half already has its arms and head
+      if (mutSever(u, L, dx + (Math.random() - 0.5) * 0.9, dz + (Math.random() - 0.5) * 0.9, 1.1 + Math.random() * 0.6)) want--;
+    }
+  }
   // the overhead throws it further — a little, so the hit reads harder, not so far it flies
   mutRagdoll(u, dx, dz, 0.7 + P * 0.7 + (oh ? 0.55 : 0));
   const BKk = u.kind.bloodK || 1;
@@ -30156,7 +30316,7 @@ function bladeLensSpatter(u, k) {
  * resistance builds; and the burst is twelve per cent of its health, never
  * under two. So on a pack mutant it is one extra blow and on a boss it is a
  * noticeable chunk every seven or eight, not a second weapon. */
-const BLEED_WAIT = 2.2, BLEED_DRAIN = 3.0, BLEED_PCT = 0.12;
+const BLEED_WAIT = 2.2, BLEED_DRAIN = 3.0, BLEED_PCT = 0.17;   // a burst takes a sixth of him (the owner's word: a little more, and it should be felt)
 function bleedMax(u) {
   const m = u.hpMax || u.kind.hp || 6;
   return (3.2 + Math.min(2.8, m / 28)) * (u.kind.bleedRes || 1) * (1 + 0.33 * (u.st.bleedProcs || 0));
@@ -30171,7 +30331,7 @@ function bleedProc(u) {
   const st = u.st, now = performance.now();
   const m = u.hpMax || u.kind.hp || 6;
   st.bleed = 0; st.bleedT = 0; st.bleedProcs = (st.bleedProcs || 0) + 1; st.bleedPop = now;
-  const dmg = Math.max(2, Math.round(m * BLEED_PCT * (u.kind.bleedK || 1)));
+  const dmg = Math.max(3, Math.round(m * BLEED_PCT * (u.kind.bleedK || 1)));
   const p = u.g.position, h = u.kind.h || 2, cy = p.y + h * 0.55;
   /* THE WOUND OPENS THE WAY IT DOES IN BLOODBORNE. Not a stroke and not a
    * puddle: the body EXPLODES into a cloud — thousands of fine bright specks
@@ -30189,8 +30349,15 @@ function bleedProc(u) {
   bleedMutant(u, 26, 1.4);
   for (let i = 0; i < 3; i++) stampBlood(p.x + (Math.random() - 0.5) * 2.2, p.z + (Math.random() - 0.5) * 2.2, 0.5 + Math.random() * 0.6, p.y + 0.1);
   bladeLensSpatter(u, 0.9);
-  if (!playSample('bleedBurst', 0.9, 0.03)) sfxBleedBurst();
-  addTrauma(0.14); fovKick = Math.max(fovKick, 2.5);
+  if (!playSample('bleedBurst', 1.05, 0.03)) sfxBleedBurst();
+  /* AND IT IS FELT: a beat of held time, the lens punched, a low thump under
+   * the burst, and the body rocked off the wound — a burst is the Bloody
+   * Blade's payoff and it has to land like one. */
+  sfxBleedThump();
+  hitstop = Math.max(hitstop, 0.075);
+  addTrauma(0.3); fovKick = Math.max(fovKick, 4.5);
+  try { mutFlinch(u, 1.2, null); } catch (e) {}
+  try { flashMats(u.g); } catch (e) {}
   u.hbT = now;
   const before = st.hp;
   st.hp -= dmg;
@@ -30198,6 +30365,18 @@ function bleedProc(u) {
     st.killP = 0.6; st.killOh = false; st.killGore = toolGore(); st.killBloody = true; st.hpBefore = before;
     killMutant(u);
   }
+}
+// the weight under a bleed burst: a sub drop and a wet slap, low
+function sfxBleedThump() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(88, t); o.frequency.exponentialRampToValueAtTime(34, t + 0.32);
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.9, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
+  o.connect(g).connect(out); o.start(t); o.stop(t + 0.45);
+  const n = noiseBurst(0.22, (x) => Math.pow(1 - x, 2.6));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
+  const ng = ctx.createGain(); ng.gain.value = 0.55;
+  n.connect(lp).connect(ng).connect(out); n.start(t); n.stop(t + 0.22);
 }
 // the meter drains once it has been left alone; nothing drains while the world is stopped
 function updateBleed(dt) {
@@ -32553,10 +32732,11 @@ function updateMutantUnit(u, dt) {
      * — the pack's take, the SCP's look, the knight's altar — so a creature
      * simply set down on the sand would sleep through you walking past it.
      * `wakeAt` is the distance at which it does not. */
-    if (u.kind.wakeAt && u.st.alive && introDone && !dying && !ended && !u.holdAnim && (!u.kind.fortBody || (inFort && fortInT > 0.9 && farmFightDone()))) {
+    if (u.kind.wakeAt && u.st.alive && introDone && !dying && !ended && !u.holdAnim && (!u.kind.fortBody || (inFort && fortInT > 0.9 && farmFightDone()))
+        && (!u.kind.fortOut || (!inFort && !fortBusy && camera.position.z < umbraLimZ() + 3))) {
       const dW = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
       // (the castle's is saved at its gate the moment before you walk in: the calm a save buys is not his)
-      if (dW < (performance.now() < chaseGraceUntil && !u.kind.fortBody ? Math.min(u.kind.wakeAt, CHASE_GRACE_R) : u.kind.wakeAt)) {
+      if (dW < (performance.now() < chaseGraceUntil && !u.kind.fortBody && !u.kind.fortOut ? Math.min(u.kind.wakeAt, CHASE_GRACE_R) : u.kind.wakeAt)) {
         if (u.kind.provoke) u.kind.provoke(u, false);
         else { u.st.awake = true; u.st.roar = 1.2; u.st.cool = 0.4; }
       }
@@ -39124,7 +39304,11 @@ function applySavedInventoryInner(d, loud, hand) {
    * order they landed, and the hotbar is muscle memory — 3 was the shovel all
    * game. Sort what you actually have by the order you were carrying it. */
   const want = d.pack || [];
-  inventory.sort((a, b) => {
+  /* AND ONCE YOU HAVE TOUCHED IT, IT IS YOURS. This runs again every time the
+   * replay hands something over, for seconds after a load — and it used to
+   * re-sort the strip and put the saved item back in your hand each time, so
+   * a change made in those seconds snapped back ("the hotbar reverts"). */
+  if (!invTouched) inventory.sort((a, b) => {
     const ia = want.indexOf(a.name), ib = want.indexOf(b.name);
     return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
   });
@@ -39171,7 +39355,7 @@ function applySavedInventoryInner(d, loud, hand) {
   if (inventory.includes(jarItem)) removeFromInventory(jarItem);
   updateBloodReadout();
   if (d.flags && d.flags.ringsFound) ringsFound = true;
-  if (hand) {
+  if (hand && !invTouched) {
     if (d.held) {
       const it = inventory.find((i) => i.name === d.held);
       if (it && it !== equipped && (it.viewmodel || it.onDig)) toggleEquip(it);
@@ -39928,7 +40112,8 @@ function animateFrame() {
   if (hPitch) camera.rotateX(-hPitch);
   if (hRoll) camera.rotateZ(-hRoll);
   renderer.autoClear = false;
-  if (viewmodel.visible) {
+  // a film has nobody's hands in it: the whale's farewell is shown without what you are holding
+  if (viewmodel.visible && !(wbFareCut && wbFareCut.cue && wbFareCut.cue.cut)) {
     renderer.clearDepth();
     renderer.render(vmScene, vmCamera);
   }
@@ -40390,6 +40575,7 @@ function catLookAhead(u, pv, p, dt) {
 }
 function mutClampX(u, p, dt) {
   if (u.kind.whaleBody) { demonClamp(u, p); return; }   // the belly's walls, not the beach's
+  if (u.kind.fortOut) { const lim = umbraLimZ(); if (p.z > lim) p.z = lim; }   // the castle's back wall is a wall to him
   if (u.kind.fortBody && fortWalls) { fortClampUnit(u, p); return; }   // the castle's stone, not the surf and the dune
   /* THE BEACH'S WALLS ARE NOT EVERY CREATURE'S WALLS — and by now there are
    * two rooms below that prove it. The dojo is six thousand metres from the
@@ -52197,7 +52383,56 @@ function armDojo() {
    * brightest thing in it; with the lift at DOJO_LIFT and the lanterns doing
    * the work, that same setting left the hilt invisible against a dark
    * statue. Brighter than the cut, nothing like the blaze it started as. */
-  heroSwordShine = addItemShine(heroSword, { size: 0.60, height: 0.34, strength: 0.95, lift: 0.34, through: true });
+  heroSwordShine = addItemShine(heroSword, { size: 0.95, height: 0.34, strength: 1.35, lift: 0.40, through: true });
+  /* AND IT IS THE ONE THING IN THE COURTYARD THE MOON FINDS (the owner's word:
+   * make it more noticeable). A column of moonlight falls on the statue's
+   * belly out of the dark, a cold lamp lights the hilt and the stone round the
+   * wound, and a slow sheen runs down the steel from the guard to where it goes
+   * in — so from the door it is a bright line in a dark shape, and walking up
+   * the courtyard the eye is taken straight to it. All of it goes with the sword. */
+  {
+    const beamRoot = new THREE.Group();
+    beamRoot.position.copy(piv.position); beamRoot.scale.setScalar(1 / DOJO_S);
+    const BH = 9;
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.95, BH, 24, 1, true), new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+      uniforms: { uT: DOJO_SKY_U.uT || { value: 0 } },
+      vertexShader: 'varying vec3 vN; varying vec3 vV; varying float vY; void main(){ vY = position.y; vec4 mv = modelViewMatrix * vec4(position, 1.0); vV = -mv.xyz; vN = normalMatrix * normal; gl_Position = projectionMatrix * mv; }',
+      fragmentShader: `uniform float uT; varying vec3 vN; varying vec3 vV; varying float vY;
+        void main(){ float face = pow(abs(dot(normalize(vN), normalize(vV))), 2.0);
+          float h = (vY + ${(BH / 2).toFixed(1)}) / ${BH.toFixed(1)};
+          float a = face * smoothstep(0.0, 0.12, h) * smoothstep(1.0, 0.35, h) * (0.8 + 0.2 * sin(uT * 0.7 + vY * 0.9));
+          gl_FragColor = vec4(vec3(0.62, 0.72, 0.95) * a * 0.16, 1.0); }`,
+    }));
+    beam.position.y = BH / 2 - 0.25; beam.raycast = () => {}; beam.userData.bwGhost = true; beam.renderOrder = 6;
+    beamRoot.add(beam);
+    // the pool of it on the stone under the hilt
+    const pool = new THREE.Mesh(new THREE.CircleGeometry(1.1, 32), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x7f93c0, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+    pool.rotation.x = -Math.PI / 2; pool.position.set(0, -YARD_BELLY.y + 0.06, -0.9); pool.raycast = () => {}; pool.userData.bwGhost = true;
+    beamRoot.add(pool);
+    dojoWorld.add(beamRoot);
+    heroSword.userData.beamRoot = beamRoot;
+    // the cold lamp on the hilt: it keeps its slot in the pool from anywhere in the yard
+    const lamp = new THREE.PointLight(0xc4d6ff, 7, 6.5, 1.6);
+    lamp.position.set(0, 0.35, 0.55); lamp.userData.lpAlways = 40;
+    heroSword.add(lamp);
+    // the sheen down the steel: a clone of its own materials, lifted on a slow band
+    heroSword.traverse((o) => {
+      if (!o.isMesh || !o.material || o.name === 'hitProxy') return;
+      const m = o.material.clone(); o.material = m;
+      if (!m.emissive) return;
+      const base = m.emissive.clone();
+      m.onBeforeCompile = (sh) => {
+        sh.uniforms.uSwT = DOJO_SKY_U.uT || { value: 0 };
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vSwY;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvSwY = position.y;');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uSwT; varying float vSwY;')
+          .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+            { float band = exp(-pow(fract(vSwY * 0.9 + uSwT * 0.22) - 0.5, 2.0) * 60.0);
+              totalEmissiveRadiance += vec3(0.55, 0.66, 0.9) * (0.10 + 0.55 * band); }`);
+      };
+      m.userData.swBase = base; m.needsUpdate = true;
+    });
+  }
   addInteractable(heroSword, 'Take the katana', undefined, {
     far: 4.2,
     mid: true,                                  // a prompt that starts a boss fight belongs under the crosshair
@@ -52206,6 +52441,7 @@ function armDojo() {
       if (heroSwordTaken) return;
       heroSwordTaken = true;
       piv.visible = false;
+      if (heroSword.userData.beamRoot) heroSword.userData.beamRoot.visible = false;
       hovered = null;
       /* `toggleEquip` TOGGLES, so it must never be called blind. Adding the
        * item can leave it in your hand already, and a second call then takes
@@ -54800,6 +55036,7 @@ function sfxCatDraught() {
 const CAT_FALL_LEVEL = 1.8;
 function playCatFallMusic() {
   const ctx = audioCtx; if (!ctx) return;
+  playSample('catFallHit', 1.25);                         // the old impact, on the effects bus, under it
   const buf = (sampleBanks.catFall || []).filter(Boolean)[0];
   if (!buf) { playSample('catFall', 1.4); return; }
   const g = ctx.createGain(); g.gain.value = settings.volume * settings.musicVolume * CAT_FALL_LEVEL;
@@ -57980,16 +58217,20 @@ function wfBuildFx() {
   if (wfFx) return wfFx;
   const beam = new THREE.Mesh(new THREE.CylinderGeometry(6, 17, 150, 40, 1, true), new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
-    uniforms: { uA: { value: 0 }, uT: { value: 0 } },
+    uniforms: { uA: { value: 0 }, uT: { value: 0 }, uDrop: { value: 1 }, uLift: { value: 0 } },
     vertexShader: `varying vec3 vN; varying vec3 vV; varying float vY; varying float vAng;
       void main(){ vY = position.y; vAng = atan(position.x, position.z);
         vec4 mv = modelViewMatrix * vec4(position, 1.0); vV = -mv.xyz; vN = normalMatrix * normal;
         gl_Position = projectionMatrix * mv; }`,
-    fragmentShader: `uniform float uA, uT; varying vec3 vN; varying vec3 vV; varying float vY; varying float vAng;
+    fragmentShader: `uniform float uA, uT, uDrop, uLift; varying vec3 vN; varying vec3 vV; varying float vY; varying float vAng;
       void main(){
         float face = pow(abs(dot(normalize(vN), normalize(vV))), 1.6);
         float h = (vY + 75.0) / 150.0;
-        float up = smoothstep(1.0, 0.25, h) * smoothstep(0.0, 0.04, h);
+        // it comes DOWN out of the cloud (uDrop), and afterwards its foot lifts off the whale and goes back up (uLift)
+        float front = 1.0 - uDrop;
+        float reveal = smoothstep(front - 0.06, front, h) * smoothstep(uLift, uLift + 0.12, h);
+        float edge = exp(-pow((h - front) / 0.025, 2.0)) * (1.0 - step(0.995, uDrop)) * 2.2;
+        float up = (mix(0.5, 1.0, smoothstep(1.0, 0.3, h)) * reveal + edge) * smoothstep(0.0, 0.04, h) * smoothstep(1.0, 0.94, h);
         float streak = 0.55 + 0.45 * sin(vAng * 14.0 + vY * 0.06 + uT * 1.7) * sin(vAng * 5.0 - uT * 0.9);
         float fall = 0.6 + 0.4 * sin(vY * 0.22 + uT * 7.0);
         vec3 col = mix(vec3(0.45, 0.80, 1.0), vec3(1.0, 0.88, 0.62), face);
@@ -58019,7 +58260,7 @@ function wfBuildFx() {
   ring.rotation.x = -Math.PI / 2; ring.frustumCulled = false; ring.raycast = () => {}; ring.userData.bwGhost = true; ring.visible = false; ring.renderOrder = 5;
   scene.add(ring);
   // motes: 420 of them, gathering in on it and then thrown out and up
-  const NM = 420, mg = new THREE.BufferGeometry();
+  const NM = 900, mg = new THREE.BufferGeometry();
   mg.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(NM * 3), 3));
   mg.setAttribute('aA', new THREE.Float32BufferAttribute(new Float32Array(NM), 1));
   mg.setAttribute('aC', new THREE.Float32BufferAttribute(new Float32Array(NM), 1));
@@ -58036,8 +58277,10 @@ function wfBuildFx() {
   }));
   motes.frustumCulled = false; motes.raycast = () => {}; motes.userData.bwGhost = true; motes.visible = false; motes.renderOrder = 7;
   scene.add(motes);
-  const M = Array.from({ length: NM }, () => ({ a: new THREE.Vector3(), th: Math.random() * Math.PI * 2, r0: 7 + Math.random() * 12, h0: 2 + Math.random() * 16,
-    sp: 0.6 + Math.random() * 1.2, c: Math.random(), k: Math.random(), up: 6 + Math.random() * 18, out: 6 + Math.random() * 16 }));
+  // the first 420 gather off the air round it; the rest RISE OUT OF THE SEA and the sand, a long way off, and drift in
+  const M = Array.from({ length: NM }, (_, i) => ({ a: new THREE.Vector3(), th: Math.random() * Math.PI * 2, r0: i < 420 ? 7 + Math.random() * 12 : 26 + Math.random() * 70, h0: i < 420 ? 2 + Math.random() * 16 : -0.4,
+    sp: 0.6 + Math.random() * 1.2, c: i < 420 ? Math.random() : Math.random() * 0.45, k: Math.random(), up: 6 + Math.random() * 18, out: 6 + Math.random() * 16,
+    sea: i >= 420, lift: 30 + Math.random() * 70, tw: Math.random() * 6.28 }));
   // the water off a leaping whale: spray and the mist over it, one draw
   const NS = 2200, sg = new THREE.BufferGeometry();
   sg.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(NS * 3), 3));
@@ -58056,7 +58299,16 @@ function wfBuildFx() {
   spray.frustumCulled = false; spray.raycast = () => {}; spray.userData.bwGhost = true; spray.visible = false; spray.renderOrder = 8;
   scene.add(spray);
   const SP = Array.from({ length: NS }, () => ({ p: new THREE.Vector3(), v: new THREE.Vector3(), age: 0, life: 0, s0: 1, grow: 0, drag: 0.4, mist: false }));
-  wfFx = { beam, pool, ring, motes, M, spray, SP, sNext: 0 };
+  // the wake it leaves swimming out: the sea's own light, stirred up behind it and left to fade
+  const NW = 320, wg = new THREE.BufferGeometry();
+  wg.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(NW * 3), 3));
+  wg.setAttribute('aA', new THREE.Float32BufferAttribute(new Float32Array(NW), 1));
+  wg.setAttribute('aC', new THREE.Float32BufferAttribute(new Float32Array(NW), 1));
+  const wake = new THREE.Points(wg, motes.material);
+  wake.frustumCulled = false; wake.raycast = () => {}; wake.userData.bwGhost = true; wake.visible = false; wake.renderOrder = 7;
+  scene.add(wake);
+  const WK = Array.from({ length: NW }, () => ({ p: new THREE.Vector3(), age: 0, life: 0 }));
+  wfFx = { beam, pool, ring, motes, M, spray, SP, sNext: 0, wake, WK, wNext: 0 };
   return wfFx;
 }
 // water thrown up: n drops from a patch of radius r round (x, y, z), `up` its speed, `mist` how much hangs over it
@@ -58099,6 +58351,31 @@ function wfUpdateFx(dt) {
   }
   F.spray.visible = any;
   pa.needsUpdate = true; aa.needsUpdate = true; as.needsUpdate = true;
+  // the wake
+  const wa = F.wake.geometry.attributes.position, wA = F.wake.geometry.attributes.aA, wC = F.wake.geometry.attributes.aC;
+  let anyW = false;
+  for (let i = 0; i < F.WK.length; i++) {
+    const P = F.WK[i];
+    if (P.life <= 0) { wA.array[i] = 0; continue; }
+    P.age += dt; if (P.age > P.life) { P.life = 0; wA.array[i] = 0; continue; }
+    anyW = true;
+    const u = P.age / P.life;
+    wa.array[i * 3] = P.p.x; wa.array[i * 3 + 1] = P.p.y + Math.sin(P.age * 1.7 + i) * 0.05; wa.array[i * 3 + 2] = P.p.z;
+    wA.array[i] = 0.9 * Math.min(1, P.age * 4) * Math.pow(1 - u, 1.5) * (0.6 + 0.4 * Math.sin(P.age * 9 + i * 1.3));
+    wC.array[i] = 0.12;
+  }
+  F.wake.visible = anyW;
+  wa.needsUpdate = true; wA.needsUpdate = true; wC.needsUpdate = true;
+}
+// the sea's light stirred up where it swims
+function wfWake(x, z, n, spread) {
+  const F = wfFx; if (!F) return;
+  for (let i = 0; i < n; i++) {
+    const P = F.WK[F.wNext]; F.wNext = (F.wNext + 1) % F.WK.length;
+    const a = Math.random() * Math.PI * 2, r = spread * Math.sqrt(Math.random());
+    P.p.set(x + Math.cos(a) * r, -0.25 + Math.random() * 0.15, z + Math.sin(a) * r);
+    P.age = 0; P.life = 4 + Math.random() * 5;
+  }
 }
 // the whale hitting the water, from where it did: a boom you feel, the sea coming down after it, late by the distance
 function sfxWhaleSplash(x, z, big = 1) {
@@ -58154,8 +58431,69 @@ function wbRemoveForGood() {
   if (wb.drips) wb.drips.pts.visible = false;
 }
 
+/* ---- THE WHALE'S LEAVING SONG, the owner's own (100 s). The farewell is cut
+ * TO it: everything from the moment you are put out on the sand is read off
+ * the song's own clock, so a hitch cannot put the picture out of step. Its
+ * shape, measured: a quiet build to 18.1 s, then the swell (the flash); the
+ * sections turn at 27.4 (it goes back into the sea), 45.7 (its flukes go
+ * under), 64.0 (it comes up once more, far out) and 82.3 (the sky); the last
+ * climax is from 86.3, which is where you get your hands back, and the song
+ * plays on out under you. It starts WL_OFF into the file, at the cut. */
+const WL_OFF = 5.5;
+const WL = { beam: 6.4, eye: 12.4, harp: 15.2, pull: 16.7, flash: 18.15, back: 27.45, swim: 36.6, surface: 64.0, spout: 68.4, down: 73.0, gone: 79.8, sky: 80.5, hand: 86.3 };
+function wlLoad() {
+  if (wlBuf || wlLoading || !audioCtx) return;
+  wlLoading = true;
+  fetch('assets/whale-leaving.m4a').then((r) => r.arrayBuffer()).then((b) => audioCtx.decodeAudioData(b)).then((buf) => { wlBuf = buf; })
+    .catch(() => {}).finally(() => { wlLoading = false; });
+}
+function wlStart(off) {
+  const ctx = audioCtx; if (!ctx || !wlBuf) return false;
+  if (!wlVol) { wlVol = ctx.createGain(); wlVol.gain.value = settings.volume * settings.musicVolume * WL_LEVEL; wlVol.connect(ctx.destination); }
+  wlEnv = ctx.createGain(); wlEnv.connect(wlVol);
+  const t = ctx.currentTime;
+  wlEnv.gain.setValueAtTime(0.0001, t);
+  wlEnv.gain.linearRampToValueAtTime(1, t + 2.6);              // up out of the black with the picture
+  const src = ctx.createBufferSource(); src.buffer = wlBuf; src.connect(wlEnv); src.start(t, off);
+  src.onended = () => { if (wlSrc === src) wlSrc = null; };
+  wlSrc = src; wlT0 = t - off;
+  return true;
+}
+// where the song is, in seconds of its own file
+function wlTime() { return wlSrc && audioCtx ? audioCtx.currentTime - wlT0 : -1; }
+function wlFade(secs) {
+  if (!wlSrc || !audioCtx || !wlEnv) return;
+  holdParam(wlEnv.gain, audioCtx.currentTime);
+  wlEnv.gain.linearRampToValueAtTime(0.0001, audioCtx.currentTime + secs);
+  const s = wlSrc; wlSrc = null; try { s.stop(audioCtx.currentTime + secs + 0.05); } catch (e) {}
+}
+// the black bars a film is shown between, and nothing of the game on the screen
+function wfBars(on) {
+  let el = document.getElementById('wf-bars');
+  if (!el) {
+    el = document.createElement('div'); el.id = 'wf-bars'; el.innerHTML = '<i></i><i><b>ENTER &nbsp;SKIP</b></i>'; document.body.appendChild(el);
+    const st = document.createElement('style');
+    st.textContent = '#wf-bars{position:fixed;inset:0;pointer-events:none;z-index:58}'
+      + '#wf-bars i{position:absolute;left:0;right:0;height:10.5vh;background:#000;transition:transform 2.4s cubic-bezier(.45,0,.2,1)}'
+      + '#wf-bars i:first-child{top:0;transform:translateY(-101%)}#wf-bars i:last-child{bottom:0;transform:translateY(101%)}'
+      + '#wf-bars.on i{transform:none}'
+      + '#wf-bars b{position:absolute;right:3.2vw;top:50%;transform:translateY(-50%);font:500 10px/1 ui-monospace,Menlo,monospace;letter-spacing:.24em;color:#fff;opacity:0;transition:opacity 1.5s 3s}#wf-bars.on b{opacity:.28}'
+      + 'body.wf-cine #hud,body.wf-cine #crosshair,body.wf-cine #promptmid,body.wf-cine #prompt,body.wf-cine #blood,body.wf-cine #ehp,body.wf-cine #fighttip{opacity:0!important;transition:opacity 1.2s}';
+    document.head.appendChild(st);
+    void el.offsetWidth;
+  }
+  el.classList.toggle('on', !!on);
+  document.body.classList.toggle('wf-cine', !!on);
+}
+const smoothPulse = (x, c, w) => Math.exp(-Math.pow((x - c) / w, 2));
+
 function updateWhaleFarewell(dt) {
   if (!wb) return;
+  if (inWhale && !wbGone) wlLoad();                         // it is asked for while you are fighting in the belly
+  // the song plays on after the take, until you go into a room
+  if (!wbFareCut && wlSrc && inRoom()) wlFade(2);
+  // the sky it opened goes back slowly once it has gone
+  if (!wbFareCut) { wfSkyK = Math.max(0, wfSkyK - dt * 0.08); wfMoonK = Math.max(0, wfMoonK - dt * 0.3); wfRay.k = 0; }
   // the belly is empty: it says so, a beat after the last of them stops moving
   if (!wbFareCut && !wbGone && inWhale && !whaleBusy && wbBellyClear()) {
     wbFareCut = null;
@@ -58175,62 +58513,126 @@ function updateWhaleFarewell(dt) {
     if (t > T.gulp) { addTrauma(dt * 2.2); blackoutEl.style.opacity = smooth01(T.gulp + 0.1, T.cut - 0.05, t).toFixed(3); }
     return;
   }
-  if (!cue.cut) { cue.cut = true; blackoutEl.style.opacity = '1'; wfPlaceOut(); }
-  blackoutEl.style.opacity = (1 - smooth01(T.cut + 0.5, T.cut + 1.7, t)).toFixed(3);
+  if (!cue.cut) {
+    // the black holds for the song if it is still coming off the network (two seconds at most)
+    if (!wlBuf && (C.waitT = (C.waitT || 0) + dt) < 2.0) { wlLoad(); blackoutEl.style.opacity = '1'; C.t = T.cut; return; }
+    cue.cut = true; blackoutEl.style.opacity = '1'; wfPlaceOut(); wfBars(true);
+    C.songOK = wlStart(WL_OFF); C.cutAt = C.t;
+  }
+  /* THE CLOCK IS THE SONG'S: S is seconds into the file. It runs on the frame
+   * clock and is pulled onto the song's own while the song is actually
+   * playing — so a hitch cannot put the picture out of step with the music,
+   * and a suspended audio context (whose clock stands still) cannot stop the
+   * take dead either. */
+  if (C.S == null) C.S = WL_OFF;
+  C.S += dt;
+  if (C.songOK && audioCtx && audioCtx.state === 'running') {
+    const st = wlTime();
+    if (st >= 0) { const e = st - C.S; C.S += Math.abs(e) > 1.2 ? e : e * Math.min(1, dt * 3); }
+  }
+  const S = C.S;
+  if (C.skip) { wfFinish(true); return; }
+  blackoutEl.style.opacity = (1 - smooth01(WL_OFF + 0.4, WL_OFF + 2.6, S)).toFixed(3);
   const F = wfFx;
+  const Cw = wfCentre(_wfCen);
 
-  // ---------- THE HEAL
-  const h = t - T.heal;
-  if (h > 0 && !cue.heal) {
+  /* ---------- THE HEAL. The cloud opens over it and a column of light comes
+   * down out of the gap; the sea's own light rises off the water all along
+   * the bay and drifts in on it; the light runs down its length and back;
+   * the lens goes in to its eye, which is open and on you; gold gathers in
+   * every cut and they close; the harpoon is thrown out; and on the swell of
+   * the song it breathes out, lifts its flippers, and everything goes white
+   * and out across the sea. */
+  wfSkyK = Math.max(wfSkyK, 0.95 * smooth01(WL_OFF, WL.beam + 2.5, S));
+  if (S > WL.beam - 0.6 && !cue.heal) {
     cue.heal = true;
-    playStory('whaleHeal', 1.3);
-    const Cw = wfCentre();
+    playStory('whaleHeal', 0.85);
     F.beam.position.set(Cw.x, 75, Cw.z); F.beam.visible = true;
     F.pool.position.set(Cw.x, 0.08, Cw.z); F.pool.scale.setScalar(30); F.pool.visible = true;
-    // the motes are anchored down its length, where it lies
-    F.M.forEach((m) => { const lz = -Math.random() * 30; m.a.set(0, 1.2, lz).applyMatrix4(G.matrixWorld); });
+    // the motes: the near ones anchored down its length, the far ones out on the water and the sand all round
+    F.M.forEach((m) => {
+      if (!m.sea) { const lz = -Math.random() * 30; m.a.set(0, 1.2, lz).applyMatrix4(G.matrixWorld); return; }
+      const lz = -Math.random() * 30; m.a.set(0, 2.5, lz).applyMatrix4(G.matrixWorld);
+      m.sx = m.a.x + Math.cos(m.th) * m.r0; m.sz = m.a.z + Math.sin(m.th) * m.r0;
+    });
     F.motes.visible = true;
     W.blState = 'open'; W.blink = 0;
   }
-  if (h > 0) {
-    const beamA = smooth01(0, 1.4, h) * (1 - smooth01(5.2, 8.0, h)) * (1 + 0.8 * Math.exp(-Math.pow((h - 4.1) / 0.35, 2)));
-    F.beam.material.uniforms.uA.value = 0.20 * beamA;
-    F.pool.material.uniforms.uA.value = 0.11 * beamA;
-    F.beam.visible = F.pool.visible = beamA > 0.002;
-    wbU.uGlow.value = smooth01(0.2, 1.8, h) * (1 - smooth01(5.0, 8.5, h));
-    // the light runs down it from the tail to the head, and back again on the flash
-    wbU.uGlowZ.value = h < 4.1 ? -36 + 40 * smooth01(0.4, 3.6, h) : 4 - 42 * smooth01(4.1, 6.2, h);
-    wbU.uGlowK.value = smooth01(0.3, 0.9, h) * (1 - smooth01(6.0, 7.0, h));
-    wbU.uHealGlow.value = smooth01(1.0, 1.9, h) * (1 - smooth01(4.3, 5.6, h));
-    wbU.uHeal.value = smooth01(2.0, 4.1, h);
-    W.healL.intensity = 14 * beamA + 10 * wbU.uHealGlow.value;
+  const flashD = S - WL.flash;                               // negative before the swell
+  if (cue.heal) {
+    // the beam: down out of the cloud, flaring on the swell, and then its foot lifting away back up
+    const beamIn = smooth01(WL.beam, WL.beam + 3.2, S);
+    const beamA = smooth01(WL.beam - 0.6, WL.beam + 1.0, S) * (1 - smooth01(24.5, 28.0, S)) * (1 + 0.7 * smoothPulse(S, WL.flash, 0.45) + 0.25 * smooth01(12, 18, S));
+    F.beam.material.uniforms.uA.value = 0.22 * beamA;
+    F.beam.material.uniforms.uDrop.value = beamIn;
+    F.beam.material.uniforms.uLift.value = smooth01(WL.flash + 1.2, 26.5, S) * 0.9;
+    F.beam.scale.set(1 + 0.35 * smoothPulse(S, WL.flash, 0.6), 1, 1 + 0.35 * smoothPulse(S, WL.flash, 0.6));
+    F.pool.material.uniforms.uA.value = 0.12 * smooth01(WL.beam + 2.4, WL.beam + 4.0, S) * (1 - smooth01(22, 27, S)) * (1 + smoothPulse(S, WL.flash, 0.5));
+    F.beam.visible = beamA > 0.002; F.pool.visible = F.pool.material.uniforms.uA.value > 0.002;
+    // the light on it: a band running tail to head, back, rushing to the head, and off the tail on the flash
+    wbU.uGlow.value = smooth01(8.0, 11.0, S) * (1 - smooth01(23, 29, S)) + 0.22 * smooth01(26, 30, S) * (1 - smooth01(44, 47, S));
+    wbU.uGlowZ.value = S < 13.6 ? -36 + 40 * smooth01(9.4, 13.6, S)
+      : S < 16.9 ? 4 - 40 * smooth01(13.6, 16.9, S)
+      : S < WL.flash ? -36 + 40 * smooth01(16.9, WL.flash, S)
+      : 4 - 62 * smooth01(WL.flash, WL.flash + 2.4, S);
+    wbU.uGlowK.value = smooth01(9.2, 10.2, S) * (1 - smooth01(WL.flash + 2.2, WL.flash + 3.4, S));
+    wbU.uHealGlow.value = smooth01(10.2, 12.2, S) * (1 - smooth01(WL.flash + 0.6, WL.flash + 4.5, S));
+    wbU.uHeal.value = smooth01(12.6, 17.9, S);
+    W.healL.intensity = 16 * beamA + 12 * wbU.uHealGlow.value;
     // the blood goes out of the water and off the sand with the wounds
-    oceanUniforms.uBlood.value.w = 0.62 * (1 - smooth01(2.0, 4.6, h));
-    for (const m of W.decals) if (m.material) { m.material.opacity = 1 - smooth01(2.2, 5.0, h) * (m.userData.keep ? 0 : 1); }
-    // it draws a breath in and holds it, eyes open, and lets it go on the flash
-    if (h < 4.1) { W.brState = 'hold'; W.brT = 9; W.breath = wbEase(W.breath, 1, 1.2, dt); }
+    oceanUniforms.uBlood.value.w = 0.62 * (1 - smooth01(12.6, 17.2, S));
+    for (const m of W.decals) if (m.material) { m.material.opacity = 1 - smooth01(12.8, 17.6, S) * (m.userData.keep ? 0 : 1); }
+    // it draws a breath and holds it, eyes open, and lets it go on the swell
+    if (flashD < 0) { W.brState = 'hold'; W.brT = 9; W.breath = wbEase(W.breath, 1, 1.4, dt); }
     else if (!cue.flash) { W.brState = 'out'; W.brT = 1.9; }
-    W.blink = 0; wbU.uBlink.value = 0;
-    // the motes: gather in, and on the flash thrown out and up
+    if (S < 30) { W.blink = 0; wbU.uBlink.value = 0; }
+    // the rays off its body, through the mist, gathering to the swell and spent after it
+    wfRay.k = smooth01(10.5, 17.5, S) * 0.45 + 0.9 * smoothPulse(S, WL.flash + 0.15, 0.6);
+    wfRay.k *= 1 - smooth01(WL.flash + 1.5, WL.flash + 6.0, S);
+    wfRay.p.copy(Cw).setY(Cw.y + 3.5);
+    // the sea: its light round the whale, then a front of it going out across the bay on the swell
+    oceanUniforms.uGlowSea.value.set(Cw.x, Cw.z, 26, 0.55 * smooth01(8, 14, S) * (1 - smooth01(WL.flash + 2, WL.flash + 9, S)));
+    if (flashD > 0 && S < WL.back) {
+      const rr = 3 + 150 * (1 - Math.exp(-flashD * 0.7));
+      oceanUniforms.uHealSea.value.set(Cw.x, Cw.z, rr, 1.3 * Math.exp(-flashD * 0.32) * smooth01(0, 0.2, flashD));
+    }
+    // the motes
     const pa = F.motes.geometry.attributes.position, aa = F.motes.geometry.attributes.aA, ac = F.motes.geometry.attributes.aC;
+    const h = S - WL.beam;
     F.M.forEach((m, i) => {
       let x, y, z, a;
-      if (h < 4.1) {
-        const g = smooth01(0, 3.8, h * (0.8 + 0.4 * m.k));
-        const r = m.r0 * (1 - g) + 0.6, th = m.th + h * m.sp * (0.6 + g * 2.5);
-        x = m.a.x + Math.cos(th) * r; z = m.a.z + Math.sin(th) * r; y = m.a.y + m.h0 * (1 - g) + Math.sin(h * 3 + m.k * 9) * 0.3;
-        a = smooth01(0, 0.8, h) * (0.35 + 0.65 * g);
+      if (flashD < 0) {
+        if (!m.sea) {
+          const g = smooth01(1.5, WL.flash - WL.beam - 0.3, h * (0.85 + 0.3 * m.k));
+          const r = m.r0 * (1 - g) + 0.6, th = m.th + h * m.sp * (0.6 + g * 2.5);
+          x = m.a.x + Math.cos(th) * r; z = m.a.z + Math.sin(th) * r; y = m.a.y + m.h0 * (1 - g) + Math.sin(h * 3 + m.k * 9) * 0.3;
+          a = smooth01(1.0, 2.6, h) * (0.35 + 0.65 * g);
+        } else {
+          // up off the water where they were, a little, and then drifting in toward it in long spirals
+          const rise = smooth01(0.8 + m.k * 3.0, 3.0 + m.k * 3.5, h);
+          const g = smooth01(3.0 + m.k * 2.0, WL.flash - WL.beam - 0.2, h);
+          const r = m.r0 * (1 - g) + 1.0, th = m.th + g * (1.6 + m.sp);
+          x = m.a.x + Math.cos(th) * r; z = m.a.z + Math.sin(th) * r;
+          y = -0.3 + rise * (0.6 + m.k * 1.6) + g * (m.a.y + 1.5 * m.k) + Math.sin(h * 1.4 + m.tw) * 0.25;
+          a = rise * (0.28 + 0.5 * g) * (0.7 + 0.3 * Math.sin(h * 4 + m.tw));
+        }
       } else {
-        const e = h - 4.1, u = 1 - Math.exp(-e * 1.6);
-        x = m.a.x + Math.cos(m.th) * m.out * u; z = m.a.z + Math.sin(m.th) * m.out * u; y = m.a.y + 0.6 + m.up * u + e * 1.5;
-        a = Math.max(0, 1 - e / (2.5 + m.k * 2));
+        // thrown out on the swell, and then the lot of them going up the column into the sky like sparks off a fire
+        const e = flashD, u = 1 - Math.exp(-e * 1.6);
+        const asc = Math.max(0, e - 1.2 - m.k * 1.5);
+        const pull = smooth01(0, 4, asc);
+        const r = m.out * u * (1 - 0.8 * pull);
+        x = Cw.x + (m.a.x - Cw.x) * (1 - pull) * 0.3 + Math.cos(m.th + asc * 0.5) * r;
+        z = Cw.z + (m.a.z - Cw.z) * (1 - pull) * 0.3 + Math.sin(m.th + asc * 0.5) * r;
+        y = m.a.y + 0.6 + m.up * u + asc * asc * 0.9 + asc * m.lift * 0.12;
+        a = Math.max(0, 1 - e / (9 + m.k * 5)) * (0.7 + 0.3 * Math.sin(e * 6 + m.tw));
       }
       pa.array[i * 3] = x; pa.array[i * 3 + 1] = y; pa.array[i * 3 + 2] = z; aa.array[i] = a; ac.array[i] = m.c;
     });
     pa.needsUpdate = true; aa.needsUpdate = true; ac.needsUpdate = true;
-    F.motes.visible = h < 9;
+    F.motes.visible = S < WL.flash + 14;
     // the harpoon is thrown out of it
-    if (h > 2.7 && !cue.harp) {
+    if (S > WL.harp && !cue.harp) {
       cue.harp = true;
       const H = scene.getObjectByName('harpoon');
       const rope = scene.getObjectByName('harpoonLine');
@@ -58243,25 +58645,30 @@ function updateWhaleFarewell(dt) {
         playSampleAt('fleshHit', H.position.x, H.position.z, { gain: 1.2, ref: 10, far: 60, rate: 0.7 });
       }
     }
-    // THE FLASH
-    if (h > 4.1 && !cue.flash) {
+    // THE SWELL
+    if (flashD > 0 && !cue.flash) {
       cue.flash = true;
-      sfxHealBloom(); addTrauma(0.45);
-      const Cw = wfCentre();
-      F.ring.position.set(Cw.x, 0.15, Cw.z); F.ring.visible = true; C.ringT = 0;
+      sfxHealBloom(); addTrauma(0.5);
+      F.ring.position.set(Cw.x, 0.15, Cw.z); F.ring.visible = true;
       wbExhale(); setTimeout(() => { if (wb) wbExhale(); }, 380);
       C.flashT = 0;
     }
     if (C.flashT != null) {
       C.flashT += dt;
-      flashEl.style.opacity = (0.45 * Math.exp(-C.flashT * 3.6)).toFixed(3);
-      const rr = 2 + 90 * (1 - Math.exp(-C.flashT * 1.3));
+      flashEl.style.opacity = (0.42 * Math.exp(-C.flashT * 3.0)).toFixed(3);
+      const rr = 2 + 110 * (1 - Math.exp(-C.flashT * 1.1));
       F.ring.scale.setScalar(rr);
-      F.ring.material.uniforms.uA.value = 1.4 * Math.max(0, 1 - C.flashT / 2.6);
-      F.ring.visible = C.flashT < 2.7;
-      if (C.flashT > 3.5) { flashEl.style.opacity = '0'; C.flashT = null; }
+      F.ring.material.uniforms.uA.value = 1.5 * Math.max(0, 1 - C.flashT / 3.4);
+      F.ring.visible = C.flashT < 3.5;
+      if (C.flashT > 4) { flashEl.style.opacity = '0'; C.flashT = null; }
     }
-    C.songK = Math.max(C.songK - dt * 0.3, h > 4.1 && h < 8 ? 0.8 : 0);
+    // it lifts its flippers like wings on the swell, and its flukes, and lets them down
+    if (S < WL.back) {
+      const wing = smoothPulse(S, WL.flash + 0.6, 1.6);
+      wbU.uFlipR.value = wbU.uFlipL.value = 0.34 * wing;
+      wbU.uTail.value = Math.max(wbU.uTail.value * 0.98, 0.5 * wing);
+    }
+    C.songK = 0.25 * smooth01(WL.flash, WL.flash + 2, S) * (1 - smooth01(24, 27, S));
   }
   if (C.harp && !C.harp.rest) {
     const P = C.harp, H = P.H;
@@ -58275,45 +58682,61 @@ function updateWhaleFarewell(dt) {
     }
   }
 
-  // ---------- BACK DOWN THE BEACH INTO THE SEA
-  const b = t - T.back;
+  // ---------- THE LENS through the heal: the whole of it; up the column to the gap in the cloud and down it again; in to its eye; out for the swell; up after the sparks; down to it
+  if (S < WL.back) {
+    const up = smooth01(WL.beam - 0.2, WL.beam + 1.8, S) * (1 - smooth01(WL.beam + 2.4, WL.beam + 4.6, S));
+    const eyeK = smooth01(WL.eye - 0.4, WL.eye + 1.4, S) * (1 - smooth01(WL.pull, WL.pull + 1.1, S));
+    const sparks = smooth01(WL.flash + 2.0, WL.flash + 4.5, S) * (1 - smooth01(WL.flash + 6.5, 26.8, S));
+    _wfT.copy(Cw).setY(4 + 46 * up + 20 * sparks);
+    if (eyeK > 0.001) {
+      const eye = wfEyeWorld(_wfE2);
+      if (eye) _wfT.lerp(eye, eyeK);
+    }
+    C.look.lerp(_wfT, 1 - Math.exp(-dt * (eyeK > 0.2 ? 2.4 : 1.7)));
+    C.fov = Math.min(settings.fov, 78 + 10 * up + 6 * sparks - 52 * eyeK + 8 * smoothPulse(S, WL.flash, 0.5));
+    C.fovRate = 2.6;
+  }
+
+  // ---------- BACK DOWN THE BEACH INTO THE SEA, its flippers heaving on the song's bar
+  const b = S - WL.back;
   if (b > 0 && !cue.back) {
-    cue.back = true;
+    cue.back = true; C.fovRate = 1.6;
     C.C.copy(wfCentre()); C.C0 = C.C.clone();
     C.yaw = WB_YAW; C.pitch = -WB_PITCH; C.roll = 0;
     for (let i = rockColliders.length - 1; i >= 0; i--) if (rockColliders[i].whale) rockColliders.splice(i, 1);
-    sfxWhaleGroan(); sfxWhaleDrag(C.C.x, C.C.z, 8.5);
-    // and it says it now, going back into the sea — quietly (the owner's word: it was too loud, and not in the belly)
-    setTimeout(() => { if (wbFareCut) playStory('whaleThanks', 0.62); }, 1400);
+    sfxWhaleGroan(); sfxWhaleDrag(C.C.x, C.C.z, 8.8);
+    setTimeout(() => { if (wbFareCut) playStory('whaleThanks', 0.55); }, 1400);
+    oceanUniforms.uHealSea.value.w = 0;
   }
-  if (b > 0 && t < T.swim) {
-    const u = smooth01(0, 8.6, b);
+  const BAR = 4.55;                                          // the song's phrase, measured
+  if (b > 0 && S < WL.swim) {
+    const u = smooth01(0, 8.8, b);
     C.C.copy(C.C0).addScaledVector(WB_DIR, -46 * u);
-    C.C.y = C.C0.y - 1.9 * smooth01(2.5, 8.6, b);
+    C.C.y = C.C0.y - 1.9 * smooth01(2.5, 8.8, b);
     C.pitch = -WB_PITCH * (1 - u);
-    C.roll = Math.sin(b * 1.1) * 0.035;
+    C.roll = Math.sin(b * Math.PI * 2 / BAR) * 0.04;
     wfPose(C.C, C.yaw, C.pitch, C.roll);
-    // flippers heave it, one then the other
-    wbU.uFlipR.value = 0.20 * Math.max(0, Math.sin(b * 2.3));
-    wbU.uFlipL.value = 0.20 * Math.max(0, Math.sin(b * 2.3 + Math.PI));
+    wbU.uFlipR.value = 0.22 * Math.max(0, Math.sin(b * Math.PI * 2 / BAR));
+    wbU.uFlipL.value = 0.22 * Math.max(0, -Math.sin(b * Math.PI * 2 / BAR));
     wbU.uTail.value = 0.18 + 0.14 * Math.sin(b * 1.3);
-    // the sand coming up round it, and the sea where it meets it
-    if ((C.sprayT = (C.sprayT || 0) - dt) <= 0 && b < 8.2) {
+    if ((C.sprayT = (C.sprayT || 0) - dt) <= 0 && b < 8.4) {
       C.sprayT = 0.07;
       for (const side of [2.3, -2.3]) {
         const q = G.localToWorld(_wfV.set(side, -0.2, -Math.random() * 16));
         const wl = shoreLineJS(q.z, oceanUniforms.uTime.value);
         if (q.x > wl + 0.8) spawnPuffs(q.x, q.z, 3, WB_DIR.x * -1, WB_DIR.z * -1, 0.15, [0.46, 0.50, 0.58]);
-        else if (Math.random() < 0.5) spawnSplash(q.x, q.z, 6, 0, 0, 1.2, Math.max(-0.3, waterSurfaceAt(q.x, q.z)));
+        else { if (Math.random() < 0.5) spawnSplash(q.x, q.z, 6, 0, 0, 1.2, Math.max(-0.3, waterSurfaceAt(q.x, q.z))); wfWake(q.x, q.z, 2, 1.5); }
       }
     }
-    if ((C.slapT = (C.slapT || 1.2) - dt) <= 0) { C.slapT = 2.73; wbFlipThud(Math.sin(b * 2.3) > 0 ? 1 : -1); }
+    const beat = Math.floor(b / (BAR / 2));
+    if (beat !== C.slapBeat) { C.slapBeat = beat; if (beat > 0) wbFlipThud(beat % 2 ? -1 : 1); }
     C.look.lerp(_wfV.copy(wfCentre()).setY(3.5), 1 - Math.exp(-dt * 1.5));
+    C.fov = Math.min(settings.fov, 76 - 6 * u);
   }
 
-  // ---------- TURN IN THE SHALLOWS AND SWIM OUT
-  const s = t - T.swim;
-  if (s > 0 && !cue.swim) {
+  // ---------- TURN IN THE SHALLOWS AND SWIM OUT, lit faintly from inside and leaving the sea's light behind it; the flukes go under on the section's turn
+  const sw = S - WL.swim;
+  if (sw > 0 && !cue.swim) {
     cue.swim = true;
     const V = _wfV.set(WF_VX, 0, WB_Z + WF_VZ_OFF);
     C.view = new THREE.Vector3(-0.75, 0, -0.66).normalize();
@@ -58323,43 +58746,51 @@ function updateWhaleFarewell(dt) {
     let dy = C.yaw1 - C.yaw; while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
     C.yaw1 = C.yaw + dy; C.yawS = C.yaw; C.spd = 0.3;
   }
-  if (s > 0 && t < T.under) {
-    const turn = smooth01(0, 6.5, s);
-    const prevYaw = C.yaw;
-    C.yaw = C.yawS + (C.yaw1 - C.yawS) * turn;
-    C.spd = 0.4 + 6.8 * smooth01(3.0, 9.0, s);
-    C.vel.set(Math.sin(C.yaw), 0, Math.cos(C.yaw)).multiplyScalar(C.spd);
-    C.C.addScaledVector(C.vel, dt);
-    const dive = smooth01(8.6, 11.4, s);
-    C.C.y += (-3.0 - C.C.y) * (1 - Math.exp(-dt * 0.6)) - dive * dt * 5.5;
-    C.pitch = 0.55 * dive + Math.sin(s * 1.25) * 0.02;
-    C.roll = THREE.MathUtils.clamp((C.yaw - prevYaw) / Math.max(dt, 1e-3) * -0.35, -0.3, 0.3);
-    wfPose(C.C, C.yaw, C.pitch, C.roll);
-    // the flukes drive it; and as it goes down they come up out of the water, the way they do
-    const fluke = smooth01(9.4, 10.6, s) * (1 - smooth01(11.2, 12.0, s));
-    wbU.uTail.value = Math.max(0.28 + 0.30 * Math.sin(s * 2.4), fluke);
-    wbU.uFlipR.value = wbU.uFlipL.value = 0.06;
-    if (s > 5.0 && !cue.spout) { cue.spout = true; wbExhale(); }
-    if (s > 11.3 && !cue.fluke) { cue.fluke = true; const p = G.localToWorld(_wfV.set(0, 0, -30)); wfSplash(p.x, 0, p.z, 90, 9, 5, 1.4, 0.3); sfxWhaleSplash(p.x, p.z, 0.45); }
-    C.songK = Math.max(C.songK - dt * 0.2, 0.35 * smooth01(1, 4, s));
-    C.look.lerp(_wfV.copy(wfCentre()).setY(Math.max(1.5, wfCentre().y + 3)), 1 - Math.exp(-dt * 1.4));
-    C.fov = Math.min(settings.fov, 80 - 22 * smooth01(4, 12, s));
-    if (s > 12.2) G.visible = false;
+  const FL = 45.75 - WL.swim;                                // the flukes' slap lands on the section's turn
+  if (sw > 0 && S < 52.4) {
+    if (sw < FL + 0.9) {
+      const turn = smooth01(0, 5.5, sw);
+      const prevYaw = C.yaw;
+      C.yaw = C.yawS + (C.yaw1 - C.yawS) * turn;
+      C.spd = 0.4 + 6.8 * smooth01(2.5, 7.0, sw);
+      C.vel.set(Math.sin(C.yaw), 0, Math.cos(C.yaw)).multiplyScalar(C.spd);
+      C.C.addScaledVector(C.vel, dt);
+      const dive = smooth01(FL - 2.6, FL - 0.2, sw);
+      C.C.y += (-3.0 - C.C.y) * (1 - Math.exp(-dt * 0.6)) - dive * dt * 5.5;
+      C.pitch = 0.55 * dive + Math.sin(sw * 1.25) * 0.02;
+      C.roll = THREE.MathUtils.clamp((C.yaw - prevYaw) / Math.max(dt, 1e-3) * -0.35, -0.3, 0.3);
+      wfPose(C.C, C.yaw, C.pitch, C.roll);
+      const fluke = smooth01(FL - 1.8, FL - 0.6, sw) * (1 - smooth01(FL - 0.15, FL + 0.5, sw));
+      wbU.uTail.value = Math.max(0.28 + 0.30 * Math.sin(sw * 2.4), fluke);
+      wbU.uFlipR.value = wbU.uFlipL.value = 0.06;
+      if (sw > 4.2 && !cue.spout) { cue.spout = true; wbExhale(); }
+      if ((C.wakeT = (C.wakeT || 0) - dt) <= 0) {
+        C.wakeT = 0.05;
+        const q = G.localToWorld(_wfV.set(0, 0, -22 - Math.random() * 10));
+        wfWake(q.x, q.z, 3, 3.2);
+      }
+      if (sw > FL && !cue.fluke) { cue.fluke = true; const p = G.localToWorld(_wfV.set(0, 0, -30)); wfSplash(p.x, 0, p.z, 110, 9, 5, 1.4, 0.3); sfxWhaleSplash(p.x, p.z, 0.5); wfWake(p.x, p.z, 40, 6); }
+      C.look.lerp(_wfV.copy(wfCentre()).setY(Math.max(1.5, wfCentre().y + 3)), 1 - Math.exp(-dt * 1.4));
+      C.fov = Math.min(settings.fov, 72 - 20 * smooth01(3, 9, sw));
+      if (sw > FL + 0.8) G.visible = false;
+    } else {
+      // ---------- UNDER: a light moving out under the water to where it will come up, and the lens going to the moon
+      G.visible = false;
+      const u = smooth01(FL + 0.8, 52.4 - WL.swim, sw);
+      const gx = C.C.x + (C.B.x - C.C.x) * u, gz = C.C.z + (C.B.z - C.C.z) * u;
+      oceanUniforms.uGlowSea.value.set(gx, gz, 16, 0.55 * smooth01(0, 1.2, sw - FL - 0.8) * (1 - smooth01(0.85, 1, u)));
+      C.look.lerp(_wfV.set(gx, 6 + 4 * u, gz), 1 - Math.exp(-dt * 1.3));
+      C.fov = Math.min(settings.fov, 40);
+    }
+    C.songK = 0.2;
+    wfMoonK = Math.max(wfMoonK, 0.55 * smooth01(46, 52, S));
   }
 
-  // ---------- UNDER, and then out in front of the moon
-  const x = t - T.under;
-  if (x > 0 && t < T.breach) {
-    G.visible = false;
-    C.look.lerp(_wfV.copy(C.B).setY(9), 1 - Math.exp(-dt * 1.2));
-    C.fov = Math.min(settings.fov, 38);
-    C.songK = 0.25 + 0.3 * smooth01(0, 3.6, x);
-  }
-  const k = t - T.breach;
-  if (k > 0) {
+  // ---------- OUT IN FRONT OF THE MOON: most of its own length out of the sea, rolling, and back in on its side
+  const k = S - 52.4;
+  if (k > 0 && S < WL.surface) {
     if (!cue.breach) {
       cue.breach = true;
-      // up out of the water, most of its length, side-on to you: the heading across your line
       C.hd = new THREE.Vector3(C.view.z, 0, -C.view.x);
       C.yaw = Math.atan2(C.hd.x, C.hd.z);
       C.C.set(C.B.x, -22, C.B.z); C.vel.set(C.hd.x * 5, 24, C.hd.z * 5);
@@ -58367,19 +58798,19 @@ function updateWhaleFarewell(dt) {
       wbU.uWbFog.value = 0.22;
       W.key.intensity = 60;
       G.visible = true;
+      oceanUniforms.uGlowSea.value.w = 0;
     }
     const g = 7.0;
     if (!C.slam) {
       C.vel.y -= g * dt;
       C.C.addScaledVector(C.vel, dt);
       if (C.vel.y < 0) C.apex = true;
-      // it rolls as it rises, and levels out and goes over onto its side as it falls
       const up = THREE.MathUtils.clamp(C.vel.y / 24, -1, 1);
       C.pitch = up > 0 ? -1.22 + 0.08 * (1 - up) : -1.14 + 1.24 * smooth01(0, 1, -up * 1.35);
       C.roll = 0.5 * smooth01(0, 3.2, k) + 1.35 * (up < 0 ? smooth01(0, 1, -up * 1.3) : 0);
       wbU.uFlipR.value = wbU.uFlipL.value = 0.30;
       wbU.uTail.value = 0.35 + 0.2 * Math.sin(k * 3);
-      // the sea breaking where it comes out, and pouring off it as it rises
+      wbU.uGlow.value = 0.18 * (1 - smooth01(0, 5, k));
       if (!cue.out && C.C.y > -9) { cue.out = true; wfSplash(C.B.x + C.hd.x * 8, 0, C.B.z + C.hd.z * 8, 420, 16, 7, 1.9, 0.35); sfxWhaleSplash(C.B.x, C.B.z, 0.9); addTrauma(0.1); }
       if ((C.pourT = (C.pourT || 0) - dt) <= 0) {
         C.pourT = 0.03;
@@ -58395,6 +58826,7 @@ function updateWhaleFarewell(dt) {
         wfSplash(p.x + C.hd.x * 14, 0, p.z + C.hd.z * 14, 300, 14, 10, 2.0, 0.3);
         wfSplash(p.x - C.hd.x * 14, 0, p.z - C.hd.z * 14, 300, 14, 10, 2.0, 0.3);
         sfxWhaleSplash(p.x, p.z, 1.6); addTrauma(0.3);
+        oceanUniforms.uHealSea.value.set(p.x, p.z, 2, 0.9); C.slamRing = 0;
       }
     } else {
       C.slamT += dt;
@@ -58404,28 +58836,108 @@ function updateWhaleFarewell(dt) {
       wbU.uTail.value = smooth01(0.6, 1.6, C.slamT) * (1 - smooth01(2.2, 3.0, C.slamT));
       if (C.slamT > 2.9 && !cue.tail) { cue.tail = true; const p = G.localToWorld(_wfV.set(0, 0, -30)); wfSplash(p.x, 0, p.z, 120, 10, 5, 1.6, 0.3); sfxWhaleSplash(p.x, p.z, 0.4); }
       if (C.slamT > 3.6) G.visible = false;
+      // the sea's light going out in a ring where it went in
+      const hs = oceanUniforms.uHealSea.value;
+      hs.z = 2 + 60 * (1 - Math.exp(-C.slamT * 0.8)); hs.w = 0.9 * Math.exp(-C.slamT * 0.45);
     }
     wfPose(C.C, C.yaw, C.pitch, C.roll);
-    C.songK = C.apex ? Math.max(0.2, 1.0 - (C.slamT || 0) * 0.2) : 0.6 + 0.4 * smooth01(0, 2.5, k);
+    C.songK = C.apex ? Math.max(0.2, 0.8 - (C.slamT || 0) * 0.2) : 0.5;
+    wfMoonK = 0.55 + 0.45 * smooth01(0, 3, k) * (1 - smooth01(8, 11, k));
     C.look.lerp(_wfV.copy(C.C).setY(Math.max(6, C.C.y * 0.8 + 4)), 1 - Math.exp(-dt * 2.0));
     C.fov = Math.min(settings.fov, 38);
-    // and it is over: gone for good, and you have your hands back
-    if (C.slam && C.slamT > 6.0) {
-      wbGone = true;
-      wbU.uWbFog.value = 1;
-      wbRemoveForGood();
-      wbFareCut = null;
-      lookEuler.setFromQuaternion(camera.quaternion, lookEuler.order); lookEuler.z = 0;
-      camera.quaternion.setFromEuler(lookEuler);
-      hovered = null;
-      autosaveNow();
-      return;
-    }
   }
+
+  /* ---------- AND ONCE MORE, FAR OUT. On the song's last turn but one it
+   * comes up in the moon's road, breathes a column of mist that the moon
+   * lights, swims a little way on with the sea's light round it, and goes
+   * down, its flukes standing up black against the moon a last time. */
+  const f = S - WL.surface;
+  if (f > 0 && S < WL.gone + 0.5) {
+    if (!cue.surface) {
+      cue.surface = true;
+      C.hd2 = C.view.clone().addScaledVector(C.hd, 0.25).normalize();
+      C.C.copy(C.B).addScaledVector(C.hd, 12).addScaledVector(C.view, 10).setY(-6);
+      C.yaw = Math.atan2(C.hd2.x, C.hd2.z); C.pitch = -0.05; C.roll = 0;
+      wbU.uWbFog.value = 0.3;
+      oceanUniforms.uHealSea.value.w = 0;
+    }
+    G.visible = S < WL.gone;
+    C.C.addScaledVector(C.hd2, dt * 2.2);
+    const down = smooth01(WL.down, WL.down + 4.0, S);
+    const upY = -2.5 + 0.5 * smooth01(0, 3.5, f);
+    C.C.y += ((upY - 6 * down) - C.C.y) * (1 - Math.exp(-dt * 0.9));
+    C.pitch = -0.04 * (1 - down) + 0.62 * down;
+    C.roll = Math.sin(f * 0.7) * 0.03;
+    wfPose(C.C, C.yaw, C.pitch, C.roll);
+    const flukes = smooth01(WL.down + 2.2, WL.down + 3.6, S) * (1 - smooth01(WL.gone - 1.4, WL.gone - 0.3, S));
+    wbU.uTail.value = Math.max(0.22 + 0.2 * Math.sin(f * 1.8), flukes);
+    wbU.uFlipR.value = wbU.uFlipL.value = 0.08;
+    wbU.uGlow.value = 0.12 * smooth01(0, 3, f) * (1 - down);
+    if (S > WL.spout && !cue.spout2) { cue.spout2 = true; wbExhale(); setTimeout(() => { if (wb) wbExhale(); }, 700); }
+    const wc = wfCentre(_wfCen);
+    oceanUniforms.uGlowSea.value.set(wc.x, wc.z, 30, 0.45 * smooth01(0.5, 4, f) * (1 - smooth01(WL.gone - 2, WL.gone + 0.5, S)));
+    if ((C.wakeT = (C.wakeT || 0) - dt) <= 0 && down < 0.9) { C.wakeT = 0.08; const q = G.localToWorld(_wfV.set(0, 0, -24 - Math.random() * 8)); wfWake(q.x, q.z, 2, 4); }
+    if (S > WL.gone - 0.4 && !cue.fluke2) { cue.fluke2 = true; const p = G.localToWorld(_wfV.set(0, 0, -30)); wfSplash(p.x, 0, p.z, 90, 7, 5, 1.4, 0.35); sfxWhaleSplash(p.x, p.z, 0.35); }
+    C.look.lerp(_wfV.copy(wc).setY(Math.max(4, wc.y + 5)), 1 - Math.exp(-dt * 1.2));
+    C.fov = Math.min(settings.fov, 30);
+    C.songK = 0.35 * (1 - down);
+    wfMoonK = 0.5 + 0.35 * smoothPulse(S, WL.spout + 1, 2.5);
+  }
+
+  // ---------- THE SKY, and your hands back on the last climax
+  if (S > WL.sky) {
+    oceanUniforms.uGlowSea.value.w = 0;
+    G.visible = false;
+    const m = _wfV.copy(MOON_DIR).multiplyScalar(300).add(camera.position);
+    const k2 = smooth01(WL.sky, WL.hand - 0.8, S);
+    _wfT.copy(camera.position).add(_wfV2.set(C.view.x, 0.02, C.view.z).multiplyScalar(300)).lerp(m, k2 * 0.8);
+    C.look.lerp(_wfT, 1 - Math.exp(-dt * 0.9));
+    C.fov = Math.min(settings.fov, 34 + 40 * k2);
+    wfMoonK = 0.5 + 0.6 * k2;
+    C.songK = 0;
+    if (S > WL.hand) { wfFinish(false); return; }
+  }
+
   // the camera, turned onto what it is looking at
   _wfM.lookAt(camera.position, C.look, camera.up);
   _wfQ.setFromRotationMatrix(_wfM);
-  camera.quaternion.slerp(_wfQ, Math.min(1, dt * (C.cue.cut && t < T.cut + 0.3 ? 30 : 2.2)));
+  camera.quaternion.slerp(_wfQ, Math.min(1, dt * (t < (C.cutAt || T.cut) + 0.3 ? 30 : 2.2)));
+}
+const _wfT = new THREE.Vector3(), _wfCen = new THREE.Vector3(), _wfE2 = new THREE.Vector3();
+// the eye nearest you, in the world
+function wfEyeWorld(out) {
+  const W = wb; if (!W || !W.B || !W.B.eyeData) return null;
+  let best = null, bd = 1e9;
+  for (const E of W.B.eyeData) {
+    if (!E) continue;
+    const p = W.G.localToWorld(_wfV2.copy(E.cen));
+    const d = p.distanceToSquared(camera.position);
+    if (d < bd) { bd = d; best = out.copy(p); }
+  }
+  return best;
+}
+/* IT IS OVER: gone for good, and you have your hands back. The song plays on
+ * under you (a skip takes it away with the picture). */
+function wfFinish(skipped) {
+  const C = wbFareCut; if (!C) return;
+  wbGone = true;
+  wbU.uWbFog.value = 1;
+  wbU.uGlow.value = 0; wbU.uGlowK.value = 0; wbU.uHealGlow.value = 0; wbU.uHeal.value = 1;
+  oceanUniforms.uHealSea.value.w = 0; oceanUniforms.uGlowSea.value.w = 0; oceanUniforms.uBlood.value.w = 0;
+  wfRay.k = 0;
+  const F = wfFx;
+  if (F) { F.beam.visible = F.pool.visible = F.ring.visible = F.motes.visible = false; }
+  if (C.harp && !C.harp.rest) { C.harp.rest = true; C.harp.H.position.y = beachGroundAt(C.harp.H.position.x, C.harp.H.position.z) + 0.12; C.harp.H.rotation.set(Math.PI / 2, 0, 0); }
+  flashEl.style.opacity = '0'; blackoutEl.style.opacity = '0';
+  wbRemoveForGood();
+  wbFareCut = null;
+  wfBars(false);
+  if (skipped) { wlFade(2.5); wfSkyK = Math.min(wfSkyK, 0.6); }
+  lookEuler.setFromQuaternion(camera.quaternion, lookEuler.order); lookEuler.z = 0;
+  lookEuler.x = THREE.MathUtils.clamp(lookEuler.x, -0.6, 0.6);
+  camera.quaternion.setFromEuler(lookEuler);
+  hovered = null;
+  autosaveNow();
 }
 const _wfCol = new THREE.Color();
 let wbFareClearT = 0;
@@ -71178,7 +71690,7 @@ MUT_KINDS.umbra = {
    * back up — 3.1 s end to end, by the owner's word that he gets up fast. */
   knockClip: 'uFall', knockHeavy: 0.12, knockGap: 20,
   knock: { fall: 1.93, lie: 0.35, rise: 0.85, land: 0.54, slide: null, riseFrom: 0.55, twitch: 0.18, turn: 1.85, turnEnd: 0.52 },
-  stunClip: 'uParry', first: 'uStance', sleepIdle: 'uCalm', wakeAt: 26, fortBody: true,
+  stunClip: 'uParry', first: 'uStance', sleepIdle: 'uCalm', wakeAt: 26, fortOut: true,
   gunBlock: true, comboGrace: 0.18,        // more of a combo counts: 0.45 let a whole string cost one point, 0.28 about three
   /* HIS HEAD HANGS OFF HIS CHEST, NOT HIS NECK (`HeadIK_125` is a sibling of
    * `Neck_3`), so with no mapped child of its own it took the chest's
@@ -71595,6 +72107,7 @@ function fortFindSpot() {
 
 /* ---- WHERE THE DOORS PUT YOU. */
 function placeInFort(at) {
+  umbraCalm();                       // he is outside: nothing in there is his
   const o = at || fortSpot || fortW(FORT_MID.x, FORT_MID.z);
   const f = fortCourtAt(o.x, o.z) ?? (FORT_Y + FORT_FLOOR);
   inFort = true; fortInT = 0;
@@ -71693,11 +72206,11 @@ function buildFortDoors() {
   });
   // the back door, from the courtyard: the way on to the lighthouse
   addInteractable(mk(FORT_DOOR.x, FORT_FLOOR + fk(1.7), FORT_DOOR.z + 0.35, fk(1.6), fk(3.4), 0.6),
-    () => (fortBossAlive() ? 'The door is barred.' : 'Open the door'), 'default', {
+    () => (fortBackBarred() ? 'The door is barred.' : 'Open the door'), 'default', {
     mid: true, far: 3.6,
-    bare: () => fortBossAlive(),
+    bare: () => fortBackBarred(),
     when: () => inFort && !fortBusy,
-    onActivate: () => { if (!fortBossAlive()) startFort(-1, 'back'); },
+    onActivate: () => { if (!fortBackBarred()) startFort(-1, 'back'); },
   });
   // and the gate from the beach, for anyone who reaches for E rather than walking into it
   addInteractable(mk(FORT_GATE.x, FORT_FLOOR + fk(1.7), FORT_GATE.z + 0.35, fk(3.0), fk(3.4), 0.6), 'Enter the castle', 'default', {
@@ -71708,16 +72221,12 @@ function buildFortDoors() {
 }
 
 function fortBossAlive() { return !!(umbraUnit && umbraUnit.st.alive) && !settings.devMode; }
+// the back door is barred while the farmers are still coming out of theirs
+function fortBackBarred() { return !settings.devMode && !(typeof farmFight !== 'undefined' && farmFight.done); }
 /* Leaving him mid-fight puts him back where he waits: nothing outside the
  * walls is his to chase, and the fight is in there. */
 function fortCalmBoss() {
   farmCalm();
-  const u = umbraUnit; if (!u || !u.st.alive) return;
-  u.st.awake = false; u.st.atk = -1; u.st.cool = 0; u.st.roar = 0; u.st.stun = 0; u.st.recoil = 0;
-  u.path = null;
-  u.g.position.x = UMBRA_X; u.g.position.z = UMBRA_Z;
-  u.g.rotation.y = UMBRA_YAW;
-  if (mutToken === u) mutToken = null;
 }
 
 /* ---- THE WALK. Outside, the castle is a solid thing on the beach: a move
@@ -72076,13 +72585,35 @@ function tickFort(dt) {
  * you, facing it — and the courtyard is where he fights. He is the castle's:
  * he wakes only once you are inside its walls (`fortBody`), he is held by its
  * stone, and he is drawn with it. */
-const UMBRA_X = FORT_X - fk(1.6), UMBRA_Z = FORT_Z - fk(6.5);
-const UMBRA_YAW = Math.atan2((FORT_X + FORT_MID.x) - UMBRA_X, (FORT_Z + FORT_MID.z) - UMBRA_Z);   // his front is +Z: facing up the street, at where you come in
+/* AND NOW HE WAITS BEHIND IT (the owner's word: after the castle, once you
+ * have left it). The courtyard is the farmers' fight; he stands on the sand
+ * past the back wall, on the way to the lighthouse, facing the door you come
+ * out of — so leaving the castle is walking out into him. The back wall is a
+ * wall to him (`fortOut`): nothing of the castle is his to go into. */
+const UMBRA_X = 11.2, UMBRA_Z = -1150;
+const UMBRA_YAW = 0;                  // his front is +Z: facing back up the beach, at the castle's back door
 let umbraUnit = null;
 {
   umbraUnit = makeMutant(UMBRA_X, UMBRA_Z, 'umbra');
   umbraUnit.g.rotation.y = UMBRA_YAW;
   umbraUnit.g.visible = false;
+  // a save that killed him in the courtyard named him by where he stood there
+  const oldKey = 'umbra@' + (FORT_X - fk(1.6)).toFixed(1) + ',' + (FORT_Z - fk(6.5)).toFixed(1);
+  if (deadUnitKeys.has(oldKey)) { umbraUnit.saveKey = oldKey; retireUnit(umbraUnit); }
+}
+// how far up the beach he may come: a stride short of the castle's back wall
+let _umbraLimZ = null;
+function umbraLimZ() {
+  if (_umbraLimZ === null && fortWalls) { try { _umbraLimZ = fortPosternSpot().z - 1.2; } catch (e) {} }
+  return _umbraLimZ !== null ? _umbraLimZ : -1130;
+}
+function umbraCalm() {
+  const u = umbraUnit; if (!u || !u.st.alive) return;
+  u.st.awake = false; u.st.atk = -1; u.st.cool = 0; u.st.roar = 0; u.st.stun = 0; u.st.recoil = 0;
+  u.path = null;
+  u.g.position.x = UMBRA_X; u.g.position.z = UMBRA_Z;
+  u.g.rotation.y = UMBRA_YAW;
+  if (mutToken === u) mutToken = null;
 }
 
 /* =====================================================================
@@ -72157,17 +72688,22 @@ function authorDemonClips(u, m) {
  * dark of the belly. */
 function demonRuneGlow(mm) {
   const prev = mm.onBeforeCompile;
-  mm.onBeforeCompile = (sh, r) => {
-    if (prev) prev(sh, r);
+  if (!mm.userData.tellU) mm.userData.tellU = { value: 0 };
+  mm.onBeforeCompile = function (sh, r) {
+    if (prev) prev.call(this, sh, r);
     sh.uniforms.uDemT = DEMON_U.uT;
+    sh.uniforms.uDemTell = (this && this.userData && this.userData.tellU) || mm.userData.tellU;
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float uDemT;')
+      .replace('#include <common>', '#include <common>\nuniform float uDemT, uDemTell;')
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
       #ifdef USE_MAP
         { vec3 tc = texture2D(map, vMapUv).rgb;
           float rune = smoothstep(0.36, 0.62, tc.r) * smoothstep(0.045, 0.11, tc.g);
           float crawl = 0.55 + 0.45 * sin(uDemT * 2.6 + vMapUv.x * 38.0 + vMapUv.y * 21.0);
-          totalEmissiveRadiance += vec3(1.0, 0.30, 0.06) * rune * crawl * 1.1; }
+          totalEmissiveRadiance += vec3(1.0, 0.30, 0.06) * rune * crawl * 1.1;
+          // THE TELL: every rune on it flares as it draws back, white-hot on the strike
+          totalEmissiveRadiance += mix(vec3(1.0, 0.35, 0.08), vec3(1.0, 0.85, 0.6), uDemTell * uDemTell) * rune * uDemTell * 3.2
+                                 + vec3(0.55, 0.10, 0.03) * uDemTell * 0.10; }
       #endif`);
   };
   mm.needsUpdate = true;
@@ -72179,15 +72715,15 @@ function demonRuneGlow(mm) {
  * better than the clip's own speed into the contact. Their startups are the
  * shortest in the game after the crawler's, which is what fast means; they
  * are still long enough to see. */
-MUT_ATTACKS.rdRake   = { wind: 0.46, strike: 0.14, recover: 0.34, hit: 0.5455, reach: 2.25, lunge: 2.1, chain: 'rdBite', chainP: 0.55, w: 0.20, guardK: 1.15, limbs: [0, 1], real: true, cock: 0.40, clipRate: 1.5, twoHanded: true, ease: true, stop: 1.20 };
-MUT_ATTACKS.rdRake2  = { wind: 0.40, strike: 0.12, recover: 0.32, hit: 0.3333, reach: 2.15, lunge: 1.8, chain: 'rdPunch', chainP: 0.50, w: 0.14, guardK: 1.05, limbs: [0, 1], real: true, cock: 0.40, clipRate: 1.4, ease: true, stop: 1.20 };
-MUT_ATTACKS.rdBite   = { wind: 0.42, strike: 0.12, recover: 0.40, hit: 0.4474, reach: 2.45, lunge: 2.5, chain: 'rdNeck', chainP: 0.35, w: 0.16, guardK: 1.10, limbs: [0, 1, 4], real: true, cock: 0.45, clipRate: 1.3, ease: true, stop: 1.20 };
-MUT_ATTACKS.rdNeck   = { wind: 0.55, strike: 0.16, recover: 0.46, hit: 0.2692, reach: 2.15, lunge: 2.2, chain: 'rdRake', chainP: 0.40, w: 0.08, guardK: 1.60, limbs: [0, 1, 4], real: true, cock: 0.35, clipRate: 1.2, twoHanded: true, ease: true, stop: 1.10 };
-MUT_ATTACKS.rdPunch  = { wind: 0.34, strike: 0.10, recover: 0.26, hit: 0.5429, reach: 2.00, lunge: 1.6, chain: 'rdFlurry', chainP: 0.45, w: 0.14, guardK: 0.90, limbs: [0], real: true, cock: 0.45, clipRate: 1.4, ease: true, stop: 1.20 };
-MUT_ATTACKS.rdFlurry = { wind: 0.55, strike: 0.20, recover: 0.40, hit: 0.4531, reach: 2.05, lunge: 1.4, chain: 'rdKick', chainP: 0.40, w: 0.10, guardK: 1.30, limbs: [0, 1], real: true, cock: 0.50, clipRate: 1.3, ease: true, stop: 1.20 };
-MUT_ATTACKS.rdKick   = { wind: 0.42, strike: 0.12, recover: 0.36, hit: 0.4146, reach: 2.30, lunge: 1.7, chain: 'rdRake', chainP: 0.45, w: 0.08, guardK: 1.10, limbs: [2], real: true, cock: 0.45, clipRate: 1.3, ease: true, stop: 1.45 };
-MUT_ATTACKS.rdKick2  = { wind: 0.55, strike: 0.14, recover: 0.40, hit: 0.54, reach: 2.35, lunge: 1.8, chain: 'rdBite', chainP: 0.45, w: 0.06, guardK: 1.25, limbs: [2], real: true, cock: 0.50, clipRate: 1.3, ease: true, stop: 1.45 };
-MUT_ATTACKS.rdButt   = { wind: 0.60, strike: 0.12, recover: 0.36, hit: 0.7174, reach: 1.95, lunge: 1.8, chain: 'rdRake2', chainP: 0.50, w: 0.06, guardK: 1.20, limbs: [4], real: true, cock: 0.55, clipRate: 1.4, ease: true, stop: 1.10 };
+MUT_ATTACKS.rdRake   = { wind: 0.46, strike: 0.14, recover: 0.34, hit: 0.5455, reach: 1.85, lunge: 2.1, chain: 'rdBite', chainP: 0.55, w: 0.20, guardK: 1.15, limbs: [0, 1], real: true, cock: 0.40, clipRate: 1.5, twoHanded: true, ease: true, stop: 1.10 };
+MUT_ATTACKS.rdRake2  = { wind: 0.40, strike: 0.12, recover: 0.32, hit: 0.3333, reach: 1.75, lunge: 1.8, chain: 'rdPunch', chainP: 0.50, w: 0.14, guardK: 1.05, limbs: [0, 1], real: true, cock: 0.40, clipRate: 1.4, ease: true, stop: 1.10 };
+MUT_ATTACKS.rdBite   = { wind: 0.42, strike: 0.12, recover: 0.40, hit: 0.4474, reach: 2.05, lunge: 2.5, chain: 'rdNeck', chainP: 0.35, w: 0.16, guardK: 1.10, limbs: [0, 1, 4], real: true, cock: 0.45, clipRate: 1.3, ease: true, stop: 1.10 };
+MUT_ATTACKS.rdNeck   = { wind: 0.55, strike: 0.16, recover: 0.46, hit: 0.2692, reach: 1.75, lunge: 2.2, chain: 'rdRake', chainP: 0.40, w: 0.08, guardK: 1.60, limbs: [0, 1, 4], real: true, cock: 0.35, clipRate: 1.2, twoHanded: true, ease: true, stop: 1.00 };
+MUT_ATTACKS.rdPunch  = { wind: 0.34, strike: 0.10, recover: 0.26, hit: 0.5429, reach: 1.60, lunge: 1.6, chain: 'rdFlurry', chainP: 0.45, w: 0.14, guardK: 0.90, limbs: [0], real: true, cock: 0.45, clipRate: 1.4, ease: true, stop: 1.10 };
+MUT_ATTACKS.rdFlurry = { wind: 0.55, strike: 0.20, recover: 0.40, hit: 0.4531, reach: 1.65, lunge: 1.4, chain: 'rdKick', chainP: 0.40, w: 0.10, guardK: 1.30, limbs: [0, 1], real: true, cock: 0.50, clipRate: 1.3, ease: true, stop: 1.10 };
+MUT_ATTACKS.rdKick   = { wind: 0.42, strike: 0.12, recover: 0.36, hit: 0.4146, reach: 1.90, lunge: 1.7, chain: 'rdRake', chainP: 0.45, w: 0.08, guardK: 1.10, limbs: [2], real: true, cock: 0.45, clipRate: 1.3, ease: true, stop: 1.35 };
+MUT_ATTACKS.rdKick2  = { wind: 0.55, strike: 0.14, recover: 0.40, hit: 0.54, reach: 1.95, lunge: 1.8, chain: 'rdBite', chainP: 0.45, w: 0.06, guardK: 1.25, limbs: [2], real: true, cock: 0.50, clipRate: 1.3, ease: true, stop: 1.35 };
+MUT_ATTACKS.rdButt   = { wind: 0.60, strike: 0.12, recover: 0.36, hit: 0.7174, reach: 1.55, lunge: 1.8, chain: 'rdRake2', chainP: 0.50, w: 0.06, guardK: 1.20, limbs: [4], real: true, cock: 0.55, clipRate: 1.4, ease: true, stop: 1.00 };
 const DEMON_BASE = {
   /* FUN BUT CHALLENGING (the owner's word, after "easy"): harder, and above
    * all METHODICAL — a pack director (`updateDemonPack`) keeps two or three of
@@ -72200,8 +72736,13 @@ const DEMON_BASE = {
    * (the clips carry none of it, so every metre of lunge is a metre of skate) */
   velGait: true, gaitMax: 1.35, noDash: true, lungeK: 0.30,
   facingRef: 'mixamo', faceFix: 0, headPop: true,
-  h: 2.25, hp: 10, dmg: 1, hitR: 0.85, body: 0.60, lungeStop: 1.20, landSlop: 0.35,   // at 0.95 they fought standing on your toes and filled the frame
-  speedK: 1.18, windK: 1.24, reachK: 1.0, aggr: 1.85, press: 0.86, chainMax: 2,
+  h: 2.25, hp: 10, dmg: 1, hitR: 0.85, body: 0.60, lungeStop: 1.15, landSlop: 0.26,   // at 0.95 they fought standing on your toes and filled the frame
+  /* A BLOW YOU CAN SEE LAND (the owner's word: too hard to read): only what
+   * is actually touching you counts, the swing closes WITH the blow, and they
+   * come in closer before they throw it rather than raking the air at arm's
+   * length and being scored on the benefit of the doubt. */
+  limbR: 0.40, bodyLow: 1.45, lungeLead: 0.26, aimDrop: 0.12,
+  speedK: 1.18, windK: 1.34, reachK: 1.0, aggr: 1.70, press: 0.84, chainMax: 2,   // a longer draw-back: closer blows land more, so the tell has to be easier to read
   // the pack: how long it stays in (swings), how far out it holds, how keen it is to come in
   bursts: 2, holdR: 5.0, pressW: 1, pressT: 7,
   use: { rdRake: 0.18, rdRake2: 0.13, rdBite: 0.17, rdNeck: 0.08, rdPunch: 0.14, rdFlurry: 0.09, rdKick: 0.09, rdKick2: 0.06, rdButt: 0.06 },
@@ -72398,7 +72939,26 @@ function demonFrenzyOK(u) {
  * `pressW`) comes in; the stalker comes in at your BACK. As they die the
  * rest press harder: with three left, all three are on you. */
 const demonPack = { t: 0, frame: -1 };
+/* A DEMON'S BLOW IS READ OFF ITS RUNES. In the belly's red dark a claw coming
+ * back is hard to see (the owner's word: too hard to read), so every rune on
+ * the one winding up flares from its own orange to white-hot as the cock
+ * holds, peaks on the strike, and dies back through the recovery. */
+function demonTellTick(dt) {
+  for (const u of demonUnits) {
+    if (!u.g || !u.model) continue;                   // not dressed yet: nothing to light, and nothing to remember
+    if (!u._tellU || !u._tellU.length) { u._tellU = []; u.g.traverse((o) => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []; for (const m of ms) if (m.userData && m.userData.tellU && !u._tellU.includes(m.userData.tellU)) u._tellU.push(m.userData.tellU); }); }
+    let want = 0;
+    const st = u.st;
+    if (st.alive && st.atk >= 0 && st.swing) {
+      const A = swingOf(u);
+      if (A) want = st.atk < A.wind ? 0.25 + 0.6 * Math.pow(st.atk / A.wind, 1.5) : st.atk < A.wind + A.strike ? 1 : Math.max(0, 1 - (st.atk - A.wind - A.strike) / Math.max(0.1, A.recover));
+    }
+    u._tell = (u._tell || 0) + (want - (u._tell || 0)) * Math.min(1, dt * (want > (u._tell || 0) ? 14 : 5));
+    for (const U of u._tellU) U.value = u._tell;
+  }
+}
 function updateDemonPack(dt, units = demonUnits) {
+  if (units === demonUnits) demonTellTick(dt);
   const A = units.filter((u) => u.st.alive && u.st.awake && !(u.farm && (!u.farm.out || u.farm.burst)));
   if (!A.length) return;
   demonPack.t += dt;
@@ -73798,7 +74358,8 @@ const FARM_BASE = {
   /* A KILLING BLOW THROWS THEM ACROSS THE STREET: a harder kick, the cap on a
    * first flight raised, and the leash on how far a body may travel let out
    * to match. The castle's walls hold them (`fortBody`'s ragdoll flag). */
-  ragK: 4.6, ragVmax: 26, ragTravel: 34, ragEven: 0.6, ragLift: 1.8,
+  ragK: 3.3, ragVmax: 18.5, ragTravel: 22, ragEven: 0.55, ragLift: 1.15,   // a little less far (the owner's word): still thrown, no longer launched
+  cutApart: true,          // and they come APART: every kill takes pieces with it (`finishMutant`)
   // and they come apart, and they bleed: more heads and limbs, and every spray twice over
   goreK: 1.7, bloodK: 2.0,
   // lit for the castle at night: the map brought down toward the stone round them, a breath of it given back, a cold edge

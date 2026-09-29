@@ -18634,3 +18634,90 @@ from 33 to 10 health in 14 s; provoked by you, 12 swings in 12 s. Harness:
 `tools/tavdrink.js` (`__tavSetup` holds the bar scene back with
 `tavScene.phase = 9`; dev mode switches swinging off, so turn it off to
 measure a fight).
+
+**THE WHALE'S FAREWELL IS CUT TO THE OWNER'S "WHALE LEAVING" (`assets/whale-leaving.m4a`,
+100 s, AAC 192k, the file's own -1 dBFS peak).** Everything after you are put out on the sand
+reads `C.S`, seconds into the song's own file: the cut runs it on the frame clock and pulls it
+onto the song's clock only while the audio context is RUNNING (a suspended context's clock
+stands still, and a take driven straight off it would stall for ever). The song starts
+`WL_OFF` (5.5 s) into the file at the cut and fades up with the picture; the black holds up to
+two seconds for it if it is still downloading (it is fetched while you fight in the belly).
+The song's shape was measured off its loudness in half-second windows and every beat sits on
+it (`WL`): the quiet build is the heal (the cloud parts, a column of light comes DOWN out of the
+gap — `uDrop` on the beam — the lens goes up it and back down, the sea's own light rises off the
+water all along the bay and drifts in on it, the light runs tail to head and back, the lens goes
+in on its eye, the wounds fill gold and close, the harpoon is thrown out); the swell at 18.15 s
+is the flash (gold rays off its body through the mist — `wfRay` takes the lighthouse's slot in
+the sharpen pass's second ray source — a ring of light going out across the sea, `uHealSea` in
+the ocean shader, its flippers lifting like wings); 27.45 it backs into the sea with its
+flippers heaving on the song's 4.55 s phrase; 36.6 it turns and swims out leaving a wake of the
+sea's light (`wfWake`) and its flukes slap on the 45.75 section; under, a light moves out under
+the water (`uGlowSea`) to where it breaches in front of the moon (52.4, landing ~59); 64 it
+surfaces once more far out, spouts on the 68.4 peak and goes under with its flukes against the
+moon; 80.5 the lens lifts to the moon; 86.3 — the song's last climax — you have your hands back
+and the song plays on out under you (a room fades it). Letterbox bars and no HUD for the length
+of it, nothing in your hands (the view model is not drawn while `wbFareCut.cue.cut`), and Enter
+skips it once you are on the sand (`wfFinish(true)`). `tools`-free: `__bw.wfState().S` is where
+it is.
+
+**A PICKED-UP BOTTLE IS SPENT ON EVERY PATH (`spendBottle`).** It was only spent if the whole
+1.45 s drink ran with the bottle still in hand; switching away half way left an empty in the
+pack that then said EMPTY. Put away mid-drink, finished, or an empty somehow left over: one door.
+
+**THE HOTBAR IS WHAT YOU CARRY.** Empty slots are not drawn (`#hotbar .slot.empty` is
+`display: none`), the wheel walks EVERY filled slot (not only holdables, and not only weapons in
+a fight), a slot whose thing is not held in the hand becomes `restSlot` and the wheel carries on
+from it, the name comes up beside the slot as you scroll (`.say`), and a commit that lands while
+the game is frozen WAITS rather than snapping the cursor back. **And a checkpoint's replay may
+not undo you**: `applySavedInventory` runs again every time the replay hands something over,
+for seconds after a load, and it re-sorted the strip and put the saved item back in your hand
+each time — "the hotbar reverts once you changed it". `invTouched` (set by `toggleEquip` outside
+a restore and by the pack's reorders) switches the sort and the hand off.
+
+**A SWING IS TESTED ALONG ITS ARC (`sweepDirs`).** One ray down the committed aim missed
+anything a hand to one side that the blade visibly passed through, and anything that moved in
+the 150-200 ms before contact. The crab and creature tests now try the committed line, then
+where you are looking at contact, then a fan across the cut (yaw for a cut, pitch for an
+overhead, none for a thrust), nearest the middle first; the body radius went 0.60 → 0.66.
+
+**THE DEMONS' BLOWS ARE READ OFF THEIR RUNES (`demonTellTick`, `uDemTell`).** Every rune on the
+one winding up flares from orange to white-hot through the cock, peaks on the strike and dies
+back. The uniform is created when `demonRuneGlow` attaches (it only exists on the material after
+a compile otherwise, and a cache taken before then is empty). Their reaches came in 0.4 m, the
+lunge closes WITH the blow (`lungeLead`), `limbR` 0.40 and `landSlop` 0.26, `windK` 1.34 and a
+0.52 s shared hurt gate: measured with the player standing in the arena, 36 hurts a minute (was
+52), every one from a blow landing within 1.4 m.
+
+**THE MARAUDER WAITS OUTSIDE THE CASTLE NOW (`UMBRA_X/Z` 11.2, -1150, `fortOut`).** On the
+sand past the back wall, facing the back door, so leaving the castle is walking into him. The
+back door is barred until the FARMERS are done (`fortBackBarred`), he does not wake while you are
+inside or before you are past the back wall (`umbraLimZ`), the back wall is a wall to him, going
+into the castle calms him (`umbraCalm`), he ignores the chase grace, and a save that killed him
+in the courtyard still counts (his old save key is checked).
+
+**FARMERS COME APART (`kind.cutApart`).** Every kill takes one to three more pieces (sometimes
+through the middle, never a second piece off an arm already gone or the top half already cut
+away), and they fly less far (`ragK` 3.3, `ragVmax` 18.5). `kind.slice` was already taken — it is
+the clip windows — and reusing it threw inside `dressMutant` for every farmer.
+
+**A BLEED BURST IS FELT**: 17 % of max health (min 3), a beat of hitstop, a lens punch, a
+flinch, a white flash on the body and a low thump (`sfxBleedThump`).
+
+**THE HEALTH RING FILLS YOU UP (`hpCharge`)** from wherever you are to the new full, 0.85 of a
+point a second with a tick per point and the bar glowing; a blow stops it where it is.
+
+**THE DOJO'S KATANA IS FOUND BY THE MOON**: a column of moonlight on the statue's belly, a pool
+of it on the stone, a cold pooled lamp on the hilt (`lpAlways`), a sheen running down the steel
+(its materials are cloned first), and a stronger glint.
+
+**THE CATACOMBS' LANDING PLAYS BOTH**: the fall music and the owner's first impact recording
+(`catFallHit`, `assets/catacombs-fall.m4a`) under it.
+
+**"THE PREVIEW KEEPS ENDING" — three things in the dev server and one in the page.** `serve.py`
+let the `4173` in `launch.json` win over the `$PORT` the preview assigns with `autoPort`, so
+with anything already on 4173 (another preview, the owner's own server) the preview's server
+could not bind and died; `$PORT` wins now. It logged every request to a pipe nobody may drain
+(a full pipe blocks the handler thread and the page stops loading) — errors only now, dropped
+connections swallowed, daemon threads, `allow_reuse_address`. And a LOST WEBGL CONTEXT leaves a
+page running with nothing drawn: it is asked for back, and the game reloads into the last
+checkpoint when it returns (or after four seconds).
