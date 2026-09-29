@@ -188,7 +188,7 @@ const ASSET_REACH = {
   'assets/reptilian.glb': 64,         // and the three waves of what is in there
   'assets/drone.glb': 65,
   'assets/alienbeast.glb': 66,
-  'assets/trader.glb': 738,           // the man at the sand wall, a little short of the stones
+  'assets/trader.glb': 1050,          // the man at the sand wall, outside the castle's gate
   'assets/magnum.glb': 739,            // and the thing he has that the jars are for
   'assets/old-ring.glb': 739,          // and the old ring on his table, five jars
   'assets/portal.glb': 740,            // the stone circle, a hundred metres past the cave
@@ -29023,9 +29023,25 @@ function blowFacing(u) {
   const d = Math.hypot(dx, dz) || 1e-3;
   return (dx * Math.sin(u.g.rotation.y) + dz * Math.cos(u.g.rotation.y)) / d > 0.3;
 }
+/* A BLOW DOES NOT GO THROUGH A WALL. Every test below is a distance, and a
+ * distance does not know the stone is there: the thing in the catacombs
+ * landed blows on a player on the far side of a wall from him, with his
+ * claws in the rock. In a room the faces are asked — his body to you and his
+ * head to you, at your chest and your hip — and a blow with stone in the way
+ * does not land, whatever the limbs are doing. */
+function blowWalled(u, foe) {
+  if (!(u.kind.cat || u.kind.catBody) || !inCat || !CAT_SITE.walls) return false;
+  const p = u.g.position;
+  const from = [[p.x, p.z]];
+  const hb = u.bones && u.bones.head;
+  if (hb) { hb.getWorldPosition(_dbB); from.push([_dbB.x, _dbB.z]); }
+  for (const [x, z] of from) for (const y of [foe.y - 0.45, foe.y - 0.95]) if (catLegBlocked(x, z, foe.x, foe.z, y)) return true;
+  return false;
+}
 function blowLands(u) {
   if (!blowHeightOK(u)) return false;
   const foe = mutFoePos(u);
+  if (blowWalled(u, foe)) return false;
   _dbF.set(Math.sin(u.g.rotation.y), 0, Math.cos(u.g.rotation.y));
   _dbC.subVectors(foe, u.g.position).setY(0);
   const dist = _dbC.length() || 0.001;
@@ -29063,7 +29079,8 @@ function blowLands(u) {
         _dbC.lerpVectors(pts[i - 1], pts[i], k / 4);
         const y = THREE.MathUtils.clamp(_dbC.y, bot, top);
         const dx = _dbC.x - foe.x, dz = _dbC.z - foe.z, dy = _dbC.y - y;
-        if (dx * dx + dz * dz + dy * dy < 0.70 * 0.70) return true;  // a body is wider than a line
+        const lr = u.kind.limbR || 0.70;
+        if (dx * dx + dz * dz + dy * dy < lr * lr) return true;  // a body is wider than a line (and a kind may say how much wider)
       }
     }
   }
@@ -33139,7 +33156,7 @@ function updateMutant(dt) {
    * ran for, which is to say the two the owner was looking at. It goes
    * where every unit is ticked instead. */
   for (const u of mutants) if (u.kind.gaitBySpeed) measureGaits(u);
-  for (const u of mutants) updateMutantUnit(u, dt);
+  for (const u of mutants) { updateMutantUnit(u, dt); if (u.kind.cat && !u.kind.baby) catSolid(u); }
   updateMutSand(dt);
 }
 
@@ -37782,7 +37799,7 @@ function saveCheckpoint(spot) {
       // Ben Ali's sword: in the thing's back, on the floor where it fell, or yours; and he is dead once he has spoken
       bb: bbState, bbAt, benDead,
       // and what the man at the sand wall has left to sell
-      trader: { ...TRADER_STOCK }, invMax: INV_MAX, ringSlots: RING_SLOTS,
+      trader: { ...TRADER_STOCK }, ammoV: AMMO_V, invMax: INV_MAX, ringSlots: RING_SLOTS,
       /* AND WHAT IS IN THE CYLINDER. The gun itself comes back through the
        * pack; the rounds in it are not an item and would otherwise reload
        * themselves to nothing on every death. */
@@ -38100,7 +38117,7 @@ function updateRestore(dt) {
   if (f.catBaby) catBabyGone = true;
   if (f.bb) restoreBackSword(f.bb, f.bbAt);
   if (f.benDead) benDead = true;
-  if (f.trader) Object.assign(TRADER_STOCK, f.trader);
+  if (f.trader) { const ammo0 = TRADER_STOCK.ammo; Object.assign(TRADER_STOCK, f.trader); if ((f.ammoV || 0) < AMMO_V) TRADER_STOCK.ammo = ammo0; }
   if (typeof f.ammo === 'number') { magAmmo = f.ammo; magSpare = f.spare || 0; }
   if (f.heroSword || f.dojoWon) heroSwordTaken = true;
   /* THE SNORKELER'S KEY: lying where he threw it, or yours (the pack puts that
@@ -43483,6 +43500,139 @@ function ucSteer(u, dt, dist) {
 }
 const _ufD = new THREE.Vector3();
 // did a step cross drawn stone at his hip or his shoulder — or at either SHOULDER's own line, a hand out?
+/* ---- HE IS SOLID, AS THE LAST WORD OF EVERY FRAME. Everything that moves
+ * him — the chase, the route, the lunge through a swing, a knockback, the
+ * separation, a snap back onto the graph — runs before this, and several of
+ * them after the wall clamp in `mutClampX`, which is how "he clips through
+ * walls" survived three rounds of better clamps: the clamp was never the last
+ * thing to touch him. Three rules, against the frame's own start
+ * (`u.catSolid`, the last place he was legal), not against whatever each mover
+ * thought it had checked:
+ *  - the frame's movement may not cross drawn stone at his feet, hip or
+ *    shoulder, down his middle or at either FLANK (he is a metre and a half
+ *    across, and a line down his middle let his shoulders into every wall);
+ *  - his HEAD may not be in the stone: the line from his hip to his head bone
+ *    is asked of the faces, and a head through a wall walks the body back
+ *    out along it (a face 1.7 m in front of his origin is exactly what went
+ *    through walls while the origin stayed legal);
+ *  - and the barred door is not a way anywhere. Nothing of him — origin,
+ *    flanks, head — comes within a body's width of the leaf at its level, and
+ *    a frame that would is refused, so he comes at you by the room and not
+ *    through the grille. */
+const CAT_FLANK = 0.34;   // at 0.52 (his real half-width) the 1.3 m doorways were narrower than he is and he never reached you
+function catLegBlocked(ax, az, bx, bz, y) {
+  // `keepHitsWall` only asks the faces round each end of the line it is given, so a long line is walked in legs
+  const L = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.ceil(L / 0.9));
+  for (let i = 0; i < n; i++) {
+    const t0 = i / n, t1 = (i + 1) / n;
+    if (keepHitsWall(ax + (bx - ax) * t0, az + (bz - az) * t0, ax + (bx - ax) * t1, az + (bz - az) * t1, y, CAT_SITE)) return true;
+  }
+  return false;
+}
+function catSweepBlocked(ax, az, bx, bz, y) {
+  const dx = bx - ax, dz = bz - az, L = Math.hypot(dx, dz);
+  if (L < 1e-4) return false;
+  /* at his hip and the top of his back, not at a standing man's shoulder: the
+   * way from the stairs to the door room is under a lintel 1.16 m up, which
+   * a crawler goes under and a line at 1.45 called a wall */
+  for (const h of [0.6, 0.95]) if (catLegBlocked(ax, az, bx, bz, y + h)) return true;
+  const px = -dz / L * CAT_FLANK, pz = dx / L * CAT_FLANK;
+  for (const sg of [1, -1]) if (catLegBlocked(ax + px * sg, az + pz * sg, bx + px * sg, bz + pz * sg, y + 0.6)) return true;
+  return false;
+}
+// the door's box, a body's width deep into the room, at the door's own level
+function catDoorBody(x, z, feet) {
+  const lx = x - CAT_X, lz = z - CAT_Z;
+  return lx > CAT_DOOR.x - 1.0 && lx < CAT_DOOR.x + 2.5 && Math.abs(lz - CAT_DOOR.z) < 2.6 && feet > CAT_Y + CAT_DOOR.f - 2.5;
+}
+const _csH = new THREE.Vector3();
+function catSolidPoints(u, p, out) {
+  // his origin, his head (where the bone really is, aim and all) and his two flanks
+  let hx = 0, hz = 0;
+  const hb = u.bones && u.bones.head;
+  if (hb) { hb.getWorldPosition(_csH); hx = _csH.x - u.g.position.x; hz = _csH.z - u.g.position.z; }
+  const hl = Math.hypot(hx, hz);
+  if (hl < 0.3 || hl > 2.6) { const yw = u.g.rotation.y; hx = Math.sin(yw) * 1.7; hz = Math.cos(yw) * 1.7; }
+  out.hx = hx; out.hz = hz;
+  const L = Math.hypot(hx, hz) || 1, rx = -hz / L * CAT_FLANK, rz = hx / L * CAT_FLANK;
+  return [[p.x, p.z], [p.x + hx, p.z + hz], [p.x + hx * 0.5, p.z + hz * 0.5], [p.x + rx, p.z + rz], [p.x - rx, p.z - rz]];
+}
+const _csOut = { hx: 0, hz: 0 };
+let catSolidOff = false;   // the harness's A/B switch
+function catSolid(u) {
+  const p = u.g.position;
+  if (catSolidOff === true) { u.catSolid = null; return; }
+  if (!inCat || !catWalk || !catBuilt || !CAT_SITE.walls || !u.st.alive) { u.catSolid = null; return; }
+  const S = u.catSolid || (u.catSolid = { x: p.x, y: p.y, z: p.z });
+  if (u.catDown !== undefined) { S.x = p.x; S.y = p.y; S.z = p.z; return; }   // lying on the flags: nothing to walk into
+  u.g.updateMatrixWorld(true);
+  const teleport = Math.hypot(p.x - S.x, p.z - S.z) > 1.2;          // no stride is this long: a snap, and a snap lands on an open node          // a snap onto the graph: a place chosen for being open
+  // 1. the frame's movement, at his width
+  if (!(catSolidOff & 1) && !teleport && catSweepBlocked(S.x, S.z, p.x, p.z, p.y)) {
+    if (!catSweepBlocked(S.x, S.z, p.x, S.z, p.y)) p.z = S.z;
+    else if (!catSweepBlocked(S.x, S.z, S.x, p.z, p.y)) p.x = S.x;
+    else { p.x = S.x; p.z = S.z; }
+    u.catBlockT = (u.catBlockT || 0) + 0.02; u.csN = u.csN || {}; u.csN.sweep = (u.csN.sweep || 0) + 1;
+  }
+  // 2. the door is not a way anywhere
+  const inDoor = (px, pz) => catSolidPoints(u, _csP.set(px, p.y, pz), _csOut).some(([x, z]) => catDoorBody(x, z, p.y));
+  if (!(catSolidOff & 2) && inDoor(p.x, p.z)) {
+    if (!teleport && !inDoor(S.x, S.z)) { p.x = S.x; p.z = S.z; }
+    else p.x -= 0.22;                                            // already in it: back into the room, which is -x of the leaf
+    u.catBlockT = (u.catBlockT || 0) + 0.05; u.csN = u.csN || {}; u.csN.door = (u.csN.door || 0) + 1;
+    if (u.path) { u.path = null; u.catRouteFail = (u.catRouteFail || 0) + 1; }
+  }
+  // 3. his head out of the stone: the last of his neck and his head, at the height the head bone really is
+  catSolidPoints(u, p, _csOut);
+  const hx = _csOut.hx, hz = _csOut.hz, hl = Math.hypot(hx, hz);
+  const hb = u.bones && u.bones.head;
+  if (!(catSolidOff & 4) && hl > 0.9 && hb) {
+    hb.getWorldPosition(_csH);
+    const ux = hx / hl, uz = hz / hl, n0 = hl - 0.8;
+    const ax = p.x + ux * n0, az = p.z + uz * n0, y = _csH.y;
+    const blockedTo = (t) => catLegBlocked(ax, az, ax + ux * 0.8 * t, az + uz * 0.8 * t, y);
+    /* A LINTEL IS NOT A WALL. The way from the stairs into the door room is a
+     * doorway 1.16 m high and his head is carried at 1.2: stone at the head's
+     * height with the way clear at the hip is an arch he ducks under, and
+     * backing him off it every frame kept him eight metres from you for good.
+     * A wall is stone at both. */
+    let lo0 = 0; if (blockedTo(1)) { let hi0 = 1; for (let i = 0; i < 5; i++) { const m = (lo0 + hi0) / 2; if (blockedTo(m)) hi0 = m; else lo0 = m; } } else lo0 = 1;
+    /* a muzzle grazing a jamb as he squeezes through a 1.3 m doorway is a thing
+     * that size in a passage; a head more than a hand's breadth INTO the stone is not */
+    if ((1 - lo0) * 0.8 > 0.22 && catLegBlocked(ax, az, ax + ux * 0.8, az + uz * 0.8, p.y + 0.7)) {
+      /* AND THE HEAD IS TURNED OUT OF IT, NOT BACKED OUT OF IT. A three-metre
+       * body in a 1.3 m corridor cannot round a corner without its head
+       * swinging into the stone, and walking the body back from the corner
+       * every frame is a creature that never gets round it (measured: eight
+       * metres from you, for good). Turning him a little on the spot swings
+       * the head along the wall instead, which is what a thing that size does
+       * in a passage: it squeezes its head round the corner. Only if no turn
+       * within half a right angle clears it is the body eased back. */
+      const neckClear = (yw) => {
+        const c = Math.cos(yw), sn = Math.sin(yw);
+        const rx = hx * c + hz * sn, rz = -hx * sn + hz * c;          // the head's offset turned by yw about the vertical
+        const qx = rx / hl, qz = rz / hl;
+        const bx = p.x + qx * n0, bz = p.z + qz * n0;
+        return !catLegBlocked(bx, bz, bx + qx * 0.8, bz + qz * 0.8, y) || !catLegBlocked(bx, bz, bx + qx * 0.8, bz + qz * 0.8, p.y + 0.7);
+      };
+      u.csN = u.csN || {}; u.csN.head = (u.csN.head || 0) + 1;
+      let turned = false;
+      for (const a of [0.12, 0.24, 0.38, 0.55, 0.75]) {
+        for (const sg of [1, -1]) if (neckClear(a * sg)) { u.g.rotation.y += a * sg; turned = true; break; }
+        if (turned) break;
+      }
+      if (!turned) {
+        let lo = 0, hi = 1;
+        for (let i = 0; i < 5; i++) { const m = (lo + hi) / 2; if (blockedTo(m)) hi = m; else lo = m; }
+        const back = Math.min(0.08, (1 - lo) * 0.8);
+        const nx = p.x - ux * back, nz = p.z - uz * back;
+        if (!catSweepBlocked(p.x, p.z, nx, nz, p.y)) { p.x = nx; p.z = nz; }
+      }
+    }
+  }
+  S.x = p.x; S.y = p.y; S.z = p.z;
+}
+const _csP = new THREE.Vector3();
 let catTick = 0;   // one per creature frame (`catWander` / `catSteer`), so the wall pushes run once whatever calls the clamp
 function catCrossed(ax, az, bx, bz, y) {
   if (keepHitsWall(ax, az, bx, bz, y + 0.9, CAT_SITE) || keepHitsWall(ax, az, bx, bz, y + 1.5, CAT_SITE)) return true;
@@ -45892,16 +46042,25 @@ const PORTAL_HEAR = 34;            // the hum reaches this far
  * hit proxy and a script, the snorkeler's own arrangement. His file ships
  * no clips, so the pose is composed onto the bind once at load and nothing
  * ever stamps over it — there is no mixer on him to argue with. */
-const TRADER_X = CLIFF_BLOCK_X - 1.35, TRADER_Z = PORTAL_Z + 8.5, TRADER_H = 1.84;
+/* HE STANDS OUTSIDE THE CASTLE NOW, the owner's word: at the foot of the sand
+ * wall sixteen metres short of the gate (the gate is at z -1065.85; `FORT_Z`
+ * is declared twenty thousand lines below, so the number is written out),
+ * which is the last thing you pass before the fight in the courtyard. */
+const TRADER_X = CLIFF_BLOCK_X - 1.35, TRADER_Z = -1049.5, TRADER_H = 1.84;
 /* AND THE ROUNDS ARE NOT HIS. He sold six for two jars, which made the one
  * thing a revolver is ABOUT — there are six and then there are none — a
  * thing you could simply buy your way out of. The owner's word: take them
  * out. `ammo` is kept in the table at zero stock so an old save that
  * recorded a count does not read as undefined. */
-const TRADER_STOCK = { glow: 1, water: 2, gun: 1, ammo: 0, ring: 1, spliff: 6, packSpace: 1, ringSlot: 1 };
+/* AND THEN THEY WERE HIS AGAIN, the owner's word the other way: six rounds
+ * for two jars, five boxes of them, the last thing you can buy before the
+ * castle. `AMMO_V` marks a save that knows this, so an older one that
+ * recorded the empty box gets the stock back. */
+const TRADER_STOCK = { glow: 1, water: 2, gun: 1, ammo: 5, ring: 1, spliff: 6, packSpace: 1, ringSlot: 1 };
+const AMMO_V = 2;
 /* THE OWNER'S PRICES. The menu's labels read this table rather than spelling
  * a number out, so a price is one line here and nothing else. */
-const TRADER_PRICE = { glow: 1, water: 1, gun: 6, ammo: 0, ring: 5, spliff: 1, packSpace: 4, ringSlot: 6 };
+const TRADER_PRICE = { glow: 1, water: 1, gun: 6, ammo: 2, ring: 5, spliff: 1, packSpace: 4, ringSlot: 6 };
 /* SHORT, BECAUSE IT SITS IN A COLUMN. "2 blood jars" beside a name in a
  * list is half the row; the header already says what the currency is. */
 const priceTag = (what) => {
@@ -46010,7 +46169,10 @@ function traderBuy(what) {
  * summary of what it does, and its price, dimmed when you cannot afford it. */
 const SHOP_ROWS = [
   { key: 'gun', item: () => magnumItem, name: '.44 Magnum', sum: 'Revolver · 3 rounds loaded',
-    desc: 'Six chambers, three in it. Right click aims, left click fires, R reloads. Nothing on this beach sells more rounds.' },
+    desc: 'Six chambers, three in it. Right click aims, left click fires, R reloads.' },
+  { key: 'ammo', item: () => ammoIconItem, name: '6 Rounds', sum: '.44 · six into the pack',
+    desc: 'A box of six for the revolver. They go in the pack; R loads them.', needs: () => inventory.includes(magnumItem),
+    stack: () => (inventory.includes(magnumItem) ? magSpare : 0) },
   { key: 'glow', item: () => glowstickItem, name: 'Glowstick', sum: 'A light you can carry',
     desc: 'Cracked and cold. It is the only light you will carry underground.' },
   { key: 'water', item: () => waterBottleItem, name: 'Bottle of water', sum: 'Heals you fully · stacks',
@@ -46051,6 +46213,23 @@ function drawUpgradeIcon(kind) {
   return c.toDataURL();
 }
 const packSpaceIconItem = { name: 'Bigger Pack', icon: drawUpgradeIcon('pack') };
+// six brass rounds standing in two rows, the upgrades' own tile
+const ammoIconItem = { name: '6 Rounds', icon: (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d');
+  const bg = g.createRadialGradient(128, 110, 10, 128, 128, 190);
+  bg.addColorStop(0, '#1c1f26'); bg.addColorStop(1, '#07080b');
+  g.fillStyle = bg; g.fillRect(0, 0, 256, 256);
+  for (let r = 0; r < 2; r++) for (let q = 0; q < 3; q++) {
+    const x = 70 + q * 58 + r * 29, y = 70 + r * 66;
+    const br = g.createLinearGradient(x - 14, 0, x + 14, 0);
+    br.addColorStop(0, '#6b4e1c'); br.addColorStop(0.45, '#e2b95a'); br.addColorStop(1, '#5a3f14');
+    g.fillStyle = br; g.fillRect(x - 13, y + 18, 26, 44);
+    g.fillStyle = '#8a8f98'; g.beginPath(); g.moveTo(x - 12, y + 18); g.quadraticCurveTo(x - 12, y - 6, x, y - 12); g.quadraticCurveTo(x + 12, y - 6, x + 12, y + 18); g.fill();
+    g.fillStyle = '#3a2c12'; g.fillRect(x - 14, y + 58, 28, 5);
+  }
+  return c.toDataURL();
+})() };
 const ringSlotIconItem = { name: 'Extra Ring Slot', icon: drawUpgradeIcon('ring') };
 const UPGRADE_ROWS = [
   { key: 'packSpace', item: () => packSpaceIconItem, name: 'Bigger Pack', sum: '+4 inventory slots (10 → 14)',
@@ -46169,6 +46348,7 @@ function shopState(r) {
   const price = TRADER_PRICE[r.key];
   if (shopHad(r)) return { ok: false, label: 'Owned', chip: 'owned', dim: true };
   if (shopOut(r)) return { ok: false, label: 'Sold out', chip: 'sold out', dim: true };
+  if (r.needs && !r.needs()) return { ok: false, label: 'Needs the .44', chip: jarsTxt(price), dim: true };
   if (bloodJars < price) { const need = price - bloodJars; return { ok: false, label: `Need ${need} more ${need === 1 ? 'jar' : 'jars'}`, chip: jarsTxt(price), poor: true }; }
   return { ok: true, label: 'Buy · ' + jarsTxt(price), chip: jarsTxt(price) };
 }
@@ -47009,6 +47189,7 @@ function magFire() {
      * cannot do is bisect one. */
     const dmg = Math.round(MAG_DMG * (h.head ? MAG_HEAD : 1));
     if (h.u.kind) hurtMutant(h.u, dmg, 0.5); else hurtCrab(h.u, 4, 0.5);
+    if (h.u.kind && h.u.kind.gunStun && !h.u.kind.baby) gunStun(h.u);
     if (h.head) { hitstop = Math.max(hitstop, 0.09); addTrauma(0.22); }
     return;
   }
@@ -47027,6 +47208,25 @@ function magFire() {
  * burst certain rather than a roll — this is the one blow in the game whose
  * whole point is what it does to the head, and an overkill die that comes up
  * short half the time would be a headshot that did not look like one. */
+/* THE .44 STUNS HIM. The thing in the catacombs is a hundred and fifteen
+ * points and a round is a few of them, so what a revolver buys against him is
+ * not damage, it is TIME: whatever he was doing stops — the swing, the
+ * chain, the charge — and he reels on the spot for `kind.gunStun` seconds,
+ * the parry's own opening. Not twice running: a window after each one in
+ * which another round hurts him and does not stop him, or a full cylinder is
+ * a lock and the fight is over. */
+function gunStun(u) {
+  if (!u.st.alive || u.catDown !== undefined || (u.st.down || 0) > 0) return;
+  const now = performance.now();
+  if (u.gunStunUntil && now < u.gunStunUntil) return;
+  u.gunStunUntil = now + (u.kind.gunStun + 1.8) * 1000;
+  u.st.roar = 0;
+  u.st.atk = -1; u.st.chainAt = -1; u.st.chained = false; u.st.feint = 0;
+  mutDrop(u);
+  u.st.cool = 0.5;
+  u.st.stun = Math.max(u.st.stun || 0, u.kind.gunStun);
+  flashMats(u.g);
+}
 function magHeadshot(u) {
   if (!u.st.alive || u.st.struck) return;
   if (u.kind.provoke && !u.st.awake) u.kind.provoke(u);
@@ -58312,7 +58512,7 @@ function catBuildGraph() {
     }
   }
   catG = { nodes, byCell, gw: w.gw, prev: new Int32Array(nodes.length), q: [],
-           stamp: new Int32Array(nodes.length), closed: new Int32Array(nodes.length), g: new Float32Array(nodes.length), gen: 0, heap: [], heapF: [] };
+           stamp: new Int32Array(nodes.length), closed: new Int32Array(nodes.length), g: new Float32Array(nodes.length), gen: 0, heap: [], heapF: [], cut: new Map() };
   /* AND THE GRAPH IS ONE PIECE, WITH POCKETS. A ledge the packer floored
    * that nothing joins to is a component of a few dozen nodes, and a body
    * standing in one can route nowhere: traced, a pocket of NINETEEN nodes
@@ -58505,6 +58705,7 @@ function catRoute(u, tx, tz, ty) {
       const hop = Math.abs(di) + Math.abs(dj) > CD ? 1.1 : 0.75;   // a step at 0.6 m spacing
       for (const m of arr) {
         if (Math.abs(N[m].f - n.f) > hop) continue;
+        if (catEdgeCut(k, m)) continue;             // the grid says floor, the drawn stone says wall: not a way
         const nd = N[m], step = (Math.hypot(nd.x - n.x, nd.z - n.z) + Math.abs(nd.f - n.f) * 1.5) * (1 + (1 - nd.w) * 1.4 + Math.max(0, 0.8 - nd.w) * 5);   // a node against the stone costs nearly twice one in the open — and within a body's width of it (a tomb's flank) far more: go round it wide
         const ng = gk + step;
         if (stamp[m] === gen && gs[m] <= ng) continue;
@@ -58578,6 +58779,27 @@ function catSmooth(out, y0) {
     if (catLineOpen(CAT_X + a.x, CAT_Z + a.z, a.f, CAT_X + c.x, CAT_Z + c.z, c.f)) out.splice(i + 1, 1);
     else i++;
   }
+}
+/* A LINK THROUGH STONE IS NOT A WAY. The graph is the walk grid's floor, and
+ * the grid is a plan: it has floor on both sides of a railing, a balustrade or
+ * a prop standing across a passage, and nothing to say you cannot step
+ * between them. Measured at the stair head outside the door room: his route's
+ * next leg ran 1.2 m straight through a solid thing the drawn faces call a
+ * wall at both his hip and his back — and with nothing but a distance test
+ * over him he simply walked through it, which is the clipping the owner kept
+ * seeing. A link is asked of the faces the first time A* wants it (lazily:
+ * the whole graph at once is a second of work) and the answer is kept, so he
+ * routes the way a body could actually go. */
+function catEdgeCut(a, b) {
+  const G = catG; if (!G || !catWalls) return false;
+  const key = a < b ? a * 131072 + b : b * 131072 + a;
+  let v = G.cut.get(key);
+  if (v === undefined) {
+    const A = G.nodes[a], B = G.nodes[b], y = Math.max(A.f, B.f);
+    v = catLegBlocked(A.x, A.z, B.x, B.z, y + 0.6) || catLegBlocked(A.x, A.z, B.x, B.z, y + 0.95);
+    G.cut.set(key, v);
+  }
+  return v;
 }
 function catFlood(from) {
   const G = catG, N = G.nodes, prev = G.prev, q = G.q, stamp = G.stamp, gen = ++G.gen;
@@ -60481,7 +60703,11 @@ MUT_KINDS.crawler = {
    * 0.94-1.41 m and filled the bottom of the frame with his back; the stops
    * hold his origin at about three metres — his face at a metre and a half,
    * where a body this size is a picture and not a wall. */
-  aimed: true, barLen: 0.45, aimK: 1.60, yawK: 0.80, lungeStop: 3.4, landSlop: 0.80,
+  /* AND THE HITBOXES ARE TIGHT: a claw has to pass within 0.46 m of you
+   * (the pack's 0.70 is a thing whose swings you learn by count), the benefit
+   * of the doubt is 0.42, and nothing lands through stone (`blowWalled`). */
+  aimed: true, barLen: 0.30, aimK: 1.60, yawK: 0.80, lungeStop: 3.4, landSlop: 0.42, limbR: 0.46,
+  gunStun: 1.7,   // a round knocks the fight out of him for a moment (`gunStun`)
   rig: { arm: 'DEF-upper_armR', fore: 'DEF-forearmR', hand: 'DEF-handR',
          armL: 'DEF-upper_armL', foreL: 'DEF-forearmL', handL: 'DEF-handL', head: 'DEF-spine006' },
   rag: { Character1_Hips: 'DEF-spine', Character1_Spine: 'DEF-spine001',
@@ -72837,7 +73063,7 @@ window.__bw = {
   renderHotbar, renderPack,
   poseRig, UMBRA_JOINTS,   buildTavMoon, tavMoonState: () => tavMoon, tavMoonU, tavTorchState: () => tavTorches, tavLightU, keepLightState: () => keepLights, tavWallRay, babyUnit, placeCatBaby, babyHoldLeg, setBabyLegK: (k) => { BABY_LEG_K = k; }, catEnrage, setCatAvOff: (v) => { catAvOff = !!v; }, FOG_GROUND, CLOUD_SHADE_GLSL, SAND_EDGE_K, airState: () => air, cliffLipX, catWebs: () => catWebs, catWebShreds: () => catWebShreds, buildCatWebs, breakCatWeb, catLimbs: () => ({ tpl: limbsTpl, spots: catLimbSpots, gone: catBabyGone, eatGain: babyEatGain ? +babyEatGain.gain.value.toFixed(3) : null, eatSrc: !!babyEatSrc }),
   breakBonePile, catPiles: () => catSpots.eatRaw, catPilesGone, catSkullMeshes,
-  demonUnits, demonPack, updateDemonPack, parasiteUnits, startWhaleFarewell, wfState: () => wbFareCut, wbGoneG: () => wbGone, wbObj: () => wb, placeInWhale, placeInBunker, bunkerHomeG: () => bunkerHome, bleedRigG: () => bleedRig, sfxLockOpen, keyUsed,
+  demonUnits, demonPack, updateDemonPack, parasiteUnits, startWhaleFarewell, wfState: () => wbFareCut, CAT_SITE, CAT_DOOR, catSolid, setCatSolidOff: (v) => { catSolidOff = v; }, catLegBlocked, catDoorBody, gunStun, blowWalled, blowLands, wbGoneG: () => wbGone, wbObj: () => wb, placeInWhale, placeInBunker, bunkerHomeG: () => bunkerHome, bleedRigG: () => bleedRig, sfxLockOpen, keyUsed,
   crawlerUnit, CRAWL_X, CRAWL_Z, crawlerProvoke, startCaveIn, placeInCatacombs, placeOutsideCatDoor, startCatExit, startCatReturn, placeInsideCatDoor, fitCatSandDoor, catWallDoor, catRoute, catSees, catNodeAt, CAT_X, CAT_Y, CAT_Z, CAT_SITE, CAT_LAND, CAT_DOOR, CAVE_Z,
   TRADER_X, TRADER_Z, TRADER_H, TRADER_POSE, traderPose, TRADER_STOCK, traderBuy, TRADER_NPC, traderWorld, get traderRig() { return traderRig; },
   magnumItem, magModel, magFire, magReload, magTrace, MAG_CAP,

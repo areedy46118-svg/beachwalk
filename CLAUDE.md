@@ -18310,3 +18310,47 @@ its side (`wfSplash`, `sfxWhaleSplash` late by the distance), and is gone
 (`uWbFog`) or at 116 m it is gone in the haze. `wbFareCut` is in `frozen()`,
 the lens and the pointer-lock guards; it plays in dev mode too. Harness:
 `startWhaleFarewell`, `wfState`, `wbObj`, `placeInWhale`.
+
+**THE CATACOMBS MONSTER IS SOLID, AND HE CAME THROUGH WALLS BECAUSE HIS
+ROUTE DID.** The walk grid is a plan of floor, so it has floor on both sides
+of a railing or a prop standing across a passage and nothing that says you
+cannot step between them. Measured at the stair head outside the door room:
+his route's next leg ran 1.2 m straight through a solid thing the drawn faces
+call a wall at his hip AND his back, and every earlier fix only moved where he
+clipped — the old watchdog got him "through" by snapping him past it. Three
+things now:
+- **`catEdgeCut`**: A* asks each link of the drawn faces (at the higher
+  floor + 0.6 and + 0.95, so a stair's riser is under it) the first time it
+  wants it, and caches the answer in `catG.cut`. Lazy on purpose — the whole
+  graph at once is a second of work. With it he routes the real way round and
+  reaches the door room in ~20 s where before he stood 8 m off for good.
+- **`catSolid(u)`**, the LAST word of every frame (run from `updateMutant`
+  after `updateMutantUnit`, because the lunge, knockback, separation and snaps
+  all move him after `mutClampX`), against `u.catSolid`, the last place he was
+  legal: the frame's movement may not cross stone at his hip and back
+  (0.6 / 0.95 — at a standing shoulder's 1.45 the stair head's 1.16 m lintel
+  was a wall) or at his flanks (`CAT_FLANK` 0.34; his real half-width is
+  0.82 and the doorways are 1.3 m); nothing of him — origin, flanks, head —
+  enters `catDoorBody`, the barred door's box a metre deep into the room; and
+  his HEAD (the last 0.8 m of neck, at the head bone's own height) is turned
+  out of stone rather than backed out of it, because a three-metre body can't
+  round a corner in a 1.3 m corridor without swinging its head, and backing it
+  off every frame is a creature that never gets round. A graze under 0.22 m is
+  allowed, and so is stone at head height with the hip clear (a lintel).
+  `setCatSolidOff(mask)`: 1 sweep, 2 door, 4 head, `true` all.
+- **His blows** go through `blowWalled` (his origin and his head to your chest
+  and hip, walked in legs) and his hitboxes are tight: `limbR` 0.46 (the
+  pack's 0.70 is a new per-kind knob), `landSlop` 0.42, `barLen` 0.30.
+Measured hands-off, player pinned 1.3 m inside the door (`tools/catsolid.js`):
+head in stone 453 frames of 4200 → 0; door box 12 → 0; 50 hits, none with
+stone between; 2.5 ms a frame.
+
+**THE .44 STUNS HIM** (`gunStun`, `kind.gunStun` 1.7): a round stops the
+swing, the chain and the charge and he reels for 1.7 s, then 1.8 s in which a
+round hurts but doesn't stun, so a cylinder isn't a lock. Not the young one.
+
+**THE TRADER STANDS OUTSIDE THE CASTLE** (`TRADER_Z` -1049.5, sixteen metres
+short of the gate), and he sells **6 Rounds** again: two jars, five boxes
+(`ammoV` on the save gives an older save that recorded the empty box its
+stock back). The row needs the .44 (`needs`), shows the loose rounds you carry
+as its stack, and its picture is drawn (`ammoIconItem`).
