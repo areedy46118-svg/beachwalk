@@ -36681,6 +36681,18 @@ function updateDealer(dt) {
     return;
   }
   dealer.g.visible = bunkerHome.group.visible && !!dealer.model;
+  /* AND HE SPEAKS HOWEVER YOU ARRIVED. The line that starts all of it was
+   * fired from the END OF THE HATCH'S CUT, and a checkpoint puts you in the
+   * room without one — so after a load nothing ever asked the question, the
+   * pickup never ran, `dealerFight` never went true, and he stood on his
+   * mark for good: "the dealer doesn't move when loading his checkpoint".
+   * The first frame you are in the room with your hands free, he asks. */
+  if (inRoom && !dealerMet && !dealerFight && dealerPick < 0 && dealer.st.alive && dealer.model
+      && !hatchBusy && !frozen() && blackoutEl.style.opacity < 0.05) {
+    dealerMet = true;
+    DEALER_NPC.head = dealer.head || null;
+    startDialog('start', DEALER_NPC);
+  }
   /* His mark. Through the wait, the dialogue and the reach for the bar he is
    * exactly where he was put and facing the ladder, whatever the frame did. */
   if (!dealerFight && dealer.st.alive) {

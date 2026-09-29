@@ -18358,3 +18358,12 @@ looking). Equipping every slot a fast scroll passed through swapped models and
 played draws for each, which was the stutter. A digit or a click cancels the
 cursor. Trackpads step a little quicker (`WHEEL_SWIPE` 44, `WHEEL_GAP` 150).
 Note `__bw.equipped` is a snapshot — read `__bw.state().equipped`.
+
+**THE DEALER SPEAKS HOWEVER YOU ARRIVED.** His opening line — which starts the
+pickup, which starts the fight — was fired only from the end of the hatch's
+cut, and a checkpoint (`bunkerIn`) puts you in the room without one: nothing
+asked the question, `dealerFight` never went true, and he stood on
+`DEALER_POST` for good. `updateDealer` now asks it on the first frame you are
+in the room with your hands free and the black gone (`dealerMet` is not on the
+save, so a load always gets it). Measured from a real `bunkerIn` reload: the
+line at 3.6 s, and after it he closed 6.4 m → 1.1 m with seven swings in 8 s.
