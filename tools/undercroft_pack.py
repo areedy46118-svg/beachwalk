@@ -488,7 +488,7 @@ def split_benches(P, UV, I):
 def main():
     global HEADROOM, OPEN_SKY
     ap = argparse.ArgumentParser()
-    ap.add_argument('kind', choices=['cave', 'church', 'passage', 'dojo', 'keep', 'tavern', 'courtyard'])
+    ap.add_argument('kind', choices=['cave', 'church', 'passage', 'dojo', 'keep', 'tavern', 'courtyard', 'castle'])
     ap.add_argument('src'); ap.add_argument('dst')
     ap.add_argument('--tex', type=int, default=1024)
     ap.add_argument('--quality', type=int, default=86)
@@ -503,7 +503,7 @@ def main():
     ap.add_argument('--headroom', type=float, default=HEADROOM, help='the least roof a cell may have over its floor and still be floor (the crouch is 1.03)')
     ap.add_argument('--floor-min', type=float, default=None, help='a surface under this height is not a floor (the sea: an island has an underside, and it is in the water)')
     a = ap.parse_args()
-    budget = a.budget or {'cave': 240000, 'church': 260000, 'passage': 60000, 'dojo': 180000, 'keep': 10 ** 9, 'tavern': 10 ** 9, 'courtyard': 10 ** 9}[a.kind]
+    budget = a.budget or {'cave': 240000, 'church': 260000, 'passage': 60000, 'dojo': 180000, 'keep': 10 ** 9, 'tavern': 10 ** 9, 'courtyard': 10 ** 9, 'castle': 10 ** 9}[a.kind]
     # AN EXACT KIND IS THE FILE, MOVED. The keep is the owner's word — a
     # perfect replica — so nothing is decimated, the normals ride through
     # the bake (a smooth-shaded stylised build under a normal map is not a
@@ -513,10 +513,10 @@ def main():
     # THE TAVERN IS EXACT TOO — Katydid's SketchUp hall, baked and unlit
     # (`KHR_materials_unlit`, which three honours as MeshBasicMaterial, so
     # what the file shows is what the game shows whatever the lamps do).
-    EXACT = a.kind in ('keep', 'tavern', 'courtyard')
+    EXACT = a.kind in ('keep', 'tavern', 'courtyard', 'castle')
     FLOOR_MIN = a.floor_min
     HEADROOM = a.headroom
-    OPEN_SKY = a.open_sky or a.kind in ('dojo', 'keep', 'courtyard')
+    OPEN_SKY = a.open_sky or a.kind in ('dojo', 'keep', 'courtyard', 'castle')
 
     root = os.path.dirname(os.path.abspath(a.src))
     g = json.load(open(a.src))
@@ -541,7 +541,7 @@ def main():
                # AND THE TAVERN'S BACK FACES ARE INVISIBLE. SketchUp exports every
                # face twice, and the back copy wears a 32x16 texture that is
                # entirely alpha zero: 16,594 triangles that draw nothing.
-               'dojo': (), 'keep': (), 'tavern': ('BackSide',), 'courtyard': ()}[a.kind]
+               'dojo': (), 'keep': (), 'tavern': ('BackSide',), 'courtyard': (), 'castle': ()}[a.kind]
     def walk(ni, parent):
         n = nodes[ni]
         m = mat_mul(parent, node_matrix(n))
@@ -733,12 +733,17 @@ def main():
     # cards of grass and ivy, which are drawn and never collided; the wall
     # (2, 3, 4) and the buildings (7) are what stops you.
     YARD_NO_WALK = ('Material', 'material_5')
+    # gogiart's castle stands on a slab of land (`acmat_52`, and `acmat_53`
+    # its skirt). The land runs out past the curtain wall where nobody can
+    # get, and on the beach the game drops it altogether.
+    CASTLE_NO_WALK = ('acmat_52', 'acmat_53')
     walk_in = [(pos, tris, is_bench) for (name, mi, pos, uvs, tris, is_bench) in packed
                if not (a.kind == 'church' and mats[mi].get('name') == 'ampoule')
                and not (a.kind == 'dojo' and mats[mi].get('name') in NO_WALK)
                and not (a.kind == 'keep' and mats[mi].get('name') in KEEP_NO_WALK)
-               and not (a.kind == 'courtyard' and mats[mi].get('name') in YARD_NO_WALK)]
-    walk = (build_walk_multi(walk_in, FLOOR_MIN) if a.kind in ('keep', 'tavern', 'courtyard')
+               and not (a.kind == 'courtyard' and mats[mi].get('name') in YARD_NO_WALK)
+               and not (a.kind == 'castle' and mats[mi].get('name') in CASTLE_NO_WALK)]
+    walk = (build_walk_multi(walk_in, FLOOR_MIN) if a.kind in ('keep', 'tavern', 'courtyard', 'castle')
             else build_walk(walk_in, None, door_box))
     if door_box: walk['door'] = door_box
     if bench_boxes: walk['benches'] = bench_boxes
@@ -760,7 +765,7 @@ def main():
         b = walk['bounds']
         log('  keep bounds %s .. %s' % ([round(v, 2) for v in b[0]], [round(v, 2) for v in b[1]]))
         log('  keep: %d cells with a floor, %d storeys in all' % (len(walk['cells']), sum(len(c[2]) // 3 for c in walk['cells'])))
-    elif a.kind == 'courtyard':
+    elif a.kind in ('courtyard', 'castle'):
         b = walk['bounds']
         log('  courtyard bounds %s .. %s' % ([round(v, 2) for v in b[0]], [round(v, 2) for v in b[1]]))
         log('  courtyard: %d cells with a floor, %d storeys in all' % (len(walk['cells']), sum(len(c[2]) // 3 for c in walk['cells'])))
@@ -774,7 +779,7 @@ def main():
     else:
         log('  church floor at the door: %s, at the altar: %s' % (floor_at(-23.5, 0), floor_at(3, 0)))
 
-    if a.sparse and a.kind not in ('keep', 'tavern', 'courtyard'):
+    if a.sparse and a.kind not in ('keep', 'tavern', 'courtyard', 'castle'):
         # A LONG THIN TUNNEL IS NINETY-FIVE PER CENT EMPTY BOUNDING BOX: the
         # passage's dense grid is 1700 by 250 cells and nearly all of them
         # say "no floor" three times over, at four megabytes of JSON. Only
@@ -820,6 +825,47 @@ def main():
         for k in ('extensionsUsed', 'extensionsRequired'):
             g.pop(k, None)
 
+    # THIRTY-THREE OF THE CASTLE'S IMAGES ARE ONE FILE, AND IT IS SIXTY
+    # MESHES OF TWENTY-SEVEN LOOKS. Its exporter gave every small prop its own
+    # material and its own copy of the same pale wood; the textures are pointed
+    # at the first copy of each identical file, the materials that then agree
+    # in every field become one, and every mesh of one material is merged into
+    # one — so the game draws the castle in twenty-seven calls without a
+    # 300,000-triangle merge landing on some frame of somebody's walk.
+    if a.kind == 'castle':
+        import hashlib
+        first = {}
+        for t in g['textures']:
+            si = t.get('source')
+            if si is None: continue
+            h = hashlib.md5(open(os.path.join(root, g['images'][si]['uri']), 'rb').read()).hexdigest()
+            t['source'] = first.setdefault(h, si)
+        tfirst = {}
+        for ti, t in enumerate(g['textures']):
+            tfirst.setdefault((t.get('source'), t.get('sampler')), ti)
+        for m in mats:
+            bt = m.get('pbrMetallicRoughness', {}).get('baseColorTexture')
+            if bt: bt['index'] = tfirst[(g['textures'][bt['index']].get('source'), g['textures'][bt['index']].get('sampler'))]
+        canon_of = {}
+        mremap = {}
+        for mi, m in enumerate(mats):
+            c = json.loads(json.dumps(m)); c.pop('name', None)
+            mremap[mi] = canon_of.setdefault(json.dumps(c, sort_keys=True), mi)
+        merged = {}
+        order_m = []
+        for pk, (name, mi, pos, uvs, tris, is_bench) in enumerate(packed):
+            cm = mremap[mi]
+            nrm = packed_n[pk]
+            if cm not in merged:
+                merged[cm] = [[], [], [], []]; order_m.append(cm)
+            M = merged[cm]; off = len(M[0])
+            M[0].extend(pos); M[1].extend(uvs)
+            M[2].extend((t[0] + off, t[1] + off, t[2] + off) for t in tris)
+            M[3].extend(nrm if nrm and len(nrm) == len(pos) else [(0.0, 1.0, 0.0)] * len(pos))
+        packed = [(mats[cm].get('name', 'm%d' % cm), cm, M[0], M[1], M[2], False) for cm, M in ((cm, merged[cm]) for cm in order_m)]
+        packed_n = [merged[cm][3] for cm in order_m]
+        log('castle: %d materials merged into their twins; %d meshes, one per material' % (sum(1 for k, v in mremap.items() if k != v), len(packed)))
+
     # ---- rebuild: one flat scene of baked meshes under a root with extras
     blob = bytearray()
     views = []
@@ -851,7 +897,7 @@ def main():
             attrs['NORMAL'] = len(accessors); accessors.append({'bufferView': emit(nb, ARRAY_BUFFER), 'componentType': 5126, 'count': len(nrm), 'type': 'VEC3'})
         meshes.append({'name': name, 'primitives': [{'attributes': attrs, 'indices': ia, 'material': mi}]})
         out_nodes.append({'name': name, 'mesh': len(meshes) - 1})
-    root_node = {'name': ('bw_' if a.kind in ('dojo', 'keep', 'tavern', 'courtyard') else 'undercroft_') + a.kind, 'children': list(range(1, len(out_nodes) + 1)),
+    root_node = {'name': ('bw_' if a.kind in ('dojo', 'keep', 'tavern', 'courtyard', 'castle') else 'undercroft_') + a.kind, 'children': list(range(1, len(out_nodes) + 1)),
                  'extras': {'bw_walk': json.dumps(walk, separators=(',', ':'))}}
     g['nodes'] = [root_node] + out_nodes
     g['meshes'] = meshes

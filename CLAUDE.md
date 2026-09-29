@@ -14523,7 +14523,7 @@ The first build of it looked "exactly the same" to the owner: the map is read LI
 
 **THE BEACH MOODS ARE SUBTLER AND WANDER.** The tint is let through at 0.55 and the density excess at 0.6; the z the mood is read at is pushed ±35 m by slow noise so a hand-over never sits on a line; and the density breathes a few per cent on two slow counts.
 
-**THE UMBRA MARAUDER, PAST THE FIVE — THE HARDEST THING ON THE WALK.** DM-913's rig (CC-BY-4.0, `assets/umbra.glb`, `gltfpack.py --tex 2048 --normal-tex 2048 --min-tris 200 --drop-mr`: the min-tris drops the three rig-gizmo meshes, and the attire's PNG stays a PNG because a fifth of it is cut-out alpha). Four arms off one pair of shoulders (a front pair `*1` and a back pair `*2`), three sickles rigid under `Hand1R`, `Hand1L` and `Hand2L`, and a HEAD that is a sibling of the neck (`HeadIK_125` under `ChestIK_135`) — so `alignLeaves` is on, or it inherits the chest's alignment and looks 35-45 degrees up the sky through every retargeted clip. Three's loader strips the dots: `Shoulder1.L_51` is `Shoulder1L_51`. He stands at `UMBRA_Z = LH_Z + 92` (SUPERSEDED `CAT_OUT_Z - 105`: he moved to where the whale's old door in the sand wall was, at the foot of the headland), facing +Z (his front), and wakes at 26 m with his `Pose3` as the roar and a shriek.
+**THE UMBRA MARAUDER, PAST THE FIVE — THE HARDEST THING ON THE WALK.** DM-913's rig (CC-BY-4.0, `assets/umbra.glb`, `gltfpack.py --tex 2048 --normal-tex 2048 --min-tris 200 --drop-mr`: the min-tris drops the three rig-gizmo meshes, and the attire's PNG stays a PNG because a fifth of it is cut-out alpha). Four arms off one pair of shoulders (a front pair `*1` and a back pair `*2`), three sickles rigid under `Hand1R`, `Hand1L` and `Hand2L`, and a HEAD that is a sibling of the neck (`HeadIK_125` under `ChestIK_135`) — so `alignLeaves` is on, or it inherits the chest's alignment and looks 35-45 degrees up the sky through every retargeted clip. Three's loader strips the dots: `Shoulder1.L_51` is `Shoulder1L_51`. He stands at `UMBRA_Z = LH_Z + 92` (SUPERSEDED `CAT_OUT_Z - 105`: he moved to where the whale's old door in the sand wall was, at the foot of the headland; SUPERSEDED again: he waits in Castle XVII's courtyard, see the end of this file), facing +Z (his front), and wakes at 26 m with his `Pose3` as the roar and a shriek.
 
 - **THE COMBO IS ONE MIXAMO TAKE CUT INTO FIVE AND CHAINED.** The hands' own speed puts the strikes at frames 15 (left), 22 (right), 35 (both), 44 (right) and 52 (both); the windows are cut at the valleys between them (`WINDOW` in `ntar_moves.py`), each with its own measured contact, and each plays at the clip's own speed (`wind` = hit x dur) so the chain IS the take. The take turns a FULL CIRCLE (+50, +125, +213, +10, -33 degrees) and ends square — so its yaw is KEPT, which also keeps the windows continuous where they join. **A chain into a swing a kind does not OWN is dropped by `makeMutant`**, so `uC2`-`uC5` sit in `use` at 0.0001. The last window is `real` with `cock: 1` so its tail plays at its own speed and then HOLDS: that is the opening after a full combo.
 - **HIS SECOND PAIR OF ARMS FOLLOWS THE FIRST** — `kind.twin` in `ntarRetarget`: each back-chain bone takes its front-chain bone's Mixamo delta `lag` frames late (3), turned by a fixed offset out of the front pair's way (`spread` 0.32 down, `back` 0.22), with its rest aligned on its OWN child. His native `Pose1-3` (the only animation the file carries) drive all four as the artist drew them; they are rebuilt to key EVERY bone plus the hip's position (`uCalm`, `uStance`, `uGuard`), because a clip that leaves a bone out leaves it wherever the last clip put it.
@@ -17854,3 +17854,420 @@ fine specks are 320 and dark; `BLOOD_MAT` is a wetter 0x520908 with a 0x280404
 lift, `BLOOD_MAX` 2304. **And the shift heavy whooshes** (`sfxHeavySwing`,
 from `startDig` on `digOverhead || katStabbing()`): the blade's recorded swing
 pitched down, or a deep rush of air.
+
+**A STALE SAMPLE IS NOT A SPEED — the belly's "lagging back and forth".**
+`velGaitAnim` measures a creature's velocity from its last position, and it
+only runs while the creature is on its feet and not swinging — so the first
+frame after a swing compared where it is with where it stood BEFORE the lunge,
+read a metre or two in one frame, and `capStep` dragged it most of the way
+back. Every swing of every demon and parasite ended with the body snapping
+back to where it started. Traced with a setter on `position.x` that records a
+stack on any write over 0.3 m. A sample older than a couple of frames
+(`u._vgT`) restarts the measurement. Measured over sixty seconds of the belly
+fight: largest single-frame move 2.17 m → 0.14 (a lunge). The parasites'
+hold also flipped sides every frame straight behind the pack (`cross` near
+zero); it has hysteresis now, its velocity is eased, and walking within 5.2 m
+of one makes it fight instead of backing off at your own pace.
+
+**A SWING FINDS THE BODY (`meleeT`).** Every creature was a 0.85 m sphere at
+half its height, so a cut at a tall thing's head or legs missed and a cut a
+hand beside it landed. It is the gun's capsule now: the aim line against the
+creature's axis from 0.06 to 0.96 of its height, radius 0.6 (or 0.85 of the
+kind's `hitR`), and `meleeBlocked` refuses a blow through a wall
+(`ehpBlocked` in rooms, the dock/rocks/wreck on the beach). The shift thrust
+reaches `stabReach() + 1.4 + P` to a body rather than the full swing reach
+(it found things 6.6 m away), and `DIG_HEAVY_REACH` is 1.9 (was 2.4).
+Measured on a demon from 2.2 m: head, chest and shin all land, 1.1 m beside
+misses.
+
+**THE BLEED IS A QUICK BURST.** Short specks (0.35-0.8 s), a small haze,
+four to six squirts of 0.14-0.26 s with no heartbeat, no lingering spurt, and
+the owner's `bleed-burst.m4a` (`bleedBurst` bank). A blade hit's spurt is
+0.6 s, the Bloody Blade's per-hit spray x3.2 (was x5.6), and every blood drop
+has air drag and a capped stretch so a spray arcs instead of flying on rails.
+
+**SOUNDS:** `SFX_TRIM` (0.8) under the effects slider; the parry and its
+poise sample about 40 % quieter. The lock (`sfxLockOpen`) is grains of the
+owner's own metal recordings (`blockMil`, `milLight`) pitched up for pins and
+the cam, stick-slip friction for the turn, and the bolt still at 0.64 s.
+
+**THE DEALER'S PUMP IS TO SCALE.** The crabs are 0.64 of the scan side by side
+with two straps each, the jars 0.62 and ink-dark, the line a visible 7.5 mm
+tube over the shelf's lip. **The belly** has a cold moon wash over the whole
+gut (`uWhMoon` 1.5, strongest on up-facing flesh), the four cut lamps summed
+into the flesh shader so they light it from anywhere, and a lighter, colder
+fog. Belly enemies +3 hp each (demons) / 54 and 49 (parasites) with quicker
+tells and three pressers while five or more are up; the knight is 44 hp,
+block 0.40.
+
+**THE LOCK IS NEVER GIVEN UP FOR AN OVERLAY (`vcActive`, `#vcursor`).** The
+pack, the examine screen, a dialogue, the shop, a note and the draw each let
+the pointer lock go when they opened so the real cursor could click them —
+and closing one asked for the lock back, which a browser refuses for about a
+second and a quarter after an exit and refuses outright without a gesture.
+So every look in the pack or word with somebody came back with the mouse
+disconnected. They keep the lock now: while one is open the mouse moves a
+cursor of our own, and every trusted press, release, click, double click,
+context menu and wheel is stopped at the window (capture phase, registered
+before every other listener) and re-sent as an ordinary event to whatever is
+under that cursor, with its coordinates — so the pack's drag, the examine
+screen's right-drag and zoom, every button, and every `:hover` rule (each is
+twinned onto `.vch` at first use) work unchanged. `setPointerCapture` is
+wrapped because it throws under a lock. The tail of the press that CLOSES an
+overlay (its up and its click, inside 320 ms) is swallowed, or with the lock
+held it would land on the world as a swing. Only Esc and the settings menu
+free the mouse. And a checkpoint load starts in the drag fallback (a page
+nobody has clicked cannot lock); any KEY now takes the lock there too, so the
+first W you press after a load is the gesture. Tested in the pane with the
+lock faked (a getter on `document.pointerLockElement` and a dispatched
+`pointerlockchange`): real mouse moves drive the cursor, a real click selects
+a pack slot, and closing the pack keeps the lock.
+
+**`hit` IS A FRACTION OF THE CLIP.** The knight's three authored swings
+(`kOver`, `kBack`, `kStomp`) are keyed in SECONDS, and their table rows gave
+the contact key's own time as `hit` — 0.846 of a 1.95 s clip is 1.65 s — so
+the overhead's damage landed as his gauntlets were already rising again, the
+better part of a second after the slam. `hit` is the key's time over the
+clip's length now, and the overhead's fall is a quarter-second segment of its
+own. Measured: arms up by 0.77 s, held to 1.15, down over 0.3 s, damage at
+1.47 with the hands at the bottom. Any clip built with `poseRig`'s `build`
+is keyed in seconds: divide.
+
+**Demons fly further**: `ragK` 2.45 and `ragVmax` 12 — a kind may exceed
+`RAG_VMAX` in its FIRST flight only (`r.landed` false), which is the cap that
+had been holding every throw to 6.5 m/s. Bodies travel 4.3-5.3 m (was
+2.4-3.3) and still land flat and sleep. **Leaving the whale's mouth is a
+checkpoint** (`autosaveNow()` after `placeOutOfWhale`).
+
+**THE COURTYARD WAS NEVER TILTED; ITS SKY WAS.** Fitting a plane to the walk
+grid and to the drawn ground both gave under 0.2 degrees, and the camera had
+no roll. What leaned was the sky: its clouds were stepped contour bands
+stretched three to one along one axis, so every cloud in the frame slanted
+the same way and the ground under them read as tilted. `makeDojoSky` is soft
+domain-warped cloud on a level deck now, lit grey-violet so it can be seen at
+night, with a flat glowing band of mist along the horizon all the way round.
+
+**ONE CLOCK DRIVES THE MOON (`dojoPeek`, `DOJO_SKY_U.uPeek`).** Two slow sines
+that do not divide say how far the cloud has opened off the moon; the sky
+thins its cloud there, `dojoLightsTick` brightens the moon directional
+(re-aimed at `DOJO_MOON`, ambient and hemisphere up, all restored on the way
+out), the shafts through the mist (four cones in `dojoAtmos`, fading with
+`uPeek`) come up, and the screen-space rays with them — the moon coming out is
+one event. The atmosphere (`buildDojoAtmos`/`updateDojoAtmos`): 44 torn smoke
+sheets of low mist (normal blending, warm near a lantern, thinned near the
+eye), 70 red maple leaves riding gusts (drawn as five soft lobes — sharp
+lobes read as red stars in the sky), 180 moonlit petals, ground mist 0.50
+(was 0.20), lanterns 34 over 21 m. **The fountain's white rectangles** were
+its fall sheets: unlit white at full alpha under the lip, a ring of flat
+facets — they are a faint cold grey now, fading in over the top 30 %.
+
+**THE SAMURAI'S KICKS WERE HALF A METRE SHORT.** `sStab` and `sSpin` are kicks
+(limbs 1 and 2 are legs), and a leg is not aim-corrected, so at his 1.3-1.4 m
+stopping distance the toe finished 0.50-0.67 m from your body on the frame the
+damage landed. Per-swing `stop` (1.0 for the kicks, 1.36 for the overhead)
+puts them on you: measured, kicks 0.02-0.06 m, cuts 0.04-0.19 m. Harder: 70
+hp, poise 15, guard 0.62, quicker and keener, a harder second wind — 71 swings
+and 83 damage a minute against 64 and 60. His glowing eyes are out.
+
+**THE FOUNTAIN'S WHITE RECTANGLES WERE THE FALL SHEETS, AND ONLY A RUNNING FRAME
+SHOWS THEM.** Three rounds tuned the sheets (dimmer, fainter, ribbons, a fade in
+at the lip) against stills rendered with `renderer.render` alone, and in those
+stills they were faint. Captured with the loop running (`__cap`, which calls
+`__bw.frame`), the top of every sheet drew as a ring of bright white-blue
+rectangles round each lip; hiding the three meshes removed them. The sheets and
+the drops (5 cm boxes, the same complaint at arm's length) are built and never
+added. The basin keeps its water, pads and caustics; the recording carries the
+fall. **Judge anything that animates from a running frame.**
+
+**THE SAMURAI HAS THE ORC'S GREAT-SWORD SET (`samuraiPick`, `SAM_PICK`), AND
+`ntarRetarget` LEARNED FORESTS.** His file carries five swings and the source
+.blend is on the owner's other machine; the orc's pack is the same Mixamo set
+his own clips came from. Two things the retarget could not do on his Rigify
+rig, both now options (9th argument):
+- **`forest`**: his shoulders, upper arms and thighs are ROOT chains, so a
+  retarget that writes rotations left them at their bind positions while the
+  chest turned and the hips dropped. Each root names its virtual parent
+  (`SAM_FOREST`) and its position is carried by forward kinematics off it every
+  frame, in the model's frame; an unmapped root (sash, scabbard) rides it
+  rigidly. **Only an unmapped root is rigid** — the first build overwrote the
+  mapped arms' rotations too and he fought in a T.
+- **`keep`**: an unmapped bone falls back to the BIND, which for fingers is a
+  flat hand; `keep` puts them on his idle's own local so the fist stays shut.
+Built at `placeInDojo` (45 ms, behind the portal's white). New swings: `gCutC`,
+`gCutD`, `gCutE`, `gChop`, `gLeap`, `gSlide`. **Their contact fractions are
+measured on HIS rig** (the frame the blade passes nearest a chest 1.5 m in
+front), not copied off the pack: the pack's `oCutE` 0.17 is in the wind-up and
+`oSpin` 0.533 has the blade behind him (it landed at 1.3 m from the chest — the
+spin is out of the draw). `aimK` 3.3 with `yawK` 2.6. Measured hands-off: 62
+swing starts and 60 damage a minute, blade 0.27-0.55 m from the chest by median
+on every sword swing, the leap opening from range.
+
+**AND HE THROWS STARS (`samThrowStep`, `updateShuriken`).** Every 8-17 s (7-14
+enraged) he takes the first gap in his own pressure: a 1.45 m step back on his
+walk played backwards, then `sThrow` — a clip whose left arm is SOLVED, not
+posed (coordinate descent onto hand targets measured off his shoulders: belt,
+cocked by the right ear, out in front, through), fitted within 3-10 cm. The
+star is in his hand from the belt, glints and rings at the cock (the tell), and
+leaves at `SAM_THROW_AT`; enraged he sends two. It is the bolts' rule: held
+guard stops it for more of the bar than a cut; the parry window sends it back
+into him for 5; taken, it is 2. It does not home. The beat owns his feet and
+clip (`holdAnim`) and anything that rocks him ends it. **A random chance a
+second never fired** — he is almost never free between cuts — so the cooldown
+is what keeps it rare. `tools/samstrip.js` has the strip, fight and contact
+harnesses (`__samSetup`, `__samStrip`, `__samFightSetup`, `__samFight`,
+`__samContact`).
+
+**HARDER:** the samurai 96 health, poise 18, guard 0.68, quicker and keener,
+five-deep chains and a stronger second wind; the seven demons one more point
+each and a shade keener; the parasites 60 and 54.
+
+**A HIT YOU CANNOT SEE IS A HIT THAT DID NOT LOOK LIKE ONE.** The samurai's
+cuts measured 0.2-0.5 m from the chest at the contact frame and the owner
+said they did not look like they hit him — both true. `aimBar` aims at your
+chest, 0.45 m under your eye, and from the eye a blade at chest height a
+stride away is under the bottom of the frame: captured from the player's own
+view (`__samPOV` in `tools/samstrip.js`), the blade at contact was at his waist
+and out of the picture. `kind.aimDrop` (0.18 for him) aims a kind higher, so a
+man half a metre taller than you cuts across the lower middle of the screen.
+**Judge a creature's blows from the player's eye, not from a side camera.**
+And `aimK` went back down to 2.2 from 3.3: it turns his upper arm, which on
+this Rigify forest is a root apart from the shoulder guard, and at that much
+turn the collar and neck stretched on the wide cuts. The deep squat
+(`gCutE`) and the floor slide (`gSlide`) are out of his draw as goofy; his own
+four are `ease`d, crossfades are 0.34 s, and the cuts chain third slash →
+fourth → side cut → third, so an exchange is a flow and not a list.
+
+**THE THROW IS A WHIP.** Up behind his head and held (the star glinting there
+is the tell), then a short snap out and a follow-through across his body, with
+the whole MODEL's yaw turning into it and past square (`SAM_THROW_YAW`) —
+twisting his spine would leave his root-chain shoulders behind. No hip dip:
+on this rig a lowered pelvis separates from the thighs.
+
+**THE BEACH'S SKY CAME BACK BLACK FROM THE DOJO.** `updateDojoSky` hid it on
+the way in and nothing put it back; every other room saves and restores it.
+
+**THE KNIGHT'S "DEATH-BLOW LAG" WAS THE RING HE DROPS.** The octopus ring is
+400,540 triangles. Its first draw cost 165 ms on the frame it came off him,
+and then `updateHover` raycast every one of its triangles every frame you
+looked at it: 33 ms a frame. `addInteractable` now drops any mesh over 20k
+triangles from the list when a `hitProxy` is there to stand in for it, and
+`warmRing` uploads the ring behind the black of the cut into the church (and
+again at the idol, in case it had not downloaded yet). After: 3 ms and 2.5.
+
+**AND THE SHIFT HEAVY THREW GREY.** The overhead's slam scattered sand clods
+off the landing point on every connect, a body included. It does not now;
+`hitFlesh` also keeps the slam's sparks off flesh. The sand you dig still
+throws its own.
+
+**HE LAUGHS OVER YOUR BODY.** Three short laughs cut from the owner's
+recording (`assets/samurai-laugh1-3.m4a`, faded out, about two seconds each, the
+`samLaugh` bank at 0.55), a beat after he kills you; the reload waits 2.9 s
+instead of 1.6 so it is not cut off.
+
+**ON A FOREST RIG THE SHOULDER DOES NOT FOLLOW THE ARM UNLESS IT IS TOLD TO.**
+The samurai's upper arms are ROOTS beside his shoulder bones, so anything that
+turns an arm — the throw's solved pose, the aim correction — leaves the
+shoulder guard where the clip put it: the "weird shoulder" and the stretched
+collar. `kind.shoulderFollow` (`aimShoulderFollow`) gives each arm's shoulder
+40 % of every aim turn, and the throw's clip rewrites the shoulder track from
+the arm's own turn away from the stance (45 %). Both bones are roots under the
+same armature, so the arm's local turn is already in the shoulder's frame.
+
+**A THROW IS A WHIP, AND THE ELBOW LEADS IT.** Solving the hand alone let the
+solver hold the arm straight and swing it from the shoulder like a flag. The
+cock asks for the elbow high and out with the hand folded behind the head;
+there is a key where the elbow has come forward and the hand is still back;
+the wrist cocks back and flicks through (its sign MEASURED at the release off
+the fingertip). The release is at 0.68 s of 1.15.
+
+**HIS LEFT HAND IS A LIMB NOW, SO THE GRIP HOLDS.** `rig.armL/foreL/handL` make
+it chain 1 (the kicks moved to `limbs: [2, 3]`), his two-handed cuts are
+`twoHanded`, and `kind.grip` corrects the sword arm and puts the left hand back
+on the handle — before, the aim dragged the right hand off and left the left
+holding air. **And he has the life layer** (`installLife`, `SAM_LIFE_J`):
+breath, weight in the chest, his head tracking you — with no hip, because a
+pelvis moved on its own parts company with the thighs on this rig.
+
+Harder: 118 health, poise 21, guard 0.74 (0.80 enraged), quicker and keener;
+a throw is one star, two a third of the time, three fanned enraged, every
+8.5-14.5 s (6-12 enraged). Measured hands-off: 66 swing starts and 73 damage a
+minute, four throws a minute.
+
+**CASTLE XVII STANDS ACROSS THE BEACH BEFORE THE LIGHTHOUSE, AND THE MARAUDER
+FIGHTS IN ITS COURTYARD.** (SUPERSEDES the marauder's `UMBRA_Z = LH_Z + 92`:
+he waits in the courtyard now, `UMBRA_X/Z` off `FORT_X/Z`.) The owner's
+"Castle XVII" (CC-BY-4.0) through `tools/undercroft_pack.py castle
+~/Downloads/castle_xvii/scene.gltf assets/castle.glb --tex 1024 --scale 1.5
+--yaw -7.37`, which is a new EXACT kind that keeps normals and drops the
+land (`acmat_52/53`). It also merges images that are identical by md5 and
+materials that are identical in canonical form, then merges the meshes per
+material: 27 meshes, 302k triangles, 21.8 MB, and a 46,966-cell walk. The
+yaw squares the gate to the walk, and the gate lands at world (10, -1065.85).
+- **IT IS ON THE BEACH, NOT IN A ROOM.** `FORT_X/Y/Z` put it there, and
+  `inFort` is not a room: `inRoom()` stays false, so the sky, the moon, the
+  mood, the gulls and the far-cull all run over it, and the lighthouse stands
+  over the roofs. The beach is cut out of its footprint by a MASK built from
+  its own walk cells (dilated 3 and eroded 5, stored as an R8 texture,
+  `FORT_M`, `fortMaskAt`, `FORT_CUT_GLSL`). The sand, the sea and the dune
+  discard inside it. So do `inWater`, `roomSubmersion`, the dig target, cache
+  placement (2.6 m clear), and the mist and blown grains. Inside, the fog is
+  ×0.55 and the sky clears (`updateMood`).
+- **EVERY WALL IS THE SITE MACHINERY** (`FORT_SITE`, the tavern's walk:
+  `keepHitsWall` at three heights, `keepWallPush`, `pushOutOfKeep`,
+  `tavEscape`, the `TAV_FIX` cap). The wall index covers 300k triangles, so it
+  is built in SLICES, 4 ms a frame once you are within 260 m
+  (`fortWallsStep`). It is finished at the cut if it has not already been.
+  Outside, the castle is a solid thing: a move into the mask, or through its
+  stone, is slid along.
+- **THE GATE IS WALKED INTO.** It has no prompt from the beach, although E
+  works too. It cuts to `FORT_MID`, which was chosen by a SILHOUETTE RENDER
+  of the lighthouse from every candidate spot, because a raycast was the wrong
+  instrument: FrontSide misses back faces, and the walk grid ignores steep
+  roofs. 93 % of the tower's column shows from there.
+- **THE BACK DOOR IS BARRED WHILE HE LIVES** ("The door is barred.", bare).
+  Once he is dead it puts you on the sand behind the castle (`fortPosternSpot`)
+  facing the lighthouse. A POSTERN on the outer back wall (a clone of the back
+  door's own mesh) lets you back in, because a castle you can leave only one
+  way takes everything before it away. Leaving by the gate mid-fight calms him
+  (`fortCalmBoss`).
+- **HE IGNORES THE CHASE GRACE.** The gate's checkpoint (`updateFortSave`,
+  14 m out) starts the 25 s grace, and it kept him asleep through the whole
+  arrival. `fortBody` wakes on `inFort && fortInT > 0.9`, holds him inside the
+  walls (`fortClampUnit`), sets his height from the paving, and pushes his
+  ragdoll out of the walls.
+- **A BRAZIER IS A DISC, NOT A WALL.** Put in the wall index, its bowl ring
+  was a pen that a jump could land you inside (0.26 m deep). They are
+  `bwGhost` with round colliders (`fortPropPush`), and so are the torches.
+- Life: five braziers down the street, wall torches either side of every
+  door, pooled lamps with `lpAlways`, and warm windows (`acmat_22`, flickered
+  in their own shader). The blade on the walls marches the wall index
+  (`fortBladeHit`, 'concrete').
+Measured: 28,800 frames walking hands-off in the courtyard, jumping, with 0
+off the paving and the worst overlap 0.163 m against a 0.26 m body; 34,000
+frames from the beach with 0 inside the footprint; the fight at 65 swings and
+63 damage a minute, never in stone; a median frame of 2.6 ms and a worst of
+9.1 in the courtyard; 239 draws. `tools/fortwalk.js` holds the harness.
+**Teleporting to the castle fires the horde's take** (`mutCut`): step until it
+is false first, or every look you set is turned onto them.
+
+**THE SAMURAI'S FIGHT HAS MUSIC** (`updateSamMusic`, `startSamMusic`). The
+owner's "8 bit samurai fight" loops from the frame he says "THAT'S MY SWORD"
+(`wakeSamurai`) until he is dead or you are out of the dojo. It fades out over
+a breath and comes straight back if you return with him still up. The source
+is FORTY BARS AT 136 BPM (70.588 s, found by autocorrelating the onsets) and
+then two seconds of the last notes ringing out. A loop that cuts that tail
+off drops a beat's worth of release every seventy seconds, so
+`assets/samurai-fight.m4a` is the forty bars with the tail folded back over
+the first ones, padded a second either side with its own wrap. The loop
+points are `SAM_LOOP` (1.0 to 71.588); the decoded buffer came back at
+exactly 72.588 s and the seam's step is under the track's own normal
+sample-to-sample steps. It is on the music slider at `SAM_MUSIC_LEVEL` 1.25,
+declared at the top beside `PASS_LEVEL` because `applySettings` reads it at
+load. It is fetched the moment you are in the dojo.
+
+**DEV: TELEPORT TO THE SHOP** (`devTeleportShop`, `#m-shop` in the settings
+menu; it comes out before release). Four rules, and the last one is general:
+- It leaves a room by that room's OWN exit (`placeOnBeach`,
+  `placeBackAtPortal`, `placeOutOfUndercroft`, `keepLeave`, `tavLeave`,
+  `catLeave`, `whaleLeave`, `fortCalmBoss`), so fog, sky, lights and sound
+  come back as walking out would.
+- It marks the dock's swim-in, the horde's take and the two beach autosaves
+  as passed, the way a checkpoint restore does. Otherwise a teleport past
+  them plays a cutscene aimed at a beach you are not on, and writes over your
+  save.
+- It refuses mid-cut and in the saucer's hall, and the button is greyed out
+  there.
+- **A ROOM MUST NOT READ THE SKY'S STATE UNDER THE HALL CULL.** Five rooms
+  save `sky.visible` on the way in and put it back on the way out. The
+  undercroft's save runs after `update()`, and on the frame you arrive the
+  cull has already hidden the dome, since it has not yet been moved onto you
+  and measures three kilometres off. So it saved "hidden". Leaving by the cut
+  happened to restore things in an order that hid this; the teleport restored
+  them in the other order, and the beach came back under a black sky. All
+  five saves now count a dome the cull is holding as visible
+  (`hallHid.includes(sky)`).
+Measured, from the beach and from inside the bunker, dojo (mid-fight),
+undercroft (twice), catacombs, keep, tavern, whale and castle: every room flag
+off, sky up, beach fog colour, the sky's duck at 0, and 0.00 m from the spot,
+with no console errors. `__bw.roomFlags()` reads all of it in one call.
+
+**TWENTY FARMERS COME OUT OF THE CASTLE'S DOORS BEFORE THE MARAUDER STIRS.**
+KIFIR's "Farmers pack Low-Poly" (CC-BY-NC-4.0, **NON-COMMERCIAL**), three men
+on one Mixamo rig with no clips: `assets/farmer-woodman.glb` / `-farmman` /
+`-workman`, each `gltfpack.py --nodes "^Woodman$"` and then pruned of the
+other two skeletons (the file carries all three skins; the pruned GLBs are
+~130 nodes against 271). They are `MUT_KINDS.farmer0..19` built off
+`FARM_BASE` + one of eight temperaments (`FARM_KINDS`: brawler, hacker,
+stabber, smith, maniac, coward, brute, jumper) + a roster line (`FARM_ROSTER`:
+file, height, tint, scaled bones, which of hat / bag / hair / beard he kept,
+voice pitch, a borrowed tool). What it took:
+
+- **THE THREE STOOD SIDE BY SIDE IN THE SOURCE SCENE,** so two arrive a metre
+  and a half off their own origin. `farmPre` (a new `kind.pre` hook, run first
+  in `dressMutant`) recentres on the hips; and it REMOVES the parts a man did
+  not keep, never hides them — `skinnedBounds` measures every skinned mesh,
+  shown or not, and a hidden basket makes him short.
+- **ONE UPLOAD PER MAP.** Twenty parses hand out twenty copies of every
+  texture; `FARM_TEX` gives every later copy the first copy's maps.
+- **EVERY MOVE IS AUTHORED, ON HIS OWN STANCE** (`farmKeyDefs`, `poseRig`):
+  they bind in an A, so `FARM_STANCE` is put on the bind by world-axis turns
+  (`lifeTurn`) BEFORE `poseRig` reads it, and every clip is a delta from a man
+  and not a scarecrow. Clips are cached per FILE (`FARM_CLIPS`) — bone names
+  are the file's, so three authoring passes serve twenty men. Four idles,
+  two walks, two runs, strafes, three hit reels, three war cries, seventeen
+  swings (`fChop`…`fKick`, contact key at `wind / dur`, so `mutClipTime`
+  plays them in real time) and five ways out of a door (`bCharge`, `bLeap`,
+  `bStumble`, `bKick`, `bSprint`).
+- **THE TOOL GOES THROUGH HIS FIST** (`farmArm`): the loose axe / rake /
+  hammer meshes are measured once (PCA: the head is the FAT end, the bit is
+  the side the head leans), then put on the right hand at the stance — the
+  handle along the knuckle line (index→pinky), the head toward the thumb,
+  gripped near its end — and `u.bones.tip` is its head, so the aim and the
+  sweep use the steel. **A RAKE USED AS A SPEAR LIES ALONG THE ARM**
+  (`kind.spear`): across the forearm, the thrust stood the shaft upright and
+  lunged with the tines at the sky.
+- **THE DOORS ARE LIFTED, AND SO IS WHAT IS BOLTED TO THEM** (`buildFarmDoors`,
+  in `loadFort`). `acmat_16` is the plank slabs (186 triangles each), but the
+  strap hinges, the lock plate and the ring are four OTHER materials
+  (`acmat_10/11/12/14`) in other merged meshes — left behind, they hung in the
+  empty doorway. Everything wholly inside a door's own slot goes onto a pivot
+  at its hinge; the triangles leave the merged meshes. The leaves stay in the
+  wall index where they were drawn shut, so no doorway is ever a way in.
+- **OUTSIDE IS WHERE THE COBBLES ARE.** The houses have ROOMS in them,
+  floored in boards a hand higher than the paving (0.88 against 0.82 in the
+  pack's metres) — so "the side nearer the street's middle" put a tower's door
+  opening inward, and `fortCourtAt` (within 0.35 of the paving) called the
+  boards street. `farmCobble` is the one test for outside.
+- **THE FIGHT IS THE DEMONS' PACK ON ITS OWN LIST** (`updateDemonPack(dt,
+  farmUnits)`, `demonHold`, `u.packList`): `pressMax` 3, the rest circling;
+  `updateFarmers` (from `tickFort`) opens a door the moment there is room —
+  three at you, then four, then five — two together now and then, the doors
+  chosen near you, in view, and not just used. `farmFightDone()` gates the
+  marauder's wake; `fortFarm` is on the save and `farmRetireAll` restores it;
+  leaving the castle mid-fight sends the living back indoors (`farmCalm`).
+- **SWARMED IS NOT A DEATH YOU COULD NOT SEE:** farmers share the demons'
+  hurt gate at 0.95 s (`demonLastLand`). Measured hands-off with three out:
+  **34 damage and 81 swings a minute** (the Dealer is 40 and 48); the whole
+  fight, one killed every three seconds: all twenty out and down, five at most
+  on you at once, 38 damage a minute.
+- **A KILLING BLOW THROWS THEM ACROSS THE STREET** (`ragK` 4.6, `ragVmax` 26,
+  `ragEven` — the feet kicked with the chest so the body LEAVES rather than
+  folding over its boots — and `ragLift`, new, for air time). Measured: 9-10 m
+  of hips travel in open street (other creatures 3-5), lying flat and asleep;
+  shorter only where a house wall stopped them. `goreK` 1.7 and `bloodK` 2.0
+  (both new hooks, in `finishMutant` / `hurtMutantCore`) double the spray.
+- **Dev mode hands over every ring too** (`devGrantWeapons`): as many worn as
+  there are slots, the rest in the pack.
+
+Harness traps, all paid for this round (`tools/farmfight.js`,
+`tools/farmpose.js`):
+- **A FAKE CLOCK MUST BE FULLY FAKE.** `real() + off` advances game time by
+  the real cost of each stepped frame as well as the 16.7 ms added — every
+  rate came out two or three times too high. `base0 + off`.
+- **SETTING `farmFight.done` WAKES THE MARAUDER**, and his blows then count
+  as the farmers'. A measurement of the farmers puts him out of it.
+- **A TELEPORT INTO THE CASTLE FIRES THE HORDE'S TAKE** a frame later:
+  step until `frozen()` has been false for forty frames, not until it is
+  false once.
+- A test's still from inside a narrow street is a wall: film the doors from
+  the cobbles side at a slant, through a 38-degree lens.

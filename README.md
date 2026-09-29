@@ -634,9 +634,32 @@ The song that comes up faintly as you climb out of the church by the way
 behind the altar is the owner's own "passing theme"
 (`assets/passing-theme.m4a`), not redistributable.
 
+The music that plays through the samurai's fight in the dojo, from the moment
+he says his line, is the owner's own "8 bit samurai fight"
+(`assets/samurai-fight.m4a`, cut to a seamless forty-bar loop), not
+redistributable.
+
 The snorkeler laughing to himself out past the campsite is a "Man Laughing
 To Himself" sound effect the owner supplied, cut into five laughs
 (`assets/snork-laugh1..5.m4a`); treat it as not redistributable.
+
+This work is based on ["Castle XVII"](https://sketchfab.com/3d-models/castle-xvii-26d4689f97f0484cbd8277d495a87123)
+by [gogiart](https://sketchfab.com/agt14032013) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the castle across the
+beach at the foot of the headland, where the four-armed thing waits
+(`assets/castle.glb`, every triangle of it with its walk grid, packed by
+`tools/undercroft_pack.py castle … --scale 1.5 --yaw -7.37`; its land is
+dropped and the beach stands in for it). The braziers, the torches and the
+postern on its back wall are built in the game; the postern is its own back
+door, copied.
+
+This work is based on ["Farmers pack Low-Poly"](https://sketchfab.com/3d-models/farmers-pack-low-poly-3c259264e6fe46a4bb33fecce4ece039)
+by [KIFIR](https://sketchfab.com/kifir) licensed under
+[CC-BY-NC-4.0](http://creativecommons.org/licenses/by-nc/4.0/) — **NON-COMMERCIAL**
+— the twenty men who come out of the castle's doors (`assets/farmer-woodman.glb`,
+`farmer-farmman.glb`, `farmer-workman.glb`: one of the three each, through
+`tools/gltfpack.py --nodes`, with the other two skeletons pruned). The pack
+ships no animation; every move they make is authored in the game.
 
 This work is based on ["Blue Whale - Textured"](https://sketchfab.com/3d-models/blue-whale-textured-d24d19021c724c3a9134eebcb76b0e0f)
 by [Bohdan Lvov](https://sketchfab.com/ostapblendercg) licensed under
