@@ -18347,3 +18347,14 @@ unless he deflects it: 45 % when he is awake, facing you and not swinging, a
 third of that mid-swing, never with his back to you, asleep, stunned or down.
 `kind.gunBlock` may be a number to set a kind's own odds (`true` is 0.45).
 Measured over 2000 draws each: 0.46 facing, 0.15 swinging, 0 from behind.
+
+**THE WHEEL RUNS THE OTHER WAY, AND THE HAND FOLLOWS THE CURSOR.** Wheel down
+goes UP the strip now (the owner's way round). A step moves a highlight
+(`wheelCursor`) at once, with a pop (`el.animate`) and a soft tick
+(`sfxWheelTick`); what it rests on goes into your hand `WHEEL_COMMIT` (95 ms)
+after the last step, on the frame clock (`updateWheelCommit`, in
+`animateFrame` — a timer is throttled the moment the browser thinks nobody is
+looking). Equipping every slot a fast scroll passed through swapped models and
+played draws for each, which was the stutter. A digit or a click cancels the
+cursor. Trackpads step a little quicker (`WHEEL_SWIPE` 44, `WHEEL_GAP` 150).
+Note `__bw.equipped` is a snapshot — read `__bw.state().equipped`.

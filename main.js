@@ -6706,6 +6706,8 @@ let packCut = false;            // the three coming in: the player watches
 let keyCut = null;
 // the whale's farewell (`updateWhaleFarewell`): up here because `frozen()` and the lens read them from the first frame
 let wbFareCut = null, wbGone = false;
+// the wheel's cursor on the hotbar (`scrollHotbar`): -1 when it is resting on what you hold
+let wheelCursor = -1, wheelStepAt = 0;
 let noteOpen = false, menuOpen = false, ended = false, introDone = false;
 let dialogOpen = false, invOpen = false, inspecting = false;
 /* AND THE SHOP'S FLAG LIVES UP HERE WITH THE OTHER OVERLAYS. `frozen()` is
@@ -9395,7 +9397,8 @@ function renderHotbar() {
       } else c.lab = null;
     }
     if (c.lab) c.lab.textContent = item.name + (item.viewmodel ? (item === equipped ? ' — holster' : ' — equip') : ' — use');
-    c.el.className = 'slot' + (item ? '' : ' empty') + (item && item === equipped ? ' equipped' : '');
+    const sel = wheelCursor >= 0 ? i === wheelCursor : !!item && item === equipped;
+    c.el.className = 'slot' + (item ? '' : ' empty') + (sel ? ' equipped' : '');
   }
 }
 /* Rings. A second, separate place things live: two slots under the hotbar,
@@ -9867,10 +9870,39 @@ function scrollHotbar(dir) {
     if (w.length) { slots.length = 0; slots.push(...w); }
   }
   if (!slots.length) return;
-  const cur = equipped ? slots.indexOf(inventory.indexOf(equipped)) : -1;
+  /* THE CURSOR MOVES NOW; THE HAND FOLLOWS WHEN YOU STOP. Equipping on every
+   * step swapped the model, played the draw and rebuilt the view for every
+   * slot a fast scroll passed through, which is the stutter in "make the
+   * scroll smoother". The highlight goes at once, with a pop and a tick, and
+   * what it rests on is put in your hand `WHEEL_COMMIT` after the last step. */
+  const at = wheelCursor >= 0 ? wheelCursor : (equipped ? inventory.indexOf(equipped) : -1);
+  const cur = slots.indexOf(at);
   const next = cur < 0 ? (dir > 0 ? 0 : slots.length - 1) : (cur + dir + slots.length) % slots.length;
-  const item = inventory[slots[next]];
-  if (item !== equipped) toggleEquip(item);
+  if (slots[next] === at && at >= 0) return;
+  wheelCursor = slots[next];
+  renderHotbar();
+  const c = hotbarCache[wheelCursor];
+  if (c && c.el.animate) c.el.animate([{ transform: 'translateY(-2px) scale(1.12)' }, { transform: 'translateY(-2px) scale(1)' }], { duration: 170, easing: 'cubic-bezier(.2,.9,.3,1)' });
+  sfxWheelTick(dir);
+  wheelStepAt = performance.now();
+}
+// on the frame clock, not a timer: a browser throttles timers the moment it thinks nobody is looking
+function updateWheelCommit() { if (wheelCursor >= 0 && performance.now() - wheelStepAt >= WHEEL_COMMIT) commitWheel(); }
+const WHEEL_COMMIT = 95;        // ms of rest before the slot the wheel is on goes into your hand
+function commitWheel() {
+  const i = wheelCursor; wheelCursor = -1;
+  const item = i >= 0 ? inventory[i] : null;
+  if (item && item !== equipped && !frozen()) toggleEquip(item);
+  renderHotbar();
+}
+// a soft dry tick, a shade higher going up the strip than down it
+function sfxWheelTick(dir) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const n = noiseBurst(0.018, (x) => Math.pow(1 - x, 4));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = dir > 0 ? 2300 : 2700; bp.Q.value = 3.5;
+  const g = ctx.createGain(); g.gain.value = 0.22;
+  n.connect(bp).connect(g).connect(sfxOut()); n.start(t); n.stop(t + 0.02);
 }
 /* THE WHEEL WALKS THE STRIP, AND IT HAS TO FEEL LIKE WALKING. Three things
  * were wrong with counting to 40 and zeroing: the REMAINDER was thrown away,
@@ -9917,8 +9949,8 @@ function scrollHotbar(dir) {
  *
  * `deltaMode` is normalised first: a wheel set to scroll by LINES reports 3,
  * not 100, and unnormalised it could never reach any threshold at all. */
-const WHEEL_SWIPE = 55;         // normalised px of a trackpad swipe per slot
-const WHEEL_GAP = 240;          // ms: the fastest a SWIPE will ever step
+const WHEEL_SWIPE = 44;         // normalised px of a trackpad swipe per slot
+const WHEEL_GAP = 150;          // ms: the fastest a SWIPE will ever step (240 felt like the strip dragging its feet)
 const WHEEL_SPARSE = 35;        // ms between events: above it a notch, below it a swipe
 const WHEEL_NOTCH = 6;          // and a notch is never two pixels
 const WHEEL_GESTURE = 320;      // ms of quiet that ends a gesture
@@ -9954,12 +9986,14 @@ window.addEventListener('wheel', (e) => {
    * click of a wheel: measured, six notches 120 ms apart moved the strip
    * three slots. */
   if (!notch && !fresh && now - wheelAt < WHEEL_GAP) return;
-  const dir = (notch ? px : wheelAcc) > 0 ? 1 : -1;
+  // the owner's way round: wheel down goes UP the strip
+  const dir = (notch ? px : wheelAcc) > 0 ? -1 : 1;
   wheelAcc = 0;                                      // a step spends the travel; nothing is banked
   wheelAt = now;
   scrollHotbar(dir);
 }, { passive: true });
 function useSlot(i) {
+  if (wheelCursor >= 0) wheelCursor = -1;   // a digit or a click is a choice now, not the wheel's
   const item = inventory[i];
   if (!item || menuOpen || ended) return;
   if (noteOpen) { closeNote(); return; }
@@ -39007,7 +39041,7 @@ function animateFrame() {
    * settling on the frame the player was handed the game. */
   if (!introDone) updateFarProps();
   update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
-  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateWhaleCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateDojoAudio(rawDt); updateFightTip(rawDt); updateCatDread(rawDt); updateBleed(rawDt); updateEnemyBars(rawDt); updateSamuraiEyes(rawDt);
+  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateWhaleCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateDojoAudio(rawDt); updateFightTip(rawDt); updateWheelCommit(); updateCatDread(rawDt); updateBleed(rawDt); updateEnemyBars(rawDt); updateSamuraiEyes(rawDt);
   updateBeachBed();            // after every room has had its say, and only here
   updateHover();
   /* After everything that may have moved a lamp or the player, and before
@@ -73024,7 +73058,7 @@ window.__bw = {
   TRADER_X, TRADER_Z, TRADER_H, TRADER_POSE, traderPose, TRADER_STOCK, traderBuy, TRADER_NPC, traderWorld, get traderRig() { return traderRig; },
   magnumItem, magModel, magFire, magReload, magTrace, MAG_CAP,
   get magAmmo() { return magAmmo; }, set magAmmo(v) { magAmmo = v; },
-  get magSpare() { return magSpare; }, set magSpare(v) { magSpare = v; },
+  scrollHotbar, get wheelCursor() { return wheelCursor; }, get magSpare() { return magSpare; }, set magSpare(v) { magSpare = v; },
   get magAiming() { return magAiming; }, set magAiming(v) { magAiming = v; },
   get mouseBtns() { return mouseBtns; }, set mouseBtns(v) { mouseBtns = v | 0; },
   get magAim() { return magAim; }, get magRel() { return magRel; },
