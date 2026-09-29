@@ -38158,7 +38158,7 @@ function updateRestore(dt) {
   if (f.catBaby) catBabyGone = true;
   if (f.bb) restoreBackSword(f.bb, f.bbAt);
   if (f.benDead) benDead = true;
-  if (f.trader) { const ammo0 = TRADER_STOCK.ammo; Object.assign(TRADER_STOCK, f.trader); if ((f.ammoV || 0) < AMMO_V) TRADER_STOCK.ammo = ammo0; }
+  if (f.trader) { const ammo0 = TRADER_STOCK.ammo; Object.assign(TRADER_STOCK, f.trader); const av = f.ammoV || 0; if (av < 2) TRADER_STOCK.ammo = ammo0; else if (av < 3) TRADER_STOCK.ammo = (f.trader.ammo || 0) >= 5 ? 1 : 0; }   // v2 stocked five: untouched is one, bought from is none
   if (typeof f.ammo === 'number') { magAmmo = f.ammo; magSpare = f.spare || 0; }
   if (f.heroSword || f.dojoWon) heroSwordTaken = true;
   /* THE SNORKELER'S KEY: lying where he threw it, or yours (the pack puts that
@@ -46101,8 +46101,8 @@ let shopAt = 1;                       // which of them you are buying from
  * for two jars, five boxes of them, the last thing you can buy before the
  * castle. `AMMO_V` marks a save that knows this, so an older one that
  * recorded the empty box gets the stock back. */
-const TRADER_STOCK = { glow: 1, water: 2, gun: 1, ammo: 5, ring: 1, spliff: 6, packSpace: 1, ringSlot: 1 };
-const AMMO_V = 2;
+const TRADER_STOCK = { glow: 1, water: 2, gun: 1, ammo: 1, ring: 1, spliff: 6, packSpace: 1, ringSlot: 1 };   // ONE box of six, the owner's word
+const AMMO_V = 3;
 /* THE OWNER'S PRICES. The menu's labels read this table rather than spelling
  * a number out, so a price is one line here and nothing else. */
 const TRADER_PRICE = { glow: 1, water: 1, gun: 6, ammo: 2, ring: 5, spliff: 1, packSpace: 4, ringSlot: 6 };
@@ -46217,7 +46217,7 @@ const SHOP_ROWS = [
   { key: 'gun', item: () => magnumItem, name: '.44 Magnum', sum: 'Revolver · 3 rounds loaded',
     desc: 'Six chambers, three in it. Right click aims, left click fires, R reloads.' },
   { key: 'ammo', item: () => ammoIconItem, name: '6 Rounds', sum: '.44 · six into the pack',
-    desc: 'A box of six for the revolver. They go in the pack; R loads them.', needs: () => inventory.includes(magnumItem),
+    desc: 'A box of six for the revolver, and the only one he has. They go in the pack; R loads them.', needs: () => inventory.includes(magnumItem),
     stack: () => (inventory.includes(magnumItem) ? magSpare : 0) },
   { key: 'glow', item: () => glowstickItem, name: 'Glowstick', sum: 'A light you can carry',
     desc: 'Cracked and cold. It is the only light you will carry underground.' },
@@ -46619,7 +46619,7 @@ addInteractable(trader2Hit, 'Buy something', 'npc', {
  * measurement rather than out of taste. */
 const MAG_CAP = 6;                  // six chambers
 const MAG_SHOT = 0.50;              // seconds a shot owns the gun (the clip is 0.567)
-const MAG_RELOAD = 2.5;             // and a reload (the clip is 3.0)
+const MAG_RELOAD = 2.7;             // and a reload: roll, crane out, brass out, loader in, twist, flick shut
 const MAG_DMG = 14;                 // what a .44 does: the katana's heavy is 3
 const MAG_HEAD = 2.2;               // and what it does to a head
 const MAG_RANGE = 80;               // how far the bullet is traced
@@ -46645,13 +46645,60 @@ const MAG_KICK_K = 235, MAG_KICK_D = 13.5;   // peaks near 0.13 s, home by 0.6
 /* THE RELOAD'S BEATS, as fractions of it — the reference clip's, scaled.
  * The cylinder is out by 0.30, the loader is up and in at 0.72 (which is
  * where the rounds are credited), and the wrist flicks it shut at 0.86. */
-const MAG_OUT = 0.30, MAG_FEED = 0.72, MAG_SHUT = 0.86;
+const MAG_OUT = 0.15, MAG_FEED = 0.64, MAG_SHUT = 0.79;
+const MAG_EJECT = 0.33;             // the ejector rod slapped and the brass falls out
+/* THE RELOAD IS A SEQUENCE, the way a revolver is reloaded in Call of Duty:
+ * the gun rolls over to the left and comes in, the thumb pops the latch and
+ * the cylinder swings OUT on its crane; the muzzle goes UP and the ejector
+ * is slapped, and six spent cases drop out of the bottom of the frame; the
+ * muzzle comes DOWN, a speedloader comes up from below, goes home, is
+ * twisted and pulled away; and a flick of the wrist snaps the cylinder shut
+ * and brings the gun back up. Keys of [pitch, lift, yaw, roll, push, side]
+ * offsets at fractions of the reload, eased between. Roll + is the left
+ * flank turned to you, pitch + is the muzzle up. */
+const MAG_REL_KEYS = [
+  [0.00, [0, 0, 0, 0, 0, 0]],
+  [0.12, [0.12, 0.030, -0.30, 0.90, 0.06, -0.50]],    // rolled over, brought in: the thumb on the latch
+  [0.20, [0.16, 0.035, -0.32, 1.00, 0.07, -0.52]],    // the crane swings out
+  [0.29, [0.95, 0.070, -0.18, 0.80, 0.05, -0.45]],    // muzzle up
+  [0.42, [0.95, 0.070, -0.20, 0.82, 0.05, -0.45]],    // held while the brass falls
+  [0.52, [-0.30, 0.020, -0.30, 0.95, 0.08, -0.52]],   // muzzle down to take the loader
+  [0.66, [-0.32, 0.020, -0.30, 0.95, 0.08, -0.52]],
+  [0.74, [-0.12, 0.030, -0.28, 1.00, 0.07, -0.50]],   // the loader pulled away
+  [0.81, [0.06, 0.030, -0.10, -0.25, 0.04, -0.25]],   // THE FLICK: a roll the other way snaps it shut
+  [0.90, [0.02, 0.010, -0.02, 0.05, 0.01, -0.05]],
+  [1.00, [0, 0, 0, 0, 0, 0]],
+];
+const _mrk = [0, 0, 0, 0, 0, 0];
+function magRelPose(p) {
+  const K = MAG_REL_KEYS;
+  let i = 0; while (i < K.length - 2 && p > K[i + 1][0]) i++;
+  const a = K[i], b = K[i + 1], t = THREE.MathUtils.clamp((p - a[0]) / (b[0] - a[0]), 0, 1), e = t * t * (3 - 2 * t);
+  for (let k = 0; k < 6; k++) _mrk[k] = a[1][k] + (b[1][k] - a[1][k]) * e;
+  _mrk[5] *= ARM_SIDE;
+  // the beats land in the hands: the ejector slapped, the loader driven home, the frame snapped shut
+  const jolt = (at, w) => { const d = (p - at) / w; return d > 0 && d < 1 ? Math.sin(d * Math.PI) * (1 - d) : 0; };
+  _mrk[0] += jolt(MAG_EJECT, 0.05) * 0.16;
+  _mrk[4] += jolt(0.60, 0.05) * 0.05; _mrk[0] += jolt(0.60, 0.05) * -0.06;
+  _mrk[3] += jolt(MAG_SHUT, 0.06) * -0.22; _mrk[1] += jolt(MAG_SHUT, 0.06) * 0.02;
+  return _mrk;
+}
+// the crane: swung out between the latch and the flick, snapped back on the flick with a little rebound
+function magCraneAngle(p) {
+  if (p < 0.13) return 0;
+  if (p < 0.20) { const t = (p - 0.13) / 0.07; return -1.35 * (1 - Math.pow(1 - t, 3)); }
+  if (p < MAG_SHUT - 0.02) return -1.35;
+  const t = (p - (MAG_SHUT - 0.02)) / 0.03;
+  if (t < 1) return -1.35 * (1 - t * t);
+  const r = (p - (MAG_SHUT + 0.01)) / 0.05;
+  return r < 1 ? -0.10 * Math.sin(r * Math.PI) * (1 - r) : 0;
+}
 
 let magAmmo = 0;                    // rounds in the cylinder
 let magSpare = 0;                   // loose rounds in the pack
 let magT = -1;                      // the shot's own clock, -1 idle
 let magRel = -1;                    // and the reload's
-let magRelFed = false, magRelShut = false, magRelOut = false;
+let magRelFed = false, magRelShut = false, magRelOut = false, magRelEject = false;
 let magAiming = false, magAim = 0;  // down the sights: 0..1
 let crossAimK = 1;                  // the crosshair's opacity while the sights are up
 let magKick = 0, magKickV = 0;      // the lens, thrown and springing back
@@ -46726,7 +46773,7 @@ const magFlashSpr = (() => {
 
 const magModel = new THREE.Group();     // exists synchronously: `holdable` names it at module time
 let magRig = null, magReady = false;
-let magVMSight = null, magVMMuzzle = null, magVMRounds = null;
+let magVMSight = null, magVMMuzzle = null, magVMRounds = null, magVMCrane = null;
 /* A drawn fallback, and it is the RIGHT object — the Military Shovel shipped
  * the sand shovel's icon for a while and a checkpoint load, which rebuilds
  * the whole pack before a single scan has landed, froze it there for the
@@ -46785,7 +46832,49 @@ bwGlb('assets/magnum.glb', (gltf) => {
     m.frustumCulled = false;
     return m;
   };
+  /* AND THE CYLINDER IS ITS OWN PART, so the reload can swing it out on its
+   * crane the way a revolver's does. Found by shape rather than typed: along
+   * the barrel's axis the cylinder is the FATTEST stretch of the gun, so the
+   * body is cut into slices along x and the widest run of them, behind the
+   * middle, is it — its axis and radius read off the vertices that stand out
+   * to the sides there. Its triangles leave the body's index (the hoist's
+   * rule: split by index, nothing copied). */
+  let cylTris = [], CYL = null;
+  {
+    mesh.updateMatrixWorld(true);
+    const W = mesh.matrixWorld, wv = new THREE.Vector3();
+    const wp = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) { wv.fromBufferAttribute(pos, i).applyMatrix4(W); wp[i * 3] = wv.x; wp[i * 3 + 1] = wv.y; wp[i * 3 + 2] = wv.z; }
+    let x0 = Infinity, x1 = -Infinity, zc = 0, nz = 0;
+    for (const i of body) { const x = wp[i * 3]; if (x < x0) x0 = x; if (x > x1) x1 = x; zc += wp[i * 3 + 2]; nz++; }
+    zc /= Math.max(1, nz);
+    /* a FLUTED cylinder is fat at the ridges and thin at the flutes, so slice
+     * widths alternate and a contiguous run of wide slices catches a sliver:
+     * what defines it is every vertex that stands out wider than the frame */
+    const wx0 = x0 + (x1 - x0) * 0.20, wx1 = x0 + (x1 - x0) * 0.60;   // clear of the grip, which is nearly as wide
+    let maxW = 0;
+    for (const i of body) { const x = wp[i * 3]; if (x > wx0 && x < wx1) maxW = Math.max(maxW, Math.abs(wp[i * 3 + 2] - zc)); }
+    let cx0 = Infinity, cx1 = -Infinity, ylo = Infinity, yhi = -Infinity;
+    for (const i of body) {
+      const x = wp[i * 3]; if (x <= wx0 || x >= wx1 || Math.abs(wp[i * 3 + 2] - zc) < maxW * 0.80) continue;
+      if (x < cx0) cx0 = x; if (x > cx1) cx1 = x;
+      const y = wp[i * 3 + 1]; if (y < ylo) ylo = y; if (y > yhi) yhi = y;
+    }
+    const bw = (x1 - x0) / 48;
+    if (maxW > 0 && cx1 > cx0) {
+      const cy = (ylo + yhi) / 2, R = Math.max(maxW, (yhi - ylo) / 2) * 1.04;
+      const inCyl = (i) => { const x = wp[i * 3]; return x >= cx0 - bw * 0.5 && x <= cx1 + bw * 0.5 && Math.hypot(wp[i * 3 + 1] - cy, wp[i * 3 + 2] - zc) < R; };
+      const keep = [];
+      for (let t = 0; t < body.length; t += 3) {
+        const a = body[t], b = body[t + 1], c = body[t + 2];
+        if (inCyl(a) && inCyl(b) && inCyl(c)) cylTris.push(a, b, c); else keep.push(a, b, c);
+      }
+      if (cylTris.length >= 60 && cylTris.length < body.length * 0.5) { body.length = 0; body.push(...keep); CYL = { x0: cx0, x1: cx1, cy, cz: zc, R }; }
+      else cylTris = [];
+    }
+  }
   const gun = part(body), rounds = loose.length >= 12 ? part(loose) : null;
+  const cyl = cylTris.length ? part(cylTris) : null;
   /* AND BLUED STEEL AT NIGHT IS A BLACK BAR. The scan's own map is what it
    * is — a dark gun photographed indoors — and the overlay scene's ambient
    * and two directionals do not get it off the floor, which is the exact
@@ -46802,6 +46891,7 @@ bwGlb('assets/magnum.glb', (gltf) => {
   }
   mesh.parent.add(gun);
   if (rounds) mesh.parent.add(rounds);
+  if (cyl) mesh.parent.add(cyl);
   mesh.removeFromParent();
   root.updateMatrixWorld(true);
 
@@ -46878,11 +46968,22 @@ bwGlb('assets/magnum.glb', (gltf) => {
      * be and completely invisible. Model +Z is the flank the reload's hold
      * turns toward the camera. */
     pivot.position.set(gripX + span * 0.13, gripY + hgt * 0.12, span * 0.085);
-    pivot.userData.drop = hgt * 5.0;       // and it comes up from below the frame
+    pivot.userData.drop = hgt * 1.6;       // and it comes up from below the frame
+    pivot.userData.len = rb.max.x - rb.min.x;
     /* And they are not there until they are needed — through the clone as
      * well, which is what `bwKeepHidden` is for. */
     pivot.userData.bwKeepHidden = true;
     pivot.visible = false;
+  }
+  if (cyl && CYL) {
+    /* THE CRANE: a pivot under the cylinder and a little to its left, the
+     * axis along the barrel — a swing of it carries the cylinder out to the
+     * gun's left (model -Z), which is where a double-action revolver's goes. */
+    const crane = new THREE.Group(); crane.name = 'magCrane';
+    root.add(crane);
+    crane.position.set(CYL.x0, CYL.cy - CYL.R * 0.92, CYL.cz - CYL.R * 0.25);
+    crane.attach(cyl);
+    crane.userData.cyl = { x0: CYL.x0, x1: CYL.x1, cy: CYL.cy, cz: CYL.cz, R: CYL.R };
   }
   magRig = new THREE.Group();
   magRig.scale.setScalar(k);
@@ -46895,7 +46996,7 @@ bwGlb('assets/magnum.glb', (gltf) => {
    * with nothing in it, so the builder is asked again. */
   if (magnumItem.viewmodel && magnumItem.viewmodel.userData.make) {
     magnumItem.viewmodel.userData.make();
-    magVMSight = magVMMuzzle = magVMRounds = null; _magRZero = null;
+    magVMSight = magVMMuzzle = magVMRounds = magVMCrane = null; _magRZero = null;
   }
 });
 
@@ -46940,43 +47041,10 @@ function magPose(out) {
   out[1] += magKick * 0.13;
   out[4] += magKick * 0.19;                       // and it comes back at you
   out[3] += magYaw * 1.05;
-  /* AND THE RELOAD. The gun rolls out of the hold and down out of the sight
-   * line, takes the loader, is snapped shut and brought back up. The beats
-   * are the reference clip's, scaled. */
+  /* AND THE RELOAD: the keyed sequence (`MAG_REL_KEYS`). */
   if (magRel >= 0) {
-    const p = magRel / MAG_RELOAD;
-    const down = p < MAG_OUT ? easeOutCubic(p / MAG_OUT)
-      : p < MAG_SHUT ? 1
-      : 1 - easeInOutCubic((p - MAG_SHUT) / (1 - MAG_SHUT));
-    /* AND IT COMES IN TO BE RELOADED, NOT OUT OF THE FRAME. The first pass
-     * dropped it and pushed it further right and what you watched for two
-     * and a half seconds was a sliver at the edge of the screen. A reload is
-     * the one beat the gun is the ONLY thing worth looking at: it comes up,
-     * in toward the middle, and rolls over so the cylinder faces you. */
-    out[0] += down * 0.30;                        // muzzle up
-    out[1] += down * 0.045;
-    out[2] += down * -0.34;                       // turned across you
-    out[3] += down * 0.80;                        // rolled: the cylinder is out on the left
-    out[4] += down * 0.07;                        // and held closer
-    out[5] += down * (-ARM_SIDE * 0.52);
-    /* AND IT IS FOUR BEATS, NOT ONE HOLD. A pose that goes over and sits
-     * there for two and a half seconds is a gun being TILTED; the reference
-     * clip dumps at 1.25 s of three, takes the loader at 1.75 and flicks
-     * shut at 2.5, and every one of those is something the wrist does. */
-    if (p > MAG_OUT && p < MAG_FEED) {            // the ejector rod knocked through
-      const q = (p - MAG_OUT) / (MAG_FEED - MAG_OUT);
-      out[0] += Math.sin(q * Math.PI * 3) * 0.065 * (1 - q);
-      out[1] += -0.04 * Math.sin(q * Math.PI);    // and it dips to take the loader
-    }
-    if (p > MAG_FEED - 0.06 && p < MAG_FEED + 0.10) {   // six rounds going home
-      const q = (p - (MAG_FEED - 0.06)) / 0.16;
-      out[4] += Math.sin(q * Math.PI) * 0.04;
-      out[0] += Math.sin(q * Math.PI) * -0.05;
-    }
-    if (p > MAG_SHUT) {                           // the flick shut, on the wrist
-      const s = (p - MAG_SHUT) / (1 - MAG_SHUT);
-      out[3] += Math.sin(s * Math.PI) * -0.30;
-    }
+    const k = magRelPose(magRel / MAG_RELOAD);
+    for (let n = 0; n < 6; n++) out[n] += k[n];
   }
   return out;
 }
@@ -46995,27 +47063,30 @@ function magSights() {
     magVMSight = magnumItem.viewmodel.getObjectByName('magSight');
     magVMMuzzle = magnumItem.viewmodel.getObjectByName('magMuzzle');
     magVMRounds = magnumItem.viewmodel.getObjectByName('magRounds');
+    magVMCrane = magnumItem.viewmodel.getObjectByName('magCrane');
   }
   /* THE LOADER IS ONLY THERE WHILE IT IS BEING USED. `holdable`'s builder
    * switches every child of the clone visible — it exists to undo whatever
    * was hidden on the original — so this is written every frame rather than
    * once at build. */
+  const pR = magRel >= 0 ? magRel / MAG_RELOAD : -1;
+  if (magVMCrane) magVMCrane.rotation.x = pR >= 0 ? magCraneAngle(pR) : 0;
   if (magVMRounds) {
-    if (!_magRZero) _magRZero = magVMRounds.position.clone();
-    const p = magRel >= 0 ? magRel / MAG_RELOAD : -1;
-    const show = p > MAG_OUT * 0.8 && p < MAG_SHUT;
-    magVMRounds.visible = show;
+    /* THE SPEEDLOADER: up from under the frame to behind the swung-out
+     * cylinder, driven home, twisted, and gone — everything measured off the
+     * crane's own geometry (`userData.cyl`), in the model's units. */
+    const show = pR > 0.44 && pR < 0.70 && magVMCrane;
+    magVMRounds.visible = !!show;
     if (show) {
-      /* Up out of the bottom of the frame, into the cylinder, and away
-       * again — the reference clip's own beat, which pushes the loader
-       * forward at 1.75 s of three and has it gone by 2.3. */
-      const q = (p - MAG_OUT * 0.8) / (MAG_SHUT - MAG_OUT * 0.8);
-      const rise = q < 0.55 ? easeOutCubic(q / 0.55) : 1 - easeInCubic((q - 0.55) / 0.45);
-      magVMRounds.position.set(
-        _magRZero.x,
-        _magRZero.y - (1 - rise) * (magVMRounds.userData.drop || 0),
-        _magRZero.z,
-      );
+      const C = magVMCrane.userData.cyl, a = magCraneAngle(pR), cp = magVMCrane.position;
+      const ry = C.R * 0.92, rz = C.R * 0.25;
+      const cy = cp.y + ry * Math.cos(a) - rz * Math.sin(a), cz = cp.z + ry * Math.sin(a) + rz * Math.cos(a);
+      const L = magVMRounds.userData.len || C.R;
+      const rise = easeOutCubic(THREE.MathUtils.clamp((pR - 0.44) / 0.12, 0, 1));
+      const home = easeInOutCubic(THREE.MathUtils.clamp((pR - 0.56) / 0.05, 0, 1));
+      const twist = easeInOutCubic(THREE.MathUtils.clamp((pR - 0.62) / 0.04, 0, 1));
+      magVMRounds.position.set(C.x0 - L * 0.55 - C.R * 0.6 * (1 - home) + L * 0.45 * home, cy - (1 - rise) * (magVMRounds.userData.drop || 0), cz);
+      magVMRounds.rotation.x = twist * 0.55;
     }
   }
   if (!magVMSight || magAim <= 0.002) return;
@@ -47059,6 +47130,7 @@ function updateGun(dt) {
     magFlashSpr.material.rotation = magFlashSeed;
   }
   if (magT >= 0) { magT += dt; if (magT >= MAG_SHOT) magT = -1; }
+  updateBrass(dt);
   // the muzzle settling back down out of its own kick
   if (magClimb > 0 && (magT < 0 || magT > 0.18)) {
     const d = Math.min(magClimb, dt * 0.95);
@@ -47069,7 +47141,8 @@ function updateGun(dt) {
   if (magRel >= 0) {
     magRel += dt;
     const p = magRel / MAG_RELOAD;
-    if (!magRelOut && p >= MAG_OUT * 0.35) { magRelOut = true; sfxMagOpen(); }
+    if (!magRelOut && p >= MAG_OUT) { magRelOut = true; sfxMagOpen(); }
+    if (!magRelEject && p >= MAG_EJECT) { magRelEject = true; magEjectBrass(); }
     if (!magRelFed && p >= MAG_FEED) {
       magRelFed = true;
       const want = Math.min(MAG_CAP - magAmmo, magSpare);
@@ -47343,10 +47416,61 @@ function gunNudge(up, side) {
   _gnE.z = 0;
   camera.quaternion.setFromEuler(_gnE);
 }
+/* THE SPENT BRASS: six cases out of the back of the swung-out cylinder, in
+ * the view model's own scene, tumbling down out of the bottom of the frame
+ * with a scatter of tinks. Only as many as were fired. */
+const brass = [];
+let brassGeo = null, brassMat = null;
+function magEjectBrass() {
+  sfxMagEject();
+  if (!magVMCrane || !vmScene) return;
+  const n = Math.max(1, Math.min(MAG_CAP, MAG_CAP - magAmmo));
+  if (!brassGeo) {
+    brassGeo = new THREE.CylinderGeometry(0.0062, 0.0062, 0.030, 8); brassGeo.rotateX(Math.PI / 2);
+    brassMat = new THREE.MeshStandardMaterial({ color: 0xc9a24c, roughness: 0.35, metalness: 0.1, emissive: 0x5a4412, emissiveIntensity: 0.6 });
+  }
+  const C = magVMCrane.userData.cyl;
+  const rear = magVMCrane.localToWorld(new THREE.Vector3(0, C.R * 0.92, C.R * 0.25));
+  for (let i = 0; i < n; i++) {
+    const m = new THREE.Mesh(brassGeo, brassMat);
+    m.position.copy(rear).add(new THREE.Vector3((Math.random() - 0.5) * 0.02, (Math.random() - 0.5) * 0.02, (Math.random() - 0.5) * 0.02));
+    m.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+    vmScene.add(m);
+    brass.push({ m, v: new THREE.Vector3((Math.random() - 0.5) * 0.35, -0.25 - Math.random() * 0.4, 0.05 + Math.random() * 0.2), w: new THREE.Vector3(Math.random() * 14, Math.random() * 14, Math.random() * 14), life: 0.9 + Math.random() * 0.3, delay: i * 0.025 });
+  }
+}
+function updateBrass(dt) {
+  for (let i = brass.length - 1; i >= 0; i--) {
+    const B = brass[i];
+    if (B.delay > 0) { B.delay -= dt; B.m.visible = false; continue; }
+    B.m.visible = true;
+    B.life -= dt; B.v.y -= 4.2 * dt;
+    B.m.position.addScaledVector(B.v, dt);
+    B.m.rotation.x += B.w.x * dt; B.m.rotation.y += B.w.y * dt; B.m.rotation.z += B.w.z * dt;
+    if (B.life <= 0) { vmScene.remove(B.m); brass.splice(i, 1); }
+  }
+}
+// the ejector rod slapped home and six cases coming out and tinking off each other and the floor
+function sfxMagEject() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  const n = noiseBurst(0.04, (x) => Math.pow(1 - x, 3));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1400; bp.Q.value = 2;
+  const g = ctx.createGain(); g.gain.value = 0.5;
+  n.connect(bp).connect(g).connect(out); n.start(t); n.stop(t + 0.05);
+  for (let i = 0; i < 9; i++) {
+    const at = t + 0.03 + i * 0.045 + Math.random() * 0.06, f = 3800 + Math.random() * 2600;
+    for (const [mul, gg, d] of [[1, 0.05, 0.10], [2.71, 0.025, 0.06]]) {
+      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f * mul;
+      const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, at); og.gain.exponentialRampToValueAtTime(gg * (i < 6 ? 1 : 0.6), at + 0.002); og.gain.exponentialRampToValueAtTime(0.0001, at + d);
+      o.connect(og).connect(out); o.start(at); o.stop(at + d + 0.01);
+    }
+  }
+}
 function magReload() {
   if (!magHeld() || frozen() || held) return;
   if (magBusy() || magAmmo >= MAG_CAP || magSpare <= 0) return;
-  magRel = 0; magRelFed = false; magRelShut = false; magRelOut = false;
+  magRel = 0; magRelFed = false; magRelShut = false; magRelOut = false; magRelEject = false;
 }
 
 /* THE CYLINDER, THE BRASS AND THE SNAP. No recording was supplied for any of
@@ -56923,7 +57047,7 @@ function wbTailSplash() {
  * point a third of the way down it — its centre of mass, which is what a leap
  * turns about; turning it about the snout, as its group is built, would swing
  * the whole tail up into the air as it levels out. `wbGone` is on the save. */
-const WF_T = { thanks: 0, gulp: 4.3, cut: 4.95, heal: 6.9, back: 14.4, swim: 23.0, under: 35.2, breach: 38.8 };
+const WF_T = { thanks: 0, gulp: 2.0, cut: 2.65, heal: 4.6, back: 12.1, swim: 20.7, under: 32.9, breach: 36.5 };   // the thanks is said on the way back into the sea now, so the belly is a warm beat and a heave
 const WF_COM = -11;                                     // the pivot, in its own metres down its length
 const WF_VX = 12.4, WF_VZ_OFF = 24;                     // where it puts you: on the dry sand, up the beach from its flank
 const _wfV = new THREE.Vector3(), _wfV2 = new THREE.Vector3(), _wfM = new THREE.Matrix4(), _wfQ = new THREE.Quaternion(), _wfE = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -56956,7 +57080,6 @@ function startWhaleFarewell() {
   blocking = false; winding = false; cancelSwing();
   hovered = null; setPrompt('');
   wbFareCut = { t: 0, fov: camera.fov, cue: {}, songK: 0, look: new THREE.Vector3(), lookRate: 1.5, C: new THREE.Vector3(), yaw: 0, pitch: 0, roll: 0, vel: new THREE.Vector3() };
-  playStory('whaleThanks', 1.35);
   addTrauma(0.12);
 }
 /* PUT YOU ON THE SAND beside it, facing it: the room's own way out, and then
@@ -57290,6 +57413,8 @@ function updateWhaleFarewell(dt) {
     C.yaw = WB_YAW; C.pitch = -WB_PITCH; C.roll = 0;
     for (let i = rockColliders.length - 1; i >= 0; i--) if (rockColliders[i].whale) rockColliders.splice(i, 1);
     sfxWhaleGroan(); sfxWhaleDrag(C.C.x, C.C.z, 8.5);
+    // and it says it now, going back into the sea — quietly (the owner's word: it was too loud, and not in the belly)
+    setTimeout(() => { if (wbFareCut) playStory('whaleThanks', 0.62); }, 1400);
   }
   if (b > 0 && t < T.swim) {
     const u = smooth01(0, 8.6, b);
@@ -73125,7 +73250,7 @@ window.__bw = {
   scrollHotbar, get wheelCursor() { return wheelCursor; }, get magSpare() { return magSpare; }, set magSpare(v) { magSpare = v; },
   get magAiming() { return magAiming; }, set magAiming(v) { magAiming = v; },
   get mouseBtns() { return mouseBtns; }, set mouseBtns(v) { mouseBtns = v | 0; },
-  get magAim() { return magAim; }, get magRel() { return magRel; },
+  get magAim() { return magAim; }, get magRel() { return magRel; }, magModel, magReloadNow: () => magReload(),
   skullKeyItem, skullKey, skullWorld, dropSkullKey, buildCatKey, CAT_KEY, get catDoorOpen() { return catDoorOpen; }, set catDoorOpen(v) { catDoorOpen = v; },
   catCue, playSampleAt, keepWallNear, keepHitsWall, catNoiseAt, catSpots, catG: () => catG,
   catFloorAt: (x, z, y, up = 0.7) => keepFloorAt(x, z, y, up, CAT_SITE),

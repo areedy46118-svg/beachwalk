@@ -18372,3 +18372,21 @@ asked the question, `dealerFight` never went true, and he stood on
 in the room with your hands free and the black gone (`dealerMet` is not on the
 save, so a load always gets it). Measured from a real `bunkerIn` reload: the
 line at 3.6 s, and after it he closed 6.4 m → 1.1 m with seven swings in 8 s.
+
+**THE .44 RELOADS THE WAY A REVOLVER DOES IN CALL OF DUTY.** The cylinder is
+its own part now. The loader measures it (the vertices fat off the frame's
+centre line, between a fifth and three fifths of the gun's length) and cuts it
+out of the body into a pivot, `magCrane`, hung under it on the barrel's axis.
+The pivot's `userData.cyl` holds the cylinder's rear x, its centre and its
+radius, in the model's units. The reload is keys (`MAG_REL_KEYS`, eased,
+`magRelPose`), with a jolt on each beat:
+- roll the gun over and swing the crane out (`MAG_OUT` 0.15);
+- muzzle up, slap the ejector, and the fired cases fall out of the frame
+  (`MAG_EJECT` 0.33: `magEjectBrass` in the view-model scene, `sfxMagEject`);
+- muzzle down, and the speedloader comes up behind the swung-out cylinder,
+  goes home and is twisted (`MAG_FEED` 0.64);
+- a flick of the wrist snaps it shut (`MAG_SHUT` 0.79, `magCraneAngle`).
+The speedloader's path is worked out from the crane's own angle every frame.
+2.7 s end to end. Only the castle's trader sells rounds, and only once
+(`TRADER_STOCK.ammo` 1, `AMMO_V` 3). The whale thanks you as it backs into the
+sea, not while you are inside it, and more quietly.
