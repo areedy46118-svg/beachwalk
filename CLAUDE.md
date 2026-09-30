@@ -18735,3 +18735,24 @@ it swept all four, so his other hand or his knee landed the cut — with
 `limbR` 0.42, `landSlop` 0.42, `lungeLead` 0.30, `reachK` 1.14, `aimK` 1.40,
 `yawK` 1.60. Measured: hits land at 0.94-1.59 m with the steel 0.11-0.64 m
 from you.
+
+**ARTIFACTS: SET INTO A WEAPON, NOT HELD OR WORN (the section just above
+`animate();`).** `whaleArtItem` (`artifact: true`) leaves the pack and rides
+the weapon (`weapon.artifact`); attach from the pack's pane ("Set in · X"),
+by dragging it onto the weapon (`findRecipe`), or with Use while holding one.
+A weapon leaving the pack gives it back (`artOnWeaponLeaving`, not on a load).
+The Artifact of the Whale rises out of the belly's floor in a gold shaft once
+the seven and the two are dead (`artState` 1), and the farewell waits until
+it is taken (`artState` 2); save flags `whaleArt` / `artOn`, and a save past
+the farewell from before this is handed one. THREE LANDED BLOWS IN A ROW
+(`artCount`, from the `hurtMutant` wrapper; a whiff breaks it via
+`artAfterSwing`, 3.4 s gap breaks it) IMMOBILIZE what you hit, Wukong-style:
+`st.immob` pauses the mixer (`timeScale` 0), `updateMutantUnit` returns into
+`artHold`, `artPin` holds the position after everything else has moved it,
+and three shells on the creature's own geometry and skeleton (`artOutline`: a
+clip-space gold line, a glow, a rim sheen) hold with it. Blows on it skip
+every reaction (`artHitFrozen`, ×1.35; a heavy ×1.7 and shatters it). 3.2 s
+(2.3 on bosses), `ART_CD` 10 s, three pips by the health bar. **Two traps:**
+`renderHotbar` runs at module time, so anything it calls must be a function
+declaration, not a const arrow below it; and `window.__bw` is created AFTER
+this section, so its handles are assigned in a microtask.

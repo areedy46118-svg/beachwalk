@@ -8137,6 +8137,8 @@ function devGrantWeapons() {
     if (!it || inventory.includes(it)) continue;
     addToInventory(it);
   }
+  // and the whale's artifact, loose in the pack to be set into whatever you like
+  if (whaleArtItem && !inventory.includes(whaleArtItem) && !whaleArtItem.on) { addToInventory(whaleArtItem); artState = 2; }
   if (!equipped && inventory.includes(shovelItem)) toggleEquip(shovelItem);
   /* AND EVERY RING. They are the same item objects the world hands out, so a
    * ring found afterwards is refused by identity (`addToInventory` looks at
@@ -9519,6 +9521,7 @@ const inventory = [];
 let INV_MAX = 10;                   // the pack (Tab); the trader sells four more (`buyPackSpace`)
 const HOTBAR_SLOTS = 6;             // the quick strip on the left, keys 1–6
 let equipped = null;
+let whaleArtItem = null, artState = 0;   // the artifact the whale gives up (its section is near the end)
 /* AND THE STRIP IS UPDATED, NOT REBUILT. `innerHTML = ''` and six fresh
  * slots every time is what made scrolling through your things feel like a
  * flicker rather than a slide: every wheel step threw six nodes and six
@@ -9563,6 +9566,7 @@ function renderHotbar() {
     if (c.lab) c.lab.textContent = item.name + (item.viewmodel ? (item === equipped ? ' — holster' : ' — equip') : ' — use');
     const sel = wheelCursor >= 0 ? i === wheelCursor : (!!item && item === equipped) || (!equipped && !!item && i === restSlot);
     c.el.classList.toggle('empty', !item);
+    c.el.classList.toggle('art', !!(item && isArtWeapon(item) && item.artifact));
     c.el.classList.toggle('equipped', sel);
     c.el.classList.add('slot');
   }
@@ -9683,6 +9687,7 @@ function removeFromInventory(item) {
   if (i < 0) return;
   if (equipped === item) toggleEquip(item);
   inventory.splice(i, 1);
+  artOnWeaponLeaving(item);
   renderHotbar();
   renderPack();
   refreshUI();
@@ -10219,6 +10224,9 @@ const RECIPES = [
 ];
 function findRecipe(x, y) {
   if (!x || !y || x === y) return null;
+  // an artifact dropped on a weapon is set into it
+  if (x.artifact === true && isArtWeapon(y)) return () => attachArtifact(x, y);
+  if (y.artifact === true && isArtWeapon(x)) return () => attachArtifact(y, x);
   for (const r of RECIPES) {
     if (x.id === r.a && y.id === r.b) return () => r.run(x, y);
     if (x.id === r.b && y.id === r.a) return () => r.run(y, x);
@@ -10280,11 +10288,21 @@ function renderPackDetail() {
   }
   invDetailEl.className = 'detail';
   const verb = item.viewmodel ? (item === equipped ? 'Holster' : 'Hold') : 'Use';
+  /* AN ARTIFACT IS SET INTO A WEAPON: one button for each weapon you carry,
+   * the one in your hand first. A weapon with one in it says so, and lets it out. */
+  const artWs = item.artifact === true ? inventory.filter(isArtWeapon).sort((a, b) => (b === equipped) - (a === equipped)).slice(0, 5) : [];
+  const isArt = item.artifact === true;
+  const artHTML = artWs.length
+    ? artWs.map((w, k) => `<button type="button" class="act attach" data-k="${k}">Set in · ${w.name}</button>`).join('')
+    : '<div class="hint">Carry a weapon to set it in</div>';
+  const artOnHTML = isArtWeapon(item) && item.artifact
+    ? `<div class="artline">◆ ${item.artifact.name}</div><button type="button" class="act detach">Remove artifact</button>` : '';
   invDetailEl.innerHTML = `<div class="big">${iconHTML(item)}</div>
     <div class="name">${item.name}</div>
     ${item.desc ? `<div class="desc">${item.desc}</div>` : ''}
+    ${artOnHTML}
     <button type="button" class="act insp">Inspect</button>
-    <button type="button" class="act hold">${verb}</button>
+    ${isArt ? artHTML : `<button type="button" class="act hold">${verb}</button>`}
     <button type="button" class="act drop">Drop</button>
     ${(item.count | 0) > 1 ? `<button type="button" class="act dropall">Drop all · ${item.count}</button>` : ''}
     <div class="hint">Drag onto another item to combine</div>`;
@@ -10292,7 +10310,13 @@ function renderPackDetail() {
   const bI = invDetailEl.querySelector('.insp'), bH = invDetailEl.querySelector('.hold');
   bI.disabled = !canInspect;
   bI.addEventListener('click', (e) => { e.stopPropagation(); inspectFromPack(item); });
-  bH.addEventListener('click', (e) => {
+  for (const b of invDetailEl.querySelectorAll('.attach')) b.addEventListener('click', (e) => {
+    e.stopPropagation(); const w = artWs[+b.dataset.k];
+    if (w && attachArtifact(item, w)) { packSel = inventory.indexOf(w); renderPack(); }
+  });
+  const bD = invDetailEl.querySelector('.detach');
+  if (bD) bD.addEventListener('click', (e) => { e.stopPropagation(); detachArtifact(item); renderPack(); });
+  if (bH) bH.addEventListener('click', (e) => {
     e.stopPropagation();
     const i = inventory.indexOf(item);
     if (i < 0) return;
@@ -10341,7 +10365,7 @@ function renderPack() {
   for (let i = 0; i < INV_MAX; i++) {
     const item = inventory[i];
     const slot = document.createElement('div');
-    slot.className = 'islot' + (item ? ' filled' : '') + (i === packSel ? ' sel' : '') + (item && item === equipped ? ' held' : '');
+    slot.className = 'islot' + (item ? ' filled' : '') + (i === packSel ? ' sel' : '') + (item && item === equipped ? ' held' : '') + (item && isArtWeapon(item) && item.artifact ? ' art' : '');
     slot.dataset.index = String(i);
     slot.innerHTML = `<span class="num">${i + 1}</span>` + (item ? iconHTML(item) : '');
     if (item) {
@@ -13048,6 +13072,7 @@ let hitFlesh = false;                 // the last swing's blow landed in a body,
 function digImpact() {
   hitFlesh = false;
   const hit = digImpactCore();
+  artAfterSwing();
   /* A THRUST LANDS LIKE A LUNGE. The stab's whole weight is in its drive,
    * and a drive that arrives with no jolt through the camera reads as the
    * sword being placed rather than put through something: the lens punches,
@@ -29505,6 +29530,7 @@ function blockMutant(u) {
 }
 function killMutant(u) {
   if (!u.st.alive || u.st.struck) return;
+  if (u.st.immob > 0) artRelease(u, true);        // the death clip needs its mixer back
   /* AND SOME THINGS DO NOT DIE. A catacomb with a corpse in it is a
    * catacomb you have finished, and the whole of the fear down there is
    * that it is his and you are in it — so at zero he GOES DOWN, lies where
@@ -29860,8 +29886,11 @@ function mutHeavyKnock(u, heavyBlow, woke, mine) {
  * below counts the same, and it only ever reads what the blow already did.
  * See `bleedBuild` for the numbers. */
 function hurtMutant(u, dmg, P = 0, from = null) {
+  // held by the Artifact of the Whale: none of the reactions below, and it goes in harder
+  if (!from && u.st && u.st.immob > 0 && u.st.alive && !u.st.struck) return artHitFrozen(u, dmg, P);
   const hp0 = u.st ? u.st.hp : 0;
   const r = hurtMutantCore(u, dmg, P, from);
+  if (!from && u.st && (r || u.st.hp < hp0)) artCount(u, r);
   if (!from && bloodHeld() && !r && u.st.alive && !u.st.struck && u.st.hp < hp0 && !u.kind.baby) bleedBuild(u, P);
   if (!r && u.st && u.st.alive && u.st.hp < hp0 && u.kind.flinch) mutFlinch(u, P, from);
   return r;
@@ -32558,6 +32587,7 @@ function updateMutantUnit(u, dt) {
     if (u.rag) updateMutRagdoll(u, dt); else mutAnim(u, dt, 0);
     return;
   }
+  if (u.st.immob > 0) { artHold(u, dt); return; }   // held in the gold: nothing of the fight runs
   /* Impact frames, held for exactly the length of the hitstop, so what you are
    * looking at is the reason the world has stopped. Driven off `hitstop` and
    * not off dt, because dt is what hitstop scales. */
@@ -33890,6 +33920,7 @@ function updateMutant(dt) {
     mutCutOut = Math.max(0, mutCutOut - dt);
     mutCutFov = mutCutOut > 0 ? THREE.MathUtils.lerp(settings.fov, mutCutFov, mutCutOut / 0.4) : -1;
   }
+  artTick(dt);
   if (updateMutantCut(dt)) return;             // the cutscene drives them itself
   mutGiveToken(dt);
   mutNearest = 999;
@@ -33904,6 +33935,7 @@ function updateMutant(dt) {
    * where every unit is ticked instead. */
   for (const u of mutants) if (u.kind.gaitBySpeed) measureGaits(u);
   for (const u of mutants) { updateMutantUnit(u, dt); if (u.kind.cat && !u.kind.baby) catSolid(u); }
+  for (const u of artFrozen) artPin(u);        // held is held: nothing that runs after it may move it
   updateMutSand(dt);
 }
 
@@ -38903,6 +38935,8 @@ function saveCheckpoint(spot) {
       spliffs: spliffItem.count || 0, glows: glowstickItem.count || 0, spliffBuff: Math.round(spliffBuffT),
       keepCrate: keepCrateBroken, keepSpliff: keepSpliffTaken,
       grammy: grammyState, grammyAt,
+      // the whale's artifact: not yet given, lying in the belly, or yours — and what it is set in
+      whaleArt: artState, artOn: artAttachedTo(),
     },
   };
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (err) { return; }
@@ -39053,6 +39087,7 @@ function beginRestoreQuiet() {
   keepCrateBroken = !!f.keepCrate; keepSpliffTaken = !!f.keepSpliff;
   // a photo on the floor is put back on the floor when the tavern is built; one in your pack comes back by name
   grammyState = f.grammy || 0; grammyAt = f.grammyAt || null;
+  artRestore(f);
   if (grammyState === 1 && !grammyAt) grammyState = 0;
   if (f.whaleGone && !wbGone) { wbGone = true; wbRemoveForGood(); }
   eyesSeen = !!f.eyesSeen; snorkMet = !!f.snorkMet; fightTipDone = !!f.fightTipDone || camera.position.z < -60;
@@ -39247,7 +39282,7 @@ function packByName(name) {
   for (const it of [shovelItem, militaryItem, katanaItem, bloodItem, pegItem, glowstickItem, ringItem,
                     weddingItem, keyItem, boatKeyItem, skullKeyItem, cdItem, crabItem,
                     syringeItem, waterBottleItem, headItem, fishingRodItem, magnumItem, fangItem, oldRingItem,
-                    spliffItem, grammyItem, lostKeyItem]) {
+                    spliffItem, grammyItem, lostKeyItem, whaleArtItem]) {
     if (it && it.name === name) return it;
   }
   return null;
@@ -58511,7 +58546,8 @@ function updateWhaleFarewell(dt) {
   // the sky it opened goes back slowly once it has gone
   if (!wbFareCut) { wfSkyK = Math.max(0, wfSkyK - dt * 0.08); wfMoonK = Math.max(0, wfMoonK - dt * 0.3); wfRay.k = 0; }
   // the belly is empty: it says so, a beat after the last of them stops moving
-  if (!wbFareCut && !wbGone && inWhale && !whaleBusy && wbBellyClear()) {
+  // and not until you have taken what it gave you (`artState` 2)
+  if (!wbFareCut && !wbGone && inWhale && !whaleBusy && wbBellyClear() && artState === 2) {
     wbFareCut = null;
     wbFareClearT = (wbFareClearT || 0) + dt;
     if (wbFareClearT > 2.4) startWhaleFarewell();
@@ -74990,6 +75026,693 @@ if (FARM_ROSTER.length) {
   }
 }
 
+
+/* ---- ARTIFACTS ---------------------------------------------------------- */
+/* A NEW KIND OF THING: an ARTIFACT is not held and not worn, it is SET INTO A
+ * WEAPON and gives that weapon an ability. The first is the Artifact of the
+ * Whale, which the whale gives up once the seven and the two in its belly
+ * are dead: three blows in a row with the weapon it is set in IMMOBILIZE
+ * what you hit — the Black Myth: Wukong spell — held in place mid-motion
+ * inside a gold outline, open to a combo that hits harder, for about three
+ * seconds; then it has to come back (`ART_CD`). A heavy blow SHATTERS the
+ * hold early for a bigger hit, which is the Wukong finisher.
+ *
+ * Set into a weapon, the artifact leaves the pack and rides the weapon
+ * (`weapon.artifact`); a weapon that leaves the pack (dropped, sold) gives it
+ * back first. Attach from the pack (select it, then a weapon), by dragging it
+ * onto the weapon, or with USE while the weapon is in your hand. */
+const ART_HITS = 3;                  // blows in a row that set it off
+const ART_CD = 10;                   // seconds before it can be used again
+const ART_CHAIN_T = 3.4;             // a gap longer than this between blows breaks the chain
+const ART_HOLD = 3.2, ART_HOLD_BOSS = 2.3;
+const ART_DMG_K = 1.35, ART_HEAVY_K = 1.7;   // blows on something held; a heavy shatters it
+const ART_GOLD = 0xffcf3a;
+const art = { count: 0, lastHit: 0, cd: 0, swingHit: false, world: null, rise: 0, lamp: null, attachPending: null, grantPending: false, warmed: false };
+const artFrozen = [];
+// function declarations, not consts: the hotbar and the pack are drawn at module time, long before this line
+function isArtWeapon(it) { return !!it && !!(it.onDig || it.gun); }
+function artWeapon() { return isArtWeapon(equipped) && equipped.artifact ? equipped : null; }
+
+function makeWhaleArtifact() {
+  const g = new THREE.Group(); g.name = 'whaleArtifact';
+  const env = ringEnv();
+  const gold = new THREE.MeshStandardMaterial({ color: 0xc9a045, metalness: 0.85, roughness: 0.3, envMap: env, envMapIntensity: 2.6, emissive: 0x3d2708, emissiveIntensity: 0.7 });
+  const ivory = new THREE.MeshStandardMaterial({ color: 0xe8dec6, roughness: 0.46, metalness: 0, emissive: 0x2e2819, emissiveIntensity: 0.55 });
+  const pearl = new THREE.MeshStandardMaterial({ color: 0xc8ecff, roughness: 0.12, metalness: 0, emissive: 0x5fb9ff, emissiveIntensity: 1.8 });
+  const R = 0.04;
+  // the setting: a gold ring with a beaded inner rim and twelve rays round it, a relic's sun
+  g.add(new THREE.Mesh(new THREE.TorusGeometry(R, 0.0048, 12, 64), gold));
+  const bead = new THREE.SphereGeometry(0.0021, 8, 6);
+  for (let i = 0; i < 36; i++) {
+    const a = i / 36 * Math.PI * 2, b = new THREE.Mesh(bead, gold);
+    b.position.set(Math.cos(a) * (R - 0.0058), Math.sin(a) * (R - 0.0058), 0); g.add(b);
+  }
+  for (let i = 0; i < 12; i++) {
+    const a = i / 12 * Math.PI * 2 + Math.PI / 12, long = i % 2 === 0;
+    const c = new THREE.Mesh(new THREE.ConeGeometry(0.0034, long ? 0.019 : 0.012, 4), gold);
+    c.position.set(Math.cos(a) * (R + (long ? 0.013 : 0.009)), Math.sin(a) * (R + (long ? 0.013 : 0.009)), 0);
+    c.rotation.z = a - Math.PI / 2; g.add(c);
+  }
+  // the whale, carved in bone: a lathe down its length, flattened, arched as if it breaches
+  const pts = [];
+  for (let k = 0; k <= 24; k++) {
+    const t = k / 24;
+    const r = 0.0105 * Math.pow(Math.sin(Math.PI * Math.min(1, t * 1.02)), 0.75) * (1 - 0.62 * t) + (t > 0.97 ? 0 : 0.0006);
+    pts.push(new THREE.Vector2(Math.max(0.0002, r), -0.034 + t * 0.066));
+  }
+  const bodyGeo = new THREE.LatheGeometry(pts, 22);
+  const pos = bodyGeo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i), t = (y + 0.034) / 0.066;
+    pos.setZ(i, pos.getZ(i) * 0.62);
+    pos.setX(i, pos.getX(i) + 0.006 * Math.sin(t * Math.PI));          // the arch of its back
+    if (pos.getX(i) < 0 && t < 0.35) pos.setX(i, pos.getX(i) * 0.8);    // the flat of the jaw
+  }
+  bodyGeo.computeVertexNormals();
+  const body = new THREE.Mesh(bodyGeo, ivory);
+  body.rotation.z = -Math.PI / 2 - 0.28;          // head to the right, rising
+  body.position.set(-0.002, -0.002, 0.002);
+  g.add(body);
+  // the flukes
+  const fs = new THREE.Shape();
+  fs.moveTo(0, 0); fs.bezierCurveTo(-0.006, 0.006, -0.016, 0.011, -0.021, 0.008);
+  fs.bezierCurveTo(-0.015, 0.004, -0.009, 0.002, 0, -0.001);
+  fs.bezierCurveTo(-0.009, -0.004, -0.015, -0.006, -0.021, -0.01);
+  fs.bezierCurveTo(-0.016, -0.012, -0.006, -0.007, 0, 0);
+  const fl = new THREE.Mesh(new THREE.ExtrudeGeometry(fs, { depth: 0.0022, bevelEnabled: true, bevelThickness: 0.0008, bevelSize: 0.0006, bevelSegments: 2 }), ivory);
+  const tail = new THREE.Vector3(0, 0.034, 0).applyAxisAngle(new THREE.Vector3(0, 0, 1), body.rotation.z).add(body.position);
+  fl.position.set(tail.x + 0.003, tail.y, -0.001); fl.rotation.z = -0.28 + 0.35; g.add(fl);
+  // a flipper, and the eye inlaid in gold
+  const fp = new THREE.Mesh(new THREE.SphereGeometry(0.006, 10, 8), ivory);
+  fp.scale.set(1.5, 0.45, 0.25); fp.position.set(0.004, -0.009, 0.006); fp.rotation.z = -0.9; g.add(fp);
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.0016, 8, 6), gold);
+  eye.position.set(0.021, -0.006, 0.0068); g.add(eye);
+  // the pearl over its blowhole, held in the top of the ring in a gold claw
+  const pr = new THREE.Mesh(new THREE.SphereGeometry(0.0078, 20, 14), pearl);
+  pr.position.set(0, R + 0.001, 0.001); g.add(pr);
+  const claw = new THREE.Mesh(new THREE.TorusGeometry(0.0078, 0.0013, 6, 20, Math.PI * 1.2), gold);
+  claw.position.copy(pr.position); claw.rotation.z = Math.PI + 0.3; g.add(claw);
+  // and the bail it once hung from
+  const bail = new THREE.Mesh(new THREE.TorusGeometry(0.006, 0.0016, 8, 20), gold);
+  bail.position.set(0, R + 0.0165, 0); bail.rotation.y = Math.PI / 2; g.add(bail);
+  g.userData.pearl = pr;
+  return g;
+}
+function makeArtIcon() {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const x = c.getContext('2d');
+  x.strokeStyle = '#d8b14a'; x.lineWidth = 3;
+  x.beginPath(); x.arc(32, 34, 20, 0, Math.PI * 2); x.stroke();
+  x.fillStyle = '#eee3c9'; x.beginPath(); x.ellipse(32, 36, 13, 6, -0.25, 0, Math.PI * 2); x.fill();
+  x.fillStyle = '#9fdcff'; x.beginPath(); x.arc(32, 13, 5, 0, Math.PI * 2); x.fill();
+  return c.toDataURL();
+}
+const whaleArtModel = makeWhaleArtifact();
+whaleArtItem = {
+  id: 'whaleArtifact', name: 'Artifact of the Whale', icon: makeArtIcon(), artifact: true,
+  desc: `Set into a weapon · ${ART_HITS} hits in a row Immobilize · ${ART_CD}s to return`,
+  inspectModel: whaleArtModel, iconRot: { x: 0.12, y: -0.35 },
+  /* USE sets it into whatever weapon is in your hand. */
+  use: () => {
+    if (isArtWeapon(equipped)) attachArtifact(whaleArtItem, equipped);
+    else artSay('Hold a weapon to set it in');
+  },
+};
+function artSay(t) {
+  setPrompt(t);
+  setTimeout(() => { if (promptHTML === t) setPrompt(''); }, 1600);
+}
+function artBanner(t) {
+  const el = document.getElementById('keyused');
+  if (!el) return;
+  el.textContent = t;
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+  clearTimeout(keyUsedT);
+  keyUsedT = setTimeout(() => el.classList.remove('show'), 2600);
+}
+function attachArtifact(a, w) {
+  if (!a || !isArtWeapon(w) || !inventory.includes(w)) return false;
+  if (w.artifact === a) return true;
+  settleRestore();
+  // one artifact to a weapon: whatever was there comes out into the pack
+  if (w.artifact) { const old = w.artifact; w.artifact = null; old.on = null; addToInventory(old); }
+  for (const it of inventory) if (it !== w && it.artifact === a) it.artifact = null;
+  if (inventory.includes(a)) {
+    const i = inventory.indexOf(a); inventory.splice(i, 1);
+  }
+  w.artifact = a; a.on = w;
+  art.count = 0; art.lastHit = 0;
+  invTouched = true;
+  renderHotbar(); renderPack(); refreshUI();
+  sfxArtAttach();
+  artWarm();
+  artBanner(a.name + ' · ' + w.name);
+  return true;
+}
+function detachArtifact(w) {
+  if (!w || !w.artifact) return false;
+  if (inventory.length >= INV_MAX) { sayInventoryFull(); return false; }
+  const a = w.artifact; w.artifact = null; a.on = null;
+  art.count = 0;
+  addToInventory(a);
+  renderHotbar(); renderPack(); refreshUI();
+  sfxArtAttach(true);
+  return true;
+}
+/* A weapon leaving the pack gives its artifact back first, into the slot it
+ * frees — never on a load, which puts things back exactly as they were. */
+function artOnWeaponLeaving(item) {
+  if (!isArtWeapon(item) || !item.artifact || applyingSave || replaying) return;
+  const a = item.artifact; item.artifact = null; a.on = null;
+  queueMicrotask(() => { if (!inventory.includes(a)) addToInventory(a); });
+}
+
+/* ---- the chain, and the hold ---- */
+/* Called for every blow of yours that took health. */
+function artCount(u, killed) {
+  const W = artWeapon();
+  if (!W || art.cd > 0 || !u || u.kind.baby) return;
+  art.swingHit = true;
+  const now = performance.now() / 1000;
+  if (art.count > 0 && now - art.lastHit > ART_CHAIN_T) art.count = 0;
+  art.lastHit = now;
+  art.count = Math.min(ART_HITS, art.count + 1);
+  if (art.count < ART_HITS) { sfxArtTick(art.count); artHudPulse(); return; }
+  // the third: if it is still standing it is held; if the blow killed it the chain waits, primed, for the next
+  if (!killed && u.st.alive && !u.st.struck) { art.count = 0; artImmobilize(u); }
+  else artHudPulse();
+}
+/* A swing that met nothing breaks the chain (a whiff, the sand, a wall). */
+function artAfterSwing() {
+  if (!artWeapon()) { art.swingHit = false; return; }
+  if (!art.swingHit && art.count > 0 && art.count < ART_HITS) { art.count = 0; artHudPulse(); }
+  art.swingHit = false;
+}
+function artImmobilize(u) {
+  const st = u.st;
+  const dur = (u.kind.hp >= 40 || u.kind.solo) ? ART_HOLD_BOSS : ART_HOLD;
+  st.immob = dur; st.immobT = dur; st.immobJolt = 0;
+  st.immobP = u.g.position.clone(); st.immobR = u.g.rotation.y;
+  if (u.mixer) { st.immobTS = u.mixer.timeScale; u.mixer.timeScale = 0; }
+  st.flinchPush = null;
+  if (mutToken === u) mutToken = null;
+  if (!artFrozen.includes(u)) artFrozen.push(u);
+  artOutline(u, true);
+  art.cd = ART_CD;
+  hitstop = Math.max(hitstop, 0.07); addTrauma(0.28); fovKick = Math.max(fovKick, 4.5);
+  const c = _artV.copy(u.g.position); c.y += u.kind.h * 0.55;
+  artBurst(c, u.kind.h, 70);
+  sfxArtImmob(c.x, c.z);
+  artHudPulse();
+}
+function artRelease(u, shatter) {
+  const st = u.st;
+  if (!(st.immob > 0) && !artFrozen.includes(u)) return;
+  st.immob = 0;
+  if (u.mixer && st.immobTS != null) { u.mixer.timeScale = st.immobTS; st.immobTS = null; }
+  const i = artFrozen.indexOf(u); if (i >= 0) artFrozen.splice(i, 1);
+  if (shatter) artDropShells(u);       // at once: a body about to be cut up must not carry a second skin
+  else artOutline(u, false);
+  const c = _artV.copy(u.g.position); c.y += u.kind.h * 0.55;
+  if (shatter) { artBurst(c, u.kind.h, 110, true); worldSparks(c, 18); sfxArtShatter(c.x, c.z); }
+  else { artBurst(c, u.kind.h, 40); sfxArtFade(c.x, c.z); }
+}
+/* A BLOW ON SOMETHING HELD. It cannot guard, reel or be knocked down — it is
+ * held — so none of `hurtMutantCore`'s reactions run: the blow goes in harder,
+ * the body shudders inside the gold, and a heavy breaks the hold for good. */
+function artHitFrozen(u, dmg, P) {
+  const st = u.st;
+  const heavy = P >= MUT_HEAVY || digOverhead;
+  dmg *= heavy ? ART_HEAVY_K : ART_DMG_K;
+  u.hbT = performance.now(); u.lastHitMine = true; st.mine = true; st.foe = null; st.lastHurt = performance.now() / 1000;
+  st.hp -= dmg;
+  art.swingHit = true;
+  if (st.hp <= 0) {
+    artRelease(u, true);
+    st.killP = P; st.killOh = digOverhead; st.killGore = toolGore(); st.killBloody = bloodHeld(); st.hpBefore = st.hp + dmg;
+    killMutant(u); return true;
+  }
+  flashMats(u.g); sfxMutHit(u.kind.voice);
+  camera.getWorldDirection(_hitC); _hitC.y = 0; _hitC.normalize();
+  const by = u.g.position.y + u.kind.h * (0.45 + Math.random() * 0.3);
+  bleedMutant(u, Math.round(20 + P * 14), 0.55 + P * 0.3);
+  sprayBlood(u.g.position.x, by, u.g.position.z, _hitC.x, _hitC.z, Math.round(22 + P * 16), 1.0 + P * 0.5);
+  woundMutant(u, _hitC.x, _hitC.z, by, P);
+  bossHit(P, true, true);
+  st.immobJolt = 1;
+  _artV.set(u.g.position.x, by, u.g.position.z);
+  artBurst(_artV, u.kind.h * 0.5, heavy ? 0 : 14);
+  if (heavy) artRelease(u, true);
+  else { st.immob = Math.max(0.3, st.immob - 0.12); sfxArtCrack(_artV.x, _artV.z); }
+  if (bloodHeld()) bleedBuild(u, P);
+  return false;
+}
+/* Held: nothing of the fight runs, the clips do not advance, and the body
+ * does not move — except to shudder when it is struck, and to strain against
+ * the gold in the last half second, the way it does in Wukong. */
+function artHold(u, dt) {
+  const st = u.st;
+  st.immob -= dt;
+  st.immobJolt = Math.max(0, (st.immobJolt || 0) - dt * 5);
+  if (st.immob <= 0) { artRelease(u, false); return; }
+  artPin(u);
+}
+function artPin(u) {
+  const st = u.st;
+  if (!st.immobP) return;
+  const strain = st.immob < 0.55 ? (0.55 - st.immob) / 0.55 : 0;
+  const j = (st.immobJolt || 0) * 0.035 + strain * 0.018;
+  u.g.position.copy(st.immobP);
+  if (j > 0) { u.g.position.x += (Math.random() - 0.5) * j; u.g.position.z += (Math.random() - 0.5) * j; }
+  u.g.rotation.y = st.immobR + (j > 0 ? (Math.random() - 0.5) * j * 0.8 : 0);
+}
+
+/* ---- the gold outline ---- */
+/* Three shells on the creature's own geometry and skeleton, so they move
+ * with it and hold with it: a hard gold LINE a couple of pixels wide round
+ * the silhouette, a soft GLOW outside that, and a gold SHEEN laid over the
+ * body. The line and the glow are pushed out in CLIP space, so they are the
+ * same width in pixels whatever the creature's scale or distance. One program
+ * each for skinned and for rigid meshes, compiled when the artifact is first
+ * yours (`artWarm`), never on the frame it fires. */
+const ART_RES = { value: new THREE.Vector2(1280, 720) };
+const ART_TIME = { value: 0 };
+function artShellMat(kind) {
+  const line = kind === 'line', sheen = kind === 'sheen';
+  const m = new THREE.MeshBasicMaterial({
+    color: line ? 0xffd84a : sheen ? 0xffc23a : 0xffb21e,
+    transparent: true, depthWrite: line, fog: false, toneMapped: false,
+    side: sheen ? THREE.FrontSide : THREE.BackSide,
+    blending: line ? THREE.NormalBlending : THREE.AdditiveBlending,
+    opacity: line ? 1 : sheen ? 0.5 : 0.34,
+  });
+  const U = { uPx: { value: line ? 1.7 : sheen ? 0 : 5.5 }, uK: { value: 0 }, uRes: ART_RES, uT: ART_TIME };
+  m.userData.artU = U;
+  m.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, U);
+    sh.vertexShader = 'uniform float uPx; uniform vec2 uRes; varying vec3 vArtN;\n' + sh.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
+      #ifdef USE_SKINNING
+        vec3 _artN = transformedNormal;
+      #else
+        vec3 _artN = normalMatrix * normal;
+      #endif
+      vArtN = normalize(_artN + vec3(1e-6));
+      vec4 _artC = projectionMatrix * vec4(_artN, 0.0);
+      float _artL = length(_artC.xy);
+      if (uPx > 0.0 && _artL > 1e-6) gl_Position.xy += (_artC.xy / _artL) * uPx * gl_Position.w * 2.0 / uRes;`);
+    sh.fragmentShader = 'uniform float uK; uniform float uT; varying vec3 vArtN;\n' + sh.fragmentShader.replace('vec4 diffuseColor = vec4( diffuse, opacity );',
+      sheen ? `float _fr = pow(1.0 - abs(normalize(vArtN).z), 2.2);
+        float _sw = 0.5 + 0.5 * sin(uT * 3.1 + gl_FragCoord.y * 0.045);
+        vec4 diffuseColor = vec4(diffuse * (0.015 + 0.8 * _fr * _fr + 0.05 * _sw), opacity * uK);`
+      : `vec4 diffuseColor = vec4(diffuse * (0.88 + 0.12 * sin(uT * 7.0)), opacity * uK);`);
+  };
+  m.customProgramCacheKey = () => 'artShell_' + kind;
+  return m;
+}
+function artOutline(u, on) {
+  if (on) {
+    if (u.artShells) artOutline(u, false);
+    const shells = [];
+    const src = [];
+    u.g.traverse((o) => {
+      if (!o.isMesh || o.userData.artShell || o.name === 'hitProxy' || o.isInstancedMesh) return;   // shells are children, so they share whatever hides the mesh
+      if (o.material && [].concat(o.material).every((mt) => mt.visible === false)) return;
+      src.push(o);
+    });
+    if (!src.length) return;                      // nothing to outline yet: `artTick` asks again
+    const mats = { line: artShellMat('line'), glow: artShellMat('glow'), sheen: artShellMat('sheen') };
+    for (const o of src) {
+      const geo = o.geometry;
+      if (!geo || !geo.attributes.position) continue;
+      if (!geo.attributes.normal) geo.computeVertexNormals();
+      for (const k of ['sheen', 'glow', 'line']) {
+        let s;
+        if (o.isSkinnedMesh) { s = new THREE.SkinnedMesh(geo, mats[k]); s.bind(o.skeleton, o.bindMatrix); s.bindMode = o.bindMode; }
+        else s = new THREE.Mesh(geo, mats[k]);
+        s.userData.artShell = true; s.frustumCulled = false; s.castShadow = false;
+        s.renderOrder = k === 'sheen' ? 3 : k === 'glow' ? 4 : 2;
+        s.raycast = () => {};
+        o.add(s); shells.push(s);
+      }
+    }
+    u.artShells = { shells, mats, t: 0, out: -1 };
+  } else if (u.artShells) {
+    u.artShells.out = 0;              // fades out in `artTick`, then is taken away
+  }
+}
+function artDropShells(u) {
+  const S = u.artShells; if (!S) return;
+  for (const s of S.shells) s.removeFromParent();
+  for (const k in S.mats) S.mats[k].dispose();
+  u.artShells = null;
+}
+function artWarm() {
+  if (art.warmed) return;
+  art.warmed = true;
+  try {
+    const g = new THREE.Group();
+    const bone = new THREE.Bone();
+    const geo = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+    const n = geo.attributes.position.count;
+    geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(new Uint16Array(n * 4), 4));
+    const w = new Float32Array(n * 4); for (let i = 0; i < n; i++) w[i * 4] = 1;
+    geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(w, 4));
+    for (const k of ['sheen', 'glow', 'line']) {
+      const mt = artShellMat(k);
+      const sk = new THREE.SkinnedMesh(geo, mt); sk.add(bone); sk.bind(new THREE.Skeleton([bone]));
+      const rg = new THREE.Mesh(geo, mt);
+      g.add(sk, rg);
+    }
+    g.position.copy(camera.position).add(_artV.set(0, -50, 0));
+    scene.add(g);
+    const done = () => g.removeFromParent();
+    if (renderer.compileAsync) renderer.compileAsync(g, camera, scene).then(done, done);
+    else { renderer.compile(g, camera, scene); done(); }
+    setTimeout(done, 8000);
+  } catch (e) { /* never fatal */ }
+}
+
+/* ---- gold motes: a burst when it takes hold, a cloud while it holds ---- */
+const ART_MOTE_N = 240;
+const artMoteGeo = new THREE.BufferGeometry();
+artMoteGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ART_MOTE_N * 3), 3));
+artMoteGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(ART_MOTE_N * 3), 3));
+const artMotes = new THREE.Points(artMoteGeo, new THREE.PointsMaterial({
+  size: 0.07, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, toneMapped: false, map: (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 32; const x = c.getContext('2d');
+    const gr = x.createRadialGradient(16, 16, 0, 16, 16, 16); gr.addColorStop(0, 'rgba(255,245,200,1)'); gr.addColorStop(0.35, 'rgba(255,200,80,0.8)'); gr.addColorStop(1, 'rgba(255,170,40,0)');
+    x.fillStyle = gr; x.fillRect(0, 0, 32, 32); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  })(),
+}));
+artMotes.frustumCulled = false; artMotes.raycast = () => {};
+scene.add(artMotes);
+const artMoteS = Array.from({ length: ART_MOTE_N }, () => ({ p: new THREE.Vector3(), v: new THREE.Vector3(), ttl: 0, life: 1, hot: 1 }));
+let artMoteI = 0;
+const _artV = new THREE.Vector3(), _artV2 = new THREE.Vector3();
+function artBurst(c, h, n, shatter = false) {
+  for (let i = 0; i < n; i++) {
+    const m = artMoteS[artMoteI]; artMoteI = (artMoteI + 1) % ART_MOTE_N;
+    const a = Math.random() * Math.PI * 2, r = (0.25 + Math.random() * 0.45) * Math.max(0.6, h * 0.35);
+    m.p.set(c.x + Math.cos(a) * r * 0.4, c.y + (Math.random() - 0.5) * h * 0.8, c.z + Math.sin(a) * r * 0.4);
+    const sp = shatter ? 3.5 + Math.random() * 4 : 0.8 + Math.random() * 1.8;
+    m.v.set(Math.cos(a) * sp, (Math.random() * 1.6 - 0.3) * sp * 0.6, Math.sin(a) * sp);
+    m.life = m.ttl = (shatter ? 0.5 : 0.7) + Math.random() * 0.7; m.hot = 0.7 + Math.random() * 0.6;
+  }
+}
+function updateArtMotes(dt) {
+  const pos = artMoteGeo.attributes.position.array, col = artMoteGeo.attributes.color.array;
+  // the frozen ones shed a slow drift of gold while they are held
+  for (const u of artFrozen) {
+    if (Math.random() < dt * 40) {
+      const m = artMoteS[artMoteI]; artMoteI = (artMoteI + 1) % ART_MOTE_N;
+      const a = Math.random() * Math.PI * 2, r = 0.3 + Math.random() * 0.5;
+      m.p.set(u.g.position.x + Math.cos(a) * r, u.g.position.y + Math.random() * u.kind.h, u.g.position.z + Math.sin(a) * r);
+      m.v.set(-Math.sin(a) * 0.35, 0.25 + Math.random() * 0.35, Math.cos(a) * 0.35);
+      m.life = m.ttl = 1.1 + Math.random() * 0.9; m.hot = 0.6;
+    }
+  }
+  for (let i = 0; i < ART_MOTE_N; i++) {
+    const m = artMoteS[i];
+    if (m.ttl <= 0) { col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = 0; continue; }
+    m.ttl -= dt;
+    m.v.multiplyScalar(Math.exp(-dt * 2.4)); m.v.y += dt * 0.25;
+    m.p.addScaledVector(m.v, dt);
+    const k = Math.max(0, m.ttl / m.life) * m.hot;
+    pos[i * 3] = m.p.x; pos[i * 3 + 1] = m.p.y; pos[i * 3 + 2] = m.p.z;
+    col[i * 3] = k; col[i * 3 + 1] = k * 0.8; col[i * 3 + 2] = k * 0.36;
+  }
+  artMoteGeo.attributes.position.needsUpdate = true; artMoteGeo.attributes.color.needsUpdate = true;
+}
+// a gold light on whatever is held, in the pool with every other lamp
+const artLamp = new THREE.PointLight(ART_GOLD, 0, 7, 2);
+artLamp.userData.lpAlways = 24;
+scene.add(artLamp);
+
+/* ---- the HUD: three pips and the cooldown, by the health bar ---- */
+const artHudEl = document.createElement('div');
+artHudEl.id = 'artifact';
+artHudEl.innerHTML = '<b></b><i></i><i></i><i></i><span><u></u></span>';
+document.body.appendChild(artHudEl);
+{
+  const st = document.createElement('style');
+  st.textContent = `#artifact{position:fixed;left:26px;bottom:40px;display:flex;align-items:center;gap:6px;z-index:5;pointer-events:none;opacity:0;transition:opacity .4s ease}
+#artifact.on{opacity:1}
+#artifact b{width:11px;height:11px;border:1px solid rgba(255,214,110,.9);border-radius:50%;box-sizing:border-box;position:relative}
+#artifact b::after{content:'';position:absolute;left:3px;top:-3px;width:3px;height:3px;border-radius:50%;background:#bfe6ff}
+#artifact i{width:7px;height:7px;transform:rotate(45deg);border:1px solid rgba(255,214,110,.75);box-sizing:border-box;transition:background .15s,box-shadow .15s}
+#artifact i.f{background:#ffd24a;box-shadow:0 0 6px rgba(255,200,70,.9)}
+#artifact span{width:46px;height:2px;background:rgba(255,255,255,.12);position:relative;overflow:hidden}
+#artifact u{position:absolute;inset:0;background:rgba(255,210,90,.85);transform-origin:left;transform:scaleX(1)}
+#artifact.cd i{opacity:.35}
+#artifact.pulse b{box-shadow:0 0 10px rgba(255,210,90,1)}
+#hotbar .slot.art::after,#inv-grid .islot.art::after{content:'';position:absolute;right:4px;top:4px;width:6px;height:6px;transform:rotate(45deg);background:#ffd24a;box-shadow:0 0 5px rgba(255,200,70,.8)}
+#inv-detail .artline{margin:6px 0 2px;font-size:.72rem;letter-spacing:.06em;color:#ffd97a}`;
+  document.head.appendChild(st);
+}
+const artPips = artHudEl.querySelectorAll('i'), artCdEl = artHudEl.querySelector('u');
+let artPulseT = 0;
+function artHudPulse() { artPulseT = 0.25; }
+function updateArtHud(dt) {
+  const W = artWeapon();
+  artHudEl.classList.toggle('on', !!W && introDone);
+  if (!W) return;
+  const n = art.cd > 0 ? 0 : art.count;
+  for (let i = 0; i < artPips.length; i++) artPips[i].classList.toggle('f', i < n);
+  artHudEl.classList.toggle('cd', art.cd > 0);
+  artCdEl.style.transform = `scaleX(${(1 - art.cd / ART_CD).toFixed(3)})`;
+  artPulseT = Math.max(0, artPulseT - dt);
+  artHudEl.classList.toggle('pulse', artPulseT > 0);
+}
+
+/* ---- where it is found: the belly, once they are all dead ---- */
+function artBellySpot(out) {
+  const cx = whCx(WH_ARENA_S) + 0.3;
+  return out.set(WHALE_X + cx, WHALE_Y + whFloor(cx, WH_ARENA_S), WHALE_Z - WH_ARENA_S);
+}
+function artSpawnWorld(rise) {
+  if (art.world) return;
+  const w = new THREE.Group();
+  const m = whaleArtModel.clone(true);
+  m.traverse((o) => { if (o.isMesh) o.material = o.material.clone(); });
+  m.scale.setScalar(4.2);
+  w.add(m);
+  artBellySpot(w.position);
+  w.userData.floor = w.position.y;
+  w.userData.m = m;
+  const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 8), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  proxy.name = 'hitProxy'; proxy.visible = false; proxy.position.y = 0;
+  w.add(proxy);
+  // a column of gold light it stands in
+  const shaftMat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+    uniforms: { uT: ART_TIME, uK: { value: 0 } },
+    vertexShader: 'varying vec2 vU; void main(){ vU = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    fragmentShader: `uniform float uT; uniform float uK; varying vec2 vU;
+      void main(){ float y = vU.y; float e = sin(vU.x * 3.14159); e = pow(e, 3.0);
+        float f = (1.0 - y) * smoothstep(0.0, 0.08, y) * (0.75 + 0.25 * sin(uT * 2.0 + vU.x * 12.0 + y * 8.0));
+        gl_FragColor = vec4(vec3(1.0, 0.78, 0.36) * e * f * 0.55 * uK, 1.0); }`,
+  });
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.9, 6, 24, 1, true), shaftMat);
+  shaft.position.y = 3; shaft.raycast = () => {};
+  w.add(shaft);
+  w.userData.shaft = shaftMat;
+  const lamp = new THREE.PointLight(ART_GOLD, 0, 11, 2);
+  lamp.userData.lpAlways = 40; lamp.position.y = 1.2;
+  w.add(lamp); w.userData.lamp = lamp;
+  scene.add(w);
+  art.world = w; art.rise = rise ? 0 : 1;
+  addItemShine(w, { size: 0.9, height: 1.25, strength: 1.4, lift: 0, through: true });
+  addInteractable(w, 'Take the Artifact of the Whale', 'inventory', {
+    keepSize: true, mid: true,
+    when: () => art.rise > 0.7,
+    onActivate: () => {
+      artState = 2;
+      scene.remove(w); removeInteractable(w); hovered = null; art.world = null;
+      addToInventory(whaleArtItem);
+      artWarm();
+      sfxArtAttach();
+      artBanner('Artifact of the Whale');
+    },
+  });
+  if (rise) sfxArtRise();
+}
+function updateArtWorld(dt) {
+  const w = art.world; if (!w) return;
+  art.rise = Math.min(1, art.rise + dt / 2.6);
+  const e = art.rise * art.rise * (3 - 2 * art.rise);
+  const t = ART_TIME.value;
+  w.userData.m.position.y = -0.6 + e * 1.8 + Math.sin(t * 1.3) * 0.06;
+  w.userData.m.rotation.y = t * 0.8;
+  w.children.forEach((c) => { if (c.name === 'hitProxy') c.position.y = w.userData.m.position.y; });
+  w.userData.shaft.uniforms.uK.value = e;
+  w.userData.lamp.intensity = 9 * e * (0.9 + 0.1 * Math.sin(t * 2.3));
+  w.visible = inWhale;
+}
+
+/* ---- per frame ---- */
+function artTick(dt) {
+  ART_TIME.value += dt;
+  renderer.getDrawingBufferSize(ART_RES.value);
+  if (art.cd > 0) { art.cd = Math.max(0, art.cd - dt); if (art.cd === 0 && artWeapon()) sfxArtReady(); }
+  if (art.count > 0 && art.count < ART_HITS && performance.now() / 1000 - art.lastHit > ART_CHAIN_T) { art.count = 0; artHudPulse(); }
+  // the frozen, and their shells coming in and going out
+  for (let i = artFrozen.length - 1; i >= 0; i--) {
+    const u = artFrozen[i];
+    if (!u.st.alive || u.st.struck) artRelease(u, true);
+    else if (!u.artShells || !u.artShells.shells.length) artOutline(u, true);   // its model had not landed when it was held
+  }
+  let lampAt = null;
+  for (const u of mutants) {
+    const S = u.artShells; if (!S) continue;
+    S.t += dt;
+    let k;
+    if (S.out >= 0) { S.out += dt; k = Math.max(0, 1 - S.out / 0.3); if (S.out > 0.3) { artDropShells(u); continue; } }
+    else {
+      k = Math.min(1, S.t / 0.12) * (1 + 0.7 * Math.exp(-S.t * 6));                // a flash as it takes, then the hold
+      const left = u.st.immob || 0;
+      if (left < 0.55) k *= 0.55 + 0.45 * (Math.sin(ART_TIME.value * 38) > 0 ? 1 : 0.3);   // it flickers as it gives
+      lampAt = u;
+    }
+    for (const key in S.mats) S.mats[key].userData.artU.uK.value = k;
+  }
+  if (lampAt) {
+    artLamp.position.set(lampAt.g.position.x, lampAt.g.position.y + lampAt.kind.h * 0.6, lampAt.g.position.z);
+    artLamp.intensity = 7;
+  } else artLamp.intensity = Math.max(0, artLamp.intensity - dt * 30);
+  updateArtMotes(dt);
+  // the belly gives it up once the fight is over
+  if (artState === 0 && inWhale && !whaleBusy && typeof wbBellyClear === 'function' && wbBellyClear()) {
+    art.clearT = (art.clearT || 0) + dt;
+    if (art.clearT > 1.6) { artState = 1; artSpawnWorld(true); }
+  }
+  if (artState === 1 && !art.world && inWhale) artSpawnWorld(false);
+  updateArtWorld(dt);
+  // a restore: what it was set in, and a save from before there was an artifact
+  /* The pack is put back on the first frame of a restore, so the weapon is
+   * there at once; the artifact rides it and is never in the pack's names, so
+   * nothing the replay does afterwards can take it off again. */
+  const aw = art.attachPending && packByName(art.attachPending);
+  if (art.attachPending && ((aw && inventory.includes(aw)) || !restore)) {
+    const w = aw; art.attachPending = null;
+    if (w && inventory.includes(w)) { if (inventory.includes(whaleArtItem)) inventory.splice(inventory.indexOf(whaleArtItem), 1); w.artifact = whaleArtItem; whaleArtItem.on = w; renderHotbar(); renderPack(); }
+    else if (!inventory.includes(whaleArtItem)) addToInventory(whaleArtItem);
+  }
+  if (!restore && art.grantPending) { art.grantPending = false; if (!inventory.includes(whaleArtItem) && !whaleArtItem.on) addToInventory(whaleArtItem); }
+  updateArtHud(dt);
+}
+function artAttachedTo() {
+  for (const it of inventory) if (it.artifact === whaleArtItem) return it.name;
+  return null;
+}
+/* Restore: 0 not yet given, 1 lying in the belly, 2 yours. */
+function artRestore(f) {
+  artState = f.whaleArt != null ? f.whaleArt : 0;
+  if (artState === 1 && f.whaleGone) artState = 2;
+  if (f.whaleArt == null && f.whaleGone) { artState = 2; art.grantPending = true; }
+  art.attachPending = f.artOn || null;
+}
+
+/* ---- sounds ---- */
+function artOut(x, z, gain) {
+  const ctx = audioCtx;
+  const g = ctx.createGain(); g.gain.value = gain;
+  let dst = sfxOut();
+  if (x != null && ctx.createStereoPanner) { const sp = ctx.createStereoPanner(); sp.pan.value = THREE.MathUtils.clamp(panTo(x, z) * 0.6, -1, 1); sp.connect(dst); dst = sp; }
+  g.connect(dst);
+  return g;
+}
+function artBell(out, t, f, dur, level) {
+  const ctx = audioCtx;
+  for (const [r, a] of [[1, 1], [2.76, 0.5], [5.4, 0.28], [8.93, 0.14], [1.002, 0.6]]) {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f * r;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(level * a, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur / Math.sqrt(r));
+    o.connect(g).connect(out); o.start(t); o.stop(t + dur + 0.05);
+  }
+}
+function artSparkle(out, t, n, span, lo = 5000, hi = 9000, level = 0.25) {
+  const ctx = audioCtx;
+  for (let i = 0; i < n; i++) {
+    const tt = t + Math.random() * span;
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = lo + Math.random() * (hi - lo);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, tt); g.gain.exponentialRampToValueAtTime(level * (0.4 + Math.random() * 0.6), tt + 0.003);
+    g.gain.exponentialRampToValueAtTime(0.0001, tt + 0.08 + Math.random() * 0.12);
+    o.connect(g).connect(out); o.start(tt); o.stop(tt + 0.25);
+  }
+}
+function sfxArtImmob(x, z) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = artOut(x, z, 0.8);
+  // a low thump as it takes, the bell struck, and glass settling round it
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(95, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.35);
+  const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.7, t + 0.01); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+  o.connect(og).connect(out); o.start(t); o.stop(t + 0.55);
+  artBell(out, t, 660, 2.2, 0.32);
+  artBell(out, t + 0.03, 990, 1.4, 0.16);
+  const n = noiseBurst(0.5, (k) => Math.pow(1 - k, 2.5));
+  const bp = ctx.createBiquadFilter(); bp.type = 'highpass'; bp.frequency.value = 4000;
+  const ng = ctx.createGain(); ng.gain.value = 0.18;
+  n.connect(bp).connect(ng).connect(out); n.start(t); n.stop(t + 0.5);
+  artSparkle(out, t + 0.05, 14, 0.9);
+}
+function sfxArtCrack(x, z) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = artOut(x, z, 0.5);
+  const n = noiseBurst(0.06, (k) => Math.pow(1 - k, 4));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 3200; bp.Q.value = 1.6;
+  n.connect(bp).connect(out); n.start(t); n.stop(t + 0.06);
+  artBell(out, t, 1180 + Math.random() * 200, 0.5, 0.12);
+}
+function sfxArtShatter(x, z) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = artOut(x, z, 0.85);
+  const n = noiseBurst(0.35, (k) => Math.pow(1 - k, 2.2) * (0.5 + Math.random() * 0.5));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2600; bp.Q.value = 0.7;
+  n.connect(bp).connect(out); n.start(t); n.stop(t + 0.35);
+  for (let i = 0; i < 6; i++) artBell(out, t + i * 0.025 + Math.random() * 0.02, 900 + Math.random() * 1700, 0.7, 0.09);
+  artSparkle(out, t, 20, 0.6, 4000, 10000, 0.22);
+}
+function sfxArtFade(x, z) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = artOut(x, z, 0.4);
+  artSparkle(out, t, 10, 0.5, 3000, 7000, 0.2);
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(880, t); o.frequency.exponentialRampToValueAtTime(330, t + 0.5);
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.12, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
+  o.connect(g).connect(out); o.start(t); o.stop(t + 0.6);
+}
+function sfxArtTick(n) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime + 0.04, out = artOut(null, null, 0.22);
+  artBell(out, t, n === 1 ? 740 : 988, 0.45, 0.2);
+}
+function sfxArtReady() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = artOut(null, null, 0.2);
+  artBell(out, t, 1320, 0.9, 0.18); artBell(out, t + 0.09, 1760, 0.8, 0.12);
+}
+function sfxArtAttach(off) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = artOut(null, null, 0.4);
+  const n = noiseBurst(0.03, (k) => Math.pow(1 - k, 5));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2400; bp.Q.value = 3;
+  n.connect(bp).connect(out); n.start(t); n.stop(t + 0.03);
+  artBell(out, t + 0.05, off ? 660 : 880, 1.3, 0.22);
+  if (!off) artBell(out, t + 0.16, 1320, 1.1, 0.14);
+}
+function sfxArtRise() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = artOut(null, null, 0.55);
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(55, t); o.frequency.linearRampToValueAtTime(82, t + 2.6);
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5, t + 1.6); g.gain.exponentialRampToValueAtTime(0.0001, t + 3.4);
+  o.connect(g).connect(out); o.start(t); o.stop(t + 3.5);
+  artBell(out, t + 2.4, 523, 3.0, 0.3); artBell(out, t + 2.45, 784, 2.6, 0.18);
+  artSparkle(out, t + 0.6, 26, 2.4, 3000, 8000, 0.14);
+}
+
+// the harness's handles on the artifact
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { whaleArtItem, art, artFrozen, attachArtifact, detachArtifact, artImmobilize, artRelease, artSpawnWorld, artCount, artState: () => artState, setArtState: (v) => { artState = v; } }));
 
 animate();
 
