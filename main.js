@@ -29718,7 +29718,15 @@ function blowLands(u) {
    * beast bites with its head and slams with its forepaws, the warden has a
    * head, two forelegs and a tail. `mutLimbs` is whatever the kind wrote
    * down, and a blow lands if ANY of them passes through you. */
-  for (const L of mutLimbs(u)) {
+  /* AND ONLY WITH WHAT IS SWINGING. This loop swept EVERY chain the creature
+   * owns on every blow — both arms and both legs — so a cut with the sword
+   * arm landed because his other hand or his knee came within reach of you
+   * ("he hits me when he isn't close enough"). A swing says which chains it
+   * strikes with (`A.limbs`); only those are asked. */
+  const _A0 = u.atk && u.atk[u.st.swing];
+  const _all = mutLimbs(u);
+  const _chains = _A0 && _A0.limbs && _A0.limbs.length ? _A0.limbs.map((i) => _all[i]).filter(Boolean) : _all;
+  for (const L of _chains) {
     const limb = [L.arm, L.fore, L.hand, L.tip];
     let n = 0;
     for (const bn of limb) { if (bn) bn.getWorldPosition(_dbPts[n++]); }
@@ -52982,7 +52990,7 @@ MUT_KINDS.samurai = {
    * sharing one token and wrong for a man fighting you alone, who has nobody
    * to take turns with and spent two fifths of every opening walking sideways.
    * He circles less, chains further, and is quicker on his feet than you are. */
-  speedK: 1.66, windK: 0.90, reachK: 1.36, aggr: 5.20, press: 0.99,
+  speedK: 1.66, windK: 0.90, reachK: 1.14, aggr: 5.20, press: 0.99,
   recoilK: 0.44,
   /* AND HE DOES NOT SKATE. THE RATE IS THE STRIDE OVER THE SPEED - the
    * knight's own number, and the samurai had none, because a retargeted clip
@@ -53141,7 +53149,7 @@ MUT_KINDS.samurai = {
    * than the hand-authored ones did: measured before raising this, the
    * overhead went by 1.41 m and the rising cut 1.15. It is still clamped, so a
    * swing thrown from too far out still misses and backing away still works. */
-  aimK: 2.20, yawK: 2.60,
+  aimK: 1.40, yawK: 1.60,
   /* AND THE BLOW IS AIMED WHERE YOU CAN SEE IT. The correction aims at your
    * chest, 0.45 m under your eye — and from your eye a blade at chest height
    * a stride away is under the bottom of the frame, so every cut that landed
@@ -53153,6 +53161,7 @@ MUT_KINDS.samurai = {
    * the shoulder guard, and at that much turn the skin between them — the
    * neck, the collar — stretched on the wide cuts. */
   aimDrop: 0.18,
+  forestFK: SAM_FOREST,              // his root bones ride his chest and hips, whatever clip is playing (`installLife`)
   grip: true,
   shoulderFollow: { map: { 'DEF-upper_armR': 'DEF-shoulderR', 'DEF-upper_armL': 'DEF-shoulderL' }, k: 0.40 },
   /* AND A BLOW HAS TO ACTUALLY LAND. `blowLands` sweeps the whole limb against
@@ -53169,7 +53178,14 @@ MUT_KINDS.samurai = {
    * finished 0.40 and 0.44 m from the chest — which is the same 0.30-0.45 the
    * comment on `LAND_SLOP` already records for an aimed creature. At 0.55
    * every genuine contact still counts and half a metre of charity is gone. */
-  landSlop: 0.68,                     // scaled with his arms
+  /* AND HE HAS TO BE THERE (the owner's word: he hits when he isn't close
+   * enough). The swept radius round your body was the pack's 0.70 and the
+   * fallback gave another 0.68 of benefit of the doubt, and the arm
+   * correction bent a blade thrown from three metres out across the gap. The
+   * steel has to pass within a forearm of you now, he starts a swing from
+   * closer, the lunge closes WITH the blow (`lungeLead`), and the correction
+   * turns the arm less, so a cut thrown from too far out goes past you. */
+  landSlop: 0.42, limbR: 0.42, lungeLead: 0.30,
   anim: { run: 'run', idle: 'idle', roar: 'taunt', die: 'die', walk: 'walk', back: 'walk',
           rate: 1.0, lean: 0.06, strafeK: 1.15 },
   voice: { f: 1.0, growl: 0.5, rasp: 0.7, throat: 'mask', human: true },
@@ -70608,6 +70624,27 @@ function installLife(u, m, J) {
     });
     m.updateMatrixWorld(true);
   }
+  /* A FOREST RIG'S ROOTS RIDE WHAT THEY HANG OFF (`kind.forestFK`). On the
+   * samurai the shoulders, the upper arms, the thighs and the pelvis are ROOT
+   * bones beside the spine, not children of it — and a clip written on the rig
+   * (his stagger, his taunt, the throw, the side-step) turns the chest without
+   * ever moving them, so the shoulders stayed where the stance left them while
+   * the chest bent away: measured 1.35-1.52x their own distance from the chest,
+   * which is the skin of the collar and the neck pulled out into "a long neck".
+   * Each root is carried at its own offset from the bone it belongs to, taken
+   * off the stance, after the clips and the life layer — so it holds for every
+   * clip, whoever wrote it. Positions only: its turn is the clip's own. */
+  const fk = [];
+  if (u.kind.forestFK) {
+    m.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4();
+    for (const [child, par] of Object.entries(u.kind.forestFK)) {
+      const c = m.getObjectByName(child), pb = m.getObjectByName(par);
+      if (!c || !pb || !c.parent) continue;
+      const off = c.getWorldPosition(new THREE.Vector3()).applyMatrix4(inv.copy(pb.matrixWorld).invert());
+      fk.push({ c, pb, off });
+    }
+  }
   const upd = u.mixer.update.bind(u.mixer);
   u.mixer.rawUpdate = upd;                      // the clips alone, for anything that measures a pose
   u.mixer.update = (dt) => {
@@ -70615,6 +70652,16 @@ function installLife(u, m, J) {
     saved.length = 0;
     upd(dt);
     lifeApply(u, B, dt, saved);
+    if (fk.length) {                            // never gated on visibility: a culled body is still the body the fight hits with
+      for (const f of fk) {
+        saved.push({ b: f.c, q: f.c.quaternion.clone(), p: f.c.position.clone() });
+        f.pb.updateWorldMatrix(true, false);
+        const w = _lfV.copy(f.off).applyMatrix4(f.pb.matrixWorld);
+        f.c.parent.updateWorldMatrix(true, false);
+        f.c.position.copy(f.c.parent.worldToLocal(w));
+        f.c.updateMatrixWorld(true);
+      }
+    }
   };
 }
 const _lfQ = new THREE.Quaternion(), _lfP = new THREE.Quaternion(), _lfA = new THREE.Vector3(), _lfV = new THREE.Vector3();

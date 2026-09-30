@@ -18721,3 +18721,17 @@ could not bind and died; `$PORT` wins now. It logged every request to a pipe nob
 connections swallowed, daemon threads, `allow_reuse_address`. And a LOST WEBGL CONTEXT leaves a
 page running with nothing drawn: it is asked for back, and the game reloads into the last
 checkpoint when it returns (or after four seconds).
+
+**THE SAMURAI'S "LONG NECK" WAS HIS FOREST ROOTS STAYING BEHIND
+(`kind.forestFK`, in `installLife`).** His shoulders, upper arms, thighs and
+pelvis are ROOT bones beside the spine, so any clip written on the rig (the
+stagger, the taunt, the throw, the side-step) turned the chest and left the
+shoulders where the stance put them: measured 1.35-1.52x their own distance
+from the chest, which is the collar and neck skin pulled out. Each root is now
+carried at its stance offset from `SAM_FOREST`'s parent after the clips and
+the life layer, positions only; every clip measures 1.000. And his blows have
+to be THERE: `blowLands` sweeps only the chains the swing names (`A.limbs`) —
+it swept all four, so his other hand or his knee landed the cut — with
+`limbR` 0.42, `landSlop` 0.42, `lungeLead` 0.30, `reachK` 1.14, `aimK` 1.40,
+`yawK` 1.60. Measured: hits land at 0.94-1.59 m with the steel 0.11-0.64 m
+from you.
