@@ -190,14 +190,20 @@
      the screen, and everything that matters in a fight — the block, the
      sprint, the step out of the way — comes out of it. Eight pixels, a
      visible track, a hairline round it, and it never falls below half. */
+  /* THE HUD SPEAKS THE GAME'S LANGUAGE NOW: cold moonlight on dark glass,
+     the white Georgia capitals the banners use, and blades rather than
+     hairlines. It was monospace scratches from the first build. The bar you
+     spend is a moonlit blade in a dark track, cut on the slant at both ends. */
   #stamina {
-    width: 240px;
-    height: 8px;
-    background: rgba(255, 255, 255, 0.14);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.30);
-    border-radius: 4px;
+    width: 300px;
+    height: 11px;
+    background: linear-gradient(180deg, rgba(4, 6, 11, 0.86), rgba(16, 21, 31, 0.86));
+    box-shadow: inset 0 0 0 1px rgba(176, 194, 224, 0.26), inset 0 1px 3px rgba(0, 0, 0, 0.9);
+    clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+    padding: 2px 5px;
+    box-sizing: border-box;
     overflow: hidden;
-    opacity: 0.55;
+    opacity: 0.6;
     transition: opacity 0.35s ease;
     flex: none;
   }
@@ -205,19 +211,25 @@
   #stamina.hit { animation: guardTick 0.42s ease-out; }
   #stamina.hit #stamina-fill { animation: guardFill 0.42s ease-out; }
   @keyframes guardTick {
-    0%   { box-shadow: 0 0 0 1px rgba(255,255,255,0.95), 0 0 14px rgba(255,190,150,0.8); transform: scaleY(2.2); }
-    100% { box-shadow: none; transform: none; }
+    0%   { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.95); transform: scaleY(2.0); }
+    100% { transform: none; }
   }
   @keyframes guardFill { 0% { background: #fff; } 100% { } }
   #stamina-fill {
     width: 100%;
     height: 100%;
-    background: rgba(210, 224, 245, 0.85);
+    background: linear-gradient(180deg, #f4f7ff 0%, #c4d1ea 45%, #7f91b6 100%);
+    box-shadow: 0 0 6px rgba(190, 210, 245, 0.55);
     transform-origin: left center;
     transition: transform 0.08s linear, background 0.25s ease;
   }
-  #stamina-fill.buff { background: rgba(120, 214, 128, 0.92); }
-  #stamina-fill.low { background: rgba(224, 138, 96, 0.9); }
+  /* the spliff: a strong unmistakable green, the fill AND the track, glowing */
+  #stamina-fill.buff { background: linear-gradient(180deg, #d4ffc8 0%, #4ef04a 40%, #12a02a 100%); box-shadow: 0 0 10px rgba(70, 255, 90, 0.95), 0 0 3px rgba(190, 255, 170, 0.9); }
+  #stamina.buff { opacity: 1; box-shadow: inset 0 0 0 1px rgba(110, 255, 120, 0.85), inset 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 12px rgba(60, 230, 80, 0.55); }
+  #stamina-fill.low { background: linear-gradient(180deg, #ffd8b8 0%, #e08a5c 45%, #8a3c22 100%); }
+  /* too little left to block or to swing: red, and the track with it */
+  #stamina-fill.out { background: linear-gradient(180deg, #ffb0a0 0%, #e0402e 45%, #7a1210 100%); box-shadow: 0 0 8px rgba(230, 60, 40, 0.75); }
+  #stamina.out { opacity: 1; box-shadow: inset 0 0 0 1px rgba(240, 90, 70, 0.75), inset 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 10px rgba(200, 40, 30, 0.35); }
   /* 8 toggles the top walk speed, and a toggle you cannot see the state of is
      a toggle nobody trusts. The HUD's own language: mono, letter-spaced,
      hairline box, no colour. */
@@ -238,9 +250,6 @@
      for the opposite reason. Empty, it goes warm: the one time the number
      has to reach you before you have read it. */
   #ammo {
-    position: absolute;
-    left: 100%;
-    margin-left: 0.9rem;
     white-space: nowrap;
     font: 600 17px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
     letter-spacing: 0.10em;
@@ -254,29 +263,61 @@
   #ammo.empty { color: rgba(228, 132, 96, 0.95); }
   #ammo i { font-style: normal; font-size: 12px; opacity: 0.55; letter-spacing: 0.06em; }
 
-  /* THE HEALTH BAR: three hairline segments in the bottom left, dim red
-     while whole and brighter the more of you is gone; a flash on the hit. */
+  /* THE HEALTH BAR: blades of blood in a dark track, a drop at the head of
+     it, and a GHOST — the pale part of a segment you have just lost lingers a
+     beat and drains after the blood does, so a hit is a thing you watch
+     happen to the bar rather than a number that changed. */
+  #vitals {
+    position: fixed; left: 22px; bottom: 20px;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 5px;
+    z-index: 5; pointer-events: none;
+  }
+  #vitals .vrow { display: flex; align-items: center; gap: 10px; padding-left: 10px; }
+  /* THE BAR YOU SPEND IS BACK ON THE BOTTOM'S CENTRE (the owner's word), on
+     its own line under the prompt, low enough that the health block's row
+     never meets it. */
+  #stamwrap {
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px;
+    z-index: 5; pointer-events: none;
+  }
+  #stamwrap #fastwalk { position: absolute; left: calc(100% + 10px); }
   #health {
-    position: fixed; left: 26px; bottom: 26px;
-    display: flex; gap: 5px;
+    position: relative;
+    display: flex; align-items: center; gap: 4px;
+    padding: 7px 14px 7px 10px;
+    background: linear-gradient(90deg, rgba(4, 6, 11, 0.70) 0%, rgba(4, 6, 11, 0.42) 70%, rgba(4, 6, 11, 0) 100%);
     z-index: 5; pointer-events: none;
     opacity: 0; transition: opacity 0.5s ease;
   }
   #health i {
-    display: block; width: 40px; height: 3px;
-    background: rgba(255, 255, 255, 0.10); border-radius: 1px;
+    display: block; width: 60px; height: 12px;
+    background: linear-gradient(180deg, rgba(4, 6, 11, 0.9), rgba(18, 22, 32, 0.9));
+    box-shadow: inset 0 0 0 1px rgba(176, 194, 224, 0.22), inset 0 1px 3px rgba(0, 0, 0, 0.9);
+    clip-path: polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%);
     position: relative; overflow: hidden;
   }
-  #health i::after {
-    content: ''; position: absolute; inset: 0;
-    background: rgba(198, 34, 30, 0.78);
+  #health i::before, #health i::after {
+    content: ''; position: absolute; inset: 1px 3px;
     transform-origin: left center; transform: scaleX(var(--f, 1));
-    transition: transform 0.28s ease, background 0.25s ease;
   }
-  #health i.off::after { transform: scaleX(0); }
-  #health.hurt i::after { background: rgba(255, 78, 66, 1); }
+  /* the ghost: the same fraction, but it waits and then drains */
+  #health i::before {
+    background: linear-gradient(180deg, #fff1e6, #e8b9a6);
+    opacity: 0.75;
+    transition: transform 0.55s cubic-bezier(.4,0,.2,1) 0.38s;
+  }
+  #health i::after {
+    background: linear-gradient(180deg, #f06a58 0%, #b3231c 42%, #5c0c0a 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 200, 180, 0.45);
+    transition: transform 0.12s ease-out, background 0.25s ease;
+  }
+  #health i.off::after, #health i.off::before { transform: scaleX(0); }
+  #health.hurt i::after { background: linear-gradient(180deg, #ffd0c0 0%, #ff5a46 45%, #a01812 100%); }
+  #health.hurt { animation: hpShake 0.32s ease-out; }
+  @keyframes hpShake { 0% { transform: translateX(-3px); } 30% { transform: translateX(3px); } 60% { transform: translateX(-1px); } 100% { transform: none; } }
   /* a ring filling the bar: the fill glows and moves smoothly rather than in steps */
-  #health.charging i::after { background: rgba(255, 120, 96, 0.95); box-shadow: 0 0 6px rgba(255, 110, 90, 0.9); transition: transform 0.12s linear, background 0.25s ease; }
+  #health.charging i::after { background: linear-gradient(180deg, #ffd9c8 0%, #ff7a62 45%, #b2271e 100%); box-shadow: 0 0 6px rgba(255, 110, 90, 0.9); transition: transform 0.12s linear, background 0.25s ease; }
 
   /* THE AUTOSAVE BADGE. Top right, in the HUD's language: a hairline ring
      that fills once as it writes, the word beside it, and it is gone. It
@@ -669,11 +710,25 @@
     transition: opacity 0.3s ease;
   }
   #hotbar.hidden { opacity: 0; pointer-events: none; }
+  /* A SLOT IS DARK GLASS WITH ITS CORNERS BRACKETED, in the moonlight the
+     whole game is lit by; the held one stands out to the right with a lit
+     edge and a mark beside it. */
   #hotbar .slot {
+    --c: rgba(214, 224, 240, 0.42);
     width: 52px;
     height: 52px;
-    border: 1px solid rgba(255, 255, 255, 0.22);
-    background: rgba(0, 0, 0, 0.55);
+    box-sizing: border-box;
+    border: 1px solid rgba(170, 188, 218, 0.14);
+    background:
+      linear-gradient(var(--c), var(--c)) left 0 top 0 / 9px 1px no-repeat,
+      linear-gradient(var(--c), var(--c)) left 0 top 0 / 1px 9px no-repeat,
+      linear-gradient(var(--c), var(--c)) right 0 top 0 / 9px 1px no-repeat,
+      linear-gradient(var(--c), var(--c)) right 0 top 0 / 1px 9px no-repeat,
+      linear-gradient(var(--c), var(--c)) left 0 bottom 0 / 9px 1px no-repeat,
+      linear-gradient(var(--c), var(--c)) left 0 bottom 0 / 1px 9px no-repeat,
+      linear-gradient(var(--c), var(--c)) right 0 bottom 0 / 9px 1px no-repeat,
+      linear-gradient(var(--c), var(--c)) right 0 bottom 0 / 1px 9px no-repeat,
+      radial-gradient(circle at 50% 38%, rgba(30, 40, 60, 0.62), rgba(4, 6, 10, 0.88) 78%);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -681,34 +736,44 @@
     cursor: pointer;
     /* the strip is updated in place, so the selection can GLIDE: a rebuilt
        element starts at its final state and no transition ever runs */
-    transition: border-color 0.13s ease, background 0.13s ease, box-shadow 0.13s ease, transform 0.13s ease;
+    transition: border-color 0.13s ease, box-shadow 0.13s ease, transform 0.13s ease;
   }
-  #hotbar .slot:hover { border-color: rgba(255, 255, 255, 0.6); }
-  #hotbar .slot.equipped { border-color: #ffffff; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35); transform: translateY(-2px); }
-  #hotbar .slot img { width: 100%; height: 100%; object-fit: cover; image-rendering: auto; display: block; }
+  #hotbar .slot:hover { --c: rgba(240, 245, 255, 0.75); }
+  #hotbar .slot.equipped {
+    --c: #ffffff;
+    border-color: rgba(214, 224, 240, 0.34);
+    box-shadow: 0 0 14px rgba(140, 172, 232, 0.30), inset 0 0 16px rgba(140, 172, 232, 0.14);
+    transform: translateX(4px);
+  }
+  #hotbar .slot.equipped::before {
+    content: ''; position: absolute; left: -9px; top: 50%; width: 2px; height: 24px; margin-top: -12px;
+    background: linear-gradient(180deg, rgba(255,255,255,0), #ffffff 50%, rgba(255,255,255,0));
+    box-shadow: 0 0 8px rgba(190, 210, 255, 0.9);
+  }
+  #hotbar .slot img { width: calc(100% - 4px); height: calc(100% - 4px); object-fit: cover; image-rendering: auto; display: block; }
   #hotbar .slot .num {
     position: absolute;
-    top: 2px;
-    left: 4px;
-    font-size: 9px;
-    letter-spacing: 0.05em;
-    color: rgba(255, 255, 255, 0.55);
-    text-shadow: 0 1px 2px #000;
+    top: 3px;
+    left: 5px;
+    font: italic 11px/1 Georgia, "Times New Roman", serif;
+    color: rgba(220, 230, 246, 0.70);
+    text-shadow: 0 1px 3px #000, 0 0 6px #000;
     z-index: 1;
   }
+  #hotbar .slot.equipped .num { color: #ffffff; }
   #hotbar .slot .label {
     position: absolute;
-    left: 62px;
+    left: 64px;
     top: 50%;
     transform: translateY(-50%);
     white-space: nowrap;
-    font-size: 0.66rem;
-    letter-spacing: 0.14em;
+    font: 0.68rem/1 Georgia, "Times New Roman", serif;
+    letter-spacing: 0.20em;
     text-transform: uppercase;
     color: #ffffff;
-    background: rgba(0, 0, 0, 0.88);
-    border-left: 1px solid rgba(255, 255, 255, 0.5);
-    padding: 4px 9px;
+    background: linear-gradient(90deg, rgba(4, 6, 11, 0.94), rgba(4, 6, 11, 0.55));
+    border-left: 1px solid rgba(214, 224, 240, 0.6);
+    padding: 6px 14px 6px 10px;
     opacity: 0;
     transition: opacity 0.12s ease;
     pointer-events: none;
@@ -727,10 +792,10 @@
   }
   #rings.hidden { opacity: 0; pointer-events: none; }
   #rings .rlabel {
-    font-size: 0.56rem;
-    letter-spacing: 0.3em;
+    font: 0.58rem/1 Georgia, "Times New Roman", serif;
+    letter-spacing: 0.34em;
     text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.4);
+    color: rgba(214, 224, 240, 0.48);
     padding-left: 1px;
   }
   #rings .rslots { display: flex; gap: 6px; }
@@ -738,9 +803,10 @@
     position: relative;
     width: 36px;
     height: 36px;
-    border: 1px solid rgba(255, 255, 255, 0.22);
+    border: 1px solid rgba(176, 194, 224, 0.26);
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.55);
+    background: radial-gradient(circle at 50% 40%, rgba(30, 40, 60, 0.6), rgba(4, 6, 10, 0.9) 75%);
+    box-shadow: inset 0 0 0 3px rgba(0, 0, 0, 0.55), inset 0 0 0 4px rgba(176, 194, 224, 0.10);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -748,9 +814,9 @@
     cursor: default;
   }
   #rings .rslot img { width: 100%; height: 100%; object-fit: cover; image-rendering: auto; }
-  #rings .rslot.worn { cursor: pointer; border-color: rgba(255, 255, 255, 0.7); }
+  #rings .rslot.worn { cursor: pointer; border-color: rgba(230, 236, 248, 0.75); box-shadow: inset 0 0 0 3px rgba(0, 0, 0, 0.55), 0 0 10px rgba(150, 180, 235, 0.25); }
   #rings .rslot.worn:hover { border-color: #ffffff; }
-  #rings .rslot.empty { opacity: 0.28; }
+  #rings .rslot.empty { opacity: 0.30; }
   #rings .rslot .label {
     position: absolute;
     left: 46px;
@@ -803,10 +869,9 @@
      square monospace so it reads as a quantity and not as a label. */
   .slot .count, .islot .count, .rslot .count {
     position: absolute;
-    right: 3px;
+    right: 4px;
     bottom: 2px;
-    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-    font-size: 0.72rem;
+    font: bold 0.78rem/1 Georgia, "Times New Roman", serif;
     letter-spacing: 0.02em;
     color: #ffffff;
     text-shadow: 0 1px 4px #000, 0 0 8px #000;
@@ -894,8 +959,7 @@
   }
   #invpanel .head {
     display: flex;
-    justify-content: space-between;
-    align-items: baseline;
+    align-items: center;
     margin-bottom: 1.1rem;
     padding: 0 0.2rem;
   }
@@ -907,21 +971,30 @@
     color: #ffffff;
   }
   #invpanel .head .count {
+    margin-left: auto;
     font-size: 0.7rem;
     letter-spacing: 0.2em;
     color: rgba(255, 255, 255, 0.4);
   }
+  /* ONE SIZE, WHATEVER IS SELECTED. The pane's buttons come and go with
+     the item (an artifact has one per weapon, a weapon with one set in has
+     another), and the panel used to grow and shrink with them and be
+     re-centred every click — the header jumped and the way out landed on
+     the title. The body is a fixed height; the grid and the pane live in it. */
   #invpanel .body {
     display: grid;
     grid-template-columns: 1fr minmax(290px, 26%);
     gap: 2.2rem;
     align-items: stretch;
+    height: clamp(300px, 54vh, 640px);
   }
   #invpanel .grid {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
     gap: 12px;
     align-content: start;
+    min-height: 0;
+    overflow-y: auto;
   }
   #invpanel .islot {
     position: relative;
@@ -990,11 +1063,16 @@
     flex-direction: column;
     align-items: stretch;
     gap: 0.6rem;
-    min-height: 100%;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
   }
   #invpanel .detail.empty { justify-content: center; align-items: center; }
+  #invpanel .detail > * { flex: none; }      /* nothing in the pane is squeezed: it scrolls instead */
   #invpanel .detail .big {
-    width: 100%;
+    flex: none;
+    width: min(100%, 28vh);
+    align-self: center;
     aspect-ratio: 1 / 1;
     border: 1px solid rgba(255, 255, 255, 0.18);
     background: #000;
@@ -1030,6 +1108,7 @@
     text-shadow: 0 0 14px rgba(255, 255, 255, 0.22);
   }
   #invpanel .detail .act {
+    flex: none;
     font: inherit;
     font-size: 0.86rem;
     letter-spacing: 0.3em;
@@ -1095,6 +1174,9 @@
     padding: 0.55rem 1.1rem 0.55rem 1.44rem; cursor: pointer; border-radius: 0;
   }
   #pack-leave:hover, #shop-leave:hover { background: rgba(255, 255, 255, 0.12); border-color: #ffffff; }
+  /* the pack's way out sits in its own header row, beside the title, so the
+     two can never meet whatever the window */
+  #invpanel #pack-leave { position: static; flex: none; margin-right: 1.4rem; align-self: center; }
   #shoppanel .panel {
     width: min(94vw, 1180px);
     border-top: 1px solid rgba(255, 255, 255, 0.3);
@@ -1531,17 +1613,21 @@
        the same trap the middle prompt already carries a comment about. -->
   <div id="prompt"></div>
   <div id="fullmsg">Inventory Full</div>
-  <div id="hud">
+  <!-- THE VITALS ARE ONE BLOCK, bottom left: the blood above, the breath
+       under it, and what you are reading mid-fight beside the breath. The
+       stamina bar used to sit on the bottom's centre on its own, and at any
+       narrow window it ran straight into the health bar. Here it is always
+       in the same place and the two read as a pair. -->
+  <div id="vitals">
+    <div id="health"><i></i><i></i><i></i><i></i><i class="xtra" style="display:none"></i></div>
+    <div class="vrow">
+      <div id="ammo"></div>
+    </div>
+  </div>
+  <div id="stamwrap">
     <div id="stamina"><div id="stamina-fill"></div></div>
     <div id="fastwalk">FAST</div>
-    <!-- HOW MANY ARE LEFT. Positioned ABSOLUTELY off the strip rather than
-         given a place in it: #hud is a flex row centred as a whole, so
-         anything added to it re-centres the stamina bar — the one element
-         that has to be in the same place every time, and the reason the
-         prompt was moved out of this strip in the first place. -->
-    <div id="ammo"></div>
   </div>
-  <div id="health"><i></i><i></i><i></i><i></i><i class="xtra" style="display:none"></i></div>
   <div id="autosave">
     <svg width="18" height="18" viewBox="0 0 18 18"><circle class="track" cx="9" cy="9" r="7" /><circle class="arc" cx="9" cy="9" r="7" /></svg>
     <span>Checkpoint</span>
@@ -1561,9 +1647,8 @@
   </div>
 
   <div id="invpanel">
-    <button id="pack-leave" type="button">Leave</button>
     <div class="panel">
-      <div class="head"><h2>Pack</h2><span class="count">Tab / Esc &nbsp;close</span></div>
+      <div class="head"><button id="pack-leave" type="button">Leave</button><h2>Pack</h2><span class="count">Tab / Esc &nbsp;close</span></div>
       <div class="body">
         <div class="grid" id="inv-grid"></div>
         <div class="detail empty" id="inv-detail"></div>

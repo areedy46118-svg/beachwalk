@@ -638,6 +638,33 @@ The snorkeler laughing to himself out past the campsite is a "Man Laughing
 To Himself" sound effect the owner supplied, cut into five laughs
 (`assets/snork-laugh1..5.m4a`); treat it as not redistributable.
 
+This work is based on ["Castle XIII"](https://sketchfab.com/3d-models/castle-xiii-5cbb50a3275149f484efb59f071ac595)
+by [gogiart](https://sketchfab.com/agt14032013) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the second castle,
+through the first one's back door (`assets/castle13.glb`, every triangle with
+its walk grid, packed by `tools/undercroft_pack.py castle … --tex 1024 --scale 13`).
+Its braziers and torches are built in the game.
+It stands on the bluff behind the first castle, half again the size it was packed
+at; the passage through its middle wall and the ground under it are built in the game.
+
+This work is based on ["Throne Room"](https://sketchfab.com/3d-models/throne-room-247c37e6a9694ae891398911876f0c14)
+by [Uğur Yakışık](https://sketchfab.com/UgurYksk) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the hall through the
+second castle's far door (`assets/throne.glb`, packed by
+`tools/undercroft_pack.py tavern … --tex 1024 --scale 0.13 --sparse`, its
+specular extension stripped first). Its end wall, the door in it and the dark
+behind its two lattice doors are built in the game.
+The great window behind its throne is the owner's own stained-glass picture
+(`assets/throne-window.jpg`, set into a border band and a tympanum by
+`tools/throne_window.js` from `tools/throne_window_src.jpg`).
+
+The flail knight in Castle XIII's west court is the owner's "Crusader tank"
+(a flail and a heater shield, fourteen of its own animations), packed by
+`tools/crusader_pack.py` into `assets/crusader.glb`. **No licence came with the
+download — confirm it before a release.** On top of his own clips he plays
+Mixamo's "Pro Sword and Shield Pack" (Adobe Mixamo terms), retargeted by
+`tools/ntar_moves.py -- crusader` into `assets/crusader-moves.json`.
+
 This work is based on ["Castle XVII"](https://sketchfab.com/3d-models/castle-xvii-26d4689f97f0484cbd8277d495a87123)
 by [gogiart](https://sketchfab.com/agt14032013) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the castle across the
@@ -1140,25 +1167,11 @@ by [ChamberSu1996](https://sketchfab.com/chambersu1996),
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
 
 
-**Rocks and stones pack** — the stone on the headland round the lighthouse.
-
-["Rocks and stones pack"](https://sketchfab.com/3d-models/rocks-and-stones-pack)
-by [shtran](https://sketchfab.com/shtran),
-[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
-
-
-**Simple grass chunks** — the grass clumps on the headland.
+**Simple grass chunks** — the tufts growing in the pavilion's cracks.
 
 ["Simple grass chunks"](https://sketchfab.com/3d-models/simple-grass-chunks)
 by [3dhdscan](https://sketchfab.com/3dhdscan),
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
-
-
-**Realistic grass** — the dense grass along the lane to the door.
-
-["Realistic grass"](https://sketchfab.com/3d-models/realistic-grass)
-by [Pasha](https://sketchfab.com/Pasha.), under the
-[Sketchfab Standard licence](https://sketchfab.com/licenses).
 
 
 **Animated Crab rigged FREE** — the enemy crab.

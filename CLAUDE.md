@@ -8673,20 +8673,11 @@ not on a timer of its own — `hitstop` scales `dt`, so anything measured in
 `dt` would stretch to ten times its length. The freeze and the squash are
 meant to be the same beat.
 
-**The headland is dressed from three scan packs** — `assets/stones.glb`
-(shtran), `assets/grass-clumps.glb` (3dhdscan, four alpha-card clumps pulled
-out of a 78k-tri scene with `gltfpack.py --nodes`), `assets/grass-patch.glb`
-(Pasha, one 30k-tri blade patch, `--min-tris` to drop the demo quads). All of
-it is placed by `headlandAt()` and kept off the lane by `onPath()`, bedded
-into the ridge by a fraction of its own height PLUS half the drop across its
-footprint (`slopeAt`), because a rock set at the surface of a slope hangs its
-downhill edge in the air. Stone gets a fraction of the lift the beach
-formation has — at the formation's emissive the field glowed like lamps.
-Boulders (the four big ones) carry `rockColliders`. The dense patch is 30k
-triangles an instance: 12 of them is the budget. And `lhGround` is in
-`farProps` at 320 m — InstancedMesh is culled by its base geometry's bounds,
-so every scatter here runs `frustumCulled = false`, and without the far cull
-the whole headland draws from the spawn.
+**THE HEADLAND'S SCANNED ROCKS AND GRASS ARE OUT** (`stones.glb`,
+`grass-patch.glb`, and the headland's planting of `grass-clumps.glb`), on the
+owner's word, for the download: 3.9 MB. The ridge, the lane, its fence and
+its slabs are all built and stay. `grass-clumps.glb` stays for the
+pavilion's cracks. Do not put the headland dressing back.
 
 **The tower is bedded into the headland by a footing.** `lhOuterAt(0)` is
 4.62 and `headlandAt()` has already dropped about 1.2 m at that radius, so
@@ -18756,3 +18747,508 @@ every reaction (`artHitFrozen`, ×1.35; a heavy ×1.7 and shatters it). 3.2 s
 `renderHotbar` runs at module time, so anything it calls must be a function
 declaration, not a const arrow below it; and `window.__bw` is created AFTER
 this section, so its handles are assigned in a microtask.
+
+**THE PACK HAS SLOTS, AND A THING STAYS IN THE ONE YOU PUT IT IN.**
+`inventory` is still the LIST of what you carry (every count, save, grant
+and trim reads it); `packSlots` is WHERE each thing sits in the grid, and it
+may have holes. The old reorder spliced a dense array, so a thing dragged to
+the bottom row slid up to the first gap on the next render. The hotbar is the
+TOP ROW of the grid (`hotbarN()`: five, seven once the trader has widened
+it), shows only what is in it, and the wheel and the digits walk the filled
+slots alone — a thing on the bottom row is in the pack and out of the strip,
+which is how you keep the wheel short. The save carries `slots` (names by
+index) and a restore puts each thing back in its own. **A FULL PACK SWAPS**
+(`swapHeldFor`): E on a pickup with no room and something in your hand puts
+what you hold down where you are looking and takes the new thing into the
+same slot and your hand (`slotHint`); a stack is not swapped. The dojo's
+sword is taken OVER THE TOP (`addToInventory(item, true)`) so nothing is
+lost for it, and the grid grows a cell.
+
+**THE SAMURAI'S SWORD RIDES THE CLIP'S OWN OFFSET.** `pinSamuraiSword`
+captured hand^-1 x katana off the first calm LIVE frame — after `forestFK`
+had moved the hand half a metre from where the clip stamped the katana —
+and the sword rode beside him for the whole fight (measured (0.31, 0.47,
+-0.07) against the clip's (0.006, 0.116, 0.006)). The offset comes off a raw
+stamp of the idle (`mixer.rawUpdate`, every other action off, the state put
+back) and is then applied to the live fist. `tools/samstrip.js` captures it
+the same way.
+
+**THE KEY IS BITTEN.** Measured off the head scan: the mouth's seam is at
+y -0.05, z 0.076 and the lips bulge to 0.10-0.11, so a key centred at z 0.108
+stood on the lip surface and floated in front of the face. At (0.002, -0.052,
+0.091) its middle is behind the lips and the bow and bit stand out past the
+corners of the mouth; at 0.072 the ends came out through the cheeks.
+
+**THE FAREWELL ENDS ON THE SPLASH, AND THE SONG STARTS LATER TO FIT.** The
+cues keep the take's original clock; `WL_START` (39.0) is where in the FILE
+the song now begins and `wfMapS` maps the song's real position onto that
+clock (`WL_MAP`: the quiet at 38.5, swells at 50.0 / 57.5 / 68.0 / 82.5, the
+last climax 86.5-90, the fade from 91.5). After the breach the map runs 1:1,
+the slam lands on the climax and `wfFinish` fires 4.4 s after it, under the
+song's own fade; the surfacing, the spout and the sky are parked past the
+end. **AND THE ARTIFACT IS MADE OF THE HEAL'S LIGHT**: after the flash the
+motes stream to `C.artP` (a few strides in front of you, worked out in
+`wfPlaceOut`) and spiral into a ball; at `WL_ART` the artifact forms there,
+drops into the sand (a puff, `sfxSandDrop`) and lies with its shaft and
+glint, takeable once the take lets go. The belly no longer gives it up and
+the farewell no longer waits on it; `art.spot` / `artAt` on the save puts it
+back on the beach. `tools/wftest.js` runs the take on a fake clock.
+
+**A .44 ROUND IS BUILT (`makeCartridge`)**: a rimmed case with its extractor
+groove, a sunk primer and a copper semi-wadcutter. Six stand in a ring on a
+built loader (`makeSpeedloader`, the cylinder's own chamber radius) in place
+of the scan's loose rounds; the ejected brass is the spent case; the shop's
+icon is rendered from six of them like every other item's.
+
+**THE DRINKERS' GRIP WAS MEASURED OFF THE HAND.** In this rig's hand frame
++Y runs down the fingers, +X across the palm toward the thumb and the
+fingers curl toward +Z, so a thing in the fist lies ALONG X at (0, 0.135,
+0.048) — the old grip ran the neck out the pinky side ("facing the wrong
+way") on the heel of the palm. The drink pose was SOLVED on the rig
+(`tools/farmpose.js`): the bottle's lip on the lips to 5 mm, base up and out
+at forty-five degrees, with the elbow bent and the head tipping back; the
+left forearm rests on the table, palm down. `life.grip` may be `{ R, L }`
+now, so the right fist closes on the bottle and the left hand is a hand.
+Four of them at the two tables furthest from the bar (a quarrel is the
+TABLE's), and the loop draws a drink, a long swig, a toast to the man across
+the table, and a wipe of the mouth after.
+
+**THE MUSIC PLAYS WHATEVER WAY YOU CAME IN.** A checkpoint load held the
+opening music off; it plays on every start (a little lower from a load),
+and `startMusic` only ever starts its source on a RUNNING context, retrying
+every second, and fetches the bytes again if they were lost.
+
+**THE ARTIFACT IS SCRIMSHAW, NOT PRIMITIVES.** The first was a smooth gold
+torus with cone spikes and a white lathe whale, every part a primitive with
+no surface — "it looks like AI". `makeWhaleArtifact` is a domed disc of
+whalebone with a humpback engraved into it (lamp-black in the cuts, a
+crescent moon, stars, curling waves, WHAT THE SEA TAKES IT KEEPS round the
+rim), set in a bronze bezel with verdigris in the recesses, the crown rubbed
+bright, rivets (one lost), barnacles, a tarred cord through the bail, and a
+small glowing stone in the whale's eye (`ART_EYE`). Every map is DRAWN at
+load (`artFaceMaps`, `artBackMaps`, `artBronzeMaps`, `artCrustMaps`), colour
+and height in one pass, height through `artNormalFrom`. Two things that read
+wrong on the first draw: a hundred and seventy strong growth lines are WOOD
+grain, not bone (forty-six faint ones); and a slim pointed outline is a FISH
+(a humpback is a third as deep as it is long, blunt at the head).
+`tools/artshot.js` renders it from four angles. `ICON_CACHE_V` went to v5.
+
+**THE FARMERS ARE DIRTY NOW (`farmGrit`, their `matMore`).** In the bind
+pose's own centimetres: two scales of mottle and a fibre on cloth and skin,
+mud from the boots to the knees, soot, and DRIED blood (nearly black — at a
+wet red it read as orange paint dots under the fires), seeded per man. All of
+it is ONE multiplier applied to the colour AND the emissive lift, because the
+lift reads the raw map and would put every stain back on the dark side. The
+AO the file ships is pushed to 1.55, the grade is pulled off the cold blue,
+and the rim is the fires' warm. The tavern's drinkers are farmer kinds and
+get it too. A test render of a farmer belongs in its own scene with
+directional lights only (`__farmStudio` in this session's harness): a point
+light added from the harness is taken by the lamp pool and lights nothing.
+
+**THE HUD IS IN THE GAME'S LANGUAGE NOW** — cold moonlight on dark glass and
+Georgia, not monospace hairlines. Health and stamina are ONE block bottom
+left (`#vitals`): stamina used to sit alone on the bottom's centre and ran
+into the health bar at any narrow window. Health is blade-cut segments of
+blood in a dark track with a drop at its head, and a GHOST (`#health
+i::before`, the same `--f` on a delayed transition) that lingers and drains
+after a hit; stamina is a moonlit blade. Hotbar slots are dark glass with
+bracketed corners (eight gradient layers on `--c`), italic Georgia numerals,
+and the held slot standing out with a lit mark. The `.wf-cine` rule hides
+`#vitals` with everything else.
+
+**THE ARTIFACT'S BAR IS GONE.** The pips and cooldown strip sat above the
+health as a yellow bar; `#artifact` is no longer on the page. Its state is on
+the weapon's own hotbar diamond (`updateArtHud`): hollow while it recharges,
+glowing harder with each hit of the chain.
+
+**THE IMMOBILIZE IS A BEAT, WUKONG'S WAY.** On the third hit: a longer world
+hold (0.14 s) with little shake, a golden SEAL with 定 stamped onto the chest
+(`artSealOn`, a drawn canvas — Songti on macOS) that sinks INTO the body
+after 0.35 s (left on the chest it covered the thing that was held), flares
+on every blow and comes back up flickering as the hold gives; two thin rings
+of light across the ground (`artRingAt`; thick, they swept under the lens as
+a slab); a gold vignette flash (`artFlash`); a bronze gong under the bell;
+the body GILT (a glaze, glitter and a band of light running up it in the
+sheen shell); gold sparks on each hit of the chain; and gold flakes falling
+off as it lets go. `tools/immob.js` captures it on a fake clock — pin the
+creature's `visible`, the horde is hidden until its take.
+
+**THE FARMERS ARE A MOB NOW, AND THE CASTLE IS ALIVE.** Three things read as
+"AI" and none of them was a single clip:
+- **THEY WALKED LIKE MUTANTS.** The knight's `walk` and `run` are the owner's
+  "Mutant Walking" / "Mutant Run" — hunched, arms hanging wide — and those were
+  the farmers' default gaits. Wong's Male Locomotion Pack is now on them too
+  (`mH*` in `FARM_MOCAP`: walk, jog, idle, strafes, side steps; `mDIdle` off the
+  drunk pack for the coward), and is the default; only the maniac keeps the
+  hunched run. Rendered in a lit studio (`tools/farmlive.js`, `__studio`), which
+  is how to judge a clip — the courtyard is too dark to read one in.
+- **THEY TURNED AT SEVEN RADIANS A SECOND, TOGETHER.** `turnMax` is 2.6–4.6 by
+  temperament, varied per man.
+- **THE ONES NOT PRESSING ORBITED YOU ON A RING.** `farmMobHold` (from
+  `demonHold`, for `u.farm`) gives each a mind of small beats on his own clock —
+  watch, pace, move elsewhere in the crowd, edge in and think better of it, a
+  war cry (`farmTaunt`, through `st.flourish`, which now takes
+  `flourishRate`), call to the man beside him — and a distance of his own.
+  `farmMobReact`: a man cut down flinches the near ones back and sets others
+  shouting; a blow on you is cheered. A presser sometimes shouts his turn
+  before he comes. Farmers press two at a time until five are out, and up to
+  four, five, then six come out (it was three, which meant every man was
+  pressing and the mob never existed). Measured over 30 s with four out: the
+  holders' time split watch 50 % / pace 28 / move 6 / edge 6 / taunt 5 /
+  call 5, seven war cries, 32 damage and 48 swings a minute.
+
+**A DOOR IS KNOCKED ON, AND SHUT BEHIND HIM.** `farmSendOut` waits 0.55–1.1 s
+with the door rattling (`D.rat`, a small spring on the closed leaf), two thumps
+and a roar behind it, then bursts; `D.busy` keeps a second man off it. When the
+burst ends `D.closeAt` is set 0.9–2.3 s on and `updateFarmDoors` drags it shut
+and slams it (sound, dust, a little trauma). Muffled shouts and rattles come
+from shut doors through the fight while men are still inside (`farmCrowdTick`),
+and a bell in the tower tolls eight times as the fight starts
+(`sfxCastleBell`).
+
+**THE COURTYARD'S AIR (`buildFortDress`, `updateFortAir`).** Off the castle
+itself, so nothing stands in stone: banners on the house walls, checked that
+the wall is behind their whole width (one hung over a corner and stuck out over
+the street), with a cloth sway in the vertex shader (`swayMaterial`,
+`FORT_SWAY_U`); lanterns strung across the street on cord (a `TubeGeometry` — a
+one-pixel `Line` vanishes at the retro scale), swinging, every other one with a
+pooled lamp; and three `makeAirPoints` batches: smoke off every brazier (a
+moonlit grey — dark smoke is invisible against the night sky), additive embers
+drifting in the wind, and low mist sheets on the cobbles round you.
+
+**THE HUD: STAMINA IS BACK ON THE BOTTOM'S CENTRE (`#stamwrap`), and the drop
+left of the health is gone.** The bar goes RED (`.out` on the bar and its
+track) while `exhausted` — the state in which the guard refuses to come up
+until a third is back — and amber (`.low`) under the cost of one more block.
+Swinging costs no stamina in this game; red means "you cannot block".
+
+**THE PACK IS ONE SIZE.** `#invpanel .body` is a fixed height and the grid and
+the pane scroll inside it; every row of the pane is `flex: none`. The pane's
+buttons come and go with the item (an artifact has one per weapon), and the
+panel used to grow, re-centre and slide its title under LEAVE, which now sits
+in the header row beside the title.
+
+**THE ARTIFACT'S MARK IS A WHALE** (`ART_WHALE_SVG` / `ART_WHALE_URL`, a `var`
+so the style block at module time can read it): on the weapon's slot in the
+hotbar and the pack, and beside its name in the pane. Glow is
+`filter: drop-shadow`, which follows a background image's alpha (a
+box-shadow would draw a square).
+
+**CASTLE XIII, THROUGH THE FIRST CASTLE'S BACK DOOR.** gogiart's (CC-BY-4.0),
+the same builder as the first, packed EXACT at `--scale 13` (its doors are
+0.2 units in the file; at 13 they are 2.76 m, the first castle's own). It
+cannot stand where the back door is — the headland starts at the first
+castle's back wall — so it stands ON THE BEACH past the tower (`C13_X/Y/Z`,
+z -1750), not in a room: the beach's sky, moon, fog and sea, its footprint cut
+out of the sand, sea and dune by a SECOND MASK (`C13_M`, `uFortMask2`/`uFortM2`
+in `FORT_CUT_GLSL`; `fortMaskAt` asks both). The walk is the first castle's
+inside walk on `C13_SITE` (`fortWallsStep` takes a site now; the index is
+built in slices on approach or at the cut). The back door (once the farmers
+are done) is `startFort(1, 'c13')`: you arrive through the east tower's door
+looking down the east court (`C13_SPAWN`, the owner's second screenshot), and
+that door behind you (`C13_DOOR`, his third) is "Leave the castle" — back to
+the sand behind the first castle. Dressed with `fortDress` (its glass,
+`acmat_9`, lit like the first one's shutters via `userData.fortWin`),
+braziers in the open courts and torches by the door, solid as discs. No
+enemies yet. Measured: 21,600 frames walked from six spots in twelve
+directions with jumps, never off the paving, worst overlap with stone
+0.26 m against a 0.26 m body (at the narrow way between the courts). The pale
+patch low on one wall of the east court is the model's own brick texture.
+
+**A FULL PACK SAYS "INVENTORY FULL" AND NOTHING ELSE.** (SUPERSEDES "A FULL
+PACK SWAPS".) `swapHeldFor` is still in the file and nothing calls it; the
+prompt and the press both just say so.
+
+**THE IMMOBILIZE HAS NO SEAL AND NO RINGS** (the owner's "circle thing"), and
+the rest is quieter: the shells are a pale old gold at about half their old
+strength, a smaller burst, a fainter gold flash, a lamp of 3, fewer motes.
+
+**THE SPLIFF WEARS OFF ON THE WALL CLOCK.** `spliffBuffT` was counted down in
+`update`, which returns early in a dozen states and scales by hitstop; it is
+counted in `animateFrame` on `rawDt` now. While it works the bar AND its track
+are a strong glowing green (`#stamina.buff`).
+
+**THE KNIGHT'S "HIT TO SIDE OF BODY" AND "HIT ON SIDE OF HEAD" ARE OUT** for
+the knight, the farmers and the parasites (aliased to `hitBig` / `hit`).
+Measured by scrubbing each reel on a farmer's rig: the side-of-body one
+turned the hips 84° and went UPSIDE DOWN (upright -0.91), the side-of-head one
+fell nearly flat (0.23) and turned 46° — de-yawed frame by frame, that is a
+body spinning. The rest turn 5–10°.
+
+**THE OLD RING'S SEGMENT IS A WHOLE SEGMENT** (`#health i.xtra` was 22 px of a
+46 px bar: half). Health segments are 60 x 12 and the stamina strip 300 x 11.
+
+**THE DOJO POURS, AND ITS STONE IS WET** (`dojoDownpour`, `dojoSplashFx`,
+`dojoWet`, after `updateDojoRain`). 5,200 one-pixel streaks wrapped round the
+camera (the squall's arrangement), a few thousand splashes a second on
+`dojoFloorAt`, a rain bed on the SFX bus (`dojoRainSound`, under 1.5 kHz), and
+`dojoWetMat` chained onto every lit material under `dojoWorld` (not the sword):
+up-facing surfaces darker and smoother, puddles from noise that are near
+mirrors, rain rings in the normal, a sky fresnel and a moon glint
+(`DOJO_WET_U`). The normal is from `dFdx/dFdy` because the packed courtyard
+has none.
+
+**THE SAMURAI HOLDS THE SWORD IN BOTH HANDS** (`samTwoHand`, after
+`pinSamuraiSword`). A two-bone IK (`samIK2`) puts his left wrist
+`SAM_GRIP_GAP` down the tsuka from the right every frame except the star
+throw; between swings (`st.atk < 0`, no reel, roar or hold) his right fist is
+also put a forearm in front of his navel with the point turned onto your
+throat (chudan), eased in and out so each cut leaves from it. The targets are
+absolute, so a frame the mixer did not restamp cannot accumulate.
+
+**THE WHALE MARK IS A HUMPBACK**, not a fish: a pleated throat, tubercles, a
+long knobbed pectoral fin, a low dorsal hump and edge-on flukes, in a bronze
+gradient with a dark drop shadow. Shuriken do 1 (was 2).
+
+**CASTLE XIII MOVED ONTO THE BLUFF, AND GREW.** (SUPERSEDES "it stands ON THE
+BEACH past the tower, z -1750".) It is `C13_K` (1.5) bigger than its pack,
+put on at load exactly the way `FORT_K` is (`ck()` on every number typed in
+its frame, the walk grid's `x0`/`z0`/`cell`/floors/roofs scaled), and it
+stands on top of the sand cliff behind the first castle
+(`C13_X = 18 + ck(37.08)`, `C13_Z = -1131 - ck(20.5)`), so from the farmers'
+courtyard it rises over the house roofs with the lighthouse to its left.
+The cliff's top only runs about thirty metres inland, so `buildC13Plateau`
+lays a grid of the cliff's own material (`aU = 1`, the top of its shading)
+from x 45.6 to 210 under it, rolling off past 145.
+
+**A DOOR IN A MODEL MAY BE A PICTURE OF A DOOR.** The arched door between
+Castle XIII's two courts (the owner's first screenshot) is a leaf on EACH face
+of a wall two metres thick, and the wall carries on between them: brick faces
+and the frame's recesses fill the whole thickness, which is why a flood of the
+walk found the courts unconnected. Lifting the leaves onto hinges opened
+nothing. The passage is CUT (`buildC13Arch`):
+- the two leaves are found as the oak and iron triangles (`acmat_1/3`) within
+  2.7 m of the door, split by which face they are on, and everything else is
+  measured off them — the passage frame (`ax, az, ux, uz, L`), its half-width,
+  and a pointed-arch profile from springing to crown;
+- every castle material discards inside that profile in its own shader
+  (`uC13PassA/B/T`, chained onto `onBeforeCompile`), with the leaves on
+  CLONED materials so the cut cannot eat the door;
+- the cut is lined (`buildC13PassLining`) in the castle's own brick and
+  paving, uv'd at the textures' measured density (brick 0.0456 of the map a
+  metre, paving 0.41);
+- the faces lying between the wall's two faces and reaching across the
+  doorway leave the wall index (`C13_SITE.cutTri`, asked by `fortWallsStep`
+  per triangle — a centroid test missed big faces whose middle was beside the
+  opening); the lining carries `c13Keep` and stays;
+- **the walk had floors inside the wall** a step and a half under the courts
+  (3.31 against 3.94), which you could walk down into and never up out of —
+  `c13PassGround` writes the court's own paving, read a stride out of each
+  face, through every cell of the passage;
+- shut, it is refused (`c13PassBlocked`, in the C13 walk's `legal`).
+Measured: shut stops you at the leaf; open, walked both ways with the eye
+steady and no stall. `__bw.c13Dbg()` reads it.
+
+**THE THRONE ROOM** (`THR_*`, `loadThrone`, `placeInThrone`, `startThrone`;
+Uğur Yakışık, CC-BY-4.0, `assets/throne.glb`) is through door 6 of Castle
+XIII's west court (the owner's second screenshot, "Go through the door"); its
+right-hand lattice door, "Go out to the beach", puts you on the sand behind
+the first castle facing the lighthouse (`placeOutOfFort('back')`) and saves.
+The model is a stage set: it ends 2.4 m behind where you arrive with nothing
+there, and there is nothing behind its two lattice doors. `buildThroneFill`
+walls the end in `Wall_Base` along the hall's measured section (straight to
+15.6, vaulted to 21.8), copies the left lattice door into it as the door you
+came in by (a proper rotation — `(dx, dz) → (dz, -dx)`, or the copy is
+mirrored), and puts a dark backing behind both side doors. The stained glass
+is lifted at 0.62, not 1.15: hotter, it read as a lamp. A `startThrone(1)`
+before the room has loaded only starts the load; the harness has to wait for
+`c13Dbg().thrReady` and call it again.
+
+**A SCROLL UNDER THE VIRTUAL CURSOR IS DONE BY HAND.** `vcFire` re-sends a
+wheel to whatever is under the cursor, and a synthetic `WheelEvent` scrolls
+nothing — so the pack's list of weapons to set an artifact into never moved.
+The capture listener walks up from the target to the first element whose
+overflow is auto or scroll and moves its `scrollTop`/`scrollLeft` itself.
+
+**THE IMMOBILIZE THROWS GOLD LEAF, NOT GLOWING DOTS.** `ART_MOTE_N` 160 flakes
+in one `ShaderMaterial` batch (`aSeed` per flake): a cut-out flake shape that
+tumbles and catches the light on its face, falling under gravity and drag with
+a flutter and settling on the floor under it (`bunkerFloorAt`). Additive round
+sprites read as a cheap particle effect, which is what the owner called them.
+
+**THE FARMERS' AND PARASITES' MOCAP PLAYS AT ITS OWN SPEED (`kind.natural`,
+`naturalSwings`).** The retarget was measured correct (every joint within 1-3
+degrees of the source, sampled ON frames — between frames a fast clip reads
+as a mismatch). What was wrong was playback: `real`/`cock` holds and eased
+wind-ups stretched and squashed a Mixamo swing into the table's startup. A
+natural kind's swing is played at the clip's own rate, its startup is the
+clip's own time to contact, and its recovery is whatever the clip has left;
+`velGaitAnim` keeps a natural kind's gait rate within 0.7-1.25 of the clip's
+own and hands walk to run later, so a stride is a stride.
+
+**THE BUNKER IS SLIMMED, AND IT LOOKS THE SAME (`tools/bunker_slim.py`).**
+The scan's source is gone, so the packed GLB is slimmed in place: meshes
+simplified per primitive by meshoptimizer's attribute-aware simplifier to an
+ABSOLUTE 2 mm in the room's metres (normals and uv in the metric, open
+borders locked; a collapse lands on an existing vertex, so every surviving uv
+is the scan's own), the near-lossless JPEGs re-encoded (colour/emissive q95,
+normal/metal-rough q92, 4:4:4), two byte-identical maps stored once, and the
+shadow decal — a 2048 PNG that is pure white with only an alpha — shipped as
+a grayscale JPEG named `Shadows_alpha`, which `models/underground-bunker.js`
+moves from `map` to `alphaMap`. 23.8 MB → 17.2, 165k triangles → 115k. The
+tripod's 39 islands, the desk's and the mug's bounds are unchanged.
+Measured over 26 views rendered at 960x540 with no retro scale: mean
+difference 0.54 of 255, 0.2 % of pixels over 12, and an unchanged copy diffs
+at exactly 0. Nearly all of that is the texture re-encode, not the geometry.
+**The pip `meshoptimizer` binding declares no argtypes for
+`meshopt_simplifyWithAttributes`**: its size_t arguments go across as
+32-bit ints and the call silently collapses nothing. The script declares
+them itself. Run it on `git show HEAD:assets/bunker.glb`, never on its own
+output.
+
+**CASTLE XIII IS A THRIVING TOWN (`c13BuildThrive`).** The eight iron bowls on
+tripods in the courts are gone (the owner: "torches on the ground don't look
+good"); everything is found off the castle and hung on its walls:
+- **Open court = the paving with SKY over it** (`c13Open`: lowest storey at
+  `C13_FLOOR` and roof > 40). House interiors are floored at court level too,
+  roofed at 17-19 m, so "floored" alone is the whole footprint.
+- **Walls** are `keepWallNear` at the height asked from court cells beside an
+  edge (`c13WallScan`); a wall is used only where it is flat for the thing's
+  width (`c13Flat`: from in front, the nearest wall is straight back on the
+  plane), and never near a door or window (`c13FeatNear`, the doors' and
+  windows' own vertices on a 0.6 m hash).
+- 19 wall **torches** (`c13AddTorch`, merged, flames via `keepFirePoints`, a
+  pooled lamp each, plus an instanced warm WASH and SOOT on the stone behind,
+  so the wall reads lit even when that lamp is out of the pool of twelve); 12
+  long crimson/blue **banners** (`swayMaterial`); **flags** on the tower tops
+  (parapet rings at 24.4 m, pole stood on the floor INSIDE the ring); 11
+  **bunting** lines with **lanterns** (one instanced batch, swung per frame —
+  30 separate lanterns were 120 draws); a **market** of 6 stalls round a
+  **fountain** in the west court (drops as points, never a sheet; the owner's
+  fountain recording from where it is); **flowers** under every low window,
+  measured under the window's wooden FRAME (`acmat_8`), not its glass;
+  **chimneys** on the roof ridges (`acmat_5`) with smoke; embers, warm motes,
+  low mist; a synthesised **lute** (Karplus-Strong) from beside the fountain;
+  a bell now and then. The windows (`acmat_9`, the glass) are 86 % lit
+  (`fortLit`), glowing on their own: the glass map is BLUE, and the orange
+  lamp multiplied by a blue map comes out grey. Inside, `updateMood` warms the
+  air amber and clears the sky.
+- **The way through stays clear**: `C13_PATH` (arrival door → arch → throne
+  door) keeps 3.4 m clear of stalls. What stands on the floor is solid
+  (`c13Solids`, discs and oriented boxes, `c13PushSolids`); nothing goes into
+  the wall index.
+- **The throne room's door** is measured off its own planks and frame
+  (`c13MeasureThroneDoor`, PCA in plan; it is a narrow door on a diagonal in a
+  corner) and dressed: torches and banners either side, a crest over it, a red
+  carpet across the open stretch in front (the threshold has the lintel over
+  it, so "open" starts a metre out), and firelight leaking under it, up both
+  edges and in a halo. Its prompt is "Enter the throne room".
+- It is built as a JOB in 3-8 ms slices (`c13Jobs`) from the moment the wall
+  index is up, which is on the beach. Measured: 53 draw calls for all of it,
+  0.6 ms of update; 18,000 frames of walking into everything — never in stone,
+  never inside a stall; the route from the arrival door to the throne door in
+  1,251 ticks with no stall. `tools/c13shot.js` (`__c13Go`, `__c13Sheet`) and
+  `tools/c13walk.js` (`__c13Clip`, `__c13Route`) are the harness.
+
+**A FACE WITH ALL THREE CORNERS ON ONE TEXEL IS A FLAT COLOUR (`fixFlatUV`).**
+That was the owner's "untextured castle wall" in Castle XIII's east court: 380
+m² of faces (most on the brick) whose uv collapsed to a point. Each is given its
+own corners and a planar projection at the material's own measured density
+(along-and-up for a wall, plan for a floor). It runs on both castles at load
+(33 and 65 ms with the parse). The brick is a tiling texture, so a projection
+lands on brick wherever it is.
+
+**WHAT IS LEFT FOR NEXT TIME:** the lighthouse's spiral stair is 397 separate
+meshes drawn whenever the tower is in view (about 400 of the ~770 draw calls in
+Castle XIII's east court) — flagged as its own task.
+
+**THE FLAIL KNIGHT HOLDS CASTLE XIII'S WEST COURT** (`MUT_KINDS.crusader`,
+`placeCrusader`, `updateCrusader`, `crusaderChain`). The owner's "Crusader tank"
+(`tools/crusader_pack.py` → `assets/crusader.glb`: his own fourteen clips, their
+Unity playback rates written into the file as `bw_crusader.rate`) plus Mixamo's
+Pro Sword and Shield Pack (`tools/ntar_moves.py -- crusader` →
+`assets/crusader-moves.json`). He stands in the open square eighteen metres in
+from the arch toward the fountain, facing the arch; he wakes when you come
+through it (`crusaderMayWake`), leaving the castle calms him back onto his post,
+and the throne room's door is barred while he lives. 66 health, poise 16, a
+shield (`block` 0.5) — measured on a still player: 42 swings and 40 damage a
+minute, the flail's ball 0.05–0.53 m from your chest on the frame it lands.
+- **THE LOADER SHARES ONE TIMES ARRAY between tracks — and between clips of the
+  same length.** `crusaderPre` rescaled his clips in place and each was rescaled
+  hundreds of times into nothing; every clip gets its own copy now.
+- **The hit is the BALL** (`rig.tip: 'ball_on_a_club2'`), and the aim steers it
+  only late in the startup (`aimFrom` 0.78, a new kind field): aimed from the
+  usual 0.55 the ball was swung into your face during the tell.
+- **A blow that lands on your chest is never in the picture** — your chest is
+  straight under the camera. `aimDrop` 0.08 aims at your face so the ball comes
+  in through the frame; the stops are 1.9 m because the ball is 1–1.6 m out.
+- His own clips key the chain; the pack's do not, so `crusaderChain` swings it
+  as a Verlet rope while one of those plays and lays the bones along it.
+- **CASTLE XIII'S PAVING IS TWO FLOORS ROUND THE THRONE DOOR** (0.30 and 0.69):
+  `c13CourtAt` takes the highest near the paving now (`c13PaveAt` for the
+  dressing). He stood 0.39 m into the stones, the runner was laid under them,
+  and `bunkerFloorAt` asked the FIRST castle's walk for both masks, so a body
+  killed there fell to the beach. Each castle answers from its own walk now.
+- **Harness:** `tools/crusader.js` (`__crBoot` after setting skipIntro and
+  reloading, `__crFight`, `__crPOV`, `__crStrip`, `__crStill`). c13shot's clock
+  now creeps on every read: frozen, the boot warm loop (`while (now - t0 < 55)`)
+  never ended once a warm step re-queued itself, and the page hung.
+
+**THE CASTLE'S DRESSING IS MADE, NOT GENERATED** (the block headed "MADE, NOT
+GENERATED", before `startC13Thrive`). The first pass was right shapes in flat
+colours — suns with faces, clip-art crowns, rows of identical sphere apples,
+glowing-cube lanterns, bead flowers, a neon outline round the throne door — and
+the owner called it corny AI. Cloth is drawn the long way (`c13ClothCanvas`):
+a weave with slubs, uneven dye, the sun fading the top, the street in the foot,
+tide-line stains, frayed edges and holes, with a weave normal map
+(`c13ClothMat`). Arms are period ordinaries in hand-laid paint
+(`C13_ARMS`, `c13PaintArms`) in the dyes a town had (`C13_DYE`, deliberately
+smoke-dulled). Banners hang in pleats (`c13FoldedPlane`) from iron rods; produce
+is heaped in wicker baskets, every item its own lump and shade (`c13Lumpy`);
+lanterns are iron straps round horn panes (`c13LanternGeos`); window boxes have
+leaf cards, flower heads and trailing ivy; torches are charred rag burning at
+the crown (keyed on the cylinder's uv, which survives `bakeStatic` — a local
+height does not); the throne door has a worn runner (`c13RunnerTex`), a painted
+shield (`c13ShieldTex`) and light only under the sill. The lit windows are
+leaded diamond quarries with an uneven room behind them (`C13_WIN_GLSL`). **A
+`ShaderMaterial` with no tone-map chunk sRGB-encodes linear values**, so the
+fountain's "dark" water came out cyan; it is near-black with the light on it.
+Keep lifts low (0.09–0.22): everything here is lit by torches, and a lift that
+makes cloth readable at noon makes it a poster at night.
+
+**THE MARAUDER SITS ON THE THRONE NOW, AND STANDS UP TO FIGHT IN THE THRONE
+ROOM.** (SUPERSEDES "he waits outside the castle", `fortOut` and `umbraLimZ`,
+which are gone.) He is made at module load at the throne's foot
+(`UMBRA_SEAT`, room-local (0.05, 3.845, -5.25), a stride in front of the seat:
+the model's `Throne.001` has its cushion at 0.71 m over the dais, its front
+edge at z -5.48 and its armrests at 1.08) with `kind.thrBody`, seated
+(`st.thrSeat`, `sleepIdle: 'uSit'`). He wakes once you are past room-local z
+`UMBRA_WAKE_Z` (7.5) on the carpet, or on a blow or a round; the wake is
+`uRise` (`UMBRA_RISE_DUR` 2.5 s, the roar the fight opens on, no turning
+through it) with a shriek as he straightens, then he comes down the dais.
+`thrClampUnit` holds him in the hall's stone and smashes the furniture he walks
+into; `updateThroneBoss` (after `updateCrusader`) draws him only in the hall,
+eases him onto its floor, and puts him back on the throne whenever you are not
+in it — including when a save's `calmChasers` has put him to sleep standing on
+the carpet. A save that killed him at either old spot still retires him.
+- **THE SIT, THE LEAN AND THE PUSH-UP ARE SOLVED** (`UMBRA_SIT`, `UMBRA_RISE1/2`,
+  `tools/umbrasit.js`): coordinate descent on his body-axis angles against joint
+  targets measured off the throne, the pelvis 0.62 m back over the cushion.
+  `poseRig`'s `build` takes `hipF` now (metres along the body's forward, like
+  `hipY`), so the hips sit back on the seat and come forward over his feet as
+  he rises, rather than his feet sliding.
+- **THE SOLVER'S BASE MUST BE THE STANCE**: stopping every action AND disabling
+  it made `poseRig`'s `a.play()` stamp nothing, and the first solve was built on
+  his bind pose — measured in the game, the pelvis sat 0.22 m low and the knees
+  half a metre out. Stop them and leave them enabled, then check `__usWhere({})`
+  against the game's own `uStance` before trusting any number.
+
+**THE THRONE ROOM'S GREAT WINDOW IS THE OWNER'S OWN PICTURE** (`THR_WIN`,
+`buildThroneWindow`, `assets/throne-window.jpg` built by `tools/throne_window.js`
+from `tools/throne_window_src.jpg`). The window is an APSE, not a pane: five
+glass facets up to 16.41 m and a half-dome to 20, plus two front facets that
+turn toward you. Its faces are lifted out of `Wall_Base` (uv2 inside the glow
+atlas's window rectangle, or anything of the wall inside the apse) and the
+picture is projected straight down the hall, so from the carpet it reads flat.
+The composite is drawn in that frame (x -4.75..4.85, y 4.05..20.05, 128 px a
+metre): the picture, its black frame trimmed, fills the straight part inside a
+red band with gold pearls; the dome is a tympanum in its own blue with roundels
+cut from its own glass; the front facets are blue diamond quarries drawn
+squeezed by `KX` (0.21) because two metres of their depth project into half a
+metre of x, and so are their leads, or they come out a hand wide on the glass.
+It is unlit at 0.55 linear, which is the old window's level from the carpet,
+measured. **The apse opening's reveal was ALSO mapped with the glass** — colour
+and glow — so a ring of the old shards stood round the new picture; its jambs
+and soffit take the side wall's stone uvs and a black glow texel. A ray that
+"hits the new mesh" does not prove the old one is gone: coplanar faces drew the
+old glass over the new at the same depth.

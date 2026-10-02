@@ -207,10 +207,11 @@ const ASSET_REACH = {
   'assets/spliff.glb': 160,            // the third cache, the trader's table and the crate on the keep's pier
   'assets/umbra.glb': 905,
   'assets/farmer-woodman.glb': 1005, 'assets/farmer-farmman.glb': 1005, 'assets/farmer-workman.glb': 1005,   // the twenty in the castle's houses
+  'assets/castle13.glb': 1080,         // Castle XIII, through the first castle's back door
+  'assets/throne.glb': 1150,           // and the throne room through its west court
+  'assets/crusader.glb': 1085,         // and the flail knight who holds its west court
   'assets/castle.glb': 1000,           // the castle across the beach at the foot of the headland, where he waits             // the four-armed thing past the five, on the open sand
-  'assets/stones.glb': 1180,          // the headland, at the end of the walk
-  'assets/grass-clumps.glb': 1185,
-  'assets/grass-patch.glb': 1190,
+  'assets/grass-clumps.glb': 300,      // the tufts in the pavilion's cracks
 };
 const ASSET_REACH_DEFAULT = 120;      // unlisted: somewhere down the middle of the walk
 const BW_INFLIGHT = 3;                // measured: three is the floor of the curve
@@ -578,6 +579,8 @@ function updateWhereAmI() {
   else if (inUndercroft) { room = 'undercroft'; ox = UC_X; oy = UC_Y; oz = UC_Z; group = undercroft; }
   else if (inDojo) { room = 'dojo'; ox = DOJO_X; oy = DOJO_Y; oz = DOJO_Z; group = dojoWorld; }
   else if (inWhale) { room = 'whale'; ox = WHALE_X; oy = WHALE_Y; oz = WHALE_Z; group = whale && whale.G; }
+  else if (inC13) { room = 'castle13'; ox = C13_X; oy = C13_Y; oz = C13_Z; }
+  else if (inThrone) { room = 'throne'; ox = THR_X; oy = THR_Y; oz = THR_Z; group = thrWorld; }
   else if (inFort || fortMaskAt(p.x, p.z + 3) || fortMaskAt(p.x, p.z - 3)) { room = inFort ? 'castle' : 'castle (outside)'; ox = FORT_X; oy = FORT_Y; oz = FORT_Z; }   // its own frame; no aim (a raycast is 300k triangles)
   const feet = camBaseY - playerEye();
   let aim = '';
@@ -2383,11 +2386,15 @@ function updateMood() {
   const fcd = Math.hypot(camera.position.x - (FORT_X + FORT_MID.x), camera.position.z - (FORT_Z + FORT_MID.z));
   const clear = Math.max(THREE.MathUtils.smoothstep(430 - twr, 0, 260), 0.85 * wsR * THREE.MathUtils.smoothstep(260 - wbd, 0, 120), THREE.MathUtils.smoothstep(110 - fcd, 0, 50));      // clearing from 430 m out, clear inside 170; over the whale only once it has been seen
   if (nearK === 14) near *= 0.25;                                   // and the air round it stays clear rather than closing in
-  const clearW = Math.max(clear, wfSkyK);
+  const clearW = Math.max(clear, wfSkyK, inC13 ? 0.9 : 0);
   moodClear = clearW;
   skyUniforms.uSqB.value.w = clearW;
   const S = 0.55 + 0.30 * near;                              // how much of each mood is let through, stronger at the set piece
   T.x = 1 + (T.x - 1) * S; T.y = 1 + (T.y - 1) * S; T.z = 1 + (T.z - 1) * S;
+  /* AND CASTLE XIII IS WARM. A town with a fire on every wall and a lamp in
+   * every window lights its own air: the haze over its courts and the shadows
+   * in them go amber, the one place on the walk where the night is not blue. */
+  if (inC13) { T.x = T.x * 0.4 + 1.24 * 0.6; T.y = T.y * 0.4 + 1.04 * 0.6; T.z = T.z * 0.4 + 0.84 * 0.6; }
   FOG_TINT.x = T.x; FOG_TINT.y = T.y; FOG_TINT.z = T.z;
   sharpMat.uniforms.uTone.value.set(T.x, T.y, T.z, MOOD_TONE);
   const breathe = 1 + 0.05 * Math.sin(tn * 0.071) + 0.035 * Math.sin(tn * 0.029 + 1.3);
@@ -2396,7 +2403,7 @@ function updateMood() {
    * is the one place the rule that fog only ever thickens is broken: its walls
    * hide everything the far cull takes away, and what is left over them is the
    * lighthouse, which has to be SEEN there. */
-  if (inFort) scene.fog.density *= 0.55;
+  if (inFort || inC13) scene.fog.density *= 0.55;
   const B = MOOD_BASE || (MOOD_BASE = [
     [skyUniforms.uHorizon.value, 1.0], [skyUniforms.uTop.value, 0.6], [skyAmbient.color, 1.0], [skyHemi.color, 1.0],
     [moonLight.color, 0.5], [oceanUniforms.uDeep.value, 0.7], [oceanUniforms.uShallow.value, 0.7],
@@ -2594,7 +2601,7 @@ function cliffLipX(z) {
 let pourKeep = null;
 function pourClear(z) {
   if (!pourKeep) {
-    try { pourKeep = [[DRAIN_Z, 10], [MUSH_Z, 16], [CAT_OUT_Z, 8], [HOLE_Z, 10], [ROCK_Z, 24]]; } catch (e) { return false; }
+    try { pourKeep = [[DRAIN_Z, 10], [MUSH_Z, 16], [CAT_OUT_Z, 8], [HOLE_Z, 10], [ROCK_Z, 24], [C13_Z, 26]]; } catch (e) { return false; }
   }
   if (z < LH_Z + 170) return false;                          // the headland: no wall to pour over
   for (const [kz, r] of pourKeep) if (Math.abs(z - kz) < r) return false;
@@ -2828,20 +2835,26 @@ function shoreLineJS(z, t) {
  * built off the castle's own walk grid when the model lands (`buildFortMask`)
  * and until then it cuts nothing. */
 const FORT_M = { data: null, gw: 0, gh: 0, x0: 0, z0: 0, cell: 0.2, floorAt: null };
-const FORT_U = { uFortMask: { value: null }, uFortM: { value: new THREE.Vector4(0, 0, 0, 0) } };
-function fortMaskAt(x, z) {
-  const M = FORT_M; if (!M.data) return false;
+const FORT_U = { uFortMask: { value: null }, uFortM: { value: new THREE.Vector4(0, 0, 0, 0) },
+  uFortMask2: { value: null }, uFortM2: { value: new THREE.Vector4(0, 0, 0, 0) } };
+// the second castle (Castle XIII, past the lighthouse) cuts the beach the same way
+const C13_M = { data: null, gw: 0, gh: 0, x0: 0, z0: 0, cell: 0.2, floorAt: null };
+function maskAt(M, x, z) {
+  if (!M.data) return false;
   const i = Math.floor((x - M.x0) / M.cell), j = Math.floor((z - M.z0) / M.cell);
   return i >= 0 && j >= 0 && i < M.gw && j < M.gh && M.data[j * M.gw + i] > 0;
 }
+function fortMaskAt(x, z) { return maskAt(FORT_M, x, z) || maskAt(C13_M, x, z); }
 const FORT_CUT_GLSL = `
 uniform sampler2D uFortMask; uniform vec4 uFortM;
-bool bwFortCut(vec2 w) {
-  if (uFortM.z <= 0.0) return false;
-  vec2 uv = (w - uFortM.xy) * uFortM.zw;
+uniform sampler2D uFortMask2; uniform vec4 uFortM2;
+bool bwFortCut1(sampler2D m, vec4 M, vec2 w) {
+  if (M.z <= 0.0) return false;
+  vec2 uv = (w - M.xy) * M.zw;
   if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return false;
-  return texture2D(uFortMask, uv).r > 0.5;
+  return texture2D(m, uv).r > 0.5;
 }
+bool bwFortCut(vec2 w) { return bwFortCut1(uFortMask, uFortM, w) || bwFortCut1(uFortMask2, uFortM2, w); }
 `;
 // true when (x,z) is seaward of the waterline — i.e. standing in / over water
 function inWater(x, z) {
@@ -2972,7 +2985,7 @@ const oceanUniforms = THREE.UniformsUtils.merge([
     uSh2: { value: Array.from({ length: 4 }, () => new THREE.Vector4()) } },
 ]);
 oceanUniforms.bwSkyTex = BW_NOISE_U;
-oceanUniforms.uFortMask = FORT_U.uFortMask; oceanUniforms.uFortM = FORT_U.uFortM;   // shared, never cloned: the castle's footprint          // the cloud shadows' noise is a texture fetch (CLOUD_SHADE_T): shared, never cloned
+oceanUniforms.uFortMask = FORT_U.uFortMask; oceanUniforms.uFortM = FORT_U.uFortM; oceanUniforms.uFortMask2 = FORT_U.uFortMask2; oceanUniforms.uFortM2 = FORT_U.uFortM2;   // shared, never cloned: the castle's footprint          // the cloud shadows' noise is a texture fetch (CLOUD_SHADE_T): shared, never cloned
 oceanUniforms.uSkyT = skyUniforms.uTime;
 oceanUniforms.uSqO = { value: new THREE.Vector4(0, 0, 1, 0) };
 oceanUniforms.uBlood = { value: new THREE.Vector4(0, 0, 1, 0) };
@@ -3130,7 +3143,7 @@ function sandShader(shader, keep = 'false', decl = '', lift = '0.0') {
   shader.uniforms.uSkyT = skyUniforms.uTime;
   shader.uniforms.uShallow = oceanUniforms.uShallow;
   shader.uniforms.uEdgeK = SAND_EDGE_K;
-  shader.uniforms.uFortMask = FORT_U.uFortMask; shader.uniforms.uFortM = FORT_U.uFortM;
+  shader.uniforms.uFortMask = FORT_U.uFortMask; shader.uniforms.uFortM = FORT_U.uFortM; shader.uniforms.uFortMask2 = FORT_U.uFortMask2; shader.uniforms.uFortM2 = FORT_U.uFortM2;
   shader.vertexShader = shader.vertexShader
     .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;')
     .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
@@ -4642,200 +4655,12 @@ function onHeadland(wx, wz) { return headlandAt(wx, wz) > 0.35; }
 }
 
 {
-  /* The headland is dressed from three scan packs, placed on the ridge by
-   * headlandAt() and kept off the lane by onPath() — the same two rules the
-   * old dodecahedra and the grass.json clumps followed, with real stone and
-   * real grass instead. The approach to the door is the last thing the walk
-   * shows you, so this is where the beach spends its detail budget.
-   *
-   *   assets/stones.glb        shtran's rocks & stones: ten scanned rocks
-   *   assets/grass-clumps.glb  3dhdscan's grass chunks: four alpha-card clumps
-   *   assets/grass-patch.glb   Pasha's realistic grass: one dense blade patch
-   *
-   * Everything is bedded INTO the ridge — a fraction of its own height under
-   * the surface — because the ridge is a smooth heightfield and anything set
-   * on it at exactly y = 0 floats on every slope. */
-  const rnd = mulberry32(19770);
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3();
-  const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
-  // re-roll a spot until it's off the path (bounded, so it can't spin)
-  const offPath = (pick, margin) => {
-    for (let tries = 0; tries < 24; tries++) {
-      const p = pick();
-      if (!onPath(p.x, p.z, margin)) return p;
-    }
-    return null;
-  };
-  const ridgeY = (x, z) => headlandAt(LH_X + x, LH_Z + z) - HL_CREST;   // local y on the ridge
-  const onRidge = (x, z) => headlandAt(LH_X + x, LH_Z + z) > 1.4       // the crown, not the fall-off
-    // ...and never on the building or its stone apron. The footing skirt runs
-    // out to 6.6 m, so anything inside that is either growing through the
-    // masonry or standing on it — which is how grass ended up in the doorway.
-    && Math.hypot(x, z) > 7.0;
-
-  // the same night treatment the beach rocks get: the scans were lit for
-  // day, and a cool tint keeps them the colour of everything else out here
-  const nightStone = (mat) => {
-    // a fraction of the lift the beach formation gets: these are small, many
-    // and IN the moon, and at the formation's emissive they glowed like lamps
-    mat.color.setHex(0x6f7a8c); mat.emissive.setHex(0x1e2531); mat.emissiveMap = mat.map;
-    mat.roughness = 1; mat.metalness = 0;
-    if (mat.normalScale) mat.normalScale.set(1.2, 1.2);
-    reexpose(mat, 0.68);
-  };
-  const nightGrass = (mat) => {
-    mat.color.setHex(0xb2c0aa); mat.emissive.setHex(0x2c3a2e); mat.emissiveMap = mat.map;
-    mat.roughness = 1; mat.metalness = 0;
-    mat.side = THREE.DoubleSide; mat.transparent = false; mat.alphaTest = 0.42; mat.depthWrite = true;
-    // the same sway the old clumps had, so the headland moves in the wind
-    mat.onBeforeCompile = (sh) => {
-      sh.uniforms.uTime = oceanUniforms.uTime;
-      sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nuniform float uTime;')
-        .replace('#include <begin_vertex>', `#include <begin_vertex>
-          vec4 iw = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-          float sway = sin(uTime * 1.5 + iw.x * 0.7 + iw.z * 0.5) * 0.5
-                     + sin(uTime * 2.6 + iw.z) * 0.2;
-          transformed.x += sway * 0.14 * max(position.y, 0.0);
-          transformed.z += sway * 0.09 * max(position.y, 0.0);`);
-    };
-    mat.needsUpdate = true;
-  };
-  // bake a loaded mesh's node transform, recentre on its footprint, base at 0
-  const bakeKind = (o) => {
-    const geo = o.geometry.clone().applyMatrix4(o.matrixWorld);
-    geo.computeBoundingBox();
-    const b = geo.boundingBox;
-    geo.translate(-(b.min.x + b.max.x) / 2, -b.min.y, -(b.min.z + b.max.z) / 2);
-    geo.computeBoundingBox(); geo.computeBoundingSphere();
-    const size = geo.boundingBox.getSize(new THREE.Vector3());
-    return { geo, mat: o.material, name: o.name, foot: Math.max(size.x, size.z), h: size.y, size };
-  };
-
-  // ---- stone --------------------------------------------------------
-  bwGlb('assets/stones.glb', (gltf) => {
-    gltf.scene.updateMatrixWorld(true);
-    const kinds = [];
-    gltf.scene.traverse((o) => { if (o.isMesh) kinds.push(bakeKind(o)); });
-    kinds.sort((a, b) => (a.name < b.name ? -1 : 1));
-    kinds.forEach((k) => nightStone(k.mat));
-    const pick = () => kinds[Math.floor(rnd() * kinds.length)];
-    /* Three populations, one pool per kind:
-     *   - a field of stone round the tower, thickest out to the flanks,
-     *   - a few real boulders on the fall-off, solid to walk into,
-     *   - and the kicked-aside stones lining the lane, which the feet of a
-     *     century put there. */
-    const per = new Map(kinds.map((k) => [k, []]));
-    const slopeAt = (x, z) => Math.hypot(ridgeY(x + 0.5, z) - ridgeY(x - 0.5, z), ridgeY(x, z + 0.5) - ridgeY(x, z - 0.5));
-    const place = (k, x, z, width, bury, tilt = 0.25) => {
-      const s = width / k.foot, sy = s * (0.78 + rnd() * 0.3);
-      // steeper ground, deeper bedding — plus half the drop across the
-      // footprint, so the downhill edge meets the surface too
-      const drop = slopeAt(x, z) * width * 0.8;
-      const y = ridgeY(x, z) - k.h * sy * bury - drop;
-      e.set((rnd() - 0.5) * tilt, rnd() * Math.PI * 2, (rnd() - 0.5) * tilt);
-      q.setFromEuler(e);
-      m.compose(v.set(x, y, z), q, sc.set(s, sy, s));
-      per.get(k).push(m.clone());
-      return { top: y + k.h * sy, r: width * 0.5 * 0.8 };
-    };
-    for (let i = 0; i < 110; i++) {                                    // the field
-      const w = 0.22 + Math.pow(rnd(), 1.6) * 1.3;
-      const spot = offPath(() => {
-        const a = rnd() * Math.PI * 2, rr = 4.5 + Math.pow(rnd(), 0.7) * 15;
-        return { x: Math.cos(a) * rr, z: Math.max(-12, Math.sin(a) * rr) };
-      }, w * 0.6 + 0.3);
-      if (!spot || !onRidge(spot.x, spot.z)) continue;
-      place(pick(), spot.x, spot.z, w, 0.18 + rnd() * 0.16);
-    }
-    for (let i = 0; i < 4; i++) {                                      // the boulders
-      const w = 1.2 + rnd() * 0.8;
-      const side = i % 2 ? 1 : -1;
-      const spot = offPath(() => ({ x: side * (6 + rnd() * 4), z: -4 + rnd() * 18 }), w * 0.6 + 0.4);
-      if (!spot || headlandAt(LH_X + spot.x, LH_Z + spot.z) < 2.5 || slopeAt(spot.x, spot.z) > 0.5) continue;
-      const c = place(pick(), spot.x, spot.z, w, 0.22 + rnd() * 0.12, 0.14);
-      rockColliders.push({ x: LH_X + spot.x, z: LH_Z + spot.z, r: c.r, top: HL_CREST + c.top });
-    }
-    for (let i = 0; i < 70; i++) {                                     // the lane's edging
-      const z = -0.5 + rnd() * (PATH_LEN + 1.5);
-      const side = i % 2 ? 1 : -1;
-      const w = 0.12 + rnd() * 0.24;
-      const x = pathBend(z) + side * (pathHalfAt(z) + 0.05 + rnd() * 0.5);
-      if (!onRidge(x, z)) continue;
-      place(pick(), x, z, w, 0.55 + rnd() * 0.25, 0.5);       // kicked here and trodden in
-    }
-    for (const [k, mats] of per) {
-      if (!mats.length) continue;
-      const inst = new THREE.InstancedMesh(k.geo, k.mat, mats.length);
-      mats.forEach((mm, idx) => inst.setMatrixAt(idx, mm));
-      inst.instanceMatrix.needsUpdate = true;
-      inst.frustumCulled = false;
-      lhDress.add(inst);
-    }
-  });
-
-  // ---- grass --------------------------------------------------------
-  // the clumps: knee-high tufts, everywhere the ridge is dry and the lane isn't
-  bwGlb('assets/grass-clumps.glb', (gltf) => {
-    gltf.scene.updateMatrixWorld(true);
-    const kinds = [];
-    gltf.scene.traverse((o) => { if (o.isMesh) kinds.push(bakeKind(o)); });
-    const seen = new Set();
-    kinds.forEach((k) => { if (!seen.has(k.mat)) { seen.add(k.mat); nightGrass(k.mat); } });
-    const PER = 260;
-    for (const k of kinds) {
-      const inst = new THREE.InstancedMesh(k.geo, k.mat, PER);
-      inst.frustumCulled = false;
-      for (let i = 0; i < PER; i++) {
-        const cz = -14 + rnd() * (HL_RUN + 20);
-        const side = rnd() < 0.5 ? -1 : 1;
-        const cx = pathBend(Math.max(0, cz)) + side * (pathHalfAt(Math.max(0, cz)) + rnd() * 10);
-        const bx = cx + (rnd() - 0.5) * 2.4, bz = cz + (rnd() - 0.5) * 2.4;
-        if (!onRidge(bx, bz) || onPath(bx, bz, -0.15)) { inst.setMatrixAt(i, hidden); continue; }
-        const h = (0.9 + rnd() * 0.7);                  // the clumps are ~0.5 m tall as shipped
-        e.set(0, rnd() * Math.PI * 2, 0); q.setFromEuler(e);
-        m.compose(v.set(bx, ridgeY(bx, bz) - 0.03, bz), q, sc.set(h, h, h));
-        inst.setMatrixAt(i, m);
-      }
-      inst.instanceMatrix.needsUpdate = true;
-      lhDress.add(inst);
-    }
-  });
-  // the dense patch: lush ground cover along the lane's edges up to the door,
-  // where you are close enough to see individual blades
-  bwGlb('assets/grass-patch.glb', (gltf) => {
-    gltf.scene.updateMatrixWorld(true);
-    let kind = null;
-    gltf.scene.traverse((o) => { if (o.isMesh && !kind) kind = bakeKind(o); });
-    if (!kind) return;
-    nightGrass(kind.mat);
-    const N = 12;                        // 30k triangles each — this is the budget
-    const inst = new THREE.InstancedMesh(kind.geo, kind.mat, N);
-    inst.frustumCulled = false;
-    // as shipped it is a ~1 m square of 5 cm blades; stretched to 2.2 m
-    // squares of 0.24 m blades it is the grass you walk past, not a lawn
-    const sw = 2.2 / kind.foot, sy = 0.24 / Math.max(0.01, kind.h);
-    for (let i = 0; i < N; i++) {
-      const z = 0.5 + rnd() * 20;
-      const side = i % 2 ? 1 : -1;
-      const x = pathBend(z) + side * (pathHalfAt(z) + 1.0 + rnd() * 2.2);
-      if (!onRidge(x, z) || onPath(x, z, 0.9)) { inst.setMatrixAt(i, hidden); continue; }
-      e.set(0, rnd() * Math.PI * 2, 0); q.setFromEuler(e);
-      m.compose(v.set(x, ridgeY(x, z) - 0.02, z), q, sc.set(sw, sy, sw));
-      inst.setMatrixAt(i, m);
-    }
-    inst.instanceMatrix.needsUpdate = true;
-    lhDress.add(inst);
-    /* AND THIS ONE GETS ITS OWN DISTANCE, BECAUSE IT IS THIRTY THOUSAND
-     * TRIANGLES AN INSTANCE. Twelve of them is 368,640 triangles — measured
-     * standing eighty metres off, more than half of everything in the frame
-     * — for blades a quarter of a metre high, rendered at 0.42 of the screen,
-     * where every one of them is a fraction of a pixel. It is the body bag's
-     * ropes again: the thing is detail, and detail has a distance past which
-     * it is not detail, it is a bill. It lines the last twenty metres of the
-     * lane, so forty-five metres is the whole of where it can be read. */
-    farProps.push({ obj: inst, z: LH_Z, d: 30 });
-  });
+  /* The headland's scanned rocks and grass (stones.glb, grass-patch.glb and
+   * a planting of grass-clumps.glb) are OUT, on the owner's word, for the
+   * download: 3.9 MB of dressing on the last stretch of the walk. What is
+   * left up here is the ridge itself, the lane, its fence and its slabs.
+   * grass-clumps.glb is still in the game — the pavilion's cracks use it. */
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3();
 
   // ---- the path surface itself -------------------------------------
   // A ribbon of packed, paler ground following the same bend, laid just
@@ -5247,6 +5072,7 @@ function sandMoundAt(x, z) {
  * the headland where it is dry. */
 function beachGroundAt(x, z) {
   if (FORT_M.floorAt) { const f = FORT_M.floorAt(x, z); if (f !== null) return f; }   // inside the castle, its paving
+  if (C13_M.floorAt) { const f = C13_M.floorAt(x, z); if (f !== null) return f; }
   let y = sandMoundAt(x, z);
   const b = wbBermAt(x, z); if (b > y) y = b;
   const d = driftAt(x, z); if (d > y) y = d;
@@ -5799,7 +5625,7 @@ function cullWorldInHall() {
    * door opens straight into the tavern, six kilometres away, and nothing
    * passes a beach frame between them, so whatever of the tavern's the keep
    * had switched off (its lamps, its cast) stayed off for the whole visit. */
-  const hk = inShrine ? 1 : inUndercroft ? 2 : inDojo ? 3 : inKeep ? 4 : inTavern ? 5 : inCat ? 6 : inWhale ? 7 : 0;
+  const hk = inShrine ? 1 : inUndercroft ? 2 : inDojo ? 3 : inKeep ? 4 : inTavern ? 5 : inCat ? 6 : inWhale ? 7 : inThrone ? 8 : 0;
   if (hallHid && hk !== hallKey) { for (const o of hallHid) o.visible = true; hallHid = null; }
   hallKey = hk;
   if (hk) {
@@ -7084,7 +6910,7 @@ function updateHurt(dt) {
       segs[i].style.setProperty('--f', cap > 0.001 ? Math.max(0, Math.min(cap, hp - i)) / cap : 0);
     }
   }
-  healthEl.style.opacity = (introDone && !ended && !dying) ? (hp < mx ? 0.95 : 0.42) : 0;
+  healthEl.style.opacity = (introDone && !ended && !dying) ? (hp < mx ? 1 : 0.7) : 0;
   healthEl.classList.toggle('hurt', hurtFlash > 0.55);
   if (!dying && !ended && introDone && hp < mx) {
     sinceHurt += dt;
@@ -7100,7 +6926,7 @@ function updateHurt(dt) {
   hurtEl.style.opacity = String(Math.max(hurtFlash * hurtFlash, rim));
 }
 
-function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || shopOpen || inspecting || peeking || packCut || !!keyCut || !!wbFareCut || mutCut || hatchBusy || ucBusy || abductCut || portalCut || sailBusy || tavBusy || fortBusy || caveBusy || catBusy || whaleBusy || !!wbSw || roomRestore || dying || ended || !introDone; }
+function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || shopOpen || inspecting || peeking || packCut || !!keyCut || !!wbFareCut || mutCut || hatchBusy || ucBusy || abductCut || portalCut || sailBusy || tavBusy || fortBusy || caveBusy || catBusy || whaleBusy || thrBusy || !!wbSw || roomRestore || dying || ended || !introDone; }
 function refreshUI() {
   const playing = started && !menuOpen && !noteOpen && !dialogOpen && !invOpen && !shopOpen && !inspecting && !dying && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
@@ -7222,7 +7048,20 @@ for (const type of ['pointerdown', 'pointerup', 'pointermove', 'mousedown', 'mou
       vcSetHover(vcFire('pointermove', e));
       return;
     }
-    vcFire(type, e);
+    const tgt = vcFire(type, e);
+    /* A SYNTHETIC WHEEL DOES NOT SCROLL. Under the held lock every wheel is
+     * re-sent as an ordinary event, and the browser only scrolls for a real
+     * one — so a list longer than its pane (an artifact's "Set in" weapons,
+     * the shop) could not be scrolled at all. The nearest scrollable box
+     * under the cursor is scrolled by hand. */
+    if (type === 'wheel') {
+      const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? innerHeight : 1;
+      for (let el = tgt; el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
+        const cs = getComputedStyle(el);
+        if (/(auto|scroll)/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 1) { el.scrollTop += e.deltaY * k; break; }
+        if (/(auto|scroll)/.test(cs.overflowX) && el.scrollWidth > el.clientWidth + 1 && Math.abs(e.deltaX) > Math.abs(e.deltaY)) { el.scrollLeft += e.deltaX * k; break; }
+      }
+    }
   }, { capture: true, passive: false });
 }
 function regainLook() {
@@ -7629,7 +7468,11 @@ function runIntro() {
       duckForIntro(false);
       introDone = true;
       openGameAudio(skipped ? 2 : INTRO_CUE.reveal);   // the beach is heard as it is seen
-      if (!instantStart) startMusic();
+      /* THE MUSIC PLAYS WHATEVER WAY YOU CAME IN. A checkpoint load used to
+       * hold it off ("the opening music is the opening"), and the owner's
+       * word is that the game without its music is a bug: it plays on every
+       * start, a little lower from a load. */
+      startMusic(instantStart ? 0.72 : 1);
       warmLensBlood();
       for (const k in keys) keys[k] = false;
       clock.getDelta();                            // drop the big first-frame dt
@@ -7938,7 +7781,7 @@ window.addEventListener('keydown', (e) => {
   else if (e.code === 'KeyG') { if (held) dropHeld(); else if (equipped) dropEquipped(); }
   else if (e.code === 'KeyQ') { if (inspecting) closeInspect(); else if (equipped) toggleEquip(equipped); }
   else if (e.code === 'KeyR') magReload();          // and six of them go back in
-  else if (/^Digit[1-6]$/.test(e.code)) { useSlot(+e.code.slice(5) - 1); }
+  else if (/^Digit[1-7]$/.test(e.code)) { if (+e.code.slice(5) <= hotbarN()) useSlot(+e.code.slice(5) - 1); }
   else if (e.code === 'Digit8') toggleFastWalk();
   else if (e.code === 'KeyP' && settings.devMode) toggleWhereAmI();
 });
@@ -8194,7 +8037,7 @@ mCheckpointBtn.addEventListener('click', () => { if (hasCheckpoint()) reloadInto
  * the trader, facing him. It refuses in the middle of a cut, and in the hall
  * in the saucer, whose fight is a sequence with no exit but winning it. */
 const devShopBusy = () => hatchBusy || ucBusy || abductCut || portalCut || sailBusy || tavBusy || fortBusy || caveBusy
-  || catBusy || whaleBusy || !!wbSw || roomRestore || packCut || mutCut || !!keyCut || !!wbFareCut || dying || ended || !introDone;
+  || catBusy || whaleBusy || thrBusy || !!wbSw || roomRestore || packCut || mutCut || !!keyCut || !!wbFareCut || dying || ended || !introDone;
 function devTeleportShop() {
   if (inShrine || devShopBusy()) return false;
   if (held) dropHeld();
@@ -8206,6 +8049,8 @@ function devTeleportShop() {
   if (inKeep) { inKeep = false; if (keepWorld) keepWorld.visible = false; keepLeave(); stopKeepIntro(0.4); }
   if (inWhale) { inWhale = false; if (whale) whale.G.visible = false; whaleLeave(); }
   if (inFort) { inFort = false; fortCalmBoss(); }
+  if (inC13) { inC13 = false; }
+  if (inThrone) { inThrone = false; if (thrWorld) thrWorld.visible = false; throneLeave(); }
   const z = TRADER_Z;
   if (packPhase < 2 && z < PACK_Z + PACK_TRIGGER) { packPhase = 2; packCut = false; }
   if (mutPhase < 2 && z < MUT_Z + MUT_TRIGGER) { mutPhase = 2; mutCut = false; mutCutOut = 0; }
@@ -8560,6 +8405,24 @@ function pickupNeedsSlot(it) {
   return true;
 }
 const packFullFor = (it) => inventory.length >= INV_MAX && pickupNeedsSlot(it);
+/* A FULL PACK SWAPS. With no room and something in your hand, E on a pickup
+ * puts what you hold down where you are looking and takes the new thing in
+ * its place — into the same slot, and into your hand if it can be held. A
+ * stack is not swapped (dropping one of it frees nothing). */
+const canSwapHeld = (it) => !!equipped && inventory.includes(equipped) && !(equipped.count > 1) && !!it && it.kind === 'inventory' && !!it.onActivate;
+function swapHeldFor(pick) {
+  if (!canSwapHeld(pick)) return false;
+  const was = equipped, at = slotOf(was);
+  const before = new Set(inventory);
+  dropItem(was);
+  if (inventory.includes(was)) return false;          // it would not go down: nothing was freed
+  slotHint = at;
+  pick.onActivate();
+  slotHint = -1;
+  const got = inventory.find((x) => !before.has(x));
+  if (got && got !== equipped && (got.viewmodel || got.onDig) && typeof got.use === 'function') toggleEquip(got);
+  return true;
+}
 function sayInventoryFull() {
   const el = document.getElementById('fullmsg');
   if (el) { el.classList.remove('show'); void el.offsetWidth; el.classList.add('show'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('show'), 1500); }
@@ -8627,7 +8490,7 @@ function updateHover() {
      * or the second one is a thing nobody finds. It is asked every frame,
      * because it depends on what you are carrying. */
     const alt = typeof best.alt === 'function' ? best.alt() : best.alt;
-    if (packFullFor(best)) { setPrompt('Inventory Full'); return; }
+    if (packFullFor(best)) { setPrompt('Inventory Full', best.mid); return; }
     setPrompt((br ? lbl : kbd('E') + lbl)
       + (alt ? ' &nbsp;&nbsp; ' + kbd('LMB') + alt : ''), best.mid);
   } else if (canWearHeld(equipped)) {
@@ -8686,7 +8549,7 @@ function primaryAction() {                       // E / F
   if (frozen()) return;
   if (held) { dropHeld(); return; }
   if (hovered) {
-    if (packFullFor(hovered)) { sayInventoryFull(); return; }
+    if (packFullFor(hovered)) { sayInventoryFull(); return; }     // no swapping, by the owner's word: a full pack just says so
     if (hovered.kind === 'physics') grab(hovered.prop);
     else if (hovered.onActivate) hovered.onActivate();
     return;
@@ -9245,7 +9108,7 @@ function groundUnder(x, z, atY) {
  * So the ray is cast at whatever room you are standing in, the floor comes
  * from `bunkerFloorAt` (which every room answers), and the beach's two walls
  * are only applied when you are on the beach. */
-const inRoom = () => inBunker || inShrine || inDojo || inUndercroft || inKeep || inTavern || inCat || inWhale;
+const inRoom = () => inBunker || inShrine || inDojo || inUndercroft || inKeep || inTavern || inCat || inWhale || inThrone;
 function dropTargets() {
   if (inUndercroft) return [undercroft];
   if (inBunker) return bunkers.map((b) => b.group).filter(Boolean);
@@ -9255,6 +9118,7 @@ function dropTargets() {
   if (inTavern) return tavWorld ? [tavWorld] : [];
   if (inCat) return catWorld ? [catWorld] : [];
   if (inWhale) return whale ? [whale.floor] : [];
+  if (inThrone) return thrWorld ? [thrWorld] : [];
   return [sand, dock, DOCK_STEPS, driftGroup, rockGroup];
 }
 function dropPoint() {
@@ -9519,7 +9383,28 @@ function sfxSmashElectronics() {
 // ------------------------------------------------------------------
 const inventory = [];
 let INV_MAX = 10;                   // the pack (Tab); the trader sells four more (`buyPackSpace`)
-const HOTBAR_SLOTS = 6;             // the quick strip on the left, keys 1–6
+/* A THING STAYS IN THE SLOT YOU PUT IT IN. `inventory` is the LIST of what
+ * you carry (every count, save, grant and trim reads it); `packSlots` is
+ * WHERE each thing sits in the grid, and it may have holes. Dragging the head
+ * to the bottom row used to splice it back into a dense array, so it slid up
+ * to the first gap on the next render and the slot you chose meant nothing.
+ * The hotbar is the TOP ROW of the grid (five slots, seven once the trader
+ * has widened it) and shows only what is in it: a thing on the bottom row is
+ * in the pack and out of the strip, which is how you keep the wheel short. */
+const packSlots = [];
+const hotbarN = () => (INV_MAX > 10 ? 7 : 5);
+const HOTBAR_SLOTS = 7;             // the most the strip can ever hold (keys 1–7)
+const slotOf = (item) => packSlots.indexOf(item);
+function firstFreeSlot() { for (let i = 0; i < INV_MAX; i++) if (!packSlots[i]) return i; return -1; }
+let slotHint = -1;                  // the slot a swap just emptied: the thing taken in its place goes there
+function placeInSlot(item, at = -1, cap = INV_MAX) {
+  if (slotOf(item) >= 0) return;
+  if (at < 0) { at = slotHint; slotHint = -1; }
+  if (at < 0 || at >= cap || packSlots[at]) at = firstFreeSlot();
+  if (at < 0) for (let i = INV_MAX; i < cap; i++) if (!packSlots[i]) { at = i; break; }
+  if (at >= 0) packSlots[at] = item;
+}
+function clearSlot(item) { const i = slotOf(item); if (i >= 0) packSlots[i] = undefined; }
 let equipped = null;
 let whaleArtItem = null, artState = 0;   // the artifact the whale gives up (its section is near the end)
 /* AND THE STRIP IS UPDATED, NOT REBUILT. `innerHTML = ''` and six fresh
@@ -9533,7 +9418,7 @@ let whaleArtItem = null, artState = 0;   // the artifact the whale gives up (its
 const hotbarCache = [];
 function renderHotbar() {
   for (let i = 0; i < HOTBAR_SLOTS; i++) {
-    const item = inventory[i] || null;
+    const item = (i < hotbarN() && packSlots[i]) || null;
     let c = hotbarCache[i];
     if (!c) {
       const el = document.createElement('div');
@@ -9661,7 +9546,7 @@ function takeOffRing(i) {
   sfxRingOff();
 }
 
-function addToInventory(item) {
+function addToInventory(item, over = false) {
   /* AND THE SAME THING CANNOT BE HAD TWICE. Every takeable that can be
    * picked up more than once (the shells, the note) builds a FRESH item
    * object, so identity is a safe test — and it is needed now that dev mode
@@ -9675,8 +9560,11 @@ function addToInventory(item) {
    * in the pack beside the one on your hand. */
   if (typeof rings !== 'undefined' && rings.includes(item)) return true;
   settleRestore();
-  if (inventory.length >= INV_MAX) return false;
+  /* `over` is the dojo's sword: it must always be taken, and nothing else may
+   * be lost for it, so a full pack grows a slot for it rather than refusing. */
+  if (inventory.length >= INV_MAX && !over) return false;
   inventory.push(item);
+  placeInSlot(item, -1, Math.max(INV_MAX, inventory.length));
   renderHotbar();
   renderPack();
   refreshUI();
@@ -9687,6 +9575,7 @@ function removeFromInventory(item) {
   if (i < 0) return;
   if (equipped === item) toggleEquip(item);
   inventory.splice(i, 1);
+  clearSlot(item);
   artOnWeaponLeaving(item);
   renderHotbar();
   renderPack();
@@ -9961,7 +9850,7 @@ function iconDrawable(model) {
  * your hands. Every icon this browser has ever rendered is kept (it is the
  * same picture every time: the same model through the same lens), so a load
  * draws them at once. `ICON_CACHE_V` goes up whenever the icon rig changes. */
-const ICON_CACHE_V = 'v4';
+const ICON_CACHE_V = 'v5';
 const iconCacheKey = (item) => 'beachwalk.icon.' + ICON_CACHE_V + '.' + (item.id || item.name);
 function itemIcon(item) {
   if (item._icon) return item._icon;
@@ -10036,14 +9925,14 @@ function scrollHotbar(dir) {
    * fight never turns a thing over on the examine screen, which is what the
    * weapons-only filter was protecting.) */
   const slots = [];
-  for (let i = 0; i < HOTBAR_SLOTS; i++) if (inventory[i]) slots.push(i);
+  for (let i = 0; i < hotbarN(); i++) if (packSlots[i]) slots.push(i);
   if (!slots.length) return;
   /* THE CURSOR MOVES NOW; THE HAND FOLLOWS WHEN YOU STOP. Equipping on every
    * step swapped the model, played the draw and rebuilt the view for every
    * slot a fast scroll passed through, which is the stutter in "make the
    * scroll smoother". The highlight goes at once, with a pop and a tick, and
    * what it rests on is put in your hand `WHEEL_COMMIT` after the last step. */
-  const at = wheelCursor >= 0 ? wheelCursor : (equipped ? inventory.indexOf(equipped) : restSlot);
+  const at = wheelCursor >= 0 ? wheelCursor : (equipped ? slotOf(equipped) : restSlot);
   const cur = slots.indexOf(at);
   const next = cur < 0 ? (dir > 0 ? 0 : slots.length - 1) : (cur + dir + slots.length) % slots.length;
   if (slots[next] === at && at >= 0) return;
@@ -10063,7 +9952,7 @@ function updateWheelCommit() { if (wheelCursor >= 0 && performance.now() - wheel
 const WHEEL_COMMIT = 80;        // ms of rest before the slot the wheel is on goes into your hand
 function commitWheel() {
   const i = wheelCursor;
-  const item = i >= 0 ? inventory[i] : null;
+  const item = i >= 0 ? packSlots[i] : null;
   /* frozen (a take, a word, the examine screen): the cursor WAITS rather than
    * snapping back to what you held, which read as the strip reverting */
   if (item && item !== equipped && frozen()) return;
@@ -10173,7 +10062,7 @@ window.addEventListener('wheel', (e) => {
 }, { passive: true });
 function useSlot(i) {
   if (wheelCursor >= 0) wheelCursor = -1;   // a digit or a click is a choice now, not the wheel's
-  const item = inventory[i];
+  const item = packSlots[i];
   if (!item || menuOpen || ended) return;
   if (noteOpen) { closeNote(); return; }
   item.use();
@@ -10278,7 +10167,7 @@ function renderPackDetail() {
     bT.addEventListener('click', (e) => { e.stopPropagation(); const k = packRingSel; packRingSel = -1; takeOffRing(k); });
     return;
   }
-  const item = inventory[packSel];
+  const item = packSlots[packSel];
   if (!item) {
     invDetailEl.className = 'detail empty';
     invDetailEl.innerHTML = inventory.length
@@ -10296,7 +10185,7 @@ function renderPackDetail() {
     ? artWs.map((w, k) => `<button type="button" class="act attach" data-k="${k}">Set in · ${w.name}</button>`).join('')
     : '<div class="hint">Carry a weapon to set it in</div>';
   const artOnHTML = isArtWeapon(item) && item.artifact
-    ? `<div class="artline">◆ ${item.artifact.name}</div><button type="button" class="act detach">Remove artifact</button>` : '';
+    ? `<div class="artline">${ART_WHALE_SVG}${item.artifact.name}</div><button type="button" class="act detach">Remove artifact</button>` : '';
   invDetailEl.innerHTML = `<div class="big">${iconHTML(item)}</div>
     <div class="name">${item.name}</div>
     ${item.desc ? `<div class="desc">${item.desc}</div>` : ''}
@@ -10312,13 +10201,13 @@ function renderPackDetail() {
   bI.addEventListener('click', (e) => { e.stopPropagation(); inspectFromPack(item); });
   for (const b of invDetailEl.querySelectorAll('.attach')) b.addEventListener('click', (e) => {
     e.stopPropagation(); const w = artWs[+b.dataset.k];
-    if (w && attachArtifact(item, w)) { packSel = inventory.indexOf(w); renderPack(); }
+    if (w && attachArtifact(item, w)) { packSel = slotOf(w); renderPack(); }
   });
   const bD = invDetailEl.querySelector('.detach');
   if (bD) bD.addEventListener('click', (e) => { e.stopPropagation(); detachArtifact(item); renderPack(); });
   if (bH) bH.addEventListener('click', (e) => {
     e.stopPropagation();
-    const i = inventory.indexOf(item);
+    const i = slotOf(item);
     if (i < 0) return;
     closePack();
     useSlot(i);
@@ -10335,8 +10224,8 @@ function renderPackDetail() {
     let n = all ? Math.max(1, item.count | 0) : 1;
     while (n-- > 0 && inventory.includes(item)) dropItem(item, 0.32);
     if (was && was !== item && inventory.includes(was) && equipped !== was) toggleEquip(was);
-    const i = inventory.indexOf(item);
-    packSel = i >= 0 ? i : Math.min(packSel, inventory.length - 1);
+    const i = slotOf(item);
+    packSel = i >= 0 ? i : (firstFilledSlot());
     renderPack();
   };
   invDetailEl.querySelector('.drop').addEventListener('click', (e) => { e.stopPropagation(); dropSel(false); });
@@ -10352,18 +10241,21 @@ function selectRingSlot(i) {
 function selectPackSlot(i) {
   packRingSel = -1;
   for (const s of document.querySelectorAll('#pack-rings .rslot')) s.classList.remove('sel');
-  packSel = inventory[i] ? i : -1;
+  packSel = packSlots[i] ? i : -1;
   for (const s of invGridEl.querySelectorAll('.islot')) s.classList.toggle('sel', +s.dataset.index === packSel);
   renderPackDetail();
 }
+const firstFilledSlot = () => { for (let i = 0; i < INV_MAX; i++) if (packSlots[i]) return i; return -1; };
 function renderPack() {
   if (!invGridEl) return;
   invGridEl.innerHTML = '';
   // fourteen slots are two rows of seven, not three of five: a third row pushes the rings off a 1080 screen
   invGridEl.style.gridTemplateColumns = `repeat(${INV_MAX > 10 ? 7 : 5}, 1fr)`;
-  if (!inventory[packSel]) packSel = inventory.length ? 0 : -1;
-  for (let i = 0; i < INV_MAX; i++) {
-    const item = inventory[i];
+  if (!packSlots[packSel]) packSel = firstFilledSlot();
+  const nSlots = Math.max(INV_MAX, inventory.length);
+  for (const it of inventory) if (slotOf(it) < 0) placeInSlot(it, -1, nSlots);   // a thing taken over the top gets a cell
+  for (let i = 0; i < nSlots; i++) {
+    const item = packSlots[i];
     const slot = document.createElement('div');
     slot.className = 'islot' + (item ? ' filled' : '') + (i === packSel ? ' sel' : '') + (item && item === equipped ? ' held' : '') + (item && isArtWeapon(item) && item.artifact ? ' art' : '');
     slot.dataset.index = String(i);
@@ -10415,7 +10307,7 @@ invGridEl.addEventListener('pointerdown', (e) => {
   const slot = e.target.closest('.islot');
   if (!slot) return;
   const i = +slot.dataset.index;
-  const item = inventory[i];
+  const item = packSlots[i];
   selectPackSlot(i);
   if (!item) return;
   e.preventDefault();
@@ -10434,7 +10326,7 @@ function beginDrag(e) {
   slot.classList.add('dragging');
   // light up anything this can actually combine with
   for (const s of invGridEl.querySelectorAll('.islot')) {
-    const other = inventory[+s.dataset.index];
+    const other = packSlots[+s.dataset.index];
     if (other && findRecipe(item, other)) s.classList.add('combines');
   }
   // and the ring slots, if this is a ring: a drop target nobody can see is a
@@ -10474,11 +10366,11 @@ window.addEventListener('pointerup', (e) => {
     addToInventory(item);
     // and it lands in the slot it was dropped on, if that one was empty
     if (slot) {
-      const to = +slot.dataset.index, at = inventory.indexOf(item);
+      const to = +slot.dataset.index;
       invTouched = true;
-      if (!inventory[to] || to >= at) { inventory.splice(at, 1); inventory.splice(Math.min(to, inventory.length), 0, item); }
+      if (!packSlots[to]) { clearSlot(item); packSlots[to] = item; }
     }
-    packSel = inventory.indexOf(item);
+    packSel = slotOf(item);
     renderRings(); renderHotbar(); renderPack();
     sfxRingOff();
     return;
@@ -10487,14 +10379,13 @@ window.addEventListener('pointerup', (e) => {
   if (!slot) return;
   const to = +slot.dataset.index;
   if (to === from) return;
-  const target = inventory[to];
+  const target = packSlots[to];
   const recipe = findRecipe(item, target);
   if (recipe) { recipe(); return; }
-  // no recipe — just reorder / swap the two slots
+  // no recipe — the thing goes EXACTLY where it was dropped, swapping with whatever was there
   invTouched = true;
-  if (target) { inventory[to] = item; inventory[from] = target; }
-  else { inventory.splice(from, 1); inventory.splice(Math.min(to, inventory.length), 0, item); }
-  packSel = inventory.indexOf(item);
+  packSlots[to] = item; packSlots[from] = target;
+  packSel = to;
   renderHotbar(); renderPack();
 });
 
@@ -19715,16 +19606,35 @@ function musicBuffer() {
   if (!musicBufP && audioCtx) musicBufP = musicBytes.then((b) => (b ? audioCtx.decodeAudioData(b.slice(0)) : null)).catch(() => null);
   return musicBufP;
 }
-function startMusic() {
-  if (musicStarted || !audioCtx) return;
+/* AND IT NEVER SILENTLY FAILS. The buffer's fetch is asked for at module
+ * load and decoded on the first context; if either came back empty the old
+ * code cleared `musicStarted` and nobody ever asked again, and a context
+ * that was still suspended on the first try (a start that was not a trusted
+ * gesture) scheduled the whole fade against a stopped clock. The source is
+ * only ever started on a RUNNING context — it is re-tried every second until
+ * it is, and the bytes are fetched again if they were lost. */
+let musicRetryT = null, musicLevel = 1;
+function startMusic(level = 1) {
+  if (!audioCtx) return;
+  musicLevel = level;
+  if (musicStarted) return;
+  if (audioCtx.state !== 'running') {
+    audioCtx.resume().catch(() => {});
+    if (!musicRetryT) musicRetryT = setTimeout(() => { musicRetryT = null; startMusic(musicLevel); }, 1000);
+    return;
+  }
   musicStarted = true;
   musicEnvGain = audioCtx.createGain();
   musicVolGain = audioCtx.createGain();
   musicEnvGain.gain.value = 0.0001;
-  musicVolGain.gain.value = document.hidden ? 0 : settings.volume * settings.musicVolume;
+  musicVolGain.gain.value = document.hidden ? 0 : settings.volume * settings.musicVolume * musicLevel;
   musicEnvGain.connect(musicVolGain).connect(audioCtx.destination);
   musicBuffer().then((buf) => {
-    if (!buf) { musicStarted = false; return; }
+    if (!buf) {
+      musicStarted = false; musicBufP = null;
+      if (!musicRetryT) musicRetryT = setTimeout(() => { musicRetryT = null; startMusic(musicLevel); }, 1500);
+      return;
+    }
     const src = musicSrc = audioCtx.createBufferSource();
     src.buffer = buf;
     src.connect(musicEnvGain);
@@ -19742,7 +19652,7 @@ function startMusic() {
   });
   // it bypasses the master bus, so it has to go quiet in a hidden tab itself
   document.addEventListener('visibilitychange', () => {
-    if (musicVolGain) musicVolGain.gain.setTargetAtTime(document.hidden ? 0 : settings.volume * settings.musicVolume, audioCtx.currentTime, 0.2);
+    if (musicVolGain) musicVolGain.gain.setTargetAtTime(document.hidden ? 0 : settings.volume * settings.musicVolume * musicLevel, audioCtx.currentTime, 0.2);
   });
 }
 
@@ -23084,8 +22994,15 @@ if (shipHead) {
      * with the flat toward you and the whole silhouette showing — the way
      * anyone carries something in their teeth. A few degrees off level,
      * because nothing in a dead man's mouth is straight. */
-    boatKey.position.set(0, -0.066, 0.108);
-    boatKey.rotation.set(0.06, 0, 0.13);
+    /* AND IT IS BITTEN, NOT HELD UP TO THE LIPS. At z 0.108 the key stood on
+     * the lip SURFACE (measured off the scan: the mouth's seam is at y -0.05,
+     * z 0.076 and the lips bulge to 0.10-0.11), so the whole key floated in
+     * front of the face. Its middle is behind the lips now, which close over
+     * it, and the bow and the bit stand out past the corners of the mouth —
+     * the mouth clenched on it. Rendered from four sides to settle the depth:
+     * at 0.072 the ends came out through the cheeks instead. */
+    boatKey.position.set(0.002, -0.052, 0.091);
+    boatKey.rotation.set(0.06, 0, 0.12);
     shipHead.add(boatKey);
     addItemShine(shipHead, { size: 0.34, height: 0.0, strength: 0.35, lift: 0.3 });
   }, undefined, () => {});
@@ -23313,12 +23230,7 @@ if (holdDoor) {
       holdDoorUnlocking = true;
       setTimeout(() => { holdDoorUnlocking = false; holdDoorOpen = true; sfxLockerOpen(); }, 850);
       // it has done its one job: it goes into the lock and stays there
-      const ki = inventory.indexOf(boatKeyItem);
-      if (ki >= 0) {
-        inventory.splice(ki, 1);
-        if (equipped === boatKeyItem) toggleEquip(boatKeyItem);
-        renderHotbar();
-      }
+      if (inventory.includes(boatKeyItem)) removeFromInventory(boatKeyItem);
       setPrompt('');
       hovered = null;
     },
@@ -27266,6 +27178,34 @@ function mutPlay(u, name, loop) {
  * clip and the startup and recovery it is mapped onto are not the same
  * length, so the two halves are remapped separately: however the timings are
  * tuned, the hand lands on the frame the damage is dealt. */
+/* MOTION CAPTURE PLAYS AT ITS OWN SPEED. The farmers and the parasites
+ * swing Mixamo takes, and the table timed them the hand-authored way: a held
+ * tell (`real`), then the stroke at `clipRate` — 1.6 to 2.6 times the clip.
+ * Measured over a live fight: the orc cuts ran at 1.8-1.9x and the zombie
+ * punches at up to 2.3x, with frames held dead still in the wind-up, which is
+ * exactly "it does not look like it does on Mixamo". A kind marked `natural`
+ * has every swing that resolves to a clip re-timed off that clip's own length
+ * the moment the clip exists: the startup is the clip up to its contact frame,
+ * the strike and recovery are the rest, so clip time IS game time. */
+function naturalSwings(u) {
+  if (!u.atk || !u.clips) return false;
+  let all = true;
+  for (const k in u.atk) {
+    const A = u.atk[k];
+    if (A._nat) continue;
+    const a = u.clips[k] || (A.clip && u.clips[A.clip]);
+    if (!a) { all = false; continue; }
+    const dur = a.getClip().duration;
+    if (!(dur > 0.2) || !(A.hit > 0.05 && A.hit < 0.98)) { A._nat = true; continue; }
+    const wind = dur * A.hit, rest = dur - wind;
+    A.real = false; A.ease = false;
+    A.wind = wind;
+    A.strike = Math.min(A.strike || 0.1, rest * 0.3);
+    A.recover = Math.max(0.05, rest - A.strike);
+    A._nat = true;
+  }
+  return all;
+}
 function mutClipTime(t, dur, A) {
   const hit = dur * A.hit;
   /* REAL TIME, WITH THE TELL AS A HOLD. Mapping the whole of a short clip's
@@ -27503,13 +27443,18 @@ function velGaitAnim(u, dt, N) {
     if (want === 'idle' || mode === 'idle' || dom(want) > dom(mode) * 1.3 + 0.1) mode = want;
   }
   u._vgMode = mode;
-  const rate = (nm, v, fb) => { const c = spd(nm); return c > 0.2 ? THREE.MathUtils.clamp(v / c, 0.3, 1.8) : fb; };
+  /* A `natural` kind's gaits stay near their own speed: past that the clip is
+   * a man running in fast-forward, which is the other half of "it does not
+   * look like Mixamo" (measured: runs at 1.45x, side-steps at 0.3x). The body
+   * is held to the stride instead of the stride being stretched to the body. */
+  const NAT = !!u.kind.natural, rLo = NAT ? 0.7 : 0.3, rHi = NAT ? 1.25 : 1.8;
+  const rate = (nm, v, fb) => { const c = spd(nm); return c > 0.2 ? THREE.MathUtils.clamp(v / c, rLo, rHi) : fb; };
   /* AND THE BODY MAY NOT OUTRUN ITS FEET. The rate can only stretch a clip so
    * far; past that the ground goes by faster than any foot is planted on it,
    * which is the whole of "they slide". Whatever carried it this frame — the
    * hold, the separation, a wall — the step is cut back to what the stride
    * being played can cover. */
-  const capFor = (nm) => { const c = spd(nm); return c > 0.2 ? c * 1.8 : 0; };
+  const capFor = (nm) => { const c = spd(nm); return c > 0.2 ? c * rHi : 0; };
   const capStep = (cap) => {
     const il2 = Math.hypot(ix, iz);
     if (!cap || il2 <= cap || dt <= 1e-4 || px0 === undefined) return;
@@ -27519,7 +27464,7 @@ function velGaitAnim(u, dt, N) {
   };
   if (mode === 'fwd') {
     const walkC = spd(G.walk) || 1.2;
-    u._vgRun = u._vgRun ? f > walkC * 1.45 : f > walkC * 1.75;
+    u._vgRun = NAT ? (u._vgRun ? f > walkC * 1.05 : f > walkC * 1.22) : (u._vgRun ? f > walkC * 1.45 : f > walkC * 1.75);
     const nm = u._vgRun ? G.run : G.walk;
     capStep(capFor(G.run || nm));
     const a = mutPlay(u, nm, true);
@@ -27683,7 +27628,7 @@ function mutAnim(u, dt, moving) {
   } else if (u.st.flourish > 0) {
     // a roar thrown in mid-fight — quick, and not the one it opened with
     const a = mutPlay(u, u.st.flourishClip, false);
-    if (a) { a.paused = false; a.timeScale = 1.7; }
+    if (a) { a.paused = false; a.timeScale = u.st.flourishRate || 1.7; }
   } else if (moving > (u.kind.gaitBySpeed ? 0.10 : 0.04)) {
     /* GAITS THAT CHANGE. The walk clips were never played — everything that
      * moved ran — and each kind ran one clip for ever. A slow advance walks
@@ -32034,7 +31979,7 @@ function mutRagdoll(u, dirX, dirZ, power) {
             room: rb && rb.nav ? rb.nav.room : null, bunker: rb || null,
             ring: !!(u.kind.ring && SH && shrineReady),     // it dies inside the drum
             gut: !!(u.kind.whaleBody && inWhale && whale),   // or inside the whale: its walls hold a body thrown at them
-            fort: !!(u.kind.fortBody && fortWalls),            // or in the castle's courtyard: its stone holds a body the same way
+            fort: (u.kind.fortBody && fortWalls) ? FORT_SITE : (u.kind.c13Body && c13Walls) ? C13_SITE : (u.kind.thrBody && thrWalls) ? THR_SITE : null,   // or in a castle's courtyard: its stone holds a body the same way
             roomG: rec ? rec.group : null, wallHit: 0, wallAt: new THREE.Vector3() };
   u.g.rotation.set(0, u.g.rotation.y, 0);           // the body's tilt is the particles' now, not the group's
   /* And the aim's yaw dies with him. It lives on the MODEL, and a man killed
@@ -32298,7 +32243,7 @@ function updateMutRagdoll(u, dt) {
            * the buildings and the curtain wall, the drawn faces the walk is
            * held by, at the particle's own height. */
           if (r.fort) {
-            const h = keepWallNear(q.p.x, q.p.z, q.r + 0.04, q.p.y - 0.35, q.p.y + 0.35, FORT_SITE);
+            const h = keepWallNear(q.p.x, q.p.z, q.r + 0.04, q.p.y - 0.35, q.p.y + 0.35, r.fort);
             if (h) {
               const ox = q.p.x - h.x, oz = q.p.z - h.z, L = Math.hypot(ox, oz) || 1;
               const vx = q.p.x - q.pp.x, vz = q.p.z - q.pp.z;
@@ -32705,6 +32650,7 @@ function updateMutantUnit(u, dt) {
    * takes them up there — and are drawn only while the room is. */
   if (u.kind.tav) {
     if (u.parLate && u.parLate()) u.parLate = null;     // a farmer at the tavern's table: his motion capture, once its packs are in
+    if (u.kind.natural && !u.natDone && !u.parLate) u.natDone = naturalSwings(u);
     u.g.visible = inTavern;
     if (!inTavern) { mutDrop(u); mutAnim(u, dt, 0); return; }
     if (u.st.vault) { tavVaultStep(u, dt); return; }
@@ -32757,7 +32703,7 @@ function updateMutantUnit(u, dt) {
    * THROUGH the heap with the sand at its knees. Every room kind has its own
    * floor above; a beach body is anything near the beach's own x and height.
    * Eased the way the rooms ease a riser, so a bank is climbed, not snapped. */
-  else if (!u.kind.uc && !u.kind.dojo && !u.kind.tav && !u.kind.cat && u.st.alive
+  else if (!u.kind.uc && !u.kind.dojo && !u.kind.tav && !u.kind.cat && !u.kind.c13Body && !u.kind.thrBody && u.st.alive
       && Math.abs(p.x) < 120 && p.y > -4 && p.y < 30 && !(u.comfy && !u.st.awake)) {
     const ty = beachGroundAt(p.x, p.z);      // in the shallows it stands on the seabed, as it always did
     const dy = ty - p.y, ad = Math.abs(dy);
@@ -32770,11 +32716,11 @@ function updateMutantUnit(u, dt) {
      * — the pack's take, the SCP's look, the knight's altar — so a creature
      * simply set down on the sand would sleep through you walking past it.
      * `wakeAt` is the distance at which it does not. */
-    if (u.kind.wakeAt && u.st.alive && introDone && !dying && !ended && !u.holdAnim && (!u.kind.fortBody || (inFort && fortInT > 0.9 && farmFightDone()))
-        && (!u.kind.fortOut || (!inFort && !fortBusy && camera.position.z < umbraLimZ() + 3))) {
+    if (u.kind.wakeAt && u.st.alive && introDone && !dying && !ended && !u.holdAnim && (!u.kind.fortBody || (inFort && fortInT > 0.9 && farmFightDone())) && (!u.kind.c13Body || crusaderMayWake())
+        && (!u.kind.thrBody || throneMayWake(u))) {
       const dW = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
       // (the castle's is saved at its gate the moment before you walk in: the calm a save buys is not his)
-      if (dW < (performance.now() < chaseGraceUntil && !u.kind.fortBody && !u.kind.fortOut ? Math.min(u.kind.wakeAt, CHASE_GRACE_R) : u.kind.wakeAt)) {
+      if (dW < (performance.now() < chaseGraceUntil && !u.kind.fortBody && !u.kind.thrBody && !u.kind.c13Body ? Math.min(u.kind.wakeAt, CHASE_GRACE_R) : u.kind.wakeAt)) {
         if (u.kind.provoke) u.kind.provoke(u, false);
         else { u.st.awake = true; u.st.roar = 1.2; u.st.cool = 0.4; }
       }
@@ -32931,7 +32877,7 @@ function updateMutantUnit(u, dt) {
   // the rest of this is going to be
   if (u.st.roar > 0) {
     u.st.roar -= dt;
-    turn(4);
+    if (!u.st.thrRising) turn(4);       // getting up off a throne is not a thing you do turning
     mutAnim(u, dt, 0);
     return;
   }
@@ -33725,7 +33671,8 @@ function aimBar(u, dt, dist) {
   if (u.st.atk >= 0 && A && !A.noAim) {
     const t = u.st.atk;
     // nothing during the wind-up you are meant to read; all of it on the way in
-    if (t > A.wind * 0.55) w = THREE.MathUtils.clamp((t - A.wind * 0.55) / (A.wind * 0.45), 0, 1);
+    const af = u.kind.aimFrom || 0.55;     // a flail's ball swings behind him until late: aim it only on the way in
+    if (t > A.wind * af) w = THREE.MathUtils.clamp((t - A.wind * af) / (A.wind * (1 - af)), 0, 1);
     if (t > A.wind + A.strike) w *= Math.max(0, 1 - (t - A.wind - A.strike) / (A.recover * 0.6));
   }
   /* THE BODY YAW IS HELD FROM THE CONTACT AND FOLDED INTO THE HEADING.
@@ -35285,7 +35232,9 @@ function spawnBunker(x, y, z, yaw = 0, opts) {
  * whatever displaces you calls this immediately afterwards. */
 const _cpL = new THREE.Vector3();
 function clampPlayerToRoom() {
-  if (fortClampPlayer()) return;          // the castle's stone answers a knockback in its courtyard
+  if (fortClampPlayer()) return;
+  if (c13ClampPlayer()) return;          // the castle's stone answers a knockback in its courtyard
+  if (thrClampPlayer()) return;
   /* AND WHATEVER MOVES THE PLAYER LAST MUST RE-RUN THE ROOM'S CLAMP — the
    * bunker's own lesson, and the courtyard never got it. `updateDojo` reverts
    * a step that leaves the walk, and the samurai's KNOCKBACK is applied from
@@ -38420,7 +38369,7 @@ function update(dt, rawDt = dt) {
    * applied you hit an invisible wall 4.6 m short of her bow while
    * standing on her own deck. Her bulwark keeps you aboard. */
   updateTugBow();           // her stem stands past WADE_X: moves the wade line, before the clamp reads it
-  if (!insideTower && !insideDrain && !inBunker && !inShrine && !inDojo && !inUndercroft && !inKeep && !inTavern && !inCat && !inWhale && !inFort && !onDock && !onShip && !atTugBow && !onTug && mushWhere === 'out' && !mushInYard) {    // (the castle's courtyard runs into the dune) the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line; the saucer and the dojo are not on the beach at all
+  if (!insideTower && !insideDrain && !inBunker && !inShrine && !inDojo && !inUndercroft && !inKeep && !inTavern && !inCat && !inWhale && !inThrone && !inFort && !inC13 && !onDock && !onShip && !atTugBow && !onTug && mushWhere === 'out' && !mushInYard) {    // (the castle's courtyard runs into the dune) the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line; the saucer and the dojo are not on the beach at all
     camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
     camera.position.x = Math.max(camera.position.x, WADE_X);
   }
@@ -38458,6 +38407,7 @@ function update(dt, rawDt = dt) {
   updateTavern(dt);         // and the hall behind its door
   updateCatacombs(dt);      // and the catacombs under the sand past the stones
   tickFort(dt);             // and the castle across the beach at the headland's foot: solid outside, walked inside
+  updateC13Arch(dt); updateThrone(dt);   // the arched door in Castle XIII, and the throne room behind it
   updateWhale(dt);          // and the whale's gut behind the door near the lighthouse
   updateSamurai(dt);        // and the man who wants his sword back
   updateUndercroft(dt);     // the cave's floor and the church's, off the grids the packer wrote
@@ -38500,7 +38450,7 @@ function update(dt, rawDt = dt) {
    * arrive on top of it. It is gated on the undercroft on purpose — the
    * bunker's fight is fought between a desk and a work table and a jump
    * beside either of those is not a player breaking it. */
-  if (!onGround && (inUndercroft || inTavern)) stompBreakables(0.5, true);
+  if (!onGround && (inUndercroft || inTavern || inThrone)) stompBreakables(0.5, true);
   /* AND THE DEALER'S DESK GOES IF YOU JUMP INTO IT. The loose stomp stays
    * off down there — eighteen breakables on a desk and a console bank, and a
    * hop beside a monitor is not a player breaking it — but the desk is the
@@ -38545,7 +38495,7 @@ function update(dt, rawDt = dt) {
         else if (inCat) sfxStepCat();
         else if (inTavern) sfxStepTav();
         else if (inWhale) sfxStepWhale();
-        else if (inFort) sfxStepCat();
+        else if (inFort || inC13 || inThrone) sfxStepCat();
         else sfxStep();
       });
     }
@@ -38628,12 +38578,18 @@ function update(dt, rawDt = dt) {
    * itself gets the extra tenth, and the fill is the fraction of it. */
   const sMax = stamMax();
   staminaEl.classList.toggle('show', stamina < sMax - 0.001);
-  if (staminaEl._max !== sMax) { staminaEl._max = sMax; staminaEl.style.width = (240 * sMax).toFixed(1) + 'px'; }
+  if (staminaEl._max !== sMax) { staminaEl._max = sMax; staminaEl.style.width = (300 * sMax).toFixed(1) + 'px'; }
   staminaFill.style.transform = `scaleX(${Math.max(0, stamina / sMax)})`;
-  staminaFill.classList.toggle('low', exhausted);
+  /* RED WHEN IT WILL NOT HOLD YOU: spent past the point the guard comes up
+   * again (`exhausted` refuses it until a third is back) the bar and its track
+   * go red; under the cost of one more block, the warning amber. */
+  staminaFill.classList.toggle('out', exhausted);
+  staminaEl.classList.toggle('out', exhausted);
+  staminaFill.classList.toggle('low', !exhausted && stamina < BLOCK_COST * sMax);
   // and green while the spliff is working — unless you are low, when the warning wins
-  if (spliffBuffT > 0) spliffBuffT = Math.max(0, spliffBuffT - dt);
-  staminaFill.classList.toggle('buff', spliffBuffT > 0 && !exhausted && stamina > sMax * 0.28);
+  const buffOn = spliffBuffT > 0 && !exhausted && stamina >= BLOCK_COST * sMax;
+  staminaFill.classList.toggle('buff', buffOn);
+  staminaEl.classList.toggle('buff', buffOn);
 
   /* Splashing is for walking THROUGH water, never over it. On the pier's
    * boards, on the wreck's deck or on a rock you are above the sea, and the
@@ -38664,7 +38620,7 @@ function update(dt, rawDt = dt) {
         sfxStepTav();                      // flags, boards or a rug: whatever is under the boot
       } else if (inWhale) {
         sfxStepWhale();                    // flesh gives underfoot; the fluid is a wade
-      } else if (inFort) {
+      } else if (inFort || inC13 || inThrone) {
         sfxStepCat();                      // the courtyard's cobbles: stone, and no print
       } else {
         stampFoot(camera.position.x, camera.position.z, moveDir.x, moveDir.z, footSide);
@@ -38735,7 +38691,10 @@ function update(dt, rawDt = dt) {
   updateBleedRig(dt);
   updateCrab(dt);
   updateMutant(dt);
+  updateCrusader(dt);       // and the flail knight's chain, after whatever moved his arm
+  updateThroneBoss(dt);     // and the marauder on his throne, on the hall's floor
   pinSamuraiSword();        // whatever moved his arm last is what the sword hangs off
+  samTwoHand(dt);           // and his left hand goes onto the handle behind the right
   cullWorldInHall();        // and the beach is not drawn from a room twelve kilometres off it
   bunkerTenantry();         // nor from one forty metres under it — AFTER `updateFarProps`, which writes a far prop's `visible` every frame
   /* AFTER the fight AI, never before: whatever moves him last has to be the
@@ -38866,6 +38825,7 @@ function saveCheckpoint(spot) {
     took: [...takenPickups],
     // the pack, in the order you carried it, and what was in your hand
     pack: inventory.map((i) => i.name),
+    slots: Array.from({ length: INV_MAX }, (_, i) => (packSlots[i] ? packSlots[i].name : null)),
     worn: rings.map((i) => i.name),
     held: equipped ? equipped.name : null,
     // the mounds you dug, so the beach is as pitted as you left it
@@ -38936,7 +38896,7 @@ function saveCheckpoint(spot) {
       keepCrate: keepCrateBroken, keepSpliff: keepSpliffTaken,
       grammy: grammyState, grammyAt,
       // the whale's artifact: not yet given, lying in the belly, or yours — and what it is set in
-      whaleArt: artState, artOn: artAttachedTo(),
+      whaleArt: artState, artOn: artAttachedTo(), artAt: art.spot || null, c13Arch: c13ArchOpen,
     },
   };
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (err) { return; }
@@ -39084,6 +39044,7 @@ function beginRestoreQuiet() {
   crabItem.count = 0; waterBottleItem.count = 0; fangItem.count = 0;   // `applySavedInventory` sets these from the save
   spliffItem.count = 0;
   spliffBuffT = f.spliffBuff || 0;
+  if (f.c13Arch) openC13Arch(true);
   keepCrateBroken = !!f.keepCrate; keepSpliffTaken = !!f.keepSpliff;
   // a photo on the floor is put back on the floor when the tavern is built; one in your pack comes back by name
   grammyState = f.grammy || 0; grammyAt = f.grammyAt || null;
@@ -39351,10 +39312,23 @@ function applySavedInventoryInner(d, loud, hand) {
    * replay hands something over, for seconds after a load — and it used to
    * re-sort the strip and put the saved item back in your hand each time, so
    * a change made in those seconds snapped back ("the hotbar reverts"). */
-  if (!invTouched) inventory.sort((a, b) => {
-    const ia = want.indexOf(a.name), ib = want.indexOf(b.name);
-    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
-  });
+  if (!invTouched) {
+    inventory.sort((a, b) => {
+      const ia = want.indexOf(a.name), ib = want.indexOf(b.name);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
+    /* AND EACH THING GOES BACK TO THE SLOT IT WAS IN. A save from before the
+     * slots were remembered lays the pack out in its carried order. */
+    const sl = Array.isArray(d.slots) ? d.slots : null;
+    packSlots.length = 0;
+    const left = [...inventory];
+    if (sl) for (let i = 0; i < INV_MAX; i++) {
+      if (!sl[i]) continue;
+      const k = left.findIndex((it) => it.name === sl[i]);
+      if (k >= 0) { packSlots[i] = left[k]; left.splice(k, 1); }
+    }
+    for (const it of left) placeInSlot(it);
+  }
   /* A WORN RING IS NOT IN THE PACK, SO THE PACK'S GRANT NEVER REACHED IT.
    * `pack` is `inventory`, and `wearRing` takes a ring OUT of the inventory
    * — so the one item the save recorded as worn was in neither list the
@@ -39437,7 +39411,7 @@ function applySavedInventoryInner(d, loud, hand) {
  * of a swell rolling every eleven seconds is a thing you hear, and the owner
  * does. Inside a room the bed is nothing; only the drain's mouth, which is
  * open to the sea, keeps a little of it near the outfall. */
-function indoors() { return inTavern || inCat || inUndercroft || !!inBunker || inShrine || inWhale; }
+function indoors() { return inTavern || inCat || inUndercroft || !!inBunker || inShrine || inWhale || inThrone; }
 function beachBedK() {
   if (indoors()) return 0;
   return (1 - 0.97 * drainMix) * (1 - bunkerMix) * (1 - shrineMix) * (1 - dojoMix) * (1 - ucMix);
@@ -40126,8 +40100,12 @@ function animateFrame() {
    * once -- the beach under the card was drawn whole, and the cull only began
    * settling on the frame the player was handed the game. */
   if (!introDone) updateFarProps();
+  /* THE SPLIFF WEARS OFF ON THE WALL CLOCK. It was counted down inside
+   * `update`, which returns early in a dozen states (a dialogue, the pack, a
+   * cut) and scales by hitstop, so four minutes could last for ever. */
+  if (spliffBuffT > 0 && introDone) spliffBuffT = Math.max(0, spliffBuffT - rawDt);
   update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
-  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateWhaleCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateDojoAudio(rawDt); updateFightTip(rawDt); updateWheelCommit(); updateCatDread(rawDt); updateBleed(rawDt); updateEnemyBars(rawDt); updateSamuraiEyes(rawDt);
+  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateDojoAudio(rawDt); updateFightTip(rawDt); updateWheelCommit(); updateCatDread(rawDt); updateBleed(rawDt); updateEnemyBars(rawDt); updateSamuraiEyes(rawDt);
   updateBeachBed();            // after every room has had its say, and only here
   updateHover();
   /* After everything that may have moved a lamp or the player, and before
@@ -40618,8 +40596,9 @@ function catLookAhead(u, pv, p, dt) {
 }
 function mutClampX(u, p, dt) {
   if (u.kind.whaleBody) { demonClamp(u, p); return; }   // the belly's walls, not the beach's
-  if (u.kind.fortOut) { const lim = umbraLimZ(); if (p.z > lim) p.z = lim; }   // the castle's back wall is a wall to him
+  if (u.kind.thrBody) { thrClampUnit(u, p); return; }   // the throne room's stone, not the beach's
   if (u.kind.fortBody && fortWalls) { fortClampUnit(u, p); return; }   // the castle's stone, not the surf and the dune
+  if (u.kind.c13Body) { c13ClampUnit(u, p); return; }   // and Castle XIII's
   /* THE BEACH'S WALLS ARE NOT EVERY CREATURE'S WALLS — and by now there are
    * two rooms below that prove it. The dojo is six thousand metres from the
    * surf, so clamping the samurai between the wading line and the foot of the
@@ -43699,11 +43678,12 @@ function poseRig(u, m, src, JOINTS, HANG) {
     (J[k].parent || J[k]).getWorldQuaternion(pq).invert();
     axes[k] = { up: W.up.clone().applyQuaternion(pq).normalize(), right: W.right.clone().applyQuaternion(pq).normalize(), fwd: W.fwd.clone().applyQuaternion(pq).normalize() };
   }
-  // the hip's world up in its own parent's frame, per metre
-  let hipUp = null;
+  // the hip's world up (and forward, for `hipF`) in its own parent's frame, per metre
+  let hipUp = null, hipFwd = null;
   if (J.hip) {
     const ps = new THREE.Vector3(); (J.hip.parent || J.hip).getWorldScale(ps);
     hipUp = axes.hip.up.clone().divideScalar(Math.max(1e-6, ps.y));
+    hipFwd = axes.hip.fwd.clone().divideScalar(Math.max(1e-6, ps.y));
   }
   if (a) a.stop();
   const tq = new THREE.Quaternion();
@@ -43723,8 +43703,9 @@ function poseRig(u, m, src, JOINTS, HANG) {
     const at = (t, k, ax) => {
       let k0 = keys[0], k1 = keys[keys.length - 1];
       for (let i = 0; i < keys.length - 1; i++) if (t >= keys[i][0] && t <= keys[i + 1][0]) { k0 = keys[i]; k1 = keys[i + 1]; break; }
-      const v0 = ax === 'hipY' ? (k0[1].hipY || 0) : ((k0[1][k] && k0[1][k][ax]) || 0);
-      const v1 = ax === 'hipY' ? (k1[1].hipY || 0) : ((k1[1][k] && k1[1][k][ax]) || 0);
+      const hx = ax === 'hipY' || ax === 'hipF';
+      const v0 = hx ? (k0[1][ax] || 0) : ((k0[1][k] && k0[1][k][ax]) || 0);
+      const v1 = hx ? (k1[1][ax] || 0) : ((k1[1][k] && k1[1][k][ax]) || 0);
       const span = k1[0] - k0[0];
       const s = span > 1e-6 ? sm(THREE.MathUtils.clamp((t - k0[0]) / span, 0, 1)) : 1;
       return v0 + (v1 - v0) * s;
@@ -43748,7 +43729,11 @@ function poseRig(u, m, src, JOINTS, HANG) {
     if (J.hip && hipUp) {
       const vals = [];
       // `hipYK`: authored heights are WORLD metres, so a kind that is a smaller copy of another scales them down with it
-      for (let i = 0; i <= n; i++) { const dy = at(times[i], 'hip', 'hipY') * ((u && u.kind && u.kind.hipYK) || 1); vals.push(hipPos.x + hipUp.x * dy, hipPos.y + hipUp.y * dy, hipPos.z + hipUp.z * dy); }
+      // `hipF`: the hips carried forward (or, negative, back) along the body, also in metres
+      for (let i = 0; i <= n; i++) {
+        const hk = (u && u.kind && u.kind.hipYK) || 1, dy = at(times[i], 'hip', 'hipY') * hk, df = at(times[i], 'hip', 'hipF') * hk;
+        vals.push(hipPos.x + hipUp.x * dy + hipFwd.x * df, hipPos.y + hipUp.y * dy + hipFwd.y * df, hipPos.z + hipUp.z * dy + hipFwd.z * df);
+      }
       tracks.push(new THREE.VectorKeyframeTrack(J.hip.name + '.position', times, vals));
     }
     return new THREE.AnimationClip(name, dur, tracks);
@@ -44178,7 +44163,11 @@ MUT_KINDS.knight = {
    * shadowing the owner's own Head Hit — the clip he sent for exactly this —
    * with the four-key rock written before it arrived. */
   alias: { idle2: 'idleB', walk2: 'walkC', run2: 'run', roar2: 'roar', die: 'hurt', die2: 'hurt',
-           back: 'walk', calm: 'idle' },
+           back: 'walk', calm: 'idle',
+           /* "Hit To Side Of Body" turns the source a hundred and seventy-five
+            * degrees and "Hit On Side Of Head" ends lying down — de-yawed frame
+            * by frame, both spun him round on the spot after a blow. Out. */
+           hitSide: 'hitBig', hitHead: 'hit' },
   provoke: knightProvoke,
   /* a voice out of a helmet: the bellow, pitched down, with the rasp taken
    * off it — there is no throat in there */
@@ -47337,7 +47326,67 @@ function drawUpgradeIcon(kind) {
 }
 const packSpaceIconItem = { name: 'Bigger Pack', icon: drawUpgradeIcon('pack') };
 // six brass rounds standing in two rows, the upgrades' own tile
-const ammoIconItem = { name: '6 Rounds', icon: (() => {
+/* A .44 ROUND, BUILT. The scan's six loose rounds are one dark texel of
+ * the gun's own map and the brass was eight-sided stubs: "the bullets don't
+ * even look real". A cartridge is a few lathes — a rimmed case with its
+ * extractor groove and a very slight taper, a primer sunk in the base, and a
+ * copper semi-wadcutter with its shoulder and its flat meplat — and the same
+ * build serves the speedloader (six in a ring), the ejected cases (spent: an
+ * open mouth and no bullet) and the shop's icon, which is rendered from it
+ * like every other item's. Metres, nose up +Y. */
+const AMMO_MATS = {
+  brass: new THREE.MeshStandardMaterial({ color: 0xd6ae56, roughness: 0.30, metalness: 0.18, emissive: 0x4a3810, emissiveIntensity: 0.55 }),
+  copper: new THREE.MeshStandardMaterial({ color: 0xb46f3c, roughness: 0.40, metalness: 0.10, emissive: 0x3a2010, emissiveIntensity: 0.5 }),
+  primer: new THREE.MeshStandardMaterial({ color: 0xb6bac0, roughness: 0.38, metalness: 0.10, emissive: 0x30333a, emissiveIntensity: 0.4 }),
+  steel: new THREE.MeshStandardMaterial({ color: 0x2b2e34, roughness: 0.52, metalness: 0.06, emissive: 0x15171c, emissiveIntensity: 0.6 }),
+};
+const AMMO_L = 0.0328, AMMO_NOSE = 0.0105;          // case and bullet lengths: a .44 Magnum is 41 mm overall
+function makeCartridge(spent = false) {
+  const g = new THREE.Group();
+  const V = (x, y) => new THREE.Vector2(x, y);
+  const rimR = 0.0065, grooveR = 0.0054, bodyR = 0.0058, mouthR = 0.0056, L = AMMO_L;
+  const pts = [V(0, 0), V(rimR * 0.92, 0), V(rimR, 0.0004), V(rimR, 0.0014), V(grooveR, 0.0019), V(grooveR, 0.0031), V(bodyR, 0.0040), V(mouthR, L)];
+  if (spent) pts.push(V(mouthR - 0.0004, L), V(mouthR - 0.0007, L - 0.009), V(mouthR - 0.0009, L - 0.0092));
+  else pts.push(V(mouthR - 0.0006, L));
+  const cs = new THREE.Mesh(new THREE.LatheGeometry(pts, 22), AMMO_MATS.brass);
+  g.add(cs);
+  const pr = new THREE.Mesh(new THREE.CircleGeometry(0.0024, 16), AMMO_MATS.primer);
+  pr.rotation.x = Math.PI / 2; pr.position.y = -0.0001; g.add(pr);
+  if (!spent) {
+    const bR = 0.0055, y0 = L - 0.0012;
+    const bp = [V(0, y0), V(bR, y0), V(bR, L + 0.0042), V(0.0047, L + 0.0046), V(0.0047, L + 0.0062), V(0.0032, L + AMMO_NOSE), V(0, L + AMMO_NOSE)];
+    g.add(new THREE.Mesh(new THREE.LatheGeometry(bp, 22), AMMO_MATS.copper));
+  }
+  g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+  return g;
+}
+/* six in a ring on a loader body: a knurled disc the cases stand in and a knob behind it, nose up +Y */
+function makeSpeedloader(ringR) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(ringR + 0.0078, ringR + 0.0066, 0.0105, 28), AMMO_MATS.steel);
+  body.position.y = -0.0052; g.add(body);
+  const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.0052, 0.0062, 0.013, 16), AMMO_MATS.steel);
+  knob.position.y = -0.0165; g.add(knob);
+  for (let i = 0; i < 6; i++) {
+    const c = makeCartridge(false);
+    const a = i / 6 * Math.PI * 2;
+    c.position.set(Math.cos(a) * ringR, 0.0004, Math.sin(a) * ringR);
+    g.add(c);
+  }
+  g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+  return g;
+}
+function makeAmmoSix() {
+  const g = new THREE.Group();
+  for (let i = 0; i < 6; i++) {
+    const c = makeCartridge(false);
+    c.position.set((i % 3 - 1) * 0.0145 + (i > 2 ? 0.006 : 0), 0, i > 2 ? -0.014 : 0.002);
+    c.rotation.set(0.05 * ((i * 7) % 3 - 1), i * 1.1, 0.04 * ((i * 5) % 3 - 1));
+    g.add(c);
+  }
+  return g;
+}
+const ammoIconItem = { id: 'ammo6', name: '6 Rounds', inspectModel: makeAmmoSix(), iconRot: { x: 0.55, y: 0.5 }, icon: (() => {
   const c = document.createElement('canvas'); c.width = c.height = 256;
   const g = c.getContext('2d');
   const bg = g.createRadialGradient(128, 110, 10, 128, 128, 190);
@@ -47950,7 +47999,7 @@ bwGlb('assets/magnum.glb', (gltf) => {
       else cylTris = [];
     }
   }
-  const gun = part(body), rounds = loose.length >= 12 ? part(loose) : null;
+  const gun = part(body), rounds = null;            // the scan's loose rounds are dropped: the loader is BUILT below
   const cyl = cylTris.length ? part(cylTris) : null;
   /* AND BLUED STEEL AT NIGHT IS A BLACK BAR. The scan's own map is what it
    * is — a dark gun photographed indoors — and the overlay scene's ambient
@@ -48010,20 +48059,21 @@ bwGlb('assets/magnum.glb', (gltf) => {
   const mk = (name, x, y, z) => { const o = new THREE.Object3D(); o.name = name; o.position.set(x, y, z); root.add(o); return o; };
   mk('magSight', sightP.x, sightP.y + hgt * 0.03, 0);
   mk('magMuzzle', bb.max.x + span * 0.03, muzY, 0);
-  if (rounds) {
+  if (CYL) {
     /* The loader, on a pivot of its own so the reload can carry it up into
-     * the cylinder, parked where the file drew it. `magRounds` is the handle
-     * the CLONE in your hand is found by. */
-    const rpts = [], rseen = new Set();
-    for (const i of loose) {
-      if (rseen.has(i)) continue; rseen.add(i);
-      rpts.push(_v.fromBufferAttribute(pos, i).applyMatrix4(rounds.matrixWorld).clone());
-    }
-    const rb = new THREE.Box3().setFromPoints(rpts);
+     * the cylinder. `magRounds` is the handle the CLONE in your hand is
+     * found by. The six are BUILT (`makeSpeedloader`) in metres and scaled
+     * into the model's own units, standing in a ring of the cylinder's own
+     * chamber radius, noses along the barrel (+X). */
     const pivot = new THREE.Group(); pivot.name = 'magRounds';
     root.add(pivot);
-    pivot.position.set((rb.min.x + rb.max.x) / 2, (rb.min.y + rb.max.y) / 2, (rb.min.z + rb.max.z) / 2);
-    pivot.attach(rounds);
+    const ringR = CYL.R * k * 0.56;
+    const ld = makeSpeedloader(ringR);
+    ld.rotation.z = -Math.PI / 2;                 // nose up +Y -> the model's +X
+    ld.scale.setScalar(1 / k);
+    ld.position.x = -(AMMO_L + AMMO_NOSE) / k * 0.5;   // the pivot is the rounds' middle, as it was
+    pivot.add(ld);
+    const rb = { min: { x: -(AMMO_L + AMMO_NOSE) / k * 0.5 }, max: { x: (AMMO_L + AMMO_NOSE) / k * 0.5 } };
     /* WHERE IT GOES, AND IT IS NOT WHERE THE FILE PARKED IT. The artist
      * laid the six rounds half a metre BEHIND the grip — which in a first
      * person view is somewhere behind your own head — so the reload has to
@@ -48502,14 +48552,11 @@ function magEjectBrass() {
   sfxMagEject();
   if (!magVMCrane || !vmScene) return;
   const n = Math.max(1, Math.min(MAG_CAP, MAG_CAP - magAmmo));
-  if (!brassGeo) {
-    brassGeo = new THREE.CylinderGeometry(0.0062, 0.0062, 0.030, 8); brassGeo.rotateX(Math.PI / 2);
-    brassMat = new THREE.MeshStandardMaterial({ color: 0xc9a24c, roughness: 0.35, metalness: 0.1, emissive: 0x5a4412, emissiveIntensity: 0.6 });
-  }
+  if (!brassGeo) { brassGeo = makeCartridge(true); brassGeo.scale.setScalar(MAG_VM); }   // a spent case, at the hand's own scale
   const C = magVMCrane.userData.cyl;
   const rear = magVMCrane.localToWorld(new THREE.Vector3(0, C.R * 0.92, C.R * 0.25));
   for (let i = 0; i < n; i++) {
-    const m = new THREE.Mesh(brassGeo, brassMat);
+    const m = brassGeo.clone(true);
     m.position.copy(rear).add(new THREE.Vector3((Math.random() - 0.5) * 0.02, (Math.random() - 0.5) * 0.02, (Math.random() - 0.5) * 0.02));
     m.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
     vmScene.add(m);
@@ -49745,6 +49792,7 @@ function updateDojoAudio(dt) {
    * the birds and the crickets are gone. */
   if (dojoMix > 0 && !dojoNature) startDojoNature();
   if (dojoNature) dojoNature.g.gain.setTargetAtTime(dojoMix * settings.sfxVolume * 0.035, ctx.currentTime, 0.6);
+  dojoRainSound(dojoMix);
 }
 function updateFountain(dt) {
   if (!fountain || !inDojo) return;
@@ -50351,6 +50399,7 @@ function loadDojo() {
      * what `buildDojoWalls` and the push-out read. */
     bwSpan('dojo bakeBlocks', () => { if (dojoBlocks) bakeStatic(dojoBlocks); if (dojoLanterns) bakeStatic(dojoLanterns); });
     bwSpan('dojo arm', armDojo);
+    bwSpan('dojo wet', () => dojoWet(dojoWorld));
     // and the man, standing hidden on his mark from the moment the room is up
     bwSpan('dojo spawnSam', () => spawnSamurai(false));
     if (samurai) samurai.g.visible = false;
@@ -52017,6 +52066,221 @@ function updateDojoRain(dt, t) {
   }
 }
 
+/* THE DOWNPOUR, AND THE STONE IS WET. The model's own two rain shells are
+ * drizzle seen through a window: big slow pictures, because anything finer
+ * than the retro scale sparkles. What makes a courtyard read as POURING is
+ * the same thing the beach's squall does — thousands of one-pixel streaks
+ * wrapped round the camera, so it is falling on you and in front of you
+ * whichever way you look — and the drops LANDING: splashes on the stone, and
+ * rings going out across puddles in a shader on every surface that faces up.
+ * Wet is three numbers and a reflection: the colour goes down, the roughness
+ * goes down (so the lanterns' own pooled lights streak across the flags), and
+ * a fresnel of the sky and a glint of the moon come back off it. */
+const DOJO_RAIN_N = 5200, DOJO_SPL_N = 420;
+const DOJO_WET_U = {
+  uWetT: { value: 0 }, uWetO: { value: new THREE.Vector3() }, uWetMoonV: { value: new THREE.Vector3(0, 1, 0) }, uWetK: { value: 1 },
+};
+const dojoDownpour = (() => {
+  const g = new THREE.BufferGeometry();
+  const pos = new Float32Array(DOJO_RAIN_N * 2 * 3), end = new Float32Array(DOJO_RAIN_N * 2);
+  for (let i = 0; i < DOJO_RAIN_N; i++) {
+    const x = (Math.random() - 0.5) * 30, y = Math.random() * 16, z = (Math.random() - 0.5) * 30;
+    for (let k = 0; k < 2; k++) { pos.set([x, y, z], (i * 2 + k) * 3); end[i * 2 + k] = k; }
+  }
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('aEnd', new THREE.BufferAttribute(end, 1));
+  const m = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, fog: false,
+    uniforms: { uTime: { value: 0 }, uK: { value: 0 }, uC: { value: new THREE.Vector3() }, uWind: { value: new THREE.Vector2(0.10, -0.06) } },
+    vertexShader: /* glsl */`
+      attribute float aEnd; uniform float uTime; uniform float uK; uniform vec3 uC; uniform vec2 uWind; varying float vA;
+      void main(){
+        float sp = 13.0 + fract(position.x * 7.31 + position.z * 3.17) * 6.0;
+        float y = mod(position.y - uTime * sp, 16.0);
+        vec3 p = vec3(position.x, y, position.z);
+        p.xz += uWind * (16.0 - y) * 0.9;
+        p.xz = mod(p.xz - uC.xz + 15.0, 30.0) - 15.0 + uC.xz;
+        p.y += uC.y - 7.0;
+        p += vec3(uWind.x * 0.06, -1.0, uWind.y * 0.06) * (0.55 + fract(position.z * 5.7) * 0.5) * aEnd;   // the streak: a drop's motion blur
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        gl_Position = projectionMatrix * mv;
+        float d = length(p - uC);
+        vA = uK * smoothstep(15.0, 4.0, length(p.xz - uC.xz)) * smoothstep(0.25, 1.1, -mv.z) * (0.55 + 0.45 * smoothstep(9.0, 1.5, d));
+      }`,
+    fragmentShader: /* glsl */`
+      varying float vA;
+      void main(){ if (vA < 0.004) discard; gl_FragColor = vec4(0.70, 0.74, 0.84, vA * 0.5); }`,
+  });
+  const l = new THREE.LineSegments(g, m);
+  l.frustumCulled = false; l.visible = false; l.renderOrder = 4; l.name = 'dojoDownpour';
+  l.userData.bwCullR = -1; l.raycast = () => {};
+  scene.add(l);
+  return l;
+})();
+// the drops landing: a small crown of spray on whatever is under them
+const dojoSplashFx = (() => {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(DOJO_SPL_N * 3), 3));
+  g.setAttribute('aT', new THREE.BufferAttribute(new Float32Array(DOJO_SPL_N), 1));
+  const m = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, fog: false,
+    uniforms: { uH: { value: 600 } },
+    vertexShader: /* glsl */`
+      attribute float aT; uniform float uH; varying float vT;
+      void main(){
+        vT = aT;
+        vec4 mv = modelViewMatrix * vec4(position + vec3(0.0, 0.03 + 0.05 * aT, 0.0), 1.0);
+        gl_Position = projectionMatrix * mv;
+        gl_PointSize = clamp((0.05 + 0.10 * aT) * projectionMatrix[1][1] * 0.5 * uH / max(0.3, -mv.z), 1.0, 8.0);
+      }`,
+    fragmentShader: /* glsl */`
+      varying float vT;
+      void main(){
+        if (vT <= 0.0 || vT >= 1.0) discard;
+        vec2 q = gl_PointCoord - 0.5; q.y *= 1.6;
+        float r = length(q) * 2.0;
+        float ring = smoothstep(0.35 + 0.5 * vT, 0.2 + 0.5 * vT, abs(r - 0.55 * vT - 0.25));
+        float a = ring * (1.0 - vT) * 0.85;
+        if (a < 0.01) discard;
+        gl_FragColor = vec4(0.78, 0.82, 0.92, a);
+      }`,
+  });
+  const p = new THREE.Points(g, m);
+  p.frustumCulled = false; p.visible = false; p.renderOrder = 5; p.raycast = () => {};
+  p.userData.bwCullR = -1;
+  scene.add(p);
+  p.userData.life = new Float32Array(DOJO_SPL_N).fill(1);
+  p.userData.dur = new Float32Array(DOJO_SPL_N).fill(0.16);
+  return p;
+})();
+let dojoSplI = 0, dojoRainAudio = null;
+const _dsz = new THREE.Vector2();
+function updateDojoDownpour(dt) {
+  const on = inDojo;
+  dojoDownpour.visible = on; dojoSplashFx.visible = on;
+  if (!on) return;
+  const U = dojoDownpour.material.uniforms;
+  U.uTime.value += dt; U.uC.value.copy(camera.position);
+  U.uK.value = Math.min(1, U.uK.value + dt * 0.8);
+  DOJO_WET_U.uWetT.value += dt;
+  DOJO_WET_U.uWetO.value.set(DOJO_X, DOJO_Y, DOJO_Z);
+  DOJO_WET_U.uWetMoonV.value.copy(DOJO_MOON).transformDirection(camera.matrixWorldInverse);
+  // the splashes: a few thousand a second, on the stone round you
+  renderer.getDrawingBufferSize(_dsz);
+  dojoSplashFx.material.uniforms.uH.value = _dsz.y;
+  const P = dojoSplashFx.geometry.attributes.position.array, T = dojoSplashFx.geometry.attributes.aT.array;
+  const L = dojoSplashFx.userData.life, D = dojoSplashFx.userData.dur;
+  let spawn = Math.min(DOJO_SPL_N, Math.round(dt * 2600 + Math.random()));
+  for (let i = 0; i < DOJO_SPL_N; i++) {
+    L[i] += dt / D[i];
+    if (L[i] >= 1 && spawn > 0) {
+      spawn--;
+      const a = Math.random() * 6.2832, r = 1.6 + Math.sqrt(Math.random()) * 12;
+      const x = camera.position.x + Math.cos(a) * r, z = camera.position.z + Math.sin(a) * r;
+      const f = dojoFloorAt(x, z, camBaseY - playerEye() + 1.5);
+      if (f === null) { T[i] = 1; continue; }
+      P[i * 3] = x; P[i * 3 + 1] = f; P[i * 3 + 2] = z;
+      L[i] = 0; D[i] = 0.10 + Math.random() * 0.12;
+    }
+    T[i] = Math.min(1, L[i]);
+  }
+  dojoSplashFx.geometry.attributes.position.needsUpdate = true;
+  dojoSplashFx.geometry.attributes.aT.needsUpdate = true;
+}
+/* AND THE SOUND OF IT: a roar of rain on stone (filtered noise, kept under a
+ * kilohertz and a half so it is weather and not a radio) with drops picked out
+ * on top — a crackle, close. */
+function dojoRainSound(mix) {
+  const ctx = audioCtx; if (!ctx || !sfxBusGain) return;
+  if (!dojoRainAudio) {
+    if (mix <= 0) return;
+    const len = ctx.sampleRate * 3, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+    let b = 0;
+    for (let i = 0; i < len; i++) {
+      b = 0.97 * b + 0.03 * (Math.random() * 2 - 1);                 // a darker bed
+      d[i] = b * 3.2 + (Math.random() * 2 - 1) * 0.22 + (Math.random() < 0.004 ? (Math.random() * 2 - 1) * 1.6 : 0);
+    }
+    const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1500; lp.Q.value = 0.4;
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 90;
+    const g = ctx.createGain(); g.gain.value = 0;
+    src.connect(hp).connect(lp).connect(g).connect(sfxBusGain);
+    src.start();
+    dojoRainAudio = { src, g };
+  }
+  dojoRainAudio.g.gain.setTargetAtTime(0.30 * mix, ctx.currentTime, 0.6);
+}
+/* The wet itself, on every lit surface in the courtyard (chained after
+ * whatever the material already does; the sky is basic and is not touched). */
+const DOJO_WET_PARS = /* glsl */`
+uniform float uWetT; uniform vec3 uWetMoonV; uniform float uWetK; varying vec3 vWetW;
+float wetH(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float wetN(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(wetH(i), wetH(i + vec2(1.0, 0.0)), f.x), mix(wetH(i + vec2(0.0, 1.0)), wetH(i + vec2(1.0, 1.0)), f.x), f.y); }
+vec2 wetRipple(vec2 p, float t){
+  vec2 acc = vec2(0.0);
+  for (int L = 0; L < 3; L++) {
+    float fl = float(L);
+    vec2 q = p * (2.1 + fl * 1.1) + fl * 17.3;
+    vec2 c = floor(q), f = fract(q);
+    float h = wetH(c + fl * 7.1);
+    vec2 o = vec2(0.32) + 0.36 * vec2(h, fract(h * 13.7));
+    float ph = fract(t * (0.9 + 0.6 * h) + h * 9.0);
+    vec2 d = f - o; float r = length(d);
+    float x = (r - ph * 0.30) * 24.0;
+    float w = sin(x * 3.1416) * exp(-x * x) * (1.0 - ph) * (1.0 - ph);
+    acc += d / max(r, 1e-3) * w;
+  }
+  return acc;
+}`;
+function dojoWetMat(m) {
+  if (!m || !m.isMeshStandardMaterial || m.userData.dojoWet || m.transparent) return;
+  m.userData.dojoWet = true;
+  const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey;
+  m.onBeforeCompile = function (sh, r) {
+    if (prev) prev.call(this, sh, r);
+    Object.assign(sh.uniforms, DOJO_WET_U);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform vec3 uWetO; varying vec3 vWetW;')
+      .replace('#include <project_vertex>', `#include <project_vertex>
+        #ifdef USE_INSTANCING
+          vWetW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz - uWetO;
+        #else
+          vWetW = (modelMatrix * vec4(transformed, 1.0)).xyz - uWetO;
+        #endif`);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + DOJO_WET_PARS)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        vec3 wetGN = normalize(cross(dFdx(vWetW), dFdy(vWetW)));
+        float wetUp = smoothstep(0.5, 0.88, abs(wetGN.y)) * uWetK;
+        float wetPudN = wetN(vWetW.xz * 0.30) * 0.65 + wetN(vWetW.xz * 1.15 + 3.7) * 0.35;
+        float wetPud = smoothstep(0.50, 0.58, wetPudN) * wetUp;
+        float wetM = max(wetUp, 0.6 * (1.0 - wetUp) * uWetK);
+        diffuseColor.rgb *= mix(1.0, 0.56, wetM) * mix(1.0, 0.50, wetPud);`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        roughnessFactor = mix(roughnessFactor, min(roughnessFactor, 0.30), wetM);
+        roughnessFactor = mix(roughnessFactor, 0.06, wetPud);`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        { vec2 rp = wetRipple(vWetW.xz, uWetT) * (0.30 * wetUp + 0.70 * wetPud);
+          normal = normalize(normal + mat3(viewMatrix) * vec3(rp.x, 0.0, rp.y) * 0.9); }`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        { totalEmissiveRadiance *= mix(1.0, 0.62, wetM);
+          vec3 wV = normalize(vViewPosition);
+          float wFr = pow(1.0 - clamp(dot(normal, wV), 0.0, 1.0), 5.0);
+          vec3 wR = reflect(-wV, normal);
+          float wMoon = pow(max(dot(wR, uWetMoonV), 0.0), mix(80.0, 700.0, wetPud));
+          totalEmissiveRadiance += (vec3(0.040, 0.036, 0.060) * wFr * 3.0 + vec3(0.75, 0.80, 0.95) * wMoon * 0.55) * (0.30 * wetM + 0.95 * wetPud); }`);
+  };
+  m.customProgramCacheKey = function () { return (prevKey ? prevKey.call(this) : '') + '|dojoWet'; };
+  m.needsUpdate = true;
+}
+function dojoWet(root) {
+  const walk = (o) => {
+    if (o === heroSword || o.userData.noWet) return;
+    if (o.isMesh) for (const m of [].concat(o.material)) dojoWetMat(m);
+    for (const c of o.children) walk(c);
+  };
+  walk(root);
+}
+
 function warmDojo() {
   if (dojoWarmed || !dojoWorld || !dojoReady) return;
   dojoWarmed = true;
@@ -52054,6 +52318,7 @@ function updateDojo(dt) {
   dojoT += dt;
   const t = dojoT;
   if (inDojo || dojoWorld.visible) updateDojoRain(dt, t);
+  updateDojoDownpour(dt);
   updateDojoLamps(dt, t);
   updateDojoPetals(dt, t);
   updateDojoAtmos(dt, t);
@@ -52491,7 +52756,9 @@ function armDojo() {
        * it straight back out again: measured, the katana went into the pack
        * and `equipped` came back null, so you picked up a sword and were
        * holding nothing. Ask first. */
-      if (!inventory.includes(katanaItem)) addToInventory(katanaItem);
+      /* AND IT GOES INTO YOUR HAND WHATEVER YOU WERE HOLDING, and nothing in
+       * the pack is lost for it: a full pack takes it over the top. */
+      if (!inventory.includes(katanaItem)) addToInventory(katanaItem, true);
       if (equipped !== katanaItem) toggleEquip(katanaItem);
       wakeSamurai();
     },
@@ -53424,11 +53691,28 @@ function pinSamuraiSword() {
   const hand = samurai.bones.hand;
   hand.updateWorldMatrix(true, false);
   if (!samKatOff) {
-    if (samurai.st.atk >= 0 || (samurai.aimW || 0) > 0.004) return;   // not mid-correction
-    samKat.updateWorldMatrix(true, false);
+    /* THE OFFSET IS THE CLIP'S, NOT THE LIVE FRAME'S. It used to be captured
+     * off the first calm frame — hand^-1 x katana as they stood — and on
+     * this rig the hand has been moved by `forestFK` AFTER the clip stamped
+     * the katana where the packer pinned it, so the capture had half a
+     * metre of that displacement in it (measured: (0.31, 0.47, -0.07)
+     * against the clip's own (0.006, 0.116, 0.006)) and the sword rode
+     * beside him for the rest of the fight, a metre off either hand. The
+     * clip alone — the mixer's raw stamp, every other action off — is where
+     * the packer's grip lives; the pin then puts it in the LIVE fist. */
+    const u = samurai, ia = u.clips && u.clips.idle;
+    if (!ia || !u.mixer.rawUpdate) return;
+    const saved = [];
+    for (const k in u.clips) { const a = u.clips[k]; saved.push([a, a.time, a.enabled, a.paused, a.getEffectiveWeight(), a.isRunning() || u.mixer._isActiveAction(a)]); }
+    for (const k in u.clips) { const a = u.clips[k]; a.stop(); a.enabled = false; a.setEffectiveWeight(0); }
+    ia.reset(); ia.play(); ia.enabled = true; ia.setEffectiveWeight(1); ia.paused = true; ia.time = 0.3;
+    u.mixer.rawUpdate(0); u.model.updateMatrixWorld(true);
     _katOff.copy(hand.matrixWorld).invert().multiply(samKat.matrixWorld);
+    ia.stop(); ia.enabled = false; ia.setEffectiveWeight(0);
+    for (const [a, t, en, pa, w, run] of saved) { if (run) { a.play(); } a.time = t; a.enabled = en; a.paused = pa; a.setEffectiveWeight(w); }
+    u.mixer.update(0); u.model.updateMatrixWorld(true);
+    hand.updateWorldMatrix(true, false);
     samKatOff = true;
-    return;
   }
   _katW.multiplyMatrices(hand.matrixWorld, _katOff);
   if (samKat.parent) {
@@ -53437,6 +53721,95 @@ function pinSamuraiSword() {
   } else _katInv.copy(_katW);
   _katInv.decompose(samKat.position, samKat.quaternion, samKat.scale);
   samKat.updateMatrixWorld(true);
+}
+
+/* AND BOTH HANDS ARE ON THE HANDLE. Half his clips are Mixamo great-sword
+ * takes whose off hand drifts off the grip, and the idle ("Blocking") holds
+ * the katana in the right fist alone with the left hand hanging by his belt —
+ * a man carrying a sword, not one holding it. The left WRIST is put by a
+ * two-bone IK a hand's width down the tsuka from the right one every frame,
+ * after the sword has been pinned in the right fist, so whatever the clip and
+ * the aim have done the grip is two-handed. It lets go only for the star
+ * (that hand is throwing) and when he is dead. The target is absolute, so a
+ * frame the mixer did not restamp cannot make it accumulate. */
+const SAM_GRIP_GAP = 0.165;                     // world metres between the wrists along the tsuka
+const _skA = new THREE.Vector3(), _skB = new THREE.Vector3(), _skC = new THREE.Vector3(), _skT = new THREE.Vector3();
+const _skU = new THREE.Vector3(), _skV = new THREE.Vector3(), _skN = new THREE.Vector3(), _skD = new THREE.Vector3();
+const _skQ = new THREE.Quaternion(), _skP = new THREE.Quaternion(), _skPi = new THREE.Quaternion();
+function samWorldTurn(bone, q) {
+  bone.parent.getWorldQuaternion(_skP);
+  _skPi.copy(_skP).invert();
+  bone.quaternion.premultiply(_skP).premultiply(q).premultiply(_skPi);
+  bone.updateMatrixWorld(true);
+}
+function samIK2(up, fo, end, target) {
+  // a two-bone IK in world space: the elbow first, then the whole arm from the shoulder
+  up.getWorldPosition(_skA); fo.getWorldPosition(_skB); end.getWorldPosition(_skC);
+  const la = _skA.distanceTo(_skB), lb = _skB.distanceTo(_skC);
+  const lt = THREE.MathUtils.clamp(_skA.distanceTo(target), Math.abs(la - lb) + 1e-3, la + lb - 1e-3);
+  _skU.subVectors(_skA, _skB).normalize(); _skV.subVectors(_skC, _skB).normalize();
+  const cur = Math.acos(THREE.MathUtils.clamp(_skU.dot(_skV), -1, 1));
+  const des = Math.acos(THREE.MathUtils.clamp((la * la + lb * lb - lt * lt) / (2 * la * lb), -1, 1));
+  _skN.crossVectors(_skU, _skV);
+  if (_skN.lengthSq() < 1e-8) _skN.set(0, -1, 0).cross(_skU);
+  _skN.normalize();
+  samWorldTurn(fo, _skQ.setFromAxisAngle(_skN, des - cur));
+  end.getWorldPosition(_skC);
+  _skU.subVectors(_skC, _skA).normalize(); _skV.subVectors(target, _skA).normalize();
+  samWorldTurn(up, _skQ.setFromUnitVectors(_skU, _skV));
+}
+const _skG = new THREE.Vector3(), _skF = new THREE.Vector3(), _skR = new THREE.Vector3();
+function samTwoHand(dt) {
+  const u = samurai;
+  if (!u || !u.model || !samKat || !u.st) return;
+  if (u.samIK === undefined) {
+    const B = {};
+    u.model.traverse((o) => { if (o.isBone) B[o.name] = o; });
+    const ok = ['DEF-upper_armL', 'DEF-forearmL', 'DEF-handL', 'DEF-upper_armR', 'DEF-forearmR', 'DEF-handR', 'DEF-katana_tip', 'DEF-spine002'].every((n) => B[n]);
+    u.samIK = ok ? { up: B['DEF-upper_armL'], fo: B['DEF-forearmL'], hl: B['DEF-handL'], upR: B['DEF-upper_armR'], foR: B['DEF-forearmR'],
+      hr: B['DEF-handR'], tip: B['DEF-katana_tip'], navel: B['DEF-spine002'], k: 0, g: 0 } : null;
+  }
+  const S = u.samIK; if (!S) return;
+  const st = u.st;
+  const want = (st.alive && !u.rag && u.g.visible && !(u.thr && u.thr.ph === 'throw')) ? 1 : 0;
+  S.k += (want - S.k) * Math.min(1, dt * 7);
+  if (S.k < 0.01) return;
+  /* THE GUARD: point at your throat, both fists a forearm in front of his
+   * navel — chudan, the guard every other stance comes out of. The clips own
+   * every swing; between them (and walking, circling, standing) the guard is
+   * eased in, and it eases out the moment a cut starts, so the cut leaves from
+   * it. The roar and the reels keep their own arms. */
+  const gw = (want && st.atk < 0 && !(st.roar > 0) && !(st.recoil > 0) && !(st.stun > 0) && !((st.down || 0) > 0) && !u.thr && !(st.immob > 0)) ? 1 : 0;
+  S.g += (gw - S.g) * Math.min(1, dt * (gw > S.g ? 5 : 11));
+  if (S.g > 0.01) {
+    const ry = u.g.rotation.y;
+    _skF.set(Math.sin(ry), 0, Math.cos(ry));
+    _skR.set(Math.cos(ry), 0, -Math.sin(ry));          // his right... or left: only used lightly
+    const H = u.kind.h || 2.45;
+    S.navel.getWorldPosition(_skG);
+    _skG.addScaledVector(_skF, 0.36 * H / 2.45);
+    _skG.y += 0.02 * H;
+    S.hr.getWorldPosition(_skC);
+    _skG.lerp(_skC, 1 - S.g);
+    samIK2(S.upR, S.foR, S.hr, _skG);
+    // and the blade turned onto your throat, about the wrist
+    pinSamuraiSword();
+    samKat.getWorldPosition(_skA); S.tip.getWorldPosition(_skB);
+    _skU.subVectors(_skB, _skA).normalize();
+    _skV.copy(_skF).multiplyScalar(Math.cos(0.52)); _skV.y = Math.sin(0.52); _skV.normalize();
+    _skQ.setFromUnitVectors(_skU, _skV);
+    _skP.identity().slerp(_skQ, S.g);
+    samWorldTurn(S.hr, _skP.clone());
+  }
+  pinSamuraiSword();
+  // the left wrist a hand's width down the tsuka from the right one
+  S.hr.getWorldPosition(_skT);
+  samKat.getWorldPosition(_skA); S.tip.getWorldPosition(_skB);
+  _skD.subVectors(_skA, _skB).normalize();
+  _skT.addScaledVector(_skD, SAM_GRIP_GAP);
+  S.hl.getWorldPosition(_skC);
+  _skT.lerp(_skC, 1 - S.k);
+  samIK2(S.up, S.fo, S.hl, _skT);
 }
 
 /* =====================================================================
@@ -53450,7 +53823,7 @@ function pinSamuraiSword() {
  * your points and a lens full of blood. It does not home — step out of its
  * line and it goes past — so every answer the fight teaches still works.
  * ===================================================================== */
-const SHUR = { SPEED: 17.5, DMG: 2, BACK_DMG: 5, R: 0.13, LIFE: 1.5 };
+const SHUR = { SPEED: 17.5, DMG: 1, BACK_DMG: 5, R: 0.13, LIFE: 1.5 };
 const shurikens = [];
 let shurGeo = null, shurMat = null, shurHand = null;
 function shurMesh() {
@@ -58255,6 +58628,10 @@ function wfPlaceOut() {
   lookEuler.set(0.05, Math.atan2(-dx, -dz), 0, lookEuler.order);
   camera.quaternion.setFromEuler(lookEuler);
   wbFareCut.look.copy(C).setY(4);
+  // the artifact lands on the dry sand a few strides in front of you, a little to your right of the line to the whale
+  { const L = Math.hypot(dx, dz) || 1, fx = dx / L, fz = dz / L;
+    const ax = x + fx * 2.6 - fz * 0.9, az = z + fz * 2.6 + fx * 0.9;
+    wbFareCut.artP = new THREE.Vector3(ax, beachGroundAt(ax, az), az); }
   wbFareCut.fov = Math.min(settings.fov, 80);
   wfBuildFx();
   try { renderer.compile(scene, camera); } catch (e) { /* a warm is never fatal */ }
@@ -58491,7 +58868,26 @@ function wbRemoveForGood() {
  * climax is from 86.3, which is where you get your hands back, and the song
  * plays on out under you. It starts WL_OFF into the file, at the cut. */
 const WL_OFF = 5.5;
-const WL = { beam: 6.4, eye: 12.4, harp: 15.2, pull: 16.7, flash: 18.15, back: 27.45, swim: 36.6, surface: 64.0, spout: 68.4, down: 73.0, gone: 79.8, sky: 80.5, hand: 86.3 };
+/* THE TAKE ENDS ON THE SPLASH, AND THE SONG STARTS LATER TO FIT. The cues
+ * below are the take's own clock (the song's original timing, kept so every
+ * beat reads as it was tuned); `WL_START` is where in the FILE the song now
+ * begins, and `wfMapS` is the piecewise map from the song's real position
+ * onto that clock. Measured off the song's loudness: the quiet at 38.5, the
+ * swells at 50.0 (the flash), 57.5 (into the sea), 68.0 (the swim) and 82.5
+ * (the breach), the last climax 86.5-90 (the slam) and the song's own fade
+ * from 91.5 — the breach's flight runs 1:1 after 81.5, lands on the climax,
+ * and the take lets go under the fade. Everything after the slam (the
+ * surfacing, the spout, the sky) is gone; those cues are parked past the end. */
+const WL_START = 39.0;
+const WL = { beam: 6.4, eye: 12.4, harp: 15.2, pull: 16.7, flash: 18.15, back: 27.45, swim: 36.6, surface: 1e9, spout: 1e9, down: 1e9, gone: 1e9, sky: 1e9, hand: 1e9 };
+const WL_ART = WL.flash + 5.6;                       // the motes have gathered: the artifact forms and drops
+const WL_MAP = [[39.0, 5.5], [50.0, 18.15], [57.5, 27.45], [68.0, 36.6], [81.5, 52.4]];
+function wfMapS(s) {
+  const M = WL_MAP;
+  if (s <= M[0][0]) return M[0][1] + (s - M[0][0]);
+  for (let i = 1; i < M.length; i++) if (s <= M[i][0]) { const [a0, b0] = M[i - 1], [a1, b1] = M[i]; return b0 + (s - a0) * (b1 - b0) / (a1 - a0); }
+  const [aL, bL] = M[M.length - 1]; return bL + (s - aL);
+}
 function wlLoad() {
   if (wlBuf || wlLoading || !audioCtx) return;
   wlLoading = true;
@@ -58529,7 +58925,7 @@ function wfBars(on) {
       + '#wf-bars i:first-child{top:0;transform:translateY(-101%)}#wf-bars i:last-child{bottom:0;transform:translateY(101%)}'
       + '#wf-bars.on i{transform:none}'
       + '#wf-bars b{position:absolute;right:3.2vw;top:50%;transform:translateY(-50%);font:500 10px/1 ui-monospace,Menlo,monospace;letter-spacing:.24em;color:#fff;opacity:0;transition:opacity 1.5s 3s}#wf-bars.on b{opacity:.28}'
-      + 'body.wf-cine #hud,body.wf-cine #crosshair,body.wf-cine #promptmid,body.wf-cine #prompt,body.wf-cine #blood,body.wf-cine #ehp,body.wf-cine #fighttip{opacity:0!important;transition:opacity 1.2s}';
+      + 'body.wf-cine #hud,body.wf-cine #vitals,body.wf-cine #stamwrap,body.wf-cine #crosshair,body.wf-cine #promptmid,body.wf-cine #prompt,body.wf-cine #blood,body.wf-cine #ehp,body.wf-cine #fighttip{opacity:0!important;transition:opacity 1.2s}';
     document.head.appendChild(st);
     void el.offsetWidth;
   }
@@ -58547,7 +58943,7 @@ function updateWhaleFarewell(dt) {
   if (!wbFareCut) { wfSkyK = Math.max(0, wfSkyK - dt * 0.08); wfMoonK = Math.max(0, wfMoonK - dt * 0.3); wfRay.k = 0; }
   // the belly is empty: it says so, a beat after the last of them stops moving
   // and not until you have taken what it gave you (`artState` 2)
-  if (!wbFareCut && !wbGone && inWhale && !whaleBusy && wbBellyClear() && artState === 2) {
+  if (!wbFareCut && !wbGone && inWhale && !whaleBusy && wbBellyClear()) {
     wbFareCut = null;
     wbFareClearT = (wbFareClearT || 0) + dt;
     if (wbFareClearT > 2.4) startWhaleFarewell();
@@ -58569,20 +58965,20 @@ function updateWhaleFarewell(dt) {
     // the black holds for the song if it is still coming off the network (two seconds at most)
     if (!wlBuf && (C.waitT = (C.waitT || 0) + dt) < 2.0) { wlLoad(); blackoutEl.style.opacity = '1'; C.t = T.cut; return; }
     cue.cut = true; blackoutEl.style.opacity = '1'; wfPlaceOut(); wfBars(true);
-    C.songOK = wlStart(WL_OFF); C.cutAt = C.t;
+    C.songOK = wlStart(WL_START); C.cutAt = C.t;
   }
   /* THE CLOCK IS THE SONG'S: S is seconds into the file. It runs on the frame
    * clock and is pulled onto the song's own while the song is actually
    * playing — so a hitch cannot put the picture out of step with the music,
    * and a suspended audio context (whose clock stands still) cannot stop the
    * take dead either. */
-  if (C.S == null) C.S = WL_OFF;
+  if (C.S == null) C.S = WL_START;
   C.S += dt;
   if (C.songOK && audioCtx && audioCtx.state === 'running') {
     const st = wlTime();
     if (st >= 0) { const e = st - C.S; C.S += Math.abs(e) > 1.2 ? e : e * Math.min(1, dt * 3); }
   }
-  const S = C.S;
+  const S = wfMapS(C.S);
   if (C.skip) { wfFinish(true); return; }
   blackoutEl.style.opacity = (1 - smooth01(WL_OFF + 0.4, WL_OFF + 2.6, S)).toFixed(3);
   const F = wfFx;
@@ -58669,15 +59065,24 @@ function updateWhaleFarewell(dt) {
           a = rise * (0.28 + 0.5 * g) * (0.7 + 0.3 * Math.sin(h * 4 + m.tw));
         }
       } else {
-        // thrown out on the swell, and then the lot of them going up the column into the sky like sparks off a fire
+        /* THROWN OUT ON THE SWELL, AND THEN THEY COME TO YOU: every mote
+         * leaves on its own count and streams in to a point on the sand in
+         * front of you (`C.artP`), spiralling down into a ball that tightens
+         * as the artifact forms inside it — what the whale gives you is made
+         * of the light that healed it, and it lands where you can pick it up. */
         const e = flashD, u = 1 - Math.exp(-e * 1.6);
-        const asc = Math.max(0, e - 1.2 - m.k * 1.5);
-        const pull = smooth01(0, 4, asc);
-        const r = m.out * u * (1 - 0.8 * pull);
-        x = Cw.x + (m.a.x - Cw.x) * (1 - pull) * 0.3 + Math.cos(m.th + asc * 0.5) * r;
-        z = Cw.z + (m.a.z - Cw.z) * (1 - pull) * 0.3 + Math.sin(m.th + asc * 0.5) * r;
-        y = m.a.y + 0.6 + m.up * u + asc * asc * 0.9 + asc * m.lift * 0.12;
-        a = Math.max(0, 1 - e / (9 + m.k * 5)) * (0.7 + 0.3 * Math.sin(e * 6 + m.tw));
+        const asc = Math.max(0, e - 0.9 - m.k * 2.0);
+        const pull = smooth01(0, 2.4, asc);
+        const r0 = m.out * u;
+        const ox = Cw.x + Math.cos(m.th) * r0, oz = Cw.z + Math.sin(m.th) * r0, oy = m.a.y + 0.6 + m.up * u + Math.min(asc, 1.5) * 2.5;
+        const P = C.artP || Cw;
+        const form = smooth01(WL_ART - 1.6, WL_ART + 0.3, S);              // the ball closes as it forms
+        const br = (0.55 + 0.9 * m.k) * (1 - 0.86 * form);
+        const bth = m.th + asc * (2.2 + m.sp * 2.0);
+        const bx = P.x + Math.cos(bth) * br, bz = P.z + Math.sin(bth) * br, by = P.y + 1.05 + Math.sin(bth * 1.7 + m.tw) * br * 0.6;
+        const pp = pull * pull * (3 - 2 * pull), arc = Math.sin(pull * Math.PI) * (2.5 + 3 * m.k);
+        x = ox + (bx - ox) * pp; z = oz + (bz - oz) * pp; y = oy + (by - oy) * pp + arc;
+        a = (0.55 + 0.45 * Math.sin(e * 6 + m.tw)) * (1 - smooth01(WL_ART + 0.1, WL_ART + 0.7, S)) * Math.min(1, 0.4 + pull * 0.6 + (1 - u));
       }
       pa.array[i * 3] = x; pa.array[i * 3 + 1] = y; pa.array[i * 3 + 2] = z; aa.array[i] = a; ac.array[i] = m.c;
     });
@@ -58696,6 +59101,13 @@ function updateWhaleFarewell(dt) {
         spawnPuffs(H.position.x, H.position.z, 6, 0, 0, H.position.y, [0.9, 0.8, 0.6]);
         playSampleAt('fleshHit', H.position.x, H.position.z, { gain: 1.2, ref: 10, far: 60, rate: 0.7 });
       }
+    }
+    // THE ARTIFACT: the light that gathered is a thing, and it drops into the sand in front of you
+    if (S > WL_ART && !cue.art && C.artP) {
+      cue.art = true;
+      artState = 1;
+      artSpawnWorld(true, C.artP);
+      sfxArtRise();
     }
     // THE SWELL
     if (flashD > 0 && !cue.flash) {
@@ -58744,8 +59156,11 @@ function updateWhaleFarewell(dt) {
       const eye = wfEyeWorld(_wfE2);
       if (eye) _wfT.lerp(eye, eyeK);
     }
-    C.look.lerp(_wfT, 1 - Math.exp(-dt * (eyeK > 0.2 ? 2.4 : 1.7)));
-    C.fov = Math.min(settings.fov, 78 + 10 * up + 6 * sparks - 52 * eyeK + 8 * smoothPulse(S, WL.flash, 0.5));
+    // and down to the sand in front of you while the light gathers into the artifact and it lands
+    const artK = C.artP ? smooth01(WL_ART - 3.6, WL_ART - 2.2, S) * (1 - smooth01(WL_ART + 2.2, WL_ART + 3.2, S)) : 0;
+    if (artK > 0.001) _wfT.lerp(_wfV.copy(C.artP).setY(C.artP.y + 0.5), artK);
+    C.look.lerp(_wfT, 1 - Math.exp(-dt * (eyeK > 0.2 || artK > 0.2 ? 2.4 : 1.7)));
+    C.fov = Math.min(settings.fov, 78 + 10 * up + 6 * sparks - 52 * eyeK - 26 * artK + 8 * smoothPulse(S, WL.flash, 0.5));
     C.fovRate = 2.6;
   }
 
@@ -58894,6 +59309,8 @@ function updateWhaleFarewell(dt) {
     }
     wfPose(C.C, C.yaw, C.pitch, C.roll);
     C.songK = C.apex ? Math.max(0.2, 0.8 - (C.slamT || 0) * 0.2) : 0.5;
+    // AND THAT IS THE END OF IT: the splash settles, and you have your hands back under the song's own fade
+    if (C.slam && C.slamT > 4.4) { wfFinish(false); return; }
     wfMoonK = 0.55 + 0.45 * smooth01(0, 3, k) * (1 - smooth01(8, 11, k));
     C.look.lerp(_wfV.copy(C.C).setY(Math.max(6, C.C.y * 0.8 + 4)), 1 - Math.exp(-dt * 2.0));
     C.fov = Math.min(settings.fov, 38);
@@ -67219,6 +67636,7 @@ function clearRoomFlags() {
   inKeep = false; inTavern = false; inCat = false; inDojo = false;
   inUndercroft = false; inBunker = null;
   if (inWhale) { inWhale = false; if (whale) whale.G.visible = false; whaleLeave(); }
+  if (inThrone) { inThrone = false; if (thrWorld) thrWorld.visible = false; throneLeave(); }
 }
 const ROOM_BACK = {
   /* `spots` are the doors a save can be written at, and each is the SAME
@@ -70656,7 +71074,7 @@ function installLife(u, m, J) {
       let tip = b; while (tip.children.length && tip.children[0].isBone) tip = tip.children[0];
       const d = (ang) => { const q0 = b.quaternion.clone(); b.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), ang)); m.updateMatrixWorld(true); const dd = tip.getWorldPosition(new THREE.Vector3()).distanceTo(wrist.getWorldPosition(new THREE.Vector3())); b.quaternion.copy(q0); return dd; };
       const sign = d(0.3) < d(-0.3) ? 1 : -1;
-      u.life.fingers.push({ b, sign, k: /thumb/i.test(b.name) ? 0.55 : (/\.01\.|[A-Za-z]1_\d+$/.test(b.name) ? 0.8 : 1.0) });
+      u.life.fingers.push({ b, sign, R: wrist === B.handR, k: /thumb/i.test(b.name) ? 0.55 : (/\.01\.|[A-Za-z]1_\d+$/.test(b.name) ? 0.8 : 1.0) });
     });
     m.updateMatrixWorld(true);
   }
@@ -70759,8 +71177,11 @@ function lifeApply(u, B, dt, saved) {
   // and the claws, curled always and harder through a blow
   if (S.fingers.length) {
     // a hand that is HOLDING something closes round it instead (`life.grip`, set by whoever owns the beat)
-    const curl = S.grip != null ? S.grip : (u.kind.claws || 0) * (busy ? 1.35 : 1.0);
-    for (const f of S.fingers) { saved.push({ b: f.b, q: f.b.quaternion.clone(), p: null }); f.b.quaternion.multiply(_lfQ.setFromAxisAngle(_lfX, f.sign * curl * f.k)); }
+    // `life.grip` may be one number for both hands or `{ R, L }` — a man with a bottle in one fist and nothing in the other
+    const base = (u.kind.claws || 0) * (busy ? 1.35 : 1.0), G = S.grip;
+    const curlR = G == null ? base : (typeof G === 'number' ? G : (G.R != null ? G.R : base));
+    const curlL = G == null ? base : (typeof G === 'number' ? G : (G.L != null ? G.L : base));
+    for (const f of S.fingers) { saved.push({ b: f.b, q: f.b.quaternion.clone(), p: null }); f.b.quaternion.multiply(_lfQ.setFromAxisAngle(_lfX, f.sign * (f.R ? curlR : curlL) * f.k)); }
   }
   // the weight moving over his feet, on two counts that never line up
   const ws = (Math.sin(S.t * 0.41 + S.seed) * 0.7 + Math.sin(S.t * 0.173 + S.seed * 2.1) * 0.3) * S.w;
@@ -71123,12 +71544,23 @@ const UMBRA_ALL = Object.assign({}, UMBRA_JOINTS, {
 function umbraAdd(...ks) {
   const o = {};
   for (const k of ks) for (const j in k) {
-    if (j === 'hipY') { o.hipY = (o.hipY || 0) + k.hipY; continue; }
+    if (j === 'hipY' || j === 'hipF') { o[j] = (o[j] || 0) + k[j]; continue; }
     const a = o[j] || (o[j] = {});
     for (const ax of ['up', 'right', 'fwd']) if (k[j][ax]) a[ax] = (a[ax] || 0) + k[j][ax];
   }
   return o;
 }
+/* HIS THRONE POSES, SOLVED ON HIS RIG (`tools/umbrasit.js`: coordinate descent
+ * on these angles against joint targets measured off the throne). In his own
+ * frame, with his feet where he will stand a stride in front of the seat: the
+ * pelvis over the cushion 0.62 back and 0.84 up, the thighs forward, the feet
+ * flat, the front blades' hands on the armrests and the back pair hanging
+ * over the sides. RISE1 is leaning forward onto his feet with his weight on
+ * the arms; RISE2 is up off the seat, still pitched over his knees. */
+const UMBRA_RISE_DUR = 2.5;
+const UMBRA_SIT = { hipY: -0.195, hipF: -0.617, chest: { right: -0.852, up: 0.234 }, thighL: { right: -0.805, fwd: -0.25, up: -0.906 }, thighR: { right: -0.391, fwd: -0.078, up: 0.211 }, calfL: { fwd: -0.172, up: 0.195 }, calfR: { right: -0.039, fwd: 0.07, up: -0.031 }, footL: { right: 0.281, fwd: -0.156, up: 0.172 }, footR: { right: 0.242, fwd: 0.055, up: -0.047 }, armL: { right: 1.242, fwd: 1, up: 0.773 }, armR: { right: 0.156, fwd: 0.07, up: -0.148 }, foreL: { right: 0.055, fwd: 0.008, up: -0.555 }, foreR: { right: -0.656, fwd: -0.195, up: 0.43 }, armL2: { right: -0.32, fwd: -0.352, up: -0.234 }, armR2: { right: -0.68, fwd: 0.43, up: 0.125 }, foreL2: { right: 0.414, fwd: 0.055, up: 0.531 }, foreR2: { right: 0.523, fwd: -0.219, up: -0.547 } };
+const UMBRA_RISE1 = { hipY: -0.133, hipF: -0.476, chest: { right: 0.14, up: 0.234 }, thighL: { right: -0.688, fwd: -0.148, up: -0.789 }, thighR: { right: -0.282, fwd: -0.078, up: 0.148 }, calfL: { right: -0.031, fwd: -0.274, up: 0.218 }, calfR: { right: 0.024, fwd: 0.133, up: -0.031 }, footL: { right: 0.179, fwd: -0.078, up: 0.125 }, footR: { right: 0.117, fwd: 0.016, up: -0.024 }, armL: { right: 1.164, fwd: 1.063, up: 0.726 }, armR: { right: 0.14, fwd: 0.023, up: -0.078 }, foreL: { right: 0.055, fwd: -0.078, up: -0.61 }, foreR: { right: -0.719, fwd: -0.117, up: 0.508 }, armL2: { right: -0.39, fwd: -0.352, up: -0.492 }, armR2: { right: -0.25, fwd: 0.555, up: 0.633 }, foreL2: { right: 0.062, fwd: -0.07, up: 0.054 }, foreR2: { right: 0.226, fwd: -0.117, up: -0.242 } };
+const UMBRA_RISE2 = { hipY: -0.008, hipF: -0.218, chest: { right: 0.304, up: 0.242 }, thighL: { right: -0.446, fwd: -0.085, up: -0.328 }, thighR: { right: 0.031, fwd: -0.008, up: -0.133 }, calfL: { right: -0.14, fwd: -0.204, up: 0.218 }, calfR: { right: -0.101, fwd: 0.219, up: 0.008 }, footL: { right: 0.015, fwd: -0.062, up: -0.055 }, footR: { right: -0.063, fwd: 0.024, up: 0.062 }, armL: { right: 1.039, fwd: 0.954, up: 0.663 }, armR: { right: -0.024, fwd: 0.14 }, foreL: { right: 0.078, fwd: -0.258, up: -0.672 }, foreR: { right: -0.813, fwd: -0.125, up: 0.571 }, armL2: { right: -0.382, fwd: -0.422, up: -0.414 }, armR2: { right: -0.492, fwd: 0.594, up: 0.461 }, foreL2: { right: 0.226, fwd: -0.015, up: 0.234 }, foreR2: { right: 0.343, fwd: -0.117, up: -0.359 } };
 function authorUmbraOwn(u, m, stance) {
   const { build } = poseRig(u, m, stance, UMBRA_ALL, {});
   const out = [];
@@ -71281,6 +71713,21 @@ function authorUmbraOwn(u, m, stance) {
              armR: { right: -1.20, fwd: -1.10 }, armL: { right: -1.20, fwd: 1.10 }, armR2: { right: -0.75, fwd: -1.0 }, armL2: { right: -0.75, fwd: 1.0 },
              foreR: { right: -0.2 }, foreL: { right: -0.2 } }],
     [2.55, {}]], false);
+  /* ON THE THRONE. Asleep he breathes, slowly, and his head sinks and lifts
+   * with it; the blades on the armrests never move. Woken he lifts his head
+   * first, then leans out over his feet with his weight on the arms, comes up
+   * off the seat pitched forward, and straightens into the stance he fights
+   * in — `UMBRA_RISE_DUR`, which is the roar the fight opens on. */
+  B('uSit', 4.2, [[0, UMBRA_SIT],
+    [2.1, umbraAdd(UMBRA_SIT, { chest: { right: -0.05 }, head: { right: 0.08 }, hipY: 0.012 })],
+    [4.2, UMBRA_SIT]], true);
+  const RD = UMBRA_RISE_DUR;
+  B('uRise', RD, [[0, UMBRA_SIT],
+    [RD * 0.24, umbraAdd(UMBRA_SIT, { head: { right: -0.35 }, neck: { right: -0.12 }, foreR: { right: -0.12 }, foreL: { right: -0.12 } })],
+    [RD * 0.46, umbraAdd(UMBRA_RISE1, { head: { right: -0.25 } })],
+    [RD * 0.66, UMBRA_RISE2],
+    [RD * 0.86, umbraAdd({}, { chest: { right: -0.12 }, head: { right: -0.15 }, hipY: 0.04 })],
+    [RD, {}]], false);
   return out;
 }
 function authorUmbraClips(u, m, gltf) {
@@ -71773,7 +72220,7 @@ MUT_KINDS.umbra = {
    * back up — 3.1 s end to end, by the owner's word that he gets up fast. */
   knockClip: 'uFall', knockHeavy: 0.12, knockGap: 20,
   knock: { fall: 1.93, lie: 0.35, rise: 0.85, land: 0.54, slide: null, riseFrom: 0.55, twitch: 0.18, turn: 1.85, turnEnd: 0.52 },
-  stunClip: 'uParry', first: 'uStance', sleepIdle: 'uCalm', wakeAt: 26, fortOut: true,
+  stunClip: 'uParry', first: 'uSit', sleepIdle: 'uSit', wakeAt: 26, thrBody: true,
   gunBlock: true, comboGrace: 0.18,        // more of a combo counts: 0.45 let a whole string cost one point, 0.28 about three
   /* HIS HEAD HANGS OFF HIS CHEST, NOT HIS NECK (`HeadIK_125` is a sibling of
    * `Neck_3`), so with no mapped child of its own it took the chest's
@@ -71861,6 +72308,16 @@ function umbraProvoke(u) {
   if (u.st.awake) return;
   u.st.awake = true; u.st.roar = 1.5; u.st.roarClip = 'uStance'; u.st.cool = 0.25; u.st.step = 0;
   u.holdAnim = false;
+  /* ON HIS THRONE HE STANDS UP FIRST: the rise is the roar, he does not turn
+   * or move through it, and the shriek comes as he straightens
+   * (`updateThroneBoss`). A blow on him while he sits still gets him up — it
+   * does not get him off the throne any faster. */
+  if (u.st.thrSeat && u.clips && u.clips.uRise) {
+    u.st.roar = UMBRA_RISE_DUR; u.st.roarClip = 'uRise'; u.st.thrRising = true; u.st.thrRiseT = 0; u.st.cool = 0.15;
+    u.st.thrSeat = false;
+    try { sfxMutHunger(Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z), u.kind.voice); } catch (e) { /* a sound is never fatal */ }
+    return;
+  }
   const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
   sfxMutRoar(d, u.kind.voice);
   addTrauma(0.35);
@@ -71967,6 +72424,7 @@ const FORT_STEP = 0.42, FORT_AIR = 0.72, FORT_BODY = 0.26;
 const FORT_FLOOR = fk(0.78);                        // the cobbles, in the castle's own (scaled) metres
 const FORT_OUT = 0.45, FORT_HOLD = 0.75, FORT_IN = 0.7;
 let fortWorld = null, fortReady = false, fortWalk = null, fortCells = null, fortWalls = null;
+let inC13 = false;                   // in Castle XIII, through the back door (its section is further down)
 let inFort = false, fortBusy = false, fortT = 0, fortDir = 1, fortCutDone = false, fortTo = null;
 let fortLastFloor = null, fortInT = 0, fortGateCool = false, fortSaveDone = false, fortSpot = null;
 const fortLastSpot = { x: 0, z: 0 };
@@ -72009,6 +72467,7 @@ function loadFort() {
     for (const o of drop) { o.removeFromParent(); o.geometry.dispose(); }
     root.applyMatrix4(new THREE.Matrix4().makeScale(FORT_K, FORT_K, FORT_K));
     fortWorld.add(root);
+    fixFlatUV(root);
     buildFortMask();
     fortFindSpot();
     buildFortDoors();
@@ -72044,22 +72503,43 @@ function fortDress(m) {
    * ruin. Some glow from inside, warm, the light leaking round the boards;
    * which ones is a hash of where the window is, so the same windows are
    * lit every night, and each breathes on its own count like a lamp. */
-  if (m.name === 'acmat_22') {
+  if (m.name === 'acmat_22' || m.userData.fortWin) {
+    // how many are lit: the besieged village's few, the thriving castle's most (`fortLit`)
+    const litT = (m.userData.fortLit ?? 0.42).toFixed(2);
     m.color.setHex(0x5b5048);
-    m.emissive.setRGB(1.0, 0.52, 0.20); m.emissiveIntensity = 0.95;
+    m.emissive.setRGB(1.0, 0.52, 0.20); m.emissiveIntensity = m.userData.fortLit !== undefined ? 0.85 : 0.95;
+    /* Castle XIII's GLASS is blue in its map, and the orange lamp multiplied
+     * by a blue map comes out grey: the glass lights warm on its own, and its
+     * leading reads through the colour pass instead. */
+    if (m.userData.fortLit !== undefined) { m.emissiveMap = null; m.emissive.setRGB(1.0, 0.46, 0.16); m.emissiveIntensity = 0.62; }
+    m.customProgramCacheKey = () => 'fortWin' + litT;
     m.onBeforeCompile = (sh) => {
       sh.uniforms.uFortT = FORT_WIN_U.uFortT;
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec3 vFwW;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFwW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
       sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vFwW;\nuniform float uFortT;\nfloat fwH(vec2 p) { return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5453); }')
+        .replace('#include <common>', '#include <common>\nvarying vec3 vFwW;\nuniform float uFortT;\nfloat fwH(vec2 p) { return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5453); }\n' + C13_WIN_GLSL)
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
           {
             vec2 cellW = floor(vFwW.xz / 2.6);
-            float lit = step(0.42, fwH(cellW)) * smoothstep(0.2, 1.4, vFwW.y + 0.8);
+            float lit = step(${litT}, fwH(cellW)) * smoothstep(0.2, 1.4, vFwW.y + 0.8);
             float fl = 0.82 + 0.12 * sin(uFortT * (2.1 + fwH(cellW + 3.1) * 3.0) + fwH(cellW) * 20.0) + 0.06 * sin(uFortT * 9.7 + fwH(cellW + 7.7) * 30.0);
             totalEmissiveRadiance *= lit * fl;
+            ${m.userData.fortLit !== undefined ? `
+            // the room behind: uneven light, a shutter or a cloth across part of it, and the leading in front
+            #ifdef USE_MAP
+              float c13lm = dot(texture2D(map, vMapUv).rgb, vec3(0.3, 0.59, 0.11));
+              totalEmissiveRadiance *= smoothstep(0.05, 0.22, c13lm);
+            #endif
+            float c13h = dot(vFwW.xz, vec2(0.71, 0.71));
+            float c13n = c13wN(vec2(c13h * 1.3, vFwW.y * 0.9) + cellW * 3.7);
+            totalEmissiveRadiance *= 0.22 + 0.7 * smoothstep(0.25, 0.8, c13n);
+            // diamond quarries in lead cames: the glass is many small panes, not one sheet
+            vec2 c13q = vec2(c13h, vFwW.y) * 5.2, c13d = vec2(c13q.x + c13q.y, c13q.x - c13q.y);
+            vec2 c13f = abs(fract(c13d) - 0.5);
+            totalEmissiveRadiance *= 1.0 - 0.85 * smoothstep(0.40, 0.46, max(c13f.x, c13f.y));
+            totalEmissiveRadiance *= 0.9 + 0.2 * c13wH(floor(c13d) + cellW);       // each quarry its own pane of old glass` : ''}
           }`);
     };
   }
@@ -72067,6 +72547,63 @@ function fortDress(m) {
   m.needsUpdate = true;
 }
 const FORT_WIN_U = { uFortT: { value: 0 } };
+/* A FACE WITH ALL THREE CORNERS ON ONE TEXEL IS A FLAT COLOUR. Both castles
+ * ship faces whose uv collapses to a single point — 380 m² of Castle XIII,
+ * most of it on the brick (`acmat_4`): a whole stretch of wall in the east
+ * court drawn as one flat grey-brown slab, which is what the owner saw as an
+ * "untextured castle wall". Every such face is given its own corners and a
+ * planar projection at the material's OWN texture density, measured off its
+ * healthy faces: along the wall and up it for a wall, plan for a floor, so it
+ * reads as the stone round it. */
+function fixFlatUV(root) {
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert(), M = new THREE.Matrix4();
+  const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), e1 = new THREE.Vector3(), e2 = new THREE.Vector3();
+  let faces = 0;
+  root.traverse((o) => {
+    if (!o.isMesh || !o.geometry || !o.geometry.index || !o.geometry.attributes.uv || !o.material || !o.material.map) return;
+    const g = o.geometry, ia = g.index, pa = g.attributes.position, ua = g.attributes.uv;
+    M.multiplyMatrices(inv, o.matrixWorld);
+    let sd = 0, sa = 0; const bad = [];
+    for (let t = 0; t < ia.count; t += 3) {
+      const i0 = ia.getX(t), i1 = ia.getX(t + 1), i2 = ia.getX(t + 2);
+      A.fromBufferAttribute(pa, i0).applyMatrix4(M); B.fromBufferAttribute(pa, i1).applyMatrix4(M); C.fromBufferAttribute(pa, i2).applyMatrix4(M);
+      const wa = e1.subVectors(B, A).cross(e2.subVectors(C, A)).length() / 2; if (wa < 1e-5) continue;
+      const ux = ua.getX(i1) - ua.getX(i0), uy = ua.getY(i1) - ua.getY(i0), vx = ua.getX(i2) - ua.getX(i0), vy = ua.getY(i2) - ua.getY(i0);
+      const uvA = Math.abs(ux * vy - uy * vx) / 2;
+      if (uvA / wa < 1e-7) bad.push(t); else { sd += Math.sqrt(uvA / wa) * wa; sa += wa; }
+    }
+    if (!bad.length || !sa) return;
+    const k = sd / sa, n0 = pa.count, add = bad.length * 3;
+    const grow = {};
+    for (const [name, at] of Object.entries(g.attributes)) {
+      const arr = new at.array.constructor((n0 + add) * at.itemSize); arr.set(at.array);
+      grow[name] = arr;
+    }
+    const idx = Array.from(ia.array);
+    let nv = n0;
+    for (const t of bad) {
+      const vs = [ia.getX(t), ia.getX(t + 1), ia.getX(t + 2)];
+      A.fromBufferAttribute(pa, vs[0]).applyMatrix4(M); B.fromBufferAttribute(pa, vs[1]).applyMatrix4(M); C.fromBufferAttribute(pa, vs[2]).applyMatrix4(M);
+      const N = e1.subVectors(B, A).cross(e2.subVectors(C, A)).normalize();
+      const flat = Math.abs(N.y) > 0.7;
+      let tx = -N.z, tz = N.x; const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
+      for (let c = 0; c < 3; c++) {
+        const v = vs[c];
+        for (const [name, at] of Object.entries(g.attributes)) for (let q = 0; q < at.itemSize; q++) grow[name][nv * at.itemSize + q] = at.array[v * at.itemSize + q];
+        const P = c === 0 ? A : c === 1 ? B : C;
+        grow.uv[nv * 2] = flat ? P.x * k : (P.x * tx + P.z * tz) * k;
+        grow.uv[nv * 2 + 1] = flat ? P.z * k : P.y * k;
+        idx[t + c] = nv; nv++;
+      }
+      faces++;
+    }
+    for (const [name, at] of Object.entries(g.attributes)) g.setAttribute(name, new THREE.BufferAttribute(grow[name], at.itemSize, at.normalized));
+    g.setIndex(nv > 65535 ? new THREE.Uint32BufferAttribute(idx, 1) : new THREE.Uint16BufferAttribute(idx, 1));
+  });
+  return faces;
+}
+
 
 /* ---- THE FOOTPRINT. Every cell of the castle's walk grid is the castle —
  * the courtyard's paving runs wall to wall and every wall and tower has a
@@ -72114,9 +72651,8 @@ function buildFortMask() {
  * and fifty metres out, the shape `buildKeepWalls` writes, and it is done
  * long before you reach the gate. A cut that finds it unfinished finishes it
  * behind its own black. */
-function fortWallsStep(budget) {
-  const S = FORT_SITE;
-  if (S.walls || !S.group || !fortReady) return !!S.walls;
+function fortWallsStep(budget, S = FORT_SITE) {
+  if (S.walls || !S.group || !(S === FORT_SITE ? fortReady : S.ready)) return !!S.walls;
   const B = S._wb || (S._wb = { ms: null, mi: 0, t: 0, tris: [], steep: [], ylo: [], yhi: [], mats: [], map: new Map() });
   if (!B.ms) {
     S.group.updateMatrixWorld(true);
@@ -72137,6 +72673,7 @@ function fortWallsStep(budget) {
       b.fromBufferAttribute(pos, ib).applyMatrix4(mw);
       c.fromBufferAttribute(pos, ic).applyMatrix4(mw);
       const lo = Math.min(a.y, b.y, c.y), hi = Math.max(a.y, b.y, c.y);
+      if (S.cutTri && S.cutTri(o, a, b, c)) continue;
       ab.subVectors(b, a); ac.subVectors(c, a); n.crossVectors(ab, ac);
       const L = n.length(); if (L < 1e-9) continue;
       const ny = Math.abs(n.y / L);
@@ -72157,7 +72694,7 @@ function fortWallsStep(budget) {
   S.walls = { v: new Float32Array(B.tris), steep: new Uint8Array(B.steep),
     ylo: new Float32Array(B.ylo), yhi: new Float32Array(B.yhi), mat: B.mats, map: B.map, cell, key };
   S._wb = null;
-  repairKeepStoreys(FORT_SITE);            // and the holes the sampler left in a floor, the keep's way
+  repairKeepStoreys(S);                    // and the holes the sampler left in a floor, the keep's way
   return true;
 }
 const _fwA = new THREE.Vector3(), _fwB = new THREE.Vector3(), _fwC = new THREE.Vector3();
@@ -72190,7 +72727,7 @@ function fortFindSpot() {
 
 /* ---- WHERE THE DOORS PUT YOU. */
 function placeInFort(at) {
-  umbraCalm();                       // he is outside: nothing in there is his
+  inC13 = false;
   const o = at || fortSpot || fortW(FORT_MID.x, FORT_MID.z);
   const f = fortCourtAt(o.x, o.z) ?? (FORT_Y + FORT_FLOOR);
   inFort = true; fortInT = 0;
@@ -72207,7 +72744,7 @@ function placeInFort(at) {
   _preMove.set(camera.position.x, 0, camera.position.z);
 }
 function placeOutOfFort(where) {
-  inFort = false;
+  inFort = false; inC13 = false;
   let x, z, yaw;
   if (where === 'back') {
     /* through the back door and on, facing the lighthouse. The door opens on
@@ -72266,7 +72803,8 @@ function updateFortCut(dt) {
   if (!fortCutDone && t >= FORT_OUT + 0.05) {
     fortCutDone = true;
     while (!fortWallsStep(1e9)) {}
-    if (fortDir > 0) placeInFort(fortTo); else placeOutOfFort(fortTo);
+    if (fortTo === 'c13') { while (!fortWallsStep(1e9, C13_SITE)) {} placeInC13(); }
+    else if (fortDir > 0) placeInFort(fortTo); else placeOutOfFort(fortTo);
   }
   if (t >= D) { fortBusy = false; blackoutEl.style.opacity = '0'; catchBreath(); }
 }
@@ -72293,7 +72831,9 @@ function buildFortDoors() {
     mid: true, far: 3.6,
     bare: () => fortBackBarred(),
     when: () => inFort && !fortBusy,
-    onActivate: () => { if (!fortBackBarred()) startFort(-1, 'back'); },
+    /* THE BACK DOOR GOES ON INTO THE NEXT CASTLE (the owner's word): Castle
+     * XIII, the same builder's, a little way down the coast past the tower */
+    onActivate: () => { if (!fortBackBarred()) startFort(1, c13Ready ? 'c13' : 'back'); },
   });
   // and the gate from the beach, for anyone who reaches for E rather than walking into it
   addInteractable(mk(FORT_GATE.x, FORT_FLOOR + fk(1.7), FORT_GATE.z + 0.35, fk(3.0), fk(3.4), 0.6), 'Enter the castle', 'default', {
@@ -72322,7 +72862,6 @@ function updateFort(dt) {
   fortWorld.visible = fortReady && (inFort || near) && !inRoom();
   if (!fortReady) return;
   if (!fortWalls && Math.abs(p.z - FORT_Z - 8) < 260 && !inRoom()) fortWallsStep(4);
-  if (umbraUnit) umbraUnit.g.visible = fortWorld.visible && umbraUnit.st.alive !== undefined;
   if (inRoom()) return;
   if (inFort) fortInT += dt;
   const feet0 = camBaseY - playerEye();
@@ -72486,6 +73025,3421 @@ function buildFortPostern() {
   });
 }
 
+/* =====================================================================
+ * CASTLE XIII, THROUGH THE FIRST CASTLE'S BACK DOOR.
+ *
+ * gogiart's "Castle XIII" (CC-BY-4.0, `assets/castle13.glb`, packed EXACT
+ * by `tools/undercroft_pack.py castle ~/Downloads/castle_xiii/scene.gltf
+ * assets/castle13.glb --tex 1024 --scale 13`): the same builder as the
+ * castle on the beach, two walled courts joined by a narrow way. Its doors
+ * are 0.2 units tall in the file, which at 13 is 2.76 m — the first
+ * castle's own doors — so the two read as one place.
+ *
+ * It cannot stand where the back door is: the headland and the tower start
+ * at the first castle's back wall. So it stands further down the same coast,
+ * past the tower (the owner: "extend the beach if you have to"), ON the beach
+ * the way the first one is — the beach's sky, moon, sea and fog, its
+ * footprint cut out of the sand, the sea and the dune by a second mask — and
+ * the back door is a cut into it. You arrive through the east tower's door
+ * looking down the east court (the owner's second screenshot), and that door
+ * behind you (his third) is the way back to the beach behind the first
+ * castle. Nothing lives in it yet.
+ * ===================================================================== */
+/* ON THE BLUFF, between the first castle's back wall and the lighthouse: its
+ * seaward wall two metres back from the cliff's edge (x 18), its north face
+ * five metres south of the first castle (z -1131), its paving on the cliff's
+ * top. See `buildC13Plateau`. */
+/* AND HALF AGAIN ITS PACKED SIZE, so it is a GRAND castle: at the first
+ * castle's own scale it stood behind the farmers' houses as a few dark towers
+ * no taller than the lighthouse. Scaled at load the first castle's way
+ * (`FORT_K`): the root, the walk grid's origin, cell, floors and roofs, and
+ * every number typed in its own frame (`ck`). Its doors are 4.1 m. */
+const C13_K = 1.5;
+const ck = (v) => v * C13_K;
+const C13_X = 18 + ck(37.08), C13_Y = 3.25, C13_Z = -1131 - ck(20.5);
+const C13_FLOOR = ck(0.2);                                   // its paving, in its own metres
+const C13_DOOR = { x: ck(32.6), z: ck(-8.11), nx: -1, nz: 0 };   // the east tower's door (the third screenshot), local; n points into the court
+const C13_SPAWN = { x: ck(28.0), z: ck(-8.0), yaw: 1.75 };      // the second screenshot: down the east court, the door at your back
+let c13World = null, c13Ready = false, c13Walk = null, c13Cells = null, c13Walls = null;
+let c13LastFloor = null; const c13LastSpot = { x: 0, z: 0 };
+const C13_SITE = {
+  X: C13_X, Y: C13_Y, Z: C13_Z, step: FORT_STEP,
+  get group() { return c13World; }, get walk() { return c13Walk; }, get cells() { return c13Cells; },
+  get walls() { return c13Walls; }, set walls(v) { c13Walls = v; },
+  get ready() { return c13Ready; },
+  skip: () => false,
+  extra: () => [],
+  sea: null,
+};
+const c13W = (lx, lz) => ({ x: C13_X + lx, z: C13_Z + lz });
+function loadC13() {
+  if (c13World) return;
+  c13World = new THREE.Group(); c13World.name = 'castle13';
+  c13World.position.set(C13_X, C13_Y, C13_Z);
+  c13World.visible = false;
+  scene.add(c13World);
+  bwGlb('assets/castle13.glb', (gltf) => {
+    const root = gltf.scene;
+    let ex = null;
+    root.traverse((o) => { if (!ex && o.userData && o.userData.bw_walk) ex = o.userData.bw_walk; });
+    if (ex) {
+      c13Walk = typeof ex === 'string' ? JSON.parse(ex) : ex;
+      c13Walk.x0 *= C13_K; c13Walk.z0 *= C13_K; c13Walk.cell *= C13_K;
+      for (const c of c13Walk.cells) for (let k = 0; k < c[2].length; k += 3) { c[2][k] *= C13_K; c[2][k + 2] *= C13_K; }
+      c13Cells = new Map();
+      for (const c of c13Walk.cells) c13Cells.set(c[1] * c13Walk.gw + c[0], c[2]);
+    }
+    // the first castle's own night on it: the same grade, and its glass lit from inside like the first one's shutters
+    root.traverse((o) => {
+      if (!o.isMesh) return;
+      if (o.material && o.material.name === 'acmat_9') { o.material.userData.fortWin = true; o.material.userData.fortLit = 0.14; }
+      fortDress(o.material);
+    });
+    root.applyMatrix4(new THREE.Matrix4().makeScale(C13_K, C13_K, C13_K));
+    c13World.add(root);
+    fixFlatUV(root);
+    buildC13Mask();
+    buildC13Doors();
+    buildC13Arch();
+    buildC13ThroneDoor();
+    c13Ready = true;
+    buildC13Life();
+    warmStep('castle13 compile', () => warmCompile([c13World], C13_X + C13_SPAWN.x, 1.7, C13_Z + C13_SPAWN.z, C13_X, 3, C13_Z + C13_SPAWN.z));
+  }, undefined, () => {});
+}
+loadC13();
+function buildC13Mask() {
+  const w = c13Walk; if (!w) return;
+  const gw = w.gw, gh = w.gh, N = gw * gh;
+  let a = new Uint8Array(N);
+  for (const c of w.cells) a[c[1] * gw + c[0]] = 1;
+  const morph = (src, dil) => {
+    const out = new Uint8Array(N);
+    for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+      let v = dil ? 0 : 1;
+      for (let dj = -1; dj <= 1 && (dil ? !v : v); dj++) for (let di = -1; di <= 1; di++) {
+        const ii = i + di, jj = j + dj;
+        const s2 = (ii < 0 || jj < 0 || ii >= gw || jj >= gh) ? 0 : src[jj * gw + ii];
+        if (dil && s2) { v = 1; break; }
+        if (!dil && !s2) { v = 0; break; }
+      }
+      out[j * gw + i] = v;
+    }
+    return out;
+  };
+  a = morph(a, true); a = morph(a, true); a = morph(a, true);
+  for (let k = 0; k < 5; k++) a = morph(a, false);
+  const px = new Uint8Array(N);
+  for (let k = 0; k < N; k++) px[k] = a[k] ? 255 : 0;
+  const tex = new THREE.DataTexture(px, gw, gh, THREE.RedFormat, THREE.UnsignedByteType);
+  tex.magFilter = tex.minFilter = THREE.NearestFilter; tex.generateMipmaps = false; tex.needsUpdate = true;
+  Object.assign(C13_M, { data: a, gw, gh, x0: C13_X + w.x0, z0: C13_Z + w.z0, cell: w.cell });
+  FORT_U.uFortMask2.value = tex;
+  FORT_U.uFortM2.value.set(C13_X + w.x0, C13_Z + w.z0, 1 / (gw * w.cell), 1 / (gh * w.cell));
+  C13_M.floorAt = (x, z) => {
+    if (!maskAt(C13_M, x, z)) return null;
+    const fl = keepCellAt(x, z, C13_SITE);
+    return fl ? C13_Y + fl[0] : C13_Y + C13_FLOOR;
+  };
+}
+/* THE COURT'S PAVING IS NOT ONE HEIGHT. Round the throne room's door the
+ * walk carries two floors in the same cell — the slab at 0.30 and the drawn
+ * paving laid on it at 0.69 — and the first one found was the slab, so a
+ * runner put there was laid UNDER the stones and a knight stood in them to
+ * the shin. The court's floor is the highest one near the paving's height. */
+function c13CourtAt(x, z) {
+  const fl = keepCellAt(x, z, C13_SITE); if (!fl) return null;
+  let best = null;
+  for (let k = 0; k < fl.length; k += 3) if (fl[k] > C13_FLOOR - 0.35 && fl[k] < C13_FLOOR + 0.6 && (best === null || fl[k] > best)) best = fl[k];
+  return best === null ? null : C13_Y + best;
+}
+// the same, in the castle's own frame and metres, falling back to the nominal paving
+function c13PaveAt(lx, lz) { const f = c13CourtAt(C13_X + lx, C13_Z + lz); return f === null ? C13_FLOOR : f - C13_Y; }
+function placeInC13() {
+  inC13 = true; inFort = false;
+  const o = c13W(C13_SPAWN.x, C13_SPAWN.z);
+  const f = c13CourtAt(o.x, o.z) ?? (C13_Y + C13_FLOOR);
+  groundY = f; c13LastFloor = f; c13LastSpot.x = o.x; c13LastSpot.z = o.z;
+  camera.position.set(o.x, f + playerEye(), o.z);
+  camBaseY = camera.position.y; vy = 0; onGround = true;
+  lookEuler.set(-0.02, C13_SPAWN.yaw, 0, lookEuler.order);
+  camera.quaternion.setFromEuler(lookEuler);
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0); crouching = false;
+  _preMove.set(camera.position.x, 0, camera.position.z);
+  fortCalmBoss();
+}
+function buildC13Doors() {
+  const D = C13_DOOR;
+  const p = new THREE.Mesh(new THREE.BoxGeometry(1.0, 3.0, 1.9),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+  p.position.set(D.x + D.nx * 0.35, C13_FLOOR + 1.5, D.z + D.nz * 0.35); p.name = 'hitProxy'; p.visible = false; p.userData.bwGhost = true;
+  c13World.add(p);
+  addInteractable(p, 'Leave the castle', 'default', {
+    mid: true, far: 3.8,
+    when: () => inC13 && !fortBusy,
+    onActivate: () => startFort(-1, 'back'),
+  });
+}
+// a wall along a line from a point, on this castle's own stone
+function c13WallAlong(x, z, dx, dz, y, max) {
+  for (let t = 0; t < max; t += 0.05) {
+    const px = x + dx * t, pz = z + dz * t;
+    if (keepWallNear(px, pz, 0.06, y - 0.15, y + 0.15, C13_SITE)) return { x: px - dx * 0.26, z: pz - dz * 0.26 };
+  }
+  return null;
+}
+/* ---- THE CASTLE'S LIFE: its lamps (every fire in it flickers off this list).
+ * There were iron bowls on tripods out in the courts here, and the owner's
+ * word was that torches on the ground do not look good — the fires are on the
+ * walls now, with everything else, in `c13BuildThrive`. */
+let c13Life = null;
+function buildC13Life() {
+  if (c13Life || !c13Walk) return;
+  const G = new THREE.Group(); G.name = 'c13Life'; G.userData.noBake = true;
+  c13World.add(G);
+  c13Life = { G, fires: [], lamps: [], spots: [], torches: false };
+}
+// and they are solid as discs, the first castle's way (and the market's stalls and its fountain, as what they are)
+function c13PropPush(p, r) {
+  c13PushSolids(p, r);
+  if (!c13Life) return;
+  for (const [lx, lz] of c13Life.spots) {
+    const qx = C13_X + lx, qz = C13_Z + lz, dx = p.x - qx, dz = p.z - qz, d = Math.hypot(dx, dz), m = 0.40 + r;
+    if (d >= m) continue;
+    if (d < 1e-4) { p.x += m; continue; }
+    p.x = qx + dx / d * m; p.z = qz + dz / d * m;
+  }
+}
+/* ---- THE WALK: the first castle's inside walk, on this castle's site. */
+const _c13Want = new THREE.Vector3();
+function updateC13(dt) {
+  if (!c13World) return;
+  const p = camera.position;
+  const near = Math.abs(p.z - C13_Z) < 260 && Math.abs(p.x - C13_X) < 200;
+  c13World.visible = c13Ready && (inC13 || near) && !inRoom();
+  if (!c13Ready) return;
+  if (!c13Walls && near && !inRoom()) fortWallsStep(4, C13_SITE);
+  if (c13Walls && !c13Thrive && !inRoom()) startC13Thrive();
+  if (c13Jobs.length) c13RunJobs(inC13 ? 8 : 3);
+  updateC13Thrive(dt);
+  if (c13World.visible) {
+    const t = performance.now() * 0.001;
+    for (const l of c13Life.lamps) l.L.intensity = l.base * (0.86 + 0.09 * Math.sin(t * 7.1 + l.ph) + 0.05 * Math.sin(t * 12.7 + l.ph * 2));
+  }
+  if (inRoom()) return;
+  const feet0 = camBaseY - playerEye();
+  if (!inC13) {
+    // from the beach it is a solid thing: its footprint is a wall
+    if (near && maskAt(C13_M, p.x, p.z)) { p.x = _preMove.x; p.z = _preMove.z; }
+    return;
+  }
+  if (!c13Walls) return;
+  const S = C13_SITE;
+  _c13Want.set(p.x - _preMove.x, 0, p.z - _preMove.z);
+  let feet = feet0;
+  if (onGround && c13LastFloor !== null && feet < c13LastFloor) feet = c13LastFloor;
+  const up = !onGround ? FORT_AIR : FORT_STEP;
+  const hits = (x0, z0, x1, z1) => keepHitsWall(x0, z0, x1, z1, feet + 0.80, S)
+    || keepHitsWall(x0, z0, x1, z1, feet + 1.25, S) || keepHitsWall(x0, z0, x1, z1, feet + 1.68, S);
+  const legal = (x, z) => keepFloorAt(x, z, feet, up, S) && maskAt(C13_M, x, z) && !c13PassBlocked(x, z) && !hits(_preMove.x, _preMove.z, x, z);
+  let st = legal(p.x, p.z);
+  if (!st) {
+    const mx = p.x - _preMove.x, mz = p.z - _preMove.z, ml = Math.hypot(mx, mz);
+    let took = false;
+    if (ml > 1e-4) {
+      const base = Math.atan2(mx, mz);
+      for (const off of [0.35, -0.35, 0.7, -0.7, 1.05, -1.05, 1.4, -1.4]) {
+        const k = Math.cos(off) * ml, a = base + off;
+        const nx = _preMove.x + Math.sin(a) * k, nz = _preMove.z + Math.cos(a) * k;
+        if (!legal(nx, nz)) continue;
+        p.x = nx; p.z = nz; took = true; break;
+      }
+    }
+    if (!took) { p.x = _preMove.x; p.z = _preMove.z; }
+    st = keepFloorAt(p.x, p.z, feet, up, S);
+  }
+  const tx = p.x, tz = p.z;
+  pushOutOfKeep(p, FORT_BODY, feet, up, S);
+  keepWallPush(p, FORT_BODY, feet, S, up);
+  c13PropPush(p, FORT_BODY);
+  {
+    const cx = p.x - tx, cz = p.z - tz, cl = Math.hypot(cx, cz);
+    if (cl > TAV_FIX && Math.hypot(tx - _preMove.x, tz - _preMove.z) < 0.5) { p.x = tx + cx / cl * TAV_FIX; p.z = tz + cz / cl * TAV_FIX; }
+  }
+  st = keepFloorAt(p.x, p.z, feet, up, S) || st;
+  if (!st) { p.x = _preMove.x; p.z = _preMove.z; st = keepFloorAt(p.x, p.z, feet, up, S); }
+  {
+    const dx = p.x - _preMove.x, dz = p.z - _preMove.z, mx = _c13Want.x, mz = _c13Want.z;
+    if ((mx * mx + mz * mz) > 1e-8 && (dx * mx + dz * mz) < 0) { p.x = _preMove.x; p.z = _preMove.z; }
+  }
+  st = keepFloorAt(p.x, p.z, feet, up, S) || st;
+  st = tavEscape(p, feet, up, S) || st;
+  if (!maskAt(C13_M, p.x, p.z)) { p.x = c13LastSpot.x; p.z = c13LastSpot.z; st = keepFloorAt(p.x, p.z, feet, up, S) || st; }
+  if (st) { c13LastFloor = st.f; c13LastSpot.x = p.x; c13LastSpot.z = p.z; }
+  groundY = st ? st.f : (c13LastFloor === null ? C13_Y + C13_FLOOR : c13LastFloor);
+}
+function c13ClampPlayer() {
+  if (!inC13 || !c13Walls) return false;
+  const p = camera.position;
+  let feet = camBaseY - playerEye();
+  if (c13LastFloor !== null && feet < c13LastFloor) feet = c13LastFloor;
+  pushOutOfKeep(p, FORT_BODY, feet, FORT_STEP, C13_SITE);
+  keepWallPush(p, FORT_BODY, feet, C13_SITE, FORT_STEP);
+  c13PropPush(p, FORT_BODY);
+  if (!keepFloorAt(p.x, p.z, feet, FORT_STEP, C13_SITE) || !maskAt(C13_M, p.x, p.z)) { p.x = c13LastSpot.x; p.z = c13LastSpot.z; }
+  return true;
+}
+
+/* ---- THE BLUFF UNDER IT. Castle XIII stands on top of the sand cliff now,
+ * between the first castle's back wall and the lighthouse, so it is seen over
+ * the farmers' walls from the courtyard with the tower still standing behind
+ * it. The cliff's own loft stops thirty metres inland, at x = 46, and the
+ * castle runs on to x = 95 — so the top of the bluff is carried on inland as a
+ * plateau in the CLIFF'S OWN MATERIAL (aU = 1, the top: the same world-space
+ * grain, the same grade, and the same fort-mask cut that opens the castle's
+ * courts), so there is no seam and no void under its walls. */
+let c13Plateau = null;
+function buildC13Plateau() {
+  if (c13Plateau || typeof cliff === 'undefined' || !cliff.material) return;
+  const X0 = 45.6, X1 = 210, Z0 = C13_Z + 130, Z1 = C13_Z - 120, NX = 54, NZ = 70;
+  const pos = new Float32Array((NX + 1) * (NZ + 1) * 3), aU = new Float32Array((NX + 1) * (NZ + 1));
+  let k = 0;
+  for (let j = 0; j <= NZ; j++) for (let i = 0; i <= NX; i++) {
+    const x = X0 + (X1 - X0) * (i / NX), z = Z0 + (Z1 - Z0) * (j / NZ);
+    // flat where it meets the cliff's crest and the castle, rolling a little further out
+    const roll = THREE.MathUtils.smoothstep(x, 145, 180) * (0.55 * Math.sin(x * 0.11 + 1.3) * Math.sin(z * 0.09) + 0.35 * Math.sin(z * 0.23 + x * 0.05));
+    pos[k * 3] = x; pos[k * 3 + 1] = CLIFF_H + 0.88 + roll; pos[k * 3 + 2] = z; aU[k] = 1; k++;
+  }
+  const idx = [];
+  for (let j = 0; j < NZ; j++) for (let i = 0; i < NX; i++) {
+    const a = j * (NX + 1) + i, b = a + 1, c = a + NX + 1, d = c + 1;
+    idx.push(a, c, b, b, c, d);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('aU', new THREE.BufferAttribute(aU, 1));
+  g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array((NX + 1) * (NZ + 1) * 2), 2));
+  g.setIndex(idx); g.computeVertexNormals();
+  c13Plateau = new THREE.Mesh(g, cliff.material);
+  c13Plateau.name = 'c13Plateau'; c13Plateau.receiveShadow = true;
+  c13Plateau.userData.bwCullR = -1;
+  scene.add(c13Plateau);
+}
+buildC13Plateau();
+
+/* ---- THE ARCHED DOOR IN THE MIDDLE WALL (the owner's first screenshot). It
+ * is the only way from the east court, where you arrive, into the castle's
+ * far half — the big west court.
+ *
+ * THE MODEL DRAWS IT AS TWO DOORS AND NO PASSAGE. A leaf on each face of a
+ * wall two metres thick, and between them the wall goes on: brick faces and
+ * the frame's own recesses fill the whole thickness, so the courts were never
+ * joined. So a passage is CUT: the two leaves (the oak and its iron) are
+ * lifted out onto hinges; the castle's own materials discard every fragment
+ * inside the doorway's measured profile (`uC13Pass`); the cut is lined in the
+ * castle's own brick and paving at the textures' own density; the faces
+ * inside the cut leave the wall index; and while the door is shut the
+ * passage is refused. Every number comes off the two leaves. */
+const C13_ARCH = { x: ck(4.4), z: ck(-0.5) };
+let c13Arch = null, c13ArchOpen = false;
+const C13_PASS_U = { a: { value: new THREE.Vector4(0, 0, 1, 0) }, b: { value: new THREE.Vector4(0, 0, 0, 0) } };
+function c13PassLocal(lx, ly, lz, pad = 0) {
+  // is (lx, ly, lz) in the castle's own frame inside the cut?  pad grows it
+  const A = c13Arch; if (!A) return false;
+  const dx = lx - A.ax, dz = lz - A.az;
+  const u = dx * A.ux + dz * A.uz, w = dx * -A.uz + dz * A.ux;
+  if (u < -pad || u > A.L + pad || Math.abs(w) > A.hw + pad) return false;
+  if (ly === null) return true;
+  const k = Math.min(1, Math.abs(w) / A.hw);
+  return ly > A.y0 - 0.5 && ly < A.ys + (A.yt - A.ys) * Math.pow(Math.max(0, 1 - k * k), 0.4) + pad;
+}
+function buildC13Arch() {
+  if (c13Arch || !c13World) return;
+  c13World.updateMatrixWorld(true);
+  const inv = c13World.matrixWorld.clone().invert();
+  const v = new THREE.Vector3(), nv = new THREE.Vector3();
+  const meshes = [];
+  c13World.traverse((o) => { if (o.isMesh && o.material && /^acmat_(1|3)$/.test(o.material.name)) meshes.push(o); });
+  const taken = [];                        // { mat, pa, na, ua, cx } a triangle each
+  for (const o of meshes) {
+    const geo = o.geometry, P = geo.attributes.position, N = geo.attributes.normal, UV = geo.attributes.uv, I = geo.index;
+    const M = inv.clone().multiply(o.matrixWorld), nm = new THREE.Matrix3().getNormalMatrix(M);
+    const n = I ? I.count : P.count;
+    const keep = [];
+    for (let t = 0; t < n; t += 3) {
+      const ids = [0, 1, 2].map((q) => I ? I.getX(t + q) : t + q);
+      let cx = 0, cz = 0, cy = 0;
+      for (const id of ids) { v.fromBufferAttribute(P, id).applyMatrix4(M); cx += v.x / 3; cy += v.y / 3; cz += v.z / 3; }
+      if (Math.hypot(cx - C13_ARCH.x, cz - C13_ARCH.z) < ck(1.8) && cy < ck(3.2)) {
+        const T = { mat: o.material, pa: [], na: [], ua: [], cx, cz };
+        for (const id of ids) {
+          v.fromBufferAttribute(P, id).applyMatrix4(M); T.pa.push(v.x, v.y, v.z);
+          if (N) { nv.fromBufferAttribute(N, id).applyMatrix3(nm).normalize(); T.na.push(nv.x, nv.y, nv.z); }
+          if (UV) T.ua.push(UV.getX(id), UV.getY(id));
+        }
+        taken.push(T);
+      } else keep.push(...ids);
+    }
+    geo.setIndex(keep);
+  }
+  if (taken.length < 8) return;
+  // the two leaves: the triangles split by which face of the wall they are on
+  const mx = taken.reduce((a, t) => a + t.cx, 0) / taken.length;
+  const leaves = [taken.filter((t) => t.cx < mx), taken.filter((t) => t.cx >= mx)];
+  const box = leaves.map((L) => {
+    let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9, z0 = 1e9, z1 = -1e9;
+    for (const t of L) for (let i = 0; i < t.pa.length; i += 3) {
+      x0 = Math.min(x0, t.pa[i]); x1 = Math.max(x1, t.pa[i]); y0 = Math.min(y0, t.pa[i + 1]); y1 = Math.max(y1, t.pa[i + 1]);
+      z0 = Math.min(z0, t.pa[i + 2]); z1 = Math.max(z1, t.pa[i + 2]);
+    }
+    return { x0, x1, y0, y1, z0, z1, cx: (x0 + x1) / 2, cz: (z0 + z1) / 2 };
+  });
+  const [W, E] = box;
+  // the passage's frame: from the west leaf's outer face to the east leaf's
+  let ux = E.cx - W.cx, uz = E.cz - W.cz; const ul = Math.hypot(ux, uz); ux /= ul; uz /= ul;
+  const ax = W.x0, az = W.cz + (W.x0 - W.cx) * uz / ux;
+  const L = (E.x1 - ax) * ux + (E.cz - az) * uz;
+  const hw = Math.min(W.z1 - W.z0, E.z1 - E.z0) / 2 - 0.02;
+  const y0 = Math.min(W.y0, E.y0), yt = Math.min(W.y1, E.y1), ys = yt - 0.98;
+  // its floor: the court's own paving, read off the walk a stride out of each face
+  let yf = C13_FLOOR;
+  if (c13Cells && c13Walk) {
+    const w = c13Walk, fs = [];
+    for (const uu of [-0.6, L + 0.6]) {
+      const lx = ax + ux * uu, lz = az + uz * uu;
+      const fl = c13Cells.get(Math.floor((lz - w.z0) / w.cell) * w.gw + Math.floor((lx - w.x0) / w.cell));
+      if (!fl) continue;
+      let best = null; for (let k = 0; k < fl.length; k += 3) if (fl[k] < yt - 0.8) best = fl[k];
+      if (best !== null) fs.push(best);
+    }
+    if (fs.length) yf = fs.reduce((q, r) => q + r, 0) / fs.length;
+  }
+  c13Arch = { ax, az, ux, uz, L, hw, y0, yf, ys, yt, leaves: [], open: 0, t: 0 };
+  c13PassGround();
+  C13_PASS_U.a.value.set(C13_X + ax, C13_Z + az, ux, uz);
+  C13_PASS_U.b.value.set(L, hw, C13_Y + yf, C13_Y + ys);
+  C13_PASS_U.a.value.yt = C13_Y + yt;
+  // each leaf on its own hinge, both swinging toward the west court
+  leaves.forEach((Lt, li) => {
+    const B = box[li];
+    const hz = B.z0, hx = B.cx;                   // hinge on the -z jamb
+    const pivot = new THREE.Group(); pivot.position.set(hx, 0, hz); pivot.name = 'c13ArchLeaf' + li;
+    const byMat = new Map();
+    for (const t of Lt) { let e = byMat.get(t.mat); if (!e) { e = { pa: [], na: [], ua: [] }; byMat.set(t.mat, e); } e.pa.push(...t.pa); e.na.push(...t.na); e.ua.push(...t.ua); }
+    for (const [mat, e] of byMat) {
+      const g = new THREE.BufferGeometry();
+      const pa = Float32Array.from(e.pa); for (let i = 0; i < pa.length; i += 3) { pa[i] -= hx; pa[i + 2] -= hz; }
+      g.setAttribute('position', new THREE.BufferAttribute(pa, 3));
+      if (e.na.length) g.setAttribute('normal', new THREE.BufferAttribute(Float32Array.from(e.na), 3)); else g.computeVertexNormals();
+      if (e.ua.length) g.setAttribute('uv', new THREE.BufferAttribute(Float32Array.from(e.ua), 2));
+      const m = new THREE.Mesh(g, mat.clone()); m.material.userData.c13NoCut = true;   // a clone: the cut must not eat the door
+      m.userData.bwGhost = true;
+      pivot.add(m);
+    }
+    c13World.add(pivot);
+    // the free end is at +z from the hinge; three turns (0, 0, l) by `rotation.y = a` to (l sin a, 0, l cos a)
+    const sign = -1;                              // so its free end goes to lower x: the west court's side
+    c13Arch.leaves.push({ pivot, sign });
+  });
+  // the cut: every castle material discards inside the profile
+  c13World.traverse((o) => {
+    if (!o.isMesh || !o.material || o.material.userData.c13NoCut || o.material.userData.c13Cut) return;
+    const m = o.material; m.userData.c13Cut = true;
+    const prev = m.onBeforeCompile;
+    m.onBeforeCompile = function (sh, r) {
+      if (prev) prev.call(this, sh, r);
+      sh.uniforms.uC13PassA = C13_PASS_U.a; sh.uniforms.uC13PassB = C13_PASS_U.b;
+      sh.uniforms.uC13PassT = { value: C13_Y + yt };
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vC13W;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvC13W = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vC13W;\nuniform vec4 uC13PassA, uC13PassB;\nuniform float uC13PassT;')
+        .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+          {
+            vec2 d = vC13W.xz - uC13PassA.xy;
+            float u = dot(d, uC13PassA.zw), w = dot(d, vec2(-uC13PassA.w, uC13PassA.z));
+            float k = min(1.0, abs(w) / uC13PassB.y);
+            float top = uC13PassB.w + (uC13PassT - uC13PassB.w) * pow(max(0.0, 1.0 - k * k), 0.4);
+            float wl = uC13PassB.y + ((u > 0.12 && u < uC13PassB.x - 0.12) ? 0.07 : -0.01);
+            if (u > -0.04 && u < uC13PassB.x + 0.04 && abs(w) < wl && vC13W.y > uC13PassB.z + 0.025 && vC13W.y < top + ((u > 0.12 && u < uC13PassB.x - 0.12) ? 0.07 : -0.01)) discard;
+          }`);
+    };
+    const pk = m.customProgramCacheKey ? m.customProgramCacheKey.bind(m) : () => '';
+    m.customProgramCacheKey = () => pk() + '|c13pass';
+    m.needsUpdate = true;
+  });
+  buildC13PassLining();
+  /* the faces inside the cut are not walls: anything lying between the wall's
+   * two faces that reaches across the doorway below its crown. The lining is
+   * the passage's wall and stays. */
+  C13_SITE.cutTri = (o, a, b, c) => {
+    if (o.userData.c13Keep) return false;
+    const A = c13Arch; let wlo = 1e9, whi = -1e9, us = 0, ylo = 1e9;
+    for (const q of [a, b, c]) {
+      const dx = q.x - C13_X - A.ax, dz = q.z - C13_Z - A.az;
+      us += (dx * A.ux + dz * A.uz) / 3; const w = dx * -A.uz + dz * A.ux;
+      wlo = Math.min(wlo, w); whi = Math.max(whi, w); ylo = Math.min(ylo, q.y - C13_Y);
+    }
+    return us > 0.08 && us < A.L - 0.08 && wlo < A.hw - 0.04 && whi > -A.hw + 0.04 && ylo < A.yt;
+  };
+  // the proxy the crosshair finds: the doorway itself, from either court
+  const p = new THREE.Mesh(new THREE.BoxGeometry(L + 0.5, yt - yf, hw * 2),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+  p.position.set(ax + ux * L / 2, (yt + yf) / 2, az + uz * L / 2); p.rotation.y = -Math.atan2(uz, ux);
+  p.name = 'hitProxy'; p.visible = false; p.userData.bwGhost = true;
+  c13World.add(p);
+  addInteractable(p, 'Open the door', 'default', {
+    mid: true, far: 3.6,
+    when: () => inC13 && !c13ArchOpen && !fortBusy,
+    onActivate: () => openC13Arch(false),
+  });
+  if (c13ArchOpen) openC13Arch(true);
+}
+/* The cut's lining: two walls, a pointed vault and a floor, in the castle's
+ * own brick and paving, mapped at the textures' own density (measured off the
+ * model: the brick 0.0456 of its map a metre, the paving 0.41). */
+function buildC13PassLining() {
+  const A = c13Arch; let brick = null, pave = null;
+  c13World.traverse((o) => { if (!o.isMesh || !o.material) return; if (o.material.name === 'acmat_4') brick = o.material; if (o.material.name === 'acmat_0') pave = o.material; });
+  if (!brick) return;
+  const BK = 0.0456, PV = 0.41;
+  const bm = brick.clone(); bm.userData.c13NoCut = true; bm.side = THREE.DoubleSide;
+  const pm = (pave || brick).clone(); pm.userData.c13NoCut = true;
+  const at = (u, w, y) => [A.ax + A.ux * u - A.uz * w, y, A.az + A.uz * u + A.ux * w];
+  const u0 = 0.0, u1 = A.L, NW = 14, NU = 6;
+  const top = (w) => { const k = Math.min(1, Math.abs(w) / A.hw); return A.ys + (A.yt - A.ys) * Math.pow(Math.max(0, 1 - k * k), 0.4); };
+  // the walls and the vault are one strip round the profile: up the -w jamb, over, down the +w jamb
+  const prof = [];
+  prof.push([-A.hw, A.yf - 0.05], [-A.hw, A.ys]);
+  for (let i = 1; i < NW; i++) { const w = -A.hw + (2 * A.hw) * i / NW; prof.push([w, top(w)]); }
+  prof.push([A.hw, A.ys], [A.hw, A.yf - 0.05]);
+  const len = [0]; for (let i = 1; i < prof.length; i++) len.push(len[i - 1] + Math.hypot(prof[i][0] - prof[i - 1][0], prof[i][1] - prof[i - 1][1]));
+  const P = [], U = [], I = [];
+  for (let j = 0; j <= NU; j++) {
+    const u = u0 + (u1 - u0) * j / NU;
+    for (let i = 0; i < prof.length; i++) { P.push(...at(u, prof[i][0], prof[i][1])); U.push((u + 3.1) * BK, len[i] * BK + 0.37); }
+  }
+  const R = prof.length;
+  for (let j = 0; j < NU; j++) for (let i = 0; i < R - 1; i++) { const a = j * R + i, b = a + 1, c = a + R, d = c + 1; I.push(a, c, b, b, c, d); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2));
+  g.setIndex(I); g.computeVertexNormals();
+  const walls = new THREE.Mesh(g, bm); walls.name = 'c13PassLining'; walls.userData.c13Keep = true;
+  // the floor: the paving carried through
+  const fP = [], fU = [];
+  for (const [u, w] of [[u0 - 0.02, -A.hw], [u1 + 0.02, -A.hw], [u0 - 0.02, A.hw], [u1 + 0.02, A.hw]]) { const q = at(u, w, A.yf + 0.006); fP.push(...q); fU.push(q[0] * PV, q[2] * PV); }
+  const fg = new THREE.BufferGeometry();
+  fg.setAttribute('position', new THREE.Float32BufferAttribute(fP, 3)); fg.setAttribute('uv', new THREE.Float32BufferAttribute(fU, 2));
+  fg.setIndex([0, 2, 1, 1, 2, 3]); fg.computeVertexNormals();
+  if (fg.attributes.normal.getY(0) < 0) fg.setIndex([0, 1, 2, 1, 3, 2]), fg.computeVertexNormals();
+  const floor = new THREE.Mesh(fg, pm); floor.name = 'c13PassFloor'; floor.userData.c13Keep = true;
+  c13World.add(walls, floor);
+}
+function openC13Arch(quiet) {
+  c13ArchOpen = true;
+  if (!c13Arch) return;
+  c13Arch.t = quiet ? 1 : 0;
+  if (!quiet) { try { sfxTavernDoor(); } catch (e) {} }
+}
+function updateC13Arch(dt) {
+  const A = c13Arch; if (!A) return;
+  if (A.groundOwed) c13PassGround();
+  if (c13ArchOpen && A.t < 1) A.t = Math.min(1, A.t + dt / 1.1);
+  const e = A.t * A.t * (3 - 2 * A.t);
+  for (const l of A.leaves) l.pivot.rotation.y = l.sign * 1.62 * (c13ArchOpen ? e : 0);
+}
+/* the passage's floor in the walk: every cell under it carries the court's
+ * own paving at its own height, and nothing lower — the wall's inside had
+ * floors of its own a step and a half under the courts, which you could
+ * walk down into and never up out of */
+function c13PassGround() {
+  const A = c13Arch, w = c13Walk; if (!A || !w || !c13Cells) { if (A) A.groundOwed = true; return; }
+  A.groundOwed = false;
+  for (let u = -0.3; u <= A.L + 0.3; u += w.cell * 0.5) for (let ww = -A.hw - 0.1; ww <= A.hw + 0.1; ww += w.cell * 0.5) {
+    const lx = A.ax + A.ux * u - A.uz * ww, lz = A.az + A.uz * u + A.ux * ww;
+    const i = Math.floor((lx - w.x0) / w.cell), j = Math.floor((lz - w.z0) / w.cell);
+    if (i < 0 || j < 0 || i >= w.gw || j >= w.gh) continue;
+    const key = j * w.gw + i, fl = c13Cells.get(key) || [], nf = [A.yf, 0, A.yt];
+    for (let k = 0; k < fl.length; k += 3) if (fl[k] > A.yt) nf.push(fl[k], fl[k + 1], fl[k + 2]);
+    c13Cells.set(key, nf);
+  }
+}
+/* shut, the doorway is a wall; open, it is the way through */
+function c13PassBlocked(wx, wz) {
+  return !!c13Arch && !c13ArchOpen && c13PassLocal(wx - C13_X, null, wz - C13_Z, 0.32);
+}
+
+/* ---- DOOR 6, IN THE WEST COURT (the owner's second screenshot): the way
+ * on, into the throne room. */
+const C13_THR_DOOR = { x: ck(-12.6), z: ck(13.1) };
+function buildC13ThroneDoor() {
+  const D = C13_THR_DOOR;
+  const p = new THREE.Mesh(new THREE.BoxGeometry(1.6, 3.0, 1.6),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+  p.position.set(D.x, C13_FLOOR + 1.8, D.z); p.name = 'hitProxy'; p.visible = false; p.userData.bwGhost = true;
+  c13World.add(p);
+  addInteractable(p, () => crusaderAlive() ? 'The door is barred.' : 'Enter the throne room', 'default', {
+    mid: true, far: 4.2,
+    bare: () => crusaderAlive(),            // while the knight who holds this court lives, it does not open
+    when: () => inC13 && !fortBusy && !thrBusy,
+    onActivate: () => { if (!crusaderAlive()) startThrone(1); },
+  });
+}
+
+/* =====================================================================
+ * CASTLE XIII, LIVED IN (the owner, 2026-10-02: "the castle should look like
+ * they are thriving in the second half of it ... it is the end game so the
+ * whole place needs to look more impressive"). The first castle is a village
+ * under siege; this one is the seat it was defending, and it is a town at a
+ * festival: torches on every wall, the windows lit, crimson banners down the
+ * walls and flags on the towers, bunting and lanterns strung across both
+ * courts, a market round a fountain in the great west court, flowers under the
+ * windows, smoke off the chimneys and a minstrel's lute somewhere in it.
+ *
+ * NOTHING HERE IS TYPED INTO PLACE. Every torch, banner and line is found off
+ * the castle itself: the open courts are the walk grid's cells with SKY over
+ * them (house interiors are floored at court level too, but roofed at 17 m),
+ * the walls are the wall index at the height asked, a wall is only used where
+ * it is flat for the width of the thing hung on it, and nothing goes within
+ * reach of a door or a window (`c13FeatNear`, off the doors' and windows' own
+ * vertices). The route you walk — the east court to the arch, the arch to the
+ * throne room — is kept clear of anything that stands on the floor.
+ *
+ * The finding is a few hundred thousand wall queries, so it runs as a JOB in
+ * slices of a few milliseconds a frame (`c13Jobs`), from the moment the wall
+ * index is up — which is on the beach, well before you go in. What stands on
+ * the floor is solid (`c13Solids`, pushed out of like the first castle's
+ * braziers); nothing is put in the wall index.
+ * ===================================================================== */
+const C13_U = { uT: { value: 0 } };
+const c13Solids = [];            // { x, z, r } discs and { x, z, ux, uz, hw, hd } boxes, castle frame
+const c13Jobs = [];
+let c13Thrive = null;
+const C13_TORCH_Y = C13_FLOOR + 3.0;
+function c13Open(lx, lz) {
+  // an open court: floored at the paving, and nothing over it (a house is floored there too, under a roof)
+  const fl = keepCellAt(C13_X + lx, C13_Z + lz, C13_SITE);
+  return !!fl && Math.abs(fl[0] - C13_FLOOR) < 0.3 && fl[2] > 40;
+}
+function c13Clear(lx, lz, r) {
+  if (!c13Open(lx, lz)) return false;
+  for (let q = 0; q < 12; q++) { const a = q / 12 * Math.PI * 2; if (!c13Open(lx + Math.sin(a) * r, lz + Math.cos(a) * r)) return false; }
+  return true;
+}
+// the way through: the door you come in by, the arch, the throne room's door
+const C13_PATH = [[C13_SPAWN.x, C13_SPAWN.z], [ck(16), ck(-4)], [C13_ARCH.x, C13_ARCH.z], [ck(-2), ck(2)], [ck(-8), ck(6.5)], [C13_THR_DOOR.x, C13_THR_DOOR.z]];
+function c13PathD(lx, lz) {
+  let best = 1e9;
+  for (let i = 1; i < C13_PATH.length; i++) { seg2(lx, lz, C13_PATH[i - 1][0], C13_PATH[i - 1][1], C13_PATH[i][0], C13_PATH[i][1]); best = Math.min(best, Math.hypot(lx - _s2.x, lz - _s2.z)); }
+  return best;
+}
+// the doors' and windows' own vertices, on a 0.6 m hash: what nothing may be hung over
+let c13Feat = null;
+function c13Features() {
+  if (c13Feat) return c13Feat;
+  c13Feat = new Set();
+  c13World.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(c13World.matrixWorld).invert(), M = new THREE.Matrix4(), v = new THREE.Vector3();
+  c13World.traverse((o) => {
+    if (!o.isMesh || !o.material || o.userData.bwGhost || !o.geometry.attributes.position) return;
+    if (!/^acmat_(1|3|9|10|11|12|13|14|16|19|23)$/.test(o.material.name)) return;
+    M.multiplyMatrices(inv, o.matrixWorld);
+    const p = o.geometry.attributes.position;
+    for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i).applyMatrix4(M); c13Feat.add(Math.floor(v.x / 0.6) + ',' + Math.floor(v.y / 0.6) + ',' + Math.floor(v.z / 0.6)); }
+  });
+  return c13Feat;
+}
+function c13FeatNear(lx, ly, lz, r, ry) {
+  const F = c13Features();
+  for (let i = Math.floor((lx - r) / 0.6); i <= Math.floor((lx + r) / 0.6); i++)
+    for (let k = Math.floor((lz - r) / 0.6); k <= Math.floor((lz + r) / 0.6); k++)
+      for (let j = Math.floor((ly - ry) / 0.6); j <= Math.floor((ly + ry) / 0.6); j++) if (F.has(i + ',' + j + ',' + k)) return true;
+  return false;
+}
+// the wall at height y behind a court point: where its face is, and which way it faces (into the court)
+function c13WallAt(lx, lz, y, r) {
+  const h = keepWallNear(C13_X + lx, C13_Z + lz, r, C13_Y + y - 0.08, C13_Y + y + 0.08, C13_SITE); if (!h) return null;
+  let nx = C13_X + lx - h.x, nz = C13_Z + lz - h.z; const d = Math.hypot(nx, nz); if (d < 1e-3) return null;
+  return { x: h.x - C13_X, z: h.z - C13_Z, nx: nx / d, nz: nz / d, d };
+}
+// flat for `half` either side of it, from y0 to y1: the nearest wall from in front of each point is straight back, on the plane
+function c13Flat(s, y0, y1, half) {
+  const tx = -s.nz, tz = s.nx;
+  for (const k of [-1, -0.5, 0, 0.5, 1]) for (const yy of [y0, (y0 + y1) / 2, y1]) {
+    const px = s.x + s.nx * 0.5 + tx * half * k, pz = s.z + s.nz * 0.5 + tz * half * k;
+    const h = c13WallAt(px, pz, yy, 0.9); if (!h) return false;
+    const dx = h.x - s.x, dz = h.z - s.z;
+    if (Math.abs(dx * s.nx + dz * s.nz) > 0.09) return false;
+    if (Math.abs(dx * tx + dz * tz - half * k) > 0.14) return false;
+  }
+  return true;
+}
+// every place an open court meets a wall at height y
+function* c13WallScan(y, out, step = 0.9) {
+  const w = c13Walk;
+  let rows = 0;
+  for (let lz = w.z0 + 0.6; lz < w.z0 + w.gh * w.cell; lz += step) {
+    for (let lx = w.x0 + 0.6; lx < w.x0 + w.gw * w.cell; lx += step) {
+      if (!c13Open(lx, lz)) continue;
+      let edge = false;
+      for (let q = 0; q < 8 && !edge; q++) { const a = q * Math.PI / 4; edge = !c13Open(lx + Math.sin(a) * 1.5, lz + Math.cos(a) * 1.5); }
+      if (!edge) continue;
+      const s = c13WallAt(lx, lz, y, 1.9);
+      if (s && s.d > 0.3 && !out.some((o) => Math.abs(o.x - s.x) < 0.5 && Math.abs(o.z - s.z) < 0.5)) out.push(s);
+    }
+    if (++rows % 4 === 0) yield;
+  }
+}
+// a stable shuffle, so the same castle is dressed the same way every time
+function c13Shuffle(a, seed) { const r = mulberry32(seed); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+function c13RunJobs(ms) {
+  const t0 = performance.now();
+  let n = 0;
+  while (c13Jobs.length && (performance.now() - t0 < ms || n === 0)) {
+    n++;
+    let r; try { r = c13Jobs[0].next(); } catch (e) { console.warn('[castle13] dressing step failed', e); r = { done: true }; }
+    if (r.done) c13Jobs.shift();
+    if (n > 4000) break;
+  }
+}
+function c13Std(color, emis, opts = {}) {
+  const m = new THREE.MeshStandardMaterial(Object.assign({ color, roughness: 0.85, metalness: 0, emissive: emis }, opts));
+  if (opts.map) { m.emissiveMap = opts.map; m.emissive.setHex(0xffffff).multiplyScalar(0.16); }
+  return m;
+}
+/* a thing in the castle is lifted off its OWN colour (map times colour, or its
+ * instance colour), the castle's stone's own treatment at night — a constant
+ * emissive lifts everything to one grey */
+function c13Lift(m, k) {
+  const prev = m.onBeforeCompile;
+  m.onBeforeCompile = (sh, r) => {
+    if (prev) prev.call(m, sh, r);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+      totalEmissiveRadiance += diffuseColor.rgb * ${k.toFixed(3)};`);
+  };
+  const pk = m.customProgramCacheKey && m.customProgramCacheKey.call(m);
+  m.customProgramCacheKey = () => (pk || '') + '|c13Lift' + k.toFixed(3);
+  return m;
+}
+function c13Tex(c, aniso = 4) { const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = aniso; return t; }
+
+/* ---- the textures, drawn ---------------------------------------------- */
+function drawSun(g, cx, cy, r, gold) {
+  g.save(); g.translate(cx, cy);
+  g.fillStyle = gold; g.strokeStyle = gold; g.lineCap = 'round';
+  for (let i = 0; i < 16; i++) {
+    const a = i / 16 * Math.PI * 2;
+    g.save(); g.rotate(a);
+    if (i % 2) { g.lineWidth = r * 0.10; g.beginPath(); g.moveTo(r * 1.05, 0); for (let k = 0; k <= 6; k++) g.lineTo(r * (1.05 + k * 0.12), Math.sin(k * 1.6) * r * 0.08); g.stroke(); }
+    else { g.beginPath(); g.moveTo(r * 1.0, -r * 0.13); g.lineTo(r * 1.85, 0); g.lineTo(r * 1.0, r * 0.13); g.closePath(); g.fill(); }
+    g.restore();
+  }
+  g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.fill();
+  g.fillStyle = 'rgba(80,30,10,0.45)';
+  g.beginPath(); g.arc(-r * 0.33, -r * 0.18, r * 0.11, 0, Math.PI * 2); g.arc(r * 0.33, -r * 0.18, r * 0.11, 0, Math.PI * 2); g.fill();
+  g.lineWidth = r * 0.07; g.strokeStyle = 'rgba(80,30,10,0.45)'; g.beginPath(); g.arc(0, r * 0.05, r * 0.45, 0.25 * Math.PI, 0.75 * Math.PI); g.stroke();
+  g.restore();
+}
+function drawCrown(g, cx, cy, w, gold) {
+  g.save(); g.translate(cx, cy); g.fillStyle = gold;
+  g.beginPath(); g.moveTo(-w / 2, w * 0.32); g.lineTo(-w / 2, -w * 0.10); g.lineTo(-w * 0.28, w * 0.08); g.lineTo(0, -w * 0.30); g.lineTo(w * 0.28, w * 0.08); g.lineTo(w / 2, -w * 0.10); g.lineTo(w / 2, w * 0.32); g.closePath(); g.fill();
+  for (const x of [-w / 2, 0, w / 2]) { g.beginPath(); g.arc(x, x ? -w * 0.13 : -w * 0.34, w * 0.07, 0, Math.PI * 2); g.fill(); }
+  g.fillStyle = 'rgba(120,20,30,0.9)'; g.fillRect(-w * 0.42, w * 0.18, w * 0.84, w * 0.08);
+  g.restore();
+}
+function makeRoyalBannerTex(seed) {
+  const W = 160, H = 512, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d'), rnd = mulberry32(seed);
+  const blue = seed % 3 === 2;
+  const field = blue ? '#1d2a66' : '#8a1620', dark = blue ? '#121b45' : '#5c0d14', gold = blue ? '#d9d4c6' : '#d9a640';
+  g.fillStyle = field; g.fillRect(0, 0, W, H);
+  // damask: a lattice of small lozenges, a shade darker, the way woven cloth reads
+  g.fillStyle = dark;
+  for (let y = 0; y < H; y += 26) for (let x = (y / 26) % 2 ? 13 : 0; x < W; x += 26) { g.beginPath(); g.moveTo(x, y - 6); g.lineTo(x + 5, y); g.lineTo(x, y + 6); g.lineTo(x - 5, y); g.closePath(); g.fill(); }
+  // the weave and a little weather
+  for (let i = 0; i < 220; i++) { g.fillStyle = `rgba(0,0,0,${0.03 + rnd() * 0.05})`; g.fillRect(rnd() * W, rnd() * H, 1, 4 + rnd() * 30); }
+  for (let i = 0; i < 160; i++) { g.fillStyle = `rgba(255,230,190,${0.02 + rnd() * 0.04})`; g.fillRect(rnd() * W, rnd() * H, 1, 2 + rnd() * 14); }
+  // gold border, an inner rule
+  g.strokeStyle = gold; g.lineWidth = 7; g.strokeRect(9, 9, W - 18, H - 92);
+  g.lineWidth = 2; g.strokeRect(19, 19, W - 38, H - 112);
+  drawCrown(g, W / 2, 92, 70, gold);
+  drawSun(g, W / 2, 230, 34, gold);
+  // a gold chevron under the sun, and a band
+  g.fillStyle = gold; g.fillRect(28, 330, W - 56, 6);
+  g.beginPath(); g.moveTo(32, 380); g.lineTo(W / 2, 352); g.lineTo(W - 32, 380); g.lineTo(W - 32, 392); g.lineTo(W / 2, 364); g.lineTo(32, 392); g.closePath(); g.fill();
+  // swallowtail foot with a fringe
+  g.globalCompositeOperation = 'destination-out';
+  g.beginPath(); g.moveTo(0, H); g.lineTo(W / 2, H - 70); g.lineTo(W, H); g.closePath(); g.fill();
+  g.globalCompositeOperation = 'source-over';
+  g.strokeStyle = gold; g.lineWidth = 5; g.beginPath(); g.moveTo(0, H - 2); g.lineTo(W / 2, H - 70); g.lineTo(W, H - 2); g.stroke();
+  return c13Tex(c);
+}
+function makeC13FlagTex() {
+  const W = 256, H = 160, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  g.fillStyle = '#8a1620'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#d9a640'; g.fillRect(0, 0, W, 10); g.fillRect(0, H - 10, W, 10);
+  drawSun(g, 92, H / 2, 30, '#d9a640');
+  g.globalCompositeOperation = 'destination-out';
+  g.beginPath(); g.moveTo(W, 0); g.lineTo(W - 56, H / 2); g.lineTo(W, H); g.closePath(); g.fill();
+  return c13Tex(c);
+}
+function makeAwningTex(a, b, seed) {
+  const S = 256, c = document.createElement('canvas'); c.width = S; c.height = S;
+  const g = c.getContext('2d'), rnd = mulberry32(seed);
+  for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? b : a; g.fillRect(i * S / 8, 0, S / 8, S); }
+  for (let i = 0; i < 500; i++) { g.fillStyle = `rgba(0,0,0,${0.03 + rnd() * 0.05})`; g.fillRect(rnd() * S, rnd() * S, 1 + rnd() * 2, 1); }
+  for (let i = 0; i < 300; i++) { g.fillStyle = `rgba(255,240,210,${0.03 + rnd() * 0.05})`; g.fillRect(rnd() * S, rnd() * S, 1, 1 + rnd() * 3); }
+  // the scalloped valance along the foot
+  g.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 8; i++) { g.beginPath(); g.ellipse((i + 0.5) * S / 8, S + 6, S / 16 + 1, 22, 0, Math.PI, 0); g.fill(); }
+  return c13Tex(c);
+}
+function makePlankTex(seed, base = [118, 82, 50]) {
+  const S = 256, c = document.createElement('canvas'); c.width = S; c.height = S;
+  const g = c.getContext('2d'), rnd = mulberry32(seed);
+  const rows = 5, h = S / rows;
+  for (let r = 0; r < rows; r++) {
+    const k = 0.82 + rnd() * 0.3;
+    g.fillStyle = `rgb(${base[0] * k | 0},${base[1] * k | 0},${base[2] * k | 0})`; g.fillRect(0, r * h, S, h);
+    for (let i = 0; i < 22; i++) { const y = r * h + rnd() * h; g.strokeStyle = `rgba(40,22,10,${0.10 + rnd() * 0.16})`; g.lineWidth = 1; g.beginPath(); g.moveTo(0, y); for (let x = 0; x <= S; x += 16) g.lineTo(x, y + Math.sin(x * 0.03 + i) * 2.2); g.stroke(); }
+    if (rnd() < 0.6) { const x = rnd() * S, y = r * h + h * (0.3 + rnd() * 0.4); g.fillStyle = 'rgba(40,20,8,0.5)'; g.beginPath(); g.ellipse(x, y, 5, 3, 0, 0, Math.PI * 2); g.fill(); }
+    g.fillStyle = 'rgba(20,10,4,0.75)'; g.fillRect(0, r * h, S, 2);
+    for (const x of [14, S - 14]) { g.fillStyle = 'rgba(30,26,24,0.85)'; g.fillRect(x - 2, r * h + h / 2 - 2, 4, 4); }
+  }
+  return c13Tex(c);
+}
+function makeCarpetTex() {
+  const W = 128, H = 512, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d'), rnd = mulberry32(4411);
+  g.fillStyle = '#7a121c'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#5a0b14';
+  for (let y = 18; y < H; y += 36) { g.beginPath(); g.moveTo(W / 2, y - 14); g.lineTo(W / 2 + 18, y); g.lineTo(W / 2, y + 14); g.lineTo(W / 2 - 18, y); g.closePath(); g.fill(); }
+  g.fillStyle = '#c99a3c'; g.fillRect(6, 0, 7, H); g.fillRect(W - 13, 0, 7, H);
+  g.fillRect(19, 0, 2, H); g.fillRect(W - 21, 0, 2, H);
+  for (let i = 0; i < 700; i++) { g.fillStyle = `rgba(0,0,0,${0.04 + rnd() * 0.06})`; g.fillRect(rnd() * W, rnd() * H, 1, 1 + rnd() * 2); }
+  const t = c13Tex(c, 8); t.wrapT = THREE.RepeatWrapping; return t;
+}
+function makeCrestTex() {
+  const W = 256, H = 300, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const shield = () => { g.beginPath(); g.moveTo(20, 20); g.lineTo(W - 20, 20); g.lineTo(W - 20, 150); g.quadraticCurveTo(W - 24, 250, W / 2, H - 12); g.quadraticCurveTo(24, 250, 20, 150); g.closePath(); };
+  g.fillStyle = '#c99a3c'; shield(); g.fill();
+  g.save(); g.translate(W / 2, H / 2); g.scale(0.86, 0.86); g.translate(-W / 2, -H / 2); g.fillStyle = '#8a1620'; shield(); g.fill(); g.restore();
+  drawCrown(g, W / 2, 86, 84, '#d9a640');
+  drawSun(g, W / 2, 182, 30, '#d9a640');
+  return c13Tex(c, 8);
+}
+// the falloff is in the COLOUR, on opaque black: a canvas's fully transparent pixels can come out white
+function makeWashTex() {
+  const S = 128, c = document.createElement('canvas'); c.width = S; c.height = S;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(S / 2, S * 0.56, 0, S / 2, S * 0.56, S / 2);
+  g.fillStyle = '#000'; g.fillRect(0, 0, S, S);
+  gr.addColorStop(0, '#fff'); gr.addColorStop(0.35, 'rgb(115,115,115)'); gr.addColorStop(1, '#000');
+  g.fillStyle = gr; g.fillRect(0, 0, S, S);
+  return new THREE.CanvasTexture(c);
+}
+
+/* ---- a torch on a wall -------------------------------------------------- */
+const C13_TORCH_MAT = {};
+function c13TorchMats() {
+  if (C13_TORCH_MAT.iron) return C13_TORCH_MAT;
+  C13_TORCH_MAT.iron = c13Lift(c13Std(0x3a3632, 0x0c0806, { roughness: 0.55 }), 0.10);
+  C13_TORCH_MAT.wood = c13Std(0x6a4a32, 0x140a05, { map: makeBarkTexture(311) });
+  C13_TORCH_MAT.pitch = c13Std(0x16100c, 0x000000, { roughness: 1 });
+  /* a pitch-soaked rag bound round the haft burns from the top down: black
+   * and crusted below, and only its crown glowing — lit evenly it was a
+   * red-and-black barber's pole */
+  C13_TORCH_MAT.pitch.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vTy;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvTy = uv.y;');   // the uv survives the merge; a local height does not
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vTy;').replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+      totalEmissiveRadiance += vec3(1.0, 0.36, 0.08) * smoothstep(0.62, 0.98, vTy) * 0.55;`);
+  };
+  C13_TORCH_MAT.pitch.customProgramCacheKey = () => 'c13Pitch';
+  return C13_TORCH_MAT;
+}
+/* the stone round a flame is lit by it whether or not that torch has one of
+ * the twelve real lights: a warm wash on the wall behind every torch, and the
+ * soot above it — two instanced quads for every torch in the castle */
+function c13WashMesh(N, dark) {
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uT: C13_U.uT, uMap: { value: makeWashTex() } },
+    transparent: true, depthWrite: false, fog: false,
+    blending: dark ? THREE.NormalBlending : THREE.AdditiveBlending,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+    vertexShader: `attribute float aPh; varying vec2 vUv; varying float vF; uniform float uT;
+      void main() { vUv = uv; vF = 0.84 + 0.09 * sin(uT * 7.3 + aPh) + 0.05 * sin(uT * 13.1 + aPh * 2.1) + 0.03 * sin(uT * 23.0 + aPh * 3.7);
+        gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0); }`,
+    fragmentShader: dark
+      ? `uniform sampler2D uMap; varying vec2 vUv; void main() { float a = texture2D(uMap, vUv).r; gl_FragColor = vec4(0.03, 0.025, 0.02, a * 0.42); }`
+      : `uniform sampler2D uMap; varying vec2 vUv; varying float vF; void main() { float a = texture2D(uMap, vUv).r; gl_FragColor = vec4(vec3(1.0, 0.46, 0.15) * a * a * 0.30 * vF, 1.0); }`,
+  });
+  const m = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), mat, N);
+  m.geometry.setAttribute('aPh', new THREE.InstancedBufferAttribute(new Float32Array(N), 1));
+  m.frustumCulled = false; m.raycast = () => {}; m.userData.bwGhost = true; m.name = dark ? 'c13Soot' : 'c13Wash';
+  return m;
+}
+const _c13o = new THREE.Object3D();
+function c13AddTorch(T, s, y, opts = {}) {
+  const M = c13TorchMats();
+  const g = new THREE.Group();
+  g.position.set(s.x, y, s.z); g.rotation.y = Math.atan2(s.nx, s.nz);         // local +z out of the wall
+  const add = (geo, mat, x, yy, z, rx = 0, ry = 0, rz = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, yy, z); m.rotation.set(rx, ry, rz); g.add(m); return m; };
+  add(new THREE.BoxGeometry(0.26, 0.46, 0.04), M.iron, 0, -0.06, 0.02);                          // the plate
+  for (const [x, yy] of [[-0.075, 0.09], [0.075, 0.09], [-0.075, -0.21], [0.075, -0.21]]) add(new THREE.SphereGeometry(0.016, 6, 4), M.iron, x, yy, 0.04);
+  add(new THREE.BoxGeometry(0.06, 0.06, 0.44), M.iron, 0, 0.02, 0.22);                          // the arm
+  add(new THREE.TorusGeometry(0.065, 0.018, 6, 12), M.iron, 0, 0.02, 0.42, Math.PI / 2);          // the ring it sits in
+  add(new THREE.TorusGeometry(0.05, 0.015, 6, 10), M.iron, 0, -0.24, 0.37, Math.PI / 2);
+  add(new THREE.BoxGeometry(0.045, 0.045, 0.46), M.iron, 0, -0.11, 0.21, -Math.atan2(0.26, 0.38));      // the brace under it
+  const lean = 0.26;
+  add(new THREE.CylinderGeometry(0.042, 0.032, 0.80, 7), M.wood, 0, 0.02, 0.43, lean);             // the haft
+  const hy = 0.02 + Math.cos(lean) * 0.46, hz = 0.43 + Math.sin(lean) * 0.46;
+  add(new THREE.CylinderGeometry(0.095, 0.070, 0.26, 9), M.pitch, 0, hy, hz, lean);                 // the pitch-soaked head
+  for (const k of [-0.10, 0.04]) add(new THREE.TorusGeometry(0.088, 0.010, 4, 10), M.iron, 0, hy + Math.cos(lean) * k, hz + Math.sin(lean) * k, Math.PI / 2 + lean);
+  T.G.add(g);
+  const fy = hy + Math.cos(lean) * 0.12, fz = hz + Math.sin(lean) * 0.12;
+  const fx = s.x + s.nx * fz, fzW = s.z + s.nz * fz;
+  T.fires.push({ c: new THREE.Vector3(fx, y + fy, fzW), k: opts.k || 1.2 });
+  T.walls.push({ x: s.x, z: s.z, nx: s.nx, nz: s.nz, y });
+  const L = new THREE.PointLight(0xff8a3a, opts.I || 6.5, opts.R || 12, 2);
+  L.position.set(s.x + s.nx * 0.8, y + fy + 0.25, s.z + s.nz * 0.8); L.userData.lpAlways = opts.always || 16;
+  T.G.add(L); c13Life.lamps.push({ L, base: opts.I || 6.5, ph: Math.random() * 10 });
+}
+function c13FinishTorches(T) {
+  const N = T.walls.length; if (!N) return;
+  const wash = c13WashMesh(N, false), soot = c13WashMesh(N, true);
+  T.walls.forEach((w, i) => {
+    _c13o.position.set(w.x + w.nx * 0.03, w.y + 0.55, w.z + w.nz * 0.03); _c13o.rotation.set(0, Math.atan2(w.nx, w.nz), 0); _c13o.scale.set(3.0, 3.6, 1); _c13o.updateMatrix();
+    wash.setMatrixAt(i, _c13o.matrix);
+    _c13o.position.set(w.x + w.nx * 0.036, w.y + 1.15, w.z + w.nz * 0.036); _c13o.scale.set(0.75, 1.5, 1); _c13o.updateMatrix();
+    soot.setMatrixAt(i, _c13o.matrix);
+    wash.geometry.attributes.aPh.array[i] = i * 2.71;
+  });
+  c13Thrive.G.add(wash, soot);
+  for (const o of keepFirePoints(T.fires)) { o.name = 'c13Flames'; c13Thrive.G.add(o); }
+  for (const F of T.fires) c13Thrive.fires.push(F);
+}
+
+/* ---- a lantern on a line: thirty of them are ONE instanced batch per part
+ * (four draws, not a hundred and twenty), each swung on its own pivot ---- */
+function c13Lantern(G, p, lit) {
+  const L = { p: p.clone(), ph: Math.random() * 10 };
+  if (lit) {
+    const PL = new THREE.PointLight(0xff9048, 2.6, 9, 2); PL.position.set(p.x, p.y - 0.62, p.z); PL.userData.lpAlways = 12; G.add(PL);
+    c13Life.lamps.push({ L: PL, base: 2.6, ph: L.ph });
+  }
+  c13Thrive.lanterns.push(L);
+  return L;
+}
+const _c13LM = new THREE.Matrix4(), _c13LP = new THREE.Matrix4(), _c13LV = new THREE.Vector3();
+const C13_L_BODY = new THREE.Matrix4().makeTranslation(0, -0.28, 0);
+const C13_L_CAP = new THREE.Matrix4().makeTranslation(0, -0.08, 0).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 4));
+function c13BuildLanterns() {
+  const T = c13Thrive, N = T.lanterns.length; if (!N) return;
+  const G = c13LanternGeos();
+  const iron = c13Lift(c13Std(0x2a2520, 0x000000, { roughness: 0.62 }), 0.10);
+  const horn = new THREE.MeshBasicMaterial({ map: c13HornTex(), color: 0x9a7a5c, side: THREE.DoubleSide });
+  const body = new THREE.InstancedMesh(G.iron, iron, N);
+  const glass = new THREE.InstancedMesh(G.pane, horn, N);
+  // the candle's own light in the air round it: small, warm, and it is the flame, not the box
+  const glow = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3)),
+    new THREE.PointsMaterial({ map: glowTex, color: 0xff8a3a, size: 0.62, sizeAttenuation: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.55 }));
+  for (const m of [body, glass, glow]) { m.frustumCulled = false; m.raycast = () => {}; m.userData.bwGhost = true; m.name = 'c13Lanterns'; T.G.add(m); }
+  T.lanternMesh = { body, glass, glow, flameY: G.flameY };
+  c13SwingLanterns(0);
+}
+function c13SwingLanterns(t) {
+  const T = c13Thrive, M = T && T.lanternMesh; if (!M) return;
+  const gp = M.glow.geometry.attributes.position;
+  T.lanterns.forEach((L, i) => {
+    _c13o.position.copy(L.p); _c13o.rotation.set(0.05 * Math.sin(t * 0.8 + L.ph * 1.7), L.ph, 0.07 * Math.sin(t * 1.2 + L.ph) * (0.6 + airGust)); _c13o.scale.set(1, 1, 1); _c13o.updateMatrix();
+    M.body.setMatrixAt(i, _c13o.matrix); M.glass.setMatrixAt(i, _c13o.matrix);
+    _c13LV.set(0, M.flameY, 0).applyMatrix4(_c13o.matrix); gp.setXYZ(i, _c13LV.x, _c13LV.y, _c13LV.z);
+  });
+  M.body.instanceMatrix.needsUpdate = M.glass.instanceMatrix.needsUpdate = true; gp.needsUpdate = true;
+}
+
+/* ---- MADE, NOT GENERATED: the castle's dressing, done the way the things
+ * are actually made. The first pass was a set of correct shapes in flat
+ * colours — a sun with a face on it, a crown, perfect rows of identical
+ * spheres for apples, glowing cubes for lanterns, beads for flowers — and
+ * every one of those reads as a picture of the thing rather than the thing.
+ * What makes cloth read as cloth is the WEAVE, uneven DYE, the SUN taking
+ * the colour out of the top and the street putting dirt into the bottom, and
+ * an edge that has FRAYED. What makes a heap of apples read as apples is that
+ * no two are the same apple. So everything here is drawn the long way, once,
+ * at the build (behind the black or on the approach), and shared. ---- */
+const C13_DYE = {
+  madder: [112, 38, 32], woad: [42, 54, 80], weld: [150, 116, 56], linen: [170, 156, 128],
+  walnut: [72, 56, 42], moss: [66, 76, 46], ochre: [132, 94, 52], soot: [34, 30, 28],
+};
+function c13Rgb(c, k = 1) { return `rgb(${Math.min(255, c[0] * k) | 0},${Math.min(255, c[1] * k) | 0},${Math.min(255, c[2] * k) | 0})`; }
+// value noise on a small random lattice, bilinear and smoothed: the low-frequency unevenness everything made by hand has
+function c13VNoise(seed, cells) {
+  const r = mulberry32(seed), N = cells + 1, v = new Float32Array(N * N);
+  for (let i = 0; i < v.length; i++) v[i] = r();
+  return (x, y) => {   // x, y in 0..1
+    const fx = x * cells, fy = y * cells, i = Math.min(cells - 1, Math.max(0, fx | 0)), j = Math.min(cells - 1, Math.max(0, fy | 0));
+    let u = fx - i, w = fy - j; u = u * u * (3 - 2 * u); w = w * w * (3 - 2 * w);
+    const a = v[j * N + i], b = v[j * N + i + 1], c = v[(j + 1) * N + i], d = v[(j + 1) * N + i + 1];
+    return a + (b - a) * u + (c - a) * w + (a - b - c + d) * u * w;
+  };
+}
+function c13Fbm(seed) {
+  const o = [c13VNoise(seed, 4), c13VNoise(seed + 1, 9), c13VNoise(seed + 2, 21), c13VNoise(seed + 3, 47)];
+  return (x, y) => (o[0](x, y) * 0.5 + o[1](x, y) * 0.27 + o[2](x, y) * 0.15 + o[3](x, y) * 0.08);
+}
+/* a polygon with its edges broken into short steps and every step nudged:
+ * paint applied by hand to a cloth never has a ruled edge */
+function c13RoughPoly(g, pts, amp, seed, closed = true) {
+  const r = mulberry32(seed), P = [];
+  const n = closed ? pts.length : pts.length - 1;
+  for (let i = 0; i < n; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]), k = Math.max(1, Math.round(L / 5));
+    for (let s = 0; s < k; s++) { const t = s / k; P.push([a[0] + (b[0] - a[0]) * t + (r() - 0.5) * amp, a[1] + (b[1] - a[1]) * t + (r() - 0.5) * amp]); }
+  }
+  g.beginPath(); g.moveTo(P[0][0], P[0][1]); for (const p of P) g.lineTo(p[0], p[1]); if (closed) g.closePath();
+}
+/* THE CLOTH ITSELF. `paint(g)` lays the dye on; this then weaves it, makes the
+ * dye uneven, fades the top, dirties the foot, stains it, and frays the edges
+ * named in `fray` ('b' bottom, 'r' right, 'all'). */
+function c13ClothCanvas(W, H, seed, paint, o = {}) {
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  paint(g, W, H);
+  const id = g.getImageData(0, 0, W, H), d = id.data;
+  const fb = c13Fbm(seed * 7 + 3), stain = c13VNoise(seed * 13 + 5, 6), slub = mulberry32(seed + 99);
+  const rows = new Float32Array(H), cols = new Float32Array(W);
+  for (let y = 0; y < H; y++) rows[y] = 1 + (slub() - 0.5) * 0.10 + (slub() < 0.04 ? -0.10 : 0);   // slubs: thicker, darker yarns in the weft
+  for (let x = 0; x < W; x++) cols[x] = 1 + (slub() - 0.5) * 0.08;
+  const fade = o.fade ?? 0.28, grime = o.grime ?? 0.35, top = o.fadeTop ?? true;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = (y * W + x) * 4; if (!d[i + 3]) continue;
+    const u = x / W, v = y / H;
+    const n = fb(u, v);
+    let r = d[i], gg = d[i + 1], b = d[i + 2];
+    // uneven dye: a dye bath never takes evenly
+    const dk = 0.86 + n * 0.28;
+    r *= dk; gg *= dk; b *= dk;
+    // the weave: over-under, warp and weft a hair different
+    const wv = ((x + y) & 1 ? 1.045 : 0.955) * rows[y] * cols[x];
+    r *= wv; gg *= wv; b *= wv;
+    // the sun takes colour out of what faces it: toward a warm grey
+    const fd = fade * (top ? Math.pow(1 - v, 1.4) * 0.8 + 0.2 : 0.6) * (0.7 + n * 0.6);
+    const L = (r * 0.3 + gg * 0.59 + b * 0.11);
+    r += (L * 1.08 + 26 - r) * fd; gg += (L * 1.02 + 20 - gg) * fd; b += (L * 0.92 + 10 - b) * fd;
+    // the street in the foot, splashed upward unevenly
+    const gr = grime * Math.max(0, Math.pow(v, 3.2) + (n - 0.6) * 0.35 * v);
+    r += (52 - r) * gr; gg += (44 - gg) * gr; b += (34 - b) * gr;
+    // water marks: tide lines where it dried
+    const s = stain(u, v); if (s > 0.74 && s < 0.77) { r *= 0.86; gg *= 0.85; b *= 0.83; } else if (s > 0.77) { r *= 0.97; gg *= 0.96; b *= 0.94; }
+    d[i] = r; d[i + 1] = gg; d[i + 2] = b;
+  }
+  // fraying: the named edges lose threads, and a few hang loose
+  const fr = mulberry32(seed + 7), fray = o.fray || '';
+  const eat = (x, y) => { if (x >= 0 && y >= 0 && x < W && y < H) d[(y * W + x) * 4 + 3] = 0; };
+  if (fray.includes('b') || fray === 'all') for (let x = 0; x < W; x++) { const k = (fr() * 5) | 0 + (fr() < 0.08 ? 6 : 0); for (let y = 0; y < k; y++) eat(x, H - 1 - y); }
+  if (fray.includes('r') || fray === 'all') for (let y = 0; y < H; y++) { const k = (fr() * 5) | 0 + (fr() < 0.10 ? 9 : 0); for (let x = 0; x < k; x++) eat(W - 1 - x, y); }
+  if (fray === 'all') for (let x = 0; x < W; x++) { const k = (fr() * 3) | 0; for (let y = 0; y < k; y++) eat(x, y); }
+  // and a few holes where it has worn through
+  for (let h = 0; h < (o.holes || 0); h++) { const cx = fr() * W, cy = H * (0.55 + fr() * 0.4), rr = 1 + fr() * 3; for (let y = -4; y <= 4; y++) for (let x = -4; x <= 4; x++) if (x * x / (rr * rr) + y * y / (rr * rr * 0.6) < 1) eat((cx + x) | 0, (cy + y) | 0); }
+  g.putImageData(id, 0, 0);
+  return c;
+}
+function c13ClothTex(W, H, seed, paint, o) {
+  const t = new THREE.CanvasTexture(c13ClothCanvas(W, H, seed, paint, o));
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter;
+  return t;
+}
+// the weave as a surface: warp and weft threads crossing, a normal map tiled finely over any cloth
+let C13_WEAVE = null;
+function c13WeaveNormal() {
+  if (C13_WEAVE) return C13_WEAVE;
+  const S = 64, c = document.createElement('canvas'); c.width = S; c.height = S;
+  const g = c.getContext('2d'), id = g.createImageData(S, S), d = id.data, hgt = new Float32Array(S * S);
+  const T = 8;   // a thread is 8 px
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const tx = Math.floor(x / T), ty = Math.floor(y / T), fx = (x % T) / T, fy = (y % T) / T;
+    const over = (tx + ty) & 1;                       // which thread is on top at this crossing
+    const warp = Math.sin(fx * Math.PI), weft = Math.sin(fy * Math.PI);
+    hgt[y * S + x] = over ? 0.6 * warp + 0.4 * weft * 0.5 : 0.6 * weft + 0.4 * warp * 0.5;
+  }
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const h = (xx, yy) => hgt[((yy + S) % S) * S + ((xx + S) % S)];
+    const dx = (h(x + 1, y) - h(x - 1, y)) * 1.6, dy = (h(x, y + 1) - h(x, y - 1)) * 1.6;
+    const l = Math.hypot(dx, dy, 1), i = (y * S + x) * 4;
+    d[i] = (-dx / l * 0.5 + 0.5) * 255; d[i + 1] = (-dy / l * 0.5 + 0.5) * 255; d[i + 2] = (1 / l * 0.5 + 0.5) * 255; d[i + 3] = 255;
+  }
+  g.putImageData(id, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8;
+  return (C13_WEAVE = t);
+}
+/* A CLOTH MATERIAL: the weave in the normal (on a SECOND uv set made by
+ * scaling the first, so it tiles at thread size whatever the cloth's map
+ * does), and lifted off its own colour, the castle's way at night. */
+function c13ClothMat(map, o = {}) {
+  const m = new THREE.MeshStandardMaterial({ map, side: THREE.DoubleSide, alphaTest: 0.45, roughness: 0.97, metalness: 0, normalMap: c13WeaveNormal(), normalScale: new THREE.Vector2(0.55, 0.55) });
+  const rep = o.weave || 40;
+  const prev = m.onBeforeCompile;
+  m.onBeforeCompile = (sh, r) => {
+    if (prev) prev.call(m, sh, r);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <normal_fragment_maps>', `
+        vec3 mapN = texture2D( normalMap, vNormalMapUv * ${rep.toFixed(1)} ).xyz * 2.0 - 1.0;
+        mapN.xy *= normalScale;
+        normal = normalize( tbn * mapN );`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        totalEmissiveRadiance += diffuseColor.rgb * ${(o.lift ?? 0.16).toFixed(3)};`);
+  };
+  m.customProgramCacheKey = () => 'c13Cloth' + rep + (o.lift ?? 0.16);
+  return m;
+}
+/* HERALDRY, AS IT WAS PAINTED: the ordinaries — a cross, a saltire, a
+ * chevron, quarters, a bordure — in three or four dyes, on a field. No faces
+ * on suns and no clip-art crowns; a town hangs its lord's arms, and his arms
+ * are geometry a sign-painter could lay out with a cord and a stick. */
+const C13_ARMS = [
+  { field: 'madder', ord: 'cross', tinc: 'weld', bord: 'weld' },
+  { field: 'woad', ord: 'chevron', tinc: 'linen', bord: null },
+  { field: 'madder', ord: 'quarterly', tinc: 'weld', bord: 'soot' },
+  { field: 'walnut', ord: 'saltire', tinc: 'weld', bord: 'madder' },
+];
+function c13PaintArms(g, W, H, arms, seed, x0 = 0, y0 = 0, w = W, h = H) {
+  const D = C13_DYE, F = D[arms.field], T = D[arms.tinc];
+  g.fillStyle = c13Rgb(F); g.fillRect(x0, y0, w, h);
+  g.fillStyle = c13Rgb(T);
+  const R = (pts) => { c13RoughPoly(g, pts.map(([x, y]) => [x0 + x * w, y0 + y * h]), Math.max(1.5, w * 0.012), seed++); g.fill(); };
+  if (arms.ord === 'cross') { R([[0.40, 0], [0.60, 0], [0.60, 1], [0.40, 1]]); R([[0, 0.34], [1, 0.34], [1, 0.48], [0, 0.48]]); }
+  else if (arms.ord === 'chevron') { R([[0, 0.66], [0.5, 0.36], [1, 0.66], [1, 0.80], [0.5, 0.50], [0, 0.80]]); }
+  else if (arms.ord === 'saltire') { R([[0, 0], [0.13, 0], [1, 0.92], [1, 1], [0.87, 1], [0, 0.08]]); R([[1, 0], [0.87, 0], [0, 0.92], [0, 1], [0.13, 1], [1, 0.08]]); }
+  else if (arms.ord === 'quarterly') { R([[0.5, 0], [1, 0], [1, 0.5], [0.5, 0.5]]); R([[0, 0.5], [0.5, 0.5], [0.5, 1], [0, 1]]); }
+  if (arms.bord) {
+    g.fillStyle = c13Rgb(D[arms.bord]);
+    const b = 0.07;
+    R([[0, 0], [1, 0], [1, b * w / h], [0, b * w / h]]); R([[0, 0], [b, 0], [b, 1], [0, 1]]); R([[1 - b, 0], [1, 0], [1, 1], [1 - b, 1]]);
+  }
+}
+function c13BannerTex(i) {
+  const arms = C13_ARMS[i % C13_ARMS.length];
+  return c13ClothTex(160, 480, 300 + i * 17, (g, W, H) => {
+    g.clearRect(0, 0, W, H);
+    // the arms on the upper body, the hoist sleeve at the top, a fringed foot cut square
+    c13PaintArms(g, W, H - 40, arms, 900 + i * 31, 0, 22, W, H - 70);
+    g.fillStyle = c13Rgb(C13_DYE[arms.field], 0.82); g.fillRect(0, 0, W, 22);                // the sleeve the rod goes through
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(0, 20, W, 3);                                   // its seam
+    // the fringe: knotted tassels of the tincture's thread, hanging unevenly
+    const r = mulberry32(i * 5 + 1);
+    g.fillStyle = c13Rgb(C13_DYE[arms.tinc], 0.9);
+    for (let x = 2; x < W; x += 3) { const L = 22 + r() * 18; g.fillRect(x, H - 48, 2, L); }
+    g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(0, H - 50, W, 3);
+  }, { fade: 0.30, grime: 0.30, holes: 3, fray: 'r' });
+}
+function c13FlagTex() {
+  // a flag on a tower is the arms quartered, and its fly end is torn ragged by the wind
+  return c13ClothTex(256, 160, 777, (g, W, H) => c13PaintArms(g, W, H, C13_ARMS[2], 4242), { fade: 0.45, grime: 0.05, fadeTop: false, fray: 'all' });
+}
+/* a hanging with FOLDS: a plane that has been hung, not stretched — loose
+ * pleats across it that deepen toward the foot, and the foot drawn in */
+function c13FoldedPlane(W, H, nx, ny, seed, depth = 0.05) {
+  const geo = new THREE.PlaneGeometry(W, H, nx, ny); geo.translate(0, -H / 2, 0);
+  const P = geo.attributes.position, r = mulberry32(seed);
+  const ph = [r() * 6, r() * 6, r() * 6], k = [2 + r(), 3.5 + r() * 1.5, 6 + r() * 2];
+  for (let i = 0; i < P.count; i++) {
+    const x = P.getX(i), y = P.getY(i), dn = -y / H, u = x / W;
+    const z = depth * (0.35 + 0.65 * dn) * (Math.sin(u * k[0] * Math.PI + ph[0]) * 0.6 + Math.sin(u * k[1] * Math.PI + ph[1]) * 0.3 + Math.sin(u * k[2] * Math.PI + ph[2]) * 0.1);
+    P.setZ(i, z + 0.015 * dn);
+    P.setX(i, x * (1 - 0.035 * dn * dn));
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+/* ---- an iron lantern, the way a smith makes one: four corner straps, a
+ * band top and bottom, a pierced pyramid roof with a chimney and a ring, and
+ * horn panes you see the candle THROUGH — a warm gradient with the flame's
+ * own brightness in the middle and the soot of it at the top — not a glowing
+ * box. Two instanced batches and a glow. */
+function c13LanternGeos() {
+  const iron = [], pane = [];
+  const bx = (w, h, d, x, y, z) => { const b = new THREE.BoxGeometry(w, h, d); b.translate(x, y, z); iron.push(b); };
+  const s = 0.10, h0 = -0.42, h1 = -0.14;          // the body hangs under its ring
+  for (const [x, z] of [[-s, -s], [s, -s], [s, s], [-s, s]]) bx(0.018, h1 - h0 + 0.02, 0.018, x, (h0 + h1) / 2, z);
+  for (const y of [h0, h1, h0 + 0.012]) { bx(2 * s + 0.02, 0.016, 0.016, 0, y, -s); bx(2 * s + 0.02, 0.016, 0.016, 0, y, s); bx(0.016, 0.016, 2 * s + 0.02, -s, y, 0); bx(0.016, 0.016, 2 * s + 0.02, s, y, 0); }
+  bx(2 * s + 0.02, 0.014, 2 * s + 0.02, 0, h0 - 0.008, 0);
+  const roof = new THREE.ConeGeometry(0.16, 0.12, 4, 1, true); roof.rotateY(Math.PI / 4); roof.translate(0, h1 + 0.065, 0); iron.push(roof);
+  const ch = new THREE.CylinderGeometry(0.026, 0.03, 0.06, 8); ch.translate(0, h1 + 0.14, 0); iron.push(ch);
+  const ring = new THREE.TorusGeometry(0.035, 0.008, 5, 12); ring.translate(0, h1 + 0.205, 0); iron.push(ring);
+  for (const [x, z] of [[-s, -s], [s, -s], [s, s], [-s, s]]) { const f = new THREE.SphereGeometry(0.014, 6, 4); f.translate(x, h0 - 0.02, z); iron.push(f); }
+  const ph = h1 - h0 - 0.02, pw = 2 * s - 0.016;
+  for (const [a, x, z] of [[0, 0, s - 0.004], [Math.PI, 0, -s + 0.004], [Math.PI / 2, s - 0.004, 0], [-Math.PI / 2, -s + 0.004, 0]]) {
+    const p = new THREE.PlaneGeometry(pw, ph); p.rotateY(a); p.translate(x, (h0 + h1) / 2, z); pane.push(p);
+  }
+  const norm = (list) => mergeGeometries(list.map((q) => { const n = q.index ? q.toNonIndexed() : q; for (const k of Object.keys(n.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') n.deleteAttribute(k); return n; }));
+  return { iron: norm(iron), pane: norm(pane), flameY: (h0 + h1) / 2 - 0.02 };
+}
+function c13HornTex() {
+  const W = 64, H = 96, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  // horn and old glass let a candle through as a warm smear, brightest round the flame, dark where the soot has climbed
+  const gr = g.createRadialGradient(W / 2, H * 0.62, 2, W / 2, H * 0.6, H * 0.62);
+  gr.addColorStop(0, 'rgb(255,214,140)'); gr.addColorStop(0.18, 'rgb(250,160,70)'); gr.addColorStop(0.55, 'rgb(150,70,24)'); gr.addColorStop(1, 'rgb(46,20,8)');
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  const sg = g.createLinearGradient(0, 0, 0, H * 0.45); sg.addColorStop(0, 'rgba(10,6,4,0.85)'); sg.addColorStop(1, 'rgba(10,6,4,0)');
+  g.fillStyle = sg; g.fillRect(0, 0, W, H);
+  const r = mulberry32(55);
+  for (let i = 0; i < 260; i++) { g.fillStyle = `rgba(${r() < 0.5 ? '0,0,0' : '255,220,170'},${0.04 + r() * 0.07})`; g.fillRect(r() * W, r() * H, 1 + r() * 2, 1 + r() * 6); }   // the horn's grain and the grime on it
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+/* ---- PRODUCE that is not a row of beads: a few shapes of each kind, every
+ * one knocked out of round by its own noise, heaped in a woven basket the way
+ * a stallholder piles them — highest in the middle, spilling at the rim — and
+ * every item its own shade. */
+function c13Lumpy(r, detail, seed, amt, squash = [1, 1, 1], stem = false) {
+  const g = new THREE.IcosahedronGeometry(r, detail), P = g.attributes.position, n = c13VNoise(seed, 5), v = new THREE.Vector3();
+  for (let i = 0; i < P.count; i++) {
+    v.fromBufferAttribute(P, i).normalize();
+    const k = 1 + (n(v.x * 0.5 + 0.5, v.z * 0.5 + 0.5) - 0.5) * amt + (n(v.y * 0.5 + 0.5, v.x * 0.5 + 0.5) - 0.5) * amt * 0.6;
+    let y = v.y; if (stem) { const top = Math.max(0, y); y -= top * top * top * 0.18; }    // the dimple an apple has where its stalk is
+    P.setXYZ(i, v.x * r * k * squash[0], y * r * k * squash[1], v.z * r * k * squash[2]);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+function c13BasketTex() {
+  const S = 128, c = document.createElement('canvas'); c.width = S; c.height = S;
+  const g = c.getContext('2d'), r = mulberry32(808);
+  g.fillStyle = '#5e4630'; g.fillRect(0, 0, S, S);
+  // stakes up, weavers round: a wicker basket is two crossing sets of rods
+  for (let y = 0; y < S; y += 8) for (let x = 0; x < S; x += 16) {
+    const off = (y / 8) % 2 ? 8 : 0, k = 0.8 + r() * 0.35;
+    g.fillStyle = `rgb(${150 * k | 0},${118 * k | 0},${74 * k | 0})`;
+    g.beginPath(); g.ellipse(x + off + 6, y + 4, 7, 3.4, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(30,18,8,0.35)'; g.fillRect(x + off + 6, y + 6, 6, 1);
+  }
+  return c13Tex(c, 8);
+}
+// a round wicker basket: an open lathe, wall and floor, flaring a little
+function c13BasketGeo() {
+  const pts = [[0.001, 0.0], [0.22, 0.0], [0.25, 0.02], [0.27, 0.15], [0.285, 0.17], [0.27, 0.172], [0.255, 0.16], [0.235, 0.025], [0.001, 0.02]].map(([a, b]) => new THREE.Vector2(a, b));
+  const g = new THREE.LatheGeometry(pts, 18);
+  const U = g.attributes.uv; for (let i = 0; i < U.count; i++) U.setXY(i, U.getX(i) * 6, U.getY(i) * 2);
+  return g;
+}
+/* ---- A WINDOW BOX: weathered boards on two iron brackets, earth in it,
+ * leaves you can see are leaves (crossed cards of drawn foliage, each leaf
+ * its own shape and its own green), flowers in heads of many small petals,
+ * and ivy trailing over the front. */
+function c13LeafTex() {
+  const S = 128, c = document.createElement('canvas'); c.width = S; c.height = S;
+  const g = c.getContext('2d'), r = mulberry32(2024);
+  for (let i = 0; i < 70; i++) {
+    const x = 10 + r() * (S - 20), y = 18 + r() * (S - 22), a = r() * 6.28, L = 9 + r() * 10, k = 0.55 + r() * 0.5;
+    g.save(); g.translate(x, y); g.rotate(a);
+    g.fillStyle = `rgb(${46 * k | 0},${92 * k | 0},${38 * k | 0})`;
+    g.beginPath(); g.moveTo(-L / 2, 0); g.quadraticCurveTo(0, -L * 0.42, L / 2, 0); g.quadraticCurveTo(0, L * 0.42, -L / 2, 0); g.fill();
+    g.strokeStyle = `rgba(20,40,16,0.5)`; g.lineWidth = 0.8; g.beginPath(); g.moveTo(-L / 2, 0); g.lineTo(L / 2, 0); g.stroke();
+    g.restore();
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
+}
+function c13BloomTex() {
+  // a head of geranium: a ball of small five-petalled flowers, pale so instance colour carries the hue
+  const S = 64, c = document.createElement('canvas'); c.width = S; c.height = S;
+  const g = c.getContext('2d'), r = mulberry32(31);
+  for (let i = 0; i < 26; i++) {
+    const a = r() * 6.28, d = Math.sqrt(r()) * 20, x = S / 2 + Math.cos(a) * d, y = S / 2 + Math.sin(a) * d * 0.85, k = 0.7 + r() * 0.3;
+    for (let p = 0; p < 5; p++) {
+      const pa = p / 5 * 6.28 + r() * 0.3;
+      g.fillStyle = `rgb(${255 * k | 0},${236 * k | 0},${230 * k | 0})`;
+      g.beginPath(); g.ellipse(x + Math.cos(pa) * 2.6, y + Math.sin(pa) * 2.6, 2.4, 1.7, pa, 0, Math.PI * 2); g.fill();
+    }
+    g.fillStyle = 'rgba(120,90,40,0.8)'; g.fillRect(x - 0.6, y - 0.6, 1.2, 1.2);
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function c13IvyTex() {
+  const W = 64, H = 128, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d'), r = mulberry32(77);
+  for (let s = 0; s < 4; s++) {
+    let x = 8 + s * 15 + r() * 6, y = 0;
+    g.strokeStyle = 'rgb(60,48,30)'; g.lineWidth = 1.2; g.beginPath(); g.moveTo(x, 0);
+    const len = H * (0.5 + r() * 0.5);
+    while (y < len) { y += 4; x += (r() - 0.5) * 3; g.lineTo(x, y); if (r() < 0.45) { const k = 0.6 + r() * 0.4, sz = 3 + r() * 3; g.save(); g.fillStyle = `rgb(${40 * k | 0},${78 * k | 0},${34 * k | 0})`; g.translate(x + (r() - 0.5) * 6, y); g.rotate(r() * 6); g.beginPath(); for (let q = 0; q < 3; q++) { const qa = q / 3 * 6.28; g.ellipse(Math.cos(qa) * sz * 0.4, Math.sin(qa) * sz * 0.4, sz * 0.55, sz * 0.4, qa, 0, Math.PI * 2); } g.fill(); g.restore(); } }
+    g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function c13CardsGeo(w, h) {
+  // two crossed cards standing on their foot
+  const a = new THREE.PlaneGeometry(w, h); a.translate(0, h / 2, 0);
+  const b = a.clone(); b.rotateY(Math.PI / 2);
+  return mergeGeometries([a, b]);
+}
+function c13FoliageMat(map, lift = 0.14) {
+  const m = new THREE.MeshStandardMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85 });
+  return c13Lift(m, lift);
+}
+/* ---- a runner that has been walked on: the pile worn down the middle to
+ * the warp, a border with a pattern woven in, faded where the door lets the
+ * daylight onto it, and fringed at both ends ---- */
+function c13RunnerTex() {
+  return c13ClothTex(128, 512, 4411, (g, W, H) => {
+    g.fillStyle = c13Rgb(C13_DYE.madder, 0.72); g.fillRect(0, 0, W, H);
+    // the field's pattern: lozenges in a darker red, woven, so slightly stepped
+    g.fillStyle = c13Rgb(C13_DYE.madder, 0.5);
+    for (let y = 24; y < H; y += 48) { c13RoughPoly(g, [[W / 2, y - 18], [W / 2 + 22, y], [W / 2, y + 18], [W / 2 - 22, y]], 2, y); g.fill(); }
+    // the border: a band of weld with a running chain in it
+    g.fillStyle = c13Rgb(C13_DYE.weld, 0.7); g.fillRect(6, 0, 14, H); g.fillRect(W - 20, 0, 14, H);
+    g.fillStyle = c13Rgb(C13_DYE.woad, 0.8); for (let y = 0; y < H; y += 10) { g.fillRect(10, y, 6, 5); g.fillRect(W - 16, y + 5, 6, 5); }
+    // worn down the middle: the colour goes to the brown warp underneath
+    const id = g.getImageData(0, 0, W, H), d = id.data, n = c13Fbm(91);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const u = (x - W / 2) / (W / 2), wear = Math.max(0, 1 - Math.abs(u) * 1.6) * (0.35 + n(x / W, y / H) * 0.65);
+      const i = (y * W + x) * 4; d[i] += (92 - d[i]) * wear; d[i + 1] += (66 - d[i + 1]) * wear; d[i + 2] += (48 - d[i + 2]) * wear;
+    }
+    g.putImageData(id, 0, 0);
+  }, { fade: 0.2, grime: 0.45, fadeTop: false, fray: 'b' });
+}
+/* ---- a painted heater shield, hung over a door: oak boards under the paint,
+ * the paint crazed and flaking back to the wood, an iron rim, rivets ---- */
+function c13ShieldTex() {
+  const W = 256, H = 300, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const shape = () => { g.beginPath(); g.moveTo(16, 14); g.lineTo(W - 16, 14); g.lineTo(W - 16, 140); g.quadraticCurveTo(W - 22, 248, W / 2, H - 8); g.quadraticCurveTo(22, 248, 16, 140); g.closePath(); };
+  g.save(); shape(); g.clip();
+  // the boards
+  const r = mulberry32(919);
+  for (let x = 0; x < W; x += 52) { const k = 0.8 + r() * 0.3; g.fillStyle = `rgb(${96 * k | 0},${70 * k | 0},${46 * k | 0})`; g.fillRect(x, 0, 52, H); g.fillStyle = 'rgba(20,12,6,0.6)'; g.fillRect(x, 0, 2, H); for (let i = 0; i < 18; i++) { g.strokeStyle = `rgba(40,24,12,${0.15 + r() * 0.2})`; g.beginPath(); const xx = x + r() * 50; g.moveTo(xx, 0); for (let y = 0; y < H; y += 20) g.lineTo(xx + Math.sin(y * 0.05 + i) * 2, y); g.stroke(); } }
+  // the arms, painted over them
+  const p = document.createElement('canvas'); p.width = W; p.height = H; const pg = p.getContext('2d');
+  c13PaintArms(pg, W, H, C13_ARMS[0], 1717, 16, 14, W - 32, H - 22);
+  // crazing and flaking: the paint comes off in islands, back to the boards
+  const pd = pg.getImageData(0, 0, W, H), dd = pd.data, n = c13Fbm(333), cr = c13VNoise(334, 40);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = (y * W + x) * 4, f = n(x / W, y / H), k = cr(x / W, y / H);
+    if (f < 0.36 || Math.abs(k - 0.5) < 0.012) dd[i + 3] = 0;
+    else { const dk = 0.78 + f * 0.3; dd[i] *= dk; dd[i + 1] *= dk; dd[i + 2] *= dk; }
+  }
+  pg.putImageData(pd, 0, 0);
+  g.drawImage(p, 0, 0);
+  g.restore();
+  // the iron rim and its rivets
+  g.lineWidth = 9; g.strokeStyle = 'rgb(38,34,32)'; shape(); g.stroke();
+  g.lineWidth = 2; g.strokeStyle = 'rgba(120,96,70,0.5)'; shape(); g.stroke();
+  for (let t = 0; t < 1; t += 0.05) { const x = 16 + (W - 32) * t; g.fillStyle = 'rgb(28,26,24)'; g.beginPath(); g.arc(x, 18, 3, 0, Math.PI * 2); g.fill(); }
+  return c13Tex(c, 8);
+}
+/* ---- a striped market awning on canvas: the stripes painted, not printed —
+ * their edges wander — sun-bleached where it faces up, water-stained, a
+ * patch sewn over a tear, and the scalloped valance frayed ---- */
+function c13AwningTex(a, b, seed) {
+  return c13ClothTex(256, 256, seed, (g, W, H) => {
+    g.fillStyle = c13Rgb(C13_DYE.linen); g.fillRect(0, 0, W, H);
+    g.fillStyle = c13Rgb(C13_DYE[a]);
+    for (let i = 0; i < 8; i += 2) c13RoughPoly(g, [[i * W / 8, 0], [(i + 1) * W / 8, 0], [(i + 1) * W / 8, H], [i * W / 8, H]], 3, seed + i), g.fill();
+    if (b) { g.fillStyle = c13Rgb(C13_DYE[b]); for (let i = 1; i < 8; i += 4) c13RoughPoly(g, [[(i + 0.4) * W / 8, 0], [(i + 0.6) * W / 8, 0], [(i + 0.6) * W / 8, H], [(i + 0.4) * W / 8, H]], 2, seed + 40 + i), g.fill(); }
+    // a patch over a tear, its stitches
+    const r = mulberry32(seed + 3), px = 30 + r() * (W - 90), py = 30 + r() * (H - 110);
+    g.fillStyle = c13Rgb(C13_DYE.ochre, 0.9); g.fillRect(px, py, 38, 30);
+    g.strokeStyle = 'rgba(30,20,12,0.7)'; g.setLineDash([2, 2]); g.strokeRect(px + 2, py + 2, 34, 26); g.setLineDash([]);
+    // the valance: scallops along the foot
+    g.globalCompositeOperation = 'destination-out';
+    for (let i = 0; i < 8; i++) { g.beginPath(); g.ellipse((i + 0.5) * W / 8, H + 6, W / 16 + 1, 20, 0, Math.PI, 0); g.fill(); }
+    g.globalCompositeOperation = 'source-over';
+  }, { fade: 0.45, grime: 0.18, fray: 'b', holes: 2 });
+}
+// an awning that sags: a sheet hung between two poles front and back, low in the middle of each span
+function c13AwningGeo(W, D, rise) {
+  const g = new THREE.PlaneGeometry(W, D, 10, 6), P = g.attributes.position;
+  for (let i = 0; i < P.count; i++) {
+    const x = P.getX(i), y = P.getY(i), u = x / W + 0.5, v = y / D + 0.5;
+    P.setZ(i, -(Math.sin(u * Math.PI) * 0.09 + Math.sin(v * Math.PI) * 0.05) + (v - 0.5) * 0);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+/* ---- a lit window: the light comes from a room, so it is uneven — brighter
+ * low and toward one side where the fire is, darker where a shutter half
+ * closes it or someone has hung a cloth — and the LEADING is in front of it,
+ * the dark lines the glass's own map carries. ---- */
+const C13_WIN_GLSL = `
+  float c13wH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float c13wN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(c13wH(i), c13wH(i + vec2(1, 0)), f.x), mix(c13wH(i + vec2(0, 1)), c13wH(i + vec2(1, 1)), f.x), f.y); }`;
+
+/* ---- the build, in slices ----------------------------------------------- */
+function startC13Thrive() {
+  if (c13Thrive || !c13Walls || !c13Life) return;
+  const G = new THREE.Group(); G.name = 'c13Thrive'; G.userData.noBake = true;
+  c13World.add(G);
+  c13Thrive = { G, fires: [], lanterns: [], banners: [], smokeAt: [], done: false, fountain: null, minstrel: null, stalls: [], flags: null };
+  c13Jobs.push(c13BuildThrive());
+}
+function* c13BuildThrive() {
+  const T = c13Thrive, G = T.G;
+  c13Features(); yield;
+  /* the walls the court meets, at the torches' height and the banners' */
+  const wallsLow = [], wallsHigh = [];
+  yield* c13WallScan(C13_TORCH_Y, wallsLow);
+  yield* c13WallScan(C13_FLOOR + 6.0, wallsHigh, 1.2);
+  c13Shuffle(wallsLow, 9917); c13Shuffle(wallsHigh, 4471);
+
+  /* ---- THE THRONE ROOM'S DOOR, before anything else takes its wall ---- */
+  const door = c13MeasureThroneDoor();
+  T.door = door; yield;
+
+  /* ---- TORCHES ON THE WALLS. One every eight metres or so round both
+   * courts, on a flat stretch of wall with nothing hung on it and nothing cut
+   * into it, at a height a man reaches up to. They replace the iron bowls on
+   * tripods that stood in the courts (the owner: "the torches on the ground
+   * don't look good"). */
+  const TT = { G: new THREE.Group(), fires: [], walls: [] };
+  TT.G.name = 'c13Torches'; G.add(TT.G);
+  const torchAt = [];
+  const tooNear = (list, s, d) => list.some((o) => Math.hypot(o.x - s.x, o.z - s.z) < d);
+  // the doors that matter get a torch either side first: the one you come in by, and the throne room's
+  const flank = (cx, cz, nx, nz, half) => {
+    for (const sg of [-1, 1]) {
+      const px = cx + nx * 1.2 + -nz * sg * half, pz = cz + nz * 1.2 + nx * sg * half;
+      const s = c13WallAt(px, pz, C13_TORCH_Y, 2.2); if (!s || s.nx * nx + s.nz * nz < 0.7) continue;
+      if (tooNear(torchAt, s, 1.5)) continue;
+      c13AddTorch(TT, s, C13_TORCH_Y, { I: 7.5, always: 20 }); torchAt.push(s);
+    }
+  };
+  flank(C13_DOOR.x, C13_DOOR.z, C13_DOOR.nx, C13_DOOR.nz, 1.75);
+  if (door) flank(door.x, door.z, door.nx, door.nz, door.hw + 0.95);
+  yield;
+  let tried = 0;
+  for (const s of wallsLow) {
+    if (torchAt.length >= 34) break;
+    if (tooNear(torchAt, s, 7.2)) continue;
+    if (!c13Open(s.x + s.nx * 1.6, s.z + s.nz * 1.6)) continue;
+    if (c13FeatNear(s.x, C13_TORCH_Y, s.z, 1.25, 1.7)) continue;
+    if (!c13Flat(s, C13_TORCH_Y - 0.6, C13_TORCH_Y + 1.2, 0.45)) continue;
+    c13AddTorch(TT, s, C13_TORCH_Y); torchAt.push(s);
+    if (++tried % 4 === 0) yield;
+  }
+  bakeStatic(TT.G, undefined, { named: true });
+  TT.G.traverse((o) => { if (o.isMesh) { o.userData.bwGhost = true; o.raycast = () => {}; } });
+  c13FinishTorches(TT);
+  T.torchAt = torchAt;
+  yield;
+
+  /* ---- BANNERS DOWN THE WALLS. Long crimson and gold, a few in the blue of
+   * the house, hung from rods high on the court walls between the windows. */
+  const bannerAt = [];
+  /* woven, dyed and hung: the lord's arms in the ordinaries a sign-painter
+   * lays out with a cord, faded at the top, dirtied at the foot, fringed,
+   * and falling in loose pleats from an iron rod (`c13BannerTex`) */
+  const bmats = [0, 1, 2, 3].map((i) => {
+    const m = c13ClothMat(c13BannerTex(i), { lift: 0.13, weave: 48 });
+    const cloth = m.onBeforeCompile; swayMaterial(m, 0.10); const sway = m.onBeforeCompile;
+    m.onBeforeCompile = (sh, r) => { cloth.call(m, sh, r); sway.call(m, sh, r); };
+    m.customProgramCacheKey = () => 'c13BannerCloth'; return m;
+  });
+  const BW = 1.55, BH = 5.0, BTOP = C13_FLOOR + 9.0;
+  const bgeos = [0, 1, 2].map((k) => c13FoldedPlane(BW, BH, 12, 28, 50 + k, 0.07));
+  const gold = c13Lift(c13Std(0x2e2a26, 0x000000, { roughness: 0.6 }), 0.12);   // the rods are forged iron, not gilt
+  const rodG = new THREE.Group(); rodG.name = 'c13BannerRods'; G.add(rodG);
+  const hang = (s, top, w = BW) => {
+    const b = new THREE.Mesh(bgeos[bannerAt.length % 3], bmats[bannerAt.length % 4]);
+    b.position.set(s.x + s.nx * 0.14, top, s.z + s.nz * 0.14); b.rotation.y = Math.atan2(s.nx, s.nz);
+    b.userData.bwGhost = true; b.raycast = () => {}; b.name = 'c13Banner';
+    G.add(b); T.banners.push(b);
+    const r = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, w + 0.3, 6), gold);
+    r.rotation.set(0, b.rotation.y, Math.PI / 2, 'YXZ'); r.position.set(s.x + s.nx * 0.16, top + 0.04, s.z + s.nz * 0.16); rodG.add(r);
+    for (const sg of [-1, 1]) { const f = new THREE.Mesh(new THREE.SphereGeometry(0.034, 8, 6), gold); f.position.set(r.position.x - s.nz * sg * (w / 2 + 0.17), top + 0.04, r.position.z + s.nx * sg * (w / 2 + 0.17)); rodG.add(f); }
+    bannerAt.push(s);
+  };
+  if (door) {
+    for (const sg of [-1, 1]) {
+      const px = door.x + door.nx * 1.2 - door.nz * sg * (door.hw + 1.25), pz = door.z + door.nz * 1.2 + door.nx * sg * (door.hw + 1.25);
+      const s = c13WallAt(px, pz, C13_FLOOR + 6, 2.4);
+      if (s && s.nx * door.nx + s.nz * door.nz > 0.7 && c13Flat(s, BTOP - BH + 0.4, BTOP - 0.1, 0.7)) hang(s, BTOP);
+    }
+  }
+  let nb = 0;
+  for (const s of wallsHigh) {
+    if (bannerAt.length >= 18) break;
+    if (tooNear(bannerAt, s, 6.5) || tooNear(torchAt, s, 1.7)) continue;
+    if (!c13Open(s.x + s.nx * 2.0, s.z + s.nz * 2.0)) continue;
+    if (c13FeatNear(s.x, BTOP - BH / 2, s.z, 1.15, BH / 2 + 0.3)) continue;
+    if (!c13Flat(s, BTOP - BH + 0.2, BTOP + 0.2, 0.85)) continue;
+    hang(s, BTOP);
+    if (++nb % 3 === 0) yield;
+  }
+  bakeStatic(rodG, undefined, { named: true });
+  rodG.traverse((o) => { if (o.isMesh) { o.userData.bwGhost = true; o.raycast = () => {}; } });
+  yield;
+
+  /* ---- FLAGS ON THE TOWERS: the tallest walkable tops with open sky over
+   * them that are round, not a wall-walk — seen from the farmers' courtyard
+   * over its roofs, and from the beach. */
+  yield* c13BuildFlags();
+
+  /* ---- BUNTING AND LANTERNS strung across both courts ---- */
+  yield* c13BuildBunting();
+
+  /* ---- THE MARKET round a fountain in the great west court ---- */
+  yield* c13BuildMarket();
+
+  /* ---- flowers under the windows, chimneys with smoke ---- */
+  yield* c13BuildWindowsAndRoofs();
+
+  /* ---- the throne room's door made unmissable ---- */
+  if (door) c13DressThroneDoor(door);
+  yield;
+
+  c13BuildLanterns();
+  c13BuildAir();
+  T.done = true;
+  if (c13Life) c13Life.torches = true;
+  warmStep('castle13 dressing', () => warmCompile([c13World], C13_X + C13_SPAWN.x, C13_Y + 1.7, C13_Z + C13_SPAWN.z, C13_X, C13_Y + 3, C13_Z + C13_SPAWN.z));
+}
+
+/* ---- the throne room's door, measured off its own planks and frame ---- */
+function c13MeasureThroneDoor() {
+  const D = C13_THR_DOOR;
+  const inv = new THREE.Matrix4().copy(c13World.matrixWorld).invert(), M = new THREE.Matrix4(), v = new THREE.Vector3();
+  let n = 0, sx = 0, sz = 0, sxx = 0, szz = 0, sxz = 0, y0 = 1e9, y1 = -1e9;
+  c13World.traverse((o) => {
+    if (!o.isMesh || !o.material || !/^acmat_(14|16)$/.test(o.material.name)) return;
+    M.multiplyMatrices(inv, o.matrixWorld);
+    const p = o.geometry.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(M);
+      if (Math.hypot(v.x - D.x, v.z - D.z) > 2.4) continue;
+      n++; sx += v.x; sz += v.z; sxx += v.x * v.x; szz += v.z * v.z; sxz += v.x * v.z; y0 = Math.min(y0, v.y); y1 = Math.max(y1, v.y);
+    }
+  });
+  if (n < 20) return null;
+  const mx = sx / n, mz = sz / n, cxx = sxx / n - mx * mx, czz = szz / n - mz * mz, cxz = sxz / n - mx * mz;
+  // the door's width runs along the major axis of its plan
+  const th = 0.5 * Math.atan2(2 * cxz, cxx - czz);
+  const tx = Math.cos(th), tz = Math.sin(th);
+  let nx = -tz, nz = tx;
+  let fwd = 0, back = 0;
+  for (let k = 1; k <= 4; k += 0.5) { fwd += c13Open(mx + nx * k, mz + nz * k) ? 1 : 0; back += c13Open(mx - nx * k, mz - nz * k) ? 1 : 0; }
+  if (back > fwd) { nx = -nx; nz = -nz; }
+  let hw = 0;
+  c13World.traverse((o) => {
+    if (!o.isMesh || !o.material || !/^acmat_(14|16)$/.test(o.material.name)) return;
+    M.multiplyMatrices(inv, o.matrixWorld);
+    const p = o.geometry.attributes.position;
+    for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i).applyMatrix4(M); if (Math.hypot(v.x - D.x, v.z - D.z) > 2.4) continue; hw = Math.max(hw, Math.abs((v.x - mx) * tx + (v.z - mz) * tz)); }
+  });
+  return { x: mx, z: mz, nx, nz, tx, tz, hw: Math.min(hw, 1.4), y0, y1 };
+}
+function c13DressThroneDoor(d) {
+  const G = c13Thrive.G;
+  /* A RED CARPET out of the door into the court, so the eye is drawn down it
+   * from wherever you stand; light spilling under the door; a crest over it;
+   * and a warm lamp in front that keeps its place in the pool from across the
+   * court. The banners and the torches either side were hung first. */
+  // from the threshold (which has the door's own lintel over it, so it is not "open") to the far side of the court
+  let len = 0, seen = false;
+  for (let k = 0.3; k < 14; k += 0.25) { const o = c13Open(d.x + d.nx * k, d.z + d.nz * k); if (o) { seen = true; len = k; } else if (seen) break; }
+  len = Math.max(3, len - 0.5);
+  const tex = c13RunnerTex(); tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(1, len / 4.2);
+  const cm = c13ClothMat(tex, { lift: 0.12, weave: 26 }); cm.side = THREE.FrontSide; cm.polygonOffset = true; cm.polygonOffsetFactor = -3; cm.polygonOffsetUnits = -3;
+  const carpet = new THREE.Mesh(new THREE.PlaneGeometry(1.75, len + 0.4), cm);
+  carpet.rotation.set(-Math.PI / 2, 0, Math.atan2(d.nx, d.nz));
+  carpet.position.set(d.x + d.nx * (len / 2 + 0.2), c13PaveAt(d.x + d.nx * (len / 2 + 0.2), d.z + d.nz * (len / 2 + 0.2)) + 0.014, d.z + d.nz * (len / 2 + 0.2));
+  carpet.userData.bwGhost = true; carpet.raycast = () => {}; carpet.name = 'c13Carpet';
+  G.add(carpet);
+  // the light under the door: warm on the paving at its foot, and a line of it in the gap
+  const spill = new THREE.Mesh(new THREE.PlaneGeometry(d.hw * 2 + 1.4, 3.2), new THREE.MeshBasicMaterial({ alphaMap: makeWashTex(), color: 0xc8703a, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.32, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+  spill.rotation.set(-Math.PI / 2, 0, Math.atan2(d.nx, d.nz));
+  spill.position.set(d.x + d.nx * 1.1, c13PaveAt(d.x + d.nx * 1.1, d.z + d.nz * 1.1) + 0.02, d.z + d.nz * 1.1); spill.raycast = () => {}; spill.name = 'c13DoorSpill';
+  G.add(spill);
+  /* AND ONLY UNDER IT. A door with light round all four edges is a
+   * neon sign; a heavy door in a stone frame lets a line out at the sill
+   * and a warm stain onto the stones in front, and that is all. */
+  const gm = new THREE.MeshBasicMaterial({ color: 0xff9a4a, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending });
+  const yaw = Math.atan2(d.nx, d.nz), hgt = d.y1 - d.y0;
+  const gap = new THREE.Mesh(new THREE.PlaneGeometry(d.hw * 2 - 0.2, 0.025), gm); gap.rotation.y = yaw; gap.position.set(d.x + d.nx * 0.07, d.y0 + 0.02, d.z + d.nz * 0.07); gap.raycast = () => {}; gap.renderOrder = 3; G.add(gap);
+  const gaps = [gap], halo = null;
+  // the crest over the door
+  const ct = c13ShieldTex();
+  const crest = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1.4), c13Lift(new THREE.MeshStandardMaterial({ map: ct, alphaTest: 0.4, roughness: 0.85 }), 0.16));
+  const cs = c13WallAt(d.x + d.nx * 1.0, d.z + d.nz * 1.0, d.y1 + 1.1, 1.8);
+  const cx = cs ? cs.x + cs.nx * 0.05 : d.x + d.nx * 0.12, cz = cs ? cs.z + cs.nz * 0.05 : d.z + d.nz * 0.12;
+  crest.position.set(cx, d.y1 + 1.0, cz); crest.rotation.y = Math.atan2(d.nx, d.nz); crest.raycast = () => {}; crest.name = 'c13Crest';
+  G.add(crest);
+  const L = new THREE.PointLight(0xffb468, 9, 14, 2); L.position.set(d.x + d.nx * 1.6, d.y0 + 2.6, d.z + d.nz * 1.6); L.userData.lpAlways = 40;
+  G.add(L); c13Life.lamps.push({ L, base: 9, ph: 1.3 });
+  c13Thrive.doorGlow = { spill, gaps, halo };
+}
+
+/* ---- flags ---- */
+function* c13BuildFlags() {
+  const S = C13_SITE, w = S.walk, G = c13Thrive.G;
+  const top = new Map();
+  for (const [key, fl] of S.cells) { let t = -1; for (let k = 0; k < fl.length; k += 3) if (fl[k] > 20 && fl[k + 2] > 100) t = Math.max(t, fl[k]); if (t > 0) top.set(key, t); }
+  yield;
+  const seen = new Set(), comps = [];
+  for (const [key, t] of top) {
+    if (seen.has(key)) continue;
+    const st = [key]; seen.add(key);
+    let n = 0, sx = 0, sz = 0, x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+    while (st.length) {
+      const k = st.pop(), i = k % w.gw, j = (k - i) / w.gw;
+      n++; const lx = w.x0 + (i + 0.5) * w.cell, lz = w.z0 + (j + 0.5) * w.cell;
+      sx += lx; sz += lz; x0 = Math.min(x0, lx); x1 = Math.max(x1, lx); z0 = Math.min(z0, lz); z1 = Math.max(z1, lz);
+      for (const nk of [k + 1, k - 1, k + w.gw, k - w.gw]) { const tn = top.get(nk); if (tn !== undefined && !seen.has(nk) && Math.abs(tn - t) < 0.6) { seen.add(nk); st.push(nk); } }
+    }
+    const a = n * w.cell * w.cell, ex = x1 - x0, ez = z1 - z0;
+    if (a > 12 && a < 140 && Math.max(ex, ez) / Math.max(0.1, Math.min(ex, ez)) < 1.8) {
+      // a top like this is the parapet's walk, a ring; the pole stands on the floor in the middle of it
+      const cx = sx / n, cz = sz / n, fl = keepCellAt(C13_X + cx, C13_Z + cz, S);
+      let base = t; if (fl) { base = -1; for (let k = 0; k < fl.length; k += 3) if (fl[k] <= t + 0.1 && fl[k + 2] > 100) base = Math.max(base, fl[k]); if (base < 0) base = t; }
+      comps.push({ x: cx, z: cz, t: base, top: t, a });
+    }
+  }
+  yield;
+  comps.sort((p, q) => q.t - p.t || q.a - p.a);
+  const picks = [];
+  for (const c of comps) { if (picks.length >= 9) break; if (picks.some((p) => Math.hypot(p.x - c.x, p.z - c.z) < 9)) continue; picks.push(c); }
+  c13Thrive.towers = picks;
+  if (!picks.length) return;
+  const POLE = 8.5, FW = 4.4, FH = 2.6;
+  const pole = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.06, 0.09, POLE, 6), c13Lift(c13Std(0x3a3028, 0x000000, { roughness: 0.7 }), 0.14), picks.length);
+  const ball = new THREE.InstancedMesh(new THREE.SphereGeometry(0.10, 10, 8), c13Lift(c13Std(0x3a342e, 0x000000, { roughness: 0.55 }), 0.14), picks.length);
+  const fgeo = new THREE.PlaneGeometry(FW, FH, 16, 6); fgeo.translate(FW / 2, -FH / 2, 0);
+  const ftex = c13FlagTex();
+  const fmat = new THREE.MeshStandardMaterial({ map: ftex, emissiveMap: ftex, emissive: 0x9a8a80, emissiveIntensity: 0.15, side: THREE.DoubleSide, alphaTest: 0.45, roughness: 0.95 });
+  fmat.onBeforeCompile = (sh) => {
+    sh.uniforms.uT = C13_U.uT;
+    sh.vertexShader = 'uniform float uT;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+      { float u = clamp(position.x / ${FW.toFixed(2)}, 0.0, 1.0);
+        vec4 iw = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0); float ph = iw.x * 0.71 + iw.z * 0.43;
+        transformed.z += u * (0.46 * sin(uT * 3.3 - u * 5.5 + ph) + 0.16 * sin(uT * 6.1 - u * 10.0 + ph * 1.7 + position.y * 2.0));
+        transformed.y -= u * u * 0.16 * (0.7 + 0.3 * sin(uT * 0.7 + ph));
+        transformed.x -= u * 0.08 * (1.0 + sin(uT * 3.3 - u * 5.5 + ph)); }`);
+  };
+  fmat.customProgramCacheKey = () => 'c13Flag';
+  const flag = new THREE.InstancedMesh(fgeo, fmat, picks.length);
+  const wind = Math.atan2(WIND.x, WIND.z) + Math.PI / 2;
+  picks.forEach((c, i) => {
+    _c13o.rotation.set(0, 0, 0); _c13o.scale.set(1, 1, 1);
+    _c13o.position.set(c.x, c.t + POLE / 2, c.z); _c13o.updateMatrix(); pole.setMatrixAt(i, _c13o.matrix);
+    _c13o.position.set(c.x, c.t + POLE + 0.08, c.z); _c13o.updateMatrix(); ball.setMatrixAt(i, _c13o.matrix);
+    _c13o.position.set(c.x, c.t + POLE - 0.25, c.z); _c13o.rotation.set(0, wind + (i % 3 - 1) * 0.15, 0); _c13o.updateMatrix(); flag.setMatrixAt(i, _c13o.matrix);
+  });
+  for (const m of [pole, ball, flag]) { m.frustumCulled = false; m.raycast = () => {}; m.userData.bwGhost = true; m.name = 'c13Flags'; G.add(m); }
+  c13Thrive.flags = flag;
+}
+
+/* ---- bunting: lines across the courts, found by marching to the walls ---- */
+function* c13BuildBunting() {
+  const w = c13Walk, G = c13Thrive.G, y = C13_FLOOR + 6.4;
+  const hitAt = (lx, lz) => keepWallNear(C13_X + lx, C13_Z + lz, 0.22, C13_Y + y - 0.1, C13_Y + y + 0.1, C13_SITE);
+  const lines = [];
+  const pts = [];
+  for (let lz = w.z0 + 2; lz < w.z0 + w.gh * w.cell; lz += 4.2) for (let lx = w.x0 + 2; lx < w.x0 + w.gw * w.cell; lx += 4.2) if (c13Clear(lx, lz, 2.0)) pts.push([lx, lz]);
+  c13Shuffle(pts, 717);
+  let done = 0;
+  for (const [lx, lz] of pts) {
+    if (lines.length >= 11) break;
+    for (const a of [0, Math.PI / 4, Math.PI / 2, Math.PI * 3 / 4]) {
+      const dx = Math.sin(a), dz = Math.cos(a);
+      const end = (sg) => { for (let t = 0.4; t < 30; t += 0.4) { const px = lx + dx * t * sg, pz = lz + dz * t * sg; if (hitAt(px, pz)) return t; if (!keepCellAt(C13_X + px, C13_Z + pz, C13_SITE)) return null; } return null; };
+      const ta = end(1), tb = ta === null ? null : end(-1);
+      if (ta === null || tb === null) continue;
+      const span = ta + tb; if (span < 8 || span > 26) continue;
+      const A = [lx + dx * (ta - 0.25), lz + dz * (ta - 0.25)], B = [lx - dx * (tb - 0.25), lz - dz * (tb - 0.25)];
+      const mid = [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2];
+      // the line must hang over open court along its whole length
+      let ok = true; for (let s = 0.1; s <= 0.9 && ok; s += 0.2) ok = c13Open(A[0] + (B[0] - A[0]) * s, A[1] + (B[1] - A[1]) * s);
+      if (!ok) continue;
+      if (lines.some((L) => Math.hypot(L.mid[0] - mid[0], L.mid[1] - mid[1]) < 7.5)) continue;
+      lines.push({ A, B, mid, span }); break;
+    }
+    if (++done % 3 === 0) yield;
+  }
+  if (!lines.length) return;
+  const ropeM = c13Std(0x2c241c, 0x120c06, { roughness: 0.95 });
+  const ropes = new THREE.Group(); ropes.name = 'c13Ropes'; G.add(ropes);
+  // a pennant is a plane narrowed to its tip, so it can bend along its length in the wind
+  const tri = new THREE.PlaneGeometry(0.34, 0.42, 2, 5); tri.translate(0, -0.21, 0);
+  { const P = tri.attributes.position; for (let i = 0; i < P.count; i++) { const t = -P.getY(i) / 0.42; P.setX(i, P.getX(i) * (1 - t * 0.97)); } tri.computeVertexNormals(); }
+  const pens = [];
+  // the dyes a town had: madder, weld, woad, undyed linen, a moss green — never a printer's primaries
+  const dye = (d) => (d[0] << 16) | (d[1] << 8) | d[2];
+  const cols = [dye(C13_DYE.madder), dye(C13_DYE.weld), dye(C13_DYE.woad), dye(C13_DYE.linen), dye(C13_DYE.moss)];
+  lines.forEach((L, li) => {
+    const A = new THREE.Vector3(L.A[0], y, L.A[1]), B = new THREE.Vector3(L.B[0], y, L.B[1]);
+    const sag = L.span * 0.075, P = [];
+    for (let i = 0; i <= 24; i++) { const s = i / 24, q = A.clone().lerp(B, s); q.y -= sag * 4 * s * (1 - s); P.push(q); }
+    const rope = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(P), 30, 0.02, 4, false), ropeM);
+    ropes.add(rope);
+    const yaw = Math.atan2(B.x - A.x, B.z - A.z) + Math.PI / 2;
+    const n = Math.floor(L.span / 0.5);
+    for (let i = 1; i < n; i++) { const s = i / n, q = A.clone().lerp(B, s); q.y -= sag * 4 * s * (1 - s); pens.push({ q, yaw, c: cols[(i + li) % cols.length], ph: i * 0.37 + li }); }
+    if (li % 2 === 0) {
+      const k = Math.max(2, Math.min(4, Math.round(L.span / 6)));
+      for (let i = 0; i < k; i++) { const s = (i + 0.5) / k, q = A.clone().lerp(B, s); q.y -= sag * 4 * s * (1 - s) + 0.05; c13Lantern(G, q, i === Math.floor(k / 2)); }
+    }
+  });
+  yield;
+  bakeStatic(ropes, undefined, { named: true });
+  ropes.traverse((o) => { if (o.isMesh) { o.userData.bwGhost = true; o.raycast = () => {}; } });
+  // the pennants are cut from one undyed linen (the dye is the instance colour), frayed and weathered
+  const pmat = c13ClothMat(c13ClothTex(64, 80, 6161, (g, W, H) => { g.fillStyle = 'rgb(212,200,178)'; g.fillRect(0, 0, W, H); g.fillStyle = 'rgba(0,0,0,0.22)'; g.fillRect(0, 0, W, 5); }, { fade: 0.25, grime: 0.15, fray: 'all' }), { lift: 0.09, weave: 10 });
+  const pcloth = pmat.onBeforeCompile;
+  pmat.onBeforeCompile = (sh, r) => {
+    pcloth.call(pmat, sh, r);
+    sh.uniforms.uT = C13_U.uT;
+    sh.vertexShader = 'uniform float uT;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+      { vec4 iw = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0); float ph = iw.x * 1.3 + iw.z * 0.9;
+        transformed.z += -position.y * 0.35 * sin(uT * 2.4 + ph); }`);
+  };
+  pmat.customProgramCacheKey = () => 'c13PennantCloth';
+  const pen = new THREE.InstancedMesh(tri, pmat, pens.length);
+  const col = new THREE.Color();
+  const prnd = mulberry32(5150);
+  pens.forEach((p, i) => { const sc = 0.9 + prnd() * 0.2; _c13o.position.copy(p.q); _c13o.rotation.set((prnd() - 0.5) * 0.12, p.yaw + (prnd() - 0.5) * 0.25, (prnd() - 0.5) * 0.10); _c13o.scale.set(sc, sc * (0.92 + prnd() * 0.16), 1); _c13o.updateMatrix(); pen.setMatrixAt(i, _c13o.matrix); pen.setColorAt(i, col.setHex(p.c).multiplyScalar(0.82 + prnd() * 0.3)); });
+  pen.frustumCulled = false; pen.raycast = () => {}; pen.userData.bwGhost = true; pen.name = 'c13Bunting';
+  G.add(pen);
+  c13Thrive.lines = lines;
+}
+
+/* ---- the market ---- */
+let C13_MKT_M = null;
+function c13MarketMats() {
+  if (C13_MKT_M) return C13_MKT_M;
+  const plank = makePlankTex(5151), dplank = makePlankTex(6262, [86, 58, 36]);
+  C13_MKT_M = {
+    wood: c13Std(0xb8a488, 0x000000, { map: plank }),
+    dark: c13Std(0x9a8a76, 0x000000, { map: dplank }),
+    post: c13Std(0x7a5a40, 0x000000, { map: makeBarkTexture(717) }),
+    hoop: c13Lift(c13Std(0x3a3430, 0x000000, { roughness: 0.6 }), 0.14),
+    cloth: [['madder', null, 1], ['woad', 'weld', 2], ['ochre', 'madder', 3], ['moss', null, 4], ['walnut', 'madder', 5]].map(([a, b, s]) => c13ClothMat(c13AwningTex(a, b, s), { lift: 0.13, weave: 30 })),
+    sack: c13ClothMat(c13ClothTex(128, 128, 7171, (g, W, H) => { g.fillStyle = 'rgb(150,124,88)'; g.fillRect(0, 0, W, H); }, { fade: 0.1, grime: 0.4 }), { lift: 0.12, weave: 14 }),
+    bolt: c13ClothMat(c13ClothTex(128, 128, 7272, (g, W, H) => { g.fillStyle = 'rgb(236,228,212)'; g.fillRect(0, 0, W, H); for (let y = 0; y < H; y += 9) { g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(0, y, W, 1); } }, { fade: 0.15, grime: 0.05 }), { lift: 0.12, weave: 22 }),
+    basket: c13Lift(c13Std(0xffffff, 0x000000, { map: c13BasketTex(), roughness: 0.95 }), 0.12),
+    produce: c13Lift(new THREE.MeshStandardMaterial({ roughness: 0.62 }), 0.14),
+    pot: c13Lift(new THREE.MeshStandardMaterial({ roughness: 0.82 }), 0.14),
+  };
+  return C13_MKT_M;
+}
+// an oriented box solid, castle frame
+function c13Solid(x, z, yaw, hw, hd) { c13Solids.push({ x, z, ux: Math.cos(yaw), uz: -Math.sin(yaw), hw, hd }); }
+function c13Footprint(x, z, yaw, hw, hd, pad) {
+  const ux = Math.cos(yaw), uz = -Math.sin(yaw), vx = Math.sin(yaw), vz = Math.cos(yaw);
+  for (let a = -1; a <= 1; a += 0.5) for (let b = -1; b <= 1; b += 0.5) {
+    const px = x + ux * (hw + pad) * a + vx * (hd + pad) * b, pz = z + uz * (hw + pad) * a + vz * (hd + pad) * b;
+    if (!c13Open(px, pz)) return false;
+  }
+  return !c13FeatNear(x, 1.6, z, Math.max(hw, hd) + 1.6, 1.8);
+}
+function c13Overlaps(x, z, r) {
+  for (const s of c13Solids) { const sr = s.r !== undefined ? s.r : Math.hypot(s.hw, s.hd); if (Math.hypot(s.x - x, s.z - z) < sr + r) return true; }
+  return false;
+}
+/* A STALL: four posts, a counter, a striped awning that slopes to the front
+ * with a scalloped edge, and its wares on the counter — and a lantern hung
+ * under the awning, which is what makes a market at night. Local +z is its
+ * front. Goods are instanced across every stall (`goods`). */
+function c13Stall(G, goods, x, z, yaw, kind, cloth) {
+  const M = c13MarketMats(), g = new THREE.Group();
+  G = c13Thrive.stallG;
+  g.position.set(x, c13PaveAt(x, z), z); g.rotation.y = yaw;
+  const W = 3.0, D = 1.8;
+  const box = (w, h, d, mat, px, py, pz, rx = 0) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(px, py, pz); m.rotation.x = rx; g.add(m); return m; };
+  for (const [px, pz, h] of [[-W / 2, D / 2, 2.45], [W / 2, D / 2, 2.45], [-W / 2, -D / 2, 2.72], [W / 2, -D / 2, 2.72]]) {
+    const p = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.065, h, 6), M.post); p.position.set(px, h / 2, pz); g.add(p);
+  }
+  box(W + 0.1, 0.08, 0.95, M.wood, 0, 0.92, D / 2 - 0.45);                 // the counter top
+  box(W, 0.86, 0.06, M.dark, 0, 0.45, D / 2 - 0.02);                      // its front board
+  box(W, 0.06, 0.6, M.wood, 0, 1.45, -D / 2 + 0.32);                      // the back shelf
+  box(W, 1.6, 0.04, M.dark, 0, 0.8, -D / 2 + 0.02);                       // the back
+  // the awning, from the back posts' tops over the front with a lip
+  const aw = new THREE.Mesh(c13AwningGeo(W + 0.5, D + 0.9), cloth);
+  const rise = 0.4, run = D + 0.9;
+  aw.position.set(0, 2.65, 0.25); aw.rotation.x = -Math.PI / 2 + Math.atan2(rise, run); g.add(aw);
+  const val = new THREE.Mesh(new THREE.PlaneGeometry(W + 0.5, 0.42), cloth); val.position.set(0, 2.25, 0.25 + run / 2 + 0.02); g.add(val);
+  G.add(g);
+  g.updateMatrixWorld(true);
+  const toW = (px, py, pz) => new THREE.Vector3(px, py, pz).applyMatrix4(g.matrix);
+  // the wares
+  const rnd = mulberry32(Math.round(x * 13 + z * 7));
+  const topY = 0.96;
+  if (kind === 'fruit') {
+    /* baskets heaped the way a stallholder heaps them: high in the middle,
+     * spilling at the rim, and no two apples the same apple */
+    const crops = [[0x7c2418, 0x9a4a22], [0x7a8a34, 0x96862e], [0x8a5a9a, 0x5a2a4a], [0xb09a6a, 0x8a6a40]];
+    for (let c = 0; c < 4; c++) {
+      const cx = -W / 2 + 0.42 + c * 0.72 + (rnd() - 0.5) * 0.08, cz = D / 2 - 0.45 + (rnd() - 0.5) * 0.08;
+      goods.push({ k: 'basket', p: toW(cx, topY, cz), s: [1, 0.9 + rnd() * 0.2, 1], yaw: rnd() * 6 });
+      const [ca, cb] = crops[c], n = 20 + (rnd() * 8 | 0);
+      for (let i = 0; i < n; i++) {
+        const a = i * 2.39996 + rnd() * 0.4, rr = 0.21 * Math.sqrt((i + 0.5) / n), hy = (1 - (rr / 0.24) ** 2) * 0.11;
+        goods.push({ k: 'fruit' + (i % 3), p: toW(cx + Math.cos(a) * rr, topY + 0.07 + hy + rnd() * 0.02, cz + Math.sin(a) * rr), s: [1, 1, 1].map(() => 0.85 + rnd() * 0.3), c: rnd() < 0.7 ? ca : cb });
+      }
+      if (rnd() < 0.6) goods.push({ k: 'fruit' + (c % 3), p: toW(cx + 0.3 + rnd() * 0.1, topY + 0.04, cz + 0.22), s: [1, 1, 1], c: ca });   // one that rolled out
+    }
+    for (let i = 0; i < 6; i++) goods.push({ k: 'cabbage', p: toW(-W / 2 + 0.3 + i * 0.48 + (rnd() - 0.5) * 0.12, 1.55, -D / 2 + 0.32), s: [1, 0.85, 1].map((v) => v * (0.85 + rnd() * 0.3)), c: rnd() < 0.5 ? 0x4a6a2c : 0x5e7a3a });
+  } else if (kind === 'bread') {
+    for (let i = 0; i < 16; i++) goods.push({ k: 'loaf', p: toW(-W / 2 + 0.35 + (i % 8) * 0.33 + (rnd() - 0.5) * 0.1, topY + 0.07, D / 2 - 0.62 + Math.floor(i / 8) * 0.34 + (rnd() - 0.5) * 0.08), s: [1, 1, 1].map(() => 0.85 + rnd() * 0.3), c: rnd() < 0.5 ? 0x9a6a36 : 0x7a4e28, yaw: yaw + (rnd() - 0.5) * 0.9 });
+    for (let i = 0; i < 9; i++) goods.push({ k: 'roll', p: toW(-W / 2 + 0.35 + i * 0.3 + (rnd() - 0.5) * 0.08, 1.53, -D / 2 + 0.32), s: [1, 1, 1].map(() => 0.85 + rnd() * 0.3), c: 0xa0703a });
+  } else if (kind === 'cloth') {
+    const cc = [0x7a2a22, 0x2c3a58, 0xa8803e, 0x485434, 0x4e2a42, 0xc8bca4];
+    for (let i = 0; i < 8; i++) goods.push({ k: 'bolt', p: toW(-W / 2 + 0.4 + (i % 4) * 0.72, topY + 0.1 + Math.floor(i / 4) * 0.19, D / 2 - 0.5), s: [1, 1, 1], c: cc[i % cc.length], yaw });
+    for (let i = 0; i < 5; i++) goods.push({ k: 'bolt', p: toW(-W / 2 + 0.5 + i * 0.5, 1.58, -D / 2 + 0.32), s: [0.8, 0.8, 0.8], c: cc[(i + 2) % cc.length], yaw });
+  } else {
+    for (let i = 0; i < 10; i++) goods.push({ k: 'pot', p: toW(-W / 2 + 0.35 + (i % 5) * 0.58 + (rnd() - 0.5) * 0.12, topY, D / 2 - 0.3 - (i < 5 ? 0 : 0.36) + (rnd() - 0.5) * 0.06), s: [0.85 + rnd() * 0.3, 0.75 + rnd() * 0.55, 0.85 + rnd() * 0.3], c: [0x8a4a30, 0x6a5440, 0x5a5650, 0x7a6a50][i % 4] });
+  }
+  // crates and a barrel or two beside it
+  for (const [px, pz] of [[W / 2 + 0.55, 0.2], [-W / 2 - 0.55, -0.3]]) {
+    if (rnd() < 0.5) goods.push({ k: 'barrel', p: toW(px, 0.48, pz), s: [1, 1, 1] });
+    else goods.push({ k: 'crate', p: toW(px, 0.28, pz), s: [0.62, 0.56, 0.62], yaw: yaw + rnd() * 0.6 });
+    if (rnd() < 0.5) goods.push({ k: 'sack', p: toW(px + (rnd() - 0.5) * 0.4, 0.26, pz + 0.55), s: [1, 1, 1], yaw: rnd() * 6 });
+  }
+  // and its lantern
+  c13Lantern(c13Thrive.G, toW(0, 2.42, D / 2 + 0.55), true);
+  c13Solid(x, z, yaw, W / 2 + 0.75, D / 2 + 0.3);
+  c13Thrive.stalls.push({ x, z, yaw });
+}
+function c13Goods(G, goods) {
+  const M = c13MarketMats();
+  const kinds = {
+    fruit0: [c13Lumpy(0.042, 2, 11, 0.22, [1, 0.92, 1], true), M.produce],
+    fruit1: [c13Lumpy(0.040, 2, 12, 0.28, [0.95, 1.05, 0.95], true), M.produce],
+    fruit2: [c13Lumpy(0.044, 2, 13, 0.18, [1, 0.88, 1.04], true), M.produce],
+    cabbage: [c13Lumpy(0.12, 2, 14, 0.38, [1, 0.85, 1]), M.produce],
+    loaf: [c13Lumpy(0.15, 2, 15, 0.16, [1, 0.46, 0.58]), M.produce],
+    roll: [c13Lumpy(0.075, 2, 16, 0.2, [1, 0.66, 1]), M.produce],
+    basket: [c13BasketGeo(), M.basket],
+    bolt: [(() => { const g = new THREE.CylinderGeometry(0.09, 0.09, 0.62, 14); g.rotateZ(Math.PI / 2); const U = g.attributes.uv; for (let i = 0; i < U.count; i++) U.setXY(i, U.getX(i) * 3, U.getY(i)); return g; })(), M.bolt],
+    pot: [new THREE.LatheGeometry([[0, 0], [0.11, 0], [0.15, 0.08], [0.16, 0.18], [0.10, 0.30], [0.075, 0.34], [0.09, 0.37]].map(([a, b]) => new THREE.Vector2(a, b)), 10), M.pot],
+    crate: [new THREE.BoxGeometry(1, 1, 1), M.wood],
+    barrel: [(() => { const g = new THREE.CylinderGeometry(0.34, 0.34, 0.96, 12, 6); const P = g.attributes.position; for (let i = 0; i < P.count; i++) { const k = 1 + 0.13 * Math.cos(P.getY(i) / 0.48 * Math.PI / 2); P.setX(i, P.getX(i) * k); P.setZ(i, P.getZ(i) * k); } g.computeVertexNormals(); return g; })(), M.dark],
+    sack: [(() => { const g = new THREE.SphereGeometry(0.26, 10, 8); g.scale(1, 0.95, 0.8); const P = g.attributes.position; for (let i = 0; i < P.count; i++) if (P.getY(i) > 0.12) { P.setX(i, P.getX(i) * 0.6); P.setZ(i, P.getZ(i) * 0.6); } g.computeVertexNormals(); return g; })(), M.sack],
+  };
+  const col = new THREE.Color(), rnd = mulberry32(8181);
+  for (const [k, [geo, mat]] of Object.entries(kinds)) {
+    const list = goods.filter((q) => q.k === k); if (!list.length) continue;
+    const m = new THREE.InstancedMesh(geo, mat, list.length);
+    list.forEach((q, i) => {
+      _c13o.position.copy(q.p); _c13o.rotation.set(0, q.yaw !== undefined ? q.yaw : rnd() * 6.28, 0); _c13o.scale.set(q.s[0], q.s[1], q.s[2]); _c13o.updateMatrix();
+      m.setMatrixAt(i, _c13o.matrix);
+      if (mat === M.produce || mat === M.pot || mat === M.bolt) m.setColorAt(i, col.setHex(q.c !== undefined ? q.c : 0xffffff).multiplyScalar(0.8 + rnd() * 0.35).offsetHSL((rnd() - 0.5) * 0.03, (rnd() - 0.5) * 0.1, 0));
+    });
+    m.frustumCulled = false; m.raycast = () => {}; m.userData.bwGhost = true; m.name = 'c13Goods';
+    G.add(m);
+  }
+}
+function* c13BuildMarket() {
+  const G = c13Thrive.G, w = c13Walk;
+  const SG = new THREE.Group(); SG.name = 'c13Stalls'; G.add(SG); c13Thrive.stallG = SG;
+  /* THE FOUNTAIN: the open spot in the west court with the most room round
+   * it that is not on the way through */
+  let best = null, bs = 0;
+  for (let lz = w.z0 + 3; lz < w.z0 + w.gh * w.cell - 3; lz += 1.0) {
+    for (let lx = w.x0 + 3; lx < C13_ARCH.x - 6; lx += 1.0) {
+      if (!c13Open(lx, lz) || c13PathD(lx, lz) < 5.2) continue;
+      let r = 0; for (let rr = 2; rr <= 10; rr += 0.5) { if (!c13Clear(lx, lz, rr)) break; r = rr; }
+      if (r > bs) { bs = r; best = [lx, lz]; }
+    }
+    yield;
+  }
+  const goods = [];
+  if (best && bs >= 4.5) {
+    c13BuildFountain(G, best[0], best[1]);
+    yield;
+    // stalls in a loose ring round it, each facing it
+    const kinds = ['fruit', 'bread', 'cloth', 'pots', 'fruit', 'cloth'];
+    let n = 0;
+    for (const R of [7.5, 9.0, 10.5]) {
+      for (let q = 0; q < 20 && n < 6; q++) {
+        const a = q / 20 * Math.PI * 2 + R;
+        const x = best[0] + Math.sin(a) * R, z = best[1] + Math.cos(a) * R;
+        const yaw = Math.atan2(best[0] - x, best[1] - z);          // local +z toward the fountain
+        if (c13PathD(x, z) < 3.4 || c13Overlaps(x, z, 2.4)) continue;
+        if (!c13Footprint(x, z, yaw, 1.7, 1.1, 0.5)) continue;
+        c13Stall(G, goods, x, z, yaw, kinds[n % kinds.length], c13MarketMats().cloth[n % 5]); n++;
+      }
+      yield;
+    }
+  }
+  // and a few along the walls of both courts, backed onto the stone
+  const along = [];
+  yield* c13WallScan(C13_FLOOR + 1.2, along, 1.5);
+  c13Shuffle(along, 3131);
+  let m = 0;
+  const kinds2 = ['bread', 'pots', 'cloth', 'fruit', 'bread'];
+  for (const s of along) {
+    if (m >= 5) break;
+    const x = s.x + s.nx * 1.3, z = s.z + s.nz * 1.3, yaw = Math.atan2(s.nx, s.nz);
+    if (c13PathD(x, z) < 3.4 || c13Overlaps(x, z, 2.6)) continue;
+    if (!c13Flat(s, C13_FLOOR + 0.5, C13_FLOOR + 2.6, 1.6)) continue;
+    if (!c13Footprint(x, z, yaw, 1.6, 1.0, 0.3)) continue;
+    if (c13Thrive.torchAt && c13Thrive.torchAt.some((t) => Math.hypot(t.x - s.x, t.z - s.z) < 2.0)) continue;
+    c13Stall(G, goods, x, z, yaw, kinds2[m % kinds2.length], c13MarketMats().cloth[(m + 2) % 5]); m++;
+    yield;
+  }
+  // barrels and crates stacked against the walls by the doors, a town's clutter
+  let k = 0;
+  for (const s of along) {
+    if (k >= 10) break;
+    const x = s.x + s.nx * 0.55, z = s.z + s.nz * 0.55;
+    if (c13PathD(x, z) < 2.6 || c13Overlaps(x, z, 1.0) || !c13Open(x, z) || !c13Open(x + s.nx * 1.0, z + s.nz * 1.0)) continue;
+    if (c13FeatNear(s.x, 1.2, s.z, 0.9, 1.0)) continue;
+    const rnd = mulberry32(k * 97 + 13), yaw = Math.atan2(s.nx, s.nz);
+    const tx = -s.nz, tz = s.nx;
+    const F0 = c13PaveAt(x, z);
+    goods.push({ k: 'barrel', p: new THREE.Vector3(x, F0 + 0.48, z), s: [1, 1, 1] });
+    goods.push({ k: 'crate', p: new THREE.Vector3(x + tx * 0.8, F0 + 0.3, z + tz * 0.8), s: [0.6, 0.6, 0.6], yaw: yaw + rnd() * 0.5 });
+    if (rnd() < 0.5) goods.push({ k: 'crate', p: new THREE.Vector3(x + tx * 0.8, F0 + 0.82, z + tz * 0.8), s: [0.46, 0.44, 0.46], yaw: yaw + rnd() });
+    if (rnd() < 0.6) goods.push({ k: 'sack', p: new THREE.Vector3(x - tx * 0.75, F0 + 0.25, z - tz * 0.75), s: [1, 1, 1], yaw: rnd() * 6 });
+    c13Solids.push({ x: x + tx * 0.3, z: z + tz * 0.3, r: 0.95 });
+    k++;
+  }
+  c13Goods(G, goods);
+  bakeStatic(SG, undefined, { named: true });
+  SG.traverse((q) => { if (q.isMesh) { q.userData.bwGhost = true; q.raycast = () => {}; } });
+  yield;
+}
+/* THE FOUNTAIN: a round basin of the castle's own stone, a column, an upper
+ * bowl that spills, and a jet from the top — the water falls as DROPS, never
+ * as a sheet (the dojo's lesson: a sheet of falling water drawn as a mesh is
+ * a pale rectangle). The owner's own fountain recording plays from it. */
+function c13BuildFountain(G, x, z) {
+  let brick = null, pave = null;
+  c13World.traverse((o) => { if (!o.isMesh || !o.material) return; if (o.material.name === 'acmat_4' && !brick) brick = o.material; if (o.material.name === 'acmat_0' && !pave) pave = o.material; });
+  const stone = (brick || c13Std(0x8a8478, 0x18161a)).clone(); stone.userData = { c13NoCut: true }; stone.side = THREE.FrontSide;
+  const cap = (pave || brick || stone).clone(); cap.userData = { c13NoCut: true };
+  const g = new THREE.Group(); g.position.set(x, c13PaveAt(x, z), z); g.name = 'c13Fountain';
+  // a lathe with uv at the stone's own density (0.06 of the map a metre round and up)
+  const lathe = (prof, k, seg = 40) => {
+    const P = [], U = [], I = []; let len = [0];
+    for (let i = 1; i < prof.length; i++) len.push(len[i - 1] + Math.hypot(prof[i][0] - prof[i - 1][0], prof[i][1] - prof[i - 1][1]));
+    const R = Math.max(...prof.map((p) => p[0]));
+    for (let j = 0; j <= seg; j++) { const a = j / seg * Math.PI * 2; for (let i = 0; i < prof.length; i++) { P.push(Math.sin(a) * prof[i][0], prof[i][1], Math.cos(a) * prof[i][0]); U.push(a * R * k, len[i] * k); } }
+    const n = prof.length;
+    for (let j = 0; j < seg; j++) for (let i = 0; i < n - 1; i++) { const a = j * n + i, b = a + n; I.push(a, a + 1, b, b, a + 1, b + 1); }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2)); geo.setIndex(I); geo.computeVertexNormals();
+    return geo;
+  };
+  const RB = 3.2, HB = 0.72, WATER = 0.55;
+  const K = 0.0612;
+  g.add(new THREE.Mesh(lathe([[RB - 0.38, WATER - 0.2], [RB - 0.38, HB], [RB - 0.30, HB + 0.08], [RB + 0.06, HB + 0.08], [RB + 0.12, HB], [RB + 0.12, 0.12], [RB + 0.30, 0.05], [RB + 0.30, 0]], K), stone));
+  g.add(new THREE.Mesh(lathe([[0.001, WATER - 0.2], [0.42, WATER - 0.2], [0.36, 0.95], [0.30, 1.35], [0.34, 1.62]], K, 24), stone));
+  // the upper bowl
+  const RU = 1.25;
+  g.add(new THREE.Mesh(lathe([[0.30, 1.62], [RU * 0.6, 1.70], [RU, 1.92], [RU + 0.06, 2.0], [RU - 0.06, 2.0], [RU * 0.55, 1.84], [0.001, 1.84]], K, 32), stone));
+  g.add(new THREE.Mesh(lathe([[0.001, 1.84], [0.16, 1.84], [0.12, 2.25], [0.17, 2.42], [0.09, 2.55], [0.001, 2.62]], K, 16), stone));
+  // the rim's cap stone
+  const capG = new THREE.RingGeometry(RB - 0.32, RB + 0.08, 48, 1); capG.rotateX(-Math.PI / 2); capG.translate(0, HB + 0.081, 0);
+  const cu = capG.attributes.uv, cp = capG.attributes.position; for (let i = 0; i < cp.count; i++) cu.setXY(i, cp.getX(i) * 0.355, cp.getZ(i) * 0.355);
+  g.add(new THREE.Mesh(capG, cap));
+  // the water: dark, rippled where the bowl's drips land, a glint of the lanterns on it
+  const wmat = new THREE.ShaderMaterial({
+    uniforms: { uT: C13_U.uT, uR: { value: RU + 0.05 } }, fog: false,
+    vertexShader: `varying vec2 vP; void main() { vP = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `uniform float uT; uniform float uR; varying vec2 vP;
+      float h(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+      void main() {
+        float r = length(vP), a = atan(vP.y, vP.x);
+        float rip = 0.55 * sin((r - uR) * 22.0 - uT * 6.0) * exp(-abs(r - uR) * 3.2)
+                  + 0.25 * sin(r * 9.0 - uT * 2.6 + sin(a * 3.0) * 0.6)
+                  + 0.18 * sin(vP.x * 5.0 + uT * 1.3) * sin(vP.y * 4.0 - uT * 1.1);
+        // still water at night is black with the light ON it: the torches as broken warm streaks, a cold sheen of sky
+        vec3 deep = vec3(0.0016, 0.0026, 0.0030), lit = vec3(0.0050, 0.0072, 0.0080);
+        vec3 col = mix(deep, lit, 0.5 + 0.5 * rip);
+        col += vec3(1.0, 0.52, 0.20) * pow(max(0.0, rip), 7.0) * 0.10;
+        col += vec3(0.30, 0.36, 0.42) * step(0.996, h(floor(vP * 18.0) + floor(uT * 3.0))) * 0.08 * smoothstep(0.4, 0.8, rip);
+        col *= 0.75 + 0.25 * smoothstep(${(RB - 0.4).toFixed(2)}, ${(RB - 1.2).toFixed(2)}, r);
+        gl_FragColor = vec4(col, 1.0);
+        #include <colorspace_fragment>
+      }`,
+  });
+  const water = new THREE.Mesh(new THREE.CircleGeometry(RB - 0.37, 48), wmat); water.rotation.x = -Math.PI / 2; water.position.y = WATER; g.add(water);
+  const wup = new THREE.Mesh(new THREE.CircleGeometry(RU - 0.04, 32), wmat); wup.rotation.x = -Math.PI / 2; wup.position.y = 1.93; g.add(wup);
+  // the drops: off the upper bowl's lip all the way round, and the jet out of the top into it
+  const NB = 260, NJ = 90, N = NB + NJ;
+  const pos = new Float32Array(N * 3), seeds = new Float32Array(N);
+  for (let i = 0; i < N; i++) seeds[i] = Math.random();
+  const dg = new THREE.BufferGeometry(); dg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const drops = new THREE.Points(dg, new THREE.PointsMaterial({ map: glowTex, color: 0x6a8296, size: 0.04, sizeAttenuation: true, transparent: true, opacity: 0.45, depthWrite: false, blending: THREE.AdditiveBlending }));
+  drops.frustumCulled = false; drops.raycast = () => {}; g.add(drops);
+  g.traverse((o) => { if (o.isMesh) { o.userData.bwGhost = true; o.raycast = () => {}; } });
+  G.add(g);
+  c13Solids.push({ x, z, r: RB + 0.25 });
+  c13Thrive.fountain = { g, x, z, drops, seeds, NB, NJ, RU, WATER, top: 2.62 };
+  c13Thrive.minstrel = { x: x + RB + 1.4, z: z + 0.4 };
+  // the plaza's own lamp: the brightest place in the castle, from a lantern hung high over the basin's rim off nothing you can see (it is the stalls' and the lines' light, gathered)
+  const L = new THREE.PointLight(0xffa860, 7, 16, 2); L.position.set(x, C13_FLOOR + 5.5, z); L.userData.lpAlways = 22;
+  G.add(L); c13Life.lamps.push({ L, base: 7, ph: 2.2 });
+}
+function updateC13Fountain(dt) {
+  const F = c13Thrive && c13Thrive.fountain; if (!F) return;
+  const t = C13_U.uT.value, P = F.drops.geometry.attributes.position, A = P.array;
+  for (let i = 0; i < F.NB; i++) {
+    // off the lip, outward a little, falling to the basin's water
+    const s = F.seeds[i], T = 0.55, k = ((t * (0.9 + s * 0.3) + s * 7.0) % T) / T;
+    const a = s * 6.2832 * 13.0 + Math.floor((t + s * 7.0) / T) * 1.7;
+    const tt = k * T, r = F.RU + 0.06 + 0.35 * tt;
+    A[i * 3] = Math.sin(a) * r; A[i * 3 + 1] = 1.98 - 4.9 * tt * tt; A[i * 3 + 2] = Math.cos(a) * r;
+    if (A[i * 3 + 1] < F.WATER) A[i * 3 + 1] = -50;
+  }
+  for (let i = F.NB; i < F.NB + F.NJ; i++) {
+    // the jet: up out of the finial and over into the bowl
+    const s = F.seeds[i], T = 0.75, k = ((t + s * 5.0) % T) / T, tt = k * T;
+    const a = s * 6.2832 * 7.0, v = 1.1 + s * 0.3;
+    A[i * 3] = Math.sin(a) * 0.45 * tt * 1.4; A[i * 3 + 1] = F.top + 1.8 * tt - 4.9 * tt * tt; A[i * 3 + 2] = Math.cos(a) * 0.45 * tt * 1.4 * v;
+    if (A[i * 3 + 1] < 1.93) A[i * 3 + 1] = -50;
+  }
+  P.needsUpdate = true;
+}
+
+/* ---- windows and roofs: flowers under the low windows; chimneys that smoke ---- */
+function* c13BuildWindowsAndRoofs() {
+  const G = c13Thrive.G;
+  const inv = new THREE.Matrix4().copy(c13World.matrixWorld).invert(), M = new THREE.Matrix4(), v = new THREE.Vector3();
+  const glass = [], roof = [], frame = [];
+  c13World.traverse((o) => {
+    if (!o.isMesh || !o.material || o.userData.bwGhost) return;
+    const nm = o.material.name; if (nm !== 'acmat_9' && nm !== 'acmat_5' && nm !== 'acmat_8') return;
+    M.multiplyMatrices(inv, o.matrixWorld);
+    const p = o.geometry.attributes.position, out = nm === 'acmat_9' ? glass : nm === 'acmat_5' ? roof : frame;
+    for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i).applyMatrix4(M); out.push(v.x, v.y, v.z); }
+  });
+  yield;
+  // windows: the glass's vertices clustered on a 1 m grid, joined
+  const cells = new Map();
+  for (let i = 0; i < glass.length; i += 3) {
+    const k = Math.floor(glass[i] / 1.0) + ',' + Math.floor(glass[i + 1] / 1.0) + ',' + Math.floor(glass[i + 2] / 1.0);
+    let c = cells.get(k); if (!c) { c = []; cells.set(k, c); } c.push(i);
+  }
+  const seen = new Set(), wins = [];
+  for (const k of cells.keys()) {
+    if (seen.has(k)) continue;
+    const st = [k]; seen.add(k); const idx = [];
+    while (st.length) {
+      const kk = st.pop(); idx.push(...cells.get(kk));
+      const [a, b, c] = kk.split(',').map(Number);
+      for (let da = -1; da <= 1; da++) for (let db = -1; db <= 1; db++) for (let dc = -1; dc <= 1; dc++) { const nk = (a + da) + ',' + (b + db) + ',' + (c + dc); if (cells.has(nk) && !seen.has(nk)) { seen.add(nk); st.push(nk); } }
+    }
+    let sx = 0, sz = 0, y0 = 1e9, y1 = -1e9, n = idx.length, sxx = 0, szz = 0, sxz = 0;
+    for (const i of idx) { sx += glass[i]; sz += glass[i + 2]; y0 = Math.min(y0, glass[i + 1]); y1 = Math.max(y1, glass[i + 1]); sxx += glass[i] ** 2; szz += glass[i + 2] ** 2; sxz += glass[i] * glass[i + 2]; }
+    const mx = sx / n, mz = sz / n, cxx = sxx / n - mx * mx, czz = szz / n - mz * mz, cxz = sxz / n - mx * mz;
+    const th = 0.5 * Math.atan2(2 * cxz, cxx - czz), tx = Math.cos(th), tz = Math.sin(th);
+    let nx = -tz, nz = tx;
+    if (!c13Open(mx + nx * 1.6, mz + nz * 1.6)) { nx = -nx; nz = -nz; }
+    if (!c13Open(mx + nx * 1.6, mz + nz * 1.6)) continue;
+    let hw = 0; for (const i of idx) hw = Math.max(hw, Math.abs((glass[i] - mx) * tx + (glass[i + 2] - mz) * tz));
+    wins.push({ x: mx, z: mz, nx, nz, y0, y1, hw });
+  }
+  c13Thrive.windows = wins;
+  yield;
+  /* FLOWERS: a box of them under every low window that looks into a court —
+   * red, gold, white and violet over green, the one thing in the place nobody
+   * would bother with in a siege. A window here is arched glass over a wooden
+   * shutter in a wooden frame (`acmat_8`), so the box goes under the FRAME:
+   * its lowest timber, measured off its own vertices, and as far out as the
+   * frame stands proud. */
+  const low = [];
+  let wi = 0;
+  for (const wn of wins) {
+    if (!(wn.y0 > C13_FLOOR + 1.6 && wn.y0 < C13_FLOOR + 8 && wn.hw > 0.25 && wn.hw < 1.6)) continue;
+    const tx = -wn.nz, tz = wn.nx;
+    let fb = wn.y0, fo = 0.2;
+    for (let i = 0; i < frame.length; i += 3) {
+      const dx = frame[i] - wn.x, dz = frame[i + 2] - wn.z, y = frame[i + 1];
+      if (y > wn.y0 + 0.3 || y < wn.y0 - 3.2) continue;
+      if (Math.abs(dx * tx + dz * tz) > wn.hw + 0.35) continue;
+      const d = dx * wn.nx + dz * wn.nz; if (d < -0.35 || d > 0.9) continue;
+      if (y < fb) fb = y;
+    }
+    for (let i = 0; i < frame.length; i += 3) {
+      const dx = frame[i] - wn.x, dz = frame[i + 2] - wn.z, y = frame[i + 1];
+      if (y > fb + 0.35 || y < fb - 0.05 || Math.abs(dx * tx + dz * tz) > wn.hw + 0.35) continue;
+      const d = dx * wn.nx + dz * wn.nz; if (d > fo && d < 0.9) fo = d;
+    }
+    if (fb > C13_FLOOR + 1.2) low.push(Object.assign({ fb, fo }, wn));
+    if (++wi % 4 === 0) yield;
+  }
+  if (low.length) {
+    /* weathered boards on iron brackets, earth in them, and what grows in
+     * a window box that is looked after: a mound of real leaves, heads of
+     * small flowers above it, ivy coming over the front */
+    const N = low.length, rnd = mulberry32(2222), col = new THREE.Color();
+    const box = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.24, 0.32), c13MarketMats().dark, N);
+    const soil = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.02, 0.28), c13Lift(c13Std(0x2a1e14, 0x000000, { roughness: 1 }), 0.06), N);
+    const brk = new THREE.InstancedMesh(new THREE.BoxGeometry(0.035, 0.24, 0.30), C13_TORCH_MAT.iron || c13TorchMats().iron, N * 2);
+    const leaf = new THREE.InstancedMesh(c13CardsGeo(0.48, 0.36), c13FoliageMat(c13LeafTex(), 0.22), N * 7);
+    const bloom = new THREE.InstancedMesh(c13CardsGeo(0.19, 0.19), c13FoliageMat(c13BloomTex(), 0.20), N * 9);
+    const ivy = new THREE.InstancedMesh((() => { const g = new THREE.PlaneGeometry(0.26, 0.62); g.translate(0, -0.31, 0); return g; })(), c13FoliageMat(c13IvyTex(), 0.18), N * 3);
+    const pal = [0xa02a30, 0xc87a86, 0xd8d0c4, 0x6a3a7a, 0xb8722a];
+    let li = 0, bi = 0, ii = 0;
+    low.forEach((wn, i) => {
+      const yaw = Math.atan2(wn.nx, wn.nz), bw = Math.max(0.8, wn.hw * 2 + 0.25);
+      const out = wn.fo + 0.19, sx = wn.x + wn.nx * out, sz = wn.z + wn.nz * out, sy = wn.fb - 0.14;
+      const tx = Math.cos(yaw), tz = -Math.sin(yaw);
+      _c13o.rotation.set(0, yaw, 0);
+      _c13o.position.set(sx, sy, sz); _c13o.scale.set(bw, 1, 1); _c13o.updateMatrix(); box.setMatrixAt(i, _c13o.matrix);
+      _c13o.position.set(sx, sy + 0.12, sz); _c13o.updateMatrix(); soil.setMatrixAt(i, _c13o.matrix);
+      _c13o.scale.set(1, 1, 1);
+      for (const sg of [-1, 1]) { _c13o.position.set(sx + tx * sg * bw * 0.36 - wn.nx * 0.02, sy - 0.2, sz + tz * sg * bw * 0.36 - wn.nz * 0.02); _c13o.updateMatrix(); brk.setMatrixAt(i * 2 + (sg > 0 ? 1 : 0), _c13o.matrix); }
+      for (let k = 0; k < 7; k++) {
+        const u = ((k + 0.5) / 7 - 0.5) * bw * 0.9 + (rnd() - 0.5) * 0.08, dz = (rnd() - 0.5) * 0.1, sc = 0.75 + rnd() * 0.5;
+        _c13o.position.set(sx + tx * u + wn.nx * dz, sy + 0.11, sz + tz * u + wn.nz * dz); _c13o.rotation.set((rnd() - 0.5) * 0.3, rnd() * 6.28, (rnd() - 0.5) * 0.3); _c13o.scale.set(sc, sc * (0.8 + rnd() * 0.4), sc); _c13o.updateMatrix();
+        leaf.setMatrixAt(li++, _c13o.matrix);
+      }
+      const pc = pal[i % pal.length], pc2 = pal[(i + 2) % pal.length];
+      for (let k = 0; k < 9; k++) {
+        const u = (rnd() - 0.5) * bw * 0.85, dz = (rnd() - 0.5) * 0.14, sc = 0.7 + rnd() * 0.6;
+        _c13o.position.set(sx + tx * u + wn.nx * dz, sy + 0.26 + rnd() * 0.14, sz + tz * u + wn.nz * dz); _c13o.rotation.set((rnd() - 0.5) * 0.4, rnd() * 6.28, (rnd() - 0.5) * 0.4); _c13o.scale.setScalar(sc); _c13o.updateMatrix();
+        bloom.setMatrixAt(bi, _c13o.matrix); bloom.setColorAt(bi, col.setHex(rnd() < 0.65 ? pc : pc2).multiplyScalar(0.8 + rnd() * 0.3)); bi++;
+      }
+      for (let k = 0; k < 3; k++) {
+        const u = (rnd() - 0.5) * bw * 0.8, sc = 0.6 + rnd() * 0.7;
+        _c13o.position.set(sx + tx * u + wn.nx * 0.17, sy + 0.1, sz + tz * u + wn.nz * 0.17); _c13o.rotation.set(0.06, yaw + (rnd() - 0.5) * 0.3, (rnd() - 0.5) * 0.2); _c13o.scale.set(1, sc, 1); _c13o.updateMatrix();
+        ivy.setMatrixAt(ii++, _c13o.matrix);
+      }
+    });
+    for (const m of [box, soil, brk, leaf, bloom, ivy]) { m.frustumCulled = false; m.raycast = () => {}; m.userData.bwGhost = true; m.name = 'c13Flowers'; G.add(m); }
+  }
+  c13Thrive.flowers = low.length;
+  yield;
+  /* CHIMNEYS on the roofs' ridges, each with smoke: the roof tiles' highest
+   * points, a few of them, spread out */
+  const ridge = new Map();
+  for (let i = 0; i < roof.length; i += 3) {
+    const k = Math.floor(roof[i] / 5) + ',' + Math.floor(roof[i + 2] / 5);
+    const r = ridge.get(k); if (!r || roof[i + 1] > r[1]) ridge.set(k, [roof[i], roof[i + 1], roof[i + 2]]);
+  }
+  const peaks = c13Shuffle([...ridge.values()].filter((p) => p[1] > C13_FLOOR + 14), 5353);
+  const chim = [];
+  for (const p of peaks) { if (chim.length >= 7) break; if (chim.some((q) => Math.hypot(q[0] - p[0], q[2] - p[2]) < 9)) continue; chim.push(p); }
+  if (chim.length) {
+    let brick = null; c13World.traverse((o) => { if (o.isMesh && o.material && o.material.name === 'acmat_4' && !brick) brick = o.material; });
+    const bm = (brick || c13Std(0x8a7a6a, 0x181210)).clone(); bm.userData = { c13NoCut: true };
+    const cg = new THREE.Group(); cg.name = 'c13Chimneys'; G.add(cg);
+    for (const p of chim) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.8, 2.0, 0.8), bm); m.position.set(p[0], p[1] + 0.55, p[2]); cg.add(m);
+      const lip = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.14, 0.95), bm); lip.position.set(p[0], p[1] + 1.6, p[2]); cg.add(lip);
+      c13Thrive.smokeAt.push({ x: p[0], y: p[1] + 1.75, z: p[2], big: true });
+    }
+    bakeStatic(cg, undefined, { named: true });
+    cg.traverse((o) => { if (o.isMesh) { o.userData.bwGhost = true; o.raycast = () => {}; } });
+  }
+}
+
+/* ---- the air: smoke off the chimneys and the torches, embers, warm motes
+ * drifting in the light, and mist lying low in the courts ---- */
+const C13_SMOKE = 120, C13_EMBER = 110, C13_MOTE = 90, C13_MIST = 30;
+let c13Air = null;
+function c13BuildAir() {
+  const smoke = makeAirPoints(C13_SMOKE, [0.50, 0.46, 0.44], true, [60, 110], 260, true);
+  const ember = makeAirPoints(C13_EMBER, [1.0, 0.55, 0.18], true, [34, 60], 9);
+  ember.material.blending = THREE.AdditiveBlending;
+  const mote = makeAirPoints(C13_MOTE, [1.0, 0.82, 0.48], true, [26, 44], 6);
+  mote.material.blending = THREE.AdditiveBlending;
+  const mist = makeAirPoints(C13_MIST, [0.42, 0.38, 0.40], true, [30, 60], 420, true);
+  for (const o of [smoke, ember, mote, mist]) { o.visible = false; o.name = 'c13Air'; }
+  const src = c13Thrive.smokeAt.concat(c13Thrive.fires.map((F) => ({ x: F.c.x, y: F.c.y, z: F.c.z, big: false })));
+  c13Air = {
+    smoke, ember, mote, mist, src,
+    s: Array.from({ length: C13_SMOKE }, () => ({ life: 0, max: 1, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, s0: 0, s1: 0, a: 0.4 })),
+    e: Array.from({ length: C13_EMBER }, () => ({ life: 0, max: 1, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, ph: 0, s: 0 })),
+    m: Array.from({ length: C13_MOTE }, () => ({ life: 0, max: 1, x: 0, y: 0, z: 0, ph: 0, s: 0 })),
+    q: Array.from({ length: C13_MIST }, () => ({ life: 0, max: 1, x: 0, y: 0, z: 0, s: 0, a: 0 })),
+    si: 0, ei: 0, sAcc: 0, eAcc: 0,
+  };
+}
+function updateC13Air(dt) {
+  const A = c13Air; if (!A) return;
+  const on = c13World.visible && !inRoom() && (inC13 || Math.hypot(camera.position.x - C13_X, camera.position.z - C13_Z) < 160);
+  A.smoke.visible = A.ember.visible = on; A.mote.visible = A.mist.visible = on && inC13;
+  if (!on) return;
+  const fov = THREE.MathUtils.degToRad(camera.fov || 75);
+  const px = renderer.getDrawingBufferSize(_airBuf).y / (2 * Math.tan(fov / 2));
+  for (const o of [A.smoke, A.ember, A.mote, A.mist]) o.material.uniforms.uPx.value = px;
+  const wx = (air.wx || WIND.x) * (0.7 + airGust * 1.6), wz = (air.wz || WIND.z) * (0.7 + airGust * 1.6);
+  const r = Math.random, X = C13_X, Y = C13_Y, Z = C13_Z, t = C13_U.uT.value;
+  A.sAcc += dt * 18; A.eAcc += dt * (inC13 ? 26 : 8);
+  while (A.sAcc >= 1) {
+    A.sAcc -= 1;
+    const F = A.src[(r() * A.src.length) | 0]; if (!F) break;
+    if (!F.big && r() < 0.55) continue;
+    const q = A.s[A.si]; A.si = (A.si + 1) % C13_SMOKE;
+    q.x = X + F.x + (r() - 0.5) * 0.2; q.y = Y + F.y + 0.2; q.z = Z + F.z + (r() - 0.5) * 0.2;
+    q.vx = (r() - 0.5) * 0.15; q.vy = (F.big ? 0.9 : 0.4) + r() * 0.3; q.vz = (r() - 0.5) * 0.15;
+    q.max = q.life = (F.big ? 6 : 2.4) + r() * 3; q.s0 = F.big ? 0.5 : 0.15; q.s1 = (F.big ? 3.4 : 0.9) + r() * 1.2; q.a = F.big ? 0.5 : 0.22;
+  }
+  while (A.eAcc >= 1) {
+    A.eAcc -= 1;
+    const fs = c13Thrive.fires; const F = fs[(r() * fs.length) | 0]; if (!F) break;
+    const q = A.e[A.ei]; A.ei = (A.ei + 1) % C13_EMBER;
+    q.x = X + F.c.x + (r() - 0.5) * 0.12; q.y = Y + F.c.y + 0.15; q.z = Z + F.c.z + (r() - 0.5) * 0.12;
+    q.vx = (r() - 0.5) * 0.35; q.vy = 0.5 + r() * 1.0; q.vz = (r() - 0.5) * 0.35; q.ph = r() * 10;
+    q.max = q.life = 1.0 + r() * 1.8; q.s = 0.045 + r() * 0.04;
+  }
+  const sp = A.smoke.geometry.attributes.position, sa = A.smoke.geometry.attributes.aA, ss = A.smoke.geometry.attributes.aS;
+  A.s.forEach((q, i) => {
+    if (q.life <= 0) { sa.setX(i, 0); return; }
+    q.life -= dt; const k = 1 - Math.max(0, q.life) / q.max;
+    q.vy *= Math.max(0, 1 - dt * 0.2);
+    q.vx += (wx * 1.1 - q.vx) * dt * 0.45; q.vz += (wz * 1.1 - q.vz) * dt * 0.45;
+    q.x += q.vx * dt; q.y += q.vy * dt; q.z += q.vz * dt;
+    sp.setXYZ(i, q.x, q.y, q.z); ss.setX(i, q.s0 + (q.s1 - q.s0) * Math.sqrt(k));
+    sa.setX(i, q.a * Math.min(1, k * 5) * (1 - k) * (1 - k));
+  });
+  const ep = A.ember.geometry.attributes.position, ea = A.ember.geometry.attributes.aA, es = A.ember.geometry.attributes.aS;
+  A.e.forEach((q, i) => {
+    if (q.life <= 0) { ea.setX(i, 0); return; }
+    q.life -= dt; const k = 1 - Math.max(0, q.life) / q.max;
+    q.vy = Math.max(0.1, q.vy - dt * 0.4);
+    q.vx += (wx - q.vx) * dt * 0.8 + Math.sin(t * 3.1 + q.ph) * dt; q.vz += (wz - q.vz) * dt * 0.8 + Math.cos(t * 2.7 + q.ph) * dt;
+    q.x += q.vx * dt; q.y += q.vy * dt; q.z += q.vz * dt;
+    ep.setXYZ(i, q.x, q.y, q.z); es.setX(i, q.s);
+    ea.setX(i, (1 - k) * (0.65 + 0.35 * Math.sin(t * 17 + q.ph * 3)) * Math.min(1, k * 8));
+  });
+  if (inC13) {
+    // motes: warm specks hanging in the air round you, catching the firelight
+    const mp = A.mote.geometry.attributes.position, ma = A.mote.geometry.attributes.aA, ms = A.mote.geometry.attributes.aS;
+    A.m.forEach((q, i) => {
+      if (q.life <= 0) {
+        const a = r() * Math.PI * 2, d = 1.5 + r() * 14;
+        const x = camera.position.x + Math.sin(a) * d, z = camera.position.z + Math.cos(a) * d;
+        if (!c13Open(x - X, z - Z)) { ma.setX(i, 0); return; }
+        q.x = x; q.z = z; q.y = Y + C13_FLOOR + 0.6 + r() * 3.5; q.max = q.life = 4 + r() * 6; q.ph = r() * 10; q.s = 0.03 + r() * 0.03;
+      }
+      q.life -= dt; const k = 1 - Math.max(0, q.life) / q.max;
+      q.x += (wx * 0.25 + Math.sin(t * 0.9 + q.ph) * 0.18) * dt; q.z += (wz * 0.25 + Math.cos(t * 0.7 + q.ph) * 0.18) * dt; q.y += Math.sin(t * 1.3 + q.ph * 2) * 0.08 * dt;
+      mp.setXYZ(i, q.x, q.y, q.z); ms.setX(i, q.s);
+      ma.setX(i, Math.sin(Math.PI * k) * (0.5 + 0.5 * Math.sin(t * 5.0 + q.ph * 4.0)) * 0.9);
+    });
+    const qp = A.mist.geometry.attributes.position, qa = A.mist.geometry.attributes.aA, qs = A.mist.geometry.attributes.aS;
+    A.q.forEach((q, i) => {
+      if (q.life <= 0) {
+        const a = r() * Math.PI * 2, d = 3 + r() * 20;
+        const x = camera.position.x + Math.sin(a) * d, z = camera.position.z + Math.cos(a) * d;
+        if (!c13Open(x - X, z - Z)) { qa.setX(i, 0); return; }
+        q.x = x; q.z = z; q.y = Y + C13_FLOOR + 0.3 + r() * 0.5; q.max = q.life = 8 + r() * 8; q.s = 3 + r() * 3; q.a = 0.07 + r() * 0.07;
+      }
+      q.life -= dt; const k = 1 - Math.max(0, q.life) / q.max;
+      q.x += wx * 0.35 * dt; q.z += wz * 0.35 * dt;
+      qp.setXYZ(i, q.x, q.y, q.z); qs.setX(i, q.s * (0.8 + 0.3 * k));
+      qa.setX(i, q.a * Math.sin(Math.PI * k));
+    });
+  }
+  for (const o of [A.smoke, A.ember, A.mote, A.mist]) { const g = o.geometry.attributes; g.position.needsUpdate = g.aA.needsUpdate = g.aS.needsUpdate = true; }
+}
+
+/* ---- the sound of the place: the fountain (the owner's recording, from
+ * where the fountain is), a minstrel's lute somewhere by it, and now and then
+ * the bell in a tower. All of it only while you are in the castle. ---- */
+let c13Snd = null;
+const C13_TUNE = [
+  [74, 1], [77, 1], [79, 1], [81, 2], [79, 1], [77, 1], [76, 1], [74, 1], [76, 2], [72, 1],
+  [74, 1], [77, 1], [81, 1], [84, 2], [81, 1], [79, 1], [77, 1], [76, 1], [74, 3],
+  [81, 1], [84, 1], [86, 1], [84, 1], [81, 1], [79, 1], [77, 1], [79, 1], [81, 1], [76, 2], [72, 1],
+  [74, 1], [76, 1], [77, 1], [79, 1], [76, 1], [72, 1], [74, 2], [69, 1], [74, 3],
+];
+const C13_BASS = [50, 50, 50, 48, 50, 53, 48, 50, 53, 53, 50, 48, 50, 48, 50, 50];
+function c13PluckBuf(midi) {
+  const ctx = audioCtx, sr = ctx.sampleRate, f = 440 * Math.pow(2, (midi - 69) / 12);
+  const dur = midi < 60 ? 3.2 : 2.0, n = Math.floor(sr * dur), buf = ctx.createBuffer(1, n, sr), d = buf.getChannelData(0);
+  const N = Math.max(2, Math.round(sr / f)), line = new Float32Array(N);
+  let prev = 0;
+  for (let i = 0; i < N; i++) { const w = Math.random() * 2 - 1; prev = prev * 0.55 + w * 0.45; line[i] = prev; }   // a softened pluck: a finger, not a pick
+  const decay = midi < 60 ? 0.4994 : 0.4988;
+  for (let i = 0, j = 0; i < n; i++) { const a = line[j], b = line[(j + 1) % N]; d[i] = a; line[j] = decay * (a + b); j = (j + 1) % N; }
+  for (let i = 0; i < Math.min(n, 64); i++) d[i] *= i / 64;
+  return buf;
+}
+function updateC13Audio(dt) {
+  const ctx = audioCtx;
+  if (!ctx || !c13Thrive || !c13Thrive.done) return;
+  if (!inC13) {
+    if (c13Snd) { const t = ctx.currentTime; c13Snd.lute.gain.setTargetAtTime(0, t, 0.4); if (c13Snd.fg) c13Snd.fg.gain.setTargetAtTime(0, t, 0.4); c13Snd.playing = false; }
+    return;
+  }
+  if (sfxHush || replaying || applyingSave) return;
+  if (!c13Snd) {
+    const out = sfxOut();
+    const mk = () => { const g = ctx.createGain(); g.gain.value = 0; const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3000; const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null; g.connect(lp); if (pan) { lp.connect(pan); pan.connect(out); } else lp.connect(out); return { g, lp, pan }; };
+    const L = mk();
+    c13Snd = { lute: L.g, llp: L.lp, lpan: L.pan, bufs: new Map(), next: 0, i: 0, bar: 0, beat: 0, playing: false, fsrc: null, fg: null, flp: null, fpan: null, bellT: 25 + Math.random() * 40 };
+  }
+  const S = c13Snd, t = ctx.currentTime;
+  const F = c13Thrive.fountain, Mi = c13Thrive.minstrel;
+  // the fountain
+  if (F && !S.fsrc && sampleBanks.fountain && sampleBanks.fountain[0]) {
+    const src = ctx.createBufferSource(); src.buffer = sampleBanks.fountain[0]; src.loop = true;
+    const g = ctx.createGain(); g.gain.value = 0; const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
+    const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    src.connect(lp).connect(g); if (pan) { g.connect(pan); pan.connect(sfxOut()); } else g.connect(sfxOut());
+    src.start(t, Math.random() * 10);
+    Object.assign(S, { fsrc: src, fg: g, flp: lp, fpan: pan });
+  }
+  if (F && S.fg) {
+    const d = Math.hypot(camera.position.x - (C13_X + F.x), camera.position.z - (C13_Z + F.z));
+    const e = Math.max(0, d - 2.8);
+    S.fg.gain.setTargetAtTime(0.20 / (1 + e / 2.6) * (1 - THREE.MathUtils.smoothstep(d, 30, 45)), t, 0.15);
+    S.flp.frequency.setTargetAtTime(700 + 6000 / (1 + e / 3), t, 0.15);
+    if (S.fpan) S.fpan.pan.setTargetAtTime(THREE.MathUtils.clamp(panTo(C13_X + F.x, C13_Z + F.z) * Math.min(1, e / 6) * 0.8, -1, 1), t, 0.1);
+  }
+  // the lute
+  if (Mi) {
+    const mx = C13_X + Mi.x, mz = C13_Z + Mi.z, d = Math.hypot(camera.position.x - mx, camera.position.z - mz);
+    S.lute.gain.setTargetAtTime(0.30 / (1 + d / 7) * (1 - THREE.MathUtils.smoothstep(d, 40, 60)), t, 0.2);
+    S.llp.frequency.setTargetAtTime(900 + 3200 / (1 + d / 8), t, 0.2);
+    if (S.lpan) S.lpan.pan.setTargetAtTime(THREE.MathUtils.clamp(panTo(mx, mz) * 0.7, -1, 1), t, 0.1);
+    if (!S.playing) { S.playing = true; S.next = t + 0.3; S.i = 0; S.beat = 0; }
+    const BEAT = 60 / 112;
+    while (S.next < t + 0.5) {
+      const [m, len] = C13_TUNE[S.i];
+      const play = (midi, when, g) => {
+        let b = S.bufs.get(midi); if (!b) { b = c13PluckBuf(midi); S.bufs.set(midi, b); }
+        const s = ctx.createBufferSource(); s.buffer = b; const gg = ctx.createGain(); gg.gain.value = g;
+        s.connect(gg).connect(S.lute); s.start(when + (Math.random() - 0.5) * 0.012);
+      };
+      play(m, S.next, 0.55);
+      // the drone: the bar's root on its first beat and its fifth on its third, under the tune
+      const beatInBar = S.beat % 3, bar = Math.floor(S.beat / 3) % C13_BASS.length;
+      for (let b = 0; b < len; b++) {
+        const bb = (S.beat + b) % 3, bar2 = Math.floor((S.beat + b) / 3) % C13_BASS.length;
+        if (bb === 0) play(C13_BASS[bar2], S.next + b * BEAT, 0.45);
+        else if (bb === 2) play(C13_BASS[bar2] + 7, S.next + b * BEAT, 0.22);
+      }
+      void beatInBar; void bar;
+      S.next += len * BEAT; S.beat += len; S.i = (S.i + 1) % C13_TUNE.length;
+      if (S.i === 0) S.next += BEAT * 3;                         // a breath between the verses
+    }
+  }
+  // the bell, now and then, from a tower
+  if ((S.bellT -= dt) <= 0) {
+    S.bellT = 70 + Math.random() * 80;
+    const tw = c13Thrive.towers && c13Thrive.towers[0];
+    if (tw) { try { sfxCastleBell(C13_X + tw.x, C13_Z + tw.z, 0.45); } catch (e) {} }
+  }
+}
+
+/* ---- the tick ---- */
+function updateC13Thrive(dt) {
+  if (!c13Thrive) return;
+  C13_U.uT.value += dt;
+  if (c13World.visible && c13Thrive.lanterns.length) {
+    const t = C13_U.uT.value;
+    if (Math.hypot(camera.position.x - C13_X, camera.position.z - C13_Z) < 120) c13SwingLanterns(t);
+  }
+  if (c13World.visible) {
+    if (!(fortWorld && fortWorld.visible)) FORT_SWAY_U.uSwT.value += dt;
+    updateC13Fountain(dt);
+    const D = c13Thrive.doorGlow;
+    if (D) { const t = C13_U.uT.value, f = 0.86 + 0.08 * Math.sin(t * 6.3) + 0.06 * Math.sin(t * 11.7 + 1.3); D.gaps[0].material.opacity = 0.55 * f; D.spill.material.opacity = 0.32 * f; }
+  }
+  if (c13Thrive.done) updateC13Air(dt);
+  updateC13Audio(dt);
+}
+// what stands on the floor is solid, the first castle's way
+function c13PushSolids(p, r) {
+  for (const s of c13Solids) {
+    const qx = C13_X + s.x, qz = C13_Z + s.z, dx = p.x - qx, dz = p.z - qz;
+    if (s.r !== undefined) {
+      const d = Math.hypot(dx, dz), m = s.r + r; if (d >= m) continue;
+      if (d < 1e-4) { p.x += m; continue; }
+      p.x = qx + dx / d * m; p.z = qz + dz / d * m; continue;
+    }
+    const vx = -s.uz, vz = s.ux;            // the box's depth axis (its front is +v)
+    const a = dx * s.ux + dz * s.uz, b = dx * vx + dz * vz;
+    const oa = s.hw + r - Math.abs(a), ob = s.hd + r - Math.abs(b);
+    if (oa <= 0 || ob <= 0) continue;
+    if (oa < ob) { const k = Math.sign(a || 1) * oa; p.x += s.ux * k; p.z += s.uz * k; }
+    else { const k = Math.sign(b || 1) * ob; p.x += vx * k; p.z += vz * k; }
+  }
+}
+
+/* =====================================================================
+ * THE CRUSADER, IN THE WEST COURT OF CASTLE XIII. The owner's "flail knight"
+ * (the Crusader tank: a heater shield on the left forearm and a flail on a
+ * twelve-link chain in the right fist), through `tools/crusader_pack.py` into
+ * `assets/crusader.glb` with his own fourteen clips, and the owner's Pro Sword
+ * and Shield Pack on top through `tools/ntar_moves.py -- crusader`. He stands
+ * on the carpet in front of the throne room's door and the door is barred
+ * while he lives: the second half of the castle is his.
+ *
+ * HIS OWN CLIPS PLAY AT THE SPEED HIS OWN SCENE PLAYS THEM. The takes are slow
+ * (24 fps, eighty frames for a swing) and his Unity Animator runs the attacks
+ * and the run at three times and the walk, the hit reel and the shield bash at
+ * twice; the packer writes those rates into the file and `crusaderPre` puts
+ * them into the clips before a single action is made from them.
+ *
+ * EVERY SWING PLAYS AT ITS OWN SPEED (`natural`): the startup is the clip up to
+ * its contact frame, measured — on his own clips, the frame the flail's ball is
+ * moving fastest (the shield's edge for the bash); on the pack's, the frame his
+ * fist is. The tell is the clip's own wind-up, so what you read is exactly what
+ * the animator drew.
+ *
+ * THE HIT IS THE FLAIL. The sweep (`blowLands`) runs shoulder, elbow, fist and
+ * then the BALL (`tip`), and the aim turns his shoulder so the ball, not the
+ * fist, arrives at your chest on the contact frame. His own clips key every link
+ * of the chain; the pack's do not, so for those the chain swings itself — a rope
+ * of thirteen links under gravity hung off the haft (`crusaderChain`) — and the
+ * ball the sweep reads is wherever the rope has thrown it.
+ * ===================================================================== */
+const CRUSADER_MOVES_URL = 'assets/crusader-moves.json';
+let crusaderMoves = null, crusaderMovesLate = null;
+bwFetch(CRUSADER_MOVES_URL, 1085).then((buf) => {
+  try { crusaderMoves = JSON.parse(new TextDecoder().decode(buf)); } catch (e) { return; }
+  if (crusaderMovesLate) { crusaderMovesLate(); crusaderMovesLate = null; }
+}, () => {});
+const CR = (n) => 'Crusader_tank_' + n;
+const CRUSADER_JOINTS = {
+  hip: CR('Hips'), waist: CR('Spine'), chest: CR('Spine2'), neck: CR('Neck'), head: CR('Head'),
+  clavL: CR('LeftShoulder'), clavR: CR('RightShoulder'), armL: CR('LeftArm'), armR: CR('RightArm'),
+  foreL: CR('LeftForeArm'), foreR: CR('RightForeArm'),
+  thighL: CR('LeftUpLeg'), thighR: CR('RightUpLeg'), calfL: CR('LeftLeg'), calfR: CR('RightLeg'),
+  footL: CR('LeftFoot'), footR: CR('RightFoot'),
+};
+const CRUSADER_RAG = {};
+for (const n of ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'RightShoulder', 'RightArm', 'RightForeArm', 'RightHand',
+  'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase',
+  'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase']) CRUSADER_RAG['Character1_' + n] = CR(n);
+const CRUSADER_OWN = new Set(['idle', 'idleB', 'idleC', 'guard', 'walk', 'run', 'side', 'jump', 'hit', 'die', 'cA1', 'cA2', 'cA3', 'cBash']);
+function crusaderPre(u, gltf) {
+  let info = null;
+  gltf.scene.traverse((o) => { if (!info && o.userData && o.userData.bw_crusader) info = o.userData.bw_crusader; });
+  try { if (typeof info === 'string') info = JSON.parse(info); } catch (e) { info = null; }
+  const rate = (info && info.rate) || {};
+  for (const c of gltf.animations) {
+    let t0 = Infinity;
+    for (const tr of c.tracks) if (tr.times.length) t0 = Math.min(t0, tr.times[0]);
+    if (!isFinite(t0)) t0 = 0;
+    const r = rate[c.name] || 1;
+    // THE LOADER SHARES ONE TIMES ARRAY between every track sampled off the same
+    // accessor: rescaled in place it was rescaled 378 times and the clip came to nothing,
+    // and between CLIPS of the same length, at different rates: each clip gets its own
+    const mine = new Map();
+    for (const tr of c.tracks) {
+      let t = mine.get(tr.times);
+      if (!t) { t = Float32Array.from(tr.times, (v) => (v - t0) / r); mine.set(tr.times, t); }
+      tr.times = t;
+    }
+    c.duration = (c.duration - t0) / r;
+    c.resetDuration && c.resetDuration();
+  }
+}
+function authorCrusaderClips(u, m, gltf) {
+  const R = poseRig(u, m, null, CRUSADER_JOINTS, {});
+  const clips = [];
+  const take = () => ntarRetarget(u, m, R.bones, R.bind, R.J, R.hipUp, R.hipPos, crusaderMoves);
+  if (crusaderMoves) for (const c of take()) clips.push(c);
+  else crusaderMovesLate = () => { for (const c of take()) u.clips[c.name] = u.mixer.clipAction(c); u.natDone = false; };
+  return clips;
+}
+/* THE TABLE. The contact fractions are measured off the clips (above); the
+ * reaches are where his flail's ball is on that frame, from his origin, with
+ * him at 2.25 m. The overhead smash and the leap take two. The bash is the
+ * short one, and it opens a string: shield into your face, then the flail. */
+MUT_ATTACKS.cA1    = { wind: 0.77, strike: 0.12, recover: 0.30, hit: 0.700, reach: 2.55, lunge: 1.4, chain: 'cA2',    chainP: 0.40, w: 0.16, guardK: 1.25, limbs: [0, 1], stop: 1.90 };
+MUT_ATTACKS.cA2    = { wind: 0.89, strike: 0.14, recover: 0.70, hit: 0.496, reach: 2.65, lunge: 1.3, chain: 'sSlash', chainP: 0.30, w: 0.12, dmg: 2, guardK: 1.85, limbs: [0], stop: 1.90 };
+MUT_ATTACKS.cBash  = { wind: 1.01, strike: 0.12, recover: 0.52, hit: 0.612, reach: 1.95, lunge: 1.6, chain: 'cA2',    chainP: 0.62, w: 0.10, guardK: 1.55, limbs: [1], stop: 1.20 };
+MUT_ATTACKS.sSlash = { wind: 0.60, strike: 0.12, recover: 0.70, hit: 0.367, reach: 2.50, lunge: 1.3, chain: 'sSlashE', chainP: 0.50, w: 0.14, guardK: 1.15, limbs: [0], stop: 1.90 };
+MUT_ATTACKS.sSlashC= { wind: 0.84, strike: 0.12, recover: 0.60, hit: 0.500, reach: 2.50, lunge: 1.2, chain: 'cBash',  chainP: 0.35, w: 0.10, guardK: 1.25, limbs: [0], stop: 1.90 };
+MUT_ATTACKS.sSlashE= { wind: 0.60, strike: 0.12, recover: 0.70, hit: 0.400, reach: 2.45, lunge: 1.3, chain: 'sAtkD',  chainP: 0.42, w: 0.10, guardK: 1.15, limbs: [0], stop: 1.90 };
+MUT_ATTACKS.sAtkD  = { wind: 0.43, strike: 0.10, recover: 0.58, hit: 0.382, reach: 2.40, lunge: 1.2, chain: 'sSlash', chainP: 0.38, w: 0.10, guardK: 1.05, limbs: [0], stop: 1.90 };
+MUT_ATTACKS.sAtkB  = { wind: 0.53, strike: 0.14, recover: 0.70, hit: 0.372, reach: 2.85, lunge: 1.0, chain: 'cA1',    chainP: 0.30, w: 0.06, guardK: 1.60, limbs: [0], hold: true, stop: 1.90 };
+MUT_ATTACKS.sAtkC  = { wind: 0.77, strike: 0.14, recover: 0.80, hit: 0.411, reach: 2.95, lunge: 1.4, chain: 'sSlash', chainP: 0.30, w: 0.05, guardK: 1.60, limbs: [0], hold: true, stop: 1.90 };
+MUT_ATTACKS.sKick  = { wind: 0.47, strike: 0.12, recover: 0.70, hit: 0.350, reach: 2.05, lunge: 1.2, chain: 'cA2',    chainP: 0.50, w: 0.07, guardK: 1.10, limbs: [2], stop: 1.40 };
+MUT_ATTACKS.sAtk   = { wind: 1.13, strike: 0.18, recover: 1.10, hit: 0.460, reach: 5.20, lunge: 4.2, chain: 'cA1',    chainP: 0.45, w: 0.05, dmg: 2, hold: true, guardK: 1.90, minDist: 3.0, limbs: [0], stop: 1.90 };
+MUT_KINDS.crusader = {
+  glb: 'assets/crusader.glb', faceFix: 0, solo: true, skin: null, bones: null, noSand: true,
+  facingRef: 'mixamo', natural: true, gaitBySpeed: true, c13Body: true,
+  /* FAIRLY DIFFICULT, by the owner's word: not the marauder and not the
+   * samurai. A lot of him to get through and a shield that turns a careless
+   * swing, but the tells are the animator's own and none of them is short. */
+  h: 2.25, hp: 66, dmg: 1, hitR: 0.80, body: 0.62, lungeStop: 1.90, landSlop: 0.42, limbR: 0.40, lungeLead: 0.30,
+  speedK: 1.10, windK: 1.00, reachK: 1.00, aggr: 2.50, press: 0.88, chainMax: 3,
+  use: { cA1: 0.16, cA2: 0.12, cBash: 0.10, sSlash: 0.14, sSlashC: 0.10, sSlashE: 0.10, sAtkD: 0.10, sAtkB: 0.06, sAtkC: 0.05, sKick: 0.07, sAtk: 0.05 },
+  circle: 0.16, step: 0.16, feint: 0.22, sizeUp: 0.14, restless: 1, smart: 1,
+  turnMax: 4.0, yawK: 0.80, fade: 0.22,
+  /* THE SHIELD. A light swing thrown into his front while he is ready meets
+   * it — half the time — and costs you more of the bar than a man's guard
+   * would; the parry and the heavy are what get past it. */
+  poise: 16, poiseBack: 2.4, poiseWait: 0.9, parryK: 0.85, recoilK: 0.50, stunK: 0.70, blockCost: 0.72, block: 0.50,
+  fidgetK: 0.12, fidgetGap: 3.2,
+  reacts: true, aimed: true, barLen: 0.0, aimK: 1.80, aimDrop: 0.08, aimFrom: 0.78, bossDeath: true,
+  rig: { arm: CR('RightArm'), fore: CR('RightForeArm'), hand: CR('RightHand'), tip: 'ball_on_a_club2',
+         armL: CR('LeftArm'), foreL: CR('LeftForeArm'), handL: CR('LeftHand'), tipL: 'shield1', head: CR('Head'),
+         limbs: [[CR('RightUpLeg'), CR('RightLeg'), CR('RightFoot'), CR('RightToeBase')]] },
+  rag: CRUSADER_RAG,
+  emis: 0.10, rim: [0.060, 0.050, 0.040], gamma: 0.92,
+  pre: crusaderPre, author: authorCrusaderClips,
+  anim: { idle: 'idle', walk: 'walk', run: 'run', roar: 'sRoar', die: 'sDie', back: 'sWalkB', rate: 1.0, lean: 0.04, strafeK: 1.0 },
+  gaits: { walk: ['walk', 'sWalk'], run: ['run', 'sRun'], idle: ['idle', 'sIdle', 'sIdleB', 'guard'],
+           strafeL: ['sStr2', 'sStr3'], strafeR: ['sStr1', 'sStr4'] },
+  alias: { idle2: 'sIdle', walk2: 'sWalk', run2: 'sRun', roar: 'sRoar', roar2: 'sDraw', die2: 'sDieB', back: 'sWalkB', calm: 'idle',
+           strafeL: 'sStr2', strafeR: 'sStr1', hit: 'hit', hitBig: 'sHitC', hitSide: 'sHitB', hitBack: 'sHit', hitHead: 'sHitB',
+           block: 'sBlockI', blockC: 'sCBlock', parry: 'sHitC' },
+  stunClip: 'sHitC', first: 'idle', sleepIdle: 'idle', wakeAt: 19,
+  /* AT HALF HEALTH HE WHIRLS THE FLAIL OVER HIS HEAD — his own third attack,
+   * which is a flourish, not a blow — and everything between his swings
+   * quickens. The tells do not. */
+  rage: { aggr: 3.3, speedK: 1.25, press: 0.94, chainMax: 4, feint: 0.30, circle: 0.10, block: 0.58 },
+  rageClip: 'cA3', rageDur: 1.75,
+  voice: { f: 0.80, growl: 1.20, rasp: 1.05, throat: 'bellow' },
+};
+let crusaderUnit = null;
+const CRUSADER_POST = { x: 0, z: 0, yaw: 0 };
+function crusaderAlive() { return !!(crusaderUnit && crusaderUnit.st.alive && !crusaderUnit.retired); }
+/* WHERE HE STANDS: in the open square between the arch and the market,
+ * facing the arch, so the first thing through it is him across the paving
+ * with the stalls and the fountain behind him. In front of the throne room's
+ * own door is a lane two strides wide, which is a place to be cornered, not
+ * a place to fight. Found, not typed: eighteen metres in from the arch toward
+ * the fountain, then the nearest spot with open paving all round it. */
+function placeCrusader() {
+  if (crusaderUnit || !c13Ready || !c13Walls || !c13Thrive || !c13Thrive.done) return;
+  const A = C13_ARCH, Fo = c13Thrive.fountain || C13_THR_DOOR;
+  let dx = Fo.x - A.x, dz = Fo.z - A.z; const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L;
+  const cx = A.x + dx * 18, cz = A.z + dz * 18;
+  const roomy = (x, z) => {
+    if (!c13Open(x, z) || c13Overlaps(x, z, 3.0)) return false;
+    for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; if (!c13Open(x + Math.cos(a) * 3.5, z + Math.sin(a) * 3.5)) return false; }
+    return true;
+  };
+  let best = null;
+  for (let r = 0; r <= 8 && !best; r += 0.5) for (let k = 0; k < (r ? 16 : 1); k++) {
+    const a = k / 16 * Math.PI * 2, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
+    if (roomy(x, z)) { best = { x, z }; break; }
+  }
+  if (!best) best = { x: cx, z: cz };
+  CRUSADER_POST.x = best.x; CRUSADER_POST.z = best.z; CRUSADER_POST.yaw = Math.atan2(A.x - best.x, A.z - best.z);
+  const w = c13W(best.x, best.z);
+  crusaderUnit = makeMutant(+w.x.toFixed(1), +w.z.toFixed(1), 'crusader', C13_Y + c13PaveAt(best.x, best.z));
+  if (crusaderUnit.retired) return;
+  crusaderUnit.g.rotation.y = CRUSADER_POST.yaw;
+  crusaderUnit.g.visible = false;
+}
+/* HE WAKES WHEN YOU COME THROUGH THE ARCH, or come within his own reach of
+ * him, and only while you are in the castle. Leaving puts him back on his
+ * post, asleep, with what health he had. */
+function crusaderMayWake() {
+  if (!inC13 || fortBusy) return false;
+  const lx = camera.position.x - C13_X;
+  return lx < C13_ARCH.x - 1.0;
+}
+function crusaderCalm() {
+  const u = crusaderUnit; if (!u || !u.st.alive) return;
+  u.st.awake = false; u.st.atk = -1; u.st.roar = 0; u.holdAnim = false;
+  if (mutToken === u) mutToken = null;
+  const w = c13W(CRUSADER_POST.x, CRUSADER_POST.z);
+  u.g.position.x = w.x; u.g.position.z = w.z; u.g.rotation.y = CRUSADER_POST.yaw;
+  if (u.model) u.model.rotation.y = 0;
+}
+// the castle's stone holds him the way the first castle's holds the marauder
+function c13ClampUnit(u, p) {
+  if (!c13Walls) return;
+  const wx = p.x, wz = p.z, r = (u.kind.body || 0.9) * 0.75;
+  pushOutOfKeep(p, r, p.y, 0.45, C13_SITE);
+  keepWallPush(p, r, p.y, C13_SITE);
+  c13PushSolids(p, r * 0.8);
+  const mx = p.x - wx, mz = p.z - wz, ml = Math.hypot(mx, mz), cap = 0.08;
+  if (ml > cap) { p.x = wx + mx / ml * cap; p.z = wz + mz / ml * cap; }
+  if (c13CourtAt(p.x, p.z) !== null && maskAt(C13_M, p.x, p.z)) { if (!u.st.c13Home) u.st.c13Home = { x: 0, z: 0 }; u.st.c13Home.x = p.x; u.st.c13Home.z = p.z; }
+  else if (u.st.c13Home) { p.x = u.st.c13Home.x; p.z = u.st.c13Home.z; }
+}
+function updateCrusader(dt) {
+  if (!crusaderUnit) { if (inC13 || (c13World && c13World.visible)) placeCrusader(); return; }
+  const u = crusaderUnit;
+  if (u.retired) return;
+  u.g.visible = !!(c13World && c13World.visible) && !inRoom();
+  if (u.st.alive && u.st.awake && !inC13) crusaderCalm();
+  // he stands on the paving, which is the castle's floor and not the beach's
+  if (u.st.alive && c13Walls) {
+    const p = u.g.position, f = c13CourtAt(p.x, p.z);
+    if (f !== null) { const dy = f - p.y; p.y += Math.abs(dy) < 0.02 ? dy : Math.sign(dy) * Math.min(Math.abs(dy), Math.max(Math.abs(dy) * dt * 12, 3 * dt)); }
+  }
+  if (u.g.visible) crusaderChain(u, dt);
+}
+/* ---- THE CHAIN. Thirteen links and a spiked ball, as a rope: each joint is a
+ * Verlet point under gravity, held at its own length to the next, its first
+ * point riding the haft. While a clip of his own plays (which keys every link)
+ * the rope simply follows the bones, so it carries their velocity into the
+ * moment a clip from the pack takes over and the rope is let go. The bones are
+ * then turned to lie along it, each by the smallest rotation, parent first. */
+const CR_CHAIN = ['chain1', 'chain2', 'chain3', 'chain4', 'chain5', 'chain6', 'chain7', 'chain8', 'chain9', 'chain10', 'chain11', 'chain12', 'ball_on_a_club1', 'ball_on_a_club2', 'ball_on_a_club3'];
+const _ccA = new THREE.Vector3(), _ccB = new THREE.Vector3(), _ccQ = new THREE.Quaternion(), _ccP = new THREE.Quaternion(), _ccW = new THREE.Quaternion();
+function crusaderChain(u, dt) {
+  if (!u.model) return;
+  let C = u.chain;
+  if (!C) {
+    const by = {}; u.model.traverse((o) => { if (o.isBone) by[o.name] = o; });
+    const bones = CR_CHAIN.map((n) => by[n]).filter(Boolean);
+    if (bones.length < 4) { u.chain = { off: true }; return; }
+    u.model.updateMatrixWorld(true);
+    const pts = bones.map((b) => b.getWorldPosition(new THREE.Vector3()));
+    C = u.chain = { bones, p: pts, pp: pts.map((v) => v.clone()), len: [], k: 1 };
+    for (let i = 1; i < pts.length; i++) C.len.push(pts[i].distanceTo(pts[i - 1]));
+  }
+  if (C.off) return;
+  dt = Math.min(dt, 1 / 30);
+  const cur = u.cur && u.cur.getClip ? u.cur.getClip().name : '';
+  const own = CRUSADER_OWN.has(cur) && !u.rag;
+  const n = C.p.length;
+  // what the clip says, this frame
+  u.model.updateMatrixWorld(true);
+  if (own) {
+    // keyed: follow, remembering last frame so the swing carries on when it is let go
+    for (let i = 0; i < n; i++) { C.pp[i].copy(C.p[i]); C.bones[i].getWorldPosition(C.p[i]); }
+    C.k = Math.max(0, C.k - dt * 4);
+    if (C.k <= 0.001) return;
+  } else C.k = Math.min(1, C.k + dt * 6);
+  // the head of the rope rides the haft
+  const head = C.bones[0].getWorldPosition(_ccA);
+  if (!own) {
+    const g = 15 * dt * dt, floorY = beachGroundAt(u.g.position.x, u.g.position.z) + 0.05;
+    for (let i = 1; i < n; i++) {
+      const p = C.p[i], q = C.pp[i];
+      const vx = (p.x - q.x) * 0.985, vy = (p.y - q.y) * 0.985, vz = (p.z - q.z) * 0.985;
+      q.copy(p);
+      p.x += vx; p.y += vy - g; p.z += vz;
+    }
+    for (let it = 0; it < 8; it++) {
+      C.p[0].copy(head);
+      for (let i = 1; i < n; i++) {
+        const a = C.p[i - 1], b = C.p[i], L = C.len[i - 1];
+        _ccB.subVectors(b, a); const d = _ccB.length() || 1e-6;
+        const k = (d - L) / d;
+        if (i === 1) b.addScaledVector(_ccB, -k);
+        else { a.addScaledVector(_ccB, k * 0.5); b.addScaledVector(_ccB, -k * 0.5); }
+      }
+      for (let i = 1; i < n; i++) if (C.p[i].y < floorY) C.p[i].y = floorY;
+    }
+    C.p[0].copy(head);
+  }
+  // lay the bones along the rope, parent first
+  for (let i = 0; i < n - 1; i++) {
+    const b = C.bones[i];
+    b.updateWorldMatrix(true, true);
+    b.getWorldPosition(_ccA);
+    C.bones[i + 1].getWorldPosition(_ccB);
+    const cur = _ccB.sub(_ccA); const cl = cur.length(); if (cl < 1e-6) continue;
+    cur.divideScalar(cl);
+    const want = _ccA.copy(C.p[i + 1]).sub(C.p[i]); const wl = want.length(); if (wl < 1e-6) continue;
+    want.divideScalar(wl);
+    _ccQ.setFromUnitVectors(cur, want);
+    if (C.k < 1) _ccQ.slerp(_ccW.identity(), 1 - C.k);
+    b.getWorldQuaternion(_ccW);
+    _ccW.premultiply(_ccQ);
+    b.parent.getWorldQuaternion(_ccP).invert();
+    b.quaternion.copy(_ccP.multiply(_ccW));
+  }
+  C.bones[n - 1].updateWorldMatrix(true, true);
+}
+
+/* =====================================================================
+ * THE THRONE ROOM. Uğur Yakışık's "Throne Room" (CC-BY-4.0,
+ * `assets/throne.glb`, `tools/undercroft_pack.py tavern … --scale 0.13
+ * --sparse`; its specular extension stripped first — three promotes every
+ * material to a physical one for it, and it shipped a 1 MB PNG a material).
+ * The file is in its own units: a table 5.8 tall, so 0.13 makes a hall 13 m
+ * by 36 with 3.4 m doors. A room like the others, far out, with its own
+ * night: torches, the chandelier and the stained glass behind the throne.
+ * You come in at the far end on the red carpet facing the throne; the lattice
+ * door on its right at the foot of the dais lets you out onto the beach in
+ * front of the lighthouse.
+ * ===================================================================== */
+const THR_X = 17000, THR_Y = 600, THR_Z = 17000;
+const THR_SPAWN = { x: 0, z: 18.6, yaw: 0 };              // the far end, facing the throne (-z)
+const THR_EXIT = { x: 6.2, z: -2.0 };                      // the lattice door on the throne's right
+const THR_FOG = { color: new THREE.Color(0x120c0a), density: 0.018 };
+let thrWorld = null, thrReady = false, thrWalk = null, thrCells = null, thrWalls = null, thrLamps = [];
+let inThrone = false, thrBusy = false, thrT = 0, thrDir = 1, thrCutDone = false, _thrFogSaved = null;
+let thrLastFloor = null; const thrLastSpot = { x: 0, z: 0 };
+const THR_SITE = {
+  X: THR_X, Y: THR_Y, Z: THR_Z, step: FORT_STEP,
+  get group() { return thrWorld; }, get walk() { return thrWalk; }, get cells() { return thrCells; },
+  get walls() { return thrWalls; }, set walls(v) { thrWalls = v; },
+  get ready() { return thrReady; },
+  skip: () => false,
+  extra: () => [],
+  sea: null,
+};
+const thrW = (lx, lz) => ({ x: THR_X + lx, z: THR_Z + lz });
+function loadThrone() {
+  if (thrWorld) return;
+  thrWorld = new THREE.Group(); thrWorld.name = 'throneRoom';
+  thrWorld.position.set(THR_X, THR_Y, THR_Z);
+  thrWorld.visible = false;
+  scene.add(thrWorld);
+  bwGlb('assets/throne.glb', (gltf) => {
+    const root = gltf.scene;
+    let ex = null;
+    root.traverse((o) => { if (!ex && o.userData && o.userData.bw_walk) ex = o.userData.bw_walk; });
+    if (ex) {
+      thrWalk = typeof ex === 'string' ? JSON.parse(ex) : ex;
+      thrCells = new Map();
+      for (const c of thrWalk.cells) thrCells.set(c[1] * thrWalk.gw + c[0], c[2]);
+    }
+    const torches = [], chand = [];
+    const graded = new Set();
+    root.traverse((o) => {
+      if (!o.isMesh) return;
+      const m = o.material;
+      if (!m) return;
+      if (/^Torch/.test(m.name)) torches.push(o);
+      if (/^Chandelier/.test(m.name)) chand.push(o);
+      if (!graded.has(m)) { graded.add(m); thrGrade(m); }
+    });
+    thrWorld.add(root);
+    thrWorld.updateMatrixWorld(true);
+    buildThroneFill();
+    buildThroneWindow();
+    buildThroneBreakables();
+    // the torches: a warm lamp at each one, found by bucketing the torch meshes' own vertices
+    const inv = thrWorld.matrixWorld.clone().invert(), v = new THREE.Vector3(), cl = [];
+    for (const o of torches) {
+      const P = o.geometry.attributes.position, M = inv.clone().multiply(o.matrixWorld);
+      for (let i = 0; i < P.count; i += 3) {
+        v.fromBufferAttribute(P, i).applyMatrix4(M);
+        let c = cl.find((q) => Math.hypot(q.x / q.n - v.x, q.z / q.n - v.z) < 0.8);
+        if (!c) { c = { x: 0, y: -1e9, z: 0, n: 0 }; cl.push(c); }
+        c.x += v.x; c.z += v.z; c.n++; c.y = Math.max(c.y, v.y);
+      }
+    }
+    const fires = [];
+    for (const c of cl) {
+      if (c.n < 20) continue;
+      const x = c.x / c.n, z = c.z / c.n;
+      const L = new THREE.PointLight(0xff9a48, 6.5, 12, 2); L.position.set(x * 0.92, c.y + 0.25, z); L.userData.lpAlways = 18;
+      thrWorld.add(L); thrLamps.push({ L, base: 6.5, ph: Math.random() * 10 });
+      fires.push({ c: new THREE.Vector3(x, c.y + 0.05, z), k: 0.7 });
+    }
+    // the chandeliers: a big soft light under each
+    for (const z of [6, 13]) {
+      const L = new THREE.PointLight(0xffc27a, 9, 18, 1.6); L.position.set(0, 9.5, z); L.userData.lpAlways = 30;
+      thrWorld.add(L); thrLamps.push({ L, base: 9, ph: Math.random() * 10 });
+    }
+    // and the moon through the great window behind the throne
+    { const L = new THREE.PointLight(0x9fb4ff, 7, 16, 1.6); L.position.set(0, 7, -11); L.userData.lpAlways = 24; thrWorld.add(L); thrLamps.push({ L, base: 7, ph: 0, steady: true }); }
+    for (const o of keepFirePoints(fires)) thrWorld.add(o);
+    // the way out: the lattice door at the foot of the dais
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.8, 3.2, 2.4),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+    p.position.set(THR_EXIT.x, 3.8, THR_EXIT.z); p.name = 'hitProxy'; p.visible = false; p.userData.bwGhost = true;
+    thrWorld.add(p);
+    addInteractable(p, 'Go out to the beach', 'default', {
+      mid: true, far: 4.2,
+      when: () => inThrone && !thrBusy,
+      onActivate: () => startThrone(-1),
+    });
+    thrReady = true;
+    warmStep('throne compile', () => warmCompile([thrWorld], THR_X, THR_Y + 4, THR_Z + THR_SPAWN.z, THR_X, THR_Y + 4, THR_Z - 5));
+  }, undefined, () => {});
+}
+/* THE MODEL IS A STAGE SET: it stops two strides behind where you stand, with
+ * the void at that end, and behind its two lattice doors there is nothing at
+ * all. Measured off the model: the hall's walls run x -6.38..6.51 straight up
+ * to 15.6 and vault to 21.8, and the model ends at z 20.96. The left lattice
+ * door is copied into that end as the door you came in by, the two side doors
+ * get a dark backing — and the END WALL IS THE HALL'S OWN SIDE WALL, TURNED.
+ *
+ * It was a flat profile in the stone material carrying only the first uv set,
+ * so the material's glow map (which reads the third) sampled the corner of the
+ * stained glass and the wall came out a flat navy slab: nothing in the room
+ * looked less like the room. The side walls repeat in bays 5.7 m apart (a
+ * pillar, two lancet windows, a pillar), and thirteen metres of the left wall
+ * centred on its middle pillar is exactly the end wall's width — so that run,
+ * every material and every uv set of it, is turned a quarter round to face down
+ * the hall, the middle pillar left out so the door stands in a clear bay
+ * between two pairs of lancets. Above the walls' straight top the lunette under
+ * the vault is filled in the same stone. */
+const THR_END_Z = 20.92;
+const THR_BAY_Z = 9.8;          // the left wall's middle pillar: the run 3.3..16.3 is centred on it
+function buildThroneFill() {
+  const inv = thrWorld.matrixWorld.clone().invert(), v = new THREE.Vector3(), q = new THREE.Vector3();
+  let wallMat = null;
+  const byMat = new Map();
+  thrWorld.traverse((o) => {
+    if (!o.isMesh || !o.material) return;
+    const mn = o.material.name || '';
+    if (mn === 'Wall_Base') wallMat = o.material;
+    if (/Wall_Base|BaseGround|RedCarpet|Windows|Torch|Flag|Chandelier/.test(mn)) return;
+    const P = o.geometry.attributes.position, I = o.geometry.index, UV = o.geometry.attributes.uv, N = o.geometry.attributes.normal;
+    const M = inv.clone().multiply(o.matrixWorld), nm = new THREE.Matrix3().getNormalMatrix(M);
+    const n = I ? I.count : P.count;
+    for (let t = 0; t < n; t += 3) {
+      const ids = [0, 1, 2].map((k) => I ? I.getX(t + k) : t + k);
+      let cx = 0, cy = 0, cz = 0;
+      for (const id of ids) { v.fromBufferAttribute(P, id).applyMatrix4(M); cx += v.x / 3; cy += v.y / 3; cz += v.z / 3; }
+      if (cx < -6.7 || cx > -5.5 || cz < -3.5 || cz > -0.5 || cy > 6.6) continue;
+      let e = byMat.get(o.material); if (!e) { e = { p: [], n: [], u: [] }; byMat.set(o.material, e); }
+      for (const id of ids) {
+        v.fromBufferAttribute(P, id).applyMatrix4(M);
+        // turned a quarter round so it faces down the hall from the end wall
+        const dx = v.x + 6.38, dz = v.z + 1.98;
+        e.p.push(0.065 + dz, v.y, THR_END_Z - dx);
+        if (N) { const qq = new THREE.Vector3().fromBufferAttribute(N, id).applyMatrix3(nm); e.n.push(qq.z, qq.y, -qq.x); }
+        if (UV) e.u.push(UV.getX(id), UV.getY(id));
+      }
+    }
+  });
+  for (const [mat, e] of byMat) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(e.p, 3));
+    if (e.n.length) g.setAttribute('normal', new THREE.Float32BufferAttribute(e.n, 3)); else g.computeVertexNormals();
+    if (e.u.length) g.setAttribute('uv', new THREE.Float32BufferAttribute(e.u, 2));
+    const m = new THREE.Mesh(g, mat); m.name = 'thrEndDoor'; thrWorld.add(m);
+  }
+  // ---- the end wall: a run of the left wall's bays, turned to face down the hall
+  const run = new Map();             // material -> { p, n, uv, uv1, uv2 }
+  thrWorld.traverse((o) => {
+    if (!o.isMesh || !o.material || o.name.startsWith('thr')) return;
+    const mn = o.material.name || '';
+    if (!/^(Wall_Base|Wall_Beam|Windows\.004|Windows_Glass\.004)$/.test(mn)) return;
+    const g = o.geometry, P = g.attributes.position, I = g.index, N = g.attributes.normal;
+    const U0 = g.attributes.uv, U1 = g.attributes.uv1, U2 = g.attributes.uv2;
+    const M = inv.clone().multiply(o.matrixWorld), nm = new THREE.Matrix3().getNormalMatrix(M);
+    const n = I ? I.count : P.count;
+    for (let t = 0; t < n; t += 3) {
+      const ids = [0, 1, 2].map((k) => I ? I.getX(t + k) : t + k);
+      let ok = true, cz = 0;
+      for (const id of ids) {
+        v.fromBufferAttribute(P, id).applyMatrix4(M);
+        if (v.x > -5.0 || v.y > 15.75 || v.z < THR_BAY_Z - 6.55 || v.z > THR_BAY_Z + 6.55) { ok = false; break; }
+        cz += v.z / 3;
+      }
+      if (!ok) continue;
+      if (mn === 'Wall_Beam' && Math.abs(cz - THR_BAY_Z) < 1.2) continue;     // the middle pillar: the door's bay
+      let e = run.get(o.material); if (!e) { e = { p: [], n: [], u0: [], u1: [], u2: [] }; run.set(o.material, e); }
+      for (const id of ids) {
+        v.fromBufferAttribute(P, id).applyMatrix4(M);
+        // +x (into the hall from the left wall) becomes -z (into the hall from the end): a quarter turn, not a mirror
+        e.p.push(v.z - THR_BAY_Z, v.y, THR_END_Z - (v.x + 6.38));
+        if (N) { q.fromBufferAttribute(N, id).applyMatrix3(nm).normalize(); e.n.push(q.z, q.y, -q.x); }
+        if (U0) e.u0.push(U0.getX(id), U0.getY(id));
+        if (U1) e.u1.push(U1.getX(id), U1.getY(id));
+        if (U2) e.u2.push(U2.getX(id), U2.getY(id));
+      }
+    }
+  });
+  for (const [mat, e] of run) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(e.p, 3));
+    if (e.n.length) g.setAttribute('normal', new THREE.Float32BufferAttribute(e.n, 3)); else g.computeVertexNormals();
+    if (e.u0.length) g.setAttribute('uv', new THREE.Float32BufferAttribute(e.u0, 2));
+    if (e.u1.length) g.setAttribute('uv1', new THREE.Float32BufferAttribute(e.u1, 2));
+    if (e.u2.length) g.setAttribute('uv2', new THREE.Float32BufferAttribute(e.u2, 2));
+    const m = new THREE.Mesh(g, mat); m.name = 'thrEndBay'; thrWorld.add(m);
+  }
+  // ---- the lunette under the vault, and a plain backing behind the whole end
+  if (wallMat) {
+    const prof = [[6.75, 15.2], [6.75, 15.6], [6.53, 16.8], [6.11, 18.0], [5.40, 19.2], [4.24, 20.4], [1.75, 21.6], [0.065, 22.0],
+      [-1.62, 21.6], [-4.11, 20.4], [-5.27, 19.2], [-5.98, 18.0], [-6.40, 16.8], [-6.62, 15.6], [-6.62, 15.2]];
+    const sh = new THREE.Shape(); prof.forEach(([x, y], i) => i ? sh.lineTo(x, y) : sh.moveTo(x, y));
+    const g = new THREE.ShapeGeometry(sh);
+    // the stone carries its colour on the first uv set and its relief on the
+    // second: borrow both off a stretch of plain side wall
+    const P = g.attributes.position, D = 0.0159;
+    const u0 = new Float32Array(P.count * 2), u1 = new Float32Array(P.count * 2), u2 = new Float32Array(P.count * 2);
+    for (let i = 0; i < P.count; i++) {
+      u0[i * 2] = P.getX(i) * D + 0.22; u0[i * 2 + 1] = P.getY(i) * D + 0.70;
+      u1[i * 2] = P.getX(i) * D + 0.22; u1[i * 2 + 1] = P.getY(i) * D + 0.70;
+      u2[i * 2] = 0.02; u2[i * 2 + 1] = 0.98;             // a black texel of the glow map
+    }
+    g.setAttribute('uv', new THREE.BufferAttribute(u0, 2));
+    g.setAttribute('uv1', new THREE.BufferAttribute(u1, 2));
+    g.setAttribute('uv2', new THREE.BufferAttribute(u2, 2));
+    const wall = new THREE.Mesh(g, wallMat); wall.position.z = THR_END_Z + 0.02; wall.name = 'thrEndWall';
+    thrWorld.add(wall);
+    const bk = new THREE.Mesh(new THREE.PlaneGeometry(14, 21), new THREE.MeshBasicMaterial({ color: 0x050403, side: THREE.DoubleSide }));
+    bk.position.set(0, 12.2, THR_END_Z + 1.4); bk.rotation.y = Math.PI; bk.name = 'thrEndBack';
+    thrWorld.add(bk);
+  }
+  // behind the two lattice doors: the dark of a passage, not the void
+  const back = new THREE.MeshBasicMaterial({ color: 0x030407, side: THREE.DoubleSide });
+  for (const x of [-6.85, 6.95]) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 4.2), back);
+    m.rotation.y = Math.PI / 2; m.position.set(x, 4.4, -1.98); m.name = 'thrDoorBack';
+    thrWorld.add(m);
+  }
+}
+/* THE GREAT WINDOW IS THE OWNER'S OWN STAINED GLASS. Behind the throne the
+ * model's apse is glass from the dais to the crown — five flat facets up to
+ * 16.41 m and a half-dome to 20 — and it wore a tiling of generic coloured
+ * shards out of the wall atlas (`Wall_Base`'s glow map, uv set 2, the
+ * rectangle `THR_WIN.uv`). Those faces are lifted out of the wall mesh into
+ * their own, and the picture is PROJECTED onto them straight down the hall:
+ * from the carpet, where everybody sees it from, the apse's curve disappears
+ * and the picture reads flat; from the side it wraps the apse the way a real
+ * one would. `assets/throne-window.jpg` is built by `tools/throne_window.js`
+ * in exactly this frame (x -4.75..4.85, y 4.05..20.05, 128 px a metre): the
+ * picture, its own black frame trimmed off, fills the straight part inside a
+ * red border band with gold pearls, and the dome above it is a tympanum in the
+ * picture's own blue with roundels cut from its own glass. It takes no light:
+ * glass at night is the light behind it, so it is drawn as itself, at the
+ * level the old window read at from the carpet. */
+const THR_WIN = { x0: -4.75, x1: 4.85, y0: 4.05, y1: 20.05, uv: { u0: 0.705, u1: 0.962, v0: 0.086, v1: 0.26 }, level: 0xc4c4c4 };   // 0.55 linear: the old window's level from the carpet, measured
+function buildThroneWindow() {
+  const inv = thrWorld.matrixWorld.clone().invert(), v = new THREE.Vector3();
+  const R = THR_WIN.uv, pos = [], uvs = [];
+  thrWorld.traverse((o) => {
+    if (!o.isMesh || !o.material || o.material.name !== 'Wall_Base' || o.name.startsWith('thr')) return;
+    const g = o.geometry, P = g.attributes.position, I = g.index, U = g.attributes.uv2;
+    if (!I || !U) return;
+    const M = inv.clone().multiply(o.matrixWorld), keep = [];
+    for (let t = 0; t < I.count; t += 3) {
+      const ids = [I.getX(t), I.getX(t + 1), I.getX(t + 2)];
+      const inR = ids.every((i) => U.getX(i) >= R.u0 && U.getX(i) <= R.u1 && U.getY(i) >= R.v0 && U.getY(i) <= R.v1);
+      /* and the apse's two FRONT facets, which are glass too but carry their uv
+       * a hair outside that rectangle: anything of the wall inside the apse */
+      let cx = 0, cy = 0, cz = 0, zmax = -1e9;
+      for (const i of ids) { v.fromBufferAttribute(P, i).applyMatrix4(M); cx += v.x / 3; cy += v.y / 3; cz += v.z / 3; zmax = Math.max(zmax, v.z); }
+      const inApse = cz < -10.1 && cy > 4.15 && Math.abs(cx) < 4.8;
+      const back = (inR || inApse) && zmax < -9;
+      if (!back) { keep.push(...ids); continue; }
+      for (const i of ids) {
+        v.fromBufferAttribute(P, i).applyMatrix4(M);
+        pos.push(v.x, v.y, v.z);
+        uvs.push((v.x - THR_WIN.x0) / (THR_WIN.x1 - THR_WIN.x0), (v.y - THR_WIN.y0) / (THR_WIN.y1 - THR_WIN.y0));
+      }
+    }
+    if (keep.length !== I.count) g.setIndex(keep);
+    /* AND THE APSE OPENING'S REVEAL IS STONE. Its jambs and the soffit of its
+     * arch (z -10.2..-7.2) were mapped with the same glass, colour and glow,
+     * so the window wore a second arch of the old shards round it. They take
+     * the side wall's own stone instead — the end wall's lunette borrows the
+     * same patch (`buildThroneFill`) — run up the jamb and over the arch, and a
+     * black texel of the glow map. */
+    const U0 = g.attributes.uv, U1 = g.attributes.uv1, D = 0.0159, done = new Set();
+    for (let t = 0; t < I.count; t += 3) {
+      const ids = [I.getX(t), I.getX(t + 1), I.getX(t + 2)];
+      const ps = ids.map((i) => new THREE.Vector3().fromBufferAttribute(P, i).applyMatrix4(M));
+      const cx = (ps[0].x + ps[1].x + ps[2].x) / 3, cy = (ps[0].y + ps[1].y + ps[2].y) / 3, cz = (ps[0].z + ps[1].z + ps[2].z) / 3;
+      const nz = new THREE.Vector3().subVectors(ps[1], ps[0]).cross(new THREE.Vector3().subVectors(ps[2], ps[0])).normalize().z;
+      if (cz > -6.9 || cz < -10.3 || Math.abs(cx) > 4.9 || cy < 4.0 || Math.abs(nz) > 0.15) continue;
+      ids.forEach((i, k) => {
+        if (done.has(i)) return; done.add(i);
+        const p = ps[k], up = p.y + Math.max(0, 4.73 - Math.abs(p.x));      // up the jamb, then on round the arch
+        if (U0) U0.setXY(i, p.z * D + 0.22, up * D + 0.70);
+        if (U1) U1.setXY(i, p.z * D + 0.22, up * D + 0.70);
+        U.setXY(i, 0.02, 0.98);
+      });
+    }
+    if (done.size) { if (U0) U0.needsUpdate = true; if (U1) U1.needsUpdate = true; U.needsUpdate = true; }
+  });
+  if (!pos.length) return;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  g.computeVertexNormals();
+  // the map is on the material from the start, so the room's warm compiles the program it will draw with
+  const tex = new THREE.TextureLoader().load('assets/throne-window.jpg');
+  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  const mat = new THREE.MeshBasicMaterial({ color: THR_WIN.level, map: tex, side: THREE.DoubleSide });
+  const m = new THREE.Mesh(g, mat); m.name = 'thrGreatWindow';
+  thrWorld.add(m);
+}
+function thrFloorNear(x, z) {
+  const fl = keepCellAt(x, z, THR_SITE); if (!fl) return null;
+  let best = null;
+  for (let k = 0; k < fl.length; k += 3) if (best === null || fl[k] < best) best = fl[k];
+  return best === null ? null : THR_Y + best;
+}
+function startThrone(dir) {
+  if (thrBusy || frozen()) return;
+  if (dir > 0 && !thrReady) { loadThrone(); return; }
+  thrBusy = true; thrDir = dir; thrT = 0; thrCutDone = false;
+  blocking = false;
+  try { sfxTavernDoor(); } catch (e) {}
+}
+function updateThroneCut(dt) {
+  if (!thrBusy) return;
+  thrT += dt;
+  const OUT = 0.55, HOLD = 0.45, IN = 0.9, D = OUT + HOLD + IN, t = thrT;
+  const black = t < OUT ? smooth01(0.04, OUT, t) : t < OUT + HOLD ? 1 : 1 - smooth01(OUT + HOLD, D, t);
+  blackoutEl.style.opacity = black.toFixed(3);
+  if (!thrCutDone && t >= OUT + 0.05) {
+    thrCutDone = true;
+    if (thrDir > 0) placeInThrone();
+    else { placeOutOfThrone(); autosaveNow(); }
+  }
+  if (t >= D) { thrBusy = false; blackoutEl.style.opacity = '0'; catchBreath(); }
+}
+function throneEnter() {
+  if (!_thrFogSaved) {
+    _thrFogSaved = { color: scene.fog.color.clone(), density: scene.fog.density, sky: sky.visible || !!(hallHid && hallHid.includes(sky)) };
+    scene.fog.color.copy(THR_FOG.color); scene.fog.density = THR_FOG.density; sky.visible = false;
+  }
+  setSkyDuck(0.85);
+}
+function throneLeave() {
+  if (_thrFogSaved) {
+    scene.fog.color.copy(_thrFogSaved.color); scene.fog.density = _thrFogSaved.density; sky.visible = _thrFogSaved.sky;
+    _thrFogSaved = null;
+  }
+  setSkyDuck(0);
+}
+function placeInThrone() {
+  inC13 = false; inFort = false;
+  inThrone = true;
+  thrWorld.visible = true;
+  throneEnter();
+  try { renderer.compile(thrWorld, camera, scene); } catch (e) { /* a warm is never fatal */ }
+  const o = thrW(THR_SPAWN.x, THR_SPAWN.z);
+  const f = thrFloorNear(o.x, o.z) ?? (THR_Y + 2.2);
+  groundY = f; thrLastFloor = f; thrLastSpot.x = o.x; thrLastSpot.z = o.z;
+  camera.position.set(o.x, f + playerEye(), o.z);
+  camBaseY = camera.position.y; vy = 0; onGround = true;
+  lookEuler.set(0.02, THR_SPAWN.yaw, 0, lookEuler.order);
+  camera.quaternion.setFromEuler(lookEuler);
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0); crouching = false;
+  _preMove.set(camera.position.x, 0, camera.position.z);
+  if (!thrWalls) while (!fortWallsStep(1e9, THR_SITE)) { /* behind the black */ }
+}
+function placeOutOfThrone() {
+  inThrone = false;
+  if (thrWorld) thrWorld.visible = false;
+  throneLeave();
+  placeOutOfFort('back');          // the sand at the foot of the first castle's back wall, facing the lighthouse
+}
+const _thrWant = new THREE.Vector3();
+function updateThrone(dt) {
+  if (!thrWorld) {
+    // fetched while you are in the castle it is reached from
+    if (inC13 || (Math.abs(camera.position.z - C13_Z) < 140 && Math.abs(camera.position.x - C13_X) < 120)) loadThrone();
+    return;
+  }
+  thrWorld.visible = inThrone;
+  if (!inThrone || !thrReady) return;
+  const t = performance.now() * 0.001;
+  for (const l of thrLamps) l.L.intensity = l.steady ? l.base : l.base * (0.86 + 0.09 * Math.sin(t * 7.1 + l.ph) + 0.05 * Math.sin(t * 12.7 + l.ph * 2));
+  if (thrBusy && !thrCutDone) return;
+  if (!thrWalls) { fortWallsStep(1e9, THR_SITE); return; }
+  const p = camera.position, S = THR_SITE;
+  _thrWant.set(p.x - _preMove.x, 0, p.z - _preMove.z);
+  let feet = camBaseY - playerEye();
+  if (onGround && thrLastFloor !== null && feet < thrLastFloor) feet = thrLastFloor;
+  const up = !onGround ? FORT_AIR : FORT_STEP;
+  const hits = (x0, z0, x1, z1) => keepHitsWall(x0, z0, x1, z1, feet + 0.80, S)
+    || keepHitsWall(x0, z0, x1, z1, feet + 1.25, S) || keepHitsWall(x0, z0, x1, z1, feet + 1.68, S);
+  const legal = (x, z) => keepFloorAt(x, z, feet, up, S) && !hits(_preMove.x, _preMove.z, x, z);
+  let st = legal(p.x, p.z);
+  if (!st) {
+    const mx = p.x - _preMove.x, mz = p.z - _preMove.z, ml = Math.hypot(mx, mz);
+    let took = false;
+    if (ml > 1e-4) {
+      const base = Math.atan2(mx, mz);
+      for (const off of [0.35, -0.35, 0.7, -0.7, 1.05, -1.05, 1.4, -1.4]) {
+        const k = Math.cos(off) * ml, a = base + off;
+        const nx = _preMove.x + Math.sin(a) * k, nz = _preMove.z + Math.cos(a) * k;
+        if (!legal(nx, nz)) continue;
+        p.x = nx; p.z = nz; took = true; break;
+      }
+    }
+    if (!took) { p.x = _preMove.x; p.z = _preMove.z; }
+    st = keepFloorAt(p.x, p.z, feet, up, S);
+  }
+  const tx = p.x, tz = p.z;
+  pushOutOfKeep(p, FORT_BODY, feet, up, S);
+  keepWallPush(p, FORT_BODY, feet, S, up);
+  pushOutOfThrFurn(p, FORT_BODY, feet);
+  {
+    const cx = p.x - tx, cz = p.z - tz, cl = Math.hypot(cx, cz);
+    if (cl > TAV_FIX && Math.hypot(tx - _preMove.x, tz - _preMove.z) < 0.5) { p.x = tx + cx / cl * TAV_FIX; p.z = tz + cz / cl * TAV_FIX; }
+  }
+  st = keepFloorAt(p.x, p.z, feet, up, S) || st;
+  if (!st) { p.x = _preMove.x; p.z = _preMove.z; st = keepFloorAt(p.x, p.z, feet, up, S); }
+  {
+    const dx = p.x - _preMove.x, dz = p.z - _preMove.z, mx = _thrWant.x, mz = _thrWant.z;
+    if ((mx * mx + mz * mz) > 1e-8 && (dx * mx + dz * mz) < 0) { p.x = _preMove.x; p.z = _preMove.z; }
+  }
+  st = keepFloorAt(p.x, p.z, feet, up, S) || st;
+  st = tavEscape(p, feet, up, S) || st;
+  if (st) { thrLastFloor = st.f; thrLastSpot.x = p.x; thrLastSpot.z = p.z; }
+  else if (Math.hypot(p.x - thrLastSpot.x, p.z - thrLastSpot.z) > 0.6) { p.x = thrLastSpot.x; p.z = thrLastSpot.z; }
+  groundY = st ? st.f : (thrLastFloor === null ? THR_Y + 2.2 : thrLastFloor);
+}
+function thrClampPlayer() {
+  if (!inThrone || !thrWalls) return false;
+  const p = camera.position;
+  let feet = camBaseY - playerEye();
+  if (thrLastFloor !== null && feet < thrLastFloor) feet = thrLastFloor;
+  pushOutOfKeep(p, FORT_BODY, feet, FORT_STEP, THR_SITE);
+  keepWallPush(p, FORT_BODY, feet, THR_SITE, FORT_STEP);
+  pushOutOfThrFurn(p, FORT_BODY, feet);
+  if (!keepFloorAt(p.x, p.z, feet, FORT_STEP, THR_SITE)) { p.x = thrLastSpot.x; p.z = thrLastSpot.z; }
+  return true;
+}
+
+/* ---- THE ROOM'S OWN GRADE. Three things were wrong with how the hall read,
+ * and none of them was a missing texture:
+ *  - THE STONE WAS POLISHED. Every surface takes its roughness through a map
+ *    authored under a specular extension three does not read, and without it
+ *    the walls came out at roughness 0.15 — so every torch drew a long wet
+ *    streak across them and the hall looked like the inside of a wet cave.
+ *    Stone, timber and cloth are given the floor they would have.
+ *  - THE GLASS GLOWED LIKE A SCREEN: the map's own pastel at full strength
+ *    with nothing between the panes. Leaded glass at night is deep colour in
+ *    a black web of cames, mottled where it is thick, and the room's torches
+ *    barely touch its inner face. The cames are FOUND (where the colour
+ *    changes across a pane's edge), the colour is deepened, and the glass's
+ *    own diffuse is taken down so it reads as glass and not as painted stone.
+ *  - AND ANYTHING A TORCH DID NOT REACH WAS BLACK. A hall under a stained
+ *    window is lit a little from everywhere: warm off the floor where the
+ *    torches are, cold off the glass above. That is a hemisphere fill in the
+ *    shader, shaped by the surface's own normal, in place of the flat lift
+ *    that made every surface the same brightness whatever way it faced. */
+function thrGrade(m) {
+  const n = m.name || '';
+  m.metalness = 0;
+  if (m.map) m.map.anisotropy = 8;
+  const glassWall = n === 'Wall_Base' && !!m.emissiveMap;      // its glow map IS the great window
+  const glass = /Windows_Glass/.test(n);
+  const stone = /^(Wall_Base|Wall_Beam|BaseGround|Windows\.004|Effigy|Wall_Amblem|Doors)/.test(n);
+  const cloth = /RedCarpet|Flag/.test(n);
+  if (m.normalMap) m.normalScale.multiplyScalar(stone ? 0.72 : 0.9);
+  const rmin = glass ? 0.25 : stone ? 0.80 : cloth ? 0.92 : 0.58;
+  if (glass) { m.emissiveIntensity = 1.6; m.transparent = false; }
+  else if (glassWall) m.emissiveIntensity = 0.95;
+  else if (m.map && !m.emissiveMap) { m.emissive = new THREE.Color(0xffffff); m.emissiveMap = m.map; m.emissiveIntensity = 0.035; }
+  const texel = (glass || glassWall) && m.emissiveMap && m.emissiveMap.image ? 1.4 / m.emissiveMap.image.width : 0;
+  const fillK = glass ? 0.0 : cloth ? 0.85 : 1.0;
+  m.onBeforeCompile = (sh) => {
+    let fs = sh.fragmentShader;
+    fs = fs.replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+      roughnessFactor = max(roughnessFactor, ${rmin.toFixed(2)});`);
+    if (texel) {
+      // the glass's own diffuse: deep, not pastel — glass at night reflects little
+      fs = fs.replace('#include <color_fragment>', `#include <color_fragment>
+      {
+        float gl = dot(texture2D(emissiveMap, vEmissiveMapUv).rgb, vec3(0.333));
+        diffuseColor.rgb *= ${glass ? '0.10' : '1.0 - 0.88 * smoothstep(0.02, 0.10, gl)'};
+      }`);
+      fs = fs.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+      {
+        vec2 gu = vEmissiveMapUv; float gd = ${texel.toFixed(6)};
+        vec3 c0 = texture2D(emissiveMap, gu).rgb;
+        vec3 e1 = texture2D(emissiveMap, gu + vec2(gd, 0.0)).rgb, e2 = texture2D(emissiveMap, gu - vec2(gd, 0.0)).rgb;
+        vec3 e3 = texture2D(emissiveMap, gu + vec2(0.0, gd)).rgb, e4 = texture2D(emissiveMap, gu - vec2(0.0, gd)).rgb;
+        float edge = length(e1 - e2) + length(e3 - e4);
+        float lit = dot(c0, vec3(0.333));
+        float mx = max(c0.r, max(c0.g, c0.b)), mn = min(c0.r, min(c0.g, c0.b));
+        float sat = (mx - mn) / max(mx, 1e-3);
+        // the cames: where the colour turns across a pane's edge, and the drawn lines, which are dull
+        float lead = max(smoothstep(0.05, 0.20, edge), smoothstep(0.42, 0.18, sat) * step(0.02, lit));
+        float L = dot(c0, vec3(0.2126, 0.7152, 0.0722));
+        vec3 g = max(mix(vec3(L), c0, 1.5), 0.0);
+        g = pow(g, vec3(1.45)) * 1.55;
+        // hand-made glass is thicker in some places than others: a slow mottle and a seed or two
+        float mot = 0.80 + 0.20 * sin(gu.x * 470.0 + sin(gu.y * 310.0) * 2.1) * sin(gu.y * 390.0 + sin(gu.x * 250.0) * 1.8);
+        mot *= 0.92 + 0.08 * sin(gu.x * 1900.0 + gu.y * 1300.0);
+        totalEmissiveRadiance = emissive * g * mot * (1.0 - 0.96 * lead) * step(0.012, lit);
+      }`);
+    }
+    if (/RedCarpet/.test(n)) {
+      /* THE RUNNER. Its map is one flat red, and a flat red slab forty metres
+       * long down the middle of a stone hall is the first thing that reads as
+       * unfinished. A runner is WOVEN: a fine twill you only see close up, a
+       * gold border a hand in from each edge with a dark line inside it, the
+       * pile worn flat and darker down the line people walk, and the colour
+       * faded unevenly along its length. All in the hall's own frame. */
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vThrW;')
+        .replace('#include <project_vertex>', '#include <project_vertex>\nvThrW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      fs = fs.replace('#include <common>', '#include <common>\nvarying vec3 vThrW;\nuniform vec3 uThrO;');
+      sh.uniforms.uThrO = { value: new THREE.Vector3(THR_X, THR_Y, THR_Z) };
+      fs = fs.replace('#include <color_fragment>', `#include <color_fragment>
+      {
+        vec3 w = vThrW - uThrO;
+        float ax = abs(w.x - 0.0);                       // across the runner, from its middle
+        vec3 crim = vec3(0.30, 0.035, 0.040);
+        vec3 c = crim;
+        // the pile, faded unevenly along its length
+        float f1 = sin(w.z * 0.73) * 0.5 + sin(w.z * 2.1 + 1.3) * 0.3 + sin(w.z * 5.3 + w.x * 3.1) * 0.2;
+        c *= 0.86 + 0.10 * f1;
+        // worn flat and darker where people walk
+        c *= 1.0 - 0.22 * exp(-ax * ax * 7.0);
+        // the border: a gold band a hand in from each edge, a dark line inside it
+        float edge = 0.99 - ax;
+        float gold = smoothstep(0.075, 0.085, edge) * smoothstep(0.175, 0.165, edge);
+        float line = smoothstep(0.200, 0.205, edge) * smoothstep(0.225, 0.220, edge);
+        float hem = smoothstep(0.03, 0.02, edge);
+        // the gold is a repeat of small lozenges, not a stripe
+        float loz = abs(fract(w.z * 4.0) - 0.5) * 2.0;
+        float lz = step(abs(edge - 0.125) * 18.0, 1.0 - loz);
+        c = mix(c, mix(vec3(0.34, 0.24, 0.07), vec3(0.20, 0.05, 0.03), lz * 0.7), gold);
+        c = mix(c, vec3(0.05, 0.012, 0.012), line + hem);
+        // the twill, close up
+        float tw = sin((w.x + w.z) * 260.0) * sin((w.x - w.z) * 90.0);
+        c *= 0.92 + 0.08 * tw;
+        diffuseColor.rgb = c;
+      }`);
+    }
+    if (fillK > 0) {
+      fs = fs.replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+      {
+        vec3 wn = inverseTransformDirection(normal, viewMatrix);
+        float up = wn.y * 0.5 + 0.5;
+        // warm off the torchlit floor below, cold off the glass above
+        vec3 fill = mix(vec3(0.060, 0.038, 0.022), vec3(0.020, 0.026, 0.046), up);
+        reflectedLight.indirectDiffuse += diffuseColor.rgb * fill * ${fillK.toFixed(2)};
+      }`);
+    }
+    sh.fragmentShader = fs;
+  };
+  m.customProgramCacheKey = () => 'thrGrade:' + n;
+  m.needsUpdate = true;
+}
+
+/* ---- THE TABLES AND CHAIRS BREAK. They are each one merged mesh in the
+ * file (two long tables, twenty-odd chairs, and everything on the tables —
+ * cups, bottles, candles — merged per material), and the parts of every one
+ * are already its own CONNECTED ISLANDS: a table is six planks, four legs and
+ * a stretcher; a chair is a seat-and-back, four legs and the spindles. So a
+ * piece of furniture is the islands that overlap each other in plan, lifted
+ * out of the merged mesh as they are, and breaking one throws those islands —
+ * it comes apart into what it is made of (the bunker's camera's rule). A plank
+ * six metres long is cut across into lengths first, because a whole tabletop
+ * flying off in one piece is not a table breaking.
+ *
+ * Until it breaks it is SOLID — a box the walk is pushed out of, the tavern's
+ * own arrangement — and its top is no floor: the packed walk's storeys over
+ * its plan are cleared, roofs under it raised, so standing at a table never
+ * ducks the camera. The blade, a landing and a thrown thing break it through
+ * the one door every breakable in this game uses (`physProps` + `onImpact`). */
+const thrFurn = [];
+function buildThroneBreakables() {
+  if (thrFurn.length) return;
+  const inv = thrWorld.matrixWorld.clone().invert();
+  const src = {};
+  thrWorld.traverse((o) => { if (o.isMesh && o.material && /^(Table|Chair|Cup|Wine|Candle)\.001$/.test(o.material.name) && o.geometry.index) src[o.material.name.split('.')[0]] = o; });
+  if (!src.Table && !src.Chair) return;
+  const v = new THREE.Vector3();
+  const lift = (o) => {
+    const M = inv.clone().multiply(o.matrixWorld);
+    return { o, M, isl: islandsOf(o.geometry, M) };
+  };
+  const group = (L, pad) => {
+    const n = L.isl.length, par = [...Array(n).keys()];
+    const f = (x) => { while (par[x] !== x) x = par[x] = par[par[x]]; return x; };
+    for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) {
+      const A = L.isl[a], B = L.isl[b];
+      if (A.x0 - pad > B.x1 || B.x0 - pad > A.x1 || A.z0 - pad > B.z1 || B.z0 - pad > A.z1 || A.y0 - pad > B.y1 || B.y0 - pad > A.y1) continue;
+      par[f(a)] = f(b);
+    }
+    const g = new Map();
+    for (let a = 0; a < n; a++) { const r = f(a); if (!g.has(r)) g.set(r, []); g.get(r).push(L.isl[a]); }
+    return [...g.values()];
+  };
+  const floorY = (x, z) => { const f = thrFloorNear(THR_X + x, THR_Z + z); return f === null ? 2.19 : f - THR_Y; };
+  const add = (kind, L, parts) => {
+    const box = new THREE.Box3();
+    for (const p of parts) { box.expandByPoint(v.set(p.x0, p.y0, p.z0)); box.expandByPoint(v.set(p.x1, p.y1, p.z1)); }
+    const grp = new THREE.Group(); grp.name = 'thrFurn_' + kind; thrWorld.add(grp); thrWorld.updateMatrixWorld(true);
+    const F = { kind, grp, box, pieces: [], items: [], dead: false, src: L.o };
+    for (const p of parts) {
+      const vi = [];
+      for (const t of p.tris) for (let k = 0; k < 3; k++) vi.push(L.o.geometry.index.getX(t * 3 + k));
+      const pm = tavPiece(L.o, vi, grp);
+      pm.userData.bwGhost = true; pm.userData.box = new THREE.Box3(new THREE.Vector3(p.x0, p.y0, p.z0), new THREE.Vector3(p.x1, p.y1, p.z1));
+      grp.add(pm); F.pieces.push(pm);
+    }
+    F.cx = (box.min.x + box.max.x) / 2; F.cz = (box.min.z + box.max.z) / 2;
+    F.top = box.max.y; F.floor = floorY(F.cx, F.cz);
+    F.wbox = box.clone().translate(new THREE.Vector3(THR_X, THR_Y, THR_Z));
+    F.prop = { mesh: grp, box: F.wbox, radius: Math.max(box.max.x - box.min.x, box.max.z - box.min.z) / 2 + 0.2,
+      dead: false, held: false, thrown: false, vel: new THREE.Vector3(), step: () => {},
+      onImpact: (speed) => smashThrFurn(F, speed) };
+    physProps.push(F.prop);
+    thrFurn.push(F);
+    return F;
+  };
+  const used = new Map();           // source mesh -> Set of triangles lifted
+  const take = (L, parts) => { let s = used.get(L.o); if (!s) used.set(L.o, s = new Set()); for (const p of parts) for (const t of p.tris) s.add(t); };
+  const tables = [];
+  if (src.Table) { const L = lift(src.Table); for (const parts of group(L, 0.04)) { tables.push(add('table', L, parts)); take(L, parts); } }
+  if (src.Chair) { const L = lift(src.Chair); for (const parts of group(L, 0.015)) { add('chair', L, parts); take(L, parts); } }
+  // what stands on a table goes down with it
+  for (const nm of ['Cup', 'Wine', 'Candle']) {
+    if (!src[nm]) continue;
+    const L = lift(src[nm]);
+    for (const p of L.isl) {
+      const cx = (p.x0 + p.x1) / 2, cz = (p.z0 + p.z1) / 2;
+      const T = tables.find((t) => cx > t.box.min.x - 0.05 && cx < t.box.max.x + 0.05 && cz > t.box.min.z - 0.05 && cz < t.box.max.z + 0.05);
+      if (!T) continue;
+      const vi = [];
+      for (const t of p.tris) for (let k = 0; k < 3; k++) vi.push(L.o.geometry.index.getX(t * 3 + k));
+      const pm = tavPiece(L.o, vi, T.grp);
+      pm.userData.bwGhost = true; pm.userData.box = new THREE.Box3(new THREE.Vector3(p.x0, p.y0, p.z0), new THREE.Vector3(p.x1, p.y1, p.z1));
+      pm.userData.item = nm;
+      T.grp.add(pm); T.items.push(pm);
+      take(L, [p]);
+    }
+  }
+  // and out of the merged meshes they came from
+  for (const [o, set] of used) {
+    const I = o.geometry.index, keep = [];
+    for (let t = 0; t < I.count / 3; t++) if (!set.has(t)) keep.push(I.getX(t * 3), I.getX(t * 3 + 1), I.getX(t * 3 + 2));
+    o.geometry.setIndex(keep);
+    if (!keep.length) o.visible = false;
+  }
+  // a table top is no floor and the underside of one is no roof
+  for (const F of thrFurn) thrClearFurnCells(F);
+}
+function thrClearFurnCells(F) {
+  const w = thrWalk; if (!w || !thrCells) return;
+  const C = w.cell, b = F.box;
+  const i0 = Math.floor((b.min.x - w.x0) / C), i1 = Math.floor((b.max.x - w.x0) / C);
+  const j0 = Math.floor((b.min.z - w.z0) / C), j1 = Math.floor((b.max.z - w.z0) / C);
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const fl = thrCells.get(j * w.gw + i); if (!fl) continue;
+    for (let k = fl.length - 3; k >= 0; k -= 3) if (fl[k] > F.floor + 0.22 && fl[k] < F.top + 0.5) fl.splice(k, 3);
+    for (let k = 0; k < fl.length; k += 3) if (fl[k + 2] < F.top + 0.6) fl[k + 2] = 99;
+    if (!fl.length) thrCells.delete(j * w.gw + i);
+  }
+}
+// solid until it breaks: the walk is pushed out of its plan, along the shallowest face
+function pushOutOfThrFurn(p, r, feet) {
+  for (const F of thrFurn) {
+    if (F.dead) continue;
+    const b = F.wbox;
+    if (feet > b.max.y - 0.05) continue;
+    const x0 = b.min.x - r, x1 = b.max.x + r, z0 = b.min.z - r, z1 = b.max.z + r;
+    if (p.x <= x0 || p.x >= x1 || p.z <= z0 || p.z >= z1) continue;
+    const dl = p.x - x0, dr = x1 - p.x, dn = p.z - z0, df = z1 - p.z, m = Math.min(dl, dr, dn, df);
+    if (m === dl) p.x = x0; else if (m === dr) p.x = x1; else if (m === dn) p.z = z0; else p.z = z1;
+  }
+}
+/* A plank cut across at the given lengths along its long axis: every
+ * triangle is clipped to each slab (position and uv carried), and the broken
+ * ends are capped in the wood's own colour so a length of it is solid. */
+function thrCutPlank(pm, axis, cuts) {
+  const g = pm.geometry, P = g.attributes.position, U = g.attributes.uv, I = g.index;
+  pm.updateMatrixWorld(true);
+  const W = pm.matrixWorld, v = new THREE.Vector3();
+  const tri = [];
+  for (let t = 0; t < I.count; t += 3) {
+    const vs = [];
+    for (let k = 0; k < 3; k++) { const i = I.getX(t + k); v.fromBufferAttribute(P, i).applyMatrix4(W); vs.push({ p: v.toArray(), u: U ? [U.getX(i), U.getY(i)] : [0, 0] }); }
+    tri.push(vs);
+  }
+  const A = axis === 'x' ? 0 : axis === 'y' ? 1 : 2;
+  const lerpV = (a, b, t) => ({ p: a.p.map((x, k) => x + (b.p[k] - x) * t), u: a.u.map((x, k) => x + (b.u[k] - x) * t) });
+  const clip = (poly, c, keepAbove) => {
+    const out = [];
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      const ia = keepAbove ? a.p[A] >= c : a.p[A] <= c, ib = keepAbove ? b.p[A] >= c : b.p[A] <= c;
+      if (ia) out.push(a);
+      if (ia !== ib) out.push(lerpV(a, b, (c - a.p[A]) / (b.p[A] - a.p[A])));
+    }
+    return out;
+  };
+  const pieces = [];
+  for (let s = 0; s < cuts.length - 1; s++) {
+    const lo = cuts[s], hi = cuts[s + 1], Pp = [], Uu = [];
+    let uSum = [0, 0], un = 0;
+    const mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
+    for (const t of tri) {
+      let poly = clip(clip(t, lo, true), hi, false);
+      for (let k = 1; k + 1 < poly.length; k++) for (const q of [poly[0], poly[k], poly[k + 1]]) {
+        Pp.push(...q.p); Uu.push(...q.u); uSum[0] += q.u[0]; uSum[1] += q.u[1]; un++;
+        for (let a = 0; a < 3; a++) { mn[a] = Math.min(mn[a], q.p[a]); mx[a] = Math.max(mx[a], q.p[a]); }
+      }
+    }
+    if (!un) continue;
+    // the broken ends, in the wood's average colour
+    const cu = [uSum[0] / un, uSum[1] / un], B = (A + 1) % 3, Cc = (A + 2) % 3;
+    for (const c of [lo, hi]) {
+      const q = (b, cc) => { const p = [0, 0, 0]; p[A] = c; p[B] = b; p[Cc] = cc; return p; };
+      const a = q(mn[B], mn[Cc]), b = q(mx[B], mn[Cc]), cc = q(mx[B], mx[Cc]), d = q(mn[B], mx[Cc]);
+      for (const p of [a, b, cc, a, cc, d]) { Pp.push(...p); Uu.push(...cu); }
+    }
+    const cx = (mn[0] + mx[0]) / 2, cy = (mn[1] + mx[1]) / 2, cz = (mn[2] + mx[2]) / 2;
+    for (let i = 0; i < Pp.length; i += 3) { Pp[i] -= cx; Pp[i + 1] -= cy; Pp[i + 2] -= cz; }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(Pp, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(Uu, 2));
+    geo.computeVertexNormals();
+    const mat = pm.material.clone(); mat.side = THREE.DoubleSide;     // a cap may face either way
+    const m = new THREE.Mesh(geo, mat); m.position.set(cx, cy, cz);
+    pieces.push(m);
+  }
+  return pieces;
+}
+function smashThrFurn(F, speed, by = null) {
+  if (F.dead) return;
+  F.dead = true; F.prop.dead = true;
+  const gy = THR_Y + F.floor;
+  const kick = Math.min(3.6, 1.0 + (speed || 6) * 0.17);
+  const from = by && by.g ? by.g.position : camera.position;
+  let dx = THR_X + F.cx - from.x, dz = THR_Z + F.cz - from.z;
+  const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+  const sz = new THREE.Vector3(), c = new THREE.Vector3();
+  thrWorld.updateMatrixWorld(true);
+  for (const pm of F.pieces) {
+    pm.userData.box.getSize(sz); pm.userData.box.getCenter(c);
+    const long = Math.max(sz.x, sz.z);
+    if (long > 1.3) {
+      // a plank: cut across into lengths of a metre or two, unevenly, the way wood gives
+      const axis = sz.x > sz.z ? 'x' : 'z', A = axis === 'x' ? 0 : 2;
+      const lo = pm.userData.box.min.getComponent(A) + (axis === 'x' ? THR_X : THR_Z), hi = lo + long;
+      const n = Math.max(2, Math.round(long / 1.5)), cuts = [lo];
+      for (let k = 1; k < n; k++) cuts.push(lo + long * (k + (Math.random() - 0.5) * 0.45) / n);
+      cuts.push(hi);
+      for (const m of thrCutPlank(pm, axis, cuts)) {
+        tavThrow(m, m.position, gy, kick, dx, dz, THREE.MathUtils.clamp((m.position.y - gy) / 1.0, 0, 1), 0.04 + Math.random() * 0.05, false);
+        const g = gibs[gibs.length - 1]; g.onLand = thrKnock; g.life = 240;
+      }
+      continue;
+    }
+    c.add(new THREE.Vector3(THR_X, THR_Y, THR_Z));
+    const g = tavGibGeo(pm, Array.from(pm.geometry.index.array), c.x, c.y, c.z);
+    const mat = pm.material;
+    const m = new THREE.Mesh(g, mat); m.position.copy(c);
+    const upright = sz.y > 0.25 && sz.y > Math.max(sz.x, sz.z) * 1.6;
+    tavThrow(m, c, gy, kick, dx, dz, THREE.MathUtils.clamp((c.y - gy) / 1.0, 0, 1), upright ? 0 : 0.03, upright);
+    const gb = gibs[gibs.length - 1]; gb.onLand = thrKnock; gb.life = 240;
+  }
+  // what stood on it: knocked off, a beat after the table goes
+  for (const pm of F.items) {
+    pm.userData.box.getCenter(c); c.add(new THREE.Vector3(THR_X, THR_Y, THR_Z));
+    const g = tavGibGeo(pm, Array.from(pm.geometry.index.array), c.x, c.y, c.z);
+    const m = new THREE.Mesh(g, pm.material); m.position.copy(c);
+    tavThrow(m, c, gy, kick * 0.6, dx + (Math.random() - 0.5) * 0.8, dz + (Math.random() - 0.5) * 0.8, 1, 0.08 + Math.random() * 0.12, false);
+    const gb = gibs[gibs.length - 1];
+    gb.life = 200;
+    if (pm.userData.item === 'Wine') gb.onLand = thrBottleLand;
+  }
+  thrWorld.remove(F.grp);
+  if (F.kind === 'table') { if (!sfxTableBreak()) sfxWoodSnap(); }
+  else sfxWoodSnap();
+}
+function thrKnock(g, sp) { if (sp > 1.2) try { sfxPlankKnock(g.m.position.x, g.m.position.z, sp, false); } catch (e) { /* a sound is never fatal */ } }
+function thrBottleLand(g, sp) {
+  if (sp < 2.0) return;
+  try { sfxGlassBreak(); } catch (e) { /* a sound is never fatal */ }
+  scene.remove(g.m); g.life = 0;
+  for (let i = 0; i < 8; i++) {
+    const m = new THREE.Mesh(new THREE.TetrahedronGeometry(0.03 + Math.random() * 0.04, 0), g.m.material);
+    m.scale.set(1, 0.4, 1); m.position.copy(g.m.position);
+    scene.add(m);
+    gibs.push({ m, vel: new THREE.Vector3((Math.random() - 0.5) * 2.4, 0.8 + Math.random() * 1.2, (Math.random() - 0.5) * 2.4),
+      spin: new THREE.Vector3(Math.random() * 9, Math.random() * 9, Math.random() * 9), rest: g.m.position.y, life: 60, bleed: false });
+  }
+}
+// the room's floor, for anything thrown or falling in it
+const _floorBeforeThrone = bunkerFloorAt;
+bunkerFloorAt = (x, z, y) => {
+  if (inThrone && thrWalk && Math.abs(x - THR_X) < 40 && Math.abs(z - THR_Z) < 40) {
+    const fl = keepCellAt(x, z, THR_SITE);
+    if (fl) {
+      let best = null;
+      for (let k = 0; k < fl.length; k += 3) { const f = THR_Y + fl[k]; if (f <= (y === undefined ? 1e9 : y + 0.4) && (best === null || f > best)) best = f; }
+      if (best !== null) return best;
+    }
+    return THR_Y + 2.19;
+  }
+  return _floorBeforeThrone(x, z, y);
+};
+
 /* ---- THE CHECKPOINT AT THE GATE. The fight in there is the hardest on the
  * walk; a death in it puts you back in front of the gate, not at the stones. */
 function updateFortSave() {
@@ -72622,10 +76576,243 @@ function buildFortTorches() {
   for (const o of keepFirePoints(fires)) G.add(o);
   warmStep('castle torches', () => warmCompile([fortWorld], FORT_X - 8, 1.7, FORT_Z + 40, FORT_X - 8, 3, FORT_Z));
 }
+/* ---- AND THE COURTYARD IS ALIVE. It was a stone plain with five fires in
+ * it: nothing moved but the flames. What a castle yard at night under siege
+ * has is SMOKE climbing off every fire and leaning over in the wind, EMBERS
+ * lifting off them and drifting down the street, a low MIST lying in the
+ * street that the fires light from underneath, the house BANNERS stirring on
+ * the walls, and LANTERNS strung across the street on ropes, swinging. All of
+ * it is found off the castle itself — the walls the wall index knows, the
+ * cobbles the walk knows — so none of it can stand in stone. */
+const FORT_AIR_SMOKE = 110, FORT_AIR_EMBER = 140, FORT_AIR_MIST = 36;
+let fortAir = null;
+function fortStreetAt(t) {
+  // a point along the street's middle line, t 0 (the gate end) .. 1 (the back door)
+  const S = FARM_SPINE, L = [];
+  let tot = 0; for (let i = 1; i < S.length; i++) { const l = Math.hypot(S[i][0] - S[i - 1][0], S[i][1] - S[i - 1][1]); L.push(l); tot += l; }
+  let d = t * tot;
+  for (let i = 1; i < S.length; i++) {
+    if (d <= L[i - 1] || i === S.length - 1) {
+      const k = Math.min(1, d / L[i - 1]), dx = S[i][0] - S[i - 1][0], dz = S[i][1] - S[i - 1][1], l = Math.hypot(dx, dz);
+      return { x: S[i - 1][0] + dx * k, z: S[i - 1][1] + dz * k, px: dz / l, pz: -dx / l };
+    }
+    d -= L[i - 1];
+  }
+  return null;
+}
+function makeBannerTex(seed) {
+  const W = 128, H = 288, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d'), rnd = mulberry32(seed);
+  const base = ['#7a2119', '#5e2c17', '#4a3e2a', '#6a2217'][seed % 4];
+  g.fillStyle = base; g.fillRect(0, 0, W, H);
+  // the weave and the weather: streaks down it, darker where the rain sits
+  for (let i = 0; i < 260; i++) { g.fillStyle = `rgba(0,0,0,${0.04 + rnd() * 0.08})`; g.fillRect(rnd() * W, rnd() * H, 1 + rnd() * 2, 6 + rnd() * 40); }
+  for (let i = 0; i < 120; i++) { g.fillStyle = `rgba(255,220,180,${0.02 + rnd() * 0.04})`; g.fillRect(rnd() * W, rnd() * H, 1, 3 + rnd() * 18); }
+  const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, 'rgba(0,0,0,0.35)'); gr.addColorStop(0.15, 'rgba(0,0,0,0)'); gr.addColorStop(0.8, 'rgba(0,0,0,0.05)'); gr.addColorStop(1, 'rgba(0,0,0,0.5)');
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  // a border, and the village's mark: a sheaf of wheat over two crossed tools
+  g.strokeStyle = 'rgba(176,140,84,0.55)'; g.lineWidth = 5; g.strokeRect(10, 10, W - 20, H - 70);
+  g.save(); g.translate(W / 2, 112); g.strokeStyle = 'rgba(190,156,96,0.7)'; g.lineCap = 'round';
+  g.lineWidth = 6; g.beginPath(); g.moveTo(-34, 40); g.lineTo(34, -40); g.moveTo(34, 40); g.lineTo(-34, -40); g.stroke();
+  g.lineWidth = 3;
+  for (let k = -3; k <= 3; k++) { g.beginPath(); g.moveTo(k * 2, 44); g.quadraticCurveTo(k * 5, 0, k * 9, -38); g.stroke();
+    for (let e = 0; e < 4; e++) { g.beginPath(); g.ellipse(k * 9 - k * e * 0.9, -38 + e * 9, 2.4, 5, k * 0.15, 0, Math.PI * 2); g.stroke(); } }
+  g.lineWidth = 5; g.beginPath(); g.moveTo(-14, 10); g.lineTo(14, 10); g.stroke();
+  g.restore();
+  // a torn foot: notched swallowtail, ragged, with holes
+  g.globalCompositeOperation = 'destination-out';
+  g.beginPath(); g.moveTo(0, H); g.lineTo(W / 2, H - 46 - rnd() * 10); g.lineTo(W, H); g.closePath(); g.fill();
+  for (let x = 0; x < W; x += 3) { const h = rnd() * 9 * (1 + (rnd() < 0.15 ? 3 : 0)); g.fillRect(x, H - 62 - h * 0.2 + (Math.abs(x - W / 2) / (W / 2)) * 46, 3, 70); }
+  for (let i = 0; i < 4; i++) { g.beginPath(); g.ellipse(14 + rnd() * (W - 28), 40 + rnd() * (H - 140), 2 + rnd() * 5, 3 + rnd() * 7, rnd() * 3, 0, Math.PI * 2); g.fill(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return t;
+}
+const FORT_SWAY_U = { uSwT: { value: 0 } };
+function swayMaterial(mat, amp) {
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uSwT = FORT_SWAY_U.uSwT;
+    sh.vertexShader = 'uniform float uSwT;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+      { float ph = modelMatrix[3].x * 1.7 + modelMatrix[3].z * 0.9;
+        float hang = clamp(-position.y / 2.1, 0.0, 1.0); hang *= hang;
+        float gust = 0.6 + 0.4 * sin(uSwT * 0.37 + ph);
+        transformed.z += hang * ${amp.toFixed(3)} * gust * (sin(uSwT * 1.6 + ph + position.y * 2.2) + 0.45 * sin(uSwT * 3.7 + ph * 2.0 + position.y * 5.0 + position.x * 6.0));
+        transformed.x += hang * ${(amp * 0.25).toFixed(3)} * sin(uSwT * 1.1 + ph * 1.3); }`);
+  };
+  mat.customProgramCacheKey = () => 'fortSway' + amp;
+}
+function buildFortDress() {
+  if (!fortLife || fortLife.dress || !fortWalls) return;
+  fortLife.dress = true;
+  const G = fortLife.G;
+  // ---- banners: on the house walls either side of the street
+  const bmats = [0, 1, 2, 3].map((i) => {
+    const tx = makeBannerTex(31 + i * 7);
+    // lit off its own cloth, the castle's way at night: the fires and the moon are not enough on their own
+    const m = new THREE.MeshStandardMaterial({ map: tx, emissiveMap: tx, emissive: 0x8a7468, emissiveIntensity: 0.32, side: THREE.DoubleSide, alphaTest: 0.5, roughness: 0.95 });
+    swayMaterial(m, 0.16); return m;
+  });
+  const bgeo = new THREE.PlaneGeometry(fk(0.95), fk(2.2), 4, 12); bgeo.translate(0, -fk(1.1), 0);
+  const rod = new THREE.MeshStandardMaterial({ color: 0x2a2018, roughness: 0.8, emissive: 0x0e0804 });
+  let nb = 0;
+  for (let kk = 0; kk < 22 && nb < 6; kk++) {
+    const k = kk >> 1;
+    const P = fortStreetAt(0.06 + k * 0.088); if (!P) continue;
+    const side = (k + kk) % 2 ? 1 : -1, y = FORT_FLOOR + fk(3.9);
+    const w = fortWallAlong(FORT_X + P.x, FORT_Z + P.z, P.px * side, P.pz * side, FORT_Y + y, fk(9)); if (!w) continue;
+    /* and the wall has to be behind ALL of it: a banner hung where a house
+     * turns its corner sticks out over the street with nothing behind it */
+    { const hw = fk(0.55), ex = -P.pz * side, ez = P.px * side, d0 = Math.hypot(w.x - FORT_X - P.x, w.z - FORT_Z - P.z);
+      let ok = true;
+      for (const sg of [-1, 1]) { const q = fortWallAlong(FORT_X + P.x + ex * hw * sg, FORT_Z + P.z + ez * hw * sg, P.px * side, P.pz * side, FORT_Y + y, fk(9));
+        if (!q || Math.abs(Math.hypot(q.x - FORT_X - P.x - ex * hw * sg, q.z - FORT_Z - P.z - ez * hw * sg) - d0) > 0.25) ok = false; }
+      if (!ok) continue; }
+    const lx = w.x - FORT_X + P.px * side * 0.2, lz = w.z - FORT_Z + P.pz * side * 0.2;
+    const b = new THREE.Mesh(bgeo, bmats[nb % 4]);
+    b.position.set(lx, y, lz); b.rotation.y = Math.atan2(-P.px * side, -P.pz * side);
+    b.userData.bwGhost = true; b.raycast = () => {}; b.name = 'fortBanner';
+    G.add(b);
+    const r = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, fk(1.15), 5), rod);
+    r.rotation.z = Math.PI / 2; r.rotation.y = b.rotation.y; r.position.set(lx, y + 0.03, lz); r.name = 'fortBannerRod';
+    r.userData.bwGhost = true; r.raycast = () => {}; G.add(r);
+    nb++;
+  }
+  // ---- lanterns strung across the street on ropes
+  const lamp = new THREE.MeshStandardMaterial({ color: 0x1c1712, roughness: 0.7, emissive: 0xff9a40, emissiveIntensity: 0.0 });
+  const glass = new THREE.MeshBasicMaterial({ color: 0xffb064 });
+  const ropeM = new THREE.MeshStandardMaterial({ color: 0x2c241c, roughness: 0.9, emissive: 0x1a120a });
+  const glowM = new THREE.SpriteMaterial({ map: glowTex, color: 0xff9a48, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.85 });
+  const lanterns = [];
+  for (const t of [0.18, 0.44, 0.7, 0.9]) {
+    const P = fortStreetAt(t); if (!P) continue;
+    const y = FORT_FLOOR + fk(4.6);
+    const a = fortWallAlong(FORT_X + P.x, FORT_Z + P.z, P.px, P.pz, FORT_Y + y, fk(10));
+    const b = fortWallAlong(FORT_X + P.x, FORT_Z + P.z, -P.px, -P.pz, FORT_Y + y, fk(10));
+    if (!a || !b) continue;
+    const A = new THREE.Vector3(a.x - FORT_X, y, a.z - FORT_Z), B = new THREE.Vector3(b.x - FORT_X, y, b.z - FORT_Z);
+    const span = A.distanceTo(B); if (span < 3 || span > fk(18)) continue;
+    const sag = span * 0.09, pts = [];
+    for (let i = 0; i <= 20; i++) { const s = i / 20, q = A.clone().lerp(B, s); q.y -= sag * 4 * s * (1 - s); pts.push(q); }
+    // a cord, not a line: a one-pixel line vanishes at the retro scale
+    const rope = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.022, 4, false), ropeM); rope.name = 'fortRope'; rope.raycast = () => {}; rope.userData.bwGhost = true;
+    G.add(rope);
+    const n = Math.max(2, Math.min(5, Math.round(span / 2.6)));
+    for (let i = 0; i < n; i++) {
+      const s = (i + 0.5) / n, q = A.clone().lerp(B, s); q.y -= sag * 4 * s * (1 - s);
+      const piv = new THREE.Group(); piv.position.copy(q); piv.name = 'fortLantern';
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.26, 0.17), lamp); body.position.y = -0.26;
+      const cap = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.12, 4), lamp); cap.position.y = -0.08; cap.rotation.y = Math.PI / 4;
+      const core = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.17, 0.12), glass); core.position.y = -0.26;
+      const gl = new THREE.Sprite(glowM); gl.scale.set(1.5, 1.5, 1); gl.position.y = -0.26;
+      for (const o of [body, cap, core]) { o.userData.bwGhost = true; o.raycast = () => {}; }
+      gl.raycast = () => {};
+      piv.add(body, cap, core, gl); G.add(piv);
+      const L = { piv, gl, ph: Math.random() * 10, base: 0.7 + Math.random() * 0.3 };
+      if (i % 2 === (n > 2 ? 1 : 0)) {
+        const PL = new THREE.PointLight(0xff9a48, 4.2, fk(9), 2); PL.position.y = -0.3; PL.userData.lpAlways = 12; piv.add(PL);
+        L.L = PL; fortLife.lamps.push({ L: PL, base: 4.2, ph: L.ph });
+      }
+      lanterns.push(L);
+    }
+  }
+  fortLife.lanterns = lanterns;
+  // ---- the air: smoke and embers off every fire, mist in the street
+  const fires = fortLife.fires.map((F) => ({ x: FORT_X + F.c.x, y: FORT_Y + F.c.y, z: FORT_Z + F.c.z, big: F.k > 1 }));
+  // smoke a fire would put up under a moon: grey, a little warm — dark smoke is invisible against a night sky
+  const smoke = makeAirPoints(FORT_AIR_SMOKE, [0.46, 0.42, 0.40], true, [45, 80], 260, true);
+  const ember = makeAirPoints(FORT_AIR_EMBER, [1.0, 0.52, 0.16], true, [32, 55], 9);
+  ember.material.blending = THREE.AdditiveBlending;
+  const mist = makeAirPoints(FORT_AIR_MIST, [0.36, 0.36, 0.41], true, [30, 60], 420, true);
+  for (const o of [smoke, ember, mist]) { o.visible = false; o.name = 'fortAir'; }
+  fortAir = {
+    smoke, ember, mist, fires,
+    s: Array.from({ length: FORT_AIR_SMOKE }, () => ({ life: 0, max: 1, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, s0: 0, s1: 0 })),
+    e: Array.from({ length: FORT_AIR_EMBER }, () => ({ life: 0, max: 1, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, ph: 0, s: 0 })),
+    m: Array.from({ length: FORT_AIR_MIST }, () => ({ life: 0, max: 1, x: 0, y: 0, z: 0, s: 0, a: 0 })),
+    si: 0, ei: 0, sAcc: 0, eAcc: 0,
+  };
+}
+function updateFortAir(dt) {
+  const A = fortAir;
+  FORT_SWAY_U.uSwT.value += dt * (1 + airGust * 1.8);
+  if (fortLife && fortLife.lanterns) {
+    const t = FORT_SWAY_U.uSwT.value;
+    for (const L of fortLife.lanterns) {
+      L.piv.rotation.z = 0.10 * Math.sin(t * 1.3 + L.ph) * (0.6 + airGust); L.piv.rotation.x = 0.06 * Math.sin(t * 0.9 + L.ph * 1.7);
+      const f = 0.82 + 0.12 * Math.sin(t * 9.1 + L.ph) + 0.06 * Math.sin(t * 15.3 + L.ph * 2.3);
+      L.gl.scale.setScalar(1.35 + 0.2 * f);
+    }
+  }
+  if (!A) return;
+  const on = fortWorld.visible && !inRoom() && Math.abs(camera.position.z - FORT_Z) < 140;
+  A.smoke.visible = A.ember.visible = A.mist.visible = on;
+  if (!on) return;
+  const fov = THREE.MathUtils.degToRad(camera.fov || 75);
+  const px = renderer.getDrawingBufferSize(_airBuf).y / (2 * Math.tan(fov / 2));
+  A.smoke.material.uniforms.uPx.value = A.ember.material.uniforms.uPx.value = A.mist.material.uniforms.uPx.value = px;
+  const wx = (air.wx || WIND.x) * (0.7 + airGust * 1.6), wz = (air.wz || WIND.z) * (0.7 + airGust * 1.6);
+  const r = Math.random;
+  // births: smoke and embers off the fires, a fire nearer you more often
+  A.sAcc += dt * 16; A.eAcc += dt * 34;
+  while (A.sAcc >= 1) {
+    A.sAcc -= 1;
+    const F = A.fires[(r() * A.fires.length) | 0]; if (!F) break;
+    const q = A.s[A.si]; A.si = (A.si + 1) % FORT_AIR_SMOKE;
+    q.x = F.x + (r() - 0.5) * 0.2; q.y = F.y + 0.25; q.z = F.z + (r() - 0.5) * 0.2;
+    q.vx = (r() - 0.5) * 0.15; q.vy = (F.big ? 0.7 : 0.45) + r() * 0.3; q.vz = (r() - 0.5) * 0.15;
+    q.max = q.life = (F.big ? 4.5 : 3) + r() * 2.5; q.s0 = F.big ? 0.35 : 0.2; q.s1 = (F.big ? 2.4 : 1.4) + r() * 0.9;
+  }
+  while (A.eAcc >= 1) {
+    A.eAcc -= 1;
+    const F = A.fires[(r() * A.fires.length) | 0]; if (!F) break;
+    if (!F.big && r() < 0.6) continue;
+    const q = A.e[A.ei]; A.ei = (A.ei + 1) % FORT_AIR_EMBER;
+    q.x = F.x + (r() - 0.5) * 0.4; q.y = F.y + 0.1; q.z = F.z + (r() - 0.5) * 0.4;
+    q.vx = (r() - 0.5) * 0.5; q.vy = 0.8 + r() * 1.4; q.vz = (r() - 0.5) * 0.5; q.ph = r() * 10;
+    q.max = q.life = 1.6 + r() * 2.6; q.s = 0.07 + r() * 0.06;
+  }
+  const sp = A.smoke.geometry.attributes.position, sa = A.smoke.geometry.attributes.aA, ss = A.smoke.geometry.attributes.aS;
+  A.s.forEach((q, i) => {
+    if (q.life <= 0) { sa.setX(i, 0); return; }
+    q.life -= dt; const k = 1 - Math.max(0, q.life) / q.max;
+    q.vy *= Math.max(0, 1 - dt * 0.25);
+    q.vx += (wx * 0.9 - q.vx) * dt * 0.5; q.vz += (wz * 0.9 - q.vz) * dt * 0.5;
+    q.x += q.vx * dt; q.y += q.vy * dt; q.z += q.vz * dt;
+    sp.setXYZ(i, q.x, q.y, q.z); ss.setX(i, q.s0 + (q.s1 - q.s0) * Math.sqrt(k));
+    sa.setX(i, 0.50 * Math.min(1, k * 5) * (1 - k) * (1 - k));
+  });
+  const ep = A.ember.geometry.attributes.position, ea = A.ember.geometry.attributes.aA, es = A.ember.geometry.attributes.aS;
+  const t = FORT_SWAY_U.uSwT.value;
+  A.e.forEach((q, i) => {
+    if (q.life <= 0) { ea.setX(i, 0); return; }
+    q.life -= dt; const k = 1 - Math.max(0, q.life) / q.max;
+    q.vy = Math.max(0.12, q.vy - dt * 0.35);
+    q.vx += (wx * 1.4 - q.vx) * dt * 0.8 + Math.sin(t * 3.1 + q.ph) * dt * 1.2; q.vz += (wz * 1.4 - q.vz) * dt * 0.8 + Math.cos(t * 2.7 + q.ph) * dt * 1.2;
+    q.x += q.vx * dt; q.y += q.vy * dt; q.z += q.vz * dt;
+    ep.setXYZ(i, q.x, q.y, q.z); es.setX(i, q.s);
+    ea.setX(i, (1 - k) * (0.65 + 0.35 * Math.sin(t * 17 + q.ph * 3)) * Math.min(1, k * 8));
+  });
+  // the mist: wide low sheets drifting down the street round you, on the cobbles only
+  const mp = A.mist.geometry.attributes.position, ma = A.mist.geometry.attributes.aA, ms = A.mist.geometry.attributes.aS;
+  A.m.forEach((q, i) => {
+    if (q.life <= 0) {
+      const a = r() * Math.PI * 2, d = 3 + r() * 22;
+      const x = camera.position.x + Math.sin(a) * d, z = camera.position.z + Math.cos(a) * d, y = fortCourtAt(x, z);
+      if (y === null) { ma.setX(i, 0); return; }
+      q.x = x; q.z = z; q.y = y + 0.25 + r() * 0.5; q.max = q.life = 7 + r() * 8; q.s = 3 + r() * 3; q.a = 0.10 + r() * 0.10;
+    }
+    q.life -= dt; const k = 1 - Math.max(0, q.life) / q.max;
+    q.x += wx * 0.45 * dt; q.z += wz * 0.45 * dt;
+    mp.setXYZ(i, q.x, q.y, q.z); ms.setX(i, q.s * (0.8 + 0.3 * k));
+    ma.setX(i, q.a * Math.sin(Math.PI * k));
+  });
+  for (const o of [A.smoke, A.ember, A.mist]) { const g = o.geometry.attributes; g.position.needsUpdate = g.aA.needsUpdate = g.aS.needsUpdate = true; }
+}
 function updateFortLife(dt) {
   if (!fortLife || !fortWorld.visible) return;
   FORT_WIN_U.uFortT.value += dt;
   if (!fortLife.torches && fortWalls) buildFortTorches();
+  if (!fortLife.dress && fortLife.torches && fortWalls) buildFortDress();
+  updateFortAir(dt);
   if (!inKeep && !(tribe && tribe.fire)) {
     KEEP_GLOW_U.uTime.value += dt;
     KEEP_GLOW_U.uPx.value = renderer.getDrawingBufferSize(_airBuf).y / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov || 75) / 2));
@@ -72637,7 +76824,14 @@ function updateFortLife(dt) {
 /* and what lands in the courtyard lands on its paving: blood, gibs, a body */
 const _floorBeforeFort = bunkerFloorAt;
 bunkerFloorAt = (x, z, y) => {
-  if (fortReady && fortMaskAt(x, z)) {
+  /* each castle answers from its OWN walk: asked of the first castle's,
+   * Castle XIII answered nothing, and a knight killed in its court fell
+   * through the paving to the beach under the bluff */
+  if (c13Ready && c13Walk && maskAt(C13_M, x, z)) {
+    const st = keepFloorAt(x, z, y === undefined ? C13_Y + C13_FLOOR + 1 : y + 0.3, 0.5, C13_SITE);
+    return st ? st.f : C13_Y + C13_FLOOR;
+  }
+  if (fortReady && maskAt(FORT_M, x, z)) {
     const st = keepFloorAt(x, z, y === undefined ? FORT_Y + FORT_FLOOR + 1 : y + 0.3, 0.5, FORT_SITE);
     return st ? st.f : FORT_Y + FORT_FLOOR;
   }
@@ -72646,6 +76840,7 @@ bunkerFloorAt = (x, z, y) => {
 // the tick, from `update()`, and the cut on the wall clock from `animateFrame`
 function tickFort(dt) {
   updateFort(dt);
+  updateC13(dt);
   updateFortSave();
   updateFortLife(dt);
   updateFarmers(dt);
@@ -72657,46 +76852,105 @@ function tickFort(dt) {
   const prev = cliff.material.onBeforeCompile;
   cliff.material.onBeforeCompile = function (sh, rndr) {
     if (prev) prev.call(this, sh, rndr);
-    sh.uniforms.uFortMask = FORT_U.uFortMask; sh.uniforms.uFortM = FORT_U.uFortM;
+    sh.uniforms.uFortMask = FORT_U.uFortMask; sh.uniforms.uFortM = FORT_U.uFortM; sh.uniforms.uFortMask2 = FORT_U.uFortMask2; sh.uniforms.uFortM2 = FORT_U.uFortM2;
     const line = 'if (length(vDrainW.xz - vec2(uMushX, uMushZ)) < 5.62 && vDrainW.y < 3.85) discard;';
     sh.fragmentShader = FORT_CUT_GLSL + sh.fragmentShader.replace(line, line + '\n  if (bwFortCut(vDrainW.xz)) discard;');
   };
   cliff.material.needsUpdate = true;
 }
 
-/* HE WAITS IN THE COURTYARD NOW, down the street from where the gate puts
- * you, facing it — and the courtyard is where he fights. He is the castle's:
- * he wakes only once you are inside its walls (`fortBody`), he is held by its
- * stone, and he is drawn with it. */
-/* AND NOW HE WAITS BEHIND IT (the owner's word: after the castle, once you
- * have left it). The courtyard is the farmers' fight; he stands on the sand
- * past the back wall, on the way to the lighthouse, facing the door you come
- * out of — so leaving the castle is walking out into him. The back wall is a
- * wall to him (`fortOut`): nothing of the castle is his to go into. */
-const UMBRA_X = 11.2, UMBRA_Z = -1150;
-const UMBRA_YAW = 0;                  // his front is +Z: facing back up the beach, at the castle's back door
+/* HE SITS ON THE THRONE (the owner's word): the hall at the end of Castle
+ * XIII is his, and the first thing you see coming in at the far end of the
+ * carpet is him on it, asleep, head down, two blades along the armrests and
+ * two hanging over the sides. He stays there while you walk up the hall; a
+ * dozen strides from the dais (`throneMayWake`) — or the first blow, or a
+ * round — he lifts his head, leans out over his feet and gets up
+ * (`uRise`, the roar the fight opens on), and comes down the steps at you.
+ *
+ * Where he sits is MEASURED off the model's own throne (`Throne.001`, in the
+ * room's frame): the seat is x -0.35..0.45 at 0.71 over the dais top (3.845),
+ * its front edge at z -5.48, the armrests 1.08 up. His origin is where he will
+ * STAND — a stride in front of the seat, on the dais — and the sit pose
+ * carries the hips back onto the cushion (`UMBRA_SIT`'s `hipF`), so the rise
+ * brings them forward over his feet rather than sliding the feet. Before he
+ * waited outside the first castle's back wall, and before that in its
+ * courtyard; a save that killed him in either still counts. */
+const UMBRA_SEAT = { x: 0.05, z: -5.25, y: 3.845 };
+const UMBRA_X = THR_X + UMBRA_SEAT.x, UMBRA_Z = THR_Z + UMBRA_SEAT.z, UMBRA_Y = THR_Y + UMBRA_SEAT.y;
+const UMBRA_YAW = 0;                  // his front is +Z: down the hall, at the door you come in by
+const UMBRA_WAKE_Z = 7.5;             // room-local z: once you are past this on the carpet, he gets up
 let umbraUnit = null;
 {
-  umbraUnit = makeMutant(UMBRA_X, UMBRA_Z, 'umbra');
+  umbraUnit = makeMutant(UMBRA_X, UMBRA_Z, 'umbra', UMBRA_Y);
   umbraUnit.g.rotation.y = UMBRA_YAW;
   umbraUnit.g.visible = false;
-  // a save that killed him in the courtyard named him by where he stood there
-  const oldKey = 'umbra@' + (FORT_X - fk(1.6)).toFixed(1) + ',' + (FORT_Z - fk(6.5)).toFixed(1);
-  if (deadUnitKeys.has(oldKey)) { umbraUnit.saveKey = oldKey; retireUnit(umbraUnit); }
+  umbraUnit.st.thrSeat = true;
+  // a save that killed him where he used to wait named him by where he stood there
+  for (const oldKey of ['umbra@' + (FORT_X - fk(1.6)).toFixed(1) + ',' + (FORT_Z - fk(6.5)).toFixed(1), 'umbra@11.2,-1150.0']) {
+    if (!umbraUnit.retired && deadUnitKeys.has(oldKey)) { umbraUnit.saveKey = oldKey; retireUnit(umbraUnit); }
+  }
 }
-// how far up the beach he may come: a stride short of the castle's back wall
-let _umbraLimZ = null;
-function umbraLimZ() {
-  if (_umbraLimZ === null && fortWalls) { try { _umbraLimZ = fortPosternSpot().z - 1.2; } catch (e) {} }
-  return _umbraLimZ !== null ? _umbraLimZ : -1130;
+function throneMayWake(u) {
+  if (!inThrone || thrBusy || !thrWalls) return false;
+  return camera.position.z - THR_Z < UMBRA_WAKE_Z;
 }
+// the highest storey of the throne room under a height: what a body standing at (x, z) stands on
+function thrStandY(x, z, y) {
+  if (!thrCells) return null;
+  const fl = keepCellAt(x, z, THR_SITE); if (!fl) return null;
+  let best = null;
+  for (let k = 0; k < fl.length; k += 3) { const f = THR_Y + fl[k]; if (f <= y + 0.6 && (best === null || f > best)) best = f; }
+  return best;
+}
+// the hall's stone holds him the way the castles' hold their own; a table or a chair in his way goes over
+function thrClampUnit(u, p) {
+  if (!thrWalls || !u.st.awake) return;
+  const wx = p.x, wz = p.z, r = (u.kind.body || 0.9) * 0.75;
+  pushOutOfKeep(p, r, p.y, 0.45, THR_SITE);
+  keepWallPush(p, r, p.y, THR_SITE);
+  for (const F of thrFurn) {
+    if (F.dead) continue;
+    const b = F.wbox;
+    if (p.x > b.min.x - r && p.x < b.max.x + r && p.z > b.min.z - r && p.z < b.max.z + r) smashThrFurn(F, 7 + (u.realSp || 0) * 2, u);
+  }
+  const mx = p.x - wx, mz = p.z - wz, ml = Math.hypot(mx, mz), cap = 0.08;
+  if (ml > cap) { p.x = wx + mx / ml * cap; p.z = wz + mz / ml * cap; }
+  if (thrStandY(p.x, p.z, p.y) !== null) { if (!u.st.thrHome) u.st.thrHome = { x: 0, z: 0 }; u.st.thrHome.x = p.x; u.st.thrHome.z = p.z; }
+  else if (u.st.thrHome) { p.x = u.st.thrHome.x; p.z = u.st.thrHome.z; }
+}
+// leaving the hall mid-fight puts him back on his throne, asleep, with what health he had
 function umbraCalm() {
-  const u = umbraUnit; if (!u || !u.st.alive) return;
+  const u = umbraUnit; if (!u || !u.st.alive || u.retired) return;
   u.st.awake = false; u.st.atk = -1; u.st.cool = 0; u.st.roar = 0; u.st.stun = 0; u.st.recoil = 0;
+  u.st.thrRising = false; u.st.thrSeat = true; u.st.thrShriek = false; u.holdAnim = false;
   u.path = null;
-  u.g.position.x = UMBRA_X; u.g.position.z = UMBRA_Z;
+  u.g.position.set(UMBRA_X, UMBRA_Y, UMBRA_Z);
   u.g.rotation.y = UMBRA_YAW;
+  if (u.model) u.model.rotation.y = 0;
   if (mutToken === u) mutToken = null;
+}
+function updateThroneBoss(dt) {
+  const u = umbraUnit; if (!u || u.retired) return;
+  u.g.visible = inThrone && thrReady && !!(thrWorld && thrWorld.visible);
+  if (!u.st.alive) return;
+  // out of the hall he is back on his throne — whoever else put him to sleep (a save calms every chaser) left him where he stood
+  if (!inThrone) { if (u.st.awake || !u.st.thrSeat) umbraCalm(); return; }
+  // the rise: the shriek as he straightens, and his hands back once he is up
+  if (u.st.thrRising) {
+    u.st.thrRiseT += dt;
+    if (!u.st.thrShriek && u.st.thrRiseT > UMBRA_RISE_DUR * 0.80) {
+      u.st.thrShriek = true;
+      const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
+      try { sfxMutRoar(d, u.kind.voice); sfxScpScream(d, u.kind.voice); } catch (e) { /* a sound is never fatal */ }
+      addTrauma(0.32);
+    }
+    if (!(u.st.roar > 0)) u.st.thrRising = false;
+  }
+  // he stands on the dais and comes down its steps: the hall's floor, eased the way a riser is
+  if (u.st.awake && thrCells) {
+    const p = u.g.position, f = thrStandY(p.x, p.z, p.y);
+    if (f !== null) { const dy = f - p.y; p.y += Math.abs(dy) < 0.02 ? dy : Math.sign(dy) * Math.min(Math.abs(dy), Math.max(Math.abs(dy) * dt * 12, 3 * dt)); }
+  }
 }
 
 /* =====================================================================
@@ -72947,6 +77201,7 @@ function demonAlarm(src, hit = false) {
 const DEMON_WAKE = 17;            // metres: this close to any of them and they know you are there
 function demonUnitPre(u, dt) {
   if (u.parLate && u.parLate()) u.parLate = null;
+  if (u.kind.natural && !u.natDone && !u.parLate) u.natDone = naturalSwings(u);
   u.st.frenzyCool = Math.max(0, (u.st.frenzyCool || 0) - dt);
   u.g.visible = inWhale;
   if (!inWhale || !whale) { mutDrop(u); mutAnim(u, dt, 0); return true; }
@@ -73045,7 +77300,10 @@ function updateDemonPack(dt, units = demonUnits) {
   const A = units.filter((u) => u.st.alive && u.st.awake && !(u.farm && (!u.farm.out || u.farm.burst)));
   if (!A.length) return;
   demonPack.t += dt;
-  const nPress = Math.min(A[0].kind.pressMax || 9, A.length <= 3 ? A.length : A.length >= 5 ? 3 : 2);   // three at you while the pack is big
+  /* the farmers are a crowd: two on you while there are a few of them, three
+   * once there are five, and the rest of the street is the mob round you */
+  const nPress = Math.min(A[0].kind.pressMax || 9, A[0].farm ? (A.length <= 2 ? A.length : A.length < 5 ? 2 : 3)
+    : A.length <= 3 ? A.length : A.length >= 5 ? 3 : 2);   // three at you while the pack is big
   let press = 0;
   for (const u of A) {
     const pk = u.pk || (u.pk = { role: 'hold', since: Math.random() * 2, sw0: 0, t: 0, side: 0, sideT: 0, R: 0 });
@@ -73080,6 +77338,7 @@ function demonHold(u, dt) {
   if (!pk || !st.alive || !st.awake || st.atk >= 0 || st.recoil > 0 || st.stun > 0 || st.struck || st.roar > 0 || u.rag || st.down > 0) return false;
   const dx = camera.position.x - p.x, dz = camera.position.z - p.z, d = Math.hypot(dx, dz) || 1e-3;
   let tx = 0, tz = 0, spd = 0;
+  if (u.farm) { const r = farmMobHold(u, dt, d, dx, dz); if (r !== null) return r; }
   if (pk.role === 'press') {
     if (!(pk.flankT > 0)) return false;
     // to your BACK: the point behind you, a stride out, and then it is a presser like the rest
@@ -73159,7 +77418,7 @@ for (const n of ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'LeftShoul
  * Renamed on the way in, because four packs each have an 'idle' and a 'run'. */
 const PAR_GAIT_PICK = { walk: 'walk', walkB: 'walkB', walkC: 'walkC', run: 'run', runB: 'runB',
   strafeL: 'strafeL', strafeR: 'strafeR2', strafeL2: 'strafeL2', strafeR3: 'strafeR3', sideL: 'sideL', sideR: 'sideR2',
-  hit: 'hit', hitBig: 'hitBig', hitSide: 'hitSide', hitBack: 'hitBack', hitHead: 'hitHead', parry: 'parry', kIdle: 'idleB' };
+  hit: 'hit', hitBig: 'hitBig', hitSide: 'hitBig', hitBack: 'hitBack', hitHead: 'hit', parry: 'parry', kIdle: 'idleB' };   // the side reels spun: out
 const PAR_SRC_A = [
   [() => knightMoves, { ...PAR_GAIT_PICK, k360: 'k360', kJump: 'kJump' }],
   [() => orcMoves, { roar: 'roar', die: 'die', oCut: 'oCut', oCutC: 'oCutC', oChop: 'oChop' }],
@@ -73240,6 +77499,7 @@ MUT_ATTACKS.pa360    = Object.assign({}, MUT_ATTACKS.k360, { wind: 0.86, recover
   MUT_ATTACKS.pbLeap  = U('oLeap', { wind: 0.96, recover: 0.60, reach: 5.60, lunge: 5.2, chain: 'pbC1', chainP: 0.65, limbs: [0, 1], stop: 1.45 });
 }
 const PARASITE_BASE = {
+  natural: true,      // their Mixamo swings play at the clip's own speed (`naturalSwings`)
   bleedRes: 1.4,          // late in the walk: the blade's bleed has to be earned on them
   glb: 'assets/parasite.glb', solo: true, noSand: true, skin: null, whaleBody: true, parasite: true, ownTurn: true,
   gaitBySpeed: true, velGait: true, gaitMax: 1.35, noDash: true, lungeK: 0.34, ragK: 1.55, facingRef: 'mixamo', faceFix: 0, headPop: true,
@@ -73331,6 +77591,7 @@ function parasiteWake(u, t) {
 function parasiteUnitPre(u, dt) {
   u.g.visible = inWhale;
   if (u.parLate && u.parLate()) u.parLate = null;
+  if (u.kind.natural && !u.natDone && !u.parLate) u.natDone = naturalSwings(u);
   if (!inWhale || !whale) { mutDrop(u); if (u.mixer) mutAnim(u, dt, 0); return true; }
   const p = u.g.position, st = u.st, P = u.par;
   const lx = p.x - WHALE_X, s = -(p.z - WHALE_Z);
@@ -73584,7 +77845,7 @@ function buildTavCast() {
  * from the bar fight who came through their table. When that man is down
  * they are done with it and stand about; you they fight to the end. They are
  * `tav` kinds, so the hall's floor, arena, steering and crush are theirs. */
-const TAV_DRINK_FROM = [3, 10];                      // two bare-handed brawlers, one of each file
+const TAV_DRINK_FROM = [3, 10, 4, 18];               // four bare-handed men: two tables of two, from the back of the hall
 function tavDrinkerKind(i) {
   const name = 'tavDrinker' + i;
   if (MUT_KINDS[name]) return name;
@@ -73620,7 +77881,15 @@ function tavBottleToHand(u) {
   b.rotation.set(TAV_DRINK_GRIP.rx, TAV_DRINK_GRIP.ry, TAV_DRINK_GRIP.rz);
   D.bottle = b;
 }
-const TAV_DRINK_GRIP = { x: 0.02, y: 0.075, z: 0.035, rx: 0, ry: 0, rz: Math.PI / 2 };
+/* MEASURED OFF THE HAND, NOT GUESSED: in this rig's hand frame +Y runs down
+ * the fingers (the knuckles at 13 cm), +X across the palm toward the thumb,
+ * and the fingers curl toward +Z — so a thing gripped in the fist lies ALONG
+ * X, in the hollow at (0, 0.135, 0.048). The old grip ran the bottle's axis
+ * to -X (the neck out past the PINKY, upside down in the fist: "facing the
+ * wrong way") and sat it 7 cm up the palm, on the heel of the hand. The neck
+ * goes out the thumb side now and the fist closes round the lower body, so
+ * the base hangs 9 cm under it. */
+const TAV_DRINK_GRIP = { x: -0.09, y: 0.135, z: 0.048, rx: 0, ry: 0, rz: -Math.PI / 2 };
 function tavDropBottle(u) {
   const D = u.drink; if (!D || !D.bottle || !D.bottle.parent) return;
   D.bottle.getWorldPosition(_mgP);
@@ -73639,40 +77908,49 @@ function tavDropBottle(u) {
 function buildTavDrinkers() {
   if (tavDrinkers.length || !tavTables.length) return;
   const fy = TAV_Y + TAV_FLOOR, bx = TAV_X + TAV_DRUNK.x, bz = TAV_Z + TAV_DRUNK.z;
-  let best = null, bs = -1;
+  // THE TWO TABLES FURTHEST FROM THE BAR — the back of the hall — two men at each
+  const cands = [];
   for (const t of tavTables) {
     const cs = tavChairs.filter((c) => !c.dead && Math.hypot(c.x - t.cx, c.z - t.cz) < t.r + 0.7);
     if (cs.length < 2) continue;
-    const d = Math.hypot(t.cx - bx, t.cz - bz);
-    if (d > bs) { bs = d; best = { t, cs }; }
+    cands.push({ t, cs, d: Math.hypot(t.cx - bx, t.cz - bz) });
   }
-  if (!best) return;
-  // the two chairs furthest apart: across the table from each other, talking
-  let pair = [best.cs[0], best.cs[1]], pd = -1;
-  for (let i = 0; i < best.cs.length; i++) for (let j = i + 1; j < best.cs.length; j++) {
-    const d = Math.hypot(best.cs[i].x - best.cs[j].x, best.cs[i].z - best.cs[j].z);
-    if (d > pd) { pd = d; pair = [best.cs[i], best.cs[j]]; }
+  cands.sort((a, b) => b.d - a.d);
+  let n = 0;
+  for (const best of cands.slice(0, 2)) {
+    // the two chairs furthest apart: across the table from each other, talking
+    let pair = [best.cs[0], best.cs[1]], pd = -1;
+    for (let i = 0; i < best.cs.length; i++) for (let j = i + 1; j < best.cs.length; j++) {
+      const d = Math.hypot(best.cs[i].x - best.cs[j].x, best.cs[i].z - best.cs[j].z);
+      if (d > pd) { pd = d; pair = [best.cs[i], best.cs[j]]; }
+    }
+    pair.forEach((c) => {
+      const i = n++; if (i >= TAV_DRINK_FROM.length) return;
+      const t = best.t;
+      const yaw = Math.atan2(t.cx - c.x, t.cz - c.z);
+      // the seat is under his hips; his origin is between his feet, which a sitting man has out in front of him
+      const sx = c.x + Math.sin(yaw) * TAV_DRINK_SEAT, sz = c.z + Math.cos(yaw) * TAV_DRINK_SEAT;
+      const u = makeMutant(sx, sz, tavDrinkerKind(i), fy);
+      u.packList = tavDrinkers;
+      u.g.rotation.y = yaw; u.g.visible = inTavern; u.pathO = { x: TAV_X, z: TAV_Z };
+      if (u.retired || !u.st.alive) return;
+      u.drink = { chair: c, table: t, seated: true, sx, sz, yaw, next: 2 + i * 3.5 + Math.random() * 3, drinking: 0, bottle: null, gulp: 0, after: null, mate: null };
+      u.holdAnim = true;
+      c.seat = u;
+      tavDrinkers.push(u);
+    });
   }
-  pair.forEach((c, i) => {
-    const t = best.t;
-    const yaw = Math.atan2(t.cx - c.x, t.cz - c.z);
-    // the seat is under his hips; his origin is between his feet, which a sitting man has out in front of him
-    const sx = c.x + Math.sin(yaw) * TAV_DRINK_SEAT, sz = c.z + Math.cos(yaw) * TAV_DRINK_SEAT;
-    const u = makeMutant(sx, sz, tavDrinkerKind(i), fy);
-    u.packList = tavDrinkers;
-    u.g.rotation.y = yaw; u.g.visible = inTavern; u.pathO = { x: TAV_X, z: TAV_Z };
-    if (u.retired || !u.st.alive) return;
-    u.drink = { chair: c, table: t, seated: true, sx, sz, yaw, next: 2 + i * 3.5 + Math.random() * 3, drinking: 0, bottle: null, gulp: 0 };
-    u.holdAnim = true;
-    c.seat = u;
-    tavDrinkers.push(u);
-  });
+  // each knows the man across his table, to raise a bottle to
+  for (const u of tavDrinkers) u.drink.mate = tavDrinkers.find((o) => o !== u && o.drink.table === u.drink.table) || null;
 }
 const TAV_DRINK_SEAT = -0.07;   // his hips at the back of the seat, the chair's middle under his thighs
+const TAV_DRINK_HANDS = { R: 1.05, L: 0.55 };   // the fist round the bottle, and a hand at rest (per-hand `life.grip`)
 function tavDrinkerProvoke(src, by) {
   const other = by && by.st && !tavDrinkers.includes(by) ? by : null;     // a man from the bar; else it was you
   for (const d of tavDrinkers) {
     if (!d.st.alive) continue;
+    // the quarrel is the TABLE's: the two at the other table have no part in it
+    if (src && src.drink && d.drink && d.drink.table !== src.drink.table) continue;
     if (d.st.awake) { if (!other && d === src) { d.st.mine = true; d.st.foe = null; } continue; }
     d.st.awake = true; d.st.cool = 0.9; d.st.step = 0;
     if (other) { d.st.foe = other; d.st.mine = false; } else { d.st.mine = true; d.st.foe = null; }
@@ -73695,14 +77973,28 @@ function updateTavDrinkers(dt) {
       u.g.position.x = D.sx; u.g.position.z = D.sz; u.g.rotation.y = D.yaw;
       tavBottleToHand(u);
       u.holdAnim = true;
+      // the right fist is closed round the bottle; the left hand is a hand, not the brawlers' claw
+      if (u.life) u.life.grip = TAV_DRINK_HANDS;
+      const near = Math.hypot(camera.position.x - D.sx, camera.position.z - D.sz) < 9;
       if (D.drinking > 0) {
         D.drinking -= dt;
-        if (D.gulp > 0 && (D.gulp -= dt) <= 0 && Math.hypot(camera.position.x - D.sx, camera.position.z - D.sz) < 9) sfxGulp();
-        if (D.drinking <= 0) { mutPlay(u, 'fSit', true); D.next = 5 + Math.random() * 8; }
+        if (D.gulp > 0 && (D.gulp -= dt) <= 0 && near) sfxGulp();
+        if (D.gulp2 > 0 && (D.gulp2 -= dt) <= 0 && near) sfxGulp();
+        if (D.drinking <= 0) {
+          if (D.after) { const nm = D.after; D.after = null; const a = mutPlay(u, nm, false); if (a) { a.paused = false; a.timeScale = 1; } D.drinking = u.clips[nm].getClip().duration; D.gulp = 0; D.gulp2 = 0; }
+          else { mutPlay(u, 'fSit', true); D.next = 5 + Math.random() * 8; }
+        }
       } else if ((D.next -= dt) <= 0) {
-        const a = mutPlay(u, 'fDrink', false);
+        /* NOT THE SAME DRINK EVERY TIME: a drink, a long swig with a second
+         * tilt, or a bottle raised to the man across the table first — and
+         * the back of the hand across the mouth after, now and then. */
+        const r = Math.random();
+        const nm = r < 0.45 ? 'fDrink' : r < 0.75 ? 'fSwig' : (D.mate && D.mate.drink && D.mate.drink.seated ? 'fToast' : 'fDrink');
+        const a = mutPlay(u, nm, false);
         if (a) { a.paused = false; a.timeScale = 1; }
-        D.drinking = u.clips.fDrink.getClip().duration; D.gulp = D.drinking * 0.46;
+        D.drinking = u.clips[nm].getClip().duration;
+        D.gulp = D.drinking * (nm === 'fToast' ? 0.62 : 0.46); D.gulp2 = nm === 'fSwig' ? D.drinking * 0.68 : 0;
+        D.after = Math.random() < 0.4 ? 'fWipe' : null;
       } else if (!u.cur || u.cur !== u.clips.fSit) mutPlay(u, 'fSit', true);
       u.mixer.update(dt);
       continue;
@@ -74178,14 +78470,34 @@ function farmKeyDefs() {
   D.idleD = [2.2, [[0, D0], [0.25, beck(-0.3)], [0.38, beck(-1.3)], [0.5, beck(-0.4)], [0.62, beck(-1.3)], [0.8, M(D0, { head: { up: 0.2, fwd: 0.15 } })], [1, D0]], true];
 
   // ---- SITTING, for the two at the tavern's table: the thighs level on the seat, the shins down, a bottle in the right fist
+  /* THE DRINK WAS SOLVED ON THE RIG, NOT POSED. With the bottle in the fist
+   * the old DR2 put its mouth a hand from his: measured in the harness
+   * (`tools/farmpose.js`), the right arm, forearm, wrist, chest, neck and
+   * head were descended on until the bottle's LIP sat on the lips (5 mm) with
+   * the base up and out in front at about forty-five degrees — bounds kept it
+   * a drink rather than a contortion (the elbow bent, the wrist modest, the
+   * head tipping back rather than the chest leaning away). The sit holds the
+   * bottle low in front, on the table, not at the chin. */
   const SIT = { chest: { right: 0.14 }, neck: { right: 0.04 }, head: { right: 0.02 },
     thighL: { right: -1.50, fwd: 0.08 }, calfL: { right: 1.45 }, footL: { right: -0.40 },
     thighR: { right: -1.50, fwd: -0.08 }, calfR: { right: 1.45 }, footR: { right: -0.40 },
-    armL: { right: -0.60, fwd: 0.30 }, foreL: { right: -1.10 }, armR: { right: -0.70, fwd: -0.15 }, foreR: { right: -1.35 }, hipY: -0.33 };
+    // the left forearm on the table in front of him, palm down (solved: the old numbers stood it upright with the open hand at his chin)
+    armL: { right: -0.80, fwd: 0.58, up: -0.59 }, foreL: { right: -0.45 }, handL: { right: -0.30, fwd: 0.30, up: -0.30 },
+    // and the bottle rests on the table in the right fist, the forearm level (bent further the neck pointed at his nose)
+    armR: { right: -0.22, fwd: -0.10, up: 0.10 }, foreR: { right: -0.72 }, handR: { right: 0.15 }, hipY: -0.33 };
   D.fSit = [3.4, [[0, SIT], [0.5, M(SIT, { chest: { right: 0.20, up: 0.06 }, head: { right: 0.08, up: 0.18 } })], [1, SIT]], true];
-  const DR1 = M(SIT, { armR: { right: -1.75, fwd: -0.30 }, foreR: { right: -2.10 }, handR: { right: -0.30 }, chest: { right: 0.04 }, head: { right: -0.10 } });
-  const DR2 = M(DR1, { head: { right: -0.45 }, neck: { right: -0.15 }, armR: { right: -2.05, fwd: -0.30 }, chest: { right: -0.05 } });
+  const DR2 = M(SIT, { armR: { right: -1.43, fwd: -0.49, up: 0.17 }, foreR: { right: -1.95 }, handR: { right: -0.19, fwd: -0.33, up: 0.13 }, chest: { right: 0.02 }, neck: { right: -0.29 }, head: { right: -0.52 } });
+  const DR1 = M(SIT, { armR: { right: -1.03, fwd: -0.33, up: 0.14 }, foreR: { right: -1.59 }, handR: { right: -0.05, fwd: -0.20, up: 0.08 }, chest: { right: 0.02 }, neck: { right: 0.0 }, head: { right: -0.05 } });
   D.fDrink = [2.8, [[0, SIT], [0.25, DR1], [0.42, DR2], [0.70, DR2], [0.86, DR1], [1, SIT]], false];
+  // a long swig: a second tilt further back, the whole trunk going with it
+  const DR3 = M(DR2, { head: { right: -0.72 }, neck: { right: -0.38 }, chest: { right: -0.10 }, armR: { right: -1.62, fwd: -0.52, up: 0.18 } });
+  D.fSwig = [4.2, [[0, SIT], [0.18, DR1], [0.30, DR2], [0.48, DR2], [0.58, DR3], [0.78, DR3], [0.88, DR1], [1, SIT]], false];
+  // a toast: the bottle raised out toward the man across the table, a nod, then the drink
+  const TST = M(SIT, { armR: { right: -1.25, fwd: 0.25, up: -0.20 }, foreR: { right: -1.10 }, handR: { right: 0.2 }, head: { right: 0.10, up: 0.12 }, chest: { right: 0.10, up: 0.08 } });
+  D.fToast = [4.0, [[0, SIT], [0.16, TST], [0.24, M(TST, { head: { right: 0.22, up: 0.12 } })], [0.32, TST], [0.48, DR1], [0.58, DR2], [0.78, DR2], [0.9, DR1], [1, SIT]], false];
+  // the back of the left hand across the mouth, after
+  const WIP = M(SIT, { armL: { right: -1.55, fwd: 0.05 }, foreL: { right: -2.25 }, handL: { right: -0.5, fwd: 0.3 }, head: { right: -0.06, up: -0.18 }, chest: { right: 0.10 } });
+  D.fWipe = [1.9, [[0, SIT], [0.3, WIP], [0.5, M(WIP, { head: { right: -0.06, up: 0.18 }, handL: { right: -0.5, fwd: -0.2 } })], [0.68, WIP], [1, SIT]], false];
   // up off the chair: the trunk thrown forward over the knees, then the legs push him up into his guard
   D.fRise = [0.75, [[0, SIT], [0.45, M(SIT, { chest: { right: 0.45 }, thighL: { right: -0.8 }, thighR: { right: -0.8 }, calfL: { right: 0.9 }, calfR: { right: 0.9 }, hipY: -0.22 })], [1, R0]], false];
 
@@ -74422,6 +78734,7 @@ const FARM_MOVES = {
 
 /* ---- WHAT THEY HAVE IN COMMON, and the eight ways of being one. */
 const FARM_BASE = {
+  natural: true,      // their Mixamo swings play at the clip's own speed (`naturalSwings`)
   solo: true, fortBody: true, farmer: true, noSand: true, gaitBySpeed: true, velGait: true, gaitMax: 1.7, lungeK: 0.55, headPop: true, faceFix: 0, facingRef: 'mixamo',
   h: 1.84, hp: 4, dmg: 1, hitR: 0.62, body: 0.42, lungeStop: 1.05, landSlop: 0.45,
   speedK: 1.25, windK: 0.96, reachK: 1.0, aggr: 2.2, press: 0.85, chainMax: 2, pressMax: 3,
@@ -74445,13 +78758,13 @@ const FARM_BASE = {
   cutApart: true,          // and they come APART: every kill takes pieces with it (`finishMutant`)
   // and they come apart, and they bleed: more heads and limbs, and every spray twice over
   goreK: 1.7, bloodK: 2.0,
-  // lit for the castle at night: the map brought down toward the stone round them, a breath of it given back, a cold edge
-  tint: 0x8a93a8, emis: 0.10, rim: [0.05, 0.06, 0.085], gamma: 1.0,
+  // lit for the castle at night: the map brought down toward the stone round them, a breath of it given back, a warm edge off the fires
+  tint: 0x8a93a8, emis: 0.065, rim: [0.075, 0.048, 0.026], gamma: 1.0, matMore: farmGrit,
   claws: 1.25, clawRe: /Hand(Thumb|Index|Middle|Ring|Pinky)\d_/,
   author: (u, m) => authorFarmerClips(u, m), pre: (u, g) => farmPre(u, g),
   anim: { idle: 'mIdle', walk: 'mWalk', run: 'mRun', roar: 'rCry', die: 'mHitBig', back: 'mWalk', rate: 1.0, lean: 0.0, strafeK: 1.0 },
-  alias: { idle2: 'mIdleB', walk2: 'mWalkC', run2: 'mRunB', roar2: 'rShake', die2: 'mHitBig', calm: 'mIdle', hit: 'mHit', hitSide: 'mHitSide', hitBack: 'mHitBack',
-           hitHead: 'mHitHead', hitBig: 'mHitBig', parry: 'mParry', block: 'mHit', blockC: 'mHit' },
+  alias: { idle2: 'mIdleB', walk2: 'mWalkC', run2: 'mRunB', roar2: 'rShake', die2: 'mHitBig', calm: 'mIdle', hit: 'mHit', hitSide: 'mHitBig', hitBack: 'mHitBack',
+           hitHead: 'mHit', hitBig: 'mHitBig', parry: 'mParry', block: 'mHit', blockC: 'mHit' },   // the knight's side-of-body and side-of-head reels spun them round: out
   voice: { f: 1.0, growl: 0.9, rasp: 1.0, throat: 'man', pitch: 130, form: 1 },
 };
 const FARM_KINDS = {
@@ -74511,9 +78824,16 @@ FARM_ROSTER.forEach((R, i) => {
   MUT_KINDS['farmer' + i] = Object.assign({}, FARM_BASE, P, {
     glb: FARM_FILE[R.f], file: R.f, keep: R.keep, tool, at: P.at, spear: tool === 'rake' ? P.spear || 0.7 : 0, bones,
     h: R.h, tint: R.tint, use, alias, swDmg,
-    gaits: { walk: ['mWalk', 'mWalkC'], run: R.p === 'coward' ? ['mRun'] : ['mRun', 'mRunB'], idle: ['mIdle', 'mIdleB'], strafeL: ['mStrL', 'mStrL2'], strafeR: ['mStrR', 'mStrR2'] },
+    /* a man's walk and a man's jog; only the maniac keeps the hunched run */
+    gaits: { walk: ['mHWalk', 'mWalkC'], run: R.p === 'maniac' ? ['mRun', 'mHRun'] : ['mHRun', 'mRunB'],
+             idle: R.p === 'coward' ? ['mIdle', 'mDIdle', 'mHIdle'] : R.p === 'brute' || R.p === 'smith' ? ['mIdle', 'mHIdle'] : ['mIdle', 'mIdleB', 'mHIdle'],
+             strafeL: ['mHStrL', 'mStrL', 'mStrL2'], strafeR: ['mHStrR', 'mStrR', 'mStrR2'] },
     stepClip: ['mSideL', 'mSideR'],
-    anim: Object.assign({}, FARM_BASE.anim, { roar: P.roar }),
+    anim: Object.assign({}, FARM_BASE.anim, { roar: P.roar, walk: 'mHWalk', run: R.p === 'maniac' ? 'mRun' : 'mHRun', back: 'mHWalk' }),
+    /* A MAN TURNS AT A MAN'S RATE, and no two at the same one: at seven
+     * radians a second twenty heads snapped onto you together, which is the
+     * plainest way there is to look like a script */
+    turnMax: (R.p === 'maniac' ? 4.6 : R.p === 'brute' ? 2.6 : 3.3) * (0.85 + ((i * 0.618) % 1) * 0.3),
     rag: farmRag(R.f),
     rig: { arm: J.armR, fore: J.foreR, hand: J.handR, armL: J.armL, foreL: J.foreL, handL: J.handL, head: J.head,
            limbs: [[J.thighR, J.calfR, J.footR, FJ(R.f, 'RightToeBase')], [J.thighL, J.calfL, J.footL, FJ(R.f, 'LeftToeBase')], [J.chest, J.neck, J.head, FJ(R.f, 'HeadTop_End')]] },
@@ -74522,6 +78842,71 @@ FARM_ROSTER.forEach((R, i) => {
 });
 
 /* ---- LOADING AND DRESSING. */
+/* THEY DID NOT MATCH THE GAME BECAUSE THEY WERE CLEAN. The pack is a tidy
+ * low-poly set: flat cloth, smooth skin, the same colours on every man, and
+ * under the castle's fires that is a row of plastic figures in a world where
+ * everything else is a scan with dirt on it. `farmGrit` puts the life on in
+ * the shader, in the model's own BIND-POSE metres (`position` is centimetres,
+ * feet at zero, 182 up) so it rides the body however it moves:
+ *  - the cloth and the skin are MOTTLED at two scales and carry a fibre that
+ *    is also a fine bump, so a sleeve catches the light as cloth does;
+ *  - MUD rises from the boots to the knees, broken by the same noise, rougher
+ *    than the clean cloth above it;
+ *  - SOOT and DRIED BLOOD lie in patches and spatter, different on every man
+ *    (a seed and an amount per unit) — these are men who have been killing;
+ *  - the occlusion the file ships is pushed harder, which is most of what
+ *    gives the folds depth, and the edge light is the fires' warm, not the
+ *    beach's cold. */
+const FARM_GRIT_GLSL = `
+  uniform float uFgSeed; uniform float uFgBlood; varying vec3 vFgP;
+  float fgH(vec3 p) { p = fract(p * 0.3183099 + vec3(0.71, 0.113, 0.419)); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+  float fgN(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(fgH(i), fgH(i + vec3(1,0,0)), f.x), mix(fgH(i + vec3(0,1,0)), fgH(i + vec3(1,1,0)), f.x), f.y),
+               mix(mix(fgH(i + vec3(0,0,1)), fgH(i + vec3(1,0,1)), f.x), mix(fgH(i + vec3(0,1,1)), fgH(i + vec3(1,1,1)), f.x), f.y), f.z); }
+  float fgF(vec3 p) { return 0.5 * fgN(p) + 0.25 * fgN(p * 2.03) + 0.125 * fgN(p * 4.07) + 0.0625 * fgN(p * 8.11); }
+  vec3 fgBump(vec3 sp, vec3 sn, float h) {
+    vec3 sx = dFdx(sp), sy = dFdy(sp), r1 = cross(sy, sn), r2 = cross(sn, sx);
+    float det = dot(sx, r1); vec2 dh = vec2(dFdx(h), dFdy(h));
+    return normalize(abs(det) * sn - sign(det) * (dh.x * r1 + dh.y * r2));
+  }`;
+function farmGrit(mm, u) {
+  if (u.kind.tint) mm.color.lerp(new THREE.Color(0x9e978e), 0.65);   // off the cold grade: the castle is lit by fire
+  mm.aoMapIntensity = 1.55;
+  if (mm.normalScale) mm.normalScale.set(1.6, 1.6);
+  const rnd = mulberry32((u.saveKey || u.kind.name || 'farm').split('').reduce((a, ch) => a * 31 + ch.charCodeAt(0) | 0, 7));
+  const U = { uFgSeed: { value: rnd() * 40 }, uFgBlood: { value: 0.35 + rnd() * 0.65 } };
+  mm.userData.fgU = U;
+  const prev = mm.onBeforeCompile;
+  mm.onBeforeCompile = (sh, r) => {
+    if (prev) prev(sh, r);
+    Object.assign(sh.uniforms, U);
+    sh.vertexShader = 'varying vec3 vFgP;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vFgP = position;');
+    sh.fragmentShader = FARM_GRIT_GLSL + '\n' + sh.fragmentShader
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        vec3 fgP = vFgP * 0.01 + uFgSeed;
+        float fgMot = fgF(fgP * 7.0), fgBig = fgF(fgP * 1.9 + 4.0), fgFine = fgN(fgP * 85.0);
+        float fgHt = clamp(vFgP.y / 182.0, 0.0, 1.0);
+        // ONE multiplier for the colour AND the lift: the emissive reads the raw map, and would put back every stain on the dark side
+        vec3 fgMul = vec3(0.70 + 0.38 * fgMot + 0.14 * fgBig + 0.12 * (fgFine - 0.5));
+        float fgMud = smoothstep(0.36, 0.02, fgHt + (fgMot - 0.5) * 0.24 + (fgBig - 0.5) * 0.10);
+        fgMul *= mix(vec3(1.0), vec3(0.50, 0.42, 0.33), fgMud * 0.82);
+        float fgSoot = smoothstep(0.60, 0.74, fgF(fgP * 3.2 + 11.0));
+        fgMul *= mix(vec3(1.0), vec3(0.42, 0.40, 0.38), fgSoot * 0.6);
+        float fgBl = smoothstep(0.64, 0.73, fgF(fgP * 4.4 + 3.1)) * smoothstep(0.30, 0.60, fgHt);
+        float fgSp = smoothstep(0.88, 0.93, fgN(fgP * 46.0 + 7.7)) * smoothstep(0.50, 0.66, fgF(fgP * 2.6 + 1.0));
+        /* DRIED blood: nearly black, a little brown — at a wet red it read as
+         * orange paint dots under the fires */
+        fgMul *= mix(vec3(1.0), vec3(0.34, 0.12, 0.10), clamp(fgBl * 0.75 + fgSp * 0.7, 0.0, 1.0) * uFgBlood);
+        diffuseColor.rgb *= fgMul;`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        totalEmissiveRadiance *= fgMul;`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        roughnessFactor = clamp(roughnessFactor + fgMud * 0.12 - fgBl * uFgBlood * 0.30, 0.25, 1.0);`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        normal = fgBump(-vViewPosition, normal, (fgFine * 0.0007 + fgMot * 0.0016 + fgMud * 0.0012));`);
+  };
+  mm.customProgramCacheKey = () => 'farmGrit' + (mm.isMeshStandardMaterial ? 's' : 'b');
+}
 const FARM_TEX = {};                        // material name -> the maps the first copy uploaded
 const FARM_TOOLS = {};                      // 'axe' | 'rake' | 'hammer' -> the tool, measured in the model's own units
 const FARM_TOOL_RE = { axe: /AXE/, rake: /Rake/, hammer: /Object004/ };
@@ -74590,6 +78975,13 @@ const FARM_MOCAP = [
   [() => orcMoves, { mIdle: 'idle', mIdleB: 'idleB', mCut: 'oCut', mCutB: 'oCutB', mCutC: 'oCutC', mCutD: 'oCutD', mCutE: 'oCutE', mChop: 'oChop', mSpin: 'oSpin', mLeap: 'oLeap', mKick: 'oKick',
     mOHit: 'hit', mOHitB: 'hitB', mOHitBig: 'hitBig' }],
   [() => demonMoves, { mZPunch: 'zPunch', mZPunch2: 'zPunch2', mZKick: 'zKick', mZKick2: 'zKick2', mZButt: 'zButt' }],
+  /* AND THEY WALK LIKE MEN. The knight's walk and run are the owner's
+   * "Mutant Walking" and "Mutant Run" — a hunched thing with its arms hanging
+   * wide — and on twenty villagers that gait was most of why they read as
+   * creatures being steered. Wong's pack is the Male Locomotion Pack: a man's
+   * walk, a man's jog, a man standing, a man side-stepping. */
+  [() => wongMoves, { mHWalk: 'walk', mHRun: 'run', mHIdle: 'idle', mHStrL: 'strafeL', mHStrR: 'strafeR', mHSideL: 'sideL', mHSideR: 'sideR', mHTurnL: 'turnL', mHTurnR: 'turnR' }],
+  [() => drunkMoves, { mDIdle: 'idleB', mDWalk: 'walk' }],
 ];
 const FARM_MOCAP_SET = {};                  // file -> { clips, speed, travel, az }
 function farmMocap(u, R0) {
@@ -74847,9 +79239,14 @@ function farmCobble(x, z) {
   return lo < fk(0.85) && lo > fk(0.6);
 }
 /* A DOOR THROWN OPEN swings out on a spring and bangs back off whatever stops
- * it, and a man coming through it sends it harder. It is never shut again. */
+ * it, and a man coming through it sends it harder. AND IT IS PULLED SHUT
+ * BEHIND HIM (the owner's word): a beat after he is clear somebody still
+ * inside drags it to, and it slams — so the next man out of it has to come
+ * through it again, and a street of doors left hanging open does not tell
+ * you which ones are spent. */
 function farmDoorCrash(D, hard) {
-  if (!D.open) { D.open = true; D.vel = (hard ? 15 : 10) + Math.random() * 3; }
+  if (!D.open || D.closing) { D.open = true; D.closing = false; D.vel = Math.max(D.vel, 0) + (hard ? 15 : 10) + Math.random() * 3; }
+  D.closeAt = 1e9;
   D.lastT = farmFight.t;
   const p = fortW(D.cx, D.cz);
   playSampleAt('doorOpen', p.x, p.z, { gain: hard ? 1.5 : 1.2, rate: 1.3 + Math.random() * 0.2, ref: 8, far: 50 });
@@ -74861,7 +79258,32 @@ function farmDoorCrash(D, hard) {
 }
 function updateFarmDoors(dt) {
   for (const D of farmDoors) {
+    // a door somebody is hammering on from the other side
+    if (!D.open && D.rat) {
+      D.ratV = (D.ratV || 0) + (-D.rat * 520 - D.ratV * 9) * dt;
+      D.rat += D.ratV * dt;
+      if (Math.abs(D.rat) < 0.0008 && Math.abs(D.ratV) < 0.02) { D.rat = 0; D.ratV = 0; }
+      D.piv.rotation.y = D.sign * Math.max(-0.01, D.rat);
+      continue;
+    }
     if (!D.open) continue;
+    if (!D.closing && farmFight.t >= (D.closeAt || 1e9)) { D.closing = true; D.vel = Math.min(D.vel, 0) - 1.2; }
+    if (D.closing) {
+      // dragged to: slow off the wall, quicker as it comes, and it slams
+      D.vel += (-5.5 - D.vel * 1.4) * dt;
+      D.ang += D.vel * dt;
+      if (D.ang <= 0) {
+        D.ang = 0; D.vel = 0; D.open = false; D.closing = false; D.rat = -0.03; D.ratV = 2.4;
+        const p = fortW(D.cx, D.cz);
+        playSampleAt('doorClose', p.x, p.z, { gain: 1.25, rate: 0.9 + Math.random() * 0.12, ref: 8, far: 50 });
+        sfxPlankKnock(p.x, p.z, 7);
+        idolDust(new THREE.Vector3(p.x + D.n.x * 0.3, FORT_Y + D.yLo + D.H * 0.8, p.z + D.n.z * 0.3), D.n, 4, 0.5, 0.5);
+        const dd = Math.hypot(camera.position.x - p.x, camera.position.z - p.z);
+        if (dd < 7) addTrauma(0.05 * (1 - dd / 7));
+      }
+      D.piv.rotation.y = D.sign * D.ang;
+      continue;
+    }
     const want = 1.62;
     D.vel += ((want - D.ang) * 70 - D.vel * 5.5) * dt;
     D.ang += D.vel * dt;
@@ -74894,7 +79316,7 @@ function farmPickDoor() {
       for (; d > 1.1; d -= 0.2) { const q = fortW(D.cx + D.n.x * d, D.cz + D.n.z * d); if (farmCobble(q.x, q.z) && fortCourtAt(q.x, q.z) !== null) break; }
       D.out = d > 1.1 ? d : 0;
     }
-    if (!D.out) continue;
+    if (!D.out || D.busy) continue;
     const p = fortW(D.cx, D.cz), dx = p.x - camera.position.x, dz = p.z - camera.position.z, d = Math.hypot(dx, dz);
     if (d < 3.5) continue;
     let s = -Math.abs(d - 11) * 0.35 + (D.open ? 0 : 3) + Math.random() * 2.5;
@@ -74907,7 +79329,7 @@ function farmPickDoor() {
 function farmSendOut(u) {
   const D = farmPickDoor(); if (!D) return false;
   let pool = (u.kind.out || ['bCharge']).slice();
-  if (D.open) pool = pool.filter((c) => c !== 'bKick');
+  if (D.open && !D.closing) pool = pool.filter((c) => c !== 'bKick');
   if (!pool.length) pool = ['bCharge'];
   const clip = pool[Math.floor(Math.random() * pool.length)];
   const B = FARM_BURST[clip];
@@ -74915,7 +79337,13 @@ function farmSendOut(u) {
   const dist = Math.min(B.dist, D.out);
   const outW = fortW(D.cx + D.n.x * dist, D.cz + D.n.z * dist);
   const y = FORT_Y + D.yLo;
-  u.farm.burst = { D, clip, B, t: 0, dur: u.clips[clip] ? u.clips[clip].getClip().duration : 1, x0: inW.x, z0: inW.z, x1: outW.x, z1: outW.z, y, crashed: false, dist: dist + 0.75 };
+  /* AND YOU HEAR HIM BEFORE YOU SEE HIM: a shut door is hammered on, or
+   * shoved and rattled, and he roars behind it — most of a second of warning
+   * for the man who is watching the doors */
+  const knock = D.open && !D.closing ? 0 : 0.55 + Math.random() * 0.55;
+  D.busy = true;
+  u.farm.burst = { D, clip, B, t: 0, dur: u.clips[clip] ? u.clips[clip].getClip().duration : 1, x0: inW.x, z0: inW.z, x1: outW.x, z1: outW.z, y, crashed: false, dist: dist + 0.75,
+    wait: knock, knocks: knock ? [knock, knock * 0.45] : [], yelled: false };
   u.farm.out = true;
   u.g.position.set(inW.x, y, inW.z);
   u.g.rotation.y = Math.atan2(D.n.x, D.n.z);
@@ -74933,6 +79361,19 @@ function farmSendOut(u) {
 }
 function farmBurstStep(u, dt) {
   const b = u.farm.burst, st = u.st;
+  if (b.wait > 0) {
+    b.wait -= dt;
+    const p = fortW(b.D.cx, b.D.cz);
+    while (b.knocks.length && b.wait <= b.knocks[0]) {
+      b.knocks.shift();
+      b.D.rat = 0.06 + Math.random() * 0.05; b.D.ratV = 1.5;
+      sfxPlankKnock(p.x, p.z, 6.5);
+      if (!b.yelled) { b.yelled = true; sfxMutRoar(Math.hypot(camera.position.x - p.x, camera.position.z - p.z) + 7, u.kind.voice); }
+    }
+    u.g.visible = false;
+    u.mixer.update(0);
+    return;
+  }
   b.t += dt;
   const k = Math.min(1, b.t / b.dur), f = b.B.prog(k);
   const p = u.g.position;
@@ -74947,6 +79388,8 @@ function farmBurstStep(u, dt) {
   u.g.visible = !!(fortWorld && fortWorld.visible) && b.crashed;
   u.mixer.update(dt);
   if (k >= 1) {
+    b.D.busy = false;
+    b.D.closeAt = farmFight.t + 0.9 + Math.random() * 1.4;
     u.farm.burst = null; u.holdAnim = false;
     st.awake = true; st.cool = 0.12 + Math.random() * 0.25; st.wait = 1;
     st.fortHome = { x: p.x, z: p.z };
@@ -74957,6 +79400,7 @@ function farmBurstStep(u, dt) {
  * burst; out, they are a pack — the demons' director, on their own list. */
 function farmUnitPre(u, dt) {
   if (u.parLate && u.parLate()) u.parLate = null;         // the motion capture, once its packs have landed
+  if (u.kind.natural && !u.natDone && !u.parLate) u.natDone = naturalSwings(u);
   if (!u.farm) return false;
   if (!u.farm.out) {
     u.g.visible = false;
@@ -74975,6 +79419,182 @@ function farmUnitPre(u, dt) {
   }
   return false;
 }
+/* ---- A MOB, NOT A RING. The ones not pressing you used to share one rule —
+ * a circle at a fixed distance, a side drawn on a timer, every face on you —
+ * and three or four men obeying the same rule at the same time is exactly
+ * what reads as a script. Each now has a mind of his own made of a few small
+ * beats, drawn on his own clock: he WATCHES (stands, weight shifting, eyes on
+ * you), PACES a few steps one way, GOES somewhere else in the crowd at a walk
+ * or a jog, EDGES in a stride as if to come and thinks better of it, shouts
+ * his war cry and shakes his weapon at you, or turns and yells at the man
+ * beside him. His distance is his own and drifts. And the crowd answers what
+ * happens: a man cut down beside them flinches the near ones back, a blow
+ * that lands on you is cheered. */
+const farmMob = { tauntT: 0, lastHp: 0, dead: new Set() };
+const FARM_TAUNTS = ['rBeat', 'rShake', 'rCry'];
+function farmFace(u, want, dt, k = 1) {
+  let dr = want - u.g.rotation.y; dr = Math.atan2(Math.sin(dr), Math.cos(dr));
+  const cap = (u.kind.turnMax || 3.3) * k * dt;
+  u.g.rotation.y += THREE.MathUtils.clamp(dr, -cap, cap);
+}
+function farmTaunt(u, rate) {
+  const st = u.st;
+  if (st.flourish > 0) return false;
+  const pool = FARM_TAUNTS.filter((c) => u.clips[c]);
+  if (!pool.length) return false;
+  const c = (u.clips[u.kind.anim.roar] && Math.random() < 0.45) ? u.kind.anim.roar : pool[(Math.random() * pool.length) | 0];
+  const r = rate || (0.92 + Math.random() * 0.3);
+  st.flourishClip = c; st.flourishRate = r;
+  st.flourish = u.clips[c].getClip().duration / r;
+  const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
+  sfxMutRoar(d + 3, u.kind.voice);
+  farmMob.tauntT = 0.9 + Math.random() * 1.1;
+  return true;
+}
+function farmMobPick(u, M, d) {
+  const r = Math.random;
+  const w = [['watch', 0.28], ['pace', 0.24], ['move', 0.18], ['edge', d < M.R + 1.6 ? 0.13 : 0.02],
+    ['taunt', farmMob.tauntT <= 0 && d < 15 ? 0.11 : 0], ['call', 0.06]];
+  let tot = 0; for (const [, x] of w) tot += x;
+  let q = r() * tot, act = 'watch';
+  for (const [a, x] of w) { if ((q -= x) <= 0) { act = a; break; } }
+  if (act === M.act && act !== 'watch' && r() < 0.6) act = 'watch';      // not the same beat twice running
+  M.act = act; M.k = 0;
+  if (act === 'watch') M.t = 1.2 + r() * 2.6;
+  else if (act === 'pace') { M.t = 1.0 + r() * 1.8; M.side = r() < 0.5 ? -1 : 1; M.spd = 0.8 + r() * 0.7; }
+  else if (act === 'move') {
+    // somewhere else in the crowd: a new bearing round you, a new distance
+    const a0 = Math.atan2(u.g.position.x - camera.position.x, u.g.position.z - camera.position.z);
+    const a = a0 + (r() - 0.5) * 1.9, R = M.R * (0.85 + r() * 0.35);
+    M.tx = camera.position.x + Math.sin(a) * R; M.tz = camera.position.z + Math.cos(a) * R;
+    M.t = 3.2; M.spd = r() < 0.35 ? 2.6 + r() * 0.8 : 1.15 + r() * 0.5;
+  } else if (act === 'edge') { M.t = 1.15 + r() * 0.3; if (r() < 0.6) sfxMutRoar(d + 7, u.kind.voice); }
+  else if (act === 'taunt') { if (!farmTaunt(u)) { M.act = 'watch'; M.t = 1.5; } else M.t = u.st.flourish; }
+  else if (act === 'call') {
+    let best = null, bd = 9;
+    for (const o of farmUnits) { if (o === u || !o.st.alive || !o.farm.out || o.farm.burst) continue; const e = o.g.position.distanceTo(u.g.position); if (e < bd) { bd = e; best = o; } }
+    if (!best) { M.act = 'watch'; M.t = 1.4; }
+    else { M.mate = best; M.t = 1.0 + r() * 0.5; sfxMutRoar(d + 5, u.kind.voice); }
+  }
+}
+function farmMobHold(u, dt, d, dx, dz) {
+  const pk = u.pk, st = u.st, p = u.g.position;
+  const M = pk.mob || (pk.mob = { act: 'watch', t: Math.random() * 1.2, R: 0, side: 1, spd: 1, k: 0 });
+  // a beat he is in the middle of: the war cry, the cheer
+  if (st.flourish > 0) {
+    farmFace(u, Math.atan2(dx, dz), dt, 0.5);
+    mutSeparate(u, dt); mutAnim(u, dt, 0);
+    st.cool = Math.max(st.cool, 0.25);
+    return true;
+  }
+  if (pk.role === 'press') {
+    /* and when it is his turn he does not simply start walking: now and then
+     * he shouts it first, from where he stands, and then comes */
+    if (!pk.shout) { pk.shout = true; if (d > 3.0 && farmMob.tauntT <= 0 && Math.random() < 0.35 && farmTaunt(u, 1.2)) { mutAnim(u, dt, 0); return true; } }
+    return null;
+  }
+  pk.shout = false;
+  if (!M.R) M.R = (u.kind.holdR || 4.6) * (0.85 + Math.random() * 0.45);
+  if (M.delay > 0 && (M.delay -= dt) <= 0) { M.delay = 0; if (M.after === 'taunt' && farmTaunt(u)) { M.act = 'taunt'; M.t = st.flourish; } }
+  M.t -= dt; M.k += dt;
+  if (M.t <= 0) farmMobPick(u, M, d);
+  const ux = dx / d, uz = dz / d;          // toward you
+  let vx = 0, vz = 0, face = Math.atan2(dx, dz), fk2 = 1;
+  const radial = THREE.MathUtils.clamp((d - M.R) * 0.55, -1.1, 1.1);
+  if (M.act === 'watch') {
+    vx = ux * radial * 0.5; vz = uz * radial * 0.5;
+    fk2 = 0.6;
+  } else if (M.act === 'pace') {
+    const e = Math.sin(Math.min(1, M.k / 0.35) * Math.PI / 2);      // gets going rather than starting at speed
+    vx = (-uz * M.side * M.spd) * e + ux * radial * 0.6; vz = (ux * M.side * M.spd) * e + uz * radial * 0.6;
+  } else if (M.act === 'move') {
+    const ex = M.tx - p.x, ez = M.tz - p.z, e = Math.hypot(ex, ez);
+    if (e < 0.6) { M.t = Math.min(M.t, 0.01); }
+    else {
+      const s = M.spd * Math.min(1, e / 1.2) * Math.min(1, M.k / 0.3);
+      vx = ex / e * s; vz = ez / e * s;
+      // a man crossing a crowd looks where he is going, and back at you when he gets there
+      if (M.spd > 2 || e > 2.5) face = Math.atan2(ex, ez);
+    }
+  } else if (M.act === 'edge') {
+    const k = M.k;
+    const s = k < 0.42 ? 2.3 * Math.sin(k / 0.42 * Math.PI) : k < 0.6 ? 0 : -1.35;
+    vx = ux * s; vz = uz * s;
+    if (d < 2.4 && s > 0) { vx = 0; vz = 0; }
+  } else if (M.act === 'call') {
+    const o = M.mate;
+    if (o && o.st.alive) face = Math.atan2(o.g.position.x - p.x, o.g.position.z - p.z);
+    fk2 = 1.2;
+  } else if (M.act === 'flinch') {
+    vx = M.fx * 1.9 * Math.max(0, 1 - M.k / 0.7); vz = M.fz * 1.9 * Math.max(0, 1 - M.k / 0.7);
+    face = Math.atan2(-M.fx, -M.fz);
+  }
+  p.x += vx * dt; p.z += vz * dt;
+  mutClampX(u, p, dt);
+  farmFace(u, face, dt, fk2);
+  mutSeparate(u, dt);
+  st.side = 0; st.back = 0;
+  mutAnim(u, dt, Math.hypot(vx, vz) / (MUT_SPEED * u.kind.speedK));
+  st.cool = Math.max(st.cool, 0.2);
+  return true;
+}
+// what the crowd sees: a man cut down, a blow landing on you
+function farmMobReact(kind, x, z) {
+  for (const u of farmUnits) {
+    if (!u.st.alive || !u.farm.out || u.farm.burst || !u.st.awake || !u.pk || u.pk.role !== 'hold') continue;
+    const M = u.pk.mob; if (!M) continue;
+    const dx = u.g.position.x - x, dz = u.g.position.z - z, d = Math.hypot(dx, dz) || 1;
+    if (kind === 'death' && d < 8) {
+      if (d < 4.2 && u.st.flourish <= 0) { M.act = 'flinch'; M.k = 0; M.t = 0.75; M.fx = dx / d; M.fz = dz / d; M.delay = 0.9 + Math.random() * 0.6; M.after = Math.random() < 0.5 ? 'taunt' : null; }
+      else if (Math.random() < 0.45) { M.delay = 0.35 + Math.random() * 0.7; M.after = 'taunt'; }
+    } else if (kind === 'hurt' && Math.random() < 0.3 && farmMob.tauntT <= 0) {
+      M.delay = 0.15 + Math.random() * 0.4; M.after = 'taunt';
+      if (Math.random() < 0.5) sfxMutLaugh(Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z) + 2, u.kind.voice);
+    }
+  }
+}
+function farmMobTick(dt) {
+  farmMob.tauntT = Math.max(0, farmMob.tauntT - dt);
+  for (const u of farmUnits) if (!u.st.alive && u.farm.out && !farmMob.dead.has(u)) { farmMob.dead.add(u); farmMobReact('death', u.g.position.x, u.g.position.z); }
+  if (hp < farmMob.lastHp && farmUnits.some((u) => u.st.alive && u.farm.out)) farmMobReact('hurt', camera.position.x, camera.position.z);
+  farmMob.lastHp = hp;
+}
+
+/* ---- THE ALARM, AND THE HOUSES FULL OF THEM. A bell in the tower tolls
+ * when the first door goes, slow and heavy; and through the fight, from the
+ * doors still shut, men can be heard shouting inside. */
+function sfxCastleBell(x, z, lvl = 1) {
+  const ctx = audioCtx; if (!ctx) return;
+  const d = Math.hypot(x - camera.position.x, z - camera.position.z);
+  const out = farOut(panTo(x, z) * 0.7, 3200 - Math.min(1, d / 120) * 1800);
+  const hit = 0.16 * lvl * Math.min(1, 30 / Math.max(30, d));
+  const t = audioCtx.currentTime + 0.02;
+  for (const [r, a, dd] of [[0.5, 0.5, 5.5], [1, 1, 4.2], [1.19, 0.6, 3.2], [1.5, 0.4, 2.6], [2.0, 0.5, 2.0], [2.74, 0.22, 1.2], [3.6, 0.1, 0.7]]) {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 196 * r * (1 + (Math.random() - 0.5) * 0.003);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(hit * a, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dd);
+    o.connect(g).connect(out); o.start(t); o.stop(t + dd + 0.05);
+  }
+  const n = noiseBurst(0.08, (k) => 1 - k);
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 2;
+  const ng = ctx.createGain(); ng.gain.value = hit * 0.8;
+  n.connect(bp).connect(ng).connect(out); n.start(t); n.stop(t + 0.1);
+}
+function farmBellSpot() { const s = FARM_SPINE[0]; return fortW(s[0], s[1]); }
+// a man inside a shut door, shouting: muffled, and only from doors nobody has come out of yet
+function farmCrowdTick(dt) {
+  if ((farmFight.crowdT = (farmFight.crowdT || 2) - dt) > 0) return;
+  const left = farmUnits.filter((u) => u.st.alive && !u.farm.out).length;
+  farmFight.crowdT = left ? 1.6 + Math.random() * 3.2 * (1 + 4 / (left + 1)) : 9;
+  if (!left) return;
+  const shut = farmDoors.filter((D) => !D.open && D.out);
+  if (!shut.length) return;
+  const D = shut[(Math.random() * shut.length) | 0], p = fortW(D.cx, D.cz);
+  const dd = Math.hypot(p.x - camera.position.x, p.z - camera.position.z);
+  if (dd > 30) return;
+  const V = Object.assign({}, FARM_BASE.voice, { pitch: 100 + Math.random() * 60, form: 0.95 + Math.random() * 0.15 });
+  sfxMutRoar(dd + 9, V);
+  if (Math.random() < 0.45) { D.rat = 0.05 + Math.random() * 0.04; D.ratV = 0; sfxPlankKnock(p.x, p.z, 3.5); }
+}
 function farmFightDone() { return farmFight.done || !farmUnits.length; }
 /* THE WAVES. Nothing moves until you are in; then the first door goes in a
  * second, and they keep coming — three on you at first, four, then five as
@@ -74986,11 +79606,15 @@ function updateFarmers(dt) {
   if (farmFight.done || !farmUnits.length) return;
   if (!inFort || fortBusy || !fortReady || frozen()) return;
   farmFight.t += dt;
-  if (!farmFight.started) { if (fortInT < 0.8) return; farmFight.started = true; farmFight.next = 0.9; }
+  if (!farmFight.started) { if (fortInT < 0.8) return; farmFight.started = true; farmFight.next = 0.9; farmFight.bellN = farmFight.bellN || 0; farmFight.bellT = 0.25; farmMob.lastHp = hp; }
+  // the alarm: eight strokes, slow, the first as the first door goes
+  if (farmFight.bellN < 8 && (farmFight.bellT -= dt) <= 0) { const B = farmBellSpot(); sfxCastleBell(B.x, B.z, 1 - farmFight.bellN * 0.06); farmFight.bellN++; farmFight.bellT = 2.1 + Math.random() * 0.25; }
+  farmMobTick(dt);
+  farmCrowdTick(dt);
   let live = 0, dead = 0;
   for (const u of farmUnits) { if (u.farm.out && u.st.alive) live++; if (!u.st.alive) dead++; }
   if (dead >= farmUnits.length) { farmFight.done = true; return; }
-  const cap = farmFight.sent < 5 ? 3 : farmFight.sent < 12 ? 4 : 5;
+  const cap = farmFight.sent < 5 ? 4 : farmFight.sent < 11 ? 5 : 6;
   farmFight.next -= dt * (live < 2 ? 2.2 : 1);
   if (farmFight.next > 0 || live >= cap) return;
   const ready = farmUnits.filter((u) => !u.farm.out && u.st.alive && u.model && u.clips.bCharge);
@@ -75002,6 +79626,7 @@ function updateFarmers(dt) {
 /* LEAVING THE CASTLE MID-FIGHT sends the ones still standing back indoors;
  * they come out again when you do. The doors stay broken. */
 function farmCalm() {
+  for (const D of farmDoors) { D.busy = false; if (D.open) D.closeAt = farmFight.t + 0.5; }
   for (const u of farmUnits) {
     if (!u.farm.out || !u.st.alive) continue;
     u.farm.out = false; u.farm.burst = null; u.holdAnim = false;
@@ -75047,84 +79672,334 @@ const ART_CHAIN_T = 3.4;             // a gap longer than this between blows bre
 const ART_HOLD = 3.2, ART_HOLD_BOSS = 2.3;
 const ART_DMG_K = 1.35, ART_HEAVY_K = 1.7;   // blows on something held; a heavy shatters it
 const ART_GOLD = 0xffcf3a;
-const art = { count: 0, lastHit: 0, cd: 0, swingHit: false, world: null, rise: 0, lamp: null, attachPending: null, grantPending: false, warmed: false };
+const art = { count: 0, lastHit: 0, cd: 0, swingHit: false, world: null, rise: 0, lamp: null, attachPending: null, grantPending: false, warmed: false, spot: null, drop: 0, dropT: 0 };
 const artFrozen = [];
 // function declarations, not consts: the hotbar and the pack are drawn at module time, long before this line
 function isArtWeapon(it) { return !!it && !!(it.onDig || it.gun); }
 function artWeapon() { return isArtWeapon(equipped) && equipped.artifact ? equipped : null; }
 
+/* THE ARTIFACT IS A THING SOMEBODY MADE, NOT A SHAPE. The first one was a
+ * smooth gold torus with twelve cone spikes round it and a white lathe in the
+ * middle — every part a primitive with no surface on it, which is exactly
+ * what the owner's "it looks like AI" was. A sailor's relic out of a whale's
+ * belly is SCRIMSHAW: a disc of whalebone with a whale cut into it and the
+ * cuts filled with lamp-black, set in a bronze bezel the sea has been at for
+ * a century — verdigris in every recess, the high edges rubbed back to
+ * metal, a crust of barnacles on one side, a tarred cord through the bail,
+ * and the whale's eye inlaid with a stone that still holds a little of the
+ * light from the heal. Every surface is DRAWN, colour and relief in one pass
+ * (the wreck's rule: the line that is dark and the line that is deep are the
+ * same line), so the engraving catches the light as the thing turns. */
+const ART_R = 0.040;                       // the bone face; the bezel stands proud round it
+function artNoise2(seed) {
+  // a cheap value noise on a 64-cell lattice, tiled, for the drawn maps
+  const N = 64, v = new Float32Array(N * N), rnd = mulberry32(seed);
+  for (let i = 0; i < v.length; i++) v[i] = rnd();
+  const sm = (t) => t * t * (3 - 2 * t);
+  return (x, y) => {
+    const xi = Math.floor(x), yi = Math.floor(y), fx = sm(x - xi), fy = sm(y - yi);
+    const a = v[((yi & 63) * N) + (xi & 63)], b = v[((yi & 63) * N) + ((xi + 1) & 63)];
+    const c = v[(((yi + 1) & 63) * N) + (xi & 63)], d = v[(((yi + 1) & 63) * N) + ((xi + 1) & 63)];
+    return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
+  };
+}
+function artFbm(nz, x, y, o = 4) { let s = 0, a = 0.5, f = 1; for (let i = 0; i < o; i++) { s += a * nz(x * f, y * f); f *= 2.03; a *= 0.5; } return s; }
+function artNormalFrom(hc, strength) {
+  const w = hc.width, h = hc.height, src = hc.getContext('2d').getImageData(0, 0, w, h).data;
+  const at = (x, y) => src[((Math.min(h - 1, Math.max(0, y))) * w + Math.min(w - 1, Math.max(0, x))) * 4];
+  const out = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const dx = (at(x + 1, y - 1) + 2 * at(x + 1, y) + at(x + 1, y + 1)) - (at(x - 1, y - 1) + 2 * at(x - 1, y) + at(x - 1, y + 1));
+    const dy = (at(x - 1, y + 1) + 2 * at(x, y + 1) + at(x + 1, y + 1)) - (at(x - 1, y - 1) + 2 * at(x, y - 1) + at(x + 1, y - 1));
+    let nx = -dx * strength / 255, ny = dy * strength / 255, nz = 1;
+    const l = Math.hypot(nx, ny, nz), o = (y * w + x) * 4;
+    out[o] = (nx / l * 0.5 + 0.5) * 255; out[o + 1] = (ny / l * 0.5 + 0.5) * 255; out[o + 2] = (nz / l * 0.5 + 0.5) * 255; out[o + 3] = 255;
+  }
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  c.getContext('2d').putImageData(new ImageData(out, w, h), 0, 0);
+  const t = new THREE.CanvasTexture(c); t.anisotropy = 4;
+  return t;
+}
+const artCanvas = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return [c, c.getContext('2d')]; };
+// bone: ivory gone yellow at the edge, growth lines, pores, stains and a few cracks — drawn into a colour and a height canvas together
+function artBone(g, hg, S, seed, edgeDark = 1) {
+  const rnd = mulberry32(seed), nz = artNoise2(seed + 7), c = S / 2;
+  g.fillStyle = '#d4c6a2'; g.fillRect(0, 0, S, S);
+  hg.fillStyle = 'rgb(150,150,150)'; hg.fillRect(0, 0, S, S);
+  // a mottle of yellowing, broken by noise, pixel by pixel at a quarter scale
+  const q = S / 4, [mc, mg] = artCanvas(q, q), im = mg.createImageData(q, q);
+  for (let y = 0; y < q; y++) for (let x = 0; x < q; x++) {
+    const n = artFbm(nz, x / 18, y / 18, 4), r = Math.hypot(x - q / 2, y - q / 2) / (q / 2), o = (y * q + x) * 4;
+    const k = Math.min(1, Math.max(0, (n - 0.35) * 1.6 + r * r * 0.55 * edgeDark));
+    im.data[o] = 214 - 70 * k; im.data[o + 1] = 198 - 82 * k; im.data[o + 2] = 160 - 92 * k; im.data[o + 3] = 255 * (0.35 + 0.65 * k);
+  }
+  mg.putImageData(im, 0, 0); g.imageSmoothingEnabled = true; g.drawImage(mc, 0, 0, S, S);
+  // growth lines: long faint waves across the bone, raised and lowered a touch
+  /* faint, and not many: bone has growth lines, but a hundred and seventy of
+   * them strong enough to see read as WOOD grain on the first build */
+  for (let i = 0; i < 46; i++) {
+    const y0 = rnd() * S, amp = 6 + rnd() * 18, fr = 0.003 + rnd() * 0.007, ph = rnd() * 9, dark = rnd() < 0.5;
+    const col = dark ? `rgba(120,96,62,${0.025 + rnd() * 0.04})` : `rgba(255,250,232,${0.04 + rnd() * 0.05})`;
+    g.strokeStyle = col; g.lineWidth = 2 + rnd() * 5; hg.strokeStyle = dark ? 'rgba(135,135,135,0.18)' : 'rgba(165,165,165,0.18)'; hg.lineWidth = g.lineWidth;
+    for (const ctx of [g, hg]) { ctx.beginPath(); for (let x = 0; x <= S; x += 8) { const y = y0 + Math.sin(x * fr + ph) * amp + Math.sin(x * fr * 3.1 + ph * 2) * amp * 0.25; x ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke(); }
+  }
+  // pores
+  for (let i = 0; i < 2600; i++) {
+    const x = rnd() * S, y = rnd() * S, r = 0.5 + rnd() * 1.1;
+    g.fillStyle = `rgba(80,60,36,${0.08 + rnd() * 0.16})`; g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill();
+    hg.fillStyle = 'rgba(95,95,95,0.6)'; hg.beginPath(); hg.arc(x, y, r, 0, 6.283); hg.fill();
+  }
+  // stains: tea-brown where it lay in the gut
+  for (let i = 0; i < 9; i++) {
+    const x = rnd() * S, y = rnd() * S, r = S * (0.05 + rnd() * 0.14), gr = g.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, `rgba(96,62,28,${0.10 + rnd() * 0.16})`); gr.addColorStop(1, 'rgba(96,62,28,0)');
+    g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  // cracks: from the rim inward, a wandering hairline with a paler lip
+  for (let i = 0; i < 7; i++) {
+    let a = rnd() * 6.283, rr = c * (0.97 - rnd() * 0.05), x = c + Math.cos(a) * rr, y = c + Math.sin(a) * rr, dir = a + Math.PI + (rnd() - 0.5) * 0.9;
+    const len = S * (0.05 + rnd() * 0.16), pts = [[x, y]];
+    for (let s = 0; s < len; s += 6) { dir += (rnd() - 0.5) * 0.7; x += Math.cos(dir) * 6; y += Math.sin(dir) * 6; pts.push([x, y]); }
+    for (const [ctx, col, w] of [[g, 'rgba(235,224,196,0.5)', 3.2], [g, 'rgba(48,32,18,0.85)', 1.4], [hg, 'rgb(40,40,40)', 2.0]]) {
+      ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); pts.forEach(([px, py], k) => (k ? ctx.lineTo(px, py) : ctx.moveTo(px, py))); ctx.stroke();
+    }
+  }
+}
+function artFaceMaps() {
+  const S = 1024, c = S / 2;
+  const [cc, g] = artCanvas(S, S), [hc, hg] = artCanvas(S, S);
+  artBone(g, hg, S, 431);
+  const rnd = mulberry32(977);
+  /* THE ENGRAVING. Every cut is drawn twice — lamp-black into the colour and
+   * a groove into the height — so the ink sits IN the line. */
+  const ink = (w = 3.5, a = 0.9) => { g.strokeStyle = `rgba(26,19,12,${a})`; g.lineWidth = w; hg.strokeStyle = 'rgb(70,70,70)'; hg.lineWidth = w * 1.15; };
+  const both = (fn) => { for (const ctx of [g, hg]) { ctx.save(); fn(ctx); ctx.restore(); } };
+  const strokeBoth = (path) => both((ctx) => { ctx.lineCap = 'round'; ctx.lineJoin = 'round'; path(ctx); ctx.stroke(); });
+  // the border: two rings and a rope between them, and the words a sailor cut round it
+  ink(5); strokeBoth((ctx) => { ctx.beginPath(); ctx.arc(c, c, 495, 0, 6.283); });
+  ink(3); strokeBoth((ctx) => { ctx.beginPath(); ctx.arc(c, c, 452, 0, 6.283); });
+  ink(2.4, 0.85);
+  for (let i = 0; i < 120; i++) {               // the rope, a twist every three degrees
+    const a = i / 120 * 6.283, a2 = a + 0.034;
+    if (a > 3.55 && a < 5.87) continue;            // the top arc carries the words instead
+    strokeBoth((ctx) => { ctx.beginPath(); ctx.moveTo(c + Math.cos(a) * 458, c + Math.sin(a) * 458); ctx.quadraticCurveTo(c + Math.cos(a + 0.03) * 476, c + Math.sin(a + 0.03) * 476, c + Math.cos(a2) * 490, c + Math.sin(a2) * 490); });
+  }
+  const words = 'WHAT THE SEA TAKES IT KEEPS';
+  g.font = 'bold 34px Georgia, "Times New Roman", serif'; hg.font = g.font;
+  const span = 2.18, a0 = -Math.PI / 2 - span / 2;
+  for (let i = 0; i < words.length; i++) {
+    const a = a0 + span * (i + 0.5) / words.length;
+    both((ctx) => { ctx.translate(c + Math.cos(a) * 474, c + Math.sin(a) * 474); ctx.rotate(a + Math.PI / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = ctx === g ? 'rgba(26,19,12,0.88)' : 'rgb(70,70,70)'; ctx.fillText(words[i], 0, 0); });
+  }
+  // the moon, a crescent hatched across
+  both((ctx) => {
+    ctx.beginPath(); ctx.arc(318, 268, 62, 0, 6.283); ctx.moveTo(346 + 56, 252); ctx.arc(346, 252, 56, 0, 6.283); ctx.clip('evenodd');
+    ctx.strokeStyle = ctx === g ? 'rgba(26,19,12,0.75)' : 'rgb(80,80,80)'; ctx.lineWidth = 2;
+    for (let k = -80; k < 80; k += 7) { ctx.beginPath(); ctx.moveTo(250 + k, 200); ctx.lineTo(390 + k, 340); ctx.stroke(); }
+  });
+  ink(3); strokeBoth((ctx) => { ctx.beginPath(); ctx.arc(318, 268, 62, 0.62, 5.42); ctx.arc(346, 252, 56, 4.9, 0.98, true); });
+  for (const [sx, sy, s] of [[440, 210, 11], [520, 168, 7], [610, 236, 9], [230, 380, 6], [705, 180, 6]]) {   // stars
+    ink(2.2); strokeBoth((ctx) => { ctx.beginPath(); ctx.moveTo(sx - s, sy); ctx.lineTo(sx + s, sy); ctx.moveTo(sx, sy - s); ctx.lineTo(sx, sy + s); });
+  }
+  // THE WHALE, side on, swimming right: the silhouette, then hatching inside it
+  const whale = (ctx) => {
+    /* A WHALE IS DEEP AND BLUNT. The first outline was slim and pointed and it
+     * read as a fish: a humpback is a third as deep as it is long, its head is
+     * a rounded wedge, and the body is widest well forward of the middle. */
+    ctx.beginPath();
+    ctx.moveTo(832, 500);
+    ctx.bezierCurveTo(830, 452, 792, 414, 722, 408);       // the blunt head, up to the crown
+    ctx.bezierCurveTo(620, 400, 470, 414, 382, 446);       // the back, falling away
+    ctx.lineTo(362, 426); ctx.lineTo(346, 456);             // the small hump of a fin
+    ctx.bezierCurveTo(314, 468, 292, 476, 270, 482);       // the tail stock
+    ctx.bezierCurveTo(242, 450, 208, 416, 168, 402);       // upper fluke
+    ctx.bezierCurveTo(186, 444, 206, 478, 222, 494);       // the notch
+    ctx.bezierCurveTo(204, 516, 182, 552, 164, 590);       // lower fluke
+    ctx.bezierCurveTo(208, 568, 246, 532, 272, 512);
+    ctx.bezierCurveTo(342, 550, 452, 592, 562, 594);       // the belly
+    ctx.bezierCurveTo(672, 596, 770, 574, 812, 542);       // the throat
+    ctx.bezierCurveTo(830, 528, 836, 514, 832, 500);       // the chin
+    ctx.closePath();
+  };
+  // a wash of grime pooled in the figure first, so it reads as cut deeper than the bone round it
+  g.save(); whale(g); g.clip(); g.fillStyle = 'rgba(70,52,30,0.22)'; g.fillRect(0, 0, S, S); g.restore();
+  hg.save(); whale(hg); hg.clip(); hg.fillStyle = 'rgba(128,128,128,0.6)'; hg.fillRect(0, 0, S, S); hg.restore();
+  // hatching: along the back, denser toward the top (the light is from below in the sea)
+  both((ctx) => {
+    whale(ctx); ctx.clip(); ctx.lineWidth = 1.8;
+    for (let k = 0; k < 28; k++) {
+      const y = 412 + k * 6.2, a = Math.max(0.10, 0.85 - k * 0.035);
+      ctx.strokeStyle = ctx === g ? `rgba(26,19,12,${a})` : `rgba(80,80,80,${a})`;
+      ctx.beginPath(); for (let x = 150; x <= 840; x += 10) { const yy = y + Math.sin(x * 0.011 + k) * 3 + (x - 500) * (x - 500) * 0.00008 * (k < 8 ? -1 : 0.4); x === 150 ? ctx.moveTo(x, yy) : ctx.lineTo(x, yy); } ctx.stroke();
+    }
+    // the throat pleats, parallel to the belly
+    ctx.lineWidth = 2.2;
+    for (let k = 0; k < 9; k++) {
+      ctx.strokeStyle = ctx === g ? 'rgba(26,19,12,0.85)' : 'rgb(72,72,72)';
+      ctx.beginPath(); ctx.moveTo(814 - k * 7, 530 + k * 5); ctx.bezierCurveTo(740, 560 + k * 3.4, 640, 580 + k * 1.6, 520, 580 + k * 1.2); ctx.stroke();
+    }
+  });
+  ink(4.5); strokeBoth(whale);
+  ink(3); strokeBoth((ctx) => { ctx.beginPath(); ctx.moveTo(830, 506); ctx.bezierCurveTo(792, 512, 748, 520, 704, 518); });     // the mouth
+  ink(3.4); strokeBoth((ctx) => {                                                                                               // the flipper
+    ctx.beginPath(); ctx.moveTo(664, 560); ctx.bezierCurveTo(640, 600, 596, 640, 536, 660); ctx.bezierCurveTo(576, 626, 612, 594, 628, 562); ctx.closePath(); });
+  // the spout, fanning up off the blowhole
+  ink(2.2, 0.8);
+  for (let k = -4; k <= 4; k++) strokeBoth((ctx) => { ctx.beginPath(); ctx.moveTo(706, 404); ctx.quadraticCurveTo(706 + k * 10, 362, 706 + k * 26, 334 + Math.abs(k) * 7); });
+  // the sea under it: three rows of curling crests
+  for (let row = 0; row < 3; row++) {
+    const y = 700 + row * 50, off = row * 34;
+    for (let x = 120 + off; x < 900; x += 92) {
+      const r2 = Math.hypot(x - c, y - c); if (r2 > 430) continue;
+      ink(3); strokeBoth((ctx) => { ctx.beginPath(); ctx.moveTo(x - 40, y + 10); ctx.bezierCurveTo(x - 20, y - 16, x + 18, y - 22, x + 30, y - 4); ctx.arc(x + 20, y - 2, 10, 0, Math.PI * 1.4, true); });
+    }
+  }
+  // the eye: a ring cut for the stone (`ART_EYE`)
+  ink(2.6); strokeBoth((ctx) => { ctx.beginPath(); ctx.arc(738, 474, 12, 0, 6.283); });
+  // and the ink worn out of the high places by a century of thumbs and grit
+  const nz = artNoise2(55);
+  const [wc, wg] = artCanvas(256, 256), wi = wg.createImageData(256, 256);
+  for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) { const n = artFbm(nz, x / 14, y / 14, 3), o = (y * 256 + x) * 4; wi.data[o] = 214; wi.data[o + 1] = 200; wi.data[o + 2] = 168; wi.data[o + 3] = Math.max(0, (n - 0.58) * 520); }
+  wg.putImageData(wi, 0, 0); g.globalAlpha = 0.55; g.drawImage(wc, 0, 0, S, S); g.globalAlpha = 1;
+  // the bevel at the rim, in the height only: a soft shoulder down to the bezel
+  const gr = hg.createRadialGradient(c, c, 470, c, c, 512); gr.addColorStop(0, 'rgba(150,150,150,0)'); gr.addColorStop(1, 'rgba(60,60,60,1)');
+  hg.fillStyle = gr; hg.fillRect(0, 0, S, S);
+  const map = new THREE.CanvasTexture(cc); map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 8;
+  return { map, normalMap: artNormalFrom(hc, 4.2) };
+}
+function artBackMaps() {
+  const S = 512, c = S / 2, [cc, g] = artCanvas(S, S), [hc, hg] = artCanvas(S, S);
+  artBone(g, hg, S, 1201, 1.4);
+  // the back is rough-cut: a spiral turned into it, and a maker's mark
+  for (let k = 0; k < 2; k++) {
+    const ctx = k ? hg : g; ctx.strokeStyle = k ? 'rgb(90,90,90)' : 'rgba(60,44,26,0.55)'; ctx.lineWidth = 3;
+    ctx.beginPath(); for (let a = 0; a < 6.283 * 5; a += 0.05) { const r = 18 + a * 7.4; const x = c + Math.cos(a) * r, y = c + Math.sin(a) * r; a ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke();
+  }
+  const map = new THREE.CanvasTexture(cc); map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 4;
+  return { map, normalMap: artNormalFrom(hc, 3.0) };
+}
+// bronze: dark metal with verdigris in the recesses and the high places rubbed bright; the metalness map is black wherever it has turned to salt
+function artBronzeMaps() {
+  const W = 512, H = 128, [cc, g] = artCanvas(W, H), [mc, mgc] = artCanvas(W, H), [hc, hg] = artCanvas(W, H);
+  const nz = artNoise2(301), nz2 = artNoise2(302), im = g.createImageData(W, H), mi = mgc.createImageData(W, H), hi = hg.createImageData(W, H), rnd = mulberry32(303);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const o = (y * W + x) * 4, n = artFbm(nz, x / 22, y / 22, 4), n2 = artFbm(nz2, x / 7, y / 7, 3);
+    const crown = 1 - Math.abs(y / H - 0.42) * 2.2;                   // the outer face of the bezel, where hands and sand wore it
+    const verd = Math.min(1, Math.max(0, (n - 0.44 + (1 - crown) * 0.22) * 3.2));
+    const bright = Math.max(0, crown) * Math.max(0, 1 - verd * 1.6) * (0.5 + n2 * 0.7);
+    let r = 84 + 70 * bright + n2 * 18, gg = 60 + 52 * bright + n2 * 12, b = 32 + 26 * bright + n2 * 8;
+    r = r * (1 - verd) + (58 + 40 * n2) * verd; gg = gg * (1 - verd) + (128 + 46 * n2) * verd; b = b * (1 - verd) + (108 + 30 * n2) * verd;
+    im.data[o] = r; im.data[o + 1] = gg; im.data[o + 2] = b; im.data[o + 3] = 255;
+    const met = (1 - verd) * 255; mi.data[o] = 0; mi.data[o + 1] = 120 + verd * 120; mi.data[o + 2] = met; mi.data[o + 3] = 255;   // glTF order: G roughness, B metalness
+    const hgt = 150 + n2 * 50 - verd * 30; hi.data[o] = hi.data[o + 1] = hi.data[o + 2] = hgt; hi.data[o + 3] = 255;
+  }
+  g.putImageData(im, 0, 0); mgc.putImageData(mi, 0, 0); hg.putImageData(hi, 0, 0);
+  for (let i = 0; i < 420; i++) {                                     // pits
+    const x = rnd() * W, y = rnd() * H, r = 0.6 + rnd() * 1.6;
+    g.fillStyle = 'rgba(28,20,10,0.6)'; g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill();
+    hg.fillStyle = 'rgb(70,70,70)'; hg.beginPath(); hg.arc(x, y, r, 0, 6.283); hg.fill();
+  }
+  for (let i = 0; i < 60; i++) {                                      // scratches through the patina
+    const x = rnd() * W, y = rnd() * H, a = (rnd() - 0.5) * 0.6, l = 8 + rnd() * 30;
+    g.strokeStyle = `rgba(214,170,96,${0.25 + rnd() * 0.35})`; g.lineWidth = 0.8;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
+  }
+  const map = new THREE.CanvasTexture(cc); map.colorSpace = THREE.SRGBColorSpace; map.wrapS = THREE.RepeatWrapping; map.repeat.set(3, 1);
+  const mr = new THREE.CanvasTexture(mc); mr.wrapS = THREE.RepeatWrapping; mr.repeat.set(3, 1);
+  const nm = artNormalFrom(hc, 2.4); nm.wrapS = THREE.RepeatWrapping; nm.repeat.set(3, 1);
+  return { map, mr, normalMap: nm };
+}
+function artCrustMaps() {
+  const S = 128, [cc, g] = artCanvas(S, S), [hc, hg] = artCanvas(S, S), rnd = mulberry32(88), nz = artNoise2(89);
+  const im = g.createImageData(S, S), hi = hg.createImageData(S, S);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const o = (y * S + x) * 4, n = artFbm(nz, x / 6, y / 6, 3);
+    im.data[o] = 170 + n * 60; im.data[o + 1] = 164 + n * 54; im.data[o + 2] = 150 + n * 44; im.data[o + 3] = 255;
+    hi.data[o] = hi.data[o + 1] = hi.data[o + 2] = 90 + n * 140; hi.data[o + 3] = 255;
+  }
+  g.putImageData(im, 0, 0); hg.putImageData(hi, 0, 0);
+  for (let i = 0; i < 40; i++) { g.strokeStyle = `rgba(70,60,48,${0.3 + rnd() * 0.3})`; g.lineWidth = 1; const y = rnd() * S; g.beginPath(); g.moveTo(0, y); g.lineTo(S, y + (rnd() - 0.5) * 20); g.stroke(); }
+  const map = new THREE.CanvasTexture(cc); map.colorSpace = THREE.SRGBColorSpace; map.wrapS = map.wrapT = THREE.RepeatWrapping;
+  const nm = artNormalFrom(hc, 3.4); nm.wrapS = nm.wrapT = THREE.RepeatWrapping;
+  return { map, normalMap: nm };
+}
+// the whale's eye on the face, in metres: the ring cut for it at canvas (744, 466) on a 1024 face of radius ART_R
+const ART_EYE = new THREE.Vector2((738 / 1024 - 0.5) * 2 * ART_R, (0.5 - 474 / 1024) * 2 * ART_R);
 function makeWhaleArtifact() {
   const g = new THREE.Group(); g.name = 'whaleArtifact';
   const env = ringEnv();
-  const gold = new THREE.MeshStandardMaterial({ color: 0xc9a045, metalness: 0.85, roughness: 0.3, envMap: env, envMapIntensity: 2.6, emissive: 0x3d2708, emissiveIntensity: 0.7 });
-  const ivory = new THREE.MeshStandardMaterial({ color: 0xe8dec6, roughness: 0.46, metalness: 0, emissive: 0x2e2819, emissiveIntensity: 0.55 });
-  const pearl = new THREE.MeshStandardMaterial({ color: 0xc8ecff, roughness: 0.12, metalness: 0, emissive: 0x5fb9ff, emissiveIntensity: 1.8 });
-  const R = 0.04;
-  // the setting: a gold ring with a beaded inner rim and twelve rays round it, a relic's sun
-  g.add(new THREE.Mesh(new THREE.TorusGeometry(R, 0.0048, 12, 64), gold));
-  const bead = new THREE.SphereGeometry(0.0021, 8, 6);
-  for (let i = 0; i < 36; i++) {
-    const a = i / 36 * Math.PI * 2, b = new THREE.Mesh(bead, gold);
-    b.position.set(Math.cos(a) * (R - 0.0058), Math.sin(a) * (R - 0.0058), 0); g.add(b);
+  const R = ART_R, T = 0.0034;                // the bone's half thickness at the rim
+  const face = artFaceMaps(), back = artBackMaps(), bz = artBronzeMaps(), crust = artCrustMaps();
+  const lift = (m, k) => { m.emissive = new THREE.Color(0xffffff); m.emissiveMap = m.map; m.emissiveIntensity = k; return m; };
+  const boneF = lift(new THREE.MeshStandardMaterial({ map: face.map, normalMap: face.normalMap, normalScale: new THREE.Vector2(1.6, 1.6), roughness: 0.62, metalness: 0, envMap: env, envMapIntensity: 0.35 }), 0.16);
+  const boneB = lift(new THREE.MeshStandardMaterial({ map: back.map, normalMap: back.normalMap, roughness: 0.78, metalness: 0, envMap: env, envMapIntensity: 0.25 }), 0.12);
+  const bronze = lift(new THREE.MeshStandardMaterial({ map: bz.map, metalnessMap: bz.mr, roughnessMap: bz.mr, normalMap: bz.normalMap, normalScale: new THREE.Vector2(1.2, 1.2),
+    metalness: 1, roughness: 1, envMap: env, envMapIntensity: 1.9 }), 0.10);
+  const crustM = lift(new THREE.MeshStandardMaterial({ map: crust.map, normalMap: crust.normalMap, normalScale: new THREE.Vector2(1.5, 1.5), roughness: 0.92, metalness: 0 }), 0.10);
+  const cordM = new THREE.MeshStandardMaterial({ color: 0x2c2218, roughness: 0.85, metalness: 0, emissive: 0x140d07, emissiveIntensity: 1 });
+  const stoneM = new THREE.MeshStandardMaterial({ color: 0x9fdcff, roughness: 0.08, metalness: 0, emissive: 0x2f8fe0, emissiveIntensity: 1.6, envMap: env, envMapIntensity: 1.4 });
+  // lathe about Y turned so its axis is +Z, with a planar uv off x and y for the faces
+  const lathe = (pts, seg) => { const geo = new THREE.LatheGeometry(pts.map(([r, z]) => new THREE.Vector2(r, z)), seg); geo.rotateX(Math.PI / 2); return geo; };
+  const planarUV = (geo) => { const p = geo.attributes.position, uv = new Float32Array(p.count * 2); for (let i = 0; i < p.count; i++) { uv[i * 2] = p.getX(i) / (2 * R) + 0.5; uv[i * 2 + 1] = p.getY(i) / (2 * R) + 0.5; } geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); return geo; };
+  // the face: domed, falling to the rim; the back flatter
+  const fp = [], bp = [];
+  for (let k = 0; k <= 24; k++) { const r = R * k / 24, d = Math.cos((k / 24) * Math.PI / 2); fp.push([r, T + 0.0022 * d]); bp.push([r, -T - 0.0009 * d]); }
+  const faceGeo = planarUV(lathe(fp.reverse(), 96)); faceGeo.computeVertexNormals();
+  const backGeo = planarUV(lathe(bp, 96)); backGeo.computeVertexNormals();
+  g.add(new THREE.Mesh(faceGeo, boneF), new THREE.Mesh(backGeo, boneB));
+  const edge = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 2 * T, 96, 1, true), boneB); edge.rotation.x = Math.PI / 2; g.add(edge);
+  // THE BEZEL: a closed section turned round the disc — a lip over the front of the bone, a heavy outer face, a step behind
+  const sec = [[R - 0.0016, T + 0.0006], [R + 0.0006, T + 0.0024], [R + 0.0044, T + 0.0018], [R + 0.0066, T], [R + 0.0070, -T + 0.0004], [R + 0.0058, -T - 0.0016],
+               [R + 0.0010, -T - 0.0018], [R - 0.0004, -T - 0.0004], [R - 0.0004, T - 0.0006], [R - 0.0016, T + 0.0006]];
+  const bezGeo = lathe(sec, 128); bezGeo.computeVertexNormals();
+  g.add(new THREE.Mesh(bezGeo, bronze));
+  // rivets round the front lip, every forty-five degrees but one lost
+  const rivGeo = new THREE.SphereGeometry(0.0021, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2); rivGeo.rotateX(Math.PI / 2);
+  for (let i = 0; i < 8; i++) {
+    if (i === 5) continue;
+    const a = i / 8 * Math.PI * 2 + 0.2, rv = new THREE.Mesh(rivGeo, bronze);
+    rv.position.set(Math.cos(a) * (R + 0.0034), Math.sin(a) * (R + 0.0034), T + 0.0019); rv.scale.set(1, 1, 0.75); g.add(rv);
   }
-  for (let i = 0; i < 12; i++) {
-    const a = i / 12 * Math.PI * 2 + Math.PI / 12, long = i % 2 === 0;
-    const c = new THREE.Mesh(new THREE.ConeGeometry(0.0034, long ? 0.019 : 0.012, 4), gold);
-    c.position.set(Math.cos(a) * (R + (long ? 0.013 : 0.009)), Math.sin(a) * (R + (long ? 0.013 : 0.009)), 0);
-    c.rotation.z = a - Math.PI / 2; g.add(c);
+  // the bail at the top, a heavy loop cast with it, and the tarred cord through it, frayed where it parted
+  const bail = new THREE.Mesh(new THREE.TorusGeometry(0.0072, 0.0021, 12, 32), bronze);
+  bail.position.set(0, R + 0.0118, 0); bail.rotation.y = Math.PI / 2; g.add(bail);
+  const cordCurve = new THREE.CatmullRomCurve3([[-0.011, R + 0.028, 0.004], [-0.004, R + 0.016, 0.002], [0, R + 0.0118, -0.0005], [0.005, R + 0.017, -0.003], [0.012, R + 0.026, -0.001], [0.017, R + 0.022, 0.003]].map((p) => new THREE.Vector3(...p)));
+  const cord = new THREE.Mesh(new THREE.TubeGeometry(cordCurve, 48, 0.0013, 8, false), cordM); g.add(cord);
+  for (let i = 0; i < 7; i++) {                                         // the frayed end
+    const fr = new THREE.Mesh(new THREE.CylinderGeometry(0.00025, 0.00012, 0.006 + (i % 3) * 0.002, 4), cordM);
+    fr.position.set(0.017 + Math.cos(i) * 0.0008, R + 0.022 - 0.003, 0.003 + Math.sin(i) * 0.0008); fr.rotation.set(0.4 * Math.sin(i * 2.1), 0, 0.5 + 0.3 * Math.cos(i * 1.7)); g.add(fr);
   }
-  // the whale, carved in bone: a lathe down its length, flattened, arched as if it breaches
-  const pts = [];
-  for (let k = 0; k <= 24; k++) {
-    const t = k / 24;
-    const r = 0.0105 * Math.pow(Math.sin(Math.PI * Math.min(1, t * 1.02)), 0.75) * (1 - 0.62 * t) + (t > 0.97 ? 0 : 0.0006);
-    pts.push(new THREE.Vector2(Math.max(0.0002, r), -0.034 + t * 0.066));
+  // barnacles crusted on the lower left of the bezel: little volcanoes with their plates shut
+  const rnd = mulberry32(4242);
+  for (let i = 0; i < 11; i++) {
+    const a = Math.PI * (1.06 + rnd() * 0.38), s = 0.0016 + rnd() * 0.0024;
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.45, s, s * 1.3, 7, 1, false), crustM);
+    const rr = R + 0.0042 + rnd() * 0.0028, z = (rnd() - 0.3) * 0.004;
+    bar.position.set(Math.cos(a) * rr, Math.sin(a) * rr, z);
+    bar.lookAt(bar.position.clone().multiplyScalar(2).setZ(z + 0.01)); bar.rotateX(Math.PI / 2);
+    g.add(bar);
+    const plate = new THREE.Mesh(new THREE.ConeGeometry(s * 0.42, s * 0.35, 4), crustM);
+    plate.position.copy(bar.position).addScaledVector(bar.position.clone().setZ(0).normalize(), s * 0.62);
+    plate.quaternion.copy(bar.quaternion); g.add(plate);
   }
-  const bodyGeo = new THREE.LatheGeometry(pts, 22);
-  const pos = bodyGeo.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    const y = pos.getY(i), t = (y + 0.034) / 0.066;
-    pos.setZ(i, pos.getZ(i) * 0.62);
-    pos.setX(i, pos.getX(i) + 0.006 * Math.sin(t * Math.PI));          // the arch of its back
-    if (pos.getX(i) < 0 && t < 0.35) pos.setX(i, pos.getX(i) * 0.8);    // the flat of the jaw
-  }
-  bodyGeo.computeVertexNormals();
-  const body = new THREE.Mesh(bodyGeo, ivory);
-  body.rotation.z = -Math.PI / 2 - 0.28;          // head to the right, rising
-  body.position.set(-0.002, -0.002, 0.002);
-  g.add(body);
-  // the flukes
-  const fs = new THREE.Shape();
-  fs.moveTo(0, 0); fs.bezierCurveTo(-0.006, 0.006, -0.016, 0.011, -0.021, 0.008);
-  fs.bezierCurveTo(-0.015, 0.004, -0.009, 0.002, 0, -0.001);
-  fs.bezierCurveTo(-0.009, -0.004, -0.015, -0.006, -0.021, -0.01);
-  fs.bezierCurveTo(-0.016, -0.012, -0.006, -0.007, 0, 0);
-  const fl = new THREE.Mesh(new THREE.ExtrudeGeometry(fs, { depth: 0.0022, bevelEnabled: true, bevelThickness: 0.0008, bevelSize: 0.0006, bevelSegments: 2 }), ivory);
-  const tail = new THREE.Vector3(0, 0.034, 0).applyAxisAngle(new THREE.Vector3(0, 0, 1), body.rotation.z).add(body.position);
-  fl.position.set(tail.x + 0.003, tail.y, -0.001); fl.rotation.z = -0.28 + 0.35; g.add(fl);
-  // a flipper, and the eye inlaid in gold
-  const fp = new THREE.Mesh(new THREE.SphereGeometry(0.006, 10, 8), ivory);
-  fp.scale.set(1.5, 0.45, 0.25); fp.position.set(0.004, -0.009, 0.006); fp.rotation.z = -0.9; g.add(fp);
-  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.0016, 8, 6), gold);
-  eye.position.set(0.021, -0.006, 0.0068); g.add(eye);
-  // the pearl over its blowhole, held in the top of the ring in a gold claw
-  const pr = new THREE.Mesh(new THREE.SphereGeometry(0.0078, 20, 14), pearl);
-  pr.position.set(0, R + 0.001, 0.001); g.add(pr);
-  const claw = new THREE.Mesh(new THREE.TorusGeometry(0.0078, 0.0013, 6, 20, Math.PI * 1.2), gold);
-  claw.position.copy(pr.position); claw.rotation.z = Math.PI + 0.3; g.add(claw);
-  // and the bail it once hung from
-  const bail = new THREE.Mesh(new THREE.TorusGeometry(0.006, 0.0016, 8, 20), gold);
-  bail.position.set(0, R + 0.0165, 0); bail.rotation.y = Math.PI / 2; g.add(bail);
-  g.userData.pearl = pr;
+  // THE EYE: a cabochon set where the whale's eye is cut, still holding a little of the heal's light
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.0011, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), stoneM);
+  eye.rotation.x = Math.PI / 2; eye.scale.set(1, 1, 0.55);
+  eye.position.set(ART_EYE.x, ART_EYE.y, T + 0.0016); g.add(eye);
+  const setting = new THREE.Mesh(new THREE.TorusGeometry(0.00118, 0.00028, 8, 24), bronze);
+  setting.position.copy(eye.position); setting.position.z -= 0.0002; g.add(setting);
+  g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+  g.userData.pearl = eye;
   return g;
 }
 function makeArtIcon() {
   const c = document.createElement('canvas'); c.width = c.height = 64;
   const x = c.getContext('2d');
-  x.strokeStyle = '#d8b14a'; x.lineWidth = 3;
-  x.beginPath(); x.arc(32, 34, 20, 0, Math.PI * 2); x.stroke();
-  x.fillStyle = '#eee3c9'; x.beginPath(); x.ellipse(32, 36, 13, 6, -0.25, 0, Math.PI * 2); x.fill();
-  x.fillStyle = '#9fdcff'; x.beginPath(); x.arc(32, 13, 5, 0, Math.PI * 2); x.fill();
+  x.fillStyle = '#d4c6a2'; x.beginPath(); x.arc(32, 34, 20, 0, Math.PI * 2); x.fill();
+  x.strokeStyle = '#6a5126'; x.lineWidth = 4; x.stroke();
+  x.fillStyle = '#2a1f14'; x.beginPath(); x.ellipse(32, 36, 13, 5, -0.1, 0, Math.PI * 2); x.fill();
+  x.fillStyle = '#9fdcff'; x.beginPath(); x.arc(41, 34, 2, 0, Math.PI * 2); x.fill();
   return c.toDataURL();
 }
 const whaleArtModel = makeWhaleArtifact();
@@ -75158,7 +80033,7 @@ function attachArtifact(a, w) {
   if (w.artifact) { const old = w.artifact; w.artifact = null; old.on = null; addToInventory(old); }
   for (const it of inventory) if (it !== w && it.artifact === a) it.artifact = null;
   if (inventory.includes(a)) {
-    const i = inventory.indexOf(a); inventory.splice(i, 1);
+    const i = inventory.indexOf(a); inventory.splice(i, 1); clearSlot(a);
   }
   w.artifact = a; a.on = w;
   art.count = 0; art.lastHit = 0;
@@ -75197,7 +80072,11 @@ function artCount(u, killed) {
   if (art.count > 0 && now - art.lastHit > ART_CHAIN_T) art.count = 0;
   art.lastHit = now;
   art.count = Math.min(ART_HITS, art.count + 1);
-  if (art.count < ART_HITS) { sfxArtTick(art.count); artHudPulse(); return; }
+  if (art.count < ART_HITS) {
+    sfxArtTick(art.count); artHudPulse();
+    _artV.copy(u.g.position); _artV.y += u.kind.h * 0.55; artBurst(_artV, u.kind.h * 0.4, 8 + art.count * 8);
+    return;
+  }
   // the third: if it is still standing it is held; if the blow killed it the chain waits, primed, for the next
   if (!killed && u.st.alive && !u.st.struck) { art.count = 0; artImmobilize(u); }
   else artHudPulse();
@@ -75219,9 +80098,14 @@ function artImmobilize(u) {
   if (!artFrozen.includes(u)) artFrozen.push(u);
   artOutline(u, true);
   art.cd = ART_CD;
-  hitstop = Math.max(hitstop, 0.07); addTrauma(0.28); fovKick = Math.max(fovKick, 4.5);
+  /* A CRISP STOP, NOT A SHAKE: a longer hold of the world than any hit, a
+   * small kick of the lens, and the seal, the rings and the gold flash. */
+  hitstop = Math.max(hitstop, 0.14); addTrauma(0.12); fovKick = Math.max(fovKick, 5.5);
   const c = _artV.copy(u.g.position); c.y += u.kind.h * 0.55;
-  artBurst(c, u.kind.h, 70);
+  /* no seal and no rings any more (the owner's word: take the circle out),
+   * and the rest of it a good deal quieter */
+  artBurst(c, u.kind.h, 46);
+  artFlash(0.42);
   sfxArtImmob(c.x, c.z);
   artHudPulse();
 }
@@ -75234,8 +80118,8 @@ function artRelease(u, shatter) {
   if (shatter) artDropShells(u);       // at once: a body about to be cut up must not carry a second skin
   else artOutline(u, false);
   const c = _artV.copy(u.g.position); c.y += u.kind.h * 0.55;
-  if (shatter) { artBurst(c, u.kind.h, 110, true); worldSparks(c, 18); sfxArtShatter(c.x, c.z); }
-  else { artBurst(c, u.kind.h, 40); sfxArtFade(c.x, c.z); }
+  if (shatter) { artBurst(c, u.kind.h, 60, true); worldSparks(c, 12); sfxArtShatter(c.x, c.z); artFlash(0.3); }
+  else { artBurst(c, u.kind.h, 14); artFlakes(u, 24); sfxArtFade(c.x, c.z); }
 }
 /* A BLOW ON SOMETHING HELD. It cannot guard, reel or be knocked down — it is
  * held — so none of `hurtMutantCore`'s reactions run: the blow goes in harder,
@@ -75260,8 +80144,10 @@ function artHitFrozen(u, dmg, P) {
   woundMutant(u, _hitC.x, _hitC.z, by, P);
   bossHit(P, true, true);
   st.immobJolt = 1;
+  artSealFlare(u);
   _artV.set(u.g.position.x, by, u.g.position.z);
-  artBurst(_artV, u.kind.h * 0.5, heavy ? 0 : 14);
+  artBurst(_artV, u.kind.h * 0.5, heavy ? 0 : 18);
+  if (!heavy) worldSparks(_artV, 8);
   if (heavy) artRelease(u, true);
   else { st.immob = Math.max(0.3, st.immob - 0.12); sfxArtCrack(_artV.x, _artV.z); }
   if (bloodHeld()) bleedBuild(u, P);
@@ -75300,13 +80186,13 @@ const ART_TIME = { value: 0 };
 function artShellMat(kind) {
   const line = kind === 'line', sheen = kind === 'sheen';
   const m = new THREE.MeshBasicMaterial({
-    color: line ? 0xffd84a : sheen ? 0xffc23a : 0xffb21e,
+    color: line ? 0xe6c86a : sheen ? 0xd9b45a : 0xd0a040,      // a pale old gold, not a highlighter
     transparent: true, depthWrite: line, fog: false, toneMapped: false,
     side: sheen ? THREE.FrontSide : THREE.BackSide,
     blending: line ? THREE.NormalBlending : THREE.AdditiveBlending,
-    opacity: line ? 1 : sheen ? 0.5 : 0.34,
+    opacity: line ? 0.75 : sheen ? 0.30 : 0.14,
   });
-  const U = { uPx: { value: line ? 1.7 : sheen ? 0 : 5.5 }, uK: { value: 0 }, uRes: ART_RES, uT: ART_TIME };
+  const U = { uPx: { value: line ? 1.0 : sheen ? 0 : 3.2 }, uK: { value: 0 }, uRes: ART_RES, uT: ART_TIME };
   m.userData.artU = U;
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, U);
@@ -75322,8 +80208,13 @@ function artShellMat(kind) {
       if (uPx > 0.0 && _artL > 1e-6) gl_Position.xy += (_artC.xy / _artL) * uPx * gl_Position.w * 2.0 / uRes;`);
     sh.fragmentShader = 'uniform float uK; uniform float uT; varying vec3 vArtN;\n' + sh.fragmentShader.replace('vec4 diffuseColor = vec4( diffuse, opacity );',
       sheen ? `float _fr = pow(1.0 - abs(normalize(vArtN).z), 2.2);
-        float _sw = 0.5 + 0.5 * sin(uT * 3.1 + gl_FragCoord.y * 0.045);
-        vec4 diffuseColor = vec4(diffuse * (0.015 + 0.8 * _fr * _fr + 0.05 * _sw), opacity * uK);`
+        // GILT: a glaze over the whole body, a band of light running up it, and glitter that twinkles
+        float _band = fract(gl_FragCoord.y * 0.0021 - uT * 0.55);
+        _band = smoothstep(0.0, 0.10, _band) * smoothstep(0.24, 0.10, _band);
+        vec2 _gc = floor(gl_FragCoord.xy / 3.0);
+        float _gh = fract(sin(dot(_gc, vec2(12.9898, 78.233))) * 43758.5453);
+        float _gl = step(0.985, _gh) * (0.5 + 0.5 * sin(uT * 9.0 + _gh * 60.0));
+        vec4 diffuseColor = vec4(diffuse * (0.05 + 0.6 * _fr * _fr + 0.28 * _band + 0.7 * _gl), opacity * uK);`
       : `vec4 diffuseColor = vec4(diffuse * (0.88 + 0.12 * sin(uT * 7.0)), opacity * uK);`);
   };
   m.customProgramCacheKey = () => 'artShell_' + kind;
@@ -75383,6 +80274,7 @@ function artWarm() {
       const rg = new THREE.Mesh(geo, mt);
       g.add(sk, rg);
     }
+    g.add(new THREE.Mesh(artSealGeo, artSealMat), new THREE.Mesh(artRingGeo, artRingMat));
     g.position.copy(camera.position).add(_artV.set(0, -50, 0));
     scene.add(g);
     const done = () => g.removeFromParent();
@@ -75393,16 +80285,47 @@ function artWarm() {
 }
 
 /* ---- gold motes: a burst when it takes hold, a cloud while it holds ---- */
-const ART_MOTE_N = 240;
+/* GOLD LEAF, NOT GLOWING ORBS. Soft additive dots drifting up is the stock
+ * "magic particles" every engine ships, and on this beach it read as exactly
+ * that. What comes off a thing that has been gilt and is held still is LEAF:
+ * small hard-edged flakes, few of them, that catch the light only when they
+ * turn toward you and otherwise go dark — tumbling, and FALLING, because gold
+ * is heavy. Each point is its own irregular flake (a seeded quad cut in the
+ * fragment shader), turned and flickered on its own clock. */
+const ART_MOTE_N = 160;
 const artMoteGeo = new THREE.BufferGeometry();
 artMoteGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ART_MOTE_N * 3), 3));
 artMoteGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(ART_MOTE_N * 3), 3));
-const artMotes = new THREE.Points(artMoteGeo, new THREE.PointsMaterial({
-  size: 0.07, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, toneMapped: false, map: (() => {
-    const c = document.createElement('canvas'); c.width = c.height = 32; const x = c.getContext('2d');
-    const gr = x.createRadialGradient(16, 16, 0, 16, 16, 16); gr.addColorStop(0, 'rgba(255,245,200,1)'); gr.addColorStop(0.35, 'rgba(255,200,80,0.8)'); gr.addColorStop(1, 'rgba(255,170,40,0)');
-    x.fillStyle = gr; x.fillRect(0, 0, 32, 32); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
-  })(),
+artMoteGeo.setAttribute('aSeed', new THREE.BufferAttribute(Float32Array.from({ length: ART_MOTE_N }, () => Math.random()), 1));
+const artMotes = new THREE.Points(artMoteGeo, new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, fog: false,
+  uniforms: { uT: { value: 0 }, uH: { value: 600 } },
+  vertexShader: /* glsl */`
+    attribute vec3 color; attribute float aSeed; uniform float uT; uniform float uH;
+    varying vec3 vC; varying float vSeed; varying float vTurn;
+    void main(){
+      vC = color; vSeed = aSeed;
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      gl_Position = projectionMatrix * mv;
+      // tumbling: how squarely the flake faces you, on its own clock
+      vTurn = abs(sin(uT * (5.0 + aSeed * 9.0) + aSeed * 40.0));
+      gl_PointSize = clamp((0.018 + 0.016 * aSeed) * projectionMatrix[1][1] * 0.5 * uH / max(0.2, -mv.z), 1.0, 6.0);
+    }`,
+  fragmentShader: /* glsl */`
+    varying vec3 vC; varying float vSeed; varying float vTurn;
+    void main(){
+      float k = max(vC.r, 0.0);
+      if (k < 0.01) discard;
+      // an irregular flake: a turned, squashed quad with one corner torn off
+      float a = vSeed * 6.2832;
+      vec2 q = gl_PointCoord - 0.5;
+      q = mat2(cos(a), -sin(a), sin(a), cos(a)) * q;
+      q.y /= mix(0.35, 0.95, fract(vSeed * 7.3)) * mix(0.25, 1.0, vTurn);
+      if (max(abs(q.x), abs(q.y)) > 0.42 || q.x + q.y > 0.48) discard;
+      // dark when edge-on, a hard glint when it turns square to you
+      float lit = 0.18 + 0.55 * vTurn + 1.2 * pow(vTurn, 14.0);
+      gl_FragColor = vec4(vec3(0.82, 0.62, 0.26) * lit * k, k);
+    }`,
 }));
 artMotes.frustumCulled = false; artMotes.raycast = () => {};
 scene.add(artMotes);
@@ -75410,36 +80333,46 @@ const artMoteS = Array.from({ length: ART_MOTE_N }, () => ({ p: new THREE.Vector
 let artMoteI = 0;
 const _artV = new THREE.Vector3(), _artV2 = new THREE.Vector3();
 function artBurst(c, h, n, shatter = false) {
+  n = Math.round(n * 0.45);
   for (let i = 0; i < n; i++) {
     const m = artMoteS[artMoteI]; artMoteI = (artMoteI + 1) % ART_MOTE_N;
-    const a = Math.random() * Math.PI * 2, r = (0.25 + Math.random() * 0.45) * Math.max(0.6, h * 0.35);
-    m.p.set(c.x + Math.cos(a) * r * 0.4, c.y + (Math.random() - 0.5) * h * 0.8, c.z + Math.sin(a) * r * 0.4);
-    const sp = shatter ? 3.5 + Math.random() * 4 : 0.8 + Math.random() * 1.8;
-    m.v.set(Math.cos(a) * sp, (Math.random() * 1.6 - 0.3) * sp * 0.6, Math.sin(a) * sp);
-    m.life = m.ttl = (shatter ? 0.5 : 0.7) + Math.random() * 0.7; m.hot = 0.7 + Math.random() * 0.6;
+    const a = Math.random() * Math.PI * 2, r = (0.15 + Math.random() * 0.35) * Math.max(0.6, h * 0.3);
+    m.p.set(c.x + Math.cos(a) * r * 0.5, c.y + (Math.random() - 0.5) * h * 0.7, c.z + Math.sin(a) * r * 0.5);
+    const sp = shatter ? 2.2 + Math.random() * 2.6 : 0.4 + Math.random() * 0.9;
+    m.v.set(Math.cos(a) * sp, (0.3 + Math.random() * 0.8) * sp * 0.6, Math.sin(a) * sp);
+    m.life = m.ttl = (shatter ? 1.1 : 1.4) + Math.random() * 0.9; m.hot = 0.8 + Math.random() * 0.2;
   }
 }
+const _amSz = new THREE.Vector2();
 function updateArtMotes(dt) {
   const pos = artMoteGeo.attributes.position.array, col = artMoteGeo.attributes.color.array;
-  // the frozen ones shed a slow drift of gold while they are held
+  artMotes.material.uniforms.uT.value += dt;
+  renderer.getDrawingBufferSize(_amSz); artMotes.material.uniforms.uH.value = _amSz.y;
+  // a held body sheds a flake now and then, off its surface, and it falls
   for (const u of artFrozen) {
-    if (Math.random() < dt * 40) {
+    if (Math.random() < dt * 9) {
       const m = artMoteS[artMoteI]; artMoteI = (artMoteI + 1) % ART_MOTE_N;
-      const a = Math.random() * Math.PI * 2, r = 0.3 + Math.random() * 0.5;
-      m.p.set(u.g.position.x + Math.cos(a) * r, u.g.position.y + Math.random() * u.kind.h, u.g.position.z + Math.sin(a) * r);
-      m.v.set(-Math.sin(a) * 0.35, 0.25 + Math.random() * 0.35, Math.cos(a) * 0.35);
-      m.life = m.ttl = 1.1 + Math.random() * 0.9; m.hot = 0.6;
+      const a = Math.random() * Math.PI * 2, r = 0.2 + Math.random() * 0.3;
+      m.p.set(u.g.position.x + Math.cos(a) * r, u.g.position.y + (0.35 + Math.random() * 0.6) * u.kind.h, u.g.position.z + Math.sin(a) * r);
+      m.v.set(Math.cos(a) * 0.25, 0.1, Math.sin(a) * 0.25);
+      m.life = m.ttl = 1.6 + Math.random() * 1.0; m.hot = 0.9;
     }
   }
   for (let i = 0; i < ART_MOTE_N; i++) {
     const m = artMoteS[i];
     if (m.ttl <= 0) { col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = 0; continue; }
     m.ttl -= dt;
-    m.v.multiplyScalar(Math.exp(-dt * 2.4)); m.v.y += dt * 0.25;
+    // leaf: heavy enough to fall, light enough that the air slows it and it flutters
+    m.v.multiplyScalar(Math.exp(-dt * 3.2));
+    m.v.y -= dt * 3.4;
+    m.v.x += Math.sin((m.ttl + i) * 7.0) * dt * 0.6; m.v.z += Math.cos((m.ttl + i) * 6.1) * dt * 0.6;
     m.p.addScaledVector(m.v, dt);
-    const k = Math.max(0, m.ttl / m.life) * m.hot;
+    const fl = bunkerFloorAt(m.p.x, m.p.z, m.p.y + 0.5);
+    const gy = fl !== null ? fl : 0;
+    if (m.p.y < gy + 0.01) { m.p.y = gy + 0.01; m.v.set(0, 0, 0); }
+    const k = Math.min(1, m.ttl / 0.5) * m.hot;
     pos[i * 3] = m.p.x; pos[i * 3 + 1] = m.p.y; pos[i * 3 + 2] = m.p.z;
-    col[i * 3] = k; col[i * 3 + 1] = k * 0.8; col[i * 3 + 2] = k * 0.36;
+    col[i * 3] = k; col[i * 3 + 1] = k; col[i * 3 + 2] = k;
   }
   artMoteGeo.attributes.position.needsUpdate = true; artMoteGeo.attributes.color.needsUpdate = true;
 }
@@ -75448,11 +80381,138 @@ const artLamp = new THREE.PointLight(ART_GOLD, 0, 7, 2);
 artLamp.userData.lpAlways = 24;
 scene.add(artLamp);
 
+/* ---- THE SEAL, THE RINGS AND THE FLASH: the hold is a BEAT, Wukong's way ----
+ * The gold outline froze the body and said nothing about the moment it
+ * happened. In Wukong the spell lands: a golden seal with 定 on it stamps onto
+ * the enemy and settles into it, a ring of light goes out across the ground,
+ * the frame flashes gold, a deep bell is struck, and the body holds as gilt
+ * with the light running up it — and when the hold ends the seal breaks and
+ * the gold comes off it in flakes. Every piece here is additive light on a
+ * shared material, compiled with the shells in `artWarm`. */
+const ART_SEAL_TEX = (() => {
+  const S = 512, c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d'), m = S / 2;
+  const glow = g.createRadialGradient(m, m, 0, m, m, m);
+  glow.addColorStop(0, 'rgba(255,214,120,0.30)'); glow.addColorStop(0.55, 'rgba(255,190,80,0.10)'); glow.addColorStop(1, 'rgba(255,170,40,0)');
+  g.fillStyle = glow; g.fillRect(0, 0, S, S);
+  g.strokeStyle = '#ffe2a0'; g.shadowColor = 'rgba(255,200,90,1)'; g.shadowBlur = 14;
+  const ring = (r, w) => { g.lineWidth = w; g.beginPath(); g.arc(m, m, r, 0, 6.283); g.stroke(); };
+  ring(236, 6); ring(222, 2); ring(150, 3); ring(140, 1.5);
+  g.lineWidth = 3;
+  for (let i = 0; i < 72; i++) {                       // the ticks round the rim, long every ninth
+    const a = i / 72 * 6.283, l = i % 9 === 0 ? 30 : 12;
+    g.beginPath(); g.moveTo(m + Math.cos(a) * 218, m + Math.sin(a) * 218); g.lineTo(m + Math.cos(a) * (218 - l), m + Math.sin(a) * (218 - l)); g.stroke();
+  }
+  for (let i = 0; i < 8; i++) {                        // eight trigram bars between the rings
+    const a = i / 8 * 6.283 + 0.39;
+    g.save(); g.translate(m + Math.cos(a) * 178, m + Math.sin(a) * 178); g.rotate(a + Math.PI / 2);
+    for (let k = 0; k < 3; k++) { const broken = (i >> k) & 1; g.fillStyle = '#ffe2a0';
+      if (broken) { g.fillRect(-22, -12 + k * 10, 18, 5); g.fillRect(4, -12 + k * 10, 18, 5); } else g.fillRect(-22, -12 + k * 10, 44, 5); }
+    g.restore();
+  }
+  g.fillStyle = '#fff1c8'; g.shadowBlur = 22;
+  g.font = 'bold 190px "Songti SC", "STSong", "SimSun", "Noto Serif CJK SC", serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('\u5b9a', m, m + 8);                        // 定: fixed, still — the character on Wukong's Immobilize
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+})();
+const artSealMat = new THREE.MeshBasicMaterial({ map: ART_SEAL_TEX, color: 0xffd27a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, toneMapped: false, side: THREE.DoubleSide });
+const artSealGeo = new THREE.PlaneGeometry(1, 1);
+const artSeals = [];
+function artSealOn(u) {
+  let S = artSeals.find((x) => x.u === u);
+  if (!S) { const m = new THREE.Mesh(artSealGeo, artSealMat.clone()); m.frustumCulled = false; m.renderOrder = 9; m.raycast = () => {}; scene.add(m); S = { u, m }; artSeals.push(S); }
+  Object.assign(S, { t: 0, out: -1, shatter: false, flare: 0, spin: 9 + Math.random() * 3, rot: Math.random() * 6.283 });
+  S.size = Math.max(0.9, Math.min(2.2, u.kind.h * 0.52));
+  return S;
+}
+function artSealOff(u, shatter) { const S = artSeals.find((x) => x.u === u); if (S && S.out < 0) { S.out = 0; S.shatter = !!shatter; } }
+function artSealFlare(u) { const S = artSeals.find((x) => x.u === u); if (S) S.flare = 1; }
+const _asV = new THREE.Vector3();
+function updateArtSeals(dt) {
+  for (let i = artSeals.length - 1; i >= 0; i--) {
+    const S = artSeals[i], u = S.u, m = S.m;
+    S.t += dt; S.flare = Math.max(0, S.flare - dt * 5);
+    // spins hard as it stamps and settles to a slow turn
+    S.spin += (0.35 - S.spin) * Math.min(1, dt * 4.5); S.rot += S.spin * dt;
+    let sc, a;
+    const land = Math.min(1, S.t / 0.24), e = 1 - Math.pow(1 - land, 3);
+    if (S.out < 0) {
+      /* it stamps on and then SINKS INTO the body — left on the chest for the
+       * whole hold it covered the very thing that is held. It shows again on
+       * every blow, and as the hold gives it comes back up, flickering. */
+      sc = 2.7 - 1.7 * e - 0.25 * Math.min(1, Math.max(0, (S.t - 0.35) / 0.4)) + 0.2 * S.flare;
+      a = (0.25 + 0.75 * e) * (1 - Math.min(1, Math.max(0, (S.t - 0.35) / 0.45))) + 0.75 * S.flare;
+      const left = u.st.immob || 0;
+      if (left < 0.6 && S.t > 0.6) a = Math.max(a, (0.6 - left) / 0.6 * 0.5 * (Math.sin(S.t * 34) > 0 ? 1 : 0.3));   // it gives: the seal comes back up, flickering
+    } else {
+      S.out += dt;
+      const k = Math.min(1, S.out / (S.shatter ? 0.22 : 0.4));
+      sc = 1 + (S.shatter ? 1.8 : 0.9) * k; a = (1 - k) * (S.shatter ? 1 : 0.5);
+      if (k >= 1) { scene.remove(m); m.material.dispose(); artSeals.splice(i, 1); continue; }
+    }
+    // on the chest, a body's width toward you, facing you
+    _asV.copy(u.g.position); _asV.y += u.kind.h * 0.56;
+    const dx = camera.position.x - _asV.x, dz = camera.position.z - _asV.z, d = Math.hypot(dx, dz) || 1;
+    const off = Math.min(d * 0.5, (u.kind.body || 0.45) + 0.12);
+    m.position.set(_asV.x + dx / d * off, _asV.y, _asV.z + dz / d * off);
+    m.quaternion.copy(camera.quaternion); m.rotateZ(S.rot);
+    m.scale.setScalar(S.size * sc);
+    m.material.opacity = Math.max(0, Math.min(1, a));
+    m.material.depthTest = sc < 1.25;                 // stamping down it is drawn over the body; settled, it is part of it
+  }
+}
+// the rings that go out across the ground from its feet
+const artRingMat = new THREE.MeshBasicMaterial({ color: 0xffcf6a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, toneMapped: false, side: THREE.DoubleSide });
+const artRingGeo = new THREE.RingGeometry(0.965, 1, 128); artRingGeo.rotateX(-Math.PI / 2);   // a line of light, not a band: thick, it swept under the lens as a slab
+const artRings = [];
+function artRingAt(x, y, z, R, dur, a0 = 0.9) {
+  let r = artRings.find((q) => q.t >= q.dur);
+  if (!r) { const m = new THREE.Mesh(artRingGeo, artRingMat.clone()); m.frustumCulled = false; m.renderOrder = 8; m.raycast = () => {}; scene.add(m); r = { m }; artRings.push(r); }
+  Object.assign(r, { t: 0, dur, R, a0 }); r.m.position.set(x, y + 0.04, z); r.m.visible = true;
+}
+function updateArtRings(dt) {
+  for (const r of artRings) {
+    if (r.t >= r.dur) { r.m.visible = false; continue; }
+    r.t += dt; const k = Math.min(1, r.t / r.dur), e = 1 - Math.pow(1 - k, 3);
+    r.m.scale.setScalar(0.25 + r.R * e);
+    r.m.material.opacity = r.a0 * (1 - k) * (1 - k);
+  }
+}
+// the frame flashes gold at the edges
+const artFlashEl = document.createElement('div');
+artFlashEl.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:4;opacity:0;mix-blend-mode:screen;' +
+  'background:radial-gradient(circle at 50% 50%, rgba(255,220,140,0.10) 0%, rgba(255,196,90,0.18) 45%, rgba(255,170,50,0.62) 100%)';
+document.body.appendChild(artFlashEl);
+let artFlashK = 0;
+function artFlash(k = 1) { artFlashK = Math.max(artFlashK, k); }
+function updateArtFlash(dt) { artFlashK = Math.max(0, artFlashK - dt * 2.4); artFlashEl.style.opacity = (artFlashK * artFlashK).toFixed(3); }
+// gold flaking off a body as the hold lets go: falls, where the burst's motes rise
+function artFlakes(u, n) {
+  for (let i = 0; i < n; i++) {
+    const m = artMoteS[artMoteI]; artMoteI = (artMoteI + 1) % ART_MOTE_N;
+    const a = Math.random() * Math.PI * 2, r = 0.15 + Math.random() * 0.35;
+    m.p.set(u.g.position.x + Math.cos(a) * r, u.g.position.y + Math.random() * u.kind.h, u.g.position.z + Math.sin(a) * r);
+    m.v.set(Math.cos(a) * 0.6, -0.4 - Math.random() * 0.8, Math.sin(a) * 0.6);
+    m.life = m.ttl = 0.8 + Math.random() * 0.8; m.hot = 0.9;
+  }
+}
+
 /* ---- the HUD: three pips and the cooldown, by the health bar ---- */
 const artHudEl = document.createElement('div');
 artHudEl.id = 'artifact';
 artHudEl.innerHTML = '<b></b><i></i><i></i><i></i><span><u></u></span>';
-document.body.appendChild(artHudEl);
+/* NOT ON SCREEN: the pips and the cooldown strip sat above the health bar as
+ * a yellow bar, and the owner's word was to take it out. What the chain is
+ * doing is on the weapon's own slot now — the diamond the hotbar already
+ * draws there goes hollow while it recharges and glows harder with each hit
+ * of the chain (`updateArtHud`). The element is kept off the page so nothing
+ * that writes to it can fail. */
+/* THE ARTIFACT'S MARK IS A WHALE: a small yellow one, flukes up, on the slot
+ * of the weapon it is set in and beside its name in the pack */
+var ART_WHALE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 8 122 44"><defs><linearGradient id="bwWg" x1="0" y1="14" x2="0" y2="40" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#5c3d0e"/><stop offset=".30" stop-color="#a77624"/><stop offset=".58" stop-color="#dcae4c"/><stop offset=".80" stop-color="#f3d68c"/><stop offset="1" stop-color="#fdeec0"/></linearGradient><linearGradient id="bwWf" x1="40" y1="34" x2="72" y2="48" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#f1d184"/><stop offset=".6" stop-color="#d9a945"/><stop offset="1" stop-color="#9a6a1c"/></linearGradient></defs><path fill="url(#bwWg)" stroke="#2e1d04" stroke-width=".7" stroke-linejoin="round" d="M3 27C6 23.5 12 21 20 19.5 30 17.4 44 15.6 58 15.2 68 15 76 15.6 82 16L84.6 15C85.4 14.2 86.6 14.2 87.2 15.1L88.5 16.8C95 18.2 101 20 106 21.6 108 22 110 21.6 112 20.8 114.4 19.8 117.4 18.2 121 16.4 120.6 18.6 119.2 20.4 117.4 21.6L116.2 22.6 116.8 23.4 114.6 23.8 115 24.6 111.6 24.6C109.4 24.8 107 25.4 104 26.4 96 29.4 86 33 74 35.6 64 37.8 54 39.4 44 39.4 32 39.4 20 37.4 12 34 7 32 4 29.6 3 27Z"/><g fill="none" stroke="#7a5310" stroke-width=".45" stroke-linecap="round" opacity=".9"><path d="M6.4 30.2C14 33.2 28 35.4 47 36.2"/><path d="M8.8 31.8C17 34.4 30 36.4 48.6 37.4"/><path d="M12.4 33.4C20 35.6 32 37.4 50 38.4"/><path d="M17.6 35.2C25 36.9 35 38.2 49 39"/></g><path fill="url(#bwWf)" stroke="#2e1d04" stroke-width=".6" stroke-linejoin="round" d="M40 33.6C50 37.8 60 42.6 72 47.2 73.4 47.8 72.4 48.8 70.8 48.6 66 47.8 62 46.8 58 45.2A1.5 1.5 0 0 1 55.4 44.2A1.5 1.5 0 0 1 52.8 43A1.5 1.5 0 0 1 50.2 41.8A1.5 1.5 0 0 1 47.6 40.4A1.5 1.5 0 0 1 45 39C42 37.8 39.6 37 37.6 36Z"/><path fill="none" stroke="#fff4c8" stroke-width=".4" opacity=".6" d="M44 36.4C53 40.4 62 44.2 70.6 47.4"/><path fill="none" stroke="#1f1302" stroke-width=".85" stroke-linecap="round" d="M3.6 27.2C10 28.8 18 29.8 26.4 30.2 27.6 30.3 28.6 30.6 29.2 31.2"/><path fill="none" stroke="#3b2605" stroke-width=".4" d="M29.4 27.2c.9-.6 2.2-.6 3 .1"/><ellipse cx="30.9" cy="28.1" rx=".85" ry=".6" fill="#140c01"/><circle cx="30.6" cy="27.9" r=".22" fill="#fff3c4"/><g fill="#4a3109"><circle cx="7" cy="24.6" r=".62"/><circle cx="10.6" cy="23" r=".7"/><circle cx="14.2" cy="21.8" r=".68"/><circle cx="17.8" cy="20.8" r=".62"/><circle cx="21.4" cy="20.1" r=".55"/><circle cx="6.2" cy="29.4" r=".5"/><circle cx="9.4" cy="30.6" r=".45"/></g><g fill="#3d2806" opacity=".55"><circle cx="5" cy="27.6" r=".5"/><circle cx="5.8" cy="28.4" r=".35"/><circle cx="37" cy="33.6" r=".35"/><circle cx="66" cy="20.4" r=".3"/><circle cx="67" cy="21" r=".22"/></g><g fill="#fff1c0"><circle cx="11.4" cy="31.6" r=".4"/><circle cx="13.6" cy="32.4" r=".3"/><circle cx="41.6" cy="35.2" r=".38"/><circle cx="43" cy="36.2" r=".28"/><circle cx="73" cy="46.6" r=".3"/></g><path fill="none" stroke="#fff1b8" stroke-width=".5" stroke-linecap="round" opacity=".55" d="M22 19.2C34 17 48 15.8 64 15.6"/><path fill="none" stroke="#3b2605" stroke-width=".45" opacity=".7" d="M90 19.6C96 21 101 22.4 105.4 23.6M104 24.6C108 23.8 112 22.6 117.8 19.6"/><g fill="none" stroke="#6d480d" stroke-width=".35" opacity=".55"><path d="M60 22c4 1 8 1.2 12 .6"/><path d="M48 24.4c3 .9 6 .9 9 .3"/><path d="M78 24.6c3 .5 6 .4 8-.4"/></g></svg>';
+var ART_WHALE_URL = 'data:image/svg+xml;utf8,' + encodeURIComponent(ART_WHALE_SVG);
 {
   const st = document.createElement('style');
   st.textContent = `#artifact{position:fixed;left:26px;bottom:40px;display:flex;align-items:center;gap:6px;z-index:5;pointer-events:none;opacity:0;transition:opacity .4s ease}
@@ -75465,8 +80525,13 @@ document.body.appendChild(artHudEl);
 #artifact u{position:absolute;inset:0;background:rgba(255,210,90,.85);transform-origin:left;transform:scaleX(1)}
 #artifact.cd i{opacity:.35}
 #artifact.pulse b{box-shadow:0 0 10px rgba(255,210,90,1)}
-#hotbar .slot.art::after,#inv-grid .islot.art::after{content:'';position:absolute;right:4px;top:4px;width:6px;height:6px;transform:rotate(45deg);background:#ffd24a;box-shadow:0 0 5px rgba(255,200,70,.8)}
-#inv-detail .artline{margin:6px 0 2px;font-size:.72rem;letter-spacing:.06em;color:#ffd97a}`;
+#hotbar .slot.art::after,#inv-grid .islot.art::after{content:'';position:absolute;right:3px;top:4px;width:27px;height:10px;background:url("${ART_WHALE_URL}") center/contain no-repeat;filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.95)) drop-shadow(0 0 2px rgba(255,200,70,.35));transition:filter .15s,transform .15s,opacity .3s;transform-origin:right top}
+#hotbar .slot.art.artcd::after{opacity:.35;filter:none}
+#hotbar .slot.art.art1::after{filter:drop-shadow(0 0 3px rgba(255,200,70,1));transform:scale(1.2)}
+#hotbar .slot.art.art2::after{filter:drop-shadow(0 0 5px rgba(255,210,90,1));transform:scale(1.4)}
+#hotbar .slot.art.artpulse::after{filter:drop-shadow(0 0 7px rgba(255,230,140,1)) brightness(1.3)}
+#inv-detail .artline{margin:6px 0 2px;font-size:.72rem;letter-spacing:.06em;color:#ffd97a;display:flex;align-items:center;gap:7px}
+#inv-detail .artline svg{width:38px;height:14px;flex:none;filter:drop-shadow(0 0 2px rgba(255,200,70,.7))}`;
   document.head.appendChild(st);
 }
 const artPips = artHudEl.querySelectorAll('i'), artCdEl = artHudEl.querySelector('u');
@@ -75475,6 +80540,16 @@ function artHudPulse() { artPulseT = 0.25; }
 function updateArtHud(dt) {
   const W = artWeapon();
   artHudEl.classList.toggle('on', !!W && introDone);
+  // the state on the weapon's own slot: hollow while it recharges, a glow per hit of the chain
+  for (let i = 0; i < hotbarCache.length; i++) {
+    const c = hotbarCache[i]; if (!c) continue;
+    const on = !!W && c.item === W;
+    const n = on && art.cd <= 0 ? art.count : 0;
+    c.el.classList.toggle('artcd', on && art.cd > 0);
+    c.el.classList.toggle('art1', n === 1);
+    c.el.classList.toggle('art2', n >= 2);
+    c.el.classList.toggle('artpulse', on && artPulseT > 0);
+  }
   if (!W) return;
   const n = art.cd > 0 ? 0 : art.count;
   for (let i = 0; i < artPips.length; i++) artPips[i].classList.toggle('f', i < n);
@@ -75489,14 +80564,17 @@ function artBellySpot(out) {
   const cx = whCx(WH_ARENA_S) + 0.3;
   return out.set(WHALE_X + cx, WHALE_Y + whFloor(cx, WH_ARENA_S), WHALE_Z - WH_ARENA_S);
 }
-function artSpawnWorld(rise) {
+function artSpawnWorld(rise, at = null) {
   if (art.world) return;
   const w = new THREE.Group();
   const m = whaleArtModel.clone(true);
   m.traverse((o) => { if (o.isMesh) o.material = o.material.clone(); });
   m.scale.setScalar(4.2);
   w.add(m);
-  artBellySpot(w.position);
+  /* ON THE SAND (`at`): the farewell gathers the heal's light into it and it
+   * drops in front of you; the belly spot is kept for a save from before. */
+  if (at) { w.position.set(at.x, beachGroundAt(at.x, at.z), at.z); w.userData.beach = true; art.spot = [at.x, at.z]; art.drop = rise ? 0 : 1; }
+  else artBellySpot(w.position);
   w.userData.floor = w.position.y;
   w.userData.m = m;
   const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 8), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
@@ -75524,10 +80602,10 @@ function artSpawnWorld(rise) {
   addItemShine(w, { size: 0.9, height: 1.25, strength: 1.4, lift: 0, through: true });
   addInteractable(w, 'Take the Artifact of the Whale', 'inventory', {
     keepSize: true, mid: true,
-    when: () => art.rise > 0.7,
+    when: () => (w.userData.beach ? (art.drop || 0) >= 1 && !wbFareCut : art.rise > 0.7),
     onActivate: () => {
       artState = 2;
-      scene.remove(w); removeInteractable(w); hovered = null; art.world = null;
+      scene.remove(w); removeInteractable(w); hovered = null; art.world = null; art.spot = null;
       addToInventory(whaleArtItem);
       artWarm();
       sfxArtAttach();
@@ -75538,9 +80616,26 @@ function artSpawnWorld(rise) {
 }
 function updateArtWorld(dt) {
   const w = art.world; if (!w) return;
+  const t = ART_TIME.value;
+  if (w.userData.beach) {
+    /* IT FORMS IN THE AIR AND DROPS INTO THE SAND: a flare as the light
+     * becomes a thing, a fall under its own weight, a puff where it lands,
+     * and then it lies there turning slowly in its own glow. */
+    const d0 = art.drop || 0;
+    art.drop = Math.min(1, d0 + dt / 0.85);
+    const d = art.drop, fall = d * d;
+    if (d0 < 1 && d >= 1) { spawnPuffs(w.position.x, w.position.z, 9, 0, 0, w.position.y + 0.05, [0.82, 0.74, 0.58]); sfxSandDrop(w.position.x, w.position.z, 0.8, true); }
+    w.userData.m.position.y = 1.05 * (1 - fall) + 0.16 + (d >= 1 ? Math.sin(t * 1.3) * 0.03 : 0);
+    w.userData.m.rotation.y = t * 0.8;
+    w.children.forEach((c) => { if (c.name === 'hitProxy') c.position.y = w.userData.m.position.y; });
+    const flare = Math.exp(-Math.max(0, art.dropT = (art.dropT || 0) + dt) * 2.2);
+    w.userData.shaft.uniforms.uK.value = 0.55 + 1.2 * flare;
+    w.userData.lamp.intensity = 7 * (0.9 + 0.1 * Math.sin(t * 2.3)) + 18 * flare;
+    w.visible = !inRoom();
+    return;
+  }
   art.rise = Math.min(1, art.rise + dt / 2.6);
   const e = art.rise * art.rise * (3 - 2 * art.rise);
-  const t = ART_TIME.value;
   w.userData.m.position.y = -0.6 + e * 1.8 + Math.sin(t * 1.3) * 0.06;
   w.userData.m.rotation.y = t * 0.8;
   w.children.forEach((c) => { if (c.name === 'hitProxy') c.position.y = w.userData.m.position.y; });
@@ -75577,15 +80672,16 @@ function artTick(dt) {
   }
   if (lampAt) {
     artLamp.position.set(lampAt.g.position.x, lampAt.g.position.y + lampAt.kind.h * 0.6, lampAt.g.position.z);
-    artLamp.intensity = 7;
+    artLamp.intensity = 3;
   } else artLamp.intensity = Math.max(0, artLamp.intensity - dt * 30);
-  updateArtMotes(dt);
-  // the belly gives it up once the fight is over
-  if (artState === 0 && inWhale && !whaleBusy && typeof wbBellyClear === 'function' && wbBellyClear()) {
-    art.clearT = (art.clearT || 0) + dt;
-    if (art.clearT > 1.6) { artState = 1; artSpawnWorld(true); }
+  updateArtMotes(dt); updateArtSeals(dt); updateArtRings(dt); updateArtFlash(dt);
+  /* The whale's farewell makes it out of the light that healed it and drops
+   * it on the sand (`WL_ART`); a restore puts it back where it lay. A save
+   * from before that, with it still lying in the belly, keeps the belly. */
+  if (artState === 1 && !art.world) {
+    if (art.spot) artSpawnWorld(false, { x: art.spot[0], z: art.spot[1] });
+    else if (inWhale) artSpawnWorld(false);
   }
-  if (artState === 1 && !art.world && inWhale) artSpawnWorld(false);
   updateArtWorld(dt);
   // a restore: what it was set in, and a save from before there was an artifact
   /* The pack is put back on the first frame of a restore, so the weapon is
@@ -75594,7 +80690,7 @@ function artTick(dt) {
   const aw = art.attachPending && packByName(art.attachPending);
   if (art.attachPending && ((aw && inventory.includes(aw)) || !restore)) {
     const w = aw; art.attachPending = null;
-    if (w && inventory.includes(w)) { if (inventory.includes(whaleArtItem)) inventory.splice(inventory.indexOf(whaleArtItem), 1); w.artifact = whaleArtItem; whaleArtItem.on = w; renderHotbar(); renderPack(); }
+    if (w && inventory.includes(w)) { if (inventory.includes(whaleArtItem)) { inventory.splice(inventory.indexOf(whaleArtItem), 1); clearSlot(whaleArtItem); } w.artifact = whaleArtItem; whaleArtItem.on = w; renderHotbar(); renderPack(); }
     else if (!inventory.includes(whaleArtItem)) addToInventory(whaleArtItem);
   }
   if (!restore && art.grantPending) { art.grantPending = false; if (!inventory.includes(whaleArtItem) && !whaleArtItem.on) addToInventory(whaleArtItem); }
@@ -75607,7 +80703,8 @@ function artAttachedTo() {
 /* Restore: 0 not yet given, 1 lying in the belly, 2 yours. */
 function artRestore(f) {
   artState = f.whaleArt != null ? f.whaleArt : 0;
-  if (artState === 1 && f.whaleGone) artState = 2;
+  art.spot = Array.isArray(f.artAt) ? f.artAt : null;
+  if (artState === 1 && f.whaleGone && !art.spot) artState = 2;
   if (f.whaleArt == null && f.whaleGone) { artState = 2; art.grantPending = true; }
   art.attachPending = f.artOn || null;
 }
@@ -75651,6 +80748,9 @@ function sfxArtImmob(x, z) {
   o.connect(og).connect(out); o.start(t); o.stop(t + 0.55);
   artBell(out, t, 660, 2.2, 0.32);
   artBell(out, t + 0.03, 990, 1.4, 0.16);
+  // the gong under it: a struck bronze, low and long, that the whole hold rings on
+  artBell(out, t + 0.01, 98, 3.6, 0.42);
+  artBell(out, t + 0.012, 147, 2.8, 0.18);
   const n = noiseBurst(0.5, (k) => Math.pow(1 - k, 2.5));
   const bp = ctx.createBiquadFilter(); bp.type = 'highpass'; bp.frequency.value = 4000;
   const ng = ctx.createGain(); ng.gain.value = 0.18;
@@ -75739,7 +80839,7 @@ window.__bw = {
     if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
     oceanUniforms.uTime.value += dt;
     update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
-    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateWhaleCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateDojoAudio(rawDt);
+    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateDojoAudio(rawDt);
     updateLightPool();
   },
   /* AND THE WARM CHAIN, THE FAR-CULL AND EVERY WALL-CLOCK CUT LIVE IN
@@ -75948,6 +81048,8 @@ window.__bw = {
   sfxMutLaugh, sfxMutHunger, sfxMutTell, sfxMutRoar, spawnSparks, tipGlint, get windFull() { return windFull; },
   MUT_X, MUT_Z, MUT_HP, MUT_WIND, MUT_STUN, MUT_ATTACKS, MUT_KINDS, MUT_TRIGGER, mutSand, throwSand,
   get mutToken() { return mutToken; }, get mutCut() { return mutCut; }, get mutPhase() { return mutPhase; },
+  // the harness's own teleports cross the horde's and the pack's lines; this marks both takes as walked past
+  skipTakes: () => { mutPhase = Math.max(mutPhase, 2); mutCut = false; mutCutOut = 0; packPhase = Math.max(packPhase, 2); packCut = false; },
   mutState: () => mutants.map((u) => ({ kind: u.kindName, ...u.st, x: +u.g.position.x.toFixed(2), z: +u.g.position.z.toFixed(2), clip: u.cur && u.cur.getClip().name })),
   packCrabs, updatePack, get packPhase() { return packPhase; }, PACK_Z,
   lhDoor, shinies, onPath, pathBend, pathHalfAt, lhWindows, lanternGlass,
@@ -76066,6 +81168,10 @@ Object.assign(window.__bw, { farmCobble, farmUnits, farmFight, farmDoors, farmSe
   setCatFloor: (v) => { catLastFloor = v; }, BEN_NPC,
   audioNodes: () => ({ waveBusGain, forestBed, masterGain, benBr }),
   audioDbg: () => ({ forest: forestBed && +forestBed.g.gain.value.toFixed(4), ben: benBr && benBr.g && +benBr.g.gain.value.toFixed(4), sand: (sampleBanks.sandStep || []).filter(Boolean).length, benBuf: (sampleBanks.benBreath || []).filter(Boolean).length, bedK: beachBedK() }),
+  c13Dbg: () => ({ arch: c13Arch, archOpen: c13ArchOpen, inThrone, thrBusy, thrReady: !!thrWalk }), openC13Arch, startThrone, placeInThrone, C13_ARCH, C13_THR_DOOR,
+  c13State: () => ({ inC13, ready: c13Ready, walls: !!c13Walls, life: !!c13Life, torches: !!(c13Life && c13Life.torches), mask: !!C13_M.data,
+    thrive: c13Thrive && { done: c13Thrive.done, jobs: c13Jobs.length, torches: (c13Thrive.torchAt || []).length, banners: c13Thrive.banners.length, lanterns: c13Thrive.lanterns.length, stalls: c13Thrive.stalls.length, towers: (c13Thrive.towers || []).length, lines: (c13Thrive.lines || []).length, windows: (c13Thrive.windows || []).length, fountain: c13Thrive.fountain && [c13Thrive.fountain.x, c13Thrive.fountain.z], door: c13Thrive.door, solids: c13Solids.length, flowers: c13Thrive.flowers, snd: c13Snd && { fountain: !!c13Snd.fsrc, fg: c13Snd.fg && +c13Snd.fg.gain.value.toFixed(3), lute: c13Snd.playing, lg: +c13Snd.lute.gain.value.toFixed(3) } } }),
+  c13Thrive: () => c13Thrive, c13Solids, c13Open, c13RunJobs, placeInC13, C13_SITE, C13_X, C13_Y, C13_Z,
   fortState: () => ({ inFort, ready: fortReady, busy: fortBusy, walls: !!fortWalls, wb: FORT_SITE._wb ? FORT_SITE._wb.mi : null, cells: fortCells ? fortCells.size : 0, spot: fortSpot, inT: +fortInT.toFixed(2), save: fortSaveDone, vis: !!(fortWorld && fortWorld.visible) }),
   loadFort, startFort, placeInFort, placeOutOfFort, fortWallsStep, fortMaskAt, fortCourtAt, fortW, FORT_K, FORT_X, FORT_Y, FORT_Z, FORT_GATE, FORT_DOOR, FORT_SITE, FORT_M, fortWorld: () => fortWorld, fortLife: () => fortLife, fortDress, FORT_LOOK,
   keepFloorAtS: keepFloorAt, keepWallNear, keepHitsWall,

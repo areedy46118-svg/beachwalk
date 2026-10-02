@@ -12,7 +12,8 @@ window.__samSetup = async function () {
   let kat = null, hand = null;
   u.model.traverse((o) => { if (o.isBone && o.name === 'Katana') kat = o; if (o.isBone && o.name === 'DEF-handR') hand = o; });
   for (const a of u.mixer._actions) { a.stop(); a.enabled = false; }
-  const ia = u.clips.idle; ia.reset(); ia.enabled = true; ia.setEffectiveWeight(1); ia.play(); ia.time = 0.3; u.mixer.update(0); u.model.updateMatrixWorld(true);
+  // the grip offset is the CLIP's (a raw stamp, the life layer and its FK out of it): captured live it carries the FK's displacement
+  const ia = u.clips.idle; ia.reset(); ia.enabled = true; ia.setEffectiveWeight(1); ia.play(); ia.time = 0.3; (u.mixer.rawUpdate || u.mixer.update).call(u.mixer, 0); u.model.updateMatrixWorld(true);
   window.__S = { T, b, u, R: b.renderer, C: b.camera, kat, hand, off: hand.matrixWorld.clone().invert().multiply(kat.matrixWorld) };
   ia.stop();
   u.g.position.set(b.DOJO_X + 1.5, b.DOJO_Y + 0.1, b.DOJO_Z + 3); u.g.rotation.y = 0;

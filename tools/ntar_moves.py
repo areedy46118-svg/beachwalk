@@ -60,7 +60,7 @@ from mathutils import Vector, Quaternion, Matrix
 # skeletons, and neither of them cares which — the quantity this writes is
 # the rotation a bone has UNDERGONE, which knows nothing about either rig.
 #   blender -b -P tools/ntar_moves.py -- knight
-SET = next((a for a in ('knight', 'wong', 'drunk', 'orc', 'crawler', 'umbra', 'mutant', 'demon') if a in sys.argv), 'ntar')
+SET = next((a for a in ('knight', 'wong', 'drunk', 'orc', 'crawler', 'umbra', 'mutant', 'demon', 'crusader') if a in sys.argv), 'ntar')
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', SET + '-moves.json')
 SRC = os.path.expanduser('~/Downloads')
 FPS = 30
@@ -444,7 +444,68 @@ if SET in ('wong', 'drunk'):
     FORCE_FLAT_YAW = {c[1] for c in CLIPS} - KEEP_YAW
 
 
+# ---- AND THE FLAIL KNIGHT IN CASTLE XIII CARRIES THE PRO SWORD AND SHIELD
+# PACK WHOLE (the owner's ~/Downloads folder of that name). He is a HumanIK rig
+# with Mixamo's naming under a prefix, so this is the retarget at its easiest;
+# his own fourteen clips ride in assets/crusader.glb beside it.
+_S = 'Pro Sword and Shield Pack'
+CRUSADER_CLIPS = [
+    ('sword and shield idle',          'sIdle',   'standing, shield up', _S),
+    ('sword and shield idle (2)',      'sIdleB',  'a second way of standing', _S),
+    ('sword and shield idle (3)',      'sIdleC',  'a third', _S),
+    ('sword and shield idle (4)',      'sIdleD',  'a fourth', _S),
+    ('sword and shield walk',          'sWalk',   'the walk', _S),
+    ('sword and shield walk (2)',      'sWalkB',  'walking backwards', _S),
+    ('sword and shield run',           'sRun',    'the run', _S),
+    ('sword and shield run (2)',       'sRunB',   'a second run', _S),
+    ('sword and shield strafe',        'sStr1',   'sideways', _S),
+    ('sword and shield strafe (2)',    'sStr2',   'sideways', _S),
+    ('sword and shield strafe (3)',    'sStr3',   'sideways', _S),
+    ('sword and shield strafe (4)',    'sStr4',   'sideways', _S),
+    ('sword and shield turn',          'sTurn',   'a turn on the spot', _S),
+    ('sword and shield turn (2)',      'sTurnB',  'a turn the other way', _S),
+    ('sword and shield 180 turn',      'sTurn180','about face', _S),
+    ('sword and shield slash',         'sSlash',  'a cut', _S),
+    ('sword and shield slash (2)',     'sSlashB', 'a second cut', _S),
+    ('sword and shield slash (3)',     'sSlashC', 'a third', _S),
+    ('sword and shield slash (4)',     'sSlashD', 'a fourth', _S),
+    ('sword and shield slash (5)',     'sSlashE', 'a fifth', _S),
+    ('sword and shield attack',        'sAtk',    'an attack', _S),
+    ('sword and shield attack (2)',    'sAtkB',   'a second', _S),
+    ('sword and shield attack (3)',    'sAtkC',   'a third', _S),
+    ('sword and shield attack (4)',    'sAtkD',   'a fourth', _S),
+    ('sword and shield kick',          'sKick',   'the kick', _S),
+    ('sword and shield block',         'sBlock',  'the shield comes up', _S),
+    ('sword and shield block idle',    'sBlockI', 'holding the guard', _S),
+    ('sword and shield crouch block',  'sCBlock', 'down behind the shield', _S),
+    ('sword and shield impact',        'sHit',    'the flinch', _S),
+    ('sword and shield impact (2)',    'sHitB',   'a second flinch', _S),
+    ('sword and shield impact (3)',    'sHitC',   'the one that rocks him', _S),
+    ('sword and shield death',         'sDie',    'and down', _S),
+    ('sword and shield death (2)',     'sDieB',   'and down, the other way', _S),
+    ('sword and shield power up',      'sRoar',   'the war cry', _S),
+    ('sword and shield casting',       'sCast',   'raising the weapon', _S),
+    ('draw sword 1',                   'sDraw',   'drawing', _S),
+    ('sword and shield jump',          'sJump',   'a jump', _S),
+]
+if SET == 'crusader':
+    CLIPS = CRUSADER_CLIPS
+    REST_FWD = True
+    # A SPINNING CUT IS THE MOVE: his swings keep their root turn, and one
+    # that ends turned away is unwound over the back half of the clip
+    # (`RAMP_YAW`) rather than snapped back square on the next.
+    _SW = ('sSlash', 'sSlashB', 'sSlashC', 'sSlashD', 'sSlashE', 'sAtk', 'sAtkB', 'sAtkC', 'sAtkD', 'sKick')
+    KEEP_YAW = {'sDie', 'sDieB', 'sTurn', 'sTurnB', 'sTurn180'} | set(_SW)
+    RAMP_YAW = set(_SW)
+    FORCE_FLAT_YAW = {c[1] for c in CLIPS} - KEEP_YAW
+    WINDOW = {}
+    for _c in _SW:
+        CONTACT[_c] = 'RightHand'          # the flail is in his right fist
+    CONTACT['sKick'] = 'RightToeBase'
+
+
 if 'HIP_FROM_TAKE' not in globals(): HIP_FROM_TAKE = set()
+if 'RAMP_YAW' not in globals(): RAMP_YAW = set()
 # A clip whose hips are measured from its LAST frame, not its first: it
 # begins on the floor and ends standing, so the stance is at the END.
 if 'HIP_ZERO_END' not in globals(): HIP_ZERO_END = {'getUp'}
@@ -632,9 +693,16 @@ def main():
         h0 = CONV @ hips[0]
         hy0 = restPos['Hips'].y if name in HIP_FROM_REST else h0.y   # see HIP_FROM_REST
         if name in HIP_FROM_TAKE: hy0 = (CONV @ takeHip).y
+        endTurn = (hipyaw(end) - y0 + math.pi) % (2 * math.pi) - math.pi
+
+        def ramp(i):
+            t = max(0.0, min(1.0, (i / max(1, end) - 0.5) / 0.5))
+            return t * t * (3 - 2 * t)
         for i in range(end + 1):
             # de-yaw about the hips' start, if this clip turns and should not
             undo = Quaternion((0, 1, 0), -(hipyaw(i) - y0)) if flat else Quaternion()
+            if not flat and name in RAMP_YAW:
+                undo = Quaternion((0, 1, 0), -endTurn * ramp(i))
             for b in bones:
                 q = undo @ (CONV @ raw[i][b])
                 # the DELTA: what this bone has done since its rest pose

@@ -121,6 +121,14 @@ export function makeUndergroundBunker(opts = {}) {
         m.depthWrite = true;
         m.alphaTest = 0.02;
       }
+      if (m.name === 'Shadows' && m.map && m.map.name === 'Shadows_alpha') {
+        /* tools/bunker_slim.py ships this decal's map as a grayscale JPEG of
+         * its ALPHA — its colour was pure white everywhere, so the alpha was
+         * all it ever said. An alpha map is data, not colour. */
+        m.alphaMap = m.map; m.map = null;
+        m.alphaMap.colorSpace = THREE.NoColorSpace;
+        m.alphaMap.needsUpdate = true;
+      }
       if (m.name === 'Shadows') {
         // a contact-shadow decal laid a hair off the floor and walls
         m.depthWrite = false;

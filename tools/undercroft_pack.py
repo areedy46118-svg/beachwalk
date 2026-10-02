@@ -491,6 +491,7 @@ def main():
     ap.add_argument('kind', choices=['cave', 'church', 'passage', 'dojo', 'keep', 'tavern', 'courtyard', 'castle'])
     ap.add_argument('src'); ap.add_argument('dst')
     ap.add_argument('--tex', type=int, default=1024)
+    ap.add_argument('--tex-for', action='append', default=[], help='NAME=SIZE: a material whose maps keep more than --tex (the big surfaces of a hall)')
     ap.add_argument('--quality', type=int, default=86)
     ap.add_argument('--budget', type=int, default=0, help='triangle budget for the whole model (0: the kind\'s default)')
     ap.add_argument('--yaw', type=float, default=0.0, help='turn the whole model about +Y by this many degrees before anything is measured')
@@ -531,6 +532,7 @@ def main():
     # ---- gather every primitive in world space, merged per (node, material)
     groups = {}          # (node name, material index) -> [P, UV, I]
     order = []
+    uvsets = {}          # material index -> the extra uv sets its primitives carry
     # AND A LIGHT-SHAFT IS NOT A TUNNEL. local.yany's cave ships a "Particles"
     # tube — an alpha cylinder hanging down the middle of the bore, which is a
     # god-ray for a scene with a sun in it. Forty metres underground there is
@@ -552,12 +554,22 @@ def main():
                     continue
                 pos = read_accessor(g, bufs, pr['attributes']['POSITION'])
                 uv = read_accessor(g, bufs, pr['attributes']['TEXCOORD_0']) if 'TEXCOORD_0' in pr['attributes'] else [(0.0, 0.0)] * len(pos)
+                # AND A MATERIAL MAY READ MORE THAN ONE UV SET. The throne room's
+                # stone takes its normal and roughness through TEXCOORD_1 and its
+                # glow through TEXCOORD_2; writing only the first and pointing
+                # every map at it put the stained glass's glow on the whole wall
+                # and a wet-looking jumble of normals over every stone.
+                uvx = [read_accessor(g, bufs, pr['attributes']['TEXCOORD_%d' % q]) if ('TEXCOORD_%d' % q) in pr['attributes'] else None for q in (1, 2)]
                 idx = [v[0] for v in read_accessor(g, bufs, pr['indices'])] if 'indices' in pr else list(range(len(pos)))
                 key = (name.split('_')[0] if a.kind == 'cave' and name.startswith('Cube_') else name, pr.get('material', 0))
                 if key not in groups:
-                    groups[key] = [[], [], [], []]; order.append(key)
+                    groups[key] = [[], [], [], [], [[], []]]; order.append(key)
                 G = groups[key]
                 off = len(G[0])
+                for q in (0, 1):
+                    src_uv = uvx[q] if uvx[q] is not None else uv
+                    if uvx[q] is not None: uvsets.setdefault(pr.get('material', 0), set()).add(q + 1)
+                    G[4][q].extend((u[0], u[1]) for u in src_uv)
                 G[0].extend(apply_m(m, p) for p in pos)
                 G[1].extend((u[0], u[1]) for u in uv)
                 # A BAKE UNDER A REFLECTION TURNS EVERY TRIANGLE INSIDE OUT. The
@@ -674,10 +686,14 @@ def main():
                 for n, (p2, u2, i2, lo, hi) in enumerate(split_benches(P, UV, I)):
                     out_meshes.append(('bench_%d' % n, key[1], p2, u2, i2, True))
                     bench_boxes.append([round(v, 3) for v in lo] + [round(v, 3) for v in hi])
+    uvx_of = {}
     for key in order:
-        P, UV, I, N = groups[key]
+        P, UV, I, N = groups[key][:4]
         if EXACT and N:
             normals_of[len(out_meshes)] = N
+        if (EXACT and len(groups[key]) > 4 and key[1] in uvsets and len(groups[key][4][0]) == len(P)
+                and any(t.get('texCoord', 0) > 0 for t in tex_refs(mats[key[1]]))):
+            uvx_of[len(out_meshes)] = groups[key][4]
         out_meshes.append((key[0], key[1], P, UV, I, False))
 
     # ---- decimate, proportionally, sparing anything already small
@@ -688,6 +704,7 @@ def main():
     log('decimating the heavy meshes to %.0f%% (budget %d)' % (ratio * 100, budget))
     packed = []
     packed_n = []        # aligned with packed: the normals, or None
+    packed_x = []        # and the extra uv sets, or None
     for k, (name, mi, P, UV, I, is_bench) in enumerate(out_meshes):
         ntri = len(I) // 3
         if EXACT:
@@ -695,12 +712,12 @@ def main():
             tris = [(I[t], I[t + 1], I[t + 2]) for t in range(0, len(I) - 2, 3)]
             pos, uvs = list(P), list(UV)
             log('  %-40s %-18s %7d tris, exact' % (name, mats[mi].get('name'), ntri))
-            packed.append((name, mi, pos, uvs, tris, is_bench)); packed_n.append(normals_of.get(k))
+            packed.append((name, mi, pos, uvs, tris, is_bench)); packed_n.append(normals_of.get(k)); packed_x.append(uvx_of.get(k))
             continue
         want = ntri if ntri <= 4000 else max(1500, int(ntri * ratio))
         pos, uvs, tris = decimate(P, UV, I, want)
         log('  %-40s %-18s %7d -> %6d tris' % (name, mats[mi].get('name'), ntri, len(tris)))
-        packed.append((name, mi, pos, uvs, tris, is_bench)); packed_n.append(None)
+        packed.append((name, mi, pos, uvs, tris, is_bench)); packed_n.append(None); packed_x.append(None)
 
     # ---- the walk
     door_box = None
@@ -811,8 +828,10 @@ def main():
         if EXACT:
             # the second uv set is identical to the first on every mesh that
             # has one (measured), and only the first is written
+            # (except where the mesh really carries the set the map reads)
             for t in tex_refs(m):
-                t['texCoord'] = 0
+                if t.get('texCoord', 0) not in uvsets.get(mats.index(m), ()):
+                    t['texCoord'] = 0
             continue
         pbr.pop('metallicRoughnessTexture', None)
         pbr['metallicFactor'] = 0.0
@@ -864,6 +883,7 @@ def main():
             M[3].extend(nrm if nrm and len(nrm) == len(pos) else [(0.0, 1.0, 0.0)] * len(pos))
         packed = [(mats[cm].get('name', 'm%d' % cm), cm, M[0], M[1], M[2], False) for cm, M in ((cm, merged[cm]) for cm in order_m)]
         packed_n = [merged[cm][3] for cm in order_m]
+        packed_x = [None] * len(packed)
         log('castle: %d materials merged into their twins; %d meshes, one per material' % (sum(1 for k, v in mremap.items() if k != v), len(packed)))
 
     # ---- rebuild: one flat scene of baked meshes under a root with extras
@@ -891,6 +911,12 @@ def main():
         ua = len(accessors); accessors.append({'bufferView': emit(ub, ARRAY_BUFFER), 'componentType': 5126, 'count': len(uvs), 'type': 'VEC2'})
         ia = len(accessors); accessors.append({'bufferView': emit(ib, ELEMENT_ARRAY_BUFFER), 'componentType': 5125 if wide else 5123, 'count': len(tris) * 3, 'type': 'SCALAR'})
         attrs = {'POSITION': pa, 'TEXCOORD_0': ua}
+        ux = packed_x[pk] if pk < len(packed_x) else None
+        if ux:
+            for n in (0, 1):
+                xb = bytearray()
+                for u in ux[n]: xb.extend(struct.pack('<ff', u[0], u[1]))
+                attrs['TEXCOORD_%d' % (n + 1)] = len(accessors); accessors.append({'bufferView': emit(xb, ARRAY_BUFFER), 'componentType': 5126, 'count': len(ux[n]), 'type': 'VEC2'})
         if nrm and len(nrm) == len(pos):
             nb = bytearray()
             for nn in nrm: nb.extend(struct.pack('<fff', *nn))
@@ -924,6 +950,14 @@ def main():
         bt = m.get('pbrMetallicRoughness', {}).get('baseColorTexture')
         if bt and m.get('alphaMode', 'OPAQUE') != 'OPAQUE': cutout.add(g['textures'][bt['index']].get('source'))
     keep_img = {}
+    if EXACT:
+        import hashlib
+        firsti = {}
+        for t in g['textures']:
+            si = t.get('source')
+            if si is None or 'uri' not in g['images'][si]: continue
+            h = hashlib.md5(open(os.path.join(root, g['images'][si]['uri']), 'rb').read()).hexdigest()
+            t['source'] = firsti.setdefault(h, si)
     for ti in sorted(live):
         si = g['textures'][ti].get('source')
         if si in keep_img: continue
@@ -935,8 +969,15 @@ def main():
             im0 = im0.convert('RGBA'); alpha = im0.getchannel('A').getextrema()[0] < 250
         alpha = alpha or si in cutout
         im = im0.convert('RGBA' if alpha else 'RGB')
-        if max(im.size) > a.tex:
-            k = a.tex / max(im.size)
+        lim = a.tex
+        for spec in a.tex_for:
+            nm_, sz_ = spec.split('=')
+            if any(m.get('name') == nm_ and g['textures'][ti] in [g['textures'][t['index']] for t in tex_refs(m)] for m in g['materials']):
+                lim = max(lim, int(sz_))
+        if 'etallicRoughness' in uri or 'specular' in uri:
+            lim = a.tex                 # roughness is low-frequency: it never earns the bigger size
+        if max(im.size) > lim:
+            k = lim / max(im.size)
             im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS)
         out = io.BytesIO()
         if alpha: im.save(out, 'PNG', optimize=True)
