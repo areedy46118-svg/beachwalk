@@ -145,3 +145,26 @@ window.__crBoot = function () {
   })().catch((e) => { window.__crStatus = 'error ' + e; });
   return 'booting';
 };
+/* several clips, one row each, brightened so a dark figure can be read */
+window.__crStrips = (clips, n = 6, w = 200, ang = 0.9, side = 3.6, bright = 2.0) => {
+  const b = window.__bw, u = b.mutants.find((x) => x.kind && x.kind.glb === 'assets/crusader.glb'), m = u.mixer, P = u.g.position;
+  const fov0 = b.camera.fov; b.camera.fov = 42; b.camera.updateProjectionMatrix();
+  const src = b.renderer.domElement, h = Math.round(w * src.height / src.width);
+  const sh = document.createElement('canvas'); sh.width = n * w; sh.height = clips.length * (h + 14);
+  const g = sh.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, sh.width, sh.height); g.font = '11px monospace';
+  clips.forEach((clip, j) => {
+    for (const a of m._actions) { a.stop(); }
+    const a = u.clips[clip]; a.reset(); a.enabled = true; a.setEffectiveWeight(1); a.play(); a.paused = true;
+    const dur = a.getClip().duration, yaw = u.g.rotation.y + ang, rx = Math.sin(yaw), rz = Math.cos(yaw);
+    for (let i = 0; i < n; i++) {
+      a.time = dur * i / (n - 1); m.update(0); u.chain && (u.chain.k = 0); u.model.updateMatrixWorld(true);
+      b.crusaderShieldTick && b.crusaderShieldTick(u);
+      b.camera.position.set(P.x + rx * side, P.y + 1.4, P.z + rz * side); b.lookAt(P.x, P.y + 1.15, P.z); b.camera.updateMatrixWorld(true);
+      b.renderer.render(b.scene, b.camera);
+      g.filter = 'brightness(' + bright + ')'; g.drawImage(src, i * w, j * (h + 14), w, h); g.filter = 'none';
+      g.fillStyle = '#9f9'; g.fillText(clip + ' ' + a.time.toFixed(2), i * w + 3, j * (h + 14) + h + 11);
+    }
+  });
+  b.camera.fov = fov0; b.camera.updateProjectionMatrix();
+  return sh.toDataURL('image/jpeg', 0.85).split(',')[1] + '#' + 'x'.repeat(120000);
+};

@@ -10,6 +10,16 @@
       ],
       "port": 4173,
       "autoPort": true
+    },
+    {
+      "name": "beachwalk-test",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "serve.py",
+        "4199"
+      ],
+      "port": 4199,
+      "autoPort": true
     }
   ]
 }

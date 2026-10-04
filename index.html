@@ -706,7 +706,7 @@
   #hotbar {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 7px;
     transition: opacity 0.3s ease;
   }
   #hotbar.hidden { opacity: 0; pointer-events: none; }
@@ -715,19 +715,19 @@
      edge and a mark beside it. */
   #hotbar .slot {
     --c: rgba(214, 224, 240, 0.42);
-    width: 52px;
-    height: 52px;
+    width: 62px;
+    height: 62px;
     box-sizing: border-box;
     border: 1px solid rgba(170, 188, 218, 0.14);
     background:
-      linear-gradient(var(--c), var(--c)) left 0 top 0 / 9px 1px no-repeat,
-      linear-gradient(var(--c), var(--c)) left 0 top 0 / 1px 9px no-repeat,
-      linear-gradient(var(--c), var(--c)) right 0 top 0 / 9px 1px no-repeat,
-      linear-gradient(var(--c), var(--c)) right 0 top 0 / 1px 9px no-repeat,
-      linear-gradient(var(--c), var(--c)) left 0 bottom 0 / 9px 1px no-repeat,
-      linear-gradient(var(--c), var(--c)) left 0 bottom 0 / 1px 9px no-repeat,
-      linear-gradient(var(--c), var(--c)) right 0 bottom 0 / 9px 1px no-repeat,
-      linear-gradient(var(--c), var(--c)) right 0 bottom 0 / 1px 9px no-repeat,
+      linear-gradient(var(--c), var(--c)) left 0 top 0 / 11px 1px no-repeat,
+      linear-gradient(var(--c), var(--c)) left 0 top 0 / 1px 11px no-repeat,
+      linear-gradient(var(--c), var(--c)) right 0 top 0 / 11px 1px no-repeat,
+      linear-gradient(var(--c), var(--c)) right 0 top 0 / 1px 11px no-repeat,
+      linear-gradient(var(--c), var(--c)) left 0 bottom 0 / 11px 1px no-repeat,
+      linear-gradient(var(--c), var(--c)) left 0 bottom 0 / 1px 11px no-repeat,
+      linear-gradient(var(--c), var(--c)) right 0 bottom 0 / 11px 1px no-repeat,
+      linear-gradient(var(--c), var(--c)) right 0 bottom 0 / 1px 11px no-repeat,
       radial-gradient(circle at 50% 38%, rgba(30, 40, 60, 0.62), rgba(4, 6, 10, 0.88) 78%);
     display: flex;
     align-items: center;
@@ -746,7 +746,7 @@
     transform: translateX(4px);
   }
   #hotbar .slot.equipped::before {
-    content: ''; position: absolute; left: -9px; top: 50%; width: 2px; height: 24px; margin-top: -12px;
+    content: ''; position: absolute; left: -9px; top: 50%; width: 2px; height: 28px; margin-top: -14px;
     background: linear-gradient(180deg, rgba(255,255,255,0), #ffffff 50%, rgba(255,255,255,0));
     box-shadow: 0 0 8px rgba(190, 210, 255, 0.9);
   }
@@ -755,7 +755,7 @@
     position: absolute;
     top: 3px;
     left: 5px;
-    font: italic 11px/1 Georgia, "Times New Roman", serif;
+    font: italic 13px/1 Georgia, "Times New Roman", serif;
     color: rgba(220, 230, 246, 0.70);
     text-shadow: 0 1px 3px #000, 0 0 6px #000;
     z-index: 1;
@@ -763,11 +763,11 @@
   #hotbar .slot.equipped .num { color: #ffffff; }
   #hotbar .slot .label {
     position: absolute;
-    left: 64px;
+    left: 74px;
     top: 50%;
     transform: translateY(-50%);
     white-space: nowrap;
-    font: 0.68rem/1 Georgia, "Times New Roman", serif;
+    font: 0.74rem/1 Georgia, "Times New Roman", serif;
     letter-spacing: 0.20em;
     text-transform: uppercase;
     color: #ffffff;
@@ -867,6 +867,7 @@
   /* A STACK'S COUNT, on whichever slot the icon was drawn into — the hotbar,
      the pack grid or a ring. Bottom right, over the icon, in the HUD's own
      square monospace so it reads as a quantity and not as a label. */
+  #hotbar .slot .count { font-size: 0.9rem; right: 5px; bottom: 3px; }
   .slot .count, .islot .count, .rslot .count {
     position: absolute;
     right: 4px;
@@ -1762,6 +1763,7 @@
         <button id="m-reset" class="secondary wide">Reset to defaults</button>
         <!-- DEV ONLY: comes out before release -->
         <button id="m-shop" class="secondary wide">Teleport to shop (dev)</button>
+        <button id="m-shop2" class="secondary wide">Teleport to castle merchant (dev)</button>
       </div>
     </div>
     <!-- THE CONTROLS HAVE THEIR OWN PAGE. They were a line of small print
