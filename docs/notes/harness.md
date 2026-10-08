@@ -234,3 +234,18 @@ local x/z + 9000). And **`placeInCatacombs` before `catReady` places you
 without building the room** — no graph, no route; wait for `catState().
 catReady` and call it again.
 
+
+**`frozen()` is true in a harness load unless the intro is skipped**: after
+`beginGame()` `introDone` waits on the intro video's real clock, so every
+take that checks `!frozen()` never starts. Set
+`sessionStorage['beachwalk.skipIntro'] = '1'` and reload; the game consumes it.
+**Dev mode stops every creature's swing** (`updateMutantUnit`, `cool <= 0 &&
+!settings.devMode`) — a fight that "never attacks" in a test is dev mode.
+**A teleport in the throne room holds only after `__bw.step()`**: `tp` then
+`frame` reverts it to the last spot; `tp`, `step(1/60)`, then frames.
+`tools/thrdante.js` (`__tdMute`, `__tdGo` in short stages, `__tdWalk`,
+`__tdTake`) and `tools/shot.js` (`__shot`, `__sheet`/`__sheetAdd`/`__sheetEnd`,
+which size a hidden pane's zero canvas) are the throne room's kit.
+`tools/audiowatch.js`: `__awPatch()` before the game makes sound, `__awTap()`
+after (null sink, analyser on `masterGain`, NaN/throw catchers, node counts),
+`__awReport()`. Import it ONCE per load.

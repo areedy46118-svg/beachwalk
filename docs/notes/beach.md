@@ -1497,3 +1497,11 @@ four sides, and a jump lands on it at 0.28.
 of it on the stone, a cold pooled lamp on the hilt (`lpAlways`), a sheen running down the steel
 (its materials are cloned first), and a stronger glint.
 
+
+**THE LAST TWO CACHES HOLD WATER.** `moundRole`'s leftover role — whatever is
+not a jar, the CD, a spliff, the crab or the glowstick, which on the seeded
+layout is the two last mounds down the walk (12.6, -987.7) and (10.1,
+-1054.1) — is `'water'` now, not the placeholder `makeBuriedObject`.
+`placeMoundWater` stands a `makeWaterBottle()` in the hole under the mound's
+own shine, taken through `gainWater` so it stacks; `moundRelicHold` pre-builds
+it like the others.

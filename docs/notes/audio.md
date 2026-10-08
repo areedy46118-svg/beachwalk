@@ -529,3 +529,21 @@ from shut doors through the fight while men are still inside (`farmCrowdTick`),
 and a bell in the tower tolls eight times as the fight starts
 (`sfxCastleBell`).
 
+
+**THE FARMER FIGHT'S AUDIO CUT OUT (2026-10-08): one death made the whole map
+laugh.** `killMutant`'s "and the others laugh" looped over EVERY living mutant
+in the game — twenty farmers (most still behind their doors), the whale's
+seven, the catacombs, the castles — and each synthesised laugh is ~30 nodes
+whose gain (`1 / (1 + d/14)`) never reaches zero, so nothing was culled by
+distance. Measured with `tools/audiowatch.js` (the context sent to a null
+sink with `setSinkId({type:'none'})`, an analyser on `masterGain`, node
+creation counted by caller): ~1,070 nodes/s through the fight, and 1,500 in
+the 0.7 s after each kill — more than the audio thread renders in time, and
+when it falls behind EVERYTHING drops out. Now only the two nearest that are
+awake, drawn, out of their doors and within 28 m laugh (~240 nodes/s), and
+`mutVoiceOK()` caps synthesised roars/laughs/tells at eight per 0.6 s as a
+net under any future broadcast. No NaN params and no thrown param calls were
+found — it was load, not poison. **When adding "everyone reacts", filter by
+awake + near + in this room first.** The watcher must be imported once per
+load (a second import used to replace its state object, and the patched
+prototypes kept counting into the old one).

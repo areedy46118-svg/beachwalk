@@ -6609,6 +6609,7 @@ let packCut = false;            // the three coming in: the player watches
  * follows the key to the sand, so where it lands is not a thing you can miss.
  * Declared up here because frozen() reads it on the first frame. */
 let keyCut = null;
+let thrCut = null;          // the throne room's two takes: the chain cut, and the marauder getting up (`updateThroneScene`)
 // the whale's farewell (`updateWhaleFarewell`): up here because `frozen()` and the lens read them from the first frame
 let wbFareCut = null, wbGone = false;
 // and the gold rays it throws off its own body at the heal, read by `beachRays`
@@ -6927,7 +6928,7 @@ function updateHurt(dt) {
   hurtEl.style.opacity = String(Math.max(hurtFlash * hurtFlash, rim));
 }
 
-function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || shopOpen || inspecting || peeking || packCut || !!keyCut || !!wbFareCut || mutCut || hatchBusy || ucBusy || abductCut || portalCut || sailBusy || tavBusy || fortBusy || caveBusy || catBusy || whaleBusy || thrBusy || !!wbSw || roomRestore || dying || ended || !introDone; }
+function frozen() { return noteOpen || menuOpen || dialogOpen || invOpen || shopOpen || inspecting || peeking || packCut || !!keyCut || !!thrCut || !!wbFareCut || mutCut || hatchBusy || ucBusy || abductCut || portalCut || sailBusy || tavBusy || fortBusy || caveBusy || catBusy || whaleBusy || thrBusy || !!wbSw || roomRestore || dying || ended || !introDone; }
 function refreshUI() {
   const playing = started && !menuOpen && !noteOpen && !dialogOpen && !invOpen && !shopOpen && !inspecting && !dying && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
@@ -7143,7 +7144,7 @@ document.addEventListener('pointerlockchange', () => {
     softLook = true;
     // an intentional exit (note / menu / dialogue / death) is handled by
     // those; a stray exit while still playing means the user hit Esc → menu
-    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !shopOpen && !inspecting && !peeking && !packCut && !keyCut && !wbFareCut && !mutCut && !abductCut && !portalCut && !hatchBusy && !ucBusy && !wbSw && !dying) openMenu();
+    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !shopOpen && !inspecting && !peeking && !packCut && !keyCut && !thrCut && !wbFareCut && !mutCut && !abductCut && !portalCut && !hatchBusy && !ucBusy && !wbSw && !dying) openMenu();
   }
 });
 window.addEventListener('unhandledrejection', (e) => {
@@ -8040,7 +8041,7 @@ mCheckpointBtn.addEventListener('click', () => { if (hasCheckpoint()) reloadInto
  * the trader, facing him. It refuses in the middle of a cut, and in the hall
  * in the saucer, whose fight is a sequence with no exit but winning it. */
 const devShopBusy = () => hatchBusy || ucBusy || abductCut || portalCut || sailBusy || tavBusy || fortBusy || caveBusy
-  || catBusy || whaleBusy || thrBusy || !!wbSw || roomRestore || packCut || mutCut || !!keyCut || !!wbFareCut || dying || ended || !introDone;
+  || catBusy || whaleBusy || thrBusy || !!wbSw || roomRestore || packCut || mutCut || !!keyCut || !!thrCut || !!wbFareCut || dying || ended || !introDone;
 /* AND THE CASTLE'S MERCHANT (the owner's word): the same, to the second
  * trader on the sand sixteen metres short of the first castle's gate. The
  * walk's once-only events between here and there are marked as passed the
@@ -10423,7 +10424,7 @@ window.addEventListener('pointerup', (e) => {
    * down into the pack and something holdable came up into its place, that
    * is in your hand instead. */
   const H = hotbarN();
-  if (to < H && item.viewmodel) { if (equipped !== item) toggleEquip(item); }
+  if ((to < H || target === equipped) && item.viewmodel) { if (equipped !== item) toggleEquip(item); }   // into the strip, or onto the thing in your hand
   else if (equipped === item && to >= H && target && from < H && target.viewmodel) toggleEquip(target);
   renderHotbar(); renderPack();
 });
@@ -15113,7 +15114,8 @@ function moundRole(m) {
       if (q.z <= HOLE_Z || q === mounds[0] || q === mounds[1] || q === past || q === spliffAt || q === preWhale || q === portal || q === pav) continue;
       if (!preCave || q.z < preCave.z) preCave = q;
     }
-    mounds.forEach((q, i) => moundRoles.set(q, i === 0 || q === past ? 'jar' : i === 1 ? 'cd' : q === spliffAt || q === preWhale ? 'spliff' : q === portal ? 'jar' : q === pav ? 'crab' : q === preCave ? 'glow' : 'buried'));
+    // and whatever is left — the last two down the walk — holds a bottle of water (the owner's word)
+    mounds.forEach((q, i) => moundRoles.set(q, i === 0 || q === past ? 'jar' : i === 1 ? 'cd' : q === spliffAt || q === preWhale ? 'spliff' : q === portal ? 'jar' : q === pav ? 'crab' : q === preCave ? 'glow' : 'water'));
   }
   return moundRoles.get(m) || 'buried';
 }
@@ -15237,7 +15239,7 @@ warmStep('mound relics', () => {
     if (m.taken || m.relic) return;
     const role = moundRole(m);
     if (role === 'glow') return;           // the glowstick builds its own, lit, when it comes out
-    m.relic = role === 'jar' ? makeBloodJar() : role === 'cd' ? makeCdCase() : role === 'spliff' ? makeSpliffWorld() : role === 'crab' ? makeCrabRelic() : makeBuriedObject();
+    m.relic = role === 'jar' ? makeBloodJar() : role === 'cd' ? makeCdCase() : role === 'spliff' ? makeSpliffWorld() : role === 'crab' ? makeCrabRelic() : role === 'water' ? makeWaterBottle() : makeBuriedObject();
     m.relic.position.set(i * 0.6, 0, 0);
     moundRelicHold.add(m.relic);
   });
@@ -15284,6 +15286,7 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
   /* AND THE ONE BEFORE THE CAVE HAS A LIGHT IN IT: the last cache you pass
    * before the crawl into the dark, already lit, lying in the hole. */
   if (role === 'glow') { dropGlowstick({ x: m.x, y: 0, z: m.z }); return; }
+  if (role === 'water') { placeMoundWater(pre || makeWaterBottle(), m.x, m.z); return; }
   const relic = pre || (second ? makeCdCase() : makeBuriedObject());
   relic.visible = true;
   relic.position.set(m.x, second ? 0.052 : 0.09, m.z);
@@ -15332,6 +15335,26 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
  * The model is its OWN instance: `bloodJar` is the one the examine screen
  * re-parents at the end of the extraction, and handing the same Group to two
  * places is how a thing ends up in neither. */
+/* A BOTTLE OF WATER OUT OF A CACHE: stood in the hole, leaning a little, under
+ * the mound's own shine, and taken through `gainWater` so it stacks with
+ * every other bottle you carry. The last two caches down the walk hold one. */
+function placeMoundWater(b, x, z) {
+  b.visible = true;
+  b.position.set(x, 0.02, z);
+  b.rotation.set(0.18, Math.random() * Math.PI * 2, -0.12);
+  const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.32, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  proxy.name = 'hitProxy'; proxy.visible = false; proxy.position.y = 0.12; b.add(proxy);
+  scene.add(b);
+  addItemShine(b, { size: 0.85, height: 0.16, strength: 1.5, lift: 0.3 });
+  addInteractable(b, 'Take the bottle of water', 'inventory', {
+    gives: waterBottleItem,
+    onActivate: () => {
+      sfxThud(0.03);
+      scene.remove(b); removeInteractable(b); hovered = null;
+      gainWater();
+    },
+  });
+}
 function dropJar(sx, sz, sy = 0.02, shine = null, pre = null) {
   const jar = pre || makeBloodJar();
   jar.visible = true;
@@ -19592,12 +19615,13 @@ function updateDialogCam(dt) {
    * constant, so it is the same zoom at any field of view the owner picks. */
   const wantFov = (mutCutFov > 0 ? mutCutFov
     : keyCut ? keyCut.fov
+    : thrCut ? thrCut.fov
     : wbFareCut ? wbFareCut.fov
     : peeking && !peekLeaving ? PEEK_FOV
     : (dialogOpen || cineHold) ? Math.min(settings.fov, dialogFov) : settings.fov) + fovKick
     - settings.fov * MAG_ZOOM * magAim;
   // and it arrives at a gun's pace, not a conversation's
-  const rate = mutCutFov > 0 ? 14 : keyCut ? 3.2 : wbFareCut ? (wbFareCut.fovRate || 1.6) : peeking ? 2.6 : magAim > 0.002 ? 13 : 3.5;
+  const rate = mutCutFov > 0 ? 14 : keyCut ? 3.2 : thrCut ? (thrCut.fovRate || 4.5) : wbFareCut ? (wbFareCut.fovRate || 1.6) : peeking ? 2.6 : magAim > 0.002 ? 13 : 3.5;
   if (Math.abs(camera.fov - wantFov) > 0.01) {
     camera.fov += (wantFov - camera.fov) * Math.min(1, dt * rate);
     camera.updateProjectionMatrix();
@@ -25470,6 +25494,24 @@ const lostKeyItem = {
   use: () => toggleEquip(lostKeyItem),
 };
 holdable(lostKeyItem, lostKeyModel, { scale: 1.1, pos: [0, -0.02, 0], rot: [0.5, 0.3, 0.7] });
+/* THE STOREROOM KEY: the tavern's locked room is opened with this, found on
+ * the floor at the far end of the hall where the owner pointed. The same
+ * scan as every key here, dulled to old iron rather than bleached brass. */
+const storeKeyModel = new THREE.Group();
+function fillStoreKey() {
+  if (storeKeyModel.children.length || !keyModel.children.length) return false;
+  const src = keyModel.children[0];
+  const m = new THREE.Mesh(src.geometry, src.material.clone());
+  m.material.emissive = new THREE.Color(0x7d766c); m.material.emissiveIntensity = 0.55;   // the tavern is a baked room: what it carries is its own lift
+  m.scale.copy(src.scale);
+  storeKeyModel.add(m);
+  return true;
+}
+const storeKeyItem = {
+  id: 'storeKey', name: 'Storeroom key', desc: 'Old iron. A door in the tavern has a lock this size.', icon: makeKeyIcon(),
+  use: () => toggleEquip(storeKeyItem),
+};
+holdable(storeKeyItem, storeKeyModel, { scale: 1.1, pos: [0, -0.02, 0], rot: [0.5, 0.3, 0.7] });
 function lostKeyLie(x, z, quiet) {
   fillLostKey();
   const W = snorkKey.world || (snorkKey.world = new THREE.Group());
@@ -30396,11 +30438,21 @@ function finishMutant(u) {
   /* AND THE OTHERS LAUGH. You kill one of them and the ones still standing
    * find it funny — which is the single cheapest thing in this whole fight
    * and the one that most makes them a pack rather than three enemies. */
+  /* BUT ONLY THE ONES THAT SAW IT. This asked EVERY living creature in the
+   * game — twenty farmers, most of them still behind their doors, the
+   * whale's seven, the catacombs, the castles — and each laugh is some thirty
+   * nodes that never fall silent with distance, so every kill in the farmer
+   * fight built well over a thousand nodes inside a second and the audio
+   * thread fell behind: the owner's "the audio always cuts out". The two
+   * nearest that are awake, standing near you and drawn laugh; nobody else. */
+  const laughers = [];
   for (const o of mutants) {
-    if (o === u || !o.st.alive) continue;
+    if (o === u || !o.st.alive || !o.st.awake || !o.g.visible || (o.farm && !o.farm.out)) continue;
     const d = Math.hypot(camera.position.x - o.g.position.x, camera.position.z - o.g.position.z);
-    setTimeout(() => { if (o.st.alive) sfxMutLaugh(d, o.kind.voice); }, 260 + Math.random() * 420);
+    if (d < 28) laughers.push([d, o]);
   }
+  laughers.sort((a, b) => a[0] - b[0]);
+  for (const [d, o] of laughers.slice(0, 2)) setTimeout(() => { if (o.st.alive) sfxMutLaugh(d, o.kind.voice); }, 260 + Math.random() * 420);
 }
 /* BLOOD GOES WHERE THE BLADE WENT. `bleedMutant` is a radial burst from the
  * chest; this is the spray a cut throws — most of it along the swing, a
@@ -30818,6 +30870,19 @@ const MUT_VOX = {
   hunger: { picks: [1, 3, 5], gain: 0.22, rate: 0.80, ref: 7,  gap: 2.0, lp: 1300 },
 };
 const mutVoxLast = {};
+/* A BUDGET ON SYNTHESISED THROATS. A laugh, a roar or a tell built from
+ * oscillators is twenty to forty nodes; a crowd of them inside half a second
+ * is more than the audio thread renders in time, and when it falls behind
+ * EVERYTHING drops out, the music and the sea with it. Eight voices to any
+ * 0.6 s and the rest are not drawn — in a crowd nobody hears the ninth. */
+const MUT_VOICE_CAP = 8, MUT_VOICE_WIN = 0.6;
+const _mutVoiceT = [];
+function mutVoiceOK() {
+  const now = audioCtx ? audioCtx.currentTime : 0;
+  while (_mutVoiceT.length && now - _mutVoiceT[0] > MUT_VOICE_WIN) _mutVoiceT.shift();
+  if (_mutVoiceT.length >= MUT_VOICE_CAP) return false;
+  _mutVoiceT.push(now); return true;
+}
 function mutVox(role, dist = 0, V = MUT_VOICE) {
   const ctx = audioCtx; if (!ctx || !V || !V.rec) return false;
   const R = MUT_VOX[role];
@@ -30841,6 +30906,7 @@ function mutVox(role, dist = 0, V = MUT_VOICE) {
 function sfxMutTell(dist = 0, W = MUT_WIND, V = MUT_VOICE) {
   const ctx = audioCtx; if (!ctx) return;
   if (mutVox('tell', dist, V)) return;
+  if (!mutVoiceOK()) return;
   if (V.cat) { catCue('catTell', { gain: 0.9, ref: 7, far: 30, cut: true }); return; }   // the thing in the catacombs has its own voice
   const t = ctx.currentTime, out = sfxOut(), g0 = 1 / (1 + dist / 12);
   const rise = Math.min(W, 0.62);
@@ -30872,6 +30938,7 @@ function sfxMutSwing(V = MUT_VOICE) {
 function sfxMutRoar(dist = 0, V = MUT_VOICE) {
   const ctx = audioCtx; if (!ctx) return;
   if (mutVox('roar', dist, V)) return;
+  if (!mutVoiceOK()) return;
   if (V.cat) { catCue('catRoar', { gain: 1.2, ref: 10, far: CAT_HEAR_FAR + 6, lpFar: 1200, cut: true }); return; }
   const t = ctx.currentTime, out = sfxOut(), g0 = 1.1 / (1 + dist / 16), D = 1.5;
   for (const [f0, f1, gn] of [[58, 96, 0.16], [87, 143, 0.09], [29, 47, 0.13]])
@@ -31177,6 +31244,7 @@ function mutTone(t, D, V, f0, f1, gain, out) {
 function sfxMutLaugh(dist = 0, V = MUT_VOICE) {
   const ctx = audioCtx; if (!ctx) return;
   if (mutVox('laugh', dist, V)) return;
+  if (!mutVoiceOK()) return;
   const t0 = ctx.currentTime, out = sfxOut(), g0 = 1.0 / (1 + dist / 14);
   const n = 5 + Math.floor(Math.random() * 3);
   let t = t0;
@@ -32807,6 +32875,7 @@ function updateMutantUnit(u, dt) {
     if (!inCat) { mutDrop(u); mutAnim(u, dt, 0); return; }
     // where the frame began: `mutClampX` puts him back here if the frame crossed a drawn wall
     if (!u.catPrev) u.catPrev = new THREE.Vector3();
+    u.catStride = Math.hypot(u.g.position.x - u.catPrev.x, u.g.position.z - u.catPrev.z);   // how far the LAST frame carried him
     u.catPrev.copy(u.g.position);
     catTick++;   // one per frame, whatever calls the clamp after this: the wall pushes run once
     const st = catWalk ? keepFloorAt(u.g.position.x, u.g.position.z, u.g.position.y + 0.3, 0.6, CAT_SITE) : null;
@@ -32825,6 +32894,8 @@ function updateMutantUnit(u, dt) {
   }
   // THE SEVEN IN THE WHALE: drawn only in it, standing on its floor, kneeling at their circle until they know you are there
   if (u.kind.whaleBody && (u.kind.parasite ? parasiteUnitPre(u, dt) : demonUnitPre(u, dt))) return;
+  // THE BEAST ON THE CHAIN: chained, it is the scene's; loose, it fights like anything else (`danteUnitPre`)
+  if (u.kind.dante && danteUnitPre(u, dt)) return;
   // THE FARMERS: behind their doors until they are sent out, then coming out of them, then a pack
   if (u.kind.farmer && farmUnitPre(u, dt)) return;
   if (!u.st.awake && u.comfy && u.st.alive && u.clips.mSit) { updateComfy(u, dt); return; }
@@ -33150,7 +33221,20 @@ function updateMutantUnit(u, dt) {
      * then "jumped" the last metre, which reads as a lunge and not as a
      * jump. `hold` keeps it where it is for the whole startup: it stops,
      * rears, and the ground is crossed all at once. */
-    if (t < A.wind * 0.8 && dist > A.reach * 0.75 && !A.hold) {
+    /* AND A BEAST THAT SWINGS WHERE IT STANDS DOES NOT SKATE INTO IT
+     * (`kind.planted`). Its clips carry no travel, so every closing below —
+     * the walk through the startup, the lunge that covers the gap, the step
+     * into a chained blow — was a body gliding across the floor in a
+     * standing swing (measured on the beast in the throne room: 10.7 m/s in
+     * its smash after you stepped back). It does the clever thing instead:
+     * you got out of reach early in the startup, so it drops the swing and
+     * comes after you on its feet; late in it, it commits where it is. */
+    if (u.kind.planted && t < A.wind * 0.7 && dist > A.reach + 0.9) {
+      u.st.atk = -1; u.st.chainAt = -1; u.st.chained = false; u.st.cool = 0.05;
+      mutAnim(u, dt, 0);
+      return;
+    }
+    if (t < A.wind * 0.8 && dist > A.reach * 0.75 && !A.hold && !u.kind.planted) {
       u.dir.set(dx / dist, 0, dz / dist);
       p.addScaledVector(u.dir, MUT_SPEED * u.kind.speedK * 0.66 * dt);
     }
@@ -33240,7 +33324,7 @@ function updateMutantUnit(u, dt) {
        * your last blow's knockback had put you back a step. Up to the
        * contact frame he covers exactly what is left to his stop. */
       if (lead > 0 && t < A.wind) sp = Math.max(sp, (dist - stop) / Math.max(0.06, A.wind - t));
-      p.addScaledVector(u.dir, Math.min(sp, MUT_SPEED * 2.4) * dt);
+      p.addScaledVector(u.dir, Math.min(sp, u.kind.lungeMax || MUT_SPEED * 2.4) * dt);
     }
     /* AND A SWING THROWN TOO CLOSE STEPS BACK. A flail is a weapon of
      * distance: chained off his kick or his shield bash, both thrown from a
@@ -33257,7 +33341,7 @@ function updateMutantUnit(u, dt) {
     // a chained swing STEPS IN through its startup: the first blow's own
     // knockback put you out of reach, and a follow-up that stands still is
     // a follow-up that never lands
-    if (u.st.chained && t < A.wind && dist > A.reach - 0.3) {
+    if (u.st.chained && t < A.wind && dist > A.reach - 0.3 && !u.kind.planted) {
       u.dir.set(dx / dist, 0, dz / dist);
       p.addScaledVector(u.dir, 2.4 * dt);
     }
@@ -38894,6 +38978,7 @@ function update(dt, rawDt = dt) {
   updateMutant(dt);
   updateCrusader(dt);       // and the flail knight's chain, after whatever moved his arm
   updateThroneBoss(dt);     // and the marauder on his throne, on the hall's floor
+  updateDante(dt);          // and the beast at the foot of his dais, and its chain
   pinSamuraiSword();        // whatever moved his arm last is what the sword hangs off
   samTwoHand(dt);           // and his left hand goes onto the handle behind the right
   samSmoothPose(dt);        // and no clip change, restart or reel may pop his body from one pose to another in a frame
@@ -39069,6 +39154,7 @@ function saveCheckpoint(spot) {
       lostKey: snorkKey.state, mushGate: mushGateUnlocked,
       // and the catacombs' own, which the skull key turns
       catDoor: catDoorOpen,
+      tavStore: tavStoreOpen,         // the tavern's storeroom, opened with its key
       catWebs: [...catWebsGone],
       catPiles: [...catPilesGone],
       chest: !shipChestLocked,        // a lock you have turned does not lock itself again
@@ -39393,6 +39479,7 @@ function updateRestore(dt) {
   if (f.dojoWon) dojoWon = true;
   if (f.fortFarm) farmRetireAll();
   if (f.catDoor) catDoorOpen = true;
+  if (f.tavStore) { tavStoreOpen = true; if (tavStore) openTavStore(true); }
   if (Array.isArray(f.catWebs)) for (const i of f.catWebs) { catWebsGone.add(i); const w = catWebs[i]; if (w) breakCatWeb(w, 1, true); }
   if (Array.isArray(f.catPiles)) for (const i of f.catPiles) catPilesGone.add(i);   // broken when the room lands (`catApplyPiles`)
   if (f.chest) shipChestLocked = false;
@@ -39455,7 +39542,7 @@ function packByName(name) {
   for (const it of [shovelItem, militaryItem, katanaItem, bloodItem, pegItem, glowstickItem, ringItem,
                     weddingItem, keyItem, boatKeyItem, skullKeyItem, cdItem, crabItem,
                     syringeItem, waterBottleItem, headItem, fishingRodItem, magnumItem, fangItem, oldRingItem,
-                    spliffItem, grammyItem, lostKeyItem, whaleArtItem]) {
+                    spliffItem, grammyItem, lostKeyItem, whaleArtItem, storeKeyItem]) {
     if (it && it.name === name) return it;
   }
   return null;
@@ -39681,6 +39768,13 @@ function updateForestBed() {
   forestBed.g.gain.setTargetAtTime(FOREST_LEVEL, ctx.currentTime, 0.8);     // the bus carries the slider and the rooms
 }
 
+const _bwErrSeen = new Set();
+function bwFrameErr(e) {
+  const k = String(e && e.message || e);
+  if (_bwErrSeen.has(k)) return;
+  _bwErrSeen.add(k);
+  console.error('[frame]', e);
+}
 function animate(ts) {
   requestAnimationFrame(animate);
   const c0 = performance.now();
@@ -40353,8 +40447,16 @@ function animateFrame() {
    * `update`, which returns early in a dozen states (a dialogue, the pack, a
    * cut) and scales by hitstop, so four minutes could last for ever. */
   if (spliffBuffT > 0 && introDone) spliffBuffT = Math.max(0, spliffBuffT - rawDt);
-  update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
-  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateDojoAudio(rawDt); updateFightTip(rawDt); updateWheelCommit(); updateCatDread(rawDt); updateBleed(rawDt); updateEnemyBars(rawDt); updateSamuraiEyes(rawDt);
+  /* A THROW INSIDE `update` MUST NOT TAKE THE CUTS AND THE RENDER WITH IT.
+   * `animate` re-arms the frame before it runs, so one exception a frame is
+   * not a dead loop — it is a game that never draws again (black) while every
+   * cut below sits on its `busy` flag, which is what keeps the menu shut: the
+   * owner crawled into the church tunnel and got a black screen he could not
+   * even open the menu from. The exception is reported once per message and
+   * the rest of the frame goes on. */
+  try { update(dt, rawDt); } catch (e) { bwFrameErr(e); }
+  updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
+  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateThroneScene(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateDojoAudio(rawDt); updateFightTip(rawDt); updateWheelCommit(); updateCatDread(rawDt); updateBleed(rawDt); updateEnemyBars(rawDt); updateSamuraiEyes(rawDt);
   updateBeachBed();            // after every room has had its say, and only here
   updateHover();
   /* After everything that may have moved a lamp or the player, and before
@@ -40843,6 +40945,45 @@ function catLookAhead(u, pv, p, dt) {
   p.x = pv.x + Math.sin(t) * ml; p.z = pv.z + Math.cos(t) * ml;
   u.catMoveYaw = t; u.catAvOn = Math.abs(u.catAv) > 0.06;
 }
+/* A THING WIDER THAN THE PASSAGE SQUEEZES THROUGH IT. He is 1.65 m across
+ * the shoulders in corridors 1.3 m wide, so wherever the route is right he
+ * still stands in both walls by a hand and a half — which is the clipping
+ * the owner sees, and no steering can take it away: sliding him toward the
+ * middle (tried: slid him into the tombs instead, 38 % -> 51 % of moving
+ * frames in stone), bending his spine into the turns (tried: the head bone
+ * swung into the stone and the solid test fought the route, 38 % -> 63 %)
+ * and turning him slower (44-57 %) all made it worse, measured. What a thing
+ * that size does in a passage is press itself thinner. The walls are asked
+ * for on either flank at the hip, at the origin and a stride ahead, and the
+ * model is squashed ACROSS the body to the room there is (never under
+ * `CAT_SQ_MIN`), eased over a third of a second so it reads as a body
+ * pressing through rather than a scale snapping. The fight's own numbers —
+ * the hitbox, the reach, the body disc — read none of it. */
+const CAT_SQ_MIN = 0.70, CAT_SQ_W = 1.70;   // the narrowest he goes, and the width he is drawn at
+function catSqueeze(u, p, pv, dt) {
+  if (!CAT_SITE.walls || !u.model) return;
+  const M = u.model, ud = M.userData;
+  if (ud.sx0 === undefined) ud.sx0 = M.scale.x;
+  let want = 1;
+  if (u.st.alive) {
+    let dx = pv ? p.x - pv.x : 0, dz = pv ? p.z - pv.z : 0, L = Math.hypot(dx, dz);
+    if (L < 0.003) { dx = Math.sin(u.g.rotation.y); dz = Math.cos(u.g.rotation.y); L = 1; }
+    dx /= L; dz /= L;
+    const lx = -dz, lz = dx, lo = p.y + 0.45, hi = p.y + 1.1, R = 0.95;
+    let width = 9;
+    for (const a of [0, 0.9]) {
+      const cx = p.x + dx * a, cz = p.z + dz * a;
+      const Lw = keepWallNear(cx + lx * 0.4, cz + lz * 0.4, R, lo, hi, CAT_SITE);
+      const Rw = keepWallNear(cx - lx * 0.4, cz - lz * 0.4, R, lo, hi, CAT_SITE);
+      if (!Lw || !Rw) continue;                                   // open on a side: nothing to squeeze through
+      width = Math.min(width, Math.max(0.6, (0.4 + R - Lw.depth) + (0.4 + R - Rw.depth)));
+    }
+    if (width < CAT_SQ_W) want = Math.max(CAT_SQ_MIN, (width + 0.12) / CAT_SQ_W);
+  }
+  const cur = u.catSq === undefined ? 1 : u.catSq;
+  u.catSq = cur + (want - cur) * Math.min(1, dt * 3.5);
+  M.scale.x = ud.sx0 * u.catSq;
+}
 function mutClampX(u, p, dt) {
   if (u.kind.whaleBody) { demonClamp(u, p); return; }   // the belly's walls, not the beach's
   if (u.kind.thrBody) { thrClampUnit(u, p); return; }   // the throne room's stone, not the beach's
@@ -41000,6 +41141,7 @@ function mutClampX(u, p, dt) {
       keepWallPush(p, r, feet, CAT_SITE, 0.6);
       const mx = p.x - wx, mz = p.z - wz, ml = Math.hypot(mx, mz), cap = Math.max(0.005, Math.min(0.02, stride * 0.33));
       if (ml > cap) { p.x = wx + mx / ml * cap; p.z = wz + mz / ml * cap; }
+      if (!(window.__catOff && window.__catOff.squeeze)) catSqueeze(u, p, pv, dt);
     }
     const st = keepFloorAt(p.x, p.z, p.y + 0.3, 0.7, CAT_SITE);
     if (st) { if (!u.st.catHome) u.st.catHome = { x: 0, z: 0 }; u.st.catHome.x = p.x; u.st.catHome.z = p.z; }
@@ -42925,7 +43067,7 @@ function updateWardenDeath(u) {
     sprayBlood(u.g.position.x, u.g.position.y + 0.5, u.g.position.z,
                u.hitDir.x, u.hitDir.z, 30, 1.1);
   }
-  if (!C.tail && t >= D.TAIL) {
+  if (!C.tail && t >= D.TAIL && !u.kind.noTail) {     // (a thing with no tail has no second thump four metres behind it)
     C.tail = true;
     /* AND THE TAIL COMES DOWN AFTER IT. It is the one silhouette in this
      * game nothing else has, it is six metres away from the body it belongs
@@ -45029,7 +45171,21 @@ function ucFollowPath(u, dt) {
   _ufD.set(wx / L, 0, wz / L);
   if (u.dir.lengthSq() < 1e-6) u.dir.copy(_ufD);
   else { u.dir.lerp(_ufD, Math.min(1, dt * 7)); if (u.dir.lengthSq() > 1e-8) u.dir.normalize(); }
-  const sp = MUT_SPEED * u.kind.speedK * (1 + (u.st.sprint || 0));
+  let sp = MUT_SPEED * u.kind.speedK * (1 + (u.st.sprint || 0));
+  /* AND A THREE-METRE BODY DOES NOT GO FROM STILL TO FULL PACE IN A FRAME.
+   * The hunter's follower set him off at his whole speed on the frame a route
+   * arrived and stopped him dead at its end — a thing that size snapping
+   * about the corridors. He gathers speed over about a third of a second
+   * (`catK`, pulled back whenever the last frame moved him nothing).
+   * Measured in the catnav harness it costs nothing in stone-contact or in
+   * reaching you (37-42 % against 38 % without, 12/12 reached). A SLOWER
+   * TURN was tried beside it and taken out: at two thirds the heading rate
+   * his head swung wider at every corner and the contact went UP (44-57 %). */
+  if (u.kind.cat) {
+    if ((u.catStride || 0) < 0.004) u.catK = Math.min(u.catK || 0, 0.35);
+    u.catK = Math.min(1, (u.catK || 0) + dt * 3.2);
+    sp *= u.catK;
+  }
   u.g.position.addScaledVector(u.dir, sp * dt);
   mutClampX(u, u.g.position, dt);
   return 1;
@@ -46961,6 +47117,11 @@ function updateUndercroftCut(dt) {
       : t < HATCH_BLACK + HATCH_HOLD + 0.45 ? 1 : 1 - smooth01(HATCH_BLACK + HATCH_HOLD + 0.45, D, t);
     blackoutEl.style.opacity = black.toFixed(3);
     if (!ucCut && t >= HATCH_BLACK + 0.04) { ucCut = true; const far = ucEnterAt === 'exit'; if (ucDir > 0) placeInUndercroft(); else placeOutOfUndercroft(); autosaveNow(ucDir > 0 ? (far ? 'ucInFar' : 'ucIn') : null); }
+    /* AND A CUT THAT HAS OUTSTAYED ITS OWN CLOCK BY TEN SECONDS IS LET GO,
+     * whatever stopped it (the placement never ran, a throw on the way): a
+     * black screen with the menu shut behind it is the one state the game
+     * may never be left in. */
+    if (t >= D + 10 && ucBusy) { console.warn('undercroft cut: released by the watchdog'); if (!ucCut) { ucCut = true; try { if (ucDir > 0) placeInUndercroft(); else placeOutOfUndercroft(); } catch (e) { bwFrameErr(e); } } }
     if (t >= D) {
       ucBusy = false; blackoutEl.style.opacity = '0';
       /* AND COMING OUT OF THE CAVE IS THE SECOND CHECKPOINT. The pavilion's
@@ -54727,7 +54888,7 @@ const CAT_HUNT = { x: 0.2 * CAT_SCALE, z: -1.5 * CAT_SCALE, f: 0.0 };           
 const CAT_DOOR = { x: 8.75 * CAT_SCALE, f: 4.33 * CAT_SCALE, z: -14.4 * CAT_SCALE };                 // the barred door on the upper room's +x wall (measured: the wall is at 8.84)
 const CAVE_Z = PORTAL_Z - 18;                                     // the sand gives here, a little past the stones
 const CAT_OUT_Z = PORTAL_Z - 60;                                  // and the door in the sand wall lets you out here
-const CAT_FOG = { color: new THREE.Color(0x000001), density: 0.048 };   // very dark, the owner's word: the fog closes at fifteen metres or so and the rooms are lit by their own torches and nothing else
+const CAT_FOG = { color: new THREE.Color(0x000001), density: 0.054 };   // very dark, the owner's word: the fog closes at fifteen metres or so and the rooms are lit by their own torches and nothing else
 /* THE BEATS. It used to be four and the last of them was a black card
  * lifting off a room you were already standing up in — the owner's word is
  * that the fall should be LOUD, that you should hit the floor on your face,
@@ -54813,7 +54974,7 @@ function loadCatacombs() {
          * each flame reads the brightness of its OWN torch out of
          * `catTorchU`, so a flame gutters with the light it throws and a
          * torch that has gone out is a dark bracket, not a lit one. */
-        m.emissiveIntensity = /Flame/.test(n) ? 2.2 : /Torch/.test(n) ? 0.18 : /Lily|Candle/.test(n) ? 0.06 : 0.014;
+        m.emissiveIntensity = /Flame/.test(n) ? 2.2 : /Torch/.test(n) ? 0.18 : /Lily|Candle/.test(n) ? 0.06 : 0.010;   // darker still (the owner's word, twice): what you see is what the torches reach
         if (/Flame/.test(n)) m.emissive.setHex(0xffa24a);        // a warm orange flame, not a white-hot ball
         if (/Flame/.test(n)) {
           m.onBeforeCompile = (sh) => {
@@ -55564,10 +55725,108 @@ function warmCatacombs() {
     warmStep('catacombs', () => warmView([catWorld], ...v));
 }
 
-/* THE AIR IS EMPTY, by the owner's word. Motes and dust were built here and
- * taken out again: at the retro scale a drifting speck is a hard little
- * square that reads as an artefact on the lens rather than as dust, and in
- * a room this dark that is the only thing in the frame that moves. */
+/* THE AIR IS EMPTY OF SPECKS, by the owner's word. Motes and dust were built
+ * here and taken out again: at the retro scale a drifting speck is a hard
+ * little square that reads as an artefact on the lens rather than as dust,
+ * and in a room this dark that is the only thing in the frame that moves.
+ * (The MIST below is sheets, not specks — see `buildCatMist`.) */
+/* ---- MIST ON THE FLOOR (the owner: "put some mist in the catacombs, I want
+ * it way more atmospheric"). Not specks — the note above is right that a
+ * drifting point is a square on the lens at the retro scale. These are the
+ * dojo's low mist SHEETS: big torn smoke sprites lying along the stone round
+ * you at knee height, slow, on their own counts, thinned to nothing where
+ * one would cross the lens and faded with distance. Each is tinted by the
+ * nearest burning torch, so the fog is warm in a torch's pool and the cold
+ * lilac of the dark between them. Sixty of them, one draw call, placed by
+ * the walk grid (`keepFloorAt`) so none hangs over a stair well or in a
+ * wall, re-seeded as you move so the air round you is always full. */
+const CAT_MIST_N = 76, CAT_WAKE_N = 16;   // the last sixteen sheets are HIS: they are born round his body and lit by whatever torch he is passing
+let catMist = null;
+function buildCatMist() {
+  const N = CAT_MIST_N;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+  g.setAttribute('aS', new THREE.BufferAttribute(new Float32Array(N), 1));
+  g.setAttribute('aR', new THREE.BufferAttribute(Float32Array.from({ length: N }, () => Math.random() * 6.28), 1));
+  g.setAttribute('aA', new THREE.BufferAttribute(new Float32Array(N), 1));
+  g.setAttribute('aW', new THREE.BufferAttribute(new Float32Array(N), 1));
+  const m = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, fog: false,
+    uniforms: { uMap: { value: smokeTex }, uScale: { value: 400 }, uT: { value: 0 } },
+    vertexShader: `attribute float aS; attribute float aR; attribute float aA; attribute float aW; uniform float uScale; uniform float uT;
+      varying float vR; varying float vW; varying float vA;
+      void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); vR = aR + uT * 0.05 * (fract(aR) - 0.5); vW = aW;
+        float d = -mv.z; vA = aA * smoothstep(1.0, 3.6, d) * (1.0 - smoothstep(16.0, 26.0, d));
+        gl_PointSize = clamp(aS * uScale / max(0.3, d), 0.0, 900.0); gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform sampler2D uMap; varying float vR; varying float vW; varying float vA;
+      void main(){ vec2 d = gl_PointCoord - 0.5; float c = cos(vR), s = sin(vR);
+        vec2 q = vec2(c * d.x - s * d.y, s * d.x + c * d.y) + 0.5;
+        float a = texture2D(uMap, q).a * vA; if (a < 0.003) discard;
+        vec3 col = mix(vec3(0.30, 0.30, 0.42), vec3(0.78, 0.46, 0.22), vW);
+        gl_FragColor = vec4(col, a); }`,
+  });
+  const pts = new THREE.Points(g, m);
+  pts.frustumCulled = false; pts.renderOrder = 7; pts.raycast = () => {}; pts.userData.bwGhost = true; pts.visible = false;
+  scene.add(pts);
+  catMist = { pts, q: Array.from({ length: N }, () => ({ x: 0, y: 0, z: 0, vx: 0, vz: 0, life: 0, max: 0, s: 3, a: 0, born: false, ph: Math.random() * 6.28 })) };
+}
+function updateCatMist(dt, tt) {
+  if (!catMist) buildCatMist();
+  const M = catMist, on = inCat && catBuilt;
+  M.pts.visible = on;
+  if (!on) return;
+  const fov = THREE.MathUtils.degToRad(camera.fov || 75);
+  M.pts.material.uniforms.uScale.value = renderer.getDrawingBufferSize(_airBuf).y / (2 * Math.tan(fov / 2));
+  M.pts.material.uniforms.uT.value = tt;
+  const c = camera.position, feet = camBaseY - playerEye();
+  const P = M.pts.geometry.attributes.position, A = M.pts.geometry.attributes.aA, S = M.pts.geometry.attributes.aS, W = M.pts.geometry.attributes.aW;
+  const T = catTorchU.uTorch.value;
+  /* THE THING IN THE DARK DISTURBS THE AIR. The last sixteen sheets are born
+   * round the hunter's own body as he moves and drift off it, so his passage
+   * through the fog is a thing you can see — and where he passes a torch the
+   * same warmth that lights every sheet lights these, so what the torchlight
+   * reveals is a shape moving in lit mist before it is a face. Nothing while
+   * he is far, dead, or not drawn. */
+  const hu = crawlerUnit, hp = hu && hu.g.position;
+  const wakeOn = !!(hu && hu.g.visible && hu.st.alive && hp && Math.hypot(hp.x - c.x, hp.z - c.z) < 30);
+  M.q.forEach((q, i) => {
+    q.life += dt;
+    const wake = i >= CAT_MIST_N - CAT_WAKE_N;
+    if (wake) {
+      if (!q.born || q.life > q.max) {
+        q.born = true; q.life = 0; q.a = 0;
+        if (!wakeOn) { q.max = 0.5; A.setX(i, 0); return; }
+        q.max = 2.6 + Math.random() * 2.4;
+        const an = Math.random() * 6.28, r = Math.random() * 1.0;
+        q.x = hp.x + Math.cos(an) * r; q.z = hp.z + Math.sin(an) * r; q.y = hp.y + 0.2 + Math.random() * 0.7;
+        q.vx = (Math.random() - 0.5) * 0.3; q.vz = (Math.random() - 0.5) * 0.3;
+        q.s = 2.0 + Math.random() * 1.6; q.a = 0.20 + Math.random() * 0.12;
+      }
+    } else if (!q.born || q.life > q.max || Math.hypot(q.x - c.x, q.z - c.z) > 24) {
+      // a new sheet somewhere on the floor round you, on your own storey
+      q.born = true; q.life = 0; q.max = 9 + Math.random() * 12; q.a = 0;
+      const an = Math.random() * 6.28, r = 2.5 + Math.random() * 16;
+      const x = c.x + Math.cos(an) * r, z = c.z + Math.sin(an) * r;
+      const st = keepFloorAt(x, z, feet, 1.2, CAT_SITE);
+      if (!st || Math.abs(st.f - feet) > 1.6) { q.max = 0.4; return; }
+      q.x = x; q.z = z; q.y = st.f + 0.15 + Math.random() * 0.45;
+      q.vx = (Math.random() - 0.5) * 0.12; q.vz = (Math.random() - 0.5) * 0.12;
+      q.s = 2.8 + Math.random() * 3.4; q.a = 0.16 + Math.random() * 0.12;
+      if (q.life === 0 && Math.random() < 0.7) q.life = Math.random() * q.max * 0.6;   // not all born at once
+    }
+    if (!q.a) { A.setX(i, 0); return; }
+    q.x += (q.vx + Math.sin(tt * 0.3 + q.ph) * 0.05) * dt; q.z += (q.vz + Math.cos(tt * 0.27 + q.ph) * 0.05) * dt;
+    // the warmth of the nearest burning torch
+    let warm = 0;
+    for (let k = 0; k < CAT_TORCH_MAX; k++) { const t = T[k]; if (t.w <= 0.01) continue; const d = Math.hypot(t.x - q.x, t.y - q.y, t.z - q.z); warm = Math.max(warm, t.w * Math.max(0, 1 - d / 8.5)); }
+    const f = q.life / q.max;
+    P.setXYZ(i, q.x, q.y + Math.sin(tt * 0.5 + q.ph) * 0.06, q.z);
+    A.setX(i, q.a * Math.sin(Math.PI * Math.min(1, f)) * (0.85 + 0.15 * Math.sin(tt * 0.8 + q.ph)));
+    S.setX(i, q.s); W.setX(i, Math.min(1, warm));
+  });
+  P.needsUpdate = A.needsUpdate = S.needsUpdate = W.needsUpdate = true;
+}
+
 // ---------------------------------------------------------------- the walk
 function updateCatacombs(dt) {
   if (!inCat) {
@@ -55627,6 +55886,7 @@ function updateCatacombs(dt) {
     if (ti >= 0 && ti < CAT_TORCH_MAX) catTorchU.uTorch.value[ti].w = Math.max(0, k);
   }
   updateCatTorchFx(dt, tt);
+  updateCatMist(dt, tt);
   if (catDoorLight) catDoorLight.intensity = 2.8 + 0.25 * Math.sin(tt * 0.9);
   const p = camera.position, S = CAT_SITE;
   let feet = camBaseY - playerEye();
@@ -55851,20 +56111,53 @@ function buildCatTorchFx(spots) {
     fragmentShader: `varying float vK; void main(){ if (vK < 0.01) discard; gl_FragColor = vec4(vec3(1.0, 0.55, 0.18) * vK, 1.0); }`,
   }));
   embers.frustumCulled = false;
-  scene.add(halo, embers);
-  catTorchFx = { halo, embers, spots, e: Array.from({ length: E }, () => ({ p: new THREE.Vector3(), v: new THREE.Vector3(), life: 0, max: 0 })) };
+  /* AND THE LIGHT IN THE MIST. A torch in fog is not a point with a halo, it
+   * is a SHAFT: the air under it lit in a cone that fades as it spreads, the
+   * one thing that says the air down here has something in it. One sprite a
+   * torch, anchored under the bracket, drawing a soft cone that opens
+   * downward and dies with distance along it; it breathes on the torch's own
+   * flicker (`aK` is the same number the lamp and the flame read), fades out
+   * as you walk into it (a cone across the lens is a slab), and is gone at
+   * the fog's own reach. Additive and warm, like the halo above it. */
+  const cg = new THREE.BufferGeometry();
+  const cp = new Float32Array(N * 3); spots.forEach((t, i) => cp.set([t.x, t.y - 0.9, t.z], i * 3));
+  cg.setAttribute('position', new THREE.BufferAttribute(cp, 3));
+  cg.setAttribute('aK', new THREE.BufferAttribute(new Float32Array(N), 1));
+  cg.setAttribute('aR', new THREE.BufferAttribute(Float32Array.from({ length: N }, () => Math.random() * 6.28), 1));
+  const cones = new THREE.Points(cg, new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    uniforms: { uPx: { value: 300 }, uT: { value: 0 } },
+    vertexShader: `attribute float aK; attribute float aR; uniform float uPx; varying float vK; varying float vR;
+      void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv; vR = aR;
+        gl_PointSize = clamp(3.6 * uPx / max(-mv.z, 0.2), 1.0, 1400.0);
+        vK = aK * smoothstep(1.6, 4.2, -mv.z) * (1.0 - smoothstep(14.0, 24.0, -mv.z)); }`,
+    fragmentShader: `uniform float uT; varying float vK; varying float vR;
+      void main(){ if (vK < 0.002) discard;
+        vec2 q = gl_PointCoord; float v = (q.y - 0.22) / 0.78; if (v < 0.0) discard;
+        float w = 0.035 + v * 0.46; float u = (q.x - 0.5) / w;
+        // the mist has grain: a slow swirl of brighter and dimmer bands down the shaft, on each torch's own phase
+        float g = 0.78 + 0.22 * sin(v * 9.0 - uT * 0.9 + vR) * sin(u * 2.3 + uT * 0.4 + vR * 1.7);
+        float a = exp(-u * u * 1.9) * pow(max(0.0, 1.0 - v), 1.45) * smoothstep(0.0, 0.08, v) * g;
+        a *= 0.19 * vK;
+        if (a < 0.002) discard;
+        gl_FragColor = vec4(vec3(1.0, 0.48, 0.16) * a, 1.0); }`,
+  }));
+  cones.frustumCulled = false; cones.renderOrder = 6;
+  scene.add(halo, embers, cones);
+  catTorchFx = { halo, embers, cones, spots, e: Array.from({ length: E }, () => ({ p: new THREE.Vector3(), v: new THREE.Vector3(), life: 0, max: 0 })) };
 }
 function updateCatTorchFx(dt, tt) {
   const F = catTorchFx; if (!F) return;
   const on = inCat;
-  F.halo.visible = F.embers.visible = on;
+  F.halo.visible = F.embers.visible = F.cones.visible = on;
   if (!on) return;
   const fov = THREE.MathUtils.degToRad(camera.fov || 75);
   const px = renderer.getDrawingBufferSize(_airBuf).y / (2 * Math.tan(fov / 2));
-  F.halo.material.uniforms.uPx.value = F.embers.material.uniforms.uPx.value = px;
-  const hk = F.halo.geometry.attributes.aK;
-  for (let i = 0; i < F.spots.length; i++) hk.setX(i, catTorchU.uTorch.value[i].w);
-  hk.needsUpdate = true;
+  F.halo.material.uniforms.uPx.value = F.embers.material.uniforms.uPx.value = F.cones.material.uniforms.uPx.value = px;
+  F.cones.material.uniforms.uT.value = tt;
+  const hk = F.halo.geometry.attributes.aK, ck = F.cones.geometry.attributes.aK;
+  for (let i = 0; i < F.spots.length; i++) { const w = catTorchU.uTorch.value[i].w; hk.setX(i, w); ck.setX(i, w); }
+  hk.needsUpdate = ck.needsUpdate = true;
   const ep = F.embers.geometry.attributes.position, ek = F.embers.geometry.attributes.aK;
   const cp = camera.position;
   F.e.forEach((q, i) => {
@@ -56721,13 +57014,16 @@ function whFleshMaterial(maps, tint, emis, heave, rough = 0.42) {
         float whLip = smoothstep(0.55, 0.02, whWd) * (1.0 - whHole);                    // torn flesh round it
         float whFat = smoothstep(0.20, 0.04, whWd) * (1.0 - whHole);                    // the blubber, pale, where it was cut through
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.10, 0.012, 0.014), whLip * 0.85);
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.62, 0.48, 0.42) * (0.8 + 0.3 * whN3(vec3(vWh.x * 9.0, vWhT * 90.0, 1.0))), whFat * 0.8);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.50, 0.36, 0.32) * (0.8 + 0.3 * whN3(vec3(vWh.x * 9.0, vWhT * 90.0, 1.0))), whFat * 0.45);   // the cut blubber: a torn edge, not a white outline round a hole
         /* A REAL HOLE: the flesh is cut away and what is behind it is the
          * beach's own sky (drawn round you while you are in here, see
          * \`whaleEnter\`), the moon and the clouds and all. Sinews still
          * stretch across it in places, and they stay flesh. */
-        float whSinew = smoothstep(0.93, 1.0, abs(sin((vWh.x * 1.3 + vWhT * 6.0) * 2.4 + whN3(vec3(vWh.x * 0.8, vWhT * 9.0, 7.0)) * 4.0))) * smoothstep(0.35, 0.8, whN3(vec3(vWh.x * 0.5, vWhT * 4.0, 2.0)));
-        if (whHole * (1.0 - whSinew) > 0.5) discard;
+        /* NO SINEWS (the owner: "floating textures in the space of the cuts
+         * — it should just be see through"): the strands drawn across the
+         * hole read as scraps hanging in mid-air, and a cut is a cut. */
+        float whSinew = 0.0;
+        if (whHole > 0.5) discard;
         diffuseColor.rgb *= 1.0 - whHole;` : 'float whHole = 0.0, whLip = 0.0;'}`)
       /* THE FILL IS THE ANIMAL'S OWN DARK RED, and it carries the folds: the
        * emissive lift is multiplied by the baked occlusion, so the troughs
@@ -61918,7 +62214,7 @@ function catPickTarget(u, C) {
    * he does not look up for a body keeping still in a doorway. Crouch and
    * watch, or run and he hears you. It is not drawn when he has already
    * gone a long while without you — then he is looking. */
-  if (pool && unseen < 45 && Math.random() < 0.28) {
+  if (pool && unseen < 45 && Math.random() < (crouching ? 0.42 : 0.28)) {   // and more of them while you are keeping low: sneaking is how you get to watch him
     const c = camera.position, feet = c.y - playerEye();
     const seen = (n) => Math.abs(n.f - feet) < 1.8 && !keepHitsWall(n.x, n.z, c.x, c.z, n.f + 1.2, CAT_SITE) && !keepHitsWall(n.x, n.z, c.x, c.z, c.y, CAT_SITE);
     let best = -1, bd = 1e9, act = null;
@@ -62283,8 +62579,15 @@ function catWander(u, dt) {
        * to `stalk` again on every one of them, which reset the clock that
        * ends a stalk and threw away the spot he was walking to — traced, he
        * stood fourteen metres off for ten seconds doing nothing at all. */
+      /* AND HE IS SEEN BEFORE HE IS FOUGHT (the owner: "it's always charging
+       * — it should stalk and be seen, like Amnesia"). The charge was the
+       * answer to any sighting inside eight metres and to a glance of a fifth
+       * of a second; now only a body nearly on him (4.5 m, standing) or one
+       * he has already fought in the last forty seconds is charged. Everything
+       * else is a stalk, which is where you see him. */
+      const blooded = C.blooded && (performance.now() - (C.bloodAt || 0)) <= 40000;
       if (C.mode === 'stalk' || C.mode === 'flee') { C.target = { x: camera.position.x, z: camera.position.z, f: camBaseY - playerEye() }; }
-      else if (dS > 8 && (!C.blooded || (performance.now() - (C.bloodAt || 0)) > 40000)) {
+      else if (!(dS <= (crouching ? 3.2 : 4.5)) && !(blooded && dS <= 9)) {
         C.mode = 'stalk'; C.peek = null; C.peekHold = 0; C.seenT = 0; C.stalkT = 0; C.feinted = false; C.tries = 0; C.mvT = 0; C.mvAt = null; u.path = null;
         C.target = { x: camera.position.x, z: camera.position.z, f: camBaseY - playerEye() };
       } else {
@@ -62338,7 +62641,12 @@ function catWander(u, dt) {
      * and if you never look he takes a NEARER one — three of them, each
      * closer than the last — before he simply comes. What ends it early is
      * you looking at him, or letting him inside six metres. */
-    if (C.seenT > 0.18 || dP < 6.0 || (C.peeks || 0) >= 3 || (C.tries || 0) > 3 || C.stalkT > 45) {
+    /* WHAT TURNS A STALK INTO A CHARGE: you nearly on him (four metres), your
+     * eyes on him for a second and a half from inside nine, a fourth corner,
+     * nowhere left to watch from, a loud noise, or a long stalk. Being LOOKED
+     * AT from further off does not — he freezes and withdraws (below), which
+     * is the half-seen thing the room is for. */
+    if (dP < 4.0 || (C.seenT > 1.5 && dP < 9) || (C.peeks || 0) >= 4 || (C.tries || 0) > 3 || C.stalkT > 75 || C.loudT > 0) {
       u.st.sprint = 0; u.path = null; C.mode = 'chase'; C.blooded = true; C.bloodAt = performance.now(); C.peeks = 0;
       crawlerProvoke(u);
       mutAnim(u, dt, 0);
@@ -62349,7 +62657,15 @@ function catWander(u, dt) {
       else {
         const sp = catPeekSpot(u, 22 - (C.peeks || 0) * 4, C.avoidA === undefined ? null : C.avoidA);
         // the feint's "round the other side" holds for one deep search; found, it is done with
-        if (sp && catRoute(u, sp.x, sp.z, sp.f)) { C.peek = sp; C.gait = 'crawl'; C.tries = 0; C.avoidA = undefined; }
+        if (sp && catRoute(u, sp.x, sp.z, sp.f)) {
+          C.peek = sp; C.gait = 'crawl'; C.tries = 0; C.avoidA = undefined;
+          /* A CORNER HE IS ALREADY STANDING ON IS A CORNER REACHED. The spot
+           * picker is happy to hand back the node under his feet, and a route
+           * of no length ends before the hold is ever set — measured, a stalk
+           * parked at 11.7 m for forty seconds in `peek` with nothing counting.
+           * It is treated as arriving: the hold begins, the corner counts. */
+          if (!u.path || Math.hypot(sp.x - p.x, sp.z - p.z) < 1.0) { u.path = null; catPeekSettle(C); }
+        }
         else if (C.avoidA !== undefined) {
           /* the other side of you may simply have no corner: one deep look
            * for one, then anywhere will do — and it is not a failed try,
@@ -62368,29 +62684,33 @@ function catWander(u, dt) {
         }
       }
     }
-    if (u.path) {
-      u.st.sprint = catPace(u, CAT_HUNT_SPEED * 0.82);     // low and quick, but not a charge
+    /* CAUGHT IN THE OPEN, HE FREEZES. Your eyes on him while he is crossing to
+     * a corner stop him where he is, turned on you, breathing — and if you keep
+     * looking from far off he gives it up and goes round the other side of you
+     * (the feint's own path). A thing that stops when you look at it and is
+     * gone when you look back is the whole of being stalked. */
+    C.frozen = shown && dP >= 9 && !!u.path;
+    if (C.frozen && C.seenT > 3.0) { u.path = null; C.feint = true; C.feinted = true; C.peekHold = 0.2 + Math.random() * 0.4; C.frozen = false; }
+    if (u.path && !C.frozen) {
+      u.st.sprint = catPace(u, CAT_HUNT_SPEED * (dP > 14 ? 0.70 : 0.55));     // a prowl, not a charge: slow enough to be watched
       moving = ucFollowPath(u, dt);
       u.st.sprint = 0;
-      if (!u.path) {
-        /* THE FAKE-OUT. Once a stalk, about two in five, the peek is a FEINT:
-         * he shows himself for a second or two and, if you have not looked
-         * at him, withdraws — and the next corner he takes is round a
-         * different side of you. It plays on his own rule that looking at
-         * him is what starts the fight: a glimpse that is gone before you
-         * have turned your head is a thing you go looking for. A feint
-         * does not count as one of his three corners. */
-        C.feint = !C.feinted && Math.random() < 0.4;
-        if (C.feint) { C.feinted = true; C.peekHold = 1.4 + Math.random() * 1.6; }
-        else { C.peekHold = 5.0 + Math.random() * 6.0; C.peeks = (C.peeks || 0) + 1; }
-      }
+      if (!u.path) catPeekSettle(C);
       if (u.dir.lengthSq() > 1e-6) {
         const want = Math.atan2(u.dir.x, u.dir.z);
         let d2 = want - u.g.rotation.y; while (d2 > Math.PI) d2 -= Math.PI * 2; while (d2 < -Math.PI) d2 += Math.PI * 2;
         const cap = (u.kind.turnMax || 4) * dt;
         u.g.rotation.y += THREE.MathUtils.clamp(d2, -cap, cap);
       }
-      if (moving > 0.04) catPlay(u, 'crawl', true, 1.15, dt); else mutAnim(u, dt, 0);
+      if (moving > 0.04) catPlay(u, 'crawl', true, 0.85, dt); else mutAnim(u, dt, 0);
+    } else if (C.frozen) {
+      // stopped in his tracks by your eyes: turned on you, still, breathing
+      C.breathT = (C.breathT || 0) - dt;
+      if (C.breathT <= 0) { C.breathT = 2.2 + Math.random() * 2.5; catCue('catBreath', { gain: 0.8, ref: 5, far: 22, lpFar: 1600 }); }
+      const want = Math.atan2(camera.position.x - p.x, camera.position.z - p.z);
+      let d2 = want - u.g.rotation.y; while (d2 > Math.PI) d2 -= Math.PI * 2; while (d2 < -Math.PI) d2 += Math.PI * 2;
+      u.g.rotation.y += THREE.MathUtils.clamp(d2, -1.8 * dt, 1.8 * dt);
+      catPlay(u, 'peek', true, 1.0, dt);
     } else {
       // at the corner: turned on you, low, watching — and breathing, which is how you find him
       C.peekHold -= dt;
@@ -62488,7 +62808,7 @@ function catWander(u, dt) {
         } else {
           const id = catPickTarget(u, C);
           if (id >= 0) { const n = catG.nodes[id]; ok = catRoute(u, n.x, n.z, n.f); }
-          if (ok) C.gait = Math.random() < 0.36 ? 'walk' : 'crawl';   // one leg in three he is up on his hind legs
+          if (ok) C.gait = Math.random() < 0.5 ? 'walk' : 'crawl';   // half his legs he is up on his hind legs, slow — the thing you catch sight of
           else {
             C.pause = 0.6 + Math.random() * 1.2;
             // off the graph (a knockback, a push): back onto the nearest node whatever its height
@@ -62573,6 +62893,17 @@ function catUnpocket(u) {
   const id = catNearestOpen(p.x, p.z, p.y);
   if (id >= 0) { const n = catG.nodes[id]; p.set(n.x, n.f, n.z); u.catFloor = n.f; u.path = null; u.catReach = null; u.catRouteFail = 0; }
   return true;
+}
+/* AT THE CORNER. THE FAKE-OUT: once a stalk, about two in five, the peek is a
+ * FEINT — he shows himself for a second or two and, if you have not looked
+ * at him, withdraws, and the next corner he takes is round a different side
+ * of you. It plays on his own rule that looking at him is what starts the
+ * fight: a glimpse that is gone before you have turned your head is a thing
+ * you go looking for. A feint does not count as one of his corners. */
+function catPeekSettle(C) {
+  C.feint = !C.feinted && Math.random() < 0.4;
+  if (C.feint) { C.feinted = true; C.peekHold = 1.4 + Math.random() * 1.6; }
+  else { C.peekHold = 5.0 + Math.random() * 6.0; C.peeks = (C.peeks || 0) + 1; }
 }
 /* HE LOSES YOU: back to watching, or to a search from where he last had you. */
 function catLose(u) {
@@ -62667,7 +62998,18 @@ function catSteer(u, dt, dist, foe) {
    * 0, grind 0.00, fails 0, mode 'chase' the whole time. Both halves of the
    * shortcut want the same storey. */
   const level = Math.abs(pf - feet) < 1.4;
-  if (level && (look <= 0.2 || clear(look))) { u.path = null; u.catGrind = 0; u.catRouteFail = 0; return; }
+  /* AND A CLEAR LINE HE IS NOT GETTING DOWN IS NOT A CLEAR LINE. This
+   * shortcut used to RETURN before the grind accounting below, so a creature
+   * whose straight way to you passed `clear()` — and whose body the solid
+   * sweep then refused, frame after frame, because the two ask the stone at
+   * different heights and widths — stood with its head in a wall with the
+   * grind at zero, the route count at zero, and every net under it out of
+   * reach. Measured in the catnav harness: eight seconds parked 8.9 m from
+   * you with `path 0, grind 0`. The grind is counted first now, and a line
+   * he has ground on for most of a second is put aside for two seconds so
+   * the route gets him round whatever it is. */
+  u.catNoLine = Math.max(0, (u.catNoLine || 0) - dt);
+  const straight = level && u.catNoLine <= 0 && (look <= 0.2 || clear(look));
   const moved = Math.hypot(p.x - (u.catWasX === undefined ? p.x : u.catWasX), p.z - (u.catWasZ === undefined ? p.z : u.catWasZ));
   u.catWasX = p.x; u.catWasZ = p.z;
   catKickBones(u, dt, moved / Math.max(1e-3, dt), dist);
@@ -62694,6 +63036,11 @@ function catSteer(u, dt, dist, foe) {
      * cleared here, where he has actually got somewhere. */
     if (!net) u.catRouteFail = 0;
     u.catGAt.x = p.x; u.catGAt.z = p.z; u.catGT = 0;
+  }
+  if (straight) {
+    u.path = null; u.catRouteFail = 0;
+    if (u.catGrind > 0.7 && look > 2.0) { u.catNoLine = 2.0; u.catGrind = 0; u.catGT = 0; }   // ground on a "clear" line: the route has it for a while
+    else return;
   }
   /* AND A HUNTER THAT HAS STOOD STILL FOR FOUR SECONDS WITH GROUND TO COVER
    * HAS LOST YOU, whatever it thinks. Measured once and not reproduced in
@@ -68388,6 +68735,7 @@ const TAV_OUT = 0.5, TAV_HOLD = 0.9, TAV_IN = 0.65;
 const KEEP_DOOR = { x: -2.6, y: 16.1, z: 8.6, yaw: 0 };   // the studded door on the terrace, keep-local, measured off the hoist: its face is at z 8.3 straight down the car's axis; `yaw` is the look that faces INTO it
 let tavWorld = null, tavReady = false, tavWalk = null, tavCells = null, tavWalls = null, tavBuilt = false, tavWarmed = false;
 let inTavern = false, tavBusy = false, tavT = 0, tavDir = 1, tavCutDone = false, tavWallsDirty = false;
+let tavStoreOpen = false;   // the storeroom's door, turned once with its key: on the save
 let _tavFogSaved = null, tavLastFloor = null;
 const tavTables = [], tavChairs = [];
 const TAV_SITE = {
@@ -68426,6 +68774,13 @@ function loadTavern() {
          * because ACES over an already-lit texture is a second exposure. */
         m.transparent = false; m.alphaTest = 0.5; m.depthWrite = true; m.toneMapped = false;
         if (m.map) { m.map.anisotropy = 8; }
+        /* AND EVERY WALL HAS A BACK. SketchUp draws each face twice and the
+         * packer drops the back copy, so from inside the storeroom off the
+         * hall its own wall was not there — you looked straight out through
+         * the planks at the room beyond ("see-through textures"). Two-sided,
+         * which the relight already allows for (its normal is the facet's
+         * own, turned toward the camera). Measured: the frame did not move. */
+        m.side = THREE.DoubleSide;
         tavRelight(m);
       }
     });
@@ -68449,6 +68804,8 @@ function buildTavern() {
   buildTavPlank();
   buildTavChairs();
   buildTavDoor();                                   // before the walls: the arch stands proud of the wall and is one
+  buildTavStore();                                  // the locked storeroom and the chest behind its bars
+  buildTavShelfAt();                                // the board on the wall the owner pointed at
   tavWalls = null; buildKeepWalls(TAV_SITE);
   repairKeepStoreys(TAV_SITE);
   pruneTavStoreys();
@@ -68458,6 +68815,7 @@ function buildTavern() {
   clearTavGhostRoofs();
   fillTavHoles();                                   // and the holes the packer left between the barrels
   buildTavBottles();
+  buildTavGrilleJar();                              // the jar behind the gallery's barred screen, in the dark
   buildTavWater();                                  // after them: it stands where they are not
   buildTavCast();
   /* AND THE HALL ITSELF IS TWO HUNDRED AND TWENTY DRAW CALLS OF NINETEEN
@@ -69165,6 +69523,12 @@ function updateTavTorches(dt) {
     const w = 5.2 * fl;          // the fires carry the room now: warm pools with the lilac dark between them
     arr[i].set(s.f.x + s.n.x * 0.3, s.f.y, s.f.z + s.n.z * 0.3, w);
     T.lights[i].intensity = inTavern ? 3.2 * fl : 0;
+  }
+  // the storeroom's candle, in the last slot: the walls round the chest take its light
+  if (tavStore && !T.spots[TAV_TORCH_MAX - 1]) {
+    const fl = 0.9 + 0.06 * Math.sin(t * 6.1) + 0.04 * Math.sin(t * 11.7);
+    arr[TAV_TORCH_MAX - 1].set(tavStore.torch.x, tavStore.torch.y, tavStore.torch.z, 2.6 * fl);
+    tavStore.lamp.intensity = inTavern ? 1.6 * fl : 0;
   }
 }
 
@@ -70479,6 +70843,66 @@ function buildTavBottles() {
       b.table = t;
     }
   }
+  /* AND ONE ON THE SHELF THE OWNER POINTED AT, so that jumping up onto it
+   * puts a bottle under your boots: `stompBreakables`' loose branch already
+   * breaks anything your body is beside in the air down here. It stands
+   * toward the back of the board, which is where a bottle put on a shelf
+   * goes, and its box is the breakable's own. */
+  if (tavShelfMesh) {
+    const A = TAV_SHELF_AT, wx = tavShelfMesh.position.x;
+    makeTavBottle(TAV_X + wx - A.d * 0.58, TAV_Z + A.z + 0.16, TAV_Y + TAV_FLOOR + A.y + 0.004, true);   // nearer the board's front: a jump up onto the shelf is beside it while still in the air
+  }
+}
+/* THE JAR AT THE FOOT OF THE GALLERY'S BARS. The owner stood on the bore's
+ * landing (room-local (-13.85, -0.12), 7.48 m over the flags) half a metre
+ * from a screen of timber posts (`TextureMaterial_13`, x -14.24..-14.33,
+ * about half a metre apart) standing against a wall face (`TextureMaterial_1`,
+ * the plane x = -14.35, 8.0 to 10.75 over the flags) — measured by a screen
+ * grid of rays from his own eye, after two wrong guesses (a table top, then a
+ * niche cut behind a wall that is solid). What he saw was the posts as bars
+ * with the wall's lit texture showing between them, and what he asked for
+ * was black behind the bars and a jar sitting there to reach for. So the
+ * wall between the posts wears a BLACK PANEL (unlit, unfogged, a hair in
+ * front of the face) over the bay he looked through, and the jar stands on
+ * the kerb the screen rises from, in the gap between the two middle posts,
+ * against the black, glowing its own blue (the landing floor there is UNDER
+ * a 0.4 m kerb and a bottom rail: a jar on the floor was inside the timber). It is sized by hand (`keepSize`): the
+ * noticeable-boost would blow it up to three times, and the first one came
+ * out 25 cm tall inside the wall. The
+ * crosshair raycasts only what can be taken, so the posts are never in the
+ * way, and the dev readout's heights are over the FLAGS, not the room's
+ * origin — the lesson of this whole placement. */
+// the screen stands on a kerb (`TextureMaterial_5`, top 7.93 over the flags, x -14.15..-14.22) with its bottom rail behind at 7.98: the jar stands on the kerb at the foot of the bars, in the gap between the two middle posts
+const TAV_GRILLE = { x: -14.345, z0: -0.75, z1: 0.75, y0: 7.90, y1: 10.75, jarX: -14.19, jarZ: -0.12, floor: 7.93 };
+function buildTavGrilleJar() {
+  if (!tavWorld || tavWorld.userData.grilleJar) return;
+  tavWorld.userData.grilleJar = true;
+  const G = TAV_GRILLE, F = TAV_FLOOR;
+  const dark = new THREE.MeshBasicMaterial({ color: 0x000000, fog: false }); dark.toneMapped = false;
+  const panel = new THREE.Mesh(new THREE.PlaneGeometry(G.z1 - G.z0, G.y1 - G.y0), dark);
+  panel.position.set(G.x + 0.004, F + (G.y0 + G.y1) / 2, (G.z0 + G.z1) / 2);
+  panel.rotation.y = Math.PI / 2;                                  // its face toward +x: the landing
+  panel.name = 'tavGrillePanel'; panel.frustumCulled = false; panel.userData.bwGhost = true; panel.raycast = () => {};
+  tavWorld.add(panel);
+  /* THE SIZE A JAR IS EVERYWHERE ELSE (the owner: at 0.9 it looked small).
+   * Not by the noticeable-boost — that is 3.2 times here, 0.41 m tall and
+   * 0.28 across, and from the kerb's middle it would put its back through
+   * the black panel 15 cm behind — but by hand: 2.4 times, 0.31 tall and 0.21
+   * across, the size it reads at on the beach from a stride off, and still
+   * clear of the panel. The proxy is sized in its own units, so it shrinks
+   * to match: 0.26 m in the world, the reach of a hand through the bars. */
+  const jar = makeBloodJar();
+  jar.scale.setScalar(2.4);
+  jar.position.set(TAV_X + G.jarX, TAV_Y + F + G.floor + 0.004, TAV_Z + G.jarZ);
+  jar.rotation.y = 0.4;
+  const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  proxy.name = 'hitProxy'; proxy.visible = false; proxy.position.y = 0.065; jar.add(proxy);
+  scene.add(jar);
+  addItemShine(jar, { size: 0.55, height: 0.24, strength: 1.1, lift: 0.3 });
+  addInteractable(jar, 'Take the jar', 'inventory', {
+    keepSize: true, far: 3.2,
+    onActivate: () => { scene.remove(jar); removeInteractable(jar); hovered = null; gainJar(); },
+  });
 }
 // what stood on a table goes with it: the shelf is dropped and the bottle falls
 function dropTavShelf(t) {
@@ -70780,6 +71204,7 @@ function openTavCurtains() {
 // -------------------------------------------------------------- the walk
 const tavLastSpot = { x: 0, z: 0 };       // the last place in the hall he could stand
 function updateTavern(dt) {
+  updateTavStore(dt);
   updateTavMoon(dt);
   updateTavTorches(dt);
   updateTavAtmos(dt);
@@ -71259,6 +71684,271 @@ function buildTavDoor() {
     onActivate: () => startTavern(-1),
   });
 }
+
+/* ---- THE STOREROOM OFF THE HALL, AND THE CHEST IN IT. A doorway stands in
+ * the hall's north wall (room-local x about -7.4, the wall's hall face at
+ * z 8.6) onto a small flagged room with nothing in it. It has a locked door
+ * now — planks, ledgers, iron, and a BARRED WINDOW at eye height — and
+ * through the bars, on a table in the middle of the room, the sea chest out
+ * of the wreck's quarters (`assets/chest.glb`, the same model), shut and
+ * empty for now. Nothing opens the door yet.
+ *
+ * The opening is MEASURED, not typed (the keep door's own rule): rays from
+ * the hall side find where the wall stops answering (the jambs) and how
+ * high the lintel is, and the leaf is cut to that, flush with the hall face
+ * and inside the wall's own thickness. The leaf is an ordinary mesh (not
+ * `bwGhost`), so it is in the wall index and the walk cannot pass it; the
+ * window is too small for a body. */
+const TAV_STORE = { cx: -7.4, zIn: 7.0, winY: 1.55, winW: 0.56, winH: 0.42, thick: 0.11 };
+let tavStore = null;
+function tavStoreHits() {
+  const all = [];
+  tavWorld.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && o.name !== 'hitProxy' && o.visible && !o.userData.bwGhost && o.geometry && o.geometry.attributes.position) all.push(o); });
+  return all;
+}
+function buildTavStore() {
+  if (tavStore || !tavWorld) return;
+  tavWorld.updateMatrixWorld(true);
+  const fy = TAV_Y + TAV_FLOOR, S = TAV_STORE, all = tavStoreHits();
+  const rc = new THREE.Raycaster(); rc.camera = camera; rc.far = 7.0;
+  const dir = new THREE.Vector3(0, 0, 1);
+  const hitZ = (x, y) => { rc.set(new THREE.Vector3(TAV_X + x, fy + y, TAV_Z + S.zIn), dir); const h = rc.intersectObjects(all, false)[0]; return h ? h.point.z - TAV_Z : null; };
+  const open = (z) => z === null || z > S.zIn + 3.0;          // through the doorway the first thing is the room's back wall, five metres on
+  // the jambs, at chest height, and the wall's own face just outside them
+  let xl = null, xr = null, zFace = -1e9;
+  for (let x = S.cx - 1.6; x <= S.cx + 1.6; x += 0.02) {
+    const z = hitZ(x, 1.2);
+    if (open(z)) { if (xl === null) xl = x; xr = x; }
+    else if (Math.abs(x - S.cx) < 1.3) zFace = Math.max(zFace, z);
+  }
+  if (xl === null || xr - xl < 0.8 || zFace < -1e8) { console.warn('tavern storeroom: no doorway found'); return; }
+  const cx = (xl + xr) / 2, W = xr - xl;
+  // the lintel, up the middle
+  let yT = null;
+  for (let y = 0.2; y <= 4.5; y += 0.05) { if (open(hitZ(cx, y))) yT = y; else if (yT !== null) break; }
+  if (yT === null) return;
+  const H = yT - 0.01, floorY = TAV_FLOOR + 0.03;
+  const G = new THREE.Group();
+  G.position.set(cx, floorY, zFace + 0.01 + S.thick / 2);   // flush with the hall's face, the leaf inside the wall's own thickness
+  const oak = new THREE.MeshBasicMaterial({ map: tavOakTex(), color: 0x9d9286 }); oak.toneMapped = false;   // darker than the keep's door: this one stands beside the torches
+  const ledger = new THREE.MeshBasicMaterial({ map: oak.map, color: 0x4a423a }); ledger.toneMapped = false;
+  const iron = new THREE.MeshBasicMaterial({ color: 0x2a2b2e }); iron.toneMapped = false;
+  const put = (w, h, d, x, y, z, m) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); b.frustumCulled = false; G.add(b); return b; };
+  const N = Math.max(4, Math.round(W / 0.19)), pw = W / N, gap = 0.014;
+  const w0 = S.winY - S.winH / 2, w1 = S.winY + S.winH / 2, wx0 = -S.winW / 2, wx1 = S.winW / 2;
+  for (let i = 0; i < N; i++) {
+    const px = -W / 2 + (i + 0.5) * pw, inWin = px + pw / 2 > wx0 && px - pw / 2 < wx1;
+    if (!inWin) put(pw - gap, H, S.thick, px, H / 2, 0, oak);
+    else {                                                   // the plank is cut round the window
+      put(pw - gap, w0, S.thick, px, w0 / 2, 0, oak);
+      put(pw - gap, H - w1, S.thick, px, w1 + (H - w1) / 2, 0, oak);
+    }
+  }
+  put(W, H, S.thick * 0.4, 0, H / 2, -S.thick * 0.25, ledger).visible = false;   // (a seam is a shadow: the ledgers below do it)
+  // the ledgers behind (room side), the bands and studs in front (hall side)
+  for (const y of [H * 0.14, H * 0.5, H * 0.84]) put(W - 0.04, 0.16, 0.05, 0, y, S.thick / 2 + 0.025, ledger);
+  for (const y of [H * 0.14, H * 0.5, H * 0.84]) {
+    put(W - 0.06, 0.09, 0.03, 0, y, -S.thick / 2 - 0.015, iron);
+    for (let x = -W / 2 + 0.14; x < W / 2 - 0.1; x += 0.3) { const b = put(0.055, 0.055, 0.04, x, y, -S.thick / 2 - 0.02, iron); b.rotation.z = Math.PI / 4; }
+  }
+  // the window: an iron frame and four bars
+  put(S.winW + 0.1, 0.045, S.thick + 0.04, 0, w0 - 0.022, 0, iron); put(S.winW + 0.1, 0.045, S.thick + 0.04, 0, w1 + 0.022, 0, iron);
+  put(0.045, S.winH + 0.09, S.thick + 0.04, wx0 - 0.022, S.winY, 0, iron); put(0.045, S.winH + 0.09, S.thick + 0.04, wx1 + 0.022, S.winY, 0, iron);
+  for (let k = 1; k <= 4; k++) put(0.028, S.winH, 0.028, wx0 + (S.winW / 5) * k, S.winY, 0, iron);
+  // the lock: a plate on the hall side by the right jamb, a keyhole in it, and a ring
+  put(0.17, 0.22, 0.02, W / 2 - 0.2, 1.02, -S.thick / 2 - 0.012, iron);
+  put(0.022, 0.05, 0.03, W / 2 - 0.2, 1.0, -S.thick / 2 - 0.016, new THREE.MeshBasicMaterial({ color: 0x08080a }));
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.012, 6, 12), iron);
+  ring.position.set(W / 2 - 0.2, 0.88, -S.thick / 2 - 0.02); ring.rotation.x = Math.PI / 2; ring.frustumCulled = false; G.add(ring);
+  G.name = 'tavStoreDoor';
+  G.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.name = 'tavStoreDoor'; } });
+  /* THE LEAF HANGS ON A HINGE AT THE LEFT JAMB and swings INTO the room
+   * (+z) once the key has turned: the group is moved onto the jamb and the
+   * leaf set half its width along from it, so a turn of the hinge is the
+   * door opening and nothing else moves. */
+  const hinge = new THREE.Group(); hinge.position.copy(G.position); hinge.position.x -= W / 2;
+  G.position.set(W / 2, 0, 0); hinge.add(G); hinge.name = 'tavStoreHinge';
+  tavWorld.add(hinge);
+  // the prompt: a proxy across the doorway
+  const proxy = new THREE.Mesh(new THREE.BoxGeometry(W, H, 0.5), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+  proxy.position.set(cx, floorY + H / 2, zFace + 0.1); proxy.name = 'hitProxy'; proxy.visible = false;
+  tavWorld.add(proxy);
+  /* LOCKED UNTIL THE STOREROOM KEY TURNS IN IT — the pavilion gate's own
+   * arrangement: bare without the key, "Unlock the door" with it in the
+   * pack, the key eaten, the bolt heard first and the leaf swinging after. */
+  addInteractable(proxy, 'The door is locked.', 'default', {
+    far: 3.0,
+    label: () => (inventory.includes(storeKeyItem) ? 'Unlock the door' : 'The door is locked.'),
+    bare: () => !inventory.includes(storeKeyItem),
+    when: () => inTavern && !tavBusy && !tavStoreOpen,
+    onActivate: () => {
+      if (tavStoreOpen) return;
+      if (!inventory.includes(storeKeyItem)) { sfxGateRattle && sfxGateRattle(); return; }
+      keyUsed(storeKeyItem);
+      removeInventoryKey(storeKeyItem);
+      tavStoreOpen = true; hovered = null;
+      setTimeout(() => openTavStore(false), 900);
+    },
+  });
+
+  /* THE ROOM: a table in the middle of it and the chest on the table, under
+   * a candle's worth of light. The table is a built one in the chairs' own
+   * timber, LIT (the chairs are baked-and-relit basic materials, which a
+   * lamp cannot touch; a thing you are meant to see through bars wants the
+   * lamp on it). */
+  const zBack = hitZ(cx, 1.2) || (zFace + 5.0);
+  const tz = zFace + Math.min(3.0, (zBack - zFace) * 0.55), ty = 0.78;
+  const woodMap = tavChairMat && tavChairMat.map;
+  const wood = new THREE.MeshStandardMaterial({ map: woodMap, color: 0x8a7a68, roughness: 0.9, metalness: 0, emissive: 0xffffff, emissiveMap: woodMap, emissiveIntensity: 0.10 });
+  const TG = new THREE.Group(); TG.position.set(cx, floorY, tz); TG.name = 'tavStoreTable';
+  const tput = (w, h, d, x, y, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wood); b.position.set(x, y, z); b.frustumCulled = false; b.name = 'tavStoreTable'; TG.add(b); return b; };
+  tput(1.30, 0.05, 0.80, 0, ty - 0.025, 0);
+  tput(1.18, 0.09, 0.06, 0, ty - 0.095, 0.34); tput(1.18, 0.09, 0.06, 0, ty - 0.095, -0.34);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) tput(0.07, ty - 0.05, 0.07, sx * 0.56, (ty - 0.05) / 2, sz * 0.32);
+  tavWorld.add(TG);
+  const CH = new THREE.Group(); CH.position.set(cx, floorY + ty, tz); CH.rotation.y = Math.PI;   // the model's lock is on its +z; the door is on -z from here
+  CH.name = 'tavStoreChest'; tavWorld.add(CH);
+  const lamp = new THREE.PointLight(0xffa24a, 1.6, 4.8, 2);
+  lamp.position.set(cx, floorY + 2.1, tz); lamp.userData.lpAlways = 9;
+  tavWorld.add(lamp);
+  tavStore = { door: G, hinge, proxy, cx, W, H, zFace, table: TG, chest: CH, lamp, tz, dressed: false, swing: null,
+    torch: new THREE.Vector4(cx, TAV_FLOOR + 1.9, tz, 0) };     // its own slot in the relight, so the walls round it take the light too
+  if (tavStoreOpen) openTavStore(true);                           // a save that turned the key comes back with the door standing open
+  placeTavStoreKey();
+  bwGlb('assets/chest.glb', (gltf) => {
+    if (tavStore.dressed) return;
+    tavStore.dressed = true;
+    const root = gltf.scene; root.updateMatrixWorld(true);
+    const seen = new Map();
+    const lift = (m) => {
+      if (!m) return m;
+      if (seen.has(m)) return seen.get(m);
+      const c = m.clone();
+      c.emissive = new THREE.Color(0xffffff); c.emissiveMap = c.map; c.emissiveIntensity = 0.16;
+      c.metalness = 0; c.roughness = Math.max(0.5, c.roughness || 0.8);
+      seen.set(m, c); return c;
+    };
+    root.traverse((o) => {
+      if (!o.isMesh) return;
+      const geo = o.geometry.clone().applyMatrix4(o.matrixWorld);
+      const mesh = new THREE.Mesh(geo, lift(o.material));
+      mesh.frustumCulled = false; mesh.name = 'tavStoreChest';
+      CH.add(mesh);
+    });
+    tavWorld.updateMatrixWorld(true);
+  });
+}
+/* THE DOOR OPENS: at once and in silence for a restore, over a second with
+ * the hinge's own sound for a key turned live. The leaf is in the wall index
+ * where it was drawn shut, so the index is taken again once it has swung. */
+const TAV_STORE_OPEN = -1.72;   // radians about the hinge: into the room, nearly flat to the wall
+function openTavStore(quiet) {
+  const S = tavStore; if (!S) return;
+  tavStoreOpen = true;
+  removeInteractable(S.proxy);
+  if (quiet) { S.hinge.rotation.y = TAV_STORE_OPEN; S.swing = null; tavWallsDirty = true; return; }
+  sfxTavernDoor();
+  S.swing = { t: 0 };
+}
+function updateTavStore(dt) {
+  const S = tavStore;
+  if (tavStoreKey && !tavStoreKey.filled && fillStoreKey()) tavStoreKey.filled = true;
+  if (!S || !S.swing) return;
+  S.swing.t += dt;
+  const k = Math.min(1, S.swing.t / 1.15), e = 1 - Math.pow(1 - k, 3);
+  S.hinge.rotation.y = TAV_STORE_OPEN * e;
+  if (k >= 1) { S.swing = null; tavWallsDirty = true; }
+}
+/* THE KEY LIES WHERE THE OWNER POINTED — room-local (-3.28, 21.55), on the
+ * mezzanine floor at the far end of the hall (he stood at (-3.39, 6.27,
+ * 20.08) with the crosshair on it — and the dev readout's heights are over
+ * the FLAGS, so 6.27 is a storey 6.27 m above them; the first placement put
+ * the key on a floor 7.5 m lower). The floor is asked of the drawn room,
+ * with his reading as the fallback. The scan lands over the network, so the group
+ * is placed with its proxy at once and filled when the key arrives. */
+const TAV_STORE_KEY_AT = { x: -3.28, z: 21.55, f: TAV_FLOOR + 6.27 };   // the P readout's heights are OVER THE FLAGS: a mezzanine at the hall's south end
+let tavStoreKey = null;
+function placeTavStoreKey() {
+  if (tavStoreKey || !tavWorld) return;
+  const K = TAV_STORE_KEY_AT, wx = TAV_X + K.x, wz = TAV_Z + K.z;
+  const f = (tavWalls && keepDrawnFloor(wx, wz, TAV_Y + K.f - 0.6, TAV_Y + K.f + 0.5, TAV_SITE)) ?? (TAV_Y + K.f);
+  const g = new THREE.Group();
+  storeKeyModel.rotation.set(Math.PI / 2, 0, 0.9); storeKeyModel.position.set(0, 0, 0);
+  g.add(storeKeyModel);
+  g.position.set(wx, f + 0.012, wz);
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy'; hit.visible = false; g.add(hit);
+  scene.add(g);
+  addItemShine(g, { size: 0.6, height: 0.12, strength: 1.3, lift: 0.2 });
+  tavStoreKey = { g, filled: fillStoreKey() };
+  addInteractable(g, 'Take the storeroom key', 'inventory', {
+    gives: storeKeyItem, far: 3.2,
+    when: () => inTavern,
+    onActivate: () => {
+      sfxThud(0.03);
+      scene.remove(g); removeInteractable(g); hovered = null;
+      addToInventory(storeKeyItem);
+    },
+  });
+}
+/* ---- A SHELF WHERE THE OWNER POINTED. He stood on the ledge at room-local
+ * (-0.04, 3.67, 2.88) and put the crosshair on the wall at (0.99, 4.76, 5.15)
+ * — 1.09 m over his feet, inside a jump — and sent the picture. The board's
+ * TOP is that point; the wall it hangs on is asked for by ray (it faces -x),
+ * and the board runs along it. The two old shelves this file has carried and
+ * taken out again were on other walls, placed by reasoning about steps; this
+ * one is placed by the picture.
+ *
+ * A board is 55 mm, under `KEEP_WALL_MIN`, so on its own it is a floor on
+ * top and nothing from the side: the apron under its front edge is what the
+ * body meets, and the storey is written into the grid (`tavCellTop`). */
+const TAV_SHELF_AT = { x: 0.99, y: 4.76, z: 5.15, w: 1.15, d: 0.52, t: 0.055, apron: 0.13, drop: 0.46 };
+let tavShelfMesh = null;
+function buildTavShelfAt() {
+  if (tavShelfMesh || !tavWorld || !tavCells) return;
+  tavWorld.updateMatrixWorld(true);
+  const A = TAV_SHELF_AT, fy = TAV_Y + TAV_FLOOR, all = tavStoreHits();
+  const rc = new THREE.Raycaster(); rc.camera = camera; rc.far = 2.5;
+  rc.set(new THREE.Vector3(TAV_X + A.x - 1.0, fy + A.y, TAV_Z + A.z), new THREE.Vector3(1, 0, 0));
+  const h = rc.intersectObjects(all, false)[0];
+  if (!h || !h.face) { console.warn('tavern shelf: no wall at the spot'); return; }
+  const n = h.face.normal.clone().transformDirection(h.object.matrixWorld); n.y = 0; n.normalize();
+  if (n.x > -0.5) { console.warn('tavern shelf: the wall there does not face the ledge', n.toArray()); return; }
+  const wx = h.point.x - TAV_X;                                   // the face, measured
+  const wood = new THREE.MeshBasicMaterial({ map: tavPlankTex(), color: 0x7b7266 }); wood.toneMapped = false;
+  const iron = new THREE.MeshBasicMaterial({ color: 0x3a3a40 }); iron.toneMapped = false;
+  const g = new THREE.Group();
+  // local: +z along the wall, +x out of it (toward -x in the room), origin at the board's top against the wall
+  const board = new THREE.Mesh(new THREE.BoxGeometry(A.d, A.t, A.w), wood); board.position.set(A.d / 2, -A.t / 2, 0); g.add(board);
+  const apron = new THREE.Mesh(new THREE.BoxGeometry(0.05, A.apron, A.w), wood); apron.position.set(A.d - 0.025, -A.t - A.apron / 2 + 0.01, 0); g.add(apron);
+  /* A BRACKET IS A WALL PLATE, AN ARM AND A STRUT, IN FLAT BAR. The first
+   * pair were two square bars — a post and a diagonal — which is scaffolding,
+   * not ironwork (the owner: "they look unrealistic"). What holds a shelf up
+   * is a strip of flat iron screwed to the wall, an arm of the same strip
+   * under the board, and a strut from the foot of the plate to the end of
+   * the arm, with the screw heads showing and a little scroll where the
+   * strut meets the arm. Everything is a 32 x 8 mm bar. */
+  const bar = 0.032, thk = 0.008;
+  const bolt = new THREE.MeshBasicMaterial({ color: 0x4a4542 }); bolt.toneMapped = false;
+  for (const s of [-1, 1]) {
+    const bz = s * (A.w / 2 - 0.16);
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(thk, A.drop, bar), iron); plate.position.set(thk / 2 + 0.002, -A.t - A.drop / 2 + 0.01, bz); g.add(plate);
+    for (const yy of [0.05, A.drop - 0.05]) { const h = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.006, 8), bolt); h.rotation.z = Math.PI / 2; h.position.set(thk + 0.004, -A.t - yy + 0.01, bz); g.add(h); }
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(A.d - 0.06, thk, bar), iron); arm.position.set((A.d - 0.06) / 2, -A.t - thk / 2, bz); g.add(arm);
+    const dy = A.drop - 0.06, dx = A.d - 0.09;
+    const strut = new THREE.Mesh(new THREE.BoxGeometry(thk, Math.hypot(dy, dx), bar), iron);
+    strut.position.set(dx / 2 + 0.01, -A.t - dy / 2 - 0.01, bz); strut.rotation.z = Math.atan2(dx, dy); g.add(strut);
+    const scroll = new THREE.Mesh(new THREE.TorusGeometry(0.022, thk / 2, 6, 12, Math.PI * 1.5), iron);
+    scroll.position.set(A.d - 0.09, -A.t - 0.03, bz); scroll.rotation.y = Math.PI / 2; scroll.rotation.x = Math.PI / 2; g.add(scroll);
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(bar, thk, bar), iron); foot.position.set(bar / 2 + thk, -A.t - A.drop + 0.012, bz); g.add(foot);
+  }
+  g.rotation.y = Math.PI;                                         // local +x → room -x: out of a wall that faces -x
+  g.position.set(wx, TAV_FLOOR + A.y, A.z);
+  g.name = 'tavShelf'; g.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.name = 'tavShelf'; } });
+  tavWorld.add(g); tavWorld.updateMatrixWorld(true);
+  tavShelfMesh = g;
+  tavCellTop(wx - A.d / 2, A.z, A.d / 2, A.w / 2, TAV_FLOOR + A.y);
+}
 /* Oak and iron: the latch lifting, the hinge taking the weight over most of
  * a second, and the door meeting the frame. Nothing above two kilohertz but
  * the latch. */
@@ -71587,8 +72277,28 @@ function installLife(u, m, J) {
       if (!wrist) return;
       let tip = b; while (tip.children.length && tip.children[0].isBone) tip = tip.children[0];
       const d = (ang) => { const q0 = b.quaternion.clone(); b.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), ang)); m.updateMatrixWorld(true); const dd = tip.getWorldPosition(new THREE.Vector3()).distanceTo(wrist.getWorldPosition(new THREE.Vector3())); b.quaternion.copy(q0); return dd; };
-      const sign = d(0.3) < d(-0.3) ? 1 : -1;
-      u.life.fingers.push({ b, sign, R: wrist === B.handR, k: /thumb/i.test(b.name) ? 0.55 : (/\.01\.|[A-Za-z]1_\d+$/.test(b.name) ? 0.8 : 1.0) });
+      let sign = d(0.3) < d(-0.3) ? 1 : -1, ax = null;
+      /* AND WHERE THE PALM IS KNOWN, THE AXIS IS BUILT, NOT GUESSED. The
+       * shorten-the-distance test is DEGENERATE on a finger that is nearly
+       * straight — bending either way shortens it by the same cosine — and on
+       * the farmers it picked the wrong way on the right hand (measured: a
+       * +0.6 curl moved the fingertips AWAY from the palm), so every man at
+       * the castle fought with his fingers bent back over his knuckles and
+       * the two at the tavern held their bottles in open hands. A kind that
+       * says which way its palm faces in the hand bone's frame (`palm`) gets
+       * an axis per bone that is perpendicular to the bone and to the palm,
+       * signed so a positive turn carries the tip toward the palm. */
+      if (u.kind.palm) {
+        const nxt = b.children.find((c) => c.isBone);
+        if (nxt) {
+          const wq = wrist.getWorldQuaternion(new THREE.Quaternion()), bq = b.getWorldQuaternion(new THREE.Quaternion()).invert();
+          const palmL = new THREE.Vector3(...u.kind.palm).applyQuaternion(wq).applyQuaternion(bq).normalize();   // the palm, in this bone's frame
+          const dirL = nxt.position.clone().normalize();                                                        // the bone, in its own frame
+          const a = new THREE.Vector3().crossVectors(dirL, palmL);
+          if (a.lengthSq() > 1e-6) { ax = a.normalize(); sign = 1; }
+        }
+      }
+      u.life.fingers.push({ b, sign, ax, R: wrist === B.handR, k: /thumb/i.test(b.name) ? 0.55 : (/\.01\.|[A-Za-z]1_\d+$/.test(b.name) ? 0.8 : 1.0) });
     });
     m.updateMatrixWorld(true);
   }
@@ -71695,7 +72405,7 @@ function lifeApply(u, B, dt, saved) {
     const base = (u.kind.claws || 0) * (busy ? 1.35 : 1.0), G = S.grip;
     const curlR = G == null ? base : (typeof G === 'number' ? G : (G.R != null ? G.R : base));
     const curlL = G == null ? base : (typeof G === 'number' ? G : (G.L != null ? G.L : base));
-    for (const f of S.fingers) { saved.push({ b: f.b, q: f.b.quaternion.clone(), p: null }); f.b.quaternion.multiply(_lfQ.setFromAxisAngle(_lfX, f.sign * (f.R ? curlR : curlL) * f.k)); }
+    for (const f of S.fingers) { saved.push({ b: f.b, q: f.b.quaternion.clone(), p: null }); f.b.quaternion.multiply(_lfQ.setFromAxisAngle(f.ax || _lfX, f.sign * (f.R ? curlR : curlL) * f.k)); }
   }
   // the weight moving over his feet, on two counts that never line up
   const ws = (Math.sin(S.t * 0.41 + S.seed) * 0.7 + Math.sin(S.t * 0.173 + S.seed * 2.1) * 0.3) * S.w;
@@ -72081,6 +72791,8 @@ function umbraAdd(...ks) {
  * over the sides. RISE1 is leaning forward onto his feet with his weight on
  * the arms; RISE2 is up off the seat, still pitched over his knees. */
 const UMBRA_RISE_DUR = 2.5;
+const UMBRA_RISE_SLOW = 6.0;      // the take after the beast: the slow one
+const UMBRA_CUT_HIT = 0.66;       // his seated cut's contact, in its own seconds
 const UMBRA_SIT = { hipY: -0.195, hipF: -0.617, chest: { right: -0.852, up: 0.234 }, thighL: { right: -0.805, fwd: -0.25, up: -0.906 }, thighR: { right: -0.391, fwd: -0.078, up: 0.211 }, calfL: { fwd: -0.172, up: 0.195 }, calfR: { right: -0.039, fwd: 0.07, up: -0.031 }, footL: { right: 0.281, fwd: -0.156, up: 0.172 }, footR: { right: 0.242, fwd: 0.055, up: -0.047 }, armL: { right: 1.242, fwd: 1, up: 0.773 }, armR: { right: 0.156, fwd: 0.07, up: -0.148 }, foreL: { right: 0.055, fwd: 0.008, up: -0.555 }, foreR: { right: -0.656, fwd: -0.195, up: 0.43 }, armL2: { right: -0.32, fwd: -0.352, up: -0.234 }, armR2: { right: -0.68, fwd: 0.43, up: 0.125 }, foreL2: { right: 0.414, fwd: 0.055, up: 0.531 }, foreR2: { right: 0.523, fwd: -0.219, up: -0.547 } };
 const UMBRA_RISE1 = { hipY: -0.133, hipF: -0.476, chest: { right: 0.14, up: 0.234 }, thighL: { right: -0.688, fwd: -0.148, up: -0.789 }, thighR: { right: -0.282, fwd: -0.078, up: 0.148 }, calfL: { right: -0.031, fwd: -0.274, up: 0.218 }, calfR: { right: 0.024, fwd: 0.133, up: -0.031 }, footL: { right: 0.179, fwd: -0.078, up: 0.125 }, footR: { right: 0.117, fwd: 0.016, up: -0.024 }, armL: { right: 1.164, fwd: 1.063, up: 0.726 }, armR: { right: 0.14, fwd: 0.023, up: -0.078 }, foreL: { right: 0.055, fwd: -0.078, up: -0.61 }, foreR: { right: -0.719, fwd: -0.117, up: 0.508 }, armL2: { right: -0.39, fwd: -0.352, up: -0.492 }, armR2: { right: -0.25, fwd: 0.555, up: 0.633 }, foreL2: { right: 0.062, fwd: -0.07, up: 0.054 }, foreR2: { right: 0.226, fwd: -0.117, up: -0.242 } };
 const UMBRA_RISE2 = { hipY: -0.008, hipF: -0.218, chest: { right: 0.304, up: 0.242 }, thighL: { right: -0.446, fwd: -0.085, up: -0.328 }, thighR: { right: 0.031, fwd: -0.008, up: -0.133 }, calfL: { right: -0.14, fwd: -0.204, up: 0.218 }, calfR: { right: -0.101, fwd: 0.219, up: 0.008 }, footL: { right: 0.015, fwd: -0.062, up: -0.055 }, footR: { right: -0.063, fwd: 0.024, up: 0.062 }, armL: { right: 1.039, fwd: 0.954, up: 0.663 }, armR: { right: -0.024, fwd: 0.14 }, foreL: { right: 0.078, fwd: -0.258, up: -0.672 }, foreR: { right: -0.813, fwd: -0.125, up: 0.571 }, armL2: { right: -0.382, fwd: -0.422, up: -0.414 }, armR2: { right: -0.492, fwd: 0.594, up: 0.461 }, foreL2: { right: 0.226, fwd: -0.015, up: 0.234 }, foreR2: { right: 0.343, fwd: -0.117, up: -0.359 } };
@@ -72244,6 +72956,39 @@ function authorUmbraOwn(u, m, stance) {
   B('uSit', 4.2, [[0, UMBRA_SIT],
     [2.1, umbraAdd(UMBRA_SIT, { chest: { right: -0.05 }, head: { right: 0.08 }, hipY: 0.012 })],
     [4.2, UMBRA_SIT]], true);
+  /* THE CUT: seated, the right front blade lifted over his shoulder and
+   * brought down past the throne's right armrest — through the beast's
+   * chain, which is bolted to it. Contact at `UMBRA_CUT_HIT`, which is when
+   * the take snaps it. SOLVED, NOT GUESSED (`tools/umbrasit.js`, against
+   * the blade's own tip, `Blade1_94`'s farthest vertex, 0.92 m past the
+   * hand): up, the tip stands 2.83 m over his feet above his right shoulder;
+   * down, the middle of the blade is 0.82 m out to his right at the
+   * armrest's height and the tip a third of a metre off the dais. Only the
+   * trunk and the right arm differ from the sit. */
+  const sitWith = (o) => Object.assign({}, UMBRA_SIT, o);
+  const CUP = sitWith({ chest: { right: -0.955, up: 0.609, fwd: -0.30 }, armR: { right: -0.51, fwd: -0.296, up: 0.246 }, foreR: { right: 0.038, fwd: -0.626, up: 0.346 }, handR: { right: 0.394, fwd: -0.216, up: -0.497 }, clavR: { fwd: -0.187, up: 0.056 } });
+  const CDN = sitWith({ chest: { right: -1.50, up: -0.057 }, armR: { right: 0.072, fwd: 0.014, up: -0.185 }, foreR: { right: -0.122, fwd: 0.105, up: -0.47 }, handR: { right: 0.797, fwd: 0.169, up: -0.459 }, clavR: { fwd: 0.056, up: 0.563 } });
+  B('uCut', 1.6, [[0, UMBRA_SIT],
+    [0.42, CUP],
+    [0.54, umbraAdd(CUP, { armR: { right: -0.08 }, chest: { up: 0.05 } })],     // the held breath at the top
+    [UMBRA_CUT_HIT, CDN],
+    [0.84, umbraAdd(CDN, { handR: { right: 0.10 } })],
+    [1.6, UMBRA_SIT]], false);
+  /* AND THE SLOW ONE, for the take after the beast dies: the head lifts first
+   * and holds on you, he breathes, the blades tighten on the armrests, and
+   * only then does he lean out, rise, straighten and throw his arms wide. */
+  const RS = UMBRA_RISE_SLOW;
+  B('uRiseSlow', RS, [[0, UMBRA_SIT],
+    [1.0, umbraAdd(UMBRA_SIT, { head: { right: -0.22 } })],
+    [1.9, umbraAdd(UMBRA_SIT, { head: { right: -0.52 }, neck: { right: -0.16 }, chest: { right: -0.10 } })],
+    [2.6, umbraAdd(UMBRA_SIT, { head: { right: -0.48 }, neck: { right: -0.16 }, chest: { right: -0.04 }, foreR: { right: -0.25 }, foreL: { right: -0.25 } })],
+    [3.5, umbraAdd(UMBRA_RISE1, { head: { right: -0.40 } })],
+    [4.35, umbraAdd(UMBRA_RISE2, { head: { right: -0.25 } })],
+    [5.05, { chest: { right: -0.38 }, waist: { right: -0.12 }, head: { right: -0.40 }, hipY: 0.05,
+             armR: { right: 0.40, fwd: -1.05 }, armL: { right: 0.40, fwd: 1.05 }, armR2: { right: 0.30, fwd: -0.85 }, armL2: { right: 0.30, fwd: 0.85 } }],
+    [5.45, { chest: { right: -0.30 }, head: { right: -0.30 }, hipY: 0.03,
+             armR: { right: 0.30, fwd: -0.90 }, armL: { right: 0.30, fwd: 0.90 }, armR2: { right: 0.25, fwd: -0.7 }, armL2: { right: 0.25, fwd: 0.7 } }],
+    [RS, {}]], false);
   const RD = UMBRA_RISE_DUR;
   B('uRise', RD, [[0, UMBRA_SIT],
     [RD * 0.24, umbraAdd(UMBRA_SIT, { head: { right: -0.35 }, neck: { right: -0.12 }, foreR: { right: -0.12 }, foreL: { right: -0.12 } })],
@@ -76563,6 +77308,12 @@ function crusaderChain(u, dt) {
     for (let i = 1; i < pts.length; i++) C.len.push(pts[i].distanceTo(pts[i - 1]));
   }
   if (C.off) return;
+  /* HELD IN THE GOLD, THE FLAIL HOLDS TOO. The artifact freezes the mixer
+   * and the body (`artHold`) and this rope is simulated OUTSIDE the mixer,
+   * so it went on swinging round a statue: the ball orbiting a man who
+   * could not move ("when he gets immobilized his flail still swings"). The
+   * rope keeps the pose it was caught in and the whirl's own clock stops. */
+  if (u.st.immob > 0) return;
   dt = Math.min(dt, 1 / 30);
   const cur = u.cur && u.cur.getClip ? u.cur.getClip().name : '';
   /* THE WHIRL (the owner: "i cant even tell he is swinging"). A flail's tell
@@ -76599,13 +77350,26 @@ function crusaderChain(u, dt) {
   // the head of the rope rides the haft
   const head = C.bones[0].getWorldPosition(_ccA);
   if (!own) {
+    /* A ROPE AT REST HANGS; IT DOES NOT SWING FOR EVER. Between swings the
+     * damping is heavy, so the ball comes to hang off the haft in a second
+     * rather than orbiting him like a pendulum through the whole exchange —
+     * most of "the flail moves so badly" was a ball that never stopped. */
+    const idle = !A;
+    const damp = idle ? 0.90 : 0.985;
     const g = 15 * dt * dt, floorY = beachGroundAt(u.g.position.x, u.g.position.z) + 0.05;
     for (let i = 1; i < n; i++) {
       const p = C.p[i], q = C.pp[i];
-      const vx = (p.x - q.x) * 0.985, vy = (p.y - q.y) * 0.985, vz = (p.z - q.z) * 0.985;
+      let vx = (p.x - q.x) * damp, vy = (p.y - q.y) * damp, vz = (p.z - q.z) * damp;
+      // and no link may move more than a chain's length in a frame: a rope that outruns its own constraints snaps about
+      const vl = Math.hypot(vx, vy, vz), vmax = 0.45; if (vl > vmax) { vx *= vmax / vl; vy *= vmax / vl; vz *= vmax / vl; }
       q.copy(p);
       p.x += vx; p.y += vy - g; p.z += vz;
     }
+    /* THE BODY IS SOLID TO THE CHAIN. Nothing kept the rope out of him, so a
+     * swing let go behind his head came round THROUGH his helmet and chest —
+     * the ball passing through the man holding it, every second swing. Every
+     * link is pushed out of a capsule round him. */
+    const bx = u.g.position.x, bz = u.g.position.z, by0 = u.g.position.y + 0.1, by1 = u.g.position.y + (u.kind.h || 2.2) * 0.92, bR = 0.46;
     for (let it = 0; it < 8; it++) {
       C.p[0].copy(head);
       for (let i = 1; i < n; i++) {
@@ -76615,9 +77379,57 @@ function crusaderChain(u, dt) {
         if (i === 1) b.addScaledVector(_ccB, -k);
         else { a.addScaledVector(_ccB, k * 0.5); b.addScaledVector(_ccB, -k * 0.5); }
       }
-      for (let i = 1; i < n; i++) if (C.p[i].y < floorY) C.p[i].y = floorY;
+      for (let i = 1; i < n; i++) {
+        const p = C.p[i];
+        if (p.y < floorY) p.y = floorY;
+        if (p.y > by0 && p.y < by1) { const ex = p.x - bx, ez = p.z - bz, r = Math.hypot(ex, ez); if (r < bR) { const s2 = r > 1e-4 ? bR / r : 0; p.x = bx + (r > 1e-4 ? ex * s2 : bR); p.z = bz + (r > 1e-4 ? ez * s2 : 0); } }
+      }
     }
     C.p[0].copy(head);
+    /* AND A BLOW GOES WHERE IT IS AIMED. The rope is physics and the aim turns
+     * his shoulder, which cannot steer a ball on a chain: measured, half his
+     * strikes went past a metre wide and the rest arrived by luck. Through
+     * the strike the ball is GUIDED — from where it was when the wind-up was
+     * let go, up over his shoulder and down onto your chest on the contact
+     * frame, blended in over the swing so the first of it is still the
+     * rope's own momentum — and the links are laid between the haft and the
+     * ball with a little sag. After the contact the physics has it back, so
+     * the follow-through is a real swing carrying on. */
+    const flailA = A && st.swing !== 'cBash' && st.swing !== 'sKick';
+    if (flailA) {
+      const swingT = A.natHold ? Math.max(0.12, (A.wind - A.natHold) * (1 - (A.cock || 0))) : Math.min(0.35, A.wind * 0.5);
+      const t0 = A.wind - swingT, t1 = A.wind + 0.04;
+      if (st.atk >= t0 && st.atk <= t1) {
+        const G = u.flailGuide || (u.flailGuide = { swing: null, atk: -1, p0: new THREE.Vector3(), p1: new THREE.Vector3(), p2: new THREE.Vector3(), on: false });
+        if (G.swing !== st.swing || st.atk < G.atk - 0.05 || !G.on) {
+          G.swing = st.swing; G.on = true;
+          G.p0.copy(C.p[n - 1]);
+          const foe = mutFoePos(u); G.p2.set(foe.x, foe.y - 0.45, foe.z);
+          // the control point: high, over the flail shoulder, a little toward you
+          const yaw = u.g.rotation.y;
+          G.p1.set(head.x + Math.sin(yaw) * 0.6 + (G.p2.x - head.x) * 0.25, head.y + 1.6, head.z + Math.cos(yaw) * 0.6 + (G.p2.z - head.z) * 0.25);
+        }
+        G.atk = st.atk;
+        const foe = mutFoePos(u); G.p2.set(foe.x, foe.y - 0.45, foe.z);           // you may have moved
+        const s0 = THREE.MathUtils.clamp((st.atk - t0) / Math.max(1e-3, A.wind - t0), 0, 1);
+        const q = 1 - s0;
+        _ccA.set(q * q * G.p0.x + 2 * q * s0 * G.p1.x + s0 * s0 * G.p2.x, q * q * G.p0.y + 2 * q * s0 * G.p1.y + s0 * s0 * G.p2.y, q * q * G.p0.z + 2 * q * s0 * G.p1.z + s0 * s0 * G.p2.z);
+        // never further from the haft than the chain is long
+        let total = 0; for (let i = 1; i < n; i++) total += C.len[i - 1];
+        _ccB.subVectors(_ccA, head); const dl = _ccB.length(); if (dl > total * 0.98) _ccB.multiplyScalar(total * 0.98 / dl);
+        _ccA.copy(head).add(_ccB);
+        const w = 0.25 + 0.7 * s0 * s0;
+        C.p[n - 1].lerp(_ccA, w);
+        // the links between, hung with a little sag toward the ball's own line
+        let along = 0;
+        for (let i = 1; i < n - 1; i++) {
+          along += C.len[i - 1];
+          const f = along / total, sag = Math.sin(f * Math.PI) * 0.18 * (1 - s0);
+          _ccB.copy(head).lerp(C.p[n - 1], f); _ccB.y -= sag;
+          C.p[i].lerp(_ccB, w * 0.8);
+        }
+      } else if (u.flailGuide) u.flailGuide.on = false;
+    } else if (u.flailGuide) u.flailGuide.on = false;
     if (W.k > 0.01) {
       // the circle: tilted up over his flail shoulder, in his own frame
       const yaw = u.g.rotation.y, ca = Math.cos(W.ang), sa = Math.sin(W.ang);
@@ -76742,10 +77554,14 @@ function loadThrone() {
       new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
     p.position.set(THR_EXIT.x, 3.8, THR_EXIT.z); p.name = 'hitProxy'; p.visible = false; p.userData.bwGhost = true;
     thrWorld.add(p);
-    addInteractable(p, () => (c13Ready ? 'Leave the throne room' : 'Go out to the beach'), 'default', {
+    /* THE LATTICE DOOR GOES OUT TOWARD THE LIGHTHOUSE (the owner's word: it
+     * put him back at the castle's entrance). It opens onto the sand behind
+     * the first castle, at the foot of its back wall, facing the tower — the
+     * way on. The door you came in by is still the way back into the court. */
+    addInteractable(p, 'Go out toward the lighthouse', 'default', {
       mid: true, far: 4.2,
       when: () => inThrone && !thrBusy,
-      onActivate: () => startThrone(-1),
+      onActivate: () => startThrone(-1, 'lh'),
     });
     // and the door you came in by, at the hall's near end behind where you arrive: it goes back out the same way
     const q = new THREE.Mesh(new THREE.BoxGeometry(2.4, 3.2, 0.8),
@@ -76970,10 +77786,11 @@ function thrFloorNear(x, z) {
   for (let k = 0; k < fl.length; k += 3) if (best === null || fl[k] < best) best = fl[k];
   return best === null ? null : THR_Y + best;
 }
-function startThrone(dir) {
+let thrTo = null;
+function startThrone(dir, to) {
   if (thrBusy || frozen()) return;
   if (dir > 0 && !thrReady) { loadThrone(); return; }
-  thrBusy = true; thrDir = dir; thrT = 0; thrCutDone = false;
+  thrBusy = true; thrDir = dir; thrT = 0; thrCutDone = false; thrTo = to || null;
   blocking = false;
   try { sfxTavernDoor(); } catch (e) {}
 }
@@ -76986,6 +77803,7 @@ function updateThroneCut(dt) {
   if (!thrCutDone && t >= OUT + 0.05) {
     thrCutDone = true;
     if (thrDir > 0) { placeInThrone(); autosaveNow('thrIn'); }
+    else if (thrTo === 'lh') { placeOutOfThroneToLighthouse(); autosaveNow(); }
     else { placeOutOfThrone(); autosaveNow(inC13 ? 'c13In' : undefined); }
   }
   if (t >= D) { thrBusy = false; blackoutEl.style.opacity = '0'; catchBreath(); }
@@ -77029,6 +77847,12 @@ function placeInThrone() {
  * throne room's door, facing away from it, so turning round shows you the
  * door and the keep's wall it is cut in. The beach is through the castle's
  * own way out. */
+function placeOutOfThroneToLighthouse() {
+  inThrone = false;
+  if (thrWorld) thrWorld.visible = false;
+  throneLeave();
+  placeOutOfFort('back');          // the sand at the foot of the first castle's back wall, facing the tower
+}
 function placeOutOfThrone() {
   inThrone = false;
   if (thrWorld) thrWorld.visible = false;
@@ -77941,6 +78765,11 @@ let umbraUnit = null;
 }
 function throneMayWake(u) {
   if (!inThrone || thrBusy || !thrWalls) return false;
+  /* THE BEAST GOES FIRST. While it lives he sits and watches: the take that
+   * cuts its chain is what the walk up the hall starts, and the one that
+   * gets HIM up is the beast's death (`updateThroneScene`). A blow on him is
+   * still a blow — `provoke` gets him up whatever the scene is doing. */
+  if (thrScene.phase < 5) return false;
   return camera.position.z - THR_Z < UMBRA_WAKE_Z;
 }
 // the highest storey of the throne room under a height: what a body standing at (x, z) stands on
@@ -78000,6 +78829,451 @@ function updateThroneBoss(dt) {
     const p = u.g.position, f = thrStandY(p.x, p.z, p.y);
     if (f !== null) { const dy = f - p.y; p.y += Math.abs(dy) < 0.02 ? dy : Math.sign(dy) * Math.min(Math.abs(dy), Math.max(Math.abs(dy) * dt * 12, 3 * dt)); }
   }
+}
+
+/* =====================================================================
+ * THE BEAST ON THE CHAIN, AND THE TWO TAKES IN THE THRONE ROOM.
+ *
+ * DanteGuy's "Dante Beast FPSC Pack" (CC-BY-4.0, `assets/dante.glb` through
+ * `gltfpack.py`: 6.4k triangles, a Biped rig and EIGHT CLIPS OF ITS OWN —
+ * idle, walk, run, two attacks, a rage, a stun that knocks it flat and gets
+ * it up again, and a death). It stands chained by the neck at the foot of
+ * the marauder's dais, on his right: a collar, a chain of real links run
+ * as a Verlet rope (`thrChain`, so it sags, swings and drags), and an iron
+ * ring bolted into the floor beside the throne.
+ *
+ * THE TAKES. Walk up the hall and the camera is turned onto the dais (never
+ * moved, so every clamp still agrees when it lets go): the marauder lifts a
+ * blade where he sits and brings it down through the chain — sparks, the
+ * links parted, the loose end dragging off the collar — the beast rears and
+ * roars, and it comes for you. He WATCHES: he does not get up for anything
+ * but a blow of yours, and his head follows you round the hall (the life
+ * layer). Kill the beast and, a beat after it has gone down, the second
+ * take: he lifts his head and holds you with it, breathes, his blades
+ * tighten on the armrests, and he gets up slowly and throws his arms wide —
+ * and charges.
+ *
+ * MEASURED, NOT GUESSED: the file's model is turned -0.585 rad about the
+ * vertical (`faceFix` takes it back), its two attacks land at frames 46 of
+ * 81 (the two-handed smash, 0.568) and 33 of 67 (the backhand, 0.49), its
+ * hands reach 1.49 and 1.73 of its own units ahead of the pelvis, and its
+ * death goes forward onto its face over 1.3-3.2 s.
+ */
+/* ITS REACH IS MEASURED FROM ITS MIDDLE, AND IT IS A BIG ANIMAL. The beast
+ * goes about bent double: its head and fists hang a metre in front of the
+ * pelvis its origin is, so at the first stops (1.7 m) its face and arms were
+ * through the camera — the owner's "he keeps clipping into the player".
+ * `body` holds you 1.3 m off the origin, which is its chest; the stops are
+ * where the fists arrive IN the picture; the reaches are the hands' own
+ * (1.49 and 1.73 of the file's units at its 1.53 scale, plus a margin). The
+ * lunge is a third: it has no travel in its clips, so a long lunge is a
+ * beast skating forward through its own swing. */
+MUT_ATTACKS.dA1 = { wind: 1.53, strike: 0.12, recover: 0.85, hit: 0.568, reach: 2.75, lunge: 1.2, chain: 'dA2', chainP: 0.55, w: 0.45, dmg: 2, guardK: 1.7, limbs: [0, 1], twoHanded: true, stop: 2.25 };
+MUT_ATTACKS.dA2 = { wind: 1.10, strike: 0.10, recover: 0.70, hit: 0.490, reach: 3.05, lunge: 1.3, chain: 'dA1', chainP: 0.50, w: 0.55, guardK: 1.30, limbs: [0], stop: 2.45 };
+function dantePre(u, gltf) {
+  for (const c of gltf.animations) c.name = c.name.split('|').pop().toLowerCase();
+}
+MUT_KINDS.dante = {
+  glb: 'assets/dante.glb', solo: true, noSand: true, skin: null, bones: null, dante: true, thrBody: true,
+  faceFix: 0.585, natural: true, deathClip: true, noTail: true,
+  death: { BUCKLE: 1.4, DROP: 2.6, TAIL: 3.2, QUIET: 4.6 },
+  /* HARDER, by the owner's word: more than twice the health it had, a poise
+   * that takes more breaking, and a parry or a stagger worth less. */
+  h: 1.78, hp: 80, dmg: 1, bleedRes: 1.3, hitR: 1.0, body: 1.30, lungeStop: 2.35, landSlop: 0.45, limbR: 0.45, lungeLead: 0, lungeK: 0.35,
+  planted: true, lungeMax: 2.2, smoothMove: true,
+  /* MORE AGGRESSIVE AND SMARTER: it swings nearly every time it could,
+   * chains up to three, takes the turn back quickly, answers a charge by
+   * stepping out of your arc (`reacts`), and sizes you up when you hold a
+   * guard (`smart`). It does NOT circle: its only sideways clip is its walk,
+   * and a walk carried sideways is a beast sliding across the floor. */
+  speedK: 1.45, windK: 1.0, reachK: 1.0, aggr: 3.4, press: 0.96, chainMax: 3,
+  use: { dA1: 0.45, dA2: 0.55 },
+  circle: 0.0, step: 0.12, feint: 0.22, sizeUp: 0.05, smart: 1, reacts: true,
+  turnMax: 5.0, fade: 0.20,
+  poise: 20, poiseBack: 3.0, poiseWait: 0.8, parryK: 0.85, recoilK: 0.40, stunK: 0.80,
+  // and at half health it rears back and roars, and comes on faster still
+  rage: { aggr: 4.0, speedK: 1.65, press: 0.98, feint: 0.30 },
+  rageClip: 'rage', rageDur: 1.9,
+  aimed: true, barLen: 0.0, aimK: 1.6, aimDrop: 0.05,
+  rig: { arm: 'Bip01_R_UpperArm_055', fore: 'Bip01_R_Forearm_058', hand: 'Bip01_R_Hand_061',
+         armL: 'Bip01_L_UpperArm_037', foreL: 'Bip01_L_Forearm_040', handL: 'Bip01_L_Hand_043', head: 'Bip01_Head_022' },
+  /* THE FEET GO WHERE THE BODY GOES (`velGait`): its walk and run strides are
+   * measured off its own toes (`rag` names them) and the clip that matches
+   * the ground is played at the rate that matches it — and the body is not
+   * let outrun the stride being played. Before this, a run at a fixed rate
+   * under whatever speed the chase asked for: the owner's "sliding". */
+  gaitBySpeed: true, velGait: true, gaitMax: 1.25,
+  rag: { Character1_RightToeBase: 'Bip01_R_Toe0_094', Character1_LeftToeBase: 'Bip01_L_Toe0_079', Character1_Head: 'Bip01_Head_022' },
+  emis: 0.16, rim: [0.07, 0.05, 0.04], gamma: 0.9,
+  pre: dantePre,
+  anim: { idle: 'idle', walk: 'walk', run: 'run', roar: 'rage', die: 'death', back: 'walk', rate: 1.0, lean: 0.0, strafeK: 1.0 },
+  gaits: { walk: ['walk'], run: ['run'], idle: ['idle'], strafeL: ['walk'], strafeR: ['walk'] },
+  alias: { idle2: 'idle', walk2: 'walk', run2: 'run', roar2: 'rage', die2: 'death', back: 'walk', calm: 'idle',
+           hit: 'rage', hitBig: 'rage', hitSide: 'rage', hitBack: 'rage', hitHead: 'rage', parry: 'stun',
+           strafeL: 'walk', strafeR: 'walk', dA1: 'attack1', dA2: 'attack2' },
+  stunClip: 'stun', first: 'idle', sleepIdle: 'idle',
+  provoke: danteProvoke,
+  voice: { f: 0.70, growl: 1.6, rasp: 1.3, throat: 'bellow' },
+};
+// where it stands (room-local): on the marauder's right at the foot of the dais, turned a little toward the hall's middle
+const DANTE_SPOT = { x: -2.30, z: -1.30, yaw: 0.30 };
+// the ring the chain is bolted to, in the floor beside the throne on the same side
+const DANTE_RING = { x: -0.76, y: 0.90, z: -5.52 };   // y over the dais: the outer face of the throne's right armrest
+let danteUnit = null;
+{
+  danteUnit = makeMutant(THR_X + DANTE_SPOT.x, THR_Z + DANTE_SPOT.z, 'dante', THR_Y + 2.69);
+  danteUnit.g.rotation.y = DANTE_SPOT.yaw;
+  danteUnit.g.visible = false;
+}
+/* THE SCENE. 0 chained; 1 the take that frees it; 2 its fight; 3 it is dead
+ * and he has not got up yet; 4 the take that gets him up; 5 his fight. */
+let thrScene = { phase: 0, t: 0, deadAt: -1 };
+function danteAlive() { return !!(danteUnit && danteUnit.st.alive && !danteUnit.retired); }
+// a blow on it while it is chained is what frees it: he cuts the chain at once
+function danteProvoke(u) {
+  if (thrScene.phase === 0) { startThrCutChain(); return; }
+  if (!u.st.awake) { u.st.awake = true; u.st.roar = 1.1; u.st.roarClip = 'rage'; u.st.cool = 0.2; }
+}
+function danteUnitPre(u, dt) {
+  const p = u.g.position;
+  u.g.visible = inThrone && thrReady && !!(thrWorld && thrWorld.visible);
+  if (u.kind.natural && !u.natDone && u.clips) u.natDone = naturalSwings(u);
+  // the hall's floor under it, eased the way a riser is
+  if (thrCells) {
+    const f = thrStandY(p.x, p.z, p.y + 0.4);
+    if (f !== null) { const dy = f - p.y; p.y += Math.abs(dy) < 0.02 ? dy : Math.sign(dy) * Math.min(Math.abs(dy), Math.max(Math.abs(dy) * dt * 12, 3 * dt)); }
+  }
+  if (!inThrone) {
+    // out of the hall: back where it stood, still loose if it was loose
+    if (u.st.awake) { u.st.awake = false; u.st.atk = -1; u.st.roar = 0; u.st.cool = 0; u.path = null; if (mutToken === u) mutToken = null; }
+    p.set(THR_X + DANTE_SPOT.x, p.y, THR_Z + DANTE_SPOT.z); u.g.rotation.y = DANTE_SPOT.yaw;
+    mutDrop(u); return true;
+  }
+  if (!u.st.awake) {
+    // on the chain, or loose and waiting for you to come back up the hall
+    if (thrScene.phase === 2 && camera.position.z - THR_Z < UMBRA_WAKE_Z + 3 && !thrBusy) {
+      u.st.awake = true; u.st.roar = 1.2; u.st.roarClip = 'rage'; u.st.cool = 0.2;
+      try { sfxMutRoar(Math.hypot(camera.position.x - p.x, camera.position.z - p.z), u.kind.voice); } catch (e) { /* a sound is never fatal */ }
+      return false;
+    }
+    mutPlay(u, u.chainRage > 0 ? 'rage' : 'idle', u.chainRage <= 0);
+    u.mixer.update(dt);
+    return true;
+  }
+  return false;
+}
+/* ---- THE CHAIN. A rope of points a link apart, pinned at the ring and at
+ * the collar; links drawn along it, every other one turned a quarter. */
+const CHAIN_PITCH = 0.115;
+let thrChain = null;
+const _chV = new THREE.Vector3(), _chW = new THREE.Vector3(), _chC = new THREE.Vector3(), _chL = new THREE.Vector3(), _chZ = new THREE.Vector3(0, 0, 1), _chQ = new THREE.Quaternion(), _chQ2 = new THREE.Quaternion(), _chM = new THREE.Matrix4(), _chS = new THREE.Vector3(1, 1, 1), _chY = new THREE.Vector3(0, 1, 0);
+/* THE COLLAR IS FITTED TO THE NECK THAT IS THERE, not to the bone. Measured:
+ * the beast's neck flesh sits 0.18 m off the line from its neck bone to its
+ * head bone (the head is thrust forward of the joint), and only the last
+ * fifth of that line has flesh weighted to it at all — a ring centred on the
+ * bones at 0.30 m stuck out each side of the head and was buried everywhere
+ * else. So once, when the chain is built, the vertices weighted to the neck
+ * and head in a thin slab across the neck are found, and their centre and
+ * the radius that holds nine in ten of them are written down in the NECK
+ * BONE'S OWN FRAME; every frame after, the collar is that ring carried on
+ * the bone, so it follows the neck through every clip. */
+let danteFit = null;
+function danteBones(u) {
+  if (!u.neckB) u.model.traverse((o) => { if (o.name === 'Bip01_Neck_019') u.neckB = o; if (o.name === 'Bip01_Head_022') u.headB = o; });
+  return !!(u.neckB && u.headB);
+}
+/* AND THE NECK IS NOT ROUND. There is no narrower neck on this animal than
+ * the base of its skull — the head goes straight into the hump — and the
+ * section there is an ELLIPSE, 0.19 m to each side and 0.29 up and down
+ * (85 in a hundred of the vertices in a 7 cm slab). A round ring big enough
+ * to clear the top stood off the jaw like a halo; the collar is a tube bent
+ * along that ellipse, a finger's width off the skin, with its top buried
+ * in the hump and its bottom under the throat, which is where a collar on
+ * a thing built like this shows. */
+function fitDanteCollar() {
+  const u = danteUnit; if (!u || !u.model || !danteBones(u)) return null;
+  u.g.updateMatrixWorld(true);
+  const n = u.neckB.getWorldPosition(new THREE.Vector3()), h = u.headB.getWorldPosition(new THREE.Vector3());
+  const L = n.distanceTo(h), ax = h.clone().sub(n).normalize();
+  const c0 = n.clone().addScaledVector(ax, L * 0.88);
+  const pts = [], v = new THREE.Vector3();
+  u.model.traverse((m) => {
+    if (!m.isSkinnedMesh) return;
+    for (let i = 0; i < m.geometry.attributes.position.count; i++) {
+      m.getVertexPosition(i, v).applyMatrix4(m.matrixWorld);
+      const d = _chW.subVectors(v, c0).dot(ax);
+      if (Math.abs(d) > 0.035) continue;
+      const q = v.clone().addScaledVector(ax, -d);
+      if (q.distanceTo(c0) < 0.5) pts.push(q);
+    }
+  });
+  if (pts.length < 20) return null;
+  const c = pts.reduce((s2, p) => s2.add(p), new THREE.Vector3()).multiplyScalar(1 / pts.length);
+  const up = new THREE.Vector3(0, 1, 0).addScaledVector(ax, -ax.y).normalize(), side = new THREE.Vector3().crossVectors(up, ax);
+  const pct = (arr) => { arr.sort((x, y) => x - y); return arr[Math.floor(arr.length * 0.85)]; };
+  const sx = pct(pts.map((p) => Math.abs(_chW.subVectors(p, c).dot(side)))) + 0.018;
+  const sy = pct(pts.map((p) => Math.abs(_chW.subVectors(p, c).dot(up)))) + 0.018;
+  // the ring's frame (x to its side, y up, z along the neck) in the NECK BONE'S frame
+  const qW = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(side, up, ax));
+  const qN = u.neckB.getWorldQuaternion(new THREE.Quaternion());
+  return {
+    local: c.clone().applyMatrix4(new THREE.Matrix4().copy(u.neckB.matrixWorld).invert()),
+    q: qN.invert().multiply(qW), sx: THREE.MathUtils.clamp(sx, 0.12, 0.32), sy: THREE.MathUtils.clamp(sy, 0.14, 0.38), n: pts.length,
+  };
+}
+function danteCollarGeo(F) {
+  const P = [];
+  for (let i = 0; i < 40; i++) { const a = i / 40 * Math.PI * 2; P.push(new THREE.Vector3(Math.cos(a) * F.sx, Math.sin(a) * F.sy, 0)); }
+  return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(P, true), 48, 0.034, 7, true);
+}
+function danteNeck(out) {
+  const u = danteUnit; if (!u || !u.model || !danteBones(u)) return null;
+  if (!danteFit) return u.neckB.getWorldPosition(out).lerp(u.headB.getWorldPosition(_chW), 0.8);
+  return out.copy(danteFit.local).applyMatrix4(u.neckB.matrixWorld);
+}
+// the collar's turn in the world: the bone's, then the fitted ring's within it
+const _dcQ = new THREE.Quaternion();
+function danteCollarQ(out) { return danteUnit.neckB.getWorldQuaternion(out).multiply(danteFit.q); }
+// where the chain meets the collar: the bottom of the ring, under the throat
+function danteCollarLow(c, out) {
+  if (!danteFit) return out.copy(c);
+  return out.set(0, -danteFit.sy, 0).applyQuaternion(danteCollarQ(_dcQ)).add(c);
+}
+function buildThrChain() {
+  if (thrChain || !thrCells || !danteUnit || !danteUnit.model || !thrWorld) return;
+  danteUnit.g.updateMatrixWorld(true);
+  if (!danteFit) danteFit = fitDanteCollar();
+  const c0 = danteNeck(new THREE.Vector3()); if (!c0) return;
+  const collar = danteCollarLow(c0, new THREE.Vector3());
+  const ring = new THREE.Vector3(THR_X + DANTE_RING.x - 0.07, UMBRA_Y + DANTE_RING.y, THR_Z + DANTE_RING.z);
+  const L = ring.distanceTo(collar) * 1.18;
+  const n = Math.max(8, Math.ceil(L / CHAIN_PITCH)) + 1;
+  const pts = [], prev = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const q = new THREE.Vector3().lerpVectors(ring, collar, t); q.y -= Math.sin(t * Math.PI) * L * 0.18;
+    pts.push(q); prev.push(q.clone());
+  }
+  // lighter than the steps it lies on and a little lit of its own, or in this hall it is a black line on black stone
+  const iron = new THREE.MeshStandardMaterial({ color: 0x8a847a, roughness: 0.40, metalness: 0, emissive: 0x2e2a24, emissiveIntensity: 1, flatShading: true });
+  const linkGeo = new THREE.TorusGeometry(0.046, 0.013, 6, 12); linkGeo.scale(1, 1.5, 1);
+  const links = new THREE.InstancedMesh(linkGeo, iron, n - 1);
+  links.frustumCulled = false; links.userData.bwGhost = true; links.raycast = () => {};
+  scene.add(links);
+  // the eye on the armrest: a plate on its outer face, a staple, and the ring hanging off it
+  const hw = new THREE.Group(); hw.position.set(THR_X + DANTE_RING.x, UMBRA_Y + DANTE_RING.y, THR_Z + DANTE_RING.z);
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.16, 0.16), iron); plate.position.x = 0.0; hw.add(plate);
+  const staple = new THREE.Mesh(new THREE.TorusGeometry(0.035, 0.012, 6, 12, Math.PI), iron); staple.position.set(-0.015, 0.04, 0); staple.rotation.set(0, Math.PI / 2, Math.PI / 2); hw.add(staple);
+  const ringM = new THREE.Mesh(new THREE.TorusGeometry(0.060, 0.014, 8, 16), iron); ringM.position.set(-0.055, -0.01, 0); hw.add(ringM);
+  hw.userData.bwGhost = true; hw.traverse((o) => { o.raycast = () => {}; });
+  scene.add(hw);
+  // the collar round its neck
+  const collarM = new THREE.Mesh(danteFit ? danteCollarGeo(danteFit) : new THREE.TorusGeometry(0.26, 0.04, 8, 26), iron);
+  collarM.frustumCulled = false; collarM.raycast = () => {};
+  scene.add(collarM);
+  thrChain = { pts, prev, n, seg: L / (n - 1), links, hw, collarM, cut: -1, ringP: ring, free: false };
+  links.visible = hw.visible = collarM.visible = false;
+}
+function stepThrChain(dt) {
+  const C = thrChain; if (!C) return;
+  const on = inThrone && !!(thrWorld && thrWorld.visible);
+  const u = danteUnit, dead = !u || u.retired;
+  C.links.visible = C.hw.visible = on;
+  C.collarM.visible = on && !dead;
+  if (!on) return;
+  const collar = dead ? null : danteNeck(_chC);
+  const low = collar ? danteCollarLow(collar, _chL) : null;
+  const h = Math.min(dt, 1 / 30) / 2;
+  for (let sub = 0; sub < 2; sub++) {
+    for (let i = 0; i < C.n; i++) {
+      const p = C.pts[i], q = C.prev[i];
+      const vx = (p.x - q.x) * 0.985, vy = (p.y - q.y) * 0.985, vz = (p.z - q.z) * 0.985;
+      q.copy(p);
+      p.x += vx; p.y += vy - 9.8 * h * h; p.z += vz;
+      const f = thrStandY(p.x, p.z, p.y + 0.3);
+      if (f !== null && p.y < f + 0.012) { p.y = f + 0.012; q.x += (p.x - q.x) * 0.4; q.z += (p.z - q.z) * 0.4; }
+    }
+    for (let it = 0; it < 10; it++) {
+      for (let i = 0; i < C.n - 1; i++) {
+        if (i === C.cut) continue;
+        const a = C.pts[i], b = C.pts[i + 1];
+        _chW.subVectors(b, a); const d = _chW.length() || 1e-6, k = (d - C.seg) / d * 0.5;
+        a.addScaledVector(_chW, k); b.addScaledVector(_chW, -k);
+      }
+      C.pts[0].copy(C.ringP);
+      if (low) C.pts[C.n - 1].copy(low);
+    }
+  }
+  for (let i = 0; i < C.n - 1; i++) {
+    const a = C.pts[i], b = C.pts[i + 1];
+    if (i === C.cut) { _chM.makeScale(0, 0, 0); C.links.setMatrixAt(i, _chM); continue; }
+    _chW.subVectors(b, a); const d = _chW.length() || 1e-6; _chW.divideScalar(d);
+    _chQ.setFromUnitVectors(_chY, _chW);
+    if (i % 2) _chQ.multiply(_chQ2.setFromAxisAngle(_chY, Math.PI / 2));
+    _chV.addVectors(a, b).multiplyScalar(0.5);
+    _chM.compose(_chV, _chQ, _chS); C.links.setMatrixAt(i, _chM);
+  }
+  C.links.instanceMatrix.needsUpdate = true;
+  if (collar) {
+    C.collarM.position.copy(collar);
+    if (danteFit) danteCollarQ(C.collarM.quaternion);
+    else { u.headB.getWorldPosition(_chW); _chW.sub(u.neckB.getWorldPosition(_chV)).normalize(); C.collarM.quaternion.setFromUnitVectors(_chZ, _chW); }
+  }
+}
+// the chain parted where the blade went through it: links, sparks and a ring of steel
+function snapThrChain(at) {
+  const C = thrChain; if (!C || C.cut >= 0) return;
+  let best = 2, bd = Infinity;
+  for (let i = 2; i < Math.floor(C.n * 0.6); i++) { const d = at ? C.pts[i].distanceTo(at) : Math.abs(i - C.n * 0.25); if (d < bd) { bd = d; best = i; } }
+  C.cut = best;
+  const p = C.pts[best];
+  // the two ends kick apart
+  C.prev[best].x -= 0.04; C.prev[best + 1].x += 0.04; C.prev[best].y -= 0.05; C.prev[best + 1].y -= 0.05;
+  try { worldSparks(p, 46); } catch (e) { /* a spark is never fatal */ }
+  deflectLamp.position.copy(p); deflectLamp.intensity = 60; deflectT = 0.21;     // the hall lit white for a blink
+  try { sfxPropHit('metal', 11); } catch (e) {}
+  try { playSample('blockMil', 0.95, 0.05, 0.72); } catch (e) {}
+  try { sfxThud(0.05); } catch (e) {}
+  addTrauma(0.28);
+}
+/* ---- THE TAKES. A turned camera, a drawn-in lens, and whatever is being
+ * looked at driven here on its own clock — `update()` stops while a take
+ * runs (`frozen()`), so nothing else moves either creature. */
+const _thcM = new THREE.Matrix4(), _thcQ = new THREE.Quaternion(), _thcP = new THREE.Vector3(), _thcA = new THREE.Vector3();
+// the lens that makes `h` metres fill the frame at the distance of `target`: a long lens from the hall's far end
+function thrCutFov(target, h) {
+  const d = Math.max(1, camera.position.distanceTo(target));
+  return THREE.MathUtils.clamp(2 * Math.atan(h / 2 / d) * 180 / Math.PI, 7, settings.fov);
+}
+function thrCutLook(target, rate, dt) {
+  _thcM.lookAt(camera.position, target, camera.up);
+  _thcQ.setFromRotationMatrix(_thcM);
+  camera.quaternion.slerp(_thcQ, Math.min(1, dt * rate));
+}
+function startThrCutChain() {
+  if (thrCut || thrScene.phase !== 0) return;
+  thrScene.phase = 1;
+  thrCut = { kind: 'chain', t: 0, fov: Math.min(settings.fov, 26), snapped: false, raged: false };
+  blocking = false; hovered = null;
+}
+function startThrCutRise() {
+  if (thrCut) return;
+  thrScene.phase = 4;
+  thrCut = { kind: 'rise', t: 0, fov: Math.min(settings.fov, 44), shriek: false };
+  blocking = false; hovered = null;
+}
+// the camera's own heading back into the look state when a take hands you back
+function thrCutRelease() {
+  _thcA.set(0, 0, -1).applyQuaternion(camera.quaternion);
+  lookEuler.set(Math.asin(THREE.MathUtils.clamp(_thcA.y, -1, 1)), Math.atan2(-_thcA.x, -_thcA.z), 0, lookEuler.order);
+  camera.quaternion.setFromEuler(lookEuler);
+  thrCut = null; hovered = null;
+}
+function updateThroneScene(dt) {
+  const D = danteUnit, U = umbraUnit;
+  if (!D || !U) return;
+  // what the save says has already happened
+  if (thrScene.phase < 3 && (D.retired || !D.st.alive) && thrScene.phase !== 1) { thrScene.phase = 3; thrScene.deadAt = D.retired ? -99 : performance.now() / 1000; if (D.retired && thrChain) thrChain.cut = Math.max(thrChain.cut, 2); }
+  if ((U.retired || !U.st.alive) && thrScene.phase < 5 && !thrCut) thrScene.phase = 5;
+  if (inThrone) buildThrChain();
+  // he got up because you hit him: the beast's chain goes with it
+  if (thrScene.phase === 0 && U.st.awake && thrChain) {
+    snapThrChain(null); thrScene.phase = 2;
+    D.st.awake = true; D.st.roar = 1.4; D.st.roarClip = 'rage'; D.st.cool = 0.3;
+  }
+  if (thrScene.phase >= 3 && thrScene.phase < 5 && U.st.awake && !thrCut) thrScene.phase = 5;
+  // the walk up the hall frees it
+  if (thrScene.phase === 0 && inThrone && !thrBusy && !thrCut && thrChain && D.model && U.model && U.clips && U.clips.uCut
+      && camera.position.z - THR_Z < UMBRA_WAKE_Z + 2.0 && !frozen()) startThrCutChain();
+  // the beast is down: a beat to look at it, then him
+  if (thrScene.phase === 3 && inThrone && !thrBusy && !thrCut && U.st.alive && !U.st.awake && U.clips && U.clips.uRiseSlow && !frozen()) {
+    const since = performance.now() / 1000 - thrScene.deadAt;
+    // (if the beat went by while you were out of the hall, he waits for you to come back up it)
+    /* NOT BEFORE THE BEAST HAS FINISHED DYING (the owner): its fall is 4.4 s
+     * and the take turned away from it at 4.2, with it still on its knees.
+     * The whole clip, and a beat on it lying there, then him. */
+    const dieDur = (D.clips && D.clips.death ? D.clips.death.getClip().duration : 4.4) + 1.3;
+    const fell = D.retired || !(D.cur && D.cur.getClip().name === 'death' && D.cur.time < D.cur.getClip().duration - 0.03);
+    if (fell && since > dieDur && (since < 25 || camera.position.z - THR_Z < UMBRA_WAKE_Z + 2.0)) startThrCutRise();
+  }
+  // the chain sim runs on the wall clock, takes included
+  stepThrChain(dt);
+  if (D.chainRage > 0) D.chainRage -= dt;
+  const C = thrCut; if (!C) return;
+  if (!inThrone) { thrCut = null; return; }
+  C.t += dt;
+  updateWorldSparks();     // the sparks and the flash live in `update()`, which a take stops
+  if (C.kind === 'chain') {
+    const T0 = 0.45, snapT = T0 + UMBRA_CUT_HIT, rageT = snapT + 0.45, END = rageT + 2.55;
+    // the marauder: his cut, on its own clock
+    if (C.t >= T0) { const a = mutPlay(U, 'uCut', false); if (a) { a.paused = true; a.time = Math.min(a.getClip().duration, C.t - T0); } }
+    U.mixer.update(dt);
+    // the beast: idle, then rearing on the broken chain
+    if (C.t < rageT) { mutPlay(D, 'idle', true); }
+    else { const a = mutPlay(D, 'rage', false); if (a && !C.raged) { C.raged = true; try { sfxMutRoar(Math.hypot(camera.position.x - D.g.position.x, camera.position.z - D.g.position.z), D.kind.voice); } catch (e) {} } }
+    D.mixer.update(dt);
+    if (!C.snapped && C.t >= snapT) {
+      C.snapped = true;
+      if (!U.thrHandB) U.model.traverse((o) => { if (o.name === 'Hand1R_95') U.thrHandB = o; });
+      snapThrChain(U.thrHandB ? U.thrHandB.getWorldPosition(_thcP) : null);
+    }
+    /* what the lens is on: HIM, tight — his blade arm and the armrest the
+     * chain is bolted to — until it has gone through; then across onto the
+     * beast as it rears, a little wider so the whole of it is in the frame */
+    U.g.getWorldPosition(_thcA); _thcA.x -= 0.45; _thcA.y += 1.25;
+    danteNeck(_thcP); _thcP.y -= 0.35;
+    const w = smooth01(snapT + 0.25, rageT + 0.9, C.t);
+    _thcA.lerp(_thcP, w);
+    thrCutLook(_thcA, C.t < 0.6 ? 3.0 : 2.4 + 2.0 * w, dt);
+    C.fov = thrCutFov(_thcA, 2.9 + 1.4 * w);
+    C.fovRate = C.t < snapT ? 5 : 2.6;
+    if (C.t >= END) {
+      D.st.awake = true; D.st.roar = 0; D.st.cool = 0.15; D.st.step = 0; D.st.atk = -1;
+      thrScene.phase = 2;
+      thrCutRelease(); catchBreath();
+    }
+    return;
+  }
+  if (C.kind === 'rise') {
+    const RS = UMBRA_RISE_SLOW, END = RS + 0.25;
+    const a = mutPlay(U, 'uRiseSlow', false); if (a) { a.paused = true; a.time = Math.min(RS, C.t); }
+    U.mixer.update(dt);
+    if (!C.shriek && C.t > RS * 0.82) {
+      C.shriek = true;
+      const d = Math.hypot(camera.position.x - U.g.position.x, camera.position.z - U.g.position.z);
+      try { sfxMutRoar(d, U.kind.voice); sfxScpScream(d, U.kind.voice); } catch (e) { /* a sound is never fatal */ }
+      addTrauma(0.40);
+    }
+    if (!U.thrHeadB) U.model.traverse((o) => { if (o.name === 'HeadIK_125') U.thrHeadB = o; });
+    if (U.thrHeadB) U.thrHeadB.getWorldPosition(_thcA); else { U.g.getWorldPosition(_thcA); _thcA.y += 2.2; }
+    _thcA.y -= 0.12 + 0.85 * smooth01(RS * 0.55, RS * 0.9, C.t);     // down onto his chest as the frame opens
+    thrCutLook(_thcA, C.t < 0.8 ? 2.2 : 3.0, dt);
+    // his head and shoulders as he lifts his eyes; the whole of him as he stands and throws his arms out
+    C.fov = thrCutFov(_thcA, 1.9 + 0.5 * smooth01(0.5, RS * 0.55, C.t) + 2.4 * smooth01(RS * 0.55, RS * 0.9, C.t));
+    C.fovRate = 3.2;
+    if (C.t >= END) {
+      U.st.awake = true; U.st.thrSeat = false; U.st.thrRising = false; U.st.roar = 0; U.st.cool = 0.05; U.st.atk = -1; U.st.step = 0;
+      U.holdAnim = false;
+      // and he CHARGES: the leap if you are across the room, the opening string if you are close
+      const d = Math.hypot(camera.position.x - U.g.position.x, camera.position.z - U.g.position.z);
+      if (U.atk && U.atk.uLeap && d > 3.8) U.st.forceSwing = 'uLeap';
+      else if (U.atk && U.atk.uC1) U.st.forceSwing = 'uC1';
+      if (!mutToken) mutToken = U;
+      thrScene.phase = 5;
+      thrCutRelease(); catchBreath();
+    }
+  }
+}
+function updateDante(dt) {
+  const D = danteUnit; if (!D || D.retired) return;
+  D.g.visible = inThrone && thrReady && !!(thrWorld && thrWorld.visible);
+  if (!D.st.alive) {
+    if (thrScene.phase < 3) { thrScene.phase = 3; thrScene.deadAt = performance.now() / 1000; }
+    if (wardenCue) updateWardenDeath(D);
+    return;
+  }
+  // chained, it strains at the chain now and then when you are in the hall
+  if (thrScene.phase === 0 && inThrone && !(D.chainRage > 0) && Math.random() < dt * 0.06) D.chainRage = 2.7;
 }
 
 /* =====================================================================
@@ -78902,6 +80176,7 @@ function tavDrinkerKind(i) {
   MUT_KINDS[name] = Object.assign({}, b, {
     tav: true, fortBody: false, frenzy: false, wakeAt: 0, solo: true,   // still a farmer: the castle's shared hurt gate, and his late motion capture
     provoke: (u) => tavDrinkerProvoke(u, null), first: 'fSit', sleepIdle: null,
+    tool: null,          // two of the four came from kinds that carry an axe, and sat drinking with it in the bottle hand (the owner's word: no weapons)
     // lit for a baked room with no lamps in it, like the bar's three: no night grade, a warm lift, a warm edge
     tint: 0, emis: 0.22, rim: [0.055, 0.046, 0.034],
     // they come down where they stood, like the castle's (the street's own numbers, inherited)
@@ -79534,11 +80809,21 @@ function farmKeyDefs() {
     // and the bottle rests on the table in the right fist, the forearm level (bent further the neck pointed at his nose)
     armR: { right: -0.22, fwd: -0.10, up: 0.10 }, foreR: { right: -0.72 }, handR: { right: 0.15 }, hipY: -0.33 };
   D.fSit = [3.4, [[0, SIT], [0.5, M(SIT, { chest: { right: 0.20, up: 0.06 }, head: { right: 0.08, up: 0.18 } })], [1, SIT]], true];
-  const DR2 = M(SIT, { armR: { right: -1.43, fwd: -0.49, up: 0.17 }, foreR: { right: -1.95 }, handR: { right: -0.19, fwd: -0.33, up: 0.13 }, chest: { right: 0.02 }, neck: { right: -0.29 }, head: { right: -0.52 } });
-  const DR1 = M(SIT, { armR: { right: -1.03, fwd: -0.33, up: 0.14 }, foreR: { right: -1.59 }, handR: { right: -0.05, fwd: -0.20, up: 0.08 }, chest: { right: 0.02 }, neck: { right: 0.0 }, head: { right: -0.05 } });
+  /* AND SOLVED AGAIN WITH THE REAL GRIP. The first solve was done before
+   * the bottle's grip was re-measured off the hand (`TAV_DRINK_GRIP`): the
+   * bottle lies ALONG the hand's own X, neck out past the thumb, so the pose
+   * that had put "the lip on the lips" now put the fist at the chin with the
+   * bottle pointing straight back behind his head — measured on the shipped
+   * DR2, the lip 0.50 m from the mouth with the bottle's axis 0.74 AWAY from
+   * his face. Re-solved on the rig with the bottle attached by the game's own
+   * grip: the lip on the mouth (0.000 m) and the bottle standing 60-70
+   * degrees up out of it, the elbow bent, the head tipping back. DR1 is a
+   * hand short of the mouth on the same line. */
+  const DR2 = M(SIT, { armR: { right: -1.13, fwd: -0.67, up: 0.47 }, foreR: { right: -1.35 }, handR: { right: 0.08, fwd: 0.78, up: -0.71 }, chest: { right: 0.02 }, neck: { right: 0.04 }, head: { right: -0.46 } });
+  const DR1 = M(SIT, { armR: { right: -0.46, fwd: -0.27, up: 0.44 }, foreR: { right: -1.29 }, handR: { right: 0.56, fwd: 0.98, up: -0.19 }, chest: { right: 0.02 }, neck: { right: 0.02 }, head: { right: -0.27 } });
   D.fDrink = [2.8, [[0, SIT], [0.25, DR1], [0.42, DR2], [0.70, DR2], [0.86, DR1], [1, SIT]], false];
   // a long swig: a second tilt further back, the whole trunk going with it
-  const DR3 = M(DR2, { head: { right: -0.72 }, neck: { right: -0.38 }, chest: { right: -0.10 }, armR: { right: -1.62, fwd: -0.52, up: 0.18 } });
+  const DR3 = M(DR2, { head: { right: -0.66 }, neck: { right: -0.12 }, chest: { right: -0.06 }, armR: { right: -1.28, fwd: -0.72, up: 0.51 } });
   D.fSwig = [4.2, [[0, SIT], [0.18, DR1], [0.30, DR2], [0.48, DR2], [0.58, DR3], [0.78, DR3], [0.88, DR1], [1, SIT]], false];
   // a toast: the bottle raised out toward the man across the table, a nod, then the drink
   const TST = M(SIT, { armR: { right: -1.25, fwd: 0.25, up: -0.20 }, foreR: { right: -1.10 }, handR: { right: 0.2 }, head: { right: 0.10, up: 0.12 }, chest: { right: 0.10, up: 0.08 } });
@@ -79782,6 +81067,7 @@ const FARM_MOVES = {
 
 /* ---- WHAT THEY HAVE IN COMMON, and the eight ways of being one. */
 const FARM_BASE = {
+  palm: [0, 0, 1],    // the hand bone's own +Z is the palm (measured for the bottle grip), so a fist closes the right way on both hands
   natural: true,      // their Mixamo swings play at the clip's own speed (`naturalSwings`)
   solo: true, fortBody: true, farmer: true, noSand: true, gaitBySpeed: true, velGait: true, gaitMax: 1.7, lungeK: 0.55, headPop: true, faceFix: 0, facingRef: 'mixamo',
   h: 1.84, hp: 4, dmg: 1, hitR: 0.62, body: 0.42, lungeStop: 1.05, landSlop: 0.45,
@@ -81962,7 +83248,7 @@ window.__bw = {
     if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
     oceanUniforms.uTime.value += dt;
     update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
-    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateDojoAudio(rawDt);
+    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateThroneScene(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateDojoAudio(rawDt);
     updateLightPool();
   },
   /* AND THE WARM CHAIN, THE FAR-CULL AND EVERY WALL-CLOCK CUT LIVE IN
@@ -82291,7 +83577,7 @@ Object.assign(window.__bw, { crusaderShieldTick, crusaderChain, farmCobble, farm
   setCatFloor: (v) => { catLastFloor = v; }, BEN_NPC,
   audioNodes: () => ({ waveBusGain, forestBed, masterGain, benBr }),
   audioDbg: () => ({ forest: forestBed && +forestBed.g.gain.value.toFixed(4), ben: benBr && benBr.g && +benBr.g.gain.value.toFixed(4), sand: (sampleBanks.sandStep || []).filter(Boolean).length, benBuf: (sampleBanks.benBreath || []).filter(Boolean).length, bedK: beachBedK() }),
-  c13Dbg: () => ({ arch: c13Arch, archOpen: c13ArchOpen, inThrone, thrBusy, thrReady: !!thrWalk }), openC13Arch, startThrone, placeInThrone, C13_ARCH, C13_THR_DOOR,
+  c13Dbg: () => ({ arch: c13Arch, archOpen: c13ArchOpen, inThrone, thrBusy, thrReady: !!thrWalk }), openC13Arch, startThrone, placeInThrone, danteU: () => danteUnit, thrSceneS: () => thrScene, thrChainS: () => thrChain, thrCutS: () => thrCut, startThrCutChain, startThrCutRise, thrStandY, THR_X, THR_Y, THR_Z, DANTE_SPOT, DANTE_RING, C13_ARCH, C13_THR_DOOR,
   c13State: () => ({ inC13, ready: c13Ready, walls: !!c13Walls, life: !!c13Life, torches: !!(c13Life && c13Life.torches), mask: !!C13_M.data,
     thrive: c13Thrive && { done: c13Thrive.done, jobs: c13Jobs.length, torches: (c13Thrive.torchAt || []).length, banners: c13Thrive.banners.length, lanterns: c13Thrive.lanterns.length, stalls: c13Thrive.stalls.length, towers: (c13Thrive.towers || []).length, lines: (c13Thrive.lines || []).length, windows: (c13Thrive.windows || []).length, fountain: c13Thrive.fountain && [c13Thrive.fountain.x, c13Thrive.fountain.z], door: c13Thrive.door, solids: c13Solids.length, flowers: c13Thrive.flowers, snd: c13Snd && { fountain: !!c13Snd.fsrc, fg: c13Snd.fg && +c13Snd.fg.gain.value.toFixed(3), lute: c13Snd.playing, lg: +c13Snd.lute.gain.value.toFixed(3) } } }),
   c13Thrive: () => c13Thrive, c13Solids, c13Open, c13RunJobs, placeInC13, C13_SITE, C13_X, C13_Y, C13_Z,

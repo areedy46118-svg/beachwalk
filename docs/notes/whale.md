@@ -559,3 +559,10 @@ out as they land; the artifact lies face up in the sand, tilted toward you
 with one edge of the bezel in it, and drops its last 12 cm with a soft thud.
 Its lamp is a dim warm glow (0.45, a brief 2.0 as it lands) and its shine is
 smaller than an ordinary pickup's. The belly's old spawn keeps the shaft.
+
+**THE CUTS ARE SEE-THROUGH, AND NOTHING HANGS IN THEM.** The sinews drawn
+across the holes read as scraps floating in mid-air (the owner's "floating
+textures in the space of the cuts") — gone; a cut is a discard and what shows
+through it is the sky dome (`whaleEnter` keeps it visible), moon, stars and
+clouds. And the pale band of cut blubber round each hole was a white outline:
+it is darker and half as wide now, a torn edge rather than a frame.

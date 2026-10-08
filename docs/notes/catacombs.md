@@ -695,3 +695,95 @@ the pile's old triangles; it has not been found to matter.
 **THE THRONE ROOM IS LIT A LITTLE MORE**: fog 0.015, torches 8.6 over 14 m,
 chandeliers 12 over 21, the moon 8.5, the sky ducked to 0.78.
 
+
+**MIST ON THE FLOOR (`buildCatMist` / `updateCatMist`).** The owner asked for
+it "way more atmospheric". Not specks — the note above about the empty air
+still holds, a drifting point is a square on the lens at the retro scale —
+but the dojo's low mist SHEETS: sixty torn smoke sprites lying along the stone
+at knee height round you, on their own counts, each placed on the walk grid
+(`keepFloorAt`, your own storey) so none hangs over a stair well, faded with
+distance and thinned where one would cross the lens, and tinted by the nearest
+burning torch (`catTorchU`) so the fog is warm in a torch's pool and lilac
+between them. One draw call; re-seeded as you move.
+
+**HE IS SEEN BEFORE HE IS FOUGHT (the owner: "it's always charging — it should
+stalk and be seen, like Amnesia").** Three things in `catWander`:
+- a sighting charged him from inside eight metres and a stalk charged on a
+  fifth of a second of being looked at. Now only a body nearly on him (4.5 m
+  standing, 3.2 crouched) or one he has fought in the last forty seconds is
+  charged; everything else is a stalk;
+- the stalk's charge is: you inside four metres, your eyes on him for a second
+  and a half from inside nine, a FOURTH corner, nowhere to watch from, a loud
+  noise, or seventy-five seconds. Looked at from further off he FREEZES where
+  he is (turned on you, breathing) and after three seconds of it gives the
+  corner up and goes round the other side of you — the feint's own path;
+- he prowls to a corner at 0.55 of his hunt speed (0.70 from far off), half
+  his roaming legs are on his hind legs at a walk, and more of his errands are
+  where you can watch him while you are crouched (0.42 against 0.28).
+
+**AND A ROOM'S CUT HAS A WATCHDOG.** "I went into the first church tunnel and
+everything went black and I couldn't even open the menu" could not be
+reproduced here (entered twice on 4199: in, placed, black lifted on time). What
+it looks like is an exception inside `update` on a frame after the placement:
+`animate` re-arms the frame first so the loop lives, but nothing after the
+throw runs — no render (black), and every cut sits on its busy flag, which is
+what keeps the menu shut. `update` runs under a try/catch now (`bwFrameErr`,
+once per message, the cuts and the render go on), and `updateUndercroftCut`
+releases a cut that has outstayed its clock by ten seconds. If it happens
+again the console will say what threw.
+
+**THE HUNTER SQUEEZES THROUGH THE PASSAGES, AND THREE STEERING IDEAS WERE
+MEASURED OUT OF THE FILE.** The owner's "less clipping through walls and
+doors" was taken to the catnav harness first (`__nav`: five points down his
+body against the drawn faces, every moving frame of twelve random chases),
+and the number it starts from is **38 % of moving frames with part of him in
+stone** — he is 1.65 m across in corridors 1.3 m wide, so wherever the route
+is right he still stands in both walls by a hand and a half. Everything that
+steers him was tried against that number and every one made it WORSE:
+sliding him toward the corridor's middle (he slid into the tombs: 51 %),
+bending his spine into the turns through the life layer (the head bone swung
+into the stone and `catSolid` fought the route: 63 %), turning him at two
+thirds the rate (44-57 %). All three are deleted. What is kept:
+- **`catSqueeze`**: the walls are asked for on either flank at the hip, at
+  the origin and a stride ahead, and the model is scaled ACROSS the body to
+  the room there is (never under `CAT_SQ_MIN` 0.70), eased over a third of
+  a second. The fight's hitbox, reach and body disc read none of it.
+  Measured (`tools/catpen.js`): the drawn shoulder's mean penetration of the
+  nearest wall 0.54 m → 0.45, the squeeze averaging 0.905 while he moves.
+  **AND AN EASE FROM `undefined` IS NaN**: the first build eased
+  `u.catSq` from itself before it existed, the model's scale went NaN, he
+  vanished, and the metric read "no penetration" — a zero that has to be
+  tested against a wall before it is believed.
+- **a speed that gathers** (`u.catK` in `ucFollowPath`): a route no longer
+  sets him off at full pace on the frame it arrives. Neutral on the metric
+  (37-42 % against 38 %), 12/12 reached.
+- **A CLEAR LINE HE IS NOT GETTING DOWN IS NOT A CLEAR LINE.** `catSteer`'s
+  straight-line shortcut RETURNED before the grind accounting, so a creature
+  whose line to you passed `clear()` and whose body the solid sweep then
+  refused — the two ask the stone at different heights and widths — sat with
+  its head in a wall at `grind 0, path 0`, every net under it unreachable.
+  Measured: eight seconds parked 8.9 m from you. The grind is counted first,
+  and a line ground on for most of a second is put aside (`catNoLine`, 2 s)
+  so the route takes him round.
+- **and a stalk whose corner is the node under his feet is a corner
+  reached** (`catPeekSettle`): the spot picker could hand back where he
+  stood, the zero-length route ended before the hold began, and he parked at
+  11.7 m in `peek` with nothing counting.
+**Harness:** the pane's real loop runs between tool calls, and a chase
+creature kills the pinned player in the gap — the page reloaded and
+`__nav` vanished twice before rAF was stubbed at the top of the session.
+
+**DARKER, AND THE TORCHES SHINE THROUGH THE MIST.** The stone's own lift
+0.014 → 0.010 and the fog 0.048 → 0.054 (the owner's word, a third time:
+darker). What carries the place now is the AIR: every burning torch draws a
+SHAFT under it (`buildCatTorchFx`'s third batch, `cones` — a sprite a torch
+drawing a soft cone that opens downward and dies along its length, grained
+by a slow swirl on the torch's own phase, breathing on the same `aK` the lamp
+and the flame read, faded out as you walk into it and gone at the fog's
+reach); the mist sheets take a torch's warmth from a metre further (8.5);
+and **the hunter disturbs the air** — the last sixteen sheets (`CAT_WAKE_N`)
+are born round his body as he moves and drift off it, so his passage through
+the fog is a thing you see, and where he passes a torch the same warmth that
+lights every sheet lights these: what the torchlight reveals is a shape
+moving in lit mist before it is a face. Nothing while he is far, dead or not
+drawn.

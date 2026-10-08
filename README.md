@@ -658,6 +658,13 @@ The great window behind its throne is the owner's own stained-glass picture
 (`assets/throne-window.jpg`, set into a border band and a tympanum by
 `tools/throne_window.js` from `tools/throne_window_src.jpg`).
 
+This work is based on ["Dante Beast FPSC Pack"](https://sketchfab.com/3d-models/dante-beast-fpsc-pack-e7f36a2fdeab49999c9e65b12f38228d)
+by [DanteGuy](https://sketchfab.com/temptecn) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the beast chained by
+the neck to the marauder's throne (`assets/dante.glb`, packed by
+`tools/gltfpack.py … --tex 1024 --normal-tex 1024`), on its own eight clips.
+Its collar and chain are built in the game.
+
 The flail knight in Castle XIII's west court is the owner's "Crusader tank"
 (a flail and a heater shield, fourteen of its own animations), packed by
 `tools/crusader_pack.py` into `assets/crusader.glb`. **No licence came with the

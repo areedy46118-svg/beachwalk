@@ -912,3 +912,111 @@ glowing harder with each hit of the chain.
 0.88, `lungeStop` 1.90 and every swing's `stop` 0.15-0.2 m nearer (1.85-1.95),
 the kick scored on his leg (`limbs: [2]`, stop 1.30). Measured over a minute:
 36 hits, all within 0.23 m of the body, 39 damage a minute (unchanged).
+
+**THE DRINKERS HOLD THEIR BOTTLES, AND THERE IS NO AXE AT THE TABLE.** Two of
+the four came from farmer kinds that carry an axe (`farmer4`, `farmer18`), and
+`tavDrinkerKind` copied the kind whole — so a man sat drinking with the axe in
+the same fist. `tool: null` on the drinker kind. The drink pose had been solved
+BEFORE the bottle's grip was re-measured off the hand: with the bottle along the
+hand's own X the solved "lip on the lips" put the fist at the chin and the
+bottle pointing straight back behind his head (measured on the shipped DR2: lip
+0.50 m from the mouth, axis 0.74 away from the face). DR1/DR2/DR3 are
+re-solved with the bottle attached by the game's own grip (`tools/farmpose.js`,
+a bottle lathe on `J.handR`, coordinate descent on arm/forearm/wrist/neck/head
+against the mouth and a bottle axis 60-70 degrees up out of it): lip 0.000 m.
+
+**A FIST CLOSES TOWARD THE PALM, WHICH THE SHORTEN-THE-DISTANCE TEST CANNOT
+TELL ON A STRAIGHT FINGER.** `installLife` picked each finger's curl sign by
+whichever turn brought the tip nearer the wrist — degenerate on a finger that is
+nearly straight (both ways shorten it by the same cosine), and on the farmers it
+chose the wrong way on the right hand: measured, a +0.6 curl moved the
+fingertips AWAY from the palm, so every castle man fought with his fingers bent
+back over his knuckles and the drinkers held bottles in open hands. A kind may
+say where its palm is in the hand bone's frame (`palm: [0, 0, 1]` on
+`FARM_BASE`, measured for the bottle grip): each finger bone's axis is then
+built — perpendicular to the bone and to the palm, signed toward the palm — and
+`lifeApply` turns about `f.ax` instead of a bare local X.
+
+**THE STOREROOM OFF THE HALL IS LOCKED, AND THE CHEST IS THROUGH ITS BARS.**
+`buildTavStore`: the doorway in the north wall (room-local x -7.4, the wall's
+hall face at z 8.6) is MEASURED by ray — jambs 1.5 m apart, lintel at 2.5 — and
+a plank leaf with ledgers, iron bands, studs, a lock plate and a BARRED WINDOW
+at eye height is cut to it, flush with the hall face inside the wall's own
+thickness. It is an ordinary mesh, so it is in the wall index: walked at, you
+stop at z 8.33. "The door is locked." (bare) on a proxy across it; nothing
+opens it yet. In the room: a built table (lit, the chairs' timber as a map,
+because a baked basic material cannot take a lamp) with the wreck's own sea
+chest on it (`assets/chest.glb`, fetched again, the same lift `dressChest`
+gives it), shut and empty, a pooled warm lamp over it with `lpAlways`, and the
+relight's last torch slot (`TAV_TORCH_MAX - 1`, driven from `updateTavTorches`)
+so the stone round it takes the light.
+
+**AND EVERY WALL HAS A BACK.** SketchUp draws each face twice and the packer
+drops the back copy, so from inside the storeroom its own wall was not drawn
+and you looked straight out through the planks at the hall. The hall's
+materials are `DoubleSide` now (set in the loader with the relight); the
+render time did not move (2.48 → 2.37 ms).
+
+**A SHELF WHERE THE OWNER POINTED (`buildTavShelfAt`, `TAV_SHELF_AT`).** He
+stood on the ledge at room-local (-0.04, 3.67, 2.88), put the crosshair on
+the wall at (0.99, 4.76, 5.15) — 1.09 m over his feet — and sent the picture.
+The board's TOP is that point, the wall it hangs on is found by ray (it faces
+-x), and the storey is written with `tavCellTop`. Measured with the game's
+own movement: walk and jump from his spot, feet 3.67 → 4.78 on the board.
+The two shelves this file carried before were on other walls, placed by
+reasoning about steps; this one is placed by the picture, by his word.
+
+**THE STOREROOM HAS A KEY, THE SHELF HAS BRACKETS AND A BOTTLE, AND THE
+GRILLE HAS A JAR BEHIND IT.** Four things from one message of the owner's,
+and the measurement that mattered was about the DEV READOUT: **the P overlay's
+heights are over the FLAGS (`TAV_FLOOR`), not over the room's origin.** The
+first placement of the key went on a floor 7.5 m under the one he was
+standing on, and the "bars" of his second screenshot were looked for 7.5 m
+too low as well — a drinkers' table top was found there and taken for a
+grating, and a black box was built under a table before the frame was
+checked. Measure the room where the readout says, in the readout's frame.
+- **The storeroom key** (`storeKeyItem`, `storeKeyModel` — the key scan
+  dulled to old iron, with its own lift: the tavern is a baked room and a
+  lit material in it is black) lies at room-local (-3.28, 21.55) on the
+  mezzanine 6.27 m over the flags, where he pointed (`TAV_STORE_KEY_AT`,
+  `placeTavStoreKey`: the floor asked of the drawn room, his reading as the
+  fallback; the group placed with its proxy at once and filled when the scan
+  lands, in `updateTavStore`). The door is the pavilion gate's arrangement:
+  bare without the key, "Unlock the door" with it, `keyUsed`, the key eaten,
+  the bolt heard at 0.64 s and the leaf swinging 0.9 s after on a HINGE at the
+  left jamb (`openTavStore`, `TAV_STORE_OPEN` -1.72 rad into the room).
+  `tavStoreOpen` is on the save (`tavStore`) and a restore opens it in
+  silence. The leaf is in the wall index where it was drawn shut, so the index
+  is taken again once it has swung (`tavWallsDirty`). Inside, the walk stops a
+  metre past the threshold: that is the chest's TABLE, which fills the little
+  room — correct, not a wall.
+- **The brackets** are flat bar (32 x 8 mm): a wall plate with two screw
+  heads, an arm under the board, a strut from the plate's foot to the arm's
+  end with a scroll where they meet. The square post and diagonal they
+  replace were scaffolding.
+- **A bottle on the shelf** (`buildTavBottles`, after the tables: the shelf
+  is built before the bottles, so it goes in THEIR builder, since
+  `buildTavBottles` returns early when any bottle exists). It stands near the
+  board's front so a jump up onto the shelf is beside it while still in the
+  air, which is what `stompBreakables`' loose branch asks. Measured: a jump in
+  place on the shelf breaks it; a jump from the ledge that catches the board's
+  edge is beside it for a frame or two and breaks it most of the time.
+- **The jar behind the grille** (`TAV_GRILLE`, `buildTavGrilleJar`). He stood
+  on the bore's landing (7.48 over the flags) half a metre from a barred iron
+  screen — `TextureMaterial_1`, a cut-out in the plane x = -14.35, 8.0 to
+  10.75 over the flags, posts at z ±0.75 — with the gallery floor 2.3 m below
+  and beyond it. The bay he looked through is a NICHE: a BackSide box behind
+  the screen between its posts, unlit and unfogged, so the bars read against
+  black; a stone ledge at the screen's foot inside it; and a jar on the ledge
+  (`dropJar` with a pre-built jar at 0.72), 1.45 m from the eye. The crosshair
+  raycasts only what can be taken, so the bars are never in the way.
+**Harness:** `__bw.fallbackLook = true` is a SETTER with no getter (reading
+it back gives undefined), and `updateHover` reads `camera.matrixWorld` — call
+`camera.updateMatrixWorld(true)` after `lookAt` or every hover reads null.
+
+**The grille jar is sized by hand (2026-10-08)**: at 0.9 with `keepSize` it
+was 0.12 m tall and the owner called it small. The noticeable-boost would make
+it 3.2× (0.41 m, 0.28 across) and put its back through the black panel 15 cm
+behind the kerb's middle. `scale 2.4` (0.31 tall, 0.21 across) with
+`keepSize` and the hit proxy at 0.11 local (0.26 m world) is the beach size
+from a stride off and still clear of the panel.

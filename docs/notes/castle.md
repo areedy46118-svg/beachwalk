@@ -542,3 +542,101 @@ inherit it. Measured: body 0.3 m from where he stood, four pieces off.
 **THE MARAUDER, HARDER AGAIN:** hp 115 (80), poise 26, block 0.62 at 0.74 a
 block, stun/recoil 0.24, bleed resistance 1.6, knockdown 0.07 every 26 s,
 and a hotter rage. Tells untouched.
+
+**THE FLAIL IS A WEAPON NOW, NOT A PENDULUM (`crusaderChain`).** Three things:
+- between swings the rope is heavily damped (0.90 a step) so the ball comes to
+  hang off the haft in a second instead of orbiting him through the exchange;
+  and no link may move more than 0.45 m in a frame, or the rope snaps about;
+- the body is SOLID to the chain: every link is pushed out of a capsule round
+  him, so a swing let go behind his head no longer comes round through his
+  helmet and chest;
+- a blow goes where it is aimed. The rope is physics and the aim turns his
+  shoulder, which cannot steer a ball on a chain. Through the strike the ball
+  is GUIDED on a curve from where it was when the wind-up was let go, up over
+  his flail shoulder, down onto your chest on the contact frame, blended in
+  over the swing and never further from the haft than the chain is long; the
+  links are laid between with a little sag. After the contact the physics has
+  it back, so the follow-through is a real swing carrying on.
+- **and held in the gold it holds too**: the artifact freezes the mixer and
+  the body, and the rope is simulated outside the mixer, so the ball went on
+  swinging round a statue. `crusaderChain` returns while `st.immob > 0`.
+
+## The beast on the chain, and the throne room's two takes (2026-10-08)
+
+The owner: put DanteGuy's "Dante Beast FPSC Pack" on a chain round its neck in
+the throne room; the marauder cuts the chain and it charges; he watches and
+only fights if hit; when it dies he gets up slowly and charges.
+
+- **The file** (`assets/dante.glb`, gltfpack 1024): Biped rig, clips named
+  `Dante Beast|dante2_skeleton|Attack1` etc. — `dantePre` keeps the last part,
+  lower-cased: idle, walk, run, attack1 (2.7 s, contact f46/81 = 0.568, two
+  hands), attack2 (2.23 s, f33/67 = 0.49, right hand), rage, stun, death
+  (4.43 s, forward onto its face). Model faces -0.585 rad (`faceFix: 0.585`).
+- **`h` is NOT its height here.** Its origin is the PELVIS, and the scale
+  comes out as `h / (origin → top)`: at `h: 2.35` it stood 3.44 m. `h: 1.78`
+  gives 2.5 m. Measure the box after loading whenever an origin is not at
+  the feet.
+- **Placement**: `DANTE_SPOT` (-2.30, -1.30) is the hall floor (2.68 over
+  `THR_Y`) left of the carpet at the dais' foot; the dais top is 3.85, the
+  steps run z -1 → -5. The chain is bolted to an eye on the OUTER FACE OF
+  THE THRONE'S RIGHT ARMREST (`DANTE_RING`, y 0.90 over the dais) — a floor
+  ring anywhere he could not reach seated made the cut impossible.
+- **The collar**: the beast's neck is buried in its shoulders. A torus round
+  the neck bone at 0.19 m was entirely inside the mesh (render it red to
+  see). 0.30 m at 0.55 of the way neck → head shows as a ring each side of
+  the head; the chain hangs from the ring's lowest point (`danteCollarLow`),
+  not from inside the neck.
+- **Scratch-vector aliasing**: `stepThrChain` held the collar in `_chV` and
+  then reused `_chV` for every link's midpoint — the collar was put on the
+  last link. A position kept across a loop gets its own vector.
+- **The chain** is a Verlet rope (points a link apart, 10 iterations, floor
+  from `thrStandY`, pinned at the eye and the collar), links an
+  `InstancedMesh` with every other one turned 90°. Iron needs to be LIGHTER
+  than the steps (0x8a847a, emissive 0x2e2a24) or it is a black line on black.
+- **The cut is SOLVED**: the marauder's blades are separate meshes
+  (`Blade1_94` under `Hand1R_95`, tip 0.92 m past the hand, found as the
+  blade's farthest vertex). `tools/umbrasit.js`'s `__usWhere` plus a tip
+  target solved `uCut`'s top (tip 2.83 over his feet above the right
+  shoulder) and its contact (blade middle 0.82 m out at armrest height, tip
+  a third of a metre off the dais) — only chest, right arm, hand, clavicle
+  differ from `UMBRA_SIT`. Group frame: x his LEFT, y up, z his front.
+- **The takes** (`thrCut`, in `frozen()`): the camera is turned, never moved.
+  From 14 m down the hall a 26° lens shows nothing; `thrCutFov(target, h)`
+  picks the lens that makes h metres fill the frame (8–12° on him, ~20° on
+  the beast). `updateWorldSparks` lives in `update()`, which a take stops —
+  the take calls it, or the sparks at the snap hang in the air unseen.
+- **Phases** (`thrScene.phase`): 0 chained → 1 cut → 2 its fight → 3 dead →
+  4 rise → 5 his fight. `throneMayWake` refuses until 5; a blow on him wakes
+  him (his own provoke) and the beast's chain goes too; a blow on the
+  chained beast starts the cut. A restore with the beast dead is phase 3 and
+  the rise plays when you come up the hall.
+- **Leaving** through the lattice door now goes OUT TO THE LIGHTHOUSE
+  (`startThrone(-1, 'lh')` → `placeOutOfFort('back')`: the beach behind the
+  first castle, facing it).
+
+## The beast, second pass (2026-10-08)
+
+- **"He keeps clipping into the player"**: the beast is bent double — head and
+  fists a metre ahead of its pelvis-origin — so `body` 1.30 (the shove radius,
+  his chest), `lungeStop` 2.35, swing stops 2.25 / 2.45 and reaches 2.75 /
+  3.05. Measured after: closest 2.06 m, blows landing at 2.1–2.6 m.
+- **Sliding**: `gaitBySpeed` + `velGait` + `rag` naming his toes
+  (`Bip01_R_Toe0_094` / `Bip01_L_Toe0_079`) so `measureGaits` reads his own
+  strides — walk 1.39 m/s, run 2.86 m/s — and the body is held to them
+  (median mismatch 0.05 m/s). And **`kind.planted`**: his attack clips carry
+  no travel, so the startup walk-in, the gap-closing `lungeLead` and the
+  chained step-in all glided him (10.7 m/s in a smash after you stepped
+  back). A planted kind skips all three, caps its lunge (`lungeMax`), and
+  DROPS a swing whose target left reach early in the startup and runs after
+  you instead — after: ≤0.21 m/s while swinging.
+- **Harder / more aggressive**: 80 hp, poise 20, aggr 3.4, press 0.96, chains
+  of three, `reacts`, `smart`, a rage at half health (`rageClip: 'rage'`).
+  He does NOT circle — his only sideways clip is his walk.
+- **The collar** is fitted to the mesh, not the bones (`fitDanteCollar`): the
+  neck flesh sits 0.18 m off the neck→head line and there is no neck
+  narrower than the skull base; the section there (0.88 of the way) is an
+  ELLIPSE ~0.19 × 0.29 m. A tube bent along it, stored in the neck bone's
+  frame, follows every clip; the chain hangs from its lowest point.
+- **The rise waits for the fall**: the death clip is 4.43 s and starts ~0.4 s
+  after the blow; the take now needs the clip finished AND 1.3 s past its
+  length. `noTail` skips the warden death's tail thump four metres behind.

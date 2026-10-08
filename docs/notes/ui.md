@@ -660,3 +660,6 @@ back to the shop when I jump" was the dev "Teleport to shop" button keeping
 keyboard focus after the menu closed: every Space clicked it again. The
 keydown handler blurs a focused button/input on Space or Enter while no
 overlay that takes keys is up, and `closeMenu` blurs anything inside the menu.
+
+**AND A WEAPON DROPPED ONTO THE ONE IN YOUR HAND REPLACES IT** (`target ===
+equipped` in the pack's drop), wherever that slot is.
