@@ -485,3 +485,60 @@ at any timing (hit 0.78 at stop 1.45: 0 of 20; stop 1.25: 0 of 18; 1.05:
 Harness: `tools/samrun.js` (`__samRunBoot`, `__samRun` stills from beside
 him with `__samSolo`/`__samGain`, `__samSwing`, `__samClear`, `__samFlicks`,
 `__samRaw` the clip alone, `__samContact`).
+
+**THE SAMURAI'S POPS WERE FIVE BUGS, AND THE BIGGEST WAS IN `mutPlay`.**
+Measured hands-off with `tools/samsmooth.js` (`__samLayers`: every one-frame
+jump of a fist or the head relative to his hips, with how far each post-mixer
+layer had carried it — `mut` / `two` / `smooth` / `clear`, via the
+`window.__samDbg` hooks in `update()`): 85 jumps over 0.45 m in 6000 frames
+before, fists up to 1.07 m in a frame and the head 0.30. After: 5, the worst
+fist frame is the strike's own speed (99.9th percentile 0.34-0.39 m), the head
+0.22, and 33 hits / 41 damage a minute against 33 / 34 before (the overhead
+lands now). In the order they were found:
+
+- **The swing clock had velocity steps** (`kind.fluid` → `A.fluid`, a branch
+  in `mutClipTime`). The draw left the guard at 2-3x the clip's speed, the
+  strike hit 1.55x its average at contact, and the great-sword cuts then played
+  1.2 s of follow-through in 0.45 s (2.4-2.7x) and stopped dead. Fluid: the draw
+  is a smoothstep, the strike `pow(sw, 1.35)` out of the hold, and the
+  follow-through LEAVES the contact at the strike's speed and decelerates to
+  rest (cubic ease-out), playing as much of the clip as that carries.
+- **`fadeOut()` restarts at weight 1** — see `creatures.md`. Seven locomotion
+  clips at 0.35 each under a swing at 0.65.
+- **A three-way crossfade flips a quaternion.** Slerp-accumulating idle + new
+  swing + fading last swing turned his upper arm 157 degrees in ONE frame. His
+  `fade` is 0.001 now: the mixer cuts, and `samSmoothPose` (0.28 s, every bone
+  watched, arms at 1.1 rad) blends every switch from the pose actually drawn,
+  carrying last frame's motion on one frame (capped 0.12 rad a bone — a chain
+  compounds it) so a switch does not freeze him for a frame. **The cut must be
+  inside one frame**: at 0.06 s the rest of the switch was drawn raw.
+- **The smoother's offset outlived its frame.** `PropertyMixer.apply` skips a
+  bone whose blended value has not changed since its last write, so a bone the
+  clip did not move (a scrubbed swing; a channel with no track — his side-steps
+  key only the hips' position) started the next frame holding what was DRAWN,
+  and the offset was added again: a left hand went six metres. The mixer is
+  wrapped (outermost, on the smoother's first frame, so the life layer's own
+  restore still runs inside it) to put every bone back on the pre-smoother pose
+  first. **Forcing the mixer to rewrite EVERY bone was tried and is wrong**: the
+  layers under the smoother (the aim, the grip) rely on that carry-over, and
+  his great-sword cut went from 10 of 10 landing to 0 of 10.
+- **The fist push flipped him through himself.** `samClear` pushed a fist out
+  of his FRONT, so one entering from behind (the smoother carrying it to the
+  run's arm swing) crossed his body in a frame. With `mem` it goes out the side
+  it came in, following the fist round a little a frame. The push runs before
+  AND after the smoother on poses that disagree, so each pass has its own
+  memory (`memR0`/`memL0` in `samTwoHand`, `memR`/`memL` in `samKeepClear`) —
+  one shared memory was pulled both ways every frame. And `samKeepClear`
+  re-grips the left hand EVERY frame it is gripping; "only when the right one
+  moved" toggled it 0.21 → 0.54 m.
+
+Also: blows are tested on the pose DRAWN last frame (`drawnPos` /
+`recordDrawn`, in his own frame so a lunge does not leave it behind), because
+the grip, the smoother and the push all move his arms after the test. And the
+overhead (`sDown`) fell 0.42 m SHORT from its 1.36 m stop on every throw —
+0 of 14, in the shipped build too (`__samOnly('sDown', N, stop)` reports
+fwd / side / up of the nearest approach). At 1.05 it lands 13 of 13. gCutD's
+stop was tried at 1.15 and put back: at that range the aim fought the cut and
+the fists flicked out and back on the contact frame, 10.8 a minute.
+**Measure every change to his limbs against hits as well as smoothness** — the
+first clean version was smooth and landed half as often.

@@ -249,3 +249,20 @@ which size a hidden pane's zero canvas) are the throne room's kit.
 `tools/audiowatch.js`: `__awPatch()` before the game makes sound, `__awTap()`
 after (null sink, analyser on `masterGain`, NaN/throw catchers, node counts),
 `__awReport()`. Import it ONCE per load.
+
+**A `javascript_tool` CALL THAT TIMES OUT KEEPS RUNNING IN THE PAGE**
+(2026-10-09). Five crowd tests in one call timed out at 45 s, finished in the
+background, and the re-run measured corpses ("thrown 0.0 m"). Split long work
+across calls, and after a timeout reload before trusting anything. The pane's
+console buffer also keeps errors from a PREVIOUS load (a `SyntaxError` from a
+broken edit stayed listed after the fix) — check `window.__bw` exists rather
+than trusting the error list. A new module-level `const` sharing a name with
+one declared mid-line elsewhere (`const _a = …, _spQ = …`) kills the page:
+grep `[ ,]name =`, not just `^const name`.
+
+**THE PANE CAN LOSE WEBGL FOR GOOD** (2026-10-09): after ~40 reloads in an
+hour the preview browser answered "Web page caused context loss and was
+blocked", then disabled the GPU outright (`GL_VENDOR = Disabled`) — a new tab,
+`127.0.0.1` instead of `localhost`, and closing/reopening the pane did not
+bring it back. Batch checks into fewer reloads; prefer re-running a harness on
+the live page over reloading for it.

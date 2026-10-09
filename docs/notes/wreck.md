@@ -750,3 +750,15 @@ creature's `visible`, the horde is hidden until its take.
 long knobbed pectoral fin, a low dorsal hump and edge-on flukes, in a bronze
 gradient with a dark drop shadow. Shuriken do 1 (was 2).
 
+
+**THE HELM'S STARS TWINKLE; THEY DO NOT BLINK (`helmStarTex`, `starPuzzle.update`).**
+They were two spheres each (a solid disc and a pale one) switched bright and
+dark on a count — "flashing a solid color". Each is two additive sprites now
+(`core`: a hot point with diffraction spikes; `halo`: a cold bloom — the old
+handle names, so the save and harness still find them), driven by a sum of four
+unrelated sines and a hash flicker off its own seed (brightness, spike length, a
+cold-blue-to-white colour, a few degrees of spike wobble). The star being asked
+for twinkles harder and FLARES (`st.flare`) on the blink's old irregular count;
+the others shimmer faintly. Two things measured: dips deeper than about half
+read as blinking again (`sc` floored at 0.55), and at the retro scale thin
+half-alpha spikes become a dot, so they are drawn bold.

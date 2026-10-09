@@ -663,3 +663,22 @@ overlay that takes keys is up, and `closeMenu` blurs anything inside the menu.
 
 **AND A WEAPON DROPPED ONTO THE ONE IN YOUR HAND REPLACES IT** (`target ===
 equipped` in the pack's drop), wherever that slot is.
+
+**THE CASTLE'S TRADER SELLS THE DOUBLE.** `shotgun` (10 jars, both barrels and
+six shells) and `shells` (2 jars, six, four boxes) are castle-only rows
+(`shopRows` filter, `shopAt !== 2` refusals); a row's `needsLabel` overrides the
+"Needs the .44" chip.
+
+
+**AND TWO LOOSE ONES FOR FOUR** (`shells2`, 2026-10-09, the owner's): a
+castle-only row after the box of six — 4 jars, +2 shells, five in stock
+(`TRADER_STOCK.shells2`, saved with the rest of the stock; an older save keeps
+the default). Icon `drawShellsIcon(2)` / `makeShellSix(2)`.
+
+**DEV MODE TOPS THE JARS UP TO 100** (`DEV_JARS`, in `devGrantWeapons`, 2026-10-09, the owner's word): every time dev mode comes on (the menu box, or the reload after a dev-mode death/restart), never cut down. Set directly, not through `gainJar`, which calls `settleRestore()` and could finish a restore early.
+
+**FOUR SHOTS, THEN TWO FOR FIVE** (2026-10-09, the owner's word): the double
+comes with both barrels loaded and `sgSpare = 2`; the box of six is gone and
+the only shells are `shells2` — 2 for 5 jars, five pairs. A restore deletes a
+saved `TRADER_STOCK.shells`, and `traderBuy` returns on any key without a
+price (an unknown key used to spend `undefined` jars and made the count NaN).

@@ -30,6 +30,9 @@ Then open <http://localhost:4173> and click to begin. Any static server works
 | Left-click (with the .44) | Fire — one round per press, six to a cylinder |
 | Hold right-click (with the .44) | Aim down the sights: the lens narrows, the sway falls away and the spread closes to almost nothing |
 | `R` | Reload the .44 off a speedloader (a dry trigger does it for you if you have one) |
+| Left-click (with the shotgun) | Fire — the right barrel, then the left; nine pellets each |
+| Hold right-click (with the shotgun) | Shoulder it: look straight down the rib with the bead on the crosshair; a tighter (never tight) pattern |
+| `R` (with the shotgun) | Break it open, flick the spent hulls out and load two |
 | `G` | Drop the held object gently |
 | `1`–`6` / click a slot | Hold an inventory item — everything can be carried |
 | Scroll wheel | Step through the hotbar, equipping as you go |
@@ -1047,6 +1050,26 @@ Shot"), trimmed of half a second of leading silence, faded and brought down
 redistributable. The cylinder swinging out, the loader seating and the crane
 shutting are synthesised.
 
+
+**Double-Barrel Shotgun** — the last thing the castle's trader sells, for ten
+blood jars: four shots — both barrels loaded and two shells in the pack — and
+after that two loose shells for five jars (five pairs in stock). A side-by-side
+twelve-bore BUILT in code (`models/shotgun.js`): blued barrels with real bores,
+a matted rib with the maker's name in gold, a mid-bead and a brass front bead;
+a coin-finish boxlock with scroll engraving inside gold-inlaid borders, domed
+fences, gold cocking indicators, a checkered top lever, a top tang with the
+safety and SAFE inlaid behind it, and, broken open, firing-pin bushings, the
+water table and the cocking dogs; a splinter fore-end with a horn tip and its
+latch; a walnut stock with a real shotgun's drop, crowned sides, checkering on
+the wrist, a gold oval, a steel grip cap and a ribbed pad. Nine pellets a
+barrel; up close a charge takes a body apart, further out it wounds and shoves.
+It is the crowd gun: everything in the open inside a cone off the barrels
+(about 14° either side from the hip, out to 6.5 m) takes its share of the
+charge, so three or four castle citizens coming at you shoulder to shoulder go
+down to one barrel, thrown four to six metres and lifted off their feet, in
+pieces. The reload breaks it on its hinge, throws the spent hulls over your
+shoulder and feeds two fresh ones. Nothing in it is a downloaded asset; its
+crack is the owner's .44 recording, pitched down, under a synthesised blast.
 
 **Skull Key** — what lies between the candles in the catacombs' lower vault,
 and the only thing that opens the barred door out of them.

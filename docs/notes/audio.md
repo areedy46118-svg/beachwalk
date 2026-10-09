@@ -547,3 +547,14 @@ found — it was load, not poison. **When adding "everyone reacts", filter by
 awake + near + in this room first.** The watcher must be imported once per
 load (a second import used to replace its state object, and the patched
 prototypes kept counting into the old one).
+
+**A NOISE BUFFER IS MADE ONCE (2026-10-09).** `sfxMutSever` wrote 0.34 s of
+shaped noise per call (2.3 ms), `sfxSgGore` 0.5 s, `sfxSgBlast` a body, a
+crack, five slaps and a 1.8 s roll, `sgThump` one per call — and a charge that
+took four farmers apart severed ~20 limbs on one frame: ~100 ms of the shot's
+frame went on `Math.random()` into buffers. `cachedNoise(key, s, env,
+variants, raw)` builds a few variants once and picks between them; `NOISE` is
+the one table of lengths and shapes that the sounds AND the warm-up read
+(`noise(key)`, `thumpNoise(len)`); `sgWarmAudio()` builds them one per 16 ms
+task from the draw. `sfxMutSever` plays at most three per 50 ms and
+`sfxSgGore` one per shot. A 4-kill shot: 97–120 ms → ~30 ms.

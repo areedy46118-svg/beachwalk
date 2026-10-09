@@ -640,3 +640,10 @@ only fights if hit; when it dies he gets up slowly and charges.
 - **The rise waits for the fall**: the death clip is 4.43 s and starts ~0.4 s
   after the blow; the take now needs the clip finished AND 1.3 s past its
   length. `noTail` skips the warden death's tail thump four metres behind.
+
+**THE FARMERS AGAINST THE DOUBLE (2026-10-09).** The owner's damping on them
+(`ragK` 1.15, `ragVmax` 6.5, `ragTravel` 5, `ragLift` 0.45, `pieceK` 0.45 —
+"they fly too far, it looks like they disappear") stays for blades; a SHOTGUN
+kill overrides it per body (creatures.md, `rBL`): thrown 3.6–6.2 m, hips
+lifted 0.4–1.4 m, ~0.6–0.9 s in the air, still inside the courtyard's walls.
+The crowd numbers are in weapons.md ("THE CROWD").

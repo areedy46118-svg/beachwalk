@@ -15,6 +15,7 @@ import { makeKatana, KAT_TIP, KAT_POMMEL } from './models/katana.js';
 import { fitSparePeg, sparePegCopy, PEG_TIP } from './models/spare-peg.js';
 import { makeUndercroft } from './models/undercroft.js';
 import { makeFishingRod, makeFishingRodIcon, ROD_LEN, ROD_GRIP } from './models/fishing-rod.js';
+import { makeShotgun, makeShell, makeShotgunIcon, SG_OPEN, SG_HINGE_X, SG_HINGE_Y, SG_BREECH_X, SG_BORE_Y, SG_BORE_Z, SHELL_R } from './models/shotgun.js';
 
 /* ------------------------------------------------------------------ *
  *  Beach Walk — an endless, eerie shoreline at night.
@@ -7987,12 +7988,22 @@ S_DEV.addEventListener('change', () => {
  * door's own `inventory.includes` all behave as if you had picked it up —
  * and `addToInventory` refuses a duplicate by identity, so finding it
  * afterwards cannot give you two. */
+const DEV_JARS = 100;                 // what dev mode puts in the corner
 function devGrantWeapons() {
   for (const it of [shovelItem, militaryItem, katanaItem, bloodItem, pegItem, skullKeyItem]) {
     if (!it || inventory.includes(it)) continue;
     addToInventory(it);
   }
   if (!equipped && inventory.includes(shovelItem)) toggleEquip(shovelItem);
+  /* AND A HUNDRED JARS TO SPEND, the owner's word: the shops are to be tried,
+   * not saved up for. Topped up to the hundred, never cut down to it. Not
+   * through `gainJar`, which settles a restore this can run in the middle of. */
+  if (bloodJars < DEV_JARS) {
+    bloodJars = DEV_JARS; jarItem.count = bloodJars;
+    bloodSeen = true; bloodPulse = 1;
+    hudJar.userData.setFill(0.86);
+    updateBloodReadout();
+  }
   /* NO RINGS AND NO ARTIFACT. They used to be handed over too, and every one
    * of them is something the world GIVES you — the knight's ring, the
    * wedding ring, the gem ring, the whale's artifact — so a dev mode that
@@ -10122,6 +10133,7 @@ function toggleEquip(item) {
     }
   }
   digT = 0;
+  if (equipped && equipped.shotgun) sgDrawStart();   // the double is RAISED into the frame (`sgPose`)
   renderHotbar();
   if (invOpen) renderPack();          // a shut pack is rebuilt when it opens; every notch of the wheel rebuilt it for nothing
 }
@@ -13528,6 +13540,7 @@ const bladeRate = (p, P) => {
 };
 let vmLagX = 0, vmLagY = 0, vmPrevYaw = 0, vmPrevPitch = 0;
 let vmSpringY = 0, vmSpringV = 0;
+let vmNudgeP = 0, vmNudgeY = 0;   // a gun's own turn of the look this frame, which the follow-through must not trail (`gunNudge`)
 const _vmEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 function vmImpulse(v) { vmSpringV += v; }          // landings, jumps, impacts
 
@@ -13857,6 +13870,12 @@ function updateViewmodel(dt) {
   if (dYaw > Math.PI) dYaw -= Math.PI * 2;
   if (dYaw < -Math.PI) dYaw += Math.PI * 2;
   vmPrevYaw = _vmEuler.y; vmPrevPitch = _vmEuler.x;
+  /* THE GUN TURNED THE LOOK; THE LOOK DID NOT TURN THE GUN. The shotgun's
+   * kick throws the view up ten degrees, and read as a turn of the head the
+   * follow-through threw the gun another fourteen IN ONE FRAME on top of its
+   * own kick, and then let it hang — measured, the whole recoil was that one
+   * frame. A nudge made with `quiet` is taken back out here. */
+  dPitch -= vmNudgeP; dYaw -= vmNudgeY; vmNudgeP = 0; vmNudgeY = 0;
   if (frozen()) { vmLagX = vmLagY = 0; }           // don't trail scripted camera moves
   else { vmLagY += dYaw * 1.15; vmLagX += dPitch * 1.15; }
   const settle = Math.min(1, 11 * dt);
@@ -14087,7 +14106,7 @@ function updateViewmodel(dt) {
      * wind-up, no strike, no recovery. What it has is a hold, a set of
      * sights to come to and a kick, and all three are the same six numbers
      * every tool in here is posed with. */
-    magPose(_pose);
+    if (equipped.shotgun) sgPose(_pose); else magPose(_pose);
   } else if (equipped && equipped.rapier) {
     pegGuardPose(_pose);                 // en garde, and breathing
   } else {
@@ -21448,6 +21467,7 @@ let splashTimer = 0, rippleTimer = 0;
 // ------------------------------------------------------------------
 let trauma = 0;                     // 0..1, decays; shake is trauma squared
 let hitstop = 0;                    // seconds of near-frozen time after a hit
+let hitstopFrame = false;           // this frame's dt was scaled by it (true on the frame it drains to zero, too)
 let landDip = 0;                    // camera sink on landing, eased back out
 let coyote = 0, jumpBuf = 0;        // late-jump grace / early-press memory
 const COYOTE_TIME = 0.12, JUMP_BUFFER = 0.14;
@@ -22971,21 +22991,71 @@ const HELM_STARS = [
 const HELM_TOL = 0.20;             // how near the cap has to be, in radians
 const HELM_SEQ = [0, 2, 1];        // the order they light in
 const helmStar = { g: null, core: null, halo: null, lit: 0, solved: false, stars: [], step: 0 };
+/* A STAR IS A POINT THAT TWINKLES, NOT A BALL THAT BLINKS. They were two
+ * spheres — a solid disc and a pale one round it — switched between bright
+ * and dark on a count, which from the helm read as three lamps flashing a
+ * flat colour. What a star actually is at night is a hot POINT with a little
+ * bloom round it and the eye's own diffraction spikes off it, and what makes
+ * it read as one is SCINTILLATION: the air moving in front of it, so its
+ * brightness, its spikes and even its colour shiver several times a second on
+ * no count you can follow. So each one is two sprites (the bloom, and the
+ * point with its spikes) driven by a sum of fast, unrelated wobbles off its
+ * own seed, and the one being asked for is not the one that blinks — it is
+ * the one that is alive: it twinkles hard and, on an irregular count, FLARES,
+ * the spikes running out long and the colour going white. */
+const helmStarTex = (() => {
+  const S = 256, m = S / 2;
+  const c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  const spike = (ang, len, w, a) => {
+    g.save(); g.translate(m, m); g.rotate(ang);
+    for (const sg of [-1, 1]) {
+      const lg = g.createLinearGradient(0, 0, sg * len, 0);
+      lg.addColorStop(0, `rgba(244,248,255,${a})`); lg.addColorStop(0.12, `rgba(220,232,255,${a * 0.55})`);
+      lg.addColorStop(0.45, `rgba(190,210,255,${a * 0.16})`); lg.addColorStop(1, 'rgba(170,195,255,0)');
+      g.strokeStyle = lg; g.lineWidth = w; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(0, 0); g.lineTo(sg * len, 0); g.stroke();
+    }
+    g.restore();
+  };
+  // four long spikes, thin and tapering to nothing, and four short ones between
+  // (bold enough to survive the retro downscale from across the water: at 3 px and half alpha they read as a dot)
+  for (let i = 0; i < 2; i++) { spike(i * Math.PI / 2, m * 0.98, 6.0, 0.80); spike(i * Math.PI / 2, m * 0.80, 2.6, 1.0); }
+  for (let i = 0; i < 2; i++) spike(Math.PI / 4 + i * Math.PI / 2, m * 0.42, 3.0, 0.55);
+  const core = g.createRadialGradient(m, m, 0, m, m, S * 0.09);
+  core.addColorStop(0, 'rgba(255,255,255,1)'); core.addColorStop(0.35, 'rgba(246,250,255,0.92)');
+  core.addColorStop(0.7, 'rgba(214,228,255,0.35)'); core.addColorStop(1, 'rgba(190,210,255,0)');
+  g.fillStyle = core; g.fillRect(0, 0, S, S);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+})();
+const helmBloomTex = (() => {
+  const S = 128, m = S / 2;
+  const c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  const b = g.createRadialGradient(m, m, 0, m, m, m);
+  b.addColorStop(0, 'rgba(225,236,255,0.85)'); b.addColorStop(0.18, 'rgba(190,212,255,0.32)');
+  b.addColorStop(0.5, 'rgba(160,190,255,0.08)'); b.addColorStop(1, 'rgba(140,175,255,0)');
+  g.fillStyle = b; g.fillRect(0, 0, S, S);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+})();
 {
   const wx = SHIP_X + SN.BR_X0 + 1.30;         // the wheel
   const eye = SHIP_Y_DECK + SN.BR_STEP + 1.72; // your eye at the helm, measured
   const D = 190;                                // out over the sea
-  for (const S0 of HELM_STARS) {
+  HELM_STARS.forEach((S0, n) => {
     const g = new THREE.Group();
     g.position.set(wx - D, eye + S0.dy, SHIP_Z + S0.dz);
-    const core = new THREE.Mesh(new THREE.SphereGeometry(S0.r, 8, 6),
-      new THREE.MeshBasicMaterial({ color: 0xbfd0f4, fog: false, transparent: true, opacity: 0.9 }));
-    const halo = new THREE.Mesh(new THREE.SphereGeometry(S0.r * 3.1, 8, 6),
-      new THREE.MeshBasicMaterial({ color: 0x9fb2d8, fog: false, transparent: true, opacity: 0.12, depthWrite: false }));
-    g.add(core, halo);
+    const sm = (map) => new THREE.SpriteMaterial({ map, color: 0xffffff, fog: false, transparent: true, opacity: 0.9,
+      depthWrite: false, blending: THREE.AdditiveBlending });
+    // `core` is the point and its spikes, `halo` the bloom: the old handles, so the save and the harness still name them
+    const core = new THREE.Sprite(sm(helmStarTex)), halo = new THREE.Sprite(sm(helmBloomTex));
+    core.scale.setScalar(S0.r * 9.0); halo.scale.setScalar(S0.r * 7.0);
+    core.raycast = halo.raycast = () => {};
+    core.renderOrder = 2; halo.renderOrder = 1;
+    g.add(halo, core);
     scene.add(g);
-    helmStar.stars.push({ theta: S0.theta, g, core, halo, lit: 0 });
-  }
+    helmStar.stars.push({ theta: S0.theta, g, core, halo, lit: 0, r: S0.r, seed: 1.7 + n * 3.31, flare: 0, flareK: -1, spin: 0 });
+  });
   // the old single-star handles still name something, so the save and the
   // harness keep working
   helmStar.g = helmStar.stars[0].g;
@@ -23025,9 +23095,10 @@ const starPuzzle = {
      * you and it. A star that is not the one being asked for sits at the
      * brightness of any other star in this sky, so you can see there are
      * three of them without being told which one matters. */
-    const k = Math.floor(now / 1.35), ph = now / 1.35 - k;
-    const off = 0.22 + bwHashJS(k * 7.1) * 0.18;
-    const on = ph > off;
+    /* (That was a blink, and it read as a lamp flashing. What follows is a
+     * TWINKLE: the lit star is never put out, it shivers — and the beat the
+     * blink used to land on is now a FLARE, on the same irregular count, so the
+     * star you are meant to follow is still the one doing something.) */
     const near = want !== null && Math.abs(this.aimT - want) < HELM_TOL;
     /* AND ONCE SHE IS SOLVED THEY GO. They burn together for a beat — that
      * is what says the thing is done — and then fade out of the sky for good:
@@ -23035,15 +23106,41 @@ const starPuzzle = {
      * puzzle that never stopped asking. */
     if (helmStar.solved) helmStar.solvedT = (helmStar.solvedT || 0) + dt;
     for (const st of helmStar.stars) {
-      let target;
-      if (helmStar.solved) target = helmStar.solvedT < 1.6 ? 0.85 : 0;
-      else if (!this.active) target = this.onStar(st) ? (on ? 0.80 : 0.10) : 0.20;
-      else if (this.onStar(st)) target = on ? (near ? 1 : 0.85) : (near ? 0.55 : 0.06);
-      else target = 0.14;
-      st.lit += (target - st.lit) * Math.min(1, dt * (target > st.lit ? 18 : 9));
-      st.core.material.opacity = 0.06 + st.lit * 0.94;
-      st.halo.material.opacity = 0.01 + st.lit * 0.22;
-      st.g.scale.setScalar(0.75 + st.lit * 0.55);
+      const asked = !helmStar.solved && this.onStar(st);
+      // how alive it is: the level it sits at, and how hard it twinkles round that level
+      let target, tw;
+      // (shallow: dipped to a third of itself it read as a lamp blinking again — a star shivers, it is never put out)
+      if (helmStar.solved) { target = helmStar.solvedT < 1.6 ? 0.85 : 0; tw = 0.25; }
+      else if (asked) { target = this.active && near ? 1.0 : 0.78; tw = this.active && near ? 0.30 : 0.55; }
+      else { target = 0.24; tw = 0.40; }
+      st.lit += (target - st.lit) * Math.min(1, dt * (target > st.lit ? 6 : 4));
+      /* SCINTILLATION: four wobbles at unrelated rates (none of them a period
+       * you could count), and a sharper hash-driven flicker under them. */
+      const s = st.seed, tt = now;
+      const wob = Math.sin(tt * 7.3 + s) * 0.33 + Math.sin(tt * 11.9 + s * 2.1) * 0.24 + Math.sin(tt * 4.1 + s * 0.7) * 0.22
+        + Math.sin(tt * 17.7 + s * 3.3) * 0.13 + (bwHashJS(Math.floor(tt * 14) + s * 91) - 0.5) * 0.36;
+      /* THE FLARE, on the old blink's irregular count: only the star being
+       * asked for, a sharp rise and a slower fall, the spikes running long. */
+      if (asked) {
+        const k = Math.floor((tt + s) / 1.35);
+        if (k !== st.flareK) { st.flareK = k; if (bwHashJS(k * 7.1 + s) > 0.18) st.flare = 1; }
+      }
+      st.flare = Math.max(0, st.flare - dt * 2.6);
+      const fl = st.flare * st.flare * (3 - 2 * st.flare);
+      const sc = Math.max(0.55, 1 + wob * tw);               // the shiver itself, round 1
+      const b = st.lit * sc * (1 + fl * 0.9);
+      st.core.material.opacity = Math.min(1, 0.04 + b);
+      st.halo.material.opacity = Math.min(0.9, 0.02 + st.lit * 0.30 * (0.7 + 0.3 * sc) + fl * 0.35);
+      // the spikes stretch and shrink with the twinkle and run out long on a flare; the point barely moves
+      // (big enough that the spikes survive the retro downscale, which reduces a small sprite to a dot)
+      st.core.scale.setScalar(st.r * (9.5 + 4.0 * (sc - 1) * st.lit + 9.0 * fl) * (0.75 + st.lit * 0.45));
+      st.halo.scale.setScalar(st.r * (5.5 + 1.6 * st.lit + 3.0 * fl));
+      // and the eye's spikes wander a few degrees, and the colour runs cold-blue to white with the air
+      st.spin += dt * (0.05 + wob * 0.10);
+      st.core.material.rotation = Math.sin(st.spin) * 0.10;
+      const wh = THREE.MathUtils.clamp(0.55 + wob * 0.35 + fl * 0.6, 0, 1);
+      st.core.material.color.setRGB(0.80 + 0.20 * wh, 0.86 + 0.14 * wh, 1.0);
+      st.g.scale.setScalar(1);
       st.g.visible = !(helmStar.solved && helmStar.solvedT > 1.6 && st.lit < 0.01);
     }
     helmStar.lit = helmStar.stars[0].lit;
@@ -24080,14 +24177,7 @@ const BILLY_SCRIPT = {
    * on the hook — so the fish says so, and "the captain, of course" points you
    * at both. */
   heading: {
-    text: 'We were told to follow the stars.',
-    choices: [
-      { label: 'Who said that?', to: 'who' },
-      { label: 'Just looking around', to: 'looking' },
-    ],
-  },
-  who: {
-    text: 'The captain, of course.',
+    text: 'If you asked the captain he would say "follow the stars." I would always ask "which one?" Asshole.',
     choices: [
       { label: 'Ask about the head on the hook', to: 'head' },
       { label: 'Just looking around', to: 'looking' },
@@ -27334,11 +27424,27 @@ function mutPlay(u, name, loop) {
   if (!a || u.cur === a) return a;
   // a kind may ask for a longer crossfade: two men in a bar are not a crab
   const fade = u.kind.fade || 0.14;
-  for (const k in u.clips) if (u.clips[k] !== a) u.clips[k].fadeOut(fade);
-  a.reset();
+  /* EVERY FADE STARTS FROM THE WEIGHT THE ACTION HAS NOW. three's `fadeOut()`
+   * schedules 1 -> 0 whatever the action is at, so a clip change made while
+   * earlier fades were still running RESURRECTED every one of them at full
+   * weight — measured on the samurai, seven locomotion clips at 0.35 each
+   * under a swing at 0.65, and since the mixer averages by weight the swing
+   * was a fifth of his pose until they died and then all of it in the last
+   * few frames: a fist jumping a metre. Actions not in the mixer are left
+   * alone; a loop chosen again while it is still fading out picks up where it
+   * is rather than restarting from frame 0 at weight 0. */
+  for (const k in u.clips) {
+    const b = u.clips[k];
+    if (b === a || !b.isScheduled()) continue;
+    const w = b.getEffectiveWeight();
+    if (w > 0.001) b._scheduleFading(fade, w, 0); else b.stop();
+  }
+  const wa = a.isScheduled() ? a.getEffectiveWeight() : 0;
+  if (!loop || wa <= 0.001) a.reset(); else { a.stopFading(); a.enabled = true; a.paused = false; }
   a.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
   a.clampWhenFinished = !loop;
-  a.fadeIn(fade).play();
+  a._scheduleFading(fade, loop ? wa : 0, 1);
+  a.play();
   u.cur = a;
   return a;
 }
@@ -27391,6 +27497,34 @@ function mutClipTime(t, dur, A) {
    * the clip's own speed) in the LAST part of the startup, so it still lands
    * on the frame the damage does. The recovery plays at no less than real
    * speed and holds its last frame. */
+  if (A.real && A.fluid) {
+    /* A FLUID SWING HAS NO VELOCITY STEP ANYWHERE IN IT. The eased curve
+     * below leaves the guard at two to three times the clip's own speed, hits
+     * the contact at 1.55x the stroke's average and then drops straight to
+     * the recovery's constant rate — which on the great-sword clips is 2.4-2.7x,
+     * a second and a quarter of follow-through squeezed into under half a
+     * second, ending in a dead stop. Measured on the samurai: fists covering
+     * 0.5-0.6 m in a frame in the follow-through, and the draw a whip off the
+     * guard. Here the draw is a smoothstep (still at both ends: off the guard,
+     * into the held cock), the strike accelerates out of the hold into the
+     * contact, and the follow-through LEAVES the contact at the strike's own
+     * speed and decelerates to rest (a cubic ease-out) — it plays as much of
+     * the clip's follow-through as that speed carries it, and the crossfade
+     * takes him home from there. The contact still lands on `A.wind`. */
+    const cock = hit * (A.cock === undefined ? 0.45 : A.cock);
+    const swing = (hit - cock) / (A.clipRate || 1);
+    const p = 1.35;
+    if (t < A.wind) {
+      const creep = Math.max(0.001, A.wind - swing);
+      if (t < creep) { const x = t / creep; return cock * x * x * (3 - 2 * x); }
+      const sw = Math.min(1, (t - creep) / Math.max(1e-3, swing));
+      return cock + (hit - cock) * Math.pow(sw, p);
+    }
+    const rest = dur - hit, v0 = p * (hit - cock) / Math.max(1e-3, swing);
+    const T = Math.max(1e-3, Math.min(A.strike + A.recover, 3 * rest / Math.max(1e-3, v0)));
+    const x = Math.min(1, (t - A.wind) / T);
+    return hit + (v0 * T / 3) * (1 - (1 - x) * (1 - x) * (1 - x));
+  }
   if (A.real) {
     const cock = hit * (A.cock === undefined ? 0.45 : A.cock);
     const swing = (hit - cock) / (A.clipRate || 1);
@@ -28261,6 +28395,7 @@ function makeMutant(x, z, kindName, y = 0) {
       reach: A.reach * kind.reachK,
       lunge: A.lunge * kind.reachK * (A.hold || A.minDist ? 1 : (kind.lungeK ?? 1)),
       chain: (A.chain && kind.use[A.chain]) ? A.chain : null,
+      fluid: !!kind.fluid,
     });
   }
   /* THE LONGEST SWING IT OWNS. `near` used to be measured against whatever
@@ -29837,6 +29972,32 @@ function blowWalled(u, foe) {
   for (const [x, z] of from) for (const y of [foe.y - 0.45, foe.y - 0.95]) if (catLegBlocked(x, z, foe.x, foe.z, y)) return true;
   return false;
 }
+/* A BLOW IS TESTED ON THE POSE THAT WAS DRAWN. The test runs inside the
+ * creature's update, and on the samurai three more layers move his arms
+ * after it — the two-handed grip, the smoother, the clearance push — so the
+ * pose it asked about was one nobody ever saw. That only worked while the
+ * mixer left bones unwritten and last frame's drawn arms leaked into this
+ * frame's test; with every bone written fresh it measured his great-sword cut
+ * landing 2 times in 9 against 10 in 10 before. `u.drawn` is the drawn limb
+ * chain, recorded in his own frame at the end of the frame before (so a
+ * lunge does not leave it behind), and anything without one asks the bone. */
+function drawnPos(u, bone, out) {
+  const p = u.drawn && u.drawn.get(bone);
+  if (!p) return bone.getWorldPosition(out);
+  u.g.updateWorldMatrix(true, false);
+  return out.copy(p).applyMatrix4(u.g.matrixWorld);
+}
+const _drInv = new THREE.Matrix4();
+function recordDrawn(u) {
+  if (!u.drawn) u.drawn = new Map();
+  u.g.updateWorldMatrix(true, false);
+  _drInv.copy(u.g.matrixWorld).invert();
+  for (const L of mutLimbs(u)) for (const bn of [L.arm, L.fore, L.hand, L.tip]) {
+    if (!bn) continue;
+    let p = u.drawn.get(bn); if (!p) { p = new THREE.Vector3(); u.drawn.set(bn, p); }
+    bn.getWorldPosition(p).applyMatrix4(_drInv);
+  }
+}
 function blowLands(u) {
   if (!blowHeightOK(u)) return false;
   const foe = mutFoePos(u);
@@ -29873,7 +30034,7 @@ function blowLands(u) {
   for (const L of _chains) {
     const limb = [L.arm, L.fore, L.hand, L.tip];
     let n = 0;
-    for (const bn of limb) { if (bn) bn.getWorldPosition(_dbPts[n++]); }
+    for (const bn of limb) { if (bn) drawnPos(u, bn, _dbPts[n++]); }
     if (!n) continue;
     // a weapon runs on past the fist, where there is no bone to ask
     if (!L.tip && (u.kind.barLen || 0) > 0 && n >= 2) {
@@ -29892,7 +30053,7 @@ function blowLands(u) {
     }
   }
   const hand = B.hand;
-  hand.getWorldPosition(_dbA);
+  drawnPos(u, hand, _dbA);
   /* OR: the swing is plainly AT you. An authored clip's bar can pass a
    * hand's width wide of a torso the geometry says it should have crossed,
    * and a boss whose blows whiff on a player standing still in front of him
@@ -29928,9 +30089,9 @@ function blowLands(u) {
         ? A.limbs.map((i) => all[i]).filter(Boolean) : all;
       for (const L of chains) {
         if (!L.hand) continue;
-        (L.tip || L.hand).getWorldPosition(_dbC);
+        drawnPos(u, L.tip || L.hand, _dbC);
         if (!L.tip && (u.kind.barLen || 0) > 0 && L.fore) {
-          L.fore.getWorldPosition(_dbB);
+          drawnPos(u, L.fore, _dbB);
           _dbB.subVectors(_dbC, _dbB).normalize();
           _dbC.addScaledVector(_dbB, u.kind.barLen);
         }
@@ -30336,6 +30497,17 @@ function finishMutant(u) {
     const over = u.st.hpBefore <= 1 && (hP >= MUT_HEAVY || hOh);
     let burst = false;
     const G = (u.st.killGore || 1) * (1 + Math.min(0.9, (u.st.cuts || 0) * 0.11)) * (u.kind.goreK || 1);   // an opened body comes apart
+    /* AND THE DOUBLE TAKES A BOSS APART TOO — less certainly than the pack, at
+     * the boss's own rarer odds scaled up by how close it was, but a man you
+     * finished with both barrels at a stride does not go down whole. */
+    const BLb = u.st.killBlast || 0;
+    if (BLb > 0.35) {
+      blastApart(u, hx, hz, BLb * 0.75);
+      mutRagdoll(u, hx, hz, 0.6 + hP * 0.6 + 1.2 + BLb * 2.0);
+      bleedMutant(u, 40, 1.4);
+      stampBlood(u.g.position.x, u.g.position.z, 1.5 + Math.random() * 0.5, u.g.position.y + 0.2);
+      return;
+    }
     if (over && Math.random() < 0.28 * G) burst = burstHead(u, hx, hz);
     else if (u.st.killBloody && Math.random() < (hP >= MUT_HEAVY || hOh ? 0.34 : 0.14) * G) burst = burstHead(u, hx, hz);
     if (!burst && Math.random() < (hP >= MUT_HEAVY || hOh ? 0.30 : 0.12) * G) {
@@ -30378,10 +30550,16 @@ function finishMutant(u) {
   /* AND THE BLOODY BLADE TAKES HEADS. Not only on an overkill: any killing
    * blow from it can open the neck, a heavy nearly always. */
   const BB = !!u.st.killBloody;
-  if (u.st.gunHead) burst = burstHead(u, dx, dz);
+  /* A CHARGE OF SHOT AT ARM'S LENGTH DOES NOT KILL A THING, IT TAKES IT APART
+   * (`blastApart`, off `st.killBlast` — how much of the pattern found it, and
+   * how close). It replaces the roll for a limb below rather than adding to
+   * it, and it throws the body a long way further than any blade does. */
+  const BL = u.st.killBlast || 0;
+  if (BL > 0.05) blastApart(u, dx, dz, BL);
+  else if (u.st.gunHead) burst = burstHead(u, dx, dz);
   else if (overkill && Math.random() < 0.55 * G) burst = burstHead(u, dx, dz);
   else if (BB && Math.random() < (P >= MUT_HEAVY || oh ? 0.70 : 0.40) * G) burst = burstHead(u, dx, dz);
-  if (!burst) {
+  if (!burst && BL <= 0.05) {
     if (P >= MUT_HEAVY && !oh && Math.random() < (BB ? 0.60 : 0.42) * G) mutSever(u, MUT_BISECT, dx, dz, 1.4);
     else if (Math.random() < 0.55 * G) {
       const pick = MUT_LIMBS[Math.floor(Math.random() * MUT_LIMBS.length)];
@@ -30420,7 +30598,8 @@ function finishMutant(u) {
     }
   }
   // the overhead throws it further — a little, so the hit reads harder, not so far it flies
-  mutRagdoll(u, dx, dz, 0.7 + P * 0.7 + (oh ? 0.55 : 0));
+  // (and a charge of shot throws what is left of it off its feet)
+  mutRagdoll(u, dx, dz, 0.7 + P * 0.7 + (oh ? 0.55 : 0) + (BL > 0.05 ? 1.4 + BL * 2.6 : 0));
   const BKk = u.kind.bloodK || 1;
   bleedMutant(u, Math.round((BB ? 120 : 26) * BKk), BB ? 1.4 : 1.0);
   sprayBlood(u.g.position.x, u.g.position.y + u.kind.h * 0.5, u.g.position.z, dx, dz, Math.round((26 + P * 14) * (BB ? 4.2 : 1) * BKk), (1.3 + P * 0.5) * (BB ? 1.3 : 1));
@@ -31596,6 +31775,68 @@ function mutGibMat(u) {
  * meat — with a burst of blood from where it was rather than from the chest,
  * and the neck is a stump the ragdoll simulates like any other. */
 const SKULL_MAT = new THREE.MeshStandardMaterial({ color: 0xb4a894, roughness: 0.85, metalness: 0.0, flatShading: true, emissive: 0x2a2620 });
+/* WHAT A CHARGE OF SHOT AT A STRIDE DOES. `k` is 0..1: the share of the
+ * pattern that found the body, closing to nothing by about eight metres. At
+ * the top of it the thing is not killed so much as UNMADE — the head gone,
+ * most of the limbs off along the line of the shot, often through the middle
+ * — and what is thrown is not only the pieces the skin can bake but a spray
+ * of meat and bone and a sheet of blood down the line the charge went, with
+ * the ground painted behind it. Lower down it takes a limb or two and the
+ * head only sometimes. ORDER MATTERS: the limbs come off first and the cut
+ * through the middle LAST, because the torso's bake carries whatever is still
+ * attached to it, and a limb severed off an already-collapsed torso bakes to
+ * a speck. */
+/* ONE CHUNK OF MEAT, SCALED. Every gib used to be built on its own
+ * icosahedron — forty to sixty new geometries and as many GPU buffers per
+ * body a charge took apart, and four bodies at once was a tenth of a second
+ * of hitch on the frame you wanted to see. They are one shared unit shape
+ * now, sized by the mesh (`shared`: a gib must not dispose of it). */
+const GIB_ICO = (() => { const g = new THREE.IcosahedronGeometry(1, 0); g.userData.shared = true; return g; })();
+function blastApart(u, dx, dz, k) {
+  if (!u.model) return;
+  const p = u.g.position, H = u.kind.h || 2.2;
+  const ox = p.x, oy = p.y + H * 0.55, oz = p.z;
+  if (u.st.gunHead || k > 0.42 || Math.random() < k * 1.3) burstHead(u, dx, dz);
+  let want = 1 + Math.round(k * 4 + Math.random() * k * 1.5);
+  const pool = MUT_LIMBS.filter((L) => L.name !== 'head').sort(() => Math.random() - 0.5);
+  const armGone = (L) => { const side = L.bone.includes('Left') ? 'Left' : 'Right'; return !!u.gone['Character1_' + side + 'Arm']; };
+  for (const L of pool) {
+    if (want <= 0) break;
+    if (u.gone[L.bone] || (L.name === 'forearm' && armGone(L))) continue;
+    const sp = 0.9 + k * 0.5;
+    if (mutSever(u, L, dx + (Math.random() - 0.5) * sp, dz + (Math.random() - 0.5) * sp, 1.6 + k * 1.6 + Math.random() * 0.6)) want--;
+  }
+  if (k > 0.55 && !u.gone[MUT_BISECT.bone] && Math.random() < 0.35 + k * 0.45) mutSever(u, MUT_BISECT, dx, dz, 1.7 + k * 1.2);
+  // the meat: chunks too small for the skin to bake, in a cone down the line of the shot
+  const meat = mutGibMat(u), n = Math.round(14 + k * 30), sz = H / 2.3;
+  for (let i = 0; i < n; i++) {
+    const bone = i % 5 === 0;
+    const r = (bone ? 0.045 : 0.032 + Math.random() * 0.03) * sz * (0.6 + Math.random() * 0.8);
+    const g = new THREE.Mesh(GIB_ICO, bone ? SKULL_MAT : (i % 2 ? meat : GIB_MAT_WET));
+    g.scale.set(r * (1 + Math.random() * 0.9), r * (0.45 + Math.random() * 0.6), r * (1 + Math.random() * 0.5));
+    g.position.set(ox + (Math.random() - 0.5) * 0.35, oy + (Math.random() - 0.5) * H * 0.4, oz + (Math.random() - 0.5) * 0.35);
+    g.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+    scene.add(g);
+    const sp = 2.5 + Math.random() * (5 + k * 6), wide = 0.6 + Math.random() * 1.1;
+    const a = (Math.random() - 0.5) * wide;
+    const cx = dx * Math.cos(a) - dz * Math.sin(a), cz = dx * Math.sin(a) + dz * Math.cos(a);
+    gibs.push({ m: g, vel: new THREE.Vector3(cx * sp, 0.8 + Math.random() * 3.4, cz * sp),
+      spin: new THREE.Vector3((Math.random() - 0.5) * 24, (Math.random() - 0.5) * 24, (Math.random() - 0.5) * 24), rest: r * 0.5, life: 45 });
+  }
+  // the blood: a sheet of it down the shot's line, a fan to the sides, and the ground behind painted
+  bleedMutant(u, Math.round(80 + k * 120), 1.3 + k * 0.8);
+  sprayBlood(ox, oy, oz, dx, dz, Math.round(50 + k * 90), 2.0 + k * 1.6);
+  sprayBlood(ox, oy - H * 0.15, oz, dx * 0.7 - dz * 0.7, dz * 0.7 + dx * 0.7, Math.round(16 + k * 24), 1.4 + k);
+  sprayBlood(ox, oy - H * 0.15, oz, dx * 0.7 + dz * 0.7, dz * 0.7 - dx * 0.7, Math.round(16 + k * 24), 1.4 + k);
+  sprayBlood(ox, oy, oz, -dx, -dz, Math.round(10 + k * 14), 0.9);           // and some of it back at you
+  for (let i = 0; i < 3 + Math.round(k * 4); i++) {
+    const d = 0.6 + i * (0.7 + k * 0.5) + Math.random() * 0.4, s = (Math.random() - 0.5) * (0.6 + i * 0.25);
+    stampBlood(ox + dx * d - dz * s, oz + dz * d + dx * s, 0.8 + Math.random() * (0.9 + k), p.y + 0.2);
+  }
+  addSpurt({ u, y: H * 0.5, dx, dz }, 1.6 + k, 1.3);
+  const dc = Math.hypot(camera.position.x - ox, camera.position.z - oz);
+  if (dc < 4.5) spatterLens(Math.min(1.1, (4.6 - dc) / 3.2 * (0.6 + k * 0.6)));
+}
 function burstHead(u, dirX, dirZ) {
   if (!u.model || u.gone['Character1_Head']) return false;
   let head = null;
@@ -31607,13 +31848,13 @@ function burstHead(u, dirX, dirZ) {
   hp.y += 0.09 * (u.kind.h / 2.3);           // the bone sits at the neck end of the skull
   u.gone['Character1_Head'] = 1;
   head.scale.setScalar(0.0001);
-  if (bloodHeld() || u.st.killBloody) addSpurt({ bone: head }, 1.6, 1.2);
+  if (bloodHeld() || u.st.killBloody || u.st.killBlast > 0.05) addSpurt({ bone: head }, 1.6, 1.2);
   const meat = mutGibMat(u);
   for (let i = 0; i < 14; i++) {
     const bone = i % 3 === 0;
     const r = (bone ? 0.055 : 0.038) * (0.6 + Math.random() * 0.8) * (u.kind.h / 2.3);
-    const g = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 0), bone ? SKULL_MAT : (i % 2 ? meat : GIB_MAT_WET));
-    g.scale.set(1 + Math.random() * 0.8, 0.5 + Math.random() * 0.6, 1 + Math.random() * 0.5);
+    const g = new THREE.Mesh(GIB_ICO, bone ? SKULL_MAT : (i % 2 ? meat : GIB_MAT_WET));
+    g.scale.set(r * (1 + Math.random() * 0.8), r * (0.5 + Math.random() * 0.6), r * (1 + Math.random() * 0.5));
     g.position.set(hp.x + (Math.random() - 0.5) * 0.16, hp.y + (Math.random() - 0.5) * 0.16, hp.z + (Math.random() - 0.5) * 0.16);
     g.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
     scene.add(g);
@@ -31754,14 +31995,21 @@ function mutSever(u, part, dirX, dirZ, force) {
   const piece = bakeLimb(u, part.bone);        // before the collapse, or there is nothing to bake
   u.gone[part.bone] = 1;
   target.scale.setScalar(0.0001);              // the seam is the skinning's own
-  if (bloodHeld() || u.st.killBloody) addSpurt({ bone: target }, 1.4, 1.0);   // and the stump goes on bleeding
+  if (bloodHeld() || u.st.killBloody || u.st.killBlast > 0.05) addSpurt({ bone: target }, 1.4, 1.0);   // and the stump goes on bleeding
   const p = u.g.position;
-  const out = (1.6 + Math.random() * 2.2) * (u.kind.pieceK || 1);
+  /* A CHARGE OF SHOT IS NOT A BLADE. `pieceK` keeps a cut-off piece where you
+   * can see it — the farmers' was taken down to under half — and that is
+   * right for a sword and wrong for a shotgun at a stride, whose whole point
+   * is that what it hits comes apart and LEAVES: the blast keeps most of the
+   * throw and lifts it. */
+  const BL = u.st.killBlast || 0;
+  const pk = BL > 0.05 ? Math.max(u.kind.pieceK || 1, 0.80 + BL * 0.25) : (u.kind.pieceK || 1);
+  const out = (1.6 + Math.random() * 2.2) * pk;
   if (piece) {
     scene.add(piece);
     gibs.push({
       m: piece,
-      vel: new THREE.Vector3(dirX * out * force + (Math.random() - 0.5), 2.0 + Math.random() * 2.2, dirZ * out * force + (Math.random() - 0.5)),
+      vel: new THREE.Vector3(dirX * out * force + (Math.random() - 0.5), 2.0 + Math.random() * 2.2 + BL * (1.6 + Math.random() * 2.4), dirZ * out * force + (Math.random() - 0.5)),
       spin: new THREE.Vector3((Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9),
       rest: 0, life: 240,
     });
@@ -31769,7 +32017,8 @@ function mutSever(u, part, dirX, dirZ, force) {
   // and a couple of small pieces of the wound itself
   const mat = mutGibMat(u);
   for (let i = 0; i < 3; i++) {
-    const g = new THREE.Mesh(new THREE.IcosahedronGeometry(part.r * u.kind.h * 0.12 * (0.6 + Math.random() * 0.8), 0), i ? mat : GIB_MAT_WET);
+    const g = new THREE.Mesh(GIB_ICO, i ? mat : GIB_MAT_WET);
+    g.scale.setScalar(part.r * u.kind.h * 0.12 * (0.6 + Math.random() * 0.8));
     g.position.set(p.x + (Math.random() - 0.5) * 0.2, part.y * u.kind.h, p.z + (Math.random() - 0.5) * 0.2);
     scene.add(g);
     gibs.push({
@@ -31785,12 +32034,56 @@ function mutSever(u, part, dirX, dirZ, force) {
   sfxMutSever();
   return true;
 }
+/* A NOISE BUFFER IS MADE ONCE. Building a third of a second of shaped noise
+ * sample by sample costs two milliseconds, and a charge of shot that takes
+ * four men apart severs twenty-odd limbs on one frame: measured, a tenth of a
+ * second of the shot's frame went on writing random numbers into buffers. A
+ * few variants of each, made the first time they are asked for, and picked
+ * between — no ear hears the same tear twice in a row. */
+const _noiseCache = new Map();
+function cachedNoise(key, seconds, env, variants = 3, raw = false) {
+  const ctx = audioCtx;
+  let set = _noiseCache.get(key);
+  if (!set) { set = []; _noiseCache.set(key, set); }
+  let buf;
+  if (set.length < variants) {
+    const len = Math.max(1, Math.floor(ctx.sampleRate * seconds));
+    buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = raw ? env(i / len) : (Math.random() * 2 - 1) * env(i / len);   // `raw`: env makes the sample itself
+    set.push(buf);
+  } else buf = set[(Math.random() * set.length) | 0];
+  const s = ctx.createBufferSource(); s.buffer = buf;
+  return s;
+}
+/* EVERY CACHED NOISE, ONCE: its length, its shape, how many variants, and
+ * whether the shape makes the sample itself (`raw`). The sounds and the
+ * warm-up (`sgWarmAudio`) both read this, so they can never disagree. */
+let _rollBr = 0;
+const NOISE = {
+  sever:     [0.34, (x) => Math.sin(Math.min(1, x * 3) * Math.PI) * (0.3 + 0.7 * Math.random()), 4],
+  sgBody:    [0.45, (x) => Math.pow(1 - x, 2.6), 3],
+  sgCrack:   [0.03, (x) => Math.pow(1 - x, 6), 3],
+  sgSlap:    [0.30, (x) => Math.pow(1 - x, 2.0), 5],
+  sgRoll:    [1.80, (x) => { _rollBr = (_rollBr + (Math.random() * 2 - 1) * 0.05) * 0.986; return _rollBr * 6 * Math.pow(1 - x, 1.6); }, 3, true],
+  sgRollIn:  [1.10, (x) => { _rollBr = (_rollBr + (Math.random() * 2 - 1) * 0.05) * 0.986; return _rollBr * 6 * Math.pow(1 - x, 1.6); }, 3, true],
+  sgSpatter: [0.50, (x) => Math.pow(1 - x, 4) * (Math.random() < 0.3 ? 1 : 0.25), 3],
+};
+const noise = (key) => { const N = NOISE[key]; return cachedNoise(key, N[0], N[1], N[2], N[3]); };
+// a thump is one shape at many lengths
+const thumpNoise = (len) => cachedNoise('sgThump' + len, len, (x) => Math.pow(1 - x, 3));
+
+/* AND A FRAME HEARS THREE OF THEM AT MOST. Six identical tears inside fifty
+ * milliseconds are not six sounds, they are one loud smear. */
+let _sevT = -1, _sevN = 0;
 function sfxMutSever() {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime, out = sfxOut();
+  if (t - _sevT > 0.05) { _sevT = t; _sevN = 0; }
+  if (++_sevN > 3) return;
   playSample('fleshHit', 0.9, 0.05, 0.62);
   // the wet part: a short tearing burst that opens and closes
-  const n = noiseBurst(0.34, (x) => Math.sin(Math.min(1, x * 3) * Math.PI) * (0.3 + 0.7 * Math.random()));
+  const n = noise('sever');
   const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.8;
   bp.frequency.setValueAtTime(240, t); bp.frequency.exponentialRampToValueAtTime(900, t + 0.3);
   const g = ctx.createGain(); g.gain.value = 0.3;
@@ -31988,6 +32281,7 @@ function mutRagdoll(u, dirX, dirZ, power) {
    * on the sand with the torso lying beside them. That is the owner's "the
    * bodies freeze". Measured over what is actually simulated, the top of a
    * stump is at h = 1 and takes the whole throw, so it goes over. */
+  const rBL = (u.st && u.st.killBlast) || 0;   // a shotgun kill: see `blastApart`
   let ragTall = 0.5;
   for (const [name] of RAG_CHAIN) {
     const bn = bones[name]; if (!bn || belowCut(bn)) continue;
@@ -32006,9 +32300,17 @@ function mutRagdoll(u, dirX, dirZ, power) {
      * staying planted, so the body LEAVES rather than folding over its boots.
      * `ragLift` puts it in the air long enough to travel. The farmers. */
     const ev = u.kind.ragEven || 0;
-    const kick = (3.1 + power * 6.2) * ((0.15 + h * 0.85) * (1 - ev) + ev) * (u.kind.ragK || 1);
+    const kw = (0.15 + h * 0.85) * (1 - ev) + ev;
+    let kick = (3.1 + power * 6.2) * kw * (u.kind.ragK || 1);
+    /* (A shotgun's throw is twenty-odd metres a second, and the flight cap
+     * scales the WHOLE velocity down to its limit — the lift with it, so the
+     * body slid off along the paving with its hips never a hand's breadth off
+     * it. The throw is held to what the cap allows and the lift kept whole.) */
+    if (rBL > 0.05) kick = Math.min(kick, (6.0 + rBL * 5.5) * kw);
     // less lift than throw: it goes over and DOWN, it does not float up first
-    const v = new THREE.Vector3(dirX * kick + (Math.random() - 0.5) * 0.7, (1.0 + h * 1.2 + Math.random() * 0.4) * (u.kind.ragK ? 0.8 + 0.4 * u.kind.ragK : 1) * (u.kind.ragLift || 1), dirZ * kick + (Math.random() - 0.5) * 0.7);
+    const v = new THREE.Vector3(dirX * kick + (Math.random() - 0.5) * 0.7, (1.0 + h * 1.2 + Math.random() * 0.4) * (u.kind.ragK ? 0.8 + 0.4 * u.kind.ragK : 1) * Math.max(u.kind.ragLift || 1, rBL > 0.05 ? 0.85 + rBL * 0.5 : 0), dirZ * kick + (Math.random() - 0.5) * 0.7);
+    // and a charge of shot lifts it off its feet: the chest most, so it goes over backwards in the air
+    if (rBL > 0.05) v.y += rBL * (1.2 + h * 2.2);
     const part = { name, bone: bn, parent: parentName, child: childName, r, p, pp: p.clone().addScaledVector(v, -1 / 60), w: name.includes('Hips') ? 0.5 : name.includes('Head') ? 0.8 : 1 };
     parts.push(part); byName[name] = part;
   }
@@ -32187,7 +32489,15 @@ function mutRagdoll(u, dirX, dirZ, power) {
             ring: !!(u.kind.ring && SH && shrineReady),     // it dies inside the drum
             gut: !!(u.kind.whaleBody && inWhale && whale),   // or inside the whale: its walls hold a body thrown at them
             fort: (u.kind.fortBody && fortWalls) ? FORT_SITE : (u.kind.c13Body && c13Walls) ? C13_SITE : (u.kind.thrBody && thrWalls) ? THR_SITE : null,   // or in a castle's courtyard: its stone holds a body the same way
-            roomG: rec ? rec.group : null, wallHit: 0, wallAt: new THREE.Vector3() };
+            roomG: rec ? rec.group : null, wallHit: 0, wallAt: new THREE.Vector3(),
+            /* A BODY TAKEN BY A SHOTGUN FLIES. The farmers' first flight was
+             * capped at the glitch cap and leashed to five metres, by the
+             * owner's word (they flew off out of sight); a charge of shot at a
+             * stride is the one blow that should throw a man a long way, so it
+             * gets its own first-flight cap and leash — still inside the walls
+             * that hold a body in a courtyard. */
+            vmax: rBL > 0.05 ? Math.max(u.kind.ragVmax || RAG_VMAX, 10 + rBL * 6.5) : 0,
+            travel: rBL > 0.05 ? Math.max(u.kind.ragTravel || RAG_TRAVEL, 6 + rBL * 5) : 0 };
   u.g.rotation.set(0, u.g.rotation.y, 0);           // the body's tilt is the particles' now, not the group's
   /* And the aim's yaw dies with him. It lives on the MODEL, and a man killed
    * halfway through a swing would otherwise lie there wearing the last
@@ -32273,6 +32583,13 @@ const RAG_REST = 4.5;                      // and how long before it is finished
 const RAG_TRAVEL = 11;                     // and how far across the ground the hips may ever get from where it died
 function updateMutRagdoll(u, dt) {
   const r = u.rag; if (!r) return;
+  /* A BODY IN THE AIR HOLDS STILL THROUGH A HITSTOP, it is not slowed. The
+   * flight cap is a distance per substep, and the substep is cut to a
+   * twelfth by the freeze — so a corpse thrown on the frame of a kill (the
+   * shotgun's) or still flying when the next blow landed had its whole
+   * throw clipped away and dropped where it stood. `hitstopFrame`, not
+   * `hitstop`: the frame the freeze drains to zero is still a scaled one. */
+  if (hitstopFrame || hitstop > 0) return;
   r.t += dt;
   const bf = bunkerFloorAt(u.g.position.x, u.g.position.z, u.g.position.y + 0.5);
   const gy = (bf === null ? 0 : bf) + 0.07;           // the floor under it, plus the flesh around a joint: the mesh rests ON it, not in it
@@ -32376,7 +32693,7 @@ function updateMutRagdoll(u, dt) {
            * substep is capped at `RAG_VMAX`, which no blow here reaches. */
           { const vx = q.p.x - q.pp.x, vy = q.p.y - q.pp.y, vz = q.p.z - q.pp.z;
             // a kind may be thrown harder (`ragVmax`) — but only in its first flight; once down, the glitch cap holds
-            const sp = Math.hypot(vx, vy, vz), lim = (r.landed ? RAG_VMAX : (u.kind.ragVmax || RAG_VMAX)) * h;
+            const sp = Math.hypot(vx, vy, vz), lim = (r.landed ? RAG_VMAX : (r.vmax || u.kind.ragVmax || RAG_VMAX)) * h;
             if (sp > lim) { const k = lim / sp; q.pp.set(q.p.x - vx * k, q.p.y - vy * k, q.p.z - vz * k); }
             if (!(sp === sp)) { q.p.copy(q.pp); } }
           if (q.p.y < q.floor + q.r) {
@@ -32554,7 +32871,7 @@ function updateMutRagdoll(u, dt) {
          * dropping straight down: "freezing mid air". Past the limit the body
          * is braked hard across the ground and gravity is left alone; only a
          * body that has gone far past it is put back. */
-        const RT = u.kind.ragTravel || RAG_TRAVEL;   // a kind thrown further may travel further
+        const RT = r.travel || u.kind.ragTravel || RAG_TRAVEL;   // a kind thrown further may travel further (and a shotgun throws further)
         if (od > RT) {
           for (const q of r.parts) { q.pp.x = q.p.x - (q.p.x - q.pp.x) * 0.4; q.pp.z = q.p.z - (q.p.z - q.pp.z) * 0.4; }
           if (od > RT + 3) {
@@ -38979,10 +39296,14 @@ function update(dt, rawDt = dt) {
   updateCrusader(dt);       // and the flail knight's chain, after whatever moved his arm
   updateThroneBoss(dt);     // and the marauder on his throne, on the hall's floor
   updateDante(dt);          // and the beast at the foot of his dais, and its chain
+  if (window.__samDbg) window.__samDbg('mut');
   pinSamuraiSword();        // whatever moved his arm last is what the sword hangs off
   samTwoHand(dt);           // and his left hand goes onto the handle behind the right
+  if (window.__samDbg) window.__samDbg('two');
   samSmoothPose(dt);        // and no clip change, restart or reel may pop his body from one pose to another in a frame
+  if (window.__samDbg) window.__samDbg('smooth');
   samKeepClear();           // and after all of it, no fist and no steel inside him
+  if (window.__samDbg) window.__samDbg('clear');
   cullWorldInHall();        // and the beach is not drawn from a room twelve kilometres off it
   bunkerTenantry();         // nor from one forty metres under it — AFTER `updateFarProps`, which writes a far prop's `visible` every frame
   /* AFTER the fight AI, never before: whatever moves him last has to be the
@@ -39169,6 +39490,8 @@ function saveCheckpoint(spot) {
        * pack; the rounds in it are not an item and would otherwise reload
        * themselves to nothing on every death. */
       ammo: magAmmo, spare: magSpare,
+      // and what is in the double's two chambers, and the shells in the pack
+      sgCh: sgCh.slice(), sgSpare,
       dockDoor: dockDoorOpen,
       /* AND THE DOJO. The same rule as the shell door and the smiling one: a
        * fight you have already won does not un-happen when you load, and a
@@ -39490,6 +39813,9 @@ function updateRestore(dt) {
   if (f.benDead) benDead = true;
   if (f.trader) { const ammo0 = TRADER_STOCK.ammo; Object.assign(TRADER_STOCK, f.trader); const av = f.ammoV || 0; if (av < 2) TRADER_STOCK.ammo = ammo0; else if (av < 3) TRADER_STOCK.ammo = (f.trader.ammo || 0) >= 5 ? 1 : 0; }   // v2 stocked five: untouched is one, bought from is none
   if (typeof f.ammo === 'number') { magAmmo = f.ammo; magSpare = f.spare || 0; }
+  if (Array.isArray(f.sgCh)) { sgCh = f.sgCh.map((c) => (c === 1 ? 1 : c === 2 ? 2 : 0)); sgSpare = f.sgSpare || 0; }
+  if (f.trader && f.trader.shotgun === undefined) TRADER_STOCK.shotgun = 1;   // a save from before the double
+  delete TRADER_STOCK.shells;                                                      // the box of six he no longer sells
   if (f.heroSword || f.dojoWon) heroSwordTaken = true;
   /* THE SNORKELER'S KEY: lying where he threw it, or yours (the pack puts that
    * back), and the gate it turned stays unlocked. A save from past the house,
@@ -39541,7 +39867,7 @@ function packByName(name) {
    * a fight depends on. The three dig tools are, and they are all here. */
   for (const it of [shovelItem, militaryItem, katanaItem, bloodItem, pegItem, glowstickItem, ringItem,
                     weddingItem, keyItem, boatKeyItem, skullKeyItem, cdItem, crabItem,
-                    syringeItem, waterBottleItem, headItem, fishingRodItem, magnumItem, fangItem, oldRingItem,
+                    syringeItem, waterBottleItem, headItem, fishingRodItem, magnumItem, shotgunItem, fangItem, oldRingItem,
                     spliffItem, grammyItem, lostKeyItem, whaleArtItem, storeKeyItem]) {
     if (it && it.name === name) return it;
   }
@@ -40435,6 +40761,7 @@ function animateFrame() {
    * the shovel mid-arc — which reads as the animation stuttering on the hit
    * rather than as the hit landing. The swing gets real seconds. */
   const rawDt = dt;
+  hitstopFrame = hitstop > 0;
   if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
   oceanUniforms.uTime.value += dt;
   if (!introStarted) titleCam(rawDt);
@@ -47583,11 +47910,11 @@ let shopAt = 1;                       // which of them you are buying from
  * for two jars, five boxes of them, the last thing you can buy before the
  * castle. `AMMO_V` marks a save that knows this, so an older one that
  * recorded the empty box gets the stock back. */
-const TRADER_STOCK = { glow: 1, water: 2, gun: 1, ammo: 1, ring: 1, spliff: 6, packSpace: 1, ringSlot: 1 };   // ONE box of six, the owner's word
+const TRADER_STOCK = { glow: 1, water: 2, gun: 1, ammo: 1, ring: 1, spliff: 6, packSpace: 1, ringSlot: 1, shotgun: 1, shells2: 5 };   // ONE box of six, the owner's word
 const AMMO_V = 3;
 /* THE OWNER'S PRICES. The menu's labels read this table rather than spelling
  * a number out, so a price is one line here and nothing else. */
-const TRADER_PRICE = { glow: 1, water: 1, gun: 6, ammo: 2, ring: 5, spliff: 1, packSpace: 4, ringSlot: 6 };
+const TRADER_PRICE = { glow: 1, water: 1, gun: 6, ammo: 2, ring: 5, spliff: 1, packSpace: 4, ringSlot: 6, shotgun: 10, shells2: 5 };
 /* SHORT, BECAUSE IT SITS IN A COLUMN. "2 blood jars" beside a name in a
  * list is half the row; the header already says what the currency is. */
 const priceTag = (what) => {
@@ -47607,6 +47934,7 @@ function spendJars(n) {
 }
 function traderBuy(what) {
   const price = TRADER_PRICE[what];
+  if (price === undefined) return;          // nothing he sells (the box of six, from an old row): never spend NaN jars
   if (TRADER_STOCK[what] <= 0) { traderSaid = 'Sold out. Shocking, I know.'; return; }
   if (bloodJars < price) {
     traderSaid = price === 1 ? 'One jar. You have none. Off you go.'
@@ -47621,6 +47949,25 @@ function traderBuy(what) {
      * design: six chambers, three rounds, and the other three cost you. */
     magAmmo = 3; magSpare = 0;
     traderSaid = "Three in it. Don't point it at me.";
+  } else if (what === 'shotgun') {
+    /* THE LAST THING HE SELLS BEFORE THE CASTLE, and the most he asks for
+     * anything: ten jars. FOUR SHOTS, the owner's word: both barrels loaded
+     * and two more in the pack, and every pair after that is bought. */
+    if (shopAt !== 2) { traderSaid = 'Not here. Ask me again at the castle.'; return; }
+    if (inventory.includes(shotgunItem)) { traderSaid = 'One is enough. It is plenty, believe me.'; return; }
+    spendJars(price); TRADER_STOCK.shotgun--;
+    addToInventory(shotgunItem);
+    sgCh = [1, 1]; sgSpare = 2;
+    traderSaid = "Both barrels, and two for after. Don't fire it in here.";
+  } else if (what === 'shells2') {
+    /* TWO MORE, DEAR. The owner's: a pair of loose shells for five jars, and
+     * the only shells he sells — the box of six is gone, so every shot past
+     * the first four is a choice. Over the counter from his own pocket. */
+    if (shopAt !== 2) { traderSaid = 'Shells? Not here.'; return; }
+    if (!inventory.includes(shotgunItem)) { traderSaid = 'Buy the gun first. Then we talk shells.'; return; }
+    spendJars(price); TRADER_STOCK.shells2--;
+    sgSpare += 2;
+    traderSaid = TRADER_STOCK.shells2 > 0 ? 'Two. Out of my own pocket, so the price is the price.' : 'My last two. After that you throw rocks.';
   } else if (what === 'ammo') {
     if (shopAt !== 2) { traderSaid = 'Rounds? Not here.'; return; }
     if (!inventory.includes(magnumItem)) { traderSaid = 'Nothing to put them in. Buy the gun.'; return; }
@@ -47696,6 +48043,11 @@ function traderBuy(what) {
  * what he will buy from you. Every row carries its picture, a one-line
  * summary of what it does, and its price, dimmed when you cannot afford it. */
 const SHOP_ROWS = [
+  { key: 'shotgun', item: () => shotgunItem, name: 'Double-Barrel Shotgun', sum: 'Twelve-bore · both barrels loaded, 2 shells',
+    desc: 'A side-by-side twelve-bore, walnut and engraved steel. Nine pellets a barrel: up close it takes a thing apart. Right click aims down the rib, left click fires, R breaks it and loads two.' },
+  { key: 'shells2', item: () => shells2IconItem, name: '2 Shells', sum: '12 gauge · two more, loose',
+    desc: 'A pair of loose red twelve-bore shells, double-ought buck, out of his own coat. Dear, but they are two more barrels. They go in the pack; R loads them.', needs: () => inventory.includes(shotgunItem), needsLabel: 'Needs the shotgun',
+    stack: () => (inventory.includes(shotgunItem) ? sgSpare : 0) },
   { key: 'gun', item: () => magnumItem, name: '.44 Magnum', sum: 'Revolver · 3 rounds loaded',
     desc: 'Six chambers, three in it. Right click aims, left click fires, R reloads.' },
   { key: 'ammo', item: () => ammoIconItem, name: '6 Rounds', sum: '.44 · six into the pack',
@@ -47818,6 +48170,35 @@ const ammoIconItem = { id: 'ammo6', name: '6 Rounds', inspectModel: makeAmmoSix(
   }
   return c.toDataURL();
 })() };
+// twelve-bore shells lying together, rendered from the built shell like the .44's box
+function makeShellSix(n = 6) {
+  const g = new THREE.Group();
+  for (let i = 0; i < n; i++) {
+    const s = makeShell(false);
+    s.rotation.set(Math.PI / 2 + (i % 2 ? 0.08 : -0.06), 0, (i - 2.5) * 0.10);
+    s.position.set((i % 3 - 1) * 0.022, (i > 2 ? 0.020 : 0), (i % 2 ? 0.004 : -0.004) - 0.030);
+    g.add(s);
+  }
+  return g;
+}
+function drawShellsIcon(n) {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d');
+  const bg = g.createRadialGradient(128, 110, 10, 128, 128, 190);
+  bg.addColorStop(0, '#1c1f26'); bg.addColorStop(1, '#07080b');
+  g.fillStyle = bg; g.fillRect(0, 0, 256, 256);
+  const x0 = 128 - (n * 31 - 7) / 2;
+  for (let q = 0; q < n; q++) {
+    const x = x0 + q * 31, y = 64 + (q % 2) * 12;
+    g.fillStyle = '#9b1810'; g.fillRect(x, y, 24, 104);
+    g.fillStyle = 'rgba(255,120,90,0.25)'; g.fillRect(x + 5, y, 4, 104);
+    const br = g.createLinearGradient(x, 0, x + 24, 0);
+    br.addColorStop(0, '#6b4e1c'); br.addColorStop(0.45, '#e2b95a'); br.addColorStop(1, '#5a3f14');
+    g.fillStyle = br; g.fillRect(x - 2, y + 104, 28, 26);
+  }
+  return c.toDataURL();
+}
+const shells2IconItem = { id: 'shells2', name: '2 Shells', inspectModel: makeShellSix(2), iconRot: { x: 0.6, y: 0.4 }, icon: drawShellsIcon(2) };
 const ringSlotIconItem = { name: 'Extra Ring Slot', icon: drawUpgradeIcon('ring') };
 const UPGRADE_ROWS = [
   { key: 'packSpace', item: () => packSpaceIconItem, name: 'Bigger Pack', sum: '+4 inventory slots (10 → 14)',
@@ -47860,7 +48241,7 @@ const SHOP_SAY = { buy: 'Just buy something...', upgrades: 'Want to carry more? 
 let shopMode = 'buy';
 // he only asks about what you are actually carrying
 const shopRows = () => (shopMode === 'sell' ? SELL_ROWS.filter((r) => r.count() > 0) : shopMode === 'upgrades' ? UPGRADE_ROWS
-  : SHOP_ROWS.filter((r) => r.key !== 'ammo' || shopAt === 2));   // the rounds are the castle's man's alone
+  : SHOP_ROWS.filter((r) => (r.key !== 'ammo' && r.key !== 'shotgun' && r.key !== 'shells2') || shopAt === 2));   // the rounds and the double are the castle's man's alone
 // a stack that the pack shows as a count: sell one, and the slot goes with the last
 function sellFromStack(item) {
   item.count = Math.max(0, (item.count || 0) - 1);
@@ -47919,6 +48300,7 @@ for (const t of shopTabEls) t.addEventListener('mousedown', (e) => { e.preventDe
 const shopHad = (r) => {
   if (r.key === 'ring') return inventory.includes(oldRingItem) || rings.includes(oldRingItem);
   if (r.key === 'gun') return inventory.includes(magnumItem);
+  if (r.key === 'shotgun') return inventory.includes(shotgunItem);
   if (r.key === 'glow') return inventory.includes(glowstickItem);
   if (r.key === 'packSpace') return INV_MAX > 10;
   if (r.key === 'ringSlot') return RING_SLOTS > 2;
@@ -47937,7 +48319,7 @@ function shopState(r) {
   const price = TRADER_PRICE[r.key];
   if (shopHad(r)) return { ok: false, label: 'Owned', chip: 'owned', dim: true };
   if (shopOut(r)) return { ok: false, label: 'Sold out', chip: 'sold out', dim: true };
-  if (r.needs && !r.needs()) return { ok: false, label: 'Needs the .44', chip: jarsTxt(price), dim: true };
+  if (r.needs && !r.needs()) return { ok: false, label: r.needsLabel || 'Needs the .44', chip: jarsTxt(price), dim: true };
   if (bloodJars < price) { const need = price - bloodJars; return { ok: false, label: `Need ${need} more ${need === 1 ? 'jar' : 'jars'}`, chip: jarsTxt(price), poor: true }; }
   return { ok: true, label: 'Buy · ' + jarsTxt(price), chip: jarsTxt(price) };
 }
@@ -48257,7 +48639,7 @@ let magClimb = 0;                   // how much of the kick is still owed back
  * only ever a hint. */
 let magTrigger = false;
 const magHeld = () => !!(equipped && equipped.gun);
-const magBusy = () => magRel >= 0;
+const magBusy = () => magRel >= 0 || (equipped && equipped.shotgun && sgRel >= 0);
 
 /* THE MUZZLE LIGHTS THE BEACH, AND IT COSTS NOTHING TO. A light ENTERING or
  * LEAVING a scene recompiles every material in the game; INTENSITY is free,
@@ -48311,6 +48693,33 @@ const magFlashSpr = (() => {
   s.renderOrder = 5;
   vmScene.add(s);
   return s;
+})();
+const magFlashTex = magFlashSpr.material.map;
+/* THE DOUBLE'S FLASH. Drawn on the .44's star, at the double's size, it was a
+ * white ball hanging off the muzzle for four frames — a lamp, not a blast:
+ * additive, a white core that wide saturates whatever it sits on. A charge of
+ * powder leaving two inches of bore is a ragged ORANGE star with a small white
+ * heart, gone in a few frames, so it is drawn that way: thirteen uneven petals,
+ * the heat in their roots, and next to no glow under it. */
+const sgFlashTex = (() => {
+  const S = 128, c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d'), R = S / 2;
+  const gl = g.createRadialGradient(R, R, 0, R, R, R);
+  gl.addColorStop(0, 'rgba(255,170,70,0.30)'); gl.addColorStop(0.5, 'rgba(220,100,30,0.08)'); gl.addColorStop(1, 'rgba(160,60,10,0)');
+  g.fillStyle = gl; g.fillRect(0, 0, S, S);
+  const N = 13;
+  g.beginPath();
+  for (let i = 0; i < N * 2; i++) {
+    const a = (i / (N * 2)) * Math.PI * 2 + (Math.random() - 0.5) * 0.16;
+    const r = (i % 2 ? 0.08 + Math.random() * 0.06 : 0.22 + Math.random() * 0.26) * S;
+    i ? g.lineTo(R + Math.cos(a) * r, R + Math.sin(a) * r) : g.moveTo(R + Math.cos(a) * r, R + Math.sin(a) * r);
+  }
+  g.closePath();
+  const pg = g.createRadialGradient(R, R, 0, R, R, R * 0.5);
+  pg.addColorStop(0, 'rgba(255,246,214,0.95)'); pg.addColorStop(0.22, 'rgba(255,196,96,0.85)');
+  pg.addColorStop(0.6, 'rgba(240,120,36,0.45)'); pg.addColorStop(1, 'rgba(200,70,16,0)');
+  g.fillStyle = pg; g.fill();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 })();
 
 const magModel = new THREE.Group();     // exists synchronously: `holdable` names it at module time
@@ -48602,6 +49011,7 @@ const _msA = new THREE.Vector3(), _msV = new THREE.Vector3();
 let _magRZero = null;
 function magSights() {
   if (!magHeld()) return;
+  if (equipped.shotgun) return sgSights();
   if (!magVMSight && magnumItem.viewmodel) {
     magVMSight = magnumItem.viewmodel.getObjectByName('magSight');
     magVMMuzzle = magnumItem.viewmodel.getObjectByName('magMuzzle');
@@ -48654,33 +49064,44 @@ function updateGun(dt) {
   magYaw += magYawV * dt;
   if (Math.abs(magKick) < 1e-4 && Math.abs(magKickV) < 1e-3) { magKick = 0; magKickV = 0; }
   if (Math.abs(magYaw) < 1e-4 && Math.abs(magYawV) < 1e-3) { magYaw = 0; magYawV = 0; }
-  magFlash = Math.max(0, magFlash - dt * 10.5);    // a tenth of a second, which is a flash you SEE
-  magLamp.intensity = magFlash * magFlash * 150;
+  const sgIn = !!(equipped && equipped.shotgun);
+  magFlash = Math.max(0, magFlash - dt * (sgIn ? 16 : 10.5));    // a tenth of a second, which is a flash you SEE (the double's is shorter and harder)
+  magLamp.intensity = magFlash * magFlash * (sgIn ? 240 : 150);   // a twelve-bore lights the place up
   if (magFlash > 0) {
     camera.getWorldDirection(_magF);
     magLamp.position.copy(camera.position).addScaledVector(_magF, 0.7);
     magLamp.position.y -= 0.10;
   }
-  magFlashSpr.visible = magFlash > 0.02 && !!magVMMuzzle && viewmodel.visible;
+  const muz = sgIn ? sgMuzzleNode() : magVMMuzzle;
+  magFlashSpr.visible = magFlash > 0.02 && !!muz && viewmodel.visible;
   if (magFlashSpr.visible) {
-    magVMMuzzle.getWorldPosition(_magF);
+    muz.getWorldPosition(_magF);
     magFlashSpr.position.copy(_magF);
     // biggest on the frame it is born and shrinking as it goes out, which is
     // what a flash does; it used to GROW as it faded, which is a smoke ring
-    const s = (0.26 + magFlash * 0.86) * MAG_VM;   // and the flash is the muzzle's, so it grows with it
+    const s = sgIn ? (0.30 + magFlash * 1.05) : (0.26 + magFlash * 0.86) * MAG_VM;   // and the flash is the muzzle's, so it grows with it
     magFlashSpr.scale.set(s, s, s);
+    magFlashSpr.material.map = sgIn ? sgFlashTex : magFlashTex;
     magFlashSpr.material.opacity = Math.min(1, magFlash * 1.5);
     magFlashSpr.material.rotation = magFlashSeed;
   }
   if (magT >= 0) { magT += dt; if (magT >= MAG_SHOT) magT = -1; }
   updateBrass(dt);
   // the muzzle settling back down out of its own kick
-  if (magClimb > 0 && (magT < 0 || magT > 0.18)) {
+  if (magClimb > 0 && sgIn) {
+    /* the double's comes back on an ease: no step in speed when it starts (it
+     * used to switch on at 0.22 s at full speed, a visible lurch mid-fall),
+     * and slowing as it arrives */
+    const rate = 0.95 * THREE.MathUtils.smoothstep(sgSince, 0.10, 0.30) * Math.min(1, 0.3 + magClimb / 0.04);
+    const d = Math.min(magClimb, dt * rate);
+    if (d > 0) { gunNudge(-d, 0, true); magClimb -= d; }
+  } else if (magClimb > 0 && (magT < 0 || magT > 0.18)) {
     const d = Math.min(magClimb, dt * 0.95);
     gunNudge(-d, 0); magClimb -= d;
   }
   const live = magHeld() && !held && !dialogOpen && !inspecting && !frozen();
   if (!live) { magAiming = false; magClimb = 0; if (magRel >= 0) magRel = -1; }
+  sgUpdate(dt, live && sgIn);
   if (magRel >= 0) {
     magRel += dt;
     const p = magRel / MAG_RELOAD;
@@ -48708,7 +49129,18 @@ function updateGun(dt) {
   if (magTrigger && live) magFire();
   // down the sights — and never while the cylinder is open
   const want = magAiming && !magBusy() && live ? 1 : 0;
-  magAim += (want - magAim) * Math.min(1, dt * (want ? 17 : 13));
+  if (equipped && equipped.shotgun) {
+    /* THE DOUBLE IS LIFTED INTO THE SHOULDER, NOT SNAPPED. The .44's
+     * exponential chase, read through the pose's cubic ease, put the whole
+     * move into three frames — right for a revolver punched out at arm's
+     * length, and a twitch for eight pounds of walnut and steel. A steady
+     * clock under the same ease is an S-curve of a fifth of a second up and
+     * a little less down. */
+    const r = dt / (want ? SG_ADS_IN : SG_ADS_OUT);
+    magAim = want ? Math.min(1, magAim + r) : Math.max(0, magAim - r);
+  } else {
+    magAim += (want - magAim) * Math.min(1, dt * (want ? 17 : 13));
+  }
   if (magAim < 0.001) magAim = 0;
   /* DOWN THE SIGHTS THE SIGHTS ARE THE CROSSHAIR. The dot sits exactly where
    * the rear sight is pinned (`magSights`), so over an aimed gun it is a
@@ -48797,9 +49229,9 @@ const magGlareEl = (() => {
   return d;
 })();
 let magGlareT = null;
-function magGlare() {
+function magGlare(k = 0.30) {
   magGlareEl.style.transition = 'none';
-  magGlareEl.style.opacity = '0.30';
+  magGlareEl.style.opacity = String(k);
   void magGlareEl.offsetWidth;                 // or the fade never restarts
   magGlareEl.style.transition = 'opacity 110ms ease-out';
   magGlareEl.style.opacity = '0';
@@ -48809,6 +49241,7 @@ function magGlare() {
 
 const _mgSp = new THREE.Vector3(), _mgUp = new THREE.Vector3(), _mgRt = new THREE.Vector3();
 function magFire() {
+  if (equipped && equipped.shotgun) return sgFire();
   if (!magHeld() || frozen() || held) return;
   if (magT >= 0 || magBusy()) return;
   if (magAmmo <= 0) {
@@ -48952,7 +49385,8 @@ function magHeadshot(u) {
  * sensitivity slider: a recoil that is bigger for one player than for
  * another is not a recoil. Radians, straight onto the look. */
 const _gnE = new THREE.Euler(0, 0, 0, 'YXZ');
-function gunNudge(up, side) {
+function gunNudge(up, side, quiet = false) {
+  if (quiet) { vmNudgeP += up; vmNudgeY -= side; }
   _gnE.setFromQuaternion(camera.quaternion);
   _gnE.x = Math.min(HALF_PI, Math.max(-HALF_PI, _gnE.x + up));
   _gnE.y -= side;
@@ -49008,6 +49442,7 @@ function sfxMagEject() {
   }
 }
 function magReload() {
+  if (equipped && equipped.shotgun) return sgReload();
   if (!magHeld() || frozen() || held) return;
   if (magBusy() || magAmmo >= MAG_CAP || magSpare <= 0) return;
   magRel = 0; magRelFed = false; magRelShut = false; magRelOut = false; magRelEject = false;
@@ -49196,10 +49631,811 @@ let ammoShown = '', ammoOn = false;
 function updateAmmoReadout() {
   if (!ammoEl) return;
   const on = magHeld() && !held && !inspecting;
-  const s = on ? `${magAmmo}<i>/${magSpare}</i>` : '';
+  const sg = on && equipped.shotgun;
+  const s = !on ? '' : sg ? `${sgLoaded()}<i>/${sgSpare}</i>` : `${magAmmo}<i>/${magSpare}</i>`;
   if (s !== ammoShown) { ammoShown = s; ammoEl.innerHTML = s; }
   if (on !== ammoOn) { ammoOn = on; ammoEl.classList.toggle('show', on); }
-  ammoEl.classList.toggle('empty', on && magAmmo === 0);
+  ammoEl.classList.toggle('empty', on && (sg ? sgLoaded() === 0 : magAmmo === 0));
+}
+
+/* =====================================================================
+ * THE DOUBLE — a side-by-side twelve-bore off the trader at the castle.
+ *
+ * What it is FOR is the thing the .44 is not: a revolver is a gun you aim,
+ * and this is a gun you put in something's chest. So almost everything about
+ * it is measured in what happens a stride in front of you. Nine pellets a
+ * barrel, each its own trace through `magTrace` (the .44's own, so a body, a
+ * head, stone and sand all answer exactly as they do to a round); what a
+ * charge does to a creature is the sum of the pellets that found it, falling
+ * off past a few metres, and at the range it is meant for it does not wound
+ * a thing, it TAKES IT APART (`st.killBlast`, read in `finishMutant`).
+ *
+ * It shares the .44's doors rather than growing its own: the aim, the trigger
+ * read off the buttons every frame, the lens spring, the flash, the lamp, the
+ * glare and the sound bus are the revolver's, branched where the two differ
+ * (`equipped.shotgun`). What is its own is two chambers, a break-open reload
+ * you can watch — lever, break, the spent hulls flicked out over your
+ * shoulder, two fresh ones up into the bores, snapped shut — and a kick that
+ * throws the whole gun up and back at you.
+ *
+ * Resident Evil is the reference for how it should FEEL: a long beat of
+ * nothing, then a noise that fills the place, the thing in front of you
+ * lifted off its feet, and a reload slow enough that you have to choose when
+ * to do it.
+ * ===================================================================== */
+const SG_PELLETS = 9;
+const SG_PELLET_DMG = 3.1;            // nine of them a stride away is 28: two .44s in one trigger pull
+const SG_FULL = 4.5, SG_FAR = 24;     // the charge holds together to here, and is a fifth of itself by there
+const SG_SPREAD = 0.085;              // radians, from the hip
+const SG_SPREAD_ADS = 0.055;          // and down the rib: tighter, never tight — a shotgun stays a shotgun
+/* THE CHARGE IS WIDER THAN NINE LINES. Nine rays in a five-degree cone find
+ * ONE man in a crowd, and the owner's whole reason for the gun is the
+ * courtyard full of farmers: a charge into three of them coming at you
+ * shoulder to shoulder has to take all three. Everything alive inside this
+ * cone, in the open, takes the share of the pattern a real one would put on
+ * it — about half the charge at a stride, falling to one or two pellets at
+ * the edge of it — and only if the traced pellets found it for less. */
+const SG_WAVE_R = 6.5, SG_WAVE_A = 0.24, SG_WAVE_A_ADS = 0.15;
+const SG_SHOT = 0.34;                 // between the barrels
+const SG_RELOAD = 2.05;
+const SG_ADS_IN = 0.22, SG_ADS_OUT = 0.17;   // seconds into the shoulder and back down
+const SG_VM = 1.45;                    // the hand's copy: a long gun is the thing the frame is about (the .44 is 1.42)
+const SG_KICK_K = 120, SG_KICK_D = 9.6;   // the ROLL toward the barrel that went: a spring, so it rocks and settles (the kick itself is `sgKickEnv`)
+/* THE RELOAD'S BEATS, as fractions of it. The thumb on the lever, the break,
+ * the flick that throws the hulls, two shells up and in, and the snap. */
+const SG_R_LEVER = 0.05, SG_R_BREAK = 0.10, SG_R_EJECT = 0.24, SG_R_SHUT = 0.80;
+const SG_R_FEED = [[0.34, 0.52], [0.50, 0.68]];
+let sgCh = [0, 0];                    // the two chambers, right then left: 0 empty, 1 live, 2 spent
+let sgSpare = 0;                      // loose shells in the pack
+let sgT = -1;                         // the shot's own clock, -1 idle
+let sgRel = -1;                       // and the reload's
+let sgRelBeat = {};                   // which beats of this reload have happened
+let sgFeedWin = [null, null];         // which feed window each chamber is taking, this reload
+let sgKick = 0, sgRoll = 0, sgRollV = 0;
+let sgShots = [], sgKickAmt = 1;                     // seconds since each recent shot: the kick is their envelopes summed
+let sgSince = 9;                      // since the last one
+let sgNudgeOwed = 0, sgNudgeSide = 0; // the look's share of the kick, still to be paid out
+/* THE KICK'S SHAPE. Up in two frames, down over a third of a second, and no
+ * hang at the top: a charge leaves in a millisecond and the gun is shoved by
+ * it at once, then the arm takes it back. (An impulse into a spring peaked at
+ * a sixth of a second — ten frames of the gun drifting UP after the shot,
+ * which is a float, not a kick.) Rise and fall constants, normalised to 1. */
+const SG_KICK_RISE = 0.020, SG_KICK_FALL = 0.13;
+const SG_KICK_NORM = (() => { const r = SG_KICK_RISE, f = SG_KICK_FALL, t = r * Math.log(1 + f / r); return 1 / ((1 - Math.exp(-t / r)) * Math.exp(-t / f)); })();
+const sgKickEnv = (t) => (1 - Math.exp(-t / SG_KICK_RISE)) * Math.exp(-t / SG_KICK_FALL) * SG_KICK_NORM;
+let sgLastBarrel = 0;
+/* THE DRAW. It used to appear in the frame on one frame, which no gun in any
+ * game does: it comes up from under the frame muzzle-low and rolled, swings
+ * in, rises a touch past where it rests and settles there — four tenths of a
+ * second, and the trigger is yours once it is most of the way up. */
+const SG_DRAW = 0.42, SG_DRAW_FIRE = 0.70;
+let sgDrawT = 9;
+function sgDrawStart() { sgDrawT = 0; if (!applyingSave && !replaying) sfxSgDraw(); sgWarmAudio(); }
+/* THE NOISES ARE BUILT BEFORE THEY ARE NEEDED: the first shot used to make
+ * every buffer the blast and the gore ask for on its own frame (`cachedNoise`).
+ * One sound's worth per idle slice, starting from the draw — silent, they are
+ * only made, never played. */
+let sgWarmed = false;
+function sgWarmAudio() {
+  if (sgWarmed || !audioCtx) return;
+  sgWarmed = true;
+  const jobs = [];
+  for (const k of Object.keys(NOISE)) for (let i = 0; i < NOISE[k][2]; i++) jobs.push(() => noise(k));
+  for (const len of [0.05, 0.07, 0.08, 0.12, 0.22]) for (let i = 0; i < 3; i++) jobs.push(() => thumpNoise(len));
+  const next = () => { const j = jobs.shift(); if (!j) return; try { j(); } catch (e) {} setTimeout(next, 16); };
+  setTimeout(next, 30);
+}
+const sgDrawing = () => sgDrawT < SG_DRAW * SG_DRAW_FIRE;
+const sgLoaded = () => (sgCh[0] === 1 ? 1 : 0) + (sgCh[1] === 1 ? 1 : 0);
+const sgModel = makeShotgun();         // BUILT, so it exists at module time — `holdable` names it here
+const shotgunItem = {
+  id: 'shotgun', name: 'Double-Barrel Shotgun', icon: makeShotgunIcon(),
+  desc: 'Two barrels, nine pellets each. Right click aims, left click fires, R reloads',
+  gun: true, shotgun: true, gore: 2.6,
+  iconRot: { rotX: -0.30, rotY: 2.5 },
+  use: () => toggleEquip(shotgunItem),
+};
+holdable(shotgunItem, sgModel, { scale: SG_VM, pos: [0, 0, 0], rot: [0, Math.PI / 2, 0] });
+/* THE HOLD. Six numbers like every tool here. At the hip it rides low on the
+ * right with the barrels angled in to the crosshair, the way a long gun comes
+ * up off the hip in a corridor; down the rib it is the arm's own carry
+ * cancelled (the .44's arithmetic) with the rib pinned to the crosshair by
+ * `sgSights`. */
+const SG_HIP = [0.035, -0.055, 0.47, -0.32, 0.30, 0.03];   // canted a third of a radian so the engraved side and the walnut show
+/* DOWN THE RIB. SOLVED, not tuned (`tools/sgads.js`, `__sgAdsSolve({ relief: 0.28, drop: 0.047 })`): the
+ * barrels lie exactly along the view axis, the rib's rear is 4.7 cm (in the hand's units) under the eye
+ * and 28 in front of it, no cant, and the bead pin has nothing left to do. The old numbers pointed the gun
+ * six degrees across the view and six up with the bead dragged onto the crosshair by the pin — the owner
+ * shouldered it and saw the side of the action and the walnut, not the rib: "make sure the aim down
+ * sights is actually working". Yaw 0.45, roll −0.10 and side −0.58 are the arm's own carry cancelled,
+ * so the gun is centred at every window shape. (The walnut that filled the bottom of the view, the
+ * reason it was pointed rather than sighted, was a stock with a rifle's drop and a sharp corner the
+ * bevel made a spike of: `models/shotgun.js`.) */
+const SG_ADS = [-0.0514, 0.1319, 0.45, -0.10, 0.5438, -0.58];
+/* THE RELOAD IS KEYS: [pitch, lift, yaw, roll, push, side] at fractions of it.
+ * Rolled toward you and tipped muzzle-down so the breech faces the lens; a
+ * flick up to throw the hulls; held there for the two shells; snapped shut on
+ * an upward jerk, and back. */
+const SG_REL_KEYS = [
+  [0.00, [0, 0, 0, 0, 0, 0]],
+  [0.06, [-0.06, 0.060, -0.08, 0.26, 0.035, -0.18]],   // brought in and rolled: the thumb on the lever
+  [0.13, [-0.28, 0.170, -0.16, 0.42, 0.060, -0.50]],   // broken: muzzle down, the breech UP in the frame and facing you
+  [0.21, [0.06, 0.200, -0.14, 0.38, 0.080, -0.48]],    // THE FLICK: up and back, and the hulls fly
+  [0.31, [-0.32, 0.185, -0.18, 0.46, 0.070, -0.54]],   // down again to take the shells
+  [0.44, [-0.35, 0.191, -0.20, 0.49, 0.073, -0.55]],   // rolled a touch further: the right chamber turned to the hand
+  [0.60, [-0.30, 0.182, -0.16, 0.44, 0.067, -0.53]],   // and back for the left
+  [0.735, [-0.40, 0.175, -0.17, 0.47, 0.064, -0.54]],  // the wind-up: the muzzle dips before it is thrown up
+  [0.80, [0.12, 0.090, -0.10, 0.20, 0.040, -0.22]],    // THE SNAP: the barrels flicked up and shut
+  [0.90, [0.02, 0.010, -0.03, 0.06, 0.010, -0.05]],
+  [1.00, [0, 0, 0, 0, 0, 0]],
+];
+/* (Tipped muzzle-down from the hip carry the gun sank into the bottom corner
+ * and all you saw of the reload was the edge of the breech: the open gun is
+ * lifted and brought in, so the chambers are in the frame while they are being
+ * filled. Measured at 16:9 they were still at 0.88 of the width and 0.83 of
+ * the height — the shells went in at the edge of the frame — so the holds
+ * come a further eighth of the way in and a couple of centimetres up.) */
+/* THROUGH THE KEYS, NOT FROM ONE TO THE NEXT. Each segment was its own
+ * ease-in-ease-out, so the gun came to a dead stop on every key — and between
+ * two equal keys it stood perfectly still for the half second the shells went
+ * in, measured to the thousandth of the screen. A hand never does either. A
+ * cardinal spline keeps the speed through a key (tension 0.3 keeps it from
+ * overshooting much), the ends still ease from and to rest, and under it all
+ * a faint tremor of the hands working, gone at both ends. */
+const SG_REL_TENSION = 0.3;
+const _srk = [0, 0, 0, 0, 0, 0];
+function sgRelPose(p) {
+  const K = SG_REL_KEYS, N = K.length;
+  let i = 0; while (i < N - 2 && p > K[i + 1][0]) i++;
+  const a = K[i], b = K[i + 1], dt = b[0] - a[0], t = THREE.MathUtils.clamp((p - a[0]) / dt, 0, 1);
+  const t2 = t * t, t3 = t2 * t;
+  const h00 = 2 * t3 - 3 * t2 + 1, h10 = t3 - 2 * t2 + t, h01 = -2 * t3 + 3 * t2, h11 = t3 - t2;
+  const tan = (j, k) => (j <= 0 || j >= N - 1) ? 0 : (1 - SG_REL_TENSION) * (K[j + 1][1][k] - K[j - 1][1][k]) / (K[j + 1][0] - K[j - 1][0]);
+  for (let k = 0; k < 6; k++) _srk[k] = h00 * a[1][k] + h10 * dt * tan(i, k) + h01 * b[1][k] + h11 * dt * tan(i + 1, k);
+  const live = Math.sin(Math.PI * THREE.MathUtils.clamp(p, 0, 1)), q = p * SG_RELOAD;
+  _srk[0] += live * (Math.sin(q * 7.3) * 0.6 + Math.sin(q * 12.1 + 1.3) * 0.4) * 0.010;
+  _srk[3] += live * (Math.sin(q * 5.9 + 0.7) * 0.6 + Math.sin(q * 10.3 + 2.1) * 0.4) * 0.012;
+  _srk[1] += live * Math.sin(q * 8.7 + 0.4) * 0.003;
+  _srk[5] *= ARM_SIDE;
+  // each beat lands in the hands
+  const jolt = (at, w) => { const d = (p - at) / w; return d > 0 && d < 1 ? Math.sin(d * Math.PI) * (1 - d) : 0; };
+  _srk[0] += jolt(SG_R_BREAK, 0.05) * -0.14;
+  for (const W of SG_R_FEED) { _srk[0] += jolt(W[1] - 0.02, 0.05) * -0.07; _srk[4] += jolt(W[1] - 0.02, 0.05) * 0.03; }
+  _srk[0] += jolt(SG_R_SHUT, 0.06) * 0.20; _srk[1] += jolt(SG_R_SHUT, 0.06) * 0.03;
+  return _srk;
+}
+// how far open the barrels are: dropped on the break with a bounce, held, snapped shut with a rebound
+function sgOpenAmt(p) {
+  if (p < SG_R_BREAK) return 0;
+  if (p < SG_R_BREAK + 0.05) { const t = (p - SG_R_BREAK) / 0.05; return 1 - Math.pow(1 - t, 3) * (1 - t * 0.0) + Math.sin(t * Math.PI) * 0.08; }
+  if (p < SG_R_SHUT - 0.03) return 1;
+  if (p < SG_R_SHUT) { const t = (p - (SG_R_SHUT - 0.03)) / 0.03; return 1 - t * t; }
+  const r = (p - SG_R_SHUT) / 0.05;
+  return r < 1 ? 0.05 * Math.sin(r * Math.PI) * (1 - r) : 0;
+}
+function sgLeverAmt(p) {
+  if (p < SG_R_LEVER) return 0;
+  if (p < SG_R_BREAK) return (p - SG_R_LEVER) / (SG_R_BREAK - SG_R_LEVER);
+  if (p < SG_R_SHUT) return 1;
+  return Math.max(0, 1 - (p - SG_R_SHUT) / 0.025);
+}
+function sgPose(out) {
+  const a = easeInOutCubic(magAim);
+  for (let i = 0; i < 6; i++) out[i] = SG_HIP[i] + (SG_ADS[i] - SG_HIP[i]) * a;
+  /* THE KICK: the muzzle thrown up, the whole gun driven back into you and up,
+   * and rolled toward the side of the barrel that went off. */
+  /* (A REVOLVER FLIPS, A LONG GUN SHOVES. Read through the .44's numbers the
+   * spring peaks near 1.0 and threw the gun 0.6 rad up and a third of a metre
+   * back — out of the bottom of the frame for half a second. A shotgun's kick
+   * is the stock driven back into the shoulder and the barrels rising off it:
+   * about a seventh of a radian and ten centimetres, less down the rib, where
+   * the shoulder is behind it.) */
+  const sk = 1 - magAim * 0.35;
+  out[0] += sgKick * 0.30 * sk;
+  out[1] += sgKick * 0.040;
+  out[4] += sgKick * 0.12 * sk;
+  out[3] += sgRoll * 0.9;
+  out[2] += magYaw * 0.6;
+  if (sgDrawT < SG_DRAW) {
+    const p = sgDrawT / SG_DRAW, rem = Math.pow(1 - p, 3);
+    const over = p > 0.45 ? Math.sin(Math.PI * (p - 0.45) / 0.55) ** 2 : 0;   // squared: it starts and ends at rest, no kink
+    out[0] += -0.60 * rem + 0.05 * over;
+    out[1] += -0.16 * rem;
+    out[2] += 0.25 * rem;
+    out[3] += 0.50 * rem - 0.03 * over;
+    out[4] += 0.05 * rem;
+    out[5] += 0.10 * rem;
+  }
+  if (sgRel >= 0) {
+    const k = sgRelPose(sgRel / SG_RELOAD);
+    for (let n = 0; n < 6; n++) out[n] += k[n];
+  }
+  return out;
+}
+
+/* THE PARTS IN YOUR HANDS, found by name on the clone and found again if the
+ * clone is rebuilt (`holdable`'s builder). */
+let sgVM = null;
+function sgParts() {
+  const vm = shotgunItem.viewmodel;
+  if (!vm || !vm.children.length) return null;
+  if (sgVM && sgVM.root === vm.children[0]) return sgVM;
+  const root = vm.children[0], n = (s) => root.getObjectByName(s);
+  sgVM = { root, barrels: n('sgBarrels'), lever: n('sgLever'), sight: n('sgSight'), bead: n('sgBead'),
+    muzzle: [n('sgMuzzleR'), n('sgMuzzleL')], live: [n('sgLiveR'), n('sgLiveL')], spent: [n('sgSpentR'), n('sgSpentL')],
+    feed: [n('sgFeedR'), n('sgFeedL')] };
+  sgVM.gun = sgVM.barrels ? sgVM.barrels.parent : null;
+  return sgVM;
+}
+const _sgA = new THREE.Vector3(), _sgB = new THREE.Vector3(), _sgC = new THREE.Vector3(), _sgQ = new THREE.Quaternion(), _sgY = new THREE.Vector3(0, 1, 0);
+/* the chamber's mouth, and the bore's axis, in the gun's own frame for a barrel set opened by `ang` */
+function sgChamberAt(i, ang, out, axis) {
+  const z = (i === 0 ? 1 : -1) * SG_BORE_Z;
+  const lx = SG_BREECH_X - SG_HINGE_X, ly = SG_BORE_Y - SG_HINGE_Y;
+  const c = Math.cos(ang), s = Math.sin(ang);
+  out.set(SG_HINGE_X + lx * c - ly * s, SG_HINGE_Y + lx * s + ly * c, z);
+  if (axis) axis.set(c, s, 0);
+  return out;
+}
+function sgSights() {
+  const S = sgParts(); if (!S || !S.barrels) return;
+  const p = sgRel >= 0 ? sgRel / SG_RELOAD : -1;
+  const ang = p >= 0 ? SG_OPEN * sgOpenAmt(p) : 0;
+  S.barrels.rotation.z = ang;
+  if (S.lever) S.lever.rotation.y = p >= 0 ? -0.62 * sgLeverAmt(p) : 0;
+  // what is in each chamber, which is only ever seen with the gun open
+  for (let i = 0; i < 2; i++) {
+    if (S.live[i]) S.live[i].visible = sgCh[i] === 1;
+    if (S.spent[i]) S.spent[i].visible = sgCh[i] === 2;
+  }
+  /* THE TWO SHELLS COMING UP: from under the frame to just behind the open
+   * chamber, nose first down the bore's line, and then slid home. Worked out
+   * off the barrels' own angle, in the gun's frame, so they meet the chamber
+   * wherever the break has put it. */
+  for (let i = 0; i < 2; i++) {
+    const f = S.feed[i]; if (!f) continue;
+    const W = sgFeedWin[i];
+    const show = p >= 0 && W && p >= W[0] && p < W[1];
+    f.visible = !!show;
+    if (!show) continue;
+    const t = (p - W[0]) / (W[1] - W[0]);
+    sgChamberAt(i, ang, _sgA, _sgB);                      // the mouth, and the bore's axis
+    const back = _sgC.copy(_sgA).addScaledVector(_sgB, -0.085).add(new THREE.Vector3(0, 0.012, 0));
+    const rise = easeOutCubic(THREE.MathUtils.clamp(t / 0.55, 0, 1));
+    const home = easeInOutCubic(THREE.MathUtils.clamp((t - 0.55) / 0.40, 0, 1));
+    const start = new THREE.Vector3(back.x - 0.06, back.y - 0.26, back.z + (i === 0 ? 0.05 : 0.03));
+    f.position.lerpVectors(start, back, rise).lerp(_sgA.clone().addScaledVector(_sgB, -0.0003), home);
+    // nose down the bore; tumbling a little on the way up and settling as it lines up
+    _sgQ.setFromUnitVectors(_sgY, _sgB);
+    f.quaternion.copy(_sgQ);
+    const wob = (1 - rise) * 0.9;
+    f.rotateX(wob * 0.8); f.rotateZ(-wob * 0.5);
+  }
+  if (magAim <= 0.002 || !S.bead) return;
+  /* THE BEAD ON THE CROSSHAIR — `magSights`' own machinery, aimed at the front
+   * sight rather than the rear. Pinned at the rib's rear, the rib lies along
+   * the view axis and the comb of the stock runs a centimetre under your eye
+   * all the way back to the lens: measured, half the frame was walnut. A
+   * shotgun is POINTED, not sighted — it comes up into the shoulder from the
+   * lower right with its barrels converging, and the bead is what you put on
+   * the thing. */
+  armRig.updateMatrixWorld(true);
+  S.bead.getWorldPosition(_msA);
+  const depth = Math.min(_msA.z, -0.20);
+  _msV.set(0, 0, 0.5).unproject(vmCamera);
+  _msV.multiplyScalar(depth / _msV.z);
+  _msV.sub(_msA);
+  if (_msV.length() > 0.40) _msV.setLength(0.40);
+  /* AND THE KICK IS LET THROUGH IT. Pinned through the recoil, the bead stayed
+   * on the crosshair and the gun pivoted about its own front sight, the stock
+   * swinging down past your cheek — nothing recoils like that. The pin lets go
+   * as the kick comes in, so the muzzle climbs off the mark and settles back
+   * onto it. */
+  armRig.position.addScaledVector(_msV, easeInOutCubic(magAim) * (1 - Math.min(1, sgKick) * 0.9));
+}
+function sgMuzzleNode() { const S = sgParts(); return S ? S.muzzle[sgLastBarrel] : null; }
+
+/* THE CLOCKS, from `updateGun`. */
+function sgUpdate(dt, live) {
+  if (sgDrawT < 9) sgDrawT += dt;
+  sgSince += dt;
+  let kk = 0;
+  for (let i = sgShots.length - 1; i >= 0; i--) { sgShots[i] += dt; if (sgShots[i] > 0.9) sgShots.splice(i, 1); else kk += sgKickEnv(sgShots[i]); }
+  sgKick = Math.min(1.35, kk * sgKickAmt);
+  // and the look's share, paid out over three frames rather than in one
+  if (sgNudgeOwed > 1e-5) {
+    const f = 1 - Math.exp(-dt / 0.022), a = sgNudgeOwed * f, sd = sgNudgeSide * f;
+    gunNudge(a, sd, true); sgNudgeOwed -= a; sgNudgeSide -= sd;
+  }
+  sgRollV += (-SG_KICK_K * 1.4 * sgRoll - SG_KICK_D * sgRollV) * dt;
+  sgRoll += sgRollV * dt;
+  if (Math.abs(sgRoll) < 1e-4 && Math.abs(sgRollV) < 1e-3) { sgRoll = 0; sgRollV = 0; }
+  if (sgT >= 0) { sgT += dt; if (sgT >= SG_SHOT) sgT = -1; }
+  updateSgSmoke(dt); updateSgSparks(dt);
+  if (!live && sgRel >= 0) sgRel = -1;                 // put away mid-reload: whatever went in is in
+  if (sgRel < 0) return;
+  sgRel += dt;
+  const p = sgRel / SG_RELOAD, B = sgRelBeat;
+  if (!B.lever && p >= SG_R_LEVER) { B.lever = true; sfxSgLever(); }
+  if (!B.brk && p >= SG_R_BREAK) {
+    B.brk = true; sfxSgBreak(); vmImpulse(-0.6);
+    // the spent ones smoke out of the open breech
+    for (let i = 0; i < 2; i++) if (sgCh[i] === 2) sgBreechSmoke(i);
+  }
+  if (!B.eject && p >= SG_R_EJECT) { B.eject = true; sgEject(); }
+  for (let i = 0; i < 2; i++) {
+    const W = sgFeedWin[i];
+    if (W && !B['fed' + i] && p >= W[1] - 0.02) {
+      B['fed' + i] = true;
+      if (sgSpare > 0) { sgSpare--; sgCh[i] = 1; sfxSgSeat(); }
+    }
+    if (W && !B['in' + i] && p >= W[0] + (W[1] - W[0]) * 0.55) { B['in' + i] = true; sfxSgSlide(); }
+  }
+  if (!B.shut && p >= SG_R_SHUT) { B.shut = true; sfxSgShut(); addTrauma(0.08); vmImpulse(0.9); }
+  if (sgRel >= SG_RELOAD) sgRel = -1;
+}
+function sgReload() {
+  if (!magHeld() || !equipped.shotgun || frozen() || held) return;
+  if (sgRel >= 0 || sgT >= 0 || sgDrawing()) return;
+  const need = [0, 1].filter((i) => sgCh[i] !== 1);
+  if (!need.length || sgSpare <= 0) return;
+  sgRel = 0; sgRelBeat = {};
+  // the windows go to the chambers that want a shell, right barrel first, as many as there are shells
+  sgFeedWin = [null, null];
+  let k = 0;
+  for (const i of need) { if (k >= Math.min(need.length, sgSpare)) break; sgFeedWin[i] = SG_R_FEED[k++]; }
+}
+/* THE HULLS GO OVER YOUR SHOULDER. Out of the open chambers in the view
+ * model's own scene, thrown up and back toward the lens and tumbling — and a
+ * second, real one in the WORLD for each, dropping beside your feet with a
+ * hollow knock, because a spent shell on the floor is the record of a fight. */
+let sgShellVM = null;
+function sgEject() {
+  const S = sgParts();
+  let n = 0;
+  for (let i = 0; i < 2; i++) {
+    if (sgCh[i] !== 2) continue;
+    sgCh[i] = 0; n++;
+    if (S && S.spent[i] && vmScene) {
+      S.spent[i].updateWorldMatrix(true, false);
+      if (!sgShellVM) { sgShellVM = makeShell(true); }
+      const m = sgShellVM.clone(true);
+      m.scale.setScalar(SG_VM);
+      S.spent[i].getWorldPosition(m.position);
+      S.spent[i].getWorldQuaternion(m.quaternion);
+      m.traverse((o) => { o.visible = true; });
+      vmScene.add(m);
+      brass.push({ m, v: new THREE.Vector3(0.30 + (Math.random() - 0.5) * 0.25, 1.05 + Math.random() * 0.35, 0.65 + Math.random() * 0.30),
+        w: new THREE.Vector3((Math.random() - 0.5) * 16, (Math.random() - 0.5) * 10, -10 - Math.random() * 10), life: 0.75 + Math.random() * 0.2, delay: i * 0.03 });
+    }
+    sgDropWorldShell(i);
+  }
+  if (n) sfxSgEject(n);
+}
+const _sgW = new THREE.Vector3(), _sgWR = new THREE.Vector3();
+function sgDropWorldShell(i) {
+  const m = makeShell(true);
+  camera.getWorldDirection(_sgW); _sgW.y = 0; if (_sgW.lengthSq() < 1e-6) _sgW.set(0, 0, -1); _sgW.normalize();
+  _sgWR.set(-_sgW.z, 0, _sgW.x);
+  m.position.copy(camera.position).addScaledVector(_sgW, 0.25).addScaledVector(_sgWR, 0.22 + i * 0.04);
+  m.position.y -= 0.32;
+  m.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+  scene.add(m);
+  gibs.push({ m, vel: _sgWR.clone().multiplyScalar(1.1 + Math.random() * 0.6).addScaledVector(_sgW, -0.6).add(new THREE.Vector3(0, 2.0 + Math.random() * 0.6, 0)),
+    spin: new THREE.Vector3((Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18),
+    half: SHELL_R, life: 120, bleed: false });
+  // and it lands a beat later: a hollow plastic knock
+  const ctx = audioCtx;
+  if (ctx) sfxSgShellLand(ctx.currentTime + 0.50 + Math.random() * 0.18 + i * 0.07);
+}
+
+/* SMOKE. A shotgun leaves the air full of it: a fat cloud rolling off the
+ * muzzle into the WORLD (it hangs where you fired it, not on your lens), and
+ * thin curls out of the breech when it is broken after firing. */
+const sgSmokeTex = (() => {
+  const S = 64, c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  for (let i = 0; i < 7; i++) {
+    const x = S / 2 + (Math.random() - 0.5) * S * 0.36, y = S / 2 + (Math.random() - 0.5) * S * 0.36, r = S * (0.18 + Math.random() * 0.16);
+    const gr = g.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, 'rgba(214,218,224,0.62)'); gr.addColorStop(0.6, 'rgba(190,194,202,0.24)'); gr.addColorStop(1, 'rgba(170,174,180,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, S, S);
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+})();
+const sgSmoke = [];
+function sgPuff(world, at, v, size, life, op) {
+  /* A SPRITE IS UNLIT, so whatever colour it is given is the colour it glows: a pale grey cloud in the
+   * middle of a night beach read as a white ball hanging in the frame for half a second. Smoke at night is
+   * the grey of what is behind it, a little lifted — dark, and seen by its edges. */
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: sgSmokeTex, transparent: true, opacity: 0, depthWrite: false, fog: false, color: world ? 0x4c5462 : 0x8a909a }));
+  s.raycast = () => {};
+  s.position.copy(at); s.scale.setScalar(size);
+  s.material.rotation = Math.random() * 6.3;
+  (world ? scene : vmScene).add(s);
+  sgSmoke.push({ s, v, life, max: life, size, grow: size * (world ? 2.4 : 3.0), op, world, spin: (Math.random() - 0.5) * 1.2 });
+}
+function sgMuzzleSmoke(fwd) {
+  // a little in front of the muzzle, in the world: the gun is drawn over everything, so its cloud cannot start at the barrel
+  for (let i = 0; i < 7; i++) {
+    const d = 0.9 + i * 0.32 + Math.random() * 0.25;
+    const at = camera.position.clone().addScaledVector(fwd, d);
+    at.y -= 0.14 + Math.random() * 0.05;
+    at.x += (Math.random() - 0.5) * 0.18; at.z += (Math.random() - 0.5) * 0.18;
+    const v = fwd.clone().multiplyScalar(2.6 - i * 0.28 + Math.random() * 0.6).add(new THREE.Vector3((Math.random() - 0.5) * 0.4, 0.25 + Math.random() * 0.25, (Math.random() - 0.5) * 0.4));
+    sgPuff(true, at, v, 0.40 + i * 0.09, 1.6 + Math.random() * 1.0, 0.62 - i * 0.05);
+  }
+}
+function sgBreechSmoke(i) {
+  const S = sgParts(); if (!S || !S.spent[i]) return;
+  S.spent[i].getWorldPosition(_sgA);
+  for (let k = 0; k < 3; k++) sgPuff(false, _sgA.clone(), new THREE.Vector3((Math.random() - 0.5) * 0.03, 0.10 + Math.random() * 0.06, 0.02), 0.035, 1.0 + Math.random() * 0.5, 0.45);
+}
+/* AND THE BURNING POWDER: a fistful of sparks thrown out of the bores down
+ * the barrels' line, in the hand's own scene so they leave the muzzle you see,
+ * dying in a tenth of a second. */
+const sgSparkMat = new THREE.SpriteMaterial({ color: 0xffb062, transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+const sgSparks = [];
+const _spD = new THREE.Vector3(), _sgSpQ = new THREE.Quaternion();
+function sgMuzzleSparks() {
+  const S = sgParts(), m = S && S.muzzle[sgLastBarrel];
+  if (!m || !S.gun || !vmScene) return;
+  armRig.updateMatrixWorld(true);
+  m.getWorldPosition(_sgA); S.gun.getWorldQuaternion(_sgSpQ);
+  _spD.set(1, 0, 0).applyQuaternion(_sgSpQ).normalize();      // the barrels run along the gun's +X
+  for (let i = 0; i < 12; i++) {
+    const sp = new THREE.Sprite(sgSparkMat.clone());
+    sp.raycast = () => {}; sp.renderOrder = 6;
+    sp.position.copy(_sgA);
+    const sz = 0.010 + Math.random() * 0.016; sp.scale.set(sz, sz, sz);
+    const v = _spD.clone().multiplyScalar(2.4 + Math.random() * 3.6).add(new THREE.Vector3((Math.random() - 0.5) * 1.1, (Math.random() - 0.5) * 1.1 + 0.15, (Math.random() - 0.5) * 1.1));
+    vmScene.add(sp);
+    sgSparks.push({ s: sp, v, life: 0.06 + Math.random() * 0.10, max: 0.16 });
+  }
+}
+function updateSgSparks(dt) {
+  for (let i = sgSparks.length - 1; i >= 0; i--) {
+    const P = sgSparks[i];
+    P.life -= dt;
+    if (P.life <= 0) { P.s.removeFromParent(); P.s.material.dispose(); sgSparks.splice(i, 1); continue; }
+    P.v.multiplyScalar(Math.exp(-dt * 7));
+    P.s.position.addScaledVector(P.v, dt);
+    P.s.material.opacity = Math.min(1, P.life / 0.05);
+  }
+}
+function updateSgSmoke(dt) {
+  for (let i = sgSmoke.length - 1; i >= 0; i--) {
+    const P = sgSmoke[i];
+    P.life -= dt;
+    if (P.life <= 0) { P.s.removeFromParent(); P.s.material.dispose(); sgSmoke.splice(i, 1); continue; }
+    const t = 1 - P.life / P.max;
+    P.v.multiplyScalar(Math.exp(-dt * (P.world ? 2.6 : 1.4)));
+    P.v.y += dt * (P.world ? 0.22 : 0.05);
+    P.s.position.addScaledVector(P.v, dt);
+    P.s.scale.setScalar(P.size + P.grow * Math.pow(t, 0.6));
+    P.s.material.rotation += P.spin * dt;
+    // in fast, out slow
+    P.s.material.opacity = P.op * Math.min(1, t * 9) * Math.pow(1 - t, 1.6);
+  }
+}
+
+/* ---- THE TRIGGER ---------------------------------------------------- */
+const _sgD = new THREE.Vector3(), _sgP = new THREE.Vector3(), _sgRt = new THREE.Vector3(), _sgUp = new THREE.Vector3(), _sgT = new THREE.Vector3();
+const sgFall = (d) => (d <= SG_FULL ? 1 : Math.max(0.2, 1 - (d - SG_FULL) / (SG_FAR - SG_FULL) * 0.8));
+function sgFire() {
+  if (!magHeld() || !equipped.shotgun || frozen() || held) return;
+  if (sgT >= 0 || sgRel >= 0 || sgDrawing()) return;
+  const i = sgCh[0] === 1 ? 0 : sgCh[1] === 1 ? 1 : -1;
+  if (i < 0) {
+    sfxSgDry();
+    sgT = 0.28;                                // a dead trigger still costs you the beat
+    if (sgSpare > 0) { sgT = -1; sgReload(); }
+    return;
+  }
+  sgCh[i] = 2; sgT = 0; sgLastBarrel = i;
+  // where it goes is read before the gun moves (the .44's own lesson)
+  camera.getWorldDirection(_sgD);
+  const fwd = _sgD.clone();
+  sfxSgBlast();
+  if (inCat) catNoiseAt(camera.position.x, camera.position.z, 90);
+  magFlash = 1; magFlashSeed = Math.random() * Math.PI * 2;
+  sgShots.push(0); sgSince = 0; sgKickAmt = 1 - magAim * 0.23;
+  sgRollV += (i === 0 ? 1 : -1) * (2.6 + Math.random() * 1.6);   // it rolls toward the barrel that went
+  magYawV += (Math.random() - 0.5) * 11;
+  magKickV += 8;                                // and the lens takes some of it
+  const up = 0.165 + Math.random() * 0.04 - magAim * 0.05;
+  sgNudgeOwed += up; sgNudgeSide += (Math.random() - 0.5) * 0.05;
+  magClimb += up * 0.80;                        // most of it comes back, as the .44's does
+  addTrauma(1.0);
+  fovKick = Math.max(fovKick, 10.0);           // a jolt, not a zoom: at 27 the lens stayed wide for a second and the thing you shot shrank to a speck
+  vmImpulse(-5.0);
+  magGlare(0.46);
+  /* (It held the world for 0.14 s on every pull, hit or miss — and a kill
+   * held its man standing, whole, for another fifth of a second before he
+   * came apart: a delay you could see, which reads as lag, not weight. The
+   * shot stalls the world for a blink; the kill is in the next frame.) */
+  hitstop = Math.max(hitstop, 0.05);
+  sgMuzzleSmoke(fwd); sgMuzzleSparks();
+
+  /* THE PATTERN: nine pellets, one dead on the crosshair and eight in a cone
+   * that opens with the hip and closes down the rib. Each is traced against
+   * the living, the dead, what can break and what cannot; what each found is
+   * gathered, and the charge is then dealt as ONE blow per thing it hit. */
+  const spread = SG_SPREAD * (1 - magAim) + SG_SPREAD_ADS * magAim;
+  _sgRt.crossVectors(fwd, camera.up).normalize();
+  _sgUp.crossVectors(_sgRt, fwd).normalize();
+  const foes = new Map(), bodies = new Map(), props = new Set(), boxes = new Set();
+  let scars = 0, solid = null, solidT = Infinity;
+  for (let k = 0; k < SG_PELLETS; k++) {
+    const a = Math.random() * Math.PI * 2, r = k === 0 ? 0 : spread * Math.sqrt(0.15 + Math.random() * 0.85);
+    _sgP.copy(fwd).addScaledVector(_sgRt, Math.cos(a) * r).addScaledVector(_sgUp, Math.sin(a) * r).normalize();
+    const h = magTrace(_sgP);                   // and `digRay` is left along this pellet
+    let best = h ? { t: h.t, h } : null;
+    // the dead: the nearest joint of a body on the pellet's line
+    for (const u of mutants) {
+      if (u.st.alive || !u.rag) continue;
+      for (const q of u.rag.parts) {
+        const t = _sgT.copy(q.p).sub(_mgO).dot(_mgD);
+        if (t < 0 || (best && t >= best.t)) continue;
+        if (q.p.distanceTo(_sgT.copy(_mgO).addScaledVector(_mgD, t)) < 0.26) best = { t, body: u, q };
+      }
+    }
+    // what breaks: bottles, jars, sets and benches, and the crates
+    for (const p of physProps) {
+      if (!p.onImpact || p.dead || p.held || !p.mesh.parent) continue;
+      const x = digRay.intersectObject(p.mesh, true)[0];
+      if (x && (!best || x.distance < best.t)) best = { t: x.distance, prop: p, point: x.point };
+    }
+    for (const c of crates) {
+      if (c.broken) continue;
+      const x = digRay.intersectObject(c.group, true)[0];
+      if (x && (!best || x.distance < best.t)) best = { t: x.distance, crate: c, point: x.point };
+    }
+    if (!best) continue;
+    if (best.body) { const B = bodies.get(best.body) || { u: best.body, q: best.q, n: 0 }; B.n++; bodies.set(best.body, B); continue; }
+    if (best.prop) { props.add(best.prop); continue; }
+    if (best.crate) { boxes.add(best.crate); continue; }
+    const H = best.h;
+    if (H.kind === 'foe') {
+      const A = foes.get(H.u) || { n: 0, head: 0, dmg: 0, t: Infinity, pts: [] };
+      A.n++; if (H.head) A.head++;
+      A.dmg += SG_PELLET_DMG * sgFall(H.t);
+      A.t = Math.min(A.t, H.t); A.pts.push(H.point);
+      foes.set(H.u, A);
+    } else if (H.kind === 'solid') {
+      if (scars < 3) { stampScar(H.hit, H.surface); scars++; }
+      spawnPuffs(H.point.x, H.point.z, 2, -_sgP.x, -_sgP.z, H.point.y, 0x9aa3ae);
+      if (H.t < solidT) { solidT = H.t; solid = H; }
+    } else if (H.kind === 'sand') {
+      spawnPuffs(H.point.x, H.point.z, 2, -_sgP.x, -_sgP.z, Math.max(0.05, H.point.y), null);
+    }
+  }
+  sgWave(fwd, foes);
+  for (const [u, A] of foes) sgHitFoe(u, A, fwd);
+  for (const B of bodies.values()) sgBlastCorpse(B.u, B.q, B.n, fwd);
+  for (const p of props) p.onImpact(14);
+  for (const c of boxes) { flashMats(c.group); breakCrate(c, 1.0); }
+  if (solid) sfxPropHit(solid.surface || 'rock', 9);
+}
+/* WHAT A CHARGE DOES TO A BODY. `k` is how much of a creature it took — the
+ * share of the pattern that found it, falling off with range — and it is what
+ * `finishMutant` reads if this blow is the last one. Short of a kill a charge
+ * in the chest still MOVES you: a hard shove back off the muzzle and the
+ * poise-breaking weight of a heavy, so what you shot reels instead of
+ * shrugging. A boss takes less of it and keeps his feet. */
+const _swO = new THREE.Vector3();
+function sgWave(fwd, foes) {
+  const waveA = SG_WAVE_A * (1 - magAim) + SG_WAVE_A_ADS * magAim;
+  camera.getWorldPosition(_swO);
+  for (const u of mutants) {
+    if (!u.kind || !u.st.alive || u.st.struck || !u.g.visible) continue;
+    const g = u.g.position, H = u.kind.h || 1.8;
+    const dx = g.x - _swO.x, dy = g.y + H * 0.55 - _swO.y, dz = g.z - _swO.z;
+    const d = Math.hypot(dx, dz), d3 = Math.hypot(dx, dy, dz);
+    if (d > SG_WAVE_R || d3 < 0.3) continue;
+    // how far off the line of the barrels its chest is, less its own width
+    const off = Math.acos(THREE.MathUtils.clamp((dx * fwd.x + dy * fwd.y + dz * fwd.z) / d3, -1, 1));
+    const a = off - Math.atan2(Math.max(0.30, (u.kind.hitR || 0.6) * 0.6), d3);
+    if (a > waveA) continue;
+    // in the open: nothing solid between the muzzle and its chest
+    _sgP.set(dx, dy, dz).divideScalar(d3);
+    digRay.set(_swO, _sgP); digRay.far = d3;
+    const s = nearestSolidHit();
+    if (s && s.distance < d3 - 0.45) continue;
+    const vn = Math.round(SG_PELLETS * 0.5 * Math.pow(1 - d / SG_WAVE_R, 0.6) * (1 - Math.max(0, a) / waveA * 0.5));
+    if (vn <= 0) continue;
+    const A = foes.get(u) || { n: 0, head: 0, dmg: 0, t: d3, pts: [] };
+    if (A.n >= vn) continue;
+    A.dmg += (vn - A.n) * SG_PELLET_DMG * sgFall(d3);
+    A.n = vn; A.t = Math.min(A.t, d3);
+    if (!A.pts.length) A.pts.push(new THREE.Vector3(g.x, g.y + H * 0.55, g.z));
+    foes.set(u, A);
+  }
+  digRay.far = MAG_RANGE;
+}
+function sgHitFoe(u, A, fwd) {
+  if (!u.st.alive || u.st.struck) return;
+  const d = A.t;
+  /* HOW MUCH OF IT THE CHARGE TOOK: the share of the pattern that found it,
+   * or how far past its health the blow went, whichever is more — so a farmer
+   * with four health and three pellets in him comes apart like a big thing
+   * with the whole charge in it — closing down with range. */
+  const kN = A.n / SG_PELLETS, kO = THREE.MathUtils.clamp((A.dmg / Math.max(1, u.st.hp || 1) - 1) * 0.28, 0, 1);
+  const k = THREE.MathUtils.clamp(Math.max(kN, kO) * (1.15 - (d - 1.6) / 7.0), 0, 1);
+  for (const p of A.pts) sprayBlood(p.x, p.y, p.z, fwd.x, fwd.z, 4, 1.5 + k);
+  if (!u.kind) { hurtCrab(u, A.n >= 3 ? 4 : 2, 1); return; }        // a crab: shell, and it goes
+  if (u.kind.gunBlock && gunBlocks(u)) { umbraDeflect(u, A.pts[0]); return; }
+  const boss = !!u.kind.bossDeath;
+  // a head full of shot, close in, is not a wound
+  if (u.kind.headPop && !boss && A.head >= 3 && d < 9) {
+    u.st.killBlast = Math.max(0.55, k); u.st.blastD = d;
+    magHeadshot(u);
+    sgFinish(u); sgKillBeat(k);
+    return;
+  }
+  u.st.killBlast = k; u.st.blastD = d;
+  const died = hurtMutant(u, Math.max(1, Math.round(A.dmg * (boss ? 0.6 : 1))), A.n >= 4 ? 1.0 : 0.55);
+  if (died) { sgFinish(u); sgKillBeat(k); return; }
+  u.st.killBlast = 0;
+  if (!u.st.alive) return;
+  playSample('fleshHit', 1.0, 0.05, 0.82);
+  if (!boss && (u.kind.h || 2) < 3.4) {
+    _sgT.set(fwd.x, 0, fwd.z).normalize();
+    u.st.flinchPush = { x: _sgT.x, z: _sgT.z, v: 2.2 + 5.5 * k };
+  }
+  if (u.kind.gunStun && !u.kind.baby) gunStun(u);
+}
+/* NO IMPACT FRAMES FOR A CHARGE OF SHOT. A blade's kill holds the man in his
+ * last pose for the hitstop (`updateMutant`'s `struck` branch) so you see
+ * what stopped the world; a shotgun's kill IS the picture — he comes apart on
+ * the frame it lands, and the short freeze after it holds the pieces just as
+ * they leave him. */
+function sgFinish(u) { if (u.st.struck && u.st.alive) finishMutant(u); }
+// the kill lands harder than the shot: the lens punched, and the noise of what happened
+function sgKillBeat(k) {
+  hitstop = Math.min(0.085, Math.max(0.05, 0.05 + k * 0.03));   // and shorter than a blade kill's (killMutant set that one): five frames of the pieces leaving
+  addTrauma(0.35 + k * 0.3);
+  fovKick = Math.max(fovKick, 12);
+  sfxSgGore(k);
+}
+/* AND THE DEAD ARE NOT SCENERY. A charge into a body on the floor throws it
+ * and takes pieces off it, the blade's `ragHit` with a shotgun's weight. */
+function sgBlastCorpse(u, q, n, fwd) {
+  const r = u.rag; if (!r) return;
+  r.asleep = false;
+  const kick = 3.2 + n * 1.25;
+  for (const o of r.parts) {
+    const d = o.p.distanceTo(q.p);
+    if (d > 1.1) continue;
+    const w = 1 / (1 + d * 2.4);
+    o.pp.x -= (fwd.x * kick + (Math.random() - 0.5) * 1.4) * w / 90;
+    o.pp.y -= (1.5 + n * 0.30) * w / 90;
+    o.pp.z -= (fwd.z * kick + (Math.random() - 0.5) * 1.4) * w / 90;
+  }
+  playSample('fleshHit', 1.0, 0.05, 0.85);
+  sprayBlood(q.p.x, q.p.y, q.p.z, fwd.x, fwd.z, 10 + n * 5, 1.2 + n * 0.12);
+  stampBlood(q.p.x, q.p.z, 0.6 + Math.random() * 0.5, q.p.y);
+  let take = n >= 6 ? 3 : n >= 3 ? 2 : n >= 2 ? 1 : 0;
+  const first = limbFor(q.name, 1.0);
+  const pool = [first, ...MUT_LIMBS.slice().sort(() => Math.random() - 0.5)].filter(Boolean);
+  for (const L of pool) {
+    if (take <= 0) break;
+    if (u.gone[L.bone]) continue;
+    if (L === MUT_BISECT && n < 5) continue;
+    if (mutSever(u, L, fwd.x + (Math.random() - 0.5) * 0.7, fwd.z + (Math.random() - 0.5) * 0.7, 1.2 + n * 0.08)) { ragCut(u, L.bone); take--; }
+  }
+}
+
+/* ---- THE NOISES ------------------------------------------------------ */
+/* THE BLAST. The owner's .44 recording, pitched down a long way, is the crack
+ * — a real gun is what makes a gun sound real — and under it the thing a
+ * shotgun has that a revolver does not: more air. A lower, longer sub, a
+ * thick body of low noise, and the report coming back off the place for a
+ * second and a half. Everything goes through the .44's limiter. */
+function sfxSgBlast() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = magBus(); if (!out) return;
+  const room = typeof inRoom === 'function' ? inRoom() : false;
+  playSample('magShot', 1.30, 0.03, 0.66, 0, out);
+  playSample('magShot', 0.55, 0.02, 0.52, 0.012, out);       // and an octave of weight under it
+  const sub = ctx.createOscillator(); sub.type = 'sine';
+  sub.frequency.setValueAtTime(74, t); sub.frequency.exponentialRampToValueAtTime(19, t + 0.55);
+  const sg = ctx.createGain(); sg.gain.setValueAtTime(0.0001, t); sg.gain.exponentialRampToValueAtTime(1.0, t + 0.008); sg.gain.exponentialRampToValueAtTime(0.0001, t + 0.70);
+  sub.connect(sg).connect(out); sub.start(t); sub.stop(t + 0.72);
+  // the body: a third of a second of low noise with the air in it, closing down
+  const bs = noise('sgBody');
+  const blp = ctx.createBiquadFilter(); blp.type = 'lowpass'; blp.frequency.setValueAtTime(1100, t); blp.frequency.exponentialRampToValueAtTime(140, t + 0.36);
+  const bg = ctx.createGain(); bg.gain.value = 0.62;
+  bs.connect(blp).connect(bg).connect(out); bs.start(t); bs.stop(t + 0.47);
+  // the crack on the front of it, band-limited so nothing hisses
+  const cs = noise('sgCrack');
+  const chp = ctx.createBiquadFilter(); chp.type = 'highpass'; chp.frequency.value = 700;
+  const clp = ctx.createBiquadFilter(); clp.type = 'lowpass'; clp.frequency.value = 4200;
+  const cg = ctx.createGain(); cg.gain.value = 0.34;
+  cs.connect(chp).connect(clp).connect(cg).connect(out); cs.start(t); cs.stop(t + 0.04);
+  // the report, and the roll after it
+  const slaps = room ? [[0.05, 0.50, 2000], [0.11, 0.32, 1400], [0.19, 0.20, 900], [0.31, 0.11, 560], [0.46, 0.06, 380]]
+                     : [[0.17, 0.30, 1100], [0.36, 0.17, 650], [0.62, 0.09, 430], [0.95, 0.04, 300]];
+  for (const [at, gain, cut] of slaps) {
+    const src = noise('sgSlap');
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = cut;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t + at); g.gain.exponentialRampToValueAtTime(gain, t + at + 0.014); g.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.28);
+    src.connect(lp).connect(g).connect(out); src.start(t + at); src.stop(t + at + 0.31);
+  }
+  const rKey = room ? 'sgRollIn' : 'sgRoll', rLen = NOISE[rKey][0];
+  const rs = noise(rKey);
+  const rlp = ctx.createBiquadFilter(); rlp.type = 'lowpass'; rlp.frequency.value = 200;
+  const rg = ctx.createGain(); rg.gain.value = room ? 0.44 : 0.36;
+  rs.connect(rlp).connect(rg).connect(out); rs.start(t + 0.04); rs.stop(t + 0.04 + rLen);
+}
+// a short metallic tick: the building block of every click and clack below
+function sgTick(at, f0, f1, len, gain, type = 'square', lpF = 3000) {
+  const ctx = audioCtx; if (!ctx) return;
+  const o = ctx.createOscillator(); o.type = type;
+  o.frequency.setValueAtTime(f0, at); o.frequency.exponentialRampToValueAtTime(f1, at + len * 0.8);
+  const g = ctx.createGain(); g.gain.setValueAtTime(gain, at); g.gain.exponentialRampToValueAtTime(0.0002, at + len);
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = lpF;
+  o.connect(lp).connect(g).connect(sfxOut()); o.start(at); o.stop(at + len + 0.01);
+}
+function sgThump(at, f, len, gain) {
+  const ctx = audioCtx; if (!ctx) return;
+  const s = thumpNoise(len);
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = f;
+  const g = ctx.createGain(); g.gain.value = gain;
+  s.connect(lp).connect(g).connect(sfxOut()); s.start(at); s.stop(at + len + 0.01);
+}
+function sfxSgLever() { const ctx = audioCtx; if (!ctx) return; const t = ctx.currentTime; sgTick(t, 2400, 900, 0.04, 0.07); sgTick(t + 0.02, 1500, 600, 0.05, 0.05); }
+function sfxSgBreak() {
+  const ctx = audioCtx; if (!ctx) return; const t = ctx.currentTime;
+  sgTick(t, 900, 260, 0.09, 0.14);                       // the bolts letting go
+  sgThump(t + 0.01, 900, 0.10, 0.30);                    // the barrels dropping on the hinge
+  sgTick(t + 0.06, 420, 160, 0.12, 0.10, 'triangle', 1400);
+}
+function sfxSgEject(n) {
+  const ctx = audioCtx; if (!ctx) return; const t = ctx.currentTime;
+  for (let i = 0; i < n; i++) {
+    const at = t + i * 0.035;
+    sgThump(at, 2200, 0.05, 0.22);                       // the ejector's spring
+    sgTick(at + 0.005, 1900, 700, 0.06, 0.06, 'triangle', 2600);   // and the hull leaving: hollow plastic
+  }
+}
+function sfxSgShellLand(at) {
+  // a plastic hull on the floor: two hollow knocks and a little roll
+  for (const [d, f, g] of [[0, 820, 0.07], [0.09, 660, 0.04], [0.16, 560, 0.025]]) { sgTick(at + d, f, f * 0.55, 0.05, g, 'triangle', 1800); sgThump(at + d, 1600, 0.03, 0.08); }
+}
+function sfxSgSlide() { const ctx = audioCtx; if (!ctx) return; const t = ctx.currentTime; sgThump(t, 2600, 0.09, 0.10); sgTick(t + 0.04, 700, 420, 0.06, 0.05, 'triangle', 1600); }
+function sfxSgSeat() { const ctx = audioCtx; if (!ctx) return; const t = ctx.currentTime; sgThump(t, 700, 0.07, 0.28); sgTick(t, 520, 180, 0.07, 0.08, 'triangle', 1200); }
+function sfxSgShut() {
+  const ctx = audioCtx; if (!ctx) return; const t = ctx.currentTime;
+  sgThump(t, 1200, 0.12, 0.55);                          // the barrels slammed up into the action
+  sgTick(t, 640, 150, 0.14, 0.22, 'square', 2200);       // the bolts going home
+  sgTick(t + 0.018, 2600, 1100, 0.05, 0.08);             // and the lever snapping back to centre
+}
+// the draw: the hands and the sling on the walnut, and the weight of it arriving in the shoulder
+function sfxSgDraw() {
+  const ctx = audioCtx; if (!ctx) return; const t = ctx.currentTime;
+  const n = noiseBurst(0.22, (x) => Math.sin(Math.min(1, x * 1.6) * Math.PI) * 0.8);
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1300; bp.Q.value = 0.7;
+  const g = ctx.createGain(); g.gain.value = 0.10;
+  n.connect(bp).connect(g).connect(sfxOut()); n.start(t); n.stop(t + 0.23);
+  sgThump(t + 0.30, 500, 0.08, 0.20);
+  sgTick(t + 0.31, 2400, 1700, 0.014, 0.035, 'square', 3500);   // the lever's small rattle
+}
+function sfxSgDry() { const ctx = audioCtx; if (!ctx) return; const t = ctx.currentTime; sgTick(t, 1100, 300, 0.04, 0.10); sgTick(t + 0.05, 900, 260, 0.04, 0.06); }
+// what a charge does to a body at the range it was made for: wet, heavy, and more than one of it
+let _sgGoreT = -1;
+function sfxSgGore(k) {
+  const ctx = audioCtx; if (!ctx) return; const t = ctx.currentTime;
+  if (t - _sgGoreT < 0.05) return;          // one charge, one noise of what it did, however many it took
+  _sgGoreT = t;
+  playSample('fleshHit', 1.0, 0.04, 0.72);
+  playSample('fleshHit', 0.8, 0.04, 0.58, 0.035);
+  sfxMutSever();
+  sgThump(t, 380, 0.22, 0.45 + k * 0.4);
+  const s = noise('sgSpatter');   // the spatter, landing
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 0.8;
+  const g = ctx.createGain(); g.gain.value = 0.22 + k * 0.2;
+  s.connect(bp).connect(g).connect(sfxOut()); s.start(t + 0.06); s.stop(t + 0.58);
 }
 
 const DOJO_X = 6000, DOJO_Y = 800, DOJO_Z = 6000;
@@ -53264,8 +54500,12 @@ MUT_ATTACKS.sRise = { wind: 0.78, strike: 0.14, recover: 0.40, hit: 0.60, reach:
 MUT_ATTACKS.sSpin = { wind: 0.48, strike: 0.10, recover: 0.30, hit: 0.60, reach: 1.95, lunge: 1.2, stop: 1.02, chain: 'sStab', chainP: 0.34, w: 0.24, limbs: [2, 3], real: true, cock: 0.42, clipRate: 1.20, ease: true };
 MUT_ATTACKS.sStab = { wind: 0.44, strike: 0.10, recover: 0.28, hit: 0.52, reach: 2.05, lunge: 1.4, stop: 1.00, chain: 'sSide', chainP: 0.30, w: 0.24, limbs: [2, 3], real: true, cock: 0.42, clipRate: 1.20, ease: true };
 /* AND THE OVERHEAD IS THE PERILOUS ONE. Two damage, most of a guard, the
- * longest tell in the fight and the quickest blade in it. */
-MUT_ATTACKS.sDown = { wind: 0.66, strike: 0.10, recover: 0.36, hit: 0.64, reach: 2.55, lunge: 1.1, stop: 1.36, chain: 'sSide', chainP: 0.34, w: 0.22, dmg: 2, guardK: 1.60, limbs: [0], real: true, cock: 0.34, clipRate: 1.40, ease: true, twoHanded: true };
+ * longest tell in the fight and the quickest blade in it. And it has to be
+ * thrown from where it can reach: from his old 1.36 m stop the blade came down
+ * 0.42 m SHORT of you on every one (measured, 0 of 14 landed; it missed in the
+ * shipped build too). At 1.05 — the chop's own stop — 13 of 13 land, the steel
+ * 0.2-0.3 m from your chest. */
+MUT_ATTACKS.sDown = { wind: 0.66, strike: 0.10, recover: 0.36, hit: 0.64, reach: 2.55, lunge: 1.1, stop: 1.05, chain: 'sSide', chainP: 0.34, w: 0.22, dmg: 2, guardK: 1.60, limbs: [0], real: true, cock: 0.34, clipRate: 1.40, ease: true, twoHanded: true };
 /* THE GREAT-SWORD SET, off the orc's pack (see `samuraiPick`). The contact
  * fractions are MEASURED ON HIS RIG, not copied off the pack: the frame the
  * blade passes nearest a chest a stride and a half in front of him. The
@@ -53278,6 +54518,8 @@ MUT_ATTACKS.sDown = { wind: 0.66, strike: 0.10, recover: 0.36, hit: 0.64, reach:
  * They chain into each other and into his own four, so no exchange has the
  * same shape twice. */
 MUT_ATTACKS.gCutC = { wind: 0.60, strike: 0.14, recover: 0.34, hit: 0.389, reach: 2.40, lunge: 1.3, stop: 1.45, chain: 'gCutD', chainP: 0.58, w: 0.24, guardK: 1.25, limbs: [0], real: true, cock: 0.44, clipRate: 1.30, ease: true, twoHanded: true };
+// (from 1.30 the steel finishes 0.3-0.5 m short and lands on the benefit of the doubt; 1.15 was tried and the aim
+// fought the cut at that range — the fists flicked out and back on the contact frame, 10.8 times a minute)
 MUT_ATTACKS.gCutD = { wind: 0.58, strike: 0.14, recover: 0.34, hit: 0.400, reach: 2.45, lunge: 1.5, stop: 1.30, chain: 'sSide', chainP: 0.55, w: 0.22, guardK: 1.30, limbs: [0], real: true, cock: 0.44, clipRate: 1.30, ease: true, twoHanded: true };
 MUT_ATTACKS.gCutE = { wind: 0.46, strike: 0.12, recover: 0.36, hit: 0.400, reach: 2.30, lunge: 1.3, stop: 1.30, chain: 'gCutC', chainP: 0.45, w: 0.20, guardK: 1.20, limbs: [0], real: true, cock: 0.40, clipRate: 1.25, ease: true };
 // the overhead from the pack: the slowest of the new ones, and it takes two.
@@ -53723,8 +54965,17 @@ MUT_KINDS.samurai = {
    * AND HIS CLIPS CROSSFADE LONGER. The default 0.14 is a crab's; two men in
    * a bar already ask for more, and so does a heavy figure in armour whose
    * every clip change was a visible pop. */
-  turnMax: 3.2, fade: 0.34,          // longer crossfades: one cut flows into the next
+  /* NEAR-INSTANT CROSSFADES, because `samSmoothPose` is what blends him now.
+   * At 0.34 s a chained cut overlapped the fading idle AND the fading last cut,
+   * and a three-way quaternion blend flips hemisphere as the weights shift (an
+   * upper arm turned 157 degrees in a frame). The inertializer takes every
+   * clip change from the pose actually drawn, so the mixer only has to cut —
+   * and it must cut INSIDE ONE FRAME: the offset is taken on the frame the
+   * clip changes, so a fade of even a few frames leaves the rest of the switch
+   * to be drawn raw (measured at 0.06 s: fists still jumping 0.5 m). */
+  turnMax: 3.2, fade: 0.001,
   smoothMove: true,                  // his lunges ease in and out instead of switching on and off
+  fluid: true,                       // and his swings' clocks have no velocity steps in them (`mutClipTime`)
   opening: 0.85,                     // after a string: no swing and no guard for this long (`rage` makes it shorter)
   /* HARDER. `aggr` is the gap between swings and `press` is how often he takes
    * a turn he could have taken — the pack's 0.62 is right for three creatures
@@ -54185,14 +55436,38 @@ const SAM_CLEAR = 0.30;                        // and no fist nearer his spine t
  * his face) and on its way back to the tsuka after a star (a straight line
  * from his belt through his belly), the sword fist to 0.14-0.22. */
 const _scA = new THREE.Vector3(), _scB = new THREE.Vector3(), _scD = new THREE.Vector3();
-const _scF = new THREE.Vector3(), _scS = new THREE.Vector3();
-function samClear(S, p, r, radial) {
+const _scF = new THREE.Vector3(), _scS = new THREE.Vector3(), _scSv = new THREE.Vector3();
+function samClear(S, p, r, radial, mem) {
   S.hip.getWorldPosition(_scA); S.neck.getWorldPosition(_scB);
   _scB.sub(_scA);
   const t = THREE.MathUtils.clamp(_scD.subVectors(p, _scA).dot(_scB) / (_scB.lengthSq() || 1), 0, 1);
   _scA.addScaledVector(_scB, t);                 // the nearest point of the core
   _scD.subVectors(p, _scA);
-  if (_scD.lengthSq() >= r * r) return 0;
+  if (_scD.lengthSq() >= r * r) { if (mem && _scD.lengthSq() > r * r * 1.0004) mem.on = false; return 0; }
+  /* A FIST REMEMBERS WHICH SIDE IT WENT IN. Pushed out of his front, a fist
+   * that entered his body from BEHIND (the smoother carrying it from the guard
+   * to the run's arm swing) was thrown straight through him in a frame —
+   * measured 0.4 m on the switch into a run. With `mem` the push is along the
+   * direction it came in on (in his own frame, so it turns with him), which on
+   * the frame of entry is exactly where it already is; while it stays inside,
+   * that direction follows the fist round his body a little a frame, so a
+   * fist that truly crosses him slides round the outside instead of jumping. */
+  if (mem && !radial) {
+    const ry = samurai.g.rotation.y + (samurai.model ? samurai.model.rotation.y : 0);
+    _scB.normalize();
+    _scF.set(Math.sin(ry), 0, Math.cos(ry)).addScaledVector(_scB, -Math.sin(ry) * _scB.x - Math.cos(ry) * _scB.z).normalize();
+    _scS.crossVectors(_scB, _scF);
+    const sd = _scD.dot(_scS), fd = _scD.dot(_scF), ad = _scD.dot(_scB), pl = Math.hypot(sd, fd);
+    if (!mem.on) { if (pl < 1e-4) { mem.s = 0; mem.f = 1; } else { mem.s = sd / pl; mem.f = fd / pl; } mem.on = true; }
+    else if (pl > 1e-4) {
+      mem.s += (sd / pl - mem.s) * 0.12; mem.f += (fd / pl - mem.f) * 0.12;
+      const ml = Math.hypot(mem.s, mem.f); if (ml < 1e-4) { mem.s = 0; mem.f = 1; } else { mem.s /= ml; mem.f /= ml; }
+    }
+    const rr = Math.sqrt(Math.max(0, r * r - ad * ad));
+    const before = _scSv.copy(p);
+    p.copy(_scA).addScaledVector(_scB, ad).addScaledVector(_scS, mem.s * rr).addScaledVector(_scF, mem.f * rr);
+    return p.distanceTo(before);
+  }
   if (radial) {                                  // the blade: straight out (steel down his back stays behind him)
     const d = _scD.length(); if (d < 1e-4) return 0;
     p.copy(_scA).addScaledVector(_scD, r / d);
@@ -54265,8 +55540,13 @@ const _skG = new THREE.Vector3(), _skF = new THREE.Vector3(), _skR = new THREE.V
  * that offset decays to nothing over `SAM_SMOOTH_T`. A continuous change has
  * no offset and is untouched; a discontinuous one becomes a fifth of a second
  * of motion. The sword is pinned to the fist again afterwards. */
-const SAM_SMOOTH_T = 0.2;
-const _ssQ = new THREE.Quaternion(), _ssI = new THREE.Quaternion();
+/* 0.28 s, now that it stands in for the mixer's crossfade as well (`fade` is a
+ * near-cut on his kind). And the offset is taken against where the body was
+ * GOING, not where it was: the last frame's motion is carried one frame on
+ * (capped, so a pop is not extrapolated) — taken against the last pose alone,
+ * every switch froze him for a frame before the new clip moved him. */
+const SAM_SMOOTH_T = 0.28;
+const _ssQ = new THREE.Quaternion(), _ssI = new THREE.Quaternion(), _ssV = new THREE.Quaternion(), _ssD = new THREE.Vector3();
 function samSmoothPose(dt) {
   const u = samurai;
   if (!u || !u.model || !u.st) return;
@@ -54275,7 +55555,39 @@ function samSmoothPose(dt) {
   if (!S) {
     const bones = [], torso = [];
     u.model.traverse((o) => { if (o.isBone && o.name !== 'Katana') { if (/^DEF-(spine|thigh)/.test(o.name)) torso.push(bones.length); bones.push(o); } });
-    u.sp = { bones, torso, lastQ: bones.map((b) => b.quaternion.clone()), lastP: bones.map((b) => b.position.clone()), rawQ: bones.map((b) => b.quaternion.clone()),
+    /* AND EVERY BONE IS WATCHED, NOT ONLY THE TORSO. A three-way crossfade
+     * (the idle, a new swing, the last one still fading) blends quaternions
+     * one slerp at a time, each the short way round, and when the inputs are
+     * far apart the result changes hemisphere as the weights shift: measured,
+     * his right upper arm turned 157 degrees in ONE frame on the overhead's
+     * draw and the fist crossed 0.8 m. A cut turns an arm 0.3-0.7 rad a frame,
+     * so anything past 1.1 rad is a flip, not a cut. */
+    const thr = bones.map((b, i) => torso.includes(i) ? 0.5 : 1.1);
+    /* AND WHAT THIS ADDS MUST NOT OUTLIVE THE FRAME. `PropertyMixer.apply`
+     * writes a bone only when its blended value has changed since the last
+     * write, so a bone the playing clip did not move this frame (a paused,
+     * scrubbed swing; a channel the clip has no track for — his side-steps key
+     * only the hips' position) starts the next frame holding what was DRAWN,
+     * smoothing included, and the offset is then added again on top: a fist
+     * walked 0.7 m and snapped back as a window closed, and with instant
+     * crossfades a left hand went six metres. So before his mixer runs, every
+     * bone is put back to the pose it had just before this pass last frame.
+     * Only this pass is undone — forcing the mixer to rewrite every bone
+     * instead was tried and it took away what the layers under this one had
+     * been leaving behind for the blow (his great-sword cut landed 0 in 10).
+     * Installed here, outermost, so the life layer's own restore still runs
+     * inside it on the bones it owns. */
+    if (!u.spWrap && u.mixer) {
+      u.spWrap = true;
+      const inner = u.mixer.update;
+      u.mixer.update = (d) => {
+        const P = u.sp;
+        if (P && P.rawP) for (let i = 0; i < P.bones.length; i++) { P.bones[i].quaternion.copy(P.rawQ[i]); P.bones[i].position.copy(P.rawP[i]); }
+        return inner(d);
+      };
+    }
+    u.sp = { bones, torso, thr, lastQ: bones.map((b) => b.quaternion.clone()), lastP: bones.map((b) => b.position.clone()), rawQ: bones.map((b) => b.quaternion.clone()),
+      rawP: bones.map((b) => b.position.clone()), prevQ: bones.map((b) => b.quaternion.clone()), prevP: bones.map((b) => b.position.clone()),
       offQ: bones.map(() => new THREE.Quaternion()), offP: bones.map(() => new THREE.Vector3()), t: 9, key: '', atk: -1 };
     return;
   }
@@ -54285,13 +55597,19 @@ function samSmoothPose(dt) {
   if (st.atk >= 0 && S.atk >= 0 && st.atk < S.atk - 0.05) trig = true;      // a swing begun again
   S.key = key; S.atk = st.atk;
   // the jump test is the DRAWN pose against the drawn pose, never against what was shown (which lags it on purpose)
-  // (arms are left out, and the bar is high: a cut turns his upper arm 0.3-0.7 rad a frame by design; a pop turns his hips 0.7-2.4)
-  if (!trig) for (const i of S.torso) if (B[i].quaternion.angleTo(S.rawQ[i]) > 0.5) { trig = true; break; }
-  for (let i = 0; i < B.length; i++) S.rawQ[i].copy(B[i].quaternion);
+  // (the bar is high: a cut turns his upper arm 0.3-0.7 rad a frame by design; a pop turns his hips 0.7-2.4, a blend flip an arm 2.7)
+  if (!trig) for (let i = 0; i < B.length; i++) if (B[i].quaternion.angleTo(S.rawQ[i]) > S.thr[i]) { trig = true; break; }
+  for (let i = 0; i < B.length; i++) { S.rawQ[i].copy(B[i].quaternion); S.rawP[i].copy(B[i].position); }
   if (trig) {
     for (let i = 0; i < B.length; i++) {
-      S.offQ[i].copy(B[i].quaternion).invert().premultiply(S.lastQ[i]);     // last = off x now
-      S.offP[i].subVectors(S.lastP[i], B[i].position);
+      // where it was going: last frame's turn (prev -> last) carried on once, capped at 0.12 rad a bone (a chain compounds it)
+      _ssV.copy(S.prevQ[i]).invert().premultiply(S.lastQ[i]);
+      const va = 2 * Math.acos(Math.min(1, Math.abs(_ssV.w)));
+      if (va > 0.12) _ssV.copy(_ssI).slerp(_ssV, 0.12 / va);
+      _ssV.multiply(S.lastQ[i]);                                            // the predicted pose
+      S.offQ[i].copy(B[i].quaternion).invert().premultiply(_ssV);           // pred = off x now
+      _ssD.subVectors(S.lastP[i], S.prevP[i]); if (_ssD.lengthSq() > 0.0025) _ssD.setLength(0.05);
+      S.offP[i].copy(S.lastP[i]).add(_ssD).sub(B[i].position);
     }
     S.t = 0;
   }
@@ -54306,7 +55624,10 @@ function samSmoothPose(dt) {
     u.model.updateMatrixWorld(true);
     pinSamuraiSword();
   }
-  for (let i = 0; i < B.length; i++) { S.lastQ[i].copy(B[i].quaternion); S.lastP[i].copy(B[i].position); }
+  for (let i = 0; i < B.length; i++) {
+    S.prevQ[i].copy(S.lastQ[i]); S.prevP[i].copy(S.lastP[i]);              // (lastQ is what was finally drawn: `samKeepClear` writes it too)
+    S.lastQ[i].copy(B[i].quaternion); S.lastP[i].copy(B[i].position);
+  }
 }
 function samTwoHand(dt) {
   const u = samurai;
@@ -54371,12 +55692,12 @@ function samTwoHand(dt) {
   }
   // the sword fist out of his chest, wherever the clip (or the aim) put it — the sword goes with it
   S.hr.getWorldPosition(_skG);
-  if (samClear(S, _skG, SAM_CLEAR * H / 2.45) > 0.005) samIK2(S.upR, S.foR, S.hr, _skG);
+  if (samClear(S, _skG, SAM_CLEAR * H / 2.45, false, S.memR0 || (S.memR0 = {})) > 0.005) samIK2(S.upR, S.foR, S.hr, _skG);
   pinSamuraiSword();
-  samGripL(u, S, H);
+  samGripL(u, S, H, S.memL0 || (S.memL0 = {}));
 }
 /* the left wrist a hand's width down the tsuka from the right one (by `S.k`), never inside him */
-function samGripL(u, S, H) {
+function samGripL(u, S, H, mem) {
   if (S.k < 0.01) return;
   S.hr.getWorldPosition(_skT);
   samKat.getWorldPosition(_skA); S.tip.getWorldPosition(_skB);
@@ -54384,7 +55705,7 @@ function samGripL(u, S, H) {
   _skT.addScaledVector(_skD, SAM_GRIP_GAP);
   S.hl.getWorldPosition(_skC);
   _skT.lerp(_skC, 1 - S.k);
-  samClear(S, _skT, SAM_CLEAR * H / 2.45);
+  samClear(S, _skT, SAM_CLEAR * H / 2.45, false, mem);
   S.hip.getWorldPosition(_skA); S.neck.getWorldPosition(_skB);
   _skG.subVectors(_skB, _skA).normalize();
   _skR.set(Math.cos(u.g.rotation.y), 0, -Math.sin(u.g.rotation.y));
@@ -54402,12 +55723,13 @@ const SAM_BLADE_CLEAR = 0.24;
 const _samClrP = new THREE.Vector3(), _samClrN = new THREE.Vector3(), _samClrH = new THREE.Vector3(), _samClrQ = new THREE.Quaternion();
 function samKeepClear() {
   const u = samurai, S = u && u.samIK;
+  if (u && (!u.st || !u.st.alive || u.rag || !u.g.visible)) u.drawn = null;   // nothing drawn this frame: the test asks the bones
   if (!S || !samKat || !u.st || !u.st.alive || u.rag || !u.g.visible) return;
   const k = (u.kind.h || 2.45) / 2.45, r = SAM_CLEAR * k;
   let moved = false;
   S.hr.getWorldPosition(_skG);
   const kc = u.samKC || (u.samKC = { fist: 0, blade: 0 });   // what this pass moved last frame (for the harness)
-  kc.fist = samClear(S, _skG, r); kc.blade = 0;
+  kc.fist = samClear(S, _skG, r, false, S.memR || (S.memR = {})); kc.blade = 0;
   if (kc.fist > 0.005) { samIK2(S.upR, S.foR, S.hr, _skG); moved = true; }
   pinSamuraiSword();
   // the blade beyond the fist: its nearest point to his core
@@ -54430,14 +55752,21 @@ function samKeepClear() {
     pinSamuraiSword();
     moved = true;
   }
-  if (moved) samGripL(u, S, u.kind.h || 2.45);
+  /* THE LEFT HAND IS PUT BACK ON THE HANDLE EVERY FRAME IT IS GRIPPING, not
+   * only on the frames this pass happened to move the right one. Re-gripped
+   * "when moved", it toggled between the smoothed pose and the snapped grip as
+   * the push engaged and let go — measured, 0.21 m to 0.54 m in a frame on the
+   * overhead. The grip follows the sword, which is already smooth. */
+  if (S.k >= 0.01) { samGripL(u, S, u.kind.h || 2.45, S.memL || (S.memL = {})); moved = true; }
   else {
     S.hl.getWorldPosition(_skT);
-    if (samClear(S, _skT, r) > 0.005) { samIK2(S.up, S.fo, S.hl, _skT); moved = true; }
+    if (samClear(S, _skT, r, false, S.memL || (S.memL = {})) > 0.005) { samIK2(S.up, S.fo, S.hl, _skT); moved = true; }
   }
   // what is drawn is what the smoother blends FROM next frame, or the clearing itself would pop
   const P = u.sp;
   if (moved && P) for (let i = 0; i < P.bones.length; i++) { P.lastQ[i].copy(P.bones[i].quaternion); P.lastP[i].copy(P.bones[i].position); }
+  // and the blow is tested next frame on this, what was actually drawn (`drawnPos`)
+  if (u.kind.fluid) { u.model.updateMatrixWorld(true); recordDrawn(u); }
 }
 
 /* =====================================================================
@@ -83245,6 +84574,7 @@ window.__bw = {
   heal: () => { hp = maxHp(); hurtFlash = 0; sinceHurt = 0; },   // the harness player has to survive a forty-second sample
   step: (dt) => {
     const rawDt = dt;
+    hitstopFrame = hitstop > 0;
     if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
     oceanUniforms.uTime.value += dt;
     update(dt, rawDt); updateHatch(rawDt); updateAbduct(rawDt); updateUndercroftCut(rawDt);
@@ -83334,6 +84664,8 @@ window.__bw = {
   crawlerUnit, CRAWL_X, CRAWL_Z, crawlerProvoke, startCaveIn, placeInCatacombs, placeOutsideCatDoor, startCatExit, startCatReturn, placeInsideCatDoor, fitCatSandDoor, catWallDoor, catRoute, catSees, catNodeAt, CAT_X, CAT_Y, CAT_Z, CAT_SITE, CAT_LAND, CAT_DOOR, CAVE_Z,
   TRADER_X, TRADER_Z, TRADER_H, TRADER_POSE, traderPose, TRADER_STOCK, traderBuy, TRADER_NPC, traderWorld, trader2World, TRADER2_X, TRADER2_Z, get shopAt() { return shopAt; }, get traderRig() { return traderRig; },
   magnumItem, magModel, magFire, magReload, magTrace, MAG_CAP,
+  shotgunItem, sgModel, sgFire, sgReload, sgParts, get sgCh() { return sgCh; }, set sgCh(v) { sgCh = v; }, get sgSpare() { return sgSpare; }, set sgSpare(v) { sgSpare = v; },
+  get sgRel() { return sgRel; }, get sgKick() { return sgKick; }, SG_HIP, SG_ADS, SG_REL_KEYS, sgRelPose,
   get magAmmo() { return magAmmo; }, set magAmmo(v) { magAmmo = v; },
   scrollHotbar, get wheelCursor() { return wheelCursor; }, get magSpare() { return magSpare; }, set magSpare(v) { magSpare = v; },
   get magAiming() { return magAiming; }, set magAiming(v) { magAiming = v; },
@@ -83695,7 +85027,7 @@ loadUfo();
 {
   const want = [cdItem, crabItem, syringeItem, waterBottleItem, glowstickItem, shovelItem,
     militaryItem, katanaItem, bloodItem, ringItem, weddingItem, keyItem, boatKeyItem, skullKeyItem,
-    headItem, magnumItem, spliffItem, grammyItem].filter(Boolean);
+    headItem, magnumItem, shotgunItem, spliffItem, grammyItem].filter(Boolean);
   const tries = new Map();
   const one = (it) => () => {
     if (it._icon) return;

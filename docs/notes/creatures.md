@@ -3267,3 +3267,38 @@ swing in dev mode). Findings, 2026-10-02:
   `mutLimbs`'s order (hand, handL, then `rig.limbs`/extra).**
 - Results: orc every hit ≤ 0.23 m (median 0.14), samurai median 0.24 / p90
   0.38 (limbR 0.33, landSlop 0.28), crusader 0.32, marauder median 0.19-0.23.
+
+**`mutPlay` FADES FROM THE WEIGHT AN ACTION HAS, NOT FROM 1.** three's
+`fadeOut()` is `_scheduleFading(d, 1, 0)` whatever the action's weight, so a
+clip change made while earlier fades were still running RESURRECTED every one
+of them at full weight; the mixer averages by weight, so the new clip was a
+fifth of the pose and arrived all at once as they died (measured on the
+samurai: seven locomotion clips at 0.35 under a swing at 0.65, and a fist
+jumping a metre). Every creature goes through `mutPlay`, so this changed all
+of them — but only during a switch made mid-fade, which is exactly where they
+popped. A loop chosen again while it is still fading out picks up where it is.
+The crab (`crabPlay`-style loop near the crab mixer) and the tall one
+(`smileClips`) still call `fadeOut` directly and have the same bug.
+
+
+**A SHOTGUN KILL HAS NO IMPACT FRAMES, AND A BODY IN THE AIR HOLDS STILL
+THROUGH A HITSTOP (2026-10-09).** Three things, found on the farmers:
+- A killed creature stands in its last pose for the whole hitstop (`struck`
+  branch) and `finishMutant` runs when it drains. The double stacked 0.14 +
+  0.24 s of freeze, so the farmer stood WHOLE for a fifth of a second before
+  he came apart — it read as lag. `sgFinish(u)` finishes the kill on the
+  shot's frame and `sgKillBeat` holds 0.05–0.085 s, so the freeze holds the
+  pieces just as they leave.
+- That exposed an old bug: the ragdoll's flight cap is a DISTANCE PER SUBSTEP
+  (`vmax × h`), and hitstop scales dt to 8% — so a ragdoll made (or still
+  flying) during a freeze had its whole throw clipped away (0.5 m instead of
+  5). `updateMutRagdoll` returns while `hitstopFrame || hitstop > 0`.
+  **`hitstopFrame`, not `hitstop`**: the frame the freeze drains to zero is
+  still a scaled frame (set at both drains, `animate` and `__bw.step`).
+- **The flight cap scales the whole velocity**, lift included: a throw of
+  25 m/s capped to 11 kept 40% of the lift and the hips never left the paving.
+  For a blast (`u.st.killBlast > 0.05`) `mutRagdoll` caps the horizontal kick
+  at `(6 + 5.5k)·kw` and keeps the lift whole (`+ k·(1.2 + 2.2h)`), and the
+  rag record carries its own `vmax` (10 + 6.5k) and `travel` (6 + 5k), which
+  win over the kind's `ragVmax`/`ragTravel`. `mutSever` keeps `pieceK` at
+  >= 0.80 + 0.25k for a blast and lifts the piece.

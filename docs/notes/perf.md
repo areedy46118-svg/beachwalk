@@ -1101,3 +1101,11 @@ catacombs 11.9/14.2/28, keep 5.1/7.1/26, undercroft 4.2/5.3/19, bunker
 4.8/7/28. The farmer fight with gore: 13/19/37. `ROOM_BACK` and
 `clearRoomFlags` are on `__bw` for it. Canvases that are read back
 (`getImageData`) are made `willReadFrequently`.
+
+**THE SHOT THAT KILLS FOUR (2026-10-09).** Profiled by exporting the inner
+functions on a temporary `window.__sgProf`: one blast kill was ~25 ms, of
+which `sfxMutSever` ×6 was ~14 (noise buffers, audio.md), `bakeLimb` ×7 ~7.6,
+`sfxSgGore` 4. Gib meshes now share one unit `GIB_ICO` (scaled; flagged
+`shared` so `updateGibs`/`sleepGib` never dispose it) instead of 40–60 new
+geometries and GPU buffers a body. 4 kills: ~30 ms in `sgFire` once warm, the
+render after it 16 ms; the very first blast kill of a session ~65 ms (JIT).

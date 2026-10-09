@@ -2272,3 +2272,153 @@ a body at 25° right and another at 20° left hits both, at 0.26 and 0.47.
 the creature code) and redeclaring it killed the page; these are `_bld*`.
 **Harness:** in a HIDDEN pane nothing loads unless frames are pumped
 (`__bw.frame` in the wait loop) and `beginGame` refuses until `startGate().startReady`.
+
+**THE DOUBLE-BARREL SHOTGUN (`shotgunItem`, `sgFire`, `sgReload`, `models/shotgun.js`).**
+A side-by-side twelve-bore BUILT in code (the katana's argument: it has to break
+open on its own hinge). It shares the .44's doors and branches on
+`equipped.shotgun`: `magFire`/`magReload`/`magSights`/the view-model pose all
+hand over, and the aim, the trigger read off `mouseBtns`, the lens spring
+(`magKick`/`magYaw`), `magFlash`/`magLamp`/`magFlashSpr`, `magGlare(k)`, `magBus`
+and `magTrace` are the revolver's. Its own: `sgCh` (two chambers, 0 empty /
+1 live / 2 spent), `sgSpare`, `sgT`, `sgRel`, its own kick spring `sgKick`/`sgRoll`.
+- **Nine pellets, each a `magTrace`**, plus the dead (ragdoll parts on the
+  pellet's line), `physProps` with `onImpact` and `crates` — gathered per thing
+  and dealt as ONE blow (`sgHitFoe`). Damage 3.1 a pellet, full to 4.5 m and a
+  fifth by 24 m: measured on a pack mutant, 28 at 3 m, 26 at 6, 18 at 10, 8.5 at
+  15, 2.3 at 22. Bosses (`bossDeath`) take 0.6. Four pellets or more is a heavy
+  (`P` 1.0) and a non-boss is shoved back (`flinchPush`).
+- **The blast death is `st.killBlast`** (0..1: share of the pattern × closeness),
+  set before `hurtMutant` and cleared if it lives; `finishMutant` reads it and
+  runs `blastApart` instead of the limb roll: the head, then up to five limbs,
+  then (k > 0.55) through the middle LAST, because the torso's bake carries
+  whatever is still on it. Plus a cone of meat and bone gibs down the shot's
+  line, a sheet of blood with the ground painted behind, a spurt, and lens
+  spatter inside 4.5 m; the ragdoll throw adds 1.4 + 2.6k. Bosses get it at
+  0.75k past k 0.35. Measured: one barrel at 2.5-3.8 m takes the head, four to
+  six limbs and often the waist; at 12 m it is an ordinary kill with one limb.
+- **A REVOLVER FLIPS, A LONG GUN SHOVES.** Read through the .44's pose factors
+  the spring peaks near 1.0 and threw the gun 0.6 rad up and a third of a metre
+  back out of the frame. 0.24 pitch, 0.10 push, less down the rib.
+- **THE FOV PUNCH IS A JOLT.** `fovKick` falls at 26°/s, so the first 27/30 held
+  the lens wide for over a second and the thing you had just shot shrank to a
+  speck. 10 on the shot, 12 on a kill.
+- **SHOULDERED, THE BEAD IS PINNED, NOT THE RIB'S REAR.** On the view axis the
+  comb runs a centimetre under the eye back to the lens (half the frame was
+  walnut), and pinning the bead with the gun on the axis put the butt pad square
+  in front of it. `SG_ADS` is WORKED OUT: grip low right ~0.25 m from the eye,
+  bead on the centre line, so the barrels come up from the lower right and the
+  butt is behind the lens. It depends on aspect; tune it at 16:9
+  (`resize_window`), never in the portrait pane.
+- **THE RELOAD** is keys (`SG_REL_KEYS`, `sgRelPose`) with beats `SG_R_LEVER`,
+  `SG_R_BREAK`, `SG_R_EJECT`, `SG_R_FEED` (a window per chamber that needs a
+  shell), `SG_R_SHUT`. `sgOpenAmt` breaks the barrels on `SG_OPEN` about the
+  hinge; the loose shells (`sgFeedR/L`, hidden parts of the gun's frame) are
+  pathed off the barrels' own angle (`sgChamberAt`). The open gun is LIFTED and
+  brought in: tipped from the hip carry it sank into the corner and you saw only
+  the edge of the breech. Spent hulls go into `brass` (the .44's list) and a
+  real one drops in the world as a gib (`half` given — a Group has no geometry).
+- **SMOKE IS UNLIT, SO ITS COLOUR IS WHAT IT GLOWS.** A pale grey cloud read as
+  a white ball in the frame for half a second; it is a dark lifted grey now.
+- **`Object3D.clone()` copies `userData` through JSON.stringify**, so the
+  model's handles live on `root.sg`, never in `userData` (the hand's copy is a
+  clone).
+- Shop: castle trader only (`shopAt` 2), `TRADER_STOCK.shotgun` 1 /
+  `shells` 4, prices 10 / 2; save `sgCh`, `sgSpare`. Harness: `tools/sgtest.js`
+  (`__sgBoot`, `__sgSheet` — contact sheets of real frames), `tools/sgshot.html`
+  (fixed views of the model, `?open=1`), `models/viewer.html?model=shotgun`.
+
+
+**THE DOUBLE, FRAME BY FRAME (2026-10-09).** Measured with `tools/sgcurve.js`
+(`__sgCurve(plan, frames)`: muzzle, grip and bead in the view camera's NDC,
+and how far the gun turned, every frame; `__sgReport` lists the frames whose
+ACCELERATION stands out — a snap is a jump in speed, not a big speed).
+- **The kick was the look-lag, not the spring.** `gunNudge` turns the camera
+  ~10° on the trigger frame, and `updateViewModel`'s follow-through read that
+  as the head turning and threw the gun 13.7° in ONE frame, then let it hang
+  for eight frames while the spring (peaking at 0.16 s) drifted on up. A
+  gun's own nudge is now `gunNudge(up, side, true)` — `quiet` — and is taken
+  back out of `dPitch`/`dYaw` (`vmNudgeP/Y`). The .44 still nudges loud.
+- **The kick is an envelope** (`sgKickEnv`: rise 0.020, fall 0.13, normalised
+  to 1; summed over `sgShots`, capped 1.35): 80% in the first frame, peak on
+  the second, no hang. The look's share is paid out over ~3 frames
+  (`sgNudgeOwed`, tau 0.022 s), and the climb back eases in
+  (`smoothstep(sgSince, 0.10, 0.30)`) — it used to switch on at 0.22 s at full
+  speed, a lurch mid-fall.
+- **Aimed, the bead pin let the gun pivot about its front sight** through the
+  recoil (stock swinging past the cheek). The pin is relaxed by the kick
+  (`× (1 − kick·0.9)`), so the bead climbs ~6% of the screen and settles.
+- **ADS was three frames** (the .44's exponential chase read through the
+  pose's cubic ease). The double runs `magAim` on a linear clock under the same
+  ease: `SG_ADS_IN` 0.22 s, `SG_ADS_OUT` 0.17 s.
+- **The reload stopped dead on every key** (each segment its own smoothstep)
+  and stood perfectly still for half a second between two equal keys while the
+  shells went in. `sgRelPose` is a cardinal spline (`SG_REL_TENSION` 0.3)
+  through the keys, with a chamber-presenting drift (0.44 / 0.60), a wind-up
+  dip before the snap (0.735) and a faint tremor under it (zero at both
+  ends). Still frames in a reload: 35 → 1. The holds were brought ~0.12 of the
+  half-width in and 2.5 cm up: at 16:9 the chambers were at 0.88 of the width.
+- **There was no draw.** `toggleEquip` → `sgDrawStart()`: 0.42 s up from
+  under the frame, rolled, a settle term `sin²` (a plain `sin` kinks the speed
+  where it starts), fire and reload held until 70% (`sgDrawing()`).
+- **The flash was a white ball for four frames** — the .44's star at the
+  double's size, additive, saturating. `sgFlashTex`: thirteen ragged orange
+  petals, a small white heart, scale 0.30 + 1.05·flash, decay 16/s; plus
+  twelve powder sparks down the barrels' +X in the hand's scene
+  (`sgMuzzleSparks`).
+- Test kit: `tools/sgcurve.js` (above), `tools/sgcrowd.js` (`__crowd`,
+  `__shotgunIn`, `__blastTest(ids, dist, gap, depth, film)`) after
+  `tools/farmfight.js`.
+
+**THE CROWD (2026-10-09).** Nine rays in a five-degree cone find ONE farmer
+in a crowd. `sgWave` gives everything alive in the open inside a cone
+(`SG_WAVE_A` 0.24 rad hip / 0.15 aimed, plus the body's own angular width, out
+to `SG_WAVE_R` 6.5 m, solid-checked to the chest) the pellets a real pattern
+would put on it — half the charge at a stride, falling with range and toward
+the edge — but only if the traced pellets found it for less. And `k` (how
+much of it the charge took) is `max(share of pellets, overkill)` with overkill
+`(dmg/hp − 1)·0.28` — so a 4-hp farmer with three pellets in him comes apart,
+not only a big thing with nine. Measured: 3 farmers 0.8 m apart at 4 m all
+die; 4 at 0.7 m at 3 m all die (2 of 4 at the old 0.20 cone); 2 at 7 m both
+die; 3 at 2.2 m all die with up to 8 pieces off. Survivors at the edge are
+shoved.
+
+**DOWN THE RIB, SOLVED (2026-10-09).** The owner: "make sure the aim down
+sights is actually working". The button worked (`mouseBtns & 2` -> `magAim`
+1); the PICTURE did not: the old `SG_ADS` pointed the barrels 6° across the
+view and 6° up, the rib's rear 10 cm right of and under the eye, and the bead
+pin dragged the gun 7 cm to put the bead on the crosshair — you looked at the
+side of the action and the walnut. `tools/sgads.js` `__sgAdsSolve({relief,
+drop, cant})` moves `SG_ADS` (live, in place) by Newton steps until the gun's
++X lies on the view axis, the sight marker sits `drop` under and `relief` in
+front of the eye, and the pin has nothing to correct. Chosen: relief 0.28,
+drop 0.047 -> `[-0.0514, 0.1319, 0.45, -0.10, 0.5438, -0.58]`. Yaw 0.45, roll
+-0.10 and side -0.58 (= `-ARM_SIDE`) cancel the arm's own carry, which makes
+it centred at EVERY aspect (x = halfW·(ARM_SIDE + side)). With the pin at ~0
+the kick's pin relax is harmless. If the model's sight, bead or stock change,
+re-run the solver. The reason it had been "pointed, not sighted" was the
+stock (models below), not the method.
+
+
+**THE DOUBLE'S MODEL, REFINED (2026-10-09, `models/shotgun.js`).**
+- **ExtrudeGeometry's bevel moves the WALLS out by `bevelSize`** (the caps stay
+  on the outline at ±(depth/2 + bevelThickness)). The action's breech face is
+  at 0.1145, not 0.112, its strap's top at 0.0397: anything placed "on" a
+  surface by the outline's numbers was buried (the old safety was).
+  `BFACE/STRAP/TABLE/SIDE` in the action block are the real surfaces.
+- **A SHARP corner in an extruded outline becomes a spike**: the bevel moves a
+  corner out along its bisector. The stock's head corner stood 1.7 cm over the
+  tang, square in the sight picture. Round every corner a bevel will see.
+- **A SHOTGUN STOCK DROPS**: the comb ~4 cm and the heel ~6 cm under the rib's
+  line (it had a rifle's 1.6 cm and a heel above the rib). `WRIST` +
+  `wristTop(x)` are the shared line the stock and the top tang are drawn on;
+  the wood's real top is `STOCK_BEVEL` above it.
+- **One square texture laid on by x,y smears across every face of constant
+  y**: the top strap was stripes. `triUV(geo, fn, from, to)` maps each
+  triangle of an (unindexed) extrusion by its own normal; the action's side
+  caps get `actionSideTex(poly)` drawn to the side outline itself (gold inset
+  border via `goldInset`), the walls get `actionWallTex`.
+- Added: fences, firing-pin bushings, water-table slot, cocking dogs, gold
+  cocking indicators, shaped/checkered top lever (tail turned up), top tang
+  with the safety and SAFE (`letterTex`), rib lettering, mid-bead, bigger
+  glowing front bead, horn fore-end tip + latch + escutcheon screws, crowned
+  stock section, wrist checkering, gold stock oval, re-seated pad and cap.

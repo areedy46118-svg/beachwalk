@@ -1,0 +1,37 @@
+<!doctype html>
+<!-- THE SHOTGUN, FROM FIXED ANGLES, under the view model's own lights. Not part of the game.
+     http://localhost:4173/tools/sgshot.html            four views in a grid
+     ?open=1                                             broken open, live shells in the chambers -->
+<html><head><meta charset="utf-8"><title>shotgun views</title>
+<style>html,body{margin:0;background:#0b0f16;color:#9ab;font:12px monospace}canvas{display:block}</style>
+<script type="importmap">{ "imports": { "three": "../vendor/three/three.module.js" } }</script>
+</head><body>
+<script type="module">
+import * as THREE from 'three';
+import { makeShotgun, makeShell, SG_OPEN } from '../models/shotgun.js';
+const Q = new URLSearchParams(location.search);
+const W = +(Q.get("w") || 528), H = +(Q.get("h") || 640);
+const r = new THREE.WebGLRenderer({ antialias: true }); r.setSize(W, H); r.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(r.domElement);
+const s = new THREE.Scene(); s.background = new THREE.Color(0x0b0f16);
+s.add(new THREE.AmbientLight(0x9fb0cc, 0.9));
+const k = new THREE.DirectionalLight(0xffe6c8, 1.15); k.position.set(-0.5, 1, 0.9); s.add(k);
+const rl = new THREE.DirectionalLight(0x6f8ec8, 0.55); rl.position.set(1, 0.3, -0.6); s.add(rl);
+const g = makeShotgun(); s.add(g);
+if (Q.get('open')) { g.sg.barrels.rotation.z = SG_OPEN; g.sg.lever.rotation.y = -0.6; for (const c of g.sg.chambers) c.live.visible = true; }
+const views = [
+  { p: [0.20, 0.05, 1.25], t: [0.20, -0.02, 0], fov: 50, name: 'side' },
+  { p: [0.95, 0.28, 0.55], t: [0.10, -0.01, 0], fov: 40, name: 'three-quarter' },
+  { p: [-0.02, 0.24, 0.30], t: [0.10, 0.00, 0], fov: 38, name: 'action' },
+  { p: [1.10, 0.03, 0.08], t: [0.80, -0.01, 0], fov: 30, name: 'muzzles' },
+];
+r.setScissorTest(true);
+views.forEach((v, i) => {
+  const x = (i % 2) * W / 2, y = (1 - Math.floor(i / 2)) * H / 2;
+  const cam = new THREE.PerspectiveCamera(v.fov, (W / 2) / (H / 2), 0.005, 20);
+  cam.position.set(...v.p); cam.lookAt(...v.t);
+  r.setViewport(x, y, W / 2, H / 2); r.setScissor(x, y, W / 2, H / 2);
+  r.render(s, cam);
+});
+window.__done = true;
+</script></body></html>
