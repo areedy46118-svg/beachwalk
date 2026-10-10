@@ -1561,3 +1561,51 @@ save with 1 loads as 2 (he is up), with him standing by the well, `wakeAt` 16.
 - **THE STING ON THE BLACK (2026-10-10).** The owner's "well zombie" (3 s,
   `assets/well-rise.m4a`, bank `wellRise`) plays through `playSample` the
   frame the climb gives way to black, under the fade and into the reveal.
+
+**THE WELL REDONE (2026-10-10, the owner: "looks horrible, textures off, too
+small, needs to look deep and dark, insane fog, a scene change, take away the
+crawl").**
+- **Size**: `WELL_S` 1.5 on `wellG`, the model's y −1 (foot of the base) on the
+  sand via `wellY(yl)`; rim `WELL_RIM_Y` 0.96, roof 2.8, outer r 0.945. A
+  `rockColliders` disc (r 0.63·S) so you walk round it. `WELL_STAND` is now
+  man 2.0 / you 4.4; the tall one moved to `SMILE_X` 8.7 (he stood in the roof).
+- **Textures were crushed, not wrong**: the maps' mean albedo is 52/47/30 and
+  the first pass multiplied them by 0.42–0.72 — a black cut-out with a lit grey
+  cup in its mouth. Now `reexpose` like the rocks (0.62 + cold rim; mechanism
+  0.78). The dark goes INSIDE: the base gets vertex colours, inward faces at r
+  < 0.40 shaded `0.04 + 0.96·exp(−3.6·depth under the rim)`.
+- **The bore was a lid of sand.** The ring's bore is r 0.245 model (every
+  inward face measured there). The beach is one opaque sheet at y 0, and the
+  SAND WALL'S TOE runs on under the beach at y −0.12 all the way to x 10.6 (it
+  was the second floor down the bore — found by a ray down the axis listing
+  every triangle hit). Both discard inside `WELL_HOLE_U` (x, z, r = bore + 1.2
+  cm: any less left a sand lip inside the ring): `sandShader` and a wrapper on
+  `cliff.material.onBeforeCompile` (via `vDrainW`). The scuff decal's middle
+  is cleared too — a FOGGED transparent decal over a hole is a grey disc.
+- **The shaft lining begins at the ring's foot** (`wellY(-1)`), r = bore ×
+  0.99, colour 0.016·exp(−0.9·depth). Starting at the rim at r 0.225 it stood
+  INSIDE the ring and covered its stones with a pale tube (0.06 read grey).
+- **The air**: `wellAirK` = smoothstep(72 − d, 0, 46). Fog density is LERPED
+  to `WELL_FOG_D` 0.11 (not multiplied); `scene.fog.color` eased to
+  `WELL_FOG_COL` (cold ash) in `updateWellAir` and put back on leaving (not in
+  a room — rooms set their own). A dark fog read as nothing but more night; a
+  pale one reads as fog with the well dark in it. Tint: blue cut by half, and
+  `wellDread` darkens EVENLY (as a hue shift with the dread multiplier on it
+  the reveal went olive). Ground mist × (1 + 3.2 k).
+- **`wellFog`**: the sky is fog-free, so no density hides the moon. A BackSide
+  sphere r 44 round the eye, black `MeshBasicMaterial` with `fog: true`,
+  transparent, renderOrder 50 — it comes out as exactly the fog at that
+  distance and walls off the sky with no seam.
+- **`wellBanks`**: 30 instanced cards round the well, turned to the eye about
+  the upright, fbm crowns, wheeling at 0.01–0.03 rad/s; faded inside 1.8–6.5 m
+  of the eye (the shaft look and his face stay clear) and past 24–36 m (none
+  outside the wall); renderOrder 51, coloured from the fog's base + lift ×
+  `FOG_TINT` × 2.
+- **Sound**: `beachBedK` × (1 − 0.72 k), `windBedK` × (1 − 0.45 k), and
+  `sfxWellDrone(k)` (wandering band-passed wind + a 55/55.7/82.6 Hz hum).
+- **The crawl is gone**: `wA4` (`on_all_four_A`) deleted with its alias; 40 s
+  of fight logged 26 swings, wA1/wA2/wA3 only. NOTE dev mode stops every
+  mutant swinging (`!settings.devMode` on the swing branch) — test a fight
+  with it off and `heal(99)` each frame. And calling `wellLetUp()` directly
+  leaves the dialog open (frozen) — `endDialog()` after.
+- Harness: `tools/wellview.js` (`__wv.sheet` of views offset from the well).

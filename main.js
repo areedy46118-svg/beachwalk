@@ -2399,10 +2399,18 @@ function updateMood() {
    * the moonlit fog dims toward a cold slate, the ground mist piles up round
    * it (`wellMistK`, read by the mist line too), and while the thing in it is
    * being brought up and looked at the whole stretch goes darker still. */
+  /* AND THEN IT BECAME A PLACE OF ITS OWN (2026-10-10, the owner: "insane
+   * amounts of fog … you can't see anything but the well … more of a scene
+   * change"). The air starts to close seventy metres out and inside
+   * twenty-six it is all there is: the fog goes to `WELL_FOG_D` (about a
+   * dozen metres you can see through), the sky, the moon and the far beach
+   * are walled off by `wellFog` (a shell round the eye drawn in the fog's own
+   * colour), the tint goes cold and dark, and the sea goes quiet. */
   const wdd = Math.hypot(camera.position.x - WELL_X, camera.position.z - WELL_Z);
-  wellMistK = THREE.MathUtils.smoothstep(34 - wdd, 0, 24) * (1 + 0.9 * wellDread);
-  const wk = Math.min(1.6, wellMistK);
-  T.x *= 1 - 0.30 * wk; T.y *= 1 - 0.28 * wk; T.z *= 1 - 0.16 * wk;
+  wellAirK = inRoom() ? 0 : THREE.MathUtils.smoothstep(72 - wdd, 0, 46);
+  wellMistK = wellAirK * (1 + 0.9 * wellDread);
+  const wk = wellAirK, wd = 1 - 0.30 * wellDread * wellAirK;   // (the dread darkens it evenly: as a hue shift it went olive, measured at the reveal)
+  T.x *= (1 - 0.12 * wk) * wd; T.y *= (1 - 0.17 * wk) * wd; T.z *= (1 - 0.50 * wk) * wd;   // and out of the night's blue (the fog's own colour goes grey in `updateWellAir`)
   /* AND CASTLE XIII IS WARM. A town with a fire on every wall and a lamp in
    * every window lights its own air: the haze over its courts and the shadows
    * in them go amber, the one place on the walk where the night is not blue. */
@@ -2415,7 +2423,7 @@ function updateMood() {
    * is the one place the rule that fog only ever thickens is broken: its walls
    * hide everything the far cull takes away, and what is left over them is the
    * lighthouse, which has to be SEEN there. */
-  scene.fog.density *= 1 + 1.25 * wellMistK;                 // the well's damp
+  if (wellAirK > 0) scene.fog.density = THREE.MathUtils.lerp(scene.fog.density, WELL_FOG_D * (1 + 0.22 * wellDread), wellAirK);   // the well's fog
   if (inFort) scene.fog.density *= 0.55;
   if (inC13) scene.fog.density *= 0.9;          // a slight haze over the courts, lit amber by `FOG_TINT` above (the owner: "slight mist")
   const B = MOOD_BASE || (MOOD_BASE = [
@@ -3151,8 +3159,11 @@ const sandMat = new THREE.MeshStandardMaterial({
  * this fragment: a heap standing out of the swash is further up the beach
  * than its footprint, so the sea wraps round it instead of cutting it off.
  * The beach passes nothing and compiles exactly what it always did. */
+/* the well's bore goes down through the beach (x, z, radius; r 0 is no hole) — set by the well, hidden under its ring */
+const WELL_HOLE_U = { value: new THREE.Vector3(0, 0, 0) };
 function sandShader(shader, keep = 'false', decl = '', lift = '0.0') {
   shader.uniforms.bwSkyTex = BW_NOISE_U;
+  shader.uniforms.uWellHole = WELL_HOLE_U;
   shader.uniforms.uTime = oceanUniforms.uTime;
   shader.uniforms.uSkyT = skyUniforms.uTime;
   shader.uniforms.uShallow = oceanUniforms.uShallow;
@@ -3162,13 +3173,14 @@ function sandShader(shader, keep = 'false', decl = '', lift = '0.0') {
     .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;')
     .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
   shader.fragmentShader = shader.fragmentShader
-    .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;\nuniform float uTime;\nuniform float uSkyT;\nuniform vec3 uShallow;\nuniform float uEdgeK;\nfloat wetMask;\nfloat bwFresh;\nfloat bwWeed;\nfloat bwShell;\nfloat bwFoam;\n' + noiseGLSL + shoreGLSL + CLOUD_SHADE_T + FORT_CUT_GLSL + decl)
+    .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;\nuniform float uTime;\nuniform float uSkyT;\nuniform vec3 uShallow;\nuniform float uEdgeK;\nuniform vec3 uWellHole;\nfloat wetMask;\nfloat bwFresh;\nfloat bwWeed;\nfloat bwShell;\nfloat bwFoam;\n' + noiseGLSL + shoreGLSL + CLOUD_SHADE_T + FORT_CUT_GLSL + decl)
     .replace('#include <clipping_planes_fragment>',
       `#include <clipping_planes_fragment>
        float bwLift = ${lift};
        float bwShore = shoreLine(vWorldPos.z, uTime) - bwLift;
        if (vWorldPos.x < bwShore - 1.0 && !(${keep})) discard;
-       if (bwFortCut(vWorldPos.xz)) discard;      // the castle's courtyard is its own floor`)
+       if (bwFortCut(vWorldPos.xz)) discard;      // the castle's courtyard is its own floor
+       { vec2 bwWh = vWorldPos.xz - uWellHole.xy; if (dot(bwWh, bwWh) < uWellHole.z * uWellHole.z) discard; }   // the well's bore`)
     .replace('#include <map_fragment>',
       `#include <map_fragment>
        float fromShore = vWorldPos.x - bwShore;
@@ -26315,7 +26327,7 @@ function updateSnorkLaugh(dt) {
  * (`idle`, `run`). The model's front is -Z, like the crab's, so
  * `atan2(dx, dz) + PI` faces it at you. It is one skinned mesh, so ONE of
  * it — no clone(). */
-const SMILE_X = 9.3, SMILE_Z = CAMP_Z - 120;   // far enough past the snorkeler that you cannot see one from the other; a little toward the sand wall now, at the well (2026-10-10)
+const SMILE_X = 8.7, SMILE_Z = CAMP_Z - 120;   // far enough past the snorkeler that you cannot see one from the other; a little toward the sand wall now, at the well (2026-10-10)
 const SMILE_H = 2.75;                  // taller than a man by a head and a half
 const SMILE_SEE = 9;                   // how close you get before it goes: close enough to see the face
 const SMILE_RUN = 8.5;                 // m/s, flat out
@@ -40963,11 +40975,11 @@ function applySavedInventoryInner(d, loud, hand) {
 function indoors() { return inTavern || inCat || inUndercroft || !!inBunker || inShrine || inWhale || inThrone; }
 function beachBedK() {
   if (indoors()) return 0;
-  return (1 - 0.97 * drainMix) * (1 - bunkerMix) * (1 - shrineMix) * (1 - dojoMix) * (1 - ucMix);
+  return (1 - 0.97 * drainMix) * (1 - bunkerMix) * (1 - shrineMix) * (1 - dojoMix) * (1 - ucMix) * (1 - 0.72 * wellAirK);   // in the well's fog the sea goes a long way off
 }
 function windBedK() {
   if (indoors()) return 0;
-  return (1 - 0.9 * drainMix) * (1 - bunkerMix) * (1 - shrineMix) * (1 - dojoMix) * (1 - ucMix) * (1 + 0.9 * airGust);
+  return (1 - 0.9 * drainMix) * (1 - bunkerMix) * (1 - shrineMix) * (1 - dojoMix) * (1 - ucMix) * (1 + 0.9 * airGust) * (1 - 0.45 * wellAirK);
 }
 function updateBeachBed() {
   const ctx = audioCtx; if (!ctx) return;
@@ -41627,7 +41639,7 @@ function animateFrame() {
   updateUmbraFire();
   FOG_MOON.w = inRoom() ? 0 : 1;
   FOG_KEEP.w = inKeep ? 1 : 0;
-  FOG_GROUND.w = inDojo ? 0.50 : inRoom() ? 0 : GROUND_MIST * (1 + 2.4 * wsM) * (1 + 2.6 * wellMistK); FOG_GROUND.x = performance.now() * 0.00055;
+  FOG_GROUND.w = inDojo ? 0.50 : inRoom() ? 0 : GROUND_MIST * (1 + 2.4 * wsM) * (1 + 3.2 * wellMistK); FOG_GROUND.x = performance.now() * 0.00055;
   FOG_GROUND.y = inDojo ? DOJO_Y + (dojoArenaY || 0) - 0.05 : -0.10;     // in the dojo the mist lies on the courtyard's own stones
   skyUniforms.uMoonDir.value = inDojo ? DOJO_MOON : MOON_DIR;
   updateDojoSky();   // the dojo has a night of its own now; the beach's sky is hidden while it is up
@@ -81728,18 +81740,139 @@ const DANTE_RING = { x: -0.76, y: 0.90, z: -5.52 };   // y over the dais: the ou
  * the run, two swipes, the crouch, the bite, the drop to all fours, the
  * hit, the fall — no other creature's. */
 const WELL_X = 10.6, WELL_Z = SMILE_Z + 0.6;
-const WELL_SINK = 0.08;                // into the sand
+const WELL_SINK = 0.12;                // into the sand
+/* BIGGER THAN AUTHORED (2026-10-10, the owner: "too small"). As modelled the
+ * rim stood 0.64 m off the sand and the bore was 48 cm across — a garden
+ * ornament. Half as big again: the rim at a wall's height (0.96), the roof
+ * at 2.8, a bore a man could go down. The model's own y −1 (the foot of the
+ * base) sits on the sand; `wellY` turns a model height into a world one. */
+const WELL_S = 1.5;
+const wellY = (yl) => -WELL_SINK + WELL_S * (1 + yl);
+const WELL_RIM_L = -0.28, WELL_RIM_Y = wellY(WELL_RIM_L);   // the top of the base's ring, model and world
 let wellPhase = 0;                     // 0 untouched; 1 the bucket is down and he is coming; 2 he is up (or was)
 let wellMistK = 0, wellDread = 0;      // what the mood reads: the damp round it, and the extra while he is coming
+let wellAirK = 0;                      // how far into the well's own air you are, 0 at 72 m to 1 inside 26
+const WELL_FOG_D = 0.11;               // FogExp2 density at the well: the ring clear at five metres, mostly gone by twelve, nothing by twenty
+/* THE WALL OF IT. The sky is drawn without fog (it has to be: it is the
+ * thing the fog is lit by), so a fog however thick leaves the moon and the
+ * clouds hanging over the well. This is a sphere round the eye, drawn last
+ * among the see-through things and in the fog's own colour — a black
+ * material with `fog: true` comes out as exactly the fog at that distance,
+ * moon-glow and tint and all — so everything past it (the sky first) goes
+ * into the same grey the near sand is going into, with no seam. */
+const wellFog = new THREE.Mesh(new THREE.SphereGeometry(44, 32, 16),
+  new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide, transparent: true, opacity: 0, depthWrite: false, fog: true }));
+wellFog.renderOrder = 50; wellFog.frustumCulled = false; wellFog.visible = false;
+wellFog.raycast = () => {}; wellFog.userData.bwGhost = true;
+scene.add(wellFog);
+/* AND IT MOVES. A fog that is only a density is a grey wash; fog you are
+ * IN has banks — thicker and thinner, edges you can see go past. Low soft
+ * cards round the well, each turned to face you about the upright, its
+ * shape a drifting noise with a ragged crown, wheeling slowly round the well
+ * on its own clock. Gone within a few metres of your eye (so the look down
+ * the shaft and the man's face are never behind one) and past thirty (so
+ * none stands outside the wall of `wellFog`). Lit the colour of the fog,
+ * a shade paler, so they read as more of it. */
+const WELL_BANKS = 30;
+const wellBanks = (() => {
+  const qg = new THREE.PlaneGeometry(1, 1); qg.translate(0, 0.5, 0);
+  const g = new THREE.InstancedBufferGeometry();
+  g.index = qg.index; g.setAttribute('position', qg.getAttribute('position')); g.setAttribute('uv', qg.getAttribute('uv'));
+  const A = new Float32Array(WELL_BANKS * 4), B = new Float32Array(WELL_BANKS * 4);
+  for (let i = 0; i < WELL_BANKS; i++) {
+    const near = i < WELL_BANKS * 0.4;
+    A[i * 4] = Math.random() * Math.PI * 2;                                     // where it starts round the well
+    A[i * 4 + 1] = near ? 3.4 + Math.random() * 6 : 8 + Math.random() * 18;   // how far out
+    A[i * 4 + 2] = (0.010 + Math.random() * 0.018) * (Math.random() < 0.5 ? 1 : -1);   // how fast it wheels (rad/s)
+    A[i * 4 + 3] = Math.random() * 40;                                          // its seed
+    B[i * 4] = near ? 4 + Math.random() * 5 : 7 + Math.random() * 10;         // wide
+    B[i * 4 + 1] = near ? 1.4 + Math.random() * 1.6 : 2.2 + Math.random() * 3.2;   // tall
+    B[i * 4 + 2] = 0.55 + Math.random() * 0.40;                                 // how thick
+    B[i * 4 + 3] = Math.random() * 6.28;                                        // its breath's phase
+  }
+  g.setAttribute('aA', new THREE.InstancedBufferAttribute(A, 4));
+  g.setAttribute('aB', new THREE.InstancedBufferAttribute(B, 4));
+  g.instanceCount = WELL_BANKS;
+  const m = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, fog: false,
+    uniforms: { uTime: skyUniforms.uTime, uC: { value: new THREE.Vector3(WELL_X, 0, WELL_Z) }, uCol: { value: new THREE.Color() }, uK: { value: 0 } },
+    vertexShader: /* glsl */`
+      attribute vec4 aA; attribute vec4 aB;
+      uniform float uTime; uniform vec3 uC;
+      varying vec2 vUv; varying float vSeed; varying float vThick; varying vec3 vWp;
+      void main(){
+        float a = aA.x + aA.z * uTime;
+        float r = aA.y + sin(uTime * 0.05 + aA.w) * 1.5;
+        vec3 c = uC + vec3(cos(a) * r, -0.35, sin(a) * r);
+        vec3 toCam = cameraPosition - c; toCam.y = 0.0;
+        vec3 right = normalize(vec3(-toCam.z, 0.0, toCam.x) + 1e-5);
+        float br = 1.0 + 0.12 * sin(uTime * 0.21 + aB.w);
+        vec3 wp = c + right * position.x * aB.x * br + vec3(0.0, position.y * aB.y * br, 0.0);
+        vUv = uv; vSeed = aA.w; vThick = aB.z * (0.75 + 0.25 * sin(uTime * 0.13 + aB.w * 1.7)); vWp = wp;
+        gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
+      }`,
+    fragmentShader: /* glsl */`
+      uniform float uTime; uniform vec3 uCol; uniform float uK;
+      varying vec2 vUv; varying float vSeed; varying float vThick; varying vec3 vWp;
+      ${SK_NOISE_ALU}
+      float wbF(vec2 p){ float a = 0.5, s = 0.0; for (int i = 0; i < 4; i++) { s += a * skN(p); p = p * 2.07 + vec2(11.3, 4.7); a *= 0.5; } return s; }
+      void main(){
+        vec2 q = vUv * vec2(3.0, 1.2) + vSeed * 3.7 + vec2(uTime * 0.035, -uTime * 0.012);
+        float n = wbF(q) * 0.65 + wbF(q * 2.4 + 3.1) * 0.35;
+        float side = smoothstep(0.5, 0.12, abs(vUv.x - 0.5) + (0.5 - n) * 0.30);
+        float top = smoothstep(1.0, 0.25, vUv.y + (0.55 - n) * 0.70);
+        float foot = smoothstep(0.0, 0.14, vUv.y);
+        float body = side * top * foot * smoothstep(0.25, 0.75, n + 0.2);
+        float dist = length(vWp - cameraPosition);
+        float al = body * vThick * uK * smoothstep(1.8, 6.5, dist) * (1.0 - smoothstep(24.0, 36.0, dist));
+        if (al < 0.004) discard;
+        gl_FragColor = vec4(uCol, al);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+  });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.frustumCulled = false; mesh.renderOrder = 51; mesh.visible = false;   // over the wall, which is further than any of them
+  mesh.raycast = () => {}; mesh.userData.bwGhost = true;
+  scene.add(mesh);
+  return mesh;
+})();
+/* AND THE FOG ITSELF GOES GREY. A dark fog is only more night — it hid
+ * things and nobody could tell it was there (measured: the first pass read
+ * as a blacker beach, nothing more). A pale one is a thing you are standing
+ * in: the base colour every lit-fog term is built on is eased from the
+ * night's navy to a cold ash, so the sand runs off into murk and the well
+ * stands up out of it dark. Put back the moment you are out of it. */
+const WELL_FOG_COL = new THREE.Color(0.062, 0.068, 0.084);
+let wellFogBase = null;
+function updateWellAir(dt) {
+  const k = wellAirK;
+  if (k > 0.002) {
+    if (!wellFogBase) wellFogBase = scene.fog.color.clone();
+    scene.fog.color.copy(wellFogBase).lerp(WELL_FOG_COL, Math.min(1, k * 1.2));
+  } else if (wellFogBase) { if (!inRoom()) scene.fog.color.copy(wellFogBase); wellFogBase = null; }   // (a room sets its own)
+  wellFog.visible = k > 0.002;
+  if (wellFog.visible) { wellFog.position.copy(camera.position); wellFog.material.opacity = Math.min(1, k * 1.35); }
+  wellBanks.visible = k > 0.02;
+  if (wellBanks.visible) {
+    const U = wellBanks.material.uniforms;
+    U.uK.value = Math.min(1, k * 1.25);
+    // the fog's own colour as the chunk builds it (base + the lit-air lift, through the mood's tint), a shade paler
+    U.uCol.value.setRGB((scene.fog.color.r + 0.0090) * FOG_TINT.x, (scene.fog.color.g + 0.0195) * FOG_TINT.y, (scene.fog.color.b + 0.0480) * FOG_TINT.z).multiplyScalar(2.0);
+  }
+  sfxWellDrone(k);
+}
 const wellG = new THREE.Group();
-wellG.position.set(WELL_X, 1.0 - WELL_SINK, WELL_Z);
+wellG.position.set(WELL_X, wellY(0), WELL_Z);
+wellG.scale.setScalar(WELL_S);
 wellG.rotation.set(0.025, 0.6, -0.015);   // settled a shade, and turned so the crank is toward the sea
 scene.add(wellG);
 farProps.push({ obj: wellG, z: WELL_Z, d: 260 });
 const wellParts = { bucket: null, handle: null, bolts: null, crank: null, rope: null, myRope: null };
 const WELL_BUCKET_LIFT = 0.44;         // the bucket wound up to the axle (authored, it hung in the mouth)
 const WELL_BUCKET_Y0 = -0.17 + WELL_BUCKET_LIFT;   // its bottom, where it hangs
-const WELL_SHAFT_R = 0.225, WELL_SHAFT_D = 40;
+const WELL_BORE_L = 0.245;            // the ring's own bore, model units (measured: every inward face of it is at r 0.245)
+const WELL_SHAFT_R = WELL_BORE_L * WELL_S * 0.99, WELL_SHAFT_D = 40;
 /* THE SHAFT: stone at the mouth, nothing four metres down. Vertex colours
  * because the game's fog would LIFT the dark (fog is a brightening here),
  * and the one thing the shaft must do is stay black. */
@@ -81754,15 +81887,34 @@ const wellShaft = (() => {
      * moonlit sand round it: 0.3 read as a lit grey cone (measured); the
      * stone at the mouth is a hair over the sand's own value, and gone by
      * three metres */
-    const k = Math.exp(-depth * 1.35) * stone;
-    col[i * 3] = 0.060 * k; col[i * 3 + 1] = 0.060 * k; col[i * 3 + 2] = 0.066 * k;
+    const k = Math.exp(-depth * 0.9) * stone;
+    col[i * 3] = 0.016 * k; col[i * 3 + 1] = 0.016 * k; col[i * 3 + 2] = 0.018 * k;   // (0.06 when it began at the rim: a pale tube standing in front of the ring's own stones)
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false }));
   const cap = new THREE.Mesh(new THREE.CircleGeometry(WELL_SHAFT_R * 1.2, 24), new THREE.MeshBasicMaterial({ color: 0x000000, fog: false }));
   cap.rotation.x = Math.PI / 2; cap.position.y = -WELL_SHAFT_D + 0.01; m.add(cap);
   const grp = new THREE.Group(); grp.add(m);
-  grp.position.set(WELL_X, 0.68, WELL_Z);     // just under the rim
+  /* IT BEGINS WHERE THE STONEWORK ENDS. The ring's own bore (darkened
+   * downward at load) is the top of the shaft, rim to foot; the lining goes on
+   * from its foot, already nearly black. */
+  grp.position.set(WELL_X, wellY(-1) + 0.03, WELL_Z);
+  /* AND THE BEACH HAS A HOLE IN IT. The sand is one opaque sheet at y 0, so
+   * all but the top metre of the bore was sand seen down the ring — a grey
+   * disc of ground mist where the dark should be (measured, after the well
+   * grew). The sand discards inside the shaft's radius; the ring hides the
+   * edge of the hole from anywhere you can stand. */
+  WELL_HOLE_U.value.set(WELL_X, WELL_Z, WELL_BORE_L * WELL_S + 0.012);   // to the bore's stones: anything less left a lip of sand inside the ring
+  // and the sand wall's toe runs on under the beach at y −0.12 as far as here (it was the second floor down the bore)
+  const prev = cliff.material.onBeforeCompile;
+  cliff.material.onBeforeCompile = function (sh, rndr) {
+    if (prev) prev.call(this, sh, rndr);
+    sh.uniforms.uWellHole = WELL_HOLE_U;
+    sh.fragmentShader = 'uniform vec3 uWellHole;\n' + sh.fragmentShader.replace(
+      'if (abs(vDrainW.z - uDrainZ) < 2.6 && vDrainW.y < 3.3) discard;',
+      'if (abs(vDrainW.z - uDrainZ) < 2.6 && vDrainW.y < 3.3) discard;\n  { vec2 bwWh = vDrainW.xz - uWellHole.xy; if (dot(bwWh, bwWh) < uWellHole.z * uWellHole.z) discard; }');
+  };
+  cliff.material.needsUpdate = true;
   grp.visible = false;                         // shown with the well
   scene.add(grp);
   return grp;
@@ -81774,12 +81926,15 @@ const wellShaft = (() => {
   const gr = g.createRadialGradient(64, 64, 10, 64, 64, 64);
   gr.addColorStop(0, 'rgba(10,9,8,0.62)'); gr.addColorStop(0.45, 'rgba(14,12,10,0.34)'); gr.addColorStop(1, 'rgba(14,12,10,0)');
   g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
-  for (let i = 0; i < 140; i++) { const a = Math.random() * 6.3, r = 20 + Math.random() * 42; g.fillStyle = `rgba(0,0,0,${(0.08 + Math.random() * 0.12).toFixed(2)})`; g.fillRect(64 + Math.cos(a) * r, 64 + Math.sin(a) * r, 2, 2); }
+  g.globalCompositeOperation = 'destination-out'; g.beginPath(); g.arc(64, 64, 64 * 1.1 / 2.3, 0, 6.3); g.fill(); g.globalCompositeOperation = 'source-over';   // nothing over the bore: a fogged decal there was a grey lid on the dark
+  for (let i = 0; i < 140; i++) { const a = Math.random() * 6.3, r = 26 + Math.random() * 36; g.fillStyle = `rgba(0,0,0,${(0.08 + Math.random() * 0.12).toFixed(2)})`; g.fillRect(64 + Math.cos(a) * r, 64 + Math.sin(a) * r, 2, 2); }
   const t = new THREE.CanvasTexture(c);
-  const d = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.2), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+  const d = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 4.6), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
   d.rotation.x = -Math.PI / 2; d.position.set(WELL_X, 0.012, WELL_Z); d.renderOrder = 1;
   scene.add(d); farProps.push({ obj: d, z: WELL_Z, d: 200 });
 }
+// the ring is solid: you walk round it, you do not walk through it
+rockColliders.push({ x: WELL_X, z: WELL_Z, r: 0.63 * WELL_S, top: WELL_RIM_Y, mat: 'rock' });
 let wellLookIt = null;
 bwGlb('assets/well.glb', (gltf) => {
   const m = gltf.scene;
@@ -81789,11 +81944,18 @@ bwGlb('assets/well.glb', (gltf) => {
     const mt = o.material;
     mt.metalness = 0; mt.envMapIntensity = 0;                 // METALNESS IS A TRAP — no environment
     const nm = (o.parent && o.parent.name) || '';
-    /* NIGHT ON IT. The maps are daylight stone and pale wood; under the moon
-     * the bucket hanging in the mouth read as a white drum (measured: it was
-     * the one bright thing in the frame). Everything is brought down, the
-     * mechanism most, and nothing is lifted. */
-    if (!mt.userData.wellDim) { mt.userData.wellDim = true; mt.color.multiplyScalar(/mechanism/i.test(mt.name) ? 0.42 : /roof/i.test(mt.name) ? 0.62 : 0.72); mt.roughness = 1; if (/mechanism/i.test(mt.name)) mt.emissive = new THREE.Color(0x0c0a08); }   // the bucket keeps a breath of its own light, so you watch it go down into the dark
+    /* EXPOSED LIKE EVERY OTHER SCAN ON THE BEACH (2026-10-10). The maps are
+     * dark already — moss on wet stone, mean albedo 52/47/30 — and the first
+     * pass multiplied them down again (× 0.42–0.72): under the moon the well
+     * was one black cut-out with a pale ring in its mouth, the owner's
+     * "textures are off". Now the rocks' own lift (`reexpose`, gamma 0.6 and a
+     * cold rim off the edges), so the stones and the boards read; the
+     * mechanism, paler wood, less. The dark goes where it belongs: INSIDE. */
+    if (!mt.userData.wellDim) {
+      mt.userData.wellDim = true; mt.roughness = 1;
+      const mech = /mechanism/i.test(mt.name);
+      reexpose(mt, mech ? 0.78 : 0.62, mech ? [0.035, 0.045, 0.07] : [0.050, 0.066, 0.098]);
+    }
     if (/Bucket_handleBolts/.test(nm)) wellParts.bolts = o.parent;
     else if (/Bucket_handle/.test(nm)) wellParts.handle = o.parent;
     else if (/Bucket/.test(nm)) wellParts.bucket = o.parent;
@@ -81805,6 +81967,22 @@ bwGlb('assets/well.glb', (gltf) => {
      * bottom is a disc inside r 0.36 at its own y −1; its triangles are cut. */
     if (/Well_base/.test(nm)) {
       const g = o.geometry, P = g.attributes.position, idx = g.index;
+      /* AND THE INSIDE OF THE RING GOES DARK DOWNWARD: a face turned in
+       * toward the bore is shaded by how far under the rim it is, black by
+       * the foot of the ring, so the mouth opens straight into the shaft's
+       * black instead of showing a lit grey cup (it did: the moon fell on the
+       * inner stones and they were the brightest thing in the well). */
+      const N = g.attributes.normal, col = new Float32Array(P.count * 3);
+      for (let i = 0; i < P.count; i++) {
+        const x = P.getX(i), y = P.getY(i), z = P.getZ(i), r = Math.hypot(x, z) || 1;
+        const inward = N ? -(N.getX(i) * x + N.getZ(i) * z) / r : 0;
+        let k = 1;
+        if (r < 0.40 && inward > 0.2) k = 0.04 + 0.96 * Math.exp(-(WELL_RIM_L - y) * 3.6);   // the top courses seen, going into the dark
+        else if (r < 0.34 && y < WELL_RIM_L - 0.05) k = 0.05;
+        col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = k;
+      }
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      mt.vertexColors = true; mt.needsUpdate = true;
       if (idx) {
         const keep = [];
         const low = (i) => Math.abs(P.getY(i) + 1.0) < 0.1 && Math.hypot(P.getX(i), P.getZ(i)) < 0.36;
@@ -81832,8 +82010,8 @@ function wellBucketDown() {
 }
 
 /* ---- THE MAN FROM THE WELL ------------------------------------------ */
-/* Fast, and never where he was: two swipes, a bite from the crouch and a
- * drop onto you from standing, each at the clip's own speed and a half
+/* Fast, and never where he was: two swipes and a bite from the crouch (the
+ * drop onto all fours was cut, 2026-10-10), each at the clip's own speed and a half
  * again; he chains them, he feints little, and he STOPS — drops into his
  * crouch and holds, dead still, for a second or two, then comes on at a
  * sprint (`wellStalk`). `hit` on each is the frame the hand or the head is
@@ -81841,7 +82019,6 @@ function wellBucketDown() {
 MUT_ATTACKS.wA1 = { wind: 0.63, strike: 0.10, recover: 0.75, hit: 0.46, reach: 2.05, lunge: 1.5, chain: 'wA2', chainP: 0.72, w: 0.30, dmg: 1, guardK: 1.1, limbs: [1], stop: 1.45, rate: 1.5 };
 MUT_ATTACKS.wA2 = { wind: 0.60, strike: 0.10, recover: 0.60, hit: 0.50, reach: 2.10, lunge: 1.5, chain: 'wA3', chainP: 0.60, w: 0.30, dmg: 1, guardK: 1.1, limbs: [0], stop: 1.45, rate: 1.6 };
 MUT_ATTACKS.wA3 = { wind: 0.30, strike: 0.08, recover: 0.55, hit: 0.35, reach: 1.75, lunge: 2.2, chain: 'wA1', chainP: 0.65, w: 0.20, dmg: 2, guardK: 1.4, limbs: [0, 1], stop: 1.25, rate: 1.3, landSlop: 0.3 };
-MUT_ATTACKS.wA4 = { wind: 1.20, strike: 0.10, recover: 0.50, hit: 0.71, reach: 2.30, lunge: 2.6, chain: 'wA3', chainP: 0.80, w: 0.20, dmg: 2, guardK: 1.5, limbs: [0, 1], stop: 1.30, rate: 1.4, landSlop: 0.3 };
 MUT_KINDS.wellman = {
   glb: 'assets/wellman.glb', solo: true, skin: null, bones: null, faceFix: 0, natural: true, deathClip: true, wellBody: true,
   death: { BUCKLE: 1.2, DROP: 2.0, TAIL: 2.6, QUIET: 3.4 },
@@ -81850,7 +82027,7 @@ MUT_KINDS.wellman = {
    * to play at up to three times their stride so the feet keep up, and a
    * burst (`st.sprint`) on every charge that takes him past ten for a moment. */
   speedK: 1.45, windK: 1.0, reachK: 1.0, aggr: 4.6, press: 0.98, chainMax: 3,   // 6.7 m/s flat out; the charge's burst puts it past eleven for a breath
-  use: { wA1: 0.30, wA2: 0.30, wA3: 0.20, wA4: 0.20 },
+  use: { wA1: 0.38, wA2: 0.37, wA3: 0.25 },   // no wA4: the drop to all fours is gone (the owner: "take away the zombie crawl move")
   circle: 0.15, step: 0.26, feint: 0.08, sizeUp: 0.0, smart: 1, reacts: true, restless: true,
   turnMax: 9.0, fade: 0.09,
   poise: 14, poiseBack: 2.5, poiseWait: 0.6, parryK: 0.9, recoilK: 0.55, stunK: 0.9,
@@ -81873,7 +82050,7 @@ MUT_KINDS.wellman = {
   gaits: { walk: ['walk01', 'walk02'], run: ['run'], idle: ['idle01', 'idle02'], strafeL: ['walk01'], strafeR: ['walk01'] },
   alias: { idle2: 'idle02', walk2: 'walk02', run2: 'run', roar2: 'caution', die2: 'death', calm: 'idle02',
            hit: 'damage', hitBig: 'down', hitSide: 'damage', hitBack: 'damage', hitHead: 'damage', parry: 'down',
-           strafeL: 'walk01', strafeR: 'walk01', wA1: 'attack01', wA2: 'attack02', wA3: 'eat', wA4: 'on_all_four_A' },
+           strafeL: 'walk01', strafeR: 'walk01', wA1: 'attack01', wA2: 'attack02', wA3: 'eat' },
   stunClip: 'down', first: 'idle01', sleepIdle: 'idle01',
   provoke: (u) => wellCharge(u),
   voice: { f: 1.35, growl: 0.5, rasp: 1.9 },
@@ -81949,8 +82126,8 @@ function wellLookStart() {
   wellLook.home.copy(camera.position); wellLook.homeQ.copy(camera.quaternion);
   // over the rim on your own side of it, head under the roof, looking straight down the bore
   const dx = camera.position.x - WELL_X, dz = camera.position.z - WELL_Z, d = Math.hypot(dx, dz) || 1;
-  wellLook.to.set(WELL_X + (dx / d) * 0.26, 1.02, WELL_Z + (dz / d) * 0.26);
-  _wlM.lookAt(wellLook.to, new THREE.Vector3(WELL_X - (dx / d) * 0.05, -3.0, WELL_Z - (dz / d) * 0.05), camera.up);
+  wellLook.to.set(WELL_X + (dx / d) * 0.26 * WELL_S, WELL_RIM_Y + 0.40, WELL_Z + (dz / d) * 0.26 * WELL_S);
+  _wlM.lookAt(wellLook.to, new THREE.Vector3(WELL_X - (dx / d) * 0.08, -3.0, WELL_Z - (dz / d) * 0.08), camera.up);
   wellLook.toQ.setFromRotationMatrix(_wlM);
   if (held) dropHeld();
   hovered = null; crosshair.className = ''; crosshair.style.display = 'none';
@@ -81977,6 +82154,7 @@ function wellLetUp() {
 const WELL_CRANK_T = 7.5;              // the bucket takes this long to go out of sight
 const WELL_CRANK_DEPTH = 6.5;          // metres down when it stops: the shaft is black past four
 function updateWell(dt) {
+  updateWellAir(dt);
   if (wellPhase >= 2 && wellUnit) updateWellMan(dt);
   wellDread += ((wellLook.on && wellLook.phase !== 'in' && wellLook.phase !== 'out' && wellLook.phase !== 'hold' ? 1 : wellPhase === 2 && wellStalk.stare > 0 ? 1 : 0) - wellDread) * Math.min(1, dt * 0.6);
   if (!wellLook.on) return;
@@ -82056,7 +82234,7 @@ function wellRopeSway(a) {
 /* THE REVEAL: behind the black you are put a few strides up the sand from
  * the well, facing the sea, and he is standing between you and it. The lens
  * is a conversation's — on his face, tight — and no conversation comes. */
-const WELL_STAND = { man: 1.6, you: 3.9 };
+const WELL_STAND = { man: 2.0, you: 4.4 };
 function wellReveal() {
   wellPhase = 2;
   wellBucketDown();
@@ -82135,7 +82313,38 @@ function wellRestore(f) {
 /* ---- ITS SOUNDS: all made here, small and dry, the way the rest of this
  * file's are. The air in the shaft, the crank's pawl, the rope taken, each
  * stride up it, the wind at the reveal, his breath. */
-let wellAirNodes = null, wellCrankAcc = 0;
+let wellAirNodes = null, wellCrankAcc = 0, wellDroneNodes = null;
+/* THE WELL'S AIR, out in the fog round it: the surf ducked away (`beachBedK`)
+ * and in its place a low moan of wind that rises and falls on its own slow
+ * clock, a bowed hum under it that never quite settles on a note, and
+ * nothing else. It comes up as the fog does. */
+function sfxWellDrone(k) {
+  const ctx = audioCtx; if (!ctx) return;
+  if (k <= 0.001 && !wellDroneNodes) return;
+  if (!wellDroneNodes) {
+    const out = sfxOut(), g = ctx.createGain(); g.gain.value = 0.0001; g.connect(out);
+    const src = noiseBurst(6, () => 1); src.loop = true;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 230; bp.Q.value = 3.2;
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.07; const lg = ctx.createGain(); lg.gain.value = 120; lfo.connect(lg).connect(bp.frequency);
+    const wg = ctx.createGain(); wg.gain.value = 0.9;
+    const lfo2 = ctx.createOscillator(); lfo2.frequency.value = 0.043; const lg2 = ctx.createGain(); lg2.gain.value = 0.55; lfo2.connect(lg2).connect(wg.gain);
+    src.connect(bp).connect(wg).connect(g);
+    const hum = ctx.createGain(); hum.gain.value = 0.10;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 260;
+    const oscs = [55, 55.7, 82.6].map((f) => { const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = f; o.connect(lp); return o; });
+    lp.connect(hum).connect(g);
+    const all = [src, lfo, lfo2, ...oscs];
+    for (const n of all) n.start();
+    wellDroneNodes = { g, all };
+  }
+  const t = ctx.currentTime;
+  wellDroneNodes.g.gain.setTargetAtTime(Math.max(0.0001, 0.11 * k * (1 + 0.5 * wellDread)), t, 0.6);
+  if (k <= 0.001) {
+    const n = wellDroneNodes; wellDroneNodes = null;
+    n.g.gain.setTargetAtTime(0.0001, t, 0.3);
+    setTimeout(() => { for (const o of n.all) try { o.stop(); } catch (e) {} }, 1500);
+  }
+}
 function sfxWellAir(on) {
   const ctx = audioCtx; if (!ctx) return;
   if (!on) { if (wellAirNodes) { const t = ctx.currentTime; wellAirNodes.g.gain.setTargetAtTime(0.0001, t, 0.25); const n = wellAirNodes; setTimeout(() => { try { n.src.stop(); } catch (e) {} }, 900); wellAirNodes = null; } return; }

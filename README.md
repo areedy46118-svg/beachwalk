@@ -1103,9 +1103,14 @@ the viewer.)
 
 **The well** — on the dry sand beside the tall one, a little toward the wall,
 and he stands over it looking in until you are close enough to see what he
-is; then he bolts for the sea as he always did. Walk up and the prompt is
-"Look inside": you lean over the rim and down a shaft that goes further than
-the moon reaches, the air round it dark and wet — and a voice: "Hey, I
+is; then he bolts for the sea as he always did. It is a place of its own: from
+seventy metres out the air closes in, and inside twenty-five there is nothing
+but grey fog, banks of it drifting past, the moon and the sky gone, the sea
+gone quiet under a low moan of wind, and the well standing dark in the middle
+of it, a wall's height at the rim and the roof over your head (`WELL_S` 1.5,
+`WELL_FOG_D`, `wellFog`, `wellBanks`). Walk up and the prompt is
+"Look inside": you lean over the rim and down a bore that goes from wet stone
+into black, further than the moon reaches — and a voice: "Hey, I
 fell." He fell coming back from the tavern, he says, couldn't pay his tab and
 thought he'd fetch a few coins; the bartender is a good friend of his, name
 of Stanley; nobody deserves this; and no, you shouldn't trust him. The lines
@@ -1116,8 +1121,8 @@ taken, and something climbs it: strides on a rope, a creak at every one,
 louder, for long enough to be sure. Black. And he is standing between you and
 the well, the sea behind him, the lens on his face as if he had something to
 say. He has nothing to say. He stands. Then he comes, faster than anything on
-this beach, and he fights fast — two swipes, a bite from the crouch, a drop
-onto you — and every few seconds, if he is not on you, he stops dead in his
+this beach, and he fights fast — two swipes and a bite from the crouch, no
+crawling — and every few seconds, if he is not on you, he stops dead in his
 crouch, holds, and comes again. Once he is up he stays up until you kill him;
 the checkpoint is written as he rises.
 
