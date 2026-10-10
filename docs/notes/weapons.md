@@ -2273,6 +2273,49 @@ the creature code) and redeclaring it killed the page; these are `_bld*`.
 **Harness:** in a HIDDEN pane nothing loads unless frames are pumped
 (`__bw.frame` in the wait loop) and `beginGame` refuses until `startGate().startReady`.
 
+**THE ARTIFACT OF THE FLAME (2026-10-09).** The second artifact, out of the
+tavern storeroom's chest. `artWeapon()` is now the WHALE's alone (chain,
+hold, HUD); `flameWeapon()` is the flame's. One artifact to a weapon is
+`attachArtifact`'s old rule (setting one in takes the other out). Its whole
+effect: a SHIFT heavy (`windOverhead`) catches as the charge passes
+`FLAME_FROM` 0.35 and is full by 1.0; `releaseWind` → `flameRelease(charge)`
+makes the swing burning only at `FLAME_FULL` 0.9 with the flames up;
+`bladeHitMutant` (main, heavy) → `flameBurn(u)`: `st.burn` 3.2 s at 0.32 hp/s
+(≈1.0 total against a katana heavy of 3), refreshed not stacked, no flinch;
+the killing tick goes through `hurtMutant`. Measured: plain heavy k 0; shift
+released at 0.88 shows flames but does not burn; a full one burned 1.03.
+**The fire**: `makeFlamePool` = one InstancedBufferGeometry of quads with
+`FLAME_VS`/`FLAME_FS` — billboards stretched along WORLD up in view space
+(`FLAME_UP`), shape cut in the fragment shader by domain-warped fbm, coloured
+by a blackbody ramp, alpha = heat, additive. The first pass (hard teardrops,
+heat to white) read as cartoon cones; soft edges + licks + alpha-follows-heat
++ many small overlapping tongues + a faint big "glow" particle is what reads
+as fire. Pools: `flameVM` (vmScene, 800) and `flameWorld` (burning enemies,
+320). Lights: `flameVMLamp` is a REAL light in vmScene (`bwPooled` so the
+pool does not virtualise it; added at load so nothing recompiles later) and
+`flameRoomLamp` a pooled one. Sound: one 4 s fire buffer made once (brown
+noise + crackle clicks) looped under the flame gain; catch / swing / sear
+one-shots. Sells for 3 jars (both artifacts, loose in the pack only).
+
+**THE CHARGE GLINT ON THE SHOVELS (2026-10-09; "I don't see it for the
+shovels").** It always fired — sized to the edge it sits on, a spade's lip
+gave a 0.10 star, and on the sand shovel the lip sits at the frame's corner
+through the wind-up, so a glint placed anywhere inside 0.94 NDC was cut in
+half. Now it is placed inside 0.82 × 0.80 and anything without `glintSpan`
+gets a 0.26 floor. Measured: sand 0.26, military 0.26, katana 0.45, all
+visible in the stills.
+
+**THE FIRE, SECOND PASS (2026-10-09; "less annoying and cool, less damage").**
+Burn 2.6 s at 0.17/s = 0.44 (was 1.03). Catches from 0.5 of the charge (was
+0.35), so a quick shift heavy stays plain. The loop sits UNDER the mix (0.10,
+darker roar, crackle rarer and half as loud); catch/swing/sear one-shots
+roughly halved. The lamps breathe instead of strobing (±10 % slow, was ±25 %
+with jitter) and are about half as bright. The look: a SHEATH — more, smaller,
+shorter, taller tongues hugging the edge; a white-hot line ON the steel
+(short-lived still points, `coreAcc`); a breath of blue at each tongue's root
+(`vDat.z > 0.5` only, so the core/glow/embers are not tinted); a shorter trail
+in the swing (life × 0.75); slower, longer-lived drifting embers.
+
 **THE DOUBLE-BARREL SHOTGUN (`shotgunItem`, `sgFire`, `sgReload`, `models/shotgun.js`).**
 A side-by-side twelve-bore BUILT in code (the katana's argument: it has to break
 open on its own hinge). It shares the .44's doors and branches on
@@ -2422,3 +2465,118 @@ stock (models below), not the method.
   with the safety and SAFE (`letterTex`), rib lettering, mid-bead, bigger
   glowing front bead, horn fore-end tip + latch + escutcheon screws, crowned
   stock section, wrist checkering, gold stock oval, re-seated pad and cap.
+
+**THE SAWN-OFF, OFF THE SCAN (2026-10-09; the owner: "use this for the sawed off
+shotgun animations and model and all and make the aim like call of duty. make
+the recoil alot too").** `assets/sawnoff.glb` is DJMaesen's "sawnoff animated"
+(CC-BY-4.0) through `tools/gltfpack.py --tex 1024 --normal-tex 1024`: 1.75 MB,
+a skinned pair of arms (7.4k verts) and the gun in nine named parts, ONE
+nine-second clip. The built double (`models/shotgun.js`) is no longer imported
+for the gun; `makeShell` stays as the fallback shell until the scan lands.
+- **The clip is cut by time, read off its channels** (`tools/sgglb.js`, and a
+  python sampler of the glTF's samplers): fire 0–0.43, one-shell reload
+  0.43–3.6, two-shell 3.6–6.4, draw 6.8–7.4 (6.4–6.8 is the gun going down),
+  idle 7.4–8.3, carry-at-a-run 8.3–8.6. `SG_SEG` / `SG_BEATS` (lever, break,
+  eject, in-hand, seat, shut, end — seconds INTO THE CLIP). Three actions on one
+  mixer: the whole clip with `timeScale 0` and its `time` set by hand (a move:
+  shot / reload / draw, under the game's own clocks `sgFireT`, `sgRel`,
+  `sgDrawT`), the idle subclip looping, the run subclip with its time set by
+  `sgRunT` (forward at a run, back at 1.5× when it stops). Weights ALWAYS sum
+  to one — what a mixer leaves unweighted is the bind pose. The move weight
+  eases in and out over ~0.06 s (`G.wMove`) so a move's last frame blends into
+  the idle; a hard cut popped.
+- **Reload rate** `SG_REL_RATE` 1.4 / 1.25: the one-shell reload is LONGER in
+  the clip than the two-shell one (3.17 s vs 2.8), so it runs faster. Two
+  shells only when two chambers want one AND two are spare (`sgRelLoad`);
+  otherwise the one-shell clip, which ejects the RIGHT shell (slug1, model
+  −x = the right barrel after the half turn). `sgEject(which)` empties only the
+  chambers the clip actually throws. Visibility of the two shells
+  (`sgSights`): what the chamber held until the hull is thrown and in the hand
+  (`inHand`), then only if that chamber is being filled.
+- **THE RIG IS PLACED IN THE EYE'S FRAME, not by the six arm numbers.** The
+  scan is the hands too, so it goes where its author's camera put it:
+  `SG_HOLD_HIP` / `SG_HOLD_ADS` = [x, y, z, pitch, yaw, roll] in view space,
+  blended by `easeInOutCubic(magAim)`, composed and multiplied by the INVERSE
+  of the arm rig's base (`ARM_BASE`, `(ARM_ROT_X, −0.45, 0.10)`) into
+  `sgRig.matrix` (`matrixAutoUpdate` off). So the sway, look-lag, bob and the
+  kick still ride the arm rig like every tool's, and `sgPose` is ONLY the
+  kick. Measured at rest: the author's hold is camera (0.02, 0.13, −0.32) m
+  looking a shade down at the gun's origin; the hip hold is that moved 8 cm
+  right, 15 cm down, 40 back, pitched +0.03, yawed in 0.02, canted 0.10. ADS:
+  bores along the view axis pitched up 0.0737 so the bead (an empty
+  `sgBead` 6.2 cm over the barrels' end, in `front`'s frame) sits at
+  (0, 0, −0.80) from an eye 2.8 cm over the rib's rear; `sgSights` pins it
+  (measured: NDC (0, 0) at full aim) and lets go entirely past six tenths of
+  a kick, so the sights JUMP (bead to +0.24 NDC aimed, +0.47 from the hip,
+  settled in ~0.35 s). The old pin relax `(1 − kick·0.9)` left the aimed kick
+  at 0.03 — nothing.
+- **Marks in the barrels' frame** (centimetres, `front`): bores' mouths at
+  (∓1.81, 4.09, 30) — the slugs sit at (∓1.8, 4.1, −2.5), the front mesh ends
+  at z 30; the barrels' top is 6.1 over the node. Sparks and the flash go down
+  `front`'s +Z, not the old gun's +X.
+- **IT IS DARK.** Albedo means 31/255 (arms) and 55 (gun). A plain grey in its
+  place lit fine, so the maps are lifted through `material.color` (2.0 / 2.0,
+  `SG_LIFT_*`) rather than the hand's lights touched. `ringEnv()` on both
+  materials (`SG_ENV` 1.3) so the blued steel has something to reflect.
+  `frustumCulled` off on every mesh: the skinned arms' bounds are the bind
+  pose.
+- **Kick** (`SG_KICK`): rig pitch 0.46 (× 0.8 aimed), lift 0.05, push 0.17,
+  roll 1.1 × `sgRoll`, a yaw of ±0.07 drawn per shot; look nudge 0.27 rad (−0.07
+  aimed) paid out over three frames, 78 % of it climbing back; `magKickV` 14,
+  `magYawV` ±9, fovKick 14, `vmImpulse(+2.5)` (the old −5 dipped the gun for
+  two frames before it rose — a landing, not a shot), `SG_KICK_FALL` 0.17,
+  cap 1.7. `SG_ZOOM` 0.11 (the .44 keeps `MAG_ZOOM` 0.22).
+- **The draw** is the clip's plus a quarter-metre drop of the rig squared out
+  over `SG_DRAW` 0.55 s, so it comes up from UNDER the frame (the clip's own
+  drop is 16 cm, still in the picture at the hip).
+- **Icons and shells.** `sgGunStatic` (the `sawnoff` subtree cloned at rest,
+  scaled 0.01) is the item's `iconModel`/`inspectModel`; `sgShellSrc` is one
+  `slug1` mesh at 0.72 (the scan's shell is big for a twelve-bore);
+  `makeShellSix` fills its group when the scan lands (`sgShellFill`), and
+  `shells2IconItem` has NO drawn icon any more — `itemIcon` renders from a model
+  whenever one exists and never falls back to `icon`. `ICON_CACHE_V` → v6.
+  `sgDropWorldShell` needed `rest: camera.position.y − EYE_HEIGHT`: a gib on
+  the sand with no `rest` has no floor (measured y −11 after a reload on the
+  beach; the owner's built shell had the same hole).
+- **Declaration order bit once**: `shells2IconItem` is built at ~49k and used
+  `sgShellSrc` from the gun block at ~50.6k — `sgShellSrc`/`sgShellClone` live
+  above `makeShellSix` now.
+- **The name changed** ('Double-Barrel Shotgun' → 'Sawn-Off Shotgun'); a save
+  names items, so `packByName` also matches `item.was`.
+- Harness: `tools/sgtest.js` still boots it (`__sgBoot`, `__sgSheet`);
+  `tools/sgglb.js` views the scan alone at any clip time; `tools/sgads.js`,
+  `sgcurve.js` and `sgshot.html` were written for the built double's named
+  parts and do not know the scan. `__bw` has `sgG`, `sgRig`, `SG_HOLD_HIP/ADS`
+  (mutable in place), `SG_KICK`, `itemIcon`, `shells2IconItem`.
+
+**NO ARMS (2026-10-09; the owner: "I don't need the arms or fingers shown").**
+The sawn-off's skinned arm mesh is hidden at load (`isSkinnedMesh → visible =
+false`); the rig still runs, so the gun's parts and the two shells move as the
+clip has them, and the shells in the reload cross the frame on their own.
+The item is named **'The Sawed Off Shotgun'** (the owner's words; `was` keeps
+both earlier names for saves).
+
+**ONE PAIR OF SHELLS (2026-10-09; the owner: "only let purchasing shotgun ammo
+be once").** `TRADER_STOCK.shells2` 1 (it was 5). Saves carry the stock, so a
+save that still has five is read as the one untouched pair and anything under
+five as none (`restore`, next to the `shotgun` default). Six shots in the
+whole game: two in the gun, two with it, two bought.
+
+**THE CHAMBERS AGREE WITH THE SHELLS (2026-10-09; the owner: "make the reload
+actually make sense with how many shots you had, when he opens the chamber
+it's not accurate").** `sgSights` draws each of the clip's two shells from
+`what` the chamber holds at that beat: before `inHand` what it held
+(`sgRelCh`); after, the fresh shell where one is going in (`sgRelLoad`), and
+otherwise NOTHING if the clip threw that hull (`thrown`: right for reload1,
+both for reload2) or what it held if the clip never touched it — the live
+left shell used to VANISH from the open gun once the hand came up, because
+only the chambers being filled were drawn from there. A spent hull wears a
+sooted clone of the material (`spentMat`, colour × 0.42, rough), a live one
+the red; the thrown hull is dark red in the air.
+- **And the one-shell clip always throws the RIGHT shell.** When the left
+  chamber alone wants one (fire both, load one, fire, buy more: `sgCh`
+  [1, 2]), the two meshes swap chambers for that reload (`swap` in
+  `sgSights`), and `sgEject` empties `sgRelLoad[0]`, not chamber 0. Traced
+  with health pinned, every case reads right: [2,2]+2 → SS, both thrown, LL;
+  [2,2]+1 → one thrown, LS (the hull stays, sooted); [2,1] → SL → LL with the
+  live one never leaving; [1,2] → the thrown mesh is the left's, LL.

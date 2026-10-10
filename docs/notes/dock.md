@@ -289,3 +289,34 @@ was a corpse stopping dead mid-flight; it brakes it across the ground and
 leaves gravity alone. Measured over sixteen kills in three sessions, every
 body ends with its highest joint 0.17–0.40 m over the floor.
 
+
+**HIS CHART (2026-10-09).** Giving the peg back now hands over the rod AND
+"Old Map of the Beach" (`giveBeachMap`, `beachMapGiven` on the save; an old
+save with the leg given and no flag is owed one after the restore). The map is
+drawn once, on first use, on a 1024×1536 canvas (`drawBeachMap`, ~16 ms) from
+the game's own positions (`mapY(z)`, `mapX(x)`), so it cannot lie about
+distance; USE opens it full-screen through `noteOpen` (closeNote hides it), the
+pack's inspect shows a curled sheet. PNG, because the burnt corner is cut out
+of the paper and a JPEG paints the hole black.
+**"I found your leg" needs the LEG, not a peg**: dev mode grants the Spare
+Peg as a weapon, so `inventory.includes(pegItem)` offered the line to a player
+who had never opened the wreck's chest. `OFFER_PEG` now also asks
+`pegTaken`, which is on the save as `pegFound` (an older save: the chest was
+unlocked).
+
+**THE CHART, REDRAWN (2026-10-09; "it looks bad … hyper realistic … nothing
+on the back … no whale, catacombs or UFO").** 1536×2304 (drawn in the
+1024×1536 coordinates under a 1.5 transform), ~70 ms on first use.
+`mapPaper` (rag paper: two scales of mottling, fibres, foxing, tea stains with
+a tide-line rim, edges yellowed and darkened) and `mapEdge` (a deckled,
+browned edge cut with `destination-in`) are shared with `drawBeachMapBack`,
+the blank reverse. The look that reads as REAL rather than drawn-by-a-program:
+watercolour washes under the ink (canvas `filter: blur`), the engraver's
+WATER-LINING (eleven offset coast lines fading out), rhumb lines from a
+32-point rose, stippled sand, hachured cliff, every ink line drawn twice (a
+faint wide bleed, then the line) with a tremor, Palatino italics with a soft
+shadow, a ribbon cartouche, folds with a dark crease + pale ridge + soft
+shadow + ink rubbed off, and worn spots where the folds cross. Concentric
+"hills" read as rings — taken out. The full-screen view gets a PNG through
+`toBlob` (the sheet is big); the inspect model is two faces, the chart in
+front and the blank paper behind.

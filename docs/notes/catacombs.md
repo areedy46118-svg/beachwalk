@@ -787,3 +787,29 @@ the fog is a thing you see, and where he passes a torch the same warmth that
 lights every sheet lights these: what the torchlight reveals is a shape
 moving in lit mist before it is a face. Nothing while he is far, dead or not
 drawn.
+
+**HE IS HEARD THROUGH THE PLACE, NOT ACROSS IT (2026-10-08, `catHear` /
+`catPlayAt`).** Every voice cue (`catCue`) and footstep of his now arrives the
+loudest of three ways: in the open (a `catLineOpen` line and within 1.2 m of
+your floor — as before); ROUND THE CORRIDORS (`catSoundField`: a Dijkstra
+field from your node over the hunter's own graph, honouring `catEdgeCut`,
+followed 55 m, rebuilt only when your node changes — 1–5 ms, 16 the first
+time an area's cuts are computed — level by walked length, top end cut by
+how far round against the straight line, PANNED TO THE LAST TURNING BEFORE
+YOU by walking `prev` back to 2.6 m); or THROUGH THE STONE (0.30 of the
+level, 380→170 Hz). Measured from one spot: open 6 kHz, round a corner
+2.5–3.7 kHz at ~60 % level, through rock ~230 Hz at 9 %. 300–450 nodes are
+within 55 m of a corridor; a pocket reaches a handful (the graph's `main` is
+a flood that ignores cuts). His footstep no longer falls back to the claw
+scrape when it is inaudible.
+
+**HE IS ON THE FLOOR OVER YOUR HEAD (`catAboveStep`).** When he walks a storey
+1.7–7 m above yours within 9 m and your ceiling there is his floor, his step
+is the slab's: his own recording at 190 Hz low-pass plus a 52→34 Hz sine
+(felt more than heard), panned at 0.4 — instead of the airborne step. Now and
+then (≥2.6 s apart) grit trickles out of the ceiling (`catDustAt`, a 320-grain
+`Points` pool, vertex colours scaled by `catLightAt` so it is only as visible
+as the torches there make it) with a 3.2 kHz sift at ~0.02. Under him is often
+ROCK, not your room: the spot is the first stretch of YOUR ceiling on the line
+from him to you. A spread of 0.22 m read as snow; 0.07 with a few strays reads
+as a stream out of a joint.

@@ -1505,3 +1505,59 @@ layout is the two last mounds down the walk (12.6, -987.7) and (10.1,
 `placeMoundWater` stands a `makeWaterBottle()` in the hole under the mound's
 own shine, taken through `gainWater` so it stacks; `moundRelicHold` pre-builds
 it like the others.
+
+**THE WELL AND THE MAN IN IT (2026-10-10).** `assets/well.glb` (Adam Glachan,
+CC-BY-4.0) at `WELL_X` 10.6 / `WELL_Z` = SMILE_Z + 0.6, the tall one moved to
+`SMILE_X` 9.3 and turned to look INTO it (his phase-0 facing is the well, not
+you; the bolt at `SMILE_SEE` is unchanged). The scene, in order
+(`wellLook.phase`): `in` (1.15 s lean over the rim, with a 22 cm rise so the
+camera goes over the ring and not through it) → `hold` (a dialog with no
+speaker, `WELL_NPC`, choices LET HIM UP / DO NOTHING, the lens held down the
+bore by `dialogTarget` on `wellMark` 2.4 m down) → `crank` (7.5 s, the bucket
+on our own rope `wellParts.myRope` to 6.5 m, the pawl every 0.19 s) → `wait`
+→ `grab` (the rope jerks, `sfxWellGrab`) → `climb` (11–14 s of strides,
+`sfxWellStride(prog)` louder and brighter, the rope swaying with each, a
+little trauma) → `black` → `reveal` (`wellReveal`: you are put 3.9 m up the
+sand facing the sea with him 1.6 m from the well between you, `cineHold` +
+`dialogFov` 34 on his head bone, idle01 at 0.22) → he stares 3.6–7 s
+(`wellStalk.stare`) → `wellCharge`. `wellPhase` 0/1/2 is saved as `well`; a
+save with 1 loads as 2 (he is up), with him standing by the well, `wakeAt` 16.
+- **The shaft** is a BackSide cylinder with vertex colours and `fog: false`
+  (the fog LIFTS a dark thing): r 0.225 to fit the base's 0.24 bore, top at
+  0.68, black by three metres. An unlit colour is what it glows under the
+  night's tone curve: 0.30 read as a LIT GREY CONE filling the mouth
+  (measured); 0.06 at the lip is a hair over the sand. The base's own floor
+  disc (72 verts, r < 0.36 at its y −1) is cut from the index at load.
+- **The bucket hung IN THE MOUTH as authored** (y 0.74–0.86 at the rim): raised
+  `WELL_BUCKET_LIFT` 0.44 to the axle, and the lean's eye at 1.02 m goes UNDER
+  it, so the look is past it into the dark and it comes down past you.
+- **Night on the maps**: colour × 0.42 (mechanism) / 0.62 (roof) / 0.72
+  (stone), roughness 1, metalness 0; a breath of emissive on the mechanism so
+  the bucket can be watched going down. No `reexpose` lift.
+- **The air**: `wellMistK` (smoothstep inside 34 m, × (1 + 0.9 `wellDread`)
+  while he is being brought up or stared at) darkens the mood tint, thickens
+  the fog (× 1 + 1.25 k) and piles the ground mist (× 1 + 2.6 k).
+- **The dialog camera is the lens the whole way**: `cineHold` kept through
+  `endDialog` (it clears `dialogTarget` otherwise) and re-targeted on his head
+  at the reveal; released at the charge.
+- Sounds, all synthesised: `sfxWellAir` (a bandpassed loop with drips, while
+  you look), `sfxWellCrank`, `sfxWellGrab`, `sfxWellStride`, `sfxWellWind`
+  (nine seconds of gusts at the reveal), `sfxWellBreath`.
+- **HE TALKS (2026-10-10).** The owner's script, word for word, and his own
+  recording cut at its silences (`assets/well-guy1..6.m4a`, bank `wellGuy`):
+  start "Hey, I fell" → "In the well? How?" → the tavern line → "They let you
+  walk out without paying?" → the bartender → "What's his name?" → Stanley →
+  "Stealing? Don't you deserve it?" → "Nobody deserves this" → "Why should I
+  trust you?" → "You shouldn't". LET HIM UP (`WELL_UP`) is on every node;
+  doing nothing is the dialog's own leave. Each of his lines plays from down
+  the shaft as its node is shown — `showDialogNode` now runs a node's `say`
+  — through `playSampleAt` with a dull low-pass and a second copy 85 ms
+  behind at a fifth (the stone's slap); the first line goes the moment you
+  choose to look, before the words. THE TAKE IS "Hey, [1.1 s] I fell coming
+  back from the tavern…": "Hey, I fell" is not a separate line in it, so clip
+  1 is "Hey" + the "I fell" off the front of the tavern line with a quarter
+  second between (ffmpeg concat), and clip 2 keeps its "I fell". Found by
+  20 ms RMS profiles, not by ear — the pane is muted.
+- **THE STING ON THE BLACK (2026-10-10).** The owner's "well zombie" (3 s,
+  `assets/well-rise.m4a`, bank `wellRise`) plays through `playSample` the
+  frame the climb gives way to black, under the fade and into the reveal.

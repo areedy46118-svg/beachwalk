@@ -344,8 +344,14 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - **The city** — pushed far back and heavily fogged so you can only just make
   out rooflines and a scattering of lit windows, under a faint sodium
   light-pollution wash that lifts over the cliff ridge.
-- **The lighthouse** — a whitewashed conical tower with a black lantern, the
-  brightest thing on the headland. Inside, a round brick shaft with a slim
+- **The lighthouse** — a lime-rendered rubble tower, its whitewash flaked and
+  streaked with a century of rust and weather, a bitumen band round its foot,
+  cut-stone sills and quoins and a corbelled gallery under a black lantern — the
+  brightest thing on the headland. It stands on a rock promontory: a scarp of
+  boulders into the surf on one side, heath and a keeper's cottage with one lit
+  window on the other, and a lane of stone steps and chain up its back from
+  the castle's postern. Coming out of the castle, the beam comes round and
+  stops on you. Inside, a round brick shaft with a slim
   red cast-iron spiral stair wound round a central steel pole, standing free
   of the wall: thin diamond-plate treads, one continuous red handrail on the
   outside, oil lamps on the brick every half turn, moonlight standing in the
@@ -667,6 +673,27 @@ by [DanteGuy](https://sketchfab.com/temptecn) licensed under
 the neck to the marauder's throne (`assets/dante.glb`, packed by
 `tools/gltfpack.py … --tex 1024 --normal-tex 1024`), on its own eight clips.
 Its collar and chain are built in the game.
+
+This work is based on ["sawnoff animated"](https://sketchfab.com/3d-models/sawnoff-animated-806f8327bed34fc3b0e3911d01f0566d)
+by [DJMaesen](https://sketchfab.com/bumstrum) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the sawn-off
+shotgun in your hands and its one clip (`assets/sawnoff.glb`; its arms are hidden,
+packed by `tools/gltfpack.py … --tex 1024 --normal-tex 1024`, 1.75 MB). The
+game cuts the clip into the shot, the two reloads, the draw, the idle and the
+carry at a run, and places the whole rig in the eye's frame itself.
+
+This work is based on ["Old Forest Well"](https://sketchfab.com/3d-models/old-forest-well-d1c0a5293ff94b5c8edd62cd4d1ef902)
+by [Adam Glachan](https://sketchfab.com/acesapien) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the well beside the
+tall one (`assets/well.glb`, packed by `tools/gltfpack.py … --tex 1024
+--normal-tex 512`, 1.9 MB). Its shaft, the rope that pays out and the dark are
+the game's.
+
+This work is based on ["animation zombie 2"](https://sketchfab.com/3d-models/animation-zombie-2-d85985955acf4b13992eef113634d4fc)
+by [RINONO](https://sketchfab.com/Jguyfioy) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the man at the
+bottom of the well (`assets/wellman.glb`, packed by `tools/gltfpack.py …
+--tex 1024`, 2.8 MB), on his own sixteen clips.
 
 The flail knight in Castle XIII's west court is the owner's "Crusader tank"
 (a flail and a heater shield, fourteen of its own animations), packed by
@@ -1051,25 +1078,48 @@ redistributable. The cylinder swinging out, the loader seating and the crane
 shutting are synthesised.
 
 
-**Double-Barrel Shotgun** — the last thing the castle's trader sells, for ten
+**The Sawed Off Shotgun** — the last thing the castle's trader sells, for ten
 blood jars: four shots — both barrels loaded and two shells in the pack — and
-after that two loose shells for five jars (five pairs in stock). A side-by-side
-twelve-bore BUILT in code (`models/shotgun.js`): blued barrels with real bores,
-a matted rib with the maker's name in gold, a mid-bead and a brass front bead;
-a coin-finish boxlock with scroll engraving inside gold-inlaid borders, domed
-fences, gold cocking indicators, a checkered top lever, a top tang with the
-safety and SAFE inlaid behind it, and, broken open, firing-pin bushings, the
-water table and the cocking dogs; a splinter fore-end with a horn tip and its
-latch; a walnut stock with a real shotgun's drop, crowned sides, checkering on
-the wrist, a gold oval, a steel grip cap and a ribbed pad. Nine pellets a
-barrel; up close a charge takes a body apart, further out it wounds and shoves.
-It is the crowd gun: everything in the open inside a cone off the barrels
-(about 14° either side from the hip, out to 6.5 m) takes its share of the
-charge, so three or four castle citizens coming at you shoulder to shoulder go
-down to one barrel, thrown four to six metres and lifted off their feet, in
-pieces. The reload breaks it on its hinge, throws the spent hulls over your
-shoulder and feeds two fresh ones. Nothing in it is a downloaded asset; its
-crack is the owner's .44 recording, pitched down, under a synthesised blast.
+after that ONE pair of loose shells for five jars, and no more. DJMaesen's
+scanned sawn-off side-by-side (credits above); its gloved arms are in the file
+but not shown, by the owner's word. Everything it does is its one clip — the trigger and the buck, breaking it open with the lever, the hulls
+flicked out over your shoulder, one or two shells pushed home and the snap
+shut, the draw up from under the frame, the breathing at rest, the carry
+across the chest when you run. The aim is a shooter's: hold right-click and it
+comes up into the middle in a fifth of a second, the bores on the view axis,
+the eye just over the rib and the muzzle on the crosshair, the field of view
+pulled in a tenth and the look slowed. The kick is a sawn-off's — the muzzle
+thrown up half the screen from the hip, a quarter down the sights, the lens
+punched, the whole thing back into you and settling in a third of a second.
+Nine pellets a barrel; up close a charge takes a body apart, further out it
+wounds and shoves. It is the crowd gun: everything in the open inside a cone
+off the barrels (about 14° either side from the hip, out to 6.5 m) takes its
+share of the charge, so three or four castle citizens coming at you shoulder
+to shoulder go down to one barrel, thrown four to six metres and lifted off
+their feet, in pieces. The shells in the shop and on the ground are the scan's
+own. Its crack is the owner's .44 recording, pitched down, under a synthesised
+blast. (The double built in code before it is still in `models/shotgun.js` for
+the viewer.)
+
+**The well** — on the dry sand beside the tall one, a little toward the wall,
+and he stands over it looking in until you are close enough to see what he
+is; then he bolts for the sea as he always did. Walk up and the prompt is
+"Look inside": you lean over the rim and down a shaft that goes further than
+the moon reaches, the air round it dark and wet — and a voice: "Hey, I
+fell." He fell coming back from the tavern, he says, couldn't pay his tab and
+thought he'd fetch a few coins; the bartender is a good friend of his, name
+of Stanley; nobody deserves this; and no, you shouldn't trust him. The lines
+are the owner's own recording, played up the shaft. Every answer leaves you
+the choice to LET HIM UP, or you can walk away. Let him up and the crank turns, the bucket goes down
+on its rope until the dark has it, and stops. Then the rope jerks, as if
+taken, and something climbs it: strides on a rope, a creak at every one,
+louder, for long enough to be sure. Black. And he is standing between you and
+the well, the sea behind him, the lens on his face as if he had something to
+say. He has nothing to say. He stands. Then he comes, faster than anything on
+this beach, and he fights fast — two swipes, a bite from the crouch, a drop
+onto you — and every few seconds, if he is not on you, he stops dead in his
+crouch, holds, and comes again. Once he is up he stays up until you kill him;
+the checkpoint is written as he rises.
 
 **Skull Key** — what lies between the candles in the catacombs' lower vault,
 and the only thing that opens the barred door out of them.

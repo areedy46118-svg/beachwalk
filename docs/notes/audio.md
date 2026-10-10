@@ -548,6 +548,10 @@ awake + near + in this room first.** The watcher must be imported once per
 load (a second import used to replace its state object, and the patched
 prototypes kept counting into the old one).
 
+**The catacombs propagate his sounds** (`catHear`, see catacombs.md): open /
+round the corridors (panned to the opening) / through the stone. Anything new
+he says should go through `catCue` or `catPlayAt`, never `playSampleAt`.
+
 **A NOISE BUFFER IS MADE ONCE (2026-10-09).** `sfxMutSever` wrote 0.34 s of
 shaped noise per call (2.3 ms), `sfxSgGore` 0.5 s, `sfxSgBlast` a body, a
 crack, five slaps and a 1.8 s roll, `sgThump` one per call — and a charge that

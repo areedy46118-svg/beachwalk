@@ -3302,3 +3302,21 @@ THROUGH A HITSTOP (2026-10-09).** Three things, found on the farmers:
   rag record carries its own `vmax` (10 + 6.5k) and `travel` (6 + 5k), which
   win over the kind's `ragVmax`/`ragTravel`. `mutSever` keeps `pieceK` at
   >= 0.80 + 0.25k for a blast and lifts the piece.
+
+**THE MAN FROM THE WELL (`MUT_KINDS.wellman`, 2026-10-10).** RINONO's
+"animation zombie 2" (CC-BY-4.0, `assets/wellman.glb`): 2.8k verts, sixteen
+clips of its own, faces +Z (`faceFix` 0), 1.92 m (`h`), 44 hp. Contact
+frames measured off the clips with `tools/glbsheet.js` (the hand or head
+furthest forward): attack01 0.46 (left hand), attack02 0.50 (right), eat
+0.35 (a crouched bite, both hands), on_all_four_A 0.71 (the head, dropping
+to all fours — used as a lunging drop, lunge 2.6). `rate` 1.3–1.6 on each.
+`caution` is the crouch he freezes in; `damage`/`down` the hits, `death` the
+fall. `speedK` 1.75 with `gaitMax` 5 (his run clip is 0.79 s a stride) and a
+`st.sprint` 0.95 burst on every charge. The weeping-angel part is
+`updateWellMan`: between swings, past 5.5 m, every 2.5–7.5 s he is put to
+sleep (`awake` false, `holdAnim`, `caution` at 0.6) for 0.9–2.8 s and woken
+with the burst; a blow wakes him too (`provoke` = `wellCharge`). Note
+`st.swing` keeps the LAST swing's name for ever — "not swinging" is
+`st.atk < 0`. Measured before the speed change: from 9.7 m on you in 3.5 s
+at 5.7 m/s; 19 swings in 30 s, all four used, every one landing on a player
+standing still.

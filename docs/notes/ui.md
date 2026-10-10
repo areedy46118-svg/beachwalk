@@ -682,3 +682,11 @@ comes with both barrels loaded and `sgSpare = 2`; the box of six is gone and
 the only shells are `shells2` — 2 for 5 jars, five pairs. A restore deletes a
 saved `TRADER_STOCK.shells`, and `traderBuy` returns on any key without a
 price (an unknown key used to spend `undefined` jars and made the count NaN).
+
+**THE FLAME'S BORDER BURNS (2026-10-09).** A weapon with the Artifact of the
+Flame set in, and the loose artifact itself, carry the class `fire` on their
+hotbar slot and pack slot (next to the gold `art` class every artifact weapon
+has): orange border and glow, breathing on a 1.6 s alternate animation
+(`fireb`). The classes are set where `art` is (`renderHotbar`, `renderPack`),
+keyed on `item.artifact === flameArtItem || item === flameArtItem`; the CSS
+sits after the `.art` rules so it wins.

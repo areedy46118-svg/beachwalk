@@ -256,3 +256,60 @@ at 0.55 rad/s (past you every 11.4 s), its flash on the lantern is one-sided
 meshes drawn whenever the tower is in view (about 400 of the ~770 draw calls in
 Castle XIII's east court) — flagged as its own task.
 
+
+## THE TOWER AND THE HEADLAND, REDONE (2026-10-09; the owner: "everything about the lighthouse looks like AI slop … make it the best moment in the game")
+
+**What was wrong**, rendered from the castle's back door: a smooth untextured
+cone (flat colour + vertex weathering) on a smooth sand lump, eighty metres
+from two photoscanned castles. Nothing on it was drawn.
+
+**The skin** (`lhWallMaps`, 1024×1536, u round / v up, made behind the title
+card by `warmStep('lhskin maps')` — the name is OFF the reach table so it runs
+first; ~2 M pixels of noise is not for module time): coursed rubble under
+lime render that has flaked off low down, under the sills and under the
+gallery drains; rust run from the twelve astragals, grey-green under the
+windows, algae and damp round the foot, salt-bleach up top, lichen, cracks,
+and the bitumen band round the base. Colour + height→normal + roughness.
+Lessons: the courses showing through the render at 0.2 of the stone relief
+read as painted bricks — 0.06 is "faintly"; bare stone drawn at 118 grey
+read as holes at night — 152 and fewer patches; `artCanvas` is a const
+declared at the end of the module, so the texture code has its own
+`lhCanvas`; `vertexColors` weathering kept but softened (0.74–1.0).
+**Dressings** (`lhdress` section, all `ashlar`, box UVs scaled to the box via
+`boxUV`/`boxUVi`): window sills, jambs, lintels and iron bars; a date stone;
+two steps; 22 corbels and a moulding under the gallery; the string courses
+and the footing in ashlar. The door's OWN surround (jambs, lintel, hood,
+further down the file near `lhDoor`) was the dark navy frame in every shot —
+it is ashlar now too; my duplicate jambs were inside it and are gone.
+**The headland** (`headlandAt`): a level top (|x| ≤ 5.5 sea / 8.5 land), a
+SCARP on the sea side (0.85 power over 6 m), a gentler land fall (10.5 m), the
+back slope the lane climbs (z 14–50), the point broken off beyond the tower
+(z −9 to −30), knuckles of rock in the height on the scarps. `headlandSlope`
+(gradient) is a vertex attribute `aS`; the ridge shader picks sand (toe) /
+heath / rock by height and slope, sampling `hlGrassMaps` and `hlRockMaps` in
+WORLD metres (1×1 DataTextures until the warm lands). The rock's cellular
+pattern at 2.3 m read as a honeycomb — 1.25 m, 9 points, cracks broken by
+noise, and rock only past slope 0.46. Heath under moonlight wants to be dark
+and cool (tint 0.68/0.76/0.90), not lawn green.
+**Dressing** (in `lhDress`, far-culled at 320 m): 64 mossy rocks (the
+wreck's, already shipped — `onMossyRocks` via `queueMicrotask`, the `let` is
+declared later) sunk into the scarps, the point and the toe; ~800 grass
+clumps (`grass-clumps.glb`, a second `bwGlb` — the fetch is cached) with a
+much higher emissive than the pavilion's: a card in the open at night is a
+black spike otherwise. The lane: 29 stone treads on the steep stretch (one
+wherever the ground has dropped a riser), flags on the top, iron stanchions
+and a sagging chain down both shoulders; the path runs on across the sand to
+the castle's back door (`PATH_LEN` 76, `pathBend` swings 10.4 m toward it).
+**The keeper's cottage** (`hl_cottage`): stone, slate, chimney, quoins, a
+plank door and ONE lit window, facing the lane (−x of its own frame — the
+first build faced the castle). Walls carried down on a plinth to the ground
+at every corner. In `lhDress`; solid by three cylinders in `rockColliders`
+(pushed from a microtask: declared later).
+**The arrival** (`lhBeamFind` / `lhBeamStep`): coming out of the castle's
+back door (`placeOutOfFort('back')`) the beam comes round at 1 rad/s, holds
+on you for 3.8 s brighter, and goes on turning from there. Measured: on you
+at 2.0 s, released at 6.2 s.
+**Harness**: `tools/lhshot.js` — `__lhSetup()`, `__lhSheet([[x, y|null, z,
+lookX, lookY, lookZ, fov, label]…])`; y null = eye height over `headlandAt`.
+A camera BELOW the ground is inside the grass, and the grass fills the lens
+as "floating black shapes" — three of the first sheet's faults were that.

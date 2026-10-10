@@ -641,9 +641,74 @@ only fights if hit; when it dies he gets up slowly and charges.
   after the blow; the take now needs the clip finished AND 1.3 s past its
   length. `noTail` skips the warden death's tail thump four metres behind.
 
+**THE BEAST, THIRD PASS (2026-10-09; "his hits never really land, his arms
+look twisted").** `aimed: false` — the shoulder correction at aimK 1.6 was
+the twist. Reaches set from his hands (smash 2.1 m at chest height, backhand
+2.3–2.6 m at hip): dA1 reach 2.45 / stop 2.0, dA2 2.75 / 2.25. `landSlop`
+0.22 and `limbR` 0.28: at 0.45 eight blows scored at 2.3–2.9 m with the
+hands half a metre short. `plantSlack` 0.2: a planted swing whose target is
+beyond reach early in the startup switches to a longer swing it owns (inside
+0.2 s) or is dropped with `st.closeIn` 0.5 s, during which he is not "near"
+and WALKS in — without it he started and dropped 342 swings in 25 s, because
+`near` uses his LONGEST reach. After: contacts at 2.6–2.7 (backhand), hands
+on you in the stills.
+
 **THE FARMERS AGAINST THE DOUBLE (2026-10-09).** The owner's damping on them
 (`ragK` 1.15, `ragVmax` 6.5, `ragTravel` 5, `ragLift` 0.45, `pieceK` 0.45 —
 "they fly too far, it looks like they disappear") stays for blades; a SHOTGUN
 kill overrides it per body (creatures.md, `rBL`): thrown 3.6–6.2 m, hips
 lifted 0.4–1.4 m, ~0.6–0.9 s in the air, still inside the courtyard's walls.
 The crowd numbers are in weapons.md ("THE CROWD").
+
+**A DEATH PUTS THE WHOLE FARMER FIGHT BACK (2026-10-09; the owner: "there's
+always less farmers in the castle fight when I reload the checkpoint — it
+should fully restart the fight").** `farmKeepDead` no longer writes each
+death into the save on disk; it only notes the key in `deadUnitKeys`. A death
+loads the gate's checkpoint exactly as it was written (every door full), and
+the dead are still in any checkpoint written AFTER them — leaving by the gate,
+the west court, the throne room — which is the progress that should keep. The
+2026-10-08 "a farmer you killed stays killed" above is reversed by this.
+
+**THE BEAST, FOURTH PASS (2026-10-09; "too slow and clumsy, needs more attack
+animations and scary aggression, connect better").**
+- **Five swings out of two clips.** `danteMirrorClips` (in `dantePre`) reflects
+  the backhand across his own sagittal plane at load → `attack2m`, the other
+  arm. The recipe that worked, after three that did not: the plane is the
+  CLIP's (hip to hip at its first frame, squared to the spine, through the
+  pelvis); the per-bone right-hand factor `G = Rm_bind · F_b` is measured ONCE
+  in the SKIN's bind pose (`bindMatrix · inverse(boneInverses[i])`, which is
+  a symmetric figure: hips, shoulders, hands and feet on one axis, every
+  partner exactly a half turn off its reflection), and holds under any turn
+  of the whole animal; locals are re-derived under the mirrored parents;
+  quaternions kept on one side of the sphere frame to frame. What failed:
+  `S·W·S` with the plane's offset in the right-hand factor (every bone 680
+  units off — tore him apart); F measured off the LOADED nodes (a bent, twisted
+  idle frame: F ran 144°–178°, and the mirrored beast was hunched and turned);
+  the plane from the bind figure (he faces another way in it: mirrored beast
+  turned 90°). Verified by stills: the mirrored backhand is the original's
+  exact reflection.
+- **Rate.** `naturalSwings` takes `A.rate`: the clip plays at that speed,
+  startup and recovery alike, still landing on its contact frame. Smash 1.4x
+  (wind 1.10 s), backhands 1.5x (0.73), the quick ones 1.9x (0.58). Five
+  entries `dA1 dA2 dA2m dA3 dA3m` (dA3/dA3m are the backhands fast), chains
+  left-right-left at 0.6–0.82, `chainMax` 4.
+- **Numbers:** `speedK` 1.75, rage 2.1; `gaitMax` 1.5 (at 1.25 a sprinting
+  player walked away from him); `aggr` 4.2 / rage 4.8; `press` 0.98; `feint`
+  0.10; `step` 0.20; `turnMax` 7; `fade` 0.11 (the 0.20 crossfade was the
+  "clumsy": every swing began with the arms sliding out of the last pose).
+- Measured, standing still at 2.4–2.8 m with health pinned: 12 blows landed
+  in 15 s, chains of four, all five swings drawn over 20 s (13 starts).
+- Chase, measured: from 9.5 m he is on you (3.2 m) in 2.75 s, running at
+  3.6 m/s — faster than your walk (3.4), slower than your sprint (5.7, five
+  seconds of it). `gaitMax` 1.5 is the cap; raise it before `speedK` if he
+  needs to be quicker, or the feet slide again.
+
+**THE BEAST'S OWN VOICE (2026-10-10, the owner's recordings).** `voice.rec`
+on his kind is a map of role → bank: `roar: 'danteChain'` (two screams cut
+from the end of a 37 s file — the first 28 s are silence), `hurt`/`tell`:
+`danteHit` (one take cut at −28 dB into ten grunts, `DANTE_HIT_N`), `die:
+'danteDeath'` (4 s, the length of his fall). `mutVox` with an object `rec`
+takes the WHOLE bank as the pool at the clip's own pitch (±2 %), and a role
+the map leaves out falls back to the synthesised throat. The chain take plays
+scream 1 through `playSampleAt` at him as he rears (`C.raged`), the synth roar
+only if the bank has not landed.

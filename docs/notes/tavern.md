@@ -1020,3 +1020,35 @@ it 3.2× (0.41 m, 0.28 across) and put its back through the black panel 15 cm
 behind the kerb's middle. `scale 2.4` (0.31 tall, 0.21 across) with
 `keepSize` and the hit proxy at 0.11 local (0.26 m world) is the beach size
 from a stride off and still clear of the panel.
+
+**THE STOREROOM DOOR, REDONE (2026-10-09; the owner: "looks like AI").** Lit
+standard materials with drawn maps (`tavPlankMaps`: grain, two small brown
+knots — black ones read as HOLES — scratches, grime low; `tavIronMaps`: rust
+and hammer dents), uneven planks a hair out of true, a ledger-and-brace Z on
+the room side, forged strap hinges (`Shape` + extrude, fishtail ends) with
+domed clout nails, pintles, a rim lock, a ring pull on a lozenge plate.
+**"I got stuck there"**: `buildTavStore` runs BEFORE `pruneTavStoreys`, and
+the prune dropped every floor cell under the shut leaf — the threshold had no
+floor, so an open door stopped you dead at z 8.33 (face 8.6).
+`tavStoreThreshold()` puts the cells back when it opens (and on a restore).
+**The chest**: lid hung on the file's hinge like the wreck's; the Artifact
+of the Flame inside (`noBake` — the tavern's `bakeStatic` takes every
+unnamed mesh and it vanished into the merge while still drawn), on the
+chest's measured floor (0.044). Save flag `tavChest`.
+
+**WONG'S NAME TAG, ON HIS SHIRT (2026-10-10; first a floating sprite, then
+the owner: "on his shirt that you can inspect, like he's at work").**
+`makeNameBadge()`: a 75 × 28 mm rounded, bevelled extrusion with a 768×288
+canvas (ivory, a red rule, WONG in red Georgia, STAFF small), the pin bar,
+pin and clasp on the back. `updateWongBadge` (every frame until done) waits
+for his model, casts a ray from a stride in front back at his spine, over
+and up a hand (`CC_Base_Spine02_035`), puts the badge 4 mm proud of the hit
+on the cloth, tips it down a little and `bone.attach`es it — the bone's
+world scale is 0.0106, and `attach` gives the badge the 94× local scale that
+makes it 75 mm again; DO NOT set the badge's scale after (a test did and it
+went to 0.8 mm). "Inspect the name tag" (`addInteractable` on it, a 0.11 m
+proxy) opens the examine view on a second badge at its own size. Lessons:
+a fixed 12.5 cm off the spine bone was INSIDE him (the bone sits behind the
+body's middle — hence the ray); a MeshPhysicalMaterial (clearcoat) on the
+plate drew nothing on him in the tavern though the examine view drew it —
+MeshStandardMaterial draws — but BLACK (6/255, measured with a 48 px render target on him): the torches barely reach his chest and the cast only reads because `dressMutant` lifts their maps with an emissive; the badge's own map is its emissive at 0.7. The man in the well calls the barman Stanley.
